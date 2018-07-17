@@ -1,4 +1,4 @@
-README.txt for version 6.1 of Vim: Vi IMproved.
+README.txt for version 6.2 of Vim: Vi IMproved.
 
 
 WHAT IS VIM
@@ -14,9 +14,9 @@ All commands are given with normal keyboard characters, so those who can type
 with ten fingers can work very fast.  Additionally, function keys can be
 defined by the user, and the mouse can be used.
 
-Vim currently runs under Amiga DOS, MS-DOS, MS-Windows 95/98/NT, Atari MiNT,
-Macintosh, BeOS, VMS, RISC OS, OS/2 and almost all flavours of UNIX.
-Porting to other systems should not be very difficult.
+Vim currently runs under Amiga DOS, MS-DOS, MS-Windows 95/98/Me/NT/2000/XP,
+Atari MiNT, Macintosh, BeOS, VMS, RISC OS, OS/2 and almost all flavours of
+UNIX.  Porting to other systems should not be very difficult.
 
 
 DISTRIBUTION
@@ -26,7 +26,7 @@ This README.txt file comes with the runtime archive.  It includes the
 documentation, syntax files and other files that are used at runtime.  To run
 Vim you must get either one of the binary archives or a source archive.
 Which one you need depends on the system you want to run it on and whether you
-want or must compile it yourself.  Check "http://vim.sf.net/download.php" for
+want or must compile it yourself.  Check "http://www.vim.org/download.php" for
 an overview of currently available distributions.
 
 
@@ -45,33 +45,13 @@ COPYING
 
 Vim is Charityware.  You can use and copy it as much as you like, but you are
 encouraged to make a donation to orphans in Uganda.  Please read the file
-"runtime/doc/uganda.txt" for details.
+"runtime/doc/uganda.txt" for details (do ":help uganda" inside Vim).
 
-There are no restrictions on distributing an unmodified copy of Vim.  Parts of
-Vim may also be distributed, but this text must always be included.  You are
-allowed to include executables that you made from the unmodified Vim sources,
-your own usage examples and Vim scripts.
-
-If you distribute a modified version of Vim, you are encouraged to send the
-maintainer a copy, including the source code.  Or make it available to the
-maintainer through ftp; let him know where it can be found.  If the number of
-changes is small (e.g., a modified Makefile) e-mailing the diffs will do.
-When the maintainer asks for it (in any way) you must make your changes,
-including source code, available to him.
-
-The maintainer reserves the right to include any changes in the official
-version of Vim.  This is negotiable.  You are not allowed to distribute a
-modified version of Vim when you are not willing to make the source code
-available to the maintainer.
-
-The current maintainer is Bram Moolenaar <Bram@vim.org>.  If this changes, it
-will be announced in appropriate places (most likely www.vim.org and
-comp.editors).  When it is completely impossible to contact the maintainer,
-the obligation to send him modified source code ceases.
-
-It is not allowed to remove these restrictions from the distribution of the
-Vim sources or parts of it.  These restrictions may also be used for previous
-Vim releases instead of the text that was included with it.
+Summary of the license: There are no restrictions on using or distributing an
+unmodified copy of Vim.  Parts of Vim may also be distributed, but the license
+text must always be included.  For modified versions a few restrictions apply.
+The license is GPL compatible, you may compile Vim with GPL libraries and
+distribute it.
 
 
 COMPILING
@@ -95,10 +75,10 @@ README_vms.txt		VMS
 INFORMATION
 
 The latest news about Vim can be found on the Vim home page:
-	http://vim.sf.org/
+	http://www.vim.org/
 
 If you have problems, have a look at the Vim FAQ:
-	http://www.vim.org/faq/
+	http://vimdoc.sf.net/vimfaq.html
 
 Send bug reports to:
 	Bram Moolenaar <Bram@vim.org>
@@ -124,7 +104,7 @@ There are four mailing lists for Vim:
 	For discussions about using and improving Vim on the Macintosh.
 	Archive: http://groups.yahoo.com/group/vim-mac
 
-See "http://www.vim.org/mail.html"
+See "http://www.vim.org/maillist.php"
 
 NOTE:
 - You can only send messages to these lists if you have subscribed!

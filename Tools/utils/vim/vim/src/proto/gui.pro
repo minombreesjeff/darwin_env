@@ -51,9 +51,10 @@ void gui_mouse_moved __ARGS((int x, int y));
 void gui_mouse_correct __ARGS((void));
 void ex_gui __ARGS((exarg_T *eap));
 int gui_find_bitmap __ARGS((char_u *name, char_u *buffer, char *ext));
+void gui_find_iconfile __ARGS((char_u *name, char_u *buffer, char *ext));
 void display_errors __ARGS((void));
 int no_console_input __ARGS((void));
 void gui_update_screen __ARGS((void));
-char_u *get_find_dialog_text __ARGS((char_u *arg, int *wordp));
-int gui_do_findrepl __ARGS((int flags, char_u *find_text, char_u *repl_text, int down, int exact));
+char_u *get_find_dialog_text __ARGS((char_u *arg, int *wwordp, int *mcasep));
+int gui_do_findrepl __ARGS((int flags, char_u *find_text, char_u *repl_text, int down));
 /* vim: set ft=c : */

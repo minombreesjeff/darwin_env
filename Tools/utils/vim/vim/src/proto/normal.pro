@@ -8,6 +8,7 @@ void end_visual_mode __ARGS((void));
 void reset_VIsual_and_resel __ARGS((void));
 void reset_VIsual __ARGS((void));
 int find_ident_under_cursor __ARGS((char_u **string, int find_type));
+int find_ident_at_pos __ARGS((win_T *wp, linenr_T lnum, colnr_T startcol, char_u **string, int find_type));
 void clear_showcmd __ARGS((void));
 int add_to_showcmd __ARGS((int c));
 void add_to_showcmd_c __ARGS((int c));
@@ -16,7 +17,7 @@ void pop_showcmd __ARGS((void));
 void do_check_scrollbind __ARGS((int check));
 void check_scrollbind __ARGS((linenr_T topline_diff, long leftcol_diff));
 void scroll_redraw __ARGS((int up, long count));
-void nv_ident __ARGS((cmdarg_T *cap));
+void do_nv_ident __ARGS((int c1, int c2));
 void start_selection __ARGS((void));
 void may_start_select __ARGS((int c));
 /* vim: set ft=c : */

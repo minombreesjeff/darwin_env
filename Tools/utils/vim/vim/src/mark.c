@@ -99,7 +99,7 @@ setpcmark()
 #endif
 
     /* for :global the mark is set only once */
-    if (global_busy)
+    if (global_busy || listcmd_busy)
 	return;
 
     curwin->w_prev_pcmark = curwin->w_pcmark;
@@ -297,13 +297,9 @@ getmark(c, changefile)
 	startp = &curbuf->b_visual_start;
 	endp = &curbuf->b_visual_end;
 	if ((c == '<') == lt(*startp, *endp))
-	{
 	    posp = startp;
-	}
 	else
-	{
 	    posp = endp;
-	}
 	/*
 	 * For Visual line mode, set mark at begin or end of line
 	 */
@@ -709,7 +705,7 @@ ex_jumps(eap)
     cleanup_jumplist();
     /* Highlight title */
     MSG_PUTS_TITLE(_("\n jump line  col file/text"));
-    for (i = 0; i < curwin->w_jumplistlen; ++i)
+    for (i = 0; i < curwin->w_jumplistlen && !got_int; ++i)
     {
 	if (curwin->w_jumplist[i].fmark.mark.lnum != 0)
 	{
@@ -720,6 +716,8 @@ ex_jumps(eap)
 		continue;
 
 	    msg_putchar('\n');
+	    if (got_int)
+		break;
 	    sprintf((char *)IObuff, "%c %2d %5ld %4d ",
 		i == curwin->w_jumplistidx ? '>' : ' ',
 		i > curwin->w_jumplistidx ? i - curwin->w_jumplistidx
@@ -731,6 +729,7 @@ ex_jumps(eap)
 			    curwin->w_jumplist[i].fmark.fnum == curbuf->b_fnum
 							? hl_attr(HLF_D) : 0);
 	    vim_free(name);
+	    ui_breakcheck();
 	}
 	out_flush();
     }
@@ -1067,7 +1066,7 @@ write_viminfo_filemarks(fp)
     buf_T	*buf;
     xfmark_T	*fm;
 
-    if (get_viminfo_parameter('\'') == 0)
+    if (get_viminfo_parameter('f') == 0)
 	return;
 
     fprintf(fp, _("\n# File marks:\n"));
@@ -1283,7 +1282,7 @@ copy_viminfo_marks(virp, fp_out, count, eof)
 	{
 	    if (line[0] != '\n' && line[0] != '\r' && line[0] != '#')
 	    {
-		if (viminfo_error(_("Missing '>'"), line))
+		if (viminfo_error("E576: ", _("Missing '>'"), line))
 		    break;	/* too many errors, return now */
 	    }
 	    eof = vim_fgets(line, LSIZE, virp->vir_fd);
@@ -1353,7 +1352,7 @@ copy_viminfo_marks(virp, fp_out, count, eof)
 	    {
 		if (line[1] != NUL)
 		{
-		    sscanf((char *)line + 2, "%ld %d", &pos.lnum, &pos.col);
+		    sscanf((char *)line + 2, "%ld %u", &pos.lnum, &pos.col);
 		    switch (line[1])
 		    {
 			case '"': curbuf->b_last_cursor = pos; break;

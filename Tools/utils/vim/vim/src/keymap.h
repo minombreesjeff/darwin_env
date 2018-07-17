@@ -30,13 +30,16 @@
 
 /*
  * Positive characters are "normal" characters.
- * Characters 0x0100 - 0x01ff are sometimes used for abbreviations.
  * Negative characters are special key codes.  Only characters below -0x200
  * are used to so that the absolute value can't be mistaken for a single-byte
  * character.
  */
 #define IS_SPECIAL(c)		((c) < 0)
-#define IS_ABBR(c)		((c) >= 0x100 && (c) < 0x200)
+
+/*
+ * Characters 0x0100 - 0x01ff have a special meaning for abbreviations.
+ * Multi-byte characters also have ABBR_OFF added, thus are above 0x0200.
+ */
 #define ABBR_OFF		0x100
 
 /*
@@ -194,7 +197,7 @@ enum key_extra
     , KE_IGNORE		/* Ignored mouse drag/release */
 
     , KE_TAB		/* unshifted TAB key */
-    , KE_S_TAB		/* shifted TAB key */
+    , KE_S_TAB_OLD	/* shifted TAB key (no longer used) */
 
     , KE_SNIFF		/* SNiFF+ input waiting */
 
@@ -228,6 +231,15 @@ enum key_extra
     , KE_C_RIGHT	/* control-right */
     , KE_C_HOME		/* control-home */
     , KE_C_END		/* control-end */
+
+    , KE_X1MOUSE	/* X1/X2 mouse-buttons */
+    , KE_X1DRAG
+    , KE_X1RELEASE
+    , KE_X2MOUSE
+    , KE_X2DRAG
+    , KE_X2RELEASE
+
+    , KE_DROP		/* DnD data is available */
 };
 
 /*
@@ -250,7 +262,13 @@ enum key_extra
 #define K_S_END		TERMCAP2KEY('*', '7')
 #define K_C_END		TERMCAP2KEY(KS_EXTRA, KE_C_END)
 #define K_TAB		TERMCAP2KEY(KS_EXTRA, KE_TAB)
-#define K_S_TAB		TERMCAP2KEY(KS_EXTRA, KE_S_TAB)
+#define K_S_TAB		TERMCAP2KEY('k', 'B')
+
+/* extra set of function keys F1-F4, for vt100 compatible xterm */
+#define K_XF1		TERMCAP2KEY(KS_EXTRA, KE_XF1)
+#define K_XF2		TERMCAP2KEY(KS_EXTRA, KE_XF2)
+#define K_XF3		TERMCAP2KEY(KS_EXTRA, KE_XF3)
+#define K_XF4		TERMCAP2KEY(KS_EXTRA, KE_XF4)
 
 /* extra set of function keys F1-F4, for vt100 compatible xterm */
 #define K_XF1		TERMCAP2KEY(KS_EXTRA, KE_XF1)
@@ -419,6 +437,13 @@ enum key_extra
 #define K_RIGHTMOUSE	TERMCAP2KEY(KS_EXTRA, KE_RIGHTMOUSE)
 #define K_RIGHTDRAG	TERMCAP2KEY(KS_EXTRA, KE_RIGHTDRAG)
 #define K_RIGHTRELEASE	TERMCAP2KEY(KS_EXTRA, KE_RIGHTRELEASE)
+#define K_X1MOUSE       TERMCAP2KEY(KS_EXTRA, KE_X1MOUSE)
+#define K_X1MOUSE       TERMCAP2KEY(KS_EXTRA, KE_X1MOUSE)
+#define K_X1DRAG	TERMCAP2KEY(KS_EXTRA, KE_X1DRAG)
+#define K_X1RELEASE     TERMCAP2KEY(KS_EXTRA, KE_X1RELEASE)
+#define K_X2MOUSE       TERMCAP2KEY(KS_EXTRA, KE_X2MOUSE)
+#define K_X2DRAG	TERMCAP2KEY(KS_EXTRA, KE_X2DRAG)
+#define K_X2RELEASE     TERMCAP2KEY(KS_EXTRA, KE_X2RELEASE)
 
 #define K_IGNORE	TERMCAP2KEY(KS_EXTRA, KE_IGNORE)
 
@@ -431,6 +456,8 @@ enum key_extra
 #define K_SNR		TERMCAP2KEY(KS_EXTRA, KE_SNR)
 #define K_PLUG		TERMCAP2KEY(KS_EXTRA, KE_PLUG)
 #define K_CMDWIN	TERMCAP2KEY(KS_EXTRA, KE_CMDWIN)
+
+#define K_DROP		TERMCAP2KEY(KS_EXTRA, KE_DROP)
 
 /* Bits for modifier mask */
 /* 0x01 cannot be used, because the modifier must be 0x02 or higher */

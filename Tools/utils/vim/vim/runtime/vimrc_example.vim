@@ -1,7 +1,7 @@
 " An example for a vimrc file.
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last change:	2001 Jul 18
+" Last change:	2002 Sep 19
 "
 " To use it, copy it to
 "     for Unix and OS/2:  ~/.vimrc
@@ -21,7 +21,6 @@ set nocompatible
 " allow backspacing over everything in insert mode
 set backspace=indent,eol,start
 
-set autoindent		" always set autoindenting on
 if has("vms")
   set nobackup		" do not keep a backup file, use versions instead
 else
@@ -37,9 +36,6 @@ set incsearch		" do incremental searching
 
 " Don't use Ex mode, use Q for formatting
 map Q gq
-
-" Make p in Visual mode replace the selected text with the "" register.
-vnoremap p <Esc>:let current_reg = @"<CR>gvs<C-R>=current_reg<CR><Esc>
 
 " This is an alternative that also works in block mode, but the deleted
 " text is lost and it only works for putting the current register.
@@ -61,6 +57,10 @@ if has("autocmd")
   " Also load indent files, to automatically do language-dependent indenting.
   filetype plugin indent on
 
+  " Put these in an autocmd group, so that we can delete them easily.
+  augroup vimrcEx
+  au!
+
   " For all text files set 'textwidth' to 78 characters.
   autocmd FileType text setlocal textwidth=78
 
@@ -71,5 +71,11 @@ if has("autocmd")
     \ if line("'\"") > 0 && line("'\"") <= line("$") |
     \   exe "normal g`\"" |
     \ endif
+
+  augroup END
+
+else
+
+  set autoindent		" always set autoindenting on
 
 endif " has("autocmd")

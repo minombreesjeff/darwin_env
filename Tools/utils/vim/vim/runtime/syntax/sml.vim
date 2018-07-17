@@ -1,12 +1,12 @@
 " Vim syntax file
 " Language:     SML
 " Filenames:    *.sml *.sig
-" Maintainers:  Markus Mottl            <markus@oefai.at>
-"               Fabrizio Zeno Cornelli  <zeno@filibusta.crema.unimi.it>
-" URL:          http://www.ai.univie.ac.at/~markus/vim/syntax/sml.vim
-" Last Change:  2001 Nov 20 - Fixed small highlighting bug with modules (MM)
-"               2001 Aug 29 - Fixed small highlighting bug  (MM)
-"               2001 Aug 28 - Upgraded URL & mail address  (MM)
+" Maintainers:	Markus Mottl		<markus@oefai.at>
+"		Fabrizio Zeno Cornelli	<zeno@filibusta.crema.unimi.it>
+" URL:		http://www.ai.univie.ac.at/~markus/vim/syntax/sml.vim
+" Last Change:	2003 May 11
+"		2001 Nov 20 - Fixed small highlighting bug with modules (MM)
+"		2001 Aug 29 - Fixed small highlighting bug  (MM)
 
 " For version 5.x: Clear all syntax items
 " For version 6.x: Quit when a syntax file was already loaded
@@ -118,7 +118,7 @@ syn match    smlMTDef "=\s*\w\(\w\|'\)*\>"hs=s+1,me=s
 syn keyword  smlKeyword  and andalso case
 syn keyword  smlKeyword  datatype else eqtype
 syn keyword  smlKeyword  exception fn fun handle
-syn keyword  smlKeyword  in infix infixl infixl
+syn keyword  smlKeyword  in infix infixl infixr
 syn keyword  smlKeyword  match nonfix of orelse
 syn keyword  smlKeyword  raise handle type
 syn keyword  smlKeyword  val where while with withtype
@@ -152,9 +152,9 @@ syn match    smlKeyChar      ";"
 syn match    smlKeyChar      "\*"
 syn match    smlKeyChar      "="
 
-syn match    smlNumber        "\<-\=\d\+\>"
-syn match    smlNumber        "\<-\=0[x|X]\x\+\>"
-syn match    smlReal          "\<-\=\d\+\.\d*\([eE][-+]\=\d\+\)\=[fl]\=\>"
+syn match    smlNumber	      "\<-\=\d\+\>"
+syn match    smlNumber	      "\<-\=0[x|X]\x\+\>"
+syn match    smlReal	      "\<-\=\d\+\.\d*\([eE][-+]\=\d\+\)\=[fl]\=\>"
 
 " Synchronization
 syn sync minlines=20
@@ -178,53 +178,53 @@ if version >= 508 || !exists("did_sml_syntax_inits")
     command -nargs=+ HiLink hi def link <args>
   endif
 
-  HiLink smlBraceErr     Error
-  HiLink smlBrackErr     Error
-  HiLink smlParenErr     Error
+  HiLink smlBraceErr	 Error
+  HiLink smlBrackErr	 Error
+  HiLink smlParenErr	 Error
 
-  HiLink smlCommentErr   Error
+  HiLink smlCommentErr	 Error
 
-  HiLink smlEndErr       Error
-  HiLink smlThenErr      Error
+  HiLink smlEndErr	 Error
+  HiLink smlThenErr	 Error
 
-  HiLink smlCharErr      Error
+  HiLink smlCharErr	 Error
 
-  HiLink smlComment      Comment
+  HiLink smlComment	 Comment
 
-  HiLink smlModPath      Include
-  HiLink smlModule       Include
-  HiLink smlModParam1    Include
-  HiLink smlModType      Include
-  HiLink smlMPRestr3     Include
-  HiLink smlFullMod      Include
+  HiLink smlModPath	 Include
+  HiLink smlModule	 Include
+  HiLink smlModParam1	 Include
+  HiLink smlModType	 Include
+  HiLink smlMPRestr3	 Include
+  HiLink smlFullMod	 Include
   HiLink smlModTypeRestr Include
-  HiLink smlWith         Include
-  HiLink smlMTDef        Include
+  HiLink smlWith	 Include
+  HiLink smlMTDef	 Include
 
   HiLink smlConstructor  Constant
 
-  HiLink smlModPreRHS    Keyword
-  HiLink smlMPRestr2     Keyword
-  HiLink smlKeyword      Keyword
-  HiLink smlFunDef       Keyword
-  HiLink smlRefAssign    Keyword
-  HiLink smlKeyChar      Keyword
-  HiLink smlAnyVar       Keyword
-  HiLink smlTopStop      Keyword
-  HiLink smlOperator     Keyword
+  HiLink smlModPreRHS	 Keyword
+  HiLink smlMPRestr2	 Keyword
+  HiLink smlKeyword	 Keyword
+  HiLink smlFunDef	 Keyword
+  HiLink smlRefAssign	 Keyword
+  HiLink smlKeyChar	 Keyword
+  HiLink smlAnyVar	 Keyword
+  HiLink smlTopStop	 Keyword
+  HiLink smlOperator	 Keyword
 
-  HiLink smlBoolean      Boolean
-  HiLink smlCharacter    Character
-  HiLink smlNumber       Number
-  HiLink smlReal         Float
-  HiLink smlString       String
-  HiLink smlType         Type
-  HiLink smlTodo         Todo
-  HiLink smlEncl         Keyword
+  HiLink smlBoolean	 Boolean
+  HiLink smlCharacter	 Character
+  HiLink smlNumber	 Number
+  HiLink smlReal	 Float
+  HiLink smlString	 String
+  HiLink smlType	 Type
+  HiLink smlTodo	 Todo
+  HiLink smlEncl	 Keyword
 
   delcommand HiLink
 endif
 
 let b:current_syntax = "sml"
 
-" vim: ts=28
+" vim: ts=8

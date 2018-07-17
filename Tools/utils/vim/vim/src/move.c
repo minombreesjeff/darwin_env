@@ -893,7 +893,12 @@ win_col_off(wp)
 	    + wp->w_p_fdc
 #endif
 #ifdef FEAT_SIGNS
-	    + (wp->w_buffer->b_signlist != NULL ? 2 : 0)
+	    + (
+# ifdef FEAT_NETBEANS_INTG
+		/* always show glyph gutter in netbeans */
+		usingNetbeans ||
+# endif
+		wp->w_buffer->b_signlist != NULL ? 2 : 0)
 #endif
 	   );
 }
@@ -1007,7 +1012,7 @@ curs_columns(scroll)
 	     * mode, the 'showbreak' string isn't shown, backup to first
 	     * column */
 	    if (*p_sbr && *ml_get_cursor() == NUL
-		    && curwin->w_wcol == (int)STRLEN(p_sbr))
+		    && curwin->w_wcol == (int)vim_strsize(p_sbr))
 		curwin->w_wcol = 0;
 #endif
 	}
@@ -1485,6 +1490,9 @@ scrolldown_clamp()
 	}
 #else
 	--curwin->w_topline;
+#endif
+#ifdef FEAT_FOLDING
+	hasFolding(curwin->w_topline, &curwin->w_topline, NULL);
 #endif
 	--curwin->w_botline;	    /* approximate w_botline */
 	curwin->w_valid &= ~(VALID_WROW|VALID_CROW|VALID_BOTLINE);
@@ -2078,15 +2086,15 @@ scroll_cursor_halfway(atend)
     lineoff_T	boff;
 
     loff.lnum = boff.lnum = curwin->w_cursor.lnum;
+#ifdef FEAT_FOLDING
+    (void)hasFolding(loff.lnum, &loff.lnum, &boff.lnum);
+#endif
 #ifdef FEAT_DIFF
     used = plines_nofill(loff.lnum);
     loff.fill = 0;
     boff.fill = 0;
 #else
     used = plines(loff.lnum);
-#endif
-#ifdef FEAT_FOLDING
-    (void)hasFolding(boff.lnum, NULL, &boff.lnum);
 #endif
     topline = loff.lnum;
     while (topline > 1)
@@ -2278,6 +2286,7 @@ onepage(dir, count)
     long	n;
     int		retval = OK;
     lineoff_T	loff;
+    linenr_T	old_topline = curwin->w_topline;
 
     if (curbuf->b_ml.ml_line_count == 1)    /* nothing to do */
     {
@@ -2458,9 +2467,21 @@ onepage(dir, count)
 
     /*
      * Avoid the screen jumping up and down when 'scrolloff' is non-zero.
+     * But make sure we scroll at least one line (happens with mix of long
+     * wrapping lines and non-wrapping line).
      */
-    if (dir == FORWARD && check_top_offset())
+    if (retval == OK && dir == FORWARD && check_top_offset())
+    {
 	scroll_cursor_top(1, FALSE);
+	if (curwin->w_topline <= old_topline
+				  && old_topline < curbuf->b_ml.ml_line_count)
+	{
+	    curwin->w_topline = old_topline + 1;
+#ifdef FEAT_FOLDING
+	    (void)hasFolding(curwin->w_topline, &curwin->w_topline, NULL);
+#endif
+	}
+    }
 
     redraw_later(VALID);
     return retval;

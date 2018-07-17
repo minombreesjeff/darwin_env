@@ -528,8 +528,11 @@ extern char* (*dyn_libintl_textdomain)(const char* domainname);
 
 /* return values for functions */
 #if !(defined(OK) && (OK == 1))
-/* OK already defined to 1 in MacOS X curses */
-/* (still protect against any other OK) */
+/* OK already defined to 1 in MacOS X curses, skip this */
+/* OK defined to 0 in MacOS X 10.2 curses!  redefine it */
+# if defined(OK) && defined(MACOS_X_UNIX)
+#  undef OK
+# endif
 # define OK			1
 #endif
 #define FAIL			0
@@ -587,6 +590,7 @@ extern char* (*dyn_libintl_textdomain)(const char* domainname);
 #define EXPAND_LANGUAGE		27
 #define EXPAND_COLORS		28
 #define EXPAND_COMPILER		29
+#define EXPAND_USER_DEFINED	30
 
 /* Values for exmode_active (0 is no exmode) */
 #define EXMODE_NORMAL		1
@@ -766,6 +770,10 @@ extern char* (*dyn_libintl_textdomain)(const char* domainname);
 #define RE_BOTH		2	/* save pat in both patterns */
 #define RE_LAST		2	/* use last used pattern if "pat" is NULL */
 
+/* Second argument for vim_regcomp(). */
+#define RE_MAGIC	1	/* 'magic' option */
+#define RE_STRING	2	/* match in string instead of buffer text */
+
 #ifdef FEAT_SYN_HL
 /* values for reg_do_extmatch */
 # define REX_SET	1	/* to allow \z\(...\), */
@@ -798,6 +806,7 @@ extern char* (*dyn_libintl_textdomain)(const char* domainname);
 #define DOCMD_NOWAIT	0x02	/* don't call wait_return() and friends */
 #define DOCMD_REPEAT	0x04	/* repeat exec. until getline() returns NULL */
 #define DOCMD_KEYTYPED	0x08	/* don't reset KeyTyped */
+#define DOCMD_EXCRESET	0x10	/* reset exception environment (for debugging)*/
 
 /* flags for beginline() */
 #define BL_WHITE	1	/* cursor on first non-white in the line */
@@ -819,7 +828,8 @@ extern char* (*dyn_libintl_textdomain)(const char* domainname);
 #define PUT_FIXINDENT	1	/* make indent look nice */
 #define PUT_CURSEND	2	/* leave cursor after end of new text */
 #define PUT_LINE	4	/* put register as lines */
-#define PUT_LINE_BACKWARD 8	/* put linewise register backwards */
+#define PUT_LINE_SPLIT	8	/* split line for linewise register */
+#define PUT_LINE_FORWARD 16	/* put linewise register below Visual sel. */
 
 /* flags for set_indent() */
 #define SIN_CHANGED	1	/* call changed_bytes() when line changed */
@@ -834,6 +844,7 @@ extern char* (*dyn_libintl_textdomain)(const char* domainname);
 /* flags for open_line() */
 #define OPENLINE_DELSPACES  1	/* delete spaces after cursor */
 #define OPENLINE_DO_COM	    2	/* format comments */
+#define OPENLINE_KEEPTRAIL  4	/* keep trailing spaces */
 
 /*
  * There are four history tables:
@@ -1106,6 +1117,8 @@ enum hlf_value
 #define MLINE	1		/* line-wise movement/register */
 #define MBLOCK	2		/* block-wise register */
 
+#define MAUTO	0xff		/* Decide between MLINE/MCHAR */
+
 /*
  * Minimum screen size
  */
@@ -1300,6 +1313,11 @@ int vim_memcmp __ARGS((void *, void *, size_t));
 # endif
 #endif
 
+#if defined(UNIX) || defined(FEAT_GUI) || defined(OS2) || defined(VMS) \
+	|| defined(FEAT_CLIENTSERVER)
+# define USE_INPUT_BUF
+#endif
+
 #ifdef MSWIN
 /* On MS-Windows the third argument isn't size_t.  This matters for Win64,
  * where sizeof(size_t)==8, not 4 */
@@ -1343,6 +1361,9 @@ int vim_memcmp __ARGS((void *, void *, size_t));
 # define MOUSE_4	0x100	/* scroll wheel down */
 # define MOUSE_5	0x200	/* scroll wheel up */
 
+# define MOUSE_X1	0x300 /* Mouse-button X1 (6th) */
+# define MOUSE_X2	0x400 /* Mouse-button X2 */
+
 /* 0x20 is reserved by xterm */
 # define MOUSE_DRAG_XTERM   0x40
 
@@ -1378,6 +1399,7 @@ int vim_memcmp __ARGS((void *, void *, size_t));
 # define MOUSE_DID_MOVE		0x04	/* only act when mouse has moved */
 # define MOUSE_SETPOS		0x08	/* only set current mouse position */
 # define MOUSE_MAY_STOP_VIS	0x10	/* may stop Visual mode */
+# define MOUSE_RELEASED		0x20	/* button was released */
 
 # if defined(UNIX) && defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
 #  define CHECK_DOUBLE_CLICK 1	/* Checking for double clicks ourselves. */
@@ -1419,7 +1441,10 @@ int vim_memcmp __ARGS((void *, void *, size_t));
 #define VV_PROGNAME	26
 #define VV_SEND_SERVER	27
 #define VV_DYING	28
-#define VV_LEN		29	/* number of v: vars */
+#define VV_EXCEPTION	29
+#define VV_THROWPOINT	30
+#define VV_REG		31
+#define VV_LEN		32	/* number of v: vars */
 
 #ifdef FEAT_CLIPBOARD
 
@@ -1527,6 +1552,7 @@ typedef int VimClipboard;	/* This is required for the prototypes. */
 #ifndef FEAT_VIRTUALEDIT
 # define getvvcol(w, p, s, c, e) getvcol(w, p, s, c, e)
 # define virtual_active() 0
+# define virtual_op FALSE
 #endif
 
 /*
@@ -1592,7 +1618,9 @@ typedef int VimClipboard;	/* This is required for the prototypes. */
  */
 # define MB_BYTE2LEN(b)		mb_bytelen_tab[b]
 # define MB_BYTE2LEN_CHECK(b)	(((b) < 0 || (b) > 255) ? 1 : mb_bytelen_tab[b])
+#endif
 
+#if defined(FEAT_MBYTE) || defined(FEAT_POSTSCRIPT)
 /* properties used in enc_canon_table[] (first three mutually exclusive) */
 # define ENC_8BIT	0x01
 # define ENC_DBCS	0x02
@@ -1606,13 +1634,24 @@ typedef int VimClipboard;	/* This is required for the prototypes. */
 # define ENC_2WORD	0x100	    /* Unicode: UTF-16 */
 
 # define ENC_LATIN1	0x200	    /* Latin1 */
+#endif
 
+#ifdef FEAT_MBYTE
 # ifdef USE_ICONV
-/* On Win32 iconv.dll is dynamically loaded. */
+#  ifndef EILSEQ
+#   define EILSEQ 123
+#  endif
 #  ifdef DYNAMIC_ICONV
+/* On Win32 iconv.dll is dynamically loaded. */
 #   define ICONV_ERRNO (*iconv_errno())
+#   define ICONV_E2BIG  7
+#   define ICONV_EINVAL 22
+#   define ICONV_EILSEQ 42
 #  else
 #   define ICONV_ERRNO errno
+#   define ICONV_E2BIG  E2BIG
+#   define ICONV_EINVAL EINVAL
+#   define ICONV_EILSEQ EILSEQ
 #  endif
 # endif
 
@@ -1631,14 +1670,35 @@ typedef int VimClipboard;	/* This is required for the prototypes. */
 #define SIGN_BYTE 1	    /* byte value used where sign is displayed;
 			       attribute value is sign type */
 
+#ifdef FEAT_NETBEANS_INTG
+# define MULTISIGN_BYTE 2   /* byte value used where sign is displayed if
+			       multiple signs exist on the line */
+#endif
+
 #if defined(FEAT_GUI) && defined(FEAT_XCLIPBOARD)
-# define X_DISPLAY	(gui.in_use ? gui.dpy : xterm_dpy)
+# ifdef FEAT_GUI_GTK
+   /* Avoid using a global variable for the X display.  It's ugly
+    * and is likely to cause trouble in multihead environments. */
+#  define X_DISPLAY	((gui.in_use) ? gui_mch_get_display() : xterm_dpy)
+# else
+#  define X_DISPLAY	(gui.in_use ? gui.dpy : xterm_dpy)
+# endif
 #else
 # ifdef FEAT_GUI
-#  define X_DISPLAY	gui.dpy
+#  ifdef FEAT_GUI_GTK
+#   define X_DISPLAY	((gui.in_use) ? gui_mch_get_display() : (Display *)NULL)
+#  else
+#   define X_DISPLAY	gui.dpy
+#  endif
 # else
 #  define X_DISPLAY	xterm_dpy
 # endif
+#endif
+
+#ifdef NBDEBUG /* Netbeans debugging. */
+# include "nbdebug.h"
+#else
+# define nbdebug(a)
 #endif
 
 #endif /* VIM__H */

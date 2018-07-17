@@ -50,6 +50,10 @@
 # include <X11/Xmu/Editres.h>
 #endif
 
+#ifdef FEAT_BEVAL_TIP
+# include "gui_beval.h"
+#endif
+
 #define VIM_NAME	"vim"
 #define VIM_CLASS	"Vim"
 
@@ -115,8 +119,8 @@ static int fontset_width __ARGS((XFontSet fs));
 static int fontset_ascent __ARGS((XFontSet fs));
 #endif
 
-static guicolor_T	prev_fg_color = (guicolor_T)-1;
-static guicolor_T	prev_bg_color = (guicolor_T)-1;
+static guicolor_T	prev_fg_color = INVALCOLOR;
+static guicolor_T	prev_bg_color = INVALCOLOR;
 
 #if defined(FEAT_GUI_MOTIF) && defined(FEAT_MENU)
 static XButtonPressedEvent last_mouse_event;
@@ -143,6 +147,11 @@ static void gui_x11_blink_cb __ARGS((XtPointer timed_out, XtIntervalId *interval
 static Cursor gui_x11_create_blank_mouse __ARGS((void));
 
 
+/*
+ * Keycodes recognized by vim.
+ * NOTE: when changing this, the table in gui_gtk_x11.c probably needs the
+ * same change!
+ */
 static struct specialkey
 {
     KeySym  key_sym;
@@ -215,12 +224,12 @@ static struct specialkey
     {XK_KP_Right,	'k', 'r'},
     {XK_KP_Up,		'k', 'u'},
     {XK_KP_Down,	'k', 'd'},
-    {XK_KP_Insert,	'k', 'I'},
-    {XK_KP_Delete,	'k', 'D'},
-    {XK_KP_Home,	'k', 'h'},
-    {XK_KP_End,		'@', '7'},
-    {XK_KP_Prior,	'k', 'P'},
-    {XK_KP_Next,	'k', 'N'},
+    {XK_KP_Insert,	KS_EXTRA, (char_u)KE_KINS},
+    {XK_KP_Delete,	KS_EXTRA, (char_u)KE_KDEL},
+    {XK_KP_Home,	'K', '1'},
+    {XK_KP_End,		'K', '4'},
+    {XK_KP_Prior,	'K', '3'},
+    {XK_KP_Next,	'K', '5'},
 
     {XK_KP_Add,		'K', '6'},
     {XK_KP_Subtract,	'K', '7'},
@@ -651,6 +660,15 @@ gui_x11_resize_window_cb(w, dud, event, dum)
 	workshop_frame_moved(rec.x, rec.y, rec.width, rec.height);
     }
 #endif
+#ifdef FEAT_NETBEANS_INTG
+    if (usingNetbeans)
+    {
+	XRectangle  rec;
+
+	shellRectangle(w, &rec);
+	netbeans_frame_moved(rec.x, rec.y);
+    }
+#endif
 #ifdef FEAT_XIM
     xim_set_preedit();
 #endif
@@ -780,7 +798,7 @@ gui_x11_key_hit_cb(w, dud, event, dum)
 	    {
 		char_u	*p = (char_u *)XtMalloc(len + 3);
 
-		mch_memmove(p, string, i);
+		mch_memmove(p, string, i + 1);
 		p[i + 1] = KS_EXTRA;
 		p[i + 2] = (int)KE_CSI;
 		mch_memmove(p + i + 3, string + i + 1, len - i);
@@ -789,6 +807,7 @@ gui_x11_key_hit_cb(w, dud, event, dum)
 		string = p;
 		string_alloced = True;
 		i += 2;
+		len += 2;
 	    }
     }
     else
@@ -977,6 +996,14 @@ gui_x11_key_hit_cb(w, dud, event, dum)
     if (p_mh)
 	gui_mch_mousehide(TRUE);
 
+#if defined(FEAT_BEVAL_TIP)
+    {
+	BalloonEval *be;
+
+	if ((be = gui_mch_currently_showing_beval()) != NULL)
+	    gui_mch_unpost_balloon(be);
+    }
+#endif
 theend:
     {}	    /* some compilers need a statement here */
 #ifdef FEAT_XIM
@@ -1163,6 +1190,17 @@ gui_mch_prepare(argc, argv)
 	}
 	else
 #endif
+#ifdef FEAT_NETBEANS_INTG
+	    if (strncmp("-nb", argv[arg], 3) == 0)
+	{
+	    usingNetbeans++;
+	    gui.dofork = FALSE;	/* don't fork() when starting GUI */
+	    netbeansArg = argv[arg];
+	    mch_memmove(&argv[arg], &argv[arg + 1],
+					    (--*argc - arg) * sizeof(char *));
+	}
+	else
+#endif
 	    arg++;
     }
 }
@@ -1196,11 +1234,33 @@ gui_mch_init_check()
     if (app_context == NULL || gui.dpy == NULL)
     {
 	gui.dying = TRUE;
-	EMSG(_("E233: cannot open display"));
+	EMSG(_(e_opendisp));
 	return FAIL;
     }
     return OK;
 }
+
+
+#ifdef USE_XSMP
+/*
+ * Handle XSMP processing, de-registering the attachment upon error
+ */
+static XtInputId _xsmp_xtinputid;
+
+static void local_xsmp_handle_requests __ARGS((XtPointer c, int *s, XtInputId *i));
+
+/*ARGSUSED*/
+    static void
+local_xsmp_handle_requests(c, s, i)
+    XtPointer	c;
+    int		*s;
+    XtInputId	*i;
+{
+    if (xsmp_handle_requests() == FAIL)
+	XtRemoveInput(_xsmp_xtinputid);
+}
+#endif
+
 
 /*
  * Initialise the X GUI.  Create all the windows, set up all the call-backs etc.
@@ -1422,13 +1482,24 @@ gui_mch_init()
     if (usingSunWorkShop)
 	workshop_connect(app_context);
 #endif
+#ifdef FEAT_NETBEANS_INTG
+    if (usingNetbeans)
+	netbeans_Xt_connect(app_context);
+#endif
 
-# ifdef FEAT_BEVAL
+#ifdef FEAT_BEVAL
     gui_init_tooltip_font();
-# endif
-# ifdef FEAT_MENU
+#endif
+#ifdef FEAT_MENU
     gui_init_menu_font();
-# endif
+#endif
+
+#ifdef USE_XSMP
+    /* Attach listener on ICE connection */
+    if (-1 != xsmp_icefd)
+	_xsmp_xtinputid = XtAppAddInput(app_context, xsmp_icefd,
+		(XtPointer)XtInputReadMask, local_xsmp_handle_requests, NULL);
+#endif
 
     return OK;
 }
@@ -1832,7 +1903,7 @@ gui_mch_get_font(name, giveErrorIfMissing)
     if (font == NULL)
     {
 	if (giveErrorIfMissing)
-	    EMSG2(_("E235: Unknown font: %s"), name);
+	    EMSG2(_(e_font), name);
 	return NOFONT;
     }
 
@@ -1856,7 +1927,7 @@ gui_mch_get_font(name, giveErrorIfMissing)
 
     if (font->max_bounds.width != font->min_bounds.width)
     {
-	EMSG2(_("E236: Font \"%s\" is not fixed-width"), name);
+	EMSG2(_(e_fontwidth), name);
 	XFreeFont(gui.dpy, font);
 	return NOFONT;
     }
@@ -1996,7 +2067,7 @@ gui_mch_get_fontset(name, giveErrorIfMissing, fixed_width)
     if (fontset == NULL)
     {
 	if (giveErrorIfMissing)
-	    EMSG2(_("E234: Unknown fontset: %s"), name);
+	    EMSG2(_(e_fontset), name);
 	return NOFONTSET;
     }
 
@@ -2122,7 +2193,7 @@ fontset_ascent(fs)
 
 /*
  * Return the Pixel value (color) for the given color name.
- * Return -1 for error.
+ * Return INVALCOLOR for error.
  */
     guicolor_T
 gui_mch_get_color(reqname)
@@ -2149,7 +2220,7 @@ gui_mch_get_color(reqname)
 
     /* can't do this when GUI not running */
     if (!gui.in_use || *reqname == NUL)
-	return (guicolor_T)-1;
+	return INVALCOLOR;
 
     colormap = DefaultColormap(gui.dpy, XDefaultScreen(gui.dpy));
 
@@ -2201,7 +2272,7 @@ gui_mch_get_color(reqname)
 	}
     }
 
-    return (guicolor_T)-1;
+    return INVALCOLOR;
 }
 
 /*
@@ -2397,7 +2468,7 @@ gui_mch_draw_string(row, col, s, len, flags)
 	    XDrawString(gui.dpy, gui.wid, gui.text_gc, TEXT_X(col),
 		    TEXT_Y(row), (char *)s, len);
     }
-    else if (p_linespace
+    else if (p_linespace != 0
 #ifdef FEAT_XFONTSET
 	    || current_fontset != NULL
 #endif
@@ -2533,7 +2604,7 @@ gui_mch_iconify()
     void
 gui_mch_set_foreground()
 {
-    XRaiseWindow(gui.dpy, XtWindow(vimShell));
+    XMapRaised(gui.dpy, XtWindow(vimShell));
 }
 #endif
 
@@ -2570,11 +2641,11 @@ gui_mch_draw_part_cursor(w, h, color)
     XFillRectangle(gui.dpy, gui.wid, gui.text_gc,
 #ifdef FEAT_RIGHTLEFT
 	    /* vertical line should be on the right of current point */
-	    !(State & CMDLINE) && curwin->w_p_rl ? FILL_X(gui.col + 1) - w :
+	    CURSOR_BAR_RIGHT ? FILL_X(gui.col + 1) - w :
 #endif
 		FILL_X(gui.col),
-	    FILL_Y(gui.row) + gui.char_height - h + (int)p_linespace / 2,
-	    w, h - (int)p_linespace);
+	    FILL_Y(gui.row) + gui.char_height - h,
+	    w, h);
 }
 
 /*
@@ -2676,7 +2747,7 @@ gui_mch_wait_for_chars(wtime)
 	 */
 	XtAppProcessEvent(app_context, desired);
 
-	if (!vim_is_input_buf_empty())
+	if (input_available())
 	{
 	    if (timer != (XtIntervalId)0 && !timed_out)
 		XtRemoveTimeOut(timer);
@@ -3225,7 +3296,7 @@ gui_mch_register_sign(signfile)
 	{
 	    XpmColorSymbol color[5] =
 	    {
-		{"none", "none", 0},
+		{"none", NULL, 0},
 		{"iconColor1", NULL, 0},
 		{"bottomShadowColor", NULL, 0},
 		{"topShadowColor", NULL, 0},
@@ -3249,9 +3320,8 @@ gui_mch_register_sign(signfile)
 	    {
 		vim_free(sign);
 		sign = NULL;
-		EMSG(_("E255: Couldn't read in sign data!"));
+		EMSG(_(e_signdata));
 	    }
-	    vim_free(attrs.colorsymbols);
 	}
     }
 
@@ -3447,13 +3517,12 @@ get_toolbar_pixmap(menu, sen, insen)
 
     if (menu->iconfile != NULL)
     {
-	/* Use the file argument: first as an absolute path (with extension),
-	 * then as a file name (without extension). */
-	expand_env(menu->iconfile, buf, MAXPATHL);
+	/* Use the "icon="  argument. */
+	gui_find_iconfile(menu->iconfile, buf, "xpm");
 	createXpmImages(buf, NULL, sen, insen);
-	if (*sen == (Pixmap)0
-		&& gui_find_bitmap(menu->name, buf, "xpm") == OK
-		&& buf[0] != NUL)
+
+	/* If it failed, try using the menu name. */
+	if (*sen == (Pixmap)0 && gui_find_bitmap(menu->name, buf, "xpm") == OK)
 	    createXpmImages(buf, NULL, sen, insen);
 	if (*sen != (Pixmap)0)
 	    return;

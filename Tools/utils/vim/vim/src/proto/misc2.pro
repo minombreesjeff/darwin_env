@@ -66,6 +66,7 @@ int default_fileformat __ARGS((void));
 int call_shell __ARGS((char_u *cmd, int opt));
 int get_real_state __ARGS((void));
 int vim_chdirfile __ARGS((char_u *fname));
+int illegal_slash __ARGS((char *name));
 char_u *parse_shape_opt __ARGS((int what));
 int get_shape_idx __ARGS((int mouse));
 void update_mouseshape __ARGS((int shape_idx));
@@ -85,4 +86,5 @@ int get_user_name __ARGS((char_u *buf, int len));
 void sort_strings __ARGS((char_u **files, int count));
 int pathcmp __ARGS((const char *p, const char *q));
 char_u *parse_list_options __ARGS((char_u *option_str, option_table_T *table, int table_size));
+void msg_str __ARGS((char_u *s, char_u *arg));
 /* vim: set ft=c : */

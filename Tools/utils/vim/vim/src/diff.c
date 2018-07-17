@@ -150,13 +150,16 @@ diff_buf_idx(buf)
 }
 
 /*
- * Mark the diff info as invalid, update it when info is requested.
+ * Mark the diff info as invalid, it will be updated when info is requested.
  */
     void
 diff_invalidate()
 {
     if (curwin->w_p_diff)
+    {
 	diff_invalid = TRUE;
+	diff_redraw(TRUE);
+    }
 }
 
 /*
@@ -780,8 +783,9 @@ ex_diffpatch(eap)
     /* Temporaraly chdir to /tmp, to avoid patching files in the current
      * directory when the patch file contains more than one patch.  When we
      * have our own temp dir use that instead, it will be cleaned up when we
-     * exit (any .rej files created). */
-    if (mch_dirname(dirbuf, MAXPATHL) != OK)
+     * exit (any .rej files created).  Don't change directory if we can't
+     * return to the current. */
+    if (mch_dirname(dirbuf, MAXPATHL) != OK || mch_chdir((char *)dirbuf) != 0)
 	dirbuf[0] = NUL;
     else
     {
@@ -819,7 +823,8 @@ ex_diffpatch(eap)
 #ifdef UNIX
     if (dirbuf[0] != NUL)
     {
-	mch_chdir((char *)dirbuf);
+	if (mch_chdir((char *)dirbuf) != 0)
+	    EMSG(_(e_prev_dir));
 	shorten_fnames(TRUE);
     }
 #endif
@@ -957,6 +962,11 @@ diff_win_options(wp, addbuf)
 	changed_window_setting(); /* make sure topline is not halfway a fold */
     }
 # endif
+#ifdef FEAT_SCROLLBIND
+    if (vim_strchr(p_sbo, 'h') == NULL)
+	do_cmdline_cmd((char_u *)"set sbo+=hor");
+#endif
+
     if (addbuf)
 	diff_buf_add(wp->w_buffer);
     redraw_win_later(wp, NOT_VALID);
@@ -1372,7 +1382,7 @@ diff_cmp(s1, s2)
 #endif
 	    {
 		if (*p1 != *p2 && (!(diff_flags & DIFF_ICASE)
-					   || TO_LOWER(*p1) != TO_LOWER(*p2)))
+				     || TOLOWER_LOC(*p1) != TOLOWER_LOC(*p2)))
 		    break;
 		++p1;
 		++p2;
@@ -1877,8 +1887,12 @@ ex_diffgetput(eap)
 		if (nr > diffbuf[idx_from]->b_ml.ml_line_count)
 		    break;
 		p = vim_strsave(ml_get_buf(diffbuf[idx_from], nr, FALSE));
-		ml_append(lnum + i - 1, p, 0, FALSE);
-		++added;
+		if (p != NULL)
+		{
+		    ml_append(lnum + i - 1, p, 0, FALSE);
+		    vim_free(p);
+		    ++added;
+		}
 	    }
 	    new_count = dp->df_count[idx_to] + added;
 	    dp->df_count[idx_to] = new_count;

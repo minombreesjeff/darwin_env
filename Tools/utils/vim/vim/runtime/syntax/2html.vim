@@ -1,6 +1,6 @@
 " Vim syntax support file
 " Maintainer: Bram Moolenaar <Bram@vim.org>
-" Last Change: 2001 Dec 12
+" Last Change: 2003 May 31
 "	       (modified by David Ne\v{c}as (Yeti) <yeti@physics.muni.cz>)
 
 " Transform a file into HTML, using the current syntax highlighting.
@@ -123,6 +123,38 @@ function! s:CSS1(id)
   return a
 endfun
 
+" Figure out proper MIME charset from the 'encoding' option.
+if exists("html_use_encoding")
+  let s:html_encoding = html_use_encoding
+else
+  let s:vim_encoding = &encoding
+  if s:vim_encoding =~ '^8bit\|^2byte'
+    let s:vim_encoding = substitute(s:vim_encoding, '^8bit-\|^2byte-', '', '')
+  endif
+  if s:vim_encoding == 'latin1'
+    let s:html_encoding = 'iso-8859-1'
+  elseif s:vim_encoding =~ "^cp12"
+    let s:html_encoding = substitute(s:vim_encoding, 'cp', 'windows-', '')
+  elseif s:vim_encoding == 'sjis'
+    let s:html_encoding = 'Shift_JIS'
+  elseif s:vim_encoding == 'euc-cn'
+    let s:html_encoding = 'GB_2312-80'
+  elseif s:vim_encoding == 'euc-tw'
+    let s:html_encoding = ""
+  elseif s:vim_encoding =~ '^euc\|^iso\|^koi'
+    let s:html_encoding = substitute(s:vim_encoding, '.*', '\U\0', '')
+  elseif s:vim_encoding == 'cp949'
+    let s:html_encoding = 'KS_C_5601-1987'
+  elseif s:vim_encoding == 'cp936'
+    let s:html_encoding = 'GBK'
+  elseif s:vim_encoding =~ '^ucs\|^utf'
+    let s:html_encoding = 'UTF-8'
+  else
+    let s:html_encoding = ""
+  endif
+endif
+
+
 " Set some options to make it work faster.
 " Expand tabs in original buffer to get 'tabstop' correctly used.
 " Don't report changes for :substitute, there will be many of them.
@@ -130,6 +162,7 @@ let s:old_title = &title
 let s:old_icon = &icon
 let s:old_et = &l:et
 let s:old_report = &report
+let s:old_search = @/
 set notitle noicon
 setlocal et
 set report=1000000
@@ -144,6 +177,8 @@ set modifiable
 %d
 let s:old_paste = &paste
 set paste
+let s:old_magic = &magic
+set magic
 
 " The DTD
 if exists("html_use_css")
@@ -155,31 +190,51 @@ endif
 exe "normal a<html>\n<head>\n<title>\e"
 exe "normal a" . expand("%:p:~") . "</title>\n\e"
 exe "normal a<meta name=\"Generator\" content=\"Vim/" . version/100 . "." . version %100 . "\">\n\e"
+if s:html_encoding != ""
+  exe "normal a<meta http-equiv=\"content-type\" content=\"text/html; charset=" . s:html_encoding . "\">\n\e"
+endif
 if exists("html_use_css")
   exe "normal a<style type=\"text/css\">\n<!--\n-->\n</style>\n\e"
 endif
-exe "normal a</head>\n<body>\n<pre>\n\e"
+if exists("html_no_pre")
+  exe "normal a</head>\n<body>\n\e"
+else
+  exe "normal a</head>\n<body>\n<pre>\n\e"
+endif
 
-exe "normal \<C-W>p"
+wincmd p
 
 " List of all id's
 let s:idlist = ","
 
-" Loop over all lines in the original text
-let s:end = line("$")
-let s:lnum = 1
+let s:expandedtab = ' '
+while strlen(s:expandedtab) < &ts
+  let s:expandedtab = s:expandedtab . ' '
+endwhile
+
+" Loop over all lines in the original text.
+" Use html_start_line and html_end_line if they are set.
+if exists("html_start_line")
+  let s:lnum = html_start_line
+  if s:lnum < 1 || s:lnum > line("$")
+    let s:lnum = 1
+  endif
+else
+  let s:lnum = 1
+endif
+if exists("html_end_line")
+  let s:end = html_end_line
+  if s:end < s:lnum || s:end > line("$")
+    let s:end = line("$")
+  endif
+else
+  let s:end = line("$")
+endif
+
 while s:lnum <= s:end
 
-  " Get the current line, with tabs expanded to spaces when needed
-  " FIXME: What if it changes syntax highlighting?
+  " Get the current line
   let s:line = getline(s:lnum)
-  if stridx(s:line, "\t") >= 0
-    exe s:lnum . "retab!"
-    let s:did_retab = 1
-    let s:line = getline(s:lnum)
-  else
-    let s:did_retab = 0
-  endif
   let s:len = strlen(s:line)
   let s:new = ""
 
@@ -197,9 +252,10 @@ while s:lnum <= s:end
     " Go along till we find a change in synID
     while s:col <= s:len && s:id == synID(s:lnum, s:col, 1) | let s:col = s:col + 1 | endwhile
 
-    " Output the text with the same synID, with class set to c{s:id}
+    " Output the text with the same synID, with class set to {s:id_name}
     let s:id = synIDtrans(s:id)
-    let s:new = s:new . '<span class="c' . s:id . '">' . substitute(substitute(substitute(substitute(substitute(strpart(s:line, s:startcol - 1, s:col - s:startcol), '&', '\&amp;', 'g'), '<', '\&lt;', 'g'), '>', '\&gt;', 'g'), '"', '\&quot;', 'g'), "\x0c", '<hr class="PAGE-BREAK">', 'g') . '</span>'
+    let s:id_name = synIDattr(s:id, "name", s:whatterm)
+    let s:new = s:new . '<span class="' . s:id_name . '">' . substitute(substitute(substitute(substitute(substitute(strpart(s:line, s:startcol - 1, s:col - s:startcol), '&', '\&amp;', 'g'), '<', '\&lt;', 'g'), '>', '\&gt;', 'g'), '"', '\&quot;', 'g'), "\x0c", '<hr class="PAGE-BREAK">', 'g') . '</span>'
     " Add the class to class list if it's not there yet
     if stridx(s:idlist, "," . s:id . ",") == -1
       let s:idlist = s:idlist . s:id . ","
@@ -209,16 +265,33 @@ while s:lnum <= s:end
       break
     endif
   endwhile
-  if s:did_retab
-    undo
-  endif
 
+  " Expand tabs
+  let s:pad=0
+  let s:start = 0
+  let s:idx = stridx(s:line, "\t")
+  while s:idx >= 0
+    let s:i = &ts - ((s:start + s:pad + s:idx) % &ts)
+    let s:new = substitute(s:new, '\t', strpart(s:expandedtab, 0, s:i), '')
+    let s:pad = s:pad + s:i - 1
+    let s:start = s:start + s:idx + 1
+    let s:idx = stridx(strpart(s:line, s:start), "\t")
+  endwhile
+
+  if exists("html_no_pre")
+    let s:new = substitute(s:new, '  ', '\&nbsp;\&nbsp;', 'g') . '<br>'
+  endif
   exe "normal \<C-W>pa" . strtrans(s:new) . "\n\e\<C-W>p"
   let s:lnum = s:lnum + 1
   +
 endwhile
 " Finish with the last line
-exe "normal \<C-W>pa</pre>\n</body>\n</html>\e"
+if exists("html_no_pre")
+  exe "normal \<C-W>pa\n</body>\n</html>\e"
+else
+  exe "normal \<C-W>pa</pre>\n</body>\n</html>\e"
+endif
+
 
 " Now, when we finally know which, we define the colors and styles
 if exists("html_use_css")
@@ -226,8 +299,8 @@ if exists("html_use_css")
 endif
 
 " Find out the background and foreground color.
-let s:fgc = s:HtmlColor(synIDattr(highlightID("Normal"), "fg#", s:whatterm))
-let s:bgc = s:HtmlColor(synIDattr(highlightID("Normal"), "bg#", s:whatterm))
+let s:fgc = s:HtmlColor(synIDattr(hlID("Normal"), "fg#", s:whatterm))
+let s:bgc = s:HtmlColor(synIDattr(hlID("Normal"), "bg#", s:whatterm))
 if s:fgc == ""
   let s:fgc = ( &background == "dark" ? "#ffffff" : "#000000" )
 endif
@@ -239,20 +312,28 @@ endif
 " For Netscape 4, set <body> attributes too, though, strictly speaking, it's
 " incorrect.
 if exists("html_use_css")
-  execute "normal A\npre { color: " . s:fgc . "; background-color: " . s:bgc . "; }\e"
-  yank
-  put
-  execute "normal ^cwbody\e"
+  if exists("html_no_pre")
+    execute "normal A\nbody { color: " . s:fgc . "; background-color: " . s:bgc . "; font-family: Courier, monospace; }\e"
+  else
+    execute "normal A\npre { color: " . s:fgc . "; background-color: " . s:bgc . "; }\e"
+    yank
+    put
+    execute "normal ^cwbody\e"
+  endif
 else
-  execute '%s:<body>:<body ' . 'bgcolor="' . s:bgc . '" text="' . s:fgc . '">'
+  if exists("html_no_pre")
+    execute '%s:<body>:<body ' . 'bgcolor="' . s:bgc . '" text="' . s:fgc . '" style="font-family\: Courier, monospace;">'
+  else
+    execute '%s:<body>:<body ' . 'bgcolor="' . s:bgc . '" text="' . s:fgc . '">'
+  endif
 endif
 
 " Line numbering attributes
 if s:numblines
   if exists("html_use_css")
-    execute "normal A\n.lnr { " . s:CSS1(highlightID("LineNr")) . "}\e"
+    execute "normal A\n.lnr { " . s:CSS1(hlID("LineNr")) . "}\e"
   else
-    execute '%s+<span class="lnr">\([^<]*\)</span>+' . s:HtmlOpening(highlightID("LineNr")) . '\1' . s:HtmlClosing(highlightID("LineNr")) . '+g'
+    execute '%s+<span class="lnr">\([^<]*\)</span>+' . s:HtmlOpening(hlID("LineNr")) . '\1' . s:HtmlClosing(hlID("LineNr")) . '+g'
   endif
 endif
 
@@ -264,38 +345,41 @@ while s:idlist != ""
   let s:id = strpart(s:idlist, 0, s:col)
   let s:idlist = strpart(s:idlist, s:col + 1)
   let s:attr = s:CSS1(s:id)
+  let s:id_name = synIDattr(s:id, "name", s:whatterm)
   " If the class has some attributes, export the style, otherwise DELETE all
   " its occurences to make the HTML shorter
   if s:attr != ""
     if exists("html_use_css")
-      execute "normal A\n.c" . s:id . " { " . s:attr . "}"
+      execute "normal A\n." . s:id_name . " { " . s:attr . "}"
     else
-      execute '%s+<span class="c' . s:id . '">\([^<]*\)</span>+' . s:HtmlOpening(s:id) . '\1' . s:HtmlClosing(s:id) . '+g'
+      execute '%s+<span class="' . s:id_name . '">\([^<]*\)</span>+' . s:HtmlOpening(s:id) . '\1' . s:HtmlClosing(s:id) . '+g'
     endif
   else
-    execute '%s+<span class="c' . s:id . '">\([^<]*\)</span>+\1+g'
+    execute '%s+<span class="' . s:id_name . '">\([^<]*\)</span>+\1+g'
     8
   endif
 endwhile
 
-" Cleanup (we've already lost last user's pattern match highlighting)
+" Add hyperlinks
+%s+\(http://\S\{-}\)\(\([.,;:]\=\(\s\|$\)\)\|[\\"'<>]\)+<A HREF="\1">\1</A>\2+ge
+
+" Cleanup
 %s:\s\+$::e
-if has("extra_search")
-  nohlsearch
-endif
 
 " Restore old settings
 let &report = s:old_report
 let &title = s:old_title
 let &icon = s:old_icon
 let &paste = s:old_paste
-exe "normal \<C-W>p"
+let &magic = s:old_magic
+let @/ = s:old_search
+wincmd p
 let &l:et = s:old_et
-exe "normal \<C-W>p"
+wincmd p
 
 " Save a little bit of memory (worths doing?)
-unlet s:old_et s:old_paste s:old_icon s:old_report s:old_title
-unlet s:whatterm s:idlist s:lnum s:end s:fgc s:bgc
+unlet s:old_et s:old_paste s:old_icon s:old_report s:old_title s:old_search
+unlet s:whatterm s:idlist s:lnum s:end s:fgc s:bgc s:old_magic
 unlet! s:col s:id s:attr s:len s:line s:new s:did_retab s:numblines
 delfunc s:HtmlColor
 delfunc s:CSS1

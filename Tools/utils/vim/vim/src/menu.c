@@ -570,7 +570,7 @@ add_menu_path(menu_path, menuarg, pri_tab, call_data
 #ifdef FEAT_GUI_MOTIF
 	    menu->sensitive = TRUE;	    /* the default */
 #endif
-#ifdef FEAT_BEVAL
+#ifdef FEAT_BEVAL_TIP
 	    menu->tip = NULL;
 #endif
 #ifdef FEAT_GUI_ATHENA
@@ -742,11 +742,20 @@ add_menu_path(menu_path, menuarg, pri_tab, call_data
 
 		if (c)
 		{
-		    menu->strings[i] = alloc((unsigned)(STRLEN(call_data) + 2));
+		    menu->strings[i] = alloc((unsigned)(STRLEN(call_data) + 4));
 		    if (menu->strings[i] != NULL)
 		    {
 			menu->strings[i][0] = c;
 			STRCPY(menu->strings[i] + 1, call_data);
+			if (c == Ctrl_C)
+			{
+			    int	    len = STRLEN(menu->strings[i]);
+
+			    /* Append CTRL-\ CTRL-G to obey 'insertmode'. */
+			    menu->strings[i][len] = Ctrl_BSL;
+			    menu->strings[i][len + 1] = Ctrl_G;
+			    menu->strings[i][len + 2] = NUL;
+			}
 		    }
 		}
 		else
@@ -755,7 +764,7 @@ add_menu_path(menu_path, menuarg, pri_tab, call_data
 		menu->silent[i] = menuarg->silent[0];
 	    }
 	}
-#if defined(FEAT_TOOLBAR) && defined(FEAT_BEVAL)
+#if defined(FEAT_TOOLBAR) && (defined(FEAT_BEVAL) || defined(FEAT_GUI_GTK))
 	/* Need to update the menu tip. */
 	if (modes & MENU_TIP_MODE)
 	    gui_mch_menu_set_tip(menu);
@@ -933,7 +942,7 @@ remove_menu(menup, name, modes, silent)
 	if (modes & MENU_TIP_MODE)
 	{
 	    free_menu_string(menu, MENU_INDEX_TIP);
-#if defined(FEAT_TOOLBAR) && defined(FEAT_BEVAL)
+#if defined(FEAT_TOOLBAR) && (defined(FEAT_BEVAL) || defined(FEAT_GUI_GTK))
 	    /* Need to update the menu tip. */
 	    if (gui.in_use)
 		gui_mch_menu_set_tip(menu);
@@ -1824,10 +1833,10 @@ gui_is_menu_shortcut(key)
     vimmenu_T	*menu;
 
     if (key < 256)
-	key = TO_LOWER(key);
+	key = TOLOWER_LOC(key);
     for (menu = root_menu; menu != NULL; menu = menu->next)
 	if (menu->mnemonic == key
-		|| (menu->mnemonic < 256 && TO_LOWER(menu->mnemonic) == key))
+		|| (menu->mnemonic < 256 && TOLOWER_LOC(menu->mnemonic) == key))
 	    return TRUE;
     return FALSE;
 }
@@ -2141,9 +2150,9 @@ ex_emenu(eap)
 	EMSG2(_("E335: Menu not defined for %s mode"), mode);
 }
 
-#if defined(FEAT_GUI_MSWIN) || (defined(FEAT_BEVAL) \
-		&& (defined(FEAT_GUI_ATHENA) || defined(FEAT_GUI_MOTIF))) \
-	|| defined(PROTO)
+#if defined(FEAT_GUI_MSWIN) \
+	|| (defined(FEAT_GUI_GTK) && defined(FEAT_MENU)) \
+	|| defined(FEAT_BEVAL_TIP) || defined(PROTO)
 /*
  * Given a menu descriptor, e.g. "File.New", find it in the menu hierarchy.
  */
@@ -2223,6 +2232,7 @@ static garray_T menutrans_ga = {0, 0, 0, 0, NULL};
  * This function is also defined without the +multi_lang feature, in which
  * case the commands are ignored.
  */
+/*ARGSUSED*/
     void
 ex_menutranslate(eap)
     exarg_T	*eap;

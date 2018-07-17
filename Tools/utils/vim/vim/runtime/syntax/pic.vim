@@ -1,9 +1,9 @@
 " Vim syntax file
 " Language:     PIC16F84 Assembler (Microchip's microcontroller)
-" Maintainer:   Aleksandar Veselinovic <alexa@cliffhanger.com>
-" Last Change:  2001 May 10
-" URL:          http://SOLAIR.EUnet.yu/~aleksav/vim/syntax/pic.vim
-" Revision:     1.0
+" Maintainer:   Aleksandar Veselinovic <aleksa@cs.cmu.com>
+" Last Change:  2003 May 11
+" URL:		http://galeb.etf.bg.ac.yu/~alexa/vim/syntax/pic.vim
+" Revision:     1.01
 
 " For version 5.x: Clear all syntax items
 " For version 6.x: Quit when a syntax file was already loaded
@@ -15,7 +15,6 @@ endif
 
 syn case match
 syn keyword picTodo NOTE TODO XXX contained
-
 
 syn case ignore
 
@@ -37,9 +36,9 @@ syn match picComment    ";.*" contains=picTodo
 
 syn region picString    start=+"+ end=+"+
 
-syn keyword picRegister         INDF TMR0 PCL STATUS FSR PORTA PORTB
-syn keyword picRegister         EEDATA EEADR PCLATH INTCON INDF OPTION_REG PCL
-syn keyword picRegister         FSR TRISA TRISB EECON1 EECON2 INTCON OPTION
+syn keyword picRegister		INDF TMR0 PCL STATUS FSR PORTA PORTB
+syn keyword picRegister		EEDATA EEADR PCLATH INTCON INDF OPTION_REG PCL
+syn keyword picRegister		FSR TRISA TRISB EECON1 EECON2 INTCON OPTION
 
 
 " Register --- bits
@@ -91,7 +90,6 @@ syn match picDirective   "#\=INCLUDE"
 syn match picDirective   "#\=DEFINE"
 
 
-
 " Define the default highlighting.
 " For version 5.7 and earlier: only when not done already
 " For version 5.8 and later: only when an item doesn't have highlighting yet
@@ -103,23 +101,23 @@ if version >= 508 || !exists("did_pic16f84_syntax_inits")
     command -nargs=+ HiLink hi def link <args>
   endif
 
-  HiLink picTodo               Todo
-  HiLink picComment            Comment
-  HiLink picDirective          Statement
-  HiLink picLabel              Label
-  HiLink picString             String
+  HiLink picTodo		Todo
+  HiLink picComment		Comment
+  HiLink picDirective		Statement
+  HiLink picLabel		Label
+  HiLink picString		String
 
- "HiLink picOpcode            Keyword
- "HiLink picRegister          Structure
- "HiLink picRegisterPart      Special
+ "HiLink picOpcode		Keyword
+ "HiLink picRegister		Structure
+ "HiLink picRegisterPart	Special
 
-  HiLink picASCII              String
-  HiLink picBinary             Number
-  HiLink picDecimal            Number
-  HiLink picHexadecimal        Number
-  HiLink picOctal              Number
+  HiLink picASCII		String
+  HiLink picBinary		Number
+  HiLink picDecimal		Number
+  HiLink picHexadecimal		Number
+  HiLink picOctal		Number
 
-  HiLink picIdentifier         Identifier
+  HiLink picIdentifier		Identifier
 
   delcommand HiLink
 endif

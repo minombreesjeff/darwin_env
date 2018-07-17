@@ -109,7 +109,6 @@ static char_u	noremapbuf_init[TYPELEN_INIT];	/* initial typebuf.tb_noremap */
 
 static int	last_recorded_len = 0;	/* number of last recorded chars */
 
-static void	free_buff __ARGS((struct buffheader *));
 static char_u	*get_buffcont __ARGS((struct buffheader *, int));
 static void	add_buff __ARGS((struct buffheader *, char_u *, long n));
 static void	add_num_buff __ARGS((struct buffheader *, long));
@@ -130,7 +129,7 @@ static void	showmap __ARGS((mapblock_T *mp, int local));
 /*
  * Free and clear a buffer.
  */
-    static void
+    void
 free_buff(buf)
     struct buffheader	*buf;
 {
@@ -1035,7 +1034,11 @@ del_typebuf(len, offset)
 {
     int	    i;
 
+    if (len == 0)
+	return;		/* nothing to do */
+
     typebuf.tb_len -= len;
+
     /*
      * Easy case: Just increase typebuf.tb_off.
      */
@@ -1090,6 +1093,12 @@ del_typebuf(len, offset)
 	else
 	    typebuf.tb_no_abbr_cnt -= len;
     }
+
+#ifdef FEAT_CLIENTSERVER
+    /* Reset the flag that text received from a client was inserted in the
+     * typeahead buffer. */
+    received_from_client = FALSE;
+#endif
 }
 
 /*
@@ -1145,7 +1154,7 @@ gotchars(s, len)
 may_sync_undo()
 {
     if ((!(State & (INSERT + CMDLINE)) || arrow_used)
-	    && scriptin[curscript] == NULL && !no_u_sync)
+	    && scriptin[curscript] == NULL && no_u_sync == 0)
 	u_sync();
 }
 
@@ -1201,6 +1210,48 @@ save_typebuf()
     }
     return OK;
 }
+
+#if defined(FEAT_EVAL) || defined(FEAT_EX_EXTRA) || defined(PROTO)
+
+/*
+ * Save all three kinds of typeahead, so that the user must type at a prompt.
+ */
+    void
+save_typeahead(tp)
+    tasave_T	*tp;
+{
+    tp->save_typebuf = typebuf;
+    tp->typebuf_valid = (alloc_typebuf() == OK);
+    if (!tp->typebuf_valid)
+	typebuf = tp->save_typebuf;
+
+    tp->save_stuffbuff = stuffbuff;
+    stuffbuff.bh_first.b_next = NULL;
+# ifdef USE_INPUT_BUF
+    tp->save_inputbuf = get_input_buf();
+# endif
+}
+
+/*
+ * Restore the typeahead to what it was before calling save_typeahead().
+ */
+    void
+restore_typeahead(tp)
+    tasave_T	*tp;
+{
+    if (tp->typebuf_valid)
+    {
+	free_typebuf();
+	typebuf = tp->save_typebuf;
+    }
+
+    free_buff(&stuffbuff);
+    stuffbuff = tp->save_stuffbuff;
+# ifdef USE_INPUT_BUF
+    set_input_buf(tp->save_inputbuf);
+# endif
+}
+#endif
 
 /*
  * Open a new script file for the ":source!" command.
@@ -1752,24 +1803,23 @@ vgetorpeek(advance)
 		     */
 		    mp = NULL;
 		    max_mlen = 0;
+		    c1 = typebuf.tb_buf[typebuf.tb_off];
 		    if (no_mapping == 0 && maphash_valid
 			    && (typebuf.tb_maplen == 0
 				|| (p_remap
 				    && typebuf.tb_noremap[typebuf.tb_off]
 								  != RM_NONE))
 			    && !(p_paste && (State & (INSERT + CMDLINE)))
-			    && !(State == HITRETURN
-				&& (typebuf.tb_buf[typebuf.tb_off] == CR
-				    || typebuf.tb_buf[typebuf.tb_off] == ' '))
+			    && !(State == HITRETURN && (c1 == CR || c1 == ' '))
 			    && State != ASKMORE
 			    && State != CONFIRM
 #ifdef FEAT_INS_EXPAND
-			    && !(ctrl_x_mode && vim_is_ctrl_x_key(
-					      typebuf.tb_buf[typebuf.tb_off]))
+			    && !((ctrl_x_mode != 0 && vim_is_ctrl_x_key(c1))
+				    || ((continue_status & CONT_LOCAL)
+					&& (c1 == Ctrl_N || c1 == Ctrl_P)))
 #endif
 			    )
 		    {
-			c1 = typebuf.tb_buf[typebuf.tb_off];
 #ifdef FEAT_LANGMAP
 			if (c1 == K_SPECIAL)
 			    nolmaplen = 2;
@@ -2578,6 +2628,8 @@ inchar(buf, maxlen, wait_time)
 	/*
 	 * If we got an interrupt, skip all previously typed characters and
 	 * return TRUE if quit reading script file.
+	 * Stop reading typeahead when a single CTRL-C was read,
+	 * fill_input_buf() returns this when not able to read from stdin.
 	 * Don't use buf[] here, closescript() may have freed typebuf.tb_buf[]
 	 * and buf may be pointing inside typebuf.tb_buf[].
 	 */
@@ -2586,8 +2638,12 @@ inchar(buf, maxlen, wait_time)
 #define DUM_LEN MAXMAPLEN * 3 + 3
 	    char_u	dum[DUM_LEN + 1];
 
-	    while (ui_inchar(dum, DUM_LEN, 0L) != 0)
-		;
+	    for (;;)
+	    {
+		len = ui_inchar(dum, DUM_LEN, 0L);
+		if (len == 0 || (len == 1 && dum[0] == 3))
+		    break;
+	    }
 	    return retesc;
 	}
 
@@ -2598,8 +2654,8 @@ inchar(buf, maxlen, wait_time)
 	out_flush();
 
 	/*
-	 * fill up to a third of the buffer, because each character may be
-	 * tripled below
+	 * Fill up to a third of the buffer, because each character may be
+	 * tripled below.
 	 */
 	len = ui_inchar(buf, maxlen / 3, wait_time);
     }
@@ -2663,6 +2719,24 @@ fix_input_buffer(buf, len, script)
     *p = NUL;		/* add trailing NUL */
     return len;
 }
+
+#if defined(USE_INPUT_BUF) || defined(PROTO)
+/*
+ * Return TRUE when bytes are in the input buffer or in the typeahead buffer.
+ * Normally the input buffer would be sufficient, but the server_to_input_buf()
+ * may insert characters in the typeahead buffer while we are waiting for
+ * input to arrive.
+ */
+    int
+input_available()
+{
+    return (!vim_is_input_buf_empty()
+# ifdef FEAT_CLIENTSERVER
+	    || received_from_client
+# endif
+	    );
+}
+#endif
 
 /*
  * map[!]		    : show all key mappings
@@ -2743,7 +2817,7 @@ do_map(maptype, arg, mode, abbrev)
     else
 	noremap = REMAP_YES;
 
-    /* Accept <buffer>, <script> and <unique> in any order. */
+    /* Accept <buffer>, <silent>, <script> and <unique> in any order. */
     for (;;)
     {
 #ifdef FEAT_LOCALMAP
@@ -3575,8 +3649,10 @@ set_context_in_map_cmd(xp, cmd, arg, forceit, isabbrev, isunmap, cmdidx)
 	xp->xp_context = EXPAND_MAPPINGS;
 #ifdef FEAT_LOCALMAP
 	expand_buffer = FALSE;
+#endif
 	for (;;)
 	{
+#ifdef FEAT_LOCALMAP
 	    if (STRNCMP(arg, "<buffer>", 8) == 0)
 	    {
 		expand_buffer = TRUE;
@@ -3587,14 +3663,20 @@ set_context_in_map_cmd(xp, cmd, arg, forceit, isabbrev, isunmap, cmdidx)
 	    if (STRNCMP(arg, "<unique>", 8) == 0)
 	    {
 		arg = skipwhite(arg + 8);
-#ifdef FEAT_LOCALMAP
 		continue;
-#endif
 	    }
-#ifdef FEAT_LOCALMAP
+	    if (STRNCMP(arg, "<silent>", 8) == 0)
+	    {
+		arg = skipwhite(arg + 8);
+		continue;
+	    }
+	    if (STRNCMP(arg, "<script>", 8) == 0)
+	    {
+		arg = skipwhite(arg + 8);
+		continue;
+	    }
 	    break;
 	}
-#endif
 	xp->xp_pattern = arg;
     }
 
@@ -3617,6 +3699,7 @@ ExpandMappings(regmatch, num_file, file)
     int		count;
     int		round;
     char_u	*p;
+    int		i;
 
     validate_maphash();
 
@@ -3630,25 +3713,33 @@ ExpandMappings(regmatch, num_file, file)
     for (round = 1; round <= 2; ++round)
     {
 	count = 0;
-#ifdef FEAT_LOCALMAP
-	if (!expand_buffer)
+
+	for (i = 0; i < 4; ++i)
 	{
-	    if (vim_regexec(regmatch, (char_u *)"<buffer>", (colnr_T)0))
+	    if (i == 0)
+		p = (char_u *)"<silent>";
+	    else if (i == 1)
+		p = (char_u *)"<unique>";
+#ifdef FEAT_EVAL
+	    else if (i == 2)
+		p = (char_u *)"<script>";
+#endif
+#ifdef FEAT_LOCALMAP
+	    else if (i == 3 && !expand_buffer)
+		p = (char_u *)"<buffer>";
+#endif
+	    else
+		continue;
+
+	    if (vim_regexec(regmatch, p, (colnr_T)0))
 	    {
 		if (round == 1)
 		    ++count;
 		else
-		    (*file)[count++] = vim_strsave((char_u *)"<buffer>");
+		    (*file)[count++] = vim_strsave(p);
 	    }
 	}
-#endif
-	if (vim_regexec(regmatch, (char_u *)"<unique>", (colnr_T)0))
-	{
-	    if (round == 1)
-		++count;
-	    else
-		(*file)[count++] = vim_strsave((char_u *)"<unique>");
-	}
+
 	for (hash = 0; hash < 256; ++hash)
 	{
 	    if (expand_isabbrev)
@@ -3723,7 +3814,8 @@ ExpandMappings(regmatch, num_file, file)
 /*
  * Check for an abbreviation.
  * Cursor is at ptr[col]. When inserting, mincol is where insert started.
- * "c" is the character typed before check_abbr was called.
+ * "c" is the character typed before check_abbr was called.  It may have
+ * ABBR_OFF added to avoid prepending a CTRL-V to it.
  *
  * Historic vi practice: The last character of an abbreviation must be an id
  * character ([a-zA-Z0-9_]). The characters in front of it must be all id
@@ -3743,16 +3835,24 @@ check_abbr(c, ptr, col, mincol)
     int		mincol;
 {
     int		len;
+    int		scol;		/* starting column of the abbr. */
     int		j;
+#ifdef FEAT_MBYTE
+    char_u	tb[MB_MAXBYTES + 4];
+#else
     char_u	tb[4];
+#endif
     mapblock_T	*mp;
 #ifdef FEAT_LOCALMAP
     mapblock_T	*mp2;
 #endif
+#ifdef FEAT_MBYTE
+    int		clen = 0;	/* length in characters */
+#endif
     int		is_id = TRUE;
     int		vim_abbr;
 
-    if (typebuf.tb_no_abbr_cnt)	    /* abbrev. are not recursive */
+    if (typebuf.tb_no_abbr_cnt)	/* abbrev. are not recursive */
 	return FALSE;
 
     /*
@@ -3778,6 +3878,7 @@ check_abbr(c, ptr, col, mincol)
 	    if (p > ptr)
 		is_id = vim_iswordp(mb_prevptr(ptr, p));
 	}
+	clen = 1;
 	while (p > ptr)
 	{
 	    p = mb_prevptr(ptr, p);
@@ -3786,8 +3887,9 @@ check_abbr(c, ptr, col, mincol)
 		p += (*mb_ptr2len_check)(p);
 		break;
 	    }
+	    ++clen;
 	}
-	len = (int)(p - ptr);
+	scol = (int)(p - ptr);
     }
     else
 #endif
@@ -3800,17 +3902,17 @@ check_abbr(c, ptr, col, mincol)
 	    if (col > 1)
 		is_id = vim_iswordc(ptr[col - 2]);
 	}
-	for (len = col - 1; len > 0 && !vim_isspace(ptr[len - 1]) &&
-		(vim_abbr || is_id == vim_iswordc(ptr[len - 1])); --len)
+	for (scol = col - 1; scol > 0 && !vim_isspace(ptr[scol - 1])
+		&& (vim_abbr || is_id == vim_iswordc(ptr[scol - 1])); --scol)
 	    ;
     }
 
-    if (len < mincol)
-	len = mincol;
-    if (len < col)		/* there is a word in front of the cursor */
+    if (scol < mincol)
+	scol = mincol;
+    if (scol < col)		/* there is a word in front of the cursor */
     {
-	ptr += len;
-	len = col - len;
+	ptr += scol;
+	len = col - scol;
 #ifdef FEAT_LOCALMAP
 	mp = curbuf->b_first_abbr;
 	mp2 = first_abbr;
@@ -3850,30 +3952,47 @@ check_abbr(c, ptr, col, mincol)
 	     * abbreviation, but is not inserted into the input stream.
 	     */
 	    j = 0;
-					    /* special key code, split up */
+					/* special key code, split up */
 	    if (c != Ctrl_RSB)
 	    {
 		if (IS_SPECIAL(c) || c == K_SPECIAL)
 		{
 		    tb[j++] = K_SPECIAL;
 		    tb[j++] = K_SECOND(c);
-		    c = K_THIRD(c);
+		    tb[j++] = K_THIRD(c);
 		}
-		else if (c < ABBR_OFF && (c < ' ' || c > '~'))
-		    tb[j++] = Ctrl_V;    /* special char needs CTRL-V */
-		tb[j++] = c;
+		else
+		{
+		    if (c < ABBR_OFF && (c < ' ' || c > '~'))
+			tb[j++] = Ctrl_V;	/* special char needs CTRL-V */
+#ifdef FEAT_MBYTE
+		    if (has_mbyte)
+		    {
+			/* if ABBR_OFF has been added, remove it here */
+			if (c >= ABBR_OFF)
+			    c -= ABBR_OFF;
+			j += (*mb_char2bytes)(c, tb + j);
+		    }
+		    else
+#endif
+			tb[j++] = c;
+		}
 		tb[j] = NUL;
-					    /* insert the last typed char */
+					/* insert the last typed char */
 		(void)ins_typebuf(tb, 1, 0, TRUE, mp->m_silent);
 	    }
-					    /* insert the to string */
+					/* insert the to string */
 	    (void)ins_typebuf(mp->m_str, mp->m_noremap, 0, TRUE, mp->m_silent);
-					    /* no abbrev. for these chars */
+					/* no abbrev. for these chars */
 	    typebuf.tb_no_abbr_cnt += (int)STRLEN(mp->m_str) + j + 1;
 
 	    tb[0] = Ctrl_H;
 	    tb[1] = NUL;
-	    while (len--)		    /* delete the from string */
+#ifdef FEAT_MBYTE
+	    if (has_mbyte)
+		len = clen;	/* Delete characters instead of bytes */
+#endif
+	    while (len-- > 0)		/* delete the from string */
 		(void)ins_typebuf(tb, 1, 0, TRUE, mp->m_silent);
 	    return TRUE;
 	}
@@ -4022,6 +4141,8 @@ makemap(fd, buf)
 			return FAIL;
 		    if (buf != NULL && fputs(" <buffer>", fd) < 0)
 			return FAIL;
+		    if (mp->m_silent && fputs(" <silent>", fd) < 0)
+			return FAIL;
 
 		    if (       putc(' ', fd) < 0
 			    || put_escstr(fd, mp->m_keys, 0) == FAIL
@@ -4052,11 +4173,12 @@ makemap(fd, buf)
  * return FAIL for failure, OK otherwise
  */
     int
-put_escstr(fd, str, what)
+put_escstr(fd, strstart, what)
     FILE	*fd;
-    char_u	*str;
+    char_u	*strstart;
     int		what;
 {
+    char_u	*str = strstart;
     int		c;
     int		modifiers;
 
@@ -4137,6 +4259,8 @@ put_escstr(fd, str, what)
 	 * prevent them from misinterpreted in DoOneCmd().
 	 * A space, Tab and '"' has to be escaped with a backslash to
 	 * prevent it to be misinterpreted in do_set().
+	 * A space has to be escaped with a CTRL-V when it's at the start of a
+	 * ":map" rhs.
 	 * A '<' has to be escaped with a CTRL-V to prevent it being
 	 * interpreted as the start of a special key name.
 	 * A space in the lhs of a :map needs a CTRL-V.
@@ -4146,8 +4270,10 @@ put_escstr(fd, str, what)
 	    if (putc('\\', fd) < 0)
 		return FAIL;
 	}
-	else if (c < ' ' || c > '~' || c == '|' || (what != 2 && c == '<')
-						   || (what == 0 && c == ' '))
+	else if (c < ' ' || c > '~' || c == '|'
+		|| (what == 0 && c == ' ')
+		|| (what == 1 && str == strstart && c == ' ')
+		|| (what != 2 && c == '<'))
 	{
 	    if (putc(Ctrl_V, fd) < 0)
 		return FAIL;

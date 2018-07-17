@@ -1,5 +1,5 @@
 /* window.c */
-void do_window __ARGS((int nchar, long Prenum));
+void do_window __ARGS((int nchar, long Prenum, int xchar));
 int win_split __ARGS((int size, int flags));
 int win_valid __ARGS((win_T *win));
 int win_count __ARGS((void));
@@ -24,8 +24,8 @@ void win_size_restore __ARGS((garray_T *gap));
 void win_setheight __ARGS((int height));
 void win_setwidth __ARGS((int width));
 void win_setminheight __ARGS((void));
-void win_drag_status_line __ARGS((int offset));
-void win_drag_vsep_line __ARGS((int offset));
+void win_drag_status_line __ARGS((win_T *dragwin, int offset));
+void win_drag_vsep_line __ARGS((win_T *dragwin, int offset));
 void win_comp_scroll __ARGS((win_T *wp));
 void command_height __ARGS((long old_p_ch));
 void last_status __ARGS((int morewin));

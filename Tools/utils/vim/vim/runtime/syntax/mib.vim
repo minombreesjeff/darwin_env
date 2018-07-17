@@ -1,8 +1,8 @@
 " Vim syntax file
 " Language:	Vim syntax file for SNMPv1 and SNMPv2 MIB and SMI files
-" Author:	David.Pascoe@jtec.com.au
+" Author:	David Pascoe <pascoedj@spamcop.net>
 " Written:	Wed Jan 28 14:37:23 GMT--8:00 1998
-" Last Changed:	Thu Apr 26 10:39:59 WST 2001
+" Last Changed:	Thu Feb 27 10:18:16 WST 2003
 
 " For version 5.x: Clear all syntax items
 " For version 6.x: Quit when a syntax file was already loaded
@@ -47,7 +47,7 @@ syn keyword mibEpilogue test-function-async next-function next-function-async
 syn keyword mibEpilogue leaf-name
 syn keyword mibEpilogue DEFAULT contained
 
-syn match  mibComment           "\ *--.*$"
+syn match  mibComment		"\ *--.*$"
 syn match  mibNumber		"\<['0-9a-fA-FhH]*\>"
 syn region mibDescription start="\"" end="\"" contains=DEFAULT
 
@@ -63,12 +63,12 @@ if version >= 508 || !exists("did_mib_syn_inits")
   endif
 
   HiLink mibImplicit	     Statement
-  HiLink mibComment          Comment
-  HiLink mibConstants        String
-  HiLink mibNumber           Number
+  HiLink mibComment	     Comment
+  HiLink mibConstants	     String
+  HiLink mibNumber	     Number
   HiLink mibDescription      Identifier
-  HiLink mibEpilogue         SpecialChar
-  HiLink mibValue            Structure
+  HiLink mibEpilogue	     SpecialChar
+  HiLink mibValue	     Structure
   delcommand HiLink
 endif
 

@@ -210,7 +210,7 @@ static long char_to_long __ARGS((char_u *));
 static char_u *make_percent_swname __ARGS((char_u *dir, char_u *name));
 #endif
 #ifdef FEAT_BYTEOFF
-static void ml_updatechunk __ARGS((buf_T *buf, long line, int len, int updtype));
+static void ml_updatechunk __ARGS((buf_T *buf, long line, long len, int updtype));
 #endif
 
 /*
@@ -900,25 +900,13 @@ ml_recover()
     }
 
     home_replace(NULL, mfp->mf_fname, NameBuff, MAXPATHL, TRUE);
-    smsg((char_u *)_("Using swap file \"%s\""),
-#ifdef VMS
-	    vms_fixfilename(NameBuff)
-#else
-	    NameBuff
-#endif
-	    );
+    msg_str((char_u *)_("Using swap file \"%s\""), NameBuff);
 
     if (buf_spname(curbuf) != NULL)
 	STRCPY(NameBuff, buf_spname(curbuf));
     else
 	home_replace(NULL, curbuf->b_ffname, NameBuff, MAXPATHL, TRUE);
-    smsg((char_u *)_("Original file \"%s\""),
-#ifdef VMS
-	    vms_fixfilename(NameBuff)
-#else
-	    NameBuff
-#endif
-	    );
+    msg_str((char_u *)_("Original file \"%s\""), NameBuff);
     msg_putchar('\n');
 
 /*
@@ -1318,7 +1306,7 @@ recover_names(fname, list, nr)
 	if (num_names == 0)
 	    num_files = 0;
 	else if (expand_wildcards(num_names, names, &num_files, &files,
-						   EW_FILE|EW_SILENT) == FAIL)
+					EW_KEEPALL|EW_FILE|EW_SILENT) == FAIL)
 	    num_files = 0;
 
 	/*
@@ -1512,13 +1500,7 @@ swapfile_info(fname)
 		if (b0.b0_fname[0] == NUL)
 		    MSG_PUTS(_("[No File]"));
 		else
-		    msg_outtrans(
-#ifdef VMS
-			    vms_fixfilename(b0.b0_fname)
-#else
-			    b0.b0_fname
-#endif
-			    );
+		    msg_outtrans(b0.b0_fname);
 
 		MSG_PUTS(_("\n          modified: "));
 		MSG_PUTS(b0.b0_dirty ? _("YES") : _("no"));
@@ -1940,7 +1922,9 @@ ml_line_alloced()
 }
 
 /*
- * append a line after lnum (may be 0 to insert a line in front of the file)
+ * Append a line after lnum (may be 0 to insert a line in front of the file).
+ * "line" does not need to be allocated, but can't be another line in a
+ * buffer, unlocking may make it invalid.
  *
  *   newfile: TRUE when starting to edit a new file, meaning that pe_old_lnum
  *		will be set for recovery
@@ -2449,7 +2433,16 @@ ml_append_int(buf, lnum, line, len, newfile, mark)
 
 #ifdef FEAT_BYTEOFF
     /* The line was inserted below 'lnum' */
-    ml_updatechunk(buf, lnum + 1, len, ML_CHNK_ADDLINE);
+    ml_updatechunk(buf, lnum + 1, (long)len, ML_CHNK_ADDLINE);
+#endif
+#ifdef FEAT_NETBEANS_INTG
+    if (usingNetbeans)
+    {
+	if (STRLEN(line) > 0)
+	    netbeans_inserted(buf, lnum+1, (colnr_T)0, 0, line, STRLEN(line));
+	netbeans_inserted(buf, lnum+1, (colnr_T)STRLEN(line), 0,
+							   (char_u *)"\n", 1);
+    }
 #endif
     return OK;
 }
@@ -2478,12 +2471,19 @@ ml_replace(lnum, line, copy)
     if (curbuf->b_ml.ml_mfp == NULL && open_buffer(FALSE, NULL) == FAIL)
 	return FAIL;
 
+    if (copy && (line = vim_strsave(line)) == NULL) /* allocate memory */
+	return FAIL;
+#ifdef FEAT_NETBEANS_INTG
+    if (usingNetbeans)
+    {
+	netbeans_removed(curbuf, lnum, 0, (long)STRLEN(ml_get(lnum)));
+	netbeans_inserted(curbuf, lnum, 0, 0, line, STRLEN(line));
+    }
+#endif
     if (curbuf->b_ml.ml_line_lnum != lnum)	    /* other line buffered */
 	ml_flush_line(curbuf);			    /* flush it */
     else if (curbuf->b_ml.ml_flags & ML_LINE_DIRTY) /* same line allocated */
 	vim_free(curbuf->b_ml.ml_line_ptr);	    /* free it */
-    if (copy && (line = vim_strsave(line)) == NULL) /* allocate memory */
-	return FAIL;
     curbuf->b_ml.ml_line_ptr = line;
     curbuf->b_ml.ml_line_lnum = lnum;
     curbuf->b_ml.ml_flags = (curbuf->b_ml.ml_flags | ML_LINE_DIRTY) & ~ML_EMPTY;
@@ -2524,7 +2524,7 @@ ml_delete_int(buf, lnum, message)
     int		stack_idx;
     int		text_start;
     int		line_start;
-    int		line_size;
+    long	line_size;
     int		i;
 
     if (lnum < 1 || lnum > buf->b_ml.ml_line_count)
@@ -2538,7 +2538,11 @@ ml_delete_int(buf, lnum, message)
  */
     if (buf->b_ml.ml_line_count == 1)	    /* file becomes empty */
     {
-	if (message)
+	if (message
+#ifdef FEAT_NETBEANS_INTG
+		&& !netbeansSuppressNoLines
+#endif
+	   )
 	{
 	    set_keep_msg((char_u *)_(no_lines_msg));
 	    keep_msg_attr = 0;
@@ -2575,6 +2579,11 @@ ml_delete_int(buf, lnum, message)
 	line_size = dp->db_txt_end - line_start;
     else
 	line_size = ((dp->db_index[idx - 1]) & DB_INDEX_MASK) - line_start;
+
+#ifdef FEAT_NETBEANS_INTG
+    if (usingNetbeans)
+	netbeans_removed(buf, lnum, 0, line_size);
+#endif
 
 /*
  * special case: If there is only one line in the data block it becomes empty.
@@ -2869,7 +2878,7 @@ ml_flush_line(buf)
 		buf->b_ml.ml_flags |= (ML_LOCKED_DIRTY | ML_LOCKED_POS);
 #ifdef FEAT_BYTEOFF
 		/* The else case is already covered by the insert and delete */
-		ml_updatechunk(buf, lnum, extra, ML_CHNK_UPDLINE);
+		ml_updatechunk(buf, lnum, (long)extra, ML_CHNK_UPDLINE);
 #endif
 	    }
 	    else
@@ -3983,7 +3992,7 @@ ml_setdirty(buf, flag)
 ml_updatechunk(buf, line, len, updtype)
     buf_T	*buf;
     linenr_T	line;
-    int		len;
+    long	len;
     int		updtype;
 {
     static buf_T	*ml_upd_lastbuf = NULL;
@@ -3999,7 +4008,7 @@ ml_updatechunk(buf, line, len, updtype)
     bhdr_T		*hp;
     DATA_BL		*dp;
 
-    if (buf->b_ml.ml_usedchunks == -1 || !len)
+    if (buf->b_ml.ml_usedchunks == -1 || len == 0)
 	return;
     if (buf->b_ml.ml_chunksize == NULL)
     {
@@ -4236,6 +4245,7 @@ ml_find_line_or_offset(buf, line, offp)
     long	offset;
     int		len;
     int		ffdos = (get_fileformat(buf) == EOL_DOS);
+    int		extra = 0;
 
     if (buf->b_ml.ml_usedchunks == -1
 	    || buf->b_ml.ml_chunksize == NULL
@@ -4255,10 +4265,10 @@ ml_find_line_or_offset(buf, line, offp)
     curline = 1;
     curix = size = 0;
     while (curix < buf->b_ml.ml_usedchunks - 1
-	    && ((line
+	    && ((line != 0
 	     && line >= curline + buf->b_ml.ml_chunksize[curix].mlcs_numlines)
-		|| (offset
-	   && offset >= size + buf->b_ml.ml_chunksize[curix].mlcs_totalsize
+		|| (offset != 0
+	       && offset > size + buf->b_ml.ml_chunksize[curix].mlcs_totalsize
 		      + ffdos * buf->b_ml.ml_chunksize[curix].mlcs_numlines)))
     {
 	curline += buf->b_ml.ml_chunksize[curix].mlcs_numlines;
@@ -4268,13 +4278,11 @@ ml_find_line_or_offset(buf, line, offp)
 	curix++;
     }
 
-    while ((line && curline < line) || (offset && size < offset))
+    while ((line != 0 && curline < line) || (offset != 0 && size < offset))
     {
 	if (curline > buf->b_ml.ml_line_count
 		|| (hp = ml_find_line(buf, curline, ML_FIND)) == NULL)
-	{
 	    return -1;
-	}
 	dp = (DATA_BL *)(hp->bh_data);
 	count = (long)(buf->b_ml.ml_locked_high) -
 		(long)(buf->b_ml.ml_locked_low) + 1;
@@ -4284,7 +4292,7 @@ ml_find_line_or_offset(buf, line, offp)
 	else
 	    text_end = ((dp->db_index[idx - 1]) & DB_INDEX_MASK);
 	/* Compute index of last line to use in this MEMLINE */
-	if (line)
+	if (line != 0)
 	{
 	    if (curline + (count - idx) >= line)
 		idx += line - curline - 1;
@@ -4293,6 +4301,7 @@ ml_find_line_or_offset(buf, line, offp)
 	}
 	else
 	{
+	    extra = 0;
 	    while (offset >= size
 		       + text_end - (int)((dp->db_index[idx]) & DB_INDEX_MASK)
 								      + ffdos)
@@ -4300,13 +4309,16 @@ ml_find_line_or_offset(buf, line, offp)
 		if (ffdos)
 		    size++;
 		if (idx == count - 1)
+		{
+		    extra = 1;
 		    break;
+		}
 		idx++;
 	    }
 	}
 	len = text_end - ((dp->db_index[idx]) & DB_INDEX_MASK);
 	size += len;
-	if (offp != NULL && size >= offset)
+	if (offset != 0 && size >= offset)
 	{
 	    if (size + ffdos == offset)
 		*offp = 0;
@@ -4315,7 +4327,10 @@ ml_find_line_or_offset(buf, line, offp)
 	    else
 		*offp = offset - size + len
 		     - (text_end - ((dp->db_index[idx - 1]) & DB_INDEX_MASK));
-	    return curline + idx - start_idx;
+	    curline += idx - start_idx + extra;
+	    if (curline > buf->b_ml.ml_line_count)
+		return -1;	/* exactly one byte beyond the end */
+	    return curline;
 	}
 	curline = buf->b_ml.ml_locked_high + 1;
     }
@@ -4355,7 +4370,7 @@ goto_byte(cnt)
     check_cursor();
 
 # ifdef FEAT_MBYTE
-    /* prevent cursor from moving on the trail byte */
+    /* Make sure the cursor is on the first byte of a multi-byte char. */
     if (has_mbyte)
 	mb_adjust_cursor();
 # endif

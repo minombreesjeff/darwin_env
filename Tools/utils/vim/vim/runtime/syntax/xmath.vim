@@ -1,8 +1,9 @@
 " Vim syntax file
 " Language:	xmath (a simulation tool)
-" Maintainer:	Dr. Charles E. Campbell, Jr. <Charles.E.Campbell.1@gsfc.nasa.gov>
-" Last Change:	Dec 10, 2001
-" Latest:	http://www.erols.com/astronaut/vim/index.html#vimlinks_syntax
+" Maintainer:	Dr. Charles E. Campbell, Jr. <Charles.E.Campbell.1@nasa.gov>
+" Last Change:	Nov 18, 2002
+" Version:	2
+" URL:	http://www.erols.com/astronaut/vim/index.html#vimlinks_syntax
 
 " For version 5.x: Clear all syntax items
 " For version 6.x: Quit when a syntax file was already loaded
@@ -169,7 +170,7 @@ syn keyword xmathFunc	extractseg	iqmix	querystd
 syn case match
 
 " Labels (supports xmath's goto)
-syn match   xmathLabel             "^\s*<[a-zA-Z_][a-zA-Z0-9]*>"
+syn match   xmathLabel	 "^\s*<[a-zA-Z_][a-zA-Z0-9]*>"
 
 " String and Character constants
 " Highlight special characters (those which have a backslash) differently

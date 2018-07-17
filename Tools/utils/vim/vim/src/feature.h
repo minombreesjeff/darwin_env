@@ -296,7 +296,7 @@
 #endif
 
 /*
- * +rightleft		Right-to-left typing and Hebrew support.
+ * +rightleft		Right-to-left editing/typing support.
  */
 #ifdef FEAT_BIG
 # define FEAT_RIGHTLEFT
@@ -304,13 +304,28 @@
 
 /*
  * +farsi		Farsi (Persian language) Keymap support.
- *			Needs FEAT_RIGHTLEFT.
+ *			Requires FEAT_RIGHTLEFT.
  */
 #ifdef FEAT_BIG
-# ifndef FEAT_RIGHTLEFT
-#  define FEAT_RIGHTLEFT
-# endif
 # define FEAT_FKMAP
+#endif
+#ifdef FEAT_FKMAP
+# ifndef FEAT_RIGHTLEFT
+#   define FEAT_RIGHTLEFT
+# endif
+#endif
+
+/*
+ * +arabic		Arabic keymap and shaping support.
+ *			Requires FEAT_RIGHTLEFT and FEAT_MBYTE.
+ */
+#if defined(FEAT_BIG) && !defined(WIN16) && SIZEOF_INT >= 4 && !defined(EBCDIC)
+# define FEAT_ARABIC
+#endif
+#ifdef FEAT_ARABIC
+# ifndef FEAT_RIGHTLEFT
+#   define FEAT_RIGHTLEFT
+# endif
 #endif
 
 /*
@@ -556,12 +571,13 @@
 
 /*
  * +multi_byte		Generic multi-byte character handling.  Doesn't work
- *			with 16 bit ints.
+ *			with 16 bit ints.  Required for GTK+ 2.
  *
  * Disabled for EBCDIC:
  * Multibyte support doesn't work on OS390 Unix currently.
  */
-#if defined(FEAT_BIG) && !defined(FEAT_MBYTE) && !defined(WIN16) \
+#if (defined(FEAT_BIG) || defined(HAVE_GTK2) || defined(FEAT_ARABIC)) \
+	&& !defined(FEAT_MBYTE) && !defined(WIN16) \
 	&& SIZEOF_INT >= 4 && !defined(EBCDIC)
 # define FEAT_MBYTE
 #endif
@@ -587,6 +603,21 @@
 #if defined(FEAT_MBYTE) && ((defined(HAVE_ICONV_H) && defined(HAVE_ICONV)) \
 		|| defined(DYNAMIC_ICONV))
 # define USE_ICONV
+#endif
+
+/*
+ * XSMP - X11 Session Management Protocol
+ * It may be preferred to disable this if the GUI supports it (e.g., GNOME/KDE)
+ * and implement save-yourself etc. through that, but it may also be cleaner to
+ * have all SM-aware vims do the same thing (libSM does not depend upon X11).
+ * If your GUI wants to support SM itself, change this ifdef.
+ * I'm assuming that any X11 implementation will cope with this for now.
+ */
+#if defined(HAVE_X11) && defined(WANT_X11) && defined(HAVE_X11_SM_SMLIB_H)
+# define USE_XSMP
+#endif
+#if defined(USE_XSMP_INTERACT) && !defined(USE_XSMP)
+# undef USE_XSMP_INTERACT
 #endif
 
 /*
@@ -626,7 +657,7 @@
  * +xfontset		X fontset support.  For outputting wide characters.
  */
 #ifndef FEAT_XFONTSET
-# if defined(FEAT_MBYTE) && defined(HAVE_X11)
+# if defined(FEAT_MBYTE) && defined(HAVE_X11) && !defined(HAVE_GTK2)
 #  define FEAT_XFONTSET
 # else
 /* #  define FEAT_XFONTSET */
@@ -706,7 +737,11 @@
 # if defined(FEAT_GUI_MSWIN)
 #  define FEAT_GUI_DIALOG
 # else
-#  if ((defined(FEAT_GUI_ATHENA) || defined(FEAT_GUI_MOTIF)) && defined(HAVE_X11_XPM_H)) || defined(FEAT_GUI_GTK) || defined(FEAT_GUI_PHOTON) || defined(FEAT_GUI_MAC)
+#  if ((defined(FEAT_GUI_ATHENA) || defined(FEAT_GUI_MOTIF)) \
+		&& defined(HAVE_X11_XPM_H)) \
+	|| defined(FEAT_GUI_GTK) \
+	|| defined(FEAT_GUI_PHOTON) \
+	|| defined(FEAT_GUI_MAC)
 #   define FEAT_CON_DIALOG
 #   define FEAT_GUI_DIALOG
 #  else
@@ -981,6 +1016,18 @@
 #endif
 
 /*
+ * +dnd		Drag'n'drop support.  Always used for the GTK+ GUI.
+ */
+#if defined(FEAT_CLIPBOARD) && defined(FEAT_GUI_GTK)
+# define FEAT_DND
+#endif
+
+#if defined(FEAT_GUI_MSWIN) && defined(FEAT_SMALL)
+# define MSWIN_FIND_REPLACE	/* include code for find/replace dialog */
+# define MSWIN_FR_BUFSIZE 256
+#endif
+
+/*
  * +clientserver	Remote control via the remote_send() function
  *			and the --remote argument
  */
@@ -1043,6 +1090,8 @@
  * +python		Python interface: "--enable-pythoninterp"
  * +tcl			TCL interface: "--enable-tclinterp"
  * +sniff		Sniff interface: "--enable-sniff"
+ * +sun_workshop	Sun Workshop integegration
+ * +netbeans_intg	Netbeans integration
  */
 
 /*
@@ -1059,13 +1108,25 @@
 #endif
 
 /*
+ * The Netbeans features currently only work with Motif and GTK.
+ * It also requires +listcmds and +eval.
+ */
+#if ((!defined(FEAT_GUI_MOTIF) && !defined(FEAT_GUI_GTK)) \
+		|| !defined(FEAT_LISTCMDS) || !defined(FEAT_EVAL)) \
+	&& defined(FEAT_NETBEANS_INTG)
+# undef FEAT_NETBEANS_INTG
+#endif
+
+/*
  * +signs		Allow signs to be displayed to the left of text lines.
  *			Adds the ":sign" command.
  */
-#if defined(FEAT_BIG) || defined(FEAT_SUN_WORKSHOP)
+#if defined(FEAT_BIG) || defined(FEAT_SUN_WORKSHOP) \
+	    || defined(FEAT_NETBEANS_INTG)
 # define FEAT_SIGNS
 # if ((defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)) \
-	&& defined(HAVE_X11_XPM_H)) \
+		&& defined(HAVE_X11_XPM_H)) \
+	|| defined(FEAT_GUI_GTK) \
 	|| (defined(WIN32) && defined(FEAT_GUI))
 #  define FEAT_SIGN_ICONS
 # endif
@@ -1076,24 +1137,33 @@
  *			debugger and for tooltips.
  *			Currently only for Athena and Motif.
  */
-#if (defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA)) \
-	&& (defined(FEAT_TOOLBAR) || defined(FEAT_SUN_WORKSHOP))
+#if (defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA) \
+			     || defined(FEAT_GUI_GTK)) \
+	&& (   (defined(FEAT_TOOLBAR) && !defined(FEAT_GUI_GTK)) \
+	    || defined(FEAT_SUN_WORKSHOP) \
+	    || defined(FEAT_NETBEANS_INTG))
 # define FEAT_BEVAL
-# ifndef FEAT_XFONTSET
+# if !defined(FEAT_XFONTSET) && !defined(FEAT_GUI_GTK)
 #  define FEAT_XFONTSET
 # endif
 #endif
 
-#if defined(FEAT_SUN_WORKSHOP)
+#if defined(FEAT_BEVAL) && (defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_ATHENA))
+# define FEAT_BEVAL_TIP		/* balloon eval used for toolbar tooltip */
+#endif
+
+#if defined(FEAT_SUN_WORKSHOP) || defined(FEAT_NETBEANS_INTG)
 /*
- * The following features are (currently) only used by Sun Visual WorkShop 6.
- * These features could be used with other integrations with debuggers so I've
- * used separate feature defines.
+ * The following features are (currently) only used by Sun Visual WorkShop 6
+ * and NetBeans. These features could be used with other integrations with
+ * debuggers so I've used separate feature defines.
  */
 # if !defined(FEAT_MENU)
 #  define FEAT_MENU
 # endif
+#endif
 
+#if defined(FEAT_SUN_WORKSHOP)
 /*
  *			Use an alternative method of X input for a secondary
  *			command input.

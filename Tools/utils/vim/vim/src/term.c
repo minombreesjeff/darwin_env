@@ -1015,6 +1015,7 @@ struct builtin_term builtin_termcaps[] =
     {K_S_F10,		IF_EB("\033[21;2~", ESC_STR "[21;2~")},
     {K_S_F11,		IF_EB("\033[23;2~", ESC_STR "[23;2~")},
     {K_S_F12,		IF_EB("\033[24;2~", ESC_STR "[24;2~")},
+    {K_S_TAB,		IF_EB("\033[Z", ESC_STR "[Z")},
     {K_HELP,		IF_EB("\033[28~", ESC_STR "[28~")},
     {K_UNDO,		IF_EB("\033[26~", ESC_STR "[26~")},
     {K_INS,		IF_EB("\033[2~", ESC_STR "[2~")},
@@ -1538,7 +1539,7 @@ static char *(key_names[]) =
     "k1", "k2", "k3", "k4", "k5", "k6",
     "k7", "k8", "k9", "k;", "F1", "F2",
     "%1", "&8", "kb", "kI", "kD", "kh",
-    "@7", "kP", "kN", "K1", "K3", "K4", "K5",
+    "@7", "kP", "kN", "K1", "K3", "K4", "K5", "kB",
     NULL
 };
 #endif
@@ -1641,15 +1642,22 @@ set_termname(term)
 					   TGETSTR(string_names[i].name, &tp);
 		}
 
-		if ((T_MS == NULL || T_MS == empty_option) && tgetflag("ms"))
+		/* tgetflag() returns 1 if the flag is present, 0 if not and
+		 * possibly -1 if the flag doesn't exist. */
+		if ((T_MS == NULL || T_MS == empty_option)
+							&& tgetflag("ms") > 0)
 		    T_MS = (char_u *)"y";
-		if ((T_XS == NULL || T_XS == empty_option) && tgetflag("xs"))
+		if ((T_XS == NULL || T_XS == empty_option)
+							&& tgetflag("xs") > 0)
 		    T_XS = (char_u *)"y";
-		if ((T_DB == NULL || T_DB == empty_option) && tgetflag("db"))
+		if ((T_DB == NULL || T_DB == empty_option)
+							&& tgetflag("db") > 0)
 		    T_DB = (char_u *)"y";
-		if ((T_DA == NULL || T_DA == empty_option) && tgetflag("da"))
+		if ((T_DA == NULL || T_DA == empty_option)
+							&& tgetflag("da") > 0)
 		    T_DA = (char_u *)"y";
-		if ((T_UT == NULL || T_UT == empty_option) && tgetflag("ut"))
+		if ((T_UT == NULL || T_UT == empty_option)
+							&& tgetflag("ut") > 0)
 		    T_UT = (char_u *)"y";
 
 
@@ -1902,7 +1910,7 @@ set_termname(term)
 
 #ifdef USE_TERM_CONSOLE
     /* DEFAULT_TERM indicates that it is the machine console. */
-    if (STRCMP(term, DEFAULT_TERM))
+    if (STRCMP(term, DEFAULT_TERM) != 0)
 	term_console = FALSE;
     else
     {
@@ -2103,20 +2111,26 @@ tgetent_error(tbuf, term)
     int	    i;
 
     i = TGETENT(tbuf, term);
-    if (i < 1)
+    if (i < 0		    /* -1 is always an error */
+# ifdef TGETENT_ZERO_ERR
+	    || i == 0	    /* sometimes zero is also an error */
+# endif
+       )
     {
 	/* On FreeBSD tputs() gets a SEGV after a tgetent() which fails.  Call
 	 * tgetent() with the always existing "dumb" entry to avoid a crash or
 	 * hang. */
 	(void)TGETENT(tbuf, "dumb");
 
-	if (i == -1)
-	    return (char_u *)_("Cannot open termcap file");
+	if (i < 0)
+# ifdef TGETENT_ZERO_ERR
+	    return (char_u *)_("E557: Cannot open termcap file");
 	if (i == 0)
+# endif
 #ifdef TERMINFO
-	    return (char_u *)_("Terminal entry not found in terminfo");
+	    return (char_u *)_("E558: Terminal entry not found in terminfo");
 #else
-	return (char_u *)_("Terminal entry not found in termcap");
+	    return (char_u *)_("E559: Terminal entry not found in termcap");
 #endif
     }
     return NULL;
@@ -2833,7 +2847,8 @@ ttest(pairs)
     t_colors = atoi((char *)T_CCO);
 }
 
-#if defined(FEAT_GUI) || defined(PROTO)
+#if (defined(FEAT_GUI) && (defined(FEAT_MENU) || !defined(USE_ON_FLY_SCROLL))) \
+	|| defined(PROTO)
 /*
  * Represent the given long_u as individual bytes, with the most significant
  * byte first, and store them in dst.
@@ -2853,6 +2868,8 @@ add_long_to_buf(val, dst)
     }
 }
 
+static int get_long_from_buf __ARGS((char_u *buf, long_u *val));
+
 /*
  * Interpret the next string of bytes in buf as a long integer, with the most
  * significant byte first.  Note that it is assumed that buf has been through
@@ -2861,7 +2878,7 @@ add_long_to_buf(val, dst)
  * (between sizeof(long_u) and 2 * sizeof(long_u)), or -1 if not enough bytes
  * were present.
  */
-    int
+    static int
 get_long_from_buf(buf, val)
     char_u  *buf;
     long_u  *val;
@@ -3652,12 +3669,9 @@ check_termcode(max_offset, buf, buflen)
     char_u	string[MAX_KEY_CODE_LEN + 1];
     int		i, j;
     int		idx = 0;
-#ifdef FEAT_GUI
-    long_u	val;
-#endif
 #ifdef FEAT_MOUSE
 # if !defined(UNIX) || defined(FEAT_MOUSE_XTERM) || defined(FEAT_GUI)
-    char_u	bytes[3];
+    char_u	bytes[6];
     int		num_bytes;
 # endif
     int		mouse_code = 0;	    /* init for GCC */
@@ -3902,6 +3916,27 @@ check_termcode(max_offset, buf, buflen)
 	/* We only get here when we have a complete termcode match */
 
 #ifdef FEAT_MOUSE
+# ifdef FEAT_GUI
+	/*
+	 * Only in the GUI: Fetch the pointer coordinates of the scroll event
+	 * so that we know which window to scroll later.
+	 */
+	if (gui.in_use
+		&& key_name[0] == (int)KS_EXTRA
+		&& (key_name[1] == (int)KE_X1MOUSE
+		    || key_name[1] == (int)KE_X2MOUSE
+		    || key_name[1] == (int)KE_MOUSEDOWN
+		    || key_name[1] == (int)KE_MOUSEUP))
+	{
+	    num_bytes = get_bytes_from_buf(tp + slen, bytes, 4);
+	    if (num_bytes == -1)	/* not enough coordinates */
+		return -1;
+	    mouse_col = 128 * (bytes[0] - ' ' - 1) + bytes[1] - ' ' - 1;
+	    mouse_row = 128 * (bytes[2] - ' ' - 1) + bytes[3] - ' ' - 1;
+	    slen += num_bytes;
+	}
+	else
+# endif
 	/*
 	 * If it is a mouse click, get the coordinates.
 	 */
@@ -3947,12 +3982,29 @@ check_termcode(max_offset, buf, buflen)
 		 */
 		for (;;)
 		{
-		    num_bytes = get_bytes_from_buf(tp + slen, bytes, 3);
-		    if (num_bytes == -1)	/* not enough coordinates */
-			return -1;
-		    mouse_code = bytes[0];
-		    mouse_col = bytes[1] - ' ' - 1;
-		    mouse_row = bytes[2] - ' ' - 1;
+#ifdef FEAT_GUI
+		    if (gui.in_use)
+		    {
+			/* GUI uses more bits for columns > 223 */
+			num_bytes = get_bytes_from_buf(tp + slen, bytes, 5);
+			if (num_bytes == -1)	/* not enough coordinates */
+			    return -1;
+			mouse_code = bytes[0];
+			mouse_col = 128 * (bytes[1] - ' ' - 1)
+							 + bytes[2] - ' ' - 1;
+			mouse_row = 128 * (bytes[3] - ' ' - 1)
+							 + bytes[4] - ' ' - 1;
+		    }
+		    else
+#endif
+		    {
+			num_bytes = get_bytes_from_buf(tp + slen, bytes, 3);
+			if (num_bytes == -1)	/* not enough coordinates */
+			    return -1;
+			mouse_code = bytes[0];
+			mouse_col = bytes[1] - ' ' - 1;
+			mouse_row = bytes[2] - ' ' - 1;
+		    }
 		    slen += num_bytes;
 
 		    /* If the following bytes is also a mouse code and it has
@@ -3967,7 +4019,13 @@ check_termcode(max_offset, buf, buflen)
 		    if (STRNCMP(tp, tp + slen, (size_t)j) == 0
 			    && tp[slen + j] == mouse_code
 			    && tp[slen + j + 1] != NUL
-			    && tp[slen + j + 2] != NUL)
+			    && tp[slen + j + 2] != NUL
+#ifdef FEAT_GUI
+			    && (!gui.in_use
+				|| (tp[slen + j + 3] != NUL
+					&& tp[slen + j + 4] != NUL))
+#endif
+			    )
 			slen += j;
 		    else
 			break;
@@ -3993,6 +4051,15 @@ check_termcode(max_offset, buf, buflen)
 		     * remember that it was a mouse wheel click. */
 		    wheel_code = mouse_code;
 		}
+#   ifdef FEAT_MOUSE_XTERM
+		else if (held_button == MOUSE_RELEASE
+			&& (mouse_code == 0x23 || mouse_code == 0x24))
+		{
+		    /* Apparently used by rxvt scroll wheel. */
+		    wheel_code = mouse_code - 0x23 + MOUSEWHEEL_LOW;
+		}
+#   endif
+
 #   if defined(UNIX) && defined(FEAT_MOUSE_TTY)
 		else if (use_xterm_mouse() > 1)
 		{
@@ -4210,9 +4277,9 @@ check_termcode(max_offset, buf, buflen)
 		* Pp is the page coordinate of the locator position
 		*   encoded as an ASCII decimal value.
 		*   The page coordinate may be omitted if the locator is on
-		*   page one (the default).
+		*   page one (the default).  We ignore it anyway.
 		*/
-		int Pe, Pb, Pr, Pc /* , Pp */;
+		int Pe, Pb, Pr, Pc;
 
 		p = tp + slen;
 
@@ -4238,10 +4305,8 @@ check_termcode(max_offset, buf, buflen)
 		if (*p == ';')
 		{
 		    p++;
-		    /* Pp = getdigits(&p); */
+		    (void)getdigits(&p);
 		}
-		/* else
-		    Pp = 0; */
 		if (*p++ != '&')
 		    return -1;
 		if (*p++ != 'w')
@@ -4290,7 +4355,6 @@ check_termcode(max_offset, buf, buflen)
 		default: return -1; /* should never occur */
 		}
 
-		/* we ignore the Pp word */
 		mouse_col = Pc - 1;
 		mouse_row = Pr - 1;
 
@@ -4357,7 +4421,11 @@ check_termcode(max_offset, buf, buflen)
 
 	    /* Interpret the mouse code */
 	    current_button = (mouse_code & MOUSE_CLICK_MASK);
-	    if (current_button == MOUSE_RELEASE)
+	    if (current_button == MOUSE_RELEASE
+# ifdef FEAT_MOUSE_XTERM
+		    && wheel_code == 0
+# endif
+		    )
 	    {
 		/*
 		 * If we get a mouse drag or release event when
@@ -4486,16 +4554,23 @@ check_termcode(max_offset, buf, buflen)
 	 * KE_FILLER followed by four bytes representing a long_u which is the
 	 * new value of the scrollbar.
 	 */
+# ifdef FEAT_MENU
 	else if (key_name[0] == (int)KS_MENU)
 	{
+	    long_u	val;
+
 	    num_bytes = get_long_from_buf(tp + slen, &val);
 	    if (num_bytes == -1)
 		return -1;
 	    current_menu = (vimmenu_T *)val;
 	    slen += num_bytes;
 	}
+# endif
+# ifndef USE_ON_FLY_SCROLL
 	else if (key_name[0] == (int)KS_VER_SCROLLBAR)
 	{
+	    long_u	val;
+
 	    /* Get the last scrollbar event in the queue of the same type */
 	    j = 0;
 	    for (i = 0; tp[j] == CSI && tp[j + 1] == KS_VER_SCROLLBAR
@@ -4522,6 +4597,8 @@ check_termcode(max_offset, buf, buflen)
 	}
 	else if (key_name[0] == (int)KS_HOR_SCROLLBAR)
 	{
+	    long_u	val;
+
 	    /* Get the last horiz. scrollbar event in the queue */
 	    j = 0;
 	    for (i = 0; tp[j] == CSI && tp[j + 1] == KS_HOR_SCROLLBAR
@@ -4538,7 +4615,9 @@ check_termcode(max_offset, buf, buflen)
 	    if (i == 0)		/* not enough characters to make one */
 		return -1;
 	}
+# endif /* !USE_ON_FLY_SCROLL */
 #endif /* FEAT_GUI */
+
 	/* Finally, add the special key code to our string */
 	if (key_name[0] == KS_KEY)
 	    string[new_slen++] = key_name[1];	/* from ":set <M-b>=xx" */

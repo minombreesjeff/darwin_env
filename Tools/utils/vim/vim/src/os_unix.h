@@ -39,6 +39,7 @@
 
 #if defined(__CYGWIN__) || defined(__CYGWIN32__)
 # define WIN32UNIX	/* Compiling for Win32 using Unix files. */
+# define BINARY_FILE_IO
 #endif
 
 /* On AIX 4.2 there is a conflicting prototype for ioctl() in stropts.h and
@@ -78,7 +79,9 @@
 #endif
 
 #ifndef __ARGS
-# if defined(__STDC__) || defined(__GNUC__)
+    /* The AIX VisualAge cc compiler defines __EXTENDED__ instead of __STDC__
+     * because it includes pre-ansi features. */
+# if defined(__STDC__) || defined(__GNUC__) || defined(__EXTENDED__)
 #  define __ARGS(x) x
 # else
 #  define __ARGS(x) ()

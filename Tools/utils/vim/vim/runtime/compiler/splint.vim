@@ -1,6 +1,7 @@
 " Vim compiler file
 " Compiler:     splint/lclint (C source code checker)
 " Maintainer:   Ralf Wildenhues <Ralf.Wildenhues@gmx.de>
+" Splint Home:	http://www.splint.org/
 " Last Change:  $Date$
 " $Revision$
 
@@ -8,6 +9,9 @@ if exists("current_compiler")
   finish
 endif
 let current_compiler = "splint"
+
+let s:cpo_save = &cpo
+set cpo-=C
 
 " adapt this if you want to check more than one file at a time.
 " put command line options in .splintrc or ~/.splintrc
@@ -25,7 +29,7 @@ setlocal makeprg=splint\ %
 " sample warning (generic):
 "
 "foo.c:1006:12: Clauses exit with var referencing local storage in one
-"                      case, fresh storage in other case
+"		       case, fresh storage in other case
 "   foo.c:1003:2: Fresh storage var allocated
 "
 " sample warning (bounds checking):
@@ -57,3 +61,6 @@ setlocal errorformat=%OLCLint*m,
 	\%X%*\\a[%*\\d]:\ Leaving\ directory\ `%f',
 	\%DMaking\ %*\\a\ in\ %f,
 	\%C\ \ %m
+
+let &cpo = s:cpo_save
+unlet s:cpo_save

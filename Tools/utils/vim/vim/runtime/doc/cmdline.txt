@@ -1,4 +1,4 @@
-*cmdline.txt*   For Vim version 6.1.  Last change: 2002 Jan 30
+*cmdline.txt*   For Vim version 6.2.  Last change: 2003 May 16
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -378,9 +378,9 @@ matching files with the next.
 For file name completion you can use the 'suffixes' option to set a priority
 between files with almost the same name.  If there are multiple matches,
 those files with an extension that is in the 'suffixes' option are ignored.
-The default is ".bak,~,.o,.h,.info,.swp", which means that files ending in
-".bak", "~", ".o", ".h", ".info" and ".swp" are sometimes ignored.  It is
-impossible to ignore suffixes with two dots.  Examples:
+The default is ".bak,~,.o,.h,.info,.swp,.obj", which means that files ending
+in ".bak", "~", ".o", ".h", ".info", ".swp" and ".obj" are sometimes ignored.
+It is impossible to ignore suffixes with two dots.  Examples:
 
   pattern:	files:				match:	~
    test*	test.c test.h test.o		test.c
@@ -525,7 +525,7 @@ argument for the command, which has a different meaning.  For example:
 			"name"
 
 ==============================================================================
-4. Ex command-line ranges		*cmdline-ranges* *[range]* *E16*
+4. Ex command-line ranges	*cmdline-ranges* *[range]* *E16* *E493*
 
 Some Ex commands accept a line range in front of them.  This is noted as
 [range].  It consists of one or more line specifiers, separated with ',' or
@@ -554,6 +554,8 @@ Line numbers may be specified with:		*:range* *E14* *{address}*
 	$		the last line in the file		  *:$*
 	%		equal to 1,$ (the entire file)		  *:%*
 	't		position of mark t (lowercase)		  *:'*
+	'T		position of mark T (uppercase); when the mark is in
+			another file it cannot be used in a range
 	/{pattern}[/]	the next line where {pattern} matches	  *:/*
 	?{pattern}[?]	the previous line where {pattern} matches *:?*
 	\/		the next line where the previously used search
@@ -602,18 +604,31 @@ Examples: >
 			following lines
 	:23d 4		delete lines 23, 24, 25 and 26
 
+
+Folds and Range
+
+When folds are active the line numbers are rounded off to include the whole
+closed fold.  See |fold-behavior|.
+
+
+Reverse Range
+
 A range should have the lower line number first.  If this is not the case, Vim
 will ask you if it should swap the line numbers.  This is not done within the
 global command ":g".
 
-							*N:*
+
+Count and Range						*N:*
+
 When giving a count before entering ":", this is translated into:
 		:.,.+(count - 1)
 In words: The 'count' lines at and after the cursor.  Example: To delete
 three lines: >
 		3:d<CR>		is translated into: .,.+2d<CR>
 <
-							*v_:*
+
+Visual Mode and Range					*v_:*
+
 {Visual}:	Starts a command-line with the Visual selected lines as a
 		range.  The code ":'<,'>" is used for this range, which makes
 		it possible to select a similar line from the command-line
@@ -636,6 +651,11 @@ function expand() |expand()|.
 Note that these give the file name as it was typed.  If an absolute path is
 needed (when using the file name from a different directory), you need to add
 ":p".  See |filename-modifiers|.
+Note that backslashes are inserted before spaces, so that the command will
+correctly interpret the file name.  But this doesn't happen for shell
+commands.  For those you probably have to use quotes: >
+	:!ls "%"
+	:r !spell "%"
 
 To avoid the special meaning of '%' and '#' insert a backslash before it.
 Detail: The special meaning is always escaped when there is a backslash before
@@ -648,6 +668,7 @@ it, no matter how many backslashes.
 			       *:<cword>* *:<cWORD>* *:<cfile>* *<cfile>*
 			       *:<sfile>* *<sfile>* *:<afile>* *<afile>*
 			       *:<abuf>* *<abuf>* *:<amatch>* *<amatch>*
+			       *E495* *E496* *E497* *E498* *E499* *E500*
 Note: these are typed literally, they are not special keys!
 	<cword>    is replaced with the word under the cursor (like |star|)
 	<cWORD>    is replaced with the WORD under the cursor (see |WORD|)
@@ -667,7 +688,7 @@ Note: these are typed literally, they are not special keys!
 		   when executing a function, is replaced with
 		   "function {function-name}"; function call nesting is
 		   indicated like this:
-		   "function {function-name1}->{function-name2}".  Note that
+		   "function {function-name1}..{function-name2}".  Note that
 		   filename-modifiers are useless when <sfile> is used inside
 		   a function.
 
@@ -684,6 +705,9 @@ These modifiers can be given, in this order:
 		separator is added at the end.  For a file name that does not
 		exist and does not have an absolute path the result is
 		unpredictable.
+	:8	Converts the path to 8.3 short format (currently only on
+		win32).  Will act on as much of a path that is an existing
+		path.
 	:~	Reduce file name to be relative to the home directory, if
 		possible.  File name is unmodified if it is not below the home
 		directory.
@@ -853,13 +877,15 @@ It is possible to use ":", "/" and other commands that use the command-line,
 but it's not possible to open another command-line window then.  There is no
 nesting.
 							*E11*
-It is not possible to move to another window or edit another buffer.  All
-commands that would do this are disabled in the command-line window.
+The command-line window is not a normal window.  It is not possible to move to
+another window or edit another buffer.  All commands that would do this are
+disabled in the command-line window.  Of course it _is_ possible to execute
+any command that you entered in the command-line window.
 
 
 CLOSE							*E199*
 
-There are three ways to leave the command-line window:
+There are several ways to leave the command-line window:
 
 <CR>		Execute the command-line under the cursor.  Works both in
 		Insert and in Normal mode.
@@ -912,9 +938,8 @@ You could put these lines in your vimrc file.
 
 While in the command-line window you cannot use the mouse to put the cursor in
 another window, or drag statuslines of other windows.  You can drag the
-statusline of the command-line window itself.  If you drag it all the way up,
-the statusline of the window above it will move, thus creating more room in
-the command-line window.
+statusline of the command-line window itself and the statusline above it.
+Thus you can resize the command-line window, but not others.
 
 
 AUTOCOMMANDS

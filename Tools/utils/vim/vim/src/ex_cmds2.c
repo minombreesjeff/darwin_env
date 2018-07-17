@@ -17,6 +17,8 @@
 static void	cmd_source __ARGS((char_u *fname, exarg_T *eap));
 
 #if defined(FEAT_EVAL) || defined(PROTO)
+static int debug_greedy = FALSE;	/* batch mode debugging: don't save
+					   and restore typeahead. */
 
 /*
  * do_debug(): Debug mode.
@@ -30,6 +32,13 @@ do_debug(cmd)
     int		save_State = State;
     int		save_did_emsg = did_emsg;
     int		save_cmd_silent = cmd_silent;
+    int		save_msg_silent = msg_silent;
+    int		save_emsg_silent = emsg_silent;
+    int		save_redir_off = redir_off;
+    tasave_T	typeaheadbuf;
+# ifdef FEAT_EX_EXTRA
+    int		save_ex_normal_busy;
+# endif
     int		n;
     char_u	*cmdline = NULL;
     char_u	*p;
@@ -40,6 +49,7 @@ do_debug(cmd)
 #define CMD_STEP	3
 #define CMD_FINISH	4
 #define CMD_QUIT	5
+#define CMD_INTERRUPT	6
 
 #ifdef ALWAYS_USE_GUI
     /* Can't do this when there is no terminal for input/output. */
@@ -56,10 +66,13 @@ do_debug(cmd)
     settmode(TMODE_RAW);
     starttermcap();
 
-    ++RedrawingDisabled;	    /* don't redisplay the window */
-    ++no_wait_return;		    /* don't wait for return */
-    did_emsg = FALSE;		    /* don't use error from debugged stuff */
-    cmd_silent = FALSE;		    /* display commands */
+    ++RedrawingDisabled;	/* don't redisplay the window */
+    ++no_wait_return;		/* don't wait for return */
+    did_emsg = FALSE;		/* don't use error from debugged stuff */
+    cmd_silent = FALSE;		/* display commands */
+    msg_silent = FALSE;		/* display messages */
+    emsg_silent = FALSE;	/* display error messages */
+    redir_off = TRUE;		/* don't redirect debug commands */
 
     State = NORMAL;
 #ifdef FEAT_SNIFF
@@ -67,13 +80,13 @@ do_debug(cmd)
 #endif
 
     if (!debug_did_msg)
-	MSG(_("Entering Debug mode.  Type \"cont\" to leave."));
+	MSG(_("Entering Debug mode.  Type \"cont\" to continue."));
     if (sourcing_name != NULL)
 	msg(sourcing_name);
     if (sourcing_lnum != 0)
 	smsg((char_u *)_("line %ld: %s"), (long)sourcing_lnum, cmd);
     else
-	smsg((char_u *)_("cmd: %s"), cmd);
+	msg_str((char_u *)_("cmd: %s"), cmd);
 
     /*
      * Repeat getting a command and executing it.
@@ -85,7 +98,26 @@ do_debug(cmd)
 #ifdef FEAT_SNIFF
 	ProcessSniffRequests();
 #endif
+	/* Save the current typeahead buffer and replace it with an empty one.
+	 * This makes sure we get input from the user here and don't interfere
+	 * with the commands being executed.  Reset "ex_normal_busy" to avoid
+	 * the side effects of using ":normal". Save the stuff buffer and make
+	 * it empty. */
+# ifdef FEAT_EX_EXTRA
+	save_ex_normal_busy = ex_normal_busy;
+	ex_normal_busy = 0;
+# endif
+	if (!debug_greedy)
+	    save_typeahead(&typeaheadbuf);
+
 	cmdline = getcmdline_prompt('>', NULL, 0);
+
+	if (!debug_greedy)
+	    restore_typeahead(&typeaheadbuf);
+# ifdef FEAT_EX_EXTRA
+	ex_normal_busy = save_ex_normal_busy;
+# endif
+
 	cmdline_row = msg_row;
 	if (cmdline != NULL)
 	{
@@ -111,6 +143,9 @@ do_debug(cmd)
 			      break;
 		    case 'q': last_cmd = CMD_QUIT;
 			      tail = "uit";
+			      break;
+		    case 'i': last_cmd = CMD_INTERRUPT;
+			      tail = "nterrupt";
 			      break;
 		    default: last_cmd = 0;
 		}
@@ -138,17 +173,23 @@ do_debug(cmd)
 			debug_break_level = -1;
 			break;
 		    case CMD_NEXT:
-			debug_break_level = debug_level;
+			debug_break_level = ex_nesting_level;
 			break;
 		    case CMD_STEP:
 			debug_break_level = 9999;
 			break;
 		    case CMD_FINISH:
-			debug_break_level = debug_level - 1;
+			debug_break_level = ex_nesting_level - 1;
 			break;
 		    case CMD_QUIT:
 			got_int = TRUE;
 			debug_break_level = -1;
+			break;
+		    case CMD_INTERRUPT:
+			got_int = TRUE;
+			debug_break_level = 9999;
+			/* Do not repeat ">interrupt" cmd, continue stepping. */
+			last_cmd = CMD_STEP;
 			break;
 		}
 		break;
@@ -157,7 +198,8 @@ do_debug(cmd)
 	    /* don't debug this command */
 	    n = debug_break_level;
 	    debug_break_level = -1;
-	    (void)do_cmdline(cmdline, getexline, NULL, DOCMD_VERBOSE);
+	    (void)do_cmdline(cmdline, getexline, NULL,
+			     DOCMD_VERBOSE|DOCMD_EXCRESET);
 	    debug_break_level = n;
 
 	    vim_free(cmdline);
@@ -175,6 +217,9 @@ do_debug(cmd)
     State = save_State;
     did_emsg = save_did_emsg;
     cmd_silent = save_cmd_silent;
+    msg_silent = save_msg_silent;
+    emsg_silent = save_emsg_silent;
+    redir_off = save_redir_off;
 
     /* Only print the message again when typing a command before coming back
      * here. */
@@ -199,9 +244,20 @@ static char_u	*debug_breakpoint_name = NULL;
 static linenr_T	debug_breakpoint_lnum;
 
 /*
- * Go to debug mode when a breakpoint was encountered or "debug_level" is
+ * When debugging or a breakpoint is set on a skipped command, no debug prompt
+ * is shown by do_one_cmd().  This situation is indicated by debug_skipped, and
+ * debug_skipped_name is then set to the source name in the breakpoint case.  If
+ * a skipped command decides itself that a debug prompt should be displayed, it
+ * can do so by calling dbg_check_skipped().
+ */
+static int	debug_skipped;
+static char_u	*debug_skipped_name;
+
+/*
+ * Go to debug mode when a breakpoint was encountered or "ex_nesting_level" is
  * at or below the break level.  But only when the line is actually
- * executed.
+ * executed.  Return TRUE and set breakpoint_name for skipped commands that
+ * decide to execute something themselves.
  * Called from do_one_cmd() before executing a command.
  */
     void
@@ -210,6 +266,7 @@ dbg_check_breakpoint(eap)
 {
     char_u	*p;
 
+    debug_skipped = FALSE;
     if (debug_breakpoint_name != NULL)
     {
 	if (!eap->skip)
@@ -228,10 +285,51 @@ dbg_check_breakpoint(eap)
 	    do_debug(eap->cmd);
 	}
 	else
+	{
+	    debug_skipped = TRUE;
+	    debug_skipped_name = debug_breakpoint_name;
 	    debug_breakpoint_name = NULL;
+	}
     }
-    else if (!eap->skip && debug_level <= debug_break_level)
-	do_debug(eap->cmd);
+    else if (ex_nesting_level <= debug_break_level)
+    {
+	if (!eap->skip)
+	    do_debug(eap->cmd);
+	else
+	{
+	    debug_skipped = TRUE;
+	    debug_skipped_name = NULL;
+	}
+    }
+}
+
+/*
+ * Go to debug mode if skipped by dbg_check_breakpoint() because eap->skip was
+ * set.  Return TRUE when the debug mode is entered this time.
+ */
+    int
+dbg_check_skipped(eap)
+    exarg_T	*eap;
+{
+    int		prev_got_int;
+
+    if (debug_skipped)
+    {
+	/*
+	 * Save the value of got_int and reset it.  We don't want a previous
+	 * interruption cause flushing the input buffer.
+	 */
+	prev_got_int = got_int;
+	got_int = FALSE;
+	debug_breakpoint_name = debug_skipped_name;
+	/* eap->skip is TRUE */
+	eap->skip = FALSE;
+	(void)dbg_check_breakpoint(eap);
+	eap->skip = TRUE;
+	got_int |= prev_got_int;
+	return TRUE;
+    }
+    return FALSE;
 }
 
 /*
@@ -266,6 +364,7 @@ dbg_parsearg(arg)
     char_u	*arg;
 {
     char_u	*p = arg;
+    char_u	*q;
     struct debuggy *bp;
 
     if (ga_grow(&dbg_breakp, 1) == FAIL)
@@ -300,7 +399,38 @@ dbg_parsearg(arg)
 	EMSG2(_(e_invarg2), arg);
 	return FAIL;
     }
-    if ((bp->dbg_name = vim_strsave(p)) == NULL)
+
+    if (bp->dbg_type == DBG_FUNC)
+	bp->dbg_name = vim_strsave(p);
+    else
+    {
+	/* Expand the file name in the same way as do_source().  This means
+	 * doing it twice, so that $DIR/file gets expanded when $DIR is
+	 * "~/dir". */
+#ifdef RISCOS
+	q = mch_munge_fname(p);
+#else
+	q = expand_env_save(p);
+#endif
+	if (q == NULL)
+	    return FAIL;
+#ifdef RISCOS
+	p = mch_munge_fname(q);
+#else
+	p = expand_env_save(q);
+#endif
+	vim_free(q);
+	if (p == NULL)
+	    return FAIL;
+	bp->dbg_name = fix_fname(p);
+	vim_free(p);
+#ifdef MACOS_CLASSIC
+	if (bp->dbg_name != NULL)
+	    slash_n_colon_adjust(bp->dbg_name);
+#endif
+    }
+
+    if (bp->dbg_name == NULL)
 	return FAIL;
     return OK;
 }
@@ -321,7 +451,7 @@ ex_breakadd(eap)
 	pat = file_pat_to_reg_pat(bp->dbg_name, NULL, NULL, FALSE);
 	if (pat != NULL)
 	{
-	    bp->dbg_prog = vim_regcomp(pat, TRUE);
+	    bp->dbg_prog = vim_regcomp(pat, RE_MAGIC + RE_STRING);
 	    vim_free(pat);
 	}
 	if (pat == NULL || bp->dbg_prog == NULL)
@@ -335,6 +465,19 @@ ex_breakadd(eap)
 	    ++debug_tick;
 	}
     }
+}
+
+/*
+ * ":debuggreedy".
+ */
+    void
+ex_debuggreedy(eap)
+    exarg_T	*eap;
+{
+    if (eap->addr_count == 0 || eap->line2 != 0)
+	debug_greedy = TRUE;
+    else
+	debug_greedy = FALSE;
 }
 
 /*
@@ -439,6 +582,7 @@ dbg_find_breakpoint(file, fname, after)
     linenr_T	lnum = 0;
     regmatch_T	regmatch;
     char_u	*name = fname;
+    int		prev_got_int;
 
     /* Replace K_SNR in function name with "<SNR>". */
     if (!file && fname[0] == K_SPECIAL)
@@ -464,8 +608,16 @@ dbg_find_breakpoint(file, fname, after)
 	{
 	    regmatch.regprog = bp->dbg_prog;
 	    regmatch.rm_ic = FALSE;
+	    /*
+	     * Save the value of got_int and reset it.  We don't want a previous
+	     * interruption cancel matching, only hitting CTRL-C while matching
+	     * should abort it.
+	     */
+	    prev_got_int = got_int;
+	    got_int = FALSE;
 	    if (vim_regexec(&regmatch, name, (colnr_T)0))
 		lnum = bp->dbg_lnum;
+	    got_int |= prev_got_int;
 	}
     }
     if (name != fname)
@@ -837,6 +989,53 @@ buf_write_all(buf, forceit)
 /*
  * Code to handle the argument list.
  */
+
+/*
+ * Isolate one argument, taking quotes and backticks.
+ * Changes the argument in-place, puts a NUL after it.
+ * Quotes are removed, backticks remain.
+ * Return a pointer to the start of the next argument.
+ */
+    char_u *
+do_one_arg(str)
+    char_u *str;
+{
+    char_u	*p;
+    int		inquote;
+    int		inbacktick;
+
+    inquote = FALSE;
+    inbacktick = FALSE;
+    for (p = str; *str; ++str)
+    {
+	/*
+	 * for MSDOS et.al. a backslash is part of a file name.
+	 * Only skip ", space and tab.
+	 */
+	if (rem_backslash(str))
+	{
+	    *p++ = *str++;
+	    *p++ = *str;
+	}
+	else
+	{
+	    /* An item ends at a space not in quotes or backticks */
+	    if (!inquote && !inbacktick && vim_isspace(*str))
+		break;
+	    if (!inquote && *str == '`')
+		inbacktick ^= TRUE;
+	    if (!inbacktick && *str == '"')
+		inquote ^= TRUE;
+	    else
+		*p++ = *str;
+	}
+    }
+    str = skipwhite(str);
+    *p = NUL;
+
+    return str;
+}
+
 static int do_arglist __ARGS((char_u *str, int what, int after));
 static void alist_check_arg_idx __ARGS((void));
 #ifdef FEAT_LISTCMDS
@@ -845,6 +1044,18 @@ static int alist_add_list __ARGS((int count, char_u **files, int after));
 #define AL_SET	1
 #define AL_ADD	2
 #define AL_DEL	3
+
+#if defined(FEAT_GUI) || defined(FEAT_CLIENTSERVER) || defined(PROTO)
+/*
+ * Redefine the argument list.
+ */
+    void
+set_arglist(str)
+    char_u	*str;
+{
+    do_arglist(str, AL_SET, 0);
+}
+#endif
 
 /*
  * "what" == AL_SET: Redefine the argument list to 'str'.
@@ -863,11 +1074,9 @@ do_arglist(str, what, after)
     garray_T	new_ga;
     int		exp_count;
     char_u	**exp_files;
-    char_u	*p;
-    int		inquote;
-    int		inbacktick;
     int		i;
 #ifdef FEAT_LISTCMDS
+    char_u	*p;
     int		match;
 #endif
 
@@ -885,38 +1094,8 @@ do_arglist(str, what, after)
 	((char_u **)new_ga.ga_data)[new_ga.ga_len++] = str;
 	--new_ga.ga_room;
 
-	/*
-	 * Isolate one argument, taking quotes and backticks.
-	 * Quotes are removed, backticks remain.
-	 */
-	inquote = FALSE;
-	inbacktick = FALSE;
-	for (p = str; *str; ++str)
-	{
-	    /*
-	     * for MSDOS et.al. a backslash is part of a file name.
-	     * Only skip ", space and tab.
-	     */
-	    if (rem_backslash(str))
-	    {
-		*p++ = *str++;
-		*p++ = *str;
-	    }
-	    else
-	    {
-		/* An item ends at a space not in quotes or backticks */
-		if (!inquote && !inbacktick && vim_isspace(*str))
-		    break;
-		if (!inquote && *str == '`')
-		    inbacktick ^= TRUE;
-		if (!inbacktick && *str == '"')
-		    inquote ^= TRUE;
-		else
-		    *p++ = *str;
-	    }
-	}
-	str = skipwhite(str);
-	*p = NUL;
+	/* Isolate one argument, change it in-place, put a NUL after it. */
+	str = do_one_arg(str);
     }
 
 #ifdef FEAT_LISTCMDS
@@ -940,7 +1119,7 @@ do_arglist(str, what, after)
 	    p = file_pat_to_reg_pat(p, NULL, NULL, FALSE);
 	    if (p == NULL)
 		break;
-	    regmatch.regprog = vim_regcomp(p, (int)p_magic);
+	    regmatch.regprog = vim_regcomp(p, p_magic ? RE_MAGIC : 0);
 	    if (regmatch.regprog == NULL)
 	    {
 		vim_free(p);
@@ -1223,6 +1402,9 @@ do_argfile(eap, argn)
 	{
 	    if (win_split(0, 0) == FAIL)
 		return;
+# ifdef FEAT_SCROLLBIND
+	    curwin->w_p_scb = FALSE;
+# endif
 	}
 	else
 #endif
@@ -1258,7 +1440,8 @@ do_argfile(eap, argn)
 					   (eap->forceit ? ECMD_FORCEIT : 0));
 
 	/* like Vi: set the mark where the cursor is in the file. */
-	setmark('\'');
+	if (eap->cmdidx != CMD_argdo)
+	    setmark('\'');
     }
 }
 
@@ -1396,6 +1579,7 @@ ex_listdo(eap)
     win_T	*win;
 #endif
     buf_T	*buf;
+    int		next_fnum = 0;
 #if defined(FEAT_AUTOCMD) && defined(FEAT_SYN_HL)
     char_u	*save_ei = vim_strsave(p_ei);
     char_u	*new_ei;
@@ -1428,8 +1612,13 @@ ex_listdo(eap)
 #ifdef FEAT_WINDOWS
 	win = firstwin;
 #endif
+	/* set pcmark now */
 	if (eap->cmdidx == CMD_bufdo)
 	    goto_buffer(eap, DOBUF_FIRST, FORWARD, 0);
+	else
+	    setpcmark();
+	listcmd_busy = TRUE;	    /* avoids setting pcmark below */
+
 	while (!got_int)
 	{
 	    if (eap->cmdidx == CMD_argdo)
@@ -1437,7 +1626,10 @@ ex_listdo(eap)
 		/* go to argument "i" */
 		if (i == ARGCOUNT)
 		    break;
-		do_argfile(eap, i);
+		/* Don't call do_argfile() when already there, it will try
+		 * reloading the file. */
+		if (curwin->w_arg_idx != i)
+		    do_argfile(eap, i);
 		if (curwin->w_arg_idx != i)
 		    break;
 		++i;
@@ -1452,24 +1644,37 @@ ex_listdo(eap)
 		win = win->w_next;
 	    }
 #endif
+	    else if (eap->cmdidx == CMD_bufdo)
+	    {
+		/* Remember the number of the next listed buffer, in case
+		 * ":bwipe" is used or autocommands do something strange. */
+		next_fnum = -1;
+		for (buf = curbuf->b_next; buf != NULL; buf = buf->b_next)
+		    if (buf->b_p_bl)
+		    {
+			next_fnum = buf->b_fnum;
+			break;
+		    }
+	    }
 
 	    /* execute the command */
-	    listcmd_busy = TRUE;
 	    do_cmdline(eap->arg, eap->getline, eap->cookie,
 						DOCMD_VERBOSE + DOCMD_NOWAIT);
-	    listcmd_busy = FALSE;
 
 	    if (eap->cmdidx == CMD_bufdo)
 	    {
-		/* Go to the next listed buffer.  Check that we really get
-		 * there (no autocommands confused us). */
-		for (buf = curbuf->b_next; buf != NULL; buf = buf->b_next)
-		    if (buf->b_p_bl)
+		/* Done? */
+		if (next_fnum < 0)
+		    break;
+		/* Check if the buffer still exists. */
+		for (buf = firstbuf; buf != NULL; buf = buf->b_next)
+		    if (buf->b_fnum == next_fnum)
 			break;
 		if (buf == NULL)
 		    break;
-		goto_buffer(eap, DOBUF_CURRENT, FORWARD, 1);
-		if (curbuf != buf)
+		goto_buffer(eap, DOBUF_FIRST, FORWARD, next_fnum);
+		/* If autocommands took us elsewhere, quit here */
+		if (curbuf->b_fnum != next_fnum)
 		    break;
 	    }
 
@@ -1482,7 +1687,9 @@ ex_listdo(eap)
 	    }
 #endif
 	}
+	listcmd_busy = FALSE;
     }
+
 #if defined(FEAT_AUTOCMD) && defined(FEAT_SYN_HL)
     if (new_ei != NULL)
     {
@@ -1653,12 +1860,9 @@ do_in_runtimepath(name, all, callback)
 								       "\t ");
 
 		    if (p_verbose > 2)
-			smsg((char_u *)_("Searching for \"%s\""), (char *)buf);
-		    /* Expand wildcards and source each match. */
-#ifdef VMS
-		    strcpy((char *)buf, vms_fixfilename(buf));
-#endif
+			msg_str((char_u *)_("Searching for \"%s\""), buf);
 
+		    /* Expand wildcards and source each match. */
 		    if (gen_expand_wildcards(1, &buf, &num_files, &files,
 							       EW_FILE) == OK)
 		    {
@@ -1677,7 +1881,7 @@ do_in_runtimepath(name, all, callback)
 	vim_free(buf);
     }
     if (p_verbose > 0 && !did_one)
-	smsg((char_u *)_("not found in 'runtimepath': \"%s\""), name);
+	msg_str((char_u *)_("not found in 'runtimepath': \"%s\""), name);
 
 #ifdef AMIGA
     proc->pr_WindowPtr = save_winptr;
@@ -1773,18 +1977,43 @@ struct source_cookie
     linenr_T	breakpoint;	/* next line with breakpoint or zero */
     char_u	*fname;		/* name of sourced file */
     int		dbg_tick;	/* debug_tick when breakpoint was set */
+    int		level;		/* top nesting level of sourced file */
 #endif
 #ifdef FEAT_MBYTE
     vimconv_T	conv;		/* type of conversion */
 #endif
 };
 
+#ifdef FEAT_EVAL
+/*
+ * Return the nesting level for a source cookie.
+ */
+    int
+source_level(cookie)
+    void *cookie;
+{
+    return ((struct source_cookie *)cookie)->level;
+}
+#endif
+
 static char_u *get_one_sourceline __ARGS((struct source_cookie *sp));
 
 #ifdef FEAT_EVAL
-/* Growarray to store the names of sourced scripts. */
-static garray_T script_names = {0, 0, sizeof(char_u *), 4, NULL};
-#define SCRIPT_NAME(id) (((char_u **)script_names.ga_data)[(id) - 1])
+/* Growarray to store the names of sourced scripts.
+ * For Unix also store the dev/ino, so that we don't have to stat() each
+ * script when going through the list. */
+struct scriptstuff
+{
+    char_u	*name;
+# ifdef UNIX
+    int		dev;
+    ino_t	ino;
+# endif
+};
+static garray_T script_names = {0, 0, sizeof(struct scriptstuff), 4, NULL};
+#define SCRIPT_NAME(id) (((struct scriptstuff *)script_names.ga_data)[(id) - 1].name)
+#define SCRIPT_DEV(id) (((struct scriptstuff *)script_names.ga_data)[(id) - 1].dev)
+#define SCRIPT_INO(id) (((struct scriptstuff *)script_names.ga_data)[(id) - 1].ino)
 #endif
 
 /*
@@ -1811,6 +2040,10 @@ do_source(fname, check_other, is_vimrc)
     static scid_T	    last_current_SID = 0;
     void		    *save_funccalp;
     int			    save_debug_break_level = debug_break_level;
+# ifdef UNIX
+    struct stat		    st;
+    int			    stat_ok;
+# endif
 #endif
 #ifdef STARTUPTIME
     struct timeval	    tv_rel;
@@ -1818,18 +2051,22 @@ do_source(fname, check_other, is_vimrc)
 #endif
 
 #ifdef RISCOS
-    fname_exp = mch_munge_fname(fname);
+    p = mch_munge_fname(fname);
 #else
-    fname_exp = expand_env_save(fname);
+    p = expand_env_save(fname);
 #endif
+    if (p == NULL)
+	return retval;
+    fname_exp = fix_fname(p);
+    vim_free(p);
     if (fname_exp == NULL)
-	goto theend;
+	return retval;
 #ifdef MACOS_CLASSIC
     slash_n_colon_adjust(fname_exp);
 #endif
     if (mch_isdir(fname_exp))
     {
-	smsg((char_u *)_("Cannot source a directory: \"%s\""), fname);
+	msg_str((char_u *)_("Cannot source a directory: \"%s\""), fname);
 	goto theend;
     }
 
@@ -1859,7 +2096,7 @@ do_source(fname, check_other, is_vimrc)
 	if (p_verbose > 0)
 	{
 	    if (sourcing_name == NULL)
-		smsg((char_u *)_("could not source \"%s\""), fname);
+		msg_str((char_u *)_("could not source \"%s\""), fname);
 	    else
 		smsg((char_u *)_("line %ld: could not source \"%s\""),
 			sourcing_lnum, fname);
@@ -1875,7 +2112,7 @@ do_source(fname, check_other, is_vimrc)
     if (p_verbose > 1)
     {
 	if (sourcing_name == NULL)
-	    smsg((char_u *)_("sourcing \"%s\""), fname);
+	    msg_str((char_u *)_("sourcing \"%s\""), fname);
 	else
 	    smsg((char_u *)_("line %ld: sourcing \"%s\""),
 		    sourcing_lnum, fname);
@@ -1911,12 +2148,11 @@ do_source(fname, check_other, is_vimrc)
     cookie.breakpoint = dbg_find_breakpoint(TRUE, fname_exp, (linenr_T)0);
     cookie.fname = fname_exp;
     cookie.dbg_tick = debug_tick;
+
+    cookie.level = ex_nesting_level;
 #endif
 #ifdef FEAT_MBYTE
     cookie.conv.vc_type = CONV_NONE;		/* no conversion */
-# ifdef USE_ICONV
-    cookie.conv.vc_fd = (iconv_t)-1;
-# endif
 #endif
 
     /*
@@ -1937,9 +2173,20 @@ do_source(fname, check_other, is_vimrc)
      * If it's new, generate a new SID.
      */
     save_current_SID = current_SID;
+# ifdef UNIX
+    stat_ok = (mch_stat((char *)fname_exp, &st) >= 0);
+# endif
     for (current_SID = script_names.ga_len; current_SID > 0; --current_SID)
 	if (SCRIPT_NAME(current_SID) != NULL
-		&& fnamecmp(SCRIPT_NAME(current_SID), fname_exp) == 0)
+		&& (
+# ifdef UNIX
+		    /* compare dev/ino when possible, it catches symbolic
+		     * links */
+		    (stat_ok && SCRIPT_DEV(current_SID) != -1)
+			? (SCRIPT_DEV(current_SID) == st.st_dev
+			    && SCRIPT_INO(current_SID) == st.st_ino) :
+# endif
+		fnamecmp(SCRIPT_NAME(current_SID), fname_exp) == 0))
 	    break;
     if (current_SID == 0)
     {
@@ -1954,6 +2201,15 @@ do_source(fname, check_other, is_vimrc)
 		--script_names.ga_room;
 	    }
 	    SCRIPT_NAME(current_SID) = fname_exp;
+# ifdef UNIX
+	    if (stat_ok)
+	    {
+		SCRIPT_DEV(current_SID) = st.st_dev;
+		SCRIPT_INO(current_SID) = st.st_ino;
+	    }
+	    else
+		SCRIPT_DEV(current_SID) = -1;
+# endif
 	    fname_exp = NULL;
 	}
 	/* Allocate the local script variables to use for this script. */
@@ -1983,12 +2239,16 @@ do_source(fname, check_other, is_vimrc)
 #endif
     if (p_verbose > 1)
     {
-	smsg((char_u *)_("finished sourcing %s"), fname);
+	msg_str((char_u *)_("finished sourcing %s"), fname);
 	if (sourcing_name != NULL)
-	    smsg((char_u *)_("continuing in %s"), sourcing_name);
+	    msg_str((char_u *)_("continuing in %s"), sourcing_name);
     }
 #ifdef STARTUPTIME
+# ifdef HAVE_SNPRINTF
+    snprintf(IObuff, IOSIZE, "sourcing %s", fname);
+# else
     sprintf(IObuff, "sourcing %s", fname);
+# endif
     time_msg(IObuff, &tv_start);
     time_pop(&tv_rel);
 #endif
@@ -1998,8 +2258,8 @@ do_source(fname, check_other, is_vimrc)
      * After a "finish" in debug mode, need to break at first command of next
      * sourced file.
      */
-    if (save_debug_break_level > debug_level
-	    && debug_break_level == debug_level)
+    if (save_debug_break_level > ex_nesting_level
+	    && debug_break_level == ex_nesting_level)
 	++debug_break_level;
 #endif
 
@@ -2024,6 +2284,21 @@ ex_scriptnames(eap)
 	    smsg((char_u *)"%3d: %s", i, SCRIPT_NAME(i));
 }
 
+# if defined(BACKSLASH_IN_FILENAME) || defined(PROTO)
+/*
+ * Fix slashes in the list of script names for 'shellslash'.
+ */
+    void
+scriptnames_slash_adjust()
+{
+    int i;
+
+    for (i = 1; i <= script_names.ga_len; ++i)
+	if (SCRIPT_NAME(i) != NULL)
+	    slash_adjust(SCRIPT_NAME(i));
+}
+# endif
+
 /*
  * Get a pointer to a script name.  Used for ":verbose set".
  */
@@ -2038,9 +2313,28 @@ get_scriptname(id)
 #endif
 
 #if defined(USE_CR) || defined(PROTO)
+
+# if defined(__MSL__) && (__MSL__ >= 22)
+/*
+ * Newer version of the Metrowerks library handle DOS and UNIX files
+ * without help.
+ * Test with earlier versions, MSL 2.2 is the library supplied with
+ * Codewarrior Pro 2.
+ */
+    char *
+fgets_cr(s, n, stream)
+    char	*s;
+    int		n;
+    FILE	*stream;
+{
+    return fgets(s, n, stream);
+}
+# else
 /*
  * Version of fgets() which also works for lines ending in a <CR> only
  * (Macintosh format).
+ * For older versions of the Metrowerks library.
+ * At least CodeWarrior 9 needed this code.
  */
     char *
 fgets_cr(s, n, stream)
@@ -2074,6 +2368,7 @@ fgets_cr(s, n, stream)
 
     return s;
 }
+# endif
 #endif
 
 /*
@@ -2202,14 +2497,12 @@ get_one_sourceline(sp)
 #ifdef USE_CR
 	if (sp->fileformat == EOL_MAC)
 	{
-	    if (fgets_cr((char *)buf + ga.ga_len, ga.ga_room, sp->fp) == NULL
-		    || got_int)
+	    if (fgets_cr((char *)buf + ga.ga_len, ga.ga_room, sp->fp) == NULL)
 		break;
 	}
 	else
 #endif
-	    if (fgets((char *)buf + ga.ga_len, ga.ga_room, sp->fp) == NULL
-		    || got_int)
+	    if (fgets((char *)buf + ga.ga_len, ga.ga_room, sp->fp) == NULL)
 		break;
 	len = (int)STRLEN(buf);
 #ifdef USE_CRNL
@@ -2364,10 +2657,42 @@ ex_finish(eap)
     exarg_T	*eap;
 {
     if (eap->getline == getsourceline)
-	((struct source_cookie *)eap->cookie)->finished = TRUE;
+	do_finish(eap, FALSE);
     else
 	EMSG(_("E168: :finish used outside of a sourced file"));
 }
+
+/*
+ * Mark a sourced file as finished.  Possibly makes the ":finish" pending.
+ * Also called for a pending finish at the ":endtry" or after returning from
+ * an extra do_cmdline().  "reanimate" is used in the latter case.
+ */
+    void
+do_finish(eap, reanimate)
+    exarg_T	*eap;
+    int		reanimate;
+{
+    int		idx;
+
+    if (reanimate)
+	((struct source_cookie *)eap->cookie)->finished = FALSE;
+
+    /*
+     * Cleanup (and inactivate) conditionals, but stop when a try conditional
+     * not in its finally clause (which then is to be executed next) is found.
+     * In this case, make the ":finish" pending for execution at the ":endtry".
+     * Otherwise, finish normally.
+     */
+    idx = cleanup_conditionals(eap->cstack, 0, TRUE);
+    if (idx >= 0)
+    {
+	eap->cstack->cs_pending[idx] = CSTP_FINISH;
+	report_make_pending(CSTP_FINISH, NULL);
+    }
+    else
+	((struct source_cookie *)eap->cookie)->finished = TRUE;
+}
+
 
 /*
  * Return TRUE when a sourced file had the ":finish" command: Don't give error
@@ -2469,23 +2794,23 @@ ex_checktime(eap)
 #ifdef FEAT_SYN_HL
 static const long_u  cterm_color_8[8] =
 {
-    (long_u)0x000000, (long_u)0xff0000, (long_u)0x00ff00, (long_u)0xffff00,
-    (long_u)0x0000ff, (long_u)0xff00ff, (long_u)0x00ffff, (long_u)0xffffff
+    (long_u)0x000000L, (long_u)0xff0000L, (long_u)0x00ff00L, (long_u)0xffff00L,
+    (long_u)0x0000ffL, (long_u)0xff00ffL, (long_u)0x00ffffL, (long_u)0xffffffL
 };
 
 static const long_u  cterm_color_16[16] =
 {
-    (long_u)0x000000, (long_u)0x0000c0, (long_u)0x008000, (long_u)0x004080,
-    (long_u)0xc00000, (long_u)0xc000c0, (long_u)0x808000, (long_u)0xc0c0c0,
-    (long_u)0x808080, (long_u)0x6060ff, (long_u)0x00ff00, (long_u)0x00ffff,
-    (long_u)0xff8080, (long_u)0xff40ff, (long_u)0xffff00, (long_u)0xffffff
+    (long_u)0x000000L, (long_u)0x0000c0L, (long_u)0x008000L, (long_u)0x004080L,
+    (long_u)0xc00000L, (long_u)0xc000c0L, (long_u)0x808000L, (long_u)0xc0c0c0L,
+    (long_u)0x808080L, (long_u)0x6060ffL, (long_u)0x00ff00L, (long_u)0x00ffffL,
+    (long_u)0xff8080L, (long_u)0xff40ffL, (long_u)0xffff00L, (long_u)0xffffffL
 };
 
 static int		current_syn_id;
 #endif
 
-#define COLOR_BLACK	(long_u)0
-#define COLOR_WHITE	(long_u)0xFFFFFF
+#define PRCOLOR_BLACK	(long_u)0
+#define PRCOLOR_WHITE	(long_u)0xFFFFFFL
 
 static int	curr_italic;
 static int	curr_bold;
@@ -2504,10 +2829,13 @@ typedef struct
     colnr_T	column;		    /* byte column */
     linenr_T	file_line;	    /* line nr in the buffer */
     long_u	bytes_printed;	    /* bytes printed so far */
+    int		ff;		    /* seen form feed character */
 } prt_pos_T;
 
+#ifdef FEAT_SYN_HL
 static long_u darken_rgb __ARGS((long_u rgb));
 static long_u prt_get_term_color __ARGS((int colorindex));
+#endif
 static void prt_set_fg __ARGS((long_u fg));
 static void prt_set_bg __ARGS((long_u bg));
 static void prt_set_font __ARGS((int bold, int italic, int underline));
@@ -2515,7 +2843,9 @@ static void prt_line_number __ARGS((prt_settings_T *psettings, int page_line, li
 static void prt_header __ARGS((prt_settings_T *psettings, int pagenum, linenr_T lnum));
 static void prt_message __ARGS((char_u *s));
 static colnr_T hardcopy_line __ARGS((prt_settings_T *psettings, int page_line, prt_pos_T *ppos));
+static void prt_get_attr __ARGS((int hl_id, prt_text_attr_T* pattr, int modec));
 
+#ifdef FEAT_SYN_HL
 /*
  * If using a dark background, the colors will probably be too bright to show
  * up well on white paper, so reduce their brightness.
@@ -2538,6 +2868,57 @@ prt_get_term_color(colorindex)
 	return cterm_color_16[colorindex % 16];
     return cterm_color_8[colorindex % 8];
 }
+
+    static void
+prt_get_attr(hl_id, pattr, modec)
+    int			hl_id;
+    prt_text_attr_T*	pattr;
+    int			modec;
+{
+    int     colorindex;
+    long_u  fg_color;
+    long_u  bg_color;
+    char    *color;
+
+    pattr->bold = (highlight_has_attr(hl_id, HL_BOLD, modec) != NULL);
+    pattr->italic = (highlight_has_attr(hl_id, HL_ITALIC, modec) != NULL);
+    pattr->underline = (highlight_has_attr(hl_id, HL_UNDERLINE, modec) != NULL);
+
+# ifdef FEAT_GUI
+    if (gui.in_use)
+    {
+	bg_color = highlight_gui_color_rgb(hl_id, FALSE);
+	if (bg_color == PRCOLOR_BLACK)
+	    bg_color = PRCOLOR_WHITE;
+
+	fg_color = highlight_gui_color_rgb(hl_id, TRUE);
+    }
+    else
+# endif
+    {
+	bg_color = PRCOLOR_WHITE;
+
+	color = (char *)highlight_color(hl_id, (char_u *)"fg", modec);
+	if (color == NULL)
+	    colorindex = 0;
+	else
+	    colorindex = atoi(color);
+
+	if (colorindex >= 0 && colorindex < t_colors)
+	    fg_color = prt_get_term_color(colorindex);
+	else
+	    fg_color = PRCOLOR_BLACK;
+    }
+
+    if (fg_color == PRCOLOR_WHITE)
+	fg_color = PRCOLOR_BLACK;
+    else if (*p_bg == 'd')
+	fg_color = darken_rgb(fg_color);
+
+    pattr->fg_color = fg_color;
+    pattr->bg_color = bg_color;
+}
+#endif /* FEAT_SYN_HL */
 
     static void
 prt_set_fg(fg)
@@ -2590,12 +2971,9 @@ prt_line_number(psettings, page_line, lnum)
     int		i;
     char_u	tbuf[20];
 
-    if (psettings->has_color)
-	prt_set_fg((long_u)0x808080);
-    else
-	prt_set_fg(COLOR_BLACK);
-    prt_set_bg(COLOR_WHITE);
-    prt_set_font(FALSE, TRUE, FALSE);
+    prt_set_fg(psettings->number.fg_color);
+    prt_set_bg(psettings->number.bg_color);
+    prt_set_font(psettings->number.bold, psettings->number.italic, psettings->number.underline);
     mch_print_start_line(TRUE, page_line);
 
     /* Leave two spaces between the number and the text; depends on
@@ -2612,8 +2990,8 @@ prt_line_number(psettings, page_line, lnum)
 #endif
     {
 	/* Set colors and font back to normal. */
-	prt_set_fg(COLOR_BLACK);
-	prt_set_bg(COLOR_WHITE);
+	prt_set_fg(PRCOLOR_BLACK);
+	prt_set_bg(PRCOLOR_WHITE);
 	prt_set_font(FALSE, FALSE, FALSE);
     }
 }
@@ -2644,7 +3022,7 @@ prt_header_height()
 prt_use_number()
 {
     return (printer_opts[OPT_PRINT_NUMBER].present
-	    && TO_LOWER(printer_opts[OPT_PRINT_NUMBER].string[0]) == 'y');
+	    && TOLOWER_ASC(printer_opts[OPT_PRINT_NUMBER].string[0]) == 'y');
 }
 
 /*
@@ -2714,7 +3092,8 @@ prt_header(psettings, pagenum, lnum)
 	curwin->w_botline = lnum + 63;
 	printer_page_num = pagenum;
 
-	build_stl_str_hl(curwin, tbuf, p_header, ' ', width, NULL);
+	build_stl_str_hl(curwin, tbuf, (size_t)(width + IOSIZE),
+						  p_header, ' ', width, NULL);
 
 	/* Reset line numbers */
 	curwin->w_cursor.lnum = tmp_lnum;
@@ -2723,10 +3102,10 @@ prt_header(psettings, pagenum, lnum)
     }
     else
 #endif
-	sprintf((char *)tbuf, "Page %d", pagenum);
+	sprintf((char *)tbuf, _("Page %d"), pagenum);
 
-    prt_set_fg(COLOR_BLACK);
-    prt_set_bg(COLOR_WHITE);
+    prt_set_fg(PRCOLOR_BLACK);
+    prt_set_bg(PRCOLOR_WHITE);
     prt_set_font(TRUE, FALSE, FALSE);
 
     /* Use a negative line number to indicate printing in the top margin. */
@@ -2764,8 +3143,8 @@ prt_header(psettings, pagenum, lnum)
 #endif
     {
 	/* Set colors and font back to normal. */
-	prt_set_fg(COLOR_BLACK);
-	prt_set_bg(COLOR_WHITE);
+	prt_set_fg(PRCOLOR_BLACK);
+	prt_set_bg(PRCOLOR_WHITE);
 	prt_set_font(FALSE, FALSE, FALSE);
     }
 }
@@ -2792,13 +3171,25 @@ ex_hardcopy(eap)
     long_u		bytes_to_print = 0;
     int			page_line;
     int			jobsplit;
+    int			id;
 
     memset(&settings, 0, sizeof(prt_settings_T));
     settings.has_color = TRUE;
 
 # ifdef FEAT_POSTSCRIPT
     if (*eap->arg == '>')
+    {
+	char_u	*errormsg = NULL;
+
+	/* Expand things like "%.ps". */
+	if (expand_filename(eap, eap->cmdlinep, &errormsg) == FAIL)
+	{
+	    if (errormsg != NULL)
+		EMSG(errormsg);
+	    return;
+	}
 	settings.outfile = skipwhite(eap->arg + 1);
+    }
     else if (*eap->arg != NUL)
 	settings.arguments = eap->arg;
 # endif
@@ -2820,13 +3211,45 @@ ex_hardcopy(eap)
 	return;
 
 #ifdef FEAT_SYN_HL
-    if (printer_opts[OPT_PRINT_SYNTAX].present
-	    && TO_LOWER(printer_opts[OPT_PRINT_SYNTAX].string[0]) != 'a')
+# ifdef  FEAT_GUI
+    if (gui.in_use)
+	settings.modec = 'g';
+    else
+# endif
+	if (t_colors > 1)
+	    settings.modec = 'c';
+	else
+	    settings.modec = 't';
+
+    if (!syntax_present(curbuf))
+	settings.do_syntax = FALSE;
+    else if (printer_opts[OPT_PRINT_SYNTAX].present
+	    && TOLOWER_ASC(printer_opts[OPT_PRINT_SYNTAX].string[0]) != 'a')
 	settings.do_syntax =
-		  (TO_LOWER(printer_opts[OPT_PRINT_SYNTAX].string[0]) == 'y');
+	       (TOLOWER_ASC(printer_opts[OPT_PRINT_SYNTAX].string[0]) == 'y');
     else
 	settings.do_syntax = settings.has_color;
 #endif
+
+    /* Set up printing attributes for line numbers */
+    settings.number.fg_color = PRCOLOR_BLACK;
+    settings.number.bg_color = PRCOLOR_WHITE;
+    settings.number.bold = FALSE;
+    settings.number.italic = TRUE;
+    settings.number.underline = FALSE;
+#ifdef FEAT_SYN_HL
+    /*
+     * Syntax highlighting of line numbers.
+     */
+    if (prt_use_number() && settings.do_syntax)
+    {
+	id = syn_name2id((char_u *)"LineNr");
+	if (id > 0)
+	    id = syn_get_final_id(id);
+
+	prt_get_attr(id, &settings.number, settings.modec);
+    }
+#endif /* FEAT_SYN_HL */
 
     /*
      * Estimate the total lines to be printed
@@ -2840,21 +3263,21 @@ ex_hardcopy(eap)
     }
 
     /* Set colors and font to normal. */
-    curr_bg = (long_u)0xffffffff;
-    curr_fg = (long_u)0xffffffff;
+    curr_bg = (long_u)0xffffffffL;
+    curr_fg = (long_u)0xffffffffL;
     curr_italic = MAYBE;
     curr_bold = MAYBE;
     curr_underline = MAYBE;
 
-    prt_set_fg(COLOR_BLACK);
-    prt_set_bg(COLOR_WHITE);
+    prt_set_fg(PRCOLOR_BLACK);
+    prt_set_bg(PRCOLOR_WHITE);
     prt_set_font(FALSE, FALSE, FALSE);
 #ifdef FEAT_SYN_HL
     current_syn_id = -1;
 #endif
 
     jobsplit = (printer_opts[OPT_PRINT_JOBSPLIT].present
-	      && TO_LOWER(printer_opts[OPT_PRINT_JOBSPLIT].string[0]) == 'y');
+	   && TOLOWER_ASC(printer_opts[OPT_PRINT_JOBSPLIT].string[0]) == 'y');
 
     if (!mch_print_begin(&settings))
 	goto print_fail_no_begin;
@@ -2938,7 +3361,7 @@ ex_hardcopy(eap)
 								  ++page_line)
 		    {
 			prtpos.column = hardcopy_line(&settings,
-							  page_line, &prtpos);
+							   page_line, &prtpos);
 			if (prtpos.column == 0)
 			{
 			    /* finished a file line */
@@ -2946,6 +3369,12 @@ ex_hardcopy(eap)
 				  STRLEN(skipwhite(ml_get(prtpos.file_line)));
 			    if (++prtpos.file_line > eap->line2)
 				break; /* reached the end */
+			}
+			else if (prtpos.ff)
+			{
+			    /* Line had a formfeed in it - start new page but
+			     * stay on the current line */
+			    break;
 			}
 		    }
 
@@ -3004,20 +3433,20 @@ hardcopy_line(psettings, page_line, ppos)
     char_u	*line;
     int		need_break = FALSE;
     int		outputlen;
-    int		colorindex;
-    char	*color;
-    int		id;
     int		tab_spaces;
     long_u	print_pos;
-    long_u	this_color;
 #ifdef FEAT_SYN_HL
-    char	modec;
+    prt_text_attr_T attr;
+    int		id;
 #endif
 
-    if (ppos->column == 0)
+    if (ppos->column == 0 || ppos->ff)
     {
 	print_pos = 0;
 	tab_spaces = 0;
+	if (!ppos->ff && prt_use_number())
+	    prt_line_number(psettings, page_line, ppos->file_line);
+	ppos->ff = FALSE;
     }
     else
     {
@@ -3025,21 +3454,6 @@ hardcopy_line(psettings, page_line, ppos)
 	print_pos = ppos->print_pos;
 	tab_spaces = ppos->lead_spaces;
     }
-
-#ifdef FEAT_SYN_HL
-# ifdef  FEAT_GUI
-    if (gui.in_use)
-	modec = 'g';
-    else
-# endif
-	if (t_colors > 1)
-	    modec = 'c';
-	else
-	    modec = 't';
-#endif
-
-    if (prt_use_number() && ppos->column == 0)
-	prt_line_number(psettings, page_line, ppos->file_line);
 
     mch_print_start_line(0, page_line);
     line = ml_get(ppos->file_line);
@@ -3071,47 +3485,10 @@ hardcopy_line(psettings, page_line, ppos)
 	    if (id != current_syn_id)
 	    {
 		current_syn_id = id;
-
-		prt_set_font((highlight_has_attr(id, HL_BOLD, modec) != NULL),
-			(highlight_has_attr(id, HL_ITALIC, modec) != NULL),
-			(highlight_has_attr(id, HL_UNDERLINE, modec) != NULL));
-
-# ifdef FEAT_GUI
-		if (gui.in_use)
-		{
-		    this_color = highlight_gui_color_rgb(id, FALSE);
-		    if (this_color == COLOR_BLACK)
-			this_color = COLOR_WHITE;
-		    prt_set_bg(this_color);
-
-		    this_color = highlight_gui_color_rgb(id, TRUE);
-		    if (this_color == COLOR_WHITE)
-			this_color = COLOR_BLACK;
-		    else if (*p_bg == 'd')
-			this_color = darken_rgb(this_color);
-		    prt_set_fg(this_color);
-		}
-		else
-# endif
-		{
-		    color = (char *)highlight_color(id, (char_u *)"fg", modec);
-		    if (color == NULL)
-			colorindex = 0;
-		    else
-			colorindex = atoi(color);
-
-		    if (colorindex >= 0 && colorindex < t_colors)
-		    {
-			this_color = prt_get_term_color(colorindex);
-			if (this_color == COLOR_WHITE)
-			    this_color = COLOR_BLACK;
-			else if (*p_bg == 'd')
-			    this_color = darken_rgb(this_color);
-			prt_set_fg(this_color);
-		    }
-		    else
-			prt_set_fg(COLOR_BLACK);
-		}
+		prt_get_attr(id, &attr, psettings->modec);
+		prt_set_font(attr.bold, attr.italic, attr.underline);
+		prt_set_fg(attr.fg_color);
+		prt_set_bg(attr.bg_color);
 	    }
 	}
 #endif /* FEAT_SYN_HL */
@@ -3136,6 +3513,14 @@ hardcopy_line(psettings, page_line, ppos)
 	    if (need_break && tab_spaces > 0)
 		break;
 	}
+	else if (line[col] == FF
+		&& printer_opts[OPT_PRINT_FORMFEED].present
+		&& TOLOWER_ASC(printer_opts[OPT_PRINT_FORMFEED].string[0])
+								       == 'y')
+	{
+	    ppos->ff = TRUE;
+	    need_break = 1;
+	}
 	else
 	{
 	    need_break = mch_print_text_out(line + col, outputlen);
@@ -3153,10 +3538,13 @@ hardcopy_line(psettings, page_line, ppos)
 
     /*
      * Start next line of file if we clip lines, or have reached end of the
-     * line.
+     * line, unless we are doing a formfeed.
      */
-    if (line[col] == NUL || (printer_opts[OPT_PRINT_WRAP].present
-		  && TO_LOWER(printer_opts[OPT_PRINT_WRAP].string[0]) == 'n'))
+    if (!ppos->ff
+	    && (line[col] == NUL
+		|| (printer_opts[OPT_PRINT_WRAP].present
+		    && TOLOWER_ASC(printer_opts[OPT_PRINT_WRAP].string[0])
+								     == 'n')))
 	return 0;
     return col;
 }
@@ -3241,30 +3629,45 @@ static struct prt_ps_font_S prt_ps_font =
     {"Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique"}
 };
 
-#define PRT_RESOURCE_PROLOG		"VIM-Prolog 1.2 0"
+struct prt_ps_resource_S
+{
+    char_u  name[64];
+    char_u  filename[MAXPATHL + 1];
+    int     type;
+    char_u  title[256];
+    char_u  version[256];
+};
 
-#if defined(WIN32)
-#define PRT_RESOURCE_ENCODING		"VIM-Encoding-Windows 1.0 0"
-#define PRT_RESOURCE_ENCODING_FILE	"evwin.ps"
-#else /* !WIN32 */
-#if defined(MACOS)
-#define PRT_RESOURCE_ENCODING		"VIM-Encoding-Macintosh 1.0 0"
-#define PRT_RESOURCE_ENCODING_FILE	"evmac.ps"
-#else /* !MACOS */
-#if defined(VMS)
-#define PRT_RESOURCE_ENCODING		"VIM-Encoding-VMS 1.0 0"
-#define PRT_RESOURCE_ENCODING_FILE	"evvms.ps"
-#else /* !VMS */
-#if defined(EBCDIC)
-#define PRT_RESOURCE_ENCODING		"VIM-Encoding-EBCDIC 1.0 0"
-#define PRT_RESOURCE_ENCODING_FILE	"evebcdic.ps"
-#else /* !EBCDIC */
-#define PRT_RESOURCE_ENCODING		"VIM-Encoding-ISOLatin1 1.0 0"
-#define PRT_RESOURCE_ENCODING_FILE	"eviso.ps"
-#endif /* !EBCDIC */
-#endif /* !VMS */
-#endif /* !MACOS */
-#endif /* !WIN32 */
+/* Types of PS resource file currently used */
+#define PRT_RESOURCE_TYPE_PROCSET   (0)
+#define PRT_RESOURCE_TYPE_ENCODING  (1)
+
+/* The PS prolog file version number has to match - if the prolog file is
+ * updated, increment the number in the file and here.  Version checking was
+ * added as of VIM 6.2.
+ * Table of VIM and prolog versions:
+ *
+ * VIM      Prolog
+ * 6.2      1.3
+ */
+#define PRT_PROLOG_VERSION  ((char_u *)"1.3")
+
+/* String versions of PS resource types - indexed by constants above so don't
+ * re-order!
+ */
+static char *resource_types[] =
+{
+    "procset",
+    "encoding"
+};
+
+/* Strings to look for in a PS resource file */
+#define PRT_RESOURCE_HEADER	    "%!PS-Adobe-"
+#define PRT_RESOURCE_RESOURCE	    "Resource-"
+#define PRT_RESOURCE_PROCSET	    "ProcSet"
+#define PRT_RESOURCE_ENCODING	    "Encoding"
+#define PRT_RESOURCE_TITLE	    "%%Title:"
+#define PRT_RESOURCE_VERSION	    "%%Version:"
 
 static void prt_write_file_raw_len __ARGS((char_u *buffer, int bytes));
 static void prt_write_file __ARGS((char_u *buffer));
@@ -3272,11 +3675,15 @@ static void prt_write_file_len __ARGS((char_u *buffer, int bytes));
 static void prt_write_string __ARGS((char *s));
 static void prt_write_int __ARGS((int i));
 static void prt_write_boolean __ARGS((int b));
-static void prt_def_font __ARGS((char *new_name, int height, char *font));
+static void prt_def_font __ARGS((char *new_name, char *encoding, int height, char *font));
 static void prt_real_bits __ARGS((double real, int precision, int *pinteger, int *pfraction));
 static void prt_write_real __ARGS((double val, int prec));
 static void prt_def_var __ARGS((char *name, double value, int prec));
 static void prt_flush_buffer __ARGS((void));
+static void prt_resource_name __ARGS((char_u *filename));
+static int prt_find_resource __ARGS((char *name, struct prt_ps_resource_S *resource));
+static int prt_open_resource __ARGS((struct prt_ps_resource_S *resource));
+static int prt_check_resource __ARGS((struct prt_ps_resource_S *resource, char_u *version));
 static void prt_dsc_start __ARGS((void));
 static void prt_dsc_noarg __ARGS((char *comment));
 static void prt_dsc_textline __ARGS((char *comment, char *text));
@@ -3290,7 +3697,7 @@ static void prt_page_margins __ARGS((double width, double height, double *left, 
 static void prt_font_metrics __ARGS((int font_scale));
 static int prt_get_cpl __ARGS((void));
 static int prt_get_lpp __ARGS((void));
-static int prt_add_resource __ARGS((char *type, char *name, char *file));
+static int prt_add_resource __ARGS((struct prt_ps_resource_S *resource));
 
 /*
  * Variables for the output PostScript file.
@@ -3354,6 +3761,10 @@ static int prt_collate;
 static char_u prt_line_buffer[257];
 static garray_T prt_ps_buffer;
 
+# ifdef FEAT_MBYTE
+static int prt_do_conv;
+static vimconv_T prt_conv;
+# endif
 
     static void
 prt_write_file_raw_len(buffer, bytes)
@@ -3424,12 +3835,13 @@ prt_write_boolean(b)
  * Write a line to define the font.
  */
     static void
-prt_def_font(new_name, height, font)
+prt_def_font(new_name, encoding, height, font)
     char	*new_name;
+    char	*encoding;
     int		height;
     char	*font;
 {
-    sprintf((char *)prt_line_buffer, "/_%s EV /%s ref\n", new_name, font);
+    sprintf((char *)prt_line_buffer, "/_%s /VIM-%s /%s ref\n", new_name, encoding, font);
     prt_write_file(prt_line_buffer);
     sprintf((char *)prt_line_buffer, "/%s %d /_%s ffs\n",
 						    new_name, height, new_name);
@@ -3522,7 +3934,7 @@ prt_flush_buffer()
     if (prt_ps_buffer.ga_len > 0)
     {
 	/* Any background color must be drawn first */
-	if (prt_do_bgcol && (prt_new_bgcol != COLOR_WHITE))
+	if (prt_do_bgcol && (prt_new_bgcol != PRCOLOR_WHITE))
 	{
 	    int     r, g, b;
 
@@ -3586,6 +3998,185 @@ prt_flush_buffer()
 	ga_clear(&prt_ps_buffer);
 	ga_init2(&prt_ps_buffer, (int)sizeof(char), PRT_PS_DEFAULT_BUFFER_SIZE);
     }
+}
+
+static char_u *resource_filename;
+
+    static void
+prt_resource_name(filename)
+    char_u  *filename;
+{
+    if (STRLEN(filename) >= MAXPATHL)
+	*resource_filename = NUL;
+    else
+	STRCPY(resource_filename, filename);
+}
+
+    static int
+prt_find_resource(name, resource)
+    char	*name;
+    struct prt_ps_resource_S *resource;
+{
+    char_u	buffer[MAXPATHL + 1];
+
+    STRCPY(resource->name, name);
+    /* Look for named resource file in runtimepath */
+    STRCPY(buffer, "print");
+    add_pathsep(buffer);
+    STRCAT(buffer, name);
+    STRCAT(buffer, ".ps");
+    resource_filename = resource->filename;
+    *resource_filename = NUL;
+    return (do_in_runtimepath(buffer, FALSE, prt_resource_name)
+	    && resource->filename[0] != NUL);
+}
+
+/* PS CR and LF characters have platform independent values */
+#define PSLF  (0x0a)
+#define PSCR  (0x0d)
+
+/* Very simple hand crafted parser to get the type, title, and version number of
+ * a PS resource file so the file details can be added to the DSC header
+ * comments. */
+    static int
+prt_open_resource(resource)
+    struct prt_ps_resource_S *resource;
+{
+    FILE	*fd_resource;
+    char_u	buffer[128];
+    char_u	*ch = buffer;
+    char_u	*ch2;
+
+    fd_resource = mch_fopen((char *)resource->filename, READBIN);
+    if (fd_resource == NULL)
+    {
+	EMSG2(_("E624: Can't open file \"%s\""), resource->filename);
+	return FALSE;
+    }
+    vim_memset(buffer, NUL, sizeof(buffer));
+
+    /* Parse first line to ensure valid resource file */
+    (void)fread((char *)buffer, sizeof(char_u), sizeof(buffer),
+								 fd_resource);
+    if (ferror(fd_resource))
+    {
+	EMSG2(_("E457: Can't read PostScript resource file \"%s\""),
+		resource->filename);
+	fclose(fd_resource);
+	return FALSE;
+    }
+
+    if (STRNCMP(ch, PRT_RESOURCE_HEADER, STRLEN(PRT_RESOURCE_HEADER)) != 0)
+    {
+	EMSG2(_("E618: file \"%s\" is not a PostScript resource file"),
+		resource->filename);
+	fclose(fd_resource);
+	return FALSE;
+    }
+
+    /* Skip over any version numbers and following ws */
+    ch += STRLEN(PRT_RESOURCE_HEADER);
+    while (!isspace(*ch))
+	ch++;
+    while (isspace(*ch))
+	ch++;
+
+    if (STRNCMP(ch, PRT_RESOURCE_RESOURCE, STRLEN(PRT_RESOURCE_RESOURCE)) != 0)
+    {
+	EMSG2(_("E619: file \"%s\" is not a supported PostScript resource file"),
+		resource->filename);
+	fclose(fd_resource);
+	return FALSE;
+    }
+    ch += STRLEN(PRT_RESOURCE_RESOURCE);
+
+    /* Decide type of resource in the file */
+    if (STRNCMP(ch, PRT_RESOURCE_PROCSET, STRLEN(PRT_RESOURCE_PROCSET)) == 0)
+    {
+	resource->type = PRT_RESOURCE_TYPE_PROCSET;
+	ch += STRLEN(PRT_RESOURCE_PROCSET);
+    }
+    else if (STRNCMP(ch, PRT_RESOURCE_ENCODING, STRLEN(PRT_RESOURCE_ENCODING)) == 0)
+    {
+	resource->type = PRT_RESOURCE_TYPE_ENCODING;
+	ch += STRLEN(PRT_RESOURCE_ENCODING);
+    }
+    else
+    {
+	EMSG2(_("E619: file \"%s\" is not a supported PostScript resource file"),
+		resource->filename);
+	fclose(fd_resource);
+	return FALSE;
+    }
+
+    /* Consume up to and including the CR/LF/CR_LF */
+    while (*ch != PSCR && *ch != PSLF)
+	ch++;
+    while (*ch == PSCR || *ch == PSLF)
+	ch++;
+
+    /* Match %%Title: */
+    if (STRNCMP(ch, PRT_RESOURCE_TITLE, STRLEN(PRT_RESOURCE_TITLE)) != 0)
+    {
+	EMSG2(_("E619: file \"%s\" is not a supported PostScript resource file"),
+		resource->filename);
+	fclose(fd_resource);
+	return FALSE;
+    }
+    ch += STRLEN(PRT_RESOURCE_TITLE);
+
+    /* Skip ws after %%Title: */
+    while (isspace(*ch))
+	ch++;
+
+    /* Copy up to the CR/LF/CR_LF */
+    ch2 = resource->title;
+    while (*ch != PSCR && *ch != PSLF)
+	*ch2++ = *ch++;
+    *ch2 = '\0';
+    while (*ch == PSCR || *ch == PSLF)
+	ch++;
+
+    /* Match %%Version: */
+    if (STRNCMP(ch, PRT_RESOURCE_VERSION, STRLEN(PRT_RESOURCE_VERSION)) != 0)
+    {
+	EMSG2(_("E619: file \"%s\" is not a supported PostScript resource file"),
+		resource->filename);
+	fclose(fd_resource);
+	return FALSE;
+    }
+    ch += STRLEN(PRT_RESOURCE_VERSION);
+
+    /* Skip ws after %%Version: */
+    while (isspace(*ch))
+	ch++;
+
+    /* Copy up to the CR/LF/CR_LF */
+    ch2 = resource->version;
+    while (*ch != PSCR && *ch != PSLF)
+	*ch2++ = *ch++;
+    *ch2 = '\0';
+
+    fclose(fd_resource);
+
+    return TRUE;
+}
+
+    static int
+prt_check_resource(resource, version)
+    struct prt_ps_resource_S *resource;
+    char_u  *version;
+{
+    /* Version number m.n should match, the revision number does not matter */
+    if (STRNCMP(resource->version, version, STRLEN(version)))
+    {
+	EMSG2(_("E621: \"%s\" resource file has wrong version"),
+		resource->name);
+	return FALSE;
+    }
+
+    /* Other checks to be added as needed */
+    return TRUE;
 }
 
     static void
@@ -3734,6 +4325,13 @@ prt_dsc_docmedia(paper_name, width, height, weight, colour, type)
     void
 mch_print_cleanup()
 {
+#ifdef FEAT_MBYTE
+    if (prt_do_conv)
+    {
+	convert_setup(&prt_conv, NULL, NULL);
+	prt_do_conv = FALSE;
+    }
+#endif
     if (prt_ps_fd != NULL)
     {
 	fclose(prt_ps_fd);
@@ -3900,7 +4498,7 @@ mch_print_init(psettings, jobname, forceit)
      * Find the size of the paper and set the margins.
      */
     prt_portrait = (!printer_opts[OPT_PRINT_PORTRAIT].present
-	      || TO_LOWER(printer_opts[OPT_PRINT_PORTRAIT].string[0]) == 'y');
+	   || TOLOWER_ASC(printer_opts[OPT_PRINT_PORTRAIT].string[0]) == 'y');
     if (printer_opts[OPT_PRINT_PAPER].present)
     {
 	paper_name = (char *)printer_opts[OPT_PRINT_PAPER].string;
@@ -3979,7 +4577,7 @@ mch_print_init(psettings, jobname, forceit)
     psettings->n_uncollated_copies = 1;
     prt_num_copies = 1;
     prt_collate = (!printer_opts[OPT_PRINT_COLLATE].present
-	    || TO_LOWER(printer_opts[OPT_PRINT_COLLATE].string[0]) == 'y');
+	    || TOLOWER_ASC(printer_opts[OPT_PRINT_COLLATE].string[0]) == 'y');
     if (prt_collate)
     {
 	/* TODO: Get number of collated copies wanted. */
@@ -4061,27 +4659,26 @@ mch_print_init(psettings, jobname, forceit)
 }
 
     static int
-prt_add_resource(type, name, file)
-    char	*type;
-    char	*name;
-    char	*file;
+prt_add_resource(resource)
+    struct prt_ps_resource_S *resource;
 {
     FILE*	fd_resource;
-    char_u	resource_buffer[128];
-    char_u	resource_filename[MAXPATHL + 1];
+    char_u	resource_buffer[512];
     char	*resource_name[1];
     size_t	bytes_read;
 
-    sprintf((char *)resource_buffer, "$VIMRUNTIME/%s", file);
-    expand_env(resource_buffer, resource_filename, MAXPATHL);
-    fd_resource = mch_fopen((char *)resource_filename, READBIN);
+    fd_resource = mch_fopen((char *)resource->filename, READBIN);
     if (fd_resource == NULL)
     {
-	EMSG2(_("E456: Can't open file \"%s\""), resource_filename);
+	EMSG2(_("E456: Can't open file \"%s\""), resource->filename);
 	return FALSE;
     }
-    resource_name[0] = name;
-    prt_dsc_resources("BeginResource", type, 1, resource_name);
+    resource_name[0] = (char *)resource->title;
+    prt_dsc_resources("BeginResource",
+			    resource_types[resource->type], 1, resource_name);
+
+    prt_dsc_textline("BeginDocument", (char *)resource->filename);
+
     for (;;)
     {
 	bytes_read = fread((char *)resource_buffer, sizeof(char_u),
@@ -4089,7 +4686,7 @@ prt_add_resource(type, name, file)
 	if (ferror(fd_resource))
 	{
 	    EMSG2(_("E457: Can't read PostScript resource file \"%s\""),
-							    resource_filename);
+							    resource->filename);
 	    fclose(fd_resource);
 	    return FALSE;
 	}
@@ -4103,6 +4700,8 @@ prt_add_resource(type, name, file)
 	}
     }
     fclose(fd_resource);
+
+    prt_dsc_noarg("EndDocument");
 
     prt_dsc_noarg("EndResource");
 
@@ -4121,6 +4720,13 @@ mch_print_begin(psettings)
     double      right;
     double      top;
     double      bottom;
+    struct prt_ps_resource_S res_prolog;
+    struct prt_ps_resource_S res_encoding;
+    char_u      buffer[256];
+    char_u      *p_encoding;
+#ifdef FEAT_MBYTE
+    int		props;
+#endif
 
     /*
      * PS DSC Header comments - no PS code!
@@ -4179,12 +4785,84 @@ mch_print_begin(psettings)
 				(double)0, NULL, NULL);
     prt_dsc_resources("DocumentNeededResources", "font", 4,
 						     prt_ps_font.ps_fontname);
-    resource[0] = PRT_RESOURCE_PROLOG;
+
+    /* Search for external resources we supply */
+    if (!prt_find_resource("prolog", &res_prolog))
+    {
+	EMSG(_("E456: Can't find PostScript resource file \"prolog.ps\""));
+	return FALSE;
+    }
+    if (!prt_open_resource(&res_prolog))
+	return FALSE;
+    if (!prt_check_resource(&res_prolog, PRT_PROLOG_VERSION))
+	return FALSE;
+    /* Find an encoding to use for printing.
+     * Check 'printencoding'. If not set or not found, then use 'encoding'. If
+     * that cannot be found then default to "latin1".
+     * Note: VIM specific encoding header is always skipped.
+     */
+#ifdef FEAT_MBYTE
+    props = enc_canon_props(p_enc);
+#endif
+    p_encoding = enc_skip(p_penc);
+    if (*p_encoding == NUL
+	    || !prt_find_resource((char *)p_encoding, &res_encoding))
+    {
+	/* 'printencoding' not set or not supported - find alternate */
+#ifdef FEAT_MBYTE
+	p_encoding = enc_skip(p_enc);
+	if (!(props & ENC_8BIT)
+		|| !prt_find_resource((char *)p_encoding, &res_encoding))
+	{
+	    /* 8-bit 'encoding' is not supported */
+#endif
+	    /* Use latin1 as default printing encoding */
+	    p_encoding = (char_u *)"latin1";
+	    if (!prt_find_resource((char *)p_encoding, &res_encoding))
+	    {
+		EMSG2(_("E456: Can't find PostScript resource file \"%s.ps\""),
+			p_encoding);
+		return FALSE;
+	    }
+#ifdef FEAT_MBYTE
+	}
+#endif
+    }
+    if (!prt_open_resource(&res_encoding))
+	return FALSE;
+    /* For the moment there are no checks on encoding resource files to perform */
+#ifdef FEAT_MBYTE
+    /* Set up encoding conversion if starting from multi-byte */
+    props = enc_canon_props(p_enc);
+    if (!(props & ENC_8BIT))
+    {
+	if (FAIL == convert_setup(&prt_conv, p_enc, p_encoding))
+	{
+	    EMSG2(_("E620: Unable to convert from multi-byte to \"%s\" encoding"),
+		    p_encoding);
+	    return FALSE;
+	}
+	prt_do_conv = TRUE;
+    }
+#endif
+
+    /* List resources supplied */
+    resource[0] = (char *)buffer;
+    STRCPY(buffer, res_prolog.title);
+    STRCAT(buffer, " ");
+    STRCAT(buffer, res_prolog.version);
     prt_dsc_resources("DocumentSuppliedResources", "procset", 1, resource);
-    resource[0] = PRT_RESOURCE_ENCODING;
+    STRCPY(buffer, res_encoding.title);
+    STRCAT(buffer, " ");
+    STRCAT(buffer, res_encoding.version);
     prt_dsc_resources(NULL, "encoding", 1, resource);
     prt_dsc_requirements(prt_duplex, prt_tumble, prt_collate,
-					psettings->do_syntax, prt_num_copies);
+#ifdef FEAT_SYN_HL
+					psettings->do_syntax
+#else
+					0
+#endif
+					, prt_num_copies);
     prt_dsc_noarg("EndComments");
 
     /*
@@ -4205,12 +4883,11 @@ mch_print_begin(psettings)
     prt_dsc_noarg("BeginProlog");
 
     /* For now there is just the one procset to be included in the PS file. */
-    if (!prt_add_resource("procset", PRT_RESOURCE_PROLOG, "procset.ps"))
+    if (!prt_add_resource(&res_prolog))
 	return FALSE;
 
     /* There will be only one font encoding to be included in the PS file. */
-    if (!prt_add_resource("encoding", PRT_RESOURCE_ENCODING,
-						    PRT_RESOURCE_ENCODING_FILE))
+    if (!prt_add_resource(&res_encoding))
 	return FALSE;
 
     prt_dsc_noarg("EndProlog");
@@ -4236,19 +4913,19 @@ mch_print_begin(psettings)
     /* Font resource inclusion and definition */
     prt_dsc_resources("IncludeResource", "font", 1,
 				 &prt_ps_font.ps_fontname[PRT_PS_FONT_ROMAN]);
-    prt_def_font("F0", (int)prt_line_height,
+    prt_def_font("F0", (char *)p_encoding, (int)prt_line_height,
 				  prt_ps_font.ps_fontname[PRT_PS_FONT_ROMAN]);
     prt_dsc_resources("IncludeResource", "font", 1,
 				  &prt_ps_font.ps_fontname[PRT_PS_FONT_BOLD]);
-    prt_def_font("F1", (int)prt_line_height,
+    prt_def_font("F1", (char *)p_encoding, (int)prt_line_height,
 				   prt_ps_font.ps_fontname[PRT_PS_FONT_BOLD]);
     prt_dsc_resources("IncludeResource", "font", 1,
 			       &prt_ps_font.ps_fontname[PRT_PS_FONT_OBLIQUE]);
-    prt_def_font("F2", (int)prt_line_height,
+    prt_def_font("F2", (char *)p_encoding, (int)prt_line_height,
 				prt_ps_font.ps_fontname[PRT_PS_FONT_OBLIQUE]);
     prt_dsc_resources("IncludeResource", "font", 1,
 			   &prt_ps_font.ps_fontname[PRT_PS_FONT_BOLDOBLIQUE]);
-    prt_def_font("F3", (int)prt_line_height,
+    prt_def_font("F3", (char *)p_encoding, (int)prt_line_height,
 			    prt_ps_font.ps_fontname[PRT_PS_FONT_BOLDOBLIQUE]);
 
     /* Misc constant vars used for underlining and background rects */
@@ -4312,8 +4989,8 @@ mch_print_end_page()
 
 /*ARGSUSED*/
     int
-mch_print_begin_page(msg)
-    char_u	*msg;
+mch_print_begin_page(str)
+    char_u	*str;
 {
     int		page_num[2];
 
@@ -4325,8 +5002,8 @@ mch_print_begin_page(msg)
     prt_dsc_noarg("BeginPageSetup");
 
     prt_write_string("sv\n0 g\nF0 sf\n");
-    prt_fgcol = COLOR_BLACK;
-    prt_bgcol = COLOR_WHITE;
+    prt_fgcol = PRCOLOR_BLACK;
+    prt_bgcol = PRCOLOR_WHITE;
     prt_font = PRT_PS_FONT_ROMAN;
 
     /* Set up page transformation for landscape printing. */
@@ -4426,7 +5103,7 @@ mch_print_text_out(p, len)
 	    prt_need_fgcol = FALSE;
 	}
 
-	if (prt_bgcol != COLOR_WHITE)
+	if (prt_bgcol != PRCOLOR_WHITE)
 	{
 	    prt_new_bgcol = prt_bgcol;
 	    if (prt_need_bgcol)
@@ -4443,14 +5120,20 @@ mch_print_text_out(p, len)
 	prt_attribute_change = FALSE;
     }
 
+#ifdef FEAT_MBYTE
+    if (prt_do_conv)
+    {
+	/* Convert from multi-byte to 8-bit encoding */
+	p = string_convert(&prt_conv, p, &len);
+	if (p == NULL)
+	    p = (char_u *)"";
+    }
+#endif
     /* Add next character to buffer of characters to output.
      * Note: One printed character may require several PS characters to
      * represent it, but we only count them as one printed character.
      */
     ch = *p;
-    /* Not handing multi-byte just yet, convert char to a blank for now */
-    if (len > 1)
-	ch = ' ';
     if (ch < 32 || ch == '(' || ch == ')' || ch == '\\')
     {
 	/* Convert non-printing characters to either their escape or octal
@@ -4485,6 +5168,13 @@ mch_print_text_out(p, len)
     }
     else
     ga_append(&prt_ps_buffer, ch);
+
+#ifdef FEAT_MBYTE
+    /* Need to free any translated characters */
+    if (prt_do_conv && (*p != NUL))
+	vim_free(p);
+#endif
+
     prt_text_count++;
     prt_pos_x += prt_char_width;
 

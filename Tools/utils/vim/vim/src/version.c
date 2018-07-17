@@ -60,6 +60,11 @@ static char *(features[]) =
 	"-ARP",
 # endif
 #endif
+#ifdef FEAT_ARABIC
+	"+arabic",
+#else
+	"-arabic",
+#endif
 #ifdef FEAT_AUTOCMD
 	"+autocmd",
 #else
@@ -156,6 +161,11 @@ static char *(features[]) =
 	"+digraphs",
 #else
 	"-digraphs",
+#endif
+#ifdef FEAT_DND
+	"+dnd",
+#else
+	"-dnd",
 #endif
 #ifdef EBCDIC
 	"+ebcdic",
@@ -355,6 +365,11 @@ static char *(features[]) =
 	"+multi_lang",
 #else
 	"-multi_lang",
+#endif
+#ifdef FEAT_NETBEANS_INTG
+	"+netbeans_intg",
+#else
+	"-netbeans_intg",
 #endif
 #ifdef FEAT_GUI_W32
 # ifdef FEAT_OLE
@@ -590,6 +605,15 @@ static char *(features[]) =
 	"-xim",
 #endif
 #if defined(UNIX) || defined(VMS)
+# ifdef USE_XSMP_INTERACT
+	"+xsmp_interact",
+# else
+#  ifdef USE_XSMP
+	"+xsmp",
+#  else
+	"-xsmp",
+#  endif
+# endif
 # ifdef FEAT_XCLIPBOARD
 	"+xterm_clipboard",
 # else
@@ -621,6 +645,23 @@ highest_patch()
 	    h = included_patches[i];
     return h;
 }
+
+#if defined(FEAT_EVAL) || defined(PROTO)
+/*
+ * Return TRUE if patch "n" has been included.
+ */
+    int
+has_patch(n)
+    int		n;
+{
+    int		i;
+
+    for (i = 0; included_patches[i] != 0; ++i)
+	if (included_patches[i] == n)
+	    return TRUE;
+    return FALSE;
+}
+#endif
 
     void
 ex_version(eap)
@@ -767,16 +808,28 @@ list_version()
 #else
 # ifdef FEAT_GUI_GTK
 #  ifdef FEAT_GUI_GNOME
+#   ifdef HAVE_GTK2
+    MSG_PUTS(_("with GTK2-GNOME GUI."));
+#   else
     MSG_PUTS(_("with GTK-GNOME GUI."));
+#   endif
 #  else
+#   ifdef HAVE_GTK2
+    MSG_PUTS(_("with GTK2 GUI."));
+#   else
     MSG_PUTS(_("with GTK GUI."));
+#   endif
 #  endif
 # else
 #  ifdef FEAT_GUI_MOTIF
     MSG_PUTS(_("with X11-Motif GUI."));
 #  else
 #   ifdef FEAT_GUI_ATHENA
+#    ifdef FEAT_GUI_NEXTAW
+    MSG_PUTS(_("with X11-neXtaw GUI."));
+#    else
     MSG_PUTS(_("with X11-Athena GUI."));
+#    endif
 #   else
 #    ifdef FEAT_GUI_BEOS
     MSG_PUTS(_("with BeOS GUI."));
@@ -805,72 +858,72 @@ list_version()
 #  endif
 # endif
 #endif
-    MSG_PUTS(_("  Features included (+) or not (-):\n"));
+    version_msg(_("  Features included (+) or not (-):\n"));
 
     /* print all the features */
     for (i = 0; features[i] != NULL; ++i)
     {
 	version_msg(features[i]);
 	if (msg_col > 0)
-	    msg_putchar(' ');
+	    version_msg(" ");
     }
 
-    msg_putchar('\n');
+    version_msg("\n");
 #ifdef SYS_VIMRC_FILE
     version_msg(_("   system vimrc file: \""));
     version_msg(SYS_VIMRC_FILE);
-    version_msg(_("\"\n"));
+    version_msg("\"\n");
 #endif
 #ifdef USR_VIMRC_FILE
     version_msg(_("     user vimrc file: \""));
     version_msg(USR_VIMRC_FILE);
-    version_msg(_("\"\n"));
+    version_msg("\"\n");
 #endif
 #ifdef USR_VIMRC_FILE2
     version_msg(_(" 2nd user vimrc file: \""));
     version_msg(USR_VIMRC_FILE2);
-    version_msg(_("\"\n"));
+    version_msg("\"\n");
 #endif
 #ifdef USR_VIMRC_FILE3
     version_msg(_(" 3rd user vimrc file: \""));
     version_msg(USR_VIMRC_FILE3);
-    version_msg(_("\"\n"));
+    version_msg("\"\n");
 #endif
 #ifdef USR_EXRC_FILE
     version_msg(_("      user exrc file: \""));
     version_msg(USR_EXRC_FILE);
-    version_msg(_("\"\n"));
+    version_msg("\"\n");
 #endif
 #ifdef USR_EXRC_FILE2
     version_msg(_("  2nd user exrc file: \""));
     version_msg(USR_EXRC_FILE2);
-    version_msg(_("\"\n"));
+    version_msg("\"\n");
 #endif
 #ifdef FEAT_GUI
 # ifdef SYS_GVIMRC_FILE
     version_msg(_("  system gvimrc file: \""));
     version_msg(SYS_GVIMRC_FILE);
-    MSG_PUTS(_("\"\n"));
+    version_msg("\"\n");
 # endif
     version_msg(_("    user gvimrc file: \""));
     version_msg(USR_GVIMRC_FILE);
-    version_msg(_("\"\n"));
+    version_msg("\"\n");
 # ifdef USR_GVIMRC_FILE2
     version_msg(_("2nd user gvimrc file: \""));
     version_msg(USR_GVIMRC_FILE2);
-    version_msg(_("\"\n"));
+    version_msg("\"\n");
 # endif
 # ifdef USR_GVIMRC_FILE3
     version_msg(_("3rd user gvimrc file: \""));
     version_msg(USR_GVIMRC_FILE3);
-    version_msg(_("\"\n"));
+    version_msg("\"\n");
 # endif
 #endif
 #ifdef FEAT_GUI
 # ifdef SYS_MENU_FILE
     version_msg(_("    system menu file: \""));
     version_msg(SYS_MENU_FILE);
-    MSG_PUTS(_("\"\n"));
+    version_msg("\"\n");
 # endif
 #endif
 #ifdef HAVE_PATHDEF
@@ -878,30 +931,30 @@ list_version()
     {
 	version_msg(_("  fall-back for $VIM: \""));
 	version_msg((char *)default_vim_dir);
-	MSG_PUTS(_("\"\n"));
+	version_msg("\"\n");
     }
     if (*default_vimruntime_dir != NUL)
     {
 	version_msg(_(" f-b for $VIMRUNTIME: \""));
 	version_msg((char *)default_vimruntime_dir);
-	MSG_PUTS(_("\"\n"));
+	version_msg("\"\n");
     }
     version_msg(_("Compilation: "));
     version_msg((char *)all_cflags);
-    msg_putchar('\n');
+    version_msg("\n");
 #ifdef VMS
     if (*compiler_version != NUL)
     {
 	version_msg(_("Compiler: "));
 	version_msg((char *)compiler_version);
-	msg_putchar('\n');
+	version_msg("\n");
     }
 #endif
     version_msg(_("Linking: "));
     version_msg((char *)all_lflags);
 #endif
 #ifdef DEBUG
-    msg_putchar('\n');
+    version_msg("\n");
     version_msg(_("  DEBUG BUILD"));
 #endif
 }
@@ -916,9 +969,11 @@ version_msg(s)
 {
     int		len = (int)STRLEN(s);
 
-    if (len < (int)Columns && msg_col + len >= (int)Columns)
+    if (!got_int && len < (int)Columns && msg_col + len >= (int)Columns
+								&& *s != '\n')
 	msg_putchar('\n');
-    MSG_PUTS(s);
+    if (!got_int)
+	MSG_PUTS(s);
 }
 
 static void do_intro_line __ARGS((int row, char_u *mesg, int add_version, int attr));
@@ -1052,9 +1107,9 @@ do_intro_line(row, mesg, add_version, attr)
     int		col;
     char_u	*p;
     int		l;
-# define MODBY_LEN 150
-    char_u	buf[MODBY_LEN];
+    int		clen;
 #ifdef MODIFIED_BY
+# define MODBY_LEN 150
     char_u	modby[MODBY_LEN];
 
     if (*mesg == ' ')
@@ -1097,12 +1152,22 @@ do_intro_line(row, mesg, add_version, attr)
     /* Split up in parts to highlight <> items differently. */
     for (p = mesg; *p != NUL; p += l)
     {
-	buf[0] = *p;
-	for (l = 1; p[l] != NUL && p[l] != '<' && p[l - 1] != '>'; ++l)
-	    buf[l] = p[l];
-	buf[l] = NUL;
-	screen_puts(buf, row, col, *buf == '<' ? hl_attr(HLF_8) : attr);
-	col += vim_strsize(buf);
+	clen = 0;
+	for (l = 0; p[l] != NUL
+			 && (l == 0 || (p[l] != '<' && p[l - 1] != '>')); ++l)
+	{
+#ifdef FEAT_MBYTE
+	    if (has_mbyte)
+	    {
+		clen += ptr2cells(p + l);
+		l += (*mb_ptr2len_check)(p + l) - 1;
+	    }
+	    else
+#endif
+		clen += byte2cells(p[l]);
+	}
+	screen_puts_len(p, l, row, col, *p == '<' ? hl_attr(HLF_8) : attr);
+	col += clen;
     }
 
     /* Add the version number to the version line. */

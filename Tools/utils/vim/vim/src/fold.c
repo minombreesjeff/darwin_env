@@ -63,7 +63,7 @@ static void foldDelMarker __ARGS((linenr_T lnum, char_u *marker, int markerlen))
 static void foldUpdateIEMS __ARGS((win_T *wp, linenr_T top, linenr_T bot));
 static void parseMarker __ARGS((win_T *wp));
 
-static char *e_nofold = N_("No fold found");
+static char *e_nofold = N_("E490: No fold found");
 
 /*
  * While updating the folds lines between invalid_top and invalid_bot have an
@@ -962,6 +962,8 @@ foldMoveTo(updown, dir, count)
 	}
 	if (lnum_found != curwin->w_cursor.lnum)
 	{
+	    if (retval == FAIL)
+		setpcmark();
 	    curwin->w_cursor.lnum = lnum_found;
 	    curwin->w_cursor.col = 0;
 	    retval = OK;
@@ -2995,6 +2997,10 @@ foldlevelMarker(flp)
 	else
 	    ++s;
     }
+
+    /* The level can't go negative, must be missing a start marker. */
+    if (flp->lvl_next < 0)
+	flp->lvl_next = 0;
 }
 
 /* foldlevelSyntax() {{{2 */
@@ -3045,7 +3051,7 @@ put_folds(fd, wp)
 {
     if (foldmethodIsManual(wp))
     {
-	if (put_line(fd, "silent! normal zE") == FAIL
+	if (put_line(fd, "silent! normal! zE") == FAIL
 		|| put_folds_recurse(fd, &wp->w_folds, (linenr_T)0) == FAIL)
 	    return FAIL;
     }

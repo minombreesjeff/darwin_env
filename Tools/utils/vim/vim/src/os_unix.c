@@ -33,6 +33,10 @@
 
 #include "os_unixx.h"	    /* unix includes for os_unix.c only */
 
+#ifdef USE_XSMP
+# include <X11/SM/SMlib.h>
+#endif
+
 /*
  * Use this prototype for select, some include files have a wrong prototype
  */
@@ -123,7 +127,7 @@ static int	did_set_icon = FALSE;
 static void may_core_dump __ARGS((void));
 
 static int  WaitForChar __ARGS((long));
-#if defined(__BEOS__) || defined(VMS)
+#if defined(__BEOS__)
 int  RealWaitForChar __ARGS((int, long, int *));
 #else
 static int  RealWaitForChar __ARGS((int, long, int *));
@@ -181,6 +185,18 @@ static int	show_shell_mess = TRUE;
 static int	deadly_signal = 0;	    /* The signal we caught */
 
 static int curr_tmode = TMODE_COOK;	/* contains current terminal mode */
+
+#ifdef USE_XSMP
+typedef struct
+{
+    SmcConn smcconn;	    /* The SM connection ID */
+    IceConn iceconn;	    /* The ICE connection ID */
+    Bool save_yourself;     /* If we're in the middle of a save_yourself */
+    Bool shutdown;	    /* If we're in shutdown mode */
+} xsmp_config_T;
+
+static xsmp_config_T xsmp;
+#endif
 
 #ifdef SYS_SIGLIST_DECLARED
 /*
@@ -279,8 +295,6 @@ mch_write(s, len)
     if (p_wd)		/* Unix is too fast, slow down a bit more */
 	RealWaitForChar(read_cmd_fd, p_wd, NULL);
 }
-
-#ifndef VMS
 
 /*
  * mch_inchar(): low level input funcion.
@@ -389,8 +403,6 @@ mch_inchar(buf, maxlen, wtime)
 	}
     }
 }
-
-#endif /* VMS */
 
     static void
 handle_resize()
@@ -609,9 +621,18 @@ get_stack_limit()
        )
     {
 	if (stack_grows_downwards)
+	{
 	    stack_limit = (char *)((long)&i - ((long)rlp.rlim_cur / 16L * 15L));
+	    if (stack_limit >= (char *)&i)
+		/* overflow, set to 1/16 of current stack position */
+		stack_limit = (char *)((long)&i / 16L);
+	}
 	else
+	{
 	    stack_limit = (char *)((long)&i + ((long)rlp.rlim_cur / 16L * 15L));
+	    if (stack_limit <= (char *)&i)
+		stack_limit = NULL;	/* overflow */
+	}
     }
 }
 
@@ -664,7 +685,11 @@ init_signal_stack()
     if (signal_stack != NULL)
     {
 # ifdef HAVE_SIGALTSTACK
+#  ifdef HAVE_SS_BASE
+	sigstk.ss_base = signal_stack;
+#  else
 	sigstk.ss_sp = signal_stack;
+#  endif
 	sigstk.ss_size = SIGSTKSZ;
 	sigstk.ss_flags = 0;
 	(void)sigaltstack(&sigstk, NULL);
@@ -742,7 +767,7 @@ sig_alarm SIGDEFARG(sigarg)
  * A simplistic version of setjmp() that only allows one level of using.
  * Don't call twice before calling mch_endjmp()!.
  * Usage:
- *	mch_startjmp()
+ *	mch_startjmp();
  *	if (SETJMP(lc_jump_env) != 0)
  *	{
  *	    mch_didjmp();
@@ -1051,7 +1076,16 @@ catch_signals(func_deadly, func_other)
 	    /* Setup to use the alternate stack for the signal function. */
 	    sa.sa_handler = func_deadly;
 	    sigemptyset(&sa.sa_mask);
+# if defined(__linux__) && defined(_REENTRANT)
+	    /* On Linux, with glibc compiled for kernel 2.2, there is a bug in
+	     * thread handling in combination with using the alternate stack:
+	     * pthread library functions try to use the stack pointer to
+	     * identify the current thread, causing a SEGV signal, which
+	     * recursively calls deathtrap() and hangs. */
+	    sa.sa_flags = 0;
+# else
 	    sa.sa_flags = SA_ONSTACK;
+# endif
 	    sigaction(signal_info[i].sig, &sa, NULL);
 #else
 # if defined(HAVE_SIGALTSTACK) && defined(HAVE_SIGVEC)
@@ -1172,6 +1206,47 @@ x_error_check(dpy, error_event)
     return 0;
 }
 
+#if defined(FEAT_X11) && defined(FEAT_XCLIPBOARD)
+# if defined(HAVE_SETJMP_H)
+/*
+ * An X IO Error handler, used to catch error while opening the display.
+ */
+static int x_IOerror_check __ARGS((Display *dpy));
+
+/* ARGSUSED */
+    static int
+x_IOerror_check(dpy)
+    Display *dpy;
+{
+    /* This function should not return, it causes exit().  Longjump instead. */
+    LONGJMP(lc_jump_env, 1);
+    /*NOTREACHED*/
+    return 0;
+}
+# endif
+
+/*
+ * An X IO Error handler, used to catch terminal errors.
+ */
+static int x_IOerror_handler __ARGS((Display *dpy));
+
+/* ARGSUSED */
+    static int
+x_IOerror_handler(dpy)
+    Display *dpy;
+{
+    xterm_dpy = NULL;
+    x11_window = 0;
+    x11_display = NULL;
+    xterm_Shell = (Widget)0;
+
+    /* This function should not return, it causes exit().  Longjump instead. */
+    LONGJMP(x_jump_env, 1);
+    /*NOTREACHED*/
+    return 0;
+}
+#endif
+
 /*
  * Return TRUE when connection to the X server is desired.
  */
@@ -1232,11 +1307,6 @@ static int get_x11_thing __ARGS((int get_title, int test_only));
  * try to get x11 window and display
  *
  * return FAIL for failure, OK otherwise
- *
- * FIXME:
- * This code is responsible for setting the window manager name of the
- * editor's window. We should provide a special version of this for usage with
- * the GTK+ widget set, which wouldn't use any direct x11 calls. (--mdcki)
  */
     static int
 get_x11_windis()
@@ -1446,7 +1516,9 @@ get_x11_thing(get_title, test_only)
 	 * keep traversing up the tree until a window with a title/icon is
 	 * found.
 	 */
-	if (term_is_xterm)
+	/* Previously this was only done for xterm and alikes.  I don't see a
+	 * reason why it would fail for other terminal emulators.
+	 * if (term_is_xterm) */
 	{
 	    Window	    root;
 	    Window	    parent;
@@ -1529,13 +1601,27 @@ set_x11_title(title)
     char_u	*title;
 {
 #if XtSpecificationRelease >= 4
-    XTextProperty text_prop;
+    XTextProperty	text_prop;
+# ifdef FEAT_XFONTSET
+    Status		status;
 
-    text_prop.value = title;
-    text_prop.nitems = STRLEN(title);
-    text_prop.encoding = XA_STRING;
-    text_prop.format = 8;
+    status = XmbTextListToTextProperty(x11_display, (char **)&title, 1,
+					      XCompoundTextStyle, &text_prop);
+    /* Status is a positive number when some chars could not be converted.
+     * Accept that, we don't know what to do otherwise. */
+    if (status < Success)
+# endif
+    {
+	text_prop.value = title;
+	text_prop.nitems = STRLEN(title);
+	text_prop.encoding = XA_STRING;
+	text_prop.format = 8;
+    }
     XSetWMName(x11_display, x11_window, &text_prop);
+# ifdef FEAT_XFONTSET
+    if (status >= Success)
+	XFree((void *)text_prop.value);
+# endif
 #else
     XStoreName(x11_display, x11_window, (char *)title);
 #endif
@@ -1552,13 +1638,27 @@ set_x11_icon(icon)
     char_u	*icon;
 {
 #if XtSpecificationRelease >= 4
-    XTextProperty text_prop;
+    XTextProperty	text_prop;
+# ifdef FEAT_XFONTSET
+    Status		status;
 
-    text_prop.value = icon;
-    text_prop.nitems = STRLEN(icon);
-    text_prop.encoding = XA_STRING;
-    text_prop.format = 8;
+    status = XmbTextListToTextProperty(x11_display, (char **)&icon, 1,
+					      XCompoundTextStyle, &text_prop);
+    /* Status is a positive number when some chars could not be converted.
+     * Accept that, we don't know what to do otherwise. */
+    if (status < Success)
+# endif
+    {
+	text_prop.value = icon;
+	text_prop.nitems = STRLEN(icon);
+	text_prop.encoding = XA_STRING;
+	text_prop.format = 8;
+    }
     XSetWMIconName(x11_display, x11_window, &text_prop);
+# ifdef FEAT_XFONTSET
+    if (status >= Success)
+	XFree((void *)text_prop.value);
+# endif
 #else
     XSetIconName(x11_display, x11_window, (char *)icon);
 #endif
@@ -1661,12 +1761,15 @@ mch_settitle(title, icon)
 	    term_settitle(title);
 #ifdef FEAT_X11
 	else
+# ifdef FEAT_GUI_GTK
+	if (!gui.in_use)		/* don't do this if GTK+ is running */
+# endif
 	    set_x11_title(title);		/* x11 */
-#else
-# if defined(FEAT_GUI_BEOS) || defined(FEAT_GUI_PHOTON) || defined(FEAT_GUI_MAC)
+#endif
+#if defined(FEAT_GUI_GTK) || defined(FEAT_GUI_BEOS) \
+	|| defined(FEAT_GUI_PHOTON) || defined(FEAT_GUI_MAC)
 	else
 	    gui_mch_settitle(title, icon);
-# endif
 #endif
 	did_set_title = TRUE;
     }
@@ -1689,6 +1792,9 @@ mch_settitle(title, icon)
 	}
 #ifdef FEAT_X11
 	else
+# ifdef FEAT_GUI_GTK
+	if (!gui.in_use)		/* don't do this if GTK+ is running */
+# endif
 	    set_x11_icon(icon);			/* x11 */
 #endif
 	did_set_icon = TRUE;
@@ -1727,6 +1833,7 @@ vim_is_xterm(name)
     return (STRNICMP(name, "xterm", 5) == 0
 		|| STRNICMP(name, "nxterm", 6) == 0
 		|| STRNICMP(name, "kterm", 5) == 0
+		|| STRNICMP(name, "rxvt", 4) == 0
 		|| STRCMP(name, "builtin_xterm") == 0);
 }
 
@@ -1784,7 +1891,6 @@ vim_is_fastterm(name)
     return (   STRNICMP(name, "hpterm", 6) == 0
 	    || STRNICMP(name, "sun-cmd", 7) == 0
 	    || STRNICMP(name, "screen", 6) == 0
-	    || STRNICMP(name, "rxvt", 4) == 0
 	    || STRNICMP(name, "dtterm", 6) == 0);
 }
 
@@ -1841,8 +1947,11 @@ mch_get_host_name(s, len)
 {
     struct utsname vutsname;
 
-    uname(&vutsname);
-    STRNCPY(s, vutsname.nodename, len);
+    if (uname(&vutsname) < 0)
+	*s = NUL;
+    else
+	STRNCPY(s, vutsname.nodename, len);
+    s[len - 1] = NUL;	/* make sure it's terminated */
 }
 #else /* HAVE_SYS_UTSNAME_H */
 
@@ -1860,6 +1969,7 @@ mch_get_host_name(s, len)
 # else
     gethostname((char *)s, len);
 # endif
+    s[len - 1] = NUL;	/* make sure it's terminated */
 }
 #endif /* HAVE_SYS_UTSNAME_H */
 
@@ -1957,6 +2067,10 @@ mch_FullName(fname, buf, len, force)
     char_u	*p;
     int		retval = OK;
 
+#ifdef VMS
+    fname = vms_fixfilename(fname);
+#endif
+
     /* expand it if forced or not an absolute path */
     if (force || !mch_isFullName(fname))
     {
@@ -1991,11 +2105,15 @@ mch_FullName(fname, buf, len, force)
 		}
 	    }
 #endif
+
+	    /* Only change directory when we are sure we can return to where
+	     * we are now.  After doing "su" chdir(".") might not work. */
 	    if (
 #ifdef HAVE_FCHDIR
 		fd < 0 &&
 #endif
-			    mch_dirname(olddir, MAXPATHL) == FAIL)
+			(mch_dirname(olddir, MAXPATHL) == FAIL
+					   || mch_chdir((char *)olddir) != 0))
 	    {
 		p = NULL;	/* can't get current dir: don't chdir */
 		retval = FAIL;
@@ -2046,12 +2164,14 @@ mch_FullName(fname, buf, len, force)
 #ifdef HAVE_FCHDIR
 	    if (fd >= 0)
 	    {
-		fchdir(fd);
+		l = fchdir(fd);
 		close(fd);
 	    }
 	    else
 #endif
-		mch_chdir((char *)olddir);
+		l = mch_chdir((char *)olddir);
+	    if (l != 0)
+		EMSG(_(e_prev_dir));
 	}
 
 	l = STRLEN(buf);
@@ -2069,11 +2189,7 @@ mch_FullName(fname, buf, len, force)
     if (retval == FAIL || STRLEN(buf) + STRLEN(fname) >= len)
 	return FAIL;
 
-#ifdef VMS
-    STRCAT(buf, vms_fixfilename(fname));
-#else
     STRCAT(buf, fname);
-#endif
 
     return OK;
 }
@@ -2089,9 +2205,10 @@ mch_isFullName(fname)
     return _fnisabs(fname);
 #else
 # ifdef VMS
-    return ( fname[0] == '/' || fname[0] == '.' || strchr((char *)fname, ':') ||
-	     strchr((char *)fname,'[') || strchr((char *)fname,']') ||
-	     strchr((char *)fname,'<') || strchr((char *)fname,'>')	 );
+    return ( fname[0] == '/'	       || fname[0] == '.'	    ||
+	     strchr((char *)fname,':') || strchr((char *)fname,'"') ||
+	    (strchr((char *)fname,'[') && strchr((char *)fname,']'))||
+	    (strchr((char *)fname,'<') && strchr((char *)fname,'>'))   );
 # else
     return (*fname == '/' || *fname == '~');
 # endif
@@ -2108,7 +2225,13 @@ mch_getperm(name)
 {
     struct stat statb;
 
-    if (stat((char *)name, &statb))
+    if (stat((char *)
+#ifdef VMS
+		    vms_fixfilename(name),
+#else
+		    name,
+#endif
+		    &statb))
 	return -1;
     return statb.st_mode;
 }
@@ -2123,7 +2246,13 @@ mch_setperm(name, perm)
     char_u  *name;
     long    perm;
 {
-    return (chmod((char *)name, (mode_t)perm) == 0 ? OK : FAIL);
+    return (chmod((char *)
+#ifdef VMS
+		    vms_fixfilename(name),
+#else
+		    name,
+#endif
+		    (mode_t)perm) == 0 ? OK : FAIL);
 }
 
 #if defined(HAVE_ACL) || defined(PROTO)
@@ -2281,8 +2410,25 @@ mch_isdir(name)
 }
 
 #if defined(FEAT_EVAL) || defined(PROTO)
+
+static int executable_file __ARGS((char_u *name));
+
 /*
- * Return 1 if "name" can be executed, 0 if not.
+ * Return 1 if "name" is an executable file, 0 if not or it doesn't exist.
+ */
+    static int
+executable_file(name)
+    char_u	*name;
+{
+    struct stat	st;
+
+    if (stat((char *)name, &st))
+	return 0;
+    return S_ISREG(st.st_mode) && mch_access((char *)name, X_OK) == 0;
+}
+
+/*
+ * Return 1 if "name" can be found in $PATH and executed, 0 if not.
  * Return -1 if unknown.
  */
     int
@@ -2290,25 +2436,49 @@ mch_can_exe(name)
     char_u	*name;
 {
     char_u	*buf;
-    char_u	*p;
+    char_u	*p, *e;
     int		retval;
 
-#ifdef VMS
-    /* TODO */
-    return -1;
-#endif
+    /* If it's an absolute or relative path don't need to use $PATH. */
+    if (mch_isFullName(name) || (name[0] == '.' && (name[1] == '/'
+				      || (name[1] == '.' && name[2] == '/'))))
+	return executable_file(name);
 
-    buf = alloc((unsigned)STRLEN(name) + 7);
+    p = (char_u *)getenv("PATH");
+    if (p == NULL || *p == NUL)
+	return -1;
+    buf = alloc((unsigned)(STRLEN(name) + STRLEN(p) + 2));
     if (buf == NULL)
 	return -1;
-    sprintf((char *)buf, "which %s", name);
-    p = get_cmd_output(buf, SHELL_SILENT);
+
+    /*
+     * Walk through all entries in $PATH to check if "name" exists there and
+     * is an executable file.
+     */
+    for (;;)
+    {
+	e = (char_u *)strchr((char *)p, ':');
+	if (e == NULL)
+	    e = p + STRLEN(p);
+	if (e - p <= 1)		/* empty entry means current dir */
+	    STRCPY(buf, "./");
+	else
+	{
+	    STRNCPY(buf, p, e - p);
+	    buf[e - p] = NUL;
+	    add_pathsep(buf);
+	}
+	STRCAT(buf, name);
+	retval = executable_file(buf);
+	if (retval == 1)
+	    break;
+
+	if (*e != ':')
+	    break;
+	p = e + 1;
+    }
+
     vim_free(buf);
-    if (p == NULL)
-	return -1;
-    /* result can be: "name: Command not found" */
-    retval = (*p != NUL && strstr((char *)p, "not found") == NULL);
-    vim_free(p);
     return retval;
 }
 #endif
@@ -2365,6 +2535,26 @@ mch_early_init()
 #endif
 }
 
+static void exit_scroll __ARGS((void));
+
+/*
+ * Output a newline when exiting.
+ * Make sure the newline goes to the same stream as the text.
+ */
+    static void
+exit_scroll()
+{
+    if (msg_use_printf())
+    {
+	if (info_message)
+	    mch_msg("\n");
+	else
+	    mch_errmsg("\r\n");
+    }
+    else
+	out_char('\n');
+}
+
     void
 mch_exit(r)
     int r;
@@ -2383,7 +2573,16 @@ mch_exit(r)
 #ifdef FEAT_TITLE
 	mch_restore_title(3);	/* restore xterm title and icon name */
 #endif
-	/* Stop termcap first: May need to check for T_CRV response, which
+	/*
+	 * When t_ti is not empty but it doesn't cause swapping terminal
+	 * pages, need to output a newline when msg_didout is set.  But when
+	 * t_ti does swap pages it should not go to the shell page.  Do this
+	 * before stoptermcap().
+	 */
+	if (swapping_screen() && !newline_on_exit && msg_didout)
+	    exit_scroll();
+
+	/* Stop termcap: May need to check for T_CRV response, which
 	 * requires RAW mode. */
 	stoptermcap();
 
@@ -2394,18 +2593,7 @@ mch_exit(r)
 	if (!swapping_screen() || newline_on_exit)
 	{
 	    if (newline_on_exit || msg_didout)
-	    {
-		/* Make sure the newline goes to the same stream as the text */
-		if (msg_use_printf())
-		{
-		    if (info_message)
-			mch_msg("\r\n");
-		    else
-			mch_errmsg("\r\n");
-		}
-		else
-		    out_char('\n');
-	    }
+		exit_scroll();
 	    else
 	    {
 		restore_cterm_colors();	/* get original colors back */
@@ -2502,7 +2690,15 @@ mch_settmode(tmode)
 	tnew.c_lflag &= ~(ECHO);
 
 # if defined(HAVE_TERMIOS_H)
-    tcsetattr(read_cmd_fd, TCSANOW, &tnew);
+    {
+	int	n = 10;
+
+	/* A signal may cause tcsetattr() to fail (e.g., SIGCONT).  Retry a
+	 * few times. */
+	while (tcsetattr(read_cmd_fd, TCSANOW, &tnew) == -1
+						   && errno == EINTR && n > 0)
+	    --n;
+    }
 # else
     ioctl(read_cmd_fd, TCSETA, &tnew);
 # endif
@@ -2800,7 +2996,7 @@ check_mouse_termcode()
 mch_screenmode(arg)
     char_u   *arg;
 {
-    EMSG(_("E359: Screen mode setting not supported"));
+    EMSG(_(e_screenmode));
     return FAIL;
 }
 
@@ -2933,11 +3129,12 @@ mch_call_shell(cmd, options)
     char	*ifn = NULL;
     char	*ofn = NULL;
 #endif
+    int		tmode = cur_tmode;
 #ifdef USE_SYSTEM	/* use system() to start the shell: simple but slow */
     int	    x;
-#ifndef __EMX__
+# ifndef __EMX__
     char_u  *newcmd;   /* only needed for unix */
-#else
+# else
     /*
      * Set the preferred shell in the EMXSHELL environment variable (but
      * only if it is different from what is already in the environment).
@@ -2958,14 +3155,14 @@ mch_call_shell(cmd, options)
 	    putenv((char *)p);	/* don't free the pointer! */
 	}
     }
-#endif
+# endif
 
     out_flush();
 
     if (options & SHELL_COOKED)
 	settmode(TMODE_COOK);	    /* set to normal mode */
 
-#ifdef __EMX__
+# ifdef __EMX__
     if (cmd == NULL)
 	x = system("");	/* this starts an interactive shell in emx */
     else
@@ -2977,12 +3174,12 @@ mch_call_shell(cmd, options)
 	msg_outtrans(p_sh);
 	msg_putchar('\n');
     }
-#else /* not __EMX__ */
+# else /* not __EMX__ */
     if (cmd == NULL)
 	x = system((char *)p_sh);
     else
     {
-# ifdef VMS
+#  ifdef VMS
 	if (ofn = strchr((char *)cmd, '>'))
 	    *ofn++ = '\0';
 	if (ifn = strchr((char *)cmd, '<'))
@@ -2998,7 +3195,7 @@ mch_call_shell(cmd, options)
 	    x = vms_sys((char *)cmd, ofn, ifn);
 	else
 	    x = system((char *)cmd);
-# else
+#  else
 	newcmd = lalloc(STRLEN(p_sh)
 		+ (extra_shell_arg == NULL ? 0 : STRLEN(extra_shell_arg))
 		+ STRLEN(p_shcf) + STRLEN(cmd) + 4, TRUE);
@@ -3013,13 +3210,16 @@ mch_call_shell(cmd, options)
 	    x = system((char *)newcmd);
 	    vim_free(newcmd);
 	}
-# endif
+#  endif
     }
+# ifdef VMS
+    x = vms_sys_status(x);
+# endif
     if (emsg_silent)
 	;
     else if (x == 127)
 	MSG_PUTS(_("\nCannot execute shell sh\n"));
-#endif	/* __EMX__ */
+# endif	/* __EMX__ */
     else if (x && !(options & SHELL_SILENT))
     {
 	MSG_PUTS(_("\nshell returned "));
@@ -3027,10 +3227,11 @@ mch_call_shell(cmd, options)
 	msg_putchar('\n');
     }
 
-    settmode(TMODE_RAW);		/* set to raw mode */
-#ifdef FEAT_TITLE
+    if (tmode == TMODE_RAW)
+	settmode(TMODE_RAW);	/* set to raw mode */
+# ifdef FEAT_TITLE
     resettitle();
-#endif
+# endif
     return x;
 
 #else /* USE_SYSTEM */	    /* don't use system(), use fork()/exec() */
@@ -3041,31 +3242,31 @@ mch_call_shell(cmd, options)
     char_u	*newcmd = NULL;
     pid_t	pid;
     pid_t	wait_pid = 0;
-#ifdef HAVE_UNION_WAIT
+# ifdef HAVE_UNION_WAIT
     union wait	status;
-#else
+# else
     int		status = -1;
-#endif
+# endif
     int		retval = -1;
     char	**argv = NULL;
     int		argc;
     int		i;
     char_u	*p;
     int		inquote;
-#ifdef FEAT_GUI
+# ifdef FEAT_GUI
     int		pty_master_fd = -1;	    /* for pty's */
     int		pty_slave_fd = -1;
     char	*tty_name;
     int		fd_toshell[2];	    /* for pipes */
     int		fd_fromshell[2];
     int		pipe_error = FALSE;
-# ifdef HAVE_SETENV
+#  ifdef HAVE_SETENV
     char	envbuf[50];
-# else
+#  else
     static char	envbuf_Rows[20];
     static char	envbuf_Columns[20];
+#  endif
 # endif
-#endif
     int		did_settmode = FALSE; /* TRUE when settmode(TMODE_RAW) called */
 
     out_flush();
@@ -3117,7 +3318,7 @@ mch_call_shell(cmd, options)
     }
     argv[argc] = NULL;
 
-#ifdef FEAT_GUI
+# ifdef FEAT_GUI
     /*
      * For the GUI: Try using a pseudo-tty to get the stdin/stdout of the
      * executed command into the Vim window.  Or use a pipe.
@@ -3163,16 +3364,16 @@ mch_call_shell(cmd, options)
     }
 
     if (!pipe_error)			/* pty or pipe opened or not used */
-#endif
+# endif
 
     {
-#ifdef __BEOS__
+# ifdef __BEOS__
 	beos_cleanup_read_thread();
-#endif
+# endif
 	if ((pid = fork()) == -1)	/* maybe we should use vfork() */
 	{
 	    MSG_PUTS(_("\nCannot fork\n"));
-#ifdef FEAT_GUI
+# ifdef FEAT_GUI
 	    if (gui.in_use && show_shell_mess)
 	    {
 		if (pty_master_fd >= 0)		/* close the pseudo tty */
@@ -3188,7 +3389,7 @@ mch_call_shell(cmd, options)
 		    close(fd_fromshell[1]);
 		}
 	    }
-#endif
+# endif
 	}
 	else if (pid == 0)	/* child */
 	{
@@ -3230,23 +3431,23 @@ mch_call_shell(cmd, options)
 		    close(fd);
 		}
 	    }
-#ifdef FEAT_GUI
+# ifdef FEAT_GUI
 	    else if (gui.in_use)
 	    {
 
-#ifdef HAVE_SETSID
+#  ifdef HAVE_SETSID
 		(void)setsid();
-#endif
+#  endif
 		/* push stream discipline modules */
 		if (options & SHELL_COOKED)
 		    SetupSlavePTY(pty_slave_fd);
-#ifdef TIOCSCTTY
+#  ifdef TIOCSCTTY
 		/* try to become controlling tty (probably doesn't work,
 		 * unless run by root) */
 		ioctl(pty_slave_fd, TIOCSCTTY, (char *)NULL);
-#endif
+#  endif
 		/* Simulate to have a dumb terminal (for now) */
-#ifdef HAVE_SETENV
+#  ifdef HAVE_SETENV
 		setenv("TERM", "dumb", 1);
 		sprintf((char *)envbuf, "%ld", Rows);
 		setenv("ROWS", (char *)envbuf, 1);
@@ -3254,7 +3455,7 @@ mch_call_shell(cmd, options)
 		setenv("LINES", (char *)envbuf, 1);
 		sprintf((char *)envbuf, "%ld", Columns);
 		setenv("COLUMNS", (char *)envbuf, 1);
-#else
+#  else
 		/*
 		 * Putenv does not copy the string, it has to remain valid.
 		 * Use a static array to avoid loosing allocated memory.
@@ -3266,7 +3467,7 @@ mch_call_shell(cmd, options)
 		putenv(envbuf_Rows);
 		sprintf(envbuf_Columns, "COLUMNS=%ld", Columns);
 		putenv(envbuf_Columns);
-#endif
+#  endif
 
 		if (pty_master_fd >= 0)
 		{
@@ -3301,7 +3502,7 @@ mch_call_shell(cmd, options)
 		    dup(1);
 		}
 	    }
-#endif
+# endif /* FEAT_GUI */
 	    /*
 	     * There is no type cast for the argv, because the type may be
 	     * different on different machines. This may cause a warning
@@ -3319,18 +3520,18 @@ mch_call_shell(cmd, options)
 	     */
 	    catch_signals(SIG_IGN, SIG_ERR);
 
-#ifdef FEAT_GUI
+# ifdef FEAT_GUI
 
 	    /*
 	     * For the GUI we redirect stdin, stdout and stderr to our window.
 	     */
 	    if (gui.in_use && show_shell_mess)
 	    {
-#define BUFLEN 100		/* length for buffer, pseudo tty limit is 128 */
+#  define BUFLEN 100		/* length for buffer, pseudo tty limit is 128 */
 		char_u	    buffer[BUFLEN + 1];
-#ifdef FEAT_MBYTE
+#  ifdef FEAT_MBYTE
 		int	    buffer_off = 0;	/* valid bytes in buffer[] */
-#endif
+#  endif
 		char_u	    ta_buf[BUFLEN + 1];	/* TypeAHead */
 		int	    ta_len = 0;		/* valid bytes in ta_buf[] */
 		int	    len;
@@ -3395,19 +3596,19 @@ mch_call_shell(cmd, options)
 			 */
 			if (len == 1 && (pty_master_fd < 0 || cmd != NULL))
 			{
-#ifdef SIGINT
+#  ifdef SIGINT
 			    /*
 			     * Send SIGINT to the child's group or all
 			     * processes in our group.
 			     */
 			    if (ta_buf[ta_len] == Ctrl_C
 					       || ta_buf[ta_len] == intr_char)
-# ifdef HAVE_SETSID
+#   ifdef HAVE_SETSID
 				kill(-pid, SIGINT);
-# else
+#   else
 				kill(0, SIGINT);
-# endif
-#endif
+#   endif
+#  endif
 			    if (pty_master_fd < 0 && toshell_fd >= 0
 					       && ta_buf[ta_len] == Ctrl_D)
 			    {
@@ -3435,10 +3636,10 @@ mch_call_shell(cmd, options)
 			    }
 			    else if (ta_buf[i] == '\r')
 				ta_buf[i] = '\n';
-#ifdef FEAT_MBYTE
+#  ifdef FEAT_MBYTE
 			    if (has_mbyte)
 				i += (*mb_ptr2len_check)(ta_buf + i) - 1;
-#endif
+#  endif
 			}
 
 			/*
@@ -3451,7 +3652,7 @@ mch_call_shell(cmd, options)
 			    {
 				if (ta_buf[i] == '\n' || ta_buf[i] == '\b')
 				    msg_putchar(ta_buf[i]);
-#ifdef FEAT_MBYTE
+#  ifdef FEAT_MBYTE
 				else if (has_mbyte)
 				{
 				    int l = (*mb_ptr2len_check)(ta_buf + i);
@@ -3459,7 +3660,7 @@ mch_call_shell(cmd, options)
 				    msg_outtrans_len(ta_buf + i, l);
 				    i += l - 1;
 				}
-#endif
+#  endif
 				else
 				    msg_outtrans_len(ta_buf + i, 1);
 			    }
@@ -3497,15 +3698,15 @@ mch_call_shell(cmd, options)
 		    while (RealWaitForChar(fromshell_fd, 10L, NULL))
 		    {
 			len = read(fromshell_fd, (char *)buffer
-#ifdef FEAT_MBYTE
+#  ifdef FEAT_MBYTE
 				+ buffer_off, (size_t)(BUFLEN - buffer_off)
-#else
+#  else
 				, (size_t)BUFLEN
-#endif
+#  endif
 				);
 			if (len <= 0)		    /* end of file or error */
 			    goto finished;
-#ifdef FEAT_MBYTE
+#  ifdef FEAT_MBYTE
 			len += buffer_off;
 			buffer[len] = NUL;
 			if (has_mbyte)
@@ -3551,7 +3752,7 @@ mch_call_shell(cmd, options)
 			    buffer_off = 0;
 			}
 			else
-#endif
+#  endif /* FEAT_MBYTE */
 			{
 			    buffer[len] = NUL;
 			    msg_puts(buffer);
@@ -3568,11 +3769,11 @@ mch_call_shell(cmd, options)
 		     * Check if the child still exists, before checking for
 		     * typed characters (otherwise we would loose typeahead).
 		     */
-#ifdef __NeXT__
+#  ifdef __NeXT__
 		    wait_pid = wait4(pid, &status, WNOHANG, (struct rusage *) 0);
-#else
+#  else
 		    wait_pid = waitpid(pid, &status, WNOHANG);
-#endif
+#  endif
 		    if ((wait_pid == (pid_t)-1 && errno == ECHILD)
 			    || (wait_pid == pid && WIFEXITED(status)))
 		    {
@@ -3584,19 +3785,19 @@ mch_call_shell(cmd, options)
 finished:
 		p_more = p_more_save;
 
-#ifndef MACOS_X_UNIX /* TODO: Is it needed for MACOS_X ? */
+#  ifndef MACOS_X_UNIX /* TODO: Is it needed for MACOS_X ? */
 		/*
 		 * Give all typeahead that wasn't used back to ui_inchar().
 		 */
 		if (ta_len)
 		    ui_inchar_undo(ta_buf, ta_len);
-#endif
+#  endif
 		State = old_State;
 		if (toshell_fd >= 0)
 		    close(toshell_fd);
 		close(fromshell_fd);
 	    }
-#endif /* FEAT_GUI */
+# endif /* FEAT_GUI */
 
 	    /*
 	     * Wait until our child has exited.
@@ -3607,11 +3808,28 @@ finished:
 	     */
 	    while (wait_pid != pid)
 	    {
+#ifdef _THREAD_SAFE
+		/* Ugly hack: when compiled with Python threads are probably
+		 * used, in which case wait() sometimes hangs for no obvious
+		 * reason.  Use waitpid() instead and loop (like the GUI). */
+#  ifdef __NeXT__
+		wait_pid = wait4(pid, &status, WNOHANG, (struct rusage *)0);
+#  else
+		wait_pid = waitpid(pid, &status, WNOHANG);
+#  endif
+		if (wait_pid == 0)
+		{
+		    /* Wait for 1/100 sec before trying again. */
+		    mch_delay(10L, TRUE);
+		    continue;
+		}
+#else
 		wait_pid = wait(&status);
-		if (wait_pid <= 0
-#ifdef ECHILD
-			&& errno == ECHILD
 #endif
+		if (wait_pid <= 0
+# ifdef ECHILD
+			&& errno == ECHILD
+# endif
 		   )
 		    break;
 	    }
@@ -3620,7 +3838,8 @@ finished:
 	     * Set to raw mode right now, otherwise a CTRL-C after
 	     * catch_signals() will kill Vim.
 	     */
-	    settmode(TMODE_RAW);
+	    if (tmode == TMODE_RAW)
+		settmode(TMODE_RAW);
 	    did_settmode = TRUE;
 	    set_signals();
 
@@ -3651,10 +3870,11 @@ finished:
 
 error:
     if (!did_settmode)
-	settmode(TMODE_RAW);		    /* set to raw mode */
-#ifdef FEAT_TITLE
+	if (tmode == TMODE_RAW)
+	    settmode(TMODE_RAW);	/* set to raw mode */
+# ifdef FEAT_TITLE
     resettitle();
-#endif
+# endif
     vim_free(newcmd);
 
     return retval;
@@ -3690,7 +3910,7 @@ WaitForChar(msec)
 #endif
     int		avail;
 
-    if (!vim_is_input_buf_empty())	    /* something in inbuf[] */
+    if (input_available())	    /* something in inbuf[] */
 	return 1;
 
 #if defined(FEAT_MOUSE_DEC)
@@ -3732,7 +3952,7 @@ WaitForChar(msec)
 # endif
 	if (!avail)
 	{
-	    if (!vim_is_input_buf_empty())
+	    if (input_available())
 		return 1;
 # ifdef FEAT_XCLIPBOARD
 	    if (rest == 0 || !do_xterm_trace())
@@ -3763,7 +3983,7 @@ WaitForChar(msec)
  * Or when a Linux GPM mouse event is waiting.
  */
 /* ARGSUSED */
-#if defined(__BEOS__) || defined(VMS)
+#if defined(__BEOS__)
     int
 #else
     static  int
@@ -3774,20 +3994,49 @@ RealWaitForChar(fd, msec, check_for_gpm)
     int		*check_for_gpm;
 {
     int		ret;
-# if defined(FEAT_XCLIPBOARD) && defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
-    struct timeval  start_tv;
-# endif
+#if defined(FEAT_XCLIPBOARD) || defined(USE_XSMP)
+    /* May retry getting characters after an event was handled. */
+# define MAY_LOOP
 
+# if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
+    /* Remember at what time we started, so that we know how much longer we
+     * should wait after being interrupted. */
+#  define USE_START_TV
+    struct timeval  start_tv;
+
+    if (msec > 0 && (
+#  ifdef FEAT_XCLIPBOARD
+	    xterm_Shell != (Widget)0
+#   ifdef USE_XSMP
+	    ||
+#   endif
+#  endif
+#  ifdef USE_XSMP
+	    xsmp_icefd != -1
+#  endif
+	    ))
+	gettimeofday(&start_tv, NULL);
+# endif
+#endif
+
+#ifdef MAY_LOOP
     while (1)
+#endif
     {
+#ifdef MAY_LOOP
+	int		finished = TRUE; /* default is to 'loop' just once */
+#endif
 #ifndef HAVE_SELECT
-	struct pollfd   fds[4];
+	struct pollfd   fds[5];
 	int		nfd;
 # ifdef FEAT_XCLIPBOARD
 	int		xterm_idx = -1;
 # endif
 # ifdef FEAT_MOUSE_GPM
 	int		gpm_idx = -1;
+# endif
+# ifdef USE_XSMP
+	int		xsmp_idx = -1;
 # endif
 
 	fds[0].fd = fd;
@@ -3810,10 +4059,6 @@ RealWaitForChar(fd, msec, check_for_gpm)
 	    fds[nfd].fd = ConnectionNumber(xterm_dpy);
 	    fds[nfd].events = POLLIN;
 	    nfd++;
-#  if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
-	    if (msec >= 0)
-		gettimeofday(&start_tv, NULL);
-#  endif
 	}
 # endif
 # ifdef FEAT_MOUSE_GPM
@@ -3821,6 +4066,15 @@ RealWaitForChar(fd, msec, check_for_gpm)
 	{
 	    gpm_idx = nfd;
 	    fds[nfd].fd = gpm_fd;
+	    fds[nfd].events = POLLIN;
+	    nfd++;
+	}
+# endif
+# ifdef USE_XSMP
+	if (xsmp_icefd != -1)
+	{
+	    xsmp_idx = nfd;
+	    fds[nfd].fd = xsmp_icefd;
 	    fds[nfd].events = POLLIN;
 	    nfd++;
 	}
@@ -3843,41 +4097,34 @@ RealWaitForChar(fd, msec, check_for_gpm)
 	if (xterm_Shell != (Widget)0 && (fds[xterm_idx].revents & POLLIN))
 	{
 	    xterm_update();      /* Maybe we should hand out clipboard */
-	    if (--ret == 0 && vim_is_input_buf_empty())
-	    {
-		if (msec > 0)
-		{
-#  if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
-		    struct timeval  tv;
-
-		    /* Compute remaining wait time. */
-		    gettimeofday(&tv, NULL);
-		    msec -= (tv.tv_sec - start_tv.tv_sec) * 1000L
-				    + (tv.tv_usec - start_tv.tv_usec) / 1000L;
-		    if (msec <= 0)
-			break;	/* waited long enough */
-#  else
-		    /* Guess we got interrupted halfway. */
-		    msec = msec / 2;
-#  endif
-		}
-		continue;
-	    }
+	    if (--ret == 0 && !input_available())
+		/* Try again */
+		finished = FALSE;
 	}
 # endif
 # ifdef FEAT_MOUSE_GPM
 	if (gpm_idx >= 0 && (fds[gpm_idx].revents & POLLIN))
 	{
 	    *check_for_gpm = 1;
-	    if (--ret == 0)
-	    {
-		if (msec > 0)
-		    msec = msec / 2;
-		continue;
-	    }
 	}
 # endif
-	break;
+# ifdef USE_XSMP
+	if (xsmp_idx >= 0)
+	{
+	    if (fds[xsmp_idx].revents & POLLIN)
+		xsmp_handle_requests();
+	    else if (fds[xsmp_idx].revents & POLLHUP)
+	    {
+		if (p_verbose > 0)
+		    MSG(_("XSMP lost ICE connection"));
+		xsmp_close();
+	    }
+	    if (--ret == 0)
+		/* Try again */
+		finished = FALSE;
+	}
+# endif
+
 
 #else /* HAVE_SELECT */
 
@@ -3925,10 +4172,6 @@ RealWaitForChar(fd, msec, check_for_gpm)
 	    FD_SET(ConnectionNumber(xterm_dpy), &rfds);
 	    if (maxfd < ConnectionNumber(xterm_dpy))
 		maxfd = ConnectionNumber(xterm_dpy);
-#  if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
-	    if (msec >= 0)
-		gettimeofday(&start_tv, NULL);
-#  endif
 	}
 # endif
 # ifdef FEAT_MOUSE_GPM
@@ -3940,8 +4183,23 @@ RealWaitForChar(fd, msec, check_for_gpm)
 		maxfd = gpm_fd;
 	}
 # endif
+# ifdef USE_XSMP
+	if (xsmp_icefd != -1)
+	{
+	    FD_SET(xsmp_icefd, &rfds);
+	    FD_SET(xsmp_icefd, &efds);
+	    if (maxfd < xsmp_icefd)
+		maxfd = xsmp_icefd;
+	}
+# endif
 
+# ifdef OLD_VMS
+	/* Old VMS as v6.2 and older have broken select(). It waits more than
+	 * required. Should not be used */
+	ret = 0;
+# else
 	ret = select(maxfd + 1, &rfds, NULL, &efds, (msec >= 0) ? &tv : NULL);
+# endif
 
 # ifdef FEAT_SNIFF
 	if (ret < 0 )
@@ -3961,23 +4219,10 @@ RealWaitForChar(fd, msec, check_for_gpm)
 	    xterm_update();	      /* Maybe we should hand out clipboard */
 	    /* continue looping when we only got the X event and the input
 	     * buffer is empty */
-	    if (--ret == 0 && vim_is_input_buf_empty())
+	    if (--ret == 0 && !input_available())
 	    {
-		if (msec > 0)
-		{
-#  if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
-		    /* Compute remaining wait time. */
-		    gettimeofday(&tv, NULL);
-		    msec -= (tv.tv_sec - start_tv.tv_sec) * 1000L
-				    + (tv.tv_usec - start_tv.tv_usec) / 1000L;
-		    if (msec <= 0)
-			break;	/* waited long enough */
-#  else
-		    /* Guess we got interrupted halfway. */
-		    msec = msec / 2;
-#  endif
-		}
-		continue;
+		/* Try again */
+		finished = FALSE;
 	    }
 	}
 # endif
@@ -3990,10 +4235,52 @@ RealWaitForChar(fd, msec, check_for_gpm)
 		*check_for_gpm = 1;
 	}
 # endif
+# ifdef USE_XSMP
+	if (ret > 0 && xsmp_icefd != -1)
+	{
+	    if (FD_ISSET(xsmp_icefd, &efds))
+	    {
+		if (p_verbose > 0)
+		    MSG(_("XSMP lost ICE connection"));
+		xsmp_close();
+		if (--ret == 0)
+		    finished = FALSE;   /* keep going if event was only one */
+	    }
+	    else if (FD_ISSET(xsmp_icefd, &rfds))
+	    {
+		xsmp_handle_requests();
+		if (--ret == 0)
+		    finished = FALSE;   /* keep going if event was only one */
+	    }
+	}
+# endif
 
-	break;
 #endif /* HAVE_SELECT */
+
+#ifdef MAY_LOOP
+	if (finished)
+	    break;
+
+	/* We're going to loop around again, find out for how long */
+	if (msec >= 0)
+	{
+# ifdef USE_START_TV
+	    struct timeval  tv;
+
+	    /* Compute remaining wait time. */
+	    gettimeofday(&tv, NULL);
+	    msec -= (tv.tv_sec - start_tv.tv_sec) * 1000L
+				    + (tv.tv_usec - start_tv.tv_usec) / 1000L;
+# else
+	    /* Guess we got interrupted halfway. */
+	    msec = msec / 2;
+# endif
+	    if (msec <= 0)
+		break;	/* waited long enough */
+	}
+#endif
     }
+
     return (ret > 0);
 }
 
@@ -4111,7 +4398,7 @@ unix_expandpath(gap, path, wildoff, flags)
 #else
     regmatch.rm_ic = FALSE;		/* Don't ever ignore case */
 #endif
-    regmatch.regprog = vim_regcomp(pat, TRUE);
+    regmatch.regprog = vim_regcomp(pat, RE_MAGIC);
     vim_free(pat);
 
     if (regmatch.regprog == NULL)
@@ -4512,7 +4799,7 @@ mch_expand_wildcards(num_pat, pat, num_file, file, flags)
     /*
      * read the names from the file into memory
      */
-    fd = fopen((char *)tempname, "r");
+    fd = fopen((char *)tempname, READBIN);
     if (fd == NULL)
     {
 	/* Something went wrong, perhaps a file name with a special char. */
@@ -4548,6 +4835,16 @@ mch_expand_wildcards(num_pat, pat, num_file, file, flags)
 	return FAIL;
     }
     vim_free(tempname);
+
+#if defined(__CYGWIN__) || defined(__CYGWIN32__)
+    /* Translate <CR><NL> into <NL>.  Caution, buffer may contain NUL. */
+    p = buffer;
+    for (i = 0; i < len; ++i)
+	if (!(buffer[i] == CR && buffer[i + 1] == NL))
+	    *p++ = buffer[i];
+    len = p - buffer;
+# endif
+
 
     /* file names are separated with Space */
     if (shell_style == STYLE_ECHO)
@@ -4983,8 +5280,7 @@ mch_gpm_process()
 }
 #endif /* FEAT_MOUSE_GPM */
 
-#if (defined(FEAT_EVAL) && (defined(USE_DLOPEN) || defined(HAVE_SHL_LOAD))) \
-	|| defined(PROTO)
+#if defined(FEAT_LIBCALL) || defined(PROTO)
 typedef char_u * (*STRPROCSTR)__ARGS((char_u *));
 typedef char_u * (*INTPROCSTR)__ARGS((int));
 typedef int (*STRPROCINT)__ARGS((char_u *));
@@ -5035,7 +5331,10 @@ mch_libcall(libname, funcname, argstring, argint, string_result, number_result)
 	 */
 	mch_startjmp();
 	if (SETJMP(lc_jump_env) != 0)
+	{
 	    success = FALSE;
+	    mch_didjmp();
+	}
 	else
 # endif
 	{
@@ -5113,7 +5412,7 @@ mch_libcall(libname, funcname, argstring, argint, string_result, number_result)
 
     if (!success)
     {
-	EMSG2(_("E364: Library call failed for \"%s()\""), funcname);
+	EMSG2(_(e_libcall), funcname);
 	return FAIL;
     }
 
@@ -5142,6 +5441,9 @@ setup_term_clip()
     if (app_context != NULL && xterm_Shell == (Widget)0)
     {
 	int (*oldhandler)();
+#if defined(HAVE_SETJMP_H)
+	int (*oldIOhandler)();
+#endif
 # if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
 	struct timeval  start_tv;
 
@@ -5152,9 +5454,29 @@ setup_term_clip()
 	/* Ignore X errors while opening the display */
 	oldhandler = XSetErrorHandler(x_error_check);
 
-	xterm_dpy = XtOpenDisplay(app_context, xterm_display,
-		"vim_xterm", "Vim_xterm", NULL, 0, &z, &strp);
+#if defined(HAVE_SETJMP_H)
+	/* Ignore X IO errors while opening the display */
+	oldIOhandler = XSetIOErrorHandler(x_IOerror_check);
+	mch_startjmp();
+	if (SETJMP(lc_jump_env) != 0)
+	{
+	    mch_didjmp();
+	    xterm_dpy = NULL;
+	}
+	else
+#endif
+	{
+	    xterm_dpy = XtOpenDisplay(app_context, xterm_display,
+		    "vim_xterm", "Vim_xterm", NULL, 0, &z, &strp);
+#if defined(HAVE_SETJMP_H)
+	    mch_endjmp();
+#endif
+	}
 
+#if defined(HAVE_SETJMP_H)
+	/* Now handle X IO errors normally. */
+	(void)XSetIOErrorHandler(oldIOhandler);
+#endif
 	/* Now handle X errors normally. */
 	(void)XSetErrorHandler(oldhandler);
 
@@ -5164,6 +5486,9 @@ setup_term_clip()
 		MSG(_("Opening the X display failed"));
 	    return;
 	}
+
+	/* Catch terminating error of the X server connection. */
+	(void)XSetIOErrorHandler(x_IOerror_handler);
 
 # if defined(HAVE_GETTIMEOFDAY) && defined(HAVE_SYS_TIME_H)
 	if (p_verbose > 0)
@@ -5401,6 +5726,275 @@ clip_xterm_set_selection(cbd)
     clip_x11_set_selection(cbd);
 }
 #endif
+
+
+#if defined(USE_XSMP) || defined(PROTO)
+/*
+ * Code for X Session Management Protocol.
+ */
+static void xsmp_handle_save_yourself __ARGS((SmcConn smc_conn, SmPointer client_data, int save_type, Bool shutdown, int interact_style, Bool fast));
+static void xsmp_die __ARGS((SmcConn smc_conn, SmPointer client_data));
+static void xsmp_save_complete __ARGS((SmcConn smc_conn, SmPointer client_data));
+static void xsmp_shutdown_cancelled __ARGS((SmcConn smc_conn, SmPointer	client_data));
+static void xsmp_ice_connection __ARGS((IceConn iceConn, IcePointer clientData, Bool opening, IcePointer *watchData));
+
+
+# if defined(FEAT_GUI) && defined(USE_XSMP_INTERACT)
+static void xsmp_handle_interaction __ARGS((SmcConn smc_conn, SmPointer client_data));
+
+/*
+ * This is our chance to ask the user if they want to save,
+ * or abort the logout
+ */
+/*ARGSUSED*/
+    static void
+xsmp_handle_interaction(smc_conn, client_data)
+    SmcConn	smc_conn;
+    SmPointer	client_data;
+{
+    cmdmod_T	save_cmdmod;
+    int		cancel_shutdown = False;
+
+    save_cmdmod = cmdmod;
+    cmdmod.confirm = TRUE;
+    if (check_changed_any(FALSE))
+	/* Mustn't logout */
+	cancel_shutdown = True;
+    cmdmod = save_cmdmod;
+    setcursor();		/* position cursor */
+    out_flush();
+
+    /* Done interaction */
+    SmcInteractDone(smc_conn, cancel_shutdown);
+
+    /* Finish off
+     * Only end save-yourself here if we're not cancelling shutdown;
+     * we'll get a cancelled callback later in which we'll end it.
+     * Hopefully get around glitchy SMs (like GNOME-1)
+     */
+    if (!cancel_shutdown)
+    {
+	xsmp.save_yourself = False;
+	SmcSaveYourselfDone(smc_conn, True);
+    }
+}
+# endif
+
+/*
+ * Callback that starts save-yourself.
+ */
+/*ARGSUSED*/
+    static void
+xsmp_handle_save_yourself(smc_conn, client_data, save_type,
+					       shutdown, interact_style, fast)
+    SmcConn	smc_conn;
+    SmPointer	client_data;
+    int		save_type;
+    Bool	shutdown;
+    int		interact_style;
+    Bool	fast;
+{
+    /* Handle already biung in saveyourself */
+    if (xsmp.save_yourself)
+	SmcSaveYourselfDone(smc_conn, True);
+    xsmp.save_yourself = True;
+    xsmp.shutdown = shutdown;
+
+    /* First up, preserve all files */
+    out_flush();
+    ml_sync_all(FALSE, FALSE);	/* preserve all swap files */
+
+    if (p_verbose > 0)
+	MSG(_("XSMP handling save-yourself request"));
+
+# if defined(FEAT_GUI) && defined(USE_XSMP_INTERACT)
+    /* Now see if we can ask about unsaved files */
+    if (shutdown && !fast && gui.in_use)
+	/* Need to interact with user, but need SM's permission */
+	SmcInteractRequest(smc_conn, SmDialogError,
+					xsmp_handle_interaction, client_data);
+    else
+# endif
+    {
+	/* Can stop the cycle here */
+	SmcSaveYourselfDone(smc_conn, True);
+	xsmp.save_yourself = False;
+    }
+}
+
+
+/*
+ * Callback to warn us of imminent death.
+ */
+/*ARGSUSED*/
+    static void
+xsmp_die(smc_conn, client_data)
+    SmcConn	smc_conn;
+    SmPointer	client_data;
+{
+    xsmp_close();
+
+    /* quit quickly leaving swapfiles for modified buffers behind */
+    getout_preserve_modified(0);
+}
+
+
+/*
+ * Callback to tell us that save-yourself has completed.
+ */
+/*ARGSUSED*/
+    static void
+xsmp_save_complete(smc_conn, client_data)
+    SmcConn	smc_conn;
+    SmPointer	client_data;
+{
+    xsmp.save_yourself = False;
+}
+
+
+/*
+ * Callback to tell us that an instigated shutdown was cancelled
+ * (maybe even by us)
+ */
+/*ARGSUSED*/
+    static void
+xsmp_shutdown_cancelled(smc_conn, client_data)
+    SmcConn	smc_conn;
+    SmPointer	client_data;
+{
+    if (xsmp.save_yourself)
+	SmcSaveYourselfDone(smc_conn, True);
+    xsmp.save_yourself = False;
+    xsmp.shutdown = False;
+}
+
+
+/*
+ * Callback to tell us that a new ICE connection has been established.
+ */
+/*ARGSUSED*/
+    static void
+xsmp_ice_connection(iceConn, clientData, opening, watchData)
+    IceConn	iceConn;
+    IcePointer	clientData;
+    Bool	opening;
+    IcePointer	*watchData;
+{
+    /* Intercept creation of ICE connection fd */
+    if (opening)
+    {
+	xsmp_icefd = IceConnectionNumber(iceConn);
+	IceRemoveConnectionWatch(xsmp_ice_connection, NULL);
+    }
+}
+
+
+/* Handle any ICE processing that's required; return FAIL if SM lost */
+    int
+xsmp_handle_requests()
+{
+    Bool rep;
+    if (IceProcessMessages(xsmp.iceconn, NULL, &rep)
+						 == IceProcessMessagesIOError)
+    {
+	/* Lost ICE */
+	if (p_verbose > 0)
+	    MSG(_("XSMP lost ICE connection"));
+	xsmp_close();
+	return FAIL;
+    }
+    else
+	return OK;
+}
+
+
+/* Set up X Session Management Protocol */
+    void
+xsmp_init(void)
+{
+    char		errorstring[80];
+    char		*clientid;
+    SmcCallbacks	smcallbacks;
+#if 0
+    SmPropValue		smname;
+    SmProp		smnameprop;
+    SmProp		*smprops[1];
+#endif
+
+    if (p_verbose > 0)
+	MSG(_("XSMP opening connection"));
+
+    xsmp.save_yourself = xsmp.shutdown = False;
+
+    /* Set up SM callbacks - must have all, even if they're not used */
+    smcallbacks.save_yourself.callback = xsmp_handle_save_yourself;
+    smcallbacks.save_yourself.client_data = NULL;
+    smcallbacks.die.callback = xsmp_die;
+    smcallbacks.die.client_data = NULL;
+    smcallbacks.save_complete.callback = xsmp_save_complete;
+    smcallbacks.save_complete.client_data = NULL;
+    smcallbacks.shutdown_cancelled.callback = xsmp_shutdown_cancelled;
+    smcallbacks.shutdown_cancelled.client_data = NULL;
+
+    /* Set up a watch on ICE connection creations */
+    if (IceAddConnectionWatch(xsmp_ice_connection, NULL) == 0)
+    {
+	if (p_verbose > 0)
+	    MSG(_("XSMP ICE connection watch failed"));
+	return;
+    }
+
+    /* Create an SM connection */
+    xsmp.smcconn = SmcOpenConnection(
+	    NULL,
+	    NULL,
+	    SmProtoMajor,
+	    SmProtoMinor,
+	    SmcSaveYourselfProcMask | SmcDieProcMask
+		     | SmcSaveCompleteProcMask | SmcShutdownCancelledProcMask,
+	    &smcallbacks,
+	    NULL,
+	    &clientid,
+	    sizeof(errorstring),
+	    errorstring);
+    if (xsmp.smcconn == NULL)
+    {
+	char errorreport[132];
+	sprintf(errorreport, _("XSMP SmcOpenConnection failed: %s"),
+		errorstring);
+	if (p_verbose > 0)
+	    MSG(errorreport);
+	return;
+    }
+    xsmp.iceconn = SmcGetIceConnection(xsmp.smcconn);
+
+#if 0
+    /* ID ourselves */
+    smname.value = "vim";
+    smname.length = 3;
+    smnameprop.name = "SmProgram";
+    smnameprop.type = "SmARRAY8";
+    smnameprop.num_vals = 1;
+    smnameprop.vals = &smname;
+
+    smprops[0] = &smnameprop;
+    SmcSetProperties(xsmp.smcconn, 1, smprops);
+#endif
+}
+
+
+/* Shut down XSMP comms. */
+    void
+xsmp_close()
+{
+    if (xsmp_icefd != -1)
+    {
+	SmcCloseConnection(xsmp.smcconn, 0, NULL);
+	xsmp_icefd = -1;
+    }
+}
+#endif /* USE_XSMP */
+
 
 #ifdef EBCDIC
 /* Translate character to its CTRL- value */

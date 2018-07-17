@@ -140,6 +140,9 @@ static void screen_line __ARGS((int row, int coloff, int endcol, int clear_width
 static void screen_line __ARGS((int row, int coloff, int endcol, int clear_width));
 # define SCREEN_LINE(r, o, e, c, rl)    screen_line((r), (o), (e), (c))
 #endif
+#ifdef FEAT_RIGHTLEFT
+static void rl_mirror __ARGS((char_u *str));
+#endif
 #ifdef FEAT_VERTSPLIT
 static void draw_vsep_win __ARGS((win_T *wp, int row));
 #endif
@@ -345,9 +348,7 @@ update_screen(type)
 	return;
     }
 
-#ifdef FEAT_GUI
     updating_screen = TRUE;
-#endif
 #ifdef FEAT_SYN_HL
     ++display_tick;	    /* let syntax code know we're in a next round of
 			     * display updating */
@@ -523,8 +524,8 @@ update_screen(type)
 	curbuf->b_mod_set = FALSE;
 #endif
 
-#ifdef FEAT_GUI
     updating_screen = FALSE;
+#ifdef FEAT_GUI
     gui_may_resize_shell();
 #endif
 
@@ -554,81 +555,15 @@ update_screen(type)
 #endif
 }
 
-#if defined(FEAT_SIGNS) || defined(PROTO)
-    void
-update_debug_sign(buf, lnum)
-    buf_T	*buf;
-    linenr_T	lnum;
-{
-    win_T	*wp;
-    int		row;
-    int		j;
+#if defined(FEAT_SIGNS) || defined(FEAT_GUI)
+static void update_prepare __ARGS((void));
+static void update_finish __ARGS((void));
 
-#ifdef FEAT_FOLDING
-    win_foldinfo.fi_level = 0;
-#endif
-
-#ifdef FEAT_GUI
-    /* Remove the cursor before starting to do anything, because scrolling may
-     * make it difficult to redraw the text under it. */
-    if (gui.in_use)
-	gui_undraw_cursor();
-#endif
-    if (buf != NULL && lnum > 0)
-    {					/* update/delete a specific mark */
-	FOR_ALL_WINDOWS(wp)
-	{
-	    if (wp->w_buffer == buf && lnum >= wp->w_topline
-						      && lnum < wp->w_botline)
-	    {
-		row = 0;
-		for (j = 0; j < wp->w_lines_valid; ++j)
-		{
-		    /* Ignore folding, a closed fold with a sign doesn't need
-		     * updating. */
-		    if (lnum == wp->w_lines[j].wl_lnum)
-		    {
-			screen_start();	/* not sure of screen cursor */
-			win_line(wp, lnum, row, row + wp->w_lines[j].wl_size);
-			break;
-		    }
-		    row += wp->w_lines[j].wl_size;
-		}
-	    }
-	}
-    }
-    else
-    {
-	/* update all windows (signs deleted) */
-#ifdef FEAT_WINDOWS
-	for (wp = firstwin; wp; wp = wp->w_next)
-	    win_update(wp);
-#else
-	    win_update(curwin);
-#endif
-    }
-#ifdef FEAT_GUI
-    /* Redraw the cursor and update the scrollbars when all screen updating is
-     * done. */
-    if (gui.in_use)
-    {
-	out_flush();	/* required before updating the cursor */
-	gui_update_cursor(FALSE, FALSE);
-	gui_update_scrollbars(FALSE);
-    }
-#endif
-}
-#endif
-
-
-#ifdef FEAT_GUI
 /*
- * Update a single window, its status line and maybe the command line msg.
- * Used for the GUI scrollbar.
+ * Prepare for updating one or more windows.
  */
-    void
-updateWindow(wp)
-    win_T	*wp;
+    static void
+update_prepare()
 {
     cursor_off();
     updating_screen = TRUE;
@@ -641,6 +576,107 @@ updateWindow(wp)
 #ifdef FEAT_SEARCH_EXTRA
     start_search_hl();
 #endif
+}
+
+/*
+ * Finish updating one or more windows.
+ */
+    static void
+update_finish()
+{
+    if (redraw_cmdline)
+	showmode();
+
+# ifdef FEAT_SEARCH_EXTRA
+    end_search_hl();
+# endif
+
+    updating_screen = FALSE;
+
+# ifdef FEAT_GUI
+    gui_may_resize_shell();
+
+    /* Redraw the cursor and update the scrollbars when all screen updating is
+     * done. */
+    if (gui.in_use)
+    {
+	out_flush();	/* required before updating the cursor */
+	gui_update_cursor(FALSE, FALSE);
+	gui_update_scrollbars(FALSE);
+    }
+# endif
+}
+#endif
+
+#if defined(FEAT_SIGNS) || defined(PROTO)
+    void
+update_debug_sign(buf, lnum)
+    buf_T	*buf;
+    linenr_T	lnum;
+{
+    win_T	*wp;
+    int		doit = FALSE;
+
+# ifdef FEAT_FOLDING
+    win_foldinfo.fi_level = 0;
+# endif
+
+    /* update/delete a specific mark */
+    FOR_ALL_WINDOWS(wp)
+    {
+	if (buf != NULL && lnum > 0)
+	{
+	    if (wp->w_buffer == buf && lnum >= wp->w_topline
+						      && lnum < wp->w_botline)
+	    {
+		if (wp->w_redraw_top == 0 || wp->w_redraw_top > lnum)
+		    wp->w_redraw_top = lnum;
+		if (wp->w_redraw_bot == 0 || wp->w_redraw_bot < lnum)
+		    wp->w_redraw_bot = lnum;
+		redraw_win_later(wp, VALID);
+	    }
+	}
+	else
+	    redraw_win_later(wp, VALID);
+	if (wp->w_redr_type != 0)
+	    doit = TRUE;
+    }
+
+    if (!doit)
+	return;
+
+    /* update all windows that need updating */
+    update_prepare();
+
+# ifdef FEAT_WINDOWS
+    for (wp = firstwin; wp; wp = wp->w_next)
+    {
+	if (wp->w_redr_type != 0)
+	    win_update(wp);
+	if (wp->w_redr_status)
+	    win_redr_status(wp);
+    }
+# else
+    if (curwin->w_redr_type != 0)
+	win_update(curwin);
+# endif
+
+    update_finish();
+}
+#endif
+
+
+#if defined(FEAT_GUI) || defined(PROTO)
+/*
+ * Update a single window, its status line and maybe the command line msg.
+ * Used for the GUI scrollbar.
+ */
+    void
+updateWindow(wp)
+    win_T	*wp;
+{
+    update_prepare();
+
 #ifdef FEAT_CLIPBOARD
     /* When Visual area changed, may have to update selection. */
     if (clip_star.available && clip_isautosel())
@@ -658,24 +694,8 @@ updateWindow(wp)
 	    )
 	win_redr_status(wp);
 #endif
-    if (redraw_cmdline)
-	showmode();
-#ifdef FEAT_SEARCH_EXTRA
-    end_search_hl();
-#endif
-    updating_screen = FALSE;
-    gui_may_resize_shell();
 
-#ifdef FEAT_GUI
-    /* Redraw the cursor and update the scrollbars when all screen updating is
-     * done. */
-    if (gui.in_use)
-    {
-	out_flush();	/* required before updating the cursor */
-	gui_update_cursor(FALSE, FALSE);
-	gui_update_scrollbars(FALSE);
-    }
-#endif
+    update_finish();
 }
 #endif
 
@@ -802,7 +822,7 @@ win_update(wp)
     {
 	/*
 	 * When there are both inserted/deleted lines and specific lines to be
-	 * redrawn,, w_redraw_top and w_redraw_bot may be invalid, just redraw
+	 * redrawn, w_redraw_top and w_redraw_bot may be invalid, just redraw
 	 * everything (only happens when redrawing is off for while).
 	 */
 	type = NOT_VALID;
@@ -829,7 +849,11 @@ win_update(wp)
 		/* Need to redraw lines above the change that may be included
 		 * in a pattern match. */
 		if (syntax_present(buf))
+		{
 		    mod_top -= buf->b_syn_sync_linebreaks;
+		    if (mod_top < 1)
+			mod_top = 1;
+		}
 #endif
 	    }
 	    if (mod_bot == 0 || mod_bot < buf->b_mod_bot)
@@ -1976,6 +2000,28 @@ fold_line(wp, fold_count, foldinfo, lnum, row)
     /* Set all attributes of the 'number' column and the text */
     RL_MEMSET(col, hl_attr(HLF_FL), (size_t)(W_WIDTH(wp) - col));
 
+#ifdef FEAT_SIGNS
+    /* If signs are being displayed, add two spaces. */
+    if (wp->w_buffer->b_signlist != NULL)
+    {
+	len = W_WIDTH(wp) - col;
+	if (len > 0)
+	{
+	    if (len > 2)
+		len = 2;
+# ifdef FEAT_RIGHTLEFT
+	    if (wp->w_p_rl)
+		/* the line number isn't reversed */
+		copy_text_attr(off + W_WIDTH(wp) - len - col,
+					(char_u *)"  ", len, hl_attr(HLF_FL));
+	    else
+# endif
+		copy_text_attr(off + col, (char_u *)"  ", len, hl_attr(HLF_FL));
+	    col += len;
+	}
+    }
+#endif
+
     /*
      * 3. Add the 'number' column
      */
@@ -2041,7 +2087,11 @@ fold_line(wp, fold_count, foldinfo, lnum, row)
 	    {
 #ifdef FEAT_MBYTE
 		if (has_mbyte && (len = (*mb_ptr2len_check)(p)) > 1)
+		{
+		    if (!vim_isprintc((*mb_ptr2char)(p)))
+			break;
 		    p += len - 1;
+		}
 		else
 #endif
 		    if (*p == TAB)
@@ -2077,6 +2127,11 @@ fold_line(wp, fold_count, foldinfo, lnum, row)
 	int	cells;
 	int	u8c, u8c_c1, u8c_c2;
 	int	idx;
+	int	c_len;
+# ifdef FEAT_ARABIC
+	int	prev_c = 0;		/* previous Arabic character */
+	int	prev_c1 = 0;		/* first composing char for prev_c */
+# endif
 
 # ifdef FEAT_RIGHTLEFT
 	if (wp->w_p_rl)
@@ -2089,6 +2144,7 @@ fold_line(wp, fold_count, foldinfo, lnum, row)
 	for (p = text; *p != NUL; )
 	{
 	    cells = (*mb_ptr2cells)(p);
+	    c_len = (*mb_ptr2len_check)(p);
 	    if (col + cells > W_WIDTH(wp)
 # ifdef FEAT_RIGHTLEFT
 		    - (wp->w_p_rl ? col : 0)
@@ -2100,10 +2156,49 @@ fold_line(wp, fold_count, foldinfo, lnum, row)
 	    {
 		u8c = utfc_ptr2char(p, &u8c_c1, &u8c_c2);
 		if (*p < 0x80 && u8c_c1 == 0 && u8c_c2 == 0)
+		{
 		    ScreenLinesUC[idx] = 0;
+#ifdef FEAT_ARABIC
+		    prev_c = u8c;
+#endif
+		}
 		else
 		{
-		    ScreenLinesUC[idx] = u8c;
+#ifdef FEAT_ARABIC
+		    if (p_arshape && !p_tbidi && ARABIC_CHAR(u8c))
+		    {
+			/* Do Arabic shaping. */
+			int	pc, pc1, nc, dummy;
+			int	firstbyte = *p;
+
+			/* The idea of what is the previous and next
+			 * character depends on 'rightleft'. */
+			if (wp->w_p_rl)
+			{
+			    pc = prev_c;
+			    pc1 = prev_c1;
+			    nc = utf_ptr2char(p + c_len);
+			    prev_c1 = u8c_c1;
+			}
+			else
+			{
+			    pc = utfc_ptr2char(p + c_len, &pc1, &dummy);
+			    nc = prev_c;
+			}
+			prev_c = u8c;
+
+			u8c = arabic_shape(u8c, &firstbyte, &u8c_c1,
+								 pc, pc1, nc);
+			ScreenLines[idx] = firstbyte;
+		    }
+		    else
+			prev_c = u8c;
+#endif
+		    /* Non-BMP character: display as ? or fullwidth ?. */
+		    if (u8c >= 0x10000)
+			ScreenLinesUC[idx] = (cells == 2) ? 0xff1f : (int)'?';
+		    else
+			ScreenLinesUC[idx] = u8c;
 		    ScreenLinesC1[idx] = u8c_c1;
 		    ScreenLinesC2[idx] = u8c_c2;
 		}
@@ -2119,7 +2214,7 @@ fold_line(wp, fold_count, foldinfo, lnum, row)
 	    }
 	    col += cells;
 	    idx += cells;
-	    p += (*mb_ptr2len_check)(p);
+	    p += c_len;
 	}
     }
     else
@@ -2153,7 +2248,16 @@ fold_line(wp, fold_count, foldinfo, lnum, row)
     {
 #ifdef FEAT_MBYTE
 	if (enc_utf8)
-	    ScreenLinesUC[off + col] = 0;
+	{
+	    if (fill_fold >= 0x80)
+	    {
+		ScreenLinesUC[off + col] = fill_fold;
+		ScreenLinesC1[off + col] = 0;
+		ScreenLinesC2[off + col] = 0;
+	    }
+	    else
+		ScreenLinesUC[off + col] = 0;
+	}
 #endif
 	ScreenLines[off + col++] = fill_fold;
     }
@@ -2382,15 +2486,16 @@ win_line(wp, lnum, startrow, endrow)
 #ifdef FEAT_LINEBREAK
     int		need_showbreak = FALSE;
 #endif
-#ifdef FEAT_SIGNS
-    int_u	sign_typenr;		/* sign type (if signs are used) */
-#endif
 #if defined(FEAT_SIGNS) || (defined(FEAT_QUICKFIX) && defined(FEAT_WINDOWS))
 # define LINE_ATTR
     int		line_attr = 0;		/* atrribute for the whole line */
 #endif
 #ifdef FEAT_SEARCH_EXTRA
     match_T	*shl;			/* points to search_hl or match_hl */
+#endif
+#ifdef FEAT_ARABIC
+    int		prev_c = 0;		/* previous Arabic character */
+    int		prev_c1 = 0;		/* first composing char for prev_c */
 #endif
 
     /* draw_state: items that are drawn in sequence: */
@@ -2418,6 +2523,10 @@ win_line(wp, lnum, startrow, endrow)
 #endif
 #define WL_LINE		WL_SBR + 1	/* text in the line */
     int		draw_state = WL_START;	/* what to draw next */
+#if defined(FEAT_XIM) && defined(FEAT_GUI_GTK)
+    int		feedback_col = 0;
+    int		feedback_old_attr = -1;
+#endif
 
 
     if (startrow > endrow)		/* past the end already! */
@@ -2498,7 +2607,11 @@ win_line(wp, lnum, startrow, endrow)
 	    }
 	    if (VIsual_mode != 'V' && lnum == bot->lnum)
 	    {
-		if (*p_sel == 'e' && bot->col == 0)
+		if (*p_sel == 'e' && bot->col == 0
+#ifdef FEAT_VIRTUALEDIT
+			&& bot->coladd == 0
+#endif
+		   )
 		{
 		    fromcol = -10;
 		    tocol = MAXCOL;
@@ -2507,18 +2620,12 @@ win_line(wp, lnum, startrow, endrow)
 		{
 		    pos = *bot;
 		    if (*p_sel == 'e')
+			getvvcol(wp, &pos, (colnr_T *)&tocol, NULL, NULL);
+		    else
 		    {
-			--pos.col;
-#ifdef FEAT_MBYTE
-			if (has_mbyte)
-			{
-			    line = ml_get_buf(wp->w_buffer, lnum, FALSE);
-			    pos.col -= (*mb_head_off)(line, line + pos.col);
-			}
-#endif
+			getvvcol(wp, &pos, NULL, NULL, (colnr_T *)&tocol);
+			++tocol;
 		    }
-		    getvvcol(wp, &pos, NULL, NULL, (colnr_T *)&tocol);
-		    ++tocol;
 		}
 	    }
 	}
@@ -2599,10 +2706,10 @@ win_line(wp, lnum, startrow, endrow)
 
 #ifdef LINE_ATTR
 # ifdef FEAT_SIGNS
-    /* Draw a sign at the start of the line and/or highlight the line. */
-    sign_typenr = buf_getsigntype(wp->w_buffer, lnum);
-    if (sign_typenr != 0)
-	line_attr = sign_get_attr(sign_typenr, TRUE);
+    /* If this line has a sign with line highlighting set line_attr. */
+    v = buf_getsigntype(wp->w_buffer, lnum, SIGN_LINEHL);
+    if (v != 0)
+	line_attr = sign_get_attr((int)v, TRUE);
 # endif
 # if defined(FEAT_QUICKFIX) && defined(FEAT_WINDOWS)
     /* Highlight the current line in the quickfix window. */
@@ -2651,6 +2758,14 @@ win_line(wp, lnum, startrow, endrow)
 #endif
 		++ptr;
 	}
+
+#ifdef FEAT_VIRTUALEDIT
+	/* When 'virtualedit' is set the end of the line may be before the
+	 * start of the displayed part. */
+	if (vcol < v && *ptr == NUL && virtual_active())
+	    vcol = v;
+#endif
+
 	/* Handle a character that's not completely on the screen: Put ptr at
 	 * that character but skip the first few screen characters. */
 	if (vcol > v)
@@ -2816,39 +2931,58 @@ win_line(wp, lnum, startrow, endrow)
 	    if (draw_state == WL_SIGN - 1 && n_extra == 0)
 	    {
 		draw_state = WL_SIGN;
-		if (wp->w_buffer->b_signlist != NULL
+		/* Show the sign column when there are any signs in this
+		 * buffer or when using Netbeans. */
+		if ((wp->w_buffer->b_signlist != NULL
+# ifdef FEAT_NETBEANS_INTG
+			    || usingNetbeans
+# endif
+		    )
 # ifdef FEAT_DIFF
 			&& filler_todo <= 0
 # endif
-			)
+		   )
 		{
-		    /* Draw two bytes with the sign value or blank. */
-		    if (sign_typenr == 0 || row > startrow)
-		    {
-			c_extra = ' ';
-			char_attr = 0;
-		    }
-		    else
-		    {
+		    int_u	text_sign;
 # ifdef FEAT_SIGN_ICONS
-			if (gui.in_use && sign_get_image(sign_typenr) != NULL)
+		    int_u	icon_sign;
+# endif
+
+		    /* Draw two cells with the sign value or blank. */
+		    c_extra = ' ';
+		    char_attr = 0;
+		    n_extra = 2;
+
+		    if (row == startrow)
+		    {
+			text_sign = buf_getsigntype(wp->w_buffer, lnum,
+								   SIGN_TEXT);
+# ifdef FEAT_SIGN_ICONS
+			icon_sign = buf_getsigntype(wp->w_buffer, lnum,
+								   SIGN_ICON);
+			if (gui.in_use && icon_sign != 0)
 			{
 			    /* Use the image in this position. */
 			    c_extra = SIGN_BYTE;
-			    char_attr = sign_typenr;
+#  ifdef FEAT_NETBEANS_INTG
+			    if (buf_signcount(wp->w_buffer, lnum) > 1)
+				c_extra = MULTISIGN_BYTE;
+#  endif
+			    char_attr = icon_sign;
 			}
 			else
 # endif
+			    if (text_sign != 0)
 			{
-			    p_extra = sign_get_text(sign_typenr);
-			    if (p_extra == NULL)
-				c_extra = ' ';
-			    else
+			    p_extra = sign_get_text(text_sign);
+			    if (p_extra != NULL)
+			    {
 				c_extra = NUL;
-			    char_attr = sign_get_attr(sign_typenr, FALSE);
+				n_extra = STRLEN(p_extra);
+			    }
+			    char_attr = sign_get_attr(text_sign, FALSE);
 			}
 		    }
-		    n_extra = 2;
 		}
 	    }
 #endif
@@ -2878,17 +3012,7 @@ win_line(wp, lnum, startrow, endrow)
 				*p_extra = '-';
 #ifdef FEAT_RIGHTLEFT
 			if (wp->w_p_rl)		    /* reverse line numbers */
-			{
-			    char_u *c1, *c2, t;
-
-			    for (c1 = extra, c2 = extra + STRLEN(extra) - 1;
-				    c1 < c2; c1++, c2--)
-			    {
-				t = *c1;
-				*c1 = *c2;
-				*c2 = t;
-			    }
-			}
+			    rl_mirror(extra);
 #endif
 			p_extra = extra;
 			c_extra = NUL;
@@ -3034,18 +3158,22 @@ win_line(wp, lnum, startrow, endrow)
 				else
 				    shl->endp = line + MAXCOL;
 
-				/* for a non-null match, loop to check if the
-				 * match starts at the current position */
-				if (shl->startp != shl->endp)
-				    continue;
-
-				/* highlight empty match, try again after it */
+				if (shl->startp == shl->endp)
+				{
+				    /* highlight empty match, try again after
+				     * it */
 #ifdef FEAT_MBYTE
-				if (has_mbyte)
-				    shl->endp += (*mb_ptr2len_check)(shl->endp);
-				else
+				    if (has_mbyte)
+					shl->endp +=
+					       (*mb_ptr2len_check)(shl->endp);
+				    else
 #endif
-				    ++shl->endp;
+					++shl->endp;
+				}
+
+				/* Loop to check if the match starts at the
+				 * current position */
+				continue;
 			    }
 			}
 			break;
@@ -3106,7 +3234,14 @@ win_line(wp, lnum, startrow, endrow)
 	    {
 		c = c_extra;
 #ifdef FEAT_MBYTE
-		mb_c = c;	/* doesn't handle multi-byte! */
+		mb_c = c;	/* doesn't handle non-utf-8 multi-byte! */
+		if (enc_utf8 && (*mb_char2len)(c) > 1)
+		{
+		    mb_utf8 = TRUE;
+		    u8c_c1 = u8c_c2 = 0;
+		}
+		else
+		    mb_utf8 = FALSE;
 #endif
 	    }
 	    else
@@ -3194,18 +3329,34 @@ win_line(wp, lnum, startrow, endrow)
 			    c = mb_c;
 			mb_utf8 = TRUE;
 		    }
+
 		    if ((mb_l == 1 && c >= 0x80)
 			    || (mb_l >= 1 && mb_c == 0)
-			    || (mb_l > 1 && !vim_isprintc(mb_c)))
+			    || (mb_l > 1 && (!vim_isprintc(mb_c)
+							 || mb_c >= 0x10000)))
 		    {
 			/*
 			 * Illegal UTF-8 byte: display as <xx>.
+			 * Non-BMP character : display as ? or fullwidth ?.
 			 */
-			transchar_hex(extra, mb_c);
+			if (mb_c < 0x10000)
+			{
+			    transchar_hex(extra, mb_c);
+#ifdef FEAT_RIGHTLEFT
+			    if (wp->w_p_rl)		/* reverse */
+				rl_mirror(extra);
+#endif
+			}
+			else if (utf_char2cells(mb_c) != 2)
+			    STRCPY(extra, "?");
+			else
+			    /* 0xff1f in UTF-8: full-width '?' */
+			    STRCPY(extra, "\357\274\237");
+
 			p_extra = extra;
-			c = *p_extra++;
-			mb_c = c;
-			mb_utf8 = FALSE;
+			c = *p_extra;
+			mb_c = mb_ptr2char_adv(&p_extra);
+			mb_utf8 = (c >= 0x80);
 			n_extra = (int)STRLEN(p_extra);
 			c_extra = NUL;
 			if (area_attr == 0 && search_attr == 0)
@@ -3217,6 +3368,33 @@ win_line(wp, lnum, startrow, endrow)
 		    }
 		    else if (mb_l == 0)  /* at the NUL at end-of-line */
 			mb_l = 1;
+#ifdef FEAT_ARABIC
+		    else if (p_arshape && !p_tbidi && ARABIC_CHAR(mb_c))
+		    {
+			/* Do Arabic shaping. */
+			int	pc, pc1, nc, dummy;
+
+			/* The idea of what is the previous and next
+			 * character depends on 'rightleft'. */
+			if (wp->w_p_rl)
+			{
+			    pc = prev_c;
+			    pc1 = prev_c1;
+			    nc = utf_ptr2char(ptr + mb_l);
+			    prev_c1 = u8c_c1;
+			}
+			else
+			{
+			    pc = utfc_ptr2char(ptr + mb_l, &pc1, &dummy);
+			    nc = prev_c;
+			}
+			prev_c = mb_c;
+
+			mb_c = arabic_shape(mb_c, &c, &u8c_c1, pc, pc1, nc);
+		    }
+		    else
+			prev_c = mb_c;
+#endif
 		}
 		else	/* enc_dbcs */
 		{
@@ -3225,13 +3403,25 @@ win_line(wp, lnum, startrow, endrow)
 			mb_l = 1;
 		    else if (mb_l > 1)
 		    {
-			if (ptr[1] != NUL)
+			/* We assume a second byte below 32 is illegal.
+			 * Hopefully this is OK for all double-byte encodings!
+			 */
+			if (ptr[1] >= 32)
 			    mb_c = (c << 8) + ptr[1];
 			else
 			{
-			    /* head byte at end of line */
-			    mb_l = 1;
-			    transchar_nonprint(extra, c);
+			    if (ptr[1] == NUL)
+			    {
+				/* head byte at end of line */
+				mb_l = 1;
+				transchar_nonprint(extra, c);
+			    }
+			    else
+			    {
+				/* illegal tail byte */
+				mb_l = 2;
+				STRCPY(extra, "XX");
+			    }
 			    p_extra = extra;
 			    n_extra = (int)STRLEN(extra) - 1;
 			    c_extra = NUL;
@@ -3347,6 +3537,16 @@ win_line(wp, lnum, startrow, endrow)
 			extra_attr = hl_attr(HLF_8);
 			saved_attr2 = char_attr; /* save current attr */
 		    }
+#ifdef FEAT_MBYTE
+		    mb_c = c;
+		    if (enc_utf8 && (*mb_char2len)(c) > 1)
+		    {
+			mb_utf8 = TRUE;
+			u8c_c1 = u8c_c2 = 0;
+		    }
+		    else
+			mb_utf8 = FALSE;
+#endif
 		}
 	    }
 
@@ -3365,6 +3565,9 @@ win_line(wp, lnum, startrow, endrow)
 		    /* tab amount depends on current column */
 		    n_extra = (int)wp->w_buffer->b_p_ts
 				   - vcol % (int)wp->w_buffer->b_p_ts - 1;
+#ifdef FEAT_MBYTE
+		    mb_utf8 = FALSE;	/* don't draw as UTF-8 */
+#endif
 		    if (wp->w_p_list)
 		    {
 			c = lcs_tab1;
@@ -3372,17 +3575,22 @@ win_line(wp, lnum, startrow, endrow)
 			n_attr = n_extra + 1;
 			extra_attr = hl_attr(HLF_8);
 			saved_attr2 = char_attr; /* save current attr */
+#ifdef FEAT_MBYTE
+			mb_c = c;
+			if (enc_utf8 && (*mb_char2len)(c) > 1)
+			{
+			    mb_utf8 = TRUE;
+			    u8c_c1 = u8c_c2 = 0;
+			}
+#endif
 		    }
 		    else
 		    {
 			c_extra = ' ';
 			c = ' ';
 		    }
-#ifdef FEAT_MBYTE
-		    mb_utf8 = FALSE;	/* don't draw as UTF-8 */
-#endif
 		}
-		else if (c == NUL && wp->w_p_list && lcs_eol_one != NUL)
+		else if (c == NUL && wp->w_p_list && lcs_eol_one > 0)
 		{
 #if defined(FEAT_DIFF) || defined(LINE_ATTR)
 		    /* For a diff line the highlighting continues after the
@@ -3415,7 +3623,7 @@ win_line(wp, lnum, startrow, endrow)
 			}
 		    }
 		    c = lcs_eol;
-		    lcs_eol_one = NUL;
+		    lcs_eol_one = -1;
 		    --ptr;	    /* put it back at the NUL */
 		    if (area_attr == 0 && search_attr == 0)
 		    {
@@ -3423,12 +3631,23 @@ win_line(wp, lnum, startrow, endrow)
 			n_attr = 1;
 		    }
 #ifdef FEAT_MBYTE
-		    mb_utf8 = FALSE;	/* don't draw as UTF-8 */
+		    mb_c = c;
+		    if (enc_utf8 && (*mb_char2len)(c) > 1)
+		    {
+			mb_utf8 = TRUE;
+			u8c_c1 = u8c_c2 = 0;
+		    }
+		    else
+			mb_utf8 = FALSE;	/* don't draw as UTF-8 */
 #endif
 		}
 		else if (c != NUL)
 		{
 		    p_extra = transchar(c);
+#ifdef FEAT_RIGHTLEFT
+		    if ((dy_flags & DY_UHEX) && wp->w_p_rl)
+			rl_mirror(p_extra);	/* reverse "<12>" */
+#endif
 		    n_extra = byte2cells(c) - 1;
 		    c_extra = NUL;
 		    c = *p_extra++;
@@ -3490,6 +3709,7 @@ win_line(wp, lnum, startrow, endrow)
 
 	/* Don't override visual selection highlighting. */
 	if (n_attr > 0
+		&& draw_state == WL_LINE
 		&& (area_attr == 0 || char_attr != area_attr)
 		&& (search_attr == 0 || char_attr != search_attr))
 	    char_attr = extra_attr;
@@ -3497,44 +3717,32 @@ win_line(wp, lnum, startrow, endrow)
 #if defined(FEAT_XIM) && defined(FEAT_GUI_GTK)
 	if (xic != NULL
 		&& lnum == curwin->w_cursor.lnum
-		&& State == INSERT
+		&& (State & INSERT)
 		&& im_get_status()
 		&& !p_imdisable
-		&& preedit_start_col != MAXCOL)
+		&& preedit_start_col != MAXCOL
+		&& draw_state == WL_LINE)
 	{
 	    colnr_T tcol;
-	    static int  bcol = 0;
-	    static int	old_attr = -1;
 
 	    getvcol(curwin, &(curwin->w_cursor), &tcol, NULL, NULL);
 	    if ((long)preedit_start_col <= vcol && vcol < (long)tcol)
 	    {
-		if (old_attr == -1)
+		if (feedback_old_attr < 0)
 		{
-		    bcol = 0;
-		    old_attr = char_attr;
+		    feedback_col = 0;
+		    feedback_old_attr = char_attr;
 		}
-		if (draw_feedback != NULL)
-		{
-		    if (draw_feedback[bcol] & XIMReverse)
-			char_attr = HL_INVERSE;
-		    else if (draw_feedback[bcol] & XIMUnderline)
-			char_attr = HL_UNDERLINE;
-		    else
-			char_attr = hl_attr(HLF_V);
-		}
-		else
-		    char_attr = old_attr;
-		bcol++;
+		char_attr = im_get_feedback_attr(feedback_col);
+		if (char_attr < 0)
+		    char_attr = feedback_old_attr;
+		feedback_col++;
 	    }
-	    else
+	    else if (feedback_old_attr >= 0)
 	    {
-		if (old_attr >= 0)
-		{
-		    char_attr = old_attr;
-		    old_attr = -1;
-		    bcol = 0;
-		}
+		char_attr = feedback_old_attr;
+		feedback_old_attr = -1;
+		feedback_col = 0;
 	    }
 	}
 #endif
@@ -3554,7 +3762,14 @@ win_line(wp, lnum, startrow, endrow)
 	    c = lcs_prec;
 	    lcs_prec_todo = NUL;
 #ifdef FEAT_MBYTE
-	    mb_utf8 = FALSE;	/* don't draw as UTF-8 */
+	    mb_c = c;
+	    if (enc_utf8 && (*mb_char2len)(c) > 1)
+	    {
+		mb_utf8 = TRUE;
+		u8c_c1 = u8c_c2 = 0;
+	    }
+	    else
+		mb_utf8 = FALSE;	/* don't draw as UTF-8 */
 #endif
 	    if ((area_attr == 0 || char_attr != area_attr)
 		    && (search_attr == 0 || char_attr != search_attr))
@@ -3583,29 +3798,36 @@ win_line(wp, lnum, startrow, endrow)
 #endif
 		       ))
 	    {
+		int n = 0;
+
 #ifdef FEAT_RIGHTLEFT
 		if (wp->w_p_rl)
 		{
 		    if (col < 0)
-		    {
-			++off;
-			++col;
-		    }
+			n = 1;
 		}
 		else
 #endif
 		{
 		    if (col >= W_WIDTH(wp))
-		    {
-			--off;
-			--col;
-		    }
+			n = -1;
 		}
-		ScreenLines[off] = ' ';
+		if (n != 0)
+		{
+		    /* At the window boundary, highlight the last character
+		     * instead (better than nothing). */
+		    off += n;
+		    col += n;
+		}
+		else
+		{
+		    /* Add a blank character to highlight. */
+		    ScreenLines[off] = ' ';
 #ifdef FEAT_MBYTE
-		if (enc_utf8)
-		    ScreenLinesUC[off] = 0;
+		    if (enc_utf8)
+			ScreenLinesUC[off] = 0;
 #endif
+		}
 #ifdef FEAT_SEARCH_EXTRA
 		if (area_attr == 0)
 		{
@@ -3662,6 +3884,16 @@ win_line(wp, lnum, startrow, endrow)
 	{
 	    c = lcs_ext;
 	    char_attr = hl_attr(HLF_AT);
+#ifdef FEAT_MBYTE
+	    mb_c = c;
+	    if (enc_utf8 && (*mb_char2len)(c) > 1)
+	    {
+		mb_utf8 = TRUE;
+		u8c_c1 = u8c_c2 = 0;
+	    }
+	    else
+		mb_utf8 = FALSE;
+#endif
 	}
 
 	/*
@@ -3758,11 +3990,11 @@ win_line(wp, lnum, startrow, endrow)
 	    ++vcol;
 
 	/* restore attributes after "predeces" in 'listchars' */
-	if (n_attr3 && --n_attr3 == 0)
+	if (draw_state > WL_NR && n_attr3 > 0 && --n_attr3 == 0)
 	    char_attr = saved_attr3;
 
 	/* restore attributes after last 'listchars' or 'number' char */
-	if (n_attr && --n_attr == 0)
+	if (n_attr > 0 && draw_state == WL_LINE && --n_attr == 0)
 	    char_attr = saved_attr2;
 
 	/*
@@ -3787,12 +4019,13 @@ win_line(wp, lnum, startrow, endrow)
 	    ++row;
 	    ++screen_row;
 
-	    /* When not wrapping and finished diff lines, break here. */
-	    if (!wp->w_p_wrap
+	    /* When not wrapping and finished diff lines, or when displayed
+	     * '$' and highlighting until last column, break here. */
+	    if ((!wp->w_p_wrap
 #ifdef FEAT_DIFF
 		    && filler_todo <= 0
 #endif
-		    )
+		    ) || lcs_eol_one == -1)
 		break;
 
 	    /* When the window is too narrow draw all "@" lines. */
@@ -3844,13 +4077,24 @@ win_line(wp, lnum, startrow, endrow)
 		     && W_WIDTH(wp) == Columns)
 	    {
 		/* First make sure we are at the end of the screen line, then
-		 * output an arbitrary character to let the terminal know
-		 * about the wrap. */
+		 * output the same character again to let the terminal know
+		 * about the wrap.  If the terminal doesn't auto-wrap, we
+		 * overwrite the character. */
 		if (screen_cur_col != W_WIDTH(wp))
 		    screen_char(LineOffset[screen_row - 1]
 						      + (unsigned)Columns - 1,
 					  screen_row - 1, (int)(Columns - 1));
-		out_char(' ');
+
+#ifdef FEAT_MBYTE
+		/* When there is a multi-byte character, just output a space
+		 * to keep it simple. */
+		if (has_mbyte && mb_off2cells(LineOffset[screen_row - 1]
+						+ (unsigned)Columns - 1) != 1)
+		    out_char(' ');
+		else
+#endif
+		    out_char(ScreenLines[LineOffset[screen_row - 1]
+							    + (Columns - 1)]);
 		/* force a redraw of the first char on the next line */
 		ScreenAttrs[LineOffset[screen_row]] = (sattr_T)-1;
 		screen_start();		/* don't know where cursor is now */
@@ -3981,7 +4225,7 @@ screen_line(row, coloff, endcol, clear_width
     clip_may_clear_selection(row, row);
 # endif
 
-    off_from = (unsigned) (current_ScreenLine - ScreenLines);
+    off_from = (unsigned)(current_ScreenLine - ScreenLines);
     off_to = LineOffset[row] + coloff;
 
 #ifdef FEAT_RIGHTLEFT
@@ -3991,7 +4235,11 @@ screen_line(row, coloff, endcol, clear_width
 	if (clear_width > 0)
 	{
 	    while (col <= endcol && ScreenLines[off_to] == ' '
-						  && ScreenAttrs[off_to] == 0)
+		    && ScreenAttrs[off_to] == 0
+# ifdef FEAT_MBYTE
+				  && (!enc_utf8 || ScreenLinesUC[off_to] == 0)
+# endif
+						  )
 	    {
 		++off_to;
 		++col;
@@ -4220,7 +4468,11 @@ screen_line(row, coloff, endcol, clear_width
 
 	/* blank out the rest of the line */
 	while (col < clear_width && ScreenLines[off_to] == ' '
-						  && ScreenAttrs[off_to] == 0)
+						  && ScreenAttrs[off_to] == 0
+#ifdef FEAT_MBYTE
+				  && (!enc_utf8 || ScreenLinesUC[off_to] == 0)
+#endif
+						  )
 	{
 	    ++off_to;
 	    ++col;
@@ -4264,13 +4516,27 @@ screen_line(row, coloff, endcol, clear_width
 	    int c;
 
 	    c = fillchar_vsep(&hl);
-	    if (ScreenLines[off_to] != c || ScreenAttrs[off_to] != hl)
+	    if (ScreenLines[off_to] != c
+# ifdef FEAT_MBYTE
+		    || (enc_utf8
+			      && ScreenLinesUC[off_to] != (c >= 0x80 ? c : 0))
+# endif
+		    || ScreenAttrs[off_to] != hl)
 	    {
 		ScreenLines[off_to] = c;
 		ScreenAttrs[off_to] = hl;
 # ifdef FEAT_MBYTE
 		if (enc_utf8)
-		    ScreenLinesUC[off_to] = 0;
+		{
+		    if (c >= 0x80)
+		    {
+			ScreenLinesUC[off_to] = c;
+			ScreenLinesC1[off_to] = 0;
+			ScreenLinesC2[off_to] = 0;
+		    }
+		    else
+			ScreenLinesUC[off_to] = 0;
+		}
 # endif
 		screen_char(off_to, row, col + coloff);
 	    }
@@ -4278,6 +4544,26 @@ screen_line(row, coloff, endcol, clear_width
     }
 #endif
 }
+
+#ifdef FEAT_RIGHTLEFT
+/*
+ * Mirror text "str" for right-lieft displaying.
+ */
+    static void
+rl_mirror(str)
+    char_u	*str;
+{
+    char_u	*p1, *p2;
+    int		t;
+
+    for (p1 = str, p2 = str + STRLEN(str) - 1; p1 < p2; ++p1, --p2)
+    {
+	t = *p1;
+	*p1 = *p2;
+	*p2 = t;
+    }
+}
+#endif
 
 #if defined(FEAT_WINDOWS) || defined(PROTO)
 /*
@@ -4377,43 +4663,7 @@ draw_vsep_win(wp, row)
 #endif
 
 #ifdef FEAT_WILDMENU
-/*
- * Private gettail for win_redr_status_matches(): Find tail of file name path
- * but ignore trailing "/".
- */
-static char_u *wm_gettail __ARGS((char_u *s));
 static int status_match_len __ARGS((expand_T *xp, char_u *s));
-
-    static char_u *
-wm_gettail(s)
-    char_u	*s;
-{
-    char_u	*p;
-    char_u	*t = s;
-    int		had_sep = FALSE;
-
-    for (p = s; *p != NUL; )
-    {
-	if (vim_ispathsep(*p)
-#ifdef BACKSLASH_IN_FILENAME
-		&& !rem_backslash(p)
-#endif
-	   )
-	    had_sep = TRUE;
-	else if (had_sep)
-	{
-	    t = p;
-	    had_sep = FALSE;
-	}
-#ifdef FEAT_MBYTE
-	if (has_mbyte)
-	    p += (*mb_ptr2len_check)(p);
-	else
-#endif
-	    ++p;
-    }
-    return t;
-}
 
 /*
  * Get the lenght of an item as it will be shown in the status line.
@@ -4466,15 +4716,14 @@ status_match_len(xp, s)
  * If inversion is possible we use it. Else '=' characters are used.
  */
     void
-win_redr_status_matches(xp, num_matches, matches, match)
+win_redr_status_matches(xp, num_matches, matches, match, showtail)
     expand_T	*xp;
     int		num_matches;
     char_u	**matches;	/* list of matches */
     int		match;
+    int		showtail;
 {
-#define L_MATCH(m) (fmatch ? wm_gettail(matches[m]) : matches[m])
-    int		fmatch = (xp->xp_context == EXPAND_FILES);
-
+#define L_MATCH(m) (showtail ? sm_gettail(matches[m]) : matches[m])
     int		row;
     char_u	*buf;
     int		len;
@@ -4633,9 +4882,9 @@ win_redr_status_matches(xp, num_matches, matches, match)
     row = cmdline_row - 1;
     if (row >= 0)
     {
-	if (!wild_menu_showing)
+	if (wild_menu_showing == 0)
 	{
-	    if (msg_scrolled && !wild_menu_showing)
+	    if (msg_scrolled > 0)
 	    {
 		/* Put the wildmenu just above the command line.  If there is
 		 * no room, scroll the screen one line up. */
@@ -4653,11 +4902,15 @@ win_redr_status_matches(xp, num_matches, matches, match)
 	    }
 	    else
 	    {
-		/* create status line if needed */
+		/* Create status line if needed by setting 'laststatus' to 2.
+		 * Set 'winminheight' to zero to avoid that the window is
+		 * resized. */
 		if (lastwin->w_status_height == 0)
 		{
 		    save_p_ls = p_ls;
+		    save_p_wmh = p_wmh;
 		    p_ls = 2;
+		    p_wmh = 0;
 		    last_status(FALSE);
 		}
 		wild_menu_showing = WM_SHOWN;
@@ -4826,7 +5079,7 @@ win_redr_status(wp)
     /*
      * May need to draw the character below the vertical separator.
      */
-    if (wp->w_vsep_width != 0)
+    if (wp->w_vsep_width != 0 && wp->w_status_height != 0 && redrawing())
     {
 	if (stl_connected(wp))
 	    fillchar = fillchar_status(&attr, wp == curwin);
@@ -4935,19 +5188,19 @@ win_redr_custom(wp, Ruler)
     int		curattr;
     int		row;
     int		col = 0;
-    int		maxlen;
+    int		maxwidth;
+    int		width;
     int		n;
     int		len;
     int		fillchar;
     char_u	buf[MAXPATHL];
     char_u	*p;
-    char_u	c;
     struct	stl_hlrec hl[STL_MAX_ITEM];
 
     /* setup environment for the task at hand */
     row = W_WINROW(wp) + wp->w_height;
     fillchar = fillchar_status(&attr, wp == curwin);
-    maxlen = W_WIDTH(wp);
+    maxwidth = W_WIDTH(wp);
     p = p_stl;
     if (Ruler)
     {
@@ -4972,41 +5225,44 @@ win_redr_custom(wp, Ruler)
 	if (col > (Columns + 1) / 2)
 	    col = (Columns + 1) / 2;
 #endif
-	maxlen = W_WIDTH(wp) - col;
+	maxwidth = W_WIDTH(wp) - col;
 #ifdef FEAT_WINDOWS
 	if (!wp->w_status_height)
 #endif
 	{
 	    row = Rows - 1;
-	    --maxlen;	/* writing in last column may cause scrolling */
+	    --maxwidth;	/* writing in last column may cause scrolling */
 	    fillchar = ' ';
 	    attr = 0;
 	}
     }
-    if (maxlen >= sizeof(buf))
-	maxlen = sizeof(buf) - 1;
-    if (maxlen <= 0)
+    if (maxwidth <= 0)
 	return;
 #ifdef FEAT_VERTSPLIT
     col += W_WINCOL(wp);
 #endif
 
-    len = build_stl_str_hl(wp, buf, p, fillchar, maxlen, hl);
+    width = build_stl_str_hl(wp, buf, sizeof(buf), p, fillchar, maxwidth, hl);
+    len = STRLEN(buf);
 
-    for (p = buf + len; p < buf + maxlen; p++)
-	*p = fillchar;
-    buf[maxlen] = NUL;
+    while (width < maxwidth && len < sizeof(buf) - 1)
+    {
+#ifdef FEAT_MBYTE
+	len += (*mb_char2bytes)(fillchar, buf + len);
+#else
+	buf[len++] = fillchar;
+#endif
+	++width;
+    }
+    buf[len] = NUL;
 
     curattr = attr;
     p = buf;
     for (n = 0; hl[n].start != NULL; n++)
     {
-	c = hl[n].start[0];
-	hl[n].start[0] = 0;
-	screen_puts(p, row, col, curattr);
-
-	hl[n].start[0] = c;
-	col += (int)(hl[n].start - p);
+	len = (int)(hl[n].start - p);
+	screen_puts_len(p, len, row, col, curattr);
+	col += len;
 	p = hl[n].start;
 
 	if (hl[n].userhl == 0)
@@ -5025,7 +5281,6 @@ win_redr_custom(wp, Ruler)
 
 /*
  * Output a single character directly to the screen and update ScreenLines.
- * Not for multi-byte chars!
  */
     void
 screen_putchar(c, row, col, attr)
@@ -5033,23 +5288,27 @@ screen_putchar(c, row, col, attr)
     int	    row, col;
     int	    attr;
 {
+#ifdef FEAT_MBYTE
+    char_u	buf[MB_MAXBYTES + 1];
+
+    buf[(*mb_char2bytes)(c, buf)] = NUL;
+#else
     char_u	buf[2];
 
-    {
-	buf[0] = c;
-	buf[1] = NUL;
-	screen_puts(buf, row, col, attr);
-    }
+    buf[0] = c;
+    buf[1] = NUL;
+#endif
+    screen_puts(buf, row, col, attr);
 }
 
 /*
- * Get a single character directly from ScreenLines.
+ * Get a single character directly from ScreenLines into "bytes[]".
  * Also return its attribute in *attrp;
- * For multi-byte chars only the first byte is obtained!
  */
-    int
-screen_getchar(row, col, attrp)
+    void
+screen_getbytes(row, col, bytes, attrp)
     int	    row, col;
+    char_u  *bytes;
     int	    *attrp;
 {
     unsigned off;
@@ -5059,9 +5318,25 @@ screen_getchar(row, col, attrp)
     {
 	off = LineOffset[row] + col;
 	*attrp = ScreenAttrs[off];
-	return ScreenLines[off];
+	bytes[0] = ScreenLines[off];
+	bytes[1] = NUL;
+
+#ifdef FEAT_MBYTE
+	if (enc_utf8 && ScreenLinesUC[off] != 0)
+	    bytes[utfc_char2bytes(off, bytes)] = NUL;
+	else if (enc_dbcs == DBCS_JPNU && ScreenLines[off] == 0x8e)
+	{
+	    bytes[0] = ScreenLines[off];
+	    bytes[1] = ScreenLines2[off];
+	    bytes[2] = NUL;
+	}
+	else if (enc_dbcs && MB_BYTE2LEN(bytes[0]) > 1)
+	{
+	    bytes[1] = ScreenLines[off + 1];
+	    bytes[2] = NUL;
+	}
+#endif
     }
-    return 0;
 }
 
 /*
@@ -5077,8 +5352,24 @@ screen_puts(text, row, col, attr)
     int		col;
     int		attr;
 {
+    screen_puts_len(text, -1, row, col, attr);
+}
+
+/*
+ * Like screen_puts(), but output "text[len]".  When "len" is -1 output up to
+ * a NUL.
+ */
+    void
+screen_puts_len(text, len, row, col, attr)
+    char_u	*text;
+    int		len;
+    int		row;
+    int		col;
+    int		attr;
+{
     unsigned	off;
     char_u	*ptr = text;
+    int		c;
 #ifdef FEAT_MBYTE
     int		mbyte_blen = 1;
     int		mbyte_cells = 1;
@@ -5086,148 +5377,203 @@ screen_puts(text, row, col, attr)
     int		u8c_c1 = 0;
     int		u8c_c2 = 0;
     int		clear_next_cell = FALSE;
+# ifdef FEAT_ARABIC
+    int		prev_c = 0;		/* previous Arabic character */
+    int		pc, nc, nc1, dummy;
+# endif
 #endif
 
-    if (ScreenLines != NULL && row < screen_Rows)	/* safety check */
+    if (ScreenLines == NULL || row >= screen_Rows)	/* safety check */
+	return;
+
+    off = LineOffset[row] + col;
+    while (*ptr != NUL && col < screen_Columns
+				      && (len < 0 || (int)(ptr - text) < len))
     {
-	off = LineOffset[row] + col;
-	while (*ptr != NUL && col < screen_Columns)
+	c = *ptr;
+#ifdef FEAT_MBYTE
+	/* check if this is the first byte of a multibyte */
+	if (has_mbyte)
 	{
-#ifdef FEAT_MBYTE
-	    /* check if this is the first byte of a multibyte */
-	    if (has_mbyte)
-	    {
+	    if (enc_utf8 && len > 0)
+		mbyte_blen = utfc_ptr2len_check_len(ptr,
+						   (int)((text + len) - ptr));
+	    else
 		mbyte_blen = (*mb_ptr2len_check)(ptr);
-		if (enc_dbcs == DBCS_JPNU && *ptr == 0x8e)
-		    mbyte_cells = 1;
-		else if (enc_dbcs != 0)
-		    mbyte_cells = mbyte_blen;
-		else	/* enc_utf8 */
-		{
-		    u8c = utfc_ptr2char(ptr, &u8c_c1, &u8c_c2);
-		    mbyte_cells = utf_char2cells(u8c);
-		}
-	    }
-#endif
-
-	    if (ScreenLines[off] != *ptr
-#ifdef FEAT_MBYTE
-		    || (mbyte_cells == 2
-			&& ScreenLines[off + 1] != (enc_dbcs ? ptr[1] : 0))
-		    || (enc_dbcs == DBCS_JPNU
-			&& *ptr == 0x8e
-			&& ScreenLines2[off] != ptr[1])
-		    || (enc_utf8
-			&& mbyte_blen > 1
-			&& (ScreenLinesUC[off] != u8c
-			    || ScreenLinesC1[off] != u8c_c1
-			    || ScreenLinesC2[off] != u8c_c2))
-#endif
-		    || ScreenAttrs[off] != attr
-		    || exmode_active
-		    )
+	    if (enc_dbcs == DBCS_JPNU && c == 0x8e)
+		mbyte_cells = 1;
+	    else if (enc_dbcs != 0)
+		mbyte_cells = mbyte_blen;
+	    else	/* enc_utf8 */
 	    {
-#if defined(FEAT_GUI) || defined(UNIX)
-		/* The bold trick makes a single row of pixels appear in the
-		 * next character.  When a bold character is removed, the next
-		 * character should be redrawn too.  This happens for our own
-		 * GUI and for some xterms.
-		 * Don't do this for the last drawn character, because the
-		 * next character may not be redrawn. */
-		if (
-# ifdef FEAT_GUI
-			gui.in_use
-# endif
-# if defined(FEAT_GUI) && defined(UNIX)
-			||
-# endif
-# ifdef UNIX
-			term_is_xterm
-# endif
-		   )
+		if (len >= 0)
+		    u8c = utfc_ptr2char_len(ptr, &u8c_c1, &u8c_c2,
+						   (int)((text + len) - ptr));
+		else
+		    u8c = utfc_ptr2char(ptr, &u8c_c1, &u8c_c2);
+		mbyte_cells = utf_char2cells(u8c);
+		/* Non-BMP character: display as ? or fullwidth ?. */
+		if (u8c >= 0x10000)
 		{
-		    int		n;
-
-		    n = ScreenAttrs[off];
-# ifdef FEAT_MBYTE
-		    if (col + 1 + mbyte_cells - 1 < screen_Columns
-			    && (n > HL_ALL || (n & HL_BOLD))
-			    && ptr[mbyte_blen] != NUL)
-			ScreenLines[off + 1 + mbyte_cells - 1] = 0;
-# else
-		    if (col + 1 < screen_Columns
-			    && (n > HL_ALL || (n & HL_BOLD))
-			    && ptr[1] != NUL)
-			ScreenLines[off + 1] = 0;
-# endif
+		    u8c = (mbyte_cells == 2) ? 0xff1f : (int)'?';
+		    if (attr == 0)
+			attr = hl_attr(HLF_8);
 		}
-#endif
-#ifdef FEAT_MBYTE
-		/* When at the end of the text and overwriting a two-cell
-		 * character with a one-cell character, need to clear the next
-		 * cell.  Also when overwriting the left halve of a two-cell
-		 * char with the right halve of a two-cell char. */
-		if (has_mbyte && ptr[mbyte_blen] == NUL
-			&& ((mbyte_cells == 1 && (*mb_off2cells)(off) > 1)
-			    || (mbyte_cells == 2
-				&& (*mb_off2cells)(off) == 1
-				&& (*mb_off2cells)(off + 1) > 1)))
-		    clear_next_cell = TRUE;
-#endif
-		ScreenLines[off] = *ptr;
-		ScreenAttrs[off] = attr;
-#ifdef FEAT_MBYTE
-		if (enc_utf8)
+# ifdef FEAT_ARABIC
+		if (p_arshape && !p_tbidi && ARABIC_CHAR(u8c))
 		{
-		    if (*ptr < 0x80 && u8c_c1 == 0 && u8c_c2 == 0)
-			ScreenLinesUC[off] = 0;
+		    /* Do Arabic shaping. */
+		    if (len >= 0 && (int)(ptr - text) + mbyte_blen >= len)
+		    {
+			/* Past end of string to be displayed. */
+			nc = NUL;
+			nc1 = NUL;
+		    }
 		    else
-		    {
-			ScreenLinesUC[off] = u8c;
-			ScreenLinesC1[off] = u8c_c1;
-			ScreenLinesC2[off] = u8c_c2;
-		    }
-		    if (mbyte_cells == 2)
-		    {
-			ScreenLines[off + 1] = 0;
-			ScreenAttrs[off + 1] = attr;
-		    }
-		    screen_char(off, row, col);
-		}
-		else if (mbyte_cells == 2)
-		{
-		    ScreenLines[off + 1] = ptr[1];
-		    ScreenAttrs[off + 1] = attr;
-		    screen_char_2(off, row, col);
-		}
-		else if (enc_dbcs == DBCS_JPNU && *ptr == 0x8e)
-		{
-		    ScreenLines2[off] = ptr[1];
-		    screen_char(off, row, col);
+			nc = utfc_ptr2char(ptr + mbyte_blen, &nc1, &dummy);
+		    pc = prev_c;
+		    prev_c = u8c;
+		    u8c = arabic_shape(u8c, &c, &u8c_c1, nc, nc1, pc);
 		}
 		else
-#endif
-		    screen_char(off, row, col);
+		    prev_c = u8c;
+# endif
 	    }
+	}
+#endif
+
+	if (ScreenLines[off] != c
 #ifdef FEAT_MBYTE
-	    if (has_mbyte)
+		|| (mbyte_cells == 2
+		    && ScreenLines[off + 1] != (enc_dbcs ? ptr[1] : 0))
+		|| (enc_dbcs == DBCS_JPNU
+		    && c == 0x8e
+		    && ScreenLines2[off] != ptr[1])
+		|| (enc_utf8
+		    && mbyte_blen > 1
+		    && (ScreenLinesUC[off] != u8c
+			|| ScreenLinesC1[off] != u8c_c1
+			|| ScreenLinesC2[off] != u8c_c2))
+#endif
+		|| ScreenAttrs[off] != attr
+		|| exmode_active
+		)
+	{
+#if defined(FEAT_GUI) || defined(UNIX)
+	    /* The bold trick makes a single row of pixels appear in the next
+	     * character.  When a bold character is removed, the next
+	     * character should be redrawn too.  This happens for our own GUI
+	     * and for some xterms.
+	     * Force the redraw by setting the attribute to a different value
+	     * than "attr", the contents of ScreenLines[] may be needed by
+	     * mb_off2cells() further on.
+	     * Don't do this for the last drawn character, because the next
+	     * character may not be redrawn. */
+	    if (
+# ifdef FEAT_GUI
+		    gui.in_use
+# endif
+# if defined(FEAT_GUI) && defined(UNIX)
+		    ||
+# endif
+# ifdef UNIX
+		    term_is_xterm
+# endif
+	       )
 	    {
-		off += mbyte_cells;
-		col += mbyte_cells;
-		ptr += mbyte_blen;
-		if (clear_next_cell)
+		int		n;
+
+		n = ScreenAttrs[off];
+# ifdef FEAT_MBYTE
+		if (col + mbyte_cells < screen_Columns
+			&& (n > HL_ALL || (n & HL_BOLD))
+			&& (len < 0 ? ptr[mbyte_blen] != NUL
+					     : ptr + mbyte_blen < text + len))
+		    ScreenAttrs[off + mbyte_cells] = attr + 1;
+# else
+		if (col + 1 < screen_Columns
+			&& (n > HL_ALL || (n & HL_BOLD))
+			&& (len < 0 ? ptr[1] != NUL : ptr + 1 < text + len))
+		    ScreenLines[off + 1] = 0;
+# endif
+	    }
+#endif
+#ifdef FEAT_MBYTE
+	    /* When at the end of the text and overwriting a two-cell
+	     * character with a one-cell character, need to clear the next
+	     * cell.  Also when overwriting the left halve of a two-cell char
+	     * with the right halve of a two-cell char.  Do this only once
+	     * (mb_off2cells() may return 2 on the right halve). */
+	    if (clear_next_cell)
+		clear_next_cell = FALSE;
+	    else if (has_mbyte
+		    && (len < 0 ? ptr[mbyte_blen] == NUL
+					     : ptr + mbyte_blen >= text + len)
+		    && ((mbyte_cells == 1 && (*mb_off2cells)(off) > 1)
+			|| (mbyte_cells == 2
+			    && (*mb_off2cells)(off) == 1
+			    && (*mb_off2cells)(off + 1) > 1)))
+		clear_next_cell = TRUE;
+
+	    /* Make sure we never leave a second byte of a double-byte behind,
+	     * it confuses mb_off2cells(). */
+	    if (enc_dbcs
+		    && ((mbyte_cells == 1 && (*mb_off2cells)(off) > 1)
+			|| (mbyte_cells == 2
+			    && (*mb_off2cells)(off) == 1
+			    && (*mb_off2cells)(off + 1) > 1)))
+		ScreenLines[off + mbyte_blen] = 0;
+#endif
+	    ScreenLines[off] = c;
+	    ScreenAttrs[off] = attr;
+#ifdef FEAT_MBYTE
+	    if (enc_utf8)
+	    {
+		if (c < 0x80 && u8c_c1 == 0 && u8c_c2 == 0)
+		    ScreenLinesUC[off] = 0;
+		else
 		{
-		    ptr = (char_u *)" ";
-		    clear_next_cell = FALSE;
+		    ScreenLinesUC[off] = u8c;
+		    ScreenLinesC1[off] = u8c_c1;
+		    ScreenLinesC2[off] = u8c_c2;
 		}
+		if (mbyte_cells == 2)
+		{
+		    ScreenLines[off + 1] = 0;
+		    ScreenAttrs[off + 1] = attr;
+		}
+		screen_char(off, row, col);
+	    }
+	    else if (mbyte_cells == 2)
+	    {
+		ScreenLines[off + 1] = ptr[1];
+		ScreenAttrs[off + 1] = attr;
+		screen_char_2(off, row, col);
+	    }
+	    else if (enc_dbcs == DBCS_JPNU && c == 0x8e)
+	    {
+		ScreenLines2[off] = ptr[1];
+		screen_char(off, row, col);
 	    }
 	    else
 #endif
-	    {
-		++off;
-		++col;
-		++ptr;
-	    }
+		screen_char(off, row, col);
+	}
+#ifdef FEAT_MBYTE
+	if (has_mbyte)
+	{
+	    off += mbyte_cells;
+	    col += mbyte_cells;
+	    ptr += mbyte_blen;
+	    if (clear_next_cell)
+		ptr = (char_u *)" ";
+	}
+	else
+#endif
+	{
+	    ++off;
+	    ++col;
+	    ++ptr;
 	}
     }
 }
@@ -5615,7 +5961,12 @@ screen_char(off, row, col)
 
     /* Outputting the last character on the screen may scrollup the screen.
      * Don't to it!  Mark the character invalid (update it when scrolled up) */
-    if (row == screen_Rows - 1 && col == screen_Columns - 1)
+    if (row == screen_Rows - 1 && col == screen_Columns - 1
+#ifdef FEAT_RIGHTLEFT
+	    /* account for first command-line character in rightleft mode */
+	    && !cmdmsg_rl
+#endif
+       )
     {
 	ScreenAttrs[off] = (sattr_T)-1;
 	return;
@@ -5644,7 +5995,9 @@ screen_char(off, row, col)
 	char_u	    buf[MB_MAXBYTES + 1];
 
 	/* Convert UTF-8 character to bytes and write it. */
+
 	buf[utfc_char2bytes(off, buf)] = NUL;
+
 	out_str(buf);
 	if (utf_char2cells(ScreenLinesUC[off]) > 1)
 	    ++screen_cur_col;
@@ -5779,7 +6132,6 @@ redraw_block(row, end, wp)
  * Fill the screen from 'start_row' to 'end_row', from 'start_col' to 'end_col'
  * with character 'c1' in first column followed by 'c2' in the other columns.
  * Use attributes 'attr'.
- * Cannot handle multi-byte characters, c1 and c2 must be < 0x80!
  */
     void
 screen_fill(start_row, end_row, start_col, end_col, c1, c2, attr)
@@ -5841,9 +6193,16 @@ screen_fill(start_row, end_row, start_col, end_col, c1, c2, attr)
 	    end_off = LineOffset[row] + end_col;
 
 	    /* skip blanks (used often, keep it fast!) */
-	    while (off < end_off && ScreenLines[off] == ' '
+#ifdef FEAT_MBYTE
+	    if (enc_utf8)
+		while (off < end_off && ScreenLines[off] == ' '
+			  && ScreenAttrs[off] == 0 && ScreenLinesUC[off] == 0)
+		    ++off;
+	    else
+#endif
+		while (off < end_off && ScreenLines[off] == ' '
 						     && ScreenAttrs[off] == 0)
-		++off;
+		    ++off;
 	    if (off < end_off)		/* something to be cleared */
 	    {
 		col = off - LineOffset[row];
@@ -5870,7 +6229,11 @@ screen_fill(start_row, end_row, start_col, end_col, c1, c2, attr)
 	c = c1;
 	for (col = start_col; col < end_col; ++col)
 	{
-	    if (ScreenLines[off] != c || ScreenAttrs[off] != attr
+	    if (ScreenLines[off] != c
+#ifdef FEAT_MBYTE
+		    || (enc_utf8 && ScreenLinesUC[off] != (c >= 0x80 ? c : 0))
+#endif
+		    || ScreenAttrs[off] != attr
 #if defined(FEAT_GUI) || defined(UNIX)
 		    || force_next
 #endif
@@ -5904,7 +6267,16 @@ screen_fill(start_row, end_row, start_col, end_col, c1, c2, attr)
 		ScreenLines[off] = c;
 #ifdef FEAT_MBYTE
 		if (enc_utf8)
-		    ScreenLinesUC[off] = 0;
+		{
+		    if (c >= 0x80)
+		    {
+			ScreenLinesUC[off] = c;
+			ScreenLinesC1[off] = 0;
+			ScreenLinesC2[off] = 0;
+		    }
+		    else
+			ScreenLinesUC[off] = 0;
+		}
 #endif
 		ScreenAttrs[off] = attr;
 		if (!did_delete || c != ' ')
@@ -6551,8 +6923,7 @@ windgoto(row, col)
 #ifdef FEAT_MBYTE
 		if (enc_utf8)
 		{
-		    /* Don't use an UTF-8 char for positioning, it's slow. And
-		     * check for composing characters. */
+		    /* Don't use an UTF-8 char for positioning, it's slow. */
 		    for (i = wouldbe_col; i < col; ++i)
 			if (ScreenLinesUC[LineOffset[row] + i] != 0)
 			{
@@ -7470,7 +7841,11 @@ showmode()
 #if defined(FEAT_XIM)
 	    if (xic != NULL && im_get_status() && !p_imdisable
 					&& curbuf->b_p_iminsert == B_IMODE_IM)
+# ifdef HAVE_GTK2 /* most of the time, it's not XIM being used */
+		MSG_PUTS_ATTR(" IM", attr);
+# else
 		MSG_PUTS_ATTR(" XIM", attr);
+# endif
 #endif
 #if defined(FEAT_HANGULIN) && defined(FEAT_GUI)
 	    if (gui.in_use)
@@ -7543,7 +7918,14 @@ showmode()
 #endif
 #ifdef FEAT_KEYMAP
 		if (State & LANGMAP)
-		    MSG_PUTS_ATTR(_(" (lang)"), attr);
+		{
+# ifdef FEAT_ARABIC
+		    if (curwin->w_p_arab)
+			MSG_PUTS_ATTR(_(" Arabic"), attr);
+		    else
+# endif
+			MSG_PUTS_ATTR(_(" (lang)"), attr);
+		}
 #endif
 		if ((State & INSERT) && p_paste)
 		    MSG_PUTS_ATTR(_(" (paste)"), attr);
@@ -7692,7 +8074,8 @@ fillchar_vsep(attr)
     int
 redrawing()
 {
-    return (!RedrawingDisabled && !(p_lz && char_avail() && !KeyTyped));
+    return (!RedrawingDisabled
+		       && !(p_lz && char_avail() && !KeyTyped && !do_redraw));
 }
 
 /*
@@ -7866,7 +8249,7 @@ win_redr_ruler(wp, always)
 	 */
 	i = (int)STRLEN(buffer);
 	get_rel_pos(wp, buffer + i + 1);
-	o = vim_strsize(buffer + i + 1);
+	o = i + vim_strsize(buffer + i + 1);
 #ifdef FEAT_WINDOWS
 	if (wp->w_status_height == 0)	/* can't use last char of screen */
 #endif
@@ -7880,10 +8263,18 @@ win_redr_ruler(wp, always)
 	 * half for the filename. */
 	if (this_ru_col < (WITH_WIDTH(width) + 1) / 2)
 	    this_ru_col = (WITH_WIDTH(width) + 1) / 2;
-	if (this_ru_col + i + o < WITH_WIDTH(width))
+	if (this_ru_col + o < WITH_WIDTH(width))
 	{
-	    while (this_ru_col + i + o < WITH_WIDTH(width))
-		buffer[i++] = fillchar;
+	    while (this_ru_col + o < WITH_WIDTH(width))
+	    {
+#ifdef FEAT_MBYTE
+		if (has_mbyte)
+		    i += (*mb_char2bytes)(fillchar, buffer + i);
+		else
+#endif
+		    buffer[i++] = fillchar;
+		++o;
+	    }
 	    get_rel_pos(wp, buffer + i);
 	}
 	/* Truncate at window boundary. */

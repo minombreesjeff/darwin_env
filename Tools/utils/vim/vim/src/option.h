@@ -107,10 +107,12 @@
 #define FO_MBYTE_JOIN	'M'	/* no space before/after multi-byte char */
 #define FO_MBYTE_JOIN2	'B'	/* no space between multi-byte chars */
 #define FO_ONE_LETTER	'1'
+#define FO_WHITE_PAR	'w'	/* trailing white space continues paragr. */
+#define FO_AUTO		'a'	/* automatic formatting */
 
 #define DFLT_FO_VI	"vt"
 #define DFLT_FO_VIM	"tcq"
-#define FO_ALL		"tcroq2vlb1mMBn,"	/* for do_set() */
+#define FO_ALL		"tcroq2vlb1mMBn,aw"	/* for do_set() */
 
 /* characters for the p_cpo option: */
 #define CPO_ALTREAD	'a'	/* ":read" sets alternate file name */
@@ -134,6 +136,7 @@
 #define CPO_LITERAL	'l'	/* take char after backslash in [] literal */
 #define CPO_LISTWM	'L'	/* 'list' changes wrapmargin */
 #define CPO_SHOWMATCH	'm'
+#define CPO_MATCHBSL	'M'	/* "%" ignores use of backslashes */
 #define CPO_NUMCOL	'n'	/* 'number' column also used for text */
 #define CPO_LINEOFF	'o'
 #define CPO_OVERNEW	'O'	/* silently overwrite new file */
@@ -143,6 +146,7 @@
 #define CPO_BUFOPTGLOB	'S'
 #define CPO_TAGPAT	't'
 #define CPO_UNDO	'u'	/* "u" undoes itself */
+#define CPO_BACKSPACE	'v'	/* "v" keep deleted text */
 #define CPO_CW		'w'	/* "cw" only changes one blank */
 #define CPO_FWRITE	'W'	/* "w!" doesn't overwrite readonly files */
 #define CPO_ESC		'x'
@@ -153,7 +157,7 @@
 #define CPO_STAR	'*'	/* ":*" means ":@" */
 #define CPO_SPECI	'<'	/* don't recognize <> in mappings */
 #define CPO_DEFAULT	"aABceFs"
-#define CPO_ALL		"aAbBcCdDeEfFgijJkKlLmnoOprsStuwWxy$!%*<"
+#define CPO_ALL		"aAbBcCdDeEfFgijJkKlLmMnoOprsStuvwWxy$!%*<"
 
 /* characters for p_ww option: */
 #define WW_ALL		"bshl<>[],~"
@@ -279,6 +283,12 @@
 #ifdef FEAT_RIGHTLEFT
 EXTERN long	p_aleph;	/* 'aleph' */
 #endif
+#if defined(FEAT_NETBEANS_INTG) || defined(FEAT_SUN_WORKSHOP)
+EXTERN int	p_acd;		/* 'autochdir' */
+#endif
+#ifdef FEAT_MBYTE
+EXTERN char_u	*p_ambw;	/* 'ambiwidth' */
+#endif
 EXTERN int	p_ar;		/* 'autoread' */
 EXTERN int	p_aw;		/* 'autowrite' */
 EXTERN int	p_awa;		/* 'autowriteall' */
@@ -293,9 +303,9 @@ EXTERN char_u	*p_bsk;		/* 'backupskip' */
 #endif
 #ifdef FEAT_BEVAL
 EXTERN long	p_bdlay;	/* 'balloondelay' */
-#endif
-#ifdef FEAT_SUN_WORKSHOP
+# if defined(FEAT_SUN_WORKSHOP) || defined(FEAT_NETBEANS_INTG)
 EXTERN int	p_beval;	/* 'ballooneval' */
+# endif
 #endif
 #ifdef FEAT_BROWSE
 EXTERN char_u	*p_bsdir;	/* 'browsedir' */
@@ -307,6 +317,13 @@ EXTERN int	p_consk;	/* 'conskey' */
 #ifdef FEAT_LINEBREAK
 EXTERN char_u	*p_breakat;	/* 'breakat' */
 #endif
+EXTERN char_u	*p_cmp;		/* 'casemap' */
+EXTERN unsigned	cmp_flags;
+#ifdef IN_OPTION_C
+static char *(p_cmp_values[]) = {"internal", "keepascii", NULL};
+#endif
+#define CMP_INTERNAL		0x001
+#define CMP_KEEPASCII		0x002
 #ifdef FEAT_MBYTE
 EXTERN char_u	*p_enc;		/* 'encoding' */
 EXTERN int	p_deco;		/* 'delcombine' */
@@ -333,6 +350,11 @@ EXTERN int	p_cp;		/* 'compatible' */
 EXTERN char_u	*p_cpo;		/* 'cpoptions' */
 #ifdef FEAT_CSCOPE
 EXTERN char_u	*p_csprg;	/* 'cscopeprg' */
+# ifdef FEAT_QUICKFIX
+EXTERN char_u	*p_csqf;	/* 'cscopequickfix' */
+#  define	CSQF_CMDS   "sgdctefi"
+#  define	CSQF_FLAGS  "+-0"
+# endif
 EXTERN int	p_cst;		/* 'cscopetag' */
 EXTERN long	p_csto;		/* 'cscopetagorder' */
 EXTERN long	p_cspc;		/* 'cscopepathcomp' */
@@ -412,6 +434,7 @@ EXTERN int	p_gd;		/* 'gdefault' */
 #ifdef FEAT_PRINTER
 EXTERN char_u	*p_pdev;	/* 'printdevice' */
 # ifdef FEAT_POSTSCRIPT
+EXTERN char_u	*p_penc;	/* 'printencoding' */
 EXTERN char_u	*p_pexpr;	/* 'printexpr' */
 # endif
 EXTERN char_u	*p_pfn;		/* 'printfont' */
@@ -461,6 +484,9 @@ EXTERN int	p_hkmapp;	/* 'hkmapp' */
 # ifdef FEAT_FKMAP
 EXTERN int	p_fkmap;	/* 'fkmap' */
 EXTERN int	p_altkeymap;	/* 'altkeymap' */
+# endif
+# ifdef FEAT_ARABIC
+EXTERN int	p_arshape;	/* 'arabicshape' */
 # endif
 #endif
 #ifdef FEAT_TITLE
@@ -641,6 +667,9 @@ EXTERN long	p_tl;		/* 'taglength' */
 EXTERN int	p_tr;		/* 'tagrelative' */
 EXTERN char_u	*p_tags;	/* 'tags' */
 EXTERN int	p_tgst;		/* 'tagstack' */
+#ifdef FEAT_ARABIC
+EXTERN int	p_tbidi;	/* 'termbidi' */
+#endif
 #ifdef FEAT_MBYTE
 EXTERN char_u	*p_tenc;	/* 'termencoding' */
 #endif
@@ -664,6 +693,25 @@ EXTERN int	p_tbi;		/* 'ttybuiltin' */
 EXTERN int	p_tf;		/* 'ttyfast' */
 #if defined(FEAT_TOOLBAR) && !defined(FEAT_GUI_W32)
 EXTERN char_u	*p_toolbar;	/* 'toolbar' */
+EXTERN unsigned toolbar_flags;
+# ifdef IN_OPTION_C
+static char *(p_toolbar_values[]) = {"text", "icons", "tooltips", "horiz", NULL};
+# endif
+# define TOOLBAR_TEXT		0x01
+# define TOOLBAR_ICONS		0x02
+# define TOOLBAR_TOOLTIPS	0x04
+# define TOOLBAR_HORIZ		0x08
+#endif
+#if defined(FEAT_TOOLBAR) && defined(FEAT_GUI_GTK) && defined(HAVE_GTK2)
+EXTERN char_u	*p_tbis;	/* 'toolbariconsize' */
+EXTERN unsigned tbis_flags;
+# ifdef IN_OPTION_C
+static char *(p_tbis_values[]) = {"tiny", "small", "medium", "large", NULL};
+# endif
+# define TBIS_TINY		0x01
+# define TBIS_SMALL		0x02
+# define TBIS_MEDIUM		0x04
+# define TBIS_LARGE		0x08
 #endif
 EXTERN long	p_ttyscroll;	/* 'ttyscroll' */
 #if defined(FEAT_MOUSE) && (defined(UNIX) || defined(VMS))
@@ -672,12 +720,12 @@ EXTERN unsigned ttym_flags;
 # ifdef IN_OPTION_C
 static char *(p_ttym_values[]) = {"xterm", "xterm2", "dec", "netterm", "jsbterm", "pterm", NULL};
 # endif
-# define TTYM_XTERM	0x01
-# define TTYM_XTERM2	0x02
-# define TTYM_DEC	0x04
-# define TTYM_NETTERM	0x08
-# define TTYM_JSBTERM	0x10
-# define TTYM_PTERM	0x20
+# define TTYM_XTERM		0x01
+# define TTYM_XTERM2		0x02
+# define TTYM_DEC		0x04
+# define TTYM_NETTERM		0x08
+# define TTYM_JSBTERM		0x10
+# define TTYM_PTERM		0x20
 #endif
 EXTERN long	p_ul;		/* 'undolevels' */
 EXTERN long	p_uc;		/* 'updatecount' */

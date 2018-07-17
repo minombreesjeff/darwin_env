@@ -1,7 +1,7 @@
 " These commands create the option window.
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2001 Dec 13
+" Last Change:	2003 May 17
 
 " If there already is an option window, jump to that one.
 if bufwinnr("option-window") > 0
@@ -147,7 +147,7 @@ endwhile
 
 " Open the window
 new option-window
-set ts=15 tw=0
+setlocal ts=15 tw=0
 
 " Insert help and a "set" command for each option.
 call append(0, '" Each "set" line shows the current value of an option (on the left).')
@@ -257,6 +257,10 @@ call append("$", "\t(global or local to buffer)")
 call <SID>OptionG("pa", &pa)
 call append("$", "cdpath\tlist of directory names used for :cd")
 call <SID>OptionG("cd", &cd)
+if has("netbeans_intg") || has("sun_workshop")
+  call append("$", "autochdir\tchange to directory of file in buffer")
+  call <SID>BinOptionG("acd", &acd)
+endif
 call append("$", "wrapscan\tsearch commands wrap around the end of the buffer")
 call <SID>BinOptionG("ws", &ws)
 call append("$", "incsearch\tshow match for partly typed search command")
@@ -267,6 +271,8 @@ call append("$", "ignorecase\tignore case when using a search pattern")
 call <SID>BinOptionG("ic", &ic)
 call append("$", "smartcase\toverride 'ignorecase' when pattern has upper case characters")
 call <SID>BinOptionG("scs", &scs)
+call append("$", "casemap\tWhat method to use for changing case of letters")
+call <SID>OptionG("cmp", &cmp)
 call append("$", "define\tpattern for a macro definition line")
 call append("$", "\t(global or local to buffer)")
 call <SID>OptionG("def", &def)
@@ -305,6 +311,8 @@ if has("cscope")
   call <SID>BinOptionG("csverb", &csverb)
   call append("$", "cscopepathcomp\thow many components of the path to show")
   call append("$", " \tset cspc=" . &cspc)
+  call append("$", "cscopequickfix\tWhen to open a quickfix window for cscope")
+  call <SID>OptionG("csqf", &csqf)
 endif
 
 
@@ -389,6 +397,9 @@ call append("$", "winheight\tminimal number of lines used for the current window
 call append("$", " \tset wh=" . &wh)
 call append("$", "winminheight\tminimal number of lines used for any window")
 call append("$", " \tset wmh=" . &wmh)
+call append("$", "winfixheight\tkeep the height of the window")
+call append("$", "\t(local to window)")
+call <SID>BinOptionL("wfh")
 if has("vertsplit")
   call append("$", "winwidth\tminimal number of columns used for the current window")
   call append("$", " \tset wiw=" . &wiw)
@@ -506,6 +517,8 @@ if has("gui")
   if has("gui_gtk")
     call append("$", "toolbar\t\"icons\", \"text\" and/or \"tooltips\"; how to show the toolbar")
     call <SID>OptionG("tb", &tb)
+    call append("$", "toolbariconsize\tSize of toolbar icons")
+    call <SID>OptionG("tbis", &tbis)
     call append("$", "guiheadroom\troom (in pixels) left above/below the window")
     call append("$", " \tset ghr=" . &ghr)
   endif
@@ -541,6 +554,8 @@ if has("printer")
   call <SID>Header("printing")
   call append("$", "printdevice\tname of the printer to be used for :hardcopy")
   call <SID>OptionG("pdev", &pdev)
+  call append("$", "printencoding\tencoding used to print the PostScript file for :hardcopy")
+  call <SID>OptionG("penc", &penc)
   call append("$", "printexpr\texpression used to print the PostScript file for :hardcopy")
   call <SID>OptionG("pexpr", &pexpr)
   call append("$", "printfont\tname of the font to be used for :hardcopy")
@@ -707,6 +722,12 @@ if has("cindent")
   call append("$", "\t(local to buffer)")
   call <SID>OptionL("indk")
 endif
+call append("$", "copyindent\tCopy whitespace for indenting from previous line")
+call append("$", "\t(local to buffer)")
+call <SID>BinOptionL("ci")
+call append("$", "preserveindent\tPreserve kind of whitespace when changing indent")
+call append("$", "\t(local to buffer)")
+call <SID>BinOptionL("pi")
 if has("lispindent")
   call append("$", "lisp\tenable lisp mode")
   call append("$", "\t(local to buffer)")
@@ -832,7 +853,7 @@ call <SID>OptionG("bex", &bex)
 call append("$", "autowrite\tautomatically write a file when leaving a modified buffer")
 call <SID>BinOptionG("aw", &aw)
 call append("$", "autowriteall\tas 'autowrite', but works with more commands")
-call <SID>BinOptionG("aw", &aw)
+call <SID>BinOptionG("awa", &awa)
 call append("$", "writeany\talways write without asking for confirmation")
 call <SID>BinOptionG("wa", &wa)
 call append("$", "autoread\tautomatically read a file when it was modified outside of Vim")
@@ -979,6 +1000,9 @@ if has("rightleft")
   call append("$", "rightleft\tdisplay the buffer right-to-left")
   call append("$", "\t(local to window)")
   call <SID>BinOptionL("rl")
+  call append("$", "rightleftcmd\tWhen to edit the command-line right-to-left")
+  call append("$", "\t(local to window)")
+  call <SID>OptionL("rlc")
   call append("$", "revins\tInsert characters backwards")
   call <SID>BinOptionG("ri", &ri)
   call append("$", "allowrevins\tAllow CTRL-_ in Insert and Command-line mode to toggle 'revins'")
@@ -995,6 +1019,15 @@ if has("farsi")
   call <SID>BinOptionG("akm", &akm)
   call append("$", "fkmap\tuse Farsi keyboard mapping")
   call <SID>BinOptionG("fk", &fk)
+endif
+if has("arabic")
+  call append("$", "arabic\tPrepare for editing Arabic text")
+  call append("$", "\t(local to window)")
+  call <SID>BinOptionL("arab")
+  call append("$", "arabicshape\tPerform shaping of Arabic characters")
+  call <SID>BinOptionG("arshape", &arshape)
+  call append("$", "termbidi\tTerminal will perform bidi handling")
+  call <SID>BinOptionG("tbidi", &tbidi)
 endif
 if has("keymap")
   call append("$", "keymap\tname of a keyboard mappping")
@@ -1040,6 +1073,8 @@ if has("multi_byte")
     call append("$", "imactivatekey\tkey that activates the X input method")
     call <SID>OptionG("imak", &imak)
   endif
+  call append("$", "ambiwidth\tWidth of ambiguous width characters")
+  call <SID>OptionG("ambw", &ambw)
 endif
 
 
@@ -1117,7 +1152,6 @@ endif
 noremap <silent> <buffer> <CR> <C-\><C-N>:call <SID>CR()<CR>
 inoremap <silent> <buffer> <CR> <Esc>:call <SID>CR()<CR>
 noremap <silent> <buffer> <Space> :call <SID>Space()<CR>
-inoremap <silent> <buffer> <Space> <Esc>:call <SID>Space()<CR>
 
 " Make the buffer be deleted when the window is closed.
 set buftype=nofile bufhidden=delete noswapfile

@@ -9,18 +9,6 @@
 /* Define unless no X support found */
 #undef HAVE_X11
 
-/* Define when curses library found */
-#undef HAVE_LIBCURSES
-
-/* Define when termcap library found */
-#undef HAVE_LIBTERMCAP
-
-/* Define when termlib library found */
-#undef HAVE_LIBTERMLIB
-
-/* Define when ncurses library found */
-#undef HAVE_LIBNCURSES
-
 /* Define when terminfo support found */
 #undef TERMINFO
 
@@ -92,6 +80,9 @@
 /* Define to `struct sigaltstack' if <signal.h> doesn't define.  */
 #undef stack_t
 
+/* Define if stack_t has the ss_base field. */
+#undef HAVE_SS_BASE
+
 /* Define if you can safely include both <sys/time.h> and <time.h>.  */
 #undef TIME_WITH_SYS_TIME
 
@@ -126,8 +117,14 @@
 /* Define if touuper/tolower only work on lower/upercase characters */
 #undef BROKEN_TOUPPER
 
+/* Define if stat() ignores a trailing slash */
+#undef STAT_IGNORES_SLASH
+
 /* Define if tgetstr() has a second argument that is (char *) */
 #undef TGETSTR_CHAR_P
+
+/* Define if tgetent() returns zero for an error */
+#undef TGETENT_ZERO_ERR
 
 /* Define if the getcwd() function should not be used.  */
 #undef BAD_GETCWD
@@ -167,6 +164,7 @@
 #undef HAVE_SIGSETJMP
 #undef HAVE_SIGSTACK
 #undef HAVE_SIGVEC
+#undef HAVE_SNPRINTF
 #undef HAVE_STRCASECMP
 #undef HAVE_STRERROR
 #undef HAVE_STRFTIME
@@ -180,6 +178,8 @@
 #undef HAVE_SYSCTL
 #undef HAVE_SYSINFO
 #undef HAVE_TGETENT
+#undef HAVE_TOWLOWER
+#undef HAVE_TOWUPPER
 #undef HAVE_USLEEP
 #undef HAVE_UTIME
 #undef HAVE_BIND_TEXTDOMAIN_CODESET
@@ -234,6 +234,7 @@
 #undef HAVE_XM_XPMP_H
 #undef HAVE_X11_XPM_H
 #undef HAVE_X11_XMU_EDITRES_H
+#undef HAVE_X11_SM_SMLIB_H
 
 /* Define if you have <sys/wait.h> that is POSIX.1 compatible.  */
 #undef HAVE_SYS_WAIT_H
@@ -246,6 +247,7 @@
 /* #undef STDC_HEADERS */
 
 /* instead, we check a few STDC things ourselves */
+#undef HAVE_STDARG_H
 #undef HAVE_STDLIB_H
 #undef HAVE_STRING_H
 
@@ -308,6 +310,12 @@
 /* Define if you use GTK and want GNOME support. */
 #undef FEAT_GUI_GNOME
 
+/* Define if GTK+ 2 is available. */
+#undef HAVE_GTK2
+
+/* Define if GTK+ multihead support is available (requires GTK+ >= 2.1.1). */
+#undef HAVE_GTK_MULTIHEAD
+
 /* Define if your X has own locale library */
 #undef X_LOCALE
 
@@ -335,8 +343,17 @@
 /* Define if you want to include Sun Visual Workshop support. */
 #undef FEAT_SUN_WORKSHOP
 
+/* Define if you want to include NetBeans integration. */
+#undef FEAT_NETBEANS_INTG
+
 /* Define default global runtime path */
 #undef RUNTIME_GLOBAL
 
 /* Define name of who modified a released Vim */
 #undef MODIFIED_BY
+
+/* Define if you want XSMP interaction as well as vanilla swapfile safety */
+#undef USE_XSMP_INTERACT
+
+/* Define if vsnprintf() works */
+#undef HAVE_VSNPRINTF

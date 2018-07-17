@@ -11,6 +11,7 @@ AWK = awk
 include ../../src/auto/config.mk
 
 DOCS = \
+	arabic.txt \
 	autocmd.txt \
 	change.txt \
 	cmdline.txt \
@@ -28,6 +29,7 @@ DOCS = \
 	gui_w32.txt \
 	gui_x11.txt \
 	hangulin.txt \
+	hebrew.txt \
 	help.txt \
 	howto.txt \
 	if_cscop.txt \
@@ -46,6 +48,7 @@ DOCS = \
 	motion.txt \
 	mbyte.txt \
 	mlang.txt \
+	netbeans.txt \
 	options.txt \
 	os_390.txt \
 	os_amiga.txt \
@@ -124,6 +127,7 @@ DOCS = \
 	workshop.txt
 
 HTMLS = \
+	arabic.html \
 	autocmd.html \
 	change.html \
 	cmdline.html \
@@ -141,6 +145,7 @@ HTMLS = \
 	gui_w32.html \
 	gui_x11.html \
 	hangulin.html \
+	hebrew.html \
 	help.html \
 	howto.html \
 	if_cscop.html \
@@ -159,6 +164,7 @@ HTMLS = \
 	motion.html \
 	mbyte.html \
 	mlang.html \
+	netbeans.html \
 	options.html \
 	os_390.html \
 	os_amiga.html \
@@ -242,11 +248,13 @@ HTMLS = \
 
 all: tags vim.man vimdiff.man vimtutor.man xxd.man
 
-# We should use Vim to generate the tags file:
-#	vim -c "helptags ." -c quit
-#
+# Use Vim to generate the tags file.  Can only be used when Vim has been
+# compiled and installed.
+vimtags: $(DOCS)
+	vim -c "helptags ." -c quit
+
 tags: doctags $(DOCS)
-	./doctags $(DOCS) | sort >tags
+	./doctags $(DOCS) | LANG=C LC_ALL=C sort >tags
 	uniq -d -2 tags
 
 doctags: doctags.c
@@ -292,8 +300,14 @@ clean:
 
 # These files are in the extra archive, skip if not present
 
+arabic.txt:
+	touch arabic.txt
+
 farsi.txt:
 	touch farsi.txt
+
+hebrew.txt:
+	touch hebrew.txt
 
 gui_w16.txt:
 	touch gui_w16.txt

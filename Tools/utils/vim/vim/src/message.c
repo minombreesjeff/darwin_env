@@ -15,7 +15,7 @@
 
 #include "vim.h"
 
-#ifdef __QNX__
+#ifdef HAVE_STDARG_H
 # include <stdarg.h>
 #endif
 
@@ -26,9 +26,11 @@ static void msg_home_replace_attr __ARGS((char_u *fname, int attr));
 #ifdef FEAT_MBYTE
 static char_u *screen_puts_mbyte __ARGS((char_u *s, int l, int attr));
 #endif
+static void msg_puts_attr_len __ARGS((char_u *str, int maxlen, int attr));
+static void t_puts __ARGS((int t_col, char_u *t_s, char_u *s, int attr));
 static void msg_screen_putchar __ARGS((int c, int attr));
 static int  msg_check_screen __ARGS((void));
-static void redir_write __ARGS((char_u *s));
+static void redir_write __ARGS((char_u *s, int maxlen));
 #ifdef FEAT_CON_DIALOG
 static char_u *msg_show_console_dialog __ARGS((char_u *message, char_u *buttons, int dfltbutton));
 static int	confirm_msg_used = FALSE;	/* displaying confirm_msg */
@@ -204,7 +206,7 @@ msg_strtrunc(s)
 }
 
 /*
- * Truncate a string "s"  to "buf" with cell width "room".
+ * Truncate a string "s" to "buf" with cell width "room".
  * "s" and "buf" may be equal.
  */
     void
@@ -226,6 +228,12 @@ trunc_string(s, buf, room)
     /* First part: Start of the string. */
     for (e = 0; len < half; ++e)
     {
+	if (s[e] == NUL)
+	{
+	    /* text fits without truncating! */
+	    buf[e] = NUL;
+	    return;
+	}
 	n = ptr2cells(s + e);
 	if (len + n >= half)
 	    break;
@@ -288,7 +296,7 @@ trunc_string(s, buf, room)
  * shorter than IOSIZE!!!
  */
 #ifndef PROTO
-# ifndef __QNX__
+# ifndef HAVE_STDARG_H
 
 int
 #ifdef __BORLANDC__
@@ -329,31 +337,45 @@ smsg_attr(attr, s, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10)
     return msg_attr(IObuff, attr);
 }
 
-# else /* __QNX__ */
+# else /* HAVE_STDARG_H */
 
     int
+#ifdef __BORLANDC__
+_RTLENTRYF
+#endif
 smsg(char_u *s, ...)
 {
     va_list arglist;
 
     va_start(arglist, s);
+# ifdef HAVE_VSNPRINTF
+    vsnprintf((char *)IObuff, IOSIZE, (char *)s, arglist);
+# else
     vsprintf((char *)IObuff, (char *)s, arglist);
+# endif
     va_end(arglist);
     return msg(IObuff);
 }
 
     int
+#ifdef __BORLANDC__
+_RTLENTRYF
+#endif
 smsg_attr(int attr, char_u *s, ...)
 {
     va_list arglist;
 
     va_start(arglist, s);
+# ifdef HAVE_VSNPRINTF
+    vsnprintf((char *)IObuff, IOSIZE, (char *)s, arglist);
+# else
     vsprintf((char *)IObuff, (char *)s, arglist);
+# endif
     va_end(arglist);
     return msg_attr(IObuff, attr);
 }
 
-# endif /* __QNX__ */
+# endif /* HAVE_STDARG_H */
 #endif
 
 /*
@@ -391,8 +413,21 @@ emsg(s)
     int		attr;
     int		other_sourcing_name;
     char	*p;
+#ifdef FEAT_EVAL
+    int		ignore = FALSE;
+    int		severe;
+#endif
 
     called_emsg = TRUE;
+
+    /*
+     * If "emsg_severe" is TRUE: When an error exception is to be thrown, prefer
+     * this message over previous messages for the same command.
+     */
+#ifdef FEAT_EVAL
+    severe = emsg_severe;
+    emsg_severe = FALSE;
+#endif
 
     /*
      * If "emsg_off" is set: no error messages at the moment.
@@ -409,6 +444,20 @@ emsg(s)
     if (!emsg_off)
     {
 #ifdef FEAT_EVAL
+	/*
+	 * Cause a throw of an error exception if appropriate.  Don't display
+	 * the error message in this case.  (If no matching catch clause will
+	 * be found, the message will be displayed later on.)  "ignore" is set
+	 * when the message should be ignored completely (used for the
+	 * interrupt message).
+	 */
+	if (cause_errthrow(s, severe, &ignore) == TRUE)
+	{
+	    if (!ignore)
+		did_emsg = TRUE;
+	    return TRUE;
+	}
+
 	/* set "v:errmsg", also when using ":silent! cmd" */
 	set_vim_var_string(VV_ERRMSG, s, -1);
 #endif
@@ -419,7 +468,7 @@ emsg(s)
 	 */
 	if (emsg_silent != 0)
 	{
-	    redir_write(s);
+	    redir_write(s, -1);
 	    return TRUE;
 	}
 
@@ -615,7 +664,7 @@ add_msg_hist(s, len, attr)
 {
     struct msg_hist *p;
 
-    if (msg_hist_off)
+    if (msg_hist_off || msg_silent != 0)
 	return;
 
     /* Don't let the message history get too big */
@@ -705,11 +754,14 @@ msg_end_prompt()
  */
     void
 wait_return(redraw)
-    int	    redraw;
+    int		redraw;
 {
-    int		    c;
-    int		    oldState;
-    int		    tmpState;
+    int		c;
+    int		oldState;
+    int		tmpState;
+#ifndef ORG_HITRETURN
+    int		had_got_int;
+#endif
 
     if (redraw == TRUE)
 	must_redraw = CLEAR;
@@ -769,6 +821,9 @@ wait_return(redraw)
 #else
 	do
 	{
+	    /* Remember "got_int", if it is set vgetc() probably returns a
+	     * CTRL-C, but we need to loop then. */
+	    had_got_int = got_int;
 	    c = safe_vgetc();
 	    if (!global_busy)
 		got_int = FALSE;
@@ -782,7 +837,8 @@ wait_return(redraw)
 		c = K_IGNORE;
 	    }
 #endif
-	} while (c == Ctrl_C || c == K_IGNORE
+	} while ((had_got_int && c == Ctrl_C)
+				|| c == K_IGNORE
 #ifdef FEAT_GUI
 				|| c == K_VER_SCROLLBAR || c == K_HOR_SCROLLBAR
 #endif
@@ -792,9 +848,12 @@ wait_return(redraw)
 				|| c == K_RIGHTDRAG  || c == K_RIGHTRELEASE
 				|| c == K_MOUSEDOWN  || c == K_MOUSEUP
 				|| (!mouse_has(MOUSE_RETURN)
+				    && mouse_row != Rows - 1
 				    && (c == K_LEFTMOUSE
 					|| c == K_MIDDLEMOUSE
-					|| c == K_RIGHTMOUSE))
+					|| c == K_RIGHTMOUSE
+					|| c == K_X1MOUSE
+					|| c == K_X2MOUSE))
 #endif
 				);
 	ui_breakcheck();
@@ -802,11 +861,12 @@ wait_return(redraw)
 	/*
 	 * Avoid that the mouse-up event causes visual mode to start.
 	 */
-	if (c == K_LEFTMOUSE || c == K_MIDDLEMOUSE || c == K_RIGHTMOUSE)
+	if (c == K_LEFTMOUSE || c == K_MIDDLEMOUSE || c == K_RIGHTMOUSE
+					  || c == K_X1MOUSE || c == K_X2MOUSE)
 	    (void)jump_to_mouse(MOUSE_SETPOS, NULL, 0);
 	else
 #endif
-	    if (vim_strchr((char_u *)"\r\n ", c) == NULL)
+	    if (vim_strchr((char_u *)"\r\n ", c) == NULL && c != Ctrl_C)
 	{
 	    stuffcharReadbuff(c);
 	    do_redraw = TRUE;	    /* need a redraw even though there is
@@ -920,7 +980,11 @@ msg_start()
     if (!msg_scroll && full_screen)	/* overwrite last message */
     {
 	msg_row = cmdline_row;
-	msg_col = 0;
+	msg_col =
+#ifdef FEAT_RIGHTLEFT
+	    cmdmsg_rl ? Columns - 1 :
+#endif
+	    0;
     }
     else if (msg_didout)		    /* start message on next line */
     {
@@ -936,7 +1000,7 @@ msg_start()
 
     /* when redirecting, may need to start a new line. */
     if (!did_return)
-	redir_write((char_u *)"\n");
+	redir_write((char_u *)"\n", -1);
 }
 
 /*
@@ -961,7 +1025,11 @@ msg_putchar_attr(c, attr)
     int		c;
     int		attr;
 {
+#ifdef FEAT_MBYTE
+    char_u	buf[MB_MAXBYTES + 1];
+#else
     char_u	buf[4];
+#endif
 
     if (IS_SPECIAL(c))
     {
@@ -972,8 +1040,12 @@ msg_putchar_attr(c, attr)
     }
     else
     {
+#ifdef FEAT_MBYTE
+	buf[(*mb_char2bytes)(c, buf)] = NUL;
+#else
 	buf[0] = c;
 	buf[1] = NUL;
+#endif
     }
     msg_puts_attr(buf, attr);
 }
@@ -1069,17 +1141,18 @@ msg_outtrans_one(p, attr)
 }
 
     int
-msg_outtrans_len_attr(str, len, attr)
-    char_u	*str;
+msg_outtrans_len_attr(msgstr, len, attr)
+    char_u	*msgstr;
     int		len;
     int		attr;
 {
     int		retval = 0;
+    char_u	*str = msgstr;
+    char_u	*plain_start = msgstr;
     char_u	*s;
 #ifdef FEAT_MBYTE
-    int		n;
+    int		mb_l;
     int		c;
-    char_u	buf[MB_MAXBYTES + 1];
 #endif
 
     /* if MSG_HIST flag set, add message to history */
@@ -1089,40 +1162,71 @@ msg_outtrans_len_attr(str, len, attr)
 	attr &= ~MSG_HIST;
     }
 
+#ifdef FEAT_MBYTE
+    /* If the string starts with a composing character first draw a space on
+     * which the composing char can be drawn. */
+    if (enc_utf8 && utf_iscomposing(utf_ptr2char(msgstr)))
+    {
+	msg_puts_attr((char_u *)" ", attr);
+	retval += 1;
+    }
+#endif
+
+    /*
+     * Go over the string.  Special characters are translated and printed.
+     * Normal characters are printed several at a time.
+     */
     while (--len >= 0)
     {
 #ifdef FEAT_MBYTE
-	/* check multibyte; print it directly if it's printable.  */
-	if (has_mbyte && (n = (*mb_ptr2len_check)(str)) > 1)
+	if (enc_utf8)
+	    /* Don't include composing chars after the end. */
+	    mb_l = utfc_ptr2len_check_len(str, len + 1);
+	else if (has_mbyte)
+	    mb_l = (*mb_ptr2len_check)(str);
+	if (has_mbyte && mb_l > 1)
 	{
-	    mch_memmove(buf, str, (size_t)n);
-	    buf[n] = NUL;
-	    c = (*mb_ptr2char)(buf);
+	    c = (*mb_ptr2char)(str);
 	    if (vim_isprintc(c))
-	    {
-		msg_puts_attr(buf, attr);
-		retval += (*mb_ptr2cells)(buf);
-	    }
+		/* printable multi-byte char: count the cells. */
+		retval += (*mb_ptr2cells)(str);
 	    else
 	    {
+		/* unprintable multi-byte char: print the printable chars so
+		 * far and the translation of the unprintable char. */
+		if (str > plain_start)
+		    msg_puts_attr_len(plain_start, (int)(str - plain_start),
+									attr);
+		plain_start = str + mb_l;
 		msg_puts_attr(transchar(c), attr == 0 ? hl_attr(HLF_8) : attr);
 		retval += char2cells(c);
 	    }
-	    len -= n - 1;
-	    str += n;
+	    len -= mb_l - 1;
+	    str += mb_l;
 	}
 	else
 #endif
 	{
 	    s = transchar_byte(*str);
-	    if (attr == 0 && s[1] != NUL)
-		msg_puts_attr(s, hl_attr(HLF_8));	/* unprintable char */
-	    else
-		msg_puts_attr(s, attr);
+	    if (s[1] != NUL)
+	    {
+		/* unprintable char: print the printable chars so far and the
+		 * translation of the unprintable char. */
+		if (str > plain_start)
+		    msg_puts_attr_len(plain_start, (int)(str - plain_start),
+									attr);
+		plain_start = str + 1;
+		msg_puts_attr(s, attr == 0 ? hl_attr(HLF_8) : attr);
+	    }
 	    retval += ptr2cells(str);
 	    ++str;
 	}
     }
+
+    if (str > plain_start)
+	/* print the printable chars at the end */
+	msg_puts_attr_len(plain_start, (int)(str - plain_start), attr);
+
     return retval;
 }
 
@@ -1162,10 +1266,11 @@ msg_make(arg)
  * the character/string -- webb
  */
     int
-msg_outtrans_special(str, from)
-    char_u	*str;
+msg_outtrans_special(strstart, from)
+    char_u	*strstart;
     int		from;	/* TRUE for lhs of a mapping */
 {
+    char_u	*str = strstart;
     int		retval = 0;
     char_u	*string;
     int		attr;
@@ -1174,7 +1279,14 @@ msg_outtrans_special(str, from)
     attr = hl_attr(HLF_8);
     while (*str != NUL)
     {
-	string = str2special(&str, from);
+	/* Leading and trailing spaces need to be displayed in <> form. */
+	if ((str == strstart || str[1] == NUL) && *str == ' ')
+	{
+	    string = (char_u *)"<Space>";
+	    ++str;
+	}
+	else
+	    string = str2special(&str, from);
 	len = vim_strsize(string);
 	/* Highlight special keys */
 	msg_puts_attr(string, len > 1
@@ -1393,24 +1505,40 @@ screen_puts_mbyte(s, l, attr)
     int		attr;
 {
     int		cw;
-    char_u	buf[MB_MAXBYTES + 1];
 
     msg_didout = TRUE;		/* remember that line is not empty */
     cw = (*mb_ptr2cells)(s);
-    if (cw > 1 && msg_col == Columns - 1)
+    if (cw > 1 && (
+#ifdef FEAT_RIGHTLEFT
+		cmdmsg_rl ? msg_col <= 1 :
+#endif
+		msg_col == Columns - 1))
     {
 	/* Doesn't fit, print a highlighted '>' to fill it up. */
 	msg_screen_putchar('>', hl_attr(HLF_AT));
 	return s;
     }
 
-    mch_memmove(buf, s, (size_t)l);
-    buf[l] = NUL;
-    screen_puts(buf, msg_row, msg_col, attr);
-    if ((msg_col += cw) >= Columns)
+    screen_puts_len(s, l, msg_row, msg_col, attr);
+#ifdef FEAT_RIGHTLEFT
+    if (cmdmsg_rl)
     {
-	msg_col = 0;
-	++msg_row;
+	msg_col -= cw;
+	if (msg_col == 0)
+	{
+	    msg_col = Columns;
+	    ++msg_row;
+	}
+    }
+    else
+#endif
+    {
+	msg_col += cw;
+	if (msg_col >= Columns)
+	{
+	    msg_col = 0;
+	    ++msg_row;
+	}
     }
     return s + l;
 }
@@ -1450,6 +1578,7 @@ msg_puts_long(longstr)
 /*
  * Show a message in such a way that it always fits in the line.  Cut out a
  * part in the middle and replace it with "..." when necessary.
+ * Does not handle multi-byte characters!
  */
     void
 msg_puts_long_attr(longstr, attr)
@@ -1486,18 +1615,36 @@ msg_puts_attr(s, attr)
     char_u	*s;
     int		attr;
 {
+    msg_puts_attr_len(s, -1, attr);
+}
+
+/*
+ * Like msg_puts_attr(), but with a maximum length "maxlen" (in bytes).
+ * When "maxlen" is -1 there is no maximum length.
+ * When "maxlen" is >= 0 the message is not put in the history.
+ */
+    static void
+msg_puts_attr_len(str, maxlen, attr)
+    char_u	*str;
+    int		maxlen;
+    int		attr;
+{
     int		oldState;
+    char_u	*s = str;
     char_u	*p;
     char_u	buf[4];
+    char_u	*t_s = str;	/* string from "t_s" to "s" is still todo */
+    int		t_col = 0;	/* screen cells todo, 0 when "t_s" not used */
 #ifdef FEAT_MBYTE
     int		l;
+    int		cw;
 #endif
     int		c;
 
     /*
      * If redirection is on, also write to the redirection file.
      */
-    redir_write(s);
+    redir_write(s, maxlen);
 
     /*
      * Don't print anything when using ":silent cmd".
@@ -1506,7 +1653,7 @@ msg_puts_attr(s, attr)
 	return;
 
     /* if MSG_HIST flag set, add message to history */
-    if (attr & MSG_HIST)
+    if ((attr & MSG_HIST) && maxlen < 0)
     {
 	add_msg_hist(s, -1, attr);
 	attr &= ~MSG_HIST;
@@ -1520,6 +1667,7 @@ msg_puts_attr(s, attr)
      */
     if (msg_scrolled && !msg_scrolled_ign)
 	need_wait_return = TRUE;
+    msg_didany = TRUE;		/* remember that something was outputted */
 
     /*
      * If there is no valid screen, use fprintf so we can see error messages.
@@ -1534,14 +1682,14 @@ msg_puts_attr(s, attr)
 	if (!silent_mode)
 	    mch_settmode(TMODE_COOK);	/* handle '\r' and '\n' correctly */
 #endif
-	while (*s)
+	while (*s != NUL && (maxlen < 0 || (int)(s - str) < maxlen))
 	{
 	    if (!silent_mode)
 	    {
 		p = &buf[0];
-		/* NL --> CR NL translation (for Unix) */
+		/* NL --> CR NL translation (for Unix, not for "--version") */
 		/* NL --> CR translation (for Mac) */
-		if (*s == '\n')
+		if (*s == '\n' && !info_message)
 		    *p++ = '\r';
 #if defined(USE_CR) && !defined(MACOS_X_UNIX)
 		else
@@ -1555,10 +1703,22 @@ msg_puts_attr(s, attr)
 	    }
 
 	    /* primitive way to compute the current column */
-	    if (*s == '\r' || *s == '\n')
-		msg_col = 0;
+#ifdef FEAT_RIGHTLEFT
+	    if (cmdmsg_rl)
+	    {
+		if (*s == '\r' || *s == '\n')
+		    msg_col = Columns - 1;
+		else
+		    --msg_col;
+	    }
 	    else
-		++msg_col;
+#endif
+	    {
+		if (*s == '\r' || *s == '\n')
+		    msg_col = 0;
+		else
+		    ++msg_col;
+	    }
 	    ++s;
 	}
 	msg_didout = TRUE;	    /* assume that line is not empty */
@@ -1570,9 +1730,8 @@ msg_puts_attr(s, attr)
 	return;
     }
 
-    msg_didany = TRUE;		/* remember that something was outputted */
     did_wait_return = FALSE;
-    while (*s)
+    while (*s != NUL && (maxlen < 0 || (int)(s - str) < maxlen))
     {
 	/*
 	 * The screen is scrolled up when:
@@ -1583,14 +1742,33 @@ msg_puts_attr(s, attr)
 	 */
 	if (msg_row >= Rows - 1
 		&& (*s == '\n'
-		    || msg_col >= Columns - 1
-		    || (*s == TAB && msg_col >= ((Columns - 1) & ~7))
-#ifdef FEAT_MBYTE
-		    || (has_mbyte && (*mb_ptr2cells)(s) > 1
-						    && msg_col >= Columns - 2)
+		    || (
+#ifdef FEAT_RIGHTLEFT
+		    cmdmsg_rl
+		    ? (
+			msg_col <= 1
+			|| (*s == TAB && msg_col <= 7)
+# ifdef FEAT_MBYTE
+			|| (has_mbyte && (*mb_ptr2cells)(s) > 1 && msg_col <= 2)
+# endif
+		      )
+		    :
 #endif
-			      ))
+		      (msg_col + t_col >= Columns - 1
+		       || (*s == TAB && msg_col + t_col >= ((Columns - 1) & ~7))
+# ifdef FEAT_MBYTE
+		       || (has_mbyte && (*mb_ptr2cells)(s) > 1
+					    && msg_col + t_col >= Columns - 2)
+# endif
+		      ))))
 	{
+	    if (t_col > 0)
+	    {
+		/* output postponed text */
+		t_puts(t_col, t_s, s, attr);
+		t_col = 0;
+	    }
+
 	    /* When no more prompt an no more room, truncate here */
 	    if (msg_no_more && lines_left == 0)
 		break;
@@ -1740,6 +1918,7 @@ msg_puts_attr(s, attr)
 			/*FALLTHROUGH*/
 		    case ' ':		/* one extra page */
 		    case K_PAGEDOWN:
+		    case K_LEFTMOUSE:
 			lines_left = Rows - 1;
 			break;
 
@@ -1774,8 +1953,28 @@ msg_puts_attr(s, attr)
 		    msg_col = 0;
 		    return;	    /* the string is not displayed! */
 		}
+#ifdef FEAT_RIGHTLEFT
+		if (cmdmsg_rl)
+		    msg_col = Columns - 1;
+#endif
 	    }
 	}
+
+	if (t_col > 0
+		&& (vim_strchr((char_u *)"\n\r\b\t", *s) != NULL
+		    || *s == BELL
+		    || msg_col + t_col >= Columns
+#ifdef FEAT_MBYTE
+		    || (has_mbyte && (*mb_ptr2cells)(s) > 1
+					    && msg_col + t_col >= Columns - 1)
+#endif
+		    ))
+	{
+	    /* output any postponed text */
+	    t_puts(t_col, t_s, s, attr);
+	    t_col = 0;
+	}
+
 	if (*s == '\n')		    /* go to next line */
 	{
 	    msg_didout = FALSE;	    /* remember that line is empty */
@@ -1800,16 +1999,92 @@ msg_puts_attr(s, attr)
 	}
 	else if (*s == BELL)	    /* beep (from ":sh") */
 	    vim_beep();
-#ifdef FEAT_MBYTE
-	else if (has_mbyte && (l = (*mb_ptr2len_check)(s)) > 1)
-	    s = screen_puts_mbyte(s, l, attr) - 1;
-#endif
 	else
-	    msg_screen_putchar(*s, attr);
+	{
+#ifdef FEAT_MBYTE
+	    if (has_mbyte)
+	    {
+		cw = (*mb_ptr2cells)(s);
+		if (enc_utf8 && maxlen >= 0)
+		    /* avoid including composing chars after the end */
+		    l = utfc_ptr2len_check_len(s, (int)((str + maxlen) - s));
+		else
+		    l = (*mb_ptr2len_check)(s);
+	    }
+	    else
+	    {
+		cw = 1;
+		l = 1;
+	    }
+#endif
+	    /* When drawing from right to left or when a double-wide character
+	     * doesn't fit, draw a single character here.  Otherwise collect
+	     * characters and draw them all at once later. */
+#if defined(FEAT_RIGHTLEFT) || defined(FEAT_MBYTE)
+	    if (
+# ifdef FEAT_RIGHTLEFT
+		    cmdmsg_rl
+#  ifdef FEAT_MBYTE
+		    ||
+#  endif
+# endif
+# ifdef FEAT_MBYTE
+		    (cw > 1 && msg_col + t_col >= Columns - 1)
+# endif
+		    )
+	    {
+# ifdef FEAT_MBYTE
+		if (l > 1)
+		    s = screen_puts_mbyte(s, l, attr) - 1;
+		else
+# endif
+		    msg_screen_putchar(*s, attr);
+	    }
+	    else
+#endif
+	    {
+		/* postpone this character until later */
+		if (t_col == 0)
+		    t_s = s;
+#ifdef FEAT_MBYTE
+		t_col += cw;
+		s += l - 1;
+#else
+		++t_col;
+#endif
+	    }
+	}
 	++s;
     }
+
+    /* output any postponed text */
+    if (t_col > 0)
+	t_puts(t_col, t_s, s, attr);
+
     msg_check();
 }
+
+/*
+ * Output any postponed text for msg_puts_attr_len().
+ */
+    static void
+t_puts(t_col, t_s, s, attr)
+    int		t_col;
+    char_u	*t_s;
+    char_u	*s;
+    int		attr;
+{
+    /* output postponed text */
+    msg_didout = TRUE;		/* remember that line is not empty */
+    screen_puts_len(t_s, (int)(s - t_s), msg_row, msg_col, attr);
+    msg_col += t_col;
+    if (msg_col >= Columns)
+    {
+	msg_col = 0;
+	++msg_row;
+    }
+}
+
 
 /*
  * Returns TRUE when messages should be printed with mch_errmsg().
@@ -1937,17 +2212,34 @@ mch_msg(str)
 }
 #endif /* USE_MCH_ERRMSG */
 
+/*
+ * Put a character on the screen at the current message position and advance
+ * to the next position.  Only for printable ASCII!
+ */
     static void
 msg_screen_putchar(c, attr)
-    int	    c;
-    int	    attr;
+    int		c;
+    int		attr;
 {
     msg_didout = TRUE;		/* remember that line is not empty */
     screen_putchar(c, msg_row, msg_col, attr);
-    if (++msg_col >= Columns)
+#ifdef FEAT_RIGHTLEFT
+    if (cmdmsg_rl)
     {
-	msg_col = 0;
-	++msg_row;
+	if (--msg_col == 0)
+	{
+	    msg_col = Columns;
+	    ++msg_row;
+	}
+    }
+    else
+#endif
+    {
+	if (++msg_col >= Columns)
+	{
+	    msg_col = 0;
+	    ++msg_row;
+	}
     }
 }
 
@@ -2035,8 +2327,19 @@ msg_clr_eos()
     }
     else
     {
-	screen_fill(msg_row, msg_row + 1, msg_col, (int)Columns, ' ', ' ', 0);
-	screen_fill(msg_row + 1, (int)Rows, 0, (int)Columns, ' ', ' ', 0);
+#ifdef FEAT_RIGHTLEFT
+	if (cmdmsg_rl)
+	{
+	    screen_fill(msg_row, msg_row + 1, 0, msg_col + 1, ' ', ' ', 0);
+	    screen_fill(msg_row + 1, (int)Rows, 0, (int)Columns, ' ', ' ', 0);
+	}
+	else
+#endif
+	{
+	    screen_fill(msg_row, msg_row + 1, msg_col, (int)Columns,
+								 ' ', ' ', 0);
+	    screen_fill(msg_row + 1, (int)Rows, 0, (int)Columns, ' ', ' ', 0);
+	}
     }
 }
 
@@ -2090,12 +2393,15 @@ msg_check()
 
 /*
  * May write a string to the redirection file.
+ * When "maxlen" is -1 write the whole string, otherwise up to "maxlen" bytes.
  */
     static void
-redir_write(s)
-    char_u	*s;
+redir_write(str, maxlen)
+    char_u	*str;
+    int		maxlen;
 {
-    static int	    cur_col = 0;
+    char_u	*s = str;
+    static int	cur_col = 0;
 
     if ((redir_fd != NULL
 #ifdef FEAT_EVAL
@@ -2110,7 +2416,7 @@ redir_write(s)
 	    {
 #ifdef FEAT_EVAL
 		if (redir_reg)
-		    write_reg_contents(redir_reg, (char_u *)" ", TRUE);
+		    write_reg_contents(redir_reg, (char_u *)" ", -1, TRUE);
 		else if (redir_fd)
 #endif
 		    fputs(" ", redir_fd);
@@ -2120,14 +2426,16 @@ redir_write(s)
 
 #ifdef FEAT_EVAL
 	if (redir_reg)
-	    write_reg_contents(redir_reg, s, TRUE);
-	else if (redir_fd)
+	    write_reg_contents(redir_reg, s, maxlen, TRUE);
 #endif
-	    fputs((char *)s, redir_fd);
 
 	/* Adjust the current column */
-	while (*s)
+	while (*s != NUL && (maxlen < 0 || (int)(s - str) < maxlen))
 	{
+#ifdef FEAT_EVAL
+	    if (!redir_reg && redir_fd != NULL)
+#endif
+		putc(*s, redir_fd);
 	    if (*s == '\r' || *s == '\n')
 		cur_col = 0;
 	    else if (*s == '\t')
@@ -2275,7 +2583,7 @@ do_dialog(type, title, message, buttons, dfltbutton, textfield)
 		    continue;
 		for (retval = 0; hotkeys[retval]; retval++)
 		{
-		    if (hotkeys[retval] == TO_LOWER(c))
+		    if (hotkeys[retval] == TOLOWER_LOC(c))
 			break;
 		}
 		if (hotkeys[retval])
@@ -2367,7 +2675,7 @@ msg_show_console_dialog(message, buttons, dfltbutton)
     p = confirm_msg + 1 + STRLEN(message);
     q = hotk;
     r = buttons;
-    *q = (char_u)TO_LOWER(*r);	/* define lowercase hotkey */
+    *q = (char_u)TOLOWER_LOC(*r);	/* define lowercase hotkey */
 
     /* Remember where the choices start, displaying starts here when "q" typed
      * at the more prompt. */
@@ -2380,7 +2688,7 @@ msg_show_console_dialog(message, buttons, dfltbutton)
 	{
 	    *p++ = ',';
 	    *p++ = ' ';	    /* '\n' -> ', ' */
-	    *(++q) = (char_u)TO_LOWER(*(r + 1)); /* next hotkey */
+	    *(++q) = (char_u)TOLOWER_LOC(*(r + 1)); /* next hotkey */
 	    if (dfltbutton)
 		--dfltbutton;
 	}
@@ -2395,7 +2703,7 @@ msg_show_console_dialog(message, buttons, dfltbutton)
 		*p++ = (dfltbutton == 1) ? '[' : '(';
 		*p++ = *r;
 		*p++ = (dfltbutton == 1) ? ']' : ')';
-		*q = (char_u)TO_LOWER(*r);	/* define lowercase hotkey */
+		*q = (char_u)TOLOWER_LOC(*r);	/* define lowercase hotkey */
 	    }
 	}
 	else

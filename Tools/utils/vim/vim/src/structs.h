@@ -120,6 +120,10 @@ typedef struct taggy
  */
 typedef struct
 {
+#ifdef FEAT_ARABIC
+    int		wo_arab;
+# define w_p_arab w_onebuf_opt.wo_arab	/* 'arabic' */
+#endif
 #ifdef FEAT_DIFF
     int		wo_diff;
 # define w_p_diff w_onebuf_opt.wo_diff	/* 'diff' */
@@ -156,6 +160,10 @@ typedef struct
 #define w_p_list w_onebuf_opt.wo_list	/* 'list' */
     int		wo_nu;
 #define w_p_nu w_onebuf_opt.wo_nu	/* 'number' */
+#if defined(FEAT_WINDOWS)
+    int		wo_wfh;
+# define w_p_wfh w_onebuf_opt.wo_wfh	/* 'winfixheight' */
+#endif
 #if defined(FEAT_WINDOWS) && defined(FEAT_QUICKFIX)
     int		wo_pvw;
 # define w_p_pvw w_onebuf_opt.wo_pvw	/* 'previewwindow' */
@@ -163,6 +171,8 @@ typedef struct
 #ifdef FEAT_RIGHTLEFT
     int		wo_rl;
 # define w_p_rl w_onebuf_opt.wo_rl	/* 'rightleft' */
+    char_u	*wo_rlc;
+# define w_p_rlc w_onebuf_opt.wo_rlc	/* 'rightleftcmd' */
 #endif
     long	wo_scr;
 #define w_p_scr w_onebuf_opt.wo_scr	/* 'scroll' */
@@ -364,6 +374,7 @@ typedef struct expand
 {
     int		xp_context;		/* type of expansion */
     char_u	*xp_pattern;		/* start of item to expand */
+    char_u	*xp_arg;		/* generic expansion argument */
     int		xp_backslash;		/* one of the XP_BS_ values */
 } expand_T;
 
@@ -490,7 +501,16 @@ struct signlist
     linenr_T	lnum;		/* line number which has this sign */
     int		typenr;		/* typenr of sign */
     signlist_T	*next;		/* next signlist entry */
+# ifdef FEAT_NETBEANS_INTG
+    signlist_T  *prev;		/* previous entry -- for easy reordering */
+# endif
 };
+
+/* type argument for buf_getsigntype() */
+#define SIGN_ANY	0
+#define SIGN_LINEHL	1
+#define SIGN_ICON	2
+#define SIGN_TEXT	3
 #endif
 
 /*
@@ -527,28 +547,106 @@ typedef struct argentry
 #define ARGCOUNT	(ALIST(curwin)->al_ga.ga_len)
 #define WARGCOUNT(wp)	(ALIST(wp)->al_ga.ga_len)
 
-#ifdef FEAT_EVAL
+/*
+ * A list used for saving values of "emsg_silent".  Used by ex_try() to save the
+ * value of "emsg_silent" if it was non-zero.  When this is done, the CSF_SILENT
+ * flag below is set.
+ */
+
+typedef struct eslist_elem eslist_T;
+struct eslist_elem
+{
+    int		saved_emsg_silent;	/* saved value of "emsg_silent" */
+    eslist_T	*next;			/* next element on the list */
+};
+
 /*
  * For conditional commands a stack is kept of nested conditionals.
  * When cs_idx < 0, there is no conditional command.
  */
-# define CSTACK_LEN	50
+#define CSTACK_LEN	50
 
 struct condstack
 {
     char	cs_flags[CSTACK_LEN];	/* CSF_ flags */
+    char	cs_pending[CSTACK_LEN];	/* CSTP_: what's pending in ":finally"*/
+    union {
+	void   *cs_pend_rv[CSTACK_LEN];	/* returnval for pending return */
+	void   *cs_pend_ex[CSTACK_LEN];	/* exception for pending throw */
+    }		cs_pend;
     int		cs_line[CSTACK_LEN];	/* line number of ":while" line */
     int		cs_idx;			/* current entry, or -1 if none */
     int		cs_whilelevel;		/* number of nested ":while"s */
+    int		cs_trylevel;		/* number of nested ":try"s */
+    eslist_T	*cs_emsg_silent_list;	/* saved values of "emsg_silent" */
     char	cs_had_while;		/* just found ":while" */
     char	cs_had_continue;	/* just found ":continue" */
     char	cs_had_endwhile;	/* just found ":endwhile" */
+    char	cs_had_finally;		/* just found ":finally" */
 };
+# define cs_retvar	cs_pend.cs_pend_rv
+# define cs_exception	cs_pend.cs_pend_ex
 
 # define CSF_TRUE	1	/* condition was TRUE */
 # define CSF_ACTIVE	2	/* current state is active */
-# define CSF_WHILE	4	/* is a ":while" */
-#endif
+# define CSF_ELSE	4	/* ":else" has been passed */
+# define CSF_WHILE	8	/* is a ":while" */
+# define CSF_TRY	16	/* is a ":try" */
+# define CSF_FINALLY	32	/* ":finally" has been passed */
+# define CSF_THROWN	64	/* exception thrown to this try conditional */
+# define CSF_CAUGHT	128	/* exception caught by this try conditional */
+# define CSF_SILENT	4	/* "emsg_silent" reset by ":try" */
+/* Note that CSF_ELSE is only used when CSF_TRY and CSF_WHILE are unset
+ * (an ":if"), and CSF_SILENT is only used when CSF_TRY is set. */
+
+/*
+ * What's pending for being reactivated at the ":endtry" of this try
+ * conditional:
+ */
+# define CSTP_NONE	0	/* nothing pending in ":finally" clause */
+# define CSTP_ERROR	1	/* an error is pending */
+# define CSTP_INTERRUPT	2	/* an interrupt is pending */
+# define CSTP_THROW	4	/* a throw is pending */
+# define CSTP_BREAK	8	/* ":break" is pending */
+# define CSTP_CONTINUE	16	/* ":continue" is pending */
+# define CSTP_RETURN	24	/* ":return" is pending */
+# define CSTP_FINISH	32	/* ":finish" is pending */
+
+/*
+ * A list of error messages that can be converted to an exception.  "throw_msg"
+ * is only set in the first element of the list.  Usually, it points to the
+ * original message stored in that element, but sometimes it points to a later
+ * message in the list.  See cause_errthrow() below.
+ */
+struct msglist
+{
+    char_u		*msg;		/* original message */
+    char_u		*throw_msg;	/* msg to throw: usually original one */
+    struct msglist	*next;		/* next of several messages in a row */
+};
+
+/*
+ * Structure describing an exception.
+ * (don't use "struct exception", it's used by the math library).
+ */
+typedef struct vim_exception except_T;
+struct vim_exception
+{
+    int			type;		/* exception type */
+    char_u		*value;		/* exception value */
+    struct msglist	*messages;	/* message(s) causing error exception */
+    char_u		*throw_name;	/* name of the throw point */
+    linenr_T		throw_lnum;	/* line number of the throw point */
+    except_T		*caught;	/* next exception on the caught stack */
+};
+
+/*
+ * The exception types.
+ */
+#define ET_USER		0	/* exception caused by ":throw" command */
+#define ET_ERROR	1	/* error exception */
+#define ET_INTERRUPT	2	/* interrupt exception triggered by Ctrl-C */
+
 
 #ifdef FEAT_SYN_HL
 /* struct passed to in_id_list() */
@@ -579,7 +677,7 @@ struct keyentry
 typedef struct buf_state
 {
     int		    bs_idx;	 /* index of pattern */
-    int		    bs_flags;	 /* flags for pattern */
+    long	    bs_flags;	 /* flags for pattern */
     reg_extmatch_T *bs_extmatch; /* external matches from start pattern */
 } bufstate_T;
 
@@ -644,7 +742,22 @@ typedef struct attr_entry
 # ifdef HAVE_ICONV_H
 #  include <iconv.h>
 # else
-#  include <errno.h>
+#  if defined(MACOS_X)
+#   include <sys/errno.h>
+#   define EILSEQ ENOENT /* MacOS X does not have EILSEQ */
+typedef struct _iconv_t *iconv_t;
+#  else
+#   if defined(MACOS_CLASSIC)
+typedef struct _iconv_t *iconv_t;
+#    define EINVAL	22
+#    define E2BIG	7
+#    define ENOENT	2
+#    define EFAULT	14
+#    define EILSEQ	123
+#   else
+#    include <errno.h>
+#   endif
+#  endif
 typedef void *iconv_t;
 # endif
 #endif
@@ -664,6 +777,17 @@ typedef struct
     int		tb_no_abbr_cnt; /* nr of chars without abbrev. in tb_buf[] */
 } typebuf_T;
 
+/* Struct to hold the saved typeahead for save_typeahead(). */
+typedef struct
+{
+    typebuf_T		save_typebuf;
+    int			typebuf_valid;	    /* TRUE when save_typebuf valid */
+    struct buffheader	save_stuffbuff;
+#ifdef USE_INPUT_BUF
+    char_u		*save_inputbuf;
+#endif
+} tasave_T;
+
 /*
  * Used for conversion of terminal I/O and script files.
  */
@@ -671,8 +795,9 @@ typedef struct
 {
     int		vc_type;	/* zero or one of the CONV_ values */
     int		vc_factor;	/* max. expansion factor */
-# ifdef FEAT_WINDOWS
-    int		vc_dbcs;	/* codepage to convert to (CONV_CODEPAGE) */
+# ifdef WIN3264
+    int		vc_cpfrom;	/* codepage to convert from (CONV_CODEPAGE) */
+    int		vc_cpto;	/* codepage to convert to (CONV_CODEPAGE) */
 # endif
 # ifdef USE_ICONV
     iconv_t	vc_fd;		/* for CONV_ICONV */
@@ -691,13 +816,12 @@ typedef struct
 #endif
 } vir_T;
 
-#define CONV_NONE	0
-#define CONV_TO_UTF8	1
-#define CONV_TO_LATIN1	2
-#define CONV_ICONV	3
-#ifdef FEAT_WINDOWS
-# define CONV_DBCS	4	/* ucs-2 -> dbcs */
-# define CONV_CODEPAGE	5	/* current codepage -> ucs-2 */
+#define CONV_NONE		0
+#define CONV_TO_UTF8		1
+#define CONV_TO_LATIN1		2
+#define CONV_ICONV		3
+#ifdef WIN3264
+# define CONV_CODEPAGE		4	/* codepage -> codepage */
 #endif
 
 /*
@@ -713,8 +837,10 @@ struct mapblock
     int		m_mode;		/* valid mode */
     int		m_noremap;	/* if non-zero no re-mapping for m_str */
     char	m_silent;	/* <silent> used, don't echo commands */
+#if 0  /* Not used yet */
     scid_T	m_script_ID;	/* ID of script where map was defined,
 				   used for s: variables and functions */
+#endif
 };
 
 /*
@@ -778,6 +904,9 @@ struct file_buffer
 				   file has been changed and not written out. */
     int		b_changedtick;	/* incremented for each change, also for undo */
 
+    int		b_saving;	/* Set to TRUE if we are in the middle of
+				   saving the buffer. */
+
     /*
      * Changes to a buffer require updating of the display.  To minimize the
      * work, remember changes made and update everything at once.
@@ -804,6 +933,9 @@ struct file_buffer
     pos_T	b_visual_start;	/* start pos of last VIsual */
     pos_T	b_visual_end;	/* end position of last VIsual */
     int		b_visual_mode;	/* VIsual_mode of last VIsual */
+# ifdef FEAT_EVAL
+    int		b_visual_mode_eval;  /* b_visual_mode for visualmode() */
+# endif
     colnr_T	b_visual_curswant;   /* MAXCOL from w_curswant */
 #endif
 
@@ -895,6 +1027,7 @@ struct file_buffer
 
     int		b_p_ai;		/* 'autoindent' */
     int		b_p_ai_nopaste;	/* b_p_ai saved for paste mode */
+    int		b_p_ci;		/* 'copyindent' */
     int		b_p_bin;	/* 'binary' */
 #ifdef FEAT_MBYTE
     int		b_p_bomb;	/* 'bomb' */
@@ -948,6 +1081,7 @@ struct file_buffer
 #ifdef FEAT_CRYPT
     char_u	*b_p_key;	/* 'key' */
 #endif
+    char_u	*b_p_kp;	/* 'keywordprg' */
 #ifdef FEAT_LISP
     int		b_p_lisp;	/* 'lisp' */
 #endif
@@ -959,6 +1093,7 @@ struct file_buffer
 #ifdef FEAT_OSFILETYPE
     char_u	*b_p_oft;	/* 'osfiletype' */
 #endif
+    int		b_p_pi;		/* 'preserveindent' */
     int		b_p_ro;		/* 'readonly' */
     long	b_p_sw;		/* 'shiftwidth' */
 #ifndef SHORT_FNAME
@@ -1005,6 +1140,7 @@ struct file_buffer
 
     /* end of buffer options */
 
+    int		b_start_eol;	/* last line had eol when it was read */
     int		b_start_ffc;	/* first char of 'ff' when edit started */
 #ifdef FEAT_MBYTE
     char_u	*b_start_fenc;	/* 'fileencoding' when edit started or NULL */
@@ -1128,6 +1264,7 @@ struct frame
     int		fr_width;
 #endif
     int		fr_height;
+    int		fr_newheight;	/* new height used in win_equal_rec() */
     frame_T	*fr_parent;	/* containing frame or NULL */
     frame_T	*fr_next;	/* frame right or below in same parent, NULL
 				   for first */
@@ -1487,8 +1624,9 @@ typedef struct cmdarg
 #define SHAPE_IDX_VSEP	12	/* A vertical separator line */
 #define SHAPE_IDX_VDRAG 13	/* dragging a vertical separator line */
 #define SHAPE_IDX_MORE	14	/* Hit-return or More */
-#define SHAPE_IDX_SM	15	/* showing matching paren */
-#define SHAPE_IDX_COUNT	16
+#define SHAPE_IDX_MOREL	15	/* Hit-return or More in last line */
+#define SHAPE_IDX_SM	16	/* showing matching paren */
+#define SHAPE_IDX_COUNT	17
 
 #define SHAPE_BLOCK	0	/* block cursor */
 #define SHAPE_HOR	1	/* horizontal bar cursor */
@@ -1584,7 +1722,7 @@ struct VimMenu
 #ifdef FEAT_GUI_MOTIF
     Pixmap	image_ins;	    /* Toolbar image insensitive */
 #endif
-#ifdef FEAT_BEVAL
+#ifdef FEAT_BEVAL_TIP
     BalloonEval *tip;		    /* tooltip for this menu item */
 #endif
 #ifdef FEAT_GUI_W16
@@ -1656,7 +1794,8 @@ typedef struct
 /*
  * Generic option table item, only used for printer at the moment.
  */
-typedef struct {
+typedef struct
+{
     const char	*name;
     int		hasnum;
     long	number;
@@ -1665,6 +1804,17 @@ typedef struct {
     int		present;
 } option_table_T;
 
+/*
+ * Structure to hold printing color and font attributes.
+ */
+typedef struct
+{
+    long_u	fg_color;
+    long_u	bg_color;
+    int		bold;
+    int		italic;
+    int		underline;
+} prt_text_attr_T;
 
 /*
  * Structure passed back to the generic printer code.
@@ -1677,7 +1827,9 @@ typedef struct
     int		chars_per_line;
     int		lines_per_page;
     int		has_color;
+    prt_text_attr_T number;
 #ifdef FEAT_SYN_HL
+    int		modec;
     int		do_syntax;
 #endif
     int		user_abort;

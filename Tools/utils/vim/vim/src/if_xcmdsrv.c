@@ -174,7 +174,7 @@ static Window	LookupName __ARGS((Display *dpy, char_u *name, int delete, char_u 
 static int	SendInit __ARGS((Display *dpy));
 static int	DoRegisterName __ARGS((Display *dpy, char_u *name));
 static void	DeleteAnyLingerer __ARGS((Display *dpy, Window w));
-static int	GetRegProp __ARGS((Display *dpy, char_u **regPropp, long_u *numItemsp, long_u *bytesAfterp, int msg));
+static int	GetRegProp __ARGS((Display *dpy, char_u **regPropp, long_u *numItemsp, int domsg));
 static int	WaitForPend __ARGS((void *p));
 static int	WaitForReply __ARGS((void *p));
 static int	WindowValid __ARGS((Display *dpy, Window w));
@@ -188,6 +188,8 @@ static int	IsSerialName __ARGS((char_u *name));
 static Atom	registryProperty = None;
 static Atom	vimProperty = None;
 static int	got_x_error = FALSE;
+
+static char_u	*empty_prop = (char_u *)"";	/* empty GetRegProp() result */
 
 /*
  * Associate an ASCII name with Vim.  Try real hard to get a unique one.
@@ -211,7 +213,7 @@ serverRegisterName(dpy, name)
 	    if (res < -1 || i >= 1000)
 	    {
 		MSG_ATTR(_("Unable to register a command server name"),
-			 hl_attr(HLF_W));
+							      hl_attr(HLF_W));
 		return FAIL;
 	    }
 	    if (p == NULL)
@@ -431,7 +433,7 @@ serverSendToVim(dpy, name, cmd,  result, server, asExpr, localLoop, silent)
     if (w == None)
     {
 	if (!silent)
-	    EMSG2(_("E247: no registered server named \"%s\""), name);
+	    EMSG2(_(e_noserver), name);
 	return -1;
     }
     else if (loosename != NULL)
@@ -628,7 +630,7 @@ serverGetVimNames(dpy)
     char_u	*regProp;
     char_u	*entry;
     char_u	*p;
-    long_u	numItems, bytesAfter;
+    long_u	numItems;
     int_u	w;
     garray_T	ga;
 
@@ -642,7 +644,7 @@ serverGetVimNames(dpy)
     /*
      * Read the registry property.
      */
-    if (GetRegProp(dpy, &regProp, &numItems, &bytesAfter, TRUE) == FAIL)
+    if (GetRegProp(dpy, &regProp, &numItems, TRUE) == FAIL)
 	return NULL;
 
     /*
@@ -667,7 +669,8 @@ serverGetVimNames(dpy)
 		p++;
 	}
     }
-    XFree(regProp);
+    if (regProp != empty_prop)
+	XFree(regProp);
     return ga.ga_data;
 }
 
@@ -729,7 +732,7 @@ serverStrToWin(str)
 
     sscanf((char *)str, "0x%x", &id);
     if (id == None)
-	EMSG2(_("Invalid server id used: %s"), str);
+	EMSG2(_("E573: Invalid server id used: %s"), str);
 
     return (Window)id;
 }
@@ -913,13 +916,13 @@ LookupName(dpy, name, delete, loose)
 {
     char_u	*regProp, *entry;
     char_u	*p;
-    long_u	numItems, bytesAfter;
+    long_u	numItems;
     int_u	returnValue;
 
     /*
      * Read the registry property.
      */
-    if (GetRegProp(dpy, &regProp, &numItems, &bytesAfter, FALSE) == FAIL)
+    if (GetRegProp(dpy, &regProp, &numItems, FALSE) == FAIL)
 	return 0;
 
     /*
@@ -983,7 +986,8 @@ LookupName(dpy, name, delete, loose)
 	XSync(dpy, False);
     }
 
-    XFree(regProp);
+    if (regProp != empty_prop)
+	XFree(regProp);
     return (Window)returnValue;
 }
 
@@ -1003,13 +1007,13 @@ DeleteAnyLingerer(dpy, win)
 {
     char_u	*regProp, *entry = NULL;
     char_u	*p;
-    long_u	numItems, bytesAfter;
+    long_u	numItems;
     Window	wwin;
 
     /*
      * Read the registry property.
      */
-    if (GetRegProp(dpy, &regProp, &numItems, &bytesAfter, FALSE) == FAIL)
+    if (GetRegProp(dpy, &regProp, &numItems, FALSE) == FAIL)
 	return;
 
     /* Scan the property for the window id.  */
@@ -1048,36 +1052,40 @@ DeleteAnyLingerer(dpy, win)
 	XSync(dpy, False);
     }
 
-    XFree(regProp);
+    if (regProp != empty_prop)
+	XFree(regProp);
 }
 
 /*
  * Read the registry property.  Delete it when it's formatted wrong.
+ * Return the property in "regPropp".  "empty_prop" is used when it doesn't
+ * exist yet.
  * Return OK when successful.
  */
     static int
-GetRegProp(dpy, regPropp, numItemsp, bytesAfterp, msg)
+GetRegProp(dpy, regPropp, numItemsp, domsg)
     Display	*dpy;
     char_u	**regPropp;
     long_u	*numItemsp;
-    long_u	*bytesAfterp;
-    int		msg;		/* When TRUE give error message. */
+    int		domsg;		/* When TRUE give error message. */
 {
     int		result, actualFormat;
+    long_u	bytesAfter;
     Atom	actualType;
 
     *regPropp = NULL;
     result = XGetWindowProperty(dpy, RootWindow(dpy, 0), registryProperty, 0L,
 				(long)MAX_PROP_WORDS, False,
 				XA_STRING, &actualType,
-				&actualFormat, numItemsp, bytesAfterp,
+				&actualFormat, numItemsp, &bytesAfter,
 				regPropp);
 
     if (actualType == None)
     {
-	if (msg)
-	    EMSG(_("E249: couldn't read VIM instance registry property"));
-	return FAIL;
+	/* No prop yet. Logically equal to the empty list */
+	*numItemsp = 0;
+	*regPropp = empty_prop;
+	return OK;
     }
 
     /* If the property is improperly formed, then delete it. */
@@ -1086,7 +1094,7 @@ GetRegProp(dpy, regPropp, numItemsp, bytesAfterp, msg)
 	if (*regPropp != NULL)
 	    XFree(*regPropp);
 	XDeleteProperty(dpy, RootWindow(dpy, 0), registryProperty);
-	if (msg)
+	if (domsg)
 	    EMSG(_("E251: VIM instance registry property is badly formed.  Deleted!"));
 	return FAIL;
     }

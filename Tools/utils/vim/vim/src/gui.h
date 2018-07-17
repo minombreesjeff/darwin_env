@@ -77,7 +77,7 @@
 # define ALWAYS_USE_GUI
 #endif
 
-#if defined(FEAT_GUI_MSWIN) || defined(FEAT_GUI_MAC)
+#if defined(FEAT_GUI_MSWIN) || defined(FEAT_GUI_MAC) || defined(HAVE_GTK2)
 # define USE_ON_FLY_SCROLL
 #endif
 
@@ -152,7 +152,7 @@
 #define DRAW_TRANSP		0x01	/* draw with transparant bg */
 #define DRAW_BOLD		0x02	/* draw bold text */
 #define DRAW_UNDERL		0x04	/* draw underline text */
-#ifdef RISCOS
+#if defined(RISCOS) || defined(HAVE_GTK2)
 # define DRAW_ITALIC		0x08	/* draw italic text */
 #endif
 #define DRAW_CURSOR		0x10	/* drawing block cursor (win32) */
@@ -182,7 +182,9 @@ typedef struct GuiScrollbar
     struct window *wp;		/* Scrollbar's window, NULL for bottom */
     int		type;		/* one of SBAR_{LEFT,RIGHT,BOTTOM} */
     long	value;		/* Represents top line number visible */
+#ifdef FEAT_GUI_ATHENA
     int		pixval;		/* pixel count of value */
+#endif
     long	size;		/* Size of scrollbar thumb */
     long	max;		/* Number of lines in buffer */
 
@@ -198,6 +200,7 @@ typedef struct GuiScrollbar
 #endif
 #ifdef FEAT_GUI_GTK
     GtkWidget *id;		/* Id of real scroll bar */
+    unsigned long handler_id;   /* Id of "value_changed" signal handler */
 #endif
 
 #ifdef FEAT_GUI_MSWIN
@@ -224,10 +227,18 @@ typedef struct GuiScrollbar
 typedef long	    guicolor_T;	/* handle for a GUI color; for X11 this should
 				   be "Pixel", but that's an unsigned and we
 				   need a signed value */
+#define INVALCOLOR (guicolor_T)-11111	/* number for invalid color; on 32 bit
+				   displays there is a tiny chance this is an
+				   actual color */
 
 #ifdef FEAT_GUI_GTK
+# ifdef HAVE_GTK2
+  typedef PangoFontDescription	*GuiFont;       /* handle for a GUI font */
+  typedef PangoFontDescription  *GuiFontset;    /* handle for a GUI fontset */
+# else
   typedef GdkFont	*GuiFont;	/* handle for a GUI font */
   typedef GdkFont	*GuiFontset;	/* handle for a GUI fontset */
+# endif
 # define NOFONT		(GuiFont)NULL
 # define NOFONTSET	(GuiFontset)NULL
 #else
@@ -298,11 +309,18 @@ typedef struct Gui
     int		char_ascent;	    /* Ascent of char in pixels */
     int		border_width;	    /* Width of our border around text area */
     int		border_offset;	    /* Total pixel offset for all borders */
+
     GuiFont	norm_font;	    /* Normal font */
+#ifndef HAVE_GTK2
     GuiFont	bold_font;	    /* Bold font */
     GuiFont	ital_font;	    /* Italic font */
     GuiFont	boldital_font;	    /* Bold-Italic font */
-#ifdef FEAT_MENU
+#else
+    int		font_can_bold;	    /* Whether norm_font supports bold weight.
+				     * The styled font variants are not used. */
+#endif
+
+#if defined(FEAT_MENU) && !defined(HAVE_GTK2)
 # ifdef FONTSET_ALWAYS
     GuiFontset	menu_fontset;	    /* set of fonts for multi-byte chars */
 # else
@@ -358,7 +376,6 @@ typedef struct Gui
 #endif
 
 #ifdef FEAT_GUI_GTK
-    Display	*dpy;		    /* X display */
     int		visibility;	    /* Is shell partially/fully obscured? */
     GdkCursor	*blank_pointer;	    /* Blank pointer */
 
@@ -380,14 +397,21 @@ typedef struct Gui
 # endif
     GdkColor	*fgcolor;	    /* GDK-styled foreground color */
     GdkColor	*bgcolor;	    /* GDK-styled background color */
-
-    GdkFont	*current_font;
+# ifndef HAVE_GTK2
+    GuiFont	current_font;
+# endif
     GdkGC	*text_gc;	    /* cached GC for normal text */
+# ifdef HAVE_GTK2
+    PangoContext     *text_context; /* the context used for all text */
+    PangoFont	     *ascii_font;   /* cached font for ASCII strings */
+    PangoGlyphString *ascii_glyphs; /* cached code point -> glyph map */
+# endif
 
     GtkAccelGroup *accel_group;
+# ifndef HAVE_GTK2
     GtkWidget	*fontdlg;	    /* font selection dialog window */
     char_u	*fontname;	    /* font name from font selection dialog */
-
+# endif
     GtkWidget	*filedlg;	    /* file selection dialog */
     char_u	*browse_fname;	    /* file name from filedlg */
 #endif	/* FEAT_GUI_GTK */
@@ -401,7 +425,7 @@ typedef struct Gui
     int		toolbar_height;	    /* height of the toolbar */
 #endif
 
-#ifdef FEAT_BEVAL
+#ifdef FEAT_BEVAL_TIP
     /* Tooltip properties; also used for balloon evaluation */
     char_u	*rsrc_tooltip_font_name; /* tooltip font name */
     char	*rsrc_tooltip_fg_name;	/* tooltip foreground color name */
@@ -480,16 +504,22 @@ typedef enum
     VW_POS_MOUSE,
     VW_POS_CENTER,
     VW_POS_TOP_CENTER
-} gui_win_pos_T;
+}
+gui_win_pos_T;
 
-#if defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_GTK)
+#if defined(FEAT_GUI_MOTIF) || defined(FEAT_GUI_GTK) \
+	|| defined(MSWIN_FIND_REPLACE)
 /*
  * Flags used to distinguish the different contexts in which the
  * find/replace callback may be called.
  */
-# define FR_FINDNEXT	1	/* Find next in find dialog */
-# define FR_R_FINDNEXT	2	/* Find next in repl dialog */
-# define FR_REPLACE	3
-# define FR_REPLACEALL	4
-# define FR_UNDO	5
+# define FRD_FINDNEXT	1	/* Find next in find dialog */
+# define FRD_R_FINDNEXT	2	/* Find next in repl dialog */
+# define FRD_REPLACE	3	/* Replace once */
+# define FRD_REPLACEALL	4	/* Replace remaining matches */
+# define FRD_UNDO	5	/* Undo replaced text */
+# define FRD_TYPE_MASK   7	/* Mask for the callback type */
+/* Flags which change the way searching is done. */
+# define FRD_WHOLE_WORD	0x08	/* match whole word only */
+# define FRD_MATCH_CASE	0x10	/* match case */
 #endif

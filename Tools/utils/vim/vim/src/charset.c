@@ -331,22 +331,30 @@ transstr(s)
     char_u	*res;
     char_u	*p;
 #ifdef FEAT_MBYTE
-    int		l, len;
+    int		l, len, c;
+    char_u	hexbuf[11];
 #endif
 
 #ifdef FEAT_MBYTE
     if (has_mbyte)
     {
-	/* Compute the length of the result, taking into account that
-	 * multi-byte characters are copied unchanged. */
+	/* Compute the length of the result, taking account of unprintable
+	 * multi-byte characters. */
 	len = 0;
 	p = s;
 	while (*p != NUL)
 	{
 	    if ((l = (*mb_ptr2len_check)(p)) > 1)
 	    {
-		len += l;
+		c = (*mb_ptr2char)(p);
 		p += l;
+		if (vim_isprintc(c))
+		    len += l;
+		else
+		{
+		    transchar_hex(hexbuf, c);
+		    len += STRLEN(hexbuf);
+		}
 	    }
 	    else
 	    {
@@ -371,7 +379,11 @@ transstr(s)
 #ifdef FEAT_MBYTE
 	    if (has_mbyte && (l = (*mb_ptr2len_check)(p)) > 1)
 	    {
-		STRNCAT(res, p, l);	/* append printable multi-byte char */
+		c = (*mb_ptr2char)(p);
+		if (vim_isprintc(c))
+		    STRNCAT(res, p, l);	/* append printable multi-byte char */
+		else
+		    transchar_hex(res + STRLEN(res), c);
 		p += l;
 	    }
 	    else
@@ -385,36 +397,81 @@ transstr(s)
 
 #if defined(FEAT_SYN_HL) || defined(FEAT_INS_EXPAND) || defined(PROTO)
 /*
- * Convert the string "p" to do ignore-case comparing.
- * It's done in-place.
+ * Convert the string "p[len]" to do ignore-case comparing.  Uses the current
+ * locale.  Returns an allocated string (NULL for out-of-memory).
  */
-    void
-str_foldcase(p)
-    char_u	*p;
+    char_u *
+str_foldcase(str, len)
+    char_u	*str;
+    int		len;
 {
-    while (*p != NUL)
+    garray_T	ga;
+    int		i;
+
+#define GA_CHAR(i)  ((char_u *)ga.ga_data)[i]
+#define GA_PTR(i)   ((char_u *)ga.ga_data + i)
+
+    /* Copy "str" into allocated memory, unmodified. */
+    ga_init2(&ga, 1, 10);
+    if (ga_grow(&ga, len + 1) == FAIL)
+	return NULL;
+    mch_memmove(ga.ga_data, str, (size_t)len);
+    GA_CHAR(len) = NUL;
+    ga.ga_len = len;
+    ga.ga_room -= len;
+
+    /* Make each character lower case. */
+    i = 0;
+    while (GA_CHAR(i) != NUL)
     {
 #ifdef FEAT_MBYTE
-	if (has_mbyte && MB_BYTE2LEN(*p) > 1)
+	if (enc_utf8 || (has_mbyte && MB_BYTE2LEN(GA_CHAR(i)) > 1))
 	{
 	    if (enc_utf8)
 	    {
 		int	c, lc;
 
-		c = utf_ptr2char(p);
+		c = utf_ptr2char(GA_PTR(i));
 		lc = utf_tolower(c);
-		if (c != lc && utf_char2len(c) == utf_char2len(lc))
-		    (void)utf_char2bytes(c, p);
+		if (c != lc)
+		{
+		    int	    ol = utf_char2len(c);
+		    int	    nl = utf_char2len(lc);
+
+		    /* If the byte length changes need to shift the following
+		     * characters forward or backward. */
+		    if (ol != nl)
+		    {
+			if (nl > ol)
+			    if (ga_grow(&ga, nl - ol) == FAIL)
+			    {
+				/* out of memory, keep old char */
+				lc = c;
+				nl = ol;
+			    }
+			if (ol != nl)
+			{
+			    mch_memmove(GA_PTR(i) + nl, GA_PTR(i) + ol,
+						  STRLEN(GA_PTR(i) + ol) + 1);
+			    ga.ga_len += nl - ol;
+			    ga.ga_room -= nl - ol;
+			}
+		    }
+		    (void)utf_char2bytes(lc, GA_PTR(i));
+		}
 	    }
-	    p += (*mb_ptr2len_check)(p);	/* skip multi-byte char */
+	    /* skip to next multi-byte char */
+	    i += (*mb_ptr2len_check)(GA_PTR(i));
 	}
 	else
 #endif
 	{
-	    *p = TO_LOWER(*p);
-	    ++p;
+	    GA_CHAR(i) = TOLOWER_LOC(GA_CHAR(i));
+	    ++i;
 	}
     }
+
+    return (char_u *)ga.ga_data;
 }
 #endif
 
@@ -747,7 +804,7 @@ win_linetabsize(wp, p, len)
     colnr_T	col = 0;
     char_u	*s;
 
-    for (s = p; *s != NUL && s < p + len; )
+    for (s = p; *s != NUL && (len == MAXCOL || s < p + len); )
     {
 	col += win_lbr_chartabsize(wp, s, col, NULL);
 #ifdef FEAT_MBYTE
@@ -1034,7 +1091,7 @@ win_lbr_chartabsize(wp, s, col, headp)
 	}
 	if (col == 0 || col + size > (colnr_T)W_WIDTH(wp))
 	{
-	    added = (int)STRLEN(p_sbr);
+	    added = vim_strsize(p_sbr);
 	    if (tab_corr)
 		size += (added / wp->w_buffer->b_p_ts) * wp->w_buffer->b_p_ts;
 	    else
@@ -1277,31 +1334,43 @@ getvvcol(wp, pos, start, cursor, end)
     colnr_T	*end;
 {
     colnr_T	col;
+    colnr_T	coladd;
+    colnr_T	endadd;
+# ifdef FEAT_MBYTE
     char_u	*ptr;
+# endif
 
     if (virtual_active())
     {
 	/* For virtual mode, only want one value */
 	getvcol(wp, pos, &col, NULL, NULL);
 
-	if (pos->coladd > 0)
+	coladd = pos->coladd;
+	endadd = 0;
+# ifdef FEAT_MBYTE
+	/* Cannot put the cursor on part of a wide character. */
+	ptr = ml_get_buf(wp->w_buffer, pos->lnum, FALSE);
+	if (pos->col < STRLEN(ptr))
 	{
-	    /* Adjust for multiwide char */
-	    ptr = ml_get(pos->lnum);
-	    if (pos->col <= STRLEN(ptr))
+	    int c = (*mb_ptr2char)(ptr);
+
+	    if (c != TAB && vim_isprintc(c))
 	    {
-		ptr += pos->col;
-		if (*ptr != TAB && *ptr != NUL && ptr2cells(ptr) > 1)
-		    pos->coladd = 0;
+		endadd = char2cells(c) - 1;
+		if (coladd >= endadd)
+		    coladd -= endadd;
+		else
+		    coladd = 0;
 	    }
-	    col += pos->coladd;
 	}
+# endif
+	col += coladd;
 	if (start != NULL)
 	    *start = col;
 	if (cursor != NULL)
 	    *cursor = col;
 	if (end != NULL)
-	    *end = col;
+	    *end = col + endadd;
     }
     else
 	getvcol(wp, pos, start, cursor, end);
@@ -1393,7 +1462,8 @@ skiptowhite(p)
     return p;
 }
 
-#if defined(FEAT_LISTCMDS) || defined(PROTO)
+#if defined(FEAT_LISTCMDS) || defined(FEAT_SIGNS) || defined(FEAT_SNIFF) \
+	|| defined(PROTO)
 /*
  * skiptowhite_esc: Like skiptowhite(), but also skip escaped chars
  */
@@ -1558,7 +1628,8 @@ hex2nr(c)
     return c - '0';
 }
 
-#if defined(FEAT_TERMRESPONSE) || defined(PROTO)
+#if defined(FEAT_TERMRESPONSE) \
+	|| (defined(FEAT_GUI_GTK) && defined(FEAT_WINDOWS)) || defined(PROTO)
 /*
  * Convert two hex characters to a byte.
  * Return -1 if one of the characters is not hex.

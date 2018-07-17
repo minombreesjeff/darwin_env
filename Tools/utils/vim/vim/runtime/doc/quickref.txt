@@ -1,4 +1,4 @@
-*quickref.txt*  For Vim version 6.1.  Last change: 2001 Sep 10
+*quickref.txt*  For Vim version 6.2.  Last change: 2003 May 11
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -588,6 +588,7 @@ Short explanation of each option:		*option-list*
 |'aleph'|	  |'al'|     ASCII code of the letter Aleph (Hebrew)
 |'allowrevins'|	  |'ari'|    allow CTRL-_ in Insert and Command-line mode
 |'altkeymap'|	  |'akm'|    for default second language (Farsi/Hebrew)
+|'arabic'|	  |'arab'|   for Arabic as a default second language
 |'autoindent'|	  |'ai'|     take indent for new line from previous line
 |'autoread'|	  |'ar'|     autom. read file when changed outside of Vim
 |'autowrite'|	  |'aw'|     automatically write file if changed
@@ -626,6 +627,7 @@ Short explanation of each option:		*option-list*
 |'complete'|	  |'cpt'|    specify how Insert mode completion works
 |'confirm'|	  |'cf'|     ask what to do about unsaved/read-only files
 |'conskey'|	  |'consk'|  get keys directly from console (MS-DOS only)
+|'copyindent'|    |'ci'|     make 'autoindent' use existing indent structure
 |'cpoptions'|	  |'cpo'|    flags for Vi-compatible behavior
 |'cscopepathcomp'| |'cspc'|  how many components of the path to show
 |'cscopeprg'|	  |'csprg'|  command to execute cscope
@@ -668,7 +670,7 @@ Short explanation of each option:		*option-list*
 |'foldexpr'|	  |'fde'|    expression used when 'foldmethod' is "expr"
 |'foldignore'|	  |'fdi'|    ignore lines when 'foldmethod' is "indent"
 |'foldlevel'|	  |'fdl'|    close folds with a level higher than this
-|'foldlevelstart'| |'fdls'|  'foldlevel' when startng to edit a file
+|'foldlevelstart'| |'fdls'|  'foldlevel' when starting to edit a file
 |'foldmarker'|	  |'fmr'|    markers used when 'foldmethod' is "marker"
 |'foldmethod'|	  |'fdm'|    folding type
 |'foldminlines'|  |'fml'|    minimum number of lines for a fold to be closed
@@ -760,6 +762,7 @@ Short explanation of each option:		*option-list*
 |'patchexpr'|	  |'pex'|    expression used to patch a file
 |'patchmode'|	  |'pm'|     keep the oldest version of a file
 |'path'|	  |'pa'|     list of directories searched with "gf" et.al.
+|'preserveindent'| |'pi'|    preserve the indent structure when reindenting
 |'previewheight'| |'pvh'|    height of the preview window
 |'previewwindow'| |'pvw'|    identifies the preview window
 |'printdevice'|   |'pdev'|   name of the printer to be used for :hardcopy
@@ -1073,7 +1076,7 @@ Context-sensitive completion on the command-line:
 |:w_c|	  :[range]w[rite] !{cmd}	Execute {cmd} with [range] lines as
 					   standard input.
 |:up|	  :[range]up[date][!]		write to current file if modified
-|:wall|	  :wall[!]			write all changed buffers
+|:wall|	  :wa[ll][!]			write all changed buffers
 
 |:q|	  :q[uit]		Quit current buffer, unless changes have been
 				   made.  Exit Vim when there are no other
@@ -1081,8 +1084,8 @@ Context-sensitive completion on the command-line:
 |:q|	  :q[uit]!		Quit current buffer always, discard any
 				   changes.  Exit Vim when there are no other
 				   non-help buffers
-|:qa|	  :qall			Exit Vim, unless changes have been made.
-|:qa|	  :qall!		Exit Vim always, discard any changes.
+|:qa|	  :qa[ll]		Exit Vim, unless changes have been made.
+|:qa|	  :qa[ll]!		Exit Vim always, discard any changes.
 |:cq|	  :cq			Quit without writing and return error code.
 
 |:wq|	  :wq[!]		Write the current file and exit.
@@ -1091,7 +1094,7 @@ Context-sensitive completion on the command-line:
 				   been made
 |ZZ|	     ZZ			Same as ":x".
 |ZQ|	     ZQ			Same as ":q!".
-|:xall|	  :xall[!]  or :wqall[!]
+|:xall|	  :xa[ll][!]  or :wqall[!]
 				Write all changed buffers and exit
 
 |:stop|	  :st[op][!]		Suspend VIM or start new shell. If 'aw' option
@@ -1120,6 +1123,7 @@ Context-sensitive completion on the command-line:
 |-m|	-m		    modifications not allowed (resets 'write' option)
 |-b|	-b		    binary mode
 |-l|	-l		    lisp mode
+|-A|	-A		    Arabic mode ('arabic' is set)
 |-F|	-F		    Farsi mode ('fkmap' and 'rightleft' are set)
 |-H|	-H		    Hebrew mode ('hkmap' and 'rightleft' are set)
 |-V|	-V		    Verbose, give informative messages
@@ -1283,7 +1287,7 @@ Context-sensitive completion on the command-line:
 		set foldmethod=syntax	folding by syntax regions
 		set foldmethod=marker	folding by 'foldmarkers'
 
-|zf|		{motion}zf		operator: Define a fold manually
+|zf|		zf{motion}		operator: Define a fold manually
 |:fold|		:{range}fold		define a fold for {range} lines
 |zd|		zd			delete one fold under the cursor
 |zD|		zD			delete all folds under the cursor

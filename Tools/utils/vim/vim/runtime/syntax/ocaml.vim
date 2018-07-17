@@ -2,13 +2,12 @@
 " Language:     OCaml
 " Filenames:    *.ml *.mli *.mll *.mly
 " Maintainers:  Markus Mottl      <markus@oefai.at>
-"               Karl-Heinz Sylla  <Karl-Heinz.Sylla@gmd.de>
-" URL:          http://www.ai.univie.ac.at/~markus/vim/syntax/ocaml.vim
-" Last Change:  2001 Nov 20 - Fixed small bug with modules  (MM)
-"               2001 Sep 01 - Fixed small bug with '\''  (MM)
-"               2001 Aug 29 - Added rules for scripting directives  (MM)
-"               2001 Aug 28 - Upgraded URL & mail address  (MM)
-"               2001 Apr 26 - upgraded for new Vim version  (MM)
+"		Karl-Heinz Sylla  <Karl-Heinz.Sylla@gmd.de>
+"		Issac Trotts	  <<ijtrotts@ucdavis.edu>
+" URL:		http://www.oefai.at/~markus/vim/syntax/ocaml.vim
+" Last Change:	2003 May 04
+"		2002 Oct 24 - Small fix for "module type" (MM)
+"		2002 Jun 16 - Added "&&", "<" and ">" as operators (MM)
 
 " For version 5.x: Clear all syntax items
 " For version 6.x: Quit when a syntax file was already loaded
@@ -42,7 +41,11 @@ syn match    ocamlCommentErr "\*)"
 
 syn match    ocamlCountErr   "\<downto\>"
 syn match    ocamlCountErr   "\<to\>"
-syn match    ocamlDoErr      "\<do\>"
+
+if !exists("ocaml_revised")
+  syn match    ocamlDoErr      "\<do\>"
+endif
+
 syn match    ocamlDoneErr    "\<done\>"
 syn match    ocamlThenErr    "\<then\>"
 
@@ -79,7 +82,9 @@ syn region   ocamlEnd matchgroup=ocamlKeyword start="\<object\>" matchgroup=ocam
 
 
 " Blocks
-syn region   ocamlEnd matchgroup=ocamlKeyword start="\<begin\>" matchgroup=ocamlKeyword end="\<end\>" contains=ALLBUT,@ocamlContained,ocamlEndErr
+if !exists("ocaml_revised")
+  syn region   ocamlEnd matchgroup=ocamlKeyword start="\<begin\>" matchgroup=ocamlKeyword end="\<end\>" contains=ALLBUT,@ocamlContained,ocamlEndErr
+endif
 
 
 " "for"
@@ -87,8 +92,9 @@ syn region   ocamlNone matchgroup=ocamlKeyword start="\<for\>" matchgroup=ocamlK
 
 
 " "do"
-syn region   ocamlDo matchgroup=ocamlKeyword start="\<do\>" matchgroup=ocamlKeyword end="\<done\>" contains=ALLBUT,@ocamlContained,ocamlDoneErr
-
+if !exists("ocaml_revised")
+  syn region   ocamlDo matchgroup=ocamlKeyword start="\<do\>" matchgroup=ocamlKeyword end="\<done\>" contains=ALLBUT,@ocamlContained,ocamlDoneErr
+endif
 
 " "if"
 syn region   ocamlNone matchgroup=ocamlKeyword start="\<if\>" matchgroup=ocamlKeyword end="\<then\>" contains=ALLBUT,@ocamlContained,ocamlThenErr
@@ -134,12 +140,13 @@ syn match    ocamlWith "\<\(\u\(\w\|'\)*\.\)*\w\(\w\|'\)*\>" contained skipwhite
 syn region   ocamlWithRest start="[^)]" end=")"me=e-1 contained contains=ALLBUT,@ocamlContained
 
 " "module type"
-syn region   ocamlKeyword start="\<module\s*type\>" matchgroup=ocamlModule end="\<\w\(\w\|'\)*\>" contains=ocamlComment skipwhite skipempty nextgroup=ocamlMTDef
+syn region   ocamlKeyword start="\<module\>\s*\<type\>" matchgroup=ocamlModule end="\<\w\(\w\|'\)*\>" contains=ocamlComment skipwhite skipempty nextgroup=ocamlMTDef
 syn match    ocamlMTDef "=\s*\w\(\w\|'\)*\>"hs=s+1,me=s
 
 syn keyword  ocamlKeyword  and as assert class
 syn keyword  ocamlKeyword  constraint else
-syn keyword  ocamlKeyword  exception external fun function
+syn keyword  ocamlKeyword  exception external fun
+
 syn keyword  ocamlKeyword  in inherit initializer
 syn keyword  ocamlKeyword  land lazy let match
 syn keyword  ocamlKeyword  method mutable new of
@@ -147,12 +154,20 @@ syn keyword  ocamlKeyword  parser private raise rec
 syn keyword  ocamlKeyword  try type
 syn keyword  ocamlKeyword  val virtual when while with
 
+if exists("ocaml_revised")
+  syn keyword  ocamlKeyword  do value
+  syn keyword  ocamlBoolean  True False
+else
+  syn keyword  ocamlKeyword  function
+  syn keyword  ocamlBoolean  true false
+  syn match    ocamlKeyChar  "!"
+endif
+
 syn keyword  ocamlType     array bool char exn float format int
 syn keyword  ocamlType     list option string unit
 
-syn keyword  ocamlOperator asr lor lsl lsr lxor mod not or
+syn keyword  ocamlOperator asr lor lsl lsr lxor mod not
 
-syn keyword  ocamlBoolean      true false
 syn match    ocamlConstructor  "(\s*)"
 syn match    ocamlConstructor  "\[\s*\]"
 syn match    ocamlConstructor  "\[|\s*>|]"
@@ -175,9 +190,11 @@ syn match    ocamlRefAssign    ":="
 syn match    ocamlTopStop      ";;"
 syn match    ocamlOperator     "\^"
 syn match    ocamlOperator     "::"
-syn match    ocamlOperator     "<-"
+
+syn match    ocamlOperator     "&&"
+syn match    ocamlOperator     "<"
+syn match    ocamlOperator     ">"
 syn match    ocamlAnyVar       "\<_\>"
-syn match    ocamlKeyChar      "!"
 syn match    ocamlKeyChar      "|[^\]]"me=e-1
 syn match    ocamlKeyChar      ";"
 syn match    ocamlKeyChar      "\~"
@@ -185,15 +202,21 @@ syn match    ocamlKeyChar      "?"
 syn match    ocamlKeyChar      "\*"
 syn match    ocamlKeyChar      "="
 
-syn match    ocamlNumber        "\<-\=\d\+\>"
-syn match    ocamlNumber        "\<-\=0[x|X]\x\+\>"
-syn match    ocamlNumber        "\<-\=0[o|O]\o\+\>"
-syn match    ocamlNumber        "\<-\=0[b|B][01]\+\>"
-syn match    ocamlFloat         "\<-\=\d\+\.\d*\([eE][-+]\=\d\+\)\=[fl]\=\>"
+if exists("ocaml_revised")
+  syn match    ocamlErr		"<-"
+else
+  syn match    ocamlOperator	"<-"
+endif
+
+syn match    ocamlNumber	"\<-\=\d\+\>"
+syn match    ocamlNumber	"\<-\=0[x|X]\x\+\>"
+syn match    ocamlNumber	"\<-\=0[o|O]\o\+\>"
+syn match    ocamlNumber	"\<-\=0[b|B][01]\+\>"
+syn match    ocamlFloat		"\<-\=\d\+\.\d*\([eE][-+]\=\d\+\)\=[fl]\=\>"
 
 " Labels
-syn match    ocamlLabel        "\~\(\l\|_\)\(\w\|'\)*"lc=1
-syn match    ocamlLabel        "?\(\l\|_\)\(\w\|'\)*"lc=1
+syn match    ocamlLabel		"\~\(\l\|_\)\(\w\|'\)*"lc=1
+syn match    ocamlLabel		"?\(\l\|_\)\(\w\|'\)*"lc=1
 syn region   ocamlLabel transparent matchgroup=ocamlLabel start="?(\(\l\|_\)\(\w\|'\)*"lc=2 end=")"me=e-1 contains=ALLBUT,@ocamlContained,ocamlParenErr
 
 
@@ -201,9 +224,17 @@ syn region   ocamlLabel transparent matchgroup=ocamlLabel start="?(\(\l\|_\)\(\w
 syn sync minlines=50
 syn sync maxlines=500
 
-syn sync match ocamlDoSync      grouphere  ocamlDo      "\<do\>"
-syn sync match ocamlDoSync      groupthere ocamlDo      "\<done\>"
-syn sync match ocamlEndSync     grouphere  ocamlEnd     "\<\(begin\|object\)\>"
+if !exists("ocaml_revised")
+  syn sync match ocamlDoSync      grouphere  ocamlDo      "\<do\>"
+  syn sync match ocamlDoSync      groupthere ocamlDo      "\<done\>"
+endif
+
+if exists("ocaml_revised")
+  syn sync match ocamlEndSync     grouphere  ocamlEnd     "\<\(object\)\>"
+else
+  syn sync match ocamlEndSync     grouphere  ocamlEnd     "\<\(begin\|object\)\>"
+endif
+
 syn sync match ocamlEndSync     groupthere ocamlEnd     "\<end\>"
 syn sync match ocamlStructSync  grouphere  ocamlStruct  "\<struct\>"
 syn sync match ocamlStructSync  groupthere ocamlStruct  "\<end\>"
@@ -221,64 +252,66 @@ if version >= 508 || !exists("did_ocaml_syntax_inits")
     command -nargs=+ HiLink hi def link <args>
   endif
 
-  HiLink ocamlBraceErr     Error
-  HiLink ocamlBrackErr     Error
-  HiLink ocamlParenErr     Error
-  HiLink ocamlArrErr       Error
+  HiLink ocamlBraceErr	   Error
+  HiLink ocamlBrackErr	   Error
+  HiLink ocamlParenErr	   Error
+  HiLink ocamlArrErr	   Error
 
   HiLink ocamlCommentErr   Error
 
-  HiLink ocamlCountErr     Error
-  HiLink ocamlDoErr        Error
-  HiLink ocamlDoneErr      Error
-  HiLink ocamlEndErr       Error
-  HiLink ocamlThenErr      Error
+  HiLink ocamlCountErr	   Error
+  HiLink ocamlDoErr	   Error
+  HiLink ocamlDoneErr	   Error
+  HiLink ocamlEndErr	   Error
+  HiLink ocamlThenErr	   Error
 
-  HiLink ocamlCharErr      Error
+  HiLink ocamlCharErr	   Error
 
-  HiLink ocamlComment      Comment
+  HiLink ocamlErr	   Error
 
-  HiLink ocamlModPath      Include
-  HiLink ocamlModule       Include
+  HiLink ocamlComment	   Comment
+
+  HiLink ocamlModPath	   Include
+  HiLink ocamlModule	   Include
   HiLink ocamlModParam1    Include
-  HiLink ocamlModType      Include
-  HiLink ocamlMPRestr3     Include
-  HiLink ocamlFullMod      Include
+  HiLink ocamlModType	   Include
+  HiLink ocamlMPRestr3	   Include
+  HiLink ocamlFullMod	   Include
   HiLink ocamlModTypeRestr Include
-  HiLink ocamlWith         Include
-  HiLink ocamlMTDef        Include
+  HiLink ocamlWith	   Include
+  HiLink ocamlMTDef	   Include
 
-  HiLink ocamlScript       Include
+  HiLink ocamlScript	   Include
 
   HiLink ocamlConstructor  Constant
 
   HiLink ocamlModPreRHS    Keyword
-  HiLink ocamlMPRestr2     Keyword
-  HiLink ocamlKeyword      Keyword
-  HiLink ocamlFunDef       Keyword
+  HiLink ocamlMPRestr2	   Keyword
+  HiLink ocamlKeyword	   Keyword
+  HiLink ocamlFunDef	   Keyword
   HiLink ocamlRefAssign    Keyword
-  HiLink ocamlKeyChar      Keyword
-  HiLink ocamlAnyVar       Keyword
-  HiLink ocamlTopStop      Keyword
-  HiLink ocamlOperator     Keyword
+  HiLink ocamlKeyChar	   Keyword
+  HiLink ocamlAnyVar	   Keyword
+  HiLink ocamlTopStop	   Keyword
+  HiLink ocamlOperator	   Keyword
 
-  HiLink ocamlBoolean      Boolean
+  HiLink ocamlBoolean	   Boolean
   HiLink ocamlCharacter    Character
-  HiLink ocamlNumber       Number
-  HiLink ocamlFloat        Float
-  HiLink ocamlString       String
+  HiLink ocamlNumber	   Number
+  HiLink ocamlFloat	   Float
+  HiLink ocamlString	   String
 
-  HiLink ocamlLabel        Identifier
+  HiLink ocamlLabel	   Identifier
 
-  HiLink ocamlType         Type
+  HiLink ocamlType	   Type
 
-  HiLink ocamlTodo         Todo
+  HiLink ocamlTodo	   Todo
 
-  HiLink ocamlEncl         Keyword
+  HiLink ocamlEncl	   Keyword
 
   delcommand HiLink
 endif
 
 let b:current_syntax = "ocaml"
 
-" vim: ts=28
+" vim: ts=8

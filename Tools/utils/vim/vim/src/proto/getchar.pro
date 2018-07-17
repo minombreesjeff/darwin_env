@@ -1,4 +1,5 @@
 /* getchar.c */
+void free_buff __ARGS((struct buffheader *buf));
 char_u *get_recorded __ARGS((void));
 char_u *get_inserted __ARGS((void));
 int stuff_empty __ARGS((void));
@@ -26,6 +27,8 @@ void del_typebuf __ARGS((int len, int offset));
 int alloc_typebuf __ARGS((void));
 void free_typebuf __ARGS((void));
 int save_typebuf __ARGS((void));
+void save_typeahead __ARGS((tasave_T *tp));
+void restore_typeahead __ARGS((tasave_T *tp));
 void openscript __ARGS((char_u *name, int directly));
 int using_script __ARGS((void));
 void updatescript __ARGS((int c));
@@ -38,6 +41,7 @@ int char_avail __ARGS((void));
 void vungetc __ARGS((int c));
 int inchar __ARGS((char_u *buf, int maxlen, long wait_time));
 int fix_input_buffer __ARGS((char_u *buf, int len, int script));
+int input_available __ARGS((void));
 int do_map __ARGS((int maptype, char_u *arg, int mode, int abbrev));
 int get_map_mode __ARGS((char_u **cmdp, int forceit));
 void map_clear __ARGS((char_u *cmdp, char_u *arg, int forceit, int abbr));
@@ -48,7 +52,7 @@ char_u *set_context_in_map_cmd __ARGS((expand_T *xp, char_u *cmd, char_u *arg, i
 int ExpandMappings __ARGS((regmatch_T *regmatch, int *num_file, char_u ***file));
 int check_abbr __ARGS((int c, char_u *ptr, int col, int mincol));
 int makemap __ARGS((FILE *fd, buf_T *buf));
-int put_escstr __ARGS((FILE *fd, char_u *str, int what));
+int put_escstr __ARGS((FILE *fd, char_u *strstart, int what));
 void check_map_keycodes __ARGS((void));
 char_u *check_map __ARGS((char_u *keys, int mode, int exact));
 void init_mappings __ARGS((void));

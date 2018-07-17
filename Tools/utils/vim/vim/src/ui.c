@@ -58,7 +58,8 @@ ui_write(s, len)
 #endif
 }
 
-#if (defined(FEAT_GUI) && defined(UNIX)) || defined(MACOS_X_UNIX) || defined(PROTO)
+#if (defined(FEAT_GUI) && (defined(UNIX) || defined(VMS))) \
+	|| defined(MACOS_X_UNIX) || defined(PROTO)
 /*
  * When executing an external program, there may be some typed characters that
  * are not consumed by it.  Give them back to ui_inchar() and they are stored
@@ -113,7 +114,7 @@ ui_inchar(buf, maxlen, wtime)
 {
     int		retval = 0;
 
-#if defined(FEAT_GUI) && defined(UNIX)
+#if defined(FEAT_GUI) && (defined(UNIX) || defined(VMS))
     /*
      * Use the typeahead if there is any.
      */
@@ -141,11 +142,11 @@ ui_inchar(buf, maxlen, wtime)
     {
 	static int count = 0;
 
-#ifndef NO_CONSOLE
+# ifndef NO_CONSOLE
 	retval = mch_inchar(buf, maxlen, 10L);
 	if (retval > 0)
 	    return retval;
-#endif
+# endif
 	if (wtime == -1 && ++count == 1000)
 	    read_error_exit();
 	buf[0] = CR;
@@ -187,7 +188,7 @@ ui_char_avail()
     if (gui.in_use)
     {
 	gui_mch_update();
-	return !vim_is_input_buf_empty();
+	return input_available();
     }
 #endif
 #ifndef NO_CONSOLE
@@ -482,6 +483,10 @@ clip_lose_selection(cbd)
 	    setcursor();
 	    cursor_on();
 	    out_flush();
+# ifdef FEAT_GUI
+	    if (gui.in_use)
+		gui_update_cursor(TRUE, FALSE);
+# endif
 	}
     }
 #endif
@@ -1451,27 +1456,23 @@ clip_gen_request_selection(cbd)
  * input buffer.
  */
 
-#if defined(UNIX) || defined(FEAT_GUI) || defined(OS2) || defined(VMS) \
-	|| defined(FEAT_CLIENTSERVER) || defined(PROTO)
+#if defined(USE_INPUT_BUF) || defined(PROTO)
 
 /*
  * Internal typeahead buffer.  Includes extra space for long key code
  * descriptions which would otherwise overflow.  The buffer is considered full
  * when only this extra space (or part of it) remains.
  */
-#ifdef VMS
-# define INBUFLEN 10000 /* for proper cut/paste between X windows in ch. mode */
-#else
-# if defined(FEAT_SUN_WORKSHOP) || defined(FEAT_CLIENTSERVER)
+#if defined(FEAT_SUN_WORKSHOP) || defined(FEAT_NETBEANS_INTG) \
+	|| defined(FEAT_CLIENTSERVER)
    /*
-    * Sun WorkShop stuffs debugger commands into the input buffer. This requires
-    * a larger buffer...
+    * Sun WorkShop and NetBeans stuff debugger commands into the input buffer.
+    * This requires a larger buffer...
     * (Madsen) Go with this for remote input as well ...
     */
-#  define INBUFLEN 4096
-# else
-#  define INBUFLEN 250
-# endif
+# define INBUFLEN 4096
+#else
+# define INBUFLEN 250
 #endif
 
 static char_u	inbuf[INBUFLEN + MAX_KEY_CODE_LEN];
@@ -1508,6 +1509,47 @@ vim_free_in_input_buf()
 vim_used_in_input_buf()
 {
     return inbufcount;
+}
+#endif
+
+#if defined(FEAT_EVAL) || defined(FEAT_EX_EXTRA) || defined(PROTO)
+/*
+ * Return the current contents of the input buffer and make it empty.
+ * The returned pointer must be passed to set_input_buf() later.
+ */
+    char_u *
+get_input_buf()
+{
+    garray_T	*gap;
+
+    /* We use a growarray to store the data pointer and the length. */
+    gap = (garray_T *)alloc((unsigned)sizeof(garray_T));
+    if (gap != NULL)
+    {
+	/* Add one to avoid a zero size. */
+	gap->ga_data = alloc((unsigned)inbufcount + 1);
+	if (gap->ga_data != NULL)
+	    mch_memmove(gap->ga_data, inbuf, (size_t)inbufcount);
+	gap->ga_len = inbufcount;
+    }
+    trash_input_buf();
+    return (char_u *)gap;
+}
+
+/*
+ * Restore the input buffer with a pointer returned from get_input_buf().
+ */
+    void
+set_input_buf(p)
+    char_u	*p;
+{
+    garray_T	*gap = (garray_T *)p;
+
+    if (gap != NULL && gap->ga_data != NULL)
+    {
+	mch_memmove(inbuf, gap->ga_data, gap->ga_len);
+	inbufcount = gap->ga_len;
+    }
 }
 #endif
 
@@ -1575,7 +1617,8 @@ push_raw_key (s, len)
 }
 #endif
 
-#if defined(FEAT_GUI) || defined(PROTO)
+#if defined(FEAT_GUI) || defined(FEAT_EVAL) || defined(FEAT_EX_EXTRA) \
+	|| defined(PROTO)
 /* Remove everything from the input buffer.  Called when ^C is found */
     void
 trash_input_buf()
@@ -1614,9 +1657,6 @@ fill_input_buf(exit_on_error)
     int		try;
     static int	did_read_something = FALSE;
 #endif
-#ifdef VMS
-    extern char ibuf[];
-#endif
 
 #ifdef FEAT_GUI
     if (gui.in_use)
@@ -1654,26 +1694,23 @@ fill_input_buf(exit_on_error)
 	return;
     }
 #  endif
-#  ifdef VMS_OLD_STUFF
-    while (!vim_is_input_buf_full() && RealWaitForChar(0, 0L))
-    {
-	add_to_input_buf((char_u *)ibuf, 1);
-    }
-    if (inbufcount < 1 && !exit_on_error)
-	return;
-    len = inbufcount;
-    inbufcount = 0;
-#  else
 
     len = 0;	/* to avoid gcc warning */
     for (try = 0; try < 100; ++try)
     {
-	len = read(read_cmd_fd, (char *)inbuf + inbufcount,
-		(size_t)((INBUFLEN - inbufcount)
+#  ifdef VMS
+	len = vms_read(
+#  else
+	len = read(read_cmd_fd,
+#  endif
+	    (char *)inbuf + inbufcount, (size_t)((INBUFLEN - inbufcount)
 #  ifdef FEAT_MBYTE
 		/ input_conv.vc_factor
 #  endif
 		));
+#  if 0
+		)	/* avoid syntax highlight error */
+#  endif
 	if (len > 0 || got_int)
 	    break;
 	/*
@@ -1700,11 +1737,11 @@ fill_input_buf(exit_on_error)
 	if (!exit_on_error)
 	    return;
     }
-#  endif /* VMS */
 # endif
     if (len <= 0 && !got_int)
 	read_error_exit();
-    did_read_something = TRUE;
+    if (len > 0)
+	did_read_something = TRUE;
     if (got_int)
     {
 	inbuf[inbufcount] = 3;
@@ -1765,7 +1802,8 @@ ui_cursor_shape()
 }
 #endif
 
-#if defined(FEAT_CLIPBOARD) || defined(FEAT_GUI) || defined(PROTO)
+#if defined(FEAT_CLIPBOARD) || defined(FEAT_GUI) || defined(FEAT_RIGHTLEFT) \
+	|| defined(PROTO)
 /*
  * Check bounds for column number
  */
@@ -2161,6 +2199,8 @@ jump_to_mouse(flags, inclusive, which_button)
 #endif
     static int	prev_row = -1;
     static int	prev_col = -1;
+    static win_T *dragwin = NULL;	/* window being dragged */
+    static int	did_drag = FALSE;	/* drag was noticed */
 
     win_T	*wp, *old_curwin;
     pos_T	old_cursor;
@@ -2174,6 +2214,16 @@ jump_to_mouse(flags, inclusive, which_button)
 
     mouse_past_bottom = FALSE;
     mouse_past_eol = FALSE;
+
+    if (flags & MOUSE_RELEASED)
+    {
+	/* On button release we may change window focus if positioned on a
+	 * status line and no dragging happened. */
+	if (dragwin != NULL && !did_drag)
+	    flags &= ~(MOUSE_FOCUS | MOUSE_DID_MOVE);
+	dragwin = NULL;
+	did_drag = FALSE;
+    }
 
     if ((flags & MOUSE_DID_MOVE)
 	    && prev_row == mouse_row
@@ -2232,16 +2282,23 @@ retnomove:
 #else
 	wp = firstwin;
 #endif
+	dragwin = NULL;
 	/*
 	 * winpos and height may change in win_enter()!
 	 */
 	if (row >= wp->w_height)		/* In (or below) status line */
+	{
 	    on_status_line = row - wp->w_height + 1;
+	    dragwin = wp;
+	}
 	else
 	    on_status_line = 0;
 #ifdef FEAT_VERTSPLIT
 	if (col >= wp->w_width)		/* In separator line */
+	{
 	    on_sep_line = col - wp->w_width + 1;
+	    dragwin = wp;
+	}
 	else
 	    on_sep_line = 0;
 
@@ -2286,20 +2343,33 @@ retnomove:
 	if (cmdwin_type != 0 && wp != curwin)
 	{
 	    /* A click outside the command-line window: Use modeless
-	     * selection if possible. */
+	     * selection if possible.  Allow dragging the status line of the
+	     * window just above the command-line window. */
+	    if (wp != curwin->w_prev)
+	    {
+		on_status_line = 0;
+		dragwin = NULL;
+	    }
+# ifdef FEAT_VERTSPLIT
+	    on_sep_line = 0;
+# endif
 # ifdef FEAT_CLIPBOARD
+	    if (on_status_line)
+		return IN_STATUS_LINE;
 	    return IN_OTHER_WIN;
 # else
 	    row = 0;
 	    col += wp->w_wincol;
 	    wp = curwin;
-	    on_status_line = 0;
-	    on_sep_line = 0;
 # endif
 	}
 #endif
 #ifdef FEAT_WINDOWS
-	win_enter(wp, TRUE);			/* can make wp invalid! */
+	/* Only change window focus when not clicking on or dragging the
+	 * status line.  Do change focus when releasing the mouse button
+	 * (MOUSE_FOCUS was set above if we dragged first). */
+	if (dragwin == NULL || (flags & MOUSE_RELEASED))
+	    win_enter(wp, TRUE);		/* can make wp invalid! */
 # ifdef CHECK_DOUBLE_CLICK
 	/* set topline, to be able to check for double click ourselves */
 	if (curwin != old_curwin)
@@ -2337,18 +2407,28 @@ retnomove:
     else if (on_status_line && which_button == MOUSE_LEFT)
     {
 #ifdef FEAT_WINDOWS
-	/* Drag the status line */
-	count = row - curwin->w_winrow - curwin->w_height + 1 - on_status_line;
-	win_drag_status_line(count);
+	if (dragwin != NULL)
+	{
+	    /* Drag the status line */
+	    count = row - dragwin->w_winrow - dragwin->w_height + 1
+							     - on_status_line;
+	    win_drag_status_line(dragwin, count);
+	    did_drag |= count;
+	}
 #endif
 	return IN_STATUS_LINE;			/* Cursor didn't move */
     }
 #ifdef FEAT_VERTSPLIT
     else if (on_sep_line && which_button == MOUSE_LEFT)
     {
-	/* Drag the separator column */
-	count = col - curwin->w_wincol - curwin->w_width + 1 - on_sep_line;
-	win_drag_vsep_line(count);
+	if (dragwin != NULL)
+	{
+	    /* Drag the separator column */
+	    count = col - dragwin->w_wincol - dragwin->w_width + 1
+								- on_sep_line;
+	    win_drag_vsep_line(dragwin, count);
+	    did_drag |= count;
+	}
 	return IN_SEP_LINE;			/* Cursor didn't move */
     }
 #endif
@@ -2600,7 +2680,13 @@ mouse_comp_pos(win, rowp, colp, lnump)
     /* skip line number and fold column in front of the line */
     col -= win_col_off(win);
     if (col < 0)
+    {
+#ifdef FEAT_NETBEANS_INTG
+	if (usingNetbeans)
+	    netbeans_gutter_click(lnum);
+#endif
 	col = 0;
+    }
 
     *colp = col;
     *rowp = row;
@@ -2608,7 +2694,7 @@ mouse_comp_pos(win, rowp, colp, lnump)
     return retval;
 }
 
-#ifdef FEAT_WINDOWS
+#if defined(FEAT_WINDOWS) || defined(PROTO)
 /*
  * Find the window at screen position "*rowp" and "*colp".  The positions are
  * updated to become relative to the top-left of the window.
@@ -2662,8 +2748,6 @@ get_fpos_of_mouse(mpos)
     pos_T	*mpos;
 {
     win_T	*wp;
-    int		count;
-    char_u	*ptr;
     int		row = mouse_row;
     int		col = mouse_col;
 
@@ -2693,25 +2777,41 @@ get_fpos_of_mouse(mpos)
     if (mouse_comp_pos(curwin, &row, &col, &mpos->lnum))
 	return IN_STATUS_LINE; /* past bottom */
 
+    mpos->col = vcol2col(wp, mpos->lnum, col);
+
+    if (mpos->col > 0)
+	--mpos->col;
+    return IN_BUFFER;
+}
+
+/*
+ * Convert a virtual (screen) column to a character column.
+ * The first column is one.
+ */
+    int
+vcol2col(wp, lnum, vcol)
+    win_T	*wp;
+    linenr_T	lnum;
+    int		vcol;
+{
     /* try to advance to the specified column */
-    mpos->col = 0;
-    count = 0;
-    ptr = ml_get_buf(wp->w_buffer, mpos->lnum, FALSE);
-    while (count <= col && *ptr != NUL)
+    int		col = 0;
+    int		count = 0;
+    char_u	*ptr;
+
+    ptr = ml_get_buf(wp->w_buffer, lnum, FALSE);
+    while (count <= vcol && *ptr != NUL)
     {
-	++mpos->col;
+	++col;
 	count += win_lbr_chartabsize(wp, ptr, count, NULL);
-#ifdef FEAT_MBYTE
+# ifdef FEAT_MBYTE
 	if (has_mbyte)
 	    ptr += (*mb_ptr2len_check)(ptr);
 	else
-#endif
+# endif
 	    ++ptr;
     }
-    if (mpos->col == 0)
-	return IN_BUFFER;
-    --mpos->col;
-    return IN_BUFFER;
+    return col;
 }
 #endif
 

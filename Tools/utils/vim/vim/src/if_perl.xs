@@ -24,7 +24,7 @@
 #undef OP_DELETE
 #undef OP_JOIN
 #ifdef __BORLANDC__
-#define NOPROTO 1
+# define NOPROTO 1
 #endif
 /* remove MAX and MIN, included by glib.h, redefined by sys/param.h */
 #ifdef MAX
@@ -42,6 +42,11 @@
 #endif
 #ifdef _DEBUG
 # undef _DEBUG
+#endif
+
+#ifdef __BORLANDC__
+/* Borland has the structure stati64 but not _stati64 */
+# define _stati64 stati64
 #endif
 
 /* OK, nasty namespace hacking over... */
@@ -90,10 +95,6 @@ static void xs_init __ARGS((pTHX));
 static void VIM_init __ARGS((void));
 EXTERN_C void boot_DynaLoader __ARGS((pTHX_ CV*));
 
-#ifdef __MINGW32__
-# include "dyn-ming.h"
-#endif
-
 /*
  * For dynamic linked perl. (Windows)
  */
@@ -133,16 +134,29 @@ EXTERN_C void boot_DynaLoader __ARGS((pTHX_ CV*));
 # define Perl_sv_2bool dll_Perl_sv_2bool
 # define Perl_sv_2iv dll_Perl_sv_2iv
 # define Perl_sv_2mortal dll_Perl_sv_2mortal
-# define Perl_sv_2pv dll_Perl_sv_2pv
+# if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+#  define Perl_sv_2pv_flags dll_Perl_sv_2pv_flags
+#  define Perl_sv_2pv_nolen dll_Perl_sv_2pv_nolen
+# else
+#  define Perl_sv_2pv dll_Perl_sv_2pv
+# endif
 # define Perl_sv_bless dll_Perl_sv_bless
-# define Perl_sv_catpvn dll_Perl_sv_catpvn
+# if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+#  define Perl_sv_catpvn_flags dll_Perl_sv_catpvn_flags
+# else
+#  define Perl_sv_catpvn dll_Perl_sv_catpvn
+# endif
 # define Perl_sv_free dll_Perl_sv_free
 # define Perl_sv_isa dll_Perl_sv_isa
 # define Perl_sv_magic dll_Perl_sv_magic
 # define Perl_sv_setiv dll_Perl_sv_setiv
 # define Perl_sv_setpv dll_Perl_sv_setpv
 # define Perl_sv_setpvn dll_Perl_sv_setpvn
-# define Perl_sv_setsv dll_Perl_sv_setsv
+# if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+#  define Perl_sv_setsv_flags dll_Perl_sv_setsv_flags
+# else
+#  define Perl_sv_setsv dll_Perl_sv_setsv
+# endif
 # define Perl_sv_upgrade dll_Perl_sv_upgrade
 # define Perl_Tstack_sp_ptr dll_Perl_Tstack_sp_ptr
 # define Perl_Top_ptr dll_Perl_Top_ptr
@@ -161,9 +175,9 @@ EXTERN_C void boot_DynaLoader __ARGS((pTHX_ CV*));
 # define boot_DynaLoader dll_boot_DynaLoader
 
 #ifndef DYNAMIC_PERL /* just generating prototypes */
-# define HANDLE int
-# define XSINIT_t int
-# define XSUBADDR_t int
+typedef int HANDLE;
+typedef int XSINIT_t;
+typedef int XSUBADDR_t;
 #endif
 
 /*
@@ -203,16 +217,29 @@ static SV** (*Perl_set_context)(void*);
 static bool (*Perl_sv_2bool)(pTHX_ SV*);
 static IV (*Perl_sv_2iv)(pTHX_ SV*);
 static SV* (*Perl_sv_2mortal)(pTHX_ SV*);
+#if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+static char* (*Perl_sv_2pv_flags)(pTHX_ SV*, STRLEN*, I32);
+static char* (*Perl_sv_2pv_nolen)(pTHX_ SV*);
+#else
 static char* (*Perl_sv_2pv)(pTHX_ SV*, STRLEN*);
+#endif
 static SV* (*Perl_sv_bless)(pTHX_ SV*, HV*);
+#if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+static void (*Perl_sv_catpvn_flags)(pTHX_ SV* , const char*, STRLEN, I32);
+#else
 static void (*Perl_sv_catpvn)(pTHX_ SV*, const char*, STRLEN);
+#endif
 static void (*Perl_sv_free)(pTHX_ SV*);
 static int (*Perl_sv_isa)(pTHX_ SV*, const char*);
 static void (*Perl_sv_magic)(pTHX_ SV*, SV*, int, const char*, I32);
 static void (*Perl_sv_setiv)(pTHX_ SV*, IV);
 static void (*Perl_sv_setpv)(pTHX_ SV*, const char*);
 static void (*Perl_sv_setpvn)(pTHX_ SV*, const char*, STRLEN);
+#if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+static void (*Perl_sv_setsv_flags)(pTHX_ SV*, SV*, I32);
+#else
 static void (*Perl_sv_setsv)(pTHX_ SV*, SV*);
+#endif
 static bool (*Perl_sv_upgrade)(pTHX_ SV*, U32);
 static SV*** (*Perl_Tstack_sp_ptr)(register PerlInterpreter*);
 static OP** (*Perl_Top_ptr)(register PerlInterpreter*);
@@ -229,6 +256,7 @@ static GV** (*Perl_Idefgv_ptr)(register PerlInterpreter*);
 static GV** (*Perl_Ierrgv_ptr)(register PerlInterpreter*);
 static SV* (*Perl_Isv_yes_ptr)(register PerlInterpreter*);
 static void (*boot_DynaLoader)_((pTHX_ CV*));
+
 
 /*
  * Table of name to function pointer of perl.
@@ -270,16 +298,29 @@ static struct {
     {"Perl_sv_2bool", (PERL_PROC*)&Perl_sv_2bool},
     {"Perl_sv_2iv", (PERL_PROC*)&Perl_sv_2iv},
     {"Perl_sv_2mortal", (PERL_PROC*)&Perl_sv_2mortal},
+#if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+    {"Perl_sv_2pv_flags", (PERL_PROC*)&Perl_sv_2pv_flags},
+    {"Perl_sv_2pv_nolen", (PERL_PROC*)&Perl_sv_2pv_nolen},
+#else
     {"Perl_sv_2pv", (PERL_PROC*)&Perl_sv_2pv},
+#endif
     {"Perl_sv_bless", (PERL_PROC*)&Perl_sv_bless},
+#if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+    {"Perl_sv_catpvn_flags", (PERL_PROC*)&Perl_sv_catpvn_flags},
+#else
     {"Perl_sv_catpvn", (PERL_PROC*)&Perl_sv_catpvn},
+#endif
     {"Perl_sv_free", (PERL_PROC*)&Perl_sv_free},
     {"Perl_sv_isa", (PERL_PROC*)&Perl_sv_isa},
     {"Perl_sv_magic", (PERL_PROC*)&Perl_sv_magic},
     {"Perl_sv_setiv", (PERL_PROC*)&Perl_sv_setiv},
     {"Perl_sv_setpv", (PERL_PROC*)&Perl_sv_setpv},
     {"Perl_sv_setpvn", (PERL_PROC*)&Perl_sv_setpvn},
+#if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+    {"Perl_sv_setsv_flags", (PERL_PROC*)&Perl_sv_setsv_flags},
+#else
     {"Perl_sv_setsv", (PERL_PROC*)&Perl_sv_setsv},
+#endif
     {"Perl_sv_upgrade", (PERL_PROC*)&Perl_sv_upgrade},
     {"Perl_Tstack_sp_ptr", (PERL_PROC*)&Perl_Tstack_sp_ptr},
     {"Perl_Top_ptr", (PERL_PROC*)&Perl_Top_ptr},
@@ -330,8 +371,7 @@ perl_runtime_link_init(char *libname, int verbose)
 	    FreeLibrary(hPerlLib);
 	    hPerlLib = NULL;
 	    if (verbose)
-		EMSG2(_("E448: Could not load library function %s"),
-						 perl_funcname_table[i].name);
+		EMSG2(_(e_loadfunc), perl_funcname_table[i].name);
 	    return FAIL;
 	}
     }
@@ -487,7 +527,11 @@ perl_buf_free(bp)
 }
 
 #ifndef PROTO
+# if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+I32 cur_val(pTHX_ IV iv, SV *sv);
+# else
 I32 cur_val(IV iv, SV *sv);
+#endif
 
 /*
  * Handler for the magic variables $main::curwin and $main::curbuf.
@@ -495,7 +539,11 @@ I32 cur_val(IV iv, SV *sv);
  * (This is effectively a C-level equivalent of a tied variable).
  * There is no "set" function as the variables are read-only.
  */
+# if (PERL_REVISION == 5) && (PERL_VERSION >= 8)
+I32 cur_val(pTHX_ IV iv, SV *sv)
+# else
 I32 cur_val(IV iv, SV *sv)
+# endif
 {
     SV *rv;
     if (iv == 0)
@@ -1086,7 +1134,8 @@ Delete(vimbuf, ...)
 		    {
 			ml_delete(lnum, 0);
 			deleted_lines_mark(lnum, 1L);
-			check_cursor();
+			if (savebuf == curbuf)
+			    check_cursor();
 		    }
 		    curbuf = savebuf;
 		    update_curbuf(VALID);

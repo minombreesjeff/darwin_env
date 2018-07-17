@@ -1,4 +1,4 @@
-*help.txt*	For Vim version 6.1.  Last change: 2001 Sep 14
+*help.txt*	For Vim version 6.2.  Last change: 2003 May 11
 
 			VIM - main help file
 									 k
@@ -133,9 +133,11 @@ Special issues ~
 |digraph.txt|	list of available digraphs
 |mbyte.txt|	multi-byte text support
 |mlang.txt|	non-English language support
+|arabic.txt|	Arabic language support and editing
 |farsi.txt|	Farsi (Persian) editing
+|hebrew.txt|	Hebrew language support and editing
 |hangulin.txt|	Hangul (Korean) input mode
-|rileft.txt|	right-to-left editing
+|rileft.txt|	right-to-left editing mode
 
 GUI ~
 |gui.txt|	Graphical User Interface (GUI)
@@ -153,6 +155,7 @@ Interfaces ~
 |if_ruby.txt|	Ruby interface
 |debugger.txt|	Interface with a debugger
 |workshop.txt|	Sun Visual Workshop interface
+|netbeans.txt|	NetBeans External Editor interface
 |sign.txt|	debugging signs
 
 Versions ~
@@ -181,7 +184,7 @@ Standard plugins	*standard-plugin-list* ~
 |pi_gzip.txt|	Reading and writing compressed files
 |pi_expl.txt|	File explorer
 
-LOCAL ADDITIONS:
+LOCAL ADDITIONS:				*local-additions*
 
 ------------------------------------------------------------------------------
 *bars*		Bars example

@@ -11,10 +11,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef __MINGW32__
-# include "dyn-ming.h"
-#endif
-
 #ifdef _WIN32
 # define NT
 # ifndef DYNAMIC_RUBY
@@ -257,7 +253,7 @@ ruby_runtime_link_init(char *libname, int verbose)
     if (!hinstRuby)
     {
 	if (verbose)
-	    EMSG2(_("E370: Could not load library %s"), libname);
+	    EMSG2(_(e_loadlib), libname);
 	return FAIL;
     }
 
@@ -269,8 +265,7 @@ ruby_runtime_link_init(char *libname, int verbose)
 	    FreeLibrary(hinstRuby);
 	    hinstRuby = 0;
 	    if (verbose)
-		EMSG2(_("E448: Could not load library function %s"),
-						 ruby_funcname_table[i].name);
+		EMSG2(_(e_loadfunc), ruby_funcname_table[i].name);
 	    return FAIL;
 	}
     }

@@ -1,8 +1,8 @@
 " Vim filetype plugin file
 " Language:	Java
 " Maintainer:	Dan Sharp <dwsharp at hotmail dot com>
-" Last Change:	Sun, 07 Oct 2001 21:41:05 Eastern Daylight Time
-" Current version is at http://mywebpage.netscape.com/sharppeople/vim/ftplugin
+" Last Change:  2003 May 02
+" URL:		http://mywebpage.netscape.com/sharppeople/vim/ftplugin
 
 " Only do this when not done yet for this buffer
 if exists("b:did_ftplugin")
@@ -31,11 +31,12 @@ setlocal suffixesadd=.java
 
 " Set 'formatoptions' to break comment lines but not other lines,
 " and insert the comment leader when hitting <CR> or using "o".
-setlocal fo-=t fo+=croql
+setlocal formatoptions-=t formatoptions+=croql
 
 " Set 'comments' to format dashed lists in comments
-setlocal com& com^=sO:*\ -,mO:*\ \ ,exO:*/  " Behaves just like C
+setlocal comments& comments^=sO:*\ -,mO:*\ \ ,exO:*/  " Behaves just like C
 
+setlocal commentstring=//%s
 " Make sure the continuation lines below do not cause problems in
 " compatibility mode.
 set cpo-=C

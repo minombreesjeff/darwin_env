@@ -2,8 +2,8 @@
 " This is a GENERATED FILE. Please always refer to source file at the URI below.
 " Language: PoV-Ray(tm) 3.5 Scene Description Language
 " Maintainer: David Ne\v{c}as (Yeti) <yeti@physics.muni.cz>
-" Last Change: 2002 Mar 10
-" URI: http://physics.muni.cz/~yeti/download/pov.vim
+" Last Change: 2003 Apr 25
+" URL: http://physics.muni.cz/~yeti/download/syntax/pov.vim
 " Required Vim Version: 6.0
 
 " Setup
@@ -14,7 +14,7 @@ if version >= 600
   endif
 else
   " Croak when an old Vim is sourcing us.
-  echo "Sorry, but this syntax file relies on Vim 6 features.  Either upgrade Vim or usea version of " . expand("<sfile>:t:r") . " syntax file appropriate for Vim " . version/100 . "." . version %100 . "."
+  echo "Sorry, but this syntax file relies on Vim 6 features.  Either upgrade Vim or use a version of " . expand("<sfile>:t:r") . " syntax file appropriate for Vim " . version/100 . "." . version %100 . "."
   finish
 endif
 
@@ -64,8 +64,8 @@ syn keyword povDensityType df3 contained
 syn keyword povCharset ascii utf8 contained
 
 " Math functions on floats, vectors and strings
-syn keyword povFunctions abs acos asc asin atan2 atanh ceil cos defined degrees dimensions dimension_size div exp file_exists floor inside int internal ln log max max_extent min min_extent mod pow radians rand seed select sin sqrt strcmp strlen tan trace val vdot vlength vstr vturbulence
-syn keyword povFunctions vaxis_rotate vcross vnormalize vrotate
+syn keyword povFunctions abs acos acosh asc asin asinh atan atan2 atanh ceil cos cosh defined degrees dimensions dimension_size div exp file_exists floor int internal ln log max min mod pow radians rand seed select sin sinh sqrt strcmp strlen tan tanh val vdot vlength vstr vturbulence
+syn keyword povFunctions min_extent max_extent trace vcross vrotate vaxis_rotate vnormalize vturbulence
 syn keyword povFunctions chr concat substr str strupr strlwr
 syn keyword povJuliaFunctions acosh asinh atan cosh cube pwr reciprocal sinh sqr tanh
 
@@ -106,39 +106,39 @@ syn match povBraceError "}"
 syn match povNumber "\(^\|\W\)\@<=[+-]\=\(\d\+\)\=\.\=\d\+\([eE][+-]\=\d\+\)\="
 
 " Define the default highlighting
-hi def link povComment		Comment
-hi def link povTodo		Todo
-hi def link povNumber		Number
-hi def link povString		String
-hi def link povFileOpen		Constant
-hi def link povConsts		Constant
-hi def link povDotItem		Constant
-hi def link povBMPType		povSpecial
-hi def link povCharset		povSpecial
-hi def link povDensityType	povSpecial
-hi def link povFontType		povSpecial
-hi def link povOpenType		povSpecial
-hi def link povSpecialChar	povSpecial
-hi def link povSpecial		Special
-hi def link povConditionalDir	PreProc
-hi def link povLabelDir		PreProc
-hi def link povDeclareDir	Define
-hi def link povIncludeDir	Include
-hi def link povFileDir		PreProc
-hi def link povMessageDir	Debug
-hi def link povAppearance	povDescriptors
-hi def link povObjects		povDescriptors
-hi def link povGlobalSettings	povDescriptors
-hi def link povDescriptors	Type
-hi def link povJuliaFunctions	PovFunctions
-hi def link povModifiers	povFunctions
-hi def link povFunctions	Function
-hi def link povCommands		Operator
-hi def link povTransform	Operator
-hi def link povCSG		Operator
-hi def link povParenError	povError
-hi def link povBraceError	povError
-hi def link povCommentError	povError
-hi def link povError		Error
+hi def link povComment Comment
+hi def link povTodo Todo
+hi def link povNumber Number
+hi def link povString String
+hi def link povFileOpen Constant
+hi def link povConsts Constant
+hi def link povDotItem Constant
+hi def link povBMPType povSpecial
+hi def link povCharset povSpecial
+hi def link povDensityType povSpecial
+hi def link povFontType povSpecial
+hi def link povOpenType povSpecial
+hi def link povSpecialChar povSpecial
+hi def link povSpecial Special
+hi def link povConditionalDir PreProc
+hi def link povLabelDir PreProc
+hi def link povDeclareDir Define
+hi def link povIncludeDir Include
+hi def link povFileDir PreProc
+hi def link povMessageDir Debug
+hi def link povAppearance povDescriptors
+hi def link povObjects povDescriptors
+hi def link povGlobalSettings povDescriptors
+hi def link povDescriptors Type
+hi def link povJuliaFunctions PovFunctions
+hi def link povModifiers povFunctions
+hi def link povFunctions Function
+hi def link povCommands Operator
+hi def link povTransform Operator
+hi def link povCSG Operator
+hi def link povParenError povError
+hi def link povBraceError povError
+hi def link povCommentError povError
+hi def link povError Error
 
 let b:current_syntax = "pov"

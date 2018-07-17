@@ -2,55 +2,57 @@
  *
  *  2.10.90 changed to word output
  *  3.03.93 new indent style, dumb bug inserted and fixed.
- *          -c option, mls
+ *	    -c option, mls
  * 26.04.94 better option parser, -ps, -l, -s added.
  *  1.07.94 -r badly needs - as input file.  Per default autoskip over
- *             consequtive lines of zeroes, as unix od does.
- *          -a shows them too.
- *          -i dump as c-style #include "file.h"
+ *	       consequtive lines of zeroes, as unix od does.
+ *	    -a shows them too.
+ *	    -i dump as c-style #include "file.h"
  *  1.11.95 if "xxd -i" knows the filename, an 'unsigned char filename_bits[]'
- *          array is written in correct c-syntax.
- *          -s improved, now defaults to absolute seek, relative requires a '+'.
- *          -r improved, now -r -s -0x... is supported.
- *             change/suppress leading '\0' bytes.
- *          -l n improved: stops exactly after n bytes.
- *          -r improved, better handling of partial lines with trailing garbage.
- *          -r improved, now -r -p works again!
- *          -r improved, less flushing, much faster now! (that was silly)
+ *	    array is written in correct c-syntax.
+ *	    -s improved, now defaults to absolute seek, relative requires a '+'.
+ *	    -r improved, now -r -s -0x... is supported.
+ *	       change/suppress leading '\0' bytes.
+ *	    -l n improved: stops exactly after n bytes.
+ *	    -r improved, better handling of partial lines with trailing garbage.
+ *	    -r improved, now -r -p works again!
+ *	    -r improved, less flushing, much faster now! (that was silly)
  *  3.04.96 Per repeated request of a single person: autoskip defaults to off.
  * 15.05.96 -v added. They want to know the version.
- *          -a fixed, to show last line inf file ends in all zeros.
- *          -u added: Print upper case hex-letters, as preferred by unix bc.
- *          -h added to usage message. Usage message extended.
- *          Now using outfile if specified even in normal mode, aehem.
- *          No longer mixing of ints and longs. May help doze people.
- *          Added binify ioctl for same reason. (Enough Doze stress for 1996!)
+ *	    -a fixed, to show last line inf file ends in all zeros.
+ *	    -u added: Print upper case hex-letters, as preferred by unix bc.
+ *	    -h added to usage message. Usage message extended.
+ *	    Now using outfile if specified even in normal mode, aehem.
+ *	    No longer mixing of ints and longs. May help doze people.
+ *	    Added binify ioctl for same reason. (Enough Doze stress for 1996!)
  * 16.05.96 -p improved, removed occasional superfluous linefeed.
  * 20.05.96 -l 0 fixed. tried to read anyway.
  * 21.05.96 -i fixed. now honours -u, and prepends __ to numeric filenames.
- *          compile -DWIN32 for NT or W95. George V. Reilly, * -v improved :-)
- *          support --gnuish-longhorn-options
+ *	    compile -DWIN32 for NT or W95. George V. Reilly, * -v improved :-)
+ *	    support --gnuish-longhorn-options
  * 25.05.96 MAC support added: CodeWarrior already uses ``outline'' in Types.h
- *          which is included by MacHeaders (Axel Kielhorn). Renamed to
- *          xxdline().
+ *	    which is included by MacHeaders (Axel Kielhorn). Renamed to
+ *	    xxdline().
  *  7.06.96 -i printed 'int' instead of 'char'. *blush*
- *          added Bram's OS2 ifdefs...
+ *	    added Bram's OS2 ifdefs...
  * 18.07.96 gcc -Wall @ SunOS4 is now slient.
- *          Added osver for MSDOS/DJGPP/WIN32.
+ *	    Added osver for MSDOS/DJGPP/WIN32.
  * 29.08.96 Added size_t to strncmp() for Amiga.
  * 24.03.97 Windows NT support (Phil Hanna). Clean exit for Amiga WB (Bram)
  * 02.04.97 Added -E option, to have EBCDIC translation instead of ASCII
- *          (antonio.colombo@jrc.it)
+ *	    (antonio.colombo@jrc.it)
  * 22.05.97 added -g (group octets) option (jcook@namerica.kla.com).
  * 23.09.98 nasty -p -r misfeature fixed: slightly wrong output, when -c was
- *          missing or wrong.
+ *	    missing or wrong.
  * 26.09.98 Fixed: 'xxd -i infile outfile' did not truncate outfile.
  * 27.10.98 Fixed: -g option parser required blank.
- *          option -b added: 01000101 binary output in normal format.
+ *	    option -b added: 01000101 binary output in normal format.
  * 16.05.00 Added VAXC changes by Stephen P. Wall
  * 16.05.00 Improved MMS file and merege for VMS by Zoltan Arpadffy
  *
  * (c) 1990-1998 by Juergen Weigert (jnweiger@informatik.uni-erlangen.de)
+ *
+ * Small changes made afterwards by Bram Moolenaar et al.
  *
  * Distribute freely and credit me,
  * make money and share with me,
@@ -68,7 +70,7 @@
 #if !defined(OS2) && defined(__EMX__)
 # define OS2
 #endif
-#if defined(MSDOS) || defined(WIN32) || defined(OS2)
+#if defined(MSDOS) || defined(WIN32) || defined(OS2) || defined(__BORLANDC__)
 # include <io.h>	/* for setmode() */
 #else
 # ifdef UNIX
@@ -81,6 +83,13 @@
 #if __MWERKS__ && !defined(BEBOX)
 # include <unix.h>	/* for fdopen() on MAC */
 #endif
+
+#if defined(__BORLANDC__) && __BORLANDC__ <= 0x0410 && !defined(fileno)
+/* Missing define and prototype grabbed from the BC 4.0 <stdio.h> */
+# define fileno(f)       ((f)->fd)
+FILE   _FAR *_Cdecl _FARFUNC fdopen(int __handle, char _FAR *__type);
+#endif
+
 
 /*  This corrects the problem of missing prototypes for certain functions
  *  in some GNU installations (e.g. SunOS 4.1.x).
@@ -134,12 +143,15 @@ char osver[] = "";
 # endif
 #endif
 
-#if defined(MSDOS) || defined(WIN32) || defined(OS2) || defined(CYGWIN) || defined(CYGWIN32)
+#if !defined(CYGWIN) && (defined(CYGWIN32) || defined(__CYGWIN__) || defined(__CYGWIN32__))
+# define CYGWIN
+#endif
+#if defined(MSDOS) || defined(WIN32) || defined(OS2) || defined(CYGWIN)
 # define BIN_READ(yes)  ((yes) ? "rb" : "rt")
 # define BIN_WRITE(yes) ((yes) ? "wb" : "wt")
 # define BIN_CREAT(yes) ((yes) ? (O_CREAT|O_BINARY) : O_CREAT)
 # define BIN_ASSIGN(fp, yes) setmode(fileno(fp), (yes) ? O_BINARY : O_TEXT)
-# if defined(CYGWIN) || defined(CYGWIN32)
+# if defined(CYGWIN)
 #  define PATH_SEP '/'
 # else
 #  define PATH_SEP '\\'
@@ -175,7 +187,8 @@ char osver[] = "";
 #endif
 
 #ifndef __P
-# if defined(__STDC__) || defined(MSDOS) || defined(WIN32) || defined(OS2)
+# if defined(__STDC__) || defined(MSDOS) || defined(WIN32) || defined(OS2) \
+		|| defined(__BORLANDC__)
 #  define __P(a) a
 # else
 #  define __P(a) ()
@@ -251,20 +264,20 @@ long base_off;
   while ((c = getc(fpi)) != EOF)
     {
       if (c == '\r')	/* Doze style input file? */
-        continue;
+	continue;
 
       n3 = n2;
       n2 = n1;
 
       if (c >= '0' && c <= '9')
-        n1 = c - '0';
+	n1 = c - '0';
       else if (c >= 'a' && c <= 'f')
-        n1 = c - 'a' + 10;
+	n1 = c - 'a' + 10;
       else if (c >= 'A' && c <= 'F')
-        n1 = c - 'A' + 10;
+	n1 = c - 'A' + 10;
       else
-        {
-          n1 = -1;
+	{
+	  n1 = -1;
 	  if (ign_garb)
 	    continue;
 	}
@@ -288,7 +301,7 @@ long base_off;
 	}
 
       if (base_off + want_off != have_off)
-        {
+	{
 	  fflush(fpo);
 #ifdef TRY_SEEK
 	  c = fseek(fpo, base_off + want_off - have_off, 1);
@@ -305,7 +318,7 @@ long base_off;
 	}
 
       if (n2 >= 0 && n1 >= 0)
-        {
+	{
 	  putc((n2 << 4) | n1, fpo);
 	  have_off++;
 	  want_off++;
@@ -315,12 +328,12 @@ long base_off;
 	      /* skip rest of line as garbaga */
 	      want_off = 0;
 	      while ((c = getc(fpi)) != '\n' && c != EOF)
-	        ;
+		;
 	      ign_garb = 1;
 	    }
 	}
       else if (n1 < 0 && n2 < 0 && n3 < 0)
-        {
+	{
 	  /* already stumbled into garbage, skip line, wait and see */
 	  if (!hextype)
 	    want_off = 0;
@@ -374,7 +387,7 @@ int nz;
 	    fputs("*\n", fp);
 	}
       if (nz >= 0 || zero_seen > 0)
-        fputs(l, fp);
+	fputs(l, fp);
       if (nz)
 	zero_seen = 0;
     }
@@ -447,7 +460,7 @@ char *argv[];
   while (argc >= 2)
     {
       pp = argv[1] + (!STRNCMP(argv[1], "--", 2) && argv[1][2]);
-           if (!STRNCMP(pp, "-a", 2)) autoskip = 1 - autoskip;
+	   if (!STRNCMP(pp, "-a", 2)) autoskip = 1 - autoskip;
       else if (!STRNCMP(pp, "-b", 2)) hextype = HEX_BITS;
       else if (!STRNCMP(pp, "-u", 2)) hexx = hexxa + 16;
       else if (!STRNCMP(pp, "-p", 2)) hextype = HEX_POSTSCRIPT;
@@ -455,7 +468,7 @@ char *argv[];
       else if (!STRNCMP(pp, "-r", 2)) revert++;
       else if (!STRNCMP(pp, "-E", 2)) ebcdic++;
       else if (!STRNCMP(pp, "-v", 2))
-        {
+	{
 	  fprintf(stderr, "%s%s\n", version, osver);
 	  exit(0);
 	}
@@ -466,14 +479,14 @@ char *argv[];
 	  else
 	    {
 	      if (!argv[2])
-	        exit_with_usage(pname);
+		exit_with_usage(pname);
 	      cols = (int)strtol(argv[2], NULL, 0);
 	      argv++;
 	      argc--;
 	    }
 	}
       else if (!STRNCMP(pp, "-g", 2))
-        {
+	{
 	  if (pp[2] && STRNCMP("group", pp + 2, 5))
 	    octspergrp = (int)strtol(pp + 2, NULL, 0);
 	  else
@@ -493,21 +506,21 @@ char *argv[];
 	    {
 #ifdef TRY_SEEK
 	      if (pp[2] == '+')
-	        relseek++;
+		relseek++;
 	      if (pp[2+relseek] == '-')
-	        negseek++;
+		negseek++;
 #endif
 	      seekoff = strtol(pp + 2+relseek+negseek, (char **)NULL, 0);
 	    }
 	  else
 	    {
 	      if (!argv[2])
-	        exit_with_usage(pname);
+		exit_with_usage(pname);
 #ifdef TRY_SEEK
 	      if (argv[2][0] == '+')
-	        relseek++;
+		relseek++;
 	      if (argv[2][relseek] == '-')
-	        negseek++;
+		negseek++;
 #endif
 	      seekoff = strtol(argv[2] + relseek+negseek, (char **)NULL, 0);
 	      argv++;
@@ -521,22 +534,22 @@ char *argv[];
 	  else
 	    {
 	      if (!argv[2])
-	        exit_with_usage(pname);
+		exit_with_usage(pname);
 	      length = strtol(argv[2], (char **)NULL, 0);
 	      argv++;
 	      argc--;
 	    }
 	}
       else if (!strcmp(pp, "--"))	/* end of options */
-        {
+	{
 	  argv++;
 	  argc--;
 	  break;
 	}
       else if (pp[0] == '-' && pp[1])	/* unknown option */
-        exit_with_usage(pname);
+	exit_with_usage(pname);
       else
-        break;				/* not an option */
+	break;				/* not an option */
 
       argv++;				/* advance to next argument */
       argc--;
@@ -594,7 +607,7 @@ char *argv[];
       int mode = revert ? O_WRONLY : (O_TRUNC|O_WRONLY);
 
       if (((fd = OPEN(argv[2], mode | BIN_CREAT(revert), 0666)) < 0) ||
-          (fpo = fdopen(fd, BIN_WRITE(revert))) == NULL)
+	  (fpo = fdopen(fd, BIN_WRITE(revert))) == NULL)
 	{
 	  fprintf(stderr, "%s: ", pname);
 	  perror(argv[2]);
@@ -606,8 +619,8 @@ char *argv[];
   if (revert)
     {
       if (hextype && (hextype != HEX_POSTSCRIPT))
-        {
-          fprintf(stderr, "%s: sorry, cannot revert this type of hexdump\n", pname);
+	{
+	  fprintf(stderr, "%s: sorry, cannot revert this type of hexdump\n", pname);
 	  return -1;
 	}
       return huntype(fp, fpo, stderr, pname, cols, hextype,
@@ -618,23 +631,23 @@ char *argv[];
     {
 #ifdef TRY_SEEK
       if (relseek)
-        e = fseek(fp, negseek ? -seekoff : seekoff, 1);
+	e = fseek(fp, negseek ? -seekoff : seekoff, 1);
       else
-        e = fseek(fp, negseek ? -seekoff : seekoff, negseek ? 2 : 0);
+	e = fseek(fp, negseek ? -seekoff : seekoff, negseek ? 2 : 0);
       if (e < 0 && negseek)
-        {
+	{
 	  fprintf(stderr, "%s: sorry cannot seek.\n", pname);
 	  return 4;
 	}
       if (e >= 0)
-        seekoff = ftell(fp);
+	seekoff = ftell(fp);
       else
 #endif
 	{
 	  long s = seekoff;
 
 	  while (s--)
-	    getc(fp);
+	    (void)getc(fp);
 	}
     }
 
@@ -657,7 +670,7 @@ char *argv[];
 	}
 
       if (p)
-        fputs("\n};\n"+3*(fp == stdin), fpo);
+	fputs("\n};\n"+3*(fp == stdin), fpo);
 
       if (fp != stdin)
 	{
@@ -677,8 +690,8 @@ char *argv[];
       p = cols;
       while ((length < 0 || n < length) && (e = getc(fp)) != EOF)
 	{
-          putchar(hexx[(e >> 4) & 0xf]);
-          putchar(hexx[(e     ) & 0xf]);
+	  putchar(hexx[(e >> 4) & 0xf]);
+	  putchar(hexx[(e     ) & 0xf]);
 	  n++;
 	  if (!--p)
 	    {
@@ -710,10 +723,10 @@ char *argv[];
       if (hextype == HEX_NORMAL)
 	{
 	  l[c = (9 + (grplen * p) / octspergrp)] = hexx[(e >> 4) & 0xf];
-	  l[++c]                               = hexx[ e       & 0xf];
+	  l[++c]			       = hexx[ e       & 0xf];
 	}
       else /* hextype == HEX_BITS */
-        {
+	{
 	  int i;
 
 	  c = (9 + (grplen * p) / octspergrp) - 1;
@@ -721,7 +734,7 @@ char *argv[];
 	    l[++c] = (e & (1 << i)) ? '1' : '0';
 	}
       if (ebcdic)
-        e = (e < 64) ? '.' : etoa64[e-64];
+	e = (e < 64) ? '.' : etoa64[e-64];
       l[11 + (grplen * cols - 1)/octspergrp + p] =
 #ifdef __MVS__
 	  (e >= 64)
@@ -730,7 +743,7 @@ char *argv[];
 #endif
 	  ? e : '.';
       if (e)
-        nonzero++;
+	nonzero++;
       n++;
       if (++p == cols)
 	{

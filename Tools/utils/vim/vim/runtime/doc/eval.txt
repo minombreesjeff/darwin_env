@@ -1,4 +1,4 @@
-*eval.txt*      For Vim version 6.1.  Last change: 2002 Mar 21
+*eval.txt*      For Vim version 6.2.  Last change: 2003 Jun 01
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -12,16 +12,17 @@ Note: Expression evaluation can be disabled at compile time.  If this has been
 done, the features in this document are not available.  See |+eval| and the
 last chapter below.
 
-1. Variables		|variables|
-2. Expression syntax	|expression-syntax|
-3. Internal variable	|internal-variables|
-4. Builtin Functions	|functions|
-5. Defining functions	|user-functions|
-6. Curly braces names	|curly-braces-names|
-7. Commands		|expression-commands|
-8. Examples		|eval-examples|
-9. No +eval feature	|no-eval-feature|
-10. The sandbox		|eval-sandbox|
+1.  Variables		|variables|
+2.  Expression syntax	|expression-syntax|
+3.  Internal variable	|internal-variables|
+4.  Builtin Functions	|functions|
+5.  Defining functions	|user-functions|
+6.  Curly braces names	|curly-braces-names|
+7.  Commands		|expression-commands|
+8.  Exception handling	|exception-handling|
+9.  Examples		|eval-examples|
+10. No +eval feature	|no-eval-feature|
+11. The sandbox		|eval-sandbox|
 
 {Vi does not have any of these commands}
 
@@ -37,29 +38,29 @@ These are converted automatically, depending on how they are used.
 
 Conversion from a Number to a String is by making the ASCII representation of
 the Number.  Examples: >
-Number 123	-->	String "123"
-Number 0	-->	String "0"
-Number -1	-->	String "-1"
+	Number 123	-->	String "123"
+	Number 0	-->	String "0"
+	Number -1	-->	String "-1"
 
 Conversion from a String to a Number is done by converting the first digits
 to a number.  Hexadecimal "0xf9" and Octal "017" numbers are recognized.  If
 the String doesn't start with digits, the result is zero.  Examples: >
-String "456"	-->	Number 456
-String "6bar"	-->	Number 6
-String "foo"	-->	Number 0
-String "0xf1"	-->	Number 241
-String "0100"	-->	Number 64
+	String "456"	-->	Number 456
+	String "6bar"	-->	Number 6
+	String "foo"	-->	Number 0
+	String "0xf1"	-->	Number 241
+	String "0100"	-->	Number 64
 
 To force conversion from String to Number, add zero to it: >
-:echo "0100" + 0
+	:echo "0100" + 0
 
 For boolean operators Numbers are used.  Zero is FALSE, non-zero is TRUE.
 
 Note that in the command >
-:if "foo"
+	:if "foo"
 "foo" is converted to 0, which means FALSE.  To test for a non-empty string,
 use strlen(): >
-:if strlen("foo")
+	:if strlen("foo")
 
 If you need to know the type of a variable or expression, use the |type()|
 function.
@@ -230,7 +231,8 @@ Examples:
 "abc" == "Abc"	  evaluates to 1 if 'ignorecase' is set, 0 otherwise
 
 When comparing a String with a Number, the String is converted to a Number,
-and the comparison is done on Numbers.
+and the comparison is done on Numbers.  This means that "0 == 'x'" is TRUE,
+because 'x' converted to a Number is zero.
 
 When comparing two Strings, this is done with strcmp() or stricmp().  This
 results in the mathematical difference (comparing byte values), not
@@ -271,7 +273,7 @@ Note the difference between "+" and ".":
 "123" + "456" = 579
 "123" . "456" = "123456"
 
-When the righthand side of '/' is zero, the result is 0xfffffff.
+When the righthand side of '/' is zero, the result is 0x7fffffff.
 When the righthand side of '%' is zero, the result is 0.
 
 
@@ -326,10 +328,13 @@ A string constant accepts these special characters:
 \...	three-digit octal number (e.g., "\316")
 \..	two-digit octal number (must be followed by non-digit)
 \.	one-digit octal number (must be followed by non-digit)
-\x..	two-character hex number (e.g., "\x1f")
-\x.	one-character hex number (must be followed by non-hex)
+\x..	byte specified with two hex numbers (e.g., "\x1f")
+\x.	byte specified with one hex number (must be followed by non-hex char)
 \X..	same as \x..
 \X.	same as \x.
+\u....  character specified with up to 4 hex numbers, stored according to the
+	current value of 'encoding' (e.g., "\u02a4")
+\U....	same as \u....
 \b	backspace <BS>
 \e	escape <Esc>
 \f	formfeed <FF>
@@ -417,7 +422,7 @@ See below |functions|.
 
 ==============================================================================
 3. Internal variable				*internal-variables* *E121*
-
+									*E461*
 An internal variable name can be made up of letters, digits and '_'.  But it
 cannot start with a digit.  It's also possible to use curly braces, see
 |curly-braces-names|.
@@ -605,6 +610,17 @@ v:errmsg	Last given error message.  It's allowed to set this variable.
 	:  ... handle error
 <		"errmsg" also works, for backwards compatibility.
 
+					*v:exception* *exception-variable*
+v:exception	The value of the exception most recently caught and not
+		finished.  See also |v:throwpoint| and |throw-variables|.
+		Example: >
+	:try
+	:  throw "oops"
+	:catch /.*/
+	:  echo "caught" v:exception
+	:endtry
+<		Output: "caught oops"
+
 					*v:fname_in* *fname_in-variable*
 v:fname_in	The name of the input file.  Only valid while evaluating:
 			option		used for ~
@@ -680,10 +696,14 @@ v:prevcount	The count given for the last but one Normal mode command.
 <		Read-only.
 
 					*v:progname* *progname-variable*
-v:progname	Contains the name (with path removed) with which vim was
+v:progname	Contains the name (with path removed) with which Vim was
 		invoked.  Allows you to do special initialisations for "view",
-		"evim" etc., or any other name you might symlink to vim.
+		"evim" etc., or any other name you might symlink to Vim.
 		Read-only.
+
+					*v:register* *register-variable*
+v:register	The name of the register supplied to the last normal mode
+		command.  Empty if none were supplied. |getreg()| |setreg()|
 
 					*v:servername* *servername-variable*
 v:servername	The resulting registered |x11-clientserver| name if any.
@@ -725,11 +745,28 @@ v:this_session	Full filename of the last loaded or saved session file.  See
 		session file has been saved, this variable is empty.
 		"this_session" also works, for backwards compatibility.
 
+					*v:throwpoint* *throwpoint-variable*
+v:throwpoint	The point where the exception most recently caught and not
+		finished was thrown.  Not set when commands are typed.  See
+		also |v:exception| and |throw-variables|.
+		Example: >
+	:try
+	:  throw "oops"
+	:catch /.*/
+	:  echo "Exception from" v:throwpoint
+	:endtry
+<		Output: "Exception from test.vim, line 2"
+
 					*v:version* *version-variable*
 v:version	Version number of Vim: Major version number times 100 plus
 		minor version number.  Version 5.0 is 500.  Version 5.1 (5.01)
 		is 501.  Read-only.  "version" also works, for backwards
 		compatibility.
+		Use |has()| to check if a certain patch was included, e.g.: >
+			if has("patch123")
+<		Note that patch numbers are specific to the version, thus both
+		version 5.0 and 5.1 may have a patch 123, but these are
+		completely different.
 
 					*v:warningmsg* *warningmsg-variable*
 v:warningmsg	Last given warning message.  It's allowed to set this variable.
@@ -783,13 +820,15 @@ getchar( [expr])		Number  get one character from the user
 getcharmod( )			Number  modifiers for the last typed character
 getbufvar( {expr}, {varname})		variable {varname} in buffer {expr}
 getcwd()			String	the current working directory
-getftime( {fname})		Number	last modification time of file
 getfsize( {fname})		Number	size in bytes of file
+getftime( {fname})		Number	last modification time of file
 getline( {lnum})		String	line {lnum} from current buffer
-getwinposx()			Number	X coord in pixels of GUI vim window
-getwinposy()			Number	Y coord in pixels of GUI vim window
-getwinvar( {nr}, {varname}		variable {varname} in window {nr}
-glob( {expr}])			String	expand file wildcards in {expr}
+getreg( [{regname}])		String  contents of register
+getregtype( [{regname}])	String  type of register
+getwinposx()			Number	X coord in pixels of GUI Vim window
+getwinposy()			Number	Y coord in pixels of GUI Vim window
+getwinvar( {nr}, {varname})		variable {varname} in window {nr}
+glob( {expr})			String	expand file wildcards in {expr}
 globpath( {path}, {expr})	String	do glob({expr}) for all dirs in {path}
 has( {feature})			Number	TRUE if feature {feature} supported
 hasmapto( {what} [, {mode}])	Number	TRUE if mapping to {what} exists
@@ -799,11 +838,13 @@ histget( {history} [, {index}])	String	get the item {index} from a history
 histnr( {history})		Number	highest index of a history
 hlexists( {name})		Number	TRUE if highlight group {name} exists
 hlID( {name})			Number	syntax ID of highlight group {name}
-hostname()			String	name of the machine vim is running on
+hostname()			String	name of the machine Vim is running on
 iconv( {expr}, {from}, {to})	String  convert encoding of {expr}
 indent( {lnum})			Number  indent of line {lnum}
 input( {prompt} [, {text}])	String	get input from the user
-inputdialog( {prompt} [, {text}]) String  like input() but in a GUI dialog
+inputdialog( {p} [, {t} [, {c}]]) String  like input() but in a GUI dialog
+inputrestore()			Number  restore typeahead
+inputsave()			Number  save and clear typeahead
 inputsecret( {prompt} [, {text}]) String  like input() but hiding the text
 isdirectory( {directory})	Number	TRUE if {directory} is a directory
 libcall( {lib}, {func}, {arg})	String  call {func} in library {lib} with {arg}
@@ -837,11 +878,12 @@ resolve( {filename})		String  get filename a shortcut points to
 search( {pattern} [, {flags}])	Number  search for {pattern}
 searchpair( {start}, {middle}, {end} [, {flags} [, {skip}]])
 				Number  search for other end of start/end pair
-server2client( {serverid}, {string})
+server2client( {clientid}, {string})
 				Number	send reply string
 serverlist()			String	get a list of available servers
 setbufvar( {expr}, {varname}, {val})	set {varname} in buffer {expr} to {val}
 setline( {lnum}, {line})	Number	set line {lnum} to {line}
+setreg( {n}, {v}[, {opt}])	Number  set register to value and type
 setwinvar( {nr}, {varname}, {val})	set {varname} in window {nr} to {val}
 strftime( {format}[, {time}])	String	time in specified format
 stridx( {haystack}, {needle})	Number	first index of {needle} in {haystack}
@@ -863,7 +905,7 @@ tolower( {expr})		String	the String {expr} switched to lowercase
 toupper( {expr})		String	the String {expr} switched to uppercase
 type( {name})			Number	type of variable {name}
 virtcol( {expr})		Number	screen column of cursor or mark
-visualmode()			String	last visual mode used
+visualmode( [expr])		String	last visual mode used
 winbufnr( {nr})			Number	buffer number of window {nr}
 wincol()			Number	window column of the cursor
 winheight( {nr})		Number	height of window {nr}
@@ -891,7 +933,7 @@ argv({nr})	The result is the {nr}th file in the argument list of the
 		Example: >
 	:let i = 0
 	:while i < argc()
-	:  let f = substitute(argv(i), '\([. ]\)', '\\&', 'g')
+	:  let f = escape(argv(i), '. ')
 	:  exe 'amenu Arg.' . f . ' :e ' . f . '<CR>'
 	:  let i = i + 1
 	:endwhile
@@ -1176,6 +1218,7 @@ exists({expr})	The result is a Number, which is non-zero if {var} is defined,
 		contains one of these:
 			&option-name	Vim option (only checks if it exists,
 					not if it really works)
+			+option-name	Vim option that works.
 			$ENVNAME	environment variable (could also be
 					done by comparing with an empty
 					string)
@@ -1183,7 +1226,8 @@ exists({expr})	The result is a Number, which is non-zero if {var} is defined,
 					or user defined function (see
 					|user-functions|).
 			varname		internal variable (see
-					|internal-variables|).
+					|internal-variables|).  Does not work
+					for |curly-braces-names|.
 			:cmdname	Ex command, both built-in and user
 					commands |:command|
 					returns:
@@ -1201,6 +1245,7 @@ exists({expr})	The result is a Number, which is non-zero if {var} is defined,
 			exists("&shortname")
 			exists("$HOSTNAME")
 			exists("*strftime")
+			exists("*s:MyFunc")
 			exists("bufcount")
 			exists(":Make")
 			exists("#CursorHold");
@@ -1234,7 +1279,7 @@ expand({expr} [, {flag}])				*expand()*
 			#n		alternate file name n
 			<cfile>		file name under the cursor
 			<afile>		autocmd file name
-			<abuf>		autocmd buffer number
+			<abuf>		autocmd buffer number (as a String!)
 			<amatch>	autocmd matched name
 			<sfile>		sourced script file name
 			<cword>		word under the cursor
@@ -1273,11 +1318,14 @@ expand({expr} [, {flag}])				*expand()*
 		When {expr} does not start with '%', '#' or '<', it is
 		expanded like a file name is expanded on the command line.
 		'suffixes' and 'wildignore' are used, unless the optional
-		{flag} argument is given and it is non-zero.
+		{flag} argument is given and it is non-zero.  Names for
+		non-existing files are included.
 
 		Expand() can also be used to expand variables and environment
 		variables that are only known in a shell.  But this can be
 		slow, because a shell must be started.  See |expr-env-expand|.
+		The expanded variable is still handled like a list of file
+		names.
 
 		See |glob()| for finding existing files.  See |system()| for
 		getting the raw output of an external command.
@@ -1352,7 +1400,8 @@ foreground()	Move the Vim window to the foreground.  Useful when sent from
 getchar([expr])						*getchar()*
 		Get a single character from the user.  If it is an 8-bit
 		character, the result is a number.  Otherwise a String is
-		returned with the encoded character.
+		returned with the encoded character.  For a special key it's a
+		sequence of bytes starting with 0x80 (decimal: 128).
 		If [expr] is omitted, wait until a character is available.
 		If [expr] is 0, only get a character when one is available.
 		If [expr] is 1, only check if a character is available, it is
@@ -1361,7 +1410,13 @@ getchar([expr])						*getchar()*
 				non-zero value is returned.
 		If a character available, it is returned as a Number.  Use
 		nr2char() to convert it to a String.
-		The returned value is negative for special keys.
+		To turn a multi-byte character string also to a Number use
+		this: >
+			let c = getchar()
+			if c == 0
+			   let c = char2nr(c)
+			endif
+<		The returned value is negative for special keys.
 		The returned value is zero if no character is available.
 		There is no prompt, you will somehow have to make clear to the
 		user that a character has to be typed.
@@ -1394,14 +1449,19 @@ getcharmod()						*getcharmod()*
 			32	mouse triple click
 			64	mouse quadruple click
 			128	Macintosh only: command
+		Only the modifiers that have not been included in the
+		character itself are obtained.  Thus Shift-a results in "A"
+		with no modifier.
 
 getbufvar({expr}, {varname})				*getbufvar()*
 		The result is the value of option or local buffer variable
-		{varname} in buffer {expr}.
+		{varname} in buffer {expr}.  Note that the name without "b:"
+		must be used.
 		This also works for a global or local window option, but it
 		doesn't work for a global or local window variable.
 		For the use of {expr}, see |bufname()| above.
-		Note that the name without "b:" must be used.
+		When the buffer or variable doesn't exist an empty string is
+		returned, there is no error message.
 		Examples: >
 			:let bufmodified = getbufvar(1, "&mod")
 			:echo "todo myvar = " . getbufvar("todo", "myvar")
@@ -1410,18 +1470,18 @@ getbufvar({expr}, {varname})				*getbufvar()*
 getcwd()	The result is a String, which is the name of the current
 		working directory.
 
+getfsize({fname})					*getfsize()*
+		The result is a Number, which is the size in bytes of the
+		given file {fname}.
+		If {fname} is a directory, 0 is returned.
+		If the file {fname} can't be found, -1 is returned.
+
 getftime({fname})					*getftime()*
 		The result is a Number, which is the last modification time of
 		the given file {fname}.  The value is measured as seconds
 		since 1st Jan 1970, and may be passed to strftime().  See also
 		|localtime()| and |strftime()|.
 		If the file {fname} can't be found -1 is returned.
-
-getfsize({fname})					*getfsize()*
-		The result is a Number, which is the size in bytes of the
-		given file {fname}.
-		If {fname} is a directory, 0 is returned.
-		If the file {fname} can't be found, -1 is returned.
 
 							*getline()*
 getline({lnum}) The result is a String, which is line {lnum} from the current
@@ -1434,14 +1494,32 @@ getline({lnum}) The result is a String, which is line {lnum} from the current
 <		When {lnum} is smaller than 1 or bigger than the number of
 		lines in the buffer, an empty string is returned.
 
+getreg([{regname}])					*getreg()*
+		The result is a String, which is the contents of register
+		{regname}. Example: >
+			:let cliptext = getreg('*')
+<		getreg('=') returns the last evaluated value of the expression
+		register. (For use in maps).
+		If {regname} is not specified, |v:register| is used.
+
+getregtype([{regname}])					*getregtype()*
+		The result is a String, which is type of register {regname}.
+		The value will be one of:
+		    "v"			for |characterwise| text
+		    "V"			for |linewise| text
+		    "<CTRL-V>{width}"	for |blockwise-visual| text
+		    0			for an empty or unknown register
+		<CTRL-V> is one character with value 0x16.
+		If {regname} is not specified, |v:register| is used.
+
 							*getwinposx()*
 getwinposx()	The result is a Number, which is the X coordinate in pixels of
-		the left hand side of the GUI vim window.  The result will be
+		the left hand side of the GUI Vim window.  The result will be
 		-1 if the information is not available.
 
 							*getwinposy()*
 getwinposy()	The result is a Number, which is the Y coordinate in pixels of
-		the top of the GUI vim window.  The result will be -1 if the
+		the top of the GUI Vim window.  The result will be -1 if the
 		information is not available.
 
 getwinvar({nr}, {varname})				*getwinvar()*
@@ -1490,8 +1568,9 @@ has({feature})	The result is a Number, which is 1 if the feature {feature} is
 
 hasmapto({what} [, {mode}])				*hasmapto()*
 		The result is a Number, which is 1 if there is a mapping that
-		contains {what} in the rhs (what it is mapped to) and this
-		mapping exists in one of the modes indicated by {mode}.
+		contains {what} in somewhere in the rhs (what it is mapped to)
+		and this mapping exists in one of the modes indicated by
+		{mode}.
 		Both the global mappings and the mappings local to the current
 		buffer are checked for a match.
 		If no matching mapping is found 0 is returned.
@@ -1527,7 +1606,8 @@ histadd({history}, {item})				*histadd()*
 		Example: >
 			:call histadd("input", strftime("%Y %b %d"))
 			:let date=input("Enter date: ")
-<
+<		This function is not available in the |sandbox|.
+
 histdel({history} [, {item}])				*histdel()*
 		Clear {history}, ie. delete all its entries.  See |hist-names|
 		for the possible values of {history}.
@@ -1535,7 +1615,7 @@ histdel({history} [, {item}])				*histdel()*
 		If the parameter {item} is given as String, this is seen
 		as regular expression.  All entries matching that expression
 		will be removed from the history (if there are any).
-		Upper/lowercase must match, unless "\c" is used |/\c|"
+		Upper/lowercase must match, unless "\c" is used |/\c|.
 		If {item} is a Number, it will be interpreted as index, see
 		|:history-indexing|.  The respective entry will be removed
 		if it exists.
@@ -1646,6 +1726,13 @@ input({prompt} [, {text}])				*input()*
 		default reply, as if the user typed this.
 		NOTE: This must not be used in a startup file, for the
 		versions that only run in GUI mode (e.g., the Win32 GUI).
+		Note: When input() is called from within a mapping it will
+		consume remaining characters from that mapping, because a
+		mapping is handled like the characters were typed.
+		Use |inputsave()| before input() and |inputrestore()|
+		after input() to avoid that.  Another solution is to avoid
+		that further characters follow in the mapping, e.g., by using
+		|:execute| or |:normal|.
 
 		Example: >
 			:if input("Coffee or beer? ") == "beer"
@@ -1653,8 +1740,15 @@ input({prompt} [, {text}])				*input()*
 			:endif
 <		Example with default text: >
 			:let color = input("Color? ", "white")
+<		Example with a mapping: >
+			:nmap \x :call GetFoo()<CR>:exe "/" . Foo<CR>
+			:function GetFoo()
+			:  call inputsave()
+			:  let g:Foo = input("enter search pattern: ")
+			:  call inputrestore()
+			:endfunction
 
-inputdialog({prompt} [, {text})				*inputdialog()*
+inputdialog({prompt} [, {text} [, {cancelreturn}]])		*inputdialog()*
 		Like input(), but when the GUI is running and text dialogs are
 		supported, a dialog window pops up to input the text.
 		Example: >
@@ -1662,8 +1756,24 @@ inputdialog({prompt} [, {text})				*inputdialog()*
 			:if n != ""
 			:  let &sw = n
 			:endif
-<		Hitting <Enter> works like pressing the OK button.  Hitting
+<		When the dialog is cancelled {cancelreturn} is returned.  When
+		omitted an empty string is returned.
+		Hitting <Enter> works like pressing the OK button.  Hitting
 		<Esc> works like pressing the Cancel button.
+
+inputrestore()						*inputrestore()*
+		Restore typeahead that was saved with a previous inputsave().
+		Should be called the same number of times inputsave() is
+		called.  Calling it more often is harmless though.
+		Returns 1 when there is nothing to restore, 0 otherwise.
+
+inputsave()						*inputsave()*
+		Preserve typeahead (also from mappings) and clear it, so that
+		a following prompt gets input from the user.  Should be
+		followed by a matching inputrestore() after the prompt.  Can
+		be used several times, in which case there must be just as
+		many inputrestore() calls.
+		Returns 1 when out of memory, 0 otherwise.
 
 inputsecret({prompt} [, {text}])			*inputsecret()*
 		This function acts much like the |input()| function with but
@@ -1694,8 +1804,9 @@ libcall({libname}, {funcname}, {argument})
 		to Vim.
 		If the function returns a number, use libcallnr()!
 		If {argument} is a number, it is passed to the function as an
-		int; if {param} is a string, it is passed as a null-terminated
-		string.
+		int; if {argument} is a string, it is passed as a
+		null-terminated string.
+		This function will fail in |restricted-mode|.
 
 		libcall() allows you to write your own 'plug-in' extensions to
 		Vim without having to recompile the program.  It is NOT a
@@ -1788,6 +1899,7 @@ maparg({name}[, {mode}])				*maparg()*
 			"o"	Operator-pending
 			"i"	Insert
 			"c"	Cmd-line
+			"l"	langmap |language-mapping|
 			""	Normal, Visual and Operator-pending
 		When {mode} is omitted, the modes from "" are used.
 		The {name} can have special key names, like in the ":map"
@@ -1909,6 +2021,7 @@ prevnonblank({lnum})					*prevnonblank()*
 			let ind = indent(prevnonblank(v:lnum - 1))
 <		When {lnum} is invalid or there is no non-blank line at or
 		above it, zero is returned.
+		Also see |nextnonblank()|.
 
 							*remote_expr()* *E449*
 remote_expr({server}, {string} [, {idvar}])
@@ -1918,6 +2031,7 @@ remote_expr({server}, {string} [, {idvar}])
 		variable and a {serverid} for later use with
 		remote_read() is stored there.
 		See also |clientserver| |RemoteReply|.
+		This function is not available in the |sandbox|.
 		{only available when compiled with the |+clientserver| feature}
 		Note: Any errors will cause a local error message to be issued
 		and the result will be the empty string.
@@ -1933,6 +2047,7 @@ remote_foreground({server})				*remote_foreground()*
 <		Except that on Win32 systems the client does the work, to work
 		around the problem that the OS doesn't always allow the server
 		to bring itself to the foreground.
+		This function is not available in the |sandbox|.
 		{only in the Win32, Athena, Motif and GTK GUI versions and the
 		Win32 console version}
 
@@ -1943,7 +2058,9 @@ remote_peek({serverid} [, {retvar}])		*remote_peek()*
 		{retvar} if specified.  {retvar} must be a string with the
 		name of a variable.
 		Returns zero if none are available.
+		Returns -1 if something is wrong.
 		See also |clientserver|.
+		This function is not available in the |sandbox|.
 		{only available when compiled with the |+clientserver| feature}
 		Examples: >
 			:let repl = ""
@@ -1953,8 +2070,9 @@ remote_read({serverid})				*remote_read()*
 		Return the oldest available reply from {serverid} and consume
 		it.  It blocks until a reply is available.
 		See also |clientserver|.
+		This function is not available in the |sandbox|.
 		{only available when compiled with the |+clientserver| feature}
-		Examples: >
+		Example: >
 			:echo remote_read(id)
 <
 							*remote_send()* *E241*
@@ -1965,6 +2083,7 @@ remote_send({server}, {string} [, {idvar}])
 		variable and a {serverid} for later use with
 		remote_read() is stored there.
 		See also |clientserver| |RemoteReply|.
+		This function is not available in the |sandbox|.
 		{only available when compiled with the |+clientserver| feature}
 		Note: Any errors will be reported in the server and may mess
 		up the display.
@@ -1983,6 +2102,7 @@ rename({from}, {to})					*rename()*
 		should also work to move files across file systems.  The
 		result is a Number, which is 0 if the file was renamed
 		successfully, and non-zero when the renaming failed.
+		This function is not available in the |sandbox|.
 
 resolve({filename})					*resolve()*
 		On MS-Windows, when {filename} is a shortcut (a .lnk file),
@@ -2037,7 +2157,7 @@ searchpair({start}, {middle}, {end} [, {flags} [, {skip}]])
 		{middle} is not empty, it is found when searching from either
 		direction, but only when not in a nested start-end pair.  A
 		typical use is: >
-			searchpair("if", "else", "endif")
+			searchpair('\<if\>', '\<else\>', '\<endif\>')
 <		By leaving {middle} empty the "else" is skipped.
 
 		{flags} are used like with |search()|.  Additionally:
@@ -2126,13 +2246,49 @@ setbufvar({expr}, {varname}, {val})			*setbufvar()*
 		Examples: >
 			:call setbufvar(1, "&mod", 1)
 			:call setbufvar("todo", "myvar", "foobar")
-<
+<		This function is not available in the |sandbox|.
+
 setline({lnum}, {line})					*setline()*
 		Set line {lnum} of the current buffer to {line}.  If this
 		succeeds, 0 is returned.  If this fails (most likely because
 		{lnum} is invalid) 1 is returned.  Example: >
 			:call setline(5, strftime("%c"))
 <		Note: The '[ and '] marks are not set.
+
+							*setreg()*
+setreg({regname}, {value} [,{options}])
+		Set the register {regname} to {value}.
+		If {options} contains "a" or {regname} is upper case,
+		then the value is appended.
+		{options} can also contains a register type specification:
+		    "c" or "v"	      |characterwise| mode
+		    "l" or "V"	      |linewise| mode
+		    "b" or "<CTRL-V>" |blockwise-visual| mode
+		If a number immediately follows "b" or "<CTRL-V>" then this is
+		used as the width of the selection - if it is not specified
+		then the width of the block is set to the number of characters
+		in the longest line (counting a <TAB> as 1 character).
+
+		If {options} contains no register settings, then the default
+		is to use character mode unless {value} ends in a <NL>.
+		Setting the '=' register is not possible.
+		Returns zero for success, non-zero for failure.
+
+		Examples: >
+			:call setreg(v:register, @*)
+			:call setreg('*', @%, 'ac')
+			:call setreg('a', "1\n2\n3", 'b5')
+
+<		This example shows using the functions to save and restore a
+		register. >
+			:let var_a = getreg('a')
+			:let var_amode = getregtype('a')
+			    ....
+			:call setreg('a', var_a, var_amode)
+
+<		You can also change the type of a register by appending
+		nothing: >
+			:call setreg('a', '', 'al')
 
 setwinvar({nr}, {varname}, {val})			*setwinvar()*
 		Set option or local variable {varname} in window {nr} to
@@ -2144,7 +2300,8 @@ setwinvar({nr}, {varname}, {val})			*setwinvar()*
 		Examples: >
 			:call setwinvar(1, "&list", 0)
 			:call setwinvar(2, "myvar", "foobar")
-<
+<		This function is not available in the |sandbox|.
+
 strftime({format} [, {time}])				*strftime()*
 		The result is a String, which is a formatted date and time, as
 		specified by the {format} string.  The given {time} is used,
@@ -2175,7 +2332,12 @@ stridx({haystack}, {needle})				*stridx()*
 <
 							*strlen()*
 strlen({expr})	The result is a Number, which is the length of the String
-		{expr}.
+		{expr} in bytes.  If you want to count the number of
+		multi-byte characters use something like this: >
+
+			:let len = strlen(substitute(str, ".", "x", "g"))
+
+<		Composing characters are not counted.
 
 strpart({src}, {start}[, {len}])			*strpart()*
 		The result is a String, which is part of {src},
@@ -2211,11 +2373,12 @@ strtrans({expr})					*strtrans()*
 
 submatch({nr})						*submatch()*
 		Only for an expression in a |:substitute| command.  Returns
-		the {nr}'th submatch of the matched text  When {nr} is 0
+		the {nr}'th submatch of the matched text.  When {nr} is 0
 		the whole matched text is returned.
 		Example: >
 			:s/\d\+/\=submatch(0) + 1/
 <		This finds the first number in the line and adds one to it.
+		Line breaks are included as a newline character.
 
 substitute({expr}, {pat}, {sub}, {flags})		*substitute()*
 		The result is a String, which is a copy of {expr}, in which
@@ -2253,7 +2416,7 @@ synID({line}, {col}, {trans})				*synID()*
 		Warning: This function can be very slow.  Best speed is
 		obtained by going through the file in forward direction.
 
-		Example (echos the name of the syntax item under the cursor): >
+		Example (echoes the name of the syntax item under the cursor): >
 			:echo synIDattr(synID(line("."), col("."), 1), "name")
 <
 synIDattr({synID}, {what} [, {mode}])			*synIDattr()*
@@ -2267,21 +2430,21 @@ synIDattr({synID}, {what} [, {mode}])			*synIDattr()*
 		Use synIDtrans() to follow linked highlight groups.
 		{what}		result
 		"name"		the name of the syntax item
-		"fg"		foreground color (GUI: color name, cterm:
-				color number as a string, term: empty string)
+		"fg"		foreground color (GUI: color name used to set
+				the color, cterm: color number as a string,
+				term: empty string)
 		"bg"		background color (like "fg")
-		"fg#"		like "fg", but name in "#RRGGBB" form
-		"bg#"		like "bg", but name in "#RRGGBB" form
+		"fg#"		like "fg", but for the GUI and the GUI is
+				running the name in "#RRGGBB" form
+		"bg#"		like "fg#" for "bg"
 		"bold"		"1" if bold
 		"italic"	"1" if italic
 		"reverse"	"1" if reverse
 		"inverse"	"1" if inverse (= reverse)
 		"underline"	"1" if underlined
 
-		When the GUI is not running or the cterm mode is asked for,
-		"fg#" is equal to "fg" and "bg#" is equal to "bg".
-
-		Example (echos the color of the syntax item under the cursor): >
+		Example (echoes the color of the syntax item under the
+		cursor): >
 	:echo synIDattr(synIDtrans(synID(line("."), col("."), 1)), "fg")
 <
 synIDtrans({synID})					*synIDtrans()*
@@ -2295,8 +2458,11 @@ system({expr})	Get the output of the shell command {expr}.  Note: newlines
 		in {expr} may cause the command to fail.  The characters in
 		'shellquote' and 'shellxquote' may also cause trouble.
 		This is not to be used for interactive commands.
-		The result is a String.
-		To make the result more system-independent, the shell output
+		The result is a String.  Example: >
+
+			:let files = system("ls")
+
+<		To make the result more system-independent, the shell output
 		is filtered to replace <CR> with <NL> for Macintosh, and
 		<CR><NL> with <NL> for DOS-like systems.
 		The command executed is constructed using several options:
@@ -2320,6 +2486,8 @@ tempname()					*tempname()* *temp-file-name*
 		accessible by the current user) to avoid security problems
 		(e.g., a symlink attack or other people reading your file).
 		When Vim exits the directory and all files in it are deleted.
+		For MS-Windows forward slashes are used when the 'shellslash'
+		option is set or when 'shellcmdflag' starts with '-'.
 
 tolower({expr})						*tolower()*
 		The result is a copy of the String given, with all uppercase
@@ -2343,7 +2511,7 @@ virtcol({expr})						*virtcol()*
 		would be of unlimited width.  When there is a <Tab> at the
 		position, the returned Number will be the column at the end of
 		the <Tab>.  For example, for a <Tab> in column 1, with 'ts'
-		set to 8, it returns 8;
+		set to 8, it returns 8.
 		When Virtual editing is active in the current mode, a position
 		beyond the end of the line can be returned. |'virtualedit'|
 		The accepted positions are:
@@ -2360,7 +2528,7 @@ virtcol({expr})						*virtcol()*
   virtcol("'t")    with text "    there", with 't at 'h', returns 6
 <		The first column is 1.  0 is returned for an error.
 
-visualmode()						*visualmode()*
+visualmode([expr])						*visualmode()*
 		The result is a String, which describes the last Visual mode
 		used.  Initially it returns an empty string, but once Visual
 		mode has been used, it returns "v", "V", or "<CTRL-V>" (a
@@ -2371,6 +2539,11 @@ visualmode()						*visualmode()*
 <		This enters the same Visual mode as before.  It is also useful
 		in scripts if you wish to act differently depending on the
 		Visual mode that was used.
+
+		If an expression is supplied that results in a non-zero number
+		or a non-empty string, then the Visual mode will be cleared
+		and the old value is returned.  Note that " " and "0" are also
+		non-empty strings, thus cause the mode to be cleared.
 
 							*winbufnr()*
 winbufnr({nr})	The result is a Number, which is the number of the buffer
@@ -2415,16 +2588,20 @@ winwidth({nr})						*winwidth()*
 <
 
 							*feature-list*
-There are two types of features:
+There are three types of features:
 1.  Features that are only supported when they have been enabled when Vim
     was compiled |+feature-list|.  Example: >
 	:if has("cindent")
 2.  Features that are only supported when certain conditions have been met.
     Example: >
 	:if has("gui_running")
+3.  Included patches.  First check |v:version| for the version of Vim.
+    Then the "patch123" feature means that patch 123 has been included for
+    this version.
 
 all_builtin_terms	Compiled with all builtin terminals enabled.
 amiga			Amiga version of Vim.
+arabic			Compiled with Arabic support |Arabic|.
 arp			Compiled with ARP support (Amiga).
 autocmd			Compiled with autocommands support.
 balloon_eval		Compiled with |balloon-eval| support.
@@ -2448,6 +2625,7 @@ dialog_con		Compiled with console dialog support.
 dialog_gui		Compiled with GUI dialog support.
 diff			Compiled with |vimdiff| and 'diff' support.
 digraphs		Compiled with support for digraphs.
+dnd			Compiled with support for the "~ register |quote_~|.
 dos32			32 bits DOS (DJGPP) version of Vim.
 dos16			16 bits DOS version of Vim.
 ebcdic			Compiled on a machine with ebcdic character set.
@@ -2470,7 +2648,8 @@ gettext			Compiled with message translation |multi-lang|
 gui			Compiled with GUI enabled.
 gui_athena		Compiled with Athena GUI.
 gui_beos		Compiled with BeOs GUI.
-gui_gtk			Compiled with GTK+ GUI.
+gui_gtk			Compiled with GTK+ GUI (any version).
+gui_gtk2		Compiled with GTK+ 2 GUI (gui_gtk is also defined).
 gui_mac			Compiled with Macintosh GUI.
 gui_motif		Compiled with Motif GUI.
 gui_photon		Compiled with Photon GUI.
@@ -2478,7 +2657,7 @@ gui_win32		Compiled with MS Windows Win32 GUI.
 gui_win32s		idem, and Win32s system being used (Windows 3.1)
 gui_running		Vim is running in the GUI, or it will start soon.
 hangul_input		Compiled with Hangul input support. |hangul|
-iconv			Can use iconv() for coversion.
+iconv			Can use iconv() for conversion.
 insert_expand		Compiled with support for CTRL-X expansion commands in
 			Insert mode.
 jumplist		Compiled with |jumplist| support.
@@ -2492,6 +2671,7 @@ listcmds		Compiled with commands for the buffer list |:files|
 			and the argument list |arglist|.
 localmap		Compiled with local mappings and abbr. |:map-local|
 mac			Macintosh version of Vim.
+macunix			Macintosh version of Vim, using Unix files (OS-X).
 menu			Compiled with support for |:menu|.
 mksession		Compiled with support for |:mksession|.
 modify_fname		Compiled with file name modifiers. |filename-modifiers|
@@ -2505,6 +2685,7 @@ mouse_xterm		Compiled with support for xterm mouse.
 multi_byte		Compiled with support for editing Korean et al.
 multi_byte_ime		Compiled with support for IME input method.
 multi_lang		Compiled with support for multiple languages.
+netbeans_intg		Compiled with support for |netbeans|.
 ole			Compiled with OLE automation support for Win32.
 os2			OS/2 version of Vim.
 osfiletype		Compiled with support for osfiletypes |+osfiletype|
@@ -2513,7 +2694,7 @@ perl			Compiled with Perl interface.
 postscript		Compiled with PostScript file printing.
 printer			Compiled with |:hardcopy| support.
 python			Compiled with Python interface.
-qnx			QNX version of vim.
+qnx			QNX version of Vim.
 quickfix		Compiled with |quickfix| support.
 rightleft		Compiled with 'rightleft' support.
 ruby			Compiled with Ruby interface |ruby|.
@@ -2560,10 +2741,13 @@ windows			Compiled with support for more than one window.
 winaltkeys		Compiled with 'winaltkeys' option.
 win16			Win16 version of Vim (MS-Windows 3.1).
 win32			Win32 version of Vim (MS-Windows 95/98/ME/NT/2000/XP).
+win32unix		Win32 version of Vim, using Unix files (Cygwin)
 win95			Win32 version for MS-Windows 95/98/ME.
 writebackup		Compiled with 'writebackup' default on.
 xfontset		Compiled with X fontset support |xfontset|.
 xim			Compiled with X input method support |xim|.
+xsmp			Compiled with X session management support.
+xsmp_interact		Compiled with interactive X session management support.
 xterm_clipboard		Compiled with support for xterm clipboard.
 xterm_save		Compiled with support for saving and restoring the
 			xterm screen.
@@ -2594,7 +2778,8 @@ Don't forget that "^" will only match at the first character of the String and
 5. Defining functions					*user-functions*
 
 New functions can be defined.  These can be called just like builtin
-functions.
+functions.  The function executes a sequence of Ex commands.  Normal mode
+commands can be executed with the |:normal| command.
 
 The function name must start with an uppercase letter, to avoid confusion with
 builtin functions.  To prevent from using the same name in different scripts
@@ -2630,7 +2815,7 @@ instead of "s:" when the mapping is expanded outside of the script.
 			is set to the number of extra arguments (which can be
 			0).
 			When not using "...", the number of arguments in a
-			function call must be equal the number of named
+			function call must be equal to the number of named
 			arguments.  When using "...", the number of arguments
 			may be larger.
 			It is also possible to define a function without any
@@ -2642,6 +2827,7 @@ instead of "s:" when the mapping is expanded outside of the script.
 			When a function by this name already exists and [!] is
 			not used an error message is given.  When [!] is used,
 			an existing function is silently replaced.
+						*a:firstline* *a:lastline*
 			When the [range] argument is added, the function is
 			expected to take care of a range itself.  The range is
 			passed as "a:firstline" and "a:lastline".  If [range]
@@ -2668,6 +2854,14 @@ instead of "s:" when the mapping is expanded outside of the script.
 			the number 0 is returned.
 			Note that there is no check for unreachable lines,
 			thus there is no warning if commands follow ":return".
+
+			If the ":return" is used after a |:try| but before the
+			matching |:finally| (if present), the commands
+			following the ":finally" up to the matching |:endtry|
+			are executed first.  This process applies to all
+			nested ":try"s inside the function.  The function
+			returns at the outermost ":endtry".
+
 
 Inside a function variables can be used.  These are local variables, which
 will disappear when the function returns.  Global variables need to be
@@ -2792,7 +2986,7 @@ You can use multiple brace pairs: >
 	echo my_{adverb}_{adjective}_message
 ..or even nest them: >
 	echo my_{ad{end_of_word}}_message
-where "end_of_word" is either "verb" or "jective"
+where "end_of_word" is either "verb" or "jective".
 
 However, the expression inside the braces must evaluate to a valid single
 variable name. e.g. this is invalid: >
@@ -2805,8 +2999,8 @@ You can call and define functions by an evaluated name in a similar way.
 Example: >
 	:let func_end='whizz'
 	:call my_func_{func_end}(parameter)
-<
-This would call the function "my_func_whizz(parameter)"
+
+This would call the function "my_func_whizz(parameter)".
 
 ==============================================================================
 7. Commands						*expression-commands*
@@ -2814,7 +3008,7 @@ This would call the function "my_func_whizz(parameter)"
 :let {var-name} = {expr1}				*:let* *E18*
 			Set internal variable {var-name} to the result of the
 			expression {expr1}.  The variable will get the type
-			from the {expr}.  if {var-name} didn't exist yet, it
+			from the {expr}.  If {var-name} didn't exist yet, it
 			is created.
 
 :let ${env-name} = {expr1}			*:let-environment* *:let-$*
@@ -2864,7 +3058,7 @@ This would call the function "my_func_whizz(parameter)"
 			With [!] no error message is given for non-existing
 			variables.
 
-:if {expr1}					*:if* *:endif* *:en* *E171*
+:if {expr1}			*:if* *:endif* *:en* *E171* *E579* *E580*
 :en[dif]		Execute the commands until the next matching ":else"
 			or ":endif" if {expr1} evaluates to non-zero.
 
@@ -2892,16 +3086,17 @@ This would call the function "my_func_whizz(parameter)"
 			NOTE: The ":append" and ":insert" commands don't work
 			properly in between ":if" and ":endif".
 
-							*:else* *:el*
+						*:else* *:el* *E581* *E583*
 :el[se]			Execute the commands until the next matching ":else"
 			or ":endif" if they previously were not being
 			executed.
 
-							*:elseif* *:elsei*
+					*:elseif* *:elsei* *E582* *E584*
 :elsei[f] {expr1}	Short for ":else" ":if", with the addition that there
 			is no extra ":endif".
 
-:wh[ile] {expr1}		*:while* *:endwhile* *:wh* *:endw* *E170*
+:wh[ile] {expr1}			*:while* *:endwhile* *:wh* *:endw*
+							*E170* *E585* *E588*
 :endw[hile]		Repeat the commands between ":while" and ":endwhile",
 			as long as {expr1} evaluates to non-zero.
 			When an error is detected from a command inside the
@@ -2910,13 +3105,115 @@ This would call the function "my_func_whizz(parameter)"
 			NOTE: The ":append" and ":insert" commands don't work
 			properly inside a ":while" loop.
 
-							*:continue* *:con*
+						*:continue* *:con* *E586*
 :con[tinue]		When used inside a ":while", jumps back to the
-			":while".
+			":while".  If it is used after a |:try| inside the
+			":while" but before the matching |:finally| (if
+			present), the commands following the ":finally" up to
+			the matching |:endtry| are executed first.  This
+			process applies to all nested ":try"s inside the
+			":while".  The outermost ":endtry" then jumps back to
+			the ":while".
 
-							*:break* *:brea*
+						*:break* *:brea* *E587*
 :brea[k]		When used inside a ":while", skips to the command
-			after the matching ":endwhile".
+			after the matching ":endwhile".  If it is used after
+			a |:try| inside the ":while" but before the matching
+			|:finally| (if present), the commands following the
+			":finally" up to the matching |:endtry| are executed
+			first.  This process applies to all nested ":try"s
+			inside the ":while".  The outermost ":endtry" then
+			jumps to the command after the ":endwhile".
+
+:try				*:try* *:endt* *:endtry* *E600* *E601* *E602*
+:endt[ry]		Change the error handling for the commands between
+			":try" and ":endtry" including everything being
+			executed across ":source" commands, function calls,
+			or autocommand invocations.
+
+			When an error or interrupt is detected and there is
+			a |:finally| command following, execution continues
+			after the ":finally".  Otherwise, or when the
+			":endtry" is reached thereafter, the next
+			(dynamically) surrounding ":try" is checked for
+			a corresponding ":finally" etc.  Then the script
+			processing is terminated.  (Whether a function
+			definition has an "abort" argument does not matter.)
+			Example: >
+		:try | edit too much | finally | echo "cleanup" | endtry
+		:echo "impossible"	" not reached, script terminated above
+<
+			Moreover, an error or interrupt (dynamically) inside
+			":try" and ":endtry" is converted to an exception.  It
+			can be caught as if it were thrown by a |:throw|
+			command (see |:catch|).  In this case, the script
+			processing is not terminated.
+
+			The value "Vim:Interrupt" is used for an interrupt
+			exception.  An error in a Vim command is converted
+			to a value of the form "Vim({command}):{errmsg}",
+			other errors are converted to a value of the form
+			"Vim:{errmsg}".  {command} is the full command name,
+			and {errmsg} is the message that is displayed if the
+			error exception is not caught, always beginning with
+			the error number.
+			Examples: >
+		:try | sleep 100 | catch /^Vim:Interrupt$/ | endtry
+		:try | edit | catch /^Vim(edit):E\d\+/ | echo "error" | endtry
+<
+					*:cat* *:catch* *E603* *E604* *E605*
+:cat[ch] /{pattern}/	The following commands until the next ":catch",
+			|:finally|, or |:endtry| that belongs to the same
+			|:try| as the ":catch" are executed when an exception
+			matching {pattern} is being thrown and has not yet
+			been caught by a previous ":catch".  Otherwise, these
+			commands are skipped.
+			When {pattern} is omitted all errors are caught.
+			Examples: >
+		:catch /^Vim:Interrupt$/	" catch interrupts (CTRL-C)
+		:catch /^Vim\%((\a\+)\)\=:E/	" catch all Vim errors
+		:catch /^Vim\%((\a\+)\)\=:/	" catch errors and interrupts
+		:catch /^Vim(write):/		" catch all errors in :write
+		:catch /^Vim\%((\a\+)\)\=:E123/	" catch error E123
+		:catch /my-exception/		" catch user exception
+		:catch /.*/			" catch everything
+		:catch				" same as /.*/
+<
+			Another character can be used instead of / around the
+			{pattern}, so long as it does not have a special
+			meaning (e.g., '|' or '"') and doesn't occur inside
+			{pattern}.
+			NOTE: It is not reliable to ":catch" the TEXT of
+			an error message because it may vary in different
+			locales.
+
+					*:fina* *:finally* *E606* *E607*
+:fina[lly]		The following commands until the matching |:endtry|
+			are executed whenever the part between the matching
+			|:try| and the ":finally" is left:  either by falling
+			through to the ":finally" or by a |:continue|,
+			|:break|, |:finish|, or |:return|, or by an error or
+			interrupt or exception (see |:throw|).
+
+							*:th* *:throw* *E608*
+:th[row] {expr1}	The {expr1} is evaluated and thrown as an exception.
+			If the ":throw" is used after a |:try| but before the
+			first corresponding |:catch|, commands are skipped
+			until the first ":catch" matching {expr1} is reached.
+			If there is no such ":catch" or if the ":throw" is
+			used after a ":catch" but before the |:finally|, the
+			commands following the ":finally" (if present) up to
+			the matching |:endtry| are executed.  If the ":throw"
+			is after the ":finally", commands up to the ":endtry"
+			are skipped.  At the ":endtry", this process applies
+			again for the next dynamically surrounding ":try"
+			(which may be found in a calling function or sourcing
+			script), until a matching ":catch" has been found.
+			If the exception is not caught, the command processing
+			is terminated.
+			Example: >
+		:try | throw "oops" | catch /^oo/ | echo "caught" | endtry
+<
 
 							*:ec* *:echo*
 :ec[ho] {expr1} ..	Echoes each {expr1}, with a space in between and a
@@ -2979,7 +3276,9 @@ This would call the function "my_func_whizz(parameter)"
 			message in the |message-history|.  When used in a
 			script or function the line number will be added.
 			Spaces are placed between the arguments as with the
-			:echo command.
+			:echo command.  When used inside a try conditional,
+			the message is raised as an error exception instead
+			(see |try-echoerr|).
 			Example: >
 		:echoerr "This script just failed!"
 <			If you just want a highlighted message use |:echohl|.
@@ -2989,17 +3288,19 @@ This would call the function "my_func_whizz(parameter)"
 							*:exe* *:execute*
 :exe[cute] {expr1} ..	Executes the string that results from the evaluation
 			of {expr1} as an Ex command.  Multiple arguments are
-			concatenated, with a space in between.
+			concatenated, with a space in between.  {expr1} is
+			used as the processed command, command line editing
+			keys are not recognized.
 			Cannot be followed by a comment.
 			Examples: >
 		:execute "buffer " nextbuf
 		:execute "normal " count . "w"
 <
-			Execute can be used to append a next command to
-			commands that don't accept a '|'.  Example: >
+			":execute" can be used to append a command to commands
+			that don't accept a '|'.  Example: >
 		:execute '!ls' | echo "theend"
 
-<			Execute is also a nice way to avoid having to type
+<			":execute" is also a nice way to avoid having to type
 			control characters in a Vim script for a ":normal"
 			command: >
 		:execute "normal ixxx\<Esc>"
@@ -3024,7 +3325,1001 @@ This would call the function "my_func_whizz(parameter)"
 		:echo "foo" | "this is a comment
 
 ==============================================================================
-8. Examples						*eval-examples*
+8. Exception handling					*exception-handling*
+
+The Vim script language comprises an exception handling feature.  This section
+explains how it can be used in a Vim script.
+
+Exceptions may be raised by Vim on an error or on interrupt, see
+|catch-errors| and |catch-interrupt|.  You can also explicitly throw an
+exception by using the ":throw" command, see |throw-catch|.
+
+
+TRY CONDITIONALS					*try-conditionals*
+
+Exceptions can be caught or can cause cleanup code to be executed.  You can
+use a try conditional to specify catch clauses (that catch exceptions) and/or
+a finally clause (to be executed for cleanup).
+    A try conditional begins with a |:try| command and ends at the matching
+|:endtry| command.  In between, you can use a |:catch| command to start
+a catch clause, or a |:finally| command to start a finally clause.  There may
+be none or multiple catch clauses, but there is at most one finally clause,
+which must not be followed by any catch clauses.  The lines before the catch
+clauses and the finally clause is called a try block. >
+
+     :try
+     :  ...
+     :  ...				TRY BLOCK
+     :  ...
+     :catch /{pattern}/
+     :  ...
+     :  ...				CATCH CLAUSE
+     :  ...
+     :catch /{pattern}/
+     :  ...
+     :  ...				CATCH CLAUSE
+     :  ...
+     :finally
+     :  ...
+     :  ...				FINALLY CLAUSE
+     :  ...
+     :endtry
+
+The try conditional allows to watch code for exceptions and to take the
+appropriate actions.  Exceptions from the try block may be caught.  Exceptions
+from the try block and also the catch clauses may cause cleanup actions.
+   When no exception is thrown during execution of the try block, the control
+is transferred to the finally clause, if present.  After its execution, the
+script continues with the line following the ":endtry".
+   When an exception occurs during execution of the try block, the remaining
+lines in the try block are skipped.  The exception is matched against the
+patterns specified as arguments to the ":catch" commands.  The catch clause
+after the first matching ":catch" is taken, other catch clauses are not
+executed.  The catch clause ends when the next ":catch", ":finally", or
+":endtry" command is reached - whatever is first.  Then, the finally clause
+(if present) is executed.  When the ":endtry" is reached, the script execution
+continues in the following line as usual.
+   When an exception that does not match any of the patterns specified by the
+":catch" commands is thrown in the try block, the exception is not caught by
+that try conditional and none of the catch clauses is executed.  Only the
+finally clause, if present, is taken.  The exception pends during execution of
+the finally clause.  It is resumed at the ":endtry", so that commands after
+the ":endtry" are not executed and the exception might be caught elsewhere,
+see |try-nesting|.
+   When during execution of a catch clause another exception is thrown, the
+remaining lines in that catch clause are not executed.  The new exception is
+not matched against the patterns in any of the ":catch" commands of the same
+try conditional and none of its catch clauses is taken.  If there is, however,
+a finally clause, it is executed, and the exception pends during its
+execution.  The commands following the ":endtry" are not executed.  The new
+exception might, however, be caught elsewhere, see |try-nesting|.
+   When during execution of the finally clause (if present) an exception is
+thrown, the remaining lines in the finally clause are skipped.  If the finally
+clause has been taken because of an exception from the try block or one of the
+catch clauses, the original (pending) exception is discarded.  The commands
+following the ":endtry" are not executed, and the exception from the finally
+clause is propagated and can be caught elsewhere, see |try-nesting|.
+
+The finally clause is also executed, when a ":break" or ":continue" for
+a ":while" loop enclosing the complete try conditional is executed from the
+try block or a catch clause.  Or when a ":return" or ":finish" is executed
+from the try block or a catch clause of a try conditional in a function or
+sourced script, respectively.  The ":break", ":continue", ":return", or
+":finish" pends during execution of the finally clause and is resumed when the
+":endtry" is reached.  It is, however, discarded when an exception is thrown
+from the finally clause.
+   When a ":break" or ":continue" for a ":while" loop enclosing the complete
+try conditional or when a ":return" or ":finish" is encountered in the finally
+clause, the rest of the finally clause is skipped, and the ":break",
+":continue", ":return" or ":finish" is executed as usual.  If the finally
+clause has been taken because of an exception or an earlier ":break",
+":continue", ":return", or ":finish" from the try block or a catch clause,
+this pending exception or command is discarded.
+
+For examples see |throw-catch| and |try-finally|.
+
+
+NESTING	OF TRY CONDITIONALS				*try-nesting*
+
+Try conditionals can be nested arbitrarily.  That is, a complete try
+conditional can be put into the try block, a catch clause, or the finally
+clause of another try conditional.  If the inner try conditional does not
+catch an exception thrown in its try block or throws a new exception from one
+of its catch clauses or its finally clause, the outer try conditional is
+checked according to the rules above.  If the inner try conditional is in the
+try block of the outer try conditional, its catch clauses are checked, but
+otherwise only the finally clause is executed.  It does not matter for
+nesting, whether the inner try conditional is directly contained in the outer
+one, or whether the outer one sources a script or calls a function containing
+the inner try conditional.
+
+When none of the active try conditionals catches an exception, just their
+finally clauses are executed.  Thereafter, the script processing terminates.
+An error message is displayed in case of an uncaught exception explicitly
+thrown by a ":throw" command.  For uncaught error and interrupt exceptions
+implicitly raised by Vim, the error message(s) or interrupt message are shown
+as usual.
+
+For examples see |throw-catch|.
+
+
+EXAMINIG EXCEPTION HANDLING CODE			*except-examine*
+
+Exception handling code can get tricky.  If you are in doubt what happens, set
+'verbose' to 13 or use the ":13verbose" command modifier when sourcing your
+script file.  Then you see when an exception is thrown, discarded, caught, or
+finished.  When using a verbosity level of at least 14, things pending in
+a finally clause are also shown.  This information is also given in debug mode
+(see |debug-scripts|).
+
+
+THROWING AND CATCHING EXCEPTIONS			*throw-catch*
+
+You can throw any number or string as an exception.  Use the |:throw| command
+and pass the value to be thrown as argument: >
+	:throw 4711
+	:throw "string"
+<							*throw-expression*
+You can also specify an expression argument.  The expression is then evaluated
+first, and the result is thrown: >
+	:throw 4705 + strlen("string")
+	:throw strpart("strings", 0, 6)
+
+An exception might be thrown during evaluation of the argument of the ":throw"
+command.  Unless it is caught there, the expression evaluation is abandoned.
+The ":throw" command then does not throw a new exception.
+   Example: >
+
+	:function! Foo(arg)
+	:  try
+	:    throw a:arg
+	:  catch /foo/
+	:  endtry
+	:  return 1
+	:endfunction
+	:
+	:function! Bar()
+	:  echo "in Bar"
+	:  return 4710
+	:endfunction
+	:
+	:throw Foo("arrgh") + Bar()
+
+This throws "arrgh", and "in Bar" is not displayed since Bar() is not
+executed. >
+	:throw Foo("foo") + Bar()
+however displays "in Bar" and throws 4711.
+
+Any other command that takes an expression as argument might also be
+abandoned by an (uncaught) exception during the expression evaluation.  The
+exception is then propagated to the caller of the command.
+   Example: >
+
+	:if Foo("arrgh")
+	:  echo "then"
+	:else
+	:  echo "else"
+	:endif
+
+Here neither of "then" or "else" is displayed.
+
+							*catch-order*
+Exceptions can be caught by a try conditional with one or more |:catch|
+commands, see |try-conditionals|.   The values to be caught by each ":catch"
+command can be specified as a pattern argument.  The subsequent catch clause
+gets executed when a matching exception is caught.
+   Example: >
+
+	:function! Foo(value)
+	:  try
+	:    throw a:value
+	:  catch /^\d\+$/
+	:    echo "Number thrown"
+	:  catch /.*/
+	:    echo "String thrown"
+	:  endtry
+	:endfunction
+	:
+	:call Foo(0x1267)
+	:call Foo('string')
+
+The first call to Foo() displays "Number thrown", the second "String thrown".
+An exception is matched against the ":catch" commands in the order they are
+specified.  Only the first match counts.  So you should place the more
+specific ":catch" first.  The following order does not make sense: >
+
+	:  catch /.*/
+	:    echo "String thrown"
+	:  catch /^\d\+$/
+	:    echo "Number thrown"
+
+The first ":catch" here matches always, so that the second catch clause is
+never taken.
+
+							*throw-variables*
+If you catch an exception by a general pattern, you may access the exact value
+in the variable |v:exception|: >
+
+	:  catch /^\d\+$/
+	:    echo "Number thrown.  Value is" v:exception
+
+You may also be interested where an exception was thrown.  This is stored in
+|v:throwpoint|.  Note that "v:exception" and "v:throwpoint" are valid for the
+exception most recently caught as long it is not finished.
+   Example: >
+
+	:function! Caught()
+	:  if v:exception != ""
+	:    echo 'Caught "' . v:exception . '" in ' . v:throwpoint
+	:  else
+	:    echo 'Nothing caught'
+	:  endif
+	:endfunction
+	:
+	:function! Foo()
+	:  try
+	:    try
+	:      try
+	:	 throw 4711
+	:      finally
+	:	 call Caught()
+	:      endtry
+	:    catch /.*/
+	:      call Caught()
+	:      throw "oops"
+	:    endtry
+	:  catch /.*/
+	:    call Caught()
+	:  finally
+	:    call Caught()
+	:  endtry
+	:endfunction
+	:
+	:call Foo()
+
+This displays >
+
+	Nothing caught
+	Caught "4711" in function Foo, line 4
+	Caught "oops" in function Foo, line 10
+	Nothing caught
+
+A practical example:  The following command ":LineNumber" displays the line
+number in the script or function where it has been used: >
+
+	:function! LineNumber()
+	:    return substitute(v:throwpoint, '.*\D\(\d\+\).*', '\1', "")
+	:endfunction
+	:command! LineNumber try | throw "" | catch | echo LineNumber() | endtry
+<
+							*try-nested*
+An exception that is not caught by a try conditional can be caught by
+a surrounding try conditional: >
+
+	:try
+	:  try
+	:    throw "foo"
+	:  catch /foobar/
+	:    echo "foobar"
+	:  finally
+	:    echo "inner finally"
+	:  endtry
+	:catch /foo/
+	:  echo "foo"
+	:endtry
+
+The inner try conditional does not catch the exception, just its finally
+clause is executed.  The exception is then caught by the outer try
+conditional.  The example displays "inner finally" and then "foo".
+
+							*throw-from-catch*
+You can catch an exception and throw a new one to be caught elsewhere from the
+catch clause: >
+
+	:function! Foo()
+	:  throw "foo"
+	:endfunction
+	:
+	:function! Bar()
+	:  try
+	:    call Foo()
+	:  catch /foo/
+	:    echo "Caught foo, throw bar"
+	:    throw "bar"
+	:  endtry
+	:endfunction
+	:
+	:try
+	:  call Bar()
+	:catch /.*/
+	:  echo "Caught" v:exception
+	:endtry
+
+This displays "Caught foo, throw bar" and then "Caught bar".
+
+							*rethrow*
+There is no real rethrow in the Vim script language, but you may throw
+"v:exception" instead: >
+
+	:function! Bar()
+	:  try
+	:    call Foo()
+	:  catch /.*/
+	:    echo "Rethrow" v:exception
+	:    throw v:exception
+	:  endtry
+	:endfunction
+<							*try-echoerr*
+Note that this method cannot be used to "rethrow" Vim error or interrupt
+exceptions, because it is not possible to fake Vim internal exceptions.
+Trying so causes an error exception.  You should throw your own exception
+denoting the situation.  If you want to cause a Vim error exception containing
+the original error exception value, you can use the |:echoerr| command: >
+
+	:try
+	:  try
+	:    asdf
+	:  catch /.*/
+	:    echoerr v:exception
+	:  endtry
+	:catch /.*/
+	:  echo v:exception
+	:endtry
+
+This code displays >
+
+	Vim(echoerr):Vim:E492: Not an editor command:   asdf
+
+
+CLEANUP CODE						*try-finally*
+
+Scripts often change global settings and restore them at their end.  If the
+user however interrupts the script by pressing CTRL-C, the settings remain in
+an inconsistent state.  The same may happen to you in the development phase of
+a script when an error occurs or you explicitly throw an exception without
+catching it.  You can solve these problems by using a try conditional with
+a finally clause for restoring the settings.  Its execution is guaranteed on
+normal control flow, on error, on an explicit ":throw", and on interrupt.
+(Note that errors and interrupts from inside the try conditional are converted
+to exceptions.  When not caught, they terminate the script after the finally
+clause has been executed.)
+Example: >
+
+	:try
+	:  let s:saved_ts = &ts
+	:  set ts=17
+	:
+	:  " Do the hard work here.
+	:
+	:finally
+	:  let &ts = s:saved_ts
+	:  unlet s:saved_ts
+	:endtry
+
+This method should be used locally whenever a function or part of a script
+changes global settings which need to be restored on failure or normal exit of
+that function or script part.
+
+							*break-finally*
+Cleanup code works also when the try block or a catch clause is left by
+a ":continue", ":break", ":return", or ":finish".
+   Example: >
+
+	:let first = 1
+	:while 1
+	:  try
+	:    if first
+	:      echo "first"
+	:      let first = 0
+	:      continue
+	:    else
+	:      throw "second"
+	:    endif
+	:  catch /.*/
+	:    echo v:exception
+	:    break
+	:  finally
+	:    echo "cleanup"
+	:  endtry
+	:  echo "still in while"
+	:endwhile
+	:echo "end"
+
+This displays "first", "cleanup", "second", "cleanup", and "end". >
+
+	:function! Foo()
+	:  try
+	:    return 4711
+	:  finally
+	:    echo "cleanup\n"
+	:  endtry
+	:  echo "Foo still active"
+	:endfunction
+	:
+	:echo Foo() "returned by Foo"
+
+This displays "cleanup" and "4711 returned by Foo".  You don't need to add an
+extra ":return" in the finally clause.  (Above all, this would override the
+return value.)
+
+							*except-from-finally*
+Using either of ":continue", ":break", ":return", ":finish", or ":throw" in
+a finally clause is possible, but not recommended since it abandons the
+cleanup actions for the try conditional.  But, of course, interrupt and error
+exceptions might get raised from a finally clause.
+   Example where an error in the finally clause stops an interrupt from
+working correctly: >
+
+	:try
+	:  try
+	:    echo "Press CTRL-C for interrupt"
+	:    while 1
+	:    endwhile
+	:  finally
+	:    unlet novar
+	:  endtry
+	:catch /novar/
+	:endtry
+	:echo "Script still running"
+	:sleep 1
+
+If you need to put commands that could fail into a finally clause, you should
+think about catching or ignoring the errors in these commands, see
+|catch-errors| and |ignore-errors|.
+
+
+CATCHING ERRORS						*catch-errors*
+
+If you want to catch specific errors, you just have to put the code to be
+watched in a try block and add a catch clause for the error message.  The
+presence of the try conditional causes all errors to be converted to an
+exception.  No message is displayed and |v:errmsg| is not set then.  To find
+the right pattern for the ":catch" command, you have to know how the format of
+the error exception is.
+   Error exceptions have the following format: >
+
+	Vim({cmdname}):{errmsg}
+or >
+	Vim:{errmsg}
+
+{cmdname} is the name of the command that failed; the second form is used when
+the command name is not known.  {errmsg} is the error message usually produced
+when the error occurs outside try conditionals.  It always begins with
+a capital "E", followed by a two or three-digit error number, a colon, and
+a space.
+
+Examples:
+
+The command >
+	:unlet novar
+normally produces the error message >
+	E108: No such variable: "novar"
+which is converted inside try conditionals to an exception >
+	Vim(unlet):E108: No such variable: "novar"
+
+The command >
+	:dwim
+normally produces the error message >
+	E492: Not an editor command: dwim
+which is converted inside try conditionals to an exception >
+	Vim:E492: Not an editor command: dwim
+
+You can catch all ":unlet" errors by a >
+	:catch /^Vim(unlet):/
+or all errors for misspelled command names by a >
+	:catch /^Vim:E492:/
+
+Some error messages may be produced by different commands: >
+	:function nofunc
+and >
+	:delfunction nofunc
+both produce the error message >
+	E128: Function name must start with a capital: nofunc
+which is converted inside try conditionals to an exception >
+	Vim(function):E128: Function name must start with a capital: nofunc
+or >
+	Vim(delfunction):E128: Function name must start with a capital: nofunc
+respectively.  You can catch the error by its number independently on the
+command that caused it if you use the following pattern: >
+	:catch /^Vim(\a\+):E128:/
+
+Some commands like >
+	:let x = novar
+produce multiple error messages, here: >
+	E121: Undefined variable: novar
+	E15: Invalid expression:  novar
+Only the first is used for the exception value, since it is the most specific
+one (see |except-several-errors|).  So you can catch it by >
+	:catch /^Vim(\a\+):E121:/
+
+You can catch all errors related to the name "nofunc" by >
+	:catch /\<nofunc\>/
+
+You can catch all Vim errors in the ":write" and ":read" commands by >
+	:catch /^Vim(\(write\|read\)):E\d\+:/
+
+You can catch all Vim errors by the pattern >
+	:catch /^Vim\((\a\+)\)\=:E\d\+:/
+<
+							*catch-text*
+NOTE: You should never catch the error message text itself: >
+	:catch /No such variable/
+only works in the english locale, but not when the user has selected
+a different language by the |:language| command.  It is however helpful to
+cite the message text in a comment: >
+	:catch /^Vim(\a\+):E108:/   " No such variable
+
+
+IGNORING ERRORS						*ignore-errors*
+
+You can ignore errors in a specific Vim command by catching them locally: >
+
+	:try
+	:  write
+	:catch
+	:endtry
+
+But you are strongly recommended NOT to use this simple form, since it could
+catch more than you want.  With the ":write" command, some autocommands could
+be executed and cause errors not related to writing, for instance: >
+
+	:au BufWritePre * unlet novar
+
+There could even be such errors you are not responsible for as a script
+writer: a user of your script might have defined such autocommands.  You would
+then hide the error from the user.
+   It is much better to use >
+
+	:try
+	:  write
+	:catch /^Vim(write):/
+	:endtry
+
+which only catches real write errors.  So catch only what you'd like to ignore
+intentionally.
+
+For a single command that does not cause execution of autocommands, you could
+even suppress the conversion of errors to exceptions by the ":silent!"
+command: >
+	:silent! nunmap k
+This works also when a try conditional is active.
+
+
+CATCHING INTERRUPTS					*catch-interrupt*
+
+When there are active try conditionals, an interrupt (CTRL-C) is converted to
+the exception "Vim:Interrupt".  You can catch it like every exception.  The
+script is not terminated, then.
+   Example: >
+
+	:function! TASK1()
+	:  sleep 10
+	:endfunction
+
+	:function! TASK2()
+	:  sleep 20
+	:endfunction
+
+	:while 1
+	:  let command = input("Type a command: ")
+	:  try
+	:    if command == ""
+	:      continue
+	:    elseif command == "END"
+	:      break
+	:    elseif command == "TASK1"
+	:      call TASK1()
+	:    elseif command == "TASK2"
+	:      call TASK2()
+	:    else
+	:      echo "\nIllegal command:" command
+	:      continue
+	:    endif
+	:  catch /^Vim:Interrupt$/
+	:    echo "\nCommand interrupted"
+	:    " Caught the interrupt.  Continue with next prompt.
+	:  endtry
+	:endwhile
+
+You can interrupt a task here by pressing CTRL-C; the script then asks for
+a new command.  If you press CTRL-C at the prompt, the script is terminated.
+
+For testing what happens when CTRL-C would be pressed on a specific line in
+your script, use the debug mode and execute the |>quit| or |>interrupt|
+command on that line.  See |debug-scripts|.
+
+
+CATCHING ALL						*catch-all*
+
+The commands >
+
+	:catch /.*/
+	:catch //
+	:catch
+
+catch everything, error exceptions, interrupt exceptions and exceptions
+explicitly thrown by the |:throw| command.  This is useful at the top level of
+a script in order to catch unexpected things.
+   Example: >
+
+	:try
+	:
+	:  " do the hard work here
+	:
+	:catch /MyException/
+	:
+	:  " handle known problem
+	:
+	:catch /^Vim:Interrupt$/
+	:    echo "Script interrupted"
+	:catch /.*/
+	:  echo "Internal error (" . v:exception . ")"
+	:  echo " - occurred at " . v:throwpoint
+	:endtry
+	:" end of script
+
+Note: Catching all might catch more things than you want.  Thus, you are
+strongly encouraged to catch only for problems that you can really handle by
+specifying a pattern argument to the ":catch".
+   Example: Catching all could make it nearly impossible to interrupt a script
+by pressing CTRL-C: >
+
+	:while 1
+	:  try
+	:    sleep 1
+	:  catch
+	:  endtry
+	:endwhile
+
+
+EXCEPTIONS AND AUTOCOMMANDS				*except-autocmd*
+
+Exceptions may be used during execution of autocommands.  Example: >
+
+	:autocmd User x try
+	:autocmd User x   throw "Oops!"
+	:autocmd User x catch
+	:autocmd User x   echo v:exception
+	:autocmd User x endtry
+	:autocmd User x throw "Arrgh!"
+	:autocmd User x echo "Should not be displayed"
+	:
+	:try
+	:  doautocmd User x
+	:catch
+	:  echo v:exception
+	:endtry
+
+This displays "Oops!" and "Arrgh!".
+
+							*except-autocmd-Pre*
+For some commands, autocommands get executed before the main action of the
+command takes place.  If an exception is thrown and not caught in the sequence
+of autocommands, the sequence and the command that caused its execution are
+abandoned and the exception is propagated to the caller of the command.
+   Example: >
+
+	:autocmd BufWritePre * throw "FAIL"
+	:autocmd BufWritePre * echo "Should not be displayed"
+	:
+	:try
+	:  write
+	:catch
+	:  echo "Caught:" v:exception "from" v:throwpoint
+	:endtry
+
+Here, the ":write" command does not write the file currently being edited (as
+you can see by checking 'modified'), since the exception from the BufWritePre
+autocommand abandons the ":write".  The exception is then caught and the
+script displays: >
+
+	Caught: FAIL from BufWrite Auto commands for "*"
+<
+							*except-autocmd-Post*
+For some commands, autocommands get executed after the main action of the
+command has taken place.  If this main action fails and the command is inside
+an active try conditional, the autocommands are skipped and an error exception
+is thrown that can be caught by the caller of the command.
+   Example: >
+
+	:autocmd BufWritePost * echo "File successfully written!"
+	:
+	:try
+	:  write /i/m/p/o/s/s/i/b/l/e
+	:catch
+	:  echo v:exception
+	:endtry
+
+This just displays: >
+
+	Vim(write):E212: Can't open file for writing (/i/m/p/o/s/s/i/b/l/e)
+
+If you really need to execute the autocommands even when the main action
+fails, trigger the event from the catch clause.
+   Example: >
+
+	:autocmd BufWritePre  * set noreadonly
+	:autocmd BufWritePost * set readonly
+	:
+	:try
+	:  write /i/m/p/o/s/s/i/b/l/e
+	:catch
+	:  doautocmd BufWritePost /i/m/p/o/s/s/i/b/l/e
+	:endtry
+<
+You can also use ":silent!": >
+
+	:let x = "ok"
+	:let v:errmsg = ""
+	:autocmd BufWritePost * if v:errmsg != ""
+	:autocmd BufWritePost *   let x = "after fail"
+	:autocmd BufWritePost * endif
+	:try
+	:  silent! write /i/m/p/o/s/s/i/b/l/e
+	:catch
+	:endtry
+	:echo x
+
+This displays "after fail".
+
+If the main action of the command does not fail, exceptions from the
+autocommands will be catchable by the caller of the command:  >
+
+	:autocmd BufWritePost * throw ":-("
+	:autocmd BufWritePost * echo "Should not be displayed"
+	:
+	:try
+	:  write
+	:catch
+	:  echo v:exception
+	:endtry
+<
+							*except-autocmd-Cmd*
+For some commands, the normal action can be replaced by a sequence of
+autocommands.  Exceptions from that sequence will be catchable by the caller
+of the command.
+   Example:  For the ":write" command, the caller cannot know whether the file
+had actually been written when the exception occurred.  You need to tell it in
+some way. >
+
+	:if !exists("cnt")
+	:  let cnt = 0
+	:
+	:  autocmd BufWriteCmd * if &modified
+	:  autocmd BufWriteCmd *   let cnt = cnt + 1
+	:  autocmd BufWriteCmd *   if cnt % 3 == 2
+	:  autocmd BufWriteCmd *     throw "BufWriteCmdError"
+	:  autocmd BufWriteCmd *   endif
+	:  autocmd BufWriteCmd *   write | set nomodified
+	:  autocmd BufWriteCmd *   if cnt % 3 == 0
+	:  autocmd BufWriteCmd *     throw "BufWriteCmdError"
+	:  autocmd BufWriteCmd *   endif
+	:  autocmd BufWriteCmd *   echo "File successfully written!"
+	:  autocmd BufWriteCmd * endif
+	:endif
+	:
+	:try
+	:	write
+	:catch /^BufWriteCmdError$/
+	:  if &modified
+	:    echo "Error on writing (file contents not changed)"
+	:  else
+	:    echo "Error after writing"
+	:  endif
+	:catch /^Vim(write):/
+	:    echo "Error on writing"
+	:endtry
+
+When this script is sourced several times after making changes, it displays
+first >
+	File successfully written!
+then >
+	Error on writing (file contents not changed)
+then >
+	Error after writing
+etc.
+
+							*except-autocmd-ill*
+You cannot spread a try conditional over autocommands for different events.
+The following code is ill-formed: >
+
+	:autocmd BufWritePre  * try
+	:
+	:autocmd BufWritePost * catch
+	:autocmd BufWritePost *   echo v:exception
+	:autocmd BufWritePost * endtry
+	:
+	:write
+
+
+EXCEPTION HIERARCHIES AND PARAMETERIZED EXCEPTIONS	*except-hier-param*
+
+Some programming languages allow to use hierarchies of exception classes or to
+pass additional information with the object of an exception class.  You can do
+similar things in Vim.
+   In order to throw an exception from a hierarchy, just throw the complete
+class name with the components separated by a colon, for instance throw the
+string "EXCEPT:MATHERR:OVERFLOW" for an overflow in a mathematical library.
+   When you want to pass additional information with your exception class, add
+it in parentheses, for instance throw the string "EXCEPT:IO:WRITEERR(myfile)"
+for an error when writing "myfile".
+   With the appropriate patterns in the ":catch" command, you can catch for
+base classes or derived classes of your hierarchy.  Additional information in
+parentheses can be cut out from |v:exception| with the ":substitute" command.
+   Example: >
+
+	:function! CheckRange(a, func)
+	:  if a:a < 0
+	:    throw "EXCEPT:MATHERR:RANGE(" . a:func . ")"
+	:  endif
+	:endfunction
+	:
+	:function! Add(a, b)
+	:  call CheckRange(a:a, "Add")
+	:  call CheckRange(a:b, "Add")
+	:  let c = a:a + a:b
+	:  if c < 0
+	:    throw "EXCEPT:MATHERR:OVERFLOW"
+	:  endif
+	:  return c
+	:endfunction
+	:
+	:function! Div(a, b)
+	:  call CheckRange(a:a, "Div")
+	:  call CheckRange(a:b, "Div")
+	:  if (a:b == 0)
+	:    throw "EXCEPT:MATHERR:ZERODIV"
+	:  endif
+	:  return a:a / a:b
+	:endfunction
+	:
+	:function! Write(file)
+	:  try
+	:    execute "write" a:file
+	:  catch /^Vim(write):/
+	:    throw "EXCEPT:IO(" . getcwd() . ", " . a:file . "):WRITEERR"
+	:  endtry
+	:endfunction
+	:
+	:try
+	:
+	:  " something with arithmetics and I/O
+	:
+	:catch /^EXCEPT:MATHERR:RANGE/
+	:  let function = substitute(v:exception, '.*(\(\a\+\)).*', '\1', "")
+	:  echo "Range error in" function
+	:
+	:catch /^EXCEPT:MATHERR/	" catches OVERFLOW and ZERODIV
+	:  echo "Math error"
+	:
+	:catch /^EXCEPT:IO/
+	:  let dir = substitute(v:exception, '.*(\(.\+\),\s*.\+).*', '\1', "")
+	:  let file = substitute(v:exception, '.*(.\+,\s*\(.\+\)).*', '\1', "")
+	:  if file !~ '^/'
+	:    let file = dir . "/" . file
+	:  endif
+	:  echo 'I/O error for "' . file . '"'
+	:
+	:catch /^EXCEPT/
+	:  echo "Unspecified error"
+	:
+	:endtry
+
+The exceptions raised by Vim itself (on error or when pressing CTRL-C) use
+a flat hierarchy:  they are all in the "Vim" class.  You cannot throw yourself
+exceptions with the "Vim" prefix; they are reserved for Vim.
+   Vim error exceptions are parameterized with the name of the command that
+failed, if known.  See |catch-errors|.
+
+
+PECULARITIES
+							*except-compat*
+The exception handling concept requires that the command sequence causing the
+exception is aborted immediately and control is transferred to finally clauses
+and/or a catch clause.
+
+In the Vim script language there are cases where scripts and functions
+continue after an error: in functions without the "abort" flag or in a command
+after ":silent!", control flow goes to the following line, and outside
+functions, control flow goes to the line following the outermost ":endwhile"
+or ":endif".  On the other hand, errors should be catchable as exceptions
+(thus, requiring the immediate abortion).
+
+This problem has been solved by converting errors to exceptions and using
+immediate abortion (if not suppressed by ":silent!") only when a try
+conditional is active.  This is no restriction since an (error) exception can
+be caught only from an active try conditional.  If you want an immediate
+termination without catching the error, just use a try conditional without
+catch clause.  (You can cause cleanup code being executed before termination
+by specifying a finally clause.)
+
+When no try conditional is active, the usual abortion and continuation
+behavior is used instead of immediate abortion.  This ensures compatibility of
+scripts written for Vim 6.1 and earlier.
+
+However, when sourcing an existing script that does not use exception handling
+commands (or when calling one of its functions) from inside an active try
+conditional of a new script, you might change the control flow of the existing
+script on error.  You get the immediate abortion on error and can catch the
+error in the new script.  If however the sourced script suppresses error
+messages by using the ":silent!" command (checking for errors by testing
+|v:errmsg| if appropriate), its execution path is not changed.  The error is
+not converted to an exception.  (See |:silent|.)  So the only remaining cause
+where this happens is for scripts that don't care about errors and produce
+error messages.  You probably won't want to use such code from your new
+scripts.
+
+							*except-syntax-err*
+Syntax errors in the exception handling commands are never caught by any of
+the ":catch" commands of the try conditional they belong to.  Its finally
+clauses, however, is executed.
+   Example: >
+
+	:try
+	:  try
+	:    throw 4711
+	:  catch /\(/
+	:    echo "in catch with syntax error"
+	:  catch
+	:    echo "inner catch-all"
+	:  finally
+	:    echo "inner finally"
+	:  endtry
+	:catch
+	:  echo 'outer catch-all caught "' . v:exception . '"'
+	:  finally
+	:    echo "outer finally"
+	:endtry
+
+This displays: >
+    inner finally
+    outer catch-all caught "Vim(catch):E54: Unmatched \("
+    outer finally
+The original exception is discarded and an error exception is raised, instead.
+
+							*except-single-line*
+The ":try", ":catch", ":finally", and ":endtry" commands can be put on
+a single line, but then syntax errors may make it difficult to recognize the
+"catch" line, thus you better avoid this.
+   Example: >
+	:try | unlet! foo # | catch | endtry
+raises an error exception for the trailing characters after the ":unlet!"
+argument, but does not see the ":catch" and ":endtry" commands, so that the
+error exception is discarded and the "E488: Trailing characters" message gets
+displayed.
+
+							*except-several-errors*
+When several errors appear in a single command, the first error message is
+usually the most specific one and therefor converted to the error exception.
+   Example: >
+	echo novar
+causes >
+	E121: Undefined variable: novar
+	E15: Invalid expression: novar
+The value of the error exception inside try conditionals is: >
+	Vim(echo):E121: Undefined variable: novar
+<							*except-syntax-error*
+But when a syntax error is detected after a normal error in the same command,
+the syntax error is used for the exception being thrown.
+   Example: >
+	unlet novar #
+causes >
+	E108: No such variable: "novar"
+	E488: Trailing characters
+The value of the error exception inside try conditionals is: >
+	Vim(unlet):E488: Trailing characters
+This is done because the syntax error might change the execution path in a way
+not intended by the user.  Example: >
+	try
+	    try | unlet novar # | catch | echo v:exception | endtry
+	catch /.*/
+	    echo "outer catch:" v:exception
+	endtry
+This displays "outer catch: Vim(unlet):E488: Trailing characters", and then
+a "E600: Missing :endtry" error message is given, see |except-single-line|.
+
+==============================================================================
+9. Examples						*eval-examples*
 
 Printing in Hex ~
 >
@@ -3060,7 +4355,7 @@ result: "3332"
 
 Sorting lines (by Robert Webb) ~
 
-Here is a vim script to sort lines.  Highlight the lines in vim and type
+Here is a Vim script to sort lines.  Highlight the lines in Vim and type
 ":Sort".  This doesn't call any external programs so it'll work on any
 platform.  The function Sort() actually takes the name of a comparison
 function as its argument, like qsort() does in C.  So you could supply it
@@ -3128,7 +4423,7 @@ with different comparison functions in order to sort according to date etc.
 <
 							*sscanf*
 There is no sscanf() function in Vim.  If you need to extract parts from a
-line, you can use matchstr() and substitute() to do it  This example shows
+line, you can use matchstr() and substitute() to do it.  This example shows
 how to get the file name, line number and column number out of a line like
 "foobar.txt, 123, 45". >
    :" Set up the match bit
@@ -3144,7 +4439,7 @@ The input is in the variable "line", the results in the variables "file",
 "lnum" and "col". (idea from Michael Geddes)
 
 ==============================================================================
-9. No +eval feature				*no-eval-feature*
+10. No +eval feature				*no-eval-feature*
 
 When the |+eval| feature was disabled at compile time, none of the expression
 evaluation commands are available.  To prevent this from causing Vim scripts
@@ -3164,11 +4459,11 @@ missing: >
 	:endif
 <
 ==============================================================================
-10. The sandbox					*eval-sandbox* *sandbox* *E48*
+11. The sandbox					*eval-sandbox* *sandbox* *E48*
 
 The 'foldexpr', 'includeexpr', 'indentexpr', 'statusline' and 'foldtext'
 options are evaluated in a sandbox.  This means that you are protected from
-these expression having nasty side effects.  This gives some safety for when
+these expressions having nasty side effects.  This gives some safety for when
 these options are set from a modeline.  It is also used when the command from
 a tags file is executed.
 This is not guaranteed 100% secure, but it should block most attacks.

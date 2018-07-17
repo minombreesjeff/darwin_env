@@ -25,6 +25,11 @@ static int coladvance2 __ARGS((pos_T *pos, int addspaces, int finetune, colnr_T 
     int
 virtual_active()
 {
+    /* While an operator is being executed we return "virtual_op", because
+     * VIsual_active has already been reset, thus we can't check for "block"
+     * being used. */
+    if (virtual_op != MAYBE)
+	return virtual_op;
     return (ve_flags == VE_ALL
 # ifdef FEAT_VISUAL
 	    || ((ve_flags & VE_BLOCK) && VIsual_active && VIsual_mode == Ctrl_V)
@@ -86,7 +91,7 @@ coladvance_force(wcol)
 #endif
 
 /*
- * Try to advance the Cursor to the specified column.
+ * Try to advance the Cursor to the specified screen column.
  * If virtual editing: fine tune the cursor position.
  * Note that all virtual positions off the end of a line should share
  * a curwin->w_cursor.col value (n.b. this is equal to STRLEN(line)),
@@ -111,6 +116,10 @@ coladvance(wcol)
     return rc;
 }
 
+/*
+ * Return in "pos" the position of the cursor advanced to screen column "wcol".
+ * return OK if desired column is reached, FAIL if not
+ */
     int
 getvpos(pos, wcol)
     pos_T   *pos;
@@ -1110,13 +1119,13 @@ del_trailing_spaces(ptr)
 }
 
 /*
- * vim_strncpy()
- *
  * This is here because strncpy() does not guarantee successful results when
- * the to and from strings overlap.  It is only currently called from nextwild()
- * which copies part of the command line to another part of the command line.
- * This produced garbage when expanding files etc in the middle of the command
- * line (on my terminal, anyway) -- webb.
+ * the to and from strings overlap.  It is only currently called from
+ * nextwild() which copies part of the command line to another part of the
+ * command line.  This produced garbage when expanding files etc in the middle
+ * of the command line (on my terminal, anyway) -- webb.
+ * Note: strncpy() pads the remainder of the buffer with NUL bytes,
+ * vim_strncpy() doesn't do that.
  */
     void
 vim_strncpy(to, from, len)
@@ -1276,7 +1285,8 @@ mch_memmove(dst_arg, src_arg, len)
 
 #if (!defined(HAVE_STRCASECMP) && !defined(HAVE_STRICMP)) || defined(PROTO)
 /*
- * Compare two strings, ignoring case.
+ * Compare two strings, ignoring case, using current locale.
+ * Doesn't work for multi-byte characters.
  * return 0 for match, < 0 for smaller, > 0 for bigger
  */
     int
@@ -1288,7 +1298,7 @@ vim_stricmp(s1, s2)
 
     for (;;)
     {
-	i = (int)TO_LOWER(*s1) - (int)TO_LOWER(*s2);
+	i = (int)TOLOWER_LOC(*s1) - (int)TOLOWER_LOC(*s2);
 	if (i != 0)
 	    return i;			    /* this character different */
 	if (*s1 == NUL)
@@ -1302,7 +1312,8 @@ vim_stricmp(s1, s2)
 
 #if (!defined(HAVE_STRNCASECMP) && !defined(HAVE_STRNICMP)) || defined(PROTO)
 /*
- * Compare two strings, for length "len", ignoring case.
+ * Compare two strings, for length "len", ignoring case, using current locale.
+ * Doesn't work for multi-byte characters.
  * return 0 for match, < 0 for smaller, > 0 for bigger
  */
     int
@@ -1315,7 +1326,7 @@ vim_strnicmp(s1, s2, len)
 
     while (len > 0)
     {
-	i = (int)TO_LOWER(*s1) - (int)TO_LOWER(*s2);
+	i = (int)TOLOWER_LOC(*s1) - (int)TOLOWER_LOC(*s2);
 	if (i != 0)
 	    return i;			    /* this character different */
 	if (*s1 == NUL)
@@ -1564,6 +1575,7 @@ ga_grow(gap, n)
 #if defined(FEAT_EVAL) || defined(FEAT_CMDL_COMPL) || defined(FEAT_PYTHON) \
 	|| defined(FEAT_RUBY) || defined(FEAT_TCL) || defined(FEAT_PERL) \
 	|| defined(FEAT_GUI_GTK) || defined(FEAT_GUI_MOTIF) \
+	|| defined(MSWIN_FIND_REPLACE) \
 	|| defined(FEAT_CLIENTSERVER) || defined(PROTO)
 /*
  * Concatenate a string to a growarray which contains characters.
@@ -1588,6 +1600,8 @@ ga_concat(gap, s)
 #if defined(FEAT_EVAL) || defined(FEAT_CMDL_COMPL) || defined(FEAT_PYTHON) \
 	|| defined(FEAT_RUBY) || defined(FEAT_TCL) || defined(FEAT_PERL) \
 	|| defined(FEAT_CLIENTSERVER) \
+	|| defined(FEAT_GUI_GTK) || defined(FEAT_GUI_MOTIF) \
+	|| defined(MSWIN_FIND_REPLACE) \
 	|| (defined(FEAT_PRINTER) && defined(FEAT_POSTSCRIPT)) || defined(PROTO)
 /*
  * Append one byte to a growarray which contains bytes.
@@ -1727,7 +1741,7 @@ static char_u modifier_keys_table[] =
     MOD_MASK_SHIFT, KS_EXTRA, (int)KE_S_F37,	'F', 'R',
 
 							    /* TAB pseudo code*/
-    MOD_MASK_SHIFT, KS_EXTRA, (int)KE_S_TAB,	KS_EXTRA, (int)KE_TAB,
+    MOD_MASK_SHIFT, 'k', 'B',			KS_EXTRA, (int)KE_TAB,
 
     NUL
 };
@@ -1863,6 +1877,13 @@ static struct key_name_entry
     {K_RIGHTRELEASE,	(char_u *)"RightRelease"},
     {K_MOUSEDOWN,	(char_u *)"MouseDown"},
     {K_MOUSEUP,		(char_u *)"MouseUp"},
+    {K_X1MOUSE,		(char_u *)"X1Mouse"},
+    {K_X1DRAG,		(char_u *)"X1Drag"},
+    {K_X1RELEASE,		(char_u *)"X1Release"},
+    {K_X2MOUSE,		(char_u *)"X2Mouse"},
+    {K_X2DRAG,		(char_u *)"X2Drag"},
+    {K_X2RELEASE,		(char_u *)"X2Release"},
+    {K_DROP,		(char_u *)"Drop"},
     {K_ZERO,		(char_u *)"Nul"},
 #ifdef FEAT_EVAL
     {K_SNR,		(char_u *)"SNR"},
@@ -1897,6 +1918,12 @@ static struct mousetable
     {(int)KE_RIGHTMOUSE,	MOUSE_RIGHT,	TRUE,	FALSE},
     {(int)KE_RIGHTDRAG,		MOUSE_RIGHT,	FALSE,	TRUE},
     {(int)KE_RIGHTRELEASE,	MOUSE_RIGHT,	FALSE,	FALSE},
+    {(int)KE_X1MOUSE,		MOUSE_X1,	TRUE,	FALSE},
+    {(int)KE_X1DRAG,		MOUSE_X1,	FALSE,	TRUE},
+    {(int)KE_X1RELEASE,		MOUSE_X1,	FALSE,	FALSE},
+    {(int)KE_X2MOUSE,		MOUSE_X2,	TRUE,	FALSE},
+    {(int)KE_X2DRAG,		MOUSE_X2,	FALSE,	TRUE},
+    {(int)KE_X2RELEASE,		MOUSE_X2,	FALSE,	FALSE},
     /* DRAG without CLICK */
     {(int)KE_IGNORE,		MOUSE_RELEASE,	FALSE,	TRUE},
     /* RELEASE without CLICK */
@@ -1915,13 +1942,10 @@ name_to_mod_mask(c)
 {
     int	    i;
 
-    if (c > 0 && c <= 255)	/* avoid TO_UPPER() with number > 255 */
-    {
-	c = TO_UPPER(c);
-	for (i = 0; mod_mask_table[i].mod_mask != 0; i++)
-	    if (c == mod_mask_table[i].name)
-		return mod_mask_table[i].mod_flag;
-    }
+    c = TOUPPER_ASC(c);
+    for (i = 0; mod_mask_table[i].mod_mask != 0; i++)
+	if (c == mod_mask_table[i].name)
+	    return mod_mask_table[i].mod_flag;
     return 0;
 }
 
@@ -2004,8 +2028,8 @@ get_special_key_name(c, modifiers)
     if (IS_SPECIAL(c))
     {
 	for (i = 0; modifier_keys_table[i] != 0; i += MOD_KEYS_ENTRY_SIZE)
-	    if (       KEY2TERMCAP0(c) == modifier_keys_table[i + 1]
-		    && KEY2TERMCAP1(c) == modifier_keys_table[i + 2])
+	    if (       KEY2TERMCAP0(c) == (int)modifier_keys_table[i + 1]
+		    && (int)KEY2TERMCAP1(c) == (int)modifier_keys_table[i + 2])
 	    {
 		modifiers |= modifier_keys_table[i];
 		c = TERMCAP2KEY(modifier_keys_table[i + 3],
@@ -2269,7 +2293,7 @@ extract_modifiers(key, modp)
 #endif
     if ((modifiers & MOD_MASK_SHIFT) && ASCII_ISALPHA(key))
     {
-	key = TO_UPPER(key);
+	key = TOUPPER_ASC(key);
 	modifiers &= ~MOD_MASK_SHIFT;
     }
     if ((modifiers & MOD_MASK_CTRL)
@@ -2353,7 +2377,7 @@ get_special_key_code(name)
 	{
 	    table_name = key_names_table[i].name;
 	    for (j = 0; vim_isIDc(name[j]) && table_name[j] != NUL; j++)
-		if (TO_LOWER(table_name[j]) != TO_LOWER(name[j]))
+		if (TOLOWER_ASC(table_name[j]) != TOLOWER_ASC(name[j]))
 		    break;
 	    if (!vim_isIDc(name[j]) && table_name[j] == NUL)
 		return key_names_table[i].key;
@@ -2538,7 +2562,7 @@ call_shell(cmd, opt)
 
     if (p_verbose > 3)
     {
-	smsg((char_u *)_("Calling shell to execute: \"%s\""),
+	msg_str((char_u *)_("Calling shell to execute: \"%s\""),
 						    cmd == NULL ? p_sh : cmd);
 	out_char('\n');
 	cursor_on();
@@ -2616,7 +2640,8 @@ get_real_state()
 
 #if defined(FEAT_SESSION) || defined(MSWIN) \
 	|| (defined(FEAT_GUI_GTK) && defined(FEAT_WINDOWS)) \
-	|| defined(FEAT_SUN_WORKSHOP) || defined(PROTO)
+	|| defined(FEAT_SUN_WORKSHOP) || defined(FEAT_NETBEANS_INTG) \
+	|| defined(PROTO)
 /*
  * Change to a file's directory.
  * Caller must call shorten_fnames()!
@@ -2638,6 +2663,26 @@ vim_chdirfile(fname)
     *t = NUL; /* chop off end of string */
 
     return mch_chdir((char *)temp_string) == 0 ? OK : FAIL;
+}
+#endif
+
+#if defined(STAT_IGNORES_SLASH) || defined(PROTO)
+/*
+ * Check if "name" ends in a slash and is not a directory.
+ * Used for systems where stat() ignores a trailing slash on a file name.
+ * The Vim code assumes a trailing slash is only ignored for a directory.
+ */
+    int
+illegal_slash(name)
+    char *name;
+{
+    if (name[0] == NUL)
+	return FALSE;	    /* no file name is not illegal */
+    if (name[strlen(name) - 1] != '/')
+	return FALSE;	    /* no trailing slash */
+    if (mch_isdir((char_u *)name))
+	return FALSE;	    /* trailing slash for a directory */
+    return TRUE;
 }
 #endif
 
@@ -2667,6 +2712,7 @@ cursorentry_T shape_table[SHAPE_IDX_COUNT] =
     {0,	0, 0,   0L,   0L,   0L, 0, 0, "vs", SHAPE_MOUSE},
     {0,	0, 0,   0L,   0L,   0L, 0, 0, "vd", SHAPE_MOUSE},
     {0,	0, 0,   0L,   0L,   0L, 0, 0, "m", SHAPE_MOUSE},
+    {0,	0, 0,   0L,   0L,   0L, 0, 0, "ml", SHAPE_MOUSE},
     {0,	0, 0, 100L, 100L, 100L, 0, 0, "sm", SHAPE_CURSOR},
 };
 
@@ -2737,9 +2783,9 @@ parse_shape_opt(what)
 	{
 	    colonp = vim_strchr(modep, ':');
 	    if (colonp == NULL)
-		return (char_u *)N_("Missing colon");
+		return (char_u *)N_("E545: Missing colon");
 	    if (colonp == modep)
-		return (char_u *)N_("Illegal mode");
+		return (char_u *)N_("E546: Illegal mode");
 	    commap = vim_strchr(modep, ',');
 
 	    /*
@@ -2756,7 +2802,7 @@ parse_shape_opt(what)
 			len = 1;
 		    else
 			len = 2;
-		    if (len == 1 && TO_LOWER(modep[0]) == 'a')
+		    if (len == 1 && TOLOWER_ASC(modep[0]) == 'a')
 			all_idx = SHAPE_IDX_COUNT - 1;
 		    else
 		    {
@@ -2766,7 +2812,7 @@ parse_shape_opt(what)
 				break;
 			if (idx == SHAPE_IDX_COUNT
 				   || (shape_table[idx].used_for & what) == 0)
-			    return (char_u *)N_("Illegal mode");
+			    return (char_u *)N_("E546: Illegal mode");
 			if (len == 2 && modep[0] == 'v' && modep[1] == 'e')
 			    found_ve = TRUE;
 		    }
@@ -2805,7 +2851,7 @@ parse_shape_opt(what)
 			    if (mshape_names[i] == NULL)
 			    {
 				if (!isdigit(*p))
-				    return (char_u *)N_("Illegal mouseshape");
+				    return (char_u *)N_("E547: Illegal mouseshape");
 				if (round == 2)
 				    shape_table[idx].mshape =
 					      getdigits(&p) + MSHAPE_NUMBERED;
@@ -2845,15 +2891,15 @@ parse_shape_opt(what)
 			{
 			    p += len;
 			    if (!isdigit(*p))
-				return (char_u *)N_("digit expected");
+				return (char_u *)N_("E548: digit expected");
 			    n = getdigits(&p);
 			    if (len == 3)   /* "ver" or "hor" */
 			    {
 				if (n == 0)
-				    return (char_u *)N_("Illegal percentage");
+				    return (char_u *)N_("E549: Illegal percentage");
 				if (round == 2)
 				{
-				    if (TO_LOWER(i) == 'v')
+				    if (TOLOWER_ASC(i) == 'v')
 					shape_table[idx].shape = SHAPE_VER;
 				    else
 					shape_table[idx].shape = SHAPE_HOR;
@@ -2953,7 +2999,13 @@ get_shape_idx(mouse)
 {
 #ifdef FEAT_MOUSESHAPE
     if (mouse && (State == HITRETURN || State == ASKMORE))
+    {
+# ifdef FEAT_GUI
+	if (Y_2_ROW(gui_mch_get_mouse_y()) == Rows - 1)
+	    return SHAPE_IDX_MOREL;
+# endif
 	return SHAPE_IDX_MORE;
+    }
     if (mouse && drag_status_line)
 	return SHAPE_IDX_SDRAG;
 # ifdef FEAT_VERTSPLIT
@@ -3304,7 +3356,7 @@ typedef struct ff_visited
 
 /*
  * We might have to manage several visited lists during a search.
- * This is expecially needed for * the tags option. If tags is set to:
+ * This is expecially needed for the tags option. If tags is set to:
  *      "./++/tags,./++/TAGS,++/tags"  (replace + with *)
  * So we have to do 3 searches:
  *   1) search from the current files directory downward for the file "tags"
@@ -3337,7 +3389,9 @@ typedef struct ff_visited_list_hdr
  * The search context:
  *   ffsc_stack_ptr:	the stack for the dirs to search
  *   ffsc_visited_list: the currently active visited list
+ *   ffsc_dir_visited_list: the currently active visited list for search dirs
  *   ffsc_visited_lists_list: the list of all visited lists
+ *   ffsc_dir_visited_lists_list: the list of all visited lists for search dirs
  *   ffsc_file_to_search:     the file to search for
  *   ffsc_start_dir:	the starting directory, if search path was relative
  *   ffsc_fix_path:	the fix part of the given path (without wildcards)
@@ -3351,7 +3405,9 @@ typedef struct ff_search_ctx_T
 {
      ff_stack_T			*ffsc_stack_ptr;
      ff_visited_list_hdr_T	*ffsc_visited_list;
+     ff_visited_list_hdr_T	*ffsc_dir_visited_list;
      ff_visited_list_hdr_T	*ffsc_visited_lists_list;
+     ff_visited_list_hdr_T	*ffsc_dir_visited_lists_list;
      char_u			*ffsc_file_to_search;
      char_u			*ffsc_start_dir;
      char_u			*ffsc_fix_path;
@@ -3373,8 +3429,9 @@ static int ff_check_visited __ARGS((ff_visited_T **, char_u *, char_u *));
 #else
 static int ff_check_visited __ARGS((ff_visited_T **, char_u *));
 #endif
+static void vim_findfile_free_visited_list __ARGS((ff_visited_list_hdr_T **list_headp));
 static void ff_free_visited_list __ARGS((ff_visited_T *vl));
-static ff_visited_list_hdr_T* ff_get_visited_list __ARGS((char_u *));
+static ff_visited_list_hdr_T* ff_get_visited_list __ARGS((char_u *, ff_visited_list_hdr_T **list_headp));
 #ifdef FEAT_PATH_EXTRA
 static int ff_wc_equal __ARGS((char_u *s1, char_u *s2));
 #endif
@@ -3527,8 +3584,13 @@ vim_findfile_init(path, filename, stopdirs, level, free_visited, need_dir,
 	 * filename. If no list for the current filename exists, creates a new
 	 * one.
 	 */
-	ff_search_ctx->ffsc_visited_list = ff_get_visited_list(filename);
+	ff_search_ctx->ffsc_visited_list = ff_get_visited_list(filename,
+				     &ff_search_ctx->ffsc_visited_lists_list);
 	if (ff_search_ctx->ffsc_visited_list == NULL)
+	    goto error_return;
+	ff_search_ctx->ffsc_dir_visited_list = ff_get_visited_list(filename,
+				 &ff_search_ctx->ffsc_dir_visited_lists_list);
+	if (ff_search_ctx->ffsc_dir_visited_list == NULL)
 	    goto error_return;
     }
 
@@ -3629,7 +3691,7 @@ vim_findfile_init(path, filename, stopdirs, level, free_visited, need_dir,
 
 		helper = walker;
 		ptr = vim_realloc(ff_search_ctx->ffsc_stopdirs_v,
-					       dircount+1 * sizeof(char_u *));
+					   (dircount + 1) * sizeof(char_u *));
 		if (ptr)
 		    ff_search_ctx->ffsc_stopdirs_v = ptr;
 		else
@@ -3901,7 +3963,7 @@ vim_findfile(search_ctx)
 	     * first time (hence ctx->ff_filearray == NULL)
 	     */
 	    if (ctx->ffs_filearray == NULL
-		    && ff_check_visited(&ff_search_ctx->ffsc_visited_list
+		    && ff_check_visited(&ff_search_ctx->ffsc_dir_visited_list
 							  ->ffvl_visited_list,
 			ctx->ffs_fix_path
 #ifdef FEAT_PATH_EXTRA
@@ -4119,7 +4181,8 @@ vim_findfile(search_ctx)
 				    {
 					/* always scroll up, don't overwrite */
 					msg_scroll = TRUE;
-					smsg((char_u *)"Already: %s", file_path);
+					msg_str((char_u *)"Already: %s",
+								   file_path);
 					/* don't overwrite this either */
 					msg_puts((char_u *)"\n");
 					cmdline_row = msg_row;
@@ -4147,7 +4210,7 @@ vim_findfile(search_ctx)
 				{
 				    /* always scroll up, don't overwrite */
 				    msg_scroll = TRUE;
-				    smsg((char_u *)"HIT: %s", file_path);
+				    msg_str((char_u *)"HIT: %s", file_path);
 				    /* don't overwrite this either */
 				    msg_puts((char_u *)"\n");
 				    cmdline_row = msg_row;
@@ -4268,24 +4331,31 @@ vim_findfile(search_ctx)
 vim_findfile_free_visited(search_ctx)
     void	*search_ctx;
 {
-    ff_visited_list_hdr_T *vp;
-
-    if (NULL == search_ctx)
+    if (search_ctx == NULL)
 	return;
 
-    ff_search_ctx = (ff_search_ctx_T*)search_ctx;
+    ff_search_ctx = (ff_search_ctx_T *)search_ctx;
 
-    while (NULL != ff_search_ctx->ffsc_visited_lists_list)
+    vim_findfile_free_visited_list(&ff_search_ctx->ffsc_visited_lists_list);
+    vim_findfile_free_visited_list(&ff_search_ctx->ffsc_dir_visited_lists_list);
+}
+
+    static void
+vim_findfile_free_visited_list(list_headp)
+    ff_visited_list_hdr_T	**list_headp;
+{
+    ff_visited_list_hdr_T *vp;
+
+    while (*list_headp != NULL)
     {
-	vp = ff_search_ctx->ffsc_visited_lists_list->ffvl_next;
-	ff_free_visited_list(
-		ff_search_ctx->ffsc_visited_lists_list->ffvl_visited_list);
+	vp = (*list_headp)->ffvl_next;
+	ff_free_visited_list((*list_headp)->ffvl_visited_list);
 
-	vim_free(ff_search_ctx->ffsc_visited_lists_list->ffvl_filename);
-	vim_free(ff_search_ctx->ffsc_visited_lists_list);
-	ff_search_ctx->ffsc_visited_lists_list = vp;
+	vim_free((*list_headp)->ffvl_filename);
+	vim_free(*list_headp);
+	*list_headp = vp;
     }
-    ff_search_ctx->ffsc_visited_lists_list = NULL;
+    *list_headp = NULL;
 }
 
     static void
@@ -4308,15 +4378,16 @@ ff_free_visited_list(vl)
  * allocates a new one.
  */
     static ff_visited_list_hdr_T*
-ff_get_visited_list(filename)
-    char_u	*filename;
+ff_get_visited_list(filename, list_headp)
+    char_u			*filename;
+    ff_visited_list_hdr_T	**list_headp;
 {
     ff_visited_list_hdr_T  *retptr = NULL;
 
     /* check if a visited list for the given filename exists */
-    if (ff_search_ctx->ffsc_visited_lists_list!= NULL)
+    if (*list_headp != NULL)
     {
-	retptr = ff_search_ctx->ffsc_visited_lists_list;
+	retptr = *list_headp;
 	while (retptr != NULL)
 	{
 	    if (fnamecmp(filename, retptr->ffvl_filename) == 0)
@@ -4326,8 +4397,8 @@ ff_get_visited_list(filename)
 		{
 		    /* always scroll up, don't overwrite */
 		    msg_scroll = TRUE;
-		    smsg((char_u *)"ff_get_visited_list: FOUND list for %s",
-			    filename);
+		    msg_str((char_u *)"ff_get_visited_list: FOUND list for %s",
+								    filename);
 		    /* don't overwrite this either */
 		    msg_puts((char_u *)"\n");
 		    cmdline_row = msg_row;
@@ -4344,8 +4415,7 @@ ff_get_visited_list(filename)
     {
 	/* always scroll up, don't overwrite */
 	msg_scroll = TRUE;
-	smsg((char_u *)"ff_get_visited_list: new list for %s",
-		filename);
+	msg_str((char_u *)"ff_get_visited_list: new list for %s", filename);
 	/* don't overwrite this either */
 	msg_puts((char_u *)"\n");
 	cmdline_row = msg_row;
@@ -4366,8 +4436,8 @@ ff_get_visited_list(filename)
 	vim_free(retptr);
 	return NULL;
     }
-    retptr->ffvl_next = ff_search_ctx->ffsc_visited_lists_list;
-    ff_search_ctx->ffsc_visited_lists_list = retptr;
+    retptr->ffvl_next = *list_headp;
+    *list_headp = retptr;
 
     return retptr;
 }
@@ -4402,7 +4472,7 @@ ff_wc_equal(s1, s2)
     {
 	if (s1[i] != s2[i]
 #ifdef CASE_INSENSITIVE_FILENAME
-		&& TO_UPPER(s1[i]) != TO_UPPER(s2[i])
+		&& TOUPPER_LOC(s1[i]) != TOUPPER_LOC(s2[i])
 #endif
 		)
 	{
@@ -4820,10 +4890,6 @@ find_file_in_path_option(ptr, len, options, first, path_option, need_dir, rel_fn
 	    file_name = NULL;
 	    goto theend;
 	}
-#ifdef VMS
-	if (vim_isAbsName(file_to_find))
-	    file_to_find = vms_fixfilename(file_to_find);
-#endif
     }
 
     rel_to_curdir = (file_to_find[0] == '.'
@@ -5153,7 +5219,7 @@ pathcmp(p, q)
 
 	if (
 #ifdef CASE_INSENSITIVE_FILENAME
-		TO_UPPER(p[i]) != TO_UPPER(q[i])
+		TOUPPER_LOC(p[i]) != TOUPPER_LOC(q[i])
 #else
 		p[i] != q[i]
 #endif
@@ -5222,7 +5288,7 @@ parse_list_options(option_str, table, table_size)
     {
 	colonp = vim_strchr(stringp, ':');
 	if (colonp == NULL)
-	    return (char_u *)N_("Missing colon");
+	    return (char_u *)N_("E550: Missing colon");
 	commap = vim_strchr(stringp, ',');
 	if (commap == NULL)
 	    commap = option_str + STRLEN(option_str);
@@ -5234,7 +5300,7 @@ parse_list_options(option_str, table, table_size)
 		break;
 
 	if (idx == table_size)
-	    return (char_u *)N_("Illegal component");
+	    return (char_u *)N_("E551: Illegal component");
 
 	p = colonp + 1;
 	table[idx].present = TRUE;
@@ -5242,7 +5308,7 @@ parse_list_options(option_str, table, table_size)
 	if (table[idx].hasnum)
 	{
 	    if (!isdigit(*p))
-		return (char_u *)N_("digit expected");
+		return (char_u *)N_("E552: digit expected");
 
 	    table[idx].number = getdigits(&p); /*advances p*/
 	}
@@ -5435,3 +5501,23 @@ vimpty_getenv(string)
 # endif
 
 #endif /* !defined(HAVE_SETENV) && !defined(HAVE_PUTENV) */
+
+/*
+ * Print a message with one string argument.
+ * Make sure that the result fits in IObuff.
+ * This is not in message.c, because the prototype for smsg() isn't used
+ * there.
+ */
+    void
+msg_str(s, arg)
+    char_u	*s;
+    char_u	*arg;
+{
+    int		ls = STRLEN(s);
+    int		larg = STRLEN(arg);
+
+    if (ls + larg >= IOSIZE)
+	smsg(s, arg + (ls + larg - IOSIZE));
+    else
+	smsg(s, arg);
+}

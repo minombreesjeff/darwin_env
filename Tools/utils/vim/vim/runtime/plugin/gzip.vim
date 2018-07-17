@@ -1,6 +1,6 @@
 " Vim plugin for editing compressed files.
 " Maintainer: Bram Moolenaar <Bram@vim.org>
-" Last Change: 2001 Sep 20
+" Last Change: 2003 Apr 06
 
 " Exit quickly when:
 " - this plugin was already loaded
@@ -57,6 +57,9 @@ fun s:read(cmd)
   " make 'patchmode' empty, we don't want a copy of the written file
   let pm_save = &pm
   set pm=
+  " remove 'a' and 'A' from 'cpo' to avoid the alternate file changes
+  let cpo_save = &cpo
+  set cpo-=a cpo-=A
   " set 'modifiable'
   let ma_save = &ma
   setlocal ma
@@ -68,11 +71,12 @@ fun s:read(cmd)
   execute "silent '[,']w " . tmpe
   " uncompress the temp file: call system("gzip -d tmp.gz")
   call system(a:cmd . " " . tmpe)
-  " delete the compressed lines
+  " delete the compressed lines; remember the line number
+  let l = line("'[") - 1
   '[,']d
   " read in the uncompressed lines "'[-1r tmp"
   setlocal nobin
-  execute "silent '[-1r " . tmp
+  execute "silent " . l . "r " . tmp
   " if buffer became empty, delete trailing blank line
   if empty
     silent $delete
@@ -83,10 +87,15 @@ fun s:read(cmd)
   silent! exe "bwipe " . tmp
   silent! exe "bwipe " . tmpe
   let &pm = pm_save
+  let &cpo = cpo_save
   let &l:ma = ma_save
   " When uncompressed the whole buffer, do autocommands
   if empty
-    execute ":silent! doau BufReadPost " . expand("%:r")
+    if &verbose >= 8
+      execute "doau BufReadPost " . expand("%:r")
+    else
+      execute "silent! doau BufReadPost " . expand("%:r")
+    endif
   endif
 endfun
 
@@ -94,9 +103,9 @@ endfun
 fun s:write(cmd)
   " don't do anything if the cmd is not supported
   if s:check(a:cmd)
-    " Rename to a weird name to avoid the risk of overwriting another file
+    " Rename the file before compressing it.
     let nm = expand("<afile>")
-    let nmt = expand("<afile>:p:h") . "/X~=@l9q5"
+    let nmt = s:tempname(nm)
     if rename(nm, nmt) == 0
       call system(a:cmd . " " . nmt)
       call rename(nmt . "." . expand("<afile>:e"), nm)
@@ -123,6 +132,17 @@ fun s:appre(cmd)
       call rename(nmt, nm)
     endif
   endif
+endfun
+
+" find a file name for the file to be compressed.  Use "name" without an
+" extension if possible.  Otherwise use a weird name to avoid overwriting an
+" existing file.
+fun s:tempname(name)
+  let fn = fnamemodify(a:name, ":r")
+  if !filereadable(fn) && !isdirectory(fn)
+    return fn
+  endif
+  return fnamemodify(a:name, ":p:h") . "/X~=@l9q5"
 endfun
 
 " vim: set sw=2 :

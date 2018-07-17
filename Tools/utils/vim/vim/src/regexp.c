@@ -313,15 +313,15 @@ toggle_Magic(x)
 
 /* Used for an error (down from) vim_regcomp(): give the error message, set
  * rc_did_emsg and return NULL */
-#define EMSG_RET_NULL(m) { EMSG(_(m)); rc_did_emsg = TRUE; return NULL; }
-#define EMSG_M_RET_NULL(m, c) { EMSG2(_(m), c ? "" : "\\"); rc_did_emsg = TRUE; return NULL; }
-#define EMSG_RET_FAIL(m) { EMSG(_(m)); rc_did_emsg = TRUE; return FAIL; }
-#define EMSG_ONE_RET_NULL EMSG_M_RET_NULL("E369: invalid item in %s%%[]", reg_magic == MAGIC_ALL)
+#define EMSG_RET_NULL(m) { EMSG(m); rc_did_emsg = TRUE; return NULL; }
+#define EMSG_M_RET_NULL(m, c) { EMSG2(m, c ? "" : "\\"); rc_did_emsg = TRUE; return NULL; }
+#define EMSG_RET_FAIL(m) { EMSG(m); rc_did_emsg = TRUE; return FAIL; }
+#define EMSG_ONE_RET_NULL EMSG_M_RET_NULL(_("E369: invalid item in %s%%[]"), reg_magic == MAGIC_ALL)
 
 #define MAX_LIMIT	(32767L << 16L)
 
 static int re_multi_type __ARGS((int));
-static int cstrncmp __ARGS((char_u *s1, char_u *s2, int n));
+static int cstrncmp __ARGS((char_u *s1, char_u *s2, int *n));
 static char_u *cstrchr __ARGS((char_u *, int));
 
 #ifdef DEBUG
@@ -601,6 +601,7 @@ init_class_tab()
 #define RF_ICASE    1	/* ignore case */
 #define RF_NOICASE  2	/* don't ignore case */
 #define RF_HASNL    4	/* can match a NL */
+#define RF_ICOMBINE 8	/* ignore combining characters */
 
 /*
  * Global work variables for vim_regcomp().
@@ -632,6 +633,9 @@ static int	reg_magic;	/* magicness of the pattern: */
 #define MAGIC_ON	3	/* "\m" or 'magic' */
 #define MAGIC_ALL	4	/* "\v" very magic */
 
+static int	reg_string;	/* matching with a string instead of a buffer
+				   line */
+
 /*
  * META contains all characters that may be magic, except '^' and '$'.
  */
@@ -649,8 +653,8 @@ static char_u META_flags[] = {
     0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1,
 /*  @  A     C	D     F     H  I     K	L  M	 O */
     1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1,
-/*  P	     S	   U  V  W  X	     [		 _ */
-    1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1,
+/*  P	     S	   U  V  W  X	  Z  [		 _ */
+    1, 0, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1,
 /*     a     c	d     f     h  i     k	l  m  n  o */
     0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1,
 /*  p	     s	   u  v  w  x	  z  {	|     ~    */
@@ -675,7 +679,7 @@ static void	skipchr_keepstart __ARGS((void));
 static int	peekchr __ARGS((void));
 static void	skipchr __ARGS((void));
 static void	ungetchr __ARGS((void));
-static void	regcomp_start __ARGS((char_u *expr, int magic));
+static void	regcomp_start __ARGS((char_u *expr, int flags));
 static char_u	*reg __ARGS((int, int *));
 static char_u	*regbranch __ARGS((int *flagp));
 static char_u	*regconcat __ARGS((int *flagp));
@@ -712,14 +716,19 @@ re_multiline(prog)
  * Stop at end of 'p' of where 'dirc' is found ('/', '?', etc).
  * Take care of characters with a backslash in front of it.
  * Skip strings inside [ and ].
+ * When "newp" is not NULL and "dirc" is '?', make an allocated copy of the
+ * expression and change "\?" to "?".  If "*newp" is not NULL the expression
+ * is changed in-place.
  */
     char_u *
-skip_regexp(p, dirc, magic)
-    char_u	*p;
+skip_regexp(startp, dirc, magic, newp)
+    char_u	*startp;
     int		dirc;
     int		magic;
+    char_u	**newp;
 {
     int		mymagic;
+    char_u	*p = startp;
 
     if (magic)
 	mymagic = MAGIC_ON;
@@ -739,7 +748,22 @@ skip_regexp(p, dirc, magic)
 	}
 	else if (p[0] == '\\' && p[1] != NUL)
 	{
-	    ++p;    /* skip next character */
+	    if (dirc == '?' && newp != NULL && p[1] == '?')
+	    {
+		/* change "\?" to "?", make a copy first. */
+		if (*newp == NULL)
+		{
+		    *newp = vim_strsave(startp);
+		    if (*newp != NULL)
+			p = *newp + (p - startp);
+		}
+		if (*newp != NULL)
+		    mch_memmove(p, p + 1, STRLEN(p));
+		else
+		    ++p;
+	    }
+	    else
+		++p;    /* skip next character */
 	    if (*p == 'v')
 		mymagic = MAGIC_ALL;
 	    else if (*p == 'V')
@@ -770,11 +794,12 @@ skip_regexp(p, dirc, magic)
  *
  * Beware that the optimization-preparation code in here knows about some
  * of the structure of the compiled regexp.
+ * "re_flags": RE_MAGIC and/or RE_STRING.
  */
     regprog_T *
-vim_regcomp(expr, magic)
+vim_regcomp(expr, re_flags)
     char_u	*expr;
-    int		magic;
+    int		re_flags;
 {
     regprog_T	*r;
     char_u	*scan;
@@ -783,14 +808,14 @@ vim_regcomp(expr, magic)
     int		flags;
 
     if (expr == NULL)
-	EMSG_RET_NULL(e_null);
+	EMSG_RET_NULL(_(e_null));
 
     init_class_tab();
 
     /*
      * First pass: determine size, legality.
      */
-    regcomp_start(expr, magic);
+    regcomp_start(expr, re_flags);
     regcode = JUST_CALC_SIZE;
     regc(REGMAGIC);
     if (reg(REG_NOPAREN, &flags) == NULL)
@@ -799,7 +824,7 @@ vim_regcomp(expr, magic)
     /* Small enough for pointer-storage convention? */
 #ifdef SMALL_MALLOC		/* 16 bit storage allocation */
     if (regsize >= 65536L - 256L)
-	EMSG_RET_NULL(N_("E339: Pattern too long"));
+	EMSG_RET_NULL(_("E339: Pattern too long"));
 #endif
 
     /* Allocate space. */
@@ -810,7 +835,7 @@ vim_regcomp(expr, magic)
     /*
      * Second pass: emit code.
      */
-    regcomp_start(expr, magic);
+    regcomp_start(expr, re_flags);
     regcode = r->program;
     regc(REGMAGIC);
     if (reg(REG_NOPAREN, &flags) == NULL)
@@ -904,15 +929,17 @@ vim_regcomp(expr, magic)
  * Setup to parse the regexp.  Used once to get the length and once to do it.
  */
     static void
-regcomp_start(expr, magic)
+regcomp_start(expr, re_flags)
     char_u	*expr;
-    int		magic;
+    int		re_flags;	    /* see vim_regcomp() */
 {
     initchr(expr);
-    if (magic)
+    if (re_flags & RE_MAGIC)
 	reg_magic = MAGIC_ON;
     else
 	reg_magic = MAGIC_OFF;
+    reg_string = (re_flags & RE_STRING);
+
     num_complex_braces = 0;
     regnpar = 1;
     vim_memset(had_endbrace, 0, sizeof(had_endbrace));
@@ -966,7 +993,7 @@ reg(paren, flagp)
     {
 	/* Make a ZOPEN node. */
 	if (regnzpar >= NSUBEXP)
-	    EMSG_RET_NULL("E50: Too many \\z(");
+	    EMSG_RET_NULL(_("E50: Too many \\z("));
 	parno = regnzpar;
 	regnzpar++;
 	ret = regnode(ZOPEN + parno);
@@ -977,7 +1004,7 @@ reg(paren, flagp)
     {
 	/* Make a MOPEN node. */
 	if (regnpar >= NSUBEXP)
-	    EMSG_M_RET_NULL("E51: Too many %s(", reg_magic == MAGIC_ALL);
+	    EMSG_M_RET_NULL(_("E51: Too many %s("), reg_magic == MAGIC_ALL);
 	parno = regnpar;
 	++regnpar;
 	ret = regnode(MOPEN + parno);
@@ -1034,20 +1061,20 @@ reg(paren, flagp)
     {
 #ifdef FEAT_SYN_HL
 	if (paren == REG_ZPAREN)
-	    EMSG_RET_NULL("E52: Unmatched \\z(")
+	    EMSG_RET_NULL(_("E52: Unmatched \\z("))
 	else
 #endif
 	    if (paren == REG_NPAREN)
-	    EMSG_M_RET_NULL("E53: Unmatched %s%%(", reg_magic == MAGIC_ALL)
+	    EMSG_M_RET_NULL(_("E53: Unmatched %s%%("), reg_magic == MAGIC_ALL)
 	else
-	    EMSG_M_RET_NULL("E54: Unmatched %s(", reg_magic == MAGIC_ALL)
+	    EMSG_M_RET_NULL(_("E54: Unmatched %s("), reg_magic == MAGIC_ALL)
     }
     else if (paren == REG_NOPAREN && peekchr() != NUL)
     {
 	if (curchr == Magic(')'))
-	    EMSG_M_RET_NULL("E55: Unmatched %s)", reg_magic == MAGIC_ALL)
+	    EMSG_M_RET_NULL(_("E55: Unmatched %s)"), reg_magic == MAGIC_ALL)
 	else
-	    EMSG_RET_NULL(e_trailing)	/* "Can't happen". */
+	    EMSG_RET_NULL(_(e_trailing))	/* "Can't happen". */
 	/* NOTREACHED */
     }
     /*
@@ -1126,6 +1153,12 @@ regconcat(flagp)
 	    case Magic('&'):
 	    case Magic(')'):
 			    cont = FALSE;
+			    break;
+	    case Magic('Z'):
+#ifdef FEAT_MBYTE
+			    regflags |= RF_ICOMBINE;
+#endif
+			    skipchr_keepstart();
 			    break;
 	    case Magic('c'):
 			    regflags |= RF_ICASE;
@@ -1208,10 +1241,10 @@ regpiece(flagp)
     if (!(flags & HASWIDTH) && re_multi_type(op) == MULTI_MULT)
     {
 	if (op == Magic('*'))
-	    EMSG_M_RET_NULL("E56: %s* operand could be empty",
+	    EMSG_M_RET_NULL(_("E56: %s* operand could be empty"),
 						       reg_magic >= MAGIC_ON);
 	if (op == Magic('+'))
-	    EMSG_M_RET_NULL("E57: %s+ operand could be empty",
+	    EMSG_M_RET_NULL(_("E57: %s+ operand could be empty"),
 						       reg_magic == MAGIC_ALL);
 	/* "\{}" is checked below, it's allowed when there is an upper limit */
     }
@@ -1265,7 +1298,7 @@ regpiece(flagp)
 			      }
 		}
 		if (lop == END)
-		    EMSG_M_RET_NULL("E59: invalid character after %s@",
+		    EMSG_M_RET_NULL(_("E59: invalid character after %s@"),
 						      reg_magic == MAGIC_ALL);
 		/* Look behind must match with behind_pos. */
 		if (lop == BEHIND || lop == NOBEHIND)
@@ -1290,7 +1323,7 @@ regpiece(flagp)
 		return NULL;
 	    if (!(flags & HASWIDTH) && (maxval > minval
 				 ? maxval >= MAX_LIMIT : minval >= MAX_LIMIT))
-		EMSG_M_RET_NULL("E58: %s{ operand could be empty",
+		EMSG_M_RET_NULL(_("E58: %s{ operand could be empty"),
 						      reg_magic == MAGIC_ALL);
 	    if (flags & SIMPLE)
 	    {
@@ -1300,7 +1333,7 @@ regpiece(flagp)
 	    else
 	    {
 		if (num_complex_braces >= 10)
-		    EMSG_M_RET_NULL("E60: Too many complex %s{...}s",
+		    EMSG_M_RET_NULL(_("E60: Too many complex %s{...}s"),
 						      reg_magic == MAGIC_ALL);
 		reginsert(BRACE_COMPLEX + num_complex_braces, ret);
 		regoptail(ret, regnode(BACK));
@@ -1437,14 +1470,26 @@ regatom(flagp)
       case Magic('U'):
 	p = vim_strchr(classchars, no_Magic(c));
 	if (p == NULL)
-	    EMSG_RET_NULL("E63: invalid use of \\_");
+	    EMSG_RET_NULL(_("E63: invalid use of \\_"));
 	ret = regnode(classcodes[p - classchars] + extra);
 	*flagp |= HASWIDTH | SIMPLE;
 	break;
 
       case Magic('n'):
-	ret = regnode(NEWL);
-	*flagp |= HASWIDTH | HASNL;
+	if (reg_string)
+	{
+	    /* In a string "\n" matches a newline character. */
+	    ret = regnode(EXACTLY);
+	    regc(NL);
+	    regc(NUL);
+	    *flagp |= HASWIDTH | SIMPLE;
+	}
+	else
+	{
+	    /* In buffer text "\n" matches the end of a line. */
+	    ret = regnode(NEWL);
+	    *flagp |= HASWIDTH | HASNL;
+	}
 	break;
 
       case Magic('('):
@@ -1460,7 +1505,7 @@ regatom(flagp)
       case Magic('|'):
       case Magic('&'):
       case Magic(')'):
-	EMSG_RET_NULL(e_internal);	    /* Supposed to be caught earlier. */
+	EMSG_RET_NULL(_(e_internal));	/* Supposed to be caught earlier. */
 	/* NOTREACHED */
 
       case Magic('='):
@@ -1494,7 +1539,7 @@ regatom(flagp)
 		}
 	    }
 	    else
-		EMSG_RET_NULL(e_nopresub);
+		EMSG_RET_NULL(_(e_nopresub));
 	    break;
 
       case Magic('1'):
@@ -1526,7 +1571,7 @@ regatom(flagp)
 					      && (p[2] == '!' || p[2] == '='))
 			    break;
 		    if (*p == NUL)
-			EMSG_RET_NULL("E65: Illegal back reference");
+			EMSG_RET_NULL(_("E65: Illegal back reference"));
 		}
 		ret = regnode(BACKREF + refnum);
 	    }
@@ -1539,7 +1584,7 @@ regatom(flagp)
 	    switch (c)
 	    {
 		case '(': if (reg_do_extmatch != REX_SET)
-			      EMSG_RET_NULL("E66: \\z( not allowed here");
+			      EMSG_RET_NULL(_("E66: \\z( not allowed here"));
 			  if (one_exactly)
 			      EMSG_ONE_RET_NULL;
 			  ret = reg(REG_ZPAREN, &flags);
@@ -1558,7 +1603,7 @@ regatom(flagp)
 		case '7':
 		case '8':
 		case '9': if (reg_do_extmatch != REX_USE)
-			      EMSG_RET_NULL("E67: \\z1 et al. not allowed here");
+			      EMSG_RET_NULL(_("E67: \\z1 et al. not allowed here"));
 			  ret = regnode(ZREF + c - '0');
 			  re_has_z = REX_USE;
 			  break;
@@ -1569,10 +1614,11 @@ regatom(flagp)
 		case 'e': ret = regnode(MCLOSE + 0);
 			  break;
 
-		default:  EMSG_RET_NULL("E68: Invalid character after \\z");
+		default:  EMSG_RET_NULL(_("E68: Invalid character after \\z"));
 	    }
 	}
 	break;
+#endif
 
       case Magic('%'):
 	{
@@ -1617,7 +1663,7 @@ regatom(flagp)
 			      while ((c = getchr()) != ']')
 			      {
 				  if (c == NUL)
-				      EMSG_M_RET_NULL("E69: Missing ] after %s%%[",
+				      EMSG_M_RET_NULL(_("E69: Missing ] after %s%%["),
 						      reg_magic == MAGIC_ALL);
 				  br = regnode(BRANCH);
 				  if (ret == NULL)
@@ -1633,7 +1679,7 @@ regatom(flagp)
 				      return NULL;
 			      }
 			      if (ret == NULL)
-				  EMSG_M_RET_NULL("E70: Empty %s%%[]",
+				  EMSG_M_RET_NULL(_("E70: Empty %s%%[]"),
 						      reg_magic == MAGIC_ALL);
 			      lastbranch = regnode(BRANCH);
 			      br = regnode(NOTHING);
@@ -1693,12 +1739,11 @@ regatom(flagp)
 			      }
 			  }
 
-			  EMSG_M_RET_NULL("E71: Invalid character after %s%%",
+			  EMSG_M_RET_NULL(_("E71: Invalid character after %s%%"),
 						      reg_magic == MAGIC_ALL);
 	    }
 	}
 	break;
-#endif
 
       case Magic('['):
 collection:
@@ -1754,14 +1799,14 @@ collection:
 #endif
 				endc = *regparse++;
 			    if (startc > endc)
-				EMSG_RET_NULL(e_invrange);
+				EMSG_RET_NULL(_(e_invrange));
 #ifdef FEAT_MBYTE
 			    if (has_mbyte && ((*mb_char2len)(startc) > 1
 						 || (*mb_char2len)(endc) > 1))
 			    {
 				/* Limit to a range of 256 chars */
 				if (endc > startc + 256)
-				    EMSG_RET_NULL(e_invrange);
+				    EMSG_RET_NULL(_(e_invrange));
 				while (++startc <= endc)
 				    regmbc(startc);
 			    }
@@ -1933,7 +1978,7 @@ collection:
 		regc(NUL);
 		prevchr_len = 1;	/* last char was the ']' */
 		if (*regparse != ']')
-		    EMSG_RET_NULL(e_toomsbra);	/* Cannot happen? */
+		    EMSG_RET_NULL(_(e_toomsbra));	/* Cannot happen? */
 		skipchr();	    /* let's be friends with the lexer again */
 		*flagp |= HASWIDTH | SIMPLE;
 		break;
@@ -1982,6 +2027,7 @@ collection:
 		    if (enc_utf8)
 		    {
 			int	off;
+			int	len;
 
 			/* Need to get composing character too, directly
 			 * access regparse for that, because skipchr() skips
@@ -1993,11 +2039,12 @@ collection:
 			    off = 0;
 			for (;;)
 			{
-			    off += utf_ptr2len_check(regparse + off);
-			    c = utf_ptr2char(regparse + off);
-			    if (!utf_iscomposing(c))
+			    len = utf_ptr2len_check(regparse + off);
+			    if (!UTF_COMPOSINGLIKE(regparse + off,
+							regparse + off + len))
 				break;
-			    regmbc(c);
+			    off += len;
+			    regmbc(utf_ptr2char(regparse + off));
 			}
 			skipchr();
 		    }
@@ -2304,7 +2351,7 @@ peekchr()
 
 		/* ignore \c \C \m and \M after '$' */
 		while (p[0] == '\\' && (p[1] == 'c' || p[1] == 'C'
-					       || p[1] == 'm' || p[1] == 'M'))
+				|| p[1] == 'm' || p[1] == 'M' || p[1] == 'Z'))
 		    p += 2;
 		if (p[0] == NUL
 			|| (p[0] == '\\'
@@ -2320,11 +2367,13 @@ peekchr()
 
 		if (c == NUL)
 		    curchr = '\\';	/* trailing '\' */
+		else if (
 #ifdef EBCDIC
-		else if (vim_strchr(META, c))
+			vim_strchr(META, c)
 #else
-		else if (c <= '~' && META_flags[c])
+			c <= '~' && META_flags[c]
 #endif
+			)
 		{
 		    /*
 		     * META contains everything that may be magic sometimes,
@@ -2487,7 +2536,7 @@ read_limits(minval, maxval)
 	regparse++;	/* Allow either \{...} or \{...\} */
     if (*regparse != '}' || (*maxval == 0 && *minval == 0))
     {
-	sprintf((char *)IObuff, _("Syntax error in %s{...}"),
+	sprintf((char *)IObuff, _("E554: Syntax error in %s{...}"),
 					  reg_magic == MAGIC_ALL ? "" : "\\");
 	EMSG_RET_FAIL(IObuff);
     }
@@ -2579,6 +2628,14 @@ int		regnarrate = 0;
  */
 static int	ireg_ic;
 
+#ifdef FEAT_MBYTE
+/*
+ * Similar to ireg_ic, but only for 'combining' characters.  Set with \Z flag
+ * in the regexp.  Defaults to false, always.
+ */
+static int	ireg_icombine;
+#endif
+
 /*
  * Sometimes need to save a copy of a line.  Since alloc()/free() is very
  * slow, we keep one allocated piece of memory and only re-allocate it when
@@ -2605,10 +2662,10 @@ static unsigned	reg_tofreelen;
  */
 static regmatch_T	*reg_match;
 static regmmatch_T	*reg_mmatch;
-static char_u		**reg_startp;
-static char_u		**reg_endp;
-static lpos_T		*reg_startpos;
-static lpos_T		*reg_endpos;
+static char_u		**reg_startp = NULL;
+static char_u		**reg_endp = NULL;
+static lpos_T		*reg_startpos = NULL;
+static lpos_T		*reg_endpos = NULL;
 static win_T		*reg_win;
 static buf_T		*reg_buf;
 static linenr_T		reg_firstlnum;
@@ -2658,6 +2715,9 @@ vim_regexec(rmp, line, col)
     reg_maxline = 0;
     reg_win = NULL;
     ireg_ic = rmp->rm_ic;
+#ifdef FEAT_MBYTE
+    ireg_icombine = FALSE;
+#endif
     return (vim_regexec_both(line, col) != 0);
 }
 
@@ -2687,6 +2747,9 @@ vim_regexec_multi(rmp, win, buf, lnum, col)
     reg_firstlnum = lnum;
     reg_maxline = reg_buf->b_ml.ml_line_count - lnum;
     ireg_ic = rmp->rmm_ic;
+#ifdef FEAT_MBYTE
+    ireg_icombine = FALSE;
+#endif
 
     /* Need to switch to buffer "buf" to make vim_iswordc() work. */
     curbuf = buf;
@@ -2776,6 +2839,12 @@ vim_regexec_both(line, col)
     else if (prog->regflags & RF_NOICASE)
 	ireg_ic = FALSE;
 
+#ifdef FEAT_MBYTE
+    /* If pattern contains "\Z" overrule value of ireg_icombine */
+    if (prog->regflags & RF_ICOMBINE)
+	ireg_icombine = TRUE;
+#endif
+
     /* If there is a "must appear" string, look for it. */
     if (prog->regmust != NULL)
     {
@@ -2790,7 +2859,7 @@ vim_regexec_both(line, col)
 	s = line + col;
 	while ((s = cstrchr(s, c)) != NULL)
 	{
-	    if (cstrncmp(s, prog->regmust, prog->regmlen) == 0)
+	    if (cstrncmp(s, prog->regmust, &prog->regmlen) == 0)
 		break;		/* Found it. */
 #ifdef FEAT_MBYTE
 	    if (has_mbyte)
@@ -2825,7 +2894,7 @@ vim_regexec_both(line, col)
 			(enc_utf8 && utf_fold(prog->regstart) == utf_fold(c)))
 			|| (c < 255 && prog->regstart < 255 &&
 #endif
-			    TO_LOWER(prog->regstart) == TO_LOWER(c)))))
+			    TOLOWER_LOC(prog->regstart) == TOLOWER_LOC(c)))))
 	    retval = regtry(prog, col);
 	else
 	    retval = 0;
@@ -2960,6 +3029,9 @@ regtry(prog, col)
 		reg_endpos[0].lnum = reglnum;
 		reg_endpos[0].col = (int)(reginput - regline);
 	    }
+	    else
+		/* Use line number of "\ze". */
+		reglnum = reg_endpos[0].lnum;
 	}
 	else
 	{
@@ -3412,9 +3484,14 @@ regmatch(scan)
 #ifdef FEAT_MBYTE
 			    !enc_utf8 &&
 #endif
-			    TO_LOWER(*opnd) != TO_LOWER(*reginput))))
+			    TOLOWER_LOC(*opnd) != TOLOWER_LOC(*reginput))))
 		    return FALSE;
-		if (opnd[1] == NUL
+		if (*opnd == NUL)
+		{
+		    /* match empty string always works; happens when "~" is
+		     * empty. */
+		}
+		else if (opnd[1] == NUL
 #ifdef FEAT_MBYTE
 			    && !(enc_utf8 && ireg_ic)
 #endif
@@ -3424,13 +3501,19 @@ regmatch(scan)
 		{
 		    len = (int)STRLEN(opnd);
 		    /* Need to match first byte again for multi-byte. */
-		    if (cstrncmp(opnd, reginput, len) != 0)
+		    if (cstrncmp(opnd, reginput, &len) != 0)
 			return FALSE;
 #ifdef FEAT_MBYTE
 		    /* Check for following composing character. */
-		    if (enc_utf8 && utf_iscomposing(
-					       utf_ptr2char(reginput + len)))
-			return FALSE;
+		    if (enc_utf8 && UTF_COMPOSINGLIKE(reginput, reginput + len))
+		    {
+			/* raaron: This code makes a composing character get
+			 * ignored, which is the correct behavior (sometimes)
+			 * for voweled Hebrew texts. */
+			if (!ireg_icombine)
+			    return FALSE;
+		    }
+		    else
 #endif
 		    reginput += len;
 		}
@@ -3617,7 +3700,7 @@ regmatch(scan)
 			/* Compare current input with back-ref in the same
 			 * line. */
 			len = (int)(reg_endp[no] - reg_startp[no]);
-			if (cstrncmp(reg_startp[no], reginput, len) != 0)
+			if (cstrncmp(reg_startp[no], reginput, &len) != 0)
 			    return FALSE;
 		    }
 		}
@@ -3636,7 +3719,7 @@ regmatch(scan)
 			    /* Compare back-ref within the current line. */
 			    len = reg_endpos[no].col - reg_startpos[no].col;
 			    if (cstrncmp(regline + reg_startpos[no].col,
-							  reginput, len) != 0)
+							  reginput, &len) != 0)
 				return FALSE;
 			}
 			else
@@ -3675,7 +3758,7 @@ regmatch(scan)
 				else
 				    len = (int)STRLEN(p + ccol);
 
-				if (cstrncmp(p + ccol, reginput, len) != 0)
+				if (cstrncmp(p + ccol, reginput, &len) != 0)
 				    return FALSE;	/* doesn't match */
 				if (clnum == reg_endpos[no].lnum)
 				    break;		/* match and at end! */
@@ -3722,7 +3805,7 @@ regmatch(scan)
 		{
 		    len = (int)STRLEN(re_extmatch_in->matches[no]);
 		    if (cstrncmp(re_extmatch_in->matches[no],
-							  reginput, len) != 0)
+							  reginput, &len) != 0)
 			return FALSE;
 		    reginput += len;
 		}
@@ -3861,9 +3944,9 @@ regmatch(scan)
 		    if (ireg_ic)
 		    {
 			if (isupper(nextb))
-			    nextb_ic = TO_LOWER(nextb);
+			    nextb_ic = TOLOWER_LOC(nextb);
 			else
-			    nextb_ic = TO_UPPER(nextb);
+			    nextb_ic = TOUPPER_LOC(nextb);
 		    }
 		    else
 			nextb_ic = nextb;
@@ -4382,8 +4465,8 @@ do_class:
 	     * would have been used for it. */
 	    if (ireg_ic)
 	    {
-		cu = TO_UPPER(*opnd);
-		cl = TO_LOWER(*opnd);
+		cu = TOUPPER_LOC(*opnd);
+		cl = TOLOWER_LOC(*opnd);
 		while (count < maxcount && (*scan == cu || *scan == cl))
 		{
 		    count++;
@@ -5140,18 +5223,147 @@ regprop(op)
 }
 #endif
 
+#ifdef FEAT_MBYTE
+static void mb_decompose __ARGS((int c, int *c1, int *c2, int *c3));
+
+typedef struct
+{
+    int a, b, c;
+} decomp_T;
+
+
+/* 0xfb20 - 0xfb4f */
+decomp_T decomp_table[0xfb4f-0xfb20+1] =
+{
+    {0x5e2,0,0},		/* 0xfb20	alt ayin */
+    {0x5d0,0,0},		/* 0xfb21	alt alef */
+    {0x5d3,0,0},		/* 0xfb22	alt dalet */
+    {0x5d4,0,0},		/* 0xfb23	alt he */
+    {0x5db,0,0},		/* 0xfb24	alt kaf */
+    {0x5dc,0,0},		/* 0xfb25	alt lamed */
+    {0x5dd,0,0},		/* 0xfb26	alt mem-sofit */
+    {0x5e8,0,0},		/* 0xfb27	alt resh */
+    {0x5ea,0,0},		/* 0xfb28	alt tav */
+    {'+', 0, 0},		/* 0xfb29	alt plus */
+    {0x5e9, 0x5c1, 0},		/* 0xfb2a	shin+shin-dot */
+    {0x5e9, 0x5c2, 0},		/* 0xfb2b	shin+sin-dot */
+    {0x5e9, 0x5c1, 0x5bc},	/* 0xfb2c	shin+shin-dot+dagesh */
+    {0x5e9, 0x5c2, 0x5bc},	/* 0xfb2d	shin+sin-dot+dagesh */
+    {0x5d0, 0x5b7, 0},		/* 0xfb2e	alef+patah */
+    {0x5d0, 0x5b8, 0},		/* 0xfb2f	alef+qamats */
+    {0x5d0, 0x5b4, 0},		/* 0xfb30	alef+hiriq */
+    {0x5d1, 0x5bc, 0},		/* 0xfb31	bet+dagesh */
+    {0x5d2, 0x5bc, 0},		/* 0xfb32	gimel+dagesh */
+    {0x5d3, 0x5bc, 0},		/* 0xfb33	dalet+dagesh */
+    {0x5d4, 0x5bc, 0},		/* 0xfb34	he+dagesh */
+    {0x5d5, 0x5bc, 0},		/* 0xfb35	vav+dagesh */
+    {0x5d6, 0x5bc, 0},		/* 0xfb36	zayin+dagesh */
+    {0xfb37, 0, 0},		/* 0xfb37 -- UNUSED */
+    {0x5d8, 0x5bc, 0},		/* 0xfb38	tet+dagesh */
+    {0x5d9, 0x5bc, 0},		/* 0xfb39	yud+dagesh */
+    {0x5da, 0x5bc, 0},		/* 0xfb3a	kaf sofit+dagesh */
+    {0x5db, 0x5bc, 0},		/* 0xfb3b	kaf+dagesh */
+    {0x5dc, 0x5bc, 0},		/* 0xfb3c	lamed+dagesh */
+    {0xfb3d, 0, 0},		/* 0xfb3d -- UNUSED */
+    {0x5de, 0x5bc, 0},		/* 0xfb3e	mem+dagesh */
+    {0xfb3f, 0, 0},		/* 0xfb3f -- UNUSED */
+    {0x5e0, 0x5bc, 0},		/* 0xfb40	nun+dagesh */
+    {0x5e1, 0x5bc, 0},		/* 0xfb41	samech+dagesh */
+    {0xfb42, 0, 0},		/* 0xfb42 -- UNUSED */
+    {0x5e3, 0x5bc, 0},		/* 0xfb43	pe sofit+dagesh */
+    {0x5e4, 0x5bc,0},		/* 0xfb44	pe+dagesh */
+    {0xfb45, 0, 0},		/* 0xfb45 -- UNUSED */
+    {0x5e6, 0x5bc, 0},		/* 0xfb46	tsadi+dagesh */
+    {0x5e7, 0x5bc, 0},		/* 0xfb47	qof+dagesh */
+    {0x5e8, 0x5bc, 0},		/* 0xfb48	resh+dagesh */
+    {0x5e9, 0x5bc, 0},		/* 0xfb49	shin+dagesh */
+    {0x5ea, 0x5bc, 0},		/* 0xfb4a	tav+dagesh */
+    {0x5d5, 0x5b9, 0},		/* 0xfb4b	vav+holam */
+    {0x5d1, 0x5bf, 0},		/* 0xfb4c	bet+rafe */
+    {0x5db, 0x5bf, 0},		/* 0xfb4d	kaf+rafe */
+    {0x5e4, 0x5bf, 0},		/* 0xfb4e	pe+rafe */
+    {0x5d0, 0x5dc, 0}		/* 0xfb4f	alef-lamed */
+};
+
+    static void
+mb_decompose(c, c1, c2, c3)
+    int c, *c1, *c2, *c3;
+{
+    decomp_T d;
+
+    if (c >= 0x4b20 && c <= 0xfb4f)
+    {
+	d = decomp_table[c - 0xfb20];
+	*c1 = d.a;
+	*c2 = d.b;
+	*c3 = d.c;
+    }
+    else
+    {
+	*c1 = c;
+	*c2 = *c3 = 0;
+    }
+}
+#endif
+
 /*
  * Compare two strings, ignore case if ireg_ic set.
  * Return 0 if strings match, non-zero otherwise.
+ * Correct the length "*n" when composing characters are ignored.
  */
     static int
 cstrncmp(s1, s2, n)
     char_u	*s1, *s2;
-    int		n;
+    int		*n;
 {
+    int		result;
+
     if (!ireg_ic)
-	return STRNCMP(s1, s2, n);
-    return MB_STRNICMP(s1, s2, n);
+	result = STRNCMP(s1, s2, *n);
+    else
+	result = MB_STRNICMP(s1, s2, *n);
+
+#ifdef FEAT_MBYTE
+    /* if it failed and it's utf8 and we want to combineignore: */
+    if (result != 0 && enc_utf8 && ireg_icombine)
+    {
+	char_u	*str1, *str2;
+	int	c1, c2, c11, c12;
+	int	ix;
+	int	junk;
+
+	/* we have to handle the strcmp ourselves, since it is necessary to
+	 * deal with the composing characters by ignoring them: */
+	str1 = s1;
+	str2 = s2;
+	c1 = c2 = 0;
+	for (ix = 0; ix < *n; )
+	{
+	    c1 = mb_ptr2char_adv(&str1);
+	    c2 = mb_ptr2char_adv(&str2);
+	    ix += utf_char2len(c1);
+
+	    /* decompose the character if necessary, into 'base' characters
+	     * because I don't care about Arabic, I will hard-code the Hebrew
+	     * which I *do* care about!  So sue me... */
+	    if (c1 != c2 && (!ireg_ic || utf_fold(c1) != utf_fold(c2)))
+	    {
+		/* decomposition necessary? */
+		mb_decompose(c1, &c11, &junk, &junk);
+		mb_decompose(c2, &c12, &junk, &junk);
+		c1 = c11;
+		c2 = c12;
+		if (c11 != c12 && (!ireg_ic || utf_fold(c11) != utf_fold(c12)))
+		    break;
+	    }
+	}
+	result = c2 - c1;
+	if (result == 0)
+	    *n = (int)(str2 - s2);
+    }
+#endif
+
+    return result;
 }
 
 /*
@@ -5181,9 +5393,9 @@ cstrchr(s, c)
     else
 #endif
 	 if (isupper(c))
-	cc = TO_LOWER(c);
+	cc = TOLOWER_LOC(c);
     else if (islower(c))
-	cc = TO_UPPER(c);
+	cc = TOUPPER_LOC(c);
     else
 	return vim_strchr(s, c);
 
@@ -5241,7 +5453,7 @@ do_upper(d, c)
     char_u *d;
     int c;
 {
-    *d = TO_UPPER(c);
+    *d = TOUPPER_LOC(c);
 
     return (fptr)NULL;
 }
@@ -5251,7 +5463,7 @@ do_Upper(d, c)
     char_u *d;
     int c;
 {
-    *d = TO_UPPER(c);
+    *d = TOUPPER_LOC(c);
 
     return (fptr)do_Upper;
 }
@@ -5261,7 +5473,7 @@ do_lower(d, c)
     char_u *d;
     int c;
 {
-    *d = TO_LOWER(c);
+    *d = TOLOWER_LOC(c);
 
     return (fptr)NULL;
 }
@@ -5271,7 +5483,7 @@ do_Lower(d, c)
     char_u	*d;
     int		c;
 {
-    *d = TO_LOWER(c);
+    *d = TOLOWER_LOC(c);
 
     return (fptr)do_Lower;
 }
@@ -5331,8 +5543,15 @@ regtilde(source, magic)
 		STRCPY(p, p + 2);		/* remove '\~' */
 	    --p;
 	}
-	else if (*p == '\\' && p[1])		/* skip escaped characters */
-	    ++p;
+	else
+	{
+	    if (*p == '\\' && p[1])		/* skip escaped characters */
+		++p;
+#ifdef FEAT_MBYTE
+	    if (has_mbyte)
+		p += (*mb_ptr2len_check)(p) - 1;
+#endif
+	}
     }
 
     vim_free(reg_prev_sub);
@@ -5746,7 +5965,7 @@ reg_submatch(no)
 		if (round == 2)
 		{
 		    STRCPY(retval, s);
-		    retval[len] = '\r';
+		    retval[len] = '\n';
 		}
 		++len;
 		++lnum;
@@ -5757,7 +5976,7 @@ reg_submatch(no)
 			STRCPY(retval + len, s);
 		    len += (int)STRLEN(s);
 		    if (round == 2)
-			retval[len] = '\r';
+			retval[len] = '\n';
 		    ++len;
 		}
 		if (round == 2)

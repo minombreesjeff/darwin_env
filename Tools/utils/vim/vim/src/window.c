@@ -30,7 +30,8 @@ static win_T *winframe_remove __ARGS((win_T *win, int *dirp));
 static frame_T *win_altframe __ARGS((win_T *win));
 static win_T *frame2win __ARGS((frame_T *frp));
 static int frame_has_win __ARGS((frame_T *frp, win_T *wp));
-static void frame_new_height __ARGS((frame_T *topfrp, int height, int topfirst));
+static void frame_new_height __ARGS((frame_T *topfrp, int height, int topfirst, int wfh));
+static int frame_fixed_height __ARGS((frame_T *frp));
 #ifdef FEAT_VERTSPLIT
 static void frame_add_statusline __ARGS((frame_T *frp));
 static void frame_new_width __ARGS((frame_T *topfrp, int width, int leftfirst));
@@ -64,7 +65,6 @@ static void restore_snapshot __ARGS((int close_curwin));
 static int check_snapshot_rec __ARGS((frame_T *sn, frame_T *fr));
 static win_T *restore_snapshot_rec __ARGS((frame_T *sn, frame_T *fr));
 
-static win_T	*prevwin = NULL;	/* previous window */
 #endif /* FEAT_WINDOWS */
 static void win_setheight_win __ARGS((int height, win_T *win));
 static win_T *win_alloc __ARGS((win_T *after));
@@ -80,13 +80,13 @@ static void win_new_height __ARGS((win_T *, int));
  * all CTRL-W window commands are handled here, called from normal_cmd().
  */
     void
-do_window(nchar, Prenum)
+do_window(nchar, Prenum, xchar)
     int		nchar;
     long	Prenum;
+    int		xchar;	    /* extra char from ":wincmd gx" or NUL */
 {
     long	Prenum1;
     win_T	*wp;
-    int		xchar;
 #if defined(FEAT_SEARCHPATH) || defined(FEAT_FIND_ID)
     char_u	*ptr;
 #endif
@@ -94,6 +94,7 @@ do_window(nchar, Prenum)
     int		type = FIND_DEFINE;
     int		len;
 #endif
+    char_u	cbuf[40];
 
     if (Prenum == 0)
 	Prenum1 = 1;
@@ -144,10 +145,10 @@ do_window(nchar, Prenum)
 #ifdef FEAT_VISUAL
 		reset_VIsual_and_resel();	/* stop Visual mode */
 #endif
-		stuffReadbuff((char_u *)":split #");
+		STRCPY(cbuf, "split #");
 		if (Prenum)
-		    stuffnumReadbuff(Prenum);	/* buffer number */
-		stuffcharReadbuff('\n');
+		    sprintf((char *)cbuf + 7, "%ld", Prenum);
+		do_cmdline_cmd(cbuf);
 		break;
 
 /* open new window */
@@ -157,10 +158,12 @@ do_window(nchar, Prenum)
 #ifdef FEAT_VISUAL
 		reset_VIsual_and_resel();	/* stop Visual mode */
 #endif
-		stuffcharReadbuff(':');
 		if (Prenum)
-		    stuffnumReadbuff(Prenum);	/* window height */
-		stuffReadbuff((char_u *)"new\n");
+		    sprintf((char *)cbuf, "%ld", Prenum); /* window height */
+		else
+		    cbuf[0] = NUL;
+		STRCAT(cbuf, "new");
+		do_cmdline_cmd(cbuf);
 		break;
 
 /* quit current window */
@@ -169,7 +172,7 @@ do_window(nchar, Prenum)
 #ifdef FEAT_VISUAL
 		reset_VIsual_and_resel();	/* stop Visual mode */
 #endif
-		stuffReadbuff((char_u *)":quit\n");
+		do_cmdline_cmd((char_u *)"quit");
 		break;
 
 /* close current window */
@@ -178,7 +181,7 @@ do_window(nchar, Prenum)
 #ifdef FEAT_VISUAL
 		reset_VIsual_and_resel();	/* stop Visual mode */
 #endif
-		stuffReadbuff((char_u *)":close\n");
+		do_cmdline_cmd((char_u *)"close");
 		break;
 
 #if defined(FEAT_WINDOWS) && defined(FEAT_QUICKFIX)
@@ -189,7 +192,7 @@ do_window(nchar, Prenum)
 #ifdef FEAT_VISUAL
 		reset_VIsual_and_resel();	/* stop Visual mode */
 #endif
-		stuffReadbuff((char_u *)":pclose\n");
+		do_cmdline_cmd((char_u *)"pclose");
 		break;
 
 /* cursor to preview window */
@@ -211,7 +214,7 @@ do_window(nchar, Prenum)
 #ifdef FEAT_VISUAL
 		reset_VIsual_and_resel();	/* stop Visual mode */
 #endif
-		stuffReadbuff((char_u *)":only\n");
+		do_cmdline_cmd((char_u *)"only");
 		break;
 
 /* cursor to next window with wrap around */
@@ -367,7 +370,7 @@ do_window(nchar, Prenum)
 #ifdef FEAT_GUI
 		need_mouse_correct = TRUE;
 #endif
-		win_equal(NULL, FALSE, 0);
+		win_equal(NULL, FALSE, 'b');
 		break;
 
 /* increase current window height */
@@ -422,7 +425,7 @@ do_window(nchar, Prenum)
 #endif
 
 /* jump to tag and split window if tag exists (in preview window) */
-#if defined(FEAT_WINDOWS) && defined(FEAT_QUICKFIX)
+#if defined(FEAT_QUICKFIX)
     case '}':
 		CHECK_CMDWIN
 		if (Prenum)
@@ -441,7 +444,10 @@ do_window(nchar, Prenum)
 		    postponed_split = Prenum;
 		else
 		    postponed_split = -1;
-		stuffcharReadbuff(Ctrl_RSB);
+
+		/* Execute the command right here, required when
+		 * "wincmd ]" was used in a function. */
+		do_nv_ident(Ctrl_RSB, NUL);
 		break;
 
 #ifdef FEAT_SEARCHPATH
@@ -461,8 +467,13 @@ do_window(nchar, Prenum)
 #endif
 		    setpcmark();
 		    if (win_split(0, 0) == OK)
+		    {
+# ifdef FEAT_SCROLLBIND
+			curwin->w_p_scb = FALSE;
+# endif
 			(void)do_ecmd(0, ptr, NULL, NULL, ECMD_LASTL,
 								   ECMD_HIDE);
+		    }
 		    vim_free(ptr);
 		}
 		break;
@@ -497,7 +508,8 @@ do_window(nchar, Prenum)
 #endif
 		++no_mapping;
 		++allow_keys;   /* no mapping for xchar, but allow key codes */
-		xchar = safe_vgetc();
+		if (xchar == NUL)
+		    xchar = safe_vgetc();
 #ifdef FEAT_LANGMAP
 		LANGMAP_ADJUST(xchar, TRUE);
 #endif
@@ -508,7 +520,7 @@ do_window(nchar, Prenum)
 #endif
 		switch (xchar)
 		{
-#if defined(FEAT_WINDOWS) && defined(FEAT_QUICKFIX)
+#if defined(FEAT_QUICKFIX)
 		    case '}':
 			xchar = Ctrl_RSB;
 			if (Prenum)
@@ -529,17 +541,7 @@ do_window(nchar, Prenum)
 
 			/* Execute the command right here, required when
 			 * "wincmd g}" was used in a function. */
-			{
-			    oparg_T	oa;
-			    cmdarg_T	ca;
-
-			    clear_oparg(&oa);
-			    vim_memset(&ca, 0, sizeof(ca));
-			    ca.oap = &oa;
-			    ca.cmdchar = 'g';
-			    ca.nchar = xchar;
-			    nv_ident(&ca);
-			}
+			do_nv_ident('g', xchar);
 			break;
 
 		    default:
@@ -720,18 +722,18 @@ win_split_ins(size, flags, newwin, dir)
 	/* if it doesn't fit in the current window, need win_equal() */
 	if (oldwin_height - new_size - STATUS_HEIGHT < p_wmh)
 	    do_equal = TRUE;
-#ifdef FEAT_QUICKFIX
-	/* We don't like to take lines for the new window from a quickfix
-	 * or preview window.  Take them from a window above or below
+
+	/* We don't like to take lines for the new window from a
+	 * 'winfixheight' window.  Take them from a window above or below
 	 * instead, if possible. */
-	if (bt_quickfix(oldwin->w_buffer) || oldwin->w_p_pvw)
+	if (oldwin->w_p_wfh)
 	{
-	    win_setheight_win(oldwin->w_height + new_size, oldwin);
+	    win_setheight_win(oldwin->w_height + new_size + STATUS_HEIGHT,
+								      oldwin);
 	    oldwin_height = oldwin->w_height;
 	    if (need_status)
 		oldwin_height -= STATUS_HEIGHT;
 	}
-#endif
     }
 
     /*
@@ -967,7 +969,7 @@ win_split_ins(size, flags, newwin, dir)
 	win_new_height(wp, new_size);
 	if (flags & (WSP_TOP | WSP_BOT))
 	    frame_new_height(curfrp, curfrp->fr_height
-			       - (new_size + STATUS_HEIGHT), flags & WSP_TOP);
+			- (new_size + STATUS_HEIGHT), flags & WSP_TOP, FALSE);
 	else
 	    win_new_height(oldwin, oldwin_height - (new_size + STATUS_HEIGHT));
 	if (before)	/* new window above current one */
@@ -1173,7 +1175,7 @@ make_windows(count, vertical)
      * Don't execute autocommands while creating the windows.  Must do that
      * when putting the buffers in the windows.
      */
-    ++autocmd_busy;
+    ++autocmd_block;
 #endif
 
     /* todo is number of windows left to create */
@@ -1195,7 +1197,7 @@ make_windows(count, vertical)
 	}
 
 #ifdef FEAT_AUTOCMD
-    --autocmd_busy;
+    --autocmd_block;
 #endif
 
     /* return actual number of windows */
@@ -1405,6 +1407,7 @@ win_totop(size, flags)
     int		flags;
 {
     int		dir;
+    int		height = curwin->w_height;
 
     if (lastwin == firstwin)
     {
@@ -1415,10 +1418,17 @@ win_totop(size, flags)
     /* Remove the window and frame from the tree of frames. */
     (void)winframe_remove(curwin, &dir);
     win_remove(curwin);
-    (void)win_comp_pos();
+    last_status(FALSE);	    /* may need to remove last status line */
+    (void)win_comp_pos();   /* recompute window positions */
 
-    /* Split a window on the right side and put the window there. */
+    /* Split a window on the desired side and put the window there. */
     (void)win_split_ins(size, flags, curwin, dir);
+    if (!(flags & WSP_VERT))
+    {
+	win_setheight(height);
+	if (p_ea)
+	    win_equal(curwin, TRUE, 'v');
+    }
 
 #if defined(FEAT_GUI) && defined(FEAT_VERTSPLIT)
     /* When 'guioptions' includes 'L' or 'R' may have to remove or add
@@ -1529,10 +1539,6 @@ win_equal_rec(next_curwin, current, topfr, dir, col, row, width, height)
     int		next_curwin_size = 0;
     int		room = 0;
     int		new_size;
-#ifdef FEAT_QUICKFIX
-    int		quickfix_height = 0;
-    int		preview_height = 0;
-#endif
     int		has_next_curwin = 0;
     int		hnc;
 
@@ -1547,7 +1553,7 @@ win_equal_rec(next_curwin, current, topfr, dir, col, row, width, height)
 	   )
 	{
 	    topfr->fr_win->w_winrow = row;
-	    frame_new_height(topfr, height, FALSE);
+	    frame_new_height(topfr, height, FALSE, FALSE);
 #ifdef FEAT_VERTSPLIT
 	    topfr->fr_win->w_wincol = col;
 	    frame_new_width(topfr, width, FALSE);
@@ -1675,19 +1681,17 @@ win_equal_rec(next_curwin, current, topfr, dir, col, row, width, height)
 	    }
 	    else
 	    {
-#ifdef FEAT_QUICKFIX
 		next_curwin_size = -1;
 		for (fr = topfr->fr_child; fr != NULL; fr = fr->fr_next)
 		{
-		    /* The quickfix and preview window keep their height if
+		    /* If 'winfixheight' set keep the window height if
 		     * possible.
 		     * Watch out for this window being the next_curwin. */
-		    if (fr->fr_win != NULL
-			    && (bt_quickfix(fr->fr_win->w_buffer)
-				|| fr->fr_win->w_p_pvw))
+		    if (frame_fixed_height(fr))
 		    {
+			n = frame_minheight(fr, NOWIN);
 			new_size = fr->fr_height;
-			if (fr->fr_win == next_curwin)
+			if (frame_has_win(fr, next_curwin))
 			{
 			    room += p_wh - p_wmh;
 			    next_curwin_size = 0;
@@ -1695,21 +1699,19 @@ win_equal_rec(next_curwin, current, topfr, dir, col, row, width, height)
 				new_size = p_wh;
 			}
 			else
-			    --totwincount;
-			room -= new_size - p_wmh - fr->fr_win->w_status_height;
+			    /* These windows don't use up room. */
+			    totwincount -= (n + (fr->fr_next == NULL
+					      ? extra_sep : 0)) / (p_wmh + 1);
+			room -= new_size - n;
 			if (room < 0)
 			{
 			    new_size += room;
 			    room = 0;
 			}
-			if (fr->fr_win->w_p_pvw)
-			    preview_height = new_size;
-			else
-			    quickfix_height = new_size;
+			fr->fr_newheight = new_size;
 		    }
 		}
 		if (next_curwin_size == -1)
-#endif
 		{
 		    if (!has_next_curwin)
 			next_curwin_size = 0;
@@ -1739,18 +1741,11 @@ win_equal_rec(next_curwin, current, topfr, dir, col, row, width, height)
 		new_size = height;
 	    else if (dir == 'h')
 		new_size = fr->fr_height;
-#ifdef FEAT_QUICKFIX
-	    else if (fr->fr_win != NULL && bt_quickfix(fr->fr_win->w_buffer))
+	    else if (frame_fixed_height(fr))
 	    {
-		new_size = quickfix_height;
+		new_size = fr->fr_newheight;
 		wincount = 0;	    /* doesn't count as a sizeable window */
 	    }
-	    else if (fr->fr_win != NULL && fr->fr_win->w_p_pvw)
-	    {
-		new_size = preview_height;
-		wincount = 0;	    /* doesn't count as a sizeable window */
-	    }
-#endif
 	    else
 	    {
 		/* Compute the maximum number of windows vert. in "fr". */
@@ -1871,6 +1866,11 @@ win_close(win, free_buf)
 	apply_autocmds(EVENT_WINLEAVE, NULL, NULL, FALSE, curbuf);
 	if (!win_valid(win) || firstwin == lastwin)
 	    return;
+# ifdef FEAT_EVAL
+	/* autocmds may abort script processing */
+	if (aborting())
+	    return;
+# endif
     }
 #endif
 
@@ -1884,7 +1884,7 @@ win_close(win, free_buf)
 	return;
 
     /* reduce the reference count to the argument list. */
-    alist_unlink(curwin->w_alist);
+    alist_unlink(win->w_alist);
 
     /* remove the window and its frame from the tree of frames. */
     frp = win->w_frame;
@@ -1902,7 +1902,7 @@ win_close(win, free_buf)
 	if (wp->w_p_pvw || bt_quickfix(wp->w_buffer))
 	{
 	    /*
-	     * When the cursor goes to the preview or the quickfix window, try
+	     * The cursor goes to the preview or the quickfix window, try
 	     * finding another window to go to.
 	     */
 	    for (;;)
@@ -1977,6 +1977,7 @@ winframe_remove(win, dirp)
     frame_T	*frp, *frp2, *frp3;
     frame_T	*frp_close = win->w_frame;
     win_T	*wp;
+    int		old_height = 0;
 
     /*
      * Remove the window from its frame.
@@ -1987,39 +1988,21 @@ winframe_remove(win, dirp)
     /* Remove this frame from the list of frames. */
     frame_remove(frp_close);
 
-    /* If rows/columns go to a window below/right its positions need to be
-     * updated. */
-    if (frp2 == frp_close->fr_next)
-    {
-	int row = win->w_winrow;
-	int col = W_WINCOL(win);
-
-	frame_comp_pos(frp2, &row, &col);
-    }
-
 #ifdef FEAT_VERTSPLIT
     if (frp_close->fr_parent->fr_layout == FR_COL)
     {
 #endif
-#ifdef FEAT_QUICKFIX
-	int	old_height = 0;
-
-	/* For a preview or quickfix window, remember its old size and restore
+	/* When 'winfixheight' is set, remember its old size and restore
 	 * it later (it's a simplistic solution...).  Don't do this if the
 	 * window will occupy the full height of the screen. */
 	if (frp2->fr_win != NULL
-		&& (frp2->fr_next != NULL
-		    || frp2->fr_prev != NULL)
-		&& (frp2->fr_win->w_p_pvw
-		    || bt_quickfix(frp2->fr_win->w_buffer)))
+		&& (frp2->fr_next != NULL || frp2->fr_prev != NULL)
+		&& frp2->fr_win->w_p_wfh)
 	    old_height = frp2->fr_win->w_height;
-#endif
 	frame_new_height(frp2, frp2->fr_height + frp_close->fr_height,
-				   frp2 == frp_close->fr_next ? TRUE : FALSE);
-#ifdef FEAT_QUICKFIX
+			    frp2 == frp_close->fr_next ? TRUE : FALSE, FALSE);
 	if (old_height != 0)
 	    win_setheight_win(old_height, frp2->fr_win);
-#endif
 #ifdef FEAT_VERTSPLIT
 	*dirp = 'v';
     }
@@ -2030,6 +2013,16 @@ winframe_remove(win, dirp)
 	*dirp = 'h';
     }
 #endif
+
+    /* If rows/columns go to a window below/right its positions need to be
+     * updated.  Can only be done after the sizes have been updated. */
+    if (frp2 == frp_close->fr_next)
+    {
+	int row = win->w_winrow;
+	int col = W_WINCOL(win);
+
+	frame_comp_pos(frp2, &row, &col);
+    }
 
     if (frp2->fr_next == NULL && frp2->fr_prev == NULL)
     {
@@ -2136,10 +2129,12 @@ frame_has_win(frp, wp)
  * frames and windows.  Caller must take care of positions.
  */
     static void
-frame_new_height(topfrp, height, topfirst)
+frame_new_height(topfrp, height, topfirst, wfh)
     frame_T	*topfrp;
     int		height;
     int		topfirst;	/* resize topmost contained frame first */
+    int		wfh;		/* obey 'winfixheight' when there is a choice;
+				   may cause the height not to be set */
 {
     frame_T	*frp;
     int		extra_lines;
@@ -2154,9 +2149,21 @@ frame_new_height(topfrp, height, topfirst)
 #ifdef FEAT_VERTSPLIT
     else if (topfrp->fr_layout == FR_ROW)
     {
-	/* All frames in this row get the same new height. */
-	for (frp = topfrp->fr_child; frp != NULL; frp = frp->fr_next)
-	    frame_new_height(frp, height, topfirst);
+	do
+	{
+	    /* All frames in this row get the same new height. */
+	    for (frp = topfrp->fr_child; frp != NULL; frp = frp->fr_next)
+	    {
+		frame_new_height(frp, height, topfirst, wfh);
+		if (frp->fr_height > height)
+		{
+		    /* Could not fit the windows, make the whole row higher. */
+		    height = frp->fr_height;
+		    break;
+		}
+	    }
+	}
+	while (frp != NULL);
     }
 #endif
     else
@@ -2165,42 +2172,97 @@ frame_new_height(topfrp, height, topfirst)
 	 * frame first, frames above that when needed. */
 
 	frp = topfrp->fr_child;
+	if (wfh)
+	    /* Advance past frames with one window with 'wfh' set. */
+	    while (frame_fixed_height(frp))
+	    {
+		frp = frp->fr_next;
+		if (frp == NULL)
+		    return;	    /* no frame without 'wfh', give up */
+	    }
 	if (!topfirst)
+	{
 	    /* Find the bottom frame of this column */
 	    while (frp->fr_next != NULL)
 		frp = frp->fr_next;
+	    if (wfh)
+		/* Advance back for frames with one window with 'wfh' set. */
+		while (frame_fixed_height(frp))
+		    frp = frp->fr_prev;
+	}
 
 	extra_lines = height - topfrp->fr_height;
 	if (extra_lines < 0)
 	{
-	    /* reduce frame height, bottom frame first */
+	    /* reduce height of contained frames, bottom or top frame first */
 	    while (frp != NULL)
 	    {
 		h = frame_minheight(frp, NULL);
 		if (frp->fr_height + extra_lines < h)
 		{
 		    extra_lines += frp->fr_height - h;
-		    frame_new_height(frp, h, topfirst);
+		    frame_new_height(frp, h, topfirst, wfh);
 		}
 		else
 		{
 		    frame_new_height(frp, frp->fr_height + extra_lines,
-								    topfirst);
+							       topfirst, wfh);
 		    break;
 		}
 		if (topfirst)
-		    frp = frp->fr_next;
+		{
+		    do
+			frp = frp->fr_next;
+		    while (wfh && frp != NULL && frame_fixed_height(frp));
+		}
 		else
-		    frp = frp->fr_prev;
+		{
+		    do
+			frp = frp->fr_prev;
+		    while (wfh && frp != NULL && frame_fixed_height(frp));
+		}
+		/* Increase "height" if we could not reduce enough frames. */
+		if (frp == NULL)
+		    height -= extra_lines;
 	    }
 	}
 	else if (extra_lines > 0)
 	{
 	    /* increase height of bottom or top frame */
-	    frame_new_height(frp, frp->fr_height + extra_lines, topfirst);
+	    frame_new_height(frp, frp->fr_height + extra_lines, topfirst, wfh);
 	}
     }
     topfrp->fr_height = height;
+}
+
+/*
+ * Return TRUE if height of frame "frp" should not be changed because of
+ * the 'winfixheight' option.
+ */
+    static int
+frame_fixed_height(frp)
+    frame_T	*frp;
+{
+    /* frame with one window: fixed height if 'winfixheight' set. */
+    if (frp->fr_win != NULL)
+	return frp->fr_win->w_p_wfh;
+
+    if (frp->fr_layout == FR_ROW)
+    {
+	/* The frame is fixed height if one of the frames in the row is fixed
+	 * height. */
+	for (frp = frp->fr_child; frp != NULL; frp = frp->fr_next)
+	    if (frame_fixed_height(frp))
+		return TRUE;
+	return FALSE;
+    }
+
+    /* frp->fr_layout == FR_COL: The frame is fixed height if all of the
+     * frames in the row are fixed height. */
+    for (frp = frp->fr_child; frp != NULL; frp = frp->fr_next)
+	if (!frame_fixed_height(frp))
+	    return FALSE;
+    return TRUE;
 }
 
 #ifdef FEAT_VERTSPLIT
@@ -2809,6 +2871,13 @@ win_enter(wp, undo_sync)
     int		undo_sync;
 {
     win_enter_ext(wp, undo_sync, FALSE);
+#if defined(FEAT_NETBEANS_INTG) || defined(FEAT_SUN_WORKSHOP)
+    /* Change directories when the acd option is set on and after
+     * switching windows. */
+    if (p_acd && curbuf->b_ffname != NULL
+	    && vim_chdirfile(curbuf->b_ffname) == OK)
+	shorten_fnames(TRUE);
+#endif
 }
 
 /*
@@ -2845,6 +2914,11 @@ win_enter_ext(wp, undo_sync, curwin_invalid)
 	apply_autocmds(EVENT_WINLEAVE, NULL, NULL, FALSE, curbuf);
 	if (!win_valid(wp))
 	    return;
+# ifdef FEAT_EVAL
+	/* autocmds may abort script processing */
+	if (aborting())
+	    return;
+# endif
     }
 #endif
 
@@ -2907,8 +2981,10 @@ win_enter_ext(wp, undo_sync, curwin_invalid)
 	redraw_later(VALID);	/* causes status line redraw */
 
     /* set window height to desired minimal value */
-    if (curwin->w_height < p_wh)
+    if (curwin->w_height < p_wh && !curwin->w_p_wfh)
 	win_setheight((int)p_wh);
+    else if (curwin->w_height == 0)
+	win_setheight(1);
 
 #ifdef FEAT_VERTSPLIT
     /* set window width to desired minimal value */
@@ -3207,7 +3283,12 @@ shell_new_rows()
 #ifdef FEAT_WINDOWS
     if (h < frame_minheight(topframe, NULL))
 	h = frame_minheight(topframe, NULL);
-    frame_new_height(topframe, h, FALSE);
+    /* First try setting the heights of windows without 'winfixheight'.  If
+     * that doesn't result in the right height, forget about that option. */
+    frame_new_height(topframe, h, FALSE, TRUE);
+    if (topframe->fr_height != h)
+	frame_new_height(topframe, h, FALSE, FALSE);
+
     (void)win_comp_pos();		/* recompute w_winrow and w_wincol */
 #else
     if (h < 1)
@@ -3446,9 +3527,7 @@ frame_setheight(curfrp, height)
     int		run;
     frame_T	*frp;
     int		h;
-#ifdef FEAT_QUICKFIX
     int		room_reserved;
-#endif
 
     /* If the height already is the desired value, nothing to do. */
     if (curfrp->fr_height == height)
@@ -3460,7 +3539,7 @@ frame_setheight(curfrp, height)
 	if (height > Rows - p_ch)
 	    height = Rows - p_ch;
 	if (height > 0)
-	    frame_new_height(curfrp, height, FALSE);
+	    frame_new_height(curfrp, height, FALSE, FALSE);
     }
     else if (curfrp->fr_parent->fr_layout == FR_ROW)
     {
@@ -3482,7 +3561,7 @@ frame_setheight(curfrp, height)
 	 * 1: compute room available, if it's not enough try resizing the
 	 *    containing frame.
 	 * 2: compute the room available and adjust the height to it.
-	 * Try not to reduce the height of the quickfix and preview window.
+	 * Try not to reduce the height of a window with 'winfixheight' set.
 	 */
 	for (run = 1; run <= 2; ++run)
 #else
@@ -3490,19 +3569,14 @@ frame_setheight(curfrp, height)
 #endif
 	{
 	    room = 0;
-#ifdef FEAT_QUICKFIX
 	    room_reserved = 0;
-#endif
 	    for (frp = curfrp->fr_parent->fr_child; frp != NULL;
 							   frp = frp->fr_next)
 	    {
-#ifdef FEAT_QUICKFIX
 		if (frp != curfrp
 			&& frp->fr_win != NULL
-			&& (frp->fr_win->w_p_pvw
-			    || bt_quickfix(frp->fr_win->w_buffer)))
+			&& frp->fr_win->w_p_wfh)
 		    room_reserved += frp->fr_height;
-#endif
 		room += frp->fr_height;
 		if (frp != curfrp)
 		    room -= frame_minheight(frp, NULL);
@@ -3542,16 +3616,14 @@ frame_setheight(curfrp, height)
 	 */
 	take = height - curfrp->fr_height;
 
-#ifdef FEAT_QUICKFIX
-	/* If there is not enough room, also reduce the height of quickfix and
-	 * preview window. */
+	/* If there is not enough room, also reduce the height of a window
+	 * with 'winfixheight' set. */
 	if (height > room + room_cmdline - room_reserved)
 	    room_reserved = room + room_cmdline - height;
-	/* If there is only a quickfix or preview window and making the
+	/* If there is only a 'winfixheight' window and making the
 	 * window smaller, need to make the other window taller. */
 	if (take < 0 && room - curfrp->fr_height < room_reserved)
 	    room_reserved = 0;
-#endif
 
 	if (take > 0 && room_cmdline > 0)
 	{
@@ -3565,7 +3637,7 @@ frame_setheight(curfrp, height)
 	/*
 	 * set the current frame to the new height
 	 */
-	frame_new_height(curfrp, height, FALSE);
+	frame_new_height(curfrp, height, FALSE, FALSE);
 
 	/*
 	 * First take lines from the frames after the current frame.  If
@@ -3581,11 +3653,9 @@ frame_setheight(curfrp, height)
 	    while (frp != NULL && take != 0)
 	    {
 		h = frame_minheight(frp, NULL);
-#ifdef FEAT_QUICKFIX
 		if (room_reserved > 0
 			&& frp->fr_win != NULL
-			&& (frp->fr_win->w_p_pvw
-			    || bt_quickfix(frp->fr_win->w_buffer)))
+			&& frp->fr_win->w_p_wfh)
 		{
 		    if (room_reserved >= frp->fr_height)
 			room_reserved -= frp->fr_height;
@@ -3594,21 +3664,21 @@ frame_setheight(curfrp, height)
 			if (frp->fr_height - room_reserved > take)
 			    room_reserved = frp->fr_height - take;
 			take -= frp->fr_height - room_reserved;
-			frame_new_height(frp, room_reserved, FALSE);
+			frame_new_height(frp, room_reserved, FALSE, FALSE);
 			room_reserved = 0;
 		    }
 		}
 		else
-#endif
 		{
 		    if (frp->fr_height - take < h)
 		    {
 			take -= frp->fr_height - h;
-			frame_new_height(frp, h, FALSE);
+			frame_new_height(frp, h, FALSE, FALSE);
 		    }
 		    else
 		    {
-			frame_new_height(frp, frp->fr_height - take, FALSE);
+			frame_new_height(frp, frp->fr_height - take,
+								FALSE, FALSE);
 			take = 0;
 		    }
 		}
@@ -3790,10 +3860,11 @@ win_setminheight()
 #ifdef FEAT_MOUSE
 
 /*
- * Status line of curwin is dragged "offset" lines down (negative is up).
+ * Status line of dragwin is dragged "offset" lines down (negative is up).
  */
     void
-win_drag_status_line(offset)
+win_drag_status_line(dragwin, offset)
+    win_T	*dragwin;
     int		offset;
 {
     frame_T	*curfr;
@@ -3803,7 +3874,7 @@ win_drag_status_line(offset)
     int		up;	/* if TRUE, drag status line up, otherwise down */
     int		n;
 
-    fr = curwin->w_frame;
+    fr = dragwin->w_frame;
     curfr = fr;
     if (fr != topframe)		/* more than one window */
     {
@@ -3880,7 +3951,7 @@ win_drag_status_line(offset)
      * Doesn't happen when dragging the last status line up.
      */
     if (fr != NULL)
-	frame_new_height(fr, fr->fr_height + offset, up);
+	frame_new_height(fr, fr->fr_height + offset, up, FALSE);
 
     if (up)
 	fr = curfr;		/* current frame gets smaller */
@@ -3896,11 +3967,11 @@ win_drag_status_line(offset)
 	if (fr->fr_height - offset <= n)
 	{
 	    offset -= fr->fr_height - n;
-	    frame_new_height(fr, n, !up);
+	    frame_new_height(fr, n, !up, FALSE);
 	}
 	else
 	{
-	    frame_new_height(fr, fr->fr_height - offset, !up);
+	    frame_new_height(fr, fr->fr_height - offset, !up, FALSE);
 	    break;
 	}
 	if (up)
@@ -3920,10 +3991,11 @@ win_drag_status_line(offset)
 
 #ifdef FEAT_VERTSPLIT
 /*
- * Separator line of curwin is dragged "offset" lines right (negative is left).
+ * Separator line of dragwin is dragged "offset" lines right (negative is left).
  */
     void
-win_drag_vsep_line(offset)
+win_drag_vsep_line(dragwin, offset)
+    win_T	*dragwin;
     int		offset;
 {
     frame_T	*curfr;
@@ -3932,7 +4004,7 @@ win_drag_vsep_line(offset)
     int		left;	/* if TRUE, drag separator line left, otherwise right */
     int		n;
 
-    fr = curwin->w_frame;
+    fr = dragwin->w_frame;
     if (fr == topframe)		/* only one window (cannot happe?) */
 	return;
     curfr = fr;
@@ -4177,10 +4249,15 @@ command_height(old_p_ch)
 
     /* Find bottom frame with width of screen. */
     frp = lastwin->w_frame;
-#ifdef FEAT_VERTSPLIT
+# ifdef FEAT_VERTSPLIT
     while (frp->fr_width != Columns && frp->fr_parent != NULL)
 	frp = frp->fr_parent;
-#endif
+# endif
+
+    /* Avoid changing the height of a window with 'winfixheight' set. */
+    while (frp->fr_prev != NULL && frp->fr_layout == FR_LEAF
+						      && frp->fr_win->w_p_wfh)
+	frp = frp->fr_prev;
 
     if (starting != NO_SCREEN)
     {
@@ -4222,6 +4299,10 @@ command_height(old_p_ch)
 	redraw_cmdline = TRUE;
     }
     frame_add_height(frp, (int)(old_p_ch - p_ch));
+
+    /* Recompute window positions. */
+    if (frp != lastwin->w_frame)
+	(void)win_comp_pos();
 #else
     win_setheight((int)(firstwin->w_height + old_p_ch - p_ch));
     cmdline_row = Rows - p_ch;
@@ -4238,7 +4319,7 @@ frame_add_height(frp, n)
     frame_T	*frp;
     int		n;
 {
-    frame_new_height(frp, frp->fr_height + n, FALSE);
+    frame_new_height(frp, frp->fr_height + n, FALSE, FALSE);
     for (;;)
     {
 	frp = frp->fr_parent;
@@ -4300,7 +4381,7 @@ last_status_rec(fr, statusline)
 	    wp->w_status_height = 1;
 	    if (fp != fr)
 	    {
-		frame_new_height(fp, fp->fr_height - 1, FALSE);
+		frame_new_height(fp, fp->fr_height - 1, FALSE, FALSE);
 		frame_fix_height(wp);
 		(void)win_comp_pos();
 	    }
@@ -4804,7 +4885,7 @@ restore_snapshot_rec(sn, fr)
 # endif
     if (fr->fr_layout == FR_LEAF)
     {
-	frame_new_height(fr, fr->fr_height, FALSE);
+	frame_new_height(fr, fr->fr_height, FALSE, FALSE);
 # ifdef FEAT_VERTSPLIT
 	frame_new_width(fr, fr->fr_width, FALSE);
 # endif

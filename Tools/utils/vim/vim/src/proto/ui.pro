@@ -33,6 +33,8 @@ int vim_is_input_buf_full __ARGS((void));
 int vim_is_input_buf_empty __ARGS((void));
 int vim_free_in_input_buf __ARGS((void));
 int vim_used_in_input_buf __ARGS((void));
+char_u *get_input_buf __ARGS((void));
+void set_input_buf __ARGS((char_u *p));
 void add_to_input_buf __ARGS((char_u *s, int len));
 void add_to_input_buf_csi __ARGS((char_u *str, int len));
 void push_raw_key __ARGS((char_u *s, int len));
@@ -53,6 +55,7 @@ int jump_to_mouse __ARGS((int flags, int *inclusive, int which_button));
 int mouse_comp_pos __ARGS((win_T *win, int *rowp, int *colp, linenr_T *lnump));
 win_T *mouse_find_win __ARGS((int *rowp, int *colp));
 int get_fpos_of_mouse __ARGS((pos_T *mpos));
+int vcol2col __ARGS((win_T *wp, linenr_T lnum, int vcol));
 void ui_focus_change __ARGS((int in_focus));
 void im_save_status __ARGS((long *psave));
 /* vim: set ft=c : */

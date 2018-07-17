@@ -1,9 +1,9 @@
 " Vim syntax file
 "    Language: SQL*Forms (Oracle 7), based on sql.vim (vim5.0)
 "  Maintainer: Austin Ziegler (austin@halostatue.ca)
-" Last Change: 20010723, updated for latest Vim (5.8+).
+" Last Change: 2003 May 11
 " Prev Change: 19980710
-"         URL: http://www.halostatue.ca/vim/syntax/proc.vim
+"	  URL: http://www.halostatue.ca/vim/syntax/proc.vim
 "
 " TODO Find a new maintainer who knows SQL*Forms.
 
@@ -17,7 +17,12 @@ endif
 
 syntax case ignore
 
-set iskeyword=a-z,A-Z,48-57,_,.,-,>
+if version >= 600
+  setlocal iskeyword=a-z,A-Z,48-57,_,.,-,>
+else
+  set iskeyword=a-z,A-Z,48-57,_,.,-,>
+endif
+
 
     " The SQL reserved words, defined as keywords.
 syntax match sqlTriggers /on-.*$/
@@ -135,10 +140,10 @@ syntax sync ccomment sqlComment
 
 if version >= 508 || !exists("did_sqlforms_syn_inits")
     if version < 508
-        let did_sqlforms_syn_inits = 1
-        command -nargs=+ HiLink hi link <args>
+	let did_sqlforms_syn_inits = 1
+	command -nargs=+ HiLink hi link <args>
     else
-        command -nargs=+ HiLink hi def link <args>
+	command -nargs=+ HiLink hi def link <args>
     endif
 
     HiLink sqlComment Comment

@@ -26,6 +26,7 @@
 # endif
 # ifndef FEAT_GUI_GTK
 #  define GdkEvent int
+#  define GdkEventKey int
 # endif
 # ifndef FEAT_X11
 #  define XImage int
@@ -37,16 +38,23 @@
 # if defined(UNIX) || defined(__EMX__) || defined(VMS)
 #  include "os_unix.pro"
 # endif
-# ifdef MSDOS
+# if defined(MSDOS) || defined(WIN16)
 #  include "os_msdos.pro"
 # endif
 # ifdef WIN16
+   typedef LPSTR LPWSTR;
+   typedef LPCSTR LPCWSTR;
+   typedef int LPBOOL;
 #  include "os_win16.pro"
 #  include "os_mswin.pro"
 # endif
 # ifdef WIN3264
 #  include "os_win32.pro"
 #  include "os_mswin.pro"
+#  if (defined(__GNUC__) && !defined(__MINGW32__)) \
+	|| (defined(__BORLANDC__) && __BORLANDC__ < 0x502)
+extern int _stricoll __ARGS((char *a, char *b));
+#  endif
 # endif
 # ifdef VMS
 #  include "os_vms.pro"
@@ -76,6 +84,7 @@
 # include "ex_cmds.pro"
 # include "ex_cmds2.pro"
 # include "ex_docmd.pro"
+# include "ex_eval.pro"
 # include "ex_getln.pro"
 # include "fileio.pro"
 # include "fold.pro"
@@ -85,13 +94,15 @@
 # endif
 # include "main.pro"
 # include "mark.pro"
-# ifndef MESSAGE_FILE
-void
+# if !defined MESSAGE_FILE || defined(HAVE_STDARG_H)
+    /* These prototypes cannot be produced automatically and conflict with
+     * the old-style prototypes in message.c. */
+int
 #ifdef __BORLANDC__
 _RTLENTRYF
 #endif
-smsg __ARGS((char_u *, ...));	/* cannot be produced automatically */
-void
+smsg __ARGS((char_u *, ...));
+int
 #ifdef __BORLANDC__
 _RTLENTRYF
 #endif
@@ -113,7 +124,8 @@ char_u *vim_strpbrk __ARGS((char_u *s, char_u *charset));
 void qsort __ARGS((void *base, size_t elm_count, size_t elm_size, int (*cmp)(const void *, const void *)));
 #endif
 # include "move.pro"
-# if defined(FEAT_MBYTE) || defined(FEAT_XIM) || defined(FEAT_KEYMAP)
+# if defined(FEAT_MBYTE) || defined(FEAT_XIM) || defined(FEAT_KEYMAP) \
+	|| defined(FEAT_POSTSCRIPT)
 #  include "mbyte.pro"
 # endif
 # include "normal.pro"
@@ -173,7 +185,7 @@ extern char_u *vimpty_getenv __ARGS((const char_u *string));	/* from pty.c */
 #  ifdef FEAT_GUI_ATHENA
 #   include "gui_athena.pro"
 #ifdef FEAT_BROWSE
-extern char *vim_SelFile __ARGS((Widget toplevel, char *prompt, char *init_path, int (*show_entry)(), int x, int y, guicolor_T fg, guicolor_T bg));
+extern char *vim_SelFile __ARGS((Widget toplevel, char *prompt, char *init_path, int (*show_entry)(), int x, int y, guicolor_T fg, guicolor_T bg, guicolor_T scroll_fg, guicolor_T scroll_bg));
 #endif
 #  endif
 #  ifdef FEAT_GUI_BEOS
@@ -196,6 +208,9 @@ extern char *vim_SelFile __ARGS((Widget toplevel, char *prompt, char *init_path,
 #  endif
 #  ifdef FEAT_SUN_WORKSHOP
 #   include "workshop.pro"
+#  endif
+#  ifdef FEAT_NETBEANS_INTG
+#   include "netbeans.pro"
 #  endif
 # endif	/* FEAT_GUI */
 

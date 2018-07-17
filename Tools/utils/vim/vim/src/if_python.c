@@ -36,6 +36,10 @@
 # undef _DEBUG
 #endif
 
+#ifdef HAVE_STDARG_H
+# undef HAVE_STDARG_H	/* Python's config.h defines it as well. */
+#endif
+
 #include <Python.h>
 #ifdef MACOS
 # include "macglue.h"
@@ -43,10 +47,6 @@
 #endif
 #undef main /* Defined in python.h - aargh */
 #undef HAVE_FCNTL_H /* Clash with os_win32.h */
-
-#ifdef __MINGW32__
-# include "dyn-ming.h"
-#endif
 
 #if !defined(FEAT_PYTHON) && defined(PROTO)
 /* Use this to be able to generate prototypes without python being used. */
@@ -79,6 +79,7 @@ struct PyMethodDef { int a; };
 # define PyErr_Occurred dll_PyErr_Occurred
 # define PyErr_SetNone dll_PyErr_SetNone
 # define PyErr_SetString dll_PyErr_SetString
+# define PyEval_InitThreads dll_PyEval_InitThreads
 # define PyEval_RestoreThread dll_PyEval_RestoreThread
 # define PyEval_SaveThread dll_PyEval_SaveThread
 # define PyInt_AsLong dll_PyInt_AsLong
@@ -123,6 +124,7 @@ static PyObject*(*dll_PyErr_NoMemory)(void);
 static PyObject*(*dll_PyErr_Occurred)(void);
 static void(*dll_PyErr_SetNone)(PyObject *);
 static void(*dll_PyErr_SetString)(PyObject *, const char *);
+static void(*dll_PyEval_InitThreads)(void);
 static void(*dll_PyEval_RestoreThread)(PyThreadState *);
 static PyThreadState*(*dll_PyEval_SaveThread)(void);
 static long(*dll_PyInt_AsLong)(PyObject *);
@@ -189,6 +191,7 @@ static struct
     {"PyErr_Occurred", (PYTHON_PROC*)&dll_PyErr_Occurred},
     {"PyErr_SetNone", (PYTHON_PROC*)&dll_PyErr_SetNone},
     {"PyErr_SetString", (PYTHON_PROC*)&dll_PyErr_SetString},
+    {"PyEval_InitThreads", (PYTHON_PROC*)&dll_PyEval_InitThreads},
     {"PyEval_RestoreThread", (PYTHON_PROC*)&dll_PyEval_RestoreThread},
     {"PyEval_SaveThread", (PYTHON_PROC*)&dll_PyEval_SaveThread},
     {"PyInt_AsLong", (PYTHON_PROC*)&dll_PyInt_AsLong},
@@ -252,7 +255,7 @@ python_runtime_link_init(char *libname, int verbose)
     if (!hinstPython)
     {
 	if (verbose)
-	    EMSG2(_("E370: Could not load library %s"), libname);
+	    EMSG2(_(e_loadlib), libname);
 	return FAIL;
     }
 
@@ -264,8 +267,7 @@ python_runtime_link_init(char *libname, int verbose)
 	    FreeLibrary(hinstPython);
 	    hinstPython = 0;
 	    if (verbose)
-		EMSG2(_("E448: Could not load library function %s"),
-					       python_funcname_table[i].name);
+		EMSG2(_(e_loadfunc), python_funcname_table[i].name);
 	    return FAIL;
 	}
     }
@@ -399,6 +401,8 @@ Python_Init(void)
 #else
 	PyMac_Initialize();
 #endif
+	/* initialise threads */
+	PyEval_InitThreads();
 
 #ifdef DYNAMIC_PYTHON
 	get_exceptions();
@@ -1234,8 +1238,10 @@ BufferGetattr(PyObject *self, char *name)
 
     if (strcmp(name, "name") == 0)
 	return Py_BuildValue("s",this->buf->b_ffname);
+    else if (strcmp(name, "number") == 0)
+	return Py_BuildValue("i",this->buf->b_fnum);
     else if (strcmp(name,"__members__") == 0)
-	return Py_BuildValue("[s]", "name");
+	return Py_BuildValue("[ss]", "name", "number");
     else
 	return Py_FindMethod(BufferMethods, self, name);
 }
@@ -2305,11 +2311,16 @@ SetBufferLineList(buf_T *buf, int lo, int hi, PyObject *list, int *len_change)
 	char	**array;
 	buf_T	*savebuf;
 
-	array = (char **)alloc((unsigned)(new_len * sizeof(char *)));
-	if (array == NULL)
+	if (new_len == 0)	/* avoid allocating zero bytes */
+	    array = NULL;
+	else
 	{
-	    PyErr_NoMemory();
-	    return FAIL;
+	    array = (char **)alloc((unsigned)(new_len * sizeof(char *)));
+	    if (array == NULL)
+	    {
+		PyErr_NoMemory();
+		return FAIL;
+	    }
 	}
 
 	for (i = 0; i < new_len; ++i)

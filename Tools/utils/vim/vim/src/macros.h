@@ -51,22 +51,32 @@
 #define bufempty() (curbuf->b_ml.ml_line_count == 1 && *ml_get((linenr_T)1) == NUL)
 
 /*
+ * toupper() and tolower() that use the current locale.
  * On some systems toupper()/tolower() only work on lower/uppercase characters
- * Careful: Only call TO_UPPER() and TO_LOWER() with a character in the range
- * 0 - 255.  toupper()/tolower() on some systems can't handle others.
+ * Careful: Only call TOUPPER_LOC() and TOLOWER_LOC() with a character in the
+ * range 0 - 255.  toupper()/tolower() on some systems can't handle others.
  * Note: for UTF-8 use utf_toupper() and utf_tolower().
  */
 #ifdef MSWIN
-#  define TO_UPPER(c)	toupper_tab[(c) & 255]
-#  define TO_LOWER(c)	tolower_tab[(c) & 255]
+#  define TOUPPER_LOC(c)	toupper_tab[(c) & 255]
+#  define TOLOWER_LOC(c)	tolower_tab[(c) & 255]
 #else
 # ifdef BROKEN_TOUPPER
-#  define TO_UPPER(c)	(islower(c) ? toupper(c) : (c))
-#  define TO_LOWER(c)	(isupper(c) ? tolower(c) : (c))
+#  define TOUPPER_LOC(c)	(islower(c) ? toupper(c) : (c))
+#  define TOLOWER_LOC(c)	(isupper(c) ? tolower(c) : (c))
 # else
-#  define TO_UPPER	toupper
-#  define TO_LOWER	tolower
+#  define TOUPPER_LOC		toupper
+#  define TOLOWER_LOC		tolower
 # endif
+#endif
+
+/* toupper() and tolower() for ASCII only and ignore the current locale. */
+#ifdef EBCDIC
+# define TOUPPER_ASC(c)	(islower(c) ? toupper(c) : (c))
+# define TOLOWER_ASC(c)	(isupper(c) ? tolower(c) : (c))
+#else
+# define TOUPPER_ASC(c)	(((c) < 'a' || (c) > 'z') ? (c) : (c) - ('a' - 'A'))
+# define TOLOWER_ASC(c)	(((c) < 'A' || (c) > 'Z') ? (c) : (c) + ('a' - 'A'))
 #endif
 
 /*
@@ -76,13 +86,13 @@
 #ifdef FEAT_MBYTE
 # define MB_ISLOWER(c)	(enc_utf8 && (c) > 0x80 ? utf_islower(c) : islower(c))
 # define MB_ISUPPER(c)	(enc_utf8 && (c) > 0x80 ? utf_isupper(c) : isupper(c))
-# define MB_TOLOWER(c)	(enc_utf8 && (c) > 0x80 ? utf_tolower(c) : TO_LOWER(c))
-# define MB_TOUPPER(c)	(enc_utf8 && (c) > 0x80 ? utf_toupper(c) : TO_UPPER(c))
+# define MB_TOLOWER(c)	(enc_utf8 && (c) > 0x80 ? utf_tolower(c) : TOLOWER_LOC(c))
+# define MB_TOUPPER(c)	(enc_utf8 && (c) > 0x80 ? utf_toupper(c) : TOUPPER_LOC(c))
 #else
 # define MB_ISLOWER(c)	islower(c)
 # define MB_ISUPPER(c)	isupper(c)
-# define MB_TOLOWER(c)	TO_LOWER(c)
-# define MB_TOUPPER(c)	TO_UPPER(c)
+# define MB_TOLOWER(c)	TOLOWER_LOC(c)
+# define MB_TOUPPER(c)	TOUPPER_LOC(c)
 #endif
 
 /* Like isalpha() but reject non-ASCII characters.  Can't be used with a
@@ -145,7 +155,13 @@
 # ifdef MSWIN	/* has it's own mch_stat() function */
 #  define mch_stat(n, p)	vim_stat((n), (p))
 # else
-#  define mch_stat(n, p)	stat((n), (p))
+#  ifdef STAT_IGNORES_SLASH
+    /* On Solaris stat() accepts "file/" as if it was "file".  Return -1 if
+     * the name ends in "/" and it's not a directory. */
+#   define mch_stat(n, p)	(illegal_slash(n) ? -1 : stat((n), (p)))
+#  else
+#   define mch_stat(n, p)	stat((n), (p))
+#  endif
 # endif
 #endif
 
@@ -194,4 +210,15 @@
 # define REPLACE_NORMAL(s) (((s) & REPLACE_FLAG) && !((s) & VREPLACE_FLAG))
 #else
 # define REPLACE_NORMAL(s) ((s) & REPLACE_FLAG)
+#endif
+
+#ifdef FEAT_ARABIC
+# define UTF_COMPOSINGLIKE(p1, p2)  utf_composinglike((p1), (p2))
+#else
+# define UTF_COMPOSINGLIKE(p1, p2)  utf_iscomposing(utf_ptr2char(p2))
+#endif
+
+#ifdef FEAT_RIGHTLEFT
+    /* Whether to draw the vertical bar on the right side of the cell. */
+# define CURSOR_BAR_RIGHT (curwin->w_p_rl && (!(State & CMDLINE) || cmdmsg_rl))
 #endif

@@ -66,7 +66,9 @@
  *     might be required.
  * (3) For the GUI the correct font must be selected, no conversion done.
  *     Otherwise, conversion is to be done when 'encoding' differs from
- *     'termencoding'.
+ *     'termencoding'.  (Different in the GTK+ 2 port -- 'termencoding'
+ *     is always used for both input and output and must always be set to
+ *     "utf-8".  gui_mch_init() does this automatically.)
  * (4) The encoding of the file is specified with 'fileencoding'.  Conversion
  *     is to be done when it's different from 'encoding'.
  *
@@ -82,6 +84,9 @@
 #  define WIN32_LEAN_AND_MEAN
 # endif
 # include <windows.h>
+# ifdef WIN32
+#  undef WIN32	    /* Some windows.h define WIN32, we don't want that here. */
+# endif
 #endif
 
 #if (defined(WIN3264) || defined(WIN32UNIX)) && !defined(__MINGW32__)
@@ -94,18 +99,20 @@
 #ifdef X_LOCALE
 #include <X11/Xlocale.h>
 #endif
-#ifndef EILSEQ
-# define EILSEQ 123
+
+#if defined(FEAT_XIM) && defined(HAVE_GTK2)
+# include <gdk/gdkkeysyms.h>
+# include <gdk/gdkx.h>
 #endif
 
 #if defined(FEAT_MBYTE) || defined(PROTO)
 
-static int dbcs_ptr2len_check __ARGS((char_u *p));
-static int dbcs_char2cells __ARGS((int c));
+static int enc_canon_search __ARGS((char_u *name));
 static int dbcs_char2len __ARGS((int c));
 static int dbcs_char2bytes __ARGS((int c, char_u *buf));
+static int dbcs_ptr2len_check __ARGS((char_u *p));
+static int dbcs_char2cells __ARGS((int c));
 static int dbcs_ptr2char __ARGS((char_u *p));
-static int enc_alias_search __ARGS((char_u *name));
 
 /* Lookup table to quickly get the length in bytes of a UTF-8 character from
  * the first byte of a UTF-8 string.  Bytes which are illegal when used as the
@@ -122,6 +129,9 @@ static char utf8len_tab[256] =
     3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,6,6,1,1,
 };
 
+#endif
+
+#if defined(FEAT_MBYTE) || defined(FEAT_POSTSCRIPT) || defined(PROTO)
 /*
  * Canonical encoding names and their properties.
  * "iso-8859-n" is handled by enc_canonize() directly.
@@ -131,7 +141,7 @@ static struct
 enc_canon_table[] =
 {
 #define IDX_LATIN_1	0
-    {"latin1",		ENC_8BIT + ENC_LATIN1,	0},
+    {"latin1",		ENC_8BIT + ENC_LATIN1,	1252},
 #define IDX_ISO_2	1
     {"iso-8859-2",	ENC_8BIT,		0},
 #define IDX_ISO_3	2
@@ -145,7 +155,7 @@ enc_canon_table[] =
 #define IDX_ISO_7	6
     {"iso-8859-7",	ENC_8BIT,		0},
 #define IDX_CP1255	7
-    {"cp1255",		ENC_8BIT,		0}, /* close to iso-8859-8 */
+    {"cp1255",		ENC_8BIT,		1255}, /* close to iso-8859-8 */
 #define IDX_ISO_8	8
     {"iso-8859-8",	ENC_8BIT,		0},
 #define IDX_ISO_9	9
@@ -277,6 +287,10 @@ enc_alias_table[] =
     {NULL,		0}
 };
 
+#ifndef CP_UTF8
+# define CP_UTF8 65001	/* magic number from winnls.h */
+#endif
+
 /*
  * Find encoding "name" in the list of canonical encoding names.
  * Returns -1 if not found.
@@ -292,6 +306,10 @@ enc_canon_search(name)
 	    return i;
     return -1;
 }
+
+#endif
+
+#if defined(FEAT_MBYTE) || defined(PROTO)
 
 /*
  * Find canonical encoding "name" in the list and return its properties.
@@ -359,10 +377,6 @@ mb_init()
 	input_conv.vc_type = CONV_NONE;
 	input_conv.vc_factor = 1;
 	output_conv.vc_type = CONV_NONE;
-#ifdef USE_ICONV
-	input_conv.vc_fd = (iconv_t)-1;
-	output_conv.vc_fd = (iconv_t)-1;
-#endif
 	return NULL;
     }
 
@@ -392,7 +406,7 @@ mb_init()
 	else if (GetLastError() == ERROR_INVALID_PARAMETER)
 	{
 codepage_invalid:
-	    return (char_u *)N_("Not a valid codepage");
+	    return (char_u *)N_("E543: Not a valid codepage");
 	}
     }
 #endif
@@ -455,13 +469,11 @@ codepage_invalid:
 	enc_utf8 = FALSE;
     }
     enc_dbcs = enc_dbcs_new;
-
-#ifdef FEAT_GUI_W32
-    /* Check for codepage which is not the current one. */
-    is_funky_dbcs = (enc_dbcs != 0 && ((int)GetACP() != enc_dbcs));
-#endif
-
     has_mbyte = (enc_dbcs != 0 || enc_utf8);
+
+#ifdef WIN3264
+    enc_codepage = encname2codepage(p_enc);
+#endif
 
     /*
      * Set the function pointers.
@@ -572,17 +584,7 @@ codepage_invalid:
     if (enc_utf8 && !option_was_set((char_u *)"fencs"))
 	set_string_option_direct((char_u *)"fencs", -1,
 				 (char_u *)"ucs-bom,utf-8,latin1", OPT_FREE);
-#ifdef FEAT_MBYTE_IME
-# ifdef USE_ICONV
-    ime_conv.vc_fd = (iconv_t)-1;
-    ime_conv_cp.vc_fd = (iconv_t)-1;
-# endif
-    convert_setup(&ime_conv, "ucs-2", p_enc);
-    ime_conv_cp.vc_type = CONV_CODEPAGE;
-    ime_conv_cp.vc_factor = 2; /* we don't really know anything about the codepage */
-#endif
-
-#ifdef HAVE_BIND_TEXTDOMAIN_CODESET
+#if defined(HAVE_BIND_TEXTDOMAIN_CODESET) && defined(FEAT_GETTEXT)
     /* GNU gettext 0.10.37 supports this feature: set the codeset used for
      * translated messages independently from the current locale. */
     (void)bind_textdomain_codeset(VIMPACKAGE,
@@ -912,28 +914,128 @@ dbcs_ptr2len_check(p)
     return len;
 }
 
+struct interval
+{
+    unsigned short first;
+    unsigned short last;
+};
+static int intable __ARGS((struct interval *table, size_t size, int c));
+
+/*
+ * Return TRUE if "c" is in "table[size / sizeof(struct interval)]".
+ */
+    static int
+intable(table, size, c)
+    struct interval	*table;
+    size_t		size;
+    int			c;
+{
+    int mid, bot, top;
+
+    /* first quick check for Latin1 etc. characters */
+    if (c < table[0].first)
+	return FALSE;
+
+    /* binary search in table */
+    bot = 0;
+    top = size / sizeof(struct interval) - 1;
+    while (top >= bot)
+    {
+	mid = (bot + top) / 2;
+	if (table[mid].last < c)
+	    bot = mid + 1;
+	else if (table[mid].first > c)
+	    top = mid - 1;
+	else
+	    return TRUE;
+    }
+    return FALSE;
+}
+
 /*
  * For UTF-8 character "c" return 2 for a double-width character, 1 for others.
  * Returns 4 or 6 for an unprintable character.
  * Is only correct for characters >= 0x80.
+ * When p_ambw is "double", return 2 for a character with East Asian Width
+ * class 'A'(mbiguous).
  */
     int
 utf_char2cells(c)
     int		c;
 {
+    /* sorted list of non-overlapping intervals of East Asian Ambiguous
+     * characters, generated with:
+     * "uniset +WIDTH-A -cat=Me -cat=Mn -cat=Cf c" */
+    static struct interval ambiguous[] = {
+	{0x00A1, 0x00A1}, {0x00A4, 0x00A4}, {0x00A7, 0x00A8},
+	{0x00AA, 0x00AA}, {0x00AE, 0x00AE}, {0x00B0, 0x00B4},
+	{0x00B6, 0x00BA}, {0x00BC, 0x00BF}, {0x00C6, 0x00C6},
+	{0x00D0, 0x00D0}, {0x00D7, 0x00D8}, {0x00DE, 0x00E1},
+	{0x00E6, 0x00E6}, {0x00E8, 0x00EA}, {0x00EC, 0x00ED},
+	{0x00F0, 0x00F0}, {0x00F2, 0x00F3}, {0x00F7, 0x00FA},
+	{0x00FC, 0x00FC}, {0x00FE, 0x00FE}, {0x0101, 0x0101},
+	{0x0111, 0x0111}, {0x0113, 0x0113}, {0x011B, 0x011B},
+	{0x0126, 0x0127}, {0x012B, 0x012B}, {0x0131, 0x0133},
+	{0x0138, 0x0138}, {0x013F, 0x0142}, {0x0144, 0x0144},
+	{0x0148, 0x014B}, {0x014D, 0x014D}, {0x0152, 0x0153},
+	{0x0166, 0x0167}, {0x016B, 0x016B}, {0x01CE, 0x01CE},
+	{0x01D0, 0x01D0}, {0x01D2, 0x01D2}, {0x01D4, 0x01D4},
+	{0x01D6, 0x01D6}, {0x01D8, 0x01D8}, {0x01DA, 0x01DA},
+	{0x01DC, 0x01DC}, {0x0251, 0x0251}, {0x0261, 0x0261},
+	{0x02C4, 0x02C4}, {0x02C7, 0x02C7}, {0x02C9, 0x02CB},
+	{0x02CD, 0x02CD}, {0x02D0, 0x02D0}, {0x02D8, 0x02DB},
+	{0x02DD, 0x02DD}, {0x02DF, 0x02DF}, {0x0391, 0x03A1},
+	{0x03A3, 0x03A9}, {0x03B1, 0x03C1}, {0x03C3, 0x03C9},
+	{0x0401, 0x0401}, {0x0410, 0x044F}, {0x0451, 0x0451},
+	{0x2010, 0x2010}, {0x2013, 0x2016}, {0x2018, 0x2019},
+	{0x201C, 0x201D}, {0x2020, 0x2022}, {0x2024, 0x2027},
+	{0x2030, 0x2030}, {0x2032, 0x2033}, {0x2035, 0x2035},
+	{0x203B, 0x203B}, {0x203E, 0x203E}, {0x2074, 0x2074},
+	{0x207F, 0x207F}, {0x2081, 0x2084}, {0x20AC, 0x20AC},
+	{0x2103, 0x2103}, {0x2105, 0x2105}, {0x2109, 0x2109},
+	{0x2113, 0x2113}, {0x2116, 0x2116}, {0x2121, 0x2122},
+	{0x2126, 0x2126}, {0x212B, 0x212B}, {0x2153, 0x2154},
+	{0x215B, 0x215E}, {0x2160, 0x216B}, {0x2170, 0x2179},
+	{0x2190, 0x2199}, {0x21B8, 0x21B9}, {0x21D2, 0x21D2},
+	{0x21D4, 0x21D4}, {0x21E7, 0x21E7}, {0x2200, 0x2200},
+	{0x2202, 0x2203}, {0x2207, 0x2208}, {0x220B, 0x220B},
+	{0x220F, 0x220F}, {0x2211, 0x2211}, {0x2215, 0x2215},
+	{0x221A, 0x221A}, {0x221D, 0x2220}, {0x2223, 0x2223},
+	{0x2225, 0x2225}, {0x2227, 0x222C}, {0x222E, 0x222E},
+	{0x2234, 0x2237}, {0x223C, 0x223D}, {0x2248, 0x2248},
+	{0x224C, 0x224C}, {0x2252, 0x2252}, {0x2260, 0x2261},
+	{0x2264, 0x2267}, {0x226A, 0x226B}, {0x226E, 0x226F},
+	{0x2282, 0x2283}, {0x2286, 0x2287}, {0x2295, 0x2295},
+	{0x2299, 0x2299}, {0x22A5, 0x22A5}, {0x22BF, 0x22BF},
+	{0x2312, 0x2312}, {0x2460, 0x24E9}, {0x24EB, 0x254B},
+	{0x2550, 0x2573}, {0x2580, 0x258F}, {0x2592, 0x2595},
+	{0x25A0, 0x25A1}, {0x25A3, 0x25A9}, {0x25B2, 0x25B3},
+	{0x25B6, 0x25B7}, {0x25BC, 0x25BD}, {0x25C0, 0x25C1},
+	{0x25C6, 0x25C8}, {0x25CB, 0x25CB}, {0x25CE, 0x25D1},
+	{0x25E2, 0x25E5}, {0x25EF, 0x25EF}, {0x2605, 0x2606},
+	{0x2609, 0x2609}, {0x260E, 0x260F}, {0x2614, 0x2615},
+	{0x261C, 0x261C}, {0x261E, 0x261E}, {0x2640, 0x2640},
+	{0x2642, 0x2642}, {0x2660, 0x2661}, {0x2663, 0x2665},
+	{0x2667, 0x266A}, {0x266C, 0x266D}, {0x266F, 0x266F},
+	{0x273D, 0x273D}, {0x2776, 0x277F}, {0xE000, 0xF8FF},
+	{0xFFFD, 0xFFFD}
+    };
+
     if (c >= 0x100)
     {
 	if (!utf_printable(c))
 	    return 6;		/* unprintable, displays <xxxx> */
 	if (c >= 0x1100
 	    && (c <= 0x115f			/* Hangul Jamo */
-		|| (c >= 0x2e80 && c <= 0xa4cf && (c & ~0x0011) != 0x300a
+		|| c == 0x2329
+		|| c == 0x232a
+		|| (c >= 0x2e80 && c <= 0xa4cf
 		    && c != 0x303f)		/* CJK ... Yi */
 		|| (c >= 0xac00 && c <= 0xd7a3)	/* Hangul Syllables */
 		|| (c >= 0xf900 && c <= 0xfaff)	/* CJK Compatibility
 						   Ideographs */
 		|| (c >= 0xfe30 && c <= 0xfe6f)	/* CJK Compatibility Forms */
-		|| (c >= 0xff00 && c <= 0xff5f)	/* Fullwidth Forms */
+		|| (c >= 0xff00 && c <= 0xff60)	/* Fullwidth Forms */
 		|| (c >= 0xffe0 && c <= 0xffe6)
 		|| (c >= 0x20000 && c <= 0x2ffff)))
 	    return 2;
@@ -942,6 +1044,9 @@ utf_char2cells(c)
     /* Characters below 0x100 are influenced by 'isprint' option */
     else if (c >= 0x80 && !vim_isprintc(c))
 	return 4;		/* unprintable, displays <xx> */
+
+    if (c >= 0x80 && *p_ambw == 'd' && intable(ambiguous, sizeof(ambiguous), c))
+	return 2;
 
     return 1;
 }
@@ -1130,6 +1235,58 @@ mb_ptr2char_adv(pp)
     return c;
 }
 
+#if defined(FEAT_ARABIC) || defined(PROTO)
+/*
+ * Check whether we are dealing with Arabic combining characters.
+ * Note: these are NOT really composing characters!
+ */
+    int
+arabic_combine(one, two)
+    int		one;	    /* first character */
+    int		two;	    /* character just after "one" */
+{
+    if (one == a_LAM)
+	return arabic_maycombine(two);
+    return FALSE;
+}
+
+/*
+ * Check whether we are dealing with a character that could be regarded as an
+ * Arabic combining character, need to check the character before this.
+ */
+    int
+arabic_maycombine(two)
+    int		two;
+{
+    if (p_arshape && !p_tbidi)
+	return (two == a_ALEF_MADDA
+		    || two == a_ALEF_HAMZA_ABOVE
+		    || two == a_ALEF_HAMZA_BELOW
+		    || two == a_ALEF);
+    return FALSE;
+}
+
+/*
+ * Check if the character pointed to by "p2" is a composing character when it
+ * comes after "p1".  For Arabic sometimes "ab" is replaced with "c", which
+ * behaves like a composing character.
+ */
+    int
+utf_composinglike(p1, p2)
+    char_u	*p1;
+    char_u	*p2;
+{
+    int		c2;
+
+    c2 = utf_ptr2char(p2);
+    if (utf_iscomposing(c2))
+	return TRUE;
+    if (!arabic_maycombine(c2))
+	return FALSE;
+    return arabic_combine(utf_ptr2char(p1), c2);
+}
+#endif
+
 /*
  * Convert a UTF-8 byte string to a wide chararacter.  Also get up to two
  * composing characters.
@@ -1148,11 +1305,52 @@ utfc_ptr2char(p, p1, p2)
     len = utf_ptr2len_check(p);
     /* Only accept a composing char when the first char isn't illegal. */
     if ((len > 1 || *p < 0x80)
-	    && p[len] >= 0x80 && utf_iscomposing(cc = utf_ptr2char(p + len)))
+	    && p[len] >= 0x80
+	    && UTF_COMPOSINGLIKE(p, p + len))
     {
-	*p1 = cc;
+	*p1 = utf_ptr2char(p + len);
 	len += utf_ptr2len_check(p + len);
 	if (p[len] >= 0x80 && utf_iscomposing(cc = utf_ptr2char(p + len)))
+	    *p2 = cc;
+	else
+	    *p2 = 0;
+    }
+    else
+    {
+	*p1 = 0;
+	*p2 = 0;
+    }
+    return c;
+}
+
+/*
+ * Convert a UTF-8 byte string to a wide chararacter.  Also get up to two
+ * composing characters.  Use no more than p[maxlen].
+ */
+    int
+utfc_ptr2char_len(p, p1, p2, maxlen)
+    char_u	*p;
+    int		*p1;	/* return: first composing char or 0 */
+    int		*p2;	/* return: second composing char or 0 */
+    int		maxlen;
+{
+    int		len;
+    int		c;
+    int		cc;
+
+    c = utf_ptr2char(p);
+    len = utf_ptr2len_check_len(p, maxlen);
+    /* Only accept a composing char when the first char isn't illegal. */
+    if ((len > 1 || *p < 0x80)
+	    && len < maxlen
+	    && p[len] >= 0x80
+	    && UTF_COMPOSINGLIKE(p, p + len))
+    {
+	*p1 = utf_ptr2char(p + len);
+	len += utf_ptr2len_check_len(p + len, maxlen - len);
+	if (len < maxlen
+		&& p[len] >= 0x80
+		&& utf_iscomposing(cc = utf_ptr2char(p + len)))
 	    *p2 = cc;
 	else
 	    *p2 = 0;
@@ -1189,8 +1387,8 @@ utfc_char2bytes(off, buf)
 }
 
 /*
- * Get the length of a UTF-8 byte sequence.  Ignores any following composing
- * characters.
+ * Get the length of a UTF-8 byte sequence, not including any following
+ * composing characters.
  * Returns 0 for "".
  * Returns 1 for an illegal byte sequence.
  */
@@ -1222,8 +1420,8 @@ utf_byte2len(b)
 }
 
 /*
- * Get the length of UTF-8 byte sequence "p[size]".  Ignores any following
- * composing characters.
+ * Get the length of UTF-8 byte sequence "p[size]".  Does not include any
+ * following composing characters.
  * Returns 1 for "".
  * Returns 1 for an illegal byte sequence.
  * Returns number > "size" for an incomplete byte sequence.
@@ -1254,6 +1452,9 @@ utfc_ptr2len_check(p)
     char_u	*p;
 {
     int		len;
+#ifdef FEAT_ARABIC
+    int		prevlen;
+#endif
 
     if (*p == NUL)
 	return 0;
@@ -1271,17 +1472,22 @@ utfc_ptr2len_check(p)
      * Check for composing characters.  We can handle only the first two, but
      * skip all of them (otherwise the cursor would get stuck).
      */
+#ifdef FEAT_ARABIC
+    prevlen = 0;
+#endif
     for (;;)
     {
-	if (p[len] < 0x80 || !utf_iscomposing(utf_ptr2char(p + len)))
+	if (p[len] < 0x80 || !UTF_COMPOSINGLIKE(p + prevlen, p + len))
 	    return len;
 
 	/* Skip over composing char */
+#ifdef FEAT_ARABIC
+	prevlen = len;
+#endif
 	len += utf_ptr2len_check(p + len);
     }
 }
 
-# if defined(FEAT_GUI_W32) || defined(PROTO)
 /*
  * Return the number of bytes the UTF-8 encoding of the character at "p[size]"
  * takes.  This includes following composing characters.
@@ -1292,6 +1498,9 @@ utfc_ptr2len_check_len(p, size)
     int		size;
 {
     int		len;
+#ifdef FEAT_ARABIC
+    int		prevlen;
+#endif
 
     if (*p == NUL)
 	return 0;
@@ -1309,17 +1518,22 @@ utfc_ptr2len_check_len(p, size)
      * Check for composing characters.  We can handle only the first two, but
      * skip all of them (otherwise the cursor would get stuck).
      */
+#ifdef FEAT_ARABIC
+    prevlen = 0;
+#endif
     while (len < size)
     {
-	if (p[len] < 0x80 || !utf_iscomposing(utf_ptr2char(p + len)))
+	if (p[len] < 0x80 || !UTF_COMPOSINGLIKE(p + prevlen, p + len))
 	    break;
 
 	/* Skip over composing char */
+#ifdef FEAT_ARABIC
+	prevlen = len;
+#endif
 	len += utf_ptr2len_check_len(p + len, size - len);
     }
     return len;
 }
-# endif
 
 /*
  * Return the number of bytes the UTF-8 encoding of character "c" takes.
@@ -1343,7 +1557,7 @@ utf_char2len(c)
 }
 
 /*
- * Convert UTF-8 character "c" to string of bytes in "buf[]".
+ * Convert Unicode character "c" to UTF-8 string in "buf[]".
  * Returns the number of bytes.
  * This does not include composing characters.
  */
@@ -1397,44 +1611,6 @@ utf_char2bytes(c, buf)
     return 6;
 }
 
-struct interval
-{
-    unsigned short first;
-    unsigned short last;
-};
-static int intable __ARGS((struct interval *table, int size, int c));
-
-/*
- * Return TRUE if "c" is in "table[size]".
- */
-    static int
-intable(table, size, c)
-    struct interval	*table;
-    int			size;
-    int			c;
-{
-    int mid, bot, top;
-
-    /* first quick check for Latin1 etc. characters */
-    if (c < table[0].first)
-	return FALSE;
-
-    /* binary search in table */
-    bot = 0;
-    top = size - 1;
-    while (top >= bot)
-    {
-	mid = (bot + top) / 2;
-	if (table[mid].last < c)
-	    bot = mid + 1;
-	else if (table[mid].first > c)
-	    top = mid - 1;
-	else
-	    return TRUE;
-    }
-    return FALSE;
-}
-
 /*
  * Return TRUE if "c" is a composing UTF-8 character.  This means it will be
  * drawn on top of the preceding character.
@@ -1447,32 +1623,38 @@ utf_iscomposing(c)
     /* sorted list of non-overlapping intervals */
     static struct interval combining[] =
     {
-	{0x0300, 0x034E}, {0x0360, 0x0362}, {0x0483, 0x0486}, {0x0488, 0x0489},
-	{0x0591, 0x05A1}, {0x05A3, 0x05B9}, {0x05BB, 0x05BD}, {0x05BF, 0x05BF},
-	{0x05C1, 0x05C2}, {0x05C4, 0x05C4}, {0x064B, 0x0655}, {0x0670, 0x0670},
-	{0x06D6, 0x06E4}, {0x06E7, 0x06E8}, {0x06EA, 0x06ED}, {0x0711, 0x0711},
-	{0x0730, 0x074A}, {0x07A6, 0x07B0}, {0x0901, 0x0902}, {0x093C, 0x093C},
-	{0x0941, 0x0948}, {0x094D, 0x094D}, {0x0951, 0x0954}, {0x0962, 0x0963},
-	{0x0981, 0x0981}, {0x09BC, 0x09BC}, {0x09C1, 0x09C4}, {0x09CD, 0x09CD},
-	{0x09E2, 0x09E3}, {0x0A02, 0x0A02}, {0x0A3C, 0x0A3C}, {0x0A41, 0x0A42},
-	{0x0A47, 0x0A48}, {0x0A4B, 0x0A4D}, {0x0A70, 0x0A71}, {0x0A81, 0x0A82},
-	{0x0ABC, 0x0ABC}, {0x0AC1, 0x0AC5}, {0x0AC7, 0x0AC8}, {0x0ACD, 0x0ACD},
-	{0x0B01, 0x0B01}, {0x0B3C, 0x0B3C}, {0x0B3F, 0x0B3F}, {0x0B41, 0x0B43},
-	{0x0B4D, 0x0B4D}, {0x0B56, 0x0B56}, {0x0B82, 0x0B82}, {0x0BC0, 0x0BC0},
-	{0x0BCD, 0x0BCD}, {0x0C3E, 0x0C40}, {0x0C46, 0x0C48}, {0x0C4A, 0x0C4D},
-	{0x0C55, 0x0C56}, {0x0CBF, 0x0CBF}, {0x0CC6, 0x0CC6}, {0x0CCC, 0x0CCD},
-	{0x0D41, 0x0D43}, {0x0D4D, 0x0D4D}, {0x0DCA, 0x0DCA}, {0x0DD2, 0x0DD4},
-	{0x0DD6, 0x0DD6}, {0x0E31, 0x0E31}, {0x0E34, 0x0E3A}, {0x0E47, 0x0E4E},
-	{0x0EB1, 0x0EB1}, {0x0EB4, 0x0EB9}, {0x0EBB, 0x0EBC}, {0x0EC8, 0x0ECD},
-	{0x0F18, 0x0F19}, {0x0F35, 0x0F35}, {0x0F37, 0x0F37}, {0x0F39, 0x0F39},
-	{0x0F71, 0x0F7E}, {0x0F80, 0x0F84}, {0x0F86, 0x0F87}, {0x0F90, 0x0F97},
-	{0x0F99, 0x0FBC}, {0x0FC6, 0x0FC6}, {0x102D, 0x1030}, {0x1032, 0x1032},
-	{0x1036, 0x1037}, {0x1039, 0x1039}, {0x1058, 0x1059}, {0x17B7, 0x17BD},
-	{0x17C6, 0x17C6}, {0x17C9, 0x17D3}, {0x18A9, 0x18A9}, {0x20D0, 0x20E3},
-	{0x302A, 0x302F}, {0x3099, 0x309A}, {0xFB1E, 0xFB1E}, {0xFE20, 0xFE23}
+	{0x0300, 0x034f}, {0x0360, 0x036f}, {0x0483, 0x0486}, {0x0488, 0x0489},
+	{0x0591, 0x05a1}, {0x05a3, 0x05b9}, {0x05bb, 0x05bd}, {0x05bf, 0x05bf},
+	{0x05c1, 0x05c2}, {0x05c4, 0x05c4}, {0x0610, 0x0615}, {0x064b, 0x0658},
+	{0x0670, 0x0670}, {0x06d6, 0x06dc}, {0x06de, 0x06e4}, {0x06e7, 0x06e8},
+	{0x06ea, 0x06ed}, {0x0711, 0x0711}, {0x0730, 0x074a}, {0x07a6, 0x07b0},
+	{0x0901, 0x0903}, {0x093c, 0x093c}, {0x093e, 0x094d}, {0x0951, 0x0954},
+	{0x0962, 0x0963}, {0x0981, 0x0983}, {0x09bc, 0x09bc}, {0x09be, 0x09c4},
+	{0x09c7, 0x09c8}, {0x09cb, 0x09cd}, {0x09d7, 0x09d7}, {0x09e2, 0x09e3},
+	{0x0a01, 0x0a03}, {0x0a3c, 0x0a3c}, {0x0a3e, 0x0a42}, {0x0a47, 0x0a48},
+	{0x0a4b, 0x0a4d}, {0x0a70, 0x0a71}, {0x0a81, 0x0a83}, {0x0abc, 0x0abc},
+	{0x0abe, 0x0ac5}, {0x0ac7, 0x0ac9}, {0x0acb, 0x0acd}, {0x0ae2, 0x0ae3},
+	{0x0b01, 0x0b03}, {0x0b3c, 0x0b3c}, {0x0b3e, 0x0b43}, {0x0b47, 0x0b48},
+	{0x0b4b, 0x0b4d}, {0x0b56, 0x0b57}, {0x0b82, 0x0b82}, {0x0bbe, 0x0bc2},
+	{0x0bc6, 0x0bc8}, {0x0bca, 0x0bcd}, {0x0bd7, 0x0bd7}, {0x0c01, 0x0c03},
+	{0x0c3e, 0x0c44}, {0x0c46, 0x0c48}, {0x0c4a, 0x0c4d}, {0x0c55, 0x0c56},
+	{0x0c82, 0x0c83}, {0x0cbc, 0x0cbc}, {0x0cbe, 0x0cc4}, {0x0cc6, 0x0cc8},
+	{0x0cca, 0x0ccd}, {0x0cd5, 0x0cd6}, {0x0d02, 0x0d03}, {0x0d3e, 0x0d43},
+	{0x0d46, 0x0d48}, {0x0d4a, 0x0d4d}, {0x0d57, 0x0d57}, {0x0d82, 0x0d83},
+	{0x0dca, 0x0dca}, {0x0dcf, 0x0dd4}, {0x0dd6, 0x0dd6}, {0x0dd8, 0x0ddf},
+	{0x0df2, 0x0df3}, {0x0e31, 0x0e31}, {0x0e34, 0x0e3a}, {0x0e47, 0x0e4e},
+	{0x0eb1, 0x0eb1}, {0x0eb4, 0x0eb9}, {0x0ebb, 0x0ebc}, {0x0ec8, 0x0ecd},
+	{0x0f18, 0x0f19}, {0x0f35, 0x0f35}, {0x0f37, 0x0f37}, {0x0f39, 0x0f39},
+	{0x0f3e, 0x0f3f}, {0x0f71, 0x0f84}, {0x0f86, 0x0f87}, {0x0f90, 0x0f97},
+	{0x0f99, 0x0fbc}, {0x0fc6, 0x0fc6}, {0x102c, 0x1032}, {0x1036, 0x1039},
+	{0x1056, 0x1059}, {0x1712, 0x1714}, {0x1732, 0x1734}, {0x1752, 0x1753},
+	{0x1772, 0x1773}, {0x17b6, 0x17d3}, {0x17dd, 0x17dd}, {0x180b, 0x180d},
+	{0x18a9, 0x18a9}, {0x1920, 0x192b}, {0x1930, 0x193b}, {0x20d0, 0x20ea},
+	{0x302a, 0x302f}, {0x3099, 0x309a}, {0xfb1e, 0xfb1e}, {0xfe00, 0xfe0f},
+	{0xfe20, 0xfe23},
     };
 
-    return intable(combining, sizeof(combining) / sizeof(struct interval), c);
+    return intable(combining, sizeof(combining), c);
 }
 
 /*
@@ -1483,14 +1665,16 @@ utf_iscomposing(c)
 utf_printable(c)
     int		c;
 {
-    /* sorted list of non-overlapping intervals */
+    /* Sorted list of non-overlapping intervals.
+     * 0xd800-0xdfff is reserved for UTF-16, actually illegal. */
     static struct interval nonprint[] =
     {
 	{0x070f, 0x070f}, {0x180b, 0x180e}, {0x200b, 0x200f}, {0x202a, 0x202e},
-	{0x206a, 0x206f}, {0xfeff, 0xfeff}, {0xfff9, 0xfffb}
+	{0x206a, 0x206f}, {0xd800, 0xdfff}, {0xfeff, 0xfeff}, {0xfff9, 0xfffb},
+	{0xfffe, 0xffff}
     };
 
-    return !intable(nonprint, sizeof(nonprint) / sizeof(struct interval), c);
+    return !intable(nonprint, sizeof(nonprint), c);
 }
 
 /*
@@ -1515,29 +1699,62 @@ utf_class(c)
 	{0x0387, 0x0387, 1},		/* Greek ano teleia */
 	{0x055a, 0x055f, 1},		/* Armenian punctuation */
 	{0x0589, 0x0589, 1},		/* Armenian full stop */
+	{0x05be, 0x05be, 1},
+	{0x05c0, 0x05c0, 1},
+	{0x05c3, 0x05c3, 1},
+	{0x05f3, 0x05f4, 1},
+	{0x060c, 0x060c, 1},
+	{0x061b, 0x061b, 1},
+	{0x061f, 0x061f, 1},
+	{0x066a, 0x066d, 1},
+	{0x06d4, 0x06d4, 1},
 	{0x0700, 0x070d, 1},		/* Syriac punctuation */
+	{0x0964, 0x0965, 1},
+	{0x0970, 0x0970, 1},
+	{0x0df4, 0x0df4, 1},
+	{0x0e4f, 0x0e4f, 1},
+	{0x0e5a, 0x0e5b, 1},
+	{0x0f04, 0x0f12, 1},
+	{0x0f3a, 0x0f3d, 1},
+	{0x0f85, 0x0f85, 1},
 	{0x104a, 0x104f, 1},		/* Myanmar punctuation */
 	{0x10fb, 0x10fb, 1},		/* Georgian punctuation */
 	{0x1361, 0x1368, 1},		/* Ethiopic punctuation */
 	{0x166d, 0x166e, 1},		/* Canadian Syl. punctuation */
+	{0x1680, 0x1680, 0},
+	{0x169b, 0x169c, 1},
+	{0x16eb, 0x16ed, 1},
+	{0x1735, 0x1736, 1},
 	{0x17d4, 0x17dc, 1},		/* Khmer punctuation */
 	{0x1800, 0x180a, 1},		/* Mongolian punctuation */
-	{0x2000, 0x200a, 0},		/* spaces */
-	{0x200b, 0x27ff, 1},		/* punctuation and symbols */
+	{0x2000, 0x200b, 0},		/* spaces */
+	{0x200c, 0x2027, 1},		/* punctuation and symbols */
+	{0x2028, 0x2029, 0},
+	{0x202a, 0x202e, 1},		/* punctuation and symbols */
+	{0x202f, 0x202f, 0},
+	{0x2030, 0x205e, 1},		/* punctuation and symbols */
+	{0x205f, 0x205f, 0},
+	{0x2060, 0x27ff, 1},		/* punctuation and symbols */
 	{0x2070, 0x207f, 0x2070},	/* superscript */
 	{0x2080, 0x208f, 0x2080},	/* subscript */
+	{0x2983, 0x2998, 1},
+	{0x29d8, 0x29db, 1},
+	{0x29fc, 0x29fd, 1},
 	{0x3000, 0x3000, 0},		/* ideographic space */
 	{0x3001, 0x3020, 1},		/* ideographic punctuation */
+	{0x3030, 0x3030, 1},
+	{0x303d, 0x303d, 1},
 	{0x3040, 0x309f, 0x3040},	/* Hiragana */
 	{0x30a0, 0x30ff, 0x30a0},	/* Katakana */
 	{0x3300, 0x9fff, 0x4e00},	/* CJK Ideographs */
 	{0xac00, 0xd7a3, 0xac00},	/* Hangul Syllables */
 	{0xf900, 0xfaff, 0x4e00},	/* CJK Ideographs */
+	{0xfd3e, 0xfd3f, 1},
 	{0xfe30, 0xfe6b, 1},		/* punctuation forms */
 	{0xff00, 0xff0f, 1},		/* half/fullwidth ASCII */
 	{0xff1a, 0xff20, 1},		/* half/fullwidth ASCII */
 	{0xff3b, 0xff40, 1},		/* half/fullwidth ASCII */
-	{0xff5b, 0xff64, 1},		/* half/fullwidth ASCII */
+	{0xff5b, 0xff65, 1},		/* half/fullwidth ASCII */
     };
     int bot = 0;
     int top = sizeof(classes) / sizeof(struct interval) - 1;
@@ -1592,11 +1809,10 @@ typedef struct
 
 convertStruct foldCase[] =
 {
-	{0x41,0x5a,1,32}, {0xb5,0xb5,-1,775}, {0xc0,0xd6,1,32},
-	{0xd8,0xde,1,32}, {0x100,0x12e,2,1}, {0x130,0x130,-1,-199},
-	{0x131,0x131,-1,-200}, {0x132,0x136,2,1}, {0x139,0x147,2,1},
-	{0x14a,0x176,2,1}, {0x178,0x178,-1,-121}, {0x179,0x17d,2,1},
-	{0x17f,0x17f,-1,-268}, {0x181,0x181,-1,210}, {0x182,0x184,2,1},
+	{0x41,0x5a,1,32}, {0xc0,0xd6,1,32}, {0xd8,0xde,1,32},
+	{0x100,0x12e,2,1}, {0x130,0x130,-1,-199}, {0x132,0x136,2,1},
+	{0x139,0x147,2,1}, {0x14a,0x176,2,1}, {0x178,0x178,-1,-121},
+	{0x179,0x17d,2,1}, {0x181,0x181,-1,210}, {0x182,0x184,2,1},
 	{0x186,0x186,-1,206}, {0x187,0x187,-1,1}, {0x189,0x18a,1,205},
 	{0x18b,0x18b,-1,1}, {0x18e,0x18e,-1,79}, {0x18f,0x18f,-1,202},
 	{0x190,0x190,-1,203}, {0x191,0x191,-1,1}, {0x193,0x193,-1,205},
@@ -1610,28 +1826,26 @@ convertStruct foldCase[] =
 	{0x1c8,0x1c8,-1,1}, {0x1ca,0x1ca,-1,2}, {0x1cb,0x1db,2,1},
 	{0x1de,0x1ee,2,1}, {0x1f1,0x1f1,-1,2}, {0x1f2,0x1f4,2,1},
 	{0x1f6,0x1f6,-1,-97}, {0x1f7,0x1f7,-1,-56}, {0x1f8,0x21e,2,1},
-	{0x222,0x232,2,1}, {0x345,0x345,-1,116}, {0x386,0x386,-1,38},
+	{0x220,0x220,-1,-130}, {0x222,0x232,2,1}, {0x386,0x386,-1,38},
 	{0x388,0x38a,1,37}, {0x38c,0x38c,-1,64}, {0x38e,0x38f,1,63},
-	{0x391,0x3a1,1,32}, {0x3a3,0x3ab,1,32}, {0x3c2,0x3c2,-1,1},
-	{0x3d0,0x3d0,-1,-30}, {0x3d1,0x3d1,-1,-25}, {0x3d5,0x3d5,-1,-15},
-	{0x3d6,0x3d6,-1,-22}, {0x3da,0x3ee,2,1}, {0x3f0,0x3f0,-1,-54},
-	{0x3f1,0x3f1,-1,-48}, {0x3f2,0x3f2,-1,-47}, {0x3f4,0x3f4,-1,-60},
-	{0x3f5,0x3f5,-1,-64}, {0x400,0x40f,1,80}, {0x410,0x42f,1,32},
-	{0x460,0x480,2,1}, {0x48c,0x4be,2,1}, {0x4c1,0x4c3,2,1},
-	{0x4c7,0x4cb,4,1}, {0x4d0,0x4f4,2,1}, {0x4f8,0x4f8,-1,1},
-	{0x531,0x556,1,48}, {0x1e00,0x1e94,2,1}, {0x1e9b,0x1e9b,-1,-58},
-	{0x1ea0,0x1ef8,2,1}, {0x1f08,0x1f0f,1,-8}, {0x1f18,0x1f1d,1,-8},
-	{0x1f28,0x1f2f,1,-8}, {0x1f38,0x1f3f,1,-8}, {0x1f48,0x1f4d,1,-8},
-	{0x1f59,0x1f5f,2,-8}, {0x1f68,0x1f6f,1,-8}, {0x1f88,0x1f8f,1,-8},
-	{0x1f98,0x1f9f,1,-8}, {0x1fa8,0x1faf,1,-8}, {0x1fb8,0x1fb9,1,-8},
-	{0x1fba,0x1fbb,1,-74}, {0x1fbc,0x1fbc,-1,-9}, {0x1fbe,0x1fbe,-1,-7173},
-	{0x1fc8,0x1fcb,1,-86}, {0x1fcc,0x1fcc,-1,-9}, {0x1fd8,0x1fd9,1,-8},
-	{0x1fda,0x1fdb,1,-100}, {0x1fe8,0x1fe9,1,-8}, {0x1fea,0x1feb,1,-112},
-	{0x1fec,0x1fec,-1,-7}, {0x1ff8,0x1ff9,1,-128}, {0x1ffa,0x1ffb,1,-126},
-	{0x1ffc,0x1ffc,-1,-9}, {0x2126,0x2126,-1,-7517}, {0x212a,0x212a,-1,-8383},
-	{0x212b,0x212b,-1,-8262}, {0x2160,0x216f,1,16}, {0x24b6,0x24cf,1,26},
-	{0xff21,0xff3a,1,32}, {0x10400,0x10425,1,40}
-	};
+	{0x391,0x3a1,1,32}, {0x3a3,0x3ab,1,32}, {0x3d8,0x3ee,2,1},
+	{0x3f4,0x3f4,-1,-60}, {0x3f7,0x3f7,-1,1}, {0x3f9,0x3f9,-1,-7},
+	{0x3fa,0x3fa,-1,1}, {0x400,0x40f,1,80}, {0x410,0x42f,1,32},
+	{0x460,0x480,2,1}, {0x48a,0x4be,2,1}, {0x4c1,0x4cd,2,1},
+	{0x4d0,0x4f4,2,1}, {0x4f8,0x500,8,1}, {0x502,0x50e,2,1},
+	{0x531,0x556,1,48}, {0x1e00,0x1e94,2,1}, {0x1ea0,0x1ef8,2,1},
+	{0x1f08,0x1f0f,1,-8}, {0x1f18,0x1f1d,1,-8}, {0x1f28,0x1f2f,1,-8},
+	{0x1f38,0x1f3f,1,-8}, {0x1f48,0x1f4d,1,-8}, {0x1f59,0x1f5f,2,-8},
+	{0x1f68,0x1f6f,1,-8}, {0x1f88,0x1f8f,1,-8}, {0x1f98,0x1f9f,1,-8},
+	{0x1fa8,0x1faf,1,-8}, {0x1fb8,0x1fb9,1,-8}, {0x1fba,0x1fbb,1,-74},
+	{0x1fbc,0x1fbc,-1,-9}, {0x1fc8,0x1fcb,1,-86}, {0x1fcc,0x1fcc,-1,-9},
+	{0x1fd8,0x1fd9,1,-8}, {0x1fda,0x1fdb,1,-100}, {0x1fe8,0x1fe9,1,-8},
+	{0x1fea,0x1feb,1,-112}, {0x1fec,0x1fec,-1,-7}, {0x1ff8,0x1ff9,1,-128},
+	{0x1ffa,0x1ffb,1,-126}, {0x1ffc,0x1ffc,-1,-9}, {0x2126,0x2126,-1,-7517},
+	{0x212a,0x212a,-1,-8383}, {0x212b,0x212b,-1,-8262},
+	{0x2160,0x216f,1,16}, {0x24b6,0x24cf,1,26}, {0xff21,0xff3a,1,32},
+	{0x10400,0x10427,1,40}
+};
 
 static int utf_convert(int a, convertStruct table[], int tableSize);
 
@@ -1701,21 +1915,22 @@ convertStruct toLower[] =
 	{0x1b3,0x1b5,2,1}, {0x1b7,0x1b7,-1,219}, {0x1b8,0x1bc,4,1},
 	{0x1c4,0x1ca,3,2}, {0x1cd,0x1db,2,1}, {0x1de,0x1ee,2,1},
 	{0x1f1,0x1f1,-1,2}, {0x1f4,0x1f4,-1,1}, {0x1f6,0x1f6,-1,-97},
-	{0x1f7,0x1f7,-1,-56}, {0x1f8,0x21e,2,1}, {0x222,0x232,2,1},
-	{0x386,0x386,-1,38}, {0x388,0x38a,1,37}, {0x38c,0x38c,-1,64},
-	{0x38e,0x38f,1,63}, {0x391,0x3a1,1,32}, {0x3a3,0x3ab,1,32},
-	{0x3da,0x3ee,2,1}, {0x3f4,0x3f4,-1,-60}, {0x400,0x40f,1,80},
-	{0x410,0x42f,1,32}, {0x460,0x480,2,1}, {0x48c,0x4be,2,1},
-	{0x4c1,0x4c3,2,1}, {0x4c7,0x4cb,4,1}, {0x4d0,0x4f4,2,1},
-	{0x4f8,0x4f8,-1,1}, {0x531,0x556,1,48}, {0x1e00,0x1e94,2,1},
-	{0x1ea0,0x1ef8,2,1}, {0x1f08,0x1f0f,1,-8}, {0x1f18,0x1f1d,1,-8},
-	{0x1f28,0x1f2f,1,-8}, {0x1f38,0x1f3f,1,-8}, {0x1f48,0x1f4d,1,-8},
-	{0x1f59,0x1f5f,2,-8}, {0x1f68,0x1f6f,1,-8}, {0x1fb8,0x1fb9,1,-8},
-	{0x1fba,0x1fbb,1,-74}, {0x1fc8,0x1fcb,1,-86}, {0x1fd8,0x1fd9,1,-8},
-	{0x1fda,0x1fdb,1,-100}, {0x1fe8,0x1fe9,1,-8}, {0x1fea,0x1feb,1,-112},
-	{0x1fec,0x1fec,-1,-7}, {0x1ff8,0x1ff9,1,-128}, {0x1ffa,0x1ffb,1,-126},
-	{0x2126,0x2126,-1,-7517}, {0x212a,0x212a,-1,-8383},
-	{0x212b,0x212b,-1,-8262}, {0xff21,0xff3a,1,32}, {0x10400,0x10425,1,40}
+	{0x1f7,0x1f7,-1,-56}, {0x1f8,0x21e,2,1}, {0x220,0x220,-1,-130},
+	{0x222,0x232,2,1}, {0x386,0x386,-1,38}, {0x388,0x38a,1,37},
+	{0x38c,0x38c,-1,64}, {0x38e,0x38f,1,63}, {0x391,0x3a1,1,32},
+	{0x3a3,0x3ab,1,32}, {0x3d8,0x3ee,2,1}, {0x3f4,0x3f4,-1,-60},
+	{0x3f7,0x3f7,-1,1}, {0x3f9,0x3f9,-1,-7}, {0x3fa,0x3fa,-1,1},
+	{0x400,0x40f,1,80}, {0x410,0x42f,1,32}, {0x460,0x480,2,1},
+	{0x48a,0x4be,2,1}, {0x4c1,0x4cd,2,1}, {0x4d0,0x4f4,2,1},
+	{0x4f8,0x500,8,1}, {0x502,0x50e,2,1}, {0x531,0x556,1,48},
+	{0x1e00,0x1e94,2,1}, {0x1ea0,0x1ef8,2,1}, {0x1f08,0x1f0f,1,-8},
+	{0x1f18,0x1f1d,1,-8}, {0x1f28,0x1f2f,1,-8}, {0x1f38,0x1f3f,1,-8},
+	{0x1f48,0x1f4d,1,-8}, {0x1f59,0x1f5f,2,-8}, {0x1f68,0x1f6f,1,-8},
+	{0x1fb8,0x1fb9,1,-8}, {0x1fba,0x1fbb,1,-74}, {0x1fc8,0x1fcb,1,-86},
+	{0x1fd8,0x1fd9,1,-8}, {0x1fda,0x1fdb,1,-100}, {0x1fe8,0x1fe9,1,-8},
+	{0x1fea,0x1feb,1,-112}, {0x1fec,0x1fec,-1,-7}, {0x1ff8,0x1ff9,1,-128},
+	{0x1ffa,0x1ffb,1,-126}, {0x2126,0x2126,-1,-7517}, {0x212a,0x212a,-1,-8383},
+	{0x212b,0x212b,-1,-8262}, {0xff21,0xff3a,1,32}, {0x10400,0x10427,1,40}
 };
 
 convertStruct toUpper[] =
@@ -1725,35 +1940,36 @@ convertStruct toUpper[] =
 	{0x131,0x131,-1,-232}, {0x133,0x137,2,-1}, {0x13a,0x148,2,-1},
 	{0x14b,0x177,2,-1}, {0x17a,0x17e,2,-1}, {0x17f,0x17f,-1,-300},
 	{0x183,0x185,2,-1}, {0x188,0x18c,4,-1}, {0x192,0x192,-1,-1},
-	{0x195,0x195,-1,97}, {0x199,0x1a1,8,-1}, {0x1a3,0x1a5,2,-1},
-	{0x1a8,0x1ad,5,-1}, {0x1b0,0x1b4,4,-1}, {0x1b6,0x1b9,3,-1},
-	{0x1bd,0x1bd,-1,-1}, {0x1bf,0x1bf,-1,56}, {0x1c5,0x1c6,1,-1},
-	{0x1c8,0x1c9,1,-1}, {0x1cb,0x1cc,1,-1}, {0x1ce,0x1dc,2,-1},
-	{0x1dd,0x1dd,-1,-79}, {0x1df,0x1ef,2,-1}, {0x1f2,0x1f3,1,-1},
-	{0x1f5,0x1f9,4,-1}, {0x1fb,0x21f,2,-1}, {0x223,0x233,2,-1},
-	{0x253,0x253,-1,-210}, {0x254,0x254,-1,-206}, {0x256,0x257,1,-205},
-	{0x259,0x259,-1,-202}, {0x25b,0x25b,-1,-203}, {0x260,0x260,-1,-205},
-	{0x263,0x263,-1,-207}, {0x268,0x268,-1,-209}, {0x269,0x26f,6,-211},
-	{0x272,0x272,-1,-213}, {0x275,0x275,-1,-214}, {0x280,0x283,3,-218},
-	{0x288,0x288,-1,-218}, {0x28a,0x28b,1,-217}, {0x292,0x292,-1,-219},
-	{0x3ac,0x3ac,-1,-38}, {0x3ad,0x3af,1,-37}, {0x3b1,0x3c1,1,-32},
-	{0x3c2,0x3c2,-1,-31}, {0x3c3,0x3cb,1,-32}, {0x3cc,0x3cc,-1,-64},
-	{0x3cd,0x3ce,1,-63}, {0x3d0,0x3d0,-1,-62}, {0x3d1,0x3d1,-1,-57},
-	{0x3d5,0x3d5,-1,-47}, {0x3d6,0x3d6,-1,-54}, {0x3db,0x3ef,2,-1},
-	{0x3f0,0x3f0,-1,-86}, {0x3f1,0x3f1,-1,-80}, {0x3f2,0x3f2,-1,-79},
-	{0x3f5,0x3f5,-1,-96}, {0x430,0x44f,1,-32}, {0x450,0x45f,1,-80},
-	{0x461,0x481,2,-1}, {0x48d,0x4bf,2,-1}, {0x4c2,0x4c4,2,-1},
-	{0x4c8,0x4cc,4,-1}, {0x4d1,0x4f5,2,-1}, {0x4f9,0x4f9,-1,-1},
-	{0x561,0x586,1,-48}, {0x1e01,0x1e95,2,-1}, {0x1e9b,0x1e9b,-1,-59},
-	{0x1ea1,0x1ef9,2,-1}, {0x1f00,0x1f07,1,8}, {0x1f10,0x1f15,1,8},
-	{0x1f20,0x1f27,1,8}, {0x1f30,0x1f37,1,8}, {0x1f40,0x1f45,1,8},
-	{0x1f51,0x1f57,2,8}, {0x1f60,0x1f67,1,8}, {0x1f70,0x1f71,1,74},
-	{0x1f72,0x1f75,1,86}, {0x1f76,0x1f77,1,100}, {0x1f78,0x1f79,1,128},
-	{0x1f7a,0x1f7b,1,112}, {0x1f7c,0x1f7d,1,126}, {0x1f80,0x1f87,1,8},
-	{0x1f90,0x1f97,1,8}, {0x1fa0,0x1fa7,1,8}, {0x1fb0,0x1fb1,1,8},
-	{0x1fb3,0x1fb3,-1,9}, {0x1fbe,0x1fbe,-1,-7205}, {0x1fc3,0x1fc3,-1,9},
-	{0x1fd0,0x1fd1,1,8}, {0x1fe0,0x1fe1,1,8}, {0x1fe5,0x1fe5,-1,7},
-	{0x1ff3,0x1ff3,-1,9}, {0xff41,0xff5a,1,-32}, {0x10428,0x1044d,1,-40}
+	{0x195,0x195,-1,97}, {0x199,0x199,-1,-1}, {0x19e,0x19e,-1,130},
+	{0x1a1,0x1a5,2,-1}, {0x1a8,0x1ad,5,-1}, {0x1b0,0x1b4,4,-1},
+	{0x1b6,0x1b9,3,-1}, {0x1bd,0x1bd,-1,-1}, {0x1bf,0x1bf,-1,56},
+	{0x1c5,0x1c6,1,-1}, {0x1c8,0x1c9,1,-1}, {0x1cb,0x1cc,1,-1},
+	{0x1ce,0x1dc,2,-1}, {0x1dd,0x1dd,-1,-79}, {0x1df,0x1ef,2,-1},
+	{0x1f2,0x1f3,1,-1}, {0x1f5,0x1f9,4,-1}, {0x1fb,0x21f,2,-1},
+	{0x223,0x233,2,-1}, {0x253,0x253,-1,-210}, {0x254,0x254,-1,-206},
+	{0x256,0x257,1,-205}, {0x259,0x259,-1,-202}, {0x25b,0x25b,-1,-203},
+	{0x260,0x260,-1,-205}, {0x263,0x263,-1,-207}, {0x268,0x268,-1,-209},
+	{0x269,0x26f,6,-211}, {0x272,0x272,-1,-213}, {0x275,0x275,-1,-214},
+	{0x280,0x283,3,-218}, {0x288,0x288,-1,-218}, {0x28a,0x28b,1,-217},
+	{0x292,0x292,-1,-219}, {0x3ac,0x3ac,-1,-38}, {0x3ad,0x3af,1,-37},
+	{0x3b1,0x3c1,1,-32}, {0x3c2,0x3c2,-1,-31}, {0x3c3,0x3cb,1,-32},
+	{0x3cc,0x3cc,-1,-64}, {0x3cd,0x3ce,1,-63}, {0x3d0,0x3d0,-1,-62},
+	{0x3d1,0x3d1,-1,-57}, {0x3d5,0x3d5,-1,-47}, {0x3d6,0x3d6,-1,-54},
+	{0x3d9,0x3ef,2,-1}, {0x3f0,0x3f0,-1,-86}, {0x3f1,0x3f1,-1,-80},
+	{0x3f2,0x3f2,-1,7}, {0x3f5,0x3f5,-1,-96}, {0x3f8,0x3fb,3,-1},
+	{0x430,0x44f,1,-32}, {0x450,0x45f,1,-80}, {0x461,0x481,2,-1},
+	{0x48b,0x4bf,2,-1}, {0x4c2,0x4ce,2,-1}, {0x4d1,0x4f5,2,-1},
+	{0x4f9,0x501,8,-1}, {0x503,0x50f,2,-1}, {0x561,0x586,1,-48},
+	{0x1e01,0x1e95,2,-1}, {0x1e9b,0x1e9b,-1,-59}, {0x1ea1,0x1ef9,2,-1},
+	{0x1f00,0x1f07,1,8}, {0x1f10,0x1f15,1,8}, {0x1f20,0x1f27,1,8},
+	{0x1f30,0x1f37,1,8}, {0x1f40,0x1f45,1,8}, {0x1f51,0x1f57,2,8},
+	{0x1f60,0x1f67,1,8}, {0x1f70,0x1f71,1,74}, {0x1f72,0x1f75,1,86},
+	{0x1f76,0x1f77,1,100}, {0x1f78,0x1f79,1,128}, {0x1f7a,0x1f7b,1,112},
+	{0x1f7c,0x1f7d,1,126}, {0x1f80,0x1f87,1,8}, {0x1f90,0x1f97,1,8},
+	{0x1fa0,0x1fa7,1,8}, {0x1fb0,0x1fb1,1,8}, {0x1fb3,0x1fb3,-1,9},
+	{0x1fbe,0x1fbe,-1,-7205}, {0x1fc3,0x1fc3,-1,9}, {0x1fd0,0x1fd1,1,8},
+	{0x1fe0,0x1fe1,1,8}, {0x1fe5,0x1fe5,-1,7}, {0x1ff3,0x1ff3,-1,9},
+	{0xff41,0xff5a,1,-32}, {0x10428,0x1044f,1,-40}
 };
 
 /*
@@ -1764,8 +1980,21 @@ convertStruct toUpper[] =
 utf_toupper(a)
     int		a;
 {
+    /* If 'casemap' contains "keepascii" use ASCII style toupper(). */
+    if (a < 128 && (cmp_flags & CMP_KEEPASCII))
+	return TOUPPER_ASC(a);
+
+#if defined(HAVE_TOWUPPER) && defined(__STDC__ISO_10646__)
+    /* If towupper() is availble and handles Unicode, use it. */
+    if (!(cmp_flags & CMP_INTERNAL))
+	return towupper(a);
+#endif
+
+    /* For characters below 128 use locale sensitive toupper(). */
     if (a < 128)
-	return toupper(a);
+	return TOUPPER_LOC(a);
+
+    /* For any other characters use the above mapping table. */
     return utf_convert(a, toUpper, sizeof(toUpper));
 }
 
@@ -1784,8 +2013,21 @@ utf_islower(a)
 utf_tolower(a)
     int		a;
 {
+    /* If 'casemap' contains "keepascii" use ASCII style tolower(). */
+    if (a < 128 && (cmp_flags & CMP_KEEPASCII))
+	return TOLOWER_ASC(a);
+
+#if defined(HAVE_TOWLOWER) && defined(__STDC__ISO_10646__)
+    /* If towlower() is availble and handles Unicode, use it. */
+    if (!(cmp_flags & CMP_INTERNAL))
+	return towlower(a);
+#endif
+
+    /* For characters below 128 use locale sensitive tolower(). */
     if (a < 128)
-	return tolower(a);
+	return TOLOWER_LOC(a);
+
+    /* For any other characters use the above mapping table. */
     return utf_convert(a, toLower, sizeof(toLower));
 }
 
@@ -1809,39 +2051,55 @@ mb_strnicmp(s1, s2, n)
     char_u	*s1, *s2;
     int		n;
 {
-    int		i, l;
+    int		i, j, l;
     int		cdiff;
 
     for (i = 0; i < n; i += l)
     {
+	if (s1[i] == NUL && s2[i] == NUL)   /* both strings end */
+	    return 0;
 	if (enc_utf8)
-	    l = utf_ptr2len_check(s1 + i);  /* exclude composing chars */
-	else
-	    l = (*mb_ptr2len_check)(s1 + i);
-	if (l <= 1)
 	{
-	    /* Single byte: first check normally, then with ignore case. */
-	    if (s1[i] != s2[i])
+	    l = utf_byte2len(s1[i]);
+	    if (l > n - i)
+		l = n - i;		    /* incomplete character */
+	    /* Check directly first, it's faster. */
+	    for (j = 0; j < l; ++j)
+		if (s1[i + j] != s2[i + j])
+		    break;
+	    if (j < l)
 	    {
-		cdiff = TO_LOWER(s1[i]) - TO_LOWER(s2[i]);
+		/* If one of the two characters is incomplete return -1. */
+		if (i + utf_byte2len(s1[i]) > n || i + utf_byte2len(s2[i]) > n)
+		    return -1;
+		cdiff = utf_fold(utf_ptr2char(s1 + i))
+					     - utf_fold(utf_ptr2char(s2 + i));
 		if (cdiff != 0)
 		    return cdiff;
 	    }
-	    else if (s1[i] == NUL)
-		return 0;
 	}
 	else
 	{
-	    /* For multi-byte only ignore case for Unicode. */
-	    if (l > n - i)
-		l = n - i;
-	    if (enc_utf8)
-		cdiff = utf_fold(utf_ptr2char(s1 + i))
-					     - utf_fold(utf_ptr2char(s2 + i));
+	    l = (*mb_ptr2len_check)(s1 + i);
+	    if (l <= 1)
+	    {
+		/* Single byte: first check normally, then with ignore case. */
+		if (s1[i] != s2[i])
+		{
+		    cdiff = TOLOWER_LOC(s1[i]) - TOLOWER_LOC(s2[i]);
+		    if (cdiff != 0)
+			return cdiff;
+		}
+	    }
 	    else
-		cdiff =  STRNCMP(s1 + i, s2 + i, l);
-	    if (cdiff != 0)
-		return cdiff;
+	    {
+		/* For non-Unicode multi-byte don't ignore case. */
+		if (l > n - i)
+		    l = n - i;
+		cdiff = STRNCMP(s1 + i, s2 + i, l);
+		if (cdiff != 0)
+		    return cdiff;
+	    }
 	}
     }
     return 0;
@@ -1921,7 +2179,8 @@ dbcs_head_off(base, p)
     return (q == p) ? 0 : 1;
 }
 
-#if defined(FEAT_CLIPBOARD) || defined(FEAT_GUI) || defined(PROTO)
+#if defined(FEAT_CLIPBOARD) || defined(FEAT_GUI) || defined(FEAT_RIGHTLEFT) \
+	|| defined(PROTO)
 /*
  * Special version of dbcs_head_off() that works for ScreenLines[], where
  * single-width DBCS_JPNU characters are stored separately.
@@ -1965,6 +2224,10 @@ utf_head_off(base, p)
 {
     char_u	*q;
     char_u	*s;
+    int		c;
+#ifdef FEAT_ARABIC
+    char_u	*j;
+#endif
 
     if (*p < 0x80)		/* be quick for ASCII */
 	return 0;
@@ -1979,11 +2242,33 @@ utf_head_off(base, p)
 	/* Move q to the first byte of this char. */
 	while (q > base && (*q & 0xc0) == 0x80)
 	    --q;
-	/* Check for illegal sequence. */
-	if (utf8len_tab[*q] != (int)(s - q + 1))
+	/* Check for illegal sequence. Do allow an illegal byte after where we
+	 * started. */
+	if (utf8len_tab[*q] != (int)(s - q + 1)
+				       && utf8len_tab[*q] != (int)(p - q + 1))
 	    return 0;
-	if (q <= base || !utf_iscomposing(utf_ptr2char(q)))
+
+	if (q <= base)
 	    break;
+
+	c = utf_ptr2char(q);
+	if (utf_iscomposing(c))
+	    continue;
+
+#ifdef FEAT_ARABIC
+	if (arabic_maycombine(c))
+	{
+	    /* Advance to get a sneak-peak at the next char */
+	    j = q;
+	    --j;
+	    /* Move j to the first byte of this char. */
+	    while (j > base && (*j & 0xc0) == 0x80)
+		--j;
+	    if (arabic_combine(utf_ptr2char(j), c))
+		continue;
+	}
+#endif
+	break;
     }
 
     return (int)(p - q);
@@ -2109,10 +2394,23 @@ mb_adjustpos(lp)
 {
     char_u	*p;
 
-    if (lp->col > 0)
+    if (lp->col > 0
+#ifdef FEAT_VIRTUALEDIT
+	    || lp->coladd > 1
+#endif
+	    )
     {
 	p = ml_get(lp->lnum);
 	lp->col -= (*mb_head_off)(p, p + lp->col);
+#ifdef FEAT_VIRTUALEDIT
+	/* Reset "coladd" when the cursor would be on the right half of a
+	 * double-wide character. */
+	if (lp->coladd == 1
+		&& p[lp->col] != TAB
+		&& vim_isprintc((*mb_ptr2char)(p + lp->col))
+		&& ptr2cells(p + lp->col) > 1)
+	    lp->coladd = 0;
+#endif
     }
 }
 
@@ -2226,7 +2524,6 @@ mb_unescape(pp)
     return NULL;
 }
 
-#if defined(FEAT_CLIPBOARD) || defined(FEAT_GUI) || defined(PROTO)
 /*
  * Return TRUE if the character at "row"/"col" on the screen is the left side
  * of a double-width character.
@@ -2248,9 +2545,9 @@ mb_lefthalve(row, col)
 		&& ScreenLines[LineOffset[row] + col + 1] == 0);
     return FALSE;
 }
-#endif
 
-#if defined(FEAT_CLIPBOARD) || defined(FEAT_GUI) || defined(PROTO)
+# if defined(FEAT_CLIPBOARD) || defined(FEAT_GUI) || defined(FEAT_RIGHTLEFT) \
+	|| defined(PROTO)
 /*
  * Correct a position on the screen, if it's the right halve of a double-wide
  * char move it to the left halve.  Returns the corrected column.
@@ -2271,7 +2568,11 @@ mb_fix_col(col, row)
 	--col;
     return col;
 }
+# endif
 #endif
+
+#if defined(FEAT_MBYTE) || defined(FEAT_POSTSCRIPT) || defined(PROTO)
+static int enc_alias_search __ARGS((char_u *name));
 
 /*
  * Skip the Vim specific head of a 'encoding' name.
@@ -2312,7 +2613,7 @@ enc_canonize(enc)
 	    if (*s == '_')
 		*p++ = '-';
 	    else
-		*p++ = TO_LOWER(*s);
+		*p++ = TOLOWER_ASC(*s);
 	}
 	*p = NUL;
 
@@ -2368,17 +2669,20 @@ enc_alias_search(name)
 	    return enc_alias_table[i].canon;
     return -1;
 }
+#endif
+
+#if defined(FEAT_MBYTE) || defined(PROTO)
 
 #ifdef HAVE_LANGINFO_H
 # include <langinfo.h>
 #endif
 
 /*
- * Set the default value for 'encoding' (p_enc).
- * Returns OK when successful, FAIL when not.
+ * Get the canonicalized encoding of the current locale.
+ * Returns an allocated string when successful, NULL when not.
  */
-    int
-enc_default()
+    char_u *
+enc_locale()
 {
 #ifndef WIN3264
     char	*s;
@@ -2386,7 +2690,6 @@ enc_default()
     int		i;
 #endif
     char	buf[50];
-    char_u	*save_enc;
 #ifdef WIN3264
     long	acp = GetACP();
 
@@ -2438,26 +2741,43 @@ enc_default()
 	if (s[i] == '_' || s[i] == '-')
 	    buf[i] = '-';
 	else if (isalnum((int)s[i]))
-	    buf[i] = TO_LOWER(s[i]);
+	    buf[i] = TOLOWER_ASC(s[i]);
 	else
 	    break;
     }
     buf[i] = NUL;
 #endif
 
-    /*
-     * Try setting 'encoding' and check if the value is valid.
-     * If not, go back to the default "latin1".
-     */
-    save_enc = p_enc;
-    p_enc = enc_canonize((char_u *)buf);
-    if (p_enc != NULL && mb_init() == NULL)
-	return OK;
-    vim_free(p_enc);
-    p_enc = save_enc;
-
-    return FAIL;
+    return enc_canonize((char_u *)buf);
 }
+
+#if defined(WIN3264) || defined(PROTO)
+/*
+ * Convert an encoding name to an MS-Windows codepage.
+ * Returns zero if no codepage can be figured out.
+ */
+    int
+encname2codepage(name)
+    char_u	*name;
+{
+    int		cp;
+    char_u	*p = name;
+    int		idx;
+
+    if (STRNCMP(p, "8bit-", 5) == 0)
+	p += 5;
+    else if (STRNCMP(p_enc, "2byte-", 6) == 0)
+	p += 6;
+
+    if (p[0] == 'c' && p[1] == 'p')
+	cp = atoi(p + 2);
+    else if ((idx = enc_canon_search(p)) >= 0)
+	cp = enc_canon_table[idx].codepage;
+    if (IsValidCodePage(cp))
+	return cp;
+    return 0;
+}
+#endif
 
 # if defined(USE_ICONV) || defined(PROTO)
 
@@ -2541,7 +2861,7 @@ iconv_string(fd, str, slen)
     fromlen = slen;
     for (;;)
     {
-	if (len == 0 || ICONV_ERRNO == E2BIG)
+	if (len == 0 || ICONV_ERRNO == ICONV_E2BIG)
 	{
 	    /* Allocate enough room for most conversions.  When re-allocating
 	     * increase the buffer size. */
@@ -2563,7 +2883,9 @@ iconv_string(fd, str, slen)
 	    *to = NUL;
 	    break;
 	}
-	if (ICONV_ERRNO == EILSEQ)
+	/* Check both ICONV_EILSEQ and EILSEQ, because the dynamically loaded
+	 * iconv library may use one of them. */
+	if (ICONV_ERRNO == ICONV_EILSEQ || ICONV_ERRNO == EILSEQ)
 	{
 	    /* Can't convert: insert a '?' and skip a character.  This assumes
 	     * conversion from 'encoding' to something else.  In other
@@ -2575,7 +2897,7 @@ iconv_string(fd, str, slen)
 	    from += l;
 	    fromlen -= l;
 	}
-	else if (ICONV_ERRNO != E2BIG)
+	else if (ICONV_ERRNO != ICONV_E2BIG)
 	{
 	    /* conversion failed */
 	    vim_free(result);
@@ -2626,7 +2948,7 @@ iconv_enabled(verbose)
 	/* Only give the message when 'verbose' is set, otherwise it might be
 	 * done whenever a conversion is attempted. */
 	if (verbose && p_verbose > 0)
-	    EMSG2(_("E370: Could not load library %s"),
+	    EMSG2(_(e_loadlib),
 		    hIconvDLL == 0 ? DYNAMIC_ICONV_DLL : DYNAMIC_MSVCRT_DLL);
 	iconv_end();
 	return FALSE;
@@ -2642,8 +2964,7 @@ iconv_enabled(verbose)
     {
 	iconv_end();
 	if (verbose && p_verbose > 0)
-	    EMSG2(_("E448: Could not load library function %s"),
-							      "for libiconv");
+	    EMSG2(_(e_loadfunc), "for libiconv");
 	return FALSE;
     }
     return TRUE;
@@ -2654,9 +2975,9 @@ iconv_end()
 {
     /* Don't use iconv() when inputting or outputting characters. */
     if (input_conv.vc_type == CONV_ICONV)
-	convert_setup(&input_conv, (char_u *)"", (char_u *)"");
+	convert_setup(&input_conv, NULL, NULL);
     if (output_conv.vc_type == CONV_ICONV)
-	convert_setup(&output_conv, (char_u *)"", (char_u *)"");
+	convert_setup(&output_conv, NULL, NULL);
 
     if (hIconvDLL != 0)
 	FreeLibrary(hIconvDLL);
@@ -2672,12 +2993,634 @@ iconv_end()
 
 #if defined(FEAT_XIM) || defined(PROTO)
 
+# if defined(HAVE_GTK2) && !defined(PROTO)
+
+static int im_is_active	       = FALSE;	/* IM is enabled for current mode    */
+static int im_preedit_cursor   = 0;	/* cursor offset in characters       */
+static int im_preedit_trailing = 0;	/* number of characters after cursor */
+
+static unsigned long im_commit_handler_id  = 0;
+static unsigned int  im_activatekey_keyval = GDK_VoidSymbol;
+static unsigned int  im_activatekey_state  = 0;
+
+    void
+im_set_active(int active)
+{
+    int was_active;
+
+    was_active = !!im_is_active;
+    im_is_active = (active && !p_imdisable);
+
+    if (im_is_active != was_active)
+	xim_reset();
+}
+
+    void
+xim_set_focus(int focus)
+{
+    if (xic != NULL)
+    {
+	if (focus)
+	    gtk_im_context_focus_in(xic);
+	else
+	    gtk_im_context_focus_out(xic);
+    }
+}
+
+    void
+im_set_position(int row, int col)
+{
+    if (xic != NULL)
+    {
+	GdkRectangle area;
+
+	area.x = FILL_X(col);
+	area.y = FILL_Y(row);
+	area.width  = gui.char_width * (mb_lefthalve(row, col) ? 2 : 1);
+	area.height = gui.char_height;
+
+	gtk_im_context_set_cursor_location(xic, &area);
+    }
+}
+
+#  if 0 || defined(PROTO) /* apparently only used in gui_x11.c */
+    void
+xim_set_preedit(void)
+{
+    im_set_position(gui.row, gui.col);
+}
+#  endif
+
+    static void
+im_add_to_input(char_u *str, int len)
+{
+    /* Convert from 'termencoding' (always "utf-8") to 'encoding' */
+    if (input_conv.vc_type != CONV_NONE)
+    {
+	str = string_convert(&input_conv, str, &len);
+	g_return_if_fail(str != NULL);
+    }
+
+    add_to_input_buf_csi(str, len);
+
+    if (input_conv.vc_type != CONV_NONE)
+	vim_free(str);
+
+    if (p_mh) /* blank out the pointer if necessary */
+	gui_mch_mousehide(TRUE);
+}
+
+    static void
+im_delete_preedit(void)
+{
+    char_u bskey[]  = {CSI, 'k', 'b'};
+    char_u delkey[] = {CSI, 'k', 'D'};
+
+    if (State & NORMAL)
+    {
+	im_preedit_cursor = 0;
+	return;
+    }
+    for (; im_preedit_cursor > 0; --im_preedit_cursor)
+	add_to_input_buf(bskey, (int)sizeof(bskey));
+
+    for (; im_preedit_trailing > 0; --im_preedit_trailing)
+	add_to_input_buf(delkey, (int)sizeof(delkey));
+}
+
+    static void
+im_correct_cursor(int num_move_back)
+{
+    char_u backkey[] = {CSI, 'k', 'l'};
+
+    if (State & NORMAL)
+	return;
+#  ifdef FEAT_RIGHTLEFT
+    if ((State & CMDLINE) == 0 && curwin != NULL && curwin->w_p_rl)
+	backkey[2] = 'r';
+#  endif
+    for (; num_move_back > 0; --num_move_back)
+	add_to_input_buf(backkey, (int)sizeof(backkey));
+}
+
+/*
+ * Callback invoked when the user finished preediting.
+ * Put the final string into the input buffer.
+ */
+/*ARGSUSED0*/
+    static void
+im_commit_cb(GtkIMContext *context, const gchar *str, gpointer data)
+{
+    /* The imhangul module doesn't reset the preedit string before
+     * committing.  Call im_delete_preedit() to work around that. */
+    im_delete_preedit();
+
+    /* Indicate that preediting has finished */
+    preedit_start_col = MAXCOL;
+
+    im_add_to_input((char_u *)str, (int)strlen(str));
+
+    if (gtk_main_level() > 0)
+	gtk_main_quit();
+}
+
+/*
+ * Callback invoked after start to the preedit.
+ */
+/*ARGSUSED*/
+    static void
+im_preedit_start_cb(GtkIMContext *context, gpointer data)
+{
+    im_is_active = TRUE;
+    gui_update_cursor(TRUE, FALSE);
+}
+/*
+ * Callback invoked after end to the preedit.
+ */
+/*ARGSUSED*/
+    static void
+im_preedit_end_cb(GtkIMContext *context, gpointer data)
+{
+    im_is_active = FALSE;
+    gui_update_cursor(TRUE, FALSE);
+}
+
+/*
+ * Callback invoked after changes to the preedit string.  If the preedit
+ * string was empty before, remember the preedit start column so we know
+ * where to apply feedback attributes.  Delete the previous preedit string
+ * if there was one, save the new preedit cursor offset, and put the new
+ * string into the input buffer.
+ *
+ * TODO: The pragmatic "put into input buffer" approach used here has
+ *       several fundamental problems:
+ *
+ * - The characters in the preedit string are subject to remapping.
+ *   That's broken, only the finally committed string should be remapped.
+ *
+ * - There is a race condition involved:  The retrieved value for the
+ *   current cursor position will be wrong if any unprocessed characters
+ *   are still queued in the input buffer.
+ *
+ * - Due to the lack of synchronization between the file buffer in memory
+ *   and any typed characters, it's practically impossible to implement the
+ *   "retrieve_surrounding" and "delete_surrounding" signals reliably.  IM
+ *   modules for languages such as Thai are likely to rely on this feature
+ *   for proper operation.
+ *
+ * Conclusions:  I think support for preediting needs to be moved to the
+ * core parts of Vim.  Ideally, until it has been committed, the preediting
+ * string should only be displayed and not affect the buffer content at all.
+ * The question how to deal with the synchronization issue still remains.
+ * Circumventing the input buffer is probably not desirable.  Anyway, I think
+ * implementing "retrieve_surrounding" is the only hard problem.
+ *
+ * One way to solve all of this in a clean manner would be to queue all key
+ * press/release events "as is" in the input buffer, and apply the IM filtering
+ * at the receiving end of the queue.  This, however, would have a rather large
+ * impact on the code base.  If there is an easy way to force processing of all
+ * remaining input from within the "retrieve_surrounding" signal handler, this
+ * might not be necessary.  Gotta ask on vim-dev for opinions.
+ */
+/*ARGSUSED1*/
+    static void
+im_preedit_changed_cb(GtkIMContext *context, gpointer data)
+{
+    char    *preedit_string = NULL;
+    int	    cursor_index    = 0;
+    int	    num_move_back   = 0;
+    char_u  *str;
+    char_u  *p;
+    int	    i;
+
+    gtk_im_context_get_preedit_string(context,
+				      &preedit_string, NULL,
+				      &cursor_index);
+
+    g_return_if_fail(preedit_string != NULL); /* just in case */
+
+    if (preedit_start_col == MAXCOL && preedit_string[0] != '\0')
+    {
+	/* Urgh, this breaks if the input buffer isn't empty now */
+	if (State & CMDLINE)
+	    preedit_start_col = cmdline_getvcol_cursor();
+	else if (curwin != NULL)
+	    getvcol(curwin, &curwin->w_cursor, &preedit_start_col, NULL, NULL);
+    }
+
+    im_delete_preedit();
+
+    str = (char_u *)preedit_string;
+    /*
+     * According to the documentation of gtk_im_context_get_preedit_string(),
+     * the cursor_pos output argument returns the offset in bytes.  This is
+     * unfortunately not true -- real life shows the offset is in characters,
+     * and the GTK+ source code agrees with me.  Will file a bug later.
+     */
+    for (p = str, i = 0; *p != NUL; p += utf_byte2len(*p), ++i)
+    {
+	int is_composing;
+
+	is_composing = ((*p & 0x80) != 0 && utf_iscomposing(utf_ptr2char(p)));
+	/*
+	 * These offsets are used as counters when generating <BS> and <Del>
+	 * to delete the preedit string.  So don't count composing characters
+	 * unless 'delcombine' is enabled.
+	 */
+	if (!is_composing || p_deco)
+	{
+	    if (i < cursor_index)
+		++im_preedit_cursor;
+	    else
+		++im_preedit_trailing;
+	}
+	if (!is_composing && i >= cursor_index)
+	{
+	    /* This is essentially the same as im_preedit_trailing, except
+	     * composing characters are not counted even if p_deco is set. */
+	    ++num_move_back;
+	}
+    }
+
+    if (p > str)
+    {
+	im_add_to_input(str, (int)(p - str));
+	im_correct_cursor(num_move_back);
+    }
+
+    g_free(preedit_string);
+
+    if (gtk_main_level() > 0)
+	gtk_main_quit();
+}
+
+/*
+ * Translate the Pango attributes at iter to Vim highlighting attributes.
+ * Ignore attributes not supported by Vim highlighting.  This shouldn't have
+ * too much impact -- right now we handle even more attributes than necessary
+ * for the IM modules I tested with.
+ */
+    static int
+translate_pango_attributes(PangoAttrIterator *iter)
+{
+    PangoAttribute  *attr;
+    int		    char_attr = HL_NORMAL;
+
+    attr = pango_attr_iterator_get(iter, PANGO_ATTR_UNDERLINE);
+    if (attr != NULL && ((PangoAttrInt *)attr)->value
+						 != (int)PANGO_UNDERLINE_NONE)
+	char_attr |= HL_UNDERLINE;
+
+    attr = pango_attr_iterator_get(iter, PANGO_ATTR_WEIGHT);
+    if (attr != NULL && ((PangoAttrInt *)attr)->value >= (int)PANGO_WEIGHT_BOLD)
+	char_attr |= HL_BOLD;
+
+    attr = pango_attr_iterator_get(iter, PANGO_ATTR_STYLE);
+    if (attr != NULL && ((PangoAttrInt *)attr)->value
+						   != (int)PANGO_STYLE_NORMAL)
+	char_attr |= HL_ITALIC;
+
+    attr = pango_attr_iterator_get(iter, PANGO_ATTR_BACKGROUND);
+    if (attr != NULL)
+    {
+	const PangoColor *color = &((PangoAttrColor *)attr)->color;
+
+	/* Assume inverse if black background is requested */
+	if ((color->red | color->green | color->blue) == 0)
+	    char_attr |= HL_INVERSE;
+    }
+
+    return char_attr;
+}
+
+/*
+ * Retrieve the highlighting attributes at column col in the preedit string.
+ * Return -1 if not in preediting mode or if col is out of range.
+ */
+    int
+im_get_feedback_attr(int col)
+{
+    char	    *preedit_string = NULL;
+    PangoAttrList   *attr_list	    = NULL;
+    int		    char_attr	    = -1;
+
+    if (xic == NULL)
+	return char_attr;
+
+    gtk_im_context_get_preedit_string(xic, &preedit_string, &attr_list, NULL);
+
+    if (preedit_string != NULL && attr_list != NULL)
+    {
+	int index;
+
+	/* Get the byte index as used by PangoAttrIterator */
+	for (index = 0; col > 0 && preedit_string[index] != '\0'; --col)
+	    index += utfc_ptr2len_check((char_u *)preedit_string + index);
+
+	if (preedit_string[index] != '\0')
+	{
+	    PangoAttrIterator	*iter;
+	    int			start, end;
+
+	    char_attr = HL_NORMAL;
+	    iter = pango_attr_list_get_iterator(attr_list);
+
+	    /* Extract all relevant attributes from the list. */
+	    do
+	    {
+		pango_attr_iterator_range(iter, &start, &end);
+
+		if (index >= start && index < end)
+		    char_attr |= translate_pango_attributes(iter);
+	    }
+	    while (pango_attr_iterator_next(iter));
+
+	    pango_attr_iterator_destroy(iter);
+	}
+    }
+
+    if (attr_list != NULL)
+	pango_attr_list_unref(attr_list);
+    g_free(preedit_string);
+
+    return char_attr;
+}
+
+    void
+xim_init(void)
+{
+    g_return_if_fail(gui.drawarea != NULL);
+    g_return_if_fail(gui.drawarea->window != NULL);
+
+    xic = gtk_im_multicontext_new();
+
+    im_commit_handler_id = g_signal_connect(G_OBJECT(xic), "commit",
+					    G_CALLBACK(&im_commit_cb), NULL);
+    g_signal_connect(G_OBJECT(xic), "preedit_changed",
+		     G_CALLBACK(&im_preedit_changed_cb), NULL);
+    g_signal_connect(G_OBJECT(xic), "preedit_start",
+		     G_CALLBACK(&im_preedit_start_cb), NULL);
+    g_signal_connect(G_OBJECT(xic), "preedit_end",
+		     G_CALLBACK(&im_preedit_end_cb), NULL);
+
+    gtk_im_context_set_client_window(xic, gui.drawarea->window);
+}
+
+    void
+im_shutdown(void)
+{
+    if (xic != NULL)
+    {
+	gtk_im_context_focus_out(xic);
+	g_object_unref(xic);
+	xic = NULL;
+    }
+    im_is_active = FALSE;
+    im_commit_handler_id = 0;
+    preedit_start_col = MAXCOL;
+}
+
+/*
+ * Convert the string argument to keyval and state for GdkEventKey.
+ * If str is valid return TRUE, otherwise FALSE.
+ *
+ * See 'imactivatekey' for documentation of the format.
+ */
+    static int
+im_string_to_keyval(const char *str, unsigned int *keyval, unsigned int *state)
+{
+    const char	    *mods_end;
+    unsigned	    tmp_keyval;
+    unsigned	    tmp_state = 0;
+
+    mods_end = strrchr(str, '-');
+    mods_end = (mods_end != NULL) ? mods_end + 1 : str;
+
+    /* Parse modifier keys */
+    while (str < mods_end)
+	switch (*str++)
+	{
+	    case '-':							break;
+	    case 'S': case 's': tmp_state |= (unsigned)GDK_SHIFT_MASK;	break;
+	    case 'L': case 'l': tmp_state |= (unsigned)GDK_LOCK_MASK;	break;
+	    case 'C': case 'c': tmp_state |= (unsigned)GDK_CONTROL_MASK;break;
+	    case '1':		tmp_state |= (unsigned)GDK_MOD1_MASK;	break;
+	    case '2':		tmp_state |= (unsigned)GDK_MOD2_MASK;	break;
+	    case '3':		tmp_state |= (unsigned)GDK_MOD3_MASK;	break;
+	    case '4':		tmp_state |= (unsigned)GDK_MOD4_MASK;	break;
+	    case '5':		tmp_state |= (unsigned)GDK_MOD5_MASK;	break;
+	    default:
+		return FALSE;
+	}
+
+    tmp_keyval = gdk_keyval_from_name(str);
+
+    if (tmp_keyval == 0 || tmp_keyval == GDK_VoidSymbol)
+	return FALSE;
+
+    if (keyval != NULL)
+	*keyval = tmp_keyval;
+    if (state != NULL)
+	*state = tmp_state;
+
+    return TRUE;
+}
+
+/*
+ * Return TRUE if p_imak is valid, otherwise FALSE.  As a special case, an
+ * empty string is also regarded as valid.
+ *
+ * Note: The numerical key value of p_imak is cached if it was valid; thus
+ * boldly assuming im_xim_isvalid_imactivate() will always be called whenever
+ * 'imak' changes.  This is currently the case but not obvious -- should
+ * probably rename the function for clarity.
+ */
+    int
+im_xim_isvalid_imactivate(void)
+{
+    if (p_imak[0] == NUL)
+    {
+	im_activatekey_keyval = GDK_VoidSymbol;
+	im_activatekey_state  = 0;
+	return TRUE;
+    }
+
+    return im_string_to_keyval((const char *)p_imak,
+			       &im_activatekey_keyval,
+			       &im_activatekey_state);
+}
+
+    static void
+im_synthesize_keypress(unsigned int keyval, unsigned int state)
+{
+    GdkEventKey *event;
+
+#  ifdef HAVE_GTK_MULTIHEAD
+    event = (GdkEventKey *)gdk_event_new(GDK_KEY_PRESS);
+    g_object_ref(gui.drawarea->window); /* unreffed by gdk_event_free() */
+#  else
+    event = (GdkEventKey *)g_malloc0((gulong)sizeof(GdkEvent));
+    event->type = GDK_KEY_PRESS;
+#  endif
+    event->window = gui.drawarea->window;
+    event->send_event = TRUE;
+    event->time = GDK_CURRENT_TIME;
+    event->state  = state;
+    event->keyval = keyval;
+    event->hardware_keycode = /* needed for XIM */
+	XKeysymToKeycode(GDK_WINDOW_XDISPLAY(event->window), (KeySym)keyval);
+    event->length = 0;
+    event->string = NULL;
+
+    gtk_im_context_filter_keypress(xic, event);
+
+    /* For consistency, also send the corresponding release event. */
+    event->type = GDK_KEY_RELEASE;
+    event->send_event = FALSE;
+    gtk_im_context_filter_keypress(xic, event);
+
+#  ifdef HAVE_GTK_MULTIHEAD
+    gdk_event_free((GdkEvent *)event);
+#  else
+    g_free(event);
+#  endif
+}
+
+    void
+xim_reset(void)
+{
+    if (xic != NULL)
+    {
+	/*
+	 * The third-party imhangul module (and maybe others too) ignores
+	 * gtk_im_context_reset() or at least doesn't reset the active state.
+	 * Thus sending imactivatekey would turn it off if it was on before,
+	 * which is clearly not what we want.  Fortunately we can work around
+	 * that for imhangul by sending GDK_Escape, but I don't know if it
+	 * works with all IM modules that support an activation key :/
+	 *
+	 * An alternative approach would be to destroy the IM context and
+	 * recreate it.  But that means loading/unloading the IM module on
+	 * every mode switch, which causes a quite noticable delay even on
+	 * my rather fast box...
+	 * *
+	 * Moreover, there are some XIM which cannot respond to
+	 * im_synthesize_keypress(). we hope that they reset by
+	 * xim_shutdown().
+	 */
+	if (im_activatekey_keyval != GDK_VoidSymbol && im_is_active)
+	    im_synthesize_keypress(GDK_Escape, 0U);
+
+	gtk_im_context_reset(xic);
+	/*
+	 * HACK for Ami: This sequence of function calls makes Ami handle
+	 * the IM reset gratiously, without breaking loads of other stuff.
+	 * It seems to force English mode as well, which is exactly what we
+	 * want because it makes the Ami status display work reliably.
+	 */
+	gtk_im_context_set_use_preedit(xic, FALSE);
+	gtk_im_context_set_use_preedit(xic, TRUE);
+	xim_set_focus(gui.in_focus);
+
+	if (im_activatekey_keyval != GDK_VoidSymbol && im_is_active)
+	{
+	    g_signal_handler_block(xic, im_commit_handler_id);
+	    im_synthesize_keypress(im_activatekey_keyval, im_activatekey_state);
+	    g_signal_handler_unblock(xic, im_commit_handler_id);
+	}
+	else
+	{
+	    im_shutdown();
+	    xim_init();
+	    xim_set_focus(gui.in_focus);
+	}
+    }
+
+    preedit_start_col = MAXCOL;
+}
+
+    int
+xim_queue_key_press_event(GdkEventKey *event)
+{
+    /*
+     * When typing fFtT, XIM may be activated. Thus it must pass
+     * gtk_im_context_filter_keypress() in Normal mode.
+     * And while doing :sh too.
+     */
+    if (xic != NULL && !p_imdisable
+		    && (State & (INSERT | CMDLINE | NORMAL | EXTERNCMD)) != 0)
+    {
+	/*
+	 * Filter 'imactivatekey' and map it to CTRL-^.  This way, Vim is
+	 * always aware of the current status of IM, and can even emulate
+	 * the activation key for modules that don't support one.
+	 */
+	if (event->keyval == im_activatekey_keyval
+	     && (event->state & im_activatekey_state) == im_activatekey_state)
+	{
+	    unsigned int state_mask;
+
+	    /* Require the state of the 3 most used modifiers to match exactly.
+	     * Otherwise e.g. <S-C-space> would be unusable for other purposes
+	     * if the IM activate key is <S-space>. */
+	    state_mask  = im_activatekey_state;
+	    state_mask |= ((int)GDK_SHIFT_MASK | (int)GDK_CONTROL_MASK
+							| (int)GDK_MOD1_MASK);
+
+	    if ((event->state & state_mask) != im_activatekey_state)
+		return FALSE;
+
+	    /* Don't send it a second time on GDK_KEY_RELEASE. */
+	    if (event->type == GDK_KEY_PRESS)
+	    {
+		char_u ctrl_hat[] = {Ctrl_HAT};
+
+		add_to_input_buf(ctrl_hat, (int)sizeof(ctrl_hat));
+
+		if (gtk_main_level() > 0)
+		    gtk_main_quit();
+	    }
+	    return TRUE;
+	}
+
+	/* Don't filter events through the IM context if IM isn't active
+	 * right now.  Unlike with GTK+ 1.2 we cannot rely on the IM module
+	 * not doing anything before the activation key was sent. */
+	if (im_activatekey_keyval == GDK_VoidSymbol || im_is_active)
+	    return gtk_im_context_filter_keypress(xic, event);
+    }
+
+    return FALSE;
+}
+
+    int
+im_get_status(void)
+{
+    return im_is_active;
+}
+
+# else /* !HAVE_GTK2 */
+
 static int	xim_is_active = FALSE;  /* XIM should be active in the current
 					   mode */
 static int	xim_has_focus = FALSE;	/* XIM is really being used for Vim */
 #ifdef FEAT_GUI_X11
 static XIMStyle	input_style;
 static int	status_area_enabled = TRUE;
+#endif
+
+#ifdef FEAT_GUI_GTK
+# include <gdk/gdkx.h>
+#else
+# ifdef PROTO
+/* Define a few things to be able to generate prototypes while not configured
+ * for GTK. */
+#  define GSList int
+#  define gboolean int
+   typedef int GdkEvent;
+   typedef int GdkEventKey;
+#  define GdkIC int
+# endif
 #endif
 
 #if defined(FEAT_GUI_GTK) || defined(PROTO)
@@ -2884,10 +3827,45 @@ im_set_active(active)
 	    }
 	}
     }
+    else
+    {
+# ifndef XIMPreeditUnKnown
+	/* X11R5 doesn't have these, it looks safe enough to define here. */
+	typedef unsigned long XIMPreeditState;
+#  define XIMPreeditUnKnown	0L
+#  define XIMPreeditEnable	1L
+#  define XIMPreeditDisable	(1L<<1)
+#  define XNPreeditState	"preeditState"
+# endif
+	XIMPreeditState preedit_state = XIMPreeditUnKnown;
+	XVaNestedList preedit_attr;
+	XIC pxic;
+
+	preedit_attr = XVaCreateNestedList(0,
+				XNPreeditState, &preedit_state,
+				NULL);
+	pxic = ((GdkICPrivate *)xic)->xic;
+
+	if (!XGetICValues(pxic, XNPreeditAttributes, preedit_attr, NULL))
+	{
+	    XFree(preedit_attr);
+	    preedit_attr = XVaCreateNestedList(0,
+				XNPreeditState,
+				active ? XIMPreeditEnable : XIMPreeditDisable,
+				NULL);
+	    XSetICValues(pxic, XNPreeditAttributes, preedit_attr, NULL);
+	    xim_preediting = active;
+	    xim_is_active = active;
+	}
+	XFree(preedit_attr);
+    }
     if (xim_input_style & XIMPreeditCallbacks)
     {
 	preedit_buf_len = 0;
-	getvcol(curwin, &(curwin->w_cursor), &preedit_start_col, NULL, NULL);
+	if (State & CMDLINE)
+	    preedit_start_col = cmdline_getvcol_cursor();
+	else
+	    getvcol(curwin, &curwin->w_cursor, &preedit_start_col, NULL, NULL);
     }
 #else
 # if 0
@@ -3038,7 +4016,7 @@ xim_set_preedit()
 	}
 # endif /* FEAT_XFONTSET */
 
-	if (xim_fg_color < 0)
+	if (xim_fg_color == INVALCOLOR)
 	{
 	    xim_fg_color = gui.def_norm_pixel;
 	    xim_bg_color = gui.def_back_pixel;
@@ -3080,7 +4058,7 @@ xim_set_preedit()
 
 	if (input_style & XIMPreeditPosition)
 	{
-	    if (xim_fg_color < 0)
+	    if (xim_fg_color == INVALCOLOR)
 	    {
 		xim_fg_color = gui.def_norm_pixel;
 		xim_bg_color = gui.def_back_pixel;
@@ -3550,7 +4528,11 @@ xim_real_init(x11_window, x11_display)
 static char e_overthespot[] = N_("E290: over-the-spot style requires fontset");
 # endif
 
-void
+# ifdef PROTO
+typedef int GdkIC;
+# endif
+
+    void
 xim_decide_input_style()
 {
     /* GDK_IM_STATUS_CALLBACKS was disabled, enabled it to allow Japanese
@@ -3588,17 +4570,6 @@ xim_decide_input_style()
 	xim_input_style = (int)gdk_im_decide_style((GdkIMStyle)supported_style);
     }
 }
-
-#ifdef FEAT_GUI_GTK
-# include <gdk/gdkx.h>
-#else
-/* Define a few things to be able to generate prototypes while not configured
- * for GTK. */
-# define GSList int
-# define gboolean int
-  typedef int GdkEvent;
-# define GdkIC int
-#endif
 
 /*ARGSUSED*/
     static void
@@ -3644,7 +4615,10 @@ preedit_draw_cbproc(XIC xic, XPointer client_data, XPointer call_data)
     if ((text == NULL && draw_data->chg_length == preedit_buf_len)
 	    || preedit_buf_len == 0)
     {
-	getvcol(curwin, &(curwin->w_cursor), &preedit_start_col, NULL, NULL);
+	if (State & CMDLINE)
+	    preedit_start_col = cmdline_getvcol_cursor();
+	else
+	    getvcol(curwin, &curwin->w_cursor, &preedit_start_col, NULL, NULL);
 	vim_free(draw_feedback);
 	draw_feedback = NULL;
     }
@@ -3724,7 +4698,7 @@ preedit_draw_cbproc(XIC xic, XPointer client_data, XPointer call_data)
     {
 	event_queue = key_press_event_queue;
 	processing_queued_event = TRUE;
-	while (event_queue != NULL)
+	while (event_queue != NULL && processing_queued_event)
 	{
 	    GdkEvent *ev = event_queue->data;
 
@@ -3743,6 +4717,26 @@ preedit_draw_cbproc(XIC xic, XPointer client_data, XPointer call_data)
     }
     if (gtk_main_level() > 0)
 	gtk_main_quit();
+}
+
+/*
+ * Retrieve the highlighting attributes at column col in the preedit string.
+ * Return -1 if not in preediting mode or if col is out of range.
+ */
+    int
+im_get_feedback_attr(int col)
+{
+    if (draw_feedback != NULL && col < preedit_buf_len)
+    {
+	if (draw_feedback[col] & XIMReverse)
+	    return HL_INVERSE;
+	else if (draw_feedback[col] & XIMUnderline)
+	    return HL_UNDERLINE;
+	else
+	    return hl_attr(HLF_V);
+    }
+
+    return -1;
 }
 
 /*ARGSUSED*/
@@ -3784,13 +4778,15 @@ xim_reset(void)
 }
 
     int
-xim_queue_key_press_event(GdkEvent *ev)
+xim_queue_key_press_event(GdkEventKey *event)
 {
-    if (preedit_buf_len <= 0 || processing_queued_event)
+    if (preedit_buf_len <= 0)
 	return FALSE;
+    if (processing_queued_event)
+	processing_queued_event = FALSE;
 
     key_press_event_queue = g_slist_append(key_press_event_queue,
-					   gdk_event_copy(ev));
+					   gdk_event_copy((GdkEvent *)event));
     return TRUE;
 }
 
@@ -3933,6 +4929,21 @@ xim_init(void)
 	}
     }
 }
+
+    void
+im_shutdown(void)
+{
+    if (xic != NULL)
+    {
+	gdk_im_end();
+	gdk_ic_destroy(xic);
+	xic = NULL;
+    }
+    xim_is_active = FALSE;
+    xim_preediting = FALSE;
+    preedit_start_col = MAXCOL;
+}
+
 #endif /* FEAT_GUI_GTK */
 
     int
@@ -3964,6 +4975,7 @@ im_get_status()
     return xim_has_focus;
 }
 
+# endif /* !HAVE_GTK2 */
 #endif /* FEAT_XIM */
 
 #if defined(FEAT_MBYTE) || defined(PROTO)
@@ -3971,10 +4983,12 @@ im_get_status()
 /*
  * Setup "vcp" for conversion from "from" to "to".
  * The names must have been made canonical with enc_canonize().
+ * vcp->vc_type must have been initialized to CONV_NONE.
  * Note: cannot be used for conversion from/to ucs-2 and ucs-4 (will use utf-8
  * instead).
+ * Return FAIL when conversion is not supported, OK otherwise.
  */
-    void
+    int
 convert_setup(vcp, from, to)
     vimconv_T	*vcp;
     char_u	*from;
@@ -3984,19 +4998,17 @@ convert_setup(vcp, from, to)
     int		to_prop;
 
     /* Reset to no conversion. */
+# ifdef USE_ICONV
+    if (vcp->vc_type == CONV_ICONV && vcp->vc_fd != (iconv_t)-1)
+	iconv_close(vcp->vc_fd);
+# endif
     vcp->vc_type = CONV_NONE;
     vcp->vc_factor = 1;
-# ifdef USE_ICONV
-    if (vcp->vc_fd != (iconv_t)-1)
-    {
-	iconv_close(vcp->vc_fd);
-	vcp->vc_fd = (iconv_t)-1;
-    }
-# endif
 
     /* No conversion when one of the names is empty or they are equal. */
-    if (*from == NUL || *to == NUL || STRCMP(from, to) == 0)
-	return;
+    if (from == NULL || *from == NUL || to == NULL || *to == NUL
+						     || STRCMP(from, to) == 0)
+	return OK;
 
     from_prop = enc_canon_props(from);
     to_prop = enc_canon_props(to);
@@ -4011,26 +5023,15 @@ convert_setup(vcp, from, to)
 	/* Internal utf-8 -> latin1 conversion. */
 	vcp->vc_type = CONV_TO_LATIN1;
     }
-#ifdef WIN32
-    /* Win32-specific UTF-16 -> DBCS conversion, for the IME,
-     * so we don't need iconv ... */
-    else if ((from_prop & ENC_UNICODE)
-			   && (from_prop & ENC_2BYTE) && (to_prop & ENC_DBCS))
+#ifdef WIN3264
+    /* Win32-specific codepage <-> codepage conversion without iconv. */
+    else if (((from_prop & ENC_UNICODE) || encname2codepage(from) > 0)
+	    && ((to_prop & ENC_UNICODE) || encname2codepage(to) > 0))
     {
-	vcp->vc_type = CONV_DBCS;
+	vcp->vc_type = CONV_CODEPAGE;
 	vcp->vc_factor = 2;	/* up to twice as long */
-	vcp->vc_dbcs = atoi(to + 2);
-    }
-    else if ((from_prop & ENC_UNICODE)
-			&& (from_prop & ENC_2BYTE) && (to_prop & ENC_UNICODE))
-    {
-	vcp->vc_type = CONV_DBCS;
-	vcp->vc_factor = 2;	/* up to twice as long */
-#ifdef CP_UTF8
-	vcp->vc_dbcs = CP_UTF8;
-#else
-	vcp->vc_dbcs = 65001;	/* magic number from winnls.h */
-#endif
+	vcp->vc_cpfrom = (from_prop & ENC_UNICODE) ? 0 : encname2codepage(from);
+	vcp->vc_cpto = (to_prop & ENC_UNICODE) ? 0 : encname2codepage(to);
     }
 #endif
 # ifdef USE_ICONV
@@ -4047,10 +5048,14 @@ convert_setup(vcp, from, to)
 	}
     }
 # endif
+    if (vcp->vc_type == CONV_NONE)
+	return FAIL;
+    return OK;
 }
 
 /*
  * Do conversion on typed input characters in-place.
+ * The input and output are not NUL terminated!
  * Returns the length after conversion.
  */
     int
@@ -4060,27 +5065,25 @@ convert_input(ptr, len, maxlen)
     int		maxlen;
 {
     char_u	*d;
-    int		l;
+    int		dlen = len;
 
-    d = string_convert(&input_conv, ptr, &len);
+    d = string_convert(&input_conv, ptr, &dlen);
     if (d != NULL)
     {
-	l = (int)STRLEN(d);
-	if (l <= maxlen)
-	{
-	    mch_memmove(ptr, d, l);
-	    len = l;
-	}
+	if (dlen <= maxlen)
+	    mch_memmove(ptr, d, dlen);
+	else
+	    dlen = len;	    /* result is too long, keep the unconverted text */
 	vim_free(d);
     }
-    return len;
+    return dlen;
 }
 
 /*
  * Convert text "ptr[*lenp]" according to "vcp".
  * Returns the result in allocated memory and sets "*lenp".
  * When "lenp" is NULL, use NUL terminated strings.
- * When something goes wrong, NULL is returned.
+ * When something goes wrong, NULL is returned and "*lenp" is unchanged.
  */
     char_u *
 string_convert(vcp, ptr, lenp)
@@ -4099,6 +5102,8 @@ string_convert(vcp, ptr, lenp)
 	len = (int)STRLEN(ptr);
     else
 	len = *lenp;
+    if (len == 0)
+	return vim_strsave((char_u *)"");
 
     switch (vcp->vc_type)
     {
@@ -4161,37 +5166,47 @@ string_convert(vcp, ptr, lenp)
 		*lenp = (int)STRLEN(retval);
 	    break;
 # endif
-# ifdef WIN32
-	case CONV_DBCS:		/* UTF-16 -> dbcs or UTF8 */
+# ifdef WIN3264
+	case CONV_CODEPAGE:		/* codepage -> codepage */
 	{
-	    int retlen;
+	    int		retlen;
+	    int		tmp_len;
+	    short_u	*tmp;
 
-	    if (!lenp)
-		len /= sizeof(unsigned short);
-	    retlen = WideCharToMultiByte(vcp->vc_dbcs, 0,
-				(const unsigned short *)ptr, len, 0, 0, 0, 0);
+	    /* 1. codepage/UTF-8  ->  ucs-2. */
+	    if (vcp->vc_cpfrom == 0)
+		tmp_len = utf8_to_ucs2(ptr, len, NULL);
+	    else
+		tmp_len = MultiByteToWideChar(vcp->vc_cpfrom, 0,
+							      ptr, len, 0, 0);
+	    tmp = (short_u *)alloc(sizeof(short_u) * tmp_len);
+	    if (tmp == NULL)
+		break;
+	    if (vcp->vc_cpfrom == 0)
+		utf8_to_ucs2(ptr, len, tmp);
+	    else
+		MultiByteToWideChar(vcp->vc_cpfrom, 0, ptr, len, tmp, tmp_len);
+
+	    /* 2. ucs-2  ->  codepage/UTF-8. */
+	    if (vcp->vc_cpto == 0)
+		retlen = ucs2_to_utf8(tmp, tmp_len, NULL);
+	    else
+		retlen = WideCharToMultiByte(vcp->vc_cpto, 0,
+						    tmp, tmp_len, 0, 0, 0, 0);
 	    retval = alloc(retlen + 1);
-	    if (retval == NULL)
-		break;
-	    WideCharToMultiByte(vcp->vc_dbcs, 0,
-		     (const unsigned short *) ptr, len, retval, retlen, 0, 0);
-	    retval[retlen] = NUL;
-	    if (lenp != NULL)
-		*lenp = retlen;
+	    if (retval != NULL)
+	    {
+		if (vcp->vc_cpto == 0)
+		    ucs2_to_utf8(tmp, tmp_len, retval);
+		else
+		    WideCharToMultiByte(vcp->vc_cpto, 0,
+					  tmp, tmp_len, retval, retlen, 0, 0);
+		retval[retlen] = NUL;
+		if (lenp != NULL)
+		    *lenp = retlen;
+	    }
+	    vim_free(tmp);
 	    break;
-	}
-	case CONV_CODEPAGE:	/* current codepage -> ucs-2 */
-	{
-	    int retlen;
-
-	    retlen = MultiByteToWideChar(GetACP(), 0, ptr, len, 0, 0);
-	    retval = alloc(sizeof(unsigned short) * retlen);
-	    if (retval == NULL)
-		break;
-	    MultiByteToWideChar(GetACP(), 0, ptr, len,
-					   (unsigned short *) retval, retlen);
-	    if (lenp != NULL)
-		*lenp = retlen * sizeof(unsigned short); /* number of shorts -> buffer size */
 	}
 # endif
     }

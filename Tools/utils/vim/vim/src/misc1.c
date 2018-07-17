@@ -24,6 +24,7 @@ static char_u *remove_tail __ARGS((char_u *p, char_u *pend, char_u *name));
 static char_u *remove_tail_with_ext __ARGS((char_u *p, char_u *pend, char_u *name));
 #endif
 static int get_indent_str __ARGS((char_u *ptr, int ts));
+static int copy_indent __ARGS((int size, char_u	*src));
 
 /*
  * Count the size (in window cells) of the indent in the current line.
@@ -103,6 +104,8 @@ set_indent(size, flags)
     int		ind_len;
     int		line_len;
     int		doit = FALSE;
+    int		ind_done;
+    int		tab_pad;
 
     /*
      * First check if there is anything to do and compute the number of
@@ -111,16 +114,66 @@ set_indent(size, flags)
     todo = size;
     ind_len = 0;
     p = ml_get_curline();
-    if (!curbuf->b_p_et)	/* if 'expandtab' isn't set: use TABs */
+
+    /* Calculate the buffer size for the new indent, and check to see if it
+     * isn't already set */
+
+    /* if 'expandtab' isn't set: use TABs */
+    if (!curbuf->b_p_et)
+    {
+	/* If 'preserveindent' is set then reuse as much as possible of
+	 * the existing indent structure for the new indent */
+	if (!(flags & SIN_INSERT) && curbuf->b_p_pi)
+	{
+	    ind_done = 0;
+
+	    /* count as many characters as we can use */
+	    while (todo > 0 && vim_iswhite(*p))
+	    {
+		if (*p == TAB)
+		{
+		    tab_pad = (int)curbuf->b_p_ts
+					   - (ind_done % (int)curbuf->b_p_ts);
+		    /* stop if this tab will overshoot the target */
+		    if (todo < tab_pad)
+			break;
+		    todo -= tab_pad;
+		    ++ind_len;
+		    ind_done += tab_pad;
+		}
+		else
+		{
+		    --todo;
+		    ++ind_len;
+		    ++ind_done;
+		}
+		++p;
+	    }
+
+	    /* Fill to next tabstop with a tab, if possible */
+	    tab_pad = (int)curbuf->b_p_ts - (ind_done % (int)curbuf->b_p_ts);
+	    if (todo >= tab_pad)
+	    {
+		doit = TRUE;
+		todo -= tab_pad;
+		++ind_len;
+		/* ind_done += tab_pad; */
+	    }
+	}
+
+	/* count tabs required for indent */
 	while (todo >= (int)curbuf->b_p_ts)
 	{
 	    if (*p != TAB)
 		doit = TRUE;
 	    else
 		++p;
-	    todo -= curbuf->b_p_ts;
+	    todo -= (int)curbuf->b_p_ts;
 	    ++ind_len;
+	    /* ind_done += (int)curbuf->b_p_ts; */
 	}
+    }
+    /* count spaces required for indent */
     while (todo > 0)
     {
 	if (*p != ' ')
@@ -129,6 +182,7 @@ set_indent(size, flags)
 	    ++p;
 	--todo;
 	++ind_len;
+	/* ++ind_done; */
     }
 
     /* Return if the indent is OK already. */
@@ -148,12 +202,53 @@ set_indent(size, flags)
     /* Put the characters in the new line. */
     s = line;
     todo = size;
-    if (!curbuf->b_p_et)	/* if 'expandtab' isn't set: use TABs */
+    /* if 'expandtab' isn't set: use TABs */
+    if (!curbuf->b_p_et)
+    {
+	/* If 'preserveindent' is set then reuse as much as possible of
+	 * the existing indent structure for the new indent */
+	if (!(flags & SIN_INSERT) && curbuf->b_p_pi)
+	{
+	    p = ml_get_curline();
+	    ind_done = 0;
+
+	    while (todo > 0 && vim_iswhite(*p))
+	    {
+		if (*p == TAB)
+		{
+		    tab_pad = (int)curbuf->b_p_ts
+					   - (ind_done % (int)curbuf->b_p_ts);
+		    /* stop if this tab will overshoot the target */
+		    if (todo < tab_pad)
+			break;
+		    todo -= tab_pad;
+		    ind_done += tab_pad;
+		}
+		else
+		{
+		    --todo;
+		    ++ind_done;
+		}
+		*s++ = *p++;
+	    }
+
+	    /* Fill to next tabstop with a tab, if possible */
+	    tab_pad = (int)curbuf->b_p_ts - (ind_done % (int)curbuf->b_p_ts);
+	    if (todo >= tab_pad)
+	    {
+		*s++ = TAB;
+		todo -= tab_pad;
+	    }
+
+	    p = skipwhite(p);
+	}
+
 	while (todo >= (int)curbuf->b_p_ts)
 	{
 	    *s++ = TAB;
 	    todo -= (int)curbuf->b_p_ts;
 	}
+    }
     while (todo > 0)
     {
 	*s++ = ' ';
@@ -171,6 +266,110 @@ set_indent(size, flags)
     else
 	vim_free(line);
 
+    curwin->w_cursor.col = ind_len;
+    return TRUE;
+}
+
+/*
+ * Copy the indent from ptr to the current line (and fill to size)
+ * Leaves the cursor on the first non-blank in the line.
+ * Returns TRUE if the line was changed.
+ */
+    static int
+copy_indent(size, src)
+    int		size;
+    char_u	*src;
+{
+    char_u	*p = NULL;
+    char_u	*line = NULL;
+    char_u	*s;
+    int		todo;
+    int		ind_len;
+    int		line_len = 0;
+    int		tab_pad;
+    int		ind_done;
+    int		round;
+
+    /* Round 1: compute the number of characters needed for the indent
+     * Round 2: copy the characters. */
+    for (round = 1; round <= 2; ++round)
+    {
+	todo = size;
+	ind_len = 0;
+	ind_done = 0;
+	s = src;
+
+	/* Count/copy the usable portion of the source line */
+	while (todo > 0 && vim_iswhite(*s))
+	{
+	    if (*s == TAB)
+	    {
+		tab_pad = (int)curbuf->b_p_ts
+					   - (ind_done % (int)curbuf->b_p_ts);
+		/* Stop if this tab will overshoot the target */
+		if (todo < tab_pad)
+		    break;
+		todo -= tab_pad;
+		ind_done += tab_pad;
+	    }
+	    else
+	    {
+		--todo;
+		++ind_done;
+	    }
+	    ++ind_len;
+	    if (round == 2)
+		*p++ = *s;
+	    ++s;
+	}
+
+	/* Fill to next tabstop with a tab, if possible */
+	tab_pad = (int)curbuf->b_p_ts - (ind_done % (int)curbuf->b_p_ts);
+	if (todo >= tab_pad)
+	{
+	    todo -= tab_pad;
+	    ++ind_len;
+	    if (round == 2)
+		*p++ = TAB;
+	}
+
+	/* Add tabs required for indent */
+	while (todo >= (int)curbuf->b_p_ts)
+	{
+	    todo -= (int)curbuf->b_p_ts;
+	    ++ind_len;
+	    if (round == 2)
+		*p++ = TAB;
+	}
+
+	/* Count/add spaces required for indent */
+	while (todo > 0)
+	{
+	    --todo;
+	    ++ind_len;
+	    if (round == 2)
+		*p++ = ' ';
+	}
+
+	if (round == 1)
+	{
+	    /* Allocate memory for the result: the copied indent, new indent
+	     * and the rest of the line. */
+	    line_len = (int)STRLEN(ml_get_curline()) + 1;
+	    line = alloc(ind_len + line_len);
+	    if (line == NULL)
+		return FALSE;
+	    p = line;
+	}
+    }
+
+    /* Append the original line */
+    mch_memmove(p, ml_get_curline(), (size_t)line_len);
+
+    /* Replace the line */
+    ml_replace(curwin->w_cursor.lnum, line, FALSE);
+
+    /* Put the cursor after the indent. */
     curwin->w_cursor.col = ind_len;
     return TRUE;
 }
@@ -299,6 +498,7 @@ open_line(dir, flags, old_indent)
     int		vreplace_mode;
 #endif
     int		did_append;		/* appended a new line */
+    int		saved_pi = curbuf->b_p_pi; /* copy of preserveindent setting */
 
     /*
      * make a copy of the current line so we can mess with it
@@ -931,7 +1131,12 @@ open_line(dir, flags, old_indent)
 	    replace_push(NUL);	    /* end of extra blanks */
 	if (curbuf->b_p_ai || (flags & OPENLINE_DELSPACES))
 	{
-	    while (*p_extra == ' ' || *p_extra == '\t')
+	    while ((*p_extra == ' ' || *p_extra == '\t')
+#ifdef FEAT_MBYTE
+		    && (!enc_utf8
+			       || !utf_iscomposing(utf_ptr2char(p_extra + 1)))
+#endif
+		    )
 	    {
 		if (REPLACE_NORMAL(State))
 		    replace_push(*p_extra);
@@ -1009,7 +1214,21 @@ open_line(dir, flags, old_indent)
 	    newindent += (int)curbuf->b_p_sw;
 	}
 #endif
-	(void)set_indent(newindent, SIN_INSERT);
+	/* Copy the indent only if expand tab is disabled */
+	if (curbuf->b_p_ci && !curbuf->b_p_et)
+	{
+	    (void)copy_indent(newindent, saved_line);
+
+	    /*
+	     * Set the 'preserveindent' option so that any further screwing
+	     * with the line doesn't entirely destroy our efforts to preserve
+	     * it.  It gets restored at the function end.
+	     */
+	    curbuf->b_p_pi = TRUE;
+	}
+	else
+	    (void)set_indent(newindent, SIN_INSERT);
+
 	ai_col = curwin->w_cursor.col;
 
 	/*
@@ -1044,7 +1263,8 @@ open_line(dir, flags, old_indent)
 	{
 	    /* truncate current line at cursor */
 	    saved_line[curwin->w_cursor.col] = NUL;
-	    if (trunc_line)	    /* Remove trailing white space */
+	    /* Remove trailing white space, unless OPENLINE_KEEPTRAIL used. */
+	    if (trunc_line && !(flags & OPENLINE_KEEPTRAIL))
 		truncate_spaces(saved_line);
 	    ml_replace(curwin->w_cursor.lnum, saved_line, FALSE);
 	    saved_line = NULL;
@@ -1157,6 +1377,7 @@ open_line(dir, flags, old_indent)
 
     retval = TRUE;		/* success! */
 theend:
+    curbuf->b_p_pi = saved_pi;
     vim_free(saved_line);
     vim_free(next_line);
     vim_free(allocated);
@@ -1834,10 +2055,6 @@ del_bytes(count, fixpos)
     colnr_T	col = curwin->w_cursor.col;
     int		was_alloced;
     long	movelen;
-#ifdef FEAT_MBYTE
-    int		p0, p1, p2;
-    int		p0len, p1len, p2len;
-#endif
 
     oldp = ml_get(lnum);
     oldlen = (int)STRLEN(oldp);
@@ -1849,31 +2066,24 @@ del_bytes(count, fixpos)
 	return FAIL;
 
 #ifdef FEAT_MBYTE
-    if (p_deco && enc_utf8)
+    /* If 'delcombine' is set and deleting (less than) one character, only
+     * delete the last combining character. */
+    if (p_deco && enc_utf8 && (*mb_ptr2len_check)(oldp + col) <= count)
     {
-	p1 = p2 = 0;
-	/* see if there are any combining characters: */
-	p0 = utfc_ptr2char(oldp + col, &p1, &p2);
-	p0len = utf_char2len(p0);
-	p1len = p1 != 0 ? utf_char2len(p1) : 0;
-	p2len = p2 != 0 ? utf_char2len(p2) : 0;
+	int	c1, c2;
+	int	n;
 
-	/* don't try anything if trying to del more than one 'char' */
-	if ((count <= (p0len + p1len + p2len)) && p1 != 0)
+	(void)utfc_ptr2char(oldp + col, &c1, &c2);
+	if (c1 != NUL)
 	{
-	    /* We are here because there are combining characters; either
-	     * p1, p2 or both.  We need to remove just that character, and
-	     * leave the cursor where it was. */
-
-	    /* since p1 is always valid, adjust for it */
-	    col += p0len;
-	    count = p1len;
-	    if (p2 != 0)
+	    /* Find the last composing char, there can be several. */
+	    n = col;
+	    do
 	    {
-		/* p2 is valid, so remove it instead of p1 */
-		col += p1len;
-		count = p2len;
-	    }
+		col = n;
+		count = utf_ptr2len_check(oldp + n);
+		n += count;
+	    } while (UTF_COMPOSINGLIKE(oldp + col, oldp + n));
 	    fixpos = 0;
 	}
     }
@@ -1910,10 +2120,15 @@ del_bytes(count, fixpos)
      * existing line. Otherwise a new line has to be allocated
      */
     was_alloced = ml_line_alloced();	    /* check if oldp was allocated */
+#ifdef FEAT_NETBEANS_INTG
+    if (was_alloced && usingNetbeans)
+	netbeans_removed(curbuf, lnum, col, count);
+    /* else is handled by ml_replace() */
+#endif
     if (was_alloced)
 	newp = oldp;			    /* use same allocated memory */
     else
-    {					    /* need to allocated a new line */
+    {					    /* need to allocate a new line */
 	newp = alloc((unsigned)(oldlen + 1 - count));
 	if (newp == NULL)
 	    return FAIL;
@@ -2311,9 +2526,15 @@ changed_common(lnum, col, lnume, xtra)
 
 	    /* The change may cause lines above or below the change to become
 	     * included in a fold.  Set lnum/lnume to the first/last line that
-	     * might be displayed differently. */
-	    hasFoldingWin(wp, lnum, &lnum, NULL, FALSE, NULL);
-	    hasFoldingWin(wp, lnume, NULL, &lnume, FALSE, NULL);
+	     * might be displayed differently.
+	     * Set w_cline_folded here as an efficient way to update it when
+	     * inserting lines just above a closed fold. */
+	    i = hasFoldingWin(wp, lnum, &lnum, NULL, FALSE, NULL);
+	    if (wp->w_cursor.lnum == lnum)
+		wp->w_cline_folded = i;
+	    i = hasFoldingWin(wp, lnume, NULL, &lnume, FALSE, NULL);
+	    if (wp->w_cursor.lnum == lnume)
+		wp->w_cline_folded = i;
 
 	    /* If the changed line is in a range of previously folded lines,
 	     * compare with the first line in that range. */
@@ -2400,6 +2621,9 @@ unchanged(buf, ff)
     }
     ++buf->b_changedtick;
     ++global_changedtick;
+#ifdef FEAT_NETBEANS_INTG
+    netbeans_unmodified(buf);
+#endif
 }
 
 #if defined(FEAT_WINDOWS) || defined(PROTO)
@@ -2526,7 +2750,8 @@ ask_yesno(str, direct)
 
 /*
  * Get a key stroke directly from the user.
- * Ignores mouse clicks and scrollbar events.
+ * Ignores mouse clicks and scrollbar events, except a click for the left
+ * button (used at the more prompt).
  * Doesn't use vgetc(), because it syncs undo and eats mapped characters.
  * Disadvantage: typeahead is ignored.
  * Translates the interrupt character for unix to ESC.
@@ -2574,19 +2799,24 @@ get_keystroke()
 	    if (buf[1] == KS_MODIFIER
 		    || n == K_IGNORE
 #ifdef FEAT_MOUSE
-		    || n == K_LEFTMOUSE
 		    || n == K_LEFTMOUSE_NM
 		    || n == K_LEFTDRAG
-		    || n ==  K_LEFTRELEASE
-		    || n ==  K_LEFTRELEASE_NM
-		    || n ==  K_MIDDLEMOUSE
-		    || n ==  K_MIDDLEDRAG
-		    || n ==  K_MIDDLERELEASE
-		    || n ==  K_RIGHTMOUSE
-		    || n ==  K_RIGHTDRAG
-		    || n ==  K_RIGHTRELEASE
-		    || n ==  K_MOUSEDOWN
-		    || n ==  K_MOUSEUP
+		    || n == K_LEFTRELEASE
+		    || n == K_LEFTRELEASE_NM
+		    || n == K_MIDDLEMOUSE
+		    || n == K_MIDDLEDRAG
+		    || n == K_MIDDLERELEASE
+		    || n == K_RIGHTMOUSE
+		    || n == K_RIGHTDRAG
+		    || n == K_RIGHTRELEASE
+		    || n == K_MOUSEDOWN
+		    || n == K_MOUSEUP
+		    || n == K_X1MOUSE
+		    || n == K_X1DRAG
+		    || n == K_X1RELEASE
+		    || n == K_X2MOUSE
+		    || n == K_X2DRAG
+		    || n == K_X2RELEASE
 # ifdef FEAT_GUI
 		    || n == K_VER_SCROLLBAR
 		    || n == K_HOR_SCROLLBAR
@@ -2800,7 +3030,11 @@ init_homedir()
 	{
 	    sprintf((char *)NameBuff, "%s%s", homedrive, homepath);
 	    if (NameBuff[0] != NUL)
+	    {
 		var = NameBuff;
+		/* Also set $HOME, it's needed for _viminfo. */
+		vim_setenv((char_u *)"HOME", NameBuff);
+	    }
 	}
     }
 #endif
@@ -2818,13 +3052,15 @@ init_homedir()
 #ifdef UNIX
 	/*
 	 * Change to the directory and get the actual path.  This resolves
-	 * links.
+	 * links.  Don't do it when we can't return.
 	 */
-	if (mch_dirname(NameBuff, MAXPATHL) == OK)
+	if (mch_dirname(NameBuff, MAXPATHL) == OK
+					  && mch_chdir((char *)NameBuff) == 0)
 	{
 	    if (!mch_chdir((char *)var) && mch_dirname(IObuff, IOSIZE) == OK)
 		var = IObuff;
-	    mch_chdir((char *)NameBuff);
+	    if (mch_chdir((char *)NameBuff) != 0)
+		EMSG(_(e_prev_dir));
 	}
 #endif
 	homedir = vim_strsave(var);
@@ -2901,7 +3137,7 @@ expand_env_esc(src, dst, dstlen, esc)
 			    ))
 		    {
 #ifdef OS2		/* env vars only in uppercase */
-			*var++ = TO_UPPER(*tail);
+			*var++ = TOUPPER_LOC(*tail);
 			tail++;	    /* toupper() may be a macro! */
 #else
 			*var++ = *tail++;
@@ -3022,7 +3258,7 @@ expand_env_esc(src, dst, dstlen, esc)
 	    }
 
 	    /* If "var" contains white space, escape it with a backslash.
-	     * Required for ":e ~/tt" $HOME includes a space. */
+	     * Required for ":e ~/tt" when $HOME includes a space. */
 	    if (esc && var != NULL && vim_strpbrk(var, (char_u *)" \t") != NULL)
 	    {
 		char_u	*p = vim_strsave_escaped(var, (char_u *)" \t");
@@ -3765,7 +4001,7 @@ vim_fnamencmp(x, y, len)
 {
     while (len > 0 && *x && *y)
     {
-	if (TO_LOWER(*x) != TO_LOWER(*y)
+	if (TOLOWER_LOC(*x) != TOLOWER_LOC(*y)
 		&& !(*x == '/' && *y == '\\')
 		&& !(*x == '\\' && *y == '/'))
 	    break;
@@ -3773,7 +4009,7 @@ vim_fnamencmp(x, y, len)
 	++y;
 	--len;
     }
-    if (len <= 0)
+    if (len == 0)
 	return 0;
     return (*x - *y);
 }
@@ -3950,6 +4186,7 @@ do_c_expr_indent()
 
 static char_u	*cin_skipcomment __ARGS((char_u *));
 static int	cin_nocode __ARGS((char_u *));
+static pos_T	*find_line_comment __ARGS((void));
 static int	cin_islabel_skip __ARGS((char_u **));
 static int	cin_isdefault __ARGS((char_u *));
 static char_u	*after_label __ARGS((char_u *l));
@@ -3957,6 +4194,7 @@ static int	get_indent_nolabel __ARGS((linenr_T lnum));
 static int	skip_label __ARGS((linenr_T, char_u **pp, int ind_maxcomment));
 static int	cin_ispreproc __ARGS((char_u *));
 static int	cin_iscomment __ARGS((char_u *));
+static int	cin_islinecomment __ARGS((char_u *));
 static int	cin_isterminated __ARGS((char_u *, int));
 static int	cin_isfuncdecl __ARGS((char_u *));
 static int	cin_isif __ARGS((char_u *));
@@ -4009,6 +4247,32 @@ cin_nocode(s)
     char_u	*s;
 {
     return *cin_skipcomment(s) == NUL;
+}
+
+/*
+ * Check previous lines for a "//" line comment, skipping over blank lines.
+ */
+    static pos_T *
+find_line_comment() /* XXX */
+{
+    static pos_T pos;
+    char_u	 *line;
+    char_u	 *p;
+
+    pos = curwin->w_cursor;
+    while (--pos.lnum > 0)
+    {
+	line = ml_get(pos.lnum);
+	p = skipwhite(line);
+	if (cin_islinecomment(p))
+	{
+	    pos.col = (int)(p - line);
+	    return &pos;
+	}
+	if (*p != NUL)
+	    break;
+    }
+    return NULL;
 }
 
 /*
@@ -4274,6 +4538,16 @@ cin_iscomment(p)
     char_u  *p;
 {
     return (p[0] == '/' && (p[1] == '*' || p[1] == '/'));
+}
+
+/*
+ * Recognize the start of a "//" comment.
+ */
+    static int
+cin_islinecomment(p)
+    char_u *p;
+{
+    return (p[0] == '/' && p[1] == '/');
 }
 
 /*
@@ -4653,6 +4927,11 @@ get_c_indent()
     int ind_matching_paren = 0;
 
     /*
+     * Extra indent for comments.
+     */
+    int ind_comment = 0;
+
+    /*
      * spaces from the comment opener when there is nothing after it.
      */
     int ind_in_comment = 3;
@@ -4765,6 +5044,7 @@ get_c_indent()
 	    case '=': ind_case_code = n; break;
 	    case 'p': ind_param = n; break;
 	    case 't': ind_func_type = n; break;
+	    case '/': ind_comment = n; break;
 	    case 'c': ind_in_comment = n; break;
 	    case 'C': ind_in_comment2 = n; break;
 	    case '+': ind_continuation = n; break;
@@ -4822,6 +5102,18 @@ get_c_indent()
     else if (cin_islabel(ind_maxcomment))	    /* XXX */
     {
 	amount = 0;
+    }
+
+    /*
+     * If we're inside a "//" comment and there is a "//" comment in a
+     * previous line, lineup with that one.
+     */
+    else if (cin_islinecomment(theline)
+	    && (trypos = find_line_comment()) != NULL) /* XXX */
+    {
+	/* find how indented the line beginning the comment is */
+	getvcol(curwin, trypos, &col, NULL, NULL);
+	amount = col;
     }
 
     /*
@@ -5124,6 +5416,10 @@ get_c_indent()
 		    amount = cur_amount;
 	    }
 	}
+
+	/* add extra indent for a comment */
+	if (cin_iscomment(theline))
+	    amount += ind_comment;
       }
 
       /*
@@ -5761,6 +6057,10 @@ term_again:
 	    }
 	}
       }
+
+      /* add extra indent for a comment */
+      if (cin_iscomment(theline))
+	  amount += ind_comment;
     }
 
     /*
@@ -5834,7 +6134,7 @@ term_again:
 		if (*skipwhite(l) == '}')
 		    break;
 
-		/*
+		/*			    (matching {)
 		 * If the previous line ends on '};' (maybe followed by
 		 * comments) align at column 0.  For example:
 		 * char *string_array[] = { "foo",
@@ -5909,6 +6209,10 @@ term_again:
 		amount = get_indent();	    /* XXX */
 		break;
 	    }
+
+	    /* add extra indent for a comment */
+	    if (cin_iscomment(theline))
+		amount += ind_comment;
 	}
     }
 
@@ -6419,9 +6723,9 @@ expand_wildcards(num_pat, pat, num_file, file, flags)
 	    ffname = FullName_save((*file)[i], FALSE);
 	    if (ffname == NULL)		/* out of memory */
 		break;
-#ifdef VMS
+# ifdef VMS
 	    vms_remove_version(ffname);
-#endif
+# endif
 	    if (match_file_list(p_wig, (*file)[i], ffname))
 	    {
 		/* remove this matching file from the list */
@@ -6529,7 +6833,7 @@ namelowcpy(
     else
 #  endif
 	while (*s)
-	    *d++ = TO_LOWER(*s++);
+	    *d++ = TOLOWER_LOC(*s++);
     *d = NUL;
 }
 # endif
@@ -6630,7 +6934,7 @@ dos_expandpath(
 
     /* compile the regexp into a program */
     regmatch.rm_ic = TRUE;		/* Always ignore case */
-    regmatch.regprog = vim_regcomp(pat, TRUE);
+    regmatch.regprog = vim_regcomp(pat, RE_MAGIC);
     vim_free(pat);
 
     if (regmatch.regprog == NULL)
@@ -7053,7 +7357,13 @@ get_cmd_output(cmd, flags)
     /*
      * read the names from the file into memory
      */
+# ifdef VMS
+    /* created temporary file is not allways readable as binary */
     fd = mch_fopen((char *)tempname, "r");
+# else
+    fd = mch_fopen((char *)tempname, READBIN);
+# endif
+
     if (fd == NULL)
     {
 	EMSG2(_(e_notopen), tempname);
@@ -7071,6 +7381,9 @@ get_cmd_output(cmd, flags)
     mch_remove(tempname);
     if (buffer == NULL)
 	goto done;
+#ifdef VMS
+    len = i;	/* VMS doesn't give us what we asked for... */
+#endif
     if (i != len)
     {
 	EMSG2(_(e_notread), tempname);

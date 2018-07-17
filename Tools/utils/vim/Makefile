@@ -20,4 +20,7 @@ Install_Prefix = /usr
 RC_Install_Prefix = $(Install_Prefix)
 
 symlink:
-	cd $(DSTROOT)/usr/bin && ln -s vim vi
+	ln -s vim $(DSTROOT)/usr/bin/vi
+	ln -s vim.1 $(DSTROOT)/usr/share/man/man1/vi.1
+	install -d $(DSTROOT)/usr/share/vim
+	install -c -m 644 $(SRCROOT)/vimrc $(DSTROOT)/usr/share/vim

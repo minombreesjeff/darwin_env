@@ -22,6 +22,13 @@
 # include <fcntl.h>
 #endif
 
+#ifdef __CYGWIN__
+# ifndef WIN32
+#  include <sys/cygwin.h>	/* for cygwin_conv_to_posix_path() */
+# endif
+# include <limits.h>
+#endif
+
 #if defined(UNIX) || defined(VMS)
 static int file_owned __ARGS((char *fname));
 #endif
@@ -58,7 +65,7 @@ static char *(main_errors[]) =
 #define ME_ARG_MISSING		2
     N_("Garbage after option"),
 #define ME_GARBAGE		3
-    N_("Too many \"+command\" or \"-c command\" arguments"),
+    N_("Too many \"+command\", \"-c command\" or \"--cmd command\" arguments"),
 #define ME_EXTRA_CMD		4
     N_("Invalid argument for"),
 #define ME_INVALID_ARG		5
@@ -140,6 +147,11 @@ main
     int		literal = FALSE;	/* don't expand file names */
 #endif
 
+# ifdef NBDEBUG
+    nbdebug_wait(WT_ENV | WT_WAIT | WT_STOP, "SPRO_GVIM_WAIT", 20);
+    nbdebug_log_init("SPRO_GVIM_DEBUG", "SPRO_GVIM_DLEVEL");
+# endif
+
     /*
      * Do any system-specific initialisations.  These can NOT use IObuff or
      * NameBuff.  Thus emsg2() cannot be called!
@@ -147,7 +159,7 @@ main
     mch_early_init();
 
 #ifdef FEAT_TCL
-    tcl_init(argv[0]);
+    vim_tcl_init(argv[0]);
 #endif
 
 #ifdef MEM_PROFILE
@@ -280,16 +292,19 @@ main
 # ifdef FEAT_GUI_GTK
 	else if (STRICMP(argv[i], "--socketid") == 0)
 	{
-	    int count;
+	    unsigned int    socket_id;
+	    int		    count;
 
 	    if (i == argc - 1)
 		mainerr_arg_missing((char_u *)argv[i]);
 	    if (STRNICMP(argv[i+1], "0x", 2) == 0)
-		count = sscanf(&(argv[i + 1][2]), "%x", &gtk_socket_id);
+		count = sscanf(&(argv[i + 1][2]), "%x", &socket_id);
 	    else
-		count = sscanf(argv[i+1], "%d", &gtk_socket_id);
+		count = sscanf(argv[i+1], "%u", &socket_id);
 	    if (count != 1)
 		mainerr(ME_INVALID_ARG, (char_u *)argv[i]);
+	    else
+		gtk_socket_id = socket_id;
 	    i++;
 	}
 	else if (STRICMP(argv[i], "--echo-wid") == 0)
@@ -300,6 +315,9 @@ main
 
 #ifdef FEAT_SUN_WORKSHOP
     findYourself(argv[0]);
+#endif
+#ifdef FEAT_NETBEANS_INTG
+    netbeans_setRunDir(argv[0]);
 #endif
 #if defined(FEAT_GUI) && !defined(MAC_OS_CLASSIC)
     gui_prepare(&argc, argv);	/* Prepare for possibly starting GUI sometime */
@@ -406,15 +424,16 @@ main
     /* TODO: On MacOS X default to gui if argv[0] ends in:
      *       /vim.app/Contents/MacOS/Vim */
 
-    if (TO_LOWER(initstr[0]) == 'r')
+    if (TOLOWER_ASC(initstr[0]) == 'r')
     {
 	restricted = TRUE;
 	++initstr;
     }
 
     /* Avoid using evim mode for "editor". */
-    if (TO_LOWER(initstr[0]) == 'e'
-	    && (TO_LOWER(initstr[1]) == 'v' || TO_LOWER(initstr[1]) == 'g'))
+    if (TOLOWER_ASC(initstr[0]) == 'e'
+	    && (TOLOWER_ASC(initstr[1]) == 'v'
+					   || TOLOWER_ASC(initstr[1]) == 'g'))
     {
 #ifdef FEAT_GUI
 	gui.starting = TRUE;
@@ -423,7 +442,7 @@ main
 	++initstr;
     }
 
-    if (TO_LOWER(initstr[0]) == 'g')
+    if (TOLOWER_ASC(initstr[0]) == 'g')
     {
 	main_start_gui();
 #ifdef FEAT_GUI
@@ -501,10 +520,10 @@ main
 	    if (c == '/')
 	    {
 		c = argv[0][argv_idx++];
-		c = TO_UPPER(c);
+		c = TOUPPER_ASC(c);
 	    }
 	    else
-		c = TO_LOWER(c);
+		c = TOLOWER_ASC(c);
 #endif
 	    switch (c)
 	    {
@@ -526,6 +545,7 @@ main
 				/* "--help" give help message */
 				/* "--version" give version message */
 				/* "--literal" take files literally */
+				/* "--nofork" don't fork */
 				/* "--noplugin[s]" skip plugins */
 				/* "--cmd <cmd>" execute cmd before vimrc */
 		if (STRICMP(argv[0] + argv_idx, "help") == 0)
@@ -535,12 +555,20 @@ main
 		    Columns = 80;	/* need to init Columns */
 		    info_message = TRUE; /* use mch_msg(), not mch_errmsg() */
 		    list_version();
-		    mch_exit(1);
+		    msg_putchar('\n');
+		    msg_didout = FALSE;
+		    mch_exit(0);
 		}
 		else if (STRNICMP(argv[0] + argv_idx, "literal", 7) == 0)
 		{
 #if (!defined(UNIX) && !defined(__EMX__)) || defined(ARCHIE)
 		    literal = TRUE;
+#endif
+		}
+		else if (STRNICMP(argv[0] + argv_idx, "nofork", 6) == 0)
+		{
+#ifdef FEAT_GUI
+		    gui.dofork = FALSE;	/* don't fork() when starting GUI */
 #endif
 		}
 		else if (STRNICMP(argv[0] + argv_idx, "noplugin", 8) == 0)
@@ -589,6 +617,15 @@ main
 		}
 		if (!want_argument)
 		    argv_idx = -1;	/* skip to next argument */
+		break;
+
+	    case 'A':		/* "-A" start in Arabic mode */
+#ifdef FEAT_ARABIC
+		set_option_value((char_u *)"arabic", 1L, NULL, 0);
+#else
+		mch_errmsg(_(e_noarabic));
+		mch_exit(2);
+#endif
 		break;
 
 	    case 'b':		/* "-b" binary mode */
@@ -642,7 +679,7 @@ main
 
 	    case 'l':		/* "-l" lisp mode, 'lisp' and 'showmatch' on */
 #ifdef FEAT_LISP
-		curbuf->b_p_lisp = TRUE;
+		set_option_value((char_u *)"lisp", 1L, NULL, 0);
 		p_sm = TRUE;
 #endif
 		break;
@@ -824,7 +861,7 @@ main
 		    mainerr(ME_GARBAGE, (char_u *)argv[0]);
 
 		--argc;
-		if (argc < 1)
+		if (argc < 1 && c != 'S')
 		    mainerr_arg_missing((char_u *)argv[0]);
 		++argv;
 		argv_idx = -1;
@@ -837,10 +874,26 @@ main
 			mainerr(ME_EXTRA_CMD, NULL);
 		    if (c == 'S')
 		    {
-			p = alloc((unsigned)(STRLEN(argv[0]) + 4));
+			char	*a;
+
+			if (argc < 1)
+			    /* "-S" without argument: use default session file
+			     * name. */
+			    a = SESSION_FILE;
+			else if (argv[0][0] == '-')
+			{
+			    /* "-S" followed by another option: use default
+			     * session file name. */
+			    a = SESSION_FILE;
+			    ++argc;
+			    --argv;
+			}
+			else
+			    a = argv[0];
+			p = alloc((unsigned)(STRLEN(a) + 4));
 			if (p == NULL)
 			    mch_exit(2);
-			sprintf((char *)p, "so %s", argv[0]);
+			sprintf((char *)p, "so %s", a);
 			commands[n_commands++] = p;
 		    }
 		    else
@@ -849,7 +902,7 @@ main
 
 #ifdef FEAT_PRECOMMANDS
 		case '-':	/* "--cmd {command}" execute command */
-		    if (n_commands >= MAX_ARG_CMDS)
+		    if (p_commands >= MAX_ARG_CMDS)
 			mainerr(ME_EXTRA_CMD, NULL);
 		    pre_commands[p_commands++] = (char_u *)argv[0];
 		    break;
@@ -970,6 +1023,24 @@ scripterror:
 		    vim_free(p);
 		    p = r;
 		}
+	    }
+#endif
+#if defined(__CYGWIN32__) && !defined(WIN32)
+	    /*
+	     * If vim is invoked by non-Cygwin tools, convert away any
+	     * DOS paths, so things like .swp files are created correctly.
+	     * Look for evidence of non-Cygwin paths before we bother.
+	     * This is only for when using the Unix files.
+	     */
+	    if (strpbrk(p, "\\:") != NULL)
+	    {
+		char posix_path[PATH_MAX];
+
+		cygwin_conv_to_posix_path(p, posix_path);
+		vim_free(p);
+		p = vim_strsave(posix_path);
+		if (p == NULL)
+		    mch_exit(2);
 	    }
 #endif
 	    alist_add(&global_alist, p,
@@ -1097,6 +1168,22 @@ scripterror:
     mch_init();
     TIME_MSG("shell init");
 
+#ifdef USE_XSMP
+    /*
+     * For want of anywhere else to do it, try to connect to xsmp here.
+     * Fitting it in after gui_mch_init, but before gui_init (via termcapinit).
+     * Hijacking -X 'no X connection' to also disable XSMP connection as that
+     * has a similar delay upon failure.
+     * Only try if SESSION_MANAGER is set to something non-null.
+     */
+    if (!x_no_connect)
+    {
+	p = (char_u *)getenv("SESSION_MANAGER");
+	if (p != NULL && *p != NUL)
+	    xsmp_init();
+    }
+#endif
+
     /*
      * Print a warning if stdout is not a terminal.
      * When starting in Ex mode and commands come from a file, set Silent mode.
@@ -1119,7 +1206,8 @@ scripterror:
 	if (!input_isatty)
 	    mch_errmsg(_("Vim: Warning: Input is not from a terminal\n"));
 	out_flush();
-	ui_delay(2000L, TRUE);
+	if (scriptin[0] == NULL)
+	    ui_delay(2000L, TRUE);
 	TIME_MSG("Warning delay");
     }
 
@@ -1135,6 +1223,10 @@ scripterror:
      * Set the default values for the options that use Rows and Columns.
      */
     ui_get_shellsize();		/* inits Rows and Columns */
+#ifdef FEAT_NETBEANS_INTG
+    if (usingNetbeans)
+	Columns += 2;		/* leave room for glyph gutter */
+#endif
     firstwin->w_height = Rows - p_ch;
     topframe->fr_height = Rows - p_ch;
 #ifdef FEAT_VERTSPLIT
@@ -1145,10 +1237,7 @@ scripterror:
     /* Set the 'diff' option now, so that it can be checked for in a .vimrc
      * file.  There is no buffer yet though. */
     if (diff_mode)
-    {
 	diff_win_options(firstwin, FALSE);
-	p_sbo = (char_u *)"ver,hor,jump";
-    }
 #endif
 
     cmdline_row = Rows - p_ch;
@@ -1157,21 +1246,6 @@ scripterror:
     set_init_2();
     TIME_MSG("inits 2");
 
-#if 0	/* disabled, don't know why it's needed */
-    /*
-     * Don't call msg_start() if the GUI is expected to start, it switches the
-     * cursor off.  Only need to avoid it when want_full_screen could not have
-     * been reset above.
-     * Also don't do it when reading from stdin (the program writing to the
-     * pipe might use the cursor).
-     */
-    if (full_screen && edit_type != EDIT_STDIN
-#if defined(FEAT_GUI) && !defined(ALWAYS_USE_GUI) && !defined(FEAT_GUI_X11)
-	    && !gui.starting
-#endif
-       )
-	msg_start();	    /* in case a mapping or error message is printed */
-#endif
     msg_scroll = TRUE;
     no_wait_return = TRUE;
 
@@ -1379,6 +1453,9 @@ scripterror:
     if (curwin->w_p_rl && p_altkeymap)
     {
 	p_hkmap = FALSE;	/* Reset the Hebrew keymap mode */
+# ifdef FEAT_ARABIC
+	curwin->w_p_arab = FALSE; /* Reset the Arabic keymap mode */
+# endif
 	p_fkmap = TRUE;		/* Set the Farsi keymap mode */
     }
 #endif
@@ -1853,6 +1930,12 @@ scripterror:
     if (restart_edit != 0)
 	stuffcharReadbuff(K_IGNORE);
 
+#ifdef FEAT_NETBEANS_INTG
+    if (usingNetbeans)
+	/* Tell the client that it can start sending commands. */
+	netbeans_startup_done();
+#endif
+
     TIME_MSG("before starting main loop");
 
     /*
@@ -1874,6 +1957,38 @@ main_loop(cmdwin)
     int		cmdwin;	/* TRUE when working in the command-line window */
 {
     oparg_T	oa;	/* operator arguments */
+
+#if defined(FEAT_X11) && defined(FEAT_XCLIPBOARD)
+    /* Setup to catch a terminating error from the X server.  Just ignore
+     * it, restore the state and continue.  This might not always work
+     * properly, but at least we don't exit unexpectedly when the X server
+     * exists while Vim is running in a console. */
+    if (!cmdwin && SETJMP(x_jump_env))
+    {
+	State = NORMAL;
+# ifdef FEAT_VISUAL
+	VIsual_active = FALSE;
+# endif
+	got_int = TRUE;
+	need_wait_return = FALSE;
+	global_busy = FALSE;
+	exmode_active = 0;
+	skip_redraw = FALSE;
+	RedrawingDisabled = 0;
+	no_wait_return = 0;
+# ifdef FEAT_EVAL
+	emsg_skip = 0;
+# endif
+	emsg_off = 0;
+# ifdef FEAT_MOUSE
+	setmouse();
+# endif
+	settmode(TMODE_RAW);
+	starttermcap();
+	scroll_start();
+	redraw_later_clear();
+    }
+#endif
 
     clear_oparg(&oa);
     while (!cmdwin
@@ -1983,11 +2098,12 @@ main_loop(cmdwin)
 	    emsg_on_display = FALSE;	/* can delete error message now */
 	    did_emsg = FALSE;
 	    msg_didany = FALSE;		/* reset lines_left in msg_start() */
-	    do_redraw = FALSE;
 	    showruler(FALSE);
 
 	    setcursor();
 	    cursor_on();
+
+	    do_redraw = FALSE;
 	}
 #ifdef FEAT_GUI
 	if (need_mouse_correct)
@@ -2011,6 +2127,24 @@ main_loop(cmdwin)
     }
 }
 
+
+#if defined(USE_XSMP) || defined(FEAT_GUI_MSWIN) || defined(PROTO)
+/*
+ * Exit, but leave behind swap files for modified buffers.
+ */
+    void
+getout_preserve_modified(exitval)
+    int		exitval;
+{
+    ml_close_notmod();		    /* close all not-modified buffers */
+    ml_sync_all(FALSE, FALSE);	    /* preserve all swap files */
+    ml_close_all(FALSE);	    /* close all memfiles, without deleting */
+    getout(exitval);		    /* exit Vim properly */
+}
+#endif
+
+
+/* Exit properly */
     void
 getout(exitval)
     int		exitval;
@@ -2093,6 +2227,9 @@ getout(exitval)
 #endif
 #if defined(USE_ICONV) && defined(DYNAMIC_ICONV)
     iconv_end();
+#endif
+#ifdef FEAT_NETBEANS_INTG
+    netbeans_end();
 #endif
 
     mch_exit(exitval);
@@ -2273,7 +2410,7 @@ usage()
 #endif
 #ifdef FEAT_GUI
     main_msg(_("-g\t\t\tRun using GUI (like \"gvim\")"));
-    main_msg(_("-f\t\t\tForeground: Don't fork when starting GUI"));
+    main_msg(_("-f  or  --nofork\tForeground: Don't fork when starting GUI"));
 #endif
     main_msg(_("-v\t\t\tVi mode (like \"vi\")"));
     main_msg(_("-e\t\t\tEx mode (like \"ex\")"));
@@ -2302,11 +2439,14 @@ usage()
     main_msg(_("-f\t\t\tDon't use newcli to open window"));
     main_msg(_("-dev <device>\t\tUse <device> for I/O"));
 #endif
+#ifdef FEAT_ARABIC
+    main_msg(_("-A\t\t\tstart in Arabic mode"));
+#endif
 #ifdef FEAT_RIGHTLEFT
-    main_msg(_("-H\t\t\tstart in Hebrew mode"));
+    main_msg(_("-H\t\t\tStart in Hebrew mode"));
 #endif
 #ifdef FEAT_FKMAP
-    main_msg(_("-F\t\t\tstart in Farsi mode"));
+    main_msg(_("-F\t\t\tStart in Farsi mode"));
 #endif
     main_msg(_("-T <terminal>\tSet terminal type to <terminal>"));
     main_msg(_("-u <vimrc>\t\tUse <vimrc> instead of any .vimrc"));
@@ -2315,7 +2455,7 @@ usage()
 #endif
     main_msg(_("--noplugin\t\tDon't load plugin scripts"));
     main_msg(_("-o[N]\t\tOpen N windows (default: one for each file)"));
-    main_msg(_("-O[N]\t\tlike -o but split vertically"));
+    main_msg(_("-O[N]\t\tLike -o but split vertically"));
     main_msg(_("+\t\t\tStart at end of file"));
     main_msg(_("+<lnum>\t\tStart at line <lnum>"));
 #ifdef FEAT_PRECOMMANDS
@@ -2330,17 +2470,16 @@ usage()
     main_msg(_("-x\t\t\tEdit encrypted files"));
 #endif
 #if (defined(UNIX) || defined(VMS)) && defined(FEAT_X11)
-# ifndef FEAT_GUI_X11
+# if defined(FEAT_GUI_X11) && !defined(FEAT_GUI_GTK)
     main_msg(_("-display <display>\tConnect vim to this particular X-server"));
 # endif
     main_msg(_("-X\t\t\tDo not connect to X server"));
-# ifdef FEAT_GUI_GTK
-    main_msg(_("--socketid <xid>\tOpen Vim inside another GTK widget"));
-# endif
 #endif
 #ifdef FEAT_CLIENTSERVER
-    main_msg(_("--remote <files>\tEdit <files> in a Vim server and exit"));
+    main_msg(_("--remote <files>\tEdit <files> in a Vim server if possible"));
+    main_msg(_("--remote-silent <files>  Same, don't complain if there is no server"));
     main_msg(_("--remote-wait <files>  As --remote but wait for files to have been edited"));
+    main_msg(_("--remote-wait-silent <files>  Same, don't complain if there is no server"));
     main_msg(_("--remote-send <keys>\tSend <keys> to a Vim server and exit"));
     main_msg(_("--remote-expr <expr>\tEvaluate <expr> in a Vim server and print result"));
     main_msg(_("--serverlist\t\tList available Vim server names and exit"));
@@ -2349,15 +2488,19 @@ usage()
 #ifdef FEAT_VIMINFO
     main_msg(_("-i <viminfo>\t\tUse <viminfo> instead of .viminfo"));
 #endif
-    main_msg(_("-h\t\t\tprint Help (this message) and exit"));
-    main_msg(_("--version\t\tprint version information and exit"));
+    main_msg(_("-h  or  --help\tPrint Help (this message) and exit"));
+    main_msg(_("--version\t\tPrint version information and exit"));
 
 #ifdef FEAT_GUI_X11
 # ifdef FEAT_GUI_MOTIF
     mch_msg(_("\nArguments recognised by gvim (Motif version):\n"));
 # else
 #  ifdef FEAT_GUI_ATHENA
+#   ifdef FEAT_GUI_NEXTAW
+    mch_msg(_("\nArguments recognised by gvim (neXtaw version):\n"));
+#   else
     mch_msg(_("\nArguments recognised by gvim (Athena version):\n"));
+#   endif
 #  endif
 # endif
     main_msg(_("-display <display>\tRun vim on <display>"));
@@ -2392,11 +2535,15 @@ usage()
     main_msg(_("-geometry <geom>\tUse <geom> for initial geometry (also: -geom)"));
     main_msg(_("-reverse\t\tUse reverse video (also: -rv)"));
     main_msg(_("-display <display>\tRun vim on <display> (also: --display)"));
+# ifdef HAVE_GTK2
+    main_msg(_("--role <role>\tSet a unique role to identify the main window"));
+# endif
+    main_msg(_("--socketid <xid>\tOpen Vim inside another GTK widget"));
 # ifdef FEAT_GUI_GNOME
     main_msg(_("--help\t\tShow Gnome arguments"));
 # endif
 #endif
-    mch_exit(1);
+    mch_exit(0);
 }
 
 #if defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG)
@@ -2543,6 +2690,7 @@ cmdsrv_main(argc, argv, serverName_arg, serverStr)
     char_u	*sname;
     int		ret;
     int		didone = FALSE;
+    int		exiterr = 0;
     char	**newArgV = argv + 1;
     int		newArgC = 1,
 		Argc = *argc;
@@ -2564,197 +2712,223 @@ cmdsrv_main(argc, argv, serverName_arg, serverStr)
     if (sname == NULL)
 	return;
 
-# ifdef FEAT_X11
-    if (xterm_dpy != NULL)	/* Win32 always works? */
-# endif
+    /*
+     * Execute the command server related arguments and remove them
+     * from the argc/argv array; We may have to return into main()
+     */
+    for (i = 1; i < Argc; i++)
     {
-	/*
-	 * Execute the command server related arguments and remove them
-	 * from the argc/argv array; We may have to return into main()
-	 */
-	for (i = 1; i < Argc; i++)
+	res = NULL;
+	if (STRCMP(argv[i], "--") == 0)	/* end of options */
 	{
-	    res = NULL;
-	    if (STRCMP(argv[i], "--") == 0)	/* end of options */
-	    {
-		for (; i < *argc; i++)
-		{
-		    *newArgV++ = argv[i];
-		    newArgC++;
-		}
-		break;
-	    }
-
-	    if (STRICMP(argv[i], "--remote") == 0)
-		argtype = ARGTYPE_EDIT;
-	    else if (STRICMP(argv[i], "--remote-silent") == 0)
-	    {
-		argtype = ARGTYPE_EDIT;
-		silent = TRUE;
-	    }
-	    else if (STRICMP(argv[i], "--remote-wait") == 0)
-		argtype = ARGTYPE_EDIT_WAIT;
-	    else if (STRICMP(argv[i], "--remote-wait-silent") == 0)
-	    {
-		argtype = ARGTYPE_EDIT_WAIT;
-		silent = TRUE;
-	    }
-	    else if (STRICMP(argv[i], "--remote-send") == 0)
-		argtype = ARGTYPE_SEND;
-	    else
-		argtype = ARGTYPE_OTHER;
-	    if (argtype != ARGTYPE_OTHER)
-	    {
-		if (i == *argc - 1)
-		    mainerr_arg_missing((char_u *)argv[i]);
-		if (argtype == ARGTYPE_SEND)
-		{
-		    *serverStr = (char_u *)argv[i + 1];
-		    i++;
-		}
-		else
-		{
-		    *serverStr = build_drop_cmd(*argc - i - 1, argv + i + 1,
-						argtype == ARGTYPE_EDIT_WAIT);
-		    if (*serverStr == NULL)
-		    {
-			/* Probably out of memory, exit. */
-			didone = TRUE;
-			break;
-		    }
-		    Argc = i;
-		}
-# ifdef FEAT_X11
-		ret = serverSendToVim(xterm_dpy, sname, *serverStr,
-						    NULL, &srv, 0, 0, silent);
-# else
-		ret = serverSendToVim(sname, *serverStr, NULL, &srv, 0, silent);
-# endif
-		if (ret < 0)
-		{
-		    if (argtype == ARGTYPE_SEND)
-		    {
-			/* Failed to send, abort. */
-			mch_errmsg(_("\nSend failed.\n"));
-			didone = TRUE;
-		    }
-		    else if (!silent)
-			/* Let vim start normally.  */
-			mch_errmsg(_("\nSend failed. Trying to execute locally\n"));
-		    break;
-		}
-
-# ifdef FEAT_GUI_W32
-		/* Guess that when the server name starts with "g" it's a GUI
-		 * server, which we can bring to the foreground here.
-		 * Foreground() in the server doesn't work very well. */
-		if (argtype != ARGTYPE_SEND && TO_UPPER(*sname) == 'G')
-		    SetForegroundWindow(srv);
-# endif
-
-		/*
-		 * For --remote-wait: Wait until the server did edit each
-		 * file.  Also detect that the server no longer runs.
-		 */
-		if (ret >= 0 && argtype == ARGTYPE_EDIT_WAIT)
-		{
-		    int	    numFiles = *argc - i - 1;
-		    int	    j;
-		    char_u  *done = alloc(numFiles);
-		    char_u  *p;
-# ifdef FEAT_GUI_W32
-		    NOTIFYICONDATA ni;
-		    int count = 0;
-		    extern HWND message_window;
-
-		    ni.cbSize = sizeof(ni);
-		    ni.hWnd = message_window;
-		    ni.uID = 0;
-		    ni.uFlags = NIF_ICON|NIF_TIP;
-		    ni.hIcon = LoadIcon((HINSTANCE)GetModuleHandle(0),
-								   "IDR_VIM");
-		    sprintf(ni.szTip, _("%d of %d edited"), count, numFiles);
-		    Shell_NotifyIcon(NIM_ADD, &ni);
-# endif
-
-		    /* Wait for all files to unload in remote */
-		    memset(done, 0, numFiles);
-		    while (memchr(done, 0, numFiles) != NULL)
-		    {
-# ifdef WIN32
-			p = serverGetReply(srv, NULL, TRUE, TRUE);
-			if (p == NULL)
-			    break;
-# else
-			if (serverReadReply(xterm_dpy, srv, &p, TRUE) < 0)
-			    break;
-# endif
-			j = atoi((char *)p);
-			if (j >= 0 && j < numFiles)
-			{
-# ifdef FEAT_GUI_W32
-			    ++count;
-			    sprintf(ni.szTip, _("%d of %d edited"),
-							     count, numFiles);
-			    Shell_NotifyIcon(NIM_MODIFY, &ni);
-# endif
-			    done[j] = 1;
-			}
-		    }
-# ifdef FEAT_GUI_W32
-		    Shell_NotifyIcon(NIM_DELETE, &ni);
-# endif
-		}
-	    }
-	    else if (STRICMP(argv[i], "--remote-expr") == 0)
-	    {
-		if (i == *argc - 1)
-		    mainerr_arg_missing((char_u *)argv[i]);
-# ifdef WIN32
-		if (serverSendToVim(sname, (char_u *)argv[i + 1],
-						    &res, NULL, 1, FALSE) < 0)
-# else
-		if (serverSendToVim(xterm_dpy, sname, (char_u *)argv[i + 1],
-						 &res, NULL, 1, 1, FALSE) < 0)
-# endif
-		    mch_errmsg(_("Send expression failed.\n"));
-	    }
-	    else if (STRICMP(argv[i], "--serverlist") == 0)
-	    {
-# ifdef WIN32
-		res = serverGetVimNames();
-#else
-		res = serverGetVimNames(xterm_dpy);
-#endif
-	    }
-	    else if (STRICMP(argv[i], "--servername") == 0)
-	    {
-		/* Alredy processed. Take it out of the command line */
-		i++;
-		continue;
-	    }
-	    else
+	    for (; i < *argc; i++)
 	    {
 		*newArgV++ = argv[i];
 		newArgC++;
-		continue;
 	    }
-	    didone = TRUE;
-	    if (res != NULL && *res != NUL)
-	    {
-		mch_msg((char *)res);
-		if (res[STRLEN(res) - 1] != '\n')
-		    mch_msg("\n");
-	    }
-	    vim_free(res);
+	    break;
 	}
 
-	if (didone)
+	if (STRICMP(argv[i], "--remote") == 0)
+	    argtype = ARGTYPE_EDIT;
+	else if (STRICMP(argv[i], "--remote-silent") == 0)
 	{
-	    display_errors();	/* display any collected messages */
-	    exit(0);		/* Mission accomplished - get out */
+	    argtype = ARGTYPE_EDIT;
+	    silent = TRUE;
 	}
+	else if (STRICMP(argv[i], "--remote-wait") == 0)
+	    argtype = ARGTYPE_EDIT_WAIT;
+	else if (STRICMP(argv[i], "--remote-wait-silent") == 0)
+	{
+	    argtype = ARGTYPE_EDIT_WAIT;
+	    silent = TRUE;
+	}
+	else if (STRICMP(argv[i], "--remote-send") == 0)
+	    argtype = ARGTYPE_SEND;
+	else
+	    argtype = ARGTYPE_OTHER;
+	if (argtype != ARGTYPE_OTHER)
+	{
+	    if (i == *argc - 1)
+		mainerr_arg_missing((char_u *)argv[i]);
+	    if (argtype == ARGTYPE_SEND)
+	    {
+		*serverStr = (char_u *)argv[i + 1];
+		i++;
+	    }
+	    else
+	    {
+		*serverStr = build_drop_cmd(*argc - i - 1, argv + i + 1,
+						argtype == ARGTYPE_EDIT_WAIT);
+		if (*serverStr == NULL)
+		{
+		    /* Probably out of memory, exit. */
+		    didone = TRUE;
+		    exiterr = 1;
+		    break;
+		}
+		Argc = i;
+	    }
+# ifdef FEAT_X11
+	    if (xterm_dpy == NULL)
+	    {
+		mch_errmsg(_("No display"));
+		ret = -1;
+	    }
+	    else
+		ret = serverSendToVim(xterm_dpy, sname, *serverStr,
+						    NULL, &srv, 0, 0, silent);
+# else
+	    /* Win32 always works? */
+	    ret = serverSendToVim(sname, *serverStr, NULL, &srv, 0, silent);
+# endif
+	    if (ret < 0)
+	    {
+		if (argtype == ARGTYPE_SEND)
+		{
+		    /* Failed to send, abort. */
+		    mch_errmsg(_(": Send failed.\n"));
+		    didone = TRUE;
+		    exiterr = 1;
+		}
+		else if (!silent)
+		    /* Let vim start normally.  */
+		    mch_errmsg(_(": Send failed. Trying to execute locally\n"));
+		break;
+	    }
+
+# ifdef FEAT_GUI_W32
+	    /* Guess that when the server name starts with "g" it's a GUI
+	     * server, which we can bring to the foreground here.
+	     * Foreground() in the server doesn't work very well. */
+	    if (argtype != ARGTYPE_SEND && TOUPPER_ASC(*sname) == 'G')
+		SetForegroundWindow(srv);
+# endif
+
+	    /*
+	     * For --remote-wait: Wait until the server did edit each
+	     * file.  Also detect that the server no longer runs.
+	     */
+	    if (ret >= 0 && argtype == ARGTYPE_EDIT_WAIT)
+	    {
+		int	numFiles = *argc - i - 1;
+		int	j;
+		char_u  *done = alloc(numFiles);
+		char_u  *p;
+# ifdef FEAT_GUI_W32
+		NOTIFYICONDATA ni;
+		int	count = 0;
+		extern HWND message_window;
+# endif
+
+		if (numFiles > 0 && argv[i + 1][0] == '+')
+		    /* Skip "+cmd" argument, don't wait for it to be edited. */
+		    --numFiles;
+
+# ifdef FEAT_GUI_W32
+		ni.cbSize = sizeof(ni);
+		ni.hWnd = message_window;
+		ni.uID = 0;
+		ni.uFlags = NIF_ICON|NIF_TIP;
+		ni.hIcon = LoadIcon((HINSTANCE)GetModuleHandle(0), "IDR_VIM");
+		sprintf(ni.szTip, _("%d of %d edited"), count, numFiles);
+		Shell_NotifyIcon(NIM_ADD, &ni);
+# endif
+
+		/* Wait for all files to unload in remote */
+		memset(done, 0, numFiles);
+		while (memchr(done, 0, numFiles) != NULL)
+		{
+# ifdef WIN32
+		    p = serverGetReply(srv, NULL, TRUE, TRUE);
+		    if (p == NULL)
+			break;
+# else
+		    if (serverReadReply(xterm_dpy, srv, &p, TRUE) < 0)
+			break;
+# endif
+		    j = atoi((char *)p);
+		    if (j >= 0 && j < numFiles)
+		    {
+# ifdef FEAT_GUI_W32
+			++count;
+			sprintf(ni.szTip, _("%d of %d edited"),
+							     count, numFiles);
+			Shell_NotifyIcon(NIM_MODIFY, &ni);
+# endif
+			done[j] = 1;
+		    }
+		}
+# ifdef FEAT_GUI_W32
+		Shell_NotifyIcon(NIM_DELETE, &ni);
+# endif
+	    }
+	}
+	else if (STRICMP(argv[i], "--remote-expr") == 0)
+	{
+	    if (i == *argc - 1)
+		mainerr_arg_missing((char_u *)argv[i]);
+# ifdef WIN32
+	    /* Win32 always works? */
+	    if (serverSendToVim(sname, (char_u *)argv[i + 1],
+						    &res, NULL, 1, FALSE) < 0)
+# else
+	    if (xterm_dpy == NULL)
+		mch_errmsg(_("No display: Send expression failed.\n"));
+	    else if (serverSendToVim(xterm_dpy, sname, (char_u *)argv[i + 1],
+						 &res, NULL, 1, 1, FALSE) < 0)
+# endif
+	    {
+		if (res != NULL && *res != NUL)
+		{
+		    /* Output error from remote */
+		    mch_errmsg((char *)res);
+		    vim_free(res);
+		    res = NULL;
+		}
+		mch_errmsg(_(": Send expression failed.\n"));
+	    }
+	}
+	else if (STRICMP(argv[i], "--serverlist") == 0)
+	{
+# ifdef WIN32
+	    /* Win32 always works? */
+	    res = serverGetVimNames();
+# else
+	    if (xterm_dpy != NULL)
+		res = serverGetVimNames(xterm_dpy);
+# endif
+	    if (called_emsg)
+		mch_errmsg("\n");
+	}
+	else if (STRICMP(argv[i], "--servername") == 0)
+	{
+	    /* Alredy processed. Take it out of the command line */
+	    i++;
+	    continue;
+	}
+	else
+	{
+	    *newArgV++ = argv[i];
+	    newArgC++;
+	    continue;
+	}
+	didone = TRUE;
+	if (res != NULL && *res != NUL)
+	{
+	    mch_msg((char *)res);
+	    if (res[STRLEN(res) - 1] != '\n')
+		mch_msg("\n");
+	}
+	vim_free(res);
     }
+
+    if (didone)
+    {
+	display_errors();	/* display any collected messages */
+	exit(exiterr);	/* Mission accomplished - get out */
+    }
+
     /* Return back into main() */
     *argc = newArgC;
     vim_free(sname);
@@ -2791,7 +2965,8 @@ build_drop_cmd(filec, filev, sendReply)
     ga_init2(&ga, 1, 100);
     ga_concat(&ga, (char_u *)"<C-\\><C-N>:cd ");
     ga_concat(&ga, p);
-    ga_concat(&ga, (char_u *)"<CR>:drop");
+    /* Call inputsave() so that a prompt for an encryption key works. */
+    ga_concat(&ga, (char_u *)"<CR>:if exists('*inputsave')|call inputsave()|endif|drop");
     vim_free(p);
     for (i = 0; i < filec; i++)
     {
@@ -2814,7 +2989,10 @@ build_drop_cmd(filec, filev, sendReply)
 	ga_concat(&ga, p);
 	vim_free(p);
     }
-    ga_concat(&ga, (char_u *)"<CR>:cd -");
+    /* The :drop commands goes to Insert mode when 'insertmode' is set, use
+     * CTRL-\ CTRL-N again. */
+    ga_concat(&ga, (char_u *)"|if exists('*inputrestore')|call inputrestore()|endif<CR>");
+    ga_concat(&ga, (char_u *)"<C-\\><C-N>:cd -");
     if (sendReply)
 	ga_concat(&ga, (char_u *)"<CR>:call SetupRemoteReplies()");
     if (inicmd != NULL)
@@ -2822,8 +3000,9 @@ build_drop_cmd(filec, filev, sendReply)
 	ga_concat(&ga, (char_u *)"<CR>:");
 	ga_concat(&ga, inicmd);
     }
-    /* Bring the window to the foreground & clear command line */
-    ga_concat(&ga, (char_u *)"<CR>:call foreground()<CR>:<CR>");
+    /* Bring the window to the foreground, goto Insert mode when 'im' set and
+     * clear command line */
+    ga_concat(&ga, (char_u *)"<CR>:call foreground()<CR>:if &im|starti|endif|echo<CR>");
     ga_append(&ga, NUL);
     return ga.ga_data;
 }
@@ -2841,17 +3020,22 @@ server_to_input_buf(str)
     /* Set 'cpoptions' the way we want it.
      *    B set - backslashes are *not* treated specially
      *    k set - keycodes are *not* reverse-engineered
-     *    < unset - <Key> sequenecs *are* interpreted
-     *  last parameter of replace_termcodes() is TRUE so that
-     *  the <lt> sequence is recognised - needed as backslash
-     *  is not special...
+     *    < unset - <Key> sequences *are* interpreted
+     *  The last parameter of replace_termcodes() is TRUE so that the <lt>
+     *  sequence is recognised - needed for a real backslash.
      */
     p_cpo = (char_u *)"Bk";
     str = replace_termcodes((char_u *)str, &ptr, FALSE, TRUE);
     p_cpo = cpo_save;
 
-    add_to_input_buf(str, STRLEN(str));
-    vim_free((char_u *)(ptr));
+    /* Can't use add_to_input_buf() here, we now have K_SPECIAL bytes.
+     * First clear the typeahead buffer, there could be half a mapping there. */
+    del_typebuf(typebuf.tb_len, 0);
+    (void)ins_typebuf(str, REMAP_NONE, 0, TRUE, FALSE);
+    vim_free((char_u *)ptr);
+
+    /* Let input_available() know we inserted text in the typeahead buffer. */
+    received_from_client = TRUE;
 }
 
 /*
@@ -2884,4 +3068,11 @@ serverMakeName(arg, cmd)
  */
 #if defined(FEAT_FKMAP) || defined(PROTO)
 # include "farsi.c"
+#endif
+
+/*
+ * When FEAT_ARABIC is defined, also compile the Arabic source code.
+ */
+#if defined(FEAT_ARABIC) || defined(PROTO)
+# include "arabic.c"
 #endif
