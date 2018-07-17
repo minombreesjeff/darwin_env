@@ -1,0 +1,283 @@
+*os_390.txt*    For Vim version 6.1.  Last change: 2001 Sep 08
+
+
+		  VIM REFERENCE MANUAL	  by Ralf Schandl
+
+
+							*OS390* *os390*
+This file contains the particularities for the OS/390 Unix version of Vim.
+
+1. Your feedback is needed		|OS390-feedback|
+2. Building VIM for OS/390 Unix		|OS390-building|
+3. ASCII/EBCDIC dependent scripts	|OS390-has-ebcdic|
+4. Xterm Problems			|OS390-xterm|
+5. Motif Problems			|OS390-Motif|
+6. Known weaknesses			|OS390-weaknesses|
+7. Changes				|OS390-changes|
+
+The port to OS/390 Unix was done by Ralf Schandl <schandl@de.ibm.com>
+for the redbook mentioned below.
+
+DISCLAIMER:
+Also I am an IBMer, IBM is not responsible for this port, this is my
+private fun. If you have problems with this port, please contact me.
+
+If you want to use more Open Source Software on OS/390 Unix have a look
+at the following Redbook (www.redbooks.ibm.com):
+
+    Mike MacIsaak et al
+    "Open Source Software on OS/390 Unix"
+    SG24-5944-00
+
+AFAIK a new edition of this redbook will be released in 2001.
+
+Changes or bugreports or both by:
+
+	David Moore
+	Anthony Giorgio
+	and others
+
+==============================================================================
+1. Your feedback is needed				*OS390-feedback*
+
+A lot of changes had to be done to the code to get Vim on OS/390 Unix. As most
+Unix programs it contained heavy ASCII dependencies. It might be, that I
+missed a ASCII dependency or that a new one has been added with a new feature
+or bug fix. Most programmers are simply not aware of possible ASCII/EBCDIC
+problems. If you hit a problem, that seems related to this, feel free to
+contact me at the email address above.
+
+Only if you report a bug, it is possible to fix it. Don't rely on someone else
+reporting it! Also see the section |bug-reports|.
+
+
+==============================================================================
+2. Building VIM for OS/390 Unix				*OS390-building*
+
+A word on debugging code first: ~
+
+The normal run of configure adds the flag '-g' to the compiler options,
+to include debugging information into the executable. This information
+are normally removed from the executable with the strip command during
+installation. On OS/390 Unix, it is not possible to remove this from
+the executable. The strip command exists on OS/390 Unix and is called
+during the installation, but in fact it just does nothing.
+
+If you want to build Vim without debugging code, export the environment
+variable CFLAGS set to an empty string, before you call configure.
+>
+	export CFLAGS=""
+<
+
+
+Building without X11: ~
+
+Note: I always used cc to build Vim, I never tried c89.
+
+If you build VIM without X11 support, compiling and building is
+straightforward, but don't forget to export _CC_CCMODE=1 before calling
+configure and make.
+>
+    $ export _CC_CCMODE=1
+    $./configure --with-features=big --without-x --enable-gui=no
+    $ make
+    $ make test
+<
+	Note: Test 11 will fail, if you don't have gzip installed.
+	Test 42 will fail, as VIM on OS/390 Unix doesn't support the multibyte
+	feature. (David Moore: "Doesn't work _yet_!  :-)  I'll see what I
+	can do.")
+	As of 07. September 2001 Test 45 (folding) fails.
+>
+
+    $ make install
+<
+
+
+Building with X11: ~
+
+There are two ways for building VIM with X11 support. You can link it
+statically with the X11 libraries or can bind it with the X11 DLLs. The
+statical link results in a huge executable (~13Mb), the dynamical linked
+executable is much smaller (~4.5Mb).
+
+Here is what you do, if you want Motif:
+
+  a) Static link >
+	$ configure --with-features=big --enable-gui=motif
+	$ make
+<
+     VIM is now linked statically with the X11 libraries.
+
+  b) Dynamic link:
+     Make VIM as described for the static link. Then change the contense of
+     the 'auto/link.sed' file by appending: >
+	s%-lXm  *%/usr/lib/Xm.x %g
+	s%-lX11  *%/usr/lib/X11.x %g
+	s%-lSM  *%/usr/lib/SM.x %g
+	s%-lICE  *%/usr/lib/ICE.x %g
+<
+     Then do: >
+	$ rm vim
+	$ make
+<
+     Now Vim is linked with the X11-DLLs.
+
+See the Makefile and the file link.sh on how link.sed is used.
+
+
+==============================================================================
+3. ASCII/EBCDIC dependent scripts			*OS390-has-ebcdic*
+
+For the internal script language the feature "ebcdic" was added. With this
+you can fix ASCII dependent scripts like this:
+>
+    if has("ebcdic")
+	let space = 64
+    else
+	let space = 32
+    endif
+<
+
+==============================================================================
+4. XTerm problems					*OS390-xterm*
+
+I saw one problem with XTerm on OS390 Unix.  The terminal code for moving the
+cursor to the left is wrong in the termlib database.  Perhaps not wrong, but
+it didn't work with VIM syntax highlighting and command line cursor movement.
+
+If the highlighting is messed up while you type, but is ok after you refreshed
+the screen with <C-L> or if you can't move to the left with the cursor key on
+the command line, try adding >
+        :set t_le=^H
+<
+to your .vimrc. NOTE: '^H' is one character, hit <C-V><C-H> to get it.
+
+==============================================================================
+5. Motif Problems					*OS390-Motif*
+
+It seems that in the Motif library a translation from EBCDIC to ASCII for
+Mnemonic chars of the menus were forgotten. Even after I tried some
+conversion by hand, it still only works for opening menus (like <Alt-F> to
+open the file menu), but doesn't work for the menu items (like <Alt-F>O to
+open the file browser). No solution for this yet.
+
+
+==============================================================================
+6. Known weaknesses					*OS390-weaknesses*
+
+- No binary search in tag files.
+  The program /bin/sort sorts by ASCII value by default. This program is
+  normally used by ctags to sort the tags. There might be a version of
+  ctags out there, that does it right, but we can't be sure. So this seems to
+  be a permanent restriction.
+
+- Multibyte support (utf-8) doesn't work, it's disabled at compile time.
+  (|multibyte|)
+
+
+Never tested:
+    - Perl interface		(|perl|)
+    - Hangul input		(|hangul|)
+    - Cscope interface		(|cscope|)
+    - Encryption support	(|encryption|)
+    - Langmap			(|'langmap'|)
+    - Python support		(|Python|)
+    - Right-to-left mode	(|'rightleft'|)
+    - SNiFF+ interface		(|sniff|)
+    - TCL interface		(|tcl|)
+    ....
+
+If you try on of this and it works drop me a note!!
+
+==============================================================================
+7. Changes						*OS390-changes*
+
+This doesn't include all changes made for EBCDIC/OS390, but is just a
+reference for me.
+
+6.0au:
+  Changed configure.in
+  Changed documentation.
+  Anthony Giorgio fixed the errorbell.
+
+  David Moore found some problems, which were fixed by Bram and/or David for
+  6.0au.
+
+6.0q (alpha):
+  Minor changes for nrformats=alpha (see |'nrformats'|).
+  Problem with hardcoded keycode for the english pound sign. Added a define in
+  ascii.h
+  Disabled multibyte for EBCDIC in feature.h
+
+6.0f (alpha):
+  First compile of Vim 6 on OS/390 Unix. Some minor changes were needed.
+
+  Finally found the reason why make from the toplevel didn't work (I must have
+  been blind before!). The Makefile contained a list of targets in one target
+  line. On all other Unixes the macro $@ evaluates to the first target in this
+  list, only on OS/390 Unix it evaluates to the last one :-(.
+
+5.6-390d:
+  Cleaned up some hacks.
+
+5.6-390c:
+
+  I greped thru the source and examined every spot with a character
+  involved in a operation (+-). I hope I now found all EBCDIC/ASCII
+  stuff, but ....
+
+  Fixed:
+    - fixed warning message in do_fixdel()
+    - fixed translation from Ctrl-Char to symbolic name (like ^h to CTRL-H)
+	    for :help
+    - fixed yank/delete/... into register
+    - fixed :register command
+    - fixed viminfo register storing
+    - fixed quick-access table in findoptions()
+    - fixed 'g^H' select mode
+    - fixed tgetstr() 'get terminal capability string', ESC and
+	    Ctrl chars where wrong. (Not used on OS 390 Unix)
+
+
+  ctags:
+    - added trigraphs support (used in prolog of system header files)
+	    (get.c)
+    - fixed sorting order with LC_COLLATE=S390 to force EBCDIC sorting.
+	    (sort.c)
+
+
+5.6-390b:
+  Changed:
+    - configure.in:
+	- added test for OS/390 Unix
+	- added special compiler and linker options if building with X11
+    - configure:
+	- after created via autoconf handedited it to make the test for
+	  ICEConnectionNumber work. This is a autoconf problem. OS/390 Unix
+	  needs -lX11 for this.
+    - Makefile
+	- Don't include the lib directories ('-L...') into the variable
+	  ALL_LIBS. Use own variable ALL_LIB_DIRS instead. A fully POSIX
+	  compliant compiler must not accept objects/libraries and options
+	  mixed. Now we can call the linker like this:
+
+	    $(CC) $(LDFLAGS) $(ALL_LIB_DIRS) $(OBJ) $(ALL_LIBS)
+
+  Fixed:
+    - Double quote couldn't be entered
+      Missed ASCII dependencies while setting up terminal
+      In ASCII 127 is the delete char, in EBCDIC codepage 1047 the value 127
+      is the double quote.
+    - fixed ':fixdel'
+
+5.6-390a:
+  first alpha release for OS/390 Unix.
+
+  Addition:
+    - For the internal script language I added the feature "ebcdic".
+      This can be queried with the has()-function of the internal
+      script language.
+
+------------------------------------------------------------------------------
+ vim:tw=78:fo=tcq2:ts=8:ft=help:norl:
