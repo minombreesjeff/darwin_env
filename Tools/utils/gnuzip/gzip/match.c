@@ -1,4 +1,5 @@
 /* match.s -- optional optimized asm version of longest match in deflate.c
+ * Copyright (C) 2002 Free Software Foundation, Inc.
  * Copyright (C) 1992-1993 Jean-loup Gailly
  * This is free software; you can redistribute it and/or modify it under the
  * terms of the GNU General Public License, see the file COPYING.
@@ -9,7 +10,7 @@
  * Kristoffer Eriksson <ske@pkmab.se>
  */
  
-/* $Id: match.S,v 1.1.1.1 1999/04/23 01:05:57 wsanchez Exp $ */
+/* $Id: match.S,v 0.14 1993/06/11 18:33:24 jloup Exp $ */
 
 /* Preprocess with -DNO_UNDERLINE if your C compiler does not prefix
  * external symbols with an underline character '_'.
@@ -32,7 +33,7 @@
   error: DYN_ALLOC not yet supported in match.s
 #endif
 
-#if defined(i386) || defined(_I386)
+#if defined(i386) || defined(_I386) || defined(__i386) || defined(__i386__)
 
 /* This version is for 386 Unix or OS/2 in 32 bit mode.
  * Warning: it uses the AT&T syntax: mov source,dest
