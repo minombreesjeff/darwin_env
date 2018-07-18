@@ -1,10 +1,10 @@
 /*
- * dfile.c - Darwin file processing functions for lsof
+ * dfile.c - Darwin file processing functions for /dev/kmem-based lsof
  */
 
 
 /*
- * Copyright 2004 Purdue Research Foundation, West Lafayette, Indiana
+ * Copyright 2005 Purdue Research Foundation, West Lafayette, Indiana
  * 47907.  All rights reserved.
  *
  * Written by Victor A. Abell
@@ -31,8 +31,8 @@
 
 #ifndef lint
 static char copyright[] =
-"@(#) Copyright 2004 Purdue Research Foundation.\nAll rights reserved.\n";
-static char *rcsid = "$Id: dfile.c,v 1.3 2004/11/01 20:51:22 ajn Exp $";
+"@(#) Copyright 2005 Purdue Research Foundation.\nAll rights reserved.\n";
+static char *rcsid = "$Id: dfile.c,v 1.6 2006/04/27 20:28:48 ajn Exp $";
 #endif
 
 
@@ -97,14 +97,34 @@ struct pshminfo {
 
 struct pshmnode {
     off_t mapp_addr;
-#if	DARWINV<800
+
+# if	DARWINV<800
     size_t map_size;
-#else	/* DARWINV>=800 */
+# else	/* DARWINV>=800 */
     user_size_t map_size;
-#endif	/* DARWINV>=800 */
+# endif	/* DARWINV>=800 */
+
     struct pshminfo *pinfo;
 };
 #endif	/* defined(HASPSXSHM) */
+
+
+#if	DARWINV>=800
+/*
+ * print_v_path() - print vnode's path
+ */
+
+int
+print_v_path(lf)
+	struct lfile *lf;
+{
+	if (lf->V_path) {
+	    safestrprt(lf->V_path, stdout, 0);
+	    return(1);
+	}
+	return(0);
+}
+#endif	/* DARWINV>=800 */
 
 
 #if	defined(HASKQUEUE)
@@ -127,6 +147,22 @@ process_kqueue(ka)
 	enter_nm(Namech);
 }
 #endif	/* defined(HASKQUEUE) */
+
+
+#if	DARWINV>=800
+/*
+ * process_pipe() - process a file structure whose type is DTYPE_PIPE
+ */
+
+void
+process_pipe(pa)
+	KA_T pa;			/* pipe structure address */
+{
+	(void) snpf(Lf->type, sizeof(Lf->type), "PIPE");
+	enter_dev_ch(print_kptr(pa, (char *)NULL, 0));
+	Namech[0] = '\0';
+}
+#endif	/* DARWINV>=800 */
 
 
 #if	defined(HASPSXSEM)
@@ -215,12 +251,14 @@ void
 process_file(fp)
 	KA_T fp;			/* kernel file structure address */
 {
+
 #if	DARWINV<800
 	struct file f;
 #else	/* DARWINV>=800 */
-	struct fileproc fileproc;
 	struct fileglob f;
+	struct fileproc fileproc;
 #endif	/* DARWINV>=800 */
+
 	int flag;
 
 #if	defined(FILEPTR)
@@ -233,6 +271,7 @@ process_file(fp)
 /*
  * Read file structure.
  */
+
 #if	DARWINV<800
 	if (kread((KA_T)fp, (char *)&f, sizeof(f))) {
 	    (void) snpf(Namech, Namechl, "can't read file struct from %s",
@@ -254,6 +293,7 @@ process_file(fp)
 	    return;
 	}
 #endif	/* DARWINV>=800 */
+
 	Lf->off = (SZOFFTYPE)f.f_offset;
 	if (f.f_count) {
 
@@ -300,26 +340,11 @@ process_file(fp)
 # if	defined(HASPIPEFN)
 		if (!Selinet)
 		    HASPIPEFN((KA_T)f.f_data);
-		return;
 # endif	/* defined(HASPIPEFN) */
+		return;
 #endif	/* defined(DTYPE_PIPE) */
 
-#if	defined(DTYPE_GNODE)
-	    case DTYPE_GNODE:
-#endif	/* defined(DTYPE_GNODE) */
-
-#if	defined(DTYPE_INODE)
-	    case DTYPE_INODE:
-#endif	/* defined(DTYPE_INODE) */
-
-#if	defined(DTYPE_PORT)
-	    case DTYPE_PORT:
-#endif	/* defined(DTYPE_PORT) */
-
-#if	defined(DTYPE_VNODE)
 	    case DTYPE_VNODE:
-#endif	/* defined(DTYPE_VNODE) */
-
 		if (!Selinet)
 		    process_node((KA_T)f.f_data);
 		return;

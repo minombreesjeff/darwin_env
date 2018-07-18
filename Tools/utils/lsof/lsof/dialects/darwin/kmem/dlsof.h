@@ -1,5 +1,5 @@
 /*
- * dlsof.h - Darwin header file for lsof
+ * dlsof.h - Darwin header file for /dev/kmem-based lsof
  */
 
 
@@ -31,7 +31,7 @@
 
 
 /*
- * $Id: dlsof.h,v 1.9 2004/03/10 23:50:16 abe Exp $
+ * $Id: dlsof.h,v 1.6 2006/04/27 20:28:48 ajn Exp $
  */
 
 
@@ -43,6 +43,7 @@
 #include <nlist.h>
 #include <setjmp.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/conf.h>
 #include <sys/filedesc.h>
 #include <sys/ucred.h>
@@ -61,6 +62,7 @@
 #else	/* DARWINV>=800 */
 #include <sys/vnode.h>
 #define	_SYS_SYSTM_H_
+struct nameidata { int dummy; };	/* to satisfy function  prototypes */
 #include <sys/vnode_internal.h>
 #endif	/* DARWINV>=800 */
 
@@ -80,15 +82,17 @@
 #undef	KERNEL
 #include <net/ndrv.h>
 #  if	DARWINV>=530
-#define	KERNEL	1
+#define	KERNEL        1
 #include <net/ndrv_var.h>
-#undef	KERNEL
+#undef  KERNEL
 #  endif	/* DARWINV>=530 */
 # endif	/* defined(AF_NDRV) */
 
 # if	defined(AF_SYSTEM)
 #include <sys/queue.h>
+#define	KERNEL
 #include <sys/kern_event.h>
+#undef	KERNEL
 # endif	/* defined(AF_SYSTEM) */
 
 #include <netinet/in.h>
@@ -104,7 +108,6 @@
 #include <netinet/tcp_timer.h>
 #include <netinet/tcp_var.h>
 #include <arpa/inet.h>
-
 #include <net/raw_cb.h>
 #include <sys/domain.h>
 #define	pmap	RPC_pmap
@@ -113,67 +116,70 @@
 #undef	pmap
 
 #include <sys/quota.h>
-
 #include <sys/event.h>
 
-#if	DARWINV<800
+# if	DARWINV<800
+#include <paths.h>
+#undef	MAXNAMLEN
+#include <ufs/ufs/quota.h>
 #include <paths.h>
 #include <ufs/ufs/quota.h>
-#undef	MAXNAMLEN	/* to avoid redefinition */
 #include <ufs/ufs/inode.h>
 #include <nfs/rpcv2.h>
 #include <nfs/nfs.h>
 #include <nfs/nfsproto.h>
 #include <nfs/nfsnode.h>
 
-# if	DARWINV<600
+#  if	DARWINV<600
 #include <hfs/hfs.h>
 #undef	offsetof
-# else
+# else	/* DARWINV>=600 */
 #define	KERNEL
 #include <hfs/hfs_cnode.h>
 #undef	KERNEL
-# endif
-#endif	/* DARWINV<800 */
+#  endif        /* DARWINV<600 */
+# endif	/* DARWINV<800 */
 
-#if	DARWINV<800
+# if	DARWINV<800
 #define	time	t1		/* hack to make dn_times() happy */
 #include <miscfs/devfs/devfsdefs.h>
 #undef	time
-#endif	/* DARWINV<800 */
+# endif	/* DARWINV<800 */
 
-#if	DARWINV<800
-# if	defined(HASFDESCFS)
+# if	DARWINV<800
+#define	KERNEL
 #include <miscfs/fdesc/fdesc.h>
-# endif	/* defined(HASFDESCFS) */
-#endif	/* DARWINV<800 */
+#undef	KERNEL
+# endif	/* DARWINV<800 */
 
-#if	DARWINV<800
+# if	DARWINV<800
 #include <sys/proc.h>
-#else	/* DARWINV>=800 */
-#define PROC_DEF_ENABLED
+# else	/* DARWINV>=800 */
+#define	PROC_DEF_ENABLED
+#define	sleep	kernel_sleep
 #include <sys/proc_internal.h>
-#endif	/* DARWINV>=800 */
+#undef	sleep
+# endif	/* DARWINV<800 */
 
 #include <kvm.h>
 #undef	TRUE
 #undef	FALSE
 
-#if	DARWINV<800
+# if	DARWINV<800
 #include <sys/sysctl.h>
-#else	/* DARWINV>=800 */
+# else	/* DARWINV>=800 */
 #include "/usr/include/sys/sysctl.h"
-#endif	/* DARWINV>=800 */
+# endif	/* DARWINV<800 */
 
-#if	DARWINV<800
+# if	DARWINV<800
 #define	KERNEL
 #include <sys/fcntl.h>
 #include <sys/file.h>
 #undef	KERNEL
-#else	/* DARWINV>=800 */
+# else	/* DARWINV>=800 */
 #include <sys/fcntl.h>
 #include <sys/file_internal.h>
-#endif	/* DARWINV>=800 */
+# endif	/* DARWINV<800 */
 
 # if	defined(HASKQUEUE)
 #include <sys/eventvar.h>
@@ -189,9 +195,8 @@
 						 * file type */
 # endif	/* defined(DTYPE_PSXSHM) */
 
-struct vop_advlock_args { int dummy; };	/* to pacify lf_advlock() prototype */
+struct vop_advlock_args { int dummy; };	/* to satisfy lf_advlock() prototype */
 #include <sys/lockf.h>
-
 #include <sys/lock.h>
 
 /*
@@ -200,31 +205,41 @@ struct vop_advlock_args { int dummy; };	/* to pacify lf_advlock() prototype */
  */
 
 # if	defined(MAP_ENTRY_IS_SUB_MAP) && !defined(MAP_ENTRY_IS_A_MAP)
-#define MAP_ENTRY_IS_A_MAP	0
+#define	MAP_ENTRY_IS_A_MAP	0
 # endif	/* defined(MAP_ENTRY_IS_SUB_MAP) && !defined(MAP_ENTRY_IS_A_MAP) */
 
 #undef	B_NEEDCOMMIT
 #include <sys/buf.h>
+#include <sys/signal.h>
+#define	user_sigaltstack	sigaltstack
 #include <sys/user.h>
 
 #define	COMP_P		const void
-#define DEVINCR		1024	/* device table malloc() increment */
+#define	DEVINCR		1024	/* device table malloc() increment */
 #define	DIRTYPE		dirent	/* directory entry type */
 
 typedef	u_long		KA_T;
 
 #define	KMEM		"/dev/kmem"
 #define	LOGINML		MAXLOGNAME
-#define MALLOC_P	void
-#define FREE_P		MALLOC_P
-#define MALLOC_S	size_t
+#define	MALLOC_P	void
+#define	FREE_P		MALLOC_P
+#define	MALLOC_S	size_t
 
-#define N_UNIX	"/mach_kernel"
+#define	N_UNIX	"/mach_kernel"
 
-#define QSORT_P		void
+#define	QSORT_P		void
 #define	READLEN_T	int
-#define STRNCPY_L	size_t
-#define SWAP		"/dev/drum"
+#define	STRNCPY_L	size_t
+#define	SWAP		"/dev/drum"
+
+# if	DARWINV>=800
+#define	SZOFFTYPE	unsigned long long
+					/* size and offset internal storage
+					 * type */
+#define	SZOFFPSPEC	"ll"		/* SZOFFTYPE printf specification
+					 * modifier */
+# endif	/* DARWINV>=800 */
 
 
 /*
@@ -260,7 +275,7 @@ struct mounts {
 					 * (symbolic links resolved) */
         dev_t dev;              	/* directory st_dev */
 	dev_t rdev;			/* directory st_rdev */
-	ino_t inode;			/* directory st_ino */
+	INODETYPE inode;		/* directory st_ino */
 	mode_t mode;			/* directory st_mode */
 	mode_t fs_mode;			/* file system st_mode */
         struct mounts *next;    	/* forward link */
@@ -279,7 +294,7 @@ struct sfile {
 	u_short mode;			/* S_IFMT mode bits from stat() */
 	int type;			/* file type: 0 = file system
 				 	 *	      1 = regular file */
-	ino_t i;			/* inode number */
+	INODETYPE i;			/* inode number */
 	int f;				/* file found flag */
 	struct sfile *next;		/* forward link */
 
@@ -287,6 +302,7 @@ struct sfile {
 
 #define	XDR_VOID	(const xdrproc_t)xdr_void 
 #define	XDR_PMAPLIST	(const xdrproc_t)xdr_pmaplist
+
 
 /*
  * Definitions for rnmh.c

@@ -1,5 +1,5 @@
 /*
- * dnode.c - Darwin node functions for lsof
+ * dnode.c - Darwin node functions for /dev/kmem-based lsof
  */
 
 
@@ -32,7 +32,7 @@
 #ifndef lint
 static char copyright[] =
 "@(#) Copyright 1994 Purdue Research Foundation.\nAll rights reserved.\n";
-static char *rcsid = "$Id: dnode.c,v 1.8 2004/03/10 23:50:16 abe Exp $";
+static char *rcsid = "$Id: dnode.c,v 1.6 2006/04/27 20:28:48 ajn Exp $";
 #endif
 
 
@@ -44,8 +44,254 @@ static char *rcsid = "$Id: dnode.c,v 1.8 2004/03/10 23:50:16 abe Exp $";
  */
 
 #if	DARWINV<600
-_PROTOTYPE(static int lkup_dev_tty,(dev_t *dr, dev_t *rdr, unsigned long *ir));
+_PROTOTYPE(static int lkup_dev_tty,(dev_t *dr, dev_t *rdr, INODETYPE *ir));
 #endif	/* DARWINV<600 */
+
+#if	DARWINV>=800
+_PROTOTYPE(static char *getvpath,(KA_T va, struct vnode *rv));
+_PROTOTYPE(static int readvname,(KA_T addr, char *buf, int buflen));
+#endif	/* DARWINV>=800 */
+
+
+#if	DARWINV>=800
+/*
+ * getvpath() - get vnode path
+ *		adapted from build_path() (.../bsd/vfs/vfs_subr.c)
+ */
+
+static char *
+getvpath(va, rv)
+	KA_T va;			/* kernel address of the rightmost
+					 * vnode in the path */
+	struct vnode *rv;		/* pointer to rightmost vnode */
+{
+	char *ap;
+	static char *bp = (char *)NULL;
+	static size_t bl = (size_t)(MAXPATHLEN + MAXPATHLEN + 1);
+	static char *cb = (char *)NULL;
+	static size_t cbl = (size_t)0;
+	static int ce = 0;
+	struct mount mb;
+	int pl, vnl;
+	char *pp, vn[MAXPATHLEN+1];
+	struct vnode vb;
+	KA_T vas = va;
+/*
+ * Initialize the path assembly.
+ */
+	if (!bp) {
+	    if (!(bp = (char *)malloc((MALLOC_S)bl))) {
+		(void) fprintf(stderr, "%s: no space (%d) for path assembly\n",
+		    Pn, (int)bl);
+		Exit(1);
+	    }
+	}
+	pp = bp + bl - 1;
+	*pp = '\0';
+	pl = 0;
+/*
+ * Process the starting vnode.
+ */
+	if (!va)
+	    return(0);
+	if ((rv->v_flag & VROOT) && rv->v_mount) {
+
+	/*
+	 * This is the root of a file system and it has a mount structure.
+	 * Read the mount structure.
+	 */
+	    if (kread((KA_T)rv->v_mount, (char *)&mb, sizeof(mb)))
+		return(0);
+	    if (mb.mnt_flag & MNT_ROOTFS) {
+
+	    /*
+	     * This is the root file system, so the path is "/".
+	     */
+		pp--;
+		*pp = '/';
+		pl = 1;
+		goto getvpath_alloc;
+	    } else {
+
+	    /*
+	     * Get the covered vnode's pointer and read it.  Use it to
+	     * form the path.
+	     */
+		if ((va = (KA_T)mb.mnt_vnodecovered)) {
+		    if (readvnode(va, &vb))
+			return(0);
+		}
+	    }
+	} else {
+
+	/*
+	 * Use the supplied vnode.
+	 */
+	    vb = *rv;
+	}
+/*
+ * Accumulate the path from the vnode chain.
+ */
+	while (va && ((KA_T)vb.v_parent != va)) {
+	    if (!vb.v_name) {
+
+	    /*
+	     * If there is no name pointer or parent, the assembly is complete.
+	     */
+		if (vb.v_parent) {
+
+		/*
+		 * It is an error if there is a parent but no name.
+		 */
+		    return((char *)NULL);
+		}
+		break;
+	    }
+	/*
+	 * Read the name and add it to the assembly.
+	 */
+	    if ((vnl = readvname((KA_T)vb.v_name, vn, sizeof(vn))) <= 0)
+		return((char *)NULL);
+	    if ((vnl + 1 + pl + 1) > bl)
+		return((char *)NULL);
+	    memmove((void *)(pp - vnl), (void *)vn, vnl);
+	    pp -= (vnl + 1);
+	    *pp = '/';
+	    pl += vnl + 1;
+	    if ((va == vas) && (vb.v_flag & VROOT)) {
+
+	    /*
+	     * This is the starting vnode and it is a root vnode.  Read its
+	     * mount structure.
+	     */
+		if (vb.v_mount) {
+		    if (kread((KA_T)vb.v_mount, (char *)&mb, sizeof(mb)))
+			return((char *)NULL);
+		    if (mb.mnt_vnodecovered) {
+
+		    /*
+		     * If there's a covered vnode, read it and use it's parent
+		     * vnode pointer.
+		     */
+			if ((va = (KA_T)mb.mnt_vnodecovered)) {
+			    if (readvnode(va, &vb))
+				return((char *)NULL);
+			    va = (KA_T)vb.v_parent;
+			}
+		    } else
+			va = (KA_T)NULL;
+		} else
+		    va = (KA_T)NULL;
+	    } else
+		va = (KA_T)vb.v_parent;
+	/*
+	 * If there's a parent vnode, read it.
+	 */
+	    if (va) {
+		if (readvnode(va, &vb))
+		    return((char *)NULL);
+		if ((vb.v_flag & VROOT) && vb.v_mount) {
+
+		/*
+		 * The mount point has been reached.  Read the mount structure
+		 * and use its covered vnode pointer.
+		 */
+		    if (kread((KA_T)vb.v_mount, (char *)&mb, sizeof(mb)))
+			return((char *)NULL);
+		    if ((va = (KA_T)mb.mnt_vnodecovered)) {
+			if (readvnode(va, &vb))
+			    return((char *)NULL);
+		    }
+		}
+	    }
+	}
+/*
+ * As a special case the following code attempts to trim a path that is
+ * larger than MAXPATHLEN by seeing if the lsof process CWD can be removed
+ * from the start of the path to make it MAXPATHLEN characters or less.
+ */
+	if (pl > MAXPATHLEN) {
+
+	/*
+	 * Get the cwd.  If that can't be done, return an error.
+	 */
+	    if (ce)
+		return((char *)NULL);
+	    if (!cb) {
+		if (!(cb = (char *)malloc((MALLOC_S)(MAXPATHLEN + 1)))) {
+		    (void) fprintf(stderr, "%s: no space (%d) for CWD\n",
+			Pn, (int)bl);
+		    Exit(1);
+		}
+		if (!getcwd(cb, (size_t)(MAXPATHLEN + 1))) {
+		    if (!Fwarn) {
+			(void) fprintf(stderr, "%s: WARNING: can't get CWD\n",
+			    Pn);
+		    }
+		    ce = 1;
+		    return((char *)NULL);
+		}
+		cb[MAXPATHLEN - 1] = '\0';
+		if (!(cbl = (size_t)strlen(cb))) {
+		    if (!Fwarn) {
+			(void) fprintf(stderr, "%s: WARNING: CWD is NULL\n",
+			    Pn);
+		    }
+		    ce = 1;
+		    return((char *)NULL);
+		}
+	    }
+	/*
+	 * See if trimming the CWD shortens the path to MAXPATHLEN or less.
+	 */
+	    if ((pl <= cbl) || strncmp(cb, pp, cbl))
+		return((char *)NULL);
+	    pp += cbl;
+	    pl -= cbl;
+	    if (cb[cbl - 1] == '/') {
+
+	    /*
+	     * The CWD ends in a '/', so the path must not begin with one.  If
+	     * it does, no trimming can be done.
+	     */
+		if (*pp == '/')
+		    return((char *)NULL);
+	    } else {
+
+	    /*
+	     * The CWD doesn't end in a '/', so the path must begin with one.
+	     * If it doesn't, no trimming can be done.
+	     */
+		if (*pp != '/')
+		    return((char *)NULL);
+	    /*
+	     * Skip all leading path '/' characters.  Some characters must
+	     * remain.
+	     */
+		while ((pl > 0) && (*pp == '/')) {
+		    pp++;
+		    pl--;
+		}
+		if (!pl)
+		    return((char *)NULL);
+	    }
+	}
+/*
+ * Allocate space for the assembled path, including terminator, and return its
+ * pointer.
+ */
+
+getvpath_alloc:
+
+	if (!(ap = (char *)malloc(pl + 1))) {
+	    (void) fprintf(stderr, "%s: no getvpath space (%d)\n",
+		Pn, pl + 1);
+	    Exit(1);
+	}
+	(void) memmove(ap, pp, pl + 1);
+	return(ap);
+}
+#endif	/* DARWINV>=800 */
 
 
 #if	DARWINV<600
@@ -57,7 +303,7 @@ static int
 lkup_dev_tty(dr, rdr, ir)
 	dev_t *dr;			/* place to return device number */
 	dev_t *rdr;			/* place to return raw device number */
-	unsigned long *ir;		/* place to return inode number */
+	INODETYPE *ir;			/* place to return inode number */
 {
 	int i;
 
@@ -66,238 +312,13 @@ lkup_dev_tty(dr, rdr, ir)
 	    if (strcmp(Devtp[i].name, "/dev/tty") == 0) {
 		*dr = DevDev;
 		*rdr = Devtp[i].rdev;
-		*ir = (unsigned long)Devtp[i].inode;
+		*ir = (INODETYPE)Devtp[i].inode;
 		return(1);
 	    }
 	}
 	return(-1);
 }
 #endif	/* DARWINV<600 */
-
-
-#if	DARWINV>=800
-static int
-readname(KA_T addr, char *buf, int buflen)
-{
-	int n = 0;
-
-	/*
-	 * Read the name, 32 characters at a time, until a NUL character
-	 * has been read or the buffer has been filled.
-	 */
-	while (n < buflen) {
-	    int	rl;
-
-	    rl = buflen - n;
-	    if (rl > 32) {
-		rl = 32;
-		buf[n + rl] = '\0';
-	    }
-
-	    if (kread(addr, &buf[n], rl)) {
-		return 1;
-	    }
-
-	    rl = (int)strlen(&buf[n]);
-	    if (rl < 32)
-		return 0;
-
-	    addr += rl;
-	    n += rl;
-	}
-
-	return 0;
-}
-
-/*
- * vnode_getpath() - get file path from vnode
- *	adapted from build_path() (.../bsd/vfs/vfs_subr.c)
- */
-
-static int
-vnode_getpath(struct vnode *first_vp, char *buff, int buflen)
-{
-    struct vnode *vp = first_vp;
-    struct vnode vb, *VP=&vb;
-    struct mount mb, *MP=&mb;
-    char *end;
-    char *path = buff;
-    int pathlen = buflen;
-
-    end = &path[pathlen-1];
-    *end = '\0';
-
-    if (!vp
-    ||  readvnode((KA_T)vp, VP)) {
-//	fprintf(stderr, "vnode_getpath: no vnode address\n");
-	return 0;
-    }
-
-    // if this is the root dir of a file system and there is no parent
-    if (vp && (VP->v_flag & VROOT) && VP->v_mount) {
-	// then if it's the root fs, just put in a '/' and get out of here
-	if (kread((KA_T)VP->v_mount, (char *)&mb, sizeof(mb))) {
-//	    fprintf(stderr, "vnode_getpath: no vnode mount\n");
-	    return 0;
-	}
-	if (MP->mnt_flag & MNT_ROOTFS) {
-	    *--end = '/';
-	    goto out;
-	} else {
-	    // else just use the covered vnode to get the mount path
-	    vp = MP->mnt_vnodecovered;
-	    if (vp) {
-		if (readvnode((KA_T)vp, VP)) {
-//		    fprintf(stderr, "vnode_getpath: bad vnode address\n");
-		    return 0;
-		}
-	    }
-	}
-    }
-
-    while(vp && VP->v_parent != vp) {
-	char v_name[MAXPATHLEN+1];
-	char *str;
-	int len;
-
-	if (VP->v_name == NULL) {
-	    if (VP->v_parent != NULL) {
-		goto err;
-	    }
-	    break;
-	}
-	
-	if (readname((KA_T)VP->v_name, v_name, MAXPATHLEN)) {
-//	    fprintf(stderr, "vnode_getpath: bad v_name address\n");
-	    goto err;
-	}
-
-	v_name[MAXPATHLEN] = '\0';
-	str = &v_name[0];
-
-	// count how long the string is
-	for(len=0; *str; str++, len++)
-	    /* nothing */;
-
-	// check that there's enough space
-	if ((end - path - 1) < len) {
-	    if (path == buff) {
-		char *oend = end;
-
-		/*
-		 * expand the size of the path buffer to see if we can
-		 * get a path relative to the current working directory.
-		 */
-		pathlen += MAXPATHLEN;
-		path = malloc(pathlen);
-		end = &path[oend - buff + MAXPATHLEN];
-		memmove(end, oend, &buff[buflen] - oend);
-	    } else {
-		// if the path won't fit in the buffer
-		goto err;
-	    }
-	}
-
-	// copy it backwards
-	for(; len > 0; len--) {
-	    *--end = *--str;
-	}
-
-	// put in the path separator
-	*--end = '/';
-
-	// walk up the chain (as long as we're not the root)  
-	if (vp == first_vp && (VP->v_flag & VROOT)) {
-	    if (VP->v_mount) {
-		if (kread((KA_T)VP->v_mount, (char *)&mb, sizeof(mb))) {
-//		    fprintf(stderr, "vnode_getpath: no vnode mount\n");
-		    goto err;
-		}
-		if (MP->mnt_vnodecovered) {
-		    vp = MP->mnt_vnodecovered;
-		    if (vp) {
-			if (readvnode((KA_T)vp, VP)) {
-//			    fprintf(stderr, "vnode_getpath: bad vnode address\n");
-			    goto err;
-			}
-			vp = VP->v_parent;
-		    }
-		} else {
-		    vp = NULL;
-		}
-	    } else {
-		vp = NULL;
-	    }
-	} else {
-	    vp = VP->v_parent;
-	}
-	if (vp && readvnode((KA_T)vp, VP)) {
-//	    fprintf(stderr, "vnode_getpath: bad vnode address\n");
-	    goto err;
-	}
-
-	// check if we're crossing a mount point and
-	// switch the vp if we are.
-	if (vp && (VP->v_flag & VROOT) && VP->v_mount) {
-	    if (kread((KA_T)VP->v_mount, (char *)&mb, sizeof(mb))) {
-//		fprintf(stderr, "vnode_getpath: no vnode mount\n");
-		goto err;
-	    }
-	    vp = MP->mnt_vnodecovered;
-	    if (vp) {
-		if (readvnode((KA_T)vp, VP)) {
-//		    fprintf(stderr, "vnode_getpath: bad vnode address\n");
-		    goto err;
-		}
-	    }
-	}
-    }
-
-  out:
-    /*
-     * attempt to reduce long paths which are relative to the current
-     * working directory.
-     */
-    if (path != buff) {
-	static char cwd[MAXPATHLEN];
-	static int cwdlen = 0;
-
-	if (cwdlen == 0) {
-	    if (!getcwd(cwd, sizeof(cwd))) {
-		// if we could not get current working directory
-//		fprintf(stderr, "vnode_getpath: getcwd failed\n");
-		goto err;
-	    }
-	    cwdlen = strlen(cwd);
-	    if ((cwd[cwdlen-1] != '/') && cwdlen < sizeof(cwd)) {
-		cwd[cwdlen++] = '/';
-	    }
-	}
-
-	if (strncmp(end, cwd, cwdlen) != 0) {
-		// if the path is not relative to the current working directory
-		goto err;
-	}
-
-	end += cwdlen;		// skip past cwd
-	if ((&path[pathlen] - end) > buflen) {
-		// if the relative path won't fit in the provided buffer
-		goto err;
-	}
-    }
-
-    // slide it down to the beginning of the buffer
-    memmove(buff, end, &path[pathlen] - end);
-    return 1;
-
-  err:
-    if (path != buff) {
-	free(path);
-    }
-    buff[0] = '\0';
-    return 0;
-}
-#endif	/* DARWINV>=800 */
 
 
 /*
@@ -308,7 +329,8 @@ void
 process_node(va)
 	KA_T va;			/* vnode kernel space address */
 {
-	dev_t dev, rdev;
+	dev_t dev = (dev_t)0;
+	dev_t rdev = (dev_t)0;
 	unsigned char devs = 0;
 	unsigned char rdevs = 0;
 
@@ -317,11 +339,13 @@ process_node(va)
 	struct devnode db;
 	unsigned char lt;
 	char dev_ch[32];
+
 # if	defined(HASFDESCFS)
 	struct fdescnode *f = (struct fdescnode *)NULL;
 	struct fdescnode fb;
 # endif	/* defined(HASFDESCFS) */
-	static unsigned long fi;
+
+	static INODETYPE fi;
 	static dev_t fdev, frdev;
 	static int fs = 0;
 	struct inode *i = (struct inode *)NULL;
@@ -329,6 +353,9 @@ process_node(va)
 	struct lockf lf, *lff, *lfp;
 	struct nfsnode *n = (struct nfsnode *)NULL;
 	struct nfsnode nb;
+#else	/* DARWINV>=800 */
+	struct stat sb;
+	char *vn;
 #endif	/* DARWINV<800 */
 
 	char *ty;
@@ -341,19 +368,22 @@ process_node(va)
 	struct hfsnode hb;
 	struct hfsfilemeta *hm = (struct hfsfilemeta *)NULL;
 	struct hfsfilemeta hmb;
-#elif	DARWINV<800
+#else	/* DARWINV>=600 */
+# if	DARWINV<800
 	struct cnode *h = (struct cnode *)NULL;
 	struct cnode hb;
 	struct filefork *hf = (struct filefork *)NULL;
 	struct filefork hfb;
-#endif	/* DARWINV<800 */
+# endif	/* DARWINV<800 */
+#endif	/* DARWINV<600 */
 
 #if	defined(HAS9660FS)
 	dev_t iso_dev;
 	int iso_dev_def = 0;
-	unsigned long iso_ino, iso_sz;
+	INODETYPE iso_ino;
 	long iso_links;
 	int iso_stat = 0;
+	SZOFFTYPE iso_sz;
 #endif	/* defined(HAS9660FS) */
 
 /*
@@ -604,9 +634,10 @@ process_node(va)
 		rdev = i->i_rdev ;
 		rdevs = 1;
 	    }
+	}
 
 # if	defined(HASFDESCFS)
-	} else if (f) {
+	else if (f) {
 	    if (f->fd_link
 	    &&  !kread((KA_T)f->fd_link, Namech, Namechl -1))
 		Namech[Namechl - 1] = '\0';
@@ -622,10 +653,11 @@ process_node(va)
 		    Lf->inode = fi;
 		}
 	    }
+	}
 #  endif	/* DARWINV<600 */
-# endif	defined(HASFDESCFS)
+# endif	/* defined(HASFDESCFS) */
 
-	} else if (h) {
+	else if (h) {
 
 # if	DARWINV<600
 	    dev = hm->h_dev;
@@ -663,17 +695,17 @@ process_node(va)
  * Obtain the inode number.
  */
 	if (i) {
-	    Lf->inode = (unsigned long)i->i_number;
+	    Lf->inode = (INODETYPE)i->i_number;
 	    Lf->inp_ty = 1;
 	} else if (n) {
-	    Lf->inode = (unsigned long)n->n_vattr.va_fileid;
+	    Lf->inode = (INODETYPE)n->n_vattr.va_fileid;
 	    Lf->inp_ty = 1;
 	} else if (h) {
 
 # if	DARWINV<600
-	    Lf->inode = (unsigned long)hm->h_nodeID;
+	    Lf->inode = (INODETYPE)hm->h_nodeID;
 # else	/* DARWINV>=600 */
-	    Lf->inode = (unsigned long)h->c_fileid;
+	    Lf->inode = (INODETYPE)h->c_fileid;
 # endif	/* DARWINV<600 */
 
 	    Lf->inp_ty = 1;
@@ -769,7 +801,7 @@ process_node(va)
 		    Lf->nlink = (long)hm->h_nlink;
 # else	/* DARWINV>=600 */
 		    Lf->nlink = (long)h->c_nlink;
-# endif	/* DARWINV>=600 */
+# endif	/* DARWINV<600 */
 
 		    Lf->nlink_def = 1;
 		}
@@ -786,69 +818,90 @@ process_node(va)
 	    if (Lf->nlink_def && Nlink && (Lf->nlink < Nlink))
 		Lf->sf |= SELNLINK;
 	}
-
 #else	/* DARWINV>=800 */
 
-	if (vnode_getpath((struct vnode *)va, Lf->path, MAXPATHLEN)) {
-	    struct stat	sb;
+/*
+ * Process a vnode for Darwin >= 8.0.
+ */
+	if ((vn = getvpath(va, v))) {
 
-	    if (stat(Lf->path, &sb) == 0) {
+	/*
+	 * If the vnode yields a path, get the file's information by doing
+	 * a "safe" stat(2) of the path.
+	 */
+	    if (!statsafely(vn, &sb)) {
+
+	    /*
+	     * Save file size or offset.
+	     */
 		if (Foffset) {
-		    Lf->off_def = 1;	/* show file offset */
+		    Lf->off_def = 1;
 		} else {
 		    switch (Ntype) {
 		    case N_FIFO:
 			if (!Fsize)
-			    /* show file offset */
 			    Lf->off_def = 1;
 			break;
 		    case N_NFS:
 		    case N_REGLR:
 			if (type == VREG || type == VDIR) {
-			    /* file size, in bytes */
 			    Lf->sz = sb.st_size;
 			    Lf->sz_def = 1;
-			}
-			else if ((type == VCHR || type == VBLK) && !Fsize) {
-			    /* show file offset */
+			} else if ((type == VCHR || type == VBLK) && !Fsize)
 			    Lf->off_def = 1;
-			}
 			break;
 		    }
 		}
-
-		/* inode's number */
-		Lf->inode = sb.st_ino;
+	    /*
+	     * Save node number.
+	     */
+		Lf->inode = (INODETYPE)sb.st_ino;
 		Lf->inp_ty = 1; 
-
+	    /*
+	     * Optionally save link count.
+	     */
 		if (Fnlink) {
-		    /* number or hard links to the file */
 		    Lf->nlink = sb.st_nlink;
 		    Lf->nlink_def = 1;
 		}
-
-		/* device inode resides on */
+	    /*
+	     * Save device number and path.
+	     */
 		switch (v->v_tag) {
 		case VT_DEVFS:
-		    Lf->hasPath = 0;
+		    if (vn)
+			(void) free((FREE_P *)vn);
 		    dev = DevDev;
 		    devs = 1;
 		    break;
 		default :
-		    Lf->hasPath = 1;
+		    Lf->V_path = vn;
 		    dev = sb.st_dev;
 		    devs = 1;
 		    break;
 		}
-
-		/* device type, for special file inode */
+	    /*
+	     * Save character and block device number.
+	     */
 		if ((type == VCHR) || (type == VBLK)) {
 		    rdev = sb.st_rdev;
 		    rdevs = 1;
 		}
-	    }
-	}
+	    } else {
 
+	    /*
+	     * Indicate a stat(2) failure in Namech[].
+	     */
+		(void) snpf(Namech, Namechl, "stat(%s): %s", vn,
+		    strerror(errno));
+		(void) free((FREE_P *)vn);
+	    }
+	/*
+	 * Record an NFS file.
+	 */
+	    if (vfs && !strcmp(vfs->typnm, "nfs"))
+		Ntype = N_NFS;
+	}
 #endif	/* DARWINV>=800 */
 
 /*
@@ -907,11 +960,7 @@ process_node(va)
 	    ty = "FIFO";
 	    break;
 	default:
-	    if (type > 9999)
-		(void) snpf(Lf->type, sizeof(Lf->type), "*%03d", type % 1000);
-	    else
-		(void) snpf(Lf->type, sizeof(Lf->type), "%4d", type);
-	    (void) snpf(Namech, Namechl, "unknown type");
+	    (void) snpf(Lf->type, sizeof(Lf->type), "%04o", (type & 0xfff));
 	    ty = (char *)NULL;
 	}
 	if (ty)
@@ -958,41 +1007,32 @@ process_node(va)
 
 
 #if	DARWINV>=800
-
-/*      
- * print_vnode_path() - print a vnode file path
- *
- * return: 1 if path printed
- *
- * This function is called by the name HASPRIVNMCACHE from printname().
- */
-
-int
-print_vnode_path(lf)
-        struct lfile *lf;               /* file whose name is to be printed */
-{
-	if (lf->hasPath) {
-	    safestrprt(lf->path, stdout, 0);
-	    return(1);
-	}
-	return (0);
-
-}
-
 /*
- * process_pipe() - process a file structure whose type is DTYPE_PIPE
+ * readvname() - read vnode's path name
  */
 
-void
-process_pipe(pa)
-	KA_T pa;			/* pipe structure address */
+static int
+readvname(addr, buf, buflen)
+	KA_T addr;			/* kernel v_path address */
+	char *buf;			/* receiving buffer */
+	int buflen;			/* sizeof(buf) */
 {
-	char dev_ch[32];
-
-	(void) snpf(Lf->type, sizeof(Lf->type), "PIPE");
-	(void) snpf(dev_ch, sizeof(dev_ch), "%#x", pa);
-	enter_dev_ch(dev_ch);
-	Namech[0] = '\0';
+	int n, rl;
+/*
+ * Read the name 32 characters at a time, until a NUL character
+ * has been read or the buffer has been filled.
+ */
+	for (n = 0; n < buflen; addr += 32, n += 32) {
+	    rl = buflen - n;
+	    if (rl > 32)
+		rl = 32;
+	    if (kread(addr, &buf[n], rl))
+		return(0);
+	    buf[n + rl] = '\0';
+	    if ((rl = (int)strlen(&buf[n])) < 32) {
+		return(n + rl);
+	    }
+	}
+	return(0);
 }
-
 #endif	/* DARWINV>=800 */

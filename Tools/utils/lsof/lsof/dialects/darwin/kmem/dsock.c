@@ -1,5 +1,5 @@
 /*
- * dsock.c - Darwin socket processing functions for lsof
+ * dsock.c - Darwin socket processing functions for /dev/kmem-based lsof
  */
 
 /*
@@ -35,7 +35,7 @@
 #ifndef lint
 static char copyright[] =
 "@(#) Copyright 1994 Purdue Research Foundation.\nAll rights reserved.\n";
-static char *rcsid = "$Id: dsock.c,v 1.9 2004/03/10 23:50:16 abe Exp $";
+static char *rcsid = "$Id: dsock.c,v 1.6 2006/04/27 20:28:49 ajn Exp $";
 #endif
 
 
@@ -62,8 +62,8 @@ process_socket(sa)
 {
 	struct domain d;
 	unsigned char *fa = (unsigned char *)NULL;
-	int fam;
-	int fp, lp;
+	int fam, lp;
+	int fp = 0;
 	struct inpcb inp;
 	unsigned char *la = (unsigned char *)NULL;
 	struct protosw p;
@@ -98,7 +98,7 @@ process_socket(sa)
 	    enter_nm("no socket address");
 	    return;
 	}
-	if (kread(sa, (char *) &s, sizeof(s))) {
+	if (kread(sa, (char *)&s, sizeof(s))) {
 	    (void) snpf(Namech, Namechl, "can't read socket struct from %s",
 		print_kptr(sa, (char *)NULL, 0));
 	    enter_nm(Namech);
@@ -145,12 +145,13 @@ process_socket(sa)
 #if	defined(HASSOOPT)
 	Lf->lts.ltm = (unsigned int)(s.so_linger & 0xffff);
 	Lf->lts.opt = (unsigned int)(s.so_options & 0xffff);
+	Lf->lts.pqlen = (unsigned int)s.so_incqlen;
 	Lf->lts.qlen = (unsigned int)s.so_qlen;
 	Lf->lts.qlim = (unsigned int)s.so_qlimit;
 	Lf->lts.rbsz = (unsigned long)s.so_rcv.sb_mbmax;
 	Lf->lts.sbsz = (unsigned long)s.so_snd.sb_mbmax;
-	Lf->lts.qlens = Lf->lts.qlims = Lf->lts.rbszs
-		      = Lf->lts.sbszs = (unsigned char)1;
+	Lf->lts.pqlens = Lf->lts.qlens = Lf->lts.qlims = Lf->lts.rbszs
+		       = Lf->lts.sbszs = (unsigned char)1;
 #endif	/* defined(HASSOOPT) */
 
 #if	defined(HASSOSTATE)
@@ -229,7 +230,7 @@ process_socket(sa)
 	     * Read IPv4 protocol control block.
 	     */
 		if (!s.so_pcb
-		||  kread((KA_T)s.so_pcb, (char *) &inp, sizeof(inp))) {
+		||  kread((KA_T)s.so_pcb, (char *)&inp, sizeof(inp))) {
 		    if (!s.so_pcb) {
 			(void) snpf(Namech, Namechl, "no PCB%s%s",
 			    (s.so_state & SS_CANTSENDMORE) ? ", CANTSENDMORE"
@@ -311,7 +312,7 @@ process_socket(sa)
 	 * Read protocol control block.
 	 */
 	    if (!s.so_pcb
-	    ||  kread((KA_T) s.so_pcb, (char *) &ndrv_cb, sizeof(ndrv_cb))) {
+	    ||  kread((KA_T)s.so_pcb, (char *)&ndrv_cb, sizeof(ndrv_cb))) {
 		(void) snpf(Namech, Namechl, "can't read ndrv_cb at %s",
 		    print_kptr((KA_T)s.so_pcb, (char *)NULL, 0));
 		enter_nm(Namech);
@@ -324,15 +325,15 @@ process_socket(sa)
 	/*
 	 * Print device name, if bound
 	 */
-	    if (!ndrv_cb.nd_if ||
-		kread((KA_T) ndrv_cb.nd_if, (char *) &ifnet, sizeof(ifnet))){
+	    if (!ndrv_cb.nd_if
+	    ||  kread((KA_T)ndrv_cb.nd_if, (char *)&ifnet, sizeof(ifnet))) {
 		(void) snpf(Namech, Namechl, "can't read ifnet at %s",
 			    print_kptr((KA_T)ndrv_cb.nd_if, (char *)NULL, 0));
 		enter_nm(Namech);
 		return;
 	    }
-	    if (!ifnet.if_name ||
-		kread((KA_T) ifnet.if_name, buf, sizeof(buf))){
+	    if (!ifnet.if_name
+	    ||  kread((KA_T)ifnet.if_name, buf, sizeof(buf))) {
 		(void) snpf(Namech, Namechl, "can't read ifnet.if_name at %s",
 			    print_kptr((KA_T)ifnet.if_name, (char *)NULL, 0));
 		enter_nm(Namech);
@@ -357,13 +358,12 @@ process_socket(sa)
  * Process a SYSTEM domain socket
  */
 	case AF_SYSTEM:
-	{
 	    (void) snpf(Lf->type, sizeof(Lf->type), "systm");
 	/*
 	 * Read protocol control block.
 	 */
 	    if (!s.so_pcb
-	    ||  kread((KA_T) s.so_pcb, (char *) &kev_cb, sizeof(kev_cb))) {
+	    ||  kread((KA_T)s.so_pcb, (char *)&kev_cb, sizeof(kev_cb))) {
 		(void) snpf(Namech, Namechl, "can't read kev_cb at %s",
 		    print_kptr((KA_T)s.so_pcb, (char *)NULL, 0));
 		enter_nm(Namech);
@@ -373,21 +373,10 @@ process_socket(sa)
 	 * Print SYSTEM socket information.
 	 */
 	    enter_dev_ch(print_kptr((KA_T)(s.so_pcb), (char *)NULL, 0));
-	/*
-	 * Determine SYSTEM protocol...
-	 */
-	    if ( kread((KA_T) s.so_pcb, (char *) &kev_cb, sizeof(kev_cb))) {
-		(void) snpf(Namech, Namechl, "can't read kev_cb at %s",
-		    print_kptr((KA_T)s.so_pcb, (char *)NULL, 0));
-		enter_nm(Namech);
-		return;
-	    }
 	    (void) snpf(Namech, Namechl, "[%lx:%lx:%lx]",
 			kev_cb.vendor_code_filter,
-			kev_cb.class_filter,
-			kev_cb.subclass_filter);
-	}
-	break;
+			kev_cb.class_filter, kev_cb.subclass_filter);
+	    break;
 #endif	/* defined(AF_SYSTEM) */
 
 #if	defined(AF_PPP)
@@ -423,7 +412,8 @@ process_socket(sa)
 	 */
 
 	    enter_dev_ch(print_kptr(sa, (char *)NULL, 0));
-	    if (kread((KA_T) s.so_pcb, (char *) &unp, sizeof(unp))) {
+	    if (!s.so_pcb
+	    ||  kread((KA_T)s.so_pcb, (char *)&unp, sizeof(unp))) {
 		(void) snpf(Namech, Namechl, "can't read unpcb at %s",
 		    print_kptr((KA_T)s.so_pcb, (char *)NULL, 0));
 		break;

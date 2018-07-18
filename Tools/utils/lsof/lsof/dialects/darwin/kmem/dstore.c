@@ -1,5 +1,5 @@
 /*
- * dstore.c - Darwin global storage for lsof
+ * dstore.c - Darwin global storage for /dev/kmem-based lsof
  */
 
 
@@ -32,7 +32,7 @@
 #ifndef lint
 static char copyright[] =
 "@(#) Copyright 1994 Purdue Research Foundation.\nAll rights reserved.\n";
-static char *rcsid = "$Id: dstore.c,v 1.3 2004/03/10 23:50:16 abe Exp $";
+static char *rcsid = "$Id: dstore.c,v 1.6 2006/04/27 20:28:49 ajn Exp $";
 #endif
 
 
@@ -81,6 +81,7 @@ struct pff_tab Pff_tab[] = {
 	{ (long)FDEFER,		FF_DEFER	},
 	{ (long)FHASLOCK,	FF_HASLOCK	},
 	{ (long)O_NOCTTY,	FF_NOCTTY	},
+	{ (long)O_EVTONLY,	FF_EVTONLY	},
 	{ (long)0,		NULL 		}
 };
 

@@ -1,13 +1,16 @@
 /*
- * dmnt.c - Darwin device support functions for lsof
+ * ddev.c -- Darwin device support functions for libproc-based lsof
  */
 
 
 /*
- * Copyright 1994 Purdue Research Foundation, West Lafayette, Indiana
+ * Portions Copyright 2005 Apple Computer, Inc.  All rights reserved.
+ *
+ * Copyright 2005 Purdue Research Foundation, West Lafayette, Indiana
  * 47907.  All rights reserved.
  *
- * Written by Victor A. Abell
+ * Written by Allan Nathanson, Apple Computer, Inc., and Victor A.
+ * Abell, Purdue University.
  *
  * This software is not subject to any license of the American Telephone
  * and Telegraph Company or the Regents of the University of California.
@@ -16,12 +19,13 @@
  * any computer system, and to alter it and redistribute it freely, subject
  * to the following restrictions:
  *
- * 1. Neither the authors nor Purdue University are responsible for any
- *    consequences of the use of this software.
+ * 1. Neither the authors, nor Apple Computer, Inc. nor Purdue University
+ *    are responsible for any consequences of the use of this software.
  *
- * 2. The origin of this software must not be misrepresented, either by
- *    explicit claim or by omission.  Credit to the authors and Purdue
- *    University must appear in documentation and sources.
+ * 2. The origin of this software must not be misrepresented, either
+ *    by explicit claim or by omission.  Credit to the authors, Apple
+ *    Computer, Inc. and Purdue University must appear in documentation
+ *    and sources.
  *
  * 3. Altered versions must be plainly marked as such, and must not be
  *    misrepresented as being the original software.
@@ -29,10 +33,11 @@
  * 4. This notice may not be removed or altered.
  */
 
+
 #ifndef lint
 static char copyright[] =
-"@(#) Copyright 1994 Purdue Research Foundation.\nAll rights reserved.\n";
-static char *rcsid = "$Id: ddev.c,v 1.2 2000/12/05 23:51:27 abe Exp $";
+"@(#) Copyright 2005 Apple Computer, Inc. and Purdue Research Foundation.\nAll rights reserved.\n";
+static char *rcsid = "$Id: ddev.c,v 1.1 2005/11/06 12:49:50 abe Exp abe $";
 #endif
 
 
@@ -48,6 +53,9 @@ static char *rcsid = "$Id: ddev.c,v 1.2 2000/12/05 23:51:27 abe Exp $";
 #else	/* !defined(DVCH_DEVPATH) */
 #define	DDEV_DEVPATH	"/dev"
 #endif	/* defined(DVCH_DEVPATH) */
+
+#define	LIKE_BLK_SPEC	"like block special"
+#define	LIKE_CHR_SPEC	"like character special"
 
 #if	defined(USE_STAT)
 #define	STATFN	stat
@@ -109,7 +117,69 @@ HASSPECDEVD(p, s)
 
 
 /*
- * readdev() - read device names, modes and types
+ * printdevname() -- print character device name
+ */
+
+int
+printdevname(dev, rdev, f, nty)
+	dev_t	*dev;		/* device */
+	dev_t	*rdev;		/* raw device */
+	int	f;		/* 1 = follow with '\n' */
+	int	nty;		/* node type: N_BLK or N_chr */
+{
+	char *cp, *ttl;
+	struct l_dev *dp;
+	int i, len;
+/*
+ * See if the device node resides in DDEV_DEVPATH.  If it does, return zero
+ * to indicate the vnode path is to be used for the NAME column.
+ */
+	if (*dev == DevDev)
+	    return(0);
+	readdev(0);
+	for (i = 0; i < ADevU; i++) {
+	    if (*dev == ADev[i])
+		return(0);
+	}
+/*
+ * This device is not in DDEV_DEVPATH.
+ *
+ * See if it has a DDEV_DEVPATH analogue by searching the device table for a
+ * match without inode number and dev.
+ */
+
+#if	defined(HASBLKDEV)
+	if (nty == N_BLK)
+	    dp = lkupbdev(&DevDev, rdev, 0, 1);
+	else
+#endif	/* defined(HASBLKDEV) */
+
+	    dp = lkupdev(&DevDev, rdev, 0, 1);
+	if (dp) {
+
+	/*
+	 * A match was found.  Record it as a name column addition.
+	 */
+	    ttl = (nty == N_BLK) ? LIKE_BLK_SPEC : LIKE_CHR_SPEC;
+	    len = (int)(1 + strlen(ttl) + 1 + strlen(dp->name) + 1);
+	    if (!(cp = (char *)malloc((MALLOC_S)(len + 1)))) {
+		(void) fprintf(stderr, "%s: no nma space for: (%s %s)\n",
+		    Pn, ttl, dp->name);
+		Exit(1);
+	    }
+	    (void) snpf(cp, len + 1, "(%s %s)", ttl, dp->name);
+	    (void) add_nma(cp, len);
+	    (void) free((MALLOC_P *)cp);
+	}
+/*
+ * Return zero to indicate the vnode path is to be used for the NAME column.
+ */
+	return(0);
+}
+
+
+/*
+ * readdev() -- read device names, modes and types
  */
 
 void
@@ -246,7 +316,7 @@ readdev(skip)
 			}
 		    }
 		    Devtp[i].rdev = sb.st_rdev;
-		    Devtp[i].inode = sb.st_ino;
+		    Devtp[i].inode = (INODETYPE)sb.st_ino;
 		    if (!(Devtp[i].name = mkstrcpy(fp, (MALLOC_S *)NULL))) {
 			(void) fprintf(stderr,
 			    "%s: no space for device name: ", Pn);
@@ -279,7 +349,7 @@ readdev(skip)
 		    }
 		    BDevtp[j].name = fp;
 		    fp = (char *)NULL;
-		    BDevtp[j].inode = sb.st_ino;
+		    BDevtp[j].inode = (INODETYPE)sb.st_ino;
 		    BDevtp[j].rdev = sb.st_rdev;
 		    BDevtp[j].v = 0;
 		    j++;

@@ -1,10 +1,10 @@
 /*
- * rdev.c -- readdev() function for lsof library
+ * ddev.c - Darwin device support functions for /dev/kmem-based lsof
  */
 
 
 /*
- * Copyright 1997 Purdue Research Foundation, West Lafayette, Indiana
+ * Copyright 1994 Purdue Research Foundation, West Lafayette, Indiana
  * 47907.  All rights reserved.
  *
  * Written by Victor A. Abell
@@ -29,88 +29,83 @@
  * 4. This notice may not be removed or altered.
  */
 
-
-#include "../machine.h"
-
-#if	defined(USE_LIB_READDEV)
-
-# if	!defined(lint)
+#ifndef lint
 static char copyright[] =
-"@(#) Copyright 1997 Purdue Research Foundation.\nAll rights reserved.\n";
-static char *rcsid = "$Id: rdev.c,v 1.11 2005/08/08 19:41:18 abe Exp $";
-# endif	/* !defined(lint) */
-
-#include "../lsof.h"
+"@(#) Copyright 1994 Purdue Research Foundation.\nAll rights reserved.\n";
+static char *rcsid = "$Id: ddev.c,v 1.6 2006/04/27 20:28:48 ajn Exp $";
+#endif
 
 
-_PROTOTYPE(static int rmdupdev,(struct l_dev ***dp, int n, char *nm));
+#include "lsof.h"
 
 
 /*
- * To use this source file:
- *
- * 1. Define DIRTYPE as:
- *
- *	  #define DIRTYPE direct
- *    or  #define DIRTYPE dirent
- *
- * 2. Define HASDNAMLEN if struct DIRTYPE has a d_namlen element, giving
- *    the length of d_name.
- *
- * 3. Define the RDEV_EXPDEV macro to apply special handling to device
- *    numbers, as required.  For example, for EP/IX 2.1.1:
- *
- *	#define RDEV_EXPDEV(n)	expdev(n)
- *
- *    to use the expdev() function to expand device numbers.  If
- *    no RDEV_EXPDEV macro is defined, it defaults to:
- *
- *	#define RDEV_EXPDEV(n)	(n)
- *
- * 4. Define HASBLKDEV to request that information on S_IFBLK devices be
- *    recorded in BDevtp[].
- *
- *    Define NOWARNBLKDEV to suppress the issuance of a warning when no
- *    block devices are found.
- *
- * 5. Define RDEV_STATFN to be a stat function other than stat() or lstat()
- *    -- e.g.,
- *
- *	#define	RDEV_STATFN	private_stat
- *
- * 6. Define HAS_STD_CLONE to request that clone device information be stored
- *    in standard clone structures (defined in lsof.h and addressed via
- *    Clone).  If HAS_STD_CLONE is defined, these must also be defined:
- *
- *	a.  Define CLONEMAJ to be the name of the constant or
- *	    variable that defines the clone major device -- e.g.,
- *
- *		#define CLONEMAJ CloneMaj
- *
- *	b.  Define HAVECLONEMAJ to be the name of the variable that
- *	    contains the status of the clone major device -- e.g.,
- *
- *		#define HAVECLONEMAJ HaveCloneMaj
- *
- *    Define HAS_STD_CLONE to be 1 if readdev() is expected to build the
- *    clone table, the clone table is cached (if HASDCACHE is defined), and
- *    there is a function to clear the cache table when the device table must
- *    be reloaded.  (See dvch.c for naming the clone cache build and clear
- *    functions.)
+ * Local definitions
  */
 
+#if	defined(DVCH_DEVPATH)
+#define	DDEV_DEVPATH	DVCH_DEVPATH
+#else	/* !defined(DVCH_DEVPATH) */
+#define	DDEV_DEVPATH	"/dev"
+#endif	/* defined(DVCH_DEVPATH) */
 
-# if	!defined(RDEV_EXPDEV)
-#define	RDEV_EXPDEV(n)		(n)
-# endif	/* !defined(RDEV_EXPDEV) */
+#if	defined(USE_STAT)
+#define	STATFN	stat
+#else	/* !defined(USE_STAT) */
+#define	STATFN	lstat
+#endif	/* defined(USE_STAT) */
 
-# if	!defined(RDEV_STATFN)
-#  if	defined(USE_STAT)
-#define	RDEV_STATFN	stat
-#  else	/* !defined(USE_STAT) */
-#define	RDEV_STATFN	lstat
-#  endif	/* defined(USE_STAT) */
-# endif	/* !defined(RDEV_STATFN) */
+
+/*
+ * Local static variables.
+ */
+
+static dev_t *ADev = (dev_t *) NULL;	/* device numbers besides DevDev found
+					 * inside DDEV_DEVPATH */
+static int ADevA = 0;			/* entries allocated to ADev[] */
+static int ADevU = 0;			/* entries used in ADev[] */
+
+
+/*
+ * Local function prototypes
+ */
+
+_PROTOTYPE(static int rmdupdev,(struct l_dev ***dp, int n, char *nm));
+_PROTOTYPE(static void saveADev,(struct stat *s));
+
+
+#if	defined(HASSPECDEVD)
+/*
+ * HASSPECDEVD() -- process stat(2) result to see if the device number is
+ *		    inside DDEV_DEVPATH "/"
+ *
+ * exit: s->st_dev changed to DevDev, as required
+ */
+
+void
+HASSPECDEVD(p, s)
+	char *p;			/* file path */
+	struct stat *s;			/* stat(2) result for file */
+{
+	int i;
+
+	switch (s->st_mode & S_IFMT) {
+	case S_IFCHR:
+	case S_IFBLK:
+	    if (s->st_dev == DevDev)
+		return;
+	    (void) readdev(0);
+	    if (!ADev)
+		return;
+	    for (i = 0; i < ADevU; i++) {
+		if (s->st_dev == ADev[i]) {
+		    s->st_dev = DevDev;
+		    return;
+		}
+	    }
+	}
+}
+#endif	/* defined(HASSPECDEVD) */
 
 
 /*
@@ -119,52 +114,32 @@ _PROTOTYPE(static int rmdupdev,(struct l_dev ***dp, int n, char *nm));
 
 void
 readdev(skip)
-	int skip;			/* skip device cache read if 1 */
+	int skip;			/* skip device cache read if 1 --
+					 * ignored since device cache not
+					 * used */
 {
-
-# if	defined(HAS_STD_CLONE) && HAS_STD_CLONE==1
-	struct clone *c;
-# endif	/* defined(HAS_STD_CLONE) && HAS_STD_CLONE==1 */
-
-# if	defined(HASDCACHE)
-	int dcrd;
-# endif	/* defined(HASDCACHE) */
-
 	DIR *dfp;
 	int dnamlen;
-	struct DIRTYPE *dp;
+	struct dirent *dp;
 	char *fp = (char *)NULL;
-	int i = 0;
-
-# if	defined(HASBLKDEV)
-	int j = 0;
-# endif	/* defined(HASBLKDEV) */
-
 	char *path = (char *)NULL;
-	MALLOC_S pl;
+	int i = 0;
+	int j = 0;
+	MALLOC_S pl, sz;
 	struct stat sb;
-
+/*
+ * Read device names but once.
+ */
 	if (Sdev)
 	    return;
-
-# if	defined(HASDCACHE)
 /*
- * Read device cache, as directed.
+ * Prepare to scan DDEV_DEVPATH.
  */
-	if (!skip) {
-	    if (DCstate == 2 || DCstate == 3) {
-		if ((dcrd = read_dcache()) == 0)
-		    return;
-	    }
-	} else
-	    dcrd = 1;
-# endif	/* defined(HASDCACHE) */
-
 	Dstkn = Dstkx = 0;
 	Dstk = (char **)NULL;
-	(void) stkdir("/dev");
+	(void) stkdir(DDEV_DEVPATH);
 /*
- * Unstack the next /dev or /dev/<subdirectory> directory.
+ * Unstack the next directory.
  */
 	while (--Dstkx >= 0) {
 	    if (!(dfp = OpenDir(Dstk[Dstkx]))) {
@@ -202,13 +177,7 @@ readdev(skip)
 	    /*
 	     * Form the full path name and get its status.
 	     */
-
-# if	defined(HASDNAMLEN)
 		dnamlen = (int)dp->d_namlen;
-# else	/* !defined(HASDNAMLEN) */
-		dnamlen = (int)strlen(dp->d_name);
-# endif	/* defined(HASDNAMLEN) */
-
 		if (fp) {
 		    (void) free((FREE_P *)fp);
 		    fp = (char *)NULL;
@@ -221,7 +190,7 @@ readdev(skip)
 		    safestrprtn(dp->d_name, dnamlen, stderr, 1);
 		    Exit(1);
 		}
-		if (RDEV_STATFN(fp, &sb) != 0) {
+		if (STATFN(fp, &sb) != 0) {
 		    if (errno == ENOENT)	/* a sym link to nowhere? */
 			continue;
 
@@ -242,7 +211,19 @@ readdev(skip)
 	     * processing.
 	     */
 		if ((sb.st_mode & S_IFMT) == S_IFDIR) {
-		    (void) stkdir(fp);
+
+		/*
+		 * Skip /dev/fd.
+		 */
+		    if (strcmp(fp, "/dev/fd"))
+			(void) stkdir(fp);
+		    continue;
+		}
+		if ((sb.st_mode & S_IFMT) == S_IFLNK) {
+
+		/*
+		 * Ignore symbolic links.
+		 */
 		    continue;
 		}
 		if ((sb.st_mode & S_IFMT) == S_IFCHR) {
@@ -264,7 +245,7 @@ readdev(skip)
 			    Exit(1);
 			}
 		    }
-		    Devtp[i].rdev = RDEV_EXPDEV(sb.st_rdev);
+		    Devtp[i].rdev = sb.st_rdev;
 		    Devtp[i].inode = (INODETYPE)sb.st_ino;
 		    if (!(Devtp[i].name = mkstrcpy(fp, (MALLOC_S *)NULL))) {
 			(void) fprintf(stderr,
@@ -273,27 +254,6 @@ readdev(skip)
 			Exit(1);
 		    }
 		    Devtp[i].v = 0;
-
-# if	defined(HAS_STD_CLONE) && HAS_STD_CLONE==1
-		    if (HAVECLONEMAJ && GET_MAJ_DEV(Devtp[i].rdev) == CLONEMAJ)
-		    {
-
-		    /*
-		     * Record clone device information.
-		     */
-			if (!(c = (struct clone *)malloc(sizeof(struct clone))))
-			{
-			    (void) fprintf(stderr,
-				"%s: no space for clone device: ", Pn);
-			    safestrprt(fp, stderr, 1);
-			    Exit(1);
-			}
-			c->dx = i;
-			c->next = Clone;
-			Clone = c;
-		    }
-# endif	/* defined(HAS_STD_CLONE) && HAS_STD_CLONE==1 */
-
 		    i++;
 		}
 
@@ -320,18 +280,48 @@ readdev(skip)
 		    BDevtp[j].name = fp;
 		    fp = (char *)NULL;
 		    BDevtp[j].inode = (INODETYPE)sb.st_ino;
-		    BDevtp[j].rdev = RDEV_EXPDEV(sb.st_rdev);
+		    BDevtp[j].rdev = sb.st_rdev;
 		    BDevtp[j].v = 0;
 		    j++;
 		}
 # endif	/* defined(HASBLKDEV) */
 
+	    /*
+	     * Save a possible new st_dev number within DDEV_DEVPATH.
+	     */
+		if (sb.st_dev != DevDev)
+		    (void) saveADev(&sb);
 	    }
 	    (void) CloseDir(dfp);
 	}
 /*
- * Free any allocated space.
+ * Free any unneeded space that was allocated.
  */
+	if (ADev && (ADevU < ADevA)) {
+
+	/*
+	 * Reduce space allocated to additional DDEV_DEVPATH device numbers.
+	 */
+	    if (!ADevU) {
+
+	    /*
+	     * If no space was used, free the entire allocation.
+	     */
+		(void) free((FREE_P *)ADev);
+		ADev = (dev_t *)NULL;
+		ADevA = 0;
+	    } else {
+
+	    /*
+	     * Reduce the allocation to what was used.
+	     */
+		sz = (MALLOC_S)(ADevU * sizeof(dev_t));
+		if (!(ADev = (dev_t *)realloc((MALLOC_P *)ADev, sz))) {
+		    (void) fprintf(stderr, "%s: can't reduce ADev[]\n", Pn);
+		    Exit(1);
+		}
+	    }
+	}
 	if (!Dstk) {
 	    (void) free((FREE_P *)Dstk);
 	    Dstk = (char **)NULL;
@@ -400,36 +390,7 @@ readdev(skip)
 	    (void) fprintf(stderr, "%s: no character devices found\n", Pn);
 	    Exit(1);
 	}
-
-# if	defined(HASDCACHE)
-/*
- * Write device cache file, as required.
- */
-	if (DCstate == 1 || (DCstate == 3 && dcrd))
-	    write_dcache();
-# endif	/* defined(HASDCACHE) */
-
 }
-
-
-# if	defined(HASDCACHE)
-/*
- * rereaddev() - reread device names, modes and types
- */
-
-void
-rereaddev()
-{
-	(void) clr_devtab();
-
-# if	defined(DCACHE_CLR)
-	(void) DCACHE_CLR();
-# endif	/* defined(DCACHE_CLR) */
-
-	readdev(1);
-	DCunsafe = 0;
-}
-#endif	/* defined(HASDCACHE) */
 
 
 /*
@@ -442,11 +403,6 @@ rmdupdev(dp, n, nm)
 	int n;			/* number of pointers */
 	char *nm;		/* device table name for error message */
 {
-
-# if	defined(HAS_STD_CLONE) && HAS_STD_CLONE==1
-	struct clone *c, *cp;
-# endif	/* defined(HAS_STD_CLONE) && HAS_STD_CLONE==1 */
-
 	int i, j, k;
 	struct l_dev **p;
 
@@ -454,27 +410,6 @@ rmdupdev(dp, n, nm)
 	    for (k = i + 1; k < n; k++) {
 		if (p[i]->rdev != p[k]->rdev || p[i]->inode != p[k]->inode)
 		    break;
-
-# if	defined(HAS_STD_CLONE) && HAS_STD_CLONE==1
-	    /*
-	     * See if we're deleting a duplicate clone device.  If so,
-	     * delete its clone table entry.
-	     */
-		for (c = Clone, cp = (struct clone *)NULL;
-		     c;
-		     cp = c, c = c->next)
-		{
-		    if (&Devtp[c->dx] != p[k])
-			continue;
-		    if (!cp)
-			Clone = c->next;
-		    else
-			cp->next = c->next;
-		    (void) free((FREE_P *)c);
-		    break;
-		}
-# endif	/* defined(HAS_STD_CLONE) && HAS_STD_CLONE==1 */
-
 	    }
 	    if (i != j)
 		p[j] = p[i];
@@ -494,31 +429,51 @@ rmdupdev(dp, n, nm)
 }
 
 
-# if	defined(HASDCACHE)
 /*
- * vfy_dev() - verify a device table entry (usually when DCunsafe == 1)
- *
- * Note: rereads entire device table when an entry can't be verified.
+ * saveADev() - save additional device number appearing inside DDEV_DEVPATH
  */
 
-int
-vfy_dev(dp)
-	struct l_dev *dp;		/* device table pointer */
+static void
+saveADev(s)
+	struct stat *s;			/* stat(2) buffer for file */
 {
-	struct stat sb;
+	int i;
+	MALLOC_S sz;
+/*
+ * Process VCHR files.
+ *
+ * Optionally process VBLK files.
+ */
 
-	if (!DCunsafe || dp->v)
-	    return(1);
-	if (RDEV_STATFN(dp->name, &sb) != 0
-	||  dp->rdev != RDEV_EXPDEV(sb.st_rdev)
-	||  dp->inode != sb.st_ino) {
-	   (void) rereaddev();
-	   return(0);
+#if	defined(HASBLKDEV)
+	if (((s->st_mode & S_IFMT) != S_IFBLK)
+	&&  ((s->st_mode & S_IFMT) != S_IFCHR))
+#else	/* !defined(HASBLKDEV) */
+	if ((s->st_mode & S_IFCHR) != S_IFCHR)
+#endif	/* defined(HASBLKDEV) */
+
+		return;
+/*
+ * See if this is a new VBLK or VCHR st_dev value for ADev[].
+ */
+	for (i = 0; i < ADevU; i++) {
+	    if (s->st_dev == ADev[i])
+		return;
 	}
-	dp->v = 1;
-	return(1);
+/*
+ * This is a new device number to add to ADev[].
+ */
+	if (ADevU >= ADevA) {
+	    ADevA += 16;
+	    sz = (MALLOC_S)(ADevA * sizeof(dev_t));
+	    if (ADev)
+		ADev = (dev_t *)realloc((MALLOC_P *)ADev, sz);
+	    else
+		ADev = (dev_t *)malloc(sz);
+	    if (!ADev) {
+		(void) fprintf(stderr, "%s: no space for ADev[]\n", Pn);
+		Exit(1);
+	    }
+	}
+	ADev[ADevU++] = s->st_dev;
 }
-# endif	/* defined(HASDCACHE) */
-#else	/* !defined(USE_LIB_READDEV) */
-static char d1[] = "d"; static char *d2 = d1;
-#endif	/* defined(USE_LIB_READDEV) */

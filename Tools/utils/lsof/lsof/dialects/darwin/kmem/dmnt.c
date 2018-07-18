@@ -1,5 +1,5 @@
 /*
- * dmnt.c - Darwin mount support functions for lsof
+ * dmnt.c - Darwin mount support functions for /dev/kmem-based lsof
  */
 
 
@@ -32,7 +32,7 @@
 #ifndef lint
 static char copyright[] =
 "@(#) Copyright 1994 Purdue Research Foundation.\nAll rights reserved.\n";
-static char *rcsid = "$Id: dmnt.c,v 1.2 2002/06/17 01:41:42 abe Exp $";
+static char *rcsid = "$Id: dmnt.c,v 1.6 2006/04/27 20:28:48 ajn Exp $";
 #endif
 
 
@@ -139,7 +139,7 @@ no_space_for_mount:
 	    mtp->next = Lmi;
 	    mtp->dev = sb.st_dev;
 	    mtp->rdev = sb.st_rdev;
-	    mtp->inode = sb.st_ino;
+	    mtp->inode = (INODETYPE)sb.st_ino;
 	    mtp->mode = sb.st_mode;
 	/*
 	 * Interpolate a possible file system (mounted-on) device name link.

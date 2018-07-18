@@ -1,5 +1,5 @@
 /*
- * machine.h - Darwin definitions for lsof
+ * machine.h - Darwin definitions for /dev/kmem-based lsof
  */
 
 
@@ -31,7 +31,7 @@
 
 
 /*
- * $Id: machine.h,v 1.11 2004/10/17 21:54:38 abe Exp $
+ * $Id: machine.h,v 1.6 2006/04/27 20:28:49 ajn Exp $
  */
 
 
@@ -42,9 +42,9 @@
 #include <sys/types.h>
 #include <sys/param.h>
 
-#if	DARWINV>=800
+# if	DARWINV>=800
 #include "/usr/include/string.h"
-#endif	/* DARWINV>=800 */
+# endif	/* DARWINV>=800 */
 
 
 /*
@@ -148,10 +148,19 @@
  * FSV_DEFAULT defines the default set of file structure values to list.
  * It defaults to zero (0), but may be made up of a combination of the
  * FSV_* symbols from lsof.h.
+ *
+ *   HASNOFSADDR  -- has no file structure address
+ *   HASNOFSFLAGS -- has no file structure flags
+ *   HASNOFSCOUNT -- has no file structure count
+ *   HASNOFSNADDR -- has no file structure node address
  */
 
 #define	HASFSTRUCT	1
 /* #define	FSV_DEFAULT	FSV_? | FSV_? | FSV_? */
+/* #define	HASNOFSADDR	1	has no file structure address */
+/* #define	HASNOFSFLAGS	1	has no file structure flags */
+/* #define	HASNOFSCOUNT	1	has no file structure count */
+/* #define	HASNOFSNADDR	1	has no file structure node address */
 
 
 /*
@@ -173,9 +182,9 @@
  * use readinode() from node.c.
  */
 
-#if	DARWINV<800
+# if	DARWINV<800
 #define	HASINODE	1
-#endif	/* DARWINV<800 */
+# endif	/* DARWINV<800 */
 
 
 /*
@@ -207,16 +216,35 @@
  * in struct lfile.  The HASLFILEADD definition is a macro that defines
  * them.  If any of the additional elements need to be preset in the
  * alloc_lfile() function of proc.c, the SETLFILEADD macro may be defined
- * to do that.  The HASXOPT definition may be used to select the conditions
- * under which private lfile elements are used.
+ * to do that.
+ *
+ * If any additional elements need to be cleared in alloc_lfile() or in the
+ * free_proc() function of proc.c, the CLRLFILEADD macro may be defined to
+ * do that.  Note that CLRLFILEADD takes one argument, the pointer to the
+ * lfile struct.  The CLRLFILEADD macro is expected to expand to statements
+ * that are complete -- i.e., have terminating semi-colons -- so the macro is
+ * called without a terminating semicolon by proc.c.
+ *
+ * The HASXOPT definition may be used to select the conditions under which
+ * private lfile elements are used.
  */
 
-/* #define HASLFILEADD int ... */
-/* #define SETLFILEADD Lf->... */
-#if	DARWINV>=800
-#define HASLFILEADD int hasPath; char path[MAXPATHLEN+1];
-#define SETLFILEADD Lf->hasPath=0; Lf->path[0]='\0';
-#endif	/* DARWINV>=800 */
+# if	DARWINV>=800
+#define	HASLFILEADD char *V_path;
+#define CLRLFILEADD(lf)	if (lf->V_path) { \
+			    (void) free((FREE_P *)lf->V_path); \
+			    lf->V_path = (char *)NULL; \
+			}
+#define SETLFILEADD Lf->V_path = (char *)NULL;
+# endif	/* DARWINV>=800 */
+
+
+/*
+ * HASMNTSTAT indicates the dialect supports the mount stat(2) result option
+ * in its l_vfs and mounts structures.
+ */
+
+/* #define	HASMNTSTAT	1	*/
 
 
 /*
@@ -245,11 +273,15 @@
  * NCACHELDSFX is a set of C commands to execute after calling ncache_load().
  */
 
-#if	DARWINV<800
+# if	DARWINV<800
 #define	HASNCACHE	1
-#endif	/* DARWINV<800 */
 /* #define	NCACHELDPFX	??? */
 /* #define	NCACHELDSFX	??? */
+# else	/* DARWINV>=800 */
+/* #define	HASNCACHE	1   */
+/* #define	NCACHELDPFX	??? */
+/* #define	NCACHELDSFX	??? */
+# endif	/* DARWINV<800 */
 
 
 /*
@@ -268,9 +300,11 @@
  * NOTE: don't forget to define a prototype for this function in dproto.h.
  */
 
-#if	DARWINV>=800
+# if	DARWINV<800
+/* #define	HASPIPEFN	process_pipe? */
+# else	/* DARWINV>=800 */
 #define	HASPIPEFN	process_pipe
-#endif	/* DARWINV >= 800 */
+# endif	/* DARWINV<800 */
 
 
 /*
@@ -332,10 +366,11 @@
  * returns non-zero if it prints a name to stdout.
  */
 
+# if	DARWINV<800
 /* #define	HASPRIVNMCACHE	<function name>	*/
-#if	DARWINV>=800
-#define	HASPRIVNMCACHE	print_vnode_path
-#endif	/* DARWINV>=800 */
+# else	/* DARWINV>=800 */
+#define	HASPRIVNMCACHE	print_v_path
+# endif	/* DARWINV<800 */
 
 
 /*
@@ -514,6 +549,22 @@
 
 
 /*
+ * INODETYPE and INODEPSPEC define the internal node number type and its
+ * printf specification modifier.  These need not be defined and lsof.h
+ * can be allowed to define defaults.
+ *
+ * These are defined here, because they must be used in dlsof.h.
+ */
+
+# if	DARWINV>=800
+#define	INODETYPE	unsigned long long
+					/* inode number internal storage type */
+#define	INODEPSPEC	"ll"		 /* INODETYPE printf specification
+					 * modifier */
+# endif	/* DARWINV>=800 */
+
+
+/*
  * UID_ARG defines the size of a User ID number when it is passed
  * as a function argument.
  */
@@ -542,11 +593,13 @@
 /* #define	USE_LIB_READMNT			1	   rmnt.c */
 /* #define	USE_LIB_REGEX			1	   regex.c */
 /* #define	USE_LIB_RNAM			1	   rnam.c */
+
 #if	DARWINV<800
 #define	USE_LIB_RNMH				1	/* rnmh.c */
-#else	/* DARWINV>=800 */
+#else	/* DARWINV>800 */
 /* #define	USE_LIB_RNMH			1	   rnmh.c */
-#endif	/* DARWINV>=800 */
+#endif	/* DARWINV<800 */
+
 /* #define	USE_LIB_RNCH			1	   rnch.c */
 /* #define	USE_LIB_SNPF			1	   snpf.c */
 #define	snpf	snprintf	/* use the system's snprintf() */

@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Mksrc - make Darwin source files
+# Mksrc - make Darwin /dev/kmem-based lsof source files
 #
 # WARNING: This script assumes it is running from the main directory
 #	   of the lsof, version 4 distribution.
@@ -10,10 +10,10 @@
 # LSOF_MKC	is the method for creating the source files.
 #		It defaults to "ln -s".  A common alternative is "cp".
 #
-# $Id: Mksrc,v 1.2 2000/11/30 18:44:31 abe Exp $
+# $Id: Mksrc,v 1.6 2006/04/27 20:28:48 ajn Exp $
 
 
-D=dialects/darwin
+D=dialects/darwin/kmem
 L="dlsof.h ddev.c dfile.c dmnt.c dnode.c dnode1.c dproc.c dproto.h dsock.c dstore.c machine.h"
 
 for i in $L

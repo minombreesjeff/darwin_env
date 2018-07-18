@@ -1,5 +1,5 @@
 /*
- * dproc.c - Darwin process access functions for lsof
+ * dproc.c - Darwin process access functions for /dev/kmem-based lsof
  */
 
 
@@ -32,10 +32,11 @@
 #ifndef lint
 static char copyright[] =
 "@(#) Copyright 1994 Purdue Research Foundation.\nAll rights reserved.\n";
-static char *rcsid = "$Id: dproc.c,v 1.6 2004/03/10 23:50:16 abe Exp $";
+static char *rcsid = "$Id: dproc.c,v 1.6 2006/04/27 20:28:49 ajn Exp $";
 #endif
 
 #include "lsof.h"
+
 #include <mach/mach_traps.h>
 #include <mach/mach_init.h>
 #include <mach/message.h>
@@ -158,11 +159,6 @@ gather_proc_info()
 	static struct file **ofb = NULL;
 	static int ofbb = 0;
 	struct proc *p;
-#if	DARWINV<800
-	struct pcred pc;
-#else	/* DARWINV>=800 */
-	struct ucred uc;
-#endif	/* DARWINV<800 */
 	int pgid;
 	int ppid = 0;
 	static char *pof = (char *)NULL;
@@ -170,6 +166,13 @@ gather_proc_info()
 	short pss, sf;
 	int px;
 	uid_t uid;
+
+#if	DARWINV<800
+	struct pcred pc;
+#else	/* DARWINV>=800 */
+	struct ucred uc;
+#endif	/* DARWINV<800 */
+
 /*
  * Read the process table.
  */
@@ -182,6 +185,7 @@ gather_proc_info()
  */
 	for (p = Proc, px = 0; px < Np; p++, px++)
 	{
+
 #if	DARWINV<800
 	    if (!p->p_cred || kread((KA_T)p->p_cred, (char *)&pc, sizeof(pc)))
 		continue;
@@ -210,7 +214,7 @@ gather_proc_info()
 		    cmd = p->p_comm;
 	   } else
 		cmd = p->p_comm;
-#endif	/* DARWINV>=700 */
+#endif	/* DARWINV<700 */
 
 	/*
 	 * See if process is excluded.
@@ -255,7 +259,7 @@ gather_proc_info()
 		    link_lfile();
 	    }
 	/*
-	 * process the VM map.
+	 * Process the VM map.
 	 */
 	    process_map(p->p_pid);
 	/*
@@ -504,10 +508,16 @@ kread(addr, buf, len)
 {
 	int br;
 
-	if (((off_t)addr & (off_t)0x3) != 0)
-	    return(0);	/* if not aligned on a word boundary */
+	if ((off_t)addr & (off_t)0x3) {
+
+	/*
+	 * No read is possible if the address is not aligned on a word
+	 * boundary.
+	 */
+	    return(1);
+	}
 	if (lseek(Kd, (off_t)addr, SEEK_SET) == (off_t)-1)
-	    return(0);
+	    return(1);
 	br = read(Kd, buf, len);
 	return((br == len) ? 0 : 1);
 }
@@ -521,91 +531,75 @@ static void
 process_map(pid)
 	pid_t pid;			/* process id */
 {
-	vm_address_t	address	= 0;
-	int		n	= 0;
-	vm_size_t	size	= 0;
-	vm_map_t	task;
+	vm_address_t address = 0;
+	mach_msg_type_number_t count;
+	vm_region_extended_info_data_t e_info;
+	int n = 0;
+	mach_port_t object_name;
+	vm_size_t size = 0;
+	vm_map_t task;
+	vm_region_top_info_data_t t_info;
+
+	struct vm_object {		/* should come from <vm/vm_object.h> */
 
 #if	DARWINV<800
-	struct vm_object {		/* should come from <vm/vm_object.h> */
 	    KA_T		Dummy1[15];
-	    memory_object_t	pager;
-	} vmo;
 #else	/* DARWINV>=800 */
-	struct vm_object {		/* should come from <vm/vm_object.h> */
 	    KA_T		Dummy1[14];
+#endif	/* DARWINV>=800 */
+
 	    memory_object_t	pager;
 	} vmo;
-#endif	/* DARWINV>=800 */
 
 	struct vnode_pager {		/* from <osfmk/vm/bsd_vm.c> */
 	    KA_T		Dummy1[4];
 	    struct vnode	*vnode;
 	} vp;
 
-	/*
-	 * Get the task port associated with the process
-	 */
-	if (task_for_pid((mach_port_name_t)mach_task_self(),
-			 pid,
-			 (mach_port_name_t *)&task) != KERN_SUCCESS)
+/*
+ * Get the task port associated with the process
+ */
+	if (task_for_pid((mach_port_name_t)mach_task_self(), pid,
+			 (mach_port_name_t *)&task)
+	!= KERN_SUCCESS) {
 	    return;
-
-	/*
-	 * Iterate of the tasks address space looking for blocks of memory
-	 * backed by an external pager (aka: a "vnode")
-	 */
-	for (address = 0; 1; address += size) {
-	    mach_port_t				object_name;
-	    vm_region_extended_info_data_t	e_info;
-	    vm_region_top_info_data_t		t_info;
-	    mach_msg_type_number_t		count;
-
+	}
+/*
+ * Go through the task's address space, looking for blocks of memory
+ * backed by an external pager (i.e, a "vnode")
+ */
+	for (address = 0;; address += size) {
 	    count = VM_REGION_EXTENDED_INFO_COUNT;
-	    if (vm_region(task,
-			  &address,
-			  &size,
-			  VM_REGION_EXTENDED_INFO,
-			  (vm_region_info_t)&e_info,
-			  &count,
-			  &object_name) != KERN_SUCCESS)
+	    if (vm_region(task, &address, &size, VM_REGION_EXTENDED_INFO,
+			  (vm_region_info_t)&e_info, &count, &object_name)
+	    != KERN_SUCCESS) {
 		break;
-
+	    }
 	    if (!e_info.external_pager)
-		continue;	/* if not external pager */
-
+		continue;
 	    count = VM_REGION_TOP_INFO_COUNT;
-	    if (vm_region(task,
-			  &address,
-			  &size,
-			  VM_REGION_TOP_INFO,
-			  (vm_region_info_t)&t_info,
-			  &count,
-			  &object_name) != KERN_SUCCESS)
+	    if (vm_region(task, &address, &size, VM_REGION_TOP_INFO,
+			  (vm_region_info_t)&t_info, &count, &object_name)
+	    != KERN_SUCCESS) {
 		break;
-
-	    /*
-	     * the returned "obj_id" is the "vm_object_t" address
-	     */
+	    }
+	/*
+	 * The returned "obj_id" is the "vm_object_t" address.
+	 */
 	    if (!t_info.obj_id)
-		continue;	/* if no address */
-
+		continue;
 	    if (kread(t_info.obj_id, (char *)&vmo, sizeof(vmo)))
 		break;
-
-	    /*
-	     * if the "pager" is backed by a vnode then the "vm_object_t"
-	     * "memory_object_t" address is actually a "struct vnode_pager *".
-	     */
+	/*
+	 * If the "pager" is backed by a vnode then the "vm_object_t"
+	 * "memory_object_t" address is actually a "struct vnode_pager *".
+	 */
 	    if (!vmo.pager)
-		continue;	/* if no address */
-
+		continue;
 	    if (kread((KA_T)vmo.pager, (char *)&vp, sizeof(vp)))
 		break;
-
 	    (void) enter_vn_text((KA_T)vp.vnode, &n);
 	}
-
 	return;
 }
 

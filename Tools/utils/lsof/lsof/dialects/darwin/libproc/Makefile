@@ -1,7 +1,7 @@
 
-# Darwin Makefile
+# Darwin libproc-based lsof Makefile
 #
-# $Id: Makefile,v 1.3 2001/11/01 20:26:13 abe Exp abe $
+# $Id: Makefile,v 1.5 2006/03/23 21:28:26 ajn Exp $
 
 PROG=	lsof
 
@@ -19,14 +19,14 @@ CDEFS=	${CDEF} ${CFGF}
 INCL=	${DINC}
 override CFLAGS= ${CDEFS} ${INCL} ${DEBUG}
 
-GRP= kmem
+GRP=    kmem
 
 HDR=    lsof.h lsof_fields.h dlsof.h machine.h proto.h dproto.h
 
-SRC=    ddev.c dfile.c dmnt.c dnode.c dnode1.c dproc.c dsock.c dstore.c \
+SRC=    ddev.c dfile.c dmnt.c dproc.c dsock.c dstore.c \
 	arg.c main.c misc.c node.c print.c proc.c store.c usage.c
 
-OBJ=	ddev.o dfile.o dmnt.o dnode.o dnode1.o dproc.o dsock.o dstore.o \
+OBJ=	ddev.o dfile.o dmnt.o dproc.o dsock.o dstore.o \
 	arg.o main.o misc.o node.o print.o proc.o store.o usage.o
 
 MAN=	lsof.8
@@ -47,17 +47,40 @@ clean: FRC
 	rm -f machine.h.old new_machine.h
 	(cd lib; ${MAKE} -f Makefile.skel clean)
 
-install-strip:
-	${MAKE} STRIPFLAGS=-s install
+install-strip: all FRC
+	mkdir -p ${BIN}
+	install -c -s -m 2755 -g ${GRP} ${PROG} ${BIN}
+	mkdir -p ${DOC}
+	install -c -m 444 ${MAN} ${DOC}
 
 install: all FRC
-	mkdir -p ${BIN}
-	install -c ${STRIPFLAGS} -m 2755 -g ${GRP} ${PROG} ${BIN}/${PROG}
-	mkdir -p ${DOC}
-	install -c -m 444 ${MAN} ${DOC}/${MAN}
+	@echo ''
+	@echo 'Please write your own install rule.  Lsof for Darwin below 8'
+	@echo 'should be installed setgid to the group that has permission'
+	@echo 'to read /dev/kmem, often kmem or sys.  Lsof for Darwin 8 and'
+	@echo 'above should be installed setuid-root.  Your install rule'
+	@echo 'actions for Darwin below 8 might look something like this:'
+	@echo ''
+	@echo '    install -m 2xxx -g $${GRP} $${PROG} $${BIN}'
+	@echo '    install -m 444 $${MAN} $${DOC}'
+	@echo ''
+	@echo 'Your install rule actions for Darwin 8 and above might look'
+	@echo 'something like this:'
+	@echo ''
+	@echo '    install -m 4xxx -o root $${PROG} $${BIN}'
+	@echo '    install -m 444 $${MAN} $${DOC}'
+	@echo ''
+	@echo 'You will have to complete the xxx modes, the GRP value, and'
+	@echo 'the skeletons for the BIN and DOC strings, given at the'
+	@echo 'beginning of this Makefile, e.g.,'
+	@echo ''
+	@echo '    BIN= $${DESTDIR}/usr/local/etc'
+	@echo '    DOC= $${DESTDIR}/usr/man/man8'
+	@echo '    GRP= kmem'
+	@echo ''
 
 ${LIB}: FRC
-	(cd lib; ${MAKE})
+	(cd lib; ${MAKE} DEBUG="${DEBUG}" CFGF="${CFGF}")
 
 version.h:	FRC
 	@echo Constructing version.h
@@ -67,6 +90,7 @@ version.h:	FRC
 	@echo '#define	LSOF_CCV	"${CCV}"' >> version.h
 	@echo '#define	LSOF_CCDATE	"'`date`'"' >> version.h
 	@echo '#define	LSOF_CCFLAGS	"'`echo ${CFLAGS} | sed 's/\\\\(/\\(/g' | sed 's/\\\\)/\\)/g' | sed 's/"/\\\\"/g'`'"' >> version.h
+	@echo '#define  LSOF_CINFO      "${CINFO}"' >> version.h
 	@if [ "X${LSOF_HOST}" = "X" ]; then \
 	  echo '#define	LSOF_HOST	"'`uname -n`'"' >> version.h; \
 	else \
@@ -115,10 +139,6 @@ ddev.o:		${HDR} ddev.c
 dfile.o:	${HDR} dfile.c
 
 dmnt.o:		${HDR} dmnt.c
-
-dnode.o:	${HDR} dnode.c
-
-dnode1.o:	${HDR} dnode1.c
 
 dproc.o:	${HDR} dproc.c
 

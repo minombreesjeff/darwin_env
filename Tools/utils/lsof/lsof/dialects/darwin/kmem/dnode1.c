@@ -1,5 +1,5 @@
 /*
- * dnode1.c - Darwin node functions for lsof
+ * dnode1.c - Darwin node functions for /dev/kmem-based lsof
  *
  * This module must be separate to keep separate the multiple kernel inode
  * structure definitions.
@@ -35,7 +35,7 @@
 #ifndef lint
 static char copyright[] =
 "@(#) Copyright 1994 Purdue Research Foundation.\nAll rights reserved.\n";
-static char *rcsid = "$Id: dnode1.c,v 1.1 2000/11/27 18:25:03 abe Exp $";
+static char *rcsid = "$Id: dnode1.c,v 1.6 2006/04/27 20:28:48 ajn Exp $";
 #endif
 
 #include "lsof.h"
@@ -85,9 +85,9 @@ read_iso_node(v, d, dd, ino, nl, sz)
 	struct vnode *v;		/* containing vnode */
 	dev_t *d;			/* returned device number */
 	int *dd;			/* returned device-defined flag */
-	unsigned long *ino;		/* returned inode number */
+	INODETYPE *ino;			/* returned inode number */
 	long *nl;			/* returned number of links */
-	unsigned long *sz;		/* returned size */
+	SZOFFTYPE *sz;			/* returned size */
 {
 
 	struct iso_node i;
@@ -98,9 +98,9 @@ read_iso_node(v, d, dd, ino, nl, sz)
 
 	*d = i.i_dev;
 	*dd = 1;
-	*ino = i.i_number;
+	*ino = (INODETYPE)i.i_number;
 	*nl = (long)i.inode.iso_links;
-	*sz = i.i_size;
+	*sz = (SZOFFTYPE)i.i_size;
 
 	return(0);
 }

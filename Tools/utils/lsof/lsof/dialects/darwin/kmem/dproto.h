@@ -1,5 +1,5 @@
 /*
- * dproto.h - Darwin function prototypes for lsof
+ * dproto.h - Darwin function prototypes for /dev/kmem-based lsof
  *
  * The _PROTOTYPE macro is defined in the common proto.h.
  */
@@ -33,7 +33,7 @@
 
 
 /*
- * $Id: dproto.h,v 1.2 2004/03/10 23:50:16 abe Exp $
+ * $Id: dproto.h,v 1.6 2006/04/27 20:28:49 ajn Exp $
  */
 
 _PROTOTYPE(extern int is_file_named,(char *p, int cd));
@@ -56,7 +56,7 @@ _PROTOTYPE(extern void process_psxshm,(KA_T pa));
 #endif	/* defined(HASPSXSHM) */
 
 #if	defined(HAS9660FS)
-_PROTOTYPE(extern int read_iso_node,(struct vnode *v, dev_t *d, int *dd, unsigned long *ino, long *nl, unsigned long *sz));
+_PROTOTYPE(extern int read_iso_node,(struct vnode *v, dev_t *d, int *dd, INODETYPE *ino, long *nl, SZOFFTYPE *sz));
 #endif	/* defined(HAS9660FS) */
 
 _PROTOTYPE(extern void process_socket,(KA_T sa));
