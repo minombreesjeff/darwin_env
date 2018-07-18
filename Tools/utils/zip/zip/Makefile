@@ -20,7 +20,7 @@ Install_Target	= -f unix/Makefile generic
 Extra_CC_Flags  = -mdynamic-no-pic
 CC_Optimize     =       # project handles this
 Extra_Install_Flags	=	LOCAL_ZIP="$(CC_Flags)" \
-		BIND="$(CC) $(LDFLAGS)" CC="$(CC) -fno-builtin"
+		BIND="$(CC) $(LDFLAGS)" CC="$(CC) -fno-builtin -x c"
 Environment		=	$(Extra_Environment)
 
 build:: install_source_local patch_source_local
