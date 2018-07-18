@@ -1799,7 +1799,7 @@ diff -u --exclude=CVS -r -udbp syscall.c syscall.c
  
  #define RETURN_ERROR_IF(x,e) \
  	do { \
-@@ -53,7 +53,20 @@
+@@ -53,7 +53,19 @@
  {
 	if (dry_run) return 0;
 	RETURN_ERROR_IF_RO_OR_LO;
@@ -1814,9 +1814,8 @@ diff -u --exclude=CVS -r -udbp syscall.c syscall.c
 +	    else
 +		return 0;
 +	}
-+#else
-	return unlink(fname);
 +#endif
+	return unlink(fname);
  }
  
  int do_symlink(char *fname1, char *fname2)

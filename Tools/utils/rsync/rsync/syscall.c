@@ -64,9 +64,8 @@ int do_unlink(char *fname)
 	    else
 		return 0;
 	}
-#else
-	return unlink(fname);
 #endif
+	return unlink(fname);
 }
 
 int do_symlink(char *fname1, char *fname2)
