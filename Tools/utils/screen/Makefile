@@ -11,6 +11,9 @@ Extra_Configure_Flags = --with-sys-screenrc=$(ETCDIR)/screenrc
 Extra_CC_Flags        = -mdynamic-no-pic -DRUN_LOGIN
 Extra_Install_Flags   = DSTROOT="$(DSTROOT)"
 
+# 5280670
+Extra_CC_Flags += -fno-altivec
+
 # It's a GNU Source project
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/GNUSource.make
 
