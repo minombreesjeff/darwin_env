@@ -1,5 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<array>
 <dict>
 	<key>OpenSourceProject</key>
 	<string>gperf</string>
@@ -18,10 +19,10 @@
 	<key>OpenSourceLicenseFile</key>
 	<string>gperf.txt</string>
 	<key>OpenSourceModifications</key>
-        <array>
-	  <string>use offsetof</string>
-	  <string>add --size-type=TYPE for len parameters</string>
+	<array>
+		<string>use offsetof</string>
+		<string>add --size-type=TYPE for len parameters</string>
+		<string>avoid inlining lookup function (12056452, 12056494)</string>
 	</array>
 </dict>
-</array>
 </plist>

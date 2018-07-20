@@ -1880,6 +1880,7 @@ Output::output_lookup_function_body (const Output_Compare& comparison) const
 void
 Output::output_lookup_function () const
 {
+#if 0 /* 12056452, 12056494 */
   /* Output the function's head.  */
   if (option[KRC] | option[C] | option[ANSIC])
     /* GCC 4.3 and above with -std=c99 or -std=gnu99 implements ISO C99
@@ -1891,6 +1892,7 @@ Output::output_lookup_function () const
             "__attribute__ ((__gnu_inline__))\n"
             "#endif\n"
             "#endif\n");
+#endif
 
   printf ("%s%s\n",
           const_for_struct, _return_type);
