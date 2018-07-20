@@ -4,6 +4,7 @@
 
 # Project info
 Project		= gperf
+ToolType	= Commands
 Extra_CC_Flags	= -no-cpp-precomp
 GnuAfterInstall	= post-install
 
