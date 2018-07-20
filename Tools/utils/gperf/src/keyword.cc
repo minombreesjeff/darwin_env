@@ -121,11 +121,10 @@ KeywordExt::init_selchars_tuple (const Positions& positions, const unsigned int 
 void
 KeywordExt::init_selchars_multiset (const Positions& positions, const unsigned int *alpha_unify, const unsigned int *alpha_inc)
 {
-  unsigned int *selchars =
-    init_selchars_low (positions, alpha_unify, alpha_inc);
+  unsigned int *selchars = init_selchars_low (positions, alpha_unify, alpha_inc);
 
   /* Sort the selchars elements alphabetically.  */
-  sort_char_set (selchars, _selchars_length);
+  sort_char_set (selchars, (int)_selchars_length);
 }
 
 /* Deletes selchars.  */

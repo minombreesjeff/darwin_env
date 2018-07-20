@@ -443,7 +443,7 @@ output_upperlower_memcmp ()
    backslashes, double quote and unprintable characters.  */
 
 static void
-output_string (const char *key, int len)
+output_string (const char *key, size_t len)
 {
   putchar ('"');
   for (; len > 0; len--)
@@ -742,182 +742,177 @@ Output::output_asso_values_ref (int pos) const
 void
 Output::output_hash_function () const
 {
-  /* Output the function's head.  */
-  if (option[CPLUSPLUS])
-    printf ("inline ");
-  else if (option[KRC] | option[C] | option[ANSIC])
-    printf ("#ifdef __GNUC__\n"
-            "__inline\n"
-            "#else\n"
-            "#ifdef __cplusplus\n"
-            "inline\n"
-            "#endif\n"
-            "#endif\n");
-
-  if (/* The function does not use the 'str' argument?  */
-      _key_positions.get_size() == 0
-      || /* The function uses 'str', but not the 'len' argument?  */
-         (option[NOLENGTH]
-          && _key_positions[0] < _min_key_len
-          && _key_positions[_key_positions.get_size() - 1] != Positions::LASTCHAR))
-    /* Pacify lint.  */
-    printf ("/*ARGSUSED*/\n");
-
-  if (option[KRC] | option[C] | option[ANSIC])
-    printf ("static ");
-  printf ("unsigned int\n");
-  if (option[CPLUSPLUS])
-    printf ("%s::", option.get_class_name ());
-  printf ("%s ", option.get_hash_name ());
-  printf (option[KRC] ?
-                 "(str, len)\n"
+    /* Output the function's head.  */
+    if (option[CPLUSPLUS]) {
+        printf ("inline ");
+    } else if (option[KRC] | option[C] | option[ANSIC]) {
+        printf ("#ifdef __GNUC__\n"
+                "__inline\n"
+                "#else\n"
+                "#ifdef __cplusplus\n"
+                "inline\n"
+                "#endif\n"
+                "#endif\n");
+    }
+    /* The function does not use the 'str' argument?  */
+    /* The function uses 'str', but not the 'len' argument?  */
+    if (_key_positions.get_size() == 0 || (option[NOLENGTH] && _key_positions[0] < _min_key_len
+                                           && _key_positions[_key_positions.get_size() - 1] != Positions::LASTCHAR)) {
+        /* Pacify lint.  */
+        printf ("/*ARGSUSED*/\n");
+    }
+    
+    if (option[KRC] | option[C] | option[ANSIC]) {
+        printf ("static ");
+    }
+    printf ("unsigned int\n");
+    if (option[CPLUSPLUS]) {
+        printf ("%s::", option.get_class_name ());
+    }
+    printf ("%s ", option.get_hash_name ());
+    printf (option[KRC] ?
+            "(str, len)\n"
             "     register char *str;\n"
             "     register %s len;\n" :
-          option[C] ?
-                 "(str, len)\n"
+            option[C] ?
+            "(str, len)\n"
             "     register const char *str;\n"
             "     register %s len;\n" :
-          option[ANSIC] | option[CPLUSPLUS] ?
-                 "(register const char *str, register %s len)\n" :
-          "", option.get_size_type());
-
-  /* Note that when the hash function is called, it has already been verified
+            option[ANSIC] | option[CPLUSPLUS] ?
+            "(register const char *str, register %s len)\n" :
+            "/* %s */\n", option.get_size_type());
+    
+    /* Note that when the hash function is called, it has already been verified
      that  min_key_len <= len <= max_key_len.  */
-
-  /* Output the function's body.  */
-  printf ("{\n");
-
-  /* First the asso_values array.  */
-  if (_key_positions.get_size() > 0)
-    {
-      printf ("  static %s%s asso_values[] =\n"
-              "    {",
-              const_readonly_array,
-              smallest_integral_type (_max_hash_value + 1));
-
-      const int columns = 10;
-
-      /* Calculate maximum number of digits required for MAX_HASH_VALUE.  */
-      int field_width = 2;
-      for (int trunc = _max_hash_value; (trunc /= 10) > 0;)
-        field_width++;
-
-      for (unsigned int count = 0; count < _alpha_size; count++)
-        {
-          if (count > 0)
-            printf (",");
-          if ((count % columns) == 0)
-            printf ("\n     ");
-          printf ("%*d", field_width, _asso_values[count]);
+    
+    /* Output the function's body.  */
+    printf ("{\n");
+    
+    /* First the asso_values array.  */
+    if (_key_positions.get_size() > 0) {
+        printf ("  static %s%s asso_values[] =\n"
+                "    {",
+                const_readonly_array,
+                smallest_integral_type (_max_hash_value + 1));
+        
+        const int columns = 10;
+        
+        /* Calculate maximum number of digits required for MAX_HASH_VALUE.  */
+        int field_width = 2;
+        for (int trunc = _max_hash_value; (trunc /= 10) > 0;) {
+            field_width++;
         }
-
-      printf ("\n"
-              "    };\n");
+        
+        for (unsigned int count = 0; count < _alpha_size; count++) {
+            if (count > 0) {
+                printf (",");
+            }
+            if ((count % columns) == 0) {
+                printf ("\n     ");
+            }
+            printf ("%*d", field_width, _asso_values[count]);
+        }
+        
+        printf ("\n"
+                "    };\n");
     }
-
-  if (_key_positions.get_size() == 0)
-    {
-      /* Trivial case: No key positions at all.  */
-      printf ("  return %s;\n",
-              option[NOLENGTH] ? "0" : "len");
-    }
-  else
-    {
-      /* Iterate through the key positions.  Remember that Positions::sort()
+    
+    if (_key_positions.get_size() == 0) {
+        /* Trivial case: No key positions at all.  */
+        printf ("  return %s;\n",
+                option[NOLENGTH] ? "0" : "len");
+    } else {
+        /* Iterate through the key positions.  Remember that Positions::sort()
          has sorted them in decreasing order, with Positions::LASTCHAR coming
          last.  */
-      PositionIterator iter = _key_positions.iterator(_max_key_len);
-      int key_pos;
-
-      /* Get the highest key position.  */
-      key_pos = iter.next ();
-
-      if (key_pos == Positions::LASTCHAR || key_pos < _min_key_len)
-        {
-          /* We can perform additional optimizations here:
+        PositionIterator iter = _key_positions.iterator(_max_key_len);
+        int key_pos;
+        
+        /* Get the highest key position.  */
+        key_pos = iter.next ();
+        
+        if (key_pos == Positions::LASTCHAR || key_pos < _min_key_len) {
+            /* We can perform additional optimizations here:
              Write it out as a single expression. Note that the values
              are added as 'int's even though the asso_values array may
              contain 'unsigned char's or 'unsigned short's.  */
-
-          printf ("  return %s",
-                  option[NOLENGTH] ? "" : "len + ");
-
-          if (_key_positions.get_size() == 2
-              && _key_positions[0] == 0
-              && _key_positions[1] == Positions::LASTCHAR)
-            /* Optimize special case of "-k 1,$".  */
-            {
-              output_asso_values_ref (Positions::LASTCHAR);
-              printf (" + ");
-              output_asso_values_ref (0);
+            
+            printf ("  return %s",
+                    option[NOLENGTH] ? "" : "len + ");
+            
+            if (_key_positions.get_size() == 2
+                && _key_positions[0] == 0
+                && _key_positions[1] == Positions::LASTCHAR) {
+                /* Optimize special case of "-k 1,$".  */
+                output_asso_values_ref (Positions::LASTCHAR);
+                printf (" + ");
+                output_asso_values_ref (0);
+            } else {
+                for (; key_pos != Positions::LASTCHAR; ) {
+                    output_asso_values_ref (key_pos);
+                    if ((key_pos = iter.next ()) != PositionIterator::EOS) {
+                        printf (" + ");
+                    } else {
+                        break;
+                    }
+                }
+                
+                if (key_pos == Positions::LASTCHAR) {
+                    output_asso_values_ref (Positions::LASTCHAR);
+                }
             }
-          else
-            {
-              for (; key_pos != Positions::LASTCHAR; )
-                {
-                  output_asso_values_ref (key_pos);
-                  if ((key_pos = iter.next ()) != PositionIterator::EOS)
-                    printf (" + ");
-                  else
+            
+            printf (";\n");
+        } else {
+            /* We've got to use the correct, but brute force, technique.  */
+            printf ("  register unsigned int hval = %s;\n\n"
+                    "  switch (%s)\n"
+                    "    {\n"
+                    "      default:\n",
+                    option[NOLENGTH] ? "0" : "len",
+                    option[NOLENGTH] ? "len" : "hval");
+            
+            while (key_pos != Positions::LASTCHAR && key_pos >= _max_key_len) {
+                if ((key_pos = iter.next ()) == PositionIterator::EOS) {
                     break;
                 }
-
-              if (key_pos == Positions::LASTCHAR)
+            }
+            
+            if (key_pos != PositionIterator::EOS && key_pos != Positions::LASTCHAR) {
+                int i = key_pos;
+                do {
+                    if (i > key_pos) {
+                        printf ("      /*FALLTHROUGH*/\n"); /* Pacify lint.  */
+                    }
+                    for ( ; i > key_pos; i--) {
+                        printf ("      case %d:\n", i);
+                    }
+                    printf ("        hval += ");
+                    output_asso_values_ref (key_pos);
+                    printf (";\n");
+                    
+                    key_pos = iter.next ();
+                } while (key_pos != PositionIterator::EOS && key_pos != Positions::LASTCHAR);
+                
+                if (i >= _min_key_len) {
+                    printf ("      /*FALLTHROUGH*/\n"); /* Pacify lint.  */
+                }
+                for ( ; i >= _min_key_len; i--) {
+                    printf ("      case %d:\n", i);
+                }
+            }
+            
+            printf ("        break;\n"
+                    "    }\n"
+                    "  return hval");
+            if (key_pos == Positions::LASTCHAR) {
+                printf (" + ");
                 output_asso_values_ref (Positions::LASTCHAR);
             }
-
-          printf (";\n");
-        }
-      else
-        {
-          /* We've got to use the correct, but brute force, technique.  */
-          printf ("  register int hval = %s;\n\n"
-                  "  switch (%s)\n"
-                  "    {\n"
-                  "      default:\n",
-                  option[NOLENGTH] ? "0" : "(int)len",
-                  option[NOLENGTH] ? "len" : "hval");
-
-          while (key_pos != Positions::LASTCHAR && key_pos >= _max_key_len)
-            if ((key_pos = iter.next ()) == PositionIterator::EOS)
-              break;
-
-          if (key_pos != PositionIterator::EOS && key_pos != Positions::LASTCHAR)
-            {
-              int i = key_pos;
-              do
-                {
-                  if (i > key_pos)
-                    printf ("      /*FALLTHROUGH*/\n"); /* Pacify lint.  */
-                  for ( ; i > key_pos; i--)
-                    printf ("      case %d:\n", i);
-
-                  printf ("        hval += ");
-                  output_asso_values_ref (key_pos);
-                  printf (";\n");
-
-                  key_pos = iter.next ();
-                }
-              while (key_pos != PositionIterator::EOS && key_pos != Positions::LASTCHAR);
-
-              if (i >= _min_key_len)
-                printf ("      /*FALLTHROUGH*/\n"); /* Pacify lint.  */
-              for ( ; i >= _min_key_len; i--)
-                printf ("      case %d:\n", i);
-            }
-
-          printf ("        break;\n"
-                  "    }\n"
-                  "  return hval");
-          if (key_pos == Positions::LASTCHAR)
-            {
-              printf (" + ");
-              output_asso_values_ref (Positions::LASTCHAR);
-            }
-          printf (";\n");
+            printf (";\n");
         }
     }
-  printf ("}\n\n");
+    printf ("}\n\n");
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1216,8 +1211,7 @@ Output::output_keyword_table () const
           {
             links->_final_index = ++index;
             printf (",\n");
-            int stringpool_index =
-              (links->_allchars_length == keyword->_allchars_length
+            int stringpool_index = (links->_allchars_length == keyword->_allchars_length
                && memcmp (links->_allchars, keyword->_allchars,
                           keyword->_allchars_length) == 0
                ? keyword->_final_index
@@ -1298,7 +1292,7 @@ Output::output_lookup_array () const
 
           if (option[DEBUG])
             fprintf (stderr,
-                     "dup_ptr[%d]: hash_value = %d, index = %d, count = %d\n",
+                     "dup_ptr[%ld]: hash_value = %d, index = %d, count = %d\n",
                      dup_ptr - duplicates,
                      dup_ptr->hash_value, dup_ptr->index, dup_ptr->count);
 
@@ -1576,7 +1570,7 @@ Output::output_lookup_function_body (const Output_Compare& comparison) const
 {
   printf ("  if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)\n"
           "    {\n"
-          "      register int key = %s (str, len);\n\n",
+          "      unsigned int key = %s (str, len);\n\n",
           option.get_hash_name ());
 
   if (option[SWITCH])
@@ -1685,7 +1679,7 @@ Output::output_lookup_function_body (const Output_Compare& comparison) const
     }
   else
     {
-      printf ("      if (key <= MAX_HASH_VALUE && key >= 0)\n");
+      printf ("      if (key <= MAX_HASH_VALUE)\n");
 
       if (option[DUP])
         {
@@ -1881,61 +1875,62 @@ void
 Output::output_lookup_function () const
 {
 #if 0 /* 12056452, 12056494 */
-  /* Output the function's head.  */
-  if (option[KRC] | option[C] | option[ANSIC])
+    /* Output the function's head.  */
+    if (option[KRC] | option[C] | option[ANSIC])
     /* GCC 4.3 and above with -std=c99 or -std=gnu99 implements ISO C99
-       inline semantics, unless -fgnu89-inline is used.  It defines a macro
-       __GNUC_STDC_INLINE__ to indicate this situation.  */
-    printf ("#ifdef __GNUC__\n"
-            "__inline\n"
-            "#ifdef __GNUC_STDC_INLINE__\n"
-            "__attribute__ ((__gnu_inline__))\n"
-            "#endif\n"
-            "#endif\n");
+     inline semantics, unless -fgnu89-inline is used.  It defines a macro
+     __GNUC_STDC_INLINE__ to indicate this situation.  */
+        printf ("#ifdef __GNUC__\n"
+                "__inline\n"
+                "#ifdef __GNUC_STDC_INLINE__\n"
+                "__attribute__ ((__gnu_inline__))\n"
+                "#endif\n"
+                "#endif\n");
 #endif
-
-  printf ("%s%s\n",
-          const_for_struct, _return_type);
-  if (option[CPLUSPLUS])
-    printf ("%s::", option.get_class_name ());
-  printf ("%s ", option.get_function_name ());
-  printf (option[KRC] ?
-                 "(str, len)\n"
+    
+    printf ("%s%s\n",
+            const_for_struct, _return_type);
+    if (option[CPLUSPLUS]) {
+        printf ("%s::", option.get_class_name ());
+    }
+    printf ("%s ", option.get_function_name ());
+    printf (option[KRC] ?
+            "(str, len)\n"
             "     register char *str;\n"
             "     register %s len;\n" :
-          option[C] ?
-                 "(str, len)\n"
+            option[C] ?
+            "(str, len)\n"
             "     register const char *str;\n"
             "     register %s len;\n" :
-          option[ANSIC] | option[CPLUSPLUS] ?
-                 "(register const char *str, register %s len)\n" :
-          "", option.get_size_type());
-
-  /* Output the function's body.  */
-  printf ("{\n");
-
-  if (option[ENUM] && !option[GLOBAL])
-    {
-      Output_Enum style ("  ");
-      output_constants (style);
+            option[ANSIC] | option[CPLUSPLUS] ?
+            "(register const char *str, register %s len)\n" :
+            "/* %s */\n", option.get_size_type());
+    
+    /* Output the function's body.  */
+    printf ("{\n");
+    
+    if (option[ENUM] && !option[GLOBAL]) {
+        Output_Enum style ("  ");
+        output_constants (style);
     }
-
-  if (option[SHAREDLIB] && !(option[GLOBAL] || option[TYPE]))
-    output_lookup_pools ();
-  if (!option[GLOBAL])
-    output_lookup_tables ();
-
-  if (option[LENTABLE])
-    output_lookup_function_body (Output_Compare_Memcmp ());
-  else
-    {
-      if (option[COMP])
-        output_lookup_function_body (Output_Compare_Strncmp ());
-      else
-        output_lookup_function_body (Output_Compare_Strcmp ());
+    
+    if (option[SHAREDLIB] && !(option[GLOBAL] || option[TYPE])) {
+        output_lookup_pools ();
     }
-
-  printf ("}\n");
+    if (!option[GLOBAL]) {
+        output_lookup_tables ();
+    }
+    if (option[LENTABLE]) {
+        output_lookup_function_body (Output_Compare_Memcmp ());
+    } else {
+        if (option[COMP]) {
+            output_lookup_function_body (Output_Compare_Strncmp ());
+        } else {
+            output_lookup_function_body (Output_Compare_Strcmp ());
+        }
+    }
+    
+    printf ("}\n");
 }
 
 /* ------------------------------------------------------------------------- */

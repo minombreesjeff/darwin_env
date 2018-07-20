@@ -253,7 +253,7 @@ Input::read_input ()
 
   char *input = NULL;
   size_t input_size = 0;
-  int input_length = get_delim (&input, &input_size, EOF, _stream);
+  ssize_t input_length = get_delim (&input, &input_size, EOF, _stream);
   if (input_length < 0)
     {
       if (ferror (_stream))
@@ -598,8 +598,7 @@ Input::read_input ()
               delete[] struct_decl;
             struct_decl = new_struct_decl;
             /* Append the lineno to struct_decl_linenos.  */
-            unsigned int *new_struct_decl_linenos =
-              new unsigned int[struct_decl_linecount + 1];
+            unsigned int *new_struct_decl_linenos = new unsigned int[struct_decl_linecount + 1];
             if (struct_decl_linecount > 0)
               memcpy (new_struct_decl_linenos, struct_decl_linenos,
                       struct_decl_linecount * sizeof (unsigned int));
@@ -968,7 +967,7 @@ Input::read_input ()
               }
 
             /* Allocate Keyword and add it to the list.  */
-            Keyword *new_kw = _factory->create_keyword (keyword, keyword_length,
+            Keyword *new_kw = _factory->create_keyword (keyword, (int)keyword_length,
                                                         rest);
             new_kw->_lineno = lineno;
             *list_tail = new Keyword_List (new_kw);

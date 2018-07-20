@@ -52,26 +52,26 @@
 		FCF25129149DBF65008F32DD /* hash.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = hash.h; sourceTree = "<group>"; };
 		FCF2512C149DBF65008F32DD /* bool-array.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "bool-array.cc"; sourceTree = "<group>"; };
 		FCF2512D149DBF65008F32DD /* bool-array.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "bool-array.h"; sourceTree = "<group>"; };
-		FCF2512E149DBF65008F32DD /* bool-array.icc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = "bool-array.icc"; sourceTree = "<group>"; };
+		FCF2512E149DBF65008F32DD /* bool-array.icc */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; path = "bool-array.icc"; sourceTree = "<group>"; };
 		FCF25134149DBF65008F32DD /* hash-table.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "hash-table.cc"; sourceTree = "<group>"; };
 		FCF25135149DBF65008F32DD /* hash-table.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "hash-table.h"; sourceTree = "<group>"; };
 		FCF25136149DBF65008F32DD /* input.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = input.cc; sourceTree = "<group>"; };
 		FCF25137149DBF65008F32DD /* input.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = input.h; sourceTree = "<group>"; };
 		FCF25138149DBF65008F32DD /* keyword-list.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "keyword-list.cc"; sourceTree = "<group>"; };
 		FCF25139149DBF65008F32DD /* keyword-list.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "keyword-list.h"; sourceTree = "<group>"; };
-		FCF2513A149DBF65008F32DD /* keyword-list.icc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = "keyword-list.icc"; sourceTree = "<group>"; };
+		FCF2513A149DBF65008F32DD /* keyword-list.icc */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; path = "keyword-list.icc"; sourceTree = "<group>"; };
 		FCF2513B149DBF65008F32DD /* keyword.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = keyword.cc; sourceTree = "<group>"; };
 		FCF2513C149DBF65008F32DD /* keyword.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = keyword.h; sourceTree = "<group>"; };
-		FCF2513D149DBF65008F32DD /* keyword.icc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = keyword.icc; sourceTree = "<group>"; };
+		FCF2513D149DBF65008F32DD /* keyword.icc */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; path = keyword.icc; sourceTree = "<group>"; };
 		FCF2513E149DBF65008F32DD /* main.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = main.cc; sourceTree = "<group>"; };
 		FCF25140149DBF65008F32DD /* options.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = options.cc; sourceTree = "<group>"; };
 		FCF25141149DBF65008F32DD /* options.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = options.h; sourceTree = "<group>"; };
-		FCF25142149DBF65008F32DD /* options.icc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = options.icc; sourceTree = "<group>"; };
+		FCF25142149DBF65008F32DD /* options.icc */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; path = options.icc; sourceTree = "<group>"; };
 		FCF25143149DBF65008F32DD /* output.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = output.cc; sourceTree = "<group>"; };
 		FCF25144149DBF65008F32DD /* output.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = output.h; sourceTree = "<group>"; };
 		FCF25145149DBF65008F32DD /* positions.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = positions.cc; sourceTree = "<group>"; };
 		FCF25146149DBF65008F32DD /* positions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = positions.h; sourceTree = "<group>"; };
-		FCF25147149DBF65008F32DD /* positions.icc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = positions.icc; sourceTree = "<group>"; };
+		FCF25147149DBF65008F32DD /* positions.icc */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; path = positions.icc; sourceTree = "<group>"; };
 		FCF25148149DBF65008F32DD /* search.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = search.cc; sourceTree = "<group>"; };
 		FCF25149149DBF65008F32DD /* search.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = search.h; sourceTree = "<group>"; };
 		FCF2514A149DBF65008F32DD /* version.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = version.cc; sourceTree = "<group>"; };
@@ -198,7 +198,7 @@
 		FCEC7E25149DB7BA00CD52C5 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0430;
+				LastUpgradeCheck = 0600;
 				ORGANIZATIONNAME = "Apple Inc.";
 			};
 			buildConfigurationList = FCEC7E28149DB7BA00CD52C5 /* Build configuration list for PBXProject "gperf" */;

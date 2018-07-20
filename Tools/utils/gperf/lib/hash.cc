@@ -3,6 +3,7 @@ Copyright (C) 1990, 2000, 2002 Free Software Foundation
     written by Doug Lea <dl@rocky.oswego.edu>
 */
 
+#include <unistd.h>
 #include <hash.h>
 
 /*
@@ -12,7 +13,7 @@ Copyright (C) 1990, 2000, 2002 Free Software Foundation
 */
 
 unsigned int
-hashpjw (const unsigned char *x, unsigned int len) // From Dragon book, p436
+hashpjw (const unsigned char *x, size_t len) // From Dragon book, p436
 {
   unsigned int h = 0;
   unsigned int g;

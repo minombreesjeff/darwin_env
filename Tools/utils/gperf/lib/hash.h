@@ -10,6 +10,6 @@ Copyright (C) 1988, 1992, 2000, 2002 Free Software Foundation
 
 /* a hash function for char[] arrays using the
    method described in Aho, Sethi, & Ullman, p 436. */
-extern unsigned int hashpjw (const unsigned char *string, unsigned int len);
+extern unsigned int hashpjw (const unsigned char *string, size_t len);
 
 #endif

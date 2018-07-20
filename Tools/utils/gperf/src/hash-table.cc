@@ -41,45 +41,40 @@ static const int size_factor = 10;
 
 /* Constructor.  */
 Hash_Table::Hash_Table (unsigned int size, bool ignore_length)
-  : _ignore_length (ignore_length),
-    _collisions (0)
+: _ignore_length (ignore_length),
+_collisions (0)
 {
-  /* There need to be enough spare entries.  */
-  size = size * size_factor;
-
-  /* Find smallest power of 2 that is >= size.  */
-  unsigned int shift = 0;
-  if ((size >> 16) > 0)
-    {
-      size = size >> 16;
-      shift += 16;
+    /* There need to be enough spare entries.  */
+    size = size * size_factor;
+    
+    /* Find smallest power of 2 that is >= size.  */
+    unsigned int shift = 0;
+    if ((size >> 16) > 0) {
+        size = size >> 16;
+        shift += 16;
     }
-  if ((size >> 8) > 0)
-    {
-      size = size >> 8;
-      shift += 8;
+    if ((size >> 8) > 0) {
+        size = size >> 8;
+        shift += 8;
     }
-  if ((size >> 4) > 0)
-    {
-      size = size >> 4;
-      shift += 4;
+    if ((size >> 4) > 0) {
+        size = size >> 4;
+        shift += 4;
     }
-  if ((size >> 2) > 0)
-    {
-      size = size >> 2;
-      shift += 2;
+    if ((size >> 2) > 0) {
+        size = size >> 2;
+        shift += 2;
     }
-  if ((size >> 1) > 0)
-    {
-      size = size >> 1;
-      shift += 1;
+    if ((size >> 1) > 0) {
+        // size = size >> 1;
+        shift += 1;
     }
-  _log_size = shift;
-  _size = 1 << shift;
-
-  /* Allocate table.  */
-  _table = new KeywordExt*[_size];
-  memset (_table, 0, _size * sizeof (*_table));
+    _log_size = shift;
+    _size = 1 << shift;
+    
+    /* Allocate table.  */
+    _table = new KeywordExt*[_size];
+    memset (_table, 0, _size * sizeof (*_table));
 }
 
 /* Destructor.  */
@@ -99,7 +94,7 @@ Hash_Table::dump () const
     for (int i = _size - 1; i >= 0; i--)
       if (_table[i])
         if (field_width < _table[i]->_selchars_length)
-          field_width = _table[i]->_selchars_length;
+          field_width = (int)_table[i]->_selchars_length;
   }
 
   fprintf (stderr,
@@ -114,7 +109,7 @@ Hash_Table::dump () const
       {
         fprintf (stderr, "%8d, ", i);
         if (field_width > _table[i]->_selchars_length)
-          fprintf (stderr, "%*s", field_width - _table[i]->_selchars_length, "");
+          fprintf (stderr, "%*s", field_width - (int)_table[i]->_selchars_length, "");
         for (int j = 0; j < _table[i]->_selchars_length; j++)
           putc (_table[i]->_selchars[j], stderr);
         fprintf (stderr, ", %.*s\n",
@@ -141,12 +136,10 @@ Hash_Table::equal (KeywordExt *item1, KeywordExt *item2) const
 KeywordExt *
 Hash_Table::insert (KeywordExt *item)
 {
-  unsigned hash_val =
-    hashpjw (reinterpret_cast<const unsigned char *>(item->_selchars),
+  unsigned hash_val = hashpjw (reinterpret_cast<const unsigned char *>(item->_selchars),
              item->_selchars_length * sizeof (unsigned int));
   unsigned int probe = hash_val & (_size - 1);
-  unsigned int increment =
-    (((hash_val >> _log_size)
+  unsigned int increment = (((hash_val >> _log_size)
       ^ (_ignore_length ? 0 : item->_allchars_length))
      << 1) + 1;
   /* Note that because _size is a power of 2 and increment is odd,

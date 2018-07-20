@@ -286,7 +286,7 @@ Options::print_options () const
         {
           putchar (*arg);
           arg++;
-          if (*arg >= 'A' && *arg <= 'Z' || *arg >= 'a' && *arg <= 'z')
+          if ((*arg >= 'A' && *arg <= 'Z') || (*arg >= 'a' && *arg <= 'z'))
             {
               putchar (*arg);
               arg++;
@@ -298,7 +298,7 @@ Options::print_options () const
                   putchar (*arg);
                   arg++;
                 }
-              while (*arg >= 'A' && *arg <= 'Z' || *arg >= 'a' && *arg <= 'z' || *arg == '-');
+              while ((*arg >= 'A' && *arg <= 'Z') || (*arg >= 'a' && *arg <= 'z') || *arg == '-');
               if (*arg == '=')
                 {
                   putchar (*arg);
@@ -682,8 +682,7 @@ Options::set_size_type (const char *size_type)
 
 /* Parses the command line Options and sets appropriate flags in option_word.  */
 
-static const struct option long_options[] =
-{
+static const struct option long_options[] = {
   { "output-file", required_argument, NULL, CHAR_MAX + 1 },
   { "ignore-case", no_argument, NULL, CHAR_MAX + 2 },
   { "delimiters", required_argument, NULL, 'e' },
@@ -738,8 +737,7 @@ Options::parse_options (int argc, char *argv[])
   _argument_count  = argc;
   _argument_vector = argv;
 
-  while ((option_char =
-            getopt_long (_argument_count, _argument_vector,
+  while ((option_char = getopt_long (_argument_count, _argument_vector,
                          "acCdDe:Ef:F:gGhH:i:Ij:k:K:lL:m:nN:oOpPQ:rs:S:tTvW:Z:7",
                          long_options, NULL))
          != -1)
@@ -870,7 +868,7 @@ Options::parse_options (int argc, char *argv[])
                     *key_pos = value;
                   }
 
-                unsigned int total_keysig_size = key_pos - key_positions;
+                unsigned int total_keysig_size = (int)(key_pos - key_positions);
                 if (total_keysig_size == 0)
                   {
                     fprintf (stderr, "No key positions selected.\n");

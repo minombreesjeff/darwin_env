@@ -26,6 +26,8 @@
 #ifndef keyword_h
 #define keyword_h 1
 
+#include <unistd.h>
+
 /* Class defined in "positions.h".  */
 class Positions;
 
@@ -60,7 +62,7 @@ struct KeywordExt : public Keyword
      selected according to the keyposition list, as a canonically reordered
      multiset.  */
   const unsigned int *  _selchars;
-  int                   _selchars_length;
+  size_t                _selchars_length;
   /* Chained list of keywords having the same _selchars and
      - if !option[NOLENGTH] - also the same _allchars_length.
      Note that these duplicates are not members of the main keyword list.  */

@@ -37,7 +37,7 @@ USA. */
    null terminator), or -1 on error or immediate EOF.
    NOTE: There is another getstr() function declared in <curses.h>.  */
 
-static int
+static ssize_t
 getstr (char **lineptr, size_t *n, FILE *stream, char terminator, size_t offset)
 {
   size_t nchars_avail;          /* Allocated but unused chars in *LINEPTR.  */
@@ -106,13 +106,13 @@ getstr (char **lineptr, size_t *n, FILE *stream, char terminator, size_t offset)
   return read_pos - (*lineptr + offset);
 }
 
-int
+ssize_t
 get_line (char **lineptr, size_t *n, FILE *stream)
 {
   return getstr (lineptr, n, stream, '\n', 0);
 }
 
-int
+ssize_t
 get_delim (char **lineptr, size_t *n, int delimiter, FILE *stream)
 {
   return getstr (lineptr, n, stream, delimiter, 0);

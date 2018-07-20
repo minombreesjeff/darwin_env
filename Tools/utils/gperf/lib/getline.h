@@ -29,13 +29,13 @@ USA.  */
    NULL), pointing to *N characters of space.  It is realloc'd as
    necessary.  Returns the number of characters read (not including the
    null terminator), or -1 on error or immediate EOF.  */
-extern int get_line (char **lineptr, size_t *n, FILE *stream);
+extern ssize_t get_line (char **lineptr, size_t *n, FILE *stream);
 
 /* Reads up to (and including) a DELIMITER from STREAM into *LINEPTR
    (and null-terminate it). *LINEPTR is a pointer returned from new [] (or
    NULL), pointing to *N characters of space.  It is realloc'd as
    necessary.  Returns the number of characters read (not including the
    null terminator), or -1 on error or immediate EOF.  */
-extern int get_delim (char **lineptr, size_t *n, int delimiter, FILE *stream);
+extern ssize_t get_delim (char **lineptr, size_t *n, int delimiter, FILE *stream);
 
 #endif /* not GETLINE_H_ */
