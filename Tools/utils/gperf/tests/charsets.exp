@@ -89,7 +89,7 @@ hash (str, len)
       5046, 5046, 5046, 5046, 5046, 5046, 5046, 5046, 5046, 5046,
       5046, 5046, 5046, 5046, 5046, 5046, 5046, 5046, 5046
     };
-  register int hval = len;
+  register int hval = (int)len;
 
   switch (hval)
     {

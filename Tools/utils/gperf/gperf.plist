@@ -17,6 +17,11 @@
 	<string>GPL</string>
 	<key>OpenSourceLicenseFile</key>
 	<string>gperf.txt</string>
+	<key>OpenSourceModifications</key>
+        <array>
+	  <string>use offsetof</string>
+	  <string>add --size-type=TYPE for len parameters</string>
+	</array>
 </dict>
 </array>
 </plist>

@@ -88,6 +88,8 @@ Details in the output code:
                          Prevents the transfer of the type declaration to the
                          output file. Use this option if the type is already
                          defined elsewhere.
+      --size-type=TYPE   Specify the type for length parameters. Default type is
+                         'unsigned int'.
 
 Algorithm employed by gperf:
   -k, --key-positions=KEYS
