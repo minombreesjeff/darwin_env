@@ -1,6 +1,6 @@
-dnl autoconf configuration for gperf/tests
+dnl autoconf configuration for gperf/lib
 
-dnl Copyright (C) 1998, 2002 Free Software Foundation, Inc.
+dnl Copyright (C) 1998, 2002, 2005, 2007 Free Software Foundation, Inc.
 dnl Written by Douglas C. Schmidt <schmidt@ics.uci.edu>
 dnl and Bruno Haible <bruno@clisp.org>.
 dnl
@@ -19,9 +19,10 @@ dnl
 dnl You should have received a copy of the GNU General Public License
 dnl along with this program; see the file COPYING.
 dnl If not, write to the Free Software Foundation, Inc.,
-dnl 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+dnl 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.  */
 
-AC_INIT(c-parse.gperf)
+AC_PREREQ([2.60])
+AC_INIT(hash.cc)
 AC_PROG_MAKE_SET
 dnl
 dnl           checks for programs
@@ -34,12 +35,10 @@ AC_PROG_CXX
                       dnl sets variable CXX
 AC_PROG_CXXCPP
                       dnl sets variable CXXCPP
-if test $ac_cv_prog_gcc = yes -a $ac_cv_prog_gxx = yes; then
-  CHECK_LANG_SYNTAX='check-lang-syntax'
-else
-  CHECK_LANG_SYNTAX=''
-fi
-AC_SUBST(CHECK_LANG_SYNTAX)
+AC_PROG_RANLIB
+                      dnl sets variable RANLIB
+CL_PROG_INSTALL
+                      dnl sets variables INSTALL, INSTALL_DATA, INSTALL_PROGRAM
 dnl
 dnl           That's it.
 dnl
