@@ -96,8 +96,8 @@ Makefile: ${srcdir}/Makefile.in config.status
 config.status: ${srcdir}/configure
 	./config.status --recheck
 
-#${srcdir}/configure: ${srcdir}/configure.in
-#	cd ${srcdir}; autoheader; autoconf
+${srcdir}/configure: ${srcdir}/configure.ac
+	cd ${srcdir}; autoheader; autoconf
 
 clean:
 	rm -f *.${O} core less lesskey lessecho

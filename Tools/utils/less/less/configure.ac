@@ -1,35 +1,44 @@
-dnl Process this file with autoconf to produce a configure script.
-AC_INIT(forwback.c)
-AC_CONFIG_HEADER(defines.h)
+# Process this file with autoconf to produce a configure script.
 
-dnl Checks for programs.
+# Copyright (C) 1984-2002  Mark Nudelman
+#
+# You may distribute under the terms of either the GNU General Public
+# License or the Less License, as specified in the README file.
+#
+# For more information about less, or for information on how to 
+# contact the author, see the README file.
+
+# Autoconf initialization.
+AC_INIT(less, 1)
+AC_CONFIG_SRCDIR([forwback.c])
+AC_CONFIG_HEADER([defines.h])
+
+# Checks for programs.
 AC_PROG_CC
 AC_ISC_POSIX
 AC_PROG_GCC_TRADITIONAL
 AC_PROG_INSTALL
 
-dnl Check for compilation model.
-dnl AC_SYS_LARGEFILE is not supported in all versions of autoconf.
-dnl Remove the dnl comment on the next line to use large (64 bit) files.
-dnl AC_SYS_LARGEFILE
+# Checks for compilation model.
+AC_SYS_LARGEFILE
 
-dnl Checks for libraries.
+# Checks for general libraries.
 AC_CHECK_LIB(xcurses, initscr, [have_xcurses=yes], [have_xcurses=no])
 AC_CHECK_LIB(ncurses, initscr, [have_ncurses=yes], [have_ncurses=no])
 AC_CHECK_LIB(curses, initscr, [have_curses=yes], [have_curses=no])
 AC_CHECK_LIB(termcap, tgetent, [have_termcap=yes], [have_termcap=no])
 AC_CHECK_LIB(termlib, tgetent, [have_termlib=yes], [have_termlib=no])
-dnl Regular expressions (regcmp) are in -lgen on Solaris 2,
-dnl and in -lintl on SCO Unix.
+# Regular expressions (regcmp) are in -lgen on Solaris 2,
+# and in -lintl on SCO Unix.
 AC_CHECK_LIB(gen, regcmp)
 AC_CHECK_LIB(intl, regcmp)
 AC_CHECK_LIB(PW, regcmp)
-dnl Checks for terminal libraries
 
-AC_MSG_CHECKING(for working terminal libraries)
+# Checks for terminal libraries
+AC_MSG_CHECKING([for working terminal libraries])
 TERMLIBS=
 
-dnl Check for systems where curses is broken.
+# Check for systems where curses is broken.
 curses_broken=0
 if test x`uname -s` = "xHP-UX" >/dev/null 2>&1; then
 if test x`uname -r` = "xB.11.00" >/dev/null 2>&1; then
@@ -41,7 +50,7 @@ fi
 fi
 
 if test $curses_broken = 0; then
-dnl -- Try xcurses.
+# -- Try xcurses.
 if test "x$TERMLIBS" = x; then
   if test $have_xcurses = yes; then
     TERMLIBS="-lxcurses"
@@ -54,7 +63,7 @@ if test "x$TERMLIBS" = x; then
   fi
 fi
 
-dnl -- Try ncurses.
+# -- Try ncurses.
 if test "x$TERMLIBS" = x; then
   if test $have_ncurses = yes; then
     TERMLIBS="-lncurses"
@@ -67,7 +76,7 @@ if test "x$TERMLIBS" = x; then
   fi
 fi
 
-dnl -- Try curses.
+# -- Try curses.
 if test "x$TERMLIBS" = x; then
   if test $have_curses = yes; then
     TERMLIBS="-lcurses"
@@ -80,7 +89,7 @@ if test "x$TERMLIBS" = x; then
   fi
 fi
 
-dnl -- Try curses & termcap.
+# -- Try curses & termcap.
 if test "x$TERMLIBS" = x; then
   if test $have_curses = yes; then
   if test $have_termcap = yes; then
@@ -96,7 +105,7 @@ if test "x$TERMLIBS" = x; then
 fi
 fi
 
-dnl -- Try termcap.
+# -- Try termcap.
 if test "x$TERMLIBS" = x; then
   if test $have_termcap = yes; then
     TERMLIBS="-ltermcap"
@@ -109,7 +118,7 @@ if test "x$TERMLIBS" = x; then
   fi
 fi
 
-dnl -- Try termlib.
+# -- Try termlib.
 if test "x$TERMLIBS" = x; then
   if test $have_termlib = yes; then
     TERMLIBS="-lcurses -ltermlib"
@@ -129,11 +138,66 @@ fi
 AC_MSG_RESULT(using $TERMLIBS)
 LIBS="$LIBS $TERMLIBS"
 
+# Checks for header files.
+AC_HEADER_STDC
+AC_CHECK_HEADERS([ctype.h errno.h fcntl.h limits.h stdio.h stdlib.h string.h termcap.h termio.h termios.h time.h unistd.h values.h sys/ioctl.h sys/stream.h sys/ptem.h])
 
-dnl Checks for header files.
-AC_CHECK_HEADERS(ctype.h errno.h fcntl.h limits.h stdio.h stdlib.h string.h termcap.h termio.h termios.h time.h unistd.h values.h sys/ioctl.h sys/stream.h sys/ptem.h)
+# Checks for typedefs, structures, and compiler characteristics.
+AC_HEADER_STAT
+AC_C_CONST
+AC_TYPE_OFF_T
+AC_TYPE_SIZE_T
+AC_HEADER_TIME
 
-dnl Checks for identifiers.
+# Autoheader templates for symbols defined later by AC_DEFINE.
+AH_TEMPLATE([HAVE_POSIX_REGCOMP],
+	[POSIX regcomp() and regex.h])
+AH_TEMPLATE([HAVE_PCRE],
+	[PCRE (Perl-compatible regular expression) library])
+AH_TEMPLATE([HAVE_RE_COMP],
+	[BSD re_comp()])
+AH_TEMPLATE([HAVE_REGCMP],
+	[System V regcmp()])
+AH_TEMPLATE([HAVE_V8_REGCOMP],
+	[Henry Spencer V8 regcomp() and regexp.h])
+AH_TEMPLATE([NO_REGEX],
+	[pattern matching is supported, but without metacharacters.])
+AH_TEMPLATE([HAVE_REGEXEC2],
+	[])
+AH_TEMPLATE([HAVE_VOID],
+	[Define HAVE_VOID if your compiler supports the "void" type.])
+AH_TEMPLATE([HAVE_CONST],
+	[Define HAVE_CONST if your compiler supports the "const" modifier.])
+AH_TEMPLATE([HAVE_TIME_T],
+	[Define HAVE_TIME_T if your system supports the "time_t" type.])
+AH_TEMPLATE([HAVE_STRERROR],
+	[Define HAVE_STRERROR if you have the strerror() function.])
+AH_TEMPLATE([HAVE_FILENO],
+	[Define HAVE_FILENO if you have the fileno() macro.])
+AH_TEMPLATE([HAVE_ERRNO],
+	[Define HAVE_ERRNO if you have the errno variable.])
+AH_TEMPLATE([MUST_DEFINE_ERRNO],
+	[Define MUST_DEFINE_ERRNO if you have errno but it is not define in errno.h.])
+AH_TEMPLATE([HAVE_SYS_ERRLIST],
+	[Define HAVE_SYS_ERRLIST if you have the sys_errlist[] variable.])
+AH_TEMPLATE([HAVE_OSPEED],
+	[Define HAVE_OSPEED if your termcap library has the ospeed variable.])
+AH_TEMPLATE([MUST_DEFINE_OSPEED],
+	[Define MUST_DEFINE_OSPEED if you have ospeed but it is not defined in termcap.h.])
+AH_TEMPLATE([HAVE_LOCALE],
+	[Define HAVE_LOCALE if you have locale.h and setlocale.])
+AH_TEMPLATE([HAVE_TERMIOS_FUNCS],
+	[Define HAVE_TERMIOS_FUNCS if you have tcgetattr/tcsetattr.])
+AH_TEMPLATE([HAVE_UPPER_LOWER],
+	[Define HAVE_UPPER_LOWER if you have isupper, islower, toupper, tolower.])
+AH_TEMPLATE([HAVE_SIGSET_T],
+	[Define HAVE_SIGSET_T you have the sigset_t type.])
+AH_TEMPLATE([HAVE_SIGEMPTYSET],
+	[Define HAVE_SIGEMPTYSET if you have the sigemptyset macro.])
+AH_TEMPLATE([EDIT_PGM],
+	[Define EDIT_PGM to your editor.])
+
+# Checks for identifiers.
 AC_TYPE_OFF_T
 AC_MSG_CHECKING(for void)
 AC_TRY_COMPILE(, [void *foo = 0;], 
@@ -145,11 +209,11 @@ AC_MSG_CHECKING(for time_t)
 AC_TRY_COMPILE([#include <time.h>], [time_t t = 0;],
   [AC_MSG_RESULT(yes); AC_DEFINE(HAVE_TIME_T)], [AC_MSG_RESULT(no)])
 
-dnl Checks for functions and external variables.
+# Checks for library functions.
 AC_TYPE_SIGNAL
-AC_CHECK_FUNCS(fsync memcpy popen _setjmp sigprocmask sigsetmask stat strchr strstr system)
+AC_CHECK_FUNCS([fsync memcpy popen _setjmp sigprocmask sigsetmask stat strchr strstr system])
 
-dnl Some systems have termios.h but not the corresponding functions.
+# Some systems have termios.h but not the corresponding functions.
 AC_CHECK_FUNC(tcgetattr, AC_DEFINE(HAVE_TERMIOS_FUNCS))
 
 AC_MSG_CHECKING(for fileno)
@@ -215,7 +279,7 @@ AC_TRY_LINK([
 #endif], [static int x; x = isupper(x); x = tolower(x); x = toupper(x);],
   [AC_MSG_RESULT(yes); AC_DEFINE(HAVE_UPPER_LOWER)], [AC_MSG_RESULT(no)])
 
-dnl Checks for external variable ospeed in the termcap library.
+# Checks for external variable ospeed in the termcap library.
 have_ospeed=no
 AC_MSG_CHECKING(termcap for ospeed)
 AC_TRY_LINK([
@@ -233,7 +297,7 @@ AC_TRY_LINK(, [extern short ospeed; ospeed = 0;],
   [AC_MSG_RESULT(no)])
 fi
 
-dnl Checks for regular expression functions.
+# Checks for regular expression functions.
 have_regex=no
 have_posix_regex=unknown
 AC_MSG_CHECKING(for regcomp)
@@ -245,8 +309,8 @@ AC_ARG_WITH(regex,
 
 if test $have_regex = no; then
 if test $WANT_REGEX = auto -o $WANT_REGEX = posix; then
-dnl Some versions of Solaris have a regcomp() function, but it doesn't work!
-dnl So we run a test program.  If we're cross-compiling, do it the old way.
+# Some versions of Solaris have a regcomp() function, but it doesn't work!
+# So we run a test program.  If we're cross-compiling, do it the old way.
 AC_TRY_RUN([
 #include <sys/types.h>
 #include <regex.h>
@@ -317,6 +381,183 @@ fi
 
 AC_ARG_WITH(editor,
   [  --with-editor=PROGRAM   use PROGRAM as the default editor [vi]],
-  AC_DEFINE_UNQUOTED(EDIT_PGM, "$withval"))
+  AC_DEFINE_UNQUOTED(EDIT_PGM, "$withval"), AC_DEFINE(EDIT_PGM, "vi"))
 
-AC_OUTPUT(Makefile)
+AH_TOP([
+/* Unix definition file for less.  -*- C -*-
+ *
+ * This file has 3 sections:
+ * User preferences.
+ * Settings always true on Unix.
+ * Settings automatically determined by configure.
+ *
+ * * * * * *  WARNING  * * * * * *
+ * If you edit defines.h by hand, do "touch stamp-h" before you run make
+ * so config.status doesn't overwrite your changes.
+ */
+
+/* User preferences.  */
+
+/*
+ * SECURE is 1 if you wish to disable a bunch of features in order to
+ * be safe to run by unprivileged users.
+ */
+#define	SECURE		0
+
+/*
+ * SHELL_ESCAPE is 1 if you wish to allow shell escapes.
+ * (This is possible only if your system supplies the system() function.)
+ */
+#define	SHELL_ESCAPE	(!SECURE)
+
+/*
+ * EXAMINE is 1 if you wish to allow examining files by name from within less.
+ */
+#define	EXAMINE		(!SECURE)
+
+/*
+ * TAB_COMPLETE_FILENAME is 1 if you wish to allow the TAB key
+ * to complete filenames at prompts.
+ */
+#define	TAB_COMPLETE_FILENAME	(!SECURE)
+
+/*
+ * CMD_HISTORY is 1 if you wish to allow keys to cycle through
+ * previous commands at prompts.
+ */
+#define	CMD_HISTORY	1
+
+/*
+ * HILITE_SEARCH is 1 if you wish to have search targets to be 
+ * displayed in standout mode.
+ */
+#define	HILITE_SEARCH	1
+
+/*
+ * EDITOR is 1 if you wish to allow editor invocation (the "v" command).
+ * (This is possible only if your system supplies the system() function.)
+ * EDIT_PGM is the name of the (default) editor to be invoked.
+ */
+#define	EDITOR		(!SECURE)
+
+/*
+ * TAGS is 1 if you wish to support tag files.
+ */
+#define	TAGS		(!SECURE)
+
+/*
+ * USERFILE is 1 if you wish to allow a .less file to specify 
+ * user-defined key bindings.
+ */
+#define	USERFILE	(!SECURE)
+
+/*
+ * GLOB is 1 if you wish to have shell metacharacters expanded in filenames.
+ * This will generally work if your system provides the "popen" function
+ * and the "echo" shell command.
+ */
+#define	GLOB		(!SECURE)
+
+/*
+ * PIPEC is 1 if you wish to have the "|" command
+ * which allows the user to pipe data into a shell command.
+ */
+#define	PIPEC		(!SECURE)
+
+/*
+ * LOGFILE is 1 if you wish to allow the -l option (to create log files).
+ */
+#define	LOGFILE		(!SECURE)
+
+/*
+ * GNU_OPTIONS is 1 if you wish to support the GNU-style command
+ * line options --help and --version.
+ */
+#define	GNU_OPTIONS	1
+
+/*
+ * ONLY_RETURN is 1 if you want RETURN to be the only input which
+ * will continue past an error message.
+ * Otherwise, any key will continue past an error message.
+ */
+#define	ONLY_RETURN	0
+
+/*
+ * LESSKEYFILE is the filename of the default lesskey output file 
+ * (in the HOME directory).
+ * LESSKEYFILE_SYS is the filename of the system-wide lesskey output file.
+ * DEF_LESSKEYINFILE is the filename of the default lesskey input 
+ * (in the HOME directory).
+ */
+#define	LESSKEYFILE		".less"
+#define	LESSKEYFILE_SYS		SYSDIR "/sysless"
+#define	DEF_LESSKEYINFILE	".lesskey"
+
+
+/* Settings always true on Unix.  */
+
+/*
+ * Define MSDOS_COMPILER if compiling under Microsoft C.
+ */
+#define	MSDOS_COMPILER	0
+
+/*
+ * Pathname separator character.
+ */
+#define	PATHNAME_SEP	"/"
+
+/*
+ * HAVE_SYS_TYPES_H is 1 if your system has <sys/types.h>.
+ */
+#define HAVE_SYS_TYPES_H	1
+
+/*
+ * Define if you have the <sgstat.h> header file.
+ */
+#undef HAVE_SGSTAT_H
+
+/*
+ * HAVE_PERROR is 1 if your system has the perror() call.
+ * (Actually, if it has sys_errlist, sys_nerr and errno.)
+ */
+#define	HAVE_PERROR	1
+
+/*
+ * HAVE_TIME is 1 if your system has the time() call.
+ */
+#define	HAVE_TIME	1
+
+/*
+ * HAVE_SHELL is 1 if your system supports a SHELL command interpreter.
+ */
+#define	HAVE_SHELL	1
+
+/*
+ * Default shell metacharacters and meta-escape character.
+ */
+#define	DEF_METACHARS	"; *?\t\n'\"()<>|&^`#\\"
+#define	DEF_METAESCAPE	"\\"
+
+/* 
+ * HAVE_DUP is 1 if your system has the dup() call.
+ */
+#define	HAVE_DUP	1
+
+/*
+ * Sizes of various buffers.
+ */
+#define	CMDBUF_SIZE	512	/* Buffer for multichar commands */
+#define	UNGOT_SIZE	100	/* Max chars to unget() */
+#define	LINEBUF_SIZE	1024	/* Max size of line in input file */
+#define	OUTBUF_SIZE	1024	/* Output buffer */
+#define	PROMPT_SIZE	200	/* Max size of prompt string */
+#define	TERMBUF_SIZE	2048	/* Termcap buffer for tgetent */
+#define	TERMSBUF_SIZE	1024	/* Buffer to hold termcap strings */
+#define	TAGLINE_SIZE	512	/* Max size of line in tags file */
+#define	TABSTOP_MAX	32	/* Max number of custom tab stops */
+
+/* Settings automatically determined by configure.  */
+])
+
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT
