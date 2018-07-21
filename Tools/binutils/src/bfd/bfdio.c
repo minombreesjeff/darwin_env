@@ -137,6 +137,9 @@ bfd_bwrite (ptr, size, abfd)
 		}
 	    }
 	}
+      memcpy (bim->buffer + abfd->where, ptr, (size_t) size);
+      abfd->where += size;
+      return size;
     }
   else if ((abfd->flags & BFD_IO_FUNCS) != 0)
     {
@@ -281,7 +284,7 @@ bfd_seek (abfd, position, direction)
       abfd = abfd->my_archive;
     }
 
-  if (direction == SEEK_SET && position == abfd->where)
+  if ((direction == SEEK_SET) && ((ufile_ptr) position == abfd->where))
     return 0;
 
   if ((position < 0) && (direction != SEEK_CUR)) {
@@ -303,7 +306,7 @@ bfd_seek (abfd, position, direction)
     {  
       int result;
 
-      BFD_ASSERT (ftell (bfd_cache_lookup (abfd)) == abfd->where);
+      BFD_ASSERT ((ufile_ptr) ftell (bfd_cache_lookup (abfd)) == abfd->where);
 
       result = fseek (bfd_cache_lookup (abfd), position, direction);
       if (result != 0)
@@ -326,7 +329,7 @@ bfd_seek (abfd, position, direction)
 }
 
 boolean
-bfd_io_close (abfd)
+_bfd_io_close (abfd)
      bfd *abfd;
 {
   if (abfd->flags & BFD_IN_MEMORY)
@@ -355,7 +358,6 @@ bfd_io_close (abfd)
   else
     {
       boolean ret = true;
-
       ret = bfd_cache_close (abfd);
 
       /* If the file was open for writing and is now executable,
@@ -368,13 +370,16 @@ bfd_io_close (abfd)
 
 	  if (stat (abfd->filename, &buf) == 0)
 	    {
-	      int mask = umask (0);
+	      unsigned int mask = umask (0);
+
 	      umask (mask);
 	      chmod (abfd->filename,
 		     (0x777
 		      & (buf.st_mode | ((S_IXUSR | S_IXGRP | S_IXOTH) &~ mask))));
 	    }
 	}
+
+      return ret;
     }
 }
 

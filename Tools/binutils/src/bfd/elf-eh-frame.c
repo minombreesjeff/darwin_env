@@ -64,6 +64,7 @@ struct eh_cie_fde
   unsigned char removed : 1;
   unsigned char make_relative : 1;
   unsigned char make_lsda_relative : 1;
+  unsigned char per_encoding_relative : 1;
 };
 
 struct eh_frame_sec_info
@@ -286,7 +287,7 @@ _bfd_elf_discard_section_eh_frame (abfd, info, sec, ehdrsec,
      bfd *abfd;
      struct bfd_link_info *info;
      asection *sec, *ehdrsec;
-     boolean (*reloc_symbol_deleted_p) (bfd_vma, PTR);
+     boolean (*reloc_symbol_deleted_p) PARAMS ((bfd_vma, PTR));
      struct elf_reloc_cookie *cookie;
 {
   bfd_byte *ehbuf = NULL, *buf;
@@ -469,6 +470,8 @@ _bfd_elf_discard_section_eh_frame (abfd, info, sec, ehdrsec,
 		    = cie.make_relative;
 		  sec_info->entry[last_cie_ndx].make_lsda_relative
 		    = cie.make_lsda_relative;
+		  sec_info->entry[last_cie_ndx].per_encoding_relative
+		    = (cie.per_encoding & 0x70) == DW_EH_PE_pcrel;
 		}
 	    }
 
@@ -503,6 +506,11 @@ _bfd_elf_discard_section_eh_frame (abfd, info, sec, ehdrsec,
 	    }
 	  read_uleb128 (cie.code_align, buf);
 	  read_sleb128 (cie.data_align, buf);
+	  /* Note - in DWARF2 the return address column is an unsigned byte.
+	     In DWARF3 it is a ULEB128.  We are following DWARF3.  For most
+	     ports this will not matter as the value will be less than 128.
+	     For the others (eg FRV, SH, MMIX, IA64) they need a fixed GCC
+	     which conforms to the DWARF3 standard.  */
 	  read_uleb128 (cie.ra_column, buf);
 	  ENSURE_NO_RELOCS (buf);
 	  cie.lsda_encoding = DW_EH_PE_omit;
@@ -624,17 +632,18 @@ _bfd_elf_discard_section_eh_frame (abfd, info, sec, ehdrsec,
 	    goto free_no_table;
 	  if ((*reloc_symbol_deleted_p) (buf - ehbuf, cookie))
 	    {
-	      cookie->rel = rel;
 	      /* This is a FDE against discarded section, it should
 		 be deleted.  */
 	      new_size -= hdr.length + 4;
 	      sec_info->entry[sec_info->count].removed = 1;
+	      memset (rel, 0, sizeof (*rel));
 	    }
 	  else
 	    {
 	      if (info->shared
-		  && (cie.fde_encoding & 0xf0) == DW_EH_PE_absptr
-		  && cie.make_relative == 0)
+		  && (((cie.fde_encoding & 0xf0) == DW_EH_PE_absptr
+		       && cie.make_relative == 0)
+		      || (cie.fde_encoding & 0xf0) == DW_EH_PE_aligned))
 		{
 		  /* If shared library uses absolute pointers
 		     which we cannot turn into PC relative,
@@ -689,6 +698,7 @@ _bfd_elf_discard_section_eh_frame (abfd, info, sec, ehdrsec,
 	    {
 	      sec_info->entry[i].make_relative = make_relative;
 	      sec_info->entry[i].make_lsda_relative = make_lsda_relative;
+	      sec_info->entry[i].per_encoding_relative = 0;
 	    }
 	}
       else if (sec_info->entry[i].cie && sec_info->entry[i].sec == sec)
@@ -782,7 +792,7 @@ _bfd_elf_maybe_strip_eh_frame_hdr (info)
   struct eh_frame_hdr_info *hdr_info;
 
   sec = bfd_get_section_by_name (elf_hash_table (info)->dynobj, ".eh_frame_hdr");
-  if (sec == NULL)
+  if (sec == NULL || bfd_is_abs_section (sec->output_section))
     return true;
 
   hdr_info
@@ -800,7 +810,7 @@ _bfd_elf_maybe_strip_eh_frame_hdr (info)
 	/* Count only sections which have at least a single CIE or FDE.
 	   There cannot be any CIE or FDE <= 8 bytes.  */
 	o = bfd_get_section_by_name (abfd, ".eh_frame");
-	if (o && o->_raw_size > 8)
+	if (o && o->_raw_size > 8 && !bfd_is_abs_section (o->output_section))
 	  break;
       }
 
@@ -948,7 +958,8 @@ _bfd_elf_write_section_eh_frame (abfd, sec, ehdrsec, contents)
 	  /* CIE */
 	  cie_offset = sec_info->entry[i].new_offset;
 	  if (sec_info->entry[i].make_relative
-	      || sec_info->entry[i].make_lsda_relative)
+	      || sec_info->entry[i].make_lsda_relative
+	      || sec_info->entry[i].per_encoding_relative)
 	    {
 	      unsigned char *aug;
 	      unsigned int action;
@@ -957,7 +968,8 @@ _bfd_elf_write_section_eh_frame (abfd, sec, ehdrsec, contents)
 	      /* Need to find 'R' or 'L' augmentation's argument and modify
 		 DW_EH_PE_* value.  */
 	      action = (sec_info->entry[i].make_relative ? 1 : 0)
-		       | (sec_info->entry[i].make_lsda_relative ? 2 : 0);
+		       | (sec_info->entry[i].make_lsda_relative ? 2 : 0)
+		       | (sec_info->entry[i].per_encoding_relative ? 4 : 0);
 	      buf = contents + sec_info->entry[i].offset;
 	      /* Skip length, id and version.  */
 	      buf += 9;
@@ -989,10 +1001,22 @@ _bfd_elf_write_section_eh_frame (abfd, sec, ehdrsec, contents)
                     per_width = get_DW_EH_PE_width (per_encoding,
 						    ptr_size);
 		    BFD_ASSERT (per_width != 0);
+		    BFD_ASSERT (((per_encoding & 0x70) == DW_EH_PE_pcrel)
+				== sec_info->entry[i].per_encoding_relative);
 		    if ((per_encoding & 0xf0) == DW_EH_PE_aligned)
 		      buf = (contents
 			     + ((buf - contents + per_width - 1)
 				& ~((bfd_size_type) per_width - 1)));
+		    if (action & 4)
+		      {
+			bfd_vma value;
+
+			value = read_value (abfd, buf, per_width);
+			value += (sec_info->entry[i].offset
+				  - sec_info->entry[i].new_offset);
+			write_value (abfd, buf, value, per_width);
+			action &= ~4;
+		      }
 		    buf += per_width;
 		    break;
 		  case 'R':
@@ -1009,7 +1033,7 @@ _bfd_elf_write_section_eh_frame (abfd, sec, ehdrsec, contents)
 		  }
 	    }
 	}
-      else
+      else if (sec_info->entry[i].size > 4)
 	{
 	  /* FDE */
 	  bfd_vma value = 0, address;
@@ -1082,6 +1106,9 @@ _bfd_elf_write_section_eh_frame (abfd, sec, ehdrsec, contents)
 		}
 	    }
 	}
+      else
+	/* Terminating FDE must be at the end of .eh_frame section only.  */
+	BFD_ASSERT (i == sec_info->count - 1);
 
       BFD_ASSERT (p == contents + sec_info->entry[i].new_offset);
       memmove (p, contents + sec_info->entry[i].offset,

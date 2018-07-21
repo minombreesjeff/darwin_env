@@ -29,14 +29,17 @@ SRCDOC = $(srcdir)/../aoutx.h  $(srcdir)/../archive.c \
 	$(srcdir)/../reloc.c  $(srcdir)/../section.c \
 	$(srcdir)/../syms.c  $(srcdir)/../targets.c \
 	$(srcdir)/../hash.c $(srcdir)/../linker.c \
-	$(srcdir)/../mmo.c
+	$(srcdir)/../mmo.c $(srcdir)/../bfdio.c \
+	$(srcdir)/../bfdwin.c
 
 SRCPROT = $(srcdir)/../archive.c $(srcdir)/../archures.c \
 	$(srcdir)/../bfd.c $(srcdir)/../coffcode.h $(srcdir)/../corefile.c \
 	$(srcdir)/../format.c $(srcdir)/../libbfd.c \
 	$(srcdir)/../opncls.c $(srcdir)/../reloc.c \
 	$(srcdir)/../section.c $(srcdir)/../syms.c \
-	$(srcdir)/../targets.c $(srcdir)/../init.c
+	$(srcdir)/../targets.c $(srcdir)/../init.c \
+	$(srcdir)/../cache.c $(srcdir)/../bfdio.c \
+	$(srcdir/../bfdwin.c
 
 SRCIPROT = $(srcdir)/../cache.c $(srcdir)/../libbfd.c \
 	$(srcdir)/../reloc.c $(srcdir)/../cpu-h8300.c \
@@ -199,6 +202,8 @@ LIBBFD_H_DEP = \
 	$(srcdir)/../init.c		\
 	$(srcdir)/../libbfd.c		\
 	$(srcdir)/../cache.c		\
+	$(srcdir)/../bfdio.c		\
+	$(srcdir)/../bfdwin.c		\
 	$(srcdir)/../reloc.c		\
 	$(srcdir)/../archures.c		\
 	$(srcdir)/../elf.c		\
@@ -212,8 +217,9 @@ libbfd.h: $(LIBBFD_H_DEP)
 	  case $$file in \
 	    *-in.h) cat $$file >> $@ ;; \
 	    */header.sed) break ;; \
-	    */proto.str) break ;; \
-	    *) ./$(MKDOC) -i -f $(srcdir)/proto.str < $$file >> $@ ;; \
+	    *)	echo $$file | sed -e 's,.*/,,' -e 's,^,/* Extracted from ,' \
+				-e 's,$$,.  */,' >> $@ ; \
+		./$(MKDOC) -i -f $(srcdir)/proto.str < $$file >> $@ ;; \
 	  esac; \
 	done
 	echo "#endif" >> $@
@@ -231,8 +237,9 @@ libcoff.h: $(LIBCOFF_H_DEP)
 	  case $$file in \
 	    *-in.h) cat $$file >> $@ ;; \
 	    */header.sed) break ;; \
-	    */proto.str) break ;; \
-	    *) ./$(MKDOC) -i -f $(srcdir)/proto.str < $$file >> $@ ;; \
+	    *)	echo $$file | sed -e 's,.*/,,' -e 's,^,/* Extracted from ,' \
+				-e 's,$$,.  */,' >> $@ ; \
+		./$(MKDOC) -i -f $(srcdir)/proto.str < $$file >> $@ ;; \
 	  esac; \
 	done
 
@@ -242,6 +249,9 @@ BFD_H_DEP = \
 	$(srcdir)/../opncls.c 		\
 	$(srcdir)/../libbfd.c 		\
 	$(srcdir)/../section.c 		\
+	$(srcdir)/../cache.c 		\
+	$(srcdir)/../bfdio.c 		\
+	$(srcdir)/../bfdwin.c 		\
 	$(srcdir)/../archures.c		\
 	$(srcdir)/../reloc.c		\
 	$(srcdir)/../syms.c		\
@@ -250,6 +260,8 @@ BFD_H_DEP = \
 	$(srcdir)/../corefile.c		\
 	$(srcdir)/../targets.c		\
 	$(srcdir)/../format.c		\
+	$(srcdir)/../linker.c		\
+	$(srcdir)/../simple.c		\
 	$(srcdir)/header.sed		\
 	$(srcdir)/proto.str		\
 	$(srcdir)/../version.h		\
@@ -261,8 +273,9 @@ bfd.h: $(BFD_H_DEP)
 	  case $$file in \
 	    *-in.h) cat $$file >> $@ ;; \
 	    */header.sed) break ;; \
-	    */proto.str) break ;; \
-	    *) ./$(MKDOC) -f $(srcdir)/proto.str < $$file >> $@ ;; \
+	    *)	echo $$file | sed -e 's,.*/,,' -e 's,^,/* Extracted from ,' \
+				-e 's,$$,.  */,' >> $@ ; \
+		./$(MKDOC) -f $(srcdir)/proto.str < $$file >> $@ ;; \
 	  esac; \
 	done
 	echo "#ifdef __cplusplus" >> $@

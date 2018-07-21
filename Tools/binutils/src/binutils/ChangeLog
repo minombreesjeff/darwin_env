@@ -1,3 +1,627 @@
+2002-10-09  Daniel Jacobowitz  <drow@mvista.com>
+
+	* readelf.c (display_debug_info): Ignore empty .rela.debug_info
+	sections.  Allow relocations against the absolute symbol.  Don't
+	use the value in compunit.cu_abbrev_offset if we found a RELA
+	relocation.   
+
+2002-10-07  Gordon Chaffee <chaffee@netvmg.com>
+
+	* addr2line.c (slurp_symtab): Read in dynamic symbols if no
+	ordinary ones are available.
+
+2002-09-30  H.J. Lu <hjl@gnu.org>
+
+	* readelf.c (get_machine_flags): Handle E_MIPS_MACH_4120,
+	E_MIPS_MACH_5400 and E_MIPS_MACH_5500.
+
+2002-09-17  Zack Weinberg  <zack@codesourcery.com>
+
+	* Makefile.am (CFILES): Add cxxfilt.c.
+	(cxxfilt_SOURCES): Now just cxxfilt.c $(BULIBS).
+	(cxxfilt_LDADD): Delete.
+	Remove all references to underscore.c.
+	Regen dependencies.
+	* configure.in: Define TARGET_PREPENDS_UNDERSCORE in
+	config.h from $UNDERSCORE, rather than AC_SUBSTing it.
+	* binutils/cxxfilt.c: Moved here from gcc/cp, minor
+	adjustments to fit into binutils framework.
+	* configure, config.in, Makefile.in, doc/Makefile.in: Regenerate.
+
+2002-09-12  Roland McGrath  <roland@redhat.com>
+
+	* readelf.c (decode_location_expression): DW_OP_calli -> DW_OP_call_ref
+	Handle DW_OP_GNU_push_tls_address.
+
+2002-09-11  Nick Clifton  <nickc@redhat.com>
+
+	* po/tr.po: Updated Turkish translation.
+
+2002-09-10  Nick Clifton  <nickc@redhat.com>
+
+	* MAINTAINERS: Add Ben Elliston as a maintainer for configure and
+	testsuite changes.  Add paragraphs about testsuite and config
+	patches.
+
+2002-08-29  Nick Clifton  <nickc@redhat.com>
+
+	* readelf.c (get_machine_flags): Remove redundant reference to
+	E_V850EA_ARCH.
+
+2002-08-28  Alan Modra  <amodra@bigpond.net.au>
+
+	* objdump.c (dump_bfd): Restore lines accidentally deleted in
+	last commit.
+
+2002-08-28  Michael Hayes <m.hayes@elec.canterbury.ac.nz>
+
+	* objdump.c (dump_headers): Add printing of HAS_LOAD_PAGE flag.
+	(dump_bfd_header): Likewise.
+
+2002-08-27  Alan Modra  <amodra@bigpond.net.au>
+
+	* nm.c: Revert last change.
+
+2002-08-26  Alan Modra  <amodra@bigpond.net.au>
+
+	* nm.c (display_rel_file): Don't report "no symbols" as an error.
+	* objdump.c (slurp_symtab): Likewise.
+	(slurp_dynamic_symtab): Likewise.
+	(dump_symbols): Likewise.  Do print "no symbols" to stdout.
+
+2002-08-24  Geoffrey Keating  <geoffk@redhat.com>
+
+	* MAINTAINERS: Change my mailing address.
+
+2002-08-23  John David Anglin  <dave@hiauly1.hia.nrc.ca>
+
+	* MAINTAINERS: Add Dave Anglin as HPPA co-maintainer.
+
+2002-08-22  Nick Clifton  <nickc@redhat.com>
+
+	* MAINTAINERS: Add Jeff Law as (maintainance) maintainer for
+	HPPA.
+
+2002-08-21  John David Anglin  <dave@hiauly1.hia.nrc.ca>
+
+	* readelf.c (parse_args): Change debug_dump_opt to static.
+
+2002-08-16  Sivaguru Sankaridurg  <siva@eternal-systems.com>
+
+	* stabs.c (parse_stab_argtype): Pass length of physname to
+	stab_demangle_argtypes.
+	(stab_demangle_argtypes): Add new parameter - length of physname.
+	Pass length of physname on to stab_demangle_prefix.
+	(stab_demangle_prefix): Add new parameter - length of physname.
+	Use length of physname (if supplied) to compute end of function
+	name.
+
+2002-08-15  Alan Modra  <amodra@bigpond.net.au>
+
+	* readelf.c: Include elf/i370.h.
+	(dump_relocations): Handle EM_S370.
+	(dynamic_segment_parisc_val): Print \n.
+	(process_dynamic_segment <DT_BIND_NOW>): Here too.
+
+2002-08-14  Nick Clifton  <nickc@redhat.com>
+
+	* nm.c (usage): Change 'gnu-new-abi' to 'gnu-v3'.
+	* objdump.c (usage): Likewise.
+	* doc/binutils.texi: Likewise.
+
+2002-08-14  Luke Dunstan  <infidel@users.sourceforge.net>
+
+	* rcparse.y (acc_entry): Don't warn about ALT use with
+	non-VIRTKEY.
+
+2002-08-13  H.J. Lu <hjl@gnu.org>
+
+	* objcopy.c (copy_object): Don't warn about the unsupported
+	architecture unless the input target is defaulted or the
+	output architecture is different from the input.
+
+2002-08-09  Nick Clifton  <nickc@redhat.com>
+
+	* po/sv.po: Updated Swedish translation.
+
+2002-08-05  Alan Modra  <amodra@bigpond.net.au>
+
+	* prdbg.c (pr_fix_visibility): Remove assert.
+
+2002-07-31  Nick Clifton  <nickc@redhat.com>
+
+	* addr2line.c (process_file): Rename parameter 'filename' to
+	'file_name' in order to avoid shadowing global symbol of the
+	same name.
+	(main): Likewise.
+
+2002-07-30  Jakub Jelinek  <jakub@redhat.com>
+
+	* readelf.c (OPTION_DEBUG_DUMP): Define.
+	(options): Use it.
+	(usage): Update help.
+	(parse_args): Handle --debug-dump separately from -w.
+	* doc/binutils.texi (readelf): Update documentation.
+
+2002-07-25  Nick Clifton  <nickc@redhat.com>
+
+	* po/es.po: Updated Spanish translation.
+	* po/fr.po: Updated French translation.
+
+2002-07-24  Nick Clifton  <nickc@redhat.com>
+
+	* po/es.po: Updated Spanish translation.
+
+2002-07-23  Alan Modra  <amodra@bigpond.net.au>
+
+	* Makefile.am: Run "make dep-am".
+	* Makefile.in: Regenerate.
+
+2002-07-23  Nick Clifton  <nickc@redhat.com>
+
+	* po/fr.po: Updated French translation.
+
+2002-07-23  Eric S. Raymond  <esr@golux.thyrsus.com>
+
+	* doc/binutils.texi (addr2line <man synopsis>): Correct brackets.
+
+2002-07-20  Alan Modra  <amodra@bigpond.net.au>
+
+	* budemang.c: Include config.h and string.h/strings.h.
+
+2002-07-18 Denis Chertykov  <denisc@overta.ru>
+	   Frank Ch. Eigler  <fche@redhat.com>
+
+	* readelf.c: Include "elf/ip2k.h".
+	(guess_is_rela): Add support for EM_IP2K and EM_IP2K_OLD.
+	(dump_relocations): Likewise.
+	(get_machine_name): Likewise.
+	* NEWS: Mention IP2K support.
+
+2002-07-16  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* NEWS: Add 'Changes in 2.13'.
+
+2002-07-10  Jakub Jelinek  <jakub@redhat.com>
+
+	* readelf.c (get_dynamic_type): Handle DT_GNU_PRELINKED,
+	DT_GNU_CONFLICT* and DT_GNU_LIBLISZ*.
+	(get_section_type_name): Handle SHT_GNU_LIBLIST.
+	(process_dynamic_segment): Handle DT_GNU_CONFLICTSZ,
+	DT_GNU_LIBLISTSZ and DT_GNU_PRELINKED.
+	(process_gnu_liblist): New.
+	(process_file): Call it.
+
+2002-07-03  Alan Modra  <amodra@bigpond.net.au>
+
+	* Makefile.am (check-DEJAGNU): Revert 2002-06-25 change.
+	* Makefile.in: Regenerate.
+
+2002-07-02  Alan Modra  <amodra@bigpond.net.au>
+
+	* budemang.c: New file, "demangle" function.
+	* budemang.h: New file.
+	* addr2line.c (translate_addresses): Use "demangle".
+	* nm.c (print_symname): Likewise.
+	* objdump.c (objdump_print_symname): Likewise.
+	(dump_symbols): Likewise.  Also, don't use bfd_asymbol_name macro
+	here since that obfuscates.
+	* rdcoff.c: Don't #include demangle.h.
+	* Makefile.am (CFILES): Add budemang.c, emul_aix.c,
+	emul_vanilla.c.  Remove emul_$(EMULATION).c.  Sort.
+	(HFILES): Add budemang.h.  Sort.
+	(nm_new_SOURCES, objdump_SOURCES, addr2line_SOURCES): Add budemang.c.
+	Run "make dep-am".
+	* Makefile.in: Regenerate.
+
+2002-07-01  Matt Thomas  <matt@3am-software.com>
+
+	* readelf.c: Include "elf/vax.h".
+	(guess_is_rela): Move EM_VAX from unknown to RELA case.
+	(dump_relocations): Handle VAX relocations.
+	(get_machine_flags): Handle VAX machine flags.
+
+2002-06-29  Stephane Carrez  <stcarrez@nerim.fr>
+
+	* readelf.c (dump_relocations): Handle 68HC11/68HC12 relocations.
+
+2002-06-26  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* MAINTAINERS: Remove Tom Rix from d10v and pcc maintainerships.
+
+2002-06-26  Alan Modra  <amodra@bigpond.net.au>
+
+	* nm.c (print_symname): When demangling, strip leading dots from
+	symbol names to avoid confusing the demangler.
+
+2002-06-25  H.J. Lu <hjl@gnu.org>
+
+	* Makefile.am (check-DEJAGNU): Set LC_ALL=C and export it.
+	* Makefile.in: Regenerated.
+
+2002-06-21  Igor Schein  <igor@txc.com>
+
+	* configure.in: Quote bu_cv_have_fopen64.
+	* configure: Regenerate.
+
+2002-06-21  Mitsru Chinen  <chinen@jp.ibm.com>
+
+	* configure.in: Check for strcoll.
+	* configure: Regenerate.
+	* config.in: Regenerate.
+	* nm.c (main): Set locale for LC_COLLATE category.
+	(non_numeric_forward): Use strcoll if available.
+
+2002-06-20  Dave Brolley  <brolley@redhat.com>
+
+	* MAINTAINERS: Add self as fr30 and frv maintainer.
+
+2002-06-18  H.J. Lu  (hjl@gnu.org)
+
+	* nm.c: Include "elf/common.h".
+	(extended_symbol_info): Add elfinfo, a pointer to
+	elf_symbol_type.
+	(SYM_SIZE): Use elfinfo if it is not NULL.
+	(get_symbol_type): New function.
+	(display_archive): Set print_width for each archive member.
+	(display_file): Likewise.
+	(display_rel_file): Don't set print_width here.
+	(print_object_filename_sysv): Handle print_width.
+	(print_archive_member_sysv): Likewise.
+	(print_symbols): Pass (bfd_vma) 0 to print_symbol.
+	(print_symbol): Set the elfinfo field in extended_symbol_info
+	for ELF.
+	(print_object_filename_sysv): Fix the output format.
+	(print_symbol_info_sysv): Print type and section for ELF.
+
+2002-06-18  Elias Athanasopoulos  <eathan@otenet.gr>
+
+	* nm.c (print_size_symbols): Remove assignment, which makes
+	the symbol's size equal to its value when --size-sort is
+	used.
+
+2002-06-18  Dave Brolley  <brolley@redhat.com>
+
+	From Catherine Moore:
+	* readelf.c (elf/frv.h): #include it.
+	(guess_is_rela): Support EM_CYGNUS_FRV.
+	(dump_relocations): Ditto.
+	(get_machine_name): Ditto.
+	* Makefile.am (readelf.o): add dependency on $(INCDIR)/elf/frv.h.
+
+2002-06-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* readelf.c (get_file_header): Only read the first section header if
+	e_shoff is non-zero.
+
+2002-06-15  H.J. Lu  (hjl@gnu.org)
+
+	* nm.c (print_size): New variable. Initialize to 0.
+	(long_options): Add 'S'/"print-size".
+	(main): Handle 'S'.
+	(print_symbol_info_bsd): Print size only if print_size is not
+	0.
+
+	* doc/binutils.texi: Document -S/--print-size.
+
+2002-6-13  Elias Athanasopoulos  <eathan@otenet.gr>
+
+	* nm.c (struct extended_symbol_info): New strcuture: Add the size
+	of the symbols to the information provided by the symbol_info
+	structure.
+	(print_symbols): Pass the symbol size to print_symbol.
+	(print_size_symbols): Pass the symbol size to print_symbol.
+	(print_symbol): Extra argument: The size of the symbol.  Store
+	this in the extended_symbol_info structure.
+	(print_symbol_info): Change type of info parameter to
+	extended_symbol_info.  Display the size, if known.
+	(print_symbol_info_posix): Likewise.
+	(print_symbol_info_sysv): Likewise.
+
+2002-06-08  Alan Modra  <amodra@bigpond.net.au>
+
+	* Makefile.am: Run "make dep-am".
+	* Makefile.in: Regenerate.
+	* doc/Makefile.in: Regnerate.
+
+	* bucomm.c: Replace CONST with const.
+	* nm.c: Likewise.
+	* objdump.c: Likewise.
+
+2002-06-07  H.J. Lu <hjl@gnu.org>
+
+	* readelf.c (DW_CFA_GNU_args_size): Don't define.
+	(DW_CFA_GNU_negative_offset_extended): Likewise.
+	(DW_CFA_GNU_window_save): Likewise.
+	(display_debug_frames): Handle DW_CFA_offset_extended_sf,
+	DW_CFA_def_cfa_sf and DW_CFA_def_cfa_offset_sf.
+
+2002-06-07  Elias Athanasopoulos  <eathan@otenet.gr>
+
+	* nm.c: When computing size of symbols for an ELF target use the
+	internal size field.
+
+2002-06-06  John David Anglin  <dave@hiauly1.hia.nrc.ca>
+
+	* testsuite/binutils-all/objcopy.exp: clear xfail for
+	"hppa*64*-*-hpux*".
+	* testsuite/binutils-all/hppa/objdump.exp: Return if
+	"*64*-*-*".
+
+2002-06-05  Alan Modra  <amodra@bigpond.net.au>
+
+	* objcopy.c (copy_section): Don't copy SEC_GROUP sections.
+
+2002-06-03  Elias Athanasopoulos  <eathan@otenet.gr>
+
+	* objdump.c: Fix formatting.
+
+2002-05-29  Ben Elliston  <bje@redhat.com>
+
+	* MAINTAINERS: Add self as M68k maintainer.
+
+2002-05-28  Kuang Hwa Lin <kuang@sbcglobal.net>
+
+	* readelf.c: Modified/Added DLX elf support.
+
+2002-05-27  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* arsup.c: Fix formatting.
+	* debug.c (debug_record_label): Add missing colon to error
+	message.
+	* ieee.c (parse_ieee_ty): Fix spelling typo.
+	* readelf.c (process_program_headers): Remove English assumption
+	about making a plural word.
+	(process_section_headers): Likewise.
+	(process_relocs): Allow quotes to be translated.
+	(process_unwind): Likewise,
+	(process_mips_specific): Improve error message.
+	(get_note_type): Fix spelling typo.
+
+	* configure.in (ALL_LINGUAS): Add sv
+	* po/sv.po: New file.
+
+2002-05-27  Alan Modra  <amodra@bigpond.net.au>
+
+	* unwind-ia64.c (unw_print_brmask): Don't use sprintf.
+	(unw_print_grmask): Likewise.
+	(unw_print_frmask): Likewise.
+
+2002-05-26  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* arsup.c: Remove ARGSUSED.
+	* debug.c: Likewise.
+	* ieee.c: Likewise.
+	* nlmconv.c: Likewise.
+	* prdbg.c: Likewise.
+	* stabs.c: Likewise.
+	* wrstabs.c: Likewise.
+
+2002-05-25  Alan Modra  <amodra@bigpond.net.au>
+
+	* arlex.l: Use #include "" instead of <> for local header files.
+	* coffdump.c: Likewise.
+	* coffgrok.c: Likewise.
+	* nlmconv.c: Likewise.
+	* nlmheader.y: Likewise.
+	* srconv.c: Likewise.
+	* strings.c: Likewise.
+	* sysdump.c: Likewise.
+	* unwind-ia64.h: Likewise.
+	* windres.h: Likewise.
+	* winduni.h: Likewise.
+
+2002-05-24  Tom Rix  <trix@redhat.com>
+
+	* MAINTAINERS: Add self as the d10v maintainer.
+
+2002-05-24   TAMURA Kent <kent@netbsd.org>
+
+	* configure.in: Builds dlltool for i386-netbsdpe.
+	* configure: Regenerate.
+
+2002-05-23  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* size.c: Fix formatting.
+	* srconv.c: Likewise.
+	* stabs.c: Likewise.
+	* sysdump.c: Likewise.
+	* unwind-ia64.c: Likewise.
+	* wrstabs.c: Likewise.
+
+2002-05-23  Jakub Jelinek  <jakub@redhat.com>
+
+	* readelf.c (get_segment_type): Add PT_TLS.
+	(get_elf_section_flags): Add SHF_TLS.
+	(get_dynamic_flags): Optimize.  Add DF_STATIC_TLS.
+	(process_dynamic_segment): Use puts instead of printf.
+	(get_symbol_type): Support STT_TLS.
+	* objdump.c (dump_section_header): Remove SEC_CONSTRUCTOR_TEXT,
+	SEC_CONSTRUCTOR_DATA, SEC_CONSTRUCTOR_BSS.
+	Add SEC_THREAD_LOCAL.
+
+2002-05-23  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* rdcoff.c: Fix formatting.
+	* rddbg.c: Likewise.
+	* readelf.c: Likewise.
+	* rename.c: Likewise.
+	* resbin.c: Likewise.
+	* resrc.c: Likewise.
+	* resres.c: Likewise.
+
+2002-05-21  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* filemode.c: Fix formatting.
+	* ieee.c: Likewise.
+	* is-ranlib.c: Likewise.
+	* is-strip.c: Likewise.
+	* maybe-ranlib.c: Likewise.
+	* maybe-strip.c: Likewise.
+	* nlmconv.c: Likewise.
+	* nm.c: Likewise.
+	* not-ranlib.c: Likewise.
+	* not-strip.c: Likewise.
+	* objcopy.c: Likewise.
+	* objdump.c: Likewise.
+
+2002-05-21  Thiemo Seufer <seufer@csv.ica.uni-stuttgart.de>
+
+	* objdump.c (dump_headers): Fix output formatting for ELF32
+	architectures in a BFD64 enabled toolchain.
+
+2002-05-20  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* debug.c: Fix formatting.
+	* debug.h: Likewise.
+	* dlltool.c: Likewise.
+	* dllwrap.c: Likewise.
+	* emul_aix.c: Likewise.
+	* emul_vanilla.c: Likewise.
+
+2002-05-19  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* addr2line.c: Fix formatting.
+	* ar.c: Likewise.
+	* arsup.c: Likewise.
+	* arsup.h: Likewise.
+	* binemul.c: Likewise.
+	* binemul.h: Likewise.
+	* bucomm.c: Likewise.
+	* coffdump.c: Likewise.
+	* coffgrok.c: Likewise.
+	* coffgrok.h: Likewise.
+
+2002-05-16  Marek Michalkiewicz  <marekm@amelek.gda.pl>
+
+	* MAINTAINERS: Add myself as the second AVR port maintainer.
+
+2002-05-16  Stephane Carrez  <stcarrez@nerim.fr>
+
+	* MAINTAINERS: Update my email address.
+
+2002-05-09  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* MAINTAINERS: Add Jason Thorpe as VAX maintainer.
+
+2002-05-09  Alan Modra  <amodra@bigpond.net.au>
+
+	* configure.in: Replace `*pe' with `pe' throughout.
+	* configure: Regenerate.
+
+2002-05-07  Federico G. Schwindt <fgsch@olimpo.com.br>
+
+	* Makefile.am: Honour DESTDIR.
+	* Makefile.in: Regenerate.
+
+2002-05-06  Alan Modra  <amodra@bigpond.net.au>
+
+	* dlltool.c (process_def_file): Add missing prototype.
+	(new_directive, assemble_file, main): Likewise.
+	(process_def_file, new_directive): Make static.
+	(inform): Rewrite using VA_FIXEDARG.
+	* dllwrap.c (mybasename): Add missing prototype.
+	(strhash, main): Likewise.
+	(inform): Rewrite using VA_FIXEDARG.
+	(warn): Likewise.
+	(cleanup_and_exit): Use old style function definition.
+	(strhash): Likewise.
+	* windres.c (define_resource): Use one memset to clear all of
+	struct res_resource.
+
+	* rcparse.y: Remove newcmd rule.  Move rcparse_discard_strings
+	call to rules that need no lookahead.  Check for no lookahead.
+
+2002-05-06  Borut Razem  <borut.razem@siol.net>
+
+	* rclex.l (get_string): Correct "strings" list handling.
+	* resrc.c (read_rc_file): Discard strings.
+
+2002-05-04  Alan Modra  <amodra@bigpond.net.au>
+
+	* ar.c (replace_members): Remove unused var.  Formatting fix.
+	* binemul.c (ar_emul_default_parse_arg): Add ATTRIBUTE_UNUSED.
+
+	* MAINTAINERS: Sort port maintainers by CPU.
+
+2002-05-04  Bob Byrnes  <byrnes@curl.com>
+
+	* size.c (display_archive): Add last_arfile and code to close archives.
+
+2002-05-01  Alan Modra  <amodra@bigpond.net.au>
+
+	* nm.c (print_symbol): Check returned filename from
+	bfd_find_nearest_line is non-NULL.
+
+2002-04-25  Elena Zannoni <ezannoni@redhat.com>
+
+	* readelf.c (get_AT_name): Handle DW_AT_GNU_vector.
+
+2002-04-24  Christian Groessler <chris@groessler.org>
+
+	* MAINTAINERS: Changed my email address.
+
+2002-04-17  Thiemo Seufer <seufer@csv.ica.uni-stuttgart.de>
+
+	* arparse.y: Fix syntax warning.
+
+2002-04-16  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* readelf.c (fetch_location_list): Remove unused function.
+
+	* readelf.c (process_corefile_note_segment): Catch corrupt notes
+	and display a warning message, then exit the loop.
+
+	* rcparse.y: Set MEMFLAG_DISCARDABLE by default.
+
+2002-04-15  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* resrc.c (write_rc_dialog): If charset is non-default value
+	display all of the DIALOGEX parameters.
+
+2002-04-15  Eric Kohl <ekohl@rz-online.de>
+
+	* rcparse.y: Allow two to five parameter in FONT statement of
+	DIALOGEX resources.
+	* resbin.c (bin_to_res_dialog): Fixed read/write code for dialogex
+	resource data.
+	(res_to_bin_dialog): Likewise.
+	* windres.h: Added misssing charset variable to dialog_ex
+	structure.
+
+2002-04-10  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* rcparse.y: Set MEMFLAG_PURE by default.
+
+2002-04-09  Bernd Herd <info@herdsoft.com>
+
+	* rcparse.y: CLASS definitions in DIALOG resources
+	are quoted.
+	Fix typo in BEDIT warning.
+	Don't add default dialog style when explicit style specified.
+	Add WS_CAPTION dialog style if CAPTION is specified.
+
+	* rclex.l (handle_quotes): "\xhex" encoding in strings corrected.
+	(handle_quotes) "\a" escape (used for right justified key
+	definitions in menus) is encodes as binary 8.
+
+	* resrc.c (write_rc_dialog): Print style even if it is 0.
+	(write_rc_directory): Fix overlooked sublang shift bug.
+	(bin_to_res_dialog): Don't print empty dialog caption.
+
+	* resbin.c (bin_to_res_dialog): Use signature to identify
+	DIALOGEX.
+
+	* windres.c (main): Set default LANGUAGE to english/us.
+
+2002-04-09  Gunnar Degnbol <degnbol@danbbs.dk>
+
+	* resrc.c: print CLASS names in quotes
+
+2002-04-09  J"orn Rennecke <joern.rennecke@superh.com>
+
+	* MAINTAINERS: Update my email address.
+
 2002-04-04  Alan Modra  <amodra@bigpond.net.au>
 
 	* dep-in.sed: Cope with absolute paths.
@@ -84,10 +708,10 @@
 
 2002-02-18  Timothy Daly  <remote_bob@yahoo.com>
 
-	* readelf.c (dump_relocations): Display 2nd and 3rd reloc 
-	types for 64-bit MIPS.  Narrow some fields for 80-char 
+	* readelf.c (dump_relocations): Display 2nd and 3rd reloc
+	types for 64-bit MIPS.  Narrow some fields for 80-char
 	output.
-	(dump_relocations): Change spelling from 'unrecognised' 
+	(dump_relocations): Change spelling from 'unrecognised'
 	to 'unrecognized'.
 	(decode_ARM_machine_flags): Likewise.
 	(parse_args): Likewise.
@@ -214,7 +838,7 @@
 	(main): Accept -H as an alias for --help.
 	* objcopy.c (strip_main): Accept -H as an alias for --help.
 	* objdump.c (main): Accept -v as an alias for --verbose.
-        * readelf.c (usage): Adjust format to match style used in
+	* readelf.c (usage): Adjust format to match style used in
 	other binutils.
 	* size.c (usage): Update text to provide verbose description
 	of the command line options.
@@ -266,9 +890,9 @@
 2002-01-15  Nick Clifton  <nickc@cambridge.redhat.com>
 
 	* objcopy.c (copy_usage): Use "options" instead of "switches".
-        (strip_usage): Use "options" instead of "switches".
+	(strip_usage): Use "options" instead of "switches".
 	* doc/binutils.texi (dlltool):  Refer to "options" instead of
-        "switches".
+	"switches".
 
 2002-01-14  Richard Earnshaw  <rearnsha@arm.com>
 
@@ -869,9 +1493,9 @@
 
 2001-08-03  John Healy  <jhealy@redhat.com>
 
-        Patch suggested by Frank Eigler <fche@redhat.com>.
-        * objdump.c (disassemble_data): Fill in section member of the
-        disasm_info structure.
+	Patch suggested by Frank Eigler <fche@redhat.com>.
+	* objdump.c (disassemble_data): Fill in section member of the
+	disasm_info structure.
 
 2001-08-03  Tom Walsh  <tom@cyberiansoftware.com>
 
@@ -889,18 +1513,18 @@
 
 2001-07-31  Nick Clifton  <nickc@cambridge.redhat.com>
 
-        * objcopy.c: Fix formatting.
-        (section_rename): New structure.
-        (OPTION_RENAME_SECTION): New switch.
-        (copy_usage): Document new switch.
-        (add_section_rename): New function: Add a node to the section
-        rename list.
-        (find_section_rename): New function: Find the new name and
-        flags for a section.
-        (setup_section): Call find_section_name to determine the name
-        of the output section.
-        (copy_main): Handle OPTION_RENAME_SECTION.
-        * binutils.texi: Document new switch.
+	* objcopy.c: Fix formatting.
+	(section_rename): New structure.
+	(OPTION_RENAME_SECTION): New switch.
+	(copy_usage): Document new switch.
+	(add_section_rename): New function: Add a node to the section
+	rename list.
+	(find_section_rename): New function: Find the new name and
+	flags for a section.
+	(setup_section): Call find_section_name to determine the name
+	of the output section.
+	(copy_main): Handle OPTION_RENAME_SECTION.
+	* binutils.texi: Document new switch.
 	* NEWS: Mention new switch.
 
 2001-07-30  Nick Clifton  <nickc@cambridge.redhat.com>
@@ -1064,23 +1688,23 @@
 
 2001-06-18  H.J. Lu <hjl@gnu.org> & Nick Clifton <nickc@redhat.com>
 
-        * Makefile.am: Move documentation into doc subdirectory.
-        * Makefile.in: Regenerated.
+	* Makefile.am: Move documentation into doc subdirectory.
+	* Makefile.in: Regenerated.
 	* binutils.texi: Move into doc subdirectory.
-        * addr2line.1: Removed.
-        * ar.1: Likewise.
-        * dlltool.1: Likewise.
-        * nlmconv.1: Likewise.
-        * nm.1: Likewise.
-        * objcopy.1: Likewise.
-        * objdump.1: Likewise.
-        * ranlib.1: Likewise.
-        * readelf.1: Likewise.
-        * size.1: Likewise.
-        * strings.1: Likewise.
-        * strip.1: Likewise.
-        * windres.1: Likewise.
-        * cxxfilt.man: Likewise.
+	* addr2line.1: Removed.
+	* ar.1: Likewise.
+	* dlltool.1: Likewise.
+	* nlmconv.1: Likewise.
+	* nm.1: Likewise.
+	* objcopy.1: Likewise.
+	* objdump.1: Likewise.
+	* ranlib.1: Likewise.
+	* readelf.1: Likewise.
+	* size.1: Likewise.
+	* strings.1: Likewise.
+	* strip.1: Likewise.
+	* windres.1: Likewise.
+	* cxxfilt.man: Likewise.
 	* doc: New Directory.
 	* doc/Makefile.am: New file.
 	* doc/Makefile.in: Generate.
@@ -1148,7 +1772,7 @@
 
 2001-04-27  Johan Rydberg  <jrydberg@opencores.org>
 
-        * NEWS: Announce support for OpenRISC.
+	* NEWS: Announce support for OpenRISC.
 
 2001-04-17  Danny Smith  <dannysmith@users.sourceforge.net>
 

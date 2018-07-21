@@ -1,0 +1,69 @@
+2002-10-14  Klee Dienes <kdienes@apple.com>
+
+        * configure.in: Update powerpc-apple-darwin* target to include
+	ia86, and to build gdb and binutils.
+
+2002-10-07  Klee Dienes <kdienes@apple.com>
+
+        * install-sh: Revert to Cygnus version.
+
+2002-09-12  Jason Molenda  (jmolenda@apple.com)
+
+	* Makefile.in: Remove a few extraneous diffs from FSF Makefile.in.
+
+2002-08-30  Klee Dienes  <kdienes@apple.com>
+
+	* configure: Accidentally nuked Jason's check to set --build
+	to $host_alias; restored it.
+	
+	* configure.in: Skip expect if $build != $host.  The previous
+	test would skip expect whenever building for i386.
+
+2002-07-25  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb/configure.in: By default, assume --with-mmalloc.  There
+	is a file in gdb/macosx/ which requires mmalloc to compile.
+	* gdb/acconfig.h: Updated.
+	* gdb/Makefile.in: Remove electric-fence use.
+	(YLWRAP): Reorder calls to ylwrap to conform to new usage.
+
+	* tcl/unix/configure.in: Reorder gettimeofday() checks; maybe
+	it's an autoconf bug, maybe it's an edge case, but this little
+	hack works around it.
+
+	* Makefile.in:  Remove electric-fence targets, dependencies.
+	* configure.in: Remove electric-fence.
+	Grab latest version of file from FSF.
+
+	* configure: Grab latest version of file from FSF.
+	* install-sh, missing, mkinstalldirs, ylwrap: Update from automake-1.6.
+
+	* bfd/acinclude.m4: Update from FSF version.
+	* bfd/Makefile.am:  Drop electric-fence.
+	* binutils/acinclude.m4: Update from FSF version.
+	* binutils/Makefile.am: Drop electric-fence.
+	* config/acinclude.m4: Update from FSF version.
+	* gas/Makefile.am: Drop electric-fence.
+	* gdb/acinclude.m4: Update from FSF version.
+	* ld/Makefile.am: Drop electric-fence.
+	* libiberty/Makefile.am: Drop electric-fence.
+	* libiberty/xmalloc.c: Remove electric-fence calls.
+	* opcodes/acinclude.m4: Update from FSF version.
+	* opcodes/Makefile.am: Drop electric-fence.
+	* readline/Makefile.in: Remove electric-fence calls.
+
+2002-08-02  Jason Molenda  (jmolenda@apple.com)
+
+	* configure:  Fix it in a different place; revert previous
+	change.
+
+2002-08-02  Jason Molenda  (jmolenda@apple.com)
+
+	* configure: Set --build to $host_alias if we're not building
+	Canadian cross; avoids a noisy warning from the autoconf-2.52
+	generated configure files.
+
+2001-09-13  Jason Molenda  (jmolenda@apple.com)
+
+       * configure:  Darwin's /bin/sh doesn't let you write to $PWD, so don't.
+       Apple local change.

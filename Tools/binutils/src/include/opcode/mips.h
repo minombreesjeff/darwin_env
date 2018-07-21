@@ -133,6 +133,21 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  *
 #define OP_MASK_SEL		0x7	/* The sel field of mfcZ and mtcZ.  */
 #define OP_SH_CODE19		6       /* 19 bit wait code.  */
 #define OP_MASK_CODE19		0x7ffff
+#define OP_SH_ALN		21
+#define OP_MASK_ALN		0x7
+#define OP_SH_VSEL		21
+#define OP_MASK_VSEL		0x1f
+#define OP_MASK_VECBYTE		0x7	/* Selector field is really 4 bits,
+					   but 0x8-0xf don't select bytes.  */
+#define OP_SH_VECBYTE		22
+#define OP_MASK_VECALIGN	0x7	/* Vector byte-align (alni.ob) op.  */
+#define OP_SH_VECALIGN		21
+
+/* Values in the 'VSEL' field.  */
+#define MDMX_FMTSEL_IMM_QH	0x1d
+#define MDMX_FMTSEL_IMM_OB	0x1e
+#define MDMX_FMTSEL_VEC_QH	0x15
+#define MDMX_FMTSEL_VEC_OB	0x16
 
 /* This structure holds information for a particular instruction.  */
 
@@ -179,6 +194,7 @@ struct mips_opcode
    "i" 16 bit unsigned immediate (OP_*_IMMEDIATE)
    "j" 16 bit signed immediate (OP_*_DELTA)
    "k" 5 bit cache opcode in target register position (OP_*_CACHE)
+       Also used for immediate operands in vr5400 vector insns.
    "o" 16 bit signed offset (OP_*_DELTA)
    "p" 16 bit PC relative branch target address (OP_*_DELTA)
    "q" 10 bit extra breakpoint code (OP_*_CODE2)
@@ -211,6 +227,9 @@ struct mips_opcode
    "G" 5 bit destination register (OP_*_RD)
    "H" 3 bit sel field for (d)mtc* and (d)mfc* (OP_*_SEL)
    "P" 5 bit performance-monitor register (OP_*_PERFREG)
+   "e" 5 bit vector register byte specifier (OP_*_VECBYTE)
+   "%" 3 bit immediate vr5400 vector alignment operand (OP_*_VECALIGN)
+   see also "k" above
 
    Macro instructions:
    "A" General 32 bit expression
@@ -220,14 +239,23 @@ struct mips_opcode
    "f" 32 bit floating point constant
    "l" 32 bit floating point constant in .lit4
 
+   MDMX instruction operands (note that while these use the FP register
+   fields, they accept both $fN and $vN names for the registers):  
+   "O"	MDMX alignment offset (OP_*_ALN)
+   "Q"	MDMX vector/scalar/immediate source (OP_*_VSEL and OP_*_FT)
+   "X"	MDMX destination register (OP_*_FD) 
+   "Y"	MDMX source register (OP_*_FS)
+   "Z"	MDMX source register (OP_*_FT)
+
    Other:
    "()" parens surrounding optional value
    ","  separates operands
+   "[]" brackets around index for vector-op scalar operand specifier (vr5400)
 
    Characters used so far, for quick reference when adding more:
-   "<>(),"
-   "ABCDEFGHIJLMNPRSTUVW"
-   "abcdfhijklopqrstuvwxz"
+   "%[]<>(),"
+   "ABCDEFGHIJLMNOPQRSTUVWXYZ"
+   "abcdefhijklopqrstuvwxz"
 */
 
 /* These are the bits which may be set in the pinfo field of an
@@ -297,6 +325,10 @@ struct mips_opcode
 #define INSN_MULT                   0x40000000
 /* Instruction synchronize shared memory.  */
 #define INSN_SYNC		    0x80000000
+/* Instruction reads MDMX accumulator.  XXX FIXME: No bits left!  */
+#define INSN_READ_MDMX_ACC	    0
+/* Instruction writes MDMX accumulator.  XXX FIXME: No bits left!  */
+#define INSN_WRITE_MDMX_ACC	    0
 
 /* Instruction is actually a macro.  It should be ignored by the
    disassembler, and requires special treatment by the assembler.  */
@@ -317,9 +349,14 @@ struct mips_opcode
 #define INSN_ISA64                0x00000400
 
 /* Masks used for MIPS-defined ASEs.  */
+#define INSN_ASE_MASK		  0x0000f000
 
+/* MIPS 16 ASE */
+#define INSN_MIPS16               0x00002000
 /* MIPS-3D ASE */
 #define INSN_MIPS3D               0x00004000
+/* MDMX ASE */ 
+#define INSN_MDMX                 0x00008000
 
 /* Chip specific instructions.  These are bitmasks.  */
 
@@ -335,6 +372,14 @@ struct mips_opcode
 #define INSN_10000                0x00100000
 /* Broadcom SB-1 instruction.  */
 #define INSN_SB1                  0x00200000
+/* NEC VR4111/VR4181 instruction.  */
+#define INSN_4111                 0x00400000
+/* NEC VR4120 instruction.  */
+#define INSN_4120                 0x00800000
+/* NEC VR5400 instruction.  */
+#define INSN_5400		  0x01000000
+/* NEC VR5500 instruction.  */
+#define INSN_5500		  0x02000000
 
 /* MIPS ISA defines, use instead of hardcoding ISA level.  */
 
@@ -350,18 +395,20 @@ struct mips_opcode
 /* CPU defines, use instead of hardcoding processor number. Keep this
    in sync with bfd/archures.c in order for machine selection to work.  */
 #define CPU_UNKNOWN	0               /* Gas internal use.  */
-#define CPU_R2000	2000
 #define CPU_R3000	3000
 #define CPU_R3900	3900
 #define CPU_R4000	4000
 #define CPU_R4010	4010
 #define CPU_VR4100	4100
 #define CPU_R4111	4111
+#define CPU_VR4120	4120
 #define CPU_R4300	4300
 #define CPU_R4400	4400
 #define CPU_R4600	4600
 #define CPU_R4650	4650
 #define CPU_R5000	5000
+#define CPU_VR5400	5400
+#define CPU_VR5500	5500
 #define CPU_R6000	6000
 #define CPU_R8000	8000
 #define CPU_R10000	10000
@@ -381,12 +428,15 @@ struct mips_opcode
     (((insn)->membership & isa) != 0					\
      || (cpu == CPU_R4650 && ((insn)->membership & INSN_4650) != 0)	\
      || (cpu == CPU_R4010 && ((insn)->membership & INSN_4010) != 0)	\
-     || ((cpu == CPU_VR4100 || cpu == CPU_R4111)			\
-	 && ((insn)->membership & INSN_4100) != 0)			\
+     || (cpu == CPU_VR4100 && ((insn)->membership & INSN_4100) != 0)	\
      || (cpu == CPU_R3900 && ((insn)->membership & INSN_3900) != 0)	\
      || ((cpu == CPU_R10000 || cpu == CPU_R12000)			\
 	 && ((insn)->membership & INSN_10000) != 0)			\
      || (cpu == CPU_SB1 && ((insn)->membership & INSN_SB1) != 0)	\
+     || (cpu == CPU_R4111 && ((insn)->membership & INSN_4111) != 0)	\
+     || (cpu == CPU_VR4120 && ((insn)->membership & INSN_4120) != 0)	\
+     || (cpu == CPU_VR5400 && ((insn)->membership & INSN_5400) != 0)	\
+     || (cpu == CPU_VR5500 && ((insn)->membership & INSN_5500) != 0)	\
      || 0)	/* Please keep this term for easier source merging.  */
 
 /* This is a list of macro expanded instructions.
@@ -526,9 +576,13 @@ enum
   M_REM_3I,
   M_REMU_3,
   M_REMU_3I,
+  M_DROL,
   M_ROL,
+  M_DROL_I,
   M_ROL_I,
+  M_DROR,
   M_ROR,
+  M_DROR_I,
   M_ROR_I,
   M_S_DA,
   M_S_DOB,

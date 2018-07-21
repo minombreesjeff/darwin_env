@@ -1,5 +1,5 @@
 /* Instruction printing code for the ARM
-   Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+   Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
    Contributed by Richard Earnshaw (rwe@pegasus.esprit.ec.org)
    Modification by James G. Smith (jsmith@cygnus.co.uk)
@@ -28,7 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "libcoff.h"
 #include "opintl.h"
 
-/* FIXME: This shouldn't be done here */
+/* FIXME: This shouldn't be done here.  */
 #include "elf-bfd.h"
 #include "elf/internal.h"
 #include "elf/arm.h"
@@ -102,15 +102,16 @@ int get_arm_regnames (int option, const char **setname,
 		      const char **setdescription,
 		      const char ***register_names);
 
-/* Functions. */
+/* Functions.  */
 int
-get_arm_regname_num_options (void)
+get_arm_regname_num_options ()
 {
   return NUM_ARM_REGNAMES;
 }
 
 int
-set_arm_regname_option (int option)
+set_arm_regname_option (option)
+     int option;
 {
   int old = regname_selected;
   regname_selected = option;
@@ -118,9 +119,11 @@ set_arm_regname_option (int option)
 }
 
 int
-get_arm_regnames (int option, const char **setname,
-		  const char **setdescription,
-                  const char ***register_names)
+get_arm_regnames (option, setname, setdescription, register_names)
+     int option;
+     const char **setname;
+     const char **setdescription;
+     const char ***register_names;
 {
   *setname = regnames[option].name;
   *setdescription = regnames[option].description;
@@ -164,6 +167,7 @@ arm_decode_shift (given, func, stream)
 
 /* Print one instruction from PC on INFO->STREAM.
    Return the size of the instruction (always 4 on ARM). */
+
 static int
 print_insn_arm (pc, info, given)
      bfd_vma                   pc;
@@ -203,7 +207,7 @@ print_insn_arm (pc, info, given)
 			      if ((given & 0x00800000) == 0)
 				offset = - offset;
 			  
-			      /* pre-indexed */
+			      /* Pre-indexed.  */
 			      func (stream, ", #%d]", offset);
 
 			      offset += pc + 8;
@@ -220,7 +224,8 @@ print_insn_arm (pc, info, given)
 			      /* Post indexed.  */
 			      func (stream, "], #%d", offset);
 
-			      offset = pc + 8;  /* ie ignore the offset.  */
+			      /* ie ignore the offset.  */
+			      offset = pc + 8;
 			    }
 			  
 			  func (stream, "\t; ");
@@ -743,6 +748,7 @@ print_insn_arm (pc, info, given)
 
 /* Print one instruction from PC on INFO->STREAM.
    Return the size of the instruction. */
+
 static int
 print_insn_thumb (pc, info, given)
      bfd_vma                   pc;
@@ -768,26 +774,17 @@ print_insn_thumb (pc, info, given)
 	      info->bytes_per_line  = 4;
 
 	      offset = BDISP23 (given);
-	      
+	      offset = offset * 2 + pc + 4;
+
 	      if ((given & 0x10000000) == 0)
 		{
 		  func (stream, "blx\t");
-
-		  /* The spec says that bit 1 of the branch's destination
-		     address comes from bit 1 of the instruction's
-		     address and not from the offset in the instruction.  */
-		  if (offset & 0x1)
-		    {
-		      /* func (stream, "*malformed!* "); */
-		      offset &= ~ 0x1;
-		    }
-
-		  offset |= ((pc & 0x2) >> 1);
+		  offset &= 0xfffffffc;
 		}
 	      else
 		func (stream, "bl\t");
 
-	      info->print_address_func (offset * 2 + pc + 4, info);
+	      info->print_address_func (offset, info);
               return 4;
             }
           else
@@ -991,6 +988,7 @@ print_insn_thumb (pc, info, given)
 }
 
 /* Parse an individual disassembler option.  */
+
 void
 parse_arm_disassembler_option (option)
      char * option;
@@ -1025,6 +1023,7 @@ parse_arm_disassembler_option (option)
 }
 
 /* Parse the string of disassembler options, spliting it at whitespaces.  */
+
 static void
 parse_disassembler_options (options)
      char * options;
@@ -1053,6 +1052,7 @@ parse_disassembler_options (options)
 
 /* NOTE: There are no checks in these routines that
    the relevant number of data bytes exist.  */
+
 static int
 print_insn (pc, info, little)
      bfd_vma pc;

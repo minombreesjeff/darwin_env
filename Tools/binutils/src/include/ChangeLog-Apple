@@ -1,0 +1,8 @@
+2002-10-12  Klee Dienes  <kdienes@apple.com>
+
+	* libiberty.h: Add __APPLE__ to the basename declaration #ifdef hack.
+
+2002-07-09  Jim Ingham    <jingham@apple.com>
+
+	* include.h: Add the "internal" constructor & destructor 
+	flavors.

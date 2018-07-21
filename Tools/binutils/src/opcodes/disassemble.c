@@ -28,6 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define ARCH_cris
 #define ARCH_d10v
 #define ARCH_d30v
+#define ARCH_dlx
 #define ARCH_h8300
 #define ARCH_h8500
 #define ARCH_hppa
@@ -35,6 +36,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define ARCH_i386
 #define ARCH_i860
 #define ARCH_i960
+#define ARCH_ip2k
 #define ARCH_ia64
 #define ARCH_fr30
 #define ARCH_m32r
@@ -61,6 +63,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define ARCH_sh
 #define ARCH_sparc
 #define ARCH_tic30
+#define ARCH_tic4x
 #define ARCH_tic54x
 #define ARCH_tic80
 #define ARCH_v850
@@ -68,6 +71,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define ARCH_w65
 #define ARCH_xstormy16
 #define ARCH_z8k
+#define ARCH_frv
 #define INCLUDE_SHMEDIA
 #endif
 
@@ -129,6 +133,12 @@ disassembler (abfd)
       disassemble = print_insn_d30v;
       break;
 #endif
+#ifdef ARCH_dlx
+    case bfd_arch_dlx:
+      /* As far as I know we only handle big-endian DLX objects.  */
+      disassemble = print_insn_dlx;
+      break;
+#endif
 #ifdef ARCH_h8300
     case bfd_arch_h8300:
       if (bfd_get_mach(abfd) == bfd_mach_h8300h)
@@ -172,6 +182,11 @@ disassembler (abfd)
 #ifdef ARCH_ia64
     case bfd_arch_ia64:
       disassemble = print_insn_ia64;
+      break;
+#endif
+#ifdef ARCH_ip2k
+    case bfd_arch_ip2k:
+      disassemble = print_insn_ip2k;
       break;
 #endif
 #ifdef ARCH_fr30
@@ -296,20 +311,7 @@ disassembler (abfd)
 #endif
 #ifdef ARCH_sh
     case bfd_arch_sh:
-#ifdef INCLUDE_SHMEDIA
-      if (bfd_get_mach (abfd) == bfd_mach_sh5)
-	{
-	  if (bfd_big_endian (abfd))
-	    disassemble = print_insn_sh64;
-	  else
-	    disassemble = print_insn_sh64l;
-	  break;
-	}
-#endif
-      if (bfd_big_endian (abfd))
-	disassemble = print_insn_sh;
-      else
-	disassemble = print_insn_shl;
+      disassemble = print_insn_sh;
       break;
 #endif
 #ifdef ARCH_sparc
@@ -320,6 +322,11 @@ disassembler (abfd)
 #ifdef ARCH_tic30
     case bfd_arch_tic30:
       disassemble = print_insn_tic30;
+      break;
+#endif
+#ifdef ARCH_tic4x
+    case bfd_arch_tic4x:
+      disassemble = print_insn_tic4x;
       break;
 #endif
 #ifdef ARCH_tic54x
@@ -360,6 +367,11 @@ disassembler (abfd)
       disassemble = print_insn_vax;
       break;
 #endif
+#ifdef ARCH_frv
+    case bfd_arch_frv:
+      disassemble = print_insn_frv;
+      break;
+#endif
     default:
       return 0;
     }
@@ -372,6 +384,9 @@ disassembler_usage (stream)
 {
 #ifdef ARCH_arm
   print_arm_disassembler_options (stream);
+#endif
+#ifdef ARCH_powerpc
+  print_ppc_disassembler_options (stream);
 #endif
 
   return;

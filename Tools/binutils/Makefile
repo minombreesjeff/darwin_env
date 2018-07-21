@@ -50,17 +50,32 @@ OBJTOP = $(shell (test -d $(OBJROOT) || $(INSTALL) -c -d $(OBJROOT)) && cd $(OBJ
 SYMTOP = $(shell (test -d $(SYMROOT) || $(INSTALL) -c -d $(SYMROOT)) && cd $(SYMROOT) && pwd)
 DSTTOP = $(shell (test -d $(DSTROOT) || $(INSTALL) -c -d $(DSTROOT)) && cd $(DSTROOT) && pwd)
 
-BINUTILS_VERSION = 5.0-20011017
-APPLE_VERSION = 36
+ARCH_SAYS := $(shell /usr/bin/arch)
+ifeq (i386,$(ARCH_SAYS))
+BUILD_ARCH := i386-apple-macos10
+else
+ifeq (ppc,$(ARCH_SAYS))
+BUILD_ARCH := powerpc-apple-macos10
+else
+BUILD_ARCH := $(ARCH_SAYS)
+endif
+endif
+
+BINUTILS_VERSION = 2.13-20021014
+APPLE_VERSION = 40
 
 BINUTILS_VERSION_STRING = "$(BINUTILS_VERSION) (Apple version binutils-$(APPLE_VERSION))"
 
 BINUTILS_BINARIES = objdump objcopy addr2line nm-new size strings cxxfilt
 BINUTILS_MANPAGES = 
 
-FRAMEWORKS = electric-fence mmalloc liberty bfd opcodes binutils
+FRAMEWORKS = mmalloc liberty bfd opcodes binutils
 
 CC = cc
+LD = ld
+AR = ar
+RANLIB = ranlib
+NM = nm
 CC_FOR_BUILD = cc
 CDEBUGFLAGS = -g
 CFLAGS = $(CDEBUGFLAGS) $(RC_CFLAGS)
@@ -68,7 +83,7 @@ HOST_ARCHITECTURE = UNKNOWN
 
 RC_CFLAGS_NOARCH = $(shell echo $(RC_CFLAGS) | sed -e 's/-arch [a-z0-9]*//g')
 
-SYSTEM_FRAMEWORK = -framework System
+SYSTEM_FRAMEWORK = -L../intl -L./intl -lintl -framework System
 FRAMEWORK_PREFIX =
 FRAMEWORK_SUFFIX =
 FRAMEWORK_VERSION = A
@@ -98,6 +113,7 @@ CONFIG_WITH_MMAP=--with-mmap
 CONFIG_WITH_MMALLOC=--with-mmalloc
 CONFIG_WITH_MMALLOC=
 CONFIG_MAINTAINER_MODE=--enable-maintainer-mode
+CONFIG_BUILD=--build=$(BUILD_ARCH)
 CONFIG_OTHER_OPTIONS=
 
 MAKE_CFM=WITH_CFM=1
@@ -178,6 +194,7 @@ CONFIGURE_OPTIONS = \
 	$(CONFIG_64_BIT_BFD) \
 	$(CONFIG_WITH_MMAP) \
 	$(CONFIG_WITH_MMALLOC) \
+	$(CONFIG_BUILD) \
 	$(CONFIG_OTHER_OPTIONS)
 
 MAKE_OPTIONS = \
@@ -187,6 +204,10 @@ MAKE_OPTIONS = \
 EFLAGS = \
 	CFLAGS='$(CFLAGS)' \
 	CC='$(CC)' \
+	LD='$(LD)' \
+	AR='$(AR)' \
+	RANLIB='$(RANLIB)' \
+	NM='$(NM)' \
 	CC_FOR_BUILD='$(CC_FOR_BUILD)' \
 	HOST_ARCHITECTURE='$(HOST_ARCHITECTURE)' \
 	NEXT_ROOT='$(NEXT_ROOT)' \
@@ -240,7 +261,7 @@ $(OBJROOT)/%/stamp-rc-configure:
 	touch $@
 
 $(OBJROOT)/%/stamp-build-headers:
-	$(SUBMAKE) -C $(OBJROOT)/$*/electric-fence $(FFLAGS) stamp-framework-headers
+	#$(SUBMAKE) -C $(OBJROOT)/$*/electric-fence $(FFLAGS) stamp-framework-headers
 	$(SUBMAKE) -C $(OBJROOT)/$*/mmalloc $(FFLAGS) stamp-framework-headers 
 	$(SUBMAKE) -C $(OBJROOT)/$*/libiberty $(FFLAGS) stamp-framework-headers
 	$(SUBMAKE) -C $(OBJROOT)/$*/bfd $(FFLAGS) headers stamp-framework-headers
@@ -250,7 +271,7 @@ $(OBJROOT)/%/stamp-build-headers:
 
 $(OBJROOT)/%/stamp-build-core:
 	$(SUBMAKE) -C $(OBJROOT)/$*/intl $(SFLAGS) libintl.a
-	$(SUBMAKE) -C $(OBJROOT)/$*/electric-fence $(FFLAGS) stamp-framework all
+	#$(SUBMAKE) -C $(OBJROOT)/$*/electric-fence $(FFLAGS) stamp-framework all
 	$(SUBMAKE) -C $(OBJROOT)/$*/mmalloc $(FFLAGS) stamp-framework all
 	$(SUBMAKE) -C $(OBJROOT)/$*/libiberty $(FFLAGS) stamp-framework all
 	$(SUBMAKE) -C $(OBJROOT)/$*/bfd $(FFLAGS) headers stamp-framework all

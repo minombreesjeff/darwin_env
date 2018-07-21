@@ -24,11 +24,11 @@
 #include "sysdep.h"
 #include "libbfd.h"
 
+#include "libiberty.h"
+
 #ifndef HAVE_GETPAGESIZE
 #define getpagesize() 2048
 #endif
-
-static size_t real_read PARAMS ((PTR, size_t, size_t, FILE *));
 
 /*
 SECTION

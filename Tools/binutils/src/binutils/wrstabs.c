@@ -798,7 +798,7 @@ stab_bool_type (p, size)
     case 2:
       index = -22;
       break;
-      
+
     default:
     case 4:
       index = -16;
@@ -966,7 +966,7 @@ stab_modify_type (info, mod, size, cache, cache_alloc)
     }
 
   return true;
-}  
+}
 
 /* Push a pointer type.  */
 
@@ -1371,7 +1371,6 @@ stab_get_struct_index (info, tag, id, kind, psize)
 /* Start outputting a struct.  We ignore the tag, and handle it in
    stab_tag.  */
 
-/*ARGSUSED*/
 static boolean
 stab_start_struct_type (p, tag, id, structp, size)
      PTR p;
@@ -2382,7 +2381,6 @@ stab_end_block (p, addr)
 
 /* End a function.  */
 
-/*ARGSUSED*/
 static boolean
 stab_end_function (p)
      PTR p ATTRIBUTE_UNUSED;

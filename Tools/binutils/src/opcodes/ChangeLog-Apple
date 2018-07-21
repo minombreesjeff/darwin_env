@@ -1,0 +1,3 @@
+2002-10-06  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-opc.c: Revert to Cygnus sources.

@@ -4,21 +4,21 @@
    Free Software Foundation, Inc.
    Contributed by Cygnus Support.
 
-This file is part of BFD, the Binary File Descriptor library.
+   This file is part of BFD, the Binary File Descriptor library.
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef __BFD_H_SEEN__
 #define __BFD_H_SEEN__
@@ -273,8 +273,11 @@ bfd_format;
    memory.  If this is set, iostream points to a bfd_in_memory struct.  */
 #define BFD_IN_MEMORY 0x800
 
+/* The sections in this BFD specify a memory page.  */
+#define HAS_LOAD_PAGE 0x1000
+
 /* */
-#define BFD_IO_FUNCS 0x1000
+#define BFD_IO_FUNCS 0x2000
 
 struct bfd_in_memory;
 struct bfd_io_functions;
@@ -290,6 +293,7 @@ struct bfd_io_functions
   boolean (* close_func) PARAMS ((PTR iodata, bfd *abfd));
   PTR iodata;
 };
+
 
 /* Symbols and relocation.  */
 
@@ -351,12 +355,13 @@ alent;
 /* Object and core file sections.  */
 
 #define	align_power(addr, align)	\
-	( ((addr) + ((1<<(align))-1)) & (-1 << (align)))
+  (((addr) + ((bfd_vma) 1 << (align)) - 1) & ((bfd_vma) -1 << (align)))
 
 typedef struct sec *sec_ptr;
 
 #define bfd_get_section_name(bfd, ptr) ((ptr)->name + 0)
 #define bfd_get_section_vma(bfd, ptr) ((ptr)->vma + 0)
+#define bfd_get_section_lma(bfd, ptr) ((ptr)->lma + 0)
 #define bfd_get_section_alignment(bfd, ptr) ((ptr)->alignment_power + 0)
 #define bfd_section_name(bfd, ptr) ((ptr)->name)
 #define bfd_section_size(bfd, ptr) (bfd_get_section_size_before_reloc(ptr))
@@ -368,7 +373,7 @@ typedef struct sec *sec_ptr;
 
 #define bfd_is_com_section(ptr) (((ptr)->flags & SEC_IS_COMMON) != 0)
 
-#define bfd_set_section_vma(bfd, ptr, val) (((ptr)->vma = (ptr)->lma= (val)), ((ptr)->user_set_vma = (boolean)true), true)
+#define bfd_set_section_vma(bfd, ptr, val) (((ptr)->vma = (ptr)->lma = (val)), ((ptr)->user_set_vma = (boolean)true), true)
 #define bfd_set_section_alignment(bfd, ptr, val) (((ptr)->alignment_power = (val)),true)
 #define bfd_set_section_userdata(bfd, ptr, val) (((ptr)->userdata = (val)),true)
 
@@ -547,6 +552,8 @@ extern void warn_deprecated
 #define bfd_get_symcount(abfd) ((abfd)->symcount)
 #define bfd_get_outsymbols(abfd) ((abfd)->outsymbols)
 #define bfd_count_sections(abfd) ((abfd)->section_count)
+
+#define bfd_get_dynamic_symcount(abfd) ((abfd)->dynsymcount)
 
 #define bfd_get_symbol_leading_char(abfd) ((abfd)->xvec->symbol_leading_char)
 
@@ -749,7 +756,7 @@ bfd_window;
 extern void bfd_init_window PARAMS ((bfd_window *));
 extern void bfd_free_window PARAMS ((bfd_window *));
 extern boolean bfd_get_file_window
-  PARAMS ((bfd *, file_ptr, bfd_size_type, bfd_window *, boolean));
+  PARAMS ((bfd *, ufile_ptr, bfd_size_type, bfd_window *, boolean));
 
 /* XCOFF support routines for the linker.  */
 
@@ -825,6 +832,9 @@ extern boolean bfd_elf32_arm_process_before_allocation
 extern boolean bfd_elf32_arm_get_bfd_for_interworking
   PARAMS ((bfd *, struct bfd_link_info *));
 
+extern boolean bfd_elf32_arm_add_glue_sections_to_bfd
+  PARAMS ((bfd *, struct bfd_link_info *));
+
 /* TI COFF load page support.  */
 extern void bfd_ticoff_set_section_load_page
   PARAMS ((struct sec *, int));
@@ -832,4 +842,3 @@ extern void bfd_ticoff_set_section_load_page
 extern int bfd_ticoff_get_section_load_page
   PARAMS ((struct sec *));
 
-/* And more from the source.  */

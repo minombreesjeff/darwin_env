@@ -1,5 +1,6 @@
 /* Motorola MCore specific support for 32-bit ELF
-   Copyright 1994, 1995, 1999, 2000, 2001 Free Software Foundation, Inc.
+   Copyright 1994, 1995, 1999, 2000, 2001, 2002
+   Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -28,8 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "elf/mcore.h"
 #include <assert.h>
 
-#define	USE_RELA	/* Only USE_REL is actually significant, but this is
-			   here are a reminder...  */
+/* RELA relocs are used here...  */
 
 static void mcore_elf_howto_init
   PARAMS ((void));
@@ -47,7 +47,7 @@ static boolean mcore_elf_relocate_section
   PARAMS ((bfd *, struct bfd_link_info *, bfd *, asection *, bfd_byte *,
 	   Elf_Internal_Rela *, Elf_Internal_Sym *, asection **));
 static asection * mcore_elf_gc_mark_hook
-  PARAMS ((bfd *, struct bfd_link_info *, Elf_Internal_Rela *,
+  PARAMS ((asection *, struct bfd_link_info *, Elf_Internal_Rela *,
 	   struct elf_link_hash_entry *, Elf_Internal_Sym *));
 static boolean mcore_elf_gc_sweep_hook
   PARAMS ((bfd *, struct bfd_link_info *, asection *,
@@ -310,7 +310,7 @@ mcore_elf_merge_private_bfd_data (ibfd, obfd)
   flagword new_flags;
 
   /* Check if we have the same endianess */
-  if (_bfd_generic_verify_endian_match (ibfd, obfd) == false)
+  if (! _bfd_generic_verify_endian_match (ibfd, obfd))
     return false;
 
   if (   bfd_get_flavour (ibfd) != bfd_target_elf_flavour
@@ -414,6 +414,9 @@ mcore_elf_relocate_section (output_bfd, info, input_bfd, input_section,
 	   (info->relocateable) ? " (relocatable)" : "");
 #endif
 
+  if (info->relocateable)
+    return true;
+
   if (! mcore_elf_howto_table [R_MCORE_PCRELIMM8BY4])	/* Initialize howto table if needed */
     mcore_elf_howto_init ();
 
@@ -446,32 +449,6 @@ mcore_elf_relocate_section (output_bfd, info, input_bfd, input_section,
 
       howto = mcore_elf_howto_table [(int) r_type];
       r_symndx = ELF32_R_SYM (rel->r_info);
-
-      if (info->relocateable)
-	{
-	  /* This is a relocateable link.  We don't have to change
-	     anything, unless the reloc is against a section symbol,
-	     in which case we have to adjust according to where the
-	     section symbol winds up in the output section.  */
-	  if (r_symndx < symtab_hdr->sh_info)
-	    {
-	      sym = local_syms + r_symndx;
-
-	      if ((unsigned)ELF_ST_TYPE (sym->st_info) == STT_SECTION)
-		{
-		  sec = local_sections[r_symndx];
-		  addend = rel->r_addend += sec->output_offset + sym->st_value;
-		}
-	    }
-
-#ifdef DEBUG
-	  fprintf (stderr, "\ttype = %s (%d), symbol index = %ld, offset = %ld, addend = %ld\n",
-		   howto->name, (int) r_type, r_symndx, (long) offset, (long) addend);
-#endif
-	  continue;
-	}
-
-      /* This is a final link.  */
 
       /* Complain about known relocation that are not yet supported.  */
       if (howto->special_function == mcore_elf_unsupported_reloc)
@@ -595,8 +572,8 @@ mcore_elf_relocate_section (output_bfd, info, input_bfd, input_section,
    relocation.  */
 
 static asection *
-mcore_elf_gc_mark_hook (abfd, info, rel, h, sym)
-     bfd *                        abfd;
+mcore_elf_gc_mark_hook (sec, info, rel, h, sym)
+     asection *                   sec;
      struct bfd_link_info *       info ATTRIBUTE_UNUSED;
      Elf_Internal_Rela *          rel;
      struct elf_link_hash_entry * h;
@@ -626,9 +603,7 @@ mcore_elf_gc_mark_hook (abfd, info, rel, h, sym)
 	}
     }
   else
-    {
-      return bfd_section_from_elf_index (abfd, sym->st_shndx);
-    }
+    return bfd_section_from_elf_index (sec->owner, sym->st_shndx);
 
   return NULL;
 }
@@ -726,5 +701,6 @@ mcore_elf_check_relocs (abfd, info, sec, relocs)
 #define elf_backend_check_relocs                mcore_elf_check_relocs
 
 #define elf_backend_can_gc_sections		1
+#define elf_backend_rela_normal			1
 
 #include "elf32-target.h"

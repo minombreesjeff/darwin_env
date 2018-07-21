@@ -71,13 +71,14 @@ if test -z "$target" ; then
 fi
 
 AM_MAINTAINER_MODE
+AM_INSTALL_LIBBFD
 AC_EXEEXT
 
 # host-specific stuff:
 
 AC_PROG_CC
 
-ALL_LINGUAS="fr sv tr es da de"
+ALL_LINGUAS="fr sv tr es da de id pt_BR"
 CY_GNU_GETTEXT
 
 . ${srcdir}/../bfd/configure.host
@@ -178,6 +179,7 @@ if test x${all_targets} = xfalse ; then
 	bfd_cris_arch)		ta="$ta cris-dis.lo cris-opc.lo" ;;
 	bfd_d10v_arch)		ta="$ta d10v-dis.lo d10v-opc.lo" ;;
 	bfd_d30v_arch)		ta="$ta d30v-dis.lo d30v-opc.lo" ;;
+	bfd_dlx_arch)		ta="$ta dlx-dis.lo" ;;
 	bfd_fr30_arch)          ta="$ta fr30-asm.lo fr30-desc.lo fr30-dis.lo fr30-ibld.lo fr30-opc.lo" using_cgen=yes ;;
 	bfd_h8300_arch)		ta="$ta h8300-dis.lo" ;;
 	bfd_h8500_arch)		ta="$ta h8500-dis.lo" ;;
@@ -187,6 +189,7 @@ if test x${all_targets} = xfalse ; then
 	bfd_i860_arch)		ta="$ta i860-dis.lo" ;;
 	bfd_i960_arch)		ta="$ta i960-dis.lo" ;;
 	bfd_ia64_arch)		ta="$ta ia64-dis.lo ia64-opc.lo" ;;
+	bfd_ip2k_arch)		ta="$ta ip2k-asm.lo ip2k-desc.lo ip2k-dis.lo ip2k-ibld.lo ip2k-opc.lo" using_cgen=yes ;;
 	bfd_m32r_arch)		ta="$ta m32r-asm.lo m32r-desc.lo m32r-dis.lo m32r-ibld.lo m32r-opc.lo m32r-opinst.lo" using_cgen=yes ;;
 	bfd_m68hc11_arch)	ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
 	bfd_m68hc12_arch)	ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
@@ -215,7 +218,8 @@ if test x${all_targets} = xfalse ; then
 	  # Include it just for ELF targets, since the SH5 bfd:s are ELF only.
 	  for t in $target $canon_targets; do
 	    case $t in
-	      all |  sh64-* | sh-*-*elf* | shl-*-*elf* | sh-*-linux* | shl-*-linux*)
+	      all |  sh5*-* | sh64*-* | sh-*-*elf* | shl*-*-*elf* | \
+	      sh-*-linux* | shl-*-linux*)
 				ta="$ta sh64-dis.lo sh64-opc.lo"
 				archdefs="$archdefs -DINCLUDE_SHMEDIA"
 				break;;
@@ -225,6 +229,7 @@ if test x${all_targets} = xfalse ; then
 	bfd_sparc_arch)		ta="$ta sparc-dis.lo sparc-opc.lo" ;;
 	bfd_tahoe_arch)		;;
 	bfd_tic30_arch)		ta="$ta tic30-dis.lo" ;;
+        bfd_tic4x_arch)         ta="$ta tic4x-dis.lo" ;;
 	bfd_tic54x_arch)	ta="$ta tic54x-dis.lo tic54x-opc.lo" ;;
 	bfd_tic80_arch)		ta="$ta tic80-dis.lo tic80-opc.lo" ;;
 	bfd_v850_arch)		ta="$ta v850-opc.lo v850-dis.lo" ;;
@@ -235,6 +240,7 @@ if test x${all_targets} = xfalse ; then
 	bfd_we32k_arch)		;;
 	bfd_xstormy16_arch)	ta="$ta xstormy16-asm.lo xstormy16-desc.lo xstormy16-dis.lo xstormy16-ibld.lo xstormy16-opc.lo" using_cgen=yes ;;
 	bfd_z8k_arch)		ta="$ta z8k-dis.lo" ;;
+	bfd_frv_arch)           ta="$ta frv-asm.lo frv-desc.lo frv-dis.lo frv-ibld.lo frv-opc.lo" using_cgen=yes ;;
 
 	"")			;;
 	*)		AC_MSG_ERROR(*** unknown target architecture $arch) ;;

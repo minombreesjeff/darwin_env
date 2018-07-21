@@ -1,5 +1,5 @@
 /* Generic BFD support for file formats.
-   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1999, 2000, 2001
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
    Written by Cygnus Support.
 
@@ -161,7 +161,6 @@ bfd_check_format_matches (abfd, format, matching)
   if (! abfd->target_defaulted) 
     {
       const bfd_target *ntarget = NULL;
-      int nerror; 
 
       if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0)	/* rewind */
 	return false;
@@ -253,7 +252,8 @@ bfd_check_format_matches (abfd, format, matching)
     {
       bfd_set_error (bfd_error_file_not_recognized);
       free (matching_bfd);
-      free (matching_targnames);
+      if (matching != NULL)
+	*matching = matching_targnames;
       return false;
     }
   else
@@ -292,7 +292,7 @@ bfd_set_format (abfd, format)
     }
 
   if (abfd->format != bfd_unknown)
-    return (abfd->format == format) ? true:false;
+    return abfd->format == format;
 
   /* presume the answer is yes */
   abfd->format = format;

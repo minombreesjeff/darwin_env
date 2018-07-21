@@ -62,7 +62,7 @@ typedef enum bfd_mach_o_load_command_type {
   BFD_MACH_O_LC_PREBIND_CKSUM = 0x17,   /* prebind checksum */
   /* load a dynamicly linked shared library that is allowed to be
      missing (weak)*/
-  BFD_MACH_O_LC_LOAD_WEAK_DYLIB = 0x18
+  BFD_MACH_O_LC_LOAD_WEAK_DYLIB = 0x80000018
 } bfd_mach_o_load_command_type;
 
 typedef enum bfd_mach_o_cpu_type {
@@ -357,8 +357,8 @@ typedef struct bfd_mach_o_dysymtab_command {
  * symbol was also absolute INDIRECT_SYMBOL_ABS is or'ed with that.
  */
 
-#define INDIRECT_SYMBOL_LOCAL   0x80000000
-#define INDIRECT_SYMBOL_ABS     0x40000000
+#define INDIRECT_SYMBOL_LOCAL 0x80000000
+#define INDIRECT_SYMBOL_ABS 0x40000000
 
 typedef struct bfd_mach_o_thread_flavour {
   unsigned long flavour;
@@ -427,28 +427,34 @@ typedef struct mach_o_data_struct {
 
 typedef struct mach_o_data_struct bfd_mach_o_data_struct;
 
-boolean bfd_mach_o_valid
-(bfd *abfd);
-
-int bfd_mach_o_lookup_section 
-(bfd *abfd, asection *section, 
- bfd_mach_o_load_command **mcommand, bfd_mach_o_section **msection);
-
-int bfd_mach_o_lookup_command 
-(bfd *abfd, bfd_mach_o_load_command_type type, bfd_mach_o_load_command **mcommand);
-
-int bfd_mach_o_scan_read_symtab_symbols
-(bfd *abfd, bfd_mach_o_symtab_command *sym);
-
-int bfd_mach_o_scan_read_symtab_strtab
-(bfd *abfd, bfd_mach_o_symtab_command *sym);
-
+boolean bfd_mach_o_valid (bfd *abfd);
 int bfd_mach_o_scan_read_symtab_symbol
 (bfd *abfd, bfd_mach_o_symtab_command *sym, asymbol *s, unsigned long i);
-
+int bfd_mach_o_scan_read_symtab_strtab
+(bfd *abfd, bfd_mach_o_symtab_command *sym);
+int bfd_mach_o_scan_read_symtab_symbols
+(bfd *abfd, bfd_mach_o_symtab_command *sym);
 int bfd_mach_o_scan_read_dysymtab_symbol
 (bfd *abfd, bfd_mach_o_dysymtab_command *dysym, bfd_mach_o_symtab_command *sym,
  asymbol *s, unsigned long i);
+int bfd_mach_o_scan_start_address (bfd *abfd);
+int bfd_mach_o_scan (bfd *abfd, bfd_mach_o_header *header);
+boolean bfd_mach_o_mkobject (bfd *abfd);
+const bfd_target *bfd_mach_o_object_p (bfd *abfd);
+const bfd_target *bfd_mach_o_core_p (bfd *abfd);
+const bfd_target *bfd_mach_o_archive_p (bfd *abfd);
+bfd *bfd_mach_o_openr_next_archived_file (bfd *archive, bfd *prev);
+int bfd_mach_o_lookup_section 
+(bfd *abfd, asection *section, 
+ bfd_mach_o_load_command **mcommand, bfd_mach_o_section **msection);
+int bfd_mach_o_lookup_command 
+(bfd *abfd, bfd_mach_o_load_command_type type, bfd_mach_o_load_command **mcommand);
+unsigned long bfd_mach_o_stack_addr (enum bfd_mach_o_cpu_type type);
+int bfd_mach_o_core_fetch_environment
+(bfd *abfd, unsigned char **rbuf, unsigned int *rlen);
+char *bfd_mach_o_core_file_failing_command (bfd *abfd);
+int bfd_mach_o_core_file_failing_signal (bfd *abfd);
+boolean bfd_mach_o_core_file_matches_executable_p (bfd *core_bfd, bfd *exec_bfd);
 
 extern const bfd_target mach_o_be_vec;
 extern const bfd_target mach_o_le_vec;

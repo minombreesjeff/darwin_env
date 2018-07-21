@@ -49,7 +49,7 @@ main ()
 		     MAP_ANON|MAP_PRIVATE, dev_zero, 0);
   if (p == (char *)-1)
     p = (char *) mmap (0, MAP_LEN, PROT_READ|PROT_WRITE,
-                       MAP_ANON|MAP_PRIVATE, -1, 0);
+		       MAP_ANON|MAP_PRIVATE, -1, 0);
   if (p == (char *)-1)
     exit (2);
   else
@@ -66,7 +66,7 @@ main ()
   exit (0);
 }
 ], ac_cv_func_strncmp_works=yes, ac_cv_func_strncmp_works=no,
-  ac_cv_func_strncmp_works=yes)
+  ac_cv_func_strncmp_works=no)
 rm -f core core.* *.core])
 if test $ac_cv_func_strncmp_works = no ; then
   LIBOBJS="$LIBOBJS strncmp.o"
@@ -189,7 +189,3 @@ AC_DEFINE_UNQUOTED(STACK_DIRECTION, $ac_cv_c_stack_direction,
         STACK_DIRECTION < 0 => grows toward lower addresses
         STACK_DIRECTION = 0 => direction of growth unknown])
 ])
-#else
-wenotbecray
-#endif
-], ac_cv_os_cray=yes, ac_cv_os_cray=no)])

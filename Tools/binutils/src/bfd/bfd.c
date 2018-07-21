@@ -128,6 +128,9 @@ CODE_FRAGMENT
 .  {* Symbol table for output BFD (with symcount entries).  *}
 .  struct symbol_cache_entry  **outsymbols;
 .
+.  {* Used for slurped dynamic symbol tables.  *}
+.  unsigned int dynsymcount;
+.
 .  {* Pointer to structure which contains architecture information.  *}
 .  const struct bfd_arch_info *arch_info;
 .
@@ -755,7 +758,6 @@ bfd_get_arch_size (abfd)
   if (abfd->xvec->flavour == bfd_target_elf_flavour)
     return (get_elf_backend_data (abfd))->s->arch_size;
 
-  bfd_set_error (bfd_error_wrong_format);
   return -1;
 }
 
@@ -1111,6 +1113,9 @@ DESCRIPTION
 .#define bfd_merge_sections(abfd, link_info) \
 .	BFD_SEND (abfd, _bfd_merge_sections, (abfd, link_info))
 .
+.#define bfd_discard_group(abfd, sec) \
+.	BFD_SEND (abfd, _bfd_discard_group, (abfd, sec))
+.
 .#define bfd_link_hash_table_create(abfd) \
 .	BFD_SEND (abfd, _bfd_link_hash_table_create, (abfd))
 .
@@ -1119,6 +1124,9 @@ DESCRIPTION
 .
 .#define bfd_link_add_symbols(abfd, info) \
 .	BFD_SEND (abfd, _bfd_link_add_symbols, (abfd, info))
+.
+.#define bfd_link_just_syms(sec, info) \
+.	BFD_SEND (abfd, _bfd_link_just_syms, (sec, info))
 .
 .#define bfd_final_link(abfd, info) \
 .	BFD_SEND (abfd, _bfd_final_link, (abfd, info))
@@ -1254,27 +1262,27 @@ FUNCTION
 	bfd_alt_mach_code
 
 SYNOPSIS
-	boolean bfd_alt_mach_code(bfd *abfd, int index);
+	boolean bfd_alt_mach_code(bfd *abfd, int alternative);
 
 DESCRIPTION
 
 	When more than one machine code number is available for the
 	same machine type, this function can be used to switch between
-	the preferred one (index == 0) and any others.  Currently,
+	the preferred one (alternative == 0) and any others.  Currently,
 	only ELF supports this feature, with up to two alternate
 	machine codes.
 */
 
 boolean
-bfd_alt_mach_code (abfd, index)
+bfd_alt_mach_code (abfd, alternative)
      bfd *abfd;
-     int index;
+     int alternative;
 {
   if (bfd_get_flavour (abfd) == bfd_target_elf_flavour)
     {
       int code;
 
-      switch (index)
+      switch (alternative)
 	{
 	case 0:
 	  code = get_elf_backend_data (abfd)->elf_machine_code;

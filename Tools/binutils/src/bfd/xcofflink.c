@@ -1086,21 +1086,19 @@ xcoff_link_add_symbols (abfd, info)
   /* We keep a list of the linker hash table entries that correspond
      to each external symbol.  */
   amt = symcount * sizeof (struct xcoff_link_hash_entry *);
-  sym_hash = (struct xcoff_link_hash_entry **) bfd_alloc (abfd, amt);
+  sym_hash = (struct xcoff_link_hash_entry **) bfd_zalloc (abfd, amt);
   if (sym_hash == NULL && symcount != 0)
     goto error_return;
   coff_data (abfd)->sym_hashes = (struct coff_link_hash_entry **) sym_hash;
-  memset (sym_hash, 0, (size_t) amt);
 
   /* Because of the weird stuff we are doing with XCOFF csects, we can
      not easily determine which section a symbol is in, so we store
      the information in the tdata for the input file.  */
   amt = symcount * sizeof (asection *);
-  csect_cache = (asection **) bfd_alloc (abfd, amt);
+  csect_cache = (asection **) bfd_zalloc (abfd, amt);
   if (csect_cache == NULL && symcount != 0)
     goto error_return;
   xcoff_data (abfd)->csects = csect_cache;
-  memset (csect_cache, 0, (size_t) amt);
 
   /* While splitting sections into csects, we need to assign the
      relocs correctly.  The relocs and the csects must both be in
@@ -1109,10 +1107,9 @@ xcoff_link_add_symbols (abfd, info)
      into reloc_info using the section target_index.  */
   amt = abfd->section_count + 1;
   amt *= sizeof (struct reloc_info_struct);
-  reloc_info = (struct reloc_info_struct *) bfd_malloc (amt);
+  reloc_info = (struct reloc_info_struct *) bfd_zmalloc (amt);
   if (reloc_info == NULL)
     goto error_return;
-  memset ((PTR) reloc_info, 0, (size_t) amt);
 
   /* Read in the relocs and line numbers for each section.  */
   linesz = bfd_coff_linesz (abfd);
@@ -1129,11 +1126,9 @@ xcoff_link_add_symbols (abfd, info)
 					false, (struct internal_reloc *) NULL);
 	  amt = o->reloc_count;
 	  amt *= sizeof (asection *);
-	  reloc_info[o->target_index].csects = (asection **) bfd_malloc (amt);
+	  reloc_info[o->target_index].csects = (asection **) bfd_zmalloc (amt);
 	  if (reloc_info[o->target_index].csects == NULL)
 	    goto error_return;
-	  memset (reloc_info[o->target_index].csects, 0, (size_t) amt);
-
 	}
 
       if ((info->strip == strip_none || info->strip == strip_some)
@@ -1778,12 +1773,19 @@ xcoff_link_add_symbols (abfd, info)
  	  if (info->hash->creator == abfd->xvec)
 	    {
 	      if (! bfd_is_und_section (section))
-		*sym_hash = xcoff_link_hash_lookup (xcoff_hash_table (info),
-						    name, true, copy, false);
+		{
+		  *sym_hash = xcoff_link_hash_lookup (xcoff_hash_table (info),
+						      name, true, copy, false);
+		}
 	      else
-		*sym_hash = ((struct xcoff_link_hash_entry *)
-			     bfd_wrapped_link_hash_lookup (abfd, info, name,
-							   true, copy, false));
+		{
+		  /* Make a copy of the symbol name to prevent problems with
+		     merging symbols.  */
+		  *sym_hash = ((struct xcoff_link_hash_entry *)
+			       bfd_wrapped_link_hash_lookup (abfd, info, name,
+							     true, true, 
+							     false));
+		}
 	      if (*sym_hash == NULL)
 		goto error_return;
 	      if (((*sym_hash)->root.type == bfd_link_hash_defined
@@ -1984,6 +1986,7 @@ xcoff_link_add_symbols (abfd, info)
 		      && h->descriptor == NULL)
 		    {
 		      struct xcoff_link_hash_entry *hds;
+		      struct bfd_link_hash_entry *bh;
 
 		      hds = xcoff_link_hash_lookup (xcoff_hash_table (info),
 						    h->root.root.string + 1,
@@ -1992,13 +1995,14 @@ xcoff_link_add_symbols (abfd, info)
 			goto error_return;
 		      if (hds->root.type == bfd_link_hash_new)
 			{
+			  bh = &hds->root;
 			  if (! (_bfd_generic_link_add_one_symbol
 				 (info, abfd, hds->root.root.string,
 				  (flagword) 0, bfd_und_section_ptr,
 				  (bfd_vma) 0, (const char *) NULL, false,
-				  true,
-				  (struct bfd_link_hash_entry **) &hds)))
+				  true, &bh)))
 			    goto error_return;
+			  hds = (struct xcoff_link_hash_entry *) bh;
 			}
 		      hds->flags |= XCOFF_DESCRIPTOR;
 		      BFD_ASSERT ((hds->flags & XCOFF_CALLED) == 0
@@ -2121,7 +2125,7 @@ xcoff_link_add_dynamic_symbols (abfd, info)
 
   /* Remove the sections from this object, so that they do not get
      included in the link.  */
-  abfd->sections = NULL;
+  bfd_section_list_clear (abfd);
 
   bfd_xcoff_swap_ldhdr_in (abfd, contents, &ldhdr);
 
@@ -2876,7 +2880,7 @@ bfd_xcoff_size_dynamic_sections (output_bfd, info, libpath, entry,
     }
 
   /* __rtinit */
-  if (info->init_function || info->fini_function || rtld == true) 
+  if (info->init_function || info->fini_function || rtld) 
     {
       struct xcoff_link_hash_entry *hsym;
       struct internal_ldsym *ldsym;
@@ -5885,7 +5889,10 @@ xcoff_write_global_symbol (h, inf)
       isym.n_value = (h->root.u.def.section->output_section->vma
 		      + h->root.u.def.section->output_offset
 		      + h->root.u.def.value);
-      isym.n_scnum = h->root.u.def.section->output_section->target_index;
+      if (bfd_is_abs_section (h->root.u.def.section->output_section))
+	isym.n_scnum = N_ABS;
+      else
+	isym.n_scnum = h->root.u.def.section->output_section->target_index;
       isym.n_sclass = C_HIDEXT;
       aux.x_csect.x_smtyp = XTY_SD;
 

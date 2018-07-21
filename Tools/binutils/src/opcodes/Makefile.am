@@ -11,7 +11,10 @@ MKDEP = gcc -MM
 WARN_CFLAGS = @WARN_CFLAGS@
 AM_CFLAGS = $(WARN_CFLAGS)
 
-lib_LTLIBRARIES = libopcodes.la
+bfdlibdir = @bfdlibdir@
+bfdincludedir = @bfdincludedir@
+
+bfdlib_LTLIBRARIES = libopcodes.la
 
 # This is where bfd.h lives.
 BFD_H = ../bfd/bfd.h
@@ -21,15 +24,15 @@ LIBIBERTY = ../libiberty/libiberty.a
 
 MMALLOC = ../mmalloc/libmmalloc.a
 
-EFENCE = ../electric-fence/libefence.a
-
 # Header files.
 HFILES = \
 	arm-opc.h \
 	fr30-desc.h fr30-opc.h \
+	frv-desc.h frv-opc.h \
 	h8500-opc.h \
 	ia64-asmtab.h \
 	ia64-opc.h \
+	ip2k-desc.h ip2k-opc.h \
 	m32r-desc.h m32r-opc.h \
 	mcore-opc.h \
 	openrisc-desc.h openrisc-opc.h \
@@ -59,6 +62,7 @@ CFILES = \
 	d10v-opc.c \
 	d30v-dis.c \
 	d30v-opc.c \
+	dlx-dis.c \
 	dis-buf.c \
 	disassemble.c \
 	fr30-asm.c \
@@ -66,6 +70,11 @@ CFILES = \
 	fr30-dis.c \
 	fr30-ibld.c \
 	fr30-opc.c \
+	frv-asm.c \
+	frv-desc.c \
+	frv-dis.c \
+	frv-ibld.c \
+	frv-opc.c \
 	h8300-dis.c \
 	h8500-dis.c \
 	hppa-dis.c \
@@ -84,6 +93,11 @@ CFILES = \
 	ia64-opc.c \
 	ia64-gen.c \
 	ia64-asmtab.c \
+	ip2k-asm.c \
+	ip2k-desc.c \
+	ip2k-dis.c \
+	ip2k-ibld.c \
+	ip2k-opc.c \
 	m32r-asm.c \
 	m32r-desc.c \
 	m32r-dis.c \
@@ -129,6 +143,7 @@ CFILES = \
 	sparc-dis.c \
 	sparc-opc.c \
 	tic30-dis.c \
+	tic4x-dis.c \
 	tic54x-dis.c \
 	tic54x-opc.c \
 	tic80-dis.c \
@@ -163,11 +178,17 @@ ALL_MACHINES = \
 	d10v-opc.lo \
 	d30v-dis.lo \
 	d30v-opc.lo \
+	dlx-dis.lo \
 	fr30-asm.lo \
 	fr30-desc.lo \
 	fr30-dis.lo \
 	fr30-ibld.lo \
 	fr30-opc.lo \
+	frv-asm.lo \
+	frv-desc.lo \
+	frv-dis.lo \
+	frv-ibld.lo \
+	frv-opc.lo \
 	h8300-dis.lo \
 	h8500-dis.lo \
 	hppa-dis.lo \
@@ -178,6 +199,11 @@ ALL_MACHINES = \
 	i960-dis.lo \
 	ia64-dis.lo \
 	ia64-opc.lo \
+	ip2k-asm.lo \
+	ip2k-desc.lo \
+	ip2k-dis.lo \
+	ip2k-ibld.lo \
+	ip2k-opc.lo \
 	m32r-asm.lo \
 	m32r-desc.lo \
 	m32r-dis.lo \
@@ -222,6 +248,7 @@ ALL_MACHINES = \
 	sparc-dis.lo \
 	sparc-opc.lo \
 	tic30-dis.lo \
+	tic4x-dis.lo \
 	tic54x-dis.lo \
 	tic54x-opc.lo \
 	tic80-dis.lo \
@@ -276,7 +303,7 @@ FRAMEWORK_SUFFIX =
 FRAMEWORK_VERSION_SUFFIX =
 FRAMEWORK_VERSION = A
 FRAMEWORK_OFILES = `echo $(libopcodes_la_OBJECTS) $(libopcodes_la_LIBADD) | sed -e 's/\.lo/\.o/g'`
-FRAMEWORK_LIB = -F../bfd -framework bfd -F../libiberty -framework liberty -F../mmalloc -framework mmalloc -F../electric-fence -framework electric-fence $(SYSTEM_FRAMEWORK)
+FRAMEWORK_LIB = -F../bfd -framework bfd -F../libiberty -framework liberty -F../mmalloc -framework mmalloc $(SYSTEM_FRAMEWORK)
 
 stamp-framework-headers:
 	$(RM) -f stamp-framework stamp-framework-headers
@@ -329,14 +356,32 @@ po/POTFILES.in: @MAINT@ Makefile
 config.status: $(srcdir)/configure $(srcdir)/../bfd/configure.in
 	$(SHELL) ./config.status --recheck
 
-# Install libopcodes include file.
-install-data-local: 
+install-bfdlibLTLIBRARIES: @INSTALL_LIBBFD_TRUE@install_libopcodes
 	@$(NORMAL_INSTALL)
-	$(mkinstalldirs) $(DESTDIR)$(includedir)
-	$(INSTALL_DATA) $(INCDIR)/dis-asm.h $(DESTDIR)$(includedir)/dis-asm.h
+
+uninstall-bfdlibLTLIBRARIES: @INSTALL_LIBBFD_TRUE@uninstall_libopcodes
+	@$(NORMAL_UNINSTALL)
+
+.PHONY: install_libopcodes uninstall_libopcodes
+install_libopcodes: $(bfdlib_LTLIBRARIES)
+	$(mkinstalldirs) $(DESTDIR)$(bfdlibdir)
+	$(mkinstalldirs) $(DESTDIR)$(bfdincludedir)
+	@list='$(bfdlib_LTLIBRARIES)'; for p in $$list; do \
+	  if test -f $$p; then \
+	    echo "$(LIBTOOL)  --mode=install $(INSTALL) $$p $(DESTDIR)$(bfdlibdir)/$$p"; \
+	    $(LIBTOOL)  --mode=install $(INSTALL) $$p $(DESTDIR)$(bfdlibdir)/$$p; \
+	  else :; fi; \
+	done
+	$(INSTALL_DATA) $(INCDIR)/dis-asm.h $(DESTDIR)$(bfdincludedir)/dis-asm.h
+
+uninstall_libopcodes:
+	list='$(bfdlib_LTLIBRARIES)'; for p in $$list; do \
+	  $(LIBTOOL)  --mode=uninstall rm -f $(DESTDIR)$(bfdlibdir)/$$p; \
+	done
+	rm -f $(DESTDIR)$(bfdincludedir)/dis-asm.h
 
 CLEANFILES = \
-	stamp-m32r stamp-fr30 stamp-openrisc \
+	stamp-ip2k stamp-m32r stamp-fr30 stamp-frv stamp-openrisc \
 	stamp-xstormy16 \
 	libopcodes.a stamp-lib dep.sed DEP DEPA DEP1 DEP2
 
@@ -346,7 +391,7 @@ CPUDIR = $(CGENDIR)/cpu
 CGEN = `if test -f ../guile/libguile/guile ; then echo ../guile/libguile/guile; else echo guile ; fi`
 CGENFLAGS = -v
 
-CGENDEPS = ../cgen/stamp-cgen \
+CGENDEPS = \
 	$(CGENDIR)/desc.scm $(CGENDIR)/desc-cpu.scm \
 	$(CGENDIR)/opcodes.scm $(CGENDIR)/opc-asmdis.scm \
 	$(CGENDIR)/opc-ibld.scm $(CGENDIR)/opc-itab.scm \
@@ -354,13 +399,17 @@ CGENDEPS = ../cgen/stamp-cgen \
 	cgen-asm.in cgen-dis.in cgen-ibld.in
 
 if CGEN_MAINT
+IP2K_DEPS = stamp-ip2k
 M32R_DEPS = stamp-m32r
 FR30_DEPS = stamp-fr30
+FRV_DEPS = stamp-frv
 OPENRISC_DEPS = stamp-openrisc
 XSTORMY16_DEPS = stamp-xstormy16
 else
+IP2K_DEPS =
 M32R_DEPS =
 FR30_DEPS =
+FRV_DEPS =
 OPENRISC_DEPS = 
 XSTORMY16_DEPS = 
 endif
@@ -373,6 +422,11 @@ run-cgen:
 .PHONY: run-cgen
 
 # For now, require developers to configure with --enable-cgen-maint.
+$(srcdir)/ip2k-desc.h $(srcdir)/ip2k-desc.c $(srcdir)/ip2k-opc.h $(srcdir)/ip2k-opc.c $(srcdir)/ip2k-ibld.c $(srcdir)/ip2k-asm.c $(srcdir)/ip2k-dis.c: $(IP2K_DEPS)
+	@true
+stamp-ip2k: $(CGENDEPS) $(CPUDIR)/ip2k.cpu $(CPUDIR)/ip2k.opc
+	$(MAKE) run-cgen arch=ip2k prefix=ip2k options= extrafiles=
+
 $(srcdir)/m32r-desc.h $(srcdir)/m32r-desc.c $(srcdir)/m32r-opc.h $(srcdir)/m32r-opc.c $(srcdir)/m32r-ibld.c $(srcdir)/m32r-opinst.c $(srcdir)/m32r-asm.c $(srcdir)/m32r-dis.c: $(M32R_DEPS)
 	@true
 stamp-m32r: $(CGENDEPS) $(CPUDIR)/m32r.cpu $(CPUDIR)/m32r.opc
@@ -382,6 +436,11 @@ $(srcdir)/fr30-desc.h $(srcdir)/fr30-desc.c $(srcdir)/fr30-opc.h $(srcdir)/fr30-
 	@true
 stamp-fr30: $(CGENDEPS) $(CPUDIR)/fr30.cpu $(CPUDIR)/fr30.opc
 	$(MAKE) run-cgen arch=fr30 prefix=fr30 options= extrafiles=
+
+$(srcdir)/frv-desc.h $(srcdir)/frv-desc.c $(srcdir)/frv-opc.h $(srcdir)/frv-opc.c $(srcdir)/frv-ibld.c $(srcdir)/frv-asm.c $(srcdir)/frv-dis.c: $(FRV_DEPS)
+	@true
+stamp-frv: $(CGENDEPS) $(CPUDIR)/frv.cpu $(CPUDIR)/frv.opc
+	$(MAKE) run-cgen arch=frv prefix=frv options= extrafiles=
 
 $(srcdir)/openrisc-desc.h $(srcdir)/openrisc-desc.c $(srcdir)/openrisc-opc.h $(srcdir)/openrisc-opc.c $(srcdir)/openrisc-ibld.c $(srcdir)/openrisc-asm.c $(srcdir)/openrisc-dis.c: $(OPENRISC_DEPS)
 	@true
@@ -394,7 +453,7 @@ stamp-xstormy16: $(CGENDEPS) $(CPUDIR)/xstormy16.cpu $(CPUDIR)/xstormy16.opc
 	$(MAKE) run-cgen arch=xstormy16 prefix=xstormy16 options= extrafiles=
 
 ia64-gen: ia64-gen.o
-	$(LINK) ia64-gen.o $(LIBIBERTY) $(MMALLOC) $(EFENCE)
+	$(LINK) ia64-gen.o $(LIBIBERTY) $(MMALLOC)
 
 ia64-gen.o: ia64-gen.c ia64-opc.c ia64-opc-a.c ia64-opc-b.c ia64-opc-f.c \
   ia64-opc-i.c ia64-opc-m.c ia64-opc-d.c ia64-opc.h
@@ -408,6 +467,9 @@ s390-mkopc: s390-mkopc.c
 
 s390-opc.tab: s390-mkopc s390-opc.txt
 	./s390-mkopc < $(srcdir)/s390-opc.txt > s390-opc.tab
+
+sh-dis.lo: sh-dis.c
+	$(LIBTOOL) --mode=compile $(COMPILE) -c @archdefs@ $<
 
 Makefile: $(BFDDIR)/configure.in
 
@@ -472,7 +534,7 @@ arc-dis.lo: arc-dis.c $(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
   $(INCDIR)/elf/external.h $(INCDIR)/bfdlink.h $(INCDIR)/elf/arc.h \
   $(INCDIR)/elf/reloc-macros.h opintl.h arc-dis.h arc-ext.h
 arc-opc.lo: arc-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
-  $(INCDIR)/opcode/arc.h
+  $(BFD_H) $(INCDIR)/symcat.h $(INCDIR)/opcode/arc.h
 arc-ext.lo: arc-ext.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(BFD_H) $(INCDIR)/symcat.h arc-ext.h $(INCDIR)/libiberty.h
 arm-dis.lo: arm-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
@@ -506,6 +568,8 @@ d30v-dis.lo: d30v-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/symcat.h opintl.h
 d30v-opc.lo: d30v-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/opcode/d30v.h
+dlx-dis.lo: dlx-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h $(INCDIR)/opcode/dlx.h
 dis-buf.lo: dis-buf.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h opintl.h
 disassemble.lo: disassemble.c sysdep.h config.h $(INCDIR)/ansidecl.h \
@@ -526,6 +590,23 @@ fr30-ibld.lo: fr30-ibld.c sysdep.h config.h $(INCDIR)/ansidecl.h \
 fr30-opc.lo: fr30-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(BFD_H) $(INCDIR)/symcat.h fr30-desc.h $(INCDIR)/opcode/cgen.h \
   fr30-opc.h $(INCDIR)/libiberty.h
+frv-asm.lo: frv-asm.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(BFD_H) $(INCDIR)/symcat.h frv-desc.h $(INCDIR)/opcode/cgen.h \
+  frv-opc.h opintl.h $(INCDIR)/xregex.h $(INCDIR)/xregex2.h \
+  $(INCDIR)/libiberty.h $(INCDIR)/safe-ctype.h
+frv-desc.lo: frv-desc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(BFD_H) $(INCDIR)/symcat.h frv-desc.h $(INCDIR)/opcode/cgen.h \
+  frv-opc.h opintl.h $(INCDIR)/libiberty.h
+frv-dis.lo: frv-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h frv-desc.h \
+  $(INCDIR)/opcode/cgen.h frv-opc.h opintl.h
+frv-ibld.lo: frv-ibld.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h frv-desc.h \
+  $(INCDIR)/opcode/cgen.h frv-opc.h opintl.h $(INCDIR)/safe-ctype.h
+frv-opc.lo: frv-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(BFD_H) $(INCDIR)/symcat.h frv-desc.h $(INCDIR)/opcode/cgen.h \
+  frv-opc.h $(INCDIR)/libiberty.h $(INCDIR)/elf/frv.h \
+  $(INCDIR)/elf/reloc-macros.h
 h8300-dis.lo: h8300-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/opcode/h8300.h $(INCDIR)/dis-asm.h $(BFD_H) \
   $(INCDIR)/symcat.h opintl.h
@@ -568,6 +649,22 @@ ia64-gen.lo: ia64-gen.c $(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
   ia64-opc-a.c ia64-opc-i.c ia64-opc-m.c ia64-opc-b.c \
   ia64-opc-f.c ia64-opc-x.c ia64-opc-d.c
 ia64-asmtab.lo: ia64-asmtab.c
+ip2k-asm.lo: ip2k-asm.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(BFD_H) $(INCDIR)/symcat.h ip2k-desc.h $(INCDIR)/opcode/cgen.h \
+  ip2k-opc.h opintl.h $(INCDIR)/xregex.h $(INCDIR)/xregex2.h \
+  $(INCDIR)/libiberty.h $(INCDIR)/safe-ctype.h
+ip2k-desc.lo: ip2k-desc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(BFD_H) $(INCDIR)/symcat.h ip2k-desc.h $(INCDIR)/opcode/cgen.h \
+  ip2k-opc.h opintl.h $(INCDIR)/libiberty.h
+ip2k-dis.lo: ip2k-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h ip2k-desc.h \
+  $(INCDIR)/opcode/cgen.h ip2k-opc.h opintl.h
+ip2k-ibld.lo: ip2k-ibld.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h ip2k-desc.h \
+  $(INCDIR)/opcode/cgen.h ip2k-opc.h opintl.h $(INCDIR)/safe-ctype.h
+ip2k-opc.lo: ip2k-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
+  $(BFD_H) $(INCDIR)/symcat.h ip2k-desc.h $(INCDIR)/opcode/cgen.h \
+  ip2k-opc.h $(INCDIR)/libiberty.h
 m32r-asm.lo: m32r-asm.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(BFD_H) $(INCDIR)/symcat.h m32r-desc.h $(INCDIR)/opcode/cgen.h \
   m32r-opc.h opintl.h $(INCDIR)/xregex.h $(INCDIR)/xregex2.h \
@@ -685,6 +782,8 @@ sparc-opc.lo: sparc-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/opcode/sparc.h
 tic30-dis.lo: tic30-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h $(INCDIR)/opcode/tic30.h
+tic4x-dis.lo: tic4x-dis.c $(INCDIR)/libiberty.h $(INCDIR)/ansidecl.h \
+  $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h $(INCDIR)/opcode/tic4x.h
 tic54x-dis.lo: tic54x-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h $(INCDIR)/opcode/tic54x.h \
   $(INCDIR)/coff/tic54x.h $(INCDIR)/coff/ti.h

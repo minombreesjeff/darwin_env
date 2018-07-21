@@ -1,5 +1,5 @@
 /* BFD library -- caching of file descriptors.
-   Copyright 1990, 1991, 1992, 1993, 1994, 1996, 2000, 2001
+   Copyright 1990, 1991, 1992, 1993, 1994, 1996, 2000, 2001, 2002
    Free Software Foundation, Inc.
    Hacked by Steve Chamberlain of Cygnus Support (steve@cygnus.com).
 
@@ -59,12 +59,15 @@ DESCRIPTION
 
 /* The number of BFD files we have open.  */
 
-static int open_files;
+static unsigned int open_files;
 static unsigned int bfd_cache_max_open = BFD_CACHE_MAX_OPEN;
 
 /*
-INTERNAL_FUNCTION
+FUNCTION
 	bfd_set_cache_max_open
+
+SYNOPSIS
+	void bfd_set_cache_max_open(unsigned int nmax);
 
 DESCRIPTION
 	Set the maximum number of files which the cache will keep
@@ -95,26 +98,26 @@ DESCRIPTION
 bfd *bfd_last_cache = NULL;
 
 /*
-  INTERNAL_FUNCTION
-  	bfd_cache_lookup
+INTERNAL_FUNCTION
+	bfd_cache_lookup macro
 
-  DESCRIPTION
- 	Check to see if the required BFD is the same as the last one
- 	looked up. If so, then it can use the stream in the BFD with
- 	impunity, since it can't have changed since the last lookup;
- 	otherwise, it has to perform the complicated lookup function.
+DESCRIPTION
+	Check to see if the required BFD is the same as the last one
+	looked up. If so, then it can use the stream in the BFD with
+	impunity, since it can't have changed since the last lookup;
+	otherwise, it has to perform the complicated lookup function.
  
-  .#define bfd_cache_lookup_null(x) \
-  .    ((x)==bfd_last_cache? \
-  .      (FILE*) (bfd_last_cache->iostream): \
-  .       bfd_cache_lookup_worker(x))
+.#define bfd_cache_lookup_null(x) \
+.    ((x)==bfd_last_cache? \
+.      (FILE*) (bfd_last_cache->iostream): \
+.       bfd_cache_lookup_worker(x))
 
-  .#define bfd_cache_lookup(x) \
-  .    ((bfd_cache_lookup_null(x) != NULL) ? \
-  .     (bfd_cache_lookup_null(x)) : \
-  .     (bfd_assert (__FILE__,__LINE__,"bfd_cache_lookup_null(x) != NULL"), \
-  .      (FILE *) NULL))
- */
+.#define bfd_cache_lookup(x) \
+.    ((bfd_cache_lookup_null(x) != NULL) ? \
+.     (bfd_cache_lookup_null(x)) : \
+.     (bfd_assert (__FILE__,__LINE__,"bfd_cache_lookup_null(x) != NULL"), \
+.      (FILE *) NULL))
+*/
 
 /* Insert a BFD into the cache.  */
 
@@ -200,6 +203,7 @@ bfd_cache_delete (abfd)
   boolean ret;
 
   BFD_ASSERT ((abfd->flags & BFD_IN_MEMORY) == 0);
+  BFD_ASSERT (open_files > 0);
 
   if (fclose ((FILE *) abfd->iostream) == 0)
     ret = true;
@@ -307,7 +311,7 @@ bfd_open_file (abfd)
       break;
     case both_direction:
     case write_direction:
-      if (abfd->opened_once == true)
+      if (abfd->opened_once)
 	{
 	  abfd->iostream = (PTR) fopen (abfd->filename, FOPEN_RUB);
 	  if (abfd->iostream == NULL)
@@ -417,7 +421,7 @@ void
 bfd_cache_flush (void)
 {
   while (bfd_last_cache != NULL) {
-    int prev_open = open_files;
+    unsigned int prev_open = open_files;
     close_one ();
     if (open_files == prev_open) {
       break;

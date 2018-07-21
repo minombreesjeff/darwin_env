@@ -757,6 +757,19 @@ _bfd_generic_link_add_symbols_collect (abfd, info)
   return generic_link_add_symbols (abfd, info, true);
 }
 
+/* Indicate that we are only retrieving symbol values from this
+   section.  We want the symbols to act as though the values in the
+   file are absolute.  */
+
+void
+_bfd_generic_link_just_syms (sec, info)
+     asection *sec;
+     struct bfd_link_info *info ATTRIBUTE_UNUSED;
+{
+  sec->output_section = bfd_abs_section_ptr;
+  sec->output_offset = sec->vma;
+}
+
 /* Add symbols from an object file to the global hash table.  */
 
 static boolean
@@ -1292,6 +1305,7 @@ generic_link_add_symbol_list (abfd, info, symbol_count, symbols, collect)
 	  const char *name;
 	  const char *string;
 	  struct generic_link_hash_entry *h;
+	  struct bfd_link_hash_entry *bh;
 
 	  name = bfd_asymbol_name (p);
 	  if (((p->flags & BSF_INDIRECT) != 0
@@ -1313,12 +1327,12 @@ generic_link_add_symbol_list (abfd, info, symbol_count, symbols, collect)
 	  else
 	    string = NULL;
 
-	  h = NULL;
+	  bh = NULL;
 	  if (! (_bfd_generic_link_add_one_symbol
 		 (info, abfd, name, p->flags, bfd_get_section (p),
-		  p->value, string, false, collect,
-		  (struct bfd_link_hash_entry **) &h)))
+		  p->value, string, false, collect, &bh)))
 	    return false;
+	  h = (struct generic_link_hash_entry *) bh;
 
 	  /* If this is a constructor symbol, and the linker didn't do
              anything with it, then we want to just pass the symbol
@@ -1661,8 +1675,7 @@ _bfd_generic_link_add_one_symbol (info, abfd, name, flags, section, value,
 			  abort ();
 
 			if (! ((*info->callbacks->constructor)
-			       (info,
-				c == 'I' ? true : false,
+			       (info, c == 'I',
 				h->root.string, abfd, section, value)))
 			  return false;
 		      }
@@ -1800,37 +1813,38 @@ _bfd_generic_link_add_one_symbol (info, abfd, name, flags, section, value,
 	  /* Fall through.  */
 	case MDEF:
 	  /* Handle a multiple definition.  */
-	  {
-	    asection *msec = NULL;
-	    bfd_vma mval = 0;
+	  if (!info->allow_multiple_definition)
+	    {
+	      asection *msec = NULL;
+	      bfd_vma mval = 0;
 
-	    switch (h->type)
-	      {
-	      case bfd_link_hash_defined:
-		msec = h->u.def.section;
-		mval = h->u.def.value;
+	      switch (h->type)
+		{
+		case bfd_link_hash_defined:
+		  msec = h->u.def.section;
+		  mval = h->u.def.value;
+		  break;
+	        case bfd_link_hash_indirect:
+		  msec = bfd_ind_section_ptr;
+		  mval = 0;
+		  break;
+		default:
+		  abort ();
+		}
+
+	      /* Ignore a redefinition of an absolute symbol to the
+		 same value; it's harmless.  */
+	      if (h->type == bfd_link_hash_defined
+		  && bfd_is_abs_section (msec)
+		  && bfd_is_abs_section (section)
+		  && value == mval)
 		break;
-	      case bfd_link_hash_indirect:
-		msec = bfd_ind_section_ptr;
-		mval = 0;
-		break;
-	      default:
-		abort ();
-	      }
 
-	    /* Ignore a redefinition of an absolute symbol to the same
-               value; it's harmless.  */
-	    if (h->type == bfd_link_hash_defined
-		&& bfd_is_abs_section (msec)
-		&& bfd_is_abs_section (section)
-		&& value == mval)
-	      break;
-
-	    if (! ((*info->callbacks->multiple_definition)
-		   (info, h->root.string, msec->owner, msec, mval, abfd,
-		    section, value)))
-	      return false;
-	  }
+	      if (! ((*info->callbacks->multiple_definition)
+		     (info, h->root.string, msec->owner, msec, mval,
+		      abfd, section, value)))
+		return false;
+	    }
 	  break;
 
 	case CIND:
@@ -1961,12 +1975,12 @@ _bfd_generic_link_add_one_symbol (info, abfd, name, flags, section, value,
 	    else
 	      {
 		char *w;
+		size_t len = strlen (string) + 1;
 
-		w = bfd_hash_allocate (&info->hash->table,
-				       strlen (string) + 1);
+		w = bfd_hash_allocate (&info->hash->table, len);
 		if (w == NULL)
 		  return false;
-		strcpy (w, string);
+		memcpy (w, string, len);
 		sub->u.i.warning = w;
 	      }
 
@@ -2377,7 +2391,7 @@ _bfd_generic_link_output_symbols (output_bfd, input_bfd, info, psymalloc)
 	 Gross.  .bss and similar sections won't have the linker_mark
 	 field set.  */
       if ((sym->section->flags & SEC_HAS_CONTENTS) != 0
-	  && sym->section->linker_mark == false)
+	  && ! sym->section->linker_mark)
 	output = false;
 
       if (output)

@@ -1,5 +1,5 @@
 /* stabs.c -- Parse stabs debugging information
-   Copyright 1995, 1996, 1997, 1998, 1999, 2000, 2001
+   Copyright 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
    Written by Ian Lance Taylor <ian@cygnus.com>.
 
@@ -216,7 +216,7 @@ static debug_type stab_find_tagged_type
   PARAMS ((PTR, struct stab_handle *, const char *, int,
 	   enum debug_type_kind));
 static debug_type *stab_demangle_argtypes
-  PARAMS ((PTR, struct stab_handle *, const char *, boolean *));
+  PARAMS ((PTR, struct stab_handle *, const char *, boolean *, unsigned int));
 
 /* Save a string in memory.  */
 
@@ -369,7 +369,6 @@ warn_stab (p, err)
 
 /* Create a handle to parse stabs symbols with.  */
 
-/*ARGSUSED*/
 PTR
 start_stab (dhandle, abfd, sections, syms, symcount)
      PTR dhandle ATTRIBUTE_UNUSED;
@@ -565,7 +564,7 @@ parse_stab (dhandle, handle, type, desc, value, string)
 
 	  f = info->so_string;
 
-          if (IS_ABSOLUTE_PATH (string))
+	  if (IS_ABSOLUTE_PATH (string))
 	    info->so_string = xstrdup (string);
 	  else
 	    info->so_string = concat (info->so_string, string,
@@ -1915,7 +1914,7 @@ parse_stab_sun_builtin_type (dhandle, pp)
     }
   ++*pp;
 
-  /* The second number is always 0, so ignore it too. */
+  /* The second number is always 0, so ignore it too.  */
   (void) parse_number (pp, (boolean *) NULL);
   if (**pp != ';')
     {
@@ -1924,7 +1923,7 @@ parse_stab_sun_builtin_type (dhandle, pp)
     }
   ++*pp;
 
-  /* The third number is the number of bits for this type. */
+  /* The third number is the number of bits for this type.  */
   bits = parse_number (pp, (boolean *) NULL);
 
   /* The type *should* end with a semicolon.  If it are embedded
@@ -1977,7 +1976,7 @@ parse_stab_sun_floating_type (dhandle, pp)
       || details == NF_COMPLEX32)
     return debug_make_complex_type (dhandle, bytes);
 
-  return debug_make_float_type (dhandle, bytes);      
+  return debug_make_float_type (dhandle, bytes);
 }
 
 /* Handle an enum type.  */
@@ -2311,7 +2310,7 @@ parse_stab_struct_fields (dhandle, info, pp, retp, staticsp)
       /* Look for the ':' that separates the field name from the field
 	 values.  Data members are delimited by a single ':', while member
 	 functions are delimited by a pair of ':'s.  When we hit the member
-	 functions (if any), terminate scan loop and return. */
+	 functions (if any), terminate scan loop and return.  */
 
       p = strchr (p, ':');
       if (p == NULL)
@@ -2762,27 +2761,27 @@ parse_stab_members (dhandle, info, tagname, pp, typenums, retp)
 		  /* Figure out from whence this virtual function
 		     came.  It may belong to virtual function table of
 		     one of its baseclasses.  */
-		    look_ahead_type = parse_stab_type (dhandle, info,
-						       (const char *) NULL,
-						       pp,
-						       (debug_type **) NULL);
-		    if (**pp == ':')
-		      {
-			/* g++ version 1 overloaded methods.  */
-			context = DEBUG_TYPE_NULL;
-		      }
-		    else
-		      {
-			context = look_ahead_type;
-			look_ahead_type = DEBUG_TYPE_NULL;
-			if (**pp != ';')
-			  {
-			    bad_stab (orig);
-			    return false;
-			  }
-			++*pp;
-		      }
-		  }
+		  look_ahead_type = parse_stab_type (dhandle, info,
+						     (const char *) NULL,
+						     pp,
+						     (debug_type **) NULL);
+		  if (**pp == ':')
+		    {
+		      /* g++ version 1 overloaded methods.  */
+		      context = DEBUG_TYPE_NULL;
+		    }
+		  else
+		    {
+		      context = look_ahead_type;
+		      look_ahead_type = DEBUG_TYPE_NULL;
+		      if (**pp != ';')
+			{
+			  bad_stab (orig);
+			  return false;
+			}
+		      ++*pp;
+		    }
+		}
 	      break;
 
 	    case '?':
@@ -2912,6 +2911,7 @@ parse_stab_argtypes (dhandle, info, class_type, fieldname, tagname,
   boolean is_destructor;
   debug_type *args;
   boolean varargs;
+  unsigned int physname_len = 0;
 
   /* Constructors are sometimes handled specially.  */
   is_full_physname_constructor = ((argtypes[0] == '_'
@@ -2988,6 +2988,7 @@ parse_stab_argtypes (dhandle, info, class_type, fieldname, tagname,
 	    strcpy (physname, fieldname);
 	}
 
+      physname_len = strlen (physname);
       strcat (physname, buf);
       if (tagname != NULL)
 	strcat (physname, tagname);
@@ -3004,7 +3005,7 @@ parse_stab_argtypes (dhandle, info, class_type, fieldname, tagname,
 				     false);
     }
 
-  args = stab_demangle_argtypes (dhandle, info, *pphysname, &varargs);
+  args = stab_demangle_argtypes (dhandle, info, *pphysname, &varargs, physname_len);
   if (args == NULL)
     return DEBUG_TYPE_NULL;
 
@@ -3038,7 +3039,7 @@ parse_stab_tilde_field (dhandle, info, pp, typenums, retvptrbase, retownvptr)
 
   orig = *pp;
 
-  /* If we are positioned at a ';', then skip it. */
+  /* If we are positioned at a ';', then skip it.  */
   if (**pp == ';')
     ++*pp;
 
@@ -3050,7 +3051,7 @@ parse_stab_tilde_field (dhandle, info, pp, typenums, retvptrbase, retownvptr)
   if (**pp == '=' || **pp == '+' || **pp == '-')
     {
       /* Obsolete flags that used to indicate the presence of
-	 constructors and/or destructors. */
+	 constructors and/or destructors.  */
       ++*pp;
     }
 
@@ -3091,7 +3092,7 @@ parse_stab_tilde_field (dhandle, info, pp, typenums, retvptrbase, retownvptr)
       *pp = p + 1;
     }
 
-  return true;    
+  return true;
 }
 
 /* Read a definition of an array type.  */
@@ -3733,7 +3734,7 @@ static unsigned int stab_demangle_count PARAMS ((const char **));
 static boolean stab_demangle_get_count
   PARAMS ((const char **, unsigned int *));
 static boolean stab_demangle_prefix
-  PARAMS ((struct stab_demangle_info *, const char **));
+  PARAMS ((struct stab_demangle_info *, const char **, unsigned int));
 static boolean stab_demangle_function_name
   PARAMS ((struct stab_demangle_info *, const char **, const char *));
 static boolean stab_demangle_signature
@@ -3825,11 +3826,12 @@ stab_demangle_get_count (pp, pi)
    terminated array of argument types.  */
 
 static debug_type *
-stab_demangle_argtypes (dhandle, info, physname, pvarargs)
+stab_demangle_argtypes (dhandle, info, physname, pvarargs, physname_len)
      PTR dhandle;
      struct stab_handle *info;
      const char *physname;
      boolean *pvarargs;
+     unsigned int physname_len;
 {
   struct stab_demangle_info minfo;
 
@@ -3846,7 +3848,7 @@ stab_demangle_argtypes (dhandle, info, physname, pvarargs)
   /* cplus_demangle checks for special GNU mangled forms, but we can't
      see any of them in mangled method argument types.  */
 
-  if (! stab_demangle_prefix (&minfo, &physname))
+  if (! stab_demangle_prefix (&minfo, &physname, physname_len))
     goto error_return;
 
   if (*physname != '\0')
@@ -3873,9 +3875,10 @@ stab_demangle_argtypes (dhandle, info, physname, pvarargs)
 /* Demangle the prefix of the mangled name.  */
 
 static boolean
-stab_demangle_prefix (minfo, pp)
+stab_demangle_prefix (minfo, pp, physname_len)
      struct stab_demangle_info *minfo;
      const char **pp;
+     unsigned int physname_len;
 {
   const char *scan;
   unsigned int i;
@@ -3883,26 +3886,29 @@ stab_demangle_prefix (minfo, pp)
   /* cplus_demangle checks for global constructors and destructors,
      but we can't see them in mangled argument types.  */
 
-  /* Look for `__'.  */
-  scan = *pp;
-  do
+  if (physname_len)
+    scan = *pp + physname_len;
+  else
     {
-      scan = strchr (scan, '_');
+      /* Look for `__'.  */
+      scan = *pp;
+      do
+	scan = strchr (scan, '_');
+      while (scan != NULL && *++scan != '_');
+
+      if (scan == NULL)
+	{
+	  stab_bad_demangle (*pp);
+	  return false;
+	}
+
+      --scan;
+
+      /* We found `__'; move ahead to the last contiguous `__' pair.  */
+      i = strspn (scan, "_");
+      if (i > 2)
+	scan += i - 2;
     }
-  while (scan != NULL && *++scan != '_');
-
-  if (scan == NULL)
-    {
-      stab_bad_demangle (*pp);
-      return false;
-    }
-
-  --scan;
-
-  /* We found `__'; move ahead to the last contiguous `__' pair.  */
-  i = strspn (scan, "_");
-  if (i > 2)
-    scan += i - 2;
 
   if (scan == *pp
       && (ISDIGIT (scan[2])

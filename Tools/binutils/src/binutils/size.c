@@ -84,7 +84,7 @@ usage (stream, status)
 {
   fprintf (stream, _("Usage: %s [option(s)] [file(s)]\n"), program_name);
   fprintf (stream, _(" Displays the sizes of sections inside binary files\n"));
-  fprintf (stream, _(" If no input file(s) are specified, a.out is assumed\n"));  
+  fprintf (stream, _(" If no input file(s) are specified, a.out is assumed\n"));
   fprintf (stream, _(" The options are:\n\
   -A|-B     --format={sysv|berkeley}  Select output style (default is %s)\n\
   -o|-d|-h  --radix={8|10|16}         Display numbers in octal, decimal or hex\n\
@@ -316,6 +316,7 @@ display_archive (file)
      bfd *file;
 {
   bfd *arfile = (bfd *) NULL;
+  bfd *last_arfile = (bfd *) NULL;
 
   for (;;)
     {
@@ -333,8 +334,14 @@ display_archive (file)
 	}
 
       display_bfd (arfile);
-      /* Don't close the archive elements; we need them for next_archive.  */
+
+      if (last_arfile != NULL)
+	bfd_close (last_arfile);
+      last_arfile = arfile;
     }
+
+  if (last_arfile != NULL)
+    bfd_close (last_arfile);
 }
 
 static void
@@ -441,7 +448,7 @@ berkeley_sum (abfd, sec, ignore)
     bsssize += size;
 }
 
-static void 
+static void
 print_berkeley_format (abfd)
      bfd *abfd;
 {

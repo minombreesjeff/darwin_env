@@ -108,6 +108,11 @@ extern enum sh64_elf_cr_type sh64_get_contents_type
    FIXME: This seems redundant now that we export the interface above.  */
 extern boolean sh64_address_is_shmedia PARAMS ((asection *, bfd_vma));
 
+extern int _bfd_sh64_crange_qsort_cmpb PARAMS ((const void *, const void *));
+extern int _bfd_sh64_crange_qsort_cmpl PARAMS ((const void *, const void *));
+extern int _bfd_sh64_crange_bsearch_cmpb PARAMS ((const void *, const void *));
+extern int _bfd_sh64_crange_bsearch_cmpl PARAMS ((const void *, const void *));
+
 /* We put this in elf_section_data (section)->tdata.  */
 struct sh64_section_data
 {
@@ -162,7 +167,17 @@ START_RELOC_NUMBERS (elf_sh_reloc_type)
   RELOC_NUMBER (R_SH_DIR10SL, 50)
   RELOC_NUMBER (R_SH_DIR10SQ, 51)
   FAKE_RELOC (R_SH_FIRST_INVALID_RELOC_3, 52)
-  FAKE_RELOC (R_SH_LAST_INVALID_RELOC_3, 159)
+  FAKE_RELOC (R_SH_LAST_INVALID_RELOC_3, 143)
+  RELOC_NUMBER (R_SH_TLS_GD_32, 144)
+  RELOC_NUMBER (R_SH_TLS_LD_32, 145)
+  RELOC_NUMBER (R_SH_TLS_LDO_32, 146)
+  RELOC_NUMBER (R_SH_TLS_IE_32, 147)
+  RELOC_NUMBER (R_SH_TLS_LE_32, 148)
+  RELOC_NUMBER (R_SH_TLS_DTPMOD32, 149)
+  RELOC_NUMBER (R_SH_TLS_DTPOFF32, 150)
+  RELOC_NUMBER (R_SH_TLS_TPOFF32, 151)
+  FAKE_RELOC (R_SH_FIRST_INVALID_RELOC_4, 152)
+  FAKE_RELOC (R_SH_LAST_INVALID_RELOC_4, 159)
   RELOC_NUMBER (R_SH_GOT32, 160)
   RELOC_NUMBER (R_SH_PLT32, 161)
   RELOC_NUMBER (R_SH_COPY, 162)
@@ -200,8 +215,8 @@ START_RELOC_NUMBERS (elf_sh_reloc_type)
   RELOC_NUMBER (R_SH_GLOB_DAT64, 194)
   RELOC_NUMBER (R_SH_JMP_SLOT64, 195)
   RELOC_NUMBER (R_SH_RELATIVE64, 196)
-  FAKE_RELOC (R_SH_FIRST_INVALID_RELOC_4, 197)
-  FAKE_RELOC (R_SH_LAST_INVALID_RELOC_4, 241)
+  FAKE_RELOC (R_SH_FIRST_INVALID_RELOC_5, 197)
+  FAKE_RELOC (R_SH_LAST_INVALID_RELOC_5, 241)
   RELOC_NUMBER (R_SH_SHMEDIA_CODE, 242)
   RELOC_NUMBER (R_SH_PT_16, 243)
   RELOC_NUMBER (R_SH_IMMS16, 244)

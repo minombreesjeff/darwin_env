@@ -37,12 +37,12 @@
 #include "bucomm.h"
 #include "safe-ctype.h"
 
-#include <ansidecl.h>
+#include "ansidecl.h"
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <assert.h>
-#include <getopt.h>
+#include "getopt.h"
 
 /* Internal BFD NLM header.  */
 #include "libnlm.h"
@@ -562,7 +562,7 @@ main (argc, argv)
 	      sym->section = got_sec->output_section;
 	    }
 #endif
- 	}
+	}
 
       /* If this is a global symbol, check the export list.  */
       if ((sym->flags & (BSF_EXPORT | BSF_GLOBAL)) != 0)
@@ -638,7 +638,7 @@ main (argc, argv)
 	    non_fatal (_("warning: symbol %s imported but not in import list"),
 		       bfd_asymbol_name (sym));
 	}
-	
+
       /* See if it's one of the special named symbols.  */
       if ((sym->flags & BSF_DEBUGGING) == 0)
 	{
@@ -702,7 +702,7 @@ main (argc, argv)
     }
 
   bfd_set_symtab (outbfd, outsyms, symcount + newsymcount);
-    
+
   if (! gotstart)
     non_fatal (_("warning: START procedure %s not defined"), start_procedure);
   if (! gotexit)
@@ -1383,7 +1383,6 @@ mangle_relocs (outbfd, insec, relocs_ptr, reloc_count_ptr, contents,
 /* By default all we need to do for relocs is change the address by
    the output_offset.  */
 
-/*ARGSUSED*/
 static void
 default_mangle_relocs (outbfd, insec, relocs_ptr, reloc_count_ptr, contents,
 		       contents_size)
@@ -1588,7 +1587,6 @@ static reloc_howto_type nlm32_alpha_nw_howto =
 	 0,			/* dst_mask */
 	 false);		/* pcrel_offset */
 
-/*ARGSUSED*/
 static void
 alpha_mangle_relocs (outbfd, insec, relocs_ptr, reloc_count_ptr, contents,
 		     contents_size)
@@ -1813,7 +1811,7 @@ powerpc_build_stubs (inbfd, outbfd, symbols_ptr, symcount_ptr)
 
       item->next = powerpc_stubs;
       powerpc_stubs = item;
-      
+
       ++stubcount;
     }
 
@@ -1896,7 +1894,7 @@ powerpc_resolve_stubs (inbfd, outbfd)
       reloc->address = l->toc_index + got_sec->output_offset;
       reloc->addend = 0;
       reloc->howto = bfd_reloc_type_lookup (inbfd, BFD_RELOC_32);
-				      
+
       *r++ = reloc;
     }
 
@@ -1909,7 +1907,6 @@ powerpc_resolve_stubs (inbfd, outbfd)
    r2, will be set to the correct TOC value, so there is no need for
    any further reloc.  */
 
-/*ARGSUSED*/
 static void
 powerpc_mangle_relocs (outbfd, insec, relocs_ptr, reloc_count_ptr, contents,
 		       contents_size)

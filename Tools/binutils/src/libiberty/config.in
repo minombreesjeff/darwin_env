@@ -1,22 +1,12 @@
 /* config.in.  Generated automatically from configure.in by autoheader.  */
-/* Define if you have the sys_errlist variable.  */
-#undef HAVE_SYS_ERRLIST
-
-/* Define if you have the sys_nerr variable.  */
-#undef HAVE_SYS_NERR
-
-/* Define if you have the sys_siglist variable.  */
-#undef HAVE_SYS_SIGLIST
-
-/* Define if you have the strerror function.  */
-#undef HAVE_STRERROR
-
-/* Define if you want to use the memory mapped malloc package (mmalloc). */
-#undef USE_MMALLOC
 
 /* Define to one of _getb67, GETB67, getb67 for Cray-2 and Cray-YMP systems.
    This function is required for alloca.c support on those systems. */
 #undef CRAY_STACKSEG_END
+
+/* When on a MacOS X host, enable some really nasty hacks to the generic gdb
+   code. */
+#undef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
 
 /* Define if you have the <alloca.h> header file. */
 #undef HAVE_ALLOCA_H
@@ -261,6 +251,9 @@
 /* Define if errno must be declared even when <errno.h> is included. */
 #undef NEED_DECLARATION_ERRNO
 
+/* Define if your C compiler doesn't accept -c and -o together. */
+#undef NO_MINUS_C_MINUS_O
+
 /* Define if you know the direction of stack growth for your system; otherwise
    it will be automatically deduced at run-time. STACK_DIRECTION > 0 => grows
    toward higher addresses STACK_DIRECTION < 0 => grows toward lower addresses
@@ -272,6 +265,9 @@
 
 /* Define if you can safely include both <sys/time.h> and <time.h>. */
 #undef TIME_WITH_SYS_TIME
+
+/* mmallocly goodness */
+#undef USE_MMALLOC
 
 /* Define if you need to in order for stat and other things to work. */
 #undef _POSIX_SOURCE

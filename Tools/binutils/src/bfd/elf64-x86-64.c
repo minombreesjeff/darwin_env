@@ -26,9 +26,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "elf/x86-64.h"
 
-/* We use only the RELA entries.  */
-#define USE_RELA 1
-
 /* In case we're on a 32-bit machine, construct a 64-bit "-1" value.  */
 #define MINUS_ONE (~ (bfd_vma) 0)
 
@@ -43,16 +40,16 @@ static reloc_howto_type x86_64_elf_howto_table[] =
   HOWTO(R_X86_64_64, 0, 4, 64, false, 0, complain_overflow_bitfield,
 	bfd_elf_generic_reloc, "R_X86_64_64", false, MINUS_ONE, MINUS_ONE,
 	false),
-  HOWTO(R_X86_64_PC32, 0, 4, 32, true, 0, complain_overflow_signed,
+  HOWTO(R_X86_64_PC32, 0, 2, 32, true, 0, complain_overflow_signed,
 	bfd_elf_generic_reloc, "R_X86_64_PC32", false, 0xffffffff, 0xffffffff,
 	true),
-  HOWTO(R_X86_64_GOT32, 0, 4, 32, false, 0, complain_overflow_signed,
+  HOWTO(R_X86_64_GOT32, 0, 2, 32, false, 0, complain_overflow_signed,
 	bfd_elf_generic_reloc, "R_X86_64_GOT32", false, 0xffffffff, 0xffffffff,
 	false),
-  HOWTO(R_X86_64_PLT32, 0, 4, 32, true, 0, complain_overflow_signed,
+  HOWTO(R_X86_64_PLT32, 0, 2, 32, true, 0, complain_overflow_signed,
 	bfd_elf_generic_reloc, "R_X86_64_PLT32", false, 0xffffffff, 0xffffffff,
 	true),
-  HOWTO(R_X86_64_COPY, 0, 4, 32, false, 0, complain_overflow_bitfield,
+  HOWTO(R_X86_64_COPY, 0, 2, 32, false, 0, complain_overflow_bitfield,
 	bfd_elf_generic_reloc, "R_X86_64_COPY", false, 0xffffffff, 0xffffffff,
 	false),
   HOWTO(R_X86_64_GLOB_DAT, 0, 4, 64, false, 0, complain_overflow_bitfield,
@@ -64,13 +61,13 @@ static reloc_howto_type x86_64_elf_howto_table[] =
   HOWTO(R_X86_64_RELATIVE, 0, 4, 64, false, 0, complain_overflow_bitfield,
 	bfd_elf_generic_reloc, "R_X86_64_RELATIVE", false, MINUS_ONE,
 	MINUS_ONE, false),
-  HOWTO(R_X86_64_GOTPCREL, 0, 4, 32, true,0 , complain_overflow_signed,
+  HOWTO(R_X86_64_GOTPCREL, 0, 2, 32, true, 0, complain_overflow_signed,
 	bfd_elf_generic_reloc, "R_X86_64_GOTPCREL", false, 0xffffffff,
 	0xffffffff, true),
-  HOWTO(R_X86_64_32, 0, 4, 32, false, 0, complain_overflow_unsigned,
+  HOWTO(R_X86_64_32, 0, 2, 32, false, 0, complain_overflow_unsigned,
 	bfd_elf_generic_reloc, "R_X86_64_32", false, 0xffffffff, 0xffffffff,
 	false),
-  HOWTO(R_X86_64_32S, 0, 4, 32, false, 0, complain_overflow_signed,
+  HOWTO(R_X86_64_32S, 0, 2, 32, false, 0, complain_overflow_signed,
 	bfd_elf_generic_reloc, "R_X86_64_32S", false, 0xffffffff, 0xffffffff,
 	false),
   HOWTO(R_X86_64_16, 0, 1, 16, false, 0, complain_overflow_bitfield,
@@ -81,6 +78,30 @@ static reloc_howto_type x86_64_elf_howto_table[] =
 	bfd_elf_generic_reloc, "R_X86_64_8", false, 0xff, 0xff, false),
   HOWTO(R_X86_64_PC8, 0, 0, 8, true, 0, complain_overflow_signed,
 	bfd_elf_generic_reloc, "R_X86_64_PC8", false, 0xff, 0xff, true),
+  HOWTO(R_X86_64_DTPMOD64, 0, 4, 64, false, 0, complain_overflow_bitfield,
+	bfd_elf_generic_reloc, "R_X86_64_DTPMOD64", false, MINUS_ONE,
+	MINUS_ONE, false),
+  HOWTO(R_X86_64_DTPOFF64, 0, 4, 64, false, 0, complain_overflow_bitfield,
+	bfd_elf_generic_reloc, "R_X86_64_DTPOFF64", false, MINUS_ONE,
+	MINUS_ONE, false),
+  HOWTO(R_X86_64_TPOFF64, 0, 4, 64, false, 0, complain_overflow_bitfield,
+	bfd_elf_generic_reloc, "R_X86_64_TPOFF64", false, MINUS_ONE,
+	MINUS_ONE, false),
+  HOWTO(R_X86_64_TLSGD, 0, 2, 32, true, 0, complain_overflow_signed,
+	bfd_elf_generic_reloc, "R_X86_64_TLSGD", false, 0xffffffff,
+	0xffffffff, true),
+  HOWTO(R_X86_64_TLSLD, 0, 2, 32, true, 0, complain_overflow_signed,
+	bfd_elf_generic_reloc, "R_X86_64_TLSLD", false, 0xffffffff,
+	0xffffffff, true),
+  HOWTO(R_X86_64_DTPOFF32, 0, 2, 32, false, 0, complain_overflow_bitfield,
+	bfd_elf_generic_reloc, "R_X86_64_DTPOFF32", false, 0xffffffff,
+	0xffffffff, false),
+  HOWTO(R_X86_64_GOTTPOFF, 0, 2, 32, true, 0, complain_overflow_signed,
+	bfd_elf_generic_reloc, "R_X86_64_GOTTPOFF", false, 0xffffffff,
+	0xffffffff, true),
+  HOWTO(R_X86_64_TPOFF32, 0, 2, 32, false, 0, complain_overflow_signed,
+	bfd_elf_generic_reloc, "R_X86_64_TPOFF32", false, 0xffffffff,
+	0xffffffff, false),
 
 /* GNU extension to record C++ vtable hierarchy.  */
   HOWTO (R_X86_64_GNU_VTINHERIT, 0, 4, 0, false, 0, complain_overflow_dont,
@@ -117,6 +138,14 @@ static const struct elf_reloc_map x86_64_reloc_map[] =
   { BFD_RELOC_16_PCREL,		R_X86_64_PC16, },
   { BFD_RELOC_8,		R_X86_64_8, },
   { BFD_RELOC_8_PCREL,		R_X86_64_PC8, },
+  { BFD_RELOC_X86_64_DTPMOD64,	R_X86_64_DTPMOD64, },
+  { BFD_RELOC_X86_64_DTPOFF64,	R_X86_64_DTPOFF64, },
+  { BFD_RELOC_X86_64_TPOFF64,	R_X86_64_TPOFF64, },
+  { BFD_RELOC_X86_64_TLSGD,	R_X86_64_TLSGD, },
+  { BFD_RELOC_X86_64_TLSLD,	R_X86_64_TLSLD, },
+  { BFD_RELOC_X86_64_DTPOFF32,	R_X86_64_DTPOFF32, },
+  { BFD_RELOC_X86_64_GOTTPOFF,	R_X86_64_GOTTPOFF, },
+  { BFD_RELOC_X86_64_TPOFF32,	R_X86_64_TPOFF32, },
   { BFD_RELOC_VTABLE_INHERIT,	R_X86_64_GNU_VTINHERIT, },
   { BFD_RELOC_VTABLE_ENTRY,	R_X86_64_GNU_VTENTRY, },
 };
@@ -125,20 +154,29 @@ static reloc_howto_type *elf64_x86_64_reloc_type_lookup
   PARAMS ((bfd *, bfd_reloc_code_real_type));
 static void elf64_x86_64_info_to_howto
   PARAMS ((bfd *, arelent *, Elf64_Internal_Rela *));
+static boolean elf64_x86_64_grok_prstatus
+  PARAMS ((bfd *, Elf_Internal_Note *));
+static boolean elf64_x86_64_grok_psinfo
+  PARAMS ((bfd *, Elf_Internal_Note *));
 static struct bfd_link_hash_table *elf64_x86_64_link_hash_table_create
   PARAMS ((bfd *));
+static int elf64_x86_64_tls_transition
+  PARAMS ((struct bfd_link_info *, int, int));
+static boolean elf64_x86_64_mkobject
+  PARAMS((bfd *));
 static boolean elf64_x86_64_elf_object_p PARAMS ((bfd *abfd));
 static boolean create_got_section
   PARAMS((bfd *, struct bfd_link_info *));
 static boolean elf64_x86_64_create_dynamic_sections
   PARAMS((bfd *, struct bfd_link_info *));
 static void elf64_x86_64_copy_indirect_symbol
-  PARAMS ((struct elf_link_hash_entry *, struct elf_link_hash_entry *));
+  PARAMS ((struct elf_backend_data *, struct elf_link_hash_entry *,
+	   struct elf_link_hash_entry *));
 static boolean elf64_x86_64_check_relocs
   PARAMS ((bfd *, struct bfd_link_info *, asection *sec,
 	   const Elf_Internal_Rela *));
 static asection *elf64_x86_64_gc_mark_hook
-  PARAMS ((bfd *, struct bfd_link_info *, Elf_Internal_Rela *,
+  PARAMS ((asection *, struct bfd_link_info *, Elf_Internal_Rela *,
 	   struct elf_link_hash_entry *, Elf_Internal_Sym *));
 
 static boolean elf64_x86_64_gc_sweep_hook
@@ -156,6 +194,10 @@ static boolean readonly_dynrelocs
   PARAMS ((struct elf_link_hash_entry *, PTR));
 static boolean elf64_x86_64_size_dynamic_sections
   PARAMS ((bfd *, struct bfd_link_info *));
+static bfd_vma dtpoff_base
+  PARAMS ((struct bfd_link_info *));
+static bfd_vma tpoff
+  PARAMS ((struct bfd_link_info *, bfd_vma));
 static boolean elf64_x86_64_relocate_section
   PARAMS ((bfd *, struct bfd_link_info *, bfd *, asection *, bfd_byte *,
 	 Elf_Internal_Rela *, Elf_Internal_Sym *, asection **));
@@ -196,16 +238,83 @@ elf64_x86_64_info_to_howto (abfd, cache_ptr, dst)
   r_type = ELF64_R_TYPE (dst->r_info);
   if (r_type < (unsigned int) R_X86_64_GNU_VTINHERIT)
     {
-      BFD_ASSERT (r_type <= (unsigned int) R_X86_64_PC8);
+      BFD_ASSERT (r_type <= (unsigned int) R_X86_64_TPOFF32);
       i = r_type;
     }
   else
     {
       BFD_ASSERT (r_type < (unsigned int) R_X86_64_max);
-      i = r_type - ((unsigned int) R_X86_64_GNU_VTINHERIT - R_X86_64_PC8 - 1);
+      i = r_type - ((unsigned int) R_X86_64_GNU_VTINHERIT - R_X86_64_TPOFF32 - 1);
     }
   cache_ptr->howto = &x86_64_elf_howto_table[i];
   BFD_ASSERT (r_type == cache_ptr->howto->type);
+}
+
+/* Support for core dump NOTE sections.  */
+static boolean
+elf64_x86_64_grok_prstatus (abfd, note)
+     bfd *abfd;
+     Elf_Internal_Note *note;
+{
+  int offset;
+  size_t raw_size;
+
+  switch (note->descsz)
+    {
+      default:
+	return false;
+
+      case 336:		/* sizeof(istruct elf_prstatus) on Linux/x86_64 */
+	/* pr_cursig */
+	elf_tdata (abfd)->core_signal
+	  = bfd_get_16 (abfd, note->descdata + 12);
+
+	/* pr_pid */
+	elf_tdata (abfd)->core_pid
+	  = bfd_get_32 (abfd, note->descdata + 32);
+
+	/* pr_reg */
+	offset = 112;
+	raw_size = 216;
+
+	break;
+    }
+
+  /* Make a ".reg/999" section.  */
+  return _bfd_elfcore_make_pseudosection (abfd, ".reg",
+					  raw_size, note->descpos + offset);
+}
+
+static boolean
+elf64_x86_64_grok_psinfo (abfd, note)
+     bfd *abfd;
+     Elf_Internal_Note *note;
+{
+  switch (note->descsz)
+    {
+      default:
+	return false;
+
+      case 136:		/* sizeof(struct elf_prpsinfo) on Linux/x86_64 */
+	elf_tdata (abfd)->core_program
+	 = _bfd_elfcore_strndup (abfd, note->descdata + 40, 16);
+	elf_tdata (abfd)->core_command
+	 = _bfd_elfcore_strndup (abfd, note->descdata + 56, 80);
+    }
+
+  /* Note that for some reason, a spurious space is tacked
+     onto the end of the args in some (at least one anyway)
+     implementations, so strip it off if it exists.  */
+
+  {
+    char *command = elf_tdata (abfd)->core_command;
+    int n = strlen (command);
+
+    if (0 < n && command[n - 1] == ' ')
+      command[n - 1] = '\0';
+  }
+
+  return true;
 }
 
 /* Functions for the x86-64 ELF linker.	 */
@@ -246,7 +355,7 @@ static const bfd_byte elf64_x86_64_plt_entry[PLT_ENTRY_SIZE] =
 };
 
 /* The x86-64 linker needs to keep track of the number of relocs that
-   decides to copy as dynamic relocs in check_relocs for each symbol.
+   it decides to copy as dynamic relocs in check_relocs for each symbol.
    This is so that it can later discard them if they are found to be
    unnecessary.  We store the information in a field extending the
    regular ELF linker hash table.  */
@@ -274,7 +383,31 @@ struct elf64_x86_64_link_hash_entry
 
   /* Track dynamic relocs copied for this symbol.  */
   struct elf64_x86_64_dyn_relocs *dyn_relocs;
+
+#define GOT_UNKNOWN	0
+#define GOT_NORMAL	1
+#define GOT_TLS_GD	2
+#define GOT_TLS_IE	3
+  unsigned char tls_type;
 };
+
+#define elf64_x86_64_hash_entry(ent) \
+  ((struct elf64_x86_64_link_hash_entry *)(ent))
+
+struct elf64_x86_64_obj_tdata
+{
+  struct elf_obj_tdata root;
+
+  /* tls_type for each local got entry.  */
+  char *local_got_tls_type;
+};
+
+#define elf64_x86_64_tdata(abfd) \
+  ((struct elf64_x86_64_obj_tdata *) (abfd)->tdata.any)
+
+#define elf64_x86_64_local_got_tls_type(abfd) \
+  (elf64_x86_64_tdata (abfd)->local_got_tls_type)
+
 
 /* x86-64 ELF linker hash table.  */
 
@@ -290,6 +423,11 @@ struct elf64_x86_64_link_hash_table
   asection *srelplt;
   asection *sdynbss;
   asection *srelbss;
+
+  union {
+    bfd_signed_vma refcount;
+    bfd_vma offset;
+  } tls_ld_got;
 
   /* Small local sym to section mapping cache.  */
   struct sym_sec_cache sym_sec;
@@ -326,6 +464,7 @@ link_hash_newfunc (entry, table, string)
 
       eh = (struct elf64_x86_64_link_hash_entry *) entry;
       eh->dyn_relocs = NULL;
+      eh->tls_type = GOT_UNKNOWN;
     }
 
   return entry;
@@ -358,6 +497,7 @@ elf64_x86_64_link_hash_table_create (abfd)
   ret->sdynbss = NULL;
   ret->srelbss = NULL;
   ret->sym_sec.abfd = NULL;
+  ret->tls_ld_got.refcount = 0;
 
   return &ret->elf.root;
 }
@@ -426,7 +566,8 @@ elf64_x86_64_create_dynamic_sections (dynobj, info)
 /* Copy the extra info we tack onto an elf_link_hash_entry.  */
 
 static void
-elf64_x86_64_copy_indirect_symbol (dir, ind)
+elf64_x86_64_copy_indirect_symbol (bed, dir, ind)
+     struct elf_backend_data *bed;
      struct elf_link_hash_entry *dir, *ind;
 {
   struct elf64_x86_64_link_hash_entry *edir, *eind;
@@ -468,16 +609,65 @@ elf64_x86_64_copy_indirect_symbol (dir, ind)
       eind->dyn_relocs = NULL;
     }
 
-  _bfd_elf_link_hash_copy_indirect (dir, ind);
+  if (ind->root.type == bfd_link_hash_indirect
+      && dir->got.refcount <= 0)
+    {
+      edir->tls_type = eind->tls_type;
+      eind->tls_type = GOT_UNKNOWN;
+    }
+
+  _bfd_elf_link_hash_copy_indirect (bed, dir, ind);
+}
+
+static boolean
+elf64_x86_64_mkobject (abfd)
+     bfd *abfd;
+{
+  bfd_size_type amt = sizeof (struct elf64_x86_64_obj_tdata);
+  abfd->tdata.any = bfd_zalloc (abfd, amt);
+  if (abfd->tdata.any == NULL)
+    return false;
+  return true;
 }
 
 static boolean
 elf64_x86_64_elf_object_p (abfd)
-     bfd *abfd;
+  bfd *abfd;
 {
+  /* Allocate our special target data.  */
+  struct elf64_x86_64_obj_tdata *new_tdata;
+  bfd_size_type amt = sizeof (struct elf64_x86_64_obj_tdata);
+  new_tdata = bfd_zalloc (abfd, amt);
+  if (new_tdata == NULL)
+    return false;
+  new_tdata->root = *abfd->tdata.elf_obj_data;
+  abfd->tdata.any = new_tdata;
   /* Set the right machine number for an x86-64 elf64 file.  */
   bfd_default_set_arch_mach (abfd, bfd_arch_i386, bfd_mach_x86_64);
   return true;
+}
+
+static int
+elf64_x86_64_tls_transition (info, r_type, is_local)
+     struct bfd_link_info *info;
+     int r_type;
+     int is_local;
+{
+  if (info->shared)
+    return r_type;
+
+  switch (r_type)
+    {
+    case R_X86_64_TLSGD:
+    case R_X86_64_GOTTPOFF:
+      if (is_local)
+	return R_X86_64_TPOFF32;
+      return R_X86_64_GOTTPOFF;
+    case R_X86_64_TLSLD:
+      return R_X86_64_TPOFF32;
+    }
+
+   return r_type;
 }
 
 /* Look through the relocs for a section during the first phase, and
@@ -510,10 +700,12 @@ elf64_x86_64_check_relocs (abfd, info, sec, relocs)
   rel_end = relocs + sec->reloc_count;
   for (rel = relocs; rel < rel_end; rel++)
     {
+      unsigned int r_type;
       unsigned long r_symndx;
       struct elf_link_hash_entry *h;
 
       r_symndx = ELF64_R_SYM (rel->r_info);
+      r_type = ELF64_R_TYPE (rel->r_info);
 
       if (r_symndx >= NUM_SHDR_ENTRIES (symtab_hdr))
 	{
@@ -528,38 +720,103 @@ elf64_x86_64_check_relocs (abfd, info, sec, relocs)
       else
 	h = sym_hashes[r_symndx - symtab_hdr->sh_info];
 
-      switch (ELF64_R_TYPE (rel->r_info))
+      r_type = elf64_x86_64_tls_transition (info, r_type, h == NULL);
+      switch (r_type)
 	{
+	case R_X86_64_TLSLD:
+	  htab->tls_ld_got.refcount += 1;
+	  goto create_got;
+
+	case R_X86_64_TPOFF32:
+	  if (info->shared)
+	    {
+	      (*_bfd_error_handler)
+		(_("%s: relocation %s can not be used when making a shared object; recompile with -fPIC"),
+		 bfd_archive_filename (abfd),
+		 x86_64_elf_howto_table[r_type].name);
+	      bfd_set_error (bfd_error_bad_value);
+	      return false;
+	    }
+	  break;
+
+	case R_X86_64_GOTTPOFF:
+	  if (info->shared)
+	    info->flags |= DF_STATIC_TLS;
+	  /* Fall through */
+
 	case R_X86_64_GOT32:
 	case R_X86_64_GOTPCREL:
+	case R_X86_64_TLSGD:
 	  /* This symbol requires a global offset table entry.	*/
-	  if (h != NULL)
-	    {
-	      h->got.refcount += 1;
-	    }
-	  else
-	    {
-	      bfd_signed_vma *local_got_refcounts;
+	  {
+	    int tls_type, old_tls_type;
 
-	      /* This is a global offset table entry for a local symbol.  */
-	      local_got_refcounts = elf_local_got_refcounts (abfd);
-	      if (local_got_refcounts == NULL)
-		{
-		  bfd_size_type size;
+	    switch (r_type)
+	      {
+	      default: tls_type = GOT_NORMAL; break;
+	      case R_X86_64_TLSGD: tls_type = GOT_TLS_GD; break;
+	      case R_X86_64_GOTTPOFF: tls_type = GOT_TLS_IE; break;
+	      }
 
-		  size = symtab_hdr->sh_info;
-		  size *= sizeof (bfd_signed_vma);
-		  local_got_refcounts = ((bfd_signed_vma *)
-					 bfd_zalloc (abfd, size));
-		  if (local_got_refcounts == NULL)
+	    if (h != NULL)
+	      {
+		h->got.refcount += 1;
+		old_tls_type = elf64_x86_64_hash_entry (h)->tls_type;
+	      }
+	    else
+	      {
+		bfd_signed_vma *local_got_refcounts;
+
+		/* This is a global offset table entry for a local symbol.  */
+		local_got_refcounts = elf_local_got_refcounts (abfd);
+		if (local_got_refcounts == NULL)
+		  {
+		    bfd_size_type size;
+
+		    size = symtab_hdr->sh_info;
+		    size *= sizeof (bfd_signed_vma) + sizeof (char);
+		    local_got_refcounts = ((bfd_signed_vma *)
+					   bfd_zalloc (abfd, size));
+		    if (local_got_refcounts == NULL)
+		      return false;
+		    elf_local_got_refcounts (abfd) = local_got_refcounts;
+		    elf64_x86_64_local_got_tls_type (abfd)
+		      = (char *) (local_got_refcounts + symtab_hdr->sh_info);
+		  }
+		local_got_refcounts[r_symndx] += 1;
+		old_tls_type
+		  = elf64_x86_64_local_got_tls_type (abfd) [r_symndx];
+	      }
+
+	    /* If a TLS symbol is accessed using IE at least once,
+	       there is no point to use dynamic model for it.  */
+	    if (old_tls_type != tls_type && old_tls_type != GOT_UNKNOWN
+		&& (old_tls_type != GOT_TLS_GD || tls_type != GOT_TLS_IE))
+	      {
+		if (old_tls_type == GOT_TLS_IE && tls_type == GOT_TLS_GD)
+		  tls_type = old_tls_type;
+		else
+		  {
+		    (*_bfd_error_handler)
+		      (_("%s: %s' accessed both as normal and thread local symbol"),
+		       bfd_archive_filename (abfd),
+		       h ? h->root.root.string : "<local>");
 		    return false;
-		  elf_local_got_refcounts (abfd) = local_got_refcounts;
-		}
-	      local_got_refcounts[r_symndx] += 1;
-	    }
+		  }
+	      }
+
+	    if (old_tls_type != tls_type)
+	      {
+		if (h != NULL)
+		  elf64_x86_64_hash_entry (h)->tls_type = tls_type;
+		else
+		  elf64_x86_64_local_got_tls_type (abfd) [r_symndx] = tls_type;
+	      }
+	  }
 	  /* Fall through */
 
 	  //case R_X86_64_GOTPCREL:
+	create_got:
 	  if (htab->sgot == NULL)
 	    {
 	      if (htab->elf.dynobj == NULL)
@@ -589,11 +846,28 @@ elf64_x86_64_check_relocs (abfd, info, sec, relocs)
 	case R_X86_64_8:
 	case R_X86_64_16:
 	case R_X86_64_32:
-	case R_X86_64_64:
 	case R_X86_64_32S:
+	  /* Let's help debug shared library creation.  These relocs
+	     cannot be used in shared libs.  Don't error out for
+	     sections we don't care about, such as debug sections or
+	     non-constant sections.  */
+	  if (info->shared
+	      && (sec->flags & SEC_ALLOC) != 0
+	      && (sec->flags & SEC_READONLY) != 0)
+	    {
+	      (*_bfd_error_handler)
+		(_("%s: relocation %s can not be used when making a shared object; recompile with -fPIC"),
+		 bfd_archive_filename (abfd),
+		 x86_64_elf_howto_table[r_type].name);
+	      bfd_set_error (bfd_error_bad_value);
+	      return false;
+	    }
+	  /* Fall through.  */
+
 	case R_X86_64_PC8:
 	case R_X86_64_PC16:
 	case R_X86_64_PC32:
+	case R_X86_64_64:
 	  if (h != NULL && !info->shared)
 	    {
 	      /* If this reloc is in a read-only section, we might
@@ -632,9 +906,9 @@ elf64_x86_64_check_relocs (abfd, info, sec, relocs)
 	     symbol.  */
 	  if ((info->shared
 	       && (sec->flags & SEC_ALLOC) != 0
-	       && (((ELF64_R_TYPE (rel->r_info) != R_X86_64_PC8)
-		    && (ELF64_R_TYPE (rel->r_info) != R_X86_64_PC16)
-		    && (ELF64_R_TYPE (rel->r_info) != R_X86_64_PC32))
+	       && (((r_type != R_X86_64_PC8)
+		    && (r_type != R_X86_64_PC16)
+		    && (r_type != R_X86_64_PC32))
 		   || (h != NULL
 		       && (! info->symbolic
 			   || h->root.type == bfd_link_hash_defweak
@@ -735,9 +1009,9 @@ elf64_x86_64_check_relocs (abfd, info, sec, relocs)
 		}
 
 	      p->count += 1;
-	      if (ELF64_R_TYPE (rel->r_info) == R_X86_64_PC8
-		  || ELF64_R_TYPE (rel->r_info) == R_X86_64_PC16
-		  || ELF64_R_TYPE (rel->r_info) == R_X86_64_PC32)
+	      if (r_type == R_X86_64_PC8
+		  || r_type == R_X86_64_PC16
+		  || r_type == R_X86_64_PC32)
 		p->pc_count += 1;
 	    }
 	  break;
@@ -768,8 +1042,8 @@ elf64_x86_64_check_relocs (abfd, info, sec, relocs)
    relocation.	*/
 
 static asection *
-elf64_x86_64_gc_mark_hook (abfd, info, rel, h, sym)
-     bfd *abfd;
+elf64_x86_64_gc_mark_hook (sec, info, rel, h, sym)
+     asection *sec;
      struct bfd_link_info *info ATTRIBUTE_UNUSED;
      Elf_Internal_Rela *rel;
      struct elf_link_hash_entry *h;
@@ -799,9 +1073,7 @@ elf64_x86_64_gc_mark_hook (abfd, info, rel, h, sym)
 	}
     }
   else
-    {
-      return bfd_section_from_elf_index (abfd, sym->st_shndx);
-    }
+    return bfd_section_from_elf_index (sec->owner, sym->st_shndx);
 
   return NULL;
 }
@@ -820,6 +1092,7 @@ elf64_x86_64_gc_sweep_hook (abfd, info, sec, relocs)
   bfd_signed_vma *local_got_refcounts;
   const Elf_Internal_Rela *rel, *relend;
   unsigned long r_symndx;
+  int r_type;
   struct elf_link_hash_entry *h;
 
   elf_section_data (sec)->local_dynrel = NULL;
@@ -830,8 +1103,18 @@ elf64_x86_64_gc_sweep_hook (abfd, info, sec, relocs)
 
   relend = relocs + sec->reloc_count;
   for (rel = relocs; rel < relend; rel++)
-    switch (ELF64_R_TYPE (rel->r_info))
+    switch ((r_type = elf64_x86_64_tls_transition (info,
+						   ELF64_R_TYPE (rel->r_info),
+						   ELF64_R_SYM (rel->r_info)
+						   >= symtab_hdr->sh_info)))
       {
+      case R_X86_64_TLSLD:
+	if (elf64_x86_64_hash_table (info)->tls_ld_got.refcount > 0)
+	  elf64_x86_64_hash_table (info)->tls_ld_got.refcount -= 1;
+	break;
+
+      case R_X86_64_TLSGD:
+      case R_X86_64_GOTTPOFF:
       case R_X86_64_GOT32:
       case R_X86_64_GOTPCREL:
 	r_symndx = ELF64_R_SYM (rel->r_info);
@@ -1016,7 +1299,7 @@ elf64_x86_64_adjust_dynamic_symbol (info, h)
 
   /* We must generate a R_X86_64_COPY reloc to tell the dynamic linker
      to copy the initial value out of the dynamic object and into the
-     runtime process image. */
+     runtime process image.  */
   if ((h->root.u.def.section->flags & SEC_ALLOC) != 0)
     {
       htab->srelbss->_raw_size += sizeof (Elf64_External_Rela);
@@ -1141,10 +1424,18 @@ allocate_dynrelocs (h, inf)
       h->elf_link_hash_flags &= ~ELF_LINK_HASH_NEEDS_PLT;
     }
 
-  if (h->got.refcount > 0)
+  /* If R_X86_64_GOTTPOFF symbol is now local to the binary,
+     make it a R_X86_64_TPOFF32 requiring no GOT entry.  */
+  if (h->got.refcount > 0
+      && !info->shared
+      && h->dynindx == -1
+      && elf64_x86_64_hash_entry (h)->tls_type == GOT_TLS_IE)
+    h->got.offset = (bfd_vma) -1;
+  else if (h->got.refcount > 0)
     {
       asection *s;
       boolean dyn;
+      int tls_type = elf64_x86_64_hash_entry (h)->tls_type;
 
       /* Make sure this symbol is output as a dynamic symbol.
 	 Undefined weak syms won't yet be marked as dynamic.  */
@@ -1158,8 +1449,19 @@ allocate_dynrelocs (h, inf)
       s = htab->sgot;
       h->got.offset = s->_raw_size;
       s->_raw_size += GOT_ENTRY_SIZE;
+      /* R_X86_64_TLSGD needs 2 consecutive GOT slots.  */
+      if (tls_type == GOT_TLS_GD)
+	s->_raw_size += GOT_ENTRY_SIZE;
       dyn = htab->elf.dynamic_sections_created;
-      if (WILL_CALL_FINISH_DYNAMIC_SYMBOL (dyn, info, h))
+      /* R_X86_64_TLSGD needs one dynamic relocation if local symbol
+	 and two if global.
+	 R_X86_64_GOTTPOFF needs one dynamic relocation.  */
+      if ((tls_type == GOT_TLS_GD && h->dynindx == -1)
+	  || tls_type == GOT_TLS_IE)
+	htab->srelgot->_raw_size += sizeof (Elf64_External_Rela);
+      else if (tls_type == GOT_TLS_GD)
+	htab->srelgot->_raw_size += 2 * sizeof (Elf64_External_Rela);
+      else if (WILL_CALL_FINISH_DYNAMIC_SYMBOL (dyn, info, h))
 	htab->srelgot->_raw_size += sizeof (Elf64_External_Rela);
     }
   else
@@ -1305,6 +1607,7 @@ elf64_x86_64_size_dynamic_sections (output_bfd, info)
     {
       bfd_signed_vma *local_got;
       bfd_signed_vma *end_local_got;
+      char *local_tls_type;
       bfd_size_type locsymcount;
       Elf_Internal_Shdr *symtab_hdr;
       asection *srel;
@@ -1347,21 +1650,37 @@ elf64_x86_64_size_dynamic_sections (output_bfd, info)
       symtab_hdr = &elf_tdata (ibfd)->symtab_hdr;
       locsymcount = symtab_hdr->sh_info;
       end_local_got = local_got + locsymcount;
+      local_tls_type = elf64_x86_64_local_got_tls_type (ibfd);
       s = htab->sgot;
       srel = htab->srelgot;
-      for (; local_got < end_local_got; ++local_got)
+      for (; local_got < end_local_got; ++local_got, ++local_tls_type)
 	{
 	  if (*local_got > 0)
 	    {
 	      *local_got = s->_raw_size;
 	      s->_raw_size += GOT_ENTRY_SIZE;
-	      if (info->shared)
+	      if (*local_tls_type == GOT_TLS_GD)
+		s->_raw_size += GOT_ENTRY_SIZE;
+	      if (info->shared
+		  || *local_tls_type == GOT_TLS_GD
+		  || *local_tls_type == GOT_TLS_IE)
 		srel->_raw_size += sizeof (Elf64_External_Rela);
 	    }
 	  else
 	    *local_got = (bfd_vma) -1;
 	}
     }
+
+  if (htab->tls_ld_got.refcount > 0)
+    {
+      /* Allocate 2 got entries and 1 dynamic reloc for R_X86_64_TLSLD
+	 relocs.  */
+      htab->tls_ld_got.offset = htab->sgot->_raw_size;
+      htab->sgot->_raw_size += 2 * GOT_ENTRY_SIZE;
+      htab->srelgot->_raw_size += sizeof (Elf64_External_Rela);
+    }
+  else
+    htab->tls_ld_got.offset = -1;
 
   /* Allocate global sym .plt and .got entries, and space for global
      sym dynamic relocs.  */
@@ -1473,6 +1792,38 @@ elf64_x86_64_size_dynamic_sections (output_bfd, info)
   return true;
 }
 
+/* Return the base VMA address which should be subtracted from real addresses
+   when resolving @dtpoff relocation.
+   This is PT_TLS segment p_vaddr.  */
+
+static bfd_vma
+dtpoff_base (info)
+     struct bfd_link_info *info;
+{
+  /* If tls_segment is NULL, we should have signalled an error already.  */
+  if (elf_hash_table (info)->tls_segment == NULL)
+    return 0;
+  return elf_hash_table (info)->tls_segment->start;
+}
+
+/* Return the relocation value for @tpoff relocation
+   if STT_TLS virtual address is ADDRESS.  */
+
+static bfd_vma
+tpoff (info, address)
+     struct bfd_link_info *info;
+     bfd_vma address;
+{
+  struct elf_link_tls_segment *tls_segment
+    = elf_hash_table (info)->tls_segment;
+
+  /* If tls_segment is NULL, we should have signalled an error already.  */
+  if (tls_segment == NULL)
+    return 0;
+  return address - align_power (tls_segment->size, tls_segment->align)
+	 - tls_segment->start;
+}
+
 /* Relocate an x86_64 ELF section.  */
 
 static boolean
@@ -1494,6 +1845,9 @@ elf64_x86_64_relocate_section (output_bfd, info, input_bfd, input_section,
   Elf_Internal_Rela *rel;
   Elf_Internal_Rela *relend;
 
+  if (info->relocateable)
+    return true;
+
   htab = elf64_x86_64_hash_table (info);
   symtab_hdr = &elf_tdata (input_bfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (input_bfd);
@@ -1503,7 +1857,7 @@ elf64_x86_64_relocate_section (output_bfd, info, input_bfd, input_section,
   relend = relocs + input_section->reloc_count;
   for (; rel < relend; rel++)
     {
-      int r_type;
+      unsigned int r_type;
       reloc_howto_type *howto;
       unsigned long r_symndx;
       struct elf_link_hash_entry *h;
@@ -1513,41 +1867,21 @@ elf64_x86_64_relocate_section (output_bfd, info, input_bfd, input_section,
       bfd_vma relocation;
       boolean unresolved_reloc;
       bfd_reloc_status_type r;
+      int tls_type;
 
       r_type = ELF64_R_TYPE (rel->r_info);
       if (r_type == (int) R_X86_64_GNU_VTINHERIT
 	  || r_type == (int) R_X86_64_GNU_VTENTRY)
 	continue;
 
-      if (r_type < 0 || r_type >= R_X86_64_max)
+      if (r_type >= R_X86_64_max)
 	{
 	  bfd_set_error (bfd_error_bad_value);
 	  return false;
 	}
+
       howto = x86_64_elf_howto_table + r_type;
-
       r_symndx = ELF64_R_SYM (rel->r_info);
-
-      if (info->relocateable)
-	{
-	  /* This is a relocateable link.  We don't have to change
-	     anything, unless the reloc is against a section symbol,
-	     in which case we have to adjust according to where the
-	     section symbol winds up in the output section.  */
-	  if (r_symndx < symtab_hdr->sh_info)
-	    {
-	      sym = local_syms + r_symndx;
-	      if (ELF_ST_TYPE (sym->st_info) == STT_SECTION)
-		{
-		  sec = local_sections[r_symndx];
-		  rel->r_addend += sec->output_offset + sym->st_value;
-		}
-	    }
-
-	  continue;
-	}
-
-      /* This is a final link.	*/
       h = NULL;
       sym = NULL;
       sec = NULL;
@@ -1808,9 +2142,44 @@ elf64_x86_64_relocate_section (output_bfd, info, input_bfd, input_section,
 	      else
 		{
 		  /* This symbol is local, or marked to become local.  */
-		  relocate = true;
-		  outrel.r_info = ELF64_R_INFO (0, R_X86_64_RELATIVE);
-		  outrel.r_addend = relocation + rel->r_addend;
+		  if (r_type == R_X86_64_64)
+		    {
+		      relocate = true;
+		      outrel.r_info = ELF64_R_INFO (0, R_X86_64_RELATIVE);
+		      outrel.r_addend = relocation + rel->r_addend;
+		    }
+		  else
+		    {
+		      long sindx;
+
+		      if (h == NULL)
+			sec = local_sections[r_symndx];
+		      else
+			{
+			  BFD_ASSERT (h->root.type == bfd_link_hash_defined
+				      || (h->root.type
+					  == bfd_link_hash_defweak));
+			  sec = h->root.u.def.section;
+			}
+		      if (sec != NULL && bfd_is_abs_section (sec))
+			sindx = 0;
+		      else if (sec == NULL || sec->owner == NULL)
+			{
+			  bfd_set_error (bfd_error_bad_value);
+			  return false;
+			}
+		      else
+			{
+			  asection *osec;
+
+			  osec = sec->output_section;
+			  sindx = elf_section_data (osec)->dynindx;
+			  BFD_ASSERT (sindx > 0);
+			}
+
+		      outrel.r_info = ELF64_R_INFO (sindx, r_type);
+		      outrel.r_addend = relocation + rel->r_addend;
+		    }
 		}
 
 	      sreloc = elf_section_data (input_section)->sreloc;
@@ -1831,18 +2200,324 @@ elf64_x86_64_relocate_section (output_bfd, info, input_bfd, input_section,
 
 	  break;
 
+	case R_X86_64_TLSGD:
+	case R_X86_64_GOTTPOFF:
+	  r_type = elf64_x86_64_tls_transition (info, r_type, h == NULL);
+	  tls_type = GOT_UNKNOWN;
+	  if (h == NULL && local_got_offsets)
+	    tls_type = elf64_x86_64_local_got_tls_type (input_bfd) [r_symndx];
+	  else if (h != NULL)
+	    {
+	      tls_type = elf64_x86_64_hash_entry (h)->tls_type;
+	      if (!info->shared && h->dynindx == -1 && tls_type == GOT_TLS_IE)
+		r_type = R_X86_64_TPOFF32;
+	    }
+	  if (r_type == R_X86_64_TLSGD)
+	    {
+	      if (tls_type == GOT_TLS_IE)
+		r_type = R_X86_64_GOTTPOFF;
+	    }
+
+	  if (r_type == R_X86_64_TPOFF32)
+	    {
+	      BFD_ASSERT (! unresolved_reloc);
+	      if (ELF64_R_TYPE (rel->r_info) == R_X86_64_TLSGD)
+		{
+		  unsigned int i;
+		  static unsigned char tlsgd[8]
+		    = { 0x66, 0x48, 0x8d, 0x3d, 0x66, 0x66, 0x48, 0xe8 };
+
+		  /* GD->LE transition.
+		     .byte 0x66; leaq foo@tlsgd(%rip), %rdi
+		     .word 0x6666; rex64; call __tls_get_addr@plt
+		     Change it into:
+		     movq %fs:0, %rax
+		     leaq foo@tpoff(%rax), %rax */
+		  BFD_ASSERT (rel->r_offset >= 4);
+		  for (i = 0; i < 4; i++)
+		    BFD_ASSERT (bfd_get_8 (input_bfd,
+					   contents + rel->r_offset - 4 + i)
+				== tlsgd[i]);
+		  BFD_ASSERT (rel->r_offset + 12 <= input_section->_raw_size);
+		  for (i = 0; i < 4; i++)
+		    BFD_ASSERT (bfd_get_8 (input_bfd,
+					   contents + rel->r_offset + 4 + i)
+				== tlsgd[i+4]);
+		  BFD_ASSERT (rel + 1 < relend);
+		  BFD_ASSERT (ELF64_R_TYPE (rel[1].r_info) == R_X86_64_PLT32);
+		  memcpy (contents + rel->r_offset - 4,
+			  "\x64\x48\x8b\x04\x25\0\0\0\0\x48\x8d\x80\0\0\0",
+			  16);
+		  bfd_put_32 (output_bfd, tpoff (info, relocation),
+			      contents + rel->r_offset + 8);
+		  /* Skip R_X86_64_PLT32.  */
+		  rel++;
+		  continue;
+		}
+	      else
+		{
+		  unsigned int val, type, reg;
+
+		  /* IE->LE transition:
+		     Originally it can be one of:
+		     movq foo@gottpoff(%rip), %reg
+		     addq foo@gottpoff(%rip), %reg
+		     We change it into:
+		     movq $foo, %reg
+		     leaq foo(%reg), %reg
+		     addq $foo, %reg.  */
+		  BFD_ASSERT (rel->r_offset >= 3);
+		  val = bfd_get_8 (input_bfd, contents + rel->r_offset - 3);
+		  BFD_ASSERT (val == 0x48 || val == 0x4c);
+		  type = bfd_get_8 (input_bfd, contents + rel->r_offset - 2);
+		  BFD_ASSERT (type == 0x8b || type == 0x03);
+		  reg = bfd_get_8 (input_bfd, contents + rel->r_offset - 1);
+		  BFD_ASSERT ((reg & 0xc7) == 5);
+		  reg >>= 3;
+		  BFD_ASSERT (rel->r_offset + 4 <= input_section->_raw_size);
+		  if (type == 0x8b)
+		    {
+		      /* movq */
+		      if (val == 0x4c)
+			bfd_put_8 (output_bfd, 0x49,
+				   contents + rel->r_offset - 3);
+		      bfd_put_8 (output_bfd, 0xc7,
+				 contents + rel->r_offset - 2);
+		      bfd_put_8 (output_bfd, 0xc0 | reg,
+				 contents + rel->r_offset - 1);
+		    }
+		  else if (reg == 4)
+		    {
+		      /* addq -> addq - addressing with %rsp/%r12 is
+			 special  */
+		      if (val == 0x4c)
+			bfd_put_8 (output_bfd, 0x49,
+				   contents + rel->r_offset - 3);
+		      bfd_put_8 (output_bfd, 0x81,
+				 contents + rel->r_offset - 2);
+		      bfd_put_8 (output_bfd, 0xc0 | reg,
+				 contents + rel->r_offset - 1);
+		    }
+		  else
+		    {
+		      /* addq -> leaq */
+		      if (val == 0x4c)
+			bfd_put_8 (output_bfd, 0x4d,
+				   contents + rel->r_offset - 3);
+		      bfd_put_8 (output_bfd, 0x8d,
+				 contents + rel->r_offset - 2);
+		      bfd_put_8 (output_bfd, 0x80 | reg | (reg << 3),
+				 contents + rel->r_offset - 1);
+		    }
+		  bfd_put_32 (output_bfd, tpoff (info, relocation),
+			      contents + rel->r_offset);
+		  continue;
+		}
+	    }
+
+	  if (htab->sgot == NULL)
+	    abort ();
+
+	  if (h != NULL)
+	    off = h->got.offset;
+	  else
+	    {
+	      if (local_got_offsets == NULL)
+		abort ();
+
+	      off = local_got_offsets[r_symndx];
+	    }
+
+	  if ((off & 1) != 0)
+	    off &= ~1;
+          else
+	    {
+	      Elf_Internal_Rela outrel;
+	      Elf64_External_Rela *loc;
+	      int dr_type, indx;
+
+	      if (htab->srelgot == NULL)
+		abort ();
+
+	      outrel.r_offset = (htab->sgot->output_section->vma
+				 + htab->sgot->output_offset + off);
+
+	      indx = h && h->dynindx != -1 ? h->dynindx : 0;
+	      if (r_type == R_X86_64_TLSGD)
+		dr_type = R_X86_64_DTPMOD64;
+	      else
+		dr_type = R_X86_64_TPOFF64;
+
+	      bfd_put_64 (output_bfd, 0, htab->sgot->contents + off);
+	      outrel.r_addend = 0;
+	      if (dr_type == R_X86_64_TPOFF64 && indx == 0)
+		outrel.r_addend = relocation - dtpoff_base (info);
+	      outrel.r_info = ELF64_R_INFO (indx, dr_type);
+
+	      loc = (Elf64_External_Rela *) htab->srelgot->contents;
+	      loc += htab->srelgot->reloc_count++;
+	      bfd_elf64_swap_reloca_out (output_bfd, &outrel, loc);
+
+	      if (r_type == R_X86_64_TLSGD)
+		{
+		  if (indx == 0)
+		    {
+	    	      BFD_ASSERT (! unresolved_reloc);
+		      bfd_put_64 (output_bfd,
+				  relocation - dtpoff_base (info),
+				  htab->sgot->contents + off + GOT_ENTRY_SIZE);
+		    }
+		  else
+		    {
+		      bfd_put_64 (output_bfd, 0,
+				  htab->sgot->contents + off + GOT_ENTRY_SIZE);
+		      outrel.r_info = ELF64_R_INFO (indx,
+						    R_X86_64_DTPOFF64);
+		      outrel.r_offset += GOT_ENTRY_SIZE;
+		      htab->srelgot->reloc_count++;
+		      loc++;
+		      bfd_elf64_swap_reloca_out (output_bfd, &outrel,
+						 loc);
+		    }
+		}
+
+	      if (h != NULL)
+		h->got.offset |= 1;
+	      else
+		local_got_offsets[r_symndx] |= 1;
+	    }
+
+	  if (off >= (bfd_vma) -2)
+	    abort ();
+	  if (r_type == ELF64_R_TYPE (rel->r_info))
+	    {
+	      relocation = htab->sgot->output_section->vma
+			   + htab->sgot->output_offset + off;
+	      unresolved_reloc = false;
+	    }
+	  else
+	    {
+	      unsigned int i;
+	      static unsigned char tlsgd[8]
+		= { 0x66, 0x48, 0x8d, 0x3d, 0x66, 0x66, 0x48, 0xe8 };
+
+	      /* GD->IE transition.
+		 .byte 0x66; leaq foo@tlsgd(%rip), %rdi
+		 .word 0x6666; rex64; call __tls_get_addr@plt
+		 Change it into:
+		 movq %fs:0, %rax
+		 addq foo@gottpoff(%rip), %rax */
+	      BFD_ASSERT (rel->r_offset >= 4);
+	      for (i = 0; i < 4; i++)
+	        BFD_ASSERT (bfd_get_8 (input_bfd,
+				       contents + rel->r_offset - 4 + i)
+			    == tlsgd[i]);
+	      BFD_ASSERT (rel->r_offset + 12 <= input_section->_raw_size);
+	      for (i = 0; i < 4; i++)
+	        BFD_ASSERT (bfd_get_8 (input_bfd,
+				       contents + rel->r_offset + 4 + i)
+			    == tlsgd[i+4]);
+	      BFD_ASSERT (rel + 1 < relend);
+	      BFD_ASSERT (ELF64_R_TYPE (rel[1].r_info) == R_X86_64_PLT32);
+	      memcpy (contents + rel->r_offset - 4,
+		      "\x64\x48\x8b\x04\x25\0\0\0\0\x48\x03\x05\0\0\0",
+		      16);
+
+	      relocation = (htab->sgot->output_section->vma
+			    + htab->sgot->output_offset + off
+			    - rel->r_offset
+			    - input_section->output_section->vma
+			    - input_section->output_offset
+			    - 12);
+	      bfd_put_32 (output_bfd, relocation,
+			  contents + rel->r_offset + 8);
+	      /* Skip R_X86_64_PLT32.  */
+	      rel++;
+	      continue;
+	    }
+	  break;
+
+	case R_X86_64_TLSLD:
+	  if (! info->shared)
+	    {
+	      /* LD->LE transition:
+		 Ensure it is:
+		 leaq foo@tlsld(%rip), %rdi; call __tls_get_addr@plt.
+		 We change it into:
+		 .word 0x6666; .byte 0x66; movl %fs:0, %rax.  */
+	      BFD_ASSERT (rel->r_offset >= 3);
+	      BFD_ASSERT (bfd_get_8 (input_bfd, contents + rel->r_offset - 3)
+			  == 0x48);
+	      BFD_ASSERT (bfd_get_8 (input_bfd, contents + rel->r_offset - 2)
+			  == 0x8d);
+	      BFD_ASSERT (bfd_get_8 (input_bfd, contents + rel->r_offset - 1)
+			  == 0x3d);
+	      BFD_ASSERT (rel->r_offset + 9 <= input_section->_raw_size);
+	      BFD_ASSERT (bfd_get_8 (input_bfd, contents + rel->r_offset + 4)
+			  == 0xe8);
+	      BFD_ASSERT (rel + 1 < relend);
+	      BFD_ASSERT (ELF64_R_TYPE (rel[1].r_info) == R_X86_64_PLT32);
+	      memcpy (contents + rel->r_offset - 3,
+		      "\x66\x66\x66\x64\x48\x8b\x04\x25\0\0\0", 12);
+	      /* Skip R_X86_64_PLT32.  */
+	      rel++;
+	      continue;
+	    }
+
+	  if (htab->sgot == NULL)
+	    abort ();
+
+	  off = htab->tls_ld_got.offset;
+	  if (off & 1)
+	    off &= ~1;
+	  else
+	    {
+	      Elf_Internal_Rela outrel;
+	      Elf64_External_Rela *loc;
+
+	      if (htab->srelgot == NULL)
+		abort ();
+
+	      outrel.r_offset = (htab->sgot->output_section->vma
+				 + htab->sgot->output_offset + off);
+
+	      bfd_put_64 (output_bfd, 0,
+			  htab->sgot->contents + off);
+	      bfd_put_64 (output_bfd, 0,
+			  htab->sgot->contents + off + GOT_ENTRY_SIZE);
+	      outrel.r_info = ELF64_R_INFO (0, R_X86_64_DTPMOD64);
+	      outrel.r_addend = 0;
+	      loc = (Elf64_External_Rela *) htab->srelgot->contents;
+	      loc += htab->srelgot->reloc_count++;
+	      bfd_elf64_swap_reloca_out (output_bfd, &outrel, loc);
+	      htab->tls_ld_got.offset |= 1;
+	    }
+	  relocation = htab->sgot->output_section->vma
+		       + htab->sgot->output_offset + off;
+	  unresolved_reloc = false;
+	  break;
+
+	case R_X86_64_DTPOFF32:
+	  if (info->shared || (input_section->flags & SEC_CODE) == 0)
+	    relocation -= dtpoff_base (info);
+	  else
+	    relocation = tpoff (info, relocation);
+	  break;
+
+	case R_X86_64_TPOFF32:
+	  BFD_ASSERT (! info->shared);
+	  relocation = tpoff (info, relocation);
+	  break;
+
 	default:
 	  break;
 	}
 
-      /* FIXME: Why do we allow debugging sections to escape this error?
-	 More importantly, why do we not emit dynamic relocs for
-	 R_386_32 above in debugging sections (which are ! SEC_ALLOC)?
-	 If we had emitted the dynamic reloc, we could remove the
-	 fudge here.  */
+      /* Dynamic relocs are not propagated for SEC_DEBUGGING sections
+	 because such sections are not SEC_ALLOC and thus ld.so will
+	 not process them.  */
       if (unresolved_reloc
-	  && !(info->shared
-	       && (input_section->flags & SEC_DEBUGGING) != 0
+	  && !((input_section->flags & SEC_DEBUGGING) != 0
 	       && (h->elf_link_hash_flags & ELF_LINK_HASH_DEF_DYNAMIC) != 0))
 	(*_bfd_error_handler)
 	  (_("%s(%s+0x%lx): unresolvable relocation against symbol `%s'"),
@@ -1988,13 +2663,15 @@ elf64_x86_64_finish_dynamic_symbol (output_bfd, info, h, sym)
 	}
     }
 
-  if (h->got.offset != (bfd_vma) -1)
+  if (h->got.offset != (bfd_vma) -1
+      && elf64_x86_64_hash_entry (h)->tls_type != GOT_TLS_GD
+      && elf64_x86_64_hash_entry (h)->tls_type != GOT_TLS_IE)
     {
       Elf_Internal_Rela rela;
       Elf64_External_Rela *loc;
 
       /* This symbol has an entry in the global offset table.  Set it
-         up.  */
+	 up.  */
 
       if (htab->sgot == NULL || htab->srelgot == NULL)
 	abort ();
@@ -2230,6 +2907,7 @@ elf64_x86_64_finish_dynamic_sections (output_bfd, info)
 #define elf_backend_want_plt_sym	    0
 #define elf_backend_got_header_size	    (GOT_ENTRY_SIZE*3)
 #define elf_backend_plt_header_size	    PLT_ENTRY_SIZE
+#define elf_backend_rela_normal		    1
 
 #define elf_info_to_howto		    elf64_x86_64_info_to_howto
 
@@ -2245,9 +2923,12 @@ elf64_x86_64_finish_dynamic_sections (output_bfd, info)
 #define elf_backend_finish_dynamic_symbol   elf64_x86_64_finish_dynamic_symbol
 #define elf_backend_gc_mark_hook	    elf64_x86_64_gc_mark_hook
 #define elf_backend_gc_sweep_hook	    elf64_x86_64_gc_sweep_hook
+#define elf_backend_grok_prstatus	    elf64_x86_64_grok_prstatus
+#define elf_backend_grok_psinfo		    elf64_x86_64_grok_psinfo
 #define elf_backend_reloc_type_class	    elf64_x86_64_reloc_type_class
 #define elf_backend_relocate_section	    elf64_x86_64_relocate_section
 #define elf_backend_size_dynamic_sections   elf64_x86_64_size_dynamic_sections
 #define elf_backend_object_p		    elf64_x86_64_elf_object_p
+#define bfd_elf64_mkobject		    elf64_x86_64_mkobject
 
 #include "elf64-target.h"

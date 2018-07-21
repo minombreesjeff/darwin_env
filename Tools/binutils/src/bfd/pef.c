@@ -33,21 +33,45 @@
 #define bfd_pef_bfd_relax_section bfd_generic_relax_section
 #define bfd_pef_bfd_gc_sections bfd_generic_gc_sections
 #define bfd_pef_bfd_merge_sections bfd_generic_merge_sections
+#define bfd_pef_bfd_discard_group bfd_generic_discard_group
 #define bfd_pef_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
 #define bfd_pef_bfd_link_hash_table_free _bfd_generic_link_hash_table_free
 #define bfd_pef_bfd_link_add_symbols _bfd_generic_link_add_symbols
+#define bfd_pef_bfd_link_just_syms _bfd_generic_link_just_syms
 #define bfd_pef_bfd_final_link _bfd_generic_final_link
 #define bfd_pef_bfd_link_split_section _bfd_generic_link_split_section
 #define bfd_pef_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
 
-static boolean bfd_pef_mkobject PARAMS ((bfd *));
+static void bfd_pef_print_symbol
+PARAMS ((bfd *abfd, PTR afile, asymbol *symbol, bfd_print_symbol_type how));
+static boolean bfd_pef_mkobject PARAMS ((bfd *abfd));
+static int bfd_pef_parse_traceback_table
+PARAMS ((bfd *abfd, asection *section, unsigned char *buf,
+	 size_t len, size_t pos, asymbol *sym));
+static const char *bfd_pef_section_name PARAMS ((bfd_pef_section *section));
+static asection *bfd_pef_make_bfd_section PARAMS ((bfd *abfd, bfd_pef_section *section));
+static int bfd_pef_read_header PARAMS ((bfd *abfd, bfd_pef_header *header));
 static const bfd_target *bfd_pef_object_p PARAMS ((bfd *));
+static int bfd_pef_parse_traceback_tables
+PARAMS ((bfd *abfd, asection *sec, unsigned char *buf,
+	 size_t len, long *nsym, asymbol **csym));
+static int bfd_pef_parse_function_stub
+PARAMS ((bfd *abfd, unsigned char *buf, size_t len, unsigned long *offset));
+static int bfd_pef_parse_function_stubs 
+PARAMS ((bfd *abfd, asection *codesec, unsigned char *codebuf, size_t codelen,
+	 unsigned char *loaderbuf, size_t loaderlen, unsigned long *nsym, asymbol **csym));
+static long bfd_pef_parse_symbols PARAMS ((bfd *abfd, asymbol **csym));
+static long bfd_pef_count_symbols PARAMS ((bfd *abfd));
 static long bfd_pef_get_symtab_upper_bound PARAMS ((bfd *));
 static long bfd_pef_get_symtab PARAMS ((bfd *, asymbol **));
 static asymbol *bfd_pef_make_empty_symbol PARAMS ((bfd *));
 static void bfd_pef_get_symbol_info PARAMS ((bfd *, asymbol *, symbol_info *));
 static int bfd_pef_sizeof_headers PARAMS ((bfd *, boolean));
+
+static int bfd_pef_xlib_read_header PARAMS ((bfd *abfd, bfd_pef_xlib_header *header));
+static int bfd_pef_xlib_scan PARAMS ((bfd *abfd, bfd_pef_xlib_header *header));
+static const bfd_target *bfd_pef_xlib_object_p PARAMS ((bfd *abfd));
 
 static void
 bfd_pef_print_symbol (abfd, afile, symbol, how)
@@ -242,7 +266,7 @@ bfd_pef_make_bfd_section (abfd, section)
 }
 
 int bfd_pef_parse_loader_header (abfd, buf, len, header)
-     bfd *abfd;
+     bfd *abfd ATTRIBUTE_UNUSED;
      unsigned char *buf;
      size_t len;
      bfd_pef_loader_header *header;
@@ -268,7 +292,7 @@ int bfd_pef_parse_loader_header (abfd, buf, len, header)
 }
 
 int bfd_pef_parse_imported_library (abfd, buf, len, header)
-     bfd *abfd;
+     bfd *abfd ATTRIBUTE_UNUSED;
      unsigned char *buf;
      size_t len;
      bfd_pef_imported_library *header;
@@ -288,7 +312,7 @@ int bfd_pef_parse_imported_library (abfd, buf, len, header)
 }
 
 int bfd_pef_parse_imported_symbol (abfd, buf, len, symbol)
-     bfd *abfd;
+     bfd *abfd ATTRIBUTE_UNUSED;
      unsigned char *buf;
      size_t len;
      bfd_pef_imported_symbol *symbol;
@@ -471,27 +495,32 @@ static int bfd_pef_parse_traceback_tables (abfd, sec, buf, len, nsym, csym)
 	
     BFD_ASSERT (function.name != NULL);
 
-    tbnamelen = strlen (tbprefix) + strlen (function.name);
-    name = bfd_alloc (abfd, tbnamelen + 1);
-    if (name == NULL) { 
-      bfd_release (abfd, function.name);
-      break;
-    }
-    snprintf (name, tbnamelen + 1, "%s%s", tbprefix, function.name);
-    traceback.name = name;
+    /* Don't bother to compute the name if we are just
+       counting symbols */
 
-    traceback.value = pos;
-    traceback.the_bfd = abfd;
-    traceback.section = sec;
-    traceback.flags = 0;
-    traceback.udata.i = 0;
+    if (csym)
+      {
+	tbnamelen = strlen (tbprefix) + strlen (function.name);
+	name = bfd_alloc (abfd, tbnamelen + 1);
+	if (name == NULL) { 
+	  bfd_release (abfd, (PTR) function.name);
+	  function.name = NULL;
+	  break;
+	}
+	snprintf (name, tbnamelen + 1, "%s%s", tbprefix, function.name);
+	traceback.name = name;
 	
+	traceback.value = pos;
+	traceback.the_bfd = abfd;
+	traceback.section = sec;
+	traceback.flags = 0;
+	traceback.udata.i = 0;
+	
+	*(csym[count]) = function;
+	*(csym[count + 1]) = traceback;
+      }
+
     pos += ret;
-	
-    if (csym != NULL) {
-      *(csym[count]) = function;
-      *(csym[count + 1]) = traceback;
-    }
     count += 2;
   }
 
@@ -500,7 +529,7 @@ static int bfd_pef_parse_traceback_tables (abfd, sec, buf, len, nsym, csym)
 }
 
 static int bfd_pef_parse_function_stub (abfd, buf, len, offset)
-     bfd *abfd;
+     bfd *abfd ATTRIBUTE_UNUSED;
      unsigned char *buf;
      size_t len;
      unsigned long *offset;
@@ -537,8 +566,8 @@ static int bfd_pef_parse_function_stubs (abfd, codesec, codebuf, codelen, loader
   unsigned long count = 0;
 
   bfd_pef_loader_header header;
-  bfd_pef_imported_library *libraries;
-  bfd_pef_imported_symbol *imports;
+  bfd_pef_imported_library *libraries = NULL;
+  bfd_pef_imported_symbol *imports = NULL;
 
   unsigned long i;
   int ret;
@@ -548,9 +577,9 @@ static int bfd_pef_parse_function_stubs (abfd, codesec, codebuf, codelen, loader
   ret = bfd_pef_parse_loader_header (abfd, loaderbuf, 56, &header);
   if (ret < 0) { goto error; }
 
-  libraries = (bfd_pef_imported_library *) xmalloc
+  libraries = (bfd_pef_imported_library *) bfd_malloc
     (header.imported_library_count * sizeof (bfd_pef_imported_library));
-  imports = (bfd_pef_imported_symbol *) xmalloc
+  imports = (bfd_pef_imported_symbol *) bfd_malloc
     (header.total_imported_symbol_count * sizeof (bfd_pef_imported_symbol));
   
   if (loaderlen < (56 + (header.imported_library_count * 24))) { goto error; }
@@ -601,7 +630,7 @@ static int bfd_pef_parse_function_stubs (abfd, codesec, codebuf, codelen, loader
 
     {
       size_t max, namelen;
-      char *s;
+      const char *s;
 
       if (loaderlen < (header.loader_strings_offset + imports[index].name)) { goto error; }
 
@@ -639,14 +668,14 @@ static int bfd_pef_parse_function_stubs (abfd, codesec, codebuf, codelen, loader
   goto end;
 
  end:
-  if (libraries != NULL) { xfree (libraries); }
-  if (imports != NULL) { xfree (imports); }
+  if (libraries != NULL) { free (libraries); }
+  if (imports != NULL) { free (imports); }
   *nsym = count;
   return 0;
 
  error:
-  if (libraries != NULL) { xfree (libraries); }
-  if (imports != NULL) { xfree (imports); }
+  if (libraries != NULL) { free (libraries); }
+  if (imports != NULL) { free (imports); }
   *nsym = count;
   return -1;
 }   
@@ -659,17 +688,17 @@ static long bfd_pef_parse_symbols (abfd, csym)
 
   asection *codesec = NULL;
   unsigned char *codebuf = NULL;
-  size_t codelen;
+  size_t codelen = 0;
 
   asection *loadersec = NULL;
-  unsigned char *loaderbuf;
-  size_t loaderlen;
+  unsigned char *loaderbuf = NULL;
+  size_t loaderlen = 0;
 
   codesec = bfd_get_section_by_name (abfd, "code");
   if (codesec != NULL)
     {
       codelen = bfd_section_size (abfd, codesec);
-      codebuf = (unsigned char *) xmalloc (codelen);
+      codebuf = (unsigned char *) bfd_malloc (codelen);
       if (bfd_seek (abfd, codesec->filepos, SEEK_SET) < 0) { goto end; }
       if (bfd_bread ((PTR) codebuf, codelen, abfd) != codelen) { goto end; }
     }
@@ -678,7 +707,7 @@ static long bfd_pef_parse_symbols (abfd, csym)
   if (loadersec != NULL)
     {
       loaderlen = bfd_section_size (abfd, loadersec);
-      loaderbuf = (unsigned char *) xmalloc (loaderlen);
+      loaderbuf = (unsigned char *) bfd_malloc (loaderlen);
       if (bfd_seek (abfd, loadersec->filepos, SEEK_SET) < 0) { goto end; }
       if (bfd_bread ((PTR) loaderbuf, loaderlen, abfd) != loaderlen) { goto end; }
     }
@@ -705,8 +734,11 @@ static long bfd_pef_parse_symbols (abfd, csym)
   }
   
  end:
-  if (codebuf != NULL) { xfree (codebuf); }
-  if (loaderbuf != NULL) { xfree (loaderbuf); }
+  if (codebuf != NULL) 
+    free (codebuf);
+
+  if (loaderbuf != NULL) 
+    free (loaderbuf); 
   
   return count;
 }
@@ -763,8 +795,8 @@ bfd_pef_make_empty_symbol (abfd)
 }
 
 static void
-bfd_pef_get_symbol_info (ignore_abfd, symbol, ret)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+bfd_pef_get_symbol_info (abfd, symbol, ret)
+     bfd *abfd ATTRIBUTE_UNUSED;
      asymbol *symbol;
      symbol_info *ret;
 {

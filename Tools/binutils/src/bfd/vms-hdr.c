@@ -282,7 +282,7 @@ _bfd_vms_write_hdr (abfd, objtype)
       char *fname, *fout, *fptr;
 
       fptr = bfd_get_filename (abfd);
-      fname = (char *) xmalloc (strlen (fptr) + 1);
+      fname = (char *) alloca (strlen (fptr) + 1);
       strcpy (fname, fptr);
       fout = strrchr (fname, ']');
       if (fout == 0)

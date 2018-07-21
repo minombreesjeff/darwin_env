@@ -144,3 +144,16 @@ struct bfd_pef_xlib_data_struct {
   bfd_pef_xlib_header header;
 };
 typedef struct bfd_pef_xlib_data_struct bfd_pef_xlib_data_struct;
+
+int bfd_pef_parse_loader_header
+PARAMS ((bfd *abfd, unsigned char *buf,
+	 size_t len, bfd_pef_loader_header *header));
+int bfd_pef_parse_imported_library
+PARAMS ((bfd *abfd, unsigned char *buf, size_t len,
+	bfd_pef_imported_library *header));
+int bfd_pef_parse_imported_symbol
+PARAMS ((bfd *abfd, unsigned char *buf, size_t len,
+	 bfd_pef_imported_symbol *symbol));
+int bfd_pef_scan_section 
+PARAMS ((bfd *abfd, bfd_pef_section *section));
+int bfd_pef_scan PARAMS ((bfd *abfd, bfd_pef_header *header));

@@ -20,10 +20,10 @@
 
 /* Derived from objdump.c and nm.c by Ulrich.Lauther@mchp.siemens.de
 
-   Usage: 
+   Usage:
    addr2line [options] addr addr ...
    or
-   addr2line [options] 
+   addr2line [options]
 
    both forms write results to stdout, the second form reads addresses
    to be converted from stdin.  */
@@ -35,6 +35,7 @@
 #include "libiberty.h"
 #include "demangle.h"
 #include "bucomm.h"
+#include "budemang.h"
 
 #define true 1
 #define false 0
@@ -98,19 +99,16 @@ static void
 slurp_symtab (abfd)
      bfd *abfd;
 {
-  long storage;
   long symcount;
+  unsigned int size;
 
   if ((bfd_get_file_flags (abfd) & HAS_SYMS) == 0)
     return;
 
-  storage = bfd_get_symtab_upper_bound (abfd);
-  if (storage < 0)
-    bfd_fatal (bfd_get_filename (abfd));
+  symcount = bfd_read_minisymbols (abfd, false, (PTR) &syms, &size);
+  if (symcount == 0)
+    symcount = bfd_read_minisymbols (abfd, true /* dynamic */, (PTR) &syms, &size);
 
-  syms = (asymbol **) xmalloc (storage);
-
-  symcount = bfd_canonicalize_symtab (abfd, syms);
   if (symcount < 0)
     bfd_fatal (bfd_get_filename (abfd));
 }
@@ -194,23 +192,22 @@ translate_addresses (abfd)
 	{
 	  if (with_functions)
 	    {
-	      if (functionname == NULL || *functionname == '\0')
-		printf ("??\n");
-	      else if (! do_demangle)
-		printf ("%s\n", functionname);
-	      else
-		{
-		  char *res;
+	      const char *name;
+	      char *alloc = NULL;
 
-		  res = cplus_demangle (functionname, DMGL_ANSI | DMGL_PARAMS);
-		  if (res == NULL)
-		    printf ("%s\n", functionname);
-		  else
-		    {
-		      printf ("%s\n", res);
-		      free (res);
-		    }
+	      name = functionname;
+	      if (name == NULL || *name == '\0')
+		name = "??";
+	      else if (do_demangle)
+		{
+		  alloc = demangle (abfd, name);
+		  name = alloc;
 		}
+
+	      printf ("%s\n", name);
+
+	      if (alloc != NULL)
+		free (alloc);
 	    }
 
 	  if (base_names && filename != NULL)
@@ -236,19 +233,19 @@ translate_addresses (abfd)
 /* Process a file.  */
 
 static void
-process_file (filename, target)
-     const char *filename;
+process_file (file_name, target)
+     const char *file_name;
      const char *target;
 {
   bfd *abfd;
   char **matching;
 
-  abfd = bfd_openr (filename, target);
+  abfd = bfd_openr (file_name, target);
   if (abfd == NULL)
-    bfd_fatal (filename);
+    bfd_fatal (file_name);
 
   if (bfd_check_format (abfd, bfd_archive))
-    fatal (_("%s: can not get addresses from archive"), filename);
+    fatal (_("%s: can not get addresses from archive"), file_name);
 
   if (! bfd_check_format_matches (abfd, bfd_object, &matching))
     {
@@ -281,7 +278,7 @@ main (argc, argv)
      int argc;
      char **argv;
 {
-  const char *filename;
+  const char *file_name;
   char *target;
   int c;
 
@@ -300,7 +297,7 @@ main (argc, argv)
   bfd_init ();
   set_default_bfd_target ();
 
-  filename = NULL;
+  file_name = NULL;
   target = NULL;
   while ((c = getopt_long (argc, argv, "b:Ce:sfHhVv", long_options, (int *) 0))
 	 != EOF)
@@ -317,17 +314,17 @@ main (argc, argv)
 	  if (optarg != NULL)
 	    {
 	      enum demangling_styles style;
-	      
+
 	      style = cplus_demangle_name_to_style (optarg);
-	      if (style == unknown_demangling) 
+	      if (style == unknown_demangling)
 		fatal (_("unknown demangling style `%s'"),
 		       optarg);
-	      
+
 	      cplus_demangle_set_style (style);
-           }
+	    }
 	  break;
 	case 'e':
-	  filename = optarg;
+	  file_name = optarg;
 	  break;
 	case 's':
 	  base_names = true;
@@ -349,13 +346,13 @@ main (argc, argv)
 	}
     }
 
-  if (filename == NULL)
-    filename = "a.out";
+  if (file_name == NULL)
+    file_name = "a.out";
 
   addr = argv + optind;
   naddr = argc - optind;
 
-  process_file (filename, target);
+  process_file (file_name, target);
 
   return 0;
 }

@@ -40,12 +40,13 @@ static boolean create_got_section
 static boolean elf_s390_create_dynamic_sections
   PARAMS((bfd *, struct bfd_link_info *));
 static void elf_s390_copy_indirect_symbol
-  PARAMS ((struct elf_link_hash_entry *, struct elf_link_hash_entry *));
+  PARAMS ((struct elf_backend_data *, struct elf_link_hash_entry *,
+	   struct elf_link_hash_entry *));
 static boolean elf_s390_check_relocs
   PARAMS ((bfd *, struct bfd_link_info *, asection *,
 	   const Elf_Internal_Rela *));
 static asection *elf_s390_gc_mark_hook
-  PARAMS ((bfd *, struct bfd_link_info *, Elf_Internal_Rela *,
+  PARAMS ((asection *, struct bfd_link_info *, Elf_Internal_Rela *,
 	   struct elf_link_hash_entry *, Elf_Internal_Sym *));
 static boolean elf_s390_gc_sweep_hook
   PARAMS ((bfd *, struct bfd_link_info *, asection *,
@@ -70,8 +71,6 @@ static boolean elf_s390_finish_dynamic_sections
   PARAMS ((bfd *, struct bfd_link_info *));
 static boolean elf_s390_object_p PARAMS ((bfd *));
 static boolean elf_s390_grok_prstatus PARAMS ((bfd *, Elf_Internal_Note *));
-
-#define USE_RELA 1		/* We want RELA relocations, not REL.  */
 
 #include "elf/s390.h"
 
@@ -564,7 +563,8 @@ elf_s390_create_dynamic_sections (dynobj, info)
 /* Copy the extra info we tack onto an elf_link_hash_entry.  */
 
 static void
-elf_s390_copy_indirect_symbol (dir, ind)
+elf_s390_copy_indirect_symbol (bed, dir, ind)
+     struct elf_backend_data *bed;
      struct elf_link_hash_entry *dir, *ind;
 {
   struct elf_s390_link_hash_entry *edir, *eind;
@@ -606,7 +606,7 @@ elf_s390_copy_indirect_symbol (dir, ind)
       eind->dyn_relocs = NULL;
     }
 
-  _bfd_elf_link_hash_copy_indirect (dir, ind);
+  _bfd_elf_link_hash_copy_indirect (bed, dir, ind);
 }
 
 /* Look through the relocs for a section during the first phase, and
@@ -903,8 +903,8 @@ elf_s390_check_relocs (abfd, info, sec, relocs)
    relocation.  */
 
 static asection *
-elf_s390_gc_mark_hook (abfd, info, rel, h, sym)
-     bfd *abfd;
+elf_s390_gc_mark_hook (sec, info, rel, h, sym)
+     asection *sec;
      struct bfd_link_info *info ATTRIBUTE_UNUSED;
      Elf_Internal_Rela *rel;
      struct elf_link_hash_entry *h;
@@ -934,9 +934,7 @@ elf_s390_gc_mark_hook (abfd, info, rel, h, sym)
 	}
     }
   else
-    {
-      return bfd_section_from_elf_index (abfd, sym->st_shndx);
-    }
+    return bfd_section_from_elf_index (sec->owner, sym->st_shndx);
 
   return NULL;
 }
@@ -1064,7 +1062,7 @@ elf_s390_adjust_dynamic_symbol (info, h)
 
   /* If this is a function, put it in the procedure linkage table.  We
      will fill in the contents of the procedure linkage table later
-     (although we could actually do it here). */
+     (although we could actually do it here).  */
   if (h->type == STT_FUNC
       || (h->elf_link_hash_flags & ELF_LINK_HASH_NEEDS_PLT) != 0)
     {
@@ -1632,6 +1630,9 @@ elf_s390_relocate_section (output_bfd, info, input_bfd, input_section,
   Elf_Internal_Rela *rel;
   Elf_Internal_Rela *relend;
 
+  if (info->relocateable)
+    return true;
+
   htab = elf_s390_hash_table (info);
   symtab_hdr = &elf_tdata (input_bfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (input_bfd);
@@ -1661,30 +1662,9 @@ elf_s390_relocate_section (output_bfd, info, input_bfd, input_section,
 	  bfd_set_error (bfd_error_bad_value);
 	  return false;
 	}
+
       howto = elf_howto_table + r_type;
-
       r_symndx = ELF32_R_SYM (rel->r_info);
-
-      if (info->relocateable)
-	{
-	  /* This is a relocateable link.  We don't have to change
-	     anything, unless the reloc is against a section symbol,
-	     in which case we have to adjust according to where the
-	     section symbol winds up in the output section.  */
-	  if (r_symndx < symtab_hdr->sh_info)
-	    {
-	      sym = local_syms + r_symndx;
-	      if (ELF_ST_TYPE (sym->st_info) == STT_SECTION)
-		{
-		  sec = local_sections[r_symndx];
-		  rel->r_addend += sec->output_offset + sym->st_value;
-		}
-	    }
-
-	  continue;
-	}
-
-      /* This is a final link.  */
       h = NULL;
       sym = NULL;
       sec = NULL;
@@ -1991,9 +1971,11 @@ elf_s390_relocate_section (output_bfd, info, input_bfd, input_section,
 	  break;
 	}
 
+      /* Dynamic relocs are not propagated for SEC_DEBUGGING sections
+	 because such sections are not SEC_ALLOC and thus ld.so will
+	 not process them.  */
       if (unresolved_reloc
-	  && !(info->shared
-	       && (input_section->flags & SEC_DEBUGGING) != 0
+	  && !((input_section->flags & SEC_DEBUGGING) != 0
 	       && (h->elf_link_hash_flags & ELF_LINK_HASH_DEF_DYNAMIC) != 0))
 	(*_bfd_error_handler)
 	  (_("%s(%s+0x%lx): unresolvable relocation against symbol `%s'"),
@@ -2467,6 +2449,7 @@ elf_s390_grok_prstatus (abfd, note)
 #define elf_backend_want_plt_sym	0
 #define elf_backend_got_header_size	12
 #define elf_backend_plt_header_size	PLT_ENTRY_SIZE
+#define elf_backend_rela_normal		1
 
 #define elf_info_to_howto                     elf_s390_info_to_howto
 

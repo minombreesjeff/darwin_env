@@ -52,6 +52,9 @@ INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_DATA = @INSTALL_DATA@
 mkinstalldirs = $(SHELL) $(srcdir)/../mkinstalldirs
 
+# Some compilers can't handle cc -c blah.c -o foo/blah.o.
+OUTPUT_OPTION = @OUTPUT_OPTION@
+
 AR = @AR@
 AR_FLAGS = rc
 
@@ -106,7 +109,7 @@ SUBDIRS = testsuite
 
 # FIXME: add @BUILD_INFO@ once we're sure it works for everyone.
 all: stamp-picdir $(TARGETLIB) needed-list required-list all-subdir
-	@$(MULTIDO) $(FLAGS_TO_PASS) multi-do DO=all
+	@: $(MAKE) ; exec $(MULTIDO) $(FLAGS_TO_PASS) multi-do DO=all
 
 .PHONY: check installcheck
 check: check-subdir
@@ -119,13 +122,13 @@ INCDIR=$(srcdir)/$(MULTISRCTOP)../include
 DEFS=@DEFS@
 HDEFINES=$(DEFS)
 
-COMPILE.c = $(CC) -c @DEFS@ $(LIBCFLAGS) -Dfree=xfree -Dmalloc=xmalloc -Drealloc=xrealloc -I. -I$(INCDIR) -I$(srcdir)/$(MULTISRCTOP)../electric-fence -I$(srcdir)/$(MULTISRCTOP)../mmalloc $(HDEFINES)
+COMPILE.c = $(CC) -c @DEFS@ $(LIBCFLAGS) -Dfree=xfree -Dmalloc=xmalloc -Drealloc=xrealloc -I. -I$(INCDIR) -I$(srcdir)/$(MULTISRCTOP)../mmalloc $(HDEFINES)
 
 .c.o:
 	if [ x"$(PICFLAG)" != x ]; then \
 	  $(COMPILE.c) $(PICFLAG) $< -o pic/$@; \
 	else true; fi
-	$(COMPILE.c) $<
+	$(COMPILE.c) $< $(OUTPUT_OPTION)
 
 # NOTE: If you add new files to the library, add them to this list
 # (alphabetical), and add them to REQUIRED_OFILES, or
@@ -230,7 +233,7 @@ FRAMEWORK_SUFFIX =
 FRAMEWORK_VERSION_SUFFIX =
 FRAMEWORK_VERSION = A
 FRAMEWORK_OFILES =  $(REQUIRED_OFILES) $(EXTRA_OFILES) $(LIBOBJS) $(ALLOCA)
-FRAMEWORK_LIB = -F../mmalloc -framework mmalloc  -F../electric-fence -framework electric-fence $(SYSTEM_FRAMEWORK)
+FRAMEWORK_LIB = -F../mmalloc -framework mmalloc $(SYSTEM_FRAMEWORK)
 
 stamp-framework-headers:
 	$(RM) -f stamp-framework stamp-framework-headers
@@ -240,8 +243,8 @@ stamp-framework-headers:
 	ln -s Versions/Current/Headers $(FRAMEWORK).framework/Headers
 	ln -s Versions/Current/PrivateHeaders $(FRAMEWORK).framework/PrivateHeaders
 	ln -s A $(FRAMEWORK).framework/Versions/Current
-	cp -p $(srcdir)/*.h $(FRAMEWORK).framework/Versions/Current/Headers/
-	cp -p *.h $(FRAMEWORK).framework/Versions/Current/Headers/
+	cp -p $(srcdir)/*.h $(FRAMEWORK).framework/Versions/Current/Headers/ || true
+	cp -p *.h $(FRAMEWORK).framework/Versions/Current/Headers/ || true
 	touch stamp-framework-headers
 
 stamp-framework: $(FRAMEWORK_OFILES)
@@ -306,25 +309,25 @@ INSTALL_DEST = @INSTALL_DEST@
 install: install_to_$(INSTALL_DEST) install-subdir
 
 install_to_libdir: all
-	$(INSTALL_DATA) $(TARGETLIB) $(libdir)$(MULTISUBDIR)/$(TARGETLIB)n
-	( cd $(libdir)$(MULTISUBDIR) ; $(RANLIB) $(TARGETLIB)n )
-	mv -f $(libdir)$(MULTISUBDIR)/$(TARGETLIB)n $(libdir)$(MULTISUBDIR)/$(TARGETLIB)
+	$(INSTALL_DATA) $(TARGETLIB) $(DESTDIR)$(libdir)$(MULTISUBDIR)/$(TARGETLIB)n
+	( cd $(DESTDIR)$(libdir)$(MULTISUBDIR) ; $(RANLIB) $(TARGETLIB)n )
+	mv -f $(DESTDIR)$(libdir)$(MULTISUBDIR)/$(TARGETLIB)n $(DESTDIR)$(libdir)$(MULTISUBDIR)/$(TARGETLIB)
 	if test -n "${target_header_dir}"; then \
 	  case "${target_header_dir}" in \
 	    /*)    thd=${target_header_dir};; \
 	    *)     thd=${includedir}${MULTISUBDIR}/${target_header_dir};; \
 	  esac; \
-	  ${mkinstalldirs} $${thd}; \
+	  ${mkinstalldirs} $(DESTDIR)$${thd}; \
 	  for h in ${INSTALLED_HEADERS}; do \
-	    ${INSTALL_DATA} $$h $${thd}; \
+	    ${INSTALL_DATA} $$h $(DESTDIR)$${thd}; \
 	  done; \
 	fi
 	@$(MULTIDO) $(FLAGS_TO_PASS) multi-do DO=install
 
 install_to_tooldir: all
-	$(INSTALL_DATA) $(TARGETLIB) $(tooldir)/lib$(MULTISUBDIR)/$(TARGETLIB)n
-	( cd $(tooldir)/lib$(MULTISUBDIR) ; $(RANLIB) $(TARGETLIB)n )
-	mv -f $(tooldir)/lib$(MULTISUBDIR)/$(TARGETLIB)n $(tooldir)/lib$(MULTISUBDIR)/$(TARGETLIB)
+	$(INSTALL_DATA) $(TARGETLIB) $(DESTDIR)$(tooldir)/lib$(MULTISUBDIR)/$(TARGETLIB)n
+	( cd $(DESTDIR)$(tooldir)/lib$(MULTISUBDIR) ; $(RANLIB) $(TARGETLIB)n )
+	mv -f $(DESTDIR)$(tooldir)/lib$(MULTISUBDIR)/$(TARGETLIB)n $(DESTDIR)$(tooldir)/lib$(MULTISUBDIR)/$(TARGETLIB)
 	@$(MULTIDO) $(FLAGS_TO_PASS) multi-do DO=install
 
 # needed-list is used by libstdc++.  NEEDED is the list of functions

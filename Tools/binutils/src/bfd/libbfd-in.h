@@ -121,6 +121,7 @@ bfd *_bfd_get_elt_at_filepos PARAMS ((bfd *archive, file_ptr filepos));
 extern bfd *_bfd_generic_get_elt_at_index PARAMS ((bfd *, symindex));
 bfd * _bfd_new_bfd PARAMS ((void));
 void _bfd_delete_bfd PARAMS ((bfd *));
+boolean _bfd_io_close PARAMS ((bfd *abfd));
 
 boolean	bfd_false PARAMS ((bfd *ignore));
 boolean	bfd_true PARAMS ((bfd *ignore));
@@ -330,12 +331,18 @@ extern boolean _bfd_generic_set_section_contents
   ((boolean (*) \
     PARAMS ((bfd *, struct bfd_link_info *))) \
    bfd_false)
+#define _bfd_nolink_bfd_discard_group \
+  ((boolean (*) \
+    PARAMS ((bfd *, struct sec *))) \
+   bfd_false)
 #define _bfd_nolink_bfd_link_hash_table_create \
   ((struct bfd_link_hash_table *(*) PARAMS ((bfd *))) bfd_nullvoidptr)
 #define _bfd_nolink_bfd_link_hash_table_free \
   ((void (*) PARAMS ((struct bfd_link_hash_table *))) bfd_void)
 #define _bfd_nolink_bfd_link_add_symbols \
   ((boolean (*) PARAMS ((bfd *, struct bfd_link_info *))) bfd_false)
+#define _bfd_nolink_bfd_link_just_syms \
+  ((void (*) PARAMS ((asection *, struct bfd_link_info *))) bfd_void)
 #define _bfd_nolink_bfd_final_link \
   ((boolean (*) PARAMS ((bfd *, struct bfd_link_info *))) bfd_false)
 #define _bfd_nolink_bfd_link_split_section \
@@ -418,8 +425,6 @@ extern boolean _bfd_generic_link_add_archive_symbols
   PARAMS ((bfd *, struct bfd_link_info *,
 	   boolean (*checkfn) (bfd *, struct bfd_link_info *, boolean *)));
 
-
-
 /* Forward declaration to avoid prototype errors.  */
 typedef struct bfd_link_hash_entry _bfd_link_hash_entry;
 
@@ -428,6 +433,10 @@ extern boolean _bfd_generic_link_add_one_symbol
   PARAMS ((struct bfd_link_info *, bfd *, const char *name, flagword,
 	   asection *, bfd_vma, const char *, boolean copy,
 	   boolean constructor, struct bfd_link_hash_entry **));
+
+/* Generic routine to mark section as supplying symbols only.  */
+extern void _bfd_generic_link_just_syms
+  PARAMS ((asection *, struct bfd_link_info *));
 
 /* Generic link routine.  */
 extern boolean _bfd_generic_final_link
@@ -593,4 +602,3 @@ extern boolean _bfd_sh_align_load_span
 	   boolean (*) (bfd *, asection *, PTR, bfd_byte *, bfd_vma),
 	   PTR, bfd_vma **, bfd_vma *, bfd_vma, bfd_vma, boolean *));
 
-/* And more follows */

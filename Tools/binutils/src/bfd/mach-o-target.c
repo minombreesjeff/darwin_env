@@ -71,13 +71,13 @@ const bfd_target TARGET_NAME =
     bfd_false,
     bfd_mach_o_mkobject,
     bfd_false,
-    bfd_false,
+    bfd_mach_o_mkobject,
   },
   {				/* bfd_write_contents */
     bfd_false,
     bfd_mach_o_write_contents,
     bfd_false,
-    bfd_false,
+    bfd_mach_o_write_contents,
   },
 
   BFD_JUMP_TABLE_GENERIC (bfd_mach_o),

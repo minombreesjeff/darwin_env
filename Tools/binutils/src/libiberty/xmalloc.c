@@ -66,9 +66,10 @@ function will be called to print an error message and terminate execution.
 #include "ansidecl.h"
 #include "libiberty.h"
 
-#define HAVE_EFENCE 1
+#ifdef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
 #define HAVE_MMALLOC 1
 #undef HAVE_SBRK
+#endif
 
 #include <stdio.h>
 
@@ -91,10 +92,6 @@ PTR sbrk PARAMS ((ptrdiff_t));
 void free (PTR ptr);
 #endif
 
-#ifdef HAVE_EFENCE
-#include "efence.h"
-#endif
-
 #if HAVE_MMALLOC
 #include <mmalloc.h>
 #endif
@@ -107,10 +104,6 @@ void free (PTR ptr);
 #undef malloc
 #undef realloc
 #undef free
-
-#if HAVE_EFENCE
-int use_efence = 0;
-#endif
 
 #if HAVE_MMALLOC
 int use_mmalloc = 1;
@@ -181,11 +174,6 @@ xmmalloc (md, size)
   
   if (0) { 
   }
-#if HAVE_EFENCE
-  else if (use_efence) {
-    val = efence_malloc (size);
-  }
-#endif
 #if HAVE_MMALLOC
   else if (use_mmalloc) {
     val = mmalloc (md, size);
@@ -216,11 +204,6 @@ xmcalloc (md, nelem, elsize)
 
   if (0) {
   }
-#if HAVE_EFENCE
-  else if (use_efence) {
-    val = efence_calloc (nelem, elsize);
-  }
-#endif
 #if HAVE_MMALLOC
   else if (use_mmalloc) {
     val = mcalloc (md, nelem, elsize);
@@ -250,14 +233,6 @@ xmrealloc (md, ptr, size)
 
   if (0) {
   }
-#if HAVE_EFENCE
-  else if (use_efence) {
-    if (ptr != NULL)
-      val = efence_realloc (ptr, size);
-    else
-      val = efence_malloc (size);
-  }
-#endif
 #if HAVE_MMALLOC
   else if (use_mmalloc) {
     if (ptr != NULL)
@@ -274,7 +249,10 @@ xmrealloc (md, ptr, size)
   }
 
   if (val == NULL)
-    xmalloc_failed (size);
+    if (size == 0)
+      return NULL;
+    else
+      xmalloc_failed (size);
 
   return val;
 }
@@ -289,11 +267,6 @@ xmfree (md, ptr)
 
   if (0) {
   }
-#if HAVE_EFENCE
-  else if (use_efence) {
-    efence_free (ptr);
-  }
-#endif
 #if HAVE_MMALLOC 
   else if (use_mmalloc) {
     mfree (md, ptr);

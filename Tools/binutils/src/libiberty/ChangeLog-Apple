@@ -1,0 +1,20 @@
+2002-12-06  Klee Dienes  <kdienes@apple.com>
+
+        * xmalloc.c (xmrealloc): Don't call xmalloc_failed if we are
+        returning NULL because of a zero-size realloc.
+
+2002-10-29  Jason Molenda  (jmolenda@apple.com)
+
+	* configure.in: Fix MacOS X check to catch *-apple-macos*.
+	* configure: Regenerated.
+
+2002-10-24  Jason Molenda  (jmolenda@apple.com)
+
+	* configure.in: Check if configuring on a MacOS X system.
+	* xmalloc.c: Conditionalize MacOS X specific hack on target system.
+
+2002-07-09  Jim Ingham <jingham@apple.com>
+
+	* cp-demangle.c (demangle_ctor_dtor_name): Add the new "internal"
+	constructor & destructor flavor.
+	

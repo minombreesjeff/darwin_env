@@ -1,3 +1,106 @@
+2002-11-04  Jim Ingham  <jingham@apple.com>
+
+	* mach-o.c (bfd_mach_o_write_contents, bfd_mach_o_scan_read_dylib): Treat 
+	the LC_LOAD_WEAK_DYLIB the same as the LC_LOAD_DYLIB everywhere.
+
+2002-11-01  Jim Ingham  <jingham@apple.com>
+
+	* mach-o.h: The LC_LOAD_WEAK_DYLIB define is 0x80000018,
+	not 0x18 as we had it here.
+
+2002-10-12  Klee Dienes  <kdienes@apple.com>
+
+	* mach-o.c (bfd_mach_o_scan_read_symtab_symbol): Desc and value
+	must be unsigned, or they'll get sign-extension mauled when
+	building with 64-bit BFD.
+
+2002-10-02  Klee Dienes  <kdienes@apple.com>
+
+	* format.c (bfd_check_format_matches): Check that matching is
+	non-NULL before using it to return a list of matching targets.
+
+2002-10-01  Klee Dienes  <kdienes@apple.com>
+
+	* libbfd-in.h: Add prototype for _bfd_io_close.
+	* libbfd.c: Include "libiberty.h" (for xmalloc).
+	* mach-o.c: No longer #define bfd_mach_o_core_file_* (we implement
+	them; the #defines were just causing them to have unfortunate
+	names).
+	(bfd_mach_o_convert_architecture): Subtype is an unsigned long,
+	not an enum bfd_architecture
+
+	* bfdio.c: Rename bfd_io_close to _bfd_io_close.
+	(bfd_bwrite): Actually write the data for the
+	BFD_IN_MEMORY case.
+
+	* bfd-in.h: (_bfd_get_file_window): Takes a ufile_ptr, not file_ptr.
+	* bfdwin.c (_bfd_get_file_window): Ditto.
+	(_bfd_get_file_window_mmap): Ditto.
+	(_bfd_get_file_window_mmalloc): Ditto.
+
+	* bfdwin.c: Fix compiler warnings.
+	* bfdwin.c: Fix compiler warnings.
+	* cache.c: Fix compiler warnings.
+	* bfdio.c: Fix compiler warnings
+	* mach-o.c,h: Fix compiler warnings.
+	* pef.c,h: Fix compiler warnings.  Replace calls of xmalloc and
+	xfree with bfd_malloc and free, respectively.
+	* sym.c,h: Fix compiler warnings.  Convert to K&R-style
+	function declarations.
+
+	* Makefile.am: Add bfdio.c, bfdwin.c and cache.c to the
+	appropriate Makes variable for automatic header and documentation
+	generation.
+	* Makefile.in: Regenerate.
+	* bfd-in2.h: Regenerate.
+	
+2002-09-29  Klee Dienes  <kdienes@apple.com>
+
+	* mach-o.c: Update prototypes for static functions.  K&R-ize
+	function declarations.
+	(bfd_mach_o_write_contents): No longer need to copy sections from
+	input file; they're already written by the time this function is
+	called.
+	(bfd_mach_o_scan_write_segment): Just read section information
+	from the output file, no need to use a "fake" file specified in
+	the header.
+	(bfd_mach_o_scan_read_thread): Check for already-loaded threads;
+	generate thread names of the form LC_THREAD.FLAVOR.THREADNO.
+	(bfd_mach_o_core_fetch_environment): Fix off-by-one error in the
+	search for the start of the environment region; need to check all
+	the way back to (buff + size - offset), so we use '<='.  Terminate
+	search when the entire region has been checked, even if no
+	terminator is found at the start of the buffer.
+	* mach-o.h: Update prototyles for global functions.		 
+	* mach-o-target.c: Update the write vectors in the target
+	struction to support core files, not just object files.
+	
+2002-09-28  Klee Dienes  <kdienes@apple.com>
+
+	* mach-o.c (bfd_mach_o_core_fetch_environment): Add.
+	(bfd_mach_o_stack_addr): Add.
+	(bfd_mach_o_core_file_failing_command): Update to use
+	bfd_mach_o_core_fetch_environment.
+
+2002-09-24  Klee Dienes  <kdienes@apple.com>
+
+	* mach-o.c: Add bfd_mach_o_core_file_{failing_command,
+	failing_signal, matches_executable_p}.
+
+2002-08-30  Klee Dienes  <kdienes@apple.com>
+
+	* config.bfd: Change powerpc-apple-darwin* to i386-apple-darwin*
+	in the recognizer checks for i386 build (fixes typo).
+
+	* configure: Regenerate.
+	
+2002-07-08  Jim Ingham <jingham@apple.com>
+
+	* pef.c (bfd_pef_parse_traceback_tables): Don't malloc space
+	for the name field if you are only counting symbols.
+	(bfd_pef_parse_symbols): Initialize codebuf to NULL so we don't
+	try to free it.
+
 2002-02-20  Jim Ingham <jingham@apple.com>
 
 	* config.bfd: The i386 architecture has to be the FIRST target

@@ -73,12 +73,12 @@ extern char **dupargv PARAMS ((char **)) ATTRIBUTE_MALLOC;
    declaration without arguments.  If it is 0, we checked and failed
    to find the declaration so provide a fully prototyped one.  If it
    is 1, we found it so don't provide any declaration at all.  */
-#if defined (__GNU_LIBRARY__ ) || defined (__linux__) || defined (__FreeBSD__) || defined (__OpenBSD__) || defined (__CYGWIN__) || defined (__CYGWIN32__) || (defined (HAVE_DECL_BASENAME) && !HAVE_DECL_BASENAME)
+#if !HAVE_DECL_BASENAME
+#if defined (__GNU_LIBRARY__ ) || defined (__linux__) || defined (__FreeBSD__) || defined (__OpenBSD__) || defined (__CYGWIN__) || defined (__CYGWIN32__) || defined (__APPLE__) || defined (HAVE_DECL_BASENAME)
 extern char *basename PARAMS ((const char *));
 #else
-# if !defined (HAVE_DECL_BASENAME)
 extern char *basename ();
-# endif
+#endif
 #endif
 
 /* A well-defined basename () that is always compiled in.  */
@@ -264,16 +264,20 @@ extern int pexecute PARAMS ((const char *, char * const *, const char *,
 
 extern int pwait PARAMS ((int, int *, int));
 
+#if !HAVE_DECL_ASPRINTF
 /* Like sprintf but provides a pointer to malloc'd storage, which must
    be freed by the caller.  */
 
 extern int asprintf PARAMS ((char **, const char *, ...)) ATTRIBUTE_PRINTF_2;
+#endif
 
+#if !HAVE_DECL_VASPRINTF
 /* Like vsprintf but provides a pointer to malloc'd storage, which
    must be freed by the caller.  */
 
 extern int vasprintf PARAMS ((char **, const char *, va_list))
   ATTRIBUTE_PRINTF(2,0);
+#endif
 
 #define ARRAY_SIZE(a) (sizeof (a) / sizeof ((a)[0]))
 

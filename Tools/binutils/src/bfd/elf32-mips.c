@@ -80,172 +80,22 @@ static boolean elf32_mips_grok_prstatus
   PARAMS ((bfd *, Elf_Internal_Note *));
 static boolean elf32_mips_grok_psinfo
   PARAMS ((bfd *, Elf_Internal_Note *));
-static boolean elf32_mips_discard_info
-  PARAMS ((bfd *, struct elf_reloc_cookie *, struct bfd_link_info *));
-static boolean elf32_mips_ignore_discarded_relocs
-  PARAMS ((asection *));
-static boolean elf32_mips_write_section
-  PARAMS ((bfd *, asection *, bfd_byte *));
 static irix_compat_t elf32_mips_irix_compat
   PARAMS ((bfd *));
 
-extern const bfd_target bfd_elf32_tradbigmips_vec;
-extern const bfd_target bfd_elf32_tradlittlemips_vec;
+extern const bfd_target bfd_elf32_bigmips_vec;
+extern const bfd_target bfd_elf32_littlemips_vec;
 
 /* Nonzero if ABFD is using the N32 ABI.  */
-
 #define ABI_N32_P(abfd) \
   ((elf_elfheader (abfd)->e_flags & EF_MIPS_ABI2) != 0)
-
-/* Nonzero if ABFD is using the 64-bit ABI. */
-#define ABI_64_P(abfd) \
-  ((elf_elfheader (abfd)->e_ident[EI_CLASS] == ELFCLASS64) != 0)
-
-#define NEWABI_P(abfd) (ABI_N32_P (abfd) || ABI_64_P (abfd))
 
 /* Whether we are trying to be compatible with IRIX at all.  */
 #define SGI_COMPAT(abfd) \
   (elf32_mips_irix_compat (abfd) != ict_none)
 
-/* The size of an external REL relocation.  */
-#define MIPS_ELF_REL_SIZE(abfd) \
-  (get_elf_backend_data (abfd)->s->sizeof_rel)
-
 /* The number of local .got entries we reserve.  */
 #define MIPS_RESERVED_GOTNO (2)
-
-#if 0
-/* We no longer try to identify particular sections for the .dynsym
-   section.  When we do, we wind up crashing if there are other random
-   sections with relocations.  */
-
-/* Names of sections which appear in the .dynsym section in an Irix 5
-   executable.  */
-
-static const char * const mips_elf_dynsym_sec_names[] =
-{
-  ".text",
-  ".init",
-  ".fini",
-  ".data",
-  ".rodata",
-  ".sdata",
-  ".sbss",
-  ".bss",
-  NULL
-};
-
-#define SIZEOF_MIPS_DYNSYM_SECNAMES \
-  (sizeof mips_elf_dynsym_sec_names / sizeof mips_elf_dynsym_sec_names[0])
-
-/* The number of entries in mips_elf_dynsym_sec_names which go in the
-   text segment.  */
-
-#define MIPS_TEXT_DYNSYM_SECNO (3)
-
-#endif /* 0 */
-
-/* The names of the runtime procedure table symbols used on Irix 5.  */
-
-static const char * const mips_elf_dynsym_rtproc_names[] =
-{
-  "_procedure_table",
-  "_procedure_string_table",
-  "_procedure_table_size",
-  NULL
-};
-
-/* These structures are used to generate the .compact_rel section on
-   Irix 5.  */
-
-typedef struct
-{
-  unsigned long id1;		/* Always one?  */
-  unsigned long num;		/* Number of compact relocation entries.  */
-  unsigned long id2;		/* Always two?  */
-  unsigned long offset;		/* The file offset of the first relocation.  */
-  unsigned long reserved0;	/* Zero?  */
-  unsigned long reserved1;	/* Zero?  */
-} Elf32_compact_rel;
-
-typedef struct
-{
-  bfd_byte id1[4];
-  bfd_byte num[4];
-  bfd_byte id2[4];
-  bfd_byte offset[4];
-  bfd_byte reserved0[4];
-  bfd_byte reserved1[4];
-} Elf32_External_compact_rel;
-
-typedef struct
-{
-  unsigned int ctype : 1;	/* 1: long 0: short format. See below.  */
-  unsigned int rtype : 4;	/* Relocation types. See below.  */
-  unsigned int dist2to : 8;
-  unsigned int relvaddr : 19;	/* (VADDR - vaddr of the previous entry)/ 4 */
-  unsigned long konst;		/* KONST field. See below.  */
-  unsigned long vaddr;		/* VADDR to be relocated.  */
-} Elf32_crinfo;
-
-typedef struct
-{
-  unsigned int ctype : 1;	/* 1: long 0: short format. See below.  */
-  unsigned int rtype : 4;	/* Relocation types. See below.  */
-  unsigned int dist2to : 8;
-  unsigned int relvaddr : 19;	/* (VADDR - vaddr of the previous entry)/ 4 */
-  unsigned long konst;		/* KONST field. See below.  */
-} Elf32_crinfo2;
-
-typedef struct
-{
-  bfd_byte info[4];
-  bfd_byte konst[4];
-  bfd_byte vaddr[4];
-} Elf32_External_crinfo;
-
-typedef struct
-{
-  bfd_byte info[4];
-  bfd_byte konst[4];
-} Elf32_External_crinfo2;
-
-/* These are the constants used to swap the bitfields in a crinfo.  */
-
-#define CRINFO_CTYPE (0x1)
-#define CRINFO_CTYPE_SH (31)
-#define CRINFO_RTYPE (0xf)
-#define CRINFO_RTYPE_SH (27)
-#define CRINFO_DIST2TO (0xff)
-#define CRINFO_DIST2TO_SH (19)
-#define CRINFO_RELVADDR (0x7ffff)
-#define CRINFO_RELVADDR_SH (0)
-
-/* A compact relocation info has long (3 words) or short (2 words)
-   formats.  A short format doesn't have VADDR field and relvaddr
-   fields contains ((VADDR - vaddr of the previous entry) >> 2).  */
-#define CRF_MIPS_LONG			1
-#define CRF_MIPS_SHORT			0
-
-/* There are 4 types of compact relocation at least. The value KONST
-   has different meaning for each type:
-
-   (type)		(konst)
-   CT_MIPS_REL32	Address in data
-   CT_MIPS_WORD		Address in word (XXX)
-   CT_MIPS_GPHI_LO	GP - vaddr
-   CT_MIPS_JMPAD	Address to jump
-   */
-
-#define CRT_MIPS_REL32			0xa
-#define CRT_MIPS_WORD			0xb
-#define CRT_MIPS_GPHI_LO		0xc
-#define CRT_MIPS_JMPAD			0xd
-
-#define mips_elf_set_cr_format(x,format)	((x).ctype = (format))
-#define mips_elf_set_cr_type(x,type)		((x).rtype = (type))
-#define mips_elf_set_cr_dist2to(x,v)		((x).dist2to = (v))
-#define mips_elf_set_cr_relvaddr(x,d)		((x).relvaddr = (d)<<2)
 
 /* In case we're on a 32-bit machine, construct a 64-bit "-1" value
    from smaller values.  Start with zero, widen, *then* decrement.  */
@@ -904,7 +754,7 @@ mips_elf_hi16_reloc (abfd, reloc_entry, symbol, data, input_section,
   bfd_vma relocation;
   struct mips_hi16 *n;
 
-  /* If we're relocating, and this an external symbol, we don't want
+  /* If we're relocating, and this is an external symbol, we don't want
      to change anything.  */
   if (output_bfd != (bfd *) NULL
       && (symbol->flags & BSF_SECTION_SYM) == 0
@@ -1099,7 +949,7 @@ mips_elf_got16_reloc (abfd, reloc_entry, symbol, data, input_section,
      bfd *output_bfd;
      char **error_message;
 {
-  /* If we're relocating, and this an external symbol, we don't want
+  /* If we're relocating, and this is an external symbol, we don't want
      to change anything.  */
   if (output_bfd != (bfd *) NULL
       && (symbol->flags & BSF_SECTION_SYM) == 0
@@ -1264,8 +1114,8 @@ _bfd_mips_elf32_gprel16_reloc (abfd, reloc_entry, symbol, data, input_section,
 					data, gp);
 }
 
-/* Do a R_MIPS_GPREL32 relocation.  Is this 32 bit value the offset
-   from the gp register? XXX */
+/* Do a R_MIPS_GPREL32 relocation.  This is a 32 bit value which must
+   become the offset from the gp register.  */
 
 static bfd_reloc_status_type gprel32_with_gp PARAMS ((bfd *, asymbol *,
 						      arelent *, asection *,
@@ -1531,15 +1381,16 @@ mips16_gprel_reloc (abfd, reloc_entry, symbol, data, input_section,
 /* A mapping from BFD reloc types to MIPS ELF reloc types.  */
 
 struct elf_reloc_map {
-  bfd_reloc_code_real_type bfd_reloc_val;
-  enum elf_mips_reloc_type elf_reloc_val;
+  bfd_reloc_code_real_type bfd_val;
+  enum elf_mips_reloc_type elf_val;
 };
 
 static const struct elf_reloc_map mips_reloc_map[] =
 {
-  { BFD_RELOC_NONE, R_MIPS_NONE, },
+  { BFD_RELOC_NONE, R_MIPS_NONE },
   { BFD_RELOC_16, R_MIPS_16 },
   { BFD_RELOC_32, R_MIPS_32 },
+  /* There is no BFD reloc for R_MIPS_REL32.  */
   { BFD_RELOC_64, R_MIPS_64 },
   { BFD_RELOC_MIPS_JMP, R_MIPS_26 },
   { BFD_RELOC_HI16_S, R_MIPS_HI16 },
@@ -1568,11 +1419,13 @@ bfd_elf32_bfd_reloc_type_lookup (abfd, code)
      bfd_reloc_code_real_type code;
 {
   unsigned int i;
+  reloc_howto_type *howto_table = elf_mips_howto_table_rel;
 
-  for (i = 0; i < sizeof (mips_reloc_map) / sizeof (struct elf_reloc_map); i++)
+  for (i = 0; i < sizeof (mips_reloc_map) / sizeof (struct elf_reloc_map);
+       i++)
     {
-      if (mips_reloc_map[i].bfd_reloc_val == code)
-	return &elf_mips_howto_table_rel[(int) mips_reloc_map[i].elf_reloc_val];
+      if (mips_reloc_map[i].bfd_val == code)
+	return &howto_table[(int) mips_reloc_map[i].elf_val];
     }
 
   switch (code)
@@ -1586,7 +1439,7 @@ bfd_elf32_bfd_reloc_type_lookup (abfd, code)
 	 Select the right relocation (R_MIPS_32 or R_MIPS_64) based on the
 	 size of addresses on this architecture.  */
       if (bfd_arch_bits_per_address (abfd) == 32)
-	return &elf_mips_howto_table_rel[(int) R_MIPS_32];
+	return &howto_table[(int) R_MIPS_32];
       else
 	return &elf_mips_ctor64_howto;
 
@@ -1622,32 +1475,22 @@ mips_elf32_rtype_to_howto (r_type, rela_p)
     {
     case R_MIPS16_26:
       return &elf_mips16_jump_howto;
-      break;
     case R_MIPS16_GPREL:
       return &elf_mips16_gprel_howto;
-      break;
     case R_MIPS_GNU_VTINHERIT:
       return &elf_mips_gnu_vtinherit_howto;
-      break;
     case R_MIPS_GNU_VTENTRY:
       return &elf_mips_gnu_vtentry_howto;
-      break;
     case R_MIPS_GNU_REL_HI16:
       return &elf_mips_gnu_rel_hi16;
-      break;
     case R_MIPS_GNU_REL_LO16:
       return &elf_mips_gnu_rel_lo16;
-      break;
     case R_MIPS_GNU_REL16_S2:
       return &elf_mips_gnu_rel16_s2;
-      break;
     case R_MIPS_PC64:
       return &elf_mips_gnu_pcrel64;
-      break;
     case R_MIPS_PC32:
       return &elf_mips_gnu_pcrel32;
-      break;
-
     default:
       BFD_ASSERT (r_type < (unsigned int) R_MIPS_max);
       return &elf_mips_howto_table_rel[r_type];
@@ -1727,11 +1570,11 @@ mips_elf32_object_p (abfd)
   if (SGI_COMPAT (abfd))
     elf_bad_symtab (abfd) = true;
 
-  mach = _bfd_elf_mips_mach (elf_elfheader (abfd)->e_flags);
-  bfd_default_set_arch_mach (abfd, bfd_arch_mips, mach);
-
   if (ABI_N32_P (abfd))
     return false;
+
+  mach = _bfd_elf_mips_mach (elf_elfheader (abfd)->e_flags);
+  bfd_default_set_arch_mach (abfd, bfd_arch_mips, mach);
 
   return true;
 }
@@ -1816,125 +1659,17 @@ elf32_mips_grok_psinfo (abfd, note)
   return true;
 }
 
-#define PDR_SIZE 32
-
-static boolean
-elf32_mips_discard_info (abfd, cookie, info)
-     bfd *abfd;
-     struct elf_reloc_cookie *cookie;
-     struct bfd_link_info *info;
-{
-  asection *o;
-  struct elf_backend_data *bed = get_elf_backend_data (abfd);
-  boolean ret = false;
-  unsigned char *tdata;
-  size_t i, skip;
-
-  o = bfd_get_section_by_name (abfd, ".pdr");
-  if (! o)
-    return false;
-  if (o->_raw_size == 0)
-    return false;
-  if (o->_raw_size % PDR_SIZE != 0)
-    return false;
-  if (o->output_section != NULL
-      && bfd_is_abs_section (o->output_section))
-    return false;
-
-  tdata = bfd_zmalloc (o->_raw_size / PDR_SIZE);
-  if (! tdata)
-    return false;
-
-  cookie->rels = _bfd_elf32_link_read_relocs (abfd, o, (PTR) NULL,
-					     (Elf_Internal_Rela *) NULL,
-					      info->keep_memory);
-  if (!cookie->rels)
-    {
-      free (tdata);
-      return false;
-    }
-
-  cookie->rel = cookie->rels;
-  cookie->relend =
-    cookie->rels + o->reloc_count * bed->s->int_rels_per_ext_rel;
-
-  for (i = 0, skip = 0; i < o->_raw_size; i ++)
-    {
-      if (_bfd_elf32_reloc_symbol_deleted_p (i * PDR_SIZE, cookie))
-	{
-	  tdata[i] = 1;
-	  skip ++;
-	}
-    }
-
-  if (skip != 0)
-    {
-      elf_section_data (o)->tdata = tdata;
-      o->_cooked_size = o->_raw_size - skip * PDR_SIZE;
-      ret = true;
-    }
-  else
-    free (tdata);
-
-  if (! info->keep_memory)
-    free (cookie->rels);
-
-  return ret;
-}
-
-static boolean
-elf32_mips_ignore_discarded_relocs (sec)
-     asection *sec;
-{
-  if (strcmp (sec->name, ".pdr") == 0)
-    return true;
-  return false;
-}
-
-static boolean
-elf32_mips_write_section (output_bfd, sec, contents)
-     bfd *output_bfd;
-     asection *sec;
-     bfd_byte *contents;
-{
-  bfd_byte *to, *from, *end;
-  int i;
-
-  if (strcmp (sec->name, ".pdr") != 0)
-    return false;
-
-  if (elf_section_data (sec)->tdata == NULL)
-    return false;
-
-  to = contents;
-  end = contents + sec->_raw_size;
-  for (from = contents, i = 0;
-       from < end;
-       from += PDR_SIZE, i++)
-    {
-      if (((unsigned char *)elf_section_data (sec)->tdata)[i] == 1)
-	continue;
-      if (to != from)
-	memcpy (to, from, PDR_SIZE);
-      to += PDR_SIZE;
-    }
-  bfd_set_section_contents (output_bfd, sec->output_section, contents,
-			    (file_ptr) sec->output_offset,
-			    sec->_cooked_size);
-  return true;
-}
-
 /* Depending on the target vector we generate some version of Irix
    executables or "normal" MIPS ELF ABI executables.  */
 static irix_compat_t
 elf32_mips_irix_compat (abfd)
      bfd *abfd;
 {
-  if ((abfd->xvec == &bfd_elf32_tradbigmips_vec)
-      || (abfd->xvec == &bfd_elf32_tradlittlemips_vec))
-    return ict_none;
-  else
+  if ((abfd->xvec == &bfd_elf32_bigmips_vec)
+      || (abfd->xvec == &bfd_elf32_littlemips_vec))
     return ict_irix5;
+  else
+    return ict_none;
 }
 
 /* Given a data section and an in-memory embedded reloc section, store
@@ -1953,15 +1688,10 @@ bfd_mips_elf32_create_embedded_relocs (abfd, info, datasec, relsec, errmsg)
      char **errmsg;
 {
   Elf_Internal_Shdr *symtab_hdr;
-  Elf_Internal_Shdr *shndx_hdr;
-  Elf32_External_Sym *extsyms;
-  Elf32_External_Sym *free_extsyms = NULL;
-  Elf_External_Sym_Shndx *shndx_buf = NULL;
-  Elf_Internal_Rela *internal_relocs;
-  Elf_Internal_Rela *free_relocs = NULL;
+  Elf_Internal_Sym *isymbuf = NULL;
+  Elf_Internal_Rela *internal_relocs = NULL;
   Elf_Internal_Rela *irel, *irelend;
   bfd_byte *p;
-  bfd_size_type amt;
 
   BFD_ASSERT (! info->relocateable);
 
@@ -1970,41 +1700,17 @@ bfd_mips_elf32_create_embedded_relocs (abfd, info, datasec, relsec, errmsg)
   if (datasec->reloc_count == 0)
     return true;
 
-  symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   /* Read this BFD's symbols if we haven't done so already, or get the cached
      copy if it exists.  */
-  if (symtab_hdr->contents != NULL)
-    extsyms = (Elf32_External_Sym *) symtab_hdr->contents;
-  else
+  symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
+  if (symtab_hdr->sh_info != 0)
     {
-      /* Go get them off disk.  */
-      if (info->keep_memory)
-	extsyms = ((Elf32_External_Sym *)
-		   bfd_alloc (abfd, symtab_hdr->sh_size));
-      else
-	extsyms = ((Elf32_External_Sym *)
-		   bfd_malloc (symtab_hdr->sh_size));
-      if (extsyms == NULL)
-	goto error_return;
-      if (! info->keep_memory)
-	free_extsyms = extsyms;
-      if (bfd_seek (abfd, symtab_hdr->sh_offset, SEEK_SET) != 0
-	  || (bfd_bread (extsyms, symtab_hdr->sh_size, abfd)
-	      != symtab_hdr->sh_size))
-	goto error_return;
-      if (info->keep_memory)
-	symtab_hdr->contents = (unsigned char *) extsyms;
-    }
-
-  shndx_hdr = &elf_tdata (abfd)->symtab_shndx_hdr;
-  if (shndx_hdr->sh_size != 0)
-    {
-      amt = symtab_hdr->sh_info * sizeof (Elf_External_Sym_Shndx);
-      shndx_buf = (Elf_External_Sym_Shndx *) bfd_malloc (amt);
-      if (shndx_buf == NULL)
-	goto error_return;
-      if (bfd_seek (abfd, shndx_hdr->sh_offset, SEEK_SET) != 0
-	  || bfd_bread ((PTR) shndx_buf, amt, abfd) != amt)
+      isymbuf = (Elf_Internal_Sym *) symtab_hdr->contents;
+      if (isymbuf == NULL)
+	isymbuf = bfd_elf_get_elf_syms (abfd, symtab_hdr,
+					symtab_hdr->sh_info, 0,
+					NULL, NULL, NULL);
+      if (isymbuf == NULL)
 	goto error_return;
     }
 
@@ -2014,8 +1720,6 @@ bfd_mips_elf32_create_embedded_relocs (abfd, info, datasec, relsec, errmsg)
 		      info->keep_memory));
   if (internal_relocs == NULL)
     goto error_return;
-  if (! info->keep_memory)
-    free_relocs = internal_relocs;
 
   relsec->contents = (bfd_byte *) bfd_alloc (abfd, datasec->reloc_count * 12);
   if (relsec->contents == NULL)
@@ -2046,16 +1750,11 @@ bfd_mips_elf32_create_embedded_relocs (abfd, info, datasec, relsec, errmsg)
       /* Get the target section referred to by the reloc.  */
       if (ELF32_R_SYM (irel->r_info) < symtab_hdr->sh_info)
 	{
-          Elf32_External_Sym *esym;
-          Elf_External_Sym_Shndx *shndx;
-          Elf_Internal_Sym isym;
+          Elf_Internal_Sym *isym;
 
           /* A local symbol.  */
-          esym = extsyms + ELF32_R_SYM (irel->r_info);
-          shndx = shndx_buf + (shndx_buf ? ELF32_R_SYM (irel->r_info) : 0);
-	  bfd_elf32_swap_symbol_in (abfd, esym, shndx, &isym);
-
-	  targetsec = bfd_section_from_elf_index (abfd, isym.st_shndx);
+	  isym = isymbuf + ELF32_R_SYM (irel->r_info);
+	  targetsec = bfd_section_from_elf_index (abfd, isym->st_shndx);
 	}
       else
 	{
@@ -2092,21 +1791,21 @@ bfd_mips_elf32_create_embedded_relocs (abfd, info, datasec, relsec, errmsg)
 	strncpy (p + 4, targetsec->output_section->name, 8);
     }
 
-  if (shndx_buf != NULL)
-    free (shndx_buf);
-  if (free_extsyms != NULL)
-    free (free_extsyms);
-  if (free_relocs != NULL)
-    free (free_relocs);
+  if (internal_relocs != NULL
+      && elf_section_data (datasec)->relocs != internal_relocs)
+    free (internal_relocs);
+  if (isymbuf != NULL
+      && symtab_hdr->contents != (unsigned char *) isymbuf)
+    free (isymbuf);
   return true;
 
  error_return:
-  if (shndx_buf != NULL)
-    free (shndx_buf);
-  if (free_extsyms != NULL)
-    free (free_extsyms);
-  if (free_relocs != NULL)
-    free (free_relocs);
+  if (internal_relocs != NULL
+      && elf_section_data (datasec)->relocs != internal_relocs)
+    free (internal_relocs);
+  if (isymbuf != NULL
+      && symtab_hdr->contents != (unsigned char *) isymbuf)
+    free (isymbuf);
   return false;
 }
 
@@ -2210,10 +1909,9 @@ static const struct ecoff_debug_swap mips_elf32_ecoff_debug_swap = {
 #define elf_backend_default_use_rela_p	0
 #define elf_backend_sign_extend_vma	true
 
-#define elf_backend_discard_info	elf32_mips_discard_info
+#define elf_backend_discard_info	_bfd_mips_elf_discard_info
 #define elf_backend_ignore_discarded_relocs \
-					elf32_mips_ignore_discarded_relocs
-#define elf_backend_write_section	elf32_mips_write_section
+					_bfd_mips_elf_ignore_discarded_relocs
 #define elf_backend_mips_irix_compat	elf32_mips_irix_compat
 #define elf_backend_mips_rtype_to_howto	mips_elf32_rtype_to_howto
 #define bfd_elf32_bfd_is_local_label_name \

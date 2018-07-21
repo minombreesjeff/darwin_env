@@ -34,32 +34,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "elf-bfd.h"
 #include "elf/i370.h"
 
-#define USE_RELA		/* we want RELA relocations, not REL */
-
-/* i370 relocations */
-/* Note that there is really just one relocation that we currently
- * support (and only one that we seem to need, at the moment), and
- * that is the 31-bit address relocation.  Note that the 370/390
- * only supports a 31-bit (2GB) address space.
- */
-enum i370_reloc_type
-{
-  R_I370_NONE		=   0,
-  R_I370_ADDR31		=   1,
-  R_I370_ADDR32		=   2,
-  R_I370_ADDR16		=   3,
-  R_I370_REL31		=   4,
-  R_I370_REL32		=   5,
-  R_I370_ADDR12		=   6,
-  R_I370_REL12		=   7,
-  R_I370_ADDR8		=   8,
-  R_I370_REL8		=   9,
-  R_I370_COPY		=  10,
-  R_I370_RELATIVE	=  11,
-
-  R_I370_max
-};
-
 static reloc_howto_type *i370_elf_howto_table[ (int)R_I370_max ];
 
 static reloc_howto_type i370_elf_howto_raw[] =
@@ -319,7 +293,7 @@ static boolean i370_elf_create_dynamic_sections PARAMS ((bfd *,
 
 static boolean i370_elf_section_from_shdr PARAMS ((bfd *,
 						   Elf32_Internal_Shdr *,
-						   char *));
+						   const char *));
 static boolean i370_elf_fake_sections PARAMS ((bfd *,
 					       Elf32_Internal_Shdr *,
 					       asection *));
@@ -429,7 +403,7 @@ static boolean
 i370_elf_section_from_shdr (abfd, hdr, name)
      bfd *abfd;
      Elf32_Internal_Shdr *hdr;
-     char *name;
+     const char *name;
 {
   asection *newsect;
   flagword flags;
@@ -1277,6 +1251,9 @@ i370_elf_relocate_section (output_bfd, info, input_bfd, input_section,
   bfd_vma *local_got_offsets;
   boolean ret				  = true;
 
+  if (info->relocateable)
+    return true;
+
 #ifdef DEBUG
   fprintf (stderr, "i370_elf_relocate_section called for %s section %s, %ld relocations%s\n",
 	   bfd_archive_filename (input_bfd),
@@ -1320,34 +1297,6 @@ i370_elf_relocate_section (output_bfd, info, input_bfd, input_section,
       howto = i370_elf_howto_table[(int)r_type];
       r_symndx = ELF32_R_SYM (rel->r_info);
 
-      if (info->relocateable)
-	{
-	  /* This is a relocateable link.  We don't have to change
-	     anything, unless the reloc is against a section symbol,
-	     in which case we have to adjust according to where the
-	     section symbol winds up in the output section.  */
-	  if (r_symndx < symtab_hdr->sh_info)
-	    {
-	      sym = local_syms + r_symndx;
-	      if ((unsigned)ELF_ST_TYPE (sym->st_info) == STT_SECTION)
-		{
-		  sec = local_sections[r_symndx];
-		  addend = rel->r_addend += sec->output_offset + sym->st_value;
-		}
-	    }
-
-#ifdef DEBUG
-	  fprintf (stderr, "\ttype = %s (%d), symbol index = %ld, offset = %ld, addend = %ld\n",
-		   howto->name,
-		   (int)r_type,
-		   r_symndx,
-		   (long)offset,
-		   (long)addend);
-#endif
-	  continue;
-	}
-
-      /* This is a final link.  */
       if (r_symndx < symtab_hdr->sh_info)
 	{
 	  sym = local_syms + r_symndx;
@@ -1661,6 +1610,7 @@ i370_elf_post_process_headers (abfd, link_info)
 
 #define elf_backend_plt_not_loaded 1
 #define elf_backend_got_symbol_offset 4
+#define elf_backend_rela_normal 1
 
 #define bfd_elf32_bfd_reloc_type_lookup		i370_elf_reloc_type_lookup
 #define bfd_elf32_bfd_set_private_flags		i370_elf_set_private_flags

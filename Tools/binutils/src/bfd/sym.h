@@ -607,6 +607,8 @@ extern void bfd_sym_print_type_information_table_entry
 (bfd *abfd, FILE *f, bfd_sym_type_information_table_entry *entry);
 extern void bfd_sym_print_file_references_index_table_entry
 (bfd *abfd, FILE *f, bfd_sym_file_references_index_table_entry *entry);
+void bfd_sym_print_constant_pool_entry
+(bfd *abfd, FILE *f, bfd_sym_constant_pool_entry *entry);
 
 extern unsigned char *bfd_sym_display_name_table_entry (bfd *abfd, FILE *f, unsigned char *entry);
 

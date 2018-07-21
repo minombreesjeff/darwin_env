@@ -1,5 +1,6 @@
 /* Intel i860 specific support for 32-bit ELF.
-   Copyright 1993, 1995, 1999, 2000, 2001 Free Software Foundation, Inc.
+   Copyright 1993, 1995, 1999, 2000, 2001, 2002
+   Free Software Foundation, Inc.
 
    Full i860 support contributed by Jason Eckhardt <jle@cygnus.com>.
 
@@ -830,9 +831,6 @@ i860_final_link_relocate (howto, input_bfd, input_section, contents, rel, reloca
 /* Relocate an i860 ELF section.
 
    This is boiler-plate code copied from fr30.
-   There is some attempt to make this function usable for many architectures,
-   both USE_REL and USE_RELA ['twould be nice if such a critter existed],
-   if only to serve as a learning tool.
 
    The RELOCATE_SECTION function is called by the new ELF backend linker
    to handle the relocations for a section.
@@ -878,6 +876,9 @@ elf32_i860_relocate_section (output_bfd, info, input_bfd, input_section,
   Elf_Internal_Rela *           rel;
   Elf_Internal_Rela *           relend;
 
+  if (info->relocateable)
+    return true;
+
   symtab_hdr = & elf_tdata (input_bfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (input_bfd);
   relend     = relocs + input_section->reloc_count;
@@ -904,27 +905,6 @@ elf32_i860_relocate_section (output_bfd, info, input_bfd, input_section,
 
       r_symndx = ELF32_R_SYM (rel->r_info);
 
-      if (info->relocateable)
-	{
-	  /* This is a relocateable link.  We don't have to change
-             anything, unless the reloc is against a section symbol,
-             in which case we have to adjust according to where the
-             section symbol winds up in the output section.  */
-	  if (r_symndx < symtab_hdr->sh_info)
-	    {
-	      sym = local_syms + r_symndx;
-
-	      if (ELF_ST_TYPE (sym->st_info) == STT_SECTION)
-		{
-		  sec = local_sections [r_symndx];
-		  rel->r_addend += sec->output_offset + sym->st_value;
-		}
-	    }
-
-	  continue;
-	}
-
-      /* This is a final link.  */
       howto = lookup_howto ((unsigned) ELF32_R_TYPE (rel->r_info));
       h     = NULL;
       sym   = NULL;
@@ -1097,6 +1077,7 @@ elf32_i860_is_local_label_name (abfd, name)
 #define ELF_MACHINE_CODE	EM_860
 #define ELF_MAXPAGESIZE		4096
 
+#define elf_backend_rela_normal			1
 #define elf_info_to_howto_rel                   NULL
 #define elf_info_to_howto			elf32_i860_info_to_howto_rela
 #define elf_backend_relocate_section		elf32_i860_relocate_section
