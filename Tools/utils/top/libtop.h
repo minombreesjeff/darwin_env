@@ -186,6 +186,8 @@ struct libtop_psamp_s {
 	unsigned long long	rprvt;
 	unsigned long long	vprvt;
 	unsigned long long	rshrd;
+	unsigned long long	fw_private;
+	unsigned long long	empty;
 	unsigned		reg;
 
 	unsigned long long	p_rsize;
@@ -193,6 +195,7 @@ struct libtop_psamp_s {
 	unsigned long long	p_vsize;
 	unsigned long long	p_rprvt;
 	unsigned long long	p_rshrd;
+	unsigned long long	p_empty;
 
 	/* Number of threads. */
 	unsigned		th;
@@ -225,6 +228,11 @@ struct libtop_psamp_s {
 	 * existed for the current sample (p_seq == 0).
 	 */
 	unsigned		p_seq;
+
+	/* time process was started */
+	struct timeval		started;
+       /* process cpu type */
+        cpu_type_t              cputype;
 };
 
 /*
@@ -305,6 +313,16 @@ libtop_piterate(void);
  */
 boolean_t
 libtop_preg(pid_t a_pid, libtop_preg_t a_preg);
+
+/*
+ * Set the interval between framework updates.
+ *
+ * FALSE : Success.
+ * TRUE : Error.
+ */
+boolean_t
+libtop_set_interval(unsigned ival);
+#define LIBTOP_MAX_INTERVAL 100
 
 /*
  * Return a pointer to a username string (truncated to the first 8 characters),
