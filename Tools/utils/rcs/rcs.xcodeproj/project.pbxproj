@@ -262,7 +262,7 @@
 		72BA2E420FCF0E320052385D /* Copy to man1 */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 8;
-			dstPath = /usr/share/man/man1;
+			dstPath = "$(DEVELOPER_DIR)/usr/share/man/man1";
 			dstSubfolderSpec = 0;
 			files = (
 				72BA2E560FCF0E5E0052385D /* ci.1 in Copy to man1 */,
@@ -283,7 +283,7 @@
 		72BA2E690FCF0E870052385D /* Copy to man5 */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 8;
-			dstPath = /usr/share/man/man5;
+			dstPath = "$(DEVELOPER_DIR)/usr/share/man/man5";
 			dstSubfolderSpec = 0;
 			files = (
 				72BA2E5D0FCF0E5E0052385D /* rcsfile.5 in Copy to man5 */,
@@ -636,7 +636,11 @@
 			isa = PBXProject;
 			buildConfigurationList = 72BA2CB10FCF02E40052385D /* Build configuration list for PBXProject "rcs" */;
 			compatibilityVersion = "Xcode 2.4";
+			developmentRegion = English;
 			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
 			mainGroup = 72BA2CAC0FCF02E40052385D;
 			productRefGroup = 72BA2CAC0FCF02E40052385D;
 			projectDirPath = "";
@@ -670,6 +674,7 @@
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/bash;
 			shellScript = "install -o root -g wheel -m 0755 -d \"$INSTALL_ROOT\"/usr/local/OpenSourceLicenses\ninstall -o root -g wheel -m 0444 COPYING \"$INSTALL_ROOT\"/usr/local/OpenSourceLicenses/rcs.txt\n\ninstall -o root -g wheel -m 0755 -d \"$INSTALL_ROOT\"/usr/local/OpenSourceVersions\ninstall -o root -g wheel -m 0444 rcs.plist \"$INSTALL_ROOT\"/usr/local/OpenSourceVersions/rcs.plist";
+			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -920,7 +925,7 @@
 				COPY_PHASE_STRIP = YES;
 				CURRENT_PROJECT_VERSION = "$(RC_ProjectSourceVersion)";
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				INSTALL_PATH = /usr/bin;
+				INSTALL_PATH = "$(DEVELOPER_DIR)/usr/bin";
 				PREBINDING = NO;
 				VERSIONING_SYSTEM = "apple-generic";
 				ZERO_LINK = NO;
@@ -930,7 +935,6 @@
 		72BA2CC00FCF05100052385D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INSTALL_PATH = /usr/bin;
 				PRODUCT_NAME = merge;
 			};
 			name = Release;
@@ -938,7 +942,6 @@
 		72BA2D2D0FCF087D0052385D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INSTALL_PATH = /usr/bin;
 				PRODUCT_NAME = ident;
 			};
 			name = Release;
@@ -946,7 +949,6 @@
 		72BA2D460FCF09020052385D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INSTALL_PATH = /usr/bin;
 				PRODUCT_NAME = ci;
 			};
 			name = Release;
@@ -954,7 +956,6 @@
 		72BA2D750FCF0A5D0052385D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INSTALL_PATH = /usr/bin;
 				PRODUCT_NAME = co;
 			};
 			name = Release;
@@ -962,7 +963,6 @@
 		72BA2D970FCF0ADB0052385D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INSTALL_PATH = /usr/bin;
 				PRODUCT_NAME = rlog;
 			};
 			name = Release;
@@ -970,7 +970,6 @@
 		72BA2DB80FCF0B880052385D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INSTALL_PATH = /usr/bin;
 				PRODUCT_NAME = rcs;
 			};
 			name = Release;
@@ -978,7 +977,6 @@
 		72BA2DE30FCF0C630052385D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INSTALL_PATH = /usr/bin;
 				PRODUCT_NAME = rcsclean;
 			};
 			name = Release;
@@ -986,7 +984,6 @@
 		72BA2E070FCF0CDB0052385D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INSTALL_PATH = /usr/bin;
 				PRODUCT_NAME = rcsdiff;
 			};
 			name = Release;
@@ -994,7 +991,6 @@
 		72BA2E250FCF0D570052385D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INSTALL_PATH = /usr/bin;
 				PRODUCT_NAME = rcsmerge;
 			};
 			name = Release;
