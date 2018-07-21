@@ -1,5 +1,5 @@
 /* Motorola 68k series support for 32-bit ELF
-   Copyright 1993, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+   Copyright 1993, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -340,14 +340,14 @@ elf_m68k_link_hash_table_create (abfd)
   struct elf_m68k_link_hash_table *ret;
   bfd_size_type amt = sizeof (struct elf_m68k_link_hash_table);
 
-  ret = (struct elf_m68k_link_hash_table *) bfd_alloc (abfd, amt);
+  ret = (struct elf_m68k_link_hash_table *) bfd_malloc (amt);
   if (ret == (struct elf_m68k_link_hash_table *) NULL)
     return NULL;
 
   if (! _bfd_elf_link_hash_table_init (&ret->root, abfd,
 				       elf_m68k_link_hash_newfunc))
     {
-      bfd_release (abfd, ret);
+      free (ret);
       return NULL;
     }
 
@@ -407,10 +407,13 @@ elf32_m68k_print_private_bfd_data (abfd, ptr)
   /* Ignore init flag - it may not be set, despite the flags field containing valid data.  */
 
   /* xgettext:c-format */
-  fprintf (file, _ ("private flags = %lx:"), elf_elfheader (abfd)->e_flags);
+  fprintf (file, _("private flags = %lx:"), elf_elfheader (abfd)->e_flags);
 
   if (elf_elfheader (abfd)->e_flags & EF_CPU32)
-    fprintf (file, _ (" [cpu32]"));
+    fprintf (file, _(" [cpu32]"));
+
+  if (elf_elfheader (abfd)->e_flags & EF_M68000)
+    fprintf (file, _ (" [m68000]"));
 
   fputc ('\n', file);
 
@@ -1268,6 +1271,9 @@ elf_m68k_discard_copies (h, ignore)
 {
   struct elf_m68k_pcrel_relocs_copied *s;
 
+  if (h->root.root.type == bfd_link_hash_warning)
+    h = (struct elf_m68k_link_hash_entry *) h->root.root.u.i.link;
+
   /* We only discard relocs for symbols defined in a regular object.  */
   if ((h->root.elf_link_hash_flags & ELF_LINK_HASH_DEF_REGULAR) == 0)
     return true;
@@ -1651,20 +1657,20 @@ elf_m68k_relocate_section (output_bfd, info, input_bfd, input_section,
 		}
 
 	      skip = false;
+	      relocate = false;
 
 	      outrel.r_offset =
 		_bfd_elf_section_offset (output_bfd, info, input_section,
 					 rel->r_offset);
 	      if (outrel.r_offset == (bfd_vma) -1)
 		skip = true;
+	      else if (outrel.r_offset == (bfd_vma) -2)
+		skip = true, relocate = true;
 	      outrel.r_offset += (input_section->output_section->vma
 				  + input_section->output_offset);
 
 	      if (skip)
-		{
-		  memset (&outrel, 0, sizeof outrel);
-		  relocate = false;
-		}
+		memset (&outrel, 0, sizeof outrel);
 	      /* h->dynindx may be -1 if the symbol was marked to
                  become local.  */
 	      else if (h != NULL
@@ -1673,7 +1679,6 @@ elf_m68k_relocate_section (output_bfd, info, input_bfd, input_section,
 			       & ELF_LINK_HASH_DEF_REGULAR) == 0))
 		{
 		  BFD_ASSERT (h->dynindx != -1);
-		  relocate = false;
 		  outrel.r_info = ELF32_R_INFO (h->dynindx, r_type);
 		  outrel.r_addend = relocation + rel->r_addend;
 		}
@@ -1714,7 +1719,6 @@ elf_m68k_relocate_section (output_bfd, info, input_bfd, input_section,
 			  BFD_ASSERT (indx > 0);
 			}
 
-		      relocate = false;
 		      outrel.r_info = ELF32_R_INFO (indx, r_type);
 		      outrel.r_addend = relocation + rel->r_addend;
 		    }

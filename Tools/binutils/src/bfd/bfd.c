@@ -1,6 +1,6 @@
 /* Generic BFD library interface and support routines.
    Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001
+   2000, 2001, 2002
    Free Software Foundation, Inc.
    Written by Cygnus Support.
 
@@ -36,127 +36,118 @@ CODE_FRAGMENT
 .
 .struct _bfd
 .{
-.    {* The filename the application opened the BFD with.  *}
-.    const char *filename;
+.  {* The filename the application opened the BFD with.  *}
+.  const char *filename;
 .
-.    {* A pointer to the target jump table.             *}
-.    const struct bfd_target *xvec;
+.  {* A pointer to the target jump table.  *}
+.  const struct bfd_target *xvec;
 .
-.    {* To avoid dragging too many header files into every file that
-.       includes `<<bfd.h>>', IOSTREAM has been declared as a "char
-.       *", and MTIME as a "long".  Their correct types, to which they
-.       are cast when used, are "FILE *" and "time_t".    The iostream
-.       is the result of an fopen on the filename.  However, if the
-.       BFD_IN_MEMORY flag is set, then iostream is actually a pointer
-.       to a bfd_in_memory struct.  *}
-.    PTR iostream;
+.  {* To avoid dragging too many header files into every file that
+.     includes `<<bfd.h>>', IOSTREAM has been declared as a "char *",
+.     and MTIME as a "long".  Their correct types, to which they
+.     are cast when used, are "FILE *" and "time_t".    The iostream
+.     is the result of an fopen on the filename.  However, if the
+.     BFD_IN_MEMORY flag is set, then iostream is actually a pointer
+.     to a bfd_in_memory struct.  *}
+.  PTR iostream;
 .
-.    {* Is the file descriptor being cached?  That is, can it be closed as
-.       needed, and re-opened when accessed later?  *}
+.  {* Is the file descriptor being cached?  That is, can it be closed as
+.     needed, and re-opened when accessed later?  *}
+.  boolean cacheable;
 .
-.    boolean cacheable;
+.  {* Marks whether there was a default target specified when the
+.     BFD was opened. This is used to select which matching algorithm
+.     to use to choose the back end.  *}
+.  boolean target_defaulted;
 .
-.    {* Marks whether there was a default target specified when the
-.       BFD was opened. This is used to select which matching algorithm
-.       to use to choose the back end. *}
+.  {* The caching routines use these to maintain a
+.     least-recently-used list of BFDs.  *}
+.  struct _bfd *lru_prev, *lru_next;
 .
-.    boolean target_defaulted;
+.  {* When a file is closed by the caching routines, BFD retains
+.     state information on the file here...  *}
+.  ufile_ptr where;
 .
-.    {* The caching routines use these to maintain a
-.       least-recently-used list of BFDs *}
+.  {* ... and here: (``once'' means at least once).  *}
+.  boolean opened_once;
 .
-.    struct _bfd *lru_prev, *lru_next;
+.  {* Set if we have a locally maintained mtime value, rather than
+.     getting it from the file each time.  *}
+.  boolean mtime_set;
 .
-.    {* When a file is closed by the caching routines, BFD retains
-.       state information on the file here: *}
+.  {* File modified time, if mtime_set is true.  *}
+.  long mtime;
 .
-.    ufile_ptr where;
+.  {* Reserved for an unimplemented file locking extension.  *}
+.  int ifd;
 .
-.    {* and here: (``once'' means at least once) *}
+.  {* The format which belongs to the BFD. (object, core, etc.)  *}
+.  bfd_format format;
 .
-.    boolean opened_once;
+.  {* The direction with which the BFD was opened.  *}
+.  enum bfd_direction
+.    {
+.      no_direction = 0,
+.      read_direction = 1,
+.      write_direction = 2,
+.      both_direction = 3
+.    }
+.  direction;
 .
-.    {* Set if we have a locally maintained mtime value, rather than
-.       getting it from the file each time: *}
+.  {* Format_specific flags.  *}
+.  flagword flags;
 .
-.    boolean mtime_set;
+.  {* Currently my_archive is tested before adding origin to
+.     anything. I believe that this can become always an add of
+.     origin, with origin set to 0 for non archive files.  *}
+.  ufile_ptr origin;
 .
-.    {* File modified time, if mtime_set is true: *}
+.  {* Remember when output has begun, to stop strange things
+.     from happening.  *}
+.  boolean output_has_begun;
 .
-.    long mtime;
+.  {* A hash table for section names.  *}
+.  struct bfd_hash_table section_htab;
 .
-.    {* Reserved for an unimplemented file locking extension.*}
+.  {* Pointer to linked list of sections.  *}
+.  struct sec *sections;
 .
-.    int ifd;
+.  {* The place where we add to the section list.  *}
+.  struct sec **section_tail;
 .
-.    {* The format which belongs to the BFD. (object, core, etc.) *}
+.  {* The number of sections.  *}
+.  unsigned int section_count;
 .
-.    bfd_format format;
+.  {* Stuff only useful for object files:
+.     The start address.  *}
+.  bfd_vma start_address;
 .
-.    {* The direction the BFD was opened with*}
+.  {* Used for input and output.  *}
+.  unsigned int symcount;
 .
-.    enum bfd_direction {no_direction = 0,
-.                        read_direction = 1,
-.                        write_direction = 2,
-.                        both_direction = 3} direction;
+.  {* Symbol table for output BFD (with symcount entries).  *}
+.  struct symbol_cache_entry  **outsymbols;
 .
-.    {* Format_specific flags*}
+.  {* Pointer to structure which contains architecture information.  *}
+.  const struct bfd_arch_info *arch_info;
 .
-.    flagword flags;
+.  {* Stuff only useful for archives.  *}
+.  PTR arelt_data;
+.  struct _bfd *my_archive;     {* The containing archive BFD.  *}
+.  struct _bfd *next;           {* The next BFD in the archive.  *}
+.  struct _bfd *archive_head;   {* The first BFD in the archive.  *}
+.  boolean has_armap;
 .
-.    {* Currently my_archive is tested before adding origin to
-.       anything. I believe that this can become always an add of
-.       origin, with origin set to 0 for non archive files.   *}
+.  {* A chain of BFD structures involved in a link.  *}
+.  struct _bfd *link_next;
 .
-.    ufile_ptr origin;
+.  {* A field used by _bfd_generic_link_add_archive_symbols.  This will
+.     be used only for archive elements.  *}
+.  int archive_pass;
 .
-.    {* Remember when output has begun, to stop strange things
-.       from happening. *}
-.    boolean output_has_begun;
-.
-.    {* A hash table for section names. *}
-.    struct bfd_hash_table section_htab;
-.
-.    {* Pointer to linked list of sections. *}
-.    struct sec *sections;
-.
-.    {* The place where we add to the section list. *}
-.    struct sec **section_tail;
-.
-.    {* The number of sections *}
-.    unsigned int section_count;
-.
-.    {* Stuff only useful for object files:
-.       The start address. *}
-.    bfd_vma start_address;
-.
-.    {* Used for input and output*}
-.    unsigned int symcount;
-.
-.    {* Symbol table for output BFD (with symcount entries) *}
-.    struct symbol_cache_entry  **outsymbols;
-.
-.    {* Pointer to structure which contains architecture information*}
-.    const struct bfd_arch_info *arch_info;
-.
-.    {* Stuff only useful for archives:*}
-.    PTR arelt_data;
-.    struct _bfd *my_archive;     {* The containing archive BFD.  *}
-.    struct _bfd *next;           {* The next BFD in the archive.  *}
-.    struct _bfd *archive_head;   {* The first BFD in the archive.  *}
-.    boolean has_armap;
-.
-.    {* A chain of BFD structures involved in a link.  *}
-.    struct _bfd *link_next;
-.
-.    {* A field used by _bfd_generic_link_add_archive_symbols.  This will
-.       be used only for archive elements.  *}
-.    int archive_pass;
-.
-.    {* Used by the back end to hold private data. *}
-.
-.    union
-.      {
+.  {* Used by the back end to hold private data.  *}
+.  union
+.    {
 .      struct aout_data_struct *aout_data;
 .      struct artdata *aout_ar_data;
 .      struct _oasys_data *oasys_obj_data;
@@ -192,15 +183,16 @@ CODE_FRAGMENT
 .      struct bfd_pef_xlib_data_struct *pef_xlib_data;
 .      struct bfd_sym_data_struct *sym_data;
 .      PTR any;
-.      } tdata;
+.    }
+.  tdata;
 .
-.    {* Used by the application to hold private data*}
-.    PTR usrdata;
+.  {* Used by the application to hold private data.  *}
+.  PTR usrdata;
 .
 .  {* Where all the allocated stuff under this BFD goes.  This is a
 .     struct objalloc *, but we use PTR to avoid requiring the inclusion of
 .     objalloc.h.  *}
-.    PTR memory;
+.  PTR memory;
 .};
 .
 */
@@ -275,7 +267,8 @@ CODE_FRAGMENT
 .  bfd_error_file_truncated,
 .  bfd_error_file_too_big,
 .  bfd_error_invalid_error_code
-.} bfd_error_type;
+.}
+.bfd_error_type;
 .
 */
 
@@ -637,7 +630,7 @@ FUNCTION
 
 SYNOPSIS
 	void bfd_set_reloc
-	  (bfd *abfd, asection *sec, arelent **rel, unsigned int count)
+	  (bfd *abfd, asection *sec, arelent **rel, unsigned int count);
 
 DESCRIPTION
 	Set the relocation pointer and count within
@@ -940,7 +933,8 @@ DESCRIPTION
 	in hex if a leading "0x" or "0X" is found, otherwise
 	in octal if a leading zero is found, otherwise in decimal.
 
-	Overflow is not detected.
+	If the value would overflow, the maximum <<bfd_vma>> value is
+	returned.
 */
 
 bfd_vma
@@ -950,15 +944,13 @@ bfd_scan_vma (string, end, base)
      int base;
 {
   bfd_vma value;
-  int digit;
+  bfd_vma cutoff;
+  unsigned int cutlim;
+  int overflow;
 
   /* Let the host do it if possible.  */
   if (sizeof (bfd_vma) <= sizeof (unsigned long))
     return (bfd_vma) strtoul (string, (char **) end, base);
-
-  /* A negative base makes no sense, and we only need to go as high as hex.  */
-  if ((base < 0) || (base > 16))
-    return (bfd_vma) 0;
 
   if (base == 0)
     {
@@ -966,32 +958,50 @@ bfd_scan_vma (string, end, base)
 	{
 	  if ((string[1] == 'x') || (string[1] == 'X'))
 	    base = 16;
-	  /* XXX should we also allow "0b" or "0B" to set base to 2?  */
 	  else
 	    base = 8;
 	}
-      else
-	base = 10;
     }
 
-  if ((base == 16) &&
-      (string[0] == '0') && ((string[1] == 'x') || (string[1] == 'X')))
-    string += 2;
-  /* XXX should we also skip over "0b" or "0B" if base is 2?  */
+  if ((base < 2) || (base > 36))
+    base = 10;
 
-/* Speed could be improved with a table like hex_value[] in gas.  */
-#define HEX_VALUE(c) \
-  (ISXDIGIT (c)							\
-   ? (ISDIGIT (c)						\
-      ? (c - '0')						\
-      : (10 + c - (ISLOWER (c) ? 'a' : 'A')))			\
-   : 42)
+  if (base == 16
+      && string[0] == '0'
+      && (string[1] == 'x' || string[1] == 'X')
+      && ISXDIGIT (string[2]))
+    {
+      string += 2;
+    }
 
-  for (value = 0; (digit = HEX_VALUE (* string)) < base; string ++)
-    value = value * base + digit;
+  cutoff = (~ (bfd_vma) 0) / (bfd_vma) base;
+  cutlim = (~ (bfd_vma) 0) % (bfd_vma) base;
+  value = 0;
+  overflow = 0;
+  while (1)
+    {
+      unsigned int digit;
 
-  if (end)
-    * end = string;
+      digit = *string;
+      if (ISDIGIT (digit))
+	digit = digit - '0';
+      else if (ISALPHA (digit))
+	digit = TOUPPER (digit) - 'A' + 10;
+      else
+	break;
+      if (digit >= (unsigned int) base)
+	break;
+      if (value > cutoff || (value == cutoff && digit > cutlim))
+	overflow = 1;
+      value = value * base + digit;
+      ++string;
+    }
+
+  if (overflow)
+    value = ~ (bfd_vma) 0;
+
+  if (end != NULL)
+    *end = string;
 
   return value;
 }
@@ -1103,6 +1113,9 @@ DESCRIPTION
 .
 .#define bfd_link_hash_table_create(abfd) \
 .	BFD_SEND (abfd, _bfd_link_hash_table_create, (abfd))
+.
+.#define bfd_link_hash_table_free(abfd, hash) \
+.	BFD_SEND (abfd, _bfd_link_hash_table_free, (hash))
 .
 .#define bfd_link_add_symbols(abfd, info) \
 .	BFD_SEND (abfd, _bfd_link_add_symbols, (abfd, info))

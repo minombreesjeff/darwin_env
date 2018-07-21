@@ -1,5 +1,5 @@
 /* Intel 80386/80486-specific support for 32-bit ELF
-   Copyright 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+   Copyright 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -547,13 +547,13 @@ elf_i386_link_hash_table_create (abfd)
   struct elf_i386_link_hash_table *ret;
   bfd_size_type amt = sizeof (struct elf_i386_link_hash_table);
 
-  ret = (struct elf_i386_link_hash_table *) bfd_alloc (abfd, amt);
+  ret = (struct elf_i386_link_hash_table *) bfd_malloc (amt);
   if (ret == NULL)
     return NULL;
 
   if (! _bfd_elf_link_hash_table_init (&ret->elf, abfd, link_hash_newfunc))
     {
-      bfd_release (abfd, ret);
+      free (ret);
       return NULL;
     }
 
@@ -847,11 +847,10 @@ elf_i386_check_relocs (abfd, info, sec, relocs)
 		{
 		  const char *name;
 		  bfd *dynobj;
+		  unsigned int strndx = elf_elfheader (abfd)->e_shstrndx;
+		  unsigned int shnam = elf_section_data (sec)->rel_hdr.sh_name;
 
-		  name = (bfd_elf_string_from_elf_section
-			  (abfd,
-			   elf_elfheader (abfd)->e_shstrndx,
-			   elf_section_data (sec)->rel_hdr.sh_name));
+		  name = bfd_elf_string_from_elf_section (abfd, strndx, shnam);
 		  if (name == NULL)
 		    return false;
 
@@ -1108,7 +1107,9 @@ elf_i386_adjust_dynamic_symbol (info, h)
       if (h->plt.refcount <= 0
 	  || (! info->shared
 	      && (h->elf_link_hash_flags & ELF_LINK_HASH_DEF_DYNAMIC) == 0
-	      && (h->elf_link_hash_flags & ELF_LINK_HASH_REF_DYNAMIC) == 0))
+	      && (h->elf_link_hash_flags & ELF_LINK_HASH_REF_DYNAMIC) == 0
+	      && h->root.type != bfd_link_hash_undefweak
+	      && h->root.type != bfd_link_hash_undefined))
 	{
 	  /* This case can occur if we saw a PLT32 reloc in an input
 	     file, but the symbol was never referred to by a dynamic
@@ -1249,9 +1250,14 @@ allocate_dynrelocs (h, inf)
   struct elf_i386_link_hash_entry *eh;
   struct elf_i386_dyn_relocs *p;
 
-  if (h->root.type == bfd_link_hash_indirect
-      || h->root.type == bfd_link_hash_warning)
+  if (h->root.type == bfd_link_hash_indirect)
     return true;
+
+  if (h->root.type == bfd_link_hash_warning)
+    /* When warning symbols are created, they **replace** the "real"
+       entry in the hash table, thus we never get to see the real
+       symbol in a hash traversal.  So look at it now.  */
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
 
   info = (struct bfd_link_info *) inf;
   htab = elf_i386_hash_table (info);
@@ -1419,6 +1425,9 @@ readonly_dynrelocs (h, inf)
   struct elf_i386_link_hash_entry *eh;
   struct elf_i386_dyn_relocs *p;
 
+  if (h->root.type == bfd_link_hash_warning)
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
+
   eh = (struct elf_i386_link_hash_entry *) h;
   for (p = eh->dyn_relocs; p != NULL; p = p->next)
     {
@@ -1498,10 +1507,12 @@ elf_i386_size_dynamic_sections (output_bfd, info)
 		     linker script /DISCARD/, so we'll be discarding
 		     the relocs too.  */
 		}
-	      else
+	      else if (p->count != 0)
 		{
 		  srel = elf_section_data (p->sec)->sreloc;
 		  srel->_raw_size += p->count * sizeof (Elf32_External_Rel);
+		  if ((p->sec->output_section->flags & SEC_READONLY) != 0)
+		    info->flags |= DF_TEXTREL;
 		}
 	    }
 	}
@@ -1623,7 +1634,9 @@ elf_i386_size_dynamic_sections (output_bfd, info)
 
 	  /* If any dynamic relocs apply to a read-only section,
 	     then we need a DT_TEXTREL entry.  */
-	  elf_link_hash_traverse (&htab->elf, readonly_dynrelocs, (PTR) info);
+	  if ((info->flags & DF_TEXTREL) == 0)
+	    elf_link_hash_traverse (&htab->elf, readonly_dynrelocs,
+				    (PTR) info);
 
 	  if ((info->flags & DF_TEXTREL) != 0)
 	    {
@@ -2000,20 +2013,20 @@ elf_i386_relocate_section (output_bfd, info, input_bfd, input_section,
 		 time.  */
 
 	      skip = false;
+	      relocate = false;
 
 	      outrel.r_offset =
 		_bfd_elf_section_offset (output_bfd, info, input_section,
 					 rel->r_offset);
 	      if (outrel.r_offset == (bfd_vma) -1)
 		skip = true;
+	      else if (outrel.r_offset == (bfd_vma) -2)
+		skip = true, relocate = true;
 	      outrel.r_offset += (input_section->output_section->vma
 				  + input_section->output_offset);
 
 	      if (skip)
-		{
-		  memset (&outrel, 0, sizeof outrel);
-		  relocate = false;
-		}
+		memset (&outrel, 0, sizeof outrel);
 	      else if (h != NULL
 		       && h->dynindx != -1
 		       && (r_type == R_386_PC32
@@ -2021,11 +2034,7 @@ elf_i386_relocate_section (output_bfd, info, input_bfd, input_section,
 			   || !info->symbolic
 			   || (h->elf_link_hash_flags
 			       & ELF_LINK_HASH_DEF_REGULAR) == 0))
-
-		{
-		  relocate = false;
-		  outrel.r_info = ELF32_R_INFO (h->dynindx, r_type);
-		}
+		outrel.r_info = ELF32_R_INFO (h->dynindx, r_type);
 	      else
 		{
 		  /* This symbol is local, or marked to become local.  */

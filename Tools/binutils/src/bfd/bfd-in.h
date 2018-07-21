@@ -1,6 +1,6 @@
 /* Main header file for the bfd library -- portable access to object files.
    Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001
+   2000, 2001, 2002
    Free Software Foundation, Inc.
    Contributed by Cygnus Support.
 
@@ -76,7 +76,7 @@ extern "C" {
 #endif
 #endif
 
-/* forward declaration */
+/* Forward declaration.  */
 typedef struct _bfd bfd;
 
 /* To squelch erroneous compiler warnings ("illegal pointer
@@ -93,11 +93,16 @@ typedef struct _bfd bfd;
 /* Yup, SVR4 has a "typedef enum boolean" in <sys/types.h>  -fnf */
 /* It gets worse if the host also defines a true/false enum... -sts */
 /* And even worse if your compiler has built-in boolean types... -law */
-
-#define TRUE_FALSE_ALREADY_DEFINED 1
-
+/* And even worse if your compiler provides a stdbool.h that conflicts
+   with these definitions... gcc 2.95 and later do.  If so, it must
+   be included first.  -drow */
 #if defined (__GNUG__) && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 6))
 #define TRUE_FALSE_ALREADY_DEFINED
+#else
+#if defined (__bool_true_false_are_defined)
+/* We have <stdbool.h>.  */
+#define TRUE_FALSE_ALREADY_DEFINED
+#endif
 #endif
 #ifdef MPW
 /* Pre-emptive strike - get the file with the enum.  */
@@ -199,15 +204,17 @@ extern void bfd_fprintf_vma PARAMS ((bfd *, PTR, bfd_vma));
 typedef unsigned int flagword;	/* 32 bits of flags */
 typedef unsigned char bfd_byte;
 
-/** File formats */
+/* File formats.  */
 
-typedef enum bfd_format {
-	      bfd_unknown = 0,	/* file format is unknown */
-	      bfd_object,	/* linker/assember/compiler output */
-	      bfd_archive,	/* object archive file */
-	      bfd_core,		/* core dump */
-	      bfd_type_end}	/* marks the end; don't use it! */
-         bfd_format;
+typedef enum bfd_format
+{
+  bfd_unknown = 0,	/* File format is unknown.  */
+  bfd_object,		/* Linker/assember/compiler output.  */
+  bfd_archive,		/* Object archive file.  */
+  bfd_core,		/* Core dump.  */
+  bfd_type_end		/* Marks the end; don't use it!  */
+}
+bfd_format;
 
 /* Values that may appear in the flags field of a BFD.  These also
    appear in the object_flags field of the bfd_target structure, where
@@ -284,7 +291,7 @@ struct bfd_io_functions
   PTR iodata;
 };
 
-/* symbols and relocation */
+/* Symbols and relocation.  */
 
 /* A count of carsyms (canonical archive symbols).  */
 typedef unsigned long symindex;
@@ -308,33 +315,40 @@ typedef const struct reloc_howto_struct reloc_howto_type;
 #define bfd_asymbol_flavour(x) (bfd_asymbol_bfd(x)->xvec->flavour)
 
 /* A canonical archive symbol.  */
-/* This is a type pun with struct ranlib on purpose! */
-typedef struct carsym {
+/* This is a type pun with struct ranlib on purpose!  */
+typedef struct carsym
+{
   char *name;
-  file_ptr file_offset;		/* look here to find the file */
-} carsym;			/* to make these you call a carsymogen */
+  file_ptr file_offset;	/* Look here to find the file.  */
+}
+carsym;			/* To make these you call a carsymogen.  */
 
 /* Used in generating armaps (archive tables of contents).
-   Perhaps just a forward definition would do? */
-struct orl {			/* output ranlib */
-  char **name;			/* symbol name */
-  union {
+   Perhaps just a forward definition would do?  */
+struct orl 			/* Output ranlib.  */
+{
+  char **name;		/* Symbol name.  */
+  union
+  {
     file_ptr pos;
     bfd *abfd;
-  } u;				/* bfd* or file position */
-  int namidx;			/* index into string table */
+  } u;			/* bfd* or file position.  */
+  int namidx;		/* Index into string table.  */
 };
 
-/* Linenumber stuff */
-typedef struct lineno_cache_entry {
-  unsigned int line_number;	/* Linenumber from start of function*/
-  union {
-    struct symbol_cache_entry *sym; /* Function name */
-    bfd_vma offset;	    /* Offset into section */
+/* Linenumber stuff.  */
+typedef struct lineno_cache_entry
+{
+  unsigned int line_number;	/* Linenumber from start of function.  */
+  union
+  {
+    struct symbol_cache_entry *sym;	/* Function name.  */
+    bfd_vma offset;	    		/* Offset into section.  */
   } u;
-} alent;
+}
+alent;
 
-/* object and core file sections */
+/* Object and core file sections.  */
 
 #define	align_power(addr, align)	\
 	( ((addr) + ((1<<(align))-1)) & (-1 << (align)))
@@ -473,7 +487,7 @@ extern void bfd_hash_traverse PARAMS ((struct bfd_hash_table *,
 
 #define COFF_SWAP_TABLE (PTR) &bfd_coff_std_swap_table
 
-/* User program access to BFD facilities */
+/* User program access to BFD facilities.  */
 
 /* Direct I/O routines, for programs which know more about the object
    file than BFD does.  Use higher level routines if possible.  */
@@ -689,6 +703,9 @@ extern int bfd_get_sign_extend_vma PARAMS ((bfd *));
 extern boolean bfd_m68k_elf32_create_embedded_relocs
   PARAMS ((bfd *, struct bfd_link_info *, struct sec *, struct sec *,
 	   char **));
+extern boolean bfd_mips_elf32_create_embedded_relocs
+  PARAMS ((bfd *, struct bfd_link_info *, struct sec *, struct sec *,
+	   char **));
 
 /* SunOS shared library support routines for the linker.  */
 
@@ -714,7 +731,8 @@ extern boolean bfd_sparclinux_size_dynamic_sections
 struct _bfd_window_internal;
 typedef struct _bfd_window_internal bfd_window_internal;
 
-typedef struct _bfd_window {
+typedef struct _bfd_window
+{
   /* What the user asked for.  */
   PTR data;
   bfd_size_type size;
@@ -725,7 +743,8 @@ typedef struct _bfd_window {
      application; don't want to give the same region back when the
      application wants two writable copies!  */
   struct _bfd_window_internal *i;
-} bfd_window;
+}
+bfd_window;
 
 extern void bfd_init_window PARAMS ((bfd_window *));
 extern void bfd_free_window PARAMS ((bfd_window *));
@@ -749,9 +768,12 @@ extern boolean bfd_xcoff_record_link_assignment
 extern boolean bfd_xcoff_size_dynamic_sections
   PARAMS ((bfd *, struct bfd_link_info *, const char *, const char *,
 	   unsigned long, unsigned long, unsigned long, boolean,
-	   int, boolean, boolean, struct sec **));
+	   int, boolean, boolean, struct sec **, boolean));
 extern boolean bfd_xcoff_link_generate_rtinit
-  PARAMS ((bfd *, const char *, const char *));
+  PARAMS ((bfd *, const char *, const char *, boolean));
+
+/* XCOFF support routines for ar.  */
+extern boolean bfd_xcoff_ar_archive_set_magic PARAMS ((bfd *, char *));
 
 /* Externally visible COFF routines.  */
 

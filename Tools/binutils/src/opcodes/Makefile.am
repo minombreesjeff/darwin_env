@@ -2,8 +2,6 @@
 
 AUTOMAKE_OPTIONS = cygnus
 
-NSLIBTOOL = cc -dynamiclib
-
 SUBDIRS = po
 
 INCDIR = $(srcdir)/../include
@@ -30,13 +28,14 @@ HFILES = \
 	arm-opc.h \
 	fr30-desc.h fr30-opc.h \
 	h8500-opc.h \
+	ia64-asmtab.h \
+	ia64-opc.h \
 	m32r-desc.h m32r-opc.h \
 	mcore-opc.h \
 	openrisc-desc.h openrisc-opc.h \
 	sh-opc.h \
+	sh64-opc.h \
 	sysdep.h \
-	ia64-asmtab.h \
-	ia64-opc.h \
 	w65-opc.h \
 	xstormy16-desc.h xstormy16-opc.h \
 	z8k-opc.h
@@ -112,6 +111,8 @@ CFILES = \
 	openrisc-dis.c \
 	openrisc-ibld.c \
 	openrisc-opc.c \
+	or32-dis.c \
+	or32-opc.c \
 	pdp11-dis.c \
 	pdp11-opc.c \
 	pic-dis.c \
@@ -123,6 +124,8 @@ CFILES = \
 	s390-opc.c \
 	s390-dis.c \
 	sh-dis.c \
+	sh64-dis.c \
+	sh64-opc.c \
 	sparc-dis.c \
 	sparc-opc.c \
 	tic30-dis.c \
@@ -202,6 +205,8 @@ ALL_MACHINES = \
 	openrisc-dis.lo \
 	openrisc-ibld.lo \
 	openrisc-opc.lo \
+	or32-dis.lo \
+	or32-opc.lo \
 	pdp11-dis.lo \
 	pdp11-opc.lo \
 	pic-dis.lo \
@@ -212,6 +217,8 @@ ALL_MACHINES = \
 	s390-dis.lo \
 	s390-opc.lo \
 	sh-dis.lo \
+	sh64-dis.lo \
+	sh64-opc.lo \
 	sparc-dis.lo \
 	sparc-opc.lo \
 	tic30-dis.lo \
@@ -260,7 +267,7 @@ stamp-lib: libopcodes.la
 
 libopcodes.a: stamp-lib ; @true
 
-SYSTEM_FRAMEWORK = -framework System
+SYSTEM_FRAMEWORK = -framework System -lcc_dynamic
 
 FRAMEWORK = opcodes
 FRAMEWORK_ADDRESS = 0x0
@@ -292,13 +299,13 @@ stamp-framework: $(libopcodes_la_OBJECTS) $(libopcodes_la_DEPENDENCIES)
 	mkdir -p $(FRAMEWORK).framework/Versions/Current/Resources/English.lproj
 
 	set -e; if [ "$(FRAMEWORK_SUFFIX)" != "" ]; then \
-		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE) -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(FRAMEWORK).framework/Versions/$(FRAMEWORK_VERSION)/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_VERSION_SUFFIX) -o $(FRAMEWORK).framework/Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_VERSION_SUFFIX) $(FRAMEWORK_OFILES) $(FRAMEWORK_LIB); \
+		$(CC) -dynamiclib -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(FRAMEWORK).framework/Versions/$(FRAMEWORK_VERSION)/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_VERSION_SUFFIX) -o $(FRAMEWORK).framework/Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_VERSION_SUFFIX) $(FRAMEWORK_OFILES) $(FRAMEWORK_LIB); \
 		ln -s $(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_VERSION_SUFFIX) $(FRAMEWORK).framework/Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX); \
 		ln -s Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_VERSION_SUFFIX) $(FRAMEWORK).framework/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_VERSION_SUFFIX); \
 		ln -s Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX) $(FRAMEWORK).framework/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX); \
 		ln -s $(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX) $(FRAMEWORK).framework/$(FRAMEWORK); \
 	else \
-		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE) -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(FRAMEWORK).framework/Versions/$(FRAMEWORK_VERSION)/$(FRAMEWORK_PREFIX)$(FRAMEWORK) -o $(FRAMEWORK).framework/Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK_OFILES) $(FRAMEWORK_LIB); \
+		$(CC) -dynamiclib -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(FRAMEWORK).framework/Versions/$(FRAMEWORK_VERSION)/$(FRAMEWORK_PREFIX)$(FRAMEWORK) -o $(FRAMEWORK).framework/Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK_OFILES) $(FRAMEWORK_LIB); \
 		ln -s Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK).framework/$(FRAMEWORK_PREFIX)$(FRAMEWORK); \
 	fi
 	touch stamp-framework
@@ -321,6 +328,12 @@ po/POTFILES.in: @MAINT@ Makefile
 # that's where the version number comes from.
 config.status: $(srcdir)/configure $(srcdir)/../bfd/configure.in
 	$(SHELL) ./config.status --recheck
+
+# Install libopcodes include file.
+install-data-local: 
+	@$(NORMAL_INSTALL)
+	$(mkinstalldirs) $(DESTDIR)$(includedir)
+	$(INSTALL_DATA) $(INCDIR)/dis-asm.h $(DESTDIR)$(includedir)/dis-asm.h
 
 CLEANFILES = \
 	stamp-m32r stamp-fr30 stamp-openrisc \
@@ -422,7 +435,8 @@ dep.sed: dep-in.sed config.status
 		-e 's!@BFD_H@!$(BFD_H)!'	\
 		-e 's!@INCDIR@!$(INCDIR)!'	\
 		-e 's!@BFDDIR@!$(BFDDIR)!'	\
-		-e 's!@SRCDIR@!$(srcdir)!'
+		-e 's!@SRCDIR@!$(srcdir)!'	\
+		-e 's!@TOPDIR@!'`echo $(srcdir) | sed -e s,/opcodes$$,,`'!'
 
 dep: DEP
 	sed -e '/^..DO NOT DELETE THIS LINE/,$$d' < Makefile > tmp-Makefile
@@ -452,11 +466,11 @@ alpha-dis.lo: alpha-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
 alpha-opc.lo: alpha-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/opcode/alpha.h $(BFD_H) $(INCDIR)/symcat.h \
   opintl.h
-arc-dis.lo: arc-dis.c $(INCDIR)/dis-asm.h $(BFD_H) \
-  $(INCDIR)/symcat.h $(INCDIR)/opcode/arc.h $(BFDDIR)/elf-bfd.h \
-  $(INCDIR)/elf/common.h $(INCDIR)/elf/internal.h $(INCDIR)/elf/external.h \
-  $(INCDIR)/bfdlink.h $(INCDIR)/elf/arc.h $(INCDIR)/elf/reloc-macros.h \
-  opintl.h arc-dis.h arc-ext.h
+arc-dis.lo: arc-dis.c $(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
+  $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h $(INCDIR)/opcode/arc.h \
+  $(BFDDIR)/elf-bfd.h $(INCDIR)/elf/common.h $(INCDIR)/elf/internal.h \
+  $(INCDIR)/elf/external.h $(INCDIR)/bfdlink.h $(INCDIR)/elf/arc.h \
+  $(INCDIR)/elf/reloc-macros.h opintl.h arc-dis.h arc-ext.h
 arc-opc.lo: arc-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/opcode/arc.h
 arc-ext.lo: arc-ext.c sysdep.h config.h $(INCDIR)/ansidecl.h \
@@ -534,19 +548,25 @@ i960-dis.lo: i960-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h
 ia64-dis.lo: ia64-dis.c $(INCDIR)/dis-asm.h $(BFD_H) \
   $(INCDIR)/ansidecl.h $(INCDIR)/symcat.h $(INCDIR)/opcode/ia64.h
-ia64-opc-a.lo: ia64-opc-a.c ia64-opc.h $(INCDIR)/opcode/ia64.h
-ia64-opc-b.lo: ia64-opc-b.c ia64-opc.h $(INCDIR)/opcode/ia64.h
-ia64-opc-f.lo: ia64-opc-f.c ia64-opc.h $(INCDIR)/opcode/ia64.h
-ia64-opc-i.lo: ia64-opc-i.c ia64-opc.h $(INCDIR)/opcode/ia64.h
-ia64-opc-m.lo: ia64-opc-m.c ia64-opc.h $(INCDIR)/opcode/ia64.h
+ia64-opc-a.lo: ia64-opc-a.c ia64-opc.h $(INCDIR)/opcode/ia64.h \
+  $(BFD_H) $(INCDIR)/ansidecl.h $(INCDIR)/symcat.h
+ia64-opc-b.lo: ia64-opc-b.c ia64-opc.h $(INCDIR)/opcode/ia64.h \
+  $(BFD_H) $(INCDIR)/ansidecl.h $(INCDIR)/symcat.h
+ia64-opc-f.lo: ia64-opc-f.c ia64-opc.h $(INCDIR)/opcode/ia64.h \
+  $(BFD_H) $(INCDIR)/ansidecl.h $(INCDIR)/symcat.h
+ia64-opc-i.lo: ia64-opc-i.c ia64-opc.h $(INCDIR)/opcode/ia64.h \
+  $(BFD_H) $(INCDIR)/ansidecl.h $(INCDIR)/symcat.h
+ia64-opc-m.lo: ia64-opc-m.c ia64-opc.h $(INCDIR)/opcode/ia64.h \
+  $(BFD_H) $(INCDIR)/ansidecl.h $(INCDIR)/symcat.h
 ia64-opc-d.lo: ia64-opc-d.c
 ia64-opc.lo: ia64-opc.c $(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
   sysdep.h config.h ia64-asmtab.h $(INCDIR)/opcode/ia64.h \
-  ia64-asmtab.c
+  $(BFD_H) $(INCDIR)/symcat.h ia64-asmtab.c
 ia64-gen.lo: ia64-gen.c $(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
   $(INCDIR)/safe-ctype.h sysdep.h config.h ia64-opc.h \
-  $(INCDIR)/opcode/ia64.h ia64-opc-a.c ia64-opc-i.c ia64-opc-m.c \
-  ia64-opc-b.c ia64-opc-f.c ia64-opc-x.c ia64-opc-d.c
+  $(INCDIR)/opcode/ia64.h $(BFD_H) $(INCDIR)/symcat.h \
+  ia64-opc-a.c ia64-opc-i.c ia64-opc-m.c ia64-opc-b.c \
+  ia64-opc-f.c ia64-opc-x.c ia64-opc-d.c
 ia64-asmtab.lo: ia64-asmtab.c
 m32r-asm.lo: m32r-asm.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(BFD_H) $(INCDIR)/symcat.h m32r-desc.h $(INCDIR)/opcode/cgen.h \
@@ -574,7 +594,7 @@ m68hc11-opc.lo: m68hc11-opc.c $(INCDIR)/ansidecl.h \
   $(INCDIR)/opcode/m68hc11.h
 m68k-dis.lo: m68k-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h $(INCDIR)/floatformat.h \
-  opintl.h $(INCDIR)/opcode/m68k.h
+  $(INCDIR)/libiberty.h opintl.h $(INCDIR)/opcode/m68k.h
 m68k-opc.lo: m68k-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/opcode/m68k.h
 m88k-dis.lo: m88k-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
@@ -625,6 +645,11 @@ openrisc-ibld.lo: openrisc-ibld.c sysdep.h config.h \
 openrisc-opc.lo: openrisc-opc.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(BFD_H) $(INCDIR)/symcat.h openrisc-desc.h $(INCDIR)/opcode/cgen.h \
   openrisc-opc.h $(INCDIR)/libiberty.h
+or32-dis.lo: or32-dis.c $(INCDIR)/dis-asm.h $(BFD_H) \
+  $(INCDIR)/ansidecl.h $(INCDIR)/symcat.h $(INCDIR)/opcode/or32.h \
+  $(INCDIR)/safe-ctype.h
+or32-opc.lo: or32-opc.c $(INCDIR)/safe-ctype.h $(INCDIR)/ansidecl.h \
+  $(INCDIR)/opcode/or32.h
 pdp11-dis.lo: pdp11-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h $(INCDIR)/opcode/pdp11.h
 pdp11-opc.lo: pdp11-opc.c $(INCDIR)/opcode/pdp11.h
@@ -647,6 +672,12 @@ s390-dis.lo: s390-dis.c $(INCDIR)/ansidecl.h sysdep.h \
   $(INCDIR)/opcode/s390.h
 sh-dis.lo: sh-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   sh-opc.h $(INCDIR)/dis-asm.h $(BFD_H) $(INCDIR)/symcat.h
+sh64-dis.lo: sh64-dis.c $(INCDIR)/dis-asm.h $(BFD_H) \
+  $(INCDIR)/ansidecl.h $(INCDIR)/symcat.h sysdep.h config.h \
+  sh64-opc.h $(INCDIR)/libiberty.h $(BFDDIR)/elf-bfd.h \
+  $(INCDIR)/elf/common.h $(INCDIR)/elf/internal.h $(INCDIR)/elf/external.h \
+  $(INCDIR)/bfdlink.h $(INCDIR)/elf/sh.h $(INCDIR)/elf/reloc-macros.h
+sh64-opc.lo: sh64-opc.c sh64-opc.h
 sparc-dis.lo: sparc-dis.c sysdep.h config.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/opcode/sparc.h $(INCDIR)/dis-asm.h $(BFD_H) \
   $(INCDIR)/symcat.h $(INCDIR)/libiberty.h opintl.h

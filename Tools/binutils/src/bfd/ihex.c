@@ -860,7 +860,7 @@ ihex_write_object_contents (abfd)
 
 		      sprintf_vma (buf, where);
 		      (*_bfd_error_handler)
-			(_("%s: address 0x%s out of range for Intex Hex file"),
+			(_("%s: address 0x%s out of range for Intel Hex file"),
 			 bfd_get_filename (abfd), buf);
 		      bfd_set_error (bfd_error_bad_value);
 		      return false;
@@ -873,6 +873,11 @@ ihex_write_object_contents (abfd)
 	    }
 
 	  rec_addr = where - (extbase + segbase);
+
+          /* Output records shouldn't cross 64K boundaries.  */
+          if (rec_addr + now > 0xfffff)
+            now = 0xffff - rec_addr;
+
 	  if (! ihex_write_record (abfd, now, rec_addr, 0, p))
 	    return false;
 
@@ -976,6 +981,7 @@ ihex_sizeof_headers (abfd, exec)
 #define ihex_bfd_gc_sections bfd_generic_gc_sections
 #define ihex_bfd_merge_sections bfd_generic_merge_sections
 #define ihex_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
+#define ihex_bfd_link_hash_table_free _bfd_generic_link_hash_table_free
 #define ihex_bfd_link_add_symbols _bfd_generic_link_add_symbols
 #define ihex_bfd_final_link _bfd_generic_final_link
 #define ihex_bfd_link_split_section _bfd_generic_link_split_section

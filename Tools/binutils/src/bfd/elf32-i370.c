@@ -1,5 +1,5 @@
 /* i370-specific support for 32-bit ELF
-   Copyright 1994, 1995, 1996, 1997, 1998, 2000, 2001
+   Copyright 1994, 1995, 1996, 1997, 1998, 2000, 2001, 2002
    Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
    Hacked by Linas Vepstas for i370 linas@linas.org
@@ -736,6 +736,9 @@ i370_elf_adjust_dynindx (h, cparg)
 	   h->dynindx, *cp);
 #endif
 
+  if (h->root.type == bfd_link_hash_warning)
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
+
   if (h->dynindx != -1)
     h->dynindx += *cp;
 
@@ -1436,7 +1439,7 @@ i370_elf_relocate_section (output_bfd, info, input_bfd, input_section,
 	      && r_symndx != 0)
 	    {
 	      Elf_Internal_Rela outrel;
-	      boolean skip;
+	      int skip;
 
 #ifdef DEBUG
 	      fprintf (stderr,
@@ -1468,13 +1471,14 @@ i370_elf_relocate_section (output_bfd, info, input_bfd, input_section,
 		  BFD_ASSERT (sreloc != NULL);
 		}
 
-	      skip = false;
+	      skip = 0;
 
 	      outrel.r_offset =
 		_bfd_elf_section_offset (output_bfd, info, input_section,
 					 rel->r_offset);
-	      if (outrel.r_offset == (bfd_vma) -1)
-		skip = true;
+	      if (outrel.r_offset == (bfd_vma) -1
+		  || outrel.r_offset == (bfd_vma) -2)
+		skip = (int) outrel.r_offset;
 	      outrel.r_offset += (input_section->output_section->vma
 				  + input_section->output_offset);
 
@@ -1549,7 +1553,7 @@ i370_elf_relocate_section (output_bfd, info, input_bfd, input_section,
 	      /* This reloc will be computed at runtime, so there's no
                  need to do anything now, unless this is a RELATIVE
                  reloc in an unallocated section.  */
-	      if (skip
+	      if (skip == -1
 		  || (input_section->flags & SEC_ALLOC) != 0
 		  || ELF32_R_TYPE (outrel.r_info) != R_I370_RELATIVE)
 		continue;

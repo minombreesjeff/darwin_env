@@ -29,6 +29,8 @@
 #define DMGL_PARAMS	 (1 << 0)	/* Include function args */
 #define DMGL_ANSI	 (1 << 1)	/* Include const, volatile, etc */
 #define DMGL_JAVA	 (1 << 2)	/* Demangle as Java rather than C++. */
+#define DMGL_VERBOSE	 (1 << 3)	/* Include implementation details.  */
+#define DMGL_TYPES	 (1 << 4)	/* Also try to demangle type encodings.  */
 
 #define DMGL_AUTO	 (1 << 8)
 #define DMGL_GNU	 (1 << 9)
@@ -125,7 +127,7 @@ cplus_demangle_name_to_style PARAMS ((const char *name));
 
 /* V3 ABI demangling entry points, defined in cp-demangle.c.  */
 extern char*
-cplus_demangle_v3 PARAMS ((const char* mangled));
+cplus_demangle_v3 PARAMS ((const char* mangled, int options));
 
 extern char*
 java_demangle_v3 PARAMS ((const char* mangled));
@@ -134,7 +136,8 @@ java_demangle_v3 PARAMS ((const char* mangled));
 enum gnu_v3_ctor_kinds {
   gnu_v3_complete_object_ctor = 1,
   gnu_v3_base_object_ctor,
-  gnu_v3_complete_object_allocating_ctor
+  gnu_v3_complete_object_allocating_ctor,
+  gnu_v3_unified_ctor
 };
 
 /* Return non-zero iff NAME is the mangled form of a constructor name
@@ -148,7 +151,8 @@ extern enum gnu_v3_ctor_kinds
 enum gnu_v3_dtor_kinds {
   gnu_v3_deleting_dtor = 1,
   gnu_v3_complete_object_dtor,
-  gnu_v3_base_object_dtor
+  gnu_v3_base_object_dtor,
+  gnu_v3_unified_dtor
 };
 
 /* Return non-zero iff NAME is the mangled form of a destructor name

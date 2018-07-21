@@ -18,6 +18,12 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 #
 
+# Tell GNU make 3.79 not to run the top level in parallel.  This 
+# prevents contention for $builddir/$target/config.cache, as well
+# as minimizing scatter in file system caches.
+NOTPARALLEL = .NOTPARALLEL
+$(NOTPARALLEL):
+
 srcdir = .
 
 prefix = /usr/local
@@ -144,7 +150,7 @@ M4 = `if [ -f $$r/m4/m4 ] ; \
 
 # For an installed makeinfo, we require it to be from texinfo 4 or
 # higher, else we use the "missing" dummy.
-MAKEINFO = `if [ -f $$r/texinfo/makeinfo/Makefile ] ; \
+MAKEINFO = `if [ -f $$r/texinfo/makeinfo/makeinfo ] ; \
 	then echo $$r/texinfo/makeinfo/makeinfo ; \
 	else if (makeinfo --version \
 	  | egrep 'texinfo[^0-9]*([1-3][0-9]|[4-9])') >/dev/null 2>&1; \
@@ -1146,13 +1152,13 @@ stamp-framework-binutils: $(BINUTILS_OFILES)
 	mkdir -p $(BINUTILS).framework/Versions/Current/Resources/English.lproj
 
 	set -e; if [ "$(BINUTILS_SUFFIX)" != "" ]; then \
-		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE) -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(BINUTILS).framework/Versions/$(BINUTILS_VERSION)/$(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_VERSION_SUFFIX) -o $(BINUTILS).framework/Versions/Current/$(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_VERSION_SUFFIX) $(BINUTILS_OFILES) $(BINUTILS_LIB); \
+		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE) -seg1addr $(BINUTILS_ADDRESS) -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(BINUTILS).framework/Versions/$(BINUTILS_VERSION)/$(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_VERSION_SUFFIX) -o $(BINUTILS).framework/Versions/Current/$(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_VERSION_SUFFIX) $(BINUTILS_OFILES) $(BINUTILS_LIB); \
 		ln -s $(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_VERSION_SUFFIX) $(BINUTILS).framework/Versions/Current/$(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_SUFFIX); \
 		ln -s Versions/Current/$(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_VERSION_SUFFIX) $(BINUTILS).framework/$(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_VERSION_SUFFIX); \
 		ln -s Versions/Current/$(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_SUFFIX) $(BINUTILS).framework/$(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_SUFFIX); \
 		ln -s $(BINUTILS_PREFIX)$(BINUTILS)$(BINUTILS_SUFFIX) $(BINUTILS).framework/$(BINUTILS); \
 	else \
-		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE) -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(BINUTILS).framework/Versions/$(BINUTILS_VERSION)/$(BINUTILS_PREFIX)$(BINUTILS) -o $(BINUTILS).framework/Versions/Current/$(BINUTILS_PREFIX)$(BINUTILS) $(BINUTILS_OFILES) $(BINUTILS_LIB); \
+		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE) -seg1addr $(BINUTILS_ADDRESS) -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(BINUTILS).framework/Versions/$(BINUTILS_VERSION)/$(BINUTILS_PREFIX)$(BINUTILS) -o $(BINUTILS).framework/Versions/Current/$(BINUTILS_PREFIX)$(BINUTILS) $(BINUTILS_OFILES) $(BINUTILS_LIB); \
 		ln -s Versions/Current/$(BINUTILS_PREFIX)$(BINUTILS) $(BINUTILS).framework/$(BINUTILS_PREFIX)$(BINUTILS); \
 	fi
 	touch stamp-framework-binutils
@@ -1177,10 +1183,13 @@ stamp-framework-headers-gdb:
 	ln -s Versions/Current/PrivateHeaders $(GDB).framework/PrivateHeaders
 	ln -s A $(GDB).framework/Versions/Current
 	cp -p $(srcdir)/gdb/*.h $(GDB).framework/Versions/Current/Headers/
-	cp -p $(srcdir)/gdb-next/*.h $(GDB).framework/Versions/Current/Headers/
-	cp -p $(srcdir)/gdb/tui/*.h $(GDB).framework/Versions/Current/Headers/
-	#mkdir -p $(GDB).framework/Versions/Current/Headers/tui
-	#cp -p $(srcdir)/gdb/tui/*.h $(GDB).framework/Versions/Current/Headers/tui
+	cp -p $(srcdir)/gdb/macosx/*.h $(GDB).framework/Versions/Current/Headers/
+	mkdir -p $(GDB).framework/Versions/Current/Headers/tui
+	cp -p $(srcdir)/gdb/tui/*.h $(GDB).framework/Versions/Current/Headers/tui
+	mkdir -p $(GDB).framework/Versions/Current/Headers/cli
+	cp -p $(srcdir)/gdb/cli/*.h $(GDB).framework/Versions/Current/Headers/cli
+	mkdir -p $(GDB).framework/Versions/Current/Headers/mi
+	cp -p $(srcdir)/gdb/mi/*.h $(GDB).framework/Versions/Current/Headers/mi
 	mkdir -p $(GDB).framework/Versions/Current/Headers/machine
 	cp -p gdb/*.h $(GDB).framework/Versions/Current/Headers/machine/
 	cp -rp $(srcdir)/gdb/config $(GDB).framework/Versions/Current/Headers/config
@@ -1218,8 +1227,11 @@ clean-target-libgcc:
 
 # Check target.
 
-.PHONY: check
-check: $(CHECK_MODULES) \
+.PHONY: check do-check
+check:
+	$(MAKE) do-check NOTPARALLEL=parallel-ok
+
+do-check: $(CHECK_MODULES) \
 	$(CHECK_TARGET_MODULES) \
 	$(CHECK_X11_MODULES) \
 	check-gcc
@@ -2009,13 +2021,17 @@ taz: $(DEVO_SUPPORT) $(SUPPORT_FILES) texinfo/texinfo.tex
 		TOOL=$(TOOL) PACKAGE="$(PACKAGE)" VER="$(VER)" \
 		MD5PROG="$(MD5PROG)" \
 		SUPPORT_FILES="$(SUPPORT_FILES)"
-	$(MAKE) -f Makefile.in do-tar-bz2 \
+	$(MAKE) -f Makefile.in do-tar \
+		TOOL=$(TOOL) PACKAGE="$(PACKAGE)" VER="$(VER)" \
+		MD5PROG="$(MD5PROG)" \
+		SUPPORT_FILES="$(SUPPORT_FILES)"
+	$(MAKE) -f Makefile.in do-bz2 \
 		TOOL=$(TOOL) PACKAGE="$(PACKAGE)" VER="$(VER)" \
 		MD5PROG="$(MD5PROG)" \
 		SUPPORT_FILES="$(SUPPORT_FILES)"
 
-.PHONY: gdb-taz
-gdb-taz: $(DEVO_SUPPORT) $(SUPPORT_FILES) texinfo/texinfo.tex
+.PHONY: gdb-tar
+gdb-tar: $(DEVO_SUPPORT) $(SUPPORT_FILES) texinfo/texinfo.tex
 	$(MAKE) -f Makefile.in do-proto-toplev \
 		TOOL=$(TOOL) PACKAGE="$(PACKAGE)" VER="$(VER)" \
 		MD5PROG="$(MD5PROG)" \
@@ -2028,7 +2044,18 @@ gdb-taz: $(DEVO_SUPPORT) $(SUPPORT_FILES) texinfo/texinfo.tex
 		TOOL=$(TOOL) PACKAGE="$(PACKAGE)" VER="$(VER)" \
 		MD5PROG="$(MD5PROG)" \
 		SUPPORT_FILES="$(SUPPORT_FILES)"
-	$(MAKE) -f Makefile.in do-tar-bz2 \
+	$(MAKE) -f Makefile.in do-tar \
+		TOOL=$(TOOL) PACKAGE="$(PACKAGE)" VER="$(VER)" \
+		MD5PROG="$(MD5PROG)" \
+		SUPPORT_FILES="$(SUPPORT_FILES)"
+
+.PHONY: gdb-taz
+gdb-taz: gdb-tar $(DEVO_SUPPORT) $(SUPPORT_FILES) texinfo/texinfo.tex
+	$(MAKE) -f Makefile.in gdb-tar \
+		TOOL=$(TOOL) PACKAGE="$(PACKAGE)" VER="$(VER)" \
+		MD5PROG="$(MD5PROG)" \
+		SUPPORT_FILES="$(SUPPORT_FILES)"
+	$(MAKE) -f Makefile.in do-bz2 \
 		TOOL=$(TOOL) PACKAGE="$(PACKAGE)" VER="$(VER)" \
 		MD5PROG="$(MD5PROG)" \
 		SUPPORT_FILES="$(SUPPORT_FILES)"
@@ -2095,12 +2122,17 @@ do-proto-toplev: $(DEVO_SUPPORT) $(SUPPORT_FILES) texinfo/texinfo.tex
 	-rm -f $(PACKAGE)-$(VER)
 	ln -s proto-toplev $(PACKAGE)-$(VER)
 
-.PHONY: do-tar-bz2
-do-tar-bz2:
-	echo "==> Making $(PACKAGE)-$(VER).tar.bz2"
-	-rm -f $(PACKAGE)-$(VER).tar.bz2
+.PHONY: do-tar
+do-tar:
+	echo "==> Making $(PACKAGE)-$(VER).tar"
+	-rm -f $(PACKAGE)-$(VER).tar
 	find $(PACKAGE)-$(VER) -follow -name CVS -prune -o -type f -print \
 		| tar cTfh - $(PACKAGE)-$(VER).tar
+
+.PHONY: do-bz2
+do-bz2:
+	echo "==> Bzipping $(PACKAGE)-$(VER).tar.bz2"
+	-rm -f $(PACKAGE)-$(VER).tar.bz2
 	$(BZIPPROG) -v -9 $(PACKAGE)-$(VER).tar
 
 .PHONY: do-md5sum
@@ -2165,9 +2197,14 @@ gdb.tar.bz2: $(DIST_SUPPORT) $(GDB_SUPPORT_DIRS) gdb
 	$(MAKE) -f Makefile.in gdb-taz TOOL=gdb \
 		MD5PROG="$(MD5PROG)" \
 		SUPPORT_FILES="$(GDB_SUPPORT_DIRS)"
+.PHONY: gdb.tar
+gdb.tar: $(DIST_SUPPORT) $(GDB_SUPPORT_DIRS) gdb
+	$(MAKE) -f Makefile.in gdb-tar TOOL=gdb \
+		MD5PROG="$(MD5PROG)" \
+		SUPPORT_FILES="$(GDB_SUPPORT_DIRS)"
 
-.PHONY: dejagnu.tar.bz2
 DEJAGNU_SUPPORT_DIRS=  tcl expect libiberty
+.PHONY: dejagnu.tar.bz2
 dejagnu.tar.bz2: $(DIST_SUPPORT) $(DEJAGNU_SUPPORT_DIRS) dejagnu
 	$(MAKE) -f Makefile.in taz TOOL=dejagnu \
 		MD5PROG="$(MD5PROG)" \
@@ -2179,6 +2216,11 @@ gdb+dejagnu.tar.bz2: $(DIST_SUPPORT) $(GDBD_SUPPORT_DIRS) gdb
 	$(MAKE) -f Makefile.in gdb-taz TOOL=gdb PACKAGE=gdb+dejagnu \
 		MD5PROG="$(MD5PROG)" \
 		SUPPORT_FILES="$(GDBD_SUPPORT_DIRS)"
+.PHONY: gdb+dejagnu.tar
+gdb+dejagnu.tar: $(DIST_SUPPORT) $(GDBD_SUPPORT_DIRS) gdb
+	$(MAKE) -f Makefile.in gdb-tar TOOL=gdb PACKAGE=gdb+dejagnu \
+		MD5PROG="$(MD5PROG)" \
+		SUPPORT_FILES="$(GDBD_SUPPORT_DIRS)"
 
 .PHONY: insight.tar.bz2
 INSIGHT_SUPPORT_DIRS= $(GDB_SUPPORT_DIRS) tcl tk itcl tix libgui
@@ -2186,11 +2228,21 @@ insight.tar.bz2: $(DIST_SUPPORT) $(GDB_SUPPORT_DIRS) gdb
 	$(MAKE) -f Makefile.in gdb-taz TOOL=gdb PACKAGE=insight \
 		MD5PROG="$(MD5PROG)" \
 		SUPPORT_FILES="$(INSIGHT_SUPPORT_DIRS)"
+.PHONY: insight.tar
+insight.tar: $(DIST_SUPPORT) $(GDB_SUPPORT_DIRS) gdb
+	$(MAKE) -f Makefile.in gdb-tar TOOL=gdb PACKAGE=insight \
+		MD5PROG="$(MD5PROG)" \
+		SUPPORT_FILES="$(INSIGHT_SUPPORT_DIRS)"
 
 .PHONY: insight+dejagnu.tar.bz2
 INSIGHTD_SUPPORT_DIRS= $(INSIGHT_SUPPORT_DIRS) expect dejagnu
 insight+dejagnu.tar.bz2: $(DIST_SUPPORT) $(INSIGHTD_SUPPORT_DIRS) gdb
 	$(MAKE) -f Makefile.in gdb-taz TOOL=gdb PACKAGE="insight+dejagnu" \
+		MD5PROG="$(MD5PROG)" \
+		SUPPORT_FILES="$(INSIGHTD_SUPPORT_DIRS)"
+.PHONY: insight+dejagnu.tar
+insight+dejagnu.tar: $(DIST_SUPPORT) $(INSIGHTD_SUPPORT_DIRS) gdb
+	$(MAKE) -f Makefile.in gdb-tar TOOL=gdb PACKAGE="insight+dejagnu" \
 		MD5PROG="$(MD5PROG)" \
 		SUPPORT_FILES="$(INSIGHTD_SUPPORT_DIRS)"
 

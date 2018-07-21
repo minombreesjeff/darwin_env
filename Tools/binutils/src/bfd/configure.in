@@ -7,7 +7,7 @@ AC_INIT(libbfd.c)
 AC_CANONICAL_SYSTEM
 AC_ISC_POSIX
 
-AM_INIT_AUTOMAKE(bfd, 2.11.93)
+AM_INIT_AUTOMAKE(bfd, 2.12.90)
 # Uncomment the next line to remove the date from the reported bfd version
 #is_release=y
 
@@ -196,7 +196,7 @@ changequote([,])dnl
 	COREFILE=
 	;;
 changequote(,)dnl
-  i[3456]86-*-bsd* | i[34567]86-*-freebsd[1234] | i[34567]86-*-freebsd[1234]\.* | i[34567]86-*-freebsd*aout*)
+  i[3456]86-*-bsd* | i[34567]86-*-freebsd[123] | i[34567]86-*-freebsd[123]\.* | i[34567]86-*-freebsd4\.[01234]* | i[34567]86-*-freebsd*aout*)
 changequote([,])dnl
 	COREFILE=trad-core.lo
 	TRAD_HEADER='"hosts/i386bsd.h"'
@@ -308,8 +308,11 @@ changequote([,])dnl
 	COREFILE=trad-core.lo
 	TRAD_HEADER='"hosts/m68kaux.h"'
 	;;
-  m88*-*-sysv4*)	;;
-  m88*-motorola-sysv*)	COREFILE=ptrace-core.lo ;;
+  m88*-*-sysv4*)
+	;;
+  m88*-motorola-sysv*)
+	COREFILE=ptrace-core.lo
+	;;
   m88*-*-mach3*)
 	COREFILE=trad-core.lo
 	TRAD_HEADER='"hosts/m88kmach3.h"'
@@ -321,9 +324,16 @@ changequote([,])dnl
   ns32k-*-netbsd* | ns32k-*-openbsd*)
 	COREFILE=netbsd-core.lo
 	;;
-  rs6000-*-lynx*)	COREFILE=lynx-core.lo ;;
+  rs6000-*-lynx*)
+  	COREFILE=lynx-core.lo
+	;;
+  rs6000-*-aix5.* | powerpc-*-aix5.*)
+        COREFILE=rs6000-core.lo
+	COREFLAG="$COREFLAG -DAIX_5_CORE -DAIX_CORE_DUMPX_CORE"
+	;;
 changequote(,)dnl
-  rs6000-*-aix4.[3-9]* | powerpc-*-aix4.[3-9]*)
+  rs6000-*-aix4.[4-9]* | powerpc-*-aix4.[4-9]* | \
+  rs6000-*-aix4.3.[3-9]* | powerpc-*-aix4.3.[3-9]*)
 changequote([,])dnl
         COREFILE=rs6000-core.lo
 	COREFLAG="$COREFLAG -DAIX_CORE_DUMPX_CORE"
@@ -424,11 +434,10 @@ case "${host}" in
     fi
     ;;
   *)
-    PICFLAG=
-    changequote(,)dnl
-    eval `grep "^[ 	]*PICFLAG[ 	]*=" ../libiberty/Makefile | sed -e "s/[ 	]*//g"`
-    changequote([,])dnl
-    if test -n "$PICFLAG"; then
+changequote(,)dnl
+    x=`sed -n -e 's/^[ 	]*PICFLAG[ 	]*=[ 	]*//p' < ../libiberty/Makefile | tail -1`
+changequote([,])dnl
+    if test -n "$x"; then
       WIN32LIBADD="-L../libiberty/pic -liberty"
     fi
   ;;
@@ -543,7 +552,7 @@ do
     bfd_elf32_bigarc_vec)	tb="$tb elf32-arc.lo elf32.lo $elf" ;;
     bfd_elf32_bigarm_oabi_vec)	tb="$tb elfarm-oabi.lo elf32.lo $elf" ;;
     bfd_elf32_bigarm_vec)	tb="$tb elfarm-nabi.lo elf32.lo $elf" ;;
-    bfd_elf32_bigmips_vec) 	tb="$tb elf32-mips.lo elf32.lo $elf ecofflink.lo" ;;
+    bfd_elf32_bigmips_vec) 	tb="$tb elf32-mips.lo elfxx-mips.lo elf32.lo $elf ecofflink.lo" ;;
     bfd_elf32_cris_vec)		tb="$tb elf32-cris.lo elf32.lo $elf" ;;
     bfd_elf32_d10v_vec)		tb="$tb elf32-d10v.lo elf32.lo $elf" ;;
     bfd_elf32_d30v_vec)		tb="$tb elf32-d30v.lo elf32.lo $elf" ;;
@@ -562,7 +571,7 @@ do
     bfd_elf32_littlearc_vec)	tb="$tb elf32-arc.lo elf32.lo $elf" ;;
     bfd_elf32_littlearm_oabi_vec) tb="$tb elfarm-oabi.lo elf32.lo $elf" ;;
     bfd_elf32_littlearm_vec)	tb="$tb elfarm-nabi.lo elf32.lo $elf" ;;
-    bfd_elf32_littlemips_vec) 	tb="$tb elf32-mips.lo elf32.lo $elf ecofflink.lo" ;;
+    bfd_elf32_littlemips_vec) 	tb="$tb elf32-mips.lo elfxx-mips.lo elf32.lo $elf ecofflink.lo" ;;
     bfd_elf32_m32r_vec)		tb="$tb elf32-m32r.lo elf32.lo $elf" ;;
     bfd_elf32_m68hc11_vec)	tb="$tb elf32-m68hc11.lo elf32.lo $elf" ;;
     bfd_elf32_m68hc12_vec)	tb="$tb elf32-m68hc12.lo elf32.lo $elf" ;;
@@ -573,6 +582,7 @@ do
     bfd_elf32_mn10200_vec)	tb="$tb elf-m10200.lo elf32.lo $elf" ;;
     bfd_elf32_mn10300_vec)	tb="$tb elf-m10300.lo elf32.lo $elf" ;;
     bfd_elf32_openrisc_vec)	tb="$tb elf32-openrisc.lo elf32.lo $elf" ;;
+    bfd_elf32_or32_big_vec)	tb="$tb elf32-or32.lo elf32.lo $elf" ;;
     bfd_elf32_pj_vec)           tb="$tb elf32-pj.lo elf32.lo $elf";;
     bfd_elf32_pjl_vec)          tb="$tb elf32-pj.lo elf32.lo $elf";;
     bfd_elf32_powerpc_vec)	tb="$tb elf32-ppc.lo elf32.lo $elf" ;;
@@ -584,15 +594,22 @@ do
     bfd_elf32_shlin_vec)	tb="$tb elf32-sh-lin.lo elf32.lo $elf coff-sh.lo cofflink.lo" ;;
     bfd_elf32_shlnbsd_vec)	tb="$tb elf32-sh-nbsd.lo elf32.lo $elf coff-sh.lo cofflink.lo" ;;
     bfd_elf32_shnbsd_vec)	tb="$tb elf32-sh-nbsd.lo elf32.lo $elf coff-sh.lo cofflink.lo" ;;
+    # FIXME: We include cofflink.lo not because it's needed for
+    # bfd_elf32_sh64[l]_vec, but because we include bfd_elf32_sh[l]_vec
+    # which needs it but does not list it.  Should be fixed in right place.
+    bfd_elf32_sh64_vec)		tb="$tb elf32-sh64.lo elf32.lo $elf cofflink.lo" target_size=64 ;;
+    bfd_elf32_sh64l_vec)	tb="$tb elf32-sh64.lo elf32.lo $elf cofflink.lo" target_size=64 ;;
+    bfd_elf64_sh64_vec)		tb="$tb elf64-sh64.lo elf64.lo $elf" target_size=64 ;;
+    bfd_elf64_sh64l_vec)	tb="$tb elf64-sh64.lo elf64.lo $elf" target_size=64 ;;
     bfd_elf32_sparc_vec)	tb="$tb elf32-sparc.lo elf32.lo $elf" ;;
-    bfd_elf32_tradbigmips_vec)  tb="$tb elf32-mips.lo elf32.lo $elf ecofflink.lo" ;;
-    bfd_elf32_tradlittlemips_vec) tb="$tb elf32-mips.lo elf32.lo $elf ecofflink.lo" ;;
+    bfd_elf32_tradbigmips_vec)  tb="$tb elf32-mips.lo elfxx-mips.lo elf32.lo $elf ecofflink.lo" ;;
+    bfd_elf32_tradlittlemips_vec) tb="$tb elf32-mips.lo elfxx-mips.lo elf32.lo $elf ecofflink.lo" ;;
     bfd_elf32_us_cris_vec)	tb="$tb elf32-cris.lo elf32.lo $elf" ;;
     bfd_elf32_v850_vec)		tb="$tb elf32-v850.lo elf32.lo $elf" ;;
     bfd_elf32_xstormy16_vec)	tb="$tb elf32-xstormy16.lo elf32.lo $elf" ;;
     bfd_elf64_alpha_vec)	tb="$tb elf64-alpha.lo elf64.lo $elf"; target_size=64 ;;
     bfd_elf64_big_generic_vec) 	tb="$tb elf64-gen.lo elf64.lo $elf"; target_size=64 ;;
-    bfd_elf64_bigmips_vec) 	tb="$tb elf64-mips.lo elf64.lo elf32-mips.lo elf32.lo $elf ecofflink.lo"; target_size=64 ;;
+    bfd_elf64_bigmips_vec) 	tb="$tb elf64-mips.lo elf64.lo elfxx-mips.lo elf32.lo $elf ecofflink.lo"; target_size=64 ;;
     bfd_elf64_hppa_linux_vec)	tb="$tb elf64-hppa.lo elf64.lo $elf"; target_size=64 ;;
     bfd_elf64_hppa_vec)		tb="$tb elf64-hppa.lo elf64.lo $elf"; target_size=64 ;;
     bfd_elf64_ia64_aix_big_vec)	tb="$tb elf64-ia64.lo elf64.lo $elf"; target_size=64 ;;
@@ -601,14 +618,14 @@ do
     bfd_elf64_ia64_hpux_big_vec) tb="$tb elf64-ia64.lo elf64.lo $elf"; target_size=64 ;;
     bfd_elf64_ia64_little_vec)	tb="$tb elf64-ia64.lo elf64.lo $elf"; target_size=64 ;;
     bfd_elf64_little_generic_vec) tb="$tb elf64-gen.lo elf64.lo $elf"; target_size=64 ;;
-    bfd_elf64_littlemips_vec) 	tb="$tb elf64-mips.lo elf64.lo elf32-mips.lo elf32.lo $elf ecofflink.lo"; target_size=64 ;;
+    bfd_elf64_littlemips_vec) 	tb="$tb elf64-mips.lo elf64.lo elfxx-mips.lo elf32.lo $elf ecofflink.lo"; target_size=64 ;;
     bfd_elf64_mmix_vec) 	tb="$tb elf64-mmix.lo elf64.lo $elf" target_size=64 ;;
     bfd_elf64_powerpc_vec)	tb="$tb elf64-ppc.lo elf64-gen.lo elf64.lo $elf"; target_size=64 ;;
     bfd_elf64_powerpcle_vec)	tb="$tb elf64-ppc.lo elf64-gen.lo elf64.lo $elf" target_size=64 ;;
     bfd_elf64_s390_vec)		tb="$tb elf64-s390.lo elf64.lo $elf"; target_size=64 ;;
     bfd_elf64_sparc_vec)	tb="$tb elf64-sparc.lo elf64.lo $elf"; target_size=64 ;;
-    bfd_elf64_tradbigmips_vec)	tb="$tb elf64-mips.lo elf64.lo $elf ecofflink.lo"; target_size=64 ;;
-    bfd_elf64_tradlittlemips_vec) tb="$tb elf64-mips.lo elf64.lo $elf ecofflink.lo"; target_size=64 ;;
+    bfd_elf64_tradbigmips_vec)	tb="$tb elf64-mips.lo elf64.lo elfxx-mips.lo elf32.lo $elf ecofflink.lo"; target_size=64 ;;
+    bfd_elf64_tradlittlemips_vec) tb="$tb elf64-mips.lo elf64.lo elfxx-mips.lo elf32.lo $elf ecofflink.lo"; target_size=64 ;;
     bfd_elf64_x86_64_vec)	tb="$tb elf64-x86-64.lo elf64.lo $elf"; target_size=64 ;;
     bfd_mmo_vec)		tb="$tb mmo.lo" target_size=64 ;;
     bfd_powerpc_pe_vec)         tb="$tb pe-ppc.lo peigen.lo cofflink.lo" ;;
@@ -672,6 +689,7 @@ do
     nlm32_i386_vec)		tb="$tb nlm32-i386.lo nlm32.lo nlm.lo" ;;
     nlm32_powerpc_vec)		tb="$tb nlm32-ppc.lo nlm32.lo nlm.lo" ;;
     nlm32_sparc_vec)		tb="$tb nlm32-sparc.lo nlm32.lo nlm.lo" ;;
+    or32coff_big_vec)		tb="$tb coff-or32.lo cofflink.lo" ;;
     pc532machaout_vec)		tb="$tb pc532-mach.lo aout-ns32k.lo" ;;
     pc532netbsd_vec)		tb="$tb ns32knetbsd.lo aout-ns32k.lo" ;;
     pef_vec)			tb="$tb pef.lo" ;;
@@ -680,7 +698,8 @@ do
     pmac_xcoff_vec)		tb="$tb coff-rs6000.lo xcofflink.lo" ;;
     ppcboot_vec)		tb="$tb ppcboot.lo" ;;
     riscix_vec)			tb="$tb aout32.lo riscix.lo" ;;
-    rs6000coff64_vec)		tb="$tb coff64-rs6000.lo xcofflink.lo"; target_size=64 ;;
+    rs6000coff64_vec)		tb="$tb coff64-rs6000.lo xcofflink.lo aix5ppc-core.lo"; target_size=64 ;;
+    aix5coff64_vec)		tb="$tb coff64-rs6000.lo xcofflink.lo aix5ppc-core.lo"; target_size=64 ;;
     rs6000coff_vec)		tb="$tb coff-rs6000.lo xcofflink.lo" ;;
     shcoff_small_vec)		tb="$tb coff-sh.lo cofflink.lo" ;;
     shcoff_vec)			tb="$tb coff-sh.lo cofflink.lo" ;;
@@ -780,6 +799,18 @@ case ${host64}-${target64}-${want64} in
     if test -z "$GCC" && test "$BFD_HOST_64BIT_LONG" = "0" && test "$BFD_HOST_64_BIT_DEFINED" = "0"; then
       AC_MSG_WARN([You have requested a 64 bit BFD configuration, but])
       AC_MSG_WARN([your compiler may not have a 64 bit integral type])
+    fi
+    if test -n "$GCC" ; then
+       bad_64bit_gcc=no;
+       AC_MSG_CHECKING([for gcc version with buggy 64-bit support])
+       # Add more tests for gcc versions with non-working 64-bit support here.
+       AC_EGREP_CPP([: 2 : 91 : 1 :],[:__GNUC__:__GNUC_MINOR__:__i386__:],
+		    bad_64bit_gcc=yes;
+		    AC_MSG_RESULT([yes: egcs-1.1.2 on ix86 spotted]),
+		    AC_MSG_RESULT(no))
+       if test $bad_64bit_gcc = yes ; then
+	 AC_ERROR([A newer version of gcc is needed for the requested 64-bit BFD configuration])
+       fi
     fi
     ;;
   false-false-false)

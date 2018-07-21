@@ -125,6 +125,8 @@ static struct option long_options[] =
 
 /* Local routines.  */
 
+int main PARAMS ((int, char **));
+
 static void show_usage PARAMS ((FILE *, int));
 static const char *select_output_format PARAMS ((enum bfd_architecture,
 						 unsigned long, boolean));

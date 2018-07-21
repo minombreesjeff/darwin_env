@@ -1,5 +1,5 @@
 /* Alpha specific support for 64-bit ELF
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001
+   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@tamu.edu>.
 
@@ -324,14 +324,14 @@ elf64_alpha_bfd_link_hash_table_create (abfd)
   struct alpha_elf_link_hash_table *ret;
   bfd_size_type amt = sizeof (struct alpha_elf_link_hash_table);
 
-  ret = (struct alpha_elf_link_hash_table *) bfd_zalloc (abfd, amt);
+  ret = (struct alpha_elf_link_hash_table *) bfd_zmalloc (amt);
   if (ret == (struct alpha_elf_link_hash_table *) NULL)
     return NULL;
 
   if (! _bfd_elf_link_hash_table_init (&ret->root, abfd,
 				       elf64_alpha_link_hash_newfunc))
     {
-      bfd_release (abfd, ret);
+      free (ret);
       return NULL;
     }
 
@@ -732,7 +732,22 @@ static reloc_howto_type elf64_alpha_howto_table[] =
 	 false,
 	 0,
 	 0,
-	 true)
+	 true),
+
+  /* A 21 bit branch that adjusts for gp loads.  */
+  HOWTO (R_ALPHA_BRSGP,		/* type */
+	 2,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 21,			/* bitsize */
+	 true,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 0,			/* special_function */
+	 "BRSGP",		/* name */
+	 false,			/* partial_inplace */
+	 0x1fffff,		/* src_mask */
+	 0x1fffff,		/* dst_mask */
+	 true),			/* pcrel_offset */
 };
 
 /* A relocation function which doesn't do anything.  */
@@ -886,6 +901,7 @@ static const struct elf_reloc_map elf64_alpha_reloc_map[] =
   {BFD_RELOC_ALPHA_GPREL_HI16,		R_ALPHA_GPRELHIGH},
   {BFD_RELOC_ALPHA_GPREL_LO16,		R_ALPHA_GPRELLOW},
   {BFD_RELOC_GPREL16,			R_ALPHA_GPREL16},
+  {BFD_RELOC_ALPHA_BRSGP,		R_ALPHA_BRSGP},
 };
 
 /* Given a BFD reloc type, return a HOWTO structure.  */
@@ -2104,18 +2120,21 @@ elf64_alpha_output_extsym (h, data)
   boolean strip;
   asection *sec, *output_section;
 
+  if (h->root.root.type == bfd_link_hash_warning)
+    h = (struct alpha_elf_link_hash_entry *) h->root.root.u.i.link;
+
   if (h->root.indx == -2)
     strip = false;
   else if (((h->root.elf_link_hash_flags & ELF_LINK_HASH_DEF_DYNAMIC) != 0
-           || (h->root.elf_link_hash_flags & ELF_LINK_HASH_REF_DYNAMIC) != 0)
-          && (h->root.elf_link_hash_flags & ELF_LINK_HASH_DEF_REGULAR) == 0
-          && (h->root.elf_link_hash_flags & ELF_LINK_HASH_REF_REGULAR) == 0)
+	    || (h->root.elf_link_hash_flags & ELF_LINK_HASH_REF_DYNAMIC) != 0)
+	   && (h->root.elf_link_hash_flags & ELF_LINK_HASH_DEF_REGULAR) == 0
+	   && (h->root.elf_link_hash_flags & ELF_LINK_HASH_REF_REGULAR) == 0)
     strip = true;
   else if (einfo->info->strip == strip_all
-          || (einfo->info->strip == strip_some
-              && bfd_hash_lookup (einfo->info->keep_hash,
-                                  h->root.root.root.string,
-                                  false, false) == NULL))
+	   || (einfo->info->strip == strip_some
+	       && bfd_hash_lookup (einfo->info->keep_hash,
+				   h->root.root.root.string,
+				   false, false) == NULL))
     strip = true;
   else
     strip = false;
@@ -2134,44 +2153,44 @@ elf64_alpha_output_extsym (h, data)
       h->esym.asym.st = stGlobal;
 
       if (h->root.root.type != bfd_link_hash_defined
-         && h->root.root.type != bfd_link_hash_defweak)
-       h->esym.asym.sc = scAbs;
+	  && h->root.root.type != bfd_link_hash_defweak)
+	h->esym.asym.sc = scAbs;
       else
-       {
-         const char *name;
+	{
+	  const char *name;
 
-         sec = h->root.root.u.def.section;
-         output_section = sec->output_section;
+	  sec = h->root.root.u.def.section;
+	  output_section = sec->output_section;
 
-         /* When making a shared library and symbol h is the one from
-            the another shared library, OUTPUT_SECTION may be null.  */
-         if (output_section == NULL)
-           h->esym.asym.sc = scUndefined;
-         else
-           {
-             name = bfd_section_name (output_section->owner, output_section);
+	  /* When making a shared library and symbol h is the one from
+	     the another shared library, OUTPUT_SECTION may be null.  */
+	  if (output_section == NULL)
+	    h->esym.asym.sc = scUndefined;
+	  else
+	    {
+	      name = bfd_section_name (output_section->owner, output_section);
 
-             if (strcmp (name, ".text") == 0)
-               h->esym.asym.sc = scText;
-             else if (strcmp (name, ".data") == 0)
-               h->esym.asym.sc = scData;
-             else if (strcmp (name, ".sdata") == 0)
-               h->esym.asym.sc = scSData;
-             else if (strcmp (name, ".rodata") == 0
-                      || strcmp (name, ".rdata") == 0)
-               h->esym.asym.sc = scRData;
-             else if (strcmp (name, ".bss") == 0)
-               h->esym.asym.sc = scBss;
-             else if (strcmp (name, ".sbss") == 0)
-               h->esym.asym.sc = scSBss;
-             else if (strcmp (name, ".init") == 0)
-               h->esym.asym.sc = scInit;
-             else if (strcmp (name, ".fini") == 0)
-               h->esym.asym.sc = scFini;
-             else
-               h->esym.asym.sc = scAbs;
-           }
-       }
+	      if (strcmp (name, ".text") == 0)
+		h->esym.asym.sc = scText;
+	      else if (strcmp (name, ".data") == 0)
+		h->esym.asym.sc = scData;
+	      else if (strcmp (name, ".sdata") == 0)
+		h->esym.asym.sc = scSData;
+	      else if (strcmp (name, ".rodata") == 0
+		       || strcmp (name, ".rdata") == 0)
+		h->esym.asym.sc = scRData;
+	      else if (strcmp (name, ".bss") == 0)
+		h->esym.asym.sc = scBss;
+	      else if (strcmp (name, ".sbss") == 0)
+		h->esym.asym.sc = scSBss;
+	      else if (strcmp (name, ".init") == 0)
+		h->esym.asym.sc = scInit;
+	      else if (strcmp (name, ".fini") == 0)
+		h->esym.asym.sc = scFini;
+	      else
+		h->esym.asym.sc = scAbs;
+	    }
+	}
 
       h->esym.asym.reserved = 0;
       h->esym.asym.index = indexNil;
@@ -2183,18 +2202,18 @@ elf64_alpha_output_extsym (h, data)
 	   || h->root.root.type == bfd_link_hash_defweak)
     {
       if (h->esym.asym.sc == scCommon)
-       h->esym.asym.sc = scBss;
+	h->esym.asym.sc = scBss;
       else if (h->esym.asym.sc == scSCommon)
-       h->esym.asym.sc = scSBss;
+	h->esym.asym.sc = scSBss;
 
       sec = h->root.root.u.def.section;
       output_section = sec->output_section;
       if (output_section != NULL)
-       h->esym.asym.value = (h->root.root.u.def.value
-                             + sec->output_offset
-                             + output_section->vma);
+	h->esym.asym.value = (h->root.root.u.def.value
+			      + sec->output_offset
+			      + output_section->vma);
       else
-       h->esym.asym.value = 0;
+	h->esym.asym.value = 0;
     }
   else if ((h->root.elf_link_hash_flags & ELF_LINK_HASH_NEEDS_PLT) != 0)
     {
@@ -2216,8 +2235,8 @@ elf64_alpha_output_extsym (h, data)
     }
 
   if (! bfd_ecoff_debug_one_external (einfo->abfd, einfo->debug, einfo->swap,
-                                     h->root.root.root.string,
-                                     &h->esym))
+				      h->root.root.root.string,
+				      &h->esym))
     {
       einfo->failed = true;
       return false;
@@ -2414,6 +2433,7 @@ elf64_alpha_check_relocs (abfd, info, sec, relocs)
 	case R_ALPHA_GPREL32:
 	case R_ALPHA_GPRELHIGH:
 	case R_ALPHA_GPRELLOW:
+	case R_ALPHA_BRSGP:
 	  /* We don't actually use the .got here, but the sections must
 	     be created before the linker maps input sections to output
 	     sections.  */
@@ -2501,7 +2521,8 @@ elf64_alpha_check_relocs (abfd, info, sec, relocs)
 		  rent->srel = sreloc;
 		  rent->rtype = r_type;
 		  rent->count = 1;
-		  rent->reltext = (sec->flags & SEC_READONLY) != 0;
+		  rent->reltext = ((sec->flags & (SEC_READONLY | SEC_ALLOC))
+				   == (SEC_READONLY | SEC_ALLOC));
 
 		  rent->next = h->reloc_entries;
 		  h->reloc_entries = rent;
@@ -2843,6 +2864,9 @@ elf64_alpha_calc_got_offsets_for_symbol (h, arg)
 {
   struct alpha_elf_got_entry *gotent;
 
+  if (h->root.root.type == bfd_link_hash_warning)
+    h = (struct alpha_elf_link_hash_entry *) h->root.root.u.i.link;
+
   for (gotent = h->got_entries; gotent; gotent = gotent->next)
     if (gotent->use_count > 0)
       {
@@ -3020,6 +3044,9 @@ elf64_alpha_calc_dynrel_sizes (h, info)
      struct alpha_elf_link_hash_entry *h;
      struct bfd_link_info *info;
 {
+  if (h->root.root.type == bfd_link_hash_warning)
+    h = (struct alpha_elf_link_hash_entry *) h->root.root.u.i.link;
+
   /* If the symbol was defined as a common symbol in a regular object
      file, and there was no definition in any dynamic object, then the
      linker will have allocated space for the symbol in a common
@@ -3554,6 +3581,64 @@ elf64_alpha_relocate_section (output_bfd, info, input_bfd, input_section,
 	  addend -= 4;
 	  goto default_reloc;
 
+	case R_ALPHA_BRSGP:
+	  {
+	    int other;
+	    const char *name;
+
+	    /* The regular PC-relative stuff measures from the start of
+	       the instruction rather than the end.  */
+	    addend -= 4;
+
+	    /* The source and destination gp must be the same.  Note that
+	       the source will always have an assigned gp, since we forced
+	       one in check_relocs, but that the destination may not, as
+	       it might not have had any relocations at all.  Also take 
+	       care not to crash if H is an undefined symbol.  */
+	    if (h != NULL && sec != NULL
+		&& alpha_elf_tdata (sec->owner)->gotobj
+		&& gotobj != alpha_elf_tdata (sec->owner)->gotobj)
+	      {
+		(*_bfd_error_handler)
+		  (_("%s: change in gp: BRSGP %s"),
+		   bfd_archive_filename (input_bfd), h->root.root.root.string);
+		ret_val = false;
+	      }
+
+	    /* The symbol should be marked either NOPV or STD_GPLOAD.  */
+	    if (h != NULL)
+	      other = h->root.other;
+	    else
+	      other = sym->st_other;
+	    switch (other & STO_ALPHA_STD_GPLOAD)
+	      {
+	      case STO_ALPHA_NOPV:
+	        break;
+	      case STO_ALPHA_STD_GPLOAD:
+		addend += 8;
+		break;
+	      default:
+		if (h != NULL)
+		  name = h->root.root.root.string;
+		else
+		  {
+		    name = (bfd_elf_string_from_elf_section
+			    (input_bfd, symtab_hdr->sh_link, sym->st_name));
+		    if (name == NULL)
+		      name = _("<unknown>");
+		    else if (name[0] == 0)
+		      name = bfd_section_name (input_bfd, sec);
+		  }
+		(*_bfd_error_handler)
+		  (_("%s: !samegp reloc against symbol without .prologue: %s"),
+		   bfd_archive_filename (input_bfd), name);
+		ret_val = false;
+		break;
+	      }
+
+	    goto default_reloc;
+	  }
+
 	case R_ALPHA_REFLONG:
 	case R_ALPHA_REFQUAD:
 	  {
@@ -3595,7 +3680,7 @@ elf64_alpha_relocate_section (output_bfd, info, input_bfd, input_section,
 	    outrel.r_offset =
 	      _bfd_elf_section_offset (output_bfd, info, input_section,
 				       rel->r_offset);
-	    if (outrel.r_offset != (bfd_vma) -1)
+	    if ((outrel.r_offset | 1) != (bfd_vma) -1)
 	      outrel.r_offset += (input_section->output_section->vma
 				  + input_section->output_offset);
 	    else
@@ -4023,7 +4108,7 @@ elf64_alpha_final_link (abfd, info)
 
 	      if (p->type != bfd_indirect_link_order)
 		{
-		  if (p->type == bfd_fill_link_order)
+		  if (p->type == bfd_data_link_order)
 		    continue;
 		  abort ();
 		}

@@ -125,7 +125,7 @@ DESCRIPTION
 .   (((bfd)->xvec->message[(int) ((bfd)->format)]) arglist) : \
 .   (bfd_assert (__FILE__,__LINE__,"error in BFD_SEND_FMT"), NULL))
 .#endif
-
+.
 	This is the structure which defines the type of BFD this is.  The
 	<<xvec>> member of the struct <<bfd>> itself points here.  Each
 	module that implements access to a different target under BFD,
@@ -135,7 +135,8 @@ DESCRIPTION
 	the entry points which call them. Too bad we can't have one
 	macro to define them both!
 
-.enum bfd_flavour {
+.enum bfd_flavour
+.{
 .  bfd_target_unknown_flavour,
 .  bfd_target_aout_flavour,
 .  bfd_target_coff_flavour,
@@ -168,51 +169,40 @@ DESCRIPTION
 .
 .typedef struct bfd_target
 .{
-
-Identifies the kind of target, e.g., SunOS4, Ultrix, etc.
-
+.  {* Identifies the kind of target, e.g., SunOS4, Ultrix, etc.  *}
 .  char *name;
-
-The "flavour" of a back end is a general indication about the contents
-of a file.
-
+.
+. {* The "flavour" of a back end is a general indication about
+.    the contents of a file.  *}
 .  enum bfd_flavour flavour;
-
-The order of bytes within the data area of a file.
-
+.
+.  {* The order of bytes within the data area of a file.  *}
 .  enum bfd_endian byteorder;
-
-The order of bytes within the header parts of a file.
-
+.
+. {* The order of bytes within the header parts of a file.  *}
 .  enum bfd_endian header_byteorder;
-
-A mask of all the flags which an executable may have set -
-from the set <<BFD_NO_FLAGS>>, <<HAS_RELOC>>, ...<<D_PAGED>>.
-
+.
+.  {* A mask of all the flags which an executable may have set -
+.     from the set <<BFD_NO_FLAGS>>, <<HAS_RELOC>>, ...<<D_PAGED>>.  *}
 .  flagword object_flags;
-
-A mask of all the flags which a section may have set - from
-the set <<SEC_NO_FLAGS>>, <<SEC_ALLOC>>, ...<<SET_NEVER_LOAD>>.
-
+.
+. {* A mask of all the flags which a section may have set - from
+.    the set <<SEC_NO_FLAGS>>, <<SEC_ALLOC>>, ...<<SET_NEVER_LOAD>>.  *}
 .  flagword section_flags;
-
-The character normally found at the front of a symbol
-(if any), perhaps `_'.
-
+.
+. {* The character normally found at the front of a symbol.
+.    (if any), perhaps `_'.  *}
 .  char symbol_leading_char;
-
-The pad character for file names within an archive header.
-
+.
+. {* The pad character for file names within an archive header.  *}
 .  char ar_pad_char;
-
-The maximum number of characters in an archive header.
-
+.
+.  {* The maximum number of characters in an archive header.  *}
 .  unsigned short ar_max_namelen;
-
-Entries for byte swapping for data. These are different from the other
-entry points, since they don't take a BFD asthe first argument.
-Certain other handlers could do the same.
-
+.
+.  {* Entries for byte swapping for data. These are different from the
+.     other entry points, since they don't take a BFD asthe first argument.
+.     Certain other handlers could do the same.  *}
 .  bfd_vma        (*bfd_getx64) PARAMS ((const bfd_byte *));
 .  bfd_signed_vma (*bfd_getx_signed_64) PARAMS ((const bfd_byte *));
 .  void           (*bfd_putx64) PARAMS ((bfd_vma, bfd_byte *));
@@ -222,9 +212,8 @@ Certain other handlers could do the same.
 .  bfd_vma        (*bfd_getx16) PARAMS ((const bfd_byte *));
 .  bfd_signed_vma (*bfd_getx_signed_16) PARAMS ((const bfd_byte *));
 .  void           (*bfd_putx16) PARAMS ((bfd_vma, bfd_byte *));
-
-Byte swapping for the headers
-
+.
+.  {* Byte swapping for the headers.  *}
 .  bfd_vma        (*bfd_h_getx64) PARAMS ((const bfd_byte *));
 .  bfd_signed_vma (*bfd_h_getx_signed_64) PARAMS ((const bfd_byte *));
 .  void           (*bfd_h_putx64) PARAMS ((bfd_vma, bfd_byte *));
@@ -234,25 +223,21 @@ Byte swapping for the headers
 .  bfd_vma        (*bfd_h_getx16) PARAMS ((const bfd_byte *));
 .  bfd_signed_vma (*bfd_h_getx_signed_16) PARAMS ((const bfd_byte *));
 .  void           (*bfd_h_putx16) PARAMS ((bfd_vma, bfd_byte *));
-
-Format dependent routines: these are vectors of entry points
-within the target vector structure, one for each format to check.
-
-Check the format of a file being read.  Return a <<bfd_target *>> or zero.
-
+.
+.  {* Format dependent routines: these are vectors of entry points
+.     within the target vector structure, one for each format to check.  *}
+.
+.  {* Check the format of a file being read.  Return a <<bfd_target *>> or zero.  *}
 .  const struct bfd_target *(*_bfd_check_format[bfd_type_end]) PARAMS ((bfd *));
-
-Set the format of a file being written.
-
+.
+.  {* Set the format of a file being written.  *}
 .  boolean  (*_bfd_set_format[bfd_type_end]) PARAMS ((bfd *));
-
-Write cached information into a file being written, at <<bfd_close>>.
-
+.
+.  {* Write cached information into a file being written, at <<bfd_close>>.  *}
 .  boolean  (*_bfd_write_contents[bfd_type_end]) PARAMS ((bfd *));
-
+.
 The general target vector.  These vectors are initialized using the
 BFD_JUMP_TABLE macros.
-
 .
 .  {* Generic entry points.  *}
 Do not "beautify" the CONCAT* macro args.  Traditional C will not
@@ -299,10 +284,10 @@ the tokens.
 .     to another.  *}
 .  boolean  (*_bfd_copy_private_symbol_data) PARAMS ((bfd *, asymbol *,
 .                                                     bfd *, asymbol *));
-.  {* Called to set private backend flags *}
+.  {* Called to set private backend flags.  *}
 .  boolean  (*_bfd_set_private_flags) PARAMS ((bfd *, flagword));
 .
-.  {* Called to print private BFD data *}
+.  {* Called to print private BFD data.  *}
 .  boolean  (*_bfd_print_private_bfd_data) PARAMS ((bfd *, PTR));
 .
 .  {* Core file entry points.  *}
@@ -413,6 +398,7 @@ the tokens.
 .CONCAT2 (NAME,_bfd_get_relocated_section_contents), \
 .CONCAT2 (NAME,_bfd_relax_section), \
 .CONCAT2 (NAME,_bfd_link_hash_table_create), \
+.CONCAT2 (NAME,_bfd_link_hash_table_free), \
 .CONCAT2 (NAME,_bfd_link_add_symbols), \
 .CONCAT2 (NAME,_bfd_final_link), \
 .CONCAT2 (NAME,_bfd_link_split_section), \
@@ -429,6 +415,9 @@ the tokens.
 .  {* Create a hash table for the linker.  Different backends store
 .     different information in this table.  *}
 .  struct bfd_link_hash_table *(*_bfd_link_hash_table_create) PARAMS ((bfd *));
+.
+.  {* Release the memory associated with the linker hash table.  *}
+.  void (*_bfd_link_hash_table_free) PARAMS ((struct bfd_link_hash_table *));
 .
 .  {* Add symbols from this object file into the hash table.  *}
 .  boolean  (*_bfd_link_add_symbols) PARAMS ((bfd *, struct bfd_link_info *));
@@ -452,7 +441,7 @@ the tokens.
 .CONCAT2 (NAME,_canonicalize_dynamic_symtab), \
 .CONCAT2 (NAME,_get_dynamic_reloc_upper_bound), \
 .CONCAT2 (NAME,_canonicalize_dynamic_reloc)
-.  {* Get the amount of memory required to hold the dynamic symbols. *}
+.  {* Get the amount of memory required to hold the dynamic symbols.  *}
 .  long     (*_bfd_get_dynamic_symtab_upper_bound) PARAMS ((bfd *));
 .  {* Read in the dynamic symbols.  *}
 .  long     (*_bfd_canonicalize_dynamic_symtab)
@@ -470,17 +459,16 @@ and little endian code, and target chosen by the linker has the wrong
 endianness.  The function open_output() in ld/ldlang.c uses this field
 to find an alternative output format that is suitable.
 
-. {* Opposite endian version of this target.  *}
-. const struct bfd_target * alternative_target;
+.  {* Opposite endian version of this target.  *}
+.  const struct bfd_target * alternative_target;
 .
 
-Data for use by back-end routines, which isn't generic enough to belong
-in this structure.
-
-. PTR backend_data;
+.  {* Data for use by back-end routines, which isn't
+.     generic enough to belong in this structure.  *}
+.  PTR backend_data;
 .
 .} bfd_target;
-
+.
 */
 
 /* All known xvecs (even those that don't compile on all systems).
@@ -545,6 +533,7 @@ extern const bfd_target bfd_elf32_mcore_little_vec;
 extern const bfd_target bfd_elf32_mn10200_vec;
 extern const bfd_target bfd_elf32_mn10300_vec;
 extern const bfd_target bfd_elf32_openrisc_vec;
+extern const bfd_target bfd_elf32_or32_big_vec;
 extern const bfd_target bfd_elf32_pj_vec;
 extern const bfd_target bfd_elf32_pjl_vec;
 extern const bfd_target bfd_elf32_powerpc_vec;
@@ -644,6 +633,7 @@ extern const bfd_target nlm32_i386_vec;
 extern const bfd_target nlm32_powerpc_vec;
 extern const bfd_target nlm32_sparc_vec;
 extern const bfd_target oasys_vec;
+extern const bfd_target or32coff_big_vec;
 extern const bfd_target pc532machaout_vec;
 extern const bfd_target pc532netbsd_vec;
 extern const bfd_target pdp11_aout_vec;
@@ -654,6 +644,7 @@ extern const bfd_target ppcboot_vec;
 extern const bfd_target riscix_vec;
 extern const bfd_target rs6000coff64_vec;
 extern const bfd_target rs6000coff_vec;
+extern const bfd_target aix5coff64_vec;
 extern const bfd_target shcoff_small_vec;
 extern const bfd_target shcoff_vec;
 extern const bfd_target shlcoff_small_vec;
@@ -707,6 +698,10 @@ extern const bfd_target ptrace_core_vec;
 extern const bfd_target sco5_core_vec;
 extern const bfd_target trad_core_vec;
 
+extern const bfd_target bfd_elf32_sh64_vec;
+extern const bfd_target bfd_elf32_sh64l_vec;
+extern const bfd_target bfd_elf64_sh64_vec;
+extern const bfd_target bfd_elf64_sh64l_vec;
 static const bfd_target * const _bfd_target_vector[] = {
 
 #ifdef SELECT_VECS
@@ -795,6 +790,7 @@ static const bfd_target * const _bfd_target_vector[] = {
 	&bfd_elf32_mn10200_vec,
 	&bfd_elf32_mn10300_vec,
 	&bfd_elf32_openrisc_vec,
+	&bfd_elf32_or32_big_vec,
 	&bfd_elf32_pj_vec,
 	&bfd_elf32_pjl_vec,
 	&bfd_elf32_powerpc_vec,
@@ -931,6 +927,9 @@ static const bfd_target * const _bfd_target_vector[] = {
 	   can be annoying target mis-matches.  */
 	&oasys_vec,
 #endif
+	/* Entry for the OpenRISC family.  */
+	&or32coff_big_vec,
+
 	&pc532machaout_vec,
 	&pc532netbsd_vec,
 	&pdp11_aout_vec,

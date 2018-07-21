@@ -66,8 +66,8 @@ function will be called to print an error message and terminate execution.
 #include "ansidecl.h"
 #include "libiberty.h"
 
-#define HAVE_EFENCE 0
-#define HAVE_MMALLOC 0
+#define HAVE_EFENCE 1
+#define HAVE_MMALLOC 1
 #undef HAVE_SBRK
 
 #include <stdio.h>
@@ -113,7 +113,7 @@ int use_efence = 0;
 #endif
 
 #if HAVE_MMALLOC
-int use_mmalloc = 0;
+int use_mmalloc = 1;
 #endif
 
 /* The program name if set.  */
@@ -150,12 +150,12 @@ xmalloc_failed (size)
   else
     allocated = (char *) sbrk (0) - (char *) &environ;
   fprintf (stderr,
-	   "\n%s%sUnable to allocate %lu bytes (%lu bytes already allocated)\n",
+	   "\n%s%sout of memory allocating %lu bytes after a total of %lu bytes\n",
 	   name, *name ? ": " : "",
 	   (unsigned long) size, (unsigned long) allocated);
 #else /* ! HAVE_SBRK */
   fprintf (stderr,
-	   "\n%s%sUnable to allocate %lu bytes\n",
+	   "\n%s%sout of memory allocating %lu bytes\n",
 	   name, *name ? ": " : "",
 	   (unsigned long) size);
 #endif /* HAVE_SBRK */

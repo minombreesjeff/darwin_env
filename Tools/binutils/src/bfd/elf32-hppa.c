@@ -32,8 +32,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "libhppa.h"
 #include "elf32-hppa.h"
 #define ARCH_SIZE		32
-#include "elf-hppa.h"
 #include "elf32-hppa.h"
+#include "elf-hppa.h"
 
 /* In order to gain some understanding of code in this file without
    knowing all the intricate details of the linker, note the
@@ -71,14 +71,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
    (single sub-space version)
    :		addil LR'lt_ptr+ltoff,%dp	; get procedure entry point
    :		ldw RR'lt_ptr+ltoff(%r1),%r21
-   :            bv %r0(%r21)
+   :		bv %r0(%r21)
    :		ldw RR'lt_ptr+ltoff+4(%r1),%r19	; get new dlt value.
 
    Import stub to call shared library routine from shared library
    (single sub-space version)
    :		addil LR'ltoff,%r19		; get procedure entry point
    :		ldw RR'ltoff(%r1),%r21
-   :            bv %r0(%r21)
+   :		bv %r0(%r21)
    :		ldw RR'ltoff+4(%r1),%r19	; get new dlt value.
 
    Import stub to call shared library routine from normal object file
@@ -284,6 +284,9 @@ static struct bfd_hash_entry *hppa_link_hash_newfunc
 static struct bfd_link_hash_table *elf32_hppa_link_hash_table_create
   PARAMS ((bfd *));
 
+static void elf32_hppa_link_hash_table_free
+  PARAMS ((struct bfd_link_hash_table *));
+
 /* Stub handling functions.  */
 static char *hppa_stub_name
   PARAMS ((const asection *, const asection *,
@@ -372,9 +375,6 @@ static bfd_reloc_status_type final_link_relocate
 static boolean elf32_hppa_relocate_section
   PARAMS ((bfd *, struct bfd_link_info *, bfd *, asection *,
 	   bfd_byte *, Elf_Internal_Rela *, Elf_Internal_Sym *, asection **));
-
-static int hppa_unwind_entry_compare
-  PARAMS ((const PTR, const PTR));
 
 static boolean elf32_hppa_finish_dynamic_symbol
   PARAMS ((bfd *, struct bfd_link_info *,
@@ -479,13 +479,13 @@ elf32_hppa_link_hash_table_create (abfd)
   struct elf32_hppa_link_hash_table *ret;
   bfd_size_type amt = sizeof (*ret);
 
-  ret = (struct elf32_hppa_link_hash_table *) bfd_alloc (abfd, amt);
+  ret = (struct elf32_hppa_link_hash_table *) bfd_malloc (amt);
   if (ret == NULL)
     return NULL;
 
   if (!_bfd_elf_link_hash_table_init (&ret->elf, abfd, hppa_link_hash_newfunc))
     {
-      bfd_release (abfd, ret);
+      free (ret);
       return NULL;
     }
 
@@ -512,6 +512,19 @@ elf32_hppa_link_hash_table_create (abfd)
   ret->sym_sec.abfd = NULL;
 
   return &ret->elf.root;
+}
+
+/* Free the derived linker hash table.  */
+
+static void
+elf32_hppa_link_hash_table_free (hash)
+     struct bfd_link_hash_table *hash;
+{
+  struct elf32_hppa_link_hash_table *ret
+    = (struct elf32_hppa_link_hash_table *) hash;
+
+  bfd_hash_table_free (&ret->stub_hash_table);
+  _bfd_generic_link_hash_table_free (hash);
 }
 
 /* Build a name for an entry in the stub hash table.  */
@@ -1918,7 +1931,7 @@ elf32_hppa_adjust_dynamic_symbol (info, h)
     }
 
   /* If we didn't find any dynamic relocs in read-only sections, then
-     we'll be keeping the dynamic relocs and avoiding the copy reloc.  */ 
+     we'll be keeping the dynamic relocs and avoiding the copy reloc.  */
   if (p == NULL)
     {
       h->elf_link_hash_flags &= ~ELF_LINK_NON_GOT_REF;
@@ -1982,6 +1995,9 @@ mark_PIC_calls (h, inf)
      struct elf_link_hash_entry *h;
      PTR inf ATTRIBUTE_UNUSED;
 {
+  if (h->root.type == bfd_link_hash_warning)
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
+
   if (! (h->plt.refcount > 0
 	 && (h->root.type == bfd_link_hash_defined
 	     || h->root.type == bfd_link_hash_defweak)
@@ -2011,9 +2027,11 @@ allocate_plt_static (h, inf)
   struct elf32_hppa_link_hash_table *htab;
   asection *s;
 
-  if (h->root.type == bfd_link_hash_indirect
-      || h->root.type == bfd_link_hash_warning)
+  if (h->root.type == bfd_link_hash_indirect)
     return true;
+
+  if (h->root.type == bfd_link_hash_warning)
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
 
   info = (struct bfd_link_info *) inf;
   htab = hppa_link_hash_table (info);
@@ -2080,9 +2098,11 @@ allocate_dynrelocs (h, inf)
   struct elf32_hppa_link_hash_entry *eh;
   struct elf32_hppa_dyn_reloc_entry *p;
 
-  if (h->root.type == bfd_link_hash_indirect
-      || h->root.type == bfd_link_hash_warning)
+  if (h->root.type == bfd_link_hash_indirect)
     return true;
+
+  if (h->root.type == bfd_link_hash_warning)
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
 
   info = (struct bfd_link_info *) inf;
   htab = hppa_link_hash_table (info);
@@ -2213,14 +2233,13 @@ clobber_millicode_symbols (h, info)
      struct elf_link_hash_entry *h;
      struct bfd_link_info *info;
 {
+  if (h->root.type == bfd_link_hash_warning)
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
+
   if (h->type == STT_PARISC_MILLI
       && (h->elf_link_hash_flags & ELF_LINK_FORCED_LOCAL) == 0)
     {
       elf32_hppa_hide_symbol (info, h, true);
-
-      /* ?!? We only want to remove these from the dynamic symbol table.
-	 Therefore we do not leave ELF_LINK_FORCED_LOCAL set.  */
-      h->elf_link_hash_flags &= ~ELF_LINK_FORCED_LOCAL;
     }
   return true;
 }
@@ -2234,6 +2253,9 @@ readonly_dynrelocs (h, inf)
 {
   struct elf32_hppa_link_hash_entry *eh;
   struct elf32_hppa_dyn_reloc_entry *p;
+
+  if (h->root.type == bfd_link_hash_warning)
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
 
   eh = (struct elf32_hppa_link_hash_entry *) h;
   for (p = eh->dyn_relocs; p != NULL; p = p->next)
@@ -2329,10 +2351,12 @@ elf32_hppa_size_dynamic_sections (output_bfd, info)
 		     linker script /DISCARD/, so we'll be discarding
 		     the relocs too.  */
 		}
-	      else
+	      else if (p->count != 0)
 		{
 		  srel = elf_section_data (p->sec)->sreloc;
 		  srel->_raw_size += p->count * sizeof (Elf32_External_Rela);
+		  if ((p->sec->output_section->flags & SEC_READONLY) != 0)
+		    info->flags |= DF_TEXTREL;
 		}
 	    }
 	}
@@ -2505,7 +2529,9 @@ elf32_hppa_size_dynamic_sections (output_bfd, info)
 
 	  /* If any dynamic relocs apply to a read-only section,
 	     then we need a DT_TEXTREL entry.  */
-	  elf_link_hash_traverse (&htab->elf, readonly_dynrelocs, (PTR) info);
+	  if ((info->flags & DF_TEXTREL) == 0)
+	    elf_link_hash_traverse (&htab->elf, readonly_dynrelocs,
+				    (PTR) info);
 
 	  if ((info->flags & DF_TEXTREL) != 0)
 	    {
@@ -3254,37 +3280,13 @@ elf32_hppa_final_link (abfd, info)
      bfd *abfd;
      struct bfd_link_info *info;
 {
-  asection *s;
-
   /* Invoke the regular ELF linker to do all the work.  */
   if (!bfd_elf32_bfd_final_link (abfd, info))
     return false;
 
   /* If we're producing a final executable, sort the contents of the
-     unwind section.  Magic section names, but this is much safer than
-     having elf32_hppa_relocate_section remember where SEGREL32 relocs
-     occurred.  Consider what happens if someone inept creates a
-     linker script that puts unwind information in .text.  */
-  s = bfd_get_section_by_name (abfd, ".PARISC.unwind");
-  if (s != NULL)
-    {
-      bfd_size_type size;
-      char *contents;
-
-      size = s->_raw_size;
-      contents = bfd_malloc (size);
-      if (contents == NULL)
-	return false;
-
-      if (! bfd_get_section_contents (abfd, s, contents, (file_ptr) 0, size))
-	return false;
-
-      qsort (contents, (size_t) (size / 16), 16, hppa_unwind_entry_compare);
-
-      if (! bfd_set_section_contents (abfd, s, contents, (file_ptr) 0, size))
-	return false;
-    }
-  return true;
+     unwind section. */
+  return elf_hppa_sort_unwind (abfd);
 }
 
 /* Record the lowest address for the data and text segments.  */
@@ -3471,21 +3473,27 @@ final_link_relocate (input_section, contents, rel, value, htab, sym_sec, h)
       r_field = e_fsel;
       break;
 
-    case R_PARISC_DIR21L:
-    case R_PARISC_PCREL21L:
-    case R_PARISC_DPREL21L:
-    case R_PARISC_PLABEL21L:
     case R_PARISC_DLTIND21L:
+    case R_PARISC_PCREL21L:
+    case R_PARISC_PLABEL21L:
+      r_field = e_lsel;
+      break;
+
+    case R_PARISC_DIR21L:
+    case R_PARISC_DPREL21L:
       r_field = e_lrsel;
       break;
 
-    case R_PARISC_DIR17R:
     case R_PARISC_PCREL17R:
-    case R_PARISC_DIR14R:
     case R_PARISC_PCREL14R:
-    case R_PARISC_DPREL14R:
     case R_PARISC_PLABEL14R:
     case R_PARISC_DLTIND14R:
+      r_field = e_rsel;
+      break;
+
+    case R_PARISC_DIR17R:
+    case R_PARISC_DIR14R:
+    case R_PARISC_DPREL14R:
       r_field = e_rrsel;
       break;
 
@@ -3972,7 +3980,8 @@ elf32_hppa_relocate_section (output_bfd, info, input_bfd, input_section,
 	      outrel.r_offset =
 		_bfd_elf_section_offset (output_bfd, info, input_section,
 					 rel->r_offset);
-	      skip = (outrel.r_offset == (bfd_vma) -1);
+	      skip = (outrel.r_offset == (bfd_vma) -1
+		      || outrel.r_offset == (bfd_vma) -2);
 	      outrel.r_offset += (input_section->output_offset
 				  + input_section->output_section->vma);
 
@@ -4086,32 +4095,6 @@ elf32_hppa_relocate_section (output_bfd, info, input_bfd, input_section,
     }
 
   return true;
-}
-
-/* Comparison function for qsort to sort unwind section during a
-   final link.  */
-
-static int
-hppa_unwind_entry_compare (a, b)
-     const PTR a;
-     const PTR b;
-{
-  const bfd_byte *ap, *bp;
-  unsigned long av, bv;
-
-  ap = (const bfd_byte *) a;
-  av = (unsigned long) ap[0] << 24;
-  av |= (unsigned long) ap[1] << 16;
-  av |= (unsigned long) ap[2] << 8;
-  av |= (unsigned long) ap[3];
-
-  bp = (const bfd_byte *) b;
-  bv = (unsigned long) bp[0] << 24;
-  bv |= (unsigned long) bp[1] << 16;
-  bv |= (unsigned long) bp[2] << 8;
-  bv |= (unsigned long) bp[3];
-
-  return av < bv ? -1 : av > bv ? 1 : 0;
 }
 
 /* Finish up dynamic symbol handling.  We set the contents of various
@@ -4457,6 +4440,7 @@ elf32_hppa_elf_get_symbol_type (elf_sym, type)
 /* Stuff for the BFD linker.  */
 #define bfd_elf32_bfd_final_link	     elf32_hppa_final_link
 #define bfd_elf32_bfd_link_hash_table_create elf32_hppa_link_hash_table_create
+#define bfd_elf32_bfd_link_hash_table_free   elf32_hppa_link_hash_table_free
 #define elf_backend_add_symbol_hook	     elf32_hppa_add_symbol_hook
 #define elf_backend_adjust_dynamic_symbol    elf32_hppa_adjust_dynamic_symbol
 #define elf_backend_copy_indirect_symbol     elf32_hppa_copy_indirect_symbol

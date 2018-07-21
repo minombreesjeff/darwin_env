@@ -1,3 +1,181 @@
+2002-04-04  Alan Modra  <amodra@bigpond.net.au>
+
+	* dep-in.sed: Cope with absolute paths.
+	* Makefile.am (dep.sed): Subst TOPDIR.
+	Run "make dep-am".
+	* Makefile.in: Regenerate.
+
+2002-03-27  Peter Targett  <peter.targett@arc.com>
+
+	* MAINTAINERS: Update my email address.
+
+2002-03-21  Alan Modra  <amodra@bigpond.net.au>
+
+	* Makefile.am: Run "make dep-am".
+	* Makefile.in: Regenerate.
+	* doc/Makefile.in: Regenerate.
+	* po/POTFILES.in: Regenerate.
+	* aclocal.m4: Regenerate.
+	* config.in: Regenerate.
+	* configure: Regenerate.
+
+2002-03-20  Daniel Berlin  <dan@dberlin.org>
+
+	* readelf.c: Add support for displaying dwarf2 location lists.
+	(do_debug_loc, debug_loc_section, debug_loc_size): New.
+	(parse_args): Use 'O' as shorthand for displaying location list
+	section.
+	(process_section_headers): Handle debug_loc as well.
+	(load_debug_loc): New.
+	(free_debug_loc): New.
+	(fetch_location_list): New.
+	(display_debug_loc): New.
+	(display_debug_info): Call load_debug_loc and free_debug_loc.
+	(debug_displays): We can display .debug_loc now, too.
+	(usage): Update usage string.
+	(read_and_display_attr_value): Note location lists, but don't
+	display them inline.
+
+2002-03-18  Tom Rix  <trix@redhat.com>
+
+	* Makefile.am: Add binutils emulation support.
+	* configure.in: Same.
+	* configure.tgt: New file.  Same.
+	* ar.c (main): Use ar_emul_parse_arg.
+	(usage): Use ar_emul_usage.
+	(replace_members): Use ar_emul_replace, ar_emul_append.
+	* binemul.c: New file.  Define the binutils emulation
+	layer. Define default methods.
+	* binemul.h: New file.  Binutils emulation layer header file.
+	* emul_aix.c: New file.  AIX binutils emulation.
+	* emul_vanilla.c: New file. Default binutils emulation.
+	* Makefile.in: Regenerate.
+	* configure: Same.
+
+2002-03-18  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* po/fr.po: Updated version.
+
+2002-03-13  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* po/fr.po: Updated version.
+
+2002-03-07  Daniel Jacobowitz  <drow@mvista.com>
+
+	* README: Update some version numbers.
+
+2002-03-07  Daniel Jacobowitz  <drow@mvista.com>
+
+	* doc/binutils.texi (Target Selection): Fix LD crossreferences.
+	(Architecture Selection): Likewise.
+
+2002-03-01  Dmitry Timoshkov <dmitry@baikal.ru>
+
+	* dlltool.c (gen_exp_file): Take into account --kill-at (-k) while
+	generating .exp file.
+
+2002-02-21  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* readelf.c (dump_relocations): Fix typo.
+
+2002-02-20  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* NEWS: Mark 2.12 branch.
+
+2002-02-18  Timothy Daly  <remote_bob@yahoo.com>
+
+	* readelf.c (dump_relocations): Display 2nd and 3rd reloc 
+	types for 64-bit MIPS.  Narrow some fields for 80-char 
+	output.
+	(dump_relocations): Change spelling from 'unrecognised' 
+	to 'unrecognized'.
+	(decode_ARM_machine_flags): Likewise.
+	(parse_args): Likewise.
+	(read_and_display_attr_value): Likewise.
+	(display_debug_section): Likewise.
+
+2002-02-15  Hans-Peter Nilsson  <hp@bitrange.com>
+
+	* NEWS: Mention support for MMIX.
+
+2002-02-13  Matt Fredette  <fredette@netbsd.org>
+
+	* readelf.c (get_machine_flags): Recognize EF_M68000.
+
+2002-02-12  Alexandre Oliva  <aoliva@redhat.com>
+
+	* MAINTAINERS: Added self as MN10300 co-maintainer.
+
+2002-02-12  Alan Modra  <amodra@bigpond.net.au>
+
+	* readelf.c (get_ppc64_dynamic_type): Handle DT_PPC64_OPD and
+	DT_PPC64_OPDSZ.
+
+2002-02-11  Daniel Jacobowitz  <drow@mvista.com>
+
+	* MAINTAINERS: List myself as branch maintainer.
+
+2002-02-11  Alan Modra  <amodra@bigpond.net.au>
+
+	* configure: Regenerate.
+	* objcopy.c: Update copyright date.
+	* doc/Makefile.in: Regenerate.
+
+2002-02-10  Daniel Jacobowitz  <drow@mvista.com>
+
+	* nlmconv.c: Back out localtime PARAMS change.
+
+2002-02-11  Alan Modra  <amodra@bigpond.net.au>
+
+	* objcopy.c (MKDIR): Define.
+	(copy_archive): Make name_list.name const.  Use MKDIR.
+	Handle duplicate files in archives by making more temp dirs.
+
+2002-02-10  Daniel Jacobowitz  <drow@mvista.com>
+
+	* coffdump.c: Include "getopt.h" after "bucomm.h"
+	so that macros are defined correctly.
+	* nlmconv.c: Add PARAMS ((const time_t *)) to localtime
+	prototype.  Prototype main.
+	* nlmheader.y: Add PARAMS ((int)) to strerror prototype.
+
+2002-02-06  Alexandre Oliva  <aoliva@redhat.com>
+
+	* MAINTAINERS: Added self as SH co-maintainer.
+
+2002-02-05  Nick Clifton <nickc@redhat.com>
+
+	* po/tr.po: Updated translation.
+
+2002-02-01  Alan Modra  <amodra@bigpond.net.au>
+
+	* Makefile.am: Run "make dep-am"
+	* Makefile.in: Regenerate.
+
+2002-01-29  Daniel Jacobowitz  <drow@mvista.com>
+
+	* nm.c (print_value): Mark abfd unused.
+
+2002-01-29  Daniel Jacobowitz  <drow@mvista.com>
+
+	* unwind-ia64.c (unw_decoder): Change second argument
+	to unsigned int, to match function prototypes.
+
+2002-01-29  Daniel Jacobowitz  <drow@mvista.com>
+
+	* objdump.c: Include "getopt.h" after "bucomm.h" so that
+	__GNU_LIBRARY__ will be defined.
+	* size.c: Likewise.
+
+2002-01-27  Daniel Jacobowitz  <drow@mvista.com>
+
+	* configure: Regenerated.
+
+2002-01-26  Hans-Peter Nilsson  <hp@bitrange.com>
+
+	* doc/Makefile.am (install): Depend on install-info.
+	* doc/Makefile.in: Regenerate.
+
 2002-01-25  Jason R. Thorpe <thorpej@wasabisystems.com>
 
 	* objcopy.c (strip_usage): Document -d as an alias

@@ -1,5 +1,5 @@
 /* Matsushita 10300 specific support for 32-bit ELF
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001
+   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -111,6 +111,8 @@ static struct bfd_hash_entry *elf32_mn10300_link_hash_newfunc
   PARAMS ((struct bfd_hash_entry *, struct bfd_hash_table *, const char *));
 static struct bfd_link_hash_table *elf32_mn10300_link_hash_table_create
   PARAMS ((bfd *));
+static void elf32_mn10300_link_hash_table_free
+  PARAMS ((struct bfd_link_hash_table *));
 
 static reloc_howto_type *bfd_elf32_bfd_reloc_type_lookup
   PARAMS ((bfd *abfd, bfd_reloc_code_real_type code));
@@ -709,6 +711,9 @@ elf32_mn10300_finish_hash_table_entry (gen_entry, in_args)
 
   entry = (struct elf32_mn10300_link_hash_entry *) gen_entry;
 
+  if (entry->root.root.type == bfd_link_hash_warning)
+    entry = (struct elf32_mn10300_link_hash_entry *) entry->root.root.u.i.link;
+
   /* If we already know we want to convert "call" to "calls" for calls
      to this symbol, then return now.  */
   if (entry->flags == MN10300_CONVERT_CALL_TO_CALLS)
@@ -873,6 +878,12 @@ mn10300_elf_relax_section (abfd, sec, link_info, again)
 	      asection *sym_sec = NULL;
 	      const char *sym_name;
 	      char *new_name;
+
+	      /* If there's nothing to do in this section, skip it.  */
+	      if (! (((section->flags & SEC_RELOC) != 0
+		      && section->reloc_count != 0)
+		     || (section->flags & SEC_CODE) != 0))
+		continue;
 
 	      /* Get cached copy of section contents if it exists.  */
 	      if (elf_section_data (section)->this_hdr.contents != NULL)
@@ -2960,35 +2971,50 @@ elf32_mn10300_link_hash_table_create (abfd)
   struct elf32_mn10300_link_hash_table *ret;
   bfd_size_type amt = sizeof (struct elf32_mn10300_link_hash_table);
 
-  ret = (struct elf32_mn10300_link_hash_table *) bfd_alloc (abfd, amt);
+  ret = (struct elf32_mn10300_link_hash_table *) bfd_malloc (amt);
   if (ret == (struct elf32_mn10300_link_hash_table *) NULL)
     return NULL;
 
   if (! _bfd_elf_link_hash_table_init (&ret->root, abfd,
 				       elf32_mn10300_link_hash_newfunc))
     {
-      bfd_release (abfd, ret);
+      free (ret);
       return NULL;
     }
 
   ret->flags = 0;
   amt = sizeof (struct elf_link_hash_table);
   ret->static_hash_table
-    = (struct elf32_mn10300_link_hash_table *) bfd_alloc (abfd, amt);
+    = (struct elf32_mn10300_link_hash_table *) bfd_malloc (amt);
   if (ret->static_hash_table == NULL)
     {
-      bfd_release (abfd, ret);
+      free (ret);
       return NULL;
     }
 
   if (! _bfd_elf_link_hash_table_init (&ret->static_hash_table->root, abfd,
 				       elf32_mn10300_link_hash_newfunc))
     {
-      bfd_release (abfd, ret->static_hash_table);
-      bfd_release (abfd, ret);
+      free (ret->static_hash_table);
+      free (ret);
       return NULL;
     }
   return &ret->root.root;
+}
+
+/* Free an mn10300 ELF linker hash table.  */
+
+static void
+elf32_mn10300_link_hash_table_free (hash)
+     struct bfd_link_hash_table *hash;
+{
+  struct elf32_mn10300_link_hash_table *ret
+    = (struct elf32_mn10300_link_hash_table *) hash;
+
+  _bfd_generic_link_hash_table_free
+    ((struct bfd_link_hash_table *) ret->static_hash_table);
+  _bfd_generic_link_hash_table_free
+    ((struct bfd_link_hash_table *) ret);
 }
 
 static unsigned long
@@ -3083,6 +3109,8 @@ _bfd_mn10300_elf_merge_private_bfd_data (ibfd, obfd)
 				mn10300_elf_get_relocated_section_contents
 #define bfd_elf32_bfd_link_hash_table_create \
 				elf32_mn10300_link_hash_table_create
+#define bfd_elf32_bfd_link_hash_table_free \
+				elf32_mn10300_link_hash_table_free
 
 #define elf_symbol_leading_char '_'
 

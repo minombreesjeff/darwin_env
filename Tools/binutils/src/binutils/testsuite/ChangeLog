@@ -1,3 +1,21 @@
+2002-02-18  Timothy Daly  <remote_bob@yahoo.com>
+
+	* binutils-all/readelf.r: Change expected output to match new,
+	narrowed-to-80-chars format.
+	* binutils-all/readelf.r-64: Change expected output to match new,
+	narrowed-to-80-chars format.
+
+2002-02-18  Hans-Peter Nilsson  <hp@bitrange.com>
+
+	* binutils-all/objcopy.exp
+	(strip_executable_with_saving_a_symbol): Prune symbol Main in nm
+	output for mmix-knuth-mmixware.
+
+2002-02-13  Nick Clifton  <nickc@cambridge.redhat.com>
+
+	* binutils-all/readelf.ss-mips: Do not expect an explicit
+        ordering of the sections.
+
 2002-02-10  Nick Clifton  <nickc@cambridge.redhat.com>
 
 	* binutils-all/objdump.exp: Add 'xscale' to the list of expected

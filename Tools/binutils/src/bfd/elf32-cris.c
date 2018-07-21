@@ -180,7 +180,7 @@ static reloc_howto_type cris_elf_howto_table [] =
 	 0,			/* bitpos */
 	 complain_overflow_bitfield, /* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
-	 "R_CRIS_16",		/* name */
+	 "R_CRIS_16_PCREL",	/* name */
 	 false,			/* partial_inplace */
 	 0x00000000,		/* src_mask */
 	 0x0000ffff,		/* dst_mask */
@@ -195,7 +195,7 @@ static reloc_howto_type cris_elf_howto_table [] =
 	 0,			/* bitpos */
 	 complain_overflow_bitfield, /* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
-	 "R_CRIS_32",		/* name */
+	 "R_CRIS_32_PCREL",	/* name */
 	 false,			/* partial_inplace */
 	 0x00000000,		/* src_mask */
 	 0xffffffff,		/* dst_mask */
@@ -710,14 +710,14 @@ elf_cris_link_hash_table_create (abfd)
   struct elf_cris_link_hash_table *ret;
   bfd_size_type amt = sizeof (struct elf_cris_link_hash_table);
 
-  ret = ((struct elf_cris_link_hash_table *) bfd_alloc (abfd, amt));
+  ret = ((struct elf_cris_link_hash_table *) bfd_malloc (amt));
   if (ret == (struct elf_cris_link_hash_table *) NULL)
     return NULL;
 
   if (! _bfd_elf_link_hash_table_init (&ret->root, abfd,
 				       elf_cris_link_hash_newfunc))
     {
-      bfd_release (abfd, ret);
+      free (ret);
       return NULL;
     }
 
@@ -1296,20 +1296,20 @@ cris_elf_relocate_section (output_bfd, info, input_bfd, input_section,
 		}
 
 	      skip = false;
+	      relocate = false;
 
 	      outrel.r_offset =
 		_bfd_elf_section_offset (output_bfd, info, input_section,
 					 rel->r_offset);
 	      if (outrel.r_offset == (bfd_vma) -1)
 		skip = true;
+	      else if (outrel.r_offset == (bfd_vma) -2)
+		skip = true, relocate = true;
 	      outrel.r_offset += (input_section->output_section->vma
 				  + input_section->output_offset);
 
 	      if (skip)
-		{
-		  memset (&outrel, 0, sizeof outrel);
-		  relocate = false;
-		}
+		memset (&outrel, 0, sizeof outrel);
 	      /* h->dynindx may be -1 if the symbol was marked to
 		 become local.  */
 	      else if (h != NULL
@@ -1318,7 +1318,6 @@ cris_elf_relocate_section (output_bfd, info, input_bfd, input_section,
 			       & ELF_LINK_HASH_DEF_REGULAR) == 0))
 		{
 		  BFD_ASSERT (h->dynindx != -1);
-		  relocate = false;
 		  outrel.r_info = ELF32_R_INFO (h->dynindx, r_type);
 		  outrel.r_addend = relocation + rel->r_addend;
 		}
@@ -1359,7 +1358,6 @@ cris_elf_relocate_section (output_bfd, info, input_bfd, input_section,
 			  BFD_ASSERT (indx > 0);
 			}
 
-		      relocate = false;
 		      outrel.r_info = ELF32_R_INFO (indx, r_type);
 		      outrel.r_addend = relocation + rel->r_addend;
 		    }
@@ -1932,6 +1930,9 @@ elf_cris_adjust_gotplt_to_got (h, p)
 
   BFD_ASSERT (dynobj != NULL);
 
+  if (h->root.root.type == bfd_link_hash_warning)
+    h = (struct elf_cris_link_hash_entry *) h->root.root.u.i.link;
+
   /* If nobody wanted a GOTPLT with this symbol, we're done.  */
   if (h->gotplt_refcount <= 0)
     return true;
@@ -1956,28 +1957,9 @@ elf_cris_adjust_gotplt_to_got (h, p)
 
       h->gotplt_refcount = -1;
 
-      /* We always have a .got section when there are dynamic
-	 relocs.  */
-      BFD_ASSERT (sgot != NULL /* Surely have .got section.  */);
-
-      /* We might have had a PLT but with no GOT entry and
-	 further no GOT reloc section at all needed before.
-	 Add it.  */
-      if (srelgot == NULL)
-	{
-	  srelgot = bfd_make_section (dynobj, ".rela.got");
-
-	  if (srelgot == NULL
-	      || !bfd_set_section_flags (dynobj, srelgot,
-					 (SEC_ALLOC
-					  | SEC_LOAD
-					  | SEC_HAS_CONTENTS
-					  | SEC_IN_MEMORY
-					  | SEC_LINKER_CREATED
-					  | SEC_READONLY))
-	      || !bfd_set_section_alignment (dynobj, srelgot, 2))
-	    return false;
-	}
+      /* We always have a .got and a .rela.got section if there were
+	 GOTPLT relocs in input.  */
+      BFD_ASSERT (sgot != NULL && srelgot != NULL);
 
       /* Allocate space in the .got section.  */
       sgot->_raw_size += 4;
@@ -2367,8 +2349,38 @@ cris_elf_check_relocs (abfd, info, sec, relocs)
 	 specific GOT entry).  */
       switch (r_type)
 	{
+	  /* For R_CRIS_16_GOTPLT and R_CRIS_32_GOTPLT, we need a GOT
+	     entry only for local symbols.  Unfortunately, we don't know
+	     until later on if there's a version script that forces the
+	     symbol local.  We must have the .rela.got section in place
+	     before we know if the symbol looks global now, so we need
+	     to treat the reloc just like for R_CRIS_16_GOT and
+	     R_CRIS_32_GOT.  */
+	case R_CRIS_16_GOTPLT:
+	case R_CRIS_32_GOTPLT:
 	case R_CRIS_16_GOT:
 	case R_CRIS_32_GOT:
+	  if (srelgot == NULL
+	      && (h != NULL || info->shared))
+	    {
+	      srelgot = bfd_get_section_by_name (dynobj, ".rela.got");
+	      if (srelgot == NULL)
+		{
+		  srelgot = bfd_make_section (dynobj, ".rela.got");
+		  if (srelgot == NULL
+		      || !bfd_set_section_flags (dynobj, srelgot,
+						 (SEC_ALLOC
+						  | SEC_LOAD
+						  | SEC_HAS_CONTENTS
+						  | SEC_IN_MEMORY
+						  | SEC_LINKER_CREATED
+						  | SEC_READONLY))
+		      || !bfd_set_section_alignment (dynobj, srelgot, 2))
+		    return false;
+		}
+	    }
+	  /* Fall through.  */
+
 	case R_CRIS_32_GOTREL:
 	case R_CRIS_32_PLT_GOTREL:
 	  if (sgot == NULL)
@@ -2415,27 +2427,6 @@ cris_elf_check_relocs (abfd, info, sec, relocs)
 	case R_CRIS_16_GOT:
 	case R_CRIS_32_GOT:
 	  /* This symbol requires a global offset table entry.  */
-
-	  if (srelgot == NULL
-	      && (h != NULL || info->shared))
-	    {
-	      srelgot = bfd_get_section_by_name (dynobj, ".rela.got");
-	      if (srelgot == NULL)
-		{
-		  srelgot = bfd_make_section (dynobj, ".rela.got");
-		  if (srelgot == NULL
-		      || !bfd_set_section_flags (dynobj, srelgot,
-						 (SEC_ALLOC
-						  | SEC_LOAD
-						  | SEC_HAS_CONTENTS
-						  | SEC_IN_MEMORY
-						  | SEC_LINKER_CREATED
-						  | SEC_READONLY))
-		      || !bfd_set_section_alignment (dynobj, srelgot, 2))
-		    return false;
-		}
-	    }
-
 	  if (h != NULL)
 	    {
 	      if (h->got.refcount == 0)
@@ -2883,6 +2874,9 @@ elf_cris_discard_excess_dso_dynamics (h, inf)
   struct elf_cris_pcrel_relocs_copied *s;
   struct bfd_link_info *info = (struct bfd_link_info *) inf;
 
+  if (h->root.root.type == bfd_link_hash_warning)
+    h = (struct elf_cris_link_hash_entry *) h->root.root.u.i.link;
+
   /* If a symbol has been forced local or we have found a regular
      definition for the symbolic link case, then we won't be needing
      any relocs.  */
@@ -2907,6 +2901,9 @@ elf_cris_discard_excess_program_dynamics (h, inf)
      PTR inf;
 {
   struct bfd_link_info *info = (struct bfd_link_info *) inf;
+
+  if (h->root.root.type == bfd_link_hash_warning)
+    h = (struct elf_cris_link_hash_entry *) h->root.root.u.i.link;
 
   /* If we're not creating a shared library and have a symbol which is
      referred to by .got references, but the symbol is defined locally,
@@ -2936,8 +2933,14 @@ elf_cris_discard_excess_program_dynamics (h, inf)
       /* If the locally-defined symbol isn't used by a DSO, then we don't
 	 have to export it as a dynamic symbol.  This was already done for
 	 functions; doing this for all symbols would presumably not
-	 introduce new problems.  */
-      h->root.dynindx = -1;
+	 introduce new problems.  Of course we don't do this if we're
+	 exporting all dynamic symbols.  */
+      if (! info->export_dynamic)
+	{
+	  h->root.dynindx = -1;
+	  _bfd_elf_strtab_delref (elf_hash_table (info)->dynstr,
+				  h->root.dynstr_index);
+	}
     }
 
   return true;

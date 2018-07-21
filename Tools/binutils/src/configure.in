@@ -47,15 +47,9 @@ if [ "${enable_gdbgui}" = "yes" ] ; then
 	host_libs="${host_libs} libgui"
 fi
 
-# Set up configure/Makefile variables if libstdc++-v3 is to be built.
-if [ "${enable_libstdcxx_v3}" = "yes" ] && test -d $srcdir/libstdc++-v3; then
-        libstdcxx_version="target-libstdc++-v3"
-	# Don't use libstdc++-v3's flags to configure/build itself.
-	libstdcxx_flags='`case $$dir in libstdc++-v3) ;; *) cat $$r/$(TARGET_SUBDIR)/libstdc++-v3/src/libstdc++.INC 2>/dev/null || : ;; esac` -L$$r/$(TARGET_SUBDIR)/libstd++-v3/src -L$$r/$(TARGET_SUBDIR)/libstd++-v3/src/.libs'
-else
-        libstdcxx_version="target-libio target-libstdc++"
-        libstdcxx_flags='-isystem $$s/libstdc++ -isystem $$s/libstdc++/std -isystem $$s/libstdc++/stl -isystem $$s/libio/ -isystem $$s/libio/stdio -L$$r/$(TARGET_SUBDIR)/libstdc++'
-fi
+libstdcxx_version="target-libstdc++-v3"
+# Don't use libstdc++-v3's flags to configure/build itself.
+libstdcxx_flags='`case $$dir in libstdc++-v3 | libjava) ;; *) test ! -f $$r/$(TARGET_SUBDIR)/libstdc++-v3/testsuite_flags || $(SHELL) $$r/$(TARGET_SUBDIR)/libstdc++-v3/testsuite_flags --build-includes;; esac` -L$$r/$(TARGET_SUBDIR)/libstdc++-v3/src -L$$r/$(TARGET_SUBDIR)/libstdc++-v3/src/.libs'
 
 # these tools are built for the host environment
 # Note, the powerpc-eabi build depends on sim occurring before gdb in order to
@@ -601,6 +595,17 @@ no)
 esac
 
 case "${target}" in
+  *-*-netbsd*)
+    # Skip some stuff on all NetBSD configurations.
+    skipdirs="$skipdirs target-newlib target-libiberty target-libgloss"
+
+    # Skip some stuff that's unsupported on some NetBSD configurations.
+    case "${target}" in
+      *)
+        noconfigdirs="$noconfigdirs ${libgcj}"
+	;;
+    esac
+    ;;
   *-*-netware)
     noconfigdirs="$noconfigdirs ${libstdcxx_version} target-newlib target-libiberty target-libgloss target-libffi"
     ;;
@@ -878,6 +883,9 @@ case "${target}" in
     noconfigdirs="$noconfigdirs gprof target-libffi"   # same as generic mips
     target_configdirs="${target_configdirs} target-bsp target-libstub target-cygmon"
    ;;
+  mips*-*-linux*)
+    noconfigdirs="$noconfigdirs target-libffi"
+    ;;
   mips*-*-*)
     noconfigdirs="$noconfigdirs gprof target-libffi"
     ;;
@@ -892,6 +900,9 @@ case "${target}" in
       *) skipdirs=`echo " ${skipdirs} " | sed -e 's/ gprof / /'` ;;
     esac
     noconfigdirs="$noconfigdirs target-libgloss target-libffi"
+    ;;
+  sh64-*-*)
+    noconfigdirs="$noconfigdirs target-libgloss ${libgcj}"
     ;;
   sparc-*-elf*)
     if [ x${is_cross_compiler} != xno ] ; then
@@ -1434,7 +1445,10 @@ esac
 if test "x${CXX_FOR_TARGET+set}" = xset; then
   :
 elif test -d ${topsrcdir}/gcc; then
-  CXX_FOR_TARGET='$$r/gcc/`case $$dir in libstdc++-v3) echo xgcc ;; *) echo g++ ;; esac` -B$$r/gcc/ -nostdinc++ '$libstdcxx_flags
+  # We add -shared-libgcc to CXX_FOR_TARGET whenever we use xgcc instead
+  # of g++ for linking C++ or Java, because g++ has -shared-libgcc by
+  # default whereas gcc does not.
+  CXX_FOR_TARGET='$$r/gcc/`case $$dir in libstdc++-v3 | libjava) echo xgcc -shared-libgcc ;; *) echo g++ ;; esac` -B$$r/gcc/ -nostdinc++ '$libstdcxx_flags
 elif test "$host" = "$target"; then
   CXX_FOR_TARGET='$(CXX)'
 else

@@ -1,5 +1,5 @@
 /* IBM S/390-specific support for 64-bit ELF
-   Copyright 2000, 2001 Free Software Foundation, Inc.
+   Copyright 2000, 2001, 2002 Free Software Foundation, Inc.
    Contributed Martin Schwidefsky (schwidefsky@de.ibm.com).
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -424,13 +424,13 @@ elf_s390_link_hash_table_create (abfd)
   struct elf_s390_link_hash_table *ret;
   bfd_size_type amt = sizeof (struct elf_s390_link_hash_table);
 
-  ret = (struct elf_s390_link_hash_table *) bfd_alloc (abfd, amt);
+  ret = (struct elf_s390_link_hash_table *) bfd_malloc (amt);
   if (ret == NULL)
     return NULL;
 
   if (! _bfd_elf_link_hash_table_init (&ret->elf, abfd, link_hash_newfunc))
     {
-      bfd_release (abfd, ret);
+      free (ret);
       return NULL;
     }
 
@@ -1026,7 +1026,9 @@ elf_s390_adjust_dynamic_symbol (info, h)
       if (h->plt.refcount <= 0
 	  || (! info->shared
 	      && (h->elf_link_hash_flags & ELF_LINK_HASH_DEF_DYNAMIC) == 0
-	      && (h->elf_link_hash_flags & ELF_LINK_HASH_REF_DYNAMIC) == 0))
+	      && (h->elf_link_hash_flags & ELF_LINK_HASH_REF_DYNAMIC) == 0
+	      && h->root.type != bfd_link_hash_undefweak
+	      && h->root.type != bfd_link_hash_undefined))
 	{
 	  /* This case can occur if we saw a PLT32 reloc in an input
              file, but the symbol was never referred to by a dynamic
@@ -1167,9 +1169,11 @@ allocate_dynrelocs (h, inf)
   struct elf_s390_link_hash_entry *eh;
   struct elf_s390_dyn_relocs *p;
 
-  if (h->root.type == bfd_link_hash_indirect
-      || h->root.type == bfd_link_hash_warning)
+  if (h->root.type == bfd_link_hash_indirect)
     return true;
+
+  if (h->root.type == bfd_link_hash_warning)
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
 
   info = (struct bfd_link_info *) inf;
   htab = elf_s390_hash_table (info);
@@ -1337,6 +1341,9 @@ readonly_dynrelocs (h, inf)
   struct elf_s390_link_hash_entry *eh;
   struct elf_s390_dyn_relocs *p;
 
+  if (h->root.type == bfd_link_hash_warning)
+    h = (struct elf_link_hash_entry *) h->root.u.i.link;
+
   eh = (struct elf_s390_link_hash_entry *) h;
   for (p = eh->dyn_relocs; p != NULL; p = p->next)
     {
@@ -1416,10 +1423,12 @@ elf_s390_size_dynamic_sections (output_bfd, info)
 		     linker script /DISCARD/, so we'll be discarding
 		     the relocs too.  */
 		}
-	      else
+	      else if (p->count != 0)
 		{
 		  srela = elf_section_data (p->sec)->sreloc;
 		  srela->_raw_size += p->count * sizeof (Elf64_External_Rela);
+		  if ((p->sec->output_section->flags & SEC_READONLY) != 0)
+		    info->flags |= DF_TEXTREL;
 		}
 	    }
 	}
@@ -1541,7 +1550,9 @@ elf_s390_size_dynamic_sections (output_bfd, info)
 
 	  /* If any dynamic relocs apply to a read-only section,
 	     then we need a DT_TEXTREL entry.  */
-	  elf_link_hash_traverse (&htab->elf, readonly_dynrelocs, (PTR) info);
+	  if ((info->flags & DF_TEXTREL) == 0)
+	    elf_link_hash_traverse (&htab->elf, readonly_dynrelocs,
+				    (PTR) info);
 
 	  if ((info->flags & DF_TEXTREL) != 0)
 	    {
@@ -1884,21 +1895,21 @@ elf_s390_relocate_section (output_bfd, info, input_bfd, input_section,
                  time.  */
 
               skip = false;
+              relocate = false;
 
 	      outrel.r_offset =
 		_bfd_elf_section_offset (output_bfd, info, input_section,
 					 rel->r_offset);
 	      if (outrel.r_offset == (bfd_vma) -1)
 		skip = true;
+	      else if (outrel.r_offset == (bfd_vma) -2)
+		skip = true, relocate = true;
 
               outrel.r_offset += (input_section->output_section->vma
                                   + input_section->output_offset);
 
               if (skip)
-                {
-                  memset (&outrel, 0, sizeof outrel);
-                  relocate = false;
-                }
+		memset (&outrel, 0, sizeof outrel);
               else if (h != NULL
 		       && h->dynindx != -1
 		       && (r_type == R_390_PC16
@@ -1911,7 +1922,6 @@ elf_s390_relocate_section (output_bfd, info, input_bfd, input_section,
 			   || (h->elf_link_hash_flags
 			       & ELF_LINK_HASH_DEF_REGULAR) == 0))
                 {
-		  relocate = false;
                   outrel.r_info = ELF64_R_INFO (h->dynindx, r_type);
 		  outrel.r_addend = rel->r_addend;
                 }
@@ -2320,7 +2330,7 @@ static boolean
 elf_s390_object_p (abfd)
      bfd *abfd;
 {
-  return bfd_default_set_arch_mach (abfd, bfd_arch_s390, bfd_mach_s390_esame);
+  return bfd_default_set_arch_mach (abfd, bfd_arch_s390, bfd_mach_s390_64);
 }
 
 /*

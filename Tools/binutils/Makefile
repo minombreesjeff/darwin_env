@@ -51,7 +51,7 @@ SYMTOP = $(shell (test -d $(SYMROOT) || $(INSTALL) -c -d $(SYMROOT)) && cd $(SYM
 DSTTOP = $(shell (test -d $(DSTROOT) || $(INSTALL) -c -d $(DSTROOT)) && cd $(DSTROOT) && pwd)
 
 BINUTILS_VERSION = 5.0-20011017
-APPLE_VERSION = 27
+APPLE_VERSION = 36
 
 BINUTILS_VERSION_STRING = "$(BINUTILS_VERSION) (Apple version binutils-$(APPLE_VERSION))"
 
@@ -108,7 +108,7 @@ TAR = gnutar
 ifneq ($(findstring rhapsody,$(CANONICAL_ARCHS))$(findstring macos10,$(CANONICAL_ARCHS)),)
 CC = cc -arch $(HOST_ARCHITECTURE) -no-cpp-precomp
 CC_FOR_BUILD = NEXT_ROOT= cc -no-cpp-precomp
-CDEBUGFLAGS = -g -O3
+CDEBUGFLAGS = -g -Os
 CFLAGS = $(CDEBUGFLAGS) -Wall -Wimplicit $(RC_CFLAGS_NOARCH)
 HOST_ARCHITECTURE = $(shell echo $* | sed -e 's/--.*//' -e 's/powerpc/ppc/' -e 's/-apple-rhapsody//' -e 's/-apple-macos.*//')
 endif
