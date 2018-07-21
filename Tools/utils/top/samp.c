@@ -86,12 +86,6 @@ samp_p_deprecated_legend_print();
 static boolean_t
 samp_p_deprecated_proc_print(const libtop_psamp_t *a_psamp);
 static char *
-samp_p_deprecated_vm_size_delta(unsigned long long a_size,
-    unsigned long long a_prev, char *a_buf, unsigned a_bufsize);
-static char *
-samp_p_deprecated_vm_size_render(unsigned long long a_size, char *a_buf,
-    unsigned a_bufsize);
-static char *
 samp_p_deprecated_time_render(const libtop_psamp_t *a_psamp, char *a_buf,
     unsigned a_bufsize);
 #endif
@@ -419,11 +413,13 @@ samp_p_print(void)
 		for (i = 1, psamp = libtop_piterate();
 		     psamp != NULL && i <= top_opt_n;
 		     psamp = libtop_piterate()) {
-			if (samp_p_deprecated_proc_print(psamp)) {
-				retval = TRUE;
-				goto RETURN;
+			if (top_opt_U == FALSE || psamp->uid == top_opt_U_uid) {
+				if (samp_p_deprecated_proc_print(psamp)) {
+					retval = TRUE;
+					goto RETURN;
+				}
+				i++;
 			}
-			i++;
 		}
 	} else {
 		/* Header and legend. */
@@ -1466,7 +1462,7 @@ samp_p_vm_size_render(unsigned long long a_size, char *a_buf,
 			snprintf(a_buf, a_bufsize, "%4lluG",
 			    a_size / (1024ULL * 1024ULL * 1024ULL));
 		}
-	} else if (a_size < (1024ULL * 1024ULL * 1024ULL * 1024ULL)) {
+	} else if (a_size < (1024ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL)) {
 		/* T. */
 		if (a_size < 10ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL) {
 			/* 9.99T. */
@@ -2087,7 +2083,7 @@ samp_p_deprecated_proc_print(const libtop_psamp_t *a_psamp)
 	unsigned	l_vprvt, l_rprvt, l_rshrd, l_rsize, l_vsize;
 	unsigned	l_c_rprvt, l_c_rshrd, l_c_rsize, l_c_vsize;
 	char		d_prt[8];
-	char		d_rprvt[8], d_rshrd[8], d_rsize[8], d_vsize[8];
+	char		d_rprvt[9], d_rshrd[9], d_rsize[9], d_vsize[9];
 
 	/* Render command. */
 	snprintf(command, sizeof(command), "%s", a_psamp->command);
@@ -2179,48 +2175,48 @@ samp_p_deprecated_proc_print(const libtop_psamp_t *a_psamp)
 
 		if (top_opt_w) {
 			l_vprvt = sizeof("VPRVT");
-			samp_p_deprecated_vm_size_render(a_psamp->vprvt, vprvt,
+			samp_p_vm_size_render(a_psamp->vprvt, vprvt,
 			    sizeof(vprvt));
 		} else {
 			l_vprvt = 0;
 			vprvt[0] = '\0';
 		}
 
-		samp_p_deprecated_vm_size_render(a_psamp->rprvt, rprvt,
+		samp_p_vm_size_render(a_psamp->rprvt, rprvt,
 		    sizeof(rprvt));
 
-		samp_p_deprecated_vm_size_render(a_psamp->rshrd, rshrd,
+		samp_p_vm_size_render(a_psamp->rshrd, rshrd,
 		    sizeof(rshrd));
 
-		samp_p_deprecated_vm_size_render(a_psamp->rsize, rsize,
+		samp_p_vm_size_render(a_psamp->rsize, rsize,
 		    sizeof(rsize));
 
-		samp_p_deprecated_vm_size_render(a_psamp->vsize, vsize,
+		samp_p_vm_size_render(a_psamp->vsize, vsize,
 		    sizeof(vsize));
 
 		if (top_opt_w) {
 			l_rprvt = 6;
 			l_c_rprvt = sizeof(" delta");
 			c_rprvt = d_rprvt;
-			samp_p_deprecated_vm_size_delta(a_psamp->rprvt,
+			samp_p_vm_size_delta(a_psamp->rprvt,
 			    a_psamp->p_rprvt, d_rprvt, sizeof(d_rprvt));
 
 			l_rshrd = 6;
 			l_c_rshrd = sizeof(" delta");
 			c_rshrd = d_rshrd;
-			samp_p_deprecated_vm_size_delta(a_psamp->rshrd,
+			samp_p_vm_size_delta(a_psamp->rshrd,
 			    a_psamp->p_rshrd, d_rshrd, sizeof(d_rshrd));
 
 			l_rsize = 6;
 			l_c_rsize = sizeof(" delta");
 			c_rsize = d_rsize;
-			samp_p_deprecated_vm_size_delta(a_psamp->rsize,
+			samp_p_vm_size_delta(a_psamp->rsize,
 			    a_psamp->p_rsize, d_rsize, sizeof(d_rsize));
 
 			l_vsize = 6;
 			l_c_vsize = sizeof(" delta");
 			c_vsize = d_vsize;
-			samp_p_deprecated_vm_size_delta(a_psamp->vsize,
+			samp_p_vm_size_delta(a_psamp->vsize,
 			    a_psamp->p_vsize, d_vsize, sizeof(d_vsize));
 		} else {
 			l_rprvt = 5;
@@ -2266,85 +2262,6 @@ samp_p_deprecated_proc_print(const libtop_psamp_t *a_psamp)
 	retval = FALSE;
 	RETURN:
 	return retval;
-}
-
-static char *
-samp_p_deprecated_vm_size_delta(unsigned long long a_size,
-    unsigned long long a_prev, char *a_buf, unsigned a_bufsize)
-{
-	char		buf[6], *p;
-
-	assert(a_bufsize >= 8);
-
-	if (a_size == a_prev) {
-		a_buf[0] = '\0';
-	} else if (a_size > a_prev) {
-		/* Growth. */
-		samp_p_deprecated_vm_size_render(a_size - a_prev, buf,
-		    sizeof(buf));
-		snprintf(a_buf, a_bufsize, "(%*s)", a_bufsize - 3, buf);
-	} else {
-		/* Shrinkage.  Prepend a nestled '-' to the value. */
-		samp_p_deprecated_vm_size_render(a_prev - a_size, &buf[1],
-		    sizeof(buf) - 1);
-
-		buf[0] = ' ';
-		for (p = buf; *p == ' '; p++) {
-			/* Do nothing. */
-			assert(*p != '\0');
-		}
-		p--;
-		*p = '-';
-		snprintf(a_buf, a_bufsize, "(%*s)", a_bufsize - 3, buf);
-	}
-
-	return a_buf;
-}
-
-static char *
-samp_p_deprecated_vm_size_render(unsigned long long a_size, char *a_buf,
-    unsigned a_bufsize)
-{
-	assert(a_bufsize >= 5);
-
-	if (a_size < (1024ULL * 1024ULL)) {
-		/* K. */
-		snprintf(a_buf, a_bufsize, "%.0fK",
-		    ((double)a_size) / 1024);
-	} else if (a_size < (1024ULL * 1024ULL * 1024ULL)) {
-		/* M. */
-		if (a_size < 10ULL * 1024ULL * 1024ULL) {
-			/* 9.99M */
-			snprintf(a_buf, a_bufsize, "%1.*fM",
-			    a_bufsize - 4, ((double)a_size) / (1024 * 1024));
-		} else if (a_size < 100ULL * 1024ULL * 1024ULL) {
-			/* 99.9M */
-			snprintf(a_buf, a_bufsize, "%2.*fM",
-			    a_bufsize - 5, ((double)a_size) / (1024 * 1024));
-		} else {
-			/* 1023M */
-			snprintf(a_buf, a_bufsize, "%4lluM",
-			    a_size / (1024ULL * 1024ULL));
-		}
-	} else {
-		if (a_size < 10ULL * 1024ULL * 1024ULL * 1024ULL) {
-			/* 9.99G. */
-			snprintf(a_buf, a_bufsize, "%1.*fG",
-			    a_bufsize - 4,
-			    ((double)a_size) / (1024 * 1024 * 1024));
-		} else if (a_size < 100ULL * 1024ULL * 1024ULL * 1024ULL) {
-			/* 99.9G. */
-			snprintf(a_buf, a_bufsize, "%2.*fG",
-			    a_bufsize - 5,
-			    ((double)a_size) / (1024 * 1024 * 1024));
-		} else {
-			/* 1023G */
-			snprintf(a_buf, a_bufsize, "%4lluM",
-			    a_size / (1024ULL * 1024ULL * 1024ULL));
-		}
-	}
-
-	return a_buf;
 }
 
 static char *

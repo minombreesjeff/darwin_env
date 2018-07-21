@@ -232,7 +232,7 @@ disp_run(void)
 			retval = TRUE;
 			goto RETURN;
 		}
-
+	GET_CHAR:
 		/* Read a character. */
 		c = wgetch(disp_dwin);
 
@@ -511,9 +511,10 @@ disp_run(void)
 			}
 			/* Fall through. */
 		case ERR: /* Timeout. */
-		default:
-			/* Just redisplay. */
 			break;
+		default:
+			/* Ignore this keypress.  */
+		  goto GET_CHAR;
 		}
 	}
 	assert(0); /* Not reached. */
@@ -1041,6 +1042,7 @@ disp_p_init(void)
 	signal(SIGINT, disp_p_shutdown);
 	signal(SIGQUIT, disp_p_shutdown);
 	signal(SIGWINCH, disp_p_sigwinch);
+	signal(SIGCONT, disp_p_resize);
 
 	/* Initialize windows and panels. */
 	if ((disp_dwin = newwin(0, 0, 0, 0)) == NULL) {
@@ -1067,6 +1069,7 @@ disp_p_init(void)
 		goto RETURN;
 	}
 
+	disp_sbuf[0]='\0'; disp_lbuf[0]='\0';
 	disp_bufsize = COLS + 1;
 
 	/* Initialize the default signal. */

@@ -53,6 +53,7 @@
 
 #include <sys/socket.h>
 #include <net/if.h>
+#include <net/route.h>
 #include <ifaddrs.h>
 
 #define LIBTOP_DBG
@@ -140,9 +141,9 @@ struct libtop_oinfo_s {
 	 * when another reference to the same memory region is encountered.
 	 */
 	int			rb_share_type; /* SM_EMPTY == "no rollback" */
-	vm_size_t		rb_aliased;
-	vm_size_t		rb_vprvt;
-	vm_size_t		rb_rshrd;
+	unsigned long long	rb_aliased;
+	unsigned long long	rb_vprvt;
+	unsigned long long	rb_rshrd;
 };
 
 /*
@@ -905,26 +906,28 @@ libtop_p_vm_sample(void)
 /*
  * Sample network usage.
  *
- * The algorithm used does not deal with the following conditions, which can
+ * The algorithm used does not deal with the following condition, which can
  * cause the statistics to be invalid:
  *
- * 1) Interface counters are 32 bit counters.  Given the speed of current
- *    interfaces, the counters can overflow (wrap) in a matter of seconds.  No
- *    effort is made to detect or correct counter overflow.
+ *  Interfaces are dynamic -- they can appear and disappear at any time.
+ *  There is no way to get statistics on an interface that has disappeared, so
+ *  it isn't possible to determine the amount of data transfer between the
+ *  previous sample and when the interface went away.
  *
- * 2) Interfaces are dynamic -- they can appear and disappear at any time.
- *    There is no way to get statistics on an interface that has disappeared, so
- *    it isn't possible to determine the amount of data transfer between the
- *    previous sample and when the interface went away.
- *
- *    Due to this problem, if an interface disappears, it is possible for the
- *    current sample values to be lower than those of the beginning or previous
- *    samples.
+ *  Due to this problem, if an interface disappears, it is possible for the
+ *  current sample values to be lower than those of the beginning or previous
+ *  samples.
  */
 static void
 libtop_p_networks_sample(void)
 {
-    struct ifaddrs *ifa_list = 0, *ifa;
+	short network_layer;
+	short link_layer;
+ 	int mib[6];
+     	char *buf = NULL, *lim, *next;
+	size_t len;
+	struct if_msghdr *ifm;
+
 
 	tsamp.p_net_ipackets = tsamp.net_ipackets;
 	tsamp.p_net_opackets = tsamp.net_opackets;
@@ -936,28 +939,40 @@ libtop_p_networks_sample(void)
 	tsamp.net_ibytes = 0;
 	tsamp.net_obytes = 0;
 
-	if (getifaddrs(&ifa_list) == -1)
-	    goto RETURN;
-	for (ifa = ifa_list; ifa; ifa = ifa->ifa_next) {
-		if (AF_LINK != ifa->ifa_addr->sa_family)
-				continue;
-		if (!(ifa->ifa_flags & IFF_UP) && !(ifa->ifa_flags & IFF_RUNNING))
-			continue;
-		if (ifa->ifa_data == 0)
-			continue;
-
-		/* Not a loopback device. */
-		if (strncmp(ifa->ifa_name, "lo", 2)) {
-			struct if_data *if_data = (struct if_data *)ifa->ifa_data;
-
-			tsamp.net_ipackets += if_data->ifi_ipackets;
-			tsamp.net_opackets += if_data->ifi_opackets;
-
-			tsamp.net_ibytes += if_data->ifi_ibytes;
-			tsamp.net_obytes += if_data->ifi_obytes;
-		}
-		
+	mib[0]	= CTL_NET;			// networking subsystem
+	mib[1]	= PF_ROUTE;			// type of information
+	mib[2]	= 0;				// protocol (IPPROTO_xxx)
+	mib[3]	= 0;				// address family
+	mib[4]	= NET_RT_IFLIST2;	// operation
+	mib[5]	= 0;
+	if (sysctl(mib, 6, NULL, &len, NULL, 0) < 0) return;
+	if ((buf = malloc(len)) == NULL) {
+		printf("malloc failed\n");
+		exit(1);
 	}
+	if (sysctl(mib, 6, buf, &len, NULL, 0) < 0) {
+		if (buf) free(buf);
+		return;
+	}
+
+	lim = buf + len;
+	for (next = buf; next < lim; ) {
+		network_layer = link_layer = 0;
+	        ifm = (struct if_msghdr *)next;
+		next += ifm->ifm_msglen;
+
+	        if (ifm->ifm_type == RTM_IFINFO2) {
+			struct if_msghdr2 	*if2m = (struct if_msghdr2 *)ifm;
+
+			if(if2m->ifm_data.ifi_type!=18) { /* do not count loopback traffic */
+				tsamp.net_opackets += if2m->ifm_data.ifi_opackets;
+				tsamp.net_ipackets += if2m->ifm_data.ifi_ipackets;
+				tsamp.net_obytes   += if2m->ifm_data.ifi_obytes;
+				tsamp.net_ibytes   += if2m->ifm_data.ifi_ibytes;
+			}
+		} 
+	}
+
 	if (tsamp.seq == 1) {
 		tsamp.b_net_ipackets = tsamp.net_ipackets;
 		tsamp.p_net_ipackets = tsamp.net_ipackets;
@@ -971,9 +986,8 @@ libtop_p_networks_sample(void)
 		tsamp.b_net_obytes = tsamp.net_obytes;
 		tsamp.p_net_obytes = tsamp.net_obytes;
 	}
-RETURN:
-	if(ifa_list)
-	    freeifaddrs(ifa_list);
+
+	free(buf);
 }
 
 /*
@@ -1152,12 +1166,7 @@ libtop_p_proc_table_read(boolean_t a_reg)
 				retval = TRUE;
 				goto RETURN;
 			}
-
-			/* Delete task port if it isn't our own. */
-			if (tasks[j] != mach_task_self()) {
-				mach_port_deallocate(mach_task_self(),
-				    tasks[j]);
-			}
+			mach_port_deallocate(mach_task_self(),tasks[j]);
 		}
 
 		error = vm_deallocate((vm_map_t)mach_task_self(),
@@ -1209,7 +1218,7 @@ libtop_p_task_update(task_t a_task, boolean_t a_reg)
 	vm_size_t		aliased;
 	libtop_pinfo_t		*pinfo;
 	libtop_oinfo_t		*oinfo;
-	task_basic_info_data_t	ti;
+	struct task_basic_info_64	ti;
 	struct timeval		tv;
 	vm_address_t		address;
 	mach_port_t		object_name;
@@ -1288,8 +1297,8 @@ libtop_p_task_update(task_t a_task, boolean_t a_reg)
 	 * Get task_info, which is used for memory usage and CPU usage
 	 * statistics.
 	 */
-	count = TASK_BASIC_INFO_COUNT;
-	error = task_info(a_task, TASK_BASIC_INFO, (task_info_t)&ti, &count);
+	count = TASK_BASIC_INFO_64_COUNT;
+	error = task_info(a_task, TASK_BASIC_INFO_64, (task_info_t)&ti, &count);
 	if (error != KERN_SUCCESS) {
 		state = LIBTOP_STATE_ZOMBIE;
 		retval = FALSE;
