@@ -20,21 +20,10 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#ifndef UID_H
+#define UID_H
+#include "statistic.h"
 
-static FILE *log_file = NULL;
+struct statistic *top_uid_create(WINDOW *parent, const char *name);
 
-void top_log(const char *format, ...) {
-    va_list vl;
-
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
-}
-
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
-}
+#endif /*UID_H*/

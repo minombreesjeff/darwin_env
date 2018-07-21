@@ -20,21 +20,36 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#include "libtop.h"
+#include "csw.h"
+#include "generic.h"
+#include "uinteger.h"
 
-static FILE *log_file = NULL;
+static bool csw_insert_cell(struct statistic *s, const void *sample) {
+    const libtop_psamp_t *psamp = sample;
+    char buf[GENERIC_INT_SIZE];
 
-void top_log(const char *format, ...) {
-    va_list vl;
-
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
+    if(top_uinteger_format_result(buf, sizeof(buf),
+				psamp->csw.now,
+				psamp->csw.previous,
+				psamp->csw.began)) {
+	return true;
     }
+      
+    return generic_insert_cell(s, buf);
 }
 
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
+static struct statistic_callbacks callbacks = {
+    .draw = generic_draw,
+    .resize_cells = generic_resize_cells,
+    .move_cells = generic_move_cells,
+    .get_request_size = generic_get_request_size,
+    .get_minimum_size = generic_get_minimum_size,
+    .insert_cell = csw_insert_cell,
+    .reset_insertion = generic_reset_insertion
+};
+
+struct statistic *top_csw_create(WINDOW *parent, const char *name) {
+    return create_statistic(STATISTIC_CSW, parent, NULL, &callbacks, 
+			    name);
 }

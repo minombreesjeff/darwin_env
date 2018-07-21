@@ -20,21 +20,28 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#include <ctype.h>
+#include "libtop.h"
+#include "pstate.h"
+#include "generic.h"
 
-static FILE *log_file = NULL;
+static bool pstate_insert_cell(struct statistic *s, const void *sample) {
+    const libtop_psamp_t *psamp = sample;
 
-void top_log(const char *format, ...) {
-    va_list vl;
-
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
+    return generic_insert_cell(s, libtop_state_str(psamp->state));
 }
 
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
+static struct statistic_callbacks callbacks = {
+    .draw = generic_draw,
+    .resize_cells = generic_resize_cells,
+    .move_cells = generic_move_cells,
+    .get_request_size = generic_get_request_size,
+    .get_minimum_size = generic_get_minimum_size,
+    .insert_cell = pstate_insert_cell,
+    .reset_insertion = generic_reset_insertion
+};
+
+struct statistic *top_pstate_create(WINDOW *parent, const char *name) {
+    return create_statistic(STATISTIC_PSTATE, parent, NULL, &callbacks,
+			    name);
 }

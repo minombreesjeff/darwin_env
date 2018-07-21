@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008 Apple Computer, Inc.  All rights reserved.
+ * Copyright (c) 2008, 2009 Apple Computer, Inc.  All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,21 +20,19 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#include <stdbool.h>
+#include <signal.h>
 
-static FILE *log_file = NULL;
+static volatile sig_atomic_t do_exit = 0;
 
-void top_log(const char *format, ...) {
-    va_list vl;
-
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
+static void sigint_handler(int s) {
+    do_exit = 1;   
 }
 
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
+void top_signal_init(void) {
+    signal(SIGINT, sigint_handler);
+}
+
+bool top_signal_is_exit_set(void) {
+    return (do_exit) ? true : false;
 }

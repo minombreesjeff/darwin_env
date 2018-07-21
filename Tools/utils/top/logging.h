@@ -20,21 +20,9 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#ifndef LOGGING_H
+#define LOGGING_H
 
-static FILE *log_file = NULL;
+void top_logging_loop(void *tinst);
 
-void top_log(const char *format, ...) {
-    va_list vl;
-
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
-}
-
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
-}
+#endif

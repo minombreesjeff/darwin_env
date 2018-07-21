@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc.  All rights reserved.
+ * Copyright (c) 2008 Apple Computer, Inc.  All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,5 +20,11 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-boolean_t
-disp_run(void);
+#ifndef THREADS_H
+#define THREADS_H
+
+#include "statistic.h"
+
+struct statistic *top_threadcount_create(WINDOW *parent, const char *name);
+
+#endif /*THREADS_H*/

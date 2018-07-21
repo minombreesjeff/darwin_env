@@ -20,21 +20,36 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#include <string.h>
+#include <stdlib.h>
+#include <assert.h>
+#include "libtop.h"
+#include "user.h"
+#include "generic.h"
 
-static FILE *log_file = NULL;
+static bool user_insert_cell(struct statistic *s, const void *sample) {
+    const libtop_psamp_t *psamp = sample;
+    const char *user;
 
-void top_log(const char *format, ...) {
-    va_list vl;
-
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
+    user = libtop_username(psamp->uid);
+    if(NULL == user) {
+	user = "";
     }
+      
+    return generic_insert_cell(s, user);
 }
 
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
+static struct statistic_callbacks callbacks = {
+    .draw = generic_draw,
+    .resize_cells = generic_resize_cells,
+    .move_cells = generic_move_cells,
+    .get_request_size = generic_get_request_size,
+    .get_minimum_size = generic_get_minimum_size,
+    .insert_cell = user_insert_cell,
+    .reset_insertion = generic_reset_insertion
+};
+
+struct statistic *top_user_create(WINDOW *parent, const char *name) {
+    return create_statistic(STATISTIC_USER, parent, NULL, &callbacks, 
+			    name);
 }

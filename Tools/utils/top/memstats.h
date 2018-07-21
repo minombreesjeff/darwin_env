@@ -20,21 +20,17 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#ifndef MEMSTATS_H
+#define MEMSTATS_H
 
-static FILE *log_file = NULL;
+#include "statistic.h"
 
-void top_log(const char *format, ...) {
-    va_list vl;
+struct statistic *top_rsize_create(WINDOW *parent, const char *name);
+struct statistic *top_vsize_create(WINDOW *parent, const char *name);
+struct statistic *top_rprvt_create(WINDOW *parent, const char *name);
+struct statistic *top_vprvt_create(WINDOW *parent, const char *name);
+struct statistic *top_rshrd_create(WINDOW *parent, const char *name);
+struct statistic *top_mregion_create(WINDOW *parent, const char *name);
+struct statistic *top_pageins_create(WINDOW *parent, const char *name);
 
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
-}
-
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
-}
+#endif /*MEMSTATS_H*/

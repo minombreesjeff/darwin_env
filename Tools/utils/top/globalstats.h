@@ -20,21 +20,21 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#ifndef GLOBALSTATS_H
+#define GLOBALSTATS_H
 
-static FILE *log_file = NULL;
+#include <curses.h>
+#include <stdbool.h>
 
-void top_log(const char *format, ...) {
-    va_list vl;
+void *top_globalstats_create(WINDOW *parent);
+void top_globalstats_draw(void *ptr);
+bool top_globalstats_update(void *ptr, const void *sample);
+bool top_globalstats_resize(void *ptr, int width, int height, 
+			    int *consumed_height);
+void top_globalstats_iterate(void *ptr, bool (*iter)(char *, void *), 
+			     void *dataptr);
 
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
-}
+/* This resets the maximum width of the windows, typically after a relayout. */
+void top_globalstats_reset(void *ptr);
 
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
-}
+#endif

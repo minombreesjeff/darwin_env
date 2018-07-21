@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008 Apple Computer, Inc.  All rights reserved.
+ * Copyright (c) 2009 Apple Computer, Inc.  All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,21 +20,11 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#ifndef USERINPUT_HELP_H
+#define USERINPUT_HELP_H
 
-static FILE *log_file = NULL;
+#include "userinput.h"
 
-void top_log(const char *format, ...) {
-    va_list vl;
+extern struct user_input_state top_user_input_help_state;
 
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
-}
-
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
-}
+#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc.  All rights reserved.
+ * Copyright (c) 2008 Apple Computer, Inc.  All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,15 +20,10 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-typedef boolean_t samp_skip_t (void);
-typedef boolean_t samp_print_t (const char *a_format, ...);
-typedef boolean_t samp_vprint_t (boolean_t a_newline, const char *a_format,
-    va_list a_p);
+#ifndef USER_H
+#define USER_H
+#include "statistic.h"
 
-boolean_t
-samp_init(samp_skip_t *a_skipl, samp_print_t *a_printl, samp_print_t *a_println,
-    samp_vprint_t *a_vprintln, samp_vprint_t *a_veprint);
-void
-samp_fini(void);
-boolean_t
-samp_run(void);
+struct statistic *top_user_create(WINDOW *parent, const char *name);
+
+#endif /*USER_H*/

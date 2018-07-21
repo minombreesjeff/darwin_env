@@ -20,21 +20,13 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#ifndef PSTATE_H
+#define PSTATE_H
 
-static FILE *log_file = NULL;
+#include "statistic.h"
 
-void top_log(const char *format, ...) {
-    va_list vl;
+/* A statistic for the process state. */
 
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
-}
+struct statistic *top_pstate_create(WINDOW *parent, const char *name);
 
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
-}
+#endif /*PSTATE_H*/

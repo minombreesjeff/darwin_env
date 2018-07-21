@@ -20,21 +20,10 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#ifndef PPID_H
+#define PPID_H
+#include "statistic.h"
 
-static FILE *log_file = NULL;
+struct statistic *top_ppid_create(WINDOW *parent, const char *name);
 
-void top_log(const char *format, ...) {
-    va_list vl;
-
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
-}
-
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
-}
+#endif /*PPID_H*/

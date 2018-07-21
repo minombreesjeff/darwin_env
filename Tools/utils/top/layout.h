@@ -20,21 +20,12 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#ifndef LAYOUT_H
+#define LAYOUT_H
 
-static FILE *log_file = NULL;
+#include "statistic.h"
 
-void top_log(const char *format, ...) {
-    va_list vl;
+bool layout_statistics(struct statistics_controller *controller, int maxx,
+		       int maxy, int y);
 
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
-}
-
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
-}
+#endif

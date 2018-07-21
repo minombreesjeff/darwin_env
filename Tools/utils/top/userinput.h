@@ -20,21 +20,27 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdio.h>
-#include <stdarg.h>
+#ifndef USERINPUT_H
+#define USERINPUT_H
 
-static FILE *log_file = NULL;
+#include <stdbool.h>
 
-void top_log(const char *format, ...) {
-    va_list vl;
+struct user_input_state {
+    char buf[60];
+    int offset;
+    /* This is called when Return is pressed. */
+    void (*completion)(void *tinst, struct user_input_state *s);
+	
+    /* This is called to draw the current input text, and a prompt. */
+    void (*draw)(void *tinst, struct user_input_state *s, WINDOW *win, int row, int column);
+	
+    int misc; /* A variable for misc things that each state may use. */
+};
 
-    if(log_file) {
-	va_start(vl, format);
-	vfprintf(log_file, format, vl);
-	va_end(vl);
-    }
-}
+bool user_input_process(void *tinst);
+void user_input_set_position(int r, int c);
+void user_input_draw(void *tinst, WINDOW *win);
+void user_input_set_error_state(const char *err);
+void user_input_set_state(struct user_input_state *state);
 
-void top_log_set_file(FILE *fp) {
-    log_file = fp;
-}
+#endif
