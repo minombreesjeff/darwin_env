@@ -1,6 +1,6 @@
 /* size.c -- report size of various sections of an executable file.
-   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
-   Free Software Foundation, Inc.
+   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
+   2002 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -87,7 +87,7 @@ usage (stream, status)
   fprintf (stream, _(" If no input file(s) are specified, a.out is assumed\n"));
   fprintf (stream, _(" The options are:\n\
   -A|-B     --format={sysv|berkeley}  Select output style (default is %s)\n\
-  -o|-d|-h  --radix={8|10|16}         Display numbers in octal, decimal or hex\n\
+  -o|-d|-x  --radix={8|10|16}         Display numbers in octal, decimal or hex\n\
   -t        --totals                  Display the total sizes (Berkeley only)\n\
             --target=<bfdname>        Set the binary file format\n\
   -h        --help                    Display this information\n\
@@ -362,7 +362,7 @@ display_file (filename)
   else
     display_bfd (file);
 
-  if (! bfd_close (file))
+  if (!bfd_close (file))
     {
       bfd_nonfatal (filename);
       return_code = 1;

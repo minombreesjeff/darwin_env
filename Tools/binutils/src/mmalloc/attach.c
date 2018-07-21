@@ -20,6 +20,13 @@ License along with the GNU C Library; see the file COPYING.LIB.  If
 not, write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
+#include "mmprivate.h"
+
+#define MAP_PRIVATE_OR_SHARED(MDP) (((MDP) -> flags & MMALLOC_SHARED) \
+                                    ? MAP_PRIVATE \
+                                    : MAP_SHARED)
+
+#include <stdio.h>
 #include <sys/types.h>
 #include <fcntl.h> /* After sys/types.h, at least for dpx/2.  */
 #include <sys/stat.h>
@@ -27,7 +34,6 @@ Boston, MA 02111-1307, USA.  */
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>	/* Prototypes for lseek */
 #endif
-#include "mmprivate.h"
 
 #include <sys/mman.h>
 
@@ -43,7 +49,7 @@ Boston, MA 02111-1307, USA.  */
 
 /* Forward declarations/prototypes for local functions */
 
-static struct mdesc *reuse PARAMS ((int, int));
+static struct mdesc *reuse PARAMS ((int, PTR, int));
 
 /* Initialize access to a mmalloc managed region.
 
@@ -102,17 +108,13 @@ mmalloc_attach (fd, baseaddr, flags)
 	}
       else if (sbuf.st_size > 0)
 	{
-	  return ((PTR) reuse (fd, flags));
+	  return ((PTR) reuse (fd, baseaddr, flags));
 	}
     }
 
   if (baseaddr == 0)
     {
-      baseaddr = mmalloc_findbase (sizeof (mtemp));
-      if (baseaddr == 0)
-	{
-	  return (NULL);
-	}
+      return (NULL);
     }
 
   /* We start off with the malloc descriptor allocated on the stack, until
@@ -200,12 +202,15 @@ mmalloc_attach (fd, baseaddr, flags)
    unsuccessful for some reason. */
 
 static struct mdesc *
-reuse (fd, flags)
+reuse (fd, baseaddr, flags)
   int fd;
+  PTR baseaddr;
   int flags;
 {
   struct mdesc mtemp;
   struct mdesc *mdp = NULL;
+  caddr_t base;
+  unsigned int i;
 
   if (lseek (fd, 0L, SEEK_SET) != 0)
     return NULL;
@@ -222,14 +227,36 @@ reuse (fd, flags)
   if (flags & MMALLOC_SHARED)
     mtemp.flags |= MMALLOC_SHARED;
 
-  if (__mmalloc_remap_core (&mtemp) == mtemp.base)
+  if (baseaddr == NULL)
+    baseaddr = mmalloc_findbase (mtemp.top - mtemp.base);
+
+
+  base = mmap (baseaddr, mtemp.top - mtemp.base,
+	       PROT_READ | PROT_WRITE, MAP_PRIVATE_OR_SHARED (&mtemp) | MAP_FIXED,
+	       mtemp.fd, 0);
+  
+  if (base != baseaddr)
     {
-      mdp = (struct mdesc *) mtemp.base;
-      mdp -> fd = fd;
-      mdp -> morecore = __mmalloc_mmap_morecore;
-      if (flags & MMALLOC_SHARED)
-	mdp -> flags |= MMALLOC_SHARED;
+      /* need to deallocate */
+      return NULL;
     }
+
+  mdp = (struct mdesc *) base;
+  mdp->top += (base - mdp->base);
+  mdp->breakval += (base - mdp->base);
+  mdp->base = base;
+  
+  mdp->fd = fd;
+  mdp->morecore = __mmalloc_mmap_morecore;
+  if (flags & MMALLOC_SHARED)
+    mdp->flags |= MMALLOC_SHARED;
+
+#if 0
+  for (i = 0; i < MMALLOC_KEYS; i++)
+    {
+      mdp->keys[i] = ((char *) mdp->keys[i]) + (((char *) base) - ((char *) mtemp.base));
+    }
+#endif
 
   return (mdp);
 }
@@ -242,9 +269,10 @@ reuse (fd, flags)
 
 /* ARGSUSED */
 PTR
-mmalloc_attach (fd, baseaddr)
+mmalloc_attach (fd, baseaddr, flags)
   int fd;
   PTR baseaddr;
+  int flags;
 {
    return (NULL);
 }

@@ -39,10 +39,11 @@
    -o		Like -to.  (Some other implementations have -o like -to,
 		others like -td.  We chose one arbitrarily.)
 
-   --encoding={s,b,l,B,L}
-   -e {s,b,l,B,L}
-		Select character encoding: single-byte, bigendian 16-bit,
-		littleendian 16-bit, bigendian 32-bit, littleendian 32-bit
+   --encoding={s,S,b,l,B,L}
+   -e {s,S,b,l,B,L}
+		Select character encoding: 7-bit-character, 8-bit-character,
+		bigendian 16-bit, littleendian 16-bit, bigendian 32-bit,
+		littleendian 32-bit.
 
    --target=BFDNAME
 		Specify a non-default object file format.
@@ -67,9 +68,6 @@
 #include "libiberty.h"
 #include "safe-ctype.h"
 
-#define true 1
-#define false 0
-
 /* Some platforms need to put stdin into binary mode, to read
     binary files.  */
 #ifdef HAVE_SETMODE
@@ -83,11 +81,14 @@
 #endif
 #if O_BINARY
 #include <io.h>
-#define SET_BINARY(f) do { if (!isatty(f)) setmode(f,O_BINARY); } while (0)
+#define SET_BINARY(f) do { if (!isatty (f)) setmode (f,O_BINARY); } while (0)
 #endif
 #endif
 
-#define isgraphic(c) (ISPRINT (c) || (c) == '\t')
+#define STRING_ISGRAPHIC(c) \
+      (   (c) >= 0 \
+       && (c) <= 255 \
+       && ((c) == '\t' || ISPRINT (c) || (encoding == 'S' && (c) > 127)))
 
 #ifndef errno
 extern int errno;
@@ -98,10 +99,10 @@ extern int errno;
 
 #ifdef HAVE_FOPEN64
 typedef off64_t file_off;
-#define file_open(s,m) fopen64(s,m)
+#define file_open(s,m) fopen64(s, m)
 #else
 typedef off_t file_off;
-#define file_open(s,m) fopen(s,m)
+#define file_open(s,m) fopen(s, m)
 #endif
 
 /* Radix for printing addresses (must be 8, 10 or 16).  */
@@ -110,17 +111,17 @@ static int address_radix;
 /* Minimum length of sequence of graphic chars to trigger output.  */
 static int string_min;
 
-/* true means print address within file for each string.  */
-static boolean print_addresses;
+/* TRUE means print address within file for each string.  */
+static bfd_boolean print_addresses;
 
-/* true means print filename for each string.  */
-static boolean print_filenames;
+/* TRUE means print filename for each string.  */
+static bfd_boolean print_filenames;
 
-/* true means for object files scan only the data section.  */
-static boolean datasection_only;
+/* TRUE means for object files scan only the data section.  */
+static bfd_boolean datasection_only;
 
-/* true if we found an initialized data section in the current file.  */
-static boolean got_a_section;
+/* TRUE if we found an initialized data section in the current file.  */
+static bfd_boolean got_a_section;
 
 /* The BFD object file format.  */
 static char *target;
@@ -142,18 +143,23 @@ static struct option long_options[] =
   {NULL, 0, NULL, 0}
 };
 
-static void strings_a_section PARAMS ((bfd *, asection *, PTR));
-static boolean strings_object_file PARAMS ((const char *));
-static boolean strings_file PARAMS ((char *file));
-static int integer_arg PARAMS ((char *s));
-static void print_strings PARAMS ((const char *filename, FILE *stream,
-				  file_off address, int stop_point,
-				  int magiccount, char *magic));
-static void usage PARAMS ((FILE *stream, int status));
-static long get_char PARAMS ((FILE *stream, file_off *address,
-			      int *magiccount, char **magic));
+static void strings_a_section
+  PARAMS ((bfd *, asection *, PTR));
+static bfd_boolean strings_object_file
+  PARAMS ((const char *));
+static bfd_boolean strings_file
+  PARAMS ((char *file));
+static int integer_arg
+  PARAMS ((char *s));
+static void print_strings
+  PARAMS ((const char *, FILE *, file_off, int, int, char *));
+static void usage
+  PARAMS ((FILE *, int));
+static long get_char
+  PARAMS ((FILE *, file_off *, int *, char **));
 
-int main PARAMS ((int, char **));
+int main
+  PARAMS ((int, char **));
 
 int
 main (argc, argv)
@@ -162,7 +168,7 @@ main (argc, argv)
 {
   int optc;
   int exit_status = 0;
-  boolean files_given = false;
+  bfd_boolean files_given = FALSE;
 
 #if defined (HAVE_SETLOCALE)
   setlocale (LC_ALL, "");
@@ -173,9 +179,9 @@ main (argc, argv)
   program_name = argv[0];
   xmalloc_set_program_name (program_name);
   string_min = -1;
-  print_addresses = false;
-  print_filenames = false;
-  datasection_only = true;
+  print_addresses = FALSE;
+  print_filenames = FALSE;
+  datasection_only = TRUE;
   target = NULL;
   encoding = 's';
 
@@ -185,11 +191,11 @@ main (argc, argv)
       switch (optc)
 	{
 	case 'a':
-	  datasection_only = false;
+	  datasection_only = FALSE;
 	  break;
 
 	case 'f':
-	  print_filenames = true;
+	  print_filenames = TRUE;
 	  break;
 
 	case 'H':
@@ -199,18 +205,16 @@ main (argc, argv)
 	case 'n':
 	  string_min = integer_arg (optarg);
 	  if (string_min < 1)
-	    {
-	      fatal (_("invalid number %s"), optarg);
-	    }
+	    fatal (_("invalid number %s"), optarg);
 	  break;
 
 	case 'o':
-	  print_addresses = true;
+	  print_addresses = TRUE;
 	  address_radix = 8;
 	  break;
 
 	case 't':
-	  print_addresses = true;
+	  print_addresses = TRUE;
 	  if (optarg[1] != '\0')
 	    usage (stderr, 1);
 	  switch (optarg[0])
@@ -264,6 +268,7 @@ main (argc, argv)
 
   switch (encoding)
     {
+    case 'S':
     case 's':
       encoding_bytes = 1;
       break;
@@ -284,28 +289,28 @@ main (argc, argv)
 
   if (optind >= argc)
     {
-      datasection_only = false;
+      datasection_only = FALSE;
 #ifdef SET_BINARY
       SET_BINARY (fileno (stdin));
 #endif
       print_strings ("{standard input}", stdin, 0, 0, 0, (char *) NULL);
-      files_given = true;
+      files_given = TRUE;
     }
   else
     {
       for (; optind < argc; ++optind)
 	{
 	  if (strcmp (argv[optind], "-") == 0)
-	    datasection_only = false;
+	    datasection_only = FALSE;
 	  else
 	    {
-	      files_given = true;
-	      exit_status |= (strings_file (argv[optind]) == false);
+	      files_given = TRUE;
+	      exit_status |= strings_file (argv[optind]) == FALSE;
 	    }
 	}
     }
 
-  if (files_given == false)
+  if (!files_given)
     usage (stderr, 1);
 
   return (exit_status);
@@ -327,9 +332,10 @@ strings_a_section (abfd, sect, filearg)
     {
       bfd_size_type sz = bfd_get_section_size_before_reloc (sect);
       PTR mem = xmalloc (sz);
+
       if (bfd_get_section_contents (abfd, sect, mem, (file_ptr) 0, sz))
 	{
-	  got_a_section = true;
+	  got_a_section = TRUE;
 	  print_strings (file, (FILE *) NULL, sect->filepos, 0, sz, mem);
 	}
       free (mem);
@@ -339,45 +345,43 @@ strings_a_section (abfd, sect, filearg)
 /* Scan all of the sections in FILE, and print the strings
    in the initialized data section(s).
 
-   Return true if successful,
-   false if not (such as if FILE is not an object file).  */
+   Return TRUE if successful,
+   FALSE if not (such as if FILE is not an object file).  */
 
-static boolean
+static bfd_boolean
 strings_object_file (file)
      const char *file;
 {
   bfd *abfd = bfd_openr (file, target);
 
   if (abfd == NULL)
-    {
-      /* Treat the file as a non-object file.  */
-      return false;
-    }
+    /* Treat the file as a non-object file.  */
+    return FALSE;
 
   /* This call is mainly for its side effect of reading in the sections.
      We follow the traditional behavior of `strings' in that we don't
      complain if we don't recognize a file to be an object file.  */
-  if (bfd_check_format (abfd, bfd_object) == false)
+  if (!bfd_check_format (abfd, bfd_object))
     {
       bfd_close (abfd);
-      return false;
+      return FALSE;
     }
 
-  got_a_section = false;
+  got_a_section = FALSE;
   bfd_map_over_sections (abfd, strings_a_section, (PTR) file);
 
   if (!bfd_close (abfd))
     {
       bfd_nonfatal (file);
-      return false;
+      return FALSE;
     }
 
   return got_a_section;
 }
 
-/* Print the strings in FILE.  Return true if ok, false if an error occurs.  */
+/* Print the strings in FILE.  Return TRUE if ok, FALSE if an error occurs.  */
 
-static boolean
+static bfd_boolean
 strings_file (file)
      char *file;
 {
@@ -394,7 +398,7 @@ strings_file (file)
 	{
 	  fprintf (stderr, "%s: ", program_name);
 	  perror (file);
-	  return false;
+	  return FALSE;
 	}
 
       print_strings (file, stream, (file_off) 0, 0, 0, (char *) 0);
@@ -403,11 +407,11 @@ strings_file (file)
 	{
 	  fprintf (stderr, "%s: ", program_name);
 	  perror (file);
-	  return false;
+	  return FALSE;
 	}
     }
 
-  return true;
+  return TRUE;
 }
 
 /* Read the next character, return EOF if none available.
@@ -457,6 +461,7 @@ get_char (stream, address, magiccount, magic)
 
   switch (encoding)
     {
+    case 'S':
     case 's':
       r = buf[0];
       break;
@@ -521,7 +526,7 @@ print_strings (filename, stream, address, stop_point, magiccount, magic)
 	  c = get_char (stream, &address, &magiccount, &magic);
 	  if (c == EOF)
 	    return;
-	  if (c > 255 || c < 0 || !isgraphic (c))
+	  if (! STRING_ISGRAPHIC (c))
 	    /* Found a non-graphic.  Try again starting with next char.  */
 	    goto tryline;
 	  buf[i] = c;
@@ -589,7 +594,7 @@ print_strings (filename, stream, address, stop_point, magiccount, magic)
 	  c = get_char (stream, &address, &magiccount, &magic);
 	  if (c == EOF)
 	    break;
-	  if (c > 255 || c < 0 || !isgraphic (c))
+	  if (! STRING_ISGRAPHIC (c))
 	    break;
 	  putchar (c);
 	}
@@ -639,9 +644,8 @@ integer_arg (s)
     p--;
 
   if (*p)
-    {
-      fatal (_("invalid integer argument %s"), s);
-    }
+    fatal (_("invalid integer argument %s"), s);
+
   return value;
 }
 
@@ -660,8 +664,8 @@ usage (stream, status)
   -t --radix={o,x,d}        Print the location of the string in base 8, 10 or 16\n\
   -o                        An alias for --radix=o\n\
   -T --target=<BFDNAME>     Specify the binary file format\n\
-  -e --encoding={s,b,l,B,L} Select character size and endianness:\n\
-                            s = 8-bit, {b,l} = 16-bit, {B,L} = 32-bit\n\
+  -e --encoding={s,S,b,l,B,L} Select character size and endianness:\n\
+                            s = 7-bit, S = 8-bit, {b,l} = 16-bit, {B,L} = 32-bit\n\
   -h --help                 Display this information\n\
   -v --version              Print the program's version number\n"));
   list_supported_targets (program_name, stream);

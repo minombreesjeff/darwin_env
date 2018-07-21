@@ -55,7 +55,7 @@ Boston, MA 02111-1307, USA.  */
    program understand `configure --with-gnu-libc' and omit the object files,
    it is simpler to just do this in the source for each such file.  */
 
-#if defined (_LIBC) || !defined (__GNU_LIBRARY__) || 0
+#if defined (_LIBC) || !defined (__GNU_LIBRARY__)
 
 
 #if !defined(__GNU_LIBRARY__) && !defined(STDC_HEADERS)

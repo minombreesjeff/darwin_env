@@ -950,7 +950,7 @@ build_hash_table (opcode_table, hash_table, num_opcodes)
   memset (hash_table, 0, HASH_SIZE * sizeof (hash_table[0]));
   memset (hash_count, 0, HASH_SIZE * sizeof (hash_count[0]));
   if (hash_buf != NULL)
-    xfree (hash_buf);
+    free (hash_buf);
   hash_buf = (struct opcode_hash *) xmalloc (sizeof (struct opcode_hash) * num_opcodes);
   for (i = num_opcodes - 1; i >= 0; --i)
     {

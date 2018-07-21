@@ -57,9 +57,9 @@ the possibility of a GCC built-in function.
 
 /* These variables are used by the ASTRDUP implementation that relies
    on C_alloca.  */
-const char *libiberty_optr = NULL;
-char *libiberty_nptr = NULL;
-unsigned long libiberty_len = 0;
+const char *libiberty_optr;
+char *libiberty_nptr;
+unsigned long libiberty_len;
 
 /* If your stack is a linked list of frames, you have to
    provide an "address metric" ADDRESS_FUNCTION macro.  */

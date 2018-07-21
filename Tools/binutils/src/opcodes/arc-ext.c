@@ -24,8 +24,6 @@
 #include "arc-ext.h"
 #include "libiberty.h"
 
-struct arc_ext_operand_value *arc_ext_operands = NULL;
-
 /* Extension structure  */
 static struct arcExtMap arc_extension_map;
 

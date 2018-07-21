@@ -491,7 +491,7 @@ cgen_lookup_insn (cd, insn, insn_int_value, insn_bytes_value, length, fields,
   if (cd->int_insn_p)
     {
       info = NULL;
-      buf = (unsigned char *) xmalloc (cd->max_insn_bitsize / 8);
+      buf = (unsigned char *) alloca (cd->max_insn_bitsize / 8);
       cgen_put_insn_value (cd, buf, length, insn_int_value);
       base_insn = insn_int_value;
     }

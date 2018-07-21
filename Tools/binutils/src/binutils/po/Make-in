@@ -77,7 +77,7 @@ INSTOBJEXT = @INSTOBJEXT@
 	  && rm -f $@ && $(GENCAT) $@ $*.msg
 
 
-all: all-no
+all: all-@USE_NLS@
 
 all-yes: $(CATALOGS) @MAINT@ $(PACKAGE).pot
 all-no:
@@ -107,7 +107,7 @@ $(srcdir)/stamp-cat-id: $(PACKAGE).pot
 install: install-exec install-data
 install-exec:
 install-info:
-install-data: install-data-no
+install-data: install-data-@USE_NLS@
 install-data-no: all
 install-data-yes: all
 	if test -r $(MKINSTALLDIRS); then \

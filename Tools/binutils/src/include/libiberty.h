@@ -1,6 +1,6 @@
 /* Function declarations for libiberty.
 
-   Copyright 2001 Free Software Foundation, Inc.
+   Copyright 2001, 2002 Free Software Foundation, Inc.
    
    Note - certain prototypes declared in this header file are for
    functions whoes implementation copyright does not belong to the
@@ -74,7 +74,7 @@ extern char **dupargv PARAMS ((char **)) ATTRIBUTE_MALLOC;
    to find the declaration so provide a fully prototyped one.  If it
    is 1, we found it so don't provide any declaration at all.  */
 #if !HAVE_DECL_BASENAME
-#if defined (__GNU_LIBRARY__ ) || defined (__linux__) || defined (__FreeBSD__) || defined (__OpenBSD__) || defined (__CYGWIN__) || defined (__CYGWIN32__) || defined (__APPLE__) || defined (HAVE_DECL_BASENAME)
+#if defined (__GNU_LIBRARY__ ) || defined (__linux__) || defined (__FreeBSD__) || defined (__OpenBSD__) || defined (__NetBSD__) || defined (__APPLE__) || defined (__CYGWIN__) || defined (__CYGWIN32__) || defined (HAVE_DECL_BASENAME)
 extern char *basename PARAMS ((const char *));
 #else
 extern char *basename ();
@@ -145,6 +145,12 @@ extern char * getpwd PARAMS ((void));
 
 extern long get_run_time PARAMS ((void));
 
+/* Generate a relocated path to some installation directory.  Allocates
+   return value using malloc.  */
+
+extern char *make_relative_prefix PARAMS ((const char *, const char *,
+					   const char *));
+
 /* Choose a temporary directory to use for scratch files.  */
 
 extern char *choose_temp_base PARAMS ((void)) ATTRIBUTE_MALLOC;
@@ -208,7 +214,16 @@ extern void xexit PARAMS ((int status)) ATTRIBUTE_NORETURN;
 
 extern void xmalloc_set_program_name PARAMS ((const char *));
 
+/* Set the implemtations used by xmalloc, xcalloc, xrealloc, and xfree.  */
+
+extern void xmalloc_set_malloc_hooks
+PARAMS ((PTR (*nmalloc) (size_t),
+	 PTR (*ncalloc) (size_t, size_t),
+	 PTR (*nrealloc) (PTR, size_t),
+	 void (*nfree) (PTR)));
+
 /* Report an allocation failure.  */
+
 extern void xmalloc_failed PARAMS ((size_t)) ATTRIBUTE_NORETURN;
 
 /* Allocate memory without fail.  If malloc fails, this will print a
@@ -227,6 +242,10 @@ extern PTR xrealloc PARAMS ((PTR, size_t));
    xmalloc.  */
 
 extern PTR xcalloc PARAMS ((size_t, size_t)) ATTRIBUTE_MALLOC;
+
+/* Free memory allocated with xmalloc, xrealloc, or xcalloc.  */
+
+extern void xfree PARAMS ((PTR));
 
 /* Copy a string into a memory buffer without fail.  */
 
@@ -287,7 +306,7 @@ extern int vasprintf PARAMS ((char **, const char *, va_list))
    USE_C_ALLOCA yourself.  The canonical autoconf macro C_ALLOCA is
    also set/unset as it is often used to indicate whether code needs
    to call alloca(0).  */
-extern PTR C_alloca PARAMS((size_t));
+extern PTR C_alloca PARAMS ((size_t)) ATTRIBUTE_MALLOC;
 #undef alloca
 #if GCC_VERSION >= 2000 && !defined USE_C_ALLOCA
 # define alloca(x) __builtin_alloca(x)

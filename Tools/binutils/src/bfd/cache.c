@@ -42,8 +42,8 @@ SECTION
 
 static void insert PARAMS ((bfd *));
 static void snip PARAMS ((bfd *));
-static boolean close_one PARAMS ((void));
-static boolean bfd_cache_delete PARAMS ((bfd *));
+static bfd_boolean close_one PARAMS ((void));
+static bfd_boolean bfd_cache_delete PARAMS ((bfd *));
 
 /*
 INTERNAL_FUNCTION
@@ -108,15 +108,19 @@ DESCRIPTION
 	otherwise, it has to perform the complicated lookup function.
  
 .#define bfd_cache_lookup_null(x) \
-.    ((x)==bfd_last_cache? \
-.      (FILE*) (bfd_last_cache->iostream): \
-.       bfd_cache_lookup_worker(x))
+.    ((x) == bfd_last_cache ? \
+.      (FILE *) (bfd_last_cache->iostream) : \
+.       bfd_cache_lookup_worker (x))
 
 .#define bfd_cache_lookup(x) \
-.    ((bfd_cache_lookup_null(x) != NULL) ? \
-.     (bfd_cache_lookup_null(x)) : \
-.     (bfd_assert (__FILE__,__LINE__,"bfd_cache_lookup_null(x) != NULL"), \
-.      (FILE *) NULL))
+.    ((bfd_cache_lookup_null (x) != NULL) ? \
+.     (bfd_cache_lookup_null (x)) : \
+.     (bfd_assert (__FILE__,__LINE__), NULL))
+
+.#define BFD_CACHE_ITERATOR(abfd) \
+.    for (abfd = (bfd_last_cache != NULL) ? bfd_last_cache->lru_prev : NULL; \
+.         abfd != NULL; \
+.         abfd = (abfd == bfd_last_cache) ? NULL : abfd->lru_prev)
 */
 
 /* Insert a BFD into the cache.  */
@@ -160,56 +164,40 @@ snip (abfd)
 /* We need to open a new file, and the cache is full.  Find the least
    recently used cacheable BFD and close it.  */
 
-static boolean
+static bfd_boolean
 close_one ()
 {
-  register bfd *kill;
+  bfd *kill = NULL;
 
-  if (bfd_last_cache == NULL)
-    kill = NULL;
-  else
+  BFD_CACHE_ITERATOR (kill)
     {
-      for (kill = bfd_last_cache->lru_prev;
-	   (! kill->cacheable);
-	   kill = kill->lru_prev)
+      BFD_ASSERT ((kill->flags & BFD_IN_MEMORY) == 0);
+      if (kill->cacheable)
 	{
-	  BFD_ASSERT ((kill->flags & BFD_IN_MEMORY) == 0);
-	  if (kill == bfd_last_cache)
-	    {
-	      kill = NULL;
-	      break;
-	    }
+	  kill->where = ftell ((FILE *) kill->iostream);
+	  return bfd_cache_delete (kill);
 	}
     }
 
-  if (kill == NULL)
-    {
-      /* There are no open cacheable BFD's.  */
-      return true;
-    }
-
-  BFD_ASSERT ((kill->flags & BFD_IN_MEMORY) == 0);
-  kill->where = ftell ((FILE *) kill->iostream);
-
-  return bfd_cache_delete (kill);
+  return TRUE;
 }
 
 /* Close a BFD and remove it from the cache.  */
 
-static boolean
+static bfd_boolean
 bfd_cache_delete (abfd)
      bfd *abfd;
 {
-  boolean ret;
+  bfd_boolean ret;
 
   BFD_ASSERT ((abfd->flags & BFD_IN_MEMORY) == 0);
   BFD_ASSERT (open_files > 0);
 
   if (fclose ((FILE *) abfd->iostream) == 0)
-    ret = true;
+    ret = TRUE;
   else
     {
-      ret = false;
+      ret = FALSE;
       bfd_set_error (bfd_error_system_call);
     }
 
@@ -226,13 +214,13 @@ INTERNAL_FUNCTION
 	bfd_cache_init
 
 SYNOPSIS
-	boolean bfd_cache_init (bfd *abfd);
+	bfd_boolean bfd_cache_init (bfd *abfd);
 
 DESCRIPTION
 	Add a newly opened BFD to the cache.
 */
 
-boolean
+bfd_boolean
 bfd_cache_init (abfd)
      bfd *abfd;
 {
@@ -242,11 +230,11 @@ bfd_cache_init (abfd)
   while (open_files >= bfd_cache_max_open)
     {
       if (! close_one ())
-	return false;
+	return FALSE;
     }
   insert (abfd);
   ++open_files;
-  return true;
+  return TRUE;
 }
 
 /*
@@ -254,24 +242,24 @@ INTERNAL_FUNCTION
 	bfd_cache_close
 
 SYNOPSIS
-	boolean bfd_cache_close (bfd *abfd);
+	bfd_boolean bfd_cache_close (bfd *abfd);
 
 DESCRIPTION
 	Remove the BFD @var{abfd} from the cache. If the attached file is open,
 	then close it too.
 
 RETURNS
-	<<false>> is returned if closing the file fails, <<true>> is
+	<<FALSE>> is returned if closing the file fails, <<TRUE>> is
 	returned if all is well.
 */
 
-boolean
+bfd_boolean
 bfd_cache_close (abfd)
      bfd *abfd;
 {
   BFD_ASSERT ((abfd->flags & BFD_IN_MEMORY) == 0);
   if (abfd->iostream == NULL)
-    return true;
+    return TRUE;
 
   return bfd_cache_delete (abfd);
 }
@@ -295,7 +283,7 @@ FILE *
 bfd_open_file (abfd)
      bfd *abfd;
 {
-  abfd->cacheable = true;	/* Allow it to be closed later.  */
+  abfd->cacheable = TRUE;	/* Allow it to be closed later.  */
 
   while ((open_files + 1) >= bfd_cache_max_open)
     {
@@ -346,7 +334,7 @@ bfd_open_file (abfd)
 	    unlink (abfd->filename);
 #endif
 	  abfd->iostream = (PTR) fopen (abfd->filename, FOPEN_WUB);
-	  abfd->opened_once = true;
+	  abfd->opened_once = TRUE;
 	}
       break;
     }

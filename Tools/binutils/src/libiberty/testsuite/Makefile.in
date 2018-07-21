@@ -51,7 +51,7 @@ check-cplus-dem: test-demangle $(srcdir)/demangle-expected
 TEST_COMPILE = $(CC) @DEFS@ $(LIBCFLAGS) -I.. -I$(INCDIR) $(HDEFINES)
 test-demangle: $(srcdir)/test-demangle.c
 	$(TEST_COMPILE) -o test-demangle \
-		$(srcdir)/test-demangle.c ../libiberty.a
+		$(srcdir)/test-demangle.c ../libiberty.a ../../mmalloc/libmmalloc.a
 
 # Standard (either GNU or Cygnus) rules we don't use.
 info install-info clean-info dvi install etags tags installcheck:

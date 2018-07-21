@@ -20,7 +20,11 @@ License along with the GNU C Library; see the file COPYING.LIB.  If
 not, write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
+#include "config.h"
+
 #if defined(HAVE_MMAP)
+
+#include "mmprivate.h"
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>	/* Prototypes for lseek */
@@ -33,7 +37,7 @@ Boston, MA 02111-1307, USA.  */
 #include <sys/mman.h>
 #include <errno.h>
 
-#include "mmprivate.h"
+#include <mach/mach.h>
 
 #define HAVE_MSYNC
 
@@ -76,7 +80,7 @@ __mmalloc_mmap_morecore (mdp, size)
   PTR result = NULL;
   off_t foffset;        /* File offset at which new mapping will start */
   size_t mapbytes;      /* Number of bytes to map */
-  caddr_t moveto;       /* Address where we wish to move "break value" to */
+  caddr_t moveto;       /* Address which will become the new top */
   caddr_t mapto;        /* Address we actually mapped to */
   char buf = 0;         /* Single byte to write to extend mapped file */
   int flags = 0;        /* Flags for mmap() */
@@ -98,11 +102,11 @@ __mmalloc_mmap_morecore (mdp, size)
          us to try to deallocate back past the base of the mmap'd region
          then do nothing, and return NULL.  Otherwise, deallocate the
          memory and return the old break value. */
+
       if (mdp -> breakval + size >= mdp -> base)
         {
           result = (PTR) mdp -> breakval;
-          mdp -> breakval += size;
-          moveto = PAGE_ALIGN (mdp -> breakval);
+          moveto = PAGE_ALIGN (mdp -> breakval + size);
 #ifdef HAVE_MSYNC
 #ifdef MS_SYNC
           msync (moveto, (size_t) (mdp -> top - moveto), MS_SYNC | MS_INVALIDATE);
@@ -111,6 +115,7 @@ __mmalloc_mmap_morecore (mdp, size)
 #endif
 #endif
           munmap (moveto, (size_t) (mdp -> top - moveto));
+          mdp -> breakval += size;
           mdp -> top = moveto;
           return result;
         }
@@ -197,6 +202,27 @@ __mmalloc_mmap_morecore (mdp, size)
     }
   else
     {
+      vm_address_t r_start;
+      vm_size_t r_size;
+      vm_region_basic_info_data_t r_data;
+      mach_msg_type_number_t r_info_size;
+      port_t r_object_name;
+      kern_return_t kret;
+
+      r_start = (vm_address_t) mdp -> top;
+      r_info_size = VM_REGION_BASIC_INFO_COUNT;
+      kret = vm_region (mach_task_self(), &r_start, &r_size,
+			VM_REGION_BASIC_INFO, (vm_region_info_t) &r_data,
+			&r_info_size, &r_object_name);
+      if ((kret != KERN_SUCCESS) && (kret != KERN_INVALID_ADDRESS))
+	{
+	  return NULL;
+	}
+      if ((kret == KERN_SUCCESS) && (r_start < (mdp -> top + mapbytes)))
+	{
+	  return NULL;
+	}
+
       mapto = mmap (mdp -> top, mapbytes, PROT_READ | PROT_WRITE,
                     flags | MAP_FIXED, mdp -> fd, foffset);
       if (mapto == mdp -> top)
@@ -205,35 +231,60 @@ __mmalloc_mmap_morecore (mdp, size)
           result = (PTR) mdp -> breakval;
           mdp -> breakval += size;
         }
+      else
+	{
+	  return NULL;
+	}
     }
 
   return (result);
 }
 
 PTR
-__mmalloc_remap_core (mdp)
-  struct mdesc *mdp;
+mmalloc_findbase (size)
+  size_t size;
 {
-  caddr_t base;
+  vm_address_t last = 0xd0000000;
 
-  /* FIXME:  Quick hack, needs error checking and other attention. */
+  for (;;) {
 
-  base = mmap (mdp -> base, mdp -> top - mdp -> base,
-	       PROT_READ | PROT_WRITE, MAP_PRIVATE_OR_SHARED (mdp) | MAP_FIXED,
-	       mdp -> fd, 0);
-  return ((PTR) base);
+    vm_address_t r_start;
+    vm_size_t r_size;
+    vm_region_basic_info_data_t r_data;
+    mach_msg_type_number_t r_info_size;
+    port_t r_object_name;
+    kern_return_t kret;
+
+    r_start = last;
+    r_info_size = VM_REGION_BASIC_INFO_COUNT;
+
+    kret = vm_region (mach_task_self(), &r_start, &r_size,
+		      VM_REGION_BASIC_INFO, (vm_region_info_t) &r_data,
+		      &r_info_size, &r_object_name);
+    if ((kret == KERN_INVALID_ADDRESS) && ((last + size) > last))
+      {
+	return last;
+      }
+    if (kret != KERN_SUCCESS) 
+      {
+	return NULL;
+      }
+    if ((r_start - last) >= size)
+      {
+	return last;
+      }
+
+    last = r_start + r_size;
+  }
 }
 
 PTR
-mmalloc_findbase (size)
+mmalloc_findbase_hidden (size)
   size_t size;
 {
   int fd;
   int flags;
   caddr_t base = NULL;
-
-  if (size < 128 * 1024 * 1024)
-    size = 128 * 1024 * 1024;
 
   if (pagesize == 0)
     {
@@ -308,11 +359,17 @@ void mmalloc_endpoints (md, start, end)
      size_t *end;
 {
   struct mdesc *mdp = MD_TO_MDP (md);
-  *start = mdp->base;
-  *end = PAGE_ALIGN (mdp->breakval);
+
+  if (pagesize == 0)
+    {
+      pagesize = getpagesize ();
+    }
+
+  if (mdp->child)
+    return mmalloc_endpoints (mdp->child, start, end);
+
+  *start = (size_t) mdp->base;
+  *end = (size_t) PAGE_ALIGN (mdp->breakval);
 }
 
-#else	/* defined(HAVE_MMAP) */
-/* Prevent "empty translation unit" warnings from the idiots at X3J11. */
-static char ansi_c_idiots = 69;
 #endif	/* defined(HAVE_MMAP) */

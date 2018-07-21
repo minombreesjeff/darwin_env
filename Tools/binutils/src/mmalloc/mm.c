@@ -25,18 +25,6 @@ Boston, MA 02111-1307, USA. */
 
 #include "mmprivate.h"
 
-/* The mmalloc() package can use a single implicit malloc descriptor
-   for mmalloc/mrealloc/mfree operations which do not supply an explicit
-   descriptor.  For these operations, sbrk() is used to obtain more core
-   from the system, or return core.  This allows mmalloc() to provide
-   backwards compatibility with the non-mmap'd version. */
-
-struct mdesc *__mmalloc_default_mdp = NULL;
-
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>	/* Prototypes for lseek, sbrk (maybe) */
-#endif
-
 #include "mcalloc.c"
 #include "mfree.c"
 #include "mmalloc.c"
@@ -51,4 +39,5 @@ struct mdesc *__mmalloc_default_mdp = NULL;
 #include "sbrk-sup.c"
 #include "mmap-sup.c"
 #include "malloc-sup.c"
+#include "pagecheck-sup.c"
 #include "check-sup.c"

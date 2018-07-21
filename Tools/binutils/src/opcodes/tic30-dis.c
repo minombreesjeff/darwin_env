@@ -1,5 +1,5 @@
 /* Disassembly routines for TMS320C30 architecture
-   Copyright 1998, 1999, 2000 Free Software Foundation, Inc.
+   Copyright 1998, 1999, 2000, 2002 Free Software Foundation, Inc.
    Contributed by Steven Haworth (steve@pm.cse.rmit.edu.au)
 
    This program is free software; you can redistribute it and/or modify
@@ -384,7 +384,8 @@ print_par_insn (info, insn_word, insn)
   if (insn->ptm == NULL)
     return 0;
   /* Parse out the names of each of the parallel instructions from the
-  name1 = (char *) xstrdup (insn->ptm->name + 2);
+     q_insn1_insn2 format.  */
+  name1 = (char *) strdup (insn->ptm->name + 2);
   name2 = "";
   len = strlen (name1);
   for (i = 0; i < len; i++)
@@ -662,6 +663,10 @@ cnvt_tmsfloat_ieee (tmsfloat, size, ieeefloat)
      float *ieeefloat;
 {
   unsigned long exp, sign, mant;
+  union {
+    unsigned long l;
+    float f;
+  } val;
 
   if (size == 2)
     {
@@ -704,6 +709,7 @@ cnvt_tmsfloat_ieee (tmsfloat, size, ieeefloat)
   if (tmsfloat == 0x80000000)
     sign = mant = exp = 0;
   tmsfloat = sign | exp | mant;
-  *ieeefloat = *((float *) &tmsfloat);
+  val.l = tmsfloat;
+  *ieeefloat = val.f;
   return 1;
 }

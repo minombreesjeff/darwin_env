@@ -69,7 +69,7 @@ main ()
   ac_cv_func_strncmp_works=no)
 rm -f core core.* *.core])
 if test $ac_cv_func_strncmp_works = no ; then
-  LIBOBJS="$LIBOBJS strncmp.o"
+  AC_LIBOBJ(strncmp)
 fi
 ])
 
@@ -102,9 +102,10 @@ if test -z "$CC"; then
   test -z "$CC" && AC_MSG_ERROR([no acceptable cc found in \$PATH])
 fi
 
-AC_PROG_CC_GNU
+_AC_COMPILER_OBJEXT
+_AC_LANG_COMPILER_GNU
 
-if test $ac_cv_prog_gcc = yes; then
+if test $ac_compiler_gnu = yes; then
   GCC=yes
   ac_libiberty_warn_cflags='-W -Wall -Wtraditional -pedantic'
 dnl Check whether -g works, even if CFLAGS is set, in case the package
@@ -113,7 +114,7 @@ dnl normal versions of a library), tasteless as that idea is.
   ac_test_CFLAGS="${CFLAGS+set}"
   ac_save_CFLAGS="$CFLAGS"
   CFLAGS=
-  AC_PROG_CC_G
+  _AC_PROG_CC_G
   if test "$ac_test_CFLAGS" = set; then
     CFLAGS="$ac_save_CFLAGS"
   elif test $ac_cv_prog_cc_g = yes; then

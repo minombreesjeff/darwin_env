@@ -64,7 +64,10 @@ enum operand {OP_NONE,OP_REG,OP_SHIMM,OP_LIMM};
 
 #define OPERANDS 3
 
-enum operand ls_operand[OPERANDS] = { };
+enum operand ls_operand[OPERANDS];
+
+struct arc_opcode *arc_ext_opcodes;
+struct arc_ext_operand_value *arc_ext_operands;
 
 #define LS_VALUE  0
 #define LS_DEST   0
@@ -278,13 +281,7 @@ const struct arc_operand arc_operands[] =
 
 /* Given a format letter, yields the index into `arc_operands'.
    eg: arc_operand_map['a'] = REGA.  */
-unsigned char arc_operand_map[256] = { 0 };
-
-#define I(x) (((x) & 31) << 27)
-#define A(x) (((x) & ARC_MASK_REG) << ARC_SHIFT_REGA)
-#define B(x) (((x) & ARC_MASK_REG) << ARC_SHIFT_REGB)
-#define C(x) (((x) & ARC_MASK_REG) << ARC_SHIFT_REGC)
-#define R(x,b,m) (((x) & (m)) << (b))	/* value X, mask M, at bit B */
+unsigned char arc_operand_map[256];
 
 /* ARC instructions.
 

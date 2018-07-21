@@ -43,6 +43,15 @@ cannot be found.
 
 @end deftypefn
 
+@deftypefn Replacement void xmalloc_set_malloc_hooks (PTR (*@var{nmalloc}) (size_t), PTR (*@var{ncalloc}) (size_t, size_t), PTR (*nrealloc) (PTR, @var{size_t}), void (*@var{nfree}) (PTR))
+
+Replace the implementations of @var{xmalloc}, @{xcalloc}, @{xrealloc},
+and @{xfree} with the provided functions.  By default, they will call
+the system functions @var{malloc}, @{calloc}, @{realloc}, and @{free},
+respectively
+
+@end deftypefn
+
 @deftypefn Replacement void xmalloc_set_program_name (const char *@var{name})
 
 You can use this to set the name of the program used by
@@ -66,11 +75,6 @@ function will be called to print an error message and terminate execution.
 #include "ansidecl.h"
 #include "libiberty.h"
 
-#ifdef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
-#define HAVE_MMALLOC 1
-#undef HAVE_SBRK
-#endif
-
 #include <stdio.h>
 
 #ifdef __STDC__
@@ -88,29 +92,19 @@ function will be called to print an error message and terminate execution.
 PTR malloc PARAMS ((size_t));
 PTR realloc PARAMS ((PTR, size_t));
 PTR calloc PARAMS ((size_t, size_t));
+void free PARAMS ((PTR));
 PTR sbrk PARAMS ((ptrdiff_t));
-void free (PTR ptr);
-#endif
-
-#if HAVE_MMALLOC
-#include <mmalloc.h>
-#endif
-
-#include <assert.h>
-#include <limits.h>
-
-#define MAX_SIZE ULONG_MAX
-
-#undef malloc
-#undef realloc
-#undef free
-
-#if HAVE_MMALLOC
-int use_mmalloc = 1;
 #endif
 
 /* The program name if set.  */
 static const char *name = "";
+
+static PTR (*malloc_hook) (size_t) = malloc;
+static PTR (*calloc_hook) (size_t, size_t) = calloc;
+static PTR (*realloc_hook) (PTR, size_t) = realloc;
+static void (*free_hook) (PTR) = free;
+
+#undef HAVE_SBRK
 
 #ifdef HAVE_SBRK
 /* The initial sbrk, set when the program name is set. Not used for win32
@@ -131,13 +125,26 @@ xmalloc_set_program_name (s)
 }
 
 void
+xmalloc_set_malloc_hooks (nmalloc, ncalloc, nrealloc, nfree)
+     PTR (*nmalloc) (size_t);
+     PTR (*ncalloc) (size_t, size_t);
+     PTR (*nrealloc) (PTR, size_t);
+     void (*nfree) (PTR);
+{
+  malloc_hook = nmalloc;
+  calloc_hook = ncalloc;
+  realloc_hook = nrealloc;
+  free_hook = nfree;
+}
+
+void
 xmalloc_failed (size)
      size_t size;
 {
 #ifdef HAVE_SBRK
   extern char **environ;
   size_t allocated;
-  
+
   if (first_break != NULL)
     allocated = (char *) sbrk (0) - first_break;
   else
@@ -146,171 +153,68 @@ xmalloc_failed (size)
 	   "\n%s%sout of memory allocating %lu bytes after a total of %lu bytes\n",
 	   name, *name ? ": " : "",
 	   (unsigned long) size, (unsigned long) allocated);
-#else /* ! HAVE_SBRK */
+#else /* HAVE_SBRK */
   fprintf (stderr,
 	   "\n%s%sout of memory allocating %lu bytes\n",
 	   name, *name ? ": " : "",
 	   (unsigned long) size);
 #endif /* HAVE_SBRK */
-  abort ();
-}
-
-/* Like mmalloc but get error if no storage available, and protect against
-   the caller wanting to allocate zero bytes.  Whether to return NULL for
-   a zero byte request, or translate the request into a request for one
-   byte of zero'd storage, is a religious issue. */
-
-PTR
-xmmalloc (md, size)
-     PTR md;
-     size_t size;
-{
-  PTR val;
-
-  assert (size < MAX_SIZE);
-
-  if (size == 0)
-    return NULL;
-  
-  if (0) { 
-  }
-#if HAVE_MMALLOC
-  else if (use_mmalloc) {
-    val = mmalloc (md, size);
-  }
-#endif
-  else {
-    val = malloc (size);
-  }
-
-  if (val == NULL)
-    xmalloc_failed (size);
-  
-  return val;
-}
-
-PTR
-xmcalloc (md, nelem, elsize)
-     PTR md;
-     size_t nelem;
-     size_t elsize;
-{
-  PTR val;
-
-  if (nelem == 0 || elsize == 0)
-    return NULL;
-
-  assert (nelem < (MAX_SIZE / elsize));
-
-  if (0) {
-  }
-#if HAVE_MMALLOC
-  else if (use_mmalloc) {
-    val = mcalloc (md, nelem, elsize);
-  }
-#endif
-  else {
-    val = calloc (nelem, elsize);
-  }
-
-  if (val == NULL)
-    xmalloc_failed (nelem * elsize);
-  
-  return val;
-}
-
-/* Like mrealloc but get error if no storage available.  */
-
-PTR
-xmrealloc (md, ptr, size)
-     PTR md;
-     PTR ptr;
-     size_t size;
-{
-  PTR val;
-
-  assert (size < MAX_SIZE);
-
-  if (0) {
-  }
-#if HAVE_MMALLOC
-  else if (use_mmalloc) {
-    if (ptr != NULL)
-      val = mrealloc (md, ptr, size);
-    else
-      val = mmalloc (md, size);
-  }
-#endif
-  else {
-    if (ptr != NULL)
-      val = realloc (ptr, size);
-    else
-      val = malloc (size);
-  }
-
-  if (val == NULL)
-    if (size == 0)
-      return NULL;
-    else
-      xmalloc_failed (size);
-
-  return val;
-}
-
-void
-xmfree (md, ptr)
-     PTR md;
-     PTR ptr;
-{
-  if (ptr == NULL)
-    return;
-
-  if (0) {
-  }
-#if HAVE_MMALLOC 
-  else if (use_mmalloc) {
-    mfree (md, ptr);
-  }
-#endif
-  else {
-    free (ptr);
-  }
-}
-
-/* Like malloc but get error if no storage available, and protect against
-   the caller wanting to allocate zero bytes.  */
+  xexit (1);
+}  
 
 PTR
 xmalloc (size)
-     size_t size;
+    size_t size;
 {
-  assert (size < MAX_SIZE);
-  return (xmmalloc ((PTR) NULL, size));
+  PTR newmem;
+
+  if (size == 0)
+    size = 1;
+  newmem = (* malloc_hook) (size);
+  if (!newmem)
+    xmalloc_failed (size);
+
+  return (newmem);
 }
 
 PTR
 xcalloc (nelem, elsize)
-     size_t nelem;
-     size_t elsize;
+  size_t nelem, elsize;
 {
-  assert ((nelem * elsize) < MAX_SIZE);
-  return (xmcalloc ((PTR) NULL, nelem, elsize));
+  PTR newmem;
+
+  if (nelem == 0 || elsize == 0)
+    nelem = elsize = 1;
+
+  newmem = (* calloc_hook) (nelem, elsize);
+  if (!newmem)
+    xmalloc_failed (nelem * elsize);
+
+  return (newmem);
 }
 
-/* Like mrealloc but get error if no storage available.  */
-
 PTR
-xrealloc (ptr, size)
-     PTR ptr;
-     size_t size;
+xrealloc (oldmem, size)
+    PTR oldmem;
+    size_t size;
 {
-  assert (size < MAX_SIZE);
-  return (xmrealloc ((PTR) NULL, ptr, size));
+  PTR newmem;
+
+  if (size == 0)
+    size = 1;
+  if (!oldmem)
+    newmem = (* malloc_hook) (size);
+  else
+    newmem = (* realloc_hook) (oldmem, size);
+  if (!newmem)
+    xmalloc_failed (size);
+
+  return (newmem);
 }
 
 void
-xfree (ptr)
-     PTR ptr;
+xfree (oldmem)
+    PTR oldmem;
 {
-  return xmfree ((PTR) NULL, ptr);
+  (* free_hook) (oldmem);
 }

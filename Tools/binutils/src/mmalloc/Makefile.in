@@ -66,27 +66,33 @@ MAKEINFO=makeinfo
 
 SET_TEXINPUTS = TEXINPUTS=${TEXIDIR}:.:$(srcdir):$(READLINE_DIR):$$TEXINPUTS
 
+# Files which should be generated via 'info' and installed by 'install-info'
+INFO_DEPS = mmalloc.info
+
 # The TeX formatter
 TEX = tex
+
+PAGECHECK_SRC =	@PAGECHECK_SRC@
+PAGECHECK_OBJ =	@PAGECHECK_OBJ@
 
 TARGETLIB =	libmmalloc.a
 
 CFILES =	mcalloc.c mfree.c mmalloc.c mmcheck.c mmemalign.c mmstats.c \
-		mmtrace.c mrealloc.c mvalloc.c mmap-sup.c malloc-sup.c check-sup.c attach.c detach.c \
-		keys.c sbrk-sup.c mm.c
+		mmtrace.c mrealloc.c mvalloc.c attach.c detach.c keys.c \
+		mmap-sup.c malloc-sup.c $(PAGECHECK_SRC) check-sup.c sbrk-sup.c
 
 HFILES =	mmalloc.h
 
 OFILES =	mcalloc.o mfree.o mmalloc.o mmcheck.o mmemalign.o mmstats.o \
-		mmtrace.o mrealloc.o mvalloc.o mmap-sup.o malloc-sup.o check-sup.o attach.o detach.o \
-		keys.o sbrk-sup.o
+		mmtrace.o mrealloc.o mvalloc.o attach.o detach.o keys.o \
+		mmap-sup.o malloc-sup.o $(PAGECHECK_OBJ) check-sup.o sbrk-sup.o
 
 DEFS =		@DEFS@
 
 # The current default is to build a single object module with all the mmalloc
 # functions.  To build a more traditional library, flip this macro definition.
-#TARGETOBJS =	$(OFILES)
-TARGETOBJS =	mm.o
+TARGETOBJS =	$(OFILES)
+#TARGETOBJS =	mm.o
 
 .c.o:
 		$(CC) -c $(CFLAGS) $(DEFS) -I. -I$(srcdir)/../include $<
@@ -98,7 +104,7 @@ STAGESTUFF =	$(TARGETLIB) *.o
 
 all:		$(TARGETLIB)
 
-info: mmalloc.info
+info: $(INFO_DEPS)
 dvi: mmalloc.dvi
 clean-info:
 installcheck:
@@ -112,13 +118,40 @@ mmalloc.dvi: mmalloc.texi
 	rm -f mmalloc.?? mmalloc.??s mmalloc.log mmalloc.aux mmalloc.toc
 
 install-info: info
-	$(SHELL) $(srcdir)/../mkinstalldirs $(infodir)
-	if test ! -f mmalloc.info ; then cd $(srcdir); fi; \
-	$(INSTALL_DATA) mmalloc.info $(infodir)/mmalloc.info
+	@list='$(INFO_DEPS)'; \
+	for file in $$list; do \
+	  if test -f $$file; then d=.; else d=$(srcdir); fi; \
+	  for ifile in `cd $$d && echo $$file $$file-[0-9] $$file-[0-9][0-9]`; do \
+	    if test -f $$d/$$ifile; then \
+	      echo " $(INSTALL_DATA) $$d/$$ifile $(DESTDIR)$(infodir)/$$ifile"; \
+	      $(INSTALL_DATA) $$d/$$ifile $(DESTDIR)$(infodir)/$$ifile; \
+	    else : ; fi; \
+	  done; \
+	done
+	$(POST_INSTALL)
 	@if $(SHELL) -c 'install-info --version | sed 1q | fgrep -s -v -i debian' >/dev/null 2>&1; then \
-	  echo " install-info --info-dir=$(infodir) $(infodir)/mmalloc.info";\
-	  install-info --info-dir=$(infodir) $(infodir)/mmalloc.info || :;\
+	  list='$(INFO_DEPS)'; \
+	  for file in $$list; do \
+	    echo " install-info --info-dir=$(DESTDIR)$(infodir) $(DESTDIR)$(infodir)/$$file";\
+	    install-info --info-dir=$(DESTDIR)$(infodir) $(DESTDIR)$(infodir)/$$file || :;\
+	  done; \
 	else : ; fi
+
+uninstall-info:
+	$(PRE_UNINSTALL)
+	@if $(SHELL) -c 'install-info --version | sed 1q | fgrep -s -v -i debian' >/dev/null 2>&1; then \
+	  ii=yes; \
+	else ii=; fi; \
+	list='$(INFO_DEPS)'; \
+	for file in $$list; do \
+	  test -z "$$ii" \
+	    || install-info --info-dir=$(DESTDIR)$(infodir) --remove $$file; \
+	done
+	$(NORMAL_UNINSTALL)
+	list='$(INFO_DEPS)'; \
+	for file in $$list; do \
+	  (cd $(DESTDIR)$(infodir) && rm -f $$file $$file-[0-9] $$file-[0-9][0-9]); \
+	done
 
 check: test1.c
 #	$(CC) -g $(srcdir)/test1.c libmmalloc.a
@@ -173,6 +206,8 @@ stamp-framework: $(FRAMEWORK_OFILES)
 		ln -s Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK).framework/$(FRAMEWORK_PREFIX)$(FRAMEWORK); \
 	fi
 	touch stamp-framework
+
+uninstall:	uninstall-info
 
 $(TARGETLIB):	$(TARGETOBJS)
 		$(RM) -rf $@

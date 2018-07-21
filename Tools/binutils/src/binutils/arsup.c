@@ -31,9 +31,6 @@
 #include "bucomm.h"
 #include "filenames.h"
 
-#define true 1
-#define false 0
-
 static void map_over_list
   PARAMS ((bfd *, void (*function) (bfd *, bfd *), struct list *));
 static void ar_directory_doer PARAMS ((bfd *, bfd *));
@@ -72,7 +69,7 @@ map_over_list (arch, function, list)
 	 want to hack multiple references.  */
       for (ptr = list; ptr; ptr = ptr->next)
 	{
-	  boolean found = false;
+	  bfd_boolean found = FALSE;
 	  bfd *prev = arch;
 
 	  for (head = arch->next; head; head = head->next)
@@ -80,7 +77,7 @@ map_over_list (arch, function, list)
 	      if (head->filename != NULL
 		  && FILENAME_CMP (ptr->name, head->filename) == 0)
 		{
-		  found = true;
+		  found = TRUE;
 		  function (head, prev);
 		}
 	      prev = head;
@@ -195,7 +192,7 @@ ar_open (name, t)
 	      return;
 	    }
 
-	  if (bfd_check_format(ibfd, bfd_archive) != true)
+	  if (!bfd_check_format(ibfd, bfd_archive))
 	    {
 	      fprintf (stderr,
 		       _("%s: file %s is not an archive\n"),

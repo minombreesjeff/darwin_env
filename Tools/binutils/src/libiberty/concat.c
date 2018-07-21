@@ -137,7 +137,7 @@ concat_copy VPARAMS ((char *dst, const char *first, ...))
   return save_dst;
 }
 
-char *libiberty_concat_ptr = NULL;
+char *libiberty_concat_ptr;
 
 /* @undocumented concat_copy2 */
 

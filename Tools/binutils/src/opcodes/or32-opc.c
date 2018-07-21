@@ -486,8 +486,8 @@ insn_extract (param_ch, enc_initial)
 # define MIN(x,y)          ((x) < (y) ? (x) : (y))
 #endif
 
-unsigned long *automata = NULL;
-int nuncovered = 0;
+unsigned long *automata;
+int nuncovered;
 int curpass = 0;
 
 /* MM: Struct that hold runtime build information about instructions.  */
@@ -496,9 +496,9 @@ struct temp_insn_struct
   unsigned long insn;
   unsigned long insn_mask;
   int in_pass;
-} *ti = NULL;
+} *ti;
 
-struct insn_op_struct *op_data = NULL, **op_start = NULL;
+struct insn_op_struct *op_data, **op_start;
 
 /* Recursive utility function used to find best match and to build automata.  */
 

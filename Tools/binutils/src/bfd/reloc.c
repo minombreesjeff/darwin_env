@@ -1,24 +1,24 @@
 /* BFD support for handling relocation entries.
    Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002
+   2000, 2001, 2002, 2003
    Free Software Foundation, Inc.
    Written by Cygnus Support.
 
-This file is part of BFD, the Binary File Descriptor library.
+   This file is part of BFD, the Binary File Descriptor library.
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /*
 SECTION
@@ -306,7 +306,7 @@ CODE_FRAGMENT
 .      data section of the addend.  The relocation function will
 .      subtract from the relocation value the address of the location
 .      being relocated.  *}
-.  boolean pc_relative;
+.  bfd_boolean pc_relative;
 .
 .  {*  The bit position of the reloc value in the destination.
 .      The relocated value is left shifted by this amount.  *}
@@ -342,21 +342,20 @@ CODE_FRAGMENT
 .     USE_REL targets set this field to TRUE.  Why this is so is peculiar
 .     to each particular target.  For relocs that aren't used in partial
 .     links (e.g. GOT stuff) it doesn't matter what this is set to.  *}
-.  boolean partial_inplace;
+.  bfd_boolean partial_inplace;
 .
-.  {* The src_mask selects which parts of the read in data
-.     are to be used in the relocation sum.  E.g., if this was an 8 bit
-.     byte of data which we read and relocated, this would be
-.     0x000000ff.  When we have relocs which have an addend, such as
-.     sun4 extended relocs, the value in the offset part of a
-.     relocating field is garbage so we never use it.  In this case
-.     the mask would be 0x00000000.  *}
+.  {* src_mask selects the part of the instruction (or data) to be used
+.     in the relocation sum.  If the target relocations don't have an
+.     addend in the reloc, eg. ELF USE_REL, src_mask will normally equal
+.     dst_mask to extract the addend from the section contents.  If
+.     relocations do have an addend in the reloc, eg. ELF USE_RELA, this
+.     field should be zero.  Non-zero values for ELF USE_RELA targets are
+.     bogus as in those cases the value in the dst_mask part of the
+.     section contents should be treated as garbage.  *}
 .  bfd_vma src_mask;
 .
-.  {* The dst_mask selects which parts of the instruction are replaced
-.     into the instruction.  In most cases src_mask == dst_mask,
-.     except in the above special case, where dst_mask would be
-.     0x000000ff, and src_mask would be 0x00000000.  *}
+.  {* dst_mask selects which parts of the instruction (or data) are
+.     replaced with a relocated value.  *}
 .  bfd_vma dst_mask;
 .
 .  {* When some formats create PC relative instructions, they leave
@@ -365,7 +364,7 @@ CODE_FRAGMENT
 .     be made just by adding in an ordinary offset (e.g., sun3 a.out).
 .     Some formats leave the displacement part of an instruction
 .     empty (e.g., m88k bcs); this flag signals the fact.  *}
-.  boolean pcrel_offset;
+.  bfd_boolean pcrel_offset;
 .};
 .
 */
@@ -386,15 +385,15 @@ DESCRIPTION
 
 .#define NEWHOWTO(FUNCTION, NAME, SIZE, REL, IN) \
 .  HOWTO (0, 0, SIZE, 0, REL, 0, complain_overflow_dont, FUNCTION, \
-.         NAME, false, 0, 0, IN)
+.         NAME, FALSE, 0, 0, IN)
 .
 
 DESCRIPTION
 	This is used to fill in an empty howto entry in an array.
 
 .#define EMPTY_HOWTO(C) \
-.  HOWTO ((C), 0, 0, 0, false, 0, complain_overflow_dont, NULL, \
-.         NULL, false, 0, 0, false)
+.  HOWTO ((C), 0, 0, 0, FALSE, 0, complain_overflow_dont, NULL, \
+.         NULL, FALSE, 0, 0, FALSE)
 .
 
 DESCRIPTION
@@ -645,7 +644,8 @@ bfd_perform_relocation (abfd, reloc_entry, data, input_section, output_bfd,
   reloc_target_output_section = symbol->section->output_section;
 
   /* Convert input-section-relative symbol value to absolute.  */
-  if (output_bfd && ! howto->partial_inplace)
+  if ((output_bfd && ! howto->partial_inplace)
+      || reloc_target_output_section == NULL)
     output_base = 0;
   else
     output_base = reloc_target_output_section->vma;
@@ -671,16 +671,16 @@ bfd_perform_relocation (abfd, reloc_entry, data, input_section, output_bfd,
 	 of the location within the section.  Some targets arrange for
 	 the addend to be the negative of the position of the location
 	 within the section; for example, i386-aout does this.  For
-	 i386-aout, pcrel_offset is false.  Some other targets do not
+	 i386-aout, pcrel_offset is FALSE.  Some other targets do not
 	 include the position of the location; for example, m88kbcs,
-	 or ELF.  For those targets, pcrel_offset is true.
+	 or ELF.  For those targets, pcrel_offset is TRUE.
 
 	 If we are producing relocateable output, then we must ensure
 	 that this reloc will be correctly computed when the final
-	 relocation is done.  If pcrel_offset is false we want to wind
+	 relocation is done.  If pcrel_offset is FALSE we want to wind
 	 up with the negative of the location within the section,
 	 which means we must adjust the existing addend by the change
-	 in the location within the section.  If pcrel_offset is true
+	 in the location within the section.  If pcrel_offset is TRUE
 	 we do not want to adjust the existing addend at all.
 
 	 FIXME: This seems logical to me, but for the case of
@@ -1063,16 +1063,16 @@ bfd_install_relocation (abfd, reloc_entry, data_start, data_start_offset,
 	 of the location within the section.  Some targets arrange for
 	 the addend to be the negative of the position of the location
 	 within the section; for example, i386-aout does this.  For
-	 i386-aout, pcrel_offset is false.  Some other targets do not
+	 i386-aout, pcrel_offset is FALSE.  Some other targets do not
 	 include the position of the location; for example, m88kbcs,
-	 or ELF.  For those targets, pcrel_offset is true.
+	 or ELF.  For those targets, pcrel_offset is TRUE.
 
 	 If we are producing relocateable output, then we must ensure
 	 that this reloc will be correctly computed when the final
-	 relocation is done.  If pcrel_offset is false we want to wind
+	 relocation is done.  If pcrel_offset is FALSE we want to wind
 	 up with the negative of the location within the section,
 	 which means we must adjust the existing addend by the change
-	 in the location within the section.  If pcrel_offset is true
+	 in the location within the section.  If pcrel_offset is TRUE
 	 we do not want to adjust the existing addend at all.
 
 	 FIXME: This seems logical to me, but for the case of
@@ -1374,9 +1374,9 @@ _bfd_final_link_relocate (howto, input_bfd, input_section, contents, address,
      location we are relocating.  Some targets (e.g., i386-aout)
      arrange for the contents of the section to be the negative of the
      offset of the location within the section; for such targets
-     pcrel_offset is false.  Other targets (e.g., m88kbcs or ELF)
+     pcrel_offset is FALSE.  Other targets (e.g., m88kbcs or ELF)
      simply leave the contents of the section as zero; for such
-     targets pcrel_offset is true.  If pcrel_offset is false we do not
+     targets pcrel_offset is TRUE.  If pcrel_offset is FALSE we do not
      need to subtract out the offset of the location within the
      section (which is just ADDRESS).  */
   if (howto->pc_relative)
@@ -1872,6 +1872,56 @@ ENUM
   BFD_RELOC_SPARC_REV32
 ENUMDOC
   SPARC little endian relocation
+ENUM
+  BFD_RELOC_SPARC_TLS_GD_HI22
+ENUMX
+  BFD_RELOC_SPARC_TLS_GD_LO10
+ENUMX
+  BFD_RELOC_SPARC_TLS_GD_ADD
+ENUMX
+  BFD_RELOC_SPARC_TLS_GD_CALL
+ENUMX
+  BFD_RELOC_SPARC_TLS_LDM_HI22
+ENUMX
+  BFD_RELOC_SPARC_TLS_LDM_LO10
+ENUMX
+  BFD_RELOC_SPARC_TLS_LDM_ADD
+ENUMX
+  BFD_RELOC_SPARC_TLS_LDM_CALL
+ENUMX
+  BFD_RELOC_SPARC_TLS_LDO_HIX22
+ENUMX
+  BFD_RELOC_SPARC_TLS_LDO_LOX10
+ENUMX
+  BFD_RELOC_SPARC_TLS_LDO_ADD
+ENUMX
+  BFD_RELOC_SPARC_TLS_IE_HI22
+ENUMX
+  BFD_RELOC_SPARC_TLS_IE_LO10
+ENUMX
+  BFD_RELOC_SPARC_TLS_IE_LD
+ENUMX
+  BFD_RELOC_SPARC_TLS_IE_LDX
+ENUMX
+  BFD_RELOC_SPARC_TLS_IE_ADD
+ENUMX
+  BFD_RELOC_SPARC_TLS_LE_HIX22
+ENUMX
+  BFD_RELOC_SPARC_TLS_LE_LOX10
+ENUMX
+  BFD_RELOC_SPARC_TLS_DTPMOD32
+ENUMX
+  BFD_RELOC_SPARC_TLS_DTPMOD64
+ENUMX
+  BFD_RELOC_SPARC_TLS_DTPOFF32
+ENUMX
+  BFD_RELOC_SPARC_TLS_DTPOFF64
+ENUMX
+  BFD_RELOC_SPARC_TLS_TPOFF32
+ENUMX
+  BFD_RELOC_SPARC_TLS_TPOFF64
+ENUMDOC
+  SPARC TLS relocations
 
 ENUM
   BFD_RELOC_ALPHA_GPDISP_HI16
@@ -1959,7 +2009,7 @@ ENUM
   BFD_RELOC_ALPHA_BRSGP
 ENUMDOC
   Like BFD_RELOC_23_PCREL_S2, except that the source and target must
-  share a common GP, and the target address is adjusted for 
+  share a common GP, and the target address is adjusted for
   STO_ALPHA_STD_GPLOAD.
 
 ENUM
@@ -3169,6 +3219,85 @@ ENUM
   BFD_RELOC_390_GOTENT
 ENUMDOC
   32 bit rel. offset to GOT entry.
+ENUM
+  BFD_RELOC_390_GOTOFF64
+ENUMDOC
+  64 bit offset to GOT.
+ENUM
+  BFD_RELOC_390_GOTPLT12
+ENUMDOC
+  12-bit offset to symbol-entry within GOT, with PLT handling.
+ENUM
+  BFD_RELOC_390_GOTPLT16
+ENUMDOC
+  16-bit offset to symbol-entry within GOT, with PLT handling.
+ENUM
+  BFD_RELOC_390_GOTPLT32
+ENUMDOC
+  32-bit offset to symbol-entry within GOT, with PLT handling.
+ENUM
+  BFD_RELOC_390_GOTPLT64
+ENUMDOC
+  64-bit offset to symbol-entry within GOT, with PLT handling.
+ENUM
+  BFD_RELOC_390_GOTPLTENT
+ENUMDOC
+  32-bit rel. offset to symbol-entry within GOT, with PLT handling.
+ENUM
+  BFD_RELOC_390_PLTOFF16
+ENUMDOC
+  16-bit rel. offset from the GOT to a PLT entry.
+ENUM
+  BFD_RELOC_390_PLTOFF32
+ENUMDOC
+  32-bit rel. offset from the GOT to a PLT entry.
+ENUM
+  BFD_RELOC_390_PLTOFF64
+ENUMDOC
+  64-bit rel. offset from the GOT to a PLT entry.
+
+ENUM
+  BFD_RELOC_390_TLS_LOAD
+ENUMX
+  BFD_RELOC_390_TLS_GDCALL
+ENUMX
+  BFD_RELOC_390_TLS_LDCALL
+ENUMX
+  BFD_RELOC_390_TLS_GD32
+ENUMX
+  BFD_RELOC_390_TLS_GD64
+ENUMX
+  BFD_RELOC_390_TLS_GOTIE12
+ENUMX
+  BFD_RELOC_390_TLS_GOTIE32
+ENUMX
+  BFD_RELOC_390_TLS_GOTIE64
+ENUMX
+  BFD_RELOC_390_TLS_LDM32
+ENUMX
+  BFD_RELOC_390_TLS_LDM64
+ENUMX
+  BFD_RELOC_390_TLS_IE32
+ENUMX
+  BFD_RELOC_390_TLS_IE64
+ENUMX
+  BFD_RELOC_390_TLS_IEENT
+ENUMX
+  BFD_RELOC_390_TLS_LE32
+ENUMX
+  BFD_RELOC_390_TLS_LE64
+ENUMX
+  BFD_RELOC_390_TLS_LDO32
+ENUMX
+  BFD_RELOC_390_TLS_LDO64
+ENUMX
+  BFD_RELOC_390_TLS_DTPMOD
+ENUMX
+  BFD_RELOC_390_TLS_DTPOFF
+ENUMX
+  BFD_RELOC_390_TLS_TPOFF
+ENUMDOC
+  s390 tls relocations.
 
 ENUM
   BFD_RELOC_IP2K_FR9
@@ -3597,6 +3726,8 @@ ENUMDOC
 ENUM
   BFD_RELOC_XSTORMY16_REL_12
 ENUMX
+  BFD_RELOC_XSTORMY16_12
+ENUMX
   BFD_RELOC_XSTORMY16_24
 ENUMX
   BFD_RELOC_XSTORMY16_FPTR16
@@ -3611,6 +3742,28 @@ ENUMX
   BFD_RELOC_VAX_RELATIVE
 ENUMDOC
   Relocations used by VAX ELF.
+  
+ENUM
+  BFD_RELOC_MSP430_10_PCREL
+ENUMX
+  BFD_RELOC_MSP430_16_PCREL
+ENUMX
+  BFD_RELOC_MSP430_16
+ENUMX
+  BFD_RELOC_MSP430_16_PCREL_BYTE
+ENUMX
+  BFD_RELOC_MSP430_16_BYTE
+ENUMDOC
+  msp430 specific relocation codes
+
+ENUM
+  BFD_RELOC_IQ2000_OFFSET_16
+ENUMX
+  BFD_RELOC_IQ2000_OFFSET_21
+ENUMX
+  BFD_RELOC_IQ2000_UHI16
+ENUMDOC
+  IQ2000 Relocations.
 
 ENDSENUM
   BFD_RELOC_UNUSED
@@ -3643,7 +3796,7 @@ bfd_reloc_type_lookup (abfd, code)
 }
 
 static reloc_howto_type bfd_howto_32 =
-HOWTO (0, 00, 2, 32, false, 0, complain_overflow_bitfield, 0, "VRT32", false, 0xffffffff, 0xffffffff, true);
+HOWTO (0, 00, 2, 32, FALSE, 0, complain_overflow_bitfield, 0, "VRT32", FALSE, 0xffffffff, 0xffffffff, TRUE);
 
 /*
 INTERNAL_FUNCTION
@@ -3701,7 +3854,7 @@ const char *
 bfd_get_reloc_code_name (code)
      bfd_reloc_code_real_type code;
 {
-  if (code > BFD_RELOC_UNUSED)
+  if ((int) code > (int) BFD_RELOC_UNUSED)
     return 0;
   return bfd_reloc_code_real_names[(int)code];
 }
@@ -3711,26 +3864,26 @@ INTERNAL_FUNCTION
 	bfd_generic_relax_section
 
 SYNOPSIS
-	boolean bfd_generic_relax_section
+	bfd_boolean bfd_generic_relax_section
 	 (bfd *abfd,
 	  asection *section,
 	  struct bfd_link_info *,
-	  boolean *);
+	  bfd_boolean *);
 
 DESCRIPTION
 	Provides default handling for relaxing for back ends which
 	don't do relaxing -- i.e., does nothing.
 */
 
-boolean
+bfd_boolean
 bfd_generic_relax_section (abfd, section, link_info, again)
      bfd *abfd ATTRIBUTE_UNUSED;
      asection *section ATTRIBUTE_UNUSED;
      struct bfd_link_info *link_info ATTRIBUTE_UNUSED;
-     boolean *again;
+     bfd_boolean *again;
 {
-  *again = false;
-  return true;
+  *again = FALSE;
+  return TRUE;
 }
 
 /*
@@ -3738,7 +3891,7 @@ INTERNAL_FUNCTION
 	bfd_generic_gc_sections
 
 SYNOPSIS
-	boolean bfd_generic_gc_sections
+	bfd_boolean bfd_generic_gc_sections
 	 (bfd *, struct bfd_link_info *);
 
 DESCRIPTION
@@ -3746,12 +3899,12 @@ DESCRIPTION
 	don't do section gc -- i.e., does nothing.
 */
 
-boolean
+bfd_boolean
 bfd_generic_gc_sections (abfd, link_info)
      bfd *abfd ATTRIBUTE_UNUSED;
      struct bfd_link_info *link_info ATTRIBUTE_UNUSED;
 {
-  return true;
+  return TRUE;
 }
 
 /*
@@ -3759,7 +3912,7 @@ INTERNAL_FUNCTION
 	bfd_generic_merge_sections
 
 SYNOPSIS
-	boolean bfd_generic_merge_sections
+	bfd_boolean bfd_generic_merge_sections
 	 (bfd *, struct bfd_link_info *);
 
 DESCRIPTION
@@ -3767,12 +3920,12 @@ DESCRIPTION
 	which don't have SEC_MERGE support -- i.e., does nothing.
 */
 
-boolean
+bfd_boolean
 bfd_generic_merge_sections (abfd, link_info)
      bfd *abfd ATTRIBUTE_UNUSED;
      struct bfd_link_info *link_info ATTRIBUTE_UNUSED;
 {
-  return true;
+  return TRUE;
 }
 
 /*
@@ -3785,7 +3938,7 @@ SYNOPSIS
 	     struct bfd_link_info *link_info,
 	     struct bfd_link_order *link_order,
 	     bfd_byte *data,
-	     boolean relocateable,
+	     bfd_boolean relocateable,
 	     asymbol **symbols);
 
 DESCRIPTION
@@ -3801,7 +3954,7 @@ bfd_generic_get_relocated_section_contents (abfd, link_info, link_order, data,
      struct bfd_link_info *link_info;
      struct bfd_link_order *link_order;
      bfd_byte *data;
-     boolean relocateable;
+     bfd_boolean relocateable;
      asymbol **symbols;
 {
   /* Get enough memory to hold the stuff.  */
@@ -3829,7 +3982,7 @@ bfd_generic_get_relocated_section_contents (abfd, link_info, link_order, data,
 
   /* We're not relaxing the section, so just copy the size info.  */
   input_section->_cooked_size = input_section->_raw_size;
-  input_section->reloc_done = true;
+  input_section->reloc_done = TRUE;
 
   reloc_count = bfd_canonicalize_reloc (input_bfd,
 					input_section,
@@ -3870,7 +4023,7 @@ bfd_generic_get_relocated_section_contents (abfd, link_info, link_order, data,
 		  if (!((*link_info->callbacks->undefined_symbol)
 			(link_info, bfd_asymbol_name (*(*parent)->sym_ptr_ptr),
 			 input_bfd, input_section, (*parent)->address,
-			 true)))
+			 TRUE)))
 		    goto error_return;
 		  break;
 		case bfd_reloc_dangerous:

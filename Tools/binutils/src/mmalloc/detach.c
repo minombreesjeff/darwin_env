@@ -20,7 +20,10 @@ License along with the GNU C Library; see the file COPYING.LIB.  If
 not, write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
+#include <stdlib.h>
+#include <stdio.h>
 #include <sys/types.h>
+
 #include "mmprivate.h"
 
 /* Terminate access to a mmalloc managed region by unmapping all memory pages
@@ -41,21 +44,35 @@ PTR
 mmalloc_detach (md)
      PTR md;
 {
-  struct mdesc mtemp;
   struct mdesc *mdp;
+  int fd;
 
   if (md == NULL)
     return md;
 
   mdp = MD_TO_MDP (md);
-      
+  fd = mdp -> fd;
+
   if (mdp->child != NULL)
     return mmalloc_detach (mdp->child);
 
-  if (! (mdp->flags & MMALLOC_SHARED))
-    abort ();
+  /* Now unmap all the pages associated with this region by asking for a
+     negative increment equal to the current size of the region. */
+  
+#ifdef HAVE_MSYNC
+#ifdef MS_SYNC
+  msync (mdp -> base, mdp -> top - mdp -> base, MS_SYNC | MS_INVALIDATE);
+#else
+  msync (mdp -> base, mdp -> top - mdp -> base);
+#endif
+#endif
+  munmap (mdp -> base, mdp -> top - mdp -> base);
 
-  mtemp = *mdp;
-
-  return NULL;
+  if (fd > 0)
+    {
+      close (fd);
+    }
+  md = NULL;
+  
+  return md;
 }

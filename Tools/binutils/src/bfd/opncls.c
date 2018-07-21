@@ -57,6 +57,10 @@
 #define S_IXOTH 0001	/* Execute by others.  */
 #endif
 
+/* Counter used to initialize the bfd identifier.  */
+
+static unsigned int _bfd_id_counter = 0;
+
 /* fdopen is a loser -- we should use stdio exclusively.  Unfortunately
    if we do that we can't use fcntl.  */
 
@@ -70,6 +74,8 @@ _bfd_new_bfd ()
   nbfd = (bfd *) bfd_zmalloc ((bfd_size_type) sizeof (bfd));
   if (nbfd == NULL)
     return NULL;
+
+  nbfd->id = _bfd_id_counter++;
 
   nbfd->memory = (PTR) objalloc_create ();
   if (nbfd->memory == NULL)
@@ -96,13 +102,13 @@ _bfd_new_bfd ()
   nbfd->format = bfd_unknown;
   nbfd->my_archive = (bfd *) NULL;
   nbfd->origin = 0;
-  nbfd->opened_once = false;
-  nbfd->output_has_begun = false;
+  nbfd->opened_once = FALSE;
+  nbfd->output_has_begun = FALSE;
   nbfd->section_count = 0;
   nbfd->usrdata = (PTR) NULL;
-  nbfd->cacheable = false;
+  nbfd->cacheable = FALSE;
   nbfd->flags = BFD_NO_FLAGS;
-  nbfd->mtime_set = false;
+  nbfd->mtime_set = FALSE;
 
   return nbfd;
 }
@@ -133,6 +139,7 @@ _bfd_delete_bfd (abfd)
 {
   bfd_hash_table_free (&abfd->section_htab);
   objalloc_free ((struct objalloc *) abfd->memory);
+  memset (abfd, '\0', sizeof (bfd));
   free (abfd);
 }
 
@@ -199,13 +206,13 @@ FUNCTION
 	bfd_mmap_file
 
 SYNOPSIS
-        boolean bfd_mmap_file(bfd *abfd, void *addr);
+        bfd_boolean bfd_mmap_file(bfd *abfd, void *addr);
 
 DESCRIPTION
 	Cause future file accesses to be done via mmap rather than via read/write.
 */
 
-boolean bfd_mmap_file (abfd, addr)
+bfd_boolean bfd_mmap_file (abfd, addr)
      bfd *abfd ATTRIBUTE_UNUSED;
      void *addr ATTRIBUTE_UNUSED;
 {
@@ -224,7 +231,7 @@ boolean bfd_mmap_file (abfd, addr)
 
   mem = bfd_alloc (abfd, sizeof (struct bfd_in_memory));
   if (mem == NULL) {
-    return false; 
+    return FALSE; 
   }
 
   fp = bfd_cache_lookup (abfd);
@@ -232,7 +239,7 @@ boolean bfd_mmap_file (abfd, addr)
 
   if (fstat (fd, &statbuf) != 0) {
     bfd_set_error (bfd_error_system_call);
-    return false;
+    return FALSE;
   }
   mem->size = statbuf.st_size;
 
@@ -263,7 +270,7 @@ boolean bfd_mmap_file (abfd, addr)
   mem->buffer = mmap (addr, mem->size, prot, flags, fd, 0);
   if ((caddr_t) mem->buffer == (caddr_t) -1) {
     bfd_set_error (bfd_error_system_call);
-    return false;
+    return FALSE;
   }
   
   BFD_ASSERT ((abfd->flags & BFD_IN_MEMORY) == 0);
@@ -271,11 +278,11 @@ boolean bfd_mmap_file (abfd, addr)
   abfd->iostream = mem;
   abfd->flags |= BFD_IN_MEMORY;
 
-  return true;
+  return TRUE;
 
 #else /* ! USE_MMAP */
   bfd_set_error (bfd_error_system_call);
-  return false;
+  return FALSE;
 #endif /* USE_MMAP */
 }
 
@@ -284,7 +291,7 @@ FUNCTION
 	bfd_funopenr
 
 SYNOPSIS
-        bfd *bfd_funopenr(CONST char *filename, CONST char *target, struct bfd_io_functions *fdata);
+        bfd *bfd_funopenr(const char *filename, const char *target, struct bfd_io_functions *fdata);
 
 DESCRIPTION
 	No description available.
@@ -292,8 +299,8 @@ DESCRIPTION
 
 bfd *
 bfd_funopenr (filename, target, fdata)
-     CONST char *filename;
-     CONST char *target;
+     const char *filename;
+     const char *target;
      struct bfd_io_functions *fdata;
 {
   bfd *nbfd;
@@ -333,7 +340,7 @@ FUNCTION
 	bfd_memopenr
 
 SYNOPSIS
-        bfd *bfd_memopenr(CONST char *filename, CONST char *target, unsigned char *addr, bfd_size_type len);
+        bfd *bfd_memopenr(const char *filename, const char *target, unsigned char *addr, bfd_size_type len);
 
 DESCRIPTION
 	Treat the block of memory at address @var{addr} as if it were a file of
@@ -349,8 +356,8 @@ DESCRIPTION
 
 bfd *
 bfd_memopenr (filename, target, addr, len)
-     CONST char *filename;
-     CONST char *target;
+     const char *filename;
+     const char *target;
      unsigned char *addr;
      bfd_size_type len;
 {
@@ -468,7 +475,7 @@ bfd_fdopenr (filename, target, fd)
       return NULL;
     }
 
-  /* OK, put everything where it belongs */
+  /* OK, put everything where it belongs.  */
 
   nbfd->filename = filename;
 
@@ -489,7 +496,7 @@ bfd_fdopenr (filename, target, fd)
       _bfd_delete_bfd (nbfd);
       return NULL;
     }
-  nbfd->opened_once = true;
+  nbfd->opened_once = TRUE;
 
   return nbfd;
 }
@@ -602,7 +609,7 @@ FUNCTION
 	bfd_close
 
 SYNOPSIS
-	boolean bfd_close(bfd *abfd);
+	bfd_boolean bfd_close (bfd *abfd);
 
 DESCRIPTION
 
@@ -617,26 +624,26 @@ DESCRIPTION
 	if it was passed in to BFD by <<bfd_fdopenr>>).
 
 RETURNS
-	<<true>> is returned if all is ok, otherwise <<false>>.
+	<<TRUE>> is returned if all is ok, otherwise <<FALSE>>.
 */
 
 
-boolean
+bfd_boolean
 bfd_close (abfd)
      bfd *abfd;
 {
-  boolean ret = true;
+  bfd_boolean ret = TRUE;
 
   if (bfd_write_p (abfd))
     {
       if (! BFD_SEND_FMT (abfd, _bfd_write_contents, (abfd)))
-	return false;
+	return FALSE;
     }
 
   if (! BFD_SEND (abfd, _close_and_cleanup, (abfd)))
-    return false;
+    return FALSE;
 
-  _bfd_io_close (abfd);
+  ret = _bfd_io_close (abfd);
   _bfd_delete_bfd (abfd);
 
   return ret;
@@ -647,7 +654,7 @@ FUNCTION
 	bfd_close_all_done
 
 SYNOPSIS
-	boolean bfd_close_all_done(bfd *);
+	bfd_boolean bfd_close_all_done (bfd *);
 
 DESCRIPTION
 	Close a BFD.  Differs from <<bfd_close>> since it does not
@@ -661,14 +668,14 @@ DESCRIPTION
 	All memory attached to the BFD is released.
 
 RETURNS
-	<<true>> is returned if all is ok, otherwise <<false>>.
+	<<TRUE>> is returned if all is ok, otherwise <<FALSE>>.
 */
 
-boolean
+bfd_boolean
 bfd_close_all_done (abfd)
      bfd *abfd;
 {
-  boolean ret;
+  bfd_boolean ret;
 
   ret = _bfd_io_close (abfd);
 
@@ -733,7 +740,7 @@ FUNCTION
 	bfd_make_writable
 
 SYNOPSIS
-	boolean bfd_make_writable(bfd *abfd);
+	bfd_boolean bfd_make_writable (bfd *abfd);
 
 DESCRIPTION
 	Takes a BFD as created by <<bfd_create>> and converts it
@@ -742,10 +749,10 @@ DESCRIPTION
 	you will call <<bfd_make_readable>> on this bfd later.
 
 RETURNS
-	<<true>> is returned if all is ok, otherwise <<false>>.
+	<<TRUE>> is returned if all is ok, otherwise <<FALSE>>.
 */
 
-boolean
+bfd_boolean
 bfd_make_writable(abfd)
      bfd *abfd;
 {
@@ -754,7 +761,7 @@ bfd_make_writable(abfd)
   if (abfd->direction != no_direction)
     {
       bfd_set_error (bfd_error_invalid_operation);
-      return false;
+      return FALSE;
     }
 
   bim = ((struct bfd_in_memory *)
@@ -768,7 +775,7 @@ bfd_make_writable(abfd)
   abfd->direction = write_direction;
   abfd->where = 0;
 
-  return true;
+  return TRUE;
 }
 
 /*
@@ -776,7 +783,7 @@ FUNCTION
 	bfd_make_readable
 
 SYNOPSIS
-	boolean bfd_make_readable(bfd *abfd);
+	bfd_boolean bfd_make_readable (bfd *abfd);
 
 DESCRIPTION
 	Takes a BFD as created by <<bfd_create>> and
@@ -786,23 +793,23 @@ DESCRIPTION
 	direction.
 
 RETURNS
-	<<true>> is returned if all is ok, otherwise <<false>>.  */
+	<<TRUE>> is returned if all is ok, otherwise <<FALSE>>.  */
 
-boolean
+bfd_boolean
 bfd_make_readable(abfd)
      bfd *abfd;
 {
   if (abfd->direction != write_direction || !(abfd->flags & BFD_IN_MEMORY))
     {
       bfd_set_error (bfd_error_invalid_operation);
-      return false;
+      return FALSE;
     }
 
   if (! BFD_SEND_FMT (abfd, _bfd_write_contents, (abfd)))
-    return false;
+    return FALSE;
 
   if (! BFD_SEND (abfd, _close_and_cleanup, (abfd)))
-    return false;
+    return FALSE;
 
 
   abfd->arch_info = &bfd_default_arch_struct;
@@ -811,15 +818,15 @@ bfd_make_readable(abfd)
   abfd->format = bfd_unknown;
   abfd->my_archive = (bfd *) NULL;
   abfd->origin = 0;
-  abfd->opened_once = false;
-  abfd->output_has_begun = false;
+  abfd->opened_once = FALSE;
+  abfd->output_has_begun = FALSE;
   abfd->section_count = 0;
   abfd->usrdata = (PTR) NULL;
-  abfd->cacheable = false;
+  abfd->cacheable = FALSE;
   abfd->flags = BFD_IN_MEMORY;
-  abfd->mtime_set = false;
+  abfd->mtime_set = FALSE;
 
-  abfd->target_defaulted = true;
+  abfd->target_defaulted = TRUE;
   abfd->direction = read_direction;
   abfd->sections = 0;
   abfd->symcount = 0;
@@ -829,7 +836,7 @@ bfd_make_readable(abfd)
   bfd_section_list_clear (abfd);
   bfd_check_format (abfd, bfd_object);
 
-  return true;
+  return TRUE;
 }
 
 /*

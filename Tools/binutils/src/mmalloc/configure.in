@@ -34,5 +34,20 @@ AC_CHECK_HEADERS(limits.h stddef.h unistd.h)
 BFD_NEED_DECLARATION(sbrk)
 BFD_NEED_DECLARATION(getpagesize)
 
+AC_MSG_CHECKING([for page-protection malloc support])
+case "$host" in
+*-apple-darwin*)
+	PAGECHECK_SRC=pagecheck-sup.c
+	PAGECHECK_OBJ=pagecheck-sup.o
+	;;
+*)
+	PAGECHECK_SRC=
+	PAGECHECK_OBJ=
+	;;
+esac
+AC_SUBST(PAGECHECK_SRC)
+AC_SUBST(PAGECHECK_OBJ)
+AC_MSG_RESULT($PAGECHECK_SRC)
+
 AC_CONFIG_HEADER(config.h:config.in)
 AC_OUTPUT(Makefile)

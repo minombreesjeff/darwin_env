@@ -4,10 +4,6 @@
    This function is required for alloca.c support on those systems. */
 #undef CRAY_STACKSEG_END
 
-/* When on a MacOS X host, enable some really nasty hacks to the generic gdb
-   code. */
-#undef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
-
 /* Define if you have the <alloca.h> header file. */
 #undef HAVE_ALLOCA_H
 
@@ -265,9 +261,6 @@
 
 /* Define if you can safely include both <sys/time.h> and <time.h>. */
 #undef TIME_WITH_SYS_TIME
-
-/* mmallocly goodness */
-#undef USE_MMALLOC
 
 /* Define if you need to in order for stat and other things to work. */
 #undef _POSIX_SOURCE

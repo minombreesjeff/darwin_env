@@ -26,6 +26,7 @@ Boston, MA 02111-1307, USA.
 #ifndef __MMPRIVATE_H
 #define __MMPRIVATE_H 1
 
+#include "config.h"
 #include "mmalloc.h"
 
 #ifdef HAVE_LIMITS_H
@@ -313,10 +314,6 @@ extern struct mdesc *mmalloc_sbrk_init PARAMS ((void));
 extern PTR __mmalloc_mmap_morecore PARAMS ((struct mdesc *, int));
 
 #endif
-
-/* Remap a mmalloc region that was previously mapped. */
-
-extern PTR __mmalloc_remap_core PARAMS ((struct mdesc *));
 
 /* Macro to convert from a user supplied malloc descriptor to pointer to the
    internal malloc descriptor.  If the user supplied descriptor is NULL, then

@@ -1,8 +1,5 @@
 ## Process this file with automake to generate Makefile.in
 
-## FIXME: Work around apparent bug in automake.
-INTLLIBS = ../intl/libintl.a
-
 AUTOMAKE_OPTIONS = cygnus dejagnu
 
 SUBDIRS = doc po
@@ -71,13 +68,12 @@ INCDIR	= $(BASEDIR)/include
 
 MKDEP = gcc -MM
 
-INCLUDES = -Dfree=xfree \
-	-D_GNU_SOURCE \
-	-I. -I$(srcdir) -I../bfd -I$(BFDDIR) -I$(INCDIR) \
+INCLUDES = -D_GNU_SOURCE \
+	 -I. -I$(srcdir) -I../bfd -I$(BFDDIR) -I$(INCDIR) \
 	 @HDEFINES@ \
-	-I$(srcdir)/../intl -I../intl \
-	-DLOCALEDIR="\"$(prefix)/share/locale\"" \
-	-Dbin_dummy_emulation=$(EMULATION_VECTOR)
+	 -I$(srcdir)/../intl -I../intl \
+	 -DLOCALEDIR="\"$(prefix)/share/locale\"" \
+	 -Dbin_dummy_emulation=$(EMULATION_VECTOR)
 
 HFILES = \
 	arsup.h binemul.h bucomm.h budbg.h budemang.h \
@@ -109,12 +105,13 @@ WRITE_DEBUG_SRCS = $(DEBUG_SRCS) wrstabs.c
 BULIBS = bucomm.c version.c filemode.c
 
 BFD = ../bfd/libbfd.la
+BFD_DEP = $(BFD)
 
 OPCODES = ../opcodes/libopcodes.la
+OPCODES_DEP = $(OPCODES)
 
 LIBIBERTY = ../libiberty/libiberty.a
-
-MMALLOC = ../mmalloc/libmmalloc.a
+LIBIBERTY_DEP = $(LIBIBERTY)
 
 POTFILES = $(CFILES) $(DEBUG_SRCS) $(HFILES)
 po/POTFILES.in: @MAINT@ Makefile
@@ -162,39 +159,54 @@ check-DEJAGNU: site.exp
 installcheck:
 	/bin/sh $(srcdir)/sanity.sh $(bindir)
 
-LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS) $(MMALLOC)
-
 size_SOURCES = size.c $(BULIBS)
+size_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+size_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 objcopy_SOURCES = objcopy.c not-strip.c rename.c $(WRITE_DEBUG_SRCS) $(BULIBS)
+objcopy_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+objcopy_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 strings_SOURCES = strings.c $(BULIBS)
+strings_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+strings_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 readelf_SOURCES = readelf.c version.c unwind-ia64.c
-readelf_LDADD   = $(LIBIBERTY) $(INTLLIBS) $(MMALLOC)
+readelf_LDADD = $(LIBIBERTY) $(INTLLIBS)
+readelf_DEPENDENCIES = $(LIBIBERTY_DEP) $(INTLDEP)
 
 strip_new_SOURCES = objcopy.c is-strip.c rename.c $(WRITE_DEBUG_SRCS) $(BULIBS)
+strip_new_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+strip_new_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 nm_new_SOURCES = nm.c budemang.c $(BULIBS)
+nm_new_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+nm_new_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 objdump_SOURCES = objdump.c budemang.c prdbg.c $(DEBUG_SRCS) $(BULIBS)
-
-objdump_LDADD = $(OPCODES) $(BFD) $(LIBIBERTY) $(INTLLIBS) $(MMALLOC)
+objdump_LDADD = $(OPCODES) $(BFD) $(LIBIBERTY) $(INTLLIBS)
+objdump_DEPENDENCIES = $(OPCODES_DEP) $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 objdump.o:objdump.c
 	$(COMPILE) -c $(OBJDUMP_DEFS) $(srcdir)/objdump.c
 
 cxxfilt_SOURCES = cxxfilt.c $(BULIBS)
+cxxfilt_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+cxxfilt_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 ar_SOURCES = arparse.y arlex.l ar.c not-ranlib.c arsup.c rename.c binemul.c \
 	emul_$(EMULATION).c $(BULIBS)
-ar_LDADD = $(BFD) $(LIBIBERTY) @LEXLIB@ $(INTLLIBS) $(MMALLOC)
+ar_LDADD = $(BFD) $(LIBIBERTY) @LEXLIB@ $(INTLLIBS)
+ar_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) @LEXLIB@ $(INTLLIBS_DEP)
 
 ranlib_SOURCES = ar.c is-ranlib.c arparse.y arlex.l arsup.c rename.c \
 	binemul.c emul_$(EMULATION).c $(BULIBS)
-ranlib_LDADD = $(BFD) $(LIBIBERTY) @LEXLIB@ $(INTLLIBS) $(MMALLOC)
+ranlib_LDADD = $(BFD) $(LIBIBERTY) @LEXLIB@ $(INTLLIBS)
+ranlib_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) @LEXLIB@ $(INTLDEP)
 
 addr2line_SOURCES = addr2line.c budemang.c $(BULIBS)
+addr2line_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+addr2line_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 # The following is commented out for the conversion to automake.
 # This rule creates a single binary that switches between ar and ranlib
@@ -226,14 +238,14 @@ sysinfo$(EXEEXT_FOR_BUILD): sysinfo.o syslex.o
 	$(CC_FOR_BUILD) $(CFLAGS) $(LDFLAGS) -o $@ sysinfo.o syslex.o 
 
 syslex.o: syslex.c sysinfo.h
-	if false && [ -r syslex.c ]; then \
+	if [ -r syslex.c ]; then \
 	  $(CC_FOR_BUILD) -c -I. $(CFLAGS)  syslex.c  ; \
 	else \
 	  $(CC_FOR_BUILD) -c -I. -I$(srcdir) $(CFLAGS) $(srcdir)/syslex.c ;\
 	fi
 
 sysinfo.o: sysinfo.c
-	if false && [ -r sysinfo.c ]; then \
+	if [ -r sysinfo.c ]; then \
 	  $(CC_FOR_BUILD) -c -I. $(CFLAGS)  sysinfo.c  ; \
 	else \
 	  $(CC_FOR_BUILD) -c -I. $(CFLAGS) $(srcdir)/sysinfo.c ; \
@@ -247,9 +259,12 @@ rcparse.h: rcparse.c
 sysinfo.h: sysinfo.c
 
 srconv_SOURCES = srconv.c coffgrok.c $(BULIBS)
+srconv_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+srconv_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 dlltool_SOURCES = dlltool.c defparse.y deflex.l dyn-string.c $(BULIBS)
-dlltool_LDADD = $(BFD) $(LIBIBERTY) @LEXLIB@ $(INTLLIBS) $(MMALLOC)
+dlltool_LDADD = $(BFD) $(LIBIBERTY) @LEXLIB@ $(INTLLIBS)
+dlltool_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) @LEXLIB@ $(INTLDEP)
 
 dlltool.o:dlltool.c
 	$(COMPILE) -c $(DLLTOOL_DEFS) $(srcdir)/dlltool.c
@@ -258,8 +273,12 @@ rescoff.o:rescoff.c
 	$(COMPILE) -c $(DLLTOOL_DEFS) $(srcdir)/rescoff.c
 
 coffdump_SOURCES = coffdump.c coffgrok.c $(BULIBS)
+coffdump_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+coffdump_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 sysdump_SOURCES = sysdump.c $(BULIBS)
+sysdump_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+sysdump_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 # coff/sym.h and coff/ecoff.h won't be found by the automatic dependency
 # scripts, since they are only included conditionally.
@@ -268,14 +287,17 @@ nlmconv.o: nlmconv.c $(INCDIR)/coff/sym.h $(INCDIR)/coff/ecoff.h
 	$(COMPILE) -c -DLD_NAME="\"$${ldname}\"" @NLMCONV_DEFS@ $(srcdir)/nlmconv.c
 
 nlmconv_SOURCES = nlmconv.c nlmheader.y $(BULIBS)
+nlmconv_LDADD = $(BFD) $(LIBIBERTY) $(INTLLIBS)
+nlmconv_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) $(INTLDEP)
 
 windres_SOURCES = windres.c resrc.c rescoff.c resbin.c rcparse.y rclex.l \
 	winduni.c resres.c $(BULIBS)
-windres_LDADD = $(BFD) $(LIBIBERTY) @LEXLIB@ $(INTLLIBS) $(MMALLOC)
+windres_LDADD = $(BFD) $(LIBIBERTY) @LEXLIB@ $(INTLLIBS)
+windres_DEPENDENCIES = $(BFD_DEP) $(LIBIBERTY_DEP) @LEXLIB@ $(INTLDEP)
 
 dllwrap_SOURCES = dllwrap.c version.c
 dllwrap_LDADD = $(LIBIBERTY) $(INTLLIBS)
-
+dllwrap_DEPENDENCIES = $(LIBIBERTY_DEP) $(INTLDEP)
 
 EXTRA_DIST = arparse.c arparse.h arlex.c nlmheader.c sysinfo.c sysinfo.h \
 	syslex.c deflex.c defparse.h defparse.c rclex.c rcparse.h rcparse.c
@@ -334,9 +356,7 @@ dep-am: DEP
 
 ###
 
-MOSTLYCLEANFILES = sysinfo $(DEMANGLER_NAME).1 binutils.log binutils.sum \
-	abcdefgh*
-
+MOSTLYCLEANFILES = sysinfo binutils.log binutils.sum abcdefgh*
 mostlyclean-local:
 	-rm -rf tmpdir
 
@@ -344,7 +364,7 @@ CLEANFILES = dep.sed DEP DEPA DEP1 DEP2
 
 .PHONY: install-exec-local
 
-install-exec-local: $(bin_PROGRAMS) $(noinst_PROGRAMS)
+install-exec-local: install-binPROGRAMS $(bin_PROGRAMS) $(noinst_PROGRAMS)
 	@list='$(noinst_PROGRAMS)'; for p in $$list; do \
 	  if test -f $$p; then \
 	    echo " $(LIBTOOL)  --mode=install $(INSTALL_PROGRAM) $$p $(bindir)/`echo $$p|sed -e 's/$(EXEEXT)$$//' -e 's/-new//' -e 's/cxxfilt/$(DEMANGLER_NAME)/'|sed '$(transform)'|sed 's/$$/$(EXEEXT)/'`"; \
@@ -447,10 +467,11 @@ objcopy.o: objcopy.c ../bfd/bfd.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/bin-bugs.h $(INCDIR)/fopen-same.h $(INCDIR)/libiberty.h \
   budbg.h $(INCDIR)/filenames.h
 objdump.o: objdump.c ../bfd/bfd.h $(INCDIR)/ansidecl.h \
-  $(INCDIR)/symcat.h $(INCDIR)/progress.h bucomm.h config.h \
-  $(INCDIR)/bin-bugs.h $(INCDIR)/fopen-same.h budemang.h \
-  $(INCDIR)/safe-ctype.h $(INCDIR)/dis-asm.h $(INCDIR)/libiberty.h \
-  $(INCDIR)/demangle.h debug.h budbg.h $(INCDIR)/aout/aout64.h
+  $(INCDIR)/symcat.h ../bfd/bfdver.h $(INCDIR)/progress.h \
+  bucomm.h config.h $(INCDIR)/bin-bugs.h $(INCDIR)/fopen-same.h \
+  budemang.h $(INCDIR)/safe-ctype.h $(INCDIR)/dis-asm.h \
+  $(INCDIR)/libiberty.h $(INCDIR)/demangle.h debug.h \
+  budbg.h $(INCDIR)/aout/aout64.h
 prdbg.o: prdbg.c ../bfd/bfd.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/symcat.h bucomm.h config.h $(INCDIR)/bin-bugs.h \
   $(INCDIR)/fopen-same.h $(INCDIR)/libiberty.h debug.h \
@@ -475,10 +496,11 @@ readelf.o: readelf.c ../bfd/bfd.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/elf/i960.h $(INCDIR)/elf/ia64.h $(INCDIR)/elf/ip2k.h \
   $(INCDIR)/elf/m32r.h $(INCDIR)/elf/m68k.h $(INCDIR)/elf/m68hc11.h \
   $(INCDIR)/elf/mcore.h $(INCDIR)/elf/mips.h $(INCDIR)/elf/mmix.h \
-  $(INCDIR)/elf/mn10200.h $(INCDIR)/elf/mn10300.h $(INCDIR)/elf/or32.h \
-  $(INCDIR)/elf/pj.h $(INCDIR)/elf/ppc.h $(INCDIR)/elf/s390.h \
-  $(INCDIR)/elf/sh.h $(INCDIR)/elf/sparc.h $(INCDIR)/elf/v850.h \
-  $(INCDIR)/elf/vax.h $(INCDIR)/elf/x86-64.h $(INCDIR)/elf/xstormy16.h \
+  $(INCDIR)/elf/mn10200.h $(INCDIR)/elf/mn10300.h $(INCDIR)/elf/msp430.h \
+  $(INCDIR)/elf/or32.h $(INCDIR)/elf/pj.h $(INCDIR)/elf/ppc.h \
+  $(INCDIR)/elf/ppc64.h $(INCDIR)/elf/s390.h $(INCDIR)/elf/sh.h \
+  $(INCDIR)/elf/sparc.h $(INCDIR)/elf/v850.h $(INCDIR)/elf/vax.h \
+  $(INCDIR)/elf/x86-64.h $(INCDIR)/elf/xstormy16.h $(INCDIR)/elf/iq2000.h \
   bucomm.h config.h $(INCDIR)/bin-bugs.h $(INCDIR)/fopen-same.h \
   unwind-ia64.h
 rename.o: rename.c ../bfd/bfd.h $(INCDIR)/ansidecl.h \
@@ -523,8 +545,8 @@ sysdump.o: sysdump.c ../bfd/bfd.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/fopen-same.h $(INCDIR)/safe-ctype.h $(INCDIR)/libiberty.h \
   sysroff.h sysroff.c
 version.o: version.c ../bfd/bfd.h $(INCDIR)/ansidecl.h \
-  $(INCDIR)/symcat.h bucomm.h config.h $(INCDIR)/bin-bugs.h \
-  $(INCDIR)/fopen-same.h
+  $(INCDIR)/symcat.h ../bfd/bfdver.h bucomm.h config.h \
+  $(INCDIR)/bin-bugs.h $(INCDIR)/fopen-same.h
 windres.o: windres.c ../bfd/bfd.h $(INCDIR)/ansidecl.h \
   $(INCDIR)/symcat.h $(INCDIR)/getopt.h bucomm.h config.h \
   $(INCDIR)/bin-bugs.h $(INCDIR)/fopen-same.h $(INCDIR)/libiberty.h \

@@ -17,6 +17,9 @@ License along with the GNU C Library; see the file COPYING.LIB.  If
 not, write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "mmprivate.h"
 
 /* Each memory allocation is bounded by a header structure and a trailer
@@ -126,6 +129,9 @@ mmalloc_check_create (struct mdesc *child)
   ret->mmalloc_hook = mmalloc_check;
   ret->mrealloc_hook = mrealloc_check;
   ret->abortfunc = abort;
+
+  if (child != NULL)
+    ret->flags = child->flags;
 
   return ret;
 }

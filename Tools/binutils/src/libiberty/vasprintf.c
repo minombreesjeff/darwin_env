@@ -73,11 +73,7 @@ int_vasprintf (result, format, args)
   int total_width = strlen (format) + 1;
   va_list ap;
 
-#ifdef HAVE_ARRAY_TYPED_VA_LIST
-  memcpy ((PTR) ap, (PTR) args, sizeof (va_list));
-#else
-  memcpy ((PTR) &ap, (PTR) &args, sizeof (va_list));
-#endif
+  memcpy ((PTR) &ap, (PTR) args, sizeof (va_list));
 
   while (*p != '\0')
     {
@@ -144,7 +140,7 @@ int_vasprintf (result, format, args)
 #endif
   *result = (char *) malloc (total_width);
   if (*result != NULL)
-    return vsprintf (*result, format, args);
+    return vsprintf (*result, format, *args);
   else
     return 0;
 }
@@ -159,7 +155,7 @@ vasprintf (result, format, args)
      va_list args;
 #endif
 {
-  return int_vasprintf (result, format, args);
+  return int_vasprintf (result, format, &args);
 }
 
 #ifdef TEST

@@ -533,7 +533,7 @@ extern int re_exec _RE_ARGS ((const char *));
 /* GCC 3.1 and later support declaring arrays as non-overlapping
    using the syntax array_name[restrict]  */
 #ifndef __restrict_arr
-# if ! (3 < __GNUC__ || (3 == __GNUC__ && 1 <= __GNUC_MINOR__)) || defined (__GNUG__) || defined (__APPLE_CC__)
+# if ! (3 < __GNUC__ || (3 == __GNUC__ && 1 <= __GNUC_MINOR__)) || defined (__GNUG__) || defined (__APPLE__)
 #  define __restrict_arr
 # else
 #  define __restrict_arr __restrict

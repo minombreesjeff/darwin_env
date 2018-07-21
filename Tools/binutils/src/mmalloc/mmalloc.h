@@ -64,6 +64,10 @@ extern void mmalloc_set_default_allocator PARAMS ((PTR));
 extern PTR mmalloc_default_allocator PARAMS (());
 
 extern struct mdesc * mmalloc_malloc_create PARAMS (());
+extern struct mdesc * mmalloc_pagecheck_create PARAMS (());
 extern struct mdesc * mmalloc_check_create PARAMS ((struct mdesc *child));
+
+PTR mmalloc_attach PARAMS ((int fd, PTR baseaddr, int flags));
+void mmalloc_endpoints PARAMS ((PTR md, size_t *start, size_t *end));
 
 #endif  /* MMALLOC_H */

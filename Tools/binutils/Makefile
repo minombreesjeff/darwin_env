@@ -1,9 +1,9 @@
 .PHONY: all clean configure build install installsrc installhdrs \
 	headers build-core build-binutils \
-	install-frameworks-pre install-frameworks-post install-frameworks-headers\
-	install-frameworks-pdo install-frameworks-rhapsody \
-	install-binutils-base install-binutils-pdo install-binutils-fat \
-	install-chmod-rhapsody install-chmod-pdo install-clean install-source \
+	install-frameworks-headers\
+	install-frameworks-macosx \
+	install-binutils-macosx \
+	install-chmod-macosx install-clean install-source \
 	check
 
 ifndef RC_ARCHS
@@ -30,20 +30,10 @@ INSTALL=$(SRCROOT)/src/install-sh
 
 CANONICAL_ARCHS := $(foreach arch,$(RC_ARCHS),$(foreach os,$(RC_OS),$(foreach release,$(RC_RELEASE),$(os):$(arch):$(release))))
 
-CANONICAL_ARCHS := $(subst teflon:ppc:undefined,powerpc-apple-rhapsody,$(CANONICAL_ARCHS))
-CANONICAL_ARCHS := $(subst teflon:i386:undefined,i386-apple-rhapsody,$(CANONICAL_ARCHS))
-CANONICAL_ARCHS := $(subst teflon:ppc:Hera,powerpc-apple-rhapsody,$(CANONICAL_ARCHS))
-CANONICAL_ARCHS := $(subst teflon:i386:Hera,i386-apple-rhapsody,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:i386:$(RC_RELEASE),i386-apple-darwin,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:ppc:$(RC_RELEASE),powerpc-apple-darwin,$(CANONICAL_ARCHS))
 
-CANONICAL_ARCHS := $(subst macos:i386:$(RC_RELEASE),i386-apple-macos10,$(CANONICAL_ARCHS))
-CANONICAL_ARCHS := $(subst macos:ppc:$(RC_RELEASE),powerpc-apple-macos10,$(CANONICAL_ARCHS))
-
-CANONICAL_ARCHS := $(subst solaris:sparc:Zeus,sparc-nextpdo-solaris2,$(CANONICAL_ARCHS))
-CANONICAL_ARCHS := $(subst hpux:hppa:Zeus,hppa1.1-nextpdo-hpux10.20,$(CANONICAL_ARCHS))
-CANONICAL_ARCHS := $(subst solaris:sparc:Hydra,sparc-nextpdo-solaris2,$(CANONICAL_ARCHS))
-CANONICAL_ARCHS := $(subst hpux:hppa:Hydra,hppa2.0n-nextpdo-hpux11.0,$(CANONICAL_ARCHS))
-
-CANONICAL_ARCHS := $(subst powerpc-apple-macos10 i386-apple-macos10,i386-apple-macos10 powerpc-apple-macos10,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst powerpc-apple-darwin i386-apple-darwin,i386-apple-darwin powerpc-apple-darwin,$(CANONICAL_ARCHS))
 
 SRCTOP = $(shell cd $(SRCROOT) && pwd)
 OBJTOP = $(shell (test -d $(OBJROOT) || $(INSTALL) -c -d $(OBJROOT)) && cd $(OBJROOT) && pwd)
@@ -52,17 +42,17 @@ DSTTOP = $(shell (test -d $(DSTROOT) || $(INSTALL) -c -d $(DSTROOT)) && cd $(DST
 
 ARCH_SAYS := $(shell /usr/bin/arch)
 ifeq (i386,$(ARCH_SAYS))
-BUILD_ARCH := i386-apple-macos10
+BUILD_ARCH := i386-apple-darwin
 else
 ifeq (ppc,$(ARCH_SAYS))
-BUILD_ARCH := powerpc-apple-macos10
+BUILD_ARCH := powerpc-apple-darwin
 else
 BUILD_ARCH := $(ARCH_SAYS)
 endif
 endif
 
-BINUTILS_VERSION = 2.13-20021014
-APPLE_VERSION = 40
+BINUTILS_VERSION = 2.13-20021117
+APPLE_VERSION = 45
 
 BINUTILS_VERSION_STRING = "$(BINUTILS_VERSION) (Apple version binutils-$(APPLE_VERSION))"
 
@@ -71,6 +61,7 @@ BINUTILS_MANPAGES =
 
 FRAMEWORKS = mmalloc liberty bfd opcodes binutils
 
+CPP = cpp
 CC = cc
 LD = ld
 AR = ar
@@ -83,7 +74,7 @@ HOST_ARCHITECTURE = UNKNOWN
 
 RC_CFLAGS_NOARCH = $(shell echo $(RC_CFLAGS) | sed -e 's/-arch [a-z0-9]*//g')
 
-SYSTEM_FRAMEWORK = -L../intl -L./intl -lintl -framework System
+SYSTEM_FRAMEWORK = -L../intl -L./intl -L../intl/.libs -L./intl/.libs -lintl -framework System
 FRAMEWORK_PREFIX =
 FRAMEWORK_SUFFIX =
 FRAMEWORK_VERSION = A
@@ -94,6 +85,7 @@ DOCUMENTATION_DIR=UNKNOWN
 LIBEXEC_BINUTILS_DIR=UNKNOWN
 LIBEXEC_LIB_DIR=UNKNOWN
 MAN_DIR=UNKNOWN
+LIB_DIR=UNKNOWN
 PRIVATE_FRAMEWORKS_DIR=UNKNOWN
 
 NATIVE_TARGET = unknown--unknown
@@ -107,86 +99,32 @@ I386_TARGET=UNKNOWN
 
 CONFIG_VERBOSE=-v
 CONFIG_ALL_BFD_TARGETS=
-#CONFIG_ALL_BFD_TARGETS=--enable-targets=all
 CONFIG_64_BIT_BFD=--enable-64-bit-bfd
 CONFIG_WITH_MMAP=--with-mmap
 CONFIG_WITH_MMALLOC=--with-mmalloc
-CONFIG_WITH_MMALLOC=
+CONFIG_ENABLE_SHARED=--enable-shared
 CONFIG_MAINTAINER_MODE=--enable-maintainer-mode
 CONFIG_BUILD=--build=$(BUILD_ARCH)
 CONFIG_OTHER_OPTIONS=
 
-MAKE_CFM=WITH_CFM=1
-MAKE_PTHREADS=USE_PTHREADS=1
-
 TAR = gnutar
 
-ifneq ($(findstring rhapsody,$(CANONICAL_ARCHS))$(findstring macos10,$(CANONICAL_ARCHS)),)
+ifneq ($(findstring darwin,$(CANONICAL_ARCHS)),)
 CC = cc -arch $(HOST_ARCHITECTURE) -no-cpp-precomp
 CC_FOR_BUILD = NEXT_ROOT= cc -no-cpp-precomp
 CDEBUGFLAGS = -g -Os
 CFLAGS = $(CDEBUGFLAGS) -Wall -Wimplicit $(RC_CFLAGS_NOARCH)
-HOST_ARCHITECTURE = $(shell echo $* | sed -e 's/--.*//' -e 's/powerpc/ppc/' -e 's/-apple-rhapsody//' -e 's/-apple-macos.*//')
+HOST_ARCHITECTURE = $(shell echo $* | sed -e 's/--.*//' -e 's/powerpc/ppc/' -e 's/-apple-darwin.*//')
 endif
 
-ifneq ($(findstring hpux,$(CANONICAL_ARCHS)),)
-CC = gcc
-CC_FOR_BUILD = NEXT_ROOT= cc
-CDEBUGFLAGS = -g -O3
-CFLAGS = $(CDEBUGFLAGS) -D__STDC_EXT__=1 $(RC_CFLAGS_NOARCH)
-endif
-
-ifneq ($(findstring solaris,$(CANONICAL_ARCHS)),)
-CC = gcc
-CC_FOR_BUILD = gcc
-CDEBUGFLAGS = -g -O3
-endif
-
-ifneq ($(findstring hpux,$(CANONICAL_ARCHS)),)
-SYSTEM_FRAMEWORK =
-FRAMEWORK_PREFIX = lib
-FRAMEWORK_SUFFIX = .sl
-FRAMEWORK_VERSION_SUFFIX = .$(FRAMEWORK_VERSION)
-endif
-
-ifneq ($(findstring solaris,$(CANONICAL_ARCHS)),)
-CFLAGS = $(CDEBUGFLAGS) $(RC_CFLAGS_NOARCH)
-SYSTEM_FRAMEWORK =
-FRAMEWORK_PREFIX = lib
-FRAMEWORK_SUFFIX = .so
-FRAMEWORK_VERSION_SUFFIX = .so.$(FRAMEWORK_VERSION)
-endif
-
-ifneq ($(findstring hpux,$(CANONICAL_ARCHS)),)
-CONFIG_64_BIT_BFD=
-CONFIG_MAINTAINER_MODE=
-CONFIG_WITH_MMAP=
-CONFIG_WITH_MMALLOC=
-endif
-
-ifneq ($(findstring solaris,$(CANONICAL_ARCHS)),)
-CONFIG_64_BIT_BFD=
-CONFIG_MAINTAINER_MODE=
-CONFIG_WITH_MMAP=
-CONFIG_WITH_MMALLOC=
-endif
-
-RHAPSODY_FLAGS = \
+MACOSX_FLAGS = \
 	DEVEXEC_DIR=usr/bin \
 	DOCUMENTATION_DIR=Developer/Documentation/DeveloperTools \
 	LIBEXEC_BINUTILS_DIR=usr/libexec/binutils \
 	MAN_DIR=usr/share/man \
+	LIB_DIR=usr/lib \
 	PRIVATE_FRAMEWORKS_DIR=System/Library/PrivateFrameworks \
 	SOURCE_DIR=System/Developer/Source/Commands/binutils
-
-PDO_FLAGS = \
-	DEVEXEC_DIR=Developer/Executables \
-	DOCUMENTATION_DIR=Documentation/Developer/DeveloperTools \
-	LIBEXEC_BINUTILS_DIR=Developer/Libraries/binutils \
-	MAN_DIR=Local/man \
-	PRIVATE_FRAMEWORKS_DIR=Library/PrivateFrameworks \
-	LIBEXEC_LIB_DIR=Library/Executables \
-	SOURCE_DIR=Developer/Source/binutils
 
 CONFIGURE_OPTIONS = \
 	$(CONFIG_VERBOSE) \
@@ -194,16 +132,17 @@ CONFIGURE_OPTIONS = \
 	$(CONFIG_64_BIT_BFD) \
 	$(CONFIG_WITH_MMAP) \
 	$(CONFIG_WITH_MMALLOC) \
+	$(CONFIG_ENABLE_SHARED) \
 	$(CONFIG_BUILD) \
 	$(CONFIG_OTHER_OPTIONS)
 
 MAKE_OPTIONS = \
-	$(MAKE_CFM) \
-	$(MAKE_PTHREADS)
+	prefix='/usr'
 
 EFLAGS = \
 	CFLAGS='$(CFLAGS)' \
 	CC='$(CC)' \
+	CPP='$(CPP)' \
 	LD='$(LD)' \
 	AR='$(AR)' \
 	RANLIB='$(RANLIB)' \
@@ -226,10 +165,13 @@ FFLAGS = \
 FSFLAGS = \
 	$(SFLAGS) \
 	MMALLOC='-F../mmalloc -framework mmalloc' \
+	MMALLOC_DEP='../mmalloc/mmalloc.framework' \
 	OPCODES='-F../opcodes -framework opcodes' \
+	OPCODES_DEP='../opcodes/opcodes.framework' \
 	BFD='-F../bfd -framework bfd' \
+	BFD_DEP='../bfd/bfd.framework' \
 	LIBIBERTY='-F../libiberty -framework liberty' \
-	EFENCE='-F../electric-fence -framework electric-fence'
+	LIBIBERTY_DEP='../libiberty/liberty.framework'
 
 CONFIGURE_ENV = $(EFLAGS)
 MAKE_ENV = $(EFLAGS)
@@ -237,17 +179,6 @@ MAKE_ENV = $(EFLAGS)
 SUBMAKE = $(MAKE_ENV) $(MAKE)
 
 _all: all
-
-$(OBJROOT)/%/stamp-rc-configure-pdo:
-	$(RM) -r $(OBJROOT)/$*
-	$(INSTALL) -c -d $(OBJROOT)/$*
-	(cd $(OBJROOT)/$* && \
-		$(CONFIGURE_ENV) $(SRCTOP)/src/configure \
-			--host=$(shell echo $* | sed -e 's/--.*//') \
-			--target=$(shell echo $* | sed -e 's/.*--//') \
-			$(CONFIGURE_OPTIONS) \
-			)
-	touch $@
 
 $(OBJROOT)/%/stamp-rc-configure:
 	$(RM) -r $(OBJROOT)/$*
@@ -261,7 +192,7 @@ $(OBJROOT)/%/stamp-rc-configure:
 	touch $@
 
 $(OBJROOT)/%/stamp-build-headers:
-	#$(SUBMAKE) -C $(OBJROOT)/$*/electric-fence $(FFLAGS) stamp-framework-headers
+	$(SUBMAKE) -C $(OBJROOT)/$* configure-intl configure-mmalloc configure-libiberty configure-bfd configure-opcodes
 	$(SUBMAKE) -C $(OBJROOT)/$*/mmalloc $(FFLAGS) stamp-framework-headers 
 	$(SUBMAKE) -C $(OBJROOT)/$*/libiberty $(FFLAGS) stamp-framework-headers
 	$(SUBMAKE) -C $(OBJROOT)/$*/bfd $(FFLAGS) headers stamp-framework-headers
@@ -270,16 +201,17 @@ $(OBJROOT)/%/stamp-build-headers:
 	#touch $@
 
 $(OBJROOT)/%/stamp-build-core:
-	$(SUBMAKE) -C $(OBJROOT)/$*/intl $(SFLAGS) libintl.a
-	#$(SUBMAKE) -C $(OBJROOT)/$*/electric-fence $(FFLAGS) stamp-framework all
-	$(SUBMAKE) -C $(OBJROOT)/$*/mmalloc $(FFLAGS) stamp-framework all
-	$(SUBMAKE) -C $(OBJROOT)/$*/libiberty $(FFLAGS) stamp-framework all
-	$(SUBMAKE) -C $(OBJROOT)/$*/bfd $(FFLAGS) headers stamp-framework all
-	$(SUBMAKE) -C $(OBJROOT)/$*/opcodes $(FFLAGS) stamp-framework all
+	$(SUBMAKE) -C $(OBJROOT)/$* configure-intl configure-mmalloc configure-libiberty configure-bfd configure-opcodes
+	$(SUBMAKE) -C $(OBJROOT)/$*/intl $(SFLAGS) libintl.la
+	$(SUBMAKE) -C $(OBJROOT)/$*/mmalloc $(FFLAGS) stamp-framework
+	$(SUBMAKE) -C $(OBJROOT)/$*/libiberty $(FFLAGS) stamp-framework
+	$(SUBMAKE) -C $(OBJROOT)/$*/bfd $(FFLAGS) headers stamp-framework
+	$(SUBMAKE) -C $(OBJROOT)/$*/opcodes $(FFLAGS) stamp-framework
 	#touch $@
 
 $(OBJROOT)/%/stamp-build-binutils:
-	$(SUBMAKE) -C $(OBJROOT)/$*/binutils $(FSFLAGS) VERSION='$(BINUTILS_VERSION)' VERSION_STRING='$(BINUTILS_VERSION_STRING)'
+	$(SUBMAKE) -C $(OBJROOT)/$* configure-binutils
+	$(SUBMAKE) -C $(OBJROOT)/$*/binutils $(FSFLAGS) VERSION='$(BINUTILS_VERSION)' VERSION_STRING='$(BINUTILS_VERSION_STRING)' all
 	$(SUBMAKE) -C $(OBJROOT)/$* $(FFLAGS) stamp-framework-binutils
 	#touch $@
 
@@ -317,7 +249,7 @@ install-frameworks-resources:
 			$${framedir}/Versions/A/Resources/Info-macos.plist; \
 	done
 
-install-frameworks-rhapsody:
+install-frameworks-macosx:
 
 	$(SUBMAKE) CURRENT_ROOT=$(SYMROOT) install-frameworks-headers
 	$(SUBMAKE) CURRENT_ROOT=$(DSTROOT) install-frameworks-headers
@@ -334,40 +266,21 @@ install-frameworks-rhapsody:
 		ln -sf Versions/Current/$${i} $(DSTROOT)/$(PRIVATE_FRAMEWORKS_DIR)/$${i}.framework/$${i}; \
 	done
 
-install-frameworks-pdo:
+	$(INSTALL) -c -d $(SYMROOT)/$(LIB_DIR)
+	$(INSTALL) -c -d $(DSTROOT)/$(LIB_DIR)
 
-	$(SUBMAKE) CURRENT_ROOT=$(SYMROOT) install-frameworks-headers
-	$(SUBMAKE) CURRENT_ROOT=$(DSTROOT) install-frameworks-headers
-	$(SUBMAKE) CURRENT_ROOT=$(SYMROOT) install-frameworks-resources
-	$(SUBMAKE) CURRENT_ROOT=$(DSTROOT) install-frameworks-resources
-
-	$(INSTALL) -c -d $(SYMROOT)/$(LIBEXEC_LIB_DIR)
-	$(INSTALL) -c -d $(DSTROOT)/$(LIBEXEC_LIB_DIR)
-
-	set -e; for i in $(FRAMEWORKS); do \
-		j=`echo $${i} | sed -e 's/liberty/libiberty/;' -e 's/binutils/\./;'`; \
-		fdir=$(OBJROOT)/$(NATIVE_TARGETS)/$${j}/$${i}.framework; \
-		pdir=$(PRIVATE_FRAMEWORKS_DIR)/$${i}.framework; \
-		cp -p $${fdir}/Versions/A/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX) \
-			$(SYMROOT)/$${pdir}/Versions/A/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX); \
-		cp -p $${fdir}/Versions/A/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX) \
-			$(DSTROOT)/$${pdir}/Versions/A/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX); \
-		strip $(DSTROOT)/$${pdir}/Versions/A/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX); \
-		for k in $(SYMROOT) $(DSTROOT); do \
-			ln -s $(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX) \
-				$${k}/$${pdir}/Versions/A/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_SUFFIX); \
-			ln -s Versions/Current/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX) \
-				$${k}/$${pdir}/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX); \
-			ln -s Versions/Current/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_SUFFIX) \
-				$${k}/$${pdir}/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_SUFFIX); \
-			ln -s $(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_SUFFIX) \
-				$${k}/$${pdir}/$${i}; \
-			ln -s ../../Library/PrivateFrameworks/$${i}.framework/lib$${i}$(FRAMEWORK_SUFFIX) \
-				$${k}/$(LIBEXEC_LIB_DIR)/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_SUFFIX); \
-			ln -s ../../Library/PrivateFrameworks/$${i}.framework/Versions/A/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX) \
-				$${k}/$(LIBEXEC_LIB_DIR)/$(FRAMEWORK_PREFIX)$${i}$(FRAMEWORK_VERSION_SUFFIX); \
-		done; \
-	done
+	lipo -create -output $(SYMROOT)/$(LIB_DIR)/libintl.a \
+		$(patsubst %,$(OBJROOT)/%/intl/.libs/libintl.a,$(NATIVE_TARGETS))
+	strip -S -o $(DSTROOT)/$(LIB_DIR)/libintl.a \
+		 $(SYMROOT)/$(LIB_DIR)/libintl.a
+	lipo -create -output $(SYMROOT)/$(LIB_DIR)/libintl.1.0.0.dylib \
+		$(patsubst %,$(OBJROOT)/%/intl/.libs/libintl.1.0.0.dylib,$(NATIVE_TARGETS))
+	strip -S -o $(DSTROOT)/$(LIB_DIR)/libintl.1.0.0.dylib \
+		 $(SYMROOT)/$(LIB_DIR)/libintl.1.0.0.dylib
+	ln -sf libintl.1.0.0.dylib $(DSTROOT)/$(LIB_DIR)/libintl.1.dylib
+	ln -sf libintl.1.0.0.dylib $(SYMROOT)/$(LIB_DIR)/libintl.1.dylib
+	ln -sf libintl.1.0.0.dylib $(DSTROOT)/$(LIB_DIR)/libintl.dylib
+	ln -sf libintl.1.0.0.dylib $(SYMROOT)/$(LIB_DIR)/libintl.dylib
 
 install-binutils-common:
 
@@ -382,7 +295,7 @@ install-binutils-common:
 		done; \
 	done;
 
-install-binutils-rhapsody-common: install-binutils-common
+install-binutils-macosx: install-binutils-common
 
 	set -e; for dstroot in $(SYMROOT) $(DSTROOT); do \
 		\
@@ -396,35 +309,13 @@ install-binutils-rhapsody-common: install-binutils-common
 
 	set -e; for i in $(BINUTILS_BINARIES); do \
 		instname=`echo $${i} | sed -e 's/\\-new//'`; \
-		lipo -create $(patsubst %,$(OBJROOT)/%/binutils/$${i},$(NATIVE_TARGETS)) \
+		lipo -create $(patsubst %,$(OBJROOT)/%/binutils/.libs/$${i},$(NATIVE_TARGETS)) \
 			-output $(SYMROOT)/$(LIBEXEC_BINUTILS_DIR)/$${instname}; \
 		strip -S -o $(DSTROOT)/$(LIBEXEC_BINUTILS_DIR)/$${instname} $(SYMROOT)/$(LIBEXEC_BINUTILS_DIR)/$${instname}; \
 	done
 
-install-binutils-fat: install-binutils-rhapsody-common
+install-chmod-macosx:
 
-install-binutils-rhapsody: install-binutils-rhapsody-common
-
-install-binutils-pdo: install-binutils-common
-
-	set -e;	for dstroot in $(SYMROOT) $(DSTROOT); do \
-		\
-		docroot=$${dstroot}/$(DOCUMENTATION_DIR)/binutils; \
-		\
-		for i in binutils; do \
-			cp -rp $(SRCROOT)/doc/$${i}.html $${docroot}/$${i}; \
-		done; \
-	done
-
-	set -e; for i in $(BINUTILS_BINARIES); do \
-		instname=`echo $${i} | sed -e 's/\\-new//'`; \
-		$(INSTALL) -c $(patsubst %,$(OBJROOT)/%/binutils/$${i},$(NATIVE_TARGET)) \
-			$(SYMROOT)/$(LIBEXEC_BINUTILS_DIR)/$${instname}; \
-		$(INSTALL) -c -s $(patsubst %,$(OBJROOT)/%/binutils/$${i},$(NATIVE_TARGET)) \
-			$(DSTROOT)/$(LIBEXEC_BINUTILS_DIR)/$${instname}; \
-	done
-
-install-chmod-rhapsody:
 	set -e;	if [ `whoami` = 'root' ]; then \
 		for dstroot in $(SYMROOT) $(DSTROOT); do \
 			chown -R root.wheel $${dstroot}; \
@@ -438,11 +329,6 @@ install-chmod-rhapsody:
 		done; \
 	fi
 
-install-chmod-pdo:
-	set -e;	if [ `whoami` = 'root' ]; then \
-		true; \
-	fi
-
 install-source:
 	$(INSTALL) -c -d $(DSTROOT)/$(SOURCE_DIR)
 	$(TAR) --exclude=CVS -C $(SRCROOT) -cf - . | $(TAR) -C $(DSTROOT)/$(SOURCE_DIR) -xf -
@@ -453,27 +339,13 @@ clean:
 	$(RM) -r $(OBJROOT)
 
 check-args:
-ifeq "$(CANONICAL_ARCHS)" "i386-apple-rhapsody"
+ifeq "$(CANONICAL_ARCHS)" "i386-apple-darwin"
 else
-ifeq "$(CANONICAL_ARCHS)" "powerpc-apple-rhapsody"
+ifeq "$(CANONICAL_ARCHS)" "powerpc-apple-darwin"
 else
-ifeq "$(CANONICAL_ARCHS)" "i386-apple-macos10"
+ifeq "$(CANONICAL_ARCHS)" "i386-apple-darwin powerpc-apple-darwin"
 else
-ifeq "$(CANONICAL_ARCHS)" "powerpc-apple-macos10"
-else
-ifeq "$(CANONICAL_ARCHS)" "i386-apple-rhapsody powerpc-apple-rhapsody"
-else
-ifeq "$(CANONICAL_ARCHS)" "i386-apple-macos10 powerpc-apple-macos10"
-else
-ifeq "$(CANONICAL_ARCHS)" "powerpc-apple-rhapsody i386-apple-rhapsody"
-else
-ifeq "$(CANONICAL_ARCHS)" "powerpc-apple-macos10 i386-apple-macos10"
-else
-ifeq "$(CANONICAL_ARCHS)" "hppa1.1-nextpdo-hpux10.20"
-else
-ifeq "$(CANONICAL_ARCHS)" "hppa2.0n-nextpdo-hpux11.0"
-else
-ifeq "$(CANONICAL_ARCHS)" "sparc-nextpdo-solaris2"
+ifeq "$(CANONICAL_ARCHS)" "powerpc-apple-darwin i386-apple-darwin"
 else
 	echo "Unknown architecture string: \"$(CANONICAL_ARCHS)\""
 	exit 1
@@ -481,23 +353,10 @@ endif
 endif
 endif
 endif
-endif
-endif
-endif
-endif
-endif
-endif
-endif
 
 configure: 
-ifneq ($(findstring rhapsody,$(CANONICAL_ARCHS))$(findstring macos10,$(CANONICAL_ARCHS)),)
 ifneq ($(NATIVE_TARGETS),)
 	$(SUBMAKE) $(patsubst %,$(OBJROOT)/%/stamp-rc-configure, $(NATIVE_TARGETS))
-endif
-else
-ifneq ($(NATIVE_TARGETS),)
-	$(SUBMAKE) $(patsubst %,$(OBJROOT)/%/stamp-rc-configure-pdo, $(NATIVE_TARGETS))
-endif
 endif
 
 build-headers:
@@ -526,70 +385,29 @@ build:
 install-clean:
 	$(RM) -r $(SYMROOT) $(DSTROOT)
 
-install-rhapsody:
+install-macosx:
 	$(SUBMAKE) install-clean
-ifeq "$(CANONICAL_ARCHS)" "i386-apple-rhapsody powerpc-apple-rhapsody"
-	$(SUBMAKE) install-frameworks-rhapsody NATIVE_TARGET=unknown--unknown
-	$(SUBMAKE) install-binutils-fat NATIVE_TARGET=unknown--unknown
+ifeq "$(CANONICAL_ARCHS)" "i386-apple-darwin powerpc-apple-darwin"
+	$(SUBMAKE) install-frameworks-macosx NATIVE_TARGET=unknown--unknown
+	$(SUBMAKE) install-binutils-macosx NATIVE_TARGET=unknown--unknown
 else
-ifeq "$(CANONICAL_ARCHS)" "i386-apple-macos10 powerpc-apple-macos10"
-	$(SUBMAKE) install-frameworks-rhapsody NATIVE_TARGET=unknown--unknown
-	$(SUBMAKE) install-binutils-fat NATIVE_TARGET=unknown--unknown
-else
-	$(SUBMAKE) install-frameworks-rhapsody
-	$(SUBMAKE) install-binutils-rhapsody
-endif
-endif
-	$(SUBMAKE) install-chmod-rhapsody
-
-install-pdo:
-	$(SUBMAKE) install-clean
-	$(SUBMAKE) install-frameworks-pdo NATIVE_TARGET=$(NATIVE_TARGETS)
-	$(SUBMAKE) install-binutils-pdo NATIVE_TARGET=$(NATIVE_TARGETS)
-	$(SUBMAKE) install-chmod-pdo
-
-install-src:
-	$(SUBMAKE) check-args
-	$(SUBMAKE) build
-ifneq ($(findstring rhapsody,$(CANONICAL_ARCHS))$(findstring macos10,$(CANONICAL_ARCHS)),)
-	$(SUBMAKE) $(RHAPSODY_FLAGS) install-rhapsody
-	$(SUBMAKE) $(RHAPSODY_FLAGS) install-source
-	$(SUBMAKE) $(RHAPSODY_FLAGS) install-chmod-rhapsody
-else
-	$(SUBMAKE) $(PDO_FLAGS) install-pdo
-	$(SUBMAKE) $(PDO_FLAGS) install-source
-	$(SUBMAKE) $(PDO_FLAGS) install-chmod-pdo
-endif
-
-install-nosrc:
-	$(SUBMAKE) check-args
-	$(SUBMAKE) build
-ifneq ($(findstring rhapsody,$(CANONICAL_ARCHS))$(findstring macos10,$(CANONICAL_ARCHS)),)
-	$(SUBMAKE) $(RHAPSODY_FLAGS) install-rhapsody
-else
-	$(SUBMAKE) $(PDO_FLAGS) install-pdo
+	$(SUBMAKE) install-frameworks-macosx
+	$(SUBMAKE) install-binutils-macosx
 endif
 
 install:
-ifeq ($(INSTALL_SOURCE),no)
-	$(SUBMAKE) install-nosrc
-else	
-#	$(SUBMAKE) install-src
-	$(SUBMAKE) install-nosrc
-endif
+	$(SUBMAKE) check-args
+	$(SUBMAKE) build
+	$(SUBMAKE) $(MACOSX_FLAGS) install-macosx
+	$(SUBMAKE) $(MACOSX_FLAGS) install-chmod-macosx
 
 installhdrs:
 	$(SUBMAKE) check-args
 	$(SUBMAKE) configure 
 	$(SUBMAKE) build-headers
 	$(SUBMAKE) install-clean
-ifneq ($(findstring rhapsody,$(CANONICAL_ARCHS))$(findstring macos10,$(CANONICAL_ARCHS)),)
-	$(SUBMAKE) $(RHAPSODY_FLAGS) CURRENT_ROOT=$(SYMROOT) install-frameworks-headers
-	$(SUBMAKE) $(RHAPSODY_FLAGS) CURRENT_ROOT=$(DSTROOT) install-frameworks-headers
-else
-	$(SUBMAKE) $(PDO_FLAGS) CURRENT_ROOT=$(SYMROOT) install-frameworks-headers
-	$(SUBMAKE) $(PDO_FLAGS) CURRENT_ROOT=$(DSTROOT) install-frameworks-headers
-endif
+	$(SUBMAKE) $(MACOSX_FLAGS) CURRENT_ROOT=$(SYMROOT) install-frameworks-headers
+	$(SUBMAKE) $(MACOSX_FLAGS) CURRENT_ROOT=$(DSTROOT) install-frameworks-headers
 
 installsrc:
 	$(SUBMAKE) check

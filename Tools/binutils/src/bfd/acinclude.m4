@@ -108,16 +108,6 @@ AC_DEFUN(BFD_HAVE_SYS_PROCFS_TYPE_MEMBER,
  AC_MSG_RESULT($bfd_cv_have_sys_procfs_type_member_$1_$2)
 ])
 
-sinclude(../libtool.m4)
-dnl The lines below arrange for aclocal not to bring libtool.m4
-dnl AM_PROG_LIBTOOL into aclocal.m4, while still arranging for automake
-dnl to add a definition of LIBTOOL to Makefile.in.
-ifelse(yes,no,[
-AC_DEFUN([AM_PROG_LIBTOOL],)
-AC_DEFUN([AM_DISABLE_SHARED],)
-AC_SUBST(LIBTOOL)
-])
-
 sinclude(../gettext.m4)
 ifelse(yes,no,[
 AC_DEFUN([CY_WITH_NLS],)
@@ -129,7 +119,7 @@ AC_DEFUN([AM_INSTALL_LIBBFD],
   AC_ARG_ENABLE(install-libbfd,
 [  --install-libbfd controls installation of libbfd and related headers],
       install_libbfd_p=$enableval,
-      if test "${host}" = "${target}" -o "$enable_shared" = "yes"; then
+      if test "${host}" = "${target}" || test "$enable_shared" = "yes"; then
         install_libbfd_p=yes
       else
         install_libbfd_p=no

@@ -1,9 +1,294 @@
+2003-01-28  Richard Sandiford  <rsandifo@redhat.com>
+
+	* readelf.c (dump_relocations): Reorder the r_info field for
+	little-endian mips elf64.  Move #ifdef BFD64 to cover the new code.
+
+2003-01-21  Daniel Berlin  <dan@dberlin.org>
+
+	* readelf.c (display_debug_loc): Skip address base changes.
+
+2003-01-17  Fabio Alemagna  <falemagn@aros.org>
+
+	* readelf.c (get_osabi_name): Handle ELFOSABI_AROS, ELFOSABI_OPENVMS
+	and ELFOSABI_NSK.
+
+2003-01-16  Alan Modra  <amodra@bigpond.net.au>
+
+	* readelf.c: Include elf/ppc64.h.
+	(dump_relocations <EM_PPC64>): Use elf_ppc64_reloc_type.
+	* Makefile.am: Run "make dep-am".
+	* Makefile.in: Regenerate.
+
+2003-01-02  Ben Elliston  <bje@redhat.com>
+
+	* readelf.c (guess_is_rela): Handle EM_IQ2000.
+	(get_machine_name): Likewise.
+	(dump_relocations): Likewise.
+	* NEWS: Mention IQ2000 support.
+
+2003-01-02  Richard Sandiford  <rsandifo@redhat.com>
+
+	* readelf.c (get_machine_flags): Handle E_MIPS_ARCH_32R2.
+
+2002-12-30  Chris Demetriou  <cgd@broadcom.com>
+
+	* doc/binutils.texi (objdump): Note MIPS HWR (Hardware Register)
+	changes in MIPS -M options.
+
+2002-12-30    Dmitry Diky <diwil@mail.ru>
+
+	* Makefile.am: Add msp430 target.
+	* Makefile.in: Regenerate.
+	* readelf.c: Add support for msp430 target.
+
+2002-12-27  Chris Demetriou  <cgd@broadcom.com>
+
+	* doc/binutils.texi (objdump): Document MIPS -M options.
+
+2002-12-23  Andreas Schwab  <schwab@suse.de>
+
+	* readelf.c (main): Reset dump request after each file.
+
+2002-12-23  Nick Clifton  <nickc@redhat.com>
+
+	* nlmconv.c (main): Pass TRUE as third argument to
+	bfd_arch_get_compatible.
+
+2002-12-23  Nick Clifton  <nickc@redhat.com>
+
+	* strings.c (isgraphic): Replace definition with STRING_ISGRAPHIC
+	macro.  Handle 'S' encoding, accepting 8-bit characters.
+	(main): Parse 'S' encoding.
+	(get_char): Accept 'S' encoding.
+	(print_strings): Use STRING_ISGRAPHIC.
+	(usage): Document support of 'S' encoding.
+	* doc/binutils.texi: Document support of 'S' encoding/
+	* NEWS: Mention new feature.
+
+2002-12-20  Alan Modra  <amodra@bigpond.net.au>
+
+	* README <building ar>: Don't use libibery's needed_list or
+	required_list, instead link libiberty/*.o.
+
+2002-12-19  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* doc/binutils.texi: Fix typos.
+
+2002-12-14  John David Anglin  <dave@hiauly1.hia.nrc.ca>
+
+	* doc/binutils.texi: Add missing parenthesis.
+
+2002-12-15  Nick Kelsey  <nickk@ubicom.com>
+
+	* objcopy.c: Add --prefix-symbols=<prefix> option to rename all
+	symbols by adding the given prefix to the begining of the symbol
+	name. This is useful to provide name space seperation regardless
+	of how the object file was created. Added --prefix-sections=
+	<prefix> and --prefix-alloc-sections=<prefix> options to rename all
+	sections (or all sections with the alloc flag set) by adding the given
+	prefix to the begining of the symbol name.
+	* NEWS: Mention this new feature.
+	* doc/binutils.texi: Document this new feature.
+
+2002-12-13  Alan Modra  <amodra@bigpond.net.au>
+
+	* dlltool.c (mcore_elf_gen_out_file): Replace all occurrences of
+	dyn_string_append with dyn_string_append_cstr.
+
+	* emul_aix.c (ar_emul_aix_create): Remove unused function.
+
+2002-12-10  James Cownie <jcownie@etnus.com>
+
+	* readelf.h (get_TAG_name, get_AT_name,
+	read_and_display_attr_value): Add support for UPC extensions to
+	DWARF2 spec.
+	* NEWS: Mention this new support.
+
+2002-12-08  Alan Modra  <amodra@bigpond.net.au>
+
+	* NEWS: Mention that bfd no longer declares a "boolean" type.
+
+2002-12-07  Alan Modra  <amodra@bigpond.net.au>
+
+	* readelf.c (process_program_headers): When setting loadaddr, don't
+	assume segment size is 4k.  Use p_align instead.
+	(loadaddr): Change from int to long.
+	(dynamic_addr, dynamic_info, version_info): Likewise.
+	(process_dynamic_segment <syminsz>): Likewise.
+	(process_dynamic_segment): Adjust print format string.
+	(rela_addr, rela_size): Delete.
+	(process_relocs): Formatting.
+
+2002-12-05  Jim Wilson  <wilson@redhat.com>
+
+	* configure.in (OBJDUMP_DEFS): Define SKIP_ZEROES as 16 for IA-64.
+	* configure: Regenerate.
+
+2002-12-04  Ian Lance Taylor  <ian@airs.com>
+
+	* MAINTAINERS: Change e-mail address back to airs.com.
+
+2002-12-04  Aldy Hernandez  <aldyh@redhat.com>
+
+	* MAINTAINERS: Add self.
+
+2002-11-30  Alan Modra  <amodra@bigpond.net.au>
+
+	* addr2line.c, ar.c, arsup.c, binemul.c, binemul.h, bucomm.c, bucomm.h,
+	budbg.h, debug.c, debug.h, dlltool.c, emul_aix.c, ieee.c, nlmconv.c,
+	nlmconv.h, nlmheader.y, nm.c, objcopy.c, objdump.c, prdbg.c, rdcoff.c,
+	rddbg.c, readelf.c, rename.c, size.c, stabs.c, strings.c,
+	unwind-ia64.h, wrstabs.c: Replace boolean with bfd_boolean, true with
+	TRUE, false with FALSE.  Simplify comparisons of bfd_boolean vars
+	with TRUE/FALSE.  Formatting.
+
+2002-11-29  Jakub Jelinek  <jakub@redhat.com>
+
+	* readelf.c Replace occurrences of Elf32_Internal_* and
+	Elf64_Internal_* with Elf_Internal_*.
+	(slurp_rel_relocs): Change Elf_Internal_Rel to Elf_Internal_Rela.
+	Zero r_addend fields.
+	(dump_relocations): Remove relas variable, change Elf_Internal_Rel to
+	Elf_Internal_Rela.
+
+2002-11-23  Nick Clifton  <nickc@redhat.com>
+
+	* size.c (usage): Fix typo describing switch for hex format.
+
+2002-11-18  Svein E. Seldal  <Svein.Seldal@solidas.com>
+
+	* testsuite/binutils-all/objcopy.exp: Disable tic4x from test
+	* testsuite/binutils-all/objdump.exp: Setup proper values for tic4x
+	testcase
+
+2002-11-14  Nick Clifton  <nickc@redhat.com>
+
+	* readelf.c (process_program_headers): Add comment about return
+	value.  Ensure that 0 is returned if the headers are not loaded.
+	(process_file): If process_section_headers failed to load the
+	headers disable any tests that rely upon them.  Similarly for
+	process_program_headers.
+
+2002-11-12  Nick Clifton  <nickc@redhat.com>
+
+	* po/da.po: Updated Danish translation.
+
+2002-11-12  Klee Dienes  <kdienes@apple.com>
+
+	* rddbg.c (read_section_stabs_debugging_info): Also recognize
+	LC_SYMTAB.stab/LC_SYMTAB.stabstr as a valid pair of sections.
+
+2002-11-11  Christopher Faylor  <cgf@redhat.com>
+
+	* MAINTAINERS: Reinstate DJ Delorie as COFF maintainer.  Drop COFF from
+	cgf maintainership.
+
+2002-11-11  Christopher Faylor  <cgf@redhat.com>
+
+	* MAINTAINERS: Replace DJ Delorie as PE/COFF maintainer.
+
+2002-11-07  Nick Clifton  <nickc@redhat.com>
+
+	* configure.in (ALL_LINGUAS): Add 'da'.
+	* configure: Regenerate.
+	* po/da.po: New Danish translation.
+
+	* readelf.c (get_symbol_index_type): Revert part of previous
+	patch: Display unknown symbol types in decimal, not hex.
+
+2002-11-07  Danny Smith  <dannysmith@users.sourceforge.net>
+
+	* dlltool.c (add_excludes): Don't prefix excluded fastcall
+	symbols	with underscore.
+	(xlate): Ignore add_underscore for decorated fastcall symbols.
+
+2002-11-07  Eric Kohl  <ekohl@rz-online.de>
+
+	* deflex.l: Accept '@' as first character of an ID.
+	* dlltool.c (gen_exp_file): Use existing '@' prefix rather than
+	ASM_PREFIX for fastcall symbols.
+	(scan_drectve_symbols): Handle fastcall symbols when generating
+	undecorated aliases for symbols in drectve section.
+	(scan_filtered_symbols): Likewise, with export-all.
+	(xlate): Likewise, with --kill-at.
+	(make_imp_label): New function to handle fastcall symbols
+	correctly.
+	(make_one_lib_file): Use make_imp_label instead of make_label
+	for imp	symbols.
+
+2002-11-06  Svein E. Seldal  <Svein.Seldal@solidas.com>
+
+	* MAINTAINERS: Add self as TIC4X maintainer.
+
+2002-11-06  Hiroyuki Machida  <machida@sm.sony.co.jp>
+
+	* readelf.c (get_symbol_index_type): Add hex number to
+	PROCESSOR-specific, OS-specific, reserved and unknown symbol
+	types.
+
+2002-11-04  Alan Modra  <amodra@bigpond.net.au>
+
+	* readelf.c (byte_get_little_endian): Comment typo fix.
+	(print_symbol): Constify "symbol" arg.  Don't pass "symbol" to printf
+	as the format string.
+	(dump_relocations): Correct section sym names.
+	(process_section_headers): Clear symtab_shndx_hdr.
+	(read_and_display_attr_value): Don't pass indirect string to printf
+	as the format string.
+	(display_debug_frames): Indicate when zero terminator found.  Decode
+	DW_EH_PE_pcrel addresses.
+
+2002-10-23  Svein E. Seldal  <Svein.Seldal@solidas.com>
+
+	* configure.in: Define SKIP_ZEROES as 32 for tic4x target in
+	order to ensure proper disassembly of the valid 0-value opcode.
+	* configure: Regenerate.
+	* aclocal.m4: Regenerate.
+	* config.in: Regenerate.
+	* configure.in: Regenerate.
+	* doc/Makefile.in: Regenerate.
+	* po/binutils.pot: Regenerate.
+
+2002-10-23  Kaz Kojima  <kkojima@rr.iij4u.or.jp>
+
+	* MAINTAINERS: Add self as SH maintainer.
+
+2002-10-23  Ben Elliston  <bje@redhat.com>
+
+	* doc/binutils.texi (objdump): Document -z and move the entry for
+	--disassemble-zeroes to the end of the options section (for `z').
+
+2002-10-21  Nick Clifton  <nickc@redhat.com>
+
+	* MAINTAINERS: Discontinue Hans-Peter Nilsson as SH maintainer.
+
+2002-10-21  Svein E. Seldal  <Svein.Seldal@solidas.com>
+
+	* objdump.c (dump_data): Correct addr_offset for opb != 1.
+
+2002-10-15  Alan Modra  <amodra@bigpond.net.au>
+
+	* bucomm.c (list_supported_targets): Use bfd_target_list.
+
+	* objcopy.c (copy_file): Report ambiguous bfd_object matches, and
+	other object errors in preference to bfd_core errors.
+
+2002-10-14  Alan Modra  <amodra@bigpond.net.au>
+
+	* Makefile.am: Run "make dep-am".
+	* objdump.c: #include "bfdver.h".
+	* version.c: Likewise.
+	* Makefile.in: Regenerate.
+	* config.in: Regenerate.
+	* configure: Regenerate.
+	* po/POTFILES.in: Regenerate.
+
 2002-10-09  Daniel Jacobowitz  <drow@mvista.com>
 
 	* readelf.c (display_debug_info): Ignore empty .rela.debug_info
 	sections.  Allow relocations against the absolute symbol.  Don't
 	use the value in compunit.cu_abbrev_offset if we found a RELA
-	relocation.   
+	relocation.
 
 2002-10-07  Gordon Chaffee <chaffee@netvmg.com>
 

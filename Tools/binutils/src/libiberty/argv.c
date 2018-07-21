@@ -284,7 +284,7 @@ char **buildargv (input)
 		}
 	    }
 	  *arg = EOS;
-	  argv[argc] = xstrdup (copybuf);
+	  argv[argc] = strdup (copybuf);
 	  if (argv[argc] == NULL)
 	    {
 	      freeargv (argv);

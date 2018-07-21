@@ -2243,7 +2243,10 @@ demangle_type_ptr (dm, insert_pos, substitution_start)
     {
       /* A pointer-to-member.  */
       dyn_string_t class_type;
-      
+      dyn_string_t cv_qualifiers;
+      int has_cv_qualifiers = 0;
+      char npeek;
+
       /* Eat the 'M'.  */
       advance_char (dm);
       
@@ -2252,6 +2255,16 @@ demangle_type_ptr (dm, insert_pos, substitution_start)
       RETURN_IF_ERROR (demangle_type (dm));
       class_type = (dyn_string_t) result_pop (dm);
       
+      npeek = peek_char (dm);
+      if ((npeek == 'r') || (npeek == 'V') || (npeek == 'K'))
+	{
+	  has_cv_qualifiers = 1;
+	  /* Snarf up CV qualifiers.  */
+	  cv_qualifiers = dyn_string_new (24);
+	  if (cv_qualifiers == NULL)
+	    return STATUS_ALLOCATION_FAILED;
+	  demangle_CV_qualifiers (dm, cv_qualifiers);
+	}
       if (peek_char (dm) == 'F')
 	/* A pointer-to-member function.  We want output along the
 	   lines of `void (C::*) (int, int)'.  Demangle the function
@@ -2277,6 +2290,16 @@ demangle_type_ptr (dm, insert_pos, substitution_start)
 	  /* The pointer-to-member notation (e.g. `C::*') follows the
              member's type.  */
 	  *insert_pos = result_caret_pos (dm);
+	}
+      if (has_cv_qualifiers)
+	{
+	  /* Emit them, preceded by a space.  */
+	  status = result_add_char (dm, ' ');
+	  if (STATUS_NO_ERROR (status)) 
+	    status = result_add_string (dm, cv_qualifiers);
+	  /* Clean up.  */
+	  dyn_string_delete (cv_qualifiers);
+	  RETURN_IF_ERROR (status);
 	}
 
       /* Build the pointer-to-member notation.  */

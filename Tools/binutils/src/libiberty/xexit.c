@@ -41,7 +41,7 @@ Termination is handled via the system's normal @code{exit} call.
 
 /* This variable is set by xatexit if it is called.  This way, xmalloc
    doesn't drag xatexit into the link.  */
-void (*_xexit_cleanup) PARAMS ((void)) = 0;
+void (*_xexit_cleanup) PARAMS ((void));
 
 void
 xexit (code)

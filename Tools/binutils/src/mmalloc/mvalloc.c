@@ -18,6 +18,10 @@ Boston, MA 02111-1307, USA.  */
 
 #include "mmprivate.h"
 
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+
 /* Cache the pagesize for the current host machine.  Note that if the host
    does not readily provide a getpagesize() function, we need to emulate it
    elsewhere, not clutter up this file with lots of kluges to try to figure

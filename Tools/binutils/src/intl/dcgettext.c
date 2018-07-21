@@ -160,7 +160,7 @@ const char _nl_default_dirname[] = GNULOCALEDIR;
 
 /* List with bindings of specific domains created by bindtextdomain()
    calls.  */
-struct binding *_nl_domain_bindings = NULL;
+struct binding *_nl_domain_bindings;
 
 /* Prototypes for local functions.  */
 static char *find_msg PARAMS ((struct loaded_l10nfile *domain_file,

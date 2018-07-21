@@ -1,4 +1,59 @@
-2002-05-16  Klee Dienes  <kdienes@bluegill.localnet>
+2002-12-14  Klee Dienes  <kdienes@apple.com>
+
+	* pagecheck-sup.c (alloc_buffer): Store one longword of
+	MAGIC_GUARD even if check_info_guard is not set.
+	(validate_buffer): Check for one longword of MAGIC_GUARD even if
+	check_info_guard is not set.
+
+2002-11-30  Klee Dienes  <kdienes@apple.com>
+
+	* mmap-sup.c (mmalloc_endpoints): Handle nested mmalloc pools.
+	* mmalloc.h (mmalloc_endpoints): Add prototype.
+	
+2002-11-08  Klee Dienes  <kdienes@apple.com>
+
+	* pagecheck-sup.c (mmalloc_pagecheck_zero_free): New variable.
+	If set, realloc and free will zero out the old memory as well as mark
+	it as unreadable.
+	(mfree_pagecheck): Honor mmalloc_pagecheck_zero_free.
+	(mrealloc_pagecheck): Honor mmalloc_pagecheck_zero_free.
+
+2002-11-05  Klee Dienes  <kdienes@apple.com>
+
+	* Makefile.in: Add configure variables for PAGECHECK_SRC and
+	PAGECHECK_OBJ; use them in CFILES and OFILES.
+	* configure.in: Add host-check to determine if we should build
+	pagecheck-sup.o.
+	* po/Make-in: Revert to use @USE_NLS@ to match FSF sources.
+	
+2002-11-01  Klee Dienes  <kdienes@apple.com>
+
+	* pagecheck-sup.c: New file.  Implements a page-protection-based
+	debugging malloc.  See the comments in pagecheck-sup.c.
+
+	* Makefile.in: Add pagecheck-sup.c, pagecheck-sup.o.  
+	* mmalloc.h: Add prototype for mmalloc_pagecheck_create.
+	* mm.c: Add pagecheck-sup.
+	
+2002-11-01  Klee Dienes  <kdienes@apple.com>
+
+	* Makefile.in: Convert to build using "traditional" library
+	structure, instead of using mm.c.
+	* attach.c: Include mmprivate.h _before_ trying to evaluate HAVE_MMAP.
+	(mmalloc_attach): Include the 'flags' parameter in the
+	non-HAVE_MMAP case.
+	* check-sup.c: Include stdlib.h and string.h.
+	* detach.c: Include stdlib.h.
+	* malloc-sup.c: Include stdlib.h and string.h.
+	* mm.c: Move __mmalloc_default_mdp to mmalloc.c.  Remove unistd.h;
+	move to individual .c files.
+	* mmalloc.c: Move __mmalloc_default_mdp from mm.c.
+	* mmap-sup.c: Include config.h _before_ trying to evaluate
+	HAVE_MMAP.  Remove X3J11-bait at the end of the file.
+	* mmprivate.h: Include config.h.
+	* mvalloc.c: Include unistd.h, if available.
+
+2002-05-16  Klee Dienes  <kdienes@apple.com>
 
 	* Makefile.in: add check-sup.c
 

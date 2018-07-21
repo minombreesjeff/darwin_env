@@ -959,7 +959,10 @@ objcopy [@option{-F} @var{bfdname}|@option{--target=}@var{bfdname}]
         [@option{--keep-global-symbols=}@var{filename}]
         [@option{--localize-symbols=}@var{filename}]
         [@option{--weaken-symbols=}@var{filename}]
-        [@option{--alt-machine-code=@var{index}}]
+        [@option{--alt-machine-code=}@var{index}]
+        [@option{--prefix-symbols=}@var{string}]
+        [@option{--prefix-sections=}@var{string}]
+        [@option{--prefix-alloc-sections=}@var{string}]
         [@option{-v}|@option{--verbose}]
         [@option{-V}|@option{--version}]  
         [@option{--help}]
@@ -1319,6 +1322,16 @@ a machine is assigned an official code and the tool-chain adopts the
 new code, but other applications still depend on the original code
 being used.
 
+@item --prefix-symbols=@var{string}
+Prefix all symbols in the output file with @var{string}.
+
+@item --prefix-sections=@var{string}
+Prefix all section names in the output file with @var{string}.
+
+@item --prefix-alloc-sections=@var{string}
+Prefix all the names of all allocated sections in the output file with
+@var{string}.
+
 @item -V
 @itemx --version
 Show the version number of @command{objcopy}.
@@ -1476,11 +1489,6 @@ those expected to contain instructions.
 When disassembling, print the complete address on each line.  This is
 the older disassembly format.
 
-@item --disassemble-zeroes
-Normally the disassembly output will skip blocks of zeroes.  This
-option directs the disassembler to disassemble those blocks, just like
-any other data.
-
 @item -EB
 @itemx -EL
 @itemx --endian=@{big|little@}
@@ -1584,12 +1592,54 @@ intel syntax mode and AT&T syntax mode.  @option{addr32},
 address size and operand size.  These four options will be overridden if
 @option{x86-64}, @option{i386} or @option{i8086} appear later in the
 option string.  Lastly, @option{suffix}, when in AT&T mode,
-instructs the dissassembler to print a mnemonic suffix even when the
+instructs the disassembler to print a mnemonic suffix even when the
 suffix could be inferred by the operands.
 
 For PPC, @option{booke}, @option{booke32} and @option{booke64} select
 disassembly of BookE instructions.  @option{32} and @option{64} select
 PowerPC and PowerPC64 disassembly, respectively.
+
+For MIPS, this option controls the printing of register names in
+disassembled instructions.  Multiple selections from the
+following may be specified as a comma separated string, and invalid
+options are ignored:
+
+@table @code
+@item gpr-names=@var{ABI}
+Print GPR (general-purpose register) names as appropriate
+for the specified ABI.  By default, GPR names are selected according to
+the ABI of the binary being disassembled.
+
+@item fpr-names=@var{ABI}
+Print FPR (floating-point register) names as
+appropriate for the specified ABI.  By default, FPR numbers are printed
+rather than names.
+
+@item cp0-names=@var{ARCH}
+Print CP0 (system control coprocessor; coprocessor 0) register names
+as appropriate for the CPU or architecture specified by
+@var{ARCH}.  By default, CP0 register names are selected according to
+the architecture and CPU of the binary being disassembled.
+
+@item hwr-names=@var{ARCH}
+Print HWR (hardware register, used by the @code{rdhwr} instruction) names
+as appropriate for the CPU or architecture specified by
+@var{ARCH}.  By default, HWR names are selected according to
+the architecture and CPU of the binary being disassembled.
+
+@item reg-names=@var{ABI}
+Print GPR and FPR names as appropriate for the selected ABI.
+
+@item reg-names=@var{ARCH}
+Print CPU-specific register names (CP0 register and HWR names)
+as appropriate for the selected CPU or architecture.
+@end table
+
+For any of the options listed above, @var{ABI} or
+@var{ARCH} may be specified as @samp{numeric} to have numbers printed
+rather than names, for the selected types of registers.
+You can list the available values of @var{ABI} and @var{ARCH} using
+the @option{--help} option.
 
 @item -p
 @itemx --private-headers
@@ -1691,6 +1741,12 @@ relocation entries.  Using @option{-x} is equivalent to specifying all of
 @cindex wide output, printing
 Format some lines for output devices that have more than 80 columns.
 Also do not truncate symbol names when they are displayed.
+
+@item -z
+@itemx --disassemble-zeroes
+Normally the disassembly output will skip blocks of zeroes.  This
+option directs the disassembler to disassemble those blocks, just like
+any other data.
 @end table
 
 @c man end
@@ -1942,11 +1998,11 @@ octal, @samp{x} for hexadecimal, or @samp{d} for decimal.
 @item -e @var{encoding}
 @itemx --encoding=@var{encoding}
 Select the character encoding of the strings that are to be found.
-Possible values for @var{encoding} are: @samp{s} = single-byte
-characters (ASCII, ISO 8859, etc., default), @samp{b} = 16-bit
-Bigendian, @samp{l} = 16-bit Littleendian, @samp{B} = 32-bit Bigendian,
-@samp{L} = 32-bit Littleendian. Useful for finding wide character
-strings.
+Possible values for @var{encoding} are: @samp{s} = single-7-bit-byte
+characters (ASCII, ISO 8859, etc., default), @samp{S} =
+single-8-bit-byte characters, @samp{b} = 16-bit bigendian, @samp{l} =
+16-bit littleendian, @samp{B} = 32-bit bigendian, @samp{L} = 32-bit
+littleendian. Useful for finding wide character strings.
 
 @item --target=@var{bfdname}
 @cindex object code format
@@ -2880,7 +2936,7 @@ files.  The options control what particular information to display.
 
 @var{elffile}@dots{} are the object files to be examined.  At the
 moment, @command{readelf} does not support examining archives, nor does it
-support examing 64 bit ELF files.
+support examining 64 bit ELF files.
 
 @c man end
 
