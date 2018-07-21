@@ -1,0 +1,1126 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 45;
+	objects = {
+
+/* Begin PBXAggregateTarget section */
+		72BA2E430FCF0E320052385D /* Copy documentation */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 72BA2E460FCF0E3A0052385D /* Build configuration list for PBXAggregateTarget "Copy documentation" */;
+			buildPhases = (
+				72BA2E420FCF0E320052385D /* Copy to man1 */,
+				72BA2E690FCF0E870052385D /* Copy to man5 */,
+				72444FC40FD08E05009ED584 /* ShellScript */,
+			);
+			dependencies = (
+			);
+			name = "Copy documentation";
+			productName = "Copy man pages";
+		};
+		72BA2E6A0FCF0EB90052385D /* Build All */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 72BA2E800FCF0EF70052385D /* Build configuration list for PBXAggregateTarget "Build All" */;
+			buildPhases = (
+			);
+			dependencies = (
+				72BA2E710FCF0EDC0052385D /* PBXTargetDependency */,
+				72BA2E6F0FCF0EDC0052385D /* PBXTargetDependency */,
+				72BA2E6D0FCF0EDC0052385D /* PBXTargetDependency */,
+				72BA2E770FCF0EE20052385D /* PBXTargetDependency */,
+				72BA2E750FCF0EE20052385D /* PBXTargetDependency */,
+				72BA2E730FCF0EE20052385D /* PBXTargetDependency */,
+				72BA2E7D0FCF0EE80052385D /* PBXTargetDependency */,
+				72BA2E7B0FCF0EE80052385D /* PBXTargetDependency */,
+				72BA2E790FCF0EE80052385D /* PBXTargetDependency */,
+				72BA2E7F0FCF0EEB0052385D /* PBXTargetDependency */,
+			);
+			name = "Build All";
+			productName = "Build All";
+		};
+/* End PBXAggregateTarget section */
+
+/* Begin PBXBuildFile section */
+		72BA2CCA0FCF054D0052385D /* merge.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2CC80FCF054D0052385D /* merge.c */; };
+		72BA2D0A0FCF06B80052385D /* maketime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D050FCF06B80052385D /* maketime.c */; };
+		72BA2D0B0FCF06B80052385D /* merger.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D070FCF06B80052385D /* merger.c */; };
+		72BA2D0C0FCF06B80052385D /* partime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D080FCF06B80052385D /* partime.c */; };
+		72BA2D0F0FCF06D50052385D /* rcsfnms.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0D0FCF06D50052385D /* rcsfnms.c */; };
+		72BA2D100FCF06D50052385D /* rcslex.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0E0FCF06D50052385D /* rcslex.c */; };
+		72BA2D130FCF070F0052385D /* rcskeep.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D110FCF070F0052385D /* rcskeep.c */; };
+		72BA2D140FCF070F0052385D /* rcskeys.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D120FCF070F0052385D /* rcskeys.c */; };
+		72BA2D170FCF07270052385D /* rcsmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D150FCF07270052385D /* rcsmap.c */; };
+		72BA2D180FCF07270052385D /* rcssyn.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D160FCF07270052385D /* rcssyn.c */; };
+		72BA2D1A0FCF075D0052385D /* rcsrev.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D190FCF075D0052385D /* rcsrev.c */; };
+		72BA2D1C0FCF07AB0052385D /* rcsutil.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1B0FCF07AB0052385D /* rcsutil.c */; };
+		72BA2D1E0FCF07C80052385D /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1D0FCF07C80052385D /* version.c */; };
+		72BA2D250FCF08050052385D /* rcstime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D240FCF08050052385D /* rcstime.c */; };
+		72BA2D360FCF08CA0052385D /* ident.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D340FCF08C20052385D /* ident.c */; };
+		72BA2D370FCF08CB0052385D /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1D0FCF07C80052385D /* version.c */; };
+		72BA2D3B0FCF08D80052385D /* rcsmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D150FCF07270052385D /* rcsmap.c */; };
+		72BA2D4C0FCF09270052385D /* ci.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D4B0FCF09270052385D /* ci.c */; };
+		72BA2D4D0FCF099F0052385D /* rcslex.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0E0FCF06D50052385D /* rcslex.c */; };
+		72BA2D580FCF09CC0052385D /* rcsgen.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D570FCF09CC0052385D /* rcsgen.c */; };
+		72BA2D590FCF09DC0052385D /* rcssyn.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D160FCF07270052385D /* rcssyn.c */; };
+		72BA2D5D0FCF09EB0052385D /* rcsedit.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D5C0FCF09EB0052385D /* rcsedit.c */; };
+		72BA2D5E0FCF09FF0052385D /* rcskeys.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D120FCF070F0052385D /* rcskeys.c */; };
+		72BA2D5F0FCF0A000052385D /* rcsmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D150FCF07270052385D /* rcsmap.c */; };
+		72BA2D600FCF0A020052385D /* rcsrev.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D190FCF075D0052385D /* rcsrev.c */; };
+		72BA2D610FCF0A0E0052385D /* rcsutil.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1B0FCF07AB0052385D /* rcsutil.c */; };
+		72BA2D620FCF0A120052385D /* rcsfnms.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0D0FCF06D50052385D /* rcsfnms.c */; };
+		72BA2D630FCF0A140052385D /* maketime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D050FCF06B80052385D /* maketime.c */; };
+		72BA2D640FCF0A160052385D /* partime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D080FCF06B80052385D /* partime.c */; };
+		72BA2D650FCF0A1B0052385D /* rcstime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D240FCF08050052385D /* rcstime.c */; };
+		72BA2D660FCF0A1D0052385D /* rcskeep.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D110FCF070F0052385D /* rcskeep.c */; };
+		72BA2D6B0FCF0A3B0052385D /* rcsfcmp.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D6A0FCF0A3B0052385D /* rcsfcmp.c */; };
+		72BA2D6C0FCF0A440052385D /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1D0FCF07C80052385D /* version.c */; };
+		72BA2D7F0FCF0A740052385D /* co.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D7E0FCF0A740052385D /* co.c */; };
+		72BA2D800FCF0A820052385D /* rcslex.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0E0FCF06D50052385D /* rcslex.c */; };
+		72BA2D810FCF0A860052385D /* rcssyn.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D160FCF07270052385D /* rcssyn.c */; };
+		72BA2D820FCF0A890052385D /* rcsgen.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D570FCF09CC0052385D /* rcsgen.c */; };
+		72BA2D830FCF0A940052385D /* rcsedit.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D5C0FCF09EB0052385D /* rcsedit.c */; };
+		72BA2D840FCF0A950052385D /* rcskeys.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D120FCF070F0052385D /* rcskeys.c */; };
+		72BA2D850FCF0A970052385D /* rcsmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D150FCF07270052385D /* rcsmap.c */; };
+		72BA2D860FCF0A9B0052385D /* rcsrev.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D190FCF075D0052385D /* rcsrev.c */; };
+		72BA2D870FCF0A9F0052385D /* rcsutil.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1B0FCF07AB0052385D /* rcsutil.c */; };
+		72BA2D880FCF0AA30052385D /* rcsfnms.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0D0FCF06D50052385D /* rcsfnms.c */; };
+		72BA2D890FCF0AA50052385D /* maketime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D050FCF06B80052385D /* maketime.c */; };
+		72BA2D8A0FCF0AA80052385D /* partime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D080FCF06B80052385D /* partime.c */; };
+		72BA2D8B0FCF0AB40052385D /* rcstime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D240FCF08050052385D /* rcstime.c */; };
+		72BA2D8C0FCF0AB80052385D /* rcskeep.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D110FCF070F0052385D /* rcskeep.c */; };
+		72BA2D8D0FCF0ABA0052385D /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1D0FCF07C80052385D /* version.c */; };
+		72BA2DA10FCF0AFA0052385D /* rlog.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2DA00FCF0AFA0052385D /* rlog.c */; };
+		72BA2DA20FCF0B050052385D /* rcslex.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0E0FCF06D50052385D /* rcslex.c */; };
+		72BA2DA30FCF0B090052385D /* rcsmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D150FCF07270052385D /* rcsmap.c */; };
+		72BA2DA40FCF0B0A0052385D /* rcssyn.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D160FCF07270052385D /* rcssyn.c */; };
+		72BA2DA50FCF0B0C0052385D /* rcsrev.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D190FCF075D0052385D /* rcsrev.c */; };
+		72BA2DA60FCF0B130052385D /* rcsutil.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1B0FCF07AB0052385D /* rcsutil.c */; };
+		72BA2DA70FCF0B140052385D /* maketime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D050FCF06B80052385D /* maketime.c */; };
+		72BA2DA80FCF0B170052385D /* partime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D080FCF06B80052385D /* partime.c */; };
+		72BA2DA90FCF0B5C0052385D /* rcsfnms.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0D0FCF06D50052385D /* rcsfnms.c */; };
+		72BA2DAA0FCF0B5E0052385D /* rcskeep.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D110FCF070F0052385D /* rcskeep.c */; };
+		72BA2DAB0FCF0B5F0052385D /* rcskeys.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D120FCF070F0052385D /* rcskeys.c */; };
+		72BA2DAC0FCF0B600052385D /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1D0FCF07C80052385D /* version.c */; };
+		72BA2DB00FCF0B6F0052385D /* rcstime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D240FCF08050052385D /* rcstime.c */; };
+		72BA2DC70FCF0BAB0052385D /* rcs.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2DC60FCF0BAB0052385D /* rcs.c */; };
+		72BA2DC80FCF0BB50052385D /* rcslex.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0E0FCF06D50052385D /* rcslex.c */; };
+		72BA2DC90FCF0BBF0052385D /* rcssyn.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D160FCF07270052385D /* rcssyn.c */; };
+		72BA2DCA0FCF0BC10052385D /* rcsrev.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D190FCF075D0052385D /* rcsrev.c */; };
+		72BA2DCB0FCF0BC40052385D /* rcsutil.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1B0FCF07AB0052385D /* rcsutil.c */; };
+		72BA2DCC0FCF0C1A0052385D /* rcsgen.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D570FCF09CC0052385D /* rcsgen.c */; };
+		72BA2DCD0FCF0C1B0052385D /* rcsedit.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D5C0FCF09EB0052385D /* rcsedit.c */; };
+		72BA2DCF0FCF0C1F0052385D /* rcskeys.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D120FCF070F0052385D /* rcskeys.c */; };
+		72BA2DD00FCF0C210052385D /* rcsmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D150FCF07270052385D /* rcsmap.c */; };
+		72BA2DD10FCF0C260052385D /* rcskeep.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D110FCF070F0052385D /* rcskeep.c */; };
+		72BA2DD20FCF0C290052385D /* rcsfnms.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0D0FCF06D50052385D /* rcsfnms.c */; };
+		72BA2DD30FCF0C2C0052385D /* partime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D080FCF06B80052385D /* partime.c */; };
+		72BA2DD40FCF0C2D0052385D /* maketime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D050FCF06B80052385D /* maketime.c */; };
+		72BA2DD50FCF0C2F0052385D /* rcstime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D240FCF08050052385D /* rcstime.c */; };
+		72BA2DD90FCF0C3A0052385D /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1D0FCF07C80052385D /* version.c */; };
+		72BA2DE70FCF0C790052385D /* rcsclean.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2DE60FCF0C790052385D /* rcsclean.c */; };
+		72BA2DE80FCF0C810052385D /* rcsedit.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D5C0FCF09EB0052385D /* rcsedit.c */; };
+		72BA2DE90FCF0C830052385D /* rcsfnms.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0D0FCF06D50052385D /* rcsfnms.c */; };
+		72BA2DEA0FCF0C860052385D /* rcsgen.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D570FCF09CC0052385D /* rcsgen.c */; };
+		72BA2DEB0FCF0C880052385D /* rcskeys.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D120FCF070F0052385D /* rcskeys.c */; };
+		72BA2DEC0FCF0C8B0052385D /* rcssyn.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D160FCF07270052385D /* rcssyn.c */; };
+		72BA2DED0FCF0C8D0052385D /* rcsmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D150FCF07270052385D /* rcsmap.c */; };
+		72BA2DEE0FCF0C8E0052385D /* rcsrev.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D190FCF075D0052385D /* rcsrev.c */; };
+		72BA2DEF0FCF0C900052385D /* rcslex.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0E0FCF06D50052385D /* rcslex.c */; };
+		72BA2DF00FCF0C980052385D /* rcskeep.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D110FCF070F0052385D /* rcskeep.c */; };
+		72BA2DF10FCF0C9E0052385D /* maketime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D050FCF06B80052385D /* maketime.c */; };
+		72BA2DF20FCF0C9F0052385D /* partime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D080FCF06B80052385D /* partime.c */; };
+		72BA2DF30FCF0CA00052385D /* rcstime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D240FCF08050052385D /* rcstime.c */; };
+		72BA2DF40FCF0CA30052385D /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1D0FCF07C80052385D /* version.c */; };
+		72BA2DF80FCF0CB90052385D /* rcsutil.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1B0FCF07AB0052385D /* rcsutil.c */; };
+		72BA2DFC0FCF0CC00052385D /* rcsfcmp.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D6A0FCF0A3B0052385D /* rcsfcmp.c */; };
+		72BA2E100FCF0D140052385D /* rcsdiff.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2E0B0FCF0D030052385D /* rcsdiff.c */; };
+		72BA2E110FCF0D180052385D /* rcsutil.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1B0FCF07AB0052385D /* rcsutil.c */; };
+		72BA2E130FCF0D220052385D /* rcsfnms.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0D0FCF06D50052385D /* rcsfnms.c */; };
+		72BA2E140FCF0D240052385D /* rcsmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D150FCF07270052385D /* rcsmap.c */; };
+		72BA2E150FCF0D250052385D /* rcssyn.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D160FCF07270052385D /* rcssyn.c */; };
+		72BA2E160FCF0D260052385D /* rcsrev.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D190FCF075D0052385D /* rcsrev.c */; };
+		72BA2E170FCF0D2A0052385D /* rcslex.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0E0FCF06D50052385D /* rcslex.c */; };
+		72BA2E180FCF0D2C0052385D /* maketime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D050FCF06B80052385D /* maketime.c */; };
+		72BA2E190FCF0D2D0052385D /* partime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D080FCF06B80052385D /* partime.c */; };
+		72BA2E1A0FCF0D2F0052385D /* rcstime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D240FCF08050052385D /* rcstime.c */; };
+		72BA2E1B0FCF0D320052385D /* rcskeep.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D110FCF070F0052385D /* rcskeep.c */; };
+		72BA2E1C0FCF0D330052385D /* rcskeys.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D120FCF070F0052385D /* rcskeys.c */; };
+		72BA2E1D0FCF0D340052385D /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1D0FCF07C80052385D /* version.c */; };
+		72BA2E2A0FCF0D710052385D /* rcsmerge.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2E290FCF0D710052385D /* rcsmerge.c */; };
+		72BA2E2B0FCF0D780052385D /* maketime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D050FCF06B80052385D /* maketime.c */; };
+		72BA2E2F0FCF0D7E0052385D /* merger.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D070FCF06B80052385D /* merger.c */; };
+		72BA2E300FCF0D800052385D /* partime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D080FCF06B80052385D /* partime.c */; };
+		72BA2E310FCF0D810052385D /* rcstime.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D240FCF08050052385D /* rcstime.c */; };
+		72BA2E320FCF0D840052385D /* rcsfnms.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0D0FCF06D50052385D /* rcsfnms.c */; };
+		72BA2E330FCF0D860052385D /* rcslex.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D0E0FCF06D50052385D /* rcslex.c */; };
+		72BA2E340FCF0D880052385D /* rcsutil.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1B0FCF07AB0052385D /* rcsutil.c */; };
+		72BA2E350FCF0D950052385D /* rcsrev.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D190FCF075D0052385D /* rcsrev.c */; };
+		72BA2E360FCF0D970052385D /* rcsmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D150FCF07270052385D /* rcsmap.c */; };
+		72BA2E370FCF0D980052385D /* rcssyn.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D160FCF07270052385D /* rcssyn.c */; };
+		72BA2E390FCF0D9B0052385D /* rcskeep.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D110FCF070F0052385D /* rcskeep.c */; };
+		72BA2E3A0FCF0D9D0052385D /* rcskeys.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D120FCF070F0052385D /* rcskeys.c */; };
+		72BA2E3B0FCF0D9F0052385D /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = 72BA2D1D0FCF07C80052385D /* version.c */; };
+		72BA2E560FCF0E5E0052385D /* ci.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E490FCF0E5E0052385D /* ci.1 */; };
+		72BA2E570FCF0E5E0052385D /* co.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E4A0FCF0E5E0052385D /* co.1 */; };
+		72BA2E580FCF0E5E0052385D /* ident.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E4B0FCF0E5E0052385D /* ident.1 */; };
+		72BA2E590FCF0E5E0052385D /* merge.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E4C0FCF0E5E0052385D /* merge.1 */; };
+		72BA2E5A0FCF0E5E0052385D /* rcs.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E4D0FCF0E5E0052385D /* rcs.1 */; };
+		72BA2E5B0FCF0E5E0052385D /* rcsclean.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E4E0FCF0E5E0052385D /* rcsclean.1 */; };
+		72BA2E5C0FCF0E5E0052385D /* rcsdiff.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E4F0FCF0E5E0052385D /* rcsdiff.1 */; };
+		72BA2E5D0FCF0E5E0052385D /* rcsfile.5 in Copy to man5 */ = {isa = PBXBuildFile; fileRef = 72BA2E500FCF0E5E0052385D /* rcsfile.5 */; };
+		72BA2E5F0FCF0E5E0052385D /* rcsfreeze.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E520FCF0E5E0052385D /* rcsfreeze.1 */; };
+		72BA2E600FCF0E5E0052385D /* rcsintro.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E530FCF0E5E0052385D /* rcsintro.1 */; };
+		72BA2E610FCF0E5E0052385D /* rcsmerge.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E540FCF0E5E0052385D /* rcsmerge.1 */; };
+		72BA2E620FCF0E5E0052385D /* rlog.1 in Copy to man1 */ = {isa = PBXBuildFile; fileRef = 72BA2E550FCF0E5E0052385D /* rlog.1 */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		72BA2E6C0FCF0EDC0052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2D2A0FCF087C0052385D;
+			remoteInfo = ident;
+		};
+		72BA2E6E0FCF0EDC0052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2D720FCF0A5C0052385D;
+			remoteInfo = co;
+		};
+		72BA2E700FCF0EDC0052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2D430FCF09020052385D;
+			remoteInfo = ci;
+		};
+		72BA2E720FCF0EE20052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2DB50FCF0B870052385D;
+			remoteInfo = rcs;
+		};
+		72BA2E740FCF0EE20052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2D940FCF0ADA0052385D;
+			remoteInfo = rlog;
+		};
+		72BA2E760FCF0EE20052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2CBB0FCF050F0052385D;
+			remoteInfo = merge;
+		};
+		72BA2E780FCF0EE80052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2E220FCF0D560052385D;
+			remoteInfo = rcsmerge;
+		};
+		72BA2E7A0FCF0EE80052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2E040FCF0CDA0052385D;
+			remoteInfo = rcsdiff;
+		};
+		72BA2E7C0FCF0EE80052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2DE00FCF0C630052385D;
+			remoteInfo = rcsclean;
+		};
+		72BA2E7E0FCF0EEB0052385D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 72BA2CAE0FCF02E40052385D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 72BA2E430FCF0E320052385D;
+			remoteInfo = "Copy man pages";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		72444FB40FD08D2A009ED584 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/local/OpenSourceLicenses/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2E420FCF0E320052385D /* Copy to man1 */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 8;
+			dstPath = /usr/share/man/man1;
+			dstSubfolderSpec = 0;
+			files = (
+				72BA2E560FCF0E5E0052385D /* ci.1 in Copy to man1 */,
+				72BA2E570FCF0E5E0052385D /* co.1 in Copy to man1 */,
+				72BA2E580FCF0E5E0052385D /* ident.1 in Copy to man1 */,
+				72BA2E590FCF0E5E0052385D /* merge.1 in Copy to man1 */,
+				72BA2E5A0FCF0E5E0052385D /* rcs.1 in Copy to man1 */,
+				72BA2E5B0FCF0E5E0052385D /* rcsclean.1 in Copy to man1 */,
+				72BA2E5C0FCF0E5E0052385D /* rcsdiff.1 in Copy to man1 */,
+				72BA2E5F0FCF0E5E0052385D /* rcsfreeze.1 in Copy to man1 */,
+				72BA2E600FCF0E5E0052385D /* rcsintro.1 in Copy to man1 */,
+				72BA2E610FCF0E5E0052385D /* rcsmerge.1 in Copy to man1 */,
+				72BA2E620FCF0E5E0052385D /* rlog.1 in Copy to man1 */,
+			);
+			name = "Copy to man1";
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		72BA2E690FCF0E870052385D /* Copy to man5 */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 8;
+			dstPath = /usr/share/man/man5;
+			dstSubfolderSpec = 0;
+			files = (
+				72BA2E5D0FCF0E5E0052385D /* rcsfile.5 in Copy to man5 */,
+			);
+			name = "Copy to man5";
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		72444F5C0FD087A3009ED584 /* ci */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = ci; sourceTree = BUILT_PRODUCTS_DIR; };
+		72444F5E0FD087A3009ED584 /* co */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = co; sourceTree = BUILT_PRODUCTS_DIR; };
+		72444F600FD087A3009ED584 /* ident */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = ident; sourceTree = BUILT_PRODUCTS_DIR; };
+		72444F620FD087A3009ED584 /* merge */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = merge; sourceTree = BUILT_PRODUCTS_DIR; };
+		72444F640FD087A3009ED584 /* rlog */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = rlog; sourceTree = BUILT_PRODUCTS_DIR; };
+		72444F660FD087A4009ED584 /* rcs */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = rcs; sourceTree = BUILT_PRODUCTS_DIR; };
+		72444F680FD087A4009ED584 /* rcsclean */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = rcsclean; sourceTree = BUILT_PRODUCTS_DIR; };
+		72444F6A0FD087A4009ED584 /* rcsdiff */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = rcsdiff; sourceTree = BUILT_PRODUCTS_DIR; };
+		72444F6C0FD087A4009ED584 /* rcsmerge */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = rcsmerge; sourceTree = BUILT_PRODUCTS_DIR; };
+		72444FBE0FD08DB4009ED584 /* rcs.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = rcs.plist; sourceTree = "<group>"; };
+		729539580FD08EAB0047CA4A /* COPYING */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = COPYING; sourceTree = "<group>"; };
+		72BA2CC80FCF054D0052385D /* merge.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = merge.c; sourceTree = "<group>"; };
+		72BA2CF80FCF05F00052385D /* rcsbase.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = rcsbase.h; sourceTree = "<group>"; };
+		72BA2D050FCF06B80052385D /* maketime.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = maketime.c; sourceTree = "<group>"; };
+		72BA2D060FCF06B80052385D /* maketime.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = maketime.h; sourceTree = "<group>"; };
+		72BA2D070FCF06B80052385D /* merger.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = merger.c; sourceTree = "<group>"; };
+		72BA2D080FCF06B80052385D /* partime.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = partime.c; sourceTree = "<group>"; };
+		72BA2D090FCF06B80052385D /* partime.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = partime.h; sourceTree = "<group>"; };
+		72BA2D0D0FCF06D50052385D /* rcsfnms.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsfnms.c; sourceTree = "<group>"; };
+		72BA2D0E0FCF06D50052385D /* rcslex.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcslex.c; sourceTree = "<group>"; };
+		72BA2D110FCF070F0052385D /* rcskeep.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcskeep.c; sourceTree = "<group>"; };
+		72BA2D120FCF070F0052385D /* rcskeys.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcskeys.c; sourceTree = "<group>"; };
+		72BA2D150FCF07270052385D /* rcsmap.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsmap.c; sourceTree = "<group>"; };
+		72BA2D160FCF07270052385D /* rcssyn.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcssyn.c; sourceTree = "<group>"; };
+		72BA2D190FCF075D0052385D /* rcsrev.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsrev.c; sourceTree = "<group>"; };
+		72BA2D1B0FCF07AB0052385D /* rcsutil.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsutil.c; sourceTree = "<group>"; };
+		72BA2D1D0FCF07C80052385D /* version.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = version.c; sourceTree = "<group>"; };
+		72BA2D240FCF08050052385D /* rcstime.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcstime.c; sourceTree = "<group>"; };
+		72BA2D340FCF08C20052385D /* ident.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = ident.c; sourceTree = "<group>"; };
+		72BA2D4B0FCF09270052385D /* ci.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = ci.c; sourceTree = "<group>"; };
+		72BA2D570FCF09CC0052385D /* rcsgen.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsgen.c; sourceTree = "<group>"; };
+		72BA2D5C0FCF09EB0052385D /* rcsedit.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsedit.c; sourceTree = "<group>"; };
+		72BA2D6A0FCF0A3B0052385D /* rcsfcmp.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsfcmp.c; sourceTree = "<group>"; };
+		72BA2D7E0FCF0A740052385D /* co.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = co.c; sourceTree = "<group>"; };
+		72BA2DA00FCF0AFA0052385D /* rlog.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rlog.c; sourceTree = "<group>"; };
+		72BA2DC60FCF0BAB0052385D /* rcs.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcs.c; sourceTree = "<group>"; };
+		72BA2DE60FCF0C790052385D /* rcsclean.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsclean.c; sourceTree = "<group>"; };
+		72BA2E0B0FCF0D030052385D /* rcsdiff.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsdiff.c; sourceTree = "<group>"; };
+		72BA2E290FCF0D710052385D /* rcsmerge.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = rcsmerge.c; sourceTree = "<group>"; };
+		72BA2E490FCF0E5E0052385D /* ci.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = ci.1; sourceTree = "<group>"; };
+		72BA2E4A0FCF0E5E0052385D /* co.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = co.1; sourceTree = "<group>"; };
+		72BA2E4B0FCF0E5E0052385D /* ident.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = ident.1; sourceTree = "<group>"; };
+		72BA2E4C0FCF0E5E0052385D /* merge.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = merge.1; sourceTree = "<group>"; };
+		72BA2E4D0FCF0E5E0052385D /* rcs.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = rcs.1; sourceTree = "<group>"; };
+		72BA2E4E0FCF0E5E0052385D /* rcsclean.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = rcsclean.1; sourceTree = "<group>"; };
+		72BA2E4F0FCF0E5E0052385D /* rcsdiff.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = rcsdiff.1; sourceTree = "<group>"; };
+		72BA2E500FCF0E5E0052385D /* rcsfile.5 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = rcsfile.5; sourceTree = "<group>"; };
+		72BA2E510FCF0E5E0052385D /* rcsfile.5in */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = rcsfile.5in; sourceTree = "<group>"; };
+		72BA2E520FCF0E5E0052385D /* rcsfreeze.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = rcsfreeze.1; sourceTree = "<group>"; };
+		72BA2E530FCF0E5E0052385D /* rcsintro.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = rcsintro.1; sourceTree = "<group>"; };
+		72BA2E540FCF0E5E0052385D /* rcsmerge.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = rcsmerge.1; sourceTree = "<group>"; };
+		72BA2E550FCF0E5E0052385D /* rlog.1 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.man; path = rlog.1; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		72BA2D290FCF087C0052385D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2D420FCF09020052385D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2D710FCF0A5C0052385D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2D930FCF0ADA0052385D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2DB40FCF0B870052385D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2DDF0FCF0C630052385D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2E030FCF0CDA0052385D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2E210FCF0D560052385D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		72BA2CAC0FCF02E40052385D = {
+			isa = PBXGroup;
+			children = (
+				729539580FD08EAB0047CA4A /* COPYING */,
+				72444FBE0FD08DB4009ED584 /* rcs.plist */,
+				72BA2E450FCF0E3A0052385D /* man */,
+				72BA2CC20FCF05250052385D /* src */,
+				72444F5C0FD087A3009ED584 /* ci */,
+				72444F5E0FD087A3009ED584 /* co */,
+				72444F600FD087A3009ED584 /* ident */,
+				72444F620FD087A3009ED584 /* merge */,
+				72444F640FD087A3009ED584 /* rlog */,
+				72444F660FD087A4009ED584 /* rcs */,
+				72444F680FD087A4009ED584 /* rcsclean */,
+				72444F6A0FD087A4009ED584 /* rcsdiff */,
+				72444F6C0FD087A4009ED584 /* rcsmerge */,
+			);
+			sourceTree = "<group>";
+		};
+		72BA2CC20FCF05250052385D /* src */ = {
+			isa = PBXGroup;
+			children = (
+				72BA2E290FCF0D710052385D /* rcsmerge.c */,
+				72BA2E0B0FCF0D030052385D /* rcsdiff.c */,
+				72BA2DE60FCF0C790052385D /* rcsclean.c */,
+				72BA2D7E0FCF0A740052385D /* co.c */,
+				72BA2D4B0FCF09270052385D /* ci.c */,
+				72BA2D340FCF08C20052385D /* ident.c */,
+				72BA2CC80FCF054D0052385D /* merge.c */,
+				72BA2D050FCF06B80052385D /* maketime.c */,
+				72BA2D060FCF06B80052385D /* maketime.h */,
+				72BA2D070FCF06B80052385D /* merger.c */,
+				72BA2D080FCF06B80052385D /* partime.c */,
+				72BA2D090FCF06B80052385D /* partime.h */,
+				72BA2D240FCF08050052385D /* rcstime.c */,
+				72BA2D0D0FCF06D50052385D /* rcsfnms.c */,
+				72BA2D0E0FCF06D50052385D /* rcslex.c */,
+				72BA2CF80FCF05F00052385D /* rcsbase.h */,
+				72BA2D1B0FCF07AB0052385D /* rcsutil.c */,
+				72BA2D6A0FCF0A3B0052385D /* rcsfcmp.c */,
+				72BA2D5C0FCF09EB0052385D /* rcsedit.c */,
+				72BA2D570FCF09CC0052385D /* rcsgen.c */,
+				72BA2D190FCF075D0052385D /* rcsrev.c */,
+				72BA2D150FCF07270052385D /* rcsmap.c */,
+				72BA2D160FCF07270052385D /* rcssyn.c */,
+				72BA2D110FCF070F0052385D /* rcskeep.c */,
+				72BA2D120FCF070F0052385D /* rcskeys.c */,
+				72BA2DC60FCF0BAB0052385D /* rcs.c */,
+				72BA2DA00FCF0AFA0052385D /* rlog.c */,
+				72BA2D1D0FCF07C80052385D /* version.c */,
+			);
+			path = src;
+			sourceTree = "<group>";
+		};
+		72BA2E450FCF0E3A0052385D /* man */ = {
+			isa = PBXGroup;
+			children = (
+				72BA2E490FCF0E5E0052385D /* ci.1 */,
+				72BA2E4A0FCF0E5E0052385D /* co.1 */,
+				72BA2E4B0FCF0E5E0052385D /* ident.1 */,
+				72BA2E4C0FCF0E5E0052385D /* merge.1 */,
+				72BA2E4D0FCF0E5E0052385D /* rcs.1 */,
+				72BA2E4E0FCF0E5E0052385D /* rcsclean.1 */,
+				72BA2E4F0FCF0E5E0052385D /* rcsdiff.1 */,
+				72BA2E500FCF0E5E0052385D /* rcsfile.5 */,
+				72BA2E510FCF0E5E0052385D /* rcsfile.5in */,
+				72BA2E520FCF0E5E0052385D /* rcsfreeze.1 */,
+				72BA2E530FCF0E5E0052385D /* rcsintro.1 */,
+				72BA2E540FCF0E5E0052385D /* rcsmerge.1 */,
+				72BA2E550FCF0E5E0052385D /* rlog.1 */,
+			);
+			path = man;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		72BA2CBB0FCF050F0052385D /* merge */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72BA2CC10FCF05100052385D /* Build configuration list for PBXNativeTarget "merge" */;
+			buildPhases = (
+				72BA2CB90FCF050F0052385D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = merge;
+			productName = merge;
+			productReference = 72444F620FD087A3009ED584 /* merge */;
+			productType = "com.apple.product-type.tool";
+		};
+		72BA2D2A0FCF087C0052385D /* ident */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72BA2D300FCF08AC0052385D /* Build configuration list for PBXNativeTarget "ident" */;
+			buildPhases = (
+				72BA2D280FCF087C0052385D /* Sources */,
+				72BA2D290FCF087C0052385D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ident;
+			productName = ident;
+			productReference = 72444F600FD087A3009ED584 /* ident */;
+			productType = "com.apple.product-type.tool";
+		};
+		72BA2D430FCF09020052385D /* ci */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72BA2D4A0FCF09120052385D /* Build configuration list for PBXNativeTarget "ci" */;
+			buildPhases = (
+				72BA2D410FCF09020052385D /* Sources */,
+				72BA2D420FCF09020052385D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ci;
+			productName = ci;
+			productReference = 72444F5C0FD087A3009ED584 /* ci */;
+			productType = "com.apple.product-type.tool";
+		};
+		72BA2D720FCF0A5C0052385D /* co */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72BA2D7C0FCF0A660052385D /* Build configuration list for PBXNativeTarget "co" */;
+			buildPhases = (
+				72BA2D700FCF0A5C0052385D /* Sources */,
+				72BA2D710FCF0A5C0052385D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = co;
+			productName = co;
+			productReference = 72444F5E0FD087A3009ED584 /* co */;
+			productType = "com.apple.product-type.tool";
+		};
+		72BA2D940FCF0ADA0052385D /* rlog */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72BA2D9E0FCF0AE80052385D /* Build configuration list for PBXNativeTarget "rlog" */;
+			buildPhases = (
+				72BA2D920FCF0ADA0052385D /* Sources */,
+				72BA2D930FCF0ADA0052385D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = rlog;
+			productName = rlog;
+			productReference = 72444F640FD087A3009ED584 /* rlog */;
+			productType = "com.apple.product-type.tool";
+		};
+		72BA2DB50FCF0B870052385D /* rcs */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72BA2DC30FCF0B8F0052385D /* Build configuration list for PBXNativeTarget "rcs" */;
+			buildPhases = (
+				72BA2DB30FCF0B870052385D /* Sources */,
+				72BA2DB40FCF0B870052385D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = rcs;
+			productName = rcs;
+			productReference = 72444F660FD087A4009ED584 /* rcs */;
+			productType = "com.apple.product-type.tool";
+		};
+		72BA2DE00FCF0C630052385D /* rcsclean */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72BA2DE50FCF0C6E0052385D /* Build configuration list for PBXNativeTarget "rcsclean" */;
+			buildPhases = (
+				72BA2DDE0FCF0C630052385D /* Sources */,
+				72BA2DDF0FCF0C630052385D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = rcsclean;
+			productName = rcsclean;
+			productReference = 72444F680FD087A4009ED584 /* rcsclean */;
+			productType = "com.apple.product-type.tool";
+		};
+		72BA2E040FCF0CDA0052385D /* rcsdiff */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72BA2E090FCF0CF20052385D /* Build configuration list for PBXNativeTarget "rcsdiff" */;
+			buildPhases = (
+				72BA2E020FCF0CDA0052385D /* Sources */,
+				72BA2E030FCF0CDA0052385D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = rcsdiff;
+			productName = rcsdiff;
+			productReference = 72444F6A0FD087A4009ED584 /* rcsdiff */;
+			productType = "com.apple.product-type.tool";
+		};
+		72BA2E220FCF0D560052385D /* rcsmerge */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 72BA2E270FCF0D620052385D /* Build configuration list for PBXNativeTarget "rcsmerge" */;
+			buildPhases = (
+				72BA2E200FCF0D560052385D /* Sources */,
+				72BA2E210FCF0D560052385D /* Frameworks */,
+				72444FB40FD08D2A009ED584 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = rcsmerge;
+			productName = rcsmerge;
+			productReference = 72444F6C0FD087A4009ED584 /* rcsmerge */;
+			productType = "com.apple.product-type.tool";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		72BA2CAE0FCF02E40052385D /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = 72BA2CB10FCF02E40052385D /* Build configuration list for PBXProject "rcs" */;
+			compatibilityVersion = "Xcode 2.4";
+			hasScannedForEncodings = 0;
+			mainGroup = 72BA2CAC0FCF02E40052385D;
+			productRefGroup = 72BA2CAC0FCF02E40052385D;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				72BA2E6A0FCF0EB90052385D /* Build All */,
+				72BA2D430FCF09020052385D /* ci */,
+				72BA2D720FCF0A5C0052385D /* co */,
+				72BA2D2A0FCF087C0052385D /* ident */,
+				72BA2CBB0FCF050F0052385D /* merge */,
+				72BA2D940FCF0ADA0052385D /* rlog */,
+				72BA2DB50FCF0B870052385D /* rcs */,
+				72BA2DE00FCF0C630052385D /* rcsclean */,
+				72BA2E040FCF0CDA0052385D /* rcsdiff */,
+				72BA2E220FCF0D560052385D /* rcsmerge */,
+				72BA2E430FCF0E320052385D /* Copy documentation */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		72444FC40FD08E05009ED584 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 8;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+			shellPath = /bin/bash;
+			shellScript = "install -o root -g wheel -m 0755 -d \"$INSTALL_ROOT\"/usr/local/OpenSourceLicenses\ninstall -o root -g wheel -m 0444 COPYING \"$INSTALL_ROOT\"/usr/local/OpenSourceLicenses/rcs.txt\n\ninstall -o root -g wheel -m 0755 -d \"$INSTALL_ROOT\"/usr/local/OpenSourceVersions\ninstall -o root -g wheel -m 0444 rcs.plist \"$INSTALL_ROOT\"/usr/local/OpenSourceVersions/rcs.plist";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		72BA2CB90FCF050F0052385D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BA2CCA0FCF054D0052385D /* merge.c in Sources */,
+				72BA2D0A0FCF06B80052385D /* maketime.c in Sources */,
+				72BA2D0B0FCF06B80052385D /* merger.c in Sources */,
+				72BA2D0C0FCF06B80052385D /* partime.c in Sources */,
+				72BA2D0F0FCF06D50052385D /* rcsfnms.c in Sources */,
+				72BA2D100FCF06D50052385D /* rcslex.c in Sources */,
+				72BA2D130FCF070F0052385D /* rcskeep.c in Sources */,
+				72BA2D140FCF070F0052385D /* rcskeys.c in Sources */,
+				72BA2D170FCF07270052385D /* rcsmap.c in Sources */,
+				72BA2D180FCF07270052385D /* rcssyn.c in Sources */,
+				72BA2D1A0FCF075D0052385D /* rcsrev.c in Sources */,
+				72BA2D1C0FCF07AB0052385D /* rcsutil.c in Sources */,
+				72BA2D1E0FCF07C80052385D /* version.c in Sources */,
+				72BA2D250FCF08050052385D /* rcstime.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2D280FCF087C0052385D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BA2D360FCF08CA0052385D /* ident.c in Sources */,
+				72BA2D370FCF08CB0052385D /* version.c in Sources */,
+				72BA2D3B0FCF08D80052385D /* rcsmap.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2D410FCF09020052385D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BA2D4C0FCF09270052385D /* ci.c in Sources */,
+				72BA2D4D0FCF099F0052385D /* rcslex.c in Sources */,
+				72BA2D580FCF09CC0052385D /* rcsgen.c in Sources */,
+				72BA2D590FCF09DC0052385D /* rcssyn.c in Sources */,
+				72BA2D5D0FCF09EB0052385D /* rcsedit.c in Sources */,
+				72BA2D5E0FCF09FF0052385D /* rcskeys.c in Sources */,
+				72BA2D5F0FCF0A000052385D /* rcsmap.c in Sources */,
+				72BA2D600FCF0A020052385D /* rcsrev.c in Sources */,
+				72BA2D610FCF0A0E0052385D /* rcsutil.c in Sources */,
+				72BA2D620FCF0A120052385D /* rcsfnms.c in Sources */,
+				72BA2D630FCF0A140052385D /* maketime.c in Sources */,
+				72BA2D640FCF0A160052385D /* partime.c in Sources */,
+				72BA2D650FCF0A1B0052385D /* rcstime.c in Sources */,
+				72BA2D660FCF0A1D0052385D /* rcskeep.c in Sources */,
+				72BA2D6B0FCF0A3B0052385D /* rcsfcmp.c in Sources */,
+				72BA2D6C0FCF0A440052385D /* version.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2D700FCF0A5C0052385D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BA2D7F0FCF0A740052385D /* co.c in Sources */,
+				72BA2D800FCF0A820052385D /* rcslex.c in Sources */,
+				72BA2D810FCF0A860052385D /* rcssyn.c in Sources */,
+				72BA2D820FCF0A890052385D /* rcsgen.c in Sources */,
+				72BA2D830FCF0A940052385D /* rcsedit.c in Sources */,
+				72BA2D840FCF0A950052385D /* rcskeys.c in Sources */,
+				72BA2D850FCF0A970052385D /* rcsmap.c in Sources */,
+				72BA2D860FCF0A9B0052385D /* rcsrev.c in Sources */,
+				72BA2D870FCF0A9F0052385D /* rcsutil.c in Sources */,
+				72BA2D880FCF0AA30052385D /* rcsfnms.c in Sources */,
+				72BA2D890FCF0AA50052385D /* maketime.c in Sources */,
+				72BA2D8A0FCF0AA80052385D /* partime.c in Sources */,
+				72BA2D8B0FCF0AB40052385D /* rcstime.c in Sources */,
+				72BA2D8C0FCF0AB80052385D /* rcskeep.c in Sources */,
+				72BA2D8D0FCF0ABA0052385D /* version.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2D920FCF0ADA0052385D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BA2DA10FCF0AFA0052385D /* rlog.c in Sources */,
+				72BA2DA20FCF0B050052385D /* rcslex.c in Sources */,
+				72BA2DA30FCF0B090052385D /* rcsmap.c in Sources */,
+				72BA2DA40FCF0B0A0052385D /* rcssyn.c in Sources */,
+				72BA2DA50FCF0B0C0052385D /* rcsrev.c in Sources */,
+				72BA2DA60FCF0B130052385D /* rcsutil.c in Sources */,
+				72BA2DA70FCF0B140052385D /* maketime.c in Sources */,
+				72BA2DA80FCF0B170052385D /* partime.c in Sources */,
+				72BA2DA90FCF0B5C0052385D /* rcsfnms.c in Sources */,
+				72BA2DAA0FCF0B5E0052385D /* rcskeep.c in Sources */,
+				72BA2DAB0FCF0B5F0052385D /* rcskeys.c in Sources */,
+				72BA2DAC0FCF0B600052385D /* version.c in Sources */,
+				72BA2DB00FCF0B6F0052385D /* rcstime.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2DB30FCF0B870052385D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BA2DC70FCF0BAB0052385D /* rcs.c in Sources */,
+				72BA2DC80FCF0BB50052385D /* rcslex.c in Sources */,
+				72BA2DC90FCF0BBF0052385D /* rcssyn.c in Sources */,
+				72BA2DCA0FCF0BC10052385D /* rcsrev.c in Sources */,
+				72BA2DCB0FCF0BC40052385D /* rcsutil.c in Sources */,
+				72BA2DCC0FCF0C1A0052385D /* rcsgen.c in Sources */,
+				72BA2DCD0FCF0C1B0052385D /* rcsedit.c in Sources */,
+				72BA2DCF0FCF0C1F0052385D /* rcskeys.c in Sources */,
+				72BA2DD00FCF0C210052385D /* rcsmap.c in Sources */,
+				72BA2DD10FCF0C260052385D /* rcskeep.c in Sources */,
+				72BA2DD20FCF0C290052385D /* rcsfnms.c in Sources */,
+				72BA2DD30FCF0C2C0052385D /* partime.c in Sources */,
+				72BA2DD40FCF0C2D0052385D /* maketime.c in Sources */,
+				72BA2DD50FCF0C2F0052385D /* rcstime.c in Sources */,
+				72BA2DD90FCF0C3A0052385D /* version.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2DDE0FCF0C630052385D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BA2DE70FCF0C790052385D /* rcsclean.c in Sources */,
+				72BA2DE80FCF0C810052385D /* rcsedit.c in Sources */,
+				72BA2DE90FCF0C830052385D /* rcsfnms.c in Sources */,
+				72BA2DEA0FCF0C860052385D /* rcsgen.c in Sources */,
+				72BA2DEB0FCF0C880052385D /* rcskeys.c in Sources */,
+				72BA2DEC0FCF0C8B0052385D /* rcssyn.c in Sources */,
+				72BA2DED0FCF0C8D0052385D /* rcsmap.c in Sources */,
+				72BA2DEE0FCF0C8E0052385D /* rcsrev.c in Sources */,
+				72BA2DEF0FCF0C900052385D /* rcslex.c in Sources */,
+				72BA2DF00FCF0C980052385D /* rcskeep.c in Sources */,
+				72BA2DF10FCF0C9E0052385D /* maketime.c in Sources */,
+				72BA2DF20FCF0C9F0052385D /* partime.c in Sources */,
+				72BA2DF30FCF0CA00052385D /* rcstime.c in Sources */,
+				72BA2DF40FCF0CA30052385D /* version.c in Sources */,
+				72BA2DF80FCF0CB90052385D /* rcsutil.c in Sources */,
+				72BA2DFC0FCF0CC00052385D /* rcsfcmp.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2E020FCF0CDA0052385D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BA2E100FCF0D140052385D /* rcsdiff.c in Sources */,
+				72BA2E110FCF0D180052385D /* rcsutil.c in Sources */,
+				72BA2E130FCF0D220052385D /* rcsfnms.c in Sources */,
+				72BA2E140FCF0D240052385D /* rcsmap.c in Sources */,
+				72BA2E150FCF0D250052385D /* rcssyn.c in Sources */,
+				72BA2E160FCF0D260052385D /* rcsrev.c in Sources */,
+				72BA2E170FCF0D2A0052385D /* rcslex.c in Sources */,
+				72BA2E180FCF0D2C0052385D /* maketime.c in Sources */,
+				72BA2E190FCF0D2D0052385D /* partime.c in Sources */,
+				72BA2E1A0FCF0D2F0052385D /* rcstime.c in Sources */,
+				72BA2E1B0FCF0D320052385D /* rcskeep.c in Sources */,
+				72BA2E1C0FCF0D330052385D /* rcskeys.c in Sources */,
+				72BA2E1D0FCF0D340052385D /* version.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		72BA2E200FCF0D560052385D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BA2E2A0FCF0D710052385D /* rcsmerge.c in Sources */,
+				72BA2E2B0FCF0D780052385D /* maketime.c in Sources */,
+				72BA2E2F0FCF0D7E0052385D /* merger.c in Sources */,
+				72BA2E300FCF0D800052385D /* partime.c in Sources */,
+				72BA2E310FCF0D810052385D /* rcstime.c in Sources */,
+				72BA2E320FCF0D840052385D /* rcsfnms.c in Sources */,
+				72BA2E330FCF0D860052385D /* rcslex.c in Sources */,
+				72BA2E340FCF0D880052385D /* rcsutil.c in Sources */,
+				72BA2E350FCF0D950052385D /* rcsrev.c in Sources */,
+				72BA2E360FCF0D970052385D /* rcsmap.c in Sources */,
+				72BA2E370FCF0D980052385D /* rcssyn.c in Sources */,
+				72BA2E390FCF0D9B0052385D /* rcskeep.c in Sources */,
+				72BA2E3A0FCF0D9D0052385D /* rcskeys.c in Sources */,
+				72BA2E3B0FCF0D9F0052385D /* version.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		72BA2E6D0FCF0EDC0052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2D2A0FCF087C0052385D /* ident */;
+			targetProxy = 72BA2E6C0FCF0EDC0052385D /* PBXContainerItemProxy */;
+		};
+		72BA2E6F0FCF0EDC0052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2D720FCF0A5C0052385D /* co */;
+			targetProxy = 72BA2E6E0FCF0EDC0052385D /* PBXContainerItemProxy */;
+		};
+		72BA2E710FCF0EDC0052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2D430FCF09020052385D /* ci */;
+			targetProxy = 72BA2E700FCF0EDC0052385D /* PBXContainerItemProxy */;
+		};
+		72BA2E730FCF0EE20052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2DB50FCF0B870052385D /* rcs */;
+			targetProxy = 72BA2E720FCF0EE20052385D /* PBXContainerItemProxy */;
+		};
+		72BA2E750FCF0EE20052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2D940FCF0ADA0052385D /* rlog */;
+			targetProxy = 72BA2E740FCF0EE20052385D /* PBXContainerItemProxy */;
+		};
+		72BA2E770FCF0EE20052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2CBB0FCF050F0052385D /* merge */;
+			targetProxy = 72BA2E760FCF0EE20052385D /* PBXContainerItemProxy */;
+		};
+		72BA2E790FCF0EE80052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2E220FCF0D560052385D /* rcsmerge */;
+			targetProxy = 72BA2E780FCF0EE80052385D /* PBXContainerItemProxy */;
+		};
+		72BA2E7B0FCF0EE80052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2E040FCF0CDA0052385D /* rcsdiff */;
+			targetProxy = 72BA2E7A0FCF0EE80052385D /* PBXContainerItemProxy */;
+		};
+		72BA2E7D0FCF0EE80052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2DE00FCF0C630052385D /* rcsclean */;
+			targetProxy = 72BA2E7C0FCF0EE80052385D /* PBXContainerItemProxy */;
+		};
+		72BA2E7F0FCF0EEB0052385D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 72BA2E430FCF0E320052385D /* Copy documentation */;
+			targetProxy = 72BA2E7E0FCF0EEB0052385D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		72BA2CB00FCF02E40052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = YES;
+				CURRENT_PROJECT_VERSION = "$(RC_ProjectSourceVersion)";
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				INSTALL_PATH = /usr/bin;
+				PREBINDING = NO;
+				VERSIONING_SYSTEM = "apple-generic";
+				ZERO_LINK = NO;
+			};
+			name = Release;
+		};
+		72BA2CC00FCF05100052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INSTALL_PATH = /usr/bin;
+				PRODUCT_NAME = merge;
+			};
+			name = Release;
+		};
+		72BA2D2D0FCF087D0052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INSTALL_PATH = /usr/bin;
+				PRODUCT_NAME = ident;
+			};
+			name = Release;
+		};
+		72BA2D460FCF09020052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INSTALL_PATH = /usr/bin;
+				PRODUCT_NAME = ci;
+			};
+			name = Release;
+		};
+		72BA2D750FCF0A5D0052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INSTALL_PATH = /usr/bin;
+				PRODUCT_NAME = co;
+			};
+			name = Release;
+		};
+		72BA2D970FCF0ADB0052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INSTALL_PATH = /usr/bin;
+				PRODUCT_NAME = rlog;
+			};
+			name = Release;
+		};
+		72BA2DB80FCF0B880052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INSTALL_PATH = /usr/bin;
+				PRODUCT_NAME = rcs;
+			};
+			name = Release;
+		};
+		72BA2DE30FCF0C630052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INSTALL_PATH = /usr/bin;
+				PRODUCT_NAME = rcsclean;
+			};
+			name = Release;
+		};
+		72BA2E070FCF0CDB0052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INSTALL_PATH = /usr/bin;
+				PRODUCT_NAME = rcsdiff;
+			};
+			name = Release;
+		};
+		72BA2E250FCF0D570052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INSTALL_PATH = /usr/bin;
+				PRODUCT_NAME = rcsmerge;
+			};
+			name = Release;
+		};
+		72BA2E440FCF0E320052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				PRODUCT_NAME = "Copy man pages";
+				ZERO_LINK = NO;
+			};
+			name = Release;
+		};
+		72BA2E6B0FCF0EB90052385D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				PRODUCT_NAME = "Build All";
+				ZERO_LINK = NO;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		72BA2CB10FCF02E40052385D /* Build configuration list for PBXProject "rcs" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2CB00FCF02E40052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2CC10FCF05100052385D /* Build configuration list for PBXNativeTarget "merge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2CC00FCF05100052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2D300FCF08AC0052385D /* Build configuration list for PBXNativeTarget "ident" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2D2D0FCF087D0052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2D4A0FCF09120052385D /* Build configuration list for PBXNativeTarget "ci" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2D460FCF09020052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2D7C0FCF0A660052385D /* Build configuration list for PBXNativeTarget "co" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2D750FCF0A5D0052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2D9E0FCF0AE80052385D /* Build configuration list for PBXNativeTarget "rlog" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2D970FCF0ADB0052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2DC30FCF0B8F0052385D /* Build configuration list for PBXNativeTarget "rcs" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2DB80FCF0B880052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2DE50FCF0C6E0052385D /* Build configuration list for PBXNativeTarget "rcsclean" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2DE30FCF0C630052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2E090FCF0CF20052385D /* Build configuration list for PBXNativeTarget "rcsdiff" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2E070FCF0CDB0052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2E270FCF0D620052385D /* Build configuration list for PBXNativeTarget "rcsmerge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2E250FCF0D570052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2E460FCF0E3A0052385D /* Build configuration list for PBXAggregateTarget "Copy documentation" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2E440FCF0E320052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		72BA2E800FCF0EF70052385D /* Build configuration list for PBXAggregateTarget "Build All" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72BA2E6B0FCF0EB90052385D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 72BA2CAE0FCF02E40052385D /* Project object */;
+}
