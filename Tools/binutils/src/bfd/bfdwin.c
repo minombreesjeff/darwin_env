@@ -240,7 +240,7 @@ _bfd_get_file_window_malloc (abfd, offset, size, windowp, i, writable)
     }
   if (bfd_seek (abfd, offset, SEEK_SET) != 0)
     return false;
-  i->size = bfd_read (i->data, size, 1, abfd);
+  i->size = bfd_bread (i->data, size, abfd);
   if (i->size != size)
     return false;
   i->mapped = 0;

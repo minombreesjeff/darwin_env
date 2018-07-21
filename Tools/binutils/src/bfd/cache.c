@@ -1,5 +1,5 @@
 /* BFD library -- caching of file descriptors.
-   Copyright 1990, 91, 92, 93, 94, 95, 1996, 2000
+   Copyright 1990, 1991, 1992, 1993, 1994, 1996, 2000, 2001
    Free Software Foundation, Inc.
    Hacked by Steve Chamberlain of Cygnus Support (steve@cygnus.com).
 
@@ -32,7 +32,7 @@ SECTION
 	<<bfd_cache_lookup>>, which runs around and makes sure that
 	the required BFD is open. If not, then it chooses a file to
 	close, closes it and opens the one wanted, returning its file
-	handle. 
+	handle.
 
 */
 
@@ -60,7 +60,7 @@ DESCRIPTION
 /* The number of BFD files we have open.  */
 
 static int open_files;
-static unsigned int bfd_cache_max_open = 10;
+static unsigned int bfd_cache_max_open = BFD_CACHE_MAX_OPEN;
 
 /*
 INTERNAL_FUNCTION
@@ -97,7 +97,7 @@ bfd *bfd_last_cache = NULL;
 /*
   INTERNAL_FUNCTION
   	bfd_cache_lookup
- 
+
   DESCRIPTION
  	Check to see if the required BFD is the same as the last one
  	looked up. If so, then it can use the stream in the BFD with
@@ -114,7 +114,6 @@ bfd *bfd_last_cache = NULL;
   .     (bfd_cache_lookup_null(x)) : \
   .     (bfd_assert (__FILE__,__LINE__,"bfd_cache_lookup_null(x) != NULL"), \
   .      (FILE *) NULL))
- 
  */
 
 /* Insert a BFD into the cache.  */
@@ -292,7 +291,7 @@ FILE *
 bfd_open_file (abfd)
      bfd *abfd;
 {
-  abfd->cacheable = true;	/* Allow it to be closed later. */
+  abfd->cacheable = true;	/* Allow it to be closed later.  */
 
   while ((open_files + 1) >= bfd_cache_max_open)
     {
@@ -342,7 +341,7 @@ bfd_open_file (abfd)
 	  if (stat (abfd->filename, &s) == 0 && s.st_size != 0)
 	    unlink (abfd->filename);
 #endif
-	  abfd->iostream = (PTR) fopen (abfd->filename, FOPEN_WB);
+	  abfd->iostream = (PTR) fopen (abfd->filename, FOPEN_WUB);
 	  abfd->opened_once = true;
 	}
       break;
@@ -394,7 +393,9 @@ bfd_cache_lookup_worker (abfd)
     {
       if (bfd_open_file (abfd) == NULL)
 	return NULL;
-      if (fseek ((FILE *) abfd->iostream, abfd->where, SEEK_SET) != 0)
+      if (abfd->where != (unsigned long) abfd->where)
+	return NULL;
+      if (fseek ((FILE *) abfd->iostream, (long) abfd->where, SEEK_SET) != 0)
 	return NULL;
     }
 
@@ -406,14 +407,14 @@ INTERNAL_FUNCTION
 	bfd_cache_flush
 
 SYNOPSIS
-	void bfd_cache_flush();
+	void bfd_cache_flush (void);
 
 DESCRIPTION
 	Flushes BFD file cache.
 */
 
 void
-bfd_cache_flush ()
+bfd_cache_flush (void)
 {
   while (bfd_last_cache != NULL) {
     int prev_open = open_files;

@@ -17,6 +17,49 @@ License along with libiberty; see the file COPYING.LIB.  If
 not, write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
+/*
+
+@deftypefn Replacement void* xmalloc (size_t)
+
+Allocate memory without fail.  If @code{malloc} fails, this will print
+a message to @code{stderr} (using the name set by
+@code{xmalloc_set_program_name},
+if any) and then call @code{xexit}.  Note that it is therefore safe for
+a program to contain @code{#define malloc xmalloc} in its source.
+
+@end deftypefn
+
+@deftypefn Replacement void* xrealloc (void *@var{ptr}, size_t @var{size})
+Reallocate memory without fail.  This routine functions like @code{realloc},
+but will behave the same as @code{xmalloc} if memory cannot be found.
+
+@end deftypefn
+
+@deftypefn Replacement void* xcalloc (size_t @var{nelem}, size_t @var{elsize})
+
+Allocate memory without fail, and set it to zero.  This routine functions
+like @code{calloc}, but will behave the same as @code{xmalloc} if memory
+cannot be found.
+
+@end deftypefn
+
+@deftypefn Replacement void xmalloc_set_program_name (const char *@var{name})
+
+You can use this to set the name of the program used by
+@code{xmalloc_failed} when printing a failure message.
+
+@end deftypefn
+
+@deftypefn Replacement void xmalloc_failed (size_t)
+
+This function is not meant to be called by client code, and is listed
+here for completeness only.  If any of the allocation routines fail, this
+function will be called to print an error message and terminate execution.
+
+@end deftypefn
+
+*/
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -94,7 +137,9 @@ xmalloc_set_program_name (s)
 #endif /* HAVE_SBRK */
 }
 
-static void nomem (size_t size)
+void
+xmalloc_failed (size)
+     size_t size;
 {
 #ifdef HAVE_SBRK
   extern char **environ;
@@ -151,7 +196,7 @@ xmmalloc (md, size)
   }
 
   if (val == NULL)
-    nomem (size);
+    xmalloc_failed (size);
   
   return val;
 }
@@ -186,7 +231,7 @@ xmcalloc (md, nelem, elsize)
   }
 
   if (val == NULL)
-    nomem (nelem * elsize);
+    xmalloc_failed (nelem * elsize);
   
   return val;
 }
@@ -229,7 +274,7 @@ xmrealloc (md, ptr, size)
   }
 
   if (val == NULL)
-    nomem (size);
+    xmalloc_failed (size);
 
   return val;
 }

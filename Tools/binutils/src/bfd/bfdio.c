@@ -1,5 +1,6 @@
 /* Assorted BFD support routines, only used internally.
-   Copyright 1990, 91, 92, 93, 94, 95, 96, 1997 Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
+   2000, 2001
    Written by Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -46,10 +47,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
    with?  We never call bfd_set_error, which is probably a mistake).  */
 
 bfd_size_type
-bfd_read (ptr, size, nitems, abfd)
+bfd_bread (ptr, size, abfd)
      PTR ptr;
      bfd_size_type size;
-     bfd_size_type nitems;
      bfd *abfd;
 {
   while (abfd->my_archive != NULL)
@@ -58,35 +58,33 @@ bfd_read (ptr, size, nitems, abfd)
   if ((abfd->flags & BFD_IN_MEMORY) != 0)
     {
       struct bfd_in_memory *bim;
-      bfd_size_type get;
 
       bim = (struct bfd_in_memory *) abfd->iostream;
-      get = size * nitems;
-      if (abfd->where + get > bim->size)
+      if (abfd->where + size > bim->size)
 	{
 	  if (abfd->where > bim->size) {
-	    get = 0;
+	    size = 0;
 	  } else {
-	    get = bim->size - abfd->where;
+	    size = bim->size - abfd->where;
 	  }
 	  bfd_set_error (bfd_error_file_truncated);
 	}
-      memcpy (ptr, bim->buffer + abfd->where, get);
-      abfd->where += get;
-      return get;
+      memcpy (ptr, bim->buffer + abfd->where, size);
+      abfd->where += size;
+      return size;
     }
   else if ((abfd->flags & BFD_IO_FUNCS) != 0)
     {
       struct bfd_io_functions *bif;
 
       bif = (struct bfd_io_functions *) abfd->iostream;
-      return (*bif->read_func) (bif->iodata, ptr, size, nitems, abfd, abfd->where);
+      return (*bif->read_func) (bif->iodata, ptr, 1, size, abfd, abfd->where);
     } 
   else
     {
       int nread;
 
-      nread = fread (ptr, 1, (size_t)(size*nitems), bfd_cache_lookup(abfd));
+      nread = fread (ptr, 1, (size_t) (size), bfd_cache_lookup(abfd));
   
       if (nread > 0)
 	abfd->where += nread;
@@ -99,7 +97,7 @@ bfd_read (ptr, size, nitems, abfd)
 	 A BFD backend may wish to override bfd_error_file_truncated to
 	 provide something more useful (eg. no_symbols or wrong_format).  */
 
-      if (nread < (int) (size * nitems))
+      if (nread < (int) (size))
 	{
 	  if (ferror (bfd_cache_lookup (abfd)))
 	    bfd_set_error (bfd_error_system_call);
@@ -112,10 +110,9 @@ bfd_read (ptr, size, nitems, abfd)
 }
 
 bfd_size_type
-bfd_write (ptr, size, nitems, abfd)
+bfd_bwrite (ptr, size, abfd)
      CONST PTR ptr;
      bfd_size_type size;
-     bfd_size_type nitems;
      bfd *abfd;
 {
   while (abfd->my_archive != NULL)
@@ -124,7 +121,6 @@ bfd_write (ptr, size, nitems, abfd)
   if (abfd->flags & BFD_IN_MEMORY)
     {
       struct bfd_in_memory *bim = (struct bfd_in_memory *) (abfd->iostream);
-      size *= nitems;
       if (abfd->where + size > bim->size)
 	{
 	  long newsize, oldsize = (bim->size + 127) & ~127;
@@ -147,17 +143,17 @@ bfd_write (ptr, size, nitems, abfd)
       struct bfd_io_functions *bif;
 
       bif = (struct bfd_io_functions *) abfd->iostream;
-      return (*bif->write_func) (bif->iodata, ptr, size, nitems, abfd, abfd->where);
+      return (*bif->write_func) (bif->iodata, ptr, 1, size, abfd, abfd->where);
     } 
   else 
     {
       long nwrote;
     
-      nwrote = fwrite (ptr, 1, (size_t) (size * nitems),
+      nwrote = fwrite (ptr, 1, (size_t) (size),
 		       bfd_cache_lookup (abfd));
       if (nwrote > 0)
 	abfd->where += nwrote;
-      if ((bfd_size_type) nwrote != size * nitems)
+      if ((bfd_size_type) nwrote != size)
 	{
 #ifdef ENOSPC
 	  if (nwrote >= 0)
@@ -169,7 +165,7 @@ bfd_write (ptr, size, nitems, abfd)
     }
 }
 
-long
+bfd_size_type
 bfd_tell (abfd)
      bfd *abfd;
 {
@@ -381,7 +377,6 @@ bfd_io_close (abfd)
 	}
     }
 }
-
 
 /*
 FUNCTION

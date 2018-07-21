@@ -1,8 +1,8 @@
 /* BFD back-end for RISC iX (Acorn, arm) binaries.
-   Copyright (C) 1994, 95, 96, 97, 98, 99, 2000
+   Copyright 1994, 1995, 1996, 1997, 1998, 2000, 2001
    Free Software Foundation, Inc.
    Contributed by Richard Earnshaw (rwe@pegasus.esprit.ec.org)
-   
+
 This file is part of BFD, the Binary File Descriptor library.
 
 This program is free software; you can redistribute it and/or modify
@@ -18,7 +18,6 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
-
 
 /* RISC iX overloads the MAGIC field to indicate more than just the usual
    [ZNO]MAGIC values.  Also included are squeezing information and
@@ -37,17 +36,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define SPOMAGIC        (MF_USES_SL|OMAGIC)     /* OMAGIC with large header */
                                         /* -- may contain a ref to a */
                                         /* shared lib required by the */
-                                        /* object. */
+                                        /* object.  */
 #define SLOMAGIC        (MF_IS_SL|OMAGIC) /* A reference to a shared library */
                                           /* The text portion of the object */
                                           /* contains "overflow text" from */
                                           /* the shared library to be linked */
                                           /* in with an object */
-#define QMAGIC          (MF_SQUEEZED|ZMAGIC)    /* Sqeezed demand paged. */
+#define QMAGIC          (MF_SQUEEZED|ZMAGIC)    /* Sqeezed demand paged.  */
                                           /* NOTE: This interpretation of */
                                           /* QMAGIC seems to be at variance */
                                           /* With that used on other */
-                                          /* architectures. */
+                                          /* architectures.  */
 #define SPZMAGIC        (MF_USES_SL|ZMAGIC)     /* program which uses sl */
 #define SPQMAGIC        (MF_USES_SL|QMAGIC)     /* sqeezed ditto */
 #define SLZMAGIC        (MF_IS_SL|ZMAGIC)       /* shared lib part of prog */
@@ -56,19 +55,23 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define N_SHARED_LIB(x) ((x).a_info & MF_USES_SL)
 
 /* Only a pure OMAGIC file has the minimal header */
-#define N_TXTOFF(x)                     \
- ((x).a_info == OMAGIC ? 32             \
-  : (N_MAGIC(x) == ZMAGIC) ? TARGET_PAGE_SIZE  \
-  : 999)
+#define N_TXTOFF(x)		\
+ ((x).a_info == OMAGIC		\
+  ? 32				\
+  : (N_MAGIC(x) == ZMAGIC	\
+     ? TARGET_PAGE_SIZE		\
+     : 999))
 
-#define N_TXTADDR(x)                                                         \
-  (N_MAGIC(x) != ZMAGIC ? 0 /* object file or NMAGIC */                      \
+#define N_TXTADDR(x)							     \
+  (N_MAGIC(x) != ZMAGIC							     \
+   ? (bfd_vma) 0 /* object file or NMAGIC */				     \
    /* Programs with shared libs are loaded at the first page after all the   \
       text segments of the shared library programs.  Without looking this    \
       up we can't know exactly what the address will be.  A reasonable guess \
-      is that a_entry will be in the first page of the executable.  */       \
-   : N_SHARED_LIB(x) ? ((x).a_entry & ~(TARGET_PAGE_SIZE - 1))                      \
-   : TEXT_START_ADDR)
+      is that a_entry will be in the first page of the executable.  */	     \
+   : (N_SHARED_LIB(x)							     \
+      ? ((x).a_entry & ~(bfd_vma) (TARGET_PAGE_SIZE - 1))		     \
+      : (bfd_vma) TEXT_START_ADDR))
 
 #define N_SYMOFF(x) \
   (N_TXTOFF (x) + (x).a_text + (x).a_data + (x).a_trsize + (x).a_drsize)
@@ -80,7 +83,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define SEGMENT_SIZE TARGET_PAGE_SIZE
 #define DEFAULT_ARCH bfd_arch_arm
 
-#define MY(OP) CAT(riscix_,OP)
+/* Do not "beautify" the CONCAT* macro args.  Traditional C will not
+   remove whitespace added here, and thus will fail to concatenate
+   the tokens.  */
+#define MY(OP) CONCAT2 (riscix_,OP)
 #define TARGETNAME "a.out-riscix"
 #define N_BADMAG(x) ((((x).a_info & ~007200) != ZMAGIC) && \
                      (((x).a_info & ~006000) != OMAGIC) && \
@@ -91,47 +97,47 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "sysdep.h"
 #include "libbfd.h"
 
-#define WRITE_HEADERS(abfd, execp)					   \
-  {									   \
-    bfd_size_type text_size; /* dummy vars */				   \
-    file_ptr text_end;							   \
-    if (adata(abfd).magic == undecided_magic)				   \
-      NAME(aout,adjust_sizes_and_vmas) (abfd, &text_size, &text_end);	   \
-    									   \
-    execp->a_syms = bfd_get_symcount (abfd) * EXTERNAL_NLIST_SIZE;	   \
-    execp->a_entry = bfd_get_start_address (abfd);			   \
-    									   \
-    execp->a_trsize = ((obj_textsec (abfd)->reloc_count) *		   \
-		       obj_reloc_entry_size (abfd));			   \
-    execp->a_drsize = ((obj_datasec (abfd)->reloc_count) *		   \
-		       obj_reloc_entry_size (abfd));			   \
-    NAME(aout,swap_exec_header_out) (abfd, execp, &exec_bytes);		   \
-    									   \
-    if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0) return false;	   \
-    if (bfd_write ((PTR) &exec_bytes, 1, EXEC_BYTES_SIZE, abfd)		   \
-	!= EXEC_BYTES_SIZE)						   \
-      return false;							   \
-    /* Now write out reloc info, followed by syms and strings */	   \
-									   \
-    if (bfd_get_outsymbols (abfd) != (asymbol **) NULL			   \
-	&& bfd_get_symcount (abfd) != 0)				   \
-      {									   \
-	if (bfd_seek (abfd, (file_ptr)(N_SYMOFF(*execp)), SEEK_SET) != 0)  \
-	  return false;							   \
-									   \
-	if (! NAME(aout,write_syms)(abfd)) return false;		   \
-									   \
-	if (bfd_seek (abfd, (file_ptr)(N_TRELOFF(*execp)), SEEK_SET) != 0) \
-	  return false;							   \
-									   \
-	if (! riscix_squirt_out_relocs (abfd, obj_textsec (abfd)))	   \
-	  return false;							   \
-	if (bfd_seek (abfd, (file_ptr)(N_DRELOFF(*execp)), SEEK_SET) != 0) \
-	  return false;							   \
-									   \
-	if (!NAME(aout,squirt_out_relocs)(abfd, obj_datasec (abfd)))	   \
-	  return false;							   \
-      }									   \
+#define WRITE_HEADERS(abfd, execp)					    \
+  {									    \
+    bfd_size_type text_size; /* dummy vars */				    \
+    file_ptr text_end;							    \
+    if (adata(abfd).magic == undecided_magic)				    \
+      NAME(aout,adjust_sizes_and_vmas) (abfd, &text_size, &text_end);	    \
+    									    \
+    execp->a_syms = bfd_get_symcount (abfd) * EXTERNAL_NLIST_SIZE;	    \
+    execp->a_entry = bfd_get_start_address (abfd);			    \
+    									    \
+    execp->a_trsize = ((obj_textsec (abfd)->reloc_count) *		    \
+		       obj_reloc_entry_size (abfd));			    \
+    execp->a_drsize = ((obj_datasec (abfd)->reloc_count) *		    \
+		       obj_reloc_entry_size (abfd));			    \
+    NAME(aout,swap_exec_header_out) (abfd, execp, &exec_bytes);		    \
+    									    \
+    if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0			    \
+	|| bfd_bwrite ((PTR) &exec_bytes, (bfd_size_type) EXEC_BYTES_SIZE,   \
+		      abfd) != EXEC_BYTES_SIZE)				    \
+      return false;							    \
+    /* Now write out reloc info, followed by syms and strings */	    \
+									    \
+    if (bfd_get_outsymbols (abfd) != (asymbol **) NULL			    \
+	&& bfd_get_symcount (abfd) != 0)				    \
+      {									    \
+	if (bfd_seek (abfd, (file_ptr) (N_SYMOFF(*execp)), SEEK_SET) != 0)  \
+	  return false;							    \
+									    \
+	if (! NAME(aout,write_syms) (abfd)) return false;		    \
+									    \
+	if (bfd_seek (abfd, (file_ptr) (N_TRELOFF(*execp)), SEEK_SET) != 0) \
+	  return false;							    \
+									    \
+	if (! riscix_squirt_out_relocs (abfd, obj_textsec (abfd)))	    \
+	  return false;							    \
+	if (bfd_seek (abfd, (file_ptr) (N_DRELOFF(*execp)), SEEK_SET) != 0) \
+	  return false;							    \
+									    \
+	if (!NAME(aout,squirt_out_relocs) (abfd, obj_datasec (abfd)))	    \
+	  return false;							    \
+      }									    \
   }
 
 #include "libaout.h"
@@ -144,6 +150,24 @@ riscix_fix_pcrel_26_done PARAMS ((bfd *, arelent *, asymbol *, PTR,
 static bfd_reloc_status_type
 riscix_fix_pcrel_26 PARAMS ((bfd *, arelent *, asymbol *, PTR,
 			     asection *, bfd *, char **));
+static const bfd_target *
+MY (object_p) PARAMS ((bfd *));
+
+reloc_howto_type *
+riscix_reloc_type_lookup PARAMS ((bfd *, bfd_reloc_code_real_type));
+
+void
+riscix_swap_std_reloc_out PARAMS ((bfd *, arelent *, struct reloc_std_external *));
+
+boolean
+riscix_squirt_out_relocs PARAMS ((bfd *, asection *));
+
+long
+MY (canonicalize_reloc) PARAMS ((bfd *, sec_ptr, arelent **, asymbol **));
+
+const bfd_target *
+riscix_some_aout_object_p PARAMS ((bfd *, struct internal_exec *, const bfd_target *(*) (bfd *)));
+
 
 static reloc_howto_type riscix_std_reloc_howto[] = {
   /* type              rs size bsz  pcrel bitpos ovrf                     sf name     part_inpl readmask  setmask    pcdone */
@@ -162,7 +186,6 @@ static reloc_howto_type riscix_std_reloc_howto[] = {
 
 #define RISCIX_TABLE_SIZE \
   (sizeof (riscix_std_reloc_howto) / sizeof (reloc_howto_type))
-
 
 static bfd_reloc_status_type
 riscix_fix_pcrel_26_done (abfd, reloc_entry, symbol, data, input_section,
@@ -194,7 +217,7 @@ riscix_fix_pcrel_26 (abfd, reloc_entry, symbol, data, input_section,
   bfd_size_type addr = reloc_entry->address;
   long target = bfd_get_32 (abfd, (bfd_byte *) data + addr);
   bfd_reloc_status_type flag = bfd_reloc_ok;
-  
+
   /* If this is an undefined symbol, return error */
   if (symbol->section == &bfd_und_section
       && (symbol->flags & BSF_WEAK) == 0)
@@ -224,17 +247,17 @@ riscix_fix_pcrel_26 (abfd, reloc_entry, symbol, data, input_section,
       if ((relocation & ~ (bfd_vma) 0x03ffffff) != ~ (bfd_vma) 0x03ffffff)
 	flag = bfd_reloc_overflow;
     }
-  else if (relocation & ~0x03ffffff)
+  else if (relocation & ~ (bfd_vma) 0x03ffffff)
     flag = bfd_reloc_overflow;
 
   target &= ~0x00ffffff;
   target |= (relocation >> 2) & 0x00ffffff;
-  bfd_put_32 (abfd, target, (bfd_byte *) data + addr);
+  bfd_put_32 (abfd, (bfd_vma) target, (bfd_byte *) data + addr);
 
   /* Now the ARM magic... Change the reloc type so that it is marked as done.
      Strictly this is only necessary if we are doing a partial relocation.  */
   reloc_entry->howto = &riscix_std_reloc_howto[7];
-  
+
   return flag;
 }
 
@@ -304,10 +327,9 @@ riscix_swap_std_reloc_out (abfd, g, natptr)
   /* For RISC iX, in pc-relative relocs the r_pcrel bit means that the
      relocation has been done already (Only for the 26-bit one I think)???!!!
      */
-  
+
   if (r_length == 3)
     r_pcrel = r_pcrel ? 0 : 1;
-  
 
 #if 0
   /* For a standard reloc, the addend is in the object file.  */
@@ -382,14 +404,15 @@ riscix_squirt_out_relocs (abfd, section)
   arelent **generic;
   unsigned char *native, *natptr;
   size_t each_size;
-  
+
   unsigned int count = section->reloc_count;
-  size_t natsize;
+  bfd_size_type natsize;
 
   if (count == 0) return true;
 
   each_size = obj_reloc_entry_size (abfd);
-  natsize = each_size * count;
+  natsize = each_size;
+  natsize *= count;
   native = (unsigned char *) bfd_zalloc (abfd, natsize);
   if (!native)
     return false;
@@ -402,9 +425,9 @@ riscix_squirt_out_relocs (abfd, section)
     riscix_swap_std_reloc_out (abfd, *generic,
 			       (struct reloc_std_external *) natptr);
 
-  if ( bfd_write ((PTR) native, 1, natsize, abfd) != natsize)
+  if (bfd_bwrite ((PTR) native, natsize, abfd) != natsize)
     {
-      bfd_release(abfd, native);
+      bfd_release (abfd, native);
       return false;
     }
 
@@ -412,13 +435,12 @@ riscix_squirt_out_relocs (abfd, section)
   return true;
 }
 
-
 /*
  * This is just like the standard aoutx.h version but we need to do our
  * own mapping of external reloc type values to howto entries.
  */
 long
-MY(canonicalize_reloc)(abfd, section, relptr, symbols)
+MY(canonicalize_reloc) (abfd, section, relptr, symbols)
       bfd *abfd;
       sec_ptr section;
       arelent **relptr;
@@ -428,7 +450,7 @@ MY(canonicalize_reloc)(abfd, section, relptr, symbols)
   unsigned int count, c;
   extern reloc_howto_type NAME(aout,std_howto_table)[];
 
-  /* If we have already read in the relocation table, return the values. */
+  /* If we have already read in the relocation table, return the values.  */
   if (section->flags & SEC_CONSTRUCTOR) {
     arelent_chain *chain = section->constructor_chain;
 
@@ -446,7 +468,7 @@ MY(canonicalize_reloc)(abfd, section, relptr, symbols)
     return section->reloc_count;
   }
 
-  if (!NAME(aout,slurp_reloc_table)(abfd, section, symbols))
+  if (!NAME(aout,slurp_reloc_table) (abfd, section, symbols))
     return -1;
   tblptr = section->relocation;
 
@@ -463,7 +485,7 @@ MY(canonicalize_reloc)(abfd, section, relptr, symbols)
   return section->reloc_count;
 }
 
-/* This is the same as NAME(aout,some_aout_object_p), but has different 
+/* This is the same as NAME(aout,some_aout_object_p), but has different
    expansions of the macro definitions.  */
 
 const bfd_target *
@@ -474,9 +496,9 @@ riscix_some_aout_object_p (abfd, execp, callback_to_real_object_p)
 {
   struct aout_data_struct *rawptr, *oldrawptr;
   const bfd_target *result;
+  bfd_size_type amt = sizeof (struct aout_data_struct);
 
-  rawptr = ((struct aout_data_struct  *) 
-	    bfd_zalloc (abfd, sizeof (struct aout_data_struct )));
+  rawptr = (struct aout_data_struct  *) bfd_zalloc (abfd, amt);
 
   if (rawptr == NULL)
     return 0;
@@ -506,8 +528,7 @@ riscix_some_aout_object_p (abfd, execp, callback_to_real_object_p)
   if (N_DYNAMIC(*execp))
     abfd->flags |= DYNAMIC;
 
-								  
-  if ((execp->a_info & MF_SQUEEZED) != 0) /* Squeezed files aren't supported 
+  if ((execp->a_info & MF_SQUEEZED) != 0) /* Squeezed files aren't supported
 					     (yet)! */
     {
       bfd_set_error (bfd_error_wrong_format);
@@ -545,7 +566,7 @@ riscix_some_aout_object_p (abfd, execp, callback_to_real_object_p)
   /* The default relocation entry size is that of traditional V7 Unix.  */
   obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
 
-  /* The default symbol entry size is that of traditional Unix. */
+  /* The default symbol entry size is that of traditional Unix.  */
   obj_symbol_entry_size (abfd) = EXTERNAL_NLIST_SIZE;
 
   obj_aout_external_syms (abfd) = NULL;
@@ -568,7 +589,7 @@ riscix_some_aout_object_p (abfd, execp, callback_to_real_object_p)
      : (SEC_ALLOC | SEC_LOAD | SEC_DATA | SEC_HAS_CONTENTS));
   obj_bsssec (abfd)->flags = SEC_ALLOC;
 
-  result = (*callback_to_real_object_p)(abfd);
+  result = (*callback_to_real_object_p) (abfd);
 
 #if defined(MACH) || defined(STAT_FOR_EXEC)
   /* The original heuristic doesn't work in some important cases. The
@@ -611,7 +632,6 @@ riscix_some_aout_object_p (abfd, execp, callback_to_real_object_p)
   return result;
 }
 
-
 static const bfd_target *
 MY(object_p) (abfd)
      bfd *abfd;
@@ -620,26 +640,26 @@ MY(object_p) (abfd)
   struct internal_exec exec;            /* Cleaned-up exec header */
   const bfd_target *target;
 
-  if (bfd_read ((PTR) &exec_bytes, 1, EXEC_BYTES_SIZE, abfd)
-      != EXEC_BYTES_SIZE) {
-    if (bfd_get_error () != bfd_error_system_call)
-      bfd_set_error (bfd_error_wrong_format);
-    return 0;
-  }
+  if (bfd_bread ((PTR) &exec_bytes, (bfd_size_type) EXEC_BYTES_SIZE, abfd)
+      != EXEC_BYTES_SIZE)
+    {
+      if (bfd_get_error () != bfd_error_system_call)
+	bfd_set_error (bfd_error_wrong_format);
+      return 0;
+    }
 
-  exec.a_info = bfd_h_get_32 (abfd, exec_bytes.e_info);
+  exec.a_info = H_GET_32 (abfd, exec_bytes.e_info);
 
   if (N_BADMAG (exec)) return 0;
 #ifdef MACHTYPE_OK
   if (!(MACHTYPE_OK (N_MACHTYPE (exec)))) return 0;
 #endif
 
-  NAME(aout,swap_exec_header_in)(abfd, &exec_bytes, &exec);
+  NAME(aout,swap_exec_header_in) (abfd, &exec_bytes, &exec);
 
   target = riscix_some_aout_object_p (abfd, &exec, MY(callback));
 
   return target;
 }
-
 
 #include "aout-target.h"

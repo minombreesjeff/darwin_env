@@ -1,5 +1,5 @@
 /* BFD back-end for TMS320C30 coff binaries.
-   Copyright (C) 1998, 1999 Free Software Foundation, Inc.
+   Copyright 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
    Contributed by Steven Haworth (steve@pm.cse.rmit.edu.au)
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -27,29 +27,36 @@
 #include "coff/internal.h"
 #include "libcoff.h"
 
+static int  coff_tic30_select_reloc PARAMS ((reloc_howto_type *));
+static void rtype2howto PARAMS ((arelent *, struct internal_reloc *));
+static void reloc_processing PARAMS ((arelent *, struct internal_reloc *, asymbol **, bfd *, asection *));
+
+reloc_howto_type * tic30_coff_reloc_type_lookup PARAMS ((bfd *, bfd_reloc_code_real_type));
+
 #define COFF_DEFAULT_SECTION_ALIGNMENT_POWER (1)
 
 reloc_howto_type tic30_coff_howto_table[] =
-{
-  HOWTO (R_TIC30_ABS16, 2, 1, 16, false, 0, 0, NULL,
-	 "16", false, 0x0000FFFF, 0x0000FFFF, false),
-  HOWTO (R_TIC30_ABS24, 2, 2, 24, false, 8, complain_overflow_bitfield, NULL,
-	 "24", false, 0xFFFFFF00, 0xFFFFFF00, false),
-  HOWTO (R_TIC30_LDP, 18, 0, 24, false, 0, complain_overflow_bitfield, NULL,
-	 "LDP", false, 0x00FF0000, 0x000000FF, false),
-  HOWTO (R_TIC30_ABS32, 2, 2, 32, false, 0, complain_overflow_bitfield, NULL,
-	 "32", false, 0xFFFFFFFF, 0xFFFFFFFF, false),
-  HOWTO (R_TIC30_PC16, 2, 1, 16, true, 0, complain_overflow_signed, NULL,
-	 "PCREL", false, 0x0000FFFF, 0x0000FFFF, false),
-  EMPTY_HOWTO (-1)
-};
+  {
+    HOWTO (R_TIC30_ABS16, 2, 1, 16, false, 0, 0, NULL,
+	   "16", false, 0x0000FFFF, 0x0000FFFF, false),
+    HOWTO (R_TIC30_ABS24, 2, 2, 24, false, 8, complain_overflow_bitfield, NULL,
+	   "24", false, 0xFFFFFF00, 0xFFFFFF00, false),
+    HOWTO (R_TIC30_LDP, 18, 0, 24, false, 0, complain_overflow_bitfield, NULL,
+	   "LDP", false, 0x00FF0000, 0x000000FF, false),
+    HOWTO (R_TIC30_ABS32, 2, 2, 32, false, 0, complain_overflow_bitfield, NULL,
+	   "32", false, 0xFFFFFFFF, 0xFFFFFFFF, false),
+    HOWTO (R_TIC30_PC16, 2, 1, 16, true, 0, complain_overflow_signed, NULL,
+	   "PCREL", false, 0x0000FFFF, 0x0000FFFF, false),
+    EMPTY_HOWTO (-1)
+  };
 
 #ifndef coff_bfd_reloc_type_lookup
 #define coff_bfd_reloc_type_lookup tic30_coff_reloc_type_lookup
 
 /* For the case statement use the code values used in tc_gen_reloc to
    map to the howto table entries that match those in both the aout
-   and coff implementations. */
+   and coff implementations.  */
+
 reloc_howto_type *
 tic30_coff_reloc_type_lookup (abfd, code)
      bfd *abfd ATTRIBUTE_UNUSED;
@@ -75,7 +82,7 @@ tic30_coff_reloc_type_lookup (abfd, code)
 
 #endif
 
-/* Turn a howto into a reloc number */
+/* Turn a howto into a reloc number.  */
 
 static int
 coff_tic30_select_reloc (howto)
@@ -86,18 +93,17 @@ coff_tic30_select_reloc (howto)
 
 #define SELECT_RELOC(x,howto) x.r_type = coff_tic30_select_reloc(howto)
 
-
 #define BADMAG(x) TIC30BADMAG(x)
 #define TIC30 1			/* Customize coffcode.h */
 #define __A_MAGIC_SET__
 
 /* Code to swap in the reloc */
-#define SWAP_IN_RELOC_OFFSET  bfd_h_get_32
-#define SWAP_OUT_RELOC_OFFSET bfd_h_put_32
+#define SWAP_IN_RELOC_OFFSET  H_GET_32
+#define SWAP_OUT_RELOC_OFFSET H_PUT_32
 #define SWAP_OUT_RELOC_EXTRA(abfd, src, dst) dst->r_stuff[0] = 'S'; \
 dst->r_stuff[1] = 'C';
 
-/* Code to turn a r_type into a howto ptr, uses the above howto table. */
+/* Code to turn a r_type into a howto ptr, uses the above howto table.  */
 
 static void
 rtype2howto (internal, dst)
@@ -127,13 +133,12 @@ rtype2howto (internal, dst)
     }
 }
 
-#define RTYPE2HOWTO(internal, relocentry) rtype2howto(internal,relocentry)
+#define RTYPE2HOWTO(internal, relocentry) rtype2howto (internal, relocentry)
 
 /* Perform any necessary magic to the addend in a reloc entry */
 
 #define CALC_ADDEND(abfd, symbol, ext_reloc, cache_ptr) \
  cache_ptr->addend =  ext_reloc.r_offset;
-
 
 #define RELOC_PROCESSING(relent,reloc,symbols,abfd,section) \
  reloc_processing(relent, reloc, symbols, abfd, section)
@@ -150,13 +155,10 @@ reloc_processing (relent, reloc, symbols, abfd, section)
   rtype2howto (relent, reloc);
 
   if (reloc->r_symndx > 0)
-    {
-      relent->sym_ptr_ptr = symbols + obj_convert (abfd)[reloc->r_symndx];
-    }
+    relent->sym_ptr_ptr = symbols + obj_convert (abfd)[reloc->r_symndx];
   else
-    {
-      relent->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
-    }
+    relent->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
+
   relent->addend = reloc->r_offset;
   relent->address -= section->vma;
 }
@@ -203,6 +205,6 @@ const bfd_target tic30_coff_vec =
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
   NULL,
-  
+
   COFF_SWAP_TABLE
 };

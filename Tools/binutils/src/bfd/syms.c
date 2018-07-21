@@ -1,5 +1,6 @@
 /* Generic symbol-table support for the BFD library.
-   Copyright (C) 1990, 91, 92, 93, 94, 95, 96, 97, 98, 99, 2000
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
+   2000, 2001
    Free Software Foundation, Inc.
    Written by Cygnus Support.
 
@@ -91,7 +92,6 @@ SUBSECTION
 	All storage for the symbols themselves is in an objalloc
 	connected to the BFD; it is freed when the BFD is closed.
 
-
 INODE
 Writing Symbols, Mini Symbols, Reading Symbols, Symbols
 SUBSECTION
@@ -163,8 +163,6 @@ SUBSECTION
 
 */
 
-
-
 /*
 DOCDD
 INODE
@@ -199,7 +197,7 @@ CODE_FRAGMENT
 .
 .	{* The text of the symbol. The name is left alone, and not copied; the
 .	   application may not alter it. *}
-.  CONST char *name;
+.  const char *name;
 .
 .	{* The value of the symbol.  This really should be a union of a
 .          numeric value with a pointer, since some flags indicate that
@@ -310,10 +308,12 @@ CODE_FRAGMENT
 #include "bfd.h"
 #include "sysdep.h"
 #include "libbfd.h"
+#include "safe-ctype.h"
 #include "bfdlink.h"
 #include "aout/stab_gnu.h"
 
 static char coff_section_type PARAMS ((const char *));
+static int cmpindexentry PARAMS ((const PTR, const PTR));
 
 /*
 DOCDD
@@ -355,7 +355,10 @@ bfd_is_local_label (abfd, sym)
      bfd *abfd;
      asymbol *sym;
 {
-  if ((sym->flags & (BSF_GLOBAL | BSF_WEAK)) != 0)
+  /* The BSF_SECTION_SYM check is needed for IA-64, where every label that
+     starts with '.' is local.  This would accidentally catch section names
+     if we didn't reject them here.  */
+  if ((sym->flags & (BSF_GLOBAL | BSF_WEAK | BSF_SECTION_SYM)) != 0)
     return false;
   if (sym->name == NULL)
     return false;
@@ -390,13 +393,11 @@ DESCRIPTION
 	Return the actual number of symbol pointers, not
 	including the NULL.
 
-
 .#define bfd_canonicalize_symtab(abfd, location) \
 .     BFD_SEND (abfd, _bfd_canonicalize_symtab,\
 .                  (abfd, location))
 
 */
-
 
 /*
 FUNCTION
@@ -433,14 +434,15 @@ FUNCTION
 	bfd_print_symbol_vandf
 
 SYNOPSIS
-	void bfd_print_symbol_vandf(PTR file, asymbol *symbol);
+	void bfd_print_symbol_vandf(bfd *abfd, PTR file, asymbol *symbol);
 
 DESCRIPTION
 	Print the value and flags of the @var{symbol} supplied to the
 	stream @var{file}.
 */
 void
-bfd_print_symbol_vandf (arg, symbol)
+bfd_print_symbol_vandf (abfd, arg, symbol)
+     bfd *abfd;
      PTR arg;
      asymbol *symbol;
 {
@@ -448,11 +450,12 @@ bfd_print_symbol_vandf (arg, symbol)
   flagword type = symbol->flags;
   if (symbol->section != (asection *) NULL)
     {
-      fprintf_vma (file, symbol->value + symbol->section->vma);
+      bfd_fprintf_vma (abfd, file,
+		       symbol->value + symbol->section->vma);
     }
   else
     {
-      fprintf_vma (file, symbol->value);
+      bfd_fprintf_vma (abfd, file, symbol->value);
     }
 
   /* This presumes that a symbol can not be both BSF_DEBUGGING and
@@ -474,7 +477,6 @@ bfd_print_symbol_vandf (arg, symbol)
 	       : ((type & BSF_OBJECT) ? 'O' : ' '))));
 }
 
-
 /*
 FUNCTION
 	bfd_make_empty_symbol
@@ -494,6 +496,31 @@ DESCRIPTION
 
 /*
 FUNCTION
+	_bfd_generic_make_empty_symbol
+
+SYNOPSIS
+	asymbol *_bfd_generic_make_empty_symbol (bfd *);
+
+DESCRIPTION
+	Create a new <<asymbol>> structure for the BFD @var{abfd}
+	and return a pointer to it.  Used by core file routines,
+	binary back-end and anywhere else where no private info
+	is needed.
+*/
+
+asymbol *
+_bfd_generic_make_empty_symbol (abfd)
+     bfd *abfd;
+{
+  bfd_size_type amt = sizeof (asymbol);
+  asymbol *new = (asymbol *) bfd_zalloc (abfd, amt);
+  if (new)
+    new->the_bfd = abfd;
+  return new;
+}
+
+/*
+FUNCTION
 	bfd_make_debug_symbol
 
 DESCRIPTION
@@ -507,14 +534,14 @@ DESCRIPTION
 
 struct section_to_type
 {
-  CONST char *section;
+  const char *section;
   char type;
 };
 
 /* Map section names to POSIX/BSD single-character symbol types.
    This table is probably incomplete.  It is sorted for convenience of
    adding entries.  Since it is so short, a linear search is used.  */
-static CONST struct section_to_type stt[] =
+static const struct section_to_type stt[] =
 {
   {"*DEBUG*", 'N'},
   {".bss", 'b'},
@@ -537,7 +564,7 @@ static CONST struct section_to_type stt[] =
 };
 
 /* Return the single-character symbol type corresponding to
-   section S, or '?' for an unknown COFF section.  
+   section S, or '?' for an unknown COFF section.
 
    Check for any leading string which matches, so .text5 returns
    't' as well as .text */
@@ -546,21 +573,14 @@ static char
 coff_section_type (s)
      const char *s;
 {
-  CONST struct section_to_type *t;
+  const struct section_to_type *t;
 
-  for (t = &stt[0]; t->section; t++) 
+  for (t = &stt[0]; t->section; t++)
     if (!strncmp (s, t->section, strlen (t->section)))
       return t->type;
 
   return '?';
 }
-
-#ifndef islower
-#define islower(c) ((c) >= 'a' && (c) <= 'z')
-#endif
-#ifndef toupper
-#define toupper(c) (islower(c) ? ((c) & ~0x20) : (c))
-#endif
 
 /*
 FUNCTION
@@ -616,7 +636,7 @@ bfd_decode_symclass (symbol)
   else
     return '?';
   if (symbol->flags & BSF_GLOBAL)
-    c = toupper (c);
+    c = TOUPPER (c);
   return c;
 
   /* We don't have to handle these cases just yet, but we will soon:
@@ -631,7 +651,7 @@ bfd_decode_symclass (symbol)
 
 /*
 FUNCTION
-	bfd_is_undefined_symclass 
+	bfd_is_undefined_symclass
 
 DESCRIPTION
 	Returns non-zero if the class symbol returned by
@@ -668,12 +688,12 @@ bfd_symbol_info (symbol, ret)
      symbol_info *ret;
 {
   ret->type = bfd_decode_symclass (symbol);
-  
+
   if (bfd_is_undefined_symclass (ret->type))
     ret->value = 0;
   else
     ret->value = symbol->value + symbol->section->vma;
-  
+
   ret->name = symbol->name;
 }
 
@@ -720,8 +740,10 @@ _bfd_generic_read_minisymbols (abfd, dynamic, minisymsp, sizep)
     storage = bfd_get_symtab_upper_bound (abfd);
   if (storage < 0)
     goto error_return;
+  if (storage == 0)
+    return 0;
 
-  syms = (asymbol **) bfd_malloc ((size_t) storage);
+  syms = (asymbol **) bfd_malloc ((bfd_size_type) storage);
   if (syms == NULL)
     goto error_return;
 
@@ -851,7 +873,8 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
   bfd_byte *last_stab = NULL;
   bfd_size_type stroff;
   struct indexentry *indexentry;
-  char *directory_name, *file_name;
+  char *file_name;
+  char *directory_name;
   int saw_fun;
 
   *pfound = false;
@@ -897,11 +920,10 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
       arelent **reloc_vector;
       int i;
       char *name;
-      char *file_name;
-      char *directory_name;
       char *function_name;
+      bfd_size_type amt = sizeof *info;
 
-      info = (struct stab_find_info *) bfd_zalloc (abfd, sizeof *info);
+      info = (struct stab_find_info *) bfd_zalloc (abfd, amt);
       if (info == NULL)
 	return false;
 
@@ -928,10 +950,10 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
       if (info->stabs == NULL || info->strs == NULL)
 	return false;
 
-      if (! bfd_get_section_contents (abfd, info->stabsec, info->stabs, 0,
-				      stabsize)
-	  || ! bfd_get_section_contents (abfd, info->strsec, info->strs, 0,
-					 strsize))
+      if (! bfd_get_section_contents (abfd, info->stabsec, info->stabs,
+				      (bfd_vma) 0, stabsize)
+	  || ! bfd_get_section_contents (abfd, info->strsec, info->strs,
+					 (bfd_vma) 0, strsize))
 	return false;
 
       /* If this is a relocateable object file, we have to relocate
@@ -941,7 +963,7 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
       reloc_size = bfd_get_reloc_upper_bound (abfd, info->stabsec);
       if (reloc_size < 0)
 	return false;
-      reloc_vector = (arelent **) bfd_malloc (reloc_size);
+      reloc_vector = (arelent **) bfd_malloc ((bfd_size_type) reloc_size);
       if (reloc_vector == NULL && reloc_size != 0)
 	return false;
       reloc_count = bfd_canonicalize_reloc (abfd, info->stabsec, reloc_vector,
@@ -982,7 +1004,7 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
 	      val &= r->howto->src_mask;
 	      sym = *r->sym_ptr_ptr;
 	      val += sym->value + sym->section->vma + r->addend;
-	      bfd_put_32 (abfd, val, info->stabs + r->address);
+	      bfd_put_32 (abfd, (bfd_vma) val, info->stabs + r->address);
 	    }
 	}
 
@@ -1005,7 +1027,7 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
 	      if (bfd_get_32 (abfd, stab + STRDXOFF) == 0)
 		continue;
 
-	      /* if we did not see a function def, leave space for one. */
+	      /* if we did not see a function def, leave space for one.  */
 	      if (saw_fun == 0)
 		++info->indextablesize;
 
@@ -1027,15 +1049,14 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
 
       if (saw_fun == 0)
 	++info->indextablesize;
-      
+
       if (info->indextablesize == 0)
 	return true;
       ++info->indextablesize;
 
-      info->indextable = ((struct indexentry *)
-			  bfd_alloc (abfd,
-				     (sizeof (struct indexentry)
-				      * info->indextablesize)));
+      amt = info->indextablesize;
+      amt *= sizeof (struct indexentry);
+      info->indextable = (struct indexentry *) bfd_alloc (abfd, amt);
       if (info->indextable == NULL)
 	return false;
 
@@ -1063,8 +1084,8 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
 	      /* The following code creates a new indextable entry with
 	         a NULL function name if there were no N_FUNs in a file.
 	         Note that a N_SO without a file name is an EOF and
-	         there could be 2 N_SO following it with the new filename 
-	         and directory. */
+	         there could be 2 N_SO following it with the new filename
+	         and directory.  */
 	      if (saw_fun == 0)
 		{
 		  info->indextable[i].val = bfd_get_32 (abfd, last_stab + VALOFF);
@@ -1076,7 +1097,7 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
 		  ++i;
 		}
 	      saw_fun = 0;
-	      
+
 	      file_name = (char *) str + bfd_get_32 (abfd, stab + STRDXOFF);
 	      if (*file_name == '\0')
 		{
@@ -1153,7 +1174,8 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
       ++i;
 
       info->indextablesize = i;
-      qsort (info->indextable, i, sizeof (struct indexentry), cmpindexentry);
+      qsort (info->indextable, (size_t) i, sizeof (struct indexentry),
+	     cmpindexentry);
 
       *pinfo = (PTR) info;
     }
@@ -1275,9 +1297,8 @@ _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset, pfound,
 	{
 	  if (info->filename != NULL)
 	    free (info->filename);
-	  info->filename = (char *) bfd_malloc (dirlen +
-						strlen (file_name)
-						+ 1);
+	  info->filename = (char *) bfd_malloc ((bfd_size_type) dirlen
+						+ strlen (file_name) + 1);
 	  if (info->filename == NULL)
 	    return false;
 	  strcpy (info->filename, directory_name);

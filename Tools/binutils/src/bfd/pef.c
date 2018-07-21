@@ -32,6 +32,7 @@
   bfd_generic_get_relocated_section_contents
 #define bfd_pef_bfd_relax_section bfd_generic_relax_section
 #define bfd_pef_bfd_gc_sections bfd_generic_gc_sections
+#define bfd_pef_bfd_merge_sections bfd_generic_merge_sections
 #define bfd_pef_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
 #define bfd_pef_bfd_link_add_symbols _bfd_generic_link_add_symbols
 #define bfd_pef_bfd_final_link _bfd_generic_final_link
@@ -60,7 +61,7 @@ bfd_pef_print_symbol (abfd, afile, symbol, how)
     fprintf (file, "%s", symbol->name);
     break;
   default:
-    bfd_print_symbol_vandf ((PTR) file, symbol);
+    bfd_print_symbol_vandf (abfd, (PTR) file, symbol);
     fprintf (file, " %-5s %s", symbol->section->name, symbol->name);
   }
 }
@@ -309,7 +310,7 @@ int bfd_pef_scan_section (abfd, section)
   unsigned char buf[28];
   
   bfd_seek (abfd, section->header_offset, SEEK_SET);
-  if (bfd_read ((PTR) buf, 1, 28, abfd) != 28) { return -1; }
+  if (bfd_bread ((PTR) buf, 28, abfd) != 28) { return -1; }
 
   section->name_offset = bfd_h_get_32 (abfd, buf);
   section->default_address = bfd_h_get_32 (abfd, buf + 4);
@@ -378,7 +379,7 @@ bfd_pef_read_header (abfd, header)
 
   bfd_seek (abfd, 0, SEEK_SET);
 
-  if (bfd_read ((PTR) buf, 1, 40, abfd) != 40) { return -1; }
+  if (bfd_bread ((PTR) buf, 40, abfd) != 40) { return -1; }
 
   header->tag1 = bfd_getb32 (buf);
   header->tag2 = bfd_getb32 (buf + 4);
@@ -669,7 +670,7 @@ static long bfd_pef_parse_symbols (abfd, csym)
       codelen = bfd_section_size (abfd, codesec);
       codebuf = (unsigned char *) xmalloc (codelen);
       if (bfd_seek (abfd, codesec->filepos, SEEK_SET) < 0) { goto end; }
-      if (bfd_read ((PTR) codebuf, 1, codelen, abfd) != codelen) { goto end; }
+      if (bfd_bread ((PTR) codebuf, codelen, abfd) != codelen) { goto end; }
     }
 
   loadersec = bfd_get_section_by_name (abfd, "loader");
@@ -678,7 +679,7 @@ static long bfd_pef_parse_symbols (abfd, csym)
       loaderlen = bfd_section_size (abfd, loadersec);
       loaderbuf = (unsigned char *) xmalloc (loaderlen);
       if (bfd_seek (abfd, loadersec->filepos, SEEK_SET) < 0) { goto end; }
-      if (bfd_read ((PTR) loaderbuf, 1, loaderlen, abfd) != loaderlen) { goto end; }
+      if (bfd_bread ((PTR) loaderbuf, loaderlen, abfd) != loaderlen) { goto end; }
     }
   
   count = 0;
@@ -848,7 +849,7 @@ bfd_pef_xlib_read_header (abfd, header)
 
   bfd_seek (abfd, 0, SEEK_SET);
 
-  if (bfd_read ((PTR) buf, 1, 76, abfd) != 76) { return -1; }
+  if (bfd_bread ((PTR) buf, 76, abfd) != 76) { return -1; }
 
   header->tag1 = bfd_getb32 (buf);
   header->tag2 = bfd_getb32 (buf + 4);

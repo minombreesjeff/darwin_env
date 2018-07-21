@@ -29,6 +29,7 @@
   bfd_generic_get_relocated_section_contents
 #define bfd_sym_bfd_relax_section bfd_generic_relax_section
 #define bfd_sym_bfd_gc_sections bfd_generic_gc_sections
+#define bfd_sym_bfd_merge_sections bfd_generic_merge_sections
 #define bfd_sym_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
 #define bfd_sym_bfd_link_add_symbols _bfd_generic_link_add_symbols
 #define bfd_sym_bfd_final_link _bfd_generic_final_link
@@ -98,7 +99,7 @@ static unsigned char *bfd_sym_read_name_table
   }
 
   bfd_seek (abfd, table_offset, SEEK_SET);
-  ret = bfd_read (rstr, 1, table_size, abfd);
+  ret = bfd_bread (rstr, table_size, abfd);
   if (ret != table_size) {
     bfd_release (abfd, rstr);
     return NULL;
@@ -160,7 +161,7 @@ int bfd_sym_read_header_v32 (bfd *abfd, bfd_sym_header_block *header)
   unsigned char buf[154];
   long ret;
   
-  ret = bfd_read (buf, 1, 154, abfd);
+  ret = bfd_bread (buf, 154, abfd);
   if (ret != 154)
     return -1;
   
@@ -197,7 +198,7 @@ int bfd_sym_read_version (bfd *abfd, bfd_sym_version *version)
   unsigned char version_string[32];
   long ret;
   
-  ret = bfd_read (version_string, 1, sizeof (version_string), abfd);
+  ret = bfd_bread (version_string, sizeof (version_string), abfd);
   if (ret != sizeof (version_string))
     return -1;
   
@@ -495,7 +496,7 @@ int bfd_sym_fetch_resources_table_entry
   offset = compute_offset (sdata->header.dshb_rte.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -537,7 +538,7 @@ int bfd_sym_fetch_modules_table_entry
   offset = compute_offset (sdata->header.dshb_mte.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -579,7 +580,7 @@ int bfd_sym_fetch_file_references_table_entry
   offset = compute_offset (sdata->header.dshb_frte.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -621,7 +622,7 @@ int bfd_sym_fetch_contained_modules_table_entry
   offset = compute_offset (sdata->header.dshb_cmte.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
  
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -663,7 +664,7 @@ int bfd_sym_fetch_contained_variables_table_entry
   offset = compute_offset (sdata->header.dshb_cvte.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -705,7 +706,7 @@ int bfd_sym_fetch_contained_statements_table_entry
   offset = compute_offset (sdata->header.dshb_csnte.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -747,7 +748,7 @@ int bfd_sym_fetch_contained_labels_table_entry
   offset = compute_offset (sdata->header.dshb_clte.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -789,7 +790,7 @@ int bfd_sym_fetch_contained_types_table_entry
   offset = compute_offset (sdata->header.dshb_ctte.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -831,7 +832,7 @@ int bfd_sym_fetch_file_references_index_table_entry
   offset = compute_offset (sdata->header.dshb_fite.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -873,7 +874,7 @@ int bfd_sym_fetch_constant_pool_entry
   offset = compute_offset (sdata->header.dshb_fite.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -915,7 +916,7 @@ int bfd_sym_fetch_type_table_entry
   offset = compute_offset (sdata->header.dshb_tte.dti_first_page, sdata->header.dshb_page_size, entry_size, index);
   
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
-  if (bfd_read (buf, 1, entry_size, abfd) != entry_size) { return -1; }
+  if (bfd_bread (buf, entry_size, abfd) != entry_size) { return -1; }
 
   (*parser) (buf, entry_size, entry);
   
@@ -935,19 +936,19 @@ int bfd_sym_fetch_type_information_table_entry
 
   if (bfd_seek (abfd, offset, SEEK_SET) < 0) { return -1; }
 
-  if (bfd_read (buf, 1, 4, abfd) != 4) { return -1; }
+  if (bfd_bread (buf, 4, abfd) != 4) { return -1; }
   entry->nte_index = bfd_getb32 (buf);
   
-  if (bfd_read (buf, 1, 2, abfd) != 2) { return -1; }
+  if (bfd_bread (buf, 2, abfd) != 2) { return -1; }
   entry->physical_size = bfd_getb16 (buf);
   
   if (entry->physical_size & 0x8000) {
-    if (bfd_read (buf, 1, 4, abfd) != 4) { return -1; }
+    if (bfd_bread (buf, 4, abfd) != 4) { return -1; }
     entry->physical_size &= 0x7fff;
     entry->logical_size = bfd_getb32 (buf);
     entry->offset = offset + 10;
   } else {
-    if (bfd_read (buf, 1, 2, abfd) != 2) { return -1; }
+    if (bfd_bread (buf, 2, abfd) != 2) { return -1; }
     entry->physical_size &= 0x7fff;
     entry->logical_size = bfd_getb16 (buf);
     entry->offset = offset + 8;
@@ -1615,7 +1616,7 @@ void bfd_sym_print_type_information_table_entry
   if (buf == NULL) { fprintf (f, "[ERROR]\n"); return; }
 
   if (bfd_seek (abfd, entry->offset, SEEK_SET) < 0) { fprintf (f, "[ERROR]\n"); return; }
-  if (bfd_read (buf, 1, entry->physical_size, abfd) != entry->physical_size) { fprintf (f, "[ERROR]\n"); return; }
+  if (bfd_bread (buf, entry->physical_size, abfd) != entry->physical_size) { fprintf (f, "[ERROR]\n"); return; }
 
   fprintf (f, "[");
   for (i = 0; i < entry->physical_size; i++) {

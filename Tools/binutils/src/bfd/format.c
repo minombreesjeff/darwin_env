@@ -1,5 +1,6 @@
 /* Generic BFD support for file formats.
-   Copyright (C) 1990, 91, 92, 93, 94, 95, 1999 Free Software Foundation, Inc.
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1999, 2000, 2001
+   Free Software Foundation, Inc.
    Written by Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -23,7 +24,7 @@ SECTION
 	File formats
 
 	A format is a BFD concept of high level file contents type. The
-	formats supported by BFD are: 
+	formats supported by BFD are:
 
 	o <<bfd_object>>
 
@@ -36,7 +37,6 @@ SECTION
 	o <<bfd_core>>
 
 	The BFD contains the result of an executable core dump.
-
 
 */
 
@@ -68,7 +68,7 @@ DESCRIPTION
 	the file, or an error results.
 
 	The function returns <<true>> on success, otherwise <<false>>
-	with one of the following error codes:  
+	with one of the following error codes:
 
 	o <<bfd_error_invalid_operation>> -
 	if <<format>> is not one of <<bfd_object>>, <<bfd_archive>> or
@@ -109,7 +109,7 @@ DESCRIPTION
 	Then the user may choose a format and try again.
 
 	When done with the list that @var{matching} points to, the caller
-	should free it.  
+	should free it.
 */
 
 boolean
@@ -283,13 +283,13 @@ bfd_set_format (abfd, format)
      bfd *abfd;
      bfd_format format;
 {
-
   if (bfd_read_p (abfd) ||
-      ((int)abfd->format < (int)bfd_unknown) ||
-      ((int)abfd->format >= (int)bfd_type_end)) {
-    bfd_set_error (bfd_error_invalid_operation);
-    return false;
-  }
+      ((int) abfd->format < (int) bfd_unknown) ||
+      ((int) abfd->format >= (int) bfd_type_end))
+    {
+      bfd_set_error (bfd_error_invalid_operation);
+      return false;
+    }
 
   if (abfd->format != bfd_unknown)
     return (abfd->format == format) ? true:false;
@@ -305,13 +305,12 @@ bfd_set_format (abfd, format)
   return true;
 }
 
-
 /*
 FUNCTION
 	bfd_format_string
 
 SYNOPSIS
-	CONST char *bfd_format_string(bfd_format format);
+	const char *bfd_format_string(bfd_format format);
 
 DESCRIPTION
 	Return a pointer to a const string
@@ -319,22 +318,23 @@ DESCRIPTION
 	depending upon the value of @var{format}.
 */
 
-CONST char *
+const char *
 bfd_format_string (format)
      bfd_format format;
 {
-  if (((int)format <(int) bfd_unknown) 
-      || ((int)format >=(int) bfd_type_end)) 
+  if (((int)format <(int) bfd_unknown)
+      || ((int)format >=(int) bfd_type_end))
     return "invalid";
-  
-  switch (format) {
-  case bfd_object:
-    return "object";		/* linker/assember/compiler output */
-  case bfd_archive: 
-    return "archive";		/* object archive file */
-  case bfd_core: 
-    return "core";		/* core dump */
-  default: 
-    return "unknown";
-  }
+
+  switch (format)
+    {
+    case bfd_object:
+      return "object";		/* Linker/assember/compiler output.  */
+    case bfd_archive:
+      return "archive";		/* Object archive file.  */
+    case bfd_core:
+      return "core";		/* Core dump.  */
+    default:
+      return "unknown";
+    }
 }

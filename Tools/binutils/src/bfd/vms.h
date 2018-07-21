@@ -1,6 +1,7 @@
 #undef vms
 /* vms.h -- Header file for VMS (Alpha and Vax) support.
-   Copyright 1996, 1997, 1998, 1999 Free Software Foundation, Inc.
+   Copyright 1996, 1997, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    Written by Klaus K"ampf (kkaempf@rmi.de)
 
@@ -22,7 +23,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef VMS_H
 #define VMS_H
-
 
 /* Constants starting with 'Exxx_' are for openVMS/Alpha (EVAX object language)  */
 
@@ -530,7 +530,6 @@ struct hdr_struc {
   char *hdr_c_src;
   char *hdr_c_ttl;
 };
-
 
 /* vms end of module  */
 

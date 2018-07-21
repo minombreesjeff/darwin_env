@@ -1,5 +1,5 @@
 /* Intel 860 specific support for 32-bit ELF
-   Copyright 1999 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -27,6 +27,10 @@ static bfd_reloc_status_type elf32_i960_relocate
   PARAMS ((bfd *, arelent *, asymbol *, PTR, asection *, bfd *, char **));
 static reloc_howto_type *elf32_i960_reloc_type_lookup
   PARAMS ((bfd *, bfd_reloc_code_real_type));
+static void elf32_i960_info_to_howto
+  PARAMS ((bfd *, arelent *cache_ptr, Elf32_Internal_Rela *));
+static void elf32_i960_info_to_howto_rel
+  PARAMS ((bfd *, arelent *, Elf32_Internal_Rel *));
 
 #define USE_REL 1
 
@@ -102,7 +106,6 @@ elf32_i960_info_to_howto_rel (abfd, cache_ptr, dst)
    function.  It just short circuits the reloc if producing
    relocateable output against an external symbol.  */
 
-/*ARGSUSED*/
 bfd_reloc_status_type
 elf32_i960_relocate (abfd,
 		       reloc_entry,
@@ -129,7 +132,7 @@ elf32_i960_relocate (abfd,
     {
       reloc_entry->addend -= symbol->value;
     }
-  /* This is more dubious. */
+  /* This is more dubious.  */
   else if (output_bfd != (bfd *) NULL
 	   && (symbol->flags & BSF_SECTION_SYM) != 0)
     {

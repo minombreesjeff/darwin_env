@@ -1,5 +1,6 @@
 /* hash.c -- hash table routines for BFD
-   Copyright (C) 1993, 94, 95, 97, 1999 Free Software Foundation, Inc.
+   Copyright 1993, 1994, 1995, 1997, 1999, 2001
+   Free Software Foundation, Inc.
    Written by Steve Chamberlain <sac@cygnus.com>
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -268,7 +269,7 @@ SUBSUBSECTION
 	Write other derived routines
 
 	You will want to write other routines for your new hash table,
-	as well.  
+	as well.
 
 	You will want an initialization routine which calls the
 	initialization routine of the hash table you are deriving from
@@ -366,7 +367,7 @@ bfd_hash_lookup (table, string, create, copy)
   struct bfd_hash_entry *hashp;
   unsigned int len;
   unsigned int index;
-  
+
   hash = 0;
   len = 0;
   s = (const unsigned char *) string;
@@ -581,9 +582,9 @@ struct bfd_strtab_hash *
 _bfd_stringtab_init ()
 {
   struct bfd_strtab_hash *table;
+  bfd_size_type amt = sizeof (struct bfd_strtab_hash);
 
-  table = ((struct bfd_strtab_hash *)
-	   bfd_malloc (sizeof (struct bfd_strtab_hash)));
+  table = (struct bfd_strtab_hash *) bfd_malloc (amt);
   if (table == NULL)
     return NULL;
 
@@ -710,8 +711,8 @@ _bfd_stringtab_emit (abfd, tab)
 
   for (entry = tab->first; entry != NULL; entry = entry->next)
     {
-      register const char *str;
-      register size_t len;
+      const char *str;
+      size_t len;
 
       str = entry->root.string;
       len = strlen (str) + 1;
@@ -721,12 +722,12 @@ _bfd_stringtab_emit (abfd, tab)
 	  bfd_byte buf[2];
 
 	  /* The output length includes the null byte.  */
-	  bfd_put_16 (abfd, len, buf);
-	  if (bfd_write ((PTR) buf, 1, 2, abfd) != 2)
+	  bfd_put_16 (abfd, (bfd_vma) len, buf);
+	  if (bfd_bwrite ((PTR) buf, (bfd_size_type) 2, abfd) != 2)
 	    return false;
 	}
 
-      if (bfd_write ((PTR) str, 1, len, abfd) != len)
+      if (bfd_bwrite ((PTR) str, (bfd_size_type) len, abfd) != len)
 	return false;
     }
 

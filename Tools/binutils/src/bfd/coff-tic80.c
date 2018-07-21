@@ -1,5 +1,5 @@
 /* BFD back-end for Texas Instruments TMS320C80 Multimedia Video Processor (MVP).
-   Copyright 1996, 1997, 1998, 1999 Free Software Foundation, Inc.
+   Copyright 1996, 1997, 1999, 2000, 2001 Free Software Foundation, Inc.
 
    Written by Fred Fish (fnf@cygnus.com)
 
@@ -35,8 +35,8 @@ Boston, MA 02111-1307, USA.  */
 #define COFF_ALIGN_IN_SECTION_HEADER 1
 #define COFF_ALIGN_IN_SFLAGS 1
 
-#define GET_SCNHDR_FLAGS bfd_h_get_16
-#define PUT_SCNHDR_FLAGS bfd_h_put_16
+#define GET_SCNHDR_FLAGS H_GET_16
+#define PUT_SCNHDR_FLAGS H_PUT_16
 
 static void rtype2howto
   PARAMS ((arelent *cache_ptr, struct internal_reloc *dst));
@@ -51,6 +51,10 @@ static bfd_reloc_status_type local16_reloc
 static boolean coff_tic80_relocate_section
   PARAMS ((bfd *, struct bfd_link_info *, bfd *, asection *, bfd_byte *,
 	   struct internal_reloc *, struct internal_syment *, asection **));
+static reloc_howto_type * coff_tic80_rtype_to_howto
+  PARAMS ((bfd *, asection *, struct internal_reloc *,
+	   struct coff_link_hash_entry *, struct internal_syment *,
+	   bfd_vma *));
 
 static reloc_howto_type tic80_howto_table[] =
 {
@@ -424,7 +428,7 @@ local16_reloc (abfd, reloc_entry, symbol_in, data, input_section, output_bfd,
 
 /* Code to turn an external r_type into a pointer to an entry in the howto_table.
    If passed an r_type we don't recognize the abort rather than silently failing
-   to generate an output file. */
+   to generate an output file.  */
 
 static void
 rtype2howto (cache_ptr, dst)
@@ -465,7 +469,7 @@ coff_tic80_rtype_to_howto (abfd, sec, rel, h, sym, addendp)
     {
       /* This is a TI "internal relocation", which means that the relocation
 	 amount is the amount by which the current section is being relocated
-	 in the output section. */
+	 in the output section.  */
       *addendp = (sec -> output_section -> vma + sec -> output_offset) - sec -> vma;
     }
   RTYPE2HOWTO (&genrel, rel);
@@ -518,7 +522,7 @@ coff_tic80_relocate_section (output_bfd, info, input_bfd,
 	  sym = NULL;
 	}
       else
-	{    
+	{
 	  h = obj_coff_sym_hashes (input_bfd)[symndx];
 	  sym = syms + symndx;
 	}
@@ -649,7 +653,7 @@ coff_tic80_relocate_section (output_bfd, info, input_bfd,
 	    contents[addr + 1] |= hold & 0x80;
 	    break;
 	  }
-	
+
 	case R_PPBASE:
 	  /* Parameter RAM is from 0x1000000 to 0x1000800.  */
 	  contents[addr] &=~ 0x3;
@@ -680,7 +684,7 @@ coff_tic80_relocate_section (output_bfd, info, input_bfd,
 	case bfd_reloc_outofrange:
 	  (*_bfd_error_handler)
 	    (_("%s: bad reloc address 0x%lx in section `%s'"),
-	     bfd_get_filename (input_bfd),
+	     bfd_archive_filename (input_bfd),
 	     (unsigned long) rel->r_vaddr,
 	     bfd_get_section_name (input_bfd, input_section));
 	  return false;

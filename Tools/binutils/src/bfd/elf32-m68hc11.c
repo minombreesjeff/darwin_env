@@ -1,5 +1,5 @@
 /* Motorola 68HC11-specific support for 32-bit ELF
-   Copyright (C) 1999, 2000 Free Software Foundation, Inc.
+   Copyright 1999, 2000 Free Software Foundation, Inc.
    Contributed by Stephane Carrez (stcarrez@worldnet.fr)
    (Heavily copied from the D10V port by Martin Hunt (hunt@cygnus.com))
 
@@ -29,7 +29,6 @@ static reloc_howto_type *bfd_elf32_bfd_reloc_type_lookup
 PARAMS ((bfd * abfd, bfd_reloc_code_real_type code));
 static void m68hc11_info_to_howto_rel
 PARAMS ((bfd *, arelent *, Elf32_Internal_Rel *));
-
 
 /* Use REL instead of RELA to save space */
 #define USE_REL

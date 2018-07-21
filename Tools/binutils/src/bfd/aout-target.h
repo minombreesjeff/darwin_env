@@ -1,5 +1,6 @@
 /* Define a target vector and some small routines for a variant of a.out.
-   Copyright (C) 1990, 91, 92, 93, 94, 95, 96, 97, 98, 99, 2000
+   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
+   2000, 2001
    Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -87,9 +88,9 @@ MY(callback) (abfd)
 
   /* Determine the architecture and machine type of the object file.  */
 #ifdef SET_ARCH_MACH
-  SET_ARCH_MACH(abfd, *execp);
+  SET_ARCH_MACH (abfd, *execp);
 #else
-  bfd_default_set_arch_mach(abfd, DEFAULT_ARCH, 0);
+  bfd_default_set_arch_mach (abfd, DEFAULT_ARCH, 0);
 #endif
 
   /* The number of relocation records.  This must be called after
@@ -145,18 +146,19 @@ MY(object_p) (abfd)
   struct external_exec exec_bytes;	/* Raw exec header from file */
   struct internal_exec exec;		/* Cleaned-up exec header */
   const bfd_target *target;
+  bfd_size_type amt = EXEC_BYTES_SIZE;
 
-  if (bfd_read ((PTR) &exec_bytes, 1, EXEC_BYTES_SIZE, abfd)
-      != EXEC_BYTES_SIZE) {
-    if (bfd_get_error () != bfd_error_system_call)
-      bfd_set_error (bfd_error_wrong_format);
-    return 0;
-  }
+  if (bfd_bread ((PTR) &exec_bytes, amt, abfd) != amt)
+    {
+      if (bfd_get_error () != bfd_error_system_call)
+	bfd_set_error (bfd_error_wrong_format);
+      return 0;
+    }
 
 #ifdef SWAP_MAGIC
   exec.a_info = SWAP_MAGIC (exec_bytes.e_info);
 #else
-  exec.a_info = bfd_h_get_32 (abfd, exec_bytes.e_info);
+  exec.a_info = GET_MAGIC (abfd, exec_bytes.e_info);
 #endif /* SWAP_MAGIC */
 
   if (N_BADMAG (exec)) return 0;
@@ -164,7 +166,7 @@ MY(object_p) (abfd)
   if (!(MACHTYPE_OK (N_MACHTYPE (exec)))) return 0;
 #endif
 
-  NAME(aout,swap_exec_header_in)(abfd, &exec_bytes, &exec);
+  NAME(aout,swap_exec_header_in) (abfd, &exec_bytes, &exec);
 
 #ifdef SWAP_MAGIC
   /* swap_exec_header_in read in a_info with the wrong byte order */
@@ -205,7 +207,7 @@ static boolean
 MY(mkobject) (abfd)
      bfd *abfd;
 {
-  if (NAME(aout,mkobject)(abfd) == false)
+  if (NAME(aout,mkobject) (abfd) == false)
     return false;
 #if 0 /* Sizes get set in set_sizes callback, later, after we know
 	 the architecture and machine.  */
@@ -249,6 +251,8 @@ MY_bfd_copy_private_section_data (ibfd, isec, obfd, osec)
    file header, symbols, and relocation.  */
 
 #ifndef MY_write_object_contents
+static boolean MY(write_object_contents) PARAMS ((bfd *));
+
 static boolean
 MY(write_object_contents) (abfd)
      bfd *abfd;
@@ -325,7 +329,7 @@ MY(set_sizes) (abfd)
 #define MY_finish_dynamic_link 0
 #endif
 
-static CONST struct aout_backend_data MY(backend_data) = {
+static const struct aout_backend_data MY(backend_data) = {
   MY_zmagic_contiguous,
   MY_text_includes_header,
   MY_entry_is_text_address,
@@ -505,6 +509,9 @@ MY_bfd_final_link (abfd, info)
 #endif
 #ifndef MY_bfd_gc_sections
 #define MY_bfd_gc_sections bfd_generic_gc_sections
+#endif
+#ifndef MY_bfd_merge_sections
+#define MY_bfd_merge_sections bfd_generic_merge_sections
 #endif
 #ifndef MY_bfd_reloc_type_lookup
 #define MY_bfd_reloc_type_lookup NAME(aout,reloc_type_lookup)

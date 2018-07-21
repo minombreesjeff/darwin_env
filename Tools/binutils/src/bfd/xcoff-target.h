@@ -1,5 +1,5 @@
 /* Common definitions for backends based on IBM RS/6000 "XCOFF64" files.
-   Copyright 2000
+   Copyright 2000, 2001
    Free Software Foundation, Inc.
    Contributed by Cygnus Support.
 
@@ -97,6 +97,7 @@ extern int lynx_core_file_failing_signal PARAMS ((bfd *abfd));
   coff_bfd_get_relocated_section_contents
 #define _bfd_xcoff_bfd_relax_section coff_bfd_relax_section
 #define _bfd_xcoff_bfd_gc_sections coff_bfd_gc_sections
+#define _bfd_xcoff_bfd_merge_sections coff_bfd_merge_sections
 #define _bfd_xcoff_bfd_link_split_section coff_bfd_link_split_section
 
 /* XCOFF archives do not have anything which corresponds to an
@@ -146,7 +147,7 @@ extern unsigned int _bfd_xcoff_swap_aux_out PARAMS ((bfd *, PTR, int, int, int, 
 
 #include "coffcode.h"
 
-/* The transfer vector that leads the outside world to all of the above. */
+/* The transfer vector that leads the outside world to all of the above.  */
 
 const bfd_target TARGET_SYM =
 {
@@ -189,6 +190,6 @@ const bfd_target TARGET_SYM =
      BFD_JUMP_TABLE_DYNAMIC (_bfd_xcoff),
 
   NULL,
-  
+
   COFF_SWAP_TABLE
 };

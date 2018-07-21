@@ -1,5 +1,5 @@
 /* BFD library support routines for the AVR architecture.
-   Copyright (C) 1999, 2000 Free Software Foundation, Inc.
+   Copyright 1999, 2000 Free Software Foundation, Inc.
    Contributed by Denis Chertykov <denisc@overta.ru>
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -22,10 +22,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "sysdep.h"
 #include "libbfd.h"
 
-
 static const bfd_arch_info_type *compatible
   PARAMS ((const bfd_arch_info_type *, const bfd_arch_info_type *));
-
 
 #define N(addr_bits, machine, print, default, next)		\
 {								\
