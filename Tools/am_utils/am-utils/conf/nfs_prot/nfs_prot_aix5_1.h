@@ -37,53 +37,56 @@
  * SUCH DAMAGE.
  *
  *
- * $Id: nfs_prot_netbsd1_4.h,v 1.1.1.2 2002/07/15 19:42:53 zarzycki Exp $
+ * $Id: nfs_prot_aix5_1.h,v 1.1.1.1 2002/07/15 19:42:53 zarzycki Exp $
  *
  */
 
 #ifndef _AMU_NFS_PROT_H
 #define _AMU_NFS_PROT_H
 
+
+/*
+ * AIX 5.1 has a different aix51_nfs_args structure, hence the separate header.
+ */
+
 #ifdef HAVE_RPCSVC_NFS_PROT_H
 # include <rpcsvc/nfs_prot.h>
 #endif /* HAVE_RPCSVC_NFS_PROT_H */
+#ifdef HAVE_NFS_NFSV2_H
+# include <nfs/nfsv2.h>
+#endif /* HAVE_NFS_NFSV2_H */
 #ifdef HAVE_NFS_RPCV2_H
 # include <nfs/rpcv2.h>
 #endif /* HAVE_NFS_RPCV2_H */
-#ifndef NFS_NPROCS
-# define NFS_NPROCS	26
-#endif /* not NFS_NPROCS */
-#ifdef HAVE_NFS_NFS_H
-# include <nfs/nfs.h>
-#endif /* HAVE_NFS_NFS_H */
-#ifdef HAVE_NFS_NFSMOUNT_H
-# include <nfs/nfsmount.h>
-#endif /* HAVE_NFS_NFSMOUNT_H */
-
-#ifdef HAVE_UFS_UFS_UFSMOUNT_H
-/* netbsd-1.4 does't protect <ufs/ufs/ufsmount.h> */
-# ifndef _UFS_UFS_UFSMOUNT_H
-#  include <ufs/ufs/ufsmount.h>
-#  define _UFS_UFS_UFSMOUNT_H
-# endif /* not _UFS_UFS_UFSMOUNT_H */
-#endif /* HAVE_UFS_UFS_UFSMOUNT_H */
-
-/* NON-NFS STUFF (doesn't really belong here) */
-#ifndef DEFINED_YPALL_CALLBACK_FXN_T
-# define DEFINED_YPALL_CALLBACK_FXN_T
-#if 0
-/* this is RIGHT for 1.2G and 1.2.1 */
-typedef int (*ypall_callback_fxn_t)(u_long, char *, int, char *, int, void *);
-#endif
-/* this is right for 1.3beta and newer */
-typedef int (*ypall_callback_fxn_t)(int, char *, int, char *, int, char *);
-#endif /* DEFINED_YPALL_CALLBACK_FXN_T */
+#ifdef HAVE_SYS_FS_NFS_H
+# include <sys/fs/nfs.h>
+#endif /* HAVE_SYS_FS_NFS_H */
+#ifdef HAVE_RPCSVC_MOUNT_H
+# include <rpcsvc/mount.h>
+#endif /* HAVE_RPCSVC_MOUNT_H */
 
 
 /*
- * MACROS:
+ * MACROS
  */
+
+#ifndef MNTPATHLEN
+# define MNTPATHLEN 1024
+#endif /* not MNTPATHLEN */
+#ifndef MNTNAMLEN
+# define MNTNAMLEN 255
+#endif /* not MNTNAMLEN */
+
+/* map field names */
+#define ex_dir ex_name
+#define gr_name g_name
+#define gr_next g_next
+#define ml_directory ml_path
+#define ml_hostname ml_name
+#define ml_next ml_nxt
+
 #define	dr_drok_u	diropres
+#define ca_attributes	attributes
 #define ca_where	where
 #define da_fhandle	dir
 #define da_name		name
@@ -97,6 +100,8 @@ typedef int (*ypall_callback_fxn_t)(int, char *, int, char *, int, char *);
 #define la_fhandle	from
 #define la_to		to
 #define na_atime	atime
+#define na_blocks	blocks
+#define na_blocksize	blocksize
 #define na_ctime	ctime
 #define na_fileid	fileid
 #define na_fsid		fsid
@@ -104,9 +109,10 @@ typedef int (*ypall_callback_fxn_t)(int, char *, int, char *, int, char *);
 #define na_mode		mode
 #define na_mtime	mtime
 #define na_nlink	nlink
+#define na_rdev		rdev
 #define na_size		size
-#define na_uid		uid
 #define na_type		type
+#define na_uid		uid
 #define ne_cookie	cookie
 #define ne_fileid	fileid
 #define ne_name		name
@@ -116,6 +122,14 @@ typedef int (*ypall_callback_fxn_t)(int, char *, int, char *, int, char *);
 #define ns_u		attrstat_u
 #define nt_seconds	seconds
 #define nt_useconds	useconds
+#define ra_count	count
+#define ra_fhandle	file
+#define ra_offset	offset
+#define ra_totalcount	totalcount
+#define raok_attributes	attributes
+#define raok_len_u	data_len
+#define raok_u		data
+#define raok_val_u	data_val
 #define rda_cookie	cookie
 #define rda_count	count
 #define rda_fhandle	dir
@@ -127,7 +141,16 @@ typedef int (*ypall_callback_fxn_t)(int, char *, int, char *, int, char *);
 #define rlr_u		readlinkres_u
 #define rna_from	from
 #define rna_to		to
+#define rr_reply_u	reply
 #define rr_status	status
+#define rr_u		readres_u
+#define sa_atime	atime
+#define sa_gid		gid
+#define sa_mode		mode
+#define sa_mtime	mtime
+#define sa_size		size
+#define sa_uid		uid
+#define sag_attributes	attributes
 #define sag_fhandle	file
 #define sfr_reply_u	reply
 #define sfr_status	status
@@ -137,48 +160,101 @@ typedef int (*ypall_callback_fxn_t)(int, char *, int, char *, int, char *);
 #define sfrok_blocks	blocks
 #define sfrok_bsize	bsize
 #define sfrok_tsize	tsize
+#define sla_attributes	attributes
 #define sla_from	from
+#define sla_to		to
+#define wra_beginoffset	beginoffset
 #define wra_fhandle	file
+#define wra_len_u	data_len
+#define wra_offset	offset
+#define wra_totalcount	totalcount
+#define wra_u		data
+#define wra_val_u	data_val
 
 
 /*
  * TYPEDEFS:
  */
-typedef attrstat nfsattrstat;
-typedef createargs nfscreateargs;
-typedef dirlist nfsdirlist;
-typedef diropargs nfsdiropargs;
-typedef diropres nfsdiropres;
-typedef entry nfsentry;
-typedef fattr nfsfattr;
-typedef ftype nfsftype;
-typedef linkargs nfslinkargs;
-typedef readargs nfsreadargs;
-typedef readdirargs nfsreaddirargs;
-typedef readdirres nfsreaddirres;
-typedef readlinkres nfsreadlinkres;
-typedef readres nfsreadres;
-typedef renameargs nfsrenameargs;
-typedef sattrargs nfssattrargs;
-typedef statfsokres nfsstatfsokres;
-typedef statfsres nfsstatfsres;
-typedef symlinkargs nfssymlinkargs;
-typedef writeargs nfswriteargs;
+typedef char *dirpath;
+typedef char *name;
+typedef struct exports *exports;
+typedef struct exports exportnode;
+typedef struct groups *groups;
+typedef struct groups groupnode;
+typedef struct mountlist *mountlist;
+
+typedef attrstat	nfsattrstat;
+typedef createargs	nfscreateargs;
+typedef dirlist		nfsdirlist;
+typedef diropargs	nfsdiropargs;
+typedef diropokres	nfsdiropokres;
+typedef diropres	nfsdiropres;
+typedef entry		nfsentry;
+typedef fattr		nfsfattr;
+typedef ftype		nfsftype;
+typedef linkargs	nfslinkargs;
+typedef readargs	nfsreadargs;
+typedef readdirargs	nfsreaddirargs;
+typedef readdirres	nfsreaddirres;
+typedef readlinkres	nfsreadlinkres;
+typedef readokres	nfsreadokres;
+typedef readres		nfsreadres;
+typedef renameargs	nfsrenameargs;
+typedef sattr		nfssattr;
+typedef sattrargs	nfssattrargs;
+typedef statfsokres	nfsstatfsokres;
+typedef statfsres	nfsstatfsres;
+typedef symlinkargs	nfssymlinkargs;
+typedef writeargs	nfswriteargs;
+
 
 /*
- *
- * NetBSD 1.2 has NFS V3, but it is undefined in the header files.
+ * EXTERNALS:
+ */
+
+
+/*
+ * STRUCTURES:
+ */
+
+/*
+ * AIX 5.1 has NFS V3, but it is undefined in the header files.
  * so I define everything that's needed for NFS V3 here.
  */
-#ifdef NFSMNT_NFSV3
-
-# define MOUNT_NFS3 MOUNT_NFS
-# define MNTOPT_NFS3 "nfs"
+#ifdef MNT_NFS3
 
 #define FHSIZE3 64		/* size in bytes of a file handle (v3) */
 #define	NFS3_FHSIZE 64
 #define	MOUNTVERS3 ((unsigned long)(3))
 #define	NFS_V3 ((unsigned long)(3))
+
+#if 0
+struct nfs_fh3 {
+  u_int len;
+  char val[64];			/* !!! */
+};
+#endif
+
+struct aix51_nfs_args {
+  struct sockaddr_in addr;	/* server address and port */
+  caddr_t u0;			/* ??? UNKNOWN ??? */
+  unsigned long proto;		/* IPPROTO_TCP/IPPROTO_UDP */
+  char *hostname;		/* pointer to hostname? */
+  char *netname;		/* pointer to netname? */
+  caddr_t fh;			/* pointer to NFS v3 fh? */
+  unsigned long u5;		/* IBM sux, IBM sux, IBM sux... */
+  unsigned long flags;		/* flags */
+  unsigned long wsize;		/* wsize */
+  unsigned long rsize;		/* rsize */
+  unsigned long timeo;		/* timeo */
+  unsigned long retrans;	/* retrans */
+  unsigned long acregmin;	/* acregmin */
+  unsigned long acregmax;	/* acregmax */
+  unsigned long acdirmin;	/* acdirmin */
+  unsigned long acdirmax;	/* acdirmax */
+  unsigned long u15;		/* ??? UNKNOWN ??? */
+  struct pathcnf *pathconf;	/* pathconf */
+};
 
 typedef struct {
   u_int fhandle3_len;
@@ -227,6 +303,25 @@ struct nfs_fh3 {
 };
 typedef struct nfs_fh3 nfs_fh3;
 
-#endif /* NFSMNT_NFSV3 */
+#endif /* MNT_NFS3 */
+
+/*
+ **************************************************************************
+ * AIX 5.1's autofs is not ported or tested yet...
+ * For now, undefine it or define dummy entries.
+ **************************************************************************
+ */
+#ifdef MNT_AUTOFS
+# undef MNT_AUTOFS
+#endif /* MNT_AUTOFS */
+#ifdef HAVE_FS_AUTOFS
+# undef HAVE_FS_AUTOFS
+#endif /* HAVE_FS_AUTOFS */
+
+/*
+ * EXTERNALS:
+ */
+extern bool_t xdr_groups(XDR *xdrs, groups *objp);
+extern char *yperr_string (int incode);
 
 #endif /* not _AMU_NFS_PROT_H */

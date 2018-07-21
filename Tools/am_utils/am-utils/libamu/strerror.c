@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2002 Ion Badulescu
  * Copyright (c) 1997-2002 Erez Zadok
  * Copyright (c) 1990 Jan-Simon Pendry
  * Copyright (c) 1990 Imperial College of Science, Technology & Medicine
@@ -37,68 +38,28 @@
  * SUCH DAMAGE.
  *
  *
- * $Id: amfs_linkx.c,v 1.1.1.2 2002/07/15 19:42:35 zarzycki Exp $
+ * $Id: strerror.c,v 1.1.1.1 2002/07/15 19:43:07 zarzycki Exp $
  *
- */
-
-/*
- * Symbol-link file system, with test that the target of the link exists.
  */
 
 #ifdef HAVE_CONFIG_H
 # include <config.h>
 #endif /* HAVE_CONFIG_H */
 #include <am_defs.h>
-#include <amd.h>
+#include <amu.h>
 
-/* forward declarations */
-static int amfs_linkx_mount(am_node *mp, mntfs *mf);
 
 /*
- * linkx operations
+ * Convert errno to a string
  */
-struct am_ops amfs_linkx_ops =
+char *
+strerror(int errnum)
 {
-  "linkx",
-  amfs_link_match,
-  0,				/* amfs_linkx_init */
-  amfs_linkx_mount,
-  amfs_link_umount,
-  amfs_error_lookup_child,
-  amfs_error_mount_child,
-  amfs_error_readdir,
-  0,				/* amfs_linkx_readlink */
-  0,				/* amfs_linkx_mounted */
-  0,				/* amfs_linkx_umounted */
-  find_amfs_auto_srvr,
-  FS_MBACKGROUND,
-#ifdef HAVE_FS_AUTOFS
-  AUTOFS_LINKX_FS_FLAGS,
-#endif /* HAVE_FS_AUTOFS */
-};
-
-
-static int
-amfs_linkx_mount(am_node *mp, mntfs *mf)
-{
-  /*
-   * Check for existence of target.
-   */
-  struct stat stb;
-  char *ln;
-
-  if (mp->am_link)
-    ln = mp->am_link;
-  else				/* should never occur */
-    ln = mf->mf_mount;
-
-  /*
-   * Use lstat, not stat, since we don't
-   * want to know if the ultimate target of
-   * a symlink chain exists, just the first.
-   */
-  if (lstat(ln, &stb) < 0)
-    return errno;
-
-  return 0;
+#ifdef HAVE_EXTERN_SYS_ERRLIST
+  if (errnum < 0 || errnum >= (sizeof(sys_errlist) >> 2))
+    return "(null)";
+  return sys_errlist[error];
+#else  /* not HAVE_EXTERN_SYS_ERRLIST */
+  return "unknown (strerror not available)";
+#endif /* not HAVE_EXTERN_SYS_ERRLIST */
 }
