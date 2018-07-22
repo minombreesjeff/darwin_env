@@ -728,7 +728,7 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 25868;
+				CURRENT_PROJECT_VERSION = 26098;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_MODEL_TUNING = G5;
@@ -1058,6 +1058,18 @@
 			isa = PBXTargetDependency;
 			target = 4C414FAA07305C57004C9490;
 			targetProxy = 4C41507007305E17004C9490;
+		};
+		4C41507207305E1A004C9490 = {
+			containerPortal = 08FB7793FE84155DC02AAC07;
+			isa = PBXContainerItemProxy;
+			proxyType = 1;
+			remoteGlobalIDString = 4C414FAA07305C57004C9490;
+			remoteInfo = tokend;
+		};
+		4C41507307305E1A004C9490 = {
+			isa = PBXTargetDependency;
+			target = 4C414FAA07305C57004C9490;
+			targetProxy = 4C41507207305E1A004C9490;
 		};
 		4C41507407305E1C004C9490 = {
 			containerPortal = 08FB7793FE84155DC02AAC07;
@@ -1457,15 +1469,15 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 25868;
+				CURRENT_PROJECT_VERSION = 26098;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_MODEL_TUNING = G5;
 				INFOPLIST_FILE = CAC/Info.plist;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Security/tokend";
-				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines";
 				OPT_CXFLAGS = "-DNDEBUG $(OPT_INLINEXFLAGS)";
-				OPT_INLINEXFLAGS = " -finline-functions --param max-inline-insns-single=150 --param max-inline-insns-auto=150 --param max-inline-insns=300 --param min-inline-insns=90";
+				OPT_INLINEXFLAGS = " -finline-functions";
 				OPT_LDXFLAGS = "-dead_strip";
 				OPT_LDXNOPIC = ",_nopic";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
@@ -1509,7 +1521,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>25868</string>
+	<string>26098</string>
 </dict>
 </plist>
 ";
@@ -1662,6 +1674,20 @@
 			settings = {
 			};
 		};
+		4C7DF1F507161BDD008C31C7 = {
+			fileRef = 4CA8C4D606D6D19400F1BCC8;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		4C7DF1FC07161C50008C31C7 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = text.xml;
+			path = Info.plist;
+			refType = 4;
+			sourceTree = "<group>";
+		};
 		4C86D367070B3F7A006A0C7F = {
 			buildPhases = (
 				4C86D368070B3F7A006A0C7F,
@@ -1672,15 +1698,15 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 25868;
+				CURRENT_PROJECT_VERSION = 26098;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_MODEL_TUNING = G5;
 				INFOPLIST_FILE = BELPIC/Info.plist;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Security/tokend";
-				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines";
 				OPT_CXFLAGS = "-DNDEBUG $(OPT_INLINEXFLAGS)";
-				OPT_INLINEXFLAGS = " -finline-functions --param max-inline-insns-single=150 --param max-inline-insns-auto=150 --param max-inline-insns=300 --param min-inline-insns=90";
+				OPT_INLINEXFLAGS = " -finline-functions";
 				OPT_LDXFLAGS = "-dead_strip";
 				OPT_LDXNOPIC = ",_nopic";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
@@ -1724,7 +1750,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>25868</string>
+	<string>26098</string>
 </dict>
 </plist>
 ";
@@ -2103,15 +2129,15 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 25868;
+				CURRENT_PROJECT_VERSION = 26098;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_MODEL_TUNING = G5;
 				INFOPLIST_FILE = MuscleCard/Info.plist;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Security/tokend";
-				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines";
 				OPT_CXFLAGS = "-DNDEBUG $(OPT_INLINEXFLAGS)";
-				OPT_INLINEXFLAGS = " -finline-functions --param max-inline-insns-single=150 --param max-inline-insns-auto=150 --param max-inline-insns=300 --param min-inline-insns=90";
+				OPT_INLINEXFLAGS = " -finline-functions";
 				OPT_LDXFLAGS = "-dead_strip";
 				OPT_LDXNOPIC = ",_nopic";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
