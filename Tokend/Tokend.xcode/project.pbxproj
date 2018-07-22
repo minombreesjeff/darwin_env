@@ -731,7 +731,7 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 32296;
+				CURRENT_PROJECT_VERSION = 32404;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_MODEL_TUNING = G5;
@@ -1562,15 +1562,15 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 32296;
+				CURRENT_PROJECT_VERSION = 32404;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_MODEL_TUNING = G5;
 				INFOPLIST_FILE = CAC/Info.plist;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Security/tokend";
-				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines";
 				OPT_CXFLAGS = "-DNDEBUG $(OPT_INLINEXFLAGS)";
-				OPT_INLINEXFLAGS = " -finline-functions --param max-inline-insns-single=150 --param max-inline-insns-auto=150 --param max-inline-insns=300 --param min-inline-insns=90";
+				OPT_INLINEXFLAGS = " -finline-functions";
 				OPT_LDXFLAGS = "-dead_strip";
 				OPT_LDXNOPIC = ",_nopic";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
@@ -1614,7 +1614,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>32296</string>
+	<string>32404</string>
 </dict>
 </plist>
 ";
@@ -1777,15 +1777,15 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 32296;
+				CURRENT_PROJECT_VERSION = 32404;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_MODEL_TUNING = G5;
 				INFOPLIST_FILE = JPKI/Info.plist;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Security/tokend";
-				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines";
 				OPT_CXFLAGS = "-DNDEBUG $(OPT_INLINEXFLAGS)";
-				OPT_INLINEXFLAGS = " -finline-functions --param max-inline-insns-single=150 --param max-inline-insns-auto=150 --param max-inline-insns=300 --param min-inline-insns=90";
+				OPT_INLINEXFLAGS = " -finline-functions";
 				OPT_LDXFLAGS = "-dead_strip";
 				OPT_LDXNOPIC = ",_nopic";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
@@ -1829,7 +1829,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>32296</string>
+	<string>32404</string>
 </dict>
 </plist>
 ";
@@ -2082,15 +2082,15 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 32296;
+				CURRENT_PROJECT_VERSION = 32404;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_MODEL_TUNING = G5;
 				INFOPLIST_FILE = BELPIC/Info.plist;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Security/tokend";
-				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines";
 				OPT_CXFLAGS = "-DNDEBUG $(OPT_INLINEXFLAGS)";
-				OPT_INLINEXFLAGS = " -finline-functions --param max-inline-insns-single=150 --param max-inline-insns-auto=150 --param max-inline-insns=300 --param min-inline-insns=90";
+				OPT_INLINEXFLAGS = " -finline-functions";
 				OPT_LDXFLAGS = "-dead_strip";
 				OPT_LDXNOPIC = ",_nopic";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
@@ -2134,7 +2134,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>32296</string>
+	<string>32404</string>
 </dict>
 </plist>
 ";
@@ -2513,15 +2513,15 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 32296;
+				CURRENT_PROJECT_VERSION = 32404;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_MODEL_TUNING = G5;
 				INFOPLIST_FILE = MuscleCard/Info.plist;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Security/tokend";
-				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines";
 				OPT_CXFLAGS = "-DNDEBUG $(OPT_INLINEXFLAGS)";
-				OPT_INLINEXFLAGS = " -finline-functions --param max-inline-insns-single=150 --param max-inline-insns-auto=150 --param max-inline-insns=300 --param min-inline-insns=90";
+				OPT_INLINEXFLAGS = " -finline-functions";
 				OPT_LDXFLAGS = "-dead_strip";
 				OPT_LDXNOPIC = ",_nopic";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
