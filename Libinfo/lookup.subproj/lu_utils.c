@@ -303,12 +303,6 @@ _lu_create_request(uint32_t proc, const char *buf, uint32_t len, void *callback,
 	r->proc = proc;
 
 	r->request_buffer = malloc(len * BYTES_PER_XDR_UNIT);
-	if (r->request_buffer == NULL)
-	{
-		free(r);
-		return NULL;
-	}
-
 	memcpy(r->request_buffer, buf, len * BYTES_PER_XDR_UNIT);
 	r->request_buffer_len = len;
 
@@ -423,8 +417,6 @@ _lookupd_xdr_dictionary(XDR *inxdr)
 	if (!xdr_int(inxdr, &nkeys)) return NULL;
 
 	l = (ni_proplist *)malloc(sizeof(ni_proplist));
-	if (l == NULL) return NULL;
-
 	NI_INIT(l);
 
 	l->ni_proplist_len = nkeys;
@@ -432,11 +424,6 @@ _lookupd_xdr_dictionary(XDR *inxdr)
 	if (nkeys > 0)
 	{
 		l->ni_proplist_val = (ni_property *)calloc(nkeys, sizeof(ni_property));
-		if (l->ni_proplist_val == NULL)
-		{
-			free(l);
-			return NULL;
-		}
 	}
 
 	for (i = 0; i < nkeys; i++)
@@ -460,11 +447,6 @@ _lookupd_xdr_dictionary(XDR *inxdr)
 		if (nvals > 0)
 		{
 			l->ni_proplist_val[i].nip_val.ni_namelist_val = (ni_name *)calloc(nvals, sizeof(ni_name));
-			if (l->ni_proplist_val[i].nip_val.ni_namelist_val == NULL)
-			{
-				ni_proplist_free(l);
-				return NULL;
-			}
 		}
 
 		for (j = 0; j < nvals; j++)
@@ -570,11 +552,6 @@ lookupd_query(ni_proplist *l, ni_proplist ***out)
 	}
 
 	*out = (ni_proplist **)malloc(n * sizeof(ni_proplist *));
-	if (out == NULL)
-	{
-		xdr_destroy(&inxdr);
-		return 0;
-	}
 
 	for (i = 0; i < n; i++)
 	{
@@ -601,8 +578,6 @@ lookupd_make_query(char *cat, char *fmt, ...)
 	if (fmt[0] != 'k') return NULL;
 
 	l = (ni_proplist *)malloc(sizeof(ni_proplist));
-	if (l == NULL) return NULL;
-
 	NI_INIT(l);
 
 	na = 0;
@@ -611,36 +586,13 @@ lookupd_make_query(char *cat, char *fmt, ...)
 	if (cat != NULL)
 	{
 		l->ni_proplist_val = (ni_property *)malloc(sizeof(ni_property));
-		if (l->ni_proplist_val == NULL)
-		{
-			free(l);
-			return NULL;
-		}
-
 		p = &(l->ni_proplist_val[0]);
 		arg = "_lookup_category";
 		p->nip_name = strdup(arg);
-		if (p->nip_name == NULL)
-		{
-			ni_proplist_free(l);
-			return NULL;
-		}
-		
 		p->nip_val.ni_namelist_len = 1;
 		p->nip_val.ni_namelist_val = (ni_name *)malloc(sizeof(ni_name));
-		if (p->nip_val.ni_namelist_val == NULL)
-		{
-			ni_proplist_free(l);
-			return NULL;
-		}
-			
 		p->nip_val.ni_namelist_val[0] = strdup(cat);
-		if (p->nip_val.ni_namelist_val[0] == NULL)
-		{
-			ni_proplist_free(l);
-			return NULL;
-		}
-		
+
 		l->ni_proplist_len++;
 		x++;
 	}
@@ -651,21 +603,10 @@ lookupd_make_query(char *cat, char *fmt, ...)
 		arg = va_arg(ap, char *);
 		if (*f == 'k')
 		{
-			l->ni_proplist_val = (ni_property *)reallocf(l->ni_proplist_val, (l->ni_proplist_len + 1) * sizeof(ni_property));
-			if (l->ni_proplist_val == NULL)
-			{
-				ni_proplist_free(l);
-				return NULL;
-			}
-			
+			l->ni_proplist_val = (ni_property *)realloc(l->ni_proplist_val, (l->ni_proplist_len + 1) * sizeof(ni_property));
+
 			p = &(l->ni_proplist_val[l->ni_proplist_len]);
 			p->nip_name = strdup(arg);
-			if (p->nip_name == NULL)
-			{
-				ni_proplist_free(l);
-				return NULL;
-			}
-
 			p->nip_val.ni_namelist_len = 0;
 			p->nip_val.ni_namelist_val = NULL;
 
@@ -681,22 +622,9 @@ lookupd_make_query(char *cat, char *fmt, ...)
 			}
 			else
 			{
-				p->nip_val.ni_namelist_val = (ni_name *)reallocf(p->nip_val.ni_namelist_val, (p->nip_val.ni_namelist_len + 1) * sizeof(ni_name));
+				p->nip_val.ni_namelist_val = (ni_name *)realloc(p->nip_val.ni_namelist_val, (p->nip_val.ni_namelist_len + 1) * sizeof(ni_name));
 			}
-
-			if (p->nip_val.ni_namelist_val == NULL)
-			{
-				ni_proplist_free(l);
-				return NULL;
-			}
-
 			p->nip_val.ni_namelist_val[p->nip_val.ni_namelist_len] = strdup(arg);
-			if (p->nip_val.ni_namelist_val[p->nip_val.ni_namelist_len] == NULL)
-			{
-				ni_proplist_free(l);
-				return NULL;
-			}
-
 			p->nip_val.ni_namelist_len++;
 		}
 	}
@@ -723,17 +651,8 @@ ni_property_merge(ni_property *a, ni_property *b)
 
 		if (addme == 1)
 		{
-			a->nip_val.ni_namelist_val = (ni_name *)reallocf(a->nip_val.ni_namelist_val, (a->nip_val.ni_namelist_len + 1) * sizeof(ni_name));
-			if (a->nip_val.ni_namelist_val == NULL) return;
-
+			a->nip_val.ni_namelist_val = (ni_name *)realloc(a->nip_val.ni_namelist_val, (a->nip_val.ni_namelist_len + 1) * sizeof(ni_name));
 			a->nip_val.ni_namelist_val[a->nip_val.ni_namelist_len] = strdup(b->nip_val.ni_namelist_val[j]);
-			if (a->nip_val.ni_namelist_val[a->nip_val.ni_namelist_len] == NULL)
-			{
-				free(a->nip_val.ni_namelist_val);
-				a->nip_val.ni_namelist_val = NULL;
-				return;
-			}
-
 			a->nip_val.ni_namelist_len++;
 		}
 	}
@@ -757,17 +676,8 @@ ni_proplist_merge(ni_proplist *a, ni_proplist *b)
 		}
 		if (addme == 1)
 		{
-			a->ni_proplist_val = (ni_property *)reallocf(a->ni_proplist_val, (a->ni_proplist_len + 1) * sizeof(ni_property));
-			if (a->ni_proplist_val == NULL) return;
-
+			a->ni_proplist_val = (ni_property *)realloc(a->ni_proplist_val, (a->ni_proplist_len + 1) * sizeof(ni_property));
 			a->ni_proplist_val[a->ni_proplist_len].nip_name = strdup(b->ni_proplist_val[wb].nip_name);
-			if (a->ni_proplist_val[a->ni_proplist_len].nip_name == NULL)
-			{
-				free(a->ni_proplist_val);
-				a->ni_proplist_val = NULL;
-				return NULL;
-			}
-	
 			a->ni_proplist_val[a->ni_proplist_len].nip_val.ni_namelist_len = 0;
 			a->ni_proplist_val[a->ni_proplist_len].nip_val.ni_namelist_val = NULL;
 			a->ni_proplist_len++;
@@ -841,7 +751,6 @@ _lu_data_get()
 	if (libinfo_data != NULL) return libinfo_data;
 
 	libinfo_data = (struct _lu_data_s *)calloc(1, sizeof(struct _lu_data_s));
-	if (libinfo_data == NULL) return NULL;
 
 	pthread_setspecific(_info_key, libinfo_data);
 	return libinfo_data;
@@ -854,7 +763,6 @@ _lu_data_create_key(unsigned int key, void (*destructor)(void *))
 	unsigned int i, n;
 
 	libinfo_data = _lu_data_get();
-	if (libinfo_data == NULL) return NULL;
 
 	for (i = 0; i < libinfo_data->icount; i++)
 	{
@@ -872,17 +780,9 @@ _lu_data_create_key(unsigned int key, void (*destructor)(void *))
 	}
 	else
 	{
-		libinfo_data->ikey = (unsigned int *)reallocf(libinfo_data->ikey, n * sizeof(unsigned int));
-		libinfo_data->idata = (void **)reallocf(libinfo_data->idata, n * sizeof(void *));
-		libinfo_data->idata_destructor = (void (**)(void *))reallocf(libinfo_data->idata_destructor, n * sizeof(void (*)(void *)));
-	}
-
-	if ((libinfo_data->ikey == NULL) || (libinfo_data->idata == NULL) || (libinfo_data->idata_destructor == NULL))
-	{
-		if (libinfo_data->ikey != NULL) free(libinfo_data->ikey);
-		if (libinfo_data->idata != NULL) free(libinfo_data->idata);
-		if (libinfo_data->idata_destructor != NULL) free(libinfo_data->idata_destructor);
-		return NULL;
+		libinfo_data->ikey = (unsigned int *)realloc(libinfo_data->ikey, n * sizeof(unsigned int));
+		libinfo_data->idata = (void **)realloc(libinfo_data->idata, n * sizeof(void *));
+		libinfo_data->idata_destructor = (void (**)(void *))realloc(libinfo_data->idata_destructor, n * sizeof(void (*)(void *)));
 	}
 
 	libinfo_data->ikey[i] = key;
@@ -915,7 +815,6 @@ _lu_data_set_key(unsigned int key, void *data)
 	unsigned int i;
 
 	libinfo_data = _lu_data_get();
-	if (libinfo_data == NULL) return;
 
 	i = _lu_data_index(key, libinfo_data);
 	if (i == (unsigned int)-1) return;
@@ -930,7 +829,6 @@ _lu_data_get_key(unsigned int key)
 	unsigned int i;
 
 	libinfo_data = _lu_data_get();
-	if (libinfo_data == NULL) return NULL;
 
 	i = _lu_data_index(key, libinfo_data);
 	if (i == (unsigned int)-1) return NULL;
@@ -987,8 +885,6 @@ _lu_xdr_attribute(XDR *xdr, char **key, char ***val, unsigned int *count)
 	*count = len;
 
 	x = (char **)calloc(len + 1, sizeof(char *));
-	if (x == NULL) return -1;
-
 	*val = x;
 
 	for (i = 0; i < len; i++)

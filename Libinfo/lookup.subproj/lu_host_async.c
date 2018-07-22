@@ -379,6 +379,7 @@ _gethostbyaddr_async_start(const char *addr, int len, int type, a_request_callou
 
 			v4addr = malloc(len);
 			memmove(v4addr, addr, len);
+			v4addr->s_addr = htonl(v4addr->s_addr);
 
 			address = (void *)v4addr;
 			proc = proc4;

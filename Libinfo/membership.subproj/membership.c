@@ -56,7 +56,6 @@ int mbr_uid_to_uuid(uid_t id, uuid_t uu)
 	struct kauth_identity_extlookup request;
 	int result = 0;
 
-	request.el_seqno = 1;  // used as byte order field
 	request.el_flags = KAUTH_EXTLOOKUP_VALID_UID | KAUTH_EXTLOOKUP_WANT_UGUID;
 	request.el_uid = id;
 	result = _mbr_DoMembershipCall(GetServerPort(), &request);
@@ -77,7 +76,6 @@ int mbr_gid_to_uuid(gid_t id, uuid_t uu)
 	kern_return_t result;
 	int error = 0;
 
-	request.el_seqno = 1;  // used as byte order field
 	request.el_flags = KAUTH_EXTLOOKUP_VALID_GID | KAUTH_EXTLOOKUP_WANT_GGUID;
 	request.el_gid = id;
 	result = _mbr_DoMembershipCall(GetServerPort(), &request);
@@ -98,7 +96,6 @@ int mbr_uuid_to_id( const uuid_t uu, uid_t* id, int* id_type)
 	kern_return_t result;
 	int error = 0;
 
-	request.el_seqno = 1;  // used as byte order field
 	request.el_flags = KAUTH_EXTLOOKUP_VALID_UGUID | KAUTH_EXTLOOKUP_VALID_GGUID |
 						KAUTH_EXTLOOKUP_WANT_UID | KAUTH_EXTLOOKUP_WANT_GID;
 	memcpy(&request.el_uguid, uu, sizeof(guid_t));
@@ -129,7 +126,6 @@ int mbr_sid_to_uuid(const nt_sid_t* sid, uuid_t uu)
 	kern_return_t result;
 	int error = 0;
 
-	request.el_seqno = 1;  // used as byte order field
 	request.el_flags = KAUTH_EXTLOOKUP_VALID_GSID | KAUTH_EXTLOOKUP_WANT_GGUID;
 	memset(&request.el_gsid, 0, sizeof(ntsid_t));
 	memcpy(&request.el_gsid, sid, KAUTH_NTSID_SIZE(sid));
@@ -151,7 +147,6 @@ int mbr_uuid_to_sid(const uuid_t uu, nt_sid_t* sid)
 	kern_return_t result;
 	int error = 0;
 
-	request.el_seqno = 1;  // used as byte order field
 	request.el_flags = KAUTH_EXTLOOKUP_VALID_GGUID | KAUTH_EXTLOOKUP_WANT_GSID;
 	memcpy(&request.el_gguid, uu, sizeof(guid_t));
 	result = _mbr_DoMembershipCall(GetServerPort(), &request);
@@ -172,7 +167,6 @@ int mbr_check_membership(uuid_t user, uuid_t group, int* ismember)
 	kern_return_t result;
 	int error = 0;
 
-	request.el_seqno = 1;  // used as byte order field
 	request.el_flags = KAUTH_EXTLOOKUP_VALID_UGUID | KAUTH_EXTLOOKUP_VALID_GGUID |
 						KAUTH_EXTLOOKUP_WANT_MEMBERSHIP;
 	memcpy(&request.el_uguid, user, sizeof(guid_t));
@@ -197,7 +191,6 @@ int mbr_check_membership_refresh(uuid_t user, uuid_t group, int* ismember)
 	kern_return_t result;
 	int error = 0;
 
-	request.el_seqno = 1;  // used as byte order field
 	request.el_flags = KAUTH_EXTLOOKUP_VALID_UGUID | KAUTH_EXTLOOKUP_VALID_GGUID |
 						KAUTH_EXTLOOKUP_WANT_MEMBERSHIP | (1<<15);
 	memcpy(&request.el_uguid, user, sizeof(guid_t));
@@ -222,7 +215,6 @@ int mbr_check_membership_by_id(uuid_t user, gid_t group, int* ismember)
 	kern_return_t result;
 	int error = 0;
 
-	request.el_seqno = 1;  // used as byte order field
 	request.el_flags = KAUTH_EXTLOOKUP_VALID_UGUID | KAUTH_EXTLOOKUP_VALID_GID |
 						KAUTH_EXTLOOKUP_WANT_MEMBERSHIP;
 	memcpy(&request.el_uguid, user, sizeof(guid_t));
