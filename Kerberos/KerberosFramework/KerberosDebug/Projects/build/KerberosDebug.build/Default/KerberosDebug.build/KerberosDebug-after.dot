@@ -1,0 +1,33 @@
+digraph KerberosDebug {
+   size = "10.000000,8.500000";
+   concentrate = false;
+
+   node [ shape = box, style = filled, color = "0.3 0.5 0.6", fillcolor = "0.3 0.2 0.9", fontname = "Monaco", fontsize = "9" ];
+   n00001 [ label = "Default/libKerberosDebug.a\n6d0bc439600f4b7ba62abf7e70f231c6\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9", peripheries = 3 ];
+   n00002 [ label = "ppc/KerberosDebug.o\n2e6cb9daf4c9eb3652c3510be3206feb\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9" ];
+   n00003 [ label = "Sources/KerberosDebug.c\n0000000043975cde00000000000037c8\nUpToDate" ];
+   n00004 [ label = "<Default/libKerberosDebug.a>\n4f13b6f67e1b5cbff41d314c4d45186f\nDepsUpdated", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9", style = "filled,dashed" ];
+   n00005 [ label = "<postprocessing_dependency_collector>\n4f13b6f67e1b5cbff41d314c4d45186f\nDepsUpdated", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9", style = "filled,dashed" ];
+   n00006 [ label = "<postprocessing_permissions_dependency_collector>\n4f13b6f67e1b5cbff41d314c4d45186f\nDepsUpdated", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9", peripheries = 3 ];
+   n00007 [ label = "Kerberos/KerberosDebug.h\n0000000043975cde0000000000000f40\nUpToDate" ];
+   n00008 [ label = "Kerberos/KerberosLogin.h\n0000000043975cde0000000000004660\nUpToDate" ];
+   n00009 [ label = "include/stdarg.h\n0000000043765d7e00000000000010d9\nUpToDate" ];
+
+   node [ shape = box, style = "filled,bold", color = "0.7 0.5 0.7", fillcolor = "0.7 0.2 1.0", fontname = "Monaco", fontsize = "9" ];
+   c00001 [ label = "CompileC KerberosDebug.o <wt:4>\nwaitCount: 0\n0000000000e101a00000000000006e31\n^ 2e6cb9daf428ea9652c3510be32001da\n= 2e6cb9daf4c9eb3652c3510be3206feb\nNeedsToRun\n1 output is missing", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+   c00002 [ label = "Libtool libKerberosDebug.a <wt:4>\nwaitCount: 0\n2e6cb9daf4c9eb3652c3510be3206feb\n^ 43677de394c6a04df4e9ee7593d25e2d\n= 6d0bc439600f4b7ba62abf7e70f231c6\nIndirectlyNeedsToRun\nNeeds to run because at least one of the inputs to the command are scheduled to be updated.", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+   c00003 [ label = "Ranlib libKerberosDebug.a <wt:9>\nwaitCount: 0\n6d0bc439600f4b7ba62abf7e70f231c6\n^ 221872cf1e1417c452378e323db729a9\n= 4f13b6f67e1b5cbff41d314c4d45186f\nIndirectlyNeedsToRun\nNeeds to run because at least one of the inputs to the command are scheduled to be updated.", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+
+   edge [ style = solid, color = black, arrowhead = none, arrowtail = normal ];
+   n00001 -> { c00002 };
+   n00002 -> { c00001 };
+   n00004 -> { c00003 };
+   n00005 -> { n00004 };
+   n00006 -> { n00005 };
+   c00001 -> { n00003 };
+   c00002 -> { n00002 };
+   c00003 -> { n00001 };
+
+   edge [ style = solid, color = gray60, arrowhead = none, arrowtail = normal ];
+   n00003 -> { n00007 n00008 n00009 };
+}

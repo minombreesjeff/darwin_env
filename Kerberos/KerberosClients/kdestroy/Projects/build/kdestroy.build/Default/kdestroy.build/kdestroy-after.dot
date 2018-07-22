@@ -1,0 +1,26 @@
+digraph kdestroy {
+   size = "10.000000,8.500000";
+   concentrate = false;
+
+   node [ shape = box, style = filled, color = "0.3 0.5 0.6", fillcolor = "0.3 0.2 0.9", fontname = "Monaco", fontsize = "9" ];
+   n00001 [ label = "Default/kdestroy\n090b167bb16d002bf6b9fc68f346cdbe\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9", peripheries = 3 ];
+   n00002 [ label = "ppc/kdestroy.o\n0b1f982f07194fd2d8a422206393588e\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9" ];
+   n00003 [ label = "Sources/kdestroy.c\n0000000043975cda0000000000001f97\nUpToDate" ];
+   n00004 [ label = "BuiltProducts/Kerberos.framework[C]\n00000000000000000000000000000000\nUpToDate" ];
+   n00005 [ label = "<postprocessing_dependency_collector>\nffffffffffffffffffffffffffffffff\nUnknown", color = "0.0 0.0 0.5", fillcolor = "0.0 0.0 0.9", style = "filled,dashed" ];
+   n00006 [ label = "<postprocessing_permissions_dependency_collector>\nffffffffffffffffffffffffffffffff\nUnknown", color = "0.0 0.0 0.5", fillcolor = "0.0 0.0 0.9", style = "filled,dashed" ];
+   n00007 [ label = "include/stdarg.h\n0000000043765d7e00000000000010d9\nUpToDate" ];
+
+   node [ shape = box, style = "filled,bold", color = "0.7 0.5 0.7", fillcolor = "0.7 0.2 1.0", fontname = "Monaco", fontsize = "9" ];
+   c00001 [ label = "CompileC kdestroy.o <wt:4>\nwaitCount: 0\n0000000000e101a40000000000000f4e\n^ 0b1f982f07f84e76d8a42220639357c0\n= 0b1f982f07194fd2d8a422206393588e\nNeedsToRun\n1 output is missing", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+   c00002 [ label = "Ld kdestroy <wt:4>\nwaitCount: 0\n0b1f982f07194fd2d8a422206393588e\n^ 02148e54b6744ff92e1dde4890d59530\n= 090b167bb16d002bf6b9fc68f346cdbe\nIndirectlyNeedsToRun\nNeeds to run because at least one of the inputs to the command are scheduled to be updated.", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+
+   edge [ style = solid, color = black, arrowhead = none, arrowtail = normal ];
+   n00001 -> { c00002 };
+   n00002 -> { c00001 };
+   c00001 -> { n00003 };
+   c00002 -> { n00002 n00004 };
+
+   edge [ style = solid, color = gray60, arrowhead = none, arrowtail = normal ];
+   n00003 -> { n00007 };
+}

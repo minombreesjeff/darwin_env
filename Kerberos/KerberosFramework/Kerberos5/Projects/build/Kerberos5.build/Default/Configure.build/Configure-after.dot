@@ -1,0 +1,20 @@
+digraph Configure {
+   size = "10.000000,8.500000";
+   concentrate = false;
+
+   node [ shape = box, style = filled, color = "0.3 0.5 0.6", fillcolor = "0.3 0.2 0.9", fontname = "Monaco", fontsize = "9" ];
+   n00001 [ label = "<Configure.build/Script-A1B707600873129400F0C55D.sh>\nffffffffffffffffffffffffffffffff\nUnknown", color = "0.0 0.0 0.5", fillcolor = "0.0 0.0 0.9", style = "filled,dashed" ];
+   n00002 [ label = "Configure.build/Script-A1B707600873129400F0C55D.sh\n00000000000000000000000000000000\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9" ];
+   n00003 [ label = "Sources/configure\n0000000043975cdc000000000004ed0b\nUpToDate" ];
+   n00004 [ label = "build/Makefile\n91b4c4287acd7ad38127f690644ed6dd\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9", peripheries = 3 ];
+
+   node [ shape = box, style = "filled,bold", color = "0.7 0.5 0.7", fillcolor = "0.7 0.2 1.0", fontname = "Monaco", fontsize = "9" ];
+   c00001 [ label = "PhaseScriptExecution Script-A1B707600873129400F0C55D.sh <wt:1>\nwaitCount: 0\n0000000043975cdc000000000004ed0b\n^ 91b4c428395a260f8127f690644a3bd6\n= 91b4c4287acd7ad38127f690644ed6dd\nIndirectlyNeedsToRun\nNeeds to run because at least one of the inputs to the command are scheduled to be updated.", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+
+   edge [ style = solid, color = black, arrowhead = none, arrowtail = normal ];
+   n00001 -> { c00001 };
+   n00004 -> { c00001 };
+   c00001 -> { n00002 n00003 };
+
+   edge [ style = solid, color = gray60, arrowhead = none, arrowtail = normal ];
+}

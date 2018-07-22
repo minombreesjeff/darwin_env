@@ -1,0 +1,12 @@
+digraph KerberosLibraries {
+   size = "10.000000,8.500000";
+   concentrate = false;
+
+   node [ shape = box, style = filled, color = "0.3 0.5 0.6", fillcolor = "0.3 0.2 0.9", fontname = "Monaco", fontsize = "9" ];
+
+   node [ shape = box, style = "filled,bold", color = "0.7 0.5 0.7", fillcolor = "0.7 0.2 1.0", fontname = "Monaco", fontsize = "9" ];
+
+   edge [ style = solid, color = black, arrowhead = none, arrowtail = normal ];
+
+   edge [ style = solid, color = gray60, arrowhead = none, arrowtail = normal ];
+}

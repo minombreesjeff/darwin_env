@@ -1,0 +1,34 @@
+digraph SaveNewProfile {
+   size = "10.000000,8.500000";
+   concentrate = false;
+
+   node [ shape = box, style = filled, color = "0.3 0.5 0.6", fillcolor = "0.3 0.2 0.9", fontname = "Monaco", fontsize = "9" ];
+   n00001 [ label = "Default/SaveNewProfile\n9644c2f236642ef737cde4eb546d2e83\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9", peripheries = 3 ];
+   n00002 [ label = "ppc/SaveNewProfile.o\nb06b9da6df8be39702a68487d83d7192\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9" ];
+   n00003 [ label = "Sources/SaveNewProfile.c\n0000000043975cdb00000000000011ad\nUpToDate" ];
+   n00004 [ label = "ppc/UNIXReadWrite.o\n24554326c14f1253acfb85bdf8492466\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9" ];
+   n00005 [ label = "Sources/UNIXReadWrite.c\n0000000043975cda0000000000001586\nUpToDate" ];
+   n00006 [ label = "Frameworks/CoreFoundation.framework[C]\n00000000435ae2fb00000000000000ee\nUpToDate" ];
+   n00007 [ label = "Frameworks/Kerberos.framework[C]\n00000000435ae31000000000000000ee\nUpToDate" ];
+   n00008 [ label = "<postprocessing_dependency_collector>\nffffffffffffffffffffffffffffffff\nUnknown", color = "0.0 0.0 0.5", fillcolor = "0.0 0.0 0.9", style = "filled,dashed" ];
+   n00009 [ label = "<postprocessing_permissions_dependency_collector>\nffffffffffffffffffffffffffffffff\nUnknown", color = "0.0 0.0 0.5", fillcolor = "0.0 0.0 0.9", style = "filled,dashed" ];
+   n00010 [ label = "Kerberos/KerberosDebug.h\n0000000043975cde0000000000000f40\nUpToDate" ];
+   n00011 [ label = "Headers/UNIXReadWrite.h\n0000000043975cda0000000000000620\nUpToDate" ];
+
+   node [ shape = box, style = "filled,bold", color = "0.7 0.5 0.7", fillcolor = "0.7 0.2 1.0", fontname = "Monaco", fontsize = "9" ];
+   c00001 [ label = "CompileC SaveNewProfile.o <wt:2>\nwaitCount: 0\n0000000043975cdf00000000000018cd\n^ b06b9da69c1cbf4802a68487d83d695f\n= b06b9da6df8be39702a68487d83d7192\nNeedsToRun\n1 output is missing", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+   c00002 [ label = "CompileC UNIXReadWrite.o <wt:2>\nwaitCount: 0\n0000000043975cde0000000000001ce6\n^ 2455432682d84e8dacfb85bdf8493880\n= 24554326c14f1253acfb85bdf8492466\nNeedsToRun\n1 output is missing", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+   c00003 [ label = "Ld SaveNewProfile <wt:2>\nwaitCount: 0\n943ede801ec4f02fae5d013a207455f4\n^ 027a1c7228a0ded89990e5d174197b77\n= 9644c2f236642ef737cde4eb546d2e83\nIndirectlyNeedsToRun\nNeeds to run because at least one of the inputs to the command are scheduled to be updated.", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+
+   edge [ style = solid, color = black, arrowhead = none, arrowtail = normal ];
+   n00001 -> { c00003 };
+   n00002 -> { c00001 };
+   n00004 -> { c00002 };
+   c00001 -> { n00003 };
+   c00002 -> { n00005 };
+   c00003 -> { n00002 n00004 n00006 n00007 };
+
+   edge [ style = solid, color = gray60, arrowhead = none, arrowtail = normal ];
+   n00003 -> { n00010 n00011 };
+   n00005 -> { n00010 n00011 };
+}

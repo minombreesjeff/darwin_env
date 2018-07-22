@@ -1,0 +1,26 @@
+digraph klist {
+   size = "10.000000,8.500000";
+   concentrate = false;
+
+   node [ shape = box, style = filled, color = "0.3 0.5 0.6", fillcolor = "0.3 0.2 0.9", fontname = "Monaco", fontsize = "9" ];
+   n00001 [ label = "Default/klist\n7fbf61b62ea5882aa27ef2fe007ed4ee\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9", peripheries = 3 ];
+   n00002 [ label = "ppc/klist.o\n22ddf2d9afd93f1c74397c17e5143369\nMissing", color = "0.1 0.5 0.5", fillcolor = "0.1 0.2 0.9" ];
+   n00003 [ label = "Sources/klist.c\n0000000043975cdb00000000000089ed\nUpToDate" ];
+   n00004 [ label = "BuiltProducts/Kerberos.framework[C]\n00000000000000000000000000000000\nUpToDate" ];
+   n00005 [ label = "<postprocessing_dependency_collector>\nffffffffffffffffffffffffffffffff\nUnknown", color = "0.0 0.0 0.5", fillcolor = "0.0 0.0 0.9", style = "filled,dashed" ];
+   n00006 [ label = "<postprocessing_permissions_dependency_collector>\nffffffffffffffffffffffffffffffff\nUnknown", color = "0.0 0.0 0.5", fillcolor = "0.0 0.0 0.9", style = "filled,dashed" ];
+   n00007 [ label = "include/stdarg.h\n0000000043765d7e00000000000010d9\nUpToDate" ];
+
+   node [ shape = box, style = "filled,bold", color = "0.7 0.5 0.7", fillcolor = "0.7 0.2 1.0", fontname = "Monaco", fontsize = "9" ];
+   c00001 [ label = "CompileC klist.o <wt:4>\nwaitCount: 0\n0000000000e101a50000000000009934\n^ 22ddf2d9af383eb974397c17e514aa5d\n= 22ddf2d9afd93f1c74397c17e5143369\nNeedsToRun\n1 output is missing", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+   c00002 [ label = "Ld klist <wt:4>\nwaitCount: 0\n22ddf2d9afd93f1c74397c17e5143369\n^ 5d62936f817cb736d6478ee9e56ae787\n= 7fbf61b62ea5882aa27ef2fe007ed4ee\nIndirectlyNeedsToRun\nNeeds to run because at least one of the inputs to the command are scheduled to be updated.", color = "0.6 0.5 0.7", fillcolor = "0.6 0.2 1.0" ];
+
+   edge [ style = solid, color = black, arrowhead = none, arrowtail = normal ];
+   n00001 -> { c00002 };
+   n00002 -> { c00001 };
+   c00001 -> { n00003 };
+   c00002 -> { n00002 n00004 };
+
+   edge [ style = solid, color = gray60, arrowhead = none, arrowtail = normal ];
+   n00003 -> { n00007 };
+}
