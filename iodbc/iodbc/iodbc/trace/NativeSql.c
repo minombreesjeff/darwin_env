@@ -1,14 +1,13 @@
 /*
- *  itrace.c
+ *  NativeSql.c
  *
- *  $Id: itrace.c,v 1.1.1.1 2002/04/08 22:48:10 miner Exp $
+ *  $Id: NativeSql.c,v 1.1 2004/08/10 22:20:26 luesang Exp $
  *
- *  Trace functions
+ *  SQLNativeSql trace functions
  *
  *  The iODBC driver manager.
  *  
- *  Copyright (C) 1995 by Ke Jin <kejin@empress.com> 
- *  Copyright (C) 1996-2002 by OpenLink Software <iodbc@openlinksw.com>
+ *  Copyright (C) 1996-2003 by OpenLink Software <iodbc@openlinksw.com>
  *  All Rights Reserved.
  *
  *  This software is released under the terms of either of the following
@@ -70,91 +69,58 @@
  *  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "trace.h"
 
-#include <iodbc.h>
 
-#include <sql.h>
-#include <sqlext.h>
-
-#include <dlproc.h>
-
-#include <itrace.h>
-
-#include <herr.h>
-#include <henv.h>
-
-#include <stdio.h>
-
-extern char *odbcapi_symtab[];
-
-static int
-printreturn (void FAR * istm, int ret)
+void 
+trace_SQLNativeSql (int trace_leave, int retcode,
+  SQLHDBC		  hdbc,
+  SQLCHAR		* InStatementText,
+  SQLINTEGER		  TextLength1,
+  SQLCHAR		* OutStatementText,
+  SQLINTEGER		  BufferLength,
+  SQLINTEGER		* TextLength2Ptr)
 {
-  FILE FAR *stm = (FILE FAR *) istm;
-  char FAR *ptr = "Invalid return value";
+  SQLSMALLINT len = 0;
 
-  switch (ret)
-    {
-    case SQL_SUCCESS:
-      ptr = "SQL_SUCCESS";
-      break;
+  if (TextLength2Ptr)
+    len = *TextLength2Ptr;
 
-    case SQL_SUCCESS_WITH_INFO:
-      ptr = "SQL_SUCCESS_WITH_INFO";
-      break;
+  /* Trace function */
+  _trace_print_function (en_NativeSql, trace_leave, retcode);
 
-    case SQL_NO_DATA_FOUND:
-      ptr = "SQL_NO_DATA_FOUND";
-      break;
-
-    case SQL_NEED_DATA:
-      ptr = "SQL_NEED_DATA";
-      break;
-
-    case SQL_INVALID_HANDLE:
-      ptr = "SQL_INVALID_HANDLE";
-      break;
-
-    case SQL_ERROR:
-      ptr = "SQL_ERROR";
-      break;
-
-    case SQL_STILL_EXECUTING:
-      ptr = "SQL_STILL_EXECUTING";
-      break;
-
-    default:
-      break;
-    }
-
-  fprintf (stm, "%s\n", ptr);
-  fflush (stm);
-
-  return 0;
+  /* Trace Arguments */
+  _trace_handle (SQL_HANDLE_DBC, hdbc);
+  _trace_string (InStatementText, TextLength1, NULL, TRACE_INPUT);
+  _trace_stringlen ("SQLINTEGER", TextLength1);
+  _trace_string (OutStatementText, BufferLength, &len, TRACE_OUTPUT_SUCCESS);
+  _trace_stringlen ("SQLINTEGER", BufferLength);
+  _trace_integer_p (TextLength2Ptr, TRACE_OUTPUT_SUCCESS);
 }
 
 
-HPROC
-_iodbcdm_gettrproc (void FAR * istm, int procid, int type)
+void 
+trace_SQLNativeSqlW (int trace_leave, int retcode,
+  SQLHDBC		  hdbc,
+  SQLWCHAR		* InStatementText,
+  SQLINTEGER		  TextLength1,
+  SQLWCHAR		* OutStatementText,
+  SQLINTEGER		  BufferLength,
+  SQLINTEGER		* TextLength2Ptr)
 {
-  FILE FAR *stm = (FILE FAR *) istm;
+  SQLSMALLINT len = 0;
 
-  if (type == TRACE_TYPE_DM2DRV)
-    {
-#if defined (THREAD_IDENT)
-      fprintf (stm, "\n[%08lX]: %s ( ... )\n", 
-	THREAD_IDENT, odbcapi_symtab[procid]);
-#else
-      fprintf (stm, "\n%s ( ... )\n", odbcapi_symtab[procid]);
-#endif
+  if (TextLength2Ptr)
+    len = *TextLength2Ptr;
 
-      fflush (stm);
-    }
+  /* Trace function */
+  _trace_print_function (en_NativeSqlW, trace_leave, retcode);
 
-  if (type == TRACE_TYPE_RETURN)
-    {
-      return (HPROC) printreturn;
-    }
-
-  return SQL_NULL_HPROC;
+  /* Trace Arguments */
+  _trace_handle (SQL_HANDLE_DBC, hdbc);
+  _trace_string_w (InStatementText, TextLength1, NULL, TRACE_INPUT);
+  _trace_stringlen ("SQLINTEGER", TextLength1);
+  _trace_string_w (OutStatementText, BufferLength, &len, TRACE_OUTPUT_SUCCESS);
+  _trace_stringlen ("SQLINTEGER", BufferLength);
+  _trace_integer_p (TextLength2Ptr, TRACE_OUTPUT_SUCCESS);
 }

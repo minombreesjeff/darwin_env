@@ -2,7 +2,7 @@
  *
  *  iodbc.h
  *
- *  $Id: iodbc.h,v 1.4 2002/06/14 15:07:31 miner Exp $
+ *  $Id: iodbc.h,v 1.2 2004/11/11 01:52:36 luesang Exp $
  *
  *  Configuration
  *
@@ -74,16 +74,20 @@
 #ifndef	_IODBC_H
 #define _IODBC_H
 
-#if	!defined(WINDOWS) && !defined(WIN32_SYSTEM)
-#define _UNIX_
-
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
 
 #ifndef VERSION
-#define VERSION	"3.0.6"
+#define VERSION	"3.52.1"
 #endif
+
+#ifndef IODBC_BUILD
+#define IODBC_BUILD 10928	/* 0001.0928 */
+#endif
+
+#if	!defined(WINDOWS) && !defined(WIN32_SYSTEM)
+#define _UNIX_
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -98,7 +102,23 @@
 #define STRCAT(t, s)	(strcat((char*)(t), (char*)(s)))
 #define STRNCAT(t,s,n)	(strncat((char*)(t), (char*)(s), (size_t)(n)))
 #define STREQ(a, b)	(strcmp((char*)(a), (char*)(b)) == 0)
+#define STRNEQ(a, b, n)		(strncmp((char*)(a), (char*)(b), (size_t)(n)) == 0)
 #define STRLEN(str)	((str)? strlen((char*)(str)):0)
+#define STRDUP(t)		(strdup((char*)(t)))
+#define STRCASEEQ(a, b)		(strcasecmp((char*)(a), (char*)(b)) == 0)
+#define STRNCASEEQ(a, b, n)	(strncasecmp((char*)(a), (char*)(b), (size_t)(n)) == 0)
+
+#define WCSCPY(t, s)		(wcscpy((wchar_t*)(t), (wchar_t*)(s)))
+#define WCSNCPY(t,s,n)		(wcsncpy((wchar_t*)(t), (wchar_t*)(s), (size_t)(n)))
+#define WCSCAT(t, s)		(wcscat((wchar_t*)(t), (wchar_t*)(s)))
+#define WCSNCAT(t,s,n)		(wcsncat((wchar_t*)(t), (wchar_t*)(s), (size_t)(n)))
+#define WCSEQ(a, b)		(wcscmp((wchar_t*)(a), (wchar_t*)(b)) == 0)
+#define WCSNEQ(a, b, n)		(wcsncmp((wchar_t*)(a), (wchar_t*)(b), (size_t)(n)) == 0)
+#define WCSLEN(str)		((str)? wcslen((wchar_t*)(str)):0)
+#define WCSDUP(t)		(wcsdup((wchar_t*)(t)))
+#define WCSCASEEQ(a, b)		(wcscasecmp((wchar_t*)(a), (wchar_t*)(b)) == 0)
+#define WCSNCASEEQ(a, b, n)	(wcsncasecmp((wchar_t*)(a), (wchar_t*)(b), (size_t)(n)) == 0)
+
 
 #define EXPORT
 #define CALLBACK
@@ -108,22 +128,11 @@
 #define UNALIGNED
 #endif
 
-/* SEM */
-# if defined(__APPLE__)
-#    define ODBC_INI_APP "/Library/ODBC/odbc.ini"
-#    define ODBCINST_INI_APP	"/Library/ODBC/odbcinst.ini"
-# endif
-
-
-
 /*
  *  If not defined, use this as the system default odbc.ini file
  */
-/*
- *  If not defined, use this as the system default odbc.ini file
- */
-#ifndef SYS_ODBC_INI
-# ifdef _BE
+#if !defined(SYS_ODBC_INI) || (defined(__APPLE__) && !defined(ODBC_INI_APP))
+# if defined(__BEOS__)
 # 	define SYS_ODBC_INI "/boot/beos/etc/odbc.ini"
 # elif defined(_MAC)
 # 	ifdef __POWERPC__
@@ -131,21 +140,21 @@
 # 	else
 # 		define SYS_ODBC_INI "Boot:System Folder:Preferences:ODBC Preferences"
 # 	endif
-# elif defined(_MACX)
+# elif defined(__APPLE__)
 # 	define SYS_ODBC_INI "/etc/odbc.ini"
-# 	define ODBC_INI_APP "/Library/Preferences/ODBC.preference"
+# 	define ODBC_INI_APP "/Library/ODBC/odbc.ini"
 # else
 # 	define SYS_ODBC_INI "/etc/odbc.ini"
 # endif
 #endif
 
-#if !defined(SYS_ODBCINST_INI) && !defined(ODBCINST_INI_APP)
+#if !defined(SYS_ODBCINST_INI) || (defined(__APPLE__) && !defined(ODBCINST_INI_APP))
 #  if defined(__BEOS__)
 #    define SYS_ODBCINST_INI	"/boot/beos/etc/odbcinst.ini"
 #  elif defined(macintosh)
-#  elif defined(_MACX)
+#  elif defined(__APPLE__)
 #    define SYS_ODBCINST_INI	"/etc/odbcinst.ini"
-#    define ODBCINST_INI_APP	"/Library/Preferences/ODBC Installer.preference"
+#    define ODBCINST_INI_APP	"/Library/ODBC/odbcinst.ini"
 #  else
 #    define SYS_ODBCINST_INI	"/etc/odbcinst.ini"
 #  endif
@@ -201,26 +210,26 @@
 #define SYSERR		(-1)
 
 #ifndef	NULL
-#define NULL		((void FAR*)0UL)
+#define NULL		((void *)0UL)
 #endif
 
 /*
  *  Map generic pointer to internal pointer 
  */
 #define STMT(stmt, var) \
-	STMT_t FAR *stmt = (STMT_t FAR *)var
+	STMT_t *stmt = (STMT_t *)var
 
 #define CONN(con, var) \
-	DBC_t FAR *con = (DBC_t FAR *)var
+	DBC_t *con = (DBC_t *)var
 
 #define GENV(genv, var) \
-	GENV_t FAR *genv = (GENV_t FAR *)var
+	GENV_t *genv = (GENV_t *)var
 
 #define ENVR(env, var) \
-	ENV_t FAR *env = (ENV_t FAR *)var
+	ENV_t *env = (ENV_t *)var
 
 #define DESC(desc, var) \
-	DESC_t FAR *desc = (DESC_t FAR *)var
+	DESC_t *desc = (DESC_t *)var
 
 #define NEW_VAR(type, var) \
 	type *var = (type *)MEM_ALLOC(sizeof(type))

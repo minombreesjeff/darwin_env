@@ -1,13 +1,13 @@
 /*
- *  login.c
+ *  PutData.c
  *
- *  $Id: login.c,v 1.1.1.1 2002/04/08 22:48:09 miner Exp $
+ *  $Id: PutData.c,v 1.2 2004/11/11 01:52:38 luesang Exp $
  *
- *  The data_sources dialog for SQLDriverConnect and a login box procedures
+ *  SQLPutData trace functions
  *
  *  The iODBC driver manager.
  *  
- *  Copyright (C) 1999-2002 by OpenLink Software <iodbc@openlinksw.com>
+ *  Copyright (C) 1996-2003 by OpenLink Software <iodbc@openlinksw.com>
  *  All Rights Reserved.
  *
  *  This software is released under the terms of either of the following
@@ -69,61 +69,20 @@
  *  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "trace.h"
 
-#include <config.h>
-#include <iodbc.h>
-#include <iodbcinst.h>
-#include <iodbc_error.h>
 
-#include "gui.h"
-
-SQLRETURN SQL_API
-_iodbcdm_loginbox (HWND hwnd,
-    LPSTR szInOutConnStr, DWORD cbInOutConnStr, int FAR * sqlStat)
+void
+trace_SQLPutData (int trace_leave, int retcode,
+  SQLHSTMT		  hstmt,
+  SQLPOINTER		  rgbValue,
+  SQLLEN		  cbValue)
 {
-  RETCODE retcode = SQL_ERROR;
-  char *szUID = NULL, *szPWD = NULL, *szDSN = NULL, *curr;
-  TLOGIN log_t;
+  /* Trace function */
+  _trace_print_function (en_PutData, trace_leave, retcode);
 
-  /* Check input parameters */
-  if (!hwnd || !szInOutConnStr || cbInOutConnStr < 1)
-    goto quit;
-
-  /* Check if the user and password are put */
-  for (curr = szInOutConnStr; *curr; curr += (STRLEN (curr) + 1))
-    {
-      if (!strncasecmp (curr, "DSN=", STRLEN ("DSN=")))
-	szDSN = curr + STRLEN ("DSN=");
-      if (!strncasecmp (curr, "UID=", STRLEN ("UID=")))
-	szUID = curr + STRLEN ("UID=");
-      if (!strncasecmp (curr, "PWD=", STRLEN ("PWD=")))
-	szPWD = curr + STRLEN ("PWD=");
-    }
-
-  if (!szUID || !szPWD)
-    {
-      create_login (hwnd, szUID, szPWD, szDSN, &log_t);
-
-      if (log_t.user && !szUID)
-	{
-	  sprintf (curr, "UID=%s\0", log_t.user);
-	  curr += (STRLEN (curr) + 1);
-	  free (log_t.user);
-	  *curr = 0;
-	}
-
-      if (log_t.pwd)
-	{
-	  sprintf (curr, "PWD=%s\0", log_t.pwd);
-	  curr += (STRLEN (curr) + 1);
-	  free (log_t.pwd);
-	  *curr = 0;
-	}
-
-    }
-
-  retcode = SQL_SUCCESS;
-
-quit:
-  return retcode;
+  /* Trace Arguments */
+  _trace_handle (SQL_HANDLE_STMT, hstmt);
+  _trace_pointer (rgbValue);
+  _trace_len (cbValue);
 }
