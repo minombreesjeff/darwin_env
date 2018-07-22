@@ -31,6 +31,7 @@
 
 #include <Security/cssmtype.h>
 #include <security_utilities/utilities.h>
+#include "Attribute.h"
 
 namespace Tokend
 {
@@ -109,7 +110,7 @@ public:
 
 		/* If any of the values for this attribute match we have a match. */
 		for (uint32 ix = 0; ix < numValues; ++ix)
-			if (dynamic_cast<const T *>(value)->evaluate(T(attr[ix]), op))
+			if (dynamic_cast<const T *>(value)->evaluate(static_cast<const T &>(attr[ix]), op))
 				return true;
 
 		return false;
