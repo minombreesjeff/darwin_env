@@ -1,13 +1,13 @@
 /*
- *  unicode.h
+ *  iodbc_misc.h
  *
- *  $Id: unicode.h,v 1.2 2004/11/11 01:52:38 luesang Exp $
+ *  $Id: iodbc_misc.h,v 1.2 2006/07/10 13:49:46 source Exp $
  *
- *  ODBC unicode support
+ *  Misc functions
  *
  *  The iODBC driver manager.
  *
- *  Copyright (C) 1996-2003 by OpenLink Software <iodbc@openlinksw.com>
+ *  Copyright (C) 2005 by OpenLink Software <iodbc@openlinksw.com>
  *  All Rights Reserved.
  *
  *  This software is released under the terms of either of the following
@@ -69,60 +69,15 @@
  *  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef _UNICODE_H
-#define _UNICODE_H
+#ifndef	_IODBC_MISC_H_
+#define	_IODBC_MISC_H_
 
-#if HAVE_WCHAR_H
-#include <wchar.h>
-#endif
+#include "inifile.h"
 
+int _iodbcdm_cfg_init_str (PCONFIG *ppconf, void *str, int size, int wide);
+int _iodbcdm_cfg_parse_str (PCONFIG pconfig, void *str, int size, int wide);
+void *_iodbcdm_cfg_lookup (PCONFIG pconfig, const char *id);
+int _iodbcdm_cfg_to_string (PCONFIG pconfig, char *section,
+			    char *buf, size_t buf_sz);
 
-/*
- *  Max length of a UTF-8 encoded character sequence
- */
-#define UTF8_MAX_CHAR_LEN 4
-
-/*
- *  Function Prototypes
- */
-SQLCHAR *dm_SQL_W2A (SQLWCHAR * inStr, ssize_t size);
-SQLCHAR *dm_SQL_WtoU8 (SQLWCHAR * inStr, ssize_t size);
-SQLCHAR *dm_strcpy_W2A (SQLCHAR * destStr, SQLWCHAR * sourStr);
-
-SQLWCHAR *dm_SQL_A2W (SQLCHAR * inStr, ssize_t size);
-SQLWCHAR *dm_SQL_U8toW (SQLCHAR * inStr, SQLSMALLINT size);
-SQLWCHAR *dm_strcpy_A2W (SQLWCHAR * destStr, SQLCHAR * sourStr);
-
-int dm_StrCopyOut2_A2W (SQLCHAR * inStr, SQLWCHAR * outStr, SQLSMALLINT size,
-    SQLSMALLINT * result);
-int dm_StrCopyOut2_U8toW (SQLCHAR * inStr, SQLWCHAR * outStr, size_t size,
-    u_short * result);
-int dm_StrCopyOut2_W2A (SQLWCHAR * inStr, SQLCHAR * outStr, SQLSMALLINT size,
-    SQLSMALLINT * result);
-
-# ifdef WIN32
-#define OPL_W2A(w, a, cb)     \
-	WideCharToMultiByte(CP_ACP, 0, w, cb, a, cb, NULL, NULL)
-
-#define OPL_A2W(a, w, cb)     \
-	MultiByteToWideChar(CP_ACP, 0, a, cb, w, cb)
-
-# else
-#define OPL_W2A(XW, XA, SIZE)      wcstombs((char *) XA, (wchar_t *) XW, SIZE)
-#define OPL_A2W(XA, XW, SIZE)      mbstowcs((wchar_t *) XW, (char *) XA, SIZE)
-# endif
-
-/*
- *  Replacement functions
- */
-#if !defined(HAVE_WCSLEN)
-size_t wcslen (wchar_t * wcs);
-#endif
-#if !defined(HAVE_WCSCPY)
-wchar_t * wcscpy (wchar_t * wcd, const wchar_t * wcs);
-#endif
-#if !defined(HAVE_WCSNCPY)
-wchar_t * wcsncpy (wchar_t * wcd, const wchar_t * wcs, size_t n);
-#endif
-
-#endif /* _UNICODE_H */
+#endif /* _IODBC_MISC_H_ */

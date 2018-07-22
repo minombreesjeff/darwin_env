@@ -1,13 +1,13 @@
 /*
  *  unicode.c
  *
- *  $Id: unicode.c,v 1.2 2004/11/11 01:52:38 luesang Exp $
+ *  $Id: unicode.c,v 1.2 2006/01/20 15:58:35 source Exp $
  *
  *  ODBC unicode functions
  *
  *  The iODBC driver manager.
  *
- *  Copyright (C) 1996-2003 by OpenLink Software <iodbc@openlinksw.com>
+ *  Copyright (C) 1996-2006 by OpenLink Software <iodbc@openlinksw.com>
  *  All Rights Reserved.
  *
  *  This software is released under the terms of either of the following
@@ -15,6 +15,10 @@
  *
  *      - GNU Library General Public License (see LICENSE.LGPL)
  *      - The BSD License (see LICENSE.BSD).
+ *
+ *  Note that the only valid version of the LGPL license as far as this
+ *  project is concerned is the original GNU Library General Public License
+ *  Version 2, dated June 1991.
  *
  *  While not mandated by the BSD license, any patches you make to the
  *  iODBC source code may be contributed back into the iODBC project
@@ -28,8 +32,8 @@
  *  ============================================
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Library General Public
- *  License as published by the Free Software Foundation; either
- *  version 2 of the License, or (at your option) any later version.
+ *  License as published by the Free Software Foundation; only
+ *  Version 2 of the License dated June 1991.
  *
  *  This library is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -38,7 +42,7 @@
  *
  *  You should have received a copy of the GNU Library General Public
  *  License along with this library; if not, write to the Free
- *  Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  *
  *  The BSD License
@@ -69,6 +73,7 @@
  *  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #define UNICODE
 
 #include <iodbc.h>
@@ -89,7 +94,7 @@
 
 #if !defined(HAVE_WCSLEN)
 size_t
-wcslen (wchar_t * wcs)
+wcslen (const wchar_t * wcs)
 {
   size_t len = 0;
 
@@ -132,6 +137,109 @@ wcsncpy (wchar_t * wcd, const wchar_t * wcs, size_t n)
 }
 #endif
 
+#if !defined(HAVE_WCSCHR)
+wchar_t* wcschr(const wchar_t *wcs, const wchar_t wc)
+{
+  do
+    if(*wcs == wc)
+      return (wchar_t*) wcs;
+  while(*wcs++ != L'\0');
+ 
+  return NULL;
+}
+#endif
+
+#if !defined(HAVE_WCSCAT)
+wchar_t* wcscat(wchar_t *dest, const wchar_t *src)
+{
+  wchar_t *s1 = dest;
+  const wchar_t *s2 = src;
+  wchar_t c;
+  
+  do
+    c = *s1 ++;
+  while(c != L'\0');
+
+  s1 -= 2;
+  
+  do
+    {
+      c = *s2 ++;
+      *++s1 = c;
+    }
+  while(c != L'\0');
+
+  return dest;
+}
+#endif
+
+#if !defined(HAVE_WCSCMP)
+int wcscmp (const wchar_t* s1, const wchar_t* s2)
+{
+  wchar_t c1, c2;
+  
+  if (s1 == s2)
+    return 0;
+
+  do
+    {
+      c1 = *s1++;
+      c2 = *s2++;
+      if(c1 == L'\0')
+        break;
+    }
+  while (c1 == c2);
+
+  return c1 - c2;
+}
+#endif
+
+#if !defined(HAVE_TOWLOWER)
+#if (defined(__APPLE__) && !defined (_LP64)) || defined (macintosh)
+#include <Carbon/Carbon.h>
+wchar_t towlower(wchar_t wc)
+{
+#if defined (__APPLE__) && !defined (NO_FRAMEWORKS)
+#ifndef __CORESERVICES__
+#include <CoreServices/CoreServices.h>
+#endif
+
+  CFMutableStringRef strRef = CFStringCreateMutable(NULL, 0);
+  UniChar c = (UniChar)wc;
+  wchar_t wcs;
+
+  CFStringAppendCharacters(strRef, &c, 1);
+  CFStringLowercase(strRef, NULL);
+  wcs = CFStringGetCharacterAtIndex(strRef, 0);
+  CFRelease(strRef);
+
+  return wcs;
+#else
+  return wc;
+#endif
+}
+#endif
+#endif
+
+#if !defined(HAVE_WCSNCASECMP)
+int wcsncasecmp (wchar_t* s1, wchar_t* s2, size_t n)
+{
+  wchar_t c1, c2;
+  
+  if (s1 == s2 || n ==0)
+    return 0;
+
+  do
+    {
+      c1 = towlower(*s1++);
+      c2 = towlower(*s2++);
+      if(c1 == L'\0' || c1 != c2)
+        return c1 - c2;
+    } while (--n > 0);
+
+  return c1 - c2;
+}
+#endif
 
 SQLCHAR *
 dm_SQL_W2A (SQLWCHAR * inStr, ssize_t size)
@@ -150,7 +258,7 @@ dm_SQL_W2A (SQLWCHAR * inStr, ssize_t size)
   if (len < 0)
     return NULL;
 
-  if ((outStr = (SQLCHAR *) malloc (len + 1)) != NULL)
+  if ((outStr = (SQLCHAR *) malloc (len * UTF8_MAX_CHAR_LEN + 1)) != NULL)
     {
       if (len > 0)
 	OPL_W2A (inStr, outStr, len);
