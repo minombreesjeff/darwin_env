@@ -1,4 +1,4 @@
-Destination = $(DSTROOT)/usr/share/man/man5
+Destination = $(DSTROOT)/usr/share/man/man7
 
 # Common Makefile
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/Common.make
@@ -14,4 +14,4 @@ install::
 install::
 	@echo "Installing $(Destination)"
 	$(_v) $(INSTALL_DIRECTORY) "$(Destination)"
-	$(_v) $(INSTALL_FILE) -c *.5 $(Destination)
+	$(_v) $(INSTALL_FILE) -c *.7 $(Destination)
