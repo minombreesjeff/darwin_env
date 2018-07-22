@@ -649,7 +649,6 @@ lu_gethostbyaddr(const char *addr, int want, int *err)
 	if (family == AF_INET)
 	{
 		memmove(&(addr4.s_addr), addr, IPV4_ADDR_LEN);
-		addr4.s_addr = htonl(addr4.s_addr);
 		address = (char *)&(addr4.s_addr);
 		proc = proc4;
 	}

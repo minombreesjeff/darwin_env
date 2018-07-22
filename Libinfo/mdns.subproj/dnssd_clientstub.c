@@ -28,24 +28,27 @@
     Change History (most recent first):
 
 $Log: dnssd_clientstub.c,v $
-Revision 1.20.68.3  2006/05/02 16:16:08  majka
+Revision 1.20.70.3  2006/05/02 16:17:04  majka
 Make NumTries unsigned.
 
-Revision 1.20.68.2  2006/05/01 21:41:19  majka
-Additional change (make NumTries static) for 4374646.
-SUTiLondon Libinfo-222.3.3
+Revision 1.20.70.2  2006/05/01 21:43:09  majka
+Additional change (make NumTries static) for 4527193
+SUChardLondon Libinfo-222.4.6
 
-Revision 1.20.68.1  2006/05/01 16:22:28  majka
-Libinfo-222_3_2 is equivalent to SUTiLondon8J109 Libinfo-222.2
+Revision 1.20.70.1  2006/05/01 16:10:54  majka
+Libinfo-222_4_5 is equivalent to Chardonnay Libinfo-222.0.5
 
-Revision 1.20.64.1  2006/04/27 21:19:51  majka
-Bug #: 4374646
+Revision 1.20.60.1  2006/04/27 21:33:30  majka
+Integrated 4527193
 
 Revision 1.20  2005/02/03 00:39:05  majka
 Integrated 3942900
 
 Revision 1.19.4.1  2005/02/02 00:47:40  ksekar
 <rdar://problem/3942900> dnd-sd shows the wrong port numbers
+
+Revision 1.19  2004/12/23 23:10:59  majka
+*** empty log message ***
 
 Revision 1.18.8.1  2004/12/23 17:32:56  ksekar
 <rdar://problem/3931319> Rendevzous calls leak sockets if mDNSResponder is not running
