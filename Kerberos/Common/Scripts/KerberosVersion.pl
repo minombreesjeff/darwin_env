@@ -6,10 +6,10 @@ use Encode;
 Encode::perlio_ok ("utf16") or die ("can't read utf16");
 
 my $kfm = "KfM";
-my $buildVersion = "5.5.22";
-my $marketingVersion = "5.5.2";
-my $copyright = "Copyright 2005 Massachusetts Institute of Technology";
-my $shortCopyright = "Copyright 2005 MIT";
+my $buildVersion = "5.5.23";
+my $marketingVersion = "5.5.3";
+my $copyright = "Copyright 2006 Massachusetts Institute of Technology";
+my $shortCopyright = "Copyright 2006 MIT";
 
 my $root = shift @ARGV;
 $root or die "Usage: KerberosVersion <root directory>\n";
