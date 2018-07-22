@@ -1,11 +1,11 @@
 #------------------------------------------------------------------------------
 # mach file description
 #
-# Since Java bytecode and Mach-O universal binaries have the same magic number
-# the test must be preformed in the same "magic" sequence to get both right.
-# The long at offset 4 in a universal binary tells the number of architectures.
-# The short at offset 4 in a Java bytecode file is the compiler minor version
-# and the short at offset 6 is the compiler major version.  Since there are
+# Since Java bytecode and Mach-O universal binaries have the same magic number the test
+# must be preformed in the same "magic" sequence to get both right.  The long
+# at offset 4 in a universal binary tells the number of architectures.  The short at
+# offset 4 in a Java bytecode file is the compiler minor version and the
+# short at offset 6 is the compiler major version.  Since there are only 
 # only 18 labeled Mach-O architectures at current, and the first released 
 # Java class format was version 43.0, we can safely choose any number
 # between 18 and 39 to test the number of architectures against
@@ -45,13 +45,13 @@
 >4	lelong		7		i386
 >4	lelong		8		mips
 >4	lelong		9		ns32532
->4	lelong		10		architecture=10
+>4	lelong		10		m98k
 >4	lelong		11		hppa
->4	lelong		12		acorn
+>4	lelong		12		arm
 >4	lelong		13		m88k
 >4	lelong		14		sparc
->4	lelong		15		i860-big
->4	lelong		16		i860
+>4	lelong		15		i860
+>4	lelong		16		alpha
 >4	lelong		17		rs6000
 >4	lelong		18		ppc
 >4	lelong		16777223	x86_64
@@ -88,13 +88,13 @@
 >4	belong		7		i386
 >4	belong		8		mips
 >4	belong		9		ns32532
->4	belong		10		architecture=10
+>4	belong		10		m98k
 >4	belong		11		hppa
->4	belong		12		acorn
+>4	belong		12		arm
 >4	belong		13		m88k
 >4	belong		14		sparc
->4	belong		15		i860-big
->4	belong		16		i860
+>4	belong		15		i860
+>4	belong		16		alpha
 >4	belong		17		rs6000
 >4	belong		18		ppc
 >4	belong		16777223	x86_64

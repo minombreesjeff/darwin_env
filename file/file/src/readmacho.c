@@ -22,7 +22,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifdef BUILTIN_FAT
+#ifdef BUILTIN_MACHO
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,7 +46,7 @@ print_arch_name_for_file(struct magic_set *ms, cpu_type_t cputype,
 	ArchInfoTable = NXGetAllArchInfos();
 
 	for (ai = ArchInfoTable; ai->name != NULL; ai++) {
-		if(ai->cputype == cputype && ai->cpusubtype == cpusubtype) {
+		if(ai->cputype == cputype && ai->cpusubtype == (cpusubtype & ~CPU_SUBTYPE_MASK)) {
 			file_printf(ms, " (for architecture %s)", ai->name);
 			return;
 		}
@@ -57,7 +57,7 @@ print_arch_name_for_file(struct magic_set *ms, cpu_type_t cputype,
 }
 
 protected int
-file_tryfat(struct magic_set *ms, int fd, const unsigned char *buf,
+file_trymacho(struct magic_set *ms, int fd, const unsigned char *buf,
 	size_t nbytes, const char *inname)
 {
 	struct stat stat_buf;
@@ -124,10 +124,10 @@ file_tryfat(struct magic_set *ms, int fd, const unsigned char *buf,
 			return -1;
 		}
 
-		file_buffer(ms, tmpbuf, (size_t)tbytes);
+		file_buffer(ms, -1, tmpbuf, (size_t)tbytes);
 	}
 
 	free(fat_archs);
 	return 0;
 }
-#endif /* BUILTIN_FAT */
+#endif /* BUILTIN_MACHO */

@@ -1,5 +1,5 @@
 --- /dev/null	Wed Sep  8 12:48:00 2004
-+++ src/readfat.c	Wed Sep  8 12:47:48 2004
++++ src/readmacho.c	Wed Sep  8 12:47:48 2004
 @@ -0,0 +1,133 @@
 +/*
 + * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
@@ -25,7 +25,7 @@
 + * @APPLE_LICENSE_HEADER_END@
 + */
 +
-+#ifdef BUILTIN_FAT
++#ifdef BUILTIN_MACHO
 +#include <stdio.h>
 +#include <stdlib.h>
 +#include <string.h>
@@ -49,7 +49,7 @@
 +	ArchInfoTable = NXGetAllArchInfos();
 +
 +	for (ai = ArchInfoTable; ai->name != NULL; ai++) {
-+		if(ai->cputype == cputype && ai->cpusubtype == cpusubtype) {
++		if(ai->cputype == cputype && ai->cpusubtype == (cpusubtype & ~CPU_SUBTYPE_MASK)) {
 +			file_printf(ms, " (for architecture %s)", ai->name);
 +			return;
 +		}
@@ -60,7 +60,7 @@
 +}
 +
 +protected int
-+file_tryfat(struct magic_set *ms, int fd, const unsigned char *buf,
++file_trymacho(struct magic_set *ms, int fd, const unsigned char *buf,
 +	size_t nbytes, const char *inname)
 +{
 +	struct stat stat_buf;
@@ -127,10 +127,10 @@
 +			return -1;
 +		}
 +
-+		file_buffer(ms, tmpbuf, (size_t)tbytes);
++		file_buffer(ms, -1, tmpbuf, (size_t)tbytes);
 +	}
 +
 +	free(fat_archs);
 +	return 0;
 +}
-+#endif /* BUILTIN_FAT */
++#endif /* BUILTIN_MACHO */
