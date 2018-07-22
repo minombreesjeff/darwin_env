@@ -128,4 +128,3 @@ public:
 
 #endif /* !_TOKEND_METAATTRIBUTE_H_ */
 
-/* arch-tag: E95D3E68-DF80-11D8-B030-000A95C4302E */
