@@ -16,6 +16,8 @@ tty:*:4:root
 operator:*:5:root
 mail:*:6:
 bin:*:7:
+procview:*:8:root
+procmod:*:9:root
 staff:*:20:root
 lp:*:26:
 postfix:*:27:
