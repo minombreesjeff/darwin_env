@@ -1,7 +1,6 @@
 /*
  * kdc/do_as_req.c
  *
- * Portions Copyright (C) 2007 Apple Inc.
  * Copyright 1990,1991 by the Massachusetts Institute of Technology.
  * All Rights Reserved.
  *
@@ -53,13 +52,6 @@
 int kdc_update_pws( const char *in_user_principle, int in_error, int inCheck, krb5_db_entry server );
 #endif
 
-#define     AS_REQ_DEBUG    0
-#if	    AS_REQ_DEBUG
-#define     asReqDebug(args...)       printf(args)
-#else
-#define     asReqDebug(args...)
-#endif
-
 static krb5_error_code prepare_error_as (krb5_kdc_req *, int, krb5_data *, 
 					 krb5_data **, const char *);
 
@@ -94,9 +86,6 @@ process_as_req(krb5_kdc_req *request, krb5_data *req_pkt,
     char rep_etypestr[128];
     char fromstringbuf[70];
     void *pa_context = NULL;
-
-    asReqDebug("process_as_req top realm %s name %s\n", 
-	request->client->realm.data, request->client->data->data);
 
     ticket_reply.enc_part.ciphertext.data = 0;
     e_data.data = 0;
@@ -242,7 +231,35 @@ process_as_req(krb5_kdc_req *request, krb5_data *req_pkt,
 		min(enc_tkt_reply.times.starttime + server.max_life,
 		    enc_tkt_reply.times.starttime + max_life_for_realm)));
 
-	/* delay further time-related processing until after preauth check */
+    if (isflagset(request->kdc_options, KDC_OPT_RENEWABLE_OK) &&
+	!isflagset(client.attributes, KRB5_KDB_DISALLOW_RENEWABLE) &&
+	(enc_tkt_reply.times.endtime < request->till)) {
+
+	/* we set the RENEWABLE option for later processing */
+
+	setflag(request->kdc_options, KDC_OPT_RENEWABLE);
+	request->rtime = request->till;
+    }
+    rtime = (request->rtime == 0) ? kdc_infinity : request->rtime;
+
+    if (isflagset(request->kdc_options, KDC_OPT_RENEWABLE)) {
+	/*
+	 * XXX Should we squelch the output renew_till to be no
+	 * earlier than the endtime of the ticket? 
+	 */
+	setflag(enc_tkt_reply.flags, TKT_FLG_RENEWABLE);
+	enc_tkt_reply.times.renew_till =
+	    min(rtime, enc_tkt_reply.times.starttime +
+		       min(client.max_renewable_life,
+			   min(server.max_renewable_life,
+			       max_renewable_life_for_realm)));
+    } else
+	enc_tkt_reply.times.renew_till = 0; /* XXX */
+
+    /* starttime is optional, and treated as authtime if not present.
+       so we can nuke it if it matches */
+    if (enc_tkt_reply.times.starttime == enc_tkt_reply.times.authtime)
+	enc_tkt_reply.times.starttime = 0;
 
     enc_tkt_reply.caddrs = request->addresses;
     enc_tkt_reply.authorization_data = 0;
@@ -277,36 +294,6 @@ process_as_req(krb5_kdc_req *request, krb5_data *req_pkt,
 	} 
     }
 
-    if (isflagset(request->kdc_options, KDC_OPT_RENEWABLE_OK) &&
-	!isflagset(client.attributes, KRB5_KDB_DISALLOW_RENEWABLE) &&
-	(enc_tkt_reply.times.endtime < request->till)) {
-
-	/* we set the RENEWABLE option for later processing */
-
-	setflag(request->kdc_options, KDC_OPT_RENEWABLE);
-	request->rtime = request->till;
-    }
-    rtime = (request->rtime == 0) ? kdc_infinity : request->rtime;
-
-    if (isflagset(request->kdc_options, KDC_OPT_RENEWABLE)) {
-	/*
-	 * XXX Should we squelch the output renew_till to be no
-	 * earlier than the endtime of the ticket? 
-	 */
-	setflag(enc_tkt_reply.flags, TKT_FLG_RENEWABLE);
-	enc_tkt_reply.times.renew_till =
-	    min(rtime, enc_tkt_reply.times.starttime +
-		       min(client.max_renewable_life,
-			   min(server.max_renewable_life,
-			       max_renewable_life_for_realm)));
-    } else
-	enc_tkt_reply.times.renew_till = 0; /* XXX */
-
-    /* starttime is optional, and treated as authtime if not present.
-       so we can nuke it if it matches */
-    if (enc_tkt_reply.times.starttime == enc_tkt_reply.times.authtime)
-	enc_tkt_reply.times.starttime = 0;
-
     /*
      * Final check before handing out ticket: If the client requires
      * preauthentication, verify that the proper kind of
@@ -318,11 +305,6 @@ process_as_req(krb5_kdc_req *request, krb5_data *req_pkt,
 	get_preauth_hint_list(request, &client, &server, &e_data);
 	goto errout;
     }
-
-	errcode = handle_authdata(kdc_context, &client, req_pkt, request, &enc_tkt_reply);
-	if (errcode) {
-		krb5_klog_syslog(LOG_INFO,  "AS_REQ : handle_authdata (%d)", errcode);
-	}
 
     ticket_reply.enc_part2 = &enc_tkt_reply;
 
@@ -414,9 +396,6 @@ process_as_req(krb5_kdc_req *request, krb5_data *req_pkt,
 	status = "KDC_RETURN_PADATA";
 	goto errout;
     }
-
-    asReqDebug("process_as_req reply realm %s name %s\n", 
-	reply.client->realm.data, reply.client->data->data);
 
     /* now encode/encrypt the response */
 
