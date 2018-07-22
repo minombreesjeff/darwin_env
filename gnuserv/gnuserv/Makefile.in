@@ -114,7 +114,7 @@ COMPILE_FLAGS = -I. -I$(srcdir) $(DEFS) $(CPPFLAGS) $(CFLAGS)
 
 .SUFFIXES: .el .elc
 .el.elc:
-	$(EMACS) -batch -f batch-byte-compile $<
+	$(EMACS) -batch -l loadup -f batch-byte-compile $<
 
 all: all-gnuserv
 all-info: info
@@ -244,11 +244,11 @@ gnuslib.o: gnuslib.c gnuserv.h getopt.o config.h
 getopt.o: getopt.c getopt.h config.h
 
 gnuserv-compat.elc: gnuserv-compat.el
-	$(EMACS) --no-site-file -batch \
+	$(EMACS) -batch -l loadup \
 		--eval "(add-to-list 'load-path \".\")" \
 		-l gnuserv-compat  -f batch-byte-compile $<
 gnuserv.elc: gnuserv.el
-	$(EMACS) --no-site-file -batch \
+	$(EMACS) -batch -l loadup \
 	--eval "(add-to-list 'load-path \".\")" \
 	-l gnuserv-compat -f batch-byte-compile $<
 devices.elc: devices.el

@@ -17,7 +17,9 @@ ENV=	CFLAGS="$(RC_ARCHS:%=-arch %) -no-cpp-precomp"
 # directory.  Unfortunately, that means hard coding  the path to the emacs lisp
 # directory, which happens to have the emacs version number embedded in it.  As
 # such, this variable needs updated every time the emacs version changes.
-EMACS_VERSION := 21.1
+EMACS_VERSION := 21.2
+# byte-compile using temacs (3325521)
+TEMACS=/usr/bin/emacs-undumped
 
 INSTALLED_BINS := gnuserv gnuclient
 
@@ -37,7 +39,7 @@ install :
 	$(SHELL) -ec \
 	'cd $(SRCROOT)/gnuserv; \
 	$(ENV) ./configure --prefix=$(DSTROOT)/usr; \
-	$(ENV) $(MAKE); \
+	$(ENV) $(MAKE) EMACS="$(TEMACS)"; \
 	$(ENV) $(MAKE) install; \
 	$(ENV) $(MAKE) distclean; \
 	mkdir -p $(DSTROOT)/usr/share; \
