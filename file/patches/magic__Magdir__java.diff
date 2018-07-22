@@ -8,9 +8,9 @@
 ->6	beshort x	version %d.
 ->4	beshort x	\b%d
 +#
-+# The Java magic number is the same as the Mach-O fat file magic number.
-+# To make the file(1) command work with both, the Java Bytecode magic was
-+# merged with the Mach-O magic in the file mach.
++# The Java magic number is the same as the Mach-O universal binary magic
++# number.  To make the file(1) command work with both, the Java Bytecode magic
++# was merged with the Mach-O magic in the file mach.
 +#
 +#0	belong		0xcafebabe	compiled Java class data,
 +#>6	beshort x	version %d.
