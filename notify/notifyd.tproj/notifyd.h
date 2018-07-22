@@ -1,8 +1,8 @@
 /*
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2010 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -21,38 +21,36 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef _FILE_WATCHER_H_
-#define _FILE_WATCHER_H_
+#ifndef _NOTIFY_DAEMON_H_
+#define _NOTIFY_DAEMON_H_
 
-#include "watcher.h"
-#include "w_event.h"
-#include <sys/types.h>
-#include <sys/stat.h>
+#include <libnotify.h>
+#include <mach/mach.h>
+#include <launch.h>
+#include <dispatch/dispatch.h>
 
-#define FS_TYPE_NONE  0
-#define FS_TYPE_FILE  1
-#define FS_TYPE_DIR   2
-#define FS_TYPE_LINK  3
-
-typedef struct
+struct global_s
 {
-	watcher_t *w;
-	uintptr_t kqident;
-	char *path;
-	uint32_t flags;
-	uint32_t ftype;
-	struct stat *sb;
-	struct stat *targetsb;
-	watcher_t *parent;
-	watcher_t *linktarget;
-	w_event_t *contents;
-	w_event_t *tail;
-} file_watcher_t;
+	mach_port_t server_port;
+	launch_data_t launch_dict;
+	notify_state_t *notify_state;
+	dispatch_queue_t work_q;
+	uint32_t request_size;
+	uint32_t reply_size;
+	uint32_t nslots;
+	uint32_t slot_id;
+	uint32_t *shared_memory_base;
+	uint32_t *shared_memory_refcount;
+	uint32_t log_cutoff;
+	uint32_t log_default;
+	FILE *log_file;
+} global;
 
-watcher_t *file_watcher_for_path(const char *p);
-watcher_t *file_watcher_new(const char *p);
-int32_t file_watcher_trigger(watcher_t *w, uint32_t flags, uint32_t level);
-void file_watcher_free(watcher_t *w);
-w_event_t *file_watcher_history(watcher_t *w);
+extern void log_message(int priority, const char *str, ...);
+extern uint32_t daemon_post(const char *name, uint32_t u, uint32_t g);
+extern void daemon_post_client(uint32_t cid);
+extern void daemon_set_state(const char *name, uint64_t val);
+extern void dump_status(uint32_t level);
+extern void cancel_port(mach_port_t port);
 
-#endif /* _FILE_WATCHER_H_ */
+#endif /* _NOTIFY_DAEMON_H_ */
