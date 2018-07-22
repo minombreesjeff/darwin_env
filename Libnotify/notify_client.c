@@ -660,6 +660,7 @@ notify_register_file_descriptor(const char *name, int *notify_fd, int flags, int
 {
 	kern_return_t kstatus;
 	uint32_t status, cid, port, len;
+	uint16_t sport;
 	struct sockaddr_in sin;
 	task_t task;
 	security_token_t sec;
@@ -685,7 +686,8 @@ notify_register_file_descriptor(const char *name, int *notify_fd, int flags, int
 
 	status = getsockname(*notify_fd, (struct sockaddr *)&sin, &len);
 	if (status < 0) return NOTIFY_STATUS_INVALID_FILE;
-	port = sin.sin_port;
+	sport = ntohs(sin.sin_port);
+	port = sport;
 
 	if (!strncmp(name, SELF_PREFIX, SELF_PREFIX_LEN))
 	{
@@ -735,7 +737,7 @@ uint32_t
 notify_check(int token, int *check)
 {
 	kern_return_t kstatus;
-	uint32_t status;
+	uint32_t status, val;
 	token_table_node_t *t;
 	security_token_t sec;
 
@@ -753,10 +755,11 @@ notify_check(int token, int *check)
 	if (t->flags & TOKEN_TYPE_MEMORY)
 	{
 		*check = 0;
-		if (t->val != shm_base[t->slot])
+		val = ntohl(shm_base[t->slot]);
+		if (t->val != val)
 		{
 			*check = 1;
-			t->val = shm_base[t->slot];
+			t->val = val;
 		}
 		return NOTIFY_STATUS_OK;
 	}
@@ -787,7 +790,7 @@ notify_peek(int token, uint32_t *val)
 
 	if (t->flags & TOKEN_TYPE_MEMORY)
 	{
-		*val = shm_base[t->slot];
+		*val = ntohl(shm_base[t->slot]);
 		return NOTIFY_STATUS_OK;
 	}
 
@@ -960,7 +963,7 @@ notify_get_val(int token, int *val)
 
 	if (t->flags & TOKEN_TYPE_MEMORY)
 	{
-		*val = shm_base[t->slot];
+		*val = ntohl(shm_base[t->slot]);
 		return NOTIFY_STATUS_OK;
 	}
 

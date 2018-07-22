@@ -37,6 +37,8 @@
 #include "notify.h"
 #include "common.h"
 
+#define MACH_PORT_SEND_TIMEOUT 50
+
 /* Required to prevent deadlocks */
 int __notify_78945668_info__ = 0;
 
@@ -343,6 +345,7 @@ static void
 _internal_send(notify_state_t *ns, client_t *c)
 {
 	uint32_t cid, status;
+	uint16_t sport;
 	struct sockaddr_in sin;
 	kern_return_t kstatus;
 
@@ -361,19 +364,22 @@ _internal_send(notify_state_t *ns, client_t *c)
 			memset(&sin, 0, sizeof(struct sockaddr_in));
 			sin.sin_family = AF_INET;
 			sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-			sin.sin_port = c->info->port;
-			cid = c->info->token;
+			sport = c->info->port;
+			sin.sin_port = htons(sport);
+			cid = htonl(c->info->token);
 			status = sendto(ns->sock, &cid, 4, 0, (struct sockaddr *)&sin, sizeof(struct sockaddr_in));
 			break;
 		case NOTIFY_TYPE_PORT:
 			c->info->msg->header.msgh_id = (mach_msg_id_t)(c->info->token);
-			kstatus = mach_msg(&(c->info->msg->header), 
-				MACH_SEND_MSG, 
-				c->info->msg->header.msgh_size, 
-				0, 
-				MACH_PORT_NULL,
-				MACH_MSG_TIMEOUT_NONE,
-				MACH_PORT_NULL);
+
+			kstatus = mach_msg(&(c->info->msg->header),
+							   MACH_SEND_MSG | MACH_SEND_TIMEOUT,
+							   c->info->msg->header.msgh_size,
+							   0,
+							   MACH_PORT_NULL,
+							   MACH_PORT_SEND_TIMEOUT,
+							   MACH_PORT_NULL);
+
 			if (kstatus == MACH_SEND_INVALID_DEST)
 			{
 				/* XXX clean up XXX */
@@ -845,6 +851,7 @@ _notify_lib_register_signal(notify_state_t *ns, const char *name, task_t task, u
 /*
  * Register for notification on a file descriptor.
  * Returns the client_id;
+ * NB port is passed in host byte order in a 32 bit int.
  */
 uint32_t
 _notify_lib_register_file_descriptor(notify_state_t *ns, const char *name, task_t task, uint32_t port, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token)
