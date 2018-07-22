@@ -59,54 +59,57 @@ extern mach_port_t _lookupd_port();
 static int gai_proc = -1;
 static int gni_proc = -1;
 
-static int32_t supported_family[] =
+static const int32_t supported_family[] =
 {
 	PF_UNSPEC,
 	PF_INET,
 	PF_INET6
 };
-static int32_t supported_family_count = 3;
+static const int32_t supported_family_count = (sizeof(supported_family) / sizeof(supported_family[0]));
 
-static int32_t supported_socket[] =
+static const int32_t supported_socket[] =
 {
 	SOCK_RAW,
 	SOCK_UNSPEC,
 	SOCK_DGRAM,
 	SOCK_STREAM
 };
-static int32_t supported_socket_count = 4;
+static const int32_t supported_socket_count = (sizeof(supported_socket) / sizeof(supported_socket[0]));
 
-static int32_t supported_protocol[] =
+static const int32_t supported_protocol[] =
 {
 	IPPROTO_UNSPEC,
+	IPPROTO_ICMP,
 	IPPROTO_ICMPV6,
 	IPPROTO_UDP,
 	IPPROTO_TCP
 };
-static int32_t supported_protocol_count = 4;
+static const int32_t supported_protocol_count = (sizeof(supported_protocol) / sizeof(supported_protocol[0]));
 
-static int32_t supported_socket_protocol_pair[] =
+static const int32_t supported_socket_protocol_pair[] =
 {
 	SOCK_RAW,    IPPROTO_UNSPEC,
 	SOCK_RAW,    IPPROTO_UDP,
 	SOCK_RAW,    IPPROTO_TCP,
+	SOCK_RAW,    IPPROTO_ICMP,
 	SOCK_RAW,    IPPROTO_ICMPV6,
 	SOCK_UNSPEC, IPPROTO_UNSPEC,
 	SOCK_UNSPEC, IPPROTO_UDP,
 	SOCK_UNSPEC, IPPROTO_TCP,
+	SOCK_UNSPEC, IPPROTO_ICMP,
 	SOCK_UNSPEC, IPPROTO_ICMPV6,
 	SOCK_DGRAM,  IPPROTO_UNSPEC,
 	SOCK_DGRAM,  IPPROTO_UDP,
 	SOCK_STREAM, IPPROTO_UNSPEC,
 	SOCK_STREAM, IPPROTO_TCP
 };
-static int32_t supported_socket_protocol_pair_count = 12;
+static const int32_t supported_socket_protocol_pair_count = (sizeof(supported_socket_protocol_pair) / (sizeof(supported_socket_protocol_pair[0]) * 2));
 
 static int
 gai_family_type_check(int32_t f)
 {
 	int32_t i;
-	
+
 	for (i = 0; i < supported_family_count; i++)
 	{
 		if (f == supported_family[i]) return 0;
@@ -119,7 +122,7 @@ static int
 gai_socket_type_check(int32_t s)
 {
 	int32_t i;
-	
+
 	for (i = 0; i < supported_socket_count; i++)
 	{
 		if (s == supported_socket[i]) return 0;
@@ -132,7 +135,7 @@ static int
 gai_protocol_type_check(int32_t p)
 {
 	int32_t i;
-	
+
 	for (i = 0; i < supported_protocol_count; i++)
 	{
 		if (p == supported_protocol[i]) return 0;
@@ -145,7 +148,7 @@ static int
 gai_socket_protocol_type_check(int32_t s, int32_t p)
 {
 	int32_t i, j, ss, sp;
-	
+
 	for (i = 0, j = 0; i < supported_socket_protocol_pair_count; i++, j+=2)
 	{
 		ss = supported_socket_protocol_pair[j];
@@ -547,7 +550,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 			return EAI_SYSTEM;
 		}
 	}
-	
+
 	if (socktype != SOCK_UNSPEC)
 	{
 		snprintf(str, 64, "%u", socktype);
@@ -557,7 +560,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 			return EAI_SYSTEM;
 		}
 	}
-	
+
 	if (family != PF_UNSPEC)
 	{
 		snprintf(str, 64, "%u", family);
@@ -567,7 +570,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 			return EAI_SYSTEM;
 		}
 	}
-	
+
 	if (canonname != 0)
 	{
 		if (encode_kv(&outxdr, "canonname", "1") != 0)
@@ -576,7 +579,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 			return EAI_SYSTEM;
 		}
 	}
-	
+
 	if (passive != 0)
 	{
 		if (encode_kv(&outxdr, "passive", "1") != 0)
@@ -585,7 +588,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 			return EAI_SYSTEM;
 		}
 	}
-	
+
 	if (parallel != 0)
 	{
 		if (encode_kv(&outxdr, "parallel", "1") != 0)
@@ -594,7 +597,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 			return EAI_SYSTEM;
 		}
 	}
-	
+
 	if (numerichost != 0)
 	{
 		if (encode_kv(&outxdr, "numerichost", "1") != 0)
@@ -607,7 +610,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 	*len = xdr_getpos(&outxdr);
 
 	xdr_destroy(&outxdr);
-	
+
 	return 0;
 }
 
@@ -627,10 +630,128 @@ is_a_number(const char *s)
 	return 1;
 }
 
+static int
+gai_trivial(struct in_addr *in4, struct in6_addr *in6, int16_t port, const struct addrinfo *hints, struct addrinfo **res)
+{
+	int32_t family, wantv4, wantv6, proto;
+	char *loopv4, *loopv6;
+	struct in_addr a4;
+	struct in6_addr a6;
+	struct addrinfo *a;
+
+	family = PF_UNSPEC;
+	if (hints != NULL) family = hints->ai_family;
+
+	wantv4 = 1;
+	wantv6 = 1;
+
+	if (family == PF_INET6) wantv4 = 0;
+	if (family == PF_INET) wantv6 = 0;
+
+	memset(&a4, 0, sizeof(struct in_addr));
+	memset(&a6, 0, sizeof(struct in6_addr));
+
+	if ((in4 == NULL) && (in6 == NULL))
+	{
+		loopv4 = "127.0.0.1";
+		loopv6 = "0:0:0:0:0:0:0:1";
+
+		if ((hints != NULL) && ((hints->ai_flags & AI_PASSIVE) == 1))
+		{
+			loopv4 = "0.0.0.0";
+			loopv6 = "0:0:0:0:0:0:0:0";
+		}
+
+		if ((family == PF_UNSPEC) || (family == PF_INET))
+		{
+			inet_pton(AF_INET, loopv4, &a4);
+		}
+
+		if ((family == PF_UNSPEC) || (family == PF_INET6))
+		{
+			inet_pton(AF_INET6, loopv6, &a6);
+		}
+	}
+	else if (in4 == NULL)
+	{
+		if (family == PF_INET) return EAI_BADHINTS;
+
+		wantv4 = 0;
+		memcpy(&a6, in6, sizeof(struct in6_addr));
+	}
+	else if (in6 == NULL)
+	{
+		if (family == PF_INET6) return EAI_BADHINTS;
+
+		wantv6 = 0;
+		memcpy(&a4, in4, sizeof(struct in_addr));
+	}
+	else
+	{
+		return EAI_NODATA;
+	}
+
+	proto = IPPROTO_UNSPEC;
+
+	if (hints != NULL)
+	{
+		proto = hints->ai_protocol;
+		if (proto == IPPROTO_UNSPEC)
+		{
+			if (hints->ai_socktype == SOCK_DGRAM) proto = IPPROTO_UDP;
+			else if (hints->ai_socktype == SOCK_STREAM) proto = IPPROTO_TCP;
+		}
+	}
+
+	if (wantv4 == 1)
+	{
+		if ((proto == IPPROTO_UNSPEC) || (proto == IPPROTO_UDP))
+		{
+			a = new_addrinfo_v4(0, SOCK_DGRAM, IPPROTO_UDP, port, a4, 0, NULL);
+			append_addrinfo(res, a);
+		}
+
+		if ((proto == IPPROTO_UNSPEC) || (proto == IPPROTO_TCP))
+		{
+			a = new_addrinfo_v4(0, SOCK_STREAM, IPPROTO_TCP, port, a4, 0, NULL);
+			append_addrinfo(res, a);
+		}
+
+		if (proto == IPPROTO_ICMP)
+		{
+			a = new_addrinfo_v4(0, SOCK_RAW, IPPROTO_ICMP, port, a4, 0, NULL);
+			append_addrinfo(res, a);
+		}
+	}
+
+	if (wantv6 == 1)
+	{
+		if ((proto == IPPROTO_UNSPEC) || (proto == IPPROTO_UDP))
+		{
+			a = new_addrinfo_v6(0, SOCK_DGRAM, IPPROTO_UDP, port, a6, 0, NULL);
+			append_addrinfo(res, a);
+		}
+
+		if ((proto == IPPROTO_UNSPEC) || (proto == IPPROTO_TCP))
+		{
+			a = new_addrinfo_v6(0, SOCK_STREAM, IPPROTO_TCP, port, a6, 0, NULL);
+			append_addrinfo(res, a);
+		}
+
+		if (proto == IPPROTO_ICMPV6)
+		{
+			a = new_addrinfo_v6(0, SOCK_RAW, IPPROTO_ICMPV6, port, a6, 0, NULL);
+			append_addrinfo(res, a);
+		}
+	}
+
+	return 0;
+}
+
 int
 gai_files(const char *nodename, const char *servname, const struct addrinfo *hints, struct addrinfo **res)
 {
-	int32_t i, numericserv, numerichost, family, proto, wantv4, wantv6;
+	int32_t i, status, numericserv, numerichost, family, proto, wantv4, wantv6;
 	int16_t port;
 	struct servent *s;
 	struct hostent *h;
@@ -674,14 +795,22 @@ gai_files(const char *nodename, const char *servname, const struct addrinfo *hin
 	{
 		if ((family == PF_UNSPEC) || (family == PF_INET))
 		{
-			numerichost = inet_pton(AF_INET, nodename, &a4);
-			if ((numerichost == 1) && (family == PF_UNSPEC)) family = PF_INET;
+			status = inet_pton(AF_INET, nodename, &a4);
+			if (status == 1)
+			{
+				numerichost = 1;
+				if (family == PF_UNSPEC) family = PF_INET;
+			}
 		}
 
 		if ((family == PF_UNSPEC) || (family == PF_INET6))
 		{
-			numerichost = inet_pton(AF_INET6, nodename, &a6);
-			if ((numerichost == 1) && (family == PF_UNSPEC)) family = PF_INET6;
+			status = inet_pton(AF_INET6, nodename, &a6);
+			if (status == 1)
+			{
+				numerichost = 1;
+				if (family == PF_UNSPEC) family = PF_INET6;
+			}
 		}
 	}
 
@@ -737,6 +866,12 @@ gai_files(const char *nodename, const char *servname, const struct addrinfo *hin
 				a = new_addrinfo_v4(0, SOCK_STREAM, IPPROTO_TCP, port, a4, 0, NULL);
 				append_addrinfo(res, a);
 			}
+
+			if (proto == IPPROTO_ICMP)
+			{
+				a = new_addrinfo_v4(0, SOCK_RAW, IPPROTO_ICMP, port, a4, 0, NULL);
+				append_addrinfo(res, a);
+			}
 		}
 
 		if (wantv6 == 1)
@@ -750,6 +885,12 @@ gai_files(const char *nodename, const char *servname, const struct addrinfo *hin
 			if ((proto == IPPROTO_UNSPEC) || (proto == IPPROTO_TCP))
 			{
 				a = new_addrinfo_v6(0, SOCK_STREAM, IPPROTO_TCP, port, a6, 0, NULL);
+				append_addrinfo(res, a);
+			}
+
+			if (proto == IPPROTO_ICMPV6)
+			{
+				a = new_addrinfo_v6(0, SOCK_RAW, IPPROTO_ICMPV6, port, a6, 0, NULL);
 				append_addrinfo(res, a);
 			}
 		}
@@ -877,6 +1018,10 @@ int
 getaddrinfo(const char * __restrict nodename, const char * __restrict servname, const struct addrinfo * __restrict hints, struct addrinfo ** __restrict res)
 {
 	int32_t status, nodenull, servnull;
+	int32_t numericserv, numerichost, family;
+	int16_t port;
+	struct in_addr a4, *p4;
+	struct in6_addr a6, *p6;
 
 	if (res == NULL) return 0;
 	*res = NULL;
@@ -887,10 +1032,59 @@ getaddrinfo(const char * __restrict nodename, const char * __restrict servname, 
 
 	servnull = 0;
 	if ((servname == NULL) || (servname[0] == '\0')) servnull = 1;
-	
+
 	if ((nodenull == 1) && (servnull == 1)) return EAI_NONAME;
+
 	status = gai_checkhints(hints);
 	if (status != 0) return status;
+
+	/*
+	 * Trap the "trivial" cases that can be answered without a query.
+	 * (nodename == numeric) && (servname == NULL)
+	 * (nodename == numeric) && (servname == numeric)
+	 * (nodename == NULL) && (servname == numeric)
+	 */
+	p4 = NULL;
+	p6 = NULL;
+
+	memset(&a4, 0, sizeof(struct in_addr));
+	memset(&a6, 0, sizeof(struct in6_addr));
+
+	numericserv = 0;
+	port = 0;
+	if (servnull == 0) numericserv = is_a_number(servname);
+	if (numericserv == 1) port = atoi(servname);
+
+	family = PF_UNSPEC;
+	if (hints != NULL) family = hints->ai_family;
+
+	numerichost = 0;
+	if (nodenull == 0)
+	{
+		if ((family == PF_UNSPEC) || (family == PF_INET))
+		{
+			status = inet_pton(AF_INET, nodename, &a4);
+			if (status == 1)
+			{
+				p4 = &a4;
+				numerichost = 1;
+			}
+		}
+
+		if ((family == PF_UNSPEC) || (family == PF_INET6))
+		{
+			status = inet_pton(AF_INET6, nodename, &a6);
+			if (status == 1)
+			{
+				p6 = &a6;
+				numerichost = 1;
+			}
+		}
+	}
+
+	if ((nodenull == 1) && (numericserv == 1)) return gai_trivial(NULL, NULL, port, hints, res);
+	if ((numerichost == 1) && (numericserv == 1)) return gai_trivial(p4, p6, port, hints, res);
+	if ((numerichost == 1) && (servnull == 1)) return gai_trivial(p4, p6, 0, hints, res);
 
 	if (nodenull == 1) status = gai_lookupd(NULL, servname, hints, res);
 	else if (servnull == 1) status = gai_lookupd(nodename, NULL, hints, res);
@@ -1092,7 +1286,7 @@ gni_lookupd_process_dictionary(XDR *inxdr, char **host, char **serv)
 		key = NULL;
 		vals = NULL;
 		nvals = 0;
-		
+
 		status = _lu_xdr_attribute(inxdr, &key, &vals, (uint32_t *)&nvals);
 		if (status < 0) return EAI_SYSTEM;
 
@@ -1192,7 +1386,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 			ifnum = s6->sin6_addr.__u6_addr.__u6_addr16[1];
 			if (ifnum == 0) ifnum = s6->sin6_scope_id;
 			else if ((s6->sin6_scope_id != 0) && (ifnum != s6->sin6_scope_id)) return EAI_FAIL;
-			
+
 			s6->sin6_addr.__u6_addr.__u6_addr16[1] = 0;
 			s6->sin6_scope_id = ifnum;
 			if ((ifnum != 0) && (flags & NI_NUMERICHOST)) flags |= NI_WITHSCOPEID;
@@ -1329,7 +1523,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 	*len = xdr_getpos(&outxdr);
 
 	xdr_destroy(&outxdr);
-	
+
 	return 0;
 }
 
@@ -1391,7 +1585,7 @@ getnameinfo(const struct sockaddr * __restrict sa, socklen_t salen, char * __res
 			return i;
 		}
 	}
-		
+
 	wanth = 0;
 	if ((host != NULL) && (hostlen != 0)) wanth = 1;
 
