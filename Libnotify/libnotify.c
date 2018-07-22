@@ -35,10 +35,13 @@
 #include <mach/mach.h>
 #include <errno.h>
 #include <pthread.h>
+#include "libnotify.h"
 #include "notify.h"
-#include "common.h"
 
 #define MACH_PORT_SEND_TIMEOUT 50
+
+#define USER_PROTECTED_UID_PREFIX "user.uid."
+#define USER_PROTECTED_UID_PREFIX_LEN 9
 
 /* Required to prevent deadlocks */
 int __notify_78945668_info__ = 0;
@@ -123,6 +126,7 @@ _internal_client_new(notify_state_t *ns)
 		if (c == NULL) return NULL;
 
 		ns->client_id++;
+		if (ns->client_id == NOTIFY_INVALID_CLIENT_ID) ns->client_id++;
 		c->client_id = ns->client_id;
 	}
 
@@ -146,11 +150,18 @@ _internal_free_client_info(client_info_t *info)
 	switch (info->notify_type)
 	{
 		case NOTIFY_TYPE_SIGNAL:
+		{
 			break;
+		}
+
 		case NOTIFY_TYPE_FD:
+		{
 			if (info->fd > 0) close(info->fd);
 			break;
+		}
+
 		case NOTIFY_TYPE_PORT:
+		{
 			if (info->msg != NULL)
 			{
 				if (info->msg->header.msgh_remote_port != MACH_PORT_NULL)
@@ -161,8 +172,18 @@ _internal_free_client_info(client_info_t *info)
 				free(info->msg);
 			}
 			break;
+		}
+
 		default:
+		{
 			break;
+		}
+	}
+
+	if (info->session != TASK_NAME_NULL) 
+	{
+		mach_port_deallocate(mach_task_self(), info->session);
+		info->session = TASK_NAME_NULL;
 	}
 
 	free(info);
@@ -252,9 +273,7 @@ _internal_new_name(notify_state_t *ns, const char *name)
 	if (n == NULL) return NULL;
 
 	n->name = strdup(name);
-
 	n->access = NOTIFY_ACCESS_DEFAULT;
-
 	n->slot = (uint32_t)-1;
 	n->val = 1;
 
@@ -263,17 +282,120 @@ _internal_new_name(notify_state_t *ns, const char *name)
 	return n;
 }
 
-static uint32_t
-_internal_check_controlled_access(notify_state_t *ns, char *name, uint32_t uid, uint32_t gid, int req)
+static void
+_internal_insert_controlled_name(notify_state_t *ns, name_info_t *n)
 {
-	uint32_t i, len, plen;
+	int i, j;
+
+	for (i = 0; i < ns->controlled_name_count; i++)
+	{
+		if (ns->controlled_name[i] == n) return;
+	}
+
+	if (ns->controlled_name_count == 0)
+	{
+		ns->controlled_name = (name_info_t **)malloc(sizeof(name_info_t *));
+	}
+	else
+	{
+		ns->controlled_name = (name_info_t **)reallocf(ns->controlled_name, (ns->controlled_name_count + 1) * sizeof(name_info_t *));
+	}
+
+	/*
+	 * Insert name in reverse sorted order (longer names preceed shorter names).
+	 * this means that in _notify_lib_check_controlled_access, we check
+	 * subspaces from the bottom up - i.e. we check access for the "deepest"
+	 * controlled subspace.
+	 */
+
+	for (i = 0; i < ns->controlled_name_count; i++)
+	{
+		if (strcmp(n->name, ns->controlled_name[i]->name) > 0) break;
+	}
+
+	for (j = ns->controlled_name_count; j > i; j--)
+	{
+		ns->controlled_name[j] = ns->controlled_name[j-1];
+	}
+
+	ns->controlled_name[i] = n;
+	ns->controlled_name_count++;
+}
+
+static void
+_internal_remove_controlled_name(notify_state_t *ns, name_info_t *n)
+{
+	uint32_t i, j;
+
+	for (i = 0; i < ns->controlled_name_count; i++)
+	{
+		if (ns->controlled_name[i] == n)
+		{
+			for (j = i + 1; j < ns->controlled_name_count; j++)
+			{
+				ns->controlled_name[j-1] = ns->controlled_name[j];
+			}
+
+			ns->controlled_name_count--;
+			if (ns->controlled_name_count == 0)
+			{
+				free(ns->controlled_name);
+				ns->controlled_name = NULL;
+			}
+			else
+			{
+				ns->controlled_name = (name_info_t **)reallocf(ns->controlled_name, ns->controlled_name_count * sizeof(name_info_t *));
+			}
+
+			return;
+		}
+	}
+}
+
+/* 
+ * Only owner and root may access user.uid.<uid> or user.uid.<uid>.[...]
+ */
+static uint32_t
+_internal_check_user_protected(const char *name, uid_t uid, int *is_protected)
+{
+	char str[64];
+	uint32_t len;
+
+	*is_protected = 0;
+
+	/* if it doesn't have "user.uid." as a prefix, it's not in the user-protected namespace */
+	if (strncmp(name, USER_PROTECTED_UID_PREFIX, USER_PROTECTED_UID_PREFIX_LEN)) return NOTIFY_STATUS_OK;
+
+	*is_protected = 1;
+
+	/* root may do anything */
+	if (uid == 0) return NOTIFY_STATUS_OK;
+
+	snprintf(str, sizeof(str) - 1, "%s%d", USER_PROTECTED_UID_PREFIX, uid);
+	len = strlen(str);
+
+	/* user may access user.uid.<uid> or a subtree name */
+	if ((!strncmp(name, str, len)) && ((name[len] == '\0') || (name[len] == '.'))) return NOTIFY_STATUS_OK;
+	return NOTIFY_STATUS_NOT_AUTHORIZED;
+}
+
+static uint32_t
+_internal_check_controlled_access(notify_state_t *ns, char *name, uid_t uid, gid_t gid, int req)
+{
+	uint32_t status, i, len, plen;
 	name_info_t *p;
+	int is_protected;
 
 	if (ns == NULL) return NOTIFY_STATUS_FAILED;
 	if (name == NULL) return NOTIFY_STATUS_INVALID_NAME;
 
 	/* root can do anything */
 	if (uid == 0) return NOTIFY_STATUS_OK;
+
+	/* check if name is user protected */
+	is_protected = 0;
+	status = _internal_check_user_protected(name, uid, &is_protected);
+	if (status != NOTIFY_STATUS_OK) return status;
 
 	/* check if the name is in a reserved subspace */
 
@@ -306,7 +428,7 @@ _internal_check_controlled_access(notify_state_t *ns, char *name, uint32_t uid, 
 }
 
 uint32_t
-_notify_lib_check_controlled_access(notify_state_t *ns, char *name, uint32_t uid, uint32_t gid, int req)
+_notify_lib_check_controlled_access(notify_state_t *ns, char *name, uid_t uid, gid_t gid, int req)
 {
 	int status;
 
@@ -318,7 +440,7 @@ _notify_lib_check_controlled_access(notify_state_t *ns, char *name, uint32_t uid
 }
 
 static uint32_t
-_internal_check_access(notify_state_t *ns, name_info_t *n, uint32_t uid, uint32_t gid, int req)
+_internal_check_access(notify_state_t *ns, name_info_t *n, uid_t uid, gid_t gid, int req)
 {
 	uint32_t status;
 
@@ -359,9 +481,13 @@ _internal_send(notify_state_t *ns, client_t *c)
 	switch (c->info->notify_type)
 	{
 		case NOTIFY_TYPE_SIGNAL:
+		{
 			kill(c->info->pid, c->info->sig);
 			break;
+		}
+
 		case NOTIFY_TYPE_FD:
+		{
 			if (c->info->fd >= 0)
 			{
 				cid = htonl(c->info->token);
@@ -373,7 +499,10 @@ _internal_send(notify_state_t *ns, client_t *c)
 				}
 			}
 			break;
+		}
+
 		case NOTIFY_TYPE_PORT:
+		{
 			c->info->msg->header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, MACH_MSGH_BITS_ZERO);
 			c->info->msg->header.msgh_local_port = MACH_PORT_NULL;
 			c->info->msg->header.msgh_size = sizeof(mach_msg_empty_send_t);
@@ -392,8 +521,12 @@ _internal_send(notify_state_t *ns, client_t *c)
 				/* XXX clean up XXX */
 			}
 			break;
+		}
+
 		default:
+		{
 			break;
+		}
 	}
 }
 
@@ -401,7 +534,7 @@ _internal_send(notify_state_t *ns, client_t *c)
  * Notify clients of this name.
  */
 uint32_t
-_notify_lib_post(notify_state_t *ns, const char *name, uint32_t uid, uint32_t gid)
+_notify_lib_post(notify_state_t *ns, const char *name, uid_t uid, gid_t gid)
 {
 	name_info_t *n;
 	client_t *c;
@@ -441,6 +574,19 @@ _notify_lib_post(notify_state_t *ns, const char *name, uint32_t uid, uint32_t gi
 	return NOTIFY_STATUS_OK;
 }
 
+static void
+_internal_release_name_info(notify_state_t *ns, name_info_t *n)
+{
+	if (n->refcount > 0) n->refcount--;
+	if (n->refcount == 0)
+	{
+		_internal_remove_controlled_name(ns, n);
+		_nc_table_delete(ns->name_table, n->name);
+		free(n->name);
+		free(n);
+	}
+}
+
 /*
  * Cancel (delete) a client
  */
@@ -462,19 +608,9 @@ _internal_cancel(notify_state_t *ns, uint32_t cid)
 	n = c->info->name_info;
 	if (n == NULL) return;
 
-	n->refcount--;
-
 	n->client_list = _nc_list_find_release(n->client_list, c);
-
 	_internal_client_release(ns, c);
-
-	if (n->refcount == 0)
-	{
-		_nc_table_delete(ns->name_table, n->name);
-		free(n->name);
-		free(n);
-	}
-
+	_internal_release_name_info(ns, n);
 }
 
 void
@@ -489,7 +625,7 @@ _notify_lib_cancel(notify_state_t *ns, uint32_t cid)
  * Delete all clients for a session
  */
 void
-_notify_lib_cancel_session(notify_state_t *ns, task_t t)
+_notify_lib_cancel_session(notify_state_t *ns, task_name_t tname)
 {
 	client_t *c, *a, *p;
 	name_info_t *n;
@@ -511,9 +647,15 @@ _notify_lib_cancel_session(notify_state_t *ns, task_t t)
 		for (l = n->client_list; l != NULL; l = _nc_list_next(l))
 		{
 			c = _nc_list_data(l);
-			if (c->info->session == t)
+			if ((c->info != NULL) && (c->info->session == tname))
 			{
 				a = (client_t *)malloc(sizeof(client_t));
+				if (a == NULL)
+				{
+					if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
+					return;
+				}
+
 				a->client_id = c->client_id;
 				a->info = c->info;
 
@@ -616,27 +758,27 @@ _notify_lib_check_addr(notify_state_t *ns, uint32_t cid)
 	client_t *c;
 	int *addr;
 
-	if (ns == NULL) return 0;
-	if (cid == 0) return 0;
-	
+	if (ns == NULL) return NULL;
+	if (cid == 0) return NULL;
+
 	if (ns->lock != NULL) pthread_mutex_lock(ns->lock);
-	
+
 	c = _nc_table_find_n(ns->client_table, cid);
-	
+
 	if (c == NULL)
 	{
 		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return 0;
+		return NULL;
 	}
-	
+
 	if (c->info->name_info == NULL)
 	{
 		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return 0;
+		return NULL;
 	}
-	
+
 	addr = (int *)&(c->info->name_info->val);
-	
+
 	if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
 	return addr;
 }
@@ -682,7 +824,7 @@ _notify_lib_get_state(notify_state_t *ns, uint32_t cid, uint64_t *state)
  * Set state value for a name.
  */
 uint32_t
-_notify_lib_set_state(notify_state_t *ns, uint32_t cid, uint64_t state, uint32_t uid, uint32_t gid)
+_notify_lib_set_state(notify_state_t *ns, uint32_t cid, uint64_t state, uid_t uid, gid_t gid)
 {
 	client_t *c;
 	int auth;
@@ -758,7 +900,7 @@ _notify_lib_get_val(notify_state_t *ns, uint32_t cid, int *val)
  * Set value for a name.
  */
 uint32_t
-_notify_lib_set_val(notify_state_t *ns, uint32_t cid, int val, uint32_t uid, uint32_t gid)
+_notify_lib_set_val(notify_state_t *ns, uint32_t cid, int val, uid_t uid, gid_t gid)
 {
 	client_t *c;
 	int auth;
@@ -795,62 +937,113 @@ _notify_lib_set_val(notify_state_t *ns, uint32_t cid, int val, uint32_t uid, uin
 	return NOTIFY_STATUS_OK;
 }
 
-/*
- * Register for signal.
- * Returns the client_id;
- */
-uint32_t
-_notify_lib_register_signal(notify_state_t *ns, const char *name, task_t task, uint32_t sig, uint32_t uid, uint32_t gid, uint32_t *out_token)
+static uint32_t
+_internal_register_common(notify_state_t *ns, const char *name, uid_t uid, gid_t gid, client_t **outc, name_info_t **outn)
 {
-	name_info_t *n;
 	client_t *c;
-	int pid, auth;
-	kern_return_t ks;
+	name_info_t *n;
+	int auth, is_protected, is_new_name;
+	uint32_t status;
 
-	if (ns == NULL) return 0;
-	if (name == NULL) return 0;
+	if (outc == NULL) return 0;
 
-	if (ns->lock != NULL) pthread_mutex_lock(ns->lock);
+	*outc = NULL;
+	if (outn != NULL) *outn = NULL;
+	is_new_name = 0;
+	is_protected = 0;
 
 	n = (name_info_t *)_nc_table_find(ns->name_table, name);
-	if (n == NULL) n = _internal_new_name(ns, name);
 	if (n == NULL)
 	{
-		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return NOTIFY_STATUS_FAILED;
+		is_new_name = 1;
+
+		status = _internal_check_user_protected(name, uid, &is_protected);
+		if (status != NOTIFY_STATUS_OK) return status;
+
+		n = _internal_new_name(ns, name);
+		if (n == NULL) return NOTIFY_STATUS_FAILED;
+
+		if (is_protected == 1)
+		{
+			n->uid = uid;
+			n->gid = gid;
+			if (uid == 0)
+			{
+				n->uid = atoi(name + USER_PROTECTED_UID_PREFIX_LEN);
+				n->gid = -1;
+			}
+
+			n->access = NOTIFY_ACCESS_USER_RW;
+		}
 	}
 
 	auth = _internal_check_access(ns, n, uid, gid, NOTIFY_ACCESS_READ);
 	if (auth != 0)
 	{
-		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
+		if (is_new_name == 1)
+		{
+			_nc_table_delete(ns->name_table, n->name);
+			free(n->name);
+			free(n);
+		}
+
 		return NOTIFY_STATUS_NOT_AUTHORIZED;
 	}
-
-	ks = pid_for_task(task, &pid);
-	if (ks != KERN_SUCCESS)
-	{
-		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return 0;
-	}
-
-	n->refcount++;
 
 	c = _internal_client_new(ns);
 	if (c == NULL)
 	{
-		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return 0;
+		if (is_new_name == 1)
+		{
+			_nc_table_delete(ns->name_table, n->name);
+			free(n->name);
+			free(n);
+		}
+
+		return NOTIFY_STATUS_FAILED;
 	}
 
+	n->refcount++;
+
 	c->info->name_info = n;
+	n->client_list = _nc_list_prepend(n->client_list, _nc_list_new(c));
+
+	if ((is_new_name == 1) && (is_protected == 1)) _internal_insert_controlled_name(ns, n);
+
+	*outc = c;
+	if (outn != NULL) *outn = n;
+
+	return NOTIFY_STATUS_OK;
+}
+
+/*
+ * Register for signal.
+ * Returns the client_id;
+ */
+uint32_t
+_notify_lib_register_signal(notify_state_t *ns, const char *name, task_name_t tname, pid_t pid, uint32_t sig, uid_t uid, gid_t gid, uint32_t *out_token)
+{
+	client_t *c;
+	uint32_t status;
+
+	if (ns == NULL) return 0;
+	if (name == NULL) return 0;
+
+	c = NULL;
+
+	if (ns->lock != NULL) pthread_mutex_lock(ns->lock);
+
+	status = _internal_register_common(ns, name, uid, gid, &c, NULL);
+	if (status != NOTIFY_STATUS_OK)
+	{
+		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
+		return status;
+	}
+
 	c->info->notify_type = NOTIFY_TYPE_SIGNAL;
 	c->info->pid = pid;
 	c->info->sig = sig;
-	c->info->session = task;
-
-	n->client_list = _nc_list_prepend(n->client_list, _nc_list_new(c));
-
+	c->info->session = tname;
 	*out_token = c->client_id;
 
 	if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
@@ -862,54 +1055,52 @@ _notify_lib_register_signal(notify_state_t *ns, const char *name, task_t task, u
  * Returns the client_id;
  */
 uint32_t
-_notify_lib_register_file_descriptor(notify_state_t *ns, const char *name, task_t task, const char *path, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token)
+_notify_lib_register_file_descriptor(notify_state_t *ns, const char *name, task_name_t tname, const char *path, uint32_t token, uid_t uid, gid_t gid, uint32_t *out_token)
 {
-	name_info_t *n;
 	client_t *c;
-	int auth, fd;
+	name_info_t *n;
+	uint32_t status;
+	struct sockaddr_un sun;
+	int sock;
 
 	if (ns == NULL) return 0;
 	if (name == NULL) return 0;
-	if (path == NULL) return 0;
+
+	c = NULL;
+	n = NULL;
 
 	if (ns->lock != NULL) pthread_mutex_lock(ns->lock);
 
-	n = (name_info_t *)_nc_table_find(ns->name_table, name);
-	if (n == NULL) n = _internal_new_name(ns, name);
-	if (n == NULL) 
+	sock = socket(AF_UNIX, SOCK_DGRAM, 0);
+	if (sock < 0)
 	{
 		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
 		return NOTIFY_STATUS_FAILED;
 	}
 
-	auth = _internal_check_access(ns, n, uid, gid, NOTIFY_ACCESS_READ);
-	if (auth != 0)
+	memset(&sun, 0, sizeof(sun));
+	sun.sun_family = AF_UNIX;
+	strncpy(sun.sun_path, path, sizeof(sun.sun_path));
+
+	if (connect(sock, (const struct sockaddr *)&sun, sizeof(sun)) < 0)
 	{
+		close(sock);
 		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return NOTIFY_STATUS_NOT_AUTHORIZED;
+		return NOTIFY_STATUS_INVALID_FILE;
 	}
 
-	fd = open(path, O_WRONLY | O_NONBLOCK, 0);
-	if (fd < 0) return NOTIFY_STATUS_INVALID_FILE;
-
-	n->refcount++;
-
-	c = _internal_client_new(ns);
-	if (c == NULL)
+	status = _internal_register_common(ns, name, uid, gid, &c, &n);
+	if (status != NOTIFY_STATUS_OK)
 	{
-		close(fd);
 		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return 0;
+		return status;
 	}
 
 	c->info->name_info = n;
 	c->info->notify_type = NOTIFY_TYPE_FD;
-	c->info->fd = fd;
+	c->info->fd = sock;
 	c->info->token = token;
-	c->info->session = task;
-
-	n->client_list = _nc_list_prepend(n->client_list, _nc_list_new(c));
-
+	c->info->session = tname;
 	*out_token = c->client_id;
 
 	if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
@@ -921,42 +1112,25 @@ _notify_lib_register_file_descriptor(notify_state_t *ns, const char *name, task_
  * Returns the client_id;
  */
 uint32_t
-_notify_lib_register_mach_port(notify_state_t *ns, const char *name, task_t task, mach_port_t port, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token)
+_notify_lib_register_mach_port(notify_state_t *ns, const char *name, task_name_t tname, mach_port_t port, uint32_t token, uid_t uid, gid_t gid, uint32_t *out_token)
 {
-	name_info_t *n;
 	client_t *c;
-	int auth;
+	uint32_t status;
 
 	if (ns == NULL) return 0;
 	if (name == NULL) return 0;
 
+	c = NULL;
+
 	if (ns->lock != NULL) pthread_mutex_lock(ns->lock);
 
-	n = (name_info_t *)_nc_table_find(ns->name_table, name);
-	if (n == NULL) n = _internal_new_name(ns, name);
-	if (n == NULL)
+	status = _internal_register_common(ns, name, uid, gid, &c, NULL);
+	if (status != NOTIFY_STATUS_OK)
 	{
 		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return NOTIFY_STATUS_FAILED;
+		return status;
 	}
 
-	auth = _internal_check_access(ns, n, uid, gid, NOTIFY_ACCESS_READ);
-	if (auth != 0)
-	{
-		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return NOTIFY_STATUS_NOT_AUTHORIZED;
-	}
-
-	n->refcount++;
-
-	c = _internal_client_new(ns);
-	if (c == NULL)
-	{
-		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return 0;
-	}
-
-	c->info->name_info = n;
 	c->info->notify_type = NOTIFY_TYPE_PORT;
 	c->info->msg = (mach_msg_empty_send_t *)calloc(1, sizeof(mach_msg_empty_send_t));
 	c->info->msg->header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, MACH_MSGH_BITS_ZERO);
@@ -965,10 +1139,7 @@ _notify_lib_register_mach_port(notify_state_t *ns, const char *name, task_t task
 	c->info->msg->header.msgh_size = sizeof(mach_msg_empty_send_t);
 	c->info->msg->header.msgh_id = token;
 	c->info->token = token;
-	c->info->session = task;
-
-	n->client_list = _nc_list_prepend(n->client_list, _nc_list_new(c));
-
+	c->info->session = tname;
 	*out_token = c->client_id;
 
 	if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
@@ -980,98 +1151,46 @@ _notify_lib_register_mach_port(notify_state_t *ns, const char *name, task_t task
  * Returns the client_id.
  */
 uint32_t
-_notify_lib_register_plain(notify_state_t *ns, const char *name, task_t task, uint32_t slot, uint32_t uid, uint32_t gid, uint32_t *out_token)
+_notify_lib_register_plain(notify_state_t *ns, const char *name, task_name_t tname, uint32_t slot, uid_t uid, gid_t gid, uint32_t *out_token)
 {
-	name_info_t *n;
 	client_t *c;
-	int auth;
+	name_info_t *n;
+	uint32_t status;
 
-	if (ns == NULL) return NOTIFY_STATUS_FAILED;
-	if (name == NULL) return NOTIFY_STATUS_INVALID_NAME;
-	if (out_token == NULL) return NOTIFY_STATUS_INVALID_TOKEN;
+	if (ns == NULL) return 0;
+	if (name == NULL) return 0;
+
+	c = NULL;
+	n = NULL;
 
 	if (ns->lock != NULL) pthread_mutex_lock(ns->lock);
 
-	n = (name_info_t *)_nc_table_find(ns->name_table, name);
-	if (n == NULL) n = _internal_new_name(ns, name);
-	if (n == NULL)
+	status = _internal_register_common(ns, name, uid, gid, &c, &n);
+	if (status != NOTIFY_STATUS_OK)
 	{
 		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return NOTIFY_STATUS_FAILED;
+		return status;
 	}
 
-	auth = _internal_check_access(ns, n, uid, gid, NOTIFY_ACCESS_READ);
-	if (auth != 0)
+	if (slot == (uint32_t)-1)
 	{
-		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return NOTIFY_STATUS_NOT_AUTHORIZED;
+		c->info->notify_type = NOTIFY_TYPE_PLAIN;
 	}
-
-	n->refcount++;
-	if (slot != (uint32_t)-1) n->slot = slot;
-
-	c = _internal_client_new(ns);
-	if (c == NULL)
+	else
 	{
-		if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
-		return NOTIFY_STATUS_FAILED;
+		c->info->notify_type = NOTIFY_TYPE_MEMORY;
+		n->slot = slot;
 	}
 
-	c->info->name_info = n;
-	if (slot == (uint32_t)-1) c->info->notify_type = NOTIFY_TYPE_PLAIN;
-	else c->info->notify_type = NOTIFY_TYPE_MEMORY;
-	c->info->session = task;
-
-	n->client_list = _nc_list_prepend(n->client_list, _nc_list_new(c));
-
+	c->info->session = tname;
 	*out_token = c->client_id;
 
 	if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
 	return NOTIFY_STATUS_OK;
 }
 
-static void
-_internal_insert_controlled_name(notify_state_t *ns, name_info_t *n)
-{
-	int i, j;
-
-	for (i = 0; i < ns->controlled_name_count; i++)
-	{
-		if (ns->controlled_name[i] == n) return;
-	}
-
-	if (ns->controlled_name_count == 0)
-	{
-		ns->controlled_name = (name_info_t **)malloc(sizeof(name_info_t *));
-	}
-	else
-	{
-		ns->controlled_name = (name_info_t **)realloc(ns->controlled_name, (ns->controlled_name_count + 1) * sizeof(name_info_t *));
-	}
-
-	/*
-	 * Insert name in reverse sorted order (longer names preceed shorter names).
-	 * this means that in _notify_lib_check_controlled_access, we check
-	 * subspaces from the bottom up - i.e. we check access for the "deepest"
-	 * controlled subspace.
-	 */
-
-	for (i = 0; i < ns->controlled_name_count; i++)
-	{
-		if (strcmp(n->name, ns->controlled_name[i]->name) > 0) break;
-	}
-
-	for (j = ns->controlled_name_count; j > i; j--)
-	{
-		ns->controlled_name[j] = ns->controlled_name[j-1];
-	}
-
-	ns->controlled_name[i] = n;
-	ns->controlled_name_count++;
-}
-
 uint32_t
-_notify_lib_set_owner(notify_state_t *ns, const char *name, uint32_t uid, uint32_t gid)
+_notify_lib_set_owner(notify_state_t *ns, const char *name, uid_t uid, gid_t gid)
 {
 	name_info_t *n;
 
@@ -1085,9 +1204,17 @@ _notify_lib_set_owner(notify_state_t *ns, const char *name, uint32_t uid, uint32
 	{
 		/* create new name */
 		n = _internal_new_name(ns, name);
-		if (n == NULL) return NOTIFY_STATUS_FAILED;
+		if (n == NULL)
+		{
+			if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
+			return NOTIFY_STATUS_FAILED;
+		}
 
-		n->access = NOTIFY_ACCESS_DEFAULT;
+		/* 
+		 * Setting the refcount here allows the namespace to be "pre-populated"
+		 * with controlled names.  notifyd does this for reserved names in 
+		 * its configuration file.
+		 */
 		n->refcount++;
 	}
 
@@ -1130,6 +1257,7 @@ _notify_lib_get_owner(notify_state_t *ns, const char *name, uint32_t *uid, uint3
 		{
 			*uid = n->uid;
 			*gid = n->gid;
+			if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
 			return NOTIFY_STATUS_OK;
 		}
 
@@ -1172,6 +1300,11 @@ _notify_lib_set_access(notify_state_t *ns, const char *name, uint32_t mode)
 			return NOTIFY_STATUS_FAILED;
 		}
 
+		/* 
+		 * Setting the refcount here allows the namespace to be "pre-populated"
+		 * with controlled names.  notifyd does this for reserved names in 
+		 * its configuration file.
+		 */
 		n->refcount++;
 	}
 
@@ -1237,10 +1370,9 @@ _notify_lib_get_access(notify_state_t *ns, const char *name, uint32_t *mode)
 }
 
 uint32_t
-_notify_lib_release_name(notify_state_t *ns, const char *name, uint32_t uid, uint32_t gid)
+_notify_lib_release_name(notify_state_t *ns, const char *name, uid_t uid, gid_t gid)
 {
 	name_info_t *n;
-	uint32_t i, j;
 
 	if (ns == NULL) return NOTIFY_STATUS_FAILED;
 	if (name == NULL) return NOTIFY_STATUS_INVALID_NAME;
@@ -1261,38 +1393,7 @@ _notify_lib_release_name(notify_state_t *ns, const char *name, uint32_t uid, uin
 		return NOTIFY_STATUS_NOT_AUTHORIZED;
 	}
 
-	for (i = 0; i < ns->controlled_name_count; i++)
-	{
-		if (ns->controlled_name[i] == n)
-		{
-			for (j = i + 1; j < ns->controlled_name_count; j++)
-			{
-				ns->controlled_name[j-1] = ns->controlled_name[j];
-			}
-
-			ns->controlled_name_count--;
-			if (ns->controlled_name_count == 0)
-			{
-				free(ns->controlled_name);
-				ns->controlled_name = NULL;
-			}
-			else
-			{
-				ns->controlled_name = (name_info_t **)realloc(ns->controlled_name, ns->controlled_name_count * sizeof(name_info_t *));
-			}
-
-			break;
-		}
-	}
-
-	n->refcount--;
-
-	if (n->refcount == 0)
-	{
-		_nc_table_delete(ns->name_table, n->name);
-		free(n->name);
-		free(n);
-	}
+	_internal_release_name_info(ns, n);
 
 	if (ns->lock != NULL) pthread_mutex_unlock(ns->lock);
 	return NOTIFY_STATUS_OK;

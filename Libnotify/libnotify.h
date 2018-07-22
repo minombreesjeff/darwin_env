@@ -56,6 +56,7 @@
 #define NOTIFY_ACCESS_USER_SHIFT  0
 
 #define NOTIFY_ACCESS_DEFAULT 0x00000333
+#define NOTIFY_ACCESS_USER_RW 0x00000003
 
 /* Filesystem Services */
 #define NOTIFY_SERVICE_FILE_STATUS_QUO 0x00
@@ -69,6 +70,8 @@
 
 /* notify state flags */
 #define NOTIFY_STATE_USE_LOCKS 0x00000001
+
+#define NOTIFY_INVALID_CLIENT_ID 0xffffffff
 
 typedef struct
 {
@@ -87,7 +90,7 @@ typedef struct
 typedef struct
 {
 	name_info_t *name_info;
-	task_t session;
+	task_name_t session;
 	uint32_t notify_type;
 	uint32_t lastval;
 	mach_msg_empty_send_t *msg;
@@ -114,8 +117,6 @@ typedef struct
 	uint32_t controlled_name_count;
 	uint32_t client_id;
 	pthread_mutex_t *lock;
-	uint32_t session_count;
-	task_t *session;
 	int sock;
 } notify_state_t;
 
@@ -129,11 +130,11 @@ uint32_t _notify_lib_set_state(notify_state_t *ns, uint32_t cid, uint64_t state,
 uint32_t _notify_lib_get_val(notify_state_t *ns, uint32_t cid, int *val);
 uint32_t _notify_lib_set_val(notify_state_t *ns, uint32_t cid, int val, uint32_t uid, uint32_t gid);
 
-uint32_t _notify_lib_register_plain(notify_state_t *ns, const char *name, task_t session, uint32_t slot, uint32_t uid, uint32_t gid, uint32_t *out_token);
-uint32_t _notify_lib_register_signal(notify_state_t *ns, const char *name, task_t session, uint32_t sig, uint32_t uid, uint32_t gid, uint32_t *out_token);
-uint32_t _notify_lib_register_mach_port(notify_state_t *ns, const char *name, task_t session, mach_port_t port, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token);
-uint32_t _notify_lib_register_file_descriptor(notify_state_t *ns, const char *name, task_t session, const char *path, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token);
-void _notify_lib_cancel_session(notify_state_t *ns, task_t session);
+uint32_t _notify_lib_register_plain(notify_state_t *ns, const char *name, task_name_t session, uint32_t slot, uint32_t uid, uint32_t gid, uint32_t *out_token);
+uint32_t _notify_lib_register_signal(notify_state_t *ns, const char *name, task_name_t session, pid_t pid, uint32_t sig, uint32_t uid, uint32_t gid, uint32_t *out_token);
+uint32_t _notify_lib_register_mach_port(notify_state_t *ns, const char *name, task_name_t session, mach_port_t port, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token);
+uint32_t _notify_lib_register_file_descriptor(notify_state_t *ns, const char *name, task_name_t session, const char *path, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token);
+void _notify_lib_cancel_session(notify_state_t *ns, task_name_t session);
 
 uint32_t _notify_lib_get_owner(notify_state_t *ns, const char *name, uint32_t *uid, uint32_t *gid);
 uint32_t _notify_lib_get_access(notify_state_t *ns, const char *name, uint32_t *access);
