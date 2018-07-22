@@ -1,10 +1,10 @@
-Destination = $(DSTROOT)/private/var/root/Library
+Destination = $(DSTROOT)/usr/share/man/man5
 
 # Common Makefile
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/Common.make
 
 # Subdirectories with their own makefiles
-SubDirs = Preferences
+SubDirs =
 
 install::
 	$(_v) for subdir in $(SubDirs); do						\
@@ -13,5 +13,5 @@ install::
 
 install::
 	@echo "Installing $(Destination)"
-	$(_v) $(INSTALL_DIRECTORY) -m 700 "$(Destination)"
-	$(_v) $(INSTALL_FILE) -c .localized "$(Destination)"
+	$(_v) $(INSTALL_DIRECTORY) "$(Destination)"
+	$(_v) $(INSTALL_FILE) -c intro.5          "$(Destination)/intro.5"
