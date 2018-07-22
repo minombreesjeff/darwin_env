@@ -32,6 +32,7 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <stdio.h>
 #include <ctype.h>
 #include <rpc/types.h>
@@ -520,6 +521,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 	if (!xdr_int(&outxdr, (int32_t *)&na))
 	{
 		xdr_destroy(&outxdr);
+		errno = EIO;
 		return EAI_SYSTEM;
 	}
 
@@ -528,6 +530,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 		if (encode_kv(&outxdr, "name", nodename) != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -537,6 +540,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 		if (encode_kv(&outxdr, "service", servname) != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -547,6 +551,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 		if (encode_kv(&outxdr, "protocol", str) != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -557,6 +562,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 		if (encode_kv(&outxdr, "socktype", str) != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -567,6 +573,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 		if (encode_kv(&outxdr, "family", str) != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -576,6 +583,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 		if (encode_kv(&outxdr, "canonname", "1") != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -585,6 +593,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 		if (encode_kv(&outxdr, "passive", "1") != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -594,6 +603,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 		if (encode_kv(&outxdr, "parallel", "1") != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -603,6 +613,7 @@ gai_make_query(const char *nodename, const char *servname, const struct addrinfo
 		if (encode_kv(&outxdr, "numerichost", "1") != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -947,10 +958,16 @@ gai_lookupd(const char *nodename, const char *servname, const struct addrinfo *h
 	if (gai_proc < 0)
 	{
 		status = _lookup_link(server_port, "getaddrinfo", &gai_proc);
-		if (status != KERN_SUCCESS) return EAI_SYSTEM;
+		if (status != KERN_SUCCESS)
+		{
+			errno = ECONNREFUSED;
+			return EAI_SYSTEM;
+		}
 	}
 
 	qlen = LU_QBUF_SIZE;
+
+	/* gai_make_query sets errno if it fails */
 	i = gai_make_query(nodename, servname, hints, qbuf, &qlen);
 	if (i != 0) return EAI_SYSTEM;
 
@@ -968,6 +985,7 @@ gai_lookupd(const char *nodename, const char *servname, const struct addrinfo *h
 	if (!xdr_int(&inxdr, (int32_t *)&n))
 	{
 		xdr_destroy(&inxdr);
+		errno = EIO;
 		return EAI_SYSTEM;
 	}
 
@@ -1112,21 +1130,38 @@ getaddrinfo_async_start(mach_port_t *p, const char *nodename, const char *servna
 
 	server_port = MACH_PORT_NULL;
 	if (_lu_running()) server_port = _lookupd_port(0);
-	if (server_port == MACH_PORT_NULL) return EAI_SYSTEM;
+	if (server_port == MACH_PORT_NULL)
+	{
+		errno = ECONNREFUSED;
+		return EAI_SYSTEM;
+	}
 
 	if (gai_proc < 0)
 	{
 		status = _lookup_link(server_port, "getaddrinfo", &gai_proc);
-		if (status != KERN_SUCCESS) return EAI_SYSTEM;
+		if (status != KERN_SUCCESS)
+		{
+			errno = ECONNREFUSED;
+			return EAI_SYSTEM;
+		}
 	}
 
 	qlen = LU_QBUF_SIZE;
+
+	/* gai_make_query sets errno if it fails */
 	i = gai_make_query(nodename, servname, hints, qbuf, &qlen);
 	if (i != 0) return EAI_SYSTEM;
 
 	qlen /= BYTES_PER_XDR_UNIT;
 
-	return lu_async_start(p, gai_proc, qbuf, qlen, (void *)callback, context);
+	status = lu_async_start(p, gai_proc, qbuf, qlen, (void *)callback, context);
+	if (status != 0)
+	{
+		errno = ECONNREFUSED;
+		return EAI_SYSTEM;
+	}
+
+	return 0;
 }
 
 int32_t
@@ -1153,6 +1188,7 @@ gai_extract_data(char *buf, uint32_t len, struct addrinfo **res)
 	if (!xdr_int(&xdr, (int32_t *)&n))
 	{
 		xdr_destroy(&xdr);
+		errno = EIO;
 		return EAI_SYSTEM;
 	}
 
@@ -1274,9 +1310,17 @@ gni_lookupd_process_dictionary(XDR *inxdr, char **host, char **serv)
 	int32_t i, j, nkeys, nvals, status;
 	char *key, **vals;
 
-	if ((host == NULL) || (serv == NULL)) return EAI_SYSTEM;
+	if ((host == NULL) || (serv == NULL))
+	{
+		errno = EINVAL;
+		return EAI_SYSTEM;
+	}
 
-	if (!xdr_int(inxdr, &nkeys)) return EAI_SYSTEM;
+	if (!xdr_int(inxdr, &nkeys))
+	{
+		errno = EIO;
+		return EAI_SYSTEM;
+	}
 
 	*host = NULL;
 	*serv = NULL;
@@ -1288,7 +1332,11 @@ gni_lookupd_process_dictionary(XDR *inxdr, char **host, char **serv)
 		nvals = 0;
 
 		status = _lu_xdr_attribute(inxdr, &key, &vals, (uint32_t *)&nvals);
-		if (status < 0) return EAI_SYSTEM;
+		if (status < 0)
+		{
+			errno = EIO;
+			return EAI_SYSTEM;
+		}
 
 		if (nvals == 0)
 		{
@@ -1441,6 +1489,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 	if (!xdr_int(&outxdr, (int32_t *)&na))
 	{
 		xdr_destroy(&outxdr);
+		errno = EIO;
 		return EAI_SYSTEM;
 	}
 
@@ -1461,6 +1510,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 		if (encode_kv(&outxdr, key, str) != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -1471,6 +1521,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 		if (encode_kv(&outxdr, "port", str) != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -1480,6 +1531,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 		if (encode_kv(&outxdr, "protocol", "udp") != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -1489,6 +1541,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 		if (encode_kv(&outxdr, "fqdn", "0") != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -1498,6 +1551,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 		if (encode_kv(&outxdr, "numerichost", "1") != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -1507,6 +1561,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 		if (encode_kv(&outxdr, "numericserv", "1") != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -1516,6 +1571,7 @@ gni_make_query(const struct sockaddr *sa, size_t salen, int wanthost, int wantse
 		if (encode_kv(&outxdr, "name_required", "1") != 0)
 		{
 			xdr_destroy(&outxdr);
+			errno = EIO;
 			return EAI_SYSTEM;
 		}
 	}
@@ -1642,12 +1698,20 @@ getnameinfo(const struct sockaddr * __restrict sa, socklen_t salen, char * __res
 	 */
 	server_port = MACH_PORT_NULL;
 	if (_lu_running()) server_port = _lookupd_port(0);
-	if (server_port == MACH_PORT_NULL) return EAI_SYSTEM;
+	if (server_port == MACH_PORT_NULL)
+	{
+		errno = ECONNREFUSED;
+		return EAI_SYSTEM;
+	}
 
 	if (gni_proc < 0)
 	{
 		status = _lookup_link(server_port, "getnameinfo", &gni_proc);
-		if (status != KERN_SUCCESS) return EAI_SYSTEM;
+		if (status != KERN_SUCCESS)
+		{
+			errno = ECONNREFUSED;
+			return EAI_SYSTEM;
+		}
 	}
 
 	qlen = LU_QBUF_SIZE;
@@ -1668,6 +1732,7 @@ getnameinfo(const struct sockaddr * __restrict sa, socklen_t salen, char * __res
 	if (!xdr_int(&inxdr, (int32_t *)&n))
 	{
 		xdr_destroy(&inxdr);
+		errno = EIO;
 		return EAI_SYSTEM;
 	}
 
@@ -1721,12 +1786,20 @@ getnameinfo_async_start(mach_port_t *p, const struct sockaddr *sa, size_t salen,
 
 	server_port = MACH_PORT_NULL;
 	if (_lu_running()) server_port = _lookupd_port(0);
-	if (server_port == MACH_PORT_NULL) return EAI_SYSTEM;
+	if (server_port == MACH_PORT_NULL)
+	{
+		errno = ECONNREFUSED;
+		return EAI_SYSTEM;
+	}
 
 	if (gni_proc < 0)
 	{
 		status = _lookup_link(server_port, "getnameinfo", &gni_proc);
-		if (status != KERN_SUCCESS) return EAI_SYSTEM;
+		if (status != KERN_SUCCESS)
+		{
+			errno = ECONNREFUSED;
+			return EAI_SYSTEM;
+		}
 	}
 
 	qlen = LU_QBUF_SIZE;
@@ -1735,7 +1808,14 @@ getnameinfo_async_start(mach_port_t *p, const struct sockaddr *sa, size_t salen,
 
 	qlen /= BYTES_PER_XDR_UNIT;
 
-	return lu_async_start(p, gni_proc, qbuf, qlen, (void *)callback, context);
+	status = lu_async_start(p, gni_proc, qbuf, qlen, (void *)callback, context);
+	if (status != 0)
+	{
+		errno = ECONNREFUSED;
+		return EAI_SYSTEM;
+	}
+
+	return 0;
 }
 
 int32_t
@@ -1762,6 +1842,7 @@ gni_extract_data(char *buf, uint32_t len, char **host, char **serv)
 	if (!xdr_int(&xdr, (int32_t *)&n))
 	{
 		xdr_destroy(&xdr);
+		errno = EIO;
 		return EAI_SYSTEM;
 	}
 
