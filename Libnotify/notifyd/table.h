@@ -33,12 +33,10 @@ extern table_t *_nc_table_new(uint32_t n);
 
 extern void _nc_table_insert(table_t *t, const char *key, void *datum);
 extern void _nc_table_insert_no_copy(table_t *t, const char *key, void *datum);
-extern void _nc_table_insert_pass(table_t *t, char *key, void *datum);
 extern void _nc_table_insert_n(table_t *t, uint32_t key, void *datum);
 extern void _nc_table_insert_64(table_t *t, uint64_t key, void *datum);
 
 extern void *_nc_table_find(table_t *t, const char *key);
-extern void *_nc_table_find_get_key(table_t *tin, const char *key, const char **shared_key);
 extern void *_nc_table_find_n(table_t *t, uint32_t key);
 extern void *_nc_table_find_64(table_t *t, uint64_t key);
 
