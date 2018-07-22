@@ -4,16 +4,15 @@
 <dict>
 	<key>generateduid</key>
 	<array>
-		<string>ABCDEFAB-CDEF-ABCD-EFAB-CDEF00000055</string>
+		<string>ABCDEFAB-CDEF-ABCD-EFAB-CDEF00000037</string>
 	</array>
 	<key>gid</key>
 	<array>
-		<string>85</string>
+		<string>55</string>
 	</array>
 	<key>name</key>
 	<array>
-		<string>_xgridcontroller</string>
-		<string>xgridcontroller</string>
+		<string>_appleevents</string>
 	</array>
 	<key>passwd</key>
 	<array>
@@ -21,7 +20,7 @@
 	</array>
 	<key>realname</key>
 	<array>
-		<string>Xgrid Controller</string>
+		<string>AppleEvents Daemon</string>
 	</array>
 </dict>
 </plist>

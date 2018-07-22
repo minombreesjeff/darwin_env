@@ -12,8 +12,7 @@
 	</array>
 	<key>name</key>
 	<array>
-		<string>_pcastserver</string>
-		<string>pcastserver</string>
+		<string>_geod</string>
 	</array>
 	<key>passwd</key>
 	<array>
@@ -21,7 +20,7 @@
 	</array>
 	<key>realname</key>
 	<array>
-		<string>Podcast Producer Server</string>
+		<string>Geo Services Daemon Group</string>
 	</array>
 </dict>
 </plist>
