@@ -22,42 +22,34 @@
  */
 
 /*
- *  CACError.h
+ *  BELPICAttributeCoder.h
  *  TokendMuscle
  */
 
-#ifndef _CACERROR_H_
-#define _CACERROR_H_
+#ifndef _BELPICATTRIBUTECODER_H_
+#define _BELPICATTRIBUTECODER_H_
 
-#include "SCardError.h"
+#include "AttributeCoder.h"
+#include <string>
 
-/** Entered PIN is not correct and pin was blocked. */
-#define CAC_AUTHENTICATION_FAILED_0        0x6300
-/** Entered PIN is not correct, 1 try left. */
-#define CAC_AUTHENTICATION_FAILED_1        0x6301
-/** Entered PIN is not correct, 2 tries left. */
-#define CAC_AUTHENTICATION_FAILED_2        0x6302
-/** Entered PIN is not correct, 3 tries left. */
-#define CAC_AUTHENTICATION_FAILED_3        0x6303
+#include <PCSC/musclecard.h>
 
-class CACError : public Tokend::SCardError
+
+//
+// A coder that reads the data of an object
+//
+class BELPICDataAttributeCoder : public Tokend::AttributeCoder
 {
-protected:
-    CACError(uint16_t sw);
-	virtual ~CACError() throw ();
+	NOCOPY(BELPICDataAttributeCoder)
 public:
-	OSStatus osStatus() const;
-	virtual const char *what () const throw ();
 
-    static void check(uint16_t sw)	{ if (sw != SCARD_SUCCESS) throwMe(sw); }
-    static void throwMe(uint16_t sw) __attribute__((noreturn));
-    
-protected:
-#if MAX_OS_X_VERSION_MIN_REQUIRED <= MAX_OS_X_VERSION_10_5
-    IFDEBUG(void debugDiagnose(const void *id) const;)
-#endif
-    IFDEBUG(const char *errorstr(uint16_t sw) const;)
+	BELPICDataAttributeCoder() {}
+	virtual ~BELPICDataAttributeCoder();
+
+	virtual void decode(Tokend::TokenContext *tokenContext,
+		const Tokend::MetaAttribute &metaAttribute, Tokend::Record &record);
 };
 
-#endif /* !_CACERROR_H_ */
+
+#endif /* !_BELPICATTRIBUTECODER_H_ */
 
