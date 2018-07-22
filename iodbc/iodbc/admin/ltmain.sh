@@ -3665,7 +3665,7 @@ EOF
 		  done
 
 		  # Can't deal with blanks in file names
-		  $run eval "d_files=\`find \$d_dir -type f | sed -e 's,.*/,,' -e '/ /d' | sort -u\`" || exit $?
+		  $run eval "d_files=\`find \$d_dir -type f | sed -e 's,.*/,,' -e '/ /d' -e '/__.SYMDEF/d' | sort -u\`" || exit $?
 
 		  for d_file in $d_files; do
 		    $run eval "d_f=\`find \$d_dir -name \$d_file -print\`" || exit $?
@@ -3996,7 +3996,7 @@ EOF
 		done
 
 		# Can't deal with blanks in file names
-		$run eval "d_files=\`find \$d_dir -type f | sed -e 's,.*/,,' -e '/ /d' | sort -u\`" || exit $?
+		$run eval "d_files=\`find \$d_dir -type f | sed -e 's,.*/,,' -e '/ /d' -e '/__.SYMDEF/d' | sort -u\`" || exit $?
 
 		for d_file in $d_files; do
 		  $run eval "d_f=\`find \$d_dir -name \$d_file -print\`" || exit $?
@@ -5056,7 +5056,7 @@ fi\
 	      done
 
 	      # Can't deal with blanks in file names
-	      $run eval "d_files=\`find \$d_dir -type f | sed -e 's,.*/,,' -e '/ /d' | sort -u\`" || exit $?
+	      $run eval "d_files=\`find \$d_dir -type f | sed -e 's,.*/,,' -e '/ /d' -e '/__.SYMDEF/d' | sort -u\`" || exit $?
 
 	      for d_file in $d_files; do
 		$run eval "d_f=\`find \$d_dir -name \$d_file -print\`" || exit $?
