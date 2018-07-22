@@ -1,0 +1,26 @@
+.\"Modified from man(1) of FreeBSD, the NetBSD mdoc.template, and mdoc.samples.
+.\"See Also:
+.\"man mdoc.samples for a complete listing of options
+.\"man mdoc for the short list of editing options
+.\"/usr/share/misc/mdoc.template
+.Dd March 24, 2003       \" DATE 
+.Dt IODBC-CONFIG 1       \" Program name and manual section number 
+.Os Darwin
+.Sh NAME                 \" Section Header - required - don't modify 
+.Nm iodbc-config
+.Nd reports iODBC configuration parameters
+.Sh SYNOPSIS             \" Section Header - required - don't modify
+.Nm
+.Op Fl -prefix[=DIR]
+.Op Fl -exec-prefix[=DIR]
+.Op Fl -version
+.Op Fl -libs
+.Op Fl -static-libs
+.Op Fl -libtool-libs
+.Op Fl -cflags
+.Op Fl -odbcversion
+.Op Fl -odbcini
+.Op Fl -odbcinstini
+.Sh DESCRIPTION          \" Section Header - required - don't modify
+.Nm
+reports the configuration parameters used to create the iODBC library.
