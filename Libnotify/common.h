@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -70,8 +70,6 @@
 /* notify state flags */
 #define NOTIFY_STATE_USE_LOCKS 0x00000001
 
-struct client_s;
-
 typedef struct
 {
 	char *name;
@@ -81,7 +79,7 @@ typedef struct
 	uint32_t slot;
 	uint32_t refcount;
 	uint32_t val;
-	uint32_t state;
+	uint64_t state;
 	void *private;
 	list_t *client_list;
 } name_info_t;
@@ -93,7 +91,7 @@ typedef struct
 	uint32_t notify_type;
 	uint32_t lastval;
 	mach_msg_empty_send_t *msg;
-	uint16_t port;
+	int fd;
 	uint32_t pid;
 	uint32_t sig;
 	int token;
@@ -126,15 +124,15 @@ void _notify_lib_notify_state_free(notify_state_t *ns);
 
 uint32_t _notify_lib_post(notify_state_t *ns, const char *name, uint32_t uid, uint32_t gid);
 uint32_t _notify_lib_check(notify_state_t *ns, uint32_t cid, int *check);
-uint32_t _notify_lib_get_state(notify_state_t *ns, uint32_t cid, int *state);
-uint32_t _notify_lib_set_state(notify_state_t *ns, uint32_t cid, int state, uint32_t uid, uint32_t gid);
+uint32_t _notify_lib_get_state(notify_state_t *ns, uint32_t cid, uint64_t *state);
+uint32_t _notify_lib_set_state(notify_state_t *ns, uint32_t cid, uint64_t state, uint32_t uid, uint32_t gid);
 uint32_t _notify_lib_get_val(notify_state_t *ns, uint32_t cid, int *val);
 uint32_t _notify_lib_set_val(notify_state_t *ns, uint32_t cid, int val, uint32_t uid, uint32_t gid);
 
 uint32_t _notify_lib_register_plain(notify_state_t *ns, const char *name, task_t session, uint32_t slot, uint32_t uid, uint32_t gid, uint32_t *out_token);
 uint32_t _notify_lib_register_signal(notify_state_t *ns, const char *name, task_t session, uint32_t sig, uint32_t uid, uint32_t gid, uint32_t *out_token);
 uint32_t _notify_lib_register_mach_port(notify_state_t *ns, const char *name, task_t session, mach_port_t port, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token);
-uint32_t _notify_lib_register_file_descriptor(notify_state_t *ns, const char *name, task_t session, uint32_t port, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token);
+uint32_t _notify_lib_register_file_descriptor(notify_state_t *ns, const char *name, task_t session, const char *path, uint32_t token, uint32_t uid, uint32_t gid, uint32_t *out_token);
 void _notify_lib_cancel_session(notify_state_t *ns, task_t session);
 
 uint32_t _notify_lib_get_owner(notify_state_t *ns, const char *name, uint32_t *uid, uint32_t *gid);
@@ -147,4 +145,4 @@ uint32_t _notify_lib_release_name(notify_state_t *ns, const char *name, uint32_t
 
 void _notify_lib_cancel(notify_state_t *ns, uint32_t cid);
 
-#endif _NOTIFY_COMMON_H_
+#endif /* _NOTIFY_COMMON_H_ */

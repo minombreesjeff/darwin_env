@@ -79,4 +79,4 @@ extern uint32_t _nc_list_count(list_t *l);
 extern list_t *_nc_list_extract(list_t *n);
 extern list_t *_nc_list_chop(list_t *l);
 
-#endif _NOTIFY_TABLE_H_
+#endif /* _NOTIFY_TABLE_H_ */

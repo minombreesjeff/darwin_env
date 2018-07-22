@@ -59,7 +59,7 @@ routine _notify_server_register_file_descriptor
 	server : mach_port_t;
 	name : notify_name;
 	task : task_t;
-	udp_port : int;
+	path : notify_name;
 	ntoken : int;
 	out client_id : int;
 	out status : int;
@@ -145,7 +145,7 @@ routine _notify_server_get_state
 (
 	server : mach_port_t;
 	client_id : int;
-	out state : int;
+	out state : uint64_t;
 	out status : int;
 	SecToken token : security_token_t
 );
@@ -154,7 +154,7 @@ routine _notify_server_set_state
 (
 	server : mach_port_t;
 	client_id : int;
-	state : int;
+	state : uint64_t;
 	out status : int;
 	SecToken token : security_token_t
 );
