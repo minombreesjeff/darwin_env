@@ -1,8 +1,8 @@
-{\rtf1\mac\ansicpg10000\cocoartf102
+{\rtf1\mac\ansicpg10000\cocoartf824\cocoasubrtf230
 \readonlydoc1{\fonttbl\f0\fnil\fcharset77 LucidaGrande-Bold;\f1\fnil\fcharset77 LucidaGrande;\f2\froman\fcharset77 Times-Roman;
-\f3\froman\fcharset77 Palatino-Italic;\f4\fswiss\fcharset77 Helvetica;}
-{\colortbl;\red255\green255\blue255;\red157\green17\blue179;}
-\margl1440\margr1440\vieww17500\viewh13680\viewkind0
+\f3\froman\fcharset77 Times-Italic;\f4\fswiss\fcharset77 Helvetica;}
+{\colortbl;\red255\green255\blue255;\red157\green17\blue179;\red0\green0\blue240;}
+\margl1440\margr1440\vieww17820\viewh16040\viewkind0
 \pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
 
 \f0\b\fs28 \cf0 Acknowledgments\
@@ -518,6 +518,16 @@ Copyright \'a9 1998-2000 Ralf S. Engelschall. All rights reserved.\
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:  1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.  2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.  3. All advertising materials mentioning features or use of this software must display the following acknowledgment:  This product includes software developed by Ralf S. Engelschall <rse@engelschall.com> for use in the mod_ssl project (http://www.modssl.org/).  4. The names mod_ssl must not be used to endorse or promote products derived from this software without prior written permission. For written permission, please contact rse@engelschall.com.  5. Products derived from this software may not be called mod_ssl nor may mod_ssl appear in their names without prior written permission of Ralf S. Engelschall.  6. Redistributions of any form whatsoever must retain the following acknowledgment:  This product includes software developed by Ralf S. Engelschall <rse@engelschall.com> for use in the mod_ssl project (http://www.modssl.org/).\
 THIS SOFTWARE IS PROVIDED BY RALF S. ENGELSCHALL ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL RALF S. ENGELSCHALL OR HIS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\
 \
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural\pardirnatural
+
+\f0\b \cf0 Hiroaki Etoh, Federico G. Schwindt, and Miodrag Vallat
+\f1\b0  ( stack_protector.c )\
+Copyright \'a9 2002 Hiroaki Etoh, Federico G. Schwindt, and Miodrag Vallat.  All rights reserved.\
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.  2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
+\cf0 \
 
 \f0\b Michael Everson
 \f1\b0  ( Unicode Mapping Tables )\
@@ -543,7 +553,7 @@ The views and conclusions contained in the software and documentation are those 
 \
 
 \f0\b Free Software Foundation
-\f1\b0  ( various GNU projects, including autoconf, automake, bash, bc, bison, cvs, diffutils, emacs, gcc, gdb, gm4, gnumake, gnutar, gperf, grep, groff, patch, screen, texi2html, texinfo )\
+\f1\b0  ( various GNU projects, including autoconf, automake, bash, bc, bison, cvs, diffutils, emacs, gas, gcc, gdb, gm4, gnumake, gnutar, gperf, grep, groff, patch, screen, texi2html, texinfo )\
 Copyright \'a9 1988-2003 Free Software Foundation, Inc. (FSF).\
 Parts of this product include certain software owned by the FSF and licensed by Apple. You may obtain a complete machine-readable copy of the source code for the FSF software under the terms of GNU General Public License (GPL), without charge except for the cost of media, shipping, and handling, upon written request to Apple.  The FSF software is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GPL for more details; a copy of the GPL is included below.\
 \pard\li720\ql\qnatural
@@ -756,9 +766,8 @@ Portions of this product \'a9 2002-2005 Glyph & Cog, LLC. The Xpdf JBIG2 decoder
 Copyright \'a9 1996-2005 Julian Hall, Simon Tatham, et al.\
 \pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
 \cf0 The NASM software is licensed under the terms of the GNU Lesser General Public License, Version (LGPL) as published by the Free Software Foundation; either version 2.1 of the License, http://www.fsf.org/copyleft/lesser.html, or (at your option) any later version. You may obtain a complete machine-readable copy of the source code for the NASM software under the terms of LGPL, without charge except for the cost of media, shipping, and handling, upon written request to Apple.  The NASM software is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the LGPL for more details.  You should have received a copy of the LGPL along with the NASM software; if not, write to the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307, USA.\
-\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
 
-\f0\b \cf0 \
+\f0\b \
 David Hines
 \f1\b0  ( PC Card driver )\
 This product contains software provided by David Hines under the Mozilla Public License Version 1.1. The initial developer of the original code is David Hines <dhinds@hyper.stanford.edu>. Portions created by David A. Hines are Copyright \'a9 1998 David A. Hines. All rights reserved.  Source code of Apple's modifications to this software is available under the MPL 1.1 and may be found at http://www.opensource.apple.com/.\
@@ -800,6 +809,13 @@ Copyright \'a9 1997, 1998, 1999, International Business Machines Corporation and
 The Postfix and Jikes compiler software (IBM software) are released under the IBM Public License Version 1.0.  A copy of the source code for this IBM software may be found in Apple's Open Source repository.  See Apple's Open Source web site (http://www.opensource.apple.com/) for information on how to obtain the source code.  THE IBM SOFTWARE IS PROVIDED ON AN AS IS BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING, WITHOUT LIMITATION, ANY WARRANTIES OR CONDITIONS OF TITLE, NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.  NEITHER APPLE, IBM NOR ANY OTHER CONTRIBUTOR TO THE IBM SOFTWARE SHALL HAVE ANY LIABILITY FOR ANY DIRECT, INDIRECT, INCIDENTIAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, WITHOUT LIMITATION, LOST PROFITS), HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OR DISTRIBUTION OF THE IBM SOFTWARE OR THE EXERCISE OF ANY RIGHTS GRANTED HEREUNDER, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.\
 \pard\ql\qnatural
 \cf0 \
+\pard\ql\qnatural
+
+\f0\b \cf0 Doug Lea
+\f1\b0  ( dlmalloc )\
+This is a version (aka dlmalloc) of malloc/free/realloc written by Doug Lea and released to the public domain.\'ca Use, modify, and redistribute this code without permission or acknowledgement in any way you wish.\'ca Send questions, comments, complaints, performance data, etc to {\field{\*\fldinst{HYPERLINK "mailto:dl@cs.oswego.edu"}}{\fldrslt \cf3 \ul \ulc3 dl@cs.oswego.edu}}\cf3 \ul \ulc3 .\
+\pard\pardeftab720\ql\qnatural
+\cf0 \ulnone \
 \pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
 
 \f0\b \cf0 Industrial Light & Magic
@@ -897,9 +913,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS AS IS AND AN
 Copyright \'a9 2003 Anders S. Johansen/SecondGuess ApS.  All rights reserved. \
 Used with permission from the author. \
 \
-\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
 
-\f0\b \cf0 Evan Jones
+\f0\b Evan Jones
 \f1\b0  ( RowResizableViews )\
 Copyright \'a9 2004-2005, Evan Jones.  All rights reserved.\
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\
@@ -907,8 +922,7 @@ Redistribution and use in source and binary forms, with or without modification,
 * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\
 * Neither the name of RowResizableViews nor the names of its contributors may be used to endorse or promote products derived fom this software without specific prior written permission.\
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\
-\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
-\cf0 \
+\
 
 \f0\b Juniper Networks
 \f1\b0  ( PAM )\
@@ -1505,15 +1519,13 @@ Copyright \'a9 1998-2001 Sendmail, Inc. All rights reserved.\
 The following license terms and conditions apply, unless a different license is obtained from Sendmail, Inc., 6425 Christie Ave, Fourth Floor, Emeryville, CA 94608, or by electronic mail at license@sendmail.com.\
 License Terms:  Use, Modification and Redistribution (including distribution of any modified or derived work) in source and binary forms is permitted only if each of the following conditions is met:  1. Redistributions qualify as freeware or Open Source Software under one of the following terms: (a) Redistributions are made at no charge beyond the reasonable cost of materials and delivery. (b) Redistributions are accompanied by a copy of the Source Code or by an irrevocable offer to provide a copy of the Source Code for up to three years at the cost of materials and delivery.  Such redistributions must allow further use, modification, and redistribution of the Source Code under substantially the same terms as this license.  For the purposes of redistribution Source Code means the complete compilable and linkable source code of sendmail including all modifications. 2. Redistributions of source code must retain the copyright notices as they appear in each source code file, these license terms, and the disclaimer/limitation of liability set forth as paragraph 6 below.  3. Redistributions in binary form must reproduce the Copyright Notice, these license terms, and the disclaimer/limitation of liability set forth as paragraph 6 below, in the documentation and/or other materials provided with the distribution.  For the purposes of binary distribution the Copyright Notice refers to the following language: Copyright (c) 1998-2001 Sendmail, Inc.  All rights reserved.  4. Neither the name of Sendmail, Inc. nor the University of California nor the names of their contributors may be used to endorse or promote products derived from this software without specific prior written permission.  The name sendmail is a trademark of Sendmail, Inc.  5. All redistributions must comply with the conditions imposed by the University of California on certain embedded code, whose copyright notice and conditions for redistribution are as follows: (a) Copyright (c) 1988, 1993 The Regents of the University of California.  All rights reserved. (b) Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met: (i) Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer. (ii) Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution. (iii) Neither the name of the University nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.  6. Disclaimer/Limitation of Liability: THIS SOFTWARE IS PROVIDED BY SENDMAIL, INC. AND CONTRIBUTORS AS IS AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL SENDMAIL, INC., THE REGENTS OF THE UNIVERSITY OF CALIFORNIA OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.\
 \
-\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
 
-\f0\b \cf0 Sente SA
+\f0\b Sente SA
 \f1\b0  ( OCUnit )\
 Copyright \'a9 1994-2005, Sente SA.  All rights reserved.\
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:  1.  Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.  2.  Redistributions in binary form must reproduce the above copyright notice, this list of and the following disclaimer in the documentation and/or other materials provided with the distribution.\
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SEN:TE OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\
-\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
-\cf0 \
+\
 
 \f0\b Julian R. Seward
 \f1\b0  ( bzip2 )\
@@ -1776,8 +1788,20 @@ Copyright \'a9 1993-2000 Juergen Weigert, Michael Schroeder.  Copyright \'a9 198
 \fs20 \
 
 \fs24 \
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural\pardirnatural
 
-\f0\b Jean-Claude Wippler
+\f0\b \cf0 Winning Strategies 
+\f1\b0 ( asa )
+\f0\b \
+
+\f1\b0 Copyright \'a9 1993, 1994 Winning Strategies, Inc. All rights reserved.\
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.  2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.  3. All advertising materials mentioning features or use of this software must display the following acknowledgement: This product includes software developed by Winning Strategies, Inc.  4. The name of the author may not be used to endorse or promote products derived from this software without specific prior written permission.\
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\
+\
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
+
+\f0\b \cf0 Jean-Claude Wippler
 \f1\b0  ( MetaKit )\
 Copyright \'a9 1996-1999 Jean-Claude Wippler.\
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the Software), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies  of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:   The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. \
@@ -1831,5 +1855,5 @@ Redistribution and use in source and binary forms, with or without modification,
 \
 \pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural
 
-\fs20 \cf0 Rev. 5-16-05X&Dev Tools\
+\fs20 \cf0 Rev. 11-18-05X&Dev Tools\
 }

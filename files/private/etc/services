@@ -4681,10 +4681,12 @@ dls		2047/udp #
 dls		2047/tcp # 
 dls-monitor	2048/udp # 
 dls-monitor	2048/tcp # 
-#                         <== NOTE Conflict on 2049 !
-shilp		2049/udp nfs # 
-shilp		2049/tcp nfs # 
-#                          Brent Callaghan <brent@terra.eng.sun.com>
+nfsd		2049/tcp   nfs		# NFS server daemon
+nfsd		2049/udp   nfs		# NFS server daemon
+#PROBLEMS!=============================================================
+#shilp		2049/tcp
+#shilp		2049/udp
+#PROBLEMS!=============================================================
 av-emb-config   2050/udp    # Avaya EMB Config Port
 av-emb-config   2050/tcp    # Avaya EMB Config Port
 #                          John Yeager <johnyeager@avaya.com>
@@ -9307,7 +9309,7 @@ cindycollab     3770/udp    # Cinderella Collaboration
 cindycollab     3770/tcp    # Cinderella Collaboration
 #                          Ulrich Kortenkamp  <kortenkamp@cinderella.de> June 2003
 paging-port     3771/udp    # RTP Paging Port
-paging-port     3771/tdp    # RTP Paging Port
+paging-port     3771/tcp    # RTP Paging Port
 #                          Patrick Ferriter <Patrick.Ferriter@zultys.com> June 2003
 ctp             3772/udp    # Chantry Tunnel Protocol
 ctp             3772/tcp    # Chantry Tunnel Protocol
@@ -9983,9 +9985,6 @@ jprinter	5309/tcp    # J Printer
 outlaws		5310/udp    # Outlaws
 outlaws		5310/tcp    # Outlaws
 #			   Richard Fife <richardf@lucasarts.com>
-tmlogin		5311/udp    # TM Login
-tmlogin		5311/tcp    # TM Login
-#			   Eric Sharakan <eric.sharakan@east.sun.com>
 #               5312-5313  Unassigned
 opalis-rbt-ipc  5314/udp    # opalis-rbt-ipc
 opalis-rbt-ipc  5314/tcp    # opalis-rbt-ipc
