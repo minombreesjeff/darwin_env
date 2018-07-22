@@ -1,5 +1,5 @@
 .\" 
-.\" Copyright (c) 2006-2007 Apple Inc. All rights reserved.
+.\" Copyright (c) 2009 Apple Inc. All rights reserved.
 .\" 
 .\" @APPLE_LICENSE_HEADER_START@
 .\" 
@@ -20,42 +20,25 @@
 .\" 
 .\" @APPLE_LICENSE_HEADER_END@
 .\" 
-.Dd August 30, 2007
-.Dt configureLocalKDC 1
+.Dd January 08, 2009
+.Dt migrate 1
 .Os Darwin
 .Sh NAME
-.Nm configureLocalKDC
-.Nd generate a LocalKDC
+.Nm migrateLocalKDC
+.Nd migrates a LocalKDC
 .Sh SYNOPSIS
 .Nm
 .Sh DESCRIPTION
 .Nm
-generates a LocalKDC and provisions LKDC service principals.
-The script is non-destructive and can be run multiple times.
+migrates a localKDC database from an old installation
 .Pp
 .Sh FILES
 .Nm
-does not own, but references the following files:
-.Pp
-.br
-/Library/Keychains/System.keychain
-.br
 /var/db/krb5kdc/kdc.conf
-.br
-/System/Library/LaunchDaemons/com.apple.kdcmond.plist
-.br
-/Library/Preferences/com.apple.AppleFileServer
-.br
-/Library/Preferences/SystemConfiguration/com.apple.smb.server
 .Pp
 .Sh SEE ALSO
-.Xr systemkeychain 8 ,
-.Xr certtool 1 ,
-.Xr kdcsetup 1 ,
-.Xr launchctl 1 ,
-.Xr kadmin 8 ,
-.Xr defaults 1
+.Xr configureLocalKDC 1 ,
 .Pp
 .Sh HISTORY
 .Nm
-first appeared in version 10.5 of Mac OS X.
+first appeared in version 10.6 of Mac OS X.
