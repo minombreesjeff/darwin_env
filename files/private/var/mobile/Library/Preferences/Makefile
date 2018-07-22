@@ -1,4 +1,4 @@
-Destination = $(DSTROOT)/private/var/root/Library/Preferences
+Destination = $(DSTROOT)/private/var/mobile/Library/Preferences
 
 # Common Makefile
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/Common.make
