@@ -21,7 +21,7 @@
 >>4	belong		<20		Mach-O universal binary with %ld architectures
 #>>4	belong		<0xffff		Mach-O universal binary with %ld architectures
 #
-0	lelong&0xfeffffff	0xfeedface	Mach-O
+0	lelong&0xfffffffe	0xfeedface	Mach-O
 >0	byte		0xcf		64-bit
 >12	lelong		1		object
 >12	lelong		2		executable
@@ -54,6 +54,7 @@
 >4	lelong		16		i860
 >4	lelong		17		rs6000
 >4	lelong		18		ppc
+>4	lelong		16777223	x86_64
 >4	lelong		16777234	ppc64
 >4	lelong		>16777234
 >>4	lelong		x		architecture=%ld
@@ -96,6 +97,7 @@
 >4	belong		16		i860
 >4	belong		17		rs6000
 >4	belong		18		ppc
+>4	belong		16777223	x86_64
 >4	belong		16777234	ppc64
 >4	belong		>16777234
 >>4	belong		x		architecture=%ld

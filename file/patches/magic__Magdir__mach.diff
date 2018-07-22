@@ -1,6 +1,6 @@
---- magic/Magdir/mach.orig	Fri Sep 12 15:03:47 2003
-+++ magic/Magdir/mach	Thu Nov 18 08:33:48 2004
-@@ -1,21 +1,75 @@
+--- magic/Magdir/mach.orig	2003-09-12 12:03:47.000000000 -0700
++++ magic/Magdir/mach	2006-01-12 18:01:26.000000000 -0800
+@@ -1,21 +1,76 @@
  #------------------------------------------------------------------------------
  # mach file description
  #
@@ -27,7 +27,7 @@
 +>>4	belong		<20		Mach-O universal binary with %ld architectures
 +#>>4	belong		<0xffff		Mach-O universal binary with %ld architectures
 +#
-+0	lelong&0xfeffffff	0xfeedface	Mach-O
++0	lelong&0xfffffffe	0xfeedface	Mach-O
 +>0	byte		0xcf		64-bit
 +>12	lelong		1		object
 +>12	lelong		2		executable
@@ -60,6 +60,7 @@
 +>4	lelong		16		i860
 +>4	lelong		17		rs6000
 +>4	lelong		18		ppc
++>4	lelong		16777223	x86_64
 +>4	lelong		16777234	ppc64
 +>4	lelong		>16777234
 +>>4	lelong		x		architecture=%ld
@@ -82,7 +83,7 @@
  >>12	belong		x		filetype=%ld
  >4	belong		<0
  >>4	belong		x		architecture=%ld
-@@ -34,7 +88,7 @@
+@@ -34,7 +89,7 @@
  >4	belong		8		mips
  >4	belong		9		ns32532
  >4	belong		10		architecture=10
@@ -91,11 +92,12 @@
  >4	belong		12		acorn
  >4	belong		13		m88k
  >4	belong		14		sparc
-@@ -42,5 +96,6 @@
+@@ -42,5 +97,7 @@
  >4	belong		16		i860
  >4	belong		17		rs6000
  >4	belong		18		ppc
 ->4	belong		>18
++>4	belong		16777223	x86_64
 +>4	belong		16777234	ppc64
 +>4	belong		>16777234
  >>4	belong		x		architecture=%ld
