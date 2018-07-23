@@ -57,6 +57,7 @@
 #include <unistd.h>
 #endif
 #include <signal.h>
+#include <sys/stat.h>
 
 #include "libpfkey.h"
 
@@ -121,8 +122,7 @@ session(void)
 
 	sigreq = 0;
 	while (1) {
-		rfds = mask0;
-
+	
 		/*
 		 * asynchronous requests via signal.
 		 * make sure to reset sigreq to 0.
@@ -131,7 +131,7 @@ session(void)
 
 		/* scheduling */
 		timeout = schedular();
-
+		rfds = mask0;
 		error = select(nfds, &rfds, (fd_set *)0, (fd_set *)0, timeout);
 		if (error < 0) {
 			switch (errno) {
@@ -145,7 +145,6 @@ session(void)
 			}
 			/*NOTREACHED*/
 		}
-
 #ifdef ENABLE_ADMINPORT
 		if (FD_ISSET(lcconf->sock_admin, &rfds))
 			admin_handler();
@@ -154,6 +153,7 @@ session(void)
 		for (p = lcconf->myaddrs; p; p = p->next) {
 			if (!p->addr)
 				continue;
+			
 			if (FD_ISSET(p->sock, &rfds))
 				isakmp_handler(p->sock);
 #ifdef IKE_NAT_T
@@ -165,11 +165,9 @@ session(void)
 		if (FD_ISSET(lcconf->sock_pfkey, &rfds))
 			pfkey_handler();
 
-		if (lcconf->rtsock >= 0 && FD_ISSET(lcconf->rtsock, &rfds)) {
+		if (lcconf->rtsock >= 0 && FD_ISSET(lcconf->rtsock, &rfds))
 			if (update_myaddrs() && lcconf->autograbaddr)
 				sched_new(5, check_rtsock, NULL);
-			initfds();
-		}
 	}
 }
 
@@ -185,14 +183,15 @@ close_session()
 	exit(0);
 }
 
+
 static void
 check_rtsock(p)
 	void *p;
-{
-	isakmp_close();
+{	
 	grab_myaddrs();
+	isakmp_close_unused();
 	autoconf_myaddrsport();
-	isakmp_open();
+	isakmp_open();	
 
 	/* initialize socket list again */
 	initfds();

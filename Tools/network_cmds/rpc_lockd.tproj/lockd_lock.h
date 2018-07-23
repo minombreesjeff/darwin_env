@@ -11,7 +11,7 @@ enum nlm_stats unlock(nlm4_lock *lock, const int flags);
 enum nlm_stats cancellock(nlm4_cancargs *args, const int flags);
 int lock_answer(int version, netobj *netcookie, nlm4_lock *lock, int flags, int result);
 enum nlm_stats getshare(nlm_shareargs *shrarg, struct svc_req *rqstp, const int flags);
-enum nlm_stats unshare(nlm_shareargs *shrarg, struct svc_req *rqstp);
+enum nlm_stats unshare(nlm_shareargs *shrarg, struct svc_req *rqstp, const int flags);
 void do_free_all(const char *hostname);
 void granted_failed(nlm4_res *arg);
 

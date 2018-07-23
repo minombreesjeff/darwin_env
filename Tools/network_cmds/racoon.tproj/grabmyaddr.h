@@ -36,6 +36,8 @@ struct myaddrs {
 #ifdef IKE_NAT_T
 	int	nattsock;	/* nat-traversal socket (port PORT_ISAKMP_NATT), for IPv4 sockets only */
 #endif
+	int addrcount;	/* number of interfaces associated with this address */
+					
 };
 
 extern void clear_myaddr __P((struct myaddrs **));

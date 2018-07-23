@@ -31,7 +31,7 @@
  *
  * so there!
  *
- * $Id: ifconfig.h,v 1.1.1.1.140.1 2004/04/14 00:27:17 lindak Exp $
+ * $Id: ifconfig.h,v 1.2 2003/12/16 23:16:58 lindak Exp $
  */
 
 extern struct ifreq ifr;

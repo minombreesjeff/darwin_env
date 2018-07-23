@@ -16,7 +16,7 @@ SUBPROJECTS = timed.tproj bootparams
 
 TOOLS = arp.tproj domainname.tproj \
 	rpc_lockd.tproj rpc_statd.tproj \
-        ifconfig.tproj inetd.tproj logger.tproj netstat.tproj\
+        ifconfig.tproj logger.tproj netstat.tproj\
         nfsd.tproj nfsiod.tproj nfsstat.tproj ping.tproj rarpd.tproj\
         rcp.tproj rexecd.tproj rlogin.tproj rlogind.tproj\
         route.tproj routed.tproj rpcinfo.tproj rsh.tproj rshd.tproj\

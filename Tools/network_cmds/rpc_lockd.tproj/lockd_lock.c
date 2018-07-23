@@ -1724,7 +1724,6 @@ void
 clear_partialfilelock(const char *hostname)
 {
 	struct file_lock *ifl, *nfl;
-	enum partialfilelock_status pfsret;
 
 	/* Clear blocking file lock list */
 	clear_blockingfilelock(hostname);
@@ -1738,7 +1737,7 @@ clear_partialfilelock(const char *hostname)
 	 * would mess up the iteration.  Thus, a next element
 	 * must be used explicitly
 	 */
-restart:
+
 	ifl = LIST_FIRST(&nfslocklist_head);
 
 	while (ifl != NULL) {
@@ -1746,21 +1745,8 @@ restart:
 
 		if (strncmp(hostname, ifl->client_name, SM_MAXSTRLEN) == 0) {
 			/* Unlock destroys ifl out from underneath */
-			pfsret = unlock_partialfilelock(ifl);
-			if (pfsret != PFL_GRANTED) {
-				/* Uh oh... there was some sort of problem. */
-				/* If we restart the loop, we may get */
-				/* stuck here forever getting errors. */
-				/* So, let's just abort the whole scan. */
-				syslog(LOG_WARNING, "lock clearing for %s failed: %d",
-					hostname, pfsret);
-				break;
-			}
+			unlock_partialfilelock(ifl);
 			/* ifl is NO LONGER VALID AT THIS POINT */
-			/* Note: the unlock may deallocate several existing locks. */
-			/* Therefore, we need to restart the scanning of the list, */
-			/* because nfl could be pointing to a freed lock. */
-			goto restart;
 		}
 		ifl = nfl;
 	}
@@ -2000,6 +1986,12 @@ testlock(struct nlm4_lock *lock, bool_t exclusive, int flags __unused)
 {
 	struct file_lock test_fl, *conflicting_fl;
 
+	if (lock->fh.n_len != sizeof(fhandle_t)) {
+		debuglog("received fhandle size %d, local size %d",
+		    lock->fh.n_len, (int)sizeof(fhandle_t));
+		return NULL;
+	}
+
 	bzero(&test_fl, sizeof(test_fl));
 
 	test_fl.filehandle.n_len = lock->fh.n_len;
@@ -2041,6 +2033,12 @@ getlock(nlm4_lockargs *lckarg, struct svc_req *rqstp, const int flags)
 		return (flags & LOCK_V4) ?
 		    nlm4_denied_grace_period : nlm_denied_grace_period;
 
+	if (lckarg->alock.fh.n_len != sizeof(fhandle_t)) {
+		debuglog("received fhandle size %d, local size %d",
+		    lckarg->alock.fh.n_len, (int)sizeof(fhandle_t));
+		return (flags & LOCK_V4) ? nlm4_failed : nlm_denied;
+	}
+
 	/* allocate new file_lock for this request */
 	newfl = allocate_file_lock(&lckarg->alock.oh, &lckarg->alock.fh,
 				   (struct sockaddr *)svc_getcaller(rqstp->rq_xprt),
@@ -2050,11 +2048,6 @@ getlock(nlm4_lockargs *lckarg, struct svc_req *rqstp, const int flags)
 		/* failed */
 		return (flags & LOCK_V4) ?
 		    nlm4_denied_nolocks : nlm_denied_nolocks;
-	}
-
-	if (lckarg->alock.fh.n_len != sizeof(fhandle_t)) {
-		debuglog("recieved fhandle size %d, local size %d",
-		    lckarg->alock.fh.n_len, (int)sizeof(fhandle_t));
 	}
 
 	fill_file_lock(newfl,
@@ -2098,14 +2091,20 @@ getlock(nlm4_lockargs *lckarg, struct svc_req *rqstp, const int flags)
 
 /* unlock a filehandle */
 enum nlm_stats
-unlock(nlm4_lock *lock, const int flags __unused)
+unlock(nlm4_lock *lock, const int flags)
 {
 	struct file_lock fl;
 	enum nlm_stats err;
 	
-	siglock();
-	
 	debuglog("Entering unlock...\n");
+
+	if (lock->fh.n_len != sizeof(fhandle_t)) {
+		debuglog("received fhandle size %d, local size %d",
+		    lock->fh.n_len, (int)sizeof(fhandle_t));
+		return (flags & LOCK_V4) ? nlm4_failed : nlm_denied;
+	}
+	
+	siglock();
 	
 	bzero(&fl,sizeof(struct file_lock));
 	fl.filehandle.n_len = lock->fh.n_len;
@@ -2124,14 +2123,20 @@ unlock(nlm4_lock *lock, const int flags __unused)
 
 /* cancel a blocked lock request */
 enum nlm_stats
-cancellock(nlm4_cancargs *args, const int flags __unused)
+cancellock(nlm4_cancargs *args, const int flags)
 {
 	struct file_lock *ifl, *nfl;
 	enum nlm_stats err;
 
-	siglock();
-
 	debuglog("Entering cancellock...\n");
+
+	if (args->alock.fh.n_len != sizeof(fhandle_t)) {
+		debuglog("received fhandle size %d, local size %d",
+		    args->alock.fh.n_len, (int)sizeof(fhandle_t));
+		return (flags & LOCK_V4) ? nlm4_failed : nlm_denied;
+	}
+
+	siglock();
 
 	err = nlm_denied;
 
@@ -2629,6 +2634,12 @@ getshare(nlm_shareargs *shrarg, struct svc_req *rqstp, const int flags)
 			nlm_denied_grace_period;
 	}
 
+	if (shrarg->share.fh.n_len != sizeof(fhandle_t)) {
+		debuglog("received fhandle size %d, local size %d",
+		    shrarg->share.fh.n_len, (int)sizeof(fhandle_t));
+		return (flags & LOCK_V4) ? nlm4_failed : nlm_denied;
+	}
+
 	/* find file in list of share files */
 	LIST_FOREACH(shrfile, &nfssharefilelist_head, sharefilelist) {
 		if ((shrarg->share.fh.n_len == shrfile->filehandle.n_len) &&
@@ -2745,12 +2756,18 @@ getshare(nlm_shareargs *shrarg, struct svc_req *rqstp, const int flags)
 
 /* remove a share reservation */
 enum nlm_stats
-unshare(nlm_shareargs *shrarg, struct svc_req *rqstp)
+unshare(nlm_shareargs *shrarg, struct svc_req *rqstp, const int flags)
 {
 	struct sharefile *shrfile;
 	struct file_share *sh;
 
 	debuglog("Entering unshare...\n");
+
+	if (shrarg->share.fh.n_len != sizeof(fhandle_t)) {
+		debuglog("received fhandle size %d, local size %d",
+		    shrarg->share.fh.n_len, (int)sizeof(fhandle_t));
+		return (flags & LOCK_V4) ? nlm4_failed : nlm_denied;
+	}
 
 	/* find file in list of share files */
 	LIST_FOREACH(shrfile, &nfssharefilelist_head, sharefilelist) {
@@ -2814,7 +2831,6 @@ do_free_all(const char *hostname)
 	struct file_lock *ifl, *nfl;
 	struct sharefile *shrfile, *nshrfile;
 	struct file_share *ifs, *nfs;
-	enum partialfilelock_status pfsret;
 
 	/* clear non-monitored blocking file locks */
 	ifl = LIST_FIRST(&blockedlocklist_head);
@@ -2831,7 +2847,6 @@ do_free_all(const char *hostname)
 	}
 
 	/* clear non-monitored file locks */
-restart:
 	ifl = LIST_FIRST(&nfslocklist_head);
 	while (ifl != NULL) {
 		nfl = LIST_NEXT(ifl, nfslocklist);
@@ -2839,21 +2854,8 @@ restart:
 		if (((ifl->flags & LOCK_MON) == 0) &&
 		    (strncmp(hostname, ifl->client_name, SM_MAXSTRLEN) == 0)) {
 			/* Unlock destroys ifl out from underneath */
-			pfsret = unlock_partialfilelock(ifl);
-			if (pfsret != PFL_GRANTED) {
-				/* Uh oh... there was some sort of problem. */
-				/* If we restart the loop, we may get */
-				/* stuck here forever getting errors. */
-				/* So, let's just abort the whole scan. */
-				syslog(LOG_WARNING, "unmonitored lock clearing for %s failed: %d",
-					hostname, pfsret);
-				break;
-			}
+			unlock_partialfilelock(ifl);
 			/* ifl is NO LONGER VALID AT THIS POINT */
-			/* Note: the unlock may deallocate several existing locks. */
-			/* Therefore, we need to restart the scanning of the list, */
-			/* because nfl could be pointing to a freed lock. */
-			goto restart;
 		}
 
 		ifl = nfl;

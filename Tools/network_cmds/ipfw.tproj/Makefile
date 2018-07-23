@@ -12,7 +12,7 @@ NAME = ipfw
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-CFILES = ipfw.c
+CFILES = ipfw2.c
 
 OTHERSRCS = Makefile.preamble Makefile Makefile.postamble ipfw.8
 

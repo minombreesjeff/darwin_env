@@ -110,3 +110,7 @@ STRIPFLAGS =
 # derived files should go.
 
 VPATH += :../tftp.tproj
+
+after_install:
+	mkdir -p "$(DSTROOT)/usr/share/man/man8"
+	cp tftpd.8 "$(DSTROOT)/usr/share/man/man8/"

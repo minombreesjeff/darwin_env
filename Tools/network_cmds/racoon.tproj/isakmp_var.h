@@ -65,6 +65,7 @@ extern int isakmp_init __P((void));
 extern const char *isakmp_pindex __P((const isakmp_index *, const u_int32_t));
 extern int isakmp_open __P((void));
 extern void isakmp_close __P((void));
+extern void isakmp_close_unused __P((void));
 extern int isakmp_send __P((struct ph1handle *, vchar_t *));
 
 extern void isakmp_ph1resend_stub __P((void *));

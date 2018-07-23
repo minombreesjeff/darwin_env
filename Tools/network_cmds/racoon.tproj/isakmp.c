@@ -1549,7 +1549,12 @@ isakmp_open()
 	for (p = lcconf->myaddrs; p; p = p->next) {
 		if (!p->addr)
 			continue;
-
+			
+		if (p->sock != -1) {
+			ifnum++;
+			continue;		// socket already open	
+		}
+					
 		/* warn if wildcard address - should we forbid this? */
 		switch (p->addr->sa_family) {
 		case AF_INET:
@@ -1591,14 +1596,12 @@ isakmp_open()
 		{
 			struct sockaddr_in	sin = *(struct sockaddr_in*)p->addr;
 			
-			sin.sin_port = ntohs(PORT_ISAKMP_NATT);
+			sin.sin_port = htons(PORT_ISAKMP_NATT);
 			p->nattsock = isakmp_setup_socket((struct sockaddr*)&sin);
 			if (p->nattsock >= 0)
-			{
 				plog(LLV_DEBUG, LOCATION, NULL,
 					"%s used as nat-t isakmp port (fd=%d)\n",
 					saddr2str((struct sockaddr*)&sin), p->nattsock);
-			}
 		}
 #endif
 
@@ -1642,6 +1645,33 @@ isakmp_close()
 	}
 
 	lcconf->myaddrs = NULL;
+}
+
+// close sockets for addresses that have gone away
+void
+isakmp_close_unused()
+{
+	struct myaddrs *p, *next, **prev;
+	
+	prev = &(lcconf->myaddrs);
+	for (p = lcconf->myaddrs; p; p = next) {
+		next = p->next;
+		if (p->addrcount == 0) { 	// not in use ?
+	
+			if (p->sock >= 0)
+				close(p->sock);
+			
+	#ifdef IKE_NAT_T
+			if (p->nattsock >= 0) 
+				close(p->nattsock);
+	#endif
+			*prev = p->next;
+			if (p->addr)
+				racoon_free(p->addr);
+			racoon_free(p);
+		} else
+			prev = &(p->next);
+	}
 }
 
 int

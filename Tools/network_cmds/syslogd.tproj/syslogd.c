@@ -107,6 +107,11 @@ static char sccsid[] = "@(#)syslogd.c	8.3 (Berkeley) 4/4/94";
 #include <unistd.h>
 #include <utmp.h>
 #include <string.h>
+#include <notify.h>
+
+#ifndef NETWORK_CHANGE_NOTIFICATION
+#define NETWORK_CHANGE_NOTIFICATION "com.apple.system.config.network_change"
+#endif
 
 #include "pathnames.h"
 #include "ttymsg.h"
@@ -339,6 +344,7 @@ main(int argc, char *argv[])
 	sigset_t mask;
 	pid_t ppid = 1;
 	socklen_t len;
+	int nctoken = -1;
 
 	bindhostname = NULL;
 	while ((ch = getopt(argc, argv, "46ACa:b:cdf:kl:m:nop:P:suv")) != -1)
@@ -451,6 +457,7 @@ main(int argc, char *argv[])
 	(void)sigaction(SIGCHLD, &sact, NULL);
 	(void)signal(SIGALRM, domark);
 	(void)signal(SIGPIPE, SIG_IGN);	/* We'll catch EPIPE instead. */
+	notify_register_signal(NETWORK_CHANGE_NOTIFICATION, SIGHUP, &nctoken);
 	(void)alarm(TIMERINTVL);
 
 	TAILQ_INIT(&deadq_head);
@@ -1096,13 +1103,13 @@ fprintlog(struct filed *f, int flags, const char *msg)
 			gr = getgrnam("admin");
 			if( gr ) 
 				fchown(f->f_file, 0, gr->gr_gid);
-			if (f->f_type == F_CHECKTTY) {
-				if (isatty(f->f_file)) {
-					if (strcmp(f->f_un.f_fname, ctty) == 0)
-						f->f_type = F_CONSOLE;
-					else
-						f->f_type = F_TTY;
-				}
+		}
+		if (f->f_type == F_CHECKTTY) {
+			if (isatty(f->f_file)) {
+				if (strcmp(f->f_un.f_fname, ctty) == 0)
+					f->f_type = F_CONSOLE;
+				else
+					f->f_type = F_TTY;
 			}
 		}
 	}
@@ -1168,7 +1175,7 @@ fprintlog(struct filed *f, int flags, const char *msg)
 				/* case ENOBUFS: */
 				/* case ECONNREFUSED: */
 				default:
-					dprintf("removing entry\n", e);
+					dprintf("removing entry\n");
 					(void)close(f->f_file);
 					f->f_type = F_UNUSED;
 					break;
@@ -1811,7 +1818,7 @@ cfline(const char *line, struct filed *f, const char *prog, const char *host)
 
 	switch (*p) {
 	case '@':
-		port = p;
+		port = (char *)p;
 		p = strsep(&port, ":");
 		(void)strlcpy(f->f_un.f_forw.f_hname, ++p,
 			sizeof(f->f_un.f_forw.f_hname));
@@ -1831,7 +1838,7 @@ cfline(const char *line, struct filed *f, const char *prog, const char *host)
 	case '/':
 		/* Delay opening files until we're ready to log to them */
 		f->f_file = -1;
-		if (strncmp(p, _PATH_DEV, sizeof(_PATH_DEV)) == 0)
+		if (strncmp(p, _PATH_DEV, sizeof(_PATH_DEV)-1) == 0)
 			f->f_type = F_CHECKTTY;
 		else
 			f->f_type = F_FILE;

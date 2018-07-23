@@ -1418,7 +1418,7 @@ pk_recvexpire(mhp)
 		/*
 		 * If the status is not equal to PHASE2ST_ESTABLISHED,
 		 * racoon ignores this expire message.  There are two reason.
-		 * One is that the phase 2 probably starts becuase there is
+		 * One is that the phase 2 probably starts because there is
 		 * a potential that racoon receives the acquire message
 		 * without receiving a expire message.  Another is that racoon
 		 * may receive the multiple expire messages from the kernel.
@@ -1524,17 +1524,17 @@ pk_recvacquire(mhp)
 	 * If there is a phase 2 handler against the policy identifier in
 	 * the acquire message, and if
 	 *    1. its state is less than PHASE2ST_ESTABLISHED, then racoon
-	 *       should ignore such a acquire message becuase the phase 2
+	 *       should ignore such a acquire message because the phase 2
 	 *       is just negotiating.
 	 *    2. its state is equal to PHASE2ST_ESTABLISHED, then racoon
-	 *       has to prcesss such a acquire message becuase racoon may
+	 *       has to prcesss such a acquire message because racoon may
 	 *       lost the expire message.
 	 */
 	iph2[0] = getph2byspid(xpl->sadb_x_policy_id);
 	if (iph2[0] != NULL) {
 		if (iph2[0]->status < PHASE2ST_ESTABLISHED) {
 			plog(LLV_DEBUG, LOCATION, NULL,
-				"ignore the acquire becuase ph2 found\n");
+				"ignore the acquire because ph2 found\n");
 			return -1;
 		}
 		if (iph2[0]->status == PHASE2ST_EXPIRED)
