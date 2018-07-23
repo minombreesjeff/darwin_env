@@ -14,7 +14,7 @@ PROJECT_TYPE = Aggregate
 LANGUAGE = English
 
 TOOLS = cap_mkdb.tproj colldef.tproj finger.tproj fingerd.tproj gencat.tproj \
-        last.tproj lsvfs.tproj md.tproj mklocale.tproj pstat.tproj stty.tproj \
+        last.tproj lsvfs.tproj md.tproj mklocale.tproj stty.tproj \
         tty.tproj whois.tproj ps.tproj usr-share-locale.tproj
 
 OTHERSRCS = Makefile.preamble Makefile Makefile.include adv_cmds.rtf

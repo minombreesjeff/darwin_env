@@ -19,7 +19,6 @@
 	    lsvfs.tproj,
             md.tproj, 
             mklocale.tproj, 
-            pstat.tproj, 
             sccs.tproj, 
             stty.tproj, 
             tput.tproj, 
