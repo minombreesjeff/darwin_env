@@ -94,7 +94,7 @@ int get_task_info (KINFO *ki)
 	int j, err = 0;
 
 	pid = KI_PROC(ki)->p_pid;
-	if (task_for_pid(mach_task_self(), pid, &ki->task) != KERN_SUCCESS) {
+	if (pid == 0 || task_for_pid(mach_task_self(), pid, &ki->task) != KERN_SUCCESS) {
                 return(1);
 	}
 	info_count = TASK_BASIC_INFO_COUNT;

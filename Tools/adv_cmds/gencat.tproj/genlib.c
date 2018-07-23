@@ -609,11 +609,12 @@ MCWriteCat(int fd)
 	cnt = 0;
 	for (msg = set->first; msg; msg = msg->next) {
 	    msg->offset = lseek(fd, (off_t)0L, L_INCR) - ntohll(mcSet.data.off);
-	    mcSet.dataLen += htonl(write(fd, msg->str, strlen(msg->str) + 1));
+	    mcSet.dataLen += write(fd, msg->str, strlen(msg->str) + 1);
 	    ++cnt;
 	}
 	mcSet.u.firstMsg = htonll(lseek(fd, (off_t)0L, L_INCR));
 	mcSet.numMsgs = htonl(cnt);
+	mcSet.dataLen = htonl(mcSet.dataLen);
 
 	/* Now write the message headers */
 	for (msg = set->first; msg; msg = msg->next) {
