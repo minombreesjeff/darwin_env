@@ -74,7 +74,7 @@ __FBSDID("$FreeBSD: src/usr.bin/whois/whois.c,v 1.34 2003/02/24 17:10:32 mike Ex
 #define	QNICHOST_TAIL	".whois-servers.net"
 #define	SNICHOST	"whois.6bone.net"
 #define	BNICHOST	"whois.registro.br"
-#define	DEFAULT_PORT	"whois"
+#define	DEFAULT_PORT	"nicname"
 #define	WHOIS_SERVER_ID	"Whois Server: "
 #define	WHOIS_ORG_SERVER_ID	"Registrant Street1:Whois Server:"
 

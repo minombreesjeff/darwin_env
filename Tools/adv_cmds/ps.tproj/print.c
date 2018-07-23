@@ -97,7 +97,7 @@ printheader()
 static void
 getproclline(KINFO *k, char **command_name, int *cmdlen, int show_args)
 {
-	int		mib[3], argmax;
+	int		mib[3], argmax, nargs, c = 0;
 	size_t		size;
 	char		*procargs, *sp, *np, *cp;
 	extern int	eflg;
@@ -146,6 +146,8 @@ getproclline(KINFO *k, char **command_name, int *cmdlen, int show_args)
 	 * |---------------|
 	 * | 0             |
 	 * |---------------| <-- Beginning of data returned by sysctl() is here.
+	 * | argc          |
+	 * |---------------|
 	 * | exec_path     |
 	 * |:::::::::::::::|
 	 * |               |
@@ -157,7 +159,7 @@ getproclline(KINFO *k, char **command_name, int *cmdlen, int show_args)
 	 * \---------------/ 0xffffffff
 	 */
 	mib[0] = CTL_KERN;
-	mib[1] = KERN_PROCARGS;
+	mib[1] = KERN_PROCARGS2;
 	mib[2] = KI_PROC(k)->p_pid;
 
 	size = (size_t)argmax;
@@ -165,8 +167,11 @@ getproclline(KINFO *k, char **command_name, int *cmdlen, int show_args)
 		goto ERROR_B;
 	}
 
+	memcpy(&nargs, procargs, sizeof(nargs));
+	cp = procargs + sizeof(nargs);
+
 	/* Skip the saved exec_path. */
-	for (cp = procargs; cp < &procargs[size]; cp++) {
+	for (; cp < &procargs[size]; cp++) {
 		if (*cp == '\0') {
 			/* End of exec_path reached. */
 			break;
@@ -196,8 +201,9 @@ getproclline(KINFO *k, char **command_name, int *cmdlen, int show_args)
 	 * know where the command arguments end and the environment strings
 	 * start, which is why the '=' character is searched for as a heuristic.
 	 */
-	for (np = NULL; cp < &procargs[size]; cp++) {
+	for (np = NULL; c < nargs && cp < &procargs[size]; cp++) {
 		if (*cp == '\0') {
+			c++;
 			if (np != NULL) {
 				/* Convert previous '\0'. */
 				*np = ' ';
@@ -214,9 +220,6 @@ getproclline(KINFO *k, char **command_name, int *cmdlen, int show_args)
 				 */
 				break;
 			}
-		} else if (*cp == '=') {
-			/* Potentially in an environment string. */
-			break;
 		}
 	}
 
