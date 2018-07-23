@@ -1,7 +1,7 @@
 #ifdef HMAC_MD5
 #ifndef __APPLE__
 #ifndef LINT
-static const char rcsid[] = "$Header: /cvs/root/netinfo/resolver/dst_hmac_link.c,v 1.3 2003/10/16 22:13:09 majka Exp $";
+static const char rcsid[] = "$Header: /cvs/root/netinfo/resolver/Attic/dst_hmac_link.c,v 1.3.206.1 2006/03/20 23:06:32 majka Exp $";
 #endif
 #endif
 

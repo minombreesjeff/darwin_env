@@ -220,7 +220,6 @@ service_open_file(int client_id, const char *name, const char *path, int flags, 
 		if (path == NULL) return NOTIFY_STATUS_INVALID_REQUEST;
 		if (w == NULL) w = file_watcher_new(path);
 		watcher_add_name(w, name);
-		daemon_set_state(name, w->state);
 		s = (svc_info_t *)calloc(1, sizeof(svc_info_t));
 		s->type = SERVICE_TYPE_FILE;
 		s->private = w;

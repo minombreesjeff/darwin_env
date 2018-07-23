@@ -458,6 +458,7 @@ file_watcher_remove(file_watcher_t *f)
 		}
 
 		delta = f->contents;
+		if (delta == NULL) delta = x;
 
 		f->contents = NULL;
 	}
@@ -664,7 +665,7 @@ file_watcher_update(file_watcher_t *f, uint32_t flags, uint32_t level)
 {
 	struct stat *oldsb;
 	w_event_t *e, *delta;
-	int32_t status, i, do_notify, did_remove;
+	int32_t status, do_notify, did_remove;
 
 #ifdef DEBUG
 	log_message(ASL_LEVEL_DEBUG, "file_watcher_update(%u, 0x%08x, %s)", f->w->wid, flags, f->path);
@@ -706,13 +707,6 @@ file_watcher_update(file_watcher_t *f, uint32_t flags, uint32_t level)
 		free(oldsb);
 		if (did_remove == 0) status = file_watcher_remove(f);
 		return 1;
-	}
-
-	f->w->state = f->ftype;
-	if (f->w->name != NULL)
-	{
-		for (i = 0; f->w->name[i] != NULL; i++)
-			daemon_set_state(f->w->name[i], f->w->state);
 	}
 
 	if ((f->flags == FS_REMOVED) || (f->flags == FS_INITIAL))
