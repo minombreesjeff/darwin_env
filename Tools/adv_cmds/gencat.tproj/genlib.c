@@ -40,6 +40,7 @@ __FBSDID("$FreeBSD: src/usr.bin/gencat/genlib.c,v 1.13 2002/12/24 07:40:10 david
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <nl_types.h>
 #include "msgcat.h"
 #include "gencat.h"
 #include <machine/endian.h>
@@ -299,7 +300,7 @@ void
 MCParse(int fd)
 {
     char	*cptr, *str;
-    int		setid, msgid = 0;
+    int		setid = NL_SETD, msgid = 0;
     char	hconst[MAXTOKEN+1];
     char	quote = 0;
 
@@ -351,6 +352,7 @@ MCParse(int fd)
 		}
 	    }
 	} else {
+	    if (!curSet) MCAddSet(setid, NULL);
 	    if (isdigit((unsigned char)*cptr) || *cptr == '#') {
 		if (*cptr == '#') {
 		    ++msgid;
@@ -370,11 +372,18 @@ MCParse(int fd)
 		} else {
 		    msgid = atoi(cptr);
 		    cptr = cskip(cptr);
-		    cptr = wskip(cptr);
+		    if (isspace(*cptr))
+			    cptr++;
 		    /* if (*cptr) ++cptr; */
 		}
-		if (!*cptr) MCDelMsg(msgid);
-		else {
+		if (!*cptr) {
+			if (isspace(cptr[-1])) {
+				MCAddMsg(msgid, "", hconst);
+				hconst[0] = '\0';
+			} else {
+				MCDelMsg(msgid);
+			}
+		} else {
 		    str = getmsg(fd, cptr, quote);
 		    MCAddMsg(msgid, str, hconst);
 		    hconst[0] = '\0';
