@@ -58,6 +58,7 @@
 	unsigned long dataLen;
 	unsigned long state;
 	int notify_token;
+	Root *context;
 }
 
 + (void)shutdown;

@@ -237,7 +237,7 @@ file_watcher_check_file(file_watcher_t *f, struct stat *oldsb, w_event_t **delta
 
 	if ((cchange != 0) || (mchange != 0)) status = 1;
 
-	if ((f->ftype == FS_TYPE_FILE) || (f->ftype == FS_TYPE_LINK))
+	if ((f->ftype == FS_TYPE_DIR) || (f->ftype == FS_TYPE_FILE) || (f->ftype == FS_TYPE_LINK))
 	{
 		if (cchange != 0)
 		{

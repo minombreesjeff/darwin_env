@@ -111,7 +111,7 @@ launchpad(launch_args *x)
 	free(x);
 
 	[args.launchThread setThread:sys_thread_self()];
-	
+
 	if (args.launchArgCount == 0)
 		[args.launchContext perform:args.launchSEL];
 	else if (args.launchArgCount == 1)
@@ -335,6 +335,7 @@ launch_thread(launch_args *args)
 	data = NULL;
 	dataLen = 0;
 	server = NULL;
+	context = NULL;
 	state = ThreadStateInitial;
 	notify_token = -1;
 	unlock_threads();
@@ -434,6 +435,8 @@ launch_thread(launch_args *args)
 		return;
 	}
 
+	context = [anObject retain];
+
 	isRunning = YES;
 
 	args = (launch_args *)malloc(sizeof(launch_args));
@@ -459,6 +462,8 @@ launch_thread(launch_args *args)
 		[anObject perform:aSelector with:arg1];
 		return;
 	}
+
+	context = [anObject retain];
 
 	isRunning = YES;
 
@@ -486,6 +491,8 @@ launch_thread(launch_args *args)
 		return;
 	}
 
+	context = [anObject retain];
+
 	isRunning = YES;
 
 	args = (launch_args *)malloc(sizeof(launch_args));
@@ -512,6 +519,7 @@ launch_thread(launch_args *args)
 
 - (void)terminateSelf
 {
+	[context release];
 	[Thread releaseThread:[Thread currentThread]];
 	[Thread threadExit];
 }
