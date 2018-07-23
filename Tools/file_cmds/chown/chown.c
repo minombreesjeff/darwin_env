@@ -84,11 +84,7 @@ main(int argc, char **argv)
 	ischown = (strcmp(cp, "chown") == 0);
 
 	Hflag = Lflag = Rflag = fflag = hflag = vflag = 0;
-#ifndef __APPLE__
 	while ((ch = getopt(argc, argv, "HLPRfhv")) != -1)
-#else
-	while ((ch = getopt(argc, argv, "HLPRfv")) != -1)
-#endif
 		switch (ch) {
 		case 'H':
 			Hflag = 1;
@@ -107,11 +103,9 @@ main(int argc, char **argv)
 		case 'f':
 			fflag = 1;
 			break;
-#ifndef __APPLE__
 		case 'h':
 			hflag = 1;
 	 		break;
-#endif
 		case 'v':
 			vflag = 1;
 			break;
@@ -192,11 +186,7 @@ main(int argc, char **argv)
 		if ((uid == (uid_t)-1 || uid == p->fts_statp->st_uid) &&
 		    (gid == (gid_t)-1 || gid == p->fts_statp->st_gid))
 			continue;
-#ifndef __APPLE__
 		if ((hflag ? lchown : chown)(p->fts_accpath, uid, gid) == -1) {
-#else
-		if (chown(p->fts_accpath, uid, gid) == -1) {
-#endif /* __APPLE__ */
 			if (!fflag) {
 				chownerr(p->fts_path);
 				rval = 1;
@@ -289,10 +279,6 @@ usage(void)
 		    "       chown [-fhv] [-R [-H | -L | -P]] :group file ...");
 	else
 		(void)fprintf(stderr, "%s\n",
-#ifndef __APPLE__
 		    "usage: chgrp [-fhv] [-R [-H | -L | -P]] group file ...");
-#else
-		    "usage: chgrp [-fv] [-R [-H | -L | -P]] group file ...");
-#endif
 	exit(1);
 }

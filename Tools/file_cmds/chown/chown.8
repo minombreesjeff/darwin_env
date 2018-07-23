@@ -40,7 +40,7 @@
 .Nd change file owner and group
 .Sh SYNOPSIS
 .Nm
-.Op Fl fv
+.Op Fl fhv
 .Oo
 .Fl R
 .Op Fl H | Fl L | Fl P
@@ -48,7 +48,7 @@
 .Ar owner Ns Op : Ns Ar group
 .Ar
 .Nm
-.Op Fl fv
+.Op Fl fhv
 .Oo
 .Fl R
 .Op Fl H | Fl L | Fl P
@@ -59,6 +59,9 @@
 The
 .Nm
 utility changes the user ID and/or the group ID of the specified files.
+Symbolic links named by arguments are silently left unchanged unless
+.Fl h
+is used.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
@@ -82,6 +85,9 @@ in the files instead of just the files themselves.
 .It Fl f
 Don't report any failure to change file owner or group, nor modify
 the exit status to reflect such failures.
+.It Fl h
+If the file is a symbolic link, change the user ID and/or the
+group ID of the link itself.
 .It Fl v
 Cause
 .Nm

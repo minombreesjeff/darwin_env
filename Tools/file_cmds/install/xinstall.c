@@ -65,6 +65,10 @@ static const char rcsid[] =
 #include <sysexits.h>
 #include <utime.h>
 
+#ifdef __APPLE__
+#include <copyfile.h>
+#endif
+
 #include "pathnames.h"
 
 /* Bootstrap aid - this doesn't exist in most older releases */
@@ -503,6 +507,15 @@ install(from_name, to_name, fset, flags)
 			}
 		}
 	}
+
+#if __APPLE__
+	{
+	    if (copyfile(from_name, to_name, NULL, COPYFILE_ACL | COPYFILE_XATTR) < 0)
+	    {
+		warn("%s: copyfile", to_name);
+	    }
+	}
+#endif
 
 	(void)close(to_fd);
 	if (!devnull)

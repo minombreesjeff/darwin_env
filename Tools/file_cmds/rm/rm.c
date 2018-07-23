@@ -60,10 +60,18 @@ static const char rcsid[] =
 #include <sysexits.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include "get_compat.h"
+#else
+#define COMPAT_MODE(func, mode) 1
+#endif
+
 int dflag, eval, fflag, iflag, Pflag, vflag, Wflag, stdin_ok;
 uid_t uid;
 
 int	check __P((char *, char *, struct stat *));
+int checkdir __P((char *));
+int		yes_or_no __P((void));
 void	checkdot __P((char **));
 void	rm_file __P((char **));
 void	rm_overwrite __P((char *, struct stat *));
@@ -165,7 +173,7 @@ rm_tree(argv)
 	int needstat;
 	int flags;
 	int rval;
-
+	int wantConformance = COMPAT_MODE("bin/rm", "unix2003");
 	/*
 	 * Remove a file hierarchy.  If forcing removal (-f), or interactive
 	 * (-i) or can't ask anyway (stdin_ok), don't stat the file.
@@ -183,8 +191,11 @@ rm_tree(argv)
 		flags |= FTS_NOSTAT;
 	if (Wflag)
 		flags |= FTS_WHITEOUT;
-	if (!(fts = fts_open(argv, flags, NULL)))
+	if (!(fts = fts_open(argv, flags, NULL))) {
+		if (fflag && errno == ENOENT)
+			return;
 		err(1, NULL);
+	}
 	while ((p = fts_read(fts)) != NULL) {
 		switch (p->fts_info) {
 		case FTS_DNR:
@@ -211,8 +222,13 @@ rm_tree(argv)
 			continue;
 		case FTS_D:
 			/* Pre-order: give user chance to skip. */
-			if (!fflag && !check(p->fts_path, p->fts_accpath,
-			    p->fts_statp)) {
+			/* In conformance mode the user is prompted to skip processing the contents.
+			 * Then the option to delete the dir is presented post-order */
+			if (!fflag && 
+					( (wantConformance && !checkdir(p->fts_path)) ||
+					  (!wantConformance && !check(p->fts_path, p->fts_accpath, p->fts_statp))
+					)
+			   ){
 				(void)fts_set(fts, p, FTS_SKIP);
 				p->fts_number = SKIPPED;
 			}
@@ -225,8 +241,16 @@ rm_tree(argv)
 			continue;
 		case FTS_DP:
 			/* Post-order: see if user skipped. */
-			if (p->fts_number == SKIPPED)
+			if(p->fts_number == SKIPPED)/*in legacy mode, the user was prompted pre-order */
 				continue;
+			else if(wantConformance)
+			{
+				/* delete directory if force is on, or if user answers Y to prompt */
+				if(fflag || check(p->fts_path, p->fts_accpath, p->fts_statp)) 
+					break;
+				else
+					continue;
+			}
 			break;
 		default:
 			if (!fflag &&
@@ -414,13 +438,33 @@ err:	eval = 1;
 	warn("%s", file);
 }
 
+int 
+yes_or_no()
+{
+	int ch, first;
+	(void)fflush(stderr);
+
+	first = ch = getchar();
+	while (ch != '\n' && ch != EOF)
+		ch = getchar();
+	return (first == 'y' || first == 'Y');
+}
+
+int
+checkdir(path)
+	char *path;
+{
+	if(!iflag)
+		return 1;	//if not interactive, process directory's contents
+	(void)fprintf(stderr, "examine files in directory %s? ", path);
+	return yes_or_no();
+}
 
 int
 check(path, name, sp)
 	char *path, *name;
 	struct stat *sp;
 {
-	int ch, first;
 	char modep[15], *flagsp;
 
 	/* Check -i first. */
@@ -449,13 +493,9 @@ check(path, name, sp)
 		    path);
 		free(flagsp);
 	}
-	(void)fflush(stderr);
-
-	first = ch = getchar();
-	while (ch != '\n' && ch != EOF)
-		ch = getchar();
-	return (first == 'y' || first == 'Y');
+	return yes_or_no();
 }
+
 
 #define ISDOT(a)	((a)[0] == '.' && (!(a)[1] || ((a)[1] == '.' && !(a)[2])))
 void
