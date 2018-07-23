@@ -38,7 +38,6 @@
 
 #include <net/route.h>
 #include <net/pfkeyv2.h>
-#include <netkey/key_debug.h>
 
 #include <netinet/in.h>
 #ifdef IPV6_INRIA_VERSION
@@ -976,7 +975,7 @@ pk_sendupdate(iph2)
 			iph2->ph1->remote->sa_family == AF_INET)
 		{
 			flags |= SADB_X_EXT_NATT;
-			port = ((struct sockaddr_in*)iph2->ph1->remote)->sin_port;
+			port = ntohs(((struct sockaddr_in*)iph2->ph1->remote)->sin_port);
 		}
 #endif
 
@@ -1228,7 +1227,7 @@ pk_sendadd(iph2)
 			iph2->ph1->remote->sa_family == AF_INET)
 		{
 			flags |= SADB_X_EXT_NATT;
-			port = ((struct sockaddr_in*)iph2->ph1->remote)->sin_port;
+			port = ntohs(((struct sockaddr_in*)iph2->ph1->remote)->sin_port);
 			
 			/* If we're the side behind the NAT, send keepalives */
 			if ((iph2->ph1->natt_flags & natt_no_local_nat) == 0)
@@ -1691,7 +1690,7 @@ pk_recvdelete(mhp)
 	 || mhp[SADB_EXT_ADDRESS_SRC] == NULL
 	 || mhp[SADB_EXT_ADDRESS_DST] == NULL) {
 		plog(LLV_ERROR, LOCATION, NULL,
-			"inappropriate sadb acquire message passed.\n");
+			"inappropriate sadb delete message passed.\n");
 		return -1;
 	}
 	msg = (struct sadb_msg *)mhp[0];
@@ -1753,7 +1752,7 @@ pk_recvflush(mhp)
 	/* sanity check */
 	if (mhp[0] == NULL) {
 		plog(LLV_ERROR, LOCATION, NULL,
-			"inappropriate sadb acquire message passed.\n");
+			"inappropriate sadb flush message passed.\n");
 		return -1;
 	}
 

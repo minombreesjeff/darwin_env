@@ -155,11 +155,28 @@ session(void)
 				continue;
 			
 			if (FD_ISSET(p->sock, &rfds))
-				isakmp_handler(p->sock);
+				if ((error = isakmp_handler(p->sock)) == -2)
+					break;
+					
+					
 #ifdef IKE_NAT_T
 			if (p->nattsock >= 0 && FD_ISSET(p->nattsock, &rfds))
-				isakmp_natt_handler(p->nattsock);
+				if ((error = isakmp_natt_handler(p->nattsock)) == -2)
+					break;
 #endif
+		}
+		if (error == -2) {
+			if (lcconf->autograbaddr) {
+				/* serious socket problem - close all listening sockets and re-open */
+				isakmp_close(); 
+				initfds();
+				sched_new(5, check_rtsock, NULL);
+				continue;
+			} else {
+				isakmp_close_sockets();
+				isakmp_open();
+			}
+				
 		}
 
 		if (FD_ISSET(lcconf->sock_pfkey, &rfds))

@@ -29,6 +29,10 @@
  * SUCH DAMAGE.
  */
 
+#ifndef __GRABMYADDR_H__
+#define __GRABMYADDR_H__
+
+
 struct myaddrs {
 	struct myaddrs *next;
 	struct sockaddr *addr;
@@ -50,3 +54,7 @@ extern void insmyaddr __P((struct myaddrs *, struct myaddrs **));
 extern void delmyaddr __P((struct myaddrs *));
 extern int initmyaddr __P((void));
 extern int getsockmyaddr __P((struct sockaddr *));
+
+
+#endif /* __GRABMYADDR_H__ */
+

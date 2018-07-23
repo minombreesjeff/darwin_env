@@ -20,8 +20,7 @@ TOOLS = arp.tproj domainname.tproj \
         nfsd.tproj nfsiod.tproj nfsstat.tproj ping.tproj rarpd.tproj\
         rcp.tproj rexecd.tproj rlogin.tproj rlogind.tproj\
         route.tproj routed.tproj rpcinfo.tproj rsh.tproj rshd.tproj\
-        ruptime.tproj rwho.tproj rwhod.tproj slattach.tproj\
-        spray.tproj syslogd.tproj\
+        ruptime.tproj rwho.tproj rwhod.tproj slattach.tproj spray.tproj\
         talk.tproj talkd.tproj telnet.tproj telnetd.tproj tftp.tproj\
         tftpd.tproj traceroute.tproj trpt.tproj wall.tproj\
         ypbind.tproj ypcat.tproj ypmatch.tproj yppoll.tproj\
