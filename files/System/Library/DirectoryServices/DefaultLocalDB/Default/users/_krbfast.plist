@@ -4,16 +4,15 @@
 <dict>
 	<key>gid</key>
 	<array>
-		<string>92</string>
+		<string>-2</string>
 	</array>
 	<key>home</key>
 	<array>
-		<string>/var/db/securityagent</string>
+		<string>/var/empty</string>
 	</array>
 	<key>name</key>
 	<array>
-		<string>_securityagent</string>
-		<string>securityagent</string>
+		<string>_krbfast</string>
 	</array>
 	<key>passwd</key>
 	<array>
@@ -21,7 +20,7 @@
 	</array>
 	<key>realname</key>
 	<array>
-		<string>SecurityAgent</string>
+		<string>Kerberos FAST Account</string>
 	</array>
 	<key>shell</key>
 	<array>
@@ -29,11 +28,11 @@
 	</array>
 	<key>uid</key>
 	<array>
-		<string>92</string>
+		<string>246</string>
 	</array>
 	<key>generateduid</key>
 	<array>
-		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA0000005C</string>
+		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000F6</string>
 	</array>
 </dict>
 </plist>

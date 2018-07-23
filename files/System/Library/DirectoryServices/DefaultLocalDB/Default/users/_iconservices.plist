@@ -4,11 +4,11 @@
 <dict>
 	<key>generateduid</key>
 	<array>
-		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000EE</string>
+		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000F0</string>
 	</array>
 	<key>gid</key>
 	<array>
-		<string>238</string>
+		<string>240</string>
 	</array>
 	<key>home</key>
 	<array>
@@ -16,7 +16,7 @@
 	</array>
 	<key>name</key>
 	<array>
-		<string>_xcscredserver</string>
+		<string>_iconservices</string>
 	</array>
 	<key>passwd</key>
 	<array>
@@ -24,7 +24,7 @@
 	</array>
 	<key>realname</key>
 	<array>
-		<string>Xcode Server Credential Server</string>
+		<string>IconServices</string>
 	</array>
 	<key>shell</key>
 	<array>
@@ -32,7 +32,7 @@
 	</array>
 	<key>uid</key>
 	<array>
-		<string>238</string>
+		<string>240</string>
 	</array>
 </dict>
 </plist>

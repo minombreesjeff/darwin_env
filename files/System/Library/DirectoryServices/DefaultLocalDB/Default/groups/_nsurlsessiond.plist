@@ -4,19 +4,15 @@
 <dict>
 	<key>generateduid</key>
 	<array>
-		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000ED</string>
+		<string>ABCDEFAB-CDEF-ABCD-EFAB-CDEF000000F2</string>
 	</array>
 	<key>gid</key>
 	<array>
-		<string>237</string>
-	</array>
-	<key>home</key>
-	<array>
-		<string>/var/empty</string>
+		<string>242</string>
 	</array>
 	<key>name</key>
 	<array>
-		<string>_xcsbuildagent</string>
+		<string>_nsurlsessiond</string>
 	</array>
 	<key>passwd</key>
 	<array>
@@ -24,15 +20,7 @@
 	</array>
 	<key>realname</key>
 	<array>
-		<string>Xcode Server Build Agent</string>
-	</array>
-	<key>shell</key>
-	<array>
-		<string>/usr/bin/false</string>
-	</array>
-	<key>uid</key>
-	<array>
-		<string>237</string>
+		<string>NSURLSession Daemon</string>
 	</array>
 </dict>
 </plist>
