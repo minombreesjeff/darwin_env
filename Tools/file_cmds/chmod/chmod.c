@@ -77,7 +77,11 @@ main(int argc, char *argv[])
 	set = NULL;
 	omode = 0;
 	Hflag = Lflag = Rflag = fflag = hflag = vflag = 0;
+#ifndef __APPLE__
 	while ((ch = getopt(argc, argv, "HLPRXfghorstuvwx")) != -1)
+#else
+	while ((ch = getopt(argc, argv, "HLPRXfgorstuvwx")) != -1)
+#endif
 		switch (ch) {
 		case 'H':
 			Hflag = 1;

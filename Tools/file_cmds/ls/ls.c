@@ -630,13 +630,7 @@ display(FTSENT *p, FTSENT *list)
 			warnx("%s: %s",
 			    cur->fts_name, strerror(cur->fts_errno));
 			cur->fts_number = NO_PRINT;
-#ifndef __APPLE__
-			/* Don't count this as an error.  This is for
-			 * binary compatibility with Matlab installer script.
-			 * 3252074
-			 */
 			rval = 1;
-#endif
 			continue;
 		}
 		/*

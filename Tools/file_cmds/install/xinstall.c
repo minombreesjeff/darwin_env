@@ -85,10 +85,6 @@ int dobackup, docompare, dodir, dopreserve, dostrip, nommap, safecopy, verbose;
 mode_t mode = S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
 char *suffix = BACKUP_SUFFIX;
 
-#ifdef __APPLE__
-u_long  string_to_flags __P((char **, u_long *, u_long *));
-#define strtofflags(x,y,z) string_to_flags((x),(y),(z))
-#endif
 void	copy __P((int, char *, int, char *, off_t));
 int	compare __P((int, const char *, size_t, int, const char *, size_t));
 int	create_newfile __P((char *, int, struct stat *));

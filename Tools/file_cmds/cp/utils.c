@@ -90,6 +90,7 @@ copy_file(FTSENT *entp, int dne)
 		if (nflag) {
 			if (vflag)
 				printf("%s not overwritten\n", to.p_path);
+			close(from_fd);
 			return (0);
 		} else if (iflag) {
 			(void)fprintf(stderr, "overwrite %s? %s", 

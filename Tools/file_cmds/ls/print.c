@@ -49,9 +49,7 @@ __RCSID("$FreeBSD: src/bin/ls/print.c,v 1.57 2002/08/29 14:29:09 keramida Exp $"
 #include <errno.h>
 #include <fts.h>
 #include <math.h>
-#ifndef __APPLE__
 #include <langinfo.h>
-#endif /* __APPLE__ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -379,10 +377,8 @@ printtime(time_t ftime)
 	const char *format;
 	static int d_first = -1;
 
-#ifndef __APPLE__
 	if (d_first < 0)
 		d_first = (*nl_langinfo(D_MD_ORDER) == 'd');
-#endif /* __APPLE__ */
 	if (now == 0)
 		now = time(NULL);
 

@@ -415,9 +415,8 @@ copy(char *argv[], enum op type, int fts_options)
 			break;
 		case S_IFDIR:
 			if (!Rflag && !rflag) {
-				if (curr->fts_info == FTS_DP)
-					warnx("%s is a directory (not copied).",
-					    curr->fts_path);
+				warnx("%s is a directory (not copied).",
+					 curr->fts_path);
 				(void)fts_set(ftsp, curr, FTS_SKIP);
 				badcp = rval = 1;
 				break;

@@ -14,7 +14,7 @@ PROJECT_TYPE = Tool
 
 HFILES = extern.h ls.h
 
-CFILES = cmp.c ls.c print.c stat_flags.c util.c
+CFILES = cmp.c ls.c print.c util.c
 
 OTHERSRCS = Makefile Makefile.preamble Makefile.postamble ls.1
 

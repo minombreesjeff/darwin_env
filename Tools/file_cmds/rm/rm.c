@@ -70,15 +70,6 @@ void	rm_overwrite __P((char *, struct stat *));
 void	rm_tree __P((char **));
 void	usage __P((void));
 
-#ifdef __APPLE__
-/* We lack fflagstostr(), but ls has a flags_to_string function
- * that does the same thing.  So...  We really use that.
- */
-char * flags_to_string(u_long, char *);
-#define fflagstostr(x) flags_to_string((x), NULL)
-
-#endif
-
 /*
  * rm --
  *	This rm is different from historic rm's, but is expected to match
@@ -456,9 +447,7 @@ check(path, name, sp)
 		    group_from_gid(sp->st_gid, 0),
 		    *flagsp ? flagsp : "", *flagsp ? " " : "", 
 		    path);
-#ifndef __APPLE__
 		free(flagsp);
-#endif
 	}
 	(void)fflush(stderr);
 
