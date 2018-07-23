@@ -6,7 +6,6 @@
 0750	root	admin	Library/Logs/DiagnosticReports
 0755	root	wheel	Library/PreferencePanes
 0775	root	admin	Library/Receipts
-0755	root	wheel	Library/Sandbox/Profiles
 0755	root	wheel	Library/ScriptingAdditions
 0755	root	wheel	Library/SystemProfiler
 0755	root	wheel	Library/Filesystems/NetFSPlugins
