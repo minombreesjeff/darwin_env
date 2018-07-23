@@ -1,9 +1,9 @@
 /*
- * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * "Portions Copyright (c) 2001 Apple Computer, Inc.  All Rights
  * Reserved.  This file contains Original Code and/or Modifications of
  * Original Code as defined in and that are subject to the Apple Public
  * Source License Version 1.0 (the 'License').  You may not use this file
@@ -22,4 +22,26 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <rpcsvc/bootparam_prot.x>
+/*
+ * DSAgent.h
+ * Directory Services agent for lookupd
+ */
+
+#import "LUAgent.h"
+
+#ifndef _OS_DARWIN_
+#define _ENABLE_DSAGENT_
+#endif
+
+#ifdef _ENABLE_DSAGENT_
+#include <DirectoryService/DirServices.h>
+#include <DirectoryService/DirServicesConst.h>
+#include <DirectoryService/DirServicesTypes.h>
+#endif
+
+@interface DSAgent : LUAgent
+{
+}
+
+@end
+
