@@ -4,20 +4,19 @@
 <dict>
 	<key>generateduid</key>
 	<array>
-		<string>ABCDEFAB-CDEF-ABCD-EFAB-CDEF0000005E</string>
+		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000EE</string>
 	</array>
 	<key>gid</key>
 	<array>
-		<string>94</string>
+		<string>238</string>
 	</array>
-	<key>groupmembers</key>
+	<key>home</key>
 	<array>
-		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000DC</string>
+		<string>/var/empty</string>
 	</array>
 	<key>name</key>
 	<array>
-		<string>_teamsserver</string>
-		<string>teamsserver</string>
+		<string>_xcscredserver</string>
 	</array>
 	<key>passwd</key>
 	<array>
@@ -25,11 +24,15 @@
 	</array>
 	<key>realname</key>
 	<array>
-		<string>Teams Server</string>
+		<string>Xcode Server Credential Server</string>
 	</array>
-	<key>users</key>
+	<key>shell</key>
 	<array>
-		<string>_devicemgr</string>
+		<string>/usr/bin/false</string>
+	</array>
+	<key>uid</key>
+	<array>
+		<string>238</string>
 	</array>
 </dict>
 </plist>

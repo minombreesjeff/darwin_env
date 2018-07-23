@@ -4,15 +4,15 @@
 <dict>
 	<key>gid</key>
 	<array>
-		<string>24</string>
+		<string>236</string>
 	</array>
 	<key>home</key>
 	<array>
-		<string>/var/networkd</string>
+		<string>/var/empty</string>
 	</array>
 	<key>name</key>
 	<array>
-		<string>_networkd</string>
+		<string>_coremediaiod</string>
 	</array>
 	<key>passwd</key>
 	<array>
@@ -20,7 +20,7 @@
 	</array>
 	<key>realname</key>
 	<array>
-		<string>Network Services</string>
+		<string>Core Media IO Daemon</string>
 	</array>
 	<key>shell</key>
 	<array>
@@ -28,11 +28,11 @@
 	</array>
 	<key>uid</key>
 	<array>
-		<string>24</string>
+		<string>236</string>
 	</array>
 	<key>generateduid</key>
 	<array>
-		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA00000018</string>
+		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000EC</string>
 	</array>
 </dict>
 </plist>
