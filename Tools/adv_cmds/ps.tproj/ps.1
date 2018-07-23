@@ -40,7 +40,7 @@
 .Nd process status
 .Sh SYNOPSIS
 .Nm ps
-.Op Fl aCcefhjlMmrSTuvwx
+.Op Fl aACcefhjlMmrSTuvwx
 .Op Fl O Ar fmt
 .Op Fl o Ar fmt
 .Op Fl p Ar pid
@@ -76,6 +76,8 @@ The options are as follows:
 .Bl -tag -width indent
 .It Fl a
 Display information about other users' processes as well as your own.
+.It Fl A
+Display information about other users' processes including those without controlling terminals.
 .It Fl c
 Change the ``command'' column output to just contain the executable name,
 rather than the full command line.
