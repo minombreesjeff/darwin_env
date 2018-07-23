@@ -40,6 +40,7 @@
 #include <AppleTalk/at_proto.h>
 #include <AppleTalk/at_paths.h>
 
+
 #define   ATOL(str)       strtol(str, (char **) NULL, 0)
 
 static char *usage = 
@@ -159,6 +160,8 @@ int main(argc, argv)
 	int router_mix = 0;
  	int flag = 0;		/* used on AIOCSTOPATALK to force shutdown */
 	int ret; 		/* used for do_init() return value */
+	
+
 
 	checkCfg = 0;
 	displayCfg = 0;
