@@ -105,8 +105,6 @@ static void
 	print_routerid(at_if_cfg_t *),
 	print_nodeid(at_if_cfg_t *);
 
-static FILE *STDOUT = stdout;
-
 /* *** Create a header file in /System/Developer/Headers later? *** */
 
 #include <sysexits.h>
@@ -1266,12 +1264,12 @@ static int showRouterStats()
 	u_char state = cfg.flags & LAP_STATE_MASK;
 
 	if (!first++)
-		fprintf(STDOUT, "%s%s%s%s",
+		fprintf(stdout, "%s%s%s%s",
 			STATS_HEADER1,
 			STATS_HEADER2,
 			STATS_HEADER3,
 			STATS_HEADER4);
-	fprintf(STDOUT, "%c%-4s %-18s",
+	fprintf(stdout, "%c%-4s %-18s",
 		(cfg.flags & AT_IFF_DEFAULT)? '*' : ' ',
 		cfg.ifr_name, 
 		(state == LAP_OFFLINE)? "Offline":
@@ -1279,12 +1277,12 @@ static int showRouterStats()
 		(state == LAP_ONLINE_FOR_ZIP)? "Online for ZIP":
 		(state == LAP_ONLINE_ZONELESS)? "Online zoneless": "Unknown");
 
-	fprintf(STDOUT, "%5d-%-5d %5d:%-3d ", 
+	fprintf(stdout, "%5d-%-5d %5d:%-3d ", 
 		    cfg.netStart,
 		    cfg.netEnd,
 		    cfg.node.s_net,
 		    cfg.node.s_node);
-	fprintf(STDOUT, "%s\n", cfg.zonename.str);
+	fprintf(stdout, "%s\n", cfg.zonename.str);
 
 	/* *** Should stats be printed too? *** */
 
