@@ -61,7 +61,7 @@ static char *usage =
 	-d shut down AppleTalk\n\
 	-h check/modify default zone\n\
 	-n print network number and node id\n\
-	-p print saved PRAM AppleTalk information\n\
+	-p print saved AppleTalk information\n\
 	-s show statistics & error counts\n\
   Other routing commands:\n\
 	-j print router status\n\
