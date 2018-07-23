@@ -42,6 +42,14 @@ __FBSDID("$FreeBSD: src/usr.bin/gencat/genlib.c,v 1.13 2002/12/24 07:40:10 david
 #include <unistd.h>
 #include "msgcat.h"
 #include "gencat.h"
+#include <machine/endian.h>
+/* libkern/OSByteOrder is needed for the 64 bit byte swap */
+#include <libkern/OSByteOrder.h>
+
+#ifndef htonll
+#define htonll(x) OSSwapHostToBigInt64(x)
+#define ntohll(x) OSSwapBigToHostInt64(x)
+#endif
 
 static char *curline = NULL;
 static long lineno = 0;
@@ -391,12 +399,17 @@ MCReadCat(int fd)
     if (!cat) nomem();
     bzero(cat, sizeof(catT));
 
+    /* While we deal with read/write this in network byte order we do NOT
+      deal with struct member padding issues, or even sizeof(long) issues,
+      those are left for a future genneration to curse either me, or the
+      original author for */
+
     if (read(fd, &mcHead, sizeof(mcHead)) != sizeof(mcHead)) corrupt();
     if (strncmp(mcHead.magic, MCMagic, MCMagicLen) != 0) corrupt();
-    if (mcHead.majorVer != MCMajorVer) error(NULL, "unrecognized catalog version");
-    if ((mcHead.flags & MCGetByteOrder()) == 0) error(NULL, "wrong byte order");
+    if (ntohl(mcHead.majorVer) != MCMajorVer) error(NULL, "unrecognized catalog version");
+    if ((ntohl(mcHead.flags) & MC68KByteOrder) == 0) error(NULL, "wrong byte order");
 
-    if (lseek(fd, mcHead.firstSet, L_SET) == -1) corrupt();
+    if (lseek(fd, ntohll(mcHead.firstSet), L_SET) == -1) corrupt();
 
     while (TRUE) {
 	if (read(fd, &mcSet, sizeof(mcSet)) != sizeof(mcSet)) corrupt();
@@ -411,17 +424,17 @@ MCReadCat(int fd)
 	    cat->last = set;
 	} else cat->first = cat->last = set;
 
-	set->setId = mcSet.setId;
+	set->setId = ntohl(mcSet.setId);
 
 	/* Get the data */
 	if (mcSet.dataLen) {
-	    data = (char *) malloc((size_t)mcSet.dataLen);
+	    data = (char *) malloc((size_t)ntohl(mcSet.dataLen));
 	    if (!data) nomem();
-	    if (lseek(fd, mcSet.data.off, L_SET) == -1) corrupt();
-	    if (read(fd, data, (size_t)mcSet.dataLen) != mcSet.dataLen) corrupt();
-	    if (lseek(fd, mcSet.u.firstMsg, L_SET) == -1) corrupt();
+	    if (lseek(fd, ntohll(mcSet.data.off), L_SET) == -1) corrupt();
+	    if (read(fd, data, (size_t)ntohl(mcSet.dataLen)) != ntohl(mcSet.dataLen)) corrupt();
+	    if (lseek(fd, ntohll(mcSet.u.firstMsg), L_SET) == -1) corrupt();
 
-	    for (i = 0; i < mcSet.numMsgs; ++i) {
+	    for (i = 0; i < ntohl(mcSet.numMsgs); ++i) {
 		if (read(fd, &mcMsg, sizeof(mcMsg)) != sizeof(mcMsg)) corrupt();
 		if (mcMsg.invalid) {
 		    --i;
@@ -437,13 +450,13 @@ MCReadCat(int fd)
 		    set->last = msg;
 		} else set->first = set->last = msg;
 
-		msg->msgId = mcMsg.msgId;
-		msg->str = dupstr((char *) (data + mcMsg.msg.off));
+		msg->msgId = ntohl(mcMsg.msgId);
+		msg->str = dupstr((char *) (data + ntohll(mcMsg.msg.off)));
 	    }
 	    free(data);
 	}
 	if (!mcSet.nextSet) break;
-	if (lseek(fd, mcSet.nextSet, L_SET) == -1) corrupt();
+	if (lseek(fd, ntohll(mcSet.nextSet), L_SET) == -1) corrupt();
     }
 }
 
@@ -558,27 +571,33 @@ MCWriteCat(int fd)
     off_t	pos;
 
     bcopy(MCMagic, mcHead.magic, MCMagicLen);
-    mcHead.majorVer = MCMajorVer;
-    mcHead.minorVer = MCMinorVer;
-    mcHead.flags = MCGetByteOrder();
+    mcHead.majorVer = htonl(MCMajorVer);
+    mcHead.minorVer = htonl(MCMinorVer);
+    mcHead.flags = htonl(MC68KByteOrder);
     mcHead.firstSet = 0;	/* We'll be back to set this in a minute */
 
     if (cat == NULL)
 	error(NULL, "cannot write empty catalog set");
 
     for (cnt = 0, set = cat->first; set; set = set->next) ++cnt;
-    mcHead.numSets = cnt;
+    mcHead.numSets = htonl(cnt);
+
+    /* I'm not inclined to mess with it, but it looks odd that we write
+      the header twice...and that we get the firstSet value from another
+      lseek rather then just 'sizeof(mcHead)' */
+
+    /* Also, this code doesn't seem to check returns from write! */
 
     lseek(fd, (off_t)0L, L_SET);
     write(fd, &mcHead, sizeof(mcHead));
-    mcHead.firstSet = lseek(fd, (off_t)0L, L_INCR);
+    mcHead.firstSet = htonll(lseek(fd, (off_t)0L, L_INCR));
     lseek(fd, (off_t)0L, L_SET);
     write(fd, &mcHead, sizeof(mcHead));
 
     for (set = cat->first; set; set = set->next) {
 	bzero(&mcSet, sizeof(mcSet));
 
-	mcSet.setId = set->setId;
+	mcSet.setId = htonl(set->setId);
 	mcSet.invalid = FALSE;
 
 	/* The rest we'll have to come back and change in a moment */
@@ -586,20 +605,20 @@ MCWriteCat(int fd)
 	write(fd, &mcSet, sizeof(mcSet));
 
 	/* Now write all the string data */
-	mcSet.data.off = lseek(fd, (off_t)0L, L_INCR);
+	mcSet.data.off = htonll(lseek(fd, (off_t)0L, L_INCR));
 	cnt = 0;
 	for (msg = set->first; msg; msg = msg->next) {
-	    msg->offset = lseek(fd, (off_t)0L, L_INCR) - mcSet.data.off;
-	    mcSet.dataLen += write(fd, msg->str, strlen(msg->str) + 1);
+	    msg->offset = lseek(fd, (off_t)0L, L_INCR) - ntohll(mcSet.data.off);
+	    mcSet.dataLen += htonl(write(fd, msg->str, strlen(msg->str) + 1));
 	    ++cnt;
 	}
-	mcSet.u.firstMsg = lseek(fd, (off_t)0L, L_INCR);
-	mcSet.numMsgs = cnt;
+	mcSet.u.firstMsg = htonll(lseek(fd, (off_t)0L, L_INCR));
+	mcSet.numMsgs = htonl(cnt);
 
 	/* Now write the message headers */
 	for (msg = set->first; msg; msg = msg->next) {
-	    mcMsg.msgId = msg->msgId;
-	    mcMsg.msg.off = msg->offset;
+	    mcMsg.msgId = htonl(msg->msgId);
+	    mcMsg.msg.off = htonll(msg->offset);
 	    mcMsg.invalid = FALSE;
 	    write(fd, &mcMsg, sizeof(mcMsg));
 	}
@@ -611,10 +630,10 @@ MCWriteCat(int fd)
 	    lseek(fd, pos, L_SET);
 	    write(fd, &mcSet, sizeof(mcSet));
 	} else {
-	    mcSet.nextSet = lseek(fd, (off_t)0L, L_INCR);
+	    mcSet.nextSet = htonll(lseek(fd, (off_t)0L, L_INCR));
 	    lseek(fd, pos, L_SET);
 	    write(fd, &mcSet, sizeof(mcSet));
-	    lseek(fd, mcSet.nextSet, L_SET);
+	    lseek(fd, ntohll(mcSet.nextSet), L_SET);
 	}
     }
 }
