@@ -4,19 +4,19 @@
 <dict>
 	<key>generateduid</key>
 	<array>
-		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000FB</string>
+		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000FE</string>
 	</array>
 	<key>gid</key>
 	<array>
-		<string>251</string>
+		<string>254</string>
 	</array>
 	<key>home</key>
 	<array>
-		<string>/var/empty</string>
+		<string>/var/db/findmydevice</string>
 	</array>
 	<key>name</key>
 	<array>
-		<string>_xserverdocs</string>
+		<string>_findmydevice</string>
 	</array>
 	<key>passwd</key>
 	<array>
@@ -24,7 +24,7 @@
 	</array>
 	<key>realname</key>
 	<array>
-		<string>macOS Server Documents Service</string>
+		<string>Find My Device Daemon</string>
 	</array>
 	<key>shell</key>
 	<array>
@@ -32,7 +32,7 @@
 	</array>
 	<key>uid</key>
 	<array>
-		<string>251</string>
+		<string>254</string>
 	</array>
 </dict>
 </plist>

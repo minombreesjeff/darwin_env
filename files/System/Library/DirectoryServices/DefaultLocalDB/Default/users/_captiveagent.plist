@@ -4,11 +4,11 @@
 <dict>
 	<key>generateduid</key>
 	<array>
-		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA000000FB</string>
+		<string>FFFFEEEE-DDDD-CCCC-BBBB-AAAA00000102</string>
 	</array>
 	<key>gid</key>
 	<array>
-		<string>251</string>
+		<string>258</string>
 	</array>
 	<key>home</key>
 	<array>
@@ -16,7 +16,7 @@
 	</array>
 	<key>name</key>
 	<array>
-		<string>_xserverdocs</string>
+		<string>_captiveagent</string>
 	</array>
 	<key>passwd</key>
 	<array>
@@ -24,7 +24,7 @@
 	</array>
 	<key>realname</key>
 	<array>
-		<string>macOS Server Documents Service</string>
+		<string>captiveagent</string>
 	</array>
 	<key>shell</key>
 	<array>
@@ -32,7 +32,7 @@
 	</array>
 	<key>uid</key>
 	<array>
-		<string>251</string>
+		<string>258</string>
 	</array>
 </dict>
 </plist>
