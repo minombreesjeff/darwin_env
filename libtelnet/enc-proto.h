@@ -30,8 +30,8 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)misc-proto.h	8.1 (Berkeley) 6/4/93
- * $FreeBSD: src/crypto/telnet/libtelnet/misc-proto.h,v 1.1.1.1.8.1 2002/04/13 10:59:07 markm Exp $
+ *	@(#)enc-proto.h	8.1 (Berkeley) 6/4/93
+ * $FreeBSD: src/crypto/telnet/libtelnet/enc-proto.h,v 1.3.2.2 2002/04/13 10:59:07 markm Exp $
  */
 
 /*
@@ -54,27 +54,73 @@
  * or implied warranty.
  */
 
-#ifndef	__MISC_PROTO__
-#define	__MISC_PROTO__
+#ifdef	ENCRYPTION
+void encrypt_init(const char *, int);
+Encryptions *findencryption(int);
+void encrypt_send_supprt(void);
+void encrypt_auto(int);
+void decrypt_auto(int);
+void encrypt_is(unsigned char *, int);
+void encrypt_reply(unsigned char *, int);
+void encrypt_start_input(int);
+void encrypt_session_key(Session_Key *, int);
+void encrypt_end_input(void);
+void encrypt_start_output(int);
+void encrypt_end_output(void);
+void encrypt_send_request_start(void);
+void encrypt_send_request_end(void);
+void encrypt_send_end(void);
+void encrypt_wait(void);
+void encrypt_send_support(void);
+void encrypt_send_keyid(int, const char *, int, int);
+void encrypt_start(unsigned char *, int);
+void encrypt_end(void);
+void encrypt_support(unsigned char *, int);
+void encrypt_request_start(unsigned char *, int);
+void encrypt_request_end(void);
+void encrypt_enc_keyid(unsigned char *, int);
+void encrypt_dec_keyid(unsigned char *, int);
+void encrypt_printsub(unsigned char *, int, unsigned char *, int);
+void encrypt_gen_printsub(unsigned char *, int, unsigned char *, int);
+void encrypt_display(void);
 
-void auth_encrypt_init(char *, char *, const char *, int);
-void auth_encrypt_connect(int);
-void printd(const unsigned char *, int);
+void fb64_printsub(unsigned char *, int, unsigned char *, int, const char *);
 
-int isprefix(char *, const char *);
-char **genget(char *, char **, int);
-int Ambiguous(char **);
+int EncryptEnable(char *, char *);
+int EncryptDisable(char *, char *);
+int EncryptStatus(void);
+int EncryptDebug(int);
+int EncryptVerbose(int);
+int EncryptAutoEnc(int);
+int EncryptAutoDec(int);
 
-int getent(char *, const char *);
-char *Getstr(const char *, char **);
+void krbdes_encrypt(unsigned char *, int);
+int krbdes_decrypt(int);
+int krbdes_is(unsigned char *, int);
+int krbdes_reply(unsigned char *, int);
+void krbdes_init(int);
+int krbdes_start(int, int);
+void krbdes_session(Session_Key *, int);
+void krbdes_printsub(unsigned char *, int, unsigned char *, int);
 
-/*
- * These functions are imported from the application
- */
-int net_write(unsigned char *, int);
-void net_encrypt(void);
-int telnet_spin(void);
-char *telnet_getenv(char *);
-char *telnet_gets(const char *, char *, int, int);
-void printsub(char, unsigned char *, int);
-#endif
+void cfb64_encrypt(unsigned char *, int);
+int cfb64_decrypt(int);
+void cfb64_init(int);
+int cfb64_start(int, int);
+int cfb64_is(unsigned char *, int);
+int cfb64_reply(unsigned char *, int);
+void cfb64_session(Session_Key *, int);
+int cfb64_keyid(int, unsigned char *, int *);
+void cfb64_printsub(unsigned char *, int, unsigned char *, int);
+
+void ofb64_encrypt(unsigned char *, int);
+int ofb64_decrypt(int);
+void ofb64_init(int);
+int ofb64_start(int, int);
+int ofb64_is(unsigned char *, int);
+int ofb64_reply(unsigned char *, int);
+void ofb64_session(Session_Key *, int);
+int ofb64_keyid(int, unsigned char *, int *);
+void ofb64_printsub(unsigned char *, int, unsigned char *, int);
+
+#endif	/* ENCRYPTION */

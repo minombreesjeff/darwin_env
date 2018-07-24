@@ -30,8 +30,8 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)misc-proto.h	8.1 (Berkeley) 6/4/93
- * $FreeBSD: src/crypto/telnet/libtelnet/misc-proto.h,v 1.1.1.1.8.1 2002/04/13 10:59:07 markm Exp $
+ *	@(#)auth-proto.h	8.1 (Berkeley) 6/4/93
+ * $FreeBSD: src/crypto/telnet/libtelnet/auth-proto.h,v 1.3.2.2 2002/04/13 10:59:07 markm Exp $
  */
 
 /*
@@ -41,7 +41,7 @@
  * to require a specific license from the United States Government.
  * It is the responsibility of any person or organization contemplating
  * export to obtain such a license before exporting.
- *
+ * 
  * WITHIN THAT CONSTRAINT, permission to use, copy, modify, and
  * distribute this software and its documentation for any purpose and
  * without fee is hereby granted, provided that the above copyright
@@ -54,27 +54,57 @@
  * or implied warranty.
  */
 
-#ifndef	__MISC_PROTO__
-#define	__MISC_PROTO__
+#ifdef	AUTHENTICATION
 
-void auth_encrypt_init(char *, char *, const char *, int);
-void auth_encrypt_connect(int);
-void printd(const unsigned char *, int);
+Authenticator *findauthenticator(int, int);
 
-int isprefix(char *, const char *);
-char **genget(char *, char **, int);
-int Ambiguous(char **);
+void auth_init(const char *, int);
+int auth_cmd(int, char **);
+void auth_request(void);
+void auth_send(unsigned char *, int);
+void auth_send_retry(void);
+void auth_is(unsigned char *, int);
+void auth_reply(unsigned char *, int);
+void auth_finished(Authenticator *, int);
+int auth_wait(char *);
+void auth_disable_name(char *);
+void auth_gen_printsub(unsigned char *, int, unsigned char *, int);
+void auth_name(unsigned char *, int);
+void auth_printsub(unsigned char *, int, unsigned char *, int);
+int auth_sendname(unsigned char *, int);
+void auth_encrypt_user(char *);
+int auth_disable(char *);
+int auth_enable(char *);
+int auth_togdebug(int);
+int auth_status(void);
 
-int getent(char *, const char *);
-char *Getstr(const char *, char **);
+int getauthmask(char *, int *);
 
-/*
- * These functions are imported from the application
- */
-int net_write(unsigned char *, int);
-void net_encrypt(void);
-int telnet_spin(void);
-char *telnet_getenv(char *);
-char *telnet_gets(const char *, char *, int, int);
-void printsub(char, unsigned char *, int);
+#ifdef	KRB4
+int kerberos4_init(Authenticator *, int);
+int kerberos4_send(Authenticator *);
+void kerberos4_is(Authenticator *, unsigned char *, int);
+void kerberos4_reply(Authenticator *, unsigned char *, int);
+int kerberos4_status(Authenticator *, char *, int);
+void kerberos4_printsub(unsigned char *, int, unsigned char *, int);
+#endif
+
+#ifdef	KRB5
+int kerberos5_init(Authenticator *, int);
+int kerberos5_send(Authenticator *);
+void kerberos5_is(Authenticator *, unsigned char *, int);
+void kerberos5_reply(Authenticator *, unsigned char *, int);
+int kerberos5_status(Authenticator *, char *, int level);
+void kerberos5_printsub(unsigned char *, int, unsigned char *, int);
+#endif
+
+#ifdef SRA
+int sra_init(Authenticator *, int);
+int sra_send(Authenticator *);
+void sra_is(Authenticator *, unsigned char *, int);
+void sra_reply(Authenticator *, unsigned char *, int);
+int sra_status(Authenticator *, char *, int);
+void sra_printsub(unsigned char *, int, unsigned char *, int);
+#endif
+
 #endif

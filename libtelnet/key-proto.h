@@ -30,8 +30,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)misc-proto.h	8.1 (Berkeley) 6/4/93
- * $FreeBSD: src/crypto/telnet/libtelnet/misc-proto.h,v 1.1.1.1.8.1 2002/04/13 10:59:07 markm Exp $
+ *	@(#)key-proto.h	8.1 (Berkeley) 6/4/93
  */
 
 /*
@@ -52,29 +51,15 @@
  * permission.  M.I.T. makes no representations about the suitability of
  * this software for any purpose.  It is provided "as is" without express
  * or implied warranty.
+ *
+ * $FreeBSD: src/crypto/telnet/libtelnet/key-proto.h,v 1.1.1.1.8.1 2002/04/13 10:59:07 markm Exp $
  */
 
-#ifndef	__MISC_PROTO__
-#define	__MISC_PROTO__
+#ifndef	__KEY_PROTO__
+#define	__KEY_PROTO__
 
-void auth_encrypt_init(char *, char *, const char *, int);
-void auth_encrypt_connect(int);
-void printd(const unsigned char *, int);
-
-int isprefix(char *, const char *);
-char **genget(char *, char **, int);
-int Ambiguous(char **);
-
-int getent(char *, const char *);
-char *Getstr(const char *, char **);
-
-/*
- * These functions are imported from the application
- */
-int net_write(unsigned char *, int);
-void net_encrypt(void);
-int telnet_spin(void);
-char *telnet_getenv(char *);
-char *telnet_gets(const char *, char *, int, int);
-void printsub(char, unsigned char *, int);
+int key_file_exists(void);
+void key_lookup(unsigned char *, Block);
+void key_stream_init(Block, Block, int);
+unsigned char key_stream(int, int);
 #endif

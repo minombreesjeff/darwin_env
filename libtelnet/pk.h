@@ -1,6 +1,6 @@
 /*-
  * Copyright (c) 1991, 1993
- *	The Regents of the University of California.  All rights reserved.
+ *      Dave Safford.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -10,11 +10,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,54 +25,35 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ * 
+ * $FreeBSD: src/crypto/telnet/libtelnet/pk.h,v 1.1.2.3 2002/04/13 10:59:07 markm Exp $
  */
 
-#include <sys/cdefs.h>
+/* header for the des routines that we will use */
 
-#ifdef __FBSDID
-__FBSDID("$FreeBSD: src/crypto/telnet/libtelnet/getent.c,v 1.2.6.2 2002/04/13 10:59:07 markm Exp $");
-#endif
+typedef unsigned char byte, DesData[ 8], IdeaData[16];
+#define DesKeys des_key_schedule
 
-#ifndef __unused
-#define __unused        __attribute__((__unused__))
-#endif
+#define DES_DECRYPT 0
+#define DES_ENCRYPT 1
 
-#ifndef lint
-#if 0
-static char sccsid[] = "@(#)getent.c	8.2 (Berkeley) 12/15/93";
-#endif
-#endif /* not lint */
+/* public key routines */
+/* functions:
+	genkeys(char *public, char *secret)
+	common_key(char *secret, char *public, desData *deskey)
+      where
+	char public[HEXKEYBYTES + 1];
+	char secret[HEXKEYBYTES + 1];
+ */
 
-#include <stdlib.h>
-#include <string.h>
+#define HEXMODULUS "d4a0ba0250b6fd2ec626e7efd637df76c716e22d0944b88b"
+#define HEXKEYBYTES 48
+#define KEYSIZE 192
+#define KEYBYTES 24
+#define PROOT 3
 
-#include "misc-proto.h"
-
-static char *area;
-static char gettytab[] = "/etc/gettytab";
-
-/*ARGSUSED*/
-int
-getent(char *cp __unused, const char *name)
-{
-	int retval;
-	char *tempnam, *dba[2] = { gettytab, NULL };
-
-	tempnam = strdup(name);
-	retval =  cgetent(&area, dba, tempnam) == 0 ? 1 : 0;
-	free(tempnam);
-	return(retval);
-}
-
-/*ARGSUSED*/
-char *
-Getstr(const char *id, char **cpp __unused)
-{
-	int retval;
-	char *answer, *tempid;
-
-	tempid = strdup(id);
-	retval = cgetstr(area, tempid, &answer);
-	free(tempid);
-	return((retval > 0) ? answer : NULL);
-}
+extern void genkeys(char *public, char *secret);
+extern void common_key(char *secret, char *public, IdeaData *common,
+  DesData *deskey);
+extern void pk_encode(char *in, char *out, DesData *deskey);
+extern void pk_decode(char *in, char *out, DesData *deskey);

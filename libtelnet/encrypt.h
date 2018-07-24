@@ -30,8 +30,8 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)misc-proto.h	8.1 (Berkeley) 6/4/93
- * $FreeBSD: src/crypto/telnet/libtelnet/misc-proto.h,v 1.1.1.1.8.1 2002/04/13 10:59:07 markm Exp $
+ *	@(#)encrypt.h	8.1 (Berkeley) 6/4/93
+ * $FreeBSD: src/crypto/telnet/libtelnet/encrypt.h,v 1.4.2.1 2002/04/13 10:59:07 markm Exp $
  */
 
 /*
@@ -54,27 +54,53 @@
  * or implied warranty.
  */
 
-#ifndef	__MISC_PROTO__
-#define	__MISC_PROTO__
+#ifdef	ENCRYPTION
+# ifndef __ENCRYPTION__
+# define __ENCRYPTION__
 
-void auth_encrypt_init(char *, char *, const char *, int);
-void auth_encrypt_connect(int);
-void printd(const unsigned char *, int);
+#define	DIR_DECRYPT		1
+#define	DIR_ENCRYPT		2
 
-int isprefix(char *, const char *);
-char **genget(char *, char **, int);
-int Ambiguous(char **);
-
-int getent(char *, const char *);
-char *Getstr(const char *, char **);
-
-/*
- * These functions are imported from the application
- */
-int net_write(unsigned char *, int);
-void net_encrypt(void);
-int telnet_spin(void);
-char *telnet_getenv(char *);
-char *telnet_gets(const char *, char *, int, int);
-void printsub(char, unsigned char *, int);
+#include <des.h>
+typedef	unsigned char Block[8];
+typedef unsigned char *BlockT;
+#if 0
+typedef struct { Block __; } Schedule[16];
+#else
+#define Schedule des_key_schedule
 #endif
+
+#define	VALIDKEY(key)	( key[0] | key[1] | key[2] | key[3] | \
+			  key[4] | key[5] | key[6] | key[7])
+
+#define	SAMEKEY(k1, k2)	(!bcmp((void *)k1, (void *)k2, sizeof(Block)))
+
+typedef	struct {
+	short		type;
+	int		length;
+	unsigned char	*data;
+} Session_Key;
+
+typedef struct {
+	const char *name;
+	int	type;
+	void	(*output)(unsigned char *, int);
+	int	(*input)(int);
+	void	(*init)(int);
+	int	(*start)(int, int);
+	int	(*is)(unsigned char *, int);
+	int	(*reply)(unsigned char *, int);
+	void	(*session)(Session_Key *, int);
+	int	(*keyid)(int, unsigned char *, int *);
+	void	(*printsub)(unsigned char *, int, unsigned char *, int);
+} Encryptions;
+
+#define	SK_DES		1	/* Matched Kerberos v5 KEYTYPE_DES */
+
+#include "enc-proto.h"
+
+extern int encrypt_debug_mode;
+extern int (*decrypt_input)(int);
+extern void (*encrypt_output)(unsigned char *, int);
+# endif /* __ENCRYPTION__ */
+#endif /* ENCRYPTION */

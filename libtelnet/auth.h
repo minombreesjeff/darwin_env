@@ -30,8 +30,8 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)misc-proto.h	8.1 (Berkeley) 6/4/93
- * $FreeBSD: src/crypto/telnet/libtelnet/misc-proto.h,v 1.1.1.1.8.1 2002/04/13 10:59:07 markm Exp $
+ *	@(#)auth.h	8.1 (Berkeley) 6/4/93
+ * $FreeBSD: src/crypto/telnet/libtelnet/auth.h,v 1.1.1.1.8.1 2002/04/13 10:59:07 markm Exp $
  */
 
 /*
@@ -54,27 +54,30 @@
  * or implied warranty.
  */
 
-#ifndef	__MISC_PROTO__
-#define	__MISC_PROTO__
+#ifndef	__AUTH__
+#define	__AUTH__
 
-void auth_encrypt_init(char *, char *, const char *, int);
-void auth_encrypt_connect(int);
-void printd(const unsigned char *, int);
+#define	AUTH_REJECT	0	/* Rejected */
+#define	AUTH_UNKNOWN	1	/* We don't know who he is, but he's okay */
+#define	AUTH_OTHER	2	/* We know him, but not his name */
+#define	AUTH_USER	3	/* We know he name */
+#define	AUTH_VALID	4	/* We know him, and he needs no password */
 
-int isprefix(char *, const char *);
-char **genget(char *, char **, int);
-int Ambiguous(char **);
+typedef struct XauthP {
+	int	type;
+	int	way;
+	int	(*init)(struct XauthP *, int);
+	int	(*send)(struct XauthP *);
+	void	(*is)(struct XauthP *, unsigned char *, int);
+	void	(*reply)(struct XauthP *, unsigned char *, int);
+	int	(*status)(struct XauthP *, char *, int);
+	void	(*printsub)(unsigned char *, int, unsigned char *, int);
+} Authenticator;
 
-int getent(char *, const char *);
-char *Getstr(const char *, char **);
+#include "auth-proto.h"
 
-/*
- * These functions are imported from the application
- */
-int net_write(unsigned char *, int);
-void net_encrypt(void);
-int telnet_spin(void);
-char *telnet_getenv(char *);
-char *telnet_gets(const char *, char *, int, int);
-void printsub(char, unsigned char *, int);
+#define OPTS_FORWARD_CREDS           0x00000002
+#define OPTS_FORWARDABLE_CREDS       0x00000001
+
+extern int auth_debug_mode;
 #endif
