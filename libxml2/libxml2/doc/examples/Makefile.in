@@ -14,7 +14,7 @@
 
 @SET_MAKE@
 
-SOURCES = $(io1_SOURCES) $(io2_SOURCES) $(parse1_SOURCES) $(parse2_SOURCES) $(parse3_SOURCES) $(parse4_SOURCES) $(reader1_SOURCES) $(reader2_SOURCES) $(reader3_SOURCES) $(testWriter_SOURCES) $(tree1_SOURCES) $(tree2_SOURCES) $(xpath1_SOURCES) $(xpath2_SOURCES)
+SOURCES = $(io1_SOURCES) $(io2_SOURCES) $(parse1_SOURCES) $(parse2_SOURCES) $(parse3_SOURCES) $(parse4_SOURCES) $(reader1_SOURCES) $(reader2_SOURCES) $(reader3_SOURCES) $(reader4_SOURCES) $(testWriter_SOURCES) $(tree1_SOURCES) $(tree2_SOURCES) $(xpath1_SOURCES) $(xpath2_SOURCES)
 
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
@@ -41,7 +41,7 @@ noinst_PROGRAMS = xpath1$(EXEEXT) parse1$(EXEEXT) parse2$(EXEEXT) \
 	tree1$(EXEEXT) tree2$(EXEEXT) testWriter$(EXEEXT) \
 	reader1$(EXEEXT) reader2$(EXEEXT) reader3$(EXEEXT) \
 	io1$(EXEEXT) parse3$(EXEEXT) parse4$(EXEEXT) io2$(EXEEXT) \
-	xpath2$(EXEEXT)
+	xpath2$(EXEEXT) reader4$(EXEEXT)
 subdir = doc/examples
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -73,6 +73,8 @@ am_reader2_OBJECTS = reader2.$(OBJEXT)
 reader2_OBJECTS = $(am_reader2_OBJECTS)
 am_reader3_OBJECTS = reader3.$(OBJEXT)
 reader3_OBJECTS = $(am_reader3_OBJECTS)
+am_reader4_OBJECTS = reader4.$(OBJEXT)
+reader4_OBJECTS = $(am_reader4_OBJECTS)
 am_testWriter_OBJECTS = testWriter.$(OBJEXT)
 testWriter_OBJECTS = $(am_testWriter_OBJECTS)
 am_tree1_OBJECTS = tree1.$(OBJEXT)
@@ -90,9 +92,10 @@ am__depfiles_maybe = depfiles
 @AMDEP_TRUE@	./$(DEPDIR)/parse1.Po ./$(DEPDIR)/parse2.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/parse3.Po ./$(DEPDIR)/parse4.Po \
 @AMDEP_TRUE@	./$(DEPDIR)/reader1.Po ./$(DEPDIR)/reader2.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/reader3.Po ./$(DEPDIR)/testWriter.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/tree1.Po ./$(DEPDIR)/tree2.Po \
-@AMDEP_TRUE@	./$(DEPDIR)/xpath1.Po ./$(DEPDIR)/xpath2.Po
+@AMDEP_TRUE@	./$(DEPDIR)/reader3.Po ./$(DEPDIR)/reader4.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/testWriter.Po ./$(DEPDIR)/tree1.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/tree2.Po ./$(DEPDIR)/xpath1.Po \
+@AMDEP_TRUE@	./$(DEPDIR)/xpath2.Po
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) \
@@ -104,13 +107,13 @@ LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 SOURCES = $(io1_SOURCES) $(io2_SOURCES) $(parse1_SOURCES) \
 	$(parse2_SOURCES) $(parse3_SOURCES) $(parse4_SOURCES) \
 	$(reader1_SOURCES) $(reader2_SOURCES) $(reader3_SOURCES) \
-	$(testWriter_SOURCES) $(tree1_SOURCES) $(tree2_SOURCES) \
-	$(xpath1_SOURCES) $(xpath2_SOURCES)
+	$(reader4_SOURCES) $(testWriter_SOURCES) $(tree1_SOURCES) \
+	$(tree2_SOURCES) $(xpath1_SOURCES) $(xpath2_SOURCES)
 DIST_SOURCES = $(io1_SOURCES) $(io2_SOURCES) $(parse1_SOURCES) \
 	$(parse2_SOURCES) $(parse3_SOURCES) $(parse4_SOURCES) \
 	$(reader1_SOURCES) $(reader2_SOURCES) $(reader3_SOURCES) \
-	$(testWriter_SOURCES) $(tree1_SOURCES) $(tree2_SOURCES) \
-	$(xpath1_SOURCES) $(xpath2_SOURCES)
+	$(reader4_SOURCES) $(testWriter_SOURCES) $(tree1_SOURCES) \
+	$(tree2_SOURCES) $(xpath1_SOURCES) $(xpath2_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -136,6 +139,8 @@ CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
+CYGWIN_EXTRA_LDFLAGS = @CYGWIN_EXTRA_LDFLAGS@
+CYGWIN_EXTRA_PYTHON_LIBADD = @CYGWIN_EXTRA_PYTHON_LIBADD@
 DEBUG_OBJ = @DEBUG_OBJ@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
@@ -168,6 +173,7 @@ LIBXML_MAJOR_VERSION = @LIBXML_MAJOR_VERSION@
 LIBXML_MICRO_VERSION = @LIBXML_MICRO_VERSION@
 LIBXML_MINOR_VERSION = @LIBXML_MINOR_VERSION@
 LIBXML_VERSION = @LIBXML_VERSION@
+LIBXML_VERSION_EXTRA = @LIBXML_VERSION_EXTRA@
 LIBXML_VERSION_INFO = @LIBXML_VERSION_INFO@
 LIBXML_VERSION_NUMBER = @LIBXML_VERSION_NUMBER@
 LN_S = @LN_S@
@@ -185,6 +191,7 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PATTERN_TEST = @PATTERN_TEST@
+PERL = @PERL@
 PYTHON = @PYTHON@
 PYTHON_INCLUDES = @PYTHON_INCLUDES@
 PYTHON_SITE_PACKAGES = @PYTHON_SITE_PACKAGES@
@@ -241,6 +248,7 @@ WITH_PYTHON_FALSE = @WITH_PYTHON_FALSE@
 WITH_PYTHON_TRUE = @WITH_PYTHON_TRUE@
 WITH_READER = @WITH_READER@
 WITH_REGEXPS = @WITH_REGEXPS@
+WITH_RUN_DEBUG = @WITH_RUN_DEBUG@
 WITH_SAX1 = @WITH_SAX1@
 WITH_SCHEMAS = @WITH_SCHEMAS@
 WITH_THREADS = @WITH_THREADS@
@@ -254,6 +262,7 @@ WITH_XINCLUDE = @WITH_XINCLUDE@
 WITH_XPATH = @WITH_XPATH@
 WITH_XPTR = @WITH_XPTR@
 XINCLUDE_OBJ = @XINCLUDE_OBJ@
+XMLLINT = @XMLLINT@
 XML_CFLAGS = @XML_CFLAGS@
 XML_INCLUDEDIR = @XML_INCLUDEDIR@
 XML_LIBDIR = @XML_LIBDIR@
@@ -261,6 +270,7 @@ XML_LIBS = @XML_LIBS@
 XML_LIBTOOLLIBS = @XML_LIBTOOLLIBS@
 XPATH_OBJ = @XPATH_OBJ@
 XPTR_OBJ = @XPTR_OBJ@
+XSLTPROC = @XSLTPROC@
 Z_CFLAGS = @Z_CFLAGS@
 Z_LIBS = @Z_LIBS@
 ac_ct_AR = @ac_ct_AR@
@@ -313,7 +323,7 @@ target_alias = @target_alias@
 INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include -I@srcdir@/include @THREAD_CFLAGS@ @Z_CFLAGS@
 DEPS = $(top_builddir)/libxml2.la
 LDADDS = @STATIC_BINARIES@ $(top_builddir)/libxml2.la @THREAD_LIBS@ @Z_LIBS@ $(ICONV_LIBS) -lm @WIN32_EXTRA_LIBADD@
-EXTRA_DIST = examples.xsl index.py test1.xml examples.xml test2.xml writer.xml test3.xml tst.xml reader1.res reader3.res tree1.res tree2.res io1.res io2.res xpath1.res xpath2.res 
+EXTRA_DIST = examples.xsl index.py test1.xml examples.xml test2.xml writer.xml test3.xml tst.xml reader1.res reader3.res tree1.res tree2.res io1.res io2.res xpath1.res xpath2.res reader4.res 
 xpath1_SOURCES = xpath1.c
 xpath1_LDFLAGS = 
 xpath1_DEPENDENCIES = $(DEPS)
@@ -370,6 +380,10 @@ xpath2_SOURCES = xpath2.c
 xpath2_LDFLAGS = 
 xpath2_DEPENDENCIES = $(DEPS)
 xpath2_LDADD = @RDL_LIBS@ $(LDADDS)
+reader4_SOURCES = reader4.c
+reader4_LDFLAGS = 
+reader4_DEPENDENCIES = $(DEPS)
+reader4_LDADD = @RDL_LIBS@ $(LDADDS)
 all: all-am
 
 .SUFFIXES:
@@ -437,6 +451,9 @@ reader2$(EXEEXT): $(reader2_OBJECTS) $(reader2_DEPENDENCIES)
 reader3$(EXEEXT): $(reader3_OBJECTS) $(reader3_DEPENDENCIES) 
 	@rm -f reader3$(EXEEXT)
 	$(LINK) $(reader3_LDFLAGS) $(reader3_OBJECTS) $(reader3_LDADD) $(LIBS)
+reader4$(EXEEXT): $(reader4_OBJECTS) $(reader4_DEPENDENCIES) 
+	@rm -f reader4$(EXEEXT)
+	$(LINK) $(reader4_LDFLAGS) $(reader4_OBJECTS) $(reader4_LDADD) $(LIBS)
 testWriter$(EXEEXT): $(testWriter_OBJECTS) $(testWriter_DEPENDENCIES) 
 	@rm -f testWriter$(EXEEXT)
 	$(LINK) $(testWriter_LDFLAGS) $(testWriter_OBJECTS) $(testWriter_LDADD) $(LIBS)
@@ -468,6 +485,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/reader1.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/reader2.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/reader3.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/reader4.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testWriter.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tree1.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tree2.Po@am__quote@
@@ -689,6 +707,7 @@ valgrind:
 	$(MAKE) CHECKER='valgrind -q' tests
 
 tests: $(noinst_PROGRAMS)
+	@(echo '## examples regression tests')
 	@(echo > .memdump)
 	@($(CHECKER) ././xpath1 test3.xml '//child2' > xpath1.tmp ; diff xpath1.tmp xpath1.res ; rm xpath1.tmp)
 	@(grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0" ; exit 0)
@@ -717,6 +736,8 @@ tests: $(noinst_PROGRAMS)
 	@($(CHECKER) ./io2 > io2.tmp ; diff io2.tmp io2.res ; rm -f io2.tmp)
 	@(grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0" ; exit 0)
 	@($(CHECKER) ./xpath2 test3.xml '//discarded' discarded > xpath2.tmp ; diff xpath2.tmp xpath2.res ; rm xpath2.tmp)
+	@(grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0" ; exit 0)
+	@($(CHECKER) ./reader4 test1.xml test2.xml test3.xml > reader4.tmp ; diff reader4.tmp reader4.res ; rm reader4.tmp)
 	@(grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0" ; exit 0)
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

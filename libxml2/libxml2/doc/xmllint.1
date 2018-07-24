@@ -24,14 +24,14 @@ xmllint \- command line XML tool
 .ad l
 .hy 0
 .HP 8
-\fBxmllint\fR [\fB\-\-version\fR | \fB\-\-debug\fR | \fB\-\-shell\fR | \fB\-\-debugent\fR | \fB\-\-copy\fR | \fB\-\-recover\fR | \fB\-\-noent\fR | \fB\-\-nocdata\fR | \fB\-\-nsclean\fR | \fB\-\-noout\fR | \fB\-\-htmlout\fR | \fB\-\-nowrap\fR | \fB\-\-valid\fR | \fB\-\-postvalid\fR | \fB\-\-dtdvalid\ \fIURL\fR\fR | \fB\-\-dtdvalidfpi\ \fIFPI\fR\fR | \fB\-\-timing\fR | \fB\-\-repeat\fR | \fB\-\-insert\fR | \fB\-\-compress\fR | \fB\-\-html\fR | \fB\-\-push\fR | \fB\-\-memory\fR | \fB\-\-nowarning\fR | \fB\-\-noblanks\fR | \fB\-\-format\fR | \fB\-\-testIO\fR | \fB\-\-encode\ \fIencoding\fR\fR | \fB\-\-catalogs\fR | \fB\-\-nocatalogs\fR | \fB\-\-auto\fR | \fB\-\-xinclude\fR | \fB\-\-loaddtd\fR | \fB\-\-dtdattr\fR | \fB\-\-dropdtd\fR | \fB\-\-stream\fR | \fB\-\-chkregister\fR | \fB\-\-relaxng\fR | \fB\-\-schema\fR | \fB\-\-nonet\fR] [\fB\fIxmlfile\fR\fR]
+\fBxmllint\fR [\fB\-\-version\fR | \fB\-\-debug\fR | \fB\-\-shell\fR | \fB\-\-debugent\fR | \fB\-\-copy\fR | \fB\-\-recover\fR | \fB\-\-noent\fR | \fB\-\-noout\fR | \fB\-\-nonet\fR | \fB\-\-path\ \fIpaths\fR\fR | \fB\-\-load\-trace\fR | \fB\-\-htmlout\fR | \fB\-\-nowrap\fR | \fB\-\-valid\fR | \fB\-\-postvalid\fR | \fB\-\-dtdvalid\ \fIURL\fR\fR | \fB\-\-dtdvalidfpi\ \fIFPI\fR\fR | \fB\-\-timing\fR | \fB\-\-output\ \fIfile\fR\fR | \fB\-\-repeat\fR | \fB\-\-insert\fR | \fB\-\-compress\fR | \fB\-\-html\fR | \fB\-\-xmlout\fR | \fB\-\-push\fR | \fB\-\-memory\fR | \fB\-\-maxmem\ \fInbbytes\fR\fR | \fB\-\-nowarning\fR | \fB\-\-noblanks\fR | \fB\-\-nocdata\fR | \fB\-\-format\fR | \fB\-\-encode\ \fIencoding\fR\fR | \fB\-\-dropdtd\fR | \fB\-\-nsclean\fR | \fB\-\-testIO\fR | \fB\-\-catalogs\fR | \fB\-\-nocatalogs\fR | \fB\-\-auto\fR | \fB\-\-xinclude\fR | \fB\-\-noxincludenode\fR | \fB\-\-loaddtd\fR | \fB\-\-dtdattr\fR | \fB\-\-stream\fR | \fB\-\-walker\fR | \fB\-\-pattern\ \fIpatternvalue\fR\fR | \fB\-\-chkregister\fR | \fB\-\-relaxng\fR | \fB\-\-schema\fR | \fB\-\-c14n\fR] [\fB\fIxmlfile\fR\fR]
 .ad
 .hy
 
 .SH "INTRODUCTION"
 
 .PP
-The xmllint program parses one or more XML files, specified on the command line as \fIxmlfile\fR\&. It prints various types of output, depending upon the options selected\&. It is useful for detecting errors both in XML code and in the XML parser itself\&.
+The xmllint program parses one or more XML files, specified on the command line as \fIxmlfile\fR (or the standard input if the filename provided is \- )\&. It prints various types of output, depending upon the options selected\&. It is useful for detecting errors both in XML code and in the XML parser itself\&.
 
 .PP
 It is included in libxml2\&.
@@ -79,6 +79,22 @@ Remove redundant namespace declarations\&.
 Suppress output\&. By default, xmllint outputs the result tree\&.
 
 .TP
+\fB\-\-nonet\fR
+Do not use the Internet to fetch DTD's or entities\&.
+
+.TP
+\fB\-\-nonet\fR
+Do not use the Internet to fetch DTD's or entities\&.
+
+.TP
+\fB\-\-path\fR \fIpaths\fR
+Use the list (separated by space or column) of filesystem path specified by \fIpaths\fR to load DTDs or entities \&.
+
+.TP
+\fB\-\-load\-trace\fR
+Display to stderr all the documents loaded during the processing\&.
+
+.TP
 \fB\-\-htmlout\fR
 Output results as an HTML file\&. This causes xmllint to output the necessary HTML tags surrounding the result tree output so the results can be displayed in a browser\&.
 
@@ -107,6 +123,10 @@ Use the DTD specified by the Public Identifier \fIFPI\fR for validation, note th
 Output information about the time it takes xmllint to perform the various steps\&.
 
 .TP
+\fB\-\-output\fR \fIfile\fR
+Define a file path where xmllint will save the result of parsing\&. Usually the programs build a tree and save it on stdout, with this option the result XML instance will be saved onto a file\&.
+
+.TP
 \fB\-\-repeat\fR
 Repeat 100 times, for timing or profiling\&.
 
@@ -123,12 +143,20 @@ Turn on gzip compression of output\&.
 Use the HTML parser\&.
 
 .TP
+\fB\-\-xmlout\fR
+Used in conjusntion with \fB\-\-html\fR\&. Usually when HTML is parsed the document is saved with the HTML serializer, but with this option the resulting document is saved with the XML serializer\&. This is primarily used to generate XHTML from HTML input\&.
+
+.TP
 \fB\-\-push\fR
 Use the push mode of the parser\&.
 
 .TP
 \fB\-\-memory\fR
 Parse from memory\&.
+
+.TP
+\fB\-\-maxmem\fR \fInnbytes\fR
+Test the parser memory support\&. \fInnbytes\fR is the maximum number of bytes the library is allowed to allocate\&. This can also be used to make sure batch processing of XML files will not exhaust the virtual memory of the server running them\&.
 
 .TP
 \fB\-\-nowarning\fR
@@ -167,6 +195,10 @@ Generate a small document for testing purposes\&.
 Do XInclude processing\&.
 
 .TP
+\fB\-\-noxincludenode\fR
+Do XInclude processing but do not generate XInclude start and end nodes\&.
+
+.TP
 \fB\-\-loaddtd\fR
 Fetch external DTD\&.
 
@@ -183,8 +215,16 @@ Remove DTD from output\&.
 Use streaming API \- useful when used in combination with \-\-relaxng or \-\-valid options for validation of files that are too large to be held in memory\&.
 
 .TP
+\fB\-\-walker\fR
+Test the walker module, which is a reader interface but for a document tree, instead of using the reader API on an unparsed document it works on a existing in\-memory tree\&. Used in debugging\&.
+
+.TP
 \fB\-\-chkregister\fR
-Turn on node registration\&. Useful for developeres testing libxml2 node tracking code\&.
+Turn on node registration\&. Useful for developers testing libxml2 node tracking code\&.
+
+.TP
+\fB\-\-pattern\fR \fIpatternvalue\fR
+Used to exercise the pattern recognition engine, which can be used with the reader interface to the parser\&. It allows to select some nodes in the document based on an XPath (subset) expression\&. Used for debugging\&.
 
 .TP
 \fB\-\-relaxng\fR \fIschema\fR
@@ -195,8 +235,8 @@ Use RelaxNG file named \fIschema\fR for validation\&.
 Use a W3C XML Schema file named \fIschema\fR for validation\&.
 
 .TP
-\fB\-\-nonet\fR
-Do not use the Internet to fetch DTD's or entities\&.
+\fB\-\-c14n\fR
+Use the W3C XML Canonicalisation (C14N) to serialize the result of parsing to stdout\&. It keeps comments in the result\&.
 
 .SH "SHELL"
 
@@ -276,6 +316,51 @@ Catalog behavior can be changed by redirecting queries to the user's own set of 
 
 .PP
 Setting the environment variable \fIXML_DEBUG_CATALOG\fR using the command \fB"export XML_DEBUG_CATALOG="\fR outputs debugging information related to catalog operations\&.
+
+.SH "ERROR RETURN CODES"
+
+.PP
+On the completion of execution, Xmllint returns the following error codes:
+
+.TP
+0
+No error
+
+.TP
+1
+Unclassified
+
+.TP
+2
+Error in DTD
+
+.TP
+3
+Validation error
+
+.TP
+4
+Validation error
+
+.TP
+5
+Error in schema compilation
+
+.TP
+6
+Error writing output
+
+.TP
+7
+Error in pattern (generated when [\-\-pattern] option is used)
+
+.TP
+8
+Error in Reader registration (generated when [\-\-chkregister] option is used)
+
+.TP
+9
+Out of memory error
 
 .SH AUTHORS
 John Fleck, Ziying Sherwin, Heiko Rupp.

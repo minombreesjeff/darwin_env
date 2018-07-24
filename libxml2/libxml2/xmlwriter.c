@@ -71,6 +71,7 @@ struct _xmlTextWriter {
     xmlChar *ichar;             /* indent character */
     char qchar;                 /* character used for quoting attribute values */
     xmlParserCtxtPtr ctxt;
+    int no_doc_free;
 };
 
 static void xmlFreeTextWriterStackEntry(xmlLinkPtr lk);
@@ -96,10 +97,57 @@ static int
                                        xmlTextWriterStackEntry * p);
 
 /**
+ * xmlWriterErrMsg:
+ * @ctxt:  a writer context
+ * @error:  the error number
+ * @msg:  the error message
+ *
+ * Handle a writer error
+ */
+static void
+xmlWriterErrMsg(xmlTextWriterPtr ctxt, xmlParserErrors error,
+               const char *msg)
+{
+    if (ctxt != NULL) {
+	__xmlRaiseError(NULL, NULL, NULL, ctxt->ctxt,
+	            NULL, XML_FROM_WRITER, error, XML_ERR_FATAL,
+		    NULL, 0, NULL, NULL, NULL, 0, 0, msg);
+    } else {
+	__xmlRaiseError(NULL, NULL, NULL, NULL, NULL, XML_FROM_WRITER, error,
+                    XML_ERR_FATAL, NULL, 0, NULL, NULL, NULL, 0, 0, msg);
+    }
+}
+
+/**
+ * xmlWriterErrMsgInt:
+ * @ctxt:  a writer context
+ * @error:  the error number
+ * @msg:  the error message
+ * @val:  an int
+ *
+ * Handle a writer error
+ */
+static void
+xmlWriterErrMsgInt(xmlTextWriterPtr ctxt, xmlParserErrors error,
+               const char *msg, int val)
+{
+    if (ctxt != NULL) {
+	__xmlRaiseError(NULL, NULL, NULL, ctxt->ctxt,
+	            NULL, XML_FROM_WRITER, error, XML_ERR_FATAL,
+		    NULL, 0, NULL, NULL, NULL, val, 0, msg, val);
+    } else {
+	__xmlRaiseError(NULL, NULL, NULL, NULL, NULL, XML_FROM_WRITER, error,
+                    XML_ERR_FATAL, NULL, 0, NULL, NULL, NULL, val, 0, msg, val);
+    }
+}
+
+/**
  * xmlNewTextWriter:
  * @out:  an xmlOutputBufferPtr
  *
  * Create a new xmlNewTextWriter structure using an xmlOutputBufferPtr
+ * NOTE: the @out parameter will be deallocated when the writer is closed
+ *       (if the call succeed.)
  *
  * Returns the new xmlTextWriterPtr or NULL in case of error
  */
@@ -110,7 +158,7 @@ xmlNewTextWriter(xmlOutputBufferPtr out)
 
     ret = (xmlTextWriterPtr) xmlMalloc(sizeof(xmlTextWriter));
     if (ret == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                         "xmlNewTextWriter : out of memory!\n");
         return NULL;
     }
@@ -121,7 +169,7 @@ xmlNewTextWriter(xmlOutputBufferPtr out)
                                (xmlListDataCompare)
                                xmlCmpTextWriterStackEntry);
     if (ret->nodes == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                         "xmlNewTextWriter : out of memory!\n");
         xmlFree(ret);
         return NULL;
@@ -132,7 +180,7 @@ xmlNewTextWriter(xmlOutputBufferPtr out)
                                  (xmlListDataCompare)
                                  xmlCmpTextWriterNsStackEntry);
     if (ret->nsstack == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                         "xmlNewTextWriter : out of memory!\n");
         xmlListDelete(ret->nodes);
         xmlFree(ret);
@@ -147,10 +195,11 @@ xmlNewTextWriter(xmlOutputBufferPtr out)
         xmlListDelete(ret->nodes);
         xmlListDelete(ret->nsstack);
         xmlFree(ret);
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                         "xmlNewTextWriter : out of memory!\n");
         return NULL;
     }
+    ret->no_doc_free = 0;
 
     return ret;
 }
@@ -172,14 +221,14 @@ xmlNewTextWriterFilename(const char *uri, int compression)
 
     out = xmlOutputBufferCreateFilename(uri, NULL, compression);
     if (out == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                         "xmlNewTextWriterFilename : out of memory!\n");
         return NULL;
     }
 
     ret = xmlNewTextWriter(out);
     if (ret == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                         "xmlNewTextWriterFilename : out of memory!\n");
         xmlOutputBufferClose(out);
         return NULL;
@@ -213,14 +262,14 @@ xmlNewTextWriterMemory(xmlBufferPtr buf, int compression ATTRIBUTE_UNUSED)
                                   xmlTextWriterCloseMemCallback,
                                   (void *) buf, NULL);
     if (out == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                         "xmlNewTextWriterMemory : out of memory!\n");
         return NULL;
     }
 
     ret = xmlNewTextWriter(out);
     if (ret == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                         "xmlNewTextWriterMemory : out of memory!\n");
         xmlOutputBufferClose(out);
         return NULL;
@@ -235,6 +284,8 @@ xmlNewTextWriterMemory(xmlBufferPtr buf, int compression ATTRIBUTE_UNUSED)
  * @compression:  compress the output?
  *
  * Create a new xmlNewTextWriter structure with @ctxt as output
+ * NOTE: the @ctxt context will be freed with the resulting writer
+ *       (if the call succeeds).
  * TODO: handle compression
  *
  * Returns the new xmlTextWriterPtr or NULL in case of error
@@ -247,7 +298,7 @@ xmlNewTextWriterPushParser(xmlParserCtxtPtr ctxt,
     xmlOutputBufferPtr out;
 
     if (ctxt == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlNewTextWriterPushParser : invalid context!\n");
         return NULL;
     }
@@ -258,14 +309,14 @@ xmlNewTextWriterPushParser(xmlParserCtxtPtr ctxt,
                                   xmlTextWriterCloseDocCallback,
                                   (void *) ctxt, NULL);
     if (out == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlNewTextWriterPushParser : error at xmlOutputBufferCreateIO!\n");
         return NULL;
     }
 
     ret = xmlNewTextWriter(out);
     if (ret == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlNewTextWriterPushParser : error at xmlNewTextWriter!\n");
         xmlOutputBufferClose(out);
         return NULL;
@@ -300,30 +351,37 @@ xmlNewTextWriterDoc(xmlDocPtr * doc, int compression)
 
     ctxt = xmlCreatePushParserCtxt(&saxHandler, NULL, NULL, 0, NULL);
     if (ctxt == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlNewTextWriterDoc : error at xmlCreatePushParserCtxt!\n");
         return NULL;
     }
+    /*
+     * For some reason this seems to completely break if node names
+     * are interned.
+     */
+    ctxt->dictNames = 0;
 
     ctxt->myDoc = xmlNewDoc(BAD_CAST XML_DEFAULT_VERSION);
     if (ctxt->myDoc == NULL) {
         xmlFreeParserCtxt(ctxt);
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlNewTextWriterDoc : error at xmlNewDoc!\n");
         return NULL;
     }
 
     ret = xmlNewTextWriterPushParser(ctxt, compression);
     if (ret == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlNewTextWriterDoc : error at xmlNewTextWriterPushParser!\n");
         return NULL;
     }
 
     xmlSetDocCompressMode(ctxt->myDoc, compression);
 
-    if (doc != NULL)
+    if (doc != NULL) {
         *doc = ctxt->myDoc;
+	ret->no_doc_free = 1;
+    }
 
     return ret;
 }
@@ -347,7 +405,7 @@ xmlNewTextWriterTree(xmlDocPtr doc, xmlNodePtr node, int compression)
     xmlParserCtxtPtr ctxt;
 
     if (doc == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlNewTextWriterTree : invalid document tree!\n");
         return NULL;
     }
@@ -360,21 +418,27 @@ xmlNewTextWriterTree(xmlDocPtr doc, xmlNodePtr node, int compression)
 
     ctxt = xmlCreatePushParserCtxt(&saxHandler, NULL, NULL, 0, NULL);
     if (ctxt == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlNewTextWriterDoc : error at xmlCreatePushParserCtxt!\n");
         return NULL;
     }
+    /*
+     * For some reason this seems to completely break if node names
+     * are interned.
+     */
+    ctxt->dictNames = 0;
 
     ret = xmlNewTextWriterPushParser(ctxt, compression);
     if (ret == NULL) {
         xmlFreeParserCtxt(ctxt);
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlNewTextWriterDoc : error at xmlNewTextWriterPushParser!\n");
         return NULL;
     }
 
     ctxt->myDoc = doc;
     ctxt->node = node;
+    ret->no_doc_free = 1;
 
     xmlSetDocCompressMode(doc, compression);
 
@@ -402,8 +466,13 @@ xmlFreeTextWriter(xmlTextWriterPtr writer)
     if (writer->nsstack != NULL)
         xmlListDelete(writer->nsstack);
 
-    if (writer->ctxt != NULL)
+    if (writer->ctxt != NULL) {
+        if ((writer->ctxt->myDoc != NULL) && (writer->no_doc_free == 0)) {
+	    xmlFreeDoc(writer->ctxt->myDoc);
+	    writer->ctxt->myDoc = NULL;
+	}
         xmlFreeParserCtxt(writer->ctxt);
+    }
 
     if (writer->ichar != NULL)
         xmlFree(writer->ichar);
@@ -431,14 +500,14 @@ xmlTextWriterStartDocument(xmlTextWriterPtr writer, const char *version,
     xmlCharEncodingHandlerPtr encoder;
 
     if ((writer == NULL) || (writer->out == NULL)) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterStartDocument : invalid writer!\n");
         return -1;
     }
 
     lk = xmlListFront(writer->nodes);
     if ((lk != NULL) && (xmlLinkGetData(lk) != NULL)) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterStartDocument : not allowed in this context!\n");
         return -1;
     }
@@ -447,7 +516,7 @@ xmlTextWriterStartDocument(xmlTextWriterPtr writer, const char *version,
     if (encoding != NULL) {
         encoder = xmlFindCharEncodingHandler(encoding);
         if (encoder == NULL) {
-            xmlGenericError(xmlGenericErrorContext,
+            xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                             "xmlTextWriterStartDocument : out of memory!\n");
             return -1;
         }
@@ -545,7 +614,7 @@ xmlTextWriterEndDocument(xmlTextWriterPtr writer)
     xmlTextWriterStackEntry *p;
 
     if (writer == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterEndDocument : invalid writer!\n");
         return -1;
     }
@@ -628,7 +697,7 @@ xmlTextWriterStartComment(xmlTextWriterPtr writer)
     xmlTextWriterStackEntry *p;
 
     if (writer == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterStartComment : invalid writer!\n");
         return -1;
     }
@@ -665,7 +734,7 @@ xmlTextWriterStartComment(xmlTextWriterPtr writer)
     p = (xmlTextWriterStackEntry *)
         xmlMalloc(sizeof(xmlTextWriterStackEntry));
     if (p == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartElement : out of memory!\n");
         return -1;
     }
@@ -707,14 +776,14 @@ xmlTextWriterEndComment(xmlTextWriterPtr writer)
     xmlTextWriterStackEntry *p;
 
     if (writer == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterEndComment : invalid writer!\n");
         return -1;
     }
 
     lk = xmlListFront(writer->nodes);
     if (lk == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterEndComment : not allowed in this context!\n");
         return -1;
     }
@@ -789,7 +858,7 @@ xmlTextWriterWriteVFormatComment(xmlTextWriterPtr writer,
     xmlChar *buf;
 
     if (writer == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterWriteVFormatComment : invalid writer!\n");
         return -1;
     }
@@ -886,14 +955,14 @@ xmlTextWriterStartElement(xmlTextWriterPtr writer, const xmlChar * name)
     p = (xmlTextWriterStackEntry *)
         xmlMalloc(sizeof(xmlTextWriterStackEntry));
     if (p == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartElement : out of memory!\n");
         return -1;
     }
 
     p->name = xmlStrdup(name);
     if (p->name == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartElement : out of memory!\n");
         xmlFree(p);
         return -1;
@@ -1191,13 +1260,13 @@ xmlTextWriterWriteRawLen(xmlTextWriterPtr writer, const xmlChar * content,
     xmlTextWriterStackEntry *p;
 
     if (writer == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterWriteRawLen : invalid writer!\n");
         return -1;
     }
 
-    if ((content == NULL) && (len > 0)) {
-        xmlGenericError(xmlGenericErrorContext,
+    if ((content == NULL) || (len < 0)) {
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterWriteRawLen : invalid content!\n");
         return -1;
     }
@@ -1258,6 +1327,9 @@ xmlTextWriterWriteFormatString(xmlTextWriterPtr writer, const char *format,
     int rc;
     va_list ap;
 
+    if ((writer == NULL) || (format == NULL))
+        return -1;
+
     va_start(ap, format);
 
     rc = xmlTextWriterWriteVFormatString(writer, format, ap);
@@ -1283,7 +1355,7 @@ xmlTextWriterWriteVFormatString(xmlTextWriterPtr writer,
     int rc;
     xmlChar *buf;
 
-    if (writer == NULL)
+    if ((writer == NULL) || (format == NULL))
         return -1;
 
     buf = xmlTextWriterVSprintf(format, argptr);
@@ -1314,7 +1386,7 @@ xmlTextWriterWriteString(xmlTextWriterPtr writer, const xmlChar * content)
     xmlTextWriterStackEntry *p;
     xmlChar *buf;
 
-    if (writer == NULL)
+    if ((writer == NULL) || (content == NULL))
         return -1;
 
     sum = 0;
@@ -1326,6 +1398,10 @@ xmlTextWriterWriteString(xmlTextWriterPtr writer, const xmlChar * content)
             switch (p->state) {
                 case XML_TEXTWRITER_NAME:
                 case XML_TEXTWRITER_TEXT:
+#if 0
+                    buf = NULL;
+		    xmlOutputBufferWriteEscape(writer->out, content, NULL);
+#endif
                     buf = xmlEncodeSpecialChars(NULL, content);
                     break;
                 case XML_TEXTWRITER_ATTRIBUTE:
@@ -1367,12 +1443,20 @@ static int
 xmlOutputBufferWriteBase64(xmlOutputBufferPtr out, int len,
                            const unsigned char *data)
 {
-    static unsigned char dtable[64] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    static unsigned char const dtable[64] =
+            {'A','B','C','D','E','F','G','H','I','J','K','L','M',
+	     'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+	     'a','b','c','d','e','f','g','h','i','j','k','l','m',
+	     'n','o','p','q','r','s','t','u','v','w','x','y','z',
+	     '0','1','2','3','4','5','6','7','8','9','+','/'};
+
     int i;
     int linelen;
     int count;
     int sum;
+
+    if ((out == NULL) || (len < 0) || (data == NULL))
+        return(-1);
 
     linelen = 0;
     sum = 0;
@@ -1446,7 +1530,7 @@ xmlTextWriterWriteBase64(xmlTextWriterPtr writer, const char *data,
     xmlLinkPtr lk;
     xmlTextWriterStackEntry *p;
 
-    if (writer == NULL)
+    if ((writer == NULL) || (data == NULL) || (start < 0) || (len < 0))
         return -1;
 
     sum = 0;
@@ -1483,7 +1567,8 @@ xmlTextWriterWriteBase64(xmlTextWriterPtr writer, const char *data,
  * Write hqx encoded data to an xmlOutputBuffer.
  * ::todo
  *
- * Returns the bytes written (may be 0 because of buffering) or -1 in case of error
+ * Returns the bytes written (may be 0 because of buffering) 
+ * or -1 in case of error
  */
 static int
 xmlOutputBufferWriteBinHex(xmlOutputBufferPtr out,
@@ -1491,10 +1576,11 @@ xmlOutputBufferWriteBinHex(xmlOutputBufferPtr out,
 {
     int count;
     int sum;
-    static char hex[] = "0123456789ABCDEF";
+    static char const hex[16] = 
+    	{'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
     int i;
 
-    if ((out == NULL) || ((data == 0) && (len != 0))) {
+    if ((out == NULL) || (data == NULL) || (len < 0)) {
         return -1;
     }
 
@@ -1537,7 +1623,7 @@ xmlTextWriterWriteBinHex(xmlTextWriterPtr writer, const char *data,
     xmlLinkPtr lk;
     xmlTextWriterStackEntry *p;
 
-    if (writer == NULL)
+    if ((writer == NULL) || (data == NULL) || (start < 0) || (len < 0))
         return -1;
 
     sum = 0;
@@ -1677,7 +1763,7 @@ xmlTextWriterStartAttributeNS(xmlTextWriterPtr writer,
         p = (xmlTextWriterNsStackEntry *)
             xmlMalloc(sizeof(xmlTextWriterNsStackEntry));
         if (p == 0) {
-            xmlGenericError(xmlGenericErrorContext,
+            xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                             "xmlTextWriterStartAttributeNS : out of memory!\n");
             return -1;
         }
@@ -1685,7 +1771,7 @@ xmlTextWriterStartAttributeNS(xmlTextWriterPtr writer,
         p->prefix = buf;
         p->uri = xmlStrdup(namespaceURI);
         if (p->uri == 0) {
-            xmlGenericError(xmlGenericErrorContext,
+            xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                             "xmlTextWriterStartAttributeNS : out of memory!\n");
             xmlFree(p);
             return -1;
@@ -1721,12 +1807,14 @@ xmlTextWriterEndAttribute(xmlTextWriterPtr writer)
     lk = xmlListFront(writer->nodes);
     if (lk == 0) {
         xmlListDelete(writer->nsstack);
+	writer->nsstack = NULL;
         return -1;
     }
 
     p = (xmlTextWriterStackEntry *) xmlLinkGetData(lk);
     if (p == 0) {
         xmlListDelete(writer->nsstack);
+	writer->nsstack = NULL;
         return -1;
     }
 
@@ -1738,6 +1826,7 @@ xmlTextWriterEndAttribute(xmlTextWriterPtr writer)
             count = xmlOutputBufferWrite(writer->out, 1, &writer->qchar);
             if (count < 0) {
                 xmlListDelete(writer->nsstack);
+		writer->nsstack = NULL;
                 return -1;
             }
             sum += count;
@@ -1751,6 +1840,7 @@ xmlTextWriterEndAttribute(xmlTextWriterPtr writer)
                                                     np->uri);
                     if (count < 0) {
                         xmlListDelete(writer->nsstack);
+			writer->nsstack = NULL;
                         return -1;
                     }
                     sum += count;
@@ -2210,7 +2300,7 @@ xmlTextWriterStartPI(xmlTextWriterPtr writer, const xmlChar * target)
         return -1;
 
     if (xmlStrcasecmp(target, (const xmlChar *) "xml") == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterStartPI : target name [Xx][Mm][Ll] is reserved for xml standardization!\n");
         return -1;
     }
@@ -2240,7 +2330,7 @@ xmlTextWriterStartPI(xmlTextWriterPtr writer, const xmlChar * target)
                     break;
                 case XML_TEXTWRITER_PI:
                 case XML_TEXTWRITER_PI_TEXT:
-                    xmlGenericError(xmlGenericErrorContext,
+                    xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                                     "xmlTextWriterStartPI : nested PI!\n");
                     return -1;
                 default:
@@ -2252,14 +2342,14 @@ xmlTextWriterStartPI(xmlTextWriterPtr writer, const xmlChar * target)
     p = (xmlTextWriterStackEntry *)
         xmlMalloc(sizeof(xmlTextWriterStackEntry));
     if (p == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartPI : out of memory!\n");
         return -1;
     }
 
     p->name = xmlStrdup(target);
     if (p->name == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartPI : out of memory!\n");
         xmlFree(p);
         return -1;
@@ -2462,7 +2552,7 @@ xmlTextWriterStartCDATA(xmlTextWriterPtr writer)
                     p->state = XML_TEXTWRITER_TEXT;
                     break;
                 case XML_TEXTWRITER_CDATA:
-                    xmlGenericError(xmlGenericErrorContext,
+                    xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                                     "xmlTextWriterStartCDATA : CDATA not allowed in this context!\n");
                     return -1;
                 default:
@@ -2474,7 +2564,7 @@ xmlTextWriterStartCDATA(xmlTextWriterPtr writer)
     p = (xmlTextWriterStackEntry *)
         xmlMalloc(sizeof(xmlTextWriterStackEntry));
     if (p == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartCDATA : out of memory!\n");
         return -1;
     }
@@ -2651,7 +2741,7 @@ xmlTextWriterStartDTD(xmlTextWriterPtr writer,
     sum = 0;
     lk = xmlListFront(writer->nodes);
     if ((lk != NULL) && (xmlLinkGetData(lk) != NULL)) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterStartDTD : DTD allowed only in prolog!\n");
         return -1;
     }
@@ -2659,14 +2749,14 @@ xmlTextWriterStartDTD(xmlTextWriterPtr writer,
     p = (xmlTextWriterStackEntry *)
         xmlMalloc(sizeof(xmlTextWriterStackEntry));
     if (p == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartDTD : out of memory!\n");
         return -1;
     }
 
     p->name = xmlStrdup(name);
     if (p->name == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartDTD : out of memory!\n");
         xmlFree(p);
         return -1;
@@ -2686,7 +2776,7 @@ xmlTextWriterStartDTD(xmlTextWriterPtr writer,
 
     if (pubid != 0) {
         if (sysid == 0) {
-            xmlGenericError(xmlGenericErrorContext,
+            xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                             "xmlTextWriterStartDTD : system identifier needed!\n");
             return -1;
         }
@@ -2998,14 +3088,14 @@ xmlTextWriterStartDTDElement(xmlTextWriterPtr writer, const xmlChar * name)
     p = (xmlTextWriterStackEntry *)
         xmlMalloc(sizeof(xmlTextWriterStackEntry));
     if (p == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartDTDElement : out of memory!\n");
         return -1;
     }
 
     p->name = xmlStrdup(name);
     if (p->name == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartDTDElement : out of memory!\n");
         xmlFree(p);
         return -1;
@@ -3235,14 +3325,14 @@ xmlTextWriterStartDTDAttlist(xmlTextWriterPtr writer, const xmlChar * name)
     p = (xmlTextWriterStackEntry *)
         xmlMalloc(sizeof(xmlTextWriterStackEntry));
     if (p == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartDTDAttlist : out of memory!\n");
         return -1;
     }
 
     p->name = xmlStrdup(name);
     if (p->name == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartDTDAttlist : out of memory!\n");
         xmlFree(p);
         return -1;
@@ -3474,14 +3564,14 @@ xmlTextWriterStartDTDEntity(xmlTextWriterPtr writer,
     p = (xmlTextWriterStackEntry *)
         xmlMalloc(sizeof(xmlTextWriterStackEntry));
     if (p == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartDTDElement : out of memory!\n");
         return -1;
     }
 
     p->name = xmlStrdup(name);
     if (p->name == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_NO_MEMORY,
                         "xmlTextWriterStartDTDElement : out of memory!\n");
         xmlFree(p);
         return -1;
@@ -3793,7 +3883,7 @@ xmlTextWriterWriteDTDExternalEntityContents(xmlTextWriterPtr writer,
     xmlTextWriterStackEntry *p;
 
     if (writer == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterWriteDTDExternalEntityContents: xmlTextWriterPtr invalid!\n");
         return -1;
     }
@@ -3801,7 +3891,7 @@ xmlTextWriterWriteDTDExternalEntityContents(xmlTextWriterPtr writer,
     sum = 0;
     lk = xmlListFront(writer->nodes);
     if (lk == 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterWriteDTDExternalEntityContents: you must call xmlTextWriterStartDTDEntity before the call to this function!\n");
         return -1;
     }
@@ -3815,20 +3905,20 @@ xmlTextWriterWriteDTDExternalEntityContents(xmlTextWriterPtr writer,
             break;
         case XML_TEXTWRITER_DTD_PENT:
             if (ndataid != NULL) {
-                xmlGenericError(xmlGenericErrorContext,
+                xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                                 "xmlTextWriterWriteDTDExternalEntityContents: notation not allowed with parameter entities!\n");
                 return -1;
             }
             break;
         default:
-            xmlGenericError(xmlGenericErrorContext,
+            xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                             "xmlTextWriterWriteDTDExternalEntityContents: you must call xmlTextWriterStartDTDEntity before the call to this function!\n");
             return -1;
     }
 
     if (pubid != 0) {
         if (sysid == 0) {
-            xmlGenericError(xmlGenericErrorContext,
+            xmlWriterErrMsg(writer, XML_ERR_INTERNAL_ERROR,
                             "xmlTextWriterWriteDTDExternalEntityContents: system identifier needed!\n");
             return -1;
         }
@@ -4217,7 +4307,7 @@ xmlTextWriterWriteDocCallback(void *context, const xmlChar * str, int len)
     int rc;
 
     if ((rc = xmlParseChunk(ctxt, (const char *) str, len, 0)) != 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsgInt(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterWriteDocCallback : XML error %d !\n",
                         rc);
         return -1;
@@ -4241,7 +4331,7 @@ xmlTextWriterCloseDocCallback(void *context)
     int rc;
 
     if ((rc = xmlParseChunk(ctxt, NULL, 0, 1)) != 0) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsgInt(NULL, XML_ERR_INTERNAL_ERROR,
                         "xmlTextWriterWriteDocCallback : XML error %d !\n",
                         rc);
         return -1;
@@ -4269,7 +4359,7 @@ xmlTextWriterVSprintf(const char *format, va_list argptr)
     size = BUFSIZ;
     buf = (xmlChar *) xmlMalloc(size);
     if (buf == NULL) {
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                         "xmlTextWriterVSprintf : out of memory!\n");
         return NULL;
     }
@@ -4280,7 +4370,7 @@ xmlTextWriterVSprintf(const char *format, va_list argptr)
         size += BUFSIZ;
         buf = (xmlChar *) xmlMalloc(size);
         if (buf == NULL) {
-            xmlGenericError(xmlGenericErrorContext,
+            xmlWriterErrMsg(NULL, XML_ERR_NO_MEMORY,
                             "xmlTextWriterVSprintf : out of memory!\n");
             return NULL;
         }
@@ -4301,9 +4391,6 @@ xmlTextWriterStartDocumentCallback(void *ctx)
     xmlParserCtxtPtr ctxt = (xmlParserCtxtPtr) ctx;
     xmlDocPtr doc;
 
-#ifdef DEBUG_SAX
-    xmlGenericError(xmlGenericErrorContext, "SAX.startDocument()\n");
-#endif
     if (ctxt->html) {
 #ifdef LIBXML_HTML_ENABLED
         if (ctxt->myDoc == NULL)
@@ -4318,7 +4405,7 @@ xmlTextWriterStartDocumentCallback(void *ctx)
             return;
         }
 #else
-        xmlGenericError(xmlGenericErrorContext,
+        xmlWriterErrMsg(NULL, XML_ERR_INTERNAL_ERROR,
                         "libxml2 built without HTML support\n");
         ctxt->errNo = XML_ERR_INTERNAL_ERROR;
         ctxt->instate = XML_PARSER_EOF;
@@ -4369,7 +4456,7 @@ xmlTextWriterStartDocumentCallback(void *ctx)
 int
 xmlTextWriterSetIndent(xmlTextWriterPtr writer, int indent)
 {
-    if (indent < 0)
+    if ((writer == NULL) || (indent < 0))
         return -1;
 
     writer->indent = indent;
@@ -4390,7 +4477,7 @@ xmlTextWriterSetIndent(xmlTextWriterPtr writer, int indent)
 int
 xmlTextWriterSetIndentString(xmlTextWriterPtr writer, const xmlChar * str)
 {
-    if (!str)
+    if ((writer == NULL) || (!str))
         return -1;
 
     if (writer->ichar != NULL)

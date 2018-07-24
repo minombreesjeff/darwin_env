@@ -1,12 +1,12 @@
 Summary: Library providing XML and HTML support
 Name: libxml2
-Version: 2.6.9
+Version: 2.6.16
 Release: 1
 License: MIT
 Group: Development/Libraries
 Source: ftp://xmlsoft.org/libxml2-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
-BuildRequires: python python-devel
+BuildRequires: python python-devel zlib-devel
 URL: http://xmlsoft.org/
 Prefix: %{_prefix}
 Docdir: %{_docdir}
@@ -60,8 +60,46 @@ at parse time or later once the document has been modified.
 %setup -q
 
 %build
-%configure
-make
+#
+# try to use compiler profiling, based on Arjan van de Ven <arjanv@redhat.com>
+# initial test spec. This really doesn't work okay for most tests done.
+#
+GCC_VERSION=`gcc --version | grep "^gcc" | awk '{ print $3 }' | sed 's+\([0-9]\)\.\([0-9]\)\..*+\1\2+'`
+#if [ $GCC_VERSION -eq 32 ]
+#then
+#    PROF_GEN='-fprofile-arcs'
+#    PROF_USE='-fbranch-probabilities'
+#else if [ $GCC_VERSION -eq 33 ]
+#then
+#    PROF_GEN='-fprofile-arcs'
+#    PROF_USE='-fbranch-probabilities -ftracer'
+#else
+if [ $GCC_VERSION -ge 34 ]
+then
+    PROF_GEN='-fprofile-generate'
+    PROF_USE='-fprofile-use'
+fi
+#fi
+#fi
+
+if [ "$PROF_GEN" != "" ]
+then
+    # First generate a profiling version
+    CFLAGS="${RPM_OPT_FLAGS} ${PROF_GEN}"  %configure
+    make
+    # Run a few sampling
+    make dba100000.xml
+    ./xmllint --noout  dba100000.xml
+    ./xmllint --stream  dba100000.xml
+    ./xmllint --noout --valid test/valid/REC-xml-19980210.xml
+    ./xmllint --stream --valid test/valid/REC-xml-19980210.xml
+    # Then generate code based on profile
+    CFLAGS="${RPM_OPT_FLAGS} ${PROF_USE}"  %configure
+    make
+else
+    %configure
+    make
+fi
 (cd doc/examples ; make clean)
 gzip -9 ChangeLog
 
@@ -121,8 +159,8 @@ rm -fr %{buildroot}
 %doc doc/python.html
 
 %changelog
-* Mon Apr 19 2004 Daniel Veillard <veillard@redhat.com>
-- upstream release 2.6.9 see http://xmlsoft.org/news.html
+* Wed Nov 10 2004 Daniel Veillard <veillard@redhat.com>
+- upstream release 2.6.16 see http://xmlsoft.org/news.html
 
 * Thu Jan  2 2003 Daniel Veillard <veillard@redhat.com>
 - integrated drv_libxml2 xml.sax driver from Stéphane Bidoul

@@ -5,7 +5,8 @@ SUBDIRS= . tests
 
 INCLUDES = \
 	-I$(PYTHON_INCLUDES) \
-	-I$(top_srcdir)/include
+	-I$(top_srcdir)/include	\
+	-I$(top_builddir)/include
 
 DOCS_DIR = $(datadir)/doc/libxml2-python-$(LIBXML_VERSION)
 # libxml2class.txt is generated
@@ -23,7 +24,7 @@ EXTRA_DIST = 			\
 	libxml2-python-api.xml	\
 	$(DOCS)
 
-libxml2mod_la_LDFLAGS = -module -avoid-version -L$(top_builddir)/.libs
+libxml2mod_la_LDFLAGS = @CYGWIN_EXTRA_LDFLAGS@ @WIN32_EXTRA_LDFLAGS@ -module -avoid-version -L$(top_builddir)/.libs
 
 if WITH_PYTHON
 mylibs = \
@@ -34,7 +35,7 @@ all-local:	libxml2.py
 python_LTLIBRARIES = libxml2mod.la
 
 libxml2mod_la_SOURCES = libxml.c types.c libxml2-py.c
-libxml2mod_la_LIBADD = $(mylibs)
+libxml2mod_la_LIBADD = $(mylibs) @CYGWIN_EXTRA_PYTHON_LIBADD@
 
 libxml2.py: $(srcdir)/libxml.py $(srcdir)/libxml2class.py
 	cat $(srcdir)/libxml.py $(srcdir)/libxml2class.py > libxml2.py
@@ -69,5 +70,5 @@ else
 all: 
 endif
 tests test: all
-	cd tests && $(MAKE) tests
+	cd tests && $(MAKE) MAKEFLAGS+=--silent tests
 

@@ -14,7 +14,7 @@
 
 @SET_MAKE@
 
-SOURCES = gjobread.c
+SOURCES = $(gjobread_SOURCES)
 
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
@@ -49,12 +49,10 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 PROGRAMS = $(noinst_PROGRAMS)
-gjobread_SOURCES = gjobread.c
-gjobread_OBJECTS = gjobread.$(OBJEXT)
-gjobread_LDADD = $(LDADD)
+am_gjobread_OBJECTS = gjobread.$(OBJEXT)
+gjobread_OBJECTS = $(am_gjobread_OBJECTS)
 am__DEPENDENCIES_1 =
-gjobread_DEPENDENCIES = $(top_builddir)/libxml2.la \
-	$(am__DEPENDENCIES_1)
+am__DEPENDENCIES_2 = $(top_builddir)/libxml2.la $(am__DEPENDENCIES_1)
 DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
@@ -67,8 +65,8 @@ LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) \
 CCLD = $(CC)
 LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = gjobread.c
-DIST_SOURCES = gjobread.c
+SOURCES = $(gjobread_SOURCES)
+DIST_SOURCES = $(gjobread_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -94,6 +92,8 @@ CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
+CYGWIN_EXTRA_LDFLAGS = @CYGWIN_EXTRA_LDFLAGS@
+CYGWIN_EXTRA_PYTHON_LIBADD = @CYGWIN_EXTRA_PYTHON_LIBADD@
 DEBUG_OBJ = @DEBUG_OBJ@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
@@ -126,6 +126,7 @@ LIBXML_MAJOR_VERSION = @LIBXML_MAJOR_VERSION@
 LIBXML_MICRO_VERSION = @LIBXML_MICRO_VERSION@
 LIBXML_MINOR_VERSION = @LIBXML_MINOR_VERSION@
 LIBXML_VERSION = @LIBXML_VERSION@
+LIBXML_VERSION_EXTRA = @LIBXML_VERSION_EXTRA@
 LIBXML_VERSION_INFO = @LIBXML_VERSION_INFO@
 LIBXML_VERSION_NUMBER = @LIBXML_VERSION_NUMBER@
 LN_S = @LN_S@
@@ -143,6 +144,7 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PATTERN_TEST = @PATTERN_TEST@
+PERL = @PERL@
 PYTHON = @PYTHON@
 PYTHON_INCLUDES = @PYTHON_INCLUDES@
 PYTHON_SITE_PACKAGES = @PYTHON_SITE_PACKAGES@
@@ -199,6 +201,7 @@ WITH_PYTHON_FALSE = @WITH_PYTHON_FALSE@
 WITH_PYTHON_TRUE = @WITH_PYTHON_TRUE@
 WITH_READER = @WITH_READER@
 WITH_REGEXPS = @WITH_REGEXPS@
+WITH_RUN_DEBUG = @WITH_RUN_DEBUG@
 WITH_SAX1 = @WITH_SAX1@
 WITH_SCHEMAS = @WITH_SCHEMAS@
 WITH_THREADS = @WITH_THREADS@
@@ -212,6 +215,7 @@ WITH_XINCLUDE = @WITH_XINCLUDE@
 WITH_XPATH = @WITH_XPATH@
 WITH_XPTR = @WITH_XPTR@
 XINCLUDE_OBJ = @XINCLUDE_OBJ@
+XMLLINT = @XMLLINT@
 XML_CFLAGS = @XML_CFLAGS@
 XML_INCLUDEDIR = @XML_INCLUDEDIR@
 XML_LIBDIR = @XML_LIBDIR@
@@ -219,6 +223,7 @@ XML_LIBS = @XML_LIBS@
 XML_LIBTOOLLIBS = @XML_LIBTOOLLIBS@
 XPATH_OBJ = @XPATH_OBJ@
 XPTR_OBJ = @XPTR_OBJ@
+XSLTPROC = @XSLTPROC@
 Z_CFLAGS = @Z_CFLAGS@
 Z_LIBS = @Z_LIBS@
 ac_ct_AR = @ac_ct_AR@
@@ -266,12 +271,13 @@ sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 sysconfdir = @sysconfdir@
 target_alias = @target_alias@
-INCLUDES = \
-	-I$(top_builddir) -I$(top_srcdir)	\
-	-I$(top_builddir)/include		\
-	-I$(top_srcdir)/include -I@srcdir@
-
-LDADD = $(top_builddir)/libxml2.la @THREAD_LIBS@ @Z_LIBS@ $(ICONV_LIBS) -lm @WIN32_EXTRA_LIBADD@
+INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include -I@srcdir@/include @THREAD_CFLAGS@ @Z_CFLAGS@
+DEPS = $(top_builddir)/libxml2.la
+LDADDS = @STATIC_BINARIES@ $(top_builddir)/libxml2.la @THREAD_LIBS@ @Z_LIBS@ $(ICONV_LIBS) -lm @WIN32_EXTRA_LIBADD@
+gjobread_SOURCES = gjobread.c
+gjobread_LDFLAGS = 
+gjobread_DEPENDENCIES = $(DEPS)
+gjobread_LDADD = @RDL_LIBS@ $(LDADDS)
 all: all-am
 
 .SUFFIXES:

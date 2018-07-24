@@ -80,7 +80,7 @@ testXmlwriterFilename(const char *uri)
     }
 
     /* Start the document with the xml default for the version,
-     * encoding ISO 8858-1 and the default for the standalone
+     * encoding ISO 8859-1 and the default for the standalone
      * declaration. */
     rc = xmlTextWriterStartDocument(writer, NULL, MY_ENCODING, NULL);
     if (rc < 0) {
@@ -359,7 +359,7 @@ testXmlwriterMemory(const char *file)
     }
 
     /* Start the document with the xml default for the version,
-     * encoding ISO 8858-1 and the default for the standalone
+     * encoding ISO 8859-1 and the default for the standalone
      * declaration. */
     rc = xmlTextWriterStartDocument(writer, NULL, MY_ENCODING, NULL);
     if (rc < 0) {
@@ -636,7 +636,7 @@ testXmlwriterDoc(const char *file)
     }
 
     /* Start the document with the xml default for the version,
-     * encoding ISO 8858-1 and the default for the standalone
+     * encoding ISO 8859-1 and the default for the standalone
      * declaration. */
     rc = xmlTextWriterStartDocument(writer, NULL, MY_ENCODING, NULL);
     if (rc < 0) {
@@ -908,7 +908,7 @@ testXmlwriterTree(const char *file)
     }
 
     /* Start the document with the xml default for the version,
-     * encoding ISO 8858-1 and the default for the standalone
+     * encoding ISO 8859-1 and the default for the standalone
      * declaration. */
     rc = xmlTextWriterStartDocument(writer, NULL, MY_ENCODING, NULL);
     if (rc < 0) {
@@ -1168,8 +1168,8 @@ ConvertInput(const char *in, const char *encoding)
     if (out != 0) {
         temp = size - 1;
         ret = handler->input(out, &out_size, (const xmlChar *) in, &temp);
-        if (ret || temp - size + 1) {
-            if (ret) {
+        if ((ret < 0) || (temp - size + 1)) {
+            if (ret < 0) {
                 printf("ConvertInput: conversion wasn't successful.\n");
             } else {
                 printf

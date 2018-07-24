@@ -32,21 +32,30 @@ PYTESTS=	\
     ctxterror.py\
     readererr.py\
     relaxng.py	\
+    schema.py	\
     thread2.py \
+    sync.py \
     tstLastError.py \
-    indexes.py
+    indexes.py \
+    dtdvalid.py
 
 XMLS=		\
     tst.xml	\
     valid.xml	\
-    invalid.xml
+    invalid.xml	\
+    test.dtd
 
 EXTRA_DIST = $(PYTESTS) $(XMLS)
 
 if WITH_PYTHON
 tests: $(PYTESTS)
-	-@(PYTHONPATH="..:../.libs:$(srcdir)/.." ; export PYTHONPATH; \
-	   for test in $(PYTESTS) ; do echo "-- $$test" ; $(PYTHON) $(srcdir)/$$test ; done)
+	@echo "## running Python regression tests"
+	-@(PYTHONPATH="..:../.libs:$(srcdir)/..:$$PYTHONPATH" ; \
+	   export PYTHONPATH; \
+	   for test in $(PYTESTS) ; \
+	   do log=`$(PYTHON) $(srcdir)/$$test` ; \
+	   if [ "`echo $$log | grep OK`" = "" ] ; then \
+	   echo "-- $$test" ; echo "$$log" ; fi ; done)
 else
 tests:
 endif

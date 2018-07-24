@@ -82,6 +82,8 @@ CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
+CYGWIN_EXTRA_LDFLAGS = @CYGWIN_EXTRA_LDFLAGS@
+CYGWIN_EXTRA_PYTHON_LIBADD = @CYGWIN_EXTRA_PYTHON_LIBADD@
 DEBUG_OBJ = @DEBUG_OBJ@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
@@ -114,6 +116,7 @@ LIBXML_MAJOR_VERSION = @LIBXML_MAJOR_VERSION@
 LIBXML_MICRO_VERSION = @LIBXML_MICRO_VERSION@
 LIBXML_MINOR_VERSION = @LIBXML_MINOR_VERSION@
 LIBXML_VERSION = @LIBXML_VERSION@
+LIBXML_VERSION_EXTRA = @LIBXML_VERSION_EXTRA@
 LIBXML_VERSION_INFO = @LIBXML_VERSION_INFO@
 LIBXML_VERSION_NUMBER = @LIBXML_VERSION_NUMBER@
 LN_S = @LN_S@
@@ -131,6 +134,7 @@ PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PATTERN_TEST = @PATTERN_TEST@
+PERL = @PERL@
 PYTHON = @PYTHON@
 PYTHON_INCLUDES = @PYTHON_INCLUDES@
 PYTHON_SITE_PACKAGES = @PYTHON_SITE_PACKAGES@
@@ -187,6 +191,7 @@ WITH_PYTHON_FALSE = @WITH_PYTHON_FALSE@
 WITH_PYTHON_TRUE = @WITH_PYTHON_TRUE@
 WITH_READER = @WITH_READER@
 WITH_REGEXPS = @WITH_REGEXPS@
+WITH_RUN_DEBUG = @WITH_RUN_DEBUG@
 WITH_SAX1 = @WITH_SAX1@
 WITH_SCHEMAS = @WITH_SCHEMAS@
 WITH_THREADS = @WITH_THREADS@
@@ -200,6 +205,7 @@ WITH_XINCLUDE = @WITH_XINCLUDE@
 WITH_XPATH = @WITH_XPATH@
 WITH_XPTR = @WITH_XPTR@
 XINCLUDE_OBJ = @XINCLUDE_OBJ@
+XMLLINT = @XMLLINT@
 XML_CFLAGS = @XML_CFLAGS@
 XML_INCLUDEDIR = @XML_INCLUDEDIR@
 XML_LIBDIR = @XML_LIBDIR@
@@ -207,6 +213,7 @@ XML_LIBS = @XML_LIBS@
 XML_LIBTOOLLIBS = @XML_LIBTOOLLIBS@
 XPATH_OBJ = @XPATH_OBJ@
 XPTR_OBJ = @XPTR_OBJ@
+XSLTPROC = @XSLTPROC@
 Z_CFLAGS = @Z_CFLAGS@
 Z_LIBS = @Z_LIBS@
 ac_ct_AR = @ac_ct_AR@
@@ -625,57 +632,66 @@ uninstall-man: uninstall-man1
 
 all: web $(top_srcdir)/NEWS libxml2.xsa $(man_MANS)
 
-api: libxml2-api.xml libxml2-refs.xml $(APIPAGES) $(srcdir)/html/index.html $(WIN32_DIR)/libxml2.def.src
+api: libxml2-api.xml libxml2-refs.xml $(APIPAGES) $(srcdir)/html/index.html $(WIN32_DIR)/libxml2.def.src ../elfgcchack.h
 
 web: $(PAGES)
 
+../elfgcchack.h: $(srcdir)/elfgcchack.xsl $(srcdir)/libxml2-api.xml
+	-@(if [ -x $(XSLTPROC) ] ; then \
+	  echo "Rebuilding the elfgcchack.h header" ; \
+	  $(XSLTPROC) --nonet $(srcdir)/elfgcchack.xsl $(srcdir)/libxml2-api.xml > elfgcchack.h ; \
+	  if [ "`diff -q elfgcchack.h ../elfgcchack.h`" ] ; then \
+	    echo "updating ../elfgcchack.h"; \
+	    cp elfgcchack.h ../elfgcchack.h; \
+	  fi ; rm -f elfgcchack.h ;  fi );
+
 $(PAGES): xml.html site.xsl
-	-@(if [ -x $(bindir)/xsltproc ] ; then \
+	-@(if [ -x $(XSLTPROC) ] ; then \
 	  echo "Rebuilding the HTML Web pages from xml.html" ; \
-	  $(bindir)/xsltproc --nonet --html $(top_srcdir)/doc/site.xsl $(top_srcdir)/doc/xml.html > index.html ; fi );
-	-@(if [ -x $(bindir)/xmllint ] ; then \
+	  $(XSLTPROC) --nonet --html $(top_srcdir)/doc/site.xsl $(top_srcdir)/doc/xml.html > index.html ; fi );
+	-@(if [ -x $(XMLLINT) ] ; then \
 	  echo "Validating the HTML Web pages" ; \
-	  $(bindir)/xmllint --nonet --valid --noout $(PAGES) ; fi );
+	  $(XMLLINT) --nonet --valid --noout $(PAGES) ; fi );
 
 $(top_srcdir)/NEWS: $(top_srcdir)/doc/news.xsl $(top_srcdir)/doc/news.html
-	-@(if [ -x $(bindir)/xsltproc ] ; then \
-	  $(bindir)/xsltproc --nonet $(top_srcdir)/doc/news.xsl $(top_srcdir)/doc/news.html > $(top_srcdir)/NEWS ; fi );
+	-@(if [ -x $(XSLTPROC) ] ; then \
+	  $(XSLTPROC) --nonet $(top_srcdir)/doc/news.xsl $(top_srcdir)/doc/news.html > $(top_srcdir)/NEWS ; fi );
 
 libxml2.xsa: $(top_srcdir)/doc/xsa.xsl $(top_srcdir)/doc/news.html
-	-@(if [ -x $(bindir)/xsltproc ] ; then \
-	  $(bindir)/xsltproc --nonet $(top_srcdir)/doc/xsa.xsl $(top_srcdir)/doc/news.html > libxml2.xsa ; fi );
+	-@(if [ -x $(XSLTPROC) ] ; then \
+	  echo "Rebuilding the NEWS file" ; \
+	  $(XSLTPROC) --nonet $(top_srcdir)/doc/xsa.xsl $(top_srcdir)/doc/news.html > libxml2.xsa ; fi );
 
 $(APIPAGES): libxml2-api.xml libxml2-refs.xml $(top_srcdir)/doc/site.xsl $(top_srcdir)/doc/api.xsl
-	-@(if [ -x $(bindir)/xsltproc ] ; then \
+	-@(if [ -x $(XSLTPROC) ] ; then \
 	  echo "Rebuilding the HTML API pages from libxml2-refs.xml" ; \
-	  $(bindir)/xsltproc --nonet --html $(top_srcdir)/doc/api.xsl \
+	  $(XSLTPROC) --nonet --html $(top_srcdir)/doc/api.xsl \
 	                     $(top_srcdir)/doc/xml.html ; fi );
-	-@(if [ -x $(bindir)/xmllint ] ; then \
+	-@(if [ -x $(XMLLINT) ] ; then \
 	  echo "Validating the HTML API pages" ; \
-	  $(bindir)/xmllint --nonet --valid --noout API*.html ; fi );
+	  $(XMLLINT) --nonet --valid --noout API*.html ; fi );
 
 $(srcdir)/html/index.html: libxml2-api.xml $(srcdir)/newapi.xsl
-	-@(if [ -x $(bindir)/xsltproc ] ; then \
+	-@(if [ -x $(XSLTPROC) ] ; then \
 	  echo "Rebuilding the HTML pages from the XML API" ; \
-	  $(bindir)/xsltproc \
-	  --nonet $(srcdir)/newapi.xsl libxml2-api.xml ; fi )
-	-@(if [ -x $(bindir)/xmllint ] ; then \
+	  $(XSLTPROC) --nonet $(srcdir)/newapi.xsl libxml2-api.xml ; fi )
+	-@(if [ -x $(XMLLINT) ] ; then \
 	  echo "Validating the resulting XHTML pages" ; \
-	  $(bindir)/xmllint --nonet --valid --noout html/*.html ; fi );
+	  $(XMLLINT) --nonet --valid --noout html/*.html ; fi );
 
 $(WIN32_DIR)/libxml2.def.src: libxml2-api.xml
-	-@(if [ -x $(bindir)/xsltproc ] ; then \
-	  $(bindir)/xsltproc -o $(WIN32_DIR)/libxml2.def.src \
+	-@(if [ -x $(XSLTPROC) ] ; then \
+	  $(XSLTPROC) -o $(WIN32_DIR)/libxml2.def.src \
 	  --nonet $(WIN32_DIR)/defgen.xsl libxml2-api.xml ; fi )
 
 libxml2-api.xml libxml2-refs.xml: apibuild.py ../include/libxml/*.h ../*.c
 	-(./apibuild.py)
 
 xmllint.1: xmllint.xml
-	-@(xsltproc --nonet xmllint.xml)
+	-@($(XSLTPROC) --nonet xmllint.xml)
 
 xmlcatalog.1: xmlcatalog_man.xml
-	-@(xsltproc --nonet xmlcatalog_man.xml)
+	-@($(XSLTPROC) --nonet xmlcatalog_man.xml)
 
 clean-local:
 	rm -f *~ *.bak *.hierarchy *.signals *-unused.txt
