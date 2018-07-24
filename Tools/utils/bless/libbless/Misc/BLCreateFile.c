@@ -40,6 +40,7 @@
 #include <sys/stat.h>
 #include <sys/fcntl.h>
 #include <sys/paths.h>
+#include <errno.h>
 
 #include "bless.h"
 #include "bless_private.h"
@@ -129,7 +130,7 @@ int BLCreateFile(BLContextPtr context, const CFDataRef data,
 		contextprintf(context, kBLLogLevelVerbose, "Setting UF_IMMUTABLE on %s\n",
 					  rsrcpath);					
 		err = chflags(rsrcpath, UF_IMMUTABLE);
-		if(err) {
+		if(err && errno != ENOTSUP) {
 			contextprintf(context, kBLLogLevelError, 
 						  "Can't set UF_IMMUTABLE on %s: %s\n", rsrcpath,
 						  strerror(errno));		

@@ -14,5 +14,10 @@
 		<key>_panicd_ip</key>
 		<string>Preserve core dump server</string>
 	</dict>
+	<key>4697801</key>
+	<dict>
+		<key>io</key>
+		<string>Preserve IOKit debugging setting</string>
+	</dict>
 </dict>
 </plist>

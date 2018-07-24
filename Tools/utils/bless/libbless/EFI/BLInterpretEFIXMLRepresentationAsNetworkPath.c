@@ -47,13 +47,14 @@
 
 int BLInterpretEFIXMLRepresentationAsNetworkPath(BLContextPtr context,
                                                  CFStringRef xmlString,
+                                                 BLNetBootProtocolType *protocol,
                                                  char *interface,
                                                  char *host,
                                                  char *path)
 {
     CFArrayRef  efiArray = NULL;
     CFIndex     count, i, foundinterfaceindex, foundserverindex;
-    int         foundmac = 0, foundinterface = 0, foundserver = 0;
+    int         foundmac = 0, foundinterface = 0, foundserver = 0, foundPXE = 0;
     CFDataRef   macAddress = 0;
     char        buffer[1024];
         
@@ -102,6 +103,20 @@ int BLInterpretEFIXMLRepresentationAsNetworkPath(BLContextPtr context,
                     foundinterfaceindex = i;
                 }
             }                
+        }
+        
+        if(!foundPXE) {
+            CFStringRef compType;
+            compType = CFDictionaryGetValue(dict, CFSTR("IOEFIDevicePathType"));
+            if(compType && CFEqual(compType, CFSTR("MessagingNetbootProtocol"))) {
+                CFStringRef	guid;
+                
+                guid = CFDictionaryGetValue(dict, CFSTR("Protocol"));
+                if(guid && CFEqual(guid, CFSTR("FE3913DB-9AEE-4E40-A294-ABBE93A1A4B7"))) {
+                    foundPXE = 1;
+                }
+            }
+            
         }
         
     }
@@ -236,6 +251,12 @@ int BLInterpretEFIXMLRepresentationAsNetworkPath(BLContextPtr context,
         
         strcpy(host, "255.255.255.255");
         strcpy(path, "");
+    }
+    
+    if(foundPXE) {
+        *protocol = kBLNetBootProtocol_PXE;
+    } else {
+        *protocol = kBLNetBootProtocol_BSDP;    
     }
         
     return 0;

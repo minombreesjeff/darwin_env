@@ -83,15 +83,15 @@ static void addElements(const void *key, const void *value, void *context);
 
 #define MISSINGMSG "<missing>"
 static const char *messages[7][2] = {
-
-       { "No Blessed System Folder", "Blessed System Folder is " },    /* 0 */
-       { "No Blessed System File", "Blessed System File is " },
-       { "Open-folder linked list empty", "1st dir in open-folder list is " },
-       { "No OS 9 + X blessed 9 folder", "OS 9 blessed folder is " },  /* 3 */
-       { "Unused field unset", "Thought-to-be-unused field points to " },
-       { "No OS 9 + X blessed X folder", "OS X blessed folder is " },  /* 5 */
-       { "64-bit VSDB volume id not present", "64-bit VSDB volume id: " }
-       
+    
+    { "No Blessed System Folder", "Blessed System Folder is " },    /* 0 */
+    { "No Blessed System File", "Blessed System File is " },
+    { "Open-folder linked list empty", "1st dir in open-folder list is " },
+    { "No OS 9 + X blessed 9 folder", "OS 9 blessed folder is " },  /* 3 */
+    { "Unused field unset", "Thought-to-be-unused field points to " },
+    { "No OS 9 + X blessed X folder", "OS X blessed folder is " },  /* 5 */
+    { "64-bit VSDB volume id not present", "64-bit VSDB volume id: " }
+    
 };
 
 int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
@@ -100,158 +100,159 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
     int                 isNetboot = 0;
     struct statfs       sb;
     CFMutableDictionaryRef  allInfo = NULL;
-
+	int					isHFS = 0;
+	
     if(!actargs[kinfo].hasArg ||  actargs[kgetboot].present) {
-            char currentString[1024];
-            char currentDev[1024]; // may contain URLs like bsdp://foo
-            struct statfs *mnts;
-            int vols;
-			BLPreBootEnvType	preboot;
-			
-			ret = BLGetPreBootEnvironmentType(context, &preboot);
-			if(ret)
-				return 1;
-
-            if(preboot == kBLPreBootEnvType_OpenFirmware) {
-
-                FILE *pop;
-    
-                pop = popen("/usr/sbin/nvram boot-device", "r");
-                if(pop == NULL) {
-                        blesscontextprintf(context, kBLLogLevelError,  "Could not determine current boot device\n" );
-                        return 1;
-                }
-    
-                if(1 != fscanf(pop, "%*s\t%s\n", &(currentString[0]))) {
-                        blesscontextprintf(context, kBLLogLevelError,  "Could not parse output from /usr/sbin/nvram\n" );
-                        return 1;
-                }
-    
-                pclose(pop);
-    
-                blesscontextprintf(context, kBLLogLevelVerbose,  "Current OF: %s\n", currentString );
-
-                // XXX temporarily trap enet:bootp. Doesn't work with enet1:bootp
-                if(strncmp(currentString, "enet:", strlen("enet:")) == 0) {
-                    blesscontextprintf(context, kBLLogLevelVerbose,  "Synthesizing BSDP boot device\n" );
-                    strcpy(currentDev, "bsdp://en0@255.255.255.255");
-                    isNetboot = 1;
-                } else {
-                    ret = BLGetDeviceForOpenFirmwarePath(context, currentString,
-                                                        currentDev);
-                    if(ret) {
-                        blesscontextprintf(context, kBLLogLevelError,  "Can't get device for %s: %d\n", currentString, ret );
-                        return 1;
+        char currentString[1024];
+        char currentDev[1024]; // may contain URLs like bsdp://foo
+        struct statfs *mnts;
+        int vols;
+        BLPreBootEnvType	preboot;
         
-                    }
-                }
-            } else if(preboot == kBLPreBootEnvType_EFI) {
-				// fill this in later
-				//struct statfs sb;
-                CFStringRef     efibootdev = NULL;
-                char currentString[1024];
-
-                ret = BLCopyEFINVRAMVariableAsString(context,
-                                                     CFSTR("efi-boot-device"),
-                                                     &efibootdev);
-                    
-                if(ret || efibootdev == NULL) {
-                    blesscontextprintf(context, kBLLogLevelError,
-                                       "Can't access \"efi-boot-device\" NVRAM variable\n");
-                    return 1;
-                }
-                
-                if(CFStringGetCString(efibootdev, currentString, sizeof(currentString), kCFStringEncodingUTF8)) {
-                    blesscontextprintf(context, kBLLogLevelVerbose,  "Current EFI boot device string is: '%s'\n",
-                                       currentString);                    
-                }
-                
-				ret = BLValidateXMLBootOption(context,
-											  CFSTR("efi-boot-device"),
-											  CFSTR("efi-boot-device-data"));
-				if(ret) {
-                    blesscontextprintf(context, kBLLogLevelError,
-                                       "XML representation doesn't match true boot preference\n");
-                    return 2;                    					
-				}
-					
-                ret = interpretEFIString(context, efibootdev, currentDev);
+        ret = BLGetPreBootEnvironmentType(context, &preboot);
+        if(ret)
+            return 1;
+        
+        if(preboot == kBLPreBootEnvType_OpenFirmware) {
+            
+            FILE *pop;
+            
+            pop = popen("/usr/sbin/nvram boot-device", "r");
+            if(pop == NULL) {
+                blesscontextprintf(context, kBLLogLevelError,  "Could not determine current boot device\n" );
+                return 1;
+            }
+            
+            if(1 != fscanf(pop, "%*s\t%s\n", &(currentString[0]))) {
+                blesscontextprintf(context, kBLLogLevelError,  "Could not parse output from /usr/sbin/nvram\n" );
+                return 1;
+            }
+            
+            pclose(pop);
+            
+            blesscontextprintf(context, kBLLogLevelVerbose,  "Current OF: %s\n", currentString );
+            
+            // XXX temporarily trap enet:bootp. Doesn't work with enet1:bootp
+            if(strncmp(currentString, "enet:", strlen("enet:")) == 0) {
+                blesscontextprintf(context, kBLLogLevelVerbose,  "Synthesizing BSDP boot device\n" );
+                strcpy(currentDev, "bsdp://en0@255.255.255.255");
+                isNetboot = 1;
+            } else {
+                ret = BLGetDeviceForOpenFirmwarePath(context, currentString,
+                                                     currentDev);
                 if(ret) {
-                    blesscontextprintf(context, kBLLogLevelError,
-                                       "Can't interpet EFI boot device\n");
-                    return 2;                    
+                    blesscontextprintf(context, kBLLogLevelError,  "Can't get device for %s: %d\n", currentString, ret );
+                    return 1;
+                    
                 }
-                				
-			} else {
-				blesscontextprintf(context, kBLLogLevelError,  "Unknown preboot environment\n");
-				return 1;
-			}
-
+            }
+        } else if(preboot == kBLPreBootEnvType_EFI) {
+            // fill this in later
+            //struct statfs sb;
+            CFStringRef     efibootdev = NULL;
+            char currentString[1024];
+            
+            ret = BLCopyEFINVRAMVariableAsString(context,
+                                                 CFSTR("efi-boot-device"),
+                                                 &efibootdev);
+            
+            if(ret || efibootdev == NULL) {
+                blesscontextprintf(context, kBLLogLevelError,
+                                   "Can't access \"efi-boot-device\" NVRAM variable\n");
+                return 1;
+            }
+            
+            if(CFStringGetCString(efibootdev, currentString, sizeof(currentString), kCFStringEncodingUTF8)) {
+                blesscontextprintf(context, kBLLogLevelVerbose,  "Current EFI boot device string is: '%s'\n",
+                                   currentString);                    
+            }
+            
+            ret = BLValidateXMLBootOption(context,
+                                          CFSTR("efi-boot-device"),
+                                          CFSTR("efi-boot-device-data"));
+            if(ret) {
+                blesscontextprintf(context, kBLLogLevelError,
+                                   "XML representation doesn't match true boot preference\n");
+                return 2;                    					
+            }
+            
+            ret = interpretEFIString(context, efibootdev, currentDev);
+            if(ret) {
+                blesscontextprintf(context, kBLLogLevelError,
+                                   "Can't interpet EFI boot device\n");
+                return 2;                    
+            }
+            
+        } else {
+            blesscontextprintf(context, kBLLogLevelError,  "Unknown preboot environment\n");
+            return 1;
+        }
+        
 	    if( actargs[kgetboot].present) {
-                if(actargs[kplist].present) {
-                    CFStringRef vol = CFStringCreateWithCString(kCFAllocatorDefault,
-                                                                currentDev,
-                                                                kCFStringEncodingUTF8);
-                    CFMutableDictionaryRef dict = NULL;
-                    CFDataRef		tempData = NULL;
-                    
-                    dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
-                                                     &kCFTypeDictionaryKeyCallBacks,
-                                                     &kCFTypeDictionaryValueCallBacks);
-                    CFDictionaryAddValue(dict, CFSTR("Boot Volume"), vol);
-                    CFRelease(vol);
-                    
-                    tempData = CFPropertyListCreateXMLData(kCFAllocatorDefault, dict);
-                    
-                    write(fileno(stdout), CFDataGetBytePtr(tempData), CFDataGetLength(tempData));
-                    
-                    CFRelease(tempData);
-                    CFRelease(dict);
-                    
-                } else {
-                    blesscontextprintf(context, kBLLogLevelNormal, "%s\n", currentDev);
-                }
-                return 0;
+            if(actargs[kplist].present) {
+                CFStringRef vol = CFStringCreateWithCString(kCFAllocatorDefault,
+                                                            currentDev,
+                                                            kCFStringEncodingUTF8);
+                CFMutableDictionaryRef dict = NULL;
+                CFDataRef		tempData = NULL;
+                
+                dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                                 &kCFTypeDictionaryKeyCallBacks,
+                                                 &kCFTypeDictionaryValueCallBacks);
+                CFDictionaryAddValue(dict, CFSTR("Boot Volume"), vol);
+                CFRelease(vol);
+                
+                tempData = CFPropertyListCreateXMLData(kCFAllocatorDefault, dict);
+                
+                write(fileno(stdout), CFDataGetBytePtr(tempData), CFDataGetLength(tempData));
+                
+                CFRelease(tempData);
+                CFRelease(dict);
+                
+            } else {
+                blesscontextprintf(context, kBLLogLevelNormal, "%s\n", currentDev);
+            }
+            return 0;
 	    }
 	    
-            vols = getmntinfo(&mnts, MNT_NOWAIT);
-            if(vols == -1) {
-                    blesscontextprintf(context, kBLLogLevelError,  "Error gettings mounts\n" );
-                    return 1;
+        vols = getmntinfo(&mnts, MNT_NOWAIT);
+        if(vols == -1) {
+            blesscontextprintf(context, kBLLogLevelError,  "Error gettings mounts\n" );
+            return 1;
+        }
+        
+        while(--vols >= 0) {
+            struct statfs sb;
+            
+            // somewhat redundant, but blsustatfs will canonicalize the mount device
+            if(0 != blsustatfs(mnts[vols].f_mntonname, &sb)) {
+                continue;
             }
-
-            while(--vols >= 0) {
-                struct statfs sb;
-                
-                // somewhat redundant, but blsustatfs will canonicalize the mount device
-                if(0 != blsustatfs(mnts[vols].f_mntonname, &sb)) {
-                    continue;
-                }
-                
-                if(strncmp(sb.f_mntfromname, currentDev, strlen(currentDev)+1) == 0) {
-                    blesscontextprintf(context, kBLLogLevelVerbose,  "mount: %s\n", mnts[vols].f_mntonname );
-                    strcpy(actargs[kinfo].argument, mnts[vols].f_mntonname);
-                    actargs[kinfo].hasArg = 1;
-                    break;
-                }
-
+            
+            if(strncmp(sb.f_mntfromname, currentDev, strlen(currentDev)+1) == 0) {
+                blesscontextprintf(context, kBLLogLevelVerbose,  "mount: %s\n", mnts[vols].f_mntonname );
+                strcpy(actargs[kinfo].argument, mnts[vols].f_mntonname);
+                actargs[kinfo].hasArg = 1;
+                break;
             }
-
+            
+        }
+        
 	    if(!actargs[kinfo].hasArg) {
-	      blesscontextprintf(context, kBLLogLevelError,
-			    "Volume for OpenFirmware path %s is not available\n",
-			    currentString);
-	      return 2;
+            blesscontextprintf(context, kBLLogLevelError,
+                               "Volume for OpenFirmware path %s is not available\n",
+                               currentString);
+            return 2;
 	    }
     }
-
-
+    
+    
     ret = BLGetCommonMountPoint(context, actargs[kinfo].argument, "", actargs[kmount].argument);
     if(ret) {
-            blesscontextprintf(context, kBLLogLevelError,  "Can't get mount point for %s\n", actargs[kinfo].argument );
-            return 1;
+        blesscontextprintf(context, kBLLogLevelError,  "Can't get mount point for %s\n", actargs[kinfo].argument );
+        return 1;
     }
-
+    
     ret = blsustatfs(actargs[kmount].argument, &sb);
     if(ret) {
         blesscontextprintf(context, kBLLogLevelError,  "Can't get device for %s\n", actargs[kmount].argument );
@@ -259,42 +260,54 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
         
     }
     
-    ret = BLCreateVolumeInformationDictionary(context, actargs[kmount].argument,
-                                            &dict);
+	ret = BLIsMountHFS(context, actargs[kmount].argument, &isHFS);
     if(ret) {
-        blesscontextprintf(context, kBLLogLevelError,  "Can't print Finder information\n" );
+		blesscontextprintf(context, kBLLogLevelError,  "Could not determine filesystem of %s\n", actargs[kmount].argument );
 		return 1;
+    }
+	
+	if(isHFS) {
+		ret = BLCreateVolumeInformationDictionary(context, actargs[kmount].argument,
+												  &dict);
+		if(ret) {
+			blesscontextprintf(context, kBLLogLevelError,  "Can't print Finder information\n" );
+			return 1;
+		}
+        
+		allInfo = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, dict);
+		CFRelease(dict);
+		dict = NULL;
+	} else {
+		allInfo = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 	}
-
-    allInfo = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, dict);
-    CFRelease(dict);
+    
     
     ret = BLCreateBooterInformationDictionary(context, sb.f_mntfromname + 5, &dict);
     if(ret) {
         blesscontextprintf(context, kBLLogLevelError,  "Can't get booter information\n" );
 		return 3;
     }
-
+    
     CFDictionaryApplyFunction(dict, addElements, (void *)allInfo);    
     CFRelease(dict);
     
     dict = (CFDictionaryRef)allInfo;
     
     if(actargs[kplist].present) {
-	CFDataRef		tempData = NULL;
-
-	tempData = CFPropertyListCreateXMLData(kCFAllocatorDefault, dict);
-
+        CFDataRef		tempData = NULL;
+        
+        tempData = CFPropertyListCreateXMLData(kCFAllocatorDefault, dict);
+        
         write(fileno(stdout), CFDataGetBytePtr(tempData), CFDataGetLength(tempData));
-
-	CFRelease(tempData);
-
-    } else {
+        
+        CFRelease(tempData);
+        
+    } else if(isHFS) {
         CFArrayRef finfo = CFDictionaryGetValue(dict, CFSTR("Finder Info"));
         int j;
         CFNumberRef vsdbref;
         uint64_t vsdb;
-
+        
         for(j = 0; j < (8-2); j++) {
             CFDictionaryRef word = CFArrayGetValueAtIndex(finfo, j);
             CFNumberRef dirID = CFDictionaryGetValue(word, CFSTR("Directory ID"));
@@ -305,29 +318,29 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
             if(!CFNumberGetValue(dirID, kCFNumberLongType, &dirint)) {
                 continue;
             }
-
+            
             if(dirint > 0 && CFStringGetLength(path) == 0) {
-                    strcpy(cpath, MISSINGMSG);
+                strcpy(cpath, MISSINGMSG);
             } else {
-                    if(!CFStringGetCString(path, cpath, MAXPATHLEN, kCFStringEncodingUTF8)) {
-                            continue;
-                    }
+                if(!CFStringGetCString(path, cpath, MAXPATHLEN, kCFStringEncodingUTF8)) {
+                    continue;
+                }
             }
-
+            
             blesscontextprintf(context, kBLLogLevelNormal,
-                        "finderinfo[%i]: %6u => %s%s\n", j, dirint,
-                        messages[j][dirint > 0], cpath);
-
+                               "finderinfo[%i]: %6u => %s%s\n", j, dirint,
+                               messages[j][dirint > 0], cpath);
+            
         }
-
-
+        
+        
         vsdbref = CFDictionaryGetValue(dict, CFSTR("VSDB ID"));
         CFNumberGetValue(vsdbref, kCFNumberSInt64Type, &vsdb);
         
         
     	blesscontextprintf(context, kBLLogLevelNormal, "%s 0x%016qX\n", messages[6][1],
-		      vsdb);
-
+                           vsdb);
+        
     }
     
     
@@ -352,8 +365,11 @@ static int interpretEFIString(BLContextPtr context, CFStringRef efiString,
         
         return 0;
     } else {
+		BLNetBootProtocolType protocol;
+		
         ret = BLInterpretEFIXMLRepresentationAsNetworkPath(context,
                                                            efiString,
+														   &protocol,
                                                            interface,
                                                            host,
                                                            path);
@@ -364,14 +380,16 @@ static int interpretEFIString(BLContextPtr context, CFStringRef efiString,
             if(strlen(path) > 0) {
                 sprintf(bootdevice, "tftp://%s@%s/%s", interface, host, path);
             } else {
-                sprintf(bootdevice, "bsdp://%s@%s", interface, host);            
+                sprintf(bootdevice, "%s://%s@%s",
+                                        (protocol == kBLNetBootProtocol_PXE ? "pxe" : "bsdp"),
+                                        interface, host);            
             }
             
             return 0;
         } else {
 			ret = BLInterpretEFIXMLRepresentationAsLegacyDevice(context,
-														  efiString,
-														  path);
+                                                                efiString,
+                                                                path);
 			if(ret == 0) {
 				blesscontextprintf(context, kBLLogLevelVerbose,  "Legacy boot device detected\n" );
 				
@@ -381,7 +399,7 @@ static int interpretEFIString(BLContextPtr context, CFStringRef efiString,
 			}				
 		}
     }
-
+    
     blesscontextprintf(context, kBLLogLevelError,  "Could not interpret boot device as either network or disk\n" );
     
     return 1;

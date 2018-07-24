@@ -45,9 +45,6 @@
 		BA3D815E086C4F0F00484376 /* unbless.c in Sources */ = {isa = PBXBuildFile; fileRef = BA3D8141086C4E5000484376 /* unbless.c */; };
 		BA3D8161086C4F2400484376 /* libbless.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C61759C9057E749600252FAB /* libbless.a */; };
 		BA3E3AB707B7599000602B58 /* BLDeviceNeedsBooter.c in Sources */ = {isa = PBXBuildFile; fileRef = BA3E3AB607B7599000602B58 /* BLDeviceNeedsBooter.c */; };
-		BA88D2A40790068700B77125 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F61E91F801A4B30C01F50364 /* CoreFoundation.framework */; };
-		BA9367EF078FC89E005B9387 /* genbootargs.c in Sources */ = {isa = PBXBuildFile; fileRef = BA9367EE078FC89E005B9387 /* genbootargs.c */; };
-		BA936801078FCDA4005B9387 /* PreserveBootArgs.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = BA9367FD078FCD74005B9387 /* PreserveBootArgs.plist */; };
 		BA936805078FCDCB005B9387 /* preserve_bootargs.h in Headers */ = {isa = PBXBuildFile; fileRef = BA936804078FCDCB005B9387 /* preserve_bootargs.h */; };
 		BADDF5E507B7E80F006424A5 /* BLGetIOServiceForDeviceName.c in Sources */ = {isa = PBXBuildFile; fileRef = BADDF5E407B7E80F006424A5 /* BLGetIOServiceForDeviceName.c */; };
 		BADDF61007B7EB10006424A5 /* BLGetIOServiceForDeviceName.c in Sources */ = {isa = PBXBuildFile; fileRef = BADDF5E407B7E80F006424A5 /* BLGetIOServiceForDeviceName.c */; };
@@ -117,7 +114,6 @@
 		C61759C1057E749600252FAB /* BLIsOpenFirmwarePresent.c in Sources */ = {isa = PBXBuildFile; fileRef = BA8520BE04CE621300AE3A66 /* BLIsOpenFirmwarePresent.c */; };
 		C61759CF057E749600252FAB /* setOFLabel.c in Sources */ = {isa = PBXBuildFile; fileRef = BA92249A03A7F164000BA4D4 /* setOFLabel.c */; };
 		C61759D1057E749600252FAB /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F61E91F801A4B30C01F50364 /* CoreFoundation.framework */; };
-		C61759D3057E749600252FAB /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BA92249E03A7F27A000BA4D4 /* CoreServices.framework */; };
 		C61759D4057E749600252FAB /* ApplicationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F521EBA90228ED9201F502C1 /* ApplicationServices.framework */; };
 		C61759E6057E749600252FAB /* extractBootBlocks.c in Sources */ = {isa = PBXBuildFile; fileRef = BAA914300429422700B0AD74 /* extractBootBlocks.c */; };
 		C61759E8057E749600252FAB /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BA92249E03A7F27A000BA4D4 /* CoreServices.framework */; };
@@ -170,20 +166,6 @@
 			remoteGlobalIDString = C69AA27307417ECB007F9862;
 			remoteInfo = genFakeFrameworks;
 		};
-		BA88D76B07900D5400B77125 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = BA9367E1078FC7B1005B9387;
-			remoteInfo = genbootargs;
-		};
-		BA936808078FCDD6005B9387 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = BA9367E1078FC7B1005B9387;
-			remoteInfo = genbootargs;
-		};
 		C6175A09057E749700252FAB /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
@@ -226,13 +208,6 @@
 			remoteGlobalIDString = C617599A057E749600252FAB;
 			remoteInfo = "libbless (Upgraded)";
 		};
-		C6C7345207417F4E008AE8AB /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = C69AA27307417ECB007F9862;
-			remoteInfo = genFakeFrameworks;
-		};
 		C6C7345607417F55008AE8AB /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
@@ -243,16 +218,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		BA9367FE078FCD80005B9387 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 8;
-			dstPath = /usr/local/share/bless/bless;
-			dstSubfolderSpec = 0;
-			files = (
-				BA936801078FCDA4005B9387 /* PreserveBootArgs.plist in CopyFiles */,
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
 		C6175983057E749600252FAB /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 8;
@@ -294,8 +259,6 @@
 		BA92249A03A7F164000BA4D4 /* setOFLabel.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = setOFLabel.c; sourceTree = "<group>"; };
 		BA92249E03A7F27A000BA4D4 /* CoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreServices.framework; path = /System/Library/Frameworks/CoreServices.framework; sourceTree = "<absolute>"; };
 		BA924000060D53EB004FC452 /* bless-prefix.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "bless-prefix.h"; sourceTree = "<group>"; };
-		BA9367E2078FC7B1005B9387 /* genbootargs */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = genbootargs; sourceTree = BUILT_PRODUCTS_DIR; };
-		BA9367EE078FC89E005B9387 /* genbootargs.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = genbootargs.c; sourceTree = "<group>"; };
 		BA9367FD078FCD74005B9387 /* PreserveBootArgs.plist */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xml; path = PreserveBootArgs.plist; sourceTree = "<group>"; };
 		BA936804078FCDCB005B9387 /* preserve_bootargs.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = preserve_bootargs.h; sourceTree = BUILT_PRODUCTS_DIR; };
 		BAA914300429422700B0AD74 /* extractBootBlocks.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = extractBootBlocks.c; sourceTree = "<group>"; };
@@ -329,6 +292,7 @@
 		C6DF0CE707B938FE00F5F2FA /* DiskArbitration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DiskArbitration.framework; path = /System/Library/Frameworks/DiskArbitration.framework; sourceTree = "<absolute>"; };
 		C6E53F2609228CD000D16619 /* BLCreateEFIXMLRepresentationForPath.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = BLCreateEFIXMLRepresentationForPath.c; sourceTree = "<group>"; };
 		C6E5590E09EC7549004B8204 /* BLGetOpenFirmwareBootDeviceForNetworkPath.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = BLGetOpenFirmwareBootDeviceForNetworkPath.c; sourceTree = "<group>"; };
+		C6F19FD90AB0CA2800380AF6 /* testcgtext.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = testcgtext.c; sourceTree = "<group>"; };
 		C6F84087088471CD0017C96C /* BLGetPreBootEnvironmentType.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = BLGetPreBootEnvironmentType.c; sourceTree = "<group>"; };
 		F509904E0234414F01F502C1 /* bless_private.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = bless_private.h; sourceTree = "<group>"; };
 		F50990500234418C01F502C1 /* BLLoadXCOFFLoader.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = BLLoadXCOFFLoader.c; sourceTree = "<group>"; };
@@ -393,14 +357,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		BA9367E0078FC7B1005B9387 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				BA88D2A40790068700B77125 /* CoreFoundation.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		C617597C057E749600252FAB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -435,7 +391,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				C61759D1057E749600252FAB /* CoreFoundation.framework in Frameworks */,
-				C61759D3057E749600252FAB /* CoreServices.framework in Frameworks */,
 				C61759D4057E749600252FAB /* ApplicationServices.framework in Frameworks */,
 				C6175A20057E749700252FAB /* libbless.a in Frameworks */,
 			);
@@ -483,7 +438,6 @@
 				BA92249A03A7F164000BA4D4 /* setOFLabel.c */,
 				BAA914300429422700B0AD74 /* extractBootBlocks.c */,
 				BA85207804CDDE4200AE3A66 /* genheader.c */,
-				BA9367EE078FC89E005B9387 /* genbootargs.c */,
 				BA9367FD078FCD74005B9387 /* PreserveBootArgs.plist */,
 				BA3A398B04C8AB2200E2414C /* test */,
 				BA10D77D04FADE430070B3E0 /* minibless.c */,
@@ -500,7 +454,6 @@
 				C61759C9057E749600252FAB /* libbless.a */,
 				C61759D7057E749600252FAB /* setOFLabel */,
 				C61759EB057E749600252FAB /* extractBootBlocks */,
-				BA9367E2078FC7B1005B9387 /* genbootargs */,
 				BA3D8159086C4E7D00484376 /* unbless */,
 			);
 			name = Products;
@@ -510,6 +463,7 @@
 			isa = PBXGroup;
 			children = (
 				BA3A398C04C8AB3500E2414C /* testgetfileid.c */,
+				C6F19FD90AB0CA2800380AF6 /* testcgtext.c */,
 				BA85208604CDEFFA00AE3A66 /* testgetparentdev.c */,
 			);
 			path = test;
@@ -722,7 +676,6 @@
 				C617599C057E749600252FAB /* BLWriteStartupFile.h in Headers */,
 				C617599D057E749600252FAB /* bless.h in Headers */,
 				C617599E057E749600252FAB /* bless_private.h in Headers */,
-				BA936805078FCDCB005B9387 /* preserve_bootargs.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -737,6 +690,14 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C6DCDC850B6AD5250053E68A /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BA936805078FCDCB005B9387 /* preserve_bootargs.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -757,24 +718,6 @@
 			name = unbless;
 			productName = unbless;
 			productReference = BA3D8159086C4E7D00484376 /* unbless */;
-			productType = "com.apple.product-type.tool";
-		};
-		BA9367E1078FC7B1005B9387 /* genbootargs */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = BA7EB3BE086BD01A000A41C1 /* Build configuration list for PBXNativeTarget "genbootargs" */;
-			buildPhases = (
-				BA9367DF078FC7B1005B9387 /* Sources */,
-				BA9367E0078FC7B1005B9387 /* Frameworks */,
-				BA9367F0078FC8C0005B9387 /* ShellScript */,
-				BA9367FE078FCD80005B9387 /* CopyFiles */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = genbootargs;
-			productName = genbootargs;
-			productReference = BA9367E2078FC7B1005B9387 /* genbootargs */;
 			productType = "com.apple.product-type.tool";
 		};
 		C617596D057E749600252FAB /* bless */ = {
@@ -814,7 +757,6 @@
 			);
 			dependencies = (
 				BA7EB4EC086BE4AA000A41C1 /* PBXTargetDependency */,
-				BA88D76C07900D5400B77125 /* PBXTargetDependency */,
 			);
 			name = minibless;
 			productInstallPath = /usr/local/bin;
@@ -827,13 +769,14 @@
 			buildConfigurationList = BA7EB3C3086BD01A000A41C1 /* Build configuration list for PBXNativeTarget "libbless" */;
 			buildPhases = (
 				C617599B057E749600252FAB /* Headers */,
+				C663E9300B6AD44A00A3EC76 /* ShellScript */,
+				C6DCDC850B6AD5250053E68A /* Headers */,
 				C617599F057E749600252FAB /* Sources */,
 				C61759C4057E749600252FAB /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				BA936809078FCDD6005B9387 /* PBXTargetDependency */,
 			);
 			name = libbless;
 			productInstallPath = /usr/local/lib;
@@ -853,7 +796,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				C6C7345307417F4E008AE8AB /* PBXTargetDependency */,
 				C6175A16057E749700252FAB /* PBXTargetDependency */,
 			);
 			name = setOFLabel;
@@ -891,6 +833,7 @@
 			hasScannedForEncodings = 1;
 			mainGroup = 08FB7794FE84155DC02AAC07 /* bless */;
 			projectDirPath = "";
+			projectRoot = "";
 			shouldCheckCompatibility = 1;
 			targets = (
 				C6175968057E749600252FAB /* World */,
@@ -898,7 +841,6 @@
 				C6175988057E749600252FAB /* minibless */,
 				C617599A057E749600252FAB /* libbless */,
 				C61759CB057E749600252FAB /* setOFLabel */,
-				BA9367E1078FC7B1005B9387 /* genbootargs */,
 				C69AA27307417ECB007F9862 /* genFakeFrameworks */,
 				C61759E3057E749600252FAB /* extractBootBlocks */,
 				BA3D8158086C4E7D00484376 /* unbless */,
@@ -938,7 +880,7 @@
 /* End PBXRezBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		BA9367F0078FC8C0005B9387 /* ShellScript */ = {
+		C663E9300B6AD44A00A3EC76 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -949,7 +891,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = "/bin/sh -x";
-			shellScript = "# printenv | sort\n\nPLISTDIR=/usr/local/share/bless\nPLISTNAMES=PreserveBootArgs.plist\n\nFILES=\"\"\n\nif [ -d \"${PLISTDIR}\" ]; then\n\tFILES=`find \"${PLISTDIR}\"/* \\( -type d  -name bless -prune \\) -o \\( -type f -name \"${PLISTNAMES}\" -print \\) | xargs echo`;\nfi\n\nFILES=\"${FILES} ${SRCROOT}/${PLISTNAMES}\"\n\n${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME} ${FILES} > \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h.new\"\n\ncmp \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h\" \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h.new\" > /dev/null 2>&1\nif [ $? -ne 0 ]; then\n\tmv \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h.new\" \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h\"\nelse\n\trm \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h.new\"\nfi\n";
+			shellScript = "PLISTDIR=/usr/local/share/bless\nPLISTNAMES=PreserveBootArgs.plist\n\nFILES=\"\"\n\nif [ -d \"${PLISTDIR}\" ]; then\n\tFILES=`find \"${PLISTDIR}\"/* \\( -type d  -name bless -prune \\) -o \\( -type f -name \"${PLISTNAMES}\" -print \\) | xargs echo`;\nfi\n\nFILES=\"${FILES} ${SRCROOT}/${PLISTNAMES}\"\n\n${SRCROOT}/genbootargs.pl ${FILES} > \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h.new\"\n\ncmp \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h\" \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h.new\" > /dev/null 2>&1\nif [ $? -ne 0 ]; then\n\tmv \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h.new\" \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h\"\nelse\n\trm \"${BUILT_PRODUCTS_DIR}/preserve_bootargs.h.new\"\nfi\n";
 		};
 		C69AA27207417ECB007F9862 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -972,14 +914,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				BA3D815E086C4F0F00484376 /* unbless.c in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		BA9367DF078FC7B1005B9387 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				BA9367EF078FC89E005B9387 /* genbootargs.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1111,16 +1045,6 @@
 			target = C69AA27307417ECB007F9862 /* genFakeFrameworks */;
 			targetProxy = BA7EB4EB086BE4AA000A41C1 /* PBXContainerItemProxy */;
 		};
-		BA88D76C07900D5400B77125 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = BA9367E1078FC7B1005B9387 /* genbootargs */;
-			targetProxy = BA88D76B07900D5400B77125 /* PBXContainerItemProxy */;
-		};
-		BA936809078FCDD6005B9387 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = BA9367E1078FC7B1005B9387 /* genbootargs */;
-			targetProxy = BA936808078FCDD6005B9387 /* PBXContainerItemProxy */;
-		};
 		C6175A0A057E749700252FAB /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C617596D057E749600252FAB /* bless */;
@@ -1151,11 +1075,6 @@
 			target = C617599A057E749600252FAB /* libbless */;
 			targetProxy = C6175A15057E749700252FAB /* PBXContainerItemProxy */;
 		};
-		C6C7345307417F4E008AE8AB /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = C69AA27307417ECB007F9862 /* genFakeFrameworks */;
-			targetProxy = C6C7345207417F4E008AE8AB /* PBXContainerItemProxy */;
-		};
 		C6C7345707417F55008AE8AB /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C69AA27307417ECB007F9862 /* genFakeFrameworks */;
@@ -1168,7 +1087,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = "$(HOME)/bin";
@@ -1182,7 +1101,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = "$(HOME)/bin";
@@ -1208,24 +1127,15 @@
 			};
 			name = Default;
 		};
-		BA7EB3C2086BD01A000A41C1 /* Default */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
-			buildSettings = {
-				GCC_DYNAMIC_NO_PIC = YES;
-				PRODUCT_NAME = genbootargs;
-				VALID_ARCHS = "$(NATIVE_ARCH)";
-			};
-			name = Default;
-		};
 		BA7EB3C7086BD01A000A41C1 /* Default */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				FRAMEWORK_SEARCH_PATHS = "$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "bless-prefix.h";
+				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
 				INSTALL_PATH = /usr/local/lib;
 				LIBRARY_STYLE = STATIC;
 				PRODUCT_NAME = bless;
@@ -1238,7 +1148,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = /usr/sbin;
@@ -1252,7 +1162,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
@@ -1260,6 +1170,7 @@
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					NO_VASPRINTF,
 					DISABLE_DISK_ARBITRATION,
+					NO_GETCSTRING,
 				);
 				INSTALL_PATH = /usr/local/bin;
 				MACOSX_DEPLOYMENT_TARGET = 10.1;
@@ -1277,7 +1188,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = /usr/local/bin;
 				PRODUCT_NAME = setOFLabel;
@@ -1305,7 +1216,7 @@
 		BA7EB3E5086BD01A000A41C1 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_DEBUGGING_SYMBOLS = default;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -1324,6 +1235,7 @@
 		BA7EB3FE086BD01A000A41C1 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 			};
 			name = Default;
 		};
@@ -1343,24 +1255,15 @@
 			};
 			name = Debug;
 		};
-		BA7EB482086BDDED000A41C1 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
-			buildSettings = {
-				GCC_DYNAMIC_NO_PIC = YES;
-				PRODUCT_NAME = genbootargs;
-				VALID_ARCHS = "$(NATIVE_ARCH)";
-			};
-			name = Debug;
-		};
 		BA7EB483086BDDED000A41C1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				FRAMEWORK_SEARCH_PATHS = "$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "bless-prefix.h";
+				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
 				INSTALL_PATH = /usr/local/lib;
 				LIBRARY_STYLE = STATIC;
 				PRODUCT_NAME = bless;
@@ -1373,7 +1276,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = /usr/sbin;
@@ -1387,7 +1290,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
@@ -1413,7 +1316,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = /usr/local/bin;
 				PRODUCT_NAME = setOFLabel;
@@ -1441,7 +1344,7 @@
 		BA7EB489086BDDED000A41C1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 46.1;
+				CURRENT_PROJECT_VERSION = 56;
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_DEBUGGING_SYMBOLS = default;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -1460,6 +1363,7 @@
 		BA7EB48A086BDDED000A41C1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				UNSTRIPPED_PRODUCT = YES;
 			};
@@ -1482,15 +1386,6 @@
 			buildConfigurations = (
 				BA7EB3BD086BD01A000A41C1 /* Default */,
 				BA7EB481086BDDED000A41C1 /* Debug */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Default;
-		};
-		BA7EB3BE086BD01A000A41C1 /* Build configuration list for PBXNativeTarget "genbootargs" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				BA7EB3C2086BD01A000A41C1 /* Default */,
-				BA7EB482086BDDED000A41C1 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;

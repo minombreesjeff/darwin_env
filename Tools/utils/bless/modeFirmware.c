@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2005-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -27,7 +27,6 @@
  *  Created by Shantonu Sen on 2/22/05.
  *  Copyright 2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: modeFirmware.c,v 1.13 2006/06/06 17:23:52 ssen Exp $
  */
 
 #include <stdlib.h>
@@ -36,6 +35,7 @@
 
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <fts.h>
 
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOBSD.h>
@@ -43,6 +43,8 @@
 
 #include <IOKit/IOCFSerialize.h>
 #include <IOKit/IOCFUnserialize.h>
+
+#include <DiskArbitration/DiskArbitration.h>
 
 #include "enums.h"
 #include "structs.h"

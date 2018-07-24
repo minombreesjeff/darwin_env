@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2005-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 10/10/05.
- *  Copyright 2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2005-2007 Apple Inc. All rights reserved.
  *
  */
 
@@ -49,14 +49,15 @@
 static bool validateAddress(const char *host);
 
 static int parseURL(BLContextPtr context,
-                     const char *url,
-                     char * interface,
-                     char * host,
-                     char * path,
-                     bool   requiresPath,
-                     const char *requiresSheme,
-					 bool	useBackslash);
-                     
+                    const char *url,
+                    char * scheme,
+                    char * interface,
+                    char * host,
+                    char * path,
+                    bool   requiresPath,
+                    const char *requiresScheme,
+                    bool	useBackslash);
+
 
 int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
 {
@@ -65,6 +66,7 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
     char                interface[IF_NAMESIZE];
     char                host[NS_MAXDNAME];
     char                path[MAXPATHLEN];
+	char				scheme[128];
 	bool				useBackslash = false;
     
     
@@ -81,7 +83,7 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
         return 1;
     }
     
-
+    
 	ret = BLGetPreBootEnvironmentType(context, &preboot);
     if(ret)
         return 2;
@@ -98,20 +100,22 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
         
         ret = parseURL(context,
                        actargs[kserver].argument,
+					   scheme,
                        interface,
                        host,
                        path,
                        false,
-                       "bsdp",
+                       NULL,
 					   useBackslash);
         
     } else {
         blesscontextprintf(context, kBLLogLevelVerbose,
                            "NetBoot booter given as: %s\n",
                            actargs[kbooter].argument);  
-
+        
         ret = parseURL(context,
                        actargs[kbooter].argument,
+					   scheme,
                        interface,
                        host,
                        path,
@@ -137,20 +141,27 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
         
         pid_t p;
         int status;
-
+        
+		if (0 != strcmp(scheme, "bsdp") && 0 != strcmp(scheme, "tftp")) {
+			blesscontextprintf(context, kBLLogLevelError,
+                               "Netboot scheme %s not supported on Open Firmware systems\n",
+							   scheme);  
+		}
+		
 		ret = BLGetOpenFirmwareBootDeviceForNetworkPath(context,
-                                               interface,
-                                               strcmp(host, "255.255.255.255") == 0 ? NULL : host,
-                                               path,
-											   ofstring);
+                                                        interface,
+                                                        strcmp(host, "255.255.255.255") == 0 ? NULL : host,
+                                                        path,
+                                                        ofstring);
 		if(ret)
 			return 3;
-
+        
 		sprintf(bootdevice, "boot-device=%s", ofstring);
         
         if(actargs[kkernel].present) {
             ret = parseURL(context,
                            actargs[kkernel].argument,
+						   scheme,
                            interface,
                            host,
                            path,
@@ -159,12 +170,12 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
 						   useBackslash);            
             if(ret)
                 return 1;
-
+            
 			ret = BLGetOpenFirmwareBootDeviceForNetworkPath(context,
-												   interface,
-												   strcmp(host, "255.255.255.255") == 0 ? NULL : host,
-												   path,
-												   ofstring);
+                                                            interface,
+                                                            strcmp(host, "255.255.255.255") == 0 ? NULL : host,
+                                                            path,
+                                                            ofstring);
 			if(ret)
 				return 4;
             
@@ -172,7 +183,7 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
         } else {
             sprintf(bootfile, "boot-file=");
         }
-
+        
         if(actargs[kmkext].present) {
             blesscontextprintf(context, kBLLogLevelError,
                                "mkext option not supported on Open Firmware systems\n");  
@@ -213,8 +224,29 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
         
     } else if(preboot == kBLPreBootEnvType_EFI) {
         CFStringRef booterXML = NULL, kernelXML = NULL, mkextXML = NULL;
+		BLNetBootProtocolType protocol = kBLNetBootProtocol_Unknown;
+        
+		if (0 == strcmp(scheme, "bsdp") || 0 == strcmp(scheme, "tftp")) {
+			protocol = kBLNetBootProtocol_BSDP;
+		} else if (0 == strcmp(scheme, "pxe")) {
+			protocol = kBLNetBootProtocol_PXE;
+            
+			if (0 != strcmp(host, "255.255.255.255")) {
+				blesscontextprintf(context, kBLLogLevelError,
+								   "PXE requires broadcast address 255.255.255.255\n");  
+				return 3;				
+			}
+			
+		} else {			
+			blesscontextprintf(context, kBLLogLevelError,
+                               "Netboot scheme %s not supported on EFI systems\n",
+							   scheme);  
+			return 3;
+		}
+		
         
         ret = BLCreateEFIXMLRepresentationForNetworkPath(context,
+														 protocol,
                                                          interface,
                                                          strcmp(host, "255.255.255.255") == 0 ? NULL : host,
                                                          strlen(path) > 0 ? path : NULL,
@@ -222,34 +254,12 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
                                                          &booterXML);
         if(ret)
             return 3;
-
+        
         
         if(actargs[kkernel].present) {
             ret = parseURL(context,
                            actargs[kkernel].argument,
-                           interface,
-                           host,
-                           path,
-                           true,
-                           "tftp",
-						   false);            
-            if(ret)
-                return 1;
-
-            ret = BLCreateEFIXMLRepresentationForNetworkPath(context,
-                                                             interface,
-                                                             host,
-                                                             path,
-                                                             NULL,
-                                                             &kernelXML);
-            if(ret)
-                return 3;
-        }
-        
-
-        if(actargs[kmkext].present) {
-            ret = parseURL(context,
-                           actargs[kmkext].argument,
+						   scheme,
                            interface,
                            host,
                            path,
@@ -260,6 +270,32 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
                 return 1;
             
             ret = BLCreateEFIXMLRepresentationForNetworkPath(context,
+															 protocol,
+                                                             interface,
+                                                             host,
+                                                             path,
+                                                             NULL,
+                                                             &kernelXML);
+            if(ret)
+                return 3;
+        }
+        
+        
+        if(actargs[kmkext].present) {
+            ret = parseURL(context,
+                           actargs[kmkext].argument,
+						   scheme,
+                           interface,
+                           host,
+                           path,
+                           true,
+                           "tftp",
+						   false);            
+            if(ret)
+                return 1;
+            
+            ret = BLCreateEFIXMLRepresentationForNetworkPath(context,
+															 protocol,
                                                              interface,
                                                              host,
                                                              path,
@@ -283,7 +319,7 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
                            "NetBoot not supported on this system\n");
         return 3;        
     }
-
+    
     return 0;
 }
 
@@ -301,17 +337,18 @@ static bool validateAddress(const char *host)
 
 static int parseURL(BLContextPtr context,
                     const char *url,
+					char * scheme,
                     char * interface,
                     char * host,
                     char * path,
                     bool   requiresPath,
-                    const char *requiresSheme,
+                    const char *requiresScheme,
 					bool	useBackslash)
 {
     int                 ret;
     
     CFURLRef            serverURL;
-    CFStringRef         scheme, interfaceString, pathString, hostString;
+    CFStringRef         schemeString, interfaceString, pathString, hostString;
     CFStringRef         requiredScheme = NULL;
     
     serverURL = CFURLCreateAbsoluteURLWithBytes(kCFAllocatorDefault,
@@ -328,19 +365,27 @@ static int parseURL(BLContextPtr context,
         return 2;        
     }
     
-    scheme = CFURLCopyScheme(serverURL);
-    requiredScheme = CFStringCreateWithCString(kCFAllocatorDefault,requiresSheme,kCFStringEncodingUTF8);
-    if(!scheme || !CFEqual(scheme, requiredScheme)) {
-        if(scheme) CFRelease(scheme);
-        CFRelease(requiredScheme);
+    schemeString = CFURLCopyScheme(serverURL);
+    if (requiresScheme) {
+        requiredScheme = CFStringCreateWithCString(kCFAllocatorDefault,requiresScheme,kCFStringEncodingUTF8);        
+    }
+    if(!schemeString || (requiredScheme && !CFEqual(schemeString, requiredScheme))) {
+        if(schemeString) CFRelease(schemeString);
+        if(requiredScheme) CFRelease(requiredScheme);
         
         blesscontextprintf(context, kBLLogLevelError,
-                           "Unrecognized scheme\n");
+                           "Unrecognized scheme %s\n", BLGetCStringDescription(schemeString));
         return 2;               
     }
     
-    CFRelease(requiredScheme);
-    CFRelease(scheme);
+	if(!CFStringGetCString(schemeString,scheme,128,kCFStringEncodingUTF8)) {
+		blesscontextprintf(context, kBLLogLevelError,
+						   "Can't interpret scheme as string\n");
+		return 3;            
+	}		
+	
+    if(requiredScheme) CFRelease(requiredScheme);
+    CFRelease(schemeString);
     
     interfaceString = CFURLCopyUserName(serverURL);
     

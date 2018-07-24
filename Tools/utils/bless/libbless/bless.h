@@ -41,11 +41,9 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <sys/cdefs.h>
 
-#ifdef _cplusplus
-extern "C" {
-#endif
- 
+__BEGIN_DECLS 
 
 /*!
  * @header Bless Library
@@ -225,7 +223,15 @@ typedef enum {
     
 } BLPreBootEnvType;
 
-
+typedef enum {
+	
+	kBLNetBootProtocol_Unknown		= 0x00000001,
+	
+	kBLNetBootProtocol_BSDP			= 0x00000002,
+	
+	kBLNetBootProtocol_PXE			= 0x00000004
+	
+} BLNetBootProtocolType;
 
 /***** BootBlocks *****/
 
@@ -530,7 +536,8 @@ int BLGetParentDeviceAndPartitionType(BLContextPtr context,
  * @function BLIsNewWorld
  * @abstract Is the machine a New World machine
  * @discussion Get the hardware type of the
- *    current machine
+ *    current machine. Deprecated, since it
+ *    only applies to OpenFirmware-based systems
  * @param context Bless Library context
  */
 int BLIsNewWorld(BLContextPtr context);
@@ -752,6 +759,7 @@ int BLCreateEFIXMLRepresentationForLegacyDevice(BLContextPtr context,
                                           CFStringRef *xmlString);
 
 int BLCreateEFIXMLRepresentationForNetworkPath(BLContextPtr context,
+                                               BLNetBootProtocolType protocol,
                                                const char *interface,
                                                const char *host,
                                                const char *path,
@@ -760,6 +768,7 @@ int BLCreateEFIXMLRepresentationForNetworkPath(BLContextPtr context,
 
 int BLInterpretEFIXMLRepresentationAsNetworkPath(BLContextPtr context,
                                                  CFStringRef xmlString,
+                                                 BLNetBootProtocolType *protocol,
                                                  char *interface,
                                                  char *host,
                                                  char *path);
@@ -794,8 +803,6 @@ int BLPreserveBootArgs(BLContextPtr context,
 int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdName,
                                         CFDictionaryRef *outDict);
 
-#ifdef _cplusplus
-}
-#endif
+__END_DECLS
 
 #endif // _BLESS_H_

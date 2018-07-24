@@ -44,93 +44,84 @@
 #define NVRAM "/usr/sbin/nvram"
 
 int BLSetOpenFirmwareBootDevice(BLContextPtr context, const char * mntfrm) {
-  char ofString[1024];
-  int err;
-  
-  char * OFSettings[6];
-  
-  char bootdevice[1024];
-  char bootfile[1024];
-  char bootcommand[1024];
-  char bootargs[1024]; // always zero out bootargs
-  
-  int isNewWorld = BLIsNewWorld(context);
-  pid_t p;
-  int status;
-  
-  OFSettings[0] = NVRAM;
-  err = BLGetOpenFirmwareBootDevice(context, mntfrm, ofString);
-  if(err) {
-    contextprintf(context, kBLLogLevelError,  "Can't get Open Firmware information\n" );
-    return 1;
-  } else {
-    contextprintf(context, kBLLogLevelVerbose,  "Got OF string %s\n", ofString );
-  }
-
-  sprintf(bootargs, "boot-args=");
-  
-  if (isNewWorld) {
-      char oldbootargs[1024];
-      char *restargs;
-      FILE *pop;
-      
-      oldbootargs[0] = '\0';
-      
-      pop = popen("/usr/sbin/nvram boot-args", "r");
-      if(pop) {
-          
-          if(NULL == fgets(oldbootargs, sizeof(oldbootargs), pop)) {
-              contextprintf(context, kBLLogLevelVerbose,  "Could not parse output from /usr/sbin/nvram\n" );
-          }
-          pclose(pop);
-
-          restargs = oldbootargs;
-          if(NULL != strsep(&restargs, "\t")) { // nvram must separate the name from the value with a tab
-              restargs[strlen(restargs)-1] = '\0'; // remove \n
-
-              err = BLPreserveBootArgs(context, restargs, bootargs+strlen(bootargs));
-          }
+    char ofString[1024];
+    int err;
+    
+    char * OFSettings[6];
+    
+    char bootdevice[1024];
+    char bootfile[1024];
+    char bootcommand[1024];
+    char bootargs[1024]; // always zero out bootargs
+    
+    pid_t p;
+    int status;
+    
+    OFSettings[0] = NVRAM;
+    err = BLGetOpenFirmwareBootDevice(context, mntfrm, ofString);
+    if(err) {
+        contextprintf(context, kBLLogLevelError,  "Can't get Open Firmware information\n" );
+        return 1;
+    } else {
+        contextprintf(context, kBLLogLevelVerbose,  "Got OF string %s\n", ofString );
     }
-      
-      // set them up
+    
+    sprintf(bootargs, "boot-args=");
+    
+    char oldbootargs[1024];
+    char *restargs;
+    FILE *pop;
+    
+    oldbootargs[0] = '\0';
+    
+    pop = popen("/usr/sbin/nvram boot-args", "r");
+    if(pop) {
+        
+        if(NULL == fgets(oldbootargs, sizeof(oldbootargs), pop)) {
+            contextprintf(context, kBLLogLevelVerbose,  "Could not parse output from /usr/sbin/nvram\n" );
+        }
+        pclose(pop);
+        
+        restargs = oldbootargs;
+        if(NULL != strsep(&restargs, "\t")) { // nvram must separate the name from the value with a tab
+            restargs[strlen(restargs)-1] = '\0'; // remove \n
+            
+            err = BLPreserveBootArgs(context, restargs, bootargs+strlen(bootargs));
+        }
+    }
+    
+    // set them up
     sprintf(bootdevice, "boot-device=%s", ofString);
     sprintf(bootfile, "boot-file=");
     sprintf(bootcommand, "boot-command=mac-boot");
 	// bootargs initialized above, and append-to later
-  } else {
-    // set them up
-    sprintf(bootdevice, "boot-device=%s", ofString);
-    sprintf(bootfile, "boot-file=");
-    sprintf(bootcommand, "boot-command=0 bootr");
-    sprintf(bootargs, "boot-args=");    
-  }
-	    
+    
     OFSettings[1] = bootdevice;
     OFSettings[2] = bootfile;
     OFSettings[3] = bootcommand;
     OFSettings[4] = bootargs;
     OFSettings[5] = NULL;
-        
+    
     contextprintf(context, kBLLogLevelVerbose,  "OF Setings:\n" );    
     contextprintf(context, kBLLogLevelVerbose,  "\t\tprogram: %s\n", OFSettings[0] );
     contextprintf(context, kBLLogLevelVerbose,  "\t\t%s\n", OFSettings[1] );
     contextprintf(context, kBLLogLevelVerbose,  "\t\t%s\n", OFSettings[2] );
     contextprintf(context, kBLLogLevelVerbose,  "\t\t%s\n", OFSettings[3] );
     contextprintf(context, kBLLogLevelVerbose,  "\t\t%s\n", OFSettings[4] );
-
+    
     p = fork();
     if (p == 0) {
-      int ret = execv(NVRAM, OFSettings);
-      if(ret == -1) {
-	contextprintf(context, kBLLogLevelError,  "Could not exec %s\n", NVRAM );
-      }
-      _exit(1);
+        int ret = execv(NVRAM, OFSettings);
+        if(ret == -1) {
+            contextprintf(context, kBLLogLevelError,  "Could not exec %s\n", NVRAM );
+        }
+        _exit(1);
     }
     
     wait(&status);
     if(status) {
-      contextprintf(context, kBLLogLevelError,  "%s returned non-0 exit status\n", NVRAM );
-      return 3;
+        contextprintf(context, kBLLogLevelError,  "%s returned non-0 exit status\n", NVRAM );
+        return 3;
     }
     
     return 0;

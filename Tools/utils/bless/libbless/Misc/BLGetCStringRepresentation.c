@@ -45,7 +45,7 @@
  * by thread-local storage
  */
 
-#if !defined(NO_GETCSTRING) || NO_GETCSTRING
+#if !defined(NO_GETCSTRING) || !NO_GETCSTRING
 
 static pthread_once_t	blcstr_once_control = PTHREAD_ONCE_INIT;
 static pthread_key_t	blcstr_key = 0;

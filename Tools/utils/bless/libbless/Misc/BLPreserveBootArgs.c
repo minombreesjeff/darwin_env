@@ -60,7 +60,7 @@ int BLPreserveBootArgs(BLContextPtr context,
     while((token = strsep(&restargs, " ")) != NULL) {
         int shouldbesaved = 0, i;
         contextprintf(context, kBLLogLevelVerbose, "\tGot token: %s\n", token);
-        for(i=0; i < sizeof(preserve_boot_args)/sizeof(preserve_boot_args[0]); i++) {
+        for(i=0; preserve_boot_args[i]; i++) {
             // see if it's something we want
             if(preserve_boot_args[i][0] == '-') {
                 // -v style

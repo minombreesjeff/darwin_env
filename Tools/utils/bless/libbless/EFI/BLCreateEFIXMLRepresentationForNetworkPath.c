@@ -46,6 +46,7 @@
 #include "bless_private.h"
 
 int BLCreateEFIXMLRepresentationForNetworkPath(BLContextPtr context,
+                                               BLNetBootProtocolType protocol,
                                                const char *interface,
                                                const char *host,
                                                const char *path,
@@ -144,8 +145,18 @@ int BLCreateEFIXMLRepresentationForNetworkPath(BLContextPtr context,
         }
         
     }
-    
-    
+
+    contextprintf(context, kBLLogLevelVerbose, "Netboot protocol %d\n", protocol);        
+    if (protocol == kBLNetBootProtocol_PXE) {
+        dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
+                                         &kCFTypeDictionaryValueCallBacks);
+        CFDictionaryAddValue(dict, CFSTR("IOEFIDevicePathType"),
+                             CFSTR("MessagingNetbootProtocol"));
+        CFDictionaryAddValue(dict, CFSTR("Protocol"),
+                             CFSTR("FE3913DB-9AEE-4E40-A294-ABBE93A1A4B7"));
+        CFArrayAppendValue(array, dict);
+        CFRelease(dict);
+    }
     
     if(optionalData) {
         CFStringRef optString = CFStringCreateWithCString(kCFAllocatorDefault, optionalData, kCFStringEncodingUTF8);

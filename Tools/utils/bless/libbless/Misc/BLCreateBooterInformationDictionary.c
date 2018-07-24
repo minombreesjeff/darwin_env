@@ -43,6 +43,7 @@
 #include <IOKit/storage/IOPartitionScheme.h>
 #include <IOKit/storage/IOApplePartitionScheme.h>
 #include <IOKit/storage/IOGUIDPartitionScheme.h>
+#include <IOKit/storage/IOStorageProtocolCharacteristics.h>
 
 #include <CoreFoundation/CoreFoundation.h>
 
@@ -50,18 +51,21 @@
 #include "bless_private.h"
 
 static int addRAIDInfo(BLContextPtr context, CFDictionaryRef dict,
-            CFMutableSetRef dataPartitions,
-            CFMutableSetRef booterPartitions,
-            CFMutableSetRef systemPartitions);      
+            CFMutableArrayRef dataPartitions,
+            CFMutableArrayRef booterPartitions,
+            CFMutableArrayRef systemPartitions);      
+
 
 static int addDataPartitionInfo(BLContextPtr context, io_service_t dataPartition,
-                       CFMutableSetRef dataPartitions,
-                       CFMutableSetRef booterPartitions,
-                       CFMutableSetRef systemPartitions);      
+                       CFMutableArrayRef dataPartitions,
+                       CFMutableArrayRef booterPartitions,
+                       CFMutableArrayRef systemPartitions);      
 
-static CFArrayRef set2array(CFMutableSetRef setRef);
+static int addPreferredSystemPartitionInfo(BLContextPtr context,
+                                CFMutableArrayRef systemPartitions);      
 
-static CFComparisonResult sortCompare(const void *val1, const void *val2, void *context);
+
+static bool isPreferredSystemPartition(BLContextPtr context, CFStringRef bsdName);
 
 /*
  * For the given device, we return the set of Auxiliary Partitions and
@@ -77,9 +81,9 @@ static CFComparisonResult sortCompare(const void *val1, const void *val2, void *
 int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdName,
                                         CFDictionaryRef *outDict)
 {
-    CFMutableSetRef dataPartitions = NULL;
-    CFMutableSetRef booterPartitions = NULL;
-    CFMutableSetRef systemPartitions = NULL;
+    CFMutableArrayRef dataPartitions = NULL;
+    CFMutableArrayRef booterPartitions = NULL;
+    CFMutableArrayRef systemPartitions = NULL;
     CFMutableDictionaryRef booters = NULL;
     
     CFArrayRef      array;
@@ -88,16 +92,17 @@ int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdNa
     
     io_service_t            rootDev;
     int                     ret = 0;
+    bool                    foundPreferredSystemPartition = false;
     
-    dataPartitions = CFSetCreateMutable(kCFAllocatorDefault, 0, &kCFTypeSetCallBacks);
+    dataPartitions = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
     if(dataPartitions == NULL)
         return 1;
 
-    booterPartitions = CFSetCreateMutable(kCFAllocatorDefault, 0, &kCFTypeSetCallBacks);
+    booterPartitions = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
     if(booterPartitions == NULL)
         return 1;
     
-    systemPartitions = CFSetCreateMutable(kCFAllocatorDefault, 0, &kCFTypeSetCallBacks);
+    systemPartitions = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
     if(systemPartitions == NULL)
         return 1;
     
@@ -106,7 +111,8 @@ int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdNa
                                         &kCFTypeDictionaryValueCallBacks);
     if(booters == NULL)
         return 1;
-        
+
+	
     rootDev = IOServiceGetMatchingService(kIOMasterPortDefault,
                                           IOBSDNameMatching(kIOMasterPortDefault, 0, bsdName));
     
@@ -190,17 +196,47 @@ int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdNa
 
     IOObjectRelease(rootDev);
     
-    array = set2array(dataPartitions);
+gotinfo:
+	
+    if(getenv("BL_PRIMARY_BOOTER_INDEX")) {
+        char *bindex = getenv("BL_PRIMARY_BOOTER_INDEX");
+        CFIndex index = atoi(bindex);
+        
+        if(index >= 0 && index < CFArrayGetCount(booterPartitions)) {
+            CFArrayExchangeValuesAtIndices(booterPartitions, 0, index);
+        }
+    }
+    
+    // we have a set of systemPartitions. Reorder a preferred one to the front.
+    // if not, look for a preferred partition manually
+    if(CFArrayGetCount(systemPartitions) > 0) {
+        CFIndex i, count;
+        count = CFArrayGetCount(systemPartitions);
+        for(i=0; i < count; i++) {
+            CFStringRef testSP = CFArrayGetValueAtIndex(systemPartitions, i);                
+            if(isPreferredSystemPartition(context, testSP)) {
+                foundPreferredSystemPartition = true;
+                CFArrayExchangeValuesAtIndices(systemPartitions, 0, i);      
+                break;
+            }
+        }
+    }
+    
+    if(!foundPreferredSystemPartition) {
+        addPreferredSystemPartitionInfo(context, systemPartitions);            
+    }
+
+    array = CFArrayCreateCopy(kCFAllocatorDefault, dataPartitions);
     CFDictionaryAddValue(booters, kBLDataPartitionsKey, array);
     CFRelease(array);
     CFRelease(dataPartitions);
     
-    array = set2array(booterPartitions);
+    array = CFArrayCreateCopy(kCFAllocatorDefault, booterPartitions);
     CFDictionaryAddValue(booters, kBLAuxiliaryPartitionsKey, array);
     CFRelease(array);
     CFRelease(booterPartitions);
     
-    array = set2array(systemPartitions);
+    array = CFArrayCreateCopy(kCFAllocatorDefault, systemPartitions);
     CFDictionaryAddValue(booters, kBLSystemPartitionsKey, array);
     CFRelease(array);
     CFRelease(systemPartitions);
@@ -214,9 +250,9 @@ int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdNa
 }
 
 static int addRAIDInfo(BLContextPtr context, CFDictionaryRef dict,
-                       CFMutableSetRef dataPartitions,
-                       CFMutableSetRef booterPartitions,
-                       CFMutableSetRef systemPartitions)
+                       CFMutableArrayRef dataPartitions,
+                       CFMutableArrayRef booterPartitions,
+                       CFMutableArrayRef systemPartitions)
 {
     CFStringRef bootpath = NULL;
     io_string_t iostring;
@@ -254,9 +290,9 @@ static int addRAIDInfo(BLContextPtr context, CFDictionaryRef dict,
 }
 
 static int addDataPartitionInfo(BLContextPtr context, io_service_t dataPartition,
-                                CFMutableSetRef dataPartitions,
-                                CFMutableSetRef booterPartitions,
-                                CFMutableSetRef systemPartitions)
+                                CFMutableArrayRef dataPartitions,
+                                CFMutableArrayRef booterPartitions,
+                                CFMutableArrayRef systemPartitions)
 {
     CFStringRef bsdName;
     kern_return_t   kret;
@@ -308,7 +344,9 @@ static int addDataPartitionInfo(BLContextPtr context, io_service_t dataPartition
 		return 1;        
     }
     
-    CFSetAddValue(dataPartitions, bsdName);
+    if(!CFArrayContainsValue(dataPartitions,CFRangeMake(0, CFArrayGetCount(dataPartitions)), bsdName)) {
+        CFArrayAppendValue(dataPartitions, bsdName);
+    }
     CFRelease(bsdName);
     CFRelease(partitionNum);
     
@@ -380,7 +418,9 @@ static int addDataPartitionInfo(BLContextPtr context, io_service_t dataPartition
                     if(childPartitionID && (CFGetTypeID(childPartitionID) == CFNumberGetTypeID()) && CFEqual(childPartitionID, neededBooterPartitionNum)) {
                         childBSDName = IORegistryEntryCreateCFProperty(child, CFSTR(kIOBSDNameKey), kCFAllocatorDefault, 0);
                         if(childBSDName && (CFGetTypeID(childBSDName) == CFStringGetTypeID())) {
-                            CFSetAddValue(booterPartitions, childBSDName);
+                            if(!CFArrayContainsValue(booterPartitions,CFRangeMake(0, CFArrayGetCount(booterPartitions)), childBSDName)) {
+                                CFArrayAppendValue(booterPartitions, childBSDName);
+                            }
                         }
                         CFRelease(childBSDName);
                         contextprintf(context, kBLLogLevelVerbose,  "Booter partition found\n" );                        
@@ -388,7 +428,9 @@ static int addDataPartitionInfo(BLContextPtr context, io_service_t dataPartition
                 } else if(neededSystemContent && CFEqual(childContent, neededSystemContent)) {
                     childBSDName = IORegistryEntryCreateCFProperty(child, CFSTR(kIOBSDNameKey), kCFAllocatorDefault, 0);
                     if(childBSDName && (CFGetTypeID(childBSDName) == CFStringGetTypeID())) {
-                        CFSetAddValue(systemPartitions, childBSDName);
+                        if(!CFArrayContainsValue(systemPartitions,CFRangeMake(0, CFArrayGetCount(systemPartitions)), childBSDName)) {
+                            CFArrayAppendValue(systemPartitions, childBSDName);
+                        }
                     }
                     CFRelease(childBSDName);
                     contextprintf(context, kBLLogLevelVerbose,  "System partition found\n" );                    
@@ -409,27 +451,109 @@ static int addDataPartitionInfo(BLContextPtr context, io_service_t dataPartition
     return 0;
 }
 
-static CFArrayRef set2array(CFMutableSetRef setRef)
+static bool _isPreferredSystemPartition(BLContextPtr context, io_service_t service)
 {
-    CFIndex count = CFSetGetCount(setRef);
-    const void    *values[count];
-    CFArrayRef   array;
-    CFMutableArrayRef mutArray;
+    CFDictionaryRef         protocolCharacteristics;
+    bool                    foundOne = false;
     
-    CFSetGetValues(setRef, values);
+    protocolCharacteristics = IORegistryEntrySearchCFProperty(service,
+                                                              kIOServicePlane,
+                                                              CFSTR(kIOPropertyProtocolCharacteristicsKey),
+                                                              kCFAllocatorDefault,
+                                                              kIORegistryIterateRecursively|
+                                                              kIORegistryIterateParents);
     
-    array = CFArrayCreate(kCFAllocatorDefault, values, count, &kCFTypeArrayCallBacks);
+    if(protocolCharacteristics && CFGetTypeID(protocolCharacteristics) == CFDictionaryGetTypeID()) {
+        CFStringRef interconnect = CFDictionaryGetValue(protocolCharacteristics,
+                                                        CFSTR(kIOPropertyPhysicalInterconnectTypeKey));
+        CFStringRef location = CFDictionaryGetValue(protocolCharacteristics,
+                                                    CFSTR(kIOPropertyPhysicalInterconnectLocationKey));
+        
+        if(interconnect && location && CFGetTypeID(interconnect) == CFStringGetTypeID() && CFGetTypeID(location) == CFStringGetTypeID()) {
+            if(  (  CFEqual(interconnect,CFSTR(kIOPropertyPhysicalInterconnectTypeATA))
+                  || CFEqual(interconnect,CFSTR(kIOPropertyPhysicalInterconnectTypeSerialATA)))
+               && CFEqual(location, CFSTR(kIOPropertyInternalKey))) {
+                // OK, found an internal ESP
+                foundOne = true;
+            }
+            
+        }
+        
+    }
+    if(protocolCharacteristics) CFRelease(protocolCharacteristics);
     
-    mutArray = CFArrayCreateMutableCopy(kCFAllocatorDefault, count, array);
+    return foundOne;
     
-    CFRelease(array);
-    
-    CFArraySortValues(mutArray, CFRangeMake(0, count), sortCompare, NULL);
-    
-    return mutArray;
 }
 
-static CFComparisonResult sortCompare(const void *val1, const void *val2, void *context)
+static bool isPreferredSystemPartition(BLContextPtr context, CFStringRef bsdName)
 {
-    return CFStringCompare((CFStringRef)val1, (CFStringRef)val2, 0);
+    CFMutableDictionaryRef  matching;
+    io_service_t            service;
+    bool                    ret;
+    
+    matching = IOServiceMatching(kIOMediaClass);
+    CFDictionarySetValue(matching, CFSTR(kIOBSDNameKey), bsdName);
+
+    
+    service = IOServiceGetMatchingService(kIOMasterPortDefault,
+                                          matching);
+    
+    if(service == IO_OBJECT_NULL) {
+        return false;
+    }
+        
+    ret = _isPreferredSystemPartition(context, service);
+    
+    IOObjectRelease(service);
+    
+    return ret;
 }
+
+
+// search for all ESPs on the system. Once we find them, only add internal
+// interconnects on a SATA/PATA bus
+static int addPreferredSystemPartitionInfo(BLContextPtr context,
+                                           CFMutableArrayRef systemPartitions)
+{
+    
+    CFMutableDictionaryRef  matching;
+    kern_return_t           kret;
+    io_iterator_t           iter;
+    io_service_t            service;
+    CFStringRef             bsdName;
+    bool                    foundOne = false;
+    
+    matching = IOServiceMatching(kIOMediaClass);
+    CFDictionarySetValue(matching, CFSTR(kIOMediaContentKey), CFSTR("C12A7328-F81F-11D2-BA4B-00A0C93EC93B"));
+    
+    kret = IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iter);
+    if(kret != KERN_SUCCESS) {
+        contextprintf(context, kBLLogLevelVerbose,  "No preferred system partitions found\n" );
+        return 0;
+    }
+    
+    while((service = IOIteratorNext(iter)) != IO_OBJECT_NULL) {
+        
+        foundOne = _isPreferredSystemPartition(context, service);
+        if(foundOne) {
+            bsdName = IORegistryEntryCreateCFProperty(service, CFSTR(kIOBSDNameKey), kCFAllocatorDefault, 0);
+            if(bsdName && (CFGetTypeID(bsdName) == CFStringGetTypeID())) {
+                contextprintf(context, kBLLogLevelVerbose,  "Preferred system partition found: %s\n", BLGetCStringDescription(bsdName));
+                // this is a new preferred ESP. Prepend it to the list
+                CFArrayInsertValueAtIndex(systemPartitions, 0, bsdName);
+            }
+            if(bsdName) CFRelease(bsdName);            
+
+            IOObjectRelease(service);
+            break;
+        }
+                
+        IOObjectRelease(service);
+    }
+    
+    IOObjectRelease(iter);
+    
+    return 0;
+}
+
