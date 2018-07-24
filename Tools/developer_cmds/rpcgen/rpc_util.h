@@ -34,6 +34,8 @@
 /*
  * rpc_util.h, Useful definitions for the RPC protocol compiler 
  */
+#include <sys/types.h>
+#include <stdlib.h>
 
 #define alloc(size)		(void *)malloc((unsigned)(size))
 #define ALLOC(object)   (object *) malloc(sizeof(object))
@@ -89,6 +91,8 @@ extern int exitnow;
 extern int timerflag;
 
 extern int nonfatalerrors;
+
+extern pid_t childpid;
 
 /*
  * rpc_util routines 

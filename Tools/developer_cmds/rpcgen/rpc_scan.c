@@ -157,6 +157,7 @@ get_token(tokp)
 	token  *tokp;
 {
 	int     commenting;
+	int stat = 0;
 
 	if (pushed) {
 		pushed = 0;
@@ -169,6 +170,12 @@ get_token(tokp)
 			for (;;) {
 				if (!fgets(curline, MAXLINESIZE, fin)) {
 					tokp->kind = TOK_EOF;
+					/* now check if cpp returned non NULL value */
+					waitpid(childpid, &stat, WUNTRACED);
+					if (stat > 0) {
+					/* Set return value from rpcgen */
+						nonfatalerrors = stat >> 8;
+					}
 					*where = 0;
 					return;
 				}

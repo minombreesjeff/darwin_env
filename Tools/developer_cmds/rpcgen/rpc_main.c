@@ -162,6 +162,7 @@ static int parseargs __P((int, char *[], struct commandline *));
 static void usage __P((void));
 static void options_usage __P((void));
 
+pid_t childpid;
 
 int
 main(argc, argv)
@@ -388,7 +389,7 @@ open_input(infile, define)
 	}
 #else
 	(void) pipe(pd);
-	switch (fork()) {
+	switch (childpid = fork()) {
 	case 0:
 		find_cpp();
 		putarg(0, CPP);
