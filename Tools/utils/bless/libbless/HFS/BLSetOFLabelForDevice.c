@@ -27,7 +27,9 @@
  *  Created by Shantonu Sen on Wed Apr 16 2003.
  *  Copyright (c) 2003-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLSetOFLabelForDevice.c,v 1.17 2005/08/22 20:49:23 ssen Exp $
+ *  $Id: BLSetOFLabelForDevice.c,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
+ *
+ *
  *
  */
 

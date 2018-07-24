@@ -27,9 +27,12 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 28 2002.
  *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLBlockChecksum.c,v 1.7 2005/02/03 00:42:27 ssen Exp $
+ *  $Id: BLBlockChecksum.c,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
  *
  *  $Log: BLBlockChecksum.c,v $
+ *  Revision 1.1.1.1  2006/01/27 22:43:54  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.7  2005/02/03 00:42:27  ssen
  *  Update copyrights to 2005
  *

@@ -27,9 +27,15 @@
  *  Created by Shantonu Sen on 1/14/05.
  *  Copyright 2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: setboot.c,v 1.21 2006/01/02 22:27:28 ssen Exp $
+ *  $Id: setboot.c,v 1.2 2006/01/27 22:57:33 ssen Exp $
  *
  *  $Log: setboot.c,v $
+ *  Revision 1.2  2006/01/27 22:57:33  ssen
+ *  *** empty log message ***
+ *
+ *  Revision 1.1.1.1  2006/01/27 22:43:54  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.21  2006/01/02 22:27:28  ssen
  *  <rdar://problem/4395370> bless should not support BIOS systems
  *  For RC_RELEASE=Leopard, keep BIOS support, but preprocess it out
@@ -136,8 +142,10 @@ extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fm
 static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRef bootxData,
 							 CFDataRef labelData);
 
-int setefidevice(BLContextPtr context, const char * bsdname, int bootNext, const char *optionalData);
-int setefifilepath(BLContextPtr context, const char * path, int bootNext, const char *optionalData);
+int setefidevice(BLContextPtr context, const char * bsdname, int bootNext,
+				 int bootLegacy, const char *optionalData);
+int setefifilepath(BLContextPtr context, const char * path, int bootNext,
+				   int bootLegacy, const char *optionalData);
 int setefinetworkpath(BLContextPtr context, CFStringRef booterXML,
 							 CFStringRef kernelXML, CFStringRef mkextXML,
                              int bootNext);
@@ -188,7 +196,7 @@ int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 			blesscontextprintf(context, kBLLogLevelVerbose,  "Open Firmware set successfully\n" );
 		}
 	} else if(preboot == kBLPreBootEnvType_EFI) {
-        err = setefidevice(context, device + 5, 0, NULL);
+        err = setefidevice(context, device + 5, 0, 0, NULL);
 		if(err) {
 			blesscontextprintf(context, kBLLogLevelError,  "Can't set EFI\n" );
 			return 1;
@@ -395,17 +403,26 @@ static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRe
 	return 0;
 }
 
-int setefidevice(BLContextPtr context, const char * bsdname, int bootNext, const char *optionalData)
+int setefidevice(BLContextPtr context, const char * bsdname, int bootNext,
+				 int bootLegacy, const char *optionalData)
 {
     int ret;
 
     CFStringRef xmlString = NULL;
     const char *bootString = NULL;
     
-    ret = BLCreateEFIXMLRepresentationForDevice(context,
-                                              bsdname,
-                                              optionalData,
-                                              &xmlString);
+	if(bootLegacy) {
+		ret = BLCreateEFIXMLRepresentationForLegacyDevice(context,
+												  bsdname,
+												  &xmlString);
+			
+	} else {
+		ret = BLCreateEFIXMLRepresentationForDevice(context,
+													bsdname,
+													optionalData,
+													&xmlString);
+	}
+		
     if(ret) {
         return 1;
     }
@@ -470,16 +487,32 @@ static int setit(BLContextPtr context, mach_port_t masterPort, const char *bootv
     return 0;
 }
 
-int setefifilepath(BLContextPtr context, const char * path, int bootNext, const char *optionalData)
+int setefifilepath(BLContextPtr context, const char * path, int bootNext,
+				   int bootLegacy, const char *optionalData)
 {
     CFStringRef xmlString = NULL;
     const char *bootString = NULL;
     int ret;
     
-    ret = BLCreateEFIXMLRepresentationForPath(context,
-                                              path,
-                                              optionalData,
-                                              &xmlString);
+    if(bootLegacy) {
+      struct statfs sb;
+      if(0 != statfs(path, &sb)) {
+        blesscontextprintf(context, kBLLogLevelError,  "Can't statfs %s\n" ,
+                           path);
+        return 1;           
+      }
+
+      ret = BLCreateEFIXMLRepresentationForLegacyDevice(context,
+							sb.f_mntfromname + 5,
+							&xmlString);
+      
+    } else {
+      ret = BLCreateEFIXMLRepresentationForPath(context,
+						path,
+						optionalData,
+						&xmlString);
+    }
+
     if(ret) {
         return 1;
     }

@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: handleFolder.c,v 1.71 2005/12/05 12:48:58 ssen Exp $
+ *  $Id: handleFolder.c,v 1.2 2006/01/27 22:57:33 ssen Exp $
  *
  */
 
@@ -57,7 +57,8 @@ extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fm
 static int isOFLabel(const char *data, int labelsize);
 extern int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 				   CFDataRef labelData);
-extern int setefifilepath(BLContextPtr context, const char * path, int bootNext, const char *optionalData);
+extern int setefifilepath(BLContextPtr context, const char * path, int bootNext,
+				   int bootLegacy, const char *optionalData);
 
 int modeFolder(BLContextPtr context, struct clarg actargs[klast]) {
 	
@@ -484,6 +485,7 @@ int modeFolder(BLContextPtr context, struct clarg actargs[klast]) {
 											actargs[kfile].argument :
 											actargs[kmount].argument),
                                  actargs[knextonly].present,
+                                 actargs[klegacy].present,
                                  actargs[koptions].present ? actargs[koptions].argument : NULL);
             if(err) {
                 return 3;

@@ -27,9 +27,12 @@
  *  Created by Shantonu Sen on Tue Jul 22 2003.
  *  Copyright (c) 2003-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLIsOpenFirmwarePresent.c,v 1.10 2005/07/29 18:28:25 ssen Exp $
+ *  $Id: BLIsOpenFirmwarePresent.c,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
  *
  *  $Log: BLIsOpenFirmwarePresent.c,v $
+ *  Revision 1.1.1.1  2006/01/27 22:43:54  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.10  2005/07/29 18:28:25  ssen
  *  use new BLGetPreBootEnvironmentType()
  *

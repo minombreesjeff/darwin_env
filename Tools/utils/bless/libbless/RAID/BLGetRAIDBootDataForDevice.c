@@ -28,9 +28,12 @@
  *  Copyright 2005-2005 Apple Computer, Inc. All rights reserved.
  *
  *
- *  $Id: BLGetRAIDBootDataForDevice.c,v 1.7 2005/08/22 20:49:25 ssen Exp $
+ *  $Id: BLGetRAIDBootDataForDevice.c,v 1.1.1.1 2006/01/27 22:43:55 ssen Exp $
  *
  *  $Log: BLGetRAIDBootDataForDevice.c,v $
+ *  Revision 1.1.1.1  2006/01/27 22:43:55  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.7  2005/08/22 20:49:25  ssen
  *  Change functions to take "char *foo" instead of "char foo[]".
  *  It should be semantically identical, and be more consistent with

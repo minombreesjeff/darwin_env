@@ -27,9 +27,12 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Tue Apr 17 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLSetOpenFirmwareBootDevice.c,v 1.17 2005/11/17 00:17:31 ssen Exp $
+ *  $Id: BLSetOpenFirmwareBootDevice.c,v 1.1.1.1 2006/01/27 22:43:55 ssen Exp $
  *
  *  $Log: BLSetOpenFirmwareBootDevice.c,v $
+ *  Revision 1.1.1.1  2006/01/27 22:43:55  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.17  2005/11/17 00:17:31  ssen
  *  <rdar://problem/4344363> Bless needs to zero out kernel/mkext fields when booting from local disk
  *  refactor code into BLPreserveBootArgs

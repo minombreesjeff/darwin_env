@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Nov 14 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: enums.h,v 1.33 2005/12/07 04:49:17 ssen Exp $
+ *  $Id: enums.h,v 1.2 2006/01/27 22:57:33 ssen Exp $
  *
  *
  */
@@ -52,6 +52,7 @@ enum {
     kkernel,
     klabel,
     klabelfile,
+    klegacy,
     kmkext,
     kmount,
     knetboot,

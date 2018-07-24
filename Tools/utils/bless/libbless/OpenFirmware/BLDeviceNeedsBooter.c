@@ -27,9 +27,12 @@
  *  Created by Shantonu Sen on 2/7/05.
  *  Copyright 2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLDeviceNeedsBooter.c,v 1.7 2005/11/09 22:42:06 ssen Exp $
+ *  $Id: BLDeviceNeedsBooter.c,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
  *
  *  $Log: BLDeviceNeedsBooter.c,v $
+ *  Revision 1.1.1.1  2006/01/27 22:43:54  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.7  2005/11/09 22:42:06  ssen
  *  fix annoying diagnostic message on GPT maps
  *

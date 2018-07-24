@@ -27,9 +27,12 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Apr 19 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLGetOpenFirmwareBootDevice.c,v 1.29 2005/11/15 23:59:53 ssen Exp $
+ *  $Id: BLGetOpenFirmwareBootDevice.c,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
  *
  *  $Log: BLGetOpenFirmwareBootDevice.c,v $
+ *  Revision 1.1.1.1  2006/01/27 22:43:54  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.29  2005/11/15 23:59:53  ssen
  *  Export new API, Add __attribute__((format)) for better compile-time
  *  checking

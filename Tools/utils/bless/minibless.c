@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Mon Aug 25 2003.
  *  Copyright (c) 2003-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: minibless.c,v 1.8 2005/12/04 07:42:58 ssen Exp $
+ *  $Id: minibless.c,v 1.2 2006/01/27 22:57:33 ssen Exp $
  *
  */
 
@@ -43,8 +43,8 @@
 #include "bless.h"
 
 void usage(char *program);
-extern int setefidevice(BLContextPtr context, const char * bsdname,
-						int bootNext, const char *optionalData);
+extern int setefidevice(BLContextPtr context, const char * bsdname, int bootNext,
+				 int bootLegacy, const char *optionalData);
 
 int main(int argc, char *argv[]) {
 	
@@ -81,6 +81,7 @@ int main(int argc, char *argv[]) {
 #ifdef __i386__
 	if(0 != setefidevice(NULL, device + 5 /* strlen("/dev/") */,
 					   0,
+			                   0,
 					   NULL)) {
 		errx(1, "Can't set EFI");		
 	}

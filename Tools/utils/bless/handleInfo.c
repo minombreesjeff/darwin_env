@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: handleInfo.c,v 1.40 2006/01/02 22:27:27 ssen Exp $
+ *  $Id: handleInfo.c,v 1.3 2006/02/08 19:49:40 ssen Exp $
  *
  *
  */
@@ -163,6 +163,15 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
                                        currentString);                    
                 }
                 
+				err = BLValidateXMLBootOption(context,
+											  CFSTR("efi-boot-device"),
+											  CFSTR("efi-boot-device-data"));
+				if(err) {
+                    blesscontextprintf(context, kBLLogLevelError,
+                                       "XML representation doesn't match true boot preference\n");
+                    return 2;                    					
+				}
+					
                 err = interpretEFIString(context, efibootdev, currentDev);
                 if(err) {
                     blesscontextprintf(context, kBLLogLevelError,
@@ -336,7 +345,18 @@ static int interpretEFIString(BLContextPtr context, CFStringRef efiString,
             }
             
             return 0;
-        }            
+        } else {
+			ret = BLInterpretEFIXMLRepresentationAsLegacyDevice(context,
+														  efiString,
+														  path);
+			if(ret == 0) {
+				blesscontextprintf(context, kBLLogLevelVerbose,  "Legacy boot device detected\n" );
+				
+				sprintf(bootdevice, "/dev/%s", path);
+				
+				return 0;
+			}				
+		}
     }
 
     blesscontextprintf(context, kBLLogLevelError,  "Could not interpret boot device as either network or disk\n" );

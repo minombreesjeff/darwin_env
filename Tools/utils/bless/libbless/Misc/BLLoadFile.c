@@ -27,9 +27,12 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Tue Apr 30 2002.
  *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLLoadFile.c,v 1.14 2005/08/22 20:49:24 ssen Exp $
+ *  $Id: BLLoadFile.c,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
  *
  *  $Log: BLLoadFile.c,v $
+ *  Revision 1.1.1.1  2006/01/27 22:43:54  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.14  2005/08/22 20:49:24  ssen
  *  Change functions to take "char *foo" instead of "char foo[]".
  *  It should be semantically identical, and be more consistent with

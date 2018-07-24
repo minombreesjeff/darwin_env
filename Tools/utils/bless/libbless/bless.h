@@ -28,7 +28,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 21 2002.
  *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: bless.h,v 1.72 2006/01/02 22:27:28 ssen Exp $
+ *  $Id: bless.h,v 1.5 2006/02/10 23:41:59 ssen Exp $
  *
  */
  
@@ -738,6 +738,10 @@ int BLCreateEFIXMLRepresentationForDevice(BLContextPtr context,
                                           const char *optionalData,
                                           CFStringRef *xmlString);
 
+int BLCreateEFIXMLRepresentationForLegacyDevice(BLContextPtr context,
+                                          const char *bsdName,
+                                          CFStringRef *xmlString);
+
 int BLCreateEFIXMLRepresentationForNetworkPath(BLContextPtr context,
                                                const char *interface,
                                                const char *host,
@@ -755,9 +759,20 @@ int BLInterpretEFIXMLRepresentationAsDevice(BLContextPtr context,
                                             CFStringRef xmlString,
                                             char *bsdName);
 
+int BLInterpretEFIXMLRepresentationAsLegacyDevice(BLContextPtr context,
+                                            CFStringRef xmlString,
+                                            char *bsdName);
+
 int BLCopyEFINVRAMVariableAsString(BLContextPtr context,
                                    CFStringRef  name,
                                    CFStringRef *value);
+
+int BLValidateXMLBootOption(BLContextPtr context,
+							CFStringRef	 xmlName,
+							CFStringRef	 binaryName);
+
+bool BLSupportsLegacyMode(BLContextPtr context);
+
 
 // filter out bad boot-args
 int BLPreserveBootArgs(BLContextPtr context,

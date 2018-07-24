@@ -27,9 +27,12 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Jan 24 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLGetDeviceForOpenFirmwarePath.c,v 1.21 2005/08/22 20:49:25 ssen Exp $
+ *  $Id: BLGetDeviceForOpenFirmwarePath.c,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
  *
  *  $Log: BLGetDeviceForOpenFirmwarePath.c,v $
+ *  Revision 1.1.1.1  2006/01/27 22:43:54  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.21  2005/08/22 20:49:25  ssen
  *  Change functions to take "char *foo" instead of "char foo[]".
  *  It should be semantically identical, and be more consistent with

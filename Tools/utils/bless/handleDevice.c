@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: handleDevice.c,v 1.49 2005/12/02 19:13:49 ssen Exp $
+ *  $Id: handleDevice.c,v 1.2 2006/01/27 22:57:33 ssen Exp $
  *
  *
  */
@@ -50,8 +50,8 @@ extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fm
     __attribute__ ((format (printf, 3, 4)));
 extern int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 				   CFDataRef labelData);
-extern int setefidevice(BLContextPtr context, const char * bsdname,
-                        int bootNext, const char *optionalData);
+extern int setefidevice(BLContextPtr context, const char * bsdname, int bootNext,
+				 int bootLegacy, const char *optionalData);
 
 int modeDevice(BLContextPtr context, struct clarg actargs[klast]) {
     int err = 0;
@@ -110,6 +110,7 @@ int modeDevice(BLContextPtr context, struct clarg actargs[klast]) {
 
             err = setefidevice(context, actargs[kdevice].argument + strlen("/dev/"),
                                  actargs[knextonly].present,
+                                 actargs[klegacy].present,
                                  actargs[koptions].present ? actargs[koptions].argument : NULL);
         } else {        
             err = setboot(context, actargs[kdevice].argument, bootXdata, labeldata);

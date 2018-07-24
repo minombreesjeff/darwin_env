@@ -27,9 +27,12 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Mon Jun 25 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLWriteStartupFile.h,v 1.7 2005/02/03 00:42:26 ssen Exp $
+ *  $Id: BLWriteStartupFile.h,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
  *
  *  $Log: BLWriteStartupFile.h,v $
+ *  Revision 1.1.1.1  2006/01/27 22:43:54  ssen
+ *  bless-37.1 import
+ *
  *  Revision 1.7  2005/02/03 00:42:26  ssen
  *  Update copyrights to 2005
  *
