@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 1/14/05.
- *  Copyright 2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2005-2007 Apple Inc. All Rights Reserved.
  *
  *  $Id: setboot.c,v 1.30 2006/07/19 00:15:36 ssen Exp $
  *
@@ -38,7 +38,6 @@
 
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOCFSerialize.h>
-#include <DiskArbitration/DiskArbitration.h>
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "enums.h"
@@ -46,8 +45,14 @@
 #include "bless_private.h"
 #include "protos.h"
 
+#if USE_DISKARBITRATION
+#include <DiskArbitration/DiskArbitration.h>
+#endif
+
+#if SUPPORT_RAID
 static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRef bootxData,
 							 CFDataRef labelData);
+#endif
 
 static int setit(BLContextPtr context, mach_port_t masterPort, const char *bootvar, CFStringRef xmlstring);
 
@@ -58,7 +63,6 @@ int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 				   CFDataRef labelData)
 {
 	int err;	
-	CFTypeRef bootData = NULL;
 	BLPreBootEnvType	preboot;
 	
 	err = BLGetPreBootEnvironmentType(context, &preboot);
@@ -67,6 +71,9 @@ int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 		return 1;
 	}
 	
+#if SUPPORT_RAID
+	CFTypeRef bootData = NULL;
+
 	err = BLGetRAIDBootDataForDevice(context, device, &bootData);
 	if(err) {
 		blesscontextprintf(context, kBLLogLevelError,  "Error while determining if %s is a RAID\n", device );
@@ -87,6 +94,7 @@ int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 			blesscontextprintf(context, kBLLogLevelError,  "Error while updating booter for %s\n", device );			
 		}		
 	}
+#endif // SUPPORT_RAID
 		
 	if(preboot == kBLPreBootEnvType_OpenFirmware) {
 		err = BLSetOpenFirmwareBootDevice(context, device);
@@ -112,7 +120,7 @@ int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 	return 0;	
 }
 
-
+#if SUPPORT_RAID
 static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRef bootxData,
 									CFDataRef labelData)
 {
@@ -141,11 +149,12 @@ static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRe
 		return 0;
 	
 	for(;;) {
+		char label[MAXPATHLEN];
+#if USE_DISKARBITRATION
 		DADiskRef disk = NULL;
 		DASessionRef session = NULL;
 		CFDictionaryRef props = NULL;
 		CFStringRef	daName = NULL;
-		char label[MAXPATHLEN];
 
 		
 		if(labelData) break; // no need to generate
@@ -196,6 +205,9 @@ static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRe
 		CFRelease(props);
 		CFRelease(disk);
 		CFRelease(session);	
+#else // !USE_DISKARBITRATION
+		strlcpy(label, "Unknown", sizeof(label));
+#endif // !USE_DISKARBITRATION
 		
 		ret = BLGenerateOFLabel(context, label, &labelData);
 		if(ret)
@@ -303,6 +315,7 @@ static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRe
 	
 	return 0;
 }
+#endif // SUPPORT_RAID
 
 int setefidevice(BLContextPtr context, const char * bsdname, int bootNext,
 				 int bootLegacy, const char *legacyHint, const char *optionalData, bool shortForm)

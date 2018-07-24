@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2005-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 1/15/05.
- *  Copyright 2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2005-2007 Apple Inc. All Rights Reserved.
  *
  *  $Id: BLUpdateRAIDBooters.c,v 1.12 2006/02/20 22:49:58 ssen Exp $
  *
@@ -41,14 +41,19 @@
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>
 #include <IOKit/storage/IOMedia.h>
-#include <IOKit/storage/RAID/AppleRAIDUserLib.h>
 
 #include <CoreFoundation/CoreFoundation.h>
 
-#include <DiskArbitration/DiskArbitration.h>
-
 #include "bless.h"
 #include "bless_private.h"
+
+#if SUPPORT_RAID
+
+#include <IOKit/storage/RAID/AppleRAIDUserLib.h>
+
+#if USE_DISKARBITRATION
+#include <DiskArbitration/DiskArbitration.h>
+#endif
 
 #define kBootPlistName "com.apple.Boot.plist"
 
@@ -97,6 +102,7 @@ int BLUpdateRAIDBooters(BLContextPtr context, const char * device,
 	for(;;) {
 		// try to get a symbolic name from DA, if possible
 		if(labelData == NULL) {
+#if USE_DISKARBITRATION
 			DADiskRef disk = NULL;
 			DASessionRef session = NULL;
 			CFDictionaryRef props = NULL;
@@ -130,6 +136,9 @@ int BLUpdateRAIDBooters(BLContextPtr context, const char * device,
 			CFRelease(props);
 			CFRelease(disk);
 			CFRelease(session);			
+#else // !USE_DISKARBITRATION
+			daName = CFSTR("RAID");
+#endif // !USE_DISKARBITRATION
 		}
 		break;
 	}
@@ -414,3 +423,5 @@ CFDataRef _createLabel(BLContextPtr context, CFStringRef name, int index)
 		return newLabel;
 	}
 }
+
+#endif // SUPPORT_RAID

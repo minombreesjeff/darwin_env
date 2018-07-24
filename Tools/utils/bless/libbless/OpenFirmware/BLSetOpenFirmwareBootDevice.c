@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen <ssen@apple.com> on Tue Apr 17 2001.
- *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  *  $Id: BLSetOpenFirmwareBootDevice.c,v 1.18 2006/02/20 22:49:57 ssen Exp $
  *
@@ -118,8 +118,11 @@ int BLSetOpenFirmwareBootDevice(BLContextPtr context, const char * mntfrm) {
         _exit(1);
     }
     
-    wait(&status);
-    if(status) {
+    do {
+        p = wait(&status);
+    } while (p == -1 && errno == EINTR);
+    
+    if(p == -1 || status) {
         contextprintf(context, kBLLogLevelError,  "%s returned non-0 exit status\n", NVRAM );
         return 3;
     }

@@ -75,6 +75,8 @@ int main(int argc, char *argv[]) {
   TAOCFPrettyPrint(disk);
   TAOCFPrettyPrint(props);
 
+  printf("Options: %lu\n", DADiskGetOptions(disk));
+
   CFRelease(session);
   CFRelease(disk);
   CFRelease(props);

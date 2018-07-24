@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2005-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,44 +20,25 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
+/*
+ *  BLCopyOpenFirmwareNVRAMVariableAsString.c
+ *  bless
+ *
+ *  Created by Shantonu Sen on 7/7/07.
+ *  Copyright 2007 Apple Inc. All Rights Reserved.
+ *
+ */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <err.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/IOKitKeys.h>
 
-int main(int argc, char *argv[]) {
+#include "bless.h"
+#include "bless_private.h"
 
-  FILE *f;
-  int ch;
-
-  char *varname = NULL;
-
-  if(argc > 3) {
-    fprintf(stderr, "Usage: %s varname [ input ]\n", getprogname());
-    exit(1);
-  }
-
-  if(argc == 3) {
-    f = fopen(argv[2], "r");
-    if(f == NULL) {
-      err(1, "Could not open %s", argv[2]);
-    }
-  } else {
-    f = stdin;
-  }
-
-  varname = argv[1];
-
-  printf("const char %s[] = {\n", varname);
-
-  while(EOF != (ch= fgetc(f)) && !feof(f)) {
-
-    printf("%#x, ", ch);
-  }
-
-  fclose(f);
-
-  printf("\n};\n");
-
-  return 0;
+int BLCopyOpenFirmwareNVRAMVariableAsString(BLContextPtr context,
+                                           CFStringRef  name,
+                                           CFStringRef *value)
+{
+    // actually, the same thing as for EFI
+    return BLCopyEFINVRAMVariableAsString(context, name, value);
 }

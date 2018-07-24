@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen <ssen@apple.com> on Sat Feb 23 2002.
- *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright (c) 2002-2007 Apple Inc. All Rights Reserved.
  *
  */
 
@@ -147,16 +147,10 @@ CFDataRef* data) {
     return 0;
 }
 
-#define USE_CG 0
+#undef USE_COREGRAPHICS
+#define USE_COREGRAPHICS 0
 
-#include <AvailabilityMacros.h>
-#if defined(MAC_OS_X_VERSION_10_5) && (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_5)
-#define USE_CORETEXT 1
-#else
-#define USE_CORETEXT 0
-#endif
-
-#if USE_CG
+#if USE_COREGRAPHICS
 #include <ApplicationServices/ApplicationServices.h>
 
 static int makeLabelOfSize(const char *label, unsigned char *bitmapData,
@@ -293,12 +287,15 @@ uint16_t width, uint16_t height, uint16_t *newwidth) {
     
 }
 
-#else
+#else // !USE_COREGRAPHICS
 static int makeLabelOfSize(const char *label, unsigned char *bitmapData,
 						   uint16_t width, uint16_t height, uint16_t *newwidth) {
-	return 1;
+
+	// just make a blank label
+	*newwidth = 10;
+	return 0;
 }
-#endif // USE_CG
+#endif // !USE_COREGRAPHICS
 
 /*
  * data is of the form:

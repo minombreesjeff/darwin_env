@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2006-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,13 +25,14 @@
  *  bless
  *
  *  Created by Shantonu Sen on 6/6/06.
- *  Copyright 2006 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2006-2007 Apple Inc. All Rights Reserved.
  *
  */
 
 #include "enums.h"
 #include "structs.h"
 #include <stdbool.h>
+#include <sys/cdefs.h>
 
 int modeInfo(BLContextPtr context, struct clarg actargs[klast]);
 int modeDevice(BLContextPtr context, struct clarg actargs[klast]);
@@ -40,8 +41,7 @@ int modeFirmware(BLContextPtr context, struct clarg actargs[klast]);
 int modeNetboot(BLContextPtr context, struct clarg actargs[klast]);
 
 int blesslog(void *context, int loglevel, const char *string);
-int blesscontextprintf(BLContextPtr context, int loglevel, char const *fmt, ...)
-__attribute__ ((format (printf, 3, 4)));
+int blesscontextprintf(BLContextPtr context, int loglevel, char const *fmt, ...) __printflike(3, 4);
 
 void usage();
 void usage_short();

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2007 Apple Inc. All rights reserved.
+ * Copyright (c) 2005-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 10/10/05.
- *  Copyright 2005-2007 Apple Inc. All rights reserved.
+ *  Copyright 2005-2007 Apple Inc. All Rights Reserved.
  *
  */
 
@@ -68,14 +68,6 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
     char                path[MAXPATHLEN];
 	char				scheme[128];
 	bool				useBackslash = false;
-    
-    
-    if(!actargs[kserver].present) {
-        if(actargs[knetbootserver].present) {
-            strcpy(actargs[kserver].argument, actargs[knetbootserver].argument);
-            actargs[kserver].present = 1;
-        }
-    }
     
     if(!( actargs[kserver].present || actargs[kbooter].present)) {
         blesscontextprintf(context, kBLLogLevelError,
@@ -216,8 +208,11 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
             _exit(1);
         }
         
-        wait(&status);
-        if(status) {
+        do {
+            p = wait(&status);
+        } while (p == -1 && errno == EINTR);
+        
+        if(p == -1 || status) {
             blesscontextprintf(context, kBLLogLevelError,  "%s returned non-0 exit status\n", NVRAM );
             return 3;
         }

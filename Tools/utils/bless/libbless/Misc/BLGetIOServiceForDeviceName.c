@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 2/7/05.
- *  Copyright 2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2005-2007 Apple Inc. All Rights Reserved.
  *
  *  $Id: BLGetIOServiceForDeviceName.c,v 1.4 2006/02/20 22:49:56 ssen Exp $
  *
@@ -47,7 +47,7 @@
 #include "bless.h"
 #include "bless_private.h"
 
-int BLGetIOServiceForDeviceName(BLContextPtr context, char * devName,
+int BLGetIOServiceForDeviceName(BLContextPtr context, const char * devName,
 								io_service_t *service)
 {
     io_service_t			myservice;

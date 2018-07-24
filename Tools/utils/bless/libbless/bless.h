@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -26,7 +26,7 @@
  *  bless
  *
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 21 2002.
- *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright (c) 2002-2007 Apple Inc. All Rights Reserved.
  *
  *  $Id: bless.h,v 1.79 2006/07/19 00:15:38 ssen Exp $
  *
@@ -212,6 +212,20 @@ typedef enum {
 } BLPartitionType;
 
 typedef enum {
+    
+    kBLBootRootRole_Unknown             = 0x00000001,
+    
+    kBLBootRootRole_None                = 0x00000002,
+
+    kBLBootRootRole_AuxiliaryPartition  = 0x00000004,
+
+    kBLBootRootRole_MemberPartition     = 0x00000008,
+
+    kBLBootRootRole_BootRootDevice      = 0x00000010,
+
+} BLBootRootRole;
+
+typedef enum {
 	
     kBLPreBootEnvType_Unknown		= 0x00000001,
 	
@@ -219,7 +233,9 @@ typedef enum {
 	
     kBLPreBootEnvType_BIOS			= 0x00000004,
 	
-    kBLPreBootEnvType_EFI			= 0x00000008
+    kBLPreBootEnvType_EFI			= 0x00000008,
+    
+    kBLPreBootEnvType_iBoot			= 0x00000010,
     
 } BLPreBootEnvType;
 
@@ -698,6 +714,10 @@ int BLGetDeviceForOpenFirmwarePath(BLContextPtr context,
 				   char * mntfrm);
 
 
+int BLCopyOpenFirmwareNVRAMVariableAsString(BLContextPtr context,
+                                           CFStringRef  name,
+                                           CFStringRef *value);
+
 /* RAID info */
 int BLGetRAIDBootDataForDevice(BLContextPtr context, const char * device,
 							   CFTypeRef *bootData);
@@ -725,7 +745,7 @@ int BLUpdateBooter(BLContextPtr context, const char * device,
 				   BLUpdateBooterFileSpec *specs,
 				   int32_t specCount);
 
-int BLGetIOServiceForDeviceName(BLContextPtr context, char * devName,
+int BLGetIOServiceForDeviceName(BLContextPtr context, const char * devName,
 								io_service_t *service);
 
 int BLDeviceNeedsBooter(BLContextPtr context, const char * device,

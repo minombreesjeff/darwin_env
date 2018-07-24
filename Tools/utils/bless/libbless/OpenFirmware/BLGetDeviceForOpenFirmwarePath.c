@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Jan 24 2001.
- *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  *  $Id: BLGetDeviceForOpenFirmwarePath.c,v 1.22 2006/02/20 22:49:57 ssen Exp $
  *
@@ -36,8 +36,6 @@
 #import <IOKit/IOBSD.h>
 #import <IOKit/IOKitKeys.h>
 #import <IOKit/storage/IOMedia.h>
-#import <IOKit/storage/RAID/AppleRAIDUserLib.h>
-
 
 #import <CoreFoundation/CoreFoundation.h>
 
@@ -51,14 +49,22 @@
 #include "bless.h"
 #include "bless_private.h"
 
+#undef SUPPORT_RAID
+#define SUPPORT_RAID 0
+
+#if SUPPORT_RAID
+#import <IOKit/storage/RAID/AppleRAIDUserLib.h>
+
+static int findRAIDForMember(BLContextPtr context, mach_port_t iokitPort, char * mntfrm);
+static int isRAIDPath(BLContextPtr context, mach_port_t iokitPort, io_service_t member,
+					  CFDictionaryRef raidEntry);
+#endif
+
 extern int getPNameAndPType(BLContextPtr context,
 			    char * target,
 			    char * pname,
 			    char * ptype);
 
-static int findRAIDForMember(BLContextPtr context, mach_port_t iokitPort, char * mntfrm);
-static int isRAIDPath(BLContextPtr context, mach_port_t iokitPort, io_service_t member,
-					  CFDictionaryRef raidEntry);
 
 int BLGetDeviceForOpenFirmwarePath(BLContextPtr context, const char * ofstring, char * mntfrm) {
 	
@@ -67,11 +73,7 @@ int BLGetDeviceForOpenFirmwarePath(BLContextPtr context, const char * ofstring, 
     char newof[1024];
     char targetPName[MAXPATHLEN];
     char targetPType[MAXPATHLEN];
-    char parentDev[MNAMELEN];
-    uint32_t slice = 0;
     int ret;
-    
-    BLPartitionType partitionType = 0;
     
     char *comma = NULL;;
 	
@@ -107,11 +109,18 @@ int BLGetDeviceForOpenFirmwarePath(BLContextPtr context, const char * ofstring, 
     
     contextprintf(context, kBLLogLevelVerbose,  "Partition name is %s. Partition type is %s\n",  targetPName, targetPType);
     
+#if 0
+    
     if(strcmp("Apple_Boot", targetPType) != 0 && strcmp("Apple_Boot_RAID", targetPType) != 0) {
 		contextprintf(context, kBLLogLevelVerbose,  "No external booter needed\n");
         return 0;
         
     }
+    
+    char parentDev[MNAMELEN];
+    uint32_t slice = 0;
+    
+    BLPartitionType partitionType = 0;
     
     // this is a auxiliary booter partition
     contextprintf(context, kBLLogLevelVerbose,  "Looking for root partition\n");
@@ -154,6 +163,7 @@ int BLGetDeviceForOpenFirmwarePath(BLContextPtr context, const char * ofstring, 
         return 4;
     }
 
+#if SUPPORT_RAID
     if(strcmp("Apple_RAID", targetPType) == 0 || strcmp("Apple_Boot_RAID", targetPType) == 0) {
         contextprintf(context, kBLLogLevelVerbose,  "%s is an Apple_RAID. Looking for exported volume\n", mntfrm);
         ret = findRAIDForMember(context, ourIOKitPort, mntfrm);
@@ -162,10 +172,15 @@ int BLGetDeviceForOpenFirmwarePath(BLContextPtr context, const char * ofstring, 
             return 4;
         }				
     }
+#endif
+    
+#endif // 0
     
     return 0;
 	
 }
+
+#if SUPPORT_RAID
 
 static int findRAIDForMember(BLContextPtr context, mach_port_t iokitPort, char * mntfrm)
 {
@@ -320,3 +335,5 @@ static int isRAIDPath(BLContextPtr context, mach_port_t iokitPort, io_service_t 
 	
 	return 0;
 }
+
+#endif // SUPPORT_RAID

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2006-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 4/11/06.
- *  Copyright 2006 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2006-2007 Apple Inc. All Rights Reserved.
  *
  * $Id: BLGetOpenFirmwareBootDeviceForNetworkPath.c,v 1.1 2006/04/12 00:15:05 ssen Exp $
  *

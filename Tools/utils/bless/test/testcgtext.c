@@ -3,7 +3,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 9/7/06.
- *  Copyright 2006 __MyCompanyName__. All rights reserved.
+ *  Copyright 2006 __MyCompanyName__. All Rights Reserved.
  *
  */
 

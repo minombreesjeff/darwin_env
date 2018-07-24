@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 1/13/05.
- *  Copyright 2005-2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2005-2007 Apple Inc. All Rights Reserved.
  *
  *
  *  $Id: BLGetRAIDBootDataForDevice.c,v 1.8 2006/02/20 22:49:58 ssen Exp $
@@ -39,12 +39,15 @@
 
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOKitKeys.h>
-#include <IOKit/storage/RAID/AppleRAIDUserLib.h>
 
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "bless.h"
 #include "bless_private.h"
+
+#if SUPPORT_RAID
+
+#include <IOKit/storage/RAID/AppleRAIDUserLib.h>
 
 int BLGetRAIDBootDataForDevice(BLContextPtr context, const char * device,
 							   CFTypeRef *bootData)
@@ -54,7 +57,7 @@ int BLGetRAIDBootDataForDevice(BLContextPtr context, const char * device,
 	mach_port_t             ourIOKitPort;
 	io_service_t			service;
 	io_iterator_t			serviter;
-	CFTypeRef				isRAID = NULL, data = NULL;
+	CFTypeRef			data = NULL;
 	
 	*bootData = NULL;
 	
@@ -83,25 +86,6 @@ int BLGetRAIDBootDataForDevice(BLContextPtr context, const char * device,
         
 	IOObjectRelease(serviter);
 	
-	isRAID = IORegistryEntrySearchCFProperty( service,
-											  kIOServicePlane,
-											  CFSTR(kAppleRAIDIsRAIDKey),
-											  kCFAllocatorDefault,
-											  kIORegistryIterateRecursively|
-												kIORegistryIterateParents);
-
-	if(isRAID == NULL
-	   || CFGetTypeID(isRAID) != CFBooleanGetTypeID()
-	   || !CFEqual(isRAID, kCFBooleanTrue)) {
-		// no error, but the lack of boot data means it's not a raid
-		if(isRAID) CFRelease(isRAID);
-		IOObjectRelease(service);
-		
-		return 0;
-	}
-
-	CFRelease(isRAID);
-	contextprintf(context, kBLLogLevelVerbose,  "%s is part of a RAID\n", device );
 	
 	// we know this IOService is a RAID member. Now we need to get the boot data
 	data = IORegistryEntrySearchCFProperty( service,
@@ -113,7 +97,7 @@ int BLGetRAIDBootDataForDevice(BLContextPtr context, const char * device,
 	if(data == NULL) {
 		// it's an error for a RAID not to have this information
 		IOObjectRelease(service);
-		return 4;
+		return 0;
 	}
 	
 	IOObjectRelease(service);
@@ -132,3 +116,4 @@ int BLGetRAIDBootDataForDevice(BLContextPtr context, const char * device,
 	return 0;
 }
 
+#endif // SUPPORT_RAID

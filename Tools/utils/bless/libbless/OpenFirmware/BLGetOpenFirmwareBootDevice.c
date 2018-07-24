@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Apr 19 2001.
- *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  *  $Id: BLGetOpenFirmwareBootDevice.c,v 1.30 2006/02/20 22:49:57 ssen Exp $
  *
@@ -96,11 +96,13 @@ int BLGetOpenFirmwareBootDevice(BLContextPtr context, const char * mntfrm, char 
       return 2;
     }
 
+#if SUPPORT_RAID
     err = BLGetRAIDBootDataForDevice(context, mntfrm, &bootData);
     if(err) {
         contextprintf(context, kBLLogLevelError,  "Error while determining if %s is a RAID\n", mntfrm );
         return 3;
     }
+#endif
     
     if(bootData) {
         CFDictionaryRef primary = NULL;

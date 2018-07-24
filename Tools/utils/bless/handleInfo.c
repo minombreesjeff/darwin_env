@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
- *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  *  $Id: handleInfo.c,v 1.45 2006/06/24 00:46:37 ssen Exp $
  *
@@ -54,12 +54,19 @@
 #include "bless_private.h"
 #include "protos.h"
 
+#include <IOKit/storage/IOMedia.h>
+#include <IOKit/IOBSD.h>
 #include <CoreFoundation/CoreFoundation.h>
 
 static int interpretEFIString(BLContextPtr context, CFStringRef efiString, 
                               char *bootdevice);
+static int interpretOFString(BLContextPtr context, CFStringRef ofString, 
+                              char *bootdevice);
 
 static void addElements(const void *key, const void *value, void *context);
+
+static int findBootRootAggregate(BLContextPtr context, char *memberPartition, char *bootRootDevice);
+
 
 
 /* 8 words of "finder info" in volume
@@ -72,7 +79,7 @@ static void addElements(const void *key, const void *value, void *context);
  * 6 & 7 is the vsdb stuff (64 bits) to see if sysA has seen diskB
  *
  * 0 is blessed system folder
- * 1 is folder which contains startup app (reserved for Finder these days)
+ * 1 is blessed system file for EFI systems
  * 2 is first link in linked list of folders to open at mount (deprecated)
  *   (9 and X are supposed to honor this if set and ignore OpenFolderListDF)
  * 3 OS 9 blessed system folder (maybe OS X?)
@@ -97,16 +104,13 @@ static const char *messages[7][2] = {
 int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
     int                 ret;
     CFDictionaryRef     dict;
-    int                 isNetboot = 0;
     struct statfs       sb;
     CFMutableDictionaryRef  allInfo = NULL;
 	int					isHFS = 0;
 	
-    if(!actargs[kinfo].hasArg ||  actargs[kgetboot].present) {
+    if(!actargs[kinfo].hasArg || actargs[kgetboot].present) {
         char currentString[1024];
         char currentDev[1024]; // may contain URLs like bsdp://foo
-        struct statfs *mnts;
-        int vols;
         BLPreBootEnvType	preboot;
         
         ret = BLGetPreBootEnvironmentType(context, &preboot);
@@ -115,42 +119,31 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
         
         if(preboot == kBLPreBootEnvType_OpenFirmware) {
             
-            FILE *pop;
+            CFStringRef     ofbootdev = NULL;
             
-            pop = popen("/usr/sbin/nvram boot-device", "r");
-            if(pop == NULL) {
-                blesscontextprintf(context, kBLLogLevelError,  "Could not determine current boot device\n" );
+            ret = BLCopyOpenFirmwareNVRAMVariableAsString(context,
+                                                 CFSTR("boot-device"),
+                                                 &ofbootdev);
+            
+            if(ret || ofbootdev == NULL) {
+                blesscontextprintf(context, kBLLogLevelError,
+                                   "Can't access \"boot-device\" NVRAM variable\n");
                 return 1;
             }
             
-            if(1 != fscanf(pop, "%*s\t%s\n", &(currentString[0]))) {
-                blesscontextprintf(context, kBLLogLevelError,  "Could not parse output from /usr/sbin/nvram\n" );
-                return 1;
+            blesscontextprintf(context, kBLLogLevelVerbose,  "Current OpenFirmware boot device string is: '%s'\n",
+                               BLGetCStringDescription(ofbootdev));                    
+
+            
+            ret = interpretOFString(context, ofbootdev, currentDev);
+            if(ret) {
+                blesscontextprintf(context, kBLLogLevelError,
+                                   "Can't interpet OpenFirmware boot device\n");
+                return 2;                    
             }
             
-            pclose(pop);
-            
-            blesscontextprintf(context, kBLLogLevelVerbose,  "Current OF: %s\n", currentString );
-            
-            // XXX temporarily trap enet:bootp. Doesn't work with enet1:bootp
-            if(strncmp(currentString, "enet:", strlen("enet:")) == 0) {
-                blesscontextprintf(context, kBLLogLevelVerbose,  "Synthesizing BSDP boot device\n" );
-                strcpy(currentDev, "bsdp://en0@255.255.255.255");
-                isNetboot = 1;
-            } else {
-                ret = BLGetDeviceForOpenFirmwarePath(context, currentString,
-                                                     currentDev);
-                if(ret) {
-                    blesscontextprintf(context, kBLLogLevelError,  "Can't get device for %s: %d\n", currentString, ret );
-                    return 1;
-                    
-                }
-            }
         } else if(preboot == kBLPreBootEnvType_EFI) {
-            // fill this in later
-            //struct statfs sb;
             CFStringRef     efibootdev = NULL;
-            char currentString[1024];
             
             ret = BLCopyEFINVRAMVariableAsString(context,
                                                  CFSTR("efi-boot-device"),
@@ -161,12 +154,10 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
                                    "Can't access \"efi-boot-device\" NVRAM variable\n");
                 return 1;
             }
-            
-            if(CFStringGetCString(efibootdev, currentString, sizeof(currentString), kCFStringEncodingUTF8)) {
-                blesscontextprintf(context, kBLLogLevelVerbose,  "Current EFI boot device string is: '%s'\n",
-                                   currentString);                    
-            }
-            
+
+            blesscontextprintf(context, kBLLogLevelVerbose,  "Current EFI boot device string is: '%s'\n",
+                               BLGetCStringDescription(efibootdev));                    
+
             ret = BLValidateXMLBootOption(context,
                                           CFSTR("efi-boot-device"),
                                           CFSTR("efi-boot-device-data"));
@@ -188,6 +179,72 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
             return 1;
         }
         
+        // Check for Boot!=Root for physical disk boot paths
+        if (0 == strncmp(currentDev, "/dev/", 5)) {
+            char parentDev[MNAMELEN];
+            uint32_t partNum;
+            BLPartitionType mapType;
+            io_service_t service = IO_OBJECT_NULL;
+            CFStringRef contentHint;
+            
+            ret = BLGetIOServiceForDeviceName(context, currentDev + 5, &service);
+            if (ret) {
+                blesscontextprintf(context, kBLLogLevelError,
+                                   "Can't get IOService for %s\n", currentDev);
+                return 3;
+            }
+            
+            contentHint = IORegistryEntryCreateCFProperty(service, CFSTR(kIOMediaContentKey), kCFAllocatorDefault, 0);
+            
+            if (contentHint && CFGetTypeID(contentHint) == CFStringGetTypeID()) {
+                bool doSearch = false;
+                char booterPart[MNAMELEN];
+                
+                ret = BLGetParentDeviceAndPartitionType(context, currentDev,
+                                                        parentDev,
+                                                        &partNum,
+                                                        &mapType);
+                if (ret) {
+                    blesscontextprintf(context, kBLLogLevelError,
+                                       "Can't determine parent media for %s\n", currentDev);
+                    return 3;
+                }
+                
+                switch(mapType) {
+                    case kBLPartitionType_APM:
+                        if (CFEqual(contentHint, CFSTR("Apple_Boot"))) {
+                            doSearch = true;
+                            snprintf(booterPart, sizeof(booterPart), "%ss%u", parentDev, partNum+1);
+                        }
+                        break;
+                    case kBLPartitionType_GPT:
+                        if (CFEqual(contentHint, CFSTR("426F6F74-0000-11AA-AA11-00306543ECAC"))) {
+                            doSearch = true;
+                            snprintf(booterPart, sizeof(booterPart), "%ss%u", parentDev, partNum-1);
+                        }
+                        break;
+                    default:
+                        blesscontextprintf(context, kBLLogLevelVerbose,
+                                           "Partition map type does not support Boot!=Root\n");
+                        break;
+                }
+                
+                if (doSearch) {
+                    ret = findBootRootAggregate(context, booterPart, currentDev);
+                    if (ret) {
+                        blesscontextprintf(context, kBLLogLevelError,
+                                           "Failed to find Boot!=Root aggregate media for %s\n", currentDev);
+                        return 3;
+                    }
+                }
+            }            
+            
+
+            if (contentHint) CFRelease(contentHint);
+            IOObjectRelease(service);
+            
+        }
+            
 	    if( actargs[kgetboot].present) {
             if(actargs[kplist].present) {
                 CFStringRef vol = CFStringCreateWithCString(kCFAllocatorDefault,
@@ -215,32 +272,38 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
             return 0;
 	    }
 	    
-        vols = getmntinfo(&mnts, MNT_NOWAIT);
-        if(vols == -1) {
-            blesscontextprintf(context, kBLLogLevelError,  "Error gettings mounts\n" );
-            return 1;
-        }
-        
-        while(--vols >= 0) {
-            struct statfs sb;
-            
-            // somewhat redundant, but blsustatfs will canonicalize the mount device
-            if(0 != blsustatfs(mnts[vols].f_mntonname, &sb)) {
-                continue;
+        // only look at mountpoints if it looks like a dev node
+        if (0 == strncmp(currentDev, "/dev/", 5)) {
+            struct statfs *mnts;
+            int vols;
+
+            vols = getmntinfo(&mnts, MNT_NOWAIT);
+            if(vols == -1) {
+                blesscontextprintf(context, kBLLogLevelError,  "Error gettings mounts\n" );
+                return 1;
             }
             
-            if(strncmp(sb.f_mntfromname, currentDev, strlen(currentDev)+1) == 0) {
-                blesscontextprintf(context, kBLLogLevelVerbose,  "mount: %s\n", mnts[vols].f_mntonname );
-                strcpy(actargs[kinfo].argument, mnts[vols].f_mntonname);
-                actargs[kinfo].hasArg = 1;
-                break;
+            while(--vols >= 0) {
+                struct statfs sb;
+                
+                // somewhat redundant, but blsustatfs will canonicalize the mount device
+                if(0 != blsustatfs(mnts[vols].f_mntonname, &sb)) {
+                    continue;
+                }
+                
+                if(strncmp(sb.f_mntfromname, currentDev, strlen(currentDev)+1) == 0) {
+                    blesscontextprintf(context, kBLLogLevelVerbose,  "mount: %s\n", mnts[vols].f_mntonname );
+                    strcpy(actargs[kinfo].argument, mnts[vols].f_mntonname);
+                    actargs[kinfo].hasArg = 1;
+                    break;
+                }
+                
             }
-            
         }
         
 	    if(!actargs[kinfo].hasArg) {
             blesscontextprintf(context, kBLLogLevelError,
-                               "Volume for OpenFirmware path %s is not available\n",
+                               "Volume for path %s is not available\n",
                                currentString);
             return 2;
 	    }
@@ -338,7 +401,7 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
         CFNumberGetValue(vsdbref, kCFNumberSInt64Type, &vsdb);
         
         
-    	blesscontextprintf(context, kBLLogLevelNormal, "%s 0x%016qX\n", messages[6][1],
+    	blesscontextprintf(context, kBLLogLevelNormal, "%s 0x%016llX\n", messages[6][1],
                            vsdb);
         
     }
@@ -346,6 +409,38 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
 	CFRelease(dict);
     
     return 0;
+}
+
+static int interpretOFString(BLContextPtr context, CFStringRef ofString, 
+                              char *bootdevice)
+{
+    int                 ret;
+    char currentString[1024];
+    
+    if(!CFStringGetCString(ofString, currentString, sizeof(currentString), kCFStringEncodingUTF8)) {
+        return 1;
+    }
+    
+    // since there are no new OpenFirmware-based machines, just support
+    // enet: and enet1:
+    
+    if(strncmp(currentString, "enet:", strlen("enet:")) == 0
+        || strncmp(currentString, "enet1:", strlen("enet1:")) == 0) {
+         blesscontextprintf(context, kBLLogLevelVerbose,  "Synthesizing BSDP boot device\n" );
+         strcpy(bootdevice, "bsdp://en0@255.255.255.255");
+        return 0;
+     } else {
+         ret = BLGetDeviceForOpenFirmwarePath(context, currentString, bootdevice);
+         if(ret) {
+             blesscontextprintf(context, kBLLogLevelError,  "Can't get device for %s: %d\n", currentString, ret );
+             return 1;
+         }
+         return 0;
+     }
+
+    blesscontextprintf(context, kBLLogLevelError,  "Could not interpret boot device as either network or disk\n" );
+    
+    return 1;
 }
 
 static int interpretEFIString(BLContextPtr context, CFStringRef efiString, 
@@ -406,6 +501,143 @@ static int interpretEFIString(BLContextPtr context, CFStringRef efiString,
     return 1;
 }
 
+// stolen from BLGetDeviceForOFPath
+static int isBootRootPath(BLContextPtr context, mach_port_t iokitPort, io_service_t member,
+					  CFDictionaryRef raidEntry)
+{
+	CFStringRef path;
+	io_string_t	cpath;
+	io_service_t	service;
+	
+	path = CFDictionaryGetValue(raidEntry, CFSTR(kIOBootDevicePathKey));
+	if(path == NULL) return 0;
+    
+	if(!CFStringGetCString(path,cpath,sizeof(cpath),kCFStringEncodingUTF8))
+		return 0;
+    
+	contextprintf(context, kBLLogLevelVerbose,  "Comparing member to %s", cpath);
+	
+	service = IORegistryEntryFromPath(iokitPort, cpath);
+	if(service == 0) {
+		contextprintf(context, kBLLogLevelVerbose,  "\nCould not find service\n");
+		return 0;
+	}
+	
+	if(IOObjectIsEqualTo(service, member)) {
+		contextprintf(context, kBLLogLevelVerbose,  "\tEQUAL\n");
+		IOObjectRelease(service);
+		return 1;
+	} else {
+		contextprintf(context, kBLLogLevelVerbose,  "\tNOT EQUAL\n");		
+	}
+	
+	IOObjectRelease(service);	
+	
+	return 0;
+}
+
+
+
+static int findBootRootAggregate(BLContextPtr context, char *memberPartition, char *bootRootDevice)
+{
+    io_service_t member = IO_OBJECT_NULL, testmedia = IO_OBJECT_NULL;
+    io_iterator_t iter;
+    kern_return_t kret;
+    int ret;
+    bool                foundBootRoot = false;
+    CFStringRef         memberContent = NULL;
+    
+    ret = BLGetIOServiceForDeviceName(context, memberPartition + 5, &member);
+    if (ret) {
+        blesscontextprintf(context, kBLLogLevelError,
+                           "Can't get IOService for %s\n", memberPartition);
+        return 3;
+    }
+    
+    kret = IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching(kIOMediaClass), &iter);
+	if(kret != KERN_SUCCESS) {
+        IOObjectRelease(member);
+		contextprintf(context, kBLLogLevelVerbose,  "Could not find any media devices on the system\n");
+		return 2;
+	}
+    
+    while((testmedia = IOIteratorNext(iter))) {
+		CFTypeRef			data = NULL;
+        io_string_t         iopath;
+        
+        if(0 == IORegistryEntryGetPath(testmedia, kIOServicePlane, iopath)) {
+            contextprintf(context, kBLLogLevelVerbose,  "Checking %s\n", iopath);
+        }
+        
+        data = IORegistryEntrySearchCFProperty( testmedia,
+                                               kIOServicePlane,
+                                               CFSTR(kIOBootDeviceKey),
+                                               kCFAllocatorDefault,
+                                               kIORegistryIterateRecursively|
+                                               kIORegistryIterateParents);
+        
+        if(data) {
+            if (CFGetTypeID(data) == CFArrayGetTypeID()) {
+                CFIndex i, count = CFArrayGetCount(data);
+                for(i=0; i < count; i++) {
+                    CFDictionaryRef ent = CFArrayGetValueAtIndex((CFArrayRef)data,i);
+                    if(isBootRootPath(context, kIOMasterPortDefault, member, ent)) {
+                        foundBootRoot = true;
+                        break;
+                    }
+                }
+                
+            } else if(CFGetTypeID(data) == CFDictionaryGetTypeID()) {
+                if(isBootRootPath(context, kIOMasterPortDefault, member, (CFDictionaryRef)data)) {
+                    foundBootRoot = true;
+                }
+            }
+            CFRelease(data);
+		}
+        
+        if (foundBootRoot) {
+            CFStringRef bsdName;
+            
+            bsdName = IORegistryEntryCreateCFProperty(testmedia, CFSTR(kIOBSDNameKey), kCFAllocatorDefault, 0);
+            
+            contextprintf(context, kBLLogLevelVerbose,  "Found Boot!=Root aggregate media %s\n", BLGetCStringDescription(bsdName));
+            
+            strcpy(bootRootDevice, "/dev/");
+            CFStringGetCString(bsdName, bootRootDevice+5, 1024-5, kCFStringEncodingUTF8);
+            
+            CFRelease(bsdName);
+            
+        }
+        
+        IOObjectRelease(testmedia);
+        
+        if (foundBootRoot) break;
+    }
+    IOObjectRelease(iter);
+    
+    memberContent = IORegistryEntryCreateCFProperty(member, CFSTR(kIOMediaContentKey), kCFAllocatorDefault, 0);
+    IOObjectRelease(member);
+    
+
+    // not boot root. It might still be something like UFS
+    if (!foundBootRoot) {
+        if (memberContent && (!CFEqual(memberContent, CFSTR("Apple_Boot")) && !CFEqual(memberContent, CFSTR("Apple_HFS")))) {
+            foundBootRoot = true;
+            contextprintf(context, kBLLogLevelVerbose,  "Found legacy Apple_Boot media %s\n", BLGetCStringDescription(memberContent));
+            
+            strcpy(bootRootDevice, memberPartition);
+        }
+    }
+    
+    if (memberContent) CFRelease(memberContent);
+    
+    if (foundBootRoot) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+    
 static void addElements(const void *key, const void *value, void *context)
 {
     CFMutableDictionaryRef dict = (CFMutableDictionaryRef)context;

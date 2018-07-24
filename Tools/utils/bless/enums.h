@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Nov 14 2001.
- *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright (c) 2001-2007 Apple Inc. All Rights Reserved.
  *
  *  $Id: enums.h,v 1.37 2006/07/17 22:19:05 ssen Exp $
  *
@@ -57,7 +57,6 @@ enum {
     kmkext,
     kmount,
     knetboot,
-    knetbootserver,
     knextonly,
     kopenfolder,
     koptions,
@@ -70,7 +69,6 @@ enum {
     ksaveX,
     kserver,
     ksetboot,
-    ksetOF,
     kshortform,
     kstartupfile,
     kuse9,
@@ -78,6 +76,9 @@ enum {
     kversion,
     klast
 };
+
+// getopt_long(3) uses ':' as a special return value
+extern int too_many_options[klast >= ':' ? -1 : 0];
 
 #define kMaxArgLength 2048
 

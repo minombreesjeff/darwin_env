@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2006-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 5/22/06.
- *  Copyright 2006 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2006-2007 Apple Inc. All Rights Reserved.
  *
  */
 
@@ -211,6 +211,7 @@ int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdNa
 
     IOObjectRelease(rootDev);
     
+	goto gotinfo;
 gotinfo:
 	
     if(getenv("BL_PRIMARY_BOOTER_INDEX")) {

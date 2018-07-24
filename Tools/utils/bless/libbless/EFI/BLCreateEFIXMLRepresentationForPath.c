@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2005-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 11/9/05.
- *  Copyright 2005 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2005-2007 Apple Inc. All Rights Reserved.
  *
  */
 
@@ -35,9 +35,6 @@
 #import <IOKit/IOKitKeys.h>
 #import <IOKit/storage/IOMedia.h>
 
-#if !DISABLE_DISK_ARBITRATION
-#include <DiskArbitration/DiskArbitration.h>
-#endif
 #import <CoreFoundation/CoreFoundation.h>
 
 #include <string.h>
@@ -46,6 +43,10 @@
 
 #include "bless.h"
 #include "bless_private.h"
+
+#if USE_DISKARBITRATION
+#include <DiskArbitration/DiskArbitration.h>
+#endif
 
 int addMatchingInfoForBSDName(BLContextPtr context,
 			      mach_port_t masterPort,
@@ -225,7 +226,7 @@ int addMatchingInfoForBSDName(BLContextPtr context,
         CFUUIDRef       fsuuid = NULL;
 		CFStringRef     fsuuidstr = NULL;        
 		io_string_t path;
-#if !DISABLE_DISK_ARBITRATION
+#if USE_DISKARBITRATION
         DASessionRef    session = NULL;
         DADiskRef       dadisk = NULL;
 		
@@ -251,7 +252,7 @@ int addMatchingInfoForBSDName(BLContextPtr context,
             
             CFRelease(session);
         }
-#endif // DISABLE_DISK_ARBITRATION
+#endif // USE_DISKARBITRATION
 		
         if(fsuuid) {
             char        fsuuidCString[64];

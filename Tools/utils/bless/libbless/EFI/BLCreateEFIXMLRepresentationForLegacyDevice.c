@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2005-2007 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,7 @@
  *  bless
  *
  *  Created by Shantonu Sen on 1/24/06.
- *  Copyright 2006 Apple Computer, Inc. All rights reserved.
+ *  Copyright 2006-2007 Apple Inc. All Rights Reserved.
  *
  */
 
@@ -37,7 +37,6 @@
 #include <IOKit/usb/IOUSBLib.h>
 #include <IOKit/storage/IOStorageProtocolCharacteristics.h>
 
-#include <DiskArbitration/DiskArbitration.h>
 #include <CoreFoundation/CoreFoundation.h>
 
 #include <string.h>
@@ -120,7 +119,7 @@ int BLCreateEFIXMLRepresentationForLegacyDevice(BLContextPtr context,
     
             if(CFNumberGetValue(number, kCFNumberSInt32Type, &num32)) {
                 fvaddr = num32;
-                contextprintf(context, kBLLogLevelVerbose,  "Got start address %qx\n", fvaddr);
+                contextprintf(context, kBLLogLevelVerbose,  "Got start address %llx\n", fvaddr);
             }
         }
         if(number) CFRelease(number);
@@ -133,7 +132,7 @@ int BLCreateEFIXMLRepresentationForLegacyDevice(BLContextPtr context,
     
             if(CFNumberGetValue(number, kCFNumberSInt32Type, &num32)) {
                 fvsize = num32;
-                contextprintf(context, kBLLogLevelVerbose,  "Got size %qx\n", fvsize);
+                contextprintf(context, kBLLogLevelVerbose,  "Got size %llx\n", fvsize);
             }
         }
         if(number) CFRelease(number);
