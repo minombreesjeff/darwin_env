@@ -8,7 +8,7 @@ AC_CANONICAL_HOST
 
 LIBXML_MAJOR_VERSION=2
 LIBXML_MINOR_VERSION=9
-LIBXML_MICRO_VERSION=1
+LIBXML_MICRO_VERSION=2
 LIBXML_MICRO_VERSION_SUFFIX=
 LIBXML_VERSION=$LIBXML_MAJOR_VERSION.$LIBXML_MINOR_VERSION.$LIBXML_MICRO_VERSION$LIBXML_MICRO_VERSION_SUFFIX
 LIBXML_VERSION_INFO=`expr $LIBXML_MAJOR_VERSION + $LIBXML_MINOR_VERSION`:$LIBXML_MICRO_VERSION:$LIBXML_MINOR_VERSION
@@ -68,6 +68,7 @@ AC_PATH_PROG(PERL, perl, /usr/bin/perl)
 AC_PATH_PROG(WGET, wget, /usr/bin/wget)
 AC_PATH_PROG(XMLLINT, xmllint, /usr/bin/xmllint)
 AC_PATH_PROG(XSLTPROC, xsltproc, /usr/bin/xsltproc)
+PKG_PROG_PKG_CONFIG
 
 LT_INIT
 
@@ -156,6 +157,9 @@ AC_ARG_WITH(push,
 [  --with-push             add the PUSH parser interfaces (on)])
 AC_ARG_WITH(python,
 [  --with-python[[=DIR]]     build Python bindings if found])
+AC_ARG_WITH(python_install_dir,
+[  --with-python-install-dir=DIR
+                          install Python bindings in DIR])
 AC_ARG_WITH(reader,
 [  --with-reader           add the xmlReader parsing interface (on)])
 AC_ARG_WITH(readline,
@@ -231,6 +235,7 @@ fi
 if test "$with_schematron" = "yes"
 then
     with_pattern=yes
+    with_tree=yes
     with_xpath=yes
 fi
 if test "$with_reader" = "yes"
@@ -395,6 +400,8 @@ if test "$with_zlib" = "no"; then
     echo "Disabling compression support"
 else
     AC_CHECK_HEADERS(zlib.h,
+        [SAVE_LDFLAGS="${LDFLAGS}"
+	 LDFLAGS="-L${Z_DIR}/lib"
 	AC_CHECK_LIB(z, gzread,[
 	    AC_DEFINE([HAVE_LIBZ], [1], [Have compression library])
 	    WITH_ZLIB=1
@@ -408,7 +415,8 @@ else
 		esac]
 	    else
 		Z_LIBS="-lz"
-	    fi]))
+	    fi])
+	 LDFLAGS="${SAVE_LDFLAGS}"])
 fi
 
 AC_SUBST(Z_CFLAGS)
@@ -423,16 +431,36 @@ WITH_LZMA=0
 if test "$with_lzma" = "no"; then
     echo "Disabling compression support"
 else
-    AC_CHECK_HEADERS(lzma.h,
-	AC_CHECK_LIB(lzma, lzma_code,[
-	    AC_DEFINE([HAVE_LIBLZMA], [1], [Have compression library])
-	    WITH_LZMA=1
-	    if test "x${LZMA_DIR}" != "x"; then
-		LZMA_CFLAGS="-I${LZMA_DIR}/include"
-		LZMA_LIBS="-L${LZMA_DIR}/lib -llzma"
-	    else
-		LZMA_LIBS="-llzma"
-	    fi]))
+    # Try pkg-config first so that static linking works.
+    # If this succeeeds, we ignore the WITH_LZMA directory.
+    PKG_CHECK_MODULES([LZMA],[liblzma],
+        [have_liblzma=yes],
+        [have_liblzma=no])
+
+     # If pkg-config failed, fall back to AC_CHECK_LIB. This
+     # will not pick up the necessary LIBS flags for liblzma's
+     # private dependencies, though, so static linking may fail.
+     if test "x$have_liblzma" = "xno"; then
+         AC_CHECK_HEADERS(lzma.h,
+	    [SAVE_LDFLAGS="${LDFLAGS}"
+	     LDFLAGS="-L${LZMA_DIR}/lib"
+            AC_CHECK_LIB(lzma, lzma_code,[
+                have_liblzma=yes
+                if test "x${LZMA_DIR}" != "x"; then
+                    LZMA_CFLAGS="-I${LZMA_DIR}/include"
+                    LZMA_LIBS="-L${LZMA_DIR}/lib -llzma"
+                else
+                    LZMA_LIBS="-llzma"
+                fi],
+                [have_liblzma=no])
+	     LDFLAGS="${SAVE_LDFLAGS}"])
+    fi
+
+    # Found the library via either method?
+    if test "x$have_liblzma" = "xyes"; then
+        AC_DEFINE([HAVE_LIBLZMA], [1], [Have compression library])
+        WITH_LZMA=1
+    fi
 fi
 
 AC_SUBST(LZMA_CFLAGS)
@@ -554,6 +582,16 @@ else
     fi
 fi
 
+dnl Checking whether va_list is an array type
+AC_MSG_CHECKING([whether va_list is an array type])
+AC_TRY_COMPILE2([
+#include <stdarg.h>
+void a(va_list * ap) {}],[
+va_list ap1, ap2; a(&ap1); ap2 = (va_list) ap1],[
+  AC_MSG_RESULT(no)],[
+  AC_MSG_RESULT(yes)
+  AC_DEFINE([VA_LIST_IS_ARRAY], [1],[Define if va_list is an array type])])
+
 dnl Checks for inet libraries:
 AC_SEARCH_LIBS(gethostent, [nsl])
 AC_SEARCH_LIBS(setsockopt, [socket net network])
@@ -585,6 +623,37 @@ AC_TRY_COMPILE2([
       AC_MSG_WARN(could not determine)
       XML_SOCKLEN_T="int"])])])
 AC_DEFINE_UNQUOTED(XML_SOCKLEN_T, $XML_SOCKLEN_T, [Determine what socket length (socklen_t) data type is])
+
+dnl Checking if gethostbyname() argument is const.
+AC_MSG_CHECKING([for const gethostbyname() argument])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <netdb.h>]],
+    [[(void)gethostbyname((const char *)"");]])],
+have_gethostbyname_const_arg=yes,
+have_gethostbyname_const_arg=no)
+AC_MSG_RESULT($have_gethostbyname_const_arg)
+if test x"$have_gethostbyname_const_arg" = x"yes"; then
+    AC_DEFINE([GETHOSTBYNAME_ARG_CAST], [],
+      [Type cast for the gethostbyname() argument])
+else
+    AC_DEFINE([GETHOSTBYNAME_ARG_CAST], [(char *)],
+      [Type cast for the gethostbyname() argument])
+fi
+
+dnl Checking if send() second argument is const.
+AC_MSG_CHECKING([for const send() second argument])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <sys/types.h>
+#include <sys/socket.h>]],
+    [[(void)send(1,(const char *)"",1,1);]])],
+have_send_const_arg2=yes,
+have_send_const_arg2=no)
+AC_MSG_RESULT($have_send_const_arg2)
+if test x"$have_send_const_arg2" = x"yes"; then
+    AC_DEFINE([SEND_ARG2_CAST], [],
+      [Type cast for the send() function 2nd arg])
+else
+    AC_DEFINE([SEND_ARG2_CAST], [(char *)],
+      [Type cast for the send() function 2nd arg])
+fi
 
 dnl ***********************Checking for availability of IPv6*******************
 
@@ -814,6 +883,10 @@ if test "$with_python" != "no" ; then
 		fi
 	    fi
 	fi
+    fi
+    if test "$with_python_install_dir" != ""
+    then
+	PYTHON_SITE_PACKAGES="$with_python_install_dir"
     fi
     if test "$PYTHON_VERSION" != "" -a "$PYTHON_SITE_PACKAGES" = ""
     then
@@ -1291,6 +1364,29 @@ AC_SUBST(WITH_XINCLUDE)
 AC_SUBST(XINCLUDE_OBJ)
 AC_SUBST(TEST_XINCLUDE)
 
+if test "$with_xptr" = "" -a "$with_xpath" = "no" ; then
+    with_xptr=no
+fi
+
+if test "$with_schematron" = "" -a "$with_xpath" = "no" ; then
+    with_schematron=no
+fi
+
+if test "$with_schematron" = "no" ; then
+    echo "Disabling Schematron support"
+    WITH_SCHEMATRON=0
+    TEST_SCHEMATRON=
+else 
+    echo "Enabled Schematron support"
+    WITH_SCHEMATRON=1
+    TEST_SCHEMATRON="Schematrontests"
+    with_xpath=yes
+    with_pattern=yes
+    with_schematron=yes
+fi
+AC_SUBST(WITH_SCHEMATRON)
+AC_SUBST(TEST_SCHEMATRON)
+
 if test "$with_xpath" = "no" ; then
     echo Disabling XPATH support
     WITH_XPATH=0
@@ -1449,20 +1545,6 @@ fi
 fi
 AC_SUBST(WITH_ISO8859X)
 
-if test "$with_schematron" = "no" ; then
-    echo "Disabling Schematron support"
-    WITH_SCHEMATRON=0
-    TEST_SCHEMATRON=
-else    
-    echo "Enabled Schematron support"
-    WITH_SCHEMATRON=1
-    TEST_SCHEMATRON="Schematrontests"
-    with_xpath=yes
-    with_pattern=yes
-fi
-AC_SUBST(WITH_SCHEMATRON)
-AC_SUBST(TEST_SCHEMATRON)
-
 if test "$with_schemas" = "no" ; then
     echo "Disabling Schemas/Relax-NG support"
     WITH_SCHEMAS=0
@@ -1613,8 +1695,9 @@ rm -f COPYING.LIB COPYING
 ln -s $srcdir/Copyright COPYING
 
 # keep on one line for cygwin c.f. #130896
-AC_CONFIG_FILES([libxml2.spec:libxml.spec.in Makefile include/Makefile include/libxml/Makefile doc/Makefile doc/examples/Makefile doc/devhelp/Makefile example/Makefile python/Makefile python/tests/Makefile xstc/Makefile include/libxml/xmlversion.h xml2-config libxml-2.0.pc libxml-2.0-uninstalled.pc python/setup.py])
+AC_CONFIG_FILES([libxml2.spec:libxml.spec.in Makefile include/Makefile include/libxml/Makefile doc/Makefile doc/examples/Makefile doc/devhelp/Makefile example/Makefile python/Makefile python/tests/Makefile xstc/Makefile include/libxml/xmlversion.h libxml-2.0.pc libxml-2.0-uninstalled.pc libxml2-config.cmake])
+AC_CONFIG_FILES([python/setup.py], [chmod +x python/setup.py])
+AC_CONFIG_FILES([xml2-config], [chmod +x xml2-config])
 AC_OUTPUT
 
-chmod +x xml2-config python/setup.py
 echo Done configuring
