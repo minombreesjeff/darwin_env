@@ -32,21 +32,42 @@
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOKitKeys.h>
 
+#include <sys/stat.h>
 #include "bless.h"
 #include "bless_private.h"
 
 // Check if a system supports CSM legacy mode
 
 #define kBL_APPLE_VENDOR_NVRAM_GUID "4D1EDE05-38C7-4A6A-9CC6-4BCCA8B38C14"
-
+static bool _getFeatureFlags(BLContextPtr context, uint32_t *featureMask,
+                        uint32_t *featureFlags);
 
 bool BLSupportsLegacyMode(BLContextPtr context)
 {
     
-    io_registry_entry_t optionsNode = IO_OBJECT_NULL;
-    CFDataRef		dataRef;
 	uint32_t		featureMask;
 	uint32_t		featureFlags;
+    
+    if(!_getFeatureFlags(context, &featureMask, &featureFlags)) {
+        return false;
+    }
+
+	if((featureMask & 0x00000001)
+	   && (featureFlags & 0x00000001)) {
+        contextprintf(context, kBLLogLevelVerbose,  "Legacy mode suppported\n");
+		return true;
+	}
+	
+    contextprintf(context, kBLLogLevelVerbose,  "Legacy mode NOT suppported\n");
+    return false;
+}
+
+static bool _getFeatureFlags(BLContextPtr context, uint32_t *featureMask,
+                        uint32_t *featureFlags)
+{
+    
+    io_registry_entry_t optionsNode = IO_OBJECT_NULL;
+    CFDataRef		dataRef;
     
     optionsNode = IORegistryEntryFromPath(kIOMasterPortDefault, kIODeviceTreePlane ":/options");
     
@@ -64,9 +85,9 @@ bool BLSupportsLegacyMode(BLContextPtr context)
 	   && CFDataGetLength(dataRef) == sizeof(uint32_t)) {
 		const UInt8	*bytes = CFDataGetBytePtr(dataRef);
 		
-		featureMask = CFSwapInt32LittleToHost(*(uint32_t *)bytes);
+		*featureMask = CFSwapInt32LittleToHost(*(uint32_t *)bytes);
 	} else {
-		featureMask = 0x000003FF;
+		*featureMask = 0x000003FF;
 	}
     
 	if(dataRef) CFRelease(dataRef);
@@ -80,22 +101,17 @@ bool BLSupportsLegacyMode(BLContextPtr context)
 	   && CFDataGetLength(dataRef) == sizeof(uint32_t)) {
 		const UInt8	*bytes = CFDataGetBytePtr(dataRef);
 		
-		featureFlags = CFSwapInt32LittleToHost(*(uint32_t *)bytes);
+		*featureFlags = CFSwapInt32LittleToHost(*(uint32_t *)bytes);
 	} else {
-		featureFlags = 0x00000014;
+		*featureFlags = 0x00000014;
 	}
     
 	if(dataRef) CFRelease(dataRef);
 		
 	IOObjectRelease(optionsNode);
     
-	contextprintf(context, kBLLogLevelVerbose,  "Firmware feature mask: 0x%08X\n", featureMask);
-	contextprintf(context, kBLLogLevelVerbose,  "Firmware features: 0x%08X\n", featureFlags);
-
-	if((featureMask & 0x00000001)
-	   && (featureFlags & 0x00000001)) {
-		return true;
-	}
+	contextprintf(context, kBLLogLevelVerbose,  "Firmware feature mask: 0x%08X\n", *featureMask);
+	contextprintf(context, kBLLogLevelVerbose,  "Firmware features: 0x%08X\n", *featureFlags);
 	
-    return false;
+    return true;
 }

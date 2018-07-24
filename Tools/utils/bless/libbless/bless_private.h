@@ -28,7 +28,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 28 2002.
  *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: bless_private.h,v 1.21 2005/11/15 23:59:52 ssen Exp $
+ *  $Id: bless_private.h,v 1.22 2006/05/31 22:30:26 ssen Exp $
  *
  */
 
@@ -54,6 +54,10 @@ uint32_t BLBlockChecksum(const void *buf , uint32_t length);
 int BLCopyFileFromCFData(BLContextPtr context, const CFDataRef data,
 	     const char * dest, int shouldPreallocate);
 
+/*
+ * convert to a char * description
+ */
+char *BLGetCStringDescription(CFTypeRef typeRef);
 
 /*
  * check if the context is null. if not, check if the log funcion is null

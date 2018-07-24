@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Nov 14 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: bless.c,v 1.83 2006/03/07 16:51:39 ssen Exp $
+ *  $Id: bless.c,v 1.85 2006/07/17 22:19:05 ssen Exp $
  *
  */
 
@@ -45,8 +45,14 @@
 #include "structs.h"
 
 #include "bless.h"
+#include "protos.h"
 
 struct clarg actargs[klast];
+
+/*
+ * To add an option, allocate an enum in enums.h, add a getopt_long entry here,
+ * add to main(), add to usage and man page
+ */
 
 /* options descriptor */
 static struct option longopts[] = {
@@ -66,6 +72,7 @@ static struct option longopts[] = {
 { "label",          required_argument,      0,              klabel },
 { "labelfile",      required_argument,      0,              klabelfile },
 { "legacy",         no_argument,            0,              klegacy },
+{ "legacydrivehint",required_argument,      0,              klegacydrivehint },
 { "mkext",          required_argument,      0,              kmkext },
 { "mount",          required_argument,      0,              kmount },
 { "netboot",        no_argument,            0,              knetboot},
@@ -82,6 +89,7 @@ static struct option longopts[] = {
 { "server",         required_argument,      0,              kserver },
 { "setBoot",        no_argument,            0,              ksetboot },
 { "setOF",          no_argument,            0,              ksetOF },
+{ "shortform",      no_argument,            0,              kshortform },
 { "startupfile",    required_argument,      0,              kstartupfile },
 { "use9",           no_argument,            0,              kuse9 },
 { "verbose",        no_argument,            0,              kverbose },
@@ -91,19 +99,6 @@ static struct option longopts[] = {
 
 extern char *optarg;
 extern int optind;
-
-
-int modeInfo(BLContextPtr context, struct clarg actargs[klast]);
-int modeDevice(BLContextPtr context, struct clarg actargs[klast]);
-int modeFolder(BLContextPtr context, struct clarg actargs[klast]);
-int modeFirmware(BLContextPtr context, struct clarg actargs[klast]);
-int modeNetboot(BLContextPtr context, struct clarg actargs[klast]);
-
-int blesslog(void *context, int loglevel, const char *string);
-extern void usage();
-extern void usage_short();
-
-extern void addPayload(const char *path);
 
 void arg_err(char *message, char *opt);
 
@@ -163,6 +158,7 @@ int main (int argc, char * argv[])
             case klabel:
             case klabelfile:
             case klegacy:
+            case klegacydrivehint:
             case kmkext:
             case kmount:
             case knetboot:
@@ -176,6 +172,7 @@ int main (int argc, char * argv[])
             case ksaveX:
             case kserver:
             case ksetboot:
+            case kshortform:
             case kstartupfile:
             case kuse9:
             case kversion:

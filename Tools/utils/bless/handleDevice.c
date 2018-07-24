@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: handleDevice.c,v 1.51 2006/03/07 16:51:40 ssen Exp $
+ *  $Id: handleDevice.c,v 1.54 2006/07/19 00:15:36 ssen Exp $
  *
  *
  */
@@ -44,13 +44,7 @@
 #include "structs.h"
 
 #include "bless.h"
-
-extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fmt, ...)
-    __attribute__ ((format (printf, 3, 4)));
-extern int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
-				   CFDataRef labelData);
-extern int setefidevice(BLContextPtr context, const char * bsdname, int bootNext,
-				 int bootLegacy, const char *optionalData);
+#include "protos.h"
 
 int modeDevice(BLContextPtr context, struct clarg actargs[klast]) {
     int err = 0;
@@ -102,7 +96,7 @@ int modeDevice(BLContextPtr context, struct clarg actargs[klast]) {
 							   actargs[kbootinfo].argument);
 		}
 	}
-		
+    		
     /* Set Open Firmware to boot off the specified volume*/
     if(actargs[ksetboot].present) {
         if(preboot == kBLPreBootEnvType_EFI) {
@@ -110,7 +104,9 @@ int modeDevice(BLContextPtr context, struct clarg actargs[klast]) {
             err = setefidevice(context, actargs[kdevice].argument + strlen("/dev/"),
                                  actargs[knextonly].present,
                                  actargs[klegacy].present,
-                                 actargs[koptions].present ? actargs[koptions].argument : NULL);
+                                 actargs[klegacydrivehint].present ? actargs[klegacydrivehint].argument : NULL,
+                                 actargs[koptions].present ? actargs[koptions].argument : NULL,
+                                 actargs[kshortform].present ? true : false);
         } else {        
             err = setboot(context, actargs[kdevice].argument, bootXdata, labeldata);
         }

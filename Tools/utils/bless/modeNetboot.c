@@ -44,13 +44,7 @@
 
 #include "bless.h"
 #include "bless_private.h"
-
-extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fmt, ...)
-    __attribute__ ((format (printf, 3, 4)));
-
-extern int setefinetworkpath(BLContextPtr context, CFStringRef booterXML,
-							 CFStringRef kernelXML, CFStringRef mkextXML,
-                             int bootNext);
+#include "protos.h"
 
 static bool validateAddress(const char *host);
 
@@ -139,15 +133,20 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
         char bootfile[1024];
         char bootcommand[1024];
         char bootargs[1024];
+		char ofstring[1024];
         
         pid_t p;
         int status;
 
-        if(0 != strcmp(host, "255.255.255.255") && strlen(path)) {
-            sprintf(bootdevice, "boot-device=enet:%s,%s", host, path);
-        } else {
-            sprintf(bootdevice, "boot-device=enet:bootp");                
-        }
+		ret = BLGetOpenFirmwareBootDeviceForNetworkPath(context,
+                                               interface,
+                                               strcmp(host, "255.255.255.255") == 0 ? NULL : host,
+                                               path,
+											   ofstring);
+		if(ret)
+			return 3;
+
+		sprintf(bootdevice, "boot-device=%s", ofstring);
         
         if(actargs[kkernel].present) {
             ret = parseURL(context,
@@ -160,8 +159,16 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
 						   useBackslash);            
             if(ret)
                 return 1;
+
+			ret = BLGetOpenFirmwareBootDeviceForNetworkPath(context,
+												   interface,
+												   strcmp(host, "255.255.255.255") == 0 ? NULL : host,
+												   path,
+												   ofstring);
+			if(ret)
+				return 4;
             
-            sprintf(bootfile, "boot-file=enet:%s,%s", host, path);
+            sprintf(bootfile, "boot-file=%s", ofstring);
         } else {
             sprintf(bootfile, "boot-file=");
         }

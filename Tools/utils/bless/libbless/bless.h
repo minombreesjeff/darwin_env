@@ -28,7 +28,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 21 2002.
  *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: bless.h,v 1.74 2006/03/07 16:51:45 ssen Exp $
+ *  $Id: bless.h,v 1.79 2006/07/19 00:15:38 ssen Exp $
  *
  */
  
@@ -40,6 +40,7 @@
 
 #include <sys/types.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef _cplusplus
 extern "C" {
@@ -641,6 +642,12 @@ int BLGetOpenFirmwareBootDeviceForMountPoint(BLContextPtr context,
 					     const char * mountpoint,
 					     char * ofstring);
 
+int BLGetOpenFirmwareBootDeviceForNetworkPath(BLContextPtr context,
+                                               const char *interface,
+                                               const char *host,
+                                               const char *path,
+											   char * ofstring);
+
 /*!
  * @function BLSetOpenFirmwareBootDevice
  * @abstract Set OF <i>boot-device</i>
@@ -731,12 +738,14 @@ bool BLIsValidNetworkInterface(BLContextPtr context,
 int BLCreateEFIXMLRepresentationForPath(BLContextPtr context,
                                           const char *path,
                                           const char *optionalData,
-                                          CFStringRef *xmlString);
+                                          CFStringRef *xmlString,
+                                          bool shortForm);
 
 int BLCreateEFIXMLRepresentationForDevice(BLContextPtr context,
                                           const char *bsdName,
                                           const char *optionalData,
-                                          CFStringRef *xmlString);
+                                          CFStringRef *xmlString,
+                                          bool shortForm);
 
 int BLCreateEFIXMLRepresentationForLegacyDevice(BLContextPtr context,
                                           const char *bsdName,
@@ -773,11 +782,17 @@ int BLValidateXMLBootOption(BLContextPtr context,
 
 bool BLSupportsLegacyMode(BLContextPtr context);
 
-
 // filter out bad boot-args
 int BLPreserveBootArgs(BLContextPtr context,
                        const char *input,
                        char *output);
+
+#define kBLDataPartitionsKey        CFSTR("Data Partitions")
+#define kBLAuxiliaryPartitionsKey   CFSTR("Auxiliary Partitions")
+#define kBLSystemPartitionsKey      CFSTR("System Partitions")
+
+int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdName,
+                                        CFDictionaryRef *outDict);
 
 #ifdef _cplusplus
 }

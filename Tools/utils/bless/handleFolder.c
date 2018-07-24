@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: handleFolder.c,v 1.75 2006/03/07 17:09:25 ssen Exp $
+ *  $Id: handleFolder.c,v 1.79 2006/07/21 14:59:24 ssen Exp $
  *
  */
 
@@ -45,20 +45,14 @@
 
 #include "bless.h"
 #include "bless_private.h"
+#include "protos.h"
 
 enum {
   kIsInvisible                  = 0x4000, /* Files and folders */
 };
 
-extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fmt, ...)
-    __attribute__ ((format (printf, 3, 4)));
-
 
 static int isOFLabel(const char *data, int labelsize);
-extern int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
-				   CFDataRef labelData);
-extern int setefifilepath(BLContextPtr context, const char * path, int bootNext,
-				   int bootLegacy, const char *optionalData);
 
 int modeFolder(BLContextPtr context, struct clarg actargs[klast]) {
 	
@@ -486,13 +480,16 @@ int modeFolder(BLContextPtr context, struct clarg actargs[klast]) {
 			// if you blessed the volume, then just point EFI at the volume.
 			// only if you didn't bless, but you have something interesting
 			// to point at, should you use actargs[kfile]
+            
 
             err = setefifilepath(context, ( !shouldBless && actargs[kfile].present ?
 											actargs[kfile].argument :
 											actargs[kmount].argument),
                                  actargs[knextonly].present,
                                  actargs[klegacy].present,
-                                 actargs[koptions].present ? actargs[koptions].argument : NULL);
+                                 actargs[klegacydrivehint].present ? actargs[klegacydrivehint].argument : NULL,
+                                 actargs[koptions].present ? actargs[koptions].argument : NULL,
+                                 actargs[kshortform].present ? true : false);
             if(err) {
                 return 3;
             }

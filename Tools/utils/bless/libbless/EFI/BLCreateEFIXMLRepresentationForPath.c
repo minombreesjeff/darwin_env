@@ -50,12 +50,14 @@
 int addMatchingInfoForBSDName(BLContextPtr context,
 			      mach_port_t masterPort,
 			      CFMutableDictionaryRef dict,
-			      const char *bsdName);
+			      const char *bsdName,
+                  bool shortForm);
 
 int BLCreateEFIXMLRepresentationForPath(BLContextPtr context,
                                         const char *path,
                                         const char *optionalData,
-                                        CFStringRef *xmlString)
+                                        CFStringRef *xmlString,
+                                        bool shortForm)
 {
     char fullpath[MAXPATHLEN];
     struct statfs sb;
@@ -128,7 +130,7 @@ int BLCreateEFIXMLRepresentationForPath(BLContextPtr context,
     dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
                                      &kCFTypeDictionaryValueCallBacks);
 
-    ret = addMatchingInfoForBSDName(context, masterPort, dict, sb.f_mntfromname+strlen("/dev/"));
+    ret = addMatchingInfoForBSDName(context, masterPort, dict, sb.f_mntfromname+strlen("/dev/"), shortForm);
     if(ret) {
       CFRelease(dict);
       CFRelease(array);
@@ -191,7 +193,8 @@ int BLCreateEFIXMLRepresentationForPath(BLContextPtr context,
 int addMatchingInfoForBSDName(BLContextPtr context,
 			      mach_port_t masterPort,
 			      CFMutableDictionaryRef dict,
-			      const char *bsdName)
+			      const char *bsdName,
+                  bool shortForm)
 {
     io_service_t                media = IO_OBJECT_NULL, checkMedia = IO_OBJECT_NULL;
     CFStringRef                 uuid = NULL;
@@ -212,7 +215,7 @@ int addMatchingInfoForBSDName(BLContextPtr context,
     
     if(media == IO_OBJECT_NULL) {
         contextprintf(context, kBLLogLevelError, "Could not find object for %s\n", bsdName);
-	CFRelease(lastBSDName);
+        CFRelease(lastBSDName);
         return 1;
     }
     
@@ -305,20 +308,20 @@ int addMatchingInfoForBSDName(BLContextPtr context,
     } else {
       CFMutableDictionaryRef propMatch;
 
-        contextprintf(context, kBLLogLevelVerbose, "IOMedia %s has %s\n",
-                      bsdName, kIOMediaUUIDKey);
+        contextprintf(context, kBLLogLevelVerbose, "IOMedia %s has UUID %s\n",
+                      bsdName, BLGetCStringDescription(uuid));
 
-	propMatch = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
-					      &kCFTypeDictionaryKeyCallBacks,
-					      &kCFTypeDictionaryValueCallBacks);
-	CFDictionaryAddValue(propMatch, CFSTR(kIOMediaUUIDKey), uuid);
+        propMatch = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                              &kCFTypeDictionaryKeyCallBacks,
+                              &kCFTypeDictionaryValueCallBacks);
+        CFDictionaryAddValue(propMatch, CFSTR(kIOMediaUUIDKey), uuid);
 
-	propDict = IOServiceMatching(kIOMediaClass);
-	CFDictionaryAddValue(propDict,  CFSTR(kIOPropertyMatchKey), propMatch);
-	CFRelease(propMatch);
+        propDict = IOServiceMatching(kIOMediaClass);
+        CFDictionaryAddValue(propDict,  CFSTR(kIOPropertyMatchKey), propMatch);
+        CFRelease(propMatch);
 
-	// add a hint to the top-level dict
-	CFDictionaryAddValue(dict, CFSTR("BLLastBSDName"), lastBSDName);
+        // add a hint to the top-level dict
+        CFDictionaryAddValue(dict, CFSTR("BLLastBSDName"), lastBSDName);
 
         CFRelease(uuid);
     }
@@ -347,7 +350,10 @@ int addMatchingInfoForBSDName(BLContextPtr context,
     CFDictionaryAddValue(dict, CFSTR("IOMatch"), propDict);        
     CFRelease(lastBSDName);
     CFRelease(propDict);
-    
+
+    if(shortForm) {
+        CFDictionaryAddValue(dict, CFSTR("IOEFIShortForm"), kCFBooleanTrue);
+    }
     
     return 0;
 }

@@ -47,6 +47,14 @@
 #include "bless.h"
 #include "bless_private.h"
 
+typedef enum {
+    EfiMemoryMappedIO = 11
+} EFI_MEMORY_TYPE;
+
+#define kDefaultFVAddress (0xffe00000ULL)
+#define kDefaultFVSize    (0x1a0000ULL)
+
+
 static int addLegacyTypeForBSDName(BLContextPtr context,
 									 mach_port_t masterPort,
 									 CFMutableDictionaryRef dict,
@@ -65,6 +73,9 @@ int BLCreateEFIXMLRepresentationForLegacyDevice(BLContextPtr context,
     CFMutableArrayRef array;
     CFNumberRef number;
     uint64_t    num64;
+    uint32_t    num32;
+    uint64_t    fvaddr, fvsize, fvaddrend;
+    io_registry_entry_t romNode;
     
     const UInt8 *xmlBuffer;
     UInt8 *outBuffer;
@@ -87,20 +98,59 @@ int BLCreateEFIXMLRepresentationForLegacyDevice(BLContextPtr context,
     CFDictionaryAddValue(dict, CFSTR("IOEFIDevicePathType"),
                          CFSTR("HardwareMemoryMapped"));
 
-    num64 = 0xb;
+    num64 = EfiMemoryMappedIO;
     number = CFNumberCreate(kCFAllocatorDefault,kCFNumberSInt64Type, &num64);
     CFDictionaryAddValue(dict, CFSTR("MemoryType"),
                          number);
     CFRelease(number);
 
-    num64 = 0xffe00000ULL;
-    number = CFNumberCreate(kCFAllocatorDefault,kCFNumberSInt64Type, &num64);
+    fvaddr = kDefaultFVAddress;
+    fvsize = kDefaultFVSize;
+    
+    romNode = IORegistryEntryFromPath(kIOMasterPortDefault, kIODeviceTreePlane ":/rom");
+    
+    if(IO_OBJECT_NULL != romNode) {
+        contextprintf(context, kBLLogLevelVerbose,  "Got " kIODeviceTreePlane ":/rom\n");
+
+        number = IORegistryEntryCreateCFProperty(romNode,
+											 CFSTR("fv-main-address"),
+											 kCFAllocatorDefault, 0);
+        if(number != NULL
+           && CFGetTypeID(number) == CFNumberGetTypeID()) {
+    
+            if(CFNumberGetValue(number, kCFNumberSInt32Type, &num32)) {
+                fvaddr = num32;
+                contextprintf(context, kBLLogLevelVerbose,  "Got start address %qx\n", fvaddr);
+            }
+        }
+        if(number) CFRelease(number);
+
+        number = IORegistryEntryCreateCFProperty(romNode,
+											 CFSTR("fv-main-size"),
+											 kCFAllocatorDefault, 0);
+        if(number != NULL
+           && CFGetTypeID(number) == CFNumberGetTypeID()) {
+    
+            if(CFNumberGetValue(number, kCFNumberSInt32Type, &num32)) {
+                fvsize = num32;
+                contextprintf(context, kBLLogLevelVerbose,  "Got size %qx\n", fvsize);
+            }
+        }
+        if(number) CFRelease(number);
+
+        IOObjectRelease(romNode);
+    }
+
+    
+    fvaddrend = fvaddr + fvsize - 1;
+
+
+    number = CFNumberCreate(kCFAllocatorDefault,kCFNumberSInt64Type, &fvaddr);
     CFDictionaryAddValue(dict, CFSTR("StartingAddress"),
                          number);
     CFRelease(number);
 
-    num64 = 0xfff9ffffULL;
-    number = CFNumberCreate(kCFAllocatorDefault,kCFNumberSInt64Type, &num64);
+    number = CFNumberCreate(kCFAllocatorDefault,kCFNumberSInt64Type, &fvaddrend);
     CFDictionaryAddValue(dict, CFSTR("EndingAddress"),
                          number);
     CFRelease(number);
@@ -196,13 +246,13 @@ static int addLegacyTypeForBSDName(BLContextPtr context,
         CFStringRef interconnect = CFDictionaryGetValue(protocolCharacteristics,
                                                         CFSTR(kIOPropertyPhysicalInterconnectTypeKey));
         if(interconnect && CFGetTypeID(interconnect) == CFStringGetTypeID()) {
+			contextprintf(context, kBLLogLevelVerbose,
+						  "Found %s interconnect in protocol characteristics\n",
+						  BLGetCStringDescription(interconnect));        
+
             if(CFEqual(interconnect, CFSTR(kIOPropertyPhysicalInterconnectTypeUSB))) {
-                contextprintf(context, kBLLogLevelVerbose,
-                              "Found USB interconnect in protocol characteristics\n");        
                 foundUSB = true;
             } else if(CFEqual(interconnect, CFSTR(kIOPropertyPhysicalInterconnectTypeATAPI))) {
-                contextprintf(context, kBLLogLevelVerbose,
-                              "Found ATAPI interconnect in protocol characteristics\n");        
                 foundATAPI = true;
             }
             //otherwise assume it's an HD-class device

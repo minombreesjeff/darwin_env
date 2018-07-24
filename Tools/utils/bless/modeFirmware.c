@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen on 2/22/05.
  *  Copyright 2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: modeFirmware.c,v 1.12 2006/01/23 19:58:41 ssen Exp $
+ *  $Id: modeFirmware.c,v 1.13 2006/06/06 17:23:52 ssen Exp $
  */
 
 #include <stdlib.h>
@@ -49,10 +49,7 @@
 
 #include "bless.h"
 #include "bless_private.h"
-
-extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fmt, ...)
-    __attribute__ ((format (printf, 3, 4)));
-
+#include "protos.h"
 
 
 int modeFirmware(BLContextPtr context, struct clarg actargs[klast])

@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen on 1/14/05.
  *  Copyright 2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: setboot.c,v 1.24 2006/03/07 16:51:41 ssen Exp $
+ *  $Id: setboot.c,v 1.30 2006/07/19 00:15:36 ssen Exp $
  *
  */
 
@@ -42,26 +42,17 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "enums.h"
-
 #include "bless.h"
-
-extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fmt, ...)
-    __attribute__ ((format (printf, 3, 4)));
-
+#include "bless_private.h"
+#include "protos.h"
 
 static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRef bootxData,
 							 CFDataRef labelData);
 
-int setefidevice(BLContextPtr context, const char * bsdname, int bootNext,
-				 int bootLegacy, const char *optionalData);
-int setefifilepath(BLContextPtr context, const char * path, int bootNext,
-				   int bootLegacy, const char *optionalData);
-int setefinetworkpath(BLContextPtr context, CFStringRef booterXML,
-							 CFStringRef kernelXML, CFStringRef mkextXML,
-                             int bootNext);
 static int setit(BLContextPtr context, mach_port_t masterPort, const char *bootvar, CFStringRef xmlstring);
 
 static int setefibootargs(BLContextPtr context, mach_port_t masterPort);
+static int _forwardNVRAM(BLContextPtr context, CFStringRef from, CFStringRef to);
 
 int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 				   CFDataRef labelData)
@@ -106,7 +97,7 @@ int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 			blesscontextprintf(context, kBLLogLevelVerbose,  "Open Firmware set successfully\n" );
 		}
 	} else if(preboot == kBLPreBootEnvType_EFI) {
-        err = setefidevice(context, device + 5, 0, 0, NULL);
+        err = setefidevice(context, device + 5, 0, 0, NULL, NULL, false);
 		if(err) {
 			blesscontextprintf(context, kBLLogLevelError,  "Can't set EFI\n" );
 			return 1;
@@ -314,7 +305,7 @@ static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRe
 }
 
 int setefidevice(BLContextPtr context, const char * bsdname, int bootNext,
-				 int bootLegacy, const char *optionalData)
+				 int bootLegacy, const char *legacyHint, const char *optionalData, bool shortForm)
 {
     int ret;
 
@@ -322,15 +313,65 @@ int setefidevice(BLContextPtr context, const char * bsdname, int bootNext,
     const char *bootString = NULL;
     
 	if(bootLegacy) {
-		ret = BLCreateEFIXMLRepresentationForLegacyDevice(context,
-												  bsdname,
-												  &xmlString);
-			
+        if(legacyHint) {
+            ret = BLCreateEFIXMLRepresentationForDevice(context,
+                                                legacyHint+5,
+                                                NULL,
+                                                &xmlString,
+                                                false);
+
+            if(ret) {
+                return 1;
+            }
+            
+            ret = setit(context, kIOMasterPortDefault, "efi-legacy-drive-hint", xmlString);    
+            if(ret) return ret;
+
+            ret = _forwardNVRAM(context, CFSTR("efi-legacy-drive-hint-data"), CFSTR("BootCampHD"));
+            if(ret) return ret;     
+            
+            ret = setit(context, kIOMasterPortDefault, kIONVRAMDeletePropertyKey, CFSTR("efi-legacy-drive-hint"));    
+            if(ret) return ret;
+       
+        }
+
+        ret = BLCreateEFIXMLRepresentationForLegacyDevice(context,
+                                                  bsdname,
+                                                  &xmlString);
 	} else {
+        // the given device may be pointing at a RAID
+        CFDictionaryRef dict = NULL;
+        CFArrayRef array = NULL;
+        char    newBSDName[MAXPATHLEN];
+        
+        strcpy(newBSDName, bsdname);
+        
+        ret = BLCreateBooterInformationDictionary(context, newBSDName,
+                                                    &dict);
+        if(ret) {
+            return 1;
+        }
+        
+        // check to see if there's a booer partition. If so, use it
+        array = CFDictionaryGetValue(dict, kBLAuxiliaryPartitionsKey);
+        if(array) {
+            if(CFArrayGetCount(array) > 0) {
+                CFStringRef firstBooter = CFArrayGetValueAtIndex(array, 0);
+                if(!CFStringGetCString(firstBooter, newBSDName, sizeof(newBSDName),
+                                       kCFStringEncodingUTF8)) {
+                    return 1;
+                }
+                blesscontextprintf(context, kBLLogLevelVerbose, "Substituting booter %s\n", newBSDName);
+            }
+        }
+        
+        CFRelease(dict);
+        
 		ret = BLCreateEFIXMLRepresentationForDevice(context,
-													bsdname,
+													newBSDName,
 													optionalData,
-													&xmlString);
+													&xmlString,
+                                                    shortForm);
 	}
 		
     if(ret) {
@@ -369,7 +410,7 @@ static int setit(BLContextPtr context, mach_port_t masterPort, const char *bootv
 
     optionsNode = IORegistryEntryFromPath(masterPort, kIODeviceTreePlane ":/options");
     
-    if(MACH_PORT_NULL == optionsNode) {
+    if(IO_OBJECT_NULL == optionsNode) {
         blesscontextprintf(context, kBLLogLevelError,  "Could not find " kIODeviceTreePlane ":/options\n");
         return 1;
     }
@@ -398,29 +439,99 @@ static int setit(BLContextPtr context, mach_port_t masterPort, const char *bootv
 }
 
 int setefifilepath(BLContextPtr context, const char * path, int bootNext,
-				   int bootLegacy, const char *optionalData)
+				   int bootLegacy, const char *legacyHint, const char *optionalData, bool shortForm)
 {
     CFStringRef xmlString = NULL;
     const char *bootString = NULL;
     int ret;
-    
-    if(bootLegacy) {
-      struct statfs sb;
-      if(0 != statfs(path, &sb)) {
+    struct statfs sb;
+    if(0 != blsustatfs(path, &sb)) {
         blesscontextprintf(context, kBLLogLevelError,  "Can't statfs %s\n" ,
                            path);
         return 1;           
-      }
+    }
+    
+    if(bootLegacy) {
+        if(legacyHint) {
+            ret = BLCreateEFIXMLRepresentationForDevice(context,
+                                                legacyHint+5,
+                                                NULL,
+                                                &xmlString,
+                                                false);
 
-      ret = BLCreateEFIXMLRepresentationForLegacyDevice(context,
-							sb.f_mntfromname + 5,
-							&xmlString);
+            if(ret) {
+                return 1;
+            }
+            
+            ret = setit(context, kIOMasterPortDefault, "efi-legacy-drive-hint", xmlString);    
+            if(ret) return ret;
+
+            ret = _forwardNVRAM(context, CFSTR("efi-legacy-drive-hint-data"), CFSTR("BootCampHD"));
+            if(ret) return ret;     
+            
+            ret = setit(context, kIOMasterPortDefault, kIONVRAMDeletePropertyKey, CFSTR("efi-legacy-drive-hint"));    
+            if(ret) return ret;
+       
+        }
+
+
+        ret = BLCreateEFIXMLRepresentationForLegacyDevice(context,
+                        sb.f_mntfromname + 5,
+                        &xmlString);
       
     } else {
-      ret = BLCreateEFIXMLRepresentationForPath(context,
-						path,
-						optionalData,
-						&xmlString);
+        // first try to get booter information for the block device.
+        // if there is none, we can do our normal path
+        // the given device may be pointing at a RAID
+        CFDictionaryRef dict = NULL;
+        CFArrayRef array = NULL;
+        char    newBSDName[MAXPATHLEN];
+        CFStringRef firstBooter = NULL;
+        
+        strcpy(newBSDName, sb.f_mntfromname + 5);
+        
+        ret = BLCreateBooterInformationDictionary(context, newBSDName,
+                                                  &dict);
+        if(ret) {
+            return 1;
+        }
+        
+        // check to see if there's a booter partition. If so, use it
+        array = CFDictionaryGetValue(dict, kBLAuxiliaryPartitionsKey);
+        if(array) {
+            if(CFArrayGetCount(array) > 0) {
+                firstBooter = CFArrayGetValueAtIndex(array, 0);
+                if(!CFStringGetCString(firstBooter, newBSDName, sizeof(newBSDName),
+                                       kCFStringEncodingUTF8)) {
+                    return 1;
+                }
+                blesscontextprintf(context, kBLLogLevelVerbose, "Substituting booter %s\n", newBSDName);
+            }
+        }
+        
+        
+        if(firstBooter) {
+            // so this is probably a RAID. Validate that we were passed a mountpoint
+            if(0 != strncmp(sb.f_mntonname, path, MAXPATHLEN)) {
+                blesscontextprintf(context, kBLLogLevelError,  "--file not supported for %s\n" ,
+                                   sb.f_mntonname);
+                return 2;
+            }
+            ret = BLCreateEFIXMLRepresentationForDevice(context,
+                                                        newBSDName,
+                                                        optionalData,
+                                                        &xmlString,
+                                                        shortForm);
+            
+        } else {
+            ret = BLCreateEFIXMLRepresentationForPath(context,
+                                                      path,
+                                                      optionalData,
+                                                      &xmlString, shortForm);
+            
+        }
+        
+        CFRelease(dict);
     }
 
     if(ret) {
@@ -532,3 +643,43 @@ static int setefibootargs(BLContextPtr context, mach_port_t masterPort)
     return 0;
 }
 
+
+static int _forwardNVRAM(BLContextPtr context, CFStringRef from, CFStringRef to) {
+    
+    io_registry_entry_t optionsNode = 0;
+    CFTypeRef       valRef;
+    kern_return_t   kret;
+    
+    optionsNode = IORegistryEntryFromPath(kIOMasterPortDefault, kIODeviceTreePlane ":/options");
+    
+    if(IO_OBJECT_NULL == optionsNode) {
+        contextprintf(context, kBLLogLevelError,  "Could not find " kIODeviceTreePlane ":/options\n");
+        return 1;
+    }
+    
+    valRef = IORegistryEntryCreateCFProperty(optionsNode, from, kCFAllocatorDefault, 0);
+    
+    if(valRef == NULL) {
+        contextprintf(context, kBLLogLevelError,  "Could not find variable '%s'\n",
+                                                    BLGetCStringDescription(from));
+        return 2;
+    }
+    
+    blesscontextprintf(context, kBLLogLevelVerbose,  "Setting EFI NVRAM:\n" );
+    blesscontextprintf(context, kBLLogLevelVerbose,  "\t%s='...'\n", BLGetCStringDescription(to) );
+
+    kret = IORegistryEntrySetCFProperty(optionsNode, to, valRef);
+    if(kret) {
+        CFRelease(valRef);
+        IOObjectRelease(optionsNode);
+        blesscontextprintf(context, kBLLogLevelError,  "Could not set boot property '%s': %#x\n",
+                                                        BLGetCStringDescription(to),
+                                                        kret);
+        return 3;        
+    }
+
+    CFRelease(valRef);    
+    IOObjectRelease(optionsNode);
+
+    return 0;
+}

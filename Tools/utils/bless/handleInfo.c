@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: handleInfo.c,v 1.42 2006/03/07 16:51:40 ssen Exp $
+ *  $Id: handleInfo.c,v 1.45 2006/06/24 00:46:37 ssen Exp $
  *
  *
  */
@@ -52,14 +52,15 @@
 
 #include "bless.h"
 #include "bless_private.h"
+#include "protos.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 
-extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fmt, ...)
-    __attribute__ ((format (printf, 3, 4)));
-
 static int interpretEFIString(BLContextPtr context, CFStringRef efiString, 
                               char *bootdevice);
+
+static void addElements(const void *key, const void *value, void *context);
+
 
 /* 8 words of "finder info" in volume
  * 0 & 1 often set to blessed system folder
@@ -94,9 +95,11 @@ static const char *messages[7][2] = {
 };
 
 int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
-    int                 err;
+    int                 ret;
     CFDictionaryRef     dict;
     int                 isNetboot = 0;
+    struct statfs       sb;
+    CFMutableDictionaryRef  allInfo = NULL;
 
     if(!actargs[kinfo].hasArg ||  actargs[kgetboot].present) {
             char currentString[1024];
@@ -105,8 +108,8 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
             int vols;
 			BLPreBootEnvType	preboot;
 			
-			err = BLGetPreBootEnvironmentType(context, &preboot);
-			if(err)
+			ret = BLGetPreBootEnvironmentType(context, &preboot);
+			if(ret)
 				return 1;
 
             if(preboot == kBLPreBootEnvType_OpenFirmware) {
@@ -134,10 +137,10 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
                     strcpy(currentDev, "bsdp://en0@255.255.255.255");
                     isNetboot = 1;
                 } else {
-                    err = BLGetDeviceForOpenFirmwarePath(context, currentString,
+                    ret = BLGetDeviceForOpenFirmwarePath(context, currentString,
                                                         currentDev);
-                    if(err) {
-                        blesscontextprintf(context, kBLLogLevelError,  "Can't get device for %s: %d\n", currentString, err );
+                    if(ret) {
+                        blesscontextprintf(context, kBLLogLevelError,  "Can't get device for %s: %d\n", currentString, ret );
                         return 1;
         
                     }
@@ -148,11 +151,11 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
                 CFStringRef     efibootdev = NULL;
                 char currentString[1024];
 
-                err = BLCopyEFINVRAMVariableAsString(context,
+                ret = BLCopyEFINVRAMVariableAsString(context,
                                                      CFSTR("efi-boot-device"),
                                                      &efibootdev);
                     
-                if(err || efibootdev == NULL) {
+                if(ret || efibootdev == NULL) {
                     blesscontextprintf(context, kBLLogLevelError,
                                        "Can't access \"efi-boot-device\" NVRAM variable\n");
                     return 1;
@@ -163,17 +166,17 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
                                        currentString);                    
                 }
                 
-				err = BLValidateXMLBootOption(context,
+				ret = BLValidateXMLBootOption(context,
 											  CFSTR("efi-boot-device"),
 											  CFSTR("efi-boot-device-data"));
-				if(err) {
+				if(ret) {
                     blesscontextprintf(context, kBLLogLevelError,
                                        "XML representation doesn't match true boot preference\n");
                     return 2;                    					
 				}
 					
-                err = interpretEFIString(context, efibootdev, currentDev);
-                if(err) {
+                ret = interpretEFIString(context, efibootdev, currentDev);
+                if(ret) {
                     blesscontextprintf(context, kBLLogLevelError,
                                        "Can't interpet EFI boot device\n");
                     return 2;                    
@@ -243,19 +246,40 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
     }
 
 
-    err = BLGetCommonMountPoint(context, actargs[kinfo].argument, "", actargs[kmount].argument);
-    if(err) {
+    ret = BLGetCommonMountPoint(context, actargs[kinfo].argument, "", actargs[kmount].argument);
+    if(ret) {
             blesscontextprintf(context, kBLLogLevelError,  "Can't get mount point for %s\n", actargs[kinfo].argument );
             return 1;
     }
 
-    err = BLCreateVolumeInformationDictionary(context, actargs[kmount].argument,
+    ret = blsustatfs(actargs[kmount].argument, &sb);
+    if(ret) {
+        blesscontextprintf(context, kBLLogLevelError,  "Can't get device for %s\n", actargs[kmount].argument );
+        return 1;        
+        
+    }
+    
+    ret = BLCreateVolumeInformationDictionary(context, actargs[kmount].argument,
                                             &dict);
-    if(err) {
-            blesscontextprintf(context, kBLLogLevelError,  "Can't print Finder information\n" );
+    if(ret) {
+        blesscontextprintf(context, kBLLogLevelError,  "Can't print Finder information\n" );
 		return 1;
 	}
 
+    allInfo = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, dict);
+    CFRelease(dict);
+    
+    ret = BLCreateBooterInformationDictionary(context, sb.f_mntfromname + 5, &dict);
+    if(ret) {
+        blesscontextprintf(context, kBLLogLevelError,  "Can't get booter information\n" );
+		return 3;
+    }
+
+    CFDictionaryApplyFunction(dict, addElements, (void *)allInfo);    
+    CFRelease(dict);
+    
+    dict = (CFDictionaryRef)allInfo;
+    
     if(actargs[kplist].present) {
 	CFDataRef		tempData = NULL;
 
@@ -307,7 +331,6 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
     }
     
     
-    CFRelease(dict);
     return 0;
 }
 
@@ -362,4 +385,11 @@ static int interpretEFIString(BLContextPtr context, CFStringRef efiString,
     blesscontextprintf(context, kBLLogLevelError,  "Could not interpret boot device as either network or disk\n" );
     
     return 1;
+}
+
+static void addElements(const void *key, const void *value, void *context)
+{
+    CFMutableDictionaryRef dict = (CFMutableDictionaryRef)context;
+    
+    CFDictionaryAddValue(dict, key, value);
 }

@@ -98,7 +98,8 @@ int BLCreateEFIXMLRepresentationForNetworkPath(BLContextPtr context,
                                                  kCFAllocatorDefault,
                                                  kIORegistryIterateRecursively|kIORegistryIterateParents);
     if(macAddress) {
-        contextprintf(context, kBLLogLevelVerbose, "MAC address found for %s\n", interface);
+        contextprintf(context, kBLLogLevelVerbose, "MAC address %s found for %s\n",
+					  BLGetCStringDescription(macAddress), interface);
         
         CFDictionaryAddValue(dict, CFSTR("BLMACAddress"), macAddress);
         CFRelease(macAddress);

@@ -48,12 +48,14 @@
 extern int addMatchingInfoForBSDName(BLContextPtr context,
                               mach_port_t masterPort,
                               CFMutableDictionaryRef dict,
-                              const char *bsdName);
+                              const char *bsdName,
+                              bool shortForm);
 
 int BLCreateEFIXMLRepresentationForDevice(BLContextPtr context,
                                         const char *bsdName,
                                         const char *optionalData,
-                                        CFStringRef *xmlString)
+                                        CFStringRef *xmlString,
+                                        bool shortForm)
 {
     int ret;
     mach_port_t masterPort;
@@ -75,7 +77,7 @@ int BLCreateEFIXMLRepresentationForDevice(BLContextPtr context,
     dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
                                      &kCFTypeDictionaryValueCallBacks);
     
-    ret = addMatchingInfoForBSDName(context, masterPort, dict, bsdName);
+    ret = addMatchingInfoForBSDName(context, masterPort, dict, bsdName, shortForm);
     if(ret) {
         CFRelease(dict);
         CFRelease(array);

@@ -1,0 +1,25 @@
+To export this project for Darwin:
+
+1) Run "./EXPORT.APPLE"
+
+
+/tmp/bless-XXX will contain a "darwinized" project, which
+has certain code stripped out.
+
+-- CLIENTS --
+CD Springboard app uses bless -setOF with AEWP
+Firmware updaters use libbless to squirrel away OF path for /
+DiskCopy for imaging volumes and blessing
+some public copying programs like Carbon Copy Cloner bless target
+Darwin uses it to bless installed volumes
+advanced users/scripts might bless volumes manually
+bless -info used to debugging booting problems with unblessed volumes
+DiskManagement uses it to select the boot device
+
+-- NOTES FOR MODIFYING BLESS --
+1) bless is an open source Darwin project. As such, it should not
+    include confidential content not suitable for open source the
+    next time the source is published (usually for major OS releases)
+2) use of private API/SPI should be bracketed by
+3) new function to libbless should be in their own source file,
+    with corresponding declaration in bless.h (with headerdoc)

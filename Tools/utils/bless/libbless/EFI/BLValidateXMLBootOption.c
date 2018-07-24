@@ -88,11 +88,11 @@ int BLValidateXMLBootOption(BLContextPtr context,
 	if(bootOption == NULL)
 		return 3;
 
-	devicePath = _getBootDevicePath(context, optionsNode, CFSTR("efi-boot-device-data"), &devicePathSize);
+	devicePath = _getBootDevicePath(context, optionsNode, binaryName, &devicePathSize);
 	if(devicePath == NULL)
 		return 4;
 	
-	xmlPath = _getBootDeviceXML(context, optionsNode, CFSTR("efi-boot-device"));
+	xmlPath = _getBootDeviceXML(context, optionsNode, xmlName);
 	if(xmlPath == NULL)
 		return 5;
 	
