@@ -65,7 +65,7 @@ static int addPreferredSystemPartitionInfo(BLContextPtr context,
                                 CFMutableArrayRef systemPartitions);      
 
 
-static bool isPreferredSystemPartition(BLContextPtr context, CFStringRef bsdName);
+bool isPreferredSystemPartition(BLContextPtr context, CFStringRef bsdName);
 
 /*
  * For the given device, we return the set of Auxiliary Partitions and
@@ -126,6 +126,10 @@ int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdNa
     
     if(!IOObjectConformsTo(rootDev,kIOMediaClass)) {
         CFRelease(booters);
+		CFRelease(dataPartitions);
+		CFRelease(booterPartitions);
+		CFRelease(systemPartitions);
+		
         IOObjectRelease(rootDev);
         
         contextprintf(context, kBLLogLevelError,
@@ -173,13 +177,20 @@ int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdNa
         }
         
         if(ret) {
+			CFRelease(bootData);
             CFRelease(booters);
+			CFRelease(dataPartitions);
+			CFRelease(booterPartitions);
+			CFRelease(systemPartitions);
+			
             IOObjectRelease(rootDev);
 
             return ret;
             
         }
 		
+		CFRelease(bootData);
+
 	} else {
         ret = addDataPartitionInfo(context, rootDev,
                                    dataPartitions,
@@ -187,6 +198,10 @@ int BLCreateBooterInformationDictionary(BLContextPtr context, const char * bsdNa
                                    systemPartitions);    
         if(ret) {
             CFRelease(booters);
+			CFRelease(dataPartitions);
+			CFRelease(booterPartitions);
+			CFRelease(systemPartitions);
+			
             IOObjectRelease(rootDev);
             
             return ret;
@@ -326,20 +341,28 @@ static int addDataPartitionInfo(BLContextPtr context, io_service_t dataPartition
     partitionNum = IORegistryEntryCreateCFProperty(dataPartition, CFSTR(kIOMediaPartitionIDKey), kCFAllocatorDefault, 0);
     if(partitionNum == NULL || (CFGetTypeID(partitionNum) != CFNumberGetTypeID())) {
         if(partitionNum) CFRelease(partitionNum);
-        
+        CFRelease(bsdName);
+		
         return 1;
     }
     
     content = (CFStringRef)IORegistryEntryCreateCFProperty(dataPartition, CFSTR(kIOMediaContentKey), kCFAllocatorDefault, 0);
     if(content == NULL || (CFGetTypeID(content) != CFStringGetTypeID())) {
         if(content) CFRelease(content);
-        contextprintf(context, kBLLogLevelError,  "Partition does not have Content key\n" );
+		CFRelease(partitionNum);
+		CFRelease(bsdName);
+
+		contextprintf(context, kBLLogLevelError,  "Partition does not have Content key\n" );
         
         return 1;
     }
     
     
     if(!CFNumberGetValue(partitionNum,kCFNumberSInt32Type, &partitionID)) {
+		CFRelease(content);
+		CFRelease(partitionNum);
+		CFRelease(bsdName);
+		
         contextprintf(context, kBLLogLevelError,  "Could not get Partition ID for service\n" );
 		return 1;        
     }
@@ -352,6 +375,8 @@ static int addDataPartitionInfo(BLContextPtr context, io_service_t dataPartition
     
     kret = IORegistryEntryGetParentEntry(dataPartition, kIOServicePlane, &parent);
     if(kret != KERN_SUCCESS) {
+		CFRelease(content);
+
         contextprintf(context, kBLLogLevelError,  "Could not get parent path in device plane for service\n" );
 		return 1;
     }
@@ -392,6 +417,9 @@ static int addDataPartitionInfo(BLContextPtr context, io_service_t dataPartition
         contextprintf(context, kBLLogLevelVerbose,  "Other partition scheme detected\n" );
     }
     
+	CFRelease(content);
+
+	
     if(needsBooter) {
         contextprintf(context, kBLLogLevelVerbose,  "Booter partition required at index %u\n", searchID);        
     } else {
@@ -486,7 +514,7 @@ static bool _isPreferredSystemPartition(BLContextPtr context, io_service_t servi
     
 }
 
-static bool isPreferredSystemPartition(BLContextPtr context, CFStringRef bsdName)
+bool isPreferredSystemPartition(BLContextPtr context, CFStringRef bsdName)
 {
     CFMutableDictionaryRef  matching;
     io_service_t            service;

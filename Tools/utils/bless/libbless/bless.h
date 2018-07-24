@@ -791,6 +791,9 @@ int BLValidateXMLBootOption(BLContextPtr context,
 
 bool BLSupportsLegacyMode(BLContextPtr context);
 
+bool BLIsEFIRecoveryAccessibleDevice(BLContextPtr context, CFStringRef bsdName);
+
+
 // filter out bad boot-args
 int BLPreserveBootArgs(BLContextPtr context,
                        const char *input,

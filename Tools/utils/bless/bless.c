@@ -83,6 +83,7 @@ static struct option longopts[] = {
 { "payload",        required_argument,      0,              kpayload },
 { "plist",          no_argument,            0,              kplist },
 { "quiet",          no_argument,            0,              kquiet },
+{ "recovery",		no_argument,            0,              krecovery },
 { "reset",          no_argument,            0,              kreset },
 { "save9",          no_argument,            0,              ksave9 },
 { "saveX",          no_argument,            0,              ksaveX },
@@ -168,6 +169,7 @@ int main (int argc, char * argv[])
             case kopenfolder:
             case koptions:
             case kplist:
+			case krecovery:
             case kreset:
             case ksave9:
             case ksaveX:

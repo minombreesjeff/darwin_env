@@ -343,6 +343,7 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
         
     }
     
+	CFRelease(dict);
     
     return 0;
 }

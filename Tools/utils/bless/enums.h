@@ -64,6 +64,7 @@ enum {
     kpayload,
     kplist,
     kquiet,
+	krecovery,
     kreset,
     ksave9,
     ksaveX,

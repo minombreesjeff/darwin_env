@@ -37,10 +37,11 @@
 #include <sys/stat.h>
 #include <fts.h>
 
+#include <AvailabilityMacros.h>
+
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/storage/IOMedia.h>
-
 #include <IOKit/IOCFSerialize.h>
 #include <IOKit/IOCFUnserialize.h>
 

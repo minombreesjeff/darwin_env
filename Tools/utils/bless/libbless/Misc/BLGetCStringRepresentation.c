@@ -94,6 +94,8 @@ char *BLGetCStringDescription(CFTypeRef typeRef) {
 		ret = pthread_setspecific(blcstr_key, storage);
 		if(ret) {
 			CFRelease(desc);
+			free(storage->string);
+			free(storage);
 			fprintf(stderr, "pthread_setspecific failed\n");
 			return NULL;
 		}
@@ -110,6 +112,8 @@ char *BLGetCStringDescription(CFTypeRef typeRef) {
 		fprintf(stderr, "CFStringGetCString failed\n");		
 		return NULL;
 	}
+	
+	CFRelease(desc);
 	
 	return storage->string;
 }
