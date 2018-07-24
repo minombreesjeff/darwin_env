@@ -573,6 +573,16 @@ xmlSAX2AttributeDecl(void *ctx, const xmlChar *elem, const xmlChar *fullname,
 	    "SAX.xmlSAX2AttributeDecl(%s, %s, %d, %d, %s, ...)\n",
             elem, fullname, type, def, defaultValue);
 #endif
+    if ((xmlStrEqual(fullname, BAD_CAST "xml:id")) &&
+        (type != XML_ATTRIBUTE_ID)) {
+	/*
+	 * Raise the error but keep the validity flag
+	 */
+	int tmp = ctxt->valid;
+	xmlErrValid(ctxt, XML_DTD_XMLID_TYPE,
+	      "xml:id : attribute type should be ID\n", NULL, NULL);
+	ctxt->valid = tmp;
+    }
     /* TODO: optimize name/prefix allocation */
     name = xmlSplitQName(ctxt, fullname, &prefix);
     ctxt->vctxt.valid = 1;
@@ -839,8 +849,10 @@ xmlSAX2StartDocument(void *ctx)
 	    ctxt->disableSAX = 1;
 	    return;
 	}
-	if ((ctxt->dictNames) && (doc != NULL))
+	if ((ctxt->dictNames) && (doc != NULL)) {
 	    doc->dict = ctxt->dict;
+	    xmlDictReference(doc->dict);
+	}
     }
     if ((ctxt->myDoc != NULL) && (ctxt->myDoc->URL == NULL) &&
 	(ctxt->input != NULL) && (ctxt->input->filename != NULL)) {
@@ -1202,6 +1214,19 @@ xmlSAX2AttributeInternal(void *ctx, const xmlChar *fullname,
 	    xmlAddID(&ctxt->vctxt, ctxt->myDoc, value, ret);
 	else if (xmlIsRef(ctxt->myDoc, ctxt->node, ret))
 	    xmlAddRef(&ctxt->vctxt, ctxt->myDoc, value, ret);
+	else if (xmlStrEqual(fullname, BAD_CAST "xml:id")) {
+	    /*
+	     * Add the xml:id value
+	     *
+	     * Open issue: normalization of the value.
+	     */
+	    if (xmlValidateNCName(value, 1) != 0) {
+	        xmlErrValid(ctxt, XML_DTD_XMLID_VALUE,
+		      "xml:id : attribute value %s is not an NCName\n",
+			    (const char *) value, NULL);
+	    }
+	    xmlAddID(&ctxt->vctxt, ctxt->myDoc, value, ret);
+	}
     }
 
 error:
@@ -1923,7 +1948,23 @@ xmlSAX2AttributeNs(xmlParserCtxtPtr ctxt,
 	    if (dup == NULL)
 	        dup = xmlStrndup(value, valueend - value);
 	    xmlAddRef(&ctxt->vctxt, ctxt->myDoc, dup, ret);
-        }
+        } else if ((prefix == ctxt->str_xml) &&
+	           (localname[0] == 'i') && (localname[1] == 'd') &&
+		   (localname[2] == 0)) {
+	    /*
+	     * Add the xml:id value
+	     *
+	     * Open issue: normalization of the value.
+	     */
+	    if (dup == NULL)
+	        dup = xmlStrndup(value, valueend - value);
+	    if (xmlValidateNCName(dup, 1) != 0) {
+	        xmlErrValid(ctxt, XML_DTD_XMLID_VALUE,
+		      "xml:id : attribute value %s is not an NCName\n",
+			    (const char *) dup, NULL);
+	    }
+	    xmlAddID(&ctxt->vctxt, ctxt->myDoc, dup, ret);
+	}
     }
     if (dup != NULL)
 	xmlFree(dup);

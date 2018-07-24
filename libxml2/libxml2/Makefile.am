@@ -17,7 +17,7 @@ bin_SCRIPTS=xml2-config
 lib_LTLIBRARIES = libxml2.la
 libxml2_la_LIBADD = @THREAD_LIBS@ @Z_LIBS@ $(ICONV_LIBS) @M_LIBS@ @WIN32_EXTRA_LIBADD@
 
-libxml2_la_LDFLAGS = -version-info @LIBXML_VERSION_INFO@
+libxml2_la_LDFLAGS = @WIN32_EXTRA_LDFLAGS@ -version-info @LIBXML_VERSION_INFO@
 
 if WITH_TRIO_SOURCES
 libxml2_la_SOURCES = SAX.c entities.c encoding.c error.c parserInternals.c  \
@@ -27,7 +27,7 @@ libxml2_la_SOURCES = SAX.c entities.c encoding.c error.c parserInternals.c  \
 		catalog.c globals.c threads.c c14n.c xmlstring.c \
 		xmlregexp.c xmlschemas.c xmlschemastypes.c xmlunicode.c \
 		triostr.c trio.c xmlreader.c relaxng.c dict.c SAX2.c \
-		xmlwriter.c legacy.c chvalid.c pattern.c
+		xmlwriter.c legacy.c chvalid.c pattern.c xmlsave.c
 else
 libxml2_la_SOURCES = SAX.c entities.c encoding.c error.c parserInternals.c  \
 		parser.c tree.c hash.c list.c xmlIO.c xmlmemory.c uri.c  \
@@ -36,7 +36,7 @@ libxml2_la_SOURCES = SAX.c entities.c encoding.c error.c parserInternals.c  \
 		catalog.c globals.c threads.c c14n.c xmlstring.c \
 		xmlregexp.c xmlschemas.c xmlschemastypes.c xmlunicode.c \
 		xmlreader.c relaxng.c dict.c SAX2.c \
-		xmlwriter.c legacy.c chvalid.c pattern.c
+		xmlwriter.c legacy.c chvalid.c pattern.c xmlsave.c
 endif
 
 DEPS = $(top_builddir)/libxml2.la
@@ -122,7 +122,7 @@ check-local: tests
 
 testall : tests SVGtests SAXtests
 
-tests: XMLtests XMLenttests NStests Errtests @READER_TEST@ @TEST_SAX@ @TEST_PUSH@ @TEST_HTML@ @TEST_PHTML@  @TEST_VALID@ URItests @TEST_XPATH@ @TEST_XPTR@ @TEST_XINCLUDE@ @TEST_C14N@ @TEST_DEBUG@ @TEST_CATALOG@ @TEST_REGEXPS@ @TEST_SCHEMAS@ @TEST_THREADS@ Timingtests @TEST_VTIME@
+tests: XMLtests XMLenttests NStests IDtests Errtests @READER_TEST@ @TEST_SAX@ @TEST_PUSH@ @TEST_HTML@ @TEST_PHTML@  @TEST_VALID@ URItests @TEST_XPATH@ @TEST_XPTR@ @TEST_XINCLUDE@ @TEST_C14N@ @TEST_DEBUG@ @TEST_CATALOG@ @TEST_REGEXPS@ @TEST_SCHEMAS@ @TEST_THREADS@ Timingtests @TEST_VTIME@ @PYTHON_TESTS@
 	@(if [ "@PYTHON_SUBDIR@" != "" ] ; then cd python ; $(MAKE) tests ; fi)
 	@(cd doc/examples ; $(MAKE) tests)
 
@@ -277,6 +277,27 @@ NStests : xmllint$(EXEEXT)
 	      grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0"; \
 	      diff $(srcdir)/result/namespaces/$$name result.$$name ; \
 	      diff $(srcdir)/result/namespaces/$$name.err error.$$name` ; \
+	      if [ -n "$$log" ] ; then echo $$name result ; echo $$log ; fi ; \
+	      rm result.$$name error.$$name ; \
+	  fi ; fi ; done)
+
+IDtests : xmllint$(EXEEXT) testXPath$(EXEEXT)
+	@(echo > .memdump)
+	@echo "## xml:id regression tests"
+	-@(for i in $(srcdir)/test/xmlid/id_*.xml ; do \
+	  name=`basename $$i`; \
+	  if [ ! -d $$i ] ; then \
+	  if [ ! -f $(srcdir)/result/xmlid/$$name ] ; then \
+	      echo New test file $$name ; \
+	      $(CHECKER) $(top_builddir)/testXPath -i $$i "id('bar')" \
+	         2> $(srcdir)/result/xmlid/$$name.err \
+		 > $(srcdir)/result/xmlid/$$name ; \
+	      grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0"; \
+	  else \
+	      log=`$(CHECKER) $(top_builddir)/testXPath -i $$i "id('bar')" 2> error.$$name > result.$$name ; \
+	      grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0"; \
+	      diff $(srcdir)/result/xmlid/$$name result.$$name ; \
+	      diff $(srcdir)/result/xmlid/$$name.err error.$$name` ; \
 	      if [ -n "$$log" ] ; then echo $$name result ; echo $$log ; fi ; \
 	      rm result.$$name error.$$name ; \
 	  fi ; fi ; done)
@@ -728,24 +749,24 @@ Timingtests: xmllint$(EXEEXT) $(srcdir)/dba100000.xml
 	@echo "## 2/ using the memory interface"
 	@echo "## 3/ repeated DOM parsing"
 	@echo "## 4/ repeated DOM validation"
-	-@(xmllint --stream --timing $(srcdir)/dba100000.xml; \
+	-@($(top_builddir)/xmllint --stream --timing $(srcdir)/dba100000.xml; \
 	   MEM=`cat .memdump | grep "MEMORY ALLOCATED" | awk '{ print $$7}'`;\
 	   if [ "$$MEM" != "" ] ; then echo Using $$MEM bytes ; fi ; \
 	   grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0";\
 	   exit 0)
-	-@(xmllint --stream --timing --memory $(srcdir)/dba100000.xml; \
+	-@($(top_builddir)/xmllint --stream --timing --memory $(srcdir)/dba100000.xml; \
 	   MEM=`cat .memdump | grep "MEMORY ALLOCATED" | awk '{ print $$7}'`;\
 	   if [ "$$MEM" != "" ] ; then echo Using $$MEM bytes ; fi ; \
 	   grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0";\
 	   exit 0)
-	-@(xmllint --noout --timing --repeat $(srcdir)/test/valid/REC-xml-19980210.xml; \
+	-@($(top_builddir)/xmllint --noout --timing --repeat $(srcdir)/test/valid/REC-xml-19980210.xml; \
 	   MEM=`cat .memdump | grep "MEMORY ALLOCATED" | awk '{ print $$7}'`;\
 	   if [ "$$MEM" != "" ] ; then echo Using $$MEM bytes ; fi ; \
 	   grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0";\
 	   exit 0)
 
 VTimingtests: xmllint$(EXEEXT)
-	-@(xmllint --noout --timing --valid --repeat $(srcdir)/test/valid/REC-xml-19980210.xml; \
+	-@($(top_builddir)/xmllint --noout --timing --valid --repeat $(srcdir)/test/valid/REC-xml-19980210.xml; \
 	   MEM=`cat .memdump | grep "MEMORY ALLOCATED" | awk '{ print $$7}'`;\
 	   if [ "$$MEM" != "" ] ; then echo Using $$MEM bytes ; fi ; \
 	   grep "MORY ALLO" .memdump  | grep -v "MEMORY ALLOCATED : 0";\
@@ -878,10 +899,28 @@ Relaxtests: xmllint$(EXEEXT)
 		      diff $(srcdir)/result/relaxng/"$$name"_"$$xno".err \
 			   err.$$name | grep -v "error detected at";\
 		  fi ; grep Unimplemented err.$$name`; \
-	          if [ -n "$$log" ] ; then echo $$name result ; echo $$log ; fi ; \
+	          if [ -n "$$log" ] ; then echo "$$name"_"$$xno" result ; echo $$log ; fi ; \
 	          rm res.$$name err.$$name ; \
 	       fi ; fi ; \
 	  done; done)
+
+RelaxNGPythonTests:
+	@(if [ -x $(PYTHON) ] ; then \
+	    PYTHONPATH=$(top_builddir)/python:$(top_builddir)/python/.libs ; \
+	    export PYTHONPATH; \
+	    echo "## Relax-NG Python based test suite 1" ; \
+	    $(CHECKER) $(PYTHON) $(srcdir)/check-relaxng-test-suite.py ; \
+	    echo "## Relax-NG Python based test suite 2" ; \
+	    $(CHECKER) $(PYTHON) $(srcdir)/check-relaxng-test-suite2.py ; \
+	  fi)
+
+SchemasPythonTests:
+	@(if [ -x $(PYTHON) ] ; then \
+	    PYTHONPATH=$(top_builddir)/python:$(top_builddir)/python/.libs; \
+	    export PYTHONPATH; \
+	    echo "## XML Schemas datatypes Python based test suite" ; \
+	    $(CHECKER) $(PYTHON) $(srcdir)/check-xsddata-test-suite.py ; \
+	  fi)
 
 cleanup:
 	-@(find . -name .\#\* -exec rm {} \;)
@@ -901,13 +940,23 @@ rpm: cleanup cleantar
 ## the value NONE in configure if the user doesn't specify them (this
 ## is an autoconf feature, not a bug).
 
+xml2Conf.sh: xml2Conf.sh.in Makefile
+## Use sed and then mv to avoid problems if the user interrupts.
+	sed -e 's?\@XML_LIBDIR\@?$(XML_LIBDIR)?g' \
+	    -e 's?\@XML_INCLUDEDIR\@?$(XML_INCLUDEDIR)?g' \
+	    -e 's?\@VERSION\@?$(VERSION)?g' \
+	    -e 's?\@XML_LIBS\@?$(XML_LIBS)?g' \
+	       < $(srcdir)/xml2Conf.sh.in > xml2Conf.tmp \
+	&& mv xml2Conf.tmp xml2Conf.sh
+
 CLEANFILES=xml2Conf.sh
 
 confexecdir=$(libdir)
 confexec_DATA = xml2Conf.sh
 EXTRA_DIST = xml2-config.in xml2Conf.sh.in libxml.spec.in libxml2.spec \
              libxml.m4 Copyright check-xml-test-suite.py \
-	     check-relaxng-test-suite.py check-xinclude-test-suite.py \
+	     check-relaxng-test-suite.py check-relaxng-test-suite2.py \
+	     check-xsddata-test-suite.py check-xinclude-test-suite.py \
              example/Makefile.am example/gjobread.c example/gjobs.xml \
 	     $(man_MANS) libxml-2.0.pc.in libxml-2.0-uninstalled.pc.in \
 	     trionan.c trionan.h triostr.c triostr.h trio.c trio.h \

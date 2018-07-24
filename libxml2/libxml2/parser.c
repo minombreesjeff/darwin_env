@@ -1260,6 +1260,21 @@ static int spacePop(xmlParserCtxtPtr ctxt) {
 	    xmlPopInput(ctxt);						\
   } while (0)
 
+#define SKIPL(val) do {							\
+    int skipl;								\
+    for(skipl=0; skipl<val; skipl++) {					\
+    	if (*(ctxt->input->cur) == '\n') {				\
+	ctxt->input->line++; ctxt->input->col = 1;			\
+    	} else ctxt->input->col++;					\
+    	ctxt->nbChars++;						\
+	ctxt->input->cur++;						\
+    }									\
+    if (*ctxt->input->cur == '%') xmlParserHandlePEReference(ctxt);	\
+    if ((*ctxt->input->cur == 0) &&					\
+        (xmlParserInputGrow(ctxt->input, INPUT_CHUNK) <= 0))		\
+	    xmlPopInput(ctxt);						\
+  } while (0)
+
 #define SHRINK if ((ctxt->progressive == 0) &&				\
 		   (ctxt->input->cur - ctxt->input->base > 2 * INPUT_CHUNK) && \
 		   (ctxt->input->end - ctxt->input->cur < 2 * INPUT_CHUNK)) \
@@ -1810,9 +1825,13 @@ xmlParserHandlePEReference(xmlParserCtxtPtr ctxt) {
 		     * Get the 4 first bytes and decode the charset
 		     * if enc != XML_CHAR_ENCODING_NONE
 		     * plug some encoding conversion routines.
+		     * Note that, since we may have some non-UTF8
+		     * encoding (like UTF16, bug 135229), the 'length'
+		     * is not known, but we can calculate based upon
+		     * the amount of data in the buffer.
 		     */
 		    GROW
-	            if (entity->length >= 4) {
+		    if ((ctxt->input->end - ctxt->input->cur)>=4) {
 			start[0] = RAW;
 			start[1] = NXT(1);
 			start[2] = NXT(2);
@@ -1844,10 +1863,12 @@ xmlParserHandlePEReference(xmlParserCtxtPtr ctxt) {
  * Macro used to grow the current buffer.
  */
 #define growBuffer(buffer) {						\
+    xmlChar *tmp;							\
     buffer##_size *= 2;							\
-    buffer = (xmlChar *)						\
+    tmp = (xmlChar *)							\
     		xmlRealloc(buffer, buffer##_size * sizeof(xmlChar));	\
-    if (buffer == NULL) goto mem_error;					\
+    if (tmp == NULL) goto mem_error;					\
+    buffer = tmp;							\
 }
 
 /**
@@ -3143,11 +3164,6 @@ get_more_space:
 		return;
 	    }
 get_more:
-#if 0
-	    while (((*in >= 0x20) && (*in != '<') && (*in != ']') &&
-		    (*in != '&') && (*in <= 0x7F)) || (*in == 0x09))
-		in++;
-#endif
 	    while (((*in > ']') && (*in <= 0x7F)) ||
 	           ((*in > '&') && (*in < '<')) ||
 	           ((*in > '<') && (*in < ']')) ||
@@ -7325,6 +7341,7 @@ reparse:
 		    if (nsPush(ctxt, attname, URL) > 0) nbNs++;
 		if (alloc != 0) xmlFree(attvalue);
 		SKIP_BLANKS;
+		if (ctxt->input->base != base) goto base_changed;
 		continue;
 	    }
 
@@ -9252,7 +9269,7 @@ xmlParseTryOrFinish(xmlParserCtxtPtr ctxt, int terminate) {
 				                      ctxt->input->cur,
 					  XML_PARSER_BIG_BUFFER_SIZE);
 			}
-			SKIP(XML_PARSER_BIG_BUFFER_SIZE);
+			SKIPL(XML_PARSER_BIG_BUFFER_SIZE);
 			ctxt->checkIndex = 0;
 		    }
 		    goto done;
@@ -9266,7 +9283,7 @@ xmlParseTryOrFinish(xmlParserCtxtPtr ctxt, int terminate) {
 			    ctxt->sax->characters(ctxt->userData,
 						  ctxt->input->cur, base);
 		    }
-		    SKIP(base + 3);
+		    SKIPL(base + 3);
 		    ctxt->checkIndex = 0;
 		    ctxt->instate = XML_PARSER_CONTENT;
 #ifdef DEBUG_PUSH
@@ -9951,7 +9968,7 @@ xmlIOParseDTD(xmlSAXHandlerPtr sax, xmlParserInputBufferPtr input,
 	if (ctxt->sax != NULL)
 	    xmlFree(ctxt->sax);
         ctxt->sax = sax;
-        ctxt->userData = NULL;
+        ctxt->userData = ctxt;
     }
     xmlDetectSAX2(ctxt);
 
@@ -11762,9 +11779,11 @@ xmlCtxtReset(xmlParserCtxtPtr ctxt)
     ctxt->nsWellFormed = 1;
     ctxt->disableSAX = 0;
     ctxt->valid = 1;
+#if 0
     ctxt->vctxt.userData = ctxt;
     ctxt->vctxt.error = xmlParserValidityError;
     ctxt->vctxt.warning = xmlParserValidityWarning;
+#endif
     ctxt->record_info = 0;
     ctxt->nbChars = 0;
     ctxt->checkIndex = 0;
@@ -12027,25 +12046,12 @@ xmlDoRead(xmlParserCtxtPtr ctxt, const char *URL, const char *encoding,
     else {
         ret = NULL;
 	if (ctxt->myDoc != NULL) {
-	    if ((ctxt->dictNames) &&
-		(ctxt->myDoc->dict == ctxt->dict))
-		xmlDictReference(ctxt->dict);
 	    xmlFreeDoc(ctxt->myDoc);
 	}
     }
     ctxt->myDoc = NULL;
     if (!reuse) {
-        if ((ctxt->dictNames) &&
-	    (ret != NULL) &&
-	    (ret->dict == ctxt->dict))
-	    ctxt->dict = NULL;
 	xmlFreeParserCtxt(ctxt);
-    } else {
-        /* Must duplicate the reference to the dictionary */
-        if ((ctxt->dictNames) &&
-	    (ret != NULL) &&
-	    (ret->dict == ctxt->dict))
-	    xmlDictReference(ctxt->dict);
     }
 
     return (ret);

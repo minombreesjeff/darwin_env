@@ -704,20 +704,16 @@ static void streamFile(char *filename) {
 	}
 	if ((timing) && (!repeat)) {
 #ifdef LIBXML_SCHEMAS_ENABLED
-	    if ((valid) || (relaxng != NULL))
+	    if (relaxng != NULL)
 		endTimer("Parsing and validating");
 	    else
-		endTimer("Parsing");
-#else
+#endif
 #ifdef LIBXML_VALID_ENABLED
 	    if (valid)
 		endTimer("Parsing and validating");
 	    else
-		endTimer("Parsing");
-#else
-	    endTimer("Parsing");
-#endif /* LIBXML_VALID_ENABLED */
 #endif
+	    endTimer("Parsing");
 	}
 
 #ifdef LIBXML_VALID_ENABLED
@@ -878,6 +874,7 @@ static void parseAndPrintFile(char *filename, xmlParserCtxtPtr rectxt) {
 		if (res > 0) {
 		    ctxt = xmlCreatePushParserCtxt(NULL, NULL,
 		                chars, res, filename);
+		    xmlCtxtUseOptions(ctxt, options);
 		    while ((res = fread(chars, 1, size, f)) > 0) {
 			xmlParseChunk(ctxt, chars, res, 0);
 		    }
@@ -1876,7 +1873,11 @@ main(int argc, char **argv) {
 	if (timing) {
 	    endTimer("Compiling the schemas");
 	}
-    } else if ((schema != NULL) && (stream == 0)) {
+    } else if ((schema != NULL)
+#ifdef LIBXML_READER_ENABLED
+		   	&& (stream == 0)
+#endif
+	) {
 	xmlSchemaParserCtxtPtr ctxt;
 
 	if (timing) {

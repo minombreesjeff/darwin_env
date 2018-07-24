@@ -1,6 +1,6 @@
 Summary: Library providing XML and HTML support
 Name: libxml2
-Version: 2.6.7
+Version: 2.6.9
 Release: 1
 License: MIT
 Group: Development/Libraries
@@ -44,7 +44,7 @@ URI library.
 Summary: Python bindings for the libxml2 library
 Group: Development/Libraries
 Requires: libxml2 = %{version}
-Requires: python
+Requires: %{_libdir}/python%(echo `python -c "import sys; print sys.version[0:3]"`)
 
 %description python
 The libxml2-python package contains a module that permits applications
@@ -63,6 +63,7 @@ at parse time or later once the document has been modified.
 %configure
 make
 (cd doc/examples ; make clean)
+gzip -9 ChangeLog
 
 %install
 rm -fr %{buildroot}
@@ -81,7 +82,7 @@ rm -fr %{buildroot}
 %files
 %defattr(-, root, root)
 
-%doc AUTHORS ChangeLog NEWS README Copyright TODO
+%doc AUTHORS ChangeLog.gz NEWS README Copyright TODO
 %doc %{_mandir}/man1/xmllint.1*
 %doc %{_mandir}/man1/xmlcatalog.1*
 %doc %{_mandir}/man3/libxml.3*
@@ -94,7 +95,7 @@ rm -fr %{buildroot}
 %defattr(-, root, root)
 
 %doc %{_mandir}/man1/xml2-config.1*
-%doc AUTHORS ChangeLog NEWS README Copyright TODO
+%doc AUTHORS ChangeLog.gz NEWS README Copyright TODO
 %doc doc/*.html doc/html doc/*.gif doc/*.png
 %doc doc/tutorial doc/libxml2-api.xml
 %doc doc/examples
@@ -109,7 +110,7 @@ rm -fr %{buildroot}
 %files python
 %defattr(-, root, root)
 
-%doc AUTHORS ChangeLog NEWS README Copyright
+%doc AUTHORS ChangeLog.gz NEWS README Copyright
 %{_libdir}/python*/site-packages/libxml2.py
 %{_libdir}/python*/site-packages/drv_libxml2.py
 %{_libdir}/python*/site-packages/libxml2mod*
@@ -120,8 +121,8 @@ rm -fr %{buildroot}
 %doc doc/python.html
 
 %changelog
-* Mon Feb 23 2004 Daniel Veillard <veillard@redhat.com>
-- upstream release 2.6.7 see http://xmlsoft.org/news.html
+* Mon Apr 19 2004 Daniel Veillard <veillard@redhat.com>
+- upstream release 2.6.9 see http://xmlsoft.org/news.html
 
 * Thu Jan  2 2003 Daniel Veillard <veillard@redhat.com>
 - integrated drv_libxml2 xml.sax driver from Stéphane Bidoul

@@ -392,7 +392,7 @@ xmlCreateNewCatalog(xmlCatalogType type, xmlCatalogPrefer prefer) {
 
 /**
  * xmlFreeCatalog:
- * @catal:  a Catalog entry
+ * @catal:  a Catalog
  *
  * Free the memory allocated to a Catalog
  */
@@ -417,7 +417,7 @@ xmlFreeCatalog(xmlCatalogPtr catal) {
 #ifdef LIBXML_OUTPUT_ENABLED
 /**
  * xmlCatalogDumpEntry:
- * @entry:  the 
+ * @entry:  the catalog entry
  * @out:  the file.
  *
  * Serialize an SGML Catalog entry
@@ -749,7 +749,7 @@ xmlCatalogUnWrapURN(const xmlChar *urn) {
     urn += sizeof(XML_URN_PUBID) - 1;
     
     while (*urn != 0) {
-	if (i > sizeof(result) - 3)
+	if (i > sizeof(result) - 4)
 	    break;
 	if (*urn == '+') {
 	    result[i++] = ' ';
@@ -763,21 +763,21 @@ xmlCatalogUnWrapURN(const xmlChar *urn) {
 	    result[i++] = ':';
 	    urn++;
 	} else if (*urn == '%') {
-	    if ((urn[1] == '2') && (urn[1] == 'B'))
+	    if ((urn[1] == '2') && (urn[2] == 'B'))
 		result[i++] = '+';
-	    else if ((urn[1] == '3') && (urn[1] == 'A'))
+	    else if ((urn[1] == '3') && (urn[2] == 'A'))
 		result[i++] = ':';
-	    else if ((urn[1] == '2') && (urn[1] == 'F'))
+	    else if ((urn[1] == '2') && (urn[2] == 'F'))
 		result[i++] = '/';
-	    else if ((urn[1] == '3') && (urn[1] == 'B'))
+	    else if ((urn[1] == '3') && (urn[2] == 'B'))
 		result[i++] = ';';
-	    else if ((urn[1] == '2') && (urn[1] == '7'))
+	    else if ((urn[1] == '2') && (urn[2] == '7'))
 		result[i++] = '\'';
-	    else if ((urn[1] == '3') && (urn[1] == 'F'))
+	    else if ((urn[1] == '3') && (urn[2] == 'F'))
 		result[i++] = '?';
-	    else if ((urn[1] == '2') && (urn[1] == '3'))
+	    else if ((urn[1] == '2') && (urn[2] == '3'))
 		result[i++] = '#';
-	    else if ((urn[1] == '2') && (urn[1] == '5'))
+	    else if ((urn[1] == '2') && (urn[2] == '5'))
 		result[i++] = '%';
 	    else {
 		result[i++] = *urn;
@@ -960,7 +960,7 @@ xmlCatalogListXMLResolveURI(xmlCatalogEntryPtr catal, const xmlChar *URI);
  *
  * lookup the internal type associated to an XML catalog entry name
  *
- * Returns the type associate with that name
+ * Returns the type associated with that name
  */
 static xmlCatalogEntryType
 xmlGetXMLCatalogEntryType(const xmlChar *name) {
@@ -1469,8 +1469,8 @@ xmlDelXMLCatalog(xmlCatalogEntryPtr catal, const xmlChar *value) {
 /**
  * xmlCatalogXMLResolve:
  * @catal:  a catalog list
- * @pubId:  the public ID string
- * @sysId:  the system ID string
+ * @pubID:  the public ID string
+ * @sysID:  the system ID string
  *
  * Do a complete resolution lookup of an External Identifier for a
  * list of catalog entries.
@@ -1700,7 +1700,7 @@ xmlCatalogXMLResolve(xmlCatalogEntryPtr catal, const xmlChar *pubID,
  * xmlCatalogXMLResolveURI:
  * @catal:  a catalog list
  * @URI:  the URI
- * @sysId:  the system ID string
+ * @sysID:  the system ID string
  *
  * Do a complete resolution lookup of an External Identifier for a
  * list of catalog entries.
@@ -1835,8 +1835,8 @@ xmlCatalogXMLResolveURI(xmlCatalogEntryPtr catal, const xmlChar *URI) {
 /**
  * xmlCatalogListXMLResolve:
  * @catal:  a catalog list
- * @pubId:  the public ID string
- * @sysId:  the system ID string
+ * @pubID:  the public ID string
+ * @sysID:  the system ID string
  *
  * Do a complete resolution lookup of an External Identifier for a
  * list of catalogs
@@ -1887,7 +1887,7 @@ xmlCatalogListXMLResolve(xmlCatalogEntryPtr catal, const xmlChar *pubID,
 	else if (xmlStrEqual(pubID, urnID))
 	    ret = xmlCatalogListXMLResolve(catal, pubID, NULL);
 	else {
-	    ret = xmlCatalogListXMLResolve(catal, pubID, NULL);
+	    ret = xmlCatalogListXMLResolve(catal, pubID, urnID);
 	}
 	if (urnID != NULL)
 	    xmlFree(urnID);
@@ -2355,11 +2355,11 @@ xmlParseSGMLCatalog(xmlCatalogPtr catal, const xmlChar *value,
 /**
  * xmlCatalogGetSGMLPublic:
  * @catal:  an SGML catalog hash
- * @pubId:  the public ID string
+ * @pubID:  the public ID string
  *
- * Try to lookup the system ID associated to a public ID
+ * Try to lookup the catalog local reference associated to a public ID
  *
- * Returns the system ID if found or NULL otherwise.
+ * Returns the local resource if found or NULL otherwise.
  */
 static const xmlChar *
 xmlCatalogGetSGMLPublic(xmlHashTablePtr catal, const xmlChar *pubID) {
@@ -2379,11 +2379,11 @@ xmlCatalogGetSGMLPublic(xmlHashTablePtr catal, const xmlChar *pubID) {
 /**
  * xmlCatalogGetSGMLSystem:
  * @catal:  an SGML catalog hash
- * @sysId:  the public ID string
+ * @sysID:  the system ID string
  *
  * Try to lookup the catalog local reference for a system ID
  *
- * Returns the system ID if found or NULL otherwise.
+ * Returns the local resource if found or NULL otherwise.
  */
 static const xmlChar *
 xmlCatalogGetSGMLSystem(xmlHashTablePtr catal, const xmlChar *sysID) {
@@ -2403,8 +2403,8 @@ xmlCatalogGetSGMLSystem(xmlHashTablePtr catal, const xmlChar *sysID) {
 /**
  * xmlCatalogSGMLResolve:
  * @catal:  the SGML catalog
- * @pubId:  the public ID string
- * @sysId:  the system ID string
+ * @pubID:  the public ID string
+ * @sysID:  the system ID string
  *
  * Do a complete resolution lookup of an External Identifier
  *
@@ -2576,11 +2576,11 @@ xmlExpandCatalog(xmlCatalogPtr catal, const char *filename)
 /**
  * xmlACatalogResolveSystem:
  * @catal:  a Catalog
- * @sysID:  the public ID string
+ * @sysID:  the system ID string
  *
  * Try to lookup the catalog resource for a system ID
  *
- * Returns the system ID if found or NULL otherwise, the value returned
+ * Returns the resource if found or NULL otherwise, the value returned
  *      must be freed by the caller.
  */
 xmlChar *
@@ -2613,9 +2613,9 @@ xmlACatalogResolveSystem(xmlCatalogPtr catal, const xmlChar *sysID) {
  * @catal:  a Catalog
  * @pubID:  the public ID string
  *
- * Try to lookup the system ID associated to a public ID in that catalog
+ * Try to lookup the catalog local reference associated to a public ID in that catalog
  *
- * Returns the system ID if found or NULL otherwise, the value returned
+ * Returns the local resource if found or NULL otherwise, the value returned
  *      must be freed by the caller.
  */
 xmlChar *
@@ -2664,13 +2664,16 @@ xmlACatalogResolve(xmlCatalogPtr catal, const xmlChar * pubID,
         return (NULL);
 
     if (xmlDebugCatalogs) {
-        if (pubID != NULL) {
-            xmlGenericError(xmlGenericErrorContext,
-                            "Resolve: pubID %s\n", pubID);
-        } else {
-            xmlGenericError(xmlGenericErrorContext,
-                            "Resolve: sysID %s\n", sysID);
-        }
+         if ((pubID != NULL) && (sysID != NULL)) {
+             xmlGenericError(xmlGenericErrorContext,
+                             "Resolve: pubID %s sysID %s\n", pubID, sysID);
+         } else if (pubID != NULL) {
+             xmlGenericError(xmlGenericErrorContext,
+                             "Resolve: pubID %s\n", pubID);
+         } else {
+             xmlGenericError(xmlGenericErrorContext,
+                             "Resolve: sysID %s\n", sysID);
+         }
     }
 
     if (catal->type == XML_XML_CATALOG_TYPE) {
@@ -2728,7 +2731,7 @@ xmlACatalogResolveURI(xmlCatalogPtr catal, const xmlChar *URI) {
  * @catal:  a Catalog
  * @out:  the file.
  *
- * Free up all the memory associated with catalogs
+ * Dump the given catalog to the given file.
  */
 void
 xmlACatalogDump(xmlCatalogPtr catal, FILE *out) {
@@ -3060,11 +3063,11 @@ xmlCatalogCleanup(void) {
 
 /**
  * xmlCatalogResolveSystem:
- * @sysID:  the public ID string
+ * @sysID:  the system ID string
  *
  * Try to lookup the catalog resource for a system ID
  *
- * Returns the system ID if found or NULL otherwise, the value returned
+ * Returns the resource if found or NULL otherwise, the value returned
  *      must be freed by the caller.
  */
 xmlChar *
@@ -3082,9 +3085,9 @@ xmlCatalogResolveSystem(const xmlChar *sysID) {
  * xmlCatalogResolvePublic:
  * @pubID:  the public ID string
  *
- * Try to lookup the system ID associated to a public ID
+ * Try to lookup the catalog reference associated to a public ID
  *
- * Returns the system ID if found or NULL otherwise, the value returned
+ * Returns the resource if found or NULL otherwise, the value returned
  *      must be freed by the caller.
  */
 xmlChar *
@@ -3144,7 +3147,7 @@ xmlCatalogResolveURI(const xmlChar *URI) {
  * xmlCatalogDump:
  * @out:  the file.
  *
- * Free up all the memory associated with catalogs
+ * Dump all the global catalog content to the given file.
  */
 void
 xmlCatalogDump(FILE *out) {
@@ -3434,13 +3437,16 @@ xmlCatalogLocalResolve(void *catalogs, const xmlChar *pubID,
 	return(NULL);
 
     if (xmlDebugCatalogs) {
-	if (pubID != NULL) {
-	    xmlGenericError(xmlGenericErrorContext,
-		    "Local resolve: pubID %s\n", pubID);
-	} else {
-	    xmlGenericError(xmlGenericErrorContext,
-		    "Local resolve: sysID %s\n", sysID);
-	}
+        if ((pubID != NULL) && (sysID != NULL)) {
+            xmlGenericError(xmlGenericErrorContext,
+                            "Local Resolve: pubID %s sysID %s\n", pubID, sysID);
+        } else if (pubID != NULL) {
+            xmlGenericError(xmlGenericErrorContext,
+                            "Local Resolve: pubID %s\n", pubID);
+        } else {
+            xmlGenericError(xmlGenericErrorContext,
+                            "Local Resolve: sysID %s\n", sysID);
+        }
     }
 
     catal = (xmlCatalogEntryPtr) catalogs;
@@ -3496,10 +3502,10 @@ xmlCatalogLocalResolveURI(void *catalogs, const xmlChar *URI) {
  * xmlCatalogGetSystem:
  * @sysID:  the system ID string
  *
- * Try to lookup the system ID associated to a public ID
+ * Try to lookup the catalog reference associated to a system ID
  * DEPRECATED, use xmlCatalogResolveSystem()
  *
- * Returns the system ID if found or NULL otherwise.
+ * Returns the resource if found or NULL otherwise.
  */
 const xmlChar *
 xmlCatalogGetSystem(const xmlChar *sysID) {
@@ -3540,10 +3546,10 @@ xmlCatalogGetSystem(const xmlChar *sysID) {
  * xmlCatalogGetPublic:
  * @pubID:  the public ID string
  *
- * Try to lookup the system ID associated to a public ID
+ * Try to lookup the catalog reference associated to a public ID
  * DEPRECATED, use xmlCatalogResolvePublic()
  *
- * Returns the system ID if found or NULL otherwise.
+ * Returns the resource if found or NULL otherwise.
  */
 const xmlChar *
 xmlCatalogGetPublic(const xmlChar *pubID) {

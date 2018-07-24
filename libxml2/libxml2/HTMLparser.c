@@ -880,6 +880,7 @@ static const char *htmlStartClose[] = {
 "head",		"p", NULL,
 "title",	"p", NULL,
 "body",		"head", "style", "link", "title", "p", NULL,
+"frameset",	"head", "style", "link", "title", "p", NULL,
 "li",		"p", "h1", "h2", "h3", "h4", "h5", "h6", "dl", "address",
 		"pre", "listing", "xmp", "head", "li", NULL,
 "hr",		"p", "head", NULL,
@@ -5507,22 +5508,28 @@ htmlCtxtUseOptions(htmlParserCtxtPtr ctxt, int options)
 {
     if (options & HTML_PARSE_NOWARNING) {
         ctxt->sax->warning = NULL;
+        ctxt->vctxt.warning = NULL;
         options -= XML_PARSE_NOWARNING;
+	ctxt->options |= XML_PARSE_NOWARNING;
     }
     if (options & HTML_PARSE_NOERROR) {
         ctxt->sax->error = NULL;
+        ctxt->vctxt.error = NULL;
         ctxt->sax->fatalError = NULL;
         options -= XML_PARSE_NOERROR;
+	ctxt->options |= XML_PARSE_NOERROR;
     }
     if (options & HTML_PARSE_PEDANTIC) {
         ctxt->pedantic = 1;
         options -= XML_PARSE_PEDANTIC;
+	ctxt->options |= XML_PARSE_PEDANTIC;
     } else
         ctxt->pedantic = 0;
     if (options & XML_PARSE_NOBLANKS) {
         ctxt->keepBlanks = 0;
         ctxt->sax->ignorableWhitespace = xmlSAX2IgnorableWhitespace;
         options -= XML_PARSE_NOBLANKS;
+	ctxt->options |= XML_PARSE_NOBLANKS;
     } else
         ctxt->keepBlanks = 1;
     ctxt->dictNames = 0;
@@ -5568,12 +5575,6 @@ htmlDoRead(htmlParserCtxtPtr ctxt, const char *URL, const char *encoding,
 	    (ret->dict == ctxt->dict))
 	    ctxt->dict = NULL;
 	xmlFreeParserCtxt(ctxt);
-    } else {
-        /* Must duplicate the reference to the dictionary */
-        if ((ctxt->dictNames) &&
-	    (ret != NULL) &&
-	    (ret->dict == ctxt->dict))
-	    xmlDictReference(ctxt->dict);
     }
     return (ret);
 }

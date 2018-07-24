@@ -18,6 +18,6 @@ Install_Target = install-strip
 
 strip:
 	rm -f "$(DSTROOT)/usr/lib/libxml2.2.dylib" "$(DSTROOT)/usr/lib/libxml2.dylib"
-	mv "$(DSTROOT)/usr/lib/libxml2.2.6.7.dylib" "$(DSTROOT)/usr/lib/libxml2.2.dylib"
+	mv "$(DSTROOT)/usr/lib/libxml2.2.6.9.dylib" "$(DSTROOT)/usr/lib/libxml2.2.dylib"
 	strip -x "$(DSTROOT)/usr/lib/libxml2.2.dylib"
 	ln -sf libxml2.2.dylib "$(DSTROOT)/usr/lib/libxml2.dylib"

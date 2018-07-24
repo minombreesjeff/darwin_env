@@ -840,7 +840,15 @@ xmlNanoHTTPScanAnswer(xmlNanoHTTPCtxtPtr ctxt, const char *line) {
 	while ((*cur == ' ') || (*cur == '\t')) cur++;
 	if (ctxt->location != NULL)
 	    xmlFree(ctxt->location);
-	ctxt->location = xmlMemStrdup(cur);
+	if (*cur == '/') {
+	    xmlChar *tmp_http = xmlStrdup(BAD_CAST "http://");
+	    xmlChar *tmp_loc = 
+	        xmlStrcat(tmp_http, (const xmlChar *) ctxt->hostname);
+	    ctxt->location = 
+	        (char *) xmlStrcat (tmp_loc, (const xmlChar *) cur);
+	} else {
+	    ctxt->location = xmlMemStrdup(cur);
+	}
     } else if (!xmlStrncasecmp(BAD_CAST line, BAD_CAST"WWW-Authenticate:", 17)) {
         cur += 17;
 	while ((*cur == ' ') || (*cur == '\t')) cur++;
@@ -1065,21 +1073,11 @@ xmlNanoHTTPConnectHost(const char *host, int port)
 	for (res = result; res; res = res->ai_next) {
 	    if (res->ai_family == AF_INET || res->ai_family == AF_INET6) {
 		if (res->ai_family == AF_INET6) {
-		    if (res->ai_addrlen > sizeof(sockin6)) {
-			__xmlIOErr(XML_FROM_HTTP, 0, "address size mismatch\n");
-			freeaddrinfo (result);
-			return (-1);
-		    }
 		    memcpy (&sockin6, res->ai_addr, res->ai_addrlen);
 		    sockin6.sin6_port = htons (port);
 		    addr = (struct sockaddr *)&sockin6;
 		}
 		else {
-		    if (res->ai_addrlen > sizeof(sockin)) {
-			__xmlIOErr(XML_FROM_HTTP, 0, "address size mismatch\n");
-			freeaddrinfo (result);
-			return (-1);
-		    }
 		    memcpy (&sockin, res->ai_addr, res->ai_addrlen);
 		    sockin.sin_port = htons (port);
 		    addr = (struct sockaddr *)&sockin;
@@ -1144,10 +1142,6 @@ xmlNanoHTTPConnectHost(const char *host, int port)
 	for (i = 0; h->h_addr_list[i]; i++) {
 	    if (h->h_addrtype == AF_INET) {
 		/* A records (IPv4) */
-		if ((unsigned int) h->h_length > sizeof(ia)) {
-		    __xmlIOErr(XML_FROM_HTTP, 0, "address size mismatch\n");
-		    return (-1);
-		}
 		memcpy (&ia, h->h_addr_list[i], h->h_length);
 		sockin.sin_family = h->h_addrtype;
 		sockin.sin_addr = ia;
@@ -1156,10 +1150,6 @@ xmlNanoHTTPConnectHost(const char *host, int port)
 #ifdef SUPPORT_IP6
 	    } else if (have_ipv6 () && (h->h_addrtype == AF_INET6)) {
 		/* AAAA records (IPv6) */
-		if ((unsigned int) h->h_length > sizeof(ia6)) {
-		    __xmlIOErr(XML_FROM_HTTP, 0, "address size mismatch\n");
-		    return (-1);
-		}
 		memcpy (&ia6, h->h_addr_list[i], h->h_length);
 		sockin6.sin6_family = h->h_addrtype;
 		sockin6.sin6_addr = ia6;
@@ -1606,6 +1596,7 @@ xmlNanoHTTPSave(void *ctxt, const char *filename) {
     }
 
     xmlNanoHTTPClose(ctxt);
+    close(fd);
     return(0);
 }
 #endif /* LIBXML_OUTPUT_ENABLED */

@@ -105,6 +105,42 @@ xmlErrValid(xmlValidCtxtPtr ctxt, xmlParserErrors error,
                         msg);
 }
 
+#if defined(LIBXML_VALID_ENABLED) || defined(LIBXML_SCHEMAS_ENABLED)
+/**
+ * xmlErrValidNode:
+ * @ctxt:  an XML validation parser context
+ * @node:  the node raising the error
+ * @error:  the error number
+ * @str1:  extra informations
+ * @str2:  extra informations
+ * @str3:  extra informations
+ *
+ * Handle a validation error, provide contextual informations
+ */
+static void
+xmlErrValidNode(xmlValidCtxtPtr ctxt,
+                xmlNodePtr node, xmlParserErrors error,
+                const char *msg, const xmlChar * str1,
+                const xmlChar * str2, const xmlChar * str3)
+{
+    xmlStructuredErrorFunc schannel = NULL;
+    xmlGenericErrorFunc channel = NULL;
+    xmlParserCtxtPtr pctxt = NULL;
+    void *data = NULL;
+
+    if (ctxt != NULL) {
+        channel = ctxt->error;
+        data = ctxt->userData;
+	pctxt = ctxt->userData;
+    }
+    __xmlRaiseError(schannel, channel, data, pctxt, node, XML_FROM_VALID, error,
+                    XML_ERR_ERROR, NULL, 0,
+                    (const char *) str1,
+                    (const char *) str1,
+                    (const char *) str3, 0, 0, msg, str1, str2, str3);
+}
+#endif /* LIBXML_VALID_ENABLED or LIBXML_SCHEMAS_ENABLED */
+
 #ifdef LIBXML_VALID_ENABLED
 /**
  * xmlErrValidNodeNr:
@@ -139,39 +175,7 @@ xmlErrValidNodeNr(xmlValidCtxtPtr ctxt,
                     (const char *) str3,
                     NULL, int2, 0, msg, str1, int2, str3);
 }
-/**
- * xmlErrValidNode:
- * @ctxt:  an XML validation parser context
- * @node:  the node raising the error
- * @error:  the error number
- * @str1:  extra informations
- * @str2:  extra informations
- * @str3:  extra informations
- *
- * Handle a validation error, provide contextual informations
- */
-static void
-xmlErrValidNode(xmlValidCtxtPtr ctxt,
-                xmlNodePtr node, xmlParserErrors error,
-                const char *msg, const xmlChar * str1,
-                const xmlChar * str2, const xmlChar * str3)
-{
-    xmlStructuredErrorFunc schannel = NULL;
-    xmlGenericErrorFunc channel = NULL;
-    xmlParserCtxtPtr pctxt = NULL;
-    void *data = NULL;
 
-    if (ctxt != NULL) {
-        channel = ctxt->error;
-        data = ctxt->userData;
-	pctxt = ctxt->userData;
-    }
-    __xmlRaiseError(schannel, channel, data, pctxt, node, XML_FROM_VALID, error,
-                    XML_ERR_ERROR, NULL, 0,
-                    (const char *) str1,
-                    (const char *) str1,
-                    (const char *) str3, 0, 0, msg, str1, str2, str3);
-}
 /**
  * xmlErrValidWarning:
  * @ctxt:  an XML validation parser context
@@ -657,10 +661,10 @@ xmlValidBuildAContentModel(xmlElementContentPtr content,
 			                     ctxt->state, fullname, NULL);
 		    break;
 		case XML_ELEMENT_CONTENT_MULT:
-		    xmlAutomataNewTransition(ctxt->am, ctxt->state,
-			                     ctxt->state, fullname, NULL);
-		    ctxt->state = xmlAutomataNewEpsilon(ctxt->am, ctxt->state,
-			                     NULL);
+		    ctxt->state = xmlAutomataNewEpsilon(ctxt->am,
+		    			    ctxt->state, NULL);
+		    xmlAutomataNewTransition(ctxt->am,
+		    	    ctxt->state, ctxt->state, fullname, NULL);
 		    break;
 	    }
 	    if ((fullname != fn) && (fullname != content->name))
@@ -2473,7 +2477,7 @@ xmlAddID(xmlValidCtxtPtr ctxt, xmlDocPtr doc, const xmlChar *value,
 	/*
 	 * The id is already defined in this DTD.
 	 */
-	if (ctxt != NULL) {
+	if ((ctxt != NULL) && (ctxt->error != NULL)) {
 	    xmlErrValidNode(ctxt, attr->parent, XML_DTD_ID_REDEFINED,
 	                    "ID %s already defined\n",
 			    value, NULL, NULL);
@@ -2715,6 +2719,20 @@ xmlWalkRemoveRef(const void *data, const void *user)
 }
 
 /**
+ * xmlDummyCompare
+ * @data0:  Value supplied by the user
+ * @data1:  Value supplied by the user
+ *
+ * Do nothing, return 0. Used to create unordered lists.
+ */
+static int
+xmlDummyCompare(const void *data0 ATTRIBUTE_UNUSED,
+                const void *data1 ATTRIBUTE_UNUSED)
+{
+    return (0);
+}
+
+/**
  * xmlAddRef:
  * @ctxt:  the validation context
  * @doc:  pointer to the document
@@ -2784,7 +2802,7 @@ xmlAddRef(xmlValidCtxtPtr ctxt, xmlDocPtr doc, const xmlChar *value,
      */
 
     if (NULL == (ref_list = xmlHashLookup(table, value))) {
-        if (NULL == (ref_list = xmlListCreate(xmlFreeRef, NULL))) {
+        if (NULL == (ref_list = xmlListCreate(xmlFreeRef, xmlDummyCompare))) {
 	    xmlErrValid(NULL, XML_ERR_INTERNAL_ERROR,
 		    "xmlAddRef: Reference list creation failed!\n",
 		    NULL);
@@ -3137,7 +3155,7 @@ xmlGetDtdNotationDesc(xmlDtdPtr dtd, const xmlChar *name) {
     return(xmlHashLookup(table, name));
 }
 
-#ifdef LIBXML_VALID_ENABLED
+#if defined(LIBXML_VALID_ENABLED) || defined(LIBXML_SCHEMAS_ENABLED)
 /**
  * xmlValidateNotationUse:
  * @ctxt:  the validation context
@@ -3168,7 +3186,7 @@ xmlValidateNotationUse(xmlValidCtxtPtr ctxt, xmlDocPtr doc,
     }
     return(1);
 }
-#endif /* LIBXML_VALID_ENABLED */
+#endif /* LIBXML_VALID_ENABLED or LIBXML_SCHEMAS_ENABLED */
 
 /**
  * xmlIsMixedElement:

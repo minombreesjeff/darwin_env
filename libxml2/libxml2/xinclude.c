@@ -132,6 +132,7 @@ xmlXIncludeErr(xmlXIncludeCtxtPtr ctxt, xmlNodePtr node, int error,
 		    msg, (const char *) extra);
 }
 
+#if 0
 /**
  * xmlXIncludeWarn:
  * @ctxt: the XInclude context
@@ -150,6 +151,7 @@ xmlXIncludeWarn(xmlXIncludeCtxtPtr ctxt, xmlNodePtr node, int error,
 		    (const char *) extra, NULL, NULL, 0, 0,
 		    msg, (const char *) extra);
 }
+#endif
 
 /**
  * xmlXIncludeGetProp:
@@ -451,19 +453,11 @@ xmlXIncludeParseFile(xmlXIncludeCtxtPtr ctxt, const char *URL) {
 
     if (pctxt->wellFormed) {
         ret = pctxt->myDoc;
-	xmlDictReference(pctxt->dict);
     }
     else {
         ret = NULL;
-	if (pctxt->myDoc != NULL) {
-	    if ((ctxt->doc != NULL) && (ctxt->doc->dict != NULL) &&
-	        (pctxt->myDoc->dict == ctxt->doc->dict))
-		xmlDictReference(ctxt->doc->dict);
-	    else if ((pctxt->dict != NULL) &&
-	             (pctxt->dict == pctxt->myDoc->dict))
-		xmlDictReference(pctxt->dict);
+	if (pctxt->myDoc != NULL)
 	    xmlFreeDoc(pctxt->myDoc);
-	}
         pctxt->myDoc = NULL;
     }
     xmlFreeParserCtxt(pctxt);
@@ -692,6 +686,11 @@ xmlXIncludeRecurseDoc(xmlXIncludeCtxtPtr ctxt, xmlDocPtr doc,
 	    newctxt->incTab[i]->count++; /* prevent the recursion from
 					    freeing it */
 	}
+	/*
+	 * The new context should also inherit the Parse Flags
+	 * (bug 132597)
+	 */
+	newctxt->parseFlags = ctxt->parseFlags;
 	xmlXIncludeDoProcess(newctxt, doc, xmlDocGetRootElement(doc));
 	for (i = 0;i < ctxt->incNr;i++) {
 	    newctxt->incTab[i]->count--;
@@ -907,7 +906,8 @@ xmlXIncludeCopyRange(xmlXIncludeCtxtPtr ctxt, xmlDocPtr target,
 	 */
 	if (level < 0) {
 	    while (level < 0) {
-	        tmp2 = xmlDocCopyNode(listParent, target, 0);
+	        /* copy must include namespaces and properties */
+	        tmp2 = xmlDocCopyNode(listParent, target, 2);
 	        xmlAddChild(tmp2, list);
 	        list = tmp2;
 	        listParent = listParent->parent;
@@ -953,7 +953,8 @@ xmlXIncludeCopyRange(xmlXIncludeCtxtPtr ctxt, xmlDocPtr target,
 	    } else {	/* ending node not a text node */
 	        endLevel = level;	/* remember the level of the end node */
 		endFlag = 1;
-		tmp = xmlDocCopyNode(cur, target, 0);
+		/* last node - need to take care of properties + namespaces */
+		tmp = xmlDocCopyNode(cur, target, 2);
 		if (list == NULL) {
 		    list = tmp;
 		    listParent = cur->parent;
@@ -1000,7 +1001,11 @@ xmlXIncludeCopyRange(xmlXIncludeCtxtPtr ctxt, xmlDocPtr target,
 		last = list = tmp;
 		listParent = cur->parent;
 	    } else {		/* Not text node */
-		tmp = xmlDocCopyNode(cur, target, 0);
+	        /*
+		 * start of the range - need to take care of
+		 * properties and namespaces
+		 */
+		tmp = xmlDocCopyNode(cur, target, 2);
 		list = last = tmp;
 		listParent = cur->parent;
 		if (index1 > 1) {	/* Do we need to position? */
@@ -1033,7 +1038,11 @@ xmlXIncludeCopyRange(xmlXIncludeCtxtPtr ctxt, xmlDocPtr target,
 		    /* Humm, should not happen ! */
 		    break;
 		default:
-		    tmp = xmlDocCopyNode(cur, target, 0);
+		    /*
+		     * Middle of the range - need to take care of
+		     * properties and namespaces
+		     */
+		    tmp = xmlDocCopyNode(cur, target, 2);
 		    break;
 	    }
 	    if (tmp != NULL) {
@@ -1354,6 +1363,9 @@ xmlXIncludeLoadDoc(xmlXIncludeCtxtPtr ctxt, const xmlChar *url, int nr) {
     xmlChar *URL;
     xmlChar *fragment = NULL;
     int i = 0;
+#ifdef LIBXML_XPTR_ENABLED
+    int saveFlags;
+#endif
 
 #ifdef DEBUG_XINCLUDE
     xmlGenericError(xmlGenericErrorContext, "Loading doc %s:%d\n", url, nr);
@@ -1418,7 +1430,22 @@ xmlXIncludeLoadDoc(xmlXIncludeCtxtPtr ctxt, const xmlChar *url, int nr) {
 #ifdef DEBUG_XINCLUDE
     printf("loading %s\n", URL);
 #endif
+#ifdef LIBXML_XPTR_ENABLED
+    /*
+     * If this is an XPointer evaluation, we want to assure that
+     * all entities have been resolved prior to processing the
+     * referenced document
+     */
+    saveFlags = ctxt->parseFlags;
+    if (fragment != NULL) {	/* if this is an XPointer eval */
+	ctxt->parseFlags |= XML_PARSE_NOENT;
+    }
+#endif
+
     doc = xmlXIncludeParseFile(ctxt, (const char *)URL);
+#ifdef LIBXML_XPTR_ENABLED
+    ctxt->parseFlags = saveFlags;
+#endif
     if (doc == NULL) {
 	xmlFree(URL);
 	if (fragment != NULL)
@@ -1789,8 +1816,10 @@ xmlXIncludeLoadFallback(xmlXIncludeCtxtPtr ctxt, xmlNodePtr fallback, int nr) {
 	    return (-1);
 	xmlXIncludeSetFlags(newctxt, ctxt->parseFlags);
 	ret = xmlXIncludeDoProcess(newctxt, ctxt->doc, fallback->children);
-	if ((ret >=0) && (ctxt->nbErrors > 0))
+	if (ctxt->nbErrors > 0)
 	    ret = -1;
+	else if (ret > 0)
+	    ret = 0;	/* xmlXIncludeDoProcess can return +ve number */
 	xmlXIncludeFreeContext(newctxt);
 
 	ctxt->incTab[nr]->inc = xmlCopyNodeList(fallback->children);
@@ -2179,6 +2208,8 @@ xmlXIncludeDoProcess(xmlXIncludeCtxtPtr ctxt, xmlDocPtr doc, xmlNodePtr tree) {
 	    if (xmlXIncludeTestNode(ctxt, cur))
 		xmlXIncludePreProcessNode(ctxt, cur);
 	} else {
+	    if (cur == tree)
+	        break;
 	    do {
 		cur = cur->parent;
 		if (cur == NULL) break; /* do */

@@ -1538,6 +1538,7 @@ xmlShellBase(xmlShellCtxtPtr ctxt,
     return (0);
 }
 
+#ifdef LIBXML_TREE_ENABLED
 /**
  * xmlShellSetBase:
  * @ctxt:  the shell context
@@ -1558,6 +1559,7 @@ xmlShellSetBase(xmlShellCtxtPtr ctxt ATTRIBUTE_UNUSED,
     xmlNodeSetBase(node, (xmlChar*) arg);
     return (0);
 }
+#endif
 
 /**
  * xmlShellGrep:
@@ -1804,7 +1806,7 @@ xmlShellLoad(xmlShellCtxtPtr ctxt, char *filename,
         doc = NULL;
 #endif /* LIBXML_HTML_ENABLED */
     } else {
-        doc = xmlParseFile(filename);
+        doc = xmlReadFile(filename,NULL,0);
     }
     if (doc != NULL) {
         if (ctxt->loaded == 1) {
@@ -1955,6 +1957,7 @@ xmlShellSave(xmlShellCtxtPtr ctxt, char *filename,
 }
 #endif /* LIBXML_OUTPUT_ENABLED */
 
+#ifdef LIBXML_VALID_ENABLED
 /**
  * xmlShellValidate:
  * @ctxt:  the shell context
@@ -1994,6 +1997,7 @@ xmlShellValidate(xmlShellCtxtPtr ctxt, char *dtd,
     }
     return (res);
 }
+#endif /* LIBXML_VALID_ENABLED */
 
 /**
  * xmlShellDu:
@@ -2249,13 +2253,17 @@ xmlShell(xmlDocPtr doc, char *filename, xmlShellReadlineFunc input,
 		  fprintf(ctxt->output, "\tsave [name]  save this document to name or the original name\n");
 		  fprintf(ctxt->output, "\twrite [name] write the current node to the filename\n");
 #endif /* LIBXML_OUTPUT_ENABLED */
+#ifdef LIBXML_VALID_ENABLED
 		  fprintf(ctxt->output, "\tvalidate     check the document for errors\n");
+#endif /* LIBXML_VALID_ENABLED */
 #ifdef LIBXML_SCHEMAS_ENABLED
 		  fprintf(ctxt->output, "\trelaxng rng  validate the document agaisnt the Relax-NG schemas\n");
 #endif
 		  fprintf(ctxt->output, "\tgrep string  search for a string in the subtree\n");
+#ifdef LIBXML_VALID_ENABLED
         } else if (!strcmp(command, "validate")) {
             xmlShellValidate(ctxt, arg, NULL, NULL);
+#endif /* LIBXML_VALID_ENABLED */
         } else if (!strcmp(command, "load")) {
             xmlShellLoad(ctxt, arg, NULL, NULL);
 #ifdef LIBXML_SCHEMAS_ENABLED
@@ -2300,8 +2308,10 @@ xmlShell(xmlDocPtr doc, char *filename, xmlShellReadlineFunc input,
 		xmlXPathFreeObject(list);
 	    }
 #endif /* LIBXML_XPATH_ENABLED */
+#ifdef LIBXML_TREE_ENABLED
         } else if (!strcmp(command, "setbase")) {
             xmlShellSetBase(ctxt, arg, ctxt->node, NULL);
+#endif
         } else if ((!strcmp(command, "ls")) || (!strcmp(command, "dir"))) {
             int dir = (!strcmp(command, "dir"));
 

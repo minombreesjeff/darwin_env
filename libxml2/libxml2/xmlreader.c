@@ -496,6 +496,7 @@ xmlTextReaderFreeDoc(xmlTextReaderPtr reader, xmlDocPtr cur) {
     if (cur->encoding != NULL) xmlFree((char *) cur->encoding);
     if (cur->oldNs != NULL) xmlFreeNsList(cur->oldNs);
     if (cur->URL != NULL) xmlFree((char *) cur->URL);
+    if (cur->dict != NULL) xmlDictFree(cur->dict);
     xmlFree(cur);
 }
 
@@ -877,6 +878,7 @@ static void
 xmlTextReaderValidatePush(xmlTextReaderPtr reader ATTRIBUTE_UNUSED) {
     xmlNodePtr node = reader->node;
 
+#ifdef LIBXML_VALID_ENABLED
     if ((reader->validate == XML_TEXTREADER_VALIDATE_DTD) &&
         (reader->ctxt != NULL) && (reader->ctxt->validate == 1)) {
 	if ((node->ns == NULL) || (node->ns->prefix == NULL)) {
@@ -894,8 +896,10 @@ xmlTextReaderValidatePush(xmlTextReaderPtr reader ATTRIBUTE_UNUSED) {
 	    if (qname != NULL)
 		xmlFree(qname);
 	}
+    }
+#endif /* LIBXML_VALID_ENABLED */
 #ifdef LIBXML_SCHEMAS_ENABLED
-    } else if ((reader->validate == XML_TEXTREADER_VALIDATE_RNG) &&
+    if ((reader->validate == XML_TEXTREADER_VALIDATE_RNG) &&
                (reader->rngValidCtxt != NULL)) {
 	int ret;
 
@@ -920,8 +924,8 @@ printf("Expand failed !\n");
 	}
 	if (ret != 1)
 	    reader->rngValidErrors++;
-#endif
     }
+#endif
 }
 
 /**
@@ -935,12 +939,15 @@ printf("Expand failed !\n");
 static void
 xmlTextReaderValidateCData(xmlTextReaderPtr reader,
                            const xmlChar *data, int len) {
+#ifdef LIBXML_VALID_ENABLED
     if ((reader->validate == XML_TEXTREADER_VALIDATE_DTD) &&
         (reader->ctxt != NULL) && (reader->ctxt->validate == 1)) {
 	reader->ctxt->valid &= xmlValidatePushCData(&reader->ctxt->vctxt,
 	                                            data, len);
+    }
+#endif /* LIBXML_VALID_ENABLED */
 #ifdef LIBXML_SCHEMAS_ENABLED
-    } else if ((reader->validate == XML_TEXTREADER_VALIDATE_RNG) &&
+    if ((reader->validate == XML_TEXTREADER_VALIDATE_RNG) &&
                (reader->rngValidCtxt != NULL)) {
 	int ret;
 
@@ -948,8 +955,8 @@ xmlTextReaderValidateCData(xmlTextReaderPtr reader,
 	ret = xmlRelaxNGValidatePushCData(reader->rngValidCtxt, data, len);
 	if (ret != 1)
 	    reader->rngValidErrors++;
-#endif
     }
+#endif
 }
 
 /**
@@ -962,6 +969,7 @@ static void
 xmlTextReaderValidatePop(xmlTextReaderPtr reader) {
     xmlNodePtr node = reader->node;
 
+#ifdef LIBXML_VALID_ENABLED
     if ((reader->validate == XML_TEXTREADER_VALIDATE_DTD) &&
         (reader->ctxt != NULL) && (reader->ctxt->validate == 1)) {
 	if ((node->ns == NULL) || (node->ns->prefix == NULL)) {
@@ -979,8 +987,10 @@ xmlTextReaderValidatePop(xmlTextReaderPtr reader) {
 	    if (qname != NULL)
 		xmlFree(qname);
 	}
+    }
+#endif /* LIBXML_VALID_ENABLED */
 #ifdef LIBXML_SCHEMAS_ENABLED
-    } else if ((reader->validate == XML_TEXTREADER_VALIDATE_RNG) &&
+    if ((reader->validate == XML_TEXTREADER_VALIDATE_RNG) &&
                (reader->rngValidCtxt != NULL)) {
 	int ret;
 
@@ -994,8 +1004,8 @@ xmlTextReaderValidatePop(xmlTextReaderPtr reader) {
 					   node);
 	if (ret != 1)
 	    reader->rngValidErrors++;
-#endif
     }
+#endif
 }
 
 /**
@@ -2043,19 +2053,12 @@ xmlTextReaderClose(xmlTextReaderPtr reader) {
     reader->curnode = NULL;
     reader->mode = XML_TEXTREADER_MODE_CLOSED;
     if (reader->ctxt != NULL) {
+	xmlStopParser(reader->ctxt);
 	if (reader->ctxt->myDoc != NULL) {
 	    if (reader->preserve == 0)
 		xmlTextReaderFreeDoc(reader, reader->ctxt->myDoc);
 	    reader->ctxt->myDoc = NULL;
 	}
-	if (reader->allocs & XML_TEXTREADER_CTXT) {
-	    xmlFreeParserCtxt(reader->ctxt);
-	    reader->allocs -= XML_TEXTREADER_CTXT;
-	}
-    }
-    if (reader->sax != NULL) {
-        xmlFree(reader->sax);
-	reader->sax = NULL;
     }
     if ((reader->input != NULL)  && (reader->allocs & XML_TEXTREADER_INPUT)) {
 	xmlFreeParserInputBuffer(reader->input);
@@ -2194,6 +2197,10 @@ xmlTextReaderGetAttributeNs(xmlTextReaderPtr reader, const xmlChar *localName,
  * parser, set its state to End Of File and return the input stream with
  * what is left that the parser did not use.
  *
+ * The implementation is not good, the parser certainly procgressed past
+ * what's left in reader->input, and there is an allocation problem. Best
+ * would be to rewrite it differently.
+ *
  * Returns the xmlParserInputBufferPtr attached to the XML or NULL
  *    in case of error.
  */
@@ -2210,22 +2217,16 @@ xmlTextReaderGetRemainder(xmlTextReaderPtr reader) {
     reader->curnode = NULL;
     reader->mode = XML_TEXTREADER_MODE_EOF;
     if (reader->ctxt != NULL) {
+	xmlStopParser(reader->ctxt);
 	if (reader->ctxt->myDoc != NULL) {
 	    if (reader->preserve == 0)
 		xmlTextReaderFreeDoc(reader, reader->ctxt->myDoc);
 	    reader->ctxt->myDoc = NULL;
 	}
-	if (reader->allocs & XML_TEXTREADER_CTXT) {
-	    xmlFreeParserCtxt(reader->ctxt);
-	    reader->allocs -= XML_TEXTREADER_CTXT;
-	}
-    }
-    if (reader->sax != NULL) {
-        xmlFree(reader->sax);
-	reader->sax = NULL;
     }
     if (reader->allocs & XML_TEXTREADER_INPUT) {
 	ret = reader->input;
+	reader->input = NULL;
 	reader->allocs -= XML_TEXTREADER_INPUT;
     } else {
 	/*
@@ -3640,9 +3641,6 @@ xmlTextReaderCurrentDoc(xmlTextReaderPtr reader) {
 	return(NULL);
     
     reader->preserve = 1;
-    if ((reader->ctxt->myDoc->dict != NULL) &&
-	(reader->ctxt->myDoc->dict == reader->ctxt->dict))
-	xmlDictReference(reader->ctxt->dict);
     return(reader->ctxt->myDoc);
 }
 
@@ -4169,8 +4167,6 @@ xmlTextReaderSetup(xmlTextReaderPtr reader,
 	    xmlParserInputBufferPtr buf;
 	    xmlCharEncoding enc = XML_CHAR_ENCODING_NONE;
 
-	    if (reader->ctxt->myDoc != NULL)
-	        xmlDictReference(reader->ctxt->myDoc->dict);
 	    xmlCtxtReset(reader->ctxt);
 	    buf = xmlAllocParserInputBuffer(enc);
 	    if (buf == NULL) return(-1);

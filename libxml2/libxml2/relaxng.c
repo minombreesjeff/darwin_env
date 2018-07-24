@@ -2340,7 +2340,8 @@ xmlRelaxNGAddValidError(xmlRelaxNGValidCtxtPtr ctxt,
     /*
      * generate the error directly
      */
-    if (((ctxt->flags & 1) == 0) || (ctxt->flags & 2)) {
+    if (((ctxt->flags & FLAGS_IGNORABLE) == 0) ||
+    	 (ctxt->flags & FLAGS_NEGATIVE)) {
         xmlNodePtr node, seq;
 
         /*
@@ -2501,7 +2502,7 @@ xmlRelaxNGSchemaFacetCheck(void *data ATTRIBUTE_UNUSED,
         xmlSchemaFreeFacet(facet);
         return (-1);
     }
-    facet->value = xmlStrdup(val);
+    facet->value = val;
     ret = xmlSchemaCheckFacet(facet, typ, NULL, type);
     if (ret != 0) {
         xmlSchemaFreeFacet(facet);
@@ -2880,9 +2881,15 @@ xmlRelaxNGIsCompileable(xmlRelaxNGDefinePtr def)
                         break;
                     list = list->next;
                 }
-                if (ret == 0)
+		/*
+		 * Because the routine is recursive, we must guard against
+		 * discovering both COMPILABLE and NOT_COMPILABLE
+		 */
+                if (ret == 0) {
+		    def->dflags &= ~IS_COMPILABLE;
                     def->dflags |= IS_NOT_COMPILABLE;
-                if (ret == 1)
+		}
+                if ((ret == 1) && !(def->dflags &= IS_NOT_COMPILABLE))
                     def->dflags |= IS_COMPILABLE;
 #ifdef DEBUG_COMPILE
                 if (ret == 1) {
@@ -2952,10 +2959,8 @@ xmlRelaxNGIsCompileable(xmlRelaxNGDefinePtr def)
         case XML_RELAXNG_LIST:
         case XML_RELAXNG_PARAM:
         case XML_RELAXNG_VALUE:
-            ret = 0;
-            break;
         case XML_RELAXNG_NOT_ALLOWED:
-            ret = -1;
+            ret = 0;
             break;
     }
     if (ret == 0)
@@ -3746,15 +3751,15 @@ xmlRelaxNGCompareNameClasses(xmlRelaxNGDefinePtr def1,
         } else {
             node.name = invalidName;
         }
-        node.ns = &ns;
         if (def1->ns != NULL) {
             if (def1->ns[0] == 0) {
                 node.ns = NULL;
             } else {
+	        node.ns = &ns;
                 ns.href = def1->ns;
             }
         } else {
-            ns.href = invalidName;
+            node.ns = NULL;
         }
         if (xmlRelaxNGElementMatch(&ctxt, def2, &node)) {
             if (def1->nameClass != NULL) {
@@ -3978,7 +3983,8 @@ xmlRelaxNGGetElements(xmlRelaxNGParserCtxtPtr ctxt,
                    (cur->type == XML_RELAXNG_OPTIONAL) ||
                    (cur->type == XML_RELAXNG_PARENTREF) ||
                    (cur->type == XML_RELAXNG_REF) ||
-                   (cur->type == XML_RELAXNG_DEF)) {
+                   (cur->type == XML_RELAXNG_DEF) ||
+		   (cur->type == XML_RELAXNG_EXTERNALREF)) {
             /*
              * Don't go within elements or attributes or string values.
              * Just gather the element top list
@@ -6870,6 +6876,7 @@ xmlRelaxNGCleanupTree(xmlRelaxNGParserCtxtPtr ctxt, xmlNodePtr root)
                     xmlChar *href, *ns, *base, *URL;
                     xmlRelaxNGDocumentPtr docu;
                     xmlNodePtr tmp;
+		    xmlURIPtr uri;
 
                     ns = xmlGetProp(cur, BAD_CAST "ns");
                     if (ns == NULL) {
@@ -6890,6 +6897,27 @@ xmlRelaxNGCleanupTree(xmlRelaxNGParserCtxtPtr ctxt, xmlNodePtr root)
                         delete = cur;
                         goto skip_children;
                     }
+		    uri = xmlParseURI((const char *) href);
+		    if (uri == NULL) {
+                        xmlRngPErr(ctxt, cur, XML_RNGP_HREF_ERROR,
+                                   "Incorrect URI for externalRef %s\n",
+                                   href, NULL);
+                        if (href != NULL)
+                            xmlFree(href);
+                        delete = cur;
+                        goto skip_children;
+		    }
+		    if (uri->fragment != NULL) {
+                        xmlRngPErr(ctxt, cur, XML_RNGP_HREF_ERROR,
+			       "Fragment forbidden in URI for externalRef %s\n",
+                                   href, NULL);
+		        xmlFreeURI(uri);
+                        if (href != NULL)
+                            xmlFree(href);
+                        delete = cur;
+                        goto skip_children;
+		    }
+		    xmlFreeURI(uri);
                     base = xmlNodeGetBase(cur->doc, cur);
                     URL = xmlBuildURI(href, base);
                     if (URL == NULL) {
@@ -8274,6 +8302,8 @@ xmlRelaxNGSkipIgnored(xmlRelaxNGValidCtxtPtr ctxt ATTRIBUTE_UNUSED,
     while ((node != NULL) &&
            ((node->type == XML_COMMENT_NODE) ||
             (node->type == XML_PI_NODE) ||
+	    (node->type == XML_XINCLUDE_START) ||
+	    (node->type == XML_XINCLUDE_END) ||
             (((node->type == XML_TEXT_NODE) ||
               (node->type == XML_CDATA_SECTION_NODE)) &&
              ((ctxt->flags & FLAGS_MIXED_CONTENT) ||
@@ -10026,6 +10056,7 @@ xmlRelaxNGValidateState(xmlRelaxNGValidCtxtPtr ctxt,
                     }
                     if (list == NULL) {
                         ret = -1;
+			VALID_ERR2(XML_RELAXNG_ERR_ELEMWRONG, node->name);
                         break;
                     }
                     ret = xmlRelaxNGValidateDefinition(ctxt, list);
@@ -10464,6 +10495,7 @@ xmlRelaxNGValidateDocument(xmlRelaxNGValidCtxtPtr ctxt, xmlDocPtr doc)
         xmlRelaxNGDumpValidError(ctxt);
     }
 #endif
+#ifdef LIBXML_VALID_ENABLED
     if (ctxt->idref == 1) {
         xmlValidCtxt vctxt;
 
@@ -10476,6 +10508,7 @@ xmlRelaxNGValidateDocument(xmlRelaxNGValidCtxtPtr ctxt, xmlDocPtr doc)
         if (xmlValidateDocumentFinal(&vctxt, doc) != 1)
             ret = -1;
     }
+#endif /* LIBXML_VALID_ENABLED */
     if ((ret == 0) && (ctxt->errNo != XML_RELAXNG_OK))
         ret = -1;
 
