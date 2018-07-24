@@ -6,7 +6,7 @@
 Project               = libxml2
 UserType              = Administrator
 ToolType              = Libraries
-Extra_Configure_Flags = --with-iconv=no --enable-static=no --with-python=no
+Extra_Configure_Flags = --enable-static=no --with-python=no
 Extra_LD_Flags        = -arch i386 -arch ppc
 GnuAfterInstall       = strip
 
