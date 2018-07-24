@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Nov 14 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: bless.c,v 1.69 2005/02/23 21:42:26 ssen Exp $
+ *  $Id: bless.c,v 1.80 2005/12/05 12:59:30 ssen Exp $
  *
  */
 
@@ -38,6 +38,8 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <err.h>
+#include <sys/stat.h>
+#include <sys/mount.h>
 
 #include "enums.h"
 #include "structs.h"
@@ -49,9 +51,11 @@ struct clarg actargs[klast];
 /* options descriptor */
 static struct option longopts[] = {
 { "bootinfo",       optional_argument,      0,              kbootinfo},
+{ "bootefi",		optional_argument,      0,              kbootefi},
 { "bootBlockFile",  required_argument,      0,              kbootblockfile },
 { "device",         required_argument,      0,              kdevice },
 { "firmware",       required_argument,      0,              kfirmware },	
+{ "file",           required_argument,      0,              kfile },
 { "folder",         required_argument,      0,              kfolder },
 { "folder9",        required_argument,      0,              kfolder9 },
 { "getBoot",        no_argument,            0,              kgetboot },
@@ -60,11 +64,18 @@ static struct option longopts[] = {
 { "label",          required_argument,      0,              klabel },
 { "labelfile",      required_argument,      0,              klabelfile },
 { "mount",          required_argument,      0,              kmount },
+{ "netboot",        no_argument,            0,              knetboot},
+{ "netbootserver",  required_argument,      0,              knetbootserver},
+{ "nextonly",       no_argument,            0,              knextonly},
 { "openfolder",     required_argument,      0,              kopenfolder },
+{ "options",        required_argument,      0,              koptions },
+{ "payload",        required_argument,      0,              kpayload },
 { "plist",          no_argument,            0,              kplist },
 { "quiet",          no_argument,            0,              kquiet },
+{ "reset",          no_argument,            0,              kreset },
 { "save9",          no_argument,            0,              ksave9 },
 { "saveX",          no_argument,            0,              ksaveX },
+{ "server",         required_argument,      0,              kserver },
 { "setBoot",        no_argument,            0,              ksetboot },
 { "setOF",          no_argument,            0,              ksetOF },
 { "startupfile",    required_argument,      0,              kstartupfile },
@@ -82,11 +93,13 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]);
 int modeDevice(BLContextPtr context, struct clarg actargs[klast]);
 int modeFolder(BLContextPtr context, struct clarg actargs[klast]);
 int modeFirmware(BLContextPtr context, struct clarg actargs[klast]);
+int modeNetboot(BLContextPtr context, struct clarg actargs[klast]);
 
 int blesslog(void *context, int loglevel, const char *string);
 extern void usage();
 extern void usage_short();
-static char ** canon_argv(int argc, char *argv[]);
+
+extern void addPayload(const char *path);
 
 void arg_err(char *message, char *opt);
 
@@ -94,8 +107,7 @@ int main (int argc, char * argv[])
 {
 
     int ch;
-    char **newargv = NULL;
-    
+
     BLContext context;
     struct blesscon bcon;
 
@@ -110,9 +122,15 @@ int main (int argc, char * argv[])
         arg_err(NULL, NULL);
     }
     
-    newargv = canon_argv(argc, argv);
-
-    while ((ch = getopt_long(argc, newargv, "", longopts, NULL)) != -1) {
+    if(getenv("BL_PRINT_ARGUMENTS")) {
+        int i;
+        for(i=0; i < argc; i++) {
+            fprintf(stderr, "argv[%d] = '%s'\n", i, argv[i]);
+        }
+    }
+    
+    
+    while ((ch = getopt_long_only(argc, argv, "", longopts, NULL)) != -1) {
         if(ch == ksetOF) ch = ksetboot; // remap here
         
         switch(ch) {
@@ -127,9 +145,11 @@ int main (int argc, char * argv[])
                 
             // common handling for all other options
             case kbootinfo:
+			case kbootefi:
             case kbootblockfile:
             case kdevice:
 			case kfirmware:
+            case kfile:
             case kfolder:
             case kfolder9:
             case kgetboot:
@@ -137,10 +157,16 @@ int main (int argc, char * argv[])
             case klabel:
             case klabelfile:
             case kmount:
+            case knetboot:
+            case knetbootserver:
+            case knextonly:
             case kopenfolder:
+            case koptions:
             case kplist:
+            case kreset:
             case ksave9:
             case ksaveX:
+            case kserver:
             case ksetboot:
             case kstartupfile:
             case kuse9:
@@ -162,14 +188,17 @@ int main (int argc, char * argv[])
                         strcpy(actargs[ch].argument, optarg);
                         break;
                     case optional_argument:
-                        if(newargv[optind] && newargv[optind][0] != '-') {
+                        if(argv[optind] && argv[optind][0] != '-') {
                             actargs[ch].hasArg = 1;
-                            strcpy(actargs[ch].argument, newargv[optind]);
+                            strcpy(actargs[ch].argument, argv[optind]);
                         } else {
                             actargs[ch].hasArg = 0;
                         }
                         break;
                 }
+                break;
+            case kpayload:
+                actargs[ch].present = 1;
                 break;
             case '?':
             default:
@@ -203,6 +232,10 @@ int main (int argc, char * argv[])
 		return modeFirmware(&context, actargs);
 	}
 	
+	if(actargs[knetboot].present) {
+		return modeNetboot(&context, actargs);
+	}
+	
     /* default */
     return modeFolder(&context, actargs);
 
@@ -233,25 +266,4 @@ void arg_err(char *message, char *opt) {
 	fprintf(stderr, "%s \"%s\"\n", message, opt);
 
     usage_short();
-}
-
-static char ** canon_argv(int argc, char *argv[])
-{
-    char ** newargv = NULL;
-    int i;
-    
-    newargv = calloc(argc+1, sizeof(char *));
-    for(i=0; i < argc; i++) {
-        char *newarg = NULL;
-        if(argv[i][0] == '-' && argv[i][1] != '-') {
-            // turn -foo into --foo, for getopt_long
-            newarg = malloc(strlen(argv[i]) + 1 + 1);
-            sprintf(newarg, "-%s", argv[i]);
-        } else {
-            newarg = strdup(argv[i]);
-        }
-        newargv[i] = newarg;
-    }
-    
-    return newargv;
 }

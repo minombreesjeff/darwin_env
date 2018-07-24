@@ -27,9 +27,19 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Mon Sep 22 2003.
  *  Copyright (c) 2003-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLGetActiveBIOSPartitionForDevice.c,v 1.5 2005/02/03 00:42:24 ssen Exp $
+ *  $Id: BLGetActiveBIOSPartitionForDevice.c,v 1.7 2005/08/22 20:49:22 ssen Exp $
  *
  *  $Log: BLGetActiveBIOSPartitionForDevice.c,v $
+ *  Revision 1.7  2005/08/22 20:49:22  ssen
+ *  Change functions to take "char *foo" instead of "char foo[]".
+ *  It should be semantically identical, and be more consistent with
+ *  other system APIs
+ *
+ *  Revision 1.6  2005/06/24 16:39:49  ssen
+ *  Don't use "unsigned char[]" for paths. If regular char*s are
+ *  good enough for the BSD system calls, they're good enough for
+ *  bless.
+ *
  *  Revision 1.5  2005/02/03 00:42:24  ssen
  *  Update copyrights to 2005
  *
@@ -52,8 +62,8 @@
 #include "bless.h"
 #include "bless_private.h"
 
-int BLGetActiveBIOSPartitionForDevice(BLContextPtr context, const unsigned char device[],
-				      unsigned char active[]) {
+int BLGetActiveBIOSPartitionForDevice(BLContextPtr context, const char * device,
+				      char * active) {
 
     int ret = 0;
     unsigned long slice = 0;

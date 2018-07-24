@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Nov 14 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: enums.h,v 1.26 2005/02/23 19:52:49 ssen Exp $
+ *  $Id: enums.h,v 1.32 2005/11/12 00:39:55 ssen Exp $
  *
  *
  */
@@ -38,8 +38,10 @@
 enum {
     kdummy = 0,
     kbootinfo,
+	kbootefi,
     kbootblockfile,
     kdevice,
+    kfile,
 	kfirmware,
     kfolder,
     kfolder9,
@@ -49,11 +51,18 @@ enum {
     klabel,
     klabelfile,
     kmount,
+    knetboot,
+    knetbootserver,
+    knextonly,
     kopenfolder,
+    koptions,
+    kpayload,
     kplist,
     kquiet,
+    kreset,
     ksave9,
     ksaveX,
+    kserver,
     ksetboot,
     ksetOF,
     kstartupfile,
