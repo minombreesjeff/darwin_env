@@ -68,8 +68,6 @@
 		BA3D8161086C4F2400484376 /* libbless.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C61759C9057E749600252FAB /* libbless.a */; };
 		BA3E3AB707B7599000602B58 /* BLDeviceNeedsBooter.c in Sources */ = {isa = PBXBuildFile; fileRef = BA3E3AB607B7599000602B58 /* BLDeviceNeedsBooter.c */; };
 		BA88D2A40790068700B77125 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F61E91F801A4B30C01F50364 /* CoreFoundation.framework */; };
-		BA9153EA06597B71007858FE /* BLGetACPIBootDeviceForMountPoint.c in Sources */ = {isa = PBXBuildFile; fileRef = BA9153E906597B71007858FE /* BLGetACPIBootDeviceForMountPoint.c */; };
-		BA9153EB06597B80007858FE /* BLGetACPIBootDevice.c in Sources */ = {isa = PBXBuildFile; fileRef = BA9153E606597B56007858FE /* BLGetACPIBootDevice.c */; };
 		BA9367EF078FC89E005B9387 /* genbootargs.c in Sources */ = {isa = PBXBuildFile; fileRef = BA9367EE078FC89E005B9387 /* genbootargs.c */; };
 		BA936801078FCDA4005B9387 /* PreserveBootArgs.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = BA9367FD078FCD74005B9387 /* PreserveBootArgs.plist */; };
 		BA936805078FCDCB005B9387 /* preserve_bootargs.h in Headers */ = {isa = PBXBuildFile; fileRef = BA936804078FCDCB005B9387 /* preserve_bootargs.h */; };
@@ -330,8 +328,6 @@
 		BA85208304CDE43F00AE3A66 /* bootconfig.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = bootconfig.h; sourceTree = BUILT_PRODUCTS_DIR; };
 		BA85208604CDEFFA00AE3A66 /* testgetparentdev.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = testgetparentdev.c; sourceTree = "<group>"; };
 		BA8520BE04CE621300AE3A66 /* BLIsOpenFirmwarePresent.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = BLIsOpenFirmwarePresent.c; sourceTree = "<group>"; };
-		BA9153E606597B56007858FE /* BLGetACPIBootDevice.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = BLGetACPIBootDevice.c; sourceTree = "<group>"; };
-		BA9153E906597B71007858FE /* BLGetACPIBootDeviceForMountPoint.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = BLGetACPIBootDeviceForMountPoint.c; sourceTree = "<group>"; };
 		BA92249A03A7F164000BA4D4 /* setOFLabel.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = setOFLabel.c; sourceTree = "<group>"; };
 		BA92249E03A7F27A000BA4D4 /* CoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreServices.framework; path = /System/Library/Frameworks/CoreServices.framework; sourceTree = "<absolute>"; };
 		BA924000060D53EB004FC452 /* bless-prefix.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "bless-prefix.h"; sourceTree = "<group>"; };
@@ -348,7 +344,7 @@
 		BAF82CE80797919600E82365 /* BLGetRAIDBootDataForDevice.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = BLGetRAIDBootDataForDevice.c; sourceTree = "<group>"; };
 		C61673B30940CFB90073B88C /* BLCreateEFIXMLRepresentationForDevice.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = BLCreateEFIXMLRepresentationForDevice.c; sourceTree = "<group>"; };
 		C6175986057E749600252FAB /* bless */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = bless; sourceTree = BUILT_PRODUCTS_DIR; };
-		C6175998057E749600252FAB /* minibless */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "compiled.mach-o.executable"; path = minibless; sourceTree = BUILT_PRODUCTS_DIR; };
+		C6175998057E749600252FAB /* minibless */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = minibless; sourceTree = BUILT_PRODUCTS_DIR; };
 		C61759C9057E749600252FAB /* libbless.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libbless.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		C61759D7057E749600252FAB /* setOFLabel */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = setOFLabel; sourceTree = BUILT_PRODUCTS_DIR; };
 		C61759EB057E749600252FAB /* extractBootBlocks */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = extractBootBlocks; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -564,8 +560,6 @@
 			children = (
 				BAB2D30504CE771C0063946C /* BLSetActiveBIOSBootDevice.c */,
 				BAC10C72051FE79E00BA8A0E /* BLGetActiveBIOSPartitionForDevice.c */,
-				BA9153E606597B56007858FE /* BLGetACPIBootDevice.c */,
-				BA9153E906597B71007858FE /* BLGetACPIBootDeviceForMountPoint.c */,
 			);
 			path = BIOS;
 			sourceTree = "<group>";
@@ -859,7 +853,7 @@
 				C6899A0E0729C862002466B7 /* PBXBuildRule */,
 			);
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				DEAD_CODE_STRIPPING = YES;
 				FRAMEWORK_SEARCH_PATHS = "$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_C_LANGUAGE_STANDARD = c99;
@@ -901,7 +895,7 @@
 			buildRules = (
 			);
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_DEBUGGING_SYMBOLS = default;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
@@ -941,7 +935,7 @@
 			);
 			buildSettings = {
 				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 35.1;
+				DYLIB_CURRENT_VERSION = 37;
 				FRAMEWORK_SEARCH_PATHS = "$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_DEBUGGING_SYMBOLS = default;
@@ -982,7 +976,7 @@
 			buildRules = (
 			);
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_DEBUGGING_SYMBOLS = default;
 				GCC_DYNAMIC_NO_PIC = YES;
@@ -1020,7 +1014,7 @@
 			buildRules = (
 			);
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_DEBUGGING_SYMBOLS = default;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -1226,8 +1220,6 @@
 				C61759C1057E749600252FAB /* BLIsOpenFirmwarePresent.c in Sources */,
 				C61759C2057E749600252FAB /* BLSetActiveBIOSBootDevice.c in Sources */,
 				C61759C3057E749600252FAB /* BLGetActiveBIOSPartitionForDevice.c in Sources */,
-				BA9153EA06597B71007858FE /* BLGetACPIBootDeviceForMountPoint.c in Sources */,
-				BA9153EB06597B80007858FE /* BLGetACPIBootDevice.c in Sources */,
 				BAF82CE90797919600E82365 /* BLGetRAIDBootDataForDevice.c in Sources */,
 				C625E1170799F9FB00B3F263 /* BLUpdateRAIDBooters.c in Sources */,
 				C6AE998107B19B8F00E1A3BF /* BLUpdateBooter.c in Sources */,
@@ -1327,7 +1319,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = "$(HOME)/bin";
@@ -1341,7 +1333,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = "$(HOME)/bin";
@@ -1381,10 +1373,12 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				BIOS_SUPPORT_Leopard = "BIOS_SUPPORT=1";
+				CURRENT_PROJECT_VERSION = 37;
 				FRAMEWORK_SEARCH_PATHS = "$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "bless-prefix.h";
+				GCC_PREPROCESSOR_DEFINITIONS = "$(BIOS_SUPPORT_$(RC_RELEASE))";
 				INSTALL_PATH = /usr/local/lib;
 				LIBRARY_STYLE = STATIC;
 				PRODUCT_NAME = bless;
@@ -1397,9 +1391,11 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				BIOS_SUPPORT_Leopard = "BIOS_SUPPORT=1";
+				CURRENT_PROJECT_VERSION = 37;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = "$(BIOS_SUPPORT_$(RC_RELEASE))";
 				INSTALL_PATH = /usr/sbin;
 				PRODUCT_NAME = bless;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -1410,7 +1406,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
@@ -1435,7 +1431,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = /usr/local/bin;
 				PRODUCT_NAME = setOFLabel;
@@ -1462,7 +1458,7 @@
 		BA7EB3E5086BD01A000A41C1 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_DEBUGGING_SYMBOLS = default;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -1514,10 +1510,12 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				BIOS_SUPPORT_Leopard = "BIOS_SUPPORT=1";
+				CURRENT_PROJECT_VERSION = 37;
 				FRAMEWORK_SEARCH_PATHS = "$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "bless-prefix.h";
+				GCC_PREPROCESSOR_DEFINITIONS = "$(BIOS_SUPPORT_$(RC_RELEASE))";
 				INSTALL_PATH = /usr/local/lib;
 				LIBRARY_STYLE = STATIC;
 				PRODUCT_NAME = bless;
@@ -1530,9 +1528,11 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				BIOS_SUPPORT_Leopard = "BIOS_SUPPORT=1";
+				CURRENT_PROJECT_VERSION = 37;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = "$(BIOS_SUPPORT_$(RC_RELEASE))";
 				INSTALL_PATH = /usr/sbin;
 				PRODUCT_NAME = bless;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -1543,7 +1543,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_DYNAMIC_NO_PIC = YES;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
@@ -1568,7 +1568,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = BA7EB432086BD3AB000A41C1 /* DefaultTarget.xcconfig */;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				GCC_DYNAMIC_NO_PIC = YES;
 				INSTALL_PATH = /usr/local/bin;
 				PRODUCT_NAME = setOFLabel;
@@ -1595,7 +1595,7 @@
 		BA7EB489086BDDED000A41C1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 35.1;
+				CURRENT_PROJECT_VERSION = 37;
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_DEBUGGING_SYMBOLS = default;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;

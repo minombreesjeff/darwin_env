@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: handleInfo.c,v 1.39 2005/12/03 22:19:43 ssen Exp $
+ *  $Id: handleInfo.c,v 1.40 2006/01/02 22:27:27 ssen Exp $
  *
  *
  */
@@ -142,41 +142,6 @@ int modeInfo(BLContextPtr context, struct clarg actargs[klast]) {
         
                     }
                 }
-            } else if(preboot == kBLPreBootEnvType_BIOS){
-                // machine uses BIOS
-                struct statfs sb;
-                char parent[MNAMELEN];
-                uint32_t pnum = 0;
-                BLPartitionType ptype = 0;
-                
-                if(0 != blsustatfs("/", &sb)) {
-                    blesscontextprintf(context, kBLLogLevelError,  "Can't statfs /\n");
-                    return 1;                
-                }
-
-                err = BLGetParentDeviceAndPartitionType(context,
-														sb.f_mntfromname, parent, &pnum, &ptype);
-
-                if(err) {
-                    blesscontextprintf(context, kBLLogLevelError,  "Can't determine parent partition for %s\n", sb.f_mntfromname);
-                    return 2;                                
-                }
-
-                if(ptype != kBLPartitionType_MBR) {
-                    blesscontextprintf(context, kBLLogLevelError,  "Incorrect partition map type\n");
-                    return 3;                                                    
-                }
-
-                blesscontextprintf(context, kBLLogLevelVerbose,  "Whole device is %s\n", parent);
-
-				err = BLGetActiveBIOSPartitionForDevice(context, parent, currentDev);
-                if(err) {
-                    blesscontextprintf(context, kBLLogLevelError,  "Can't determine active partition for %s\n", parent);
-                    return 2;                                
-				}
-
-				blesscontextprintf(context, kBLLogLevelVerbose,  "Active partition is %s\n", currentDev);
-
             } else if(preboot == kBLPreBootEnvType_EFI) {
 				// fill this in later
 				//struct statfs sb;

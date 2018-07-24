@@ -27,19 +27,6 @@
  *  Created by Shantonu Sen on 7/12/05.
  *  Copyright 2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLGetPreBootEnvironmentType.c,v 1.3 2005/11/03 19:46:13 ssen Exp $
- *
- *  $Log: BLGetPreBootEnvironmentType.c,v $
- *  Revision 1.3  2005/11/03 19:46:13  ssen
- *  <rdar://problem/4255345> bless needs to write the nvram device path with booting on non-BIOS Yellow systems
- *  Initial work to support EFI nvram boot selection
- *
- *  Revision 1.2  2005/07/29 18:28:25  ssen
- *  use new BLGetPreBootEnvironmentType()
- *
- *  Revision 1.1  2005/07/13 01:21:02  ssen
- *  Add code to more generically determine the preboot environment
- *
  */
 
 #include <stdlib.h>
@@ -86,9 +73,8 @@ int BLGetPreBootEnvironmentType(BLContextPtr context,
 		entry = IORegistryEntryFromPath(masterPort, path);
 		
 		if(entry == 0) {
-			*pbType = kBLPreBootEnvType_BIOS;
-			contextprintf(context, kBLLogLevelVerbose,  "No OpenFirmware or EFI. Assuming BIOS\n");			
-			
+			*pbType = kBLPreBootEnvType_Unknown;
+			contextprintf(context, kBLLogLevelVerbose,  "No OpenFirmware or EFI.\n");			
 		} else {
 			*pbType = kBLPreBootEnvType_EFI;
 			IOObjectRelease(entry);

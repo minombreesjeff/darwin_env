@@ -48,11 +48,21 @@
 extern int blesscontextprintf(BLContextPtr context, int loglevel, char const *fmt, ...)
     __attribute__ ((format (printf, 3, 4)));
 
-extern int setefinetworkpath(BLContextPtr context, const char * interface,
-                             const char *host, const char *path,
-                             int bootNext, const char *optionalData);
+extern int setefinetworkpath(BLContextPtr context, CFStringRef booterXML,
+							 CFStringRef kernelXML, CFStringRef mkextXML,
+                             int bootNext);
 
 static bool validateAddress(const char *host);
+
+static int parseURL(BLContextPtr context,
+                     const char *url,
+                     char * interface,
+                     char * host,
+                     char * path,
+                     bool   requiresPath,
+                     const char *requiresSheme,
+					 bool	useBackslash);
+                     
 
 int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
 {
@@ -60,8 +70,8 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
     BLPreBootEnvType	preboot;
     char                interface[IF_NAMESIZE];
     char                host[NS_MAXDNAME];
-    CFURLRef            serverURL;
-    CFStringRef         scheme, interfaceString, pathString, hostString;
+    char                path[MAXPATHLEN];
+	bool				useBackslash = false;
     
     
     if(!actargs[kserver].present) {
@@ -71,114 +81,54 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
         }
     }
     
-    if(!actargs[kserver].present) {
+    if(!( actargs[kserver].present || actargs[kbooter].present)) {
         blesscontextprintf(context, kBLLogLevelError,
                            "No NetBoot server specification provided\n");
         return 1;
-    } else {
+    }
+    
+
+	ret = BLGetPreBootEnvironmentType(context, &preboot);
+    if(ret)
+        return 2;
+    
+	if(preboot == kBLPreBootEnvType_OpenFirmware) {
+		useBackslash = true;
+	}
+	
+	
+    if (actargs[kserver].present) {
         blesscontextprintf(context, kBLLogLevelVerbose,
                            "NetBoot server specification given as: %s\n",
                            actargs[kserver].argument);
-    }
-    
-    serverURL = CFURLCreateAbsoluteURLWithBytes(kCFAllocatorDefault,
-                                     (const UInt8 *)actargs[kserver].argument,
-                                     strlen(actargs[kserver].argument),
-                                     kCFStringEncodingUTF8,
-                                     NULL, false);
-    if(!serverURL || !CFURLCanBeDecomposed(serverURL)) {
-        if(serverURL) CFRelease(serverURL);
         
-        blesscontextprintf(context, kBLLogLevelError,
-                           "Could not interpret specification as a URL\n");
-        return 2;        
-    }
-
-    scheme = CFURLCopyScheme(serverURL);
-    if(!scheme || !CFEqual(scheme, CFSTR("bsdp"))) {
-        if(scheme) CFRelease(scheme);
+        ret = parseURL(context,
+                       actargs[kserver].argument,
+                       interface,
+                       host,
+                       path,
+                       false,
+                       "bsdp",
+					   useBackslash);
         
-        blesscontextprintf(context, kBLLogLevelError,
-                           "Unrecognized scheme\n");
-        return 2;               
-    }
-    
-    CFRelease(scheme);
-    
-    interfaceString = CFURLCopyUserName(serverURL);
-    
-    if(interfaceString == NULL) {
-        
-        ret = BLGetPreferredNetworkInterface(context, interface);
-        if(ret) {
-            blesscontextprintf(context, kBLLogLevelError,
-                               "Failed to determine preferred network interface\n");
-            return 1;            
-        } else {
-            blesscontextprintf(context, kBLLogLevelVerbose,
-                               "Preferred network interface is %s\n", interface);            
-        }
     } else {
-        if(!CFStringGetCString(interfaceString,interface,sizeof(interface),kCFStringEncodingUTF8)) {
-            CFRelease(interfaceString);
-            blesscontextprintf(context, kBLLogLevelError,
-                               "Can't interpret interface as string\n");
-            return 3;            
-        }
-    
-        if(!BLIsValidNetworkInterface(context, interface)) {
-            blesscontextprintf(context, kBLLogLevelError,
-                               "%s is not a valid interface\n", interface);            
-            return 4;
-        }
-        
-        CFRelease(interfaceString);
-    }
-    
-    blesscontextprintf(context, kBLLogLevelVerbose,
-                       "Using interface %s\n", interface);            
-    
-    pathString = CFURLCopyStrictPath(serverURL, NULL);
-    
-    // path component must be NULL or empty
-    if(!(pathString == NULL || CFEqual(pathString, CFSTR("")))) {
-        CFRelease(pathString);
-        blesscontextprintf(context, kBLLogLevelError,
-                           "Specification can't contain a path\n");
-        return 5;        
-    }
-    
-    if(pathString) CFRelease(pathString);
-    
-    hostString = CFURLCopyHostName(serverURL);
-    
-    // host must be present
-    if(hostString == NULL || CFEqual(hostString, CFSTR(""))) {
-        if(hostString) CFRelease(hostString);
-        blesscontextprintf(context, kBLLogLevelError,
-                           "Specification doesn't contain host\n");
-        return 5;        
-    }
+        blesscontextprintf(context, kBLLogLevelVerbose,
+                           "NetBoot booter given as: %s\n",
+                           actargs[kbooter].argument);  
 
-    if(!CFStringGetCString(hostString,host,sizeof(host),kCFStringEncodingUTF8)) {
-        CFRelease(hostString);
-        blesscontextprintf(context, kBLLogLevelError,
-                           "Can't interpret host as string\n");
-        return 5;            
+        ret = parseURL(context,
+                       actargs[kbooter].argument,
+                       interface,
+                       host,
+                       path,
+                       true,
+                       "tftp",
+					   useBackslash);
+        
     }
     
-    CFRelease(hostString);
-    
-    if(!validateAddress(host)) {
-        blesscontextprintf(context, kBLLogLevelError,
-                           "Can't interpret host %s as an IPv4 address\n",
-                           host);
-        return 6;
-    }
-    
-    ret = BLGetPreBootEnvironmentType(context, &preboot);
     if(ret)
-        return 2;
+        return 1;
     
     if(preboot == kBLPreBootEnvType_OpenFirmware) {
         // XXX temporary stub
@@ -193,8 +143,35 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
         pid_t p;
         int status;
 
-        sprintf(bootdevice, "boot-device=enet:bootp");
-        sprintf(bootfile, "boot-file=");
+        if(0 != strcmp(host, "255.255.255.255") && strlen(path)) {
+            sprintf(bootdevice, "boot-device=enet:%s,%s", host, path);
+        } else {
+            sprintf(bootdevice, "boot-device=enet:bootp");                
+        }
+        
+        if(actargs[kkernel].present) {
+            ret = parseURL(context,
+                           actargs[kkernel].argument,
+                           interface,
+                           host,
+                           path,
+                           true,
+                           "tftp",
+						   useBackslash);            
+            if(ret)
+                return 1;
+            
+            sprintf(bootfile, "boot-file=enet:%s,%s", host, path);
+        } else {
+            sprintf(bootfile, "boot-file=");
+        }
+
+        if(actargs[kmkext].present) {
+            blesscontextprintf(context, kBLLogLevelError,
+                               "mkext option not supported on Open Firmware systems\n");  
+            return 5;
+        }
+        
         sprintf(bootcommand, "boot-command=mac-boot");
         sprintf(bootargs, "boot-args=");
         
@@ -227,16 +204,66 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
             return 3;
         }
         
-    } else if(preboot == kBLPreBootEnvType_BIOS) {
-        blesscontextprintf(context, kBLLogLevelError,
-                           "NetBoot not supported on BIOS systems\n");
-        return 3;
     } else if(preboot == kBLPreBootEnvType_EFI) {
-        ret = setefinetworkpath(context, interface,
-                                strcmp(host, "255.255.255.255") == 0 ? NULL : host,
-                                NULL,
-                                actargs[knextonly].present,
-                                actargs[koptions].present ? actargs[koptions].argument : NULL);
+        CFStringRef booterXML = NULL, kernelXML = NULL, mkextXML = NULL;
+        
+        ret = BLCreateEFIXMLRepresentationForNetworkPath(context,
+                                                         interface,
+                                                         strcmp(host, "255.255.255.255") == 0 ? NULL : host,
+                                                         strlen(path) > 0 ? path : NULL,
+                                                         actargs[koptions].present ? actargs[koptions].argument : NULL,
+                                                         &booterXML);
+        if(ret)
+            return 3;
+
+        
+        if(actargs[kkernel].present) {
+            ret = parseURL(context,
+                           actargs[kkernel].argument,
+                           interface,
+                           host,
+                           path,
+                           true,
+                           "tftp",
+						   false);            
+            if(ret)
+                return 1;
+
+            ret = BLCreateEFIXMLRepresentationForNetworkPath(context,
+                                                             interface,
+                                                             host,
+                                                             path,
+                                                             NULL,
+                                                             &kernelXML);
+            if(ret)
+                return 3;
+        }
+        
+
+        if(actargs[kmkext].present) {
+            ret = parseURL(context,
+                           actargs[kmkext].argument,
+                           interface,
+                           host,
+                           path,
+                           true,
+                           "tftp",
+						   false);            
+            if(ret)
+                return 1;
+            
+            ret = BLCreateEFIXMLRepresentationForNetworkPath(context,
+                                                             interface,
+                                                             host,
+                                                             path,
+                                                             NULL,
+                                                             &mkextXML);
+            if(ret)
+                return 3;
+        }
+        
+        ret = setefinetworkpath(context, booterXML, kernelXML, mkextXML,
+                                actargs[knextonly].present);
         
 		if(ret) {
 			blesscontextprintf(context, kBLLogLevelError,  "Can't set EFI\n" );
@@ -244,6 +271,10 @@ int modeNetboot(BLContextPtr context, struct clarg actargs[klast])
 		} else {
 			blesscontextprintf(context, kBLLogLevelVerbose,  "EFI set successfully\n" );
 		}
+    } else {
+        blesscontextprintf(context, kBLLogLevelError,
+                           "NetBoot not supported on this system\n");
+        return 3;        
     }
 
     return 0;
@@ -261,3 +292,145 @@ static bool validateAddress(const char *host)
         return false;
 }
 
+static int parseURL(BLContextPtr context,
+                    const char *url,
+                    char * interface,
+                    char * host,
+                    char * path,
+                    bool   requiresPath,
+                    const char *requiresSheme,
+					bool	useBackslash)
+{
+    int                 ret;
+    
+    CFURLRef            serverURL;
+    CFStringRef         scheme, interfaceString, pathString, hostString;
+    CFStringRef         requiredScheme = NULL;
+    
+    serverURL = CFURLCreateAbsoluteURLWithBytes(kCFAllocatorDefault,
+                                                (const UInt8 *)url,
+                                                strlen(url),
+                                                kCFStringEncodingUTF8,
+                                                NULL, false);
+    
+    if(!serverURL || !CFURLCanBeDecomposed(serverURL)) {
+        if(serverURL) CFRelease(serverURL);
+        
+        blesscontextprintf(context, kBLLogLevelError,
+                           "Could not interpret %s as a URL\n", url);
+        return 2;        
+    }
+    
+    scheme = CFURLCopyScheme(serverURL);
+    requiredScheme = CFStringCreateWithCString(kCFAllocatorDefault,requiresSheme,kCFStringEncodingUTF8);
+    if(!scheme || !CFEqual(scheme, requiredScheme)) {
+        if(scheme) CFRelease(scheme);
+        CFRelease(requiredScheme);
+        
+        blesscontextprintf(context, kBLLogLevelError,
+                           "Unrecognized scheme\n");
+        return 2;               
+    }
+    
+    CFRelease(requiredScheme);
+    CFRelease(scheme);
+    
+    interfaceString = CFURLCopyUserName(serverURL);
+    
+    if(interfaceString == NULL) {
+        
+        ret = BLGetPreferredNetworkInterface(context, interface);
+        if(ret) {
+            blesscontextprintf(context, kBLLogLevelError,
+                               "Failed to determine preferred network interface\n");
+            return 1;            
+        } else {
+            blesscontextprintf(context, kBLLogLevelVerbose,
+                               "Preferred network interface is %s\n", interface);            
+        }
+    } else {
+        if(!CFStringGetCString(interfaceString,interface,IF_NAMESIZE,kCFStringEncodingUTF8)) {
+            CFRelease(interfaceString);
+            blesscontextprintf(context, kBLLogLevelError,
+                               "Can't interpret interface as string\n");
+            return 3;            
+        }
+        
+        if(!BLIsValidNetworkInterface(context, interface)) {
+            blesscontextprintf(context, kBLLogLevelError,
+                               "%s is not a valid interface\n", interface);            
+            return 4;
+        }
+        
+        CFRelease(interfaceString);
+    }
+    
+    blesscontextprintf(context, kBLLogLevelVerbose,
+                       "Using interface %s\n", interface);            
+    
+    pathString = CFURLCopyStrictPath(serverURL, NULL);
+    
+    // path component must be NULL or empty
+    if(requiresPath) {
+        if(pathString == NULL || CFEqual(pathString, CFSTR(""))) {
+            if(pathString) CFRelease(pathString);
+            blesscontextprintf(context, kBLLogLevelError,
+                               "Specification must contain a path\n");
+            return 5;        
+        }
+        if(!CFStringGetCString(pathString,path,MAXPATHLEN,kCFStringEncodingUTF8)) {
+            CFRelease(pathString);
+            blesscontextprintf(context, kBLLogLevelError,
+                               "Can't interpret path as string\n");
+            return 5;            
+        }        
+    } else {
+        if(!(pathString == NULL || CFEqual(pathString, CFSTR("")))) {
+            CFRelease(pathString);
+            blesscontextprintf(context, kBLLogLevelError,
+                               "Specification can't contain a path\n");
+            return 5;        
+        }
+        strcpy(path, "");
+    }
+	
+    if(pathString) CFRelease(pathString);
+    
+	if(useBackslash) {
+		int i, len;
+		for(i=0, len=strlen(path); i < len; i++) {
+			if(path[i] == '/') {
+				path[i] = '\\';
+			}
+		}
+	}
+	
+	
+    hostString = CFURLCopyHostName(serverURL);
+    
+    // host must be present
+    if(hostString == NULL || CFEqual(hostString, CFSTR(""))) {
+        if(hostString) CFRelease(hostString);
+        blesscontextprintf(context, kBLLogLevelError,
+                           "Specification doesn't contain host\n");
+        return 5;        
+    }
+    
+    if(!CFStringGetCString(hostString,host,NS_MAXDNAME,kCFStringEncodingUTF8)) {
+        CFRelease(hostString);
+        blesscontextprintf(context, kBLLogLevelError,
+                           "Can't interpret host as string\n");
+        return 5;            
+    }
+    
+    CFRelease(hostString);
+    
+    if(!validateAddress(host)) {
+        blesscontextprintf(context, kBLLogLevelError,
+                           "Can't interpret host %s as an IPv4 address\n",
+                           host);
+        return 6;
+    }
+    
+    return 0;
+}

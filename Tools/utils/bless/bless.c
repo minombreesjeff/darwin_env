@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Nov 14 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: bless.c,v 1.80 2005/12/05 12:59:30 ssen Exp $
+ *  $Id: bless.c,v 1.81 2005/12/07 04:49:17 ssen Exp $
  *
  */
 
@@ -53,6 +53,7 @@ static struct option longopts[] = {
 { "bootinfo",       optional_argument,      0,              kbootinfo},
 { "bootefi",		optional_argument,      0,              kbootefi},
 { "bootBlockFile",  required_argument,      0,              kbootblockfile },
+{ "booter",         required_argument,      0,              kbooter },
 { "device",         required_argument,      0,              kdevice },
 { "firmware",       required_argument,      0,              kfirmware },	
 { "file",           required_argument,      0,              kfile },
@@ -61,8 +62,10 @@ static struct option longopts[] = {
 { "getBoot",        no_argument,            0,              kgetboot },
 { "help",           no_argument,            0,              khelp },
 { "info",           optional_argument,      0,              kinfo },
+{ "kernel",         required_argument,      0,              kkernel },
 { "label",          required_argument,      0,              klabel },
 { "labelfile",      required_argument,      0,              klabelfile },
+{ "mkext",          required_argument,      0,              kmkext },
 { "mount",          required_argument,      0,              kmount },
 { "netboot",        no_argument,            0,              knetboot},
 { "netbootserver",  required_argument,      0,              knetbootserver},
@@ -147,6 +150,7 @@ int main (int argc, char * argv[])
             case kbootinfo:
 			case kbootefi:
             case kbootblockfile:
+            case kbooter:
             case kdevice:
 			case kfirmware:
             case kfile:
@@ -154,8 +158,10 @@ int main (int argc, char * argv[])
             case kfolder9:
             case kgetboot:
             case kinfo:
+            case kkernel:
             case klabel:
             case klabelfile:
+            case kmkext:
             case kmount:
             case knetboot:
             case knetbootserver:

@@ -27,17 +27,5 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Tue Jul 22 2003.
  *  Copyright (c) 2003-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLSetActiveBIOSBootDevice.c,v 1.13 2005/08/22 20:49:22 ssen Exp $
- *
  */
-
-
-#include "bless.h"
-#include "bless_private.h"
-
-int BLSetActiveBIOSBootDevice(BLContextPtr context, const char * device) {
-
-
-    return 0;    
-}
 

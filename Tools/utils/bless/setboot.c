@@ -27,9 +27,19 @@
  *  Created by Shantonu Sen on 1/14/05.
  *  Copyright 2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: setboot.c,v 1.19 2005/12/02 22:51:56 ssen Exp $
+ *  $Id: setboot.c,v 1.21 2006/01/02 22:27:28 ssen Exp $
  *
  *  $Log: setboot.c,v $
+ *  Revision 1.21  2006/01/02 22:27:28  ssen
+ *  <rdar://problem/4395370> bless should not support BIOS systems
+ *  For RC_RELEASE=Leopard, keep BIOS support, but preprocess it out
+ *  for Herbie and the open source build
+ *
+ *  Revision 1.20  2005/12/07 04:49:17  ssen
+ *  Add support for --netboot options: --booter, --kernel, --mkext.
+ *  Should make it easy to set your system to ANI-style netboot.
+ *  --mkext doesn't work on ppc
+ *
  *  Revision 1.19  2005/12/02 22:51:56  ssen
  *  Infrastructure for --getBoot, to interpret efi-boot-device as
  *  either a network path, or a disk device
@@ -128,7 +138,9 @@ static int updateAppleBootIfPresent(BLContextPtr context, char *device, CFDataRe
 
 int setefidevice(BLContextPtr context, const char * bsdname, int bootNext, const char *optionalData);
 int setefifilepath(BLContextPtr context, const char * path, int bootNext, const char *optionalData);
-int setefinetworkpath(BLContextPtr context, const char * interface, const char *host, const char *path, int bootNext, const char *optionalData);
+int setefinetworkpath(BLContextPtr context, CFStringRef booterXML,
+							 CFStringRef kernelXML, CFStringRef mkextXML,
+                             int bootNext);
 static int setit(BLContextPtr context, mach_port_t masterPort, const char *bootvar, CFStringRef xmlstring);
 
 static int setefibootargs(BLContextPtr context, mach_port_t masterPort);
@@ -175,14 +187,6 @@ int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 		} else {
 			blesscontextprintf(context, kBLLogLevelVerbose,  "Open Firmware set successfully\n" );
 		}
-	} else if( preboot == kBLPreBootEnvType_BIOS){
-		err = BLSetActiveBIOSBootDevice(context, device);
-		if(err) {
-			blesscontextprintf(context, kBLLogLevelError,  "Can't set active boot partition as %s\n", device);
-			return 4;
-		} else {
-			blesscontextprintf(context, kBLLogLevelVerbose,  "%s set as active boot partition\n" , device);
-		}
 	} else if(preboot == kBLPreBootEnvType_EFI) {
         err = setefidevice(context, device + 5, 0, NULL);
 		if(err) {
@@ -191,7 +195,10 @@ int setboot(BLContextPtr context, char *device, CFDataRef bootxData,
 		} else {
 			blesscontextprintf(context, kBLLogLevelVerbose,  "EFI set successfully\n" );
 		}
-	}
+	} else {
+        blesscontextprintf(context, kBLLogLevelError,  "Unknown system type\n");
+        return 1;
+    }
 	
 	return 0;	
 }
@@ -501,23 +508,12 @@ int setefifilepath(BLContextPtr context, const char * path, int bootNext, const 
     return 0;
 }
 
-int setefinetworkpath(BLContextPtr context, const char * interface,
-                      const char *host, const char *path, int bootNext,
-                      const char *optionalData)
+int setefinetworkpath(BLContextPtr context, CFStringRef booterXML,
+							 CFStringRef kernelXML, CFStringRef mkextXML,
+                             int bootNext)
 {
-    CFStringRef xmlString = NULL;
     const char *bootString = NULL;
     int ret;
-    
-    ret = BLCreateEFIXMLRepresentationForNetworkPath(context,
-                                              interface,
-                                              host,
-                                              path,
-                                              optionalData,
-                                              &xmlString);
-    if(ret) {
-        return 1;
-    }
     
     if(bootNext) {
         bootString = "efi-boot-next";
@@ -525,18 +521,23 @@ int setefinetworkpath(BLContextPtr context, const char * interface,
         bootString = "efi-boot-device";
     }
     
-    ret = setit(context, kIOMasterPortDefault, bootString, xmlString);
-    CFRelease(xmlString);
-    if(ret) {
-        return 2;
-    }        
-    
-    ret = setit(context, kIOMasterPortDefault, kIONVRAMDeletePropertyKey, CFSTR("efi-boot-file"));    
+    ret = setit(context, kIOMasterPortDefault, bootString, booterXML);
     if(ret) return ret;
     
-    ret = setit(context, kIOMasterPortDefault, kIONVRAMDeletePropertyKey, CFSTR("efi-boot-mkext"));    
+	if(kernelXML) {
+		ret = setit(context, kIOMasterPortDefault, "efi-boot-file", kernelXML);
+	} else {
+		ret = setit(context, kIOMasterPortDefault, kIONVRAMDeletePropertyKey, CFSTR("efi-boot-file"));
+	}
     if(ret) return ret;
-    
+
+	if(mkextXML) {
+		ret = setit(context, kIOMasterPortDefault, "efi-boot-mkext", mkextXML);
+	} else {
+		ret = setit(context, kIOMasterPortDefault, kIONVRAMDeletePropertyKey, CFSTR("efi-boot-mkext"));
+	}
+    if(ret) return ret;
+	
     ret = setefibootargs(context, kIOMasterPortDefault);
     if(ret) return ret;
     

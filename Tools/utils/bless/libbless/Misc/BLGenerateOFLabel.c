@@ -27,8 +27,6 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Sat Feb 23 2002.
  *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLGenerateOFLabel.c,v 1.21 2005/06/24 16:39:51 ssen Exp $
- *
  */
 
 #include <CoreFoundation/CoreFoundation.h>
@@ -88,7 +86,7 @@ int BLGenerateOFLabel(BLContextPtr context,
 
         contextprintf(context, kBLLogLevelError,
 		      "CoreGraphics is not available for rendering\n");
-	return 1;
+        return 1;
 	
         bitmapData = malloc(width*height+5);
         if(!bitmapData) {
@@ -146,10 +144,70 @@ int BLGenerateOFLabel(BLContextPtr context,
         return 0;
 }
 
+#define USE_CG 0
+
+
+
+#if USE_CG
+#include <ApplicationServices/ApplicationServices.h>
+
+static int makeLabelOfSize(const char *label, char *bitmapData,
+        uint16_t width, uint16_t height, uint16_t *newwidth) {
+
+        int bitmapByteCount;
+        int bitmapBytesPerRow;
+        
+        CGContextRef    context = NULL;
+        CGColorSpaceRef colorSpace = NULL;
+        CGPoint pt;
+
+
+        bitmapBytesPerRow = width*1;
+        bitmapByteCount = bitmapBytesPerRow * height;
+
+       colorSpace = CGColorSpaceCreateDeviceGray();
+
+
+        context = CGBitmapContextCreate( bitmapData,
+                                        width,
+                                        height,
+                                        8,
+                                        bitmapBytesPerRow,
+                                        colorSpace,
+                                     kCGImageAlphaNone);
+
+        if(context == NULL) {
+                fprintf(stderr, "Could not init CoreGraphics context\n");
+                return 1;
+        }
+
+    CGContextSetTextDrawingMode(context, kCGTextFill);
+    CGContextSelectFont(context, "Helvetica", 10.0, kCGEncodingMacRoman);
+    CGContextSetGrayFillColor(context, 1.0, 1.0);
+    CGContextSetShouldAntialias(context, 1);
+    CGContextSetCharacterSpacing(context, 0.5);
+        
+    pt = CGContextGetTextPosition(context);
+
+    CGContextShowTextAtPoint(context, 2.0, 2.0, label, strlen(label));
+
+    pt = CGContextGetTextPosition(context);
+
+    if(newwidth) { *newwidth = (int)pt.x + 2; }
+
+    CGColorSpaceRelease(colorSpace);
+    CGContextRelease(context);
+
+    return 0;
+
+}
+
+#else
 static int makeLabelOfSize(const char *label, char *bitmapData,
 						   uint16_t width, uint16_t height, uint16_t *newwidth) {
 	return 1;
 }
+#endif // USE_CG
 
 /*
  * data is of the form:

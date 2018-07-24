@@ -28,7 +28,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 21 2002.
  *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: bless.h,v 1.71 2005/12/02 22:51:58 ssen Exp $
+ *  $Id: bless.h,v 1.72 2006/01/02 22:27:28 ssen Exp $
  *
  */
  
@@ -214,7 +214,7 @@ typedef enum {
 
 typedef enum {
 	
-    kBLPreBootEnvType_Unknwon		= 0x00000001,
+    kBLPreBootEnvType_Unknown		= 0x00000001,
 	
     kBLPreBootEnvType_OpenFirmware	= 0x00000002,
 	
@@ -597,21 +597,6 @@ int BLLoadFile(BLContextPtr context,
 int BLGetPreBootEnvironmentType(BLContextPtr context,
 								BLPreBootEnvType *pbType);
 
-/***** BIOS ******/
-
-int BLSetActiveBIOSBootDevice(BLContextPtr context, const char * device);
-
-int BLGetActiveBIOSPartitionForDevice(BLContextPtr context, const char * device,
-                                    char * active);
-
-// Map the device to an ACPI path, or fall back to BSD name
-int BLGetACPIBootDevice(BLContextPtr context,
-			const char * mntfrm,
-			char * acpistring);
-
-int BLGetACPIBootDeviceForMountPoint(BLContextPtr context,
-			const char * mountpoint,
-			char * acpistring);
 
 /***** OpenFirmware *****/
 
