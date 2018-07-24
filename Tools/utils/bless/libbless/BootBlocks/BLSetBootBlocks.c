@@ -20,42 +20,38 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 #include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "bless.h"
 
-#include "enums.h"
-#include "structs.h"
-
-#define xstr(s) str(s)
-#define str(s) #s
-
-const char *modeList[] = { "Info Mode", "Device Mode", "Folder Mode" };
-
-void usage(struct clopt commandlineopts[]) {
-    int j;
-    short oldMode;
-    fprintf(stderr, "Usage: " xstr(PROGRAM) " [options]\n");
-    
-	for(oldMode = 0; oldMode <=2; oldMode++) {
-		fprintf(stderr, "%s:\n", modeList[oldMode]);
-
-		for(j=0; j < klast; j++) {
-			if(!(commandlineopts[j].modes & 1 << oldMode)) {
-				continue;
-			}
-
-			if(commandlineopts[j].takesarg == aRequired) {
-				fprintf(stderr, "   -%-9s arg ", commandlineopts[j].flag);
-			} else if(commandlineopts[j].takesarg == aOptional) {
-				fprintf(stderr, "   -%-9s[arg]", commandlineopts[j].flag);
-			} else {
-				fprintf(stderr, "   -%-12s  ", commandlineopts[j].flag);
-			}
-			fprintf(stderr, "\t%s\n", commandlineopts[j].description);
-		}
-		fprintf(stderr, "\n");
-    }
-    exit(1);
+int BLSetBootBlocks(BLContext context, unsigned char mountpoint[], unsigned char bbPtr[]) {
+  /* If a Classic system folder was specified, and we need to set the boot blocks
+   * for the volume, read it from the boot 0 resource of the System file, and write it */
+  fbootstraptransfer_t        bbr;
+  int                         fd;
+  int err;
+  
+  
+  fd = open(mountpoint, O_RDONLY);
+  if (fd == -1) {
+    contextprintf(context, kBLLogLevelError,  "Can't open volume mount point for %s\n", mountpoint );
+    return 2;
+  }
+  
+  bbr.fbt_offset = 0;
+  bbr.fbt_length = 1024;
+  bbr.fbt_buffer = (unsigned char *)bbPtr;
+  
+  err = fcntl(fd, F_WRITEBOOTSTRAP, &bbr);
+  if (err) {
+    contextprintf(context, kBLLogLevelError,  "Can't write boot blocks\n" );
+    close(fd);
+    return 3;
+  } else {
+    contextprintf(context, kBLLogLevelVerbose,  "Boot blocks written successfully\n" );
+  }
+  close(fd);
+  
+  return 0;
 }

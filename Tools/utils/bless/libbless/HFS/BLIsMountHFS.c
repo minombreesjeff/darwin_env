@@ -19,43 +19,32 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
+/*
+ *  BLIsMountHFS.c
+ *  bless
+ *
+ *  Created by shantonu on Mon Jul 16 2001.
+ *  Copyright (c) 2001 __CompanyName__. All rights reserved.
+ *
+ */
+
+#include <sys/mount.h>
+#include <string.h>
 
 #include "bless.h"
 
-#include "enums.h"
-#include "structs.h"
+int BLIsMountHFS(BLContext context, unsigned char mountpt[], int *isHFS) {
+  struct statfs sc;
 
-#define xstr(s) str(s)
-#define str(s) #s
+    int err;
 
-const char *modeList[] = { "Info Mode", "Device Mode", "Folder Mode" };
-
-void usage(struct clopt commandlineopts[]) {
-    int j;
-    short oldMode;
-    fprintf(stderr, "Usage: " xstr(PROGRAM) " [options]\n");
-    
-	for(oldMode = 0; oldMode <=2; oldMode++) {
-		fprintf(stderr, "%s:\n", modeList[oldMode]);
-
-		for(j=0; j < klast; j++) {
-			if(!(commandlineopts[j].modes & 1 << oldMode)) {
-				continue;
-			}
-
-			if(commandlineopts[j].takesarg == aRequired) {
-				fprintf(stderr, "   -%-9s arg ", commandlineopts[j].flag);
-			} else if(commandlineopts[j].takesarg == aOptional) {
-				fprintf(stderr, "   -%-9s[arg]", commandlineopts[j].flag);
-			} else {
-				fprintf(stderr, "   -%-12s  ", commandlineopts[j].flag);
-			}
-			fprintf(stderr, "\t%s\n", commandlineopts[j].description);
-		}
-		fprintf(stderr, "\n");
+    err = statfs(mountpt, &sc);
+    if(err) {
+      contextprintf(context, kBLLogLevelError,  "Could not statfs() %s\n", mountpt );
+      return 1;
     }
-    exit(1);
+    
+    *isHFS = ( !strcmp(sc.f_fstypename, "hfs") ? 1 : 0);
+    
+    return 0;
 }
