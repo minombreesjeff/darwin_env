@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,43 +22,45 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
+#include <libc.h>
+#include <IOKit/IOKitLib.h>
+#include <CoreFoundation/CoreFoundation.h>
 
-/*
- *  bless_private.h
- *  bless
- *
- *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 28 2002.
- *  Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
- *
- *  $Id: bless_private.h,v 1.12 2003/07/22 15:58:27 ssen Exp $
- *
- */
+int main(int argc, char *argv[]) {
 
-#include <sys/types.h>
+  char *path;
+  kern_return_t ret;
+  io_registry_entry_t entry = NULL;
+  CFMutableDictionaryRef props = NULL;
 
-#include "bless.h"
+  if(argc != 2) {
+    fprintf(stderr, "Usage: %s ofpath\n", getprogname());
+    fprintf(stderr, "\nFor example: %s IODeviceTree:/openprom\n", getprogname());
+    exit(1);
+  }
 
-#define kBootBlocksSize 1024 // in bytes
-#define kBootBlockTradOSSig 0x4c4b
+  path = argv[1];
 
-/* Calculate a shift-1-left & add checksum of all
- * 32-bit words
- */
-uint32_t BLBlockChecksum(const void *buf , uint32_t length);
+  entry = IORegistryEntryFromPath(kIOMasterPortDefault, path);
 
-/*
- * write the CFData to a file
- */
-int BLCopyFileFromCFData(BLContextPtr context, CFDataRef data,
-	     unsigned char dest[], int shouldPreallocate);
+  printf("entry is %p\n", entry);
+
+  if(entry == NULL) exit(1);
 
 
-/*
- * check if the context is null. if not, check if the log funcion is null
- */
-int contextprintf(BLContextPtr context, int loglevel, char const *fmt, ...);
+  ret = IORegistryEntryCreateCFProperties(entry, &props,
+					  kCFAllocatorDefault, 0);
 
-/*
- * stringify the OSType into the caller-provided buffer
- */
-char * blostype2string(uint32_t type, char buf[5]);
+
+  if(ret) {
+    fprintf(stderr, "Could not get entry properties\n");
+    exit(1);
+  }
+
+  TAOCFPrettyPrint(props);
+
+  CFRelease(props);
+ IOObjectRelease(entry); 
+
+  return 0;
+}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,43 +22,42 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
+#include <libc.h>
+#include <err.h>
 
-/*
- *  bless_private.h
- *  bless
- *
- *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 28 2002.
- *  Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
- *
- *  $Id: bless_private.h,v 1.12 2003/07/22 15:58:27 ssen Exp $
- *
- */
+int main(int argc, char *argv[]) {
 
-#include <sys/types.h>
+  FILE *f;
+  int ch;
 
-#include "bless.h"
+  char *varname = NULL;
 
-#define kBootBlocksSize 1024 // in bytes
-#define kBootBlockTradOSSig 0x4c4b
+  if(argc > 3) {
+    fprintf(stderr, "Usage: %s varname [ input ]\n", getprogname());
+    exit(1);
+  }
 
-/* Calculate a shift-1-left & add checksum of all
- * 32-bit words
- */
-uint32_t BLBlockChecksum(const void *buf , uint32_t length);
+  if(argc == 3) {
+    f = fopen(argv[2], "r");
+    if(f == NULL) {
+      err(1, "Could not open %s", argv[2]);
+    }
+  } else {
+    f = stdin;
+  }
 
-/*
- * write the CFData to a file
- */
-int BLCopyFileFromCFData(BLContextPtr context, CFDataRef data,
-	     unsigned char dest[], int shouldPreallocate);
+  varname = argv[1];
 
+  printf("const char %s[] = {\n", varname);
 
-/*
- * check if the context is null. if not, check if the log funcion is null
- */
-int contextprintf(BLContextPtr context, int loglevel, char const *fmt, ...);
+  while(EOF != (ch= fgetc(f)) && !feof(f)) {
 
-/*
- * stringify the OSType into the caller-provided buffer
- */
-char * blostype2string(uint32_t type, char buf[5]);
+    printf("%#x, ", ch);
+  }
+
+  fclose(f);
+
+  printf("\n};\n");
+
+  return 0;
+}

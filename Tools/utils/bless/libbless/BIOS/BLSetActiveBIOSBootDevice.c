@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -23,52 +23,40 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- *  BLBlockChecksum.c
+ *  BLSetActiveBIOSBootDevice.c
  *  bless
  *
- *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 28 2002.
- *  Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ *  Created by Shantonu Sen <ssen@apple.com> on Tue Jul 22 2003.
+ *  Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLBlockChecksum.c,v 1.5 2003/07/22 15:58:34 ssen Exp $
+ *  $Id: BLSetActiveBIOSBootDevice.c,v 1.6 2003/08/04 05:24:16 ssen Exp $
  *
- *  $Log: BLBlockChecksum.c,v $
- *  Revision 1.5  2003/07/22 15:58:34  ssen
- *  APSL 2.0
+ *  $Log: BLSetActiveBIOSBootDevice.c,v $
+ *  Revision 1.6  2003/08/04 05:24:16  ssen
+ *  Add #ifndef _OPEN_SOURCE so that some stuff isn't in darwin
  *
- *  Revision 1.4  2003/04/19 00:11:12  ssen
- *  Update to APSL 1.2
+ *  Revision 1.5  2003/07/25 00:19:05  ssen
+ *  add more apsl 2.0 license
  *
- *  Revision 1.3  2003/04/16 23:57:33  ssen
- *  Update Copyrights
+ *  Revision 1.4  2003/07/24 01:01:46  ssen
+ *  grab MK defaults for read/writing pmap
  *
- *  Revision 1.2  2003/03/19 22:57:06  ssen
- *  C99 types
+ *  Revision 1.3  2003/07/24 01:00:13  ssen
+ *  Dumbass. open it read/write
  *
- *  Revision 1.1  2002/03/05 00:01:42  ssen
- *  code reorg of secondary loader
+ *  Revision 1.2  2003/07/23 09:18:50  ssen
+ *  Code to set active MBR partition
  *
  *
  */
 
-#include <sys/types.h>
 
+#include "bless.h"
 #include "bless_private.h"
 
-/*
- * Taken from MediaKit. Used to checksum secondary loader
- * presently
- */
+int BLSetActiveBIOSBootDevice(BLContextPtr context, unsigned char device[]) {
 
-uint32_t BLBlockChecksum(const void *buf,uint32_t length)
-{
-  uint32_t          sum = 0;
-  uint32_t          *s = (uint32_t *) buf;
-  uint32_t          *t = s + length/4;
 
-  while (s < t) {
-    //      rotate 1 bit left and add bytes
-    sum = ((sum >> 31) | (sum << 1)) + *s++;
-  }
-  return sum;
+    return 0;    
 }
 
