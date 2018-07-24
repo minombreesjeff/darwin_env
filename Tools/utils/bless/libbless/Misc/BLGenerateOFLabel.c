@@ -65,10 +65,10 @@ static const char clut[] =
     0xD6, /* 0xFF = 5*43 = 215 */
   };
 
-static int makeLabelOfSize(const char *label, char *bitmapData,
+static int makeLabelOfSize(const char *label, unsigned char *bitmapData,
         uint16_t width, uint16_t height, uint16_t *newwidth);
 
-static int refitToWidth(char *bitmapData,
+static int refitToWidth(unsigned char *bitmapData,
         uint16_t width, uint16_t height, uint16_t newwidth);
 
 int BLGenerateOFLabel(BLContextPtr context,
@@ -82,13 +82,13 @@ int BLGenerateOFLabel(BLContextPtr context,
         int err;
         int i;
         CFDataRef bits = NULL;
-        char *bitmapData;
+        unsigned char *bitmapData;
 
         contextprintf(context, kBLLogLevelError,
 		      "CoreGraphics is not available for rendering\n");
         return 1;
 	
-        bitmapData = malloc(width*height+5);
+        bitmapData = (unsigned char *)malloc(width*height+5);
         if(!bitmapData) {
                 contextprintf(context, kBLLogLevelError,
                     "Could not alloc CoreGraphics backing store\n");
@@ -151,7 +151,7 @@ int BLGenerateOFLabel(BLContextPtr context,
 #if USE_CG
 #include <ApplicationServices/ApplicationServices.h>
 
-static int makeLabelOfSize(const char *label, char *bitmapData,
+static int makeLabelOfSize(const char *label, unsigned char *bitmapData,
         uint16_t width, uint16_t height, uint16_t *newwidth) {
 
         int bitmapByteCount;
@@ -203,7 +203,7 @@ static int makeLabelOfSize(const char *label, char *bitmapData,
 }
 
 #else
-static int makeLabelOfSize(const char *label, char *bitmapData,
+static int makeLabelOfSize(const char *label, unsigned char *bitmapData,
 						   uint16_t width, uint16_t height, uint16_t *newwidth) {
 	return 1;
 }
@@ -215,7 +215,7 @@ static int makeLabelOfSize(const char *label, char *bitmapData,
  *  111111111111111111
  */
 
-static int refitToWidth(char *bitmapData,
+static int refitToWidth(unsigned char *bitmapData,
         uint16_t width, uint16_t height, uint16_t newwidth)
 {
   uint16_t row;

@@ -9,5 +9,10 @@
 		<key>debug</key>
 		<string>Preserve kernel debugging setting</string>
 	</dict>
+	<key>4426766</key>
+	<dict>
+		<key>_panicd_ip</key>
+		<string>Preserve core dump server</string>
+	</dict>
 </dict>
 </plist>

@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen on 2/22/05.
  *  Copyright 2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: modeFirmware.c,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
+ *  $Id: modeFirmware.c,v 1.12 2006/01/23 19:58:41 ssen Exp $
  */
 
 #include <stdlib.h>

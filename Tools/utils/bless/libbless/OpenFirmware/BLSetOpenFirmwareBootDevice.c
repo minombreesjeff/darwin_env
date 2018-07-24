@@ -27,78 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Tue Apr 17 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLSetOpenFirmwareBootDevice.c,v 1.1.1.1 2006/01/27 22:43:55 ssen Exp $
- *
- *  $Log: BLSetOpenFirmwareBootDevice.c,v $
- *  Revision 1.1.1.1  2006/01/27 22:43:55  ssen
- *  bless-37.1 import
- *
- *  Revision 1.17  2005/11/17 00:17:31  ssen
- *  <rdar://problem/4344363> Bless needs to zero out kernel/mkext fields when booting from local disk
- *  refactor code into BLPreserveBootArgs
- *
- *  Revision 1.16  2005/08/22 20:49:25  ssen
- *  Change functions to take "char *foo" instead of "char foo[]".
- *  It should be semantically identical, and be more consistent with
- *  other system APIs
- *
- *  Revision 1.15  2005/06/24 16:39:51  ssen
- *  Don't use "unsigned char[]" for paths. If regular char*s are
- *  good enough for the BSD system calls, they're good enough for
- *  bless.
- *
- *  Revision 1.14  2005/02/03 00:42:29  ssen
- *  Update copyrights to 2005
- *
- *  Revision 1.13  2005/01/08 13:05:34  ssen
- *  <rdar://problem/3942261> need a way to avoid hard-coding clean boot-arg keys
- *  Use new code to not hardcode boot-args to preserve
- *
- *  Revision 1.12  2004/06/16 00:34:46  ssen
- *  <rdar://problem/2950473> ER: Installer carry over bootargs debug values
- *  Treat debug= as a special value, and preserve it
- *  Bug #: 2950473
- *
- *  Revision 1.11  2004/04/20 21:40:45  ssen
- *  Update copyrights to 2004
- *
- *  Revision 1.10  2003/10/17 00:10:39  ssen
- *  add more const
- *
- *  Revision 1.9  2003/07/22 15:58:36  ssen
- *  APSL 2.0
- *
- *  Revision 1.8  2003/04/19 00:11:14  ssen
- *  Update to APSL 1.2
- *
- *  Revision 1.7  2003/04/16 23:57:35  ssen
- *  Update Copyrights
- *
- *  Revision 1.6  2002/08/22 04:29:03  ssen
- *  zero out boot-args for Jim...
- *
- *  Revision 1.5  2002/06/11 00:50:51  ssen
- *  All function prototypes need to use BLContextPtr. This is really
- *  a minor change in all of the files.
- *
- *  Revision 1.4  2002/04/27 17:55:00  ssen
- *  Rewrite output logic to format the string before sending of to logger
- *
- *  Revision 1.3  2002/04/25 07:27:30  ssen
- *  Go back to using errorprint and verboseprint inside library
- *
- *  Revision 1.2  2002/02/23 04:13:06  ssen
- *  Update to context-based API
- *
- *  Revision 1.1  2001/11/16 05:36:47  ssen
- *  Add libbless files
- *
- *  Revision 1.10  2001/11/11 06:20:59  ssen
- *  readding files
- *
- *  Revision 1.8  2001/10/26 04:19:41  ssen
- *  Add dollar Id and dollar Log
- *
+ *  $Id: BLSetOpenFirmwareBootDevice.c,v 1.18 2006/02/20 22:49:57 ssen Exp $
  *
  */
 #include <stdlib.h>

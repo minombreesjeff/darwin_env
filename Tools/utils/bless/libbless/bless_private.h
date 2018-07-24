@@ -28,7 +28,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Feb 28 2002.
  *  Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: bless_private.h,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
+ *  $Id: bless_private.h,v 1.21 2005/11/15 23:59:52 ssen Exp $
  *
  */
 

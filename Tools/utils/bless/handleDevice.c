@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: handleDevice.c,v 1.2 2006/01/27 22:57:33 ssen Exp $
+ *  $Id: handleDevice.c,v 1.51 2006/03/07 16:51:40 ssen Exp $
  *
  *
  */
@@ -39,7 +39,6 @@
 #include <sys/mount.h>
 #include <sys/paths.h>
 #include <string.h>
-
 
 #include "enums.h"
 #include "structs.h"

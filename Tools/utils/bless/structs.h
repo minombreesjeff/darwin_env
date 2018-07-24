@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Wed Nov 14 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: structs.h,v 1.1.1.1 2006/01/27 22:43:54 ssen Exp $
+ *  $Id: structs.h,v 1.11 2005/06/24 16:39:48 ssen Exp $
  *
  */
 

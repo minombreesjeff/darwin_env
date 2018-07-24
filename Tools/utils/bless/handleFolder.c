@@ -27,7 +27,7 @@
  *  Created by Shantonu Sen <ssen@apple.com> on Thu Dec 6 2001.
  *  Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: handleFolder.c,v 1.2 2006/01/27 22:57:33 ssen Exp $
+ *  $Id: handleFolder.c,v 1.75 2006/03/07 17:09:25 ssen Exp $
  *
  */
 
@@ -363,8 +363,14 @@ int modeFolder(BLContextPtr context, struct clarg actargs[klast]) {
         // of HFSX. These filesystems we don't want blessed, because we don't
         // want future versions of OF to list them as bootable, but rather
         // prefer the Apple_Boot partition
+        //
+        // For EFI-based systems, it's OK to set finderinfo[0], and indeed
+        // a better user experience so that the EFI label shows up
         
-        if((sb.f_reserved1 & ~1) && (getenv("BL_OVERRIDE_BLESS_HFSX") == NULL)) {
+        if(actargs[ksetboot].present &&
+           (preboot == kBLPreBootEnvType_OpenFirmware) &&
+           (sb.f_reserved1 & ~1)
+           ) {
             blesscontextprintf(context, kBLLogLevelVerbose,  "%s is not HFS+ or Journaled HFS+. Not setting finderinfo[0]...\n", actargs[kmount].argument );
             oldwords[0] = 0;
         } else {
@@ -447,7 +453,7 @@ int modeFolder(BLContextPtr context, struct clarg actargs[klast]) {
 		if(actargs[kfolder].present) {
 			char sysfolder[MAXPATHLEN];
 		
-			sprintf(sysfolder, "%s/Volume Name Icon", actargs[kfolder].argument);
+			sprintf(sysfolder, "%s/.disk_label", actargs[kfolder].argument);
 			
 			blesscontextprintf(context, kBLLogLevelVerbose,  "Putting label bitmap in %s\n",
 							   sysfolder );

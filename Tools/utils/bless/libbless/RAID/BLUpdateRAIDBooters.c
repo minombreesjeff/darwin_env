@@ -27,55 +27,7 @@
  *  Created by Shantonu Sen on 1/15/05.
  *  Copyright 2005 Apple Computer, Inc. All rights reserved.
  *
- *  $Id: BLUpdateRAIDBooters.c,v 1.1.1.1 2006/01/27 22:43:55 ssen Exp $
- *
- *  $Log: BLUpdateRAIDBooters.c,v $
- *  Revision 1.1.1.1  2006/01/27 22:43:55  ssen
- *  bless-37.1 import
- *
- *  Revision 1.11  2005/08/22 20:49:26  ssen
- *  Change functions to take "char *foo" instead of "char foo[]".
- *  It should be semantically identical, and be more consistent with
- *  other system APIs
- *
- *  Revision 1.10  2005/06/24 16:51:06  ssen
- *  add includes for sys/param.h
- *
- *  Revision 1.9  2005/06/24 16:39:52  ssen
- *  Don't use "unsigned char[]" for paths. If regular char*s are
- *  good enough for the BSD system calls, they're good enough for
- *  bless.
- *
- *  Revision 1.8  2005/02/09 00:17:57  ssen
- *  If doing a setboot on UFS, HFSX, or RAID, and a label
- *  was not explicitly specified,  query DiskArb and render to label
- *
- *  Revision 1.7  2005/02/08 00:18:48  ssen
- *  Implement support for offline updating of BootX and OF labels
- *  in Apple_Boot partitions, and also for RAIDs. Only works
- *  in --device mode so far
- *
- *  Revision 1.6  2005/02/07 21:22:39  ssen
- *  Refact lookupServiceForName and code for BLDeviceNeedsBooter
- *
- *  Revision 1.5  2005/02/04 13:11:46  ssen
- *  Convert OF label code to using generic booter updating code.
- *
- *  Revision 1.4  2005/02/04 01:43:56  ssen
- *  Move RAID plist code over to common booter update code. Hopefully
- *  this is the last time this code has to be copied.
- *
- *  Revision 1.3  2005/01/26 01:25:30  ssen
- *  Finish v1 booting support. Also prepare for the day that
- *  unbootable RAIDs will not publish IOBoot entries.
- *
- *  Revision 1.2  2005/01/17 05:35:35  ssen
- *  provide stub for open source version
- *
- *  Revision 1.1  2005/01/16 02:07:22  ssen
- *  <rdar://problem/3861859> bless needs to try getProperty(kIOBootDeviceKey)
- *  Add code to find all booter partitions for a RAID and use
- *  MediaKit to update they com.apple.Boot.plist files
+ *  $Id: BLUpdateRAIDBooters.c,v 1.12 2006/02/20 22:49:58 ssen Exp $
  *
  */
 

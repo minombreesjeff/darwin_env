@@ -240,4 +240,3 @@ int BLInterpretEFIXMLRepresentationAsNetworkPath(BLContextPtr context,
         
     return 0;
 }
-                                                 

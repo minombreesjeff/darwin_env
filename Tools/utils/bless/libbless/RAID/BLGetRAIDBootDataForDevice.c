@@ -28,44 +28,7 @@
  *  Copyright 2005-2005 Apple Computer, Inc. All rights reserved.
  *
  *
- *  $Id: BLGetRAIDBootDataForDevice.c,v 1.1.1.1 2006/01/27 22:43:55 ssen Exp $
- *
- *  $Log: BLGetRAIDBootDataForDevice.c,v $
- *  Revision 1.1.1.1  2006/01/27 22:43:55  ssen
- *  bless-37.1 import
- *
- *  Revision 1.7  2005/08/22 20:49:25  ssen
- *  Change functions to take "char *foo" instead of "char foo[]".
- *  It should be semantically identical, and be more consistent with
- *  other system APIs
- *
- *  Revision 1.6  2005/06/24 16:39:52  ssen
- *  Don't use "unsigned char[]" for paths. If regular char*s are
- *  good enough for the BSD system calls, they're good enough for
- *  bless.
- *
- *  Revision 1.5  2005/02/03 00:42:29  ssen
- *  Update copyrights to 2005
- *
- *  Revision 1.4  2005/01/26 01:25:30  ssen
- *  Finish v1 booting support. Also prepare for the day that
- *  unbootable RAIDs will not publish IOBoot entries.
- *
- *  Revision 1.3  2005/01/16 00:10:12  ssen
- *  <rdar://problem/3861859> bless needs to try getProperty(kIOBootDeviceKey)
- *  Implement -getBoot and -info functionality. If boot-device is
- *  set to the Apple_Boot for one of the RAID members, we map
- *  this back to the top-level RAID device and print that out. This
- *  enables support in Startup Disk
- *
- *  Revision 1.2  2005/01/14 22:29:59  ssen
- *  <rdar://problem/3861859> bless needs to try getProperty(kIOBootDeviceKey)
- *  When determining the "OF path" for a device, figure out if it's
- *  part of a RAID set, and if so, find the booter for the primary
- *  path. Otherwise, find a normal booter, or else no booter at all
- *
- *  Revision 1.1  2005/01/14 18:28:40  ssen
- *  start RAID work
+ *  $Id: BLGetRAIDBootDataForDevice.c,v 1.8 2006/02/20 22:49:58 ssen Exp $
  *
  */
 
