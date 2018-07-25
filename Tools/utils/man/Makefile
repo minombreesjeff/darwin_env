@@ -1,88 +1,135 @@
-##
-# Makefile for man
-##
+#####################################################################
+#
+# Makefile for building and installing man_proj
+#
+#               ----- ----- NeXT Confidential ----- -----
+#
+# History (YY-MM-DD-wd):
+#
+# 92-12-22-tu: Revised by Kathy Walrath, NeXT Computer, Inc.
+# 97-05-29-we: Indexing support removed by Matt Rollefson, Apple
+#              Computer, Inc.
+#
+######################################################################
 
-# Project info
-Project         = man
-GnuAfterInstall = strip-man link-manpath install-plist fix-perms
+######################################################################
+# Macros/variables
+######################################################################
 
-install:: shadow_source
+NAME = man
+SUBDIRS = usr/man
+#MANDIR = ${DSTROOT}/NextLibrary/Documentation/ManPages
+MANDIR = ${DSTROOT}/usr/share/man
+#INDEXFILE= ${MANDIR}/.index.store
+#INDEXFLAGS=-fsvg -LEnglish
 
-include $(MAKEFILEPATH)/CoreOS/ReleaseControl/GNUSource.make
+# DSTROOT must be provided by invoker
+# 	E.g., for a test:  make installsrc SRCROOT=/tmp/mansrc
+# SRCROOT must be provided by invoker
+# 	E.g., for a test:  make install DSTROOT=/tmp/mandst
+OBJROOT = .  # overridden by Release Control when project is submitted
+SYMROOT = .  # overridden by Release Control when project is submitted
 
-# Not quite like other GNU projects...
-Configure_Flags = -d -prefix="$(Install_Prefix)" \
-                  -confdir="$(ETCDIR)" \
-                  -compatibility_mode_for_colored_groff
-Extra_Make_Flags = LIBS=-lxcselect
-Install_Flags   = DESTDIR="$(DSTROOT)"
-Install_Target  = install
+#####
+# The following parameters have no meaning for doc_proj, as cc isn't
+# used, and there are no architecture dependencies.
+#
+# RC_CFLAGS
+# RC_ARCHS
+# RC_m68k
+# RC_m88k   # R.I.P.
+# RC_m98k   # aka the PowerPC architecture
+# RC_i386
 
-# Automatic Extract & Patch
-AEP            = YES
-AEP_Project    = $(Project)
-AEP_Version    = 1.6c
-AEP_ProjVers   = $(AEP_Project)-$(AEP_Version)
-AEP_Filename   = $(AEP_ProjVers).tar.gz
-AEP_ExtractDir = $(AEP_ProjVers)
-AEP_Patches    = Makefile.in.diff \
-                 configure.diff \
-                 man__Makefile.in.diff \
-                 src__Makefile.in.diff \
-                 src__man-getopt.c.diff \
-                 src__man.c.diff \
-                 src__man.conf.in.diff \
-                 src__manpath.c.diff \
-                 src__util.c.diff \
-                 PR3845474.diff \
-                 PR3857969.diff \
-                 PR3939085.diff \
-                 PR4006198.diff \
-                 PR4062483.diff \
-                 PR4076593.diff \
-                 PR4121764.diff \
-                 PR4302566.diff \
-                 PR4670363.diff \
-                 PR5291011.diff \
-                 PR5024303.diff \
-                 PR11291804-xcode.diff \
-                 PR13528825.diff
+#####
+# The following parameters have no meaning for doc_proj. ???
+#
+# RC_KANJI    # ??? find out if this applies
+# JAPANESE    # ??? find out if this applies
+# SUBLIBROOTS
 
-ifeq ($(suffix $(AEP_Filename)),.bz2)
-AEP_ExtractOption = j
-else
-AEP_ExtractOption = z
-endif
 
-# Extract the source.
-install_source::
-ifeq ($(AEP),YES)
-	$(TAR) -C $(SRCROOT) -$(AEP_ExtractOption)xf $(SRCROOT)/$(AEP_Filename)
-	$(RMDIR) $(SRCROOT)/$(Project)
-	$(MV) $(SRCROOT)/$(AEP_ExtractDir) $(SRCROOT)/$(Project)
-	for patchfile in $(AEP_Patches); do \
-		(cd $(SRCROOT)/$(Project) && patch -p0 -F0 < $(SRCROOT)/patches/$$patchfile) || exit 1; \
-	done
-endif
+######################################################################
+# Targets for building man_proj
+######################################################################
 
-strip-man:
-	$(STRIP) -x $(DSTROOT)/usr/bin/man
+all default ${NAME}:
+	 for i in ${SUBDIRS}; \
+	 do \
+		echo ================= make $@ for $$i =================; \
+		(cd $$i; ${MAKE} $@); \
+	 done
 
-link-manpath:
-	$(LN) -s man $(DSTROOT)/usr/bin/manpath
-	$(LN) -s man.1 $(DSTROOT)/usr/share/man/man1/manpath.1
+#####
+# This should perhaps remove some more dot files.  Index files should probably 
+# be deleted.
+#
+clean::
+	find . \( -name '*~' -o -name '#*' -o -name '.places' -o -name '.list' \) -exec rm {} \;
 
-fix-perms:
-	@for prog in apropos man whatis; do \
-		$(CHMOD) $(Install_Program_Mode) $(DSTROOT)/usr/bin/$${prog}; \
-		$(CHMOD) $(Install_File_Mode) $(DSTROOT)/usr/share/man/man1/$${prog}.1; \
-	done
+#####
+# The "-CWD=`pwd`..." line is a standard invocation used to convert DSTROOT 
+# into a full path name.  (I don't know why, but I don't dare to take it out.)  
+# You end up not changing the current working directory.
+#	-CWD=`pwd`; cd ${DSTROOT}; DSTROOT=`pwd`; cd $$CWD; \
+#
+install:: ${DSTROOT}
+	-CWD=`pwd`; cd ${DSTROOT}; DSTROOT=`pwd`; cd $$CWD; \
+	 for i in ${SUBDIRS}; \
+	 do \
+		echo ================= make $@ for $$i =================; \
+		(cd $$i; ${MAKE} DSTROOT=$$DSTROOT $@); \
+	 done
+# Create the whatis database.
+#	/usr/libexec/makewhatis ${MANDIR}
 
-OSV     = $(DSTROOT)/usr/local/OpenSourceVersions
-OSL     = $(DSTROOT)/usr/local/OpenSourceLicenses
+# Copy the special index files.  These change from release to release....
+# 5/97 MR Special index files for Librarian support commented out
+#	cp icon.tiff ${MANDIR}/.dir.tiff
+#	cp .index.iname ${MANDIR}/.index.iname
+#	cp .index.itype ${MANDIR}/.index.itype
+#	cp .displayCommand ${MANDIR}/.displayCommand
+#	cp .roffArgs ${MANDIR}/.roffArgs
 
-install-plist:
-	$(MKDIR) $(OSV)
-	$(INSTALL_FILE) $(SRCROOT)/$(Project).plist $(OSV)/$(Project).plist
-	$(MKDIR) $(OSL)
-	$(INSTALL_FILE) $(Sources)/COPYING $(OSL)/$(Project).txt
+# Create the index when installing.
+# 5/97 MR Commented out
+#	-/bin/rm -rf ${INDEXFILE}
+#	(cd ${MANDIR} ; ixbuild  ${INDEXFLAGS}) || exit 1
+
+# Change permissions.
+# 5/97 MR Commented out files that are no longer copied
+# 10/97 MR have to reenable the whatis file when it's generated again
+#	chmod 644 ${INDEXFILE}
+#	chmod 644 ${MANDIR}/whatis
+#	chmod 444 ${MANDIR}/.dir.tiff
+#	chmod 444 ${MANDIR}/.index.iname
+#	chmod 444 ${MANDIR}/.index.itype
+#	chmod 444 ${MANDIR}/.displayCommand
+#	chmod 444 ${MANDIR}/.roffArgs
+	chown -R root.wheel ${MANDIR}
+
+# Check for and remove any core files.
+	# find /${MANDIR} -name 'core' -exec rm -rf {} \;
+
+# Create a link that points to /usr/share/man
+# 10/97 MR
+# For developer documentation directory *only*
+# 4/00 MR
+	mkdir -p ${DSTROOT}/Developer/Documentation
+	ln -s /usr/share/man ${DSTROOT}/Developer/Documentation/ManPages
+
+#####
+# Copy this directory to SRCROOT.
+#
+installsrc:: ${SRCROOT}
+	gnutar cf - . | (cd ${SRCROOT}; tar xvfp -)
+
+#####
+# Since man_proj has no headers, the "installhdrs" target does nothing.
+#
+installhdrs::	# Do nothing.
+
+#####
+# Create the SRCROOT and DSTROOT directories.
+#
+${SRCROOT} ${DSTROOT}:; mkdir -p -m 755 $@
