@@ -2,24 +2,21 @@
  * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -50,11 +47,12 @@ struct CatalogIterationSummary gCIS;
 SGlobPtr gScavGlobals;
 
 /* Local routines for checking catalog structures */
-static int  CheckCatalogRecord(const HFSPlusCatalogKey *key,
+static int  CheckCatalogRecord(SGlobPtr GPtr, const HFSPlusCatalogKey *key,
                                const CatalogRecord *rec, UInt16 reclen);
 static int  CheckCatalogRecord_HFS(const HFSCatalogKey *key,
                                    const CatalogRecord *rec, UInt16 reclen);
 
+static int  CheckIfAttributeExists(const UInt32 fileID); 
 static int  CheckDirectory(const HFSPlusCatalogKey * key, const HFSPlusCatalogFolder * dir);
 static int  CheckFile(const HFSPlusCatalogKey * key, const HFSPlusCatalogFile * file);
 static int  CheckThread(const HFSPlusCatalogKey * key, const HFSPlusCatalogThread * thread);
@@ -111,14 +109,20 @@ CheckCatalogBTree( SGlobPtr GPtr )
 	err = BTCheck(gScavGlobals, kCalculatedCatalogRefNum, (CheckLeafRecordProcPtr)CheckCatalogRecord);
 	if (err) goto exit;
 
-	if (gCIS.dirCount != gCIS.dirThreads)
+	if (gCIS.dirCount != gCIS.dirThreads) {
+		RcdError(gScavGlobals, E_IncorrectNumThdRcd);
 		gScavGlobals->CBTStat |= S_Orphan;  /* a directory record is missing */
+	}
 
-	if (hfsplus && (gCIS.fileCount != gCIS.fileThreads))
+	if (hfsplus && (gCIS.fileCount != gCIS.fileThreads)) {
+		RcdError(gScavGlobals, E_IncorrectNumThdRcd);
 		gScavGlobals->CBTStat |= S_Orphan;
+	}
 
-	if (!hfsplus && (gCIS.fileThreads != gCIS.filesWithThreads))
+	if (!hfsplus && (gCIS.fileThreads != gCIS.filesWithThreads)) {
+		RcdError(gScavGlobals, E_IncorrectNumThdRcd);
 		gScavGlobals->CBTStat |= S_Orphan;
+	}
 
 	gScavGlobals->calculatedVCB->vcbEncodingsBitmap = gCIS.encodings;
 	gScavGlobals->calculatedVCB->vcbNextCatalogID = gCIS.nextCNID;
@@ -162,7 +166,7 @@ CheckCatalogBTree( SGlobPtr GPtr )
  * Called in leaf-order for every leaf record in the Catalog B-tree
  */
 static int
-CheckCatalogRecord(const HFSPlusCatalogKey *key, const CatalogRecord *rec, UInt16 reclen)
+CheckCatalogRecord(SGlobPtr GPtr, const HFSPlusCatalogKey *key, const CatalogRecord *rec, UInt16 reclen)
 {
 	int 						result = 0;
 	Boolean						isHFSPlus;
@@ -314,6 +318,50 @@ CheckCatalogRecord_HFS(const HFSCatalogKey *key, const CatalogRecord *rec, UInt1
 	return (result);
 }
 
+/* CheckIfAttributeExists - check if atleast one extend attribute
+ *                          exists for given file/folder ID 
+ * 
+ * Returns: 0 - if not extended attribute exists
+ *          1 - if atleast one extended attribute exists
+ *          n - some error occured 
+ */
+static int 
+CheckIfAttributeExists(const UInt32 fileID) 
+{
+	int result = 0;
+	HFSPlusAttrKey *attrKey;
+	BTreeIterator iterator;
+
+	/* Initialize the iterator, note that other fields in iterator are initialized to zero */
+	ClearMemory(&iterator, sizeof(BTreeIterator));
+
+	/* Initialize attribute key to iterator key.  Other fields initialized to zero */
+	attrKey = (HFSPlusAttrKey *)&iterator.key;
+	attrKey->keyLength = kHFSPlusAttrKeyMinimumLength;
+	attrKey->fileID = fileID;
+
+	/* Search for attribute with NULL name.  This will place the iterator at correct fileID location in BTree */	
+	result = BTSearchRecord(gScavGlobals->calculatedAttributesFCB, &iterator, kInvalidMRUCacheKey, NULL, NULL, &iterator);
+	if (result && (result != btNotFound)) {
+#if 0 //DEBUG_XATTR
+		printf ("%s: No matching attribute record found\n", __FUNCTION__);
+#endif
+		goto out;
+	}
+
+	/* Iterate to next record and check there is a valid extended attribute for this file ID */ 
+	result = BTIterateRecord(gScavGlobals->calculatedAttributesFCB, kBTreeNextRecord, &iterator, NULL, NULL);
+	if ((result == noErr) && (attrKey->fileID == fileID)) {
+		/* Set success return value only if we did _find_ an attribute record for the current fileID */
+		result = 1;
+	} 
+out:
+#if 0 //DEBUG_XATTR
+	printf ("%s: Retval=%d for fileID=%d\n", __FUNCTION__, result, fileID); 
+#endif
+	return result;
+}
+
 /*
  * CheckDirectory - verify a catalog directory record
  *
@@ -328,10 +376,31 @@ CheckDirectory(const HFSPlusCatalogKey * key, const HFSPlusCatalogFolder * dir)
 
 	dirID = dir->folderID;
 
-	if (dir->flags != 0) {
+	/* Directory cannot have these two flags set */
+	if ((dir->flags & (kHFSFileLockedMask | kHFSThreadExistsMask)) != 0) {
 		RcdError(gScavGlobals, E_CatalogFlagsNotZero);
 		gScavGlobals->CBTStat |= S_ReservedNotZero;
 	}
+
+	/* 3971173, 3977448 : HFS does not clear the attribute bit after it deletes the 
+	 * last attribute.  Fix it later in 3977448 by removing the call for checking attrs
+	 */
+	result = CheckIfAttributeExists(dir->folderID);
+	if (result == 1) {
+		/* Atleast one extended attribute exists for this folder ID */
+		/* 3843779 : Record if directory record has attribute and/or security bit set */
+		RecordXAttrBits(gScavGlobals, dir->flags, dir->folderID, kCalculatedCatalogRefNum);
+#if DEBUG_XATTR
+		printf ("%s: Record folderID=%d for prime modulus calculations\n", __FUNCTION__, dir->folderID); 
+#endif
+	}
+#if 0 //DEBUG_XATTR
+	else {
+		if (result == 0) 
+			printf ("%s: Ignoring folder ID %d from prime modulus calculuation\n", __FUNCTION__, dir->folderID); 
+	}
+#endif 
+	result = 0;	/* ignore result from record xattr */
 
 	if (dirID < kHFSFirstUserCatalogNodeID  &&
             dirID != kHFSRootFolderID) {
@@ -372,17 +441,28 @@ CheckFile(const HFSPlusCatalogKey * key, const HFSPlusCatalogFile * file)
 				filename, &len);
 	filename[len] = '\0';
 
-	/* Check reserved fields
-	 *
-	 * NOTE: the bit 7 (mask 0x80) of the flags byte isn't used by HFS or HFS Plus.
-	 * It was used by MFS to indicate that a file record was in use.  However, Inside
-	 * Macintosh: Files documents this bit for HFS volumes, and some non-Mac implementations
-	 * appear to set the bit.  Therefore, we ignore it.
+	/* 3843017 : Check for reserved field removed to support new bits in future */
+
+	/* 3971173, 3977448 : HFS does not clear the attribute bit after it deletes the 
+	 * last attribute.  Fix it later in 3977448 by removing the call for checking attrs
 	 */
-	if ((file->flags & (UInt16) ~(0X83)) != 0) {
-		RcdError(gScavGlobals, E_CatalogFlagsNotZero);
-		gScavGlobals->CBTStat |= S_ReservedNotZero;
+	result = CheckIfAttributeExists(file->fileID);
+	if (result == 1) {
+		/* Atleast one extended attribute exists for this file ID */
+		/* 3843779 : Record if file record has attribute and/or security bit set */
+		RecordXAttrBits(gScavGlobals, file->flags, file->fileID, kCalculatedCatalogRefNum);
+#if DEBUG_XATTR
+		printf ("%s: Record fileID=%d for prime modulus calculations\n", __FUNCTION__, file->fileID); 
+#endif
 	}
+#if 0 //DEBUG_XATTR
+	else { 
+		if (result == 0) 
+			printf ("%s: Ignoring file ID %d from prime modulus calculuation\n", __FUNCTION__, file->fileID);
+	}
+#endif 
+	result = 0;	/* ignore result from record xattr */
+
 	fileID = file->fileID;
 	if (fileID < kHFSFirstUserCatalogNodeID) {
 		RcdError(gScavGlobals, E_InvalidID);
@@ -504,7 +584,8 @@ CheckDirectory_HFS(const HFSCatalogKey * key, const HFSCatalogFolder * dir)
 
 	dirID = dir->folderID;
 
-	if (dir->flags != 0) {
+	/* Directory cannot have these two flags set */
+	if ((dir->flags & (kHFSFileLockedMask | kHFSThreadExistsMask)) != 0) {
 		RcdError(gScavGlobals, E_CatalogFlagsNotZero);
 		gScavGlobals->CBTStat |= S_ReservedNotZero;
 	}
@@ -540,16 +621,8 @@ CheckFile_HFS(const HFSCatalogKey * key, const HFSCatalogFile * file)
 	if (file->flags & kHFSThreadExistsMask)
 		++gCIS.filesWithThreads;
 
-	/* Check reserved fields
-	 *
-	 * NOTE: the bit 7 (mask 0x80) of the flags byte isn't used
-	 * by HFS It was used by MFS to indicate that a file record
-	 * was in use.  However, Inside Macintosh: Files documents
-	 * this bit for HFS volumes, and some non-Mac implementations
-	 * appear to set the bit.  Therefore, we ignore it.
-	 */
-	if ((file->flags & (UInt8) ~(0X83)) ||
-	    (file->dataStartBlock)          ||
+	/* 3843017 : Check for reserved field removed to support new bits in future */
+	if ((file->dataStartBlock)          ||
 	    (file->rsrcStartBlock)          ||
 	    (file->reserved))
 	{

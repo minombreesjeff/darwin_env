@@ -3,22 +3,21 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * Reserved.  This file contains Original Code and/or Modifications of
+ * Original Code as defined in and that are subject to the Apple Public
+ * Source License Version 1.0 (the 'License').  You may not use this file
+ * except in compliance with the License.  Please obtain a copy of the
+ * License at http://www.apple.com/publicsource and read it before using
+ * this file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License."
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -35,6 +34,10 @@
 #include "CheckHFS.h"
 #include "BTreeScanner.h"
 #include "hfs_endian.h"
+
+#include <sys/xattr.h>
+#include <sys/acl.h>
+#include <sys/kauth.h>
 
 #ifdef __cplusplus
 extern	"C" {
@@ -57,10 +60,11 @@ enum {
 // Misc constants
 //
 
+#define kMaxReScan	3	/* max times to re-scan volume on repair success */
+
 #define	kBTreeHeaderUserBytes	128
 
 #define	kBusErrorValue	0x50FF8001
-
 
 //ее Danger! This should not be hard coded
 #define	kMaxClumpSize	0x100000	/* max clump size is 1MB (2048 btree nodes) */
@@ -239,6 +243,10 @@ enum {
 	cdMemoryFullErr					= -1326			//	not enough memory to check disk
 };
 
+
+enum {
+	fsDSIntErr	= -127	/* non-hardware Internal file system error */
+};
 
 //	Repair Info - additional info returned when a repair is attempted
 enum {
@@ -574,6 +582,30 @@ typedef pascal void (*UserMessageProcPtr)(StringPtr message, SInt16 messageType,
 
 #endif
 
+/* 3843779 Structure to detemine consistency of attribute data and 
+ * corresponding bit in catalog record.  Based on Chinese Remainder
+ * Theorem
+ */
+typedef struct PrimeBuckets {
+	UInt32	n32[32];
+	UInt32	n27[27];
+	UInt32	n25[25];
+	UInt32	n7[7];
+	UInt32	n11[11];
+	UInt32	n13[13];
+	UInt32	n17[17];
+	UInt32	n19[19];
+	UInt32	n23[23];
+	UInt32	n29[29];
+	UInt32	n31[31];
+} PrimeBuckets;
+
+/* Record last attribute ID checked, used in CheckAttributeRecord, initialized in ScavSetup */
+typedef struct lastAttrID {
+	UInt32 fileID;
+	Boolean hasSecurity;
+} lastAttrID;
+
 /* 	
 	VolumeObject encapsulates all infomration about the multiple volume anchor blocks (VHB and MSD) 
 	on HFS and HFS+ volumes.  An HFS volume will have two MDBs (primary and alternate HFSMasterDirectoryBlock), 
@@ -620,6 +652,7 @@ typedef struct SGlob {
 	UInt16				CBTStat;				//	scavenge status flags for catalog BTree 
 	UInt16				CatStat;				//	scavenge status flags for catalog file
 	UInt16				VeryMinorErrorsStat;	//	scavenge status flags for very minor errors
+	UInt16				JStat;					//	scavange status flags for journal errors
 	DrvQElPtr			DrvPtr;					//	pointer to driveQ element for target drive
 	UInt32				TarID;					//	target ID (CNID of data structure being verified)
 	UInt64				TarBlock;				//	target block/node number being verified
@@ -679,13 +712,20 @@ typedef struct SGlob {
 	int				logLevel;
 	int				chkLevel;
 	int             repairLevel;
-	Boolean			scanAgain;	//	used to force another scan of the volume (max of 2 scans)
 	Boolean			minorRepairErrors;	// indicates some minor repairs failed
 	int				canWrite;  	// we can safely write to the block device
 	int				lostAndFoundMode;  // used when creating lost+found directory
 	BTScanState		scanState;
 
 	char			volumeName[256]; /* volume name in ASCII or UTF-8 */
+
+	PrimeBuckets 	CBTAttrBucket;		/* prime number buckets for Attribute bit in Catalog btree */
+	PrimeBuckets 	CBTSecurityBucket;	/* prime number buckets for Security bit in Catalog btree */
+	PrimeBuckets 	ABTAttrBucket;		/* prime number buckets for Attribute bit in Attribute btree */
+	PrimeBuckets 	ABTSecurityBucket;	/* prime number buckets for Security bit in Attribute btree */
+	lastAttrID 	lastAttrFileID; 	/* Record last attribute ID checked, used in CheckAttributeRecord, initialized in ScavSetup */
+	UInt16		securityAttrName[XATTR_MAXNAMELEN];	/* Store security attribute name in UTF16, to avoid frequent conversion */
+	size_t  	securityAttrLen;
 } SGlob, *SGlobPtr;
 
 
@@ -708,7 +748,7 @@ enum
 #define	S_BadMDBdrAlBlSt		0x0400	//	Invalid drAlBlSt field in MDB
 #define S_InvalidWrapperExtents	0x0200	//	Invalid catalog extent start in MDB
 
-/* BTree status flags (contents of EBTStat and CBTStat) */
+/* BTree status flags (contents of EBTStat, CBTStat and ABTStat) */
 
 #define	S_BTH					0x8000	/* BTree header damaged */
 #define	S_BTM					0x4000	/* BTree map damaged */
@@ -719,6 +759,8 @@ enum
 #define S_ReservedNotZero		0x0200  // the flags or reserved fields are not zero
 #define S_RebuildBTree			0x0100  // similar to S_Indx, S_Leaf, but if one is bad we stop checking and the other may also be bad.
 #define S_ReservedBTH			0x0080  // fields in the BTree header should be zero but are not
+#define S_AttributeCount		0x0040	// incorrect number of xattr in attribute btree in comparison with attribute bit in catalog btree
+#define S_SecurityCount			0x0020	// incorrect number of security xattrs in attribute btree in comparison with security bit in catalog btree
 
 /* catalog file status flags (contents of CatStat) */
 
@@ -741,6 +783,9 @@ enum
 /* user file status flags (contents of FilStat) */
 
 //#define S_LockedName			0x4000  // locked file name
+
+/* Journal status flag (contents of JStat) */
+#define S_BadJournal		0x8000	/* Bad journal content */
 
 /*------------------------------------------------------------------------------
  ScavCtrl Interface
@@ -797,8 +842,9 @@ enum {
 	M_Look		               	= 21,
 	M_OtherWriters		       	= 22,
 	M_CaseSensitive		       	= 23,
+	M_ReRepairFailed			= 24,			
 
-	M_LastMessage               = 23
+	M_LastMessage               = 24
 };
 
 /*------------------------------------------------------------------------------
@@ -893,8 +939,12 @@ enum {
 
 	E_InvalidUID		=  570,
 	E_IllegalName		=  571,
+	E_IncorrectNumThdRcd	=  572,
+	/* Init the next two errors to pre-existing messages.  Fix them in 3964748 */
+	E_IncorrectAttrCount	=  547,	/* Incorrect attributes in attr btree with attr bits in catalog btree */
+	E_IncorrectSecurityCount=  547, /* Incorrect security attributes in attr btree with security bits in catalog btree */
 
-	E_LastError		=  571
+	E_LastError		=  572
 };
 
 
@@ -1001,7 +1051,8 @@ extern Boolean 	VolumeObjectIsHFSPlus( void );
 extern Boolean 	VolumeObjectIsHFS( void );
 extern Boolean 	VolumeObjectIsEmbeddedHFSPlus( void );
 extern Boolean 	VolumeObjectIsPureHFSPlus( void );
-
+extern void 	RecordXAttrBits(SGlobPtr GPtr, UInt16 flags, HFSCatalogNodeID fileid, UInt16 btreetype); 
+extern int ComparePrimeBuckets(SGlobPtr GPtr, UInt16 BitMask); 
 
 extern	void	InvalidateCalculatedVolumeBitMap( SGlobPtr GPtr );
 
@@ -1029,6 +1080,7 @@ extern	OSErr	AttrBTChk( SGlobPtr GPtr );		//	attributes btree check
 extern	OSErr	IVChk( SGlobPtr GPtr );
 
 extern	int	CheckForClean( SGlobPtr GPtr, Boolean markClean );
+
 extern  int	CheckIfJournaled(SGlobPtr GPtr);
 
 extern	OSErr	VInfoChk( SGlobPtr GPtr );
@@ -1045,7 +1097,7 @@ extern	OSErr	AddExtentToOverlapList( SGlobPtr GPtr, HFSCatalogNodeID fileNumber,
 
 /* ------------------------------- From SVerify2.c -------------------------------- */
 
-typedef int (* CheckLeafRecordProcPtr)(void *key, void *record, UInt16 recordLen);
+typedef int (* CheckLeafRecordProcPtr)(SGlobPtr GPtr, void *key, void *record, UInt16 recordLen);
 
 extern	int  BTCheck(SGlobPtr GPtr, short refNum, CheckLeafRecordProcPtr checkLeafRecord);
 

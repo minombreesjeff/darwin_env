@@ -498,7 +498,7 @@ void GenerateVolumeUUID(VolumeUUID *newVolumeID) {
 	int sysdata;
 	char sysctlstring[128];
 	size_t datalen;
-	struct loadavg sysloadavg;
+	double sysloadavg[3];
 	struct vmtotal sysvmtotal;
 	
 	do {
@@ -547,10 +547,8 @@ void GenerateVolumeUUID(VolumeUUID *newVolumeID) {
 		SHA1Update(&context, sysctlstring, datalen);
 
 		/* The system's load average: */
-		mib[0] = CTL_VM;
-		mib[1] = VM_LOADAVG;
 		datalen = sizeof(sysloadavg);
-		sysctl(mib, 2, &sysloadavg, &datalen, NULL, 0);
+		getloadavg(sysloadavg, 3);
 		SHA1Update(&context, &sysloadavg, datalen);
 
 		/* The system's VM statistics: */
