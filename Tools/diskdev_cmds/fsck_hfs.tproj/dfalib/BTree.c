@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -40,6 +41,52 @@
 
 
 extern Boolean NodesAreContiguous(SFCB *fcb, UInt32 nodeSize);
+
+/*-------------------------------------------------------------------------------
+Routine:	CopyKey
+
+Function:	Copy a BTree key.  Sanity check the key length; if it is too large,
+			then set the copy's length to the BTree's maximum key length.
+
+Inputs:		btcb		BTree whose key is being copied
+			srcKey		Source key being copied
+
+Output:		destKey		Destination where copy will be stored
+
+Result:		none (void)
+-------------------------------------------------------------------------------*/
+static void CopyKey(BTreeControlBlockPtr btcb, const BTreeKey *srcKey, BTreeKey *destKey)
+{
+	unsigned	keySize = CalcKeySize(btcb, srcKey);
+	unsigned	maxKeySize = MaxKeySize(btcb);
+	int			fixLength = 0;
+	
+	/*
+	 *	If the key length is too long (corrupted), then constrain the number
+	 *	of bytes to copy.  Remember that we did this so we can also update
+	 *	the copy's length field later.
+	 */
+	if (keySize > maxKeySize)
+	{
+		keySize = maxKeySize;
+		fixLength = 1;
+	}
+	
+	CopyMemory(srcKey, destKey, keySize);
+	
+	/*
+	 *	If we had to constrain the key size above, then also update the
+	 *	key length in the copy.  This will prevent the caller from dereferencing
+	 *	part of the key which we never actually copied.
+	 */
+	if (fixLength)
+	{
+		if (btcb->attributes & kBTBigKeysMask)
+			destKey->length16 = btcb->maxKeyLength;
+		else
+			destKey->length8 = btcb->maxKeyLength;
+	}
+}
 
 
 //////////////////////////////////// Globals ////////////////////////////////////
@@ -763,9 +810,9 @@ OSStatus	BTSearchRecord		(SFCB						*filePtr,
 
 		// copy the key in the BTree when found rather than searchIterator->key to get proper case/diacriticals
 		if (foundRecord == true)
-			CopyMemory ((Ptr)keyPtr, (Ptr)&resultIterator->key, CalcKeySize(btreePtr, keyPtr));
+			CopyKey(btreePtr, keyPtr, &resultIterator->key);
 		else
-			CopyMemory ((Ptr)&searchIterator->key, (Ptr)&resultIterator->key, CalcKeySize(btreePtr, &searchIterator->key));
+			CopyKey(btreePtr, &searchIterator->key, &resultIterator->key);
 	}
 
 	err = ReleaseNode (btreePtr, &node);
@@ -1036,7 +1083,7 @@ CopyData:
 		iterator->version			= 0;
 		iterator->reserved			= 0;
 
-		CopyMemory ((Ptr)keyPtr, (Ptr)&iterator->key, CalcKeySize(btreePtr, keyPtr));
+		CopyKey(btreePtr, keyPtr, &iterator->key);
 	}
 
 

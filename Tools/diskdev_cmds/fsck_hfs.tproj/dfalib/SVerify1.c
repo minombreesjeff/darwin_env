@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -167,8 +168,18 @@ CheckForClean(SGlobPtr GPtr, Boolean markClean)
 	if ( VolumeObjectIsHFSPlus( ) ) {
 		vhp = (HFSPlusVolumeHeader *) block.buffer;
 		
-		result = (vhp->attributes & kHFSVolumeUnmountedMask) != 0;
-		if (markClean && (result == 0)) {
+		result = 1;  // clean unmount
+		if ( ((vhp->attributes & kHFSVolumeUnmountedMask) == 0) )
+			result = 0;  // dirty unmount
+
+		// if we are to mark volume clean and lastMountedVersion shows journaled we invalidate
+		// the journal by setting lastMountedVersion to 'fsck'
+		if ( markClean && (vhp->lastMountedVersion == kHFSJMountVersion) ) {
+			result = 0;  // force dirty unmount path
+			vhp->lastMountedVersion = kFSCKMountVersion;
+		}
+			
+		if ( markClean && (result == 0) ) {
 			vhp->attributes |= kHFSVolumeUnmountedMask;
 			rbOptions = kForceWriteBlock;
 		}
@@ -286,6 +297,13 @@ OSErr IVChk( SGlobPtr GPtr )
 			}
 
 			GetVolumeObjectBlockNum( &blockNum ); // get the new Volume header block number
+		}
+		else {
+			if ( GPtr->logLevel >= kDebugLog )
+				printf( "\t%s - bad volume header - err %d \n", __FUNCTION__, err );
+			WriteError( GPtr, E_InvalidVolumeHeader, 1, 0 );
+			err = E_InvalidVolumeHeader;
+			goto ReleaseAndBail;
 		}
 	}
 
@@ -1751,84 +1769,8 @@ exit:
 	return (err);
 }
 
-/*------------------------------------------------------------------------------
 
-Function:	CheckAttributeRecord
 
-Function:	This is call back function called for all leaf records in 
-		Attribute BTree.  This function verifies that for every extended
-		attribute and security attribute the corresponding bits in 
-		Catalog BTree are set.  
-			
-Input:		GPtr		-	pointer to scavenger global area
-		key		-	key for current attribute
-		rec		- 	attribute record
-		reclen		- 	length of the record
-
-Output:		int		-	function result:			
-								0	= no error
-								n 	= error code 
-------------------------------------------------------------------------------*/
-
-static int 
-CheckAttributeRecord(SGlobPtr GPtr, const AttributeKey *key, const HFSPlusAttrRecord *rec, UInt16 reclen)
-{
-	int result = 0;
-	Boolean isHFSPlus;
-
-	/* Check if the volume is HFS Plus volume */
-	isHFSPlus = VolumeObjectIsHFSPlus();
-	if (!isHFSPlus) {
-		goto out;
-	}
-
-#if DEBUG_XATTR
-	char attrName[XATTR_MAXNAMELEN];
-	size_t len;
-
-	/* Convert unicode attribute name to char */
-	(void) utf_encodestr(key->attrName, key->attrNameLen * 2, attrName, &len);
-	attrName[len] = '\0';
-	printf ("%s(%s,%d): fileID=%d AttributeName=%s\n", __FUNCTION__, __FILE__, __LINE__, key->cnid, attrName);
-#endif
-	
-	/* 3984119 - Do not include extended attributes for file IDs less
-	 * kHFSFirstUserCatalogNodeID but not equal to kHFSRootFolderID 
-	 * in prime modulus checksum.  These file IDs do not have 
-	 * any catalog record
-	 */
-	if ((key->cnid < kHFSFirstUserCatalogNodeID) && 
-	    (key->cnid != kHFSRootFolderID)) {
-		goto out;
-	}
-	
-	if (GPtr->lastAttrFileID.fileID != key->cnid) {
-		/* fsck is seeing this fileID in Attribute BTree for first time */
-		GPtr->lastAttrFileID.fileID = key->cnid;
-		GPtr->lastAttrFileID.hasSecurity = false;
-		
-		if (!bcmp(key->attrName, GPtr->securityAttrName, GPtr->securityAttrLen)) {
-			/* file has both extended attribute and ACL */
-			RecordXAttrBits(GPtr, kHFSHasAttributesMask | kHFSHasSecurityMask, key->cnid, kCalculatedAttributesRefNum);
-			GPtr->lastAttrFileID.hasSecurity = true;
-		} else {
-			/* file only has extended attribute */
-			RecordXAttrBits(GPtr, kHFSHasAttributesMask, key->cnid, kCalculatedAttributesRefNum);
-		}
-	} else {
-		/* fsck has seen this fileID before */
-		if ((GPtr->lastAttrFileID.hasSecurity == false) && !bcmp(key->attrName, GPtr->securityAttrName, GPtr->securityAttrLen)) {
-			/* If GPtr->lastAttrFileID did not have security AND current xattr is ACL, 
-			 * we ONLY record ACL (as we have already recorded extended attribute
-			 */
-			RecordXAttrBits(GPtr, kHFSHasSecurityMask, key->cnid, kCalculatedAttributesRefNum);
-			GPtr->lastAttrFileID.hasSecurity = true;
-		}
-	}
-out:
-	return(result);
-}
-	
 /*------------------------------------------------------------------------------
 
 Function:	AttrBTChk - (Attributes BTree Check)
@@ -1863,16 +1805,8 @@ OSErr AttrBTChk( SGlobPtr GPtr )
 	//	check out the BTree structure
 	//
 
-	err = BTCheck( GPtr, kCalculatedAttributesRefNum, (CheckLeafRecordProcPtr)CheckAttributeRecord);
+	err = BTCheck( GPtr, kCalculatedAttributesRefNum, NULL);
 	ReturnIfError( err );														//	invalid attributes file BTree
-	
-	//	compare the attributes prime buckets calculated from catalog btree and attribute btree 
-	err = ComparePrimeBuckets(GPtr, kHFSHasAttributesMask);
-	ReturnIfError( err );
-
-	//	compare the security prime buckets calculated from catalog btree and attribute btree 
-	err = ComparePrimeBuckets(GPtr, kHFSHasSecurityMask);
-	ReturnIfError( err );
 
 	//
 	//	check out the allocation map structure

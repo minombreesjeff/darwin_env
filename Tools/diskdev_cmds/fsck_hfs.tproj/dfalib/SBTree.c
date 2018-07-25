@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -113,7 +114,6 @@ ErrorExit:
 OSErr GetBTreeRecord(SFCB *fcb, SInt16 selectionIndex, void* key, void* data, UInt16 *dataSize, UInt32 *newHint)
 {
 	FSBufferDescriptor	btRecord;
-	FSBufferDescriptor	*btRecordPtr = NULL;
 	BTreeIterator		*iterator;
 	BTreeControlBlock	*btcb;
 	OSStatus			result;
@@ -125,17 +125,14 @@ OSErr GetBTreeRecord(SFCB *fcb, SInt16 selectionIndex, void* key, void* data, UI
 	btcb = (BTreeControlBlock*) fcb->fcbBtree;
 	iterator = &btcb->lastIterator;
 
-	if (data != NULL) {
-		btRecordPtr = &btRecord;
-		btRecord.bufferAddress = data;
-		btRecord.itemCount = 1;
-		if ( btcb->maxKeyLength == kHFSExtentKeyMaximumLength )
-			btRecord.itemSize = sizeof(HFSExtentRecord);
-		else if ( btcb->maxKeyLength == kHFSPlusExtentKeyMaximumLength )
-			btRecord.itemSize = sizeof(HFSPlusExtentRecord);
-		else
-			btRecord.itemSize = sizeof(CatalogRecord);
-	} 
+	btRecord.bufferAddress = data;
+	btRecord.itemCount = 1;
+	if ( btcb->maxKeyLength == kHFSExtentKeyMaximumLength )
+		btRecord.itemSize = sizeof(HFSExtentRecord);
+	else if ( btcb->maxKeyLength == kHFSPlusExtentKeyMaximumLength )
+		btRecord.itemSize = sizeof(HFSPlusExtentRecord);
+	else
+		btRecord.itemSize = sizeof(CatalogRecord);
 	
 	// now we have to map index into next/prev operations...
 	
@@ -165,7 +162,7 @@ OSErr GetBTreeRecord(SFCB *fcb, SInt16 selectionIndex, void* key, void* data, UI
 
 		for (i = 1; i < selectionIndex; ++i)
 		{
-			result = BTIterateRecord( fcb, kBTreeNextRecord, iterator, btRecordPtr, dataSize );
+			result = BTIterateRecord( fcb, kBTreeNextRecord, iterator, &btRecord, dataSize );
 			ExitOnError(result);
 		}
 		operation = kBTreeNextRecord;
@@ -176,13 +173,13 @@ OSErr GetBTreeRecord(SFCB *fcb, SInt16 selectionIndex, void* key, void* data, UI
 
 		for (i = -1; i > selectionIndex; --i)
 		{
-			result = BTIterateRecord( fcb, kBTreePrevRecord, iterator, btRecordPtr, dataSize );
+			result = BTIterateRecord( fcb, kBTreePrevRecord, iterator, &btRecord, dataSize );
 			ExitOnError(result);
 		}
 		operation = kBTreePrevRecord;
 	}
 
-	result = BTIterateRecord( fcb, operation, iterator, btRecordPtr, dataSize );
+	result = BTIterateRecord( fcb, operation, iterator, &btRecord, dataSize );
 
 	if (result == noErr)
 	{

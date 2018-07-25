@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -430,46 +431,23 @@ union CatalogRecord {
 };
 typedef union CatalogRecord				CatalogRecord;
 
-/*------------------------------------------------------------------------------
- Extended Attributes 
-------------------------------------------------------------------------------*/
-
-/* Name of system security extended attribute (ACL) from sys/kauth.h */ 
-#ifndef KAUTH_FILESEC_XATTR
-#define KAUTH_FILESEC_XATTR "com.apple.system.Security"
-#endif
-
-/* Maximum length of extended attribute from sys/xattr.h */
-#ifndef XATTR_MAXNAMELEN
-#define XATTR_MAXNAMELEN 127
-#endif
-
-/* Catalog file record flags */
-enum {
-	kHFSHasAttributesBit	= 0x0002,	/* object has extended attributes */
-	kHFSHasAttributesMask	= 0x0004,
-
-	kHFSHasSecurityBit	= 0x0003,	/* object has security data (ACLs) */
-	kHFSHasSecurityMask	= 0x0008
-};
-
 /*
   	Key for records in the attributes file.  Fields are compared in the order:
   		cnid, attributeName, startBlock
 */
 
 struct AttributeKey {
-	UInt16 						keyLength;					/* must set kBTBigKeysMask and kBTVariableIndexKeysMask in BTree header's attributes */
-	UInt16 						pad;
+	UInt16 							keyLength;					/* must set kBTBigKeysMask and kBTVariableIndexKeysMask in BTree header's attributes */
+	UInt16 							pad;
 	HFSCatalogNodeID 				cnid;						/* file or folder ID */
-	UInt32 						startBlock;					/* block # relative to start of attribute */
-	UInt16						attrNameLen;					/* number of unicode characters */
-	UInt16						attrName[127];					/* attribute name (Unicode) */
+	UInt32 							startBlock;					/* block # relative to start of attribute */
+	UInt16     attrNameLen;     /* number of unicode characters */
+	UInt16     attrName[127];   /* attribute name (Unicode) */
 };
 typedef struct AttributeKey				AttributeKey;
 enum {
 	kAttributeKeyMaximumLength	= sizeof(AttributeKey) - sizeof(UInt16),
-	kAttributeKeyMinimumLength	= kAttributeKeyMaximumLength - (127 * sizeof(UInt16))
+	kAttributeKeyMinimumLength	= kAttributeKeyMaximumLength - 127 * sizeof(UInt16) + sizeof(UInt16)
 };
 
 struct HIOParam {
@@ -596,30 +574,6 @@ typedef pascal void (*UserMessageProcPtr)(StringPtr message, SInt16 messageType,
 
 #endif
 
-/* 3857929 Structure to detemine consistency of attribute data and 
- * corresponding bit in catalog record.  Based on Chinese Remainder
- * Theorem
- */
-typedef struct PrimeBuckets {
-	UInt32	n32[32];
-	UInt32	n27[27];
-	UInt32	n25[25];
-	UInt32	n7[7];
-	UInt32	n11[11];
-	UInt32	n13[13];
-	UInt32	n17[17];
-	UInt32	n19[19];
-	UInt32	n23[23];
-	UInt32	n29[29];
-	UInt32	n31[31];
-} PrimeBuckets;
-
-/* Record last attribute ID checked, used in CheckAttributeRecord, initialized in ScavSetup */
-typedef struct lastAttrID {
-	UInt32 fileID;
-	Boolean hasSecurity;
-} lastAttrID;
-
 /* 	
 	VolumeObject encapsulates all infomration about the multiple volume anchor blocks (VHB and MSD) 
 	on HFS and HFS+ volumes.  An HFS volume will have two MDBs (primary and alternate HFSMasterDirectoryBlock), 
@@ -732,14 +686,6 @@ typedef struct SGlob {
 	BTScanState		scanState;
 
 	char			volumeName[256]; /* volume name in ASCII or UTF-8 */
-
-	PrimeBuckets 	CBTAttrBucket;		/* prime number buckets for Attribute bit in Catalog btree */
-	PrimeBuckets 	CBTSecurityBucket;	/* prime number buckets for Security bit in Catalog btree */
-	PrimeBuckets 	ABTAttrBucket;		/* prime number buckets for Attribute bit in Attribute btree */
-	PrimeBuckets 	ABTSecurityBucket;	/* prime number buckets for Security bit in Attribute btree */
-	lastAttrID 	lastAttrFileID; 	/* Record last attribute ID checked, used in CheckAttributeRecord, initialized in ScavSetup */
-	UInt16		securityAttrName[XATTR_MAXNAMELEN];	/* Store security attribute name in UTF16, to avoid frequent conversion */
-	size_t  	securityAttrLen;
 } SGlob, *SGlobPtr;
 
 
@@ -762,7 +708,7 @@ enum
 #define	S_BadMDBdrAlBlSt		0x0400	//	Invalid drAlBlSt field in MDB
 #define S_InvalidWrapperExtents	0x0200	//	Invalid catalog extent start in MDB
 
-/* BTree status flags (contents of EBTStat, CBTStat and ABTStat) */
+/* BTree status flags (contents of EBTStat and CBTStat) */
 
 #define	S_BTH					0x8000	/* BTree header damaged */
 #define	S_BTM					0x4000	/* BTree map damaged */
@@ -773,8 +719,6 @@ enum
 #define S_ReservedNotZero		0x0200  // the flags or reserved fields are not zero
 #define S_RebuildBTree			0x0100  // similar to S_Indx, S_Leaf, but if one is bad we stop checking and the other may also be bad.
 #define S_ReservedBTH			0x0080  // fields in the BTree header should be zero but are not
-#define S_AttributeCount		0x0040	// incorrect number of xattr in attribute btree in comparison with attribute bit in catalog btree
-#define S_SecurityCount			0x0020	// incorrect number of security xattrs in attribute btree in comparison with security bit in catalog btree
 
 /* catalog file status flags (contents of CatStat) */
 
@@ -949,9 +893,6 @@ enum {
 
 	E_InvalidUID		=  570,
 	E_IllegalName		=  571,
-	/* Init the next two errors to pre-existing messages.  Fix them in 3964748 */
-	E_IncorrectAttrCount	=  547,	/* Incorrect attributes in attr btree with attr bits in catalog btree */
-	E_IncorrectSecurityCount=  547, /* Incorrect security attributes in attr btree with security bits in catalog btree */
 
 	E_LastError		=  571
 };
@@ -1060,8 +1001,7 @@ extern Boolean 	VolumeObjectIsHFSPlus( void );
 extern Boolean 	VolumeObjectIsHFS( void );
 extern Boolean 	VolumeObjectIsEmbeddedHFSPlus( void );
 extern Boolean 	VolumeObjectIsPureHFSPlus( void );
-extern void 	RecordXAttrBits(SGlobPtr GPtr, UInt16 flags, HFSCatalogNodeID fileid, UInt16 btreetype); 
-extern int 	ComparePrimeBuckets(SGlobPtr GPtr, UInt16 BitMask); 
+
 
 extern	void	InvalidateCalculatedVolumeBitMap( SGlobPtr GPtr );
 
@@ -1105,7 +1045,7 @@ extern	OSErr	AddExtentToOverlapList( SGlobPtr GPtr, HFSCatalogNodeID fileNumber,
 
 /* ------------------------------- From SVerify2.c -------------------------------- */
 
-typedef int (* CheckLeafRecordProcPtr)(SGlobPtr GPtr, void *key, void *record, UInt16 recordLen);
+typedef int (* CheckLeafRecordProcPtr)(void *key, void *record, UInt16 recordLen);
 
 extern	int  BTCheck(SGlobPtr GPtr, short refNum, CheckLeafRecordProcPtr checkLeafRecord);
 
@@ -1281,8 +1221,7 @@ EXTERN_API_C( SInt32 )
 CompareExtentKeysPlus			(const HFSPlusExtentKey * searchKey,
 								 const HFSPlusExtentKey * trialKey);
 EXTERN_API_C( SInt32 )
-CompareAttributeKeys			(const AttributeKey *	searchKey,
-					 			 const AttributeKey *	trialKey);
+CompareAttributeKeys			(const AttributeKey * searchKey,  const AttributeKey * trialKey);
 EXTERN_API( SFCB* )
 ResolveFCB						(short 					fileRefNum);
 

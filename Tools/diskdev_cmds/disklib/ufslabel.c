@@ -631,9 +631,15 @@ ufslabel_get_name(struct ufslabel * ul_p, char * name, int * len)
 void
 ufslabel_get_uuid(struct ufslabel * ul_p, char * uuid)
 {
-    VolumeUUID *volumeUUIDptr;
-    volumeUUIDptr = (VolumeUUID *) &ul_p->ul_uuid;
-    ConvertVolumeUUIDToString(volumeUUIDptr, uuid);
+    u_int32_t *volumeUUID;
+    VolumeUUID swappedUUID;
+    
+    volumeUUID = (u_int32_t *) &ul_p->ul_uuid;
+	
+    swappedUUID.v.high = ntohl(volumeUUID[0]);
+    swappedUUID.v.low = ntohl(volumeUUID[1]);
+
+    ConvertVolumeUUIDToString(&swappedUUID, uuid);
 }
 
 boolean_t
@@ -652,9 +658,15 @@ ufslabel_set_name(struct ufslabel * ul_p, char * name, int len)
 void
 ufslabel_set_uuid(struct ufslabel * ul_p)
 {
+    u_int32_t *volumeUUID;
     VolumeUUID newUUID;
+
     GenerateVolumeUUID(&newUUID);
-    bcopy(&newUUID, &ul_p->ul_uuid, sizeof(newUUID));
+    
+    volumeUUID = (u_int32_t *) &ul_p->ul_uuid;
+
+    volumeUUID[0] = htonl(newUUID.v.high);
+    volumeUUID[1] = htonl(newUUID.v.low);
 }
 
 void

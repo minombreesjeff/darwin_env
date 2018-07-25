@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -142,24 +143,17 @@ BTCheck(SGlobPtr GPtr, short refNum, CheckLeafRecordProcPtr checkLeafRecord)
 	BTHeaderRec		*header;
 	NodeRec			node;
 	NodeDescPtr		nodeDescP;
-	UInt16			*statusFlag = NULL;
+	UInt16			*statusFlag;
 	UInt32			leafRecords = 0;
 	BTreeControlBlock	*calculatedBTCB	= GetBTreeControlBlock( refNum );
 
 	//	Set up
-	switch(refNum) {
-		case kCalculatedCatalogRefNum:
-			statusFlag = &(GPtr->CBTStat);
-			break;
-		case kCalculatedExtentRefNum:
-			statusFlag = &(GPtr->EBTStat);
-			break;
-		case kCalculatedAttributesRefNum:
-			statusFlag = &(GPtr->ABTStat);
-			break;
-		default:
-			return (-1);
-	};
+	if ( refNum == kCalculatedCatalogRefNum )
+		statusFlag	= &(GPtr->CBTStat);
+	else if ( refNum == kCalculatedExtentRefNum )
+		statusFlag	= &(GPtr->EBTStat);
+	else
+		statusFlag	= &(GPtr->ABTStat);
 
 	GPtr->TarBlock = 0;
 	node.buffer = NULL;
@@ -481,7 +475,7 @@ BTCheck(SGlobPtr GPtr, short refNum, CheckLeafRecordProcPtr checkLeafRecord)
 			if (checkLeafRecord != NULL) {
 				for (i = 0; i < nodeDescP->numRecords; i++) {
 					GetRecordByIndex(calculatedBTCB, nodeDescP, i, &keyPtr, &dataPtr, &recSize);
-					result = checkLeafRecord(GPtr, keyPtr, dataPtr, recSize);
+					result = checkLeafRecord(keyPtr, dataPtr, recSize);
 					if (result) goto exit;
 				}
 			}
@@ -633,21 +627,21 @@ OSErr	CmpBTH( SGlobPtr GPtr, SInt16 fileRefNum )
 	SInt16 *statP;
 	SFCB * fcb;
 
-	switch(fileRefNum) {
-		case kCalculatedCatalogRefNum:
-			statP = (SInt16 *)&GPtr->CBTStat;
-			fcb = GPtr->calculatedCatalogFCB;
-			break;
-		case kCalculatedExtentRefNum:
-			statP = (SInt16 *)&GPtr->EBTStat;
-			fcb = GPtr->calculatedExtentsFCB;
-			break;
-		case kCalculatedAttributesRefNum:
-			statP = (SInt16 *)&GPtr->ABTStat;
-			fcb = GPtr->calculatedAttributesFCB;
-			break;
-		default:
-			return (-1);
+	switch (fileRefNum) {
+	case kCalculatedCatalogRefNum:
+		statP = (SInt16 *)&GPtr->CBTStat;
+		fcb = GPtr->calculatedCatalogFCB;
+		break;
+	case kCalculatedExtentRefNum:
+		statP = (SInt16 *)&GPtr->EBTStat;
+		fcb = GPtr->calculatedExtentsFCB;
+		break;
+	case kCalculatedAttributesRefNum:
+		statP = (SInt16 *)&GPtr->ABTStat;
+		fcb = GPtr->calculatedAttributesFCB;
+		break;
+	default:
+		return (-1);
 	};
 
 	/* 
@@ -773,18 +767,19 @@ int CmpBTM( SGlobPtr GPtr, short fileRefNum )
 
 	result = noErr;
 	calculatedBTCB	= GetBTreeControlBlock( fileRefNum );
-	switch(fileRefNum) {
-		case kCalculatedCatalogRefNum:
-			statP = &GPtr->CBTStat;
-			break;
-		case kCalculatedExtentRefNum:
-			statP = &GPtr->EBTStat;
-			break;
-		case kCalculatedAttributesRefNum:
-			statP = &GPtr->ABTStat;
-			break;
-		default:
-			return (-1);
+
+	switch (fileRefNum) {
+	case kCalculatedCatalogRefNum:
+		statP = &GPtr->CBTStat;
+		break;
+	case kCalculatedExtentRefNum:
+		statP = &GPtr->EBTStat;
+		break;
+	case kCalculatedAttributesRefNum:
+		statP = &GPtr->ABTStat;
+		break;
+	default:
+		return (-1);
 	};
 
 	nodeNum	= 0;	/* start with header node */

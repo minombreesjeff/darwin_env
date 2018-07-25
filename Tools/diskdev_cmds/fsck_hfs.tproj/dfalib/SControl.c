@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -86,6 +87,7 @@ CheckHFS( 	int fsReadRef, int fsWriteRef, int checkLevel, int repairLevel,
 	OSErr				err = noErr;
 	OSErr				scavError = 0;
 	int					scanCount = 0;
+	int					isJournaled = 0;
 	Boolean 			autoRepair;
 
 	autoRepair = (fsWriteRef != -1 && repairLevel != kNeverRepair);
@@ -122,7 +124,8 @@ DoAgain:
 		goto termScav;
 	}
 
-	if (CheckIfJournaled(&dataArea)
+	isJournaled = CheckIfJournaled( &dataArea );
+	if (isJournaled != 0
 	    && scanCount == 0
 	    && checkLevel != kForceCheck
 	    && !(checkLevel == kPartialCheck && repairLevel == kForceRepairs)) {
@@ -145,7 +148,11 @@ DoAgain:
 	if (scavError == noErr && logLevel >= kDebugLog)
 		printVerifyStatus(&dataArea);
 
-	if (scavError == noErr && !dataArea.cleanUnmount && fsWriteRef != -1)
+	// mark the volume clean if there are no errors and we have write access
+	// and either the volume is not marked as clean or if the volume is journaled.
+	// 
+	if ( scavError == noErr && fsWriteRef != -1 &&
+		 (dataArea.cleanUnmount == false || isJournaled != 0) )
 		CheckForClean(&dataArea, true);		/* mark volume clean */
 
 	if ( dataArea.RepLevel == repairLevelUnrepairable )
@@ -872,11 +879,6 @@ static int ScavSetUp( SGlob *GPtr)
 		}
 		return( R_NoMem );
 	}
-	
-	// Convert the security attribute name from utf8 to utf16.  This will
-	// avoid repeated conversion of all extended attributes to compare with
-	// security attribute name
-	(void) utf_decodestr(KAUTH_FILESEC_XATTR, strlen(KAUTH_FILESEC_XATTR), GPtr->securityAttrName, &GPtr->securityAttrLen);
 
 	return( noErr );
 

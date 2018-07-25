@@ -1,23 +1,24 @@
 /*
- * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1999-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -69,6 +70,7 @@
 #include <sys/sysctl.h>
 #include <sys/ucred.h>
 #include <sys/wait.h>
+#include <sys/queue.h>
 
 #include <rpc/rpc.h>
 #include <rpc/pmap_clnt.h>
@@ -103,12 +105,32 @@
 
 #include <stdarg.h>
 
+#include <CoreFoundation/CoreFoundation.h>
+#include <DiskArbitration/DiskArbitration.h>
+
 #define EXPORT_FROM_NETINFO 0	/* export list from NetInfo */
 #define EXPORT_FROM_FILE 1	/* export list from file only */
 #define EXPORT_FROM_FILEFIRST 2	/* export list from file first, then NetInfo */
 static int source = EXPORT_FROM_FILEFIRST;
 
 #include <netinfo/ni.h>
+
+/*
+ * Structure for maintaining list of UUIDs for exported volumes
+ */
+struct uuidlist {
+	TAILQ_ENTRY(uuidlist)	ul_list;
+	char			ul_mntfromname[MAXPATHLEN];
+	char			ul_mntonname[MAXPATHLEN];
+	u_char			ul_uuid[16];	/* UUID used */
+	u_char			ul_dauuid[16];	/* DiskArb UUID */
+	char			ul_davalid;	/* DiskArb UUID valid */
+	char			ul_exported;	/* currently exported? */
+};
+TAILQ_HEAD(,uuidlist) ulhead;
+#define UL_CHECK_MNTFROM	0x1
+#define UL_CHECK_MNTON		0x2
+#define UL_CHECK_ALL		0x3
 
 /*
  * Structures for keeping the mount list and export list
@@ -142,7 +164,7 @@ struct exportlist {
 	struct dirlist	*ex_dirl;
 	struct dirlist	*ex_defdir;
 	int		ex_flag;
-	fsid_t		ex_fs;
+	u_char		ex_uuid[16];
 	char		*ex_fsdir;
 };
 /* ex_flag bits */
@@ -182,9 +204,9 @@ struct hostlist {
 #define DEFAULTHOSTNAME "localhost"
 
 struct fhreturn {
-	int	fhr_flag;
-	int	fhr_vers;
-	nfsfh_t	fhr_fh;
+	int		fhr_flag;
+	int		fhr_vers;
+	fhandle_t	fhr_fh;
 };
 
 /* Global defs */
@@ -201,7 +223,7 @@ int	do_mount __P((struct exportlist *, struct grouplist *, int,
 		struct ucred *, char *, int, struct statfs *));
 int	do_opt __P((char **, char **, struct exportlist *, struct grouplist *,
 				int *, int *, struct ucred *));
-struct	exportlist *ex_search(fsid_t *);
+struct	exportlist *ex_search(u_char *);
 struct	exportlist *get_exp(void);
 void	free_dir(struct dirlist *);
 void	free_exp(struct exportlist *);
@@ -237,6 +259,16 @@ int	xdr_explist(XDR *, caddr_t);
 int	xdr_fhs(XDR *, caddr_t);
 int	xdr_mlist(XDR *, caddr_t);
 
+int	get_uuid_from_diskarb(const char *, u_char *);
+struct uuidlist * get_uuid_from_list(const struct statfs *, u_char *, const int);
+struct uuidlist * add_uuid_to_list(const struct statfs *, u_char *, u_char *);
+void	get_uuid(const struct statfs *, u_char *);
+struct uuidlist * find_uuid(u_char *);
+void	uuidlist_clearexport(void);
+void	uuidstring(u_char *, char *);
+void	uuidlist_save(void);
+void	uuidlist_restore(void);
+
 /* C library */
 int	getnetgrent(char **host, char **user, char **domain);
 void	endnetgrent(void);
@@ -256,8 +288,12 @@ char exname[MAXPATHLEN];
 struct ucred def_anon = {
 	1,
 	(uid_t) -2,
+	(uid_t) -2,
+	(uid_t) -2,
 	1,
-	{ (gid_t) -2 }
+	{ (gid_t) -2 },
+	(gid_t) -2,
+	(gid_t) -2
 };
 int resvport_only = 1;
 int dir_only = 1;
@@ -326,6 +362,7 @@ main(int argc, char *argv[])
 	grphead = (struct grouplist *)NULL;
 	exphead = (struct exportlist *)NULL;
 	mlhead = (struct mountlist *)NULL;
+	TAILQ_INIT(&ulhead);
 
 	for (i = 0; i < MAXHOSTNAMES; ++i)
 		our_hostnames[i] = NULL;
@@ -336,6 +373,7 @@ main(int argc, char *argv[])
 	} else
 		strcpy(exname, _PATH_EXPORTS);
 	openlog("mountd", LOG_PID, LOG_DAEMON);
+	uuidlist_restore();
 	if (debug)
 		fprintf(stderr,"Getting export list.\n");
 	get_exportlist();
@@ -443,6 +481,7 @@ mntsrv(rqstp, transp)
 	char rpcpath[RPCMNT_PATHLEN + 1], dirpath[MAXPATHLEN];
 	int bad = ENOENT, defset, hostset;
 	sigset_t sighup_mask;
+	u_char uuid[16];
 
 	sigemptyset(&sighup_mask);
 	sigaddset(&sighup_mask, SIGHUP);
@@ -482,9 +521,18 @@ mntsrv(rqstp, transp)
 			return;
 		}
 
+		/* get UUID for volume */
+		if (!get_uuid_from_list(&fsb, uuid, UL_CHECK_ALL)) {
+			if (debug)
+				fprintf(stderr, "no exported volume uuid for %s\n", dirpath);
+			if (!svc_sendreply(transp, xdr_long, (caddr_t)&bad))
+				log(LOG_ERR, "Can't send reply");
+			return;
+		}
+
 		/* Check in the exports list */
 		sigprocmask(SIG_BLOCK, &sighup_mask, NULL);
-		ep = ex_search(&fsb.f_fsid);
+		ep = ex_search(uuid);
 		hostset = defset = 0;
 		if (ep && (chk_host(ep->ex_defdir, saddr, &defset, &hostset) ||
 		    ((dp = dirp_search(ep->ex_dirl, dirpath)) &&
@@ -497,7 +545,7 @@ mntsrv(rqstp, transp)
 				fhr.fhr_flag = defset;
 			fhr.fhr_vers = rqstp->rq_vers;
 			/* Get the file handle */
-			memset(&fhr.fhr_fh, 0, sizeof(nfsfh_t));
+			memset(&fhr.fhr_fh, 0, sizeof(fhandle_t));
 			if (getfh(dirpath, (fhandle_t *)&fhr.fhr_fh) < 0) {
 				bad = errno;
 				log(LOG_ERR, "Can't get fh for %s", dirpath);
@@ -619,13 +667,13 @@ xdr_mlist(xdrsp, cp)
 	caddr_t cp;
 {
 	struct mountlist *mlp;
-	int true = 1;
-	int false = 0;
+	int trueval = 1;
+	int falseval = 0;
 	char *strp;
 
 	mlp = mlhead;
 	while (mlp) {
-		if (!xdr_bool(xdrsp, &true))
+		if (!xdr_bool(xdrsp, &trueval))
 			return (0);
 		strp = &mlp->ml_host[0];
 		if (!xdr_string(xdrsp, &strp, RPCMNT_NAMELEN))
@@ -635,7 +683,7 @@ xdr_mlist(xdrsp, cp)
 			return (0);
 		mlp = mlp->ml_next;
 	}
-	if (!xdr_bool(xdrsp, &false))
+	if (!xdr_bool(xdrsp, &falseval))
 		return (0);
 	return (1);
 }
@@ -649,7 +697,7 @@ xdr_explist(xdrsp, cp)
 	caddr_t cp;
 {
 	struct exportlist *ep;
-	int false = 0;
+	int falseval = 0;
 	int putdef;
 	sigset_t sighup_mask;
 
@@ -668,7 +716,7 @@ xdr_explist(xdrsp, cp)
 		ep = ep->ex_next;
 	}
 	sigprocmask(SIG_UNBLOCK, &sighup_mask, NULL);
-	if (!xdr_bool(xdrsp, &false))
+	if (!xdr_bool(xdrsp, &falseval))
 		return (0);
 	return (1);
 errout:
@@ -689,15 +737,15 @@ put_exlist(dp, xdrsp, adp, putdefp)
 {
 	struct grouplist *grp;
 	struct hostlist *hp;
-	int true = 1;
-	int false = 0;
+	int trueval = 1;
+	int falseval = 0;
 	int gotalldir = 0;
 	char *strp;
 
 	if (dp) {
 		if (put_exlist(dp->dp_left, xdrsp, adp, putdefp))
 			return (1);
-		if (!xdr_bool(xdrsp, &true))
+		if (!xdr_bool(xdrsp, &trueval))
 			return (1);
 		strp = dp->dp_dirp;
 		if (!xdr_string(xdrsp, &strp, RPCMNT_PATHLEN))
@@ -712,14 +760,14 @@ put_exlist(dp, xdrsp, adp, putdefp)
 			while (hp) {
 				grp = hp->ht_grp;
 				if (grp->gr_type == GT_HOST) {
-					if (!xdr_bool(xdrsp, &true))
+					if (!xdr_bool(xdrsp, &trueval))
 						return (1);
 					strp = grp->gr_ptr.gt_hostent->h_name;
 					if (!xdr_string(xdrsp, &strp, 
 					    RPCMNT_NAMELEN))
 						return (1);
 				} else if (grp->gr_type == GT_NET) {
-					if (!xdr_bool(xdrsp, &true))
+					if (!xdr_bool(xdrsp, &trueval))
 						return (1);
 					strp = grp->gr_ptr.gt_net.nt_name;
 					if (!xdr_string(xdrsp, &strp, 
@@ -733,7 +781,7 @@ put_exlist(dp, xdrsp, adp, putdefp)
 				}
 			}
 		}
-		if (!xdr_bool(xdrsp, &false))
+		if (!xdr_bool(xdrsp, &falseval))
 			return (1);
 		if (put_exlist(dp->dp_right, xdrsp, adp, putdefp))
 			return (1);
@@ -1042,7 +1090,7 @@ register_export(const char *path, const char **hostnamearray, int addurl)
 			fprintf(stderr, "%sregistering URL %s\n",
 				(addurl ? "" : "un"), urlstring);
 		rv = safe_exec(URLRegistrar, (addurl ? "-r" : "-d"), urlstring);
-		if (debug || rv && (addurl || rv != URLNOTFOUND))
+		if (debug || (rv && (addurl || rv != URLNOTFOUND)))
 			log(LOG_ERR, "%s exit status %d", URLRegistrar, rv);
 		if (rv && (addurl || rv != URLNOTFOUND))
 			result = rv; /* arbitrarily retaining last failure */
@@ -1055,7 +1103,7 @@ register_export(const char *path, const char **hostnamearray, int addurl)
 			fprintf(stderr, "%sregistering URL %s\n",
 				(addurl ? "" : "un"), urlstring);
 		rv = safe_exec(URLRegistrar, (addurl ? "-r" : "-d"), urlstring);
-		if (debug || rv && (addurl || rv != URLNOTFOUND))
+		if (debug || (rv && (addurl || rv != URLNOTFOUND)))
 			log(LOG_ERR, "%s exit status %d", URLRegistrar, rv);
 		if (rv && (addurl || rv != URLNOTFOUND))
 			result = rv; /* arbitrarily retaining last failure */
@@ -1075,11 +1123,436 @@ exportable(struct statfs *fsp)
 	 */
 	return (!strcmp(fsp->f_fstypename, "ufs") ||
 		!strcmp(fsp->f_fstypename, "hfs") ||
-		!strcmp(fsp->f_fstypename, "acfs") ||
 		!strcmp(fsp->f_fstypename, "cd9660"));
 }
 
 
+/*
+ * Query DiskArb for a volume's UUID
+ */
+int
+get_uuid_from_diskarb(const char *path, u_char *uuid)
+{
+	DASessionRef session;
+	DADiskRef disk;
+	CFDictionaryRef dd;
+	CFTypeRef val;
+	CFUUIDBytes uuidbytes;
+	int rv = 1;
+
+	session = NULL;
+	disk = NULL;
+	dd = NULL;
+
+	session = DASessionCreate(NULL);
+	if (!session) {
+		log(LOG_ERR, "can't create DiskArb session");
+		rv = 0;
+		goto out;
+	}
+	disk = DADiskCreateFromBSDName(NULL, session, path);
+	if (!disk) {
+		if (debug)
+			fprintf(stderr, "DADiskCreateFromBSDName(%s) failed\n", path);
+		rv = 0;
+		goto out;
+	}
+	dd = DADiskCopyDescription(disk);
+	if (!dd) {
+		if (debug)
+			fprintf(stderr, "DADiskCopyDescription(%s) failed\n", path);
+		rv = 0;
+		goto out;
+	}
+
+	if (!CFDictionaryGetValueIfPresent(dd, (kDADiskDescriptionVolumeUUIDKey), &val)) {
+		if (debug)
+			fprintf(stderr, "unable to get UUID for volume %s\n", path);
+		rv = 0;
+		goto out;
+	}
+	uuidbytes = CFUUIDGetUUIDBytes(val);
+	bcopy(&uuidbytes, uuid, sizeof(uuidbytes));
+
+out:
+	if (session) CFRelease(session);
+	if (disk) CFRelease(disk);
+	if (dd) CFRelease(dd);
+	return (rv);
+}
+
+/*
+ * find the UUID for this volume in the UUID list
+ */
+struct uuidlist *
+get_uuid_from_list(const struct statfs *fsb, u_char *uuid, const int flags)
+{
+	struct uuidlist *ulp;
+
+	if (!(flags & UL_CHECK_ALL))
+		return (NULL);
+
+	TAILQ_FOREACH(ulp, &ulhead, ul_list) {
+		if ((flags & UL_CHECK_MNTFROM) &&
+		    strcmp(fsb->f_mntfromname, ulp->ul_mntfromname))
+			continue;
+		if ((flags & UL_CHECK_MNTON) &&
+		    strcmp(fsb->f_mntonname, ulp->ul_mntonname))
+			continue;
+		if (uuid)
+			bcopy(&ulp->ul_uuid, uuid, sizeof(ulp->ul_uuid));
+		break;
+	}
+	return (ulp);
+}
+
+/*
+ * find UUID list entry with the given UUID
+ */
+struct uuidlist *
+find_uuid(u_char *uuid)
+{
+	struct uuidlist *ulp;
+
+	TAILQ_FOREACH(ulp, &ulhead, ul_list) {
+		if (!bcmp(ulp->ul_uuid, uuid, sizeof(ulp->ul_uuid)))
+			break;
+	}
+	return (ulp);
+}
+
+/*
+ * add a UUID to the UUID list
+ */
+struct uuidlist *
+add_uuid_to_list(const struct statfs *fsb, u_char *dauuid, u_char *uuid)
+{
+	struct uuidlist *ulpnew;
+
+	ulpnew = malloc(sizeof(struct uuidlist));
+	if (!ulpnew)
+		out_of_mem();
+	if (dauuid) {
+		bcopy(dauuid, ulpnew->ul_dauuid, sizeof(ulpnew->ul_dauuid));
+		ulpnew->ul_davalid = 1;
+	} else {
+		bzero(ulpnew->ul_dauuid, sizeof(ulpnew->ul_dauuid));
+		ulpnew->ul_davalid = 0;
+	}
+	bcopy(uuid, ulpnew->ul_uuid, sizeof(ulpnew->ul_uuid));
+	strcpy(ulpnew->ul_mntfromname, fsb->f_mntfromname);
+	strcpy(ulpnew->ul_mntonname, fsb->f_mntonname);
+	TAILQ_INSERT_TAIL(&ulhead, ulpnew, ul_list);
+	return (ulpnew);
+}
+
+/*
+ * get the UUID to use for this volume's file handles
+ * and add it to the UUID list if it isn't there yet.
+ */
+void
+get_uuid(const struct statfs *fsb, u_char *uuid)
+{
+	CFUUIDRef cfuuid;
+	CFUUIDBytes uuidbytes;
+	struct uuidlist *ulp;
+	u_char dauuid[16];
+	int davalid, uuidchanged, reportuuid = 0;
+	char buf[64], buf2[64];
+
+	/* get DiskArb's idea of the UUID (if any) */
+	davalid = get_uuid_from_diskarb(fsb->f_mntfromname, dauuid);
+
+	if (debug && davalid) {
+		uuidstring(dauuid, buf);
+		fprintf(stderr, "get_uuid: %s %s DiskArb says: %s\n",
+			fsb->f_mntfromname, fsb->f_mntonname, buf);
+	}
+
+	/* try to get UUID out of UUID list */
+	if ((ulp = get_uuid_from_list(fsb, uuid, UL_CHECK_MNTON))) {
+		if (debug) {
+			uuidstring(uuid, buf);
+			fprintf(stderr, "get_uuid: %s %s found: %s\n",
+				fsb->f_mntfromname, fsb->f_mntonname, buf);
+		}
+		/*
+		 * Check against any DiskArb UUID.
+		 * If diskarb UUID is different then drop the uuid entry.
+		 */
+		if (davalid) {
+			if (!ulp->ul_davalid)
+				uuidchanged = 1;
+			else if (bcmp(ulp->ul_dauuid, dauuid, sizeof(dauuid)))
+				uuidchanged = 1;
+			else
+				uuidchanged = 0;
+		} else {
+			if (ulp->ul_davalid)
+				uuidchanged = 1;
+			else
+				uuidchanged = 0;
+		}
+		if (uuidchanged) {
+			uuidstring(ulp->ul_dauuid, buf);
+			if (davalid)
+				uuidstring(dauuid, buf2);
+			else
+				strcpy(buf2, "------------------------------------");
+			log(LOG_WARNING, "UUID changed for %s, was %s now %s",
+				fsb->f_mntonname, buf, buf2);
+			bcopy(dauuid, uuid, sizeof(dauuid));
+			/* remove old UUID from list */
+			TAILQ_REMOVE(&ulhead, ulp, ul_list);
+			free(ulp);
+			ulp = NULL;
+		} else {
+			ulp->ul_exported = 1;
+		}
+	} else if (davalid) {
+		/*
+		 * The UUID wasn't in the list, but DiskArb has a UUID for it.
+		 * (If the DiskArb UUID conflicts with something already in the
+		 * list, we'll need to create a new UUID for it below.)
+		 */
+		bcopy(dauuid, uuid, sizeof(dauuid));
+	} else {
+		/*
+		 * We need to create a UUID to use for this volume.
+		 * This is because it wasn't already in the list, and
+		 * either DiskArb didn't have a UUID for the volume or
+		 * the UUID DiskArb has for the volume conflicts with
+		 * a UUID for a volume already in the list.
+		 */
+		reportuuid = 1;
+		cfuuid = CFUUIDCreate(NULL);
+		uuidbytes = CFUUIDGetUUIDBytes(cfuuid);
+		bcopy(&uuidbytes, uuid, sizeof(uuidbytes));
+		CFRelease(cfuuid);
+	}
+
+	if (!ulp) {
+		/*
+		 * Add the UUID to the list, but make sure it is unique first.
+		 */
+		while ((ulp = find_uuid(uuid))) {
+			reportuuid = 1;
+			uuidstring(uuid, buf);
+			log(LOG_WARNING, "%s UUID conflict with %s, %s",
+				fsb->f_mntonname, ulp->ul_mntonname, buf);
+			cfuuid = CFUUIDCreate(NULL);
+			uuidbytes = CFUUIDGetUUIDBytes(cfuuid);
+			bcopy(&uuidbytes, uuid, sizeof(uuidbytes));
+			CFRelease(cfuuid);
+			/* double check that the UUID is unique */
+		}
+		ulp = add_uuid_to_list(fsb, (davalid ? dauuid : NULL), uuid);
+		ulp->ul_exported = 1;
+	}
+
+	if (reportuuid || debug) {
+		uuidstring(uuid, buf);
+		log(LOG_WARNING, "%s using UUID %s", fsb->f_mntonname, buf);
+	}
+}
+
+/*
+ * clear export flags on all UUID entries
+ */
+void
+uuidlist_clearexport(void)
+{
+	struct uuidlist *ulp;
+
+	TAILQ_FOREACH(ulp, &ulhead, ul_list) {
+		ulp->ul_exported = 0;
+	}
+}
+
+/* convert UUID bytes to UUID string */
+#define HEXTOC(c) \
+	((c) >= 'a' ? ((c) - ('a' - 10)) : \
+	((c) >= 'A' ? ((c) - ('A' - 10)) : ((c) - '0')))
+#define HEXSTRTOI(p) \
+	((HEXTOC(p[0]) << 4) + HEXTOC(p[1]))
+void
+uuidstring(u_char *uuid, char *string)
+{
+	sprintf(string, "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+		uuid[0] & 0xff, uuid[1] & 0xff, uuid[2] & 0xff, uuid[3] & 0xff,
+		uuid[4] & 0xff, uuid[5] & 0xff,
+		uuid[6] & 0xff, uuid[7] & 0xff,
+		uuid[8] & 0xff, uuid[9] & 0xff,
+		uuid[10] & 0xff, uuid[11] & 0xff, uuid[12] & 0xff,
+		uuid[13] & 0xff, uuid[14] & 0xff, uuid[15] & 0xff);
+}
+
+/*
+ * save the exported volume UUID list to the mountdexptab file
+ *
+ * We have the option of saving all UUIDs in the list, or just
+ * saving the ones that are currently exported.  However, if we
+ * have a volume exported, then removed from the export list, and
+ * then added back to the export list, it may be expected that the
+ * file handles/UUIDs will be the same.  But if we don't save what
+ * the UUIDs were before, we risk the chance of using a different
+ * UUID for the second export.  This can happen if the volume's
+ * DiskArb UUID is not used for export (because DiskArb doesn't have
+ * a UUID for it, or because there was a UUID conflict and we needed
+ * to use a different UUID.
+ */
+void
+uuidlist_save(void)
+{
+	FILE *ulfile;
+	struct uuidlist *ulp;
+	char buf[64], buf2[64];
+
+	if ((ulfile = fopen(_PATH_MOUNTEXPLIST, "w")) == NULL) {
+		log(LOG_ERR, "Can't write %s, errno=%d", _PATH_MOUNTEXPLIST, errno);
+		return;
+	}
+	TAILQ_FOREACH(ulp, &ulhead, ul_list) {
+#ifdef SAVE_ONLY_EXPORTED_UUIDS
+		if (!ulp->ul_exported)
+			continue;
+#endif
+		if (ulp->ul_davalid)
+			uuidstring(ulp->ul_dauuid, buf);
+		else
+			strcpy(buf, "------------------------------------");
+		uuidstring(ulp->ul_uuid, buf2);
+		fprintf(ulfile, "%s %s %s\n", buf, buf2, ulp->ul_mntonname);
+	}
+	fclose(ulfile);
+}
+
+/*
+ * read in the exported volume UUID list from the mountdexptab file
+ */
+void
+uuidlist_restore(void)
+{
+	struct uuidlist *ulp;
+	char *cp, str[2*MAXPATHLEN];
+	FILE *ulfile;
+	int i, linenum, davalid, uuidchanged;
+	struct statfs fsb;
+	u_char dauuid[16];
+	char buf[64], buf2[64];
+
+	if ((ulfile = fopen(_PATH_MOUNTEXPLIST, "r")) == NULL) {
+		if (errno != ENOENT || debug)
+			log(LOG_ERR, "Can't open %s, errno=%d", _PATH_MOUNTEXPLIST, errno);
+		return;
+	}
+	linenum = 1;
+	while (fgets(str, 2*MAXPATHLEN, ulfile) != NULL) {
+		i = strlen(str);
+		if (str[i-1] == '\n')
+			str[i-1] = '\0';
+		ulp = malloc(sizeof(*ulp));
+		if (ulp == NULL)
+			out_of_mem();
+		cp = str;
+		if (*cp == '-') {
+			/* DiskArb UUID not present */
+			ulp->ul_davalid = 0;
+			bzero(ulp->ul_dauuid, sizeof(ulp->ul_dauuid));
+			while (*cp && (*cp != ' '))
+				cp++;
+		} else {
+			ulp->ul_davalid = 1;
+			for (i=0; i < sizeof(ulp->ul_dauuid); i++, cp+=2) {
+				if (*cp == '-')
+					cp++;
+				if (!isxdigit(*cp) || !isxdigit(*(cp+1))) {
+					log(LOG_ERR, "invalid UUID at line %d of %s",
+						linenum, _PATH_MOUNTEXPLIST);
+					free(ulp);
+					ulp = NULL;
+					break;
+				}
+				ulp->ul_dauuid[i] = HEXSTRTOI(cp);
+			}
+		}
+		if (ulp == NULL)
+			continue;
+		cp++;
+		for (i=0; i < sizeof(ulp->ul_uuid); i++, cp+=2) {
+			if (*cp == '-')
+				cp++;
+			if (!isxdigit(*cp) || !isxdigit(*(cp+1))) {
+				log(LOG_ERR, "invalid UUID at line %d of %s",
+					linenum, _PATH_MOUNTEXPLIST);
+				free(ulp);
+				ulp = NULL;
+				break;
+			}
+			ulp->ul_uuid[i] = HEXSTRTOI(cp);
+		}
+		if (ulp == NULL)
+			continue;
+		if (*cp != ' ') {
+			log(LOG_ERR, "invalid entry at line %d of %s",
+				linenum, _PATH_MOUNTEXPLIST);
+			free(ulp);
+			continue;
+		}
+		cp++;
+		strncpy(ulp->ul_mntonname, cp, MAXPATHLEN);
+		ulp->ul_mntonname[MAXPATHLEN-1] = '\0';
+
+		/* verify the path exists and that it is a mount point */
+		if (!check_dirpath(ulp->ul_mntonname) ||
+		    (statfs(ulp->ul_mntonname, &fsb) < 0) ||
+		    strcmp(ulp->ul_mntonname, fsb.f_mntonname)) {
+			log(LOG_WARNING, "bad/stale export entry at line %d of %s",
+				linenum, _PATH_MOUNTEXPLIST);
+			free(ulp);
+			continue;
+		}
+
+		/* grab the path's mntfromname */
+		strncpy(ulp->ul_mntfromname, fsb.f_mntfromname, MAXPATHLEN);
+		ulp->ul_mntfromname[MAXPATHLEN-1] = '\0';
+
+		/*
+		 * Grab DiskArb's UUID for this volume (if any) and
+		 * see if it has changed.
+		 */
+		davalid = get_uuid_from_diskarb(ulp->ul_mntfromname, dauuid);
+		if (davalid) {
+			if (!ulp->ul_davalid)
+				uuidchanged = 1;
+			else if (bcmp(ulp->ul_dauuid, dauuid, sizeof(dauuid)))
+				uuidchanged = 1;
+			else
+				uuidchanged = 0;
+		} else {
+			if (ulp->ul_davalid)
+				uuidchanged = 1;
+			else
+				uuidchanged = 0;
+		}
+		if (uuidchanged) {
+			/* The UUID changed, so we'll drop any entry */
+			uuidstring(ulp->ul_dauuid, buf);
+			if (davalid)
+				uuidstring(dauuid, buf2);
+			else
+				strcpy(buf2, "------------------------------------");
+			log(LOG_WARNING, "UUID changed for %s, was %s now %s",
+				ulp->ul_mntonname, buf, buf2);
+			free(ulp);
+			continue;
+		}
+
+		TAILQ_INSERT_TAIL(&ulhead, ulp, ul_list);
+		linenum++;
+	}
+	fclose(ulfile);
+}
 
 #define LINESIZ	10240
 char line[LINESIZ];
@@ -1105,11 +1578,13 @@ get_exportlist(void)
 		struct iso_args ia;
 	} targs;
 	struct reglist *rl;
+	u_char uuid[16];
 
 	/*
 	 * First, get rid of the old list
 	 */
 	if (debug) fprintf(stderr, "get_exportlist: freeing old exports...\n");
+	/* XXX why isn't this cleaned up properly? */
 	exphead = (struct exportlist *)NULL;
 
 	if (debug) fprintf(stderr, "get_exportlist: freeing old groups...\n");
@@ -1224,9 +1699,10 @@ get_exportlist(void)
 					getexp_err(ep, tgrp);
 					goto nextline;
 				}
+				/* get UUID for volume */
+				get_uuid(&fsb, uuid);
 				if (ep) {
-				    if (ep->ex_fs.val[0] != fsb.f_fsid.val[0] ||
-					ep->ex_fs.val[1] != fsb.f_fsid.val[1]) {
+				    if (bcmp(ep->ex_uuid, uuid, sizeof(uuid))) {
 					free(word);
 					getexp_err(ep, tgrp);
 					goto nextline;
@@ -1236,10 +1712,10 @@ get_exportlist(void)
 				     * See if this directory is already
 				     * in the list.
 				     */
-				    ep = ex_search(&fsb.f_fsid);
+				    ep = ex_search(uuid);
 				    if (ep == (struct exportlist *)NULL) {
 					ep = get_exp();
-					ep->ex_fs = fsb.f_fsid;
+					bcopy(uuid, ep->ex_uuid, sizeof(uuid));
 					ep->ex_fsdir = (char *)
 					    malloc(strlen(fsb.f_mntonname) + 1);
 					if (ep->ex_fsdir)
@@ -1247,16 +1723,16 @@ get_exportlist(void)
 						       fsb.f_mntonname);
 					else
 						out_of_mem();
-					if (debug)
-						fprintf(stderr,
-							"New ep fs=0x%x,0x%x\n",
-							fsb.f_fsid.val[0],
-							fsb.f_fsid.val[1]);
-				    } else if (debug)
-					fprintf(stderr,
-						"Found ep fs=0x%x,0x%x\n",
-						fsb.f_fsid.val[0],
-						fsb.f_fsid.val[1]);
+					if (debug) {
+						char buf[64];
+						uuidstring(uuid, buf);
+						fprintf(stderr, "New ep uuid=%s\n", buf);
+					}
+				    } else if (debug) {
+					char buf[64];
+					uuidstring(uuid, buf);
+					fprintf(stderr, "Found ep uuid=%s\n", buf);
+				    }
 				}
 
 				/*
@@ -1431,6 +1907,8 @@ nextline:
 
 	if (source == EXPORT_FROM_NETINFO) ni_exports_close();
 	else fclose(exp_file);
+
+	uuidlist_save();
 }
 
 /*
@@ -1487,15 +1965,13 @@ getexp_err(ep, grp)
  * Search the export list for a matching fs.
  */
 struct exportlist *
-ex_search(fsid)
-	fsid_t *fsid;
+ex_search(u_char *uuid)
 {
 	struct exportlist *ep;
 
 	ep = exphead;
 	while (ep) {
-		if (ep->ex_fs.val[0] == fsid->val[0] &&
-		    ep->ex_fs.val[1] == fsid->val[1])
+		if (!bcmp(ep->ex_uuid, uuid, 16))
 			return (ep);
 		ep = ep->ex_next;
 	}
@@ -2024,6 +2500,7 @@ do_mount(ep, grp, exflags, anoncrp, dirp, dirplen, fsb)
 	args.ua.fspec = 0;
 	args.ua.export.ex_flags = exflags;
 	args.ua.export.ex_anon = *anoncrp;
+	bcopy(ep->ex_uuid, args.ua.export.ex_uuid, sizeof(ep->ex_uuid));
 	memset(&sin, 0, sizeof(sin));
 	memset(&imask, 0, sizeof(imask));
 	sin.sin_family = AF_INET;
