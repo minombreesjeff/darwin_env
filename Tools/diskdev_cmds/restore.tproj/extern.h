@@ -22,7 +22,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*-
- * Copyright (c) 1994
+ * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -52,111 +52,80 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ *	@(#)extern.h	8.2 (Berkeley) 1/7/94
  */
 
+struct entry	*addentry __P((char *, ino_t, int));
+long		 addfile __P((char *, ino_t, int));
+void		 badentry __P((struct entry *, char *));
+void	 	 canon __P((char *, char *));
+void		 checkrestore __P((void));
+void		 closemt __P((void));
+void		 createfiles __P((void));
+void		 createleaves __P((char *));
+void		 createlinks __P((void));
+long		 deletefile __P((char *, ino_t, int));
+void		 deleteino __P((ino_t));
+ino_t		 dirlookup __P((const char *));
+__dead void 	 done __P((int));
+void		 dumpsymtable __P((char *, long));
+void	 	 extractdirs __P((int));
+int		 extractfile __P((char *));
+void		 findunreflinks __P((void));
+char		*flagvalues __P((struct entry *));
+void		 freeentry __P((struct entry *));
+void		 freename __P((char *));
+int	 	 genliteraldir __P((char *, ino_t));
+char		*gentempname __P((struct entry *));
+void		 getfile __P((void (*)(char *, long), void (*)(char *, long)));
+void		 getvol __P((long));
+void		 initsymtable __P((char *));
+int	 	 inodetype __P((ino_t));
+int		 linkit __P((char *, char *, int));
+struct entry	*lookupino __P((ino_t));
+struct entry	*lookupname __P((char *));
+long		 listfile __P((char *, ino_t, int));
+ino_t		 lowerbnd __P((ino_t));
+void		 mktempname __P((struct entry *));
+void		 moveentry __P((struct entry *, char *));
+void		 msg __P((const char *, ...));
+char		*myname __P((struct entry *));
+void		 newnode __P((struct entry *));
+void		 newtapebuf __P((long));
+long		 nodeupdates __P((char *, ino_t, int));
+void	 	 onintr __P((int));
+void		 panic __P((const char *, ...));
+void		 pathcheck __P((char *));
+struct direct	*pathsearch __P((const char *));
+void		 printdumpinfo __P((void));
+void		 removeleaf __P((struct entry *));
+void		 removenode __P((struct entry *));
+void		 removeoldleaves __P((void));
+void		 removeoldnodes __P((void));
+void		 renameit __P((char *, char *));
+int		 reply __P((char *));
+RST_DIR		*rst_opendir __P((const char *));
+struct direct	*rst_readdir __P((RST_DIR *));
+void		 rst_closedir __P((RST_DIR *dirp));
+void	 	 runcmdshell __P((void));
+char		*savename __P((char *));
+void	 	 setdirmodes __P((int));
+void		 setinput __P((char *));
+void		 setup __P((void));
+void	 	 skipdirs __P((void));
+void		 skipfile __P((void));
+void		 skipmaps __P((void));
+void		 swabst __P((u_char *, u_char *));
+void	 	 treescan __P((char *, ino_t, long (*)(char *, ino_t, int)));
+ino_t		 upperbnd __P((ino_t));
+long		 verifyfile __P((char *, ino_t, int));
+void		 xtrnull __P((char *, long));
 
-#include <sys/param.h>
-#include <sys/stat.h>
-
-#include <err.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sysexits.h>
-
-#include "mntopts.h"
-
-int getmnt_silent = 1;
-
-void
-getmntopts(options, m0, flagp, altflagp)
-	const char *options;
-	const struct mntopt *m0;
-	int *flagp;
-	int *altflagp;
-{
-	const struct mntopt *m;
-	int negative, len;
-	char *opt, *optbuf, *p;
-	int *thisflagp;
-
-	/* Copy option string, since it is about to be torn asunder... */
-	if ((optbuf = strdup(options)) == NULL)
-		err(1, NULL);
-
-	for (opt = optbuf; (opt = strtok(opt, ",")) != NULL; opt = NULL) {
-		/* Check for "no" prefix. */
-		if (opt[0] == 'n' && opt[1] == 'o') {
-			negative = 1;
-			opt += 2;
-		} else
-			negative = 0;
-
-		/*
-		 * for options with assignments in them (ie. quotas)
-		 * ignore the assignment as it's handled elsewhere
-		 */
-		p = strchr(opt, '=');
-		if (p)
-			 *++p = '\0';
-
-		/* Scan option table. */
-		for (m = m0; m->m_option != NULL; ++m) {
-			len = strlen(m->m_option);
-			if (strncasecmp(opt, m->m_option, len) == 0)
-				if (   opt[len]	== '\0'
-				    || opt[len]	== '='
-				   )
-				break;
-		}
-
-		/* Save flag, or fail if option is not recognized. */
-		if (m->m_option) {
-			thisflagp = m->m_altloc ? altflagp : flagp;
-			if (negative == m->m_inverse)
-				*thisflagp |= m->m_flag;
-			else
-				*thisflagp &= ~m->m_flag;
-		} else if (!getmnt_silent) {
-			errx(1, "-o %s: option not supported", opt);
-		}
-	}
-
-	free(optbuf);
-}
-
-void
-rmslashes(rrpin, rrpout)
-	char *rrpin;
-	char *rrpout;
-{
-	char *rrpoutstart;
-
-	*rrpout = *rrpin;
-	for (rrpoutstart = rrpout; *rrpin != '\0'; *rrpout++ = *rrpin++) {
-
-		/* skip all double slashes */
-		while (*rrpin == '/' && *(rrpin + 1) == '/')
-			 rrpin++;
-	}
-
-	/* remove trailing slash if necessary */
-	if (rrpout - rrpoutstart > 1 && *(rrpout - 1) == '/')
-		*(rrpout - 1) = '\0';
-	else
-		*rrpout = '\0';
-}
-
-void
-checkpath(path, resolved)
-	const char *path;
-	char *resolved;
-{
-	struct stat sb;
-
-	if (realpath(path, resolved) != NULL && stat(resolved, &sb) == 0) {
-		if (!S_ISDIR(sb.st_mode)) 
-			errx(EX_USAGE, "%s: not a directory", resolved);
-	} else
-		errx(EX_USAGE, "%s: %s", resolved, strerror(errno));
-}
+/* From ../dump/dumprmt.c */
+void		rmtclose __P((void));
+int		rmthost __P((char *));
+int		rmtioctl __P((int, int));
+int		rmtopen __P((char *, int));
+int		rmtread __P((char *, int));
+int		rmtseek __P((int, int));

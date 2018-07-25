@@ -21,9 +21,14 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-/*-
- * Copyright (c) 1994
+/*
+ * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * (c) UNIX System Laboratories, Inc.
+ * All or some portions of this file are derived from material licensed
+ * to the University of California by American Telephone and Telegraph
+ * Co. or Unix System Laboratories, Inc. and are reproduced herein with
+ * the permission of UNIX System Laboratories, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -52,111 +57,10 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ *	@(#)pathnames.h	8.2 (Berkeley) 1/21/94
  */
 
+#include <paths.h>
 
-#include <sys/param.h>
-#include <sys/stat.h>
-
-#include <err.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sysexits.h>
-
-#include "mntopts.h"
-
-int getmnt_silent = 1;
-
-void
-getmntopts(options, m0, flagp, altflagp)
-	const char *options;
-	const struct mntopt *m0;
-	int *flagp;
-	int *altflagp;
-{
-	const struct mntopt *m;
-	int negative, len;
-	char *opt, *optbuf, *p;
-	int *thisflagp;
-
-	/* Copy option string, since it is about to be torn asunder... */
-	if ((optbuf = strdup(options)) == NULL)
-		err(1, NULL);
-
-	for (opt = optbuf; (opt = strtok(opt, ",")) != NULL; opt = NULL) {
-		/* Check for "no" prefix. */
-		if (opt[0] == 'n' && opt[1] == 'o') {
-			negative = 1;
-			opt += 2;
-		} else
-			negative = 0;
-
-		/*
-		 * for options with assignments in them (ie. quotas)
-		 * ignore the assignment as it's handled elsewhere
-		 */
-		p = strchr(opt, '=');
-		if (p)
-			 *++p = '\0';
-
-		/* Scan option table. */
-		for (m = m0; m->m_option != NULL; ++m) {
-			len = strlen(m->m_option);
-			if (strncasecmp(opt, m->m_option, len) == 0)
-				if (   opt[len]	== '\0'
-				    || opt[len]	== '='
-				   )
-				break;
-		}
-
-		/* Save flag, or fail if option is not recognized. */
-		if (m->m_option) {
-			thisflagp = m->m_altloc ? altflagp : flagp;
-			if (negative == m->m_inverse)
-				*thisflagp |= m->m_flag;
-			else
-				*thisflagp &= ~m->m_flag;
-		} else if (!getmnt_silent) {
-			errx(1, "-o %s: option not supported", opt);
-		}
-	}
-
-	free(optbuf);
-}
-
-void
-rmslashes(rrpin, rrpout)
-	char *rrpin;
-	char *rrpout;
-{
-	char *rrpoutstart;
-
-	*rrpout = *rrpin;
-	for (rrpoutstart = rrpout; *rrpin != '\0'; *rrpout++ = *rrpin++) {
-
-		/* skip all double slashes */
-		while (*rrpin == '/' && *(rrpin + 1) == '/')
-			 rrpin++;
-	}
-
-	/* remove trailing slash if necessary */
-	if (rrpout - rrpoutstart > 1 && *(rrpout - 1) == '/')
-		*(rrpout - 1) = '\0';
-	else
-		*rrpout = '\0';
-}
-
-void
-checkpath(path, resolved)
-	const char *path;
-	char *resolved;
-{
-	struct stat sb;
-
-	if (realpath(path, resolved) != NULL && stat(resolved, &sb) == 0) {
-		if (!S_ISDIR(sb.st_mode)) 
-			errx(EX_USAGE, "%s: not a directory", resolved);
-	} else
-		errx(EX_USAGE, "%s: %s", resolved, strerror(errno));
-}
+#define	_PATH_DEFTAPE	"/dev/rmt8"
