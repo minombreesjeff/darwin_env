@@ -7,29 +7,29 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = udf.util
+NAME = vndevice
 
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-CFILES = udfutil.c
+CFILES = vndevice.c
 
-OTHERSRCS = Makefile.preamble Makefile Makefile.postamble Info.plist\
-            InfoPlist.strings PkgInfo version.plist
+OTHERSRCS = Makefile.preamble Makefile Makefile.postamble
 
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC
 MAKEFILE = tool.make
-NEXTSTEP_INSTALLDIR = $(SYSTEM_LIBRARY_DIR)/Filesystems/udf.fs
+NEXTSTEP_INSTALLDIR = /usr/libexec
 WINDOWS_INSTALLDIR = /Library/Executables
 PDO_UNIX_INSTALLDIR = /bin
-LIBS = -ldisk
+LIBS = 
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 
 
-FRAMEWORKS = -framework CoreFoundation
+HEADER_PATHS =\
+               -I$(NEXT_ROOT)$(SYSTEM_LIBRARY_DIR)/Frameworks/System.framework/PrivateHeaders
 
 
 NEXTSTEP_BUILD_OUTPUT_DIR = /tmp/BUILD
