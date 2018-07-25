@@ -118,7 +118,7 @@ extern int isatty();
 #ifdef HAVE_MALLOC_H
 #include <malloc.h>
 #else
-extern char *malloc();
+extern void *malloc(size_t);
 #endif
 
 #ifdef HAVE_GETOPT_H

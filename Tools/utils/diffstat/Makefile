@@ -22,7 +22,7 @@ AEP_Version    = 1.34
 AEP_ProjVers   = $(AEP_Project)-$(AEP_Version)
 AEP_Filename   = $(AEP_ProjVers).tgz
 AEP_ExtractDir = $(AEP_ProjVers)
-AEP_Patches    = 
+AEP_Patches    = patch-diffstat.c
 
 ifeq ($(suffix $(AEP_Filename)),.bz2)
 AEP_ExtractOption = j
