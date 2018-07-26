@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -128,7 +128,7 @@ main(argc, argv)
 	extern int optind, errno;
 
 #if 0
-	if (quotactl("/", 0, 0, (caddr_t)0) < 0 && errno == EOPNOTSUPP) {
+	if (quotactl("/", 0, 0, (caddr_t)0) < 0 && errno == ENOTSUP) {
 		fprintf(stderr, "There are no quotas on this system\n");
 		exit(0);
 	}
@@ -498,6 +498,7 @@ getprivs(id, quotatype)
         struct statfs *fst;
 	register struct quotause *qup, *quptail;
 	struct quotause *quphead;
+	struct dqblk dqb;
 	char *qfpathname;
 	int qcmd, fd;
 	int nfst, i;
@@ -514,17 +515,21 @@ getprivs(id, quotatype)
         }
 
         for (i=0; i<nfst; i++) {
-	        if(strcmp(fst[i].f_fstypename, "hfs")) {
-		    if (strcmp(fst[i].f_fstypename, "ufs"))
-		        continue;
-		}	
-		if (!hasquota(&fst[i], quotatype, &qfpathname))
-			continue;
+		error = quotactl(fst[i].f_mntonname, qcmd, id, (char *)&dqb);
+		if (error) {
+			if (strcmp(fst[i].f_fstypename, "hfs") &&
+			    strcmp(fst[i].f_fstypename, "ufs"))
+				continue;
+			if (!hasquota(&fst[i], quotatype, &qfpathname))
+				continue;
+		}
 		if ((qup = (struct quotause *)malloc(sizeof *qup)) == NULL) {
 			fprintf(stderr, "quota: out of memory\n");
 			exit(2);
 		}
-		if (quotactl(fst[i].f_mntonname, qcmd, id, (char *)&qup->dqblk) != 0) {
+		if (!error) {
+			bcopy(&dqb, &qup->dqblk, sizeof(dqb));
+		} else {
 			if ((fd = open(qfpathname, O_RDONLY)) < 0) {
 				perror(qfpathname);
 				free(qup);

@@ -55,14 +55,16 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/cdefs.h>
+
 #ifndef lint
-static char copyright[] =
+__unused static char copyright[] =
 "@(#) Copyright (c) 1980, 1990, 1993\n\
 	The Regents of the University of California.  All rights reserved.\n";
 #endif /* not lint */
 
 #ifndef lint
-static char sccsid[] = "@(#)repquota.c	8.2 (Berkeley) 11/22/94";
+__unused static char sccsid[] = "@(#)repquota.c	8.2 (Berkeley) 11/22/94";
 #endif /* not lint */
 
 /*
@@ -272,7 +274,7 @@ repquota(fst, type, qfpathname)
 
 
 	if (quotactl(fst->f_mntonname, QCMD(Q_SYNC, type), 0, 0) < 0 &&
-	    errno == EOPNOTSUPP && !warned && vflag) {
+	    errno == ENOTSUP && !warned && vflag) {
 		warned++;
 		fprintf(stdout,
 		    "*** Warning: Quotas are not compiled into this kernel\n");
@@ -387,7 +389,7 @@ repquota(fs, type, qfpathname)
 	extern int errno;
 
 	if (quotactl(fs->fs_file, QCMD(Q_SYNC, type), 0, 0) < 0 &&
-	    errno == EOPNOTSUPP && !warned && vflag) {
+	    errno == ENOTSUP && !warned && vflag) {
 		warned++;
 		fprintf(stdout,
 		    "*** Warning: Quotas are not compiled into this kernel\n");
@@ -618,13 +620,13 @@ timeprt(seconds)
 	minutes = (seconds + 30) / 60;
 	hours = (minutes + 30) / 60;
 	if (hours >= 36) {
-		sprintf(buf, "%ddays", (hours + 12) / 24);
+		sprintf(buf, "%lddays", (hours + 12) / 24);
 		return (buf);
 	}
 	if (minutes >= 60) {
-		sprintf(buf, "%2d:%d", minutes / 60, minutes % 60);
+		sprintf(buf, "%2ld:%ld", minutes / 60, minutes % 60);
 		return (buf);
 	}
-	sprintf(buf, "%2d", minutes);
+	sprintf(buf, "%2ld", minutes);
 	return (buf);
 }

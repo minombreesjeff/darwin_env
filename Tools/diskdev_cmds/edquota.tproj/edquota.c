@@ -55,14 +55,16 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/cdefs.h>
+
 #ifndef lint
-static char copyright[] =
+__unused static  char copyright[] =
 "@(#) Copyright (c) 1980, 1990, 1993\n\
 	The Regents of the University of California.  All rights reserved.\n";
 #endif /* not lint */
 
 #ifndef lint
-static char sccsid[] = "@(#)edquota.c	8.3 (Berkeley) 4/27/95";
+__unused static char sccsid[] = "@(#)edquota.c	8.3 (Berkeley) 4/27/95";
 #endif /* not lint */
 
 /*
@@ -86,6 +88,7 @@ static char sccsid[] = "@(#)edquota.c	8.3 (Berkeley) 4/27/95";
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include "pathnames.h"
 
 #ifdef __APPLE__
@@ -286,12 +289,12 @@ getentry(name, quotatype)
 		return (atoi(name));
 	switch(quotatype) {
 	case USRQUOTA:
-		if (pw = getpwnam(name))
+		if ((pw = getpwnam(name)))
 			return (pw->pw_uid);
 		fprintf(stderr, "%s: no such user\n", name);
 		break;
 	case GRPQUOTA:
-		if (gr = getgrnam(name))
+		if ((gr = getgrnam(name)))
 			return (gr->gr_gid);
 		fprintf(stderr, "%s: no such group\n", name);
 		break;
@@ -344,7 +347,7 @@ getprivs(id, quotatype)
 			exit(2);
 		}
 		if (quotactl(fst[i].f_mntonname, qcmd, id, (char *)&qup->dqblk) != 0) {
-	    		if (errno == EOPNOTSUPP && !warned) {
+	    		if (errno == ENOTSUP && !warned) {
 				warned++;
 				fprintf(stderr, "Warning: %s\n",
 				    "Quotas are not compiled into this kernel");
@@ -419,7 +422,7 @@ getprivs(id, quotatype)
 			exit(2);
 		}
 		if (quotactl(fs->fs_file, qcmd, id, &qup->dqblk) != 0) {
-	    		if (errno == EOPNOTSUPP && !warned) {
+	    		if (errno == ENOTSUP && !warned) {
 				warned++;
 				fprintf(stderr, "Warning: %s\n",
 				    "Quotas are not compiled into this kernel");
@@ -1018,7 +1021,7 @@ readtimes(quplist, infd)
 			return (0);
 		}
 		cnt = sscanf(cp,
-		    " block grace period: %d %s file grace period: %d %s",
+		    " block grace period: %ld %s file grace period: %ld %s",
 		    &btime, bunits, &itime, iunits);
 		if (cnt != 4) {
 			fprintf(stderr, "%s:%s: bad format\n", fsp, cp);
@@ -1130,7 +1133,7 @@ alldigits(s)
 	do {
 		if (!isdigit(c))
 			return (0);
-	} while (c = *s++);
+	} while ((c = *s++));
 	return (1);
 }
 

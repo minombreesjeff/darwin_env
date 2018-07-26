@@ -416,7 +416,7 @@ update(fsname, quotafile, type)
 		return (1);
 	}
 	if (quotactl(fsname, QCMD(Q_SYNC, type), (u_long)0, (caddr_t)0) < 0 &&
-		errno == EOPNOTSUPP && !warned && vflag) {
+		errno == ENOTSUP && !warned && vflag) {
 		warned++;
 		fprintf(stdout, "*** Warning: %s\n",
 		    "Quotas are not compiled into this kernel");
@@ -619,7 +619,7 @@ update(fsname, quotafile, type)
 		return (1);
 	}
 	if (quotactl(fsname, QCMD(Q_SYNC, type), (u_long)0, (caddr_t)0) < 0 &&
-	    errno == EOPNOTSUPP && !warned && vflag) {
+	    errno == ENOTSUP && !warned && vflag) {
 		warned++;
 		(void)printf("*** Warning: %s\n",
 		    "Quotas are not compiled into this kernel");
@@ -802,7 +802,7 @@ getquotagid()
 {
 	struct group *gr;
 
-	if (gr = getgrnam(quotagroup))
+	if ((gr = getgrnam(quotagroup)))
 		return (gr->gr_gid);
 	return (-1);
 }
@@ -921,7 +921,7 @@ addid(id, type)
 	char *name;
 	int len;
 
-	if (fup = lookup(id, type))
+	if ((fup = lookup(id, type)))
 		return (fup);
 
 	name = NULL;

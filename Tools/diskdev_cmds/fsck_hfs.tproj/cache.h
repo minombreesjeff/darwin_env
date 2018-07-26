@@ -223,14 +223,22 @@ int CacheEvict (Cache_t *cache, Tag_t *tag);
 int 
 CacheFlush( Cache_t *cache );
 
-/*
- * CacheFlushRange
+/* CacheCopyDiskBlocks 
  *
- * Flush, and optionally remove, all cache blocks that intersect
- * a given range.
+ * Perform direct disk block copy from from_offset to to_offset of given length. 
  */
-int
-CacheFlushRange( Cache_t *cache, uint64_t start, uint64_t len, int remove);
+int CacheCopyDiskBlocks (Cache_t *cache, uint64_t from_offset, uint64_t to_offset, uint32_t len);
 
+/* CacheWriteBufferToDisk 
+ *
+ * Write data on disk starting at given offset for upto write_len.
+ * The data from given buffer upto buf_len is written to the disk starting
+ * at given offset.  If the amount of data written on disk is greater than 
+ * the length of buffer, all the remaining data is written as zeros.
+ * 
+ * If no buffer is provided or if length of buffer is zero, the function
+ * writes zeros on disk from offset upto write_len bytes.
+ */
+int CacheWriteBufferToDisk (Cache_t *cache, uint64_t offset, uint32_t write_len, u_char *buffer, uint32_t buf_len);
 #endif
 
