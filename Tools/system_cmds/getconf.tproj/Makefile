@@ -7,37 +7,39 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = init
+NAME = getconf
 
-PROJECTVERSION = 2.8
+PROJECTVERSION = 1.0
 PROJECT_TYPE = Tool
 
-HFILES = pathnames.h
+CFILES = getconf.c
 
-CFILES = init.c
-
-OTHERSRCS = Makefile.preamble Makefile Makefile.postamble Makefile.dist\
-            NOTES init.8
-
+OTHERSRCS = Makefile.preamble Makefile Makefile.postamble\
+	_fbsd_compat.h confstr.gperf fake-gperf.awk getconf.1\
+	getconf.h limits.gperf pathconf.gperf progenv.gperf sysconf.gperf 
+OTHER_GENERATED_SRCFILES = $(OBJROOT)/confstr.c $(OBJROOT)/limits.c\
+	$(OBJROOT)/pathconf.c $(OBJROOT)/progenv.c $(OBJROOT)/sysconf.c 
+OTHER_GENERATED_OFILES = confstr.o limits.o pathconf.o progenv.o sysconf.o 
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC
 MAKEFILE = tool.make
-NEXTSTEP_INSTALLDIR = /sbin
-WINDOWS_INSTALLDIR = /sbin
-PDO_UNIX_INSTALLDIR = /sbin
+NEXTSTEP_INSTALLDIR = /usr/bin
+WINDOWS_INSTALLDIR = /usr/bin
+PDO_UNIX_INSTALLDIR = /usr/bin
 LIBS = 
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 
-NEXTSTEP_BUILD_OUTPUT_DIR = /tmp/$(USER)/BUILD
+
+
 
 NEXTSTEP_OBJCPLUS_COMPILER = /usr/bin/cc
 WINDOWS_OBJCPLUS_COMPILER = $(DEVDIR)/gcc
 PDO_UNIX_OBJCPLUS_COMPILER = $(NEXTDEV_BIN)/gcc
 NEXTSTEP_JAVA_COMPILER = /usr/bin/javac
 WINDOWS_JAVA_COMPILER = $(JDKBINDIR)/javac.exe
-PDO_UNIX_JAVA_COMPILER = $(NEXTDEV_BIN)/javac
+PDO_UNIX_JAVA_COMPILER = $(JDKBINDIR)/javac
 
 include $(MAKEFILEDIR)/platform.make
 

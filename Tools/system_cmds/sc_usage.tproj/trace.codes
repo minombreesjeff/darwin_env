@@ -1,4 +1,4 @@
-918
+917
 0x1f000000	DYLD_initialize
 0x1f010000	DYLD_CALL_image_init_routine
 0x1f010004	DYLD_CALL_dependent_init_routine
@@ -47,11 +47,11 @@
 0x1f040010	DYLD_map_bundle_image
 0x1f040014	DYLD_load_dependent_libraries
 0x1f040018	DYLD_notify_prebinding_agent
+0x21070000      LAUNCH_LSOpen                                                
+0x21070004      LAUNCH_LSRegisterItem                                        
+0x21070008      LAUNCH_LSGetApplicationAndFlagsForInfo
 0x1fff0000	LAUNCH_START_FINDER
 0x1fff0100	LAUNCH_START_DOCK
-0x1fff0200	LAUNCH_LSOpen
-0x1fff0204	LAUNCH_LSRegisterItem
-0x1fff0208	LAUNCH_LSGetApplicationAndFlagsForInfo
 0x1fff0300	LAUNCH_CPSLaunch
 0x1fff0304	LAUNCH_CPSRegisterwithServer
 0x1fff0308	LAUNCH_CGSCheckInNewProcess
@@ -118,19 +118,14 @@
 0xff001f40  	MSG_memory_object_get_attributes
 0xff001f44  	MSG_memory_object_change_attributes
 0xff001f48  	MSG_memory_object_synchronize_completed
-0xff001f4c  	MSG_memory_object_data_unavailable
-0xff001f50  	MSG_memory_object_lock_request
-0xff001f54  	MSG_memory_object_data_error
-0xff001f58  	MSG_memory_object_destroy
-0xff001f5c  	MSG_memory_object_data_supply
-0xff001f60  	MSG_memory_object_discard_reply
-0xff001f64  	MSG_vm_object_upl_request
-0xff001f68  	MSG_vm_pager_upl_request
-0xff001f6c  	MSG_vm_upl_map
-0xff001f70  	MSG_vm_upl_unmap
-0xff001f74  	MSG_vm_upl_abort
-0xff001f78  	MSG_vm_upl_commit
-0xff001f7c  	MSG_vm_upl_commit_range
+0xff001f4c  	MSG_memory_object_lock_request
+0xff001f50  	MSG_memory_object_destroy
+0xff001f54  	MSG_memory_object_upl_request
+0xff001f58  	MSG_memory_object_super_upl_request
+0xff001f5c  	MSG_memory_object_page_op
+0xff001f60  	MSG_memory_object_recover_named
+0xff001f64  	MSG_memory_object_release_name
+0xff001f68  	MSG_memory_object_range_op
 0xff002008  	MSG_upl_abort
 0xff00200c  	MSG_upl_abort_range
 0xff002010  	MSG_upl_commit
@@ -338,6 +333,7 @@
 0xff003bcc  	MSG_vm_map_get_upl
 0xff003bd0  	MSG_vm_upl_map
 0xff003bd4  	MSG_vm_upl_unmap
+0xff003bd8  	MSG_vm_purgable_control
 0xff003e80  	MSG_processor_set_statistics
 0xff003e84  	MSG_processor_set_destroy
 0xff003e88  	MSG_processor_set_max_priority
@@ -376,7 +372,6 @@
 0xff25abd4  	MSG_semaphore_wait_signal
 0xff25abd8  	MSG_semaphore_timedwait_signal
 0xffbebdcc  	MSG_clock_alarm_reply
-
 0x1300000 	MACH_vmfault
 0x1300004 	MACH_Pageout
 0x1400000 	MACH_SCHED
@@ -725,7 +720,7 @@
 0x40c02d4 	BSC_setgid
 0x40c02d8 	BSC_setegid
 0x40c02dc 	BSC_seteuid
-0x40c02e0 	BSC_#184
+0x40c02e0 	BSC_sigreturn
 0x40c02e4 	BSC_#185
 0x40c02e8 	BSC_#186
 0x40c02ec 	BSC_#187
@@ -891,16 +886,16 @@
 0x40c056c 	BSC_#347
 0x40c0570 	BSC_#348
 0x40c0574 	BSC_#349
-0x40c0578 	BSC_#350
-0x40c057c 	BSC_#351
-0x40c0580 	BSC_#352
-0x40c0584 	BSC_#353
-0x40c0588 	BSC_#354
-0x40c058c 	BSC_#355
-0x40c0590 	BSC_#356
-0x40c0594 	BSC_#357
-0x40c0598 	BSC_#358
-0x40c059c 	BSC_#359
+0x40c0578 	BSC_audit
+0x40c057c 	BSC_auditon
+0x40c0580 	BSC_auditsvc
+0x40c0584 	BSC_getauid
+0x40c0588 	BSC_setauid
+0x40c058c 	BSC_getaudit
+0x40c0590 	BSC_setaudit
+0x40c0594 	BSC_getaudit_addr
+0x40c0598 	BSC_setaudit_addr
+0x40c059c 	BSC_auditctl
 0x40c05a0 	BSC_#360
 0x40c05a4 	BSC_#361
 0x40c05a8	BSC_kqueue

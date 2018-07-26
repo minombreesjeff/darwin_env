@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -125,9 +126,10 @@ int     argmax = 0;
  * Network only or filesystem only output filter
  * Default of zero means report all activity - no filtering
  */
-#define FILESYS_FILTER 0x01
-#define NETWORK_FILTER 0x02
-#define DEFAULT_DO_NOT_FILTER 0x0
+#define FILESYS_FILTER    1
+#define NETWORK_FILTER    2
+#define CACHEHIT_FILTER      4
+#define DEFAULT_DO_NOT_FILTER  0
 int filter_mode = DEFAULT_DO_NOT_FILTER;
 
 #define NFS_DEV -1
@@ -167,18 +169,13 @@ char           *find_disk_name();
 void		cache_disk_names();
 int 		ReadSegAddrTable();
 void		mark_thread_waited(int);
-int		check_filter_mode(struct th_info *, int, int, int);
+int		check_filter_mode(struct th_info *, int, int, int, char *);
 void		fs_usage_fd_set(unsigned int, unsigned int);
 int		fs_usage_fd_isset(unsigned int, unsigned int);
 void		fs_usage_fd_clear(unsigned int, unsigned int);
 void		init_arguments_buffer();
 int	        get_real_command_name(int, char *, int);
 void            create_map_entry(int, int, char *);
-
-#define DBG_ZERO_FILL_FAULT   1
-#define DBG_PAGEIN_FAULT      2
-#define DBG_COW_FAULT         3
-#define DBG_CACHE_HIT_FAULT   4
 
 #define TRACE_DATA_NEWTHREAD   0x07000004
 #define TRACE_DATA_EXEC        0x07000008
@@ -507,7 +504,7 @@ main(argc, argv)
 	int quit();
 
         if ( geteuid() != 0 ) {
-            printf("'fs_usage' must be run as root...\n");
+            fprintf(stderr, "'fs_usage' must be run as root...\n");
             exit(1);
         }
 	get_screenwidth();
@@ -539,6 +536,8 @@ main(argc, argv)
 		       filter_mode |= NETWORK_FILTER;
 		   else if (!strcmp(optarg, "filesys"))
 		       filter_mode |= FILESYS_FILTER;
+		   else if (!strcmp(optarg, "cachehit"))
+		       filter_mode |= CACHEHIT_FILTER;   /* turns off CACHE_HIT */
 		   break;
 		       
 	       default:
@@ -586,9 +585,9 @@ main(argc, argv)
 	for (i = 0; i < num_of_pids; i++)
 	  {
 	    if (exclude_pids)
-	      printf("exclude pid %d\n", pids[i]);
+	      fprintf(stderr, "exclude pid %d\n", pids[i]);
 	    else
-	      printf("pid %d\n", pids[i]);
+	      fprintf(stderr, "pid %d\n", pids[i]);
 	  }
 #endif
 
@@ -757,7 +756,7 @@ set_pidcheck(int pid, int on_off)
 
 	if (sysctl(mib, 3, &kr, &needed, NULL, 0) < 0) {
 	        if (on_off == 1)
-		        printf("pid %d does not exist\n", pid);
+		        fprintf(stderr, "pid %d does not exist\n", pid);
 	}
 	else {
 	  one_good_pid++;
@@ -788,7 +787,7 @@ set_pidexclude(int pid, int on_off)
 
 	if (sysctl(mib, 3, &kr, &needed, NULL, 0) < 0) {
 	        if (on_off == 1)
-		          printf("pid %d does not exist\n", pid);
+		          fprintf(stderr, "pid %d does not exist\n", pid);
 	}
 }
 
@@ -888,7 +887,7 @@ sample_sc()
 	count = needed;
 
 	if (bufinfo.flags & KDBG_WRAPPED) {
-	        printf("buffer wrapped  count = %d\n", count);
+	        fprintf(stderr, "buffer wrapped  count = %d\n", count);
 
 	        for (i = 0; i < cur_max; i++) {
 			th_state[i].thread = 0;
@@ -904,7 +903,7 @@ sample_sc()
 	}
 	kd = (kd_buf *)my_buffer;
 #if 0
-	printf("READTR returned %d items\n", count);
+	fprintf(stderr, "READTR returned %d items\n", count);
 #endif
 	for (i = 0; i < count; i++) {
 	        int debugid, thread;
@@ -921,11 +920,11 @@ sample_sc()
 		void extend_syscall();
 		void kill_thread_map();
 
-		thread  = kd[i].arg5 & KDBG_THREAD_MASK;
+		thread  = kd[i].arg5;
 		debugid = kd[i].debugid;
 		type    = kd[i].debugid & DBG_FUNC_MASK;
                 
-                now = kd[i].timestamp;
+                now = kd[i].timestamp & KDBG_TIMESTAMP_MASK;
 
 		if (i == 0)
 		{
@@ -2126,7 +2125,7 @@ exit_syscall(char *sc_name, int thread, int type, int error, int retval,
     if ((ti = find_thread(thread, type)) == (struct th_info *)0)
         return;
 
-    if (check_filter_mode(ti, type, error, retval))
+    if (check_filter_mode(ti, type, error, retval, sc_name))
 	format_print(ti, sc_name, thread, type, error, retval, has_fd, has_ret, now, ti->stime, ti->waited, ti->pathname, NULL);
 
     if (ti == &th_state[cur_max - 1])
@@ -2327,9 +2326,9 @@ char *s;
 	if (set_remove_flag)
 	        set_remove();
 
-        printf("fs_usage: ");
+        fprintf(stderr, "fs_usage: ");
 	if (s)
-		printf("%s", s);
+		fprintf(stderr, "%s", s);
 
 	exit(1);
 }
@@ -2946,7 +2945,7 @@ void print_diskio(struct diskio *dio)
             p = "  ";
 	    break;
     }
-    if (check_filter_mode(NULL, dio->type,0, 0))
+    if (check_filter_mode(NULL, dio->type,0, 0, p))
 	format_print(NULL, p, dio->issuing_thread, dio->type, 0, 0, 0, 7, dio->completed_time, dio->issued_time, 1, "", dio);
 }
 
@@ -3031,7 +3030,7 @@ fs_usage_fd_set(thread, fd)
     /* If the map is not big enough, then reallocate it */
     while (fdmap->fd_setsize < fd)
     {
-	printf("reallocating bitmap for threadid %d, fd = %d, setsize = %d\n",
+	fprintf(stderr, "reallocating bitmap for threadid %d, fd = %d, setsize = %d\n",
 	  thread, fd, fdmap->fd_setsize);
 	n = fdmap->fd_setsize * 2;
 	fdmap->fd_setptr = (unsigned long *)realloc(fdmap->fd_setptr, (FS_USAGE_NFDBYTES(n)));
@@ -3097,7 +3096,7 @@ fs_usage_fd_clear(thread, fd)
  * ret = 0 means don't print the entry
  */
 int
-check_filter_mode(struct th_info * ti, int type, int error, int retval)
+check_filter_mode(struct th_info * ti, int type, int error, int retval, char *sc_name)
 {
     int ret = 0;
     int network_fd_isset = 0;
@@ -3106,6 +3105,13 @@ check_filter_mode(struct th_info * ti, int type, int error, int retval)
     if (filter_mode == DEFAULT_DO_NOT_FILTER)
 	return(1);
 
+    if (filter_mode & CACHEHIT_FILTER)
+    {
+	/* Do not print if cachehit filter is set */
+	if (!strcmp (sc_name, "CACHE_HIT"))
+	    return(0);
+    }
+	
     if (ti == (struct th_info *)0)
     {
 	if(filter_mode & FILESYS_FILTER)
@@ -3114,7 +3120,6 @@ check_filter_mode(struct th_info * ti, int type, int error, int retval)
 	    ret = 0;
 	return(ret);
     }
-	
 
     switch (type) {
     case BSC_close:

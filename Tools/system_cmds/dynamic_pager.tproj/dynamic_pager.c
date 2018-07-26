@@ -113,10 +113,9 @@ server_alert_loop(
       return kr;
     mlock(bufReply, max_size + MAX_TRAILER_SIZE);
     while(TRUE) {
-       mr = mach_msg_overwrite_trap(&bufRequest->Head, MACH_RCV_MSG|options,
-                                 0, max_size, rcv_name,
-                                 MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,
-                                 (mach_msg_header_t *) 0, 0);
+       mr = mach_msg(&bufRequest->Head, MACH_RCV_MSG|options,
+		     0, max_size, rcv_name,
+		     MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
         if (mr == MACH_MSG_SUCCESS) {
            /* we have a request message */
 
@@ -242,15 +241,21 @@ default_pager_space_alert(alert_port, flags)
 
 		sprintf(subfile, "%s%d", fileroot, file_count);
 		file_ptr = fopen(subfile, "w+");
-		fchmod(fileno(file_ptr), (mode_t)01600);
-		error = fcntl(fileno(file_ptr), F_SETSIZE, &filesize);
-		if(error) {
-			error = ftruncate(fileno(file_ptr), filesize);
+		if (file_ptr == NULL) {
+			/* force error recovery below */
+			error = -1;
+		} else {
+			fchmod(fileno(file_ptr), (mode_t)01600);
+			error = fcntl(fileno(file_ptr), F_SETSIZE, &filesize);
+			if(error) {
+				error = ftruncate(fileno(file_ptr), filesize);
+			}
+			if(error)
+				unlink(subfile);
+			fclose(file_ptr);
 		}
-		fclose(file_ptr);
 
 		if(error == -1) {
-			unlink(subfile);
 			file_count--;
 
 			if (file_count > max_valid)
@@ -382,9 +387,9 @@ wait_on_paging_trigger(trigger_port)
 	result = server_alert_loop(4096, trigger_port, MACH_MSG_OPTION_NONE);
 	if (result != KERN_SUCCESS) {
 	     fprintf(stderr, "dynamic_pager: default pager alert failed\n");
-	     exit(1);
+	     exit(EXIT_FAILURE);
 	}
-	exit(0);
+	exit(EXIT_SUCCESS);
 }
 
 void
@@ -403,12 +408,24 @@ paging_setup(flags, size, priority, low, high)
 	file_count = 0;
 	sprintf(subfile, "%s%d", fileroot, file_count);
 	file_ptr = fopen(subfile, "w+");
+	if (file_ptr == NULL) {
+		fprintf(stderr, "dynamic_pager: cannot create paging file %s!\n",
+			subfile);
+		exit(EXIT_FAILURE);
+	}
 	fchmod(fileno(file_ptr), (mode_t)01600);
+
 	error = fcntl(fileno(file_ptr), F_SETSIZE, &filesize);
 	if(error) {
-	error = ftruncate(fileno(file_ptr), filesize);
+		error = ftruncate(fileno(file_ptr), filesize);
 	}
 	fclose(file_ptr);
+
+	if (error == -1) {
+		fprintf(stderr, "dynamic_pager: cannot extend paging file size %s to %llu!\n",
+			subfile, filesize);
+		exit(EXIT_FAILURE);
+	}
         
 	macx_swapon(subfile, flags, size, priority);
 
@@ -420,8 +437,8 @@ paging_setup(flags, size, priority, low, high)
 		if (mach_port_allocate(mach_task_self(), 
 				MACH_PORT_RIGHT_RECEIVE, 
 				&trigger_port) != KERN_SUCCESS)  {
-			fprintf(stderr,"allocation of trigger port failed\n");
-			exit(1);
+			fprintf(stderr,"dynamic_pager: allocation of trigger port failed\n");
+			exit(EXIT_FAILURE);
 		}
 		/* create a send right on our local port */
 		mach_port_extract_right(mach_task_self(), trigger_port,
@@ -437,7 +454,7 @@ paging_setup(flags, size, priority, low, high)
 		set_dp_control_port(mach_host_self(), trigger_port);
 		wait_on_paging_trigger(trigger_port); 
 	}
-	exit(0);
+	exit(EXIT_SUCCESS);
 }
 int
 main(int argc, char **argv)
@@ -484,7 +501,7 @@ main(int argc, char **argv)
 		default:
 			(void)fprintf(stderr,
 			    "usage: dynamic_pager [-F filename] [-L low water alert trigger] [-H high water alert trigger] [-S file size] [-P priority]\n");
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -505,7 +522,7 @@ main(int argc, char **argv)
 		 * space is left on the volume being used for swap and the amount of physical ram 
 		 * installed on the system...
 		 * basically, we'll pick a maximum size that doesn't exceed the following limits...
-		 *   1/4 the remaining free space of the swap volume 
+		 *   1/8 the remaining free space of the swap volume 
 		 *   the size of phsyical ram
 		 *   MAXIMUM_SIZE - currently set to 1 Gbyte... 
 		 * once we have the maximum, we'll create a list of sizes and low_water limits
@@ -531,15 +548,17 @@ main(int argc, char **argv)
 
 	        if (statfs(tmp, &sfs) != -1) {
 		        /*
-			 * limit the maximum size of a swap file to 1/4 the free
+			 * Limit the maximum size of a swap file to 1/8 the free
 			 * space available on the filesystem where the swap files
-			 * are to reside
+			 * are to reside.  This will allow us to allocate and
+			 * deallocate in finer increments on systems without much
+			 * free space.
 			 */
-		        fs_limit = ((u_int64_t)sfs.f_bfree * (u_int64_t)sfs.f_bsize) / 4;
+		        fs_limit = ((u_int64_t)sfs.f_bfree * (u_int64_t)sfs.f_bsize) / 8;
 
 		} else {
-		        (void)fprintf(stderr, "usage: swap directory must exist\n"); 
-			exit(1);
+		        (void)fprintf(stderr, "dynamic_pager: swap directory must exist\n"); 
+			exit(EXIT_FAILURE);
 		}
 		mib[0] = CTL_HW;
 		mib[1] = HW_MEMSIZE;
@@ -582,14 +601,14 @@ main(int argc, char **argv)
 				else
 				        limits[i].low_water = size + limits[i - 1].size;
 			}
-			if (size >= memsize)
-			        break;
 			
 			if (i) {
 			        /*
 				 * make the first 2 files the same size
 				 */
 			        size = size * 2;
+				if (size > memsize)
+					break;
 			}
 			max_valid++;
 		}
@@ -601,8 +620,8 @@ main(int argc, char **argv)
 	local_hi_water = hi_water;
 
 	if((limits[0].low_water != 0) && (limits[0].low_water <= (limits[0].size + hi_water))) {
-		(void)fprintf(stderr,  "usage: low water trigger must be larger than size + hi_water\n"); 
-		exit(1);
+		(void)fprintf(stderr,  "dynamic_pager: low water trigger must be larger than size + hi_water\n"); 
+		exit(EXIT_FAILURE);
 	}
 	argc -= optind;
 	argv += optind;
