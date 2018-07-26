@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -266,6 +267,10 @@ void            create_map_entry(int, int, char *);
 #define BSC_rmdir    0x040C0224
 #define BSC_utimes   0x040C0228
 #define BSC_futimes  0x040C022C
+#define BSC_pread    0x040C0264
+#define BSC_pread_extended    0x040E0264
+#define BSC_pwrite   0x040C0268
+#define BSC_pwrite_extended   0x040E0268
 #define BSC_statfs   0x040C0274	
 #define BSC_fstatfs  0x040C0278	
 #define BSC_stat     0x040C02F0	
@@ -914,6 +919,7 @@ sample_sc()
                 struct diskio  *dio;
 		void enter_syscall();
 		void exit_syscall();
+		void extend_syscall();
 		void kill_thread_map();
 
 		thread  = kd[i].arg5 & KDBG_THREAD_MASK;
@@ -1297,7 +1303,12 @@ sample_sc()
 		        enter_syscall(thread, type, &kd[i], p, (double)now);
 			continue;
 		}
+		
 		switch (type) {
+		    
+		case BSC_pread_extended:
+		case BSC_pwrite_extended:
+		    extend_syscall(thread, type, &kd[i], (double)now);
 
 		case MACH_pageout:
 		    if (kd[i].arg2) 
@@ -1502,6 +1513,14 @@ sample_sc()
 
 		case BSC_writev:
 		    exit_syscall("writev", thread, type, kd[i].arg1, kd[i].arg2, 1, 1, (double)now);
+		    break;
+
+		case BSC_pread:
+		    exit_syscall("pread", thread, type, kd[i].arg1, kd[i].arg2, 1, 9, (double)now);
+		    break;
+
+		case BSC_pwrite:
+		    exit_syscall("pwrite", thread, type, kd[i].arg1, kd[i].arg2, 1, 9, (double)now);
 		    break;
 
 		case BSC_fchown:
@@ -1879,6 +1898,8 @@ enter_syscall(int thread, int type, kd_buf *kd, char *name, double now)
        case BSC_fsync:
        case BSC_readv:
        case BSC_writev:
+       case BSC_pread:
+       case BSC_pwrite:
        case BSC_fchown:
        case BSC_fchmod:
        case BSC_rename:
@@ -2062,6 +2083,40 @@ enter_syscall(int thread, int type, kd_buf *kd, char *name, double now)
        fflush (0);
 }
 
+/*
+ * Handle system call extended trace data.
+ * pread and pwrite:
+ *     Wipe out the kd args that were collected upon syscall_entry
+ *     because it is the extended info that we really want, and it
+ *     is all we really need.
+*/
+
+void
+extend_syscall(int thread, int type, kd_buf *kd, char *name, double now)
+{
+       struct th_info *ti;
+
+       switch (type) {
+       case BSC_pread_extended:
+	   if ((ti = find_thread(thread, BSC_pread)) == (struct th_info *)0)
+	       return;
+	   ti->arg1   = kd->arg1;  /* the fd */
+	   ti->arg2   = kd->arg2;  /* nbytes */
+	   ti->arg3   = kd->arg3;  /* top half offset */
+	   ti->arg4   = kd->arg4;  /* bottom half offset */	   
+	   break;
+       case BSC_pwrite_extended:
+	   if ((ti = find_thread(thread, BSC_pwrite)) == (struct th_info *)0)
+	       return;
+	   ti->arg1   = kd->arg1;  /* the fd */
+	   ti->arg2   = kd->arg2;  /* nbytes */
+	   ti->arg3   = kd->arg3;  /* top half offset */
+	   ti->arg4   = kd->arg4;  /* bottom half offset */
+	   break;
+       default:
+	   return;
+       }
+}
 
 void
 exit_syscall(char *sc_name, int thread, int type, int error, int retval,
@@ -2150,7 +2205,9 @@ format_print(struct th_info *ti, char *sc_name, int thread, int type, int error,
                 else
                     sprintf(&buf[clen], "  B=0x%-6x   /dev/%s", dio->iosize, find_disk_name(dio->dev));
             } else {
-              
+
+		off_t offset_reassembled = 0LL;
+		
 	       if (has_fd == 2 && error == 0)
 		       sprintf(&buf[clen], " F=%-3d", retval);
 	       else if (has_fd == 1)
@@ -2179,6 +2236,16 @@ format_print(struct th_info *ti, char *sc_name, int thread, int type, int error,
 		       sprintf(&buf[clen], "B=0x%-8x", retval);
 	       else if (has_ret == 8)  /* BSC_select */
 		       sprintf(&buf[clen], "  S=%-3d     ", retval);	       
+	       else if (has_ret == 9)  /* BSC_pread, BSC_pwrite */
+	       {
+		   sprintf(&buf[clen], "B=0x%-8x", retval);
+		   clen = strlen(buf);
+		   offset_reassembled = (((off_t)(unsigned int)(ti->arg3)) << 32) | (unsigned int)(ti->arg4);
+		   if ((offset_reassembled >> 32) != 0)
+		       sprintf(&buf[clen], "O=0x%16.16qx", (off_t)offset_reassembled);
+		   else
+		       sprintf(&buf[clen], "O=0x%8.8qx", (off_t)offset_reassembled);
+	       }
 	       else
 		       sprintf(&buf[clen], "            ");
             }

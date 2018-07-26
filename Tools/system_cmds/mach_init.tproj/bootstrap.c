@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -186,7 +187,6 @@ main(int argc, char * argv[])
 {
 	const char *argp;
 	char c;
-	server_t *serverp;
 	kern_return_t result;
 	mach_port_t init_notify_port;
 	pthread_attr_t  attr;
@@ -246,7 +246,6 @@ main(int argc, char * argv[])
 			 * Wait for mach_init ot give us a real bootstrap port
 			 */
 			wait_for_go(init_notify_port);
-			info("Execing init");
 
 			close(0);
 			close(1);
@@ -265,20 +264,17 @@ main(int argc, char * argv[])
 		}
 
 		/*
-		 * Child - will continue along as mach_init.  Construct
-		 * a very basic environment - as much as if we were
-		 * actually forked from init (instead of the other way
-		 * around):
-		 *
-		 * Set up the PATH to be approriate for the root user.
-		 * Create an initial session.
-		 * Establish an initial user.
-		 * Disbale core dumps.
+		 * Child - will continue along as mach_init.  Save off
+		 * the init_notify_port and put back a NULL bootstrap
+		 * port for ourselves.
 		 */
-		setenv("PATH", _PATH_STDPATH, 1);
-		setsid();
-		setlogin("root");
-		enablecoredumps(FALSE);
+		init_notify_port = bootstrap_port;
+		bootstrap_port = MACH_PORT_NULL;
+		(void)task_set_bootstrap_port(
+							mach_task_self(),
+							bootstrap_port);
+		if (result != KERN_SUCCESS)
+			kern_fatal(result, "task_get_bootstrap_port");
 	} else
 		init_notify_port = MACH_PORT_NULL;
 
@@ -297,14 +293,13 @@ main(int argc, char * argv[])
 			switch (c = *argp++) {
 			case 'd':
 				debugging = TRUE;
-				enablecoredumps(TRUE);
 				break;
 			case 'D':
 				debugging = FALSE;
-				enablecoredumps(FALSE);
 				break;
 			case 'F':
-				force_fork = TRUE;
+				if (init_notify_port != MACH_PORT_NULL)
+					force_fork = TRUE;
 				break;
 			case 'r':
 				register_self = forward_ok = TRUE;
@@ -331,52 +326,17 @@ main(int argc, char * argv[])
 			exit(0);
 	}
 
-	/* block all but SIGHUP and SIGTERM and mark us as an init process */
-	setsid();
-	sigfillset(&mask);
-	sigdelset(&mask, SIGHUP);
-	signal(SIGHUP, toggle_debug);
-	sigdelset(&mask, SIGTERM);
-	signal(SIGTERM, start_shutdown);
-	(void) sigprocmask(SIG_SETMASK, &mask, (sigset_t *)NULL);
-
-	init_errlog(pid == 0); /* are we a daemon? */
-	init_lists();
-
 	/*
-	 *	This task will become the bootstrap task, so go ahead and
-	 *	initialize the ports now.
+	 *	This task will become the bootstrap task, initialize the ports.
 	 */
 	bootstrap_self = mach_task_self();
 	inherited_uid = getuid();
+	init_lists();
 	init_ports();
-	
-	log("Started with uid=%d%s%s%s",
-		inherited_uid,
-		(register_self) ? " registered-as=" : "",
-		(register_self) ? register_name : "",
-		(debugging) ? " in debug-mode" : "");
 
-
-	/*
-	 * If we are supposed to coordinate with init, we have to
-	 * get that port again, because we only have a (probably wrong)
-	 * name in memory, not a proper right.
- 	 */
 	if (init_notify_port != MACH_PORT_NULL) {
-		result = task_get_bootstrap_port(
-						 	bootstrap_self,
-						 	&init_notify_port);
-		if (result != KERN_SUCCESS)
-			kern_fatal(result, "task_get_bootstrap_port");
-
+		/* send init a real bootstrap port to use */
 		unblock_init(init_notify_port, bootstraps.bootstrap_port);
-
-		result = task_set_bootstrap_port(
-							bootstrap_self,
-							MACH_PORT_NULL);
-		if (result != KERN_SUCCESS)
-			kern_fatal(result, "task_set_bootstrap_port");
 
 		result = mach_port_deallocate(
 							bootstrap_self,
@@ -388,7 +348,6 @@ main(int argc, char * argv[])
 		inherited_bootstrap_port = MACH_PORT_NULL;
 
 	} else {
-
 		/* get inherited bootstrap port */
 		result = task_get_bootstrap_port(
 							bootstrap_self,
@@ -412,14 +371,6 @@ main(int argc, char * argv[])
 		}
 	}
 
-
-	/* Kick off all continuously running server processes */
-	for (  serverp = FIRST(servers)
-		; !IS_END(serverp, servers)
-		; serverp = NEXT(serverp))
-		if (serverp->servertype != DEMAND)
-			start_server(serverp);
-
 	pthread_attr_init (&attr);
 	pthread_attr_setdetachstate ( &attr, PTHREAD_CREATE_DETACHED );
 	result = pthread_create(
@@ -431,6 +382,36 @@ main(int argc, char * argv[])
 		unix_error("pthread_create()");
 		exit(1);
 	}
+
+	/* block all but SIGHUP and SIGTERM  */
+	sigfillset(&mask);
+	sigdelset(&mask, SIGHUP);
+	signal(SIGHUP, toggle_debug);
+	sigdelset(&mask, SIGTERM);
+	signal(SIGTERM, start_shutdown);
+	(void) sigprocmask(SIG_SETMASK, &mask, (sigset_t *)NULL);
+
+	/* 
+	 * Construct a very basic environment - as much as if we
+	 * were actually forked from init (instead of the other
+	 * way around):
+	 *
+	 * Set up the PATH to be approriate for the root user.
+	 * Create an initial session.
+	 * Establish an initial user.
+	 * Disbale core dumps.
+	 */
+	setsid();
+	setlogin("root");
+	enablecoredumps(debugging);
+	setenv("PATH", _PATH_STDPATH, 1);
+
+	init_errlog(pid == 0); /* are we a daemon? */
+	notice("Started with uid=%d%s%s%s",
+		inherited_uid,
+		(register_self) ? " registered-as=" : "",
+		(register_self) ? register_name : "",
+		(debugging) ? " in debug-mode" : "");
 
 	/* Process bootstrap service requests */
 	server_loop();	/* Should never return */
@@ -459,9 +440,10 @@ wait_for_go(mach_port_t init_notify_port)
 	if (result != KERN_SUCCESS) {
 		kern_error(result, "mach_msg(receive) failed in wait_for_go");
 	}
+	bootstrap_port = init_go_msg.hdr.msgh_remote_port;
 	result = task_set_bootstrap_port(
 						mach_task_self(),
-						init_go_msg.hdr.msgh_remote_port);
+						bootstrap_port);
 	if (result != KERN_SUCCESS) {
 		kern_error(result, "task_get_bootstrap_port()");
 	}
@@ -496,7 +478,6 @@ static void
 init_ports(void)
 {
 	kern_return_t result;
-	service_t *servicep;
 
 	/*
 	 *	This task will become the bootstrap task.
@@ -571,60 +552,6 @@ init_ports(void)
 						bootstrap_port_set);
 	if (result != KERN_SUCCESS)
 		kern_fatal(result, "mach_port_move_member");
-
-	/*
-	 * Allocate service ports for declared services.
-	 */
-	for (  servicep = FIRST(services)
-	     ; ! IS_END(servicep, services)
-	     ; servicep = NEXT(servicep))
-	{
-	 	switch (servicep->servicetype) {
-		case DECLARED:
-			result = mach_port_allocate(
-							bootstrap_self,
-							MACH_PORT_RIGHT_RECEIVE,
-							&(servicep->port));
-			if (result != KERN_SUCCESS)
-				kern_fatal(result, "mach_port_allocate");
-
-			result = mach_port_insert_right(
-							bootstrap_self,
-							servicep->port,
-							servicep->port,
-							MACH_MSG_TYPE_MAKE_SEND);
-			if (result != KERN_SUCCESS)
-				kern_fatal(result, "mach_port_insert_right");
-			info("Declared port %x for service %s",
-			      servicep->port,
-			      servicep->name);
-
-			if (servicep->server != NULL_SERVER &&
-				servicep->server->servertype == DEMAND) {
-				result = mach_port_move_member(
-								bootstrap_self,
-								servicep->port,
-								demand_port_set);
-				if (result != KERN_SUCCESS)
-					kern_fatal(result, "mach_port_move_member");
-			}
-			break;
-
-		case SELF:
-			servicep->port = bootstraps.bootstrap_port;
-			servicep->server = new_server(&bootstraps,
-							program_name,
-							inherited_uid,
-							MACHINIT);
-			info("Set port %x for self port",
-			      bootstraps.bootstrap_port);
-			break;
-
-		case REGISTERED:
-			fatal("Can't allocate REGISTERED port!?!");
-			break;
-		}
-	}
 }
 
 boolean_t
@@ -662,7 +589,7 @@ reap_server(server_t *serverp)
 	if (presult != serverp->pid) {
 		unix_error("waitpid: cmd = %s", serverp->cmd);
 	} else if (wstatus) {
-		log("Server %x in bootstrap %x uid %d: \"%s\": %s %d [pid %d]",
+		notice("Server %x in bootstrap %x uid %d: \"%s\": %s %d [pid %d]",
 			serverp->port, serverp->bootstrap->bootstrap_port,
 			serverp->uid, serverp->cmd, 
 			((WIFEXITED(wstatus)) ? 
@@ -1048,10 +975,10 @@ server_demux(
 	 * Do minimal cleanup and then exit.
 	 */
 	if (shutdown_in_progress == TRUE) {
-		log("Shutting down. Deactivating root bootstrap (%x) ...",
+		notice("Shutting down. Deactivating root bootstrap (%x) ...",
 			bootstraps.bootstrap_port);
 		deactivate_bootstrap(&bootstraps);
-		log("Done.");
+		notice("Done.");
 		exit(0);
 	}
 					

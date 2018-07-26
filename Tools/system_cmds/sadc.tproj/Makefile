@@ -7,32 +7,34 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = sa
+NAME = sadc
 
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-CFILES = main.c pdb.c usrdb.c
+HFILES = sadc.h
 
-OTHERSRCS = Makefile.preamble Makefile Makefile.postamble extern.h pathnames.h \
-	sa.8
+CFILES = sadc.c
+
+OTHERSRCS = Makefile.preamble Makefile Makefile.postamble sa1.8 sa1.sh\
+            sa2.8 sa2.sh sadc.8
 
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC
 MAKEFILE = tool.make
-NEXTSTEP_INSTALLDIR = /usr/bin
+NEXTSTEP_INSTALLDIR = /usr/lib/sa
 WINDOWS_INSTALLDIR = /Library/Executables
 PDO_UNIX_INSTALLDIR = /bin
-LIBS = -lcurses
+LIBS = 
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 
+FRAMEWORKS = -framework CoreFoundation -framework IOKit
 
-HEADER_PATHS = -I$(NEXT_ROOT)/System/Library/System.framework/\
-               -I$(NEXT_ROOT)/System/Library/Frameworks/System.framework/PrivateHeaders\
-               -I$(NEXT_ROOT)/System/Library/Frameworks/System.framework/PrivateHeaders/bsd\
-               -I$(NEXT_ROOT)$(SYSTEM_LIBRARY_DIR)/Frameworks/System.framework/PrivateHeaders/bsd
+PROJECT_HEADERS = sadc.h
+
+
 
 NEXTSTEP_OBJCPLUS_COMPILER = /usr/bin/cc
 WINDOWS_OBJCPLUS_COMPILER = $(DEVDIR)/gcc

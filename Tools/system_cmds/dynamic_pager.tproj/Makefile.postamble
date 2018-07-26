@@ -124,3 +124,7 @@ backing_store_triggers_server.c: \
 	cp $(SRCROOT)/dynamic_pager.tproj/backing_store_triggers.defs $(SYM_DIR);
 	cd $(SYM_DIR) && \
 	$(MIG) $(MIGFLAGS) -user /dev/null -server backing_store_triggers_server.c -sheader backing_store_triggers_server.h backing_store_triggers.defs
+
+install-man-page:
+	install -d $(DSTROOT)/usr/share/man/man8
+	install -c -m 444 dynamic_pager.8 $(DSTROOT)/usr/share/man/man8/dynamic_pager.8

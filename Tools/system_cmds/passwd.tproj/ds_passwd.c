@@ -3,21 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -35,6 +36,7 @@
 #include <netdb.h>
 #include <ctype.h>
 #include <string.h>
+#include <sys/dirent.h>
 
 #include <DirectoryService/DirServices.h>
 #include <DirectoryService/DirServicesConst.h>
@@ -49,12 +51,13 @@
 //-------------------------------------------------------------------------------------
 
 void
-ds_getpasswd(char *name, int isroot, int wasroot, int changePassOnSelf, char **old_clear, char **new_clear)
+ds_getpasswd(const char *loginUser, char *name, int isroot, int wasroot, int changePassOnSelf, char **old_clear, char **new_clear)
 {
 	int tries, len;
 	char *p;
 	static char obuf[kMaxPassword];
 	static char nbuf[kMaxPassword];
+	char prompt[MAXNAMLEN + 16];
 	
 	printf("Changing password for %s.\n", name);
 
@@ -62,7 +65,16 @@ ds_getpasswd(char *name, int isroot, int wasroot, int changePassOnSelf, char **o
 
 	if (isroot == 0)
 	{
-		p = getpass( changePassOnSelf ? "Old password:" : "Administrator password:" );
+		if ( changePassOnSelf )
+		{
+			strcpy( prompt, "Old password:" );
+		}
+		else
+		{
+			snprintf( prompt, sizeof(prompt), "password for %s:", loginUser );
+		}
+		
+		p = getpass( prompt );
 		snprintf( obuf, sizeof(obuf), "%s", p );
 	}
 	
@@ -183,7 +195,7 @@ ds_passwd(char *uname, char *locn)
 		if ( getuid() == 0 )
 			isroot = 1;
 		
-		ds_getpasswd( uname, isroot, wasroot, changePassOnSelf, &old_clear, &new_clear );
+		ds_getpasswd( loginUser, uname, isroot, wasroot, changePassOnSelf, &old_clear, &new_clear );
 		
 		status = dsGetDirNodeName( dsRef, tDataBuff, 1, &nodeName );
 		if (status != eDSNoErr) continue;

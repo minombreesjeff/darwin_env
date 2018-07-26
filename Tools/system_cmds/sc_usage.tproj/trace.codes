@@ -693,7 +693,9 @@
 0x40c025c 	BSC_getpgid
 0x40c0260 	BSC_setprivexec
 0x40c0264 	BSC_pread
+0x40e0264       BSC_pread_extended
 0x40c0268 	BSC_pwrite
+0x40e0268       BSC_pwrite_extended
 0x40c026c 	BSC_nfssvc
 0x40c0270 	BSC_getdirentries
 0x40c0274 	BSC_statfs
