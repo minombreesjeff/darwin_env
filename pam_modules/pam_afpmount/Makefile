@@ -22,28 +22,12 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 #
-#	$FreeBSD: src/lib/libpam/modules/Makefile,v 1.14 2001/08/02 19:01:02 markm Exp $
+#	$FreeBSD: src/lib/libpam/modules/pam_afpmount/Makefile,v 1.8 2001/08/26 17:41:13 markm Exp $
 
-SUBDIR+=	pam_afpmount
-SUBDIR+=	pam_deny
-SUBDIR+=	pam_ftp
-.if defined(MAKE_KERBEROS4) && !defined(NOCRYPT) && !defined(NO_OPENSSL)
-SUBDIR+=	pam_kerberosIV
-.endif
-.if defined(MAKE_KERBEROS5) && !defined(NOCRYPT) && !defined(NO_OPENSSL)
-SUBDIR+=	pam_krb5
-.endif
-SUBDIR+=	pam_nologin
-SUBDIR+=	pam_opie
-SUBDIR+=	pam_permit
-SUBDIR+=	pam_radius
-SUBDIR+=	pam_rootok
-SUBDIR+=	pam_securetty
-.if !defined(NOCRYPT) && !defined(NO_OPENSSL) && !defined(NO_OPENSSH)
-SUBDIR+=	pam_ssh
-.endif
-SUBDIR+=	pam_tacplus
-SUBDIR+=	pam_unix
-SUBDIR+=	pam_wheel
+LIB=		pam_afpmount
+SHLIB_NAME=	pam_afpmount.so
+SRCS=		pam_afpmount.c
+DPADD=		${LIBKRB} ${LIBCRYPTO} ${LIBCOM_ERR}
+LDADD=		-lkrb -lcrypto -lcom_err
 
-.include <bsd.subdir.mk>
+.include <bsd.lib.mk>
