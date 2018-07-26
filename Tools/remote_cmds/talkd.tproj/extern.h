@@ -1,8 +1,5 @@
-/*	$FreeBSD: src/usr.sbin/timed/timedc/extern.h,v 1.2 2007/11/07 10:53:41 kevlo Exp $	*/
-
-/*-
- * Copyright (c) 1993
- *	The Regents of the University of California.  All rights reserved.
+/*
+ * Copyright (c) 2002 M. Warner Losh.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -12,13 +9,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -32,23 +22,19 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)extern.h	8.1 (Berkeley) 6/6/93
+ * $FreeBSD: src/libexec/talkd/extern.h,v 1.3 2003/04/03 05:13:27 jmallett Exp $
  */
 
-#if __STDC__
-struct tsp;
-#endif
-
-extern struct cmd cmdtab[];
-
-void	bytehostorder(struct tsp *);
-void	bytenetorder(struct tsp *);
-void	clockdiff(int, char *[]);
-void	help(int, char *[]);
-void	intr(int);
-void	makeargv(void);
-void	msite(int, char *[]);
-int	priv_resources(void);
-void	quit(void);
-void	testing(int, char *[]);
-void	tracing(int, char *[]);
+int	announce(CTL_MSG *, const char *);
+int	delete_invite(u_int32_t);
+void	do_announce(CTL_MSG *, CTL_RESPONSE *);
+CTL_MSG	*find_match(CTL_MSG *request);
+CTL_MSG	*find_request(CTL_MSG *request);
+int	find_user(const char *name, char *tty);
+void	insert_table(CTL_MSG *, CTL_RESPONSE *);
+int	new_id(void);
+int	print_mesg(const char *, CTL_MSG *, const char *);
+void	print_request(const char *, CTL_MSG *);
+void	print_response(const char *, CTL_RESPONSE *);
+void	process_request(CTL_MSG *mp, CTL_RESPONSE *rp);
+void	timeout(int sig);
