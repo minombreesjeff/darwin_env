@@ -233,22 +233,6 @@ CReplicaFile::CReplicaFile( bool inLoadCustomFile, const char *inFilePath )
 
 
 //----------------------------------------------------------------------------------------------------
-//	CReplicaFile
-//
-//	Copy constructor
-//----------------------------------------------------------------------------------------------------
-
-CReplicaFile::CReplicaFile( const CReplicaFile &inReplicaFile )
-{
-	mReplicaDict = CFDictionaryCreateMutableCopy( kCFAllocatorDefault, 0, inReplicaFile.mReplicaDict );
-	mReplicaArray = NULL;
-	mDirty = inReplicaFile.mDirty;
-	mReplicaFileModDate = inReplicaFile.mReplicaFileModDate;
-	strlcpy( mSelfName, inReplicaFile.mSelfName, sizeof(mSelfName) );
-}
-
-
-//----------------------------------------------------------------------------------------------------
 //	~CReplicaFile
 //
 //	Destructor
@@ -555,7 +539,7 @@ CReplicaFile::RefreshIfNeeded( void )
 	
 	refresh = this->FileHasChanged();
 	
-	if ( refresh && this->Dirty() )
+	if ( refresh && mDirty )
 	{
 		// need to resolve conflict between file and memory copies
 		// SaveXMLData handles merging
@@ -1868,18 +1852,6 @@ CReplicaFile::stringToPasswordRecRef(const char *inRefStr, PWFileEntry *outPassw
     }
     
     return result;
-}
-
-
-bool CReplicaFile::Dirty( void )
-{
-	return mDirty;
-}
-
-
-void CReplicaFile::SetDirty( bool inDirty )
-{
-	mDirty = inDirty;
 }
 
 

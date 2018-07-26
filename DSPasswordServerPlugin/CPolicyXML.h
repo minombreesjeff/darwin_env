@@ -53,9 +53,7 @@ class CPolicyXML : public CPolicyBase
 		virtual void							GetPolicy( PWAccessFeatures *outPolicy );
 		virtual char *							GetPolicyAsSpaceDelimitedData( void );
 		virtual void							SetPolicy( PWAccessFeatures *inPolicy );
-		virtual void							SetPolicyExtra( PWAccessFeatures *inPolicy, PWMoreAccessFeatures *inExtraPolicy );
 		virtual void							SetPolicy( CFDictionaryRef inPolicyDict );
-		virtual void							AddMiscPolicies( const char *inPolicyStr );
 		
 	protected:
 		
@@ -63,7 +61,6 @@ class CPolicyXML : public CPolicyBase
 		virtual int								ConvertStructToPropertyListPolicy( void );
 		
 		PWAccessFeatures mPolicy;
-		PWMoreAccessFeatures mExtraPolicy;
 		unsigned long mWarnOfExpirationMinutes;
 		unsigned long mWarnOfDisableMinutes;
 		time_t mProjectedPasswordExpireDate;

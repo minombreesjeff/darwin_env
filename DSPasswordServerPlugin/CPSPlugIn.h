@@ -183,9 +183,7 @@ protected:
     sInt32				DoAuthMethodPush			(	sDoDirNodeAuth *inData,
 														sPSContextData *inContext,
 														tDataBufferPtr outBuf );
-	sInt32				DoAuthMethodNTUserSessionKey(	sInt32 inAuthenticatorAuthResult,
-														uInt32 inAuthMethod,
-														sDoDirNodeAuth *inData,
+	sInt32				DoAuthMethodNTUserSessionKey(	sDoDirNodeAuth *inData,
 														sPSContextData *inContext,
 														tDataBufferPtr outBuf );
 	sInt32				DoAuthMethodMSChapChangePass(	sDoDirNodeAuth *inData, sPSContextData *inContext );
@@ -237,8 +235,7 @@ protected:
                                                         
     bool				RequiresSASLAuthentication	(	uInt32 inAuthMethodConstant );
 	
-    sInt32				GetAuthMethodSASLName		(	sPSContextData *inContext, 
-														uInt32 inAuthMethodConstant,
+    sInt32				GetAuthMethodSASLName		(	uInt32 inAuthMethodConstant,
                                                         bool inAuthOnly,
                                                         char *outMechName,
 														bool *outMethodCanSetPassword );
