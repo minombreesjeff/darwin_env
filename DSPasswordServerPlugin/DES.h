@@ -25,7 +25,7 @@
 #ifndef __DEStypesLocal__
 #define __DEStypesLocal__
 
-#include <sys/types.h>
+#include <stdint.h>
 #include <TargetConditionals.h>
 
 typedef int32_t KeysArray[32];			// Encryption Key array type

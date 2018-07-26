@@ -148,7 +148,7 @@ key_fingerprint(Key *k)
 	static char retval[(EVP_MAX_MD_SIZE+1)*3];
 	unsigned char *blob = NULL;
 	unsigned int len = 0;
-	unsigned int nlen, elen;
+	int nlen, elen;
 
 	switch (k->type) {
 	case KEY_RSA:
@@ -333,7 +333,8 @@ key_write(Key *key, FILE *f)
 			error("key_write: failed for RSA key");
 		}
 	} else if (key->type == KEY_DSA && key->dsa != NULL) {
-		unsigned int len, n;
+		unsigned int len;
+		int n;
 		unsigned char *blob;
 		char *uu;
 		dsa_make_key_blob(key, &blob, &len);

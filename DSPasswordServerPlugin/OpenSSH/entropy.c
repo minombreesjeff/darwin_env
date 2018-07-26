@@ -76,7 +76,7 @@ void pwsf_verbose(const char *fmt,...)
 }
 
 
-//RCSID("$Id: entropy.c,v 1.5.22.1 2006/03/22 23:30:33 snsimon Exp $");
+//RCSID("$Id: entropy.c,v 1.6 2005/08/19 23:20:22 snsimon Exp $");
 
 #ifndef offsetof
 # define offsetof(type, member) ((size_t) &((type *)0)->member)
@@ -588,7 +588,7 @@ prng_check_seedfile(char *filename) {
 void
 prng_write_seedfile(void) {
 	int fd;
-	unsigned char seed[1024];
+	char seed[1024];
 	char filename[1024];
 	struct passwd *pw;
 
@@ -615,7 +615,7 @@ prng_write_seedfile(void) {
 
 	debug("writing PRNG seed to file %.100s", filename);
 
-	RAND_bytes(seed, sizeof(seed));
+	RAND_bytes((unsigned char *)seed, sizeof(seed));
 
 	/* Don't care if the seed doesn't exist */
 	prng_check_seedfile(filename);

@@ -37,9 +37,10 @@
 #include "DSMutexSemaphore.h"
 #include "CAuthFileBase.h"
 #include "SASLCode.h"
+#include "PSUtilitiesDefs.h"
 
 extern "C" {
-#include "saslutil.h"
+#include <sasl/saslutil.h>
 
 #if COMPILE_WITH_RSA_LOAD
     #include "bufaux.h"
@@ -52,7 +53,6 @@ extern "C" {
 
 #define kFixedDESChunk			8
 #define kMaxWriteSuspendTime	2			// seconds
-#define kPWUserIDSize			4*sizeof(long)
 
 /* Version identification string for identity files. */
 #define AUTHFILE_ID_STRING "SSH PRIVATE KEY FILE FORMAT 1.1\n"
@@ -144,7 +144,7 @@ CAuthFileBase::validatePasswordFile(void)
         {
             if ( pwFileHeader.signature != kPWFileSignature ||
                  pwFileHeader.version != kPWFileVersion ||
-                 sb.st_size != sizeof(PWFileHeader) + pwFileHeader.numberOfSlotsCurrentlyInFile * sizeof(PWFileEntry) )
+                 sb.st_size != (long)(sizeof(PWFileHeader) + pwFileHeader.numberOfSlotsCurrentlyInFile * sizeof(PWFileEntry)) )
             {
                 err = -1;
             }
@@ -243,8 +243,10 @@ CAuthFileBase::createPasswordFile(void)
         
         this->closePasswordFile();
         
-        if ( err != 0 )
-            remove( fFilePath );
+        if ( err == 0 )
+			this->validateFiles();
+		else
+            unlink( fFilePath );
     }
     else
     {
@@ -596,7 +598,7 @@ CAuthFileBase::setHeader( const PWFileHeader *inHeader )
 {
     int err = -1;
     long writeCount;
-	
+    
     if ( inHeader == NULL )
         return -1;
 	if ( inHeader->signature != kPWFileSignature )
@@ -1056,24 +1058,15 @@ CAuthFileBase::expandDatabase( unsigned long inNumSlots, long *outSlot )
 		}
 		
 		// update header
-		if ( err == 0 )
-			err = fseek( pwFile, 0, SEEK_SET );
-		if ( err == 0 )
+		pwFileHeader.numberOfSlotsCurrentlyInFile += inNumSlots;
+		if ( outSlot != NULL )
 		{
-			pwFileHeader.numberOfSlotsCurrentlyInFile += inNumSlots;
-			if ( outSlot != NULL )
-			{
-				pwFileHeader.deepestSlotUsed++;
-				pwFileHeader.deepestSlotUsedByThisServer = pwFileHeader.deepestSlotUsed;
-				*outSlot = pwFileHeader.deepestSlotUsed;
-			}
-			
-			writeCount = fwrite( &pwFileHeader, sizeof(PWFileHeader), 1, pwFile );
-			if ( writeCount != 1 )
-			{
-				err = -1;
-			}
+			pwFileHeader.deepestSlotUsed++;
+			pwFileHeader.deepestSlotUsedByThisServer = pwFileHeader.deepestSlotUsed;
+			*outSlot = pwFileHeader.deepestSlotUsed;
 		}
+		
+		err = this->setHeader( &pwFileHeader );
 	}
 	
 	pwSignal();
@@ -1159,7 +1152,7 @@ CAuthFileBase::nextSlot(void)
 				while ( err == -1 && curpos > 0 );
 				pwSignal();
 				this->closeFreeListFile();
-                    }
+            }
 			
             // if freelist is empty, expand the file
             if ( err != 0 || slot == 0 )
@@ -1235,63 +1228,82 @@ CAuthFileBase::getRandom(void)
 int
 CAuthFileBase::addRSAKeys(unsigned int inBitCount)
 {
-    char commandStr[256];
-    FILE *aFile;
-    struct stat sb;
-    int result;
-	unsigned char *publicKey;
-	unsigned long publicKeyLen;
-	unsigned char *privateKey;
-	unsigned long privateKeyLen;
+	FILE *aFile = NULL;
+    int result = -1;
+	unsigned char *publicKey = NULL;
+	unsigned long publicKeyLen = 0;
+	unsigned char *privateKey = NULL;
+	unsigned long privateKeyLen = 0;
+	char bitCountStr[256] = {0,};
+    char tempFileStr[256] = {0,};
+    char publicKeyFileStr[256] = {0,};
+    struct stat sb = {0};
+	char *argv[] = {	"/usr/bin/ssh-keygen",
+						"-t", "rsa1",
+						"-b", bitCountStr,
+						"-f", tempFileStr,
+						"-P", "",
+						NULL };
 	
-    // make the keys
-    sprintf(commandStr, "/usr/bin/ssh-keygen -t rsa1 -b %u -f %s -P \"\"", inBitCount, kTempKeyFile);
-    aFile = popen( commandStr, "r" );
-	if ( !aFile )
-        return -1;
-    
-    // read the data back (but there's nothing to read)
-    
-    pclose(aFile);
-    
-    // stat the key file to make sure we created it
-    result = stat( kTempKeyFile, &sb );
-    if ( result != 0 )
-        return result;
-        
-    // add the private key
-    aFile = fopen( kTempKeyFile, "r" );
-    if ( !aFile )
-        return -1;
-    
-    privateKeyLen = (unsigned long)sb.st_size;
-	privateKey = (unsigned char *) malloc( privateKeyLen + 1 );
-    fread((char*)privateKey, (unsigned long)sb.st_size, 1, aFile);
-    fclose(aFile);
-    
-    // stat the public key file to make sure we created it
-    sprintf(commandStr, "%s.pub", kTempKeyFile);
-    result = stat( commandStr, &sb );
-    if ( result != 0 )
-        return result;
-    
-    // add the public key
-    aFile = fopen( commandStr, "r" );
-    if ( !aFile )
-        return -1;
-    
-    publicKeyLen = (unsigned long)sb.st_size;
-    publicKey = (unsigned char *) malloc( publicKeyLen + 1 );
-    fread(publicKey, (unsigned long)sb.st_size, 1, aFile);
-    fclose(aFile);
-    
-    result = this->addRSAKeys( publicKey, publicKeyLen, privateKey, privateKeyLen );
+	// setup command parameters
+	sprintf( bitCountStr, "%u", inBitCount );
+	strcpy( tempFileStr, kTempKeyTemplate );
+	if ( mktemp(tempFileStr) == NULL )
+		return -1;
+	
+	do
+	{
+		// make the keys
+		if ( pwsf_LaunchTask("/usr/bin/ssh-keygen", argv) != EX_OK )
+			break;
+		
+		// stat the key file, get the length
+		if ( lstat(tempFileStr, &sb) != 0 )
+			break;
+		
+		if ( !S_ISREG(sb.st_mode) || sb.st_nlink != 1 )
+			break;
+
+		// add the private key
+		aFile = fopen( tempFileStr, "r" );
+		if ( aFile != NULL )
+		{
+			privateKeyLen = (unsigned long)sb.st_size;
+			privateKey = (unsigned char *) malloc( privateKeyLen + 1 );
+			fread( (char*)privateKey, (unsigned long)sb.st_size, 1, aFile );
+			fclose( aFile );
+			
+			// stat the public key file, get the length
+			sprintf( publicKeyFileStr, "%s.pub", tempFileStr );
+			if ( lstat(publicKeyFileStr, &sb) != 0 )
+				break;
+			
+			// add the public key
+			aFile = fopen( publicKeyFileStr, "r" );
+			if ( aFile != NULL )
+			{
+				publicKeyLen = (unsigned long)sb.st_size;
+				publicKey = (unsigned char *) malloc( publicKeyLen + 1 );
+				fread( publicKey, (unsigned long)sb.st_size, 1, aFile );
+				fclose( aFile );
+				
+				result = this->addRSAKeys( publicKey, publicKeyLen, privateKey, privateKeyLen );
+			}
+		}
+	}
+	while ( 0 );
 	
 	// we are done with these
-    remove(commandStr);
-    remove(kTempKeyFile);
-    free(privateKey);
-	free(publicKey);
+	if ( publicKeyFileStr[0] != '\0' )
+		unlink( publicKeyFileStr );
+	if ( tempFileStr[0] != '\0' )
+		unlink( tempFileStr );
+	if ( privateKey != NULL ) {
+		bzero( privateKey, privateKeyLen );
+		free( privateKey );
+	}
+	if ( publicKey != NULL )
+		free( publicKey );
 	
     return result;
 }
@@ -1623,8 +1635,8 @@ CAuthFileBase::setPasswordAtSlot(PWFileEntry *passwordRec, long slot, bool obfus
 {
     long offset;
     int err = -1;
-    int writeCount;	
-	unsigned int encodeLen;
+    int writeCount;
+    unsigned int encodeLen;
 	
 	if ( fReadOnlyFileSystem )
 		return -1;
@@ -1641,7 +1653,7 @@ CAuthFileBase::setPasswordAtSlot(PWFileEntry *passwordRec, long slot, bool obfus
         err = this->openPasswordFile( "r+", false );
         if ( err == 0 && pwFile )
         {
-            offset = fUtils.slotToOffset( slot );
+            offset = pwsf_slotToOffset( slot );
             
             err = fseek( pwFile, offset, SEEK_SET );
             if ( err == 0 )
@@ -1653,12 +1665,12 @@ CAuthFileBase::setPasswordAtSlot(PWFileEntry *passwordRec, long slot, bool obfus
                     encodeLen = sizeof(passwordRec->passwordStr);
                 
 				if ( obfuscate )
-					fUtils.DESEncode( passwordRec->passwordStr, encodeLen);
-				
+					pwsf_DESEncode(passwordRec->passwordStr, encodeLen);
+					
                 writeCount = fwrite( passwordRec, sizeof(PWFileEntry), 1, pwFile );
 				
                 if ( obfuscate )
-					fUtils.DESDecode( passwordRec->passwordStr, encodeLen);
+					pwsf_DESDecode(passwordRec->passwordStr, encodeLen);
 				
 				if ( writeCount == 1 )
 					fflush( pwFile );
@@ -1769,7 +1781,7 @@ CAuthFileBase::setPasswordAtSlotFast(PWFileEntry *passwordRec, long slot)
 		err = this->openPasswordFile( "r+", false );
 		if ( err == 0 && pwFile )
 		{
-			offset = fUtils.slotToOffset( slot );
+			offset = pwsf_slotToOffset( slot );
 			
 			err = fseek( pwFile, offset, SEEK_SET );
 			if ( err == 0 )
@@ -1780,7 +1792,7 @@ CAuthFileBase::setPasswordAtSlotFast(PWFileEntry *passwordRec, long slot)
 				if ( encodeLen > sizeof(passwordRec->passwordStr) )
 					encodeLen = sizeof(passwordRec->passwordStr);
 								
-				fUtils.DESEncode( passwordRec->passwordStr, encodeLen);
+				pwsf_DESEncode(passwordRec->passwordStr, encodeLen);
 					
 				writeCount = fwrite( passwordRec, sizeof(PWFileEntry), 1, pwFile );
 				if ( writeCount == 1 )
@@ -1843,6 +1855,9 @@ CAuthFileBase::addHashes( const char *inRealm, PWFileEntry *inOutPasswordRec )
 	// KERBEROS			[ 5 ]
 	// Kerberos doesn't currently store a hash here, we just store the principal name.
 	// combined with the domain, we can call the KDC to get the kerberos hashes
+	
+	// SALTED_SHA1		[ 6 ]
+	pwsf_addHashSaltedSHA1( inOutPasswordRec );
 }
 #endif
 
@@ -1857,7 +1872,7 @@ CAuthFileBase::addHashDigestMD5( const char *inRealm, PWFileEntry *inOutPassword
 	// DIGEST-MD5		[ 2 ]
 	pwLen = strlen(inOutPasswordRec->passwordStr);
 	
-	this->passwordRecRefToString( inOutPasswordRec, userID );
+	pwsf_passwordRecRefToString( inOutPasswordRec, userID );
 	DigestCalcSecret( (unsigned char *)userID,
 						(unsigned char *)inRealm,
 						(unsigned char *)inOutPasswordRec->passwordStr,
@@ -1886,7 +1901,7 @@ CAuthFileBase::addHashCramMD5( PWFileEntry *inOutPasswordRec )
 	strncpy( inOutPasswordRec->digest[kPWHashSlotCRAM_MD5].method, "*cmusaslsecretCRAM-MD5", SASL_MECHNAMEMAX );
 	inOutPasswordRec->digest[kPWHashSlotCRAM_MD5].method[SASL_MECHNAMEMAX] = '\0';
 	
-	this->getHashCramMD5( (unsigned char *)inOutPasswordRec->passwordStr,
+	pwsf_getHashCramMD5( (unsigned char *)inOutPasswordRec->passwordStr,
 						  strlen(inOutPasswordRec->passwordStr),
 						  (unsigned char *)&inOutPasswordRec->digest[kPWHashSlotCRAM_MD5].digest[1],
 						  &pwLen );
@@ -1894,19 +1909,6 @@ CAuthFileBase::addHashCramMD5( PWFileEntry *inOutPasswordRec )
 	inOutPasswordRec->digest[kPWHashSlotCRAM_MD5].digest[0] = (unsigned char)pwLen;
 }
 
-
-void
-pwsf_getHashCramMD5(const unsigned char *inPassword, long inPasswordLen, unsigned char *outHash, unsigned long *outHashLen )
-{
-	HMAC_MD5_STATE state;
-	
-	if ( inPassword == NULL || outHash == NULL || outHashLen == NULL )
-		return;
-	
-	pwsf_hmac_md5_precalc( &state, inPassword, inPasswordLen );
-	*outHashLen = sizeof(HMAC_MD5_STATE);
-	memcpy( outHash, &state, sizeof(HMAC_MD5_STATE) );
-}
 
 void
 CAuthFileBase::getHashCramMD5( const unsigned char *inPassword, long inPasswordLen, unsigned char *outHash, unsigned long *outHashLen )
@@ -1953,7 +1955,7 @@ CAuthFileBase::getPasswordRec(long slot, PWFileEntry *passRec, bool unObfuscate)
         err = this->openPasswordFile( fReadOnlyFileSystem ? "r" : "r+", false );
         if ( err == 0 && pwFile )
         {
-            offset = fUtils.slotToOffset( slot );
+            offset = pwsf_slotToOffset( slot );
             
             if ( pwFileBasePtr )
             {
@@ -1979,7 +1981,7 @@ CAuthFileBase::getPasswordRec(long slot, PWFileEntry *passRec, bool unObfuscate)
             
             // recover the password
 			if ( unObfuscate && !PWRecIsZero(*passRec) )
-				fUtils.DESAutoDecode(  passRec->passwordStr );
+				pwsf_DESAutoDecode( passRec->passwordStr );
         }
         pwSignal();
     }
@@ -2103,7 +2105,7 @@ CAuthFileBase::freeSlot(PWFileEntry *passwordRec)
 void
 CAuthFileBase::passwordRecRefToString(PWFileEntry *inPasswordRec, char *outRefStr)
 {
-	fUtils.passwordRecRefToString( inPasswordRec, outRefStr );
+	pwsf_passwordRecRefToString( inPasswordRec, outRefStr );
 }
         
 
@@ -2116,7 +2118,7 @@ CAuthFileBase::passwordRecRefToString(PWFileEntry *inPasswordRec, char *outRefSt
 int
 CAuthFileBase::stringToPasswordRecRef(const char *inRefStr, PWFileEntry *outPasswordRec)
 {
-    return fUtils.stringToPasswordRecRef( inRefStr, outPasswordRec );
+    return pwsf_stringToPasswordRecRef( inRefStr, outPasswordRec );
 }
 
 
@@ -2165,7 +2167,7 @@ CAuthFileBase::getUserIDFromName(const char *inName, bool inAllUsers, long inMax
                 buffRemaining--;
             }
             
-			fUtils.passwordRecRefToString( &passRec, theAdminID );
+			pwsf_passwordRecRefToString( &passRec, theAdminID );
             len = strlen( theAdminID );
             
             if ( buffRemaining <= len )
@@ -2214,8 +2216,7 @@ CAuthFileBase::getUserRecordFromPrincipal(const char *inPrincipal, PWFileEntry *
 	thePrincDomain++;
 	
 	// save the name as a c-str
-	strncpy( thePrincName, inPrincipal, len );
-	thePrincName[len] = '\0';
+	strlcpy( thePrincName, inPrincipal, len + 1 );
 	
 	err = this->getHeader( &dbHeader, true );
 	if ( err != 0 && err != -3 )
@@ -2304,11 +2305,11 @@ CAuthFileBase::AddPassword( const char *inUser, const char *inPassword, char *ou
     anEntry.access.maxChars = 0;
     
     strcpy( anEntry.usernameStr, inUser );
-    strncpy( anEntry.passwordStr, inPassword, sizeof(anEntry.passwordStr) );
+    strlcpy( anEntry.passwordStr, inPassword, sizeof(anEntry.passwordStr) );
  
 	result = this->addPassword( &anEntry );
 	
-    fUtils.passwordRecRefToString( &anEntry, refStr );
+    pwsf_passwordRecRefToString( &anEntry, refStr );
     strcpy( outPasswordRef, refStr );
     
     return result;
@@ -2343,7 +2344,7 @@ CAuthFileBase::NewPasswordSlot( const char *inUser, const char *inPassword, char
 
 	result = this->initPasswordRecord( inOutUserRec );
 
-	fUtils.passwordRecRefToString( inOutUserRec, outPasswordRef );
+	pwsf_passwordRecRefToString( inOutUserRec, outPasswordRef );
 
 	return result;
 }
@@ -2893,114 +2894,6 @@ CAuthFileBase::DisableStatus(PWFileEntry *inOutPasswordRec, Boolean *outChanged,
 }
 
 
-//------------------------------------------------------------------------------------
-//	pwsf_TestDisabledStatus
-//
-//	Returns: kAuthUserDisabled or kAuthOK
-//
-//  <inOutFailedLoginAttempts> is set to 0 if the failed login count is exceeded.
-//------------------------------------------------------------------------------------
-
-int pwsf_TestDisabledStatus( PWAccessFeatures *inAccess, PWGlobalAccessFeatures *inGAccess, struct tm *inCreationDate, struct tm *inLastLoginTime, UInt16 *inOutFailedLoginAttempts )
-{
-	PWDisableReasonCode ignored;
-	
-	return pwsf_TestDisabledStatusWithReasonCode( inAccess, inGAccess, inCreationDate, inLastLoginTime,
-				inOutFailedLoginAttempts, &ignored );
-}
-
-
-//------------------------------------------------------------------------------------
-//	pwsf_TestDisabledStatusWithReasonCode
-//
-//	Returns: kAuthUserDisabled or kAuthOK
-//
-//  <inOutFailedLoginAttempts> is set to 0 if the failed login count is exceeded.
-//  <outReasonCode> is only valid if the return value is kAuthUserDisabled.
-//------------------------------------------------------------------------------------
-
-int pwsf_TestDisabledStatusWithReasonCode( PWAccessFeatures *inAccess, PWGlobalAccessFeatures *inGAccess, struct tm *inCreationDate, struct tm *inLastLoginTime, UInt16 *inOutFailedLoginAttempts, PWDisableReasonCode *outReasonCode )
-{
-	bool setToDisabled = false;
-	
-	*outReasonCode = kPWDisabledNotSet;
-	
-    // test policies in the user record
-	if ( inAccess->maxFailedLoginAttempts > 0 )
-	{
-		if ( *inOutFailedLoginAttempts >= inAccess->maxFailedLoginAttempts )
-		{
-			// for failed login attempts, if the maximum is exceeded, set the isDisabled flag on the record
-			// and reset <maxFailedLoginAttempts> so that the account can be re-enabled later.
-			*inOutFailedLoginAttempts = 0;
-			*outReasonCode = kPWDisabledTooManyFailedLogins;
-			setToDisabled = true;
-		}
-    }
-	else
-	// test policies in the global record
-    if ( inGAccess->maxFailedLoginAttempts > 0 &&
-         *inOutFailedLoginAttempts >= inGAccess->maxFailedLoginAttempts )
-    {
-        // for failed login attempts, if the maximum is exceeded, set the isDisabled flag on the record
-        // and reset <maxFailedLoginAttempts> so that the account can be re-enabled later.
-		*inOutFailedLoginAttempts = 0;
-		*outReasonCode = kPWDisabledTooManyFailedLogins;
-		setToDisabled = true;
-    }
-	
-	// usingHardExpirationDate
-	if ( inAccess->usingHardExpirationDate )
-	{
-		if ( TimeIsStale(&(inAccess->hardExpireDateGMT)) )
-		{
-			*outReasonCode = kPWDisabledExpired;
-			setToDisabled = true;
-		}
-	}
-	else
-	if ( inGAccess->usingHardExpirationDate && TimeIsStale(&inGAccess->hardExpireDateGMT) )
-	{
-		*outReasonCode = kPWDisabledExpired;
-		setToDisabled = true;
-	}
-	
-	// maxMinutesUntilDisabled
-	if ( inAccess->maxMinutesUntilDisabled > 0 )
-	{
-		if ( LoginTimeIsStale((BSDTimeStructCopy *)inCreationDate, inAccess->maxMinutesUntilDisabled) )
-		{
-			*outReasonCode = kPWDisabledExpired;
-			setToDisabled = true;
-		}
-	}
-	else
-	if ( inGAccess->maxMinutesUntilDisabled > 0 && LoginTimeIsStale((BSDTimeStructCopy *)inCreationDate, inGAccess->maxMinutesUntilDisabled) )
-	{
-		*outReasonCode = kPWDisabledExpired;
-		setToDisabled = true;
-	}
-	
-	if ( inAccess->maxMinutesOfNonUse > 0 )
-	{
-		if ( LoginTimeIsStale( (BSDTimeStructCopy *)inLastLoginTime, inAccess->maxMinutesOfNonUse) )
-		{
-			*outReasonCode = kPWDisabledInactive;
-			setToDisabled = true;
-		}
-	}
-	else
-    if ( inGAccess->maxMinutesOfNonUse > 0 &&
-		 LoginTimeIsStale( (BSDTimeStructCopy *)inLastLoginTime, inGAccess->maxMinutesOfNonUse) )
-    {
-		*outReasonCode = kPWDisabledInactive;
-		setToDisabled = true;
-    }
-	
-	return ( setToDisabled ? kAuthUserDisabled : kAuthOK );
-}
-
-
 //------------------------------------------------------------------------------------------------
 //	ChangePasswordStatus
 //
@@ -3014,64 +2907,11 @@ CAuthFileBase::ChangePasswordStatus(PWFileEntry *inPasswordRec)
 	
 	if ( inPasswordRec->access.isAdminUser )
 		return kAuthOK;
-	
-	result = pwsf_ChangePasswordStatus( &inPasswordRec->access, &pwFileHeader.access, (struct tm *)&inPasswordRec->modDateOfPassword );
-	
-    return result;
-}
 
+	result = pwsf_ChangePasswordStatus( &inPasswordRec->access, &pwFileHeader.access,
+				(struct tm *)&inPasswordRec->modDateOfPassword );
 
-//------------------------------------------------------------------------------------------------
-//	pwsf_ChangePasswordStatus
-//
-//	Returns: kAuthOK, kAuthPasswordNeedsChange, kAuthPasswordExpired
-//------------------------------------------------------------------------------------------------
-
-int pwsf_ChangePasswordStatus( PWAccessFeatures *inAccess, PWGlobalAccessFeatures *inGAccess, struct tm *inModDateOfPassword )
-{
-	bool needsChange = false;
-	
-	if ( inAccess->newPasswordRequired )
-	{
-		needsChange = true;
-	}
-	else
-	{
-		// usingExpirationDate
-		if ( inAccess->usingExpirationDate )
-		{
-			if ( TimeIsStale( &inAccess->expirationDateGMT ) )
-				needsChange = true;
-		}
-		else
-		if ( inGAccess->usingExpirationDate && TimeIsStale( &inGAccess->expirationDateGMT ) )
-		{
-			needsChange = true;
-		}
-		
-		// maxMinutesUntilChangePassword
-		if ( inAccess->maxMinutesUntilChangePassword > 0 )
-		{
-			if ( LoginTimeIsStale( (BSDTimeStructCopy *)inModDateOfPassword, inAccess->maxMinutesUntilChangePassword ) )
-				needsChange = true;
-		}
-		else
-		if ( inGAccess->maxMinutesUntilChangePassword > 0 && LoginTimeIsStale( (BSDTimeStructCopy *)inModDateOfPassword, inGAccess->maxMinutesUntilChangePassword ) )
-		{
-			needsChange = true;
-		}
-	}
-	
-	if ( needsChange )
-    {
-        if ( inAccess->canModifyPasswordforSelf )
-            return kAuthPasswordNeedsChange;
-        else
-        	return kAuthPasswordExpired;
-    }
-    
-    // not implemented
-    return kAuthOK;
+	return result;
 }
 
 
@@ -3087,130 +2927,6 @@ CAuthFileBase::RequiredCharacterStatus(PWFileEntry *inPasswordRec, const char *i
 	return pwsf_RequiredCharacterStatusExtra( &(inPasswordRec->access), &(pwFileHeader.access), inPasswordRec->usernameStr, inPassword, &(inPasswordRec->extraAccess) );
 }
 
-
-//------------------------------------------------------------------------------------------------
-//	pwsf_RequiredCharacterStatus
-//
-//	Returns: enum of Reposonse Codes (CAuthFileBase.h)
-//------------------------------------------------------------------------------------------------
-
-int pwsf_RequiredCharacterStatus(PWAccessFeatures *access, PWGlobalAccessFeatures *inGAccess, const char *inUsername, const char *inPassword)
-{
-    Boolean requiresAlpha = (access->requiresAlpha || inGAccess->requiresAlpha );
-    Boolean requiresNumeric = (access->requiresNumeric || inGAccess->requiresNumeric );
-    UInt16 minChars = (access->minChars > 0) ? access->minChars : inGAccess->minChars;
-    UInt16 maxChars = (access->maxChars > 0) ? access->maxChars : inGAccess->maxChars;
-	Boolean passwordCannotBeName = (access->passwordCannotBeName || inGAccess->passwordCannotBeName );
-    UInt16 len;
-	int index;
-	
-	if ( inPassword == NULL )
-		return kAuthPasswordTooShort;
-		
-	len = strlen(inPassword);
-    
-	// The password server is not accepting blank passwords because some auth 
-	// methods, such as DIGEST-MD5, will not authenticate them.
-	if ( len == 0 )
-		return kAuthPasswordTooShort;
-	
-    if ( len < minChars )
-        return kAuthPasswordTooShort;
-    
-    if ( maxChars > 0 && len > maxChars )
-        return kAuthPasswordTooLong;
-    
-    if ( requiresAlpha )
-    {
-        Boolean hasAlpha = false;
-        
-        for ( index = 0; index < len; index++ )
-        {
-            if ( isalpha(inPassword[index]) )
-            {
-                hasAlpha = true;
-                break;
-            }
-        }
-        
-        if ( !hasAlpha )
-            return kAuthPasswordNeedsAlpha;
-    }
-	
-    if ( requiresNumeric )
-    {
-        Boolean hasDecimal = false;
-        
-        for ( index = 0; index < len; index++ )
-        {
-            if ( isdigit(inPassword[index]) )
-            {
-                hasDecimal = true;
-                break;
-            }
-        }
-        
-        if ( !hasDecimal )
-            return kAuthPasswordNeedsDecimal;
-    }
-	
-	if ( passwordCannotBeName )
-	{
-		UInt16 unameLen = strlen( inUsername );
-		UInt16 smallerLen = ((len < unameLen) ? len : unameLen);
-		
-		// disallow the smaller substring, case-insensitive
-		if ( strncasecmp( inPassword, inUsername, smallerLen ) == 0 )
-			return kAuthPasswordCannotBeUsername;
-	}
-	
-    return kAuthOK;
-}
-
-
-//------------------------------------------------------------------------------------------------
-//	pwsf_RequiredCharacterStatusExtra
-//
-//	Returns: enum of Response Codes (CAuthFileCPP.h)
-//------------------------------------------------------------------------------------------------
-
-int pwsf_RequiredCharacterStatusExtra(PWAccessFeatures *access, PWGlobalAccessFeatures *inGAccess, const char *inUsername, const char *inPassword, PWMoreAccessFeatures *inExtraFeatures )
-{
-	int responseCode;
-		
-	responseCode = pwsf_RequiredCharacterStatus( access, inGAccess, inUsername, inPassword );
-	if ( responseCode != kAuthOK )
-		return responseCode;
-	
-	UInt16 len = strlen( inPassword );
-	
-	if ( inGAccess->requiresMixedCase || inExtraFeatures->requiresMixedCase )
-	{
-		Boolean hasUpper = false;
-        Boolean hasLower = false;
-        
-        for ( int index = 0; index < len; index++ )
-        {
-            if ( inPassword[index] >= 'A' && inPassword[index] <= 'Z' )
-                hasUpper = true;
-			else
-			if ( inPassword[index] >= 'a' && inPassword[index] <= 'z' )
-				hasLower = true;
-			
-			if ( hasUpper && hasLower )
-				break;
-        }
-        
-        if ( !(hasUpper && hasLower) )
-            return kAuthPasswordNeedsMixedCase;
-	}
-	
-	/*if ( inGAccess->notGuessablePattern || inExtraFeatures->notGuessablePattern )
-	{
-	}*/
-	
-	return kAuthOK;
-}
 
 
 //------------------------------------------------------------------------------------------------
@@ -3272,7 +2988,7 @@ CAuthFileBase::getPasswordRecFromSpillBucket(PWFileEntry *inRec, PWFileEntry *pa
 		return err;
 	
 	// use text-based matching to avoid endian problems
-	fUtils.passwordRecRefToString( inRec, uidStr );
+	pwsf_passwordRecRefToString( inRec, uidStr );
 	
 	do
 	{
@@ -3285,7 +3001,7 @@ CAuthFileBase::getPasswordRecFromSpillBucket(PWFileEntry *inRec, PWFileEntry *pa
 			{
 				pwsf_EndianAdjustPWFileEntry( &recBuff, 1 );
 				if ( unObfuscate )
-					fUtils.DESAutoDecode( recBuff.passwordStr );
+					pwsf_DESAutoDecode(recBuff.passwordStr);
 				
 				// copy the record
 				memcpy( passRec, &recBuff, sizeof(PWFileEntry) );
@@ -3341,7 +3057,7 @@ CAuthFileBase::SaveOverflowRecord( PWFileEntry *inPasswordRec, bool obfuscate, b
 		return err;
 	
 	// use text-based matching to avoid endian problems
-	fUtils.passwordRecRefToString( inPasswordRec, uidStr );
+	pwsf_passwordRecRefToString( inPasswordRec, uidStr );
 	
 	if ( setModDate )
 		fUtils.getGMTime( (struct tm *)&inPasswordRec->modificationDate );
@@ -3352,7 +3068,7 @@ CAuthFileBase::SaveOverflowRecord( PWFileEntry *inPasswordRec, bool obfuscate, b
 		encodeLen = sizeof(inPasswordRec->passwordStr);
 	
 	if ( obfuscate )
-		fUtils.DESEncode( inPasswordRec->passwordStr, encodeLen);
+		pwsf_DESEncode(inPasswordRec->passwordStr, encodeLen);
 	
 	err = -1;
 	do
@@ -3397,7 +3113,7 @@ CAuthFileBase::SaveOverflowRecord( PWFileEntry *inPasswordRec, bool obfuscate, b
 	}
 	
 	if ( obfuscate )
-		fUtils.DESDecode( inPasswordRec->passwordStr, encodeLen );
+		pwsf_DESDecode(inPasswordRec->passwordStr, encodeLen);
 	
 	fclose( fp );
 	

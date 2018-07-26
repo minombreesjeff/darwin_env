@@ -26,24 +26,26 @@
 #define __AUTHFILE_H__
 
 #include <time.h>
+#include <unistd.h>
 #include <CoreFoundation/CoreFoundation.h>
 
 #ifdef __cplusplus
 	extern "C" {
 #endif
 
-#include "sasl.h"
+#include <sasl/sasl.h>
 
-#define kPWFileSignature				'pwfi'
-#define kPWFileVersion					1
-#define kPWFileInitialSlots				512
-#define kPWFileMaxWeakMethods			25
-#define kPWFileMaxDigests				10
-#define kPWFileMaxPublicKeyBytes		1024
-#define kPWFileMaxPrivateKeyBytes		2048
-#define kPWFileMaxHistoryCount			15
-#define kPWFileMaxReplicaName			32
-#define kSMBNTStorageTag				"*cmusaslsecretSMBNT"
+#define kPWFileSignature					'pwfi'
+#define kPWFileVersion						1
+#define kPWFileInitialSlots					512
+#define kPWFileMaxWeakMethods				25
+#define kPWFileMaxDigests					10
+#define kPWFileMaxPublicKeyBytes			1024
+#define kPWFileMaxPrivateKeyBytes			2048
+#define kPWFileMaxHistoryCount				15
+#define kPWFileMaxReplicaName				32
+#define kSMBNTStorageTag					"*cmusaslsecretSMBNT"
+#define kEmptyPasswordAltStr				"<1-empty-insecure-1>"
 
 // password server error strings
 #define kPasswordServerErrPrefixStr			"-ERR "
@@ -52,13 +54,19 @@
 
 // file names and folder paths
 #define kPWDirPath							"/var/db/authserver"
+#define kPWAuxDirPath						"/var/db/authserver/additional-data"
+#define kPWAuxDirName						"additional-data"
 #define kPWFilePath							"/var/db/authserver/authservermain"
 #define kFreeListFilePath					"/var/db/authserver/authserverfree"
 #define kPWHistoryFileName					"histories"
 #define kPWWeakFileStart					"/weakpasswords."
-#define kTempKeyFile						"/tmp/passwordserverKey"
+#define kTempKeyTemplate					"/var/run/passwordserverKeyXXXXXX"
 #define kPWReplicaLocalFile					"/var/db/authserver/authserverreplicas.local"
 #define kPWReplicaPreConfiguredFile			"/var/db/authserver/authserverreplicas.manual"
+#define kPWStatisticsFilePath				"/var/db/authserver/.stats"
+
+// name of our domain socket
+#define kPWUNIXDomainSocketAddress			"/var/run/passwordserver"
 
 // ascii identifiers for password policies
 #define kPWPolicyStr_isDisabled						"isDisabled"
@@ -80,10 +88,20 @@
 #define kPWPolicyStr_maxChars						"maxChars"
 #define kPWPolicyStr_passwordCannotBeName			"passwordCannotBeName"
 #define kPWPolicyStr_isSessionKeyAgent				"isSessionKeyAgent"
+#define kPWPolicyStr_isComputerAccount				"isComputerAccount"
 #define kPWPolicyStr_requiresMixedCase				"requiresMixedCase"
+#define kPWPolicyStr_requiresSymbol					"requiresSymbol"
 #define kPWPolicyStr_notGuessablePattern			"notGuessablePattern"
 #define kPWPolicyStr_warnOfExpirationMinutes		"warnOfExpirationMinutes"
 #define kPWPolicyStr_warnOfDisableMinutes			"warnOfDisableMinutes"
+#define kPWPolicyStr_adminNoChangePasswords			"adminNoChangePasswords"
+#define kPWPolicyStr_adminNoSetPolicies				"adminNoSetPolicies"
+#define kPWPolicyStr_adminNoCreate					"adminNoCreate"
+#define kPWPolicyStr_adminNoDelete					"adminNoDelete"
+#define kPWPolicyStr_adminNoClearState				"adminNoClearState"
+#define kPWPolicyStr_adminNoPromoteAdmins			"adminNoPromoteAdmins"
+#define kPWPolicyStr_adminClass						"adminClass"
+#define kPWPolicyStr_adminAuthorityGroups			"adminAuthorityGroups"
 
 // meta policies
 #define kPWPolicyStr_resetToGlobalDefaults			"resetToGlobalDefaults"
@@ -96,14 +114,29 @@
 #define kPWPolicyStr_projectedPasswordExpireDate	"projectedPasswordExpireDate"
 #define kPWPolicyStr_projectedAccountDisableDate	"projectedAccountDisableDate"
 
-enum 
-{
+// dictionary keys
+#define kPWKey_ScopeOfAuthority						"ScopeOfAuthorityUUIDList"
+#define kPWKey_ComputerAccountOwnerList				"ComputerAccountOwnerList"
+
+enum {
+	kPWByteOrderDiskAndNet				= 0,
+	kPWByteOrderHost					= 1
+};
+
+enum {
 	kPWHashSlotSMB_NT					= 0,
 	kPWHashSlotSMB_LAN_MANAGER			= 1,
 	kPWHashSlotDIGEST_MD5				= 2,
 	kPWHashSlotCRAM_MD5					= 3,
 	kPWHashSlotKERBEROS					= 4,
-	kPWHashSlotKERBEROS_NAME			= 5
+	kPWHashSlotKERBEROS_NAME			= 5,
+	kPWHashSlotSALTED_SHA1				= 6
+};
+
+enum {
+	kPWGroupNotSet						= 0,
+	kPWGroupInSlot						= 1,
+	kPWGroupInFile						= 2
 };
 
 typedef enum PWDisableReasonCode {
@@ -140,6 +173,11 @@ typedef struct PasswordDigest {
     char method[SASL_MECHNAMEMAX + 1];
     char digest[256];
 } PasswordDigest;
+
+typedef struct PWAdminGroupList {
+	uint8_t list_type;
+	uuid_t group_uuid;
+} PWAdminGroupList;
 
 #if TARGET_RT_BIG_ENDIAN
 	#define GlobalHistoryCount(A)			(A).historyCount
@@ -265,16 +303,31 @@ typedef struct PWMoreAccessFeatures {
 	unsigned int doNotReplicate:1;				// the password information does not get replicated
 	unsigned int doNotMerge:1; 					// used for restoring from backup
 	unsigned int requiresMixedCase:1;			// TRUE == password must have one char in [A-Z], and one char in [a-z]
-	unsigned int obfuscationCode:2;				// method of obfuscation for recoverable passwords
-	int unused511:10; 							// reserved
+	unsigned int isComputerAccount:1;			// 0 = normal/user; 1 = computer account
+	unsigned int unused:1;
+	unsigned int requiresSymbol:1;				// TRUE == password must have one char not in [A-Z][a-z] or [0-9]
+	unsigned int adminNoChangePasswords:1;
+	unsigned int adminNoSetPolicies:1;
+	unsigned int adminNoCreate:1;
+	unsigned int adminNoDelete:1;
+	unsigned int adminNoClearState:1;
+	unsigned int adminNoPromoteAdmins:1;
+	unsigned int adminClass:3;
 #else
-	unsigned int unused510:2;
-	unsigned int obfuscationCode:2;				// method of obfuscation for recoverable passwords
+	unsigned int adminNoChangePasswords:1;
+	unsigned int requiresSymbol:1;
+	unsigned int unused:1;
+	unsigned int isComputerAccount:1;			// 0 = normal/user; 1 = computer account
 	unsigned int requiresMixedCase:1;			// TRUE == password must have one char in [A-Z], and one char in [a-z]
 	unsigned int doNotMerge:1; 					// used for restoring from backup
 	unsigned int doNotReplicate:1;				// the password information does not get replicated
 	unsigned int recordIsDead:1;				// death certificate for deleted user
-	int unused511:8; 							// reserved
+	unsigned int adminClass:3;
+	unsigned int adminNoPromoteAdmins:1;
+	unsigned int adminNoClearState:1;
+	unsigned int adminNoDelete:1;
+	unsigned int adminNoCreate:1;
+	unsigned int adminNoSetPolicies:1;
 #endif
 } PWMoreAccessFeatures;
 
@@ -301,7 +354,9 @@ typedef struct PWFileHeader {
 	UInt32 deepestSlotUsedByThisServer;				// deepest slot used in this replica's allocated range
 	UInt32 accessModDate;							// time of last change to access field in seconds from 1970
 	PWGlobalMoreAccessFeatures extraAccess;			// new policy data
-	UInt32 fExtraData[244];							// not used yet, room for future growth - all zero's until used...
+	char properShutdown;							// set to 0 on startup, set to 1 by SIGTERM after saving state
+	char unusedExtraData[3];
+	UInt32 fExtraData[243];							// not used yet, room for future growth - all zero's until used...
 } PWFileHeader;
 
 typedef struct PWFileEntry {
@@ -331,7 +386,11 @@ typedef struct PWFileEntry {
     PasswordDigest digest[kPWFileMaxDigests];	// password digests
     
     char usernameStr[256];						// the username
-	char userdata[426];							// place for users to store their own information
+	uuid_t userGUID;							// The GUID associated with <usernameStr>
+	PWAdminGroupList admingroup;				// groups that an administrator can modify
+	SInt64 changeTransactionID;					// serial number of last update
+	char changeNeedsKerberos;					// set to 1 if the kerberos principal needs replication
+	char userdata[380];							// place for users to store their own information
 	PWDisableReasonCode disableReason;			// indicates why an account was disabled
 	PWMoreAccessFeatures extraAccess;			// password policy data determined by marketing
 } PWFileEntry;
@@ -366,6 +425,42 @@ void pwsf_AppendUTF8StringToArray( const char *inUTF8Str, CFMutableArrayRef inAr
 void pwsf_EndianAdjustTimeStruct( BSDTimeStructCopy *inOutTimeStruct, int native );
 void pwsf_EndianAdjustPWFileHeader( PWFileHeader *inOutHeader, int native );
 void pwsf_EndianAdjustPWFileEntry( PWFileEntry *inOutEntry, int native );
+void pwsf_AddHashesToPWRecord( const char *inRealm, bool inAddNT, bool inAddLM, PWFileEntry *inOutPasswordRec );
+void pwsf_getHashCramMD5(const unsigned char *inPassword, long inPasswordLen, unsigned char *outHash, unsigned long *outHashLen);
+void pwsf_getSaltedSHA1(const unsigned char *inPassword, long inPasswordLen, unsigned char *outHash, unsigned long *outHashLen);
+long pwsf_slotToOffset(long slot);
+void pwsf_getGMTime(struct tm *inOutGMT);
+unsigned long pwsf_getTimeForRef(void);
+unsigned long pwsf_getRandom(void);
+void pwsf_passwordRecRefToString(PWFileEntry *inPasswordRec, char *outRefStr);
+int pwsf_stringToPasswordRecRef(const char *inRefStr, PWFileEntry *outPasswordRec);
+void pwsf_addHashDigestMD5( const char *inRealm, PWFileEntry *inOutPasswordRec );
+void pwsf_addHashCramMD5( PWFileEntry *inOutPasswordRec );
+void pwsf_addHashSaltedSHA1( PWFileEntry *inOutPasswordRec );
+
+// db codecs
+int pwsf_compress_header( PWFileHeader *inHeader, unsigned char **outCompressedHeader, unsigned int *outCompressedHeaderLength );
+int pwsf_compress_slot( PWFileEntry *inPasswordRec, unsigned char **outCompressedRecord, unsigned int *outCompressedRecordLength );
+int pwsf_expand_header( const unsigned char *inCompressedHeader, unsigned int inCompressedHeaderLength, PWFileHeader *outHeader );
+int pwsf_expand_slot( const unsigned char *inCompressedRecord, unsigned int inCompressedRecordLength, PWFileEntry *inOutPasswordRec );
+
+// DES
+void pwsf_DESEncode(void *data, unsigned long inDataLen);
+void pwsf_DESDecode(void *data, unsigned long inDataLen);
+void pwsf_DESAutoDecode(void *data);
+
+// group list functions
+bool pwsf_is_guid( const char *inStr );
+bool pwsf_uuid_for_group( const char *groupName, uuid_t uuid );
+int pwsf_PolicyStringToGroupList( const char *inString, uuid_t *outGroupList[] );
+CFMutableDictionaryRef pwsf_CreateAdditionalDataDictionaryWithUUIDList( int uuidCount, uuid_t *uuidList );
+CFMutableDictionaryRef pwsf_CreateAdditionalDataDictionaryWithOwners( const char *inSlotIDList );
+CFStringRef pwsf_UUIDToString( uuid_t uuid );
+bool pwsf_UUIDStrToUUID(const char *inUUIDStr, uuid_t *outUUID);
+int pwsf_GetGroupList( PWFileEntry *adminRec, uuid_t **outGroupList );
+int pwsf_GetGroupListWithPath( const char *basePath, PWFileEntry *adminRec, uuid_t **outGroupList );
+int pwsf_loadxml( const char *inFilePath, CFMutableDictionaryRef *outPList );
+int pwsf_savexml(const char *inSaveFile, CFDictionaryRef inPList );
 
 // in CAuthFileBase.cpp
 int pwsf_TestDisabledStatus( PWAccessFeatures *inAccess, PWGlobalAccessFeatures *inGAccess, struct tm *inCreationDate, struct tm *inLastLoginTime, UInt16 *inOutFailedLoginAttempts );
@@ -378,8 +473,22 @@ void pwsf_getHashCramMD5(const unsigned char *inPassword, long inPasswordLen, un
 // in CReplicaFile.cpp
 CFDictionaryRef pwsf_GetStatusForReplicas( void );
 
+// in CPolicyBase.cpp
+bool pwsf_ConvertCFDateToBSDTime( CFDateRef inDateRef, struct tm *outBSDDate );
+bool pwsf_ConvertBSDTimeToCFDate( struct tm *inBSDDate, CFDateRef *outDateRef );
+
+// in CPolicyGlobalXML.cpp
+int ConvertGlobalXMLPolicyToSpaceDelimited( const char *inXMLDataStr, char **outPolicyStr );
+int ConvertGlobalSpaceDelimitedPolicyToXML( const char *inPolicyStr, char **outXMLDataStr );
+
+// in CPolicyXML.cpp
+int ConvertXMLPolicyToSpaceDelimited( const char *inXMLDataStr, char **outPolicyStr );
+int ConvertSpaceDelimitedPolicyToXML( const char *inPolicyStr, char **outXMLDataStr );
+int ConvertSpaceDelimitedPoliciesToXML( const char *inPolicyStr, int inPreserveStateInfo, char **outXMLDataStr );
+void GetDefaultUserPolicies( PWAccessFeatures *inOutUserPolicies );
+
 #ifdef __cplusplus
-	};
+};
 #endif
 
 #endif

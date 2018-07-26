@@ -21,6 +21,9 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
+#include <TargetConditionals.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <sys/_endian.h>
 #include "DES.h"
 
 #define kVersion1 1
@@ -418,10 +421,10 @@ void InitialPermutation(EncryptBlk *sourceBlkPTr,EncryptBlk *resultBlkPTr )
 	dataToEncrypt.bits17to32 = sourceBlkPTr->keyLo >> kwordSize;
 	dataToEncrypt.bits1to16  = sourceBlkPTr->keyHi >> kwordSize;
 #else
-	dataToEncrypt.bits49to64 = ntohs(sourceBlkPTr->keyLo >> kwordSize);
-	dataToEncrypt.bits33to48 = ntohs(sourceBlkPTr->keyHi >> kwordSize);
-	dataToEncrypt.bits17to32 = ntohs(sourceBlkPTr->keyLo & klowWord);
-	dataToEncrypt.bits1to16  = ntohs(sourceBlkPTr->keyHi & klowWord);
+	dataToEncrypt.bits49to64 = CFSwapInt16(sourceBlkPTr->keyLo >> kwordSize);
+	dataToEncrypt.bits33to48 = CFSwapInt16(sourceBlkPTr->keyHi >> kwordSize);
+	dataToEncrypt.bits17to32 = CFSwapInt16(sourceBlkPTr->keyLo & klowWord);
+	dataToEncrypt.bits1to16  = CFSwapInt16(sourceBlkPTr->keyHi & klowWord);
 #endif
 	
 	Extract(&dataToEncrypt, &resultLow, &resultHi);

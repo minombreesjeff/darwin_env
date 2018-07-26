@@ -72,69 +72,6 @@ CAuthFileUtils::slotToOffset(long slot)
 }
 
 
-//----------------------------------------------------------------------------------------------------
-//	passwordRecRefToString
-//
-//----------------------------------------------------------------------------------------------------
-
-void
-CAuthFileUtils::passwordRecRefToString(PWFileEntry *inPasswordRec, char *outRefStr)
-{
-    sprintf( outRefStr, "0x%.8lx%.8lx%.8lx%.8lx",
-                inPasswordRec->time,
-                inPasswordRec->rnd,
-                inPasswordRec->sequenceNumber,
-                inPasswordRec->slot );
-}
-
-
-//----------------------------------------------------------------------------------------------------
-//	stringToPasswordRecRef
-//
-//	Returns: Boolean (1==valid ref, 0==fail)
-//----------------------------------------------------------------------------------------------------
-
-int
-CAuthFileUtils::stringToPasswordRecRef(const char *inRefStr, PWFileEntry *outPasswordRec)
-{
-    char tempStr[9];
-    const char *sptr;
-    int result = false;
-    
-    // invalid slot value
-    outPasswordRec->slot = 0;
-    
-    if ( strncmp( inRefStr, "0x", 2 ) == 0 && strlen(inRefStr) == 2+8*4 )
-    {
-        sptr = inRefStr + 2;
-        
-        memcpy( tempStr, sptr, 8 );
-        tempStr[8] = 0;
-        sscanf( tempStr, "%lx", &outPasswordRec->time );
-        sptr += 8;
-        
-        memcpy( tempStr, sptr, 8 );
-        tempStr[8] = 0;
-        sscanf( tempStr, "%lx", &outPasswordRec->rnd );
-        sptr += 8;
-        
-        memcpy( tempStr, sptr, 8 );
-        tempStr[8] = 0;
-        sscanf( tempStr, "%lx", &outPasswordRec->sequenceNumber );
-        sptr += 8;
-        
-        memcpy( tempStr, sptr, 8 );
-        tempStr[8] = 0;
-        sscanf( tempStr, "%lx", &outPasswordRec->slot );
-        //sptr += 8;
-        
-        result = true;
-    }
-    
-    return result;
-}
-
-
 /*----------------------------------------------------------------------------------*/
 
 #pragma mark -
