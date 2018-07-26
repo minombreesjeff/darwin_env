@@ -1,4 +1,4 @@
-# Copyright 1998 Juniper Networks, Inc.
+# Copyright 2001 Mark R V Murray
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -21,31 +21,12 @@
 # LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
-#
-#	$FreeBSD: src/lib/libpam/modules/Makefile,v 1.14 2001/08/02 19:01:02 markm Exp $
 
-SUBDIR+=	pam_afpmount
-SUBDIR+=	pam_deny
-SUBDIR+=	pam_ftp
-.if defined(MAKE_KERBEROS4) && !defined(NOCRYPT) && !defined(NO_OPENSSL)
-SUBDIR+=	pam_kerberosIV
-.endif
-.if defined(MAKE_KERBEROS5) && !defined(NOCRYPT) && !defined(NO_OPENSSL)
-SUBDIR+=	pam_krb5
-.endif
-SUBDIR+=	pam_nologin
-SUBDIR+=	pam_opie
-SUBDIR+=	pam_permit
-SUBDIR+=	pam_radius
-SUBDIR+=	pam_rootok
-SUBDIR+=	pam_securetty
-.if !defined(NOCRYPT) && !defined(NO_OPENSSL) && !defined(NO_OPENSSH)
-SUBDIR+=	pam_ssh
-.endif
-SUBDIR+=	pam_tacplus
-SUBDIR+=	pam_unix
-SUBDIR+=	pam_wheel
-SUBDIR+=	pam_serialnumber
-SUBDIR+=	pam_sacl
+LIB=		pam_serialnumber
+SHLIB_NAME=	pam_serialnumber.so
+SRCS=		pam_serialnumber.c
+MAN=		pam_serialnumber.8
 
-.include <bsd.subdir.mk>
+LDADD+=		-L/usr/local/lib -lAppleSystemInfo -framework CoreFoundation -framework IOKit
+
+.include <bsd.lib.mk>
