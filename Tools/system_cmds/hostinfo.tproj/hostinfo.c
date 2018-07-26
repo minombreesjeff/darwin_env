@@ -51,9 +51,9 @@ int			slots[1024];
 int main(int argc, char *argv[])
 {
 	kern_return_t		ret;
-	int			size;
+	unsigned int		size, count;
 	char			*cpu_name, *cpu_subname;
-	int			i, count;
+	int			i;
 	int 			mib[2];
 	size_t			len;
 	uint64_t		memsize;

@@ -41,17 +41,29 @@ Binary data can be set using the %xx notation, where xx is the hex
 value of the byte.  The type for new variables is always binary
 data.
 .SH OPTIONS
-.TP
-.B \-p
-Print all of the firmware variables.
-.TP
-.BI \-f " filename"
-Set firmware variables from a text file.  The file must be a
-list name=value statements.  If the last character of a line is
-\\, the value will be continued to the next line.
+.\" ==========
 .TP
 .BI \-d " name"
 Deletes the named firmware variable.
+.\" ==========
+.TP
+.BI \-f " filename"
+Set firmware variables from a text file.  The file must be a
+list of "name value" statements.  The first space on each line
+is taken to be the separator between "name" and "value".  If
+the last character of a line is \\, the value extends to the next line.
+.\" ==========
+.TP
+.B \-x
+Use XML format for reading and writing variables.
+This option must be used before the
+.B \-p
+or
+.B \-f
+options, since arguments are processed in order.
+.TP
+.B \-p
+Print all of the firmware variables.
 .SH EXAMPLES
 .LP
 .RS

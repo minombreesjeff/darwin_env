@@ -31,6 +31,7 @@ LIBS = -lbsm
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 
+FRAMEWORKS = -framework IOKit
 
 
 

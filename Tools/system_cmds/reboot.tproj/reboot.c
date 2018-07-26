@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 1980, 1986, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Portions copyright (c) 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -10,11 +11,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -66,6 +63,7 @@ static const char rcsid[] =
 #include <mach/mach_port.h>		// allocate
 #include <mach/mach.h>			// task_self, etc
 #include <servers/bootstrap.h>	// bootstrap
+#include <reboot2.h>
 #endif
 
 void usage(void);
@@ -80,10 +78,14 @@ int
 main(int argc, char *argv[])
 {
 	struct passwd *pw;
-	int ch, howto, i, fd, kflag, lflag, nflag, qflag, pflag, uflag, sverrno;
-	u_int pageins;
-	char *kernel, *p;
+	int ch, howto, kflag, lflag, nflag, qflag, uflag;
+	char *p;
 	const char *user;
+#ifndef __APPLE__
+	int i, fd, pflag, sverrno;
+	u_int pageins;
+	char *kernel;
+#endif
 
 	if (strstr((p = rindex(*argv, '/')) ? p + 1 : *argv, "halt")) {
 		dohalt = 1;
@@ -192,9 +194,11 @@ main(int argc, char *argv[])
 	if (!nflag)
 		sync();
 
+#ifndef __APPLE__
 	/* Just stop init -- if we fail, we'll restart it. */
 	if (kill(1, SIGTSTP) == -1)
 		err(1, "SIGTSTP init");
+#endif
 
 	/* Ignore the SIGHUP we get when our parent shell dies. */
 	(void)signal(SIGHUP, SIG_IGN);
@@ -236,16 +240,19 @@ main(int argc, char *argv[])
 	}
 #endif
 
+#ifdef __APPLE__
+	// launchd(8) handles reboot.  This call returns NULL on success.
+	exit(reboot2(howto) == NULL ? EXIT_SUCCESS : EXIT_FAILURE);
+#else /* __APPLE__ */
 	reboot(howto);
 	/* FALLTHROUGH */
 
-#ifndef __APPLE__
 restart:
-#endif
 	sverrno = errno;
 	errx(1, "%s%s", kill(1, SIGHUP) == -1 ? "(can't restart init): " : "",
 	    strerror(sverrno));
 	/* NOTREACHED */
+#endif /* __APPLE__ */
 }
 
 void
@@ -276,64 +283,60 @@ get_pageins()
 }
 
 #ifdef __APPLE__
-// XX another copy of this routine is in shutdown.c; it would be nice to share
+// XX this routine is also in shutdown.tproj; it would be nice to share
 
-#define LCK_MAXTRIES 10
-#define LCK_DELAY	 30
+#define WAITFORLOCK 1
 /*
  * contact kextd to lock for reboot
  */
 int
 reserve_reboot()
 {
-	int rval = ELAST+1;
+	int rval = ELAST + 1;
 	kern_return_t macherr = KERN_FAILURE;
-	mach_port_t tport, bsport, kxport, myport = MACH_PORT_NULL;
-	int busyStatus, nretries = LCK_MAXTRIES;
-	dev_path_t busyDev = "<unknown>";
+	mach_port_t kxport, tport = MACH_PORT_NULL, myport = MACH_PORT_NULL;
+	int busyStatus = ELAST + 1;
+	mountpoint_t busyVol;
 
-	// find kextd
-	tport = mach_task_self();
-	if (tport == MACH_PORT_NULL)  goto finish;
-	macherr = task_get_bootstrap_port(tport, &bsport);
-	if (macherr)  goto finish;
-	macherr = bootstrap_look_up(bsport, KEXTD_SERVER_NAME, &kxport);
+	macherr = bootstrap_look_up(bootstrap_port, KEXTD_SERVER_NAME, &kxport);
 	if (macherr)  goto finish;
 
 	// allocate a port to pass to kextd (in case we die)
+	tport = mach_task_self();
+	if (tport == MACH_PORT_NULL)  goto finish;
 	macherr = mach_port_allocate(tport, MACH_PORT_RIGHT_RECEIVE, &myport);
 	if (macherr)  goto finish;
 
-	// loop trying to lock for reboot (i.e. no volumes are busy)
-	do {
-		nretries--;
-		macherr = kextmanager_lock_reboot(kxport, myport, busyDev, &busyStatus);
-		if (macherr)  goto finish;
+	// try to lock for reboot
+	macherr = kextmanager_lock_reboot(kxport, myport, !WAITFORLOCK, busyVol,
+                                      &busyStatus);
+	if (macherr)  goto finish;
 
-		if (busyStatus == EBUSY) {
-			if (*busyDev) {
-				warnx("%s is busy updating; delaying reboot (%d retries left)",
-						busyDev, nretries);
-			} else
-				warnx("kextd still starting up");
-			if (nretries)		sleep(LCK_DELAY);	// don't sleep the last time
-		}
-	} while (busyStatus == EBUSY && nretries > 0);
+	if (busyStatus == EBUSY) {
+		warnx("%s is busy updating; waiting for lock", busyVol);
+		macherr = kextmanager_lock_reboot(kxport, myport, WAITFORLOCK,
+										  busyVol, &busyStatus);
+		if (macherr)	goto finish;
+	}
 
-	rval = busyStatus;
+	if (busyStatus == EALREADY) {
+		// reboot already in progress
+		rval = 0;
+	} else {
+		rval = busyStatus;
+	}
 
 finish:
-	if (macherr == BOOTSTRAP_UNKNOWN_SERVICE) {
-		mach_port_mod_refs(tport, myport, MACH_PORT_RIGHT_RECEIVE, -1);
+	// in general, we want to err on the side of allowing the reboot
+	if (macherr) {
+		if (macherr != BOOTSTRAP_UNKNOWN_SERVICE)
+			warnx("WARNING: couldn't lock kext manager for reboot: %s",
+					mach_error_string(macherr));
 		rval = 0;
-	} else if (macherr) {
-		warnx("couldn't lock kext manager for reboot: %s",
-				mach_error_string(macherr));
-		rval = ELAST + 1;
-	}
-	if (rval && myport != MACH_PORT_NULL) {
+	} 
+	// unless we got the lock, clean up our port
+	if (busyStatus != 0 && myport != MACH_PORT_NULL)
 		mach_port_mod_refs(tport, myport, MACH_PORT_RIGHT_RECEIVE, -1);
-	}
 
 	return rval;
 }

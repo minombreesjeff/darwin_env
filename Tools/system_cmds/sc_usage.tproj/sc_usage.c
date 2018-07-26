@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1999-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -171,6 +171,7 @@ double       other_start;
 int    max_sc = 0;
 int    bsc_base = 0;
 int    msc_base = 0;
+int	   mach_idle = 0;
 int    mach_sched = 0;
 int    mach_stkhandoff = 0;
 int    vfs_lookup = 0;
@@ -994,7 +995,7 @@ sc_tab_init(char *codefile) {
 
 	/* Count Mach message MSG_ codes */
 	for (msgcode_cnt=0;;) {
-	        n = fscanf(fp, "%x%s\n", &code, &name[0]);
+	        n = fscanf(fp, "%x%55s\n", &code, &name[0]);
 		if (n != 2)
 		  break;
 		if (strncmp ("MSG_", &name[0], 4) == 0)
@@ -1032,7 +1033,7 @@ sc_tab_init(char *codefile) {
 	        return;
 
 	for (;;) {
-	        n = fscanf(fp, "%x%s\n", &code, &name[0]);
+	        n = fscanf(fp, "%x%55s\n", &code, &name[0]);
 
 		if (n != 2)
 		        break;
@@ -1047,6 +1048,10 @@ sc_tab_init(char *codefile) {
 		}
 		if (strcmp("MACH_STKHANDOFF", &name[0]) == 0) {
 		        mach_stkhandoff = code;
+			continue;
+		}
+		if (strcmp("MACH_IDLE", &name[0]) == 0) {
+		        mach_idle = code;
 			continue;
 		}
 		if (strcmp("VFS_LOOKUP", &name[0]) == 0) {
@@ -1478,10 +1483,50 @@ sample_sc()
 
 		} else if (baseid == bsc_base)
 		        code = (debugid >> 2) & 0x1ff;
-	        else if (baseid == msc_base)
+		else if (baseid == msc_base)
 		        code = 512 + ((debugid >> 2) & 0x1ff);
+		else if (type == mach_idle) {
+			if (debugid & DBG_FUNC_START) {
+				switched_out = find_thread(kd[i].arg5);
+				switched_in = 0;
+			}
+			else
+			if (debugid & DBG_FUNC_END) {
+				switched_in = find_thread(kd[i].arg5);
+				switched_out = 0;
+			}
+
+			if (in_idle) {
+			        itime_usecs += ((double)now - idle_start) / divisor;
+			        delta_itime_usecs += ((double)now - idle_start) / divisor;
+				in_idle = 0;
+			} else if (in_other) {
+			        otime_usecs += ((double)now - other_start) / divisor;
+			        delta_otime_usecs += ((double)now - other_start) / divisor;
+				in_other = 0;
+			}
+			if ( !switched_in) {
+			        /*
+					 * not one of the target proc's threads
+					 */
+			        if (now_collect_cpu_time) {
+					        in_idle = 1;
+							idle_start = (double)now;
+					}
+			}
+			else {
+			        if (now_collect_cpu_time) {
+							in_idle = 0;
+							in_other = 1;
+							other_start = (double)now;
+					}
+			}
+			if ( !switched_in && !switched_out)
+			        continue;
+
+		}
 		else if (type == mach_sched || type == mach_stkhandoff) {
-		        switched_out = find_thread(kd[i].arg5);
+			switched_out = find_thread(kd[i].arg5);
 			switched_in  = find_thread(kd[i].arg2);
 
 			if (in_idle) {
@@ -1495,17 +1540,12 @@ sample_sc()
 			}
 			if ( !switched_in) {
 			        /*
-				 * not one of the target proc's threads
-				 */
+					 * not one of the target proc's threads
+					 */
 			        if (now_collect_cpu_time) {
-				        if (kd[i].arg4 == 0) {
-					        in_idle = 1;
-						idle_start = (double)now;
-					} else {
 					        in_other = 1;
-						other_start = (double)now;
+							other_start = (double)now;
 					}
-				}
 			}
 			if ( !switched_in && !switched_out)
 			        continue;
@@ -1611,7 +1651,7 @@ sample_sc()
 			        se = &sc_tab[code];
 				scalls++;
 			} else {
-			        se = &faults[kd[i].arg2];
+			        se = &faults[kd[i].arg4];
 				total_faults++;
 			}
 			if (se->total_count == 0)

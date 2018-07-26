@@ -30,6 +30,7 @@
 #include <mach/mach.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <signal.h>
 #include <strings.h>
 #include <nlist.h>
@@ -141,7 +142,7 @@ int need_new_map = 0;
 int total_threads = 0;
 kd_threadmap *mapptr = 0;
 
-#define MAX_ENTRIES 1024
+#define MAX_ENTRIES 4096
 struct ct {
         int type;
         char name[32];
@@ -172,7 +173,7 @@ int  cur_max = 0;
 #define INTERRUPT         0x01050000
 #define DECR_TRAP         0x01090000
 #define DECR_SET          0x01090004
-#define MACH_vmfault      0x01300000
+#define MACH_vmfault      0x01300008
 #define MACH_sched        0x01400000
 #define MACH_stkhandoff   0x01400008
 #define VFS_LOOKUP        0x03010090
@@ -1633,6 +1634,7 @@ exit_syscall(FILE *fp, kd_buf *kd, int thread, int type, char *command, double t
        struct th_info *ti;
        int    cpunum;
        char   *p;
+       uint64_t user_addr;
 
        cpunum = CPU_NUMBER(kd->timestamp);
 
@@ -1650,9 +1652,11 @@ exit_syscall(FILE *fp, kd_buf *kd, int thread, int type, char *command, double t
 	       if ((p = find_code(type))) {
 		       if (type == INTERRUPT) {
 			       fprintf(fp, "INTERRUPT                                                               %-8x  %d  %s\n", thread, cpunum, command);
-		       } else if (type == MACH_vmfault && kd->arg2 <= DBG_CACHE_HIT_FAULT) {
-			       fprintf(fp, "%-28.28s %-8.8s   %-8x                        %-8x  %d  %s\n",
-				       p, fault_name[kd->arg2], kd->arg1,
+		       } else if (type == MACH_vmfault && kd->arg4 <= DBG_CACHE_HIT_FAULT) {
+			       user_addr = ((uint64_t)kd->arg1 << 32) | (uint32_t)kd->arg2;
+
+			       fprintf(fp, "%-28.28s %-8.8s   %-16qx                %-8x  %d  %s\n",
+				       p, fault_name[kd->arg4], user_addr,
 				       thread, cpunum, command);
 		       } else {
 			       fprintf(fp, "%-28.28s %-8x   %-8x                        %-8x  %d  %s\n",
@@ -2076,7 +2080,7 @@ void init_code_file()
 	        return;
 	}
 	for (i = 0; i < MAX_ENTRIES; i++) {
-	        n = fscanf(fp, "%x%s\n", &code, name);
+	        n = fscanf(fp, "%x%127s\n", &code, name);
 
 		if (n != 2)
 		        break;
@@ -2103,7 +2107,11 @@ do_kernel_nm()
   bzero(tmpstr, 1024);
 
   /* Build the temporary nm file path */
-  sprintf(tmp_nm_file, "/tmp/knm.out.%d", getpid());
+  strcpy(tmp_nm_file,"/tmp/knm.out.XXXXXX");
+  if (!mktemp(tmp_nm_file)) {
+    fprintf(stderr, "Error in mktemp call\n");
+    return;
+  }
 
   /* Build the nm command and create a tmp file with the output*/
   sprintf (tmpstr, "/usr/bin/nm -f -n -s __TEXT __text %s > %s",

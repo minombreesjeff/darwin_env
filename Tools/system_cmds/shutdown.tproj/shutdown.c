@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 1988, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Portions copyright (c) 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -10,11 +11,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +28,7 @@
  * SUCH DAMAGE.
  */
 
+#if 0
 #ifndef lint
 static const char copyright[] =
 "@(#) Copyright (c) 1988, 1990, 1993\n\
@@ -38,12 +36,13 @@ static const char copyright[] =
 #endif /* not lint */
 
 #ifndef lint
-#if 0
 static char sccsid[] = "@(#)shutdown.c	8.4 (Berkeley) 4/28/95";
-#endif
-static const char rcsid[] =
-  "$FreeBSD: src/sbin/shutdown/shutdown.c,v 1.23 2002/03/21 13:20:48 imp Exp $";
 #endif /* not lint */
+#endif
+#include <sys/cdefs.h>
+#ifndef __APPLE__
+__FBSDID("$FreeBSD: src/sbin/shutdown/shutdown.c,v 1.28 2005/01/25 08:40:51 delphij Exp $");
+#endif
 
 #include <sys/param.h>
 #include <sys/time.h>
@@ -53,6 +52,7 @@ static const char rcsid[] =
 #include <ctype.h>
 #include <err.h>
 #include <fcntl.h>
+#include <paths.h>
 #include <pwd.h>
 #include <setjmp.h>
 #include <signal.h>
@@ -61,23 +61,22 @@ static const char rcsid[] =
 #include <string.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
 #include <errno.h>
+#include <util.h>
 #include <bsm/libbsm.h>
 #include <bsm/audit_uevents.h>
 
-#ifdef __APPLE__
 #include "kextmanager.h"
 #include <IOKit/kext/kextmanager_types.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
 #include <mach/mach_port.h>		// allocate
 #include <mach/mach.h>			// task_self, etc
 #include <servers/bootstrap.h>	// bootstrap
-#endif
+#include <reboot2.h>
 
 #include "pathnames.h"
-
-#ifdef __APPLE__
-#define __unused
-#endif
+#endif /* __APPLE__ */
 
 #ifdef DEBUG
 #undef _PATH_NOLOGIN
@@ -109,9 +108,16 @@ struct interval {
 #undef S
 
 static time_t offset, shuttime;
-static int dohalt, dopower, doreboot, doups, killflg, mbuflen, oflag = 1;
+#ifdef __APPLE__
+static int dohalt, doreboot, doups, killflg, mbuflen, oflag;
+#else
+static int dohalt, dopower, doreboot, killflg, mbuflen, oflag;
+#endif
 static char mbuf[BUFSIZ];
 static const char *nosync, *whom;
+#ifdef __APPLE__
+static int dosleep;
+#endif
 
 void badtime(void);
 #ifdef __APPLE__
@@ -126,15 +132,15 @@ void nolog(void);
 void timeout(int);
 void timewarn(int);
 void usage(const char *);
-int audit_shutdown(int);
 #ifdef __APPLE__
+int audit_shutdown(int);
 int reserve_reboot(void);
 #endif
 
+extern const char **environ;
+
 int
-main(argc, argv)
-	int argc;
-	char *argv[];
+main(int argc, char **argv)
 {
 	char *p, *endp;
 	struct passwd *pw;
@@ -149,7 +155,7 @@ main(argc, argv)
 #ifndef __APPLE__
 	while ((ch = getopt(argc, argv, "-hknopr")) != -1)
 #else
-	while ((ch = getopt(argc, argv, "-hknoru")) != -1)
+	while ((ch = getopt(argc, argv, "-hknorsu")) != -1)
 #endif
 		switch (ch) {
 		case '-':
@@ -160,7 +166,6 @@ main(argc, argv)
 			break;
 		case 'k':
 			killflg = 1;
-			oflag = 0;
 			break;
 		case 'n':
 			nosync = "-n";
@@ -179,6 +184,11 @@ main(argc, argv)
 		case 'r':
 			doreboot = 1;
 			break;
+#ifdef __APPLE__
+		case 's':
+			dosleep = 1;
+			break;
+#endif
 		case '?':
 		default:
 			usage((char *)NULL);
@@ -195,19 +205,19 @@ main(argc, argv)
 
 	if (oflag && !(dohalt || dopower || doreboot))
 		usage("-o requires -h, -p or -r");
-#else
-	if (killflg + doreboot + dohalt > 1)
-		usage("incompatible switches -h, -k, and -r");
-
-	if (oflag && !(dohalt || doreboot))
-		usage("-o requires -h or -r");
-		
-	if (doups && !dohalt)
-		usage("-u requires -h");
-#endif
 
 	if (nosync != NULL && !oflag)
 		usage("-n requires -o");
+#else /* !__APPLE__ */
+	if (killflg + doreboot + dohalt + dosleep > 1)
+		usage("incompatible switches -h, -k, -r, and -s");
+
+	if (!(dohalt || doreboot || dosleep || killflg))
+		usage("-h, -r, -s, or -k is required");
+		
+	if (doups && !dohalt)
+		usage("-u requires -h");
+#endif /* !__APPLE__ */
 
 	getoffset(*argv++);
 
@@ -254,7 +264,11 @@ main(argc, argv)
 	(void)putc('\n', stdout);
 #else
 	(void)setpriority(PRIO_PROCESS, 0, PRIO_MIN);
+#ifdef __APPLE__
+	if (offset) {
+#else
 	{
+#endif
 		int forkpid;
 
 		forkpid = fork();
@@ -262,9 +276,8 @@ main(argc, argv)
 			audit_shutdown(1);
 			err(1, "fork");
 		}
-		if (forkpid) {
+		if (forkpid)
 			errx(0, "[pid %d]", forkpid);
-		}
 	}
 	audit_shutdown(0);
 	setsid();
@@ -328,14 +341,15 @@ static const char *restricted_environ[] = {
 };
 
 void
-timewarn(timeleft)
-	int timeleft;
+timewarn(int timeleft)
 {
 	static int first;
 	static char hostname[MAXHOSTNAMELEN + 1];
 	FILE *pf;
 	char wcmd[MAXPATHLEN + 4];
-	extern const char **environ;
+
+	/* wall is sometimes missing, e.g. on install media */
+	if (access(_PATH_WALL, X_OK) == -1) return;
 
 	if (!first++)
 		(void)gethostname(hostname, sizeof(hostname));
@@ -380,8 +394,7 @@ timewarn(timeleft)
 }
 
 void
-timeout(signo)
-	int signo __unused;
+timeout(int signo __unused)
 {
 	longjmp(alarmbuf, 1);
 }
@@ -393,9 +406,9 @@ log_and_exec_reboot_or_halt()
 die_you_gravy_sucking_pig_dog()
 #endif
 {
+#ifndef __APPLE__
 	char *empty_environ[] = { NULL };
-
-#ifdef __APPLE__
+#else
 	if ((errno = reserve_reboot()))
 		err(1, "couldn't lock for reboot");
 #endif
@@ -404,9 +417,9 @@ die_you_gravy_sucking_pig_dog()
 #ifndef __APPLE__
 	    doreboot ? "reboot" : dohalt ? "halt" : dopower ? "power-down" : 
 #else
-	    doreboot ? "reboot" : dohalt ? "halt" : 
+	    doreboot ? "reboot" : dohalt ? "halt" : dosleep ? "sleep" :
 #endif
-	    "shutdown", doups?"with UPS delay":"", whom, mbuf);
+	    "shutdown", doups?" with UPS delay":"", whom, mbuf);
 #ifndef __APPLE__
 	(void)sleep(2);
 #endif
@@ -424,27 +437,49 @@ die_you_gravy_sucking_pig_dog()
 #ifndef __APPLE__
 	else if (dopower)
 		(void)printf("power-down");
-#endif
 	if (nosync != NULL)
 		(void)printf(" no sync");
+#else
+	else if (dosleep)
+		(void)printf("sleep");
+#endif
 	(void)printf("\nkill -HUP 1\n");
 #else
 #ifdef __APPLE__
-	{
-		int ws = 0;
-		int fp = fork();
-		if (fp == 0)
-			execl(_PATH_BSHELL, _PATH_BSHELL, "/etc/rc.shutdown", NULL);
-		else if (fp > 0)
-			waitpid(fp, &ws, 0);
+	if (dosleep) {
+		mach_port_t mp;
+		io_connect_t fb;
+		kern_return_t kr = IOMasterPort(bootstrap_port, &mp);
+		if (kr == kIOReturnSuccess) {
+			fb = IOPMFindPowerManagement(mp);
+			if (fb != IO_OBJECT_NULL) {
+				IOReturn err = IOPMSleepSystem(fb);
+				if (err != kIOReturnSuccess) {
+					fprintf(stderr, "shutdown: sleep failed (0x%08x)\n", err);
+					kr = -1;
+				}
+			}
+		}
+		exit((kr == kIOReturnSuccess) ? 0 : 1);
+	} else {
+		int howto = 0;
+
+		logwtmp("~", "shutdown", "");
+
+		if (dohalt) howto |= RB_HALT;
+		if (doups) howto |= RB_UPSDELAY;
+		if (nosync) howto |= RB_NOSYNC;
+
+		// launchd(8) handles reboot.  This call returns NULL on success.
+		exit(reboot2(howto) == NULL ? EXIT_SUCCESS : EXIT_FAILURE);
 	}
-#endif
+	/* NOT-REACHED */
+
+#else /* __APPLE__ */
 	if (!oflag) {
 		(void)kill(1, doreboot ? SIGINT :	/* reboot */
 			      dohalt ? SIGUSR1 :	/* halt */
-#ifndef __APPLE__
 			      dopower ? SIGUSR2 :	/* power-down */
-#endif
 			      SIGTERM);			/* single-user */
 	} else {
 		if (doreboot) {
@@ -455,19 +490,12 @@ die_you_gravy_sucking_pig_dog()
 			warn(_PATH_REBOOT);
 		}
 		else if (dohalt) {
-			char *halt_args;
-			if(doups) {
-				halt_args = "-lu";
-			} else { 
-				halt_args = "-l";
-			}
-			execle(_PATH_HALT, "halt", halt_args, nosync,
+			execle(_PATH_HALT, "halt", "-l", nosync,
 				(char *)NULL, empty_environ);
 			syslog(LOG_ERR, "shutdown: can't exec %s: %m.",
 				_PATH_HALT);
 			warn(_PATH_HALT);
 		}
-#ifndef __APPLE__
 		else if (dopower) {
 			execle(_PATH_HALT, "halt", "-l", "-p", nosync,
 				(char *)NULL, empty_environ);
@@ -475,9 +503,9 @@ die_you_gravy_sucking_pig_dog()
 				_PATH_HALT);
 			warn(_PATH_HALT);
 		}
-#endif
 		(void)kill(1, SIGTERM);		/* to single-user */
 	}
+#endif /* __APPLE__ */
 #endif
 	finish(0);
 }
@@ -485,8 +513,7 @@ die_you_gravy_sucking_pig_dog()
 #define	ATOI2(p)	(p[0] - '0') * 10 + (p[1] - '0'); p += 2;
 
 void
-getoffset(timearg)
-	char *timearg;
+getoffset(char *timearg)
 {
 	struct tm *lt;
 	char *p;
@@ -589,12 +616,11 @@ nolog()
 		(void)write(logfd, mbuf, strlen(mbuf));
 		(void)close(logfd);
 	}
-#endif
+#endif /* !__APPLE__ */
 }
 
 void
-finish(signo)
-	int signo __unused;
+finish(int signo __unused)
 {
 #ifndef __APPLE__
 	if (!killflg)
@@ -610,17 +636,21 @@ badtime()
 }
 
 void
-usage(cp)
-	const char *cp;
+usage(const char *cp)
 {
 	if (cp != NULL)
 		warnx("%s", cp);
 	(void)fprintf(stderr,
-	    "usage: shutdown [-] [-h [-u] | -r | -k] [-o [-n]]"
+#ifdef __APPLE__
+	    "usage: shutdown [-] [-h [-u] [-n] | -r [-n] | -s | -k]"
+#else
+	    "usage: shutdown [-] [-h | -p | -r | -k] [-o [-n]]"
+#endif
 	    " time [warning-message ...]\n");
 	exit(1);
 }
 
+#ifdef __APPLE__
 /*
  * The following tokens are included in the audit record for shutdown
  * header
@@ -668,67 +698,62 @@ int audit_shutdown(int exitstatus)
 }
 
 
-#ifdef __APPLE__
-// XX copied from reboot.c; would be nice to share the code
+// XX copied from reboot.tproj/reboot.c; it would be nice to share the code
 
-#define LCK_MAXTRIES 10
-#define LCK_DELAY	 30
+#define WAITFORLOCK 1
 /*
  * contact kextd to lock for reboot
  */
 int
 reserve_reboot()
 {
-	int rval = ELAST+1;
-	kern_return_t macherr = KERN_FAILURE;
-	mach_port_t tport, bsport, kxport, myport = MACH_PORT_NULL;
-	int busyStatus, nretries = LCK_MAXTRIES;
-	dev_path_t busyDev = "<unknown>";
+    int rval = ELAST + 1;
+    kern_return_t macherr = KERN_FAILURE;
+    mach_port_t kxport, tport = MACH_PORT_NULL, myport = MACH_PORT_NULL;
+    int busyStatus = ELAST + 1;
+    mountpoint_t busyVol;
 
-	// find kextd
-	tport = mach_task_self();
-	if (tport == MACH_PORT_NULL)  goto finish;
-	macherr = task_get_bootstrap_port(tport, &bsport);
-	if (macherr)  goto finish;
-	macherr = bootstrap_look_up(bsport, KEXTD_SERVER_NAME, &kxport);
-	if (macherr)  goto finish;
+    macherr = bootstrap_look_up(bootstrap_port, KEXTD_SERVER_NAME, &kxport);
+    if (macherr)  goto finish;
 
-	// allocate a port to pass to kextd (in case we die)
-	macherr = mach_port_allocate(tport, MACH_PORT_RIGHT_RECEIVE, &myport);
-	if (macherr)  goto finish;
+    // allocate a port to pass to kextd (in case we die)
+    tport = mach_task_self();
+    if (tport == MACH_PORT_NULL)  goto finish;
+    macherr = mach_port_allocate(tport, MACH_PORT_RIGHT_RECEIVE, &myport);
+    if (macherr)  goto finish;
 
-	// loop trying to lock for reboot (i.e. no volumes are busy)
-	do {
-		nretries--;
-		macherr = kextmanager_lock_reboot(kxport, myport, busyDev, &busyStatus);
-		if (macherr)  goto finish;
+    // try to lock for reboot
+    macherr = kextmanager_lock_reboot(kxport, myport, !WAITFORLOCK, busyVol,
+                                      &busyStatus);
+    if (macherr)  goto finish;
 
-		if (busyStatus == EBUSY) {
-			if (*busyDev) {
-				warnx("%s is busy updating; delaying reboot (%d retries left)",
-						busyDev, nretries);
-			} else
-				warnx("kextd still starting up");
-			if (nretries)		sleep(LCK_DELAY);	// don't sleep the last time
-		}
-	} while (busyStatus == EBUSY && nretries > 0);
+    if (busyStatus == EBUSY) {
+        warnx("%s is busy updating; waiting for lock", busyVol);
+        macherr = kextmanager_lock_reboot(kxport, myport, WAITFORLOCK,
+                                          busyVol, &busyStatus);
+        if (macherr)    goto finish;
+    }
 
-	rval = busyStatus;
+    if (busyStatus == EALREADY) {
+        // reboot already in progress
+        rval = 0;
+    } else {
+        rval = busyStatus;
+    }
 
 finish:
-	if (macherr == BOOTSTRAP_UNKNOWN_SERVICE) {
-		mach_port_mod_refs(tport, myport, MACH_PORT_RIGHT_RECEIVE, -1);
-		rval = 0;
-	} else if (macherr) {
-		warnx("couldn't lock kext manager for reboot: %s",
-				mach_error_string(macherr));
-		rval = ELAST + 1;
-	}
-	if (rval && myport != MACH_PORT_NULL) {
-		mach_port_mod_refs(tport, myport, MACH_PORT_RIGHT_RECEIVE, -1);
-	}
+    // in general, we want to err on the side of allowing the reboot
+    if (macherr) {
+        if (macherr != BOOTSTRAP_UNKNOWN_SERVICE)
+            warnx("WARNING: couldn't lock kext manager for reboot: %s",
+                    mach_error_string(macherr));
+        rval = 0;
+    }
+    // unless we got the lock, clean up our port
+    if (busyStatus != 0 && myport != MACH_PORT_NULL)
+        mach_port_mod_refs(tport, myport, MACH_PORT_RIGHT_RECEIVE, -1);
 
-	return rval;
+    return rval;
 }
-#endif
+#endif /* __APPLE__ */
 
