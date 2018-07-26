@@ -147,7 +147,7 @@ lines(fp, off)
 	char *sp;
 
 	p = NULL;
-	if ((lines = malloc(off * sizeof(*lines))) == NULL)
+	if ((lines = calloc(off, sizeof(*lines))) == NULL)
 		err(1, "%s", strerror(errno));
 
 	sp = NULL;
