@@ -13,6 +13,7 @@ PROJECTVERSION = 2.8
 PROJECT_TYPE = Aggregate
 
 TOOLS = dynamic_pager.tproj ac.tproj accton.tproj arch.tproj at.tproj\
+	auditd.tproj audit.tproj\
         atrun.tproj chkpasswd.tproj chpass.tproj dmesg.tproj\
         getconf.tproj getty.tproj hostinfo.tproj iostat.tproj kgmon.tproj\
         ktrace.tproj login.tproj makekey.tproj\
@@ -20,7 +21,8 @@ TOOLS = dynamic_pager.tproj ac.tproj accton.tproj arch.tproj at.tproj\
         reboot.tproj shutdown.tproj sync.tproj sysctl.tproj\
         update.tproj vipw.tproj zic.tproj zdump.tproj vm_stat.tproj\
         zprint.tproj latency.tproj sc_usage.tproj fs_usage.tproj\
-        kdump.tproj sadc.tproj sar.tproj
+        kdump.tproj sadc.tproj sar.tproj pt_chown.tproj sa.tproj\
+        utmp_update.tproj
 
 LIBRARIES = dp_notify_lib
 

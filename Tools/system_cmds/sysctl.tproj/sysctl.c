@@ -1,24 +1,23 @@
 /*
- * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1999-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * Reserved.  This file contains Original Code and/or Modifications of
+ * Original Code as defined in and that are subject to the Apple Public
+ * Source License Version 1.0 (the 'License').  You may not use this file
+ * except in compliance with the License.  Please obtain a copy of the
+ * License at http://www.apple.com/publicsource and read it before using
+ * this file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License."
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -111,7 +110,6 @@ static char sccsid[] = "@(#)sysctl.c	8.5 (Berkeley) 5/9/95";
 #else
 #include <vm/vm_param.h>
 #endif /* __APPLE__ */
-#include <machine/cpu.h>
 
 #include <errno.h>
 #include <ctype.h>
@@ -351,7 +349,8 @@ old_parse(string, flags)
 		break;
 
 	case CTL_VM:
-		if (mib[1] == VM_LOADAVG) {	/* XXX this is bogus */
+		switch (mib[1]) {
+		case VM_LOADAVG: {	/* XXX this is bogus */
 			double loads[3];
 
 			getloadavg(loads, 3);
@@ -360,6 +359,33 @@ old_parse(string, flags)
 			fprintf(stdout, "%.2f %.2f %.2f\n", 
 			    loads[0], loads[1], loads[2]);
 			return;
+		}
+		case VM_SWAPUSAGE: {
+			struct xsw_usage	xsu;
+			int			saved_errno;
+
+			size = sizeof (xsu);
+			if (sysctl(mib, 2, &xsu, &size, NULL, 0) != 0) {
+				if (flags == 0)
+					return;
+				saved_errno = errno;
+				if (!nflag)
+					fprintf(stderr, "%s: ", string);
+				fprintf(stderr, "sysctl(VM_SWAPUSAGE): %s\n",
+					strerror(saved_errno));
+				return;
+			}
+
+			if (!nflag)
+				fprintf(stdout, "%s: ", string);
+			fprintf(stdout,
+				"total = %.2fM  used = %.2fM  free = %.2fM  %s\n",
+				((double) xsu.xsu_total) / (1024.0 * 1024.0),
+				((double) xsu.xsu_used) / (1024.0 * 1024.0),
+				((double) xsu.xsu_avail) / (1024.0 * 1024.0),
+				xsu.xsu_encrypted ? "(encrypted)" : "");
+			return;
+		}
 		}
 		if (flags == 0)
 			return;
@@ -723,8 +749,7 @@ parse(char *string, int flags)
 			case CTLTYPE_STRING:
 				break;
 			case CTLTYPE_QUAD:
-				break;
-				sscanf(newval, "%qd", &quadval);
+				quadval = strtoq(newval, NULL, 0);
 				newval = &quadval;
 				newsize = sizeof quadval;
 				break;

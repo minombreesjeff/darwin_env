@@ -20,6 +20,8 @@
             "arch.tproj", 
             "at.tproj", 
             "atrun.tproj", 
+            "audit.tproj", 
+            "auditd.tproj", 
             "chkpasswd.tproj", 
             "chpass.tproj", 
             "dmesg.tproj", 

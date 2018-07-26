@@ -10,7 +10,6 @@
 #ifndef MACH_BSD
 #define MACH_BSD
 #endif
-#include <mach/bootstrap.h>
 #include <mach/mach_syscalls.h>
 #include <mach/mig_errors.h>
 #include <sys/param.h>
@@ -393,12 +392,13 @@ wait_on_paging_trigger(trigger_port)
 }
 
 void
-paging_setup(flags, size, priority, low, high)
+paging_setup(flags, size, priority, low, high, encrypted)
 	int	flags;
 	int	size;
 	int	priority;
 	int	low;
 	int	high;
+	boolean_t	encrypted;
 {
 	off_t		filesize = size;
 	char 		subfile[512];
@@ -427,6 +427,17 @@ paging_setup(flags, size, priority, low, high)
 		exit(EXIT_FAILURE);
 	}
         
+	if (macx_triggers(0, 0,
+			  (encrypted
+			   ? SWAP_ENCRYPT_ON
+			   : SWAP_ENCRYPT_OFF),
+			  MACH_PORT_NULL) != 0) {
+		fprintf(stderr,
+			"dynamic_pager: warning: "
+			"could not turn encrypted swap %s\n", 
+			(encrypted ? "on" : "off"));
+	}
+
 	macx_swapon(subfile, flags, size, priority);
 
 	if(hi_water) {
@@ -464,6 +475,7 @@ main(int argc, char **argv)
 	char default_filename[] = "/private/var/vm/swapfile";
 	int ch;
 	int variable_sized = 1;
+	boolean_t	encrypted_swap = FALSE;
 
 	seteuid(getuid());
 	strcpy(fileroot, default_filename);
@@ -475,8 +487,12 @@ main(int argc, char **argv)
 	local_hi_water = 0;
 
 
-	while ((ch = getopt(argc, argv, "F:L:H:S:P:O:")) != EOF) {
+	while ((ch = getopt(argc, argv, "EF:L:H:S:P:O:")) != EOF) {
 		switch((char)ch) {
+
+		case 'E':
+			encrypted_swap = TRUE;
+			break;
 
 		case 'F':
 			strncpy(fileroot, optarg, 500);
@@ -626,7 +642,8 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
-	paging_setup(0, limits[0].size, priority, limits[0].low_water, hi_water);
+	paging_setup(0, limits[0].size, priority, limits[0].low_water, hi_water,
+		     encrypted_swap);
 
 	return (0);
 }

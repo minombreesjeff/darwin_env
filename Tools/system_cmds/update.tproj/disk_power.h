@@ -2,29 +2,10 @@
 
 #define __SPINDOWN_H__
 
+#include <libkern/OSTypes.h>
+#include <IOKit/storage/ata/IOATAStorageDefines.h>
 #include <stdio.h>
 #include <time.h>
-
-/*
---
-*/
-
-/* Public types */
-
-/* ATA power states, from lowest to highest power usage */
-// This is taken from the IOATABlockStorage project, IOATAStorageDefines.h
-enum IOATAPowerState
-{
-    kIOATAPowerStateSystemSleep     = 0,
-    kIOATAPowerStateSleep           = 1,
-    kIOATAPowerStateStandby         = 2, 
-    kIOATAPowerStateIdle            = 3,
-    kIOATAPowerStateActive          = 4,
-
-    kNumIOATAPowerStates
-};
-
-typedef enum IOATAPowerState IOATAPowerState;
 
 /* IOATAPowerStates */
 
