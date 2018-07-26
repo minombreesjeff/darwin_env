@@ -2553,11 +2553,11 @@ sInt32 CPSPlugIn::DoAuthentication ( sDoDirNodeAuth *inData )
 				throw( siResult );
 			
 			if ( ! Connected(pContext) )
-			{
-				// close out anything stale
-				EndServerSession( pContext );
-				throw( (sInt32)eDSAuthServerError );
-			}
+				{
+					// close out anything stale
+					EndServerSession( pContext );
+					throw( (sInt32)eDSAuthServerError );
+				}
 			
 			pContext->madeFirstContact = true;
 		}
@@ -2578,7 +2578,7 @@ sInt32 CPSPlugIn::DoAuthentication ( sDoDirNodeAuth *inData )
 			DEBUGLOG( "GetAuthMethodSASLName siResult=%l, mech=%s", siResult, saslMechNameStr );
 			if ( siResult != eDSNoErr )
 				throw( siResult );
-						
+			
             if ( rsaKeyPtr != NULL && bNeedsRSAValidation )
 				siResult = DoRSAValidation( pContext, rsaKeyPtr );
 			
@@ -4084,59 +4084,59 @@ sInt32 CPSPlugIn::DoAuthMethodNTUserSessionKey(
 			
 			if ( inAuthenticatorAuthResult == eDSNoErr )
 			{
-				result = SendFlushReadWithMutex( inContext, "GETNTHASHHASH", userID, NULL, buf, sizeof(buf) );
-				if ( result.err != 0 )
-					throw( PWSErrToDirServiceError(result) );
-				
-				decodedStrLen = strlen( buf ) - 4;
-				if ( decodedStrLen < 2 )
-					throw( (sInt32)eDSAuthServerError );
-				
-				stepData = (char *) malloc( decodedStrLen );
-				if ( stepData == NULL )
-					throw( (sInt32)eMemoryError );
-				
-				// decode
-				if ( Convert64ToBinary( buf + 4, stepData, decodedStrLen, &decodedStrLen ) != SASL_OK )
-					throw( (sInt32)eDSAuthServerError );
-				
-				// decrypt
-				gSASLMutex->Wait();
-				saslResult = sasl_decode( inContext->conn,
-											stepData,
-											decodedStrLen,
-											&decryptedStr,
-											&decryptedStrLen);
-				gSASLMutex->Signal();
-				
-				if ( saslResult != SASL_OK )
-					throw( (sInt32)eDSAuthFailed );
-				
-				if ( outBuf->fBufferSize < decryptedStrLen + 4 )
-					throw( (sInt32)eDSBufferTooSmall );
-				
-				outBuf->fBufferLength = decryptedStrLen + 4;
-				decodedStrLen = decryptedStrLen;
-				memcpy( outBuf->fBufferData, &decodedStrLen, 4 );
-				memcpy( outBuf->fBufferData + 4, decryptedStr, decryptedStrLen );
+			result = SendFlushReadWithMutex( inContext, "GETNTHASHHASH", userID, NULL, buf, sizeof(buf) );
+			if ( result.err != 0 )
+				throw( PWSErrToDirServiceError(result) );
+			
+			decodedStrLen = strlen( buf ) - 4;
+			if ( decodedStrLen < 2 )
+				throw( (sInt32)eDSAuthServerError );
+			
+			stepData = (char *) malloc( decodedStrLen );
+			if ( stepData == NULL )
+				throw( (sInt32)eMemoryError );
+			
+			// decode
+			if ( Convert64ToBinary( buf + 4, stepData, decodedStrLen, &decodedStrLen ) != SASL_OK )
+				throw( (sInt32)eDSAuthServerError );
+			
+			// decrypt
+			gSASLMutex->Wait();
+			saslResult = sasl_decode( inContext->conn,
+										stepData,
+										decodedStrLen,
+										&decryptedStr,
+										&decryptedStrLen);
+			gSASLMutex->Signal();
+			
+			if ( saslResult != SASL_OK )
+				throw( (sInt32)eDSAuthFailed );
+			
+			if ( outBuf->fBufferSize < decryptedStrLen + 4 )
+				throw( (sInt32)eDSBufferTooSmall );
+			
+			outBuf->fBufferLength = decryptedStrLen + 4;
+			decodedStrLen = decryptedStrLen;
+			memcpy( outBuf->fBufferData, &decodedStrLen, 4 );
+			memcpy( outBuf->fBufferData + 4, decryptedStr, decryptedStrLen );
 			}
 			
 			if ( inAuthMethod == kAuthNTSessionKey )
 			{
-				// now do the NT auth
-				siResult = GetDataFromAuthBuffer( inData->fInAuthStepData, 2, &challenge, &len );
-				if ( siResult != noErr || challenge == NULL || len != 8 )
-					throw( (sInt32)eDSInvalidBuffFormat );
-				
-				siResult = GetDataFromAuthBuffer( inData->fInAuthStepData, 3, &digest, &len );
-				if ( siResult != noErr || digest == NULL || len != 24 )
-					throw( (sInt32)eDSInvalidBuffFormat );
-				
-				memcpy( password, challenge, 8 );
-				memcpy( password + 8, digest, 24 );
-				
-				siResult = DoSASLAuth( inContext, userID, password, 32, NULL, "SMB-NT", inData, &stepData );
-			}
+			// now do the NT auth
+			siResult = GetDataFromAuthBuffer( inData->fInAuthStepData, 2, &challenge, &len );
+			if ( siResult != noErr || challenge == NULL || len != 8 )
+				throw( (sInt32)eDSInvalidBuffFormat );
+			
+			siResult = GetDataFromAuthBuffer( inData->fInAuthStepData, 3, &digest, &len );
+			if ( siResult != noErr || digest == NULL || len != 24 )
+				throw( (sInt32)eDSInvalidBuffFormat );
+			
+			memcpy( password, challenge, 8 );
+			memcpy( password + 8, digest, 24 );
+			
+			siResult = DoSASLAuth( inContext, userID, password, 32, NULL, "SMB-NT", inData, &stepData );
+		}
 			else
 			{
 				siResult = inAuthenticatorAuthResult;

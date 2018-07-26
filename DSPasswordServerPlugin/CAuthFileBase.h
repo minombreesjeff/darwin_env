@@ -169,7 +169,7 @@ class CAuthFileBase
 
 		virtual CAuthFileUtils*			GetUtilsObject( void );
 		
-		int								getPasswordRecFromSpillBucket(PWFileEntry *inRec, PWFileEntry *passRec);
+		int								getPasswordRecFromSpillBucket(PWFileEntry *inRec, PWFileEntry *passRec, bool unObfuscate = true);
 		int								SaveOverflowRecord( PWFileEntry *inPasswordRec, bool obfuscate = true, bool setModDate = true );
 		int								OpenOverflowFile( PWFileEntry *inPasswordRec, bool create, FILE **outFP );
 		void							PWRecToOverflowFileName( PWFileEntry *inPasswordRec, char *outFileName );

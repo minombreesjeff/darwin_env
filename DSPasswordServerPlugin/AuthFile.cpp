@@ -1193,8 +1193,10 @@ char * pwsf_ShadowHashArrayToData( CFArrayRef inHashTypeArray, long *outResultLe
 void pwsf_AppendUTF8StringToArray( const char *inUTF8Str, CFMutableArrayRef inArray )
 {
 	CFStringRef stringRef = CFStringCreateWithCString( kCFAllocatorDefault, inUTF8Str, kCFStringEncodingUTF8 );
-	CFArrayAppendValue( inArray, stringRef );
-	CFRelease( stringRef );
+	if ( stringRef != NULL ) {
+		CFArrayAppendValue( inArray, stringRef );
+		CFRelease( stringRef );
+	}
 }
 
 
@@ -1261,8 +1263,8 @@ void pwsf_EndianAdjustPWFileHeader( PWFileHeader *inOutHeader, int native )
 		inOutHeader->access.minChars = EndianU16_BtoN(inOutHeader->access.minChars);
 		inOutHeader->access.maxChars = EndianU16_BtoN(inOutHeader->access.maxChars);
 		
-		pwsf_EndianAdjustTimeStruct(&(inOutHeader->access.expirationDateGMT), 1);
-		pwsf_EndianAdjustTimeStruct(&(inOutHeader->access.hardExpireDateGMT), 1);
+		pwsf_EndianAdjustTimeStruct(&(inOutHeader->access.expirationDateGMT), native);
+		pwsf_EndianAdjustTimeStruct(&(inOutHeader->access.hardExpireDateGMT), native);
 		
 		inOutHeader->publicKeyLen = EndianU32_BtoN(inOutHeader->publicKeyLen);                                                    // 1024-bit RSA public key - expected size is 233
 		inOutHeader->privateKeyLen = EndianU32_BtoN(inOutHeader->privateKeyLen);
@@ -1284,8 +1286,8 @@ void pwsf_EndianAdjustPWFileHeader( PWFileHeader *inOutHeader, int native )
 		inOutHeader->access.maxMinutesUntilDisabled = EndianU32_NtoB(inOutHeader->access.maxMinutesUntilDisabled);
 		inOutHeader->access.maxMinutesOfNonUse = EndianU32_NtoB(inOutHeader->access.maxMinutesOfNonUse);
 		inOutHeader->access.maxFailedLoginAttempts = EndianU32_NtoB(inOutHeader->access.maxFailedLoginAttempts);
-		pwsf_EndianAdjustTimeStruct(&(inOutHeader->access.expirationDateGMT), 0);
-		pwsf_EndianAdjustTimeStruct(&(inOutHeader->access.hardExpireDateGMT), 0);
+		pwsf_EndianAdjustTimeStruct(&(inOutHeader->access.expirationDateGMT), native);
+		pwsf_EndianAdjustTimeStruct(&(inOutHeader->access.hardExpireDateGMT), native);
 		inOutHeader->access.minChars = EndianU16_NtoB(inOutHeader->access.minChars);
 		inOutHeader->access.maxChars = EndianU16_NtoB(inOutHeader->access.maxChars);
 		inOutHeader->publicKeyLen = EndianU32_NtoB(inOutHeader->publicKeyLen);
@@ -1298,4 +1300,78 @@ void pwsf_EndianAdjustPWFileHeader( PWFileHeader *inOutHeader, int native )
 #endif
 }
 
+
+// ----------------------------------------------------------------------------------------
+//  pwsf_EndianAdjustPWFileEntry
+// ----------------------------------------------------------------------------------------
+
+void pwsf_EndianAdjustPWFileEntry( PWFileEntry *inOutEntry, int native )
+{
+#if TARGET_RT_LITTLE_ENDIAN
+	if ( native == 1 )
+	{
+		// adjust to native byte order
+		inOutEntry->time = EndianU32_BtoN(inOutEntry->time);
+		inOutEntry->rnd = EndianU32_BtoN(inOutEntry->rnd);
+		inOutEntry->sequenceNumber = EndianU32_BtoN(inOutEntry->sequenceNumber);
+		inOutEntry->slot = EndianU32_BtoN(inOutEntry->slot);
+		
+		pwsf_EndianAdjustTimeStruct(&inOutEntry->creationDate, native);
+		pwsf_EndianAdjustTimeStruct(&inOutEntry->modificationDate, native);
+		pwsf_EndianAdjustTimeStruct(&inOutEntry->modDateOfPassword, native);
+		pwsf_EndianAdjustTimeStruct(&inOutEntry->lastLogin, native);
+		
+		inOutEntry->failedLoginAttempts = EndianU16_BtoN(inOutEntry->failedLoginAttempts);
+		
+		pwsf_EndianAdjustTimeStruct(&(inOutEntry->access.expirationDateGMT), native);
+		pwsf_EndianAdjustTimeStruct(&(inOutEntry->access.hardExpireDateGMT), native);
+
+		inOutEntry->access.maxMinutesUntilChangePassword = EndianU32_BtoN(inOutEntry->access.maxMinutesUntilChangePassword);
+		inOutEntry->access.maxMinutesUntilDisabled = EndianU32_BtoN(inOutEntry->access.maxMinutesUntilDisabled);
+		inOutEntry->access.maxMinutesOfNonUse = EndianU32_BtoN(inOutEntry->access.maxMinutesOfNonUse);
+		inOutEntry->access.maxFailedLoginAttempts = EndianU16_BtoN(inOutEntry->access.maxFailedLoginAttempts);
+		inOutEntry->access.minChars = EndianU16_BtoN(inOutEntry->access.minChars);
+		inOutEntry->access.maxChars = EndianU16_BtoN(inOutEntry->access.maxChars);
+		
+		inOutEntry->disableReason = (PWDisableReasonCode) EndianS32_BtoN(inOutEntry->disableReason);
+
+		inOutEntry->extraAccess.minutesUntilFailedLoginReset = EndianU32_BtoN(inOutEntry->extraAccess.minutesUntilFailedLoginReset);
+		inOutEntry->extraAccess.notGuessablePattern = EndianU32_BtoN(inOutEntry->extraAccess.notGuessablePattern);
+		inOutEntry->extraAccess.logOffTime = EndianU32_BtoN(inOutEntry->extraAccess.logOffTime);
+		inOutEntry->extraAccess.kickOffTime = EndianU32_BtoN(inOutEntry->extraAccess.kickOffTime);
+	}
+	else
+	{
+		// adjust to big-endian byte order
+		inOutEntry->time = EndianU32_NtoB(inOutEntry->time);
+		inOutEntry->rnd = EndianU32_NtoB(inOutEntry->rnd);
+		inOutEntry->sequenceNumber = EndianU32_NtoB(inOutEntry->sequenceNumber);
+		inOutEntry->slot = EndianU32_NtoB(inOutEntry->slot);
+		
+		pwsf_EndianAdjustTimeStruct(&inOutEntry->creationDate, native);
+		pwsf_EndianAdjustTimeStruct(&inOutEntry->modificationDate, native);
+		pwsf_EndianAdjustTimeStruct(&inOutEntry->modDateOfPassword, native);
+		pwsf_EndianAdjustTimeStruct(&inOutEntry->lastLogin, native);
+		
+		inOutEntry->failedLoginAttempts = EndianU16_NtoB(inOutEntry->failedLoginAttempts);
+		
+		pwsf_EndianAdjustTimeStruct(&(inOutEntry->access.expirationDateGMT), native);
+		pwsf_EndianAdjustTimeStruct(&(inOutEntry->access.hardExpireDateGMT), native);
+
+		inOutEntry->access.maxMinutesUntilChangePassword = EndianU32_NtoB(inOutEntry->access.maxMinutesUntilChangePassword);
+		inOutEntry->access.maxMinutesUntilDisabled = EndianU32_NtoB(inOutEntry->access.maxMinutesUntilDisabled);
+		inOutEntry->access.maxMinutesOfNonUse = EndianU32_NtoB(inOutEntry->access.maxMinutesOfNonUse);
+		inOutEntry->access.maxFailedLoginAttempts = EndianU16_NtoB(inOutEntry->access.maxFailedLoginAttempts);
+		inOutEntry->access.minChars = EndianU16_NtoB(inOutEntry->access.minChars);
+		inOutEntry->access.maxChars = EndianU16_NtoB(inOutEntry->access.maxChars);
+		
+		inOutEntry->disableReason = (PWDisableReasonCode) EndianS32_NtoB(inOutEntry->disableReason);
+
+		inOutEntry->extraAccess.minutesUntilFailedLoginReset = EndianU32_NtoB(inOutEntry->extraAccess.minutesUntilFailedLoginReset);
+		inOutEntry->extraAccess.notGuessablePattern = EndianU32_NtoB(inOutEntry->extraAccess.notGuessablePattern);
+		inOutEntry->extraAccess.logOffTime = EndianU32_NtoB(inOutEntry->extraAccess.logOffTime);
+		inOutEntry->extraAccess.kickOffTime = EndianU32_NtoB(inOutEntry->extraAccess.kickOffTime);
+	}
+#endif
+}
 

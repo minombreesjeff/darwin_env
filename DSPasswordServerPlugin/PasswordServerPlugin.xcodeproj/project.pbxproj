@@ -9,7 +9,7 @@
 /* Begin PBXAggregateTarget section */
 		AABD3CF50830037A00C77166 /* ALL */ = {
 			isa = PBXAggregateTarget;
-			buildConfigurationList = AA0AB36509992A8000DB44C8 /* Build configuration list for PBXAggregateTarget "ALL" */;
+			buildConfigurationList = AAD8093709897A68006ADE2F /* Build configuration list for PBXAggregateTarget "ALL" */;
 			buildPhases = (
 			);
 			buildSettings = {
@@ -99,6 +99,7 @@
 		AABD3D410830037A00C77166 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0AA1909FFE8422F4C02AAC07 /* CoreFoundation.framework */; };
 		AABD3D420830037A00C77166 /* libsasl2.2.0.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = F56C1E240294335201DD284B /* libsasl2.2.0.1.dylib */; };
 		AABD3F06083022D000C77166 /* DirectoryService.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AABD3F05083022D000C77166 /* DirectoryService.framework */; };
+		AAD809C009897C11006ADE2F /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AAD809BF09897C11006ADE2F /* CoreServices.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildStyle section */
@@ -171,6 +172,7 @@
 		AABD3D440830037A00C77166 /* Info-PasswordServerFramework.plist */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "Info-PasswordServerFramework.plist"; sourceTree = "<group>"; };
 		AABD3D450830037A00C77166 /* PasswordServer.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = PasswordServer.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AABD3F05083022D000C77166 /* DirectoryService.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DirectoryService.framework; path = /System/Library/Frameworks/DirectoryService.framework; sourceTree = "<absolute>"; };
+		AAD809BF09897C11006ADE2F /* CoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreServices.framework; path = /System/Library/Frameworks/CoreServices.framework; sourceTree = "<absolute>"; };
 		F54CAA5303562D7B01DD284B /* SASLCode.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = SASLCode.cpp; sourceTree = "<group>"; };
 		F54CAA5403562D7B01DD284B /* SASLCode.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = SASLCode.h; sourceTree = "<group>"; };
 		F56C1796029431B901DD284B /* CPSPlugIn.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = CPSPlugIn.cpp; sourceTree = "<group>"; };
@@ -234,6 +236,7 @@
 				AABD3D410830037A00C77166 /* CoreFoundation.framework in Frameworks */,
 				AABD3D420830037A00C77166 /* libsasl2.2.0.1.dylib in Frameworks */,
 				AA220A2D08352B44002ADE7E /* Foundation.framework in Frameworks */,
+				AAD809C009897C11006ADE2F /* CoreServices.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -258,6 +261,7 @@
 			children = (
 				F56C1E240294335201DD284B /* libsasl2.2.0.1.dylib */,
 				0AA1909FFE8422F4C02AAC07 /* CoreFoundation.framework */,
+				AAD809BF09897C11006ADE2F /* CoreServices.framework */,
 				AA220A2C08352B44002ADE7E /* Foundation.framework */,
 				F56C19ED0294331B01DD284B /* Security.framework */,
 				F56C19EE0294331B01DD284B /* System.framework */,
@@ -425,7 +429,7 @@
 /* Begin PBXNativeTarget section */
 		AABD3CF70830037A00C77166 /* PasswordServerPlugin */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA0AB36109992A8000DB44C8 /* Build configuration list for PBXNativeTarget "PasswordServerPlugin" */;
+			buildConfigurationList = AAD8093309897A68006ADE2F /* Build configuration list for PBXNativeTarget "PasswordServerPlugin" */;
 			buildPhases = (
 				AABD3CF80830037A00C77166 /* Headers */,
 				AABD3CFA0830037A00C77166 /* Resources */,
@@ -483,7 +487,7 @@
 		};
 		AABD3D0A0830037A00C77166 /* PasswordServerFramework */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA0AB36909992A8000DB44C8 /* Build configuration list for PBXNativeTarget "PasswordServerFramework" */;
+			buildConfigurationList = AAD8093B09897A68006ADE2F /* Build configuration list for PBXNativeTarget "PasswordServerFramework" */;
 			buildPhases = (
 				AABD3D0B0830037A00C77166 /* Headers */,
 				AABD3D280830037A00C77166 /* Resources */,
@@ -542,7 +546,7 @@
 /* Begin PBXProject section */
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
-			buildConfigurationList = AA0AB36D09992A8000DB44C8 /* Build configuration list for PBXProject "PasswordServerPlugin" */;
+			buildConfigurationList = AAD8093F09897A68006ADE2F /* Build configuration list for PBXProject "PasswordServerPlugin" */;
 			buildSettings = {
 			};
 			buildStyles = (
@@ -643,7 +647,7 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		AA0AB36209992A8000DB44C8 /* Development */ = {
+		AAD8093409897A68006ADE2F /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = NO;
@@ -691,7 +695,7 @@
 			};
 			name = Development;
 		};
-		AA0AB36309992A8000DB44C8 /* Deployment */ = {
+		AAD8093509897A68006ADE2F /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
@@ -738,7 +742,7 @@
 			};
 			name = Deployment;
 		};
-		AA0AB36409992A8000DB44C8 /* Default */ = {
+		AAD8093609897A68006ADE2F /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				EXPORTED_SYMBOLS_FILE = ServerModule.exp;
@@ -780,7 +784,7 @@
 			};
 			name = Default;
 		};
-		AA0AB36609992A8000DB44C8 /* Development */ = {
+		AAD8093809897A68006ADE2F /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = NO;
@@ -803,7 +807,7 @@
 			};
 			name = Development;
 		};
-		AA0AB36709992A8000DB44C8 /* Deployment */ = {
+		AAD8093909897A68006ADE2F /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
@@ -824,7 +828,7 @@
 			};
 			name = Deployment;
 		};
-		AA0AB36809992A8000DB44C8 /* Default */ = {
+		AAD8093A09897A68006ADE2F /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				OTHER_CFLAGS = "";
@@ -840,7 +844,7 @@
 			};
 			name = Default;
 		};
-		AA0AB36A09992A8000DB44C8 /* Development */ = {
+		AAD8093C09897A68006ADE2F /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = NO;
@@ -886,7 +890,7 @@
 			};
 			name = Development;
 		};
-		AA0AB36B09992A8000DB44C8 /* Deployment */ = {
+		AAD8093D09897A68006ADE2F /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
@@ -931,7 +935,7 @@
 			};
 			name = Deployment;
 		};
-		AA0AB36C09992A8000DB44C8 /* Default */ = {
+		AAD8093E09897A68006ADE2F /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				DYLIB_COMPATIBILITY_VERSION = 1;
@@ -971,19 +975,19 @@
 			};
 			name = Default;
 		};
-		AA0AB36E09992A8000DB44C8 /* Development */ = {
+		AAD8094009897A68006ADE2F /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 			};
 			name = Development;
 		};
-		AA0AB36F09992A8000DB44C8 /* Deployment */ = {
+		AAD8094109897A68006ADE2F /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 			};
 			name = Deployment;
 		};
-		AA0AB37009992A8000DB44C8 /* Default */ = {
+		AAD8094209897A68006ADE2F /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 			};
@@ -992,42 +996,42 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA0AB36109992A8000DB44C8 /* Build configuration list for PBXNativeTarget "PasswordServerPlugin" */ = {
+		AAD8093309897A68006ADE2F /* Build configuration list for PBXNativeTarget "PasswordServerPlugin" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AA0AB36209992A8000DB44C8 /* Development */,
-				AA0AB36309992A8000DB44C8 /* Deployment */,
-				AA0AB36409992A8000DB44C8 /* Default */,
+				AAD8093409897A68006ADE2F /* Development */,
+				AAD8093509897A68006ADE2F /* Deployment */,
+				AAD8093609897A68006ADE2F /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		AA0AB36509992A8000DB44C8 /* Build configuration list for PBXAggregateTarget "ALL" */ = {
+		AAD8093709897A68006ADE2F /* Build configuration list for PBXAggregateTarget "ALL" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AA0AB36609992A8000DB44C8 /* Development */,
-				AA0AB36709992A8000DB44C8 /* Deployment */,
-				AA0AB36809992A8000DB44C8 /* Default */,
+				AAD8093809897A68006ADE2F /* Development */,
+				AAD8093909897A68006ADE2F /* Deployment */,
+				AAD8093A09897A68006ADE2F /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		AA0AB36909992A8000DB44C8 /* Build configuration list for PBXNativeTarget "PasswordServerFramework" */ = {
+		AAD8093B09897A68006ADE2F /* Build configuration list for PBXNativeTarget "PasswordServerFramework" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AA0AB36A09992A8000DB44C8 /* Development */,
-				AA0AB36B09992A8000DB44C8 /* Deployment */,
-				AA0AB36C09992A8000DB44C8 /* Default */,
+				AAD8093C09897A68006ADE2F /* Development */,
+				AAD8093D09897A68006ADE2F /* Deployment */,
+				AAD8093E09897A68006ADE2F /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		AA0AB36D09992A8000DB44C8 /* Build configuration list for PBXProject "PasswordServerPlugin" */ = {
+		AAD8093F09897A68006ADE2F /* Build configuration list for PBXProject "PasswordServerPlugin" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AA0AB36E09992A8000DB44C8 /* Development */,
-				AA0AB36F09992A8000DB44C8 /* Deployment */,
-				AA0AB37009992A8000DB44C8 /* Default */,
+				AAD8094009897A68006ADE2F /* Development */,
+				AAD8094109897A68006ADE2F /* Deployment */,
+				AAD8094209897A68006ADE2F /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;

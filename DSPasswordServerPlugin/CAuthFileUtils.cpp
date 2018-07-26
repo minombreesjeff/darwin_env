@@ -27,6 +27,12 @@
 
 CAuthFileUtils::CAuthFileUtils()
 {
+	int32_t desKeyArray[] = {	3785, 1706062950, 57253, 290150789, 20358, -1895669319, 31632, -1897719547, 
+								14472, -356383814, 45160, 1045764877, 42031, 340922616, 17982, 893499693, 
+								26821, 1697433225, 49601, 1067086915, 42371, -1280392416, 46874, -1550815422, 
+								47922, -788758000, 7254, -590256566, 22097, 1547481608, 22125, -1323694915 };
+	
+	memcpy( mDESKeyArray, desKeyArray, sizeof(KeysArray) );
 }
 
 
@@ -137,16 +143,13 @@ CAuthFileUtils::stringToPasswordRecRef(const char *inRefStr, PWFileEntry *outPas
 
 
 void
-CAuthFileUtils::DESEncode(const void *key, void *data, unsigned long inDataLen)
+CAuthFileUtils::DESEncode(void *data, unsigned long inDataLen)
 {
-    KeysArray theKeyArray;
     char *tptr = (char *)data;
-    
-    KeySched((const EncryptBlk *)key, theKeyArray, kDESVersion2);
     
     while ( inDataLen > 0 )
     {
-        Encode(theKeyArray, kFixedDESChunk, tptr);
+        Encode(mDESKeyArray, kFixedDESChunk, tptr);
         tptr += kFixedDESChunk;
         inDataLen -= kFixedDESChunk;
     }
@@ -154,15 +157,13 @@ CAuthFileUtils::DESEncode(const void *key, void *data, unsigned long inDataLen)
 
 
 void
-CAuthFileUtils::DESDecode(const void *key, void *data, unsigned long inDataLen)
+CAuthFileUtils::DESDecode(void *data, unsigned long inDataLen)
 {
-    KeysArray theKeyArray;
     char *tptr = (char *)data;
     
-    KeySched((const EncryptBlk *)key, theKeyArray, kDESVersion2);
     while ( inDataLen > 0 )
     {
-        Decode(theKeyArray, kFixedDESChunk, tptr);
+        Decode(mDESKeyArray, kFixedDESChunk, tptr);
         tptr += kFixedDESChunk;
         inDataLen -= kFixedDESChunk;
     }
@@ -170,7 +171,7 @@ CAuthFileUtils::DESDecode(const void *key, void *data, unsigned long inDataLen)
 
 
 void
-CAuthFileUtils::DESAutoDecode(const void *key, void *data)
+CAuthFileUtils::DESAutoDecode( void *data )
 {
 	PWFileEntry anEntry;
 	unsigned long offset;
@@ -183,7 +184,7 @@ CAuthFileUtils::DESAutoDecode(const void *key, void *data)
 	for ( offset = 0; offset <= sizeof(anEntry.passwordStr) - kFixedDESChunk; offset += kFixedDESChunk )
 	{
 		dataPtr = (unsigned char *)data + offset;
-		DESDecode( key, dataPtr, kFixedDESChunk );
+		DESDecode( dataPtr, kFixedDESChunk );
 		
 		if ( dataPtr[0] == 0 || dataPtr[1] == 0 || dataPtr[2] == 0 ||
 			 dataPtr[3] == 0 || dataPtr[4] == 0 || dataPtr[5] == 0 ||

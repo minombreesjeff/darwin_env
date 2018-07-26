@@ -83,7 +83,7 @@ typedef struct sPSContextData {
 	char remoteaddr[NI_MAXHOST + NI_MAXSERV + 1];
     
     sasl_conn_t *conn;
-    FILE *serverIn, *serverOut;
+    FILE *serverOut;
     int fd;
 	sasl_callback_t callbacks[5];
     

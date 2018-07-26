@@ -42,11 +42,13 @@ class CAuthFileUtils
         virtual int						stringToPasswordRecRef(const char *inRefStr, PWFileEntry *outPasswordRec);
 		
 		// DES accessors
-        virtual void					DESEncode(const void *key, void *data, unsigned long inDataLen);
-        virtual void					DESDecode(const void *key, void *data, unsigned long inDataLen);
-		virtual void					DESAutoDecode(const void *key, void *data);
-		
+        virtual void					DESEncode(void *data, unsigned long inDataLen);
+        virtual void					DESDecode(void *data, unsigned long inDataLen);
+		virtual void					DESAutoDecode(void *data);
+				
     protected:
+		
+		KeysArray mDESKeyArray;
 };
 
 #endif

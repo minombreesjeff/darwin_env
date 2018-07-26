@@ -76,7 +76,7 @@ void pwsf_verbose(const char *fmt,...)
 }
 
 
-//RCSID("$Id: entropy.c,v 1.5 2004/03/03 00:34:39 snsimon Exp $");
+//RCSID("$Id: entropy.c,v 1.5.22.1 2006/03/22 23:30:33 snsimon Exp $");
 
 #ifndef offsetof
 # define offsetof(type, member) ((size_t) &((type *)0)->member)
@@ -510,7 +510,7 @@ hash_output_from_command(entropy_source_t *src, char *hash)
 		}
 	}
 
-	SHA1_Final(hash, &sha);
+	SHA1_Final((unsigned char *)hash, &sha);
 
 	close(p[0]);
 
@@ -588,7 +588,7 @@ prng_check_seedfile(char *filename) {
 void
 prng_write_seedfile(void) {
 	int fd;
-	char seed[1024];
+	unsigned char seed[1024];
 	char filename[1024];
 	struct passwd *pw;
 
