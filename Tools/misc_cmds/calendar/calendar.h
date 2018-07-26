@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1989, 1993
+ * Copyright (c) 1989, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,11 +30,51 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)pathnames.h	8.1 (Berkeley) 6/6/93
- * $FreeBSD: src/usr.bin/calendar/pathnames.h,v 1.4 2001/01/13 01:33:59 ache Exp $
+ * $FreeBSD: src/usr.bin/calendar/calendar.h,v 1.9 2002/06/13 21:20:56 grog Exp $
  */
 
-#include <paths.h>
 
-#define	_PATH_CPP	"/usr/bin/cpp"
-#define	_PATH_INCLUDE	"/usr/share/calendar"
+extern struct passwd *pw;
+extern int doall;
+extern struct iovec header[];
+extern struct tm *tp;
+extern const char *calendarFile;
+extern char *optarg;
+
+void	 cal(void);
+void	 closecal(FILE *);
+int	 getday(char *);
+int	 getdayvar(char *);
+int	 getfield(char *, char **, int *);
+int	 getmonth(char *);
+int	 geteaster(char *, int);
+int      getpaskha(char *, int);
+int      easter(int);
+int	 isnow(char *, int *, int *, int *);
+FILE	*opencal(void);
+#ifndef __APPLE__
+void	 settime(time_t);
+#else
+void     settime(time_t, short, short);
+#endif
+time_t   Mktime(char *);
+void	 usage(void);
+void     setnnames(void);
+
+#define isleap(y) ((((y) % 4) == 0 && ((y) % 100) != 0) || ((y) % 400) == 0)
+
+/* some flags */
+#define	F_ISMONTH	0x01 /* month (Januar ...) */
+#define	F_ISDAY		0x02 /* day of week (Sun, Mon, ...) */
+#define	F_ISDAYVAR	0x04 /* variables day of week, like SundayLast */
+#define	F_EASTER	0x08 /* Easter or easter depending days */
+
+extern int f_dayAfter; /* days after current date */
+extern int f_dayBefore; /* days bevore current date */
+extern int Friday;	/* day before weekend */
+
+struct fixs {
+	char *name;
+	int len;
+};
+
