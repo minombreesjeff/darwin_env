@@ -21,42 +21,46 @@
 .\" @APPLE_LICENSE_HEADER_END@
 .\"
 .Dd February 7, 2009
-.Dt pam_sacl 8
+.Dt pam_opendirectory 8
 .Os
 .Sh NAME
-.Nm pam_sacl
-.Nd Service Access Control List PAM module
+.Nm pam_opendirectory
+.Nd OpenDirectory PAM module
 .Sh SYNOPSIS
 .Op Ar service-name
 .Ar function-class
 .Ar control-flag
-pam_sacl
+pam_opendirectory
 .Op Ar options
 .Sh DESCRIPTION
-The Service Access Control List PAM module supports the account management function class.  In terms of the
+The OpenDirectory PAM module supports the authentication, account management and password management function classes.  In terms of the
 .Ar function-class
-parameter, this is the
+parameter, these are
+.Dq Li auth ,
 .Dq Li account
-class.
+and
+.Dq Li password
+respectively.
+.Ss The OpenDirectory Authentication Module
+The OpenDirectory authenticaion module permits or denies users based on OpenDirectory password authentication.
 .Pp
-The Service Access Control List account management module verifies that the authenticated user is permitted access by checking the username against the the SACL of the service named by the
-.Cm sacl_service
-option.
-.Pp
-The following option must be passed to this account module:
+The following option may be passed to this authenticaion module:
 .Bl -tag
-.It Cm sacl_service=SERVICE
-This option names the SACL that the username should be checked against.  SERVICE should be the literal name of the service
-.Pq eg. Dq sacl_service=smb .
+.It Cm nullok
+Allow null passwords.
 .El
+.Ss The OpenDirectory Account Managemnt Module
+The OpenDirectory account management module permits or denies users based whether the account is enabled in OpenDirectory.
 .Pp
-The following options may be passed to the account module:
+The following option may be passed to this account management module:
 .Bl -tag
-.It Cm allow_trustacct
-Always allow access to computer trust accounts.
-.It Cm debug
-Debug information will be printed to the system log.
+.It Cm no_shell_check
+Skip validating the user's shell.
 .El
+.Ss The OpenDirectory Password Management Module
+The OpenDirectory password management module supports password changing and enforces the OpenDirectory password policy.
 .Sh SEE ALSO
 .Xr pam.conf 5 ,
-.Xr pam 8
+.Xr pam 8 ,
+.Xr pwpolicy 8 ,
+.Xr DirectoryService 8
