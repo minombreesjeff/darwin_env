@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2005-2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1999, 2005 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -305,7 +305,7 @@ OSStatus	TrashNode	(BTreeControlBlockPtr	 btreePtr,
 		err = releaseNodeProc (btreePtr->fcbPtr,
 							   nodePtr,
 							   kReleaseBlock | kTrashBlock );
-		PanicIf (err, "\pTrashNode: releaseNodeProc returned error.");
+		PanicIf (err, "TrashNode: releaseNodeProc returned error.");
 		++btreePtr->numReleaseNodes;
 	}
 

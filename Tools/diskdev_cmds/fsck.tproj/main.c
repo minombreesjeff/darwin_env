@@ -301,8 +301,7 @@ checkfilesys(filesys, mntpt, auxdata, child)
         case 0:
             if (preen)
                 pfatal("CAN'T CHECK UFS FILE SYSTEM.");
-	    else
-		return (EEXIT);
+            /* fall through */
         case -1:
             return (0);
 #ifdef __APPLE__
@@ -314,9 +313,6 @@ checkfilesys(filesys, mntpt, auxdata, child)
             if (qflag)				/* Other file system inconsistency */
             return (EEXIT);
             break;
-	case CANTFIXIT:
-	    return (CANTFIXIT);
-	    break;
 #endif /* __APPLE__ */
         }
     

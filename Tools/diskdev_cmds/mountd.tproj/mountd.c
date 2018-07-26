@@ -304,7 +304,7 @@ void	uuidlist_save(void);
 void	uuidlist_restore(void);
 
 struct expidlist * find_export_id(struct uuidlist *, u_int32_t);
-struct expidlist * get_export_id(struct uuidlist *, char *);
+struct expidlist * get_export_id(struct uuidlist *, u_char *);
 
 /* C library */
 int	getnetgrent(char **host, char **user, char **domain);
@@ -485,14 +485,18 @@ my_svc_run(void)
 		x = select(tsize, &readfdset, NULL, NULL, NULL);
 		if (x > 0) {
 			svc_getreqset(&readfdset);
-		}
-		while (gothup && !gotterm) {
-			gothup = 0;
-			get_exportlist();
-		}
-		if (gotterm) {
-			gotterm = 0;
-			exit(0);
+		} else if (x == -1) {
+			switch (errno) {
+			case EINTR:
+				if (gotterm) {
+					gotterm = 0;
+					exit(0);
+				}
+				if (gothup) {
+					gothup = 0;
+					get_exportlist();
+				}
+			}
 		}
 	}
 }
@@ -1707,13 +1711,13 @@ find_export_id(struct uuidlist *ulp, u_int32_t id)
 }
 
 struct expidlist *
-get_export_id(struct uuidlist *ulp, char *path)
+get_export_id(struct uuidlist *ulp, u_char *path)
 {
 	struct expidlist *xid;
 	u_int32_t maxid = 0;
 
 	LIST_FOREACH(xid, &ulp->ul_exportids, xid_list) {
-		if (!strcmp(xid->xid_path, path))
+		if (!strcmp(xid->xid_path, (char *)path))
 			break;
 		if (maxid < xid->xid_id)
 			maxid = xid->xid_id;
@@ -1727,7 +1731,7 @@ get_export_id(struct uuidlist *ulp, char *path)
 		return (NULL);
 	}
 	bzero(xid, sizeof(*xid));
-	strcpy(xid->xid_path, path);
+	strcpy(xid->xid_path, (char *)path);
 	xid->xid_id = maxid + 1;
 	while (find_export_id(ulp, xid->xid_id)) {
 		xid->xid_id++;
@@ -1741,37 +1745,6 @@ get_export_id(struct uuidlist *ulp, char *path)
 	}
 	LIST_INSERT_HEAD(&ulp->ul_exportids, xid, xid_list);
 	return (xid);
-}
-
-/*
- * subdir_check()
- *
- * Compares two pathname strings to see if one is a subdir of the other.
- * Returns:
- * 1   if second path is a subdir of the first path
- * 0   if the paths are the same
- * -1  if the paths have just a substring match
- * -2  if the paths do not match at all
- * -3  if second path could not be a subdir of the first path (due to length)
- */
-int
-subdir_check(char *s1, char *s2)
-{
-	int len1, len2, rv;
-	len1 = strlen(s1);
-	len2 = strlen(s2);
-	if (len1 > len2)
-		rv = -3;
-	else if (strncmp(s1, s2, len1))
-		rv = -2;
-	else if (len1 == len2)
-		rv = 0;
-	else if ((s2[len1] == '/') || (len1 == 1))
-		rv = 1;
-	else
-		rv = -1;
-	log(LOG_DEBUG, "subdir_check: %s %s %d", s1, s2, rv);
-	return rv;
 }
 
 #define LINESIZ	10240
@@ -2125,18 +2098,6 @@ get_exportlist(void)
 		while (dirl) {
 			/* check for existing/conflicting export */
 			log(LOG_DEBUG, "dir: %s", dirl->dl_dir);
-			/*
-			 * Check for nesting conflicts with any existing entries.
-			 */
-			TAILQ_FOREACH(xd2, &xf->xf_dirl, xd_next) {
-				if ((subdir_check(xd2->xd_dir, dirl->dl_dir) == 1) ||
-				    (subdir_check(dirl->dl_dir, xd2->xd_dir) == 1)) {
-					log(LOG_ERR, "%s conflicts with existing export %s",
-						dirl->dl_dir, xd2->xd_dir);
-					getexp_err(xf, tgrp);
-					goto nextline;
-				}
-			}
 			s = dirl->dl_dir;
 			len = strlen(s);
 			xd3 = NULL;
@@ -2146,8 +2107,10 @@ get_exportlist(void)
 				cmp = strncmp(dirl->dl_dir, xd2->xd_dir, dlen);
 				log(LOG_DEBUG, "     %s compare %s %d", dirl->dl_dir, xd2->xd_dir, cmp);
 				if (!cmp) {
-					if (len == dlen) /* found an exact match */
+					if ((len == dlen) || (dirl->dl_dir[dlen] == '/')) {
+						/* found a match */
 						break;
+					}
 					/* dirl was actually longer than xd2 */
 					cmp = 1;
 				}
@@ -2156,6 +2119,18 @@ get_exportlist(void)
 				xd3 = xd2;
 			}
 			if (cmp != 0) {
+				if (xd3 && !strncmp(xd3->xd_dir, s, len) &&
+				    (xd3->xd_dir[len] == '/')) {
+					log(LOG_ERR, "%s conflicts with existing export %s", s, xd3->xd_dir);
+					getexp_err(xf, tgrp);
+					goto nextline;
+				}
+				if (xd2 && !strncmp(xd2->xd_dir, s, strlen(xd2->xd_dir)) &&
+				    (s[strlen(xd2->xd_dir)] == '/')) {
+					log(LOG_ERR, "%s conflicts with existing export %s", s, xd2->xd_dir);
+					getexp_err(xf, tgrp);
+					goto nextline;
+				}
 				xd = get_expdir();
 				if (xd)
 					xd->xd_dir = strdup(dirl->dl_dir);
@@ -2200,7 +2175,8 @@ get_exportlist(void)
 			/* add mount subdirectories of this directory */
 			dirl2 = dirl->dl_next;
 			while (dirl2) {
-				if (subdir_check(dirl->dl_dir, dirl2->dl_dir) != 1)
+				if (strncmp(dirl->dl_dir, dirl2->dl_dir, len) ||
+				    (dirl2->dl_dir[len] != '/'))
 					break;
 				error = hang_options_mountdir(xd, dirl2->dl_dir, opt_flags,
 						(hostcount ? tgrp : NULL));
@@ -2399,7 +2375,8 @@ add_dir(struct dirlist **dlpp, char *cp)
 				log(LOG_DEBUG, "add_dir: %s compare %s %d subdir match",
 					cp, dl->dl_dir, cmp);
 				dlstop = dl->dl_next;
-				while (dlstop && (subdir_check(dl->dl_dir, dlstop->dl_dir) == 1))
+				while (dlstop && !strncmp(dl->dl_dir, dlstop->dl_dir, dlen) &&
+					(!dlstop->dl_dir[dlen] || (dlstop->dl_dir[dlen] == '/')))
 					dlstop = dlstop->dl_next;
 			} else {
 				/*
@@ -2410,7 +2387,8 @@ add_dir(struct dirlist **dlpp, char *cp)
 				dl3 = dl;
 				dl2 = dl;
 				dl = dl->dl_next;
-				while (dl && (subdir_check(dl3->dl_dir, dl->dl_dir) == 1)) {
+				while (dl && !strncmp(dl3->dl_dir, dl->dl_dir, dlen) &&
+					(!dl->dl_dir[dlen] || (dl->dl_dir[dlen] == '/'))) {
 					dl2 = dl;
 					dl = dl->dl_next;
 					}
@@ -2606,10 +2584,16 @@ expdir_search(struct expfs *xf, char *dirpath, u_long saddr, int *options)
 {
 	struct expdir *xd, *mxd;
 	struct host *hp;
-	int cmp = -1, chkalldirs = 0;
+	int dirpathlen, dlen = 0;
+	int chkalldirs = 0;
+
+	dirpathlen = strlen(dirpath);
 
 	TAILQ_FOREACH(xd, &xf->xf_dirl, xd_next) {
-		if ((cmp = subdir_check(xd->xd_dir, dirpath)) >= 0)
+		dlen = strlen(xd->xd_dir);
+		if (strncmp(dirpath, xd->xd_dir, dlen))
+			continue;
+		if ((dirpathlen == dlen) || (dirpath[dlen] == '/'))
 			break;
 	}
 	if (!xd) {
@@ -2619,7 +2603,7 @@ expdir_search(struct expfs *xf, char *dirpath, u_long saddr, int *options)
 
 	log(LOG_DEBUG, "expdir_search: %s -> %s", dirpath, xd->xd_dir);
 
-	if (cmp == 0) {
+	if (dirpathlen == dlen) {
 		/* exact match on exported directory path */
 check_xd_hosts:
 		/* find options for this host */
@@ -2641,11 +2625,13 @@ check_xd_hosts:
 
 	// search for a matching mountdir
 	TAILQ_FOREACH(mxd, &xd->xd_mountdirs, xd_next) {
-		cmp = subdir_check(mxd->xd_dir, dirpath);
-		if (cmp < 0)
+		dlen = strlen(mxd->xd_dir);
+		if (strncmp(dirpath, mxd->xd_dir, dlen))
 			continue;
-		log(LOG_DEBUG, "expdir_search: %s subdir path match %s", dirpath, mxd->xd_dir);
-		chkalldirs = (cmp != 0);
+		log(LOG_DEBUG, "expdir_search: %s subdir path partial match %s", dirpath, mxd->xd_dir);
+		if ((dirpathlen != dlen) && (dirpath[dlen] != '/'))
+			continue;
+		chkalldirs = (dirpathlen != dlen);
 		/* found a match on a mountdir */
 		hp = find_host(mxd->xd_hosts, saddr);
 		if (hp && (!chkalldirs || (hp->ht_flag & OP_ALLDIRS))) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -87,6 +87,10 @@ static char sccsid[] = "@(#)edquota.c	8.3 (Berkeley) 4/27/95";
 #include <string.h>
 #include <unistd.h>
 #include "pathnames.h"
+
+#ifdef __APPLE__
+#include <libkern/OSByteOrder.h>
+#endif /* __APPLE__ */
 
 char *qfname = QUOTAFILENAME;
 char *qfextension[] = INITQFNAMES;
@@ -521,11 +525,11 @@ qfinit(fd, fst, type)
 	}
 
 	(void) ftruncate(fd, (off_t)((max + 1) * sizeof(struct dqblk)));
-	dqhdr.dqh_magic = quotamagic[type];
-	dqhdr.dqh_version = QF_VERSION;
-	dqhdr.dqh_maxentries = max;
-	dqhdr.dqh_btime = MAX_DQ_TIME;
-	dqhdr.dqh_itime = MAX_IQ_TIME;
+	dqhdr.dqh_magic      = OSSwapHostToBigInt32(quotamagic[type]);
+	dqhdr.dqh_version    = OSSwapHostToBigConstInt32(QF_VERSION);
+	dqhdr.dqh_maxentries = OSSwapHostToBigInt32(max);
+	dqhdr.dqh_btime      = OSSwapHostToBigConstInt32(MAX_DQ_TIME);
+	dqhdr.dqh_itime      = OSSwapHostToBigConstInt32(MAX_IQ_TIME);
 	memmove(dqhdr.dqh_string, QF_STRING_TAG, strlen(QF_STRING_TAG));
 	(void) lseek(fd, 0, L_SET);
 	(void) write(fd, &dqhdr, sizeof(dqhdr));
@@ -557,14 +561,14 @@ qflookup(fd, id, type, dqbp)
 		return (-1);
 
 	/* Sanity check the quota file header. */
-	if ((dqhdr.dqh_magic != quotamagic[type]) ||
-	    (dqhdr.dqh_version > 1) ||
-	    (!powerof2(dqhdr.dqh_maxentries))) {
+	if ((OSSwapBigToHostInt32(dqhdr.dqh_magic) != quotamagic[type]) ||
+	    (OSSwapBigToHostInt32(dqhdr.dqh_version) > 1) ||
+	    (!powerof2(OSSwapBigToHostInt32(dqhdr.dqh_maxentries)))) {
 		fprintf(stderr, "quota: invalid quota file header\n");
 		return (-1);
 	}
 
-	m = dqhdr.dqh_maxentries;
+	m = OSSwapBigToHostInt32(dqhdr.dqh_maxentries);
 	mask = m - 1;
 	i = dqhash1(id, dqhashshift(m), mask);
 	skip = dqhash2(id, mask);
@@ -579,9 +583,20 @@ qflookup(fd, id, type, dqbp)
 		 * Stop when an empty entry is found
 		 * or we encounter a matching id.
 		 */
-		if (dqbp->dqb_id == 0 || dqbp->dqb_id == id)
+		if (dqbp->dqb_id == 0 || OSSwapBigToHostInt32(dqbp->dqb_id) == id)
 			break;
 	}
+	/* Put data in host native byte order. */
+	dqbp->dqb_bhardlimit = OSSwapBigToHostInt64(dqbp->dqb_bhardlimit);
+	dqbp->dqb_bsoftlimit = OSSwapBigToHostInt64(dqbp->dqb_bsoftlimit);
+	dqbp->dqb_curbytes   = OSSwapBigToHostInt64(dqbp->dqb_curbytes);
+	dqbp->dqb_ihardlimit = OSSwapBigToHostInt32(dqbp->dqb_ihardlimit);
+	dqbp->dqb_isoftlimit = OSSwapBigToHostInt32(dqbp->dqb_isoftlimit);
+	dqbp->dqb_curinodes  = OSSwapBigToHostInt32(dqbp->dqb_curinodes);
+	dqbp->dqb_btime      = OSSwapBigToHostInt32(dqbp->dqb_btime);
+	dqbp->dqb_itime      = OSSwapBigToHostInt32(dqbp->dqb_itime);
+	dqbp->dqb_id         = OSSwapBigToHostInt32(dqbp->dqb_id);
+
 	return (0);
 }
 #endif /* __APPLE */
@@ -652,14 +667,14 @@ qfupdate(fd, id, type, dqbp)
 		return (-1);
 
 	/* Sanity check the quota file header. */
-	if ((dqhdr.dqh_magic != quotamagic[type]) ||
-	    (dqhdr.dqh_version > QF_VERSION) ||
-	    (!powerof2(dqhdr.dqh_maxentries))) {
+	if ((OSSwapBigToHostInt32(dqhdr.dqh_magic) != quotamagic[type]) ||
+	    (OSSwapBigToHostInt32(dqhdr.dqh_version) > QF_VERSION) ||
+	    (!powerof2(OSSwapBigToHostInt32(dqhdr.dqh_maxentries)))) {
 		fprintf(stderr, "quota: invalid quota file header\n");
 		return (EINVAL);
 	}
 
-	m = dqhdr.dqh_maxentries;
+	m = OSSwapBigToHostInt32(dqhdr.dqh_maxentries);
 	mask = m - 1;
 	i = dqhash1(id, dqhashshift(m), mask);
 	skip = dqhash2(id, mask);
@@ -674,8 +689,19 @@ qfupdate(fd, id, type, dqbp)
 		 * Stop when an empty entry is found
 		 * or we encounter a matching id.
 		 */
-		if (dqbuf.dqb_id == 0 || dqbuf.dqb_id == id) {
-			dqbp->dqb_id = id;
+		if (dqbuf.dqb_id == 0 || OSSwapBigToHostInt32(dqbuf.dqb_id) == id) {
+
+			/* Convert buffer to big endian before writing. */
+			dqbp->dqb_bhardlimit = OSSwapHostToBigInt64(dqbp->dqb_bhardlimit);
+			dqbp->dqb_bsoftlimit = OSSwapHostToBigInt64(dqbp->dqb_bsoftlimit);
+			dqbp->dqb_curbytes   = OSSwapHostToBigInt64(dqbp->dqb_curbytes);
+			dqbp->dqb_ihardlimit = OSSwapHostToBigInt32(dqbp->dqb_ihardlimit);
+			dqbp->dqb_isoftlimit = OSSwapHostToBigInt32(dqbp->dqb_isoftlimit);
+			dqbp->dqb_curinodes  = OSSwapHostToBigInt32(dqbp->dqb_curinodes);
+			dqbp->dqb_btime      = OSSwapHostToBigInt32(dqbp->dqb_btime);
+			dqbp->dqb_itime      = OSSwapHostToBigInt32(dqbp->dqb_itime);
+			dqbp->dqb_id         = OSSwapHostToBigInt32(id);
+
 			lseek(fd, dqoffset(i), L_SET);
 			if (write(fd, dqbp, sizeof (struct dqblk)) !=
 			    sizeof (struct dqblk)) {

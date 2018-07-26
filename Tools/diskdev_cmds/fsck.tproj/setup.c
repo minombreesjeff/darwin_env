@@ -89,53 +89,6 @@ static int readsb __P((int listerr));
 int dkdisklabel __P((int fd, struct disklabel * lp));
 #endif
 
-static int
-check_cg_offsets(struct cg *cg) {
-	char *base = (char*)cg,
-		*end = ((char*)cg) + sblock.fs_bsize;;
-
-#define CHECKSIZE(x) (((x) < 0) || \
-		((x) > sblock.fs_bsize) || \
-		(base + (x) > end))
-	if (CHECKSIZE(cg->cg_btotoff)) {
-		pfatal("CG:  block total offset out of range (%d)\n", cg->cg_btotoff);
-		return 0;
-	}
-
-	if ((unsigned int)sblock.fs_cpg > INT_MAX / sizeof(int32_t)) {
-		pfatal("CG:  block total array size overflows\n");
-		return 0;
-	}
-
-	if (CHECKSIZE(sblock.fs_cpg * sizeof(int32_t))) {
-		pfatal("CG:  block total arrays out of bounds\n");
-		return 0;
-	}
-
-	if (CHECKSIZE(cg->cg_boff)) {
-		pfatal("CG:  free block positions out of range (%d)\n", cg->cg_boff);
-		return 0;
-	}
-
-	if ((unsigned int)sblock.fs_nrpos > INT_MAX / sizeof(int16_t)) {
-		pfatal("CG:  free block array size overflows\n");
-		return 0;
-	}
-
-	if (CHECKSIZE(sblock.fs_nrpos * sizeof(int16_t))) {
-		pfatal("CG:  free block array out of bounds\n");
-		return 0;
-	}
-
-	if (CHECKSIZE(cg->cg_clustersumoff)) {
-		pfatal("CG:  cluster sum array offset out of range (%d)\n", cg->cg_clustersumoff);
-		return 0;
-	}
-#undef CHECKSIZE
-
-	return 1;
-}
-
 /*
  * Read in a superblock finding an alternate if necessary.
  * Return 1 if successful, 0 if unsuccessful, -1 if filesystem
@@ -249,13 +202,8 @@ setup(dev)
 #endif	/* REV_ENDIAN_FS */
 	if (!cg_chkmagic(cg0)) {
 	  pfatal("CG %d: BAD MAGIC NUMBER\n", 0);
-	  return(CANTFIXIT);
+	  return(EEXIT);
 	}
-	if (check_cg_offsets(cg0) == 0) {
-		pfatal("CG %d:  OFFSETS OUT OF RANGE", 0);
-		return(CANTFIXIT);
-	}
-
 	if (cg0->cg_clustersumoff != 0) {
 	  /* Check for overlap */
 	  clustersumoff = cg0->cg_freeoff +
@@ -282,12 +230,6 @@ setup(dev)
 		return (-1);
 	}
 	maxfsblock = sblock.fs_size;
-	if (sblock.fs_ipg != 0 &&
-			+ (unsigned)sblock.fs_ncg > INT_MAX / (unsigned)sblock.fs_ipg) {
-		printf("NCG * IPG OVERFLOWS\n");
-		goto badsb;
-	}
-		
 	maxino = sblock.fs_ncg * sblock.fs_ipg;
 	/*
 	 * Check and potentially fix certain fields in the super block.
@@ -423,12 +365,6 @@ setup(dev)
 		    (unsigned)(maxino + 1));
 		goto badsb;
 	}
-	
-	if ((size_t)(maxino + 1) > SIZE_T_MAX / sizeof(short)) {
-		printf("integer overflow detected allocating for lncntp\n");
-		goto badsb;
-	}
-
 	typemap = calloc((unsigned)(maxino + 1), sizeof(char));
 	if (typemap == NULL) {
 		printf("cannot alloc %u bytes for typemap\n",
@@ -438,25 +374,19 @@ setup(dev)
 	lncntp = (short *)calloc((unsigned)(maxino + 1), sizeof(short));
 	if (lncntp == NULL) {
 		printf("cannot alloc %u bytes for lncntp\n", 
-		    (unsigned int)(maxino + 1) * sizeof(short));
+		    (unsigned)(maxino + 1) * sizeof(short));
 		goto badsb;
 	}
 	numdirs = sblock.fs_cstotal.cs_ndir;
 	inplast = 0;
 	listmax = numdirs + 10;
-	if (((size_t)numdirs > SIZE_T_MAX / sizeof(struct inoinfo *)) ||
-			((size_t)listmax > SIZE_T_MAX / sizeof(struct inoinfo *))) {
-		printf("integer overflow detected allocating for inphead\n");
-		goto badsb;
-	}
-
 	inpsort = (struct inoinfo **)calloc((unsigned)listmax,
 	    sizeof(struct inoinfo *));
 	inphead = (struct inoinfo **)calloc((unsigned)numdirs,
 	    sizeof(struct inoinfo *));
 	if (inpsort == NULL || inphead == NULL) {
 		printf("cannot alloc %u bytes for inphead\n", 
-		    (unsigned int)numdirs * sizeof(struct inoinfo *));
+		    (unsigned)numdirs * sizeof(struct inoinfo *));
 		goto badsb;
 	}
 
@@ -582,7 +512,7 @@ readsb(listerr)
 			for ( ; olp < endlp; olp++, nlp++) {
 				if (*olp == *nlp)
 					continue;
-				printf("offset %ld, original %ld, alternate %ld\n",
+				printf("offset %d, original %d, alternate %d\n",
 				    olp - (long *)&sblock, *olp, *nlp);
 			}
 		}
@@ -633,20 +563,22 @@ calcsb(dev, devfd, fs)
 	}
 	memset(fs, 0, sizeof(struct fs));
 	fs->fs_fsize = pp->p_fsize;
-	fs->fs_frag = pp->p_frag;
+//	fs->fs_frag = pp->p_frag;
 	fs->fs_cpg = pp->p_cpg;
 	fs->fs_size = pp->p_size;
 	fs->fs_ntrak = lp->d_ntracks;
 	fs->fs_nsect = lp->d_nsectors;
-	fs->fs_spc = lp->d_secpercyl;
+#warning fix this
+//	fs->fs_spc = lp->d_secpercyl;
 	fs->fs_nspf = fs->fs_fsize / lp->d_secsize;
-	if (fs->fs_frag)
-		fs->fs_sblkno = roundup(
-			howmany(lp->d_bbsize + lp->d_sbsize, fs->fs_fsize),
-			fs->fs_frag);
-	else
-		fs->fs_sblkno = SBOFF/secsize;
-
+#ifdef __APPLE__
+#warning verify this change
+	fs->fs_sblkno = SBOFF/secsize;
+#else
+	fs->fs_sblkno = roundup(
+		howmany(lp->d_bbsize + lp->d_sbsize, fs->fs_fsize),
+		fs->fs_frag);
+#endif
 	fs->fs_cgmask = 0xffffffff;
 	for (i = fs->fs_ntrak; i > 1; i >>= 1)
 		fs->fs_cgmask <<= 1;
