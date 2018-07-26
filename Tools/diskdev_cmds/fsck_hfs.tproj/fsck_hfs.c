@@ -37,19 +37,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #include "fsck_hfs.h"
 #include "fsck_debug.h"
 #include "dfalib/CheckHFS.h"
-
-/*
- * The definition of CACHE_IOSIZE below matches the definition in SVerify1.c.
- * If you change it here, then change it there, too.  Or else put it in some
- * common header file.
- */
-#define CACHE_IOSIZE	32768
-#define CACHE_BLOCKS	128
-#define CACHE_HASHSIZE	111
 
 /*
  * These definitions are duplicated from xnu's hfs_readwrite.c, and could live
@@ -77,6 +69,7 @@ char	rebuildCatalogBtree;  /* rebuild catalog btree file */
 char	modeSetting;	/* set the mode when creating "lost+found" directory */
 int		upgrading;		/* upgrading format */
 int		lostAndFoundMode = 0; /* octal mode used when creating "lost+found" directory */
+uint64_t userCacheSize;	/* Cache size provided by the user */
 
 int	fsmodified;		/* 1 => write done to file system */
 int	fsreadfd;		/* file descriptor for reading file system */
@@ -100,14 +93,36 @@ main(argc, argv)
 	int ret;
 	extern int optind;
 	extern char *optarg;
+	char * lastChar;
 
 	if ((progname = strrchr(*argv, '/')))
 		++progname;
 	else
 		progname = *argv;
 
-	while ((ch = getopt(argc, argv, "D:dfglm:npqruy")) != EOF) {
+	while ((ch = getopt(argc, argv, "c:D:dfglm:npqruy")) != EOF) {
 		switch (ch) {
+		case 'c':
+			/* Cache size to use in fsck_hfs */
+			userCacheSize = strtoull(optarg, &lastChar, 0);
+			if (*lastChar) {
+				switch (tolower(*lastChar)) {
+					case 'g':
+						userCacheSize *= 1024ULL;
+						/* fall through */
+					case 'm':
+						userCacheSize *= 1024ULL;
+						/* fall through */
+					case 'k':
+						userCacheSize *= 1024ULL;
+						break;
+					default:
+						userCacheSize = 0;
+						break;
+				};
+			}
+			break;
+
 		case 'd':
 			debug++;
 			break;
@@ -380,6 +395,8 @@ setup( char *dev, int *blockDevice_fdPtr, int *canWritePtr )
 {
 	struct stat statb;
 	int devBlockSize;
+	uint32_t cacheBlockSize;
+	uint32_t cacheTotalBlocks;
 
 	fswritefd = -1;
 	*blockDevice_fdPtr = -1;
@@ -420,9 +437,15 @@ setup( char *dev, int *blockDevice_fdPtr, int *canWritePtr )
 		pfatal ("Can't get device block size\n");
 		return (0);
 	}
+
+	 /* calculate the cache block size and total blocks */
+	if (CalculateCacheSize(userCacheSize, &cacheBlockSize, &cacheTotalBlocks, debug) != 0) {
+		return (0);
+	}
+
 	/* Initialize the cache */
 	if (CacheInit (&fscache, fsreadfd, fswritefd, devBlockSize,
-			CACHE_IOSIZE, CACHE_BLOCKS, CACHE_HASHSIZE) != EOK) {
+			cacheBlockSize, cacheTotalBlocks, CacheHashSize) != EOK) {
 		pfatal("Can't initialize disk cache\n");
 		return (0);
 	}	
@@ -507,7 +530,8 @@ ExitThisRoutine:
 static void
 usage()
 {
-	(void) fprintf(stderr, "usage: %s [-dfl m [mode] npqruy] special-device\n", progname);
+	(void) fprintf(stderr, "usage: %s [-c [size] dfl m [mode] npqruy] special-device\n", progname);
+	(void) fprintf(stderr, "  c size = cache size (ex. 512m, 1g)\n");
 	(void) fprintf(stderr, "  d = output debugging info\n");
 	(void) fprintf(stderr, "  f = force fsck even if clean (preen only) \n");
 	(void) fprintf(stderr, "  l = live fsck (lock down and test-only)\n");

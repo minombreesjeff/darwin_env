@@ -23,7 +23,7 @@
 .Nd construct a new HFS Plus file system
 .Sh SYNOPSIS
 .Nm newfs_hfs
-.Op Fl N
+.Op Fl N Ar [partition-size]
 .Op Fl U Ar uid
 .Op Fl G Ar gid
 .Op Fl M Ar mask
@@ -53,7 +53,7 @@ reasonable, however
 has several options to allow the defaults to be selectively overridden.
 The options are as follows:
 .Bl -tag -width Fl
-.It Fl N
+.It Fl N Ar [partition-size]
 Causes the file system parameters to be printed out
 without really creating the file system.
 .It Fl U Ar uid

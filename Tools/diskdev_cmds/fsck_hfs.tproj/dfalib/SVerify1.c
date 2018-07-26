@@ -33,6 +33,7 @@
 */
 
 #include "Scavenger.h"
+#include "../cache.h"
 
 //	internal routine prototypes
 
@@ -1245,15 +1246,10 @@ OSErr	CreateExtendedAllocationsFCB( SGlobPtr GPtr )
 		// The allocation file will get processed in whole allocation blocks, or
 		// maximal-sized cache blocks, whichever is smaller.  This means the cache
 		// doesn't need to cope with buffers that are larger than a cache block.
-		//
-		// The definition of CACHE_IOSIZE below matches the definition in fsck_hfs.c.
-		// If you change it here, then change it there, too.  Or else put it in some
-		// common header file.
-		#define CACHE_IOSIZE	32768
-		if (vcb->vcbBlockSize < CACHE_IOSIZE)
+		if (vcb->vcbBlockSize < fscache.BlockSize)
 			(void) SetFileBlockSize (fcb, vcb->vcbBlockSize);
 		else
-			(void) SetFileBlockSize (fcb, CACHE_IOSIZE);
+			(void) SetFileBlockSize (fcb, fscache.BlockSize);
 	
 		if ( volumeHeader->allocationFile.totalBlocks != numABlks )
 		{

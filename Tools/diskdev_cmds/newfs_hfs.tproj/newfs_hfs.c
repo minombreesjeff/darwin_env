@@ -94,6 +94,8 @@ uid_t	gUserID = (uid_t)NOVAL;
 gid_t	gGroupID = (gid_t)NOVAL;
 mode_t	gModeMask = (mode_t)NOVAL;
 
+UInt64  gPartitionSize = 0;
+
 UInt32	catnodesiz = 8192;
 UInt32	extnodesiz = 4096;
 UInt32	atrnodesiz = 4096;
@@ -107,24 +109,43 @@ UInt32	datclumpblks = 0;
 UInt32	hfsgrowblks = 0;      /* maximum growable size of wrapper */
 
 
-int
+UInt64
 get_num(char *str)
 {
-    int num;
-    char *ptr;
+	UInt64 num;
+	char *ptr;
 
-    num = strtoul(str, &ptr, 0);
+	num = strtoull(str, &ptr, 0);
 
-    if (*ptr) {
-	if (tolower(*ptr) == 'k') {
-	    num *= 1024;
-	} else if (tolower(*ptr) == 'm') {
-	    num *= (1024 * 1024);
-	} else if (tolower(*ptr) == 'g') {
-	    num *= (1024 * 1024 * 1024);
+	if (*ptr) {
+		char scale = tolower(*ptr);
+    	
+		switch(scale) {
+			case 'b':
+				num *= 512ULL;
+				break;
+
+			case 'p':
+				num *= 1024ULL;
+				/* fall through */
+			case 't':
+				num *= 1024ULL;
+				/* fall through */
+			case 'g':
+				num *= 1024ULL;
+				/* fall through */
+			case 'm':
+				num *= 1024ULL;
+				/* fall through */
+			case 'k':
+				num *= 1024ULL;
+				break;
+
+			default:
+				num = 0ULL;
+				break;
+		}
 	}
-    }
-
     return num;
 }
 
@@ -148,7 +169,7 @@ main(argc, argv)
 
 	forceHFS = FALSE;
 
-	while ((ch = getopt(argc, argv, "G:J:M:NU:hswb:c:i:n:v:")) != EOF)
+	while ((ch = getopt(argc, argv, "G:J:M:N:U:hswb:c:i:n:v:")) != EOF)
 		switch (ch) {
 		case 'G':
 			gGroupID = a_gid(optarg);
@@ -171,6 +192,12 @@ main(argc, argv)
 			
 		case 'N':
 			gNoCreate = TRUE;
+			if (isdigit(optarg[0])) {
+			    gPartitionSize = get_num(optarg);
+			} else {
+				/* back up because there was no size argument */
+				optind--;
+			}
 			break;
 
 		case 'M':
@@ -236,17 +263,22 @@ main(argc, argv)
 	argc -= optind;
 	argv += optind;
 
-	if (argc != 1)
-		usage();
+	if (gPartitionSize != 0) {
+		if (argc != 0)
+			usage();
+	} else {
+		if (argc != 1)
+			usage();
 
-	special = argv[0];
-	cp = strrchr(special, '/');
-	if (cp != 0)
-		special = cp + 1;
-	if (*special == 'r')
-		special++;
-	(void) sprintf(rawdevice, "%sr%s", _PATH_DEV, special);
-	(void) sprintf(blkdevice, "%s%s", _PATH_DEV, special);
+		special = argv[0];
+		cp = strrchr(special, '/');
+		if (cp != 0)
+			special = cp + 1;
+		if (*special == 'r')
+			special++;
+		(void) sprintf(rawdevice, "%sr%s", _PATH_DEV, special);
+		(void) sprintf(blkdevice, "%s%s", _PATH_DEV, special);
+	}
 
 	if (forceHFS && gJournaled) {
 		fprintf(stderr, "-h -J: incompatible options specified\n");
@@ -265,17 +297,19 @@ main(argc, argv)
 		exit(1);
 	}
 
-	/*
-	 * Check if target device is aready mounted
-	 */
-	n = getmntinfo(&mp, MNT_NOWAIT);
-	if (n == 0)
-		fatal("%s: getmntinfo: %s", blkdevice, strerror(errno));
-
-	while (--n >= 0) {
-		if (strcmp(blkdevice, mp->f_mntfromname) == 0)
-			fatal("%s is mounted on %s", blkdevice, mp->f_mntonname);
-		++mp;
+	if (gPartitionSize == 0) {
+		/*
+		 * Check if target device is aready mounted
+		 */
+		n = getmntinfo(&mp, MNT_NOWAIT);
+		if (n == 0)
+			fatal("%s: getmntinfo: %s", blkdevice, strerror(errno));
+	
+		while (--n >= 0) {
+			if (strcmp(blkdevice, mp->f_mntfromname) == 0)
+				fatal("%s is mounted on %s", blkdevice, mp->f_mntonname);
+			++mp;
+		}
 	}
 
 	if (hfs_newfs(rawdevice, forceHFS, true) < 0) {
@@ -474,49 +508,55 @@ hfs_newfs(char *device, int forceHFS, int isRaw)
 	hfsparams_t defaults = {0};
 	u_int64_t maxSectorsPerIO;
 
-	if (gNoCreate) {
-		fso = open( device, O_RDONLY | O_NDELAY, 0 );
-	} else {
-		fso = open( device, O_WRONLY | O_NDELAY, 0 );
-	}
-
-	if (fso < 0)
-		fatal("%s: %s", device, strerror(errno));
-
-	if (fstat( fso, &stbuf) < 0)
-		fatal("%s: %s", device, strerror(errno));
-
-	if (ioctl(fso, DKIOCGETBLOCKCOUNT, &dip.totalSectors) < 0)
-		fatal("%s: %s", device, strerror(errno));
-
-	if (ioctl(fso, DKIOCGETBLOCKSIZE, &dip.sectorSize) < 0)
-		fatal("%s: %s", device, strerror(errno));
-
-	if (ioctl(fso, DKIOCGETMAXBLOCKCOUNTWRITE, &maxSectorsPerIO) < 0)
-		dip.sectorsPerIO = (128 * 1024) / dip.sectorSize;  /* use 128K as default */
-	else
-		dip.sectorsPerIO = MIN(maxSectorsPerIO, (1024 * 1024) / dip.sectorSize);
-        /*
-         * The make_hfs code currentlydoes 512 byte sized I/O.
-         * If the sector size is bigger than 512, start over
-         * using the block device (to get de-blocking).
-         */       
-        if (dip.sectorSize != kBytesPerSector) {
-		if (isRaw) {
-			close(fso);
-			errno = ENXIO;
-			return (-1);
-		} else {
-			if ((dip.sectorSize % kBytesPerSector) != 0)
-				fatal("%d is an unsupported sector size\n", dip.sectorSize);
-
-			dip.totalSectors *= (dip.sectorSize / kBytesPerSector);
-			dip.sectorsPerIO *= (dip.sectorSize / kBytesPerSector);
+	if (gPartitionSize) {
 			dip.sectorSize = kBytesPerSector;
+			dip.totalSectors = gPartitionSize / kBytesPerSector;
+			dip.sectorsPerIO = (128 * 1024) / kBytesPerSector;
+			dip.fd = 0;
+	} else {
+		if (gNoCreate) {
+			fso = open( device, O_RDONLY | O_NDELAY, 0 );
+		} else {
+			fso = open( device, O_WRONLY | O_NDELAY, 0 );
 		}
-        }
-  
-	dip.fd = fso;
+		dip.fd = fso;
+	
+		if (fso < 0)
+			fatal("%s: %s", device, strerror(errno));
+	
+		if (fstat( fso, &stbuf) < 0)
+			fatal("%s: %s", device, strerror(errno));
+	
+		if (ioctl(fso, DKIOCGETBLOCKCOUNT, &dip.totalSectors) < 0)
+			fatal("%s: %s", device, strerror(errno));
+	
+		if (ioctl(fso, DKIOCGETBLOCKSIZE, &dip.sectorSize) < 0)
+			fatal("%s: %s", device, strerror(errno));
+	
+		if (ioctl(fso, DKIOCGETMAXBLOCKCOUNTWRITE, &maxSectorsPerIO) < 0)
+			dip.sectorsPerIO = (128 * 1024) / dip.sectorSize;  /* use 128K as default */
+		else
+			dip.sectorsPerIO = MIN(maxSectorsPerIO, (1024 * 1024) / dip.sectorSize);
+		/*
+		 * The make_hfs code currentlydoes 512 byte sized I/O.
+		 * If the sector size is bigger than 512, start over
+		 * using the block device (to get de-blocking).
+		 */       
+		if (dip.sectorSize != kBytesPerSector) {
+			if (isRaw) {
+				close(fso);
+				errno = ENXIO;
+				return (-1);
+			} else {
+				if ((dip.sectorSize % kBytesPerSector) != 0)
+					fatal("%d is an unsupported sector size\n", dip.sectorSize);
+	
+				dip.totalSectors *= (dip.sectorSize / kBytesPerSector);
+				dip.sectorsPerIO *= (dip.sectorSize / kBytesPerSector);
+				dip.sectorSize = kBytesPerSector;
+			}
+		}
+	}
 	dip.sectorOffset = 0;
 	time(&createtime);
 
@@ -753,7 +793,7 @@ static void hfsplus_params (UInt64 sectorCount, UInt32 sectorSize, hfsparams_t *
 		defaults->flags |= kMakeCaseSensitive;
 
 	if (gNoCreate) {
-		if (!gWrapper)
+		if (!gWrapper && gPartitionSize == 0)
 			printf("%qd sectors (%lu bytes per sector)\n", sectorCount, sectorSize);
 		printf("HFS Plus format parameters:\n");
 		printf("\tvolume name: \"%s\"\n", gVolumeName);
