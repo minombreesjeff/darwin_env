@@ -24,7 +24,7 @@
  */
 
 /******************************************************************
- * The purpose of this module is to provide a LocalAuthentication 
+ * The purpose of this module is to provide a Touch ID
  * based authentication module for Mac OS X.
  ******************************************************************/
 
@@ -38,26 +38,35 @@
 
 #include <security/pam_modules.h>
 #include <security/pam_appl.h>
+#include <Security/Authorization.h>
+#include <vproc_priv.h>
+#include "Logging.h"
+#include "Common.h"
+
+PAM_DEFINE_LOG(touchid)
+#define PAM_LOG PAM_LOG_touchid()
 
 PAM_EXTERN int
 pam_sm_authenticate(pam_handle_t * pamh, int flags, int argc, const char **argv)
 {
-    openpam_log(PAM_LOG_NOTICE, "pam_localauthentication: pam_sm_authenticate");
+    os_log_debug(PAM_LOG, "pam_tid: pam_sm_authenticate");
 
     int retval = PAM_AUTH_ERR;
-    int tmpval = 0;
-    CFDataRef *externalized_context = NULL;
     CFTypeRef context = NULL;
     CFErrorRef error = NULL;
     CFMutableDictionaryRef options = NULL;
     CFNumberRef key = NULL;
     CFNumberRef value = NULL;
+	CFNumberRef key2 = NULL;
+	CFNumberRef value2 = NULL;
+	AuthorizationRef authorizationRef = NULL;
+
     int tmp;
 
     const char *user = NULL;
     struct passwd *pwd = NULL;
     struct passwd pwdbuf;
-    
+
     /* determine the required bufsize for getpwnam_r */
     int bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
     if (bufsize == -1) {
@@ -68,34 +77,27 @@ pam_sm_authenticate(pam_handle_t * pamh, int flags, int argc, const char **argv)
     char *buffer = malloc(bufsize);
     if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS || !user ||
         getpwnam_r(user, &pwdbuf, buffer, bufsize, &pwd) != 0 || !pwd) {
-        openpam_log(PAM_LOG_ERROR, "unable to obtain the username.");
-        retval = PAM_AUTHINFO_UNAVAIL;
-        goto cleanup;
-    }
-    
-    /* get the externalized context */
-    tmpval = pam_get_data(pamh, "token_la", (void *)&externalized_context);
-    if (tmpval != PAM_SUCCESS) {
-        openpam_log(PAM_LOG_ERROR, "error obtaining the token: %d", tmpval);
+        os_log_error(PAM_LOG, "unable to obtain the username.");
         retval = PAM_AUTHINFO_UNAVAIL;
         goto cleanup;
     }
 
-    /* check that the externalized context is valid */
-    if (!*externalized_context) {
-        openpam_log(PAM_LOG_ERROR, "invalid token");
-        retval = PAM_AUTHTOK_ERR;
-        goto cleanup;
-    }
+	// check if we are running under Aqua session
+	char *manager;
+	if (vproc_swap_string(NULL, VPROC_GSK_MGR_NAME, NULL, &manager) != NULL) {
+		os_log_error(PAM_LOG, "unable to determine session.");
+		retval = PAM_AUTH_ERR;
+		goto cleanup;
+	}
+	bool runningInAquaSession = manager ? !strcmp(manager, VPROCMGR_SESSION_AQUA) : FALSE;
+	free(manager);
+	if (!runningInAquaSession) {
+		os_log_debug(PAM_LOG, "UI not available.");
+		retval = PAM_AUTH_ERR;
+		goto cleanup;
+	}
 
-    /* create a new LA context from the externalized context */
-    context = LACreateNewContextWithACMContext(*externalized_context, &error);
-    if (!context) {
-        openpam_log(PAM_LOG_ERROR, "context creation failed: %ld", CFErrorGetCode(error));
-        retval = PAM_AUTHTOK_ERR;
-        goto cleanup;
-    }
-
+	// check if user is eligible to use Touch ID. If not, fail.
     /* prepare the options dictionary, aka rewrite @{ @(LAOptionNotInteractive) : @YES } without Foundation */
     tmp = kLAOptionNotInteractive;
     key = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &tmp);
@@ -103,51 +105,67 @@ pam_sm_authenticate(pam_handle_t * pamh, int flags, int argc, const char **argv)
     tmp = 1;
     value = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &tmp);
 
-    options = CFDictionaryCreateMutable(kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	tmp = kLAOptionUserId;
+	key2 = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &tmp);
+
+	tmp = pwd->pw_uid;
+	value2 = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &tmp);
+
+	if (! (key && value && key2 && value2)) {
+		os_log_error(PAM_LOG, "unable to create data structures.");
+		retval = PAM_AUTH_ERR;
+		goto cleanup;
+	}
+
+    options = CFDictionaryCreateMutable(kCFAllocatorDefault, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     CFDictionarySetValue(options, key, value);
+	CFDictionarySetValue(options, key2, value2);
+
+	context = LACreateNewContextWithACMContext(NULL, &error);
+	if (!context) {
+		os_log_error(PAM_LOG, "unable to create context.");
+		retval = PAM_AUTH_ERR;
+		goto cleanup;
+	}
 
     /* evaluate policy */
     if (!LAEvaluatePolicy(context, kLAPolicyDeviceOwnerAuthenticationWithBiometrics, options, &error)) {
-        openpam_log(PAM_LOG_ERROR, "policy evaluation failed: %ld", CFErrorGetCode(error));
-        retval = PAM_AUTH_ERR;
-        goto cleanup;
+		// error is intended as failure means Touch ID is not usable which is in fact not an error but the state we need to handle
+		if (CFErrorGetCode(error) != kLAErrorNotInteractive) {
+			os_log_debug(PAM_LOG, "policy evaluation failed: %ld", CFErrorGetCode(error));
+			retval = PAM_AUTH_ERR;
+			goto cleanup;
+		}
     }
 
-    /* verify that M8 is not spoofed */
-    if (!LAVerifySEP(pwd->pw_uid, &error)) {
-        openpam_log(PAM_LOG_ERROR, "LAVerifySEP failed: %ld", CFErrorGetCode(error));
-        retval = PAM_AUTH_ERR;
-        goto cleanup;
-    }
-    
+	OSStatus status = AuthorizationCreate(NULL, NULL, kAuthorizationFlagDefaults, &authorizationRef);
+	if (status == errAuthorizationSuccess) {
+		AuthorizationItem myItems = {"com.apple.security.sudo", 0, NULL, 0};
+		AuthorizationRights myRights = {1, &myItems};
+		AuthorizationRights *authorizedRights = NULL;
+		AuthorizationFlags flags = kAuthorizationFlagDefaults | kAuthorizationFlagInteractionAllowed | kAuthorizationFlagExtendRights;
+		status = AuthorizationCopyRights(authorizationRef, &myRights, kAuthorizationEmptyEnvironment, flags, &authorizedRights);
+		os_log_debug(PAM_LOG, "Authorization result: %d", status);
+		if (authorizedRights)
+			AuthorizationFreeItemSet(authorizedRights);
+		AuthorizationFree(authorizationRef, kAuthorizationFlagDefaults);
+	}
+
     /* we passed the Touch ID authentication successfully */
-    retval = PAM_SUCCESS;
-    
+	if (status == errAuthorizationSuccess) {
+		retval = PAM_SUCCESS;
+	}
+
 cleanup:
-    if (context) {
-        CFRelease(context);
-    }
-
-    if (key) {
-        CFRelease(key);
-    }
-
-    if (value) {
-        CFRelease(value);
-    }
-
-    if (options) {
-        CFRelease(options);
-    }
-    
-    if (error) {
-        CFRelease(error);
-    }
-
-    if (buffer) {
-        free(buffer);
-    }
-    openpam_log(PAM_LOG_NOTICE, "pam_localauthentication: pam_sm_authenticate returned %d", retval);
+	CFReleaseSafe(context);
+	CFReleaseSafe(key);
+	CFReleaseSafe(value);
+	CFReleaseSafe(key2);
+	CFReleaseSafe(value2);
+	CFReleaseSafe(options);
+	CFReleaseSafe(error);
+    free(buffer);
+	os_log_debug(PAM_LOG, "pam_tid: pam_sm_authenticate returned %d", retval);
     return retval;
 }
 
