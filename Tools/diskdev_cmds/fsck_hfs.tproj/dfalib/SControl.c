@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1999-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -368,6 +368,7 @@ void ScavCtrl( SGlobPtr GPtr, UInt32 ScavOp, short *ScavRes )
 			gettimeofday( &myStartTime, &zone );
 #endif
 
+			/* Initialize volume bitmap structure */
 			if ( BitMapCheckBegin(GPtr) != 0)
 				break;
 
@@ -388,7 +389,8 @@ void ScavCtrl( SGlobPtr GPtr, UInt32 ScavOp, short *ScavRes )
 			gettimeofday( &myStartTime, &zone );
 #endif
 
-			if ( ( result = CreateExtentsBTreeControlBlock( GPtr ) ) )	//	Create the calculated BTree structures
+			/* Create calculated BTree structures */
+			if ( ( result = CreateExtentsBTreeControlBlock( GPtr ) ) )	
 				break;
 			if ( ( result = CreateCatalogBTreeControlBlock( GPtr ) ) )
 				break;
@@ -419,6 +421,7 @@ void ScavCtrl( SGlobPtr GPtr, UInt32 ScavOp, short *ScavRes )
 			gettimeofday( &myStartTime, &zone );
 #endif
 				
+			/* Verify extent btree structure */
 			if ((result = ExtBTChk(GPtr)))
 				break;
 
@@ -435,7 +438,8 @@ void ScavCtrl( SGlobPtr GPtr, UInt32 ScavOp, short *ScavRes )
 			
 			GPtr->itemsProcessed += GPtr->onePercent;	// We do this 4 times as set up in CalculateItemCount() to smooth the scroll
 
-			if ((result = ExtFlChk(GPtr)))
+			/* Check extents of bad block file */
+			if ((result = BadBlockFileExtentCheck(GPtr)))
 				break;
 			if ((result = CheckForStop(GPtr)))
 				break;
@@ -458,6 +462,10 @@ void ScavCtrl( SGlobPtr GPtr, UInt32 ScavOp, short *ScavRes )
 				break;
 			}
 			
+			/* Check catalog btree.  For given fileID, the function accounts
+			 * for all extents existing in catalog record as well as in
+			 * overflow extent btree
+			 */
 			if ((result = CheckCatalogBTree(GPtr)))
 				break;
 
@@ -478,6 +486,7 @@ void ScavCtrl( SGlobPtr GPtr, UInt32 ScavOp, short *ScavRes )
 			gettimeofday( &myStartTime, &zone );
 #endif
 				
+			/* Check catalog hierarchy */
 			if ((result = CatHChk(GPtr)))
 				break;
 
@@ -491,10 +500,36 @@ void ScavCtrl( SGlobPtr GPtr, UInt32 ScavOp, short *ScavRes )
 
 			if ((result = CheckForStop(GPtr)))
 				break;
+
+			/* Check attribute btree.  The function accounts for all extents
+			 * for extended attributes whose values are stored in 
+			 * allocation blocks
+			 */
 			if ((result = AttrBTChk(GPtr)))
 				break;
+
 			if ((result = CheckForStop(GPtr)))
 				break;
+
+			/* 
+			 * fsck_hfs has accounted for all valid allocation blocks by 
+			 * traversing all catalog records and attribute records.
+			 * These traversals may have found overlapping extents.  Note
+			 * that the overlapping extents are detected in CaptureBitmapBits 
+			 * when it tries to set a bit corresponding to allocation block
+			 * and finds that it is already set.  Therefore fsck_hfs does not
+			 * know the orignal file involved overlapped extents.
+			 */
+			if (GPtr->VIStat & S_OverlappingExtents) {
+				/* Find original files involved in overlapped extents */
+				result = FindOrigOverlapFiles(GPtr);
+				if (result) {
+					break;
+				}
+		
+				/* Print all unique overlapping file IDs and paths */
+				(void) PrintOverlapFiles(GPtr);
+			}
 
 			WriteMsg( GPtr, M_VolumeBitMapChk, kStatusMessage );
 
@@ -502,6 +537,7 @@ void ScavCtrl( SGlobPtr GPtr, UInt32 ScavOp, short *ScavRes )
 			gettimeofday( &myStartTime, &zone );
 #endif
 				
+			/* Compare in-memory volume bitmap with on-disk bitmap */
 			if ((result = CheckVolumeBitMap(GPtr, false)))
 				break;
 
@@ -521,7 +557,8 @@ void ScavCtrl( SGlobPtr GPtr, UInt32 ScavOp, short *ScavRes )
 #if SHOW_ELAPSED_TIMES
 			gettimeofday( &myStartTime, &zone );
 #endif
-				
+
+			/* Verify volume level information */
 			if ((result = VInfoChk(GPtr)))
 				break;
 
@@ -952,6 +989,9 @@ static int ScavTerm( SGlobPtr GPtr )
 	BTreeControlBlock	*btcbP;
 	RepairOrderPtr		rP;
 	OSErr			err;
+	ExtentsTable 		**extentsTableH;
+	ExtentInfo		*curExtentInfo;
+	int			i;
 
 	(void) BitMapCheckEnd();
 
@@ -965,8 +1005,21 @@ static int ScavTerm( SGlobPtr GPtr )
 	if( GPtr->validFilesList != nil )
 		DisposeHandle( (Handle) GPtr->validFilesList );
 	
-	if( GPtr->overlappedExtents != nil )
+	if( GPtr->overlappedExtents != nil ) {
+ 		extentsTableH = GPtr->overlappedExtents;
+ 	
+		/* Overlapped extents list also allocated memory for attribute name */
+		for (i=0; i<(**extentsTableH).count; i++) {
+			curExtentInfo = &((**extentsTableH).extentInfo[i]);
+
+			/* Deallocate memory for attribute name, if any */
+			if (curExtentInfo->attrname) {
+				free(curExtentInfo->attrname);
+			}
+		}
+
 		DisposeHandle( (Handle) GPtr->overlappedExtents );
+	}
 	
 	if( GPtr->fileIdentifierTable != nil )
 		DisposeHandle( (Handle) GPtr->fileIdentifierTable );

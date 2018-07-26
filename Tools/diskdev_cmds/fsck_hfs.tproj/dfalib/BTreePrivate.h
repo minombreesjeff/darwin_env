@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1999, 2005-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -96,7 +96,7 @@ typedef enum {
 
 #if DEBUG_BUILD
 	#define Panic( message )					DebugStr( (ConstStr255Param) message )
-	#define PanicIf( condition, message )		if ( condition != 0 )	DebugStr( message )
+	#define PanicIf( condition, message )		if ( (condition) != 0 )	DebugStr( message )
 #else
 	#define Panic( message )
 	#define PanicIf( condition, message )
@@ -216,7 +216,7 @@ typedef BTreeKeyPtr			 KeyPtr;
 
 #if DEBUG_BUILD
 	#define Panic( message )					DebugStr( (ConstStr255Param) message )
-	#define PanicIf( condition, message )		if ( condition != 0 )	DebugStr( message )
+	#define PanicIf( condition, message )		if ( (condition) != 0 )	DebugStr( message )
 #else
 	#define Panic( message )
 	#define PanicIf( condition, message )

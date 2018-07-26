@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1999-2000, 2002-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -39,6 +39,7 @@
 #include <stdlib.h>
 
 #include "fsck_hfs.h"
+#include "fsck_debug.h"
 #include "dfalib/CheckHFS.h"
 
 /*
@@ -105,10 +106,18 @@ main(argc, argv)
 	else
 		progname = *argv;
 
-	while ((ch = getopt(argc, argv, "dfglm:npqruy")) != EOF) {
+	while ((ch = getopt(argc, argv, "D:dfglm:npqruy")) != EOF) {
 		switch (ch) {
 		case 'd':
 			debug++;
+			break;
+
+		case 'D':
+			/* Input value should be in hex example: -D 0x5 */
+			cur_debug_level = strtoul(optarg, NULL, 0);
+			if (cur_debug_level == 0) {
+				(void) fprintf (stderr, "%s: invalid debug development argument.  Assuming zero\n", progname);
+			}
 			break;
 
 		case 'f':
