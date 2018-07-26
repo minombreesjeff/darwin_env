@@ -1,5 +1,3 @@
-/*	$NetBSD: cut.c,v 1.12 1998/08/25 20:59:36 ross Exp $	*/
-
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -36,22 +34,17 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static const char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+static const char sccsid[] = "@(#)cut.c	8.3 (Berkeley) 5/4/95";
+#endif /* not lint */
 #include <sys/cdefs.h>
-#ifndef lint
-__COPYRIGHT("@(#) Copyright (c) 1989, 1993\n\
-	The Regents of the University of California.  All rights reserved.\n");
-#endif /* not lint */
-
-#ifndef lint
-#if 0
-static char sccsid[] = "@(#)cut.c	8.3 (Berkeley) 5/4/95";
-#endif
-__RCSID("$NetBSD: cut.c,v 1.12 1998/08/25 20:59:36 ross Exp $");
-#endif /* not lint */
+//__FBSDID("$FreeBSD: src/usr.bin/cut/cut.c,v 1.23 2002/09/04 23:28:59 dwmalone Exp $");
 
 #include <ctype.h>
 #include <err.h>
-#include <errno.h>
 #include <limits.h>
 #include <locale.h>
 #include <stdio.h>
@@ -59,37 +52,44 @@ __RCSID("$NetBSD: cut.c,v 1.12 1998/08/25 20:59:36 ross Exp $");
 #include <string.h>
 #include <unistd.h>
 
+int	bflag;
 int	cflag;
 char	dchar;
 int	dflag;
 int	fflag;
+int	nflag;
 int	sflag;
 
-void	c_cut __P((FILE *, char *));
-void	f_cut __P((FILE *, char *));
-void	get_list __P((char *));
-int	main __P((int, char **));
-void	usage __P((void));
+void	b_n_cut(FILE *, const char *);
+void	c_cut(FILE *, const char *);
+void	f_cut(FILE *, const char *);
+void	get_list(char *);
+void	needpos(size_t);
+static 	void usage(void);
 
 int
-main(argc, argv)
-	int argc;
-	char *argv[];
+main(int argc, char *argv[])
 {
 	FILE *fp;
-	void (*fcn) __P((FILE *, char *));
-	int ch;
+	void (*fcn)(FILE *, const char *);
+	int ch, rval;
+
+	setlocale(LC_ALL, "");
 
 	fcn = NULL;
-	setlocale (LC_ALL, "");
-
 	dchar = '\t';			/* default delimiter is \t */
 
-	/* Since we don't support multi-byte characters, the -c and -b 
-	   options are equivalent, and the -n option is meaningless. */
+	/*
+	 * Since we don't support multi-byte characters, the -c and -b
+	 * options are equivalent.
+	 */
 	while ((ch = getopt(argc, argv, "b:c:d:f:sn")) != -1)
 		switch(ch) {
 		case 'b':
+			fcn = c_cut;
+			get_list(optarg);
+			bflag = 1;
+			break;
 		case 'c':
 			fcn = c_cut;
 			get_list(optarg);
@@ -108,6 +108,7 @@ main(argc, argv)
 			sflag = 1;
 			break;
 		case 'n':
+			nflag = 1;
 			break;
 		case '?':
 		default:
@@ -117,32 +118,44 @@ main(argc, argv)
 	argv += optind;
 
 	if (fflag) {
-		if (cflag)
+		if (bflag || cflag || nflag)
 			usage();
-	} else if (!cflag || dflag || sflag)
+	} else if (!(bflag || cflag) || dflag || sflag)
+		usage();
+	else if (!bflag && nflag)
 		usage();
 
+	if (nflag)
+		fcn = b_n_cut;
+
+	rval = 0;
 	if (*argv)
 		for (; *argv; ++argv) {
-			if (!(fp = fopen(*argv, "r")))
-				err(1, "%s", *argv);
-			fcn(fp, *argv);
-			(void)fclose(fp);
+			if (strcmp(*argv, "-") == 0)
+				fcn(stdin, "stdin");
+			else {
+				if (!(fp = fopen(*argv, "r"))) {
+					warn("%s", *argv);
+					rval = 1;
+					continue;
+				}
+				fcn(fp, *argv);
+				(void)fclose(fp);
+			}
 		}
 	else
 		fcn(stdin, "stdin");
-	exit(0);
+	exit(rval);
 }
 
-int autostart, autostop, maxval;
+size_t autostart, autostop, maxval;
 
-char positions[_POSIX2_LINE_MAX + 1];
+char *positions;
 
 void
-get_list(list)
-	char *list;
+get_list(char *list)
 {
-	int setautostart, start, stop;
+	size_t setautostart, start, stop;
 	char *pos;
 	char *p;
 
@@ -154,19 +167,19 @@ get_list(list)
 	 * overlapping lists.  We also handle "-3-5" although there's no
 	 * real reason too.
 	 */
-	for (; (p = strtok(list, ", \t")) != NULL; list = NULL) {
+	for (; (p = strsep(&list, ", \t")) != NULL;) {
 		setautostart = start = stop = 0;
 		if (*p == '-') {
 			++p;
 			setautostart = 1;
 		}
-		if (isdigit(*p)) {
+		if (isdigit((unsigned char)*p)) {
 			start = stop = strtol(p, &p, 10);
 			if (setautostart && start > autostart)
 				autostart = start;
 		}
 		if (*p == '-') {
-			if (isdigit(p[1]))
+			if (isdigit((unsigned char)p[1]))
 				stop = strtol(p + 1, &p, 10);
 			if (*p == '-') {
 				++p;
@@ -175,31 +188,111 @@ get_list(list)
 			}
 		}
 		if (*p)
-			errx(1, "[-cf] list: illegal list value\n");
+			errx(1, "[-cf] list: illegal list value");
 		if (!stop || !start)
-			errx(1, "[-cf] list: values may not include zero\n");
-		if (stop > _POSIX2_LINE_MAX)
-			errx(1, "[-cf] list: %d too large (max %d)\n",
-			    stop, _POSIX2_LINE_MAX);
-		if (maxval < stop)
+			errx(1, "[-cf] list: values may not include zero");
+		if (maxval < stop) {
 			maxval = stop;
+			needpos(maxval + 1);
+		}
 		for (pos = positions + start; start++ <= stop; *pos++ = 1);
 	}
 
 	/* overlapping ranges */
-	if (autostop && maxval > autostop)
+	if (autostop && maxval > autostop) {
 		maxval = autostop;
+		needpos(maxval + 1);
+	}
 
 	/* set autostart */
 	if (autostart)
 		memset(positions + 1, '1', autostart);
 }
 
-/* ARGSUSED */
 void
-c_cut(fp, fname)
-	FILE *fp;
-	char *fname;
+needpos(size_t n)
+{
+	static size_t npos;
+	size_t oldnpos;
+
+	/* Grow the positions array to at least the specified size. */
+	if (n > npos) {
+		oldnpos = npos;
+		if (npos == 0)
+			npos = n;
+		while (n > npos)
+			npos *= 2;
+		if ((positions = realloc(positions, npos)) == NULL)
+			err(1, "realloc");
+		memset((char *)positions + oldnpos, 0, npos - oldnpos);
+	}
+}
+
+/*
+ * Cut based on byte positions, taking care not to split multibyte characters.
+ * Although this function also handles the case where -n is not specified,
+ * c_cut() ought to be much faster.
+ */
+void
+b_n_cut(FILE *fp, const char *fname)
+{
+	size_t col, i, lbuflen;
+	char *lbuf;
+	int canwrite, clen, warned;
+
+	warned = 0;
+	while ((lbuf = fgetln(fp, &lbuflen)) != NULL) {
+		for (col = 0; lbuflen > 0; col += clen) {
+			if ((clen = mblen(lbuf, lbuflen)) < 0) {
+				if (!warned) {
+					warn("%s", fname);
+					warned = 1;
+				}
+				clen = 1;
+			}
+			if (clen == 0 || *lbuf == '\n')
+				break;
+			if (col < maxval && !positions[1 + col]) {
+				/*
+				 * Print the character if (1) after an initial
+				 * segment of un-selected bytes, the rest of
+				 * it is selected, and (2) the last byte is
+				 * selected.
+				 */
+				i = col;
+				while (i < col + clen && i < maxval &&
+				    !positions[1 + i])
+					i++;
+				canwrite = i < col + clen;
+				for (; i < col + clen && i < maxval; i++)
+					canwrite &= positions[1 + i];
+				if (canwrite)
+					fwrite(lbuf, 1, clen, stdout);
+			} else {
+				/*
+				 * Print the character if all of it has
+				 * been selected.
+				 */
+				canwrite = 1;
+				for (i = col; i < col + clen; i++)
+					if ((i >= maxval && !autostop) ||
+					    (i < maxval && !positions[1 + i])) {
+						canwrite = 0;
+						break;
+					}
+				if (canwrite)
+					fwrite(lbuf, 1, clen, stdout);
+			}
+			lbuf += clen;
+			lbuflen -= clen;
+		}
+		if (lbuflen > 0)
+			putchar('\n');
+	}
+}
+
+void
+c_cut(FILE *fp, const char *fname __unused)
 {
 	int ch, col;
 	char *pos;
@@ -227,26 +320,35 @@ c_cut(fp, fname)
 }
 
 void
-f_cut(fp, fname)
-	FILE *fp;
-	char *fname;
+f_cut(FILE *fp, const char *fname __unused)
 {
 	int ch, field, isdelim;
 	char *pos, *p, sep;
 	int output;
-	char lbuf[_POSIX2_LINE_MAX + 1];
+	char *lbuf, *mlbuf;
+	size_t lbuflen;
 
-	for (sep = dchar; fgets(lbuf, sizeof(lbuf), fp);) {
+	mlbuf = NULL;
+	for (sep = dchar; (lbuf = fgetln(fp, &lbuflen)) != NULL;) {
+		/* Assert EOL has a newline. */
+		if (*(lbuf + lbuflen - 1) != '\n') {
+			/* Can't have > 1 line with no trailing newline. */
+			mlbuf = malloc(lbuflen + 1);
+			if (mlbuf == NULL)
+				err(1, "malloc");
+			memcpy(mlbuf, lbuf, lbuflen);
+			*(mlbuf + lbuflen) = '\n';
+			lbuf = mlbuf;
+		}
 		output = 0;
 		for (isdelim = 0, p = lbuf;; ++p) {
-			if (!(ch = *p))
-				errx(1, "%s: line too long.\n", fname);
+			ch = *p;
 			/* this should work if newline is delimiter */
 			if (ch == sep)
 				isdelim = 1;
 			if (ch == '\n') {
 				if (!isdelim && !sflag)
-					(void)printf("%s", lbuf);
+					(void)fwrite(lbuf, lbuflen, 1, stdout);
 				break;
 			}
 		}
@@ -278,12 +380,16 @@ f_cut(fp, fname)
 		}
 		(void)putchar('\n');
 	}
+	if (mlbuf != NULL)
+		free(mlbuf);
 }
 
-void
-usage()
+static void
+usage(void)
 {
-	(void)fprintf(stderr,
-"usage:\tcut -c list [file1 ...]\n\tcut -f list [-s] [-d delim] [file ...]\n");
+	(void)fprintf(stderr, "%s\n%s\n%s\n",
+		"usage: cut -b list [-n] [file ...]",
+		"       cut -c list [file ...]",
+		"       cut -f list [-s] [-d delim] [file ...]");
 	exit(1);
 }
