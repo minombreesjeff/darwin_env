@@ -1,10 +1,6 @@
-/* inputting files to be patched */
+/* Failure exit status
 
-/* $Id: inp.h,v 1.1.1.3 2003/05/08 18:38:02 rbraun Exp $ */
-
-/* Copyright (C) 1986, 1988 Larry Wall
-   Copyright (C) 1991, 1992, 1993, 1997, 1998, 1999, 2002 Free
-   Software Foundation, Inc.
+   Copyright (C) 2002 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,9 +17,15 @@
    If not, write to the Free Software Foundation,
    59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-XTERN LINENUM input_lines;		/* how long is input file in lines */
+#if HAVE_CONFIG_H
+# include <config.h>
+#endif
 
-char const *ifetch (LINENUM, int, size_t *);
-void get_input_file (char const *, char const *);
-void re_input (void);
-void scan_input (char *);
+#if HAVE_STDLIB_H
+# include <stdlib.h>
+#endif
+#ifndef EXIT_FAILURE
+# define EXIT_FAILURE 1
+#endif
+
+int volatile exit_failure = EXIT_FAILURE;
