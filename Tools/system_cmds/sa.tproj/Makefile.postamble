@@ -80,7 +80,7 @@
         # User/group ownership 
 #INSTALL_AS_GROUP = wheel
         # (probably want to set both of these) 
-INSTALL_PERMISSIONS = 4555
+#INSTALL_PERMISSIONS = 4555
         # If set, 'install' chmod's executable to this
 
 
@@ -100,5 +100,5 @@ INSTALL_PERMISSIONS = 4555
 #
 
 install-man-page:
-	install -d $(DSTROOT)/usr/share/man/man1
-	install -c -m 444 top.1 $(DSTROOT)/usr/share/man/man1/top.1
+	install -d $(DSTROOT)/usr/share/man/man8
+	install -c -m 444 sa.8 $(DSTROOT)/usr/share/man/man8/sa.8

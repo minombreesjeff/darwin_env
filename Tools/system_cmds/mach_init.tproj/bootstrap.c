@@ -1,24 +1,23 @@
 /*
- * Copyright (c) 1999-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1999-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * Reserved.  This file contains Original Code and/or Modifications of
+ * Original Code as defined in and that are subject to the Apple Public
+ * Source License Version 1.0 (the 'License').  You may not use this file
+ * except in compliance with the License.  Please obtain a copy of the
+ * License at http://www.apple.com/publicsource and read it before using
+ * this file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License."
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -47,12 +46,15 @@
 
 #import <sys/ioctl.h>
 #import <sys/types.h>
+#import <sys/time.h>
+#import <sys/resource.h>
 #import <sys/wait.h>
 #import <pthread.h>
 #import	<string.h>
 #import	<ctype.h>
 #import	<stdio.h>
 #import <libc.h>
+#import <paths.h>
 
 #import "bootstrap.h"
 
@@ -123,42 +125,60 @@ pthread_t	demand_thread;
 mach_port_t notify_port;
 mach_port_t backup_port;
 
+
 static void
-notify_server_loop(mach_port_name_t about)
+enablecoredumps(boolean_t enabled)
+{
+	struct rlimit rlimit;
+
+	getrlimit(RLIMIT_CORE, &rlimit);
+	rlimit.rlim_cur = (enabled) ? rlimit.rlim_max : 0;
+	setrlimit(RLIMIT_CORE, &rlimit);
+}
+
+static void
+toggle_debug(int signal)
+{
+
+	debugging = (debugging) ? FALSE : TRUE;
+	enablecoredumps(debugging);
+}
+
+static mach_msg_return_t
+inform_server_loop(
+        mach_port_name_t about,
+	mach_msg_option_t options)
 {
 	mach_port_destroyed_notification_t not;
-	mach_msg_return_t nresult;
+	mach_msg_size_t size = sizeof(not) - sizeof(not.trailer);
 
 	not.not_header.msgh_id = DEMAND_REQUEST;
 	not.not_header.msgh_remote_port = backup_port;
 	not.not_header.msgh_local_port = MACH_PORT_NULL;
 	not.not_header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
-	not.not_header.msgh_size = sizeof(not) - sizeof(not.trailer);
+	not.not_header.msgh_size = size;
 	not.not_body.msgh_descriptor_count = 1;
 	not.not_port.type = MACH_MSG_PORT_DESCRIPTOR;
 	not.not_port.disposition = MACH_MSG_TYPE_PORT_NAME;
 	not.not_port.name = about;
-	nresult = mach_msg_send(&not.not_header);
-	if (nresult != MACH_MSG_SUCCESS) {
-		kern_error(nresult, "notify_server: mach_msg_send()");
-	}
+	return mach_msg(&not.not_header, MACH_SEND_MSG|options, size,
+			0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
 }
 
-void _myExit(int arg)
+static void
+notify_server_loop(mach_port_name_t about)
 {
-    exit(arg);
-}
+	mach_msg_return_t result;
 
-void toggle_debug(int signal)
-{
-	debugging = (debugging) ? FALSE : TRUE;
+	result = inform_server_loop(about, MACH_MSG_OPTION_NONE);
+	if (result != MACH_MSG_SUCCESS)
+		kern_error(result, "notify_server_loop: mach_msg()");
 }
 
 void start_shutdown(int signal)
 {
-	debug("received SIGTERM");
 	shutdown_in_progress = TRUE;
-	notify_server_loop(MACH_PORT_DEAD);
+	(void) inform_server_loop(MACH_PORT_NULL, MACH_SEND_TIMEOUT);
 }
 
 int
@@ -243,6 +263,22 @@ main(int argc, char * argv[])
 			exit(1);  /* will likely trigger a panic */
 
 		}
+
+		/*
+		 * Child - will continue along as mach_init.  Construct
+		 * a very basic environment - as much as if we were
+		 * actually forked from init (instead of the other way
+		 * around):
+		 *
+		 * Set up the PATH to be approriate for the root user.
+		 * Create an initial session.
+		 * Establish an initial user.
+		 * Disbale core dumps.
+		 */
+		setenv("PATH", _PATH_STDPATH, 1);
+		setsid();
+		setlogin("root");
+		enablecoredumps(FALSE);
 	} else
 		init_notify_port = MACH_PORT_NULL;
 
@@ -261,9 +297,11 @@ main(int argc, char * argv[])
 			switch (c = *argp++) {
 			case 'd':
 				debugging = TRUE;
+				enablecoredumps(TRUE);
 				break;
 			case 'D':
 				debugging = FALSE;
+				enablecoredumps(FALSE);
 				break;
 			case 'F':
 				force_fork = TRUE;
@@ -606,12 +644,7 @@ useless_server(server_t *serverp)
 boolean_t
 active_server(server_t *serverp)
 {
-	return (
-#ifdef DELAYED_BOOTSTRAP_DESTROY
-			serverp->port ||
-#else
-			(serverp->port && serverp->pid == NO_PID) ||
-#endif
+	return (	serverp->port ||
 			serverp->task_port || serverp->active_services);
 }
 
@@ -747,9 +780,7 @@ start_server(server_t *serverp)
 	case SERVER:
 	case DEMAND:
 	case RESTARTABLE:
-#ifdef DELAYED_BOOTSTRAP_DESTROY
 	  if (!serverp->port)
-#endif
 	      setup_server(serverp);
 
 	  serverp->activity = 0;

@@ -3,22 +3,21 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * Reserved.  This file contains Original Code and/or Modifications of
+ * Original Code as defined in and that are subject to the Apple Public
+ * Source License Version 1.0 (the 'License').  You may not use this file
+ * except in compliance with the License.  Please obtain a copy of the
+ * License at http://www.apple.com/publicsource and read it before using
+ * this file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License."
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -82,7 +81,7 @@ pw_scan(bp, pw)
 	char *bp;
 	struct passwd *pw;
 {
-	long id;
+	uid_t id;
 	int root;
 	char *p, *sh;
 
@@ -95,22 +94,32 @@ pw_scan(bp, pw)
 
 	if (!(p = strsep(&bp, ":")))			/* uid */
 		goto fmt;
-	id = atol(p);
+	errno = 0;
+	id = strtoul(p, NULL, 10);
+	if( (id == 0) && (errno == EINVAL) ) {
+		warnx("%s did not convert to uid", p);
+		return(0);
+	}
 	if (root && id) {
 		warnx("root uid should be 0");
 		return (0);
 	}
-	if (id > USHRT_MAX) {
-		warnx("%s > max uid value (%d)", p, USHRT_MAX);
+	if ( (id == ULONG_MAX) && (errno == ERANGE) ) {
+		warnx("%s > max uid value (%d)", p, ULONG_MAX);
 		return (0);
 	}
 	pw->pw_uid = id;
 
 	if (!(p = strsep(&bp, ":")))			/* gid */
 		goto fmt;
-	id = atol(p);
-	if (id > USHRT_MAX) {
-		warnx("%s > max gid value (%d)", p, USHRT_MAX);
+	errno = 0;
+	id = strtoul(p, NULL, 10);
+	if( (id == 0) && (errno == EINVAL) ) {
+		warnx("%s did not convert to gid", p);
+		return(0);
+	}
+	if ( (id == ULONG_MAX) && (errno == ERANGE) ) {
+		warnx("%s > max gid value (%d)", p, ULONG_MAX);
 		return (0);
 	}
 	pw->pw_gid = id;

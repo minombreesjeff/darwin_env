@@ -137,3 +137,4 @@
 DSTROOT = $(HOME)
 
 AFTER_INSTALL += install-man-page
+
