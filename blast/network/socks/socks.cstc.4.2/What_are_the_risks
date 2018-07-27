@@ -1,0 +1,70 @@
+>From daemon@inoc.dl.nec.com Wed Dec  1 17:44:07 1993
+Date: Wed, 1 Dec 93 17:42:55 CST
+From: ylee@syl.dl.nec.com	(Ying-Da Lee)
+Message-Id: <9312012342.AA26065@florida.syl.dl.nec.com>
+To: socks@inoc.dl.nec.com, zz5@dswpa.dsdoe.ornl.gov
+Subject: Re:  Comparing firewall packages...
+Cc: ylee@syl.dl.nec.com
+X-Mailing-List: socks@syl.dl.nec.com     (SOCKS discussion list)
+Status: RO
+
+>I will be working with SOCKS now. Any information would be  
+>appreciated. I just want to know how secure SOCKS is, and what  
+>guarantees can be made about it... Thanks.
+
+I don't know about guarantees. Should we start with 'as far as I
+know, there is no way...' and see where it ends?
+
+As far as I know, there is no way to initiate an attack into your
+firewalled internal network through SOCKS if your SOCKS server is
+properly configured. For example, if your internal network is
+200.100.50 and you put the line
+
+deny	0.0.0.0  0.0.0.0   200.100.50.0  255.255.255.0
+
+at the top of your sockd.conf, the SOCKS server will fend off
+all attempts to go through it to reach your inside hosts. No
+routing tricks or IP address spoofing will make any difference.
+
+This is not to say that you are not incurring some risks by
+running SOCKS. You are, but these are the risks/vulnerabilities
+accompanying the applications you allow to run on top of SOCKS,
+not with SOCKS itself. For example, doing any network communication
+without encryption runs the risk of having your password or other
+confidential information stolen, whether you use SOCKS or not.
+Blindly "displaying" a postscript file can end in a disaster
+regardless of whether you retrieved the file through SOCKS or
+not. SOCKS doesn't add more on top of these risks, but it doesn't
+help you deal with them either.
+
+Should it?
+
+It really can't if SOCKS is to remain a general purpose TCP relayer
+without delving into the specific application protocols. This accounts
+for the server's high effficiency. This independence of the application
+protocol also makes it easy to convert an application program into a
+SOCKS client. In addition, SOCKS probably will have a fairly easy time
+accommodating security devices in the application protocols if and when
+they are used.
+
+So, if on balance you find the security risks of existing telnet, ftp,
+Mosaic, etc. outweigh their usefulness to you and you are unable or
+unwilling to develop a more secure version, then SOCKS is not for you.
+If the balance tilts the other way, welcome to SOCKS.
+
+I hope that's enough for a start.
+
+	Ying-Da Lee	(214)518-3490	(214)518-3552 (FAX)
+	Principal Member, Technical Staff
+	NEC Systems Laboratory, C&C Software Technology Center /
+	NEC USA, Corporate Network Administration Division
+	ylee@syl.dl.nec.com
+
+**************        
+The rest of this message was automatically appended by the socks list
+mail munger.  To send a message to the entire list, address it to:
+socks@inoc.dl.nec.com.  However, if you want to get off the list or
+change your address, please send a message to socks-request@inoc.dl.nec.com,
+and NOT the entire list.   Thank you.
+**************
+

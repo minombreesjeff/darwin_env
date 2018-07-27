@@ -1,0 +1,135 @@
+
+
+		README for netblast (network-client BLAST)
+			last updated 6/14/99
+
+
+	This README describes the BLAST client (blastcl3), which accesses the
+newest NCBI BLAST search engine (version 2.0).  The software behind BLAST version 
+2.0 was written from scratch to allow BLAST to handle the new challenges posed 
+by the sequence databases in the coming years.  Updates to this software will
+continue in the coming years.
+
+	Blastcl3 can search all the sequences in a FASTA file, produce one-to-many
+(master-slave) alignments as well as HTML, and it can perform searches against multiple
+databases.  Organism-specific searches are planned for the near future.  A full list of 
+command-line options is given below.
+
+	Blastcl3 should be used instead of previous clients such as blastcl2, 
+blastcli, and PowerBlast.  (Blastcl2 and blastcli do not produce gapped alignments 
+at all; PowerBlast performs the gapped computation on the user machine, instead of 
+the NCBI server).  The service that these older clients use will not be supported 
+indefinitely.
+
+	The setup for NCBI network clients has been greatly simplified.  If you are
+not behind a firewall no further action is required.  If you are behind a firewall,
+and already use Sequin or Entrez, or if your system administrator has already performed
+the setup, then you should be able to start performing searches immediately.  Otherwise,
+please refer to 'firewall.txt' that is included with this archive.  Follow the instructions
+for "Configuring newer clients".  
+
+	Please send questions and comments to 'blast-help@ncbi.nlm.nih.gov'.
+
+Blastcl3
+--------
+
+Blastcl3 may be used to perform all five flavors of blast comparison. One
+may obtain the blastcl3 options by executing 'blastcl3 -' (note the dash). A
+typical use of blastcl3 would be to perform a blastn search (nucl. vs. nucl.) 
+of a file called QUERY:
+
+blastcl3 -p blastn -d nr -i QUERY -o out.QUERY
+
+The output is placed into the output file out.QUERY and the search is performed
+against the 'nr' database.  If a protein vs. protein search is desired,
+then 'blastn' should be replaced with 'blastp' etc.
+
+Some of the most commonly used blastcl3 options are:
+
+blastcl3   arguments:
+
+  -p  Program Name [String]
+
+        Input should be one of "blastp", "blastn", "blastx", "tblastn", or "tblastx".
+
+  -d  Database [String]
+    default = nr
+
+        Multiple database names (bracketed by quotations) will be accepted.
+        An example would be
+
+                -d "nr est"
+
+        which will search both the nr and est databases, presenting the results as if one
+        'virtual' database consisting of all the entries from both were searched.   The
+        statistics are based on the 'virtual' database of nr and est.  
+
+  -i  Query File [File In]
+    default = stdin
+
+        The query should be in FASTA format.  If multiple FASTA entries are in the input
+        file, all queries will be searched.
+
+  -e  Expectation value (E) [Real]
+    default = 10.0
+
+  -o  BLAST report Output File [File Out]  Optional
+    default = stdout
+
+  -F  Filter query sequence (DUST with blastn, SEG with others) [T/F]
+    default = T
+
+         BLAST 2.0 uses the dust low-complexity filter for blastn and seg for the
+         other programs. Both 'dust' and 'seg' are integral parts of the NCBI toolkit
+         and are accessed automatically.
+
+         If one uses "-F T" then normal filtering by seg or dust (for blastn)
+         occurs (likewise "-F F" means no filtering whatsoever).  The seg options
+         can be changed by using:
+
+         -F "S 10 1.0 1.5"
+
+         which specifies a window of 10, locut of 1.0 and hicut of 1.5.  A coiled-coiled filter,
+         based on the work of Lupas et al. (Science, vol 252, pp. 1162-4 (1991)) and written by
+         John Kuzio (Wilson et al., J Gen Virol, vol. 76, pp. 2923-32 (1995)), may be invoked
+         by specifying:
+
+         -F "C"
+
+         There are three parameters for this: window, cutoff (prob of a coil-coil), and
+         linker (distance between two coiled-coiled regions that should be linked
+         together).  These are now set to
+
+         window: 22
+         cutoff: 40.0
+         linker: 32
+
+         One may also change the coiled-coiled parameters in a manner analogous to
+         that of seg:
+
+         -F "C 28 40.0 32" will change the window to 28.
+
+         One may also run both seg and coiled-coiled together by using a ";":
+
+         -F "C;S"
+
+         Filtering by dust may also be specified by:
+
+         -F "D"
+
+         It is possible to specify that the masking should only be done during
+         the process of building the initial words by starting the filtering
+         command with 'm':
+
+         -F "m S"
+
+         which specifies that seg (with default arguments) should be used for masking, 
+         but that the masking should only be done when the words are being built.  
+         This masking option is available with all filters.
+
+  -S  Query strands to search against database (for blast[nx], and tblastx).  3 is both, 1 is top, 2 is bottom [Integer]
+    default = 3
+
+  -T  Produce HTML output [T/F]
+    default = F
+

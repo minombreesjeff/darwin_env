@@ -1,0 +1,332 @@
+This is CSTC 4.1 release of SOCKS, a package that allows Unix hosts
+behind a firewall to gain full access to the internet without requiring
+direct IP reachability. It does require a SOCKS server program being
+run on a hosts that can communicate directly to hosts behind the firewall
+as well as hosts on the Internet at large.  It is based on the original
+SOCKS written by David Koblas <koblas@netcom.com>.
+
+The package includes full source for the SOCKS server and SOCKSified
+client programs of finger, ftp, telnet, and whois. Other SOCKSified
+clients such as xgopher (ver. 1.3.1) and Mosaic (ver. 2.0) can be
+found on ftp.nec.com, in directory /pub/security/socks.cstc. (On
+WWW, the URL is file://ftp.nec.com/pub/security/socks.cstc ) Mosaic 2.1
+as distributed by NCSA already contains the SOCKSification patch in its
+source, which is available from ftp.ncsa.uiuc.edu, in /Mosaic/Mosaic-source.
+
+This release is known to run on the following Unix platforms:
+
+SunOS 4.1.x (ylee@syl.dl.nec.com)
+Irix 4.0.x (imd1707@ggr.co.uk)
+Ultrix 4.3 (als@cpsg.com.au, imd1707@ggr.co.uk)
+HP-UX 9.0x (als@cpsg.com.au, ken.shackelford@sdrc.com, bryan@Stoner.COM)
+AIX 3.2.x (ken.shackelford@sdrc.com, bryan@Stoner.COM)
+Interactive Systems Unix (ken.shackelford@sdrc.com)
+Alpha OSF 1.3 (ken.shackelford@sdrc.com, amellan@acri.fr, treese@crl.dec.com)
+Solaris 2.2 (ylee@syl.dl.nec.com)
+NetBSD 0.9 (bryan@Stoner.COM)
+UnixWare (pax@ankh.metrolink.com)
+Linux 0.99pl13 (cornell@syl.dl.nec.com, cmetz@thor.tjhsst.edu)
+
+-------------------- MAJOR CHANGES SINCE 4.0
+
+1)You now have the option to build 'sockd' to run on a multi-homed
+  host by defining the symbol 'MULTIHOMED_SERVER' in include/socks.h.
+  A multi-homed server requires another control file /etc/sockd.route
+  to tell it which of its network interfaces it should use for communicating
+  with which networks or hosts. For example:
+
+# Use interface 120.10.1.5 for host 100.1.2.3
+120.10.1.5	100.1.2.3 255.255.255.255
+# Use interface 120.10.2.10 for hosts in network 193.10.2
+120.10.2.10	193.10.2.0 255.255.255.0
+# Use interface 198.1.1.1 for all other connections
+198.1.1.1	0.0.0.0 0.0.0.0
+
+  For a typical dual-homed server, all you need is a single line:
+
+outside_interface	0.0.0.0 0.0.0.0
+
+  where 'outside_interface' should be the IP address of the network
+  interface going outside of your firewall.
+
+  test_sockd_conf has been updated so that it also checks the new control
+  file and tells you which interface will be used.
+ 
+2)You can now build 'versatile' clients, which uses SOCKS server(s)
+  to reach outside of your firewall but connects directly to hosts
+  within the firewall. So, for example, you can save away your regular
+  ftp program and replace it with the versatile SOCKS ftp client (rftp).
+  You have to be careful with 'finger' though and make sure that the
+  macro 'ORIG_FINGER' is properly defined in include/socks.h.
+
+  All versatile clients use the file /etc/socks.conf to decide whether
+  a connection should be denied, done directly, or done indirectly through
+  SOCKS server at one or more hosts. For example:
+
+# Deny ftp and telnet access by baduser
+deny	*=baduser	0.0.0.0 0.0.0.0	eq ftp: mail -s 'ftp by baduser' root
+deny	*=baduser	0.0.0.0 0.0.0.0	eq telnet: mail -s 'telnet by baduser' root
+# Be sure to include the next line for localhost!
+direct	127.0.0.1	255.255.255.255
+# Use direct connection to all hosts in network 120.10
+direct	120.10.0.0 255.255.0.0
+# Use the defaiult SOCKS server to connect to host 13.13.13.13
+sockd			13.13.13.13 255.255.255.255
+# For other connections, try SOCKS servers at 120.10.2.3, 120.10.50.1,
+# in that order
+sockd	@=120.10.2.3,120.10.50.1	0.0.0.0 0.0.0.0
+
+3)As you may have already noticed, the interpretation of address masks
+  are changed. 1's in a mask now denote the bit positions that matter
+  while 0's denote the don't-care bit positions. In other words, they
+  are now interpreted the same way as IP netmasks. This holds true not
+  only for the two new control files mentioned above, but also for 
+  /etc/sockd.conf. A new program 'flip_cfmasks' is provided in the sockd
+  subdirectory to convert the old format to the new one. Just do
+
+flip_cfmasks /etc/sockd.conf sockd.conf.flip
+
+  check the output file sockd.conf.flip to see if all is well (with any
+  luck it should be) and then use that with the new server.
+
+4)An optional getpass() is provided to communicate with systems that
+  may require longer password (> 8 characters). This is for regular
+  passwords. As in 4.0, "passwords" for anonymous ftp can be longer than
+  8 characters even without using the optional getpass().
+
+5)Termination of a TCP session is now also logged on the SOCKS server,
+  including the number of bytes transported in either direction.
+
+6)An compile time option is provided to make ftp (rftp) log the name
+  of every file transferred.
+
+7)The man pages are substantially revamped.
+
+All 4.1 clients work with all 4.0 and 4.1 servers. 4.0 clients work
+with single-homed 4.1 servers but NOT with 4.1 multi-homed servers.
+'sockd -ver' tells you not only the version number but also whether
+it is single- or multi-homed.
+
+Please see below for the procedure for building and testing.
+Remember that the names of the control files are all configurable
+in include/socks.h. It will probably greatly reduce your frustration
+while you are flipping between the old and the new versions if you
+uses different file names for the new version. 
+
+
+There is now a mailing list devoted to issues related
+to SOCKS. To join the list, please send an email subscription request
+with your email address to socks-request@inoc.dl.nec.com.
+
+Finally, I want to thanks all the people who have helped in making
+and shaping this release. I certainly remember discussions and
+contributions from the following, please forgive me (and remind me)
+if I inadvertently leave your name off the list.
+
+  brandon@dd.eng.bbc.co.uk (Brandon.Butterworth), bryan@Stoner.COM
+  (A. Bryan Curnutt), Ian Dunkin <imd1707@ggr.co.uk>,
+  Ingo_Dean@Warren.MentorG.com, Cornell Kinderknecht
+  <cornell@syl.dl.nec.com>, kupec@agouron.com (John W. Kupec),
+  jonl@hal.com (jon r. luini), amellan@acri.fr (Alain Mellan),
+  Craig Metz <cmetz@thor.tjhsst.edu>, montnaro@ausable.crd.ge.com
+  (Skip Montanaro), whna@nexos.com (Heinz Naef), nagler@olsen.ch
+  (Rob Nagler), "Jason Ornstein" <ornstein@xor.com>, pax@ankh.metrolink.com
+  (Garry M. Paxinos), mikey@netcom.com (Michael Pechner), royle@knmi.nl
+  (Keenan Royle), ken.shackelford@sdrc.com (Ken Shackelford), Anthony
+  Shipman <als@cpsg.com.au>, Rich Schultz <rich@ccrwest.org>,
+  treese@crl.dec.com (Win Treese), Paul.Vickers@barclays.co.uk (Paul Vickers),
+  vince@dsi.unimi.it (David Vincenzetti), posc!waddell@uunet.uu.net
+  (David Waddell)
+
+	Ying-Da Lee	(214)518-3490	(214)518-3552 (FAX)
+	Principal Member, Technical Staff
+	NEC Systems Laboratory, C&C Software Technology Center /
+	NEC USA, Corporate Network Administration Division
+	ylee@syl.dl.nec.com
+====================================================================
+
+Please read the file 'COPYRIGHTS' before you proceed further.
+
+In the following section, by 'top directory' we mean the top
+directory of the SOCKS package, i.e., the directory you are
+in right now. Ignore statements about rtelnet, rxgopher, and
+rxmosaic if you are not building them.
+
+-------------------------------------------------------------
+
+HOW TO BUILD THE PROGRAMS
+
+1. Check and modify the following files to suit your systems:
+
+	Makefile
+	include/socks.h
+
+   Be sure that the macro 'SOCKS_DEFAULT_SERVER' in include/sosks.h
+   is set correctly to the host that will be running the proxy server
+   for your site.  Although this can be overridden at run time with
+   environment variable SOCKS_SERVER, it is a lot simpler if you put
+   in the right name at compile time. Also be sure to uncomment and set
+   the macro 'SOCKS_DEFAULT_NS' in the same file if yor client machines
+   normally cann't do DNS resolution for outside hosts.
+
+   Be sure that the macros 'ORIG_FINGER' and 'MULTIHOMED_SERVER' in
+   include/socks.h are set correctly.
+
+   In most cases, you should have no needs to modify the Makefiles
+   in the subdirectories. But if you run into problems, you may
+   have to look into modifying
+
+	sockd/Makefile
+	libident/Makefile
+	lib/Makefile
+	rfinger/Makefile
+	rftp/Makefile
+	rtelnet/Makefile
+
+   If your system is not among those included in the top Makefile,
+   then you may also have to construct an entry for your system
+   in the file rtelnet/Config.local.
+
+2. cd to the top directory and issue 'make' command.  It's a good
+   idea to direct stdout and stderr to a file so that you can
+   see what's being done afterwards. There will be a few warning
+   messages which you can ignore. This builds the server as well
+   as all the clients.
+
+   If you only want to build the server (and the program for testing
+   your sever configuration file, AND THE PROGRAM FOR CONVERTING THE
+   FILE TO THE NEW FORMAT), use comannd 'make server' instead.
+   Use command 'make clients' to build only the client programs. You
+   can also build the individual clients using 'make RFINGER',
+   'make RFTP', and 'make RTELNET', all from the top directory.
+
+3. All the man pages (except for libident) are in directory doc.
+   You are encouraged to print them out and read them before proceeding
+   to the next part.
+
+-------------------------------------------------------------
+
+HOW TO INSTALL THE SERVER
+
+1. Become superuser on the proxy server host for your site. 
+
+2. cd to the top directory and issue 'make install.server'.
+   This installs programs sockd and test_sockd_conf as well
+   as the man pages for them.
+
+3. Add the line
+socks	1080/tcp
+   to file /etc/services. It would be nice also to include
+gopher	70/tcp
+WWW	80/tcp
+   in the file if you don't already have them.
+
+4. Add the line
+socks	stream	tcp	nowait	nobody	/usr/etc/sockd	sockd
+   to file /etc/inetd.conf. Use the actual path where sockd
+   is installed if not in /usr/etc. If you want to make use of
+   identd on your client machines when it is available, use
+socks	stream	tcp	nowait	nobody	/usr/etc/sockd	sockd -i
+   If you want to REQUIRE identd be run on your client machines,
+   use
+socks	stream	tcp	nowait	nobody	/usr/etc/sockd	sockd -I
+   Running sockd with -I will reject all requests from hosts that
+   do not run identd.
+
+5. Set up access control with file /etc/sockd.conf. You have to
+   read the man pages for sockd, sockd.conf, and test_sockd_conf
+   for the details.
+   For a quick test, you can use these four lines in the file: (Replace
+   'client_IP' with the IP address of the host on which you will be
+   testing the client programs.)
+permit	client_IP   255.255.255.255
+# One LONG line follows:
+deny	0.0.0.0 0.0.0.0 : /usr/ucb/finger @%A | /usr/ucb/mail -s 'SOCKD: rejected -- from %u@%A to host %Z (service %S)' root
+# Another LONG line:
+#BAD_ID: /usr/ucb/finger @%A | /usr/ucb/mail -s '%U pretends to be %u on host %A' root@%A root
+# Last line:
+#NO_IDENTD: /usr/ucb/mail -s 'Please run identd on %A' %u@%A root@%A
+   This is essentially the contents of file sockd/sockd.conf.sample.
+   *** NOTE *** The meanings of 1's and 0's in address masks are
+   reversed from previous versions. If you already have a working
+   /etc/sockd.conf with an earlier version, use the program
+   sockd/flip_cfmasks to produce one for the new version.
+
+6. If the server host is multi-homed and you built sockd with the
+   macro MULTIHOMED_SERVER in include/socks.h defined, you must
+   also supply the file /etc/sockd.route. For a typical dual-homed
+   server, this can simply be a one-liner:
+out_interface	0.0.0.0 0.0.0.0
+   where out_interface is the IP address of the server's network
+   interface leading to the outside world. The format for lines
+   in this file should be
+# comments
+Interface_addr	dst_addr dst_mask
+
+   Read the man page on sockd.route !!!
+
+7. Run a few tests using program test_sockd_conf to make sure you
+   have the configuration file set up correctly. On a multi-homed
+   server, the program also tests /etc/sockd.route and shows which
+   interface is to be used.
+
+8. Send a SIGHUP signal to the running inetd process so that it will
+   use the new configuration. You may also have to do other things to
+   accommodate syslog facility.  Read the man pages.
+
+-------------------------------------------------------------
+
+HOW TO TEST THE CLIENT PROGRAMS
+
+   NOTE: Build and install identd on your client hosts first. This is
+   required if you run sockd with -I option. It is a good idea anyway.
+
+   Set up the file /etc/socks.conf on the client host. Lines in this
+   file should be of the form
+# comments
+deny [*=userlist] dst_addr dst_mask [op port]
+direct [*=userlist] dst_addr dst_mask [op port]
+sockd [@=serverlist] [*=userlist] dst_addr dst_mask [op port]
+   Fields in square brackets are optional. The optional @=serverlist
+   field with a 'sockd' line specifies the list of SOCKS servers
+   the client should try (in the given order) instead of the default
+   SOCKS server.  If the @=serverlist part is omitted, then the default
+   SOCKS server is used. Commas are used in the userlist and serverlist
+   as separators, no white spaces are allowed.
+
+   Read the man page on socks.conf !!!
+
+   On a client host (for testing purpose, this can be the same as
+   the proxy server), the clients rfinger, rwhois, rftp, and rtelnet,
+   can be tried out without any additional setup on the
+   client host once the server is running. They should behave like
+   finger, whois, ftp, and telnet, respectively. rftp DOES
+   echo your password IF you are using 'anonymous' as the log-in name.
+
+   Quite a lot of details of operations of both the clients and the
+   server are logged. Checking the contents of the log files may be
+   helpful when you run into problems. You should try using these
+   clients to connect to both inside and outside hosts and check the
+   log messages to see whether the correct ways are used.
+
+-------------------------------------------------------------
+
+HOW TO INSTALL CLIENT PROGRAMS
+
+1. Become superuser on the client host.
+
+2. cd to the top directory, then issue the command 'make install.clients'.
+   This installs rfinger, rwhois, rftp, rtelnet, and
+   their man pages.
+
+3. Rename your regular 'finger', 'whois', 'ftp', and 'telnet'
+   to something else. The new name for the 'finger' program
+   must be EXACTLY what you used for defining the macro ORIG_FINGER in
+   include/socks.h. Then either rename the SOCKS clients or use symbolic
+   links for them. For example, if you have installed the clients in
+   directory /usr/local/bin and your regular 'finger', 'whois', 'ftp',
+   and 'telnet' were in /usr/ucb, then you should do
+ln -s /usr/local/bin/rfinger /usr/ucb/finger
+ln -s /usr/local/bin/rftp /usr/ucb/ftp
+ln -s /usr/local/bin/rhwois /usr/ucb/whois
+ln -s /usr/local/bin/rtelnet /usr/ucb/telnet

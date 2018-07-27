@@ -1,0 +1,79 @@
+.TH SOCKD.ROUTE 5 "November 17, 1993"
+.SH NAME
+sockd.route \- Routing file for multi-homed SOCKS proxy server
+.SH SYNOPSIS
+\fB/etc/sockd.route\fP
+.SH DESCRIPTION
+The file \fB/etc/sockd.route\fP is used by a multi-homed SOCKS server
+\fIsockd\fP to determine which of its network interfaces it should
+use to reach a given destination host.
+
+A multi-homed host is a host with more than one network interfaces
+and with its IP_FORWARDING turned off. Only the multi-homed version of
+\fIsockd\fP can be run on such hosts. Hosts which have a single
+network interface or that have enabled IP_FORWARDING -- even
+with multiple network interfaces -- can run the single-homed version
+of \fIsockd\fP, which requires no use of \fB/etc/sockd.route\fP.
+
+A line in the file can be up to 1024 characters long. Lines starting
+with a `#' are comments. Non-comment lines must be of the form
+
+\fIif_addr		dst_addr  dst_mask\fR
+
+All three fields are required and are separated by spaces or tabs.
+Each filed is specified in the usual dotted form of IP addresses,
+e.g., 128.23.16.2.
+\fIif_addr\fR must be the IP address of one of the network interfaces
+on the SOCKS server host. The \fIdst_addr dst_mask\fR pair together
+specify the destination IP address or a range of destination IP
+addresses. Bits in \fIdst_mask\fP that are set to 0 indicate the
+bit positions to be ignored during comparison of IP addresses. So,
+specifying 255.255.255.255 in \fIdst_mask\fP demands an exact match
+with \fIdst_addr\fP, whereas 0.0.0.0 in \fIdst_mask\fP causes a
+matching with any given destination address regardless of what is
+specified for \fIdst_addr\fP.
+
+When a multi-homed \fIsockd\fP receives a network request, it first
+checks with \fB/etc/sockd.conf\fP to decide whether the request
+should be allowed or denied. For an allowable request, \fIsockd\fP
+then checks the given destination IP address against the \fIdst_addr
+dst_mask\fP pair in \fB/etc/sockd.route\fP, one line at a line. Once
+a match is found, the network interface of the corresponding
+\fIif_addr\fR field is used for connection to the destination host.
+Remaining lines in the file are skipped. Therefore the order of the
+lines in the file is of extreme importance. If no match is found
+throughout the file, a line indicating the error is produced using
+\fIsyslog\fP with facility \fBdaemon\fP and level \fIerr\fP and
+\fIsockd\fP then terminates.
+
+The program \fItest_sockd_conf\fP checks \fB/etc/sockd.conf\fR as well
+as the regular configuration file \fB/etc/sockd.conf\fP.
+See \fItest_sockd_conf\fP(8).
+
+.SH EXAMPLES
+Suppose you have a dual-homed host with interface 129.1.2.3 connecting
+to your internal Class B network 129.1, and interface 129.1.254.1
+connecting to the outside world. If you only use the SOCKS server
+to provide connections to outside hosts, then the file \fB/etc/sockd.route\fP
+only needs one line:
+
+.nf
+.+1
+129.1.254.1	0.0.0.0  0.0.0.0
+.fi
+.-1
+
+If you also use the SOCKS server to provide connection to internal
+hosts as well, then two lines would suffice:
+
+.nf
+.+1
+129.1.2.3	129.1.0.0  255.255.0.0
+129.1.254.1	0.0.0.0  0.0.0.0
+.fi
+.-1
+
+Note that these two lines must be in the order given above.
+.SH SEE ALSO
+\fIsockd\fP(8), \fIsockd.route\fP(5), \fItest_sockd_conf\fP(8),
+\fIsocks.conf\fP(5), \fIsocks_clients\fP(1)

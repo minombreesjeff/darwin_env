@@ -1,0 +1,319 @@
+Seq-submit ::= {
+  sub {
+    contact {
+      name "R. Taussig" ,
+      address {
+        "Room 123, Bldg 82" ,
+        "Univ of x" ,
+        "City EH 23 OR" ,
+        "Country" } ,
+      phone "1-222-122-22-2-2-2" ,
+      email "rt@123.xyz" } ,
+    cit {
+      authors {
+        names
+          std {
+            {
+              name
+                name {
+                  last "Taussig" ,
+                  initials "R" } ,
+              affil
+                std {
+                  affil "Univ of x" ,
+                  div "Dept of Y" ,
+                  city "YourCity" ,
+                  sub "YourState" ,
+                  country "Your country" ,
+                  street "123 Your Street" } ,
+              is-corr TRUE } ,
+            {
+              name
+                name {
+                  last "Scheller" ,
+                  initials "R.H." } } } } ,
+      imp {
+        date
+          std {
+            year 1986 ,
+            month 4 ,
+            day 22 } } } ,
+    reldate
+      std {
+        year 1986 ,
+        month 10 ,
+        day 1 } } ,
+  data entrys {
+    set {
+      class nuc-prot ,
+      descr {
+        title "Aplysia californica FMRFamide mRNA, 3' end, clone FMRF-2. and
+ translated products" ,
+        comment "FMRF-2 lacks a 192 bp region spanning residues 1787-1978 on
+ the genomic sequence (M14958), which would come after position 191. This
+ clone lacks the consensus acceptor site 'ag'.  The dinucleotide 'at' is
+ present at the 3' border of the deleted region, and therefore, this sequence
+ probably does not arise from an RNA processing event.  The highly repetitive
+ nature of much of the gene coupled with sequence polymorphisms leaves open
+ the possibility of an organization which would conform to the splicing
+ consensus rules.  Alternatively, the deletion may represent a cloning
+ artifact." ,
+        pub {
+          pub {
+            article {
+              title {
+                name "The Aplysia FMRFamide gene encodes sequences related to
+ mammalian brain peptides" } ,
+              authors {
+                names
+                  str {
+                    "Taussig,R." ,
+                    "Scheller,R.H." } } ,
+              from
+                journal {
+                  title {
+                    iso-jta "DNA" } ,
+                  imp {
+                    date
+                      std {
+                        year 1986 } ,
+                    volume "5" ,
+                    pages "453-461" } } } } } ,
+        org {
+          taxname "Aplysia californica" } } ,
+      seq-set {
+        seq {
+          id {
+            local
+              id 1 } ,
+          descr {
+            title "Aplysia californica FMRFamide mRNA, 3' end, clone FMRF-2." ,
+            genbank {
+              source "Aplysia californica abdominal ganglion, cDNA to mRNA,
+ clone FMRF-2." ,
+              keywords {
+                "FMRFamide" ,
+                "neuropeptide" } ,
+              origin "About 192 bp after segment [DNA 5, 453-461 (1986)]." ,
+              date "31-AUG-1987" ,
+              div "INV" ,
+              taxonomy "Eukaryota; Animalia; Eumetazoa; Mollusca; Gastropoda;
+ Opisthobranchia; Anaspidea; Aplysiidae." } } ,
+          inst {
+            repr raw ,
+            mol rna ,
+            length 484 ,
+            topology linear ,
+            strand ss ,
+            seq-data
+              ncbi2na 'D84023F38AFEA00BB2826182E8C02BF38AFEA009BE81E38EE8406BD
+388FE900B7E81638EE8406BD398FEA00B7E81E08EE8406BD388FE900B7E81E08EC8406BD388FEA
+01AFCE23FAD82EFAA3D40CDAA64249801B4E1048740101848109840C2D700C412E33FBC106EEBB
+8FDF5F4CCF3F9F840EE3FA8C0B100EF'H } ,
+          annot {
+            {
+              data
+                ftable {
+                  {
+                    data
+                      rna {
+                        type mRNA } ,
+                    location
+                      int {
+                        from 0 ,
+                        to 483 ,
+                        id
+                          local
+                            id 1 ,
+                        fuzz-from
+                          lim lt } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "FMRF2 mRNA" } } } ,
+                  {
+                    data
+                      imp {
+                        key "mat_peptide" ,
+                        loc "12..23" } ,
+                    location
+                      int {
+                        from 11 ,
+                        to 22 ,
+                        id
+                          local
+                            id 1 } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "FMRFamide copy X" } ,
+                      {
+                        qual "codon_start" ,
+                        val "1" } } } ,
+                  {
+                    data
+                      imp {
+                        key "mat_peptide" ,
+                        loc "60..71" } ,
+                    location
+                      int {
+                        from 59 ,
+                        to 70 ,
+                        id
+                          local
+                            id 1 } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "FMRFamide copy X+1" } ,
+                      {
+                        qual "codon_start" ,
+                        val "1" } } } ,
+                  {
+                    data
+                      imp {
+                        key "mat_peptide" ,
+                        loc "108..119" } ,
+                    location
+                      int {
+                        from 107 ,
+                        to 118 ,
+                        id
+                          local
+                            id 1 } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "FMRFamide copy X+2" } ,
+                      {
+                        qual "codon_start" ,
+                        val "1" } } } ,
+                  {
+                    data
+                      imp {
+                        key "mat_peptide" ,
+                        loc "156..167" } ,
+                    location
+                      int {
+                        from 155 ,
+                        to 166 ,
+                        id
+                          local
+                            id 1 } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "FMRFamide copy X+3" } ,
+                      {
+                        qual "codon_start" ,
+                        val "1" } } } ,
+                  {
+                    data
+                      imp {
+                        key "mat_peptide" ,
+                        loc "204..215" } ,
+                    location
+                      int {
+                        from 203 ,
+                        to 214 ,
+                        id
+                          local
+                            id 1 } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "FMRFamide copy X+4" } ,
+                      {
+                        qual "codon_start" ,
+                        val "1" } } } ,
+                  {
+                    data
+                      imp {
+                        key "mat_peptide" ,
+                        loc "252..263" } ,
+                    location
+                      int {
+                        from 251 ,
+                        to 262 ,
+                        id
+                          local
+                            id 1 } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "FMRFamide copy X+5" } ,
+                      {
+                        qual "codon_start" ,
+                        val "1" } } } ,
+                  {
+                    data
+                      imp {
+                        key "mat_peptide" ,
+                        loc "273..284" } ,
+                    location
+                      int {
+                        from 272 ,
+                        to 283 ,
+                        id
+                          local
+                            id 1 } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "FMRFamide copy X+6" } ,
+                      {
+                        qual "codon_start" ,
+                        val "1" } } } } } } } ,
+        seq {
+          id {
+            local
+              id 2 } ,
+          descr {
+            title "FMRFamide precursor" ,
+            method concept-trans } ,
+          inst {
+            repr raw ,
+            mol aa ,
+            length 127 ,
+            seq-data
+              iupacaa "DKRFMRFGKSVGSDEVDKRFMRFGKSVGTDDVDKRFMRFGKSLGTDDVDKRFMRF
+GKSLGTEDVDKRFMRFGKSLGTEDVDKRFMRFGKRFMRFGRSVGDSKYRGASSENVMTTDSKQTTEQATNKS" } ,
+          annot {
+            {
+              data
+                ftable {
+                  {
+                    data
+                      prot {
+                        desc "FMRFamide precursor" } ,
+                    location
+                      whole
+                        local
+                          id 2 } } } } } } ,
+      annot {
+        {
+          data
+            ftable {
+              {
+                data
+                  cdregion {
+                    frame three ,
+                    code {
+                      id 1 } } ,
+                product
+                  whole
+                    local
+                      id 2 ,
+                location
+                  int {
+                    from 0 ,
+                    to 385 ,
+                    id
+                      local
+                        id 1 ,
+                    fuzz-from
+                      lim lt } ,
+                qual {
+                  {
+                    qual "note" ,
+                    val "(AA at 3)" } } } } } } } } }

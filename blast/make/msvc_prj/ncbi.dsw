@@ -1,0 +1,2522 @@
+Microsoft Developer Studio Workspace File, Format Version 6.00
+# WARNING: DO NOT EDIT OR DELETE THIS WORKSPACE FILE!
+
+###############################################################################
+
+Project: "all"=.\all.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name all_demo
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name all_exe
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name all_lib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "all_demo"=.\all_demo.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name demo_asn2ff
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_asn2xml
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_asndhuff
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_bl2seq
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_blastall
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_blastclust
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_blastpgp
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_ccp
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_ccpv
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_cdscan
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_checksub
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_cnsgn
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_cnsgnv
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_cnsrt
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_cnsrtv
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_copymat
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_dosimple
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_dust
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_dustv
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_entrezcf
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_epi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_epiv
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_fa2htgs
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_fastacmd
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_fmerge
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_formatdb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_getfeat
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_getmesh
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_getpub
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_getseq
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_gil2bin
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_impala
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_indexpub
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_makemat
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_megablast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_nentrez
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_nentrez_ogl
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_netentcf
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_rpsblast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_searchv
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_seedtop
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_seqtest
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_sigme
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_sigmev
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_srchaa
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_srchnt
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_tbl2asn
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_testcore
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_testobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_twop
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_twopv
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_udv
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_vclient
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name demo_vecscreen
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name test_ncbi_socket
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name test_ncbisock
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "all_exe"=.\all_exe.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name exe_asntool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name exe_blastcl3
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name exe_cn3d
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name exe_ddv
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name exe_sequin
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name exe_sequin_ogl
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "all_lib"=.\all_lib.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ddvlib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name medarch
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicn3d
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicn3d_ogl
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiid1
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimmdb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitxc2
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netblast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibnet
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant_ogl
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ddvlib"=.\ddv\ddvlib\ddvlib.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "demo_asn2ff"=.\demo\asn2ff\demo_asn2ff.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_asn2xml"=.\demo\asn2xml\demo_asn2xml.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_asndhuff"=.\demo\asndhuff\demo_asndhuff.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_bl2seq"=.\demo\bl2seq\demo_bl2seq.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_blastall"=.\demo\blastall\demo_blastall.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_blastclust"=.\demo\blastclust\demo_blastclust.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_blastpgp"=.\demo\blastpgp\demo_blastpgp.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_ccp"=.\demo\ccp\demo_ccp.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_ccpv"=.\demo\ccpv\demo_ccpv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_cdscan"=.\demo\cdscan\demo_cdscan.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_checksub"=.\demo\checksub\demo_checksub.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_cnsgn"=.\demo\cnsgn\demo_cnsgn.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name netblast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_cnsgnv"=.\demo\cnsgnv\demo_cnsgnv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_cnsrt"=.\demo\cnsrt\demo_cnsrt.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_cnsrtv"=.\demo\cnsrtv\demo_cnsrtv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_copymat"=.\demo\copymat\demo_copymat.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_dosimple"=.\demo\dosimple\demo_dosimple.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_dust"=.\demo\dust\demo_dust.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_dustv"=.\demo\dustv\demo_dustv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_entrezcf"=.\demo\entrezcf\demo_entrezcf.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_epi"=.\demo\epi\demo_epi.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_epiv"=.\demo\epiv\demo_epiv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_fa2htgs"=.\demo\fa2htgs\demo_fa2htgs.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_fastacmd"=.\demo\fastacmd\demo_fastacmd.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_fmerge"=.\demo\fmerge\demo_fmerge.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_formatdb"=.\demo\formatdb\demo_formatdb.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_getfeat"=.\demo\getfeat\demo_getfeat.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_getmesh"=.\demo\getmesh\demo_getmesh.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_getpub"=.\demo\getpub\demo_getpub.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_getseq"=.\demo\getseq\demo_getseq.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_gil2bin"=.\demo\gil2bin\demo_gil2bin.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_impala"=.\demo\impala\demo_impala.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_indexpub"=.\demo\indexpub\demo_indexpub.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_makemat"=.\demo\makemat\demo_makemat.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_megablast"=.\demo\megablast\demo_megablast.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_nentrez"=.\demo\nentrez\demo_nentrez.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiid1
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibnet
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicn3d
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ddvlib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netblast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimmdb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_nentrez_ogl"=.\demo\nentrez_ogl\demo_nentrez_ogl.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiid1
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibnet
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicn3d_ogl
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ddvlib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netblast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimmdb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiacc
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_netentcf"=.\demo\netentcf\demo_netentcf.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibnet
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_rpsblast"=.\demo\rpsblast\demo_rpsblast.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_searchv"=.\demo\searchv\demo_searchv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_seedtop"=.\demo\seedtop\demo_seedtop.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_seqtest"=.\demo\seqtest\demo_seqtest.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_sigme"=.\demo\sigme\demo_sigme.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_sigmev"=.\demo\sigmev\demo_sigmev.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_srchaa"=.\demo\srchaa\demo_srchaa.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitxc2
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_srchnt"=.\demo\srchnt\demo_srchnt.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_tbl2asn"=.\demo\tbl2asn\demo_tbl2asn.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_testcore"=.\demo\testcore\demo_testcore.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_testobj"=.\demo\testobj\demo_testobj.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_twop"=.\demo\twop\demo_twop.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_twopv"=.\demo\twopv\demo_twopv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_udv"=.\demo\udv\demo_udv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiid1
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibnet
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ddvlib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_vclient"=.\network\nsdemocl\demo_vclient.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "demo_vecscreen"=.\demo\vecscreen\demo_vecscreen.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "exe_asntool"=.\asnlib\asntool\exe_asntool.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "exe_blastcl3"=.\network\blast3\blastcl3\exe_blastcl3.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name netblast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "exe_cn3d"=.\cn3d\cn3d\exe_cn3d.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicn3d
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netblast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibnet
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name medarch
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ddvlib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimmdb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "exe_ddv"=.\ddv\ddv\exe_ddv.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbiid1
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibnet
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ddvlib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "exe_sequin"=.\sequin\sequin\exe_sequin.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibnet
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicn3d
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netblast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimmdb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ddvlib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitxc2
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiid1
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name medarch
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "exe_sequin_ogl"=.\sequin\sequin_ogl\exe_sequin_ogl.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name vibnet
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicn3d_ogl
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netblast
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitool
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimmdb
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbidesk
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ddvlib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbitxc2
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiid1
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name medarch
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netcli
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbinacc
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name netentr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbicdr
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name vibrant
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbiobj
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "medarch"=.\network\medarch\client\medarch.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbi"=.\corelib\ncbi\ncbi.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbiacc"=.\cdromlib\ncbiacc\ncbiacc.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbicdr"=.\cdromlib\ncbicdr\ncbicdr.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbicn3d"=.\cn3d\ncbicn3d\ncbicn3d.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbicn3d_ogl"=.\cn3d\ncbicn3d_ogl\ncbicn3d_ogl.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbidesk"=.\desktop\ncbidesk.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbiid1"=.\network\id1arch\ncbiid1.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbimain"=.\corelib\ncbimain\ncbimain.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbimmdb"=.\biostruc\ncbimmdb.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbinacc"=.\cdromlib\ncbinacc\ncbinacc.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbiobj"=.\object\ncbiobj.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbitool"=.\tools\ncbitool.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "ncbitxc2"=.\network\taxon1\taxon2\ncbitxc2.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "netblast"=.\network\blast3\netblast\netblast.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "netcli"=.\network\nsclilib\netcli.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "netentr"=.\network\entrez\client\netentr.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "test_ncbi_socket"=.\connect\test\test_ncbi_socket\test_ncbi_socket.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "test_ncbisock"=.\connect\test\test_ncbisock\test_ncbisock.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name ncbi
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name ncbimain
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "vibgif"=.\gif\vibgif.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "vibnet"=.\network\vibnet\vibnet.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "vibrant"=.\vibrant\vibrant\vibrant.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "vibrant_ogl"=.\vibrant\vibrant_ogl\vibrant_ogl.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Global:
+
+Package=<5>
+{{{
+}}}
+
+Package=<3>
+{{{
+}}}
+
+###############################################################################
+

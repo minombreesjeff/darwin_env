@@ -1,0 +1,49 @@
+
+		 #####
+		#     #   ####    ####   #    #   ####
+		#        #    #  #    #  #   #   #
+		 #####   #    #  #       ####     ####
+		      #  #    #  #       #  #         #
+		#     #  #    #  #    #  #   #   #    #
+		 #####    ####    ####   #    #   ####
+
+
+This system was described in a paper appearing the the 1992 USENIX
+Security Simposium.  This code has been in use at a variety of sites
+for many years, and is now available for general consumption.
+
+One quick disclaimer, which is that documentation isn't up to snuff,
+the best best thing available is the USENIX procedings.  If you
+notice something in particular lacking please let me know.
+
+I can reached at, for any questions comments or other sudgestions:
+	koblas@netcom.com
+
+What the directories contain:
+
+  include   -- Common include file for both the daemon and library
+  lib       -- Standard library containting replacement calls 
+  rfinger   -- Example Rconnect() program, contains both finger & whois
+  rftp      -- The standard BSD Networking release finger, copied
+	        from ftp.uu.net, and modified to work with Socks
+  sockd     -- The daemon that runs on the gateway host.
+  doc       -- Some unfinished documentation
+
+*** The short and simple installation instructions:
+
+1) Look at the socks.h in the include directory, cusomize it for your site.
+
+2) Put the following line in your /etc/services file
+	socks           1080/tcp              # Socks gateway service
+
+3) Cusomize sockd/sockd.conf to your sites needs
+
+4) Copy sockd/sockd and sockd/sockd.conf to your gateway host
+
+5) Add the following line to your /etc/inetd.conf file on the gateway
+	socks   stream  tcp     nowait  nobody  /etc/sockd	sockd
+
+6) Reload your inetd on the gateway host (kill -HUP <pid of inetd>)
+
+7) Test out rwhois or rfinger in the rfinger directory to see if
+   things are working.

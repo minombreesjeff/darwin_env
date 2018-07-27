@@ -1,0 +1,369 @@
+--$Revision: 6.0 $
+--*********************************************************************
+--
+--  entrez.asn
+--   Jim Ostell, 1993
+--              revised from epstein/ostell 1992
+--
+--     messages for entrez functions
+--
+--*********************************************************************
+
+NCBI-Entrez DEFINITIONS ::=
+BEGIN
+
+IMPORTS Seq-entry FROM NCBI-SeqSet
+        Seq-id FROM NCBI-SeqLoc
+        Medline-entry FROM NCBI-MedLine
+        Link-set FROM NCBI-Access
+        Biostruc, Biostruc-annot-set FROM MMDB
+	Bioseq FROM NCBI-Sequence
+	Date FROM NCBI-General
+        Cdrom-inf,Docsum FROM NCBI-CdRom;
+
+        --**********************************
+        -- requests
+        --
+
+Entrez-request ::= CHOICE {
+    init SEQUENCE {                -- EntrezInit
+        version VisibleString OPTIONAL
+    } ,
+    maxlinks NULL ,                -- EntGetMaxLinks
+    eval Entrez-termget ,          -- EntTLEval
+    docsum Entrez-docget ,         -- DocSum
+    linkuidlist Link-setget ,      -- LinkUidList
+    uidlinks Link-setget ,         -- UidLinks
+    byterm Entrez-term-by-term ,   -- TermListByTerm
+    bypage Entrez-term-by-page ,   -- TermListByPage
+    findterm Term-lookup ,         -- EntrezFindTerm
+    fini NULL ,                    -- EntrezFini
+    createnamed Entrez-named-list ,
+    getmle Entrez-docget ,          -- get MedlineEntry
+    getseq Entrez-seqget ,         -- get SeqEntry
+    evalX Entrez-termget ,         -- EntTLEvalX
+    createnamedX Entrez-named-listX ,
+    seqidforgi INTEGER ,           -- EntrezSeqIdForGI
+    findseqid Seq-id ,             -- EntrezFindSeqId
+    canneighbortext NULL ,         -- EntrezCanNeighborText
+    expanded-medline NULL ,
+    get-hierarchy Term-lookup ,
+    neighbortext Entrez-neighbor-text , -- EntrezNeighborText
+    eval-count Entrez-termget ,         -- EntTLEvalCount
+    initX SEQUENCE {                -- new EntrezInit
+        version VisibleString OPTIONAL
+    } ,
+    getbiostr Entrez-docget ,       -- EntrezBiostrucGet (obselete)
+    getbiostrX SEQUENCE {           -- EntrezBiostrucGet
+        complexity INTEGER ,
+        get Entrez-docget ,
+        max-models INTEGER OPTIONAL } ,
+    extrainfo INTEGER ,             -- obseletes maxlinks, canneighbortext, and expanded-medline
+    blast Entrez-blastreq ,         -- BLAST request
+    docsumX Entrez-docget ,         -- DocSum
+    getgenome Entrez-docget ,          -- get Genome-based Seq-entry
+    cluster-arts Cluster-articles ,
+    getbiostrannot INTEGER ,
+    getbiostr-feat-ids Get-feat-ids ,
+    getbiostr-annot-by-fid Get-by-fid }
+
+Get-by-fid ::= SEQUENCE {
+	mmdbid INTEGER ,
+	feature-id INTEGER ,
+	feature-set-id INTEGER }
+
+Get-feat-ids ::= SEQUENCE {
+	mmdbid INTEGER ,
+	feature-type INTEGER ,
+	feature-set-id INTEGER }
+
+Cluster-articles ::= SEQUENCE {
+    ids Entrez-ids ,
+    fld Entrez-field ,
+    min-cluster INTEGER ,
+    max-cluster INTEGER ,
+    max-terms INTEGER }
+
+Cluster-resp ::= SEQUENCE {
+    count INTEGER ,
+    terms SEQUENCE OF VisibleString ,
+    term-counts SEQUENCE OF INTEGER }
+
+Entrez-blastreq ::= SEQUENCE {
+    bsp Bioseq ,                   -- the sequence to be BLASTed
+    bsp-database Entrez-class ,
+    program VisibleString OPTIONAL ,
+    database VisibleString OPTIONAL ,
+    options VisibleString OPTIONAL ,
+    showprogress BOOLEAN OPTIONAL }
+
+Entrez-docget ::= SEQUENCE {
+    class Entrez-class ,
+    mark-missing BOOLEAN OPTIONAL ,
+    ids Entrez-ids ,
+    defer-count INTEGER OPTIONAL }
+
+Entrez-seqget ::= SEQUENCE {       -- SeqEntryGet
+    retype ENUMERATED {
+        fetch-from-id (-2) ,    -- fetch these entries from the ID service
+        unmatched (-1) ,        -- an entry which for which SeqIds needn't match
+        entry (0) ,             -- the "natural" entry for this (nuc-prot)
+        bioseq (1) ,            -- only the bioseq identified
+        bioseq-set (2) ,        -- any seg-set it may be part of
+        nuc-prot (3) ,            -- any nuc-prot it may be part of
+        pub-set (4) } DEFAULT entry ,
+    mark-missing BOOLEAN OPTIONAL ,
+    ids Entrez-ids }
+
+Entrez-termget ::= SEQUENCE {        -- terms query
+    max INTEGER OPTIONAL ,        -- maximum ids to return
+    cls Entrez-class ,            -- class of data to query
+    terms Entrez-term-list ,
+    date-constraints Date-constraints OPTIONAL }
+
+Date-constraints ::= SEQUENCE {
+    count INTEGER ,
+    date-vec SEQUENCE OF Date-vector
+}
+
+Date-vector ::= SEQUENCE {
+    begin-date Date OPTIONAL ,
+    end-date Date OPTIONAL ,
+    field-abbr VisibleString 
+}
+
+Entrez-class ::= ENUMERATED {     -- class of document to query
+    medline (0) ,
+    aa (1) ,
+    na (2) ,
+    st (3) ,
+    genome (4) }
+
+Entrez-field ::= INTEGER {              -- type of field
+    word (0) ,        -- words
+    mesh (1) ,        -- meSH terms
+    keyword (2) ,     -- keyword
+    author (3) ,      -- author names
+    journal (4) ,     -- journal title
+    org (5) ,         -- organism name
+    accn (6),         -- accession number
+    gene (7) ,        -- gene symbol
+    prot (8) ,        -- protein name
+    ecno (9) ,        -- E.C. number
+    hierarchy (10) ,  -- organism and MeSH hierarchies
+    pubdate (11) ,    -- publication date
+    fkey (12) ,       -- feature key
+    prop (13) ,       -- properties
+    subs (14) ,       -- substance
+    mloc (15) }       -- map location
+
+Entrez-operator ::= ENUMERATED {
+    lparen (1) ,
+    rparen (2) ,
+    andsymbl (3) ,
+    orsymbl (4) ,
+    butnotsymbl (5) }
+
+Special-operand ::= SEQUENCE {
+    term     VisibleString ,
+    fld      Entrez-field ,
+    type     Entrez-class ,
+    high-range VisibleString OPTIONAL }
+
+Total-operand ::= SEQUENCE {
+    term     VisibleString ,
+    fld      Entrez-field ,
+    type     Entrez-class ,
+    high-range VisibleString OPTIONAL }
+
+Entrez-term-list ::= SEQUENCE OF CHOICE {
+    operator      Entrez-operator ,
+    sp-operand    Special-operand ,
+    tot-operand   Total-operand   }
+
+Link-setget ::= SEQUENCE {
+    max INTEGER OPTIONAL ,        -- maximum ids to return
+    link-to-cls Entrez-class ,    -- class of data to return
+    query-cls Entrez-class ,      -- class of query
+    mark-missing BOOLEAN DEFAULT FALSE , -- need to know which IDs didn't match
+    query-size INTEGER ,          -- size of query
+    query SEQUENCE OF INTEGER }   -- ids of query
+
+
+Entrez-neighbor-text ::= SEQUENCE {
+    fld Entrez-field ,
+    percent-terms-to-use INTEGER ,
+    max-neighbors INTEGER ,
+    min-score INTEGER ,
+    normal-text VisibleString ,
+    special-text VisibleString }
+
+        --*********************************
+        -- replies (back)
+        --
+
+Entrez-back ::= CHOICE {
+    error INTEGER ,                -- Generic errors
+    init SEQUENCE {                -- EntrezInit
+        e-info Cdrom-inf OPTIONAL
+    } ,
+    maxlinks INTEGER ,             -- EntGetMaxLinks
+    eval CHOICE {                  -- EntTLEval
+      bad-count INTEGER ,             -- if too many UIDs to return set
+      link-set Link-set } ,
+    docsum CHOICE {                -- get summarys by term (DocSum)
+      ml Ml-summary-list ,         -- medline summary list
+      seq Seq-summary-list ,       -- sequence summary list
+      str Seq-summary-list } ,     -- biostruc summary list
+    linkuidlist Marked-link-set ,  -- LinkUidList
+    uidlinks Marked-link-set ,     -- UidLinks
+    byterm Entrez-term-resp ,      -- TermListByTerm
+    bypage Entrez-term-resp ,      -- TermListByPage
+    findterm Term-counts ,         -- EntrezFindTerm
+    fini NULL ,                    -- EntrezFini
+    createnamed NULL ,
+    getmle Entrez-Medline-entry-list ,   -- get Medline Entry
+    getseq Entrez-Seq-entry-list , -- get SeqEntry
+    evalX OCTET STRING ,           -- EntTLEvalX
+    createnamedX NULL ,
+    seqidforgi Seq-id ,            -- EntrezSeqIdForGI
+    findseqid INTEGER ,            -- EntrezFindSeqId
+    canneighbortext BOOLEAN ,         -- EntrezCanNeighborText 
+    expanded-medline BOOLEAN , 
+    get-hierarchy Entrez-Tree,
+    neighbortext Link-set ,
+    eval-count INTEGER ,            -- EntTLEvalCount
+    getbiostr Entrez-Biostruc-list ,-- EntrezBiostrucGet (obselete)
+    getbiostrX Entrez-Biostruc-list ,-- EntrezBiostrucGet
+    extrainfo Entrez-extra-info , 
+    blast CHOICE {                  -- BLAST
+      bad-count INTEGER ,             -- if too many UIDs to return set
+      link-set Link-set ,
+      job-start INTEGER ,
+      job-progress INTEGER } ,
+    docsumX New-summary-list ,
+    getgenome Entrez-Seq-entry-list , -- get genome (UNUSED)
+    cluster-arts Cluster-resp ,
+    getbiostrannot Biostruc-annot-set ,
+    getbiostr-feat-ids Link-set ,
+    getbiostr-annot-by-fid Biostruc-annot-set }
+
+Entrez-extra-info ::= SEQUENCE {
+    maxlinks INTEGER ,
+    canneighbortext BOOLEAN ,
+    expanded-medline BOOLEAN ,
+    canblast BOOLEAN }
+
+New-summary-list ::= SEQUENCE {          
+    num INTEGER ,
+    type Entrez-class ,
+    data SEQUENCE OF Docsum }
+
+Ml-summary-list ::= SEQUENCE {
+    num INTEGER ,
+    data SEQUENCE OF Ml-summary }
+
+Ml-summary ::= SEQUENCE {          
+    muid INTEGER ,
+    no-abstract BOOLEAN DEFAULT FALSE ,
+    translated-title BOOLEAN DEFAULT FALSE ,
+    no-authors BOOLEAN DEFAULT FALSE ,
+    caption VisibleString OPTIONAL ,
+    title VisibleString OPTIONAL }
+
+Seq-summary-list ::= SEQUENCE {
+    num INTEGER ,
+    data SEQUENCE OF Seq-summary }
+
+Seq-summary ::= SEQUENCE {
+    id INTEGER ,          -- Gi id
+    caption VisibleString OPTIONAL ,
+    title VisibleString OPTIONAL }
+
+Marked-link-set ::= SEQUENCE {
+    link-set Link-set ,
+    uids-processed INTEGER ,
+    marked-missing Entrez-ids OPTIONAL }
+
+Entrez-ids ::= SEQUENCE {
+    numid INTEGER ,                   -- number of ids to follow
+    ids SEQUENCE OF INTEGER }         -- the ids
+
+Entrez-term-by-page ::= SEQUENCE {
+    type     Entrez-class ,           -- type of query
+    fld      Entrez-field ,           -- 
+    page     INTEGER ,                -- starting page number
+    num-pages INTEGER }               -- # of pages desired
+
+Entrez-term-by-term ::= SEQUENCE {
+    type     Entrez-class ,           -- type of query
+    fld      Entrez-field ,           -- 
+    term     VisibleString ,          -- term on which to key
+    num-terms INTEGER }               -- # of terms desired
+
+Term-lookup ::= SEQUENCE {
+    type     Entrez-class ,           -- type of query
+    fld      Entrez-field ,           -- 
+    term     VisibleString }
+
+Term-page-info ::= SEQUENCE {
+    term       VisibleString ,
+    spec-count INTEGER ,
+    tot-count  INTEGER }
+
+Term-counts ::= SEQUENCE {
+    found BOOLEAN ,                   -- was the term found ?
+    spec-count INTEGER ,
+    tot-count  INTEGER }
+
+Entrez-term-resp ::= SEQUENCE {
+    num-terms INTEGER ,
+    first-page INTEGER OPTIONAL,
+    pages-read INTEGER ,
+    info SEQUENCE OF Term-page-info }
+
+Entrez-named-list ::= SEQUENCE {
+    term       VisibleString ,
+    type       Entrez-class ,           -- type of query
+    fld        Entrez-field ,           -- 
+    uids       Entrez-ids }
+
+Entrez-named-listX ::= SEQUENCE {
+    term       VisibleString ,
+    type       Entrez-class ,           -- type of query
+    fld        Entrez-field ,           -- 
+    uids       OCTET STRING }
+
+Entrez-Seq-entry-list ::= SEQUENCE {
+    num INTEGER ,
+    data SEQUENCE OF Seq-entry ,
+    marked-missing Entrez-ids OPTIONAL }
+
+Entrez-Medline-entry-list ::= SEQUENCE {
+    num INTEGER ,
+    data SEQUENCE OF Medline-entry ,
+    marked-missing Entrez-ids OPTIONAL }
+
+Entrez-Biostruc-list ::= SEQUENCE {
+    num INTEGER ,
+    data SEQUENCE OF Biostruc ,
+    marked-missing Entrez-ids OPTIONAL }
+
+
+Entrez-Tree-Child ::= SEQUENCE {
+    name VisibleString ,
+    is-leaf-node BOOLEAN ,
+    special INTEGER ,
+    total INTEGER
+}
+
+Entrez-Tree ::= SEQUENCE {
+    num-in-lineage INTEGER ,
+    num-children INTEGER ,
+    term VisibleString ,
+    lineage SEQUENCE OF VisibleString ,
+    children SEQUENCE OF Entrez-Tree-Child ,
+    canonical-form VisibleString OPTIONAL
+}
+
+END

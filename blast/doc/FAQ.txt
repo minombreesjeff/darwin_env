@@ -1,0 +1,155 @@
+
+That document contains the Frequently Asked Questions with Answers
+to the NCBI toolkit.
+It is available at ftp://ftp.ncbi.nih.gov/toolbox/FAQ.html
+
+In case of any questions don't hesitate to ask us at
+	mailto:toolbox@ncbi.nlm.nih.gov
+
+Q. Where can I download the binaries of NCBI toolkit?
+A. The binaries of NCBI toolkit may be downloaded at:
+	BLAST:		ftp://ftp.ncbi.nih.gov/blast/executables/
+	SEQUIN:		ftp://ftp.ncbi.nih.gov/sequin/
+	FA2HTGS:	ftp://ftp.ncbi.nih.gov/fa2htgs/
+	ENTREZ:		ftp://ftp.ncbi.nih.gov/entrez/
+	CN3D:		ftp://ftp.ncbi.nih.gov/cn3d/
+
+Currently NCBI prepares the binaries for the following platforms:
+	IBM       -- AIX 4.3.3
+	DEC Alpha -- OSF1 V5.1
+	SGI       -- IRIX 6.4
+	SGI       -- IRIX 5.3
+	Sun/Sparc -- Solaris 2.6
+	Intel x86 -- Solaris 2.7
+	Intel x86 -- Red Hat Linux release 5.2 with kernel 2.0.36
+	Intel x86 -- Microsoft NT or Windows 95 (32bit)
+	Motorola 68000   -- MacOS
+	Motorola PowerPC -- MacOS
+
+Q. Where can I download the sources of NCBI toolkit?
+A. The sources of NCBI toolkit for Unix are located at:
+	ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.tar.Z
+The sources of NCBI toolkit for Windows are located at:
+	ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbiz.exe
+And the sources of NCBI toolkit for Mac are located at:
+	ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.hqx
+
+Q. How to find the version of the toolkit?
+A. The source of the ToolKit for Unix, which is located at
+	ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.tar.Z
+should have the file ncbi/VERSION with the date of the building.
+
+Q. How to build NCBI toolkit on Unix?
+A. Read the file ftp://ftp.ncbi.nih.gov/toolbox/readme.unx
+   You should take the sources of NCBI tookit at:
+	ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.tar.Z
+	put the archive to the new empty directory:
+	mkdir toolkit
+	cd toolkit
+	#download ncbi.tar.Z here
+	compress -d < ncbi.tar.Z | tar xvf -
+	# the new directory ncbi will be extracted
+	# now run the command:
+	# in sh or bash
+	./ncbi/make/makedis.csh - 2>&1 | tee out.makedis.csh
+	# in csh or tcsh
+	./ncbi/make/makedis.csh - |& tee out.makedis.csh
+   The new binaries and libraries will be in ncbi/build subdirectory
+
+Q. May I build toolkit on Solaris/Intel or Solaris/Sparc using GNU C?
+A. Yes, just copy the file ./ncbi/platform/solaris-gcc.ncbi.mk
+   instead of ./ncbi/platform/solarisintel.ncbi.mk (for Solaris/Intel)
+   or ./ncbi/platform/solaris.ncbi.mk (for Solaris/Sparc).
+
+Q. How can I build toolkit on Linux with Vibrant library?
+A. You should purchase Motif for Linux. For example look at:
+	http://www.redhat.com/online_orders.phtml?pid=RH2110
+As an alternative to Motif there is free clone which is called Lesstif
+which can be obtained at http://www.lesstif.org/
+We didn't check it work yet, so you can use Lesstif for your own risk.
+Besides that the X11R6 development toolkit should be installed.
+
+Q. How can I build toolkit on Linux without Vibrant library?
+A. To disable vibrant library you need to edit the files
+   ncbi/platform/linux.ncbi.mk and ncbi/make/makedis.csh
+   to delete all references to:
+
+	BLIB31=libvibnet.a
+	LIB20=libncbidesk.a
+	LIB28=libvibgif.a
+	LIB30=libncbicn3d.a
+	LIB4=libvibrant.a
+	VIBFLAG="$NCBI_VIBFLAG"
+	VIBLIBS="$NCBI_DISTVIBLIBS"
+
+  Besides that you should delete the references to Psequin, Nentrez, Cn3D
+  and powblast in ncbi/make/makedis.csh
+
+Q. Are there any ready binaries of NCBI toolkit for Debian Linux?
+A. Yes, they are. Try to look at
+   http://www.pasteur.fr/units/sis/debian/biology-en.html
+   and
+   http://www.debian.org/Packages/unstable/libs/vibrant6.html
+
+Q. Can I build threaded version of BLAST on IRIX6.X?
+A. Yes, you can if you upgrade your system and put the proper patches.
+SGI recommends the following threads patches on IRIX6 systems:
+   For 6.2 systems, install SG0001404, SG0001645, SG0002000, SG0002420
+and SG0002458 (in that order)
+   For 6.3 systems, install SG0001645, SG0002420 and SG0002458 (in that order)
+   For 6.4 systems, install SG0002194, SG0002420 and SG0002458 (in that order)
+These patches can be obtained by calling SGI customer service or from
+the web: http://support.sgi.com/
+
+Q. Can I build non-threaded version of BLAST on IRIX6.X?
+A. Yes, you can. In that case you should specify the flag
+ -DNCBI_NOTHREADS_AVAIL modifying the file ncbi/make/makedis.csh
+
+Q. I am having a bit of trouble trying to get the PSI blast to work. The
+demo program "blastpgp.exe" simple issues an error message saying
+"cannot open file "nr.pin"" and then crashes.
+A. That message indicates that it can not find your database 'nr'.
+After you run formatdb on nr you should have seven files (if you use
+the '-o T' option) with names:
+nr.phr  nr.pin  nr.pnd  nr.pni  nr.psd  nr.psi  nr.psq
+First you should check that all the files are present and if they are
+not, then look for error messages in formatdb.log.  Next check that
+you are specifying the correct path to the files (or better, run blastpgp.exe
+in the same directory as the database files).  You can also specify the
+path in your ncbi.ini file by adding:
+[BLAST]
+BLASTDB=C:\BLAST\DB
+where you replace "C:\BLAST\DB" by the directory that contains your
+BLAST databases.
+
+Q. I installed the NCBI Toolkit but when I attempt to run this, I get
+the error message: FindPath failed
+A. This error message is usually caused either by not having an
+ncbi.ini on Windows platforms or the .ncbirc file on UNIx or by not
+having this file in the proper directory.
+
+ 1. For UNIX you need to have a .ncbirc file in your home
+    directory which points to the data directories.
+    Example:
+
+    [NCBI]
+    Data=/home/user/entrez/data
+
+ 2. For Windows you need to have a ncbi.ini in your WINDOWS or
+    WINNT directory file which points to the data
+    directories. Example:
+
+    [NCBI]
+    Data=C:\entrez\data
+ 3. For the Mac, the configuration file is called ncbi.cnf, and
+    should be placed in your "System Folder:Preferences" subfolder.
+	Example:
+
+    [NCBI]
+    Data=MacintoshHD:Entrez Folder:data
+        
+Q. Can I get a hardcopy of the NCBI Toolkit documentation?
+A. Yes, we will send you a hardcopy of the toolkit documentation. Please
+send your request to the NCBI Information help desk at info@ncbi.nlm.nih.gov
+Include your complete mailing address. 
+

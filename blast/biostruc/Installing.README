@@ -1,0 +1,27 @@
+To install new versions of mmdbsrv and vastsrv on vaster:
+
+To build:
+
+make -f make.mmdbsrv mmdbsrv.FF		(flat file versions)
+make -f make.vastsrv vastsrv.FF		
+make -f make.mmdbsrv mmdbsrv.PS		(PubStruct versions)
+make -f make.vastsrv vastsrv.PS		
+
+________To install flat file versions:________
+
+cp mmdbsrv.FF /net/vaster/usr/attic/httpd.local/cgi-bin/Structure/mmdbsrv.FF
+cp mmdbsrv.FF /net/vaster/usr/attic/httpd.local/cgi-bin/Structure/vastsrv.FF
+cp mmdbsrv.FF /net/vaster/usr/attic/httpd.public/cgi-bin/Structure/mmdbsrv.FF
+cp vastsrv.FF /net/vaster/usr/attic/httpd.public/cgi-bin/Structure/vastsrv.FF
+
+________To install PubStruct versions:________
+
+cp mmdbsrv.PS /net/vaster/usr/attic/httpd.local/cgi-bin/Structure/mmdbsrv.PS
+cp mmdbsrv.PS /net/vaster/usr/attic/httpd.public/cgi-bin/Structure/mmdbsrv.PS
+
+and check to be sure that mmdbsrv.sh (in same dirs) invokes mmdbsrv.PS
+
+cp vastsrv.PS /net/vaster/usr/attic/httpd.local/cgi-bin/Structure/vastsrv.PS
+cp vastsrv.PS /net/vaster/usr/attic/httpd.public/cgi-bin/Structure/vastsrv.PS
+
+and check to be sure that vastsrv.sh (in same dirs) invokes vastsrv.PS

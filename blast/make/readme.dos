@@ -1,0 +1,215 @@
+# $Id: readme.dos,v 6.11 2001/12/12 20:37:50 beloslyu Exp $
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+DIRECTIONS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Getting the NCBI C Toolkit sources
+------------------------------------
+
+Outside users can download self-extracting archive from:
+    ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/CURRENT/ncbiz.exe
+
+Insiders can always retrieve the latest Toolkit sources from CVS using script:
+    $CVSROOT/scripts/makedist_pc
+
+
+
+Building the NCBI C Toolkit
+-----------------------------
+
+1) go to MAKE directory
+
+2) here, if necessary, modify path to your BORLAND or MSVC++ toolkit
+   at the very beginning of the "ncbimake.bat" file:
+        set __PATH_MS=c:\msdev
+        set __PATH_BOR=c:\bc5
+	NOTE: On Windows-NT, MSVC++ 5.x, 6.x it is often enough to uncomment
+         (and maybe slightly fix the paths) this:
+	  set __PATH_MS=D:\Program Files\DevStudio\SharedIDE\bin;D:\Program Files\DevStudio\VC
+
+3) then (from the MAKE directory) run:
+        ncbimake.bat XXX YYY ZZZ copy
+
+   where XXX, YYY and ZZZ specifies(see Usage):
+
+ncbimake {M|B|D} {W|C} {O|D} [noexe | copy | user <makefile> <toolkit_path>]
+  (M)icrosoft / (B)orland compiler / (D)LL
+  (W)indows/(C)onsole application
+  (D)ebug/(O)ptimized version
+
+  Argument #4:
+    (copy)  -- deploy all sources(must be run from MAKE directory)
+    ()      -- build in the current directory(created by 'copy')
+    (noexe) -- same as () but build libraries only(no executables)
+    (user)  -- must be followed by(both):
+      <makefile>      -- user makefile basename (will be completed by .MAK)
+      <toolkit_path>  -- path to the NCBI toolkit
+
+E.g., to deploy the NCBI toolkit sources for
+MSVC++ (M), GUI (W), optimized (O) application, just use:
+    ncbimake.bat M W O copy
+
+two new directories will be created and filled with necessary source files:
+    BUILD.MS
+    INCLUDE
+
+The build directory naming policy is:
+    BUILD[_D].[MS|BOR|DLL]
+          ^^   ^^^
+          |     |>>> Microsoft / Borland compiler
+          |>>> debugging version
+
+4) now go to the new "BUILD*.*" directory and run "ncbimake.bat"
+   with the same options but the "copy".
+
+E.g., for the case described above, go to "BUILD.MS" and run:
+    ncbimake.bat M W O
+
+Use "noexe" flag if you want to build only toolkit libraries and
+do not want to build all executables(the latter can occupy, depending of
+the build mode and the compiler, from 8M to 40M of your disk space):
+    ncbimake.bat M W O noexe
+
+
+Building a separate application
+--------------------------------
+
+1) Build the NCBI toolkit with "ncbimake.bat" (e.g. with options 'M W D'
+in directory "c:\ncbi")
+
+2) Write special makefile.  It must have extension ".mak". For example,
+the special makefile to build "cn3d.exe" can have name "cn3d.mak" and
+contain:
+#################################
+!include "$(LIBPATH)\make_gen.dos"
+TEST_NAME = cn3d
+TEST_OBJ = cn3dmain.obj
+#TEST_OPT = -I.
+TEST_LIB = $(LIB41) $(LIB31) $(LIB30) $(LIB23) $(LIB22) $(LIB20) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1)
+#RES = 1
+#RES_DEP = ncbilogo.ico
+!include "$(LIBPATH)\make_exe.dos"
+#################################
+
+3) Now, from any directory containing both "cn3d.mak" and "cn3dmain.c"
+(or already compiled "cn3dmain.obj") just run:
+    c:\ncbi\make\ncbimake M W D user cn3d c:\ncbi
+
+*)  If specified, the $(TEST_OPT) flags will be added to the C compiler
+flags when compiling modules from the $(TEST_OBJ) list.
+**) If $(RES) is defined then "$(TEST_NAME).rc"(=="cn3d.rc" in our case)
+resource file must present in the working directory(along with the
+"cn3d.mak" and "cn3dmain.c" files);  it will be compiled by the relevant
+resource compiler and linked in the executable("cn3d.exe").
+$(RES_DEP) describes hidden resource file dependencies(if any).
+***) Use $(TEST_STDLIB) to add additional standard libraries.
+
+
+Building a separate library
+----------------------------
+
+1) Build the NCBI toolkit with "ncbimake.bat" (e.g. with options M W D
+in directory "c:\ncbi")
+
+2) Write special makefile.  It must have extension ".mak". For example,
+the special makefile to build "ncbiobj.lib(or .dll)" can have name
+"ncbiobj.mak" and contain:
+#################################
+#NCBI_DLL = 1
+!include "$(LIBPATH)\make_gen.dos"
+LIB_NAME = ncbiobj
+LIB_LIB  = $(LIB1)
+LIB_OBJ  = +naccentr.obj +accutils.obj
+#LIB_OPT  = -I.
+#RES =
+#RES_DEP =
+!include "$(LIBPATH)\make_lib.dos"
+#################################
+
+3) Now, from any directory containing both "ncbiobj.mak" and modules
+"naccentr.c" and "accutils.c"(or already compiled "naccentr.obj" and
+"accutils.obj") just run:
+    c:\ncbi\make\ncbimake 32 W D user ncbiobj c:\ncbi
+
+*)  If specified, the $(LIB_PREOPT) and $(LIB_OPT) flags will be added
+to the C compiler flags when compiling modules from the $(LIB_OBJ) list;
+$(LIB_PREOPT) will be added before standard toolkit flags $(CFLAGS), and
+$(LIB_OPT) will be added after the $(CFLAGS). Thus, $(LIB_PREOPT) can be
+useful if you e.g. need to add your include dirs to alternate standard
+toolkit include dirs("-I...");  and $(LIB_OPT) can be used to override
+standard toolkit C-preprocessor variables("-D.... -U...").
+The '+' sign before each object module in the $(LIB_OBJ) list is mandatory
+if you use Borland librarian.
+**) Should the target library can be built as DLL, just uncomment the line
+containing "NCBI_DLL = 1".  (Otherwise, the $(LIB_LIB) variable does
+not need to contain the list of underlying libraries.)
+***) Use $(LIB_STDLIB) to specify additional standard libraries.
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+TIPS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ *1*) The files like "flag*.*" in your "BUILD*.*" directory(ies) are
+      designed to protect you from running "ncbimake.bat" with
+      wrong options(e.g. mixing optimized and debugging versions
+      of NCBI toolkit, or different compilers, etc.).
+ *2*) Exit from Norton Commander before running "ncbimake.bat" --
+      as NC has not enough space for environment variables used
+      within "ncbimake.bat".
+ *3*) If *2* does not help and the "Out of environment space" problem
+      persists then run new command interpreter with option /e:2000
+      (to increase DOS environment space to 2000 bytes), like
+         c:\dos\command.com /e:2000
+                 or
+         c:\command.com /e:2000
+ *4*) Before starting with the source deployment make sure that you
+      have not set environment variable NC -- if set, this variable
+      prevents the source copying(use "set NC=" to unset it, if necessary)
+ *5*) Before running most of NCBI applications you should modify(if
+      necessary) and copy NCBI config files(like "ncbi.ini") to your
+      WINDOWS directory.
+      For more details see CONFIG/README and main README file.
+ *6*) If the toolkit build fails due to an occasional error
+      (e.g. "INTERNAL COMPILER ERROR"), the build can be resumed from
+      that state by just rerunning the build command with the same
+      arguments.
+ *7*) If you use "vibgif.lib"(LIB28) to dump VIBRANT pictures directly to
+      GIF files:  be aware to exclude all GUI-specific code from your
+      application (you can output either to GIF or to the screen, but not
+      to both!). Also, this library must be linked only to console
+      applications (use flag "C" for "ncbimake.bat").
+ *8*) $(LIB4), $(LIB30) and $(LIB31) libraries are actually
+      linked to the applications only when the "W" flag specified
+      (2nd "ncbimake.bat" parameter);  thus, there is no reason to
+      remove e.g. $(LIB4) from the application library list if you
+      want to build non-Vibrant(console) version of your application.
+ *9*) If you want to run your build from inside the MSVC++
+      environment, create file "fake.mak" containing something like:
+        fake_target:
+            c:\ncbi\make\ncbimake.bat 32 W O user cn3d c:\ncbi
+      and open this as a makefile.  In "Build"/"Settings..."(Alt-F7)
+      dialog set the output name to "cn3d.exe". Make sure that
+      all involved files ("fake.mak", "cn3d.mak", "cn3dmain.c", etc.)
+      are copied to the MSVC project dir.
+*10*) If you have an error like "Too many parameters" (and the script
+      usually cannot find "nmake.exe" after this), try to add
+      double-quotes to the "***** Set Environment *****" section of
+      "ncbimake.bat":
+	      { set PATH=%BIN%;%PATH% }  --->  { set PATH="%BIN%;%PATH%" }
+      and, maybe, analogously:
+	      { set __PATH_MS="c:\program files\devstudio\vc" }).
+      This is a "feature"(bug?) in some versions of "command.com".
+      Another flavor of this bug can require to use only the opening
+      double-quote, and omit the closing one, like: {set PATH="%BIN%;%PATH%}.
+*11*) All toolkit libs and applications are always built in Multi-Thread mode.
+*12*) To build applications which use 3D graphics (Cn3D, Sequin, Nentrez)
+      with the OpenGL libraries (in addition to those built with the
+      the NCBI 3D-viewer), you will have to:
+         set OPENGL=1
+      before running "ncbimake.bat ....". -- or, you can just uncomment
+      the following line in "ncbimake.bat":
+         rem set OPENGL=1
+
+*****  Please send your remarks to:  <vakatov@ncbi.nlm.nih.gov>  *****
+

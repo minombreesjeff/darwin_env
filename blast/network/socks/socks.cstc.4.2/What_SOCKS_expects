@@ -1,0 +1,48 @@
+	What SOCKS Expects In the Client Programs
+
+		    Ying-Da Lee
+		<ylee@syl.dl.nec.com>
+
+SOCKS is intended for easy conversion of existing network TCP client
+programs.  Towards that end, it expects that the programs are written
+in a certain way.
+
+SOCKS only pays attention to six socket functions: connect(), bind(),
+getsockname(), listen(), accept(), select(), and rcmd(). (select and
+rcmd() do not apply to versions prior to version 4.2 of SOCKS.CSTC.)
+SOCKS makes the following assumptions.
+
+1) Everything is done in TCP.
+
+2) The very first function invoked must be connect(), or rcmd().
+
+3) If connect() is used on a non-blocking socket, no I/O should occur
+   on that socket until after another connect() with the same arguments
+   returns with -1 and errno indicating EISCONN. This is required even
+   if select() on write is used to check the readiness of that socket.
+   Also, while a connection is still pending, no attempts may
+   be made to start another connection via connect() or the bind()--
+   getsockname()--listen()--accept() sequence.
+
+4) bind() is used after a successful connect() call to a host for a
+   specific service.  It is used to establish an auxiliary TCP
+   session with the same host in the previous connect() call and for
+   the same service.
+
+5) bind() is followed by
+
+	getsockname()
+	listen()
+	accept()
+
+   in the order given above.
+
+Most client programs fit these assumptions very well; such programs
+can be SOCKSified without changing the code at all using the steps
+described in the file How_to_SOCKSified. 
+
+Some client programs use a bind() before each connect(). If the bind()
+is used to claim a specific port or a specific network interface, the
+current SOCKS is not able to accommodate such use. Very often though,
+such a bind() call is there for no reason at all, and should simply
+be deleted.

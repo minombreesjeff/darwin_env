@@ -1,0 +1,33 @@
+#!/bin/sh -x
+watchers="sirotkin chenhc Francis"
+mailprog=/usr/bin/mailx
+tmp=/tmp/fa2htgs.$$
+mailtmp=/tmp/fa2htgs.mail.$$
+ftpdir=/net/ncbi/ncbi/ftp/fa2htgs
+masterdir=/net/sampson/a0/coremake/has.source.ncbi/doc/fa2htgs
+master1=$masterdir/README
+ftp1=$ftpdir/README
+master2=$masterdir/Example
+ftp2=$ftpdir/Example
+touch $tmp $mailtmp
+diff $master1 $ftp1 >>$tmp 2>>$tmp
+retval=$?
+if [ -r $master1 ] && [ $retval -eq 1 ]
+then
+	echo cp -p $master1 $ftp1 >>$mailtmp
+	cp -p $master1 $ftp1 
+fi
+##diff $master2 $ftp2 >>$tmp 2>>$tmp
+##retval=$?
+##if [ -r $master2 ] && [ $retval -eq 1 ]
+##then
+##	echo cp -p $master2 $ftp2 >>$mailtmp
+##	cp -p $master2 $ftp2 
+##fi
+if [ -s $mailtmp ]
+then
+    echo "Diffs:" >>$mailtmp
+    cat $tmp >>$mailtmp
+    cat $mailtmp | $mailprog -s "fa2htgs documentation changes automatically copied" $watchers
+fi
+rm -f $mailtmp $tmp

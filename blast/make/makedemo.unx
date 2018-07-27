@@ -1,0 +1,356 @@
+#	makefile for demo programs
+#
+#	$Id: makedemo.unx,v 6.59 2001/08/07 16:55:04 beloslyu Exp $
+#
+#	Sun with unbundled ANSI compiler [ make CC=acc ]
+#	Sun with Gnu C [ make CC=gcc ]
+#   Sun with Solaris 2.x OS [ make CC="cc -Xa" OTHERLIBS="-lthread -lm" ]
+#	Silicon Graphics [ make OTHERLIBS="-lm -lPW -lsun" ]
+#	IBM 3090 with AIX [ make  ]
+#	ULTRIX [ make ]
+#	Apple AUX [ make SHELL=\usr\bin ]
+#	NeXt [ make CFLAGS1="-c -ansi"  ]
+#   DEC Alpha under OSF/1  [ make CC=cc ]
+#	
+#	Subsequent makes should make ... nocopy instead of make ... all
+#	to avoid recopying the include files
+#
+#	To Make the Motif version of demos add:
+#      VIBLIBS="-lXm -lXmu -lXt -lX11" LIB4=-lvibrant VIBFLAG="-I/am/Motif/include -DWIN_MOTIF"
+#   to the argument list.  Substitute the path to your Motif includes for
+#    /am/Motif/include.
+#
+#   Motif versions on Solaris 2.x are more complicated because of changes to
+#   the socket I/O. You have explicitly include them. Try:
+#
+# make -f makedemo.unx CC="cc -Xa"
+# VIBLIBS="-L/netopt/X11R5/lib -L/netopt/Motif1.2.2/lib -R/netopt/X11R5/lib:/netopt/Motif1.2.2.lib -lXm -lXmu -lXt -lX11 -lsocket -lnsl -lgen"
+# LIB4=-lvibrant
+# VIBFLAG="-I/netopt/X11R5/include -I/netopt/Motif1.2.2/include -DWIN_MOTIF"
+#
+#   The build for RedHat Linux 2.XX with X11R6 requires:
+#     CC="gcc -ansi"
+#     VIBLIBS="-L/usr/X11R6/lib -lXm -lXpm -lXmu -lXp -lXt -lX11 -lXext"
+#
+#   NOTE: It is now possible to build using shared libraries, which 
+#     consumes significantly less disk space.  To date, this has only
+#     been tested using Solaris.  To use shared libraries, try:
+#       make ... NCBI_LINKINGLIBDIR=../shlib
+#            NCBI_OTHERLINKOPTIONS=-R`pwd`/../shlib
+#
+
+
+# default flags for compiling and loading
+
+SUFFIXLCL = $(LCL)
+CFLAGS1 = -c -O
+LDFLAGS1 = -O
+CC = cc
+RAN = ls -l
+OTHERLIBS = -lm
+THREAD_OTHERLIBS = -lthread
+THREAD_OTHERLIBS =
+THREAD_OBJ = ncbithr.o
+THREAD_OBJ =
+VIBLIBS = 
+VIBFLAG =
+VIB =
+LIBCOPY = cp -p
+SRCCOPY = ./ln-if-absent
+BINCOPY = cp -p
+
+SUFFIXENV = unx
+ASNDIR = asnstat
+LIB1 = -lncbi
+LIB2 = -lncbiobj
+LIB3 = -lncbicdr
+LIB4 = -lvibrant
+LIB4 =
+LIB5 = -lncbiacc
+LIB20 = -lncbidesk
+LIB20 =
+LIB22 = -lncbimmdb
+LIB23 = -lncbitool
+NCBI_INCDIR = ../include
+NCBI_LIBDIR = ../lib
+NCBI_LINKINGLIBDIR = $(NCBI_LIBDIR)
+# A kludge which tells the linker not to try to use shared libraries
+# when linking programs which use main() instead of Nlm_Main()
+USES_MAIN_KLUDGE = -L$(NCBI_LIBDIR)
+NCBI_OTHERLINKOPTIONS =
+CFLAGS = $(CFLAGS1) -I$(NCBI_INCDIR) $(VIBFLAG)
+LDFLAGS = $(LDFLAGS1) -I$(NCBI_INCDIR) $(NCBI_OTHERLINKOPTIONS) -L$(NCBI_LINKINGLIBDIR) $(VIBFLAG)
+ENTREZLIBS = $(LIB5) $(LIB3)
+
+##
+## some things to make
+##
+
+# sources needed for versions of demo programs
+
+EXE1 = testcore makeset \
+    getmesh indexpub getpub testobj seqtest \
+	dosimple asn2ff getseq getfeat checksub asndhuff \
+	entrcmd errhdr cdscan findspl \
+	ncbisort fa2htgs fastacmd formatdb blastall blastpgp \
+	testval seedtop fmerge makemat copymat impala bl2seq \
+	megablast vecscreen gil2bin tbl2asn blastclust rpsblast \
+	asn2xml
+
+SRC1 = testcore.c makeset.c \
+    getmesh.c indexpub.c getpub.c testobj.c seqtest.c dosimple.c asn2ff.c \
+    getseq.c getfeat.c checksub.c asndhuff.c \
+    entrcmd.c errhdr.c cdscan.c findspl.c \
+    ncbisort.c fa2htgs.c fastacmd.c formatdb.c blastall.c blastpgp.c \
+    testval.c seedtop.c fmerge.c makemat.c copymat.c profiles.c bl2seq.c \
+	megablast.c vecscreen.c gil2bin.c tbl2asn.c blastclust.c rpsblast.c \
+	asn2xml.c
+
+INTERNAL = testgen
+
+## All things to make
+##
+all : ln-if-absent copy .WAIT nocopy
+
+ln-if-absent:	../make/ln-if-absent
+	rm -f ln-if-absent
+	ln -s ../make/ln-if-absent .
+
+nocopy : sources $(EXE1) $(VIB)
+
+sources : $(SRC1)
+
+internal: $(INTERNAL)
+
+## To clean out the directory without removing make
+##
+clean :
+	- rm -f *.[acho]
+
+.NO_PARALLEL:	copy
+
+.WAIT:
+	echo Waiting...go
+
+## Implicit actions
+##
+
+.c.o :
+	$(CC) $(CFLAGS) $<
+
+## get all the source files
+##
+
+copy :
+	$(SRCCOPY) ../demo/*.* .
+	-$(SRCCOPY) ../internal/*.* .
+	chmod -R ug+rw,o+r .
+
+## make applications
+##
+
+
+# testcore
+
+testcore : testcore.c
+	$(CC) -o testcore $(LDFLAGS) testcore.c $(LIB4) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# getmesh
+
+getmesh : getmesh.c
+	$(CC) -o getmesh $(LDFLAGS) getmesh.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# indexpub
+
+indexpub : indexpub.c
+	$(CC) -o indexpub $(LDFLAGS) indexpub.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# makeset
+
+makeset : makeset.c
+	$(CC) -o makeset $(LDFLAGS) makeset.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# getpub
+
+getpub : getpub.c
+	$(CC) -o getpub $(LDFLAGS) getpub.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# testobj
+
+testobj : testobj.c
+	$(CC) -o testobj $(LDFLAGS) testobj.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# dosimple
+
+dosimple : dosimple.c
+	$(CC) -o dosimple $(LDFLAGS) dosimple.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# seqtest
+
+seqtest : seqtest.c
+	$(CC) -o seqtest $(LDFLAGS) seqtest.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+
+# checksub
+
+checksub : checksub.c
+	$(CC) -o checksub $(LDFLAGS) checksub.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# asn2ff
+
+asn2ff : asn2ff.c
+	$(CC) -o asn2ff $(LDFLAGS) asn2ff.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# fa2htgs
+
+fa2htgs : fa2htgs.c
+	$(CC) -o fa2htgs $(LDFLAGS) fa2htgs.c $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# getseq
+
+getseq : getseq.c
+	$(CC) -o getseq $(LDFLAGS) getseq.c $(LIB4) $(ENTREZLIBS) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# cdscan
+
+cdscan : cdscan.c
+	$(CC) -o cdscan $(LDFLAGS) cdscan.c $(LIB4) $(ENTREZLIBS) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# findspl
+
+findspl : findspl.c
+	$(CC) -o findspl $(LDFLAGS) findspl.c $(ENTREZLIBS) $(LIB2) $(LIB1) $(OTHERLIBS)
+
+# getfeat
+
+getfeat : getfeat.c
+	$(CC) -o getfeat $(LDFLAGS) getfeat.c $(LIB4) $(ENTREZLIBS) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+# errhdr
+
+errhdr : errhdr.c
+	$(CC) -o errhdr $(LDFLAGS) errhdr.c $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+
+
+
+# asndhuff
+
+asndhuff : asndhuff.c
+	$(CC) -o asndhuff $(LDFLAGS) asndhuff.c $(LIB4) $(ENTREZLIBS) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+ 
+# entrcmd
+
+entrcmd : entrcmd.c
+	$(CC) -o entrcmd $(LDFLAGS) entrcmd.c $(ENTREZLIBS) $(LIB2) $(LIB1) $(OTHERLIBS)
+ 
+# ncbisort
+
+ncbisort : sortcmd.c
+	$(CC) -o ncbisort $(LDFLAGS) sortcmd.c $(LIB23) $(LIB1) $(OTHERLIBS)
+
+# testval
+
+testval : testval.c
+	$(CC) -o testval $(LDFLAGS) testval.c $(LIB2) $(LIB1) $(OTHERLIBS)
+
+# fastacmd
+
+fastacmd : fastacmd.c
+	$(CC) -o fastacmd $(LDFLAGS) fastacmd.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
+
+# formatdb
+
+formatdb : formatdb.c
+	$(CC) -o formatdb $(LDFLAGS) formatdb.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
+
+# fmerge
+
+fmerge : fmerge.c
+	$(CC) -o fmerge $(LDFLAGS) fmerge.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
+
+# blastall
+
+blastall : blastall.c $(THREAD_OBJ)
+	$(CC) -o blastall $(LDFLAGS) blastall.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# blastpgp
+
+blastpgp : blastpgp.c $(THREAD_OBJ)
+	$(CC) -o blastpgp $(LDFLAGS) blastpgp.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# seedtop
+
+seedtop : seedtop.c $(THREAD_OBJ)
+	$(CC) -o seedtop $(LDFLAGS) seedtop.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# makemat
+
+makemat : makemat.c $(THREAD_OBJ)
+	$(CC) -o makemat $(LDFLAGS) makemat.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# copymat
+
+copymat : copymat.c $(THREAD_OBJ)
+	$(CC) -o copymat $(LDFLAGS) copymat.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# impala
+
+impala : profiles.c $(THREAD_OBJ)
+	$(CC) -o impala $(LDFLAGS) profiles.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# bl2seq
+
+bl2seq : bl2seq.c
+	$(CC) -o bl2seq $(LDFLAGS) bl2seq.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
+
+# testgen
+
+testgen : testgen.c
+	$(CC) -o testgen $(LDFLAGS) testgen.c $(LIB1) $(OTHERLIBS)
+
+#testmem 
+
+testmem : testmem.c
+	$(CC) -o testmem $(LDFLAGS) testmem.c $(LIB2) $(LIB1) $(OTHERLIBS)
+
+#packfilt 
+
+packfilt : packfilt.c
+	$(CC) -o packfilt $(LDFLAGS) packfilt.c $(LIB2) $(LIB1) $(OTHERLIBS)
+
+# megablast
+
+megablast : megablast.c $(THREAD_OBJ)
+	$(CC) -o megablast $(LDFLAGS) megablast.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# vecscreen
+
+vecscreen : vecscreen.c $(THREAD_OBJ)
+	$(CC) -o vecscreen $(LDFLAGS) vecscreen.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# gil2bin
+
+gil2bin : gil2bin.c 
+	$(CC) -o gil2bin $(LDFLAGS) gil2bin.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) 
+
+# tbl2asn
+
+tbl2asn : tbl2asn.c 
+	$(CC) -o tbl2asn $(LDFLAGS) tbl2asn.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) 
+
+# blastclust
+
+blastclust : blastclust.c $(THREAD_OBJ)
+	$(CC) -o blastclust $(LDFLAGS) blastclust.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# rpsblast
+
+rpsblast : rpsblast.c $(THREAD_OBJ)
+	$(CC) -o rpsblast $(LDFLAGS) rpsblast.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+
+# asn2xml
+
+asn2xml : asn2xml.c $(THREAD_OBJ)
+	$(CC) -o asn2xml $(LDFLAGS) asn2xml.c $(LIB2) $(LIB1) $(OTHERLIBS)
+

@@ -1,0 +1,279 @@
+NCBI Data in XML
+
+Introduction
+
+Extensible Markup Language (XML) is a tagged format similar to HTML on which web 
+pages are based. The familiar text format and availability of public domain tools for 
+parsing this language is making it a popular choice for the exchange of structured data 
+over the WWW. Roughly ten years ago, NCBI chose a language called Abstract Syntax 
+Notation 1 (ASN.1) for describing and exchanging information in a manner similar to the 
+ways XML is now used. ASN.1 came out of the telecommunications industry and is a 
+compact binary encoding intended for both human readable text as well as integers, 
+floating point numbers, and so on. While this is "software friendly" it is less accessible to 
+users familiar with HTML and other text based languages. Tools for ASN.1 have largely 
+stayed within the commercial telecommunications industry while a host of public domain 
+tools of varying character have arisen for XML and HTML.
+
+NCBI has recently added support for XML output to its ASN.1 toolkit. An ASN.1 
+specification can be automatically rendered into an XML DTD. Data encoded in ASN.1 
+can automatically be output in XML which will validate against the DTD using standard 
+XML tools. We hope this will make the structured sequence, map, and structure data, as 
+well as the output of tools like BLAST, more accessible to those who wish to work in 
+XML.
+
+We are providing XML in two basic modes. Full Data Conversion is the direct mapping 
+of every data field used within NCBI to XML. This is not for the faint of heart, but it 
+does mean that whatever we have, you have. The other mode is to provide smaller, 
+Targeted DTDs for end users. These are still first done as ASN.1, but with an eye to 
+providing smaller, standalone data outputs as XML. These two modes are described in 
+detail below.
+
+Full Data Conversion
+
+Note that the full conversion of existing ASN.1 specified data into XML has some 
+specific properties. NCBI is not proposing a new data model, but is simply transliterating 
+the data model we have used for the last decade into a different language for the 
+convenience of our users. ASN.1 has a number of specific data types such as INTEGER 
+or REAL numbers while XML has only strings, so our DTD automatically adds some 
+ENTITY definitions at the top which maps these numbers to strings. This mapping only 
+allows humans that read the DTD to see where numbers are expected; an XML validator  
+will not care what is there. The ASN.1 validators do care, and can also check ranges of 
+values and so on, so those continue to be used to read and process the data within NCBI.
+
+Reuse and Roles
+
+ASN.1 is also designed to allow the reuse of modules in a specification. Modules may be in multiple
+files and mixed and matched as needed, similar to C or C++ header files defining structures and
+classes. Most XML specifications in biology have been relatively small thus far, and/or focussed on
+the work of a specific group. Thus the DTDs tend to be in a single file. It is possible to write a
+large modular DTD in XML, and this is done by commercial publishing houses, but in XML the including
+process requires two sets of files. One file is basically a list of DTDs to put together to make the
+complete DTD. The other is the DTD modules themselves.  In the NCBI XML specs, the files with a .dtd
+extension are the ones referenced by the DOCTYPE line in an XML file. The DTDs for individual
+modules have the extension .mod, and these corresspond to the ASN.1 modules.
+
+XML can be "valid" or "well formed". Valid XML means that the data in a record is compared with a
+specific DTD and all the rules and elements defined in the DTD are correctly reflected in the data.
+Well formed XML just means that the file does not break any XML syntax rules, but no check is made
+that it actually follows the specification of its DTD. ASN.1 was designed on the basis that data
+must always be "valid". Not only is this more "type safe", but it also means that the ASN.1 parser
+always knows the structure of the data. This makes compact binary encoding possible. It also means
+that data elements can be reused in different roles without lots of extra tagging since the context
+is always known. So in ASN.1 (or most computer languages) the data structure "Person" can have a field
+called "name" and "Gene" can also have a field called "name", and nothing gets confused. XML requires
+that every ELEMENT have a unique tag, so if "Person" and "Gene" appear in the same DTD, you cannot
+have a single tag, "name" that means two different things depending on context.
+
+Roles:
+For example, the NCBI ASN.1 specification was designed to be used in a modular way. So a single Date
+object is defined with the fields year, month, day, etc.  It is then referenced in any object that
+needs a date, that is, this object can be reused in a variety of roles. Since ASN.1 assumes a
+modular structure, it is straightforward to reuse data in different roles without a lot of overhead.
+For this specification:
+
+Record ::= SEQUENCE {
+	create-date Date,
+	update-date Date }
+
+Date ::= SEQUENCE {
+	month INTEGER,
+	year INTEGER }
+
+and some sample data might be:
+
+Record ::= SEQUENCE {
+	create-date {
+		month 6,
+		year 1999 },
+	update-date {
+		month 8,
+		year 2000 } }
+
+the direct mapping to XML requires that every ELEMENT be explicitly tagged and not 
+implied by the context. So the equivalent DTD is more verbose:
+
+<!ELEMENT Record ( create_date, update_date )>
+<!ELEMENT create_date (Date)>
+<!ELEMENT update_date (Date)>
+
+<!ELEMENT Date (month, year)>
+<!ELEMENT month (#PCDATA)>
+<!ELEMENT year (#PCDATA)>
+
+as is the XML data itself:
+
+<Record>
+	<create_date>
+		<Date>
+			<month>6</month>
+			<year>1999</year>
+		</Date>
+	</create_date>
+	<update_date>
+		<Date>
+			<month>8</month>
+			<year>2000</year>
+		</Date>
+	</update_date>
+</Record>
+
+There is a tendency in XML DTDs to adjust to this expansion of tag levels due to roles, 
+by defining each role separately as it occurs:
+
+<!ELEMENT Record ( create_month, create_year, update_month, update_year )>
+
+Scope:
+
+ASN.1 does not require that a name be unique except within a structure, similar to 
+C or C++. XML however requires that all names be unique across the DTD, unless they 
+are attributes which must come from a limited repertoire. Many XML parsers rely on this 
+so that callback functions are associated wth a tag, not a tag within context. As a trivial 
+illustration, if both people and genes have names, they are distinct in ASN.1:
+
+Person ::= SEQUENCE {
+	name VisibleString,
+	room-number INTEGER }
+
+Gene ::= SEQUENCE {
+	name VisibleString,
+	map VisibleString }
+
+but must be made unique in XML to be distinguished:
+
+<!ELEMENT Person ( Person_name, room )>
+<!ELEMENT Person_name (#PCDATA)>
+<!ELEMENT room (#PCDATA)>
+
+<!ELEMENT Gene (Gene_name, map)>
+<!ELEMENT Gene_name (#PCDATA)>
+<!ELEMENT map (#PCDATA)>
+
+In the case above, we prefixed the element (name) that was used in two contexts with the 
+name of the context to make it unique. But this requires an analysis of all the modules of 
+the specification at once. In addition, it assumes the modules will not be used in other 
+contexts in future, which might make other elements non-unique. So the automatic 
+converter guarantees that every element is unique by always prefixing all element names 
+with the context (and would produce both Person_room, and Gene_map, in the example 
+above).
+
+Alternate Representations:
+
+In a number of cases the ASN.1 specification allows alternate forms of the same data object. This is
+because our goal was to get a workable specification that would incorporate data from all the
+available sources. While the overall model is designed to a view of how it "should be" there
+are lots of places where we allow for the reality of available sources. So, for example, while we
+might prefer that a Date have fields for month and year, for some sources we may only have a string.
+Rather than drop the Date altogether in those cases, we allow alternate forms in ASN.1:
+
+Date ::= CHOICE {
+	str VisibleString,   -- when it is all we have
+	std Date-std }       -- preferred
+
+Date-std ::= SEQUENCE {
+	month INTEGER,
+	year INTEGER }
+
+which is represented in ASN.1 data as:
+
+Date ::= std {
+	month 8,
+	year 1999 }
+
+However in XML it requires two more layers of explicit tags:
+
+<Date>
+	<Date_std>
+		<Date-std>
+			<Date-std_month>8</Date-std_month>
+			<Date-std_year>1999</Date-std_year>
+		</Date-std>
+	</Date_std>
+</Date>
+
+Note the use of hyphen in the original names (eg. Date-std) and of underline to delimit a 
+role in another object (eg. Date_std).
+
+Summary:
+
+While the effect of Roles, Scope, and Alternate Forms results in extensive 
+tags in the XML, it does accurately reflect the structure and use of the data. It allows 
+XML programs to capture as little or as much of the full data structure as they wish. And 
+once converted back from XML to structures or classes in a variety of programming 
+languages there is minimal overhead once again. The full NCBI DTD reflects this 
+structure. What is called the NCBI DTD actually only specifies the basic data structures 
+for publications, sequences, maps, alignments, and structures. These same elements are 
+reused in different roles in many services as well, such as BLAST which produces 
+alignments (defined in NCBI DTD) as well as other elements specific to BLAST. We 
+have not copied all the referenced modules into a DTD for every service as a practical 
+matter, although we can produce XML output from any ASN.1 interface.
+
+Targeted DTDs
+
+Many people do not want, or will not make use of the full data specification used 
+internally by NCBI. It is possible for us to fairly easily write specialized subsets into 
+standalone specifications when there is a clear community need that will be served. Just 
+as FASTA files are a very limited representation of a sequence, they are sufficient for a 
+large number of users most of the time.
+
+In the NCBI toolkit are tools which, given an ASN.1 specification, will automatically 
+generate the C or C++ code (C++ version is still in development) to read and write data 
+conforming to that specification in ASN.1, the C structures or classes to store it in, the 
+XML DTD, and the code to write it in XML. Thus we can specify a simpler, special 
+purpose structure, automatically generate most of the necessary code, then manually 
+write a relatively small bit of code to fill in the fields in the new C structure from our 
+existing C structures of the full version.
+
+We have created two small examples of this. The Minimal Sequence (MinSeq) example 
+keeps some of the modular structure of the full specification, but greatly reduces the 
+number and depths of elements, and does not reference any other specification. The Tiny 
+Sequence (TinySeq) removes all modularity (and thus a lot of the flexibility for growth 
+and modification) of MinSeq but results in an extremely simple structure. All these forms 
+of any sequence are available in the XML demo application. We welcome comments and 
+suggestions after you have looked through the demo.
+
+asn2xml
+
+asn2xml is a utility program designed to read sequence data in ASN.1 and output it as
+"full XML", for those who would prefer working with that format. The only change to
+the data itself, in addition to the remapping to XML, is to convert binary sequence
+alphabets to text. Especially for long DNA sequences NCBI normally stores the data
+in ASN.1 in 2 bits per base if there are no ambiguity codes, or 4 bits per base if there
+are. This reduces the data size by a factor of 2 or 4, and is also a more convenient
+form for many computations. Since XML is a text format, the alphabets are converted.
+This, and the more verbose tagging in XML, result in considerable expansion of the
+data from the binary ASN.1 on our ftp site. So, to conserve our heavily used bandwidth
+and disk space, we provide this utility. You can ftp binary ASN.1 and then expand it
+on your site to XML.
+
+The arguments to asn2xml (or any NCBI application) can be seen by typing the name and a
+hyphen.. "asn2xml -" which will give you:
+
+asn2xml 1.0   arguments:
+
+  -i  Filename for asn.1 input [File In]
+    default = stdin
+  -e  Input is a Seq-entry [T/F]  Optional
+    default = F
+  -b  Input asnfile in binary mode [T/F]  Optional
+    default = T
+  -o  Filename for XML output [File Out]  Optional
+    default = stdout
+  -l  Log errors to file named: [File Out]  Optional
+
+The defaults are set to read a binary update file into stdin and output xml from stdout:
+
+gzcat update.aso | asn2xml > update.xml
+
+The binary ASN.1 files can be found in the ncbi ftp directory at ftp.ncbi.nih.gov/ncbi-asn1
+Be sure to transfer them in binary format. Note that these files include GenBank in ASN.1,
+as well as other sources such as RefSeq, PIR, PDB, etc. SWISSPROT is not included since it
+is no longer distributable in the public domain.
+
+Documentation on the ASN.1 specification, and pointers to the DTDs, and a demo program that shows
+MinSeq and TinySeq are at http://www.ncbi.nlm.nih.gov/IEB from the upper right hand corner of the
+page. This page is not really finished, but interest in XML has prompted us to show it to you
+anyway. The ASN.1 spec documentation is directly relevant to the XML version since they are the same
+logical structure with pretty much the same names. Note that our DOCTYPE line is set up so that
+you can validate XML either with local DTD files from us, or using the public repository at
+http://www.ncbi.nlm.nih.gov/IEB/DTD
+

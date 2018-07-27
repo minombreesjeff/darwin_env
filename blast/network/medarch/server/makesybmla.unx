@@ -1,0 +1,108 @@
+#	makefile for medserv
+#	Sun with unbundled ANSI compiler [ make LCL=acc RAN=ranlib CC=acc ]
+#	Sun with Gnu C [ make LCL=gcc RAN=ranlib CC=gcc ]
+#   Sun with Solaris 2.x OS [ make LCL=sol CC="cc -Xa" ]
+#	Silicon Graphics [ make LCL=sgi OTHERLIBS="-lm -lPW -lsun" ]
+#	IBM 3090 with AIX [ make LCL=370 ]
+#	ULTRIX [ make LCL=ult RAN=ranlib ]
+#	Apple AUX [ make LCL=aux SHELL=\usr\bin ]
+#	NeXt [ make LCL=nxt CFLAGS1="-c -ansi" RAN=ranlib ]
+#	DEC Alpha under OSF/1  [ make LCL=alf CC=cc RAN=ranlib ]
+#
+#   see README for other supported systems
+#	
+#	Subsequent makes should make ... nocopy instead of make ... all
+#	to avoid recopying the include files
+#
+#
+#   NOTE: some make utilities (like SGI and IBM 3090) do not like a target
+#     which is undefined.  This would be $(LIB4) if you are not making a
+#     vibrant version.  Thus, this library target must be deleted on those
+#     systems.  The section to be deleted is marked below with DELETE
+#
+
+# default flags for compiling and loading
+
+include $(NCBI)/ncbi.mk
+SUFFIXLCL = $(LCL)
+CCOPT = -g
+CC = $(NCBI_CC)
+RAN = ls
+AR=ar
+LIBS=$(NCBI_SYBLIBS) -lncbimla -lncbiobj -lncbi -lnetcli -ldl $(NCBI_OTHERLIBS)
+LIBDIRS=-L$(NCBI_ALTLIB) -L$(NCBI_SYBASE)/lib 
+
+INCLUDES=-I../include -I$(NCBI_SYBASE)/include -I$(NCBI_INCDIR)
+
+CFLAGS=-g $(INCLUDES)
+
+SUFFIXENV = unx
+ASNDIR = asnstat
+LIBMLA = libsybmla.a
+
+
+##
+## some things to make
+##
+
+# sources and objects for medline retrieval
+
+MED_OBJ= cmdline.o getmedart.o ma_global.o ma_intfc.o medart2asn.o \
+		medretrieve.o mfmt_medasn.o message.o outmedart.o \
+		password.o patchtoiso.o sqlstring.o sybbind.o sybintfc.o \
+		voutf.o xalloc.o 
+
+MED_SRC= cmdline.c getmedart.c ma_global.c ma_intfc.c medart2asn.c \
+		medretrieve.c mfmt_medasn.c message.c outmedart.c \
+		password.c patchtoiso.c sqlstring.c sybbind.c sybintfc.c \
+		voutf.c xalloc.c 
+
+## All things to make
+##
+all : copy nocopy medserv
+
+nocopy : sources $(LIBMLA)
+
+sources : $(MED_SRC)
+
+## To clean out the directory without removing make
+##
+clean :
+	- rm -f *.[acho]
+
+## Implicit actions
+##
+
+
+## get all the source files
+##
+
+copy :
+	- chmod +w ../include/*
+	- chmod +w *
+	cp ../network/medarch/server/*.h ../include
+	cp ../network/medarch/server/*.c .
+	- chmod +w *.c
+	- chmod +w ../include/*
+	- chmod +w *
+
+## make libraries
+##
+
+medretrieve.o : medretrieve.c
+	$(CC) $(CFLAGS) -c -o $@ -DSYSV medretrieve.c
+
+getmedart.o : getmedart.c
+	$(CC) $(CFLAGS) -c -o $@ -DSYSV getmedart.c
+
+$(LIBMLA) : $(MED_OBJ)
+	- rm -f $(LIBMLA)
+	$(AR) cru $(LIBMLA) $(MED_OBJ) 
+	cp $(LIBMLA) ../lib
+	$(RAN) ../lib/$(LIBMLA)
+
+# medserv
+
+medserv: medsmain.o $(LIBMLA)
+	$(CC) -g -o medserv medsmain.o ../lib/$(LIBMLA) $(LIBDIRS) $(LIBS)
+

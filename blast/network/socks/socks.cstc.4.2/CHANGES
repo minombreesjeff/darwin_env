@@ -1,0 +1,118 @@
+Pre-release 1 of version 4.2 of SOCKS.CSTC, dated June 30, 1994
+
+-Made consistent use of u_int32 for alpha port. (David Mischel)
+
+-Included partial port (server and library) for NextStep 3.2. (William Lewis)
+
+-Made clients behave like non-SOCKSified programs if /etc/socks.conf
+ is absent.
+
+-Made the printing of client banner controllable using environment
+ variable SOCKS_BANNER. (Bryan Curnutt)
+
+-Added compile-time option to disable syslog from clients. (Jason Baietto)
+
+-Added DNS_THROUGH_NIS in Makefile to accomodate sites which resolve
+ DNS through their NIS server and have no local /etc/resolv.conf.
+
+-Include bsdinstall, a shell script written by Phil Hochstetler,
+ phil@sequent.com, which simulate BSD's install for SYSV systems. 
+
+=======================================
+Beta release of version 4.2 of SOCKS.CSTC, dated March 21, 1994
+
+-Added code to allow use of filenames in the *=userlist field.
+ The filenames must be a complete path (starting with /). Userids
+ and comments can be used in such files. Updated the man pages
+ sockd.conf.5 and soccks.conf.5 to document the new feature.
+
+-Merged in code to show sockd's usage details in the output of
+ ps commamd. Only work with non-SYSV hosts. (Matt Cohen)
+
+========================================
+Beta release of version 4.2 of SOCKS.CSTC, dated February 22, 1994
+
+-Corrected mistakes in determining privileged/non-privileged port.
+
+-Dereferenced addr in saddrtoname.c. (Anthony Starks)
+
+-Added code to zero out all sockaddr_in structures before using them.
+ (Carlos Mora)
+
+-Added code to treat IP address 0.0.0.0 as localhost. (Anthony Shipman)
+
+-Added code to save host and port after a successful direct connect.
+ (Ian Dunkin)
+
+-Made the facility and the log levels for syslog configurable in
+ socks.h. (Jon Luini)
+
+-Made the optimization flag for cc configurable in Makefile. (Craig Metz)
+
+-Made SendDst() and GetDst() quit when write() or read() returns 0.
+ (David Nochlin)
+
+-Added code to use iotcl(...,FIOSSAIOOWN...) in place of
+ fcntl(...F_SETOWN...) for hpux. (John Brezak)
+
+=======================================
+Beta release of version 4.2 of SOCKS.CSTC, dated February 9, 1994.
+
+Changes since release 4.1
+
+1) Merged in SCO/ODT 2.x and BSDi v1.0 ports by Chris Riney.
+
+2) Merged in PS/2 AIX 1.2.1 port by Craig Metz.
+
+3) Merged in DEC OSF 1.3 port by Alain Mellan.
+
+4) Merged in the code to prevent premature closing of a TCP session
+   on the SOCKS server when the server is much faster than the
+   client host. Contributed by Andy McFadden.
+
+5) Merged in the code for using environment variable SOCKS_DNAME
+   to override the setting of SOCKS_DEFAULT_DNAME. Contributed by
+   Jon Luini.
+
+6) It handles non-blocking connect() call correctly, at least for
+   the way non-blocking connect()'s are done in Mosaic 2.1. This
+   necessitates the addition of Rselect() to the library.
+
+7) You can build libsocks.a with Rbind() which accepts the same
+   calling sequence as regular bind(), i.e., without the extra
+   last argument.
+
+8) Call to SOCKSinit() is made optional.
+
+9) Rrcmd() is optionally added to the library.
+
+The combined effect of 6) through 9) is that, for most applications,
+you can do the SOOCKSification without doing anything to the code
+at all. Just add
+
+-Dconnect=Rconnect -Dbind=Rbind -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dselect=Rselect
+
+to cc and make sure the appropraite SOCKS library is used in linking.
+I hope this will encourage developers to produce SOCKSified version
+of their applications. (By the way, if you really want that, you should
+certainly make the effort of letting your friendly software vendors
+or developers know about it. Customers's demands count a great deal
+in the software market.)
+
+10) In anticipation of client hosts that can't run identd, a new
+   filed '?=n' is added to the control line for sockd.conf. This
+   enables the use of invoking sockd with -I option to use identd
+   in general but have it turned off for some specific client hosts.
+   (You can also use '?=I' or '?=i' to turn identd on for a line, I
+   just see the use of '?=n' as more likely.)
+
+11) Deliver out-of-band data end to end.
+
+12) Connection to 127.0.0.1 (localhost) is always direct. No more
+   need to specify that in /etc/socks.conf.
+
+	Ying-Da Lee	(214)518-3490	(214)518-3552 (FAX)
+	Principal Member, Technical Staff
+	NEC Systems Laboratory, C&C Software Technology Center /
+	ylee@syl.dl.nec.com
+

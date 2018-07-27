@@ -1,0 +1,80 @@
+#!/bin/sh
+#
+# Script to generate IDL from all of the relevant NCBI ASN.1 specifications.
+#
+# J. Epstein, NCBI, 8/28/1996
+#
+# Requirements for building the IDL:
+#   a) a compiled copy of 'snacc'.  The source code is available, e.g. at
+#      ftp://www.fokus.gmd.de/pub/freeware/snacc/snacc-1.2rj.9.tar.gz
+#   b) an unpacked copy of the NCBI toolkit
+#   c) the 'asntool' utility built from the NCBI toolkit
+#
+# Preferably this script should be run in a directory which is either empty
+# or only contains the script itself.
+#
+#
+# The following variables should be modified to match the directory structure
+# at your site
+#
+snacchome=$HOME/snacc/snacc-1.2rj.9
+snacc=$snacchome/compiler/snacc
+ncbihome=$HOME/ncbi
+asntool=$ncbihome/build/asntool
+useful=asn-useful.asn1
+#
+rm -f *.asn $useful xx?? *.idl
+rm -rf scratch
+cp $snacchome/asn1specs/$useful .
+#
+# Process the $useful file to include the NCBI "StringStore" type
+#
+patch $useful <<EOF >/dev/null 2>&1
+*** /home/epstein/snacc/snacc-1.2rj.9/compiler/../asn1specs/asn-useful.asn1	Mon Jul 24 11:12:35 1995
+--- ./asn-useful.asn1	Wed Aug 28 12:04:48 1996
+***************
+*** 65,70 ****
+--- 65,73 ----
+  GeneralizedTime  ::= --snacc isPdu:"TRUE" --
+                       [UNIVERSAL 24] IMPLICIT OCTET STRING
+  
++ StringStore ::= --snacc isPdu:"TRUE" --
++                      [UNIVERSAL 90] IMPLICIT OCTET STRING
++ 
+  
+  EXTERNAL         ::= --snacc isPdu:"TRUE" -- [UNIVERSAL 8] IMPLICIT SEQUENCE
+  {
+EOF
+cp $ncbihome/asn/*.asn .
+cp $ncbihome/biostruc/*.asn .
+#
+# Split files which contain multiple ASN.1 specs into multiple files, to
+# satisfy snacc
+#
+mkdir scratch
+files=`grep -c "DEFINITIONS.*::=" *.asn | sed '/:1$/d'`
+for filewithval in $files
+do
+	file=`echo $filewithval | sed "s/:[0-9]*//"`
+	val=`echo $filewithval | sed "s/^.*://"`
+	valmin1=`expr $val - 1`
+	mv $file scratch
+	csplit -s scratch/$file '/^END *$/+1' "{$valmin1}"
+	find xx?? \( -size 0 -o -size 1c \) -print | xargs rm -f
+	for f in xx??
+	do
+		num=`echo $f | sed "s/^xx//"`
+		mv $f ASN1P$num$file
+	done
+done
+#
+# Process each ASN.1 spec using 'asntool' to add the tags which 'snacc'
+# insists upon
+#
+for file in *.asn
+do
+	$asntool -m $file -f /tmp/foo.$$
+	rm -f $file
+	mv /tmp/foo.$$ $file
+done
+$snacc -idl -u $useful *.asn

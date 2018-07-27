@@ -1,0 +1,35 @@
+Four Easy Steps to SOCKSify (Most of) Your Favorite Network Programs
+		For use with SOCKS.CSTC version 4.2
+		(Ying-Da Lee, ylee@syl.dl.nec.com>)
+===================================================================
+
+1) Find out if UDP is used in the program by doing "grep SOCK_DGRAM" on
+   all the source files. If any such lines are found (and are not comments),
+   you can't make it work with SOCKS. There is, however, a UDP relayer
+   which is to UDP what SOCKS is to TCP, and you may want to look into
+   it. It is written by Tom Fitzgerald <fitz@wang.com> and is available
+   from host ftp.wang.com, file /pub/fitz/udprelay-0.2.tar.Z.
+
+2) At or near the beginning of the main procedure, add this line:
+
+   SOCKSinit(argv[0]);
+
+   This step can be omitted. The only consequence is that the generic
+   'SOCKSclient' rather than the actual client program name will be
+   used in the syslog lines on the client host.
+
+3) Add 
+
+   -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dbind=Rbind -Daccept=Raccept -Dlisten=Rlisten -Dselect=Rselect
+
+   to all cc lines. If Makefile is used, this is simply done by adding
+   the above to the definition of macro CFLAGS.
+
+4) Make sure that the appropriate SOCKS library (version 4.2, built with
+   -DSHORTENED_RBIND) is linked in in the ld or the last cc command to
+   produce the executable.
+
+That's it for most programs. Build the program and try it, chances
+are it would work. If it doesn't and you still like to have a SOCKSified
+version, please read the file What_SOCKS_expects.
+

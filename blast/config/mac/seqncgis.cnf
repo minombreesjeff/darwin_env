@@ -1,0 +1,34 @@
+[ORDER]
+ORDER_1=tRNAscan
+ORDER_2=Seg
+
+[tRNAscan]
+HOST=www.myserver.myschool.edu
+PORT=80
+PATH=/MyServices/cgi-bin/testcgi.cgi
+QUERY=request=trnascan
+TITLE=tRNAscan-SE
+SUBMENU=Search
+FORMAT=FASTA
+FLAGS=SEQ,NUC,TRG,NET
+TIMEOUT=30
+
+[Seg]
+HOST=www.myserver.myschool.edu
+PORT=80
+PATH=/MyServices/cgi-bin/testcgi.cgi
+QUERY_1=request=seg
+TITLE_1=Seg default
+QUERY_2=request=seg&window=10&lowcut=1.0&hicut=1.5
+TITLE_2=Seg 10-1.0-1.5
+QUERY_3=request=seg&window=12&lowcut=2.3&hicut=2.6
+TITLE_3=Seg 12-2.3-2.6
+SUBMENU=Seg
+FORMAT=FASTA
+FLAGS=SEQ,DOC,PRT,TRG,NET
+TIMEOUT=30
+
+[ENZYMES]
+ENZ_1=BamHI
+ENZ_2=EcoRI
+ENZ_3=HindIII

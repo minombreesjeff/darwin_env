@@ -1,0 +1,65 @@
+Medline-entry ::= {
+uid 88055872,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Developmental regulation of a constitutively expressed mouse mRNA encodi
+ng a 72-kDa heat shock-like protein." },
+authors {
+names ml {
+"Giebel LB",
+"Dworniczak BP",
+"Bautz EK" },
+affil str "Zentrum fur Molekulare Biologie, Universitat Heidelberg (ZMBH), Fed
+eral Republic of Germany." },
+from journal {
+title  { ml-jta "Dev Biol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "125",
+issue "1",
+pages "200-7"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "Multiple heat shock cognate (hsc70) cDNA clones were isolated from t
+he mouse embryonal carcinoma cell line F9. They all encode a single 72-kDa pro
+tein, which is constitutively expressed in all mouse cell lines and tissues te
+sted, and which is only slightly induced by hyperthermia. hsc70 RNA is very ab
+undant in F9 stem cells and brain, but very little is found in 14-day-old embr
+yos. Upon differentiation of F9 stem cells induced by retinoic acid and cyclic
+ AMP, expression of the hsc70 gene decreases only slightly, suggesting that hs
+c70 is highly expressed in early mouse development and is then down-regulated 
+towards the end of embryogenesis. In adult tissues only the brain retains the 
+high level of hsc70 gene expression found in F9 stem cells. We also show that 
+expression of hsc70 protein and clathrin is uncoupled in F9 cells, indicating 
+that the uncoating activity of coated vesicles may not be the only function of
+ hsc70 protein.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Animal" },
+{ term "Base Sequence" },
+{ term "Cell Differentiation" },
+{ term "Clathrin",
+qual { { subh "metabolism" }}},
+{ term "Cloning, Molecular" },
+{ term "DNA",
+qual { { subh "analysis" }}},
+{ term "Gene Expression Regulation" },
+{ term "Heat-Shock Proteins",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Mice" },
+{ term "Molecular Sequence Data" },
+{ term "RNA, Messenger",
+qual { { mp TRUE, subh "analysis" }}},
+{ term "Stem Cells",
+qual { { subh "cytology" }}},
+{ term "Support, Non-U.S. Gov't" },
+{ term "Translation, Genetic" }},
+substance {
+{ type cas, cit "9007-49-2", name "DNA" }},
+xref {
+{ type genbank, cit "M19141" }}
+} -- end Medline-entry
+

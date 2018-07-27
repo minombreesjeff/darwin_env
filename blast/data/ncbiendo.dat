@@ -1,0 +1,19 @@
+CC
+CC   *************************
+CC   *** Protease data file **
+CC   *************************
+CC
+CC   *************************************************************************
+//
+ID   Trypsin
+PA   [KR].
+//
+ID   Chymotrypsin
+PA   [FTY].
+//
+ID   Thermolysin
+PA   [LIV].
+//
+ID   CnBr
+PA   M.
+//

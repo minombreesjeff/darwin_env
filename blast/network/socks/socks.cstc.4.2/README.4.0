@@ -1,0 +1,292 @@
+This is SOCKS, a package consisting of a proxy server (sockd)
+and client programs corresponding to finger, whois, ftp, telnet,
+xgopher, and xmosaic, as well as a library module (libsocks.a)
+for adapting other applications into new client programs.
+
+The original SOCKS was written by David Koblas <koblas@netcom.com>,
+which included the library module and finger, whois, and ftp clients.
+
+Clients programs added since the original are:
+
+-telnet: adapted from telnet.91.03.25 by David Borman <dab@cray.com>.
+ This version is supposed to be much easier than the previous one
+ to port to many different systems.
+-xgopher: adapted from xgopher ver. 1.2 by Allan Tuchman <a-tuchman@uiuc.edu>.
+-xmosaic: adapted from xmosaic ver. 1.2 by NCSA staff (contact
+ Marc Andreesen, <marca@ncsa.uiuc.edu>).
+
+The SOCKS protocol has changed with this version. Since the server and
+the clients must use the same SOCKS protocol, this server does not work
+with clients of previous releases, and these clients do not work with
+servers of previous releases.
+
+The access control mechanism has been expanded:
+
+-A list of users can be included along with other fields (source address,
+ destination address, service/port) for permission/denial of access. 
+-Identd is used (controlled by option -i and -I) in SOCKS server to try
+ to verify the actual user-ids. The code uses the library written by
+ Peter Eriksson <pen@lysator.liu.se> and /Pär Emanuelsson <pell@lysator.liu.se>.
+-A shell command can optionally be specified with each line. The command
+ is executed if the conditions of that line are satisfied. This is adapted
+ from the same feature and code used in the log_tcp package by Wietse
+ Venema <wietse@wzv.win.tue.nl>.
+-Special entries (#NO_IDENTD: and #BAD_ID:) can be included to specify
+ shell commands to be executed when the client host doesn't run identd
+ and when identd's report doesn't agree with what the client prgram says.
+
+The following can be a reasonable sockd.conf using the new features:
+
+# Permit root on 129.101.64.3 all services
+permit *=root 129.101.64.3 0.0.0.0
+#
+# Permit root and usersa on 129.101.112.10 telnet access to network 222.22.22
+permit *=usera,root 129.101.112.10 0.0.0.0 222.22.22.0 0.0.0.255 eq telnet
+#
+# Permit all users on network 129.101 access to ftp
+permit 129.101.0.0 0.0.255.255 eq ftp
+#
+# Deny everything else. Upon an attempt, finger the client host and pipe
+# the result into an email to root with appropriate Subject line.
+deny	0.0.0.0 255.255.255.255 : finger @%A | /usr/ucb/mail -s 'SOCKD: rejected -- from %u@%A to host %Z (service %S)' root
+#
+# If the client doesn't run identd, tell the user and root there to run it.
+#NO_IDENTD: /usr/ucb/mail -s 'Please run identd on %A' %u@%A root@%A
+#
+# Someone is masquerading as someone else. Finger the client host
+# and pipe the result into an email message for local root and root on
+# the client host with appropriate Subject line.
+#BAD_ID: finger @%A | /usr/ucb/mail -s '%U pretends to be %u on host %A' root@%A root
+
+The test_sockd_conf program can be used to test the access control file,
+including the special entries and the execution of shell commands.
+
+The Identd server is available through anonymous ftp from many places.
+Consult archie. Or you can pick it up from ftp.inoc.dl.nec.com, the
+file is pub/security/pidentd-2.1.2.tar.gz. This copy corrected a mistake
+in the INSTALL file: In step 10, second paragraph, the line
+    TELNET session and enter "4711 , 113", where you replace 4711 with the
+should read
+    TELNET session and enter "113 , 4711", where you replace 4711 with the
+The author of pidentd is Peter Eriksson (pen@lysator.liu.se).
+
+Finally, the network/host byte order confusion has been cleaned up. That
+should make porting to other systems a lot easier. Only machines for which
+the assumptions that short=int=16 bits and long=32 bits do not hold
+are still likely to have serious problems.
+
+The package has been ported for ULTRIX 4.3 by Ian Dunkin <imd1707@ggr.co.uk>
+and Anthony Shipman <als@cpsg.com.au>, for IRIX 4.0.1 by Ian Dunkin (again),
+and partially for HPUX by Anthony Shipman (again!). (We are a small bunch
+of busy bees.) I also include patches by Craig Metz <cmetz@thor.tjhsst.edu>
+to SOCKSize xarchie and ncftp. I have not try these patches out
+myself though.
+
+I want to thank all the people I have mentioned so far, as well as the
+following, who has helped with their bug reports, comments, and suggestions:
+
+Alain Mellan <amellan@acri.fr>, Heinz Naef <whna@nexos.com>, Rejane Forre
+<for@pttnms.ewi.ch>, Michael Lachowski <mlachow@maverick1.erenj.com>,
+Nancy Ball <nancy_ball@sematech.org>, David Vincenzetti <vince@dsi.unimi.it>,
+LaMont Jones <lamont@sp1.cup.hp.com>, Brandon Butterworth
+<brandon@dd.eng.bbc.co.uk>, Richard Schultz <rich@ccrwest.org>.
+
+Please read the file 'COPYRIGHTS' before you proceed further.
+
+In the following section, by 'top directory' we mean the top
+directory of the SOCKS package, i.e., the directory you are
+in right now.
+
+-------------------------------------------------------------
+
+HOW TO BUILD THE PROGRAMS
+
+1. Check and modify the following files to suit your systems:
+
+	Makefile
+	include/socks.h
+	sockd/Makefile
+	libident/Makefile
+	lib/Makefile
+	rfinger/Makefile
+	rftp/Makefile
+	rtelnet/Makefile
+	rxgopher/Makefile
+	rxmosaic/Makefile
+	rxmosaic/libwww/Makefile
+	rxmosaic/libhtmlw/Makefile
+	rxmosaic/src/Makefile
+
+   Be very careful with the Makefiles of rxgopher and rxmosaic.
+   For rxgopher, the Makefile is an exact copy of Makefile.YDL in the same
+   directory. If you have 'xmkmf' on your system, you may want
+   to use that to generate the Makefile itself. See the comment
+   under the section RXGOPHER in the Makefile in the top directory.
+   
+   The other Makefiles should not require much tweaking. Generally speaking,
+   macros RESOLV_LIB, SOCKS_LIB, IDENT_LIB, CCKR, RANLIB, and INSTALL are
+   defined in the top level Makfile and then passed down to lower level during
+   the make, overriding the settings in the lower-level Makfiles, so
+   you should define them in the top level Makfile and ignore them in
+   other Makefiles. (The redundancy is provided so that you can do
+   a make in the subdirectories. That is not recommended, however.)
+
+   Be sure that the macro 'SOCKS_DEFAULT_SERVER' in include/sosks.h
+   is set correctly to the host that will be running the proxy server
+   for your site.  Although this can be overridden at run time with
+   environment variable SOCKS_SERVER, it is a lot simpler if you put
+   in the right name at compile time. Also be sure to uncomment and set
+   the macro 'SOCKS_DEFAULT_NS' in the same file if yor client machines
+   normally cann't do DNS resolution for outside hosts.
+
+2. cd to the top directory and issue 'make' command.  It's a good
+   idea to direct stdout and stderr to a file so that you can
+   see what's being done afterwards. There will be a few warning
+   messages which you can ignore. This builds the server as well
+   as all the clients.
+
+   If you only want to build the server (and the program for testing
+   your sever configuration file), use comannd 'make server' instead.
+   Use command 'make clients' to build only the client programs. You
+   can also build the individual clients using 'make RFINGER',
+   'make RFTP', 'make RTELNET', 'make RXGOPHER', and 'make RXMOSAIC',
+   all from the top directory.
+
+
+-------------------------------------------------------------
+
+HOW TO INSTALL THE SERVER
+
+1. Become superuser on the proxy server host for your site. 
+
+2. cd to the top directory and issue 'make install.server'.
+   This installs programs sockd and test_sockd_conf as well
+   as the man pages for them. Print the man pages and read them.
+
+3. Add the line
+socks	1080/tcp
+   to file /etc/services. It would be nice also to include
+gopher	70/tcp
+WWW	80/tcp
+   in the file if you don't already have them.
+
+4. Add the line
+socks	stream	tcp	nowait	nobody	/usr/etc/sockd	sockd
+   to file /etc/inetd.conf. Use the actual path where sockd
+   is installed if not in /usr/etc. If you want to make use of
+   identd on your client machines when it is available, use
+socks	stream	tcp	nowait	nobody	/usr/etc/sockd	sockd -i
+   If you want to REQUIRE identd be run on your client machines,
+   use
+socks	stream	tcp	nowait	nobody	/usr/etc/sockd	sockd -I
+   Running sockd with -I will reject all requests from hosts that
+   do not run identd.
+
+5. Set up access control with file /etc/sockd.conf. You have to
+   read the man pages for sockd and test_sockd_conf for the details.
+   For a quick test, you can use these four lines in the file: (Replace
+   'client_IP' with the IP address of the host on which you will be
+   testing the client programs.)
+permit	client_IP   0.0.0.0
+deny	0.0.0.0 255.255.255.255 : /usr/ucb/finger @%A | /usr/ucb/mail -s 'SOCKD: rejected -- from %u@%A to host %Z (service %S)' root
+#BAD_ID: /usr/ucb/finger @%A | /usr/ucb/mail -s '%U pretends to be %u on host %A' root@%A root
+#NO_IDENTD: /usr/ucb/mail -s 'Please run identd on %A' %u@%A root@%A
+   This is essentially the contents of file sockd/sockd.conf.sample.
+
+6. Run a few tests using program test_sockd_conf to make sure your
+   have the configuration file set up correctly.
+
+7. Send a SIGHUP signal to the running inetd process so that it will
+   use the new configuration. You may also have to do other things to
+   accommodate syslog facility.  Read the man pages.
+
+-------------------------------------------------------------
+
+HOW TO TEST THE CLIENT PROGRAMS -- EXCEPT rxgopher
+
+   NOTE: Build and install identd on your client hosts first. This is
+   required if you run sockd with -I option. It is a good idea anyway.
+
+   On a client host (for testing purpose, this can be the same
+   as the proxy server), the clients rfinger, rwhois, rftp, rtelnet,
+   and rxmosaic can be tried out without any special setup on the
+   client host once the server is running. They shoudl behave like
+   finger, whois, ftp, telnet, and xmosaic, respectively. rftp DOES
+   echo your password IF you are using 'anonymous' as the log-in name.
+
+-------------------------------------------------------------
+
+HOW TO TEST rxgopher
+[Lifted from README file of xgopher package.]
+
+1. cd to rxgopher directory.
+
+2. Modify the application defaults file (RXgopher.ad).
+   Little change may be necessary.  However, entries in this
+   file for host name, port number, help file name, etc.,
+   override those defaults compiled into rxgopher through
+   the configuration file.
+
+3. Make the application defaults file (RXgopher.ad) known to X.
+   There are several ways to do this for testing without installing
+   the file in a system directory.  Choose one of the following -
+   whichever is most comfortable for you.
+
+
+   IMPORTANT!  Remove all of the application defaults from previous
+               versions of rxgopher before you attempt to run rxgopher 1.2.
+
+
+   a. xrdb -merge RXgopher.ad
+
+   b. setenv XENVIRONMENT `pwd`/RXgopher.ad
+      (`pwd` will return the current directory, which should be the
+      rxgopher source directory.)
+
+   c. if you have your own app-defaults directory, say ~/app-defaults:
+         setenv XAPPLRESDIR ~/app-defaults/
+         cp RXgopher.ad ~/app-defaults/RXgopher
+      Note the name change.
+
+   COLOR OPTION: If you are using a color display, it is strongly
+                 recommended that you also include the rxgopher
+                 color resources.  if you used method (a) above, then
+                 also use:
+                     xrdb -merge RXgopher-color.ad -nocpp
+
+                 Otherwise, consider using the file RXgopher-complete.ad
+                 instead of RXgopher.ad.  The former file has all of the
+                 color resources included in it.
+
+                 This is sufficient for now, and to let you test.  For
+                 permanent installation, see the later section of this
+                 document which discusses color resources.
+
+4. To test, issue the command 'rxgopher' (without the quotes).
+
+
+-------------------------------------------------------------
+
+HOW TO INSTALL CLIENT PROGRAMS
+
+1. Become superuser on the client host.
+
+2. cd to the top directory, then issue the command 'make install.clients'.
+   This installs rfinger, rwhois, rftp, rtelnet, rxgopher, rxmosaic, and
+   their man pages. It also installs the help file and the application
+   defaults file for rxgopher.
+
+3. For color setting and other details regarding rxgopher, please read
+   the README file in rxgopher directory.
+
+
+-------------------------------------------------------------
+
+Good luck and enjoy it. 
+
+	Ying-Da Lee	(214)518-3490	(214)518-3552 (FAX)
+	Principal Member Technical Staff
+	NEC Systems Laboratory, C&C Software Technology Center /
+	NEC USA, Corporate Network Administration Division
+	ylee@syl.dl.nec.com
+	

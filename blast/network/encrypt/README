@@ -1,0 +1,141 @@
+This is the NCBI README file which provides instructions for how to setup
+the RIPEM/RSAREF software to be compiled in conjunction with the NCBI toolkit.
+Adding RIPEM/RSAREF to the toolkit adds the capability to produce
+client/server software which communicates using DES encryption with other
+clients and servers in the NCBI Dispatcher system, a.k.a. NCBI Network
+Services.
+
+The NCBI Network Services software uses the following scheme for key
+distribution, using a single RSA public-key/private-key pair, where the
+private-key is only known to the Dispatcher.
+
+(1) When connecting to the Dispatcher, a client includes the public key which
+    it knows, if any, within its login message.
+  
+(2) When the Dispatcher responds to the login message, it includes the
+    latest public key.  If there is a key mismatch, the client software is
+    designed to give the user the option of either accepting the new key
+    or aborting the program.  The latter option is necessary because there
+    is a slight risk that the key is being presented by a hostile party
+    which is masquerading as the Dispatcher.
+  
+(3) When the client issues a service request, it generates a pseudo-random
+    DES key which it then encrypts using the public RSA key.  The Dispatcher
+    decrypts the DES key and passes it in a secure manner to the server
+    daemon for the requested service.  The server manager (ncbid) in turn
+    spawns the real server for that service and informs it of the DES key.
+    The subsequent client/server communication takes place using cipher-
+    block-chained DES encryption using the agreed-upon DES key.
+  
+    Note that each client<->server session uses a different DES key.
+
+
+To obtain the RIPEM/RSAREF software to include in your application, you
+must follow the procedure described at the end of this document.  Note that:
+  (1) The NCBI Network Services software has been tested with the source
+      code from RIPEM 1.1 and RIPEM 1.2, although the latter is recommended.
+  (2) The RIPEM source archive is posted on its FTP server in UNIX compressed
+      tar format.  Tools are generally available to uncompress and untar
+      this type of archive for different platforms.
+  (3) After uncompressing the archive, you must copy the tar file to
+      this directory (network/encrypt) and extract the desired components
+      into this directory.
+      You may either extract the entire archive for reference:
+        tar xf ripem-1.2.tar
+      or extract only the portion you need, to save local disk space:
+        tar xf ripem-1.2.tar ripem/rsaref/source
+  (4) It may be necessary to manually modify the resulting global.h file
+      for compatibility with your hardware/software platform
+  (5) The RSAREF source code is compiled as part of the "LIB15" library.
+      See make/makenet.* for details.
+
+
+DISCLAIMER:
+      You must follow all licensing and export regulations described in
+      the RIPEM/RSAREF documentation.  Note that NCBI can detect the use of
+      a client which is using encryption to communicate with Dispatcher.
+      Note that NCBI may need to cooperate with U.S. authorities if it
+      appears that U.S. export regulations have been violated.
+
+
+Please direct any questions to toolbox@ncbi.nlm.nih.gov.
+
+The following information is what is required for U.S. and Canadian
+citizens to obtain the RIPEM cryptographic software.  Many thanks to Mark
+Riordan and RSA Laboratories for making this software available to NCBI
+and American and Canadian scientists who wish to encrypt their data.
+
+-------------------------- begin included message ---------------------------
+
+Dear FTP user,
+
+To access the RIPEM cryptographic software archive at ripem.msu.edu,
+you must have an "account" on my custom FTP server.  Traditional
+anonymous FTP login is allowed, but anonymous users are prevented
+from doing GETs on files containing cryptographic software.
+Anonymous access is allowed so that you can get README-type files
+like this one, and files containing descriptions of software
+licensing terms.
+
+To apply for FTP access to rpub.cl.msu.edu, send an email message
+to ripem@ripem.msu.edu.   State the following:
+
+1.  Your citizenship (must be USA or Canadian) 
+2.  Your willingness to comply with relevant export laws.
+3.  Your willingness to comply with relevant software license terms.
+    (You should get and read the file "rsaref-license.txt" on this host, 
+    so you know what you are agreeing to if you get RIPEM.)  
+4.  The "canonical" Internet domain name of your host.
+    (If you are not sure of the primary name of your host, FTP to
+    ripem.msu.edu under user anonymous.  The FTP server will inform
+    you of your hostname.)  Also state the country in which your host
+    resides.
+
+*****
+***** NOTE:  It is very important that you get the hostname correct.
+*****        As odd as it may seem, many requestors have
+*****        not correctly specified their host address.  This
+*****        causes extra effort for both of us.  Please check
+*****        (via anonymous FTP) unless you are certain of your
+*****        hostname as known by domain name servers.  Your
+*****        hostname does *** NOT *** have an "@" in it, and
+*****        in general cannot be derived from your email address.
+*****
+
+Here's a sample email message you might send to ripem@ripem.msu.edu:
+
+To: ripem@ripem.msu.edu
+Subject: Access to ripem.msu.edu
+
+   Dear Mark,
+
+   Please give me access to ripem.msu.edu.  I am an American
+   citizen, and I agree to comply with crypto export laws and
+   RSAREF license terms.  My hostname is hobbit.egr.bigu.edu;
+   this host is located in the United States.
+
+   Thank you.
+
+When I receive your message, with luck I'll promptly issue you
+a special FTP username and password by return email.  This username 
+will work only from the hostname you specify in your message.
+
+In the case of RIPEM, you may redistribute the code, but only
+to others in the USA and Canada, and only under the terms of
+the RSAREF license agreement mentioned above.
+
+Thank you.
+
+This method of distribution is due to local site requirements 
+and is not required by RSAREF license terms, FYI.
+
+Mark Riordan   mrr@scss3.cl.msu.edu
+
+P.S.  I realize that going through this account application process 
+is not your idea of a good time.  It doesn't take much imagination
+to figure that it isn't my idea of a good time, either.  Please
+help this process go smoothly by giving me all the informative
+requested above, so I can issue your account on the first try.
+I receive hundreds of these requests and many are lacking information.
+
+-------------------------- end included message -----------------------------

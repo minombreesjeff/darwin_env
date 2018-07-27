@@ -1,0 +1,97 @@
+.TH SOCKS_CLIENTS 1 "November 16, 1993"
+.SH NAME
+.nf
+rfinger \- SOCKS client version of finger
+rftp \- SOCKS client version of ftp
+rtelnet \- SOCKS client version of telnet
+rwhois \- SOCKS client version of whois
+.fi
+.SH SYNOPSIS
+See the man pages on \fIfinger\fP(1), \fIftp\fP(1), \fItelnet\fP(1),
+\fIwhois\fP(1).
+.SH DESCRIPTION
+These programs provide the well-known functionalities to hosts within
+a firewall. Normally, when a firewall is constructed, IP-accessibility
+across the firewall is cut off to reduce security risk to hosts within
+the firewall. As a result, inside hosts can no longer use many of the
+well-known tools directly to access the resources outside the firewall.
+
+These programs restore the convenience of the well-known tools while
+maintaining the security requirement. Though the programs differ very
+much from their counterparts in the use of the communication scheme,
+they should behave almost indistinguishably to the users. Note though
+that rftp does echo the password as you type it in if you are using
+\fIanonymous\fP as log-in name. Unlike those of the previous versions,
+these are "versatile" clinets, meaning that they can be used for
+connections to inside hosts directly and to outside hosts via SOCKS
+proxy servers. So they can be used as replacements of their traditional
+counterparts.
+
+When any of these programs starts, if the environment variable
+\fBSOCKS_BANNER\fR is defined, the program prints to \fBstderr\fP
+its version number and
+the name or IP address of its default SOCKS proxy server.
+It then consults the configuration file \fB/etc/socks.conf\fP to
+determine whether a request should be allowed or denied based on the
+requesting user, the destination host, and the requested service. For
+allowable requests, the configuration file also dictates whether
+direct or proxy connection should be used to the given destination,
+and optionally the actual SOCKS servers to use for the proxy connection.
+See \fIsocks.conf\fP(5). If the file is absent, these programs will
+only try direct connections to the destination hosts, making them
+behaving like their regular counterparts.
+
+You can use environment variable \fBSOCKS_NS\fR to set the nameserver for
+domainname resolutions. Be sure you use the IP address of the
+nameserver you want to use, not its domainname. If \fBSOCKS_NS\fR doesn't
+exist, the IP address defined by the symbol \fBSOCKS_DEFAULT_NS\fR
+at compile time is used if the programs were compiled with that symbol
+defined. Otherwise the nameservers specified in \fB/etc/resolv.conf\fR
+are used.
+
+All the client programs uses \fIsyslog\fP with facility \fBdaemon\fR
+and level \fBnotice\fR to log their activities. 
+These log lines usually appear in file \fB/var/adm/messages\fP though
+that can be changed by modifying \fB/etc/syslog.conf\fR. (See
+\fIsyslogd\fP(8) and \fIsyslog.conf\fP(5).)
+Typical lines look like
+
+.nf
+.in +1
+Apr 11 10:02:23 eon rfinger[631]: connect() from don(don) to abc.com (finger) using sockd at socksserv
+May 10 08:39:07 eon rftp[603]: connect() directly from blue(blue) to xyz.edu (ftp)
+May 10 08:39:09 eon rftp[603]: bind() directly from blue(blue) for xyz.edu (ftp)
+May 18 13:31:19 eon rtelnet[830]: connect() from root(jon) to xyz.edu (telnet) using sockd at sockd2
+May 18 14:51:19 eon rtelnet[921]: refused -- connect() from jon(jon) to xyz.edu (telnet)
+.in -1
+.fi
+
+Of the two user-ids appearing in each log line, the first is the
+effective user-id when the program is invoked, the second (that
+within the parentheses) is the one used at login. Access
+control applies to the effective user-ids.
+.SH SEE ALSO
+\fIsockd\fP(8), \fIfinger\fP(1),  \fIftp\fP(1), \fItelnet\fP(1),
+\fIwhois\fP(1)
+.SH ENVIRONMENT
+\fBSOCKS_SERVER\fR, if defined, specifies the name or IP address of the
+SOCKS proxy server host to use, overriding the default server
+compiled into the programs.
+
+\fBSOCKS_NS\fR, if defined, specify the IP address of the domain nameserver
+that should be used for name resolution, overriding both the definition
+of symbol \fBSOCKS_DEFAULT_NS\fR and the file \fB/etc/resolv.conf\fR.
+
+\fBORIG_FINGER\fR, if defined, specified the (altered) full pathname of
+the original
+finger program, which should have been renamed before installing the
+rfinger as the regular finger. The \fIrfinger\fP program invokes
+the original \fIfinger\fP program to lookup information on local users.
+Normally this name should be compiled directly into \fIrfinger\fP, avoiding
+the need for this environment variable. Use \fBORIG_FINGER\FR only if
+you want to override what is compiled into \fIrfinger\fP.
+
+.SH AUTHOR
+David Koblas, koblas@netcom.com
+.PP
+Ying-Da Lee, ylee@syl.dl.nec.com

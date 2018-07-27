@@ -1,0 +1,982 @@
+Pub-set ::= medline {
+{
+uid 88055872,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Developmental regulation of a constitutively expressed mouse mRNA encodi
+ng a 72-kDa heat shock-like protein." },
+authors {
+names ml {
+"Giebel LB",
+"Dworniczak BP",
+"Bautz EK" },
+affil str "Zentrum fur Molekulare Biologie, Universitat Heidelberg (ZMBH), Fed
+eral Republic of Germany." },
+from journal {
+title  { ml-jta "Dev Biol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "125",
+issue "1",
+pages "200-7"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "Multiple heat shock cognate (hsc70) cDNA clones were isolated from t
+he mouse embryonal carcinoma cell line F9. They all encode a single 72-kDa pro
+tein, which is constitutively expressed in all mouse cell lines and tissues te
+sted, and which is only slightly induced by hyperthermia. hsc70 RNA is very ab
+undant in F9 stem cells and brain, but very little is found in 14-day-old embr
+yos. Upon differentiation of F9 stem cells induced by retinoic acid and cyclic
+ AMP, expression of the hsc70 gene decreases only slightly, suggesting that hs
+c70 is highly expressed in early mouse development and is then down-regulated 
+towards the end of embryogenesis. In adult tissues only the brain retains the 
+high level of hsc70 gene expression found in F9 stem cells. We also show that 
+expression of hsc70 protein and clathrin is uncoupled in F9 cells, indicating 
+that the uncoating activity of coated vesicles may not be the only function of
+ hsc70 protein.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Animal" },
+{ term "Base Sequence" },
+{ term "Cell Differentiation" },
+{ term "Clathrin",
+qual { { subh "metabolism" }}},
+{ term "Cloning, Molecular" },
+{ term "DNA",
+qual { { subh "analysis" }}},
+{ term "Gene Expression Regulation" },
+{ term "Heat-Shock Proteins",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Mice" },
+{ term "Molecular Sequence Data" },
+{ term "RNA, Messenger",
+qual { { mp TRUE, subh "analysis" }}},
+{ term "Stem Cells",
+qual { { subh "cytology" }}},
+{ term "Support, Non-U.S. Gov't" },
+{ term "Translation, Genetic" }},
+substance {
+{ type cas, cit "9007-49-2", name "DNA" }},
+xref {
+{ type genbank, cit "M19141" }}
+}, -- end Medline-entry
+{
+uid 88055881,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Complex developmental regulation of the Drosophila affinidisjuncta alcoh
+ol dehydrogenase gene in Drosophila melanogaster." },
+authors {
+names ml {
+"Brennan MD",
+"Dickinson WJ" },
+affil str "Department of Biology, University of Alabama, Tuscaloosa 35486." },
+from journal {
+title  { ml-jta "Dev Biol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "125",
+issue "1",
+pages "64-74"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "During development, the alcohol dehydrogenase genes of Drosophila me
+lanogaster and D. affinidisjuncta are expressed in similar, yet distinct, tiss
+ue- and stage-specific patterns. Transcripts from both of these genes arise fr
+om two promoters (distal and proximal) that also display tissue and stage spec
+ificity. We used P-element-mediated transformation to introduce the D. affinid
+isjuncta Adh gene into the germ line of D. melanogaster. We show that the D. a
+ffinidisjuncta Adh gene is expressed at comparable overall levels in both spec
+ies and that the tissue- and stage-specific expression for this gene (includin
+g promoter utilization) is similar in the donor and the host species. However,
+ in some details, the expression of the D. affinidisjuncta gene in D. melanoga
+ster resembles the host pattern, and one novel tissue-specific expression phen
+otype is displayed by transformants. In general, our results suggest that ther
+e has been strong conservation of cis- and trans-acting regulatory factors sin
+ce the divergence of the two species but that this conservation has not been p
+erfect.",
+mesh {
+{ term "Alcohol Dehydrogenase",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Animal" },
+{ term "Drosophila",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Drosophila Melanogaster",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Female" },
+{ term "Gene Expression Regulation" },
+{ term "Male" },
+{ term "Nucleic Acid Hybridization" },
+{ term "Promoter Regions (Genetics)" },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Transcription, Genetic" }},
+substance {
+{ type ec, cit "1.1.1.1", name "Alcohol Dehydrogenase" }},
+idnum {
+"1RO1-GM34961",
+"5RO1-HD10723" }
+}, -- end Medline-entry
+{
+uid 88055884,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Transcripts of the Drosophila blastoderm-specific locus, terminus, are c
+oncentrated posteriorly and encode a potential DNA-binding finger." },
+authors {
+names ml {
+"Baldarelli RM",
+"Mahoney PA",
+"Salas F",
+"Gustavson E",
+"Boyer PD",
+"Chang MF",
+"Roark M",
+"Lengyel JA" },
+affil str "Molecular Biology Institute, UCLA 90024." },
+from journal {
+title  { ml-jta "Dev Biol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "125",
+issue "1",
+pages "85-95"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "The commitment of cells to specific fates, as well as the transition
+s in the cell cycle and transcription that occur at the cellular blastoderm st
+age of Drosophila embryogenesis, suggest that there are genes with unique func
+tions expressed specifically at this stage. In an attempt to identify such gen
+es, we used molecular screening to isolate several loci which encode blastoder
+m-specific transcripts (Roark et al., (1985). Dev. Biol. 109, 476-488). We rep
+ort here the complete nucleotide sequence of one of these genes, terminus (ter
+), which maps to 75C1,2. The predicted ter protein possesses a transcription f
+actor IIIA (TFIIIA)-like putative Zn-binding, DNA-binding finger. The ter RNA,
+ detected by in situ hybridization, is distributed uniformly in the embryo dur
+ing the syncytial blastoderm stage, and then becomes more concentrated in the 
+posterior during the late cellular blastoderm stage. During gastrulation, the 
+RNA is most concentrated in the amnioproctodeal invagination; it is also found
+ at a lower concentration in the ventral furrow and in the anterodorsal neurog
+enic region. By the end of germ band extension, ter RNA is no longer detected.
+",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Animal" },
+{ term "Base Sequence" },
+{ term "Blastoderm",
+qual { { mp TRUE, subh "analysis" }}},
+{ term "Chromosome Mapping" },
+{ term "Drosophila",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "DNA-Binding Proteins",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Molecular Sequence Data" },
+{ term "Support, U.S. Gov't, Non-P.H.S." },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Transcription Factors",
+qual { { subh "genetics" }}},
+{ mp TRUE, term "Transcription, Genetic" },
+{ term "Zinc",
+qual { { subh "metabolism" }}}},
+substance {
+{ type nameonly, name "transcription factor TFIIIA" },
+{ type cas, cit "7440-66-6", name "Zinc" }},
+xref {
+{ type genbank, cit "M19140" }},
+idnum {
+"HD 09948",
+"GM07185",
+"07104" }
+}, -- end Medline-entry
+{
+uid 88062968,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Antigenic site II of the rabies virus glycoprotein: structure and role i
+n viral virulence." },
+authors {
+names ml {
+"Prehaud C",
+"Coulon P",
+"LaFay F",
+"Thiers C",
+"Flamand A" },
+affil str "Laboratoire de Genetique des Virus, Centre National de la Recherche
+ Scientifique, Gif sur Yvette, France." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "1-7"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "Twelve monoclonal antibodies neutralizing the CVS strain of rabies v
+irus were used to characterize antigenic site II of the viral glycoprotein. Ni
+neteen antigenic mutants resistant to neutralization by some of these antibodi
+es were selected; some continued to normally or partially bind the antibody, w
+hereas others did not. Mutations conferring resistance to neutralization by si
+te II-specific monoclonal antibodies were localized into two clusters, the fir
+st between amino acids 34 and 42 (seven groups of mutants) and the second at a
+mino acids 198 and 200 (three groups of mutants). Two intermediate mutations w
+ere identified at positions 147 and 184. Four mutations resulted in reduced pa
+thogenicity after intramuscular inoculation of the virus in adult mice. One of
+ the mutants, M23, was 300 times and the others were 10 to 30 times less patho
+genic than CVS. In three cases the attenuated phenotype was related to an impo
+rtant modification of antigenic site II, whereas the other known antigenic sit
+es were unchanged.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Antibodies, Monoclonal",
+qual { { mp TRUE, subh "immunology" }}},
+{ term "Antigenic Determinants" },
+{ term "Antigens, Viral",
+qual { { subh "genetics" },
+ { mp TRUE, subh "immunology" }}},
+{ term "Glycoproteins",
+qual { { subh "genetics" },
+ { mp TRUE, subh "immunology" }}},
+{ term "Molecular Sequence Data" },
+{ term "Mutation" },
+{ term "Neutralization Tests" },
+{ term "Rabies Virus",
+qual { { mp TRUE, subh "immunology" },
+ { subh "pathogenicity" }}},
+{ term "Support, Non-U.S. Gov't" },
+{ term "Viral Proteins",
+qual { { subh "genetics" },
+ { mp TRUE, subh "immunology" }}}}
+}, -- end Medline-entry
+{
+uid 88062969,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Sequence homology and immunologic cross-reactivity of human cytomegalovi
+rus with HLA-DR beta chain: a means for graft rejection and immunosuppression.
+" },
+authors {
+names ml {
+"Fujinami RS",
+"Nelson JA",
+"Walker L",
+"Oldstone MB" },
+affil str "Department of Pathology, University of California, San Diego, La Jo
+lla 92093." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "100-5"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "A peptide (Leu-Gly-Arg-Pro-Asp-Glu-Asp-Ser-Ser-Ser-Ser-Ser-Ser-Ser-C
+ys) that was identical to residues 82 through 96 of a predicted protein of 208
+ amino acids from the immediate-early region (IE-2) nucleic acid sequence of h
+uman cytomegalovirus was chemically synthesized. By computer analysis, the fir
+st five amino acids of this peptide showed sequence homology to the beta chain
+ of the human histocompatibility complex HLA-DR. The homologous amino acids, 5
+3 through 57, were located in a region that is conserved between the human DR 
+beta chain and the beta chain of the H-2 class II histocompatibility antigen f
+or mice. The shared region between the IE-2 protein and DR beta chain were sim
+ilar in both hydrophilicity and predicted beta-turn potential. The IE-2 viral 
+peptide induced antibodies that specifically recognized the human DR beta chai
+n. These observations describe a protein encoded by the IE-2 region of human c
+ytomegalovirus that contains sequence homology and shows immunologic cross-rea
+ctivity with a conserved domain of HLA-DR and suggest a mechanism to explain h
+ow human cytomegalovirus infection contributes to graft rejection after transp
+lantation.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Antigenic Determinants" },
+{ term "Antigens, Viral",
+qual { { mp TRUE, subh "immunology" }}},
+{ term "Cross Reactions" },
+{ term "Cytomegaloviruses",
+qual { { mp TRUE, subh "immunology" }}},
+{ term "Graft Rejection" },
+{ term "HLA-D Antigens",
+qual { { mp TRUE, subh "immunology" }}},
+{ term "HLA-DR Antigens",
+qual { { mp TRUE, subh "immunology" }}},
+{ term "Immune Tolerance" },
+{ term "Immunosorbent Technics" },
+{ term "Sequence Homology, Nucleic Acid" },
+{ term "Support, Non-U.S. Gov't" },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Viral Proteins",
+qual { { mp TRUE, subh "immunology" }}}},
+idnum {
+"AI-07007",
+"AI-21640",
+"CA-35048",
+"+" }
+}, -- end Medline-entry
+{
+uid 88062973,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Localization of sequences responsible for trans-activation of the equine
+ infectious anemia virus long terminal repeat." },
+authors {
+names ml {
+"Sherman L",
+"Gazit A",
+"Yaniv A",
+"Kawakami T",
+"Dahlberg JE",
+"Tronick SR" },
+affil str "Department of Human Microbiology, Sackler Faculty of Medicine, Tel-
+Aviv University, Israel." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "120-6"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "We used the Escherichia coli chloramphenicol acetyltransferase gene 
+(cat) to study sequences that influence expression of the equine infectious an
+emia virus (EIAV) genome. The EIAV long terminal repeat (LTR) directed CAT act
+ivity in a canine cell line, but at levels much lower than those achieved with
+ other eucaryotic viral promoters. In the same cells infected with EIAV or cot
+ransfected with molecularly cloned EIAV genomic DNA, LTR-directed activity was
+ markedly enhanced. Comparison of cat mRNA and protein levels in these cells i
+ndicated that this trans-activating effect could be accounted for by a bimodal
+ mechanism in which both transcriptional and posttranscriptional events are en
+hanced. trans-Activation but not promoter activity was abolished by deletion o
+f the R-U5 region of the EIAV LTR. EIAV sequences responsible for the trans-ac
+tivating function could be localized to a region encompassing the 3' and 5' te
+rmini of the pol and env genes, respectively (nucleotides 4474 to 5775). Inter
+estingly, this stretch harbors a short open reading frame with some amino acid
+ sequence similarity to the human immunodeficiency virus type I tat gene produ
+ct.",
+mesh {
+{ term "DNA Mutational Analysis" },
+{ term "Equine Infectious Anemia Virus",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Gene Expression Regulation" },
+{ term "Genes, Viral" },
+{ mp TRUE, term "Promoter Regions (Genetics)" },
+{ mp TRUE, term "Regulatory Sequences, Nucleic Acid" },
+{ mp TRUE, term "Repetitive Sequences, Nucleic Acid" },
+{ term "Transcription Factors",
+qual { { mp TRUE, subh "physiology" }}},
+{ term "Transcription, Genetic" },
+{ term "Translation, Genetic" }}
+}, -- end Medline-entry
+{
+uid 88062986,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Molecular cloning and characterization of cytoplasmic polyhedrosis virus
+ polyhedrin and a viable deletion mutant gene." },
+authors {
+names ml {
+"Arella M",
+"Lavallee C",
+"Belloncik S",
+"Furuichi Y" },
+affil str "Department of Virology, Institut Armand-Frappier, University of Que
+bec, Montreal, Canada." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "211-7"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "The double-stranded RNA genome of Bombyx mori cytoplasmic polyhedros
+is virus (CPV) was converted to double-stranded DNA and cloned into plasmid pB
+R322. The complete nucleotide sequence of cloned genome segment 10, which enco
+des virus polyhedrin polypeptide, was determined. The CPV polyhedrin gene cons
+ists of 942 based pairs and possesses a long open reading frame that codes for
+ a polypeptide of 248 amino acids (molecular weight, 28,500), consistent with 
+an apparent molecular weight of 28,000 previously determined for purified poly
+hedrin. No sequence homology was found between CPV polyhedrin and polyhedrins 
+from several nuclear polyhedrosis viruses. In addition to the polyhedrin gene,
+ we completed the sequence analysis of a small deletion mutant gene derived fr
+om the polyhedrin gene. This mutant gene consists of two subset domains of the
+ polyhedrin gene, i.e., the 5'-terminal 121 base pairs and the 3'-terminal 200
+ base pairs. An in vitro transcription demonstrated that the small mutant gene
+ is transcribed by virion-associated RNA polymerases. These data confirm the i
+mportance of CPV terminal sequences in virus genome replication.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Base Sequence" },
+{ term "Cloning, Molecular" },
+{ term "DNA Mutational Analysis" },
+{ term "Genes, Structural" },
+{ term "Genes, Viral" },
+{ term "In Vitro" },
+{ term "Molecular Sequence Data" },
+{ term "Polyhedrosis Viruses",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Protein Conformation" },
+{ term "RNA, Viral",
+qual { { subh "genetics" }}},
+{ term "Transcription, Genetic" },
+{ term "Viral Proteins",
+qual { { mp TRUE, subh "genetics" }}}},
+substance {
+{ type nameonly, name "polyhedral protein" }},
+xref {
+{ type genbank, cit "M19112" }}
+}, -- end Medline-entry
+{
+uid 88062990,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Sigma 1 protein of mammalian reoviruses extends from the surfaces of vir
+al particles." },
+authors {
+names ml {
+"Furlong DB",
+"Nibert ML",
+"Fields BN" },
+affil str "Department of Microbiology and Molecular Genetics, Harvard Medical 
+School, Boston, Massachusetts." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "246-56"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "Electron microscopy revealed structures consisting of long fibers to
+pped with knobs extending from the surfaces of virions of mammalian reoviruses
+. The morphology of these structures was reminiscent of the fiber protein of a
+denovirus. Fibers were also seen extending from the reovirus top component and
+ intermediate subviral particles but not from cores, suggesting that the fiber
+s consist of either the mu 1C or sigma 1 outer capsid protein. Amino acid sequ
+ence analysis predicts that the reovirus cell attachment protein sigma 1 conta
+ins an extended fiber domain (R. Bassel-Duby, A. Jayasuriya, D. Chatterjee, N.
+ Sonenberg, J. V. Maizell, Jr., and B. N. Fields, Nature [London] 315:421-423,
+ 1985). When sigma 1 protein was released from viral particles with mild heat 
+and subsequently obtained in isolation, it was found to have a morphology iden
+tical to that of the fiber structures seen extending from the viral particles.
+ The identification of an extended form of sigma 1 has important implications 
+for its function in cell attachment. Other evidence suggests that sigma 1 prot
+ein may occur in virions in both an extended and an unextended state.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Electrophoresis" },
+{ term "Microscopy, Electron" },
+{ term "Molecular Sequence Data" },
+{ term "Peptide Hydrolases",
+qual { { subh "diagnostic use" }}},
+{ term "Receptors, Virus",
+qual { { subh "physiology" }}},
+{ term "Reoviridae",
+qual { { mp TRUE, subh "ultrastructure" }}},
+{ term "Support, Non-U.S. Gov't" },
+{ term "Support, U.S. Gov't, Non-P.H.S." },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Viral Proteins",
+qual { { mp TRUE, subh "physiology" }}},
+{ term "Virion",
+qual { { subh "ultrastructure" }}}},
+substance {
+{ type ec, cit "3.4.", name "Peptide Hydrolases" },
+{ type nameonly, name "protein sigma 1" }},
+idnum {
+"2 P50 NS16998-07",
+"5 R37 AI13178-12",
+"5 T32 GM07753-08" }
+}, -- end Medline-entry
+{
+uid 88062996,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Molecular dissection of cis-acting regulatory elements from 5'-proximal 
+regions of a vaccinia virus late gene cluster." },
+authors {
+names ml {
+"Miner JN",
+"Weinrich SL",
+"Hruby DE" },
+affil str "Department of Microbiology, Oregon State University, Corvallis 9733
+1-3804." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "297-304"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "Promoter elements responsible for directing the transcription of six
+ tightly clustered vaccinia virus (VV) late genes (open reading frames [ORFs] 
+D11, D12, D13, A1, A2, and A3) from the HindIII D/A region of the viral genome
+ were identified within the upstream sequences proximal to each individual loc
+us. These regions were identified as promoters by excising them from the VV ge
+nome, abutting them to the bacterial chloramphenicol acetyl transferase gene, 
+and demonstrating their ability to drive expression of the reporter gene in tr
+ansient-expression assays in an orientation-specific manner. To delineate the 
+5' boundary of the upstream elements, two of the VV late gene (A1 and D13) pro
+moter: CAT constructs were subjected to deletion mutagenesis procedures. A ser
+ies of 5' deletions of the ORF A1 promoter from -114 to -24 showed no reductio
+n in promoter activity, whereas additional deletion of the sequences from -24 
+to +2 resulted in the complete loss of activity. Deletion of the ORF A1 fragme
+nt from -114 to -104 resulted in a 24% increase in activity, suggesting the pr
+esence of a negative regulatory region. In marked contrast to previous 5' dele
+tion analyses which have identified VV late promoters as 20- to 30-base-pair c
+ap-proximal sequences, 5' deletions to define the upstream boundary of the ORF
+ D13 promoter identified two positive regulatory regions, the first between -2
+35 and -170 and the second between -123 and -106. Background levels of chloram
+phenicol acetyltransferase expression were obtained with deletions past -88. S
+ignificantly, this places the ORF D13 regulatory regions within the upstream c
+oding sequences of the ORF A1. A high-stringency computer search for homologie
+s between VV late promoters that have been thus far characterized was carried 
+out. Several potential consensus sequences were found just upstream from RNA s
+tart sites of temporally related promoter elements. Three major conclusions ar
+e drawn from these experiments. (i) The presence of promoters preceding each l
+ate ORF supports the hypothesis that each is expressed as an individual transc
+riptional unit. (ii) Promoter elements can be located within the coding portio
+n of the upstream gene. (iii) Sequence homologies between temporally related p
+romoter elements support the notion of kinetic subclasses of late genes.",
+mesh {
+{ term "Base Sequence" },
+{ term "DNA Mutational Analysis" },
+{ mp TRUE, term "Genes, Viral" },
+{ mp TRUE, term "Promoter Regions (Genetics)" },
+{ mp TRUE, term "Regulatory Sequences, Nucleic Acid" },
+{ term "Sequence Homology, Nucleic Acid" },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Vaccinia Virus",
+qual { { mp TRUE, subh "genetics" }}}},
+idnum {
+"AI-20563",
+"AI-0666",
+"GM07774-07" }
+}, -- end Medline-entry
+{
+uid 88063000,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Identification and gene mapping of a 14,700-molecular-weight protein enc
+oded by region E3 of group C adenoviruses." },
+authors {
+names ml {
+"Tollefson AE",
+"Wold WS" },
+affil str "Institute for Molecular Virology, St. Louis University School of Me
+dicine, Missouri 63110." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "33-9"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "Early region E3 of adenovirus type 5 should encode at least nine pro
+teins as judged by the DNA sequence and the spliced structures of the known mR
+NAs. Only two E3 proteins have been proved to exist, a glycoprotein (gp19K) an
+d an 11,600-molecular-weight protein (11.6K protein). Here we describe an abun
+dant 14.7K protein coded by a gene in the extreme 3' portion of E3. To identif
+y this 14.7K protein, we constructed a bacterial vector which synthesized a Tr
+pE-14.7K fusion protein, then we prepared antiserum against the fusion protein
+. This antiserum immunoprecipitated the 14.7K protein from cells infected with
+ adenovirus types 5 and 2, as well as with a variety of E3 deletion mutants. S
+ynthesis of the 14.7K protein correlated precisely with the presence or absenc
+e of the 14.7K gene and with the synthesis of the mRNA (mRNA h) which encodes 
+the 14.7K protein. The 14.7K protein appeared as a triplet on immunoprecipitat
+ion gels and Western blots (immunoblots).",
+mesh {
+{ term "Adenoviruses, Human",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Amino Acid Sequence" },
+{ term "Cloning, Molecular" },
+{ mp TRUE, term "Genes, Viral" },
+{ term "Immunologic Technics" },
+{ term "Molecular Sequence Data" },
+{ term "Molecular Weight" },
+{ term "Recombinant Fusion Proteins",
+qual { { subh "immunology" }}},
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Viral Proteins",
+qual { { mp TRUE, subh "genetics" }}}},
+idnum {
+"CA24710" }
+}, -- end Medline-entry
+{
+uid 88063001,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Four phosphoproteins with common amino termini are encoded by human cyto
+megalovirus AD169." },
+authors {
+names ml {
+"Wright DA",
+"Staprans SI",
+"Spector DH" },
+affil str "Department of Biology, University of California, San Diego, La Joll
+a 92093." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "331-40"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "In this report, we identify the proteins encoded by the 2.2-kilobase
+ class of early transcripts arising from a region of the strain AD169 human cy
+tomegalovirus genome (map units 0.682 to 0.713) which contains cell-related se
+quences. These transcripts, encoded by adjacent EcoRI fragments R and d, have 
+a complex spliced structure with 5' and 3' coterminal ends. Antiserum directed
+ against a synthetic 11-amino-acid peptide corresponding to the predicted amin
+o terminus of the proteins was generated and found to immunoprecipitate four i
+nfected-cell proteins of 84, 50, 43, and 34 kilodaltons. These proteins were p
+hosphorylated and were associated predominantly with the nuclei of infected ce
+lls. The 43-kilodalton protein was the most abundant of the four proteins, and
+ its level of expression remained relatively constant throughout the infection
+. Expression of the other proteins increased as the infection progressed. Puls
+e-chase analysis failed to show a precursor-product relationship between any o
+f the proteins. A comparison of the [35S]methionine-labeled tryptic peptide ma
+ps of the four proteins from infected cells and an in vitro-generated polypept
+ide derived from the putative first exon showed that all four infected-cell pr
+oteins were of viral origin and contained a common amino-terminal region.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Base Sequence" },
+{ term "Cell Compartmentation" },
+{ term "Cytomegaloviruses",
+qual { { mp TRUE, subh "genetics" }}},
+{ mp TRUE, term "Genes, Viral" },
+{ term "Glycosylation" },
+{ term "Immunologic Technics" },
+{ term "Molecular Sequence Data" },
+{ term "Molecular Weight" },
+{ term "Peptide Mapping" },
+{ term "Phosphoproteins",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Phosphorylation" },
+{ term "Protein Precursors",
+qual { { subh "metabolism" }}},
+{ term "Protein Processing, Post-Translational" },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Trypsin" },
+{ term "Viral Proteins",
+qual { { mp TRUE, subh "genetics" }}}},
+substance {
+{ type ec, cit "3.4.21.4", name "Trypsin" }},
+idnum {
+"34729",
+"GM07198",
+"GM07240" }
+}, -- end Medline-entry
+{
+uid 88063005,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Quantitative basic residue requirements in the cleavage-activation site 
+of the fusion glycoprotein as a determinant of virulence for Newcastle disease
+ virus." },
+authors {
+names ml {
+"Glickman RL",
+"Syddall RJ",
+"Iorio RM",
+"Sheehan JP",
+"Bratt MA" },
+affil str "Department of Molecular Genetics and Microbiology, University of Ma
+ssachusetts Medical School, Worcester 01605." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "354-6"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "Newcastle disease virus exhibits a wide range of pathogenicity and v
+irulence which, as with all paramyxoviruses, is directly related to the cleava
+bility of a precursor (F0) of the fusion glycoprotein by cellular proteases. S
+equence analyses of the cleavage site of several virulent and avirulent isolat
+es of the Newcastle disease virus serotype reveal a correlation between virule
+nce or pathogenicity and a high content of basic amino acid residues at the cl
+eavage site. A similar correlation has been seen for other paramyxoviruses.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Newcastle Disease Virus",
+qual { { subh "metabolism" },
+ { mp TRUE, subh "pathogenicity" }}},
+{ term "Peptide Hydrolases",
+qual { { subh "metabolism" }}},
+{ term "Protein Precursors",
+qual { { subh "metabolism" }}},
+{ term "Structure-Activity Relationship" },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Viral Fusion Proteins",
+qual { { mp TRUE, subh "metabolism" }}}},
+substance {
+{ type ec, cit "3.4.", name "Peptide Hydrolases" }},
+idnum {
+"AI-20762-03",
+"AI-12467-11" }
+}, -- end Medline-entry
+{
+uid 88063006,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Identification of point mutations in the envelope gene of Moloney murine
+ leukemia virus TB temperature-sensitive paralytogenic mutant ts1: molecular d
+eterminants for neurovirulence." },
+authors {
+names ml {
+"Szurek PF",
+"Yuen PH",
+"Jerzy R",
+"Wong PK" },
+affil str "University of Texas System Cancer Center, Science Park Research Div
+ision, Smithville 78957." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "357-60"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "ts1, a temperature-sensitive mutant of Moloney murine leukemia virus
+ TB, induces hind-limb paralysis in mice. The DNA of both the ts1 and Moloney 
+murine leukemia virus TB env genes has been sequenced, and the encoded amino a
+cid sequences have been deduced from the DNA sequences. Four amino acids in th
+e ts1 envelope protein have been identified which may be responsible for the t
+s1 phenotype, which includes temperature sensitivity, nonprocessing of Pr80env
+, and neurovirulence.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Base Sequence" },
+{ term "DNA Mutational Analysis" },
+{ term "Moloney Leukemia Virus",
+qual { { subh "genetics" },
+ { mp TRUE, subh "pathogenicity" }}},
+{ term "Nervous System Diseases",
+qual { { mp TRUE, subh "microbiology" }}},
+{ term "Structure-Activity Relationship" },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Temperature" },
+{ term "Viral Envelope Proteins",
+qual { { mp TRUE, subh "genetics" }}}},
+idnum {
+"CA 45124" }
+}, -- end Medline-entry
+{
+uid 88063010,
+em std { year 1988, month 3 },
+cit {
+title {
+name "Organization of the transcriptional control region of the E1b gene of ad
+enovirus type 5." },
+authors {
+names ml {
+"Parks CL",
+"Banerjee S",
+"Spector DJ" },
+affil str "Department of Microbiology, College of Medicine, Pennsylvania State
+ University, Hershey 17033." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "54-67"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "Genetic analysis of the transcriptional control sequences of the E1b
+ gene of adenovirus type 5 identified two regions that stimulated specific tra
+nscription by whole cell extracts from uninfected cells. The first region, loc
+ated within 50 nucleotides (position -50) 5' to the transcription initiation (
+cap) site, contains a G+C-rich consensus-binding site (GC box) for the transcr
+iption factor Sp1 and a TATA box. Unambiguous stimulatory activity of the seco
+nd region, between positions -358 and -127, was observed only in the absence o
+f the GC box. DNase I protection experiments (footprinting) with crude nuclear
+ extracts from uninfected cells revealed multiple DNA-protein interactions at 
+the control region. Proximal to the initiation site, both the GC box and the c
+ap site were protected; however, protection of the TATA box was not observed. 
+In the distal region, four protein-binding sites, designated I through IV, wer
+e located between positions -250 and -120. Three of the four mapped in protein
+-coding sequences of the adjacent E1a gene. Sites I and II were 5' to position
+ -218 whereas sites III and IV were 3' to position -218. This finding was cons
+istent with results of the transcriptional analysis indicating that subsets of
+ the distal region were sufficient for stimulation of transcription in vitro i
+n the absence of the GC box. Within the boundaries of site I, a 10-base-pair p
+rotected sequence was similar to one located 5' to the adenovirus E1a, E2a, E3
+, E4, E2 late, and polypeptide IX transcription initiation sites. Sequences wi
+thin the boundaries of the other three sites were similar to those within othe
+r viral and cellular enhancers.",
+mesh {
+{ term "Adenoviruses, Human",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Base Sequence" },
+{ term "Binding Sites" },
+{ term "Deoxyribonuclease I",
+qual { { subh "diagnostic use" }}},
+{ term "DNA Mutational Analysis" },
+{ term "DNA-Binding Proteins",
+qual { { mp TRUE, subh "physiology" }}},
+{ term "Gene Expression Regulation" },
+{ mp TRUE, term "Genes, Viral" },
+{ term "Molecular Sequence Data" },
+{ term "Nuclear Proteins",
+qual { { subh "physiology" }}},
+{ term "Promoter Regions (Genetics)" },
+{ mp TRUE, term "Regulatory Sequences, Nucleic Acid" },
+{ term "RNA, Viral",
+qual { { subh "genetics" }}},
+{ term "Support, Non-U.S. Gov't" },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Transcription Factors",
+qual { { mp TRUE, subh "physiology" }}},
+{ mp TRUE, term "Transcription, Genetic" }},
+substance {
+{ type ec, cit "3.1.21.1", name "Deoxyribonuclease I" }},
+idnum {
+"CA 09124",
+"CA 34381" }
+}, -- end Medline-entry
+{
+uid 88063012,
+em std { year 1988, month 3 },
+cit {
+title {
+name "The avian retrovirus env gene family: molecular analysis of host range a
+nd antigenic variants." },
+authors {
+names ml {
+"Bova CA",
+"Olsen JC",
+"Swanstrom R" },
+affil str "Department of Biochemistry, University of North Carolina, Chapel Hi
+ll 27599." },
+from journal {
+title  { ml-jta "J Virol" },
+imp {
+date std {
+year 1988,
+month 1
+},
+volume "62",
+issue "1",
+pages "75-83"} } -- end Cit-jour
+}, -- end Cit-art
+abstract "The nucleotide sequence of the env gp85-coding domain from two avian
+ sarcoma and leukosis retrovirus isolates was determined to identify host rang
+e and antigenic determinants. The predicted amino acid sequence of gp85 from a
+ subgroup D virus isolate of the Schmidt-Ruppin strain of Rous sarcoma virus w
+as compared with the previously reported sequences of subgroup A, B, C, and E 
+avian sarcoma and leukosis retroviruses. Subgroup D viruses are closely relate
+d to the subgroup B viruses but have an extended host range that includes the 
+ability to penetrate certain mammalian cells. There are 27 amino acid differen
+ces shared between the subgroup D sequence and three subgroup B sequences. At 
+16 of these sites, the subgroup D sequence is identical to the sequence of one
+ or more of the other subgroup viruses (A, C, and E). The remaining 11 sites a
+re specific to subgroup D and show some clustering in the two large variable r
+egions that are thought to be major determinants of host range. Biological ana
+lysis of recombinant viruses containing a dominant selectable marker confirmed
+ the role of the gp85-coding domain in determining the host range of the subgr
+oup D virus in the infection of mammalian cells. We also compared the sequence
+ of the gp85-coding domain from two subgroup A viruses, Rous-associated virus 
+type 1 and a subgroup A virus of the Schmidt-Ruppin strain of Rous sarcoma vir
+us. The comparison revealed 24 nonconservative amino acid changes, of which 6 
+result in changes in potential glycosylation sites. The positions of 10 amino 
+acid differences are coincident with the positions of 10 differences found bet
+ween two subgroup B virus env gene sequences. These 10 sites identify seven do
+mains in the sequence which may constitute determinants of type-specific antig
+enicity. Using a molecular recombinant, we demonstrated that type-specific neu
+tralization of two subgroup A viruses was associated with the gp85-coding doma
+in of the virus.",
+mesh {
+{ term "Amino Acid Sequence" },
+{ term "Animal" },
+{ term "Antigenic Variation" },
+{ term "Antigens, Surface",
+qual { { subh "genetics" }}},
+{ term "Antigens, Viral",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Avian Leukosis-Sarcoma Viruses",
+qual { { mp TRUE, subh "genetics" }}},
+{ term "Base Sequence" },
+{ term "Chickens",
+qual { { subh "microbiology" }}},
+{ term "Genes, Viral" },
+{ term "Mammals",
+qual { { subh "microbiology" }}},
+{ term "Molecular Sequence Data" },
+{ term "Neutralization Tests" },
+{ term "Receptors, Virus",
+qual { { subh "physiology" }}},
+{ term "Recombination, Genetic" },
+{ term "Species Specificity" },
+{ term "Support, Non-U.S. Gov't" },
+{ term "Support, U.S. Gov't, P.H.S." },
+{ term "Viral Envelope Proteins",
+qual { { mp TRUE, subh "genetics" },
+ { subh "immunology" }}},
+{ term "Virus Replication" }},
+xref {
+{ type genbank, cit "M19113" },
+{ type genbank, cit "M22730" }},
+idnum {
+"RO1 CA33147",
+"U41 RR-01685" }
+} -- end Medline-entry
+} -- end Pub-set
+

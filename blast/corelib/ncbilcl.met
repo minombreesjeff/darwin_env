@@ -1,0 +1,177 @@
+/*   ncbilcl.h
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  ncbilcl.h
+*
+* Author:  Gish, Kans, Ostell, Schuler
+*
+* Version Creation Date:   3/31/94
+*
+* $Revision: 6.4 $
+*
+* File Description:
+*		system dependent header
+*		Metrowerks version
+*
+* Modifications:
+* --------------------------------------------------------------------------
+* Date     Name        Description of modification
+* -------  ----------  -----------------------------------------------------
+*
+* $Log: ncbilcl.met,v $
+* Revision 6.4  2001/07/03 17:42:35  juran
+* Don't redefine NULL under C++.
+* Throw a preprocessor error if targeting 68K.
+* Fix newlines in previous log entry.
+*
+* Revision 6.3  2001/04/05 02:44:13  juran
+* Corrected capitalization for system include files.
+* Removed #ifdef NULL before redefining it, because NULL must be defined 
+* since we include headers like ctype.h.
+* And if it wasn't, the conditional would leave it undefined, which is Bad.
+*
+* Revision 6.2  1997/12/12 21:42:26  kans
+* Strings.h dragged in QuickDraw.h, so it is now out of the header
+*
+* Revision 6.1  1997/12/12 18:58:20  kans
+* added preferred __POWERPC__ symbol
+*
+* Revision 6.0  1997/08/25 18:16:03  madden
+* Revision changed to 6.0
+*
+* Revision 5.2  1997/01/28 22:50:27  kans
+* reverted (removed <fp.h>)
+*
+# Revision 5.0  1996/05/28  13:18:57  ostell
+# Set to revision 5.0
+#
+# Revision 4.1  1995/08/07  16:01:07  kans
+# redefined NULL to ncbistd.h style (compiler defines it as 0)
+#
+# Revision 4.0  1995/07/26  13:46:50  ostell
+# force revision to 4.0
+#
+# Revision 1.4  1995/05/15  18:45:58  ostell
+# added Log line
+#
+*
+*
+* ==========================================================================
+*/
+#ifndef _NCBILCL_
+#define _NCBILCL_
+
+/* PLATFORM DEFINITION FOR MACINTOSH UNDER METROWERKS C/C++ */
+
+#define COMP_METRO
+#define OS_MAC
+#define WIN_MAC
+
+#if defined(__POWERPC__) || defined(powerc) || defined(__powerc) || defined(__POWERPC)
+#define PROC_PPC
+#else
+#define PROC_MC680X0
+#error "The NCBI C Toolkit does not support Mac OS on the 680x0 processor."
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Desired or available feature list                               */
+/*----------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------*/
+/*      #includes                                                       */
+/*----------------------------------------------------------------------*/
+
+#include <MacMemory.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <errno.h>
+#include <limits.h>
+#include <float.h>
+
+/*----------------------------------------------------------------------*/
+/*      Missing ANSI-isms                                               */
+/*----------------------------------------------------------------------*/
+#ifndef FILENAME_MAX
+#define FILENAME_MAX 255
+#endif
+#ifndef PATH_MAX
+#define PATH_MAX 255
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Aliased Logicals, Datatypes                                     */
+/*----------------------------------------------------------------------*/
+
+/* NULL may not be a (void *) in C++. */
+#ifndef __cplusplus
+#	undef NULL
+#	define NULL ((void *)0)
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Misc Macros                                                     */
+/*----------------------------------------------------------------------*/
+#define PROTO(x)	x	/* Function prototypes are real */
+#define VPROTO(x)	x	/* Prototype for variable argument list */
+#define DIRDELIMCHR	':'
+#define DIRDELIMSTR	":"
+#define CWDSTR	"."
+
+#define KBYTE	(1024)
+#define MBYTE	(1048576)
+
+#define IS_BIG_ENDIAN
+
+/*----------------------------------------------------------------------*/
+/*      For importing MS_DOS code                                       */
+/*----------------------------------------------------------------------*/
+#define near
+#define far
+#define huge
+#define cdecl
+#define _pascal
+#define _near
+#define _far
+#define _huge
+#define _cdecl
+
+/*----------------------------------------------------------------------*/
+/*      Macros for Floating Point                                       */
+/*----------------------------------------------------------------------*/
+#define EXP2(x) exp((x)*LN2)
+#define LOG2(x) (log(x)*(1./LN2))
+#define EXP10(x) exp((x)*LN10)
+#define LOG10(x) log10(x)
+
+/*----------------------------------------------------------------------*/
+/*      Macros Defining Limits                                          */
+/*----------------------------------------------------------------------*/
+#define MAXALLOC	0x40000000 /* Largest permissible memory request */
+
+#endif

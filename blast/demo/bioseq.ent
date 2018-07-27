@@ -1,0 +1,50 @@
+Bioseq ::= {
+      id {
+        giim {
+          id 1 } ,
+        genbank {
+          name "AGMAPHAAA" ,
+          accession "M26844" } } ,
+      descr {
+        title "African green monkey alpha-DNA." ,
+        genbank {
+          source "African green monkey DNA." ,
+          keywords {
+            "alpha DNA" ,
+            "alphoid repetitive sequence" } ,
+          date "15-DEC-1989" } ,
+        org {
+          taxname "Cercopithecus aethiops" } ,
+        pub {
+          pub {
+            muid 84259347 ,
+            article {
+              title {
+                name "A protein binds to a satellite DNA repeat at three
+ specific sites that would be brought into mutual proximity by DNA folding in
+ the nucleosome" } ,
+              authors {
+                names
+                  str {
+                    "Strauss,F." ,
+                    "Varshavsky,A." } } ,
+              from
+                journal {
+                  title {
+                    name "Cell" } ,
+                  imp {
+                    date
+                      std {
+                        year 1984 } ,
+                    volume "37" ,
+                    pages "889-901" } } } } } } ,
+      inst {
+        repr raw ,
+        mol dna ,
+        length 208 ,
+        topology linear ,
+        strand ds ,
+        seq-data
+          ncbi2na '0F74EFE127CD36309FDE201EF7BBDEF0F4DD212F137F57E0425FD9C29EF
+7EE83E902A33FA055322A73AE00080CDF57D007A0209F00'H } } 
+

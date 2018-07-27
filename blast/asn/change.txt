@@ -1,0 +1,85 @@
+Changes in version 3.0 of NCBI ASN.1 specification
+
+these change the asn.1 files and their object loaders.
+NOTE: simple.c changes also
+
+general.asn -
+    1) Int-fuzz
+        A) added "circle" to indicate artificial break in a location
+           that spans origin of a circular sequence
+        B) added "alt" for a series of alternate positions
+
+biblio.asn -
+	1) Cit-pat adapted to include additional fields
+		A) Cit-pat.class changed from VisibleString to SEQUENCE OF
+             VisibleString. Since class was not formally populated this
+             destructive change should not be a problem.
+        B) new fields
+             assignees, priority, abstract
+
+    2) Affil - 
+        added email, fax, phone
+    3) Cit-sub -
+        added descr for author to describe any changes for the public
+        added date, and made imprint optional. Imprint will go away and
+         be replaced by just a date.
+    4) retraction/erratum notice added to imprint.
+CitRetract ::= SEQUENCE {
+    type ENUMERATED {                    -- retraction of an entry
+        retracted (1) ,               -- this citation retracted
+        notice (2) ,                  -- this citation is a retraction notice
+        in-error (3) ,                -- an erratum was published about this
+        erratum (4) } ,               -- this is a published erratum
+    exp VisibleString OPTIONAL }      -- citation and/or explanation
+	5) added part-supi on imprint for part/supplement on issue
+       old part-sup now specificially for volume
+             
+seq.asn -
+    1) Seq-descr redefined as SET OF Seqdesc, with Seqdesc being a CHOICE
+       of the old elements of Seqdesc, Seqdesc.E  This enables single
+       elements to be named for various tools.
+    2) GIBB-mod, GIBB-mol, GIBB-method, org expanded and consolidated into
+         MolInfo and new Org-ref. These old descriptors will be removed
+         with the next spec.
+	3) Seq-inst added
+         type "delta", Delta-seq, Seq-literal, for constructing a sequence
+         by changes (deltas) to another.
+    4) Seq-annot
+         changed "id" to use Annot-id
+         changed "db" to represent a source db
+         changed "name" to represent a source name
+         changed "desc" from VisibleString to Annot-descr for separate
+         seq-annots to have comments, titles, publications, etc.
+	5) Added BioSource and MolInfo to Seq-descr
+
+seqblock.asn -
+    1) Added divisions est, pat, sts to EMBL block
+
+seqfeat.asn -
+    1) added sites
+        signal-peptide (23) ,
+        transit_peptide (24) ,
+        transmembrane-region (25)
+    2) expanded Org-ref
+    3) added processing status to Prot-ref
+         processed ENUMERATED {             -- processing status
+            not-set (0) ,
+            preprotein (1) ,
+            mature (2) } DEFAULT not-set }
+    4) added BioSource type for biological source of materials
+
+
+seqset.asn -
+    1) added new set classes
+         mut-set = set of mutations of a sequence
+         pop-set = population set (look for frequency in BioSource)
+         phy-set = phylogenetic study
+
+submit.asn -
+    1) added tool field for string defining tool that made the entry
+    2) added user-tag field for user supplied id for this entry
+    3) added comment for user comments/advice to database on this entry
+    4) added type to indicate new, update, revise
+
+
+

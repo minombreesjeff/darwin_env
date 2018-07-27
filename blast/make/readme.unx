@@ -1,0 +1,1007 @@
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+DIRECTIONS for building the toolkit on UNIX platforms
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+==========================================================================
+|| W A R N I N G !!
+|| That readme.unx file is valid only for new NCBI toolkit issued
+|| after April, 6, 1999
+==========================================================================
+
+Building the NCBI toolkit
+-----------------------------
+
+1) Take the sources of NCBI tookit at
+	ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.tar.Z
+Extract this file to some empty directory, for example "toolkit" :
+	mkdir toolkit
+	cd toolkit
+	#assume that the file ncbi.tar.Z is already here
+	compress -d < ncbi.tar.Z | tar xf -
+The platform-dependent config files are located in directory ncbi/platform/
+and you can modify them or make your own ports to different platforms.
+
+2) you will see the file in ncbi/make:
+
+   (i) ./ncbi/make/makedis.csh
+
+       This file should actually do the make.
+
+       Normally, its output is trapped  as 
+ 
+			in case of bash or sh or zsh:
+            ./ncbi/make/makedis.csh 2>&1 | tee out.makedis.txt
+			in case of csh or tcsh
+            ./ncbi/make/makedis.csh |& tee out.makedis.txt
+
+       If there are problems with the make, this is the file which should be
+       sent to toolbox@ncbi.nlm.nih.gov
+
+       in addition, the output of 
+
+         uname -a
+
+       should also be sent.
+
+3) Errors relating to the 'internal/' directory can be ignored.  It is normal
+   for outside users to see these messages.  (We use the same makefiles,
+   internally, for the price of external users seeing these ignored errors,
+   we have only one set of makefiles to maintain for inside and outside of
+   NCBI.)
+
+Karl Sirotkin Fri Jul 24 16:50:19 EDT 1998
+
+
+4) There is some useful information about NCBI toolkit located at:
+	ftp://ftp.ncbi.nih.gov/toolbox/FAQ.html
+	
+5) Here is sample scenario to build NCBI toolkit on DEC Alpha with OSF/1
+I'm using bash as login shell
+
+Script started on Mon Jan 31 14:08:20 2000
+> uname -a
+OSF1 annie V4.0 878 alpha
+> exec bash
+bash-2.00$ PS1='\h|\w|\!> '
+annie|/work|502> mkdir toolbox
+annie|/work|503> cd toolbox
+annie|/work/toolbox|504> ftp ftp.ncbi.nih.gov
+Connected to ftp.ncbi.nih.gov.
+220-Welcome to the NCBI FTP Server (ftp.ncbi.nih.gov)
+220-
+220 ncbi FTP server (Version wu-2.5.0(1p1) Sat Aug 28 10:35:19 EDT 1999) ready.
+Name (ftp.ncbi.nih.gov:coremake): ftp
+331 Guest login ok, send your complete e-mail address as password.
+Password:
+230 Guest login ok, access restrictions apply.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> bin
+200 Type set to I.
+ftp> cd /toolbox/ncbi_tools
+250 CWD command successful.
+ftp> dir
+200 PORT command successful.
+150 Opening ASCII mode data connection for /bin/ls.
+total 490
+drwxrwsr-x   6 1042     506          512 Jan 24 23:38 .
+drwxrwsr-x   8 1042     506          512 Sep 20 20:08 ..
+lrwxrwxrwx   1 3755     506           12 Jan 24 23:38 CURRENT -> old/20000124
+lrwxrwxrwx   1 3755     506           11 Oct 28 16:23 FAQ.html -> ../FAQ.html
+drwxrws---   2 4039     506          512 Oct  2  1998 LastToolKit
+-rw-rw-r--   1 3755     511        52019 May 13  1999 README
+-rw-rw-r--   1 3755     511        59692 May 13  1999 README.htm
+-rw-r--r--   1 3755     506       112063 Jan 27  1999 asnload.tar.Z
+lrwxrwxrwx   1 3755     506           18 Oct 28 16:23 data.tar.Z -> CURRENT/data.tar.Z
+drwxr-sr-x   2 1042     506          512 Sep  9  1997 docs
+lrwxrwxrwx   1 3755     506           16 Oct 28 16:23 ncbi.hqx -> CURRENT/ncbi.hqx
+lrwxrwxrwx   1 3755     506           18 Oct 28 16:23 ncbi.tar.Z -> CURRENT/ncbi.tar.Z
+lrwxrwxrwx   1 3755     506           19 Oct 28 16:23 ncbi.tar.gz -> CURRENT/ncbi.tar.gz
+lrwxrwxrwx   1 3755     506           17 Oct 28 16:23 ncbiz.exe -> CURRENT/ncbiz.exe
+lrwxrwxrwx   1 3755     506            4 Oct 28 16:23 newdoc -> docs
+drwxr-sr-x   7 3755     506          512 Jan 24 19:12 old
+lrwxrwxrwx   1 3755     506           13 Oct 28 16:23 readme.unx -> ../readme.unx
+drwxr-sr-x   2 3755     506         1024 Jan 24 21:26 sdkdoc
+226 Transfer complete.
+ftp> get ncbi.tar.Z
+200 PORT command successful.
+150 Opening BINARY mode data connection for ncbi.tar.Z (12504643 bytes).
+226 Transfer complete.
+12504643 bytes received in 15 seconds (8.3e+02 Kbytes/s)
+ftp> bye
+221-You have transferred 12504643 bytes in 1 files.
+221-Total traffic for this session was 12506736 bytes in 2 transfers.
+221-Thank you for using the FTP service on ncbi.
+221 Goodbye.
+annie|/work/toolbox|505> ls -l
+total 12224
+-rw-r--r--   1 coremake ncbi     12504643 Jan 31 14:09 ncbi.tar.Z
+annie|/work/toolbox|506> uncompress < ncbi.tar.Z |tar xf -
+annie|/work/toolbox|507> ls -l
+total 12225
+drwxr-xr-x  32 coremake ncbi         1024 Jan 24 16:18 ncbi
+-rw-r--r--   1 coremake ncbi     12504643 Jan 31 14:09 ncbi.tar.Z
+annie|/work/toolbox|508> ./ncbi/make/makedis.csh 2>&1|tee out.makedis.txt
+platform is alphaOSF1
+make CFLAGS1="-fast -c " LDFLAGS1="-fast" SHELL="/usr/bin/sh" LCL="alf" RAN="ls -l" CC="cc" LIB30=libncbicn3d.a LIB28=libvibgif.a LIB4=libvibrant.a LIB20=libncbidesk.a VIBFLAG="-DWIN_MOTIF" VIBLIBS="-non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub" all
+chmod -R ug+rw,o+r .
+./ln-if-absent ../corelib/tsprintf.h ../include
+./ln-if-absent ../corelib/gifgen.h ../include
+./ln-if-absent ../corelib/ncbi*.h ../include
+./ln-if-absent ../corelib/tree*.h ../include
+./ln-if-absent ../corelib/regex.h ../include
+./ln-if-absent ../corelib/matrix.h ../include
+./ln-if-absent ../corelib/binary.h ../include
+./ln-if-absent ../corelib/ncbilcl.alf ../include/ncbilcl.h
+./ln-if-absent ../corelib/*.c .
+./ln-if-absent ../corelib/core*.h .
+./ln-if-absent ../asnlib/*.h .
+mv asn.h ../include
+./ln-if-absent ../asnlib/*.c .
+./ln-if-absent ../connect/*.c .
+./ln-if-absent ../connect/*.h ../include
+./ln-if-absent ../connect/lbapi/*.c .
+./ln-if-absent ../connect/lbapi/*.h ../include
+./ln-if-absent ../object/*.c .
+./ln-if-absent ../object/*.h ../include
+./ln-if-absent ../access/*.c .
+./ln-if-absent ../access/*.h ../include
+./ln-if-absent ../asnstat/*.h ../include
+./ln-if-absent ../api/*.h ../include
+./ln-if-absent ../api/*.c .
+./ln-if-absent ../cdromlib/*.h ../include
+./ln-if-absent ../cdromlib/*.c .
+./ln-if-absent ../vibrant/*.h ../include
+./ln-if-absent ../vibrant/*.c .
+./ln-if-absent ../desktop/*.h ../include
+./ln-if-absent ../desktop/*.c .
+./ln-if-absent ../biostruc/*.h ../include
+./ln-if-absent ../biostruc/*.c .
+./ln-if-absent ../tools/*.h ../include
+./ln-if-absent ../tools/*.c .
+./ln-if-absent ../cn3d/*.h ../include
+./ln-if-absent ../cn3d/*.c .
+./ln-if-absent ../gif/*.c .
+./ln-if-absent ../gif/*.h ../include
+./ln-if-absent ../ddv/*.h ../include
+./ln-if-absent ../ddv/*.c .
+./ln-if-absent ../internal/compr/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/compr/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/libindx/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/libindx/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/libpars/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/libpars/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/ccap/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/ccap/*.dat .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/ccap/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ncbidraw.c ncbidrwg.c
+./ln-if-absent ncbithr.c ncbithrs.c
+./ln-if-absent ../network/id1arch/*.h ../include
+chmod -R ug+rw,o+r .
+echo Waiting...go
+Waiting...go
+cc -fast -c  -I../include -DWIN_MOTIF ncbithr.c
+cp -p ncbithr.o ../lib
+cc -fast -c  -I../include -DWIN_MOTIF ncbibs.c
+cc -fast -c  -I../include -DWIN_MOTIF wwwutils.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbierr.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbienv.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbifile.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbimain.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbiprop.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbimath.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbimem.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbimisc.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbimsg.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbistr.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbisgml.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbitime.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbilang.c
+cc -fast -c  -I../include -DWIN_MOTIF asnbufo.c
+cc -fast -c  -I../include -DWIN_MOTIF asndebin.c
+cc -fast -c  -I../include -DWIN_MOTIF asnenbin.c
+cc -fast -c  -I../include -DWIN_MOTIF asngen.c
+cc -fast -c  -I../include -DWIN_MOTIF asnio.c
+cc -fast -c  -I../include -DWIN_MOTIF asnlex.c
+cc -fast -c  -I../include -DWIN_MOTIF asnlext.c
+cc -fast -c  -I../include -DWIN_MOTIF asnout.c
+cc -fast -c  -I../include -DWIN_MOTIF asnprint.c
+cc -fast -c  -I../include -DWIN_MOTIF asntypes.c
+cc -fast -c  -I../include -DWIN_MOTIF asngenob.c
+cc -fast -c  -I../include -DWIN_MOTIF gifgen.c
+cc -fast -c  -I../include -DWIN_MOTIF togif.c
+cc -DNCBI_NOTHREADS_AVAIL -fast -c  -I../include -DWIN_MOTIF ncbithrs.c
+cc -fast -c  -I../include -DWIN_MOTIF -DHAVE_STRING_H -DREGEX_MALLOC regex.c
+cc -fast -c  -I../include -DWIN_MOTIF tsprintf.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbiargs.c
+cc -fast -c  -I../include -DWIN_MOTIF tree.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbisock.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNCBI_C ncbi_socket.c
+cc -fast -c  -I../include -DWIN_MOTIF matrix.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbibuf.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbi_buffer.c
+cc: Warning: ncbi_buffer.c, line 116: In the initializer for pChunk, & before array "(((SBufChunk ...)0)->data)" is ignored.
+    malloc((size_t) (&(((SBufChunk*)0)->data)) + alloc_size);
+---------------------^
+cc -fast -c  -I../include -DWIN_MOTIF connectn.c
+cc -fast -c  -I../include -DWIN_MOTIF connutil.c
+cc -fast -c  -I../include -DWIN_MOTIF con_url.c
+cc -fast -c  -I../include -DWIN_MOTIF con_sock.c
+cc -fast -c  -I../include -DWIN_MOTIF urlquery.c
+cc -fast -c  -I../include -DWIN_MOTIF  lbapi.c
+cc -fast -c  -I../include -DWIN_MOTIF  con_stateless.c
+cc -fast -c  -I../include -DWIN_MOTIF binary.c
+rm -f libncbi.a
+ar cru libncbi.a ncbibs.o wwwutils.o ncbierr.o ncbienv.o ncbifile.o ncbimain.o ncbiprop.o ncbimath.o ncbimem.o ncbimisc.o ncbimsg.o ncbistr.o ncbisgml.o ncbitime.o ncbilang.o asnbufo.o asndebin.o asnenbin.o asngen.o asnio.o asnlex.o asnlext.o asnout.o asnprint.o asntypes.o asngenob.o gifgen.o togif.o ncbithrs.o regex.o tsprintf.o ncbiargs.o tree.o ncbisock.o ncbi_socket.o matrix.o ncbibuf.o ncbi_buffer.o connectn.o connutil.o con_url.o con_sock.o urlquery.o lbapi.o con_stateless.o binary.o
+cp -p libncbi.a ../lib
+ls -l ../lib/libncbi.a
+-rw-r--r--   1 coremake ncbi      827962 Jan 31 14:11 ../lib/libncbi.a
+cc -fast -c  -I../include -DWIN_MOTIF objacces.c
+cc -fast -c  -I../include -DWIN_MOTIF objalign.c
+cc -fast -c  -I../include -DWIN_MOTIF objall.c
+cc -fast -c  -I../include -DWIN_MOTIF objbibli.c
+cc -fast -c  -I../include -DWIN_MOTIF objfeat.c
+cc -fast -c  -I../include -DWIN_MOTIF objgen.c
+cc -fast -c  -I../include -DWIN_MOTIF objloc.c
+cc -fast -c  -I../include -DWIN_MOTIF objmedli.c
+cc -fast -c  -I../include -DWIN_MOTIF objpub.c
+cc -fast -c  -I../include -DWIN_MOTIF objres.c
+cc -fast -c  -I../include -DWIN_MOTIF objseq.c
+cc -fast -c  -I../include -DWIN_MOTIF objblock.c
+cc -fast -c  -I../include -DWIN_MOTIF objcode.c
+cc -fast -c  -I../include -DWIN_MOTIF objsset.c
+cc -fast -c  -I../include -DWIN_MOTIF objsub.c
+cc -fast -c  -I../include -DWIN_MOTIF objprt.c
+cc -fast -c  -I../include -DWIN_MOTIF objfdef.c
+cc -fast -c  -I../include -DWIN_MOTIF objalignloc.c
+cc -fast -c  -I../include -DWIN_MOTIF objmime.c
+cc -fast -c  -I../include -DWIN_MOTIF objpubme.c
+cc -fast -c  -I../include -DWIN_MOTIF objmdrs.c
+cc -fast -c  -I../include -DWIN_MOTIF objproj.c
+cc -fast -c  -I../include -DWIN_MOTIF objent2.c
+cc -fast -c  -I../include -DWIN_MOTIF ent2api.c
+cc -fast -c  -I../include -DWIN_MOTIF seqport.c
+cc -fast -c  -I../include -DWIN_MOTIF sequtil.c
+cc -fast -c  -I../include -DWIN_MOTIF prtutil.c
+cc -fast -c  -I../include -DWIN_MOTIF simple.c
+cc -fast -c  -I../include -DWIN_MOTIF tofasta.c
+cc -fast -c  -I../include -DWIN_MOTIF tofile.c
+cc -fast -c  -I../include -DWIN_MOTIF tomedlin.c
+cc -fast -c  -I../include -DWIN_MOTIF valid.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF alignmgr.c
+cc -fast -c  -I../include -DWIN_MOTIF alignval.c
+cc -fast -c  -I../include -DWIN_MOTIF sqnutil1.c
+cc: Warning: sqnutil1.c, line 3630: In this statement, & before array "(trp->codon)" is ignored.
+    HeapSort ((VoidPtr) &(trp->codon), 6, sizeof (Uint1), SortCodons);
+------------------------^
+cc -fast -c  -I../include -DWIN_MOTIF sqnutil2.c
+cc -fast -c  -I../include -DWIN_MOTIF subutil.c
+cc -fast -c  -I../include -DWIN_MOTIF edutil.c
+cc -fast -c  -I../include -DWIN_MOTIF asn2ff1.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF asn2ff2.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF asn2ff3.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF asn2ff4.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF asn2ff5.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF asn2ff6.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF ftusrstr.c
+cc -fast -c  -I../include -DWIN_MOTIF gbfeat.c
+cc -fast -c  -I../include -DWIN_MOTIF gbftglob.c
+cc -fast -c  -I../include -DWIN_MOTIF gbparint.c
+cc -fast -c  -I../include -DWIN_MOTIF utilpars.c
+cc -fast -c  -I../include -DWIN_MOTIF utilpub.c
+cc -fast -c  -I../include -DWIN_MOTIF ffprint.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF wprint.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF satutil.c
+cc -fast -c  -I../include -DWIN_MOTIF seqmgr.c
+cc -fast -c  -I../include -DWIN_MOTIF objmgr.c
+cc -fast -c  -I../include -DWIN_MOTIF gather.c
+cc -fast -c  -I../include -DWIN_MOTIF accmmdbs.c
+cc -fast -c  -I../include -DWIN_MOTIF acccn3ds.c
+cc -fast -c  -I../include -DWIN_MOTIF lsqfetch.c
+cc -fast -c  -I../include -DWIN_MOTIF findrepl.c
+cc -fast -c  -I../include -DWIN_MOTIF apparam.c
+cc -fast -c  -I../include -DWIN_MOTIF codon.c
+cc -fast -c  -I../include -DWIN_MOTIF jzcoll.c
+cc: Warning: jzcoll.c, line 615: In this statement, & before array "(cs_option.flabel_format)" is ignored.
+			MemCopy(&(cs_option.flabel_format), &flabel_format, (size_t)FEATDEF_ANY*sizeof(Uint1));
+--------------------------------^
+cc -fast -c  -I../include -DWIN_MOTIF jzmisc.c
+cc -fast -c  -I../include -DWIN_MOTIF maputil.c
+cc: Warning: maputil.c, line 314: Type long double has the same representation as type double on this platform and is treated as a synonym for type double in this compilation mode.
+		   sprintf(label, "%2.2Lf", (long double) m_val);
+---------------------------------------------^
+cc -fast -c  -I../include -DWIN_MOTIF mconsist.c
+cc -fast -c  -I../include -DWIN_MOTIF txalign.c
+cc -fast -c  -I../include -DWIN_MOTIF salpedit.c
+cc -fast -c  -I../include -DWIN_MOTIF salpstat.c
+cc -fast -c  -I../include -DWIN_MOTIF salpacc.c
+cc -fast -c  -I../include -DWIN_MOTIF salsap.c
+cc -fast -c  -I../include -DWIN_MOTIF salstruc.c
+cc -fast -c  -I../include -DWIN_MOTIF salutil.c
+cc -fast -c  -I../include -DWIN_MOTIF salprop.c
+cc -fast -c  -I../include -DWIN_MOTIF udvseq.c
+cc -fast -c  -I../include -DWIN_MOTIF blocks.c
+cc -fast -c  -I../include -DWIN_MOTIF pgppop.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF samutil.c
+cc -fast -c  -I../include -DWIN_MOTIF ddvcolor.c
+rm -f libncbiobj.a
+ar cru libncbiobj.a objacces.o objalign.o objall.o objbibli.o objfeat.o objgen.o objloc.o objmedli.o objpub.o objres.o objseq.o objblock.o objcode.o objsset.o objsub.o objprt.o objfdef.o objalignloc.o objmime.o objpubme.o objmdrs.o objproj.o objent2.o ent2api.o seqport.o sequtil.o prtutil.o simple.o tofasta.o tofile.o tomedlin.o valid.o alignmgr.o alignval.o sqnutil1.o sqnutil2.o subutil.o edutil.o asn2ff1.o asn2ff2.o asn2ff3.o asn2ff4.o asn2ff5.o asn2ff6.o ftusrstr.o gbfeat.o gbftglob.o gbparint.o utilpars.o utilpub.o ffprint.o wprint.o satutil.o seqmgr.o objmgr.o gather.o accmmdbs.o acccn3ds.o lsqfetch.o findrepl.o apparam.o codon.o jzcoll.o jzmisc.o maputil.o mconsist.o txalign.o salpedit.o salpstat.o salpacc.o salsap.o salstruc.o salutil.o salprop.o udvseq.o blocks.o pgppop.o samutil.o ddvcolor.o
+cp -p libncbiobj.a ../lib
+ls -l ../lib/libncbiobj.a
+-rw-r--r--   1 coremake ncbi     4873308 Jan 31 14:13 ../lib/libncbiobj.a
+cc -fast -c  -I../include -DWIN_MOTIF cdentrez.c
+cc -fast -c  -I../include -DWIN_MOTIF cdromlib.c
+cc -fast -c  -I../include -DWIN_MOTIF cdnewlib.c
+cc -fast -c  -I../include -DWIN_MOTIF casn.c
+cc -fast -c  -I../include -DWIN_MOTIF cdconfig.c
+cc -fast -c  -I../include -DWIN_MOTIF objentr.c
+rm -f libncbicdr.a
+ar cru libncbicdr.a cdentrez.o cdromlib.o cdnewlib.o casn.o cdconfig.o objentr.o
+cp -p libncbicdr.a ../lib
+ls -l ../lib/libncbicdr.a
+-rw-r--r--   1 coremake ncbi      268044 Jan 31 14:13 ../lib/libncbicdr.a
+cc -fast -c  -I../include -DWIN_MOTIF vibbutns.c
+cc -fast -c  -I../include -DWIN_MOTIF vibextra.c
+cc -fast -c  -I../include -DWIN_MOTIF vibfiles.c
+cc -fast -c  -I../include -DWIN_MOTIF vibforms.c
+cc -fast -c  -I../include -DWIN_MOTIF vibgroup.c
+cc -fast -c  -I../include -DWIN_MOTIF viblists.c
+cc -fast -c  -I../include -DWIN_MOTIF vibmenus.c
+cc -fast -c  -I../include -DWIN_MOTIF vibprmpt.c
+cc -fast -c  -I../include -DWIN_MOTIF vibsbars.c
+cc -fast -c  -I../include -DWIN_MOTIF vibslate.c
+cc -fast -c  -I../include -DWIN_MOTIF vibtexts.c
+cc -fast -c  -I../include -DWIN_MOTIF vibutils.c
+cc -fast -c  -I../include -DWIN_MOTIF vibwndws.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbidraw.c
+cc -fast -c  -I../include -DWIN_MOTIF drawing.c
+cc -fast -c  -I../include -DWIN_MOTIF mapping.c
+cc -fast -c  -I../include -DWIN_MOTIF picture.c
+cc -fast -c  -I../include -DWIN_MOTIF viewer.c
+cc -fast -c  -I../include -DWIN_MOTIF document.c
+cc -fast -c  -I../include -DWIN_MOTIF table.c
+cc -fast -c  -I../include -DWIN_MOTIF palette.c
+cc -fast -c  -I../include -DWIN_MOTIF diagnost.c
+cc -fast -c  -I../include -DWIN_MOTIF image.c
+cc -fast -c  -I../include -DWIN_MOTIF pictur3d.c
+cc -fast -c  -I../include -DWIN_MOTIF prim3d1.c
+cc -fast -c  -I../include -DWIN_MOTIF prim3d2.c
+cc -fast -c  -I../include -DWIN_MOTIF prim3d3.c
+cc -fast -c  -I../include -DWIN_MOTIF prim3d4.c
+cc -fast -c  -I../include -DWIN_MOTIF prim3d5.c
+cc -fast -c  -I../include -DWIN_MOTIF viewer3d.c
+cc -fast -c  -I../include -DWIN_MOTIF vibmouse.c
+cc -fast -c  -I../include -DWIN_MOTIF netscape.c
+cc -fast -c  -I../include -DWIN_MOTIF imagelst.c
+cc -fast -c  -I../include -DWIN_MOTIF treeview.c
+cc -fast -c  -I../include -DWIN_MOTIF shim3d.c
+cc -fast -c  -I../include -DWIN_MOTIF odlbox.c
+rm -f libvibrant.a
+ar cru libvibrant.a vibbutns.o vibextra.o vibfiles.o vibforms.o vibgroup.o viblists.o vibmenus.o vibprmpt.o vibsbars.o vibslate.o vibtexts.o vibutils.o vibwndws.o ncbidraw.o drawing.o mapping.o picture.o viewer.o document.o table.o palette.o diagnost.o image.o pictur3d.o prim3d1.o prim3d2.o prim3d3.o prim3d4.o prim3d5.o viewer3d.o vibmouse.o netscape.o imagelst.o treeview.o shim3d.o odlbox.o
+cp -p libvibrant.a ../lib
+ls -l ../lib/libvibrant.a
+-rw-r--r--   1 coremake ncbi     1624658 Jan 31 14:14 ../lib/libvibrant.a
+cc -fast -c  -I../include -DWIN_MOTIF accentr.c
+cc -fast -c  -I../include -DWIN_MOTIF accutils.c
+rm -f libncbiacc.a
+ar cru libncbiacc.a accentr.o accutils.o
+cp -p libncbiacc.a ../lib
+ls -l ../lib/libncbiacc.a
+-rw-r--r--   1 coremake ncbi       83678 Jan 31 14:14 ../lib/libncbiacc.a
+cc -fast -c  -I../include -DWIN_MOTIF drawseq.c
+cc -fast -c  -I../include -DWIN_MOTIF dotmatrx.c
+cc -fast -c  -I../include -DWIN_MOTIF fea2seg.c
+cc -fast -c  -I../include -DWIN_MOTIF fstyle.c
+cc -fast -c  -I../include -DWIN_MOTIF smdlg1.c
+cc -fast -c  -I../include -DWIN_MOTIF smdlg2.c
+cc -fast -c  -I../include -DWIN_MOTIF smdlg3.c
+cc -fast -c  -I../include -DWIN_MOTIF smtools.c
+cc -fast -c  -I../include -DWIN_MOTIF styleman.c
+cc -fast -c  -I../include -DWIN_MOTIF stylemui.c
+cc -fast -c  -I../include -DWIN_MOTIF glbpic.c
+cc -fast -c  -I../include -DWIN_MOTIF layout.c
+cc -fast -c  -I../include -DWIN_MOTIF saldist.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF saled.c
+cc -fast -c  -I../include -DWIN_MOTIF salfiles.c
+cc -fast -c  -I../include -DWIN_MOTIF salpanel.c
+cc -fast -c  -I../include -DWIN_MOTIF salparam.c
+cc -fast -c  -I../include -DWIN_MOTIF salsa.c
+cc -fast -c  -I../include -DWIN_MOTIF seqfltr.c
+cc -fast -c  -I../include -DWIN_MOTIF seqgraph.c
+cc -fast -c  -I../include -DWIN_MOTIF seqgrphx.c
+cc -fast -c  -I../include -DWIN_MOTIF seqmtrx.c
+cc -fast -c  -I../include -DWIN_MOTIF seqpcc.c
+cc -fast -c  -I../include -DWIN_MOTIF seqanal.c
+cc -fast -c  -I../include -DWIN_MOTIF aacomp.c
+cc -fast -c  -I../include -DWIN_MOTIF seqscrl.c
+cc -fast -c  -I../include -DWIN_MOTIF vsm.c
+cc -fast -c  -I../include -DWIN_MOTIF vsmfile.c
+cc -fast -c  -I../include -DWIN_MOTIF vsmutil.c
+cc -fast -c  -I../include -DWIN_MOTIF udvgraph.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF udvopen.c
+cc -fast -c  -I../include -DWIN_MOTIF udvpanel.c
+cc -fast -c  -I../include -DWIN_MOTIF dlgutil1.c
+cc -fast -c  -I../include -DWIN_MOTIF dlgutil2.c
+cc -fast -c  -I../include -DWIN_MOTIF medview.c
+cc -fast -c  -I../include -DWIN_MOTIF bspview.c
+cc -fast -c  -I../include -DWIN_MOTIF gbfview.c
+cc -fast -c  -I../include -DWIN_MOTIF gphview.c
+cc -fast -c  -I../include -DWIN_MOTIF gphdraw.c
+cc -fast -c  -I../include -DWIN_MOTIF gxydraw.c
+cc -fast -c  -I../include -DWIN_MOTIF gtrdraw.c
+cc -fast -c  -I../include -DWIN_MOTIF biosrc.c
+cc -fast -c  -I../include -DWIN_MOTIF cdrgn.c
+cc -fast -c  -I../include -DWIN_MOTIF import.c
+cc -fast -c  -I../include -DWIN_MOTIF pubdesc.c
+cc -fast -c  -I../include -DWIN_MOTIF seqsub.c
+cc -fast -c  -I../include -DWIN_MOTIF mapgene.c
+cc -fast -c  -I../include -DWIN_MOTIF prtgene.c
+cc -fast -c  -I../include -DWIN_MOTIF ddvclick.c
+cc -fast -c  -I../include -DWIN_MOTIF ddvcreate.c
+cc -fast -c  -I../include -DWIN_MOTIF ddvgraph.c
+cc -fast -c  -I../include -DWIN_MOTIF ddvopen.c
+cc -fast -c  -I../include -DWIN_MOTIF ddvpanel.c
+rm -f libncbidesk.a
+ar cru libncbidesk.a drawseq.o dotmatrx.o fea2seg.o fstyle.o smdlg1.o smdlg2.o smdlg3.o smtools.o styleman.o stylemui.o glbpic.o layout.o saldist.o saled.o salfiles.o salpanel.o salparam.o salsa.o seqfltr.o seqgraph.o seqgrphx.o seqmtrx.o seqpcc.o seqanal.o aacomp.o seqscrl.o vsm.o vsmfile.o vsmutil.o udvgraph.o udvopen.o udvpanel.o dlgutil1.o dlgutil2.o medview.o bspview.o gbfview.o gphview.o gphdraw.o gxydraw.o gtrdraw.o biosrc.o cdrgn.o import.o pubdesc.o seqsub.o mapgene.o prtgene.o ddvclick.o ddvcreate.o ddvgraph.o ddvopen.o ddvpanel.o
+cp -p libncbidesk.a ../lib
+ls -l ../lib/libncbidesk.a
+-rw-r--r--   1 coremake ncbi     3168050 Jan 31 14:16 ../lib/libncbidesk.a
+cc -fast -c  -I../include -DWIN_MOTIF corematx.c
+cc -fast -c  -I../include -DWIN_MOTIF dvncode.c
+cc -fast -c  -I../include -DWIN_MOTIF objmmdb1.c
+cc -fast -c  -I../include -DWIN_MOTIF objmmdb2.c
+cc -fast -c  -I../include -DWIN_MOTIF objmmdb3.c
+cc -fast -c  -I../include -DWIN_MOTIF mmdbapi.c
+cc -fast -c  -I../include -DWIN_MOTIF mmdbapi1.c
+cc -fast -c  -I../include -DWIN_MOTIF mmdbapi2.c
+cc -fast -c  -I../include -DWIN_MOTIF mmdbapi3.c
+cc -fast -c  -I../include -DWIN_MOTIF mmdbapi4.c
+cc -fast -c  -I../include -DWIN_MOTIF mmdbentr.c
+cc -fast -c  -I../include -DWIN_MOTIF vastsubs.c
+cc -fast -c  -I../include -DWIN_MOTIF prunebsc.c
+rm -f libncbimmdb.a
+ar cru libncbimmdb.a corematx.o dvncode.o objmmdb1.o objmmdb2.o objmmdb3.o mmdbapi.o mmdbapi1.o mmdbapi2.o mmdbapi3.o mmdbapi4.o mmdbentr.o vastsubs.o prunebsc.o
+cp -p libncbimmdb.a ../lib
+ls -l ../lib/libncbimmdb.a
+-rw-r--r--   1 coremake ncbi      778712 Jan 31 14:16 ../lib/libncbimmdb.a
+cc -fast -c  -I../include -DWIN_MOTIF csim.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF db_slist.c
+cc -fast -c  -I../include -DWIN_MOTIF dust.c
+cc -fast -c  -I../include -DWIN_MOTIF falign.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF g_any.c
+cc: Warning: g_any.c, line 92: The redefinition of the macro "DEL" conflicts with a current definition because the number of parameters is different.  The redefinition is now in effect.
+#define DEL(k)                          \
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF sim2.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF sim3.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF sim4.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF simutil.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF slist.c
+cc -fast -c  -I../include -DWIN_MOTIF sec.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF tfuns.c
+cc -fast -c  -I../include -DWIN_MOTIF toasn3.c
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc -fast -c  -I../include -DWIN_MOTIF toporg.c
+cc -fast -c  -I../include -DWIN_MOTIF pobutil.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF stsutil.c
+cc -fast -c  -I../include -DWIN_MOTIF suggadj.c
+cc -fast -c  -I../include -DWIN_MOTIF suggest.c
+cc -fast -c  -I../include -DWIN_MOTIF suggslp.c
+cc -fast -c  -I../include -DWIN_MOTIF blast.c
+cc -fast -c  -I../include -DWIN_MOTIF blastutl.c
+cc -fast -c  -I../include -DWIN_MOTIF blastool.c
+cc -fast -c  -I../include -DWIN_MOTIF splutil.c
+cc -fast -c  -I../include -DWIN_MOTIF gapxdrop.c
+cc -fast -c  -I../include -DWIN_MOTIF bandalg0.c
+cc -fast -c  -I../include -DWIN_MOTIF bandalg1.c
+cc -fast -c  -I../include -DWIN_MOTIF bandalg2.c
+cc -fast -c  -I../include -DWIN_MOTIF bandalg3.c
+cc -fast -c  -I../include -DWIN_MOTIF bandalg4.c
+cc -fast -c  -I../include -DWIN_MOTIF bandalg5.c
+cc -fast -c  -I../include -DWIN_MOTIF bandalgn.c
+cc -fast -c  -I../include -DWIN_MOTIF blastkar.c
+cc -fast -c  -I../include -DWIN_MOTIF posit.c
+cc -fast -c  -I../include -DWIN_MOTIF lookup.c
+cc -fast -c  -I../include -DWIN_MOTIF readdb.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbisam.c
+cc -fast -c  -I../include -DWIN_MOTIF ncbisort.c
+cc -fast -c  -I../include -DWIN_MOTIF salign.c
+cc -fast -c  -I../include -DWIN_MOTIF salptool.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF urkutil.c
+cc -fast -c  -I../include -DWIN_MOTIF urkpcc.c
+cc -fast -c  -I../include -DWIN_MOTIF urkptpf.c
+cc -fast -c  -I../include -DWIN_MOTIF urkepi.c
+cc -fast -c  -I../include -DWIN_MOTIF urkfltr.c
+cc -fast -c  -I../include -DWIN_MOTIF urkdust.c
+cc -fast -c  -I../include -DWIN_MOTIF urksigu.c
+cc -fast -c  -I../include -DWIN_MOTIF seg.c
+cc -fast -c  -I../include -DWIN_MOTIF urkbias.c
+cc -fast -c  -I../include -DWIN_MOTIF urkcnsrt.c
+cc -fast -c  -I../include -DWIN_MOTIF urktree.c
+cc -fast -c  -I../include -DWIN_MOTIF pseed3.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF pattern1.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF impatool.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -fast -c  -I../include -DWIN_MOTIF posit2.c
+cc -fast -c  -I../include -DWIN_MOTIF newkar.c
+cc -fast -c  -I../include -DWIN_MOTIF mbalign.c
+cc -fast -c  -I../include -DWIN_MOTIF mbutils.c
+cc -fast -c  -I../include -DWIN_MOTIF vecscrn.c
+rm -f libncbitool.a
+ar cru libncbitool.a csim.o db_slist.o dust.o falign.o g_any.o sim2.o sim3.o sim4.o simutil.o slist.o sec.o tfuns.o toasn3.o toporg.o pobutil.o stsutil.o suggadj.o suggest.o suggslp.o blast.o blastutl.o blastool.o splutil.o gapxdrop.o bandalg0.o bandalg1.o bandalg2.o bandalg3.o bandalg4.o bandalg5.o bandalgn.o blastkar.o posit.o lookup.o readdb.o ncbisam.o ncbisort.o salign.o salptool.o urkutil.o urkpcc.o urkptpf.o urkepi.o urkfltr.o urkdust.o urksigu.o seg.o urkbias.o urkcnsrt.o urktree.o pseed3.o pattern1.o impatool.o posit2.o newkar.o mbalign.o mbutils.o vecscrn.o
+cp -p libncbitool.a ../lib
+ls -l ../lib/libncbitool.a
+-rw-r--r--   1 coremake ncbi     2217638 Jan 31 14:17 ../lib/libncbitool.a
+cc -fast -c  -I../include -DWIN_MOTIF gdfontg.c
+cc -fast -c  -I../include -DWIN_MOTIF gdfontmb.c
+cc -fast -c  -I../include -DWIN_MOTIF gdfontt.c
+cc -fast -c  -I../include -DWIN_MOTIF pictogif.c
+cc -fast -c  -I../include -DWIN_MOTIF gdfontl.c
+cc -fast -c  -I../include -DWIN_MOTIF gdfonts.c
+cc -DWIN_GIF -fast -c  -I../include -DWIN_MOTIF ncbidrwg.c
+rm -f libvibgif.a
+ar cru libvibgif.a gdfontg.o gdfontmb.o gdfontt.o pictogif.o gdfontl.o gdfonts.o ncbidrwg.o drawing.o mapping.o picture.o ncbimain.o
+cp -p libvibgif.a ../lib
+ls -l ../lib/libvibgif.a
+-rw-r--r--   1 coremake ncbi      250960 Jan 31 14:17 ../lib/libvibgif.a
+cc -fast -c  -I../include -DWIN_MOTIF algorend.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dmsel.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dopen.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dsave.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dxprt.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dwin.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dentr.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dmsg.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dmatn.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dmodl.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dshim.c
+cc -fast -c  -I../include -DWIN_MOTIF cn3dmesh.c
+rm -f libncbicn3d.a
+ar cru libncbicn3d.a algorend.o cn3dmsel.o cn3dopen.o cn3dsave.o cn3dxprt.o cn3dwin.o cn3dentr.o cn3dmsg.o cn3dmatn.o cn3dmodl.o cn3dshim.o cn3dmesh.o
+cp -p libncbicn3d.a ../lib
+ls -l ../lib/libncbicn3d.a
+-rw-r--r--   1 coremake ncbi      448322 Jan 31 14:18 ../lib/libncbicn3d.a
+cc -o asntool -fast -I../include -DWIN_MOTIF  -L../lib asntool.c asncode.c ../lib/libncbi.a -lm
+cp -p asntool ../bin
+make -f makedemo.unx CFLAGS1="-fast -c" LDFLAGS1="-fast" SHELL="/usr/bin/sh" LCL="alf" RAN="ls -l" CC="cc" LIB4=-lvibrant VIBLIBS="-non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub" VIBFLAG="-DWIN_MOTIF"
+./ln-if-absent ../demo/*.* .
+./ln-if-absent ../internal/*.* .
+set: No match.
+make: [copy] Error 1 (ignored)
+chmod -R ug+rw,o+r .
+echo Waiting...go
+Waiting...go
+cc -o testcore -fast -I../include  -L../lib -DWIN_MOTIF testcore.c -lvibrant -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o makeset -fast -I../include  -L../lib -DWIN_MOTIF makeset.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o getmesh -fast -I../include  -L../lib -DWIN_MOTIF getmesh.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o indexpub -fast -I../include  -L../lib -DWIN_MOTIF indexpub.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o getpub -fast -I../include  -L../lib -DWIN_MOTIF getpub.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o testobj -fast -I../include  -L../lib -DWIN_MOTIF testobj.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o seqtest -fast -I../include  -L../lib -DWIN_MOTIF seqtest.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o dosimple -fast -I../include  -L../lib -DWIN_MOTIF dosimple.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o asn2ff -fast -I../include  -L../lib -DWIN_MOTIF asn2ff.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc: Warning: asn2ff.c, line 63: In this statement, the referenced type of the pointer value "message" is const, but the referenced type of the target of this assignment is not.
+	fprintf(fpl, "%s\n", message);
+--------^
+cc -o getseq -fast -I../include  -L../lib -DWIN_MOTIF getseq.c -lvibrant -lncbiacc -lncbicdr -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o getfeat -fast -I../include  -L../lib -DWIN_MOTIF getfeat.c -lvibrant -lncbiacc -lncbicdr -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o checksub -fast -I../include  -L../lib -DWIN_MOTIF checksub.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o asndhuff -fast -I../include  -L../lib -DWIN_MOTIF asndhuff.c -lvibrant -lncbiacc -lncbicdr -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o entrcmd -fast -I../include  -L../lib -DWIN_MOTIF entrcmd.c -lncbiacc -lncbicdr -lncbiobj -lncbi -lm
+cc -o asn2fast -fast -I../include  -L../lib -DWIN_MOTIF asn2fast.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o errhdr -fast -I../include  -L../lib -DWIN_MOTIF errhdr.c -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o cdscan -fast -I../include  -L../lib -DWIN_MOTIF cdscan.c -lvibrant -lncbiacc -lncbicdr -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o findspl -fast -I../include  -L../lib -DWIN_MOTIF findspl.c -lncbiacc -lncbicdr -lncbiobj -lncbi -lm
+cc -o ncbisort -fast -I../include  -L../lib -DWIN_MOTIF sortcmd.c -lncbitool -lncbi -lm
+cc -o fa2htgs -fast -I../include  -L../lib -DWIN_MOTIF fa2htgs.c -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub -lm
+cc -o fastacmd -fast -I../include  -L../lib -DWIN_MOTIF fastacmd.c -lncbitool -lncbiobj -lncbi -lm
+cc -o formatdb -fast -I../include  -L../lib -DWIN_MOTIF formatdb.c -lncbitool -lncbiobj -lncbi -lm
+cc -o blastall -fast -I../include  -L../lib -DWIN_MOTIF blastall.c  -lncbitool -lncbiobj -lncbi -lm 
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -o blastpgp -fast -I../include  -L../lib -DWIN_MOTIF blastpgp.c  -lncbitool -lncbiobj -lncbi -lm 
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -o testval -fast -I../include  -L../lib -DWIN_MOTIF testval.c -lncbiobj -lncbi -lm
+cc -o seedtop -fast -I../include  -L../lib -DWIN_MOTIF seedtop.c  -lncbitool -lncbiobj -lncbi -lm 
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -o fmerge -fast -I../include  -L../lib -DWIN_MOTIF fmerge.c -lncbitool -lncbiobj -lncbi -lm
+cc -o makemat -fast -I../include  -L../lib -DWIN_MOTIF makemat.c  -lncbitool -lncbiobj -lncbi -lm 
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -o copymat -fast -I../include  -L../lib -DWIN_MOTIF copymat.c  -lncbitool -lncbiobj -lncbi -lm 
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc: Warning: copymat.c, line 592: In this statement, & before array "(combinedMatrix[0])" is ignored.
+    FileWrite((void *) &(combinedMatrix[0]), sizeof(ScoreRow), 
+-----------------------^
+cc -o impala -fast -I../include  -L../lib -DWIN_MOTIF profiles.c  -lncbitool -lncbiobj -lncbi -lm 
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -o bl2seq -fast -I../include  -L../lib -DWIN_MOTIF bl2seq.c -lncbitool -lncbiobj -lncbi -lm
+cc -o megablst -fast -I../include  -L../lib -DWIN_MOTIF megablst.c  -lncbitool -lncbiobj -lncbi -lm 
+cc -o vecscreen -fast -I../include  -L../lib -DWIN_MOTIF vecscreen.c  -lncbitool -lncbiobj -lncbi -lm 
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+make -f makedemo.unx CFLAGS1="-fast -c" LDFLAGS1="-fast" SHELL="/usr/bin/sh" LCL="alf" RAN="ls -l" CC="cc" THREAD_OBJ=ncbithr.o THREAD_OTHERLIBS=-lpthread LIB4=-lvibrant VIBLIBS="-non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub" VIBFLAG="-DWIN_MOTIF" blastall blastpgp seedtop
+cc -o blastall -fast -I../include  -L../lib -DWIN_MOTIF blastall.c ncbithr.o -lncbitool -lncbiobj -lncbi -lm -lpthread
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -o blastpgp -fast -I../include  -L../lib -DWIN_MOTIF blastpgp.c ncbithr.o -lncbitool -lncbiobj -lncbi -lm -lpthread
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -o seedtop -fast -I../include  -L../lib -DWIN_MOTIF seedtop.c ncbithr.o -lncbitool -lncbiobj -lncbi -lm -lpthread
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+make -f makenet.unx CFLAGS1="-fast -c " LDFLAGS1="-fast" SHELL="/usr/bin/sh" CC="cc" RAN="ls -l" OTHERLIBS="-lm" NETENTREZVERSION="2.02c2ASN1SPEC6 " BLIB31=libvibnet.a VIBLIBS="-non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub " VIBFLAG="-DWIN_MOTIF" VIB="Psequin Nentrez Cn3D udv ddv blastcl3 "
+./ln-if-absent ../connect/test/*.c .
+./ln-if-absent ../network/entrez/client/*.h ../include
+./ln-if-absent ../network/entrez/client/*.c .
+./ln-if-absent ../network/medarch/client/*.h ../include
+./ln-if-absent ../network/medarch/client/*.c .
+./ln-if-absent ../network/taxonomy/client/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/taxonomy/client/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/taxon1/stdalone/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/taxon1/stdalone/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/taxon1/client/*.h ../include
+./ln-if-absent ../network/taxon1/client/*.c .
+./ln-if-absent ../network/taxon1/common/*.h ../include
+./ln-if-absent ../network/taxon1/common/*.c .
+./ln-if-absent ../network/taxon1/taxon2/*.h ../include
+./ln-if-absent ../network/taxon1/taxon2/*.c .
+./ln-if-absent ../network/id0arch/client/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/id0arch/client/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/id1arch/*.h ../include
+./ln-if-absent ../network/id1arch/*.c .
+./ln-if-absent ../network/spell/client/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/spell/client/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/suggest/client/*.h ../include
+./ln-if-absent ../network/suggest/client/*.c .
+./ln-if-absent ../network/blast3/client/*.h ../include
+./ln-if-absent ../network/blast3/client/*.c .
+./ln-if-absent ../network/encrypt/ripem/rsaref/source/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/socks/socks.cstc.4.2/lib/*.c .
+./ln-if-absent ../internal/misc/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/misc/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/ssparse/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/ssparse/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/libparsn/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/libparsn/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/smart/smartnet/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/smart/smartnet/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/www/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/www/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/query/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../internal/query/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/sybutils/ctlib/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/sybutils/ctlib/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/sybutils/oslib/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/sybutils/oslib/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/sybutils/idloadlib/*.c .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/sybutils/idloadlib/*.h ../include
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/nsclilib/*.h ../include
+./ln-if-absent ../network/nsclilib/*.c .
+./ln-if-absent ../network/vibnet/*.c .
+./ln-if-absent ../network/vibnet/*.h ../include
+./ln-if-absent ../cdromlib/*.h ../include
+./ln-if-absent ../cdromlib/accentr.c .
+./ln-if-absent ../cdromlib/accutils.c .
+./ln-if-absent ../sequin/*.* .
+./ln-if-absent ../demo/entrez.c .
+./ln-if-absent ../demo/netentcf.c .
+./ln-if-absent ../demo/seqget.c .
+./ln-if-absent ../demo/entrcmd.c .
+./ln-if-absent ../demo/batch.c .
+./ln-if-absent ../demo/nbatch.c .
+./ln-if-absent ../demo/elecpcr.c .
+./ln-if-absent ../demo/fetchent.c .
+./ln-if-absent ../demo/udvmain.c .
+./ln-if-absent ../demo/srchnt.c ../demo/srchaa.c ../demo/mts.c ../demo/sigme.c ../demo/dst.c ../demo/ccp.c ../demo/epi.c ../demo/twop.c ../demo/cnsrt.c ../demo/cnsgn.c ../demo/ccpv.c ../demo/dustv.c ../demo/epiv.c ../demo/sigmev.c ../demo/twopv.c ../demo/cnsrtv.c ../demo/cnsgnv.c ../demo/searchv.c .
+./ln-if-absent ../network/entrez/server/*.* .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/suggest/server/*.* .
+./ln-if-absent ../network/nsdaemon/*.* .
+set: No match.
+make: [copy] Error 1 (ignored)
+./ln-if-absent ../network/nsdemocl/*.* .
+chmod -R ug+rw,o+r .
+echo Waiting...go
+Waiting...go
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \""  ni_lib_.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" ncbicli.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" ncbiurl.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \""  ni_www.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" ni_debug.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" ni_disp.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" ni_msg.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" ni_error.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" ni_encrs.c
+rm -f libnetcli.a
+ar cru libnetcli.a ni_lib_.o ncbicli.o ncbiurl.o ni_www.o ni_debug.o ni_disp.o ni_msg.o ni_error.o ni_encrs.o
+cp -p libnetcli.a ../lib
+ls -l ../lib/libnetcli.a
+-rw-r--r--   1 coremake ncbi      297544 Jan 31 14:19 ../lib/libnetcli.a
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" ni_lib.c
+rm -f libnetcli_.a
+ar cru libnetcli_.a ni_lib.o ni_msg.o ni_error.o ni_encrs.o
+cp -p libnetcli_.a ../lib
+ls -l ../lib/libnetcli_.a
+-rw-r--r--   1 coremake ncbi      228166 Jan 31 14:19 ../lib/libnetcli_.a
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" netentr.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" netlib.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" objneten.c
+rm -f libnetentr.a
+ar cru libnetentr.a netentr.o netlib.o objneten.o
+cp -p libnetentr.a ../lib
+ls -l ../lib/libnetentr.a
+-rw-r--r--   1 coremake ncbi      300656 Jan 31 14:20 ../lib/libnetentr.a
+./ln-if-absent accentr.c Naccentr.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" -D_NETENT_ Naccentr.c
+rm -f libncbiNacc.a
+ar cru libncbiNacc.a Naccentr.o accutils.o
+cp -p libncbiNacc.a ../lib
+ls -l ../lib/libncbiNacc.a
+-rw-r--r--   1 coremake ncbi       86642 Jan 31 14:20 ../lib/libncbiNacc.a
+./ln-if-absent accentr.c Caccentr.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" -D_NET_AND_CD_ Caccentr.c
+rm -f libncbiCacc.a
+ar cru libncbiCacc.a Caccentr.o accutils.o
+cp -p libncbiCacc.a ../lib
+ls -l ../lib/libncbiCacc.a
+-rw-r--r--   1 coremake ncbi       92234 Jan 31 14:20 ../lib/libncbiCacc.a
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" netcnfg.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" trmlst.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" docsum.c
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+rm -f libvibnet.a
+ar cru libvibnet.a netcnfg.o trmlst.o docsum.o
+cp -p libvibnet.a ../lib
+ls -l ../lib/libvibnet.a
+-rw-r--r--   1 coremake ncbi      305710 Jan 31 14:20 ../lib/libvibnet.a
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" objtax1.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" taxutil.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" -c -o tc2dproc.o -DTAXSERVICE tc2proc.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" -c -o txcdproc.o -DTAXSERVICE txcdproc.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" parttree.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" taxcs.c
+rm -f libncbitxc2.a
+ar cru libncbitxc2.a objtax1.o taxutil.o tc2dproc.o txcdproc.o parttree.o taxcs.o
+cp -p libncbitxc2.a ../lib
+ls -l ../lib/libncbitxc2.a
+-rw-r--r--   1 coremake ncbi      190068 Jan 31 14:20 ../lib/libncbitxc2.a
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" id1gen.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" id1arch.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" accid1.c
+rm -f libncbiid1.a
+ar cru libncbiid1.a id1gen.o id1arch.o accid1.o 
+cp -p libncbiid1.a ../lib
+ls -l ../lib/libncbiid1.a
+-rw-r--r--   1 coremake ncbi       64478 Jan 31 14:20 ../lib/libncbiid1.a
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" objblst3.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" netblap3.c
+rm -f libnetblast.a
+ar cru libnetblast.a objblst3.o netblap3.o
+cp -p libnetblast.a ../lib
+ls -l ../lib/libnetblast.a
+-rw-r--r--   1 coremake ncbi      194888 Jan 31 14:20 ../lib/libnetblast.a
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" -DNLM_OBJ_INCL=\"mapmla.h\" objmla.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" medarch.c
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" medutil.c
+rm -f libncbimla.a
+ar cru libncbimla.a objmla.o medarch.o medutil.o
+cp -p libncbimla.a ../lib
+ls -l ../lib/libncbimla.a
+-rw-r--r--   1 coremake ncbi      110092 Jan 31 14:20 ../lib/libncbimla.a
+cc -o Psequin -I. -fast -I../include  -L../lib -DWIN_MOTIF -UINTERNAL_NCBI_SEQUIN sequin1.c sequin2.c sequin3.c sequin4.c sequin5.c sequin6.c sequin7.c sequin8.c sequin9.c sequinx.c \
+-lncbicn3d -lncbidesk -lncbimmdb -lncbitxc2 -lncbiid1 -lnetblast -lncbitool -lncbimla \
+-lncbiNacc -lnetentr -lnetcli -lncbicdr -lvibnet -lvibrant -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub  -lm
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc: Warning: ../include/asn2ff6.h, line 154: The redefinition of the macro "LAST" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define LAST ( (Uint1)1)
+-------------^
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc: Warning: ../include/simutil.h, line 208: The redefinition of the macro "DEL" conflicts with a current definition because the replacement lists differ.  The redefinition is now in effect.
+#define DEL ((Uint1)2)
+------------^
+cc -o netentcf -fast -I../include  -L../lib -DWIN_MOTIF netentcf.c -lvibnet -lncbidesk -lvibrant -lncbitool -lncbicdr -lncbiNacc -lnetentr -lnetcli -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub  -lm
+cc -o Nentrez -fast -I../include  -L../lib -DWIN_MOTIF entrez.c -lvibnet -lncbicn3d -lncbidesk -lncbimmdb -lncbitool -lncbiNacc -lnetentr -lnetcli -lncbiacc -lvibrant -lncbicdr -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub  -lm
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" cn3dmain.c
+cc -o Cn3D -fast -I../include  -L../lib -DWIN_MOTIF cn3dmain.o -lvibnet -lncbicn3d -lncbidesk \
+	-lncbimmdb -lncbitool -lncbiNacc -lnetentr -lnetcli \
+	-lvibrant -lncbicdr -lncbiobj -lncbi -non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub  -lm
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" udvmain.c
+cc -o udv -fast -I../include  -L../lib -DWIN_MOTIF udvmain.o -lncbiid1 -lvibnet -lncbidesk \
+-lncbiNacc -lnetentr -lnetcli -lncbicdr -lvibrant -lncbitool -lncbiobj -lncbi \
+-non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub  -lm
+cc -fast -c  -I../include -DWIN_MOTIF -DNETENTREZVERSION="\"2.02c2ASN1SPEC6  \"" ddvmain.c
+cc -o ddv -fast -I../include  -L../lib -DWIN_MOTIF ddvmain.o -lncbiid1 -lvibnet -lncbidesk \
+-lncbiNacc -lnetentr -lnetcli -lncbicdr -lvibrant -lncbitool -lncbiobj -lncbi \
+-non_shared -lXm -lXmu -lXt -lX11 -lXext -lSM -lICE -ldnet_stub  -lm
+cc -g -o blastcl3 -fast -I../include  -L../lib -DWIN_MOTIF blastcl3.c -lnetblast -lncbitool -lnetcli -lncbiobj -lncbi -lm
+cc: Warning: File not optimized; use -g3 if both optimization and debug wanted.
+putting date stamp to the file ../VERSION
+*********************************************************
+*The new binaries are located in ./ncbi/build/ directory*
+*********************************************************
+annie|/work/toolbox|509> exit
+exit
+
+script done on Mon Jan 31 14:41:13 2000
+
+If all is correct, you will find newly built executables in
+the directory ./ncbi/build/
+
+Good luck!
+
+
+=======================================================================	
+ $Id: readme.unx,v 6.17 2001/12/12 20:37:50 beloslyu Exp $
+=======================================================================	

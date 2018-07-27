@@ -1,0 +1,200 @@
+.TH TEST_SOCKD_CONF 8 "August 6, 1993"
+.SH NAME
+test_sockd_conf \- Test the configuration file of \fIsockd\fR proxy server
+.SH SYNOPSIS
+\fBtest_sockd_conf [ \-I | \-i | \-B ] [ \-R \fIroute_file\fB] [ \-C \fIsockd_conf\fB ] \fIuser  src_addr  dst_addr  dst_port\fR
+.SH DESCRIPTION
+\fItest_sockd_conf\fR is used for testing whether your configuration file
+for the \fIsockd\fR proxy server is set up correctly. See \fIsockd\fR(8)
+and \fIsockd.conf\fP(5) for details on the proxy server and the format
+of the configuration file.
+
+\fIsockd\fR uses the configuration file to determine whether a request
+for its service should be granted or denied, based on who the requesting
+user is, from which host the request originates, which host the
+request is trying to reach, and to which port number the request
+is trying to connect. It is not always obvious by looking at the
+configuration file whether it indeed grants all legitimate service requests
+and blocks all undesirable ones. You can use \fItest_sockd_conf\fR to
+make sure that the configuration does what you want it to do.
+
+For the multi-homed version of \fIsockd\fP, this program also checks
+the routing file \fI/etc/sockd.route\fP to indicated which interface
+on the server host will be used to reach the destination host. See
+\fIsockd.route\fP(5).
+
+\fIuser\fR is the id of an user on the request host. \fIsrc_addr\fR is
+the IP address of the request host. \fIdst_addr\fR is the IP address of
+the destination host. You may use domain names in place of the IP addresses
+if your system can resolve the names properly. \fIdst_port\fR is the
+port number on the destination host that the request wants to connect to.
+It can be replaced by the equivalent services name as specified in
+file \fB/etc/services\fP, e.g., \fBtelnet\fP and 23 are equivalent
+in this field.
+
+These parameters together forms a hypothetical service request which
+\fItest_sockd_conf\fR feeds to the access control mechanism of \fIsockd\fR.
+\fItest_sockd_conf\fR echoes the aguments, then prints either the line in the
+configuration file which matches the request if one is found or
+an indication that access is denied if no match if found in the entire file.
+If the matching line contains the optional shell command field, the command(s)
+will be executed. The program also produces log entries similar to what
+\fIsockd\fR does, which usually appear in file \fB/var/adm/messages\fP.
+You can also test the special entries #NO_IDENTD: and #BAD_ID: by specifying
+option \fB\-I\fP, \fB\-i\fP, or \fB\-B\fP. For multi-homed version, it also
+search the routing file to decide which network interface should be used
+for connection to the destination host.
+
+The program exits with code 1 if the request is permitted, 0 if denied.
+If errors in the arguments are found, it exits with code -1.
+.SH OPTION
+.TP
+\fB\-C\fI sockd_conf\fR
+Use \fIsockd_conf\fR as the configuration file to be tested. File
+\fB/etc/sockd.conf\fR is used by default.
+.TP
+.B\-I
+Simulate the situation when \fIsockd\fR is run with option \fB\-I\fP and
+the client host does not run \fIidentd\fP.
+.TP
+.B\-i
+Simulate the situation when \fIsockd\fR is run with option \fB\-i\fP and
+the client host does not run \fIidentd\fP.
+.TP
+.B\-B
+Simulate the situation when \fIsockd\fR is run with either \fB\-I\fP or
+\fB\-i\fP and the \fIidentd\fR on the client host reports a user-id
+different from what the client program claims.
+.TP
+.B\-R\fI route_file\fR
+Use \fIroute_file\fR as the routing file to be tested. File
+\fB/etc/sockd.route\fR is used by default. This option is allowed only
+with multi-homed version of SOCKS server.
+.SH EXAMPLES
+Assume that file \fB/etc/sockd.conf\fR consists of these lines:
+
+.nf
+.in +1
+deny	*=clyde	128.12.6.0 255.255.255.0 : /usr/ucb/mail -s 'Rejected SOCKS access by %u' root
+permit	*=root	128.12.6.4 255.255.255.255 137.12.0.0 255.255.0.0
+deny		128.12.0.0 255.255.0.0 eq telnet
+permit		128.12.0.0 255.255.0.0
+#NO_IDENTD: /usr/ucb/mail -s 'please run identd on %A' root@%A
+#BAD_ID: /usr/ucb/mail -s '%U pretends to be %u on %A' root
+
+
+Also assume that the file \fB/etc/sockd.route\fR consists of these line:
+129.10.1.2	10.0.0.0.0 255.0.0.0
+129.10.7.10	137.12.0.0 255.255.0.0
+129.10.254.1	0.0.0.0 0.0.0.0
+.in -1
+
+Following are the results of a few tests.
+
+.nf
+.in +1
+\fBtest_sockd_conf clyde 128.12.6.34 112.3.24.1 ftp\fR
+USER:clyde,  SRC:128.12.6.34,  DST:112.3.24.1, PORT:21
+Line 1: deny	*=clyde	128.12.6.0 255.255.255.0 : /usr/ucb/mail -s 'Rejected SOCKS access by %u' root
+.in -1
+.fi
+A mail message is sent to root with the subject line 'Rejected SOCKS
+access by clyde'.
+.in +1
+.nf
+
+\fBtest_sockd_conf root 128.12.6.4 137.12.4.15 telnet\fR
+USER:root,  SRC:128.12.6.4,  DST:137.12.4.15, PORT:23
+Line 2: permit	*=root	128.12.6.4 255.255.255.255 137.12.0.0 255.255.0.0
+==== Checking routing file (sockd.route)...
+Line 2: 129.10.7.10	137.12.0.0 255.255.0.0
+
+\fBtest_sockd_conf jane 128.12.2.13 137.12.4.15 telnet\fR
+USER:jane,  SRC:128.12.2.13,  DST:137.12.4.15, PORT:23
+Line 3: deny    128.12.0.0 255.255.0.0 eq telnet
+
+\fBtest_sockd_conf jim 128.12.6.4 126.87.13.2 telnet\fR
+USER:jim,  SRC:128.12.6.4,  DST:126.87.13.2, PORT:23
+Line 3: deny    128.12.0.0 255.255.0.0 eq telnet
+
+\fBtest_sockd_conf root 128.12.6.4 126.87.13.2 ftp\fR
+USER:root,  SRC:128.12.6.4,  DST:126.87.13.2, PORT:21
+Line 4: permit  128.12.0.0 255.255.0.0
+==== Checking routing file (sockd.route)...
+Line 3: 129.10.254.1	0.0.0.0 0.0.0.0
+
+\fBtest_sockd_conf sam 128.12.36.7 10.53.23.1 70\fR
+USER:sam,  SRC:128.12.36.7,  DST:10.53.23.1, PORT:70
+Line 4: permit  128.12.0.0 255.255.0.0
+==== Checking routing file (sockd.route)...
+Line 1: 129.10.1.2	10.0.0.0 255.0.0.0
+
+\fBtest_sockd_conf don 23.2.6.127 10.53.23.1 70\fR
+USER:don,  SRC:23.2.6.127,  DST:10.53.23.1, PORT:70
+ *** No match with any line. Access denied.
+
+\fBtest_sockd_conf clyde 128.12.1.62 112.3.24.1 ftp\fR
+USER:clyde,  SRC:128.12.1.62,  DST:112.3.24.1, PORT:21
+Line 4: permit  128.12.0.0 255.255.0.0
+==== Checking routing file (sockd.route)...
+Line 3: 129.10.254.1	0.0.0.0 0.0.0.0
+
+\fBtest_sockd_conf -I joe 128.12.6.4 126.87.13.2 ftp\fR
+USER:joe,  SRC:128.12.6.4,  DST:126.87.13.2, PORT:21
+Line 5: #NO_IDENTD: /usr/ucb/mail -s 'please run identd on %a' root@%A
+Access denied: cannot verify user-id.
+.in -1
+.fi
+A mail message is sent to root of the host 128.12.6.4 with the
+subject line 'please run identd on 128.12.6.4'.
+.nf
+.in +1
+
+\fBtest_sockd_conf -i joe 128.12.6.4 126.87.13.2 ftp\fR
+USER:joe,  SRC:128.12.6.4,  DST:126.87.13.2, PORT:21
+Line 5: #NO_IDENTD: /usr/ucb/mail -s 'please run identd on %a' root@%A
+Line 4: permit          128.12.0.0 0.0.255.255
+==== Checking routing file (sockd.route)...
+Line 3: 129.10.254.1	0.0.0.0 0.0.0.0
+.in -1
+.fi
+A mail message is sent to root of the host 128.12.6.4 with the
+subject line 'please run identd on 128.12.6.4'.
+.nf
+.in +1
+
+\fBtest_sockd_conf -i jim 128.12.6.4 126.87.13.2 telnet\fR
+USER:jim,  SRC:128.12.6.4,  DST:126.87.13.2, PORT:23
+Line 5: #NO_IDENTD: /usr/ucb/mail -s 'please run identd on %a' root@%A
+Line 3: deny    128.12.0.0 0.0.255.255 eq telnet
+.in -1
+.fi
+A mail message is sent to root of the host 128.12.6.4 with the
+subject line 'please run identd on 128.12.6.4'.
+.nf
+.in +1
+
+\fBtest_sockd_conf -B joe 128.12.6.4 126.87.13.2 ftp\fR
+USER:joe,  SRC:128.12.6.4,  DST:126.87.13.2, PORT:21
+Line 6: #BAD_ID: /usr/ucb/mail -s '%U pretends to be %u on %A' root
+Access denied: bad user-id.
+.in -1
+.fi
+A mail message is sent to root with the
+subject line 'unknown pretends to be joe on 128.12.6.4'.
+
+Note that lines in a configuration file may combine to act in a way
+that could surprise you. Be sure you run through a thorough sequence
+of tests after every modification. You may be caught 
+surprise if you only run tests on the types of
+requests that you believe you are trying to affect.
+
+.SH FILES
+\fB/etc/sockd.conf\fR, \fB/var/adm/messages\fP
+
+.SH SEE ALSO
+\fIsockd\fR(8), \fIsockd.conf\fR(5), \fIsockd.route\fR(5), \fIsocks.conf\fR(5),
+\fIsocks_clients\fR(1)
+
+.SH AUTHOR
+Ying-Da Lee, ylee@syl.dl.nec.com

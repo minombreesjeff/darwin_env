@@ -1,0 +1,62 @@
+
+General Information for BLAST Developers on IBM-AIX Systems
+===========================================================
+
+ To compile the toolkit under AIX follow the steps in readme.unx
+
+ AIX Specific information
+ ------------------------
+
+ The following files are the main platform dependent files
+
+ 1.  makedis.csh in ./ncbi/make
+
+ 2.  ibm_pwr3.ncbi.mk and ibm_auto.ncbi.mk in ./ncbi/platform
+
+ 3.  ncbilcl.ibm in ./ncbi/corelib
+
+
+makedis.csh:
+
+     This file identifies the machine model via uname -M and assigns
+     the corresponding architecture.  Currently, AIX Power3 is the
+     only architecture explicitly targeted.  All other architectures
+     are identified as auto.  auto refers to the compiler flag that
+     will check the architecture and build corresponding executables.
+     The auto flag assumes that the execution environment is the same
+     as the compilation environment.
+
+ibm_xxxx.ncbi.mk:
+
+     Currently xxxx can be either pwr3 or auto.  This notation is 
+     consistent with the compiler flags for the -qarch= option. 
+     This notation allows to easily target other architectures within
+     the IBM systems.  This file contains compiler and loader flags
+     specific for IBM.
+
+ncbilcl.ibm:
+
+     Pre-processor defines / platform specific.
+
+
+
+Multi-threading
+---------------
+
+
+     When running multi-threaded it may be beneficial to set the
+     following environment variables:
+
+	AIXTHREAD_SCOPE=S
+	MALLOCMULTIHEAP=true
+
+     Addional benefit is possibly achieved by experimenting with 
+     the value of the environment variables SPINLOOPTIME and 
+     YIELDLOOPTIME. The user might initially try values of 500 
+     for each of these and vary them to see the effect.  These 
+     variables affect the behavior of a thread at the end of a 
+     parallel region. Generally, best application (though not
+     necessarily system throughput) performance is achieved by 
+     putting an idle thread into a busy wait rather than letting 
+     it sleep.  Setting SPINLOOPTIME and YIELDLOOPTIME to a suitable 
+     "large" number encourages the former behavior. 

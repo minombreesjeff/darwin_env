@@ -1,0 +1,21 @@
+This directory contains the NCBI ToolKit documentation, such as it is. Be
+warned that this is sadly, often behind the tools themselves, and that we
+have not had the time or resources to document as fully as one would like.
+Look also in the demo directory at the .c files which give many examples of
+using the toolkit. Be sure to look over the .h files at the end of each
+chapter (or better yet, from the toolkit itself) where the definative list
+of functions and arguments are to be found.
+
+This document is a Microsoft Word for Windows document. Be sure to transfer
+it in binary mode. If you want to use it on a Mac, the Mac MS Word will
+convert it on input. However, due to differences in fonts, you will need to
+update the main table contents. Also, in the Mac print dialogue, be sure to
+use the "Color/Greyscale" option to see the figures properly (you don't need
+a color printer, it's the greyscale we need). Older versions of Word will
+not be able to read this file. This is not an endorsement or recommendation
+for MS Word, it just happens to be the word processor we used to make it.
+
+The document is about 300 pages long. If you would like a hardcopy, we will
+send you one. Just email to toolbox@ncbi.nlm.nih.gov, or phone 301-496-2475
+and ask for a hardcopy of the software toolkit manual to be mailed to you.
+Be sure to give us your name and address.

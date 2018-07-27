@@ -1,0 +1,21 @@
+In order to use the NCBI network services in conjunction with the PC-NFS 4.0
+development tools, it is necessary to copy and create the following directories
+into this directory after you have installed PC-NFS development software
+version 4.0a:
+
+include (including all its associated subdirectories)
+borlib
+msclib
+
+These files are copyrighted by Sun Microsystems, so it is not possible for
+NCBI to distribute them in its software tree.
+
+Note that you may, e.g., refrain from copying the msclib directory if
+you are only using the Borland compiler, and conversely.
+
+Note that applications developed in this environment must (according to
+the PC-NFS documentation) only be run with PC-NFS version 4.0 or 4.0a.
+
+Note that for PC-NFS version 5.0 and up, you should ignore this
+directory and instead use the instructions which appear in the winsock
+directory of this source tree, since PC-NFS 5.0 is WinSock-compliant.

@@ -1,0 +1,392 @@
+=+= README =+============Last update: April 4, 2000 ============
+
+the latest version of this document can be found at:
+
+ftp://ftp.ncbi.nih.gov/fa2htgs/README
+
+-----
+
+After having consulted with NCBI staff (see contact information below)
+submitters from Genome Sequencing centers will establish what the best
+protocol will be for them to deposit their sequence submission data to
+NCBI.
+
+One of these protocol may require the fa2htgs tool, present in this
+directory. fa2htgs is a program used to generate Seq-submits (an ASN.1
+sequence submission file) for high throughput genome sequencing
+projects. Presently we have built fa2htgs for the following platforms:
+
+   alphaOSF1.tar.Z
+      ibmaix.tar.Z
+       linux.tar.Z
+         sgi.tar.Z
+     solaris.tar.Z
+         sun.tar.Z
+ win32/fa2htgs.exe (win95/NT)
+
+If fa2htgs is required for a platform not present here, 
+please let us know (address below) and we will be happy to 
+try to provide it.
+
+fa2htgs will read a FASTA file (or an Ace Contig file with Phrap sequence 
+quality values), a Sequin submission template file, (to get contact 
+and citation information for the submission), and a series of command line
+arguments (see below).  This program will then combines these
+information to make a submission suitable for GenBank. Once you have
+generated your submission file, you need to follow the submission
+protocol (see the README present on your FTP account or mailed out to
+your Center).
+
+fa2htgs is intended for the automation by scripts for bulk submission of
+unannotated genome sequence. It can easily be extended from its current
+simple form to allow more complicated processing.  A submission
+prepared with fa2htgs can also be read into Sequin, and then annotated
+more extensively.  See the Sequin home page at:
+
+http://www.ncbi.nlm.nih.gov/Sequin/
+
+. Contacting NCBI about HTGS submissions and about using fa2htgs:
+
+  Questions and concerns about this processing protocol, or how to 
+  use this tool should be forwarded to:
+
+  htgs@ncbi.nlm.nih.gov.
+
+
+=========+=========
+
+using fa2htgs:
+
+typing "fa2htgs -" will cause the program to show its command line
+arguments. Below we show these with additional comments (what we show
+within { } does not appear on the command line)
+
+fa2htgs 2.0   arguments:
+
+  -i  Filename for fasta input [File In]
+    default = stdin
+  -t  Filename for Seq-submit template [File In]
+    default = template.sub
+  -o  Filename for asn.1 output [File Out]  Optional
+    default = stdout
+  -e  Log errors to file named: [File Out]  Optional
+  -n  Organism name? [String]  Optional
+    default = Homo sapiens
+  -s  Sequence name? [String]
+
+     { The sequence must have a name that is unique within     }
+     { the genome center. We use the combination of the genome }
+     { center name (-g argument) and the sequence name (-s) to }
+     { track this sequence and to talk to you about it.        }
+     { The name can have any form you like but must be unique  }
+     { within your center.
+
+  -l  length of sequence in bp? [Integer]
+
+     { The length is checked against the actual number of      }
+     { bases we get. For phase 1 and 2 sequence it is also     }
+     { used to estimate gap lengths. For phase 1 and 2         }
+     { records, it is important to use a number GREATER than   }
+     { the amount of provided nucleotide, otherwise this will  }
+     { generate false 'gaps'.  Here is assumed that the        }
+     { putative full length of the BAC or cosmid will be used. } 
+     { There should be at least 20 to 30 'n' in between the    }
+     { segments (you can check for these in Sequin), as this   }
+     { will ensure proper behavior when this sequence          }
+     { is used with BLAST.  Otherwise 'artifactual' unrelated  }
+     { segment neighbors may be brought into proximity of      }
+     { each other.                                             }
+
+  -g  Genome Center tag? [String]
+
+     { This is probably the same as your login name on the     }
+     { NCBI FTP server                                         }
+
+  -p  HTGS phase? [Integer]
+    default = 1
+    range from 1 to 3
+ 
+     { Phase 1 - a collection of unordered contigues with      }
+     {           gaps of unknown length.  Phase 1 record must  }
+     {           at the very least have two segments with      }
+     {           one gap.                                      }
+     { Phase 2 - a series of ordered contigs, gap lengths may  }
+     {           be known.  This could be a single sequence,   }
+     {           without gaps, if the sequence has ambiguities }
+     {           which will be resolved.                       }
+     { Phase 3 - a single contiguous sequence.  This sequenced }
+     {           is finished, although it may, or may not      } 
+     {           be annotated.                                 }
+
+  -a  GenBank accession (if an update) [String]  Optional
+   
+     { this argument is required if this is an update, do      }
+     { not use it if you are preparing a new submission        }
+
+  -r  Remark for update? [String]  Optional
+
+     { if this is an update, you can add a brief comment       }
+     { (within "") describing the nature of the update         }
+     { ("new sequence", "new citation", "updated features")    }
+
+  -c  Clone name? [String]  Optional
+    
+     { will appear as /clone in the source feature             }
+     { This could be the same as the -s argument (sequence     }
+     { name) but this one will appear in the /clone qualifier  }
+
+  -h  Chromosome? [String]  Optional
+
+     { will appear as /chromsome in the source feature         }
+
+  -d  Title for sequence? [String]  Optional
+
+     { the text that will appear in the DEFINITION line        }
+     { of the GenBank flatfile.                                }
+
+  -m  Take comment from template ? [T/F]  Optional
+    default = F
+  -u  Take biosource from template ? [T/F]  Optional
+    default = F
+  -x  Secondary accession number, separate by commas if multiple, s.t. U10000,L11000 [String]  Optional
+
+      [ ACCESSION AC000000 L00000                               }
+      {           ^        ^                                    }
+      {           |        secondary accession number           }
+      {           primary accession number                      }
+      {                                                         }
+      { In some cases a large segment will supercede another    }
+      { or group of other accession numbers (records).  These   }
+      { records which are no longer wanted in GenBank should be } 
+      { made secondary. Using the -x argument you can list the  }
+      { Accession Numbers you want to make secondary.  This will} 
+      { instruct us to remove the accession number(s) from      }
+      { GenBank, and will no longuer be part of the GenBank     }
+      { release. They will nonetheless be available from Entrez.}
+      {                                                         }
+      { !!GREAT CARE should be taken when using this argument!!!}
+      { inproper use of accession numbers here will result in   }
+      { the innapropriate withdrawal of GenBank records from    }
+      { GenBank, EMBL and DDBJ.  We provide this parameter as   }
+      { a conveniance to submitting centers, but this may need  }
+      { removed if it is not used carefully.                    }
+
+  -C  Clone library name? [String]  Optional
+    
+     { will appear as /clone-lib="string" on the source feature }
+
+  -M  Map? [String]  Optional
+    
+     { will appear as /map="string" on the source feature       }
+
+  -O  Filename for the comment: [File In]  Optional
+    
+     { will read the comment from a given file.                 }
+     { maximum 100 characters per line.                         }
+     { new lines can be incorporated with "~", and if you       }
+     { actually want to include the "~" in your text, you       }
+     { need to escape it with "`".  Please ensure that the      }
+     { correct format is obtained by viewing your comment       }
+     { in Sequin.                                               }
+
+
+  -T  Filename for phrap input [File In]  Optional
+
+     { Using this argument infers that you are NOT using the    }
+     {  -i above                                                }
+
+  -P  Contigs to use, separate by commas if multiple [String]  Optional
+  
+     { if -P is not indicated with the -T option, then the      }
+     { fragments will go in in the order that they are in the   }
+     { ace file (which is appropriate for a phase 1 record,     }
+     { but not for a phase 2 or 3.  If you need to set the      }
+     { order of the segments of the ace file, you need to set   }
+     { it with the -P flag, like this:                          }
+     { -P "Contig1,Contig4,Contig3,Contig2,Contig5"             }
+
+
+  -A  Filename for accession list input [File In]  Optional
+
+     { Using this argument infers that you are NOT using the    }
+     {  -i or -T arguments above.  The input file contains a    }
+     { tab-delimited table with three to five columns, which    }
+     { are accession number, start position, stop position,     }
+     { and (optionally) length and  strand.  If start > stop,   }
+     { the minus strand on the referenced accession is used.    }
+     { A gap is indicated by the word "gap" instead of an       }
+     { accession, 0 for the start and stop positions, and a     }
+     { number for the length.                                   }
+
+  -X  Coordinates are on the resulting sequence ? [T/F]  Optional
+    default = F
+  
+     { if -X is TRUE, then the coordinates in the input file    }
+     { are on the resulting segmented sequence.  This implies   }
+     { that bases 1 through n of each accession are used.       }
+     { if -X is FALSE, the coordinates are on the individual    }
+     { accessions, and these need not start at base 1 of the    }
+     { record.                                                  }
+
+
+  -D  HTGS_DRAFT sequence? [T/F]  Optional
+    default = F
+
+  -S  Strain name? [String]  Optional
+
+  -b  Gap length [Integer]
+    default = 100
+    range from 0 to 1000000000
+  
+  -N  Annotate assembly_fragments [T/F]  Optional
+    default = F
+  
+  -6  SP6 clone (e.g., Contig1,left) [String]  Optional
+  
+  -7  T6 clone (e.g., Contig2,right) [String]  Optional
+  
+  -L  Filename for phrap contig order [File In]  Optional
+  
+     { This is a tab-delimited file that can be used to drive   }
+     { the order of contigs (normally specified by -P), as well }
+     { as indicating the SP6 and T7 ends.  It can also be used  }
+     { when contigs are known to be in opposite orientation.    }
+     { For example:                                             }
+     {                                                          }
+     { Contig2     +       1       SP6     left                 }
+     { Contig3     +       1                                    }
+     { Contig1     -               T7      right                }
+     {                                                          }
+     { The first column is the contig name, the second is the   }
+     { orientation, the third is the fragment_group, the fourth }
+     { indicates the SP6 or T7 end, and the fifth says which    }
+     { side of SP6 or T7 end had vector removed.                }
+
+
+Presented here is an example of a phase 2 submission from an Arabidopsis 
+sequencing center. It is followed by an command line arguments used in
+an example with a Phrap ace file.
+
+
+BEFORE YOU BEGIN: fa2htgs does depend on the presence of some external
+  files.  These are provided with Sequin, so if a networked version of
+  Sequin is already installed (see URL above for Sequin info) all the
+  default files that need to be present will be there and allow fa2htgs
+  to run.
+
+
+Here are the files you need (let's assume we have a 100Kb BAC):
+
+1) fasta file (example below)
+2) sequin submission file (more on this below)
+3) genome center name ("pgec" in this example, use your 
+   FTP login name)
+4) the sequence/clone name (this will *always* stay with the record)
+5) The phase number:
+
+phase 1: multiple pieces, not in order (alway >= 2 pieces, 
+         often many more)
+phase 2: multiple pieces, in order, but can be as few as 
+         one unfinished sequence
+phase 3: 1 piece, where the sequence is "finished"
+
+6) the full sequence length, when the project is finished (eg 100000 
+   in our example).
+
+7) A new submission has no Accession Number, and and an update always
+   does.  You will need to keep track of this (ie which sequence name has
+   which accession number)
+
+8) The organism, in this example "Arabidopsis thaliana"
+
+9) The chromosome number, 1 in this example.
+
+10) the output (file name) convention so far has been to call it the
+    clone name.ss (eg P74A8.ss)  "ss" is a seq-submit, or sequence
+    submission.  We then have our scripts/code report with the same file
+    name convention.  Also note that because we are working in Unix space,
+    'case' of letter is important, and try to avoid 'metacharacters' 
+    (like ^*/\ etc).
+
+so the phase 1 or 2 FASTA file will look like this (in this example,
+this is one has 3 segments, but you could (in phase 1) have many more):
+
+>P74A8 pcr product joining p130c12 and p91c10 
+gatcagcccaaagcattgattaggggaacttacctgtagagggctgcagcaatggggaac
+acctggctgggtcacagagtggtcaatgcactccatgacttttgggtcaggacacagaaa
+gaaagagcggggaaccggggggccctacagtgatgaattatactaactgattttagaatg
+>?
+>fake next line
+ttaaacaaacattgcatttccagaataaaccccatttagtaacgcatagtgtgcttgtat
+ctcagcctcccaaagtgctgggattatagacatgagccagcgcacctggctttgttagcc
+>?200
+>fake another line
+ttttcaaataactttttgaactttgttaattttttaattgcacgttttctccttcattta
+ctaattccattcaaaagtagcatcaatgagaataaattacttaggaatacatttaattaa
+aaagtgctagacttgtacactgaaaattacaaagtactctggagatatattc
+
+
+
+The first line has the seqence id, and a title, then each segment 
+is seperated by
+
+>?
+>foobar
+
+or:
+
+>?200
+>foobar
+
+where you put a "?" if you don't know the distance between the pieces,
+or a number of bp if you do know the distance (eg 200 bp), and the
+other line is the fasta formated next segment (foobar).  So that is it
+for phase 1 or 2.  Phase 3 will be a single fasta file.  All phase 1
+will probably always be >?. 
+
+So the other thing you need is a submisssion prepared by sequin.  This
+will allow you to put in the references, authors, Titles, submission
+information the way you want it.  You simply need to make a 1 bp
+submission really.  fa2htgs will read that file and copy the
+information over to the htgs information with the "real" data.
+
+So once you have made the submission, you deposit it on the FTP account
+under "SEQSUBMIT" directory, we have software that looks for it there
+every day, validate the center, clone (sequence) id's, check if it's an
+update and so on, and write a report that you can pick up the next
+day.
+
+It is good to put the output of fa2htgs in Sequin and validate the
+record.  This is specially important for phase 3 records where many
+annotations may be present (added with the help of Sequin): Sequin has
+a very good validation suite (look under Search -> Validate)
+
+This finished record is now ready for deposition to your FTP account
+in the SEQSUBMIT directory.
+
+
+example of the command line arguments using quality score/Phrap ace file
+(all on tyhe same command line):
+
+./fa2htgs -t nuc1.sqn -o test.cmd32.out  -s Phrap_Contig_Test2  -l 111505 
+-g pgec -p 2 -h 1 -d Phrap_Contig_Test2 -n "Arabidopsis thaliana"  
+-T g5129z079.ace -P "Contig1,Contig2,Contig4,Contig3,Contig7"
+
+
+example of a contig file for a yeast chromosome (with coordinates on the
+individual accessions):
+
+U73805  1       2669
+U12980  79      103687
+L05146  133     29410
+L22015  2001    41988
+L28920  148     54812
+
+
+-- Questions about fa2htgs or how to submit?  
+
+   Just contact us at NCBI:
+
+	e-mail: htgs@ncbi.nlm.nih.gov
+
+==============+= end of the fa2htgs README =+==========================

@@ -1,0 +1,315 @@
+Seq-entry ::= set {
+  level 1 ,
+  class nuc-prot ,
+  date
+    str "15-DEC-1989" ,
+  descr {
+    title "A.variabilis nifD gene 5' recombination site. and translated
+ products" ,
+    org {
+      taxname "Anabaena variabilis" } } ,
+  seq-set {
+    set {
+      level 2 ,
+      class segset ,
+      descr {
+        title "A.variabilis nifD gene 5' recombination site." } ,
+      seq-set {
+        seq {
+          id {
+            giim {
+              id 86659 } } ,
+          descr {
+            title "A.variabilis nifD gene 5' recombination site." } ,
+          inst {
+            repr delta ,
+            mol dna ,
+            length 502 ,
+            ext
+              delta {
+			  loc
+                whole
+                  giim {
+                    id 86657 } ,
+              literal { length 5, seq-data iupacna "GGGGG" },
+			  loc
+                whole
+                  giim {
+                    id 86658 } } } } ,
+        set {
+          level 3 ,
+          class parts ,
+          seq-set {
+            seq {
+              id {
+                giim {
+                  id 86657 } ,
+                genbank {
+                  name "ANANIFDR1" ,
+                  accession "M28152" } } ,
+              descr {
+                title "A.variabilis nifD gene 5' recombination site." ,
+                genbank {
+                  source "Anabaena variabilis (strain ATCC 29413) vegetative
+ cell DNA, cosmid 33D12." ,
+                  keywords {
+                    "nifD gene" ,
+                    "nitrogenase" } } } ,
+              inst {
+                repr raw ,
+                mol dna ,
+                length 204 ,
+                topology linear ,
+                strand ds ,
+                seq-data
+                  ncbi2na '36306514D3F38E1BC597183F822F6C0270825E3F0D9F7ACF022
+0B3B7D4023A77D5F5B40E477EA3C75817263AAE40ED2348C2BF41'H } ,
+              annot {
+                {
+                  data
+                    ftable {
+                      {
+                        data
+                          imp {
+                            key "misc_recomb" } ,
+                        location
+                          int {
+                            from 152 ,
+                            to 162 ,
+                            id
+                              giim {
+                                id 86657 } ,
+                            fuzz-to
+                              lim tl } ,
+                        qual {
+                          {
+                            qual "note" ,
+                            val "nifD recombination site" } } } ,
+                      {
+                        data
+                          pub {
+                            pub {
+                              gen {
+                                cit "Journal=""Unpublished (1989) Dept. of
+ Bio., TA&M, College Station, TX 77843""," ,
+                                authors {
+                                  names
+                                    str {
+                                      "Brusca,J.S." } } } } } ,
+                        location
+                          int {
+                            from 183 ,
+                            to 203 ,
+							id
+								giim {
+									id 86657} } } ,
+                      {
+                        data
+                          pub {
+                            pub {
+                              muid 89327123 ,
+                              article {
+                                title {
+                                  name "Excision of an 11-kilobase-pair DNA
+ element from within the nifD gene in Anabaena variabilis heterocysts" } ,
+                                authors {
+                                  names
+                                    str {
+                                      "Brusca,J.S." ,
+                                      "Hale,M.A." ,
+                                      "Carrasco,C.D." ,
+                                      "Golden,J.W." } } ,
+                                from
+                                  journal {
+                                    title {
+                                      name "J. Bacteriol." } ,
+                                    imp {
+                                      date
+                                        std {
+                                          year 1989 } ,
+                                      volume "171" ,
+                                      pages "4138-4145" } } } } } ,
+                        location
+                          int {
+                            from 133 ,
+                            to 182 ,
+							id
+								giim {
+									id 86657}} } } } } } ,
+            seq {
+              id {
+                giim {
+                  id 86658 } ,
+                genbank {
+                  name "ANANIFDR2" ,
+                  accession "M28153" } } ,
+              descr {
+                title "A.variabilis nifD gene 3' recombination site, and xisA
+ gene, 5' end." ,
+                genbank {
+                  source "Anabaena variabilis (strain ATCC 29413) vegetative
+ cell DNA, cosmid 33D12." ,
+                  keywords {
+                    "nifD gene" ,
+                    "nitrogenase" ,
+                    "xisA gene" } ,
+                  origin "About 10.7 kb after segment 1." } } ,
+              inst {
+                repr raw ,
+                mol dna ,
+                length 293 ,
+                topology linear ,
+                strand ds ,
+                seq-data
+                  ncbi2na '1FFBDD3BBDDFE79EE7E487E258801E5B6B2380BA750B79029FB
+E33FB7E15E3FE4D9EEB3C9733F25C00F0EEF349010EF4D1C11E74B9013C27BE0273C0510028F1D
+695F346BC61A3F9CDC0'H } ,
+              annot {
+                {
+                  data
+                    ftable {
+                      {
+                        data
+                          imp {
+                            key "misc_recomb" } ,
+                        location
+                          int {
+                            from 249 ,
+                            to 259 ,
+                            id
+                              giim {
+                                id 86658 } ,
+                            fuzz-to
+                              lim tl } ,
+                        qual {
+                          {
+                            qual "note" ,
+                            val "nifD recombination site" } } } ,
+                      {
+                        data
+                          pub {
+                            pub {
+                              gen {
+                                cit "Journal=""Unpublished (1989) Dept. of
+ Bio., TA&M, College Station, TX 77843""," ,
+                                authors {
+                                  names
+                                    str {
+                                      "Brusca,J.S." } } } } } ,
+                        location
+                          int {
+                            from 276 ,
+                            to 292 ,
+							id
+								giim {
+									id 86658} } } ,
+
+                      {
+                        data
+                          pub {
+                            pub {
+                              muid 89327123 ,
+                              article {
+                                title {
+                                  name "Excision of an 11-kilobase-pair DNA
+ element from within the nifD gene in Anabaena variabilis heterocysts" } ,
+                                authors {
+                                  names
+                                    str {
+                                      "Brusca,J.S." ,
+                                      "Hale,M.A." ,
+                                      "Carrasco,C.D." ,
+                                      "Golden,J.W." } } ,
+                                from
+                                  journal {
+                                    title {
+                                      name "J. Bacteriol." } ,
+                                    imp {
+                                      date
+                                        std {
+                                          year 1989 } ,
+                                      volume "171" ,
+                                      pages "4138-4145" } } } } } ,
+                        location
+                          int {
+                            from 10 ,
+                            to 275 ,
+							id
+								giim {
+									id 86658 }} } } } } } } } } } ,
+    seq {
+      id {
+        giim {
+          id 86660 } } ,
+      descr {
+        title "xisA peptide A (alt.)" ,
+        method concept-trans } ,
+      inst {
+        repr raw ,
+        mol aa ,
+        length 44 ,
+        seq-data
+          iupacaa "MQNQGQDKYQQAFADLEPLSSTDGSFLGSSLQAQQQREHMRTKV" } } ,
+    seq {
+      id {
+        giim {
+          id 86661 } } ,
+      descr {
+        title "xisA peptide B (alt.)" ,
+        method concept-trans } ,
+      inst {
+        repr raw ,
+        mol aa ,
+        length 5 ,
+        seq-data
+          iupacaa "MRTKV" } } } ,
+  annot {
+    {
+      data
+        ftable {
+          {
+            data
+              cdregion {
+                code {
+                  id 1 } } ,
+            product
+              whole
+                giim {
+                  id 86660 } ,
+            location
+              int {
+                from 0 ,
+                to 130 ,
+                strand minus ,
+                id
+                  giim {
+                    id 86658 } ,
+                fuzz-from
+                  lim gt } ,
+            qual {
+              {
+                qual "note" ,
+                val "xisA peptide A (alt.)" } } } ,
+          {
+            data
+              cdregion {
+                code {
+                  id 1 } } ,
+            product
+              whole
+                giim {
+                  id 86661 } ,
+            location
+              int {
+                from 0 ,
+                to 13 ,
+                strand minus ,
+                id
+                  giim {
+                    id 86658 } ,
+                fuzz-from
+                  lim gt } ,
+            qual {
+              {
+                qual "note" ,
+                val "xisA peptide B (alt.)" } } } } } } }

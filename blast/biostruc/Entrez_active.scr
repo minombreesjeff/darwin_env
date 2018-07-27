@@ -1,0 +1,228 @@
+/*
+ * $Id: Entrez_active.scr,v 6.6 1999/07/01 21:41:36 kimelman Exp $
+ * 
+ * This file contains the additions to PubStruct Database on Public 
+ * Entrez Servers
+ *
+ * $Log: Entrez_active.scr,v $
+ * Revision 6.6  1999/07/01 21:41:36  kimelman
+ * post_index fixed to trust user data
+ * at_insert fixed to keep entry in SatKeyFlags for every row in Struct
+ *
+ * Revision 6.5  1999/05/11 21:38:41  kimelman
+ * bugfix in post_index
+ *
+ * Revision 6.4  1999/05/03 14:47:47  kimelman
+ * spaces
+ *
+ * Revision 6.3  1999/04/22 01:50:43  kimelman
+ * moved 'entrez indexing procs' to _active DB only
+ *
+ * Revision 6.2  1999/03/16 16:56:28  kimelman
+ * new ID fixes
+ *
+ * Revision 6.1  1998/07/14 20:24:44  kimelman
+ * FT schema & smart load
+ *
+ * Log: PubStruct_proc.scr,v
+ * Revision 6.7  1998/06/12 17:45:00  kimelman
+ * timestamps history fixed, vacuum cleaning debugged
+ *
+ * Revision 6.6  1998/06/05 18:19:23  kimelman
+ * atextract styled
+ *
+ * Revision 6.5  1998/06/05 17:59:18  kimelman
+ * structure takeover bug fixed
+ */
+/************************************************************************/
+PRINT '/***** SELECT DATABASE PubStruct                             *****/'
+/************************************************************************/
+go
+USE PubStruct
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'post_index'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.post_index
+END
+go
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    post_index                     *****/'
+/************************************************************************/
+go
+
+create proc
+post_index ( @index_key int, @minutes int = null, @enforce int = 0 )
+as
+  declare @acc int
+  declare @date datetime
+  declare @mod_date  datetime
+  declare @emod_date datetime
+  declare @mmdb_id        int
+
+  if ( @minutes is null )
+    select @date = getdate()
+  else
+    begin
+        select @date = dateadd(minute,@minutes,'Jan 1 1900')
+        if ( @date < getdate() and @enforce = 0 )
+          begin
+            /* we come to this case only if we update mmdb entry or just reindex it */
+            /* make sure the date we got is the same we sent to e2index */
+            select @mmdb_id= mmdb_id
+            from   Struct
+            where  acc = @index_key
+            
+            select @mod_date=min(date)
+            from   Struct s
+            where  s.state = 0 and s.mmdb_id = @mmdb_id 
+            
+            select @emod_date=min(i.date_entrez)
+            from   Struct s, EntrezControl..SatKeyFlags i
+            where  s.state = 0 and s.mmdb_id = @mmdb_id 
+            and s.acc = i.sat_key and i.sat = 10
+
+            select @mod_date=isnull(@emod_date,@mod_date)
+            /* round time to minutes */
+            select @minutes = datediff(minute,'Jan 1 1900',@mod_date)
+            select @mod_date = dateadd(minute,@minutes,'Jan 1 1900')
+
+            if ( @emod_date is not null and @mod_date != @date )
+              begin
+                print "Post_index: error: modification dates incosistence for %1! : db=%2!, entrez=%3! ", @index_key, @mod_date, @date
+                return 100
+              end
+          end
+    end
+
+  update EntrezControl..SatKeyFlags
+  set dumped4entrez = 0
+  from EntrezControl..SatKeyFlags i, Struct a, Struct b
+  where i.sat = 10 and i.dumped4entrez = 1 and i.sat_key = a.acc
+    and a.mmdb_id=b.mmdb_id and b.acc = @index_key
+                                 
+  update EntrezControl..SatKeyFlags
+  set dumped4entrez = 1, date_entrez = isnull(date_entrez,@date)
+  where sat = 10 and sat_key = @index_key
+go
+
+/*****        Grant and Revoke permissions post_index               *****/
+go
+GRANT EXECUTE ON post_index  TO anyone
+go
+
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    post_remove                    *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'post_remove'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.post_remove
+END
+go
+create proc
+post_remove(@index_key int) as
+  declare @acc  int
+  declare @date datetime
+
+  update EntrezControl..SatKeyFlags
+  set dumped4entrez = 0
+  from EntrezControl..SatKeyFlags i, Struct a, Struct b
+  where i.sat = 10 and i.dumped4entrez = 1 and i.sat_key = a.acc
+    and a.mmdb_id= @index_key
+go
+/*****        Grant and Revoke permissions post_remove              *****/
+go
+GRANT EXECUTE ON post_remove  TO anyone
+go
+
+/************************************************************************/
+PRINT '/*****           TRIGGER  at_insert                         *****/'
+/************************************************************************/
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'at_insert'
+    AND   uid = user_id('dbo')
+    AND   type = 'TR')
+BEGIN
+    DROP trigger dbo.at_insert
+END
+go
+
+create trigger
+at_insert on Struct for update,insert as
+begin
+  insert EntrezControl..SatKeyFlags
+  select 10, si.acc,  0, 0, null, 0
+  from  inserted si
+  where not exists (select * from EntrezControl..SatKeyFlags i
+                    where i.sat_key = si.acc and i.sat = 10 )
+end
+go
+  
+/************************************************************************/
+PRINT '/*****           TRIGGER  at_delete                          *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'at_delete'
+    AND   uid = user_id('dbo')
+    AND   type = 'TR')
+BEGIN
+    DROP trigger dbo.at_delete
+END
+go
+
+create trigger
+at_delete on Struct for delete as
+begin
+  delete EntrezControl..SatKeyFlags
+  from EntrezControl..SatKeyFlags i, deleted d 
+  where i.sat_key = d.acc and i.sat = 10
+end
+go
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    fill_satinfo                   *****/'
+/************************************************************************/
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'fill_satinfo'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.fill_satinfo
+END
+go
+create proc
+fill_satinfo
+as
+begin
+  delete from    EntrezControl..SatKeyFlags
+  where sat = 10
+  
+  insert EntrezControl..SatKeyFlags
+  select 10, acc,  0, 0, date, 1
+  from Struct where state = 0
+  
+  update EntrezControl..SatKeyFlags
+  set dumped4entrez = 1, suppress = 0
+  from Struct s, EntrezControl..SatKeyFlags i
+  where s.state = 0 and i.sat_key = s.acc and i.sat = 10 and s.suppressed = 0 
+end
+go
+
+/************************************************************************/
+PRINT '/*****           DONE!!!!                                   *****/'
+/************************************************************************/
+go

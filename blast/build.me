@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+# $Id: build.me,v 1.6 1999/08/12 18:38:41 beloslyu Exp $
+#
+# W A R N I N G ! ! !
+# That script is intended for internal use in NCBI only
+#
+#
+
+#check that we're running withing NCBI
+MYDOMAIN=`grep '^domain' /etc/resolv.conf |awk '{print $2}'`
+if [ "$MYDOMAIN" != "nlm.nih.gov" ] ; then
+	echo That script is intended for internal use in NCBI only
+	exit 1
+fi
+
+SCRIPTDIR=/am/ncbiapdata/scripts
+CWD=`pwd`
+UPDIR=`dirname $CWD`
+MYDIR=`basename $CWD`
+if [ "$MYDIR" != "ncbi" ] ; then
+	echo that script should be located in \"ncbi\" directory
+	exit 1;
+fi
+
+echo "Rebuilding ASNs..."
+#first rebuild the asn
+$SCRIPTDIR/rebuild_asn $CWD
+if [ "$?" != 0 ] ; then
+	echo rebuild_asn failed, bye...
+	exit 1
+fi
+
+#now make needed directories if they're absent
+mkdir -p include bin lib build altlib shlib >/dev/null 2>&1
+
+#now start the build
+cd .. && time $SCRIPTDIR/makedis.csh 2>&1 | tee $CWD/out.makedis.csh
+
+exit 0

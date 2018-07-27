@@ -1,0 +1,860 @@
+MMDB-API  (draft document February 7 1996)
+
+Molecular Modeling Database Application Programming Interface.
+Author C. Hogue 
+Contributors:  S. Bryant, H. Ohkawa, J. Kans, A. Smirnov, J. Ostell
+
+
+Contents:
+    INTRODUCTION
+    MMDB-API DESIGN CONSIDERATIONS
+    MMDB-API DATA ABSTRACTION
+    MODELSTRUC DATA NODES
+    MMDB-API EXAMPLE
+    MMDB-API Routines 
+      MMDB-API Interface Routines
+      ASN.1 MODEL INDEX <> NODE POINTER CONVERSION:
+      MODEL TRAVERSERS
+      OUTPUT
+      COMPUTATIONAL GOODIES
+      MACROS
+ 
+
+
+
+http://www.ncbi.nlm.nih.gov/Structure for the latest updates to MMDB-API.
+____________________________________________________________________
+INTRODUCTION:
+
+
+
+MMDB (Molecular Modelling DataBase) is NCBI's 3-dimensional structure service.
+The major source of MMDB data is from experimental X-ray crystallographic or 
+NMR data from the Brookhaven Protein Database (PDB).  
+
+NCBI's has a complete ASN.1 specification for storage and interchange of
+biochemical structure data. The development of the Molecular Modelling DataBase
+(MMDB) and the rationale for the use of ASN.1 are discussed at length 
+elsewhere.   The ASN.1 data specification is not a prerequisite for using
+MMDB-API, as it is parsed into complete and comprehensive memory data 
+structures by MMDB-API.  
+
+An ASN.1 Biostruc can represent a  3D structure consisting of several types of 
+experimental and derived data.  The Biostruc data consists of (a) bibligraphical
+and historical data; (b) a single, unambiguous chemical-graph (i.e. the 
+molecule's skeletal path of atoms and bonds); (c) one or more sets of 3D model 
+data consiting of locations in space ( X, Y, Z coordinates); and (d) features 
+associated with (b) and/or (c).  
+
+MMDB-API is written under the NCBI Software Development Toolkit (SDK), 
+required for implementing MMDB-API.  An Applications Programming Interface 
+(API) is a set of computer algorithms and programs that allow convenient 
+access to data.  
+
+The purpose of MMDB-API is to provide a programmer with the means 
+for accessing and computing on the structural data that is transmitted
+in the ASN.1 format.  MMDB-API's principal task is to restructure the 
+in-memory image of the ASN.1 data to make it computable.  The internal 
+representation of the ASN.1 Biostruc is, under MMDB-API converted into a
+hierarchical C data structure known as a "Modelstruc".
+
+MMDB-API provides all the C routines in a library in order to 
+service the I/O between these three layers,
+
+ASN.1                   C Object         MMDB-API
+Specification           Loaders          C Data Structures
+
+file                    Memory           Memory
+Biostruc (ASN.1)  <=>   Biostruc   <=>   Modelstruc
+
+Thus you can start computing at the highest-layer, MMDB-API
+immediately, without becoming an expert in parsing, file or network I/O,
+or the ASN.1 Biostruc file specification.
+
+MMDB-API has been created with some very complex data structures.
+You may not need to compute within these.  MMDB-API has some powerful methods 
+of obtaining sub-sets of structure data using routines called "traversers".  
+These can be applied to cast the data you require into more simple 
+data structures thay you design and operate on.  By writing, modified 
+data back into the MMDB-API data structures, one can save the results
+in the correct ASN.1 data specification automatically.
+
+MMDB-API should not be discounted on the basis of its data structure complexity,
+because it is probably the most robust and reproduceable means for obtaining
+structure data from a file format and getting it into memory in the first 
+place.  
+
+MMDB-API has provided for an astonishingly efficient amount of code-re-use.  
+Consider only that the PDB converter is less than
+1300 lines of code, and the Kinemage renderer makes 4 different kinds of
+renderings, add textual annotation, and is less than 1600 lines of code.   
+
+
+
+____________________________________________________________________
+MMDB-API DESIGN CONSIDERATIONS
+
+A program called asncode, (NCBI Toolkit) provides a means for taking
+an ASN.1 data specification, and generating C data structures, and 
+functions that provide memory management and I/O.  This is called the
+"object loader layer".  The data structures paralell the ASN.1 data
+specification.  A Biostruc can be loaded into memory and manipulated 
+in memory directly without any alteration to these ASN.1-derived C data 
+structures.   
+
+Unfortunately, the Biostruc C in-memory image, derived from the ASN.1 
+specification is ill-suited for computation.   MMDB-API adds an 
+additional layer, the Modelstruc, to optimize the in-memory data structure 
+for computational purposes. 
+
+Why is the ASN.1-derived C data structure not suited for computation?
+Three types of changes are neccesary, data type conversion, 
+data instantiation and the addition of explicit "backwards" pointers.  
+None of these affect or add to the content of the data, merely they
+are data reorganizations.
+
+The internal represenation of coordinate floating point data in the
+ASN.1 Biostruc is as an integer value and integer scale factor.  
+These must be converted to floating point for computation, hence 
+data type conversion must be performed.
+
+Chemical graphs are really saved as indices into residue dictionaries,
+both standard and non-standard (local dictionaries). Therefore, to reconstruct 
+the graph, each residue (bonds and atoms) must be copied or instantiated 
+from the dictionary.
+
+There are no pointer references from the  "chemical graph" to the "location" 
+data (i.e. the X, Y, Z coordinates). Rather there are only references from the 
+location back into the chemical graph.  These must be interpreted at load-time 
+and resolved, hence the addition of explicit backwards pointers.
+
+For computational purposes, one must have a way of finding the chemical graph 
+from the location, and the location from the chemical graph.  
+In addition, given the location of an atom, one needs a
+way of determining its bonded-neighbors, through-space non-bonded neighbors,
+its parent molecule and structure.  There is a need to have some of these 
+linkages availiable in a pre-computed and computed on-the-fly basis, and the
+emphasis in the data structure design has been to use pointers and data
+structures in order to reduce the coding and logic required to traverse
+the data.  
+
+The Modelstruc is a hybrid data stucture, containing significant portions
+of the original ASN.1 derived C structures.  
+The portions that remain unchanged after the object-loader phase are, in
+general, the descriptive parts. These include bibliographic
+and identifier information.  These parts of the data structures are
+preserved because there is a large set of NCBI programming that
+can use the ASN.1 derived C types as-is.  
+
+Given that some compuations on the Modelstruc cannot be forseen in the
+making of the API, the Modelstruc may be manipulated directly.  
+Data hiding has not been strongly enforced by MMDB-API and virtually
+all the library routines are public at the current time.
+
+Special attention has been paid to the free-ing of memory in MMDB-API, as 
+a Structure is freed with a "hierarchical collapse".  This means if you
+free something you aren't supposed to (like a string) and don't null out
+all the pointers in the structure that point to it (its parents, its children),
+MMDB-API free-ing will fail.  More safe free-ing routines will be added as
+MMDB-API develops.  
+
+
+
+Variable Names and Hungarian Notation:
+
+Code for the MMDB-API attempts to employ Hungarian Notation, whereas the bulk
+of the NCBI toolkit has no structured way of defining variables with the
+exception of Vibrant objects.  You will either love or hate my notation,
+but the reason it was implemented was to reduce bugs, which it does!  
+
+Data structures such as doubly-linked lists and singly-linked-lists are 
+maintained by NCBI toolkit core routines.  A pointer to a singly-linked-list
+node which contains a pointer to a MAD node, is a PVNMA a "Pointer to ValNode
+to ModelAtom"  and a pointer to a doubly-linked list node which contains a 
+pointer to a MMD is a PDNMM, a "Pointer to DValNode to ModelMolecule".
+
+Using Hungarian notation, a data type prefix is prepended to a variable name,
+
+a CharPtr is a "pc" meaning pointer to char.
+The "p" is put first so that equivalencies of data types is spotted easier:
+e.g.
+
+pcFetch = &mystring;
+the "p" on the left indicates that the address on the right is an appropriate
+cast, whereas
+Fetch = &mystring;
+tells nothing about whether the address of mystring is appropriate as
+a value to insert into Fetch,
+without examining the *.h file or wherever Fetch was declared.
+
+In MMDB-API, the abbreviations MS, MA, MM, etc form specific parts of the
+Hungarian Notation prefixes:
+e.g. the variable pdnmsList is a "P"ointer to "D"Val"N"ode to "M"odel"S"truc 
+and the variable name is List.  A declaration of this variable would be:
+PDNMS pdnmsList;
+
+
+_____________________________________________________________________________
+MMDB-API DATA ABSTRACTION:
+
+
+In the conversion of the ASN.1 Biostruc to the C Modelstruc, the 
+fundamental changes in the data are that: 
+
+A) Everything is instantiated. 
+e.g: In a given Biostruc, there may be many references to the dictionary
+graph for "Phe", but there is only one copy of the "Phe" chemical graph
+(i.e. the dictionary one).  In the Modelstruc, the "Phe" chemical graph
+is instantiated for each "Phe" in a protein.  Likewise there is a list of 
+each and every bond in the complete chemical graph.  
+
+(B) All "indicies" and "id's" become C pointers to "nodes" containing the data.
+e.g: An "atom" node contains information about the chemical graph part of the 
+atom (bonds, name, etc).  It also contains a list of "locations" 
+(X,Y,Z coordinates) that come from each structural model present in the ASN.1.  
+An atom can have an unlimited number of "locations".  Likewise
+an atom contains a complete list of bonds.   The number of bonds an atom
+can have is not chemically constrained, rather it is unlimited (and can
+include virtual bonds).  The bond list is a list of pointers to "bond"
+nodes which link atoms (NOT LOCATIONS) together and indicate what type
+the bond is (i.e. single, double, etc).  
+
+
+There are 4 C functions one gets from each ASN.1 type "Xx" after making
+"object loaders" with asncode:
+(1) A memory-free-er XxFree().
+(2) A memory-allocater XxNew(). 
+(3) A read function XxAsnRead(). 
+(4) A write funciton XxAsnWrite().  
+
+In addition, one can refer to structure Xx in memory with a pointer of type
+XxPtr. 
+
+Similarly, the Modelstruc can be referred to by a
+single pointer, and can be freed with a single function.  However, the act
+of making a new unpopulated Modelstruc is complicated, and there will
+be a provision for special routines to make de-novo structures.
+The Modelstruc is currently instantiated by first reading in a
+valid Biostruc with BiostrucAsnRead(), then it is converted into a Modelstruc
+using MMDB-API routines.  MMDB-API if fully capable of handling a virtually 
+unlimited number of structures in memory, providing there is room for them.
+
+Modelstruc Limits:
+Atoms - only by memory 
+Molecules - only by memory
+Residues - only by memory
+Structures - only by memory
+Models - only by memory 
+Features - only by memory
+
+
+In addition to the "Modelstruc",  a further conversion of the data to and from a 
+variety of data arrays and matricies can be easily performed.  This can be used
+to allow the application of array- and vector-based algorithms (e.g. Fortran) 
+without extensive reprogramming of the internal logic of these programs.  
+This paradigm can be convenience to an established body of programmers and 
+programs which work in this fashion.
+
+
+The output or "writing" of a Modelstruc  involves a conversion back to a valid 
+in-memory C Biostruct, at the "object loader" layer then the writing 
+out of the ASN.1 Biostruc using BiostrucAsnWrite.  In the future we hope one
+will be able to instantiate the chemical-graph portion of a Modelstruc
+from an ASN.1 sequence or from other data types.
+
+
+
+___________________________________________________________________________
+MODELSTRUC DATA NODES
+
+There are 9 Main types of data nodes in a Modelstruc.
+  
+NAMING CONVENTIONS:
+MS "ModelStruc"  
+MSD is "ModelStrucData"
+PMSD is "Pointer to MSD"
+
+likewise for:
+MM "ModelMolec",    MMD "ModelMolecData",    PMMD "Pointer to MMD"
+MG "ModelGraph",    MGD "ModelGraphData",    PMGD "Pointer to MGD"
+MA "ModelAtom",     MAD "ModelAtomData",     PMAD "Pointer to MAD"
+MB "ModelBond",     MBD "ModelBondData",     PMBD "Pointer to MBD"
+MD "ModelDensity",  MDD "ModelDensityData",  PMDD "Pointer to MDD"
+MO "ModelObject",   MOD "ModelObjectData",   PMOD "Pointer to MOD"
+AL "AtomLocation",  ALD "AtomLocationData",  PALD "Pointer to ALD"
+ML "ModelLocation", MLD "ModelLocationData", PMLD "Pointer to MLD"
+
+A Modelstruc is loosely defined as:
+A doubly-linked list containing MSD, containing:
+  A doubly-linked list containing MMD, containing:
+    A doubly-linked list containing MGD, containing:
+       MAD, MBD (interconnected by pointers):
+         MAD contains:
+	   a linked-list of of locations - ALD's...
+	   a linked-list of its own bonds - PMBD's
+         MBD contains:
+	   bond type information
+	   2 pointers - PMAD - to the atom endpoints
+    various lists of MAD, MBD (like disulfide bonds)
+  various lists of MAD, MBD (like alpha carbons)
+  various lists of MOD (objects - bricks, spheres, surfaces, etc)
+  various lists of MDD (grid density data)
+
+The root node MSD also contains
+  a pointer to the ASN.1 Biostruc which can be 
+   the entire Biostruc OR the non-redundant portion.
+  pointers to the Models MLD...
+  pointers to information & bibliographic data.
+  pointers to local & global chemical graph dictionaries.
+  pointers to Biostruc-features.
+  global rotation/translation matricies to be applied to all locations.
+  bounding box.
+  rendering information.
+
+
+
+The Linked-lists and doubly-linked list nodes contain
+the above named data nodes.  Pointers to nodes have
+naming prefixes:
+PDN  "P"ointer to "D"val"N"ode.  A Doubly-linked list.
+PVN  "P"ointer to "V"al"N"ode.   A Singly-linked list.
+  
+PDNMS "ModelStruc",   Contains a PMSD "Pointer to MSD"
+PDNMM "ModelMolec",   Contains a PMMD "Pointer to MMD"
+PDNMG "ModelGraph",   Contains a PMGD "Pointer to MGD"
+PVNMA "ModelAtom",    Contains a PMAD "Pointer to MAD"
+PVNMB "ModelBond",    Contains a PMBD "Pointer to MBD"
+PVNMD "ModelDensity", Contains a PMDD "Pointer to MDD"
+PVNMO "ModelObject",  Contains a PMOD "Pointer to MOD"
+PVNAL "AtomLocation", Contains a PALD "Pointer to ALD"
+PDNML "ModelLocation",Contains a PMLD "Pointer to MLD"
+
+
+ 
+
+OBJECT-ORIENTED NODE STRUCTURE:
+
+Each node, MSD, MMD, MGD, MAD, MBD, ALD (except MLD) can be referenced by the 
+sub-type FB (FlagBlock) with  a PFB (pointer to FlagBlock). 
+This allows one to abstract each data node for common routines,
+e.g. a routine that returns a three-dimensional bounding box could use
+whole structures (MSD), whole molecules (MMD) residues (MGD) or atoms (MAD)
+as input data.  With a PFB pointer, all these data types can be referenced 
+from a single routine.  While not quite OOP, it does reduce the code involved.
+Other tricks are availiable, i.e. given a PFB pointer to some "Model Object"
+one can determine its type (MSD,MMD, etc), its indicies and its parent objects,
+(e.g. an atom's parent molecule).   This also makes all objects "clickable"
+in a 3D graphics viewer.  If the viewer returns one pointer, one can traverse
+the pointer links back to find out what it is (bond or atom) and find out
+who its parents are (residue, molecule, structure).  
+
+The internal C definition of components in each node are found in mmdbapi1.h
+
+
+____________________________________________________________________________
+MMDB-API EXAMPLE:
+
+
+With the MMDB-API, the programmer does not need to parse the data file.  
+The task are, Open MMDB-API,  Load an ASN.1 Biostruc,  Register it with
+MakeAModelstruc and you obtain a pointer of type PDNMS to the structure,
+which is the most commonly used argument in MMDBAPI functions.
+
+You can register as many structures as you wish, they
+form a list in memory that is free-ed when CloseMMDBAPI is called.
+
+
+Here's some sample code that uses MMDB-API prints all the atomic XYZ coordinates
+for a given ASN.1 MMDB file (testapi.c).
+
+_______________________________________
+#include <ncbi.h>  /* the NCBI SDK header */
+#include <asn.h>   /* the ASN.1 header */
+#include <mmdbapi.h>   /* the MMDB-API header */
+
+/********************************************************* 
+ *The NCBI argument routines are described in            *
+ *   the NCBI Software Development Toolkit               *
+ *********************************************************/
+
+#define NUMARGS 2
+
+Args myargs[NUMARGS] = {
+        {"Input String",NULL,NULL,NULL,FALSE,'s',ARG_FILE_IN,0.0,0,NULL},
+	{"Model Level \n0 = Atoms; 1=BB; 2=all PDB; 3=VECT; ","0","0","3",TRUE,'m',ARG_INT,0.0,0,NULL}
+      };
+
+
+
+/********************************************************* 
+ *The CALLBACK routine.                                  *
+ * Executed as the traverser visits each node.           *
+ *  If the node is an atom, it prints the atom's name,   *
+ *   and the first model's                               *
+ *   X, Y, and Z values for the atom                     *
+ *********************************************************/
+
+static void DoXYZ(PFB pfbThis, Int4 iModel, Int4 iIndex, Pointer ptr)
+{
+  PMAD pmadAtom;
+  PALD paldLoc;
+
+    /* pfbThis points to a generic data node */
+    /* we want only ModelAtomData or MAD nodes */
+    if (IsAtomNode(pfbThis))
+      {
+          /* cast to the correct PMAD pointer type */
+	  pmadAtom = (PMAD) pfbThis;
+	  
+	  /* get the locations (XYZ coords node) for this atom, and model */
+	  paldLoc = GetAtomLocs(pmadAtom, iModel);
+	  
+	  /* go through each location for this particular atom and model */ 
+	  while (paldLoc) 
+	    {
+             /* print the Atom name and location data */
+	     printf("Atom, %s, X=%f, Y=%f,  Z=%f \n", 
+                AtomPDBName(pmadAtom), 
+	        AtomLocX(paldLoc),  
+                AtomLocY(paldLoc),  
+                AtomLocZ(paldLoc));
+	     paldLoc = paldLoc->next; /* get next location */
+	    }
+      }
+}
+
+
+
+/********************************************************* 
+ *The Main() function,  built according to the NCBI      *
+ *   Software Development Toolkit specifications, lends  *
+ *   portability between GUI and non-GUI platforms       *
+ *********************************************************/
+
+Nlm_Int2 Main ()
+{
+  Int2 iTest;
+  PDNMS pdnmsModelstruc;
+  BiostrucPtr pbsBiostruc;
+  
+
+        
+   	if (! GetArgs("MMDB-API Example",NUMARGS,myargs))
+		return 1;
+	 
+	/* Initialize MMDB-API  */ 
+
+ 	if (! OpenMMDBAPI(0, NULL, (Int2) myargs[1].intvalue)) 
+	  {
+	        printf("Have not opened mmdbapi");
+	        return 2;	
+	  }
+	/* load an ASN.1 Biostruc */
+	pbsBiostruc = FetchBiostrucPDB(myargs[0].strvalue, myargs[1].intvalue, 100);
+        if (pbsBiostruc == NULL)
+	  {
+	        printf("Have not fetched Biostruc");
+		return 3;
+	  }
+
+	/* convert it into a Modelstruc pointed to by pdnmsMain */
+	pdnmsModelstruc= MakeAModelstruc(pbsBiostruc);		
+	if ( pdnmsModelstruc == NULL )
+	  {
+	        printf("Have not not Converted Biostruc");
+	        return 4;
+	  }
+		
+	/* Traverse all the ATOM nodes in each pdnmsMain, */
+	/* doing the function DoXYZ at each node for each model */  
+
+ 	iTest = TraverseModels(	pdnmsModelstruc,
+				TRAVERSE_ATOM, 
+				0,NULL,
+				(pNodeFunc)(DoXYZ));
+	  
+
+	/* Free the Modelstruc (and its enclosed Biostruc) */	  
+ 	/* FreeAModelstruc(PDNMS pdnmsThis); not necessary */
+	/* This can be done individually - but all Modelstrucs */
+        /* remaining are freed in CloseMMDB-API() */
+
+	/* Shut Down MMDB-API */	
+
+	CloseMMDBAPI();	
+
+ 	return TRUE;
+}
+
+
+
+
+__________________________________________________________________________
+ ___________________________________________________________________________
+MMDBAPI Interface routines:
+
+Main routines:
+
+Int2  OpenMMDBAPI(Byte bExtent, CharPtr pcDictName);
+Boolean IsMMDBAPIOpen(void);
+BiostrucPtr FetchBiostrucPDB(CharPtr pcAcession, Int4 iModelLevel, Int4 iMaxModels);
+PDNMS MakeAModelstruc(BiostrucPtr pbsThis);
+
+Safe Free-ers (so far):
+
+Boolean FreeSingleModel(PDNMS pdnmsThis, Int2 iModel);
+void  ClearStructures(void);
+void FreeAModelstruc(PDNMS pdnmsThis);
+void CloseMMDBAPI(void);  /* frees leftovers Modelstruc's */
+
+
+Settings:
+
+PDNMS  GetPDNMSMain(void);  
+PRGD   GetPRGDDictionary(void);
+Byte  GetMMDBAPIbExtent(void);
+void  ChangeMMDBAPIbExtent(Byte bExtent);
+
+Structure Access:
+
+void SetMasterModelstruc(PDNMS pdnmsThis);
+PDNMS GetMasterModelstruc(void);
+void SetSelectedModelstruc(PDNMS pdnmsThis);
+PDNMS GetSelectedModelstruc(void);
+void SetHolderModelstruc(PDNMS pdnmsThis);
+PDNMS SwapModelstruc(void);
+
+Access from list of structures:
+
+PDNMS GetFirstModelstruc(void);
+PDNMS GetNextModelstruc(void);
+PDNMS GetPreviousModelstruc(void);
+
+
+Keeping lists of selected nodes:
+
+ValNodePtr AddPFBSelect(PFB pfbThis);
+void ClearPFBSelectList(void);
+void UndoPFBSelectList(void);
+
+Miscellaneous:
+
+CharPtr GetStrucStrings(PDNMS pdnmsThis, Int4 iPickType);
+Int4 MakeHashChange(PDNMS pdnmsThis);
+Int4   CountModelstrucs(void);
+_pmmdbAPI NewMMDBAPI(void);
+
+
+___________________________________________________________________
+ASN.1 MODEL INDEX <> NODE POINTER CONVERSION:
+
+ 
+The ASN.1 definition of the Biostruc refers to the chemical graph by 
+MoleculeID, ResidueID (same as Graph here), and AtomID.
+These routines find the appropriate node in the Modelstruc, given the
+ID's.
+
+PMAD 	AtomFromMMDBIndex(PDNMS pdnmsList, Int2 iStru, Int2 iMol, Int2 iGraph, Int2 iAtom);
+PMGD 	GraphFromMMDBIndex(PDNMS pdnmsList, Int2 iStru, Int2 iMol, Int2 iGraph);
+PMMD 	MolFromMMDBIndex(PDNMS pdnmsList, Int2 iStru, Int2 iMol);
+
+
+PALD	GetLocation(PALD paldList,  Int2 iCoord,  Char cAlt);
+PALD	GetAtomLocs(PMAD pmadThis,  Int2 iModel);
+PMGD	GetParentGraph(PFB pfbThis);
+PMMD	GetParentMol(PFB pfbThis);  
+PMSD	ToMSDParent(PFB pfbThis);  
+
+
+Generic conversions:
+PFB	PFBFromVN(ValNodePtr pvnModel);
+PFB	PFBFromDN(DValNodePtr pdnModel);
+DValNodePtr DNFromPFB(PFB pfbThis);
+Int2	IndexFromNode(PFB pfbNode);  
+
+
+Lookup routines:
+NOTE: You are not given your own copy of a string, you always get a
+pointer to a string in memory.  Do not free CharPtrs returned 
+by these functions!
+
+Int2	ParentMolNum(PFB pfbThis);
+CharPtr	ParentMolName(PFB pfbThis);
+CharPtr	ParentGraphPDBNo(PFB pfbThis);
+CharPtr	ParentGraphPDBName(PFB pfbThis);
+CharPtr	ParentGraphIUPAC1(PFB pfbThis);
+Int2	ParentGraphNum(PFB pfbThis);
+CharPtr LIBCALL ElementName(Int1 iAtomicNo);
+CharPtr LIBCALL AminoAcidName(Char cThis, Int2 iRetCode);
+
+ 
+
+
+_______________________________________________________________
+MODEL TRAVERSERS:
+
+The following routines use pointers to functions which allow the programmer
+to attach a "computation" to a routine that "walks" the Modelstruc. 
+
+
+Int2 TraverseAll( DValNodePtr pdnModel, Int4 iModel, Int4 iIndex, 
+			  Pointer ptr, pNodeFunc pfnCallMe);
+
+	 Walks the structure children from the current pointer.  Performs
+	 (*pfnCallMe)(pfbThis, iModel, iIndex, ptr) at each data node (as Flags Block).
+
+	The argument pdnModel can be either a PDNMS, PDNMM, or PDNMG.
+	Note that PDNMS to traverse a single structure, but 
+	PDNMM and PDNMG continue traversing from the point where called
+	down the linked list.  Therefore if you want to traverse only
+        one molecule, say pmmdThis, use the pmmdThis->pdnmgHead pointer 
+	that hangs off the molecule as the argument for the traverser.
+
+
+MODEL-SPECIFIC TRAVERSERS:
+These routines allow you to traverse one specific model
+        or all the models.
+
+Int2 TraverseOneModel(DValNodePtr pdnModel, Int2 iTraverse, Int2 iModel, 
+			Int4 iIndex, Pointer ptr, pNodeFunc pfnCallMe);
+
+Int2 TraverseModels(DValNodePtr pdnModel, Int2 iTraverse, 
+     Int4 iIndex, Pointer ptr,  pNodeFunc pfnCallMe);
+
+	use the iTraverse flag as:
+#define TRAVERSE_ALL 0
+#define TRAVERSE_MOLECULE 1
+#define TRAVERSE_GRAPH 2
+#define TRAVERSE_ATOM 3
+#define TRAVERSE_BOND 4
+#define TRAVERSE_SOLID  5
+#define TRAVERSE_IBOND 6
+
+
+NODE-SPECIFIC TRAVERSERS:
+These only visit the PFB nodes stated in their names, and ignore the others.
+They are usually called by TraverseOneModel and TraverseModels. 
+They are much faster than TraverseAll because they only call the function at 
+the specified node type.
+
+
+Int2 TraverseIBonds( DValNodePtr pdnModel, Int4 iModel, Int4 iIndex, 
+			  Pointer ptr, pNodeFunc pfnCallMe);
+
+ 	 Walks all the inter-res or inter-mole bond children from 
+	 the current pointer.
+	 Can start from MSD, MMD, MGD, MBD (self) 
+	 Performs(*pfnCallMe)(pfbThis, iModel, iIndex, ptr) at each bond node.
+
+
+Int2 TraverseBonds( DValNodePtr pdnModel, Int4 iModel, Int4 iIndex, 
+			  Pointer ptr, pNodeFunc pfnCallMe);
+
+ 	 Walks all the bond children from the current pointer.
+	 Can start from MSD, MMD, MGD, MBD (self) 
+	 Performs(*pfnCallMe)(pfbThis, iModel, iIndex, ptr) at each bond node.
+
+
+
+Int2 TraverseAtoms( DValNodePtr pdnModel, Int4 iModel, Int4 iIndex, 
+			  Pointer ptr, pNodeFunc pfnCallMe);
+ 	Walks all the atom children from the current pointer.
+	 Can start from MSD, MMD, MGD, MAD (self).
+	 Performs (*pfnCallMe)(pfbThis, iModel, iIndex, ptr) at each atom node.
+	
+
+
+
+Int2 TraverseGraphs( DValNodePtr pdnModel, Int4 iModel, Int4 iIndex, 
+			  Pointer ptr, pNodeFunc pfnCallMe);
+	 Walks all the model children from MSD, MMD
+	 Performs (*pfnCallMe)(pfbThis, iModel, iIndex, ptr) at each graph node.
+
+
+
+
+Int2 TraverseMolecules( DValNodePtr pdnModel, Int4 iModel, Int4 iIndex, 
+			  Pointer ptr, pNodeFunc pfnCallMe);
+ 	 Walks all the model children from MSD
+	 Performs (*pfnCallMe)(pfbThis, iModel, iIndex, ptr) at each molecule node. 
+
+
+
+Int2 TraverseSolids( DValNodePtr pdnModel, Int4 iModel, Int4 iIndex, 
+			  Pointer ptr, pNodeFunc pfnCallMe);
+
+
+	
+ 		
+
+ 
+ 
+
+__________________________________________________________________________
+OUTPUT:
+ 
+ASN.1 file generators
+Boolean WriteAsnModelList(PDNMS pdnmsThis,   Int2 iNumModels,  Int2Ptr i2Vec,  
+				    CharPtr pcSave,  Byte bSave );
+Boolean WriteAsnOneModel(PDNMS pdnmsThis,  Int2 iModel,  CharPtr pcSave,  Byte bSave);
+Boolean WriteAsnAllModel(PDNMS pdnmsThis,  CharPtr pcSave,  Byte bSave);
+Boolean WriteAsnLocalDict(PDNMS pdnmsThis, CharPtr pcSave,  Byte bSave,  Boolean SaveId);
+
+
+PDB file generators:
+Int2	WritePDBModelList(PDNMS pdnmsThis,  FILE *pFile,  Int2 iNumModels,  Int2Ptr i2Vec );
+Int2	WritePDBOneModel(PDNMS pdnmsThis,  FILE *pFile,  Int2 iModel);
+Int2	WritePDBAllModel(PDNMS pdnmsThis,  FILE *pFile);
+
+
+Kinemage file generators:
+Int2	WriteKinModelList(PDNMS pdnmsThis,  FILE *pFile,  Int2 iColor, Byte bKinRender,
+				 Int2 iNumModels,  Int2Ptr i2Vec );
+Int2	WriteKinOneModel(PDNMS pdnmsThis,  FILE *pFile, Int2 iColor, Byte bKinRender, Int2 iModel);
+Int2	WriteKinAllModel(PDNMS pdnmsThis, FILE *pFile, Int2 iColor, Byte bKinRender);
+
+iColor types:
+
+bKinRender types:
+#define KIN_MULTANIM    0x20  /* forces KIN_COLOR_NUMBER */
+#define KIN_ALTCONF     0x10  
+#define KIN_HET         0x08   /* default */
+#define KIN_RESIDUE     0x04 
+#define KIN_BACKBONE    0x02   
+#define KIN_VIRTUAL     0x01   /* default */
+#define KIN_DEFAULT     0x00  /* forces KIN_VIRTUAL */
+
+#define KIN_COLOR_DEFAULT 0  /* forces KIN_COLOR_NUMBER */
+#define KIN_COLOR_NUMBER  1  /* default */
+#define KIN_COLOR_TYPE    2 
+#define KIN_COLOR_TEMP    3  /* forces Temp groups only */ 
+#define KIN_COLOR_ATOM    4  /* forces Element groups only */
+
+
+
+
+
+
+__________________________________________________________________________
+COMPUTATIONAL GOODIES:
+
+FloatLo LIBCALL AtomDistanceSq(PMAD pmadFrom, PMAD pmadTo, Int2 iModel, Char cAlt);
+
+
+ 
+
+___________________________________________________________________________
+MACROS:
+
+The "Is" macros are used to triage PFB nodes and to query their contents
+as booleans.  You must cast to a PFB if you use these macros with
+known type data, e.g:
+
+if (IsNA((PFB)pmsdThis))
+  {
+    /* this structure contains a Nucleic Acid molecule */
+    /* it may contain other things... */
+  }
+
+if (IsNA((PFB)pmmdThis))
+  {
+    /* this molecule is a Nucleic Acid */
+  }
+
+Note that macros aren't used in mmdabpi[1-3].c code.  
+That's because they weren't defined until after that code was written.
+These are defined in mmdbapi.h.
+
+
+
+Use these with any PFB node, esp. when doing TraverseAll...
+  IsAtomNode(pfb)      ((int) pfb ->bMe == AM_MAD)
+  IsBondNode(pfb)      ((int) pfb ->bMe == AM_MBD)
+  IsGraphNode(pfb)     ((int) pfb ->bMe == AM_MGD)
+  IsMoleculeNode(pfb)  ((int) pfb ->bMe == AM_MMD)
+  IsObjectNode(pfb)    ((int) pfb ->bMe == AM_MOD)
+  IsDensityNode(pfb)   ((int) pfb ->bMe == AM_MDD)
+  IsStructureNode(pfb) ((int) pfb ->bMe == AM_MSD)
+  IsAtomLocNode(pfb)   ((int) pfb ->bMe == AM_ALD)
+
+Use these when IsStructureNode(pfb) OR IsMoleculeNode(pfb) == TRUE 
+  IsIon(pfb)		(pfb ->bWhat & (Byte) AM_ION)
+  IsRNA(pfb)		(pfb ->bWhat & (Byte) AM_RNA)
+  IsDNA(pfb)		(pfb ->bWhat & (Byte) AM_DNA)
+  IsNA(pfb)		((pfb ->bWhat & (Byte) AM_RNA) || (pfb ->bWhat & (Byte) AM_DNA))
+  IsProtein(pfb)		(pfb ->bWhat & (Byte) AM_PROT)
+  IsNAorProtein(pfb)     ((pfb ->bWhat & (Byte) AM_RNA) || (pfb ->bWhat & (Byte) AM_DNA)\
+ || (pfb ->bWhat & (Byte) AM_PROT))
+  IsWater(pfb)		(pfb ->bWhat & (Byte) AM_WAT)  
+  IsSolvent(pfb)		((pfb ->bWhat & (Byte) AM_SOL) || (pfb ->bWhat & (Byte) AM_WAT))
+  IsHeterogen(pfb)	(pfb ->bWhat & (Byte) AM_HET)
+  IsOtherPolymer(pfb)	(pfb ->bWhat & (Byte) AM_POLY)
+
+Use these when IsGraphNode(pfb) == TRUE 
+  IsGraphRNABase(pfb)	(pfb ->bWhat & (Byte) RES_RNA)
+  IsGraphDNABase(pfb)	(pfb ->bWhat & (Byte) RES_DNA)
+  IsGraphNABase(pfb)	((pfb ->bWhat & (Byte) RES_RNA) || (pfb ->bWhat & (Byte) RES_DNA))
+  IsGraphAminoAcid(pfb)	(pfb ->bWhat & (Byte) RES_AA)
+  IsGraphNAorAA(pfb)     ((pfb ->bWhat & (Byte) RES_RNA) || (pfb ->bWhat & (Byte) RES_DNA)\
+ || (pfb ->bWhat & (Byte) RES_AA))
+ 
+Use these when IsGraphNode(pfb) AND IsGraphAminoAcid(pfb) == TRUE 
+  IsAAInPDBSS(pfb)	(pfb ->bPDBSecStru)
+  IsAAInPDBHelix(pfb)   (pfb ->bPDBSecStru & (Byte) SS_HELIX)
+  IsAAInPDBSheet(pfb)   (pfb ->bPDBSecStru & (Byte) SS_SHEET)
+  IsAAInPDBStrand(pfb)  (pfb ->bPDBSecStru & (Byte) SS_STRAND)
+  IsAAInPDBTurn(pfb)    (pfb ->bPDBSecStru & (Byte) SS_TURN)
+  IsAAInNCBISS(pfb)   (pfb ->bNCBISecStru)
+  IsAAInNCBIHelix(pfb)  (pfb ->bNCBISecStru & (Byte) SS_HELIX)
+  IsAAInNCBISheet(pfb)  (pfb ->bNCBISecStru & (Byte) SS_SHEET)
+  IsAAInNCBIStrand(pfb) (pfb ->bNCBISecStru & (Byte) SS_STRAND)
+  IsAAInNCBITurn(pfb)   (pfb ->bNCBISecStru & (Byte) SS_TURN)
+
+
+Use these when IsAtomNode(pfb) == TRUE 
+  IsAtomBackBone(pfb)     (pfb ->bWhat & (Byte) AM_BACKBONE)
+  IsAtomCAlpha(pfb)       (pfb ->bWhat & (Byte) AM_CALPHA)
+  IsAtomPAlpha(pfb)       (pfb ->bWhat & (Byte) AM_PALPHA)
+  IsAtomAlpha(pfb)        ((pfb ->bWhat & (Byte) AM_CALPHA)  ||  (pfb ->bWhat & (Byte) AM_PALPHA))
+  IsAtomOCarbonyl(pfb)    (pfb ->bWhat & (Byte) AM_OCARBNYL)
+  IsAtomCBeta(pfb)        (pfb ->bWhat & (Byte) AM_CBETA)
+  IsAtomNBeta(pfb)        (pfb ->bWhat & (Byte) AM_NBETA)
+  IsAtomBeta(pfb)	 ((pfb ->bWhat & (Byte) AM_CBETA) || (pfb ->bWhat & (Byte) AM_NBETA))
+  IsAtomC1Ribose(pfb)     (pfb ->bWhat & (Byte) AM_C1RIBOSE)
+  IsAtomC4Ribose(pfb)     (pfb ->bWhat & (Byte) AM_C4RIBOSE)
+
+returns a CharPtr:
+  AtomPDBName(pfb)         pfb ->pcAName
+returns an Int1
+  AtomicNumber(pfb)        pfb ->pvnmaLink->choice 
+
+
+Use these when IsBondNode(pfb) == TRUE 
+  IsBondVirtual(pfb)      (pfb ->bWhat & (Byte) BOND_VIRTUAL)
+  IsBondPDouble(pfb)      (pfb ->bWhat & (Byte) BOND_PDOUBLE)
+  IsBondVanderWaal(pfb)   (pfb ->bWhat & (Byte) BOND_VDW)
+  IsBondIonic(pfb)        (pfb ->bWhat & (Byte) BOND_IONIC)
+  IsBondHydrogen(pfb)     (pfb ->bWhat & (Byte) BOND_H)
+  IsBondTriple(pfb)       (pfb ->bWhat & (Byte) BOND_TRIPLE)
+  IsBondDouble(pfb)       (pfb ->bWhat & (Byte) BOND_DOUBLE)
+  IsBondSingle(pfb)       (pfb ->bWhat & (Byte) BOND_SINGLE)
+  IsBondAromatic(pfb)     ((pfb ->bWhat & (Byte) BOND_PDOUBLE) && (pfb ->bWhat & (Byte) BOND_DOUBLE))
+
+Use these when IsObjectNode(pfb) == TRUE 
+  IsObjectSphere(pfb)     (pfb ->bWhat & (Byte) OBJ_SPHERE)
+  IsObjectCylinder(pfb)   (pfb ->bWhat & (Byte) OBJ_CYLINDER)
+  IsObjectBrick(pfb)      (pfb ->bWhat & (Byte) OBJ_BRICK)
+  IsObjectTMesh(pfb)      (pfb ->bWhat & (Byte) OBJ_TMESH)
+  IsObjectTriangles(pfb)  (pfb ->bWhat & (Byte) OBJ_TRIANGLES)
+  IsObjectCone(pfb)       (pfb ->bWhat & (Byte) OBJ_CONE)
+
+Use these when IsAtomLocNode(pfb) == TRUE 
+these return FloatLo values
+  AtomLocX(pfb)  pfb ->pflvData[0]
+  AtomLocY(pfb)  pfb ->pflvData[1]
+  AtomLocZ(pfb)  pfb ->pflvData[2]
+
+Use when IsStructureNode(pfb) == TRUE
+returns a CharPtr - which you should copy before use
+  PDBAccession(pfb)  pfb ->pcPDBName
+ 

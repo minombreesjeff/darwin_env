@@ -1,0 +1,144 @@
+--$Revision: 6.0 $
+--********************************************************************
+--
+--  CdRom Specific data structures
+--  James Ostell, 1991
+--
+--  Revised:  06-03-94  Schuler
+--  Revised:  07-14-94  Schuler
+--
+--********************************************************************
+
+NCBI-CdRom DEFINITIONS ::=
+BEGIN
+
+EXPORTS Cdrom-inf, Docsum;
+
+Cdrom-inf ::= SEQUENCE    -- MODIFIED
+{
+	volume-label VisibleString,                      -- title of this resource: "Entrez"
+	version INTEGER,                                 -- major release number
+	issue INTEGER,                                   -- minor release number
+	format INTEGER,                                  -- version of cdrom format used
+	descr VisibleString,                             -- a brief summary of contents
+	no-compression BOOLEAN OPTIONAL,                 -- (DEFUNCT)
+	huff-count INTEGER OPTIONAL,                     -- (DEFUNCT)
+	huff-left SEQUENCE OF INTEGER OPTIONAL,          -- (DEFUNCT)
+	huff-right SEQUENCE OF INTEGER OPTIONAL,         -- (DEFUNCT)
+	type-count INTEGER,                              -- number of document types
+	type-names SEQUENCE OF VisibleString OPTIONAL,   -- names of document types
+	type-bucket-size INTEGER OPTIONAL,               -- size of buckets for uid index
+	field-count INTEGER,                             -- number of field types
+	field-names SEQUENCE OF VisibleString OPTIONAL,  -- names of field types
+	field-bucket-size INTEGER OPTIONAL,              -- size of buckets for term index
+	types SEQUENCE OF Typedata OPTIONAL,             -- doc-type information
+	-- - - - - - - - new stuff below this line (all optional) - - - - - --
+	release-date Cd-date OPTIONAL,                    -- release date
+	close-date Cd-date OPTIONAL,                      -- close-of-data date
+	type-info SEQUENCE OF Type-info OPTIONAL,        -- more doc-type information
+	field-info SEQUENCE OF Field-info OPTIONAL,      -- field information
+	div-count INTEGER OPTIONAL,                      -- number of divisions
+	div-info SEQUENCE OF Div-info OPTIONAL,           -- division information
+	link-count INTEGER OPTIONAL,
+	link-info SEQUENCE OF Link-info OPTIONAL        -- link information
+}
+
+Typedata ::= SEQUENCE 
+{
+	num INTEGER,                       -- number of documents
+	num-uids INTEGER,                  -- number of uids
+	minuid INTEGER,                    -- minimum uid used
+	maxuid INTEGER,                    -- maximum uid used
+	num-bucket INTEGER,                -- number of index buckets
+	fields SEQUENCE OF Fielddata       -- info by field within type
+}
+
+Fielddata ::= SEQUENCE
+{
+	num-terms INTEGER,                 -- number of terms in this field
+	num-bucket INTEGER                 -- number of buckets for this field
+}
+
+Post-type ::= ENUMERATED    -- NEW TYPE
+{
+	sort (0),                          -- UIDs are sorted
+	unsort (1),                        -- UIDs are not sorted
+	hier (2) ,                         -- UIDs in hierarchical structure
+	text (3) ,                         -- "postings" file contains ASCII text
+	other (255)                        -- none of the above
+}
+
+Type-info ::= SEQUENCE   -- NEW TYPE
+{
+	id INTEGER,                        -- id number to pass to APIs
+	tag VisibleString,                 -- 2-letter tag (for CdEntrez internal use)
+	name VisibleString,                -- short string to go on menu
+	descr VisibleString OPTIONAL,      -- longer, descriptive string
+	asntype VisibleString              -- ASN.1 type (e.g. "Medline-entry")
+}
+
+Field-info ::= SEQUENCE   -- NEW TYPE
+{
+	id INTEGER,                        -- id number to pass to APIs
+	tag VisibleString,                 -- 4-letter tag (for CdEntrez internal use)
+	name VisibleString,                -- short string to go on menu
+	descr VisibleString OPTIONAL,      -- longer, descriptive string
+	single-token BOOLEAN DEFAULT FALSE, -- TRUE if terms are always a single token
+	has-special BOOLEAN DEFAULT FALSE, -- TRUE if terms may have special postings
+	hier-avail BOOLEAN DEFAULT FALSE,  -- TRUE if there is a hierarchical counterpart
+	hier-id INTEGER OPTIONAL,          -- if hier-avail==TRUE, field id of hierarchy
+	post-type Post-type DEFAULT sort   -- postings type
+}
+
+Link-info ::= SEQUENCE   -- NEW TYPE
+{
+	id INTEGER,                        -- id number
+	tag VisibleString,                 -- string identifier
+	name VisibleString,                -- short string to go on menu
+	descr VisibleString OPTIONAL,      -- longer, descriptive string
+	dbfrom INTEGER,			   -- database link points from
+	dbto INTEGER,			   -- database link points to
+	datasize INTEGER,		   -- size of link-associated data
+	reciprocal INTEGER		   -- id of reciprocal link
+}
+                                      
+Div-info ::= SEQUENCE   -- NEW TYPE
+{
+	tag VisibleString,                 -- 3-letter tag (for CdEntrez internal use)
+	descr VisibleString,               -- Description
+	reldate VisibleString OPTIONAL,    -- Release number and/or date string
+	date Cd-date OPTIONAL,             -- Structured release date     
+	docs SEQUENCE OF INTEGER OPTIONAL  -- Document counts for each type
+}
+   
+Cd-date ::= SEQUENCE    -- NEW TYPE  (Entrez date)
+{
+	year INTEGER,                      -- includes century, e.g. 1994
+	month INTEGER DEFAULT 0,           -- 1..12, 0 if unknown
+	day INTEGER DEFAULT 0              -- 1..31, 0 if unknown
+}
+
+Docsum-set ::= SEQUENCE OF Docsum
+
+Docsum ::= SEQUENCE  -- MODIFIED
+{
+	no-abstract BOOLEAN DEFAULT FALSE,               -- record has no abstract (ml)
+	translated-title BOOLEAN DEFAULT FALSE,          -- translated title (ml)
+	no-authors BOOLEAN DEFAULT FALSE,                -- no authors (ml)
+	caption VisibleString OPTIONAL,                  -- short name
+	title VisibleString OPTIONAL,                    -- full title
+	-- - - - - - new stuff below this line (all optional) - - - - - --
+	extra VisibleString OPTIONAL ,                   -- citation (ml) / seq-id (aa,nt)
+	non-document BOOLEAN DEFAULT FALSE,              -- not an Entrez doc (aa,nt: seg part)
+	is-segmented BOOLEAN DEFAULT FALSE,              -- seg seq (aa,nt) / multi-chain (st)
+	is-partial BOOLEAN DEFAULT FALSE,                -- partial sequence (aa,nt)
+	create Cd-date OPTIONAL,                         -- create date
+	modify Cd-date OPTIONAL,                         -- modify date
+	link-count SEQUENCE OF INTEGER OPTIONAL,         -- link counts to each type
+	uid INTEGER OPTIONAL,                            -- UID of this document
+	secondaryUid INTEGER OPTIONAL,                    -- Secondary UID of this document
+	not-yet-neighbored BOOLEAN DEFAULT FALSE         -- this entry not yet neighbored
+}
+
+END
+

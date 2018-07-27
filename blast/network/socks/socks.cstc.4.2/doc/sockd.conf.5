@@ -1,0 +1,195 @@
+.TH SOCKD.CONF 5 "February 9, 1994"
+.SH NAME
+sockd.conf \- SOCKS server configuration file
+.SH SYNOPSIS
+\fB/etc/sockd.conf\fP
+.SH DESCRIPTION
+The file \fB/etc/sockd.conf\fP is used to control access
+to SOCKS proxy server \fIsockd\fR and its services. (See \fIsockd\fP(8).)
+Permission and denial of a service
+request can be decided based on various combinations of the requesting
+host, the destination host, the type of service (destination port number),
+as well as the requesting user.  A line in \fB/etc/sockd.conf\fP can be
+up to 1023 characters long.  Each line may contain the following fields
+in the indicated order:
+
+.in +1
+\fIaction [\fB?=\fIuse_idend] [\fB*=\fIuserlist] src_addr src_mask [dst_addr dst_mask] [op dst_port] [ : shell_cmd ]\fR
+
+.in -1
+Spaces and tabs separate the fields. Fields enclosed in square brackets
+are optional. Blank
+lines are allowed. Except for lines that start with \fB#NO_IDENTD:\fP or
+\fB#BAD_ID:\fP, everything from the first appearance of \fB#\fP to
+the end of the line is considered comment and thus ignored by \fIsockd\fP
+during normal validation.
+
+The \fIaction\fR field
+must be either \fBpermit\fP or \fBdeny\fP
+and indicates the action to be taken if a request matches the conditions
+specified in that line. 
+
+The \fIuse_identd\fR field, when present, must be \fBI\fP, \fBi\fP, or
+\fBn\fP, and is used to specify whether \fIidentd\fR verification should be
+employed for the current line. \fB?=I\fP demands the use of
+\fIidentd\fR for verifying the user's identity, denying access if connection 
+to client's \fIidentd\fR fails or if the result does not match the user-id
+reported by the client program. \fB?=i\fP also specifies the use of
+\fIidentd\fR, but denies access only if client's \fIidentd\fR reports a user-id
+different from what the client program claims. \fB?=n\fP turns off the
+use of \fIidentd\fP. For the line in which these fields are used, they
+override the global \fIidentd\fR setting, which is determined by options
+\fB-I\fP and \fB-i\fP on the \fIsockd\fR command line.
+
+The \fIuserlist\fR field, when present, consists of
+one or more user-ids or filenames, with comma as separator. No spaces
+or tabs are allowed in the list. The user-ids should be ids of users on the
+requesting host, not those on the destination host or the SOCKS server host.
+The filenames must be full pathnames with the leading \fB/\fP. Inside
+the specified files, user-ids may be listed one or several per line,
+with any combination of blanks, tabs, and commas as separators. The
+appearance of \fB#\fP marks the remainder of the line as comment. Each
+line in the files may be up to 1023 characters long.
+If the \fB*=\fIuserlist\fR field is omitted, the line applies to all user-ids.
+
+The \fIsrc_addr\fR and \fIdst_addr\fR fields specify IP addresses
+of hosts, networks, or subnets in the usual dotted form, e.g.,
+\fB129.201.4.0\fP. The \fIsrc_mask\fR and \fIdst_mask\fR fields
+are masks for the corresponding IP addresses. 
+Bits in these masks that are set to 0 indicate the bit positions
+to be ignored during comparisons of IP addresses.
+So, specifying 255.255.255.255 in the mask demands an exact match with the
+specified IP address field, whereas 0.0.0.0 in the mask
+causes a match no matter what IP address is specified. (NOTE: This is the
+same way netmaks are usually interpreted, and is the opposite of the
+interpretation in previous versions of \fIsockd\fP.) If the
+\fIdst_addr dst_mask\fP pair is omitted, the line applies to all
+destination hosts.
+
+The \fIop\fR field must be
+\fBeq\fP, \fBneq\fP, \fBlt\fP, \fBgt\fP, \fBle\fP, or \fBge\fP,
+for the condition of equal, not equal, less than, greater than,
+less than or equal, and greater than or equal, respectively.
+The \fIdst_port\fR field can be either a port number, e.g., 23,
+or the equivalent service name as specified in the file /etc/services,
+e.g., \fBtelnet\fP for port number 23. If this pair is omitted, the
+line applies to all services, i.e., all destination port numbers.
+
+For example, consider the line
+
+.in +1
+permit *=root,clivep 128.103.4.10 255.255.255.255 179.200.20.0 255.255.255.0 le 1023
+
+.in -1
+To match the conditions indicated in this line, a request must come
+from a user named 'root' or 'clivep' on the host whose IP address is
+128.103.4.10 exactly, the destination host must have 179.200.20 in the
+first three bytes of its IP address (the last byte
+doesn't matter), and the service must use a port number
+less than or equal to 1023 on the destination host. Since the \fIaction\fR
+field is \fBpermit\fP, such requests will be granted.
+
+When a request is received by \fIsockd\fR, it checks against the lines
+in file \fB/etc/sockd.conf\fP, one line at a time. Once it finds a line
+with conditions that are matched by the request, the request is either
+granted or denied based on the \fIaction\fR field of that line. The
+remaining lines of file \fB/etc/sockd.conf\fP are skipped. If no matching
+line is found in the entire file, the request is denied.
+
+Be very careful how you order the lines in file \fB/etc/sockd.conf\fP.
+The following two lines in the indicated order
+
+.nf
+.in +1
+deny	*=abxyz	128.140.13.24  0.0.0.0
+permit		128.140.13.24  0.0.0.0
+
+.fi
+.in -1
+disallow all requests by user 'abxyz' from host 128.140.13.24, but
+allow all requests by other users from the same host. Switch the order
+of the two lines and even requests by user 'abxyz' are granted.
+
+The \fIshell_cmd\fR field specifies a command string that is executed
+when the conditions on that line are satisfied. The following substitutions
+occur before the string is presented to the Borne shell for execution:
+.nf
+.in +1
+
+%A -- replaced by the client host's domainname if known, by its IP address otherwise
+%a -- replaced by the client host's IP address
+%c -- replaced by "connect" or "bind", the command \fIsockd\fP is asked to execute
+%p -- replaced by the process id of \fIsockd\fP
+%S -- replaced by the service name (e.g., ftp) if known, by the destination port number otherwise
+%s -- replaced by the destination port number
+%U -- replaced by the user-id reported by \fIidentd\fP
+%u -- replaced by the user-id reported by the client program
+%Z -- replaced by the destination host's domainname if known, by its IP address otherwise
+%z -- replaced by the destination host's IP address
+%% -- replaced by a single %
+
+.fi
+.in -1
+Several shell commands can be strung together in the usual way. For example,
+.nf
+
+.in +1
+/usr/ucb/finger @%A | /usr/ucb/mail -s 'SOCKS: rejected %u@%A to %Z (%S)' root root@%A
+
+.in -1
+.fi
+will \fIfinger\fP the client host and pipe the result into an email message
+for superusers at the server host and the client host with an appropriate
+Subject line. Most often this feature is used with a \fBdeny\fP line, but
+it can be used with \fBpermit\fP also.
+
+Although there is an implied 'deny all' at the end of the configuration file,
+you may supply one explicitly so as to take some specific action when requests
+are so rejected, e.g., (in one continuous line),
+.nf
+.in +1
+
+deny 0.0.0.0 0.0.0.0 : /usr/ucb/finger @%A |
+ /usr/ucb/mail -s 'SOCKS: rejected %u@%A to %Z (%S)' root root@%A
+
+.fi
+.in -1
+You may also specify in \fB/etc/sockd.conf\fP commands to be executed when
+\fIsockd\fP cannot connect to client's \fIidentd\fP or when the user-ids
+reported by the client programs and the client's \fIidentd\fP do not match.
+These special entries must have \fB#NO_IDENTD:\fP and \fB#BAD_ID:\fP at the very
+beginning of the line, followed by the shell commands to be excuted. For
+example:
+.nf
+.in +1
+
+#NO_IDENTD: /usr/ucb/mail -s 'Please run identd on host %A' root@%A
+#BAD_ID: finger @%A | /usr/ucb/mail -s '%U pretends to be %u on %A' root root@%A
+
+.fi
+.in -1
+A program called \fItest_sockd_conf\fP is provided for you to check
+your \fIsockd\fR configuration file. Be sure to use it everytime after
+you modify the configuration file. See \fItest_sockd_conf\fP(8).
+
+Strictly speaking, \fIsockd\fP has no concept of inside/outside, it
+does know which is the requesting host and which the destination
+and that is the basis of its access control. Therefore it can be used
+to facilitate
+access from outside world into your internal networks as well. Needless to
+say, you have to take extreme caution if you choose to do so. If you
+don't need that kind of access, it is recommended that you specifically
+deny such connections in \fBsokcd.conf\fR. For example, if the Class B
+network 129.1 is your internal network, use
+
+.nf
+.in +1
+deny	0.0.0.0  0.0.0.0	129.1.0.0  255.255.0.0
+.fi
+.in -1
+
+as the first line of your \fBsockd.conf\fP to protect your inside hosts
+from all attempts of access from the outside world through SOCKS.
+.SH SEE ALSO
+\fIsockd\fP(8), \fIsockd.route\fP(5), \fItest_sockd_conf\fP(8),
+\fIsocks.conf\fP(5), \fIsocks_clients\fP(1)

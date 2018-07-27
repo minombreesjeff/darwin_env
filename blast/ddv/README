@@ -1,0 +1,4 @@
+The code in this directory except ddvgraph is restricted checkin as it has
+been forked and placed in the C++ toolkit.  Please check in only bugfixes and
+make sure that these bugfixes are also checked into the C++ code.  New features 
+should only go into the C++ code.  For more info, contact lewisg.

@@ -1,0 +1,5 @@
+# replace 'client_IP' below with an actual IP address before trying it
+permit	client_IP 255.255.255.255
+deny	0.0.0.0 0.0.0.0 : /usr/ucb/finger @%A | /usr/ucb/mail -s 'SOCKD: rejected -- from %u@%A to host %Z (service %S)' root
+#BAD_ID: /usr/ucb/finger @%A | /usr/ucb/mail -s '%U pretends to be %u on host %A' root@%A root
+#NO_IDENTD: /usr/ucb/mail -s 'Please run identd on %A' %u@%A root@%A

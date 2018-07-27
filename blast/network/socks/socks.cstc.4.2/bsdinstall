@@ -1,0 +1,27 @@
+#!/bin/sh
+# A BSD-like install script for SYSV systems.
+# Written by Phil Hochstetler, phil@sequent.com
+if [ $# -lt 2 ]; then
+	echo "Usage: install [-m ddd] srcfile dstdir" 1>&2
+	exit 1
+fi
+if [ X"$1" = X"-m" ]; then
+	CMD="chmod $2 $3"
+	shift
+	shift
+else
+	CMD=
+fi
+
+if [ X"$1" = X -o X"$2" = X -o X"$3" != X ]; then
+	echo "Usage: install [-m XXX] srcfile dstdir" 1>&2
+	exit 1
+fi
+
+FILE="$1"
+DIR="$2"
+if [ ! -d "$DIR" ]; then
+	mkdir $DIR
+fi
+
+cp $FILE $DIR && $CMD

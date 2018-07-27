@@ -1,0 +1,268 @@
+
+Beginning with Release 2.0 of the Entrez:Sequences and Pre-Release 1.0 of the
+Entrez:MEDLINE CD-ROMs, it is possible for the Entrez application to access
+one or both data sets. This will allow users to potentially have access to the
+rich set of MEDLINE articles on the Entrez:MEDLINE disc, while simultaneously
+having access to the sequence data on the Entrez:Sequences disc.
+
+This functionality requires both
+ i) a new version of the Entrez application software, and
+ii) a more complex configuration file, to handle the wide variety of
+    possible configurations.
+
+Users who wish to use only _one_ of the Entrez:Sequences or Entrez:MEDLINE discs
+(never in combination) will not need to make any changes in their configuration
+files; the new Entrez software is backwards compatible with these old
+configuration files. If you fall into this catagory and have already installed
+Entrez on your machine, then there is no need to read further.
+
+Note that the complex configuration mechanism which is discussed below is
+not currently supported. We would, however, appreciating hearing about any
+problems which you may encounter. A supported version with a user-friendly
+configuration program will be provided with Release 3.0 of the Entrez:Sequences
+CD-ROM.
+
+Also note that, because there will be no pre-Release 2.0 Entrez:MEDLINE CD-ROM,
+there will be a few MEDLINE abstracts which will be present on the latest
+Entrez:Sequences CD-ROM (Release 2.0), but not on the latest Entrez:MEDLINE
+CD-ROM (Pre-Release 1.0). This is a deviation from future CD-ROM releases,
+when the MEDLINE records on the latest Entrez:Sequences CD-ROM will be a
+proper subset of those sequences on the latest Entrez:MEDLINE CD-ROM.
+
+Users who wish to use both CD-ROMs on a single CD-ROM drive are advised to
+make sure that they have two CD-ROM caddies available (one for each CD).
+Frequent switching of CD-ROMs between a single caddy and the CD jewel boxes can
+induce high levels of stress.
+
+Seven pre-canned configuration files are made available, with corresponding
+.ini and .cnf files for MS Windows and the Macintosh, respectively. The
+selected file should be modified as appropriate for your machine, renamed
+to NCBI.INI or ncbi.cnf, and used to replace the NCBI.INI or ncbi.cnf file, as
+outlined on the Entrez manual's installation instructions.
+
+
+The pre-canned configuration files are as follows:
+
+    NCBISM1D.XXX      MEDLINE and Sequence CDs, with only one CD-ROM drive
+    NCBISM2D.XXX      MEDLINE and Sequence CDs, with two CD-ROM drives
+    NCBIMO.XXX        MEDLINE CD only
+    NCBISO.XXX        Sequence CD only
+    NCBISHMC.XXX      Harddisk-based Sequence CD image, and MEDLINE CD-ROM
+    NCBISCMH.XXX      Harddisk-based MEDLINE CD image, and Sequence CD-ROM
+    NCBISHMH.XXX      MEDLINE CD and Sequence CD images, both on hard disk
+
+The following customizations may be necessary for your machine:
+
+* For all files, the only changes to be made will be within the first 20-or-so
+  lines of the configuration file, within the "NCBI" section and the media
+  sections "ENTREZ_xxx_yD" (where xxx is one of "SEQ" or "MED", and y is one of
+  "C" or "H").
+
+* A copy of the CDROMDAT.VAL for each CD-ROM to be used must be stored on the
+  hard disk, in the directory pointed to by the "VAL" field for the
+  corresponding media. Note that these files are _different_ for the Sequence
+  and MEDLINE CD-ROMs, and the correct file must be stored in each prescribed
+  location.
+
+* For improved performance, a copy of the index files should be copied onto
+  the hard disk for each CD-ROM to be used, if space is available. These
+  canned configuration files assume the availability of such index files on a
+  hard disk. If you choose not to install the index files, then remove the
+  "IDX=" lines from the configuration file which you have selected. Again,
+  note that the index files are _different_ for the Sequence and MEDLINE
+  CD-ROMs, and the correct files must be stored in each prescribed location.
+
+* For MS-Windows, it is assumed that the first CD-ROM drive is drive D and the
+  second CD-ROM drive (NCBISM2D.INI only) is drive E. Change this as necessary.
+
+* For Macintosh systems, the hard disk name yourHardDisk should be changed to
+  the name of your hard disk.
+
+* For both types of systems, it is assumed that all hard disk files reside on
+  the same hard disk. Change this as necessary.
+
+* If you choose to copy both CD-ROMs to your hard disk (NCBISHMH.XXX), then
+  you need not copy the medline directory from the Entrez:Sequences CD-ROM
+  onto your hard disk, since this portion of MEDLINE is a proper subset of
+  the MEDLINE on the Entrez:MEDLINE CD-ROM.
+
+* Note that a copy of the appropriate seven configuration files for your
+  platform (Mac or Windows) will be automatically copied by the installation
+  procedure into the ENTREZ\CONFIG folder. You may, however, find an alternate
+  copy of the configuration files on the CD-ROM in the SOFTWARE\CONFIG folder,
+  inside the MAC and WIN folders.
+
+* Note that the "ROOT=" field in the "[NCBI]" section of the multi-source
+  configuration files (ncbi????.XXX) is not used by this version of Entrez,
+  but is provided for backwards compatability with older versions of Entrez,
+  as well as for compatability with other applications using the older
+  version of our data access libraries.
+
+* Because the MEDLINE entries on Release 2.0 of the Entrez:Sequences CD-ROM
+  are not a proper subset of the entries on pre-Release 1.0 of the
+  Entrez:MEDLINE CD-ROM, it may be necessary to set an additional configuration
+  parameter, if you begin to encounter "Missing UID" errors when running
+  Entrez. This is the only parameter which should be set in the
+  entrez.[cnf/ini] configuration file; all other parameters should be
+  set in the ncbi.[cnf/ini] configuration file. The parameter which should
+  be set is "SHOWALLERRORS=FALSE", in the [PREFERENCES] section. It is
+  strongly recommended that you first get your configuration of Entrez
+  running properly, before adding this line to your entrez.[cnf/ini] file.
+  This configuration option will mute many errors, which may make it
+  difficult to debug your configuration difficulties.
+  
+
+
+EXAMPLE
+
+You wish to use both CD-ROMs, on a single CD-ROM drive, under MS Windows.
+Suppose that the device for your CD-ROM drive is named "F:", not "D:"
+
+Install Entrez from Release 2.0 of the Entrez:Sequences CD-ROM, per the
+installation/update instructions in the manual.
+
+Make a copy of ncbism1d.ini from \ENTREZ\CONFIG\NCBISM1D.INI, first having
+saved a copy of NCBI.INI (if you had one):
+
+    COPY C:\WIN\NCBI.INI C:\WIN\NCBIINI.BAK
+    COPY C:\ENTREZ\CONFIG\NCBISM1D.INI C:\WIN\NCBI.INI
+
+Edit C:\WIN\NCBI.INI with your favorite editor, and change the occurrences
+of ROOT=D:\ to ROOT=F:\. Save your changes and exit the editor.
+
+Create some directories, if they don't already exist:
+    MKDIR C:\ENTREZ\MED
+    MKDIR C:\ENTREZ\MED\INDEX
+    MKDIR C:\ENTREZ\SEQ
+    MKDIR C:\ENTREZ\SEQ\INDEX
+
+Copy the sequence index files, and CDROMDAT.VAL to your hard disk.
+    COPY F:\INDEX\*.* C:\ENTREZ\SEQ\INDEX
+    COPY F:\CDROMDAT.VAL C:\ENTREZ\SEQ
+
+Now, eject the Entrez:Sequences CD, insert the Entrez:MEDLINE CD, and
+copy the MEDLINE index files and CDROMDAT.VAL to your hard disk.
+    COPY F:\INDEX\*.* C:\ENTREZ\MED\INDEX
+    COPY F:\CDROMDAT.VAL C:\ENTREZ\MED
+
+Now, start-up Windows (if it's not already running), and launch Entrez.
+It doesn't matter which CD-ROM, if any, is inserted into the CD-ROM drive
+(although, for convenience, it generally makes sense to insert the CD-ROM
+which you would like to use first). The Entrez application will inform
+you when it is time to insert the other CD-ROM.
+
+NOTES
+
+When using two CD-ROMs on a single CD-ROM drive, the Macintosh version will
+automatically eject the CD-ROM which is currently inserted. Ejection
+must be performed manually for the Microsoft Windows version.
+
+Ejecting a CD-ROM at times other than that directed by the Entrez application
+may result in undesirable effects.
+
+If you _must_ eject a CD-ROM on the Macintosh when Entrez is running, it
+is important to drag the CD-ROM icon to the trash can, rather than using
+the Eject selection from the Finder's FILE menu. The latter may result in 
+undesirable effects.
+
+
+
+The remainder of this document is a technical discussion which should not
+be necessary for the reader who only wants to install Entrez on their system.
+
+
+----------------------------------------------------------------------------
+
+                           TECHNICAL DISCUSSION
+
+The new configuration files consist of a three-level structure. This
+hierarchy is implemented by using unique user-specified names for sections
+within the configuration file, as well as some reserved section names.
+
+The top-level of the hierarchy consists of three reserved-named sections,
+"MEDLINE", "SEQUENCE", and "LINKS", each of which contain a single _field_,
+"CHANNELS". Channels are used to specify the mechanisms by which the
+corresponding types of data can be obtained. For example, considering the
+Entrez:MEDLINE and Entrez:Sequences CDs, it is possible to obtain some
+MEDLINE information from either CD, but Sequence information may only be
+obtained from the Entrez:Sequences CD. Therefore, the value of the channels
+field for MEDLINE will contain two user-defined channel names, but the value
+of the channels field for SEQUENCE will only contain one such channel name.
+
+Each name listed on the right-hand-side of "CHANNELS=" must corresponding
+to a section-name at the second-level of the hierarchy; the "Channels"
+level. Each Channel-level entry consists of a list of priorities for 
+the possible types of data associated with that channel. Priorities are used
+by the Entrez software to determine which Channel it should attempt to
+use for obtaining the corresponding data. A priority of 0 indicates that
+this channel should never be used to obtain this data. For positive values,
+a higher priority indicates a preference for that data channel. For example,
+the Channel for obtaining MEDLINE records from the Entrez:Sequences disc
+might have priority 1, while the corresponding Channel associated with
+the Entrez:MEDLINE disc might have priority 2, because the latter is a better
+source for this data. The integer-valued priorities may optionally be
+followed by a comma and the keyword "NO_DRASTIC_ACTION". This means that,
+if the priority for this channel is higher than any other, but a "drastic
+action" would need to be taken to make this channel active (like ejecting
+a different CD-ROM), then a channel with lower priority may be deferred to
+(e.g., if the corresponding CD-ROM is currently inserted).
+
+The possible data types for MEDLINE and SEQUENCE channels are:
+    RECORDS   - Entire MEDLINE abstracts, or Sequence entries; these
+                corresponding to double-clicking on a document summary
+                in the Documents window
+    DOCSUMS   - A document summary; these appear as a scrolled list in
+                the document summary window
+    TERMS     - These are the terms specified in term selection in the
+                Query window
+    BOOLEANS  - This is the operation performed during query refinement
+The default priority for an unreferenced data type (e.g., TERMS) is 1.
+
+A LINKS channel consists of an "INFO" priority, used to access global
+information about Entrez status, and a set of links relationships. Links
+relationships are specified by the "from" name, followed by two underscores,
+followed by the "to" name. For example, the name for MEDLINE to SEQUENCE
+links is "MEDLINE__SEQUENCE". The default priority for these double-underscored
+names is 0, while the default priority for "INFO" is 1.
+
+Each Channel section must also contain a "MEDIA" field. This references
+the lowest-level level in the hierarchy, Media.
+
+A Media, in turn, contains a "TYPE" field (currently this value must be either
+CD or HARDDISK), and a set of fields which correspond to much of the original
+set of fields which appeared in the "NCBI" section of the old-style
+configuration field (namely: IDX, ROOT, etc.). There is an additional field,
+"VAL", which must point to the filename for CDROMDAT.VAL. The default value for
+"VAL" is the value specified by "ROOT".
+
+A media section must also contain the field "FORMAL_NAME", which is
+the formal name to be used for that media when the software addresses the
+user (e.g. "Entrez:MEDLINE CD-ROM"). A media section may also contain
+one or more fields of the form "DRASTIC_TO_mmm=1", where mmm is the
+section name of another media. This is used in conjunction with the
+"NO_DRASTIC_ACTION" option which may appear in some Channel fields.
+For example, within a Media section "ENTREZ_MED_CD", the field
+"DRASTIC_TO_ENTREZ_SEQ_CD" means that it is considered to be a drastic
+action to switch from the Entrez:MEDLINE CD-ROM to the Entrez:Sequences
+CD-ROM.
+
+The "NCBI" section  must contain the DATA and ASNLOAD entries, indicating
+where the data files and ASN.1 object loader definitions are to be found.
+In addition, the "NCBI" section must contain a "MEDIA" field, which is
+a comma-separated list of all the Media which will be used. Note that
+this constitutes a deviation from the 3-level model mentioned earlier.
+
+A discussion of the pathname redirection used in both old and new-style
+configuration files is in order here, since it has never been fully
+documented on earlier CD-ROMs or CD-ROM documentation. The pathname
+specification field names are: "ROOT", "IDX", "TRM", "MED", "SEQ", "LNK".
+All pathnames default as being relative to the directory specified by
+"ROOT", which is a mandatory field. The remaining fields, which are all
+optional, override the pathname specified by "ROOT" for a specific set of files,
+as follows:
+* IDX    - Index files
+* TRM    - Term list files (and their associated indices and "posting files")
+* MED    - ASN.1 data for MEDLINE documents
+* SEQ    - ASN.1 data for sequence documents
+* LNK    - Links among related documents
+* 

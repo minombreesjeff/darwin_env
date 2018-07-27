@@ -1,0 +1,15 @@
+This readme is for the PC netBSD OS:
+(based on the readme.unx in this directory)
+
+(The cn3d in the below could also be sequin or entrez)
+
+* download the cn3d directory for linux and use the .mk and .sed
+files there.
+* in makeall.unx: add "ranlib libxxx.a" after every "$(AR) cru libxxx.a
+..."
+
+Delete all code in makedis.csh that is related to Vibrant and
+makenet (unless you need them).  (You will need X11 if you
+want to use vibrant.)
+
+

@@ -1,0 +1,19 @@
+Mla-request ::= init NULL
+
+Mla-request ::= getmle 66002703
+
+Mla-request ::= getpub 66014762
+
+Mla-request ::= getpub 67004291
+
+Mla-request ::= getpub 67172894
+
+Mla-request ::= getpub 66076891
+
+Mla-request ::= getpub 81264959
+
+Mla-request ::= getpub 85079995
+
+Mla-request ::= getpub 88152497
+
+Mla-request ::= fini NULL

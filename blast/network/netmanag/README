@@ -1,0 +1,9 @@
+In order to use the NCBI network services in conjunction with the NetManage
+Software development kit, it is necessary to copy the following files
+from the NEWT-SDK developer disks into this "netmanag" directory.
+
+nmpcip.h
+nmpcip.lib
+
+These files are copyrighted by NetManage, so it is not possible for NCBI
+to distribute them in its software tree.

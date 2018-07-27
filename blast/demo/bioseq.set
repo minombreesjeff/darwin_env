@@ -1,0 +1,391 @@
+Bioseq-set ::= {
+  level 0 ,
+  class genbank ,
+  release "66.0" ,
+  date
+    str "Apr 30, 1991 11:19 AM" ,
+  descr {
+    title "GenBank release 66.0 converted to ASN.1" } ,
+  seq-set {
+    seq {
+      id {
+        giim {
+          id 1 } ,
+        genbank {
+          name "AGMAPHAAA" ,
+          accession "M26844" } } ,
+      descr {
+        title "African green monkey alpha-DNA." ,
+        genbank {
+          source "African green monkey DNA." ,
+          keywords {
+            "alpha DNA" ,
+            "alphoid repetitive sequence" } ,
+          date "15-DEC-1989" } ,
+        org {
+          taxname "Cercopithecus aethiops" } ,
+        pub {
+          pub {
+            muid 84259347 ,
+            article {
+              title {
+                name "A protein binds to a satellite DNA repeat at three
+ specific sites that would be brought into mutual proximity by DNA folding in
+ the nucleosome" } ,
+              authors {
+                names
+                  str {
+                    "Strauss,F." ,
+                    "Varshavsky,A." } } ,
+              from
+                journal {
+                  title {
+                    name "Cell" } ,
+                  imp {
+                    date
+                      std {
+                        year 1984 } ,
+                    volume "37" ,
+                    pages "889-901" } } } } } } ,
+      inst {
+        repr raw ,
+        mol dna ,
+        length 208 ,
+        topology linear ,
+        strand ds ,
+        seq-data
+          ncbi2na '0F74EFE127CD36309FDE201EF7BBDEF0F4DD212F137F57E0425FD9C29EF
+7EE83E902A33FA055322A73AE00080CDF57D007A0209F00'H } } ,
+    set {
+      level 1 ,
+      class segset ,
+      date
+        str "30-SEP-1988" ,
+      descr {
+        title "African green monkey endogenous retroviral 5' LTR, segment 1 of
+ 2." ,
+        pub {
+          pub {
+            muid 85295965 ,
+            article {
+              title {
+                name "Nucleotide sequence analysis and enhancer function of
+ long terminal repeats associated with an endogenous African green monkey
+ retroviral DNA" } ,
+              authors {
+                names
+                  str {
+                    "Kessel,M." ,
+                    "Khan,A.S." } } ,
+              from
+                journal {
+                  title {
+                    name "Mol. Cell. Biol." } ,
+                  imp {
+                    date
+                      std {
+                        year 1985 } ,
+                    volume "5" ,
+                    pages "1335-1342" } } } } } ,
+        org {
+          taxname "Cercopithecus aethiops" } } ,
+      seq-set {
+        seq {
+          id {
+            giim {
+              id 4 } } ,
+          descr {
+            title "African green monkey endogenous retroviral 5' LTR, segment
+ 1 of 2." } ,
+          inst {
+            repr seg ,
+            mol dna ,
+            length 1162 ,
+            fuzz
+              lim gt ,
+            ext
+              seg {
+                whole
+                  giim {
+                    id 2 } ,
+                null NULL ,
+                whole
+                  giim {
+                    id 3 } } } } ,
+        set {
+          level 3 ,
+          class parts ,
+          seq-set {
+            seq {
+              id {
+                giim {
+                  id 2 } ,
+                genbank {
+                  name "AGMERLTR1" ,
+                  accession "M11391" } } ,
+              descr {
+                title "African green monkey endogenous retroviral 5' LTR,
+ segment 1 of 2." ,
+                genbank {
+                  source "African green monkey DNA." ,
+                  keywords {
+                    "" } ,
+                  origin "145 bp upstream of HindIII site." } } ,
+              inst {
+                repr raw ,
+                mol dna ,
+                length 612 ,
+                topology linear ,
+                strand ds ,
+                seq-data
+                  ncbi2na 'F28B8032944007C807CC87C807C887C807C887C807C887C807C
+C87C807C887C8874807C809F200944529DC0915950E14AE94DC0915950E14AE94DC09159541B53
+BA735004545403D5A0740480042D620316E6AF405070D22C2115E74A5305E750D37E65D09FEE2F
+DEEBFF97F301EDEC7293DAAD7BA507DA1328572667243037759EE1F5BAD0BADDD9861479528283
+7001CAF713FAE47E96A0D69'H } } ,
+            seq {
+              id {
+                giim {
+                  id 3 } ,
+                genbank {
+                  name "AGMERLTR2" ,
+                  accession "M11390" } } ,
+              descr {
+                title "African green monkey endogenous retroviral 3' LTR,
+ segment 2 of 2." ,
+                genbank {
+                  source "African green monkey DNA." ,
+                  keywords {
+                    "" } ,
+                  origin "131 bp upstream of HindIII site." } } ,
+              inst {
+                repr raw ,
+                mol dna ,
+                length 550 ,
+                topology linear ,
+                strand ds ,
+                seq-data
+                  ncbi2na '00228A81E00CA51001F201F321F201F221F201F221F201F221F
+201F221D201F2027C8025114A7702456543852BA537024565506D4EE9CD401151500F5681D0120
+010B5880C5466BD0141C348B084579D294C179D434DF99742FFB8BF7BAFFE5FCC07B7B1CA4F6AB
+5EE941F284CA15C999C90C0DDD67B87D6EB42EB77663855E54A0A0DC0072BD713C120'H } } } } } } ,
+    set {
+      level 1 ,
+      class nuc-prot ,
+      date
+        str "15-JUN-1988" ,
+      descr {
+        title "African green monkey BSC-1 cell growth inhibitor, and
+ translated products" ,
+        comment "Draft entry and computer-readable sequence for [Proc. Natl.
+ Acad. Sci. U.S.A. 85, 79-82 (1988)] kindly provided by S.Hanks, 03-DEC-1987." ,
+        pub {
+          pub {
+            muid 88124824 ,
+            article {
+              title {
+                name "Amino acid sequence of the BSC-1 cell growth inhibitor
+ (polyergin) deduced from the nucleotide sequence of the cDNA" } ,
+              authors {
+                names
+                  str {
+                    "Hanks,S." ,
+                    "Armour,R." ,
+                    "Baldwin,J.H." ,
+                    "Maldonado,F." ,
+                    "Spiess,J." ,
+                    "Holley,R.W." } } ,
+              from
+                journal {
+                  title {
+                    name "Proc. Natl. Acad. Sci. U.S.A." } ,
+                  imp {
+                    date
+                      std {
+                        year 1988 } ,
+                    volume "85" ,
+                    pages "79-82" } } } } } ,
+        org {
+          taxname "Cercopithecus aethiops" } } ,
+      seq-set {
+        seq {
+          id {
+            giim {
+              id 5 } ,
+            genbank {
+              name "AGMGIBSC1" ,
+              accession "J03585" } } ,
+          descr {
+            title "African green monkey BSC-1 cell growth inhibitor, complete
+ cds." ,
+            genbank {
+              source "African green monkey kidney epithelium, cDNA to mRNA." ,
+              keywords {
+                "BSC-1 cell growth inhibitor" ,
+                "cartilage-inducing factor B" ,
+                "polyergin" ,
+                "transforming growth factor type b2" } ,
+              origin "Unreported." ,
+              date "15-JUN-1988" } } ,
+          inst {
+            repr raw ,
+            mol rna ,
+            length 1585 ,
+            topology linear ,
+            strand ss ,
+            seq-data
+              ncbi2na 'FFFC0A0F424231BFF73EA4F8723EFE402ED93400401004040004004
+1DD7E3731FE20FBE7F7FFFFDF787F00107FFF517FF000E471EEE7899FFF8D7937AD1AD99D25EDC
+5E4911D8CE852F4E64228D8A6359A9235E2427827452D55208735E256282D5568AE3F537104914
+A87E7528829896889A597989988A2618A2C719428AFC4032139657DF55D600E5356547F71215C7
+D20FBDAFE1B7490E8820E7D43FAE0A48BD22DFDBF920D402522E5E041A3E27B348F742D4087C13
+7505499C4D84902FB80108920A60E9FD7D8EC1E39EF4E0E9F4530212817A8FC0309F11ED5E791F
+FB14DC30F134D50300B820F20908FE4ACF8E917513314BAE34801CC0B51CA00004BA821544DD79
+C3BCF95D7121F8B441214169A0826E7FA39A5CF9FC80EE4A30F9E5C6D67F13E3F422A372AE80E8
+C460540A310E507DEE7A24E56CFCE8BD211D24492AD789F330C53035209379F75F9E6ED5087C81
+77053DDC713E90045423E049FDC338FB02DF90392701F7E802E908D00F10E38E30E38E18610E38
+E7EC14801308897EBDB49BC0000FF8029AC40'H } ,
+          annot {
+            {
+              data
+                ftable {
+                  {
+                    data
+                      rna {
+                        type mRNA } ,
+                    location
+                      whole
+                        giim {
+                          id 5 } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "polyergin mRNA" } } } ,
+                  {
+                    data
+                      imp {
+                        key "mat_peptide" } ,
+                    location
+                      int {
+                        from 1105 ,
+                        to 1440 ,
+                        id
+                          giim {
+                            id 5 } } ,
+                    qual {
+                      {
+                        qual "note" ,
+                        val "polyergin" } } } } } } } ,
+        seq {
+          id {
+            giim {
+              id 6 } } ,
+          descr {
+            title "polyergin precursor" ,
+            method concept-trans } ,
+          inst {
+            repr raw ,
+            mol aa ,
+            length 414 ,
+            seq-data
+              iupacaa "MHYCVLSAFLILHLVTVALSLSTCSTLDMDQFMRKRIEAIRGQILSKLKLTSPPE
+DYPEPEEVPPEVISIYNSTRDLLQEKASRRAAACERERSDEEYYAKEVYKIDMPPFFPSENAIPPTFYRPYFRIVRFD
+VSAMEKNASNLVKAEFRVFRLQNPKARVPEQRIELYQILKSKDLTSPTQRYIDSKVVKTRAEGEWLSFDVTDAVHEWL
+HHKDRNLGFKISLHCPCCTFVPSNNYIIPNKSEELEARFAGIDGTSTYTSGDQKTIKSTRKKNSGKTPHLLLMLLPSY
+RLESQQTNRRKKRALDAAYCFRNVQDNCCLRPLYIDFKRDLGWKWIHEPKGYNANFCAGACPYLWSSDTQHSRVLSLY
+NTINPEASASPCCVSQDLEPLTILYYIGKTPKIEQLSNMIVKSCKCS" } } } ,
+      annot {
+        {
+          data
+            ftable {
+              {
+                data
+                  cdregion {
+                    frame one ,
+                    code {
+                      id 1 } } ,
+                product
+                  whole
+                    giim {
+                      id 6 } ,
+                location
+                  int {
+                    from 199 ,
+                    to 1443 ,
+                    id
+                      giim {
+                        id 5 } } ,
+                qual {
+                  {
+                    qual "note" ,
+                    val "polyergin precursor" } } } } } } } ,
+    seq {
+      id {
+        giim {
+          id 7 } ,
+        genbank {
+          name "AGMKPNRSA" ,
+          accession "J00337" } } ,
+      descr {
+        title "african green monkey kpni family interspersed repeat; ls1." ,
+        genbank {
+          source "african green monkey liver cell dna." ,
+          keywords {
+            "repetitive sequence" } ,
+          date "05-DEC-1983" } ,
+        org {
+          taxname "Cercopithecus aethiops" } ,
+        pub {
+          pub {
+            muid 83247399 ,
+            article {
+              title {
+                name "kpn i family of long interspersed repeated dna sequences
+ in primates: polymorphism of family members and evidence for transcription" } ,
+              authors {
+                names
+                  str {
+                    "Lerman,M.I." ,
+                    "Thayer,R.E." ,
+                    "Singer,M.F." } } ,
+              from
+                journal {
+                  title {
+                    name "Proc. Natl. Acad. Sci. U.S.A." } ,
+                  imp {
+                    date
+                      std {
+                        year 1983 } ,
+                    volume "80" ,
+                    pages "3966-3970" } } } } } } ,
+      inst {
+        repr raw ,
+        mol dna ,
+        length 1784 ,
+        topology linear ,
+        strand ds ,
+        seq-data
+          ncbi4na '8821211884281211444A118111181228144118121128812124441248411
+441228288211441411284211122128488211441118114141441212111121184411112218882184
+282184418144114118211818848412118442218188122211142118881814188811841818822218
+211428822148412888288212141188141111142412888111888218181411221111114142284848
+144211412812228144281111411211148844144218218428122841288211148181281211442812
+148112211112142184481284181221111214181814122118411121411214142228214111811212
+218121828121122182141828881121112284121111121142118444411144188222828881181118
+448428444411128442814281818821411142141112814122228882821212288184211111481188
+211418441881114128811184811112221111221811111222814114111228144211812218821441
+448144218444211141288218412812112122111112118842112111142211118841211184841828
+118211128111442882142121421111811128182182142484112444211288121111844414111188
+888421142812221828412111448281181822141182812114411288111888121141111121122221
+821111144444218182421821111144144211144181841121412128828211114111121888184211
+221121412121841111111428248282844821281414111842111821111221211841418122182821
+212214881414844841881881111142214411211214184284424144284844141118444118428828
+121284884484441181811188148821122188184411482148481421888412221421122221882284
+448181812221111418818111821884812818411412121842121248184888188421421281888121
+188421114188844112211122111842221881184181412844181114111184844212181818122184
+411811818421422181111114118414882184822888421444121844184114284411122182188282
+142111284421214411214111122111212282184882821282181148444118841421184141121218
+441212144411444118182111212844482284881144448844444211444411441414218814412121
+811281184218484441888111482814184121444841844484214211122122184421248481818481
+848112111228421248828421218481822214142881114811111111111111118428411111118841
+18111428820'H } } } }

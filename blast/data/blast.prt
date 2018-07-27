@@ -1,0 +1,132 @@
+PrintTemplateSet ::= {
+  {
+    name "StdBLAST0Result" ,
+    format {
+      asn1 "BLAST0-Result" ,
+      form
+        block {
+          separator " " ,
+          components {
+	    {
+		asn1 "BLAST0-Result.hitlists.E" ,
+		prefix "" ,
+		suffix "" ,
+		form
+		use-template "StdHitlist" } } } } } ,
+  {
+    name "StdHitlist" ,
+    format {
+      asn1 "BLAST0-HitList" ,
+      form
+        block {
+          separator " " ,
+          components {
+	    {
+		asn1 "BLAST0-HitList.hsps.E" ,
+		prefix "" ,
+		suffix "" ,
+		form
+		use-template "StdHSP" } ,
+	    {
+		asn1 "BLAST0-HitList.seqs.E" ,
+		prefix "" ,
+		suffix "" ,
+		form
+		use-template "StdSequence" } } } } } ,
+		
+  {
+    name "StdSequence" ,
+    format {
+      asn1 "BLAST0-Sequence" ,
+      form
+        block {
+          separator " " ,
+          components {
+	    {
+		asn1 "BLAST0-Sequence.desc.E" ,
+		prefix "" ,
+		suffix "" ,
+		form
+		use-template "StdSequenceDesc" } } } } } ,
+  {
+    name "StdSequenceDesc" ,
+    format {
+      asn1 "BLAST0-Seq-desc" ,
+      form
+        block {
+          separator "\n" ,
+          components {
+            {
+              asn1 "BLAST0-Seq-desc.id.E" ,
+              label "\nHSP id's:" ,
+              prefix " " ,
+              form
+        block {
+          components {
+            {
+              asn1 "BLAST0-Seq-id.E.giid" ,
+	      label "gi:" ,
+	      prefix " " ,
+              form
+                text {
+			} } ,
+            {
+              asn1 "BLAST0-Seq-id.E.textid" ,
+	      label "textid:" ,
+	      prefix " " ,
+              form
+                text {
+			} } } } } , 
+            {
+              asn1 "BLAST0-Seq-desc.defline" ,
+              label "Def-line:" ,
+              prefix " " ,
+              form
+                text {
+                   } } } } } } ,
+  {
+    name "StdHSP" ,
+    format {
+      asn1 "BLAST0-HSP" ,
+      form
+        block {
+          separator " " ,
+          components {
+	    {
+		asn1 "BLAST0-HSP.scores.E" ,
+		prefix "" ,
+		suffix "" ,
+		form
+		use-template "StdHSPScore" } } } } } ,
+  {
+    name "StdHSPScore" ,
+    format {
+      asn1 "BLAST0-Score" ,
+      form
+        block {
+          separator " " ,
+          components {
+	    {
+              asn1 "BLAST0-Score.sid" ,
+              label " " ,
+              prefix "\n" ,
+              form
+                enum {
+			} } ,
+            {
+              asn1 "BLAST0-Score.value" ,
+              label " " ,
+              prefix " " ,
+              form
+        block {
+          components {
+            {
+              asn1 "BLAST0-Score.value.i" ,
+              form
+                text {
+			} } ,
+            {
+              asn1 "BLAST0-Score.value.r" ,
+              form
+                text {
+			} } } } } } } } } }

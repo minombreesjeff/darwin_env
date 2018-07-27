@@ -1,0 +1,72 @@
+#######################################################################
+#
+# This makefile is now used to make both the flat file (suffix "FF")
+# and pubstruct (suffix "PS") production versions of mmdbsrv. The
+# previous version (6.24) was used only for building the pubstruct version.
+#
+# Historical comments that are no longer relevant have been removed.
+#
+#######################################################################
+#
+# $Log: make.mmdbsrv,v $
+# Revision 6.27  2000/06/23 22:35:56  lewisg
+# get rid of hardcoded urls
+#
+# Revision 6.26  1999/06/11 19:56:29  zimmerma
+# new makefiles
+#
+# 
+#######################################################################
+
+# Define sybase libs before ncbi.mk to allow them to be overridden:
+NCBI_SYBLIBS_CT = -L$(NCBI_SYBASE)/lib -lblk -lct -lcs -ltcl -lcomn -lintl
+
+include $(NCBI)/ncbi.mk
+CC = $(NCBI_CC)
+CFLAGS1 = -c
+OTHERLIBS = -lm
+INCPATH = $(NCBI_INCDIR)
+
+#development mode
+#OPTFLAG = -g
+#LIBPATH = $(NCBI_ALTLIB)
+
+#production mode
+OPTFLAG = $(NCBI_OPTFLAG)
+# LIBPATH = ../lib
+LIBPATH = $(NCBI_LIBDIR)
+
+# SYMBOLS FOR flat file source, executables.
+
+SRC_FF = mmdbsrv.c mmdbFF.c
+SRC_PS = mmdbsrv.c mmdb_pubstruct.c PubStructAsn.c
+
+CFLAGS = $(CFLAGS1) $(OPTFLAG) -I$(INCPATH) 
+LDFLAGS = -I$(INCPATH) $(OPTFLAG) -L../lib -L$(LIBPATH)
+
+# The current list of NCBI libraries copied from makenet.unx
+
+LIB1 = -lncbi
+LIB2 = -lncbiobj
+LIB3 = -lncbicdr
+LIB6 = -lnetcli
+LIB7 = -lnetentr
+LIB8 = -lncbiNacc
+LIB22 = -lncbimmdb
+
+# Implicit actions
+
+# if need a .o, compile the .c
+.c.o :
+	$(CC) $(CFLAGS) $<
+
+## make individual applications and components
+##$
+
+mmdbsrv.FF : $(SRC_FF)
+	$(CC) -o $@ -I./ $(LDFLAGS) $(SRC_FF) \
+        $(LIB22) $(LIB8) $(LIB7) $(LIB6) $(LIB3) $(LIB2) $(LIB1) $(NCBI_OTHERLIBS) 
+
+mmdbsrv.PS : $(SRC_PS)
+	$(CC) -o $@ -I./ $(LDFLAGS) $(NCBI_SYBFLAG) $(SRC_PS) -lnlmzip -lctutils $(NCBI_SYBLIBS_CT) \
+        $(LIB22) $(LIB8) $(LIB7) $(LIB6) $(LIB3) $(LIB2) $(LIB1) $(NCBI_OTHERLIBS)

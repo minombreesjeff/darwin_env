@@ -1,0 +1,108 @@
+/*
+ * $Id: PubStruct.scr,v 6.2 1998/06/05 17:59:55 kimelman Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *            National Center for Biotechnology Information (NCBI)
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's official duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government do not place any restriction on its use or reproduction.
+ *  We would, however, appreciate having the NCBI and the author cited in
+ *  any work or product based on this material
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ * ===========================================================================
+ *
+ * Author:  Michael Kimelman
+ *
+ * PubStruct schema definition
+ *                   
+ * Modifications:  
+ *
+ * $Log: PubStruct.scr,v $
+ * Revision 6.2  1998/06/05 17:59:55  kimelman
+ * help tags changed
+ *
+ *
+ */
+
+use PubStruct
+go
+
+PRINT "create acc"
+go
+/*
+ *  TABLE acc : ticketing
+ */
+
+create table acc (
+kind   tinyint primary key,
+ticket int NOT NULL
+)
+go
+
+insert into acc values(1,1)
+go
+
+/*
+ *   TABLE Struct : main PubStruct storage
+ */
+
+PRINT "create Struct"
+go
+
+create table Struct (
+acc           int NOT NULL primary key, /* technical accession number */
+mmdb_id       int NOT NULL,
+state         int NOT NULL,   /* important thing */
+/* value  --    legend 
+    0           alive and ready for public retrieval 
+   >0           intermediate states on "assembling line".
+                if we update some structure(BLOB) we suppress previous version 
+                instead of removing it.
+*/
+date          datetime NOT NULL, /* date of arriving in this state */
+suppressed    tinyint NOT NULL, /* >0 - if suppressed by newly arrived data */
+confidential  tinyint NOT NULL,
+blob          image NULL
+)
+go
+
+CREATE INDEX mmdb_PubStruct ON Struct(mmdb_id,state)
+go
+
+grant select on Struct to public
+go
+
+grant update(blob) on Struct to public
+go
+
+/*
+ *   TABLE pdb : pdb to mmdb translation.
+ */
+
+PRINT "create pdb"
+go
+
+create table pdb (
+                  mmdb_id       int NOT NULL PRIMARY KEY,
+                  pdb_id        char(4) NOT NULL,
+) 
+go
+
+CREATE INDEX pdb_PubStruct ON pdb(pdb_id)
+go
+
+grant select on pdb to public
+go

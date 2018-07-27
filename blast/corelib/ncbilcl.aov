@@ -1,0 +1,175 @@
+/*   ncbilcl.h - AXP/OpenVMS version
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  ncbilcl.h
+*
+* Author:  Gish, Kans, Ostell, Schuler, Gilbert
+*
+* Version Creation Date:   1/1/91
+*
+* $Revision: 6.1 $
+*
+* File Description:
+*		system dependent header
+*		AXP/OpenVMS version
+*
+* Modifications:
+* --------------------------------------------------------------------------
+* Date     Name               Description of modification
+* -------  ------------------ ---------------------------------------------
+*
+* 26-FEB-1991 L. Yarbrough    VAX/VMS Version
+* 24-DEC-1992 W. Gilbert      AXP/OpenVMS Version
+*
+* $Log: ncbilcl.aov,v $
+* Revision 6.1  1999/03/17 15:37:21  vakatov
+* Set the default(<ncbistd.h>) "Nlm_Int4" to "int" rather tnan "long";
+* the same for "Nlm_Uint4";  modifyed the concerned "ncbilcl.*" files
+* accordingly.
+*
+* Revision 6.0  1997/08/25 18:15:44  madden
+* Revision changed to 6.0
+*
+* Revision 5.0  1996/05/28 13:18:57  ostell
+* Set to revision 5.0
+*
+Revision 4.1  1996/05/21  13:58:49  epstein
+processes.h is needed for execl(), etc
+
+Revision 4.0  1995/07/26  13:46:50  ostell
+force revision to 4.0
+
+Revision 1.6  1995/05/15  18:45:58  ostell
+added Log line
+
+*
+*
+* ==========================================================================
+*/
+#ifndef _NCBILCL_
+#define _NCBILCL_
+
+/* PLATFORM DEFINITION FOR VAX under VMS */
+
+#define COMP_BSD
+#define OS_VMS
+#define OS_AXP_VMS
+#define PROC_ALPHA
+#define WIN_DUMB
+
+/*----------------------------------------------------------------------*/
+/*      #includes                                                       */
+/*----------------------------------------------------------------------*/
+#include <types.h>
+#include <limits.h>
+#include <stat.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+/* #include <malloc.h> */		/*WAG*/
+/* #include <memory.h> */		/*WAG*/
+#include <stdlib.h>
+#include <math.h>
+#include <errno.h>
+#include <float.h>
+#include <processes.h>
+
+/*----------------------------------------------------------------------*/
+/*      Missing ANSI-isms                                               */
+/*----------------------------------------------------------------------*/
+#define noalias		/* "noalias" keyword not accepted */
+
+#ifndef SEEK_SET
+#define SEEK_SET	0	/* Set file pointer to offset */
+#define SEEK_CUR	1	/* Set file pointer to current plus offset */
+#define SEEK_END	2	/* Set file pointer to EOF plus offset */
+#endif
+
+#ifndef FILENAME_MAX
+#define FILENAME_MAX 32
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Aliased Logicals, Datatypes                                     */
+/*----------------------------------------------------------------------*/
+typedef long		Nlm_Int8, *Nlm_Int8Ptr;
+typedef unsigned long	Nlm_Uint8, *Nlm_Uint8Ptr;
+
+#define Int8		Nlm_Int8
+#define Int8Ptr		Nlm_Int8Ptr
+#define Uint8		Nlm_Uint8
+#define Uint8Ptr	Nlm_Uint8Ptr
+		
+/*----------------------------------------------------------------------*/
+/*      Misc Macros                                                     */
+/*----------------------------------------------------------------------*/
+#define PROTO(x) x    /* Prototypes are acceptable */
+#define VPROTO(x) x   /* Prototype for variable argument list */
+#define DIRDELIMCHR     ']'
+#define DIRDELIMSTR     "."
+#define CWDSTR          "."
+
+#define KBYTE           (1024)
+#define MBYTE           (1048576)
+
+#define IS_LITTLE_ENDIAN	/* AXP architecture */
+
+#ifndef PATH_MAX
+#define PATH_MAX 1024
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      For importing MS_DOS code                                       */
+/*----------------------------------------------------------------------*/
+#define near
+#define far
+#define huge
+#define cdecl
+#define pascal
+#define _pascal
+#define _near
+#define _far
+#define _huge
+#define _cdecl
+
+/*----------------------------------------------------------------------*/
+/*      Macros for Floating Point                                       */
+/*----------------------------------------------------------------------*/
+#define EXP2(x) exp((x)*LN2)
+#define LOG2(x) (log(x)*(1./LN2))
+#define EXP10(x) exp((x)*LN10)
+#define LOG10(x) (log(x)*(1./LN10))
+
+/*----------------------------------------------------------------------*/
+/*      Macros Defining Limits                                          */
+/*----------------------------------------------------------------------*/
+#define INT8_MIN	LONG_MIN
+#define INT8_MAX	LONG_MAX
+#define UINT8_MAX	ULONG_MAX
+
+#define MAXALLOC	0x40000000 /* Largest permissible memory request */
+
+#endif

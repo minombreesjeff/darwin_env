@@ -1,0 +1,232 @@
+--$Revision: 6.0 $
+-- ===========================================================================
+--
+--                            PUBLIC DOMAIN NOTICE                          
+--               National Center for Biotechnology Information
+--                                                                          
+--  This software/database is a "United States Government Work" under the   
+--  terms of the United States Copyright Act.  It was written as part of    
+--  the author's official duties as a United States Government employee and 
+--  thus cannot be copyrighted.  This software/database is freely available 
+--  to the public for use. The National Library of Medicine and the U.S.    
+--  Government have not placed any restriction on its use or reproduction.  
+--                                                                          
+--  Although all reasonable efforts have been taken to ensure the accuracy  
+--  and reliability of the software and data, the NLM and the U.S.          
+--  Government do not and cannot warrant the performance or results that    
+--  may be obtained by using this software or data. The NLM and the U.S.    
+--  Government disclaim all warranties, express or implied, including       
+--  warranties of performance, merchantability or fitness for any particular
+--  purpose.                                                                
+--                                                                          
+--  Please cite the author in any work or product based on this material.   
+--
+-- ===========================================================================
+--
+-- File Name:	ni_msg.asn
+--
+-- Author:	Beatty, Gish, Epstein
+--
+-- Version Creation Date:	1/1/92
+--
+-- File Description: 
+--		ASN.1 message header
+--
+-- Modifications:  
+-- ==========================================================================
+-- Date     Name        Description of modification
+-- =======  ==========  =====================================================
+-- 5/12/92  Epstein     Added type to SVC-Entry
+--
+--
+-- ==========================================================================
+
+
+NCBI-MESSAGE DEFINITIONS ::=
+BEGIN
+
+EXPORTS SVC-Entry, RES-Entry, Toolset, Identity, Request, MSG-ACK, MSG-NACK, MSG-Login, MSG-SVC-List, 
+	MSG-SVC-Request, MSG-SVC-Response, MSG-Cmd, MSG-Acct, MSG-Catalog, Message;
+
+SVC-Entry ::= SEQUENCE {
+	name		VisibleString, -- name of service
+	minvers		INTEGER, -- minimum legal version
+	maxvers		INTEGER, -- maximum legal version
+	id		INTEGER	OPTIONAL, -- ID that is unique on host
+	priority	INTEGER	OPTIONAL, -- priority of service
+	group		VisibleString OPTIONAL, -- group with access to service
+	description	VisibleString OPTIONAL,  -- description of service
+	types	        SET OF VisibleString OPTIONAL, -- types of allowed resources
+	priority-timeout INTEGER OPTIONAL, -- priority penalization timeout
+	priority-penalty INTEGER OPTIONAL, -- penalty exacted after timeout
+	encryption-supported BOOLEAN OPTIONAL, -- service supports encryption
+	tracking-period INTEGER OPTIONAL,  -- time period (minutes) to track service
+	tracking-count INTEGER OPTIONAL    -- # service requests during tracking-period from this IP
+
+}
+
+RES-Entry ::= SEQUENCE {
+	name		VisibleString, -- name of resource
+	type		VisibleString, -- type of resource
+	minvers		INTEGER, -- minimum legal version
+	maxvers		INTEGER, -- maximum legal version
+	id		INTEGER	OPTIONAL, -- ID that is unique on host
+	group		VisibleString OPTIONAL, -- group with access to service
+	description	VisibleString OPTIONAL  -- description of service
+}
+
+Region-Descr ::= SEQUENCE {
+	region-name	VisibleString, 		-- name describing region
+	priority-delta  INTEGER OPTIONAL        -- priority incentive for client
+}
+
+Toolset ::= SEQUENCE {
+	host		VisibleString, 		-- name of host
+	motd		VisibleString OPTIONAL, -- message of the day on host
+	services	SET OF SVC-Entry OPTIONAL,
+	resources	SET OF RES-Entry OPTIONAL,
+	regions         SET OF Region-Descr OPTIONAL
+}
+
+Identity ::= SEQUENCE {
+	username	VisibleString, -- kerberos principle
+	group		VisibleString OPTIONAL, -- kerberos instance
+	domain		VisibleString OPTIONAL -- kerberos realm
+}
+
+RSA-Pubkey ::= SEQUENCE {
+	bits INTEGER,
+	modulus OCTET STRING,
+	exponent OCTET STRING
+}
+
+Dispatcher-Info ::= SEQUENCE {
+	serial-no INTEGER, -- unique ID assoc w/disp list
+	is-alternate-list BOOLEAN, -- is this an alternate dispatcher list?
+	num-dispatchers INTEGER,
+	disp-list       SEQUENCE OF VisibleString,
+	pub-key         RSA-Pubkey OPTIONAL
+}
+
+Request ::= SEQUENCE {
+	address		VisibleString OPTIONAL, 	-- client internet address
+	port		INTEGER OPTIONAL,		-- client contact port
+	svcentry	SVC-Entry,			-- service requested
+	resentry	SET OF RES-Entry OPTIONAL	-- resources requested
+}
+
+MSG-ACK ::= SEQUENCE {
+	seqno		INTEGER, -- sequence number of the acked message
+	disp-info       Dispatcher-Info OPTIONAL,
+	admin-info	VisibleString OPTIONAL,
+	motd		VisibleString OPTIONAL
+}
+
+MSG-NACK ::= SEQUENCE {
+	seqno		INTEGER, -- sequence number of the nacked message
+	code		INTEGER, -- exception code, (-1) means nonspecific error
+	reason		VisibleString OPTIONAL , -- human-readable explanation
+	disp-info       Dispatcher-Info OPTIONAL
+}
+
+MSG-Login ::= SEQUENCE {
+	seqno		INTEGER, -- sequence number
+	uid		Identity,
+	password	VisibleString OPTIONAL, -- should be encrypted
+	disp-serial-no INTEGER OPTIONAL, -- unique ID assoc w/disp list
+	encryption-desired BOOLEAN OPTIONAL,
+	pub-key         RSA-Pubkey OPTIONAL,
+	des-key         OCTET STRING OPTIONAL, -- from ncbid only
+	connect-delay	INTEGER OPTIONAL , -- connect delay when contacting Disp
+	server-port     INTEGER OPTIONAL -- from ncbid only
+}
+
+MSG-SVC-List ::= SEQUENCE {
+	seqno		INTEGER, 	-- sequence number
+	toollist	Toolset,	-- one set
+	knows-tracking	BOOLEAN OPTIONAL -- aware of tracking-count/periods
+}
+
+MSG-SVC-Request ::= SEQUENCE {
+	seqno		INTEGER, 	-- sequence number
+	conid		INTEGER, 	-- connection number for client accounting
+	uid		Identity,	-- client user ID struct
+	request		Request,	-- client address and request
+	platform        INTEGER OPTIONAL,      -- client's platform
+	appl-id         VisibleString OPTIONAL, -- identifies client application
+	des-key         OCTET STRING OPTIONAL, -- DES key to be used for session (key is encrypted using RSA)
+	want-pre-response BOOLEAN OPTIONAL, -- If TRUE, requesting MSG-SVC-Pre-Response
+	server-ip	INTEGER	OPTIONAL,  -- IP address of server machine
+	server-port	INTEGER	OPTIONAL,  -- port on server machine
+	want-ticket BOOLEAN OPTIONAL, -- If TRUE, requesting SVC-Request containing ticket
+	ticket Ticket OPTIONAL
+}
+
+Ticket ::= SEQUENCE {
+	seqno		INTEGER, 
+	-- all fields that follow are encrypted using ncbid's DES key
+	confounding-rand-num	OCTET STRING, -- used to confound forgery attempts
+	client-ip-1 OCTET STRING, -- ticket is valid from either of these 2 addrs
+	client-ip-2 OCTET STRING OPTIONAL,
+	server-ip OCTET STRING, -- this ticket is only valid at this server IP
+	client-des-key OCTET STRING OPTIONAL,
+	ticket-expiration OCTET STRING,
+	checksum OCTET STRING
+}
+
+
+MSG-SVC-Response ::= SEQUENCE {
+	seqno		INTEGER, 	-- sequence number
+	request		Request		-- client address and request
+}
+
+MSG-SVC-Pre-Response ::= SEQUENCE {
+	seqno		INTEGER, 	-- sequence number
+	server-ip	INTEGER		-- IP address of server machine
+}
+
+MSG-Cmd ::= SEQUENCE {
+	seqno		INTEGER,	 -- sequence number
+	command		INTEGER
+}
+
+MSG-Acct ::= SEQUENCE {
+	seqno		INTEGER,	 -- sequence number
+	conid		INTEGER,	 -- connection number of client
+	jobname		VisibleString,
+	usertime	INTEGER,
+	systemtime	INTEGER
+}
+
+MSG-Catalog ::= SEQUENCE {
+	seqno		INTEGER,		-- sequence number
+	motd		VisibleString OPTIONAL,	-- message of the day
+	toollists	SET OF Toolset OPTIONAL	-- one set for each ncbid
+}
+
+MSG-Load-Status ::= SEQUENCE {
+	load		REAL, -- current load on this machine
+	power		REAL, -- power of this machine
+	light-thresh	REAL, -- when load is below this value, machine is considered to be lightly-loaded
+	heavy-thresh	REAL, -- when load is above this value, machine is considered to be over-loaded
+	job-penalty     REAL -- penalty per outstanding job on this server
+}
+
+Message	::= CHOICE {
+	ack		MSG-ACK,
+	nack		MSG-NACK,
+	login		MSG-Login,
+	svc-list	MSG-SVC-List,
+	svc-request	MSG-SVC-Request,
+	svc-response	MSG-SVC-Response,
+	command		MSG-Cmd,
+	acct		MSG-Acct,
+	catalog		MSG-Catalog,
+	svc-pre-response MSG-SVC-Pre-Response,
+	load-status	MSG-Load-Status
+}
+
+END
+
+
+

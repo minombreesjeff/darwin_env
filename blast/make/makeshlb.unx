@@ -1,0 +1,18 @@
+#
+#
+#	$Id: makeshlb.unx,v 6.1 1999/03/18 17:31:11 beloslyu Exp $
+#
+# Builds shared NCBI libraries
+#  Defaults below are for Solaris; other platforms are driven from
+#  makeall.unx and makenet.unx
+#
+# For OSF/1 the "$<" below should be manually changed to "$?"
+#
+SH1 = ld -G -o
+SH2 = `lorder *.o | tsort` $(NCBI_OTHERLIBS)
+
+%.so: %.a
+	rm -f *.o __*
+	ar x $<
+	$(SH1) $@ $(SH2)
+	rm -f *.o __*

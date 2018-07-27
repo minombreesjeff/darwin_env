@@ -1,0 +1,136 @@
+.TH SOCKD 8 "February 9, 1994"
+.SH NAME
+sockd \- Internet firewall secure socket server (proxy server)
+.SH SYNOPSIS
+\fBsockd [ \-ver | \-i | \-I ]\fP
+.SH DESCRIPTION
+\fIsockd \fR is an internet secure socket server, often referred to
+as a proxy server. It was designed
+primarily to provide hosts within a firewall access to resources
+outside of the firewall.
+
+Normally, hosts inside a firewall has no IP-accessibility to the network
+outside of the firewall. This reduces the risk of being intruded
+by unauthorized people from the Internet. Unfortunately, without
+IP-accessibility users on the inside hosts can no longer use many
+of the important tools such as telnet, ftp, xgopher, Mosaic, etc. to
+access the tremendous resources available in the Internet. 
+
+With \fIsockd\fR installed on a server host, users on the other
+inside hosts can gain back the lost functionalities by using
+clients programs designed to work with \fIsockd\fR proxy server,
+e.g, \fIrtelnet\fR in place of \fItelnet\fR, \fIrftp\fR in place
+of \fIftp\fR, \fIrfinger\fR in place of \fIfinger\fR,
+etc. Since these client programs work
+like their normal counterparts without requiring direct IP-accessibility
+to the Internet, convenience to the uesrs is accomplished without
+breaching the security. The server host that runs \fIsockd\fR does
+have to be open to the Internet, and it therefore requires special
+attention to make sure that it is secure.
+
+\fIsockd\fR is usually installed in directory /usr/etc and should
+be run under the control of \fIinetd\fR. To do so,
+add the line
+
+.nf
+.in +1
+socks	1080/tcp
+
+.fi
+.in -1
+to file \fB/etc/services\fP, and the line
+
+.nf
+.in +1
+socks	stream	tcp	nowait	nobody	/usr/etc/sockd	sockd
+
+.fi
+.in -1
+to file \fB/etc/inetd.conf\fP. Then send a SIGHUP signal to the
+running \fIinetd\fR process to make it read and use the new contents
+of the files. You may also choose to use \fIidentd\fR (RFC 1413) to verify
+the user's identity by appending option \fB\-i\fP or \fB\-I\fP to
+the line in \fB/etc/inetd.conf\fP.
+
+A configuration file \fB/etc/sockd.conf\fP is used to control access
+to \fIsockd\fR and its services. Permission and denial of a service
+request can be decided based on various combinations of the requesting
+host, the destination host, the type of service (destination port number),
+as well as the requesting user. (See \fIsockd.conf\fP(5).)
+
+If the server host is multi-homed, i.e., having more than one network
+interface and with its IP_FORWARDING turtned off, it must run a multi-homed
+version of \fIsockd\fP, which requires another control file
+\fB/etc/sockd.route\fP to decide which interface to use for connection
+to any given destination host. See \fIsockd.route\fP(5).
+
+A program called \fItest_sockd_conf\fP is provided for you to check
+your \fIsockd\fR configuration file(s). Be sure to use it everytime after
+you modify the configuration file(s).
+
+\fIsockd\fR uses \fIsyslog\fR with facility \fBdaemon\fP and level
+\fBnotice\fP to log its activities and errors. Typical lines look
+like
+
+.nf
+.in +1
+Apr 11 08:51:29 eon sockd[636]: connected -- Connect from don(don)@abc.edu to wxy.com (telnet)
+Apr 11 09:24:59 eon sockd[636]: terminated -- Connect from don(don)@abc.edu to wxy.com (telnet)
+Apr 11 09:24:59 eon sockd[636]: 1048 bytes from abc.edu, 285143 bytes from wxy.com
+Jun 22 18:24:54 eon sockd[884]: refused -- Connect from sam(unknown)@big.com to small.com (ftp)
+.in -1
+.fi
+
+In these lines, the first user-id is the one reported by the client program,
+the second one (within the parentheses) is what is reported by \fIidentd\fP
+on the client host.
+These log lines usually appear in file \fB/var/adm/messages\fP though that
+can be changed by modifying \fB/etc/syslog.conf\fP. (See \fIsyslogd\fR(8)
+and \fIsyslog.conf\fR(5).)
+
+If you allow access to infosystems such as Gopher or WWW,
+you should be aware that they by nature would tend to get connections
+to hosts all over the world and would use not only Gopher and WWW ports
+but possibly also ports for finger, telnet, ftp, nntp, etc. as well as
+non-priveleged ports ( > 1023).
+.SH OPTIONS
+The options are mutually exclusive and thus may only be used one at a time.
+.TP
+.B\-ver
+With this option, \fIsockd\fR prints its own version number,
+whether it is a single-homed or multi-homed version, and whether
+it supports clients that use Rrcmd(), and then quits.
+.TP
+.B\-I
+Use \fIidentd\fR (RFC 1413) to verify the requester's user-id. Deny access if
+connection to client's \fIidentd\fR fails or if the result does not match
+the user-id reported by the client program. Client hosts without a properly
+installed \fIidentd\fR daemon will not be served. User verification is
+done before and in addition to the normal access control.
+.TP
+.B\-i
+Similar to \fB-I\fP but more lenient. Access is denied only if client's
+\fIidentd\fR reports a user-id that's different from what the client
+program claims.
+.PP
+Log entries similar to the following are produced upon failure of
+user-id verification:
+
+.nf
+.in +1
+Apr 15 14:42:51 eon sockd[729]: cannot connect to identd on big.edu
+Apr 15 14:42:51 eon sockd[729]: refused -- Connect from bob(unknown)@big.edu to xyz.com (ftp)
+Jul 15 12:23:06 eon sockd[832]: *Alert*: real user is sam, not jim
+Jul 15 12:23:06 eon sockd[832]: refused -- Connect from jim(sam)@abc.org to bad.place.com (WWW)
+.in -1
+.fi
+.SH FILES
+\fB/etc/sockd.conf\fP, \fB/etc/inetd.conf\fP, \fB/etc/services\fP,
+\fB/var/adm/messages\fP, \fB/etc/syslog.conf\fP
+.SH SEE ALSO
+\fIsocks_clients\fP(1), \fItest_sockd_conf\fP(8), \fIsockd.conf\fp(5),
+\fIsockd.route\fP(5), \fIsocks.conf\fP(5)
+.SH AUTHOR
+.nf
+David Koblas, koblas@sgi.com
+Ying-Da Lee, ylee@syl.dl.nec.com

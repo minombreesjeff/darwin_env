@@ -1,0 +1,625 @@
+/*
+ * $Id: PubStruct_proc.scr,v 6.18 2000/09/14 22:24:39 kimelman Exp $
+ *
+ * $Log: PubStruct_proc.scr,v $
+ * Revision 6.18  2000/09/14 22:24:39  kimelman
+ * bugfixes
+ *
+ * Revision 6.17  2000/09/13 16:59:38  kimelman
+ * enable retrival of dead mmdbs
+ *
+ * Revision 6.16  1999/06/15 20:37:48  kimelman
+ * id_get_asn_prop: synced to OS
+ *
+ * Revision 6.15  1999/05/03 14:44:35  kimelman
+ * spaces
+ *
+ * Revision 6.14  1999/03/16 16:56:28  kimelman
+ * new ID fixes
+ *
+ * Revision 6.13  1998/11/06 18:59:06  kimelman
+ * PubStruct loading transaction granularity changed
+ *
+ * Revision 6.12  1998/10/28 23:14:45  kimelman
+ * id_get_asn synced to OS
+ *
+ * Revision 6.11  1998/10/20 15:58:31  kimelman
+ * synchronization bugfix
+ *
+ * Revision 6.10  1998/08/08 04:49:45  kimelman
+ * bugfix: state type and processing for negative values
+ *
+ * Revision 6.9  1998/08/05 17:51:02  kimelman
+ * --enforce mode & /tmp downpath
+ *
+ * Revision 6.8  1998/07/14 20:24:49  kimelman
+ * FT schema & smart load
+ *
+ * Revision 6.7  1998/06/12 17:45:00  kimelman
+ * timestamps history fixed, vacuum cleaning debugged
+ *
+ * Revision 6.6  1998/06/05 18:19:23  kimelman
+ * atextract styled
+ *
+ * Revision 6.5  1998/06/05 17:59:18  kimelman
+ * structure takeover bug fixed
+ */
+/************************************************************************/
+/*****          Documentation By Armadillo Tools                    *****/
+/*****               Release 3.0.0 Source Version                   *****/
+/*****   Copyright Panttaja Consulting Group, Inc. 1991-1994        *****/
+/************************************************************************/
+/*****  FILE:           PubStruct_proc.scr                          *****/
+/*****  SOURCE DB:      PubStruct                                   *****/
+/*****  SERVERNAME:     BACH10                                      *****/
+/*****  CLASS:          procedures                                  *****/
+/*****  REPORT TYPE:    sch                                         *****/
+/*****  DATE OF RUN:    Fri Jun  5 14:10:09 1998                    *****/
+/************************************************************************/
+
+/************************************************************************/
+PRINT '/***** SELECT DATABASE PubStruct                             *****/'
+/************************************************************************/
+go
+USE PubStruct
+go
+
+/************************************************************************/
+PRINT '/***** PROCEDURES                                            *****/'
+/************************************************************************/
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'pdb2mmdb'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.pdb2mmdb
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    pdb2mmdb                       *****/'
+/************************************************************************/
+go
+
+create proc
+pdb2mmdb(@pdb_id char(4))
+as
+     select gi=p.mmdb_id from pdb p where p.pdb_id = @pdb_id and exists
+     (select * from Struct s where s.mmdb_id = p.mmdb_id and state = 0 and suppressed = 0 )
+go
+/*****        Grant and Revoke permissions pdb2mmdb                 *****/
+go
+GRANT EXECUTE ON pdb2mmdb  TO public
+go
+
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'mmdb2acc'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.mmdb2acc
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    mmdb2acc                       *****/'
+/************************************************************************/
+go
+
+create proc
+mmdb2acc (
+          @mmdb  int,  /* mmdb */
+          @state int,
+          @acc   int output,
+         )
+as
+   declare @stat int
+   declare @suppress int
+   select @stat = @state
+   if @stat < 0
+     begin
+       select @stat = max(state)
+       from Struct
+       where mmdb_id = @gi and suppressed = 0 and state <= -@stat-1
+     end
+   select @suppress = min(suppressed) from Struct where mmdb_id = @gi and state = @stat and datalength(blob)
+
+   select @acc=acc
+   from Struct
+   where mmdb_id = @gi and suppressed = @suppress and state = @stat
+   if @@rowcount = 0 /* looks to be removed */
+     select @acc = -1
+go
+
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_find_gi'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_find_gi
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_find_gi                     *****/'
+/************************************************************************/
+go
+
+create proc
+id_find_gi (
+            @gi  int,  /* mmdb */
+            @state int  = 0
+           )
+as
+   declare @acc int
+   declare @live tinyint
+
+   exec mmdb2acc @gi,@state, @acc=@acc output
+   if exists ( select * from Struct where acc = @acc and suppressed = 0 )
+      select @live = 100
+   else 
+      select @live = 125
+
+   select sat=convert(smallint,10),sat_key=@acc,gi_state=@live,0,0,"01/01/1900"
+   from Struct 
+   where acc = @acc
+go
+/*****        Grant and Revoke permissions id_find_gi               *****/
+go
+GRANT EXECUTE ON id_find_gi  TO public
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_get_asnprop'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_get_asnprop
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_get_asnprop                 *****/'
+/************************************************************************/
+go
+
+create proc
+id_get_asnprop ( @sat_key int)
+as
+   declare @state tinyint 
+   select  @state=suppressed from    Struct where   acc = @sat_key
+   if @@rowcount > 0 
+     begin
+        if @state > 0 
+          select  @state=125
+        else
+          select  @state=100
+        select  state=@state,confidential, suppress=suppressed, override=convert(tinyint,0),
+                length=datalength(blob), owner=convert(smallint,0), "unknown","N/A"
+        from    Struct
+        where   acc = @sat_key
+   end
+go
+/*****        Grant and Revoke permissions id_get_asnprop           *****/
+go
+GRANT EXECUTE ON id_get_asnprop  TO public
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_get_asnblob'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_get_asnblob
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_get_asnblob                 *****/'
+/************************************************************************/
+go
+
+create proc
+id_get_asnblob ( @sat_key int)
+as
+  select asn=blob
+    from Struct
+   where @sat_key = acc
+go
+/*****        Grant and Revoke permissions id_get_asnblob           *****/
+go
+GRANT EXECUTE ON id_get_asnblob  TO public
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_get_gi_content'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_get_gi_content
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_get_gi_content              *****/'
+/************************************************************************/
+go
+
+create proc
+id_get_gi_content(
+     @sat_key        int,
+     @sat            smallint=10
+     )
+as
+   declare @mod_date       datetime
+   declare @date_entrez    datetime
+   declare @create_date    datetime
+   declare @gi             int
+   declare @pdb_id         char(4)
+   declare @mmdb_id        int
+
+   if(@sat != 10)
+     return 100
+
+   select @mmdb_id= mmdb_id
+   from   Struct
+   where  acc = @sat_key
+   
+   select @pdb_id=pdb_id
+   from   pdb
+   where  mmdb_id = @mmdb_id
+   
+   select @mod_date=min(date)
+   from   Struct s
+   where  s.mmdb_id = @mmdb_id
+
+   select @mod_date=isnull(min(date),@mod_date)
+   from   Struct s
+   where  s.mmdb_id = @mmdb_id and s.state = 0
+
+   select @date_entrez=min(date)
+   from   Struct s
+   where  s.mmdb_id = @mmdb_id and s.state = 0
+
+   select @create_date=min(date)
+   from   Struct 
+   where  mmdb_id in (select mmdb_id from pdb where pdb_id = @pdb_id)
+   
+   select @create_date=isnull(min(date),@create_date)
+   from   Struct s
+   where  s.state = 0 and
+          s.mmdb_id in (select mmdb_id from pdb where pdb_id = @pdb_id)
+   
+   select gi         =@mmdb_id,
+          create_date=@create_date,
+          mod_date   =@mod_date,
+          entrez_date=@date_entrez
+
+  return 0
+ 
+go
+/*****        Grant and Revoke permissions id_get_gi_content        *****/
+go
+GRANT EXECUTE ON id_get_gi_content  TO public
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_get_asn'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_get_asn
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_get_asn                     *****/'
+/************************************************************************/
+go
+
+create proc
+id_get_asn (
+     @gi             int=0,
+     @sat_key        int=0,
+     @sat            smallint=0,
+     @maxplex        int=0,
+     @outfmt         int=0
+     )
+as
+  if(@sat != 10)
+     return 100
+
+  if(@outfmt !=100 and @outfmt != 0)
+     return 100
+  
+  if(@sat_key=0)
+    begin
+      declare @acc int
+   
+      exec mmdb2acc @gi,0, @acc=@acc output
+
+      select @sat_key = acc from Struct s where acc = @acc
+      if(@@rowcount = 0)
+        return 100
+    end
+
+  exec id_get_asnprop @sat_key
+  exec id_get_asnblob @sat_key
+        
+  if(@outfmt=100)
+    exec id_get_gi_content @sat_key,@sat
+  
+  return 0
+
+go
+/*****        Grant and Revoke permissions id_get_asn               *****/
+go
+GRANT EXECUTE ON id_get_asn  TO public
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'rm_struct'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.rm_struct
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    rm_struct                      *****/'
+/************************************************************************/
+go
+
+create proc
+rm_struct( @acc int)
+as
+   declare @mmdb      int
+   declare @state_in  tinyint
+   declare @suppr     tinyint
+
+   if (select count(*) from Struct
+       where acc = @acc ) <= 0
+     begin
+       raiserror 18001 "Structure unavailable"
+       rollback transaction
+       return -1
+     end
+   
+   select @mmdb = mmdb_id, @state_in = state, @suppr = suppressed
+     from Struct
+     where acc = @acc
+   if ( @suppr <> 0 )
+     return 0
+
+   /* suppress all blobs with the same mmdb_id and requied state */
+   update Struct
+     set suppressed = suppressed + 1
+     where  mmdb_id = @mmdb and state = @state_in
+go
+/*****        Grant and Revoke permissions rm_struct                *****/
+go
+GRANT EXECUTE ON rm_struct  TO public
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'push_struct'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.push_struct
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    push_struct                    *****/'
+/************************************************************************/
+go
+
+create proc
+push_struct( @acc int, @state_out tinyint=0,@date datetime=null,@suppr tinyint = 0)
+as
+   declare @mmdb_id   int
+   declare @state_in  tinyint
+   declare @pdb_id    char(4)
+
+   if (select count(*) from Struct
+       where acc = @acc ) <= 0
+     begin
+       raiserror 18001 "Structure unavailable"
+       rollback transaction
+       return -1
+     end
+   select @mmdb_id = s.mmdb_id, @state_in = s.state, @pdb_id=p.pdb_id
+     from Struct s, pdb p
+    where acc = @acc and p.mmdb_id = s.mmdb_id
+   /* suppress all blobs with the same mmdb_id and requied state */
+   update Struct
+     set suppressed = suppressed + 1
+     where  mmdb_id=@mmdb_id and state = @state_out
+   if @state_out = 0 and @suppr = 0
+     begin
+       /* suppress all other mmdb's related to the same pdb_id */
+       update Struct
+       set    suppressed = suppressed + 1
+       where  mmdb_id in ( select mmdb_id from pdb where mmdb_id != @mmdb_id and  pdb_id = @pdb_id)
+     end
+   /* change structure status */
+   update Struct
+     set state = @state_out, date = isnull(@date,getdate()), suppressed = @suppr
+     where  acc = @acc
+ 
+go
+/*****        Grant and Revoke permissions push_struct              *****/
+go
+GRANT EXECUTE ON push_struct  TO public
+go
+   
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'new_entry'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.new_entry
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    new_entry                     *****/'
+/************************************************************************/
+go
+
+create proc
+new_entry(@acc int = null output)
+as
+   begin transaction new_entry_1
+     update acc set ticket=ticket+1 where kind = 1
+     select @acc=ticket-1 from acc where kind = 1
+   commit transaction new_entry_1
+go
+/*****        Grant and Revoke permissions new_struct               *****/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'new_struct'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.new_struct
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    new_struct                     *****/'
+/************************************************************************/
+go
+
+create proc
+new_struct(@state_out tinyint=1)
+as
+   declare @acc int
+
+   exec new_entry @acc=@acc output
+
+   begin transaction new_struct_1
+   insert into Struct(acc ,mmdb_id , state    , date    , suppressed, confidential, blob)
+               values(@acc,0       ,@state_out,getdate(), 0         , 0           , null)
+   update Struct set blob = null where acc = @acc
+   select @acc
+   commit transaction new_struct_1
+go
+GRANT EXECUTE ON new_struct  TO public
+go
+
+
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'new_struct1'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.new_struct1
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    new_struct1                    *****/'
+/************************************************************************/
+go
+
+create proc
+new_struct1(
+            @acc       int,
+            @mmdb      int,
+            @date      datetime = null,
+            @pdb_id    char(4)  = null
+          )
+as
+   declare @state_out tinyint
+   /* QA */
+
+   if ( select count(*) from pdb where mmdb_id = @mmdb ) = 0
+     begin
+       begin transaction new_struct1_QA
+       insert into pdb(mmdb_id,pdb_id) values(@mmdb,isnull(@pdb_id,str(@mmdb)))
+       commit transaction new_struct1_QA
+     end
+   else if ( select count(*) from pdb where mmdb_id = @mmdb and pdb_id = @pdb_id ) != 1
+     begin
+       declare @msg char
+       select @msg = 'pdb identifier ['+@pdb_id+'changed for given mmdb ('+str(@mmdb)+')'
+       raiserror 18001 @msg
+       return -1
+     end
+   
+   begin transaction
+
+   update Struct
+   set    mmdb_id = @mmdb
+   where acc = @acc
+   
+   select @state_out = state
+   from Struct
+   where acc = @acc
+   
+   exec push_struct @acc,@state_out
+
+   commit transaction
+
+   /* check for initial loading */
+   if ( (select count(*) from Struct where mmdb_id = @mmdb ) = 1 and @date is not null )
+     begin
+       exec new_entry @acc=@acc output
+       begin  transaction
+       insert into Struct(acc ,mmdb_id , state    , date    , suppressed, confidential, blob)
+                   values(@acc,@mmdb   , 0        , @date   , 1         , 0           , null)
+       commit transaction
+   end
+go
+/*****        Grant and Revoke permissions new_struct1              *****/
+go
+GRANT EXECUTE ON new_struct1  TO public
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'get_props'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.get_props
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    get_props                      *****/'
+/************************************************************************/
+go
+
+create proc
+get_props ( @acc int)
+as
+  select acc,mmdb_id,state,date,suppressed,confidential,datalength(blob)
+  from Struct
+  where acc = @acc
+ 
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'vacuum_cleaning'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.vacuum_cleaning
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    vacuum_cleaning                *****/'
+/************************************************************************/
+go
+
+create proc
+vacuum_cleaning ( @days int = 0 )
+as
+  declare @acc      int
+  declare @obv_date datetime
+  declare @stamp    datetime
+  
+  /* set the obvilion date */
+  select @obv_date = dateadd(day,-@days,getdate())
+  select @stamp = getdate()
+  
+  delete from Struct 
+  where suppressed > 0 and state > 0 and date <  @obv_date
+  
+  delete Struct
+  from Struct s
+  where suppressed > 0 and state = 0 and date <  @obv_date and
+        datalength(blob) > 0
+  
+  update statistics Struct
+go

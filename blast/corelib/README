@@ -1,0 +1,63 @@
+/*   ncbilcl.h
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  ncbilcl.h
+*
+* Author:  Gish, Kans, Ostell, Schuler
+*
+* Version Creation Date:   4/12/93
+*
+* $Revision: 6.0 $
+*
+* File Description:
+*		system dependent header
+*
+* POSSIBLE PLATFORM SYMBOLS --
+*
+*  COMP_BSD, COMP_MPW, COMP_MSC, COMP_SABERC, COMP_SYSV, COMP_THINKC, COMP_BOR,
+*  COMP_DEC, COMP_CRAY, COMP_NEXT, COMP_CPLUS, COMP_SUNPRO, COMP_METRO
+*
+*  OS_DOS, OS_MAC, OS_NT, OS_OS2, OS_UNIX, OS_UNIX_BSD, OS_UNIX_SUN,
+*  OS_UNIX_SYSV, OS_UNIX_IRIX, OS_UNIX_ULTRIX, OS_UNIX_OSF1, OS_VMS
+*
+*  PROC_I8088, PROC_I80X86, PROC_I80_086, PROC_I80_286,
+*  PROC_I80_386, PROC_I80_486, PROC_I80_087, PROC_I80_287,
+*  PROC_I80_387, PROC_MC680X0, PROC_MC68_000, PROC_MC68_020,
+*  PROC_MC68_030, PROC_MC68881, PROC_MC68882, PROC_IBM370,
+*  PROC_MIPS, PROC_POWER, PROC_PPC, PROC_SPARC, PROC_VAX,
+*  PROC_CONVEX, PROC_ALPHA, PROC_YMP
+*
+*  WIN_CURSES, WIN_DUMB, WIN_MAC, WIN_MOTIF, WIN_MSWIN,
+*  WIN_NEWS, WIN_OPENLOOK, WIN_SUNVIEW, WIN_NEXTSTEP, WIN_X
+*
+*  WIN_VIBRANT   (actually in addition to above, not a replacement)
+*
+* Modifications:
+* --------------------------------------------------------------------------
+* Date     Name          Description of modification
+* -------  ----------    ---------------------------------------------------
+*
+* ==========================================================================
+*/

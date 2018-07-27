@@ -1,0 +1,14 @@
+In order to use the NCBI-modified NCSA socket library, and NCBI network
+services on a Macintosh, it is necessary to obtain the following files
+from the MacTCP developer disk, and place them within this "apple"
+directory.
+
+dnr.c
+AddressXlation.h
+GetMyIPAddr.h
+MacTCPCommonTypes.h
+TCPPB.h
+UDPPB.h
+
+These files are copyrighted by Apple, so it is not possible for NCBI
+to distribute them in its software tree.

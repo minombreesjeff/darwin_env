@@ -1,0 +1,132 @@
+########################################################################
+#       Generic command-line makefile for NCBI applications
+#
+#   This assumes the following variables are set in a file called "ncbi.mk"
+#     which is included by this one. In this case it resides in a directory
+#     set by the environment variable "NCBI"
+#
+#    NCBI_CC = default compiler to use
+#    NCBI_CFLAGS1 = default compiler switches (not optimization)
+#    NCBI_LDFLAGS1 = default compiler switches when linking (not optimization)
+#    NCBI_OPTFLAG = default optimization (-O)
+#    NCBI_INCDIR = default toolkit include paths
+#    NCBI_LIBDIR = default toolkit library paths
+#    NCBI_ALTLIB  = debugging toolkit library paths
+#    NCBI_VIBFLAG = additional include paths/defines for Vibrant apps
+#    NCBI_VIBLIBS  = additional libraries needed to link Vibrant apps
+#    NCBI_OTHERLIBS = additional libraries needed to link the system
+#
+#   This enables platform independent makefiles for ncbi toolkit apps. You
+#   can change any default behavior by setting the variable on the command
+#   line.
+#
+#   Use gcc complier.   "make NCBI_CC=gcc" or "make CC=gcc"
+#   Change optimization to debug
+#                "make NCBI_OPTFLAG="-g" NCBI_LIBPATH=$NCBI_ALTLIB"
+#                or
+#                "make OPTFLAG="-g" LIBPATH=$NCBI_ALTLIB"
+#
+#   You can also change the behavior permanently in the makefile by changing
+#    the assignment of the internal variable to the one from the include
+#    file:
+#
+#   Use gcc compiler.
+#    Change   CC=$(NCBI_CC)
+#    To       CC=gcc
+#    in the makefile itself
+#
+#   Make debugging version
+#    OPTFLAG=-g
+#    LIBPATH=$(NCBI_ALTLIB)
+#
+#   You need to specify the EXE and SRC symbols
+#
+#######################################################################
+#
+# default flags for compiling and loading
+#
+#######################################################################
+
+include $(NCBI)/ncbi.mk
+
+CC = $(NCBI_CC)
+#CC = lint
+#CC = purify cc -xildoff
+CFLAGS1 = $(NCBI_CFLAGS1)
+LDFLAGS1 = $(NCBI_LDFLAGS1)
+OPTFLAG = -g -D DEBUG_DDV
+OTHERLIBS = $(NCBI_OTHERLIBS)
+VIBLIBS= $(NCBI_VIBLIBS)
+VIBFLAG= $(NCBI_VIBFLAG)
+INCPATH = $(NCBI_INCDIR)
+LIBPATH = $(NCBI_ALTLIB)
+# DEF = -DINTERNAL_NCBI_SEQUIN -DSALSA_DEBUG 
+SRC = algorend.o cn3dentr.o cn3dmain.o cn3dmatn.o cn3dmesh.o cn3dmodl.o \
+cn3dmsel.o cn3dmsg.o cn3dopen.o cn3dsave.o cn3dshim.o \
+cn3dwin.o cn3dxprt.o seqcons.o cn3dstyl.o
+EXE = Cn3D
+
+
+CFLAGS = $(CFLAGS1) $(OPTFLAG) -I. -I$(INCPATH) $(VIBFLAG) $(DEF)
+LDFLAGS = -I. -I$(INCPATH) $(OPTFLAG) -L../lib -L$(LIBPATH) $(VIBFLAG) $(DEF)
+
+# all NCBI libraries aliased for easy access here
+
+LIB1 = -lncbi
+LIB2 = -lncbiobj
+LIB3 = -lncbicdr
+LIB4 = -lvibrant
+LIB5 = -lncbiacc
+LIB6 = -lnetcli
+LIB7 = -lnetentr
+LIB8 = -lncbiNacc
+LIB9 = -lncbiCacc
+# LIB10 is reserved for NCSA socket library
+#LIB10 =
+LIB11 = -lncbimla
+LIB12 = -lncbitax1
+LIB13 = -lncbiid0
+LIB18 = -lncbibls2
+LIB19 = -lncbispel
+LIB20 = -lncbidesk
+LIB21 = -lncbibls2
+LIB22 = -lncbimmdb
+LIB23 = -lncbitool
+LIB29 = -lncbitxc1
+LIB31 = -lvibnet
+LIB33 = -lsmartnet
+LIB36 = -lncbitree
+LIB41 = -lncbiid1
+
+## To clean out the directory without removing make
+##
+
+## Implicit actions
+##
+## if need a .o, compile the .c
+##
+
+.KEEP_STATE:
+
+.c.o :
+	$(CC) $(CFLAGS) $<
+
+#####################################################################
+##
+## Here is where you set up your own things to make
+##
+#####################################################################
+
+## Default thing to make will be "all"
+##
+
+all : $(EXE)
+
+## make individual applications and components
+##
+
+$(EXE) : $(SRC)
+	$(CC) -o $(EXE) $(LDFLAGS) $(SRC)  $(LIB31) $(LIB20) $(LIB41) -lnetblast $(LIB22) \
+	$(LIB8) $(LIB7) $(LIB6) $(LIB3) $(LIB4) $(LIB23) $(LIB2) $(LIB1) \
+	$(NCBI_VIBLIBS) $(LIB36) $(NCBI_OTHERLIBS)
+

@@ -1,0 +1,67 @@
+--$Revision: 6.0 $
+--********************************************************************
+--
+--  Network SUGGEST Archive message formats
+--  Sirotkin 7/95
+--  Sadykov 8/95
+--
+--*********************************************************************
+--
+--  suggest.asn
+--
+--*********************************************************************
+
+NCBI-Suggest DEFINITIONS ::=
+BEGIN
+
+IMPORTS Seq-entry FROM NCBI-Seqset
+        -- Genetic-code FROM NCBI-Seqfeat
+        Seq-annot FROM NCBI-Sequence;
+
+        --**********************************
+        -- requests
+        --
+
+Suggest-request ::= CHOICE {
+    init NULL ,                     -- DlInit
+    intervals Suggest-intervals ,    -- What suggest does
+    fini NULL                       -- DlFini
+}
+
+Suggest-intervals ::= SEQUENCE {
+    params Suggest-parameters OPTIONAL,
+    dna Seq-entry,
+    protein Seq-entry,
+    code INTEGER
+}
+
+Suggest-parameters ::= SEQUENCE {
+    size INTEGER OPTIONAL,	   -- Minimum size of match to see
+    begin-search INTEGER OPTIONAL, -- where on combined interval to begin search
+    end-search INTEGER OPTIONAL,
+    term-stop BOOLEAN OPTIONAL
+}
+
+Suggest-error ::= SEQUENCE {
+    level ENUMERATED {
+	none (0),    -- not an error, just a message
+	info (1),    -- informational error
+	warn (2),
+	error (3),
+	fatal (4) 
+    },
+    msg VisibleString OPTIONAL
+}
+
+        --**********************************
+        -- responses
+        --
+
+Suggest-response ::= CHOICE {
+    init NULL ,                 -- DlInit
+    error Suggest-error,        -- Error code
+    intervals Seq-annot,	-- suggested intervals
+    fini NULL                   -- DlFini
+}
+
+END

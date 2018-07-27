@@ -1,0 +1,168 @@
+/* Adapted from ncbi2.css on 9/9/99 */
+
+.TEXT {
+	font-size: 90%;
+	font-family: arial,helvetica,sans-serif;
+	}
+
+.TEXTWIDE {
+	font-size: 90%;
+	font-family: arial,helvetica,sans-serif;
+	}
+
+.medium1 {
+	font-size: 75%;
+	font-family: arial,helvetica,sans-serif;
+	}
+
+.medium2 {
+	font-size: 75%;
+	font-family: verdana;
+	}
+
+.medium3 {
+	font-size: 75%;
+	font-family: courier;
+	}
+
+.GUTTER1 {
+	font-size: 85%;
+    font-family: arial,helvetica,sans-serif;
+    color:#ffcc66;
+	}
+
+.GUTTER2 {
+	font-size: 75%;
+        font-family: arial,helvetica,sans-serif;
+	color:#ccccff;
+	}
+    
+.GUTTER3 {
+	font-size: 75%;
+	font-family: arial,helvetica,sans-serif;
+	color:#ffffff;
+	text-decoration:none;
+	}
+
+/* get rid of this, otherwise all <A NAME=""> are blue as well
+A	{
+	color:#0033CC;
+	}
+*/
+A.BAR {
+	font-size:85%;
+	color:#ffffff;
+	font-family: arial,helvetica,sans-serif;
+	text-decoration:none;
+	}
+
+A.HELPBAR {
+	color:#000000;
+        font-size: 75%;
+	font-family: arial,helvetica,sans-serif;
+	text-decoration:none;
+	}
+
+A.GUTTER {
+	color:#ffffff;
+        font-size: 85%;
+	font-family: arial,helvetica,sans-serif;
+        text-decoration:none;
+        }   
+   
+A.GUTTER1 {
+	color:#ffcc66;
+	font-size:85%;
+	font-family: arial,helvetica,sans-serif;
+	text-decoration:none;
+	}
+
+A.GUTTER2 {
+	font-size: 75%;
+	font-family: arial,helvetica,sans-serif;
+	color:#ccccff;
+	text-decoration:none;
+	}
+	
+A.GUTTER3 {
+	font-size: 75%;
+	font-family: arial,helvetica,sans-serif;
+	color:#ffffff;
+	text-decoration:none;
+	}
+
+A.BUTTON {
+	font-size: 75%;
+	font-family: arial,helvetica,sans-serif;
+	color:#000000;
+	text-decoration:none;
+	}
+
+H1, .H1 {
+	font-size: 125%;
+	font-weight: bold;
+	font-family: arial,helvetica,sans-serif;
+	}
+
+H2, .H2 {
+	font-size: 125%;
+	font-weight: bold;
+	font-family: arial,helvetica,sans-serif;
+	}
+
+H3, .H3 {
+	font-size: 100%
+	font-weight: bold;
+	font-family: arial,helvetica,sans-serif;
+	}
+
+H4, .H4 {
+	font-size: 100%
+	font-weight: bold;
+	font-family: arial,helvetica,sans-serif;
+	}
+
+H5, .H5 {
+	font-size: 85%;
+	font-weight: bold;
+	font-style: italic;
+	font-family: arial,helvetica,sans-serif;
+	}
+	
+.pmlinka {
+	font-family: arial,helvetica,sans-serif;
+	font-size:85%;
+	font-weight:bold;
+	color: #336699;
+	text-align:center;
+	vertical-align:baseline;                        
+	text-decoration:none;
+	}
+
+.pmlinkna {
+	font-family: arial,helvetica,sans-serif;
+	font-size:85%;
+	color: #336699;
+	text-align:center;
+	vertical-align:baseline;
+	text-decoration:none;
+	}
+
+.taba {
+	background:#FFFFFF;
+ 	text-align:center;
+	vertical-align:baseline;
+	}
+
+.tabna {
+	background:#CCCCCC;
+	text-align:center;
+	vertical-align:baseline;
+	}
+
+.dblinks {        
+	font-size: 75%;
+	font-family: arial,helvetica,sans-serif;
+	color:#336699;
+	text-decoration:none;
+	}

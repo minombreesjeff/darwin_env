@@ -1,0 +1,121 @@
+(cd lib; make CC="cc" GETPASS="getpass.o" \
+	OPTIMIZE="-g" \
+	RCMD="" SUPPORT_RCMD="" \
+	DNS_THROUGH_NIS="" \
+	OTHER_CFLAGS="  -DSHORTENED_RBIND -DCOMPAT   " \
+	RANLIB="ranlib")
+/projects/insg/socks.cstc.4.2.pre1/lib
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT    -target sun4 -c  Rconnect.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT    -target sun4 -c  SendGetDst.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT    -target sun4 -c  saddrtoname.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT    -target sun4 -c  porttoserv.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT    -target sun4 -c  check_cconf.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT    -target sun4 -c  percent_x.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT    -target sun4 -c  shell_cmd.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT    -target sun4 -c  check_user.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT    -target sun4 -c  getpass.c
+rm -f libsocks.a
+ar rc libsocks.a Rconnect.o SendGetDst.o saddrtoname.o porttoserv.o check_cconf.o  percent_x.o shell_cmd.o check_user.o getpass.o 
+ranlib libsocks.a
+(cd libident; make CC="cc" OTHER_CFLAGS="  -DSHORTENED_RBIND -DCOMPAT  " \
+	OPTIMIZE="-g" RANLIB="ranlib")
+/projects/insg/socks.cstc.4.2.pre1/libident
+cc -g -DSHORTENED_RBIND -DCOMPAT  -target sun4 -c  ident.c
+cc -g -DSHORTENED_RBIND -DCOMPAT  -target sun4 -c  id_open.c
+cc -g -DSHORTENED_RBIND -DCOMPAT  -target sun4 -c  id_close.c
+cc -g -DSHORTENED_RBIND -DCOMPAT  -target sun4 -c  id_query.c
+cc -g -DSHORTENED_RBIND -DCOMPAT  -target sun4 -c  id_parse.c
+rm -f libident.a
+ar cq libident.a ident.o id_open.o id_close.o id_query.o id_parse.o
+ranlib libident.a
+(cd sockd; make CC="cc" RESOLV_LIB="-lresolv" \
+	OPTIMIZE="-g" \
+	SOCKS_LIB="/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a" SUPPORT_RCMD="" \
+	IDENT_LIB="/projects/insg/socks.cstc.4.2.pre1/libident/libident.a" \
+	OTHER_CFLAGS="  -DSHORTENED_RBIND -DCOMPAT   ")
+/projects/insg/socks.cstc.4.2.pre1/sockd
+cc -I../include -I../libident -g -DSHORTENED_RBIND -DCOMPAT  -o sockd sockd.c /projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a /projects/insg/socks.cstc.4.2.pre1/libident/libident.a -lresolv
+cc -I../include -I../libident -g -DSHORTENED_RBIND -DCOMPAT  -DTEST -o test_sockd_conf sockd.c /projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a -lresolv
+cc -I../include -I../libident -g -DSHORTENED_RBIND -DCOMPAT  -o flip_cfmasks flip_cfmasks.c /projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a -lresolv
+(cd rfinger; make CC="cc" WHOIS_SERVER=-DWHOIS_SERVER\'=\"rs.internic.net\"\' \
+	OPTIMIZE="-g" SOCKS="-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect" \
+	RESOLV_LIB="-lresolv" SOCKS_LIB="/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a" \
+	OTHER_CFLAGS="  -DSHORTENED_RBIND -DCOMPAT   ")
+/projects/insg/socks.cstc.4.2.pre1/rfinger
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect  -target sun4 -c  finger.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -o rfinger finger.o /projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a -lresolv
+cc -DWHOIS_SERVER'="rs.internic.net"' -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -o rwhois finger.c /projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a -lresolv
+(cd rftp; make CC="cc" SOCKS_LIB="/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a" \
+	OPTIMIZE="-g" SOCKS="-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect" \
+	RESOLV_LIB="-lresolv" \
+	OTHER_CFLAGS="  -DSHORTENED_RBIND -DCOMPAT   ")
+/projects/insg/socks.cstc.4.2.pre1/rftp
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect  -target sun4 -c  cmds.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect  -target sun4 -c  cmdtab.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect  -target sun4 -c  ftp.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect  -target sun4 -c  glob.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect  -target sun4 -c  main.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect  -target sun4 -c  ruserpass.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect  -target sun4 -c  domacro.c
+cc -I../include -g -DSHORTENED_RBIND -DCOMPAT -Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -o rftp cmds.o cmdtab.o ftp.o glob.o main.o ruserpass.o domacro.o /projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a -lresolv
+(cd rtelnet; make CC="cc" OS="sun4.1" SOCKS_LIB="/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a" \
+	OPTIMIZE="-g" SOCKS="-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect" \
+	RESOLV_LIB="-lresolv" \
+	OTHER_CFLAGS="  -DSHORTENED_RBIND -DCOMPAT   ")
+/projects/insg/socks.cstc.4.2.pre1/rtelnet
+cd libtelnet; make sun4.1 CC="cc" OTHER_CFLAGS="-DSHORTENED_RBIND -DCOMPAT" SOCKS="-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect" SOCKS_LIB=/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a RESOLV_LIB="-lresolv" OPTIMIZE="-g"
+make -f ../Config.local WHAT= CC=cc OPTIMIZE=-g SOCKS=-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect SOCKS_LIB=/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a RESOLV_LIB=-lresolv sun4.1
+make -f Makefile.generic  \
+	LIBS="/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a -ltermcap ../libtelnet/libtelnet.a -lresolv" \
+	LIBPATH="/lib/libc.a /usr/lib/libtermcap.a \
+			../libtelnet/libtelnet.a" \
+	DEST=/usr/ucb \
+	DEFINES="-DFILIO_H -DTERMCAP -DUSE_TERMIO \
+		-DKLUDGELINEMODE -DSTREAMS \
+		-DAUTHENTICATE \
+		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS " \
+	INCLUDES="-I.. -I../../include" \
+	LIB_OBJ="getent.o strerror.o setenv.o herror.o" \
+	LIB_SRC="getent.c strerror.c setenv.c herror.c" \
+	AR=ar ARFLAGS=cq RANLIB=ranlib \
+	LIBEXEC=/usr/etc/in.telnetd \
+	CC="cc" LCCFLAGS="-g"
+cc -g -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS -I.. -I../../include  -target sun4 -c  auth.c
+cc -g -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS -I.. -I../../include  -target sun4 -c  encrypt.c
+cc -g -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS -I.. -I../../include  -target sun4 -c  genget.c
+cc -g -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS -I.. -I../../include  -target sun4 -c  misc.c
+cc -g -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS -I.. -I../../include  -target sun4 -c  enc_des.c
+cc -g -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS -I.. -I../../include  -target sun4 -c  getent.c
+cc -g -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS -I.. -I../../include  -target sun4 -c  strerror.c
+cc -g -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS -I.. -I../../include  -target sun4 -c  setenv.c
+cc -g -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS -I.. -I../../include  -target sun4 -c  herror.c
+rm -f libtelnet.a
+ar cq libtelnet.a auth.o encrypt.o genget.o  misc.o enc_des.o  getent.o strerror.o setenv.o herror.o
+ranlib libtelnet.a
+cd telnet; make sun4.1 CC="cc" OTHER_CFLAGS="-DSHORTENED_RBIND -DCOMPAT" SOCKS="-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect" SOCKS_LIB=/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a RESOLV_LIB="-lresolv" OPTIMIZE="-g"
+make -f ../Config.local WHAT= CC=cc OPTIMIZE=-g SOCKS=-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect SOCKS_LIB=/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a RESOLV_LIB=-lresolv sun4.1
+make -f Makefile.generic  \
+	LIBS="/projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a -ltermcap ../libtelnet/libtelnet.a -lresolv" \
+	LIBPATH="/lib/libc.a /usr/lib/libtermcap.a \
+			../libtelnet/libtelnet.a" \
+	DEST=/usr/ucb \
+	DEFINES="-DFILIO_H -DTERMCAP -DUSE_TERMIO \
+		-DKLUDGELINEMODE -DSTREAMS \
+		-DAUTHENTICATE \
+		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS " \
+	INCLUDES="-I.. -I../../include" \
+	LIB_OBJ="getent.o strerror.o setenv.o herror.o" \
+	LIB_SRC="getent.c strerror.c setenv.c herror.c" \
+	AR=ar ARFLAGS=cq RANLIB=ranlib \
+	LIBEXEC=/usr/etc/in.telnetd \
+	CC="cc" LCCFLAGS="-g"
+cc -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS  -target sun4 -c  authenc.c
+cc -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS  -target sun4 -c  commands.c
+cc -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS  -target sun4 -c  main.c
+cc -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS  -target sun4 -c  network.c
+cc -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS  -target sun4 -c  ring.c
+cc -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS  -target sun4 -c  sys_bsd.c
+cc -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS  -target sun4 -c  telnet.c
+cc -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS  -target sun4 -c  terminal.c
+cc -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS  -target sun4 -c  utilities.c
+cc -o ../rtelnet -g -I.. -I../../include -DFILIO_H -DTERMCAP -DUSE_TERMIO 		-DKLUDGELINEMODE -DSTREAMS 		-DAUTHENTICATE 		-Dconnect=Rconnect -Dgetsockname=Rgetsockname -Dlisten=Rlisten -Daccept=Raccept -Drcmd=Rrcmd -Dbind=Rbind -Dselect=Rselect -DDIAGNOSTICS authenc.o commands.o main.o network.o ring.o sys_bsd.o  telnet.o terminal.o utilities.o  /projects/insg/socks.cstc.4.2.pre1/lib/libsocks.a -ltermcap ../libtelnet/libtelnet.a -lresolv

@@ -1,0 +1,142 @@
+.TH SOCKS.CONF 5 "February 9, 1994"
+.SH NAME
+.nf
+socks.conf \- SOCKS clients configuration file
+.fi
+.SH SYNOPSIS
+/etc/socks.conf
+.SH DESCRIPTION
+All SOCKS client programs use this file to determine whether to
+use direct or proxy connection to a given destination host, and
+to exert access control based on the destination host, the requested
+service (port number on the destination host), and the effective user-id
+of the requesting local user. If this file is absent, SOCKS clients will
+only try direct connections, making them behave like their regular couterparts.
+
+Each line in the file may be up to 1024 characters long.
+Lines starting with a \fB#\fP are comments. Non-comment lines must be
+of one of the three forms:
+
+.nf
+.+1
+\fBdeny	\fI[\fB*=\fIuserlist]   dst_addr  dst_mask  [op dst_port]  [: shell_cmd]\fP
+\fBdirect	\fI[\fB*=\fIuserlist]   dst_addr  dst_mask  [op dst_port]  [: shell_cmd]\fP
+\fBsockd	\fI[\fB@=\fIserverlist] [\fB*=\fIuserlist]  dst_addr  dst_mask  [op dst_port]  [: shell_md]\fR
+.-1
+.fi
+
+A \fBdeny\fP line tells the SOCKS clients when to reject a request.
+A \fBdirect\fR lines tells when to use a direct connection. A \fBsockd\fR
+line indicates when to use a proxy connection and, optionally, which
+SOCKS proxy server or servers it should try.
+
+Spaces and tabs separate the fields. Fields enclosed in sqaure brackets
+are optional.
+
+The \fIuserlist\fR field, when present, consists of
+one or more user-ids or filenames, with comma as separator. No spaces
+or tabs are allowed in the list. The user-ids should be ids of users on the
+local host, not those on the destination host or the SOCKS server host.
+The filenames must be full pathnames with the leading \fB/\fP. Inside
+the specified files, user-ids may be listed one or several per line,
+with any combination of blanks, tabs, and commas as separators. The
+appearance of \fB#\fP marks the remainder of the line as comment. Each
+line in the files may be up to 1023 characters long.
+If the \fB*=\fIuserlist\fR field is omitted, the line applies to all user-ids.
+
+The \fIdst_addr dst_mask\fP pair together specify the destination IP address
+or the range of destination IP addresses. They are both given in the
+usual dotted form, e.g., 129.1.2.3. Bits in \fIdst_mask\fP that are set
+to 0 indicate the bit positions which should be masked off (i.e., ignored)
+during comparison of \fIdst_addr\fP and the actual destination IP address.
+So specifying 255.255.255.255 in \fIdst_mask\fP demands an exact match
+with \fIdst_addr\fP, whereas 0.0.0.0 in \fIdst_mask\fP causes an address
+match no matter what is specified for \fIdst_addr\fP. (NOTE: This is the
+same way netmasks are interpreted, but is the direct opposite of how the
+address masks are used in cisco router's access-lists.)
+
+The \fIop\fP field must be \fBeq\fR, \fBneq\fR, \fBlt\fR, \fBgt\fR,
+\fBle\fR, or \fBge\fR, for the condition of equal, not equal, less than,
+greater than, less than or equal, and greater than or equal, respectively.
+The \fIdst_port\fP field can be either a port number, e.g., 23, or the
+equivalent service name as specified in file /etc/services, e.g., \fBtelnet\fR
+for port number 23. If this pair is omitted, the line applies to all
+services.
+
+The \fIserverlist\fP, which may only be used in a \fBsockd\fR line,
+consists of one or more SOCKS proxy servers, which the client program should
+try to use (in the indicated order) for establishing a proxy connection.
+Only commas can be used as separator, no spaces
+or tabs are allowed in the list. Domain names of the servers may be used
+in the list, though it is probably more prudent to specify IP addresses.
+If this field is omitted, the client program will use the
+default SOCKS proxy server, which is determined by the environment variable
+\fBSOCKS_SERVER\fR if it exists, or the name compiled into the SOCKS client
+program otherwise.
+
+Consider
+
+.nf
+.+1
+sockd  @=1.2.3.4  *=boss,root 11.12.13.14 255.255.255.255 eq telnet
+.-1
+.fi
+
+To match the condition indicated in this line, a request must come from
+a local user whose effective id is either boss or root, the detination
+IP address must be 11.12.13.14 exactly, and the service requested must
+be telnet. In that case, connection to host 11.12.13.14 should be done
+via a SOCKS proxy server on host 1.2.3.4.
+
+Every time a SOCKS client has to make a network connection, it checks
+the pending request against the file \fB/etc/socks.conf\fR, one line at
+a time. Once it finds a line with conditions that are matched by the
+request, the action specified on that line is taken. The remaining
+lines of file \fB/etc/socks.conf\fR are skipped. So the order of the
+lines in the file is extremely important; switch two lines and you may
+have entirely different results.  If no matching line
+is found throughout the file, the request is denied.
+
+The \fIshell_cmd\fR field specifies a command string that is executed
+when the conditions on that line are satisfied. The following substitutions
+occur before the string is presented to the Borne shell for execution:
+.nf
+.in +1
+
+%A -- replaced by the client host's domainname if known, by its IP address otherwise
+%a -- replaced by the client host's IP address
+%c -- replaced by "connect" or "bind"
+%p -- replaced by the process id of the client program
+%S -- replaced by the service name (e.g., ftp) if known, by the destination port number otherwise
+%s -- replaced by the destination port number
+%U -- replaced by the user-id at login
+%u -- replaced by the effective user-id
+%Z -- replaced by the destination host's domainname if known, by its IP address otherwise
+%z -- replaced by the destination host's IP address
+%% -- replaced by a single %
+
+.fi
+.in -1
+Several shell commands can be strung together in the usual way with `|',
+`;', etc.
+
+Although there is an implied 'deny all' at the end of the control file,
+you may supply one explicitly so as to take some specific action when requests
+are so rejected, e.g.,
+.nf
+.in +1
+
+deny 0.0.0.0 0.0.0.0 : /usr/ucb/mail -s 'SOCKS: rejected %S from %u to %Z' root
+
+.fi
+.in -1
+Unlike the previous version, connection to address 127.0.0.1 or 0.0.0.0
+is always done directly to localhost, so there is no need to specify
+either of them in
+\fB/etc/socks.conf\fP.
+.SH ENVIRONMENT
+\fBSOCKS_SERVER\fR, if defined, specifies the name or IP address of the
+SOCKS proxy server host to use, overriding the default server
+compiled into the programs.
+.SH SEE ALSO
+\fIsockd\fP(8), \fIsocks_clients\fP(1), \fIsockd.conf\fP(5)

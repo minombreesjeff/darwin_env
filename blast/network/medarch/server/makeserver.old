@@ -1,0 +1,87 @@
+#
+#  Makefile for medsmain program
+#
+include $(NCBI)/ncbi.mk
+
+CODEGEN=asncode
+ASNTOOL=asntool
+
+CC= $(NCBI_CC)
+
+INCLUDES=-I$(NCBI_SYBASE)/include -I$(NCBI_INCDIR)
+
+LIBS1=-lncbimla -lncbiobj -lnetcli -lncbi -lm $(NCBI_OTHERLIBS)
+LIBS=$(NCBI_SYBLIBS) -lncbimla -lncbiobj -lnetcli -lncbi -ldl $(NCBI_OTHERLIBS)
+LIBDIRS=-L$(NCBI_ALTLIB) -L$(NCBI_SYBASE)/lib 
+
+CFLAGS=-g $(INCLUDES)
+
+# sources and objects for medline retrieval
+
+MED_OBJ=	medretrieve.o getmedart.o voutf.o password.o sybbind.o \
+		sybintfc.o sqlstring.o message.o patchtoiso.o \
+		ma_global.o cmdline.o ma_intfc.o mfmt_medasn.o outmedart.o \
+		medart2asn.o xalloc.o
+
+MED_SRC=	medretrieve.c getmedart.c voutf.c password.c sybbind.c \
+		sybintfc.c sqlstring.c message.c patchtoiso.c \
+		ma_global.c cmdline.c ma_intfc.c mfmt_medasn.c outmedart.c \
+		medart2asn.c xalloc.c
+
+OBJECTS=	medsmain.o $(MED_OBJ)
+
+SOURCES=	medsmain.c $(MED_SRC)
+
+TEST_OBJ=	medarchtest.o
+
+TEST_SRC=	medarchtest.c
+
+TEST1_OBJ=	test.o
+
+TEST1_SRC=	test.c
+
+.c.o:
+	$(CC) $(CFLAGS) -c $<
+	
+medretrieve.o : medretrieve.c
+	$(CC) $(CFLAGS) -c -o $@ -DSYSV medretrieve.c
+
+getmedart.o : getmedart.c
+	$(CC) $(CFLAGS) -c -o $@ -DSYSV getmedart.c
+
+medserv: $(OBJECTS)
+	$(CC) -o medserv $(OBJECTS) $(LIBDIRS) $(LIBS)
+
+medserv.purify: $(OBJECTS)
+	purify $(CC) -o medserv.purify $(OBJECTS) $(LIBDIRS) $(LIBS)
+
+medarchtest: $(TEST_OBJ)
+	$(CC) -o medarchtest $(TEST_OBJ) $(LIBDIRS) $(LIBS1)
+
+test1: $(TEST1_OBJ)
+	$(CC) -o test1 $(TEST1_OBJ) $(LIBDIRS) $(LIBS1)
+
+objmla.o: objmla.c asnmla.h mappings.h
+	$(CC) -c -g -DNLM_OBJ_INCL=\"mappings.h\" -I$(INC) objmla.c
+
+objmla.c: asnmla.l $(CODEGEN)
+	rm -f objmlaerr objmlaout
+	$(CODEGEN) -l asnmla.l -o objmla >objmlaout 2>objmlaerr
+
+medarch.o: medarch.c asnmla.h objmla.h medarch.h
+	$(CC) -c -g -I$(INC) -I. medarch.c
+
+medarchtest.o: medarchtest.c asnmla.h medarch.h
+	$(CC) -c -g -I$(INC) -I. medarchtest.c
+
+asnmla.l: mla.asn
+	rm -f asnmla.l*
+	$(ASNTOOL) -m mla.asn -l asnmla.h
+	-mv asnmla.l* asnmla.l
+	mv asnmla.h asnmlastat.h
+
+asnmla.h: mla.asn
+	$(ASNTOOL) -m mla.asn -o asnmla.h
+
+clean:
+	rm -f objmla.c objmla.h asnmla.l asnmla.h *.o medserv objmlaerr objmlaout

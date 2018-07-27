@@ -1,0 +1,109 @@
+SEQUIN APPLICATION
+
+Sequin is a program designed to aid in the submission of sequences to the
+GenBank, EMBL, and DDBJ sequence databases. It was written at the National
+Center for Biotechnology Information, part of the National Library of
+Medicine at the National Institutes of Health.
+
+Sequin can assemble the essential elements of a GenBank record from simple
+FASTA-format text files. For example, the program obtains the proper genetic
+code from an organism name, and automatically determines coding region
+intervals by back-translation from the protein sequence. An on-line help
+window scrolls to the appropriate place as the user moves between and within
+data entry forms, giving relevant details on what information is expected.
+
+Sequin also contains a number of built-in validation functions for quality
+assurance. Features such as splice sites and coding region translations are
+checked for accuracy or internal consistency. Double-clicking on an error
+message launches an appropriate editor by which the user can correct any
+problems.
+
+Sequin provides live, clickable views of the data in a variety of formats,
+including a report form, GenBank flatfile, EMBL flatfile, and a graphical
+view. Double clicking on an item in any of these formats launches an editor
+for that item. The editor is capable of maintaining correct feature table
+positions as the underlying sequence is edited. It can display features on
+the sequence during editing, and allows feature intervals to be adjusted by
+direct manipulation.
+
+Sequin runs on Macintosh, PC/Windows, UNIX and VMS computers and is available
+by anonymous ftp from ftp.ncbi.nih.gov.
+
+
+ADDING ANALYSIS PROGRAMS TO SEQUIN
+
+The seqncfig file can be configured to add items to Sequin's Analysis menu.
+Each section gives instructions on how to constuct a URL query to send to a
+cgi program on the Internet. The cgi program is then responsible for running
+the desired analysis program and for any necessary format conversions. A
+sample cgi program written in C, testcgi.c, is in the demo directory of the
+NCBI software toolkit. A perl version will be available soon. (Some analysis
+programs could be modified to act as cgi programs directly, and for those
+cases a separate cgi mediator program would not be necessary.)
+
+A portion of a sample seqncfig file is shown below. Note that the section
+names for the services are specified in the [ORDER] section, and items must
+be of the form ORDER_1, ORDER_2,...ORDER_n.
+
+    [ORDER]
+    ORDER_1=tRNAscan
+    ORDER_2=Seg
+    ...
+
+    [tRNAscan]
+    HOST=www.myserver.myschool.edu
+    PORT=80
+    PATH=/MyServices/cgi-bin/testcgi.cgi
+    QUERY=request=trnascan
+    TITLE=tRNAscan-SE
+    SUBMENU=Search
+    FORMAT=FASTA
+    FLAGS=SEQ,NUC,TRG,NET
+    TIMEOUT=30
+
+    [Seg]
+    HOST=www.myserver.myschool.edu
+    PORT=80
+    PATH=/MyServices/cgi-bin/testcgi.cgi
+    QUERY_1=request=seg
+    TITLE_1=Seg default
+    QUERY_2=request=seg&window=10&lowcut=1.0&hicut=1.5
+    TITLE_2=Seg 10-1.0-1.5
+    QUERY_3=request=seg&window=12&lowcut=2.3&hicut=2.6
+    TITLE_3=Seg 12-2.3-2.6
+    SUBMENU=Seg
+    FORMAT=FASTA
+    FLAGS=SEQ,DOC,PRT,TRG,NET
+    TIMEOUT=30
+    ...
+
+    [ENZYMES]
+    ENZ_1=BamHI
+    ENZ_2=EcoRI
+    ENZ_3=HindIII
+
+The naming conventions for configuration files varies depending upon the
+computer platform. For Mac it is seqncfig.cnf, for Windows seqncfig.ini, for
+UNIX .seqncfigrc, and for VMS sequincfig.cfg. On the Mac, configuration files
+go in the System Folder:Preferences folder, while for the PC they go in the
+"windows" directory.
+
+Individual configuration files may now be placed in a "services" directory
+that is in the same directory as the Sequin program. They do not need to
+conform to the naming convention described above.
+
+
+SOLARIS EXECUTABLES
+
+The Solaris executables distributed by NCBI no longer include a statically-
+linked Motif library. This is due to the manner in which Sun distributes
+Motif libraries. Users of Solaris version 2.4 and higher will find the
+runtime shared Motif library on their system. Users of Solaris version 2.3
+and earlier may need to either upgrade their systems or purchase the Motif
+library separately.
+
+It may be necessary to set your LD_LIBRARY_PATH environment variable to point
+to the directory where this file, libXm.so.3 (the final digit may vary),
+appears on your system. E.g.:
+
+   setenv LD_LIBRARY_PATH /usr/dt/lib

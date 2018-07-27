@@ -1,0 +1,14 @@
+# makestat.mac
+#
+# To use this file:
+#  * Get a copy of Joshua Juran's jTools.
+#  * Drop this file onto jTools.
+#
+# ToolServer and an installed MacPerl MPW tool are required.
+
+. ./all.mac
+. ./allpub.mac
+cd ../asnstat
+mpwsh 'Perl -pe "s[\.\./][::];" ::asn:makestat.unx | Perl -pe "s[/][:]g;" > makestat.temp'
+. ./makestat.temp
+echo "makestat.mac complete."

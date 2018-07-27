@@ -1,0 +1,152 @@
+/*   ncbilcl.h
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  ncbilcl.h
+*
+* Author:  Gish, Kans, Ostell, Schuler
+*
+* Version Creation Date:   1/1/91
+*
+* $Revision: 6.0 $
+*
+* File Description:
+*	system dependent header
+*	CONVEX version
+*
+* Modifications:
+* --------------------------------------------------------------------------
+* Date     Name        Description of modification
+* -------  ----------  -----------------------------------------------------
+* 6NOV92   John Powell   Header for CONVEX computer.
+*          NIH DCRT
+*
+* $Log: ncbilcl.cvx,v $
+* Revision 6.0  1997/08/25 18:15:55  madden
+* Revision changed to 6.0
+*
+* Revision 5.2  1997/05/29 16:15:53  epstein
+* remove some defines per Warren Gish
+*
+* Revision 5.1  1997/05/21 13:47:29  epstein
+* additional defines added per Warren Gish
+*
+* Revision 5.0  1996/05/28 13:18:57  ostell
+* Set to revision 5.0
+*
+Revision 4.0  1995/07/26  13:46:50  ostell
+force revision to 4.0
+
+Revision 1.5  1995/05/15  18:45:58  ostell
+added Log line
+
+*
+* ==========================================================================
+*/
+#ifndef _NCBILCL_
+#define _NCBILCL_
+
+/* PLATFORM DEFINITION FOR CONVEX */
+
+#define COMP_BSD
+#define OS_UNIX
+#define OS_UNIX_SYSV
+#define PROC_CONVEX
+#define WIN_DUMB
+
+/*----------------------------------------------------------------------*/
+/*      Desired or available feature list                               */
+/*----------------------------------------------------------------------*/
+#define MMAP_AVAIL
+#define SYSV_IPC_AVAIL
+
+/*----------------------------------------------------------------------*/
+/*      #includes                                                       */
+/*----------------------------------------------------------------------*/
+#include <sys/types.h>
+#include <limits.h>
+#include <sys/stat.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
+#include <errno.h>
+#include <float.h>
+
+/*----------------------------------------------------------------------*/
+/*      Missing ANSI-isms                                               */
+/*----------------------------------------------------------------------*/
+#define volatile	/* "volatile" keyword not accepted */
+#ifndef CLK_TCK
+#define CLK_TCK 60
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Aliased Logicals, Datatypes                                     */
+/*----------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------*/
+/*      Misc Macros                                                     */
+/*----------------------------------------------------------------------*/
+#define PROTO(x)	x	/* Function prototypes faked in */
+#define VPROTO(x)	x	/* Prototype for variable argument list */
+#define DIRDELIMCHR	'/'
+#define DIRDELIMSTR	"/"
+#define CWDSTR	"."
+
+#define KBYTE	(1024)
+#define MBYTE	(1048576)
+
+#define IS_BIG_ENDIAN
+
+/*----------------------------------------------------------------------*/
+/*      For importing MS_DOS code                                       */
+/*----------------------------------------------------------------------*/
+#define near
+#define far
+#define huge
+#define cdecl
+#define pascal
+#define _pascal
+#define _near
+#define _far
+#define _huge
+#define _cdecl
+
+/*----------------------------------------------------------------------*/
+/*      Macros for Floating Point                                       */
+/*----------------------------------------------------------------------*/
+#define EXP2(x) exp((x)*LN2)
+#define LOG2(x) (log(x)*(1./LN2))
+#define EXP10(x) exp((x)*LN10)
+#define LOG10(x) (log(x)*(1./LN10))
+
+/*----------------------------------------------------------------------*/
+/*      Macros Defining Limits                                          */
+/*----------------------------------------------------------------------*/
+#define MAXALLOC	0x40000000 /* Largest permissible memory request */
+
+#endif

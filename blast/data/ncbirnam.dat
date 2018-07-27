@@ -1,0 +1,5 @@
+> a '>' or a ';' in the first column is a comment and is ignored
+BamHI
+EcoRI
+HindIII
+PstI

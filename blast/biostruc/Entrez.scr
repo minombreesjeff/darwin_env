@@ -1,0 +1,675 @@
+/*
+ * $Id: Entrez.scr,v 6.16 2000/09/13 16:59:38 kimelman Exp $
+ * 
+ * This file contains the additions to PubStruct Database on Public 
+ * Entrez Servers
+ *
+ * $Log: Entrez.scr,v $
+ * Revision 6.16  2000/09/13 16:59:38  kimelman
+ * enable retrival of dead mmdbs
+ *
+ * Revision 6.15  1999/10/22 17:50:35  kimelman
+ * synced to OS
+ *
+ * Revision 6.14  1999/07/01 21:40:20  kimelman
+ * qa_checks extended
+ *
+ * Revision 6.13  1999/06/15 20:37:48  kimelman
+ * id_get_asn_prop: synced to OS
+ *
+ * Revision 6.12  1999/06/09 02:01:51  kimelman
+ * typo
+ *
+ * Revision 6.11  1999/06/09 01:59:31  kimelman
+ * e2index input order fixed
+ *
+ * Revision 6.10  1999/06/08 03:54:20  kimelman
+ * entrez indexes ordering fixed
+ *
+ * Revision 6.9  1999/05/11 21:41:23  kimelman
+ * 1. qa_check proc added
+ * 2. this script now removes all procs not required on public/retrieval site
+ *
+ * Revision 6.8  1999/05/03 14:47:26  kimelman
+ * spaces
+ *
+ * Revision 6.7  1999/04/22 01:51:51  kimelman
+ * Move Entrez indexing procs to _active DB only
+ * create list2index mode for selected reindexing
+ *
+ * Revision 6.6  1999/03/16 16:56:28  kimelman
+ * new ID fixes
+ *
+ * Revision 6.5  1998/10/26 20:53:43  kimelman
+ * bugfix: timerounding to minutes before comparision and print format fioxes
+ *
+ * Revision 6.4  1998/10/05 17:47:03  kimelman
+ * Fix for dates problem
+ *
+ * Revision 6.3  1998/07/27 19:35:57  kimelman
+ * fresh & full lists 2 index reordered in according to 'entrez' modification dates
+ *
+ * Revision 6.2  1998/07/22 22:06:09  kimelman
+ * Enterez removed list : satkey sat date ==> mmdb
+ *
+ * Revision 6.1  1998/07/14 20:24:42  kimelman
+ * FT schema & smart load
+ *
+ * Log: PubStruct_proc.scr,v
+ * Revision 6.7  1998/06/12 17:45:00  kimelman
+ * timestamps history fixed, vacuum cleaning debugged
+ *
+ * Revision 6.6  1998/06/05 18:19:23  kimelman
+ * atextract styled
+ *
+ * Revision 6.5  1998/06/05 17:59:18  kimelman
+ * structure takeover bug fixed
+ */
+/************************************************************************/
+PRINT '/***** SELECT DATABASE PubStruct                             *****/'
+/************************************************************************/
+go
+USE PubStruct
+go
+
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'mmdb2acc'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.mmdb2acc
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    mmdb2acc                       *****/'
+/************************************************************************/
+go
+
+create proc
+mmdb2acc (
+          @mmdb  int,  /* mmdb */
+          @state int,
+          @acc   int output
+         )
+as
+   declare @stat int
+   declare @suppress int
+   select @stat = @state
+   if @stat < 0
+     begin
+       select @stat = max(state)
+       from Struct
+       where mmdb_id = @gi and suppressed = 0 and state <= -@stat-1
+     end
+   select @suppress = min(suppressed) from Struct where mmdb_id = @gi and state = @stat and datalength(blob)
+
+   select @acc=acc
+   from Struct
+   where mmdb_id = @gi and suppressed = @suppress and state = @stat
+go
+
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_find_gi'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_find_gi
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_find_gi                     *****/'
+/************************************************************************/
+go
+
+create proc
+id_find_gi (
+            @gi  int,  /* mmdb */
+            @state tinyint  = 0
+           )
+as
+  declare @acc int
+
+  select @acc=acc
+  from Struct
+  where mmdb_id = @gi and state = @state and suppressed = 0
+
+  if @@rowcount = 0 /* looks to be removed */
+    select @acc = -1
+  
+  if @state = 0
+     begin
+       declare @acc1 int
+       
+       select @acc=acc
+       from Struct s, EntrezControl..SatKeyFlags i
+       where s.mmdb_id = @gi and s.state = 0 and s.acc = i.sat_key and i.sat = 10 and i. dumped4entrez = 1
+   
+       if @@rowcount = 0 /* looks to be removed */
+         select @acc = -1
+  end
+  if @acc = -1 
+    exec mmdb2acc @gi,@state, @acc=@acc output
+  if @acc > 0
+   begin 
+     if exists ( select * from Struct where acc = @acc and suppressed = 0 )
+       select sat=convert(smallint,10),sat_key=@acc,gi_state=convert(tinyint,100),0,0,"01/01/1900"
+     else
+       select sat=convert(smallint,10),sat_key=@acc,gi_state=convert(tinyint,125),0,0,"01/01/1900"
+  end
+go
+/*****        Grant and Revoke permissions id_find_gi               *****/
+GRANT EXECUTE ON id_find_gi  TO public
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_get_asnprop'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_get_asnprop
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_get_asnprop                 *****/'
+/************************************************************************/
+go
+
+create proc
+id_get_asnprop ( @sat_key int)
+as
+  declare @state tinyint
+
+  select @state = suppressed from  Struct where  acc = @sat_key
+  if @state > 0 
+     select @state = 125
+  else
+     select @state = 100
+  select  state=@state,confidential, suppress=convert(tinyint,0), override=convert(tinyint,0), 
+          length=datalength(blob), owner=convert(smallint,0),"unknown","N/A",class=convert(tinyint,0)
+    from  Struct
+   where  acc = @sat_key
+go
+/*****        Grant and Revoke permissions id_get_asnprop           *****/
+go
+GRANT EXECUTE ON id_get_asnprop  TO public
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_get_asnblob'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_get_asnblob
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_get_asnblob                 *****/'
+/************************************************************************/
+go
+
+create proc
+id_get_asnblob ( @sat_key int)
+as
+  select asn=blob
+    from Struct
+   where @sat_key = acc
+ 
+go
+/*****        Grant and Revoke permissions id_get_asnblob           *****/
+go
+GRANT EXECUTE ON id_get_asnblob  TO public
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_get_gi_content'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_get_gi_content
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_get_gi_content              *****/'
+/************************************************************************/
+go
+
+create proc
+id_get_gi_content (
+     @sat_key        int,
+     @sat            smallint=10
+     )
+as
+   declare @mod_date       datetime
+   declare @date_entrez    datetime
+   declare @create_date    datetime
+   declare @gi             int
+   declare @pdb_id         char(4)
+   declare @mmdb_id        int
+
+   if(@sat != 10)
+     return 100
+
+   
+   select @mmdb_id= mmdb_id
+   from   Struct
+   where  acc = @sat_key
+   
+   select @pdb_id=pdb_id
+   from   pdb
+   where  mmdb_id = @mmdb_id
+
+   /* create date */
+   select @create_date=min(date)
+   from   Struct
+   where  state = 0 and mmdb_id in (select mmdb_id from pdb where pdb_id = @pdb_id)
+   
+   select @create_date=isnull(min(i.date_entrez),@create_date)
+   from   Struct s, EntrezControl..SatKeyFlags i
+   where  s.state = 0 and s.mmdb_id in (select mmdb_id from pdb where pdb_id = @pdb_id)
+     and  s.acc = i.sat_key and i.sat = 10
+
+   /* Modificatio Date */   
+   select @mod_date=min(date)
+   from   Struct s
+   where  s.state = 0 and s.mmdb_id = @mmdb_id 
+
+   select @mod_date=isnull(min(i.date_entrez),@mod_date)
+   from   Struct s, EntrezControl..SatKeyFlags i
+   where  s.state = 0 and s.mmdb_id = @mmdb_id 
+      and s.acc = i.sat_key and i.sat = 10
+
+   /* Entrez Publication Date */
+   select @date_entrez=min(i.date_entrez)
+   from   Struct s, EntrezControl..SatKeyFlags i
+   where  s.mmdb_id = @mmdb_id and s.state = 0 and s.acc = i.sat_key and i.sat = 10 
+          and i.date_entrez is not null 
+
+   select gi         =@mmdb_id,
+          create_date=@create_date,
+          mod_date   =@mod_date,
+          entrez_date=@date_entrez
+
+  return 0
+ 
+go
+/*****        Grant and Revoke permissions id_get_gi_content        *****/
+go
+GRANT EXECUTE ON id_get_gi_content  TO public
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'id_get_asn'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.id_get_asn
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    id_get_asn                     *****/'
+/************************************************************************/
+go
+
+create proc
+id_get_asn(
+     @gi             int=0,
+     @sat_key        int=0,
+     @sat            smallint=0,
+     @maxplex        int=0,
+     @outfmt         int=0
+     )
+as
+
+  if(@sat != 10)
+     return 100
+
+  if(@outfmt !=100 and @outfmt != 0)
+     return 100
+  
+  if(@sat_key=0)
+    begin
+      select @sat_key = acc
+      from Struct s, EntrezControl..SatKeyFlags i
+      where mmdb_id = @gi and state = 0 and s.acc = i.sat_key and i.sat = 10 and i.dumped4entrez =1
+      if(@@rowcount = 0)
+        begin 
+          declare @acc int
+          exec mmdb2acc @gi,0, @acc=@acc output
+
+           select @sat_key = acc from Struct s where acc = @acc
+           if(@@rowcount = 0)
+             return 100
+      end
+    end
+
+  exec id_get_asnprop @sat_key
+  exec id_get_asnblob @sat_key
+        
+  if(@outfmt=100)
+    exec id_get_gi_content @sat_key,@sat
+  
+  return 0
+ 
+go
+/*****        Grant and Revoke permissions id_get_asn               *****/
+go
+GRANT EXECUTE ON id_get_asn  TO public
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'list2index'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.list2index
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    list2index                    *****/'
+/************************************************************************/
+go
+
+create proc
+list2index(@full int = 0,@mmdb_id int = 0)
+as
+begin
+  if (@full = 1)
+     begin
+      select 'fresh '  , s.acc, '10',
+             mod_date=datediff(minute,'Jan 1 1900', isnull(min(i1.date_entrez),min(s1.date)))
+        from Struct s, Struct s1, EntrezControl..SatKeyFlags i, EntrezControl..SatKeyFlags i1
+       where s.state = 0 and s.suppressed = 0 and i.sat_key = s.acc and i.sat=10 and  i.date_entrez is null
+         and s.mmdb_id = s1.mmdb_id
+         and s1.state = 0 and i1.sat_key = s1.acc and i1.sat=10
+         and s.mmdb_id > 0
+       group by s.acc,s.mmdb_id
+       order by mod_date,s.mmdb_id
+    end
+  else if(@full = 2) /* enforced reindex cases */
+    begin
+     select 'update '  , s.acc, '10',
+            mod_date=datediff(minute,'Jan 1 1900', isnull(min(i1.date_entrez),min(s1.date)))
+       from Struct s, Struct s1, EntrezControl..SatKeyFlags i1
+      where s.state = 0 and s.suppressed = 0 
+        and s.mmdb_id = s1.mmdb_id
+        and s1.state = 0  and i1.sat_key = s1.acc and i1.sat=10
+        and s.mmdb_id = @mmdb_id
+        and s.mmdb_id > 0
+      group by s.acc
+    end
+  else if(@full = -1)
+    begin
+      select 'removed ', mmdb_id
+      from Struct s, EntrezControl..SatKeyFlags i
+      where state = 0 and suppressed > 0 and i.sat_key = s.acc and i.sat=10 and i.dumped4entrez = 1
+      and not exists ( select * from Struct b
+                       where b.mmdb_id = s.mmdb_id and b.state = 0 and b.suppressed = 0 )
+      order by mmdb_id
+    end
+  else if(@full = 0)
+    begin
+      select 'data '   , s.acc, '10',
+            mod_date=datediff(minute,'Jan 1 1900', isnull(min(i.date_entrez),min(s1.date)))
+      from Struct s, Struct s1, EntrezControl..SatKeyFlags i
+      where s1.state = 0 and s.mmdb_id = s1.mmdb_id and s.state = 0 and s.suppressed = 0 and
+            i.sat_key = s1.acc and i.sat=10
+        and s.mmdb_id > 0
+      group by s.acc,s.mmdb_id
+      order by mod_date,s.mmdb_id
+  end
+end
+go
+GRANT EXECUTE ON list2index TO public
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'vacuum_entrez'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.vacuum_entrez
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    vacuum_entrez                  *****/'
+/************************************************************************/
+go
+
+create proc
+vacuum_entrez (@days int = 0)
+as
+  declare @acc int
+  declare @obv_date datetime
+  declare @stamp datetime
+
+  /* set the obvilion date */
+  select @obv_date = dateadd(day,-@days,getdate())
+  select @stamp = getdate()
+
+  select acc
+  from Struct s, EntrezControl..SatKeyFlags i(1)
+  where s.state = 0 and i.sat_key = s.acc and i.sat = 10 and s.suppressed >0
+       and date < @obv_date and datalength(blob) > 0 and i.dumped4entrez = 0
+go
+GRANT EXECUTE ON vacuum_entrez TO anyone
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'qa_checks'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.qa_checks
+END
+go
+/************************************************************************/
+PRINT '/*****           PROCEDURE    qa_checks                     *****/'
+/************************************************************************/
+go
+
+create proc
+qa_checks
+as
+  select mmdb_id,state from Struct
+  where suppressed = 0 
+  group by mmdb_id,state
+  having count(*) > 1
+
+  select acc,state from Struct
+  where mmdb_id <=0
+  
+  select mmdb_id from Struct s
+  where not exists ( select * from pdb p where p.mmdb_id = s.mmdb_id )
+  
+  select mmdb_id,state from Struct s, EntrezControl..SatKeyFlags e
+  where sat = 10 and sat_key = acc 
+  and dumped4entrez = 1 
+  group by mmdb_id,state
+  having count(*) > 1
+  
+  select acc from Struct s
+  where not exists (select * from EntrezControl..SatKeyFlags e 
+                    where sat = 10 and sat_key = s.acc )
+
+  select sat_key from EntrezControl..SatKeyFlags
+  where sat=10 and dumped4entrez=1 and date_entrez is null
+
+go
+GRANT EXECUTE ON qa_checks TO anyone
+go
+/************************************************************************/
+PRINT '/*****           DO QA checks                                *****/'
+/************************************************************************/
+go
+execute qa_checks
+go
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    post_index                     *****/'
+/************************************************************************/
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'post_index'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.post_index
+END
+go
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    post_remove                    *****/'
+/************************************************************************/
+go
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'post_remove'
+    AND   uid = user_id('dbo')
+    AND   type = 'P')
+BEGIN
+    DROP PROCEDURE dbo.post_remove
+END
+go
+
+/************************************************************************/
+PRINT '/*****           TRIGGER  at_insert                         *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'at_insert'
+    AND   uid = user_id('dbo')
+    AND   type = 'TR')
+BEGIN
+    DROP trigger dbo.at_insert
+END
+go
+
+/************************************************************************/
+PRINT '/*****           TRIGGER  at_delete                          *****/'
+/************************************************************************/
+go
+  
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE name = 'at_delete'
+    AND   uid = user_id('dbo')
+    AND   type = 'TR')
+BEGIN
+    DROP trigger dbo.at_delete
+END
+go
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    fill_satinfo                  *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE uid = user_id('dbo')
+    AND   type = 'P'
+    AND   name = 'fill_satinfo')
+BEGIN
+    DROP PROCEDURE dbo.fill_satinfo
+END
+go
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    rm_struct                  *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE uid = user_id('dbo')
+    AND   type = 'P'
+    AND   name = 'rm_struct')
+BEGIN
+    DROP PROCEDURE dbo.rm_struct
+END
+go
+
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    push_struct                  *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE uid = user_id('dbo')
+    AND   type = 'P'
+    AND   name = 'push_struct')
+BEGIN
+    DROP PROCEDURE dbo.push_struct
+END
+go
+
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    new_entry                  *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE uid = user_id('dbo')
+    AND   type = 'P'
+    AND   name = 'new_entry')
+BEGIN
+    DROP PROCEDURE dbo.new_entry
+END
+go
+
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    new_struct                  *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE uid = user_id('dbo')
+    AND   type = 'P'
+    AND   name = 'new_struct')
+BEGIN
+    DROP PROCEDURE dbo.new_struct
+END
+go
+
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    new_struct1                  *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE uid = user_id('dbo')
+    AND   type = 'P'
+    AND   name = 'new_struct1')
+BEGIN
+    DROP PROCEDURE dbo.new_struct1
+END
+go
+
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    get_props                  *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE uid = user_id('dbo')
+    AND   type = 'P'
+    AND   name = 'get_props')
+BEGIN
+    DROP PROCEDURE dbo.get_props
+END
+go
+
+
+/************************************************************************/
+PRINT '/*****           PROCEDURE    vacuum_cleaning                *****/'
+/************************************************************************/
+go
+
+IF EXISTS (SELECT * FROM sysobjects
+    WHERE uid = user_id('dbo')
+    AND   type = 'P'
+    AND   name = 'vacuum_cleaning')
+BEGIN
+    DROP PROCEDURE dbo.vacuum_cleaning
+END
+go
