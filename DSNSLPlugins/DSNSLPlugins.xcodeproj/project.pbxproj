@@ -459,11 +459,11 @@
 	<key>CFBundlePackageType</key>
 	<string>dspi</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3</string>
+	<string>1.3.1</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3</string>
+	<string>1.3.1</string>
 	<key>CFPlugInDynamicRegistration</key>
 	<string>NO</string>
 	<key>CFPlugInFactories</key>
@@ -597,11 +597,11 @@
 	<key>CFBundlePackageType</key>
 	<string>dspi</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3</string>
+	<string>1.3.1</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3</string>
+	<string>1.3.1</string>
 	<key>CFPlugInDynamicRegistration</key>
 	<string>NO</string>
 	<key>CFPlugInFactories</key>
@@ -852,11 +852,11 @@
 	<key>CFBundlePackageType</key>
 	<string>dspi</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3</string>
+	<string>1.3.1</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3</string>
+	<string>1.3.1</string>
 	<key>CFPlugInDynamicRegistration</key>
 	<string>NO</string>
 	<key>CFPlugInFactories</key>
@@ -1138,7 +1138,7 @@
 		774A942A01D12DDF05DD284B /* AppleTalk.dsplug */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = AppleTalk.dsplug; sourceTree = BUILT_PRODUCTS_DIR; };
 		774A948501D12F4505DD284B /* AppleTalk.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppleTalk.framework; path = /System/Library/Frameworks/AppleTalk.framework; sourceTree = "<absolute>"; };
 		774A948601D12F4505DD284B /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = /System/Library/Frameworks/CoreFoundation.framework; sourceTree = "<absolute>"; };
-		774A948701D12F4505DD284B /* CFNetwork.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CFNetwork.framework; path = /System/Library/Frameworks/CFNetwork.framework; sourceTree = "<absolute>"; };
+		774A948701D12F4505DD284B /* CoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreServices.framework; path = /System/Library/Frameworks/CoreServices.framework; sourceTree = "<absolute>"; };
 		774A948901D12F4505DD284B /* System.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = System.framework; path = /System/Library/Frameworks/System.framework; sourceTree = "<absolute>"; };
 		77CDAAE401D162E305DD284B /* Bonjour.dsplug */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = Bonjour.dsplug; sourceTree = BUILT_PRODUCTS_DIR; };
 		A41D9D8D022DAFAE03DD2834 /* tool_main.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = file; name = tool_main.cpp; path = RecentsFavorites/tool_main.cpp; sourceTree = "<group>"; };
