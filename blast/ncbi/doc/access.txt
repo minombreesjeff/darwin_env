@@ -1,0 +1,218 @@
+NCBI NETWORK SERVICES FOR ENTREZ QUERIES AND SEQUENCE FETCHING
+
+NCBI has new network services for Entrez (term lists, Boolean queries,
+document summaries, neighbors and links) and PubMed and Sequence record
+fetching.  These are all CGI-based, were written by the group that maintains
+our web services, and have a lot of advantages over our older network
+services.
+
+The code is all in the ncbi/access folder, and is compiled into the ncbiobj
+library, along with the object loaders and api functions.  This library is
+always linked in with our applications, and does not depend upon netcli or
+netentr libraries.  The network connection functions are in the ncbi and
+ncbiconn libraries, also always linked in.  The header files are ent2api.h
+for Entrez2 services and pmfapi.h for PubMed and sequence fetching.
+
+These functions are now accessed as named services, so the underlying URL is
+not present in the client code.  This allows us to redirect requests between
+multiple servers for load balancing, and to change minor URL parameters as
+needed without breaking the client.  The only parameters the client sends are
+essential ones (e.g., gi number).  These services will thus be stable and
+supported over time, regardless of what we do behind the scenes.
+
+Another advantage is that the services can be called either synchronously or
+asynchronously.  Synchronous queries wait for the reply before returning
+control back to your program, and are easier to code.  For example:
+
+  PubmedEntryPtr pep = PubMedSynchronousQuery (pmid);
+
+  SeqEntryPtr sep = PubSeqSynchronousQuery (gi, 0);
+
+These do not automatically try to reconnect if the network request failed,
+and the client can decide whether to put these calls in a small retry loop.
+
+Asynchronous queries are slighly more complicated to code, but allow better
+responsiveness, without the need for multi-threading in interactive programs.
+Asynchronous calls send the request to the server, add a block of data with
+the connection and your callback function to a queue, and immediately return
+control to your program.  You are responsible for calling a queue checking
+function every so often, typically on a timer.  When the results are ready,
+the queue checker calls the callback you specified.  Your callback reads the
+data, does whatever you want with it, and returns to the queue checker, which
+cleans up the connection before returning to the timer event loop.
+
+Some NCBI toolkit library functions require the ability to fetch sequences
+from a registered service.  For this, you can call
+
+  PubMedFetchEnable ();
+
+to enable access and
+
+  PubSeqFetchDisable ();
+
+to disable access.  The asn2gb -r flag (for remote access) works this way.
+
+The demo/entrez2 application uses desktop/e2trmlst.c and desktop/e2docsum.c
+to access the new servers.
+
+Some examples of how to use the new functions are provided below.
+
+
+/* standard startup */
+
+#include <sqnutils.h>
+#include <objall.h>
+#include <objsub.h>
+#include <objfdef.h>
+
+static void StandardStartup (void)
+
+{
+  ErrSetFatalLevel (SEV_MAX);
+  ErrClearOptFlags (EO_SHOW_USERSTR);
+  UseLocalAsnloadDataAndErrMsg ();
+  ErrPathReset ();
+
+  AllObjLoad ();
+  SubmitAsnLoad ();
+  FeatDefSetLoad ();
+  SeqCodeSetLoad ();
+  GeneticCodeTableLoad ();
+}
+
+/* enabling automatic fetch of components from SeqFetch service */
+
+#include <pmfapi.h>
+
+static void OnStartup (void)
+
+{
+  PubSeqFetchEnable ();
+}
+
+static void OnShutdown (void)
+
+{
+  PubSeqFetchDisable ();
+}
+
+/* example of fetching PubMed record */
+
+#include <pmfapi.h>
+#include <tomedlin.h>
+
+static void SavePubMedRecord (Int4 pmid, FILE *fp)
+
+{
+  PubmedEntryPtr  pep;
+
+  pep = PubMedSynchronousQuery (pmid);
+  if (pep == NULL) return;
+
+  MedlineEntryToDataFile ((MedlineEntryPtr) pep->medent, fp);
+  PubmedEntryFree (pep);
+}
+
+/* example of fetching sequence record */
+
+#include <pmfapi.h>
+#include <asn2gnbk.h>
+
+static void SaveSeqRecord (Int4 gi, FILE *fp)
+
+{
+  SeqEntryPtr  sep;
+
+  sep = PubSeqSynchronousQuery (gi, 0, 0);
+  if (sep == NULL) return;
+
+  SeqEntryToGnbk (sep, NULL, GENBANK_FMT, RELEASE_MODE, NORMAL_STYLE,
+                  0, 0, 0, NULL, fp);
+  SeqEntryFree (sep);
+}
+
+/* example of Entrez2 Boolean query */
+
+#include <ent2api.h>
+
+static void DoBooleanRequest (FILE *fp)
+
+{
+  Entrez2BooleanReplyPtr  e2br;
+  Entrez2IdListPtr        e2id;
+  Entrez2RequestPtr       e2rq;
+  Entrez2ReplyPtr         e2ry;
+  Int4                    i;
+  Int4Ptr                 uids;
+
+  e2rq = EntrezCreateBooleanRequest (TRUE, FALSE, "Nucleotide", NULL,
+                                     0, 0, NULL, 0, 0);
+  if (e2rq == NULL) return;
+
+  EntrezAddToBooleanRequest (e2rq, NULL, 0, "ORGN", "Saccharomyces cerevisiae",
+                             NULL, 0, 0, NULL, NULL, TRUE, TRUE);
+  EntrezAddToBooleanRequest (e2rq, NULL, ENTREZ_OP_AND, NULL, NULL,
+                             NULL, 0, 0, NULL, NULL, TRUE, TRUE);
+  EntrezAddToBooleanRequest (e2rq, NULL, 0, "PROP", "biomol mrna",
+                             NULL, 0, 0, NULL, NULL, TRUE, TRUE);
+
+  e2ry = EntrezSynchronousQuery (e2rq);
+  e2rq = Entrez2RequestFree (e2rq);
+  if (e2ry == NULL) return;
+
+  e2br = EntrezExtractBooleanReply (e2ry);
+  if (e2br == NULL) return;
+
+  if (e2br->count > 0) {
+    e2id = e2br->uids;
+
+    if (e2id != NULL && e2id->num > 0 && e2id->uids != NULL) {
+      fprintf (fp, "count=%ld\n", (long) e2id->num);
+
+      uids = (Int4Ptr) BSMerge (e2id->uids, NULL);
+      if (uids != NULL) {
+        for (i = 0; i < e2id->num; i++) {
+          fprintf (fp, "pmid=%ld\n", (long) uids [i]);
+        }
+        MemFree (uids);
+      }
+    }
+  }
+
+  Entrez2BooleanReplyFree (e2br);
+}
+
+/* example of fetching Entrez2 document summary */
+
+#include <ent2api.h>
+
+static void DoDocsumRequest (Int4 pmid, FILE *fp)
+
+{
+  Entrez2DocsumDataPtr  e2ddp;
+  Entrez2DocsumListPtr  e2dlp;
+  Entrez2DocsumPtr      e2dp;
+  Entrez2RequestPtr     e2rq;
+  Entrez2ReplyPtr       e2ry;
+
+  e2rq = EntrezCreateDocSumRequest ("PubMed", pmid, 0, NULL, NULL);
+  if (e2rq == NULL) return;
+
+  e2ry = EntrezSynchronousQuery (e2rq);
+  e2rq = Entrez2RequestFree (e2rq);
+  if (e2ry == NULL) return;
+
+  e2dlp = EntrezExtractDocsumReply (e2ry);
+  if (e2dlp == NULL) return;
+
+  for (e2dp = e2dlp->list; e2dp != NULL; e2dp = e2dp->next) {
+    for (e2ddp = e2dp->docsum_data; e2ddp != NULL; e2ddp = e2ddp->next) {
+      if (StringHasNoText (e2ddp->field_name)) continue;
+      if (StringHasNoText (e2ddp->field_value)) continue;
+      fprintf (fp, "%s - %s\n", e2ddp->field_name, e2ddp->field_value);
+    }
+  }
+
+  Entrez2DocsumListFree (e2dlp);
+}
+

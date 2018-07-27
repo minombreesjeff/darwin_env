@@ -1,0 +1,52 @@
+.TH CDSCAN 1 2001-10-05 NCBI "NCBI Tools User's Manual"
+.SH NAME
+cdscan \- scan through sequence records on the Entrez discs
+.SH SYNOPSIS
+.B cdscan
+[\|\fB\-\fP\|]
+[\|\fB\-c\fP\|]
+[\|\fB\-f\fP\ \fIN\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\fP\|]
+[\|\fB\-s\fP\ \fIN\fP\|]
+.SH DESCRIPTION
+\fBcdscan\fP is a simple program that scans through sequence records
+on the Entrez discs.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-c\fP
+Print SeqIds to output file and progress monitor
+.TP
+\fB\-f\fP\ \fIN\fP
+Output format:
+.RS
+.PD 0
+.IP 1
+GenBank (default)
+.IP 2
+FASTA
+.PD
+.RE
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Output File (default = stdout)
+.TP
+\fB\-p\fP
+Show progress monitor
+.TP
+\fB\-s\fP\ \fIN\fP
+Type of sequence to scan:
+.RS
+.PD 0
+.IP 1
+DNA (default)
+.IP 2
+Protein
+.PD
+.RE
+.SH AUTHOR
+The National Center for Biotechnology Information.

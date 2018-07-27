@@ -1,0 +1,308 @@
+--$Revision: 1.23 $
+--********************************************************************
+--
+--  Network BLAST 
+--  Tom Madden, January 1997
+--
+--*********************************************************************
+--
+--  blstspc.asn
+--
+--*********************************************************************
+
+NCBI-Blast DEFINITIONS ::=
+BEGIN
+
+EXPORTS	Blast-search, Blast-request,
+	Blast-response, Blast-parameters, Blast-matrix,
+	Blast-dbinfo, Blast-mask, Blast-KABlk, Blast-error,
+	Blast-phialign;
+
+	
+IMPORTS Bioseq FROM NCBI-Sequence
+        Bioseq-set FROM NCBI-Seqset
+	Seq-id, Seq-loc FROM NCBI-Seqloc
+	Seq-align, Seq-align-set FROM NCBI-Seqalign;
+
+Blast-request ::= CHOICE {
+	init	VisibleString ,	-- Init of connection, client name may be sent.
+	motd	NULL ,		-- Get the message of the day.
+	-- db-info returns information on all available databases. 
+	-- db-info-specific returns information on one databases.
+	db-info	NULL ,
+	db-info-specific	Blast-dbinfo-get ,	-- Get blast-dbinfo on a specific db.
+	-- retrieve a sequence from the BLAST database.  It is expected that most
+	-- database sequences will be retrieved from Entrez.  This request should be
+	-- used if the database is not in Entrez.
+	matrix-get	VisibleString ,	-- Get a Blast-matrix
+	search	Blast-search ,		-- perform a search, return a SeqAlignSet
+	db-seq-get	Blast-seq-id ,	-- Get a db sequence.
+	db-redundant-ids-get	Blast-seq-id,	-- Get the ID's of identical sequences, but different entries.
+	db-redundant-descr-get	Blast-seq-id,	-- Get the ID's and deflines of identical sequences, but different entries.
+	fini NULL                       
+}
+
+Blast-search ::= SEQUENCE {
+	program ENUMERATED {
+		blastn (0),    -- nucl. query vs. nucl. database
+		blastp (1),    -- prot. query vs. prot. database
+		blastx (2),    -- transl. nucl. query vs. prot. database
+		tblastn (3),    -- prot. query vs. transl. nucl. database
+		tblastx (4)     -- transl. nucl. query vs. transl. nucl. database
+	},
+	query		Bioseq,			-- Bioseq contains query.
+	database	VisibleString ,		-- BLAST db to search
+	parameters	Blast-parameters OPTIONAL, 	-- search parameters
+	mask		Seq-loc OPTIONAL,		-- locations on query to mask
+	matrix		Blast-matrix OPTIONAL,		-- PSI-BLAST matrix to use in search.
+	return-parts	BOOLEAN OPTIONAL,		-- Return the results in an Blast-parts block
+	query-set       Bioseq-set OPTIONAL     -- List of queries for MegaBLAST search
+}
+
+
+Blast-dbinfo-get ::= SEQUENCE {
+	name	VisibleString , -- name of database
+	type	ENUMERATED {		-- protein or nt.
+		unknown (0),
+		protein (1),
+		nucleotide (2)
+	}
+}
+
+Blast-dbinfo ::= SEQUENCE {
+	is-protein	BOOLEAN ,	-- Is the database protein
+	name		VisibleString ,	-- name of database
+	definition	VisibleString ,	-- description of database contents
+	date		VisibleString ,	-- timestamp of database
+	total-length	INTEGER ,	-- total length of database
+	number-seqs	INTEGER		-- how many sequence in database.
+}
+
+-- The SeqAlign for one single alignment as well as the database sequence covering that region.
+Blast-sequence ::= SEQUENCE {
+	align		Seq-align,	-- ALignment for this sequence
+	-- That part of the sequence covered by the Seq-align.  
+	-- ncbi4na is used for nucleotides, ncbistdaa for proteins.
+	-- The sequence refers to the plus strand, even if the alignment
+	-- is really on the minus strand.
+	db-seq		OCTET STRING	
+}
+
+
+Blast-parts ::= SEQUENCE {
+	defline		VisibleString, -- The FASTA definition line.
+	sequence	SET OF Blast-sequence
+}
+
+Blast-matrix ::= SEQUENCE {
+	is-protein	BOOLEAN ,	-- Is the matrix for proteins
+	name		VisibleString ,	-- name of matrix (e.g., "BLOSUM62")
+	comments	SEQUENCE OF VisibleString OPTIONAL, -- comments on matrix.
+	-- The dimensions of the matrix are returned so the client can
+	-- verify that all data was received.  Both dimensions are returned for
+	-- non-symmetric matrices (psi-blast uses these).
+	row-length	INTEGER ,	-- length of rows
+	column-length	INTEGER ,	-- number of columns
+	-- The matrix values are presented in order of the alphabet 
+	-- ncbistdaa is used for protein, ncbi4na for nucl.
+	-- for proteins the values returned correspond to (-,-), (-,A), (-,B), (-,C) ...
+	-- (A,-), (A,A), (A,B), (A,C) ...
+	scores		SEQUENCE OF INTEGER , -- integer values of matrix 
+	karlinK		REAL,	-- Karlin/Altschul parameter calculated with this matrix
+        posFreqs        SEQUENCE OF REAL OPTIONAL -- S&W PSI Blast frequencies
+}
+
+-- Describes a sequence for the BLAST retriveal system
+Blast-seq-id ::= SEQUENCE {
+	is-protein	BOOLEAN ,	-- is this a protein sequence
+	database	VisibleString ,	-- name of the BLAST database (e.g., swissprot, nr).
+	id		Seq-id 	-- The ID of the sequence.
+}
+
+-- The most common and often used options are listed here.  Other options
+-- demanded by expert users (as well as new options) can be place in the
+-- "other-options" VisibleString.  
+Blast-parameters ::= SEQUENCE {
+	first-threshold		INTEGER OPTIONAL ,	-- threshold value for 1st pass
+	second-threshold	INTEGER OPTIONAL ,	-- threshold value for 2nd pass
+	-- Cutoff values can be chosen by expect value (which depends on the db and
+	-- query size) or by nominal score.
+	cutoff	CHOICE { -- cutoff value to determine whether to report hit
+			evalue	REAL ,		-- The expect value,
+			score	INTEGER 	-- A nominal score
+			} OPTIONAL ,
+	cutoff2	CHOICE	{ -- cutoff value for individual hits or HSP's
+			evalue	REAL ,		-- An evalue for the individual hit
+			score	INTEGER 	-- A nominal score value for the hit
+			} OPTIONAL ,
+	hitlist-size	INTEGER OPTIONAL ,	-- determines how many hits are returned
+	nucl-penalty	INTEGER OPTIONAL ,	-- penalty used in blastn comparisons
+	nucl-reward	INTEGER OPTIONAL ,	-- reward used in blastn comparisons
+	genetic-code	INTEGER OPTIONAL ,	-- genetic code used to translate query (blastx or tblastx)
+	db-genetic-code	INTEGER OPTIONAL ,	-- genetic code used to translate db (tblast[nx])
+	low-complexity-filtering	INTEGER OPTIONAL ,	-- filtering for low-complexity regions.
+			-- 0 = none, 1 = dust (for blastn), 2 = seg (other programs) 
+	-- should a gapped alignment be performed.
+	gapped-alignment	BOOLEAN ,	-- perform gapped alignment if TRUE,
+	-- Cost to open and extend a gap.
+	gap-open		INTEGER OPTIONAL ,
+	gap-extend		INTEGER OPTIONAL ,
+	-- the next two options are for "ranged" blast, which restricts the building of 
+	-- words to a certain region.   Hits may be extended beyond this range.
+	required-start	INTEGER OPTIONAL ,	-- start location on query Bioseq
+	required-end	INTEGER OPTIONAL ,	-- end location on query Bioseq
+	-- PSI-BLAST parameters:
+	ethresh			REAL OPTIONAL ,
+	max-num-passes		INTEGER OPTIONAL ,
+	pseudo-count-const	INTEGER OPTIONAL ,
+	
+	other-options	VisibleString OPTIONAL,	-- other options not listed above
+
+	gilist		SEQUENCE OF INTEGER OPTIONAL,	-- list of gis
+	gifile		VisibleString OPTIONAL,	-- file with list of gis on server side    
+
+	matrix		VisibleString OPTIONAL,	-- specifies a matrix to use
+	filter-string	VisibleString OPTIONAL,	-- filtering commands to be executed
+	entrez-query	VisibleString OPTIONAL,	-- query to Entrez
+	word-size	INTEGER OPTIONAL,	-- word-size used in BLAST search.
+	db-length	INTEGER OPTIONAL,	-- length of the db for statistics purposes
+	searchsp-eff	REAL OPTIONAL,		-- effective search space to be used
+	hsp-range-max	INTEGER OPTIONAL,	-- range for keeping HSPs in culling
+	block-width	INTEGER OPTIONAL,	-- width of block to be used in culling
+	perform-culling	BOOLEAN OPTIONAL,	-- perform culling?
+	strand-option	INTEGER OPTIONAL,	-- indicates strand to use.
+	phi-pattern	VisibleString OPTIONAL,	-- indicates, that this is phi-blast search and supplies pattern
+	use-real-db-size BOOLEAN OPTIONAL, -- db size not to be adjusted for list of gis'.
+        use-best-align  BOOLEAN OPTIONAL,  -- option is to use alignments chosen by user in PSM computation API
+        is-rps-blast    BOOLEAN OPTIONAL,  -- option to set RPS BLAST search
+        tweak-parameters BOOLEAN OPTIONAL, -- Tweak Lambda, K, and score matrix for each match  
+        smith-waterman  BOOLEAN OPTIONAL,  -- Compute locally optimal Smith-Waterman alignments
+	is-megablast    BOOLEAN OPTIONAL,  -- option to set MegaBLAST search.
+	query-lcase-mask SEQUENCE OF Seq-loc OPTIONAL, -- locations for lower case masking.
+	is-ooframe      INTEGER OPTIONAL,  -- option to do outer frame. 
+        endpoint-results BOOLEAN OPTIONAL, -- return only endpoints and scores, no seqalign.
+        percent-identity   REAL OPTIONAL,  -- percent of identical residues in individual hit.   
+        first-db-seq    INTEGER OPTIONAL, -- first sequence in database
+        final-db-seq    INTEGER OPTIONAL, -- last sequence in database
+        window-size     INTEGER OPTIONAL, -- window size for the two hit version
+        mb-template-length INTEGER OPTIONAL,-- length of discontiguous word template
+        mb-disc-type    INTEGER OPTIONAL  -- type of discontiguous words
+}
+
+				-- series of these when the request is queued
+Blast-Queued ::= SEQUENCE {
+	length	INTEGER		-- length gives no. of jobs ahead of the request
+}
+
+
+Blast-Progress ::= SEQUENCE {
+	completed	INTEGER	-- "completed" specifies number of db sequences that have been searched.
+}
+
+
+Blast-KABlk ::= SEQUENCE {
+        -- (for a description of lambda, k and h see Karlin and Altschul,
+        -- Proc. Natl. Acad. Sci. USA, 87:2264-68 (1990)).
+	lambda	REAL ,		-- Lambda value for calculation.
+	k	REAL ,		-- K value used in calculation.
+	h	REAL ,		-- H value used in calculation. 
+	gapped	BOOLEAN		-- do theses values apply to a gapped alignment?
+}
+
+Blast-defline ::= SEQUENCE {
+	id	Seq-id ,	-- The ID
+	defline	VisibleString	-- The FASTA defline
+}
+
+Blast-mask ::= SEQUENCE {
+	location	SEQUENCE OF Seq-loc ,	-- The location masked.
+	frame		ENUMERATED {		-- What frame
+		notset (0),
+		plus1 (1),
+		plus2 (2),
+		plus3 (3),
+		minus1 (4),
+		minus2 (5),
+		minus3 (6)
+	}
+}
+
+Blast-version ::= SEQUENCE {
+	version	VisibleString ,	-- the version number of the program
+	date	VisibleString 	-- date the program was released
+}
+
+Blast-error ::= SEQUENCE {
+    level ENUMERATED {
+	none (0),    -- not an error, just a message
+	info (1),    -- informational error
+	warn (2),
+	error (3),
+	fatal (4) 
+    },
+    msg VisibleString OPTIONAL
+}
+
+Blast-phialign ::= SEQUENCE {
+        numaligns  INTEGER,             -- number of aligns
+	seqloc	   SEQUENCE OF Seq-loc  -- region locations
+}
+
+MegaBlast-hit ::= SEQUENCE {
+	id1            VisibleString,
+	id2            VisibleString,
+	query-offset   INTEGER,
+	subject-offset INTEGER,
+	query-end      INTEGER,
+	subject-end    INTEGER,
+	score          INTEGER
+} 
+
+MegaBlast-results ::= SEQUENCE {
+	mbhits        SEQUENCE OF MegaBlast-hit
+}
+
+
+Blast-response ::= CHOICE {
+	init Blast-version ,		-- acknowledges init
+	motd VisibleString ,	-- Message of the day, new-lines inidcated by "~"
+	error Blast-error ,	-- Error code, or informational message
+	db-seq-get	Bioseq ,	-- Bioseq from BLAST database. 
+	-- db-redundant-ids-get is a list of ID's for sequences that are absolutely
+	-- identical, but are really from different entries.
+	db-redundant-ids-get	SEQUENCE OF Seq-id ,	-- 
+	-- Both the ID and defline for redundant sequences.
+	db-redundant-descr-get	SEQUENCE OF Blast-defline ,-- 	
+	db-info	SEQUENCE OF Blast-dbinfo ,	-- Information about all database.
+	db-info-specific	Blast-dbinfo ,	-- Information about one database.
+	matrix	Blast-matrix ,	-- BLAST matrix requested by matrix-get
+	--
+	-- The type of SeqAlign returned depends on the request:
+	-- For ungapped requests where both query and db are of the same type
+	-- 	(e.g., blastn) a discontinuous Dense-diag is used.
+	--	(A discont. SeqAlign must be used to convey the information about which
+	--	HSP's belong together).
+	-- For ungapped requests with different query and db (e.g., blastx)
+	-- 	a discontinuous Std-seg is used.
+	-- For gapped alignments (blastn or blastp) a Dense-seg is used.
+	--
+	alignment	Seq-align-set ,	-- The results as a SeqAlign
+	-- If a gapped alignment is performed, then two Blast-KABlk will
+	-- be returned, one for the ungapped portion of BLAST, the other for
+	-- the (final) gapped calculations.  These Blast-KABlk's can be
+	-- differentiated by the BOOLEAN gapped.
+	mask	Blast-mask,  -- what was masked on server (e.g., by seg or dust).
+	kablk	Blast-KABlk ,		-- Karlin-Altschul parameters.
+	-- parameters, stats. about search etc., new lines indicated by "~".
+	parameters	VisibleString ,
+	queued	Blast-Queued ,	-- emitted when queued.
+	start	Blast-Progress ,	-- one emitted at start of search
+	progress	Blast-Progress ,-- regular messages emitted during search
+	done	Blast-Progress ,	-- one emitted at end of search
+	fini NULL,               -- acknowledge fini
+	phialign Blast-phialign, -- The result of PHI-Blast
+	parts		SEQUENCE OF Blast-parts, -- the resutls in the Blast-parts format, rather than a Seq-align.
+	mbalign MegaBlast-results -- one-line MegaBlast results.
+}
+
+END

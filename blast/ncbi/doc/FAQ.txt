@@ -1,0 +1,211 @@
+
+This document contains the Frequently Asked Questions with Answers
+to the NCBI toolkit.
+It is available at ftp://ftp.ncbi.nih.gov/toolbox/FAQ.html
+
+In case of any questions don't hesitate to ask us at
+    mailto:toolbox@ncbi.nlm.nih.gov
+
+Q. Where can I download the binaries of NCBI toolkit?
+A. The binaries of NCBI toolkit may be downloaded at:
+    BLAST:      ftp://ftp.ncbi.nih.gov/blast/executables/
+    SEQUIN:     ftp://ftp.ncbi.nih.gov/sequin/
+    FA2HTGS:    ftp://ftp.ncbi.nih.gov/fa2htgs/
+    ENTREZ:     ftp://ftp.ncbi.nih.gov/entrez/
+    CN3D:       ftp://ftp.ncbi.nih.gov/cn3d/
+
+Currently NCBI prepares the binaries for the following platforms:
+    Sun/Sparc -- Solaris 2.8
+    Intel x86 -- Solaris 2.7
+    Intel x86 -- Linux with kernel 2.4.17 and glibc ver 2.2.4
+    Intel x86 -- Microsoft Windows 2000 (32bit)
+    IBM       -- AIX 4.3.3
+    DEC Alpha -- OSF1 V5.1
+    SGI       -- IRIX 6.5
+    Motorola 68000   -- MacOS
+    Motorola PowerPC -- MacOS
+
+Q. Where can I download the sources of NCBI toolkit?
+A. The sources of NCBI toolkit for Unix are located at:
+    ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.tar.Z
+The sources of NCBI toolkit for Windows are located at:
+    ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbiz.exe
+And the sources of NCBI toolkit for Mac are located at:
+    ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.hqx
+
+Q. I have Macintosh PowerBook with Mac OS 10, what archive should I download?
+A. For Mac OS 10 you should download the sources of NCBI toolkit for Unix
+   located at:
+    ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.tar.Z
+   The Darwin is supported, you should have GNU tar, GNU make and other GNU utils
+   installed. Please follow unix instructions in file ./ncbi/make/readme.unx
+
+Q. How to find the version of the toolkit?
+A. The source of the ToolKit for Unix, which is located at
+    ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.tar.Z
+should have the file ncbi/VERSION with the date of the building.
+
+Q. How to build NCBI toolkit on Unix?
+A. Read the file ftp://ftp.ncbi.nih.gov/toolbox/readme.unx
+   You should take the sources of NCBI tookit at:
+    ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.tar.Z
+    put the archive to the new empty directory:
+    mkdir toolkit
+    cd toolkit
+    #download ncbi.tar.Z here
+    compress -d < ncbi.tar.Z | tar xvf -
+    # the new directory ncbi will be extracted
+    # now run the command:
+    # in sh or bash
+    ./ncbi/make/makedis.csh - 2>&1 | tee out.makedis.csh
+    # in csh or tcsh
+    ./ncbi/make/makedis.csh - |& tee out.makedis.csh
+   The new binaries and libraries will be in ncbi/build subdirectory
+
+Q. May I build toolkit on Solaris/Intel or Solaris/Sparc using GNU C?
+A. Yes, just set the environment variable CC to gcc prior to run of
+   ./ncbi/make/makedis.csh , like:
+    # in sh or bash
+    CC=gcc ./ncbi/make/makedis.csh - 2>&1 | tee out.makedis.txt
+    # in csh or tcsh
+    env CC=gcc ./ncbi/make/makedis.csh - |& tee out.makedis.txt
+
+Q. How can I build toolkit on Linux with Vibrant library?
+A. You should purchase Motif for Linux. 
+As an alternative to Motif there is a free clone which is called Lesstif
+which can be downloaded at http://www.lesstif.org/
+We didn't check this option yet, so you can use Lesstif for your own risk.
+Besides the Motif/Lesstif the X11R6 development toolkit should be installed.
+
+Q. On RedHat Linux 7.* I got the following error on compilation of toolkit:
+gcc -pipe -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -O2 -c  -I../include objproj.c
+{standard input}: Assembler messages:
+{standard input}:2352: Error: immediate operand illegal with absolute jump
+{standard input}:2761: Error: immediate operand illegal with absolute jump
+make: *** [objproj.o] Error 1
+So how can I solve this problem?
+A. This is a bug in optimizier of gcc compiler which is instaled by default
+on Redhat Linux. You can either compile this file manually deleting the
+optimization flag:
+    cd ./ncbi/build
+    gcc -pipe -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -c  -I../include objproj.c
+    cd ../..
+    ./make/makedis.csh 2>&1 | tee -a out.makedis.txt
+Or upgrade the gcc to latest version 3.0.4
+
+Q. On RedHat Linux 7.* I got the following error on compilation of toolkit:
+gcc -static -pipe -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -o Psequin
+-I. -O2 -I../include  -L../lib -I/usr/X11R6/include -L/usr/X11R6/lib
+-DWIN_MOTIF -UINTERNAL_NCBI_SEQUIN sequin1.c sequin2.c sequin3.c sequin4.c
+sequin5.c sequin6.c sequin7.c sequin8.c sequin9.c sequinx.c -lncbicn3d -lddvlib
+-lvibnet -lncbidesk -lncbimmdb -lncbitxc2 -lncbiid1 -lnetblast
+-lncbitool -lncbimla \ -lncbiNacc -lnetentr -lnetcli -lncbicdr -lvibrant
+-lncbiobj -lncbi -L/usr/X11R6/lib -lXm -lXmu -lXt -lSM -lICE -lXext -lXp
+-lX11 -ldl -lm
+sequin2.c: In function `ImportFastaDialog':
+sequin2.c:562: warning: comparison is always true due to limited range
+of data type
+sequin4.c: In function `SetDescriptorFocus':
+sequin4.c:6580: warning: cast from pointer to integer of different size
+/usr/X11R6/lib/libXmu.a(EditresCom.o): In function
+`_XEditResCheckMessages':
+EditresCom.o(.text+0x0): multiple definition of `_XEditResCheckMessages'
+/usr/X11R6/lib/libXm.a(EditresCom.o)(.text+0x70): first defined here
+../lib/libncbi.a(ncbifile.o): In function `Nlm_TmpNam':
+ncbifile.o(.text+0x728): the use of `tempnam' is dangerous, better use
+`mkstemp'
+collect2: ld returned 1 exit status
+make: *** [Psequin] Error 1
+FAILURE primary make status = 0, demo = 0, threaded_demo = 0, net = 2
+
+A. The problem is that you probably have the 'openmotif-devel' RPM installed,
+   which provides a 'libXm.a' that defines that function. We don't build
+   the toolkit aganist Open Motif, we build it against Lesstif. If the
+   end-user removes the 'openmotif-devel' package, things should work.
+   (The user might have to install a lesstif package or two, depending
+   on what they've already got set up.)
+
+   Why RedHat lets you install two different Motif toolkits at the same
+   time, when they don't have identical implementations, is beyond us.
+
+Q. On Mandrake 9.* I got the following error on compilation of toolkit:
+    gcc -static -pipe -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -o
+    asntool -O2 -I../include   -L../lib asntool.c asncode.c ../lib/libncbi.a -lm
+    /usr/bin/ld: cannot find -lm
+    collect2: ld returned 1 exit status
+    make: *** [asntool] Error 1
+   So how can I solve this problem?
+A. Seems you do not have static MATH library (-lm).
+   You can try to build toolkit with dynamic libraries. Please change the line
+   in ./ncbi/platform/linux.ncbi.mk file from:
+     NCBI_CC = gcc -static -pipe -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE
+   to:
+     NCBI_CC = gcc -pipe -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE
+
+Q. How can I build toolkit on Linux without Vibrant library?
+A. Yes, the ./ncbi/make/makedis.csh script tries to check for Motif presence
+   and without motif/lesstif builds only ascii-based applications like
+   standalone blast or idfetch.
+
+Q. Can I build threaded version of BLAST on IRIX6.X?
+A. Yes, you can if you upgrade your system and put the proper patches.
+SGI recommends the following threads patches on IRIX6 systems:
+   For 6.2 systems, install SG0001404, SG0001645, SG0002000, SG0002420
+and SG0002458 (in that order)
+   For 6.3 systems, install SG0001645, SG0002420 and SG0002458 (in that order)
+   For 6.4 systems, install SG0002194, SG0002420 and SG0002458 (in that order)
+These patches can be obtained by calling SGI customer service or from
+the web: http://support.sgi.com/
+
+Q. Can I build non-threaded version of BLAST on IRIX6.X?
+A. Yes, you can. In that case you should specify the flag
+ -DNCBI_NOTHREADS_AVAIL modifying the file ncbi/make/makedis.csh
+
+Q. I am having a bit of trouble trying to get the PSI blast to work. The
+demo program "blastpgp.exe" simple issues an error message saying
+"cannot open file "nr.pin"" and then crashes.
+A. That message indicates that it can not find your database 'nr'.
+After you run formatdb on nr you should have seven files (if you use
+the '-o T' option) with names:
+nr.phr  nr.pin  nr.pnd  nr.pni  nr.psd  nr.psi  nr.psq
+First you should check that all the files are present and if they are
+not, then look for error messages in formatdb.log.  Next check that
+you are specifying the correct path to the files (or better, run blastpgp.exe
+in the same directory as the database files).  You can also specify the
+path in your ncbi.ini file by adding:
+[BLAST]
+BLASTDB=C:\BLAST\DB
+where you replace "C:\BLAST\DB" by the directory that contains your
+BLAST databases.
+
+Q. I installed the NCBI Toolkit but when I attempt to run this, I get
+the error message: FindPath failed
+A. This error message is usually caused either by not having an
+ncbi.ini on Windows platforms or the .ncbirc file on UNIx or by not
+having this file in the proper directory.
+
+ 1. For UNIX you need to have a .ncbirc file in your home
+    directory which points to the data directories.
+    Example:
+
+    [NCBI]
+    Data=/home/user/entrez/data
+
+ 2. For Windows you need to have a ncbi.ini in your WINDOWS or
+    WINNT directory file which points to the data
+    directories. Example:
+
+    [NCBI]
+    Data=C:\entrez\data
+ 3. For the Mac, the configuration file is called ncbi.cnf, and
+    should be placed in your "System Folder:Preferences" subfolder.
+    Example:
+
+    [NCBI]
+    Data=MacintoshHD:Entrez Folder:data
+        
+Q. Can I get a hardcopy of the NCBI Toolkit documentation?
+A. Yes, we will send you a hardcopy of the toolkit documentation. Please
+send your request to the NCBI Information help desk at info@ncbi.nlm.nih.gov
+Include your complete mailing address. 
+

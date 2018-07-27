@@ -1,0 +1,54 @@
+# $Id: readme.dos,v 6.13 2004/01/26 17:04:53 vakatov Exp $
+# By Denis Vakatov, NCBI
+
+
+Getting the NCBI C Toolkit sources
+------------------------------------
+
+Outside users can download self-extracting archive from:
+    ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/CURRENT/ncbiz.exe
+
+Insiders can get the C Toolkit sources from the latest successful build from:
+    /net/sampson/a/coremake/win32/ncbi_c.zip
+
+
+Building the NCBI C Toolkit
+-----------------------------
+
+(We assume here that the Toolkit sources are deployed in "c:\ncbi".)
+
+
+1) Run Microsoft Visual C++
+
+2) Load the NCBI C Toolkit project workspace:
+      "File" / "Open Workspace..."
+         c:\ncbi\make\msvc_prj\ncbi.dsw
+
+3) Set the build mode (default is single-threaded Debug):
+      "Build" / "Set Active Configuration" / "Project configurations:"
+3.1) To build everything, choose one of:
+      "all - Win32 Debug"
+      "all - Win32 Release"
+      "all - Win32 DebugMT"
+      "all - Win32 ReleaseMT"
+      "all - Win32 DebugDLL"
+      "all - Win32 ReleaseDLL"
+3.2) Or, you can choose to build any library(es) or application(s)
+     in any configuration by using either the list of
+     project configuration here or "ClassView" (or "FileView") frame.
+
+4) Start the build of the project chosen:
+      "Build" / "Build"
+
+5) On success, the libraries and executables can be found under
+      c:\ncbi\make\msvc_prj\*\<build_mode>\
+   where <build_mode> stands for one of (see step 3 above):
+      Debug, Release, DebugMT, ReleaseMT.
+
+   For example, if you chose to build "Release" configuration, then
+   most of the built executables will be located at:
+      c:\ncbi\make\msvc_prj\demo\Release\*.exe
+
+
+*****  Please send your remarks to:  <toolkit@ncbi.nlm.nih.gov>  *****
+

@@ -1,0 +1,263 @@
+.TH FA2HTGS 1 2002-04-28 NCBI "NCBI Tools User's Manual"
+.SH NAME
+fa2htgs \- formatter for high throughput genome sequencing project submissions
+.SH SYNOPSIS
+.B fa2htgs
+[\|\fB\-\fP\|]
+[\|\fB\-6\fP\ \fIstr\fP\|]
+[\|\fB\-7\fP\ \fIstr\fP\|]
+[\|\fB\-A\fP\ \fIfilename\fP\|]
+[\|\fB\-C\fP\ \fIstr\fP\|]
+[\|\fB\-D\fP\|]
+[\|\fB\-L\fP\ \fIfilename\fP\|]
+[\|\fB\-M\fP\ \fIstr\fP\|]
+[\|\fB\-N\fP\|]
+[\|\fB\-O\fP\ \fIfilename\fP\|]
+[\|\fB\-P\fP\ \fIstr\fP\|]
+[\|\fB\-Q\fP\ \fIfilename\fP\|]
+[\|\fB\-S\fP\ \fIstr\fP\|]
+[\|\fB\-T\fP\ \fIfilename\fP\|]
+[\|\fB\-X\fP\|]
+[\|\fB\-a\fP\ \fIstr\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+[\|\fB\-c\fP\ \fIstr\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIfilename\fP\|]
+[\|\fB\-f\fP\|]
+\fB\-g\fP\ \fIstr\fP
+[\|\fB\-h\fP\ \fIstr\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIN\fP\|]
+[\|\fB\-m\fP\|]
+[\|\fB\-n\fP\ \fIstr\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\fP\ \fIN\fP\|]
+[\|\fB\-q\fP\|]
+[\|\fB\-r\fP\ \fIstr\fP\|]
+\fB\-s\fP\ \fIstr\fP
+[\|\fB\-t\fP\ \fIfilename\fP\|]
+[\|\fB\-u\fP\|]
+[\|\fB\-v\fP\|]
+[\|\fB\-w\fP\|]
+[\|\fB\-x\fP\ \fIstr\fP\|]
+.SH DESCRIPTION
+\fBfa2htgs\fP is a program used to generate Seq-submits (an ASN.1
+sequence submission file) for high throughput genome sequencing
+projects.
+.PP
+\fBfa2htgs\fP will read a FASTA file (or an Ace Contig file with Phrap
+sequence quality values), a Sequin submission template file, (to get
+contact and citation information for the submission), and a series of
+command line arguments (see below).  This program will then combines
+these information to make a submission suitable for GenBank. Once you
+have generated your submission file, you need to follow the submission
+protocol (see the README present on your FTP account or mailed out to
+your Center).
+.PP
+\fBfa2htgs\fP is intended for the automation by scripts for bulk
+submission of unannotated genome sequence. It can easily be extended
+from its current simple form to allow more complicated processing.  A
+submission prepared with \fBfa2htgs\fP can also be read into
+\fBPsequin\fP(1), and then annotated more extensively.
+.PP
+Questions and concerns about this processing protocol, or how to 
+use this tool should be forwarded to <htgs@ncbi.nlm.nih.gov>.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-6\fP\ \fIstr\fP
+SP6 clone (e.g., Contig1,left)
+.TP
+\fB\-7\fP\ \fIstr\fP
+T7 clone (e.g., Contig2,right)
+.TP
+\fB\-A\fP\ \fIfilename\fP
+Filename for accession list input (mutually exclusive with \fB\-T\fP
+and \fB\-i\fP).  The input file contains a tab-delimited table with
+three to five columns, which are accession number, start position,
+stop position, and (optionally) length and strand.  If start > stop,
+the minus strand on the referenced accession is used.  A gap is
+indicated by the word "gap" instead of an accession, 0 for the start
+and stop positions, and a number for the length.
+.TP
+\fB\-C\fP\ \fIstr\fP
+Clone library name (will appear as \fB/clone-lib="\fP\fIstr\fP\fB"\fP
+on the source feature)
+.TP
+\fB\-D\fP
+HTGS_DRAFT sequence
+.TP
+\fB\-L\fP\ \fIfilename\fP
+Read phrap contig order from \fIfilename\fP.  This is a tab-delimited
+file that can be used to drive the order of contigs (normally
+specified by \fB\-P\fP), as well as indicating the SP6 and T7 ends.  It
+can also be used when contigs are known to be in opposite orientation.
+For example:
+.nf
+
+    Contig2     +       1       SP6     left
+    Contig3     +       1
+    Contig1     -               T7      right
+
+.fi
+The first column is the contig name, the second is the orientation,
+the third is the fragment_group, the fourth indicates the SP6 or T7
+end, and the fifth says which side of SP6 or T7 end had vector
+removed.
+.TP
+\fB\-M\fP\ \fIstr\fP
+Map name (will appear as \fB/map="\fP\fIstr\fP\fB"\fP on the source feature)
+.TP
+\fB\-N\fP
+Annotate assembly_fragments
+.TP
+\fB\-O\fP\ \fIfilename\fP
+Read comment from \fIfilename\fP (100-character-per-line maximum;
+\fB~\fP is a linebreak and \fB`~\fP is a literal \fB~\fP.  You can
+check the format with \fBPSequin\fP(1).)
+.TP
+\fB\-P\fP\ \fIstr\fP
+Contigs to use, separated by commas.  If \fB\-P\fP is not indicated
+with the \fB\-T\fP option, then the fragments will go in in the order
+that they are in the ace file (which is appropriate for a phase 1
+record, but not for a phase 2 or 3).  If you need to set the order of
+the segments of the ace file, you need to set it with the \fB\-P\fP
+flag, like this: \fB\-P "Contig1,Contig4,Contig3,Contig2,Contig5"\fP
+.TP
+\fB\-Q\fP\ \fIfilename\fP
+Read quality scores from \fIfilename\fP
+.TP
+\fB\-S\fP\ \fIstr\fP
+Strain name
+.TP
+\fB\-T\fP\ \fIfilename\fP
+Filename for phrap input (mutually exclusive with \fB\-A\fP and \fB\-i\fP)
+.TP
+\fB\-X\fP
+The coordinates in the input file are on the resulting segmented
+sequence.  (Bases 1 through \fIn\fP of each accession are used.)
+Otherwise, the coordinates are on the individual accessions, which
+need not start at base 1 of the record.
+.TP
+\fB\-a\fP\ \fIstr\fP
+GenBank accession; use if and only if updating a sequence.
+.TP
+\fB\-b\fP\ \fIN\fP
+Gap length (default = 100; anything from 0 to 1000000000 is legal)
+.TP
+\fB\-c\fP\ \fIstr\fP
+Clone name (will appear as \fB/clone\fP in the source feature; can be
+the same as \fB\-s\fP)
+.TP
+\fB\-d\fP\ \fIstr\fP
+Title for sequence (will appear in GenBank \fBDEFINITION\fP line)
+.TP
+\fB\-e\fP\ \fIfilename\fP
+Log errors to \fIfilename\fP
+.TP
+\fB\-f\fP
+htgs_fulltop keyword
+.TP
+\fB\-g\fP\ \fIstr\fP
+Genome Center tag (probably the same as your login name on the NCBI FTP server)
+.TP
+\fB\-h\fP\ \fIstr\fP
+Chromosome (will appear as \fB/chromosome\fP in the source feature)
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Filename for fasta input (default is stdin; mutually exclusive with
+\fB\-A\fP and \fB\-T\fP)
+.TP
+\fB\-l\fP\ \fIN\fP
+Length of sequence in bp (default = 0). The length is checked against
+the actual number of bases we get. For phase 1 and 2 sequence it is
+also used to estimate gap lengths. For phase 1 and 2 records, it is
+important to use a number GREATER than the amount of provided
+nucleotide, otherwise this will generate false 'gaps'.  Here is
+assumed that the putative full length of the BAC or cosmid will be
+used.  There should be at least 20 to 30 'n' in between the segments
+(you can check for these in Sequin), as this will ensure proper
+behavior when this sequence is used with BLAST.  Otherwise
+'artifactual' unrelated segment neighbors may be brought into
+proximity of each other.
+.TP
+\fB\-m\fP
+Take comment from template
+.TP
+\fB\-n\fP\ \fIstr\fP
+Organism name (default = Homo sapiens)
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Filename for asn.1 output (default = stdout)
+.TP
+\fB\-p\fP\ \fIN\fP
+HTGS phase:
+.RS
+.PD 0
+.IP 1
+A collection of unordered contigs with gaps of unknown length.  A
+Phase 1 record must at the very least have two segments with one gap.
+(default)
+.IP 2
+A series of ordered contigs, possibly with known gap lengths.  This
+could be a single sequence without gaps, if the sequence has
+ambiguities to resolve.
+.IP 3
+A single contiguous sequence.  This sequence is finished, but not
+necessarily annotated.
+.PD
+.RE
+.TP
+\fB\-q\fP
+htgs_cancelled keyword
+.TP
+\fB\-r\fP\ \fIstr\fP
+Remark for update (brief comment describing the nature of the update,
+such as "new sequence", "new citation", or "updated features")
+.TP
+\fB\-s\fP\ \fIstr\fP
+Sequence name.  The sequence must have a name that is unique within
+the genome center. We use the combination of the genome center name
+(\fB\-g\fP argument) and the sequence name (\fB\-s\fP) to track this
+sequence and to talk to you about it.  The name can have any form you
+like but must be unique within your center.
+.TP
+\fB\-t\fP\ \fIfilename\fP
+Filename for Seq-submit template (default = template.sub)
+.TP
+\fB\-u\fP
+Take biosource from template
+.TP
+\fB\-v\fP
+htgs_activefin keyword
+.TP
+\fB\-w\fP
+Whole Genome Shotgun flag
+.TP
+\fB\-x\fP\ \fIstr\fP
+Secondary accession numbers, separated by commas, s.t. U10000,L11000.
+.PP
+.RS
+In some cases a large segment will supersede another or group of other
+accession numbers (records).  These records which are no longer wanted
+in GenBank should be made secondary. Using the \fB\-x\fP argument you
+can list the Accession Numbers you want to make secondary.  This will
+instruct us to remove the accession number(s) from GenBank, and will
+no longer be part of the GenBank release. They will nonetheless be
+available from Entrez.
+.PP
+\fBGREAT CARE\fP should be taken when using this argument!!!  Improper
+use of accession numbers here will result in the inappropriate
+withdrawal of GenBank records from GenBank, EMBL and DDBJ.  We provide
+this parameter as a convenience to submitting centers, but this may
+need to be removed if it is not used carefully.
+.RE
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.ad l
+.BR Psequin (1),
+fa2htgs/README

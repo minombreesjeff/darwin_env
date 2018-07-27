@@ -1,0 +1,153 @@
+.TH IDFETCH 1 2001-10-05 NCBI "NCBI Tools User's Manual"
+.SH NAME
+idfetch \- retrieve biological data from the NCBI ID1 server
+.SH SYNOPSIS
+.B idfetch
+[\|\fB\-\fP\|]
+[\|\fB\-G\fP\ \fIfilename\fP\|]
+[\|\fB\-Q\fP\ \fIfilename\fP\|]
+[\|\fB\-c\fP\ \fIN\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIN\fP\|]
+[\|\fB\-f\fP\ \fIstr\fP\|]
+[\|\fB\-g\fP\ \fIN\fP\|]
+[\|\fB\-i\fP\ \fIN\fP\|]
+[\|\fB\-l\fP\ \fIfilename\fP\|]
+[\|\fB\-n\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-q\fP\ \fIstr\fP\|]
+[\|\fB\-s\fP\ \fIstr\fP\|]
+[\|\fB\-t\fP\ \fIN\fP\|]
+.SH DESCRIPTION
+\fBidfetch\fP is a client for NCBI's ID1 server, which contains a
+large database of annotated biological sequences.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-G\fP\ \fIfilename\fP
+File with list of GIs, (versioned) accessions, FASTA SeqID's to dump
+.TP
+\fB\-Q\fP\ \fIfilename\fP
+Generate GI list by Entrez query in \fIfilename\fP; requires \fB\-dn\fP
+or \fB\-dp\fP.
+.TP
+\fB\-c\fP\ \fIN\fP
+Max complexity:
+.RS
+.PD 0
+.IP 0
+get the whole blob (default)
+.IP 1
+get the bioseq of interest
+.IP 2
+get the minimal bioseq-set containing the bioseq of interest
+.IP 3
+get the minimal nuc-prot containing the bioseq of interest
+.IP 4
+get the minimal pub-set containing the bioseq of interest
+.PD
+.RE
+.TP
+\fB\-d\fP\ \fIstr\fP
+Database to use (with \fB\-q\fP, can be either \fBn\fP for nucleotides
+or \fBp\fP for proteins).
+.TP
+\fB\-e\fP\ \fIN\fP
+Entity number (retrieval number) to dump
+.TP
+\fB\-f\fP\ \fIstr\fP
+Flattened SeqId.  Possible formats:
+.br
+\fItype\fP([\fIname\fP][,[\fIaccession\fP][,[\fIrelease\fP][,\fIversion\fP]]])
+as '5(HUMHBB)'
+.br
+\fItype\fP=\fIaccession\fP
+.br
+\fItype\fP:\fInumber\fP
+.br
+(\fItype\fP is a number indicating the ASN.1 Seq-id subtype.)
+.TP
+\fB\-g\fP\ \fIN\fP
+GI id for single Entity to dump
+.TP
+\fB\-i\fP\ \fIN\fP
+Type of lookup:
+.RS
+.PD 0
+.IP 0
+get Seq-entry (default)
+.IP 1
+get GI state (output to stderr)
+.IP 2
+get SeqIds
+.IP 3
+get GI history (sequence change only)
+.IP 4
+get revision history (any change to ASN.1)
+.PD
+.RE
+.TP
+\fB\-l\fP\ \fIfilename\fP
+Log file
+.TP
+\fB\-n\fP
+Output only the list of GIs (with \fB\-q\fP and \fB\-Q\fP).
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Filename for output (default = \fBstdout\fP)
+.TP
+\fB\-q\fP\ \fIstr\fP
+Generate gi list by Entrez query.  Requires \fB\-dn\fP or \fB\-dp\fP.
+.TP
+\fB\-s\fP\ \fIstr\fP
+FASTA style SeqId ENCLOSED IN QUOTES.  Formats:
+.br
+.BI lcl| "int or str"
+.br
+.BI bbs| int
+.br
+.BI bbm| int
+.br
+.BI gb| acc | loc
+.br
+.BI emb| acc | loc
+.br
+.BI pir| acc | name
+.br
+.BI sp| acc | name
+.br
+.BI pat| country | patent | seq
+.br
+.BI gi| int
+.br
+.BI dbj| acc | loc
+.br
+.BI prf| acc | name
+.br
+.BI pdb| entry | chain
+.TP
+\fB\-t\fP\ \fIN\fP
+Output type:
+.RS
+.PD 0
+.IP 1
+text ASN.1 (default)
+.IP 2
+binary ASN.1
+.IP 3
+GenBank (Seq-entry only)
+.IP 4
+GenPept (Seq-entry only)
+.IP 5
+FASTA (table for history)
+.IP 6
+quality scores (Seq-entry only)
+.IP 7
+Entrez DocSums
+.PD
+.RE
+.SH AUTHOR
+The National Center for Biotechnology Information.

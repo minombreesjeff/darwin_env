@@ -1,0 +1,118 @@
+.TH FASTACMD 1 2003-11-10 NCBI "NCBI Tools User's Manual"
+.SH NAME
+fastacmd \- retrieve FASTA sequences from a BLAST database
+.SH SYNOPSIS
+.B fastacmd
+[\|\fB\-\fP\|]
+[\|\fB\-D\fP\|]
+[\|\fB\-I\fP\|]
+[\|\fB\-L\fP\ \fIstart\fP,\fIstop\fP\|]
+[\|\fB\-P\fP\ \fIN\fP\|]
+[\|\fB\-S\fP\ \fIN\fP\|]
+[\|\fB\-T\fP\|]
+[\|\fB\-a\fP\|]
+[\|\fB\-c\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-i\fP\ \fIstr\fP\|]
+[\|\fB\-l\fP\ \fIN\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\fP\ \fItype\fP\|]
+[\|\fB\-s\fP\ \fIstr\fP\|]
+[\|\fB\-t\fP\|]
+.SH DESCRIPTION
+\fBfastacmd\fP retrieves FASTA formatted sequences from a
+\fBblast\fP(1) database formatted using the '\fB\-o\fP' option.  An
+example \fBfastacmd\fP call would be
+.PP
+.ce
+fastacmd -d nr -s p38398
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-D\fP
+Dump the entire database in FASTA format
+.TP
+\fB\-I\fP
+Print database information only (overrides all other options)
+.TP
+\fB\-L\fP\ \fIstart\fP,\fIstop\fP
+Range of sequence to extract (0 in start is beginning of sequence, 0
+in stop is end of sequence, default is whole sequence)
+.TP
+\fB\-P\fP\ \fIN\fP
+Retrieve sequences with Protein Identification Group (PIG) \fIN\fP.
+.TP
+\fB\-S\fP\ \fIN\fP
+Strand on subsequence (nucleotide only):
+.RS
+.PD 0
+.IP 1
+top (default)
+.IP 2
+bottom
+.PD
+.RE
+.TP
+\fB\-T\fP
+Print taxonomic information for requested sequence(s)
+.TP
+\fB\-a\fP
+Retrieve duplicate accessions
+.TP
+\fB\-c\fP
+Use ^A (\e001) as non-redundant defline separator
+.TP
+\fB\-d\fP\ \fIstr\fP
+Database (default is nr)
+.TP
+\fB\-i\fP\ \fIstr\fP
+Input file wilth GIs/accessions/locuses for batch retrieval
+.TP
+\fB\-l\fP\ \fIN\fP
+Line length for sequence (default = 80)
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Output file (default = stdout)
+.TP
+\fB\-p\fP\ \fItype\fP
+Type of file:
+.RS
+.PD 0
+.IP G
+guess (default) - look for protein, then nucleotide
+.IP T
+protein
+.IP F
+nucleotide
+.PD
+.RE
+.TP
+\fB\-s\fP\ \fIstr\fP
+Search string: GIs, accessions and locuses may be used delimited by
+commas
+.TP
+\fB\-t\fP
+Definition line should contain target GI only
+.SH EXIT STATUS
+.RS
+.PD 0
+.IP 0
+Completed successfully.
+.IP 1
+An error (other than those below) occurred.
+.IP 2
+The BLAST database was not found.
+.IP 3
+A search (accession, GI, or taxonomy info) failed.
+.IP 4
+No taxonomy database was found.
+.PD
+.RE
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.BR blast (1),
+fastacmd.txt

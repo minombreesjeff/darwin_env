@@ -1,0 +1,1 @@
+../biostruc/mkbioseq.h

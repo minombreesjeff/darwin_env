@@ -1,0 +1,379 @@
+CONFIGURING SEQUIN'S ASN2GRAPHIC GRAPHICAL SEQUENCE VIEWER
+
+asn2graphic is a viewer for displaying biological features on sequences. It
+is designed to be both efficient and flexible. It is able to quickly process
+entire chromosomes with thousands of features, displaying them at any
+desired scale of magnification. Its behavior can be easily modified using a
+simple, human-readable configuration file.
+
+There are three questions to consider when customizing the display:
+
+  1. How should a given feature be rendered?
+  2. Which features should be displayed?
+  3. Where should those features be positioned?
+
+asn2graphic addresses these issues by the concepts of Styles, Filters, and
+Layout methods, respectively. Configurations are stored in a file called
+asn2gph.ini (on PC), asn2gph.cnf (on Mac), or .asn2gphrc (on UNIX). Several
+styles and several filters can be specified, and the names for these can be
+presented in popup menus.
+
+Styles
+
+Styles control how features are rendered, specifying such details as color,
+line height, label font, and gap style. The [Styles] section lists the
+individual styles that are configured:
+
+  [Styles]
+  style1 = warm
+  style2 = cool
+  ...
+
+style00 is reserved as the built-in Default style, and should not be present
+in the configuration file.
+
+The [Styles] section can also have the following elements:
+
+  maxarrowscale = 5
+  minarrowpixels = 5
+  shadesmears = false
+
+These can be overridden by settings in individual styles.
+
+Each style has a master section, and it must have an element specifying the
+name presented to the user:
+
+  [warm.master]
+  name = Bright Colors
+
+The master section can also override relevant global values set earlier:
+
+  maxarrowscale = 5
+  minarrowpixels = 5
+  shadesmears = false
+
+The master section can also set defaults for the box and font used when the
+features of a named annotation are grouped together or when a filter
+displays a groupbox around its feature contents:
+
+  annotboxcolor = dark grey
+  annotlabelfont = Times, 12
+  annotlabelcolor = black
+  groupboxcolor = red
+  grouplabelfont = Courier, 9
+  grouplabelcolor = blue
+
+The master section, and specific feature sections, can include any of the
+following elements:
+
+  color = 205, 133, 63
+  labelfont = medium
+  labelcolor = dark red
+  label = above
+  displaywith = box
+  height = 20
+  gap = line
+  showarrow = no
+  showtype = no
+  showcontent = true
+  shadesmears = false
+
+Note that "yes", "true", and "on" are all recognized as true, and "no",
+"false", and "off" are all recognized as false. Note also that named colors
+can be prefixed by "light" or "lt" for lighter, and "dark", "drk", or "dk"
+for darker.
+
+Individual features can have their own sections, which can override values
+inherited from the master section. Only the elements that are to be changed
+need to be specified:
+
+  [warm.cds]
+  color = magenta
+  labelfont = program
+  labelcolor = magenta
+  showarrow = yes
+  gap = angle
+
+Alignment sections can also have a format element, the same as Bioseq's.
+This specifies the information included in the feature's labels:
+
+  [warm.align]
+  format = fasta
+
+Import features (e.g., exon, variation) can have an intermediate section for
+overriding default settings. Individual import features then inherit from
+that section:
+
+  [warm.imp]
+  color = gray
+  labelcolor = light gray
+  showcontent = false
+
+  [warm.exon]
+  color = green
+  showcontent = true
+
+Several feature sections can also indicate a named style for inheritance,
+allowing a set of attributes to be shared among unrelated groups of
+features:
+
+  [UseLabels]
+  label = left
+  showtype = true
+  showcontent = true
+  height = 15
+  
+  [warm.gene]
+  usenamedstyle = UseLabels
+  labelfont = Courier,12,b
+  showarrow = yes
+  
+  [warm.mrna]
+  usenamedstyle = UseLabels
+  displaywith = outlinebox
+
+The Bioseq style can have the following elements:
+
+  [warm.bioseq]
+  label = left
+  format = accn
+  scale = true
+  labelfont = system
+  scalefont = small
+  height = 10
+  scaleheight = 20
+  color = green
+  labelcolor = dark green
+  scalecolor = black
+
+FILTERS
+
+Filters control how features are grouped for display, allowing different
+kinds of features to be collected in separate passes. Each group is placed
+below the previous one. The [Filters] section lists the individual filters
+that are configured:
+
+  [Filters]
+  filter1 = mol-bio
+  filter2 = single
+  ...
+
+filter00 is reserved as the built-in Default filter, and should not be
+present in the configuration file.
+
+The [Filters] section can also have the following elements:
+
+  maxlabelscale = 200
+  grouppadding = 2
+  rowpadding = 2
+
+These can be overridden by settings in individual filters and filter groups.
+
+Each filter has a main section, and it must have an element specifying the
+name presented to the user:
+
+  [mol-bio]
+  name = Molec Biol
+
+The main section can also specify the following optional elements:
+
+  layout = compact
+  grouppadding = 3
+  rowpadding = 5
+  suppressbioseq = false
+  suppressgraphs = false
+  annotgroup = true
+  annotbox = true
+  annotlabel = above
+  annotboxcolor = grey
+  annotlabelcolor = black
+  annotlabelfont = program
+
+By default, the Bioseq and scale are placed above the first group, and
+graphs (e.g., base quality scores) are placed below the last group. These
+can be overridden with the "suppressbioseq" and "suppressgraphs" elements.
+
+If annotgroup is true (which it is by default) features and alignments that
+are within a named annotation will be grouped separately. A box can
+optionally be drawn around them (annotbox) and the section can be labeled
+with the annotation's name (annotlabel). The other 'annot' color and font
+settings override the style settings with the same names.
+
+The main section must also specify a list of filter groups:
+
+  group1 = bioseq-and-scale
+  group2 = gene-mrna-cds-prot
+  group3 = rnas
+  group4 = intron-exon
+  group5 = everything-else
+  ...
+
+Each group has its own named sections, and these could be used by more than
+one filter. The group lists the individual feature types collected in that
+pass:
+
+  [filters.gene-mrna-cds-prot]
+  feature1 = gene
+  feature2 = mrna
+  feature3 = cds
+  feature4 = prot
+
+Note that "everything" or "all" collect all remaining features, "rna" and
+"prot" collect all remaining RNAs or proteins, respectively, and "bioseq"
+and "graph" as feature values override the default placement of the Bioseq
+or graphs.
+
+In each group, the following elements can also be specified:
+
+  name = Gene-mRNA-CDS-Prots
+  layout = geneproducts
+  grouppadding = 3
+  rowpadding = 5
+  groupbox = true
+  groupboxcolor = 150, 100, 50
+  fillbox = false
+  grouplabel = above
+  grouplabelfont = large
+  grouplabelcolor = dark grey
+  label = above
+  showtype = true
+  showcontent = true
+  strand = both
+
+Features pass through the groups until they match. Thus, if two different
+groups match the same type of feature, these features will only appear in
+the first matching group. This simplifies the creation of "everything else"
+groups. A filter that includes "everything" only displays features not yet
+matched by a previous group.
+
+If an element of a filter group has the same name as one in a style section
+(e.g., label, showtype, showcontent), any value specified in the filter
+group overrides that set in the style section.
+
+LAYOUT METHODS
+
+A filter group can specify a layout method if it does not want to inherit
+the default value. This determines how features in a group are packaged with
+respect to each other. The possible choices are:
+
+  inherit -      Inherits the default value.
+
+  diagonal -     Each feature is placed in a different row.
+
+  compact -      Attempts to minimize the number of rows, without permitting
+                 features or labels to overlap.
+
+  bytype -       Features are grouped by type, and the groups are separated
+                 vertically. Within each group neither features nor labels
+                 will overlap.
+
+  smear -        Features are grouped by type, but each group occupies only
+                 one row. Overlapping features are drawn as an ambiguous
+                 smear.
+
+  geneproducts - Similar to compact, but genes, mRNAs, and CDS features are
+                 treated specially. Genes are displayed first, then pairs of
+                 mRNAs followed by the CDSs they encode. This clearly shows
+                 mRNA/CDS pair combinations in alternative splicings.
+
+PARSER REFERENCE
+
+When parsing colors, the following named colors are recognized:
+
+  black, blue, brown, coral, cyan, gray, green, grey, lavender, magenta,
+  maroon, orange, olive, pink, purple, red, white, yellow
+
+Variations on these colors are supported with the light/lt or dark/drk/dk
+prefixes.
+
+Colors can also be specified using a triplet of numbers to represent the
+red, green, and blue intensities (in that order). The numbers must be
+integers between 0 and 255 inclusive. The numbers can be separated with
+commas, which improves readability.
+
+Fonts are parsed as the typeface name and the point size, separated by a
+comma. For example:
+
+  labelfont = Courier,12
+
+Modifiers can optionally be added after the size: "b" for bold, "i" for
+italic, and "u" for underline (in any combination).
+
+  labelfont = Helvetica,24,ib
+
+Also, a few named fonts are recognized: "system" and "program" are the
+(platform-specific) default fonts. "small", "medium", and "large" are also
+recognized.
+
+There are several ways that features can be rendered. These are controlled
+by the displaywith element in a style. The following values are recognized:
+
+  none, line, cappedline, box, outlinebox
+
+Feature labels can be displayed in several locations, which are controlled
+by the label element. The values can be one of:
+
+  above, top, left, below, inside, none
+
+Filter and annotation groups can also have labels. The grouplabel and
+annotlabel element can be one of:
+
+  above, top, left, below, none
+
+Sometimes it is desirable to create a filter group that only matches
+features on a specific strand. This is done by specifying a strand element.
+Values of "plus" or "minus" refer to features only on those strands. The
+default value is "both".
+
+A Bioseq or alignment style has several options for its label, which are
+controlled by the format element. These include:
+
+  accession, accn, fasta, long
+
+The accession or accn choices show the accession.version (U54469.1), while
+fasta shows the short FASTA parsable form (gb|U54469.1|), and long shows the
+long FASTA form (gb|1322283|gb|U54469.1).
+
+Bioseq label locations can be one of:
+
+  above, top, left, below, none
+
+PROGRAMMING
+
+asn2graphic uses the picture component of Vibrant, the graphical user
+interface mocule of NCBI's C language software toolkit. Pictures are a
+Vibrant memory structure containing the primitive graphical elements to be
+displayed. Interactive programs then attach the picture to a viewer in order
+to be displayed. Web servers can instead generate a GIF from the picture by
+linking with the vibgif library, and do not link in the vibrant library.
+
+Applications must #include <asn2graphic.h> to get the basic function
+prototypes. CreateGraphicView collects features on a Bioseq (optionally
+limited to a specific subregion) and creates a SegmenT, the internal data
+type for a picture:
+
+  NLM_EXTERN SegmenT CreateGraphicView (
+    BioseqPtr bsp,
+    SeqLocPtr location,
+    Int4 scale,
+    CharPtr styleName,
+    CharPtr filterName,
+    CharPtr overrideLayout
+  );
+
+The following functions parse the configuration file and return lists of
+style, filter, and layout names, respectively:
+
+  NLM_EXTERN CharPtr PNTR GetStyleNameList (void);
+  NLM_EXTERN CharPtr PNTR GetFilterNameList (void);
+  NLM_EXTERN CharPtr PNTR GetLayoutNameList (void);
+
+Graphic view in Sequin has popup menus for Style and Filter populated from
+these procedures.
+
+Functions in the private header <asn2graphicp.h> control parsing of the
+configuration file, or generating styles and filters programmatically if you
+do not wish to use or provide an asn2gph file. However, it is easier to use
+TransientSetAppParam to simulate the configuration file than to use these
+functions.
+

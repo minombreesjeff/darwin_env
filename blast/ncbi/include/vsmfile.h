@@ -1,0 +1,1 @@
+../desktop/vsmfile.h

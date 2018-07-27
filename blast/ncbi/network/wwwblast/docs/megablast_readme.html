@@ -1,0 +1,33 @@
+<head>
+<TITLE>MEGABLAST</TITLE>
+<BODY bgcolor="FFFFFF" link="0000FF" vlink="ff0000" text="000000" >
+<!-- Changed by: Sergei Shavirin,  9-May-1996 -->
+</head>
+
+<h1 align = center>MEGABLAST Search</h1>
+
+Mega BLAST uses the greedy algorithm for nucleotide sequence alignment search. This program is optimized for aligning sequences that differ slightly as a result of sequencing or other similar "errors". When larger word size is used (see explanation below), it is up to 10 times faster than more common sequence similarity programs. Mega BLAST is also able to efficiently handle much longer DNA sequences than the blastn program of traditional BLAST algorithm. 
+
+<center><h2> Parameters </h2></center>
+<h3><a name="wordsize"></a>Word size</h3> 
+Word size is roughly the minimal length of an identical match an alignment must contain if it is to be found by the algorithm. Mega BLAST is most efficient with word sizes 16 and larger, although word size as low as 8 can be used. <BR>
+If the value W of the word size is divisible by 4, it guarantees that all perfect matches of length W + 3 will be found and extended by Mega BLAST search, however perfect matches of length as low as W might also be found, although the latter is not guaranteed. Any value of W not divisible by 4 is equivalent to the nearest value divisible by 4 (with 4i+2 equivalent to 4i).
+
+<h3><a name="percident"></a>Percent identity</h3>
+If this parameter P is set, only the alignments with identity percentage higher than P will be retained. Also the default match reward and mismatch penalty scores are chosen in this case close to the log-odds (i.e. the most statistically effective) scores for the PAM distance corresponding to a sequence conservation level somewhat higher than P. The following table shows the relation between the percent identity cut-off values, the target conservation levels and the corresponding log-odds match and mismatch scores used by Mega BLAST:
+<table><tr>
+<td>Percent<br>Identity</td><td>Target</td><td>Match<br>score</td><td>Mismatch<br>score</td>
+</tr>
+<tr><td>None</td><td>95</td><td>1</td><td>-2</td></tr>
+<tr><td>&gt= 95</td><td>99</td><td>1</td><td>-3</td></tr>
+<tr><td>85, 90</td><td>95</td><td>1</td><td>-2</td></tr>
+<tr><td>80</td><td>88</td><td>2</td><td>-3</td></tr>
+<tr><td>75</td><td>83</td><td>4</td><td>-5</td></tr>
+</table>
+
+<h3><a name="gapping"></a>Gapping parameters</h3>
+By default, non-affine gapping parameters are assumed. This means that the gap opening penalty is 0, and gap extension penalty E can be computed from match reward r and mismatch penalty q by the formula: E = r/2 - q. The non-affine version of Mega BLAST requires significantly less memory and is also significantly faster, however affine gapping parameters can also be used, preferably with larger word sizes. Non-affine gapping parameters tend to yield alignments with more gaps, but the gap lengths are shorter.
+
+<h3><a name="xdropoff"></a>X-dropoff value</h3>
+As in BLAST, this value provides a cutoff threshold for the extension algorithm tree exploration. When the score of a given branch drops below the current best score minus the X-dropoff, the exploration of this branch stops. However the actual values of the X-dropoff for Mega BLAST and for traditional nucleotide BLAST algorithms are not necessarily compatible, i.e. with the same word size, match, mismatch and gapping penalties and with the same X-dropoff, the two algorithms might produce different results, which can be remedied by changing the X-dropoff value for one of the algorithms.
+

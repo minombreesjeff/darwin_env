@@ -1,0 +1,294 @@
+#!/bin/sh
+#
+# $Id: makeallchives,v 1.73 2004/02/24 14:49:49 beloslyu Exp $
+#
+#
+# Creates all archives from a directory above 'ncbi'
+#
+# based on mkarchive written by
+# J. Epstein, 9/29/95
+#   modified to work in a distributed environment 3/13/98 (Friday the 13th)
+#    -Karl Sirotkin
+#
+PATH=/bin:/usr/bin:$PATH
+export PATH
+
+if [ ! -d ncbi ] ; then
+	echo must be executed above \'ncbi\' 
+	exit 1
+fi
+if [ ! -d ncbi/build ] ; then
+	echo must be executed above \'ncbi\' after make
+	exit 1
+fi
+
+datafiles="humrep.fsa lineages.txt sequin.hlp asn2ff.prt bstdt.val \
+featdef.val gc.val makerpt.prt objprt.prt pubkey.enc seqcode.val \
+sgmlbb.ent taxlist.txt BLOSUM62 KSat.flt KSchoth.flt KSgc.flt \
+KShopp.flt KSkyte.flt KSpur.flt KSpyr.flt \
+BLOSUM45 BLOSUM80 PAM30 PAM70 KSpcc.mat"
+
+configfiles="nlmstmanrc sequinrc ncbidtrc"
+
+TOPDIR=`pwd`
+configdir=$TOPDIR/ncbi/config/unix
+datadir=$TOPDIR/ncbi/data
+errmsgdir=$TOPDIR/ncbi/errmsg
+sequindoc=$TOPDIR/ncbi/doc/sequin.htm
+sequinimages=$TOPDIR/ncbi/doc/images/
+
+#delete the old archive subdir
+test -d archive && rm -rf archive
+
+#make sure we have timestamp file
+test -f ncbi/VERSION || date > ncbi/VERSION
+
+for i in sequin entrez fa2htgs blast netblast asn2xml
+do
+	f=""
+	mkdir -p archive/$i/data
+	for file in $datafiles
+	do
+		ln $datadir/$file archive/$i/data/
+	done
+	ln ncbi/VERSION archive/$i/VERSION
+
+#	cat > archive/$i/Cn3D.ReadMe <<EOF
+#Cn3D is now distributed separately from $i
+#To download Cn3D please look at the Cn3D home page or ftp site:
+#
+#http://www.ncbi.nlm.nih.gov/Structure/cn3d.html
+#ftp://ftp.ncbi.nih.gov/cn3d/
+#EOF
+
+	case "$i" in
+	entrez)
+		cat > archive/$i/README.1st <<EOF
+If you have not done so already, please refer to the
+file at ftp://ftp.ncbi.nih.gov/entrez/README
+EOF
+		f="entrez entrez2 blastcl3 ../doc/firewall.html"		
+		(cd ncbi/build; test -f Nentrez && ln Nentrez entrez)
+		;;
+	sequin)
+		f="sequin tbl2asn asn2gb"
+		(cd ncbi/build; test -f Psequin && ln -f Psequin sequin)
+		mkdir -p archive/sequin/errmsg archive/sequin/images
+		test -d $errmsgdir && ln $errmsgdir/* archive/sequin/errmsg/
+		test -d $sequinimages && ln $sequinimages/* archive/sequin/images/
+		test -r $sequindoc && ln $sequindoc archive/sequin/
+		#for file in $configfiles
+		#do
+		#	test -r $configdir/$file && ln $configdir/$file archive/sequin/config/
+		#done
+		;;
+	asn2xml)
+		f="asn2xml ../doc/README.asn2xml ../doc/ncbixml.txt"
+		#no need in data subdir
+		rm -rf archive/asn2xml/data
+		;;
+	fa2htgs)
+		f="fa2htgs"
+		;;
+	blast)
+		f="blastall blastpgp seedtop formatdb fastacmd copymat makemat \
+impala megablast blastclust rpsblast bl2seq ../doc/impala.txt \
+../doc/blast.txt ../doc/megablast.txt ../doc/blastclust.txt ../doc/rpsblast.txt \
+../doc/formatdb.txt ../doc/fastacmd.txt ../doc/README-qm"
+		rm -f archive/blast/data/sequin.hlp
+		;;
+	netblast)
+		f="blastcl3 ../doc/firewall.html ../doc/netblast.txt"
+		;;
+	*)
+		;;
+	esac
+	for file in $f
+	do
+		if [ -f ./ncbi/build/$file ] ; then
+			ln ./ncbi/build/$file ./archive/$i/
+		else
+			echo "$i: file $file was not built, skipping the archive"
+			rm -fr ./archive/$i
+		fi
+	done
+done
+
+#cd back to archive
+cd $TOPDIR/archive
+
+case `uname -s` in
+SunOS)
+	case `uname -r` in
+	4.1*)
+		platform=sun
+		;;
+	*)
+		if [ `uname -p` = i386 ] ; then
+			platform=solarisintel
+		else
+			platform=solaris
+		fi
+		;;
+	esac
+	;;
+IRIX*)
+	case `uname -r` in
+	4.*)
+		platform=sgi4
+		;;
+	5.*)
+		platform=sgi5
+		;;
+	6.5)
+		#platform=sgi-mips4
+		platform=sgi
+		;;
+	6.[0-4])
+		platform=sgi
+		;;
+	*)
+		platform=sgi
+		;;
+	esac
+	;;
+Linux)
+	if [ `uname -m` = ppc ] ; then
+		platform=ppclinux
+	else
+		platform=linux
+	fi
+	;;
+OSF1)
+	platform=alphaOSF1
+	;;
+HP-UX)
+	if [ `uname -m` = ia64 ] ; then
+		platform=hpux_ia64
+	else
+		platform=hpux
+	fi
+	;;
+FreeBSD)
+	platform=freebsd
+	;;
+Darwin)
+	platform=darwin
+	;;
+NetBSD)
+	platform=netbsd
+	;;
+AIX)
+	platform=ibm_auto
+	;;
+*)
+	platform="`uname -s`.`uname -m`"
+	platform=`echo $platform|tr '[A-Z]' '[a-z]'|tr ' ' '_'`
+	;;
+esac
+
+echo PLATFORM is $platform
+pwd
+
+for A in sequin entrez fa2htgs
+do
+	cd $A || continue
+	#if [ $platform = "linux" ] ; then
+	#	touch README.1st
+	#fi
+
+	if [ $platform = "solaris" ] ; then
+		touch README.1st
+		cat >>README.1st <<EOF
+As of 5/29/1996, the Solaris executables distributed by NCBI no longer include
+a statically-linked Motif library.  This is due to the manner in which
+Sun distributes Motif libraries.  Users of Solaris version 2.4 and higher
+will find the runtime shared Motif library on their system.  Users of Solaris
+version 2.3 and earlier may need to either upgrade their systems or purchase
+the Motif library separately.
+
+It may be necessary to set your LD_LIBRARY_PATH environment variable to
+point to the directory where this file, libXm.so.3 (the final digit may
+vary), appears on your system.  E.g.
+   setenv LD_LIBRARY_PATH /usr/dt/lib
+EOF
+	fi
+
+	if [ $platform = "sun" ] ; then
+		touch README.1st
+		cat >>README.1st <<EOF
+ ******************************************************************
+ *          ! ! !   W A R N I N G   ! ! !                         *
+ *                                                                *
+ *  The NCBI Toolkit on                                           *
+ *     Windows 16 bit                                             *
+ *         and                                                    *
+ *     SunOS 4.X platforms                                        *
+ *                                                                *
+ *     WILL NO LONGER BE SUPPORTED   after May 1, 1999            *
+ *                                                                *
+ ******************************************************************
+
+EOF
+	fi
+	if [ $platform = "sgi5" ] ; then
+		touch README.sgi5
+		cat >>README.1st <<EOF
+ *******************************************************************
+ *          ! ! !   W A R N I N G   ! ! !                          *
+ *                                                                 *
+ *  The NCBI Toolkit binaries for IRIX5.X                          *
+ *     WILL NO LONGER BE SUPPORTED AND BUILT after January 1, 2002 *
+ *                                                                 *
+ *******************************************************************
+
+EOF
+	fi
+	#cd back to archive
+	cd ..
+done
+
+#for A in sequin entrez fa2htgs cn3d blast netblast asn2xml
+for A in sequin entrez fa2htgs blast netblast asn2xml
+do
+	cd $A || continue
+	tar cf ../$A.$platform.tar .
+	rm -f ../$A.$platform.tar.Z
+	compress < ../$A.$platform.tar > ../$A.$platform.tar.Z
+	gzip < ../$A.$platform.tar > ../$A.$platform.tar.gz 2>/dev/null
+	if [ $? != 0 ] ; then
+		/usr/ncbi/bin/gzip < ../$A.$platform.tar > ../$A.$platform.tar.gz 2>/dev/null
+	fi
+	rm -f ../$A.$platform.tar
+	# cd back to archive
+	cd ..
+	#and remove it
+	rm -fr $A
+done
+
+# build wwwblast archive
+
+# cd archive && cvs export -d blast -r HEAD distrib/network/wwwblast && cd ..
+
+mkdir blast
+
+cp -r ../ncbi/network/wwwblast/* blast 
+
+find blast -type d -name CVS | xargs rm -rf
+find blast -type d -name Src | xargs rm -rf
+
+for file in psiblast.REAL psiblast_cs.REAL blast.REAL blast_cs.REAL wblast2.REAL wblast2_cs.REAL bl2bag.cgi nph-viewgif.cgi
+do
+cp ../ncbi/build/$file blast
+done
+
+mkdir -p blast/TmpGifs
+chmod 777 blast/TmpGifs
+chmod 666 blast/*.log
+
+tar -cpf wwwblast.$platform.tar blast
+gzip wwwblast.$platform.tar
+
+rm -rf blast
+
+exit 0

@@ -1,0 +1,40 @@
+.TH COPYMAT 1 2002-04-28 NCBI "NCBI Tools User's Manual"
+.SH NAME
+copymat \- convert ASCII matrices into a database suitable for quick reading
+.SH SYNOPSIS
+.B copymat
+[\|\fB\-\fP\|]
+[\|\fB\-H\fP\|]
+[\|\fB\-P\fP\ \fIfilename\fP\|]
+[\|\fB\-W\fP\ \fIN\fP\|]
+[\|\fB\-f\fP\ \fIX\fP\|]
+[\|\fB\-r\ F\fP\|]
+.SH DESCRIPTION
+\fBcopymat\fP converts ASCII matrices produced by \fBmakemat\fP(1)
+into a database that can be read into memory quickly.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-H\fP
+Print help; overrides all other arguments
+.TP
+\fB\-P\fP\ \fIfilename\fP
+Database for matrix profiles (default = stdin)
+.TP
+\fB\-W\fP\ \fIN\fP
+Word size for RPS database (default = 3)
+.TP
+\fB\-f\fP\ \fIX\fP
+Threshold for extending hits for RPS database (default = 11.0)
+.TP
+\fB\-r\ F\fP
+Do not create RPS mem map file(s)
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.BR impala (1),
+.BR makemat (1),
+impala.txt

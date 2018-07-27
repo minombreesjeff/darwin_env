@@ -1,0 +1,10 @@
+#include <windows.h>
+#include "ncbirc.h"
+
+STRINGTABLE
+   BEGIN
+   STR_PROGRAM, "Entrez  4.00"
+   END
+
+ICO_PROGRAM  ICON ncbilogo.ico
+ICO_NCBILOGO ICON ncbilogo.ico

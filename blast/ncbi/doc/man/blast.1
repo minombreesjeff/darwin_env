@@ -1,0 +1,885 @@
+.TH BLAST 1 2003-11-10 NCBI "NCBI Tools User's Manual"
+.SH NAME
+bl2seq, blast, blastall, blastcl3, blastpgp, impala, megablast, rpsblast, seedtop \- Basic Local Alignment Search Tool
+.SH SYNOPSIS
+.B bl2seq
+[\|\fB\-\fP\|]
+[\|\fB\-A\fP\|]
+[\|\fB\-D\fP\ \fIN\fP\|]
+[\|\fB\-E\fP\ \fIN\fP\|]
+[\|\fB\-F\fP\ \fIstr\fP\|]
+[\|\fB\-G\fP\ \fIN\fP\|]
+[\|\fB\-I\fP\ \fIstr\fP\|]
+[\|\fB\-J\fP\ \fIstr\fP\|]
+[\|\fB\-M\fP\ \fIstr\fP\|]
+[\|\fB\-S\fP\ \fIN\fP\|]
+[\|\fB\-T\fP\|]
+[\|\fB\-U\fP\|]
+[\|\fB\-W\fP\ \fIN\fP\|]
+[\|\fB\-X\fP\ \fIN\fP\|]
+[\|\fB\-Y\fP\ \fIX\fP\|]
+[\|\fB\-a\fP\ \fIfilename\fP\|]
+[\|\fB\-d\fP\ \fIN\fP\|]
+[\|\fB\-e\fP\ \fIX\fP\|]
+[\|\fB\-g\ F\fP\|]
+\fB\-i\fP\ \fIfilename\fP
+\fB\-j\fP\ \fIfilename\fP
+[\|\fB\-m\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+\fB\-p\fP\ \fIstr\fP
+[\|\fB\-q\fP\ \fIN\fP\|]
+[\|\fB\-r\fP\ \fIN\fP\|]
+[\|\fB\-t\fP\ \fIN\fP\|]
+.PP
+.B blast
+[\|\fB\-\fP\|]
+[\|\fB\-A\ F\fP\|]
+[\|\fB\-D\fP\ \fIN\fP\|]
+[\|\fB\-E\fP\ \fIN\fP\|]
+[\|\fB\-F\fP\ \fIstr\fP\|]
+[\|\fB\-G\fP\ \fIN\fP\|]
+[\|\fB\-H\fP\|]
+[\|\fB\-L\fP\|]
+[\|\fB\-M\fP\ \fIstr\fP\|]
+[\|\fB\-O\fP\ \fIfilename\fP\|]
+[\|\fB\-P\fP\ \fIX\fP\|]
+[\|\fB\-Q\fP\ \fIN\fP\|]
+[\|\fB\-S\fP\ \fIN\fP\|]
+[\|\fB\-T\fP\ \fIN\fP\|]
+[\|\fB\-V\fP\|]
+[\|\fB\-W\fP\ \fIN\fP\|]
+[\|\fB\-X\fP\ \fIN\fP\|]
+[\|\fB\-Y\fP\ \fIX\fP\|]
+[\|\fB\-Z\fP\ \fIN\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+[\|\fB\-c\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIX\fP\|]
+[\|\fB\-f\fP\ \fIN\fP\|]
+[\|\fB\-g\fP\ \fIN\fP\|]
+[\|\fB\-h\fP\ \fIN\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-j\fP\ \fIfilename\fP\|]
+[\|\fB\-k\fP\ \fIstr\fP\|]
+[\|\fB\-m\fP\ \fIN\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+\fB\-p\fP\ \fIstr\fP
+[\|\fB\-q\fP\ \fIN\fP\|]
+[\|\fB\-r\fP\ \fIN\fP\|]
+[\|\fB\-s\fP\ \fIN\fP\|]
+[\|\fB\-t\fP\ \fIN\fP\|]
+[\|\fB\-u\fP\|]
+[\|\fB\-v\fP\ \fIN\fP\|]
+[\|\fB\-w\fP\ \fIN\fP\|]
+[\|\fB\-y\fP\ \fIN\fP\|]
+.B blastall
+[\|\fB\-\fP\|]
+[\|\fB\-A\fP\ \fIN\fP\|]
+[\|\fB\-B\fP\ \fIN\fP\|]
+[\|\fB\-D\fP\ \fIN\fP\|]
+[\|\fB\-E\fP\ \fIN\fP\|]
+[\|\fB\-F\fP\ \fIstr\fP\|]
+[\|\fB\-G\fP\ \fIN\fP\|]
+[\|\fB\-I\fP\|]
+[\|\fB\-J\fP\|]
+[\|\fB\-K\fP\ \fIN\fP\|]
+[\|\fB\-L\fP\ \fIstart,stop\fP\|]
+[\|\fB\-M\fP\ \fIstr\fP\|]
+[\|\fB\-O\fP\ \fIfilename\fP\|]
+[\|\fB\-P\fP\ \fIN\fP\|]
+[\|\fB\-Q\fP\ \fIN\fP\|]
+[\|\fB\-R\fP\ \fIfilename\fP\|]
+[\|\fB\-S\fP\|]
+[\|\fB\-T\fP\|]
+[\|\fB\-U\fP\|]
+[\|\fB\-W\fP\ \fIN\fP\|]
+[\|\fB\-X\fP\ \fIN\fP\|]
+[\|\fB\-Y\fP\ \fIX\fP\|]
+[\|\fB\-Z\fP\ \fIN\fP\|]
+[\|\fB\-a\fP\ \fIN\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIX\fP\|]
+[\|\fB\-f\fP\ \fIN\fP\|]
+[\|\fB\-g\ F\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIstr\fP\|]
+[\|\fB\-m\fP\ \fIN\fP\|]
+[\|\fB\-n\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+\fB\-p\fP\ \fIstr\fP
+[\|\fB\-q\fP\ \fIN\fP\|]
+[\|\fB\-r\fP\ \fIN\fP\|]
+[\|\fB\-t\fP\ \fIN\fP\|]
+[\|\fB\-v\fP\ \fIN\fP\|]
+[\|\fB\-w\fP\ \fIN\fP\|]
+[\|\fB\-y\fP\ \fIX\fP\|]
+[\|\fB\-z\fP\ \fIX\fP\|]
+.PP
+.B blastcl3
+[\|\fB\-\fP\|]
+[\|\fB\-A\fP\ \fIN\fP\|]
+[\|\fB\-B\fP\ \fIN\fP\|]
+[\|\fB\-D\fP\ \fIN\fP\|]
+[\|\fB\-E\fP\ \fIN\fP\|]
+[\|\fB\-F\fP\ \fIstr\fP\|]
+[\|\fB\-G\fP\ \fIN\fP\|]
+[\|\fB\-I\fP\|]
+[\|\fB\-J\fP\|]
+[\|\fB\-K\fP\ \fIN\fP\|]
+[\|\fB\-L\fP\ \fIstart,stop\fP\|]
+[\|\fB\-M\fP\ \fIstr\fP\|]
+[\|\fB\-O\fP\ \fIfilename\fP\|]
+[\|\fB\-Q\fP\ \fIN\fP\|]
+[\|\fB\-R\fP\|]
+[\|\fB\-S\fP\|]
+[\|\fB\-T\fP\|]
+[\|\fB\-U\fP\|]
+[\|\fB\-W\fP\ \fIN\fP\|]
+[\|\fB\-X\fP\ \fIN\fP\|]
+[\|\fB\-Y\fP\ \fIX\fP\|]
+[\|\fB\-Z\fP\ \fIN\fP\|]
+[\|\fB\-a\fP\ \fIN\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIX\fP\|]
+[\|\fB\-f\fP\ \fIN\fP\|]
+[\|\fB\-g\ F\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-m\fP\ \fIN\fP\|]
+[\|\fB\-n\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+\fB\-p\fP\ \fIstr\fP
+[\|\fB\-q\fP\ \fIN\fP\|]
+[\|\fB\-r\fP\ \fIN\fP\|]
+[\|\fB\-u\fP\ \fIstr\fP\|]
+[\|\fB\-t\fP\ \fIN\fP\|]
+[\|\fB\-v\fP\ \fIN\fP\|]
+[\|\fB\-w\fP\ \fIN\fP\|]
+[\|\fB\-y\fP\ \fIX\fP\|]
+[\|\fB\-z\fP\ \fIX\fP\|]
+.PP
+.B blastpgp
+[\|\fB\-\fP\|]
+[\|\fB\-A\fP\ \fIN\fP\|]
+[\|\fB\-B\fP\ \fIfilename\fP\|]
+[\|\fB\-C\fP\ \fIfilename\fP\|]
+[\|\fB\-E\fP\ \fIN\fP\|]
+[\|\fB\-F T\fP\|]
+[\|\fB\-G\fP\ \fIN\fP\|]
+[\|\fB\-H\fP\ \fIN\fP\|]
+[\|\fB\-I\fP\|]
+[\|\fB\-J\fP\|]
+[\|\fB\-K\fP\ \fIN\fP\|]
+[\|\fB\-L\fP\ \fIN\fP\|]
+[\|\fB\-M\fP\ \fIstr\fP\|]
+[\|\fB\-N\fP\ \fIX\fP\|]
+[\|\fB\-O\fP\ \fIfilename\fP\|]
+[\|\fB\-P\fP\ \fIN\fP\|]
+[\|\fB\-Q\fP\ \fIfilename\fP\|]
+[\|\fB\-R\fP\ \fIfilename\fP\|]
+[\|\fB\-S\fP\ \fIN\fP\|]
+[\|\fB\-T\fP\|]
+[\|\fB\-U\fP\|]
+[\|\fB\-W\fP\ \fIN\fP\|]
+[\|\fB\-X\fP\ \fIN\fP\|]
+[\|\fB\-Y\fP\ \fIX\fP\|]
+[\|\fB\-Z\fP\ \fIN\fP\|]
+[\|\fB\-a\fP\ \fIN\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+[\|\fB\-c\fP\ \fIN\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIX\fP\|]
+[\|\fB\-f\fP\ \fIN\fP\|]
+[\|\fB\-g\ F\fP\|]
+[\|\fB\-h\fP\ \fIX\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-j\fP\ \fIN\fP\|]
+[\|\fB\-k\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIstr\fP\|]
+[\|\fB\-m\fP\ \fIN\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\fP\ \fIstr\fP\|]
+[\|\fB\-s\fP\|]
+[\|\fB\-t\ F\fP\|]
+[\|\fB\-v\fP\ \fIN\fP\|]
+[\|\fB\-y\fP\ \fIX\fP\|]
+[\|\fB\-z\fP\ \fIN\fP\|]
+.PP
+.B impala
+[\|\fB\-\fP\|]
+[\|\fB\-E\fP\ \fIN\fP\|]
+[\|\fB\-F\fP\ \fIstr\fP\|]
+[\|\fB\-G\fP\ \fIN\fP\|]
+[\|\fB\-H\fP\|]
+[\|\fB\-I\fP\|]
+[\|\fB\-J\fP\|]
+[\|\fB\-M\fP\ \fIstr\fP\|]
+[\|\fB\-O\fP\ \fIfilename\fP\|]
+[\|\fB\-P\fP\ \fIfilename\fP\|]
+[\|\fB\-a\fP\ \fIN\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+[\|\fB\-c\fP\ \fIN\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIX\fP\|]
+[\|\fB\-h\fP\ \fIX\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-j\fP\ \fIN\fP\|]
+[\|\fB\-m\fP\ \fIN\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-v\fP\ \fIN\fP\|]
+[\|\fB\-y\fP\ \fIX\fP\|]
+[\|\fB\-z\fP\ \fIN\fP\|]
+.PP
+.B megablast
+[\|\fB\-\fP\|]
+[\|\fB\-A\fP\ \fIN\fP\|]
+[\|\fB\-D\fP\ \fIN\fP\|]
+[\|\fB\-E\fP\ \fIN\fP\|]
+[\|\fB\-F\fP\ \fIstr\fP\|]
+[\|\fB\-G\fP\ \fIN\fP\|]
+[\|\fB\-H\fP\ \fIN\fP\|]
+[\|\fB\-I\fP\|]
+[\|\fB\-J\fP\|]
+[\|\fB\-L\fP\ \fIstart,stop\fP\|]
+[\|\fB\-M\fP\ \fIN\fP\|]
+[\|\fB\-N\fP\ \fIN\fP\|]
+[\|\fB\-O\fP\ \fIfilename\fP\|]
+[\|\fB\-P\fP\ \fIN\fP\|]
+[\|\fB\-Q\fP\ \fIfilename\fP\|]
+[\|\fB\-R\fP\|]
+[\|\fB\-S\fP\ \fIN\fP\|]
+[\|\fB\-T\fP\|]
+[\|\fB\-U\fP\|]
+[\|\fB\-W\fP\ \fIN\fP\|]
+[\|\fB\-X\fP\ \fIN\fP\|]
+[\|\fB\-Z\fP\ \fIN\fP\|]
+[\|\fB\-a\fP\ \fIN\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIX\fP\|]
+[\|\fB\-f\fP\|]
+[\|\fB\-g\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIstr\fP\|]
+[\|\fB\-m\fP\ \fIN\fP\|]
+[\|\fB\-n\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\fP\ \fIX\fP\|]
+[\|\fB\-q\fP\ \fIN\fP\|]
+[\|\fB\-r\fP\ \fIN\fP\|]
+[\|\fB\-t\fP\ \fIN\fP\|]
+[\|\fB\-s\fP\ \fIN\fP\|]
+[\|\fB\-v\fP\ \fIN\fP\|]
+[\|\fB\-y\fP\ \fIN\fP\|]
+[\|\fB\-z\fP\ \fIX\fP\|]
+.PP
+.B rpsblast
+[\|\fB\-\fP\|]
+[\|\fB\-F\fP\ \fIstr\fP\|]
+[\|\fB\-I\fP\|]
+[\|\fB\-J\fP\|]
+[\|\fB\-L\fP\ \fIstart,stop\fP\|]
+[\|\fB\-N\fP\ \fIX\fP\|]
+[\|\fB\-O\fP\ \fIfilename\fP\|]
+[\|\fB\-P\fP\ \fIN\fP\|]
+[\|\fB\-T\fP\|]
+[\|\fB\-U\fP\|]
+[\|\fB\-X\fP\ \fIN\fP\|]
+[\|\fB\-Y\fP\ \fIX\fP\|]
+[\|\fB\-Z\fP\ \fIN\fP\|]
+[\|\fB\-a\fP\ \fIN\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+\fB\-d\fP\ \fIfilename\fP
+[\|\fB\-e\fP\ \fIX\fP\|]
+[\|\fB\-g\ F\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIfilename\fP\|]
+[\|\fB\-m\fP\ \fIN\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\ F\fP\|]
+[\|\fB\-v\fP\ \fIN\fP\|]
+[\|\fB\-y\fP\ \fIX\fP\|]
+[\|\fB\-z\fP\ \fIN\fP\|]
+.PP
+.B seedtop
+[\|\fB\-\fP\|]
+[\|\fB\-C\fP\ \fIN\fP\|]
+[\|\fB\-D\fP\ \fIN\fP\|]
+[\|\fB\-E\fP\ \fIN\fP\|]
+[\|\fB\-F\fP\|]
+[\|\fB\-G\fP\ \fIN\fP\|]
+[\|\fB\-I\fP\|]
+[\|\fB\-J\fP\|]
+[\|\fB\-M\fP\ \fIstr\fP\|]
+[\|\fB\-O\fP\ \fIfilename\fP\|]
+[\|\fB\-S\fP\ \fIN\fP\|]
+[\|\fB\-X\fP\ \fIN\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIX\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-k\fP\ \fIfilename\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\fP\ \fIstr\fP\|]
+[\|\fB\-q\fP\ \fIN\fP\|]
+[\|\fB\-r\fP\ \fIN\fP\|]
+[\|\fB\-v\fP\ \fIN\fP\|]
+.SH DESCRIPTION
+This manual page documents briefly the commands \fBbl2seq\fP, \fBblast\fP,
+\fBblastall\fP, \fBblastcl3\fP, \fBblastpgp\fP, \fBimpala\fP,
+\fBmegablast\fP, \fBrpsblast\fP, and \fBseedtop\fP.  These commands
+are documented together because they have a lot of common options.
+.PP
+\fBbl2seq\fP performs a comparison between two sequences using either
+the blastn or blastp algorithm.  Both sequences must be either
+nucleotides or proteins.
+.PP
+\fBblast\fP compares a sequence against either a local database or a
+second sequence; it incorporates most of the functionality of both
+\fBbl2seq\fP and \fBblastall\fP, but uses a semi-experimental new
+internal engine.
+.PP
+\fBblastall\fP finds the best matches in a local database for a
+sequence.
+.PP
+\fBblastcl3\fP accesses the newest NCBI BLAST search engine (version
+2.0).  The software behind BLAST version 2.0 was written from scratch
+to allow BLAST to handle the new challenges posed by the sequence
+databases in the coming years.  Updates to this software will continue
+in the coming years.
+.PP
+\fBblastpgp\fP performs gapped blastp searches and can be used to
+perform iterative searches in psi-blast and phi-blast mode.
+.PP
+\fBimpala\fP searches a database of score matrices, prepared by
+\fBcopymat\fP(1), producing BLAST-like output.
+.PP
+\fBmegablast\fP uses the greedy algorithm of Webb Miller et al. for
+nucleotide sequence alignment search and concatenates many queries to
+save time spent scanning the database. This program is optimized for
+aligning sequences that differ slightly as a result of sequencing or
+other similar "errors". It is up to 10 times faster than more common
+sequence similarity programs and therefore can be used to swiftly
+compare two large sets of sequences against each other.
+.PP
+\fBrpsblast\fP (Reverse PSI-BLAST) searches a query sequence against a
+database of profiles.  This is the opposite of PSI-BLAST that searches
+a profile against a database of sequences, hence the 'Reverse'.
+\fBrpsblast\fP uses a BLAST-like algorithm, finding single- or
+double-word hits and then performing an ungapped extension on these
+candidate matches.  If a sufficiently high-scoring ungapped alignment
+is produced, a gapped extension is performed and those (gapped)
+alignments with sufficiently low expect value are reported.  This
+procedure is in contrast to IMPALA that performs a Smith-Waterman
+calculation between the query and each profile, rather than using a
+word-hit approach to identify matches that should be extended.
+.PP
+\fBseedtop\fP answers two relatively simple questions:
+.PD 0
+.IP 1.
+Given a sequence and a database of patterns, which patterns occur
+in the sequence and where?
+.IP 2.
+Given a pattern and a sequence database, which sequences contain the
+pattern and where?
+.PD
+.PP
+Some of these commands support multiple types of comparison, governed
+by the \fB\-p\fP ("program") flag:
+.IP blastp 12
+compares an amino acid query sequence against a protein sequence
+database.
+.IP blastn 12
+compares a nucleotide query sequence against a nucleotide sequence
+database.
+.IP blastx 12
+compares the six-frame conceptual translation products of a nucleotide
+query sequence (both strands) against a protein sequence database.
+For \fBbl2seq\fP, the nucleotide should be the first sequence given.
+.IP psitblastn 12
+compares a protein query sequence against a nucleotide sequence
+database dynamically translated in all six reading frames (both
+strands) using a position specific matrix created by PSI-BLAST.
+.IP tblastn 12
+compares a protein query sequence against a nucleotide sequence
+database dynamically translated in all six reading frames (both
+strands).  For \fBbl2seq\fP, the nucleotide should be the second
+sequence given.
+.IP tblastx 12
+compares the six-frame translations of a nucleotide query sequence
+against the six-frame translations of a nucleotide sequence database.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-A\fP (bl2seq)
+Input sequences in the form of accession.version
+.TP
+\fB\-A\ F\fP (blast)
+Do not use AG BLAST approach to database scanning
+.TP
+\fB\-A\fP\ \fIN\fP (blastall, blastcl3, blastpgp, megablast) Multiple
+Hits window size (default is 40 for blastpgp and 0 for other command,
+but blastall and blastcl3 interpret 0 as 40 for all programs but blastn
+and megablast)
+.TP
+\fB\-B\fP\ \fIN\fP (blastall, blastcl3)
+Number of concatenated queries, in blastn or tblastn mode
+.TP
+\fB\-B\fP\ \fIfilename\fP (blastpgp)
+Input Alignment File for PSI-BLAST Restart
+.TP
+\fB\-C\fP\ \fIfilename\fP (blastpgp)
+Output File for PSI-BLAST Checkpointing
+.TP
+\fB\-C\fP\ \fIN\fP (seedtop)
+Score only or not (default = 1)
+.TP
+\fB\-D\fP\ \fIN\fP (bl2seq)
+Output format:
+.RS
+.PD 0
+.IP 0
+traditional (default)
+.IP 1
+tabular
+.PD
+.RE
+.TP
+\fB\-D\fP\ \fIN\fP (blast, blastall, blastcl3)
+Translate sequences in the database according to genetic code \fIN\fP
+in /usr/share/ncbi/data/gc.prt (default is 1; only applies to tblast*)
+.TP
+\fB\-D\fP\ \fIN\fP (megablast)
+Type of output:
+.RS
+.PD 0
+.IP 0
+alignment endpoints and score (default)
+.IP 1
+all ungapped segments endpoints,
+.IP 2
+traditional BLAST output,
+.IP 3
+tab-delimited one line format
+.PD
+.RE
+.TP
+\fB\-D\fP\ \fIN\fP (seedtop)
+Cost decline to align (default = 99999)
+.TP
+\fB\-E\fP\ \fIN\fP (bl2seq)
+Extending a gap costs \fIN\fP (-1 invokes default behavior; anything
+else can result in unreliable statistics)
+.TP
+\fB\-E\fP\ \fIN\fP (blast, blastall, blastcl3, megablast)
+Extending a gap costs \fIN\fP (zero invokes default behavior:
+non-affine if greedy, 2 otherwise, at least for blast)
+.TP
+\fB\-E\fP\ \fIN\fP (blastpgp, impala, seedtop)
+Extending a gap costs \fIN\fP (default is 1)
+.TP
+\fB\-F\fP\ \fIstr\fP (bl2seq, blast, blastall, blastpgp, blastcl3, impala,
+megablast, rpsblast)
+Filter options for DUST or SEG; defaults to \fBT\fP for bl2seq,
+blast, blastall, blastcl3, and megablast, and to \fBF\fP for blastpgp,
+impala, and rpsblast.
+.TP
+\fB\-F\fP (seedtop)
+Filter sequence with SEG.
+.TP
+\fB\-G\fP\ \fIN\fP (bl2seq)
+Opening a gap costs \fIN\fP (-1 invokes default behavior; anything
+else can result in unreliable statistics)
+.TP
+\fB\-G\fP\ \fIN\fP (blast, blastall, blastcl3, megablast)
+Opening a gap costs \fIN\fP (zero invokes default behavior: non-affine
+if greedy, 5 if using dynamic programming, at least for blast)
+.TP
+\fB\-G\fP\ \fIN\fP (blastpgp, impala, seedtop)
+Opening a gap costs \fIN\fP (default is 11)
+.TP
+\fB\-H\fP (blast)
+Produce HTML output
+.TP
+\fB\-H\fP\ \fIN\fP (blastpgp)
+End of required region in query (-1 indicates end of query)
+.TP
+\fB\-H\fP (impala)
+Print help (different from usage message)
+.TP
+\fB\-H\fP\ \fIN\fP (megablast)
+Maximal number of HSPs to save per database sequence (default is 0, unlimited)
+.TP
+\fB\-I\fP\ \fIstr\fP (bl2seq)
+Location on first sequence
+.TP
+\fB\-I\fP (blastall, blastcl3, blastpgp, impala, megablast, rpsblast, seedtop)
+Show GI's in deflines
+.TP
+\fB\-J\fP\ \fIstr\fP (bl2seq)
+Location on second sequence
+.TP
+\fB\-J\fP (blastall, blastcl3, blastpgp, impala, megablast, rpsblast, seedtop)
+Believe the query defline
+.TP
+\fB\-K\fP\ \fIN\fP (blastall, blastcl3, blastpgp)
+Number of best hits from a region to keep (off by default, if used a
+value of 100 is recommended)
+.TP
+\fB\-L\fP (blast)
+Use (classical Mega BLAST) lookup table with width 12
+.TP
+\fB\-L\fP\ \fIstart,stop\fP (blastall, blastcl3, megablast, rpsblast)
+Location on query sequence (for rpsblast, only valid in blastp mode)
+.TP
+\fB\-M\fP\ \fIstr\fP (bl2seq, blast, blastall, blastcl3, blastpgp, impala, seedtop)
+Use matrix \fIstr\fP (default = BLOSUM62)
+.TP
+\fB\-M\fP\ \fIN\fP (megablast)
+Maximal total length of queries for a single search (default = 20000000)
+.TP
+\fB\-N\fP\ \fIX\fP (blastpgp, rpsblast)
+Number of bits to trigger gapping (default = 22.0)
+.TP
+\fB\-N\fP\ \fIN\fP (megablast)
+Type of a discontiguous word template:
+.RS
+.PD 0
+.IP 0
+coding (default)
+.IP 1
+optimal
+.IP 2
+two simultaneous
+.PD
+.RE
+.TP
+\fB\-O\fP\ \fIfilename\fP (blast, blastall, blastcl3, blastpgp, impala, megablast, rpsblast, seedtop)
+Write (ASN.1) sequence alignments to \fIfilename\fP; only valid for
+blastpgp, impala, rpsblast, and seedtop with \fB\-J\fP, and only valid
+for megablast with \fB\-D2\fP.
+.TP
+\fB\-P\fP\ \fIX\fP (blast)
+Identity percentage cut-off
+.TP
+\fB\-P\fP\ \fIN\fP (blastall, blastpgp, rpsblast)
+Set to 1 for single-hit mode or 0 for multiple-hit mode (default)
+.TP
+\fB\-P\fP\ \fIfilename\fP (impala)
+Read matrix profiles from database \fIfilename\fP
+.TP
+\fB\-P\fP\ \fIN\fP (megablast)
+Maximal number of positions for a hash value (set to 0 [default] to ignore)
+.TP
+\fB\-Q\fP\ \fIN\fP (blast, blastall, blastcl3)
+Translate query according to genetic code \fIN\fP in
+/usr/share/ncbi/data/gc.prt (default is 1)
+.TP
+\fB\-Q\fP\ \fIfilename\fP (blastpgp)
+Output File for PSI-BLAST Matrix in ASCII
+.TP
+\fB\-Q\fP\ \fIfilename\fP (megablast)
+Masked query output
+.TP
+\fB\-R\fP\ \fIfilename\fP (blastall)
+Read PSI-TBLASTN checkpoint file \fIfilename\fP
+.TP
+\fB\-R\fP (blastcl3)
+RPS Blast search
+.TP
+\fB\-R\fP\ \fIfilename\fP (blastpgp)
+Input File for PSI-BLAST Restart
+.TP
+\fB\-R\fP (megablast)
+Report the log information at the end of output
+.TP
+\fB\-S\fP\ \fIN\fP (bl2seq, blast, blastall, blastcl3, megablast)
+Query strands to search against database for blastn, blastx, tblastx:
+.RS
+.PD 0
+.IP 1
+top
+.IP 2
+bottom
+.IP 3
+both (default)
+.PD
+.RE
+.TP
+\fB\-S\fP\ \fIN\fP (blastpgp)
+Start of required region in query (default = 1)
+.TP
+\fB\-S\fP\ \fIN\fP (seedtop)
+Cutoff cost (default = 30)
+.TP
+\fB\-T\fP (bl2seq, blastall, blastcl3, blastpgp, megablast, rpsblast)
+Produce HTML output
+.TP
+\fB\-T\fP\ \fIN\fP (blast)
+Type of a discontiguous word template:
+.RS
+.PD 0
+.IP 0
+coding (default)
+.IP 1
+optimal
+.IP 2
+two simultaneous
+.PD
+.RE
+.TP
+\fB\-U\fP (bl2seq, blastall, blastcl3, blastpgp, megablast, rpsblast)
+Use lower case filtering for the query sequence
+.TP
+\fB\-V\fP (blast)
+Use variable word size approach to database scanning
+.TP
+\fB\-W\fP\ \fIN\fP (bl2seq, blast, blastall, blastcl3, blastpgp, megablast, rpsblast)
+Use words of size \fIN\fP (length of best perfect match; zero invokes
+default behavior, except with megablast, which defaults to 28, and
+blastpgp, which defaults to 3.  The default values for the other
+commands vary with "program": 11 for blastn, 28 for megablast, and 3
+for everything else.)
+.TP
+\fB\-X\fP\ \fIN\fP (bl2seq, blast, blastall, blastcl3, blastpgp, megablast, rpsblast, seedtop)
+X dropoff value for gapped alignment (in bits) (zero invokes default
+behavior, except with megablast, which defaults to 20, and rpsblast
+and seedtop, which default to 15.  The default values for the other
+commands vary with "program": 30 for blastn, 20 for megablast, 0 for
+tblastx, and 15 for everything else.)
+.TP
+\fB\-Y\fP\ \fIX\fP (bl2seq, blast, blastall, blastcl3, blastpgp, rpsblast)
+Effective length of the search space (use zero for the real size)
+.TP
+\fB\-Z\fP\ \fIN\fP (blast, blastall, blastcl3, blastpgp, megablast, rpsblast)
+X dropoff value for final [dynamic programming?] gapped alignment in
+bits (default is 50 for blastn and megablast, 0 for tblastx, 25 for
+others)
+.TP
+\fB\-a\fP\ \fIfilename\fP (bl2seq)
+Write SeqAnnot output to \fIfilename\fP
+.TP
+\fB\-a\fP\ \fIN\fP (blastall, blastcl3, blastpgp, impala, megablast, rpsblast)
+Number of processors to use (default is one)
+.TP
+\fB\-b\fP\ \fIN\fP (blast, blastall, blastcl3, blastpgp, impala, megablast, rpsblast, seedtop)
+Number of database sequences to show alignments for (B) (default is 250)
+.TP
+\fB\-c\fP (blast)
+Mask lower case
+.TP
+\fB\-c\fP\ \fIN\fP (blastpgp, impala)
+Constant in pseudocounts for multipass version (default is 9)
+.TP
+\fB\-d\fP\ \fIN\fP (bl2seq)
+Use theoretical DB size of \fIN\fP (zero stands for the real size)
+.TP
+\fB\-d\fP\ \fIstr\fP (blast, blastall, blastcl3, blastpgp, impala, megablast, seedtop)
+Database to use (default is nr for all executables except blast,
+which requires a second FASTA sequence if this is not set)
+.TP
+\fB\-d\fP\ \fIfilename\fP (rpsblast)
+RPS BLAST Database
+.TP
+\fB\-e\fP\ \fIX\fP
+Expectation value (E) (default = 1e6 for megablast, 10.0 for
+everything else)
+.TP
+\fB\-f\fP\ \fIN\fP (blastall, blastcl3)
+Threshold for extending hits, default if zero: 0 for blastn and
+megablast, 11 for blastp, 12 for blastx, and 13 for tblasn and
+tblastx.
+.TP
+\fB\-f\fP\ \fIN\fP (blastpgp)
+Threshold for extending hits (default 11)
+.TP
+\fB\-f\fP (megablast)
+Show full IDs in the output (default - only GIs or accessions)
+.TP
+\fB\-g\ F\fP (bl2seq, blastall, blastcl3, blastpgp, rpsblast)
+Do not perform gapped alignment (N/A for tblastx)
+.TP
+\fB\-g\fP\ \fIN\fP (blast)
+Use greedy algorithm for gapped extensions:
+.RS
+.PD 0
+.IP 0
+no (default)
+.IP 1
+one-step
+.IP 2
+two-step
+.IP 3
+two-step with ungapped
+.PD
+.RE
+.TP
+\fB\-g\fP (megablast)
+Generate words for every base of the database (default is every 4th)
+.TP
+\fB\-h\fP\ \fIN\fP (blast)
+Frame shift penalty for out-of-frame gapping (blastx, tblastn only;
+default is zero)
+.TP
+\fB\-h\fP\ \fIX\fP (blastpgp, impala)
+e-value threshold for inclusion in multipass model (default = 0.002
+for blastpgp, 0.005 for impala)
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Read (first) sequence from \fIfilename\fP (default is stdin)
+.TP
+\fB\-j\fP\ \fIfilename\fP (bl2seq, blast)
+Read second sequence from \fIfilename\fP
+.TP
+\fB\-j\fP\ \fIN\fP (blastpgp)
+Maximum number of passes to use in multipass version (default = 1)
+.TP
+\fB\-k\fP\ \fIstr\fP (blast)
+Pattern for PHI-BLAST
+.TP
+\fB\-k\fP\ \fIfilename\fP (blastpgp, seedtop)
+Input hit file for PHI-BLAST (default = hit_file)
+.TP
+\fB\-l\fP\ \fIstr\fP (blastall, blastpgp, megablast)
+Restrict search of database to list of GI's [String]
+.TP
+\fB\-l\fP\ \fIfilename\fP (rpsblast)
+Logfile name (default is rpsblast.log)
+.TP
+\fB\-m\fP (bl2seq)
+Use Mega Blast for search
+.TP
+\fB\-m\fP\ \fIN\fP (blast, blastall, blastcl3, blastpgp, impala, megablast, rpsblast)
+alignment view options:
+.RS
+.PD 0
+.IP 0
+pairwise (default)
+.IP 1
+query-anchored showing identities
+.IP 2
+query-anchored, no identities
+.IP 3
+flat query-anchored, show identities
+.IP 4
+flat query-anchored, no identities
+.IP 5
+query-anchored, no identities and blunt ends
+.IP 6
+flat query-anchored, no identities and blunt ends
+.IP 7
+XML Blast output (not available for impala)
+.IP 8
+tabular (not available for impala)
+.IP 9
+tabular with comment lines (not available for impala)
+.IP 10
+ASN.1 text (not available for impala or rpsblast)
+.IP 11
+ASN.1 binary (not available for impala or rpsblast)
+.PD
+.RE
+.TP
+\fB\-n\fP (blastall, blastcl3)
+MegaBlast search
+.TP
+\fB\-n\fP (megablast)
+Use non-greedy (dynamic programming) extension for affine gap scores
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Write final alignment report to \fIfilename\fP rather than stdout
+.TP
+\fB\-p\fP\ \fIstr\fP (bl2seq, blast, blastall, blastcl3)
+Use the "program" (comparison type) \fIstr\fP.  The \fBDESCRIPTION\fP
+section covers this option in more detail.
+.TP
+\fB\-p\fP\ \fIstr\fP (blastpgp)
+program option for PHI-BLAST (default = blastpgp)
+.TP
+\fB\-p\fP\ \fIX\fP (megablast)
+Identity percentage cut-off (default = 0)
+.TP
+\fB\-p\ F\fP (rpsblast)
+Query sequence is nucleotide, not protein
+.TP
+\fB\-p\fP\ \fIstr\fP (seedtop)
+program name:
+.RS
+.PD 0
+.IP patmatchp 10
+indicates which patterns occur in a sequence
+.IP patternp 10
+indicates which sequences contain a pattern
+.PD
+.RE
+.TP
+\fB\-q\fP\ \fIN\fP (bl2seq, blast, blastall, blastcl3, megablast, seedtop)
+Penalty for a nucleotide mismatch (blastn only) (default = -10 for
+seedtop, -3 for everything else)
+.TP
+\fB\-r\fP\ \fIN\fP (bl2seq, blast, blastall, blastcl3, megablast, seedtop)
+Reward for a nucleotide match (blastn only) (default = 10 for seedtop,
+-10 for everything else)
+.TP
+\fB\-s\fP\ \fIN\fP (blast)
+Database scanning stride (0 for default behavior)
+.TP
+\fB\-s\fP (blastpgp)
+Compute locally optimal Smith-Waterman alignments
+.TP
+\fB\-s\fP\ \fIN\fP (megablast)
+Minimal hit score to report (0 for default behavior)
+.TP
+\fB\-t\fP\ \fIN\fP (bl2seq, blast, blastall, blastcl3)
+Length of a discontiguous word template (the largest intron allowed in
+tblastn for linking HSPs; default = 0)
+.TP
+\fB\-t\ F\fP (blastpgp)
+Do not use composition-based statistics
+.TP
+\fB\-t\fP\ \fIN\fP (megablast)
+Length of a discontiguous word template (contiguous word if 0 [default])
+.TP
+\fB\-u\fP (blast)
+Do only ungapped alignment (always TRUE for tblastx)
+.TP
+\fB\-u\fP\ \fIstr\fP (blastcl3)
+Restrict search of database to results of Entrez2 lookup
+.TP
+\fB\-v\fP\ \fIN\fP (blast, blastall, blastcl3, blastpgp, impala, megablast,
+rpsblast, seedtop)
+Number of one-line descriptions to show (V) (default = 500)
+.TP
+\fB\-w\fP\ \fIN\fP (blast)
+Window size (max. allowed distance between a pair of initial hits; 0
+invokes default behavior)
+.TP
+\fB\-w\fP\ \fIN\fP (blastall, blastcl3)
+Frame shift penalty (OOF algorithm for blastx)
+.TP
+\fB\-y\fP\ \fIX\fP (blast, blastall, blastcl3, blastpgp, impala, rpsblast)
+X dropoff for ungapped extensions in bits (0.0 invokes default
+behavior: 20 for blastn, 10 for megablast, and 7 for all others.)
+.TP
+\fB\-y\fP\ \fIN\fP (megablast)
+X dropoff value for ungapped extension (default is 10)
+.TP
+\fB\-z\fP\ \fIN\fP (blastall, blastcl3, blastpgp, impala, megablast, rpsblast)
+Effective length of the database (use zero for the real size)
+.SH BUGS
+This manual page is long and confusing; individual pages might be better.
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.ad l
+.BR blastclust (1),
+.BR copymat (1),
+.BR fastacmd (1),
+.BR formatdb (1),
+.BR makemat (1),
+blast.txt,
+<http://www.ncbi.nlm.nih.gov/BLAST/>

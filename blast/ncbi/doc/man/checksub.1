@@ -1,0 +1,30 @@
+.TH CHECKSUB 1 2001-10-03 NCBI "NCBI Tools User's Manual"
+.SH NAME
+checksub \- a validator for NCBI ASN.1 Seq-submit data
+.SH SYNOPSIS
+.B checksub
+[\|\fB\-\fP\|]
+[\|\fB\-b\fP\|]
+\fB\-i\fP\ \fIfilename\fP
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+.SH DESCRIPTION
+\fBchecksub\fP attempts to read a file purporting to contain an NCBI
+Seq-submit record in text or binary form and print it back out.  If
+the file is invalid, \fBchecksub\fP reports an error instead of
+producing normal output.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-b\fP
+Input data is binary
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Read input from \fIfilename\fP
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Print data (in text form) to \fIfilename\fP rather than stdout.
+.SH AUTHOR
+The National Center for Biotechnology Information.

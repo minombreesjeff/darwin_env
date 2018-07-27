@@ -1,0 +1,1 @@
+../vibrant/panels.h

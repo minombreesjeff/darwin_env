@@ -1,0 +1,53 @@
+.TH MAKEMAT 1 2001-10-05 NCBI "NCBI Tools User's Manual"
+.SH NAME
+makemat \- convert binary profiles into portable ASCII form
+.SH SYNOPSIS
+.B makemat
+[\|\fB\-\fP\|]
+[\|\fB\-E\fP\ \fIN\fP\|]
+[\|\fB\-G\fP\ \fIN\fP\|]
+[\|\fB\-H\fP\|]
+[\|\fB\-P\fP\ \fIfilename\fP\|]
+[\|\fB\-S\fP\ \fIX\fP\|]
+[\|\fB\-U\fP\ \fIstr\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-z\fP\ \fIN\fP\|]
+.SH DESCRIPTION
+\fBmakemat\fP converts a collection of binary profiles, created by the
+\fB\-C\fP option of PSI-BLAST, into portable ASCII form.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-E\fP\ \fIN\fP
+Cost to extend a gap (default = \fB1\fP)
+.TP
+\fB\-G\fP\ \fIN\fP
+Cost to open a gap (default = \fB11\fP)
+.TP
+\fB\-H\fP
+Print help; overrides all other arguments
+.TP
+\fB\-P\fP\ \fIfilename\fP
+Database name for profile database (default = \fBstdin\fP)
+.TP
+\fB\-S\fP\ \fIX\fP
+Scaling factor for matrix outputs to avoid round-off problems (default
+= \fB100\fP)
+.TP
+\fB\-U\fP\ \fIstr\fP
+Underlying Matrix (default = \fBBLOSUM62\fP)
+.TP
+\fB\-d\fP\ \fIstr\fP
+Underlying sequence database used to make profiles (default = \fBnr\fP)
+.TP
+\fB\-z\fP\ \fIN\fP
+Effective length of the profile database (0 for length of \fB\-d\fP option)
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.BR blast (1),
+.BR copymat (1),
+impala.txt

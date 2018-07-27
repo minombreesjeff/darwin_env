@@ -1,0 +1,1 @@
+../desktop/seqpanel.h

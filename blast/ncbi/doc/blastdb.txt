@@ -1,0 +1,321 @@
+                         The BLAST Databases
+                    Last updated on July 21, 2003
+
+This document describes the "BLAST" databases available on the NCBI 
+FTP site under the "blast/db" subdirectory.  The direct URL to this 
+subdirectory is:
+      ftp://ftp.ncbi.nih.gov/blast/db
+
+I. General Introduction
+
+NCBI BLAST home pages (http://www.ncbi.nih.gov/BLAST/) use a standard 
+set of BLAST databases for Nucleotide, Protein, and Translated BLAST 
+searches.  These databases are made available in the db directory as 
+compressed archives (ftp://ftp.ncbi.nih.gov/blast/db/) in preformatted 
+format.  The FASTA databases now reside under the blast/FASTA 
+subdirectory.
+
+The preformatted databases offer the following advantages:
+
+	* The preformatted databases are smaller in size and are
+                faster to download;
+	* Preformatting removes the need to run formatdb;
+	* Taxonomy information is available for each database entry.
+
+Preformatted databases must be downloaded in binary mode and inflated 
+with gzip or other decompress tools. The BLAST database files can then 
+be extracted out of the resulting tar file using “tar” program on Unix/Linux 
+or WinZip and StuffIt Expander on Windows and Macintosh platforms, 
+respectively.  
+
+Large databases are formatted in multiple 1 Gigabytes volumes, which 
+are named using the “database.##.tar.gz” convention.  All relevant volumes
+are required. An alias file is provided so that the database can be called
+using the alias name without the extension (.nal or .pal). For example, 
+to call est database, simply use “–d est” option in the commandline 
+(without the quotes). 
+
+Certain databases are subsets of a larger parental database. For those 
+databases, mask files, rather than actual databases, are provided. The 
+mask file needs the parent database to function properly. The parent 
+databases should be generated on the same day as the mask file. For 
+example, to use swissprot preformatted database, swissprot.tar.gz, one 
+will need to get the nr.tar.gz with the same date stamp.
+
+Additional BLAST databases that are not provided in preformatted 
+formats are available in the FASTA subdirectory.  For genomic BLAST 
+databases, please check the genomes ftp directory at:
+	ftp://ftp.ncbi.nih.gov/genomes/
+
+
+2. Contents of the /blast/db/ directory
+
+The formatted databases are archived in this directory.  The name of 
+these databases and their contents are listed below.
++--------------------+-----------------------------------------------+
+|File Name           | Content Description                           |
++--------------------+-----------------------------------------------+
+/FASTA                 subdirectory for FASTA formatted sequences
+	
+README                 README for this subdirectory (this file)
+
+est.00.tar.gz          | three volumes of the formatted est database
+est.01.tar.gz          | from the EST division of GenBank, EMBL, 
+est.02.tar.gz          | and DDBJ
+
+est_human.tar.gz       | mask file for human subset of the est
+est_mouse.tar.gz       | mask file for mouse subset of the est
+est_others.tar.gz      | mask file for non-human and non-mouse subset
+                       | of the est database
+                       | These three mask files need all volumes of
+                       | est to function properly.
+
+gss.00.tar.gz          | two volumes of the formatted gss database
+gss.01.tar.gz          | from the GSS division of GenBank, EMBL, and
+                       | DDBJ
+
+htgs.00.tar.gz         | three volumes of htgs database with entries
+htgs.01.tar.gz         | from HTG division of GenBank, EMBL, and DDBJ
+htgs.01.tar.gz         |
+
+human_genomic.tar.gz   human RefSeq (NC_######) chromosome records
+                         with gap adjusted concatenated NT_ contigs
+ 
+nr.tar.gz              non-redundant protein sequence database with 
+                         entries from GenPept, Swissprot, PIR, PDF, PDB,
+                         and NCBI RefSeq
+
+nt.00.tar.gz           | nucleotide sequence database, with entries 
+nt.01.tar.gz           | from all traditional divisions of GenBank,  
+nt.02.tar.gz           | EMBL, and DDBJ excluding bulk divisions (gss, 
+                       | sts, pat, est, and htg divisions. wgs entries
+                       | are also excluded. Not non-redundant.
+
+other_genomic.tar.gz   RefSeq chromosome records (NC_######) for 
+                         organisms other than human
+
+pataa.tar.gz           | patent protein sequence database
+patnt.tar.gz           | patent nucleotide sequence database
+                       | The above two databases are directly from 
+                       | USPTO or from EU/Japan Patent Agencies via 
+                       | EMBL/DDBJ
+
+pdbaa.tar.gz           protein sequences from pdb protein structures
+pdbnt.tar.gz           nucleotide sequences from pdb nucleic acid 
+                         structures. They are NOT the protein coding 
+                         sequences for the corresponding pdbaa entries.
+
+sts.tar.gz             Sequences from the STS division of GenBank, EMBL,
+                         and DDBJ
+
+swissprot.tar.gz       swiss-prot sequence databases (last major update)
+
+taxdb.tar.gz           Taxonomy information for the formatted database 
+
+wgs.00.tar.gz          | Whole genome shotgun sequence assemblies for 
+wgs.01.tar.gz          | different organisms, broken up into 1 GB 
+wgs.02.tar.gz          | volumes. 
+wgs.03.tar.gz
+wgs.04.tar.gz
+wgs.05.tar.gz
++--------------------+-----------------------------------------------+
+
+
+3. Content of the /db/FASTA Subdirectory
+
+This subdirectory contains FASTA formatted sequence files, formerly 
+available under /db directory. The file names and database contents 
+are listed below. These files are now archived in .gz format and must 
+be processed through formatdb before they can be used by the BLAST 
+programs. 
+
++--------------------+-----------------------------------------------+
+|File Name           | Content Description                           |
++--------------------+-----------------------------------------------+
+alu.a.gz                translation of alu.n repeats
+alu.n.gz                alu repeat elements
+
+drosoph.aa.gz           CDS translations from drosophila.nt  
+drosoph.nt.gz           genomic sequences for drosophila
+
+ecoli.aa.gz		CDS translations from ecoli.nt
+ecoli.nt.gz             Escherichia coli K-12 genomic sequences
+
+est_human.gz*           | human subset of the est database (see Note 1)
+est_mouse.gz*           | mouse subset of the est database
+est_others.gz*          | non-human and non-mouse subset of the est 
+                          database
+
+gss.gz*                 sequences from the GSS division of GenBank,
+                          EMBL, and DDBJ
+
+htg.gz*                 htgs database with high throughput genomic 
+                          entries from the htg division of GenBank, 
+                          EMBL, and DDBJ 
+
+human_genomic.gz*       human RefSeq (NC_######) chromosome records
+                          with gap adjusted concatenated NT_ contigs 
+
+igSeqNt.gz              human and mouse immunoglobulin nucleotide 
+                          sequences
+igSeqProt.gz            human and mouse immunoglobulin protein 
+                          sequences
+
+mito.aa.gz              CDS translations of complete mitochondrial 
+                          genomes
+mito.nt.gz              complete mitochondrial genomes
+
+month.aa.gz             | newly released/updated protein sequences 
+                            (See Note 2)
+month.est_human.gz      | newly released/updated human est sequences	
+month.est_mouse.gz      | newly released/updated mouse est sequences
+month.est_others.gz     | newly released/updated est other than 
+                        |   human/mouse
+month.gss.gz 		| newly released/updated gss sequences 
+month.htgs.gz		| newly released/updated htgs sequences
+month.nt.gz             | newly released/updated sequences for the nt
+                          database 
+
+nr.gz*                  non-redundant protein sequence database with 
+                          entries from GenPept, Swissprot, PIR, PDF, 
+                          PDB, and RefSeq
+
+nt.gz*                  nucleotide sequence database, with entries
+                          from all traditional divisions of GenBank, 
+                          EMBL, and DDBJ excluding bulk divisions 
+                          (gss, sts, pat, est, htg divisions) and wgs 
+                          entries. Not non-redundant.
+
+other_genomic.gz*       RefSeq chromosome records (NC_######) for 
+                          organisms other than human
+
+pataa.gz*               | patent protein sequence database
+patnt.gz*               | patent nucleotide sequence database
+                        | The above two dbs are directly from USPTO 
+                        | of from EU/Japan Patent Agency via EMBL/DDBJ
+
+pdbaa.gz*               protein sequences from pdb protein structures
+pdbnt.gz*               nucleotide sequences from pdb nucleic acid 
+                         structures. They are NOT the protein coding 
+                         sequences for the corresponding pdbaa entries.
+
+sts.gz*			database for sequence tag site entries 
+
+swissprot.gz*		swiss-prot database (last major release)
+
+vector.gz		vector sequence database (See Note 3)
+
+wgs.gz*			whole genome shotgun genome assemblies
+
+yeast.aa.gz             protein translations from yeast genome
+yeast.nt.gz             yeast genomes.
++--------------------+-----------------------------------------------+
+NOTE: 
+(1) we do not provide the complete est database in FASTA format. One
+    need  to get all three subsets(est_human, est_mouse, and est_others
+    and concatenate them into the complete est fasta database.
+(2) month.### databases are the sequences newly released or updated
+    within the last 30 days for that database.
+(3) For vector contamination screening, use the UniVec database from:
+    ftp://ftp.ncbi.nih.gov/pub/UniVec/			
+ *  marked files have preformatted counterparts. 
+
+
+4. Database updates
+
+The BLAST databases are updated daily.  Update of existing databases 
+by merging of new records from the month database using fmerge is no 
+longer supported. We do not have an established incremental update 
+scheme at this time. We recommend downloading the databases regularly 
+to keep their content current.
+
+5. Non-redundant defline syntax
+
+The only non-redundant database is the protein nr. In it, identical 
+sequences are merged into one entry. To be merged two sequences must 
+have identical lengths and every residue at every position must be the 
+same.  The FASTA deflines for the different entries that belong to one 
+nr record are separated by control-A characters invisible to most 
+programs. In the example below both entries gi|1469284 and gi|1477453 
+have the same sequence, in every respect:
+
+>gi|3023276|sp|Q57293|AFUC_ACTPL   Ferric transport ATP-binding protein afuC 
+^Agi|1469284|gb|AAB05030.1|   afuC gene product ^Agi|1477453|gb|AAB17216.1|   
+afuC [Actinobacillus pleuropneumoniae]
+MNNDFLVLKNITKSFGKATVIDNLDLVIKRGTMVTLLGPSGCGKTTVLRLVAGLENPTSGQIFIDGEDVT
+KSSIQNRDICIVFQSYALFPHMSIGDNVGYGLRMQGVSNEERKQRVKEALELVDLAGFADRFVDQISGGQ
+QQRVALARALVLKPKVLILDEPLSNLDANLRRSMREKIRELQQRLGITSLYVTHDQTEAFAVSDEVIVMN
+KGTIMQKARQKIFIYDRILYSLRNFMGESTICDGNLNQGTVSIGDYRFPLHNAADFSVADGACLVGVRPE
+AIRLTATGETSQRCQIKSAVYMGNHWEIVANWNGKDVLINANPDQFDPDATKAFIHFTEQGIFLLNKE
+
+The syntax of sequence header lines used by the NCBI BLAST server 
+depends on the database from which each sequence was obtained.  The table 
+below lists the identifiers for the databases from which the sequences 
+were derived.
+
+  Database Name                     Identifier Syntax
+  ============================      ========================
+  GenBank                           gb|accession|locus
+  EMBL Data Library                 emb|accession|locus
+  DDBJ, DNA Database of Japan       dbj|accession|locus
+  NBRF PIR                          pir||entry
+  Protein Research Foundation       prf||name
+  SWISS-PROT                        sp|accession|entry name
+  Brookhaven Protein Data Bank      pdb|entry|chain
+  Patents                           pat|country|number 
+  GenInfo Backbone Id               bbs|number 
+  General database identifier	    gnl|database|identifier
+  NCBI Reference Sequence           ref|accession|locus
+  Local Sequence identifier         lcl|identifier
+
+"gi" identifiers are being assigned by NCBI for all sequences contained 
+within NCBI's sequence databases.  The "gi" identifier provides a uniform 
+and stable naming convention whereby a specific sequence is assigned its 
+unique gi identifier.  If a nucleotide or protein sequence changes, 
+however, a new gi identifier is assigned, even if the accession number 
+of the record remains unchanged. Thus gi identifiers provide a mechanism 
+for identifying the exact sequence that was used or retrieved in a given 
+search. 
+
+We recommend that "gi display option" be activated in local blast search 
+by setting the -I option to T, which was set to false by default: 
+
+  -I  Show GI's in deflines [T/F]
+    default = F
+
+For databases whose entries are not from official NCBI sequence databases, 
+such as Trace database, the gnl| convention is used. For custom database, 
+this convention should be followed and the id for each sequence must be 
+unique, if one would like to take the advantage of indexed database, 
+which enables specific sequence retrieval using fastacmd program included 
+in the blast executable package.  One should refer to documents 
+distributed in the standalone BLAST package for more details. 
+
+
+6. Formatting the FASTA database
+
+FASTA database files need to be formatted with formatdb before they can be 
+used in local blast search.  For those from NCBI, the following formatdb 
+are recommended:
+	formatdb –i input_db –p F –o T	for nucleotide
+	formatdb –i input_db –p T –o T	for protein
+
+The -A option introduced in 2.2.3 is now built into the formatdb program 
+and thus removed from the list of configurable options since 2.2.8. This 
+enables formatdb to properly handle large sequence files (longer than 16
+million bases).  Please refer to formatdb.txt under the /blast/documents 
+directory for more information.  Database preprared using 2.2.8 formatdb 
+will not be backward compatible with blast programs old than version 2.2.3.
+
+
+7. Technical Support
+
+Questions and comments on this document and NCBI BLAST related questions 
+should be sent to blast-help group at:
+      blast-help@ncbi.nlm.nih.gov
+
+For information about other NCBI resources/services, please send email to 
+NCBI User Serivce at:
+      info@ncbi.nlm.nih.gov
+
+

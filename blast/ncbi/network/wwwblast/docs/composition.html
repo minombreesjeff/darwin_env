@@ -1,0 +1,36 @@
+<HTML>
+<head>
+<TITLE>Composition based statistics</TITLE>
+<BODY bgcolor="FFFFFF" link="0000FF" vlink="ff0000" text="000000" >
+<!-- Changed by: Sergei Shavirin,  7-Aug-2000 -->
+</head>
+<h1 align="center">Composition based statistics</h1>
+<P>
+  BLAST and PSI-BLAST now permit calculated E-values to take into
+account the amino acid composition of the individual database
+sequences involved in reported alignments.  This improves E-value
+accuracy, thereby reducing the number of false positive results.
+<P>
+  The improved statistics are achieved with a scaling procedure [1,2]
+which in effect employs a slightly different scoring system for each
+database sequence.  As a result, raw BLAST alignment scores in general
+will not correspond precisely to those implied by any standard
+substitution matrix.  Furthermore, identical alignments can receive
+different scores, based upon the compositions of the sequences they
+involve. The improved statistics are now used by default for all rounds
+of searching on the PSI-BLAST page, but not on the BLAST page.
+Therefore, if one uses default settings, the results of the first
+round of searching will be different on the BLAST and PSI-BLAST pages.
+
+<P>
+  In addition adjustments have been made to two PSI-BLAST parameters:
+the pseudocount constant default has been changed from 10 to 7, and
+the E-value threshold for including matches in the PSI-BLAST model
+has been changed from 0.001 to 0.002.
+<P>
+
+1. <a href="http://www.ncbi.nlm.nih.gov:80/entrez/query.fcgi?cmd=Retrieve&db=PubMed&list_uids=9254694&dopt=Abstract">Altschul, S.F. et al. (1997) Nucl. Acids Res. 25:3389-3402.</a><BR>
+2. <a href="http://www.ncbi.nlm.nih.gov:80/entrez/query.fcgi?cmd=Retrieve&db=PubMed&list_uids=10745990&dopt=Abstract">Sch&auml;ffer, A.A. et al. (1999) Bioinformatics 15:1000-1011.</a>
+
+</BODY>
+</HTML>

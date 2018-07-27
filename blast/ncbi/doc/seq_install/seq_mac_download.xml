@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding='iso-8859-1'?>
+<doc>
+  <title>
+    Instructions for Macintosh OS 9 and OS X
+  </title>
+  <contents>
+    
+    <h4 class="c6">System Requirements</h4>
+    
+    <p>
+      The current version of
+      Sequin works with the following Windows versions:
+      
+      <ul>
+        <li>Macintosh OS 9</li>
+        <li>OS X</li>
+      </ul>
+      
+      It may work on other versions (MacOS &lt; 9), as
+      well.
+    </p>
+    
+    <h4 class="c6">Downloading Sequin</h4>
+    <p>
+      We provide a single download for both MacOS and OS X
+      platforms.
+      <ol>
+        <li class="c7">Create temporary installation folder on
+        your hard drive where you will place the downloaded
+        Sequin installation file.</li>
+        <li class="c7">Download Sequin using your Web browser
+        by clicking this link:<br />
+        <a href=
+           "ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.Mac.hqx">sequin.Mac.hqx</a>.
+        </li>
+        <li class="c7">Your Web browser may show a dialog box
+        asking if you want to run the program, or save it to
+        disk. Choose <span class="c1"><span class=
+        "c8">S</span>ave to disk...</span> and save the file in
+        the installation folder.</li>
+        <li>If your Web browser can't download the file for
+        some reason, see <a href=
+        "seq_trouble.html">Troubleshooting</a>.</li>
+      </ol>
+    </p>
+    
+    <h4 class="c6">Installing Sequin</h4>
+    
+    <p>
+      Follow these instructions to install Sequin on
+      Macintosh:
+      <ol>
+        <li class="c7">The file should automatically extract
+        into a new file called <span class=
+        "c9">sequin.Mac.sea</span>. If it doesn't, use BinHex
+        or UnStuff to convert it. Move the <span class=
+        "c9">.sea</span> file to your installation folder if it
+        isn't already there.</li>
+        <li class="c7">Double-click the file <span class=
+        "c9">sequin.Mac.sea</span>. (It is a self-extracting
+        archive.) This will create a folder called Sequin
+        Folder in your installation folder.</li>
+        <li class="c7">Place the Sequin Folder in your
+        Applications directory. This contains two versions of
+        the Sequin, asn2gb, and tbl2asn applications (one with
+        an "OSX" suffix and one without). It also contains the
+        <span class="c9">sequin.htm</span> user's guide. The
+        applications with the OSX suffix run only on Mac OS X.
+        The other versions use Apple's "Carbon" library, and
+        can run on both OS 9 or OS X.</li>
+        <li class="c7">To run Sequin, double-click the
+        <span class="c9">Sequin</span> file in MacOS 9, or the
+        <span class="c9">SequinOSX</span> file in OS X.</li>
+        <li class="c7">To run tbl2asn, double-click
+        <span class="c9">tbl2asn</span> in MacOS 9, or
+        <span class="c9">tbl2asnOSX</span> in OS X.</li>
+      </ol>
+    </p>
+  </contents>
+  <css>seq_mac_download.css</css>
+</doc>

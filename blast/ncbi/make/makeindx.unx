@@ -1,0 +1,118 @@
+#	makefile for flat2asn
+#
+#	$Id: makeindx.unx,v 6.5 2002/06/17 14:27:20 ivanov Exp $
+#
+#	Sun with unbundled ANSI compiler [ make LCL=acc RAN=ranlib CC=acc ]
+#	Sun with Gnu C [ make LCL=gcc RAN=ranlib CC=gcc ]
+#   Sun with Solaris 2.x OS [ make LCL=sol CC="cc -Xa" ]
+#	Silicon Graphics [ make LCL=sgi OTHERLIBS="-lm -lPW -lsun" ]
+#	IBM 3090 with AIX [ make LCL=370 ]
+#	ULTRIX [ make LCL=ult RAN=ranlib ]
+#	Apple AUX [ make LCL=aux SHELL=\usr\bin ]
+#	NeXt [ make LCL=nxt CFLAGS1="-c -ansi" RAN=ranlib ]
+#	DEC Alpha under OSF/1  [ make LCL=alf CC=cc RAN=ranlib ]
+#   BeOS [  make OTHERLIBS="" ]
+#
+#   see README for other supported systems
+#	
+#	Subsequent makes should make ... nocopy instead of make ... all
+#	to avoid recopying the include files
+#
+#
+#   NOTE: some make utilities (like SGI and IBM 3090) do not like a target
+#     which is undefined.  This would be $(LIB4) if you are not making a
+#     vibrant version.  Thus, this library target must be deleted on those
+#     systems.  The section to be deleted is marked below with DELETE
+#
+
+# default flags for compiling and loading
+
+include $(NCBI)/ncbi.mk
+SUFFIXLCL = $(LCL)
+CFLAGS1 = $(NCBI_CFLAGS1)
+LDFLAGS1 = $(NCBI_LDFLAGS1)
+CC = cc
+RAN = ls -l
+AR=ar
+LIBPATH = -L$(NCBI_ALTLIB)  -L$(NCBI_SYBASE)/lib
+OTHERLIBS = $(LIBPATH) -lncbimla -lncbitax -lnetentr -lnetcli -lncbiobj -lncbi $(NCBI_SYBLIBS) $(NCBI_OTHERLIBS)
+
+SUFFIXENV = unx
+ASNDIR = asnstat
+LIBPARSE = libindx.a
+
+
+CFLAGS = $(CFLAGS1) -I../include -I$(NCBI_INCDIR) 
+LDFLAGS = $(LDFLAGS1) -I../include -I$(NCBI_INCDIR) -L$(NCBI_LIBDIR)
+
+SRCCOPY = cp -p
+
+##
+## some things to make
+##
+
+# sources needed for indexing and parsing
+
+SRC_I = indx_blk.c block.c entry.c gb_index.c em_index.c \
+		sp_index.c pr_index.c utilfun.c
+
+SRC_P = add.c asci_blk.c citation.c flat2asn.c flatargs.c \
+		gb_ascii.c genref.c em_ascii.c ind.c loadfeat.c \
+		nucprot.c ref.c sp_global.c sp_ref.c sp_ascii.c\
+		taxcash.c utilfeat.c utilref.c 
+
+# objects needed for indexing and parsing
+
+OBJ_I = indx_blk.o block.o entry.o gb_index.o em_index.o \
+		sp_index.o pr_index.o utilfun.o
+
+OBJ_P = add.o asci_blk.o citation.o flat2asn.o flatargs.o \
+		gb_ascii.o genref.o em_ascii.o ind.o loadfeat.o \
+		nucprot.o ref.o sp_global.o sp_ref.o sp_ascii.o\
+		taxcash.o utilfeat.o utilref.o 
+   
+## All things to make
+##
+all : copy .WAIT nocopy flat2asn
+
+nocopy : sources $(LIBPARSE)
+
+sources : $(SRC_I) $(SRC_P)
+
+## To clean out the directory without removing make
+##
+clean :
+	- rm -f *.[acho]
+
+.NO_PARALLEL:	copy
+
+.WAIT:
+	echo Waiting...go
+
+## Implicit actions
+##
+
+
+## get all the source files
+##
+
+copy :
+	- chmod -R ug+rw,o+r .
+	$(SRCCOPY) ../internal/parser/*.h ../include
+	$(SRCCOPY) ../internal/parser/*.c .
+	- chmod -R ug+rw,o+r .
+
+## make libraries
+##
+
+$(LIBPARSE) : $(OBJ_I)
+	- rm -f $(LIBPARSE)
+	$(AR) cru $(LIBPARSE) $(OBJ_I) 
+	$(SRCCOPY) $(LIBPARSE) ../lib
+	$(RAN) ../lib/$(LIBPARSE)
+
+# flat2asn
+
+flat2asn : flat2asn.o $(OBJ_P) $(LIBPARSE)
+	$(CC) -o flat2asn $(LDFLAGS) flat2asn.o $(OBJ_P) ../lib/$(LIBPARSE) $(OTHERLIBS)
+

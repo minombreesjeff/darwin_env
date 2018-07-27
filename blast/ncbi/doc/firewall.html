@@ -1,0 +1,168 @@
+<html>
+<head>
+<!-- put your site name between the title tags and uncomment
+  <title>Site Name</title>
+-->
+
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<!-- if you use the following meta tags, uncomment them.
+ <META NAME="keywords" CONTENT="insert your keywords for the search engine">
+ <META NAME="description" CONTENT="insert the description to be displayed by the search engine.  Also searched by the search engine.">
+-->
+  <link rel="stylesheet" href="http://www.ncbi.nlm.nih.gov/corehtml/ncbi2.css">
+</head>
+
+
+<body bgcolor="#FFFFFF" background="http://www.ncbi.nlm.nih.gov/corehtml/bkgd.gif" text="#000000" link="#CC6600" vlink="#CC6600">
+<!--  the header   --> 
+<table border="0" width="600" cellspacing="0" cellpadding="0">
+  <tr> 
+    <td width="140"><a href="http://www.ncbi.nlm.nih.gov"> <img src="http://www.ncbi.nlm.nih.gov/corehtml/left.GIF" width="130" height="45" border="0"></a></td>
+    <td width="360" class="head1" valign="BOTTOM"> <span class="H1">Network Configuration</span></td>
+    <td width="100" valign="BOTTOM"></td>
+  </tr>
+</table>
+<!--  the quicklinks bar   --> 
+<table CLASS="TEXT" border="0" width="600" cellspacing="0" cellpadding="3" bgcolor="#000000">
+  <tr CLASS="TEXT"  align="CENTER"> 
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/PubMed/" class="BAR">PubMed</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/Entrez/" class="BAR">Entrez</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/BLAST/" class="BAR">BLAST</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/omim/" class="BAR">OMIM</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/Taxonomy/taxonomyhome.html"  class="BAR">Taxonomy</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/Structure/" class="BAR">Structure</a></td>
+  </tr>
+</table>
+<!--  the contents   --> 
+<table border="0" width="600" cellspacing="0" cellpadding="0">
+  <tr valign="TOP"> <!--  left column   --> 
+    <td width="125"> 
+<img src="http://www.ncbi.nlm.nih.gov/corehtml/spacer10.GIF" width="125" height="1" border="0">
+
+
+   </td>
+    <!-- extra column to force things over the gif border --> 
+    <td width="15"><img src="http://www.ncbi.nlm.nih.gov/corehtml/spacer10.GIF" width="15" height="1" border="0"> </td>
+    <!-- right content column  --> 
+    <td width="460"> 
+      <p>&nbsp;</p>
+
+			 <p>
+				<i>Last modified:</i> $Date: 2004/01/16 19:03:44 $<br>
+				<i>Latest version: </i>
+				<a href="http://www.ncbi.nlm.nih.gov/cpp/network/firewall.html">
+				  http://www.ncbi.nlm.nih.gov/cpp/network/firewall.html</a>
+
+
+      <p> When first downloaded, your NCBI application runs in stand-alone mode, 
+        without access to the network. However, your program can also be configured 
+        to exchange information with the NCBI (GenBank) over the Internet. The 
+        network-aware mode of your application is identical to the stand-alone 
+        mode, but it contains some additional useful options. 
+      <p> Your application can only function in its network-aware mode if the 
+        computer on which it resides has a direct Internet connection. Electronic 
+        mail access to the Internet is insufficient. In general, if you can install 
+        and use a WWW-browser on your system, you should be able to install and 
+        use the network. Check with your system administrator or Internet provider 
+        if you are uncertain as to whether you have direct Internet connectivity. 
+      <p> To launch the configuration form, select Net Configure under the Misc 
+        menu in Sequin or Network Entrez, or the Options menu in Cn3D.  If you are using 
+blastcl3, you must run Sequin, Network Entrez, or Cn3D first to configure blastcl3.  This is
+necessary because blastcl3 has no graphical user interface.<br>
+<p align="center">
+<img src="firedialog.gif" align=bottom>
+<br>
+
+<p>
+If you are not behind a firewall, set the <b>Connection</b> control to <b>Normal</b>.
+If you also have a Domain Name Server (DNS) available, you can now simply press
+<b>Accept</b>.
+
+<p>
+If DNS is not available, uncheck the <b>Domain Name Server</b> button. If you
+are behind a firewall, set the <b>Connection</b> control to <b>Firewall</b>.
+The <b>Proxy</b> box then becomes active. If you also use a proxy server,
+type in its address. (If you have DNS, it will be of the form
+<tt>www.myproxy.myuniversity.edu</tt>. If you do not have DNS, you should use
+the numerical IP address of the form <tt>127.45.23.6</tt>.) Once you type something
+in the <b>Proxy</b> box, the <b>Port</b> box and <b>Transparent Proxy</b> button
+become active and can be filled in or changed as appropriate. (By default the
+<b>Transparent Proxy</b> button is off, indicating a CERN-like proxy.) Ask your
+network administrator for advice on the proper settings to use.
+
+<p>
+If you are in the United States, the default <b>Timeout</b> of 30 seconds should
+suffice. From foreign countries with poor Internet connection to the U.S., you
+can select up to 5 minutes as the timeout.
+
+<p>
+Finally, you will need to quit and restart your application in order for the network-aware
+settings to take effect.
+
+<p>
+If you are behind a firewall, it must be configured correctly to access NCBI
+services. Your network administrators may have done this already. If not, please
+have them read the section below.
+
+<p>
+<a name="Settings"></a>
+<b>The following section is intended for network administrators:</b>
+
+<p>
+Using NCBI services from behind a security firewall requires opening ports in
+your firewall. The ports to open are:
+
+<p align="center">
+<pre>
+Firewall Port        IP Address
+--------------------------------
+ 5860..5870         130.14.29.112
+    5845            130.14.22.12  (cannot be accessed from outside NCBI!)
+</pre>
+
+<p>
+If your firewall is not transparent, the firewall port number
+should be mapped to the same port number on the external host.
+
+<p>
+TROUBLESHOOTING:  You can test if these ports are accessible from
+your host by just running, for example (see the "Ports to open" list
+above):
+<pre>
+  telnet 130.14.29.112 5861
+</pre>
+and entering a line of arbitrary text in the telnet session.
+If everything is fine, your TELNET session will look as follows
+(the line "test" is your input here):
+
+<pre>
+| > telnet 130.14.29.112 5861
+| Trying 130.14.29.112...
+| Connected to 130.14.29.112.
+| Escape character is '^]'.
+| test
+| NCBI Firewall Daemon:  Invalid ticket. Connection closed.
+| Connection closed by foreign host.
+</pre>
+
+<p>
+There is also an auxiliary UNIX shell script
+<a href="fwd_check.sh">fwd_check.sh</a> to check all of the above
+addresses.
+
+<p>
+Note: Old NCBI clients used different application configuration settings and
+ports than listed above. If you need to support such clients, which are now
+obsolete, please contact <a href="mailto:info@ncbi.nlm.nih.gov">
+<tt>info@ncbi.nlm.nih.gov</tt></a> for further information.
+<p>&nbsp;</p>
+
+    </td>
+
+  </tr>
+</table>
+<!--  end of content  -->  
+
+
+</body>
+</html>

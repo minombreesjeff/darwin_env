@@ -1,0 +1,40 @@
+.TH MAKESET 1 2001-10-05 NCBI "NCBI Tools User's Manual"
+.SH NAME
+makeset \- build a Bioseq-set from Seq-entries
+.SH SYNOPSIS
+.B makeset
+[\|\fB\-\fP\|]
+[\|\fB\-b\ F\fP\|]
+[\|\fB\-c\fP\ \fIN\fP\|]
+[\|\fB\-d\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-r\fP\ \fIstr\fP\|]
+.SH DESCRIPTION
+\fBmakeset\fP builds an ASN.1 Bioseq-set from a bunch of files
+containing Seq-entry objects.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-b\ F\fP
+Output data as text, not binary
+.TP
+\fB\-c\fP\ \fIN\fP
+Bioseq-set.class (default = \fB255\fP ["other"])
+.TP
+\fB\-d\fP
+Input data is binary
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Read list of files from \fIfilename\fP (default = \fBstdin\fP)
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Output Bioseq-set (default = \fBstdout\fP)
+.TP
+\fB\-r\fP\ \fIstr\fP
+Bioseq-set.release
+.SH AUTHOR
+The National Center for Biotechnology Information.

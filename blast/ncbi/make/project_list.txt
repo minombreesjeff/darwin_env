@@ -1,0 +1,36 @@
+ncbi.lib: corelib, drwnflpt.c drwnfspc.c drwnfls.c ncbimain.c
+asnlib, asncode.c asntool.c;connect, ncbi_heapmgr.c ncbi_lbsm.c ncbi_lbsm_ipc.c ncbi_lbsmd.c
+ctools;raw_scoremat.c;-I corelib asnlib util\tables; -S MSL_All-DLL_x86_D.lib
+ncbiobj.lib: object, objmime.c;api; access, strucapi.c;util\creaders;ddvcreate.c; -I asn; -D WIN32
+ncbicdr.lib: casn.c;cdconfig.c;cdentrez.c;cdnewlib.c;cdromlib.c;objentr.c;-I corelib cdromlib
+vibrant.lib: vibrant; -I corelib
+netentr.lib: network\entrez\client;-I corelib object cdromlib 
+vibnet.lib: network\vibnet; -I corelib vibrant object
+ncbicn3d.lib: cn3d; -I corelib object vibrant api biostruc
+ncbidesk.lib: desktop, aaparam.c sdisplay.c vibfltr.c vibgraph.c vibpcc.c vibtree.c; -I corelib object asn
+ddvlib.lib: ddv, ddvcreate.c ddvmain.c; -I corelib asn object
+ncbimmdb.lib: corematx.c;dvncode.c;objmmdb1.c;objmmdb2.c;objmmdb3.c;objcn3d.c
+mmdbapi.c;mmdbapi1.c;mmdbapi2.c;mmdbapi3.c;mmdbapi4.c;mmdbentr.c;vastsubs.c
+prunebsc.c;strucapi.c;objmime.c
+biostruc\cdd, cddserver.c cddumper.c qrpsb.c wrpsbcl3.c wrpsbtool.c
+-I corelib asn object cdromlib vibrant api biostruc biostruc\cn3d access
+blast.lib: algo\blast\core; -I corelib asn object
+blastapi.lib: algo\blast\api; -I algo\blast\core
+ncbispel.lib: network\spell\client; -I corelib object asn
+ncbiid1.lib: network\id1arch, idfetch.c; -I corelib object asn
+netblast.lib: network\blast3\client, blastcl3.c; -I corelib object asn
+ncbitool.lib: tools, taxblast.c urkgraph.c; -I corelib object asn
+ncbimla.lib: network\medarch\client, medutil.c, sybmed.c; -I corelib object asn
+ncbiacc.lib: accentr.c;accutils.c; -I corelib object asn cdromlib
+ncbiNacc.lib: accentr.c;accutils.c; -I corelib object asn cdromlib
+ncbiCacc.lib: accentr.c;accutils.c; -I corelib object asn cdromlib
+netcli.lib: network\nsclilib, ni_encr.c ni_lib.c ni_list.c ni_macdv.c; -I corelib asn network\nsclilib
+ncbitxc2.lib: network\taxon1\common, checkid.c; network\taxon1\taxon2, txcproc.c;taxblast.c; -I corelib object asn tools;-D TAXSERVICE
+smartnet.lib: smartnet_win32.c; -I corelib internal\smart\smartnet
+Ssequin.exe: sequin;-D INTERNAL_NCBI_SEQUIN USE_SMARTNET TAXSERVICE
+-I lib
+-L ncbi.lib ncbiobj.lib ncbicdr.lib vibrant.lib
+-L netentr.lib vibnet.lib ncbicn3d.lib ncbidesk.lib ddvlib.lib ncbimmdb.lib
+-L blast.lib blastapi.lib ncbispel.lib ncbiid1.lib netblast.lib ncbitool.lib
+-L ncbimla.lib ncbiacc.lib netcli.lib ncbitxc2.lib smartnet.lib;-I corelib object asn cdromlib desktop vibrant api connect
+-S shell32.lib comdlg32.lib advapi32.lib ws2_32.lib Gdi32.lib Kernel32.lib User32.lib wsock32.lib

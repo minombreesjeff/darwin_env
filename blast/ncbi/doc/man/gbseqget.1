@@ -1,0 +1,52 @@
+.TH GBSEQGET 1 2003-04-27 NCBI "NCBI Tools User's Manual"
+.SH NAME
+gbseqget \- format sequences from GenBank as an XML GBSet
+.SH SYNOPSIS
+.B gbseqget
+[\|\fB\-\fP\|]
+[\|\fB\-d\fP\ \fIfilename\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-m\fP\ \fIn/p/b\fP\|]
+[\|\fB\-n\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-v\fP\|]
+.SH DESCRIPTION
+\fBgbseqget\fP retrieves biological sequence data from GenBank
+(according to an input list of GI accession numbers) and prints it out
+as an XML GBSet document.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-d\fP\ \fIfilename\fP
+Input file name for date list (desired accessions, one per line,
+followed by a blank line and a list of allowed dates, also one per line)
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Input file name for GI list (default = stdin)
+.TP
+\fB\-m\fP\ \fIn/p/b\fP
+Molecule type:
+.RS
+.PD 0
+.IP n
+Nucleotide (default)
+.IP p
+Protein
+.IP b
+Both
+.PD
+.RE
+.TP
+\fB\-n\fP
+Return only new records (for which the given GI refers to an old version)
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Output file name for the XML GBSet (default = stdout)
+.TP
+\fB\-v\fP
+Fetch SNP Variations
+.SH AUTHOR
+The National Center for Biotechnology Information.

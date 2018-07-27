@@ -1,0 +1,181 @@
+property pBuildFolderName : "Sequin Folder"
+property pFolders2Copy : {"data", "errmsg", "doc:images"}
+property pFolders2Pack : {"data", "errmsg", "images"}
+property pApps2Pack : {"asn2gb", "Entrez2", "Sequin", "tbl2asn"}
+
+
+with timeout of 600 seconds
+	SetGlobals()
+	
+	tell application "Finder"
+		
+		-- First. Some sanity checks.
+		repeat with f in pFolders2Copy
+			if not (exists folder (gDistribRoot & f)) then
+				error "Folder " & (gDistribRoot & f) & return & " does not exist."
+			end if
+		end repeat
+		repeat with f in pApps2Pack
+			if not (exists file (gProjectsDir & f)) then
+				error "Carbon Application " & (gProjectsDir & f) & return & " does not exist."
+			end if
+			if not (exists file (gProjectsDir & f & "OSX.app")) then
+				error "Mach-O Application " & (gProjectsDir & f & "OSX.app") & return & " does not exist."
+			end if
+		end repeat
+		if not (exists file (gDistribRoot & "doc:sequin.htm")) then
+			error "File " & (gDistribRoot & "doc:sequin.htm") & return & " does not exist."
+		end if
+		
+		-- copy the auxiliary folders to the build folder  and clean them up.
+		repeat with f in pFolders2Copy
+			duplicate folder (gDistribRoot & f) to gProjectsDir with replacing
+		end repeat
+		
+		repeat with f in pFolders2Pack
+			set cvsFolderName to (gProjectsDir & f & ":CVS")
+			if exists folder cvsFolderName then
+				--try
+				tell application "Finder" to delete folder cvsFolderName
+				--end try
+			end if
+		end repeat
+		
+		-- install auxiliary folders in applications
+		repeat with ap in pApps2Pack
+			duplicate folder (gProjectsDir & "data") to Â
+				folder (gProjectsDir & ap & "OSX.app:Contents:Resources") with replacing
+		end repeat
+		duplicate folder (gProjectsDir & "errmsg") to Â
+			folder (gProjectsDir & "SequinOSX.app:Contents:Resources") with replacing
+		
+		-- make a clean archive folder.
+		if exists folder pBuildFolderName of gDesktop then
+			delete folder pBuildFolderName of gDesktop
+		end if
+		make new folder at gDesktop with properties {name:pBuildFolderName}
+		set gArchiveFolder to folder pBuildFolderName of gDesktop
+		
+		-- copy the applications & folders to the archive.
+		repeat with f in pFolders2Pack
+			duplicate folder (gProjectsDir & f) to gArchiveFolder
+		end repeat
+		duplicate file (gDistribRoot & "doc:sequin.htm") to gArchiveFolder
+		
+		repeat with ap in pApps2Pack
+			move file (gProjectsDir & ap) to gArchiveFolder
+			move file (gProjectsDir & ap & "OSX.app") to gArchiveFolder
+		end repeat
+		
+	end tell
+end timeout
+
+-- NOTE: gDesktop is an alias, not a string path name like the rest.
+global gDesktop
+global gStartupDisk
+global gHomeDir
+global gMWroot
+global gDistribRoot
+global gProjectsDir
+global gArchiveFolder
+
+global gMakeDir
+
+on SetGlobals()
+	set gDesktop to path to desktop
+	tell application "Finder"
+		
+		set gStartupDisk to startup disk as string
+		set gHomeDir to my HomeDir()
+		set gMWroot to my MWRootDir()
+		set gDistribRoot to my ModuleRoot()
+		set gProjectsDir to gDistribRoot & "build:"
+		
+		set gMakeDir to my GetMyPath()
+		
+	end tell
+end SetGlobals
+
+on ModuleRoot()
+	
+	set subFolder to "ncbi"
+	
+	set modRoot to ""
+	try
+		set modRoot to ResolveAlias(gMWroot & subFolder)
+	on error
+		try
+			set modRoot to ResolveAlias(gHomeDir & subFolder)
+		end try
+	end try
+	
+	return modRoot
+end ModuleRoot
+
+on GetMyPath()
+	set myPath to path to me as string
+	if myPath contains "Script Editor" then
+		-- Oops! running under script editor. 'me' is Script Editor not this script.
+		-- use the location this script is supposed to be in.
+		return gDistribRoot & "make:"
+	else
+		tell application "Finder"
+			return container of myPath
+		end tell
+	end if
+end GetMyPath
+
+on MWRootDir()
+	
+	set mwRoot to ""
+	set mwLocations to {gStartupDisk, gStartupDisk & "Applications:", gStartupDisk & "AppsLocal:", Â
+		gStartupDisk & "Applications (Mac OS 9):", gHomeDir, gHomeDir & "Applications:", Â
+		gHomeDir & "Applications:", gHomeDir & "AppsLocal (Mac OS 9):"}
+	repeat with mwVersion from 8 to 9
+		set dirName to "Metrowerks CodeWarrior " & mwVersion & ".0"
+		repeat with mwLoc in mwLocations
+			try
+				set mwRoot to ResolveAlias(mwLoc & dirName)
+				return mwRoot
+			end try
+		end repeat
+	end repeat
+	
+	error "Can't find the Metrowerks CodeWarrior folder."
+	
+end MWRootDir
+
+on HomeDir()
+	tell application "Finder"
+		
+		if my IsOSX() then
+			return the home as string
+		else
+			return gStartupDisk
+		end if
+		
+	end tell
+end HomeDir
+
+on ResolveAlias(pathname)
+	tell application "Finder"
+		--if the last character of pathname is ":" then error "Don't use a trailing colon with ResolveAlias."
+		if exists folder pathname then return pathname & ":"
+		if exists alias file pathname then return the original item of alias file pathname as string
+		error "The folder (or alias) '" & pathname & "' doesn't exist."
+	end tell
+end ResolveAlias
+
+on IsOSX()
+	tell application "Finder"
+		
+		set vers to the version as text
+		
+		if second character of vers is equal to "." then
+			set vers to "0" & vers
+		end if
+		
+		return vers > 10 or vers = 10
+		
+	end tell
+end IsOSX

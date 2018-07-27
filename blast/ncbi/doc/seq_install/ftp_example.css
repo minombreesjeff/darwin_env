@@ -1,0 +1,18 @@
+
+body { 
+  background-image:none;
+  color: rgb(0, 0, 0);
+}
+
+body a:hover {
+  text-decoration: underline;
+}
+
+.codeblock { 
+  margin-left: 40px;
+}
+
+.codefont {
+  font-family: Courier, Monaco, Monospace;
+  font-size: 1em;
+ }

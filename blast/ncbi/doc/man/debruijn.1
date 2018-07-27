@@ -1,0 +1,27 @@
+.TH DEBRUIJN 1 2004-02-07 NCBI "NCBI Tools User's Manual"
+.SH NAME
+debruijn \- de Bruijn sequence generator
+.SH SYNOPSIS
+.B debruijn
+[\|\fB\-\fP\|]
+\fB\-a\fP\ \fIstr\fP
+\fB\-n\fP\ \fIk\fP
+.SH DESCRIPTION
+\fBdebruijn\fP generates (on standard output) a string over the
+specified alphabet containing every possible word (substring) of the
+specified length exactly once.  \fBNote:\fP Substrings are not taken
+to wrap around, so the first \fIk\fP-1 characters repeat at the end.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message.
+.TP
+\fB\-a\fP\ \fIstr\fP
+Alphabet (supply \fBncbistdaa\fP or \fBncbi2na\fP for standard
+alphabets, or supply your own alphabet).
+.TP
+\fB\-n\fP\ \fIk\fP
+Word size.
+.SH AUTHOR
+The National Center for Biotechnology Information.

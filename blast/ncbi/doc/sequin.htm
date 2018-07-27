@@ -1,0 +1,1491 @@
+<HTML lang="en"> <HEAD>
+
+<TITLE>Sequin Quick Guide</TITLE>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<!-- if you use the following meta tags, uncomment them.
+ <META NAME="keywords" CONTENT="Sequin">
+ <META NAME="description" CONTENT="Sequin is a stand-alone software tool developed by the NCBI for submitting and updating entries to the GenBank, EMBL, or DDBJ sequence databases. ">
+-->
+ <link rel="stylesheet" href="images/ncbi_sequin.css">
+
+
+</HEAD> 
+
+<body bgcolor="#FFFFFF" text="#000000" link="#0033CC" vlink="#0033CC">
+<!-- change the link and vlink colors from the original orange (link="#CC6600" vlink="#CC6600") -->
+
+<!--  the header   --> 
+<table border="0" width="600" cellspacing="0" cellpadding="0" summary="NCBI Logo and Sequin Quick Guide title">
+  <tr> 
+    <td width="140"><a href="http://www.ncbi.nlm.nih.gov"> <img src="http://www.ncbi.nlm.nih.gov/corehtml/left.GIF" width="130" height="45" border="0" alt="NCBI Logo"></a></td>
+    <td width="360" class="head1" valign="BOTTOM"> <span class="H1">Sequin Quick Guide</span></td>
+<!--    <td width="100" valign="BOTTOM">Your Logo</td> -->
+  </tr>
+</table>
+
+<!--  the quicklinks bar   --> 
+<table CLASS="TEXT" border="0" width="600" cellspacing="0" cellpadding="3" bgcolor="#000000" summary="Links to several NCBI services">
+  <tr CLASS="TEXT"  align="CENTER"> 
+    <td width="100"><a href="../index.html" class="BAR">Sequin</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/Entrez/" class="BAR">Entrez</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/BLAST/" class="BAR">BLAST</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/omim/" class="BAR">OMIM</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/Taxonomy/taxonomyhome.html"  class="BAR">Taxonomy</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/Structure/" class="BAR">Structure</a></td>
+  </tr>
+</table>
+
+<!--  the contents   --> 
+
+<p align="center">
+<a name="sequin">
+<font size=5>
+<b>Sequin for Database Submissions and Updates:<br>
+A Quick Guide</b>
+</font>
+</a>
+
+<hr>
+
+<! use img src="http://www.ncbi.nlm.nih.gov/Sequin/QuickGuide/image##.png" align=bottom>
+
+<p align="left">
+<font size=4>
+<b><i>Introduction</i></b>
+</font>
+
+<p align="justify">
+Sequin is a stand-alone software tool developed by the National Center for
+Biotechnology Information (NCBI) for submitting and updating sequences to the
+GenBank, EMBL, and DDBJ databases. Sequin has the capacity to handle long
+sequences and sets of sequences (segmented entries, as well as population,
+phylogenetic, and mutation studies). It also allows sequence editing and
+updating, and provides complex annotation capabilities. In addition, Sequin
+contains a number of built-in validation functions for enhanced quality
+assurance.
+
+<p align="justify">
+This overview is intended to provide a quick guide to Sequin's capabilities,
+including automatic annotation of coding regions, the graphical viewer,
+quality control features, and editing features. We suggest that you read this
+entire document before beginning your Sequin submission. More detailed
+instructions on these and other functions can be found in Sequin's on-screen
+<b>Help</b> file, also available on the World-Wide Web from the Sequin
+homepage at:
+
+<p align="left">
+<a href="http://www.ncbi.nlm.nih.gov/Sequin/">
+<tt>http://www.ncbi.nlm.nih.gov/Sequin/</tt></a>
+
+<p align="justify">
+Email help is also available from
+<a href="mailto:info@ncbi.nlm.nih.gov">
+<tt>info@ncbi.nlm.nih.gov</tt></a>
+
+<p align="left">
+<font size=4>
+<b><i>Basic Sequin Organization</i></b>
+</font>
+
+<p align="justify">
+Sequin is organized into a series of forms to (1) enter submitting authors,
+(2) enter organism and sequences, (3) enter information such as strain, gene,
+and protein names, (4) view the complete submission, and (5) edit and annotate
+the submission. The goal is to go quickly from raw sequence data to an
+assembled record that can be viewed, edited, and submitted to your database of
+choice.
+
+<p align="justify">
+Advance through the pages that make up each form by clicking on labeled
+folder tabs or the <b>Next Page</b> button. After the basic information forms
+have been completed and the sequence data imported, Sequin provides a complete
+view of your submission, in your choice of text or graphic format. At this
+point, any of the information fields can be easily modified by double-clicking
+on any area of the record, and additional biological annotations can be
+entered by selecting from a menu.
+
+<p align="justify">
+Sequin has an on-screen <b>Help</b> file that is opened automatically when you
+start the program. Because it is context sensitive, the <b>Help</b> text will
+change and follow your steps as you progress through the program. A
+&quot;Find&quot; function is also provided.
+
+<p align="left">
+<a name="before">
+<font size=4>
+<b><i>Before You Begin</i></b>
+</font>
+</a>
+
+<p align="left">
+<b>Preparing Nucleotide and Amino Acid Data</b>
+
+<p align="justify">
+Sequin normally expects to read sequence files in FASTA format. Note that most
+sequence analysis software packages include FASTA or &quot;raw&quot; as one of
+the available output formats. Population, phylogenetic, and mutation studies
+can also be entered in PHYLIP, NEXUS, MACAW, or FASTA+GAP formats.
+
+<p align="justify">
+See <a href="http://www.ncbi.nlm.nih.gov/Sequin/faq.html#Orgnameforphyl">
+<tt>http://www.ncbi.nlm.nih.gov/Sequin/faq.html#Orgnameforphyl</tt></a>
+or &quot;<a HREF="#formatexamples">Sample Data Files</a>&quot;
+for detailed examples of each of the various input data formats.
+
+<p align="justify">
+Prepare your sequence data files using a text editor, and save in ASCII text
+format (plain text). If your nucleotide sequence encodes one or more protein
+products, Sequin expects two files, one for the nucleotides and one for the
+proteins.
+
+<p align="justify">
+FASTA format is simply the raw sequence preceded by a definition line. The
+definition line begins with a > sign and is followed immediately by a name
+for the sequence (your own local identification code, or local ID) and a
+title. During the submission process, indexing staff at the database to which
+you are submitting will change your local ID to an Accession number. You can
+embed other important information in the title, and Sequin uses this
+information to construct a record. Specifically, you can enter organism and
+strain or clone information in the nucleotide definition line and gene and
+protein information in the protein definition line. Examples for the
+nucleotide and protein files are shown here:
+
+<pre>
+>eIF4E [organism=Drosophila melanogaster] [strain=Oregon R] Drosophila ...
+CGGTTGCTTGGGTTTTATAACATCAGTCAGTGACAGGCATTTCCAGAGTTGCCCTGTTCA ...
+
+>4E-I [gene=eIF4E] [protein=eukaryotic initiation factor 4E-I]
+MQSDFHRMKNFANPKSMFKTSAPSTEQGRPEPPTSAAAPAEAKDVKPKEDPQETGEPAGN ...
+>4E-II [gene=eIF4E] [protein=eukaryotic initiation factor 4E-II]
+MVVLETEKTSAPSTEQGRPEPPTSAAAPAEAKDVKPKEDPQETGEPAGNTATTTAPAGDD ...
+</pre>
+
+<p align="justify">
+The ability to embed this information in the definition line is provided as a
+convenience to the submitter. If these annotations are not present, they can
+be entered in subsequent forms. Sequin is designed to use this information,
+and that provided in the initial forms, to build a properly structured record.
+<b>In many cases, the final submission can be completely prepared from these
+data, so that no additional manual annotation is necessary once the record is
+displayed.</b>
+
+<p align="justify">
+See <a href="http://www.ncbi.nlm.nih.gov/Sequin/faq.html#Biosrcmod">
+<tt>http://www.ncbi.nlm.nih.gov/Sequin/faq.html#Biosrcmod</tt></a>
+for a complete list of definition line modifiers.
+
+<p align="justify">
+In this example, we show alternative splicing, where a single gene produces
+multiple messenger RNAs that encode two similar but distinct protein products.
+
+<p align="justify">
+Note that the [ and ] brackets actually appear in the text. (Brackets are
+sometimes used in computer documentation to denote optional text. This
+convention is not followed here.) The bracketed information will be removed
+from the definition line for each sequence. Sequin can also calculate a new
+definition line by computing on features in the annotated record
+(see &quot;<a HREF="#autodefline">Generating the Definition Line</a>&quot;).
+
+<p align="justify">
+Also, please note that there must be a line break (carriage return) between
+the definition line and the first line of sequence. Some word processors will
+break a single line onto two lines without actually adding a carriage return.
+(This feature is known as "word wrapping".) If you are unsure whether there is
+a carriage return, you can either set up your word processor so it shows
+invisible characters like carriage returns, or view the file in a text editor
+that does not create artificial line breaks. <b>The definition line itself
+must not have a line break within it, because the second line would then be
+misinterpreted as the beginning of the sequence data.</b> The actual sequence
+is usually broken every 50 to 80 characters, but this is not necessary for
+Sequin to be able to read it.
+
+<p align="left">
+<b>Segmented Nucleotide Sets</b>
+
+<p align="justify">
+A segmented nucleotide entry is a set of non-contiguous sequences that has a
+defined order and orientation. For example, a genomic DNA segmented set could
+include encoding exons along with fragments of their flanking introns. An
+example of an mRNA segmented pair of records would be the 5' and 3' ends of an
+mRNA, where the middle region has not been sequenced. To import nucleotides in
+a segmented set, each individual sequence must be in FASTA format with an
+appropriate definition line, and all sequences should be in the same file. The
+file containing the sequences is imported into Sequin as described later.
+
+<p align="left">
+<b>Population, Phylogenetic, or Mutation Studies</b>
+
+<p align="justify">
+For phylogenetic studies, the scientific name of each organism should be
+encoded in each FASTA definition line, e.g., [organism=Mus musculus]. For
+population studies, you can encode strain, clone, and isolate information in
+the definition line, e.g., [strain=BALB/c]. For these studies, PHYLIP, NEXUS,
+MACAW, and FASTA+GAP formats
+(see &quot;<a HREF="#formatexamples">Sample Data Files</a>&quot;) can also be
+read. (All of these formats require a unique sequence identifier, i.e., a
+local ID.) A sample FASTA+GAP file for a phylogenetic study is shown here:
+
+<pre>
+>Dmel28S [organism=Drosophila melanogaster]
+AUUCUGGUUAACUCUAAGCGGUGGAUCACUCGGCUCAUGGGUCGAUGAAGAACGCAGC--
+AAACUGUGCGUCAUCGUGUGAACUGCAGGACACAU-GAACAUCGACAUUUUGAACGCAUA
+UCG-----------CAGU-------CCAUGCU-GUUAUA----------UACAACCUCAA
+>Xlae28S [organism=Xenopus laevis]
+-----UCGCGACUCUUAGCGGUGGAUCACUCGGCUCGUGCGUCGAUGAAGAACGCAGC--
+UAGCUGCGAGAAUUAGUGUGAAUUGCAGA-CACAUUGAUCAUCGACACUUCGAACGCACC
+UUGCGGCCCCGGGUUCCUCCCGGGGCCACGCCUGUCUGAGGGUCGCUCCUCAGACCUCAG
+>Mmus28S [organism=Mus musculus]
+--------CGACUCUUAGCGGUGGAUCACUCGGCUCGUACGUCGAUGAAGAACGCAGC--
+UAGCUGCGAGAAUUAAUGUGAAUUGCAGA-CACAUUGAUCAUCGACACUUCGAACGCACU
+U-GCGGCCCCGGGUUCCUCCCGGGGCUACGCCUGUCUGAGCGUCGCUUC-GCGACCUCAG
+>Hsap28S [organism=Homo sapiens]
+--------CGACUCUUAGCGGUGGAUCACUCGGCUCGUGCGUCGAUGAAGAACGCAGCGC
+UAGCUGCGAGAAUUAAUGUGAAUUGCAGA-CACAUUGAUCAUCGACACUUCGAACGCACU
+U-GCGGCCCCGGGUUCCUCCCGGGGCUACGCCUGUCUGAGCGUCGCUUC-GCGACCUCAG
+</pre>
+
+<p align="justify">
+One could add &quot;28S ribosomal RNA gene, partial sequence&quot; as a title
+to all sequences using the <b>Annotation</b> page of the <b>Organism and
+Sequences</b> form, and could also ask that the correct organism name be
+prefixed to each title. (Sequin will convert the U (uracil) characters into T
+(thymine) automatically.)
+
+<p align="left">
+<b>Sets of Segmented Sequences</b>
+
+<p align="justify">
+If the sequences in a phylogenetic study are really segmented (e.g., ITS1 and
+ITS2 of ribosomal RNA without the intervening 5.8S rRNA sequence), the
+individual segments from a single organism can be grouped within square
+brackets. Subsequent segments are detected by the presence of a FASTA
+definition line. For example:
+
+<pre>
+[
+>QruITS1 [organism=Quercus rubra]
+CGAAAACCTGCACAGCAGAAACGACTCGCAAACTAGTAATAACTGACGGAGGACGGAGGG ...
+>QruITS2
+CATCATTGCCCCCCATCCTTTGGTTTGGTTGGGTTGGAAGTTCACCTCCCATATGTGCCC ...
+]
+[
+>QsuITS1 [organism=Quercus suber]
+CAAACCTACACAGCAGAACGACTCGAGAACTGGTGACAGTTGAGGAGGGCAAGCACCTTG ...
+>QsuITS2
+CATCGTTGCCCCCCTTCTTTGGTTTGGTTGGGTTGGAAGTTGGCCTTCCATATGTGCCCT ...
+]
+...
+</pre>
+
+<p align="justify">
+FASTA+GAP format can also use this convention for encoding sets of segmented
+sequences.
+
+<p align="center">
+<a name="creating">
+<font size=5>
+<b>Creating a Submission</b>
+</font>
+</a>
+
+<p align="justify">
+The sequence data we will use for this example is the genomic sequence of the
+Drosophila melanogaster eukaryotic initiation factors 4E-I and 4E-II (GenBank
+Accession number U54469).
+
+<p align="left">
+<font size=4>
+<b><i>Welcome to Sequin Form</i></b>
+</font>
+
+<p align="justify">
+Once you have finished preparing the sequence files, you are ready to start
+the Sequin program. Sequin's first window asks you to indicate the database to
+which the sequence will be submitted and prompts you to start a new project
+or continue with an existing one. Once you choose a database, Sequin will
+remember it in subsequent sessions. In general, each sequence submission
+should be entered as a separate project. However, segmented DNA sequences,
+population studies, phylogenetic studies, and mutation studies should be
+submitted together as one project. This feature also eliminates the need to
+save Sequin information templates for each sequence.
+
+<br>
+<p align="center">
+<img src="images/seqn01.png" align=bottom alt="Welcome to Sequin form has
+push buttons to Start New Submission, Read Existing Record, Show Help, and
+Quit Program.">
+<br>
+
+<p align="justify">
+See <a href="http://www.ncbi.nlm.nih.gov/Sequin/netaware.html">
+<tt>http://www.ncbi.nlm.nih.gov/Sequin/netaware.html</tt></a>
+or &quot;<a HREF="#netconnect">Network Configuration</a>&quot;
+for instructions on how to make Sequin &quot;network-aware&quot;. When
+connected to the Internet, Sequin also allows you to download a record from
+Entrez. If you are the original submitter of this record, you can use Sequin
+to edit the sequence or add further annotations to the record.
+
+<p align="left">
+<font size=4>
+<b><i>Submitting Authors Form</i></b>
+</font>
+
+<p align="justify">
+The pages in the <b>Submitting Authors</b> form ask you to provide the release
+date, a working title, names and contact information of submitting authors,
+and affiliation information. To create a personal template for use in future
+submissions, use the <b>File/Export</b> option after completing each page of
+this form.
+
+<p align="justify">
+The <b>Submission</b> page asks for a tentative title for a manuscript
+describing the sequence and will initially mark the manuscript as being
+unpublished. When the article is published, the database staff will update the
+sequence record with the new citation. This page also lets you indicate that a
+record should be held until it is published, although the preferred policy is
+to release the record immediately into the public databases.
+
+<br>
+<p align="center">
+<img src="images/seqn02.png" align=bottom alt="Submission page defaults
+allow immediate release of the record.">
+<br>
+
+<p align="justify">
+The <b>Contact</b> page asks for the name, phone number, and email address of
+the person responsible for making the submission. Database staff members will
+contact this person if there are any questions about the record.
+
+<p align="justify">
+The Sfx (suffix) field should be filled with personal name suffixes (e.g.,
+Jr., Sr., or 3rd), not with a person's academic degrees (e.g., MD or PhD). And
+it is not necessary to type periods after initials or suffixes.
+
+<br>
+<p align="center">
+<img src="images/seqn03.png" align=bottom alt="Contact page has fields for
+contact person's Name, Phone, Fax, and Email.">
+<br>
+
+<p align="justify">
+In the <b>Authors</b> page, enter the names of the people who should get
+scientific credit for the sequence presented in this record. These will become
+the authors for the initial (unpublished) manuscript.
+
+<p align="justify">
+Authors are entered in a spreadsheet. As soon as anything is typed in the last
+row, a new (blank) row is added below it. Use the tab key to move between
+fields. Tabbing from the Sfx (suffix) column automatically moves to the First
+Name column in the next row. Again, suffix is for personal suffixes (e.g., Jr.
+or Sr.), not academic degrees.
+
+<br>
+<p align="center">
+<img src="images/seqn04.png" align=bottom alt="Authors page has a spreadsheet
+for entering an arbitrary number of authors.">
+<br>
+
+<p align="justify">
+The <b>Affiliation</b> page asks for the institutional affiliation of the
+primary author.
+
+<br>
+<p align="center">
+<img src="images/seqn05.png" align=bottom alt="Affiliation page has fields
+for institutional mailing address.">
+<br>
+
+<p align="left">
+<font size=4>
+<b><i>Sequence Format Form</i></b>
+</font>
+
+<p align="justify">
+With Sequin, the actual sequence data are imported from an outside data file.
+So before you begin, prepare your sequence data files using a text editor,
+perhaps one associated with your laboratory sequence analysis software
+(see &quot;<a HREF="#before">Before you Begin</a>&quot;).
+
+<p align="justify">
+The traditional submission is of a <b>single nucleotide sequence</b>
+containing one or more genes and encoding one or more proteins. Data files
+should be prepared in FASTA format. <b>Segmented sequences</b>, e.g., where
+several exons have been sequenced but the complete introns are not yet
+sequenced, may also be submitted, with the individual nucleotide segments in
+FASTA format combined into one file.
+
+<p align="justify">
+Sequin will also accept <b>population</b>, <b>phylogenetic</b>, or <b>mutation
+studies</b>, and <b>environmental samples</b>, in which genes from many
+individuals or organisms are sequenced. The data for these can be entered in
+FASTA format, but they can also be entered in Contiguous or Interleaved formats
+(e.g., PHYLIP, NEXUS, MACAW, or FASTA+GAP), which contain alignment information
+as well as the sequences. For this example, FASTA format will be used.
+
+<p align="justify">
+The <b>batch submission</b> choice is provided to accommodate submission of
+unrelated sequences, where no alignment is present or should be calculated.
+
+<br>
+<p align="center">
+<img src="images/seqn06.png" align=bottom alt="Sequence Format form has controls
+for choosing the submission type and sequence data format.">
+<br>
+
+<p align="justify">
+One powerful feature of Sequin is that the program can automatically annotate
+the name of the organism, strain, gene, protein product, and other information
+on your sequence and coding regions. You can supply this information in the
+FASTA definition line between square brackets, e.g., [organism=Mus musculus]
+[strain=BALB/c] for the nucleotide and [gene=ins] [protein=insulin] for the
+protein.
+
+<p align="justify">
+<b>It is much easier to produce the final submission if you let Sequin work
+for you in this manner.</b>
+
+<p align="left">
+<font size=4>
+<b><i>Organism and Sequences Form</i></b>
+</font>
+
+<p align="justify">
+The first page of this form requests information regarding the scientific name
+of the organism from which the sequence was derived, if it was not already
+encoded in the nucleotide FASTA file. Organism information is most easily
+entered by selecting the appropriate organism from the scrollable list. As you
+begin typing the scientific name, the list will jump to the right alphabetical
+location. Click on the list to finish the selection.
+
+<p align="justify">
+Once you select an organism from the list, the corresponding scientific and
+common names and genetic code are filled out automatically. If you then choose
+Mitochondrion as the sequence location, the alternative genetic code for that
+organism will be used. If your organism is not on the list, Sequin will simply
+accept the scientific name you have typed; you should then manually set the
+<a href="http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wprintgc?mode=c">
+genetic code</a> used for translation. This will later be verified by the
+database staff using a more complete taxonomic database. (Sequin only holds
+the top 800 organisms, whereas more than 40,000 are actually present in
+GenBank.)
+
+<br>
+<p align="center">
+<img src="images/seqn07.png" align=bottom alt="Organism page has fields for
+Scientific Name, Location of Sequence, and Genetic Code for Translation">
+<br>
+
+<p align="justify">
+Note: For phylogenetic studies, you may annotate each FASTA definition line
+with [organism=<i>scientific name</i>] information
+(see &quot;<a HREF="#before">Before you Begin</a>&quot;),
+and you would not need to fill in the <b>Organism</b> page. When phylogenetic
+study has been selected as the sequence format, in fact, this page is replaced
+by a notice explaining how to place the organism name in the definition line.
+In that case, you should enter the location of the sequence and the default
+genetic code. Similarly, in a single sequence, if you embed [organism=<i>scientific
+name</i>] in the definition line (usually along with other modifiers, such as
+strain or clone), you can skip this page.
+
+<p align="left">
+<b>Importing Nucleotide FASTA Files</b>
+
+<p align="justify">
+To import the nucleotide sequence data, click on the <b>Nucleotide</b> folder
+tab or the <b>Next Page</b> button to advance to the next page. Select
+molecule type and topology, check any additional boxes that apply, then click
+on <b>Import Nucleotide FASTA</b> and select the appropriate file.
+
+<p align="justify">
+It is most convenient to place the multiple segments of a segmented sequence,
+or the individual sequences of a population, phylogenetic, or mutation study,
+in a single file. However, they can also be kept in separate files. In this
+case you would repeat the import step for each file. (In addition to importing
+from a file, sequences can also be read by pasting from the computer's
+&quot;clipboard&quot;.)
+
+<p align="justify">
+When the sequence file import is complete, a box will appear showing the
+number of nucleotide segments imported, the total length in nucleotides of the
+sequences entered, and the local ID(s) you designated. The actual sequence
+data are <b>not</b> shown. If any of this information is missing or incorrect,
+check the file containing the sequence data for proper FASTA format, choose
+Clear from the <b>Edit</b> menu, then reimport the sequence(s).
+
+<p align="justify">
+The format for annotating the nucleotide FASTA definition line is shown below:
+
+<pre>
+>ID [organism=scientific name] [strain=strain name] title
+</pre>
+
+<br>
+<p align="center">
+<img src="images/seqn08.png" align=bottom alt="Nucleotide page has controls
+for Molecule, Topology, and Incomplete at 5 prime or 3 prime end.">
+<br>
+
+<p align="justify">
+Sequin has extracted the organism and strain names from the FASTA definition
+line in this example, eliminating the need to fill out the <b>Organism</b>
+page.
+
+<p align="left">
+<b>Importing Protein FASTA Files</b>
+
+<p align="justify">
+If you have specified a single sequence or segmented nucleotide sequence, and
+if it encodes one or more proteins, you can enter the sequences of the protein
+products in this page. To import the amino acid sequence, click on the
+<b>Proteins</b> folder tab and proceed in the same manner as for nucleotide
+data.
+
+<p align="justify">
+In this example, we imported two protein sequences. These are the alternative
+splice products of the same gene. Both protein sequences were in the same data
+file, but each had its own definition line with its own unique local ID.
+
+<p align="justify">
+The format for annotating the protein FASTA definition line is shown below:
+
+<pre>
+>ID [gene=gene name] [protein=protein name] title
+</pre>
+
+<br>
+<p align="center">
+<img src="images/seqn09.png" align=bottom alt="Proteins page has controls
+for Incomplete at amino or carboxy end.">
+<br>
+
+<p align="justify">
+Sequin has extracted the gene and protein names from the FASTA definition
+lines, and will use these to construct the initial sequence record.
+
+<p align="left">
+<b>Annotating Population/Phylogenetic/Mutation/Environmental Sets</b>
+
+<p align="justify">
+If you have specified a population, phylogenetic, or mutation study or
+environmental sample, the
+<b>Annotation</b> folder tab replaces the <b>Proteins</b> folder tab. This
+page allows you to add an rRNA or CDS feature to the entire length of all
+sequences in the set. In addition, you can add a title to any sequences that
+didn't obtain them from a FASTA definition line. It is much easier to add
+these in bulk at this step than to add individual rRNA or CDS features to each
+sequence after the record is constructed.
+
+<br>
+<p align="center">
+<img src="images/seqn10.png" align=bottom alt="Annotation page has controls
+for adding Gene, rRNA, or CDS features to all sequences.">
+<br>
+
+<p align="justify">
+It is customary in a nucleotide record to format titles for sequences
+containing coding region features in the following way:
+
+<p align="justify">
+Genus species protein name (gene symbol) mRNA/gene, complete/partial cds.
+
+<p align="justify">
+The choice of &quot;mRNA&quot; or &quot;gene&quot; depends upon the molecule
+type (use &quot;mRNA&quot; for mRNA or cDNA, and &quot;gene&quot; for genomic
+DNA). Use &quot;partial&quot; for incomplete features. The proper organism
+name in a phylogenetic study can be added to the beginning of each title
+automatically by checking the <b>Prefix title with organism name</b> box.
+
+<p align="justify">
+However, for records containing with CDS, rRNA, or tRNA features, Sequin can
+generate the definition line automatically by computing on the features
+(see &quot;<a HREF="#autodefline">Generating the Definition Line</a>&quot;).
+
+<p align="justify">
+More complex situations, such as a population study of HIV sequences, can
+include multiple CDS features in each sequence. In this case, do not use the
+<b>Annotation</b> page to create features. (You can still use it for a common
+title, however.) After the initial submission has been created, you would
+manually annotate features onto one of the sequences. Feature propagation
+through an alignment can then be used to annotate the same features at the
+equivalent locations on the remaining sequences.
+
+<p align="left">
+<b>Entering Gene and Protein Information</b>
+
+<p align="justify">
+In the protein FASTA definition line you can embed [gene=...] and [protein=...].
+If this information was not entered in the definition line, Sequin will
+display the following form for each protein sequence, allowing you to fill in
+the missing information manually.
+
+<br>
+<p align="center">
+<img src="images/seqn11.png" align=bottom alt="Product form has fields for
+Sequence ID, Title, Gene Symbol, Protein Name, and Comment.">
+<br>
+
+<p align="left">
+<b>Entering Organism and Source Modifiers</b>
+
+<p align="justify">
+In the nucleotide FASTA definition line, you can embed [organism=<i>scientific
+name</i>] and modifiers from the following list (all in the format
+[<i>modifier</i>=...]):  acronym, anamorph, authority, biotype, biovar, breed,
+cell-line, cell-type, chemovar, chromosome, clone, clone-lib, country,
+cultivar, dev-stage, dosage, ecotype, endogenous-virus-name, forma,
+forma-specialis, frequency, genotype, group, haplotype, ins-seq-name, isolate,
+lab-host, lineage, map, natural-host, pathovar, plasmid-name, plastid-name,
+pop-variant, segment, serogroup, serotype, serovar, sex, specimen-voucher,
+strain, sub-clone, sub-group, sub-species, sub-strain, subtype, synonym,
+teleomorph, tissue-lib, tissue-type, transposon-name, type, and variety, e.g.,
+[organism=Homo sapiens] [cell-line=HeLa]. Some population studies are a
+mixture of integrated provirus and excised virion. These can be indicated by
+molecule and location qualifiers, e.g., [molecule=dna] [location=proviral] or
+[molecule=rna] [location=virion]. You can also embed [moltype=genomic] or
+[moltype=mRNA] to indicate from what source the molecule was isolated. If
+you're unsure of which modifier to use, use [note=...], and database staff
+will determine the appropriate modifier to use.
+
+<p align="justify">
+For population, phylogenetic, or mutation studies, Sequin presents a form to
+allow this information to be edited (if it had been entered in the FASTA file),
+or entered in the first place, before it constructs the sequence record. In
+addition to organism name, you can enter any kind of source modifer in this
+form.
+
+<br>
+<p align="center">
+<img src="images/seqn12.png" align=bottom alt="Source Modifiers form has a
+spreadsheet for entering modifiers to each individual sequence.">
+<br>
+
+<p align="center">
+<a name="viewing">
+<font size=5>
+<b>Viewing Your Submission</b>
+</font>
+</a>
+
+<p align="left">
+<font size=4>
+<b><i>GenBank View</i></b>
+</font>
+
+<p align="justify">
+After you have completed importing the data files, Sequin will display your
+full submission information in the GenBank format (or EMBL format if you chose
+EMBL as the database for submission in the first form).
+
+<br>
+<p align="center">
+<img src="images/seqn13.png" align=bottom alt="View form has controls for
+Target Sequence and Display format. Default format is GenBank flatfile.">
+<br>
+
+<p align="justify">
+On the basis of the information provided in your DNA and amino acid sequence
+files, any coding regions will be automatically identified and annotated for
+you. The figure shows only the top portion of the GenBank record, but you can
+see the first of two coding region (CDS) features. The vertical bar to the
+left of the paragraph indicates that the CDS has been selected by clicking
+with the computer's mouse.
+
+<p align="justify">
+There are also three mRNA features (not shown in the figure) that were
+generated by copying the cDNA feature intervals and editing them to include
+the 5' and 3' UTRs. Also, the journal citation, originally listed as
+&quot;Unpublished&quot;, has been updated now that the article has been
+published. Chromosome and map information have also been added to the
+biological source feature. These changes were initiated by double clicking on
+the appropriate paragraphs in the GenBank display format. Finally, Sequin was
+asked to <a HREF="#autodefline">generate the definition line</a> by computing
+on the annotated features.
+
+<p align="left">
+<font size=4>
+<b><i>Graphical View</i></b>
+</font>
+
+<p align="justify">
+To get a graphical view, use the <b>Display Format</b> pop-up menu to change
+from GenBank to Graphic. Reviewing your submission in Graphic format allows you
+to visually confirm expected location of exons, introns, and other features in
+multiple interval coding regions. The Graphic view in our eukaryotic initiation
+factor example illustrates how the coding region intervals for the two protein
+products are spatially related to each other.
+
+<br>
+<p align="center">
+<img src="images/seqn14.png" align=bottom alt="Graphical view has additional
+controls for Style and Scale, and displays a drawing of feature locations on
+the sequence coordinate.">
+<br>
+
+<p align="justify">
+The <b>Duplicate View</b> item in the <b>File</b> menu will launch a second
+viewer on the record. The display format on each viewer can be independently
+set, allowing you to see a graphical view and a GenBank text report
+simultaneously. This is useful for getting an overall view of the features and
+seeing the details of annotation.
+
+<p align="left">
+<font size=4>
+<b><i>Sequence View</i></b>
+</font>
+
+<p align="justify">
+Sequence view is a static version of the sequence and alignment editor. It
+shows the actual nucleotide sequence, with feature intervals annotated
+directly on the sequence. Protein translations of CDS features are also shown,
+as are all features shown in the graphical view. Intronic regions within
+protein translations are shown as a series of tilde&nbsp;(~)&nbsp;characters.
+
+<br>
+<p align="center">
+<img src="images/seqn15.png" align=bottom alt="Sequence format displays
+feature locations on the actual sequence letters.">
+<br>
+
+<p align="center">
+<a name="editing">
+<font size=5>
+<b>Editing and Annotating Your Submission</b>
+</font>
+</a>
+
+<p align="justify">
+At this point, Sequin could process your entry based on what you have entered
+so far, and you could send it to your nucleotide database of choice (as set in
+the initial form). However, to optimize usefulness of your entry for the
+scientific community, you may want to provide additional information to
+indicate biologically significant regions of the sequence. But first, save the
+entry so that if you make any unwanted changes during the editing process you
+can revert to the original copy.
+
+<p align="justify">
+Additional information may be in the form of Descriptors or Features.
+(Descriptors are annotations that apply to an entire sequence or set of
+sequences. Features are annotations that apply to a specific sequence
+interval.)
+
+<p align="justify">
+Sequin provides two convenient methods to modify your entry: (1) to edit
+existing information, double click on the text or graphic area you want to
+modify, and Sequin will display forms requesting needed information; or (2) to
+add new information, use the <b>Annotate</b> menu and select from the list of
+available annotations.
+
+<p align="left">
+<font size=4>
+<b><i>Sequence Editor</i></b>
+</font>
+
+<p align="justify">
+Additional sequence data can also be added using Sequin's powerful sequence
+editor. Sequin will automatically adjust feature intervals when editing the
+sequence. Prior to Sequin, it was usually easier to reannotate everything from
+scratch when the sequence changed. But an even easier way to update sequences
+is described in the following section.
+
+<p align="left">
+<font size=4>
+<b><i>Updating the Sequence</i></b>
+</font>
+
+<p align="justify">
+Sequin can also read in a replacement sequence, or an overlapping sequence
+extension, and perform the alignment and feature propagation calculations
+necessary to adjust feature intervals, even though the individual editing
+operations were not done with the sequence editor.
+
+<p align="justify">
+The <b>Update Sequence</b> submenu within the <b>Edit</b> menu has several
+choices. These are for use by the original submitter of a record.
+
+<p align="justify">
+You can read a FASTA file or raw sequence file. This can be a replacement
+sequence, or it can overlap the original sequence at the 5' or 3' end. After
+Sequin aligns the two sequences, and you select optional parameters, the
+sequence in your record is updated, with all feature intervals adjusted
+properly.
+
+<p align="justify">
+You can also update with an existing sequence record that contains features.
+This can be obtained from a file, or retrieved from Entrez either via an
+Accession number. The latter choice requires the
+<a href="http://www.ncbi.nlm.nih.gov/Sequin/netaware.html">
+network-aware</a> version of Sequin. Once it gets the new record, Sequin
+aligns the two sequences as before. This is typically used either to merge two
+records that overlap, or to copy features from database records onto a new
+large contig.
+
+<br>
+<p align="center">
+<img src="images/seqn16.png" align=bottom alt="Update Sequence form
+displays information on how the old and new sequences align.">
+<br>
+
+<p align="justify">
+The first panel shows how the two sequences align to each other.  In this
+case, it is a 5' extension of the existing sequence. 400 bases are new, 70
+bases overlap the old sequence, and there are 30 bases of vector on the new
+sequence that do not align to the old sequence and will be trimmed off.
+
+<p align="justify">
+The second panel shows details of the 70-base aligned region. There is one
+single base gap in each sequence. The total number of sequence letters plus
+gap characters is the alignment length, 71 in this example. (This number was
+shown between the sequence figures in the first panel.) Mismatched bases are
+indicated by vertical red lines between the two sequences.
+
+<p align="justify">
+The third panel shows the actual sequence letters in the aligned region.
+Clicking on a gap or mismatch in the second panel scrolls to the appropriate
+place in this panel.
+
+<p align="justify">
+Before pressing Accept, you need to enter optional parameters. The alignment
+relationship is calculated by Sequin, but in some cases you may want to
+replace rather than extend the existing sequence. If you read in a record
+with features, you need to say if you only want to replace sequence, copy
+features, or do both. This control is disabled if no features were present.
+If you are copying features, you can keep protein IDs (such as when merging
+two existing overlapping records), and you can indicate how to treat features
+that were annotated in the overlapping area of both the old and new sequence.
+
+<p align="left">
+<a name="autodefline">
+<font size=4>
+<b><i>Generating the Definition Line</i></b>
+</font>
+</a>
+
+<p align="justify">
+The <b>Generate Definition Line</b> item in the <b>Annotate</b> menu can make
+the appropriate titles once the record has been annotated with features. The
+general format for sequences containing coding region features is:
+
+<p align="justify">
+Genus species protein name (gene symbol) mRNA/gene, complete/partial cds.
+
+<p align="justify">
+Exceptional cases, where this automatic function is unable to generate a
+reasonable definition line, will be edited by the database staff to conform to
+the style conventions.
+
+<p align="justify">
+The new definition line will replace any previous title, including that
+originally on the FASTA definition line.
+
+<p align="left">
+<font size=4>
+<b><i>Validation</i></b>
+</font>
+
+<p align="justify">
+Once you are satisfied that you have entered all the relevant information, save
+your file! Then select <b>Validate</b> under the <b>Search</b> menu. You will
+either receive a message that the validation test succeeded or see a screen
+listing the validation errors and warnings. Just double click on an error item
+to launch the appropriate editor for making corrections. See the Sequin
+<b>Help</b> text for more information on correcting errors. The validator
+includes checks for such things as missing organism information, incorrect
+coding region lengths, internal stop codons in coding regions, inconsistent
+genetic codes, mismatched amino acids, and non-consensus splice sites.
+
+<br>
+<p align="center">
+<img src="images/seqn17.png" align=bottom alt="Validator form has controls for
+Message verbosity, Severity, message Filter, and a display of error messages.">
+<br>
+
+<p align="left">
+<font size=4>
+<b><i>Submitting the Entry</i></b>
+</font>
+
+<p align="justify">
+When the entry is properly formatted and error-free, click the <b>Done</b>
+button or select <b>Prepare Submission</b> under the <b>File</b> menu. You will
+be prompted to save your entry and email it to the database you selected. The
+address for GenBank is <tt>gb&#173;sub@ncbi.nlm.nih.gov</tt>. The address for
+EMBL is <tt>datasubs@ebi.ac.uk</tt>. The address for DDBJ is
+<tt>ddbjsub@ddbj.nig.ac.jp</tt>.
+
+<p align="center">
+<a name="advanced">
+<font size=5>
+<b>Advanced Topics</b>
+</font>
+</a>
+
+<p align="left">
+<font size=4>
+<b><i>Feature Editor Design</i></b>
+</font>
+
+<p align="justify">
+Sequin uses a common structure for all feature editor forms, with (usually)
+three top-level folder tabs. One folder tab page is specific to the given
+feature type (biological source and publications have more). The
+<b>Properties</b> and <b>Location</b> pages are common to all features. Some
+of these pages may have subpages, accessed by a secondary set of smaller
+folder tabs. This organization allows editors for complex data structures to
+fit in a reasonably small window size. The most important information in a
+given section is always presented in the first subpage.
+
+<p align="left">
+<b>Coding Region Page</b>
+
+<p align="justify">
+The coding region editor is perhaps the most complicated form in Sequin.
+Within the <b>Coding Region</b> page, the <b>Product</b> subpage lets you
+predict the coding region intervals from the protein sequence or translate the
+protein sequence from the location. (Importing a protein sequence from a file
+will also interpret the [gene=...] and [protein=...] definition line information
+and automatically attempt to predict the coding region intervals.) It also
+displays the genetic code used for translation and the reading frame. (Please
+note that there are currently 13 different genetic codes present in Sequin.
+For more information on these, see
+<a href="http://www.ncbi.nlm.nih.gov/Taxonomy/">
+<tt>http://www.ncbi.nlm.nih.gov/Taxonomy/</tt></a>.)
+
+<p align="justify">
+The <b>Protein</b> subpage lets you set the name (or, if not known, a
+description) of the protein product. The <b>Exceptions</b> subpage allows you
+to indicate translation exceptions to the normal genetic code, such as
+insertion of selenocysteine, suppression of terminator codons by a suppressor
+tRNA, or completion of a stop codon by poly-adenylation of an mRNA.
+
+<br>
+<p align="center">
+<img src="images/seqn18.png" align=bottom alt="Coding Region page has small
+folder tabs for Product, Protein, Exceptions, and Misc. Product subpage has
+controls for Genetic Code, Predict Interval, and Translate Product.">
+<br>
+
+<p align="justify">
+Additional annotation on the protein product might include a leader peptide,
+transmembrane regions, disulfide bonds, or binding sites. These can be added
+after setting the <b>Target Sequence</b> pop-up on the sequence viewer to the
+desired protein sequence. You can also launch a duplicate view, already
+targeted to the appropriate protein, from the <b>Protein</b> subpage.
+
+<p align="left">
+<b>Properties Page</b>
+
+<p align="justify">
+All features have a number of fields in common. Check the <b>Partial</b> box to
+indicate that the range of the feature extends beyond the length of the
+sequence. (You would usually also check the 5<tt>'</tt> Partial or 3<tt>'</tt>
+Partial boxes in the <b>Location</b> page.) <b>Exception</b> means that the
+sequence of the protein product doesn't match the translation of the DNA
+sequence because of some known biological reason (e.g., RNA editing).
+<b>Evidence</b> can be experimental or non-experimental. For a coding region,
+the isolation of an mRNA or cDNA in the laboratory is sufficient to justify
+setting this box to <b>Experimental</b>.
+
+<p align="justify">
+In addition, nucleotide features (other than genes themselves) can reference a
+gene feature. This is frequently done by overlap. (The overlapping gene will
+show up on the feature as a /gene qualifier in GenBank format.) Extension of
+the feature location will automatically extend the gene that is selected in
+the editor. In rare cases, you may want to set a gene by cross-reference. For
+example, the mRNA for the lac operon in <i>E. coli</i> could indicate the
+lacIZYA gene by cross-reference, and the four coding regions would be
+overlapped by the lacI, lacZ, lacY, and lacA genes.
+
+<p align="justify">
+The <b>Comment</b> subpage allows text to be associated with a feature. In
+GenBank format, this appears as a /note qualifier. The <b>Citations</b>
+subpage attaches citations to the feature. (The citations should first be
+added to the record using items in the <b>Publication</b> submenu of the
+<b>Annotate</b> menu, whereupon it will appear in the REFERENCE section.) For
+example, an article that justifies a non-obvious or controversial biological
+conclusion would be cited here. In GenBank format, for example, if the
+publication is listed as Reference 2, the feature citation appears as
+/citation=[2]. <b>Cross-Refs</b> are cross-references to other databases. The
+contents of this subpage may only be changed by the GenBank, EMBL, or DDBJ
+database staff.
+
+<br>
+<p align="center">
+<img src="images/seqn19.png" align=bottom alt="Properties page has small
+folder tabs for General, Comment, Citations, and Cross-Refs. General page
+has controls for Partial, Pseudo, Evidence, Exception, and Explanation.">
+<br>
+
+<p align="left">
+<b>Location Page</b>
+
+<p align="justify">
+All features are required to have a location, i.e., one or more intervals on a
+sequence coordinate. The <b>Location</b> page provides a spreadsheet for
+entering and editing this information. An arbitrary number of lines can be
+entered. In this coding region example, the intervals correspond to the exons.
+For an mRNA, the intervals would be the exons and UTRs. The 5<tt>'</tt>
+Partial and 3<tt>'</tt> Partial check boxes will show up as &lt; or &gt; in
+front of a feature coordinate in the GenBank flatfile, indicating partial
+locations.
+
+<br>
+<p align="center">
+<img src="images/seqn20.png" align=bottom alt="Location page has controls for
+5 prime Partial and 3 partial Partial, and a spreadsheet for entering an arbitrary
+number of intervals.">
+<br>
+
+<p align="justify">
+The GenBank flatfile view of this location would be:
+
+<pre>
+join(201..224,1550..1920,1986..2085,2317..2404,2466..2629)
+</pre>
+
+<p align="justify">
+If the <b>5' Partial</b> or <b>3' Partial</b> boxes were checked, < and >
+symbols would appear at the appropriate end of the join statement:
+
+<pre>
+join(<201..224,1550..1920,1986..2085,2317..2404,2466..>2629)
+</pre>
+
+<p align="justify">
+If the sequence was reverse complemented (based on a length of 2881
+nucleotides), the <b>Strand</b> popups would all indicate <b>Minus</b>, and
+the join statement for the resulting feature location would be as follows:
+
+<pre>
+complement(join(253..416,478..565,797..896,962..1332, 2658..2681))
+</pre>
+
+<p align="left">
+<font size=4>
+<b><i>NCBI DeskTop</i></b>
+</font>
+
+<p align="justify">
+The NCBI DeskTop is a window that directly displays the internal structure of
+the record being viewed in Sequin. It can be understood as a Venn diagram. It
+is only meant for advanced users.
+
+<p align="justify">
+As with other views on a record, the DeskTop indicates selected items and
+lets you select items by clicking. Selected items can then be the target of
+actions chosen from the <b>Filter </b>menu. Drag and drop can be used to add,
+rearrange, or remove items in a record.
+
+<p align="justify">
+In this example, Sequin was given the genomic nucleotide, cDNA, and protein
+sequences for Drosophila eukaryotic initiation factor 4E. It then determined
+the mRNA and coding region intervals and built an initial structure. The
+organism (BioSource descriptor) is at the nuc-prot set and thus applies to
+both the nucleotide and protein sequences.
+
+<br>
+<p align="center">
+<img src="images/seqn21.png" align=bottom alt="NCBI DeskTop window displays a
+Venn Diagram of the internal structure of a record in the NCBI Data Model.">
+<br>
+
+<p align="left">
+<font size=4>
+<b><i>Additional Information</i></b>
+</font>
+
+<p align="justify">
+The Sequin homepage <a href="http://www.ncbi.nlm.nih.gov/Sequin/">
+<tt>http://www.ncbi.nlm.nih.gov/Sequin/</tt></a>
+has a Frequently Asked Questions section and more detailed instructions
+on using the capabilities of network-aware Sequin.
+
+<p align="center">
+<a name="reference">
+<font size=5>
+<b>Reference</b>
+</font>
+</a>
+
+<p align="left">
+<a name="netconnect">
+<font size=4>
+<b><i>Network Configuration</i></b>
+</font>
+</a>
+
+<p align="justify">
+When first downloaded, Sequin runs in stand-alone mode, without access to the
+network. However, the program can also be configured to exchange information
+with the NCBI (GenBank) over the Internet. The network-aware mode of Sequin is
+identical to the stand-alone mode, but it contains some additional
+useful options.
+
+<p align="justify">
+Sequin can only function in its network-aware mode if the computer on which
+it resides has a direct Internet connection. Electronic mail access to the
+Internet is insufficient. In general, if you can install and use a WWW browser
+on your system, you should be able to install and use network-aware Sequin.
+Check with your system administrator or Internet provider if you are uncertain
+as to whether you have direct Internet connectivity.
+
+<p align="justify">
+To launch the configuration form, select Net Configure under the Misc menu,
+from either the initial Welcome to Sequin form or from a viewer on an existing
+sequence record.
+
+<br>
+<p align="center">
+<img src="images/seqn22.png" align=bottom alt="Network Configuration form has
+buttons for Normal, Firewall, or No Connection.">
+<br>
+
+<p align="justify">
+If you are not behind a firewall, set the <b>Connection</b> control to
+<b>Normal</b>. If you also have a Domain Name Server (DNS) available, you can
+now simply press <b>Accept</b>.
+
+<p align="justify">
+If DNS is not available, uncheck the <b>Domain Name Server</b> button. If you
+are behind a firewall, set the <b>Connection</b> control to <b>Firewall</b>.
+The <b>Proxy</b> box then becomes active. If you also use a proxy server, type
+in its address. (If you have DNS, it will be of the form
+<tt>www.myproxy.myuniversity.edu</tt>. If you do not have DNS, you should use
+the numerical IP address of the form <tt>127.45.23.6</tt>.) Once you type
+something in the <b>Proxy</b> box, the <b>Port</b> box and <b>Transparent
+Proxy</b> button become active and can be filled in or changed as appropriate.
+(By default the <b>Transparent Proxy</b> button is off, indicating a CERN-like
+proxy.) Ask your network administrator for advice on the proper settings to
+use.
+
+<p align="justify">
+If you are in the United States, the default <b>Timeout</b> of 30 seconds
+should suffice. From foreign countries with poor Internet connection to the
+U.S., you can select up to 5 minutes as the timeout.
+
+<p align="justify">
+Finally, you will need to quit and restart Sequin ifor the network-aware
+settings to take effect.
+
+<p align="justify">
+If you are behind a firewall, it must be configured correctly to access NCBI
+services. Your network administrator may have done this already. If not,
+please have them contact NCBI for further instructions on setting up firewalls
+to work with NCBI services.
+
+<p align="justify">
+<b>The following section is intended for network administrators:</b>
+
+<p align="justify">
+Using NCBI services from behind a security firewall requires opening ports in
+your firewall. Please consult
+<a href="http://www.ncbi.nlm.nih.gov/cpp/network/firewall.html">http://www.ncbi.nlm.nih.gov/cpp/network/firewall.html</a>
+for the list of current hosts and ports that have the firewall
+daemon configured.
+
+<p align="justify">
+If your firewall is not transparent, the firewall port number
+should be mapped to the same port number on the external host.
+
+<p align="justify">
+Note: Old NCBI clients used different application configuration settings and
+ports than listed above. If you need to support such clients, which are
+becoming obsolete, please contact <a href="mailto:info@ncbi.nlm.nih.gov">
+<tt>info@ncbi.nlm.nih.gov</tt></a> for further information.
+
+<p align="left">
+<a name="formatexamples">
+<font size=4>
+<b><i>Sample Data Files</i></b>
+</font>
+</a>
+
+<p align="justify">
+Complete examples of nucleotide data files in each of the supported input
+formats are given below.
+
+<p align="justify">
+For alignment formats, such as NEXUS, do not use the ? character to
+represent ambiguous bases within sequences in the alignment. This is
+because Sequin removes non-IUPAC characters when it imports sequences.
+Ambiguous bases should be indicated as IUPAC characters such as N.
+
+<p align="justify">
+NEXUS files can contain ? for "missing" at the 5' and 3' ends of
+sequences. PHYLIP or FASTA+GAP files should contain - rather than ? to
+indicate these missing sequences.
+
+<p align="left">
+<b>FASTA</b>
+
+<pre>
+>ABC-1 [organism=Saccharomyces cerevisiae][strain=ABC][clone=1]
+ATTGCGTTATGGAAATTCGAAACTGCCAAATACTATGTCACCATCATTGA
+TGCACCTGGACACAGAGATTTCATCAAGAACATGATCACTGGTACTT
+>ABC-2 [organism=Saccharomyces cerevisiae][strain=ABC][clone=2]
+GATATTGCTTTATGGAAATTCGAAACTGCCAAATACTATGTCACCATCAT
+TGATGCACCTGGACACAGAAATTTCATCAAGAACATGATCACTGGTACTT
+>ABC-3 [organism=Saccharomyces cerevisiae][strain=ABC][clone=3]
+ATTGCTTTATGGAAATTCGAAACTGCCAAATACTATGTTATGATGCACCT
+GGACACAGAGATTTCATCAAAAACATGATCACTGGTACTT
+</pre>
+
+<p align="left">
+<b>FASTA+GAP</b>
+
+<pre>
+>ABC-1 [organism=Saccharomyces cerevisiae][strain=ABC][clone=1]
+---ATTGCGTTATGGAAATTCGAAACTGCCAAATACTATGTCACCATCAT
+TGATGCACCTGGACACAGAGATTTCATCAAGAACATGATCACTGGTACTT
+>ABC-2 [organism=Saccharomyces cerevisiae][strain=ABC][clone=2]
+GATATTGCTTTATGGAAATTCGAAACTGCCAAATACTATGTCACCATCAT
+TGATGCACCTGGACACAGAAATTTCATCAAGAACATGATCACTGGTACTT
+>ABC-3 [organism=Saccharomyces cerevisiae][strain=ABC][clone=3]
+---ATTGCTTTATGGAAATTCGAAACTGCCAAATACTATGTTA-------
+TGATGCACCTGGACACAGAGATTTCATCAAAAACATGATCACTGGTACTT
+</pre>
+
+<p align="left">
+<b>PHYLIP</b>
+
+<pre>
+      3  100
+ABC-1      ---ATTGCGT TATGGAAATT CGAAACTGCC AAATACTATG TCACCATCAT
+ABC-2      GATATTGCTT TATGGAAATT CGAAACTGCC AAATACTATG TCACCATCAT
+ABC-3      ---ATTGCTT TATGGAAATT CGAAACTGCC AAATACTATG TTA-------
+
+           TGATGCACCT GGACACAGAG ATTTCATCAA GAACATGATC ACTGGTACTT
+           TGATGCACCT GGACACAGAA ATTTCATCAA GAACATGATC ACTGGTACTT
+           TGATGCACCT GGACACAGAG ATTTCATCAA AAACATGATC ACTGGTACTT
+
+>[org=Saccharomyces cerevisiae][strain=ABC][clone=1]
+>[org=Saccharomyces cerevisiae][strain=ABC][clone=2]
+>[org=Saccharomyces cerevisiae][strain=ABC][clone=3]
+</pre>
+
+<p align="left">
+<b>NEXUS Interleaved</b>
+
+<pre>
+#NEXUS
+
+begin data;
+        dimensions  ntax=3 nchar=100;
+        format datatype=dna  missing=? gap=-  interleave ;
+        matrix
+
+[     1                                                   50]
+ABC_1 ???ATTGCGT TATGGAAATT CGAAACTGCC AAATACTATG TCACCATCAT
+ABC_2 GATATTGCTT TATGGAAATT CGAAACTGCC AAATACTATG TCACCATCAT
+ABC_3 ???ATTGCTT TATGGAAATT CGAAACTGCC AAATACTATG TTA-------
+
+[     51                                                 100]
+ABC_1 TGATGCACCT GGACACAGAG ATTTCATCAA GAACATGATC ACTGGTACTT
+ABC_2 TGATGCACCT GGACACAGAA ATTTCATCAA GAACATGATC ACTGGTACTT
+ABC_3 TGATGCACCT GGACACAGAG ATTTCATCAA AAACATGATC ACTGGTACTT
+;
+END;
+
+begin ncbi;
+sequin
+>[org=Saccharomyces cerevisiae][strain=ABC][clone=1]
+>[org=Saccharomyces cerevisiae][strain=ABC][clone=2]
+>[org=Saccharomyces cerevisiae][strain=ABC][clone=3]
+;
+end;
+</pre>
+
+<p align="left">
+<b>NEXUS Contiguous</b>
+
+<pre>
+#NEXUS
+
+begin data;
+        dimensions  ntax=3 nchar=100;
+        format datatype=dna  missing=? gap=-  ;
+        matrix
+
+ABC_1   
+???ATTGCGT TATGGAAATT CGAAACTGCC AAATACTATG TCACCATCAT
+TGATGCACCT GGACACAGAG ATTTCATCAA GAACATGATC ACTGGTACTT
+ABC_2  
+GATATTGCTT TATGGAAATT CGAAACTGCC AAATACTATG TCACCATCAT
+TGATGCACCT GGACACAGAA ATTTCATCAA GAACATGATC ACTGGTACTT
+ABC_3  
+???ATTGCTT TATGGAAATT CGAAACTGCC AAATACTATG TTA-------
+TGATGCACCT GGACACAGAG ATTTCATCAA AAACATGATC ACTGGTACTT
+;
+END;
+
+begin ncbi;
+sequin
+>[org=Saccharomyces cerevisiae][strain=ABC][clone=1]
+>[org=Saccharomyces cerevisiae][strain=ABC][clone=2]
+>[org=Saccharomyces cerevisiae][strain=ABC][clone=3]
+;
+end;
+</pre>
+
+<p align="left">
+<a name="featuretable">
+<font size=4>
+<b><i>Feature Table Format</i></b>
+</font>
+</a>
+
+<p align="justify">
+Sequin can now annotate features by reading in a tab-delimited table. This is
+most often used by genome centers that store feature interval information in
+relational databases or spreadsheets. For most submitters, it is usually
+better to supply protein sequences in FASTA format with gene and protein names
+embedded in the definition line.
+
+<p align="justify">
+The feature table specifies the location and type of each feature, and Sequin
+processes the feature intervals and translates any CDSs. The table is read in
+the record viewer (after the sequence has been imported) using the File-->Open
+menu item. The table must follow a defined format. The first line starts with
+>Feature, a space, and then the Sequence ID of the sequence you are
+annotating. In the example below, eIF4E is the Sequence ID, and it is a local
+identifier.
+
+<p align="justify">
+The table is composed of five columns: start, stop, feature key, qualifier
+key, and qualifier value. The columns are separated by tabs. The first row for
+any given feature has start, stop, and feature key. Additional feature
+intervals just have start and stop. The qualifiers follow on lines starting
+with three tabs.
+
+<p align="justify">
+For example, a table that looks like this:
+
+<pre>
+>Features lcl|eIF4E
+80      2881    gene
+                        gene     eIF4E
+
+201     224     CDS
+1550    1920
+1986    2085
+2317    2404
+2466    2629
+                        product  eukaryotic initiation factor 4E-II
+
+1402    1458    CDS
+1550    1920
+1986    2085
+2317    2404
+2466    2629
+                        product  eukaryotic initiation factor 4E-I
+                        note     encoded by two messenger RNAs
+
+80      224     mRNA
+1550    1920
+1986    2085
+2317    2404
+2466    2881
+                        product  eukaryotic initiation factor 4E-II
+
+80      224     mRNA
+892     1458
+1550    1920
+1986    2085
+2317    2404
+2466    2881
+                        product  eukaryotic initiation factor 4E-I
+
+80      224     mRNA
+1129    1458
+1550    1920
+1986    2085
+2317    2404
+2466    2881
+                        product  eukaryotic initiation factor 4E-I
+</pre>
+
+<p align="justify">
+will result in a GenBank flatfile that contains this:
+
+<pre>
+     mRNA            join(80..224,1129..1458,1550..1920,1986..2085,2317..2404,
+                     2466..2881)
+                     /gene="eIF4E"
+                     /product="eukaryotic initiation factor 4E-I"
+     mRNA            join(80..224,892..1458,1550..1920,1986..2085,2317..2404,
+                     2466..2881)
+                     /gene="eIF4E"
+                     /product="eukaryotic initiation factor 4E-I"
+     mRNA            join(80..224,1550..1920,1986..2085,2317..2404,2466..2881)
+                     /gene="eIF4E"
+                     /product="eukaryotic initiation factor 4E-II"
+     gene            80..2881
+                     /gene="eIF4E"
+     CDS             join(201..224,1550..1920,1986..2085,2317..2404,2466..2629)
+                     /gene="eIF4E"
+                     /codon_start=1
+                     /product="eukaryotic initiation factor 4E-II"
+                     /translation="MVVLETEKTSAPSTEQGRPEPPTSAAAPAEAKDVKPKEDPQETG
+                     EPAGNTATTTAPAGDDAVRTEHLYKHPLMNVWTLWYLENDRSKSWEDMQNEITSFDTV
+                     EDFWSLYNHIKPPSEIKLGSDYSLFKKNIRPMWEDAANKQGGRWVITLNKSSKTDLDN
+                     LWLDVLLCLIGEAFDHSDQICGAVINIRGKSNKISIWTADGNNEEAALEIGHKLRDAL
+                     RLGRNNSLQYQLHKDTMVKQGSNVKSIYTL"
+     CDS             join(1402..1458,1550..1920,1986..2085,2317..2404,
+                     2466..2629)
+                     /gene="eIF4E"
+                     /note="encoded by two messenger RNAs"
+                     /codon_start=1
+                     /product="eukaryotic initiation factor 4E-I"
+                     /translation="MQSDFHRMKNFANPKSMFKTSAPSTEQGRPEPPTSAAAPAEAKD
+                     VKPKEDPQETGEPAGNTATTTAPAGDDAVRTEHLYKHPLMNVWTLWYLENDRSKSWED
+                     MQNEITSFDTVEDFWSLYNHIKPPSEIKLGSDYSLFKKNIRPMWEDAANKQGGRWVIT
+                     LNKSSKTDLDNLWLDVLLCLIGEAFDHSDQICGAVINIRGKSNKISIWTADGNNEEAA
+                     LEIGHKLRDALRLGRNNSLQYQLHKDTMVKQGSNVKSIYTL"
+</pre>
+
+<p align="justify">
+Note that if the gene feature spans the intervals of the CDS and mRNA features
+for that gene, you don't need to include gene "qualifiers" in those features,
+because they will be picked up by overlap.
+
+<p align="justify">
+Features that are on the complementary strand are indicated by reversing the
+interval locations. For example, the table:
+
+<pre>
+>Features lcl|dna2
+5284    5202    tRNA
+                        product  tRNA-Glu
+</pre>
+
+<p align="justify">
+will result in a GenBank flatfile containing:
+
+<pre>
+     tRNA            complement(5202..5284)
+                     /product="tRNA-Glu"
+</pre>
+
+<p align="justify">
+More instructions on using the feature table format for submitting large
+genomic records are available at
+<a href="http://www.ncbi.nlm.nih.gov/Sequin/table.html">
+<tt>http://www.ncbi.nlm.nih.gov/Sequin/table.html</tt></a>.
+
+<HR>
+
+<CENTER>
+<P CLASS=medium1><B>Questions or Comments?</B>
+<BR>Write to the <A HREF="mailto:info@ncbi.nlm.nih.gov">NCBI Service Desk</A></P>
+<P CLASS=medium1>Revised January 20, 2004
+
+</CENTER>
+
+<!--  end of content  -->  
+
+   
+
+ 
+
+</body>
+</html>

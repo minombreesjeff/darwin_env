@@ -1,0 +1,361 @@
+/*   ncbilcl.h
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  ncbilcl.h
+*
+* Author:  Gish, Kans, Ostell, Schuler
+*
+* Version Creation Date:   1/1/91
+*
+* $Revision: 6.5 $
+*
+* File Description:
+*               system dependent header
+*               MS Windows version
+*               MCVC++ and Borland C++ compilers
+*
+* Modifications:
+* --------------------------------------------------------------------------
+* $Log: ncbilcl.msw,v $
+* Revision 6.5  2003/12/24 18:37:55  vakatov
+* More consistent #define of FAR and near (as per D.Sinyakov's request).
+* Also, get rid of all WIN16-related code (it's just not supported nowdays).
+*
+* Revision 6.4  2002/11/22 20:05:04  lavr
+* Configure HAVE_STRDUP and HAVE_STRCASECMP
+*
+* Revision 6.3  1999/11/26 21:23:01  vakatov
+* Use pragma to get rid of annoying warnings when compiling for DLL
+*
+* Revision 6.2  1999/03/17 15:37:23  vakatov
+* Set the default(<ncbistd.h>) "Nlm_Int4" to "int" rather tnan "long";
+* the same for "Nlm_Uint4";  modifyed the concerned "ncbilcl.*" files
+* accordingly.
+*
+* Revision 6.1  1998/07/28 20:28:42  vakatov
+* [WIN32,_MT]  #define WIN32_THREADS_AVAIL
+*
+* Revision 6.0  1997/08/25 18:16:07  madden
+* Revision changed to 6.0
+*
+* Revision 5.4  1997/07/22 19:11:29  vakatov
+* Separated Main() from GetArg[svc]() functions;  [WIN_MSWIN] converged
+* console and GUI libraries; [for WIN32-DLL] encapsulated global variables
+*
+* Revision 5.3  1997/06/27 17:05:35  vakatov
+* Merged "ncbilcl.bwn" to "ncbilcl.msw";  use only "ncbilcl.msw" now
+*
+* Revision 5.2  1996/08/19 19:19:10  vakatov
+* additional merge of R5.0 & R5.1 (as R5.1 grows immediately from R2.12)
+*
+* Revision 4.1  1995/12/18  17:37:38  epstein
+* add TIME_MAX
+* 
+* Revision 2.15  1995/07/18  03:34:29  ostell
+* added defined(_M_IX86) for MS compiler 2.0
+*
+* 04-05-93  Schuler     Some changes for WindowsNT and DLLs
+* 04-12-93  Schuler     Added some #ifndef's to avoid redefinitions
+* 06-11-93  Schuler     Added INLINE macro (defined to __inline)
+*
+* ==========================================================================
+*/
+#ifndef _NCBILCL_
+#define _NCBILCL_
+
+/*********************** COMPILER DEFINITIONS ******************************/
+#if defined(_MSC_VER)
+#define COMP_MSC  /* Microsoft Visual C/C++ */
+#elif defined(__BORLANDC__)
+#define COMP_BOR  /* Borland C/C++ */
+#else
+#error Unsupported compiler:  must be MSVC++ or Borland C/C++ 
+#endif
+
+
+/*********************** PLATFORM DEFINITIONS ******************************/
+
+#if defined(_MAC)  && !defined(COMP_MSC)
+#error MAC applications can be built with MSVC++ compiler only
+#endif
+
+#if !defined(WIN32) && !defined(_MAC)
+#  error You must define one of:  WIN32 or _MAC 
+#endif
+
+
+/*===== Definitions common to all platforms =======*/
+
+/* Have to #define both these by historical reasons -- as there was
+ * only GUI in earlier toolkit versions, and therefore all Win-SDK
+ * functions were considered as GUI(#WIN_MSWIN).
+ */
+#define OS_MSWIN
+#define WIN_MSWIN
+
+
+/*================[ Win32 ]===============*/
+#ifdef WIN32
+
+#define WIN_DUMB
+#define OS_NT
+
+#ifndef FAR
+#define FAR
+#endif
+
+#ifndef NEAR
+#define NEAR
+#endif
+
+#ifndef EXPORT
+#define EXPORT
+#endif
+
+#if defined(ALPHA) || defined(_ALPHA_)
+/* DEC Alpha processor */
+#define PLATFORM_NAME "Win32a"
+#define PROC_ALPHA
+#ifndef PASCAL
+#define PASCAL
+#define CDECL
+#endif
+
+#elif defined(MIPS) || defined(_MIPS_)
+/* MIPS processor */
+#define PLATFORM_NAME "Win32m"
+#define PROC_MIPS
+#ifndef PASCAL
+#define PASCAL
+#define CDECL
+#endif
+
+#elif defined(i386) || defined(X86) || defined(_X86_) || defined(_M_IX86)
+/* INTEL processor */
+#define PLATFORM_NAME "Win32i"
+#define PROC_I80X86
+#define PROC_I80_386
+#ifndef PASCAL
+#define PASCAL __stdcall
+#define CDECL  __cdecl
+#endif
+
+#else
+#error Unknown processor
+#endif
+
+#ifdef _MT
+#define WIN32_THREADS_AVAIL
+#endif
+
+#endif /* WIN32 */
+
+
+/*================[ Macintosh ]===============*/
+#ifdef _MAC
+
+#if !(defined(_68K_) || defined(_MPPC_))
+#error You must define one of: _68K_ or _MPPC_ 
+#endif
+
+#define OS_NT  // Not really, but that makes it work!
+
+#ifdef _68K_
+#define PLATFORM_NAME "Mac68K"
+#define PROC_M680X0
+#define mc68000
+#ifndef PASCAL
+#define PASCAL  __pascal
+#define CDECL	__cdecl
+#endif
+typedef signed   long  Nlm_Int4,  FAR * Nlm_Int4Ptr;
+typedef unsigned long  Nlm_Uint4, FAR * Nlm_Uint4Ptr;
+#define Int4           Nlm_Int4
+#define Int4Ptr        Nlm_Int4Ptr
+#define Uint4          Nlm_Uint4
+#define Uint4Ptr       Nlm_Uint4Ptr
+#define INT4_MIN       (-2147483647-1)
+#define INT4_MAX       2147483647
+#define UINT4_MAX      4294967295U
+#endif
+
+#ifdef _MPPC_
+#define PLATFORM_NAME "MacPPC"
+#define PROC_PPC
+#ifndef PASCAL
+#define PASCAL  
+#define CDECL	__cdecl
+#endif
+#endif
+
+#ifndef FAR
+#define FAR
+#endif
+#ifndef NEAR
+#define NEAR
+#endif
+
+#endif /* _MAC */
+
+
+/* ...for historical reasons... */
+#ifdef OS_NT
+#define OS_WINNT
+#endif
+
+
+/*----------------------------------------------------------------------*/
+/*      Desired or available feature list                               */
+/*----------------------------------------------------------------------*/
+#ifdef COMP_MSC
+
+#if (_MSC_VER >= 700)
+#define INLINE __inline
+#endif
+
+#define TRACE_TO_AUX  /* TRACE to AUX device */
+
+#ifdef _MAC
+#define NETP_INET_MACTCP 1
+#else
+#define NETP_INET_WSOCK  1
+#endif
+
+#ifdef NLM_IMPORT
+#  pragma warning(disable: 4273)
+#endif
+
+#endif /* COMP_MSC */
+
+
+#ifdef COMP_BOR
+/*  For importing Microsoft C code */
+#define __MSC__
+
+#define _near   near
+#define _far    far
+#define _huge   huge
+#define _cdecl  cdecl
+#define _pascal pascal
+
+typedef unsigned int   UINT;
+typedef unsigned long  ULONG;
+typedef unsigned short USHORT;
+typedef unsigned char  UCHAR;
+
+#endif /* COMP_BOR */
+
+#define HAVE_STRDUP 1
+
+
+/*----------------------------------------------------------------------*/
+/*      #includes                                                       */
+/*----------------------------------------------------------------------*/
+#include <stddef.h>
+#include <sys/types.h>
+#include <limits.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
+#include <errno.h>
+#include <float.h>
+
+
+/*----------------------------------------------------------------------*/
+/*      Missing ANSI-isms                                               */
+/*----------------------------------------------------------------------*/
+#ifndef FILENAME_MAX
+#define FILENAME_MAX 63
+#endif
+
+
+/*----------------------------------------------------------------------*/
+/*      Aliased Logicals, Datatypes                                     */
+/*----------------------------------------------------------------------*/
+#define PNTR FAR *
+#define HNDL NEAR *
+
+typedef int (FAR PASCAL *Nlm_FnPtr)();
+#define FnPtr Nlm_FnPtr
+
+
+/*----------------------------------------------------------------------*/
+/*      Misc Macros                                                     */
+/*----------------------------------------------------------------------*/
+#define PROTO(x)  x   /* Function prototypes are real */
+#define VPROTO(x) x   /* Prototype for variable argument list */
+
+#ifdef _MAC
+#define IS_BIG_ENDIAN
+#define DIRDELIMCHR     ':'
+#define DIRDELIMSTR     ":"
+#define CWDSTR          ":"
+#else
+#define DIRDELIMCHR     '\\'
+#define DIRDELIMSTR     "\\"
+#define CWDSTR          "."
+#endif
+
+#ifndef IS_BIG_ENDIAN
+#define IS_LITTLE_ENDIAN
+#endif
+
+#ifndef PATH_MAX
+#define PATH_MAX 256
+#endif
+
+#define KBYTE           (1024)
+#define MBYTE           (1048576L)
+
+#define TEMPNAM_AVAIL
+
+
+/*----------------------------------------------------------------------*/
+/*      Macros for Floating Point                                       */
+/*----------------------------------------------------------------------*/
+#define EXP2(x)  exp((x)*LN2)
+#define LOG2(x)  (log(x)*(1./LN2))
+#define EXP10(x) exp((x)*LN10)
+#define LOG10(x) (log10(x))
+
+#ifndef TIME_MAX
+#define TIME_MAX  INT4_MAX
+#endif
+
+
+/*----------------------------------------------------------------------*/
+/*      Macros Defining Limits                                          */
+/*----------------------------------------------------------------------*/
+#ifdef WIN32
+#define MAXALLOC        0x7F000000 /* Largest permissible memory request */
+#else
+#define MAXALLOC        0x10000    /* Largest permissible memory request */
+#endif
+
+#endif  /* _NCBILCL_ */
+

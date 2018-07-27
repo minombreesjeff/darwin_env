@@ -1,0 +1,1 @@
+../corelib/ncbistr.h

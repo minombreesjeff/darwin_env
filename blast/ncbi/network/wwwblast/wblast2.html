@@ -1,0 +1,283 @@
+<!--
+/* $Id: wblast2.html,v 1.2 2003/07/14 19:49:02 dondosha Exp $
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  $RCSfile: wblast2.html,v $
+*
+* Initial Version Creation Date: 11/02/2000
+*
+* $Revision: 1.2 $
+*
+* Authors: Ilya Dondoshansky, Sergey Shavirin
+*
+* File Description:
+*         Template for standalone BLAST 2 sequences Web page
+*
+* $Log: wblast2.html,v $
+* Revision 1.2  2003/07/14 19:49:02  dondosha
+* Some improvements in javascript
+*
+* Revision 1.1  2002/08/06 19:03:52  dondosha
+* WWW BLAST server, initial CVS revision
+*
+
+-->
+<HTML>
+<HEAD>
+<title>Blast 2 Sequences</title>
+<SCRIPT LANGUAGE="Javascript">
+
+<!-- HIDE
+function chan(a)
+{
+alert(a);
+	if (a.value == 'off') {
+		document.bl2.gopen.value=11;
+		document.bl2.gext.value=1;
+		document.bl2.match.value="";
+		document.bl2.msmatch.value="";
+		a.value = 'on';
+	} else {
+		document.bl2.gopen.value=5;
+		document.bl2.gext.value=2;
+		document.bl2.match.value="1";
+		document.bl2.msmatch.value="-2";
+		a.value = 'off';
+	}
+}
+
+function chan_prog(a)
+{
+	if (a.selectedIndex == 0) {
+		document.bl2.gopen.value = 5;
+		document.bl2.gext.value = 2;
+		document.bl2.match.value="1"; 
+		document.bl2.msmatch.value="-2";
+		document.bl2.word.value="11";
+                document.bl2.matrix.options.length = 1;
+                document.bl2.matrix.options[0] = null;
+                document.bl2.matrix.options[0] = new Option('Not Applicable');
+                document.bl2.matrix.options[0].text='Not Applicable';
+		document.bl2.matrix.options[0].value=-1;
+		document.bl2.strand.options.length = 4;
+		document.bl2.strand.options[0] = null;
+		document.bl2.strand.options[0] = new Option('Both strands');
+             document.bl2.strand.options[0].text='Both strands';
+             document.bl2.strand.options[0].value=3;
+             document.bl2.strand.options[0].selected = true;
+             document.bl2.strand.options[1].text='Top strand';
+             document.bl2.strand.options[1].value=1;
+             document.bl2.strand.options[2].text='Reverse strand';
+             document.bl2.strand.options[2].value=2;
+	} else if (a.selectedIndex >= 1) {
+                document.bl2.matrix.options.length = 7;
+	        document.bl2.matrix.options[0] = null;
+        	document.bl2.matrix.options[0] = new Option('BLOSUM62');
+             document.bl2.matrix.options[0].text='BLOSUM62';
+             document.bl2.matrix.options[0].value=0;
+             document.bl2.matrix.options[0].selected = true;
+             document.bl2.matrix.options[1].text='PAM30';
+             document.bl2.matrix.options[1].value=1;
+             document.bl2.matrix.options[2].text='PAM70';
+             document.bl2.matrix.options[2].value=2;
+             document.bl2.matrix.options[3].text='PAM250';
+             document.bl2.matrix.options[3].value=3;
+             document.bl2.matrix.options[4].text='BLOSUM90';
+             document.bl2.matrix.options[4].value=4;
+             document.bl2.matrix.options[5].text='BLOSUM50';
+             document.bl2.matrix.options[5].value=5;
+		document.bl2.word.value="3";
+		if (document.bl2.matrix.selectedIndex == 0) {
+			document.bl2.gopen.value = 11;
+			document.bl2.gext.value = 1;
+		} else if (document.bl2.matrix.selectedIndex == 1) {
+			document.bl2.gopen.value = 9;
+			document.bl2.gext.value = 1;
+		} else if (document.bl2.matrix.selectedIndex == 2) {
+			document.bl2.gopen.value = 10;
+			document.bl2.gext.value = 1;
+		} else if (document.bl2.matrix.selectedIndex == 3) {
+			document.bl2.gopen.value = 14;
+			document.bl2.gext.value = 2;
+		} else if (document.bl2.matrix.selectedIndex == 4) {
+			document.bl2.gopen.value = 10;
+			document.bl2.gext.value = 1;
+		} else if (document.bl2.matrix.selectedIndex == 5) {
+			document.bl2.gopen.value = 13;
+			document.bl2.gext.value = 2;
+		}
+		document.bl2.match.value="";
+		document.bl2.msmatch.value="";
+                document.bl2.megablast.checked = 0;
+             	document.bl2.strand.options.length = 1;
+	        document.bl2.strand.options[0] = null;
+       	     	document.bl2.strand.options[0] = new Option('Not Applicable');
+             	document.bl2.strand.options[0].selected = true;
+             document.bl2.strand.options[0].text='Not Applicable';
+             document.bl2.strand.options[0].value=0;
+	}
+}
+
+function update_mtrx(a)
+{
+	if (document.bl2.program.selectedIndex == 0) {
+		return;
+	}
+		document.bl2.word.value = 3;
+	if (a.selectedIndex == 0) {   /* BLOSUM62 */
+		document.bl2.gopen.value = 11;
+		document.bl2.gext.value = 1;
+	} else if (a.selectedIndex == 1) {  /* PAM30 */
+		document.bl2.gopen.value = 9;
+		document.bl2.gext.value = 1;
+	} else if (a.selectedIndex == 2) {  /* PAM70 */
+		document.bl2.gopen.value = 10;
+		document.bl2.gext.value = 1;
+	} else if (a.selectedIndex == 3) {  /* PAM250 */
+		document.bl2.gopen.value = 14;
+		document.bl2.gext.value = 2;
+	} else if (a.selectedIndex == 4) {  /* BLOSUM90 */
+		document.bl2.gopen.value = 10;
+		document.bl2.gext.value = 1;
+	} else if (a.selectedIndex == 5) {   /* BLOSUM50 */
+		document.bl2.gopen.value = 13;
+		document.bl2.gext.value = 2;
+	}
+}
+function clear_sequence() {
+      document.bl2.seqfile1.value='';
+      document.bl2.seqfile2.value='';
+      document.bl2.sseq.value='';
+      document.bl2.seq.value='';
+      document.bl2.one.value='';
+      document.bl2.two.value='';
+      document.bl2.to.value='';
+      document.bl2.tto.value='';
+      document.bl2.from.value='';
+      document.bl2.ffrom.value='';
+      document.bl2.seq.focus();
+}
+
+function megablast_update(a)
+{
+        if (a.checked == 0) {
+         document.bl2.word.value = 11;
+         document.bl2.gopen.value = 5;
+         document.bl2.gext.value = 2;
+        } else {
+         if (document.bl2.program.selectedIndex != 0) {
+            document.bl2.program.selectedIndex = 0;
+            chan_prog(document.bl2.program);
+         }
+         document.bl2.word.value = 28;
+         document.bl2.gopen.value = "";
+         document.bl2.gext.value = "";
+     }
+}
+
+// -->
+
+</SCRIPT>
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF" LINK="#0000FF" VLINK="#660099" ALINK="#660099">
+<A HREF="blast_form.map">
+<IMG SRC="images/bl2seq.gif" BORDER=0 ISMAP></A>
+
+<FORM NAME="bl2" method="Post" action="wblast2.cgi?0" enctype="multipart/form-data">
+This tool produces the alignment of two given sequences using BLAST<BR>
+engine for local alignment. 
+<P>
+<A HREF=docs/blast_program.html>Program</A>
+<select name="program" onChange="chan_prog(this)">
+<option selected> blastn
+<option> blastp
+<option> tblastn
+<option> blastx
+<option> tblastx
+</select>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<INPUT TYPE="submit" VALUE="Align">
+<INPUT TYPE="button" VALUE="Clear sequence" onClick="clear_sequence()">
+<HR>
+<font color=ff0000>Sequence 1: </font>&nbsp;&nbsp;&nbsp;&nbsp;
+from: <INPUT type=text size=8 name="from"> &nbsp;&nbsp; to: 
+<INPUT type=text size=8 name="to">
+<BR>
+Enter sequence in FASTA format 
+<BR>
+<textarea name="seq" rows=6 cols=60></textarea><BR>
+or download from file <INPUT type=file name="seqfile1">
+<P>
+<HR>
+<font color=ff0000>Sequence 2: </font>&nbsp;&nbsp;&nbsp;&nbsp; 
+from:<INPUT type=text size=8 name="ffrom"> &nbsp;&nbsp; to: 
+<INPUT type=text size=8 name="tto">
+<BR>
+Enter sequence in FASTA format
+<BR>
+<textarea name="sseq" rows=6 cols=60></textarea>
+<BR>
+or download from file <INPUT type=file name="seqfile2">
+<HR>
+Parameters used in <A HREF=docs/full_options.html#blastn>BLASTN </A>program only:<BR>
+<strong>Reward for a match:</strong><INPUT type=text size=8 name="match" value=1>
+<strong>Penalty for a mismatch:</strong><INPUT type=text size=8 name="msmatch" value=-2>
+<HR> 
+<A HREF=docs/options.html#matrix>Matrix</A>
+<select name="matrix" onChange="update_mtrx(this)">
+<option> Not Applicable
+<!-- <option> 0 BLOSUM62
+<option> 1 PAM30
+<option> 2 PAM70
+<option> 3 PAM250
+<option> 4 BLOSUM90
+<option> 5 BLOSUM50
+// -->
+</select>
+Open gap 
+<INPUT type=text size=4 name="gopen" value=5>
+and extension gap
+<INPUT type=text size=4 name="gext" value=2> penalties
+<BR>
+Gap x_dropoff <INPUT type=text size=4 name="dropoff" value=50>
+<A HREF=docs/newoptions.html#expect>Expect value</A> 
+<INPUT type=text size=4 name="expect" value=10> 
+Word size <INPUT type=text size=4 name="word" value=11>
+<a href="docs/newoptions.html#filter">Filter</a>
+<INPUT TYPE="checkbox" NAME="Filter" VALUE="1" CHECKED>
+<HR>
+<INPUT TYPE="submit" VALUE="Align">
+<INPUT TYPE="button" VALUE="Clear sequence" onClick="clear_sequence()">
+<INPUT TYPE="reset" VALUE="Reset form">
+</form>
+<HR>
+<ADDRESS> Comments and suggetstions to: 
+<A HREF="mailto:blast-help@ncbi.nlm.nih.gov">blast-help@ncbi.nlm.nih.gov</A>
+<BR>
+</body>
+</html>

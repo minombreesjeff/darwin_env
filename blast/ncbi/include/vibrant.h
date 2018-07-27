@@ -1,0 +1,1 @@
+../vibrant/vibrant.h

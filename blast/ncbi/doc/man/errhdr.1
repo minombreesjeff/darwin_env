@@ -1,0 +1,42 @@
+.TH ERRHDR 1 2001-10-05 NCBI "NCBI Tools User's Manual"
+.SH NAME
+errhdr \- produce a C header file from a set of messages
+.SH SYNOPSIS
+.B errhdr
+[\|\fB\-2\fP\|]
+[\|\fB\-s\fP\|]
+\fImsgfile\fP
+[\|\fIhdrfile\fP\|]
+.SH DESCRIPTION
+\fBerrhdr\fP reads a file describing error codes and corresponding
+messages and produces a C header file, either on standard output or in
+\fIhdrfile\fP.
+.PP
+The input file has a simple text-based format; one file
+(errmsg/valid.msg in the source tree) starts
+.PP
+.nf
+MODULE valid
+$$ SEQ_INST, 1
+$^   ExtNotAllowed, 1
+# This is a comment
+A Bioseq "extension" is used for special classes of Bioseq. This class of
+Bioseq should not have one but it does. This is probably a software error.
+
+$^   ExtBadOrMissing, 2
+This class of Bioseq requires an "extension" but it is missing or of the
+wrong type. This is probably a software error.
+.fi
+.PP
+(Detailed descriptions are optional, and no "end" lines of any sort
+are necessary.)
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-2\fP
+Code, subcode tuples
+.TP
+\fB\-s\fP
+Short subcode defines
+.SH AUTHOR
+The National Center for Biotechnology Information.

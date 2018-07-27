@@ -1,0 +1,102 @@
+.TH ENTRCMD 1 2001-10-03 NCBI "NCBI Tools User's Manual"
+.SH NAME
+entrcmd \- non-interactive command line interface for Entrez
+.SH SYNOPSIS
+.B entrcmd
+[\|\fB\-\fP\|]
+[\|\fB\-c\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-e\fP\ \fIstr\fP\|]
+[\|\fB\-f\fP\|]
+[\|\fB\-g\ F\fP\|]
+[\|\fB\-h\fP\|]
+[\|\fB\-i\fP\ \fIstr\fP\|]
+[\|\fB\-l\fP\ \fIstr\fP\|]
+[\|\fB\-n\fP\ \fIfilename\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+\fB\-p\fP\ \fIstr\fP
+[\|\fB\-r\fP\|]
+[\|\fB\-s\fP\|]
+[\|\fB\-t\fP\ \fIstr\fP\|]
+[\|\fB\-u\fP\ \fIstr\fP\|]
+[\|\fB\-w\fP\ \fIstr\fP\|]
+[\|\fB\-x\fP\ \fIstr\fP\|]
+[\|\fB\-y\fP\ \fIN\fP\|]
+.SH DESCRIPTION
+\fBentrcmd\fP is a non-interactive command-line interface which allows
+a user to perform a series of neighboring and output operations, based
+upon an initial set of UIDs or a boolean expression which describes a
+set of UIDs.  Alternatively, it can be used to display an
+alphabetically sorted list of terms near an initial term.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-c\fP
+\&'Check' WWW output Forms
+.TP
+\fB\-d\fP\ \fIstr\fP
+Initial database (default = m)
+.TP
+\fB\-e\fP\ \fIstr\fP
+Boolean expression
+.TP
+\fB\-f\fP
+For WWW output, use Forms
+.TP
+\fB\-g\ F\fP
+Do not use WWW-style encoding for special input characters
+.TP
+\fB\-h\fP
+Print detailed help.  Requires, but ignores, \fB\-p\fP\ \fIstr\fP
+.TP
+\fB\-i\fP\ \fIstr\fP
+Comma-delimited list of files to import for named UID list
+.TP
+\fB\-l\fP\ \fIstr\fP
+Taxonomy lookup string
+.TP
+\fB\-n\fP\ \fIfilename\fP
+On-the-fly neighboring from \fIfilename\fP
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Output file (default = stdout)
+.TP
+\fB\-p\fP\ \fIstr\fP
+Program of commands
+.TP
+\fB\-r\fP
+Get sequences from ID Repository
+.TP
+\fB\-s\fP
+Display status report
+.TP
+\fB\-t\fP\ \fIstr\fP
+Produce a list of terms
+.TP
+\fB\-u\fP\ \fIstr\fP
+Comma-delimited list of UIDs
+.TP
+\fB\-w\fP\ \fIstr\fP
+Produce WWW/HTML formatted output, using \fIstr\fP (/htbin is
+recommended) as the directory prefix for linked hypertext items.
+.TP
+\fB\-x\fP\ \fIstr\fP
+Name of export file for named UID list
+.TP
+\fB\-y\fP\ \fIN\fP
+Complexity:
+.RS
+.PD 0
+.IP 1
+bioseq only
+.IP 2
+bioseq set
+.IP 3
+nuc-prot set (default)
+.PD
+.RE
+.SH AUTHOR
+The National Center for Biotechnology Information.

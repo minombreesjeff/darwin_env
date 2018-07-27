@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding='iso-8859-1'?>
+<doc>
+  <title>
+    Troubleshooting
+  </title>
+  <contents>
+    <p>
+      <div class="c4"></div>
+      
+      <div class="c8">
+        <div class="c4">
+          If your browser will
+          not download the Sequin program:<br />
+          
+          <ul>
+            <li><span class="c6">Try</span> <span class=
+            "c6">setting your browser to use passive
+            ftp</span><span class="c6">.</span> Many
+            organizations allow only passive ftp transfers
+            through their firewalls. If your browser does not
+            download Sequin, be sure that your browser uses
+            passive mode for ftp. See <a href=
+            "seq_ftp_download.html#passivemode">Downloading
+            with ftp</a> for instructions on how to configure
+            your browser for passive mode.<br /></li>
+          </ul>
+        </div>
+        
+        <div class="c4">
+          <ul>
+            <li><span class="c6">Contact your system
+            administrator.</span> Your Internet connection may
+            be down, or there may be other configuration
+            problems with using ftp in your network. Tell your
+            administrator that you're having trouble with
+            downloads. Ask if you need to configure a proxy to
+            use ftp, and if so, how to do it. Ask him or her to
+            read this article and propose a solution:<br />
+            <a href=
+               "http://www.onlamp.com/pub/a/bsd/2002/12/19/ssn_openbsd.html"
+               target=
+               "_blank">http://www.onlamp.com/pub/a/bsd/2002/12/19/ssn_openbsd.html</a><br />
+            </li>
+          </ul>
+          
+          <ul>
+            <li>Consider using <a href=
+            "seq_ftp_download.html">ftp</a> instead of your Web
+            browser to download the file.<br /></li>
+          </ul>
+        </div>
+      </div>
+    </p>
+  </contents>
+  <css>seq_trouble.css</css>
+</doc>

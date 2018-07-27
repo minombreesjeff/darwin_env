@@ -1,0 +1,1012 @@
+-- C apps --
+
+--
+-- Properties
+--
+property pRootFolderName : "ncbi" -- name of the toolkit directory
+property pRootFolderPath : "" -- full path of the parent of the toolkit directory. Optional
+
+property pProjectFileExt : ".mcp"
+
+property pSaveContinueOnErrors : false
+-- true if we want to save compilation errors in a file and continue.
+-- false if we want to stop on an error.
+
+-- Whether to recreate existing project files.
+property pAlwaysCreateProjects : false
+-- Which targets to build.
+-- All of the targets are populated all the time. These affect what is compiled & built.
+property pCreateMachOTargets : true
+property pCreateCarbonTargets : false
+property pCreateWinTargets : false
+
+property pCreateOptimizedTargets : true
+property pCreateDebugTargets : false
+property pCreateProfiledTargets : false
+
+-- Whether to have the projects use CVS or not.
+property pProjectsCVSEnabled : true
+
+property pCreateBlastTargets : false
+
+-- Whether to compile anything.
+property pShouldBuild : true
+
+property pStationeryName : "ApplicationStationery"
+
+-- the handler GetTargetSpecs should change if these do.
+property pTargetKeyWords : "Mach-O Carbon Win32 Debug Final Profile"
+
+
+global gProjectData
+
+on SimpleProjectData(projName, features)
+	
+	if (count characters of projName) > 25 then
+		set projName to characters 1 through 25 of projName as string
+	end if
+	
+	if features does not contain "C" and features does not contain "C++" then
+		--error "Project " & projName & "'s default language (a feature) must be C or C++."
+		copy "C" to end of features
+	end if
+	set myFeatures to features
+	return {name:projName, features:myFeatures, rsrcs:{"ncbilogo.r", "Info.plc"}, settings:Â
+		{prefixFile:"", ppcProject:{}}, projLibs:Â
+		{"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbimmdb", "ncbitool"}, fileData:Â
+		{{projPath:"demo:", fileList:{projName & ".c"}}}}
+	
+end SimpleProjectData
+
+on AddProject(projData)
+	copy projData to end of gProjectData
+end AddProject
+
+on AddSimpleProject(projName, features)
+	AddProject(SimpleProjectData(projName, features))
+end AddSimpleProject
+
+on SetProjectData()
+	tell application "CodeWarrior IDE"
+		
+		-- Sequin
+		set myName to "Sequin"
+		set myFeatures to {"sockets"}
+		set mySettings to Â
+			{prefixFile:"", creator:"SEQN", ppcProject:{Preferred Heap Size:32000, Min Heap Size:6000}} Â
+				
+		set myRsrcs to {"sequin.r", "InfoSequin.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "ncbicdr", "vibrant", "ncbidesk", Â
+			"ncbimmdb", "ncbitool", "netcli", "netentr", "ncbibls3", "ncbimla", Â
+			"ncbitxc2", "ncbiid1", "ncbispell", "vibnet", "ncbiblast", "ncbiblastapi"}
+		set myFiles to Â
+			{{projPath:"cdromlib:", fileList:{"accentr.c", "accutils.c"}}, Â
+				{projPath:"sequin:", fileList:{"sequin1.c", "sequin2.c", "sequin3.c", "sequin4.c", "sequin5.c", Â
+					"sequin6.c", "sequin7.c", "sequin8.c", "sequin9.c", "sequin10.c", "sequinx.c"}}}
+		set sequinData to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
+		
+		-- Entrez
+		set myName to "Entrez"
+		set myFeatures to {"sockets"}
+		set mySettings to {prefixFile:"", creator:"ENTZ", ppcProject:{}}
+		set myRsrcs to {"entrez.r", "Info.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "ncbicdr", "vibrant", "ncbidesk", "ncbimmdb", Â
+			"ncbitool", "netcli", "netentr", "ncbibls3", "ncbiid1", "vibnet"}
+		set myFiles to Â
+			{{projPath:"cdromlib:", fileList:{"accentr.c", "accutils.c"}}, Â
+				{projPath:"demo:", fileList:{"entrez.c"}}}
+		set entrezData to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
+		
+		-- Entrez2
+		set myName to "Entrez2"
+		set myFeatures to {"sockets"}
+		set mySettings to {prefixFile:"", creator:"ENTZ", ppcProject:{}}
+		set myRsrcs to {"entrez.r", "Info.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "ncbimmdb", "ncbitool", "vibrant", "ncbidesk"}
+		set myFiles to Â
+			{{projPath:"demo:", fileList:{"entrez2.c"}}}
+		set entrez2Data to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
+		
+		-- BlastCL3
+		set myName to "blastcl3"
+		set myFeatures to {"sockets"}
+		set mySettings to {prefixFile:"blastcl3.pfx", ppcProject:{}}
+		set myRsrcs to {"ncbilogo.r", "Info.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbitool", "netcli", "ncbibls3"}
+		set myFiles to Â
+			{{projPath:"demo:", fileList:{"blastall.c"}}}
+		set blastcl3Data to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
+		
+		-- Bl2seq
+		set myName to "bl2seq"
+		set myFeatures to {"sockets"}
+		set mySettings to {prefixFile:"", ppcProject:{}}
+		set myRsrcs to {"ncbilogo.r", "Info.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbitool", "netcli", "ncbibls3", "ncbiid1"}
+		set myFiles to Â
+			{{projPath:"demo:", fileList:{"bl2seq.c"}}}
+		set bl2seqData to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
+		
+		-- Impala
+		set impalaData to my SimpleProjectData("impala", {})
+		set item 1 of fileList of item 1 of fileData of impalaData to "profiles.c"
+		
+		-- Spidey
+		set myName to "spidey"
+		set myFeatures to {"sockets"}
+		set mySettings to {prefixFile:"", ppcProject:{}}
+		set myRsrcs to {"ncbilogo.r", "Info.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbitool", "netcli", "ncbiid1"}
+		set myFiles to Â
+			{{projPath:"demo:", fileList:{"spideymain.c"}}}
+		set spideyData to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
+		
+	end tell
+	
+	
+	AddProject(sequinData)
+	AddProject(entrez2Data)
+	AddSimpleProject("tbl2asn", {})
+	AddSimpleProject("asn2gb", {"sockets"})
+	AddProject(spideyData)
+	
+	-- AddProject(entrezData)
+	
+	if pCreateBlastTargets then
+		AddSimpleProject("formatdb", {})
+		AddSimpleProject("fastacmd", {})
+		
+		AddProject(bl2seqData)
+		
+		AddSimpleProject("blastall", {})
+		AddSimpleProject("blastpgp", {})
+		
+		AddProject(blastcl3Data)
+		AddSimpleProject("megablast", {})
+		AddSimpleProject("blastclust", {})
+		AddSimpleProject("rpsblast", {})
+		AddSimpleProject("seedtop", {})
+		AddSimpleProject("copymat", {})
+		AddSimpleProject("makemat", {})
+		
+		AddProject(impalaData)
+	end if
+	
+end SetProjectData
+
+--
+-- Global variables
+--
+
+global gStartupDisk
+global gHomeDir
+
+global gDistribRoot
+global gAccessRoot
+
+global gProjectsDir
+global gSourceDir
+global gIncludeDir
+global gLibsDir
+global gRsrcsDir
+global gMakeDir
+global gStationeryDir
+
+on GetFileNames(relPath)
+	set theFiles to list folder (gSourceDir & relPath) without invisibles
+	set theFiles to EndsWith(theFiles, ".c") -- Assume C projects not C++
+	
+	return theFiles
+end GetFileNames
+
+on EndsWith(aList, suffix)
+	set newList to {}
+	repeat with f in aList
+		if (f ends with suffix) then
+			set newList to newList & (f as string)
+		end if
+	end repeat
+	
+	return newList
+end EndsWith
+
+
+on CopyHeaders()
+	CreateFolder(gIncludeDir)
+	tell application "Finder"
+		
+		set corelibFolder to folder (gDistribRoot & "corelib")
+		
+		my UpdateRenameHeader("ncbilcl.met", corelibFolder, "ncbilcl.h", "")
+		
+	end tell
+end CopyHeaders
+
+on ResolveAlias(pathname)
+	tell application "Finder"
+		if exists folder pathname then
+			-- if pathname does not end with ":" then set pathname to pathname & ":"
+			return folder pathname as string
+		end if
+		if exists alias file pathname then return the original item of alias file pathname as string
+	end tell
+	return ""
+end ResolveAlias
+
+on IsOSX()
+	tell application "Finder"
+		
+		set vers to the version as text
+		
+		if second character of vers is equal to "." then
+			set vers to "0" & vers
+		end if
+		
+		return vers > 10 or vers = 10
+		
+	end tell
+end IsOSX
+
+on stripVolName(macPath)
+	set saveTID to get text item delimiters of AppleScript
+	set text item delimiters of AppleScript to ":"
+	set strippedPath to (rest of text items of macPath) as string
+	set text item delimiters of AppleScript to saveTID
+	return strippedPath
+end stripVolName
+
+on HomeDir()
+	tell application "Finder"
+		if my IsOSX() then
+			return the home as string
+		else
+			return gStartupDisk
+		end if
+	end tell
+end HomeDir
+
+on ModuleRoot()
+	set modRoot to ""
+	try
+		set modRoot to ResolveAlias(pRootFolderPath & pRootFolderName)
+	end try
+	if modRoot is "" then
+		set modRoot to ResolveAlias(gHomeDir & pRootFolderName)
+	end if
+	return modRoot
+end ModuleRoot
+
+on GetMyPath()
+	set myPath to path to me as string
+	if myPath contains "Script Editor" or Â
+		myPath contains "osascript" or Â
+		myPath contains "Smile.app" then
+		-- Oops! running under script editor. 'me' is Script Editor not this script.
+		-- use the location this script is supposed to be in.
+		return gDistribRoot & "make:"
+	else
+		tell application "Finder"
+			return container of myPath as string
+		end tell
+	end if
+end GetMyPath
+
+on SetGlobals()
+	tell application "Finder"
+		
+		set gProjectData to {}
+		
+		set gStartupDisk to startup disk as string
+		set gHomeDir to my HomeDir()
+		set gDistribRoot to my ModuleRoot()
+		
+		set gIncludeDir to gDistribRoot & "include:"
+		set gSourceDir to gDistribRoot
+		set gLibsDir to gDistribRoot & "lib:"
+		set gProjectsDir to gDistribRoot & "build:"
+		set gRsrcsDir to gDistribRoot & "link:macmet:"
+		set gStationeryDir to gProjectsDir & pStationeryName & ":"
+		set gMakeDir to my GetMyPath()
+		
+	end tell
+end SetGlobals
+
+on HeaderExists(header, headerDir)
+	tell application "Finder"
+		if headerDir is "" then set headerDir to folder gIncludeDir
+		return exists file header of headerDir
+	end tell
+end HeaderExists
+
+on IsOlderThan(fileA, fileB)
+	tell application "Finder"
+		return (the modification date of fileA < the modification date of fileB)
+	end tell
+end IsOlderThan
+
+on UpdateRenameHeader(canonicalName, canonicalDir, dotHName, dotHDir)
+	tell application "Finder"
+		
+		set needRename to (dotHName is not "")
+		if not needRename then set dotHName to canonicalName
+		if dotHDir is "" then set dotHDir to folder gIncludeDir
+		
+		-- This file is only present if the script was interrupted.
+		if needRename and my HeaderExists(canonicalName, dotHDir) then
+			delete file canonicalName of dotHDir
+		end if
+		
+		-- The native config file.
+		-- If it's missing, assume this is a prepared distribution and the header is already up-to-date.
+		if not my HeaderExists(canonicalName, canonicalDir) then return
+		set canonicalFile to file canonicalName of canonicalDir
+		
+		set needCopy to true
+		if my HeaderExists(dotHName, dotHDir) then
+			set dotHFile to file dotHName of dotHDir
+			if my IsOlderThan(dotHFile, canonicalFile) then
+				delete dotHFile
+			else
+				set needCopy to false
+			end if
+		end if
+		
+		if needCopy then
+			duplicate canonicalFile to dotHDir
+			if needRename then set name of file canonicalName of dotHDir to dotHName
+		end if
+		
+	end tell
+end UpdateRenameHeader
+
+
+on AppendAccessPath(aPath, isRecursive, isUserPath)
+	tell application "CodeWarrior IDE"
+		if (aPath does not end with ":") then set aPath to aPath & ":"
+		
+		set aPath to POSIX path of aPath
+		set pathsToAdd to {{name:aPath, recursive:isRecursive, origin:absolute, format:Unix Path}}
+		if isUserPath then
+			Set Preferences of panel "Access Paths" to {User Paths:pathsToAdd}
+		else
+			Set Preferences of panel "Access Paths" to {System Paths:pathsToAdd}
+		end if
+	end tell
+end AppendAccessPath
+
+
+on AppendPrefixFile(filename)
+	tell application "CodeWarrior IDE"
+		try -- CW ver. 8
+			Set Preferences of panel "C/C++ Compiler" to {Prefix File:prefixFile}
+		end try
+		try -- CW ver. 9
+			set oldtext to Get Preferences of {Prefix Text} from panel "C/C++ Preprocessor"
+			set oldtext to (Prefix Text of oldtext)
+			set prefixFileInclude to (oldtext & return & "#include \"" & filename & "\"")
+			Set Preferences of panel "C/C++ Preprocessor" to {Prefix Text:prefixFileInclude}
+		end try
+	end tell
+end AppendPrefixFile
+
+
+on SetupTarget(proj, targetIndex)
+	tell application "CodeWarrior IDE"
+		
+		set targetName to name of target targetIndex of project document 1
+		if targetName contains "Carbon" then
+			set targetAPI to "Carbon"
+		else if targetName contains "Mach-O" then
+			if not my IsOSX() then return -- do not try to populate Mach-O targets on pre-OS X systems.
+			set targetAPI to "Mach-O"
+		else if targetName contains "Win32" then
+			set targetAPI to "Win32"
+		end if
+		
+		if targetName contains "Debug" then
+			set targetDebug to true
+			set targetProfile to false
+		else if targetName contains "Profile" then
+			set targetDebug to false
+			set targetProfile to true
+		else -- if targeName contains "Final" then
+			set targetDebug to false
+			set targetProfile to false
+		end if
+		
+		-- NOTE: no Profile targets. if pCreateProfiledTargets, we make the debug targets also profile-able.
+		
+		set the current target of project document 1 to target targetIndex of project document 1
+		
+		-- initialize variables
+		set projRsrcs to {}
+		set projFeatures to {}
+		set sysPaths to {}
+		
+		-- Grab the fields of our project record and store them in local variables.
+		set projName to proj's name
+		set projSettings to proj's settings
+		try
+			set projFeatures to proj's features
+		end try
+		try
+			set sysPaths to proj's sysPaths
+		end try
+		try
+			set projRsrcs to proj's rsrcs
+		end try
+		set projLibs to proj's projLibs
+		set projFileData to proj's fileData
+		
+		-- Figure out what our output file and input libraries will be named.
+		set fileNameSuffix to ""
+		
+		if targetAPI is "Carbon" then
+			set fileNameSuffix to "_C"
+		else if targetAPI is "Mach-O" then
+			set fileNameSuffix to "_M"
+		else if targetAPI is "Win32" then
+			set fileNameSuffix to "_W"
+		end if
+		
+		-- Debug or not.
+		if targetDebug then
+			set fileNameSuffix to fileNameSuffix & "_D"
+		else if targetProfile then
+			set fileNameSuffix to fileNameSuffix & "_P"
+		else
+			set fileNameSuffix to fileNameSuffix & "_O" -- for Optimized.
+		end if
+		
+		-- non debug targets get different output names.
+		if not targetDebug and not targetProfile then
+			if targetAPI is "Mach-O" then
+				set targetFilename to projName & "OSX" -- Mach adds OSX on the end.
+			else
+				set targetFilename to projName -- Carbon & Windows have same name as project.
+			end if
+		else
+			set targetFilename to projName & fileNameSuffix
+		end if
+		
+		-- make sure Mach bundles have .app on the end.
+		if targetAPI is "Mach-O" then
+			set targetFilename to targetFilename & ".app"
+		else if targetAPI is "Win32" then
+			-- and Windows executables have .exe
+			set targetFilename to targetFilename & ".exe"
+		end if
+		
+		-- Get Preference Panel names.
+		if targetAPI is "Mach-O" then
+			set targetPanelName to "PPC Mac OS X Project"
+			set codeGenPanelName to "PPC CodeGen Mach-O"
+		else if targetAPI is "Win32" then
+			set targetPanelName to "x86 Project"
+			set codeGenPanelName to "x86 CodeGen"
+		else
+			set targetPanelName to "PPC Project"
+			set codeGenPanelName to "PPC CodeGen"
+		end if
+		
+		-- Set the name of the output file (the application)
+		Set Preferences of panel targetPanelName to {File Name:targetFilename}
+		
+		-- If specified, set the File Creator.
+		try
+			set creatorName to creator of projSettings
+			Set Preferences of panel targetPanelName to {File Creator:creatorName}
+		end try
+		
+		-- If we have any per-project override settings, set them.
+		if (count ppcProject of projSettings) > 0 then
+			try
+				Set Preferences of panel targetPanelName to ppcProject of projSettings
+			end try
+		end if
+		
+		
+		if targetAPI is "Mach-O" then
+			my AppendAccessPath(gDistribRoot, true, false) -- end of system paths.
+		else
+			my AppendAccessPath(gDistribRoot, true, true) -- end of user paths.
+		end if
+		
+		-- Add per-project system paths.
+		set pathsToAdd to {}
+		repeat with i in sysPaths
+			copy {name:i, recursive:false, origin:absolute} to end of pathsToAdd
+		end repeat
+		if (count pathsToAdd) > 0 then Â
+			Set Preferences of panel "Access Paths" to {System Paths:pathsToAdd}
+		
+		-- Set the appropriate prefix file.
+		set prefixFile to prefixFile of projSettings
+		if targetAPI is "Win32" and projFeatures contains "winprefix" then
+			set prefixFile to "Win32Headers.pch"
+		else
+			if prefixFile is "" then
+				set prefixFile to "CarbonPrefix.h"
+			else
+				set prefixFile to "Carbon-" & prefixFile
+			end if
+		end if
+		if prefixFile is not "" then
+			my AppendPrefixFile(prefixFile)
+		end if
+		
+	end tell
+	
+	-- Add source files.
+	repeat with group in projFileData
+		set projPath to projPath of group
+		set fileList to group's fileList
+		
+		set filesToAdd to {}
+		repeat with i in fileList
+			--try -- ignore it if the file doesn't exist.
+			
+			-- NOTE: if the following line is within a tell "Codewarrior" block then
+			--  the following Add Files command will fail.
+			copy alias (gSourceDir & projPath & i) to end of filesToAdd
+			--end try
+		end repeat
+		
+		tell application "CodeWarrior IDE"
+			Add Files filesToAdd
+			
+			-- Take out source files that do not belong.
+			--set fileNotList to group's fileNotList
+			--Remove Files fileNotList
+		end tell
+	end repeat
+	
+	tell application "CodeWarrior IDE"
+		
+		-- take care of debugging and profiling settings
+		if targetDebug or targetProfile then
+			set the debug of every target file of target targetIndex Â
+				of project document 1 to true
+		end if
+		
+		
+		if targetAPI is "Carbon" then
+			if targetProfile then
+				(* ===== Panel PPC Processor ===== *)
+				Set Preferences of panel codeGenPanelName to Â
+					{Use Profiler:true}
+			else
+				(* ===== Panel PPC Processor ===== *)
+				Set Preferences of panel codeGenPanelName to Â
+					{Use Profiler:false}
+			end if
+		end if
+		
+		-- Add user libraries.
+		set filesToAdd to {}
+		if projFeatures contains "sockets" and targetAPI is "Carbon" then
+			if projLibs does not contain "mitsock" then
+				copy "mitsock" to beginning of projLibs
+			end if
+		end if
+		repeat with i in projLibs
+			if exists file (gLibsDir & i & fileNameSuffix & ".lib") of application "Finder" then
+				copy gLibsDir & i & fileNameSuffix & ".lib" to end of filesToAdd
+			end if
+		end repeat
+		
+		try
+			Add Files filesToAdd
+		end try
+		
+		-- Add resources.
+		set filesToAdd to {}
+		if targetAPI is not "Win32" then
+			repeat with i in projRsrcs
+				if targetAPI is "Carbon" then
+					if i ends with ".plc" then
+						copy gRsrcsDir & "Carbon-" & i to end of filesToAdd
+					else
+						copy gRsrcsDir & i to end of filesToAdd
+					end if
+				else
+					-- Mach-O does not need the .r files, only the .plc files.
+					if i does not end with ".r" then
+						copy gRsrcsDir & i to end of filesToAdd
+					end if
+				end if
+			end repeat
+			
+			Add Files filesToAdd
+		end if
+		
+	end tell
+end SetupTarget
+
+
+on GetTargetFiles(i)
+	tell application "CodeWarrior IDE"
+		-- get the target
+		if (i > (count of targets of project document 1)) then
+			return {}
+		end if
+		-- get references to all the targets files
+		set atarget to get target i of project document 1
+		set trefs to (target files of atarget whose linked is true)
+	end tell
+	set tfiles to {}
+	if ((count of trefs) ­ 0) then
+		repeat with tf in trefs
+			-- get locations of the targets files (as file objects)
+			tell application "CodeWarrior IDE"
+				set f to (location of tf)
+			end tell
+			tell application "Finder"
+				-- convert the file's to strings (colon style paths)
+				try
+					copy f as string to end of tfiles
+				on error errmsg number errnum
+					-- file in target but does not exist.
+					if errnum ­ -2753 then -- variable not defined.
+						error errmsg number errnum
+					end if
+				end try
+			end tell
+		end repeat
+	end if
+	return tfiles
+end GetTargetFiles
+
+on UpdateTarget(proj, targetIndex)
+	
+	tell application "CodeWarrior IDE"
+		
+		set targetName to name of target targetIndex of project document 1
+		if targetName contains "Carbon" then
+			set targetAPI to "Carbon"
+		else if targetName contains "Mach-O" then
+			if not my IsOSX() then return -- do not try to populate Mach-O targets on pre-OS X systems.
+			set targetAPI to "Mach-O"
+		else if targetName contains "Win32" then
+			set targetAPI to "Win32"
+		end if
+		
+		-- Grab the fields of our project record and store them in local variables.
+		set projName to proj's name
+		
+		set targetName to name of target targetIndex of project document 1
+		
+		set the current target of project document 1 to target targetIndex of project document 1
+		
+		-- initialize variables
+		set projFeatures to {}
+		
+		-- Grab the fields of our project record and store them in local variables.
+		try
+			set projFeatures to proj's features
+		end try
+		set projFileData to proj's fileData
+		
+	end tell
+	
+	-- Update source files
+	set targetFileList to my GetTargetFiles(targetIndex)
+	repeat with group in projFileData
+		set projPath to projPath of group -- projPath is relative.
+		
+		set fileList to group's fileList
+		
+		set filesToAdd to {}
+		
+		repeat with i in fileList
+			set fileFullPath to gSourceDir & projPath & i
+			set found to targetFileList contains fileFullPath
+			if (not found) then
+				try -- ignore it if the file doesn't exist.
+					
+					-- NOTE: if the following line is within a tell "Codewarrior" block then
+					--  the following Add Files command will fail.
+					
+					copy alias (fileFullPath) to end of filesToAdd
+				end try
+			end if
+		end repeat
+		
+		tell application "CodeWarrior IDE"
+			if ((count of filesToAdd) is not 0) then
+				Add Files filesToAdd
+				set targetFileList to my GetTargetFiles(targetIndex)
+			end if
+			
+			-- Take out source files that do not belong.
+			--set fileNotList to group's fileNotList
+			--Remove Files fileNotList
+		end tell
+	end repeat
+	
+end UpdateTarget
+
+on CreateFolder(folderPath)
+	set text item delimiters of AppleScript to ":"
+	-- strip off disk name.
+	tell application "Finder"
+		set pathSoFar to ""
+		if (exists disk (first text item of folderPath)) then
+			set pathSoFar to first text item of folderPath
+			set folderPath to (rest of text items of folderPath) as string
+		end if
+		repeat with f in (text items of folderPath)
+			set longerPath to pathSoFar & ":" & f
+			if not (exists folder (longerPath)) then
+				make new folder at folder (pathSoFar) with properties {name:f}
+			end if
+			set pathSoFar to longerPath
+		end repeat
+	end tell
+	set text item delimiters of AppleScript to ""
+end CreateFolder
+
+on GetStationeryName(proj)
+	set stationeryDir to gProjectsDir & pStationeryName & ":"
+	set stationeryName to pStationeryName & pProjectFileExt
+	
+	CreateFolder(stationeryDir)
+	tell application "Finder"
+		-- does the Library Stationery already exist?
+		if not (exists file (stationeryDir & stationeryName)) then
+			-- copy it.
+			duplicate file (stationeryName) of folder gRsrcsDir to folder stationeryDir
+		end if
+	end tell
+	return (stationeryDir & stationeryName)
+end GetStationeryName
+
+on CreateProject(proj)
+	tell application "CodeWarrior IDE"
+		try
+			get proj's name
+		on error
+			return
+		end try
+		
+		set projFilename to proj's name & pProjectFileExt
+		set projPathname to gProjectsDir & projFilename
+		if pAlwaysCreateProjects or not (exists file projPathname of application "Finder") then
+			
+			try
+				close (the first project document whose name is projFilename)
+			end try
+			
+			set stationeryName to my GetStationeryName(proj)
+			
+			Create Project projPathname from stationery alias stationeryName
+			if the name of window 1 is "Project Messages" then
+				close first window -- "close window 1" becomes "Close Window 1" (different event)
+			end if
+			
+			repeat with i from 1 to (count targets of project document 1)
+				my SetupTarget(proj, i)
+			end repeat
+		else
+			-- project already exists. Make sure it has all right files.
+			open (projPathname)
+			if the name of window 1 is "Project Messages" then
+				close first window -- "close window 1" becomes "Close Window 1" (different event)
+			end if
+			repeat with i from 1 to (count targets of project document 1)
+				my UpdateTarget(proj, i)
+			end repeat
+		end if
+		if pProjectsCVSEnabled then
+			--try
+			Set Preferences of panel "VCS Setup" to {VCS Active:true, Connection Method:"mwCVS"}
+			--end try
+		end if
+		set the current target of project document 1 to target 1 of project document 1
+		Close Project
+		
+	end tell
+end CreateProject
+
+on CreateAllProjects()
+	CreateFolder(gProjectsDir)
+	CleanupFiles(gProjectsDir)
+	
+	repeat with proj in gProjectData
+		CreateProject(proj)
+	end repeat
+	
+end CreateAllProjects
+
+(*
+	a target spec is a string of words "MSL Debug", all of which appear on our list of keywords.
+	Convert a Build file name to a target spec by filtering out non-keywords.
+	Each Build file creates another target spec.
+	A project target must match one of the target specs to compile.
+	To match, a target's name must contain each of the words in the target spec.
+	An empty target spec matches everything.
+	An empty list of target specs (no Build files) matches nothing, 
+	But if there are no Build files we make target specs based on
+	the script parameters.
+*)
+
+on GetTargetSpecs()
+	set theFiles to (list folder gMakeDir without invisibles)
+	set targetSpecs to {}
+	repeat with f in theFiles
+		if (f begins with "Build ") then
+			set targetSpecs to targetSpecs & MakeTargetSpec(f)
+		end if
+	end repeat
+	-- no Build files? match what the script parameters say to match.
+	-- NOTE: This is dependent on pTargetKeyWords and the target names in the stationery.
+	if (count items of targetSpecs) is 0 then
+		set debugspec to ""
+		if pCreateDebugTargets then
+			if pCreateMachOTargets then copy ("Mach-O Debug") to end of targetSpecs
+			if pCreateCarbonTargets then copy ("Carbon Debug") to end of targetSpecs
+			if pCreateWinTargets then copy ("Win32 Debug") to end of targetSpecs
+		end if
+		if pCreateProfiledTargets then
+			if pCreateMachOTargets then copy ("Mach-O Profile") to end of targetSpecs
+			if pCreateCarbonTargets then copy ("Carbon Profile") to end of targetSpecs
+			if pCreateWinTargets then copy ("Win32 Profile") to end of targetSpecs
+		end if
+		if pCreateOptimizedTargets then
+			if pCreateMachOTargets then copy ("Mach-O Final") to end of targetSpecs
+			if pCreateCarbonTargets then copy ("Carbon Final") to end of targetSpecs
+			if pCreateWinTargets then copy ("Win32 Final") to end of targetSpecs
+		end if
+	end if
+	return targetSpecs
+end GetTargetSpecs
+
+on MakeTargetSpec(f)
+	set tspec to ""
+	repeat with w in (words of f)
+		if pTargetKeyWords contains w then
+			set tspec to tspec & w & " "
+		end if
+	end repeat
+	return tspec
+end MakeTargetSpec
+
+on OkaytoBuild(targetName, targetSpecs)
+	--This target name must match at least one of the target specs.
+	repeat with ts in targetSpecs
+		if MatchSpec2Target(ts, targetName) then return true
+	end repeat
+	return false
+end OkaytoBuild
+
+on MatchSpec2Target(targSpec, targName)
+	-- the targetname must contain all of the words in the target spec.
+	repeat with w in (words of targSpec)
+		if w is not in targName then return false
+	end repeat
+	return true
+end MatchSpec2Target
+
+on BuildProject(projName, targetSpecs)
+	tell application "CodeWarrior IDE"
+		open (gProjectsDir & projName & pProjectFileExt)
+		if the name of window 1 is "Project Messages" then
+			close first window -- "close window 1" becomes "Close Window 1" (different event)
+		end if
+		repeat with i from 1 to (count targets of project document 1)
+			-- do we want to build this target?
+			set thisTarget to name of target i of project document 1
+			if my OkaytoBuild(thisTarget, targetSpecs) then
+				
+				set the current target of project document 1 to target i of project document 1
+				if pSaveContinueOnErrors then
+					try
+						Make Project
+					on error errmsg number errnum
+						if (errnum = 5) then
+							set errFileName to (gProjectsDir & projName & "-" & i & ".errs")
+							Save Error Window As (file errFileName)
+							close first window
+						else
+							error errmsg number errnum
+						end if
+					end try
+				else -- stop on any error.
+					Make Project
+				end if
+				-- If there were compiler warnings, then a compiler window will be in front.
+				-- For whatever reason, this causes the next "set the current target..." to fail.
+				-- So check for the window and close it.
+				if the name of window 1 is "Errors & Warnings" then
+					close first window -- "close window 1" becomes "Close Window 1" (different event)
+				end if
+			end if
+		end repeat
+		set the current target of project document 1 to target 1 of project document 1
+		Close Project
+	end tell
+end BuildProject
+
+on BuildAllProjects()
+	set targetSpecs to GetTargetSpecs()
+	repeat with proj in gProjectData
+		try
+			set projName to proj's name
+		on error
+			set projName to ""
+		end try
+		if projName is not "" then
+			BuildProject(projName, targetSpecs)
+		end if
+	end repeat
+	
+end BuildAllProjects
+
+-- Delete everything in the folder 'thePath' except the saveFile.
+on CleanupFolder(thePath, saveFile)
+	repeat with f in list folder (thePath) with invisibles
+		if (f as string is not saveFile) then
+			try
+				tell application "Finder" to delete folder (thePath & f)
+			end try
+			try
+				tell application "Finder" to delete file (thePath & f)
+			end try
+		end if
+	end repeat
+end CleanupFolder
+
+on CleanupFiles(thePath)
+	-- get rid of all the files and folders starting with xxxx in thePath
+	repeat with f in list folder (thePath) without invisibles
+		if ((f as string) begins with "xxxx") then
+			try
+				tell application "Finder" to delete folder (thePath & f)
+			end try
+			try
+				tell application "Finder" to delete file (thePath & f)
+			end try
+		end if
+	end repeat
+	-- delete the stationery folder.
+	try
+		tell application "Finder" to delete folder (thePath & pStationeryName)
+	end try
+end CleanupFiles
+
+on SignalCompletion()
+	beep
+end SignalCompletion
+
+with timeout of 60000 seconds
+	
+	SetGlobals()
+	SetProjectData()
+	CopyHeaders()
+	
+	tell application "CodeWarrior IDE" to activate
+	
+	CreateAllProjects()
+	
+	if pShouldBuild then
+		BuildAllProjects()
+	end if
+	
+	CleanupFiles(gProjectsDir)
+	
+	SignalCompletion()
+	
+end timeout
+

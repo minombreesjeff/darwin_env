@@ -1,0 +1,160 @@
+/*   ncbilcl.h
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  ncbilcl.h
+*
+* $Revision: 6.1 $
+*      (this file has not been tested for accuracy)
+*
+* File Description:
+*		system dependent header
+*		HP-UX version
+*
+* $Log: ncbilcl.hp_pa,v $
+* Revision 6.1  2002/02/15 21:56:26  beloslyu
+* HP-UX changes
+*
+* Revision 6.2  2001/01/03 16:08:02  beloslyu
+* allow the work with largefiles
+*
+* Revision 6.1  2000/01/13 23:37:12  beloslyu
+* changes because of port to HP-UX 11.0
+* ==========================================================================
+*/
+#ifndef _NCBILCL_
+#define _NCBILCL_
+
+/* PLATFORM DEFINITION FOR Hewlett-Packard UNDER HP-UX */
+
+#define COMP_SYSV
+#define OS_UNIX
+#define OS_UNIX_HPUX
+#define PROC_HPPA
+#define WIN_DUMB
+
+/*----------------------------------------------------------------------*/
+/*      Desired or available feature list                               */
+/*----------------------------------------------------------------------*/
+#define SYSV_IPC_AVAIL	/* System V Interprocess Communication available */
+#define SYSV_STREAMS_AVAIL  /* System V STREAMS module available */
+
+/*----------------------------------------------------------------------*/
+/*      Defines needed to trigger the correct inclusions in system files*/
+/*      Reportedly needed in HP/UX 9.05                                 */
+/*----------------------------------------------------------------------*/
+#define _INCLUDE_POSIX_SOURCE
+#define _INCLUDE_XOPEN_SOURCE
+#define _XOPEN_SOURCE_EXTENDED
+#define _INCLUDE_XOPEN_SOURCE_EXTENDED
+
+/* allow the fork with largefiles */
+#define _FILE_OFFSET_BITS 64
+
+#define POSIX_THREADS_AVAIL
+#define _POSIX_C_SOURCE 199506L
+/*----------------------------------------------------------------------*/
+/*      #includes                                                       */
+/*----------------------------------------------------------------------*/
+#include <sys/types.h>
+#include <sys/resource.h>
+#include <limits.h>
+#include <sys/stat.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+#include <malloc.h>
+#include <memory.h>
+#include <stdlib.h>
+#include <math.h>
+#include <errno.h>
+#include <float.h>
+
+/*----------------------------------------------------------------------*/
+/*      Missing ANSI-isms                                               */
+/*----------------------------------------------------------------------*/
+#ifndef SEEK_SET
+#define SEEK_SET	0
+#define SEEK_CUR	1
+#define SEEK_END	2
+#endif
+#ifdef FILENAME_MAX
+#undef FILENAME_MAX
+#endif
+#define FILENAME_MAX 1024
+
+/*----------------------------------------------------------------------*/
+/*      Aliased Logicals, Datatypes                                     */
+/*----------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------*/
+/*      Misc Macros                                                     */
+/*----------------------------------------------------------------------*/
+#if defined(__STDC__)
+#define PROTO(x)	x	/* Function prototypes copied */
+#define VPROTO(x)	x	/* Prototype for variable argument list */
+#else
+#define PROTO(x)	()	/* Function prototypes faked in */
+#define VPROTO(x)	()	/* Prototype for variable argument list */
+#endif
+#define DIRDELIMCHR	'/'
+#define DIRDELIMSTR	"/"
+#define CWDSTR	"."
+
+#define KBYTE	(1024)
+#define MBYTE	(1048576)
+
+#define IS_BIG_ENDIAN
+#define TEMPNAM_AVAIL
+
+/*----------------------------------------------------------------------*/
+/*      For importing MS_DOS code                                       */
+/*----------------------------------------------------------------------*/
+#define near
+#define far
+#define huge
+#define cdecl
+#define pascal
+#define _pascal
+#define _near
+#define _far
+#define _huge
+#define _cdecl
+
+/*----------------------------------------------------------------------*/
+/*      Macros for Floating Point                                       */
+/*----------------------------------------------------------------------*/
+#define EXP2(x) exp((x)*LN2)
+#define LOG2(x) (log(x)*(1./LN2))
+#define EXP10(x) exp((x)*LN10)
+#define LOG10(x) (log(x)*(1./LN10))
+
+/*----------------------------------------------------------------------*/
+/*      Macros Defining Limits                                          */
+/*----------------------------------------------------------------------*/
+#define MAXALLOC	0x40000000 /* Largest permissible memory request */
+
+#endif /* _NCBILCL_ */
+

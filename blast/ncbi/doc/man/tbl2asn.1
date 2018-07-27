@@ -1,0 +1,103 @@
+.TH TBL2ASN 1 2003-11-10 NCBI "NCBI Tools User's Manual"
+.SH NAME
+tbl2asn \- prepare a GenBank submission using an ASCII feature table
+.SH SYNOPSIS
+.B tbl2asn
+[\|\fB\-\fP\|]
+[\|\fB\-a\fP\ \fIstr\fP\|]
+[\|\fB\-b\fP\|]
+[\|\fB\-c\fP\|]
+[\|\fB\-d\fP\|]
+[\|\fB\-g\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-j\fP\ \fIstr\fP\|]
+[\|\fB\-k\fP\|]
+[\|\fB\-l\fP\|]
+[\|\fB\-m\fP\|]
+[\|\fB\-n\fP\ \fIstr\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\fP\ \fIstr\fP\|]
+[\|\fB\-q\fP\|]
+[\|\fB\-r\fP\ \fIstr\fP\|]
+[\|\fB\-s\fP\|]
+[\|\fB\-t\fP\ \fIfilename\fP\|]
+[\|\fB\-v\fP\|]
+[\|\fB\-x\fP\ \fIstr\fP\|]
+[\|\fB\-y\fP\ \fIstr\fP\|]
+.SH DESCRIPTION
+\fBtbl2asn\fP reads a template along with sequence and table files,
+and outputs ASN.1 for submission to GenBank. Thus, the submitter does
+not need to read each set of table and sequence files into
+Sequin. Furthermore, the template file can contain the organism and
+submitter information common to all records, obviating the need to
+input these data for each sequence/table pair.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-a\fP\ \fIstr\fP
+Accession
+.TP
+\fB\-b\fP
+Generate GenBank file
+.TP
+\fB\-c\fP
+Annotate longest ORF
+.TP
+\fB\-d\fP
+Read FASTAs as Delta
+.TP
+\fB\-g\fP
+Input is a genomic product set
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Single input file
+.TP
+\fB\-j\fP\ \fIstr\fP
+Source qualifiers
+.TP
+\fB\-k\fP
+Set conflict on mismatch
+.TP
+\fB\-l\fP
+Read FASTA+Gap Alignment
+.TP
+\fB\-m\fP
+Allow alternative starts
+.TP
+\fB\-n\fP\ \fIstr\fP
+Organism name
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Single output file
+.TP
+\fB\-p\fP\ \fIstr\fP
+Path to files
+.TP
+\fB\-q\fP
+Set sequence ID from input file name
+.TP
+\fB\-r\fP\ \fIstr\fP
+Path for results
+.TP
+\fB\-s\fP
+Read FASTAs as Set
+.TP
+\fB\-t\fP\ \fIfilename\fP
+Read template from \fIfilename\fP
+.TP
+\fB\-v\fP
+Validate
+.TP
+\fB\-x\fP\ \fIstr\fP
+Suffix (default = \fB.fsa\fP)
+.TP
+\fB\-y\fP\ \fIstr\fP
+Comment
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.BR Psequin (1),
+<http://www.ncbi.nlm.nih.gov/Sequin/table.html>

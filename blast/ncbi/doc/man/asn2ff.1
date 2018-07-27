@@ -1,0 +1,174 @@
+.TH ASN2FF 1 2002-08-30 NCBI "NCBI Tools User's Manual"
+.SH NAME
+asn2ff \- convert ASN.1 biological data to a flat format (old version)
+.SH SYNOPSIS
+.B asn2ff
+[\|\fB\-\fP\|]
+[\|\fB\-A\fP\ \fIX\fP\|]
+[\|\fB\-B\fP\ \fIX\fP\|]
+[\|\fB\-C\fP\|]
+[\|\fB\-G\fP\|]
+[\|\fB\-L\ F\fP\|]
+[\|\fB\-M\fP\|]
+[\|\fB\-R\fP\|]
+[\|\fB\-V\ F\fP\|]
+[\|\fB\-a\fP\ \fIfilename\fP\|]
+[\|\fB\-b\fP\|]
+[\|\fB\-d\fP\|]
+[\|\fB\-e\fP\|]
+[\|\fB\-f\fP\ \fIb/p/e/s/x/z\fP\|]
+[\|\fB\-g\fP\|]
+[\|\fB\-h\ F\fP\|]
+[\|\fB\-k\ F\fP\|]
+[\|\fB\-l\fP\ \fIfilename\fP\|]
+[\|\fB\-m\fP\ \fIr/d/s/c/k/l/e/p\fP\|]
+[\|\fB\-n\ F\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\ F\fP\|]
+[\|\fB\-q\fP\|]
+[\|\fB\-r\fP\ \fIfilename\fP\|]
+[\|\fB\-s\fP\|]
+[\|\fB\-t\fP\|]
+[\|\fB\-v\ F\fP\|]
+[\|\fB\-w\fP\|]
+[\|\fB\-y\fP\|]
+[\|\fB\-z\fP\|]
+.SH DESCRIPTION
+\fBasn2ff\fP converts descriptions of biological sequences from NCBI's
+ASN.1 format to one of several flat-file formats.  This program is
+built around a deprecated interface; please use \fBasn2gb\FP(1) instead.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-A\fP\ \fIX\fP
+Show region starting at \fIX\fP (default is 0)
+.TP
+\fB\-B\fP\ \fIX\fP
+Show region ending at \fIX\fP (default is last position)
+.TP
+\fB\-C\fP
+Show Bankit comments
+.TP
+\fB\-G\fP
+Output is one top bioseq only in genome view
+.TP
+\fB\-L F\fP
+Use old (pre-Genbank 127.0) LOCUS line format
+.TP
+\fB\-M\fP
+Output is map bioseqs only
+.TP
+\fB\-R\fP
+For GenBank Release
+.TP
+\fB\-V\ F\fP
+Don't use VERSION
+.TP
+\fB\-a\fP\ \fIfilename\fP
+Filename for ASN.1 input (default is stdin)
+.TP
+\fB\-b\fP
+Input asnfile in binary mode
+.TP
+\fB\-d\fP
+Use SeqMgr indexing
+.TP
+\fB\-e\fP
+Input is a Seq-entry
+.TP
+\fB\-f\fP\ \fIb/p/e/s/x/z\fP
+Output Format:
+.RS
+.PD 0
+.IP b
+GenBank (default)
+.IP p
+GenPept
+.IP e
+EMBL
+.IP s
+PseudoEMBL
+.IP x
+GenBankSelect
+.IP z
+EMBLPEPT
+.PD
+.RE
+.TP
+\fB\-g\fP
+Show gi numbers
+.TP
+\fB\-h\ F\fP
+Hide sequence
+.TP
+\fB\-k\ F\fP
+Don't use complex sets (phy-set,mut-set, pop-set)
+.TP
+\fB\-l\fP\ \fIfilename\fP
+Log errors to \fIfilename\fP
+.TP
+\fB\-m\fP\ \fIr/d/s/c/k/l/e/p\fP
+Output mode:
+.RS
+.PD 0
+.IP r
+release (default)
+.IP d
+dump
+.IP s
+Sequin
+.IP c
+Chromoscope
+.IP k
+dir-sub-debug
+.IP l
+dir-sub
+.IP e
+revise
+.IP p
+partial report
+.PD
+.RE
+.TP
+\fB\-n\ F\fP
+Strict gene_binding
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Output Filename (default is stdout)
+.TP
+\fB\-p\ F\fP
+Omit new gene features
+.TP
+\fB\-q\fP
+Output is one top bioseq only
+.TP
+\fB\-r\fP\ \fIfilename\fP
+Output error logfile (default is stderr)
+.TP
+\fB\-s\fP
+Input is a Seq-submit
+.TP
+\fB\-t\fP
+Show verbose message text
+.TP
+\fB\-v\ F\fP
+Suppress error messages
+.TP
+\fB\-w\fP
+Use HTML output format
+.TP
+\fB\-y\fP
+Print help format only
+.TP
+\fB\-z\fP
+New algorithm for orgnames
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.BR asn2asn (1),
+.BR asn2gb (1),
+.BR asn2xml (1),
+.BR asndhuff (1)

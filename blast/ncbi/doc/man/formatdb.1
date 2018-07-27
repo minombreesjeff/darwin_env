@@ -1,0 +1,104 @@
+.TH FORMATDB 1 2002-08-30 NCBI "NCBI Tools User's Manual"
+.SH NAME
+formatdb \- format protein or nucleotide databases for BLAST
+.SH SYNOPSIS
+.B formatdb
+[\|\fB\-\fP\|]
+[\|\fB\-B\fP\ \fIfilename\fP\|]
+[\|\fB\-F\fP\ \fIfilename\fP\|]
+[\|\fB\-L\fP\ \fIfilename\fP\|]
+[\|\fB\-V\fP\|]
+[\|\fB\-a\fP\|]
+[\|\fB\-b\fP\|]
+[\|\fB\-e\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIfilename\fP\|]
+[\|\fB\-n\fP\ \fIstr\fP\|]
+[\|\fB\-o\fP\|]
+[\|\fB\-p\ F\fP\|]
+[\|\fB\-s\fP\|]
+[\|\fB\-t\fP\ \fIstr\fP\|]
+[\|\fB\-v\fP\ \fIN\fP\|]
+.SH DESCRIPTION
+\fBformatdb\fP must be used in order to format protein or nucleotide
+source databases before these databases can be searched by blastall,
+blastpgp or MegaBLAST. The source database may be in either FASTA or
+ASN.1 format.  Although the FASTA format is most often used as input
+to \fBformatdb\fP, the use of ASN.1 is advantageous for those who are
+using ASN.1 as the common source for other formats such as the GenBank
+report. Once a source database file has been formatted by
+\fBformatdb\fP it is not needed by BLAST. Please note that if you are
+going to apply periodic updates to your BLAST databases using
+\fBfmerge\fP(1), you will need to keep the source database file.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-B\fP\ \fIfilename\fP
+Binary Gifile produced from the Gifile specified by \fB\-F\fP.  This
+option specifies the name of a binary GI list file.  This option
+should be used with the \fB\-F\fP option.  A text GI list may be
+specified with the \fB\-F\fP option and the \fB\-B\fP option will
+produce that GI list in binary format.  The binary file is smaller and
+BLAST does not need to convert it, so it can be read faster.
+.TP
+\fB\-F\fP\ \fIfilename\fP
+Gifile (file containing list of gi's) for use with \fB\-B\fP or \fB\-L\fP
+.TP
+\fB\-L\fP\ \fIfilename\fP
+Create an alias file named \fIfilename\fP, limiting the sequences
+searched to those specified by \fB\-F\fP.
+.TP
+\fB\-V\fP
+Verbose: check for non-unique string ids in the database
+.TP
+\fB\-a\fP
+Input file is database in ASN.1 format (otherwise FASTA is expected)
+.TP
+\fB\-b\fP
+ASN.1 database is binary (as opposed to ASCII text)
+.TP
+\fB\-e\fP
+Input is a Seq-entry.  A source ASN.1 database (either text ascii or
+binary) may contain a Bioseq-set or just one Bioseq. In the latter
+case \fB\-e\fP should be provided.
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Input file(s) for formatting
+.TP
+\fB\-l\fP\ \fIfilename\fP
+Log file name (default = \fBformatdb.log\fP)
+.TP
+\fB\-n\fP\ \fIstr\fP
+Base name for BLAST files (defaults to the name of the original FASTA file)
+.TP
+\fB\-o\fP
+Parse SeqID and create indexes.  If the source database is in FASTA
+format, the database identifiers in the FASTA definition line must
+follow the conventions of the FASTA Defline Format.
+.TP
+\fB\-p\ F\fP
+Input is a nucleotide, not a protein.
+.TP
+\fB\-s\fP
+Index only by accession, not by locus.  This is especially useful for
+sequence sets like the EST's where the accession and locus names are
+identical.  Formatdb runs faster and produces smaller temporary files
+if this option is used.  It is strongly recommended for EST's, STS's,
+GSS's, and HTGS's.
+.TP
+\fB\-t\fP\ \fIstr\fP
+Title for database file [String]
+.TP
+\fB\-v\fP\ \fIN\fP
+Break up large FASTA files into 'volumes' of size \fIN\fP million
+letters.  As part of the creation of a volume, \fBformatdb\fP writes a
+new type of BLAST database file, called an alias file, with the
+extension 'nal' or 'pal'.
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.BR blast (1),
+formatdb.txt

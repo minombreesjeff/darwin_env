@@ -1,0 +1,46 @@
+.TH FMERGE 1 2002-08-23 NCBI "NCBI Tools User's Manual"
+.SH NAME
+fmerge \- merge FASTA databases
+.SH SYNOPSIS
+.B fmerge
+[\|\fB\-\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIfilename\fP\|]
+[\|\fB\-m\fP\ \fIfilename\fP\|]
+[\|\fB\-n\fP\ \fIfilename\fP\|]
+\fB\-t\fP\ \fIN\fP
+.SH DESCRIPTION
+\fBfmerge\fP is a program to merge FASTA databases.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-i\fP\ \fIfilename\fP
+File for index storage (default is \fBindex.nr\fP)
+.TP
+\fB\-l\fP\ \fIfilename\fP
+Log file name (default is \fBfmerge.log\fP)
+.TP
+\fB\-m\fP\ \fIfilename\fP
+Read new sequences (in FASTA format) from \fIfilename\fP (default is
+\fBmonth.aa\fP)
+.TP
+\fB\-n\fP\ \fIfilename\fP
+Update \fIfilename\fP (default is \fBnr\fP)
+.TP
+\fB\-t\fP\ \fIN\fP
+Job mode:
+.RS
+.PD 0
+.IP 1
+Create index only
+.IP 2
+Update database from existing index
+.IP 3
+Create index and update database
+.PD
+.RE
+.SH AUTHOR
+The National Center for Biotechnology Information.

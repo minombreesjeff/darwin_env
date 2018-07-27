@@ -1,0 +1,66 @@
+.TH VECSCREEN 1 2001-10-05 NCBI "NCBI Tools User's Manual"
+.SH NAME
+vecscreen \- find nucleic acid segments of possible vector origin
+.SH SYNOPSIS
+.B vecscreen
+[\|\fB\-\fP\|]
+[\|\fB\-d\fP\ \fIstr\fP\|]
+[\|\fB\-f\fP\ \fIN\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+.SH DESCRIPTION
+\fBvecscreen\fP is a system for quickly identifying segments of a
+nucleic acid sequence that may be of vector origin. NCBI developed
+\fBvecscreen\fP to minimize the incidence and impact of vector
+contamination in public sequence databases. GenBank Annotation Staff
+use \fBvecscreen\fP to verify that sequences submitted for inclusion
+in the database are free from contaminating vector sequence. Any
+sequence can be screened for vector contamination using
+\fBvecscreen\fP.
+.PP
+\fBvecscreen\fP searches a query for segments that match any sequence
+in a specialized non-redundant vector database (UniVec). The search
+uses BLAST with parameters preset for optimal detection of vector
+contamination. Those segments of the query that match vector sequences
+are categorized according to the strength of the match, and their
+locations are displayed (see example positive result).
+.PP
+\fBvecscreen\fP is designed to quickly check a nucleic acid sequence
+for the presence of vector contamination and to show which segments
+within the sequence may be of vector origin. Although a
+\fBvecscreen\fP search against UniVec will not identify the vector
+that is the most likely source of the contamination, this can usually
+be deduced from the cloning history of the sequenced DNA.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-d\fP\ \fIstr\fP
+Database (default = \fBUniVec\fP)
+.TP
+\fB\-f\fP\ \fIN\fP
+Output format:
+.RS
+.PD 0
+.IP 0
+HTML format, with alignments (default)
+.IP 1
+HTML format, no alignments
+.IP 2
+Text list, with alignments
+.IP 3
+Text list, no alignments
+.PD
+.RE
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Query File (default = \fBstdin\fP)
+.TP
+\fB\-o\fP\ \fIfilename\fP
+VecScreen report Output File (default = \fBstdout\fP)
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+<http://www.ncbi.nlm.nih.gov/VecScreen/VecScreen_docs.html>

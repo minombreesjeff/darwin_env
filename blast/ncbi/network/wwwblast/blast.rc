@@ -1,0 +1,28 @@
+# $Id: blast.rc,v 1.2 2002/12/02 21:22:32 dondosha Exp $
+#
+#================================================================
+#
+#     This is dynamic configuration file for WWW BLAST service
+#              All lines started from '#' are ignored.
+#           "//" string considered as start of comments
+#
+#     Author Sergei B. Shavirin
+#
+# $Revision: 1.2 $
+#
+#
+##################################################################
+#
+#
+# Number of CPUs to use for a single request
+#
+NumCpuToUse     4
+#
+# Here are list of combinations program/database, 
+# that allowed by BLAST service. Format: <program> <db> <db> ...
+#
+blastn test_na_db 
+blastp test_aa_db
+blastx test_aa_db
+tblastn test_na_db
+tblastx test_na_db

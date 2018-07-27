@@ -1,0 +1,30 @@
+# $Id: rpsblast.rc,v 1.2 2003/06/24 21:54:47 dondosha Exp $
+#
+#================================================================
+#
+#     This is dynamic configuration file for WWW BLAST service
+#              All lines started from '#' are ignored.
+#           "//" string considered as start of comments
+#
+#     Author Sergei B. Shavirin
+#
+# $Revision: 1.2 $
+#
+#
+##################################################################
+#
+#
+# Number of CPUs to use for a single request
+#
+# At this point this is irrelevant to RPS Blast... sorry..
+#
+NumCpuToUse     4
+#
+# Here are list of combinations program/database, 
+# that allowed by BLAST service. Format: <program> <db> <db> ...
+#
+# In RPS Blast regular protein search == "blastp" and translated RPS == "blastx"
+#
+blastp CDD/test_CDD_db
+blastx CDD/test_CDD_db
+

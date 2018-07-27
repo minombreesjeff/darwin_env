@@ -1,0 +1,96 @@
+.TH PSEQUIN 1 2003-04-26 NCBI "NCBI Tools User's Manual"
+.SH NAME
+Psequin \- submit sequences to Genbank, EMBL, and DDBJ
+.SH SYNOPSIS
+.B Psequin
+[\|\fB-b\fP\|]
+[\|\fB-bse\fP\|]
+[\|\fB-e\fP\|]
+[\|\fB-f\fP\ \fIfilename\fP\|]
+[\|\fB-gc\fP\|]
+[\|\fB-h\fP\|]
+[\|\fB-oldaln\fP\|]
+[\|\fB-oldasn\fP\|]
+[\|\fB-oldgph\fP\|]
+[\|\fB-oldseq\fP\|]
+[\|\fB-oldsource\fP\|]
+[\|\fB-s\fP\|]
+[\|\fB-w\fP\|]
+[\|\fB-x\fP\|]
+.SH DESCRIPTION
+\fBPsequin\fP is a program designed to aid in the submission of
+sequences to the GenBank, EMBL, and DDBJ sequence databases. It was
+written at the National Center for Biotechnology Information, part of
+the National Library of Medicine at the National Institutes of Health.
+.PP
+\fBPsequin\fP can assemble the essential elements of a GenBank record
+from simple FASTA-format text files. For example, the program obtains
+the proper genetic code from an organism name, and automatically
+determines coding region intervals by back-translation from the
+protein sequence. An on-line help window scrolls to the appropriate
+place as the user moves between and within data entry forms, giving
+relevant details on what information is expected.
+.PP
+\fBPsequin\fP also contains a number of built-in validation functions
+for quality assurance. Features such as splice sites and coding region
+translations are checked for accuracy or internal
+consistency. Double-clicking on an error message launches an
+appropriate editor by which the user can correct any problems.
+.PP
+\fBPsequin\fP provides live, clickable views of the data in a variety
+of formats, including a report form, GenBank flatfile, EMBL flatfile,
+and a graphical view. Double clicking on an item in any of these
+formats launches an editor for that item. The editor is capable of
+maintaining correct feature table positions as the underlying sequence
+is edited. It can display features on the sequence during editing, and
+allows feature intervals to be adjusted by direct manipulation.
+.SH OPTIONS
+.TP
+\fB-b\fP
+Bioseq-set mode
+.TP
+\fB-bse\fP
+binseqentry mode
+.TP
+\fB-e\fP
+Entrez mode
+.TP
+\fB-f\fP\ \fIfilename\fP
+read from \fIfilename\fP
+.TP
+\fB-gc\fP
+genome center mode
+.TP
+\fB-h\fP
+turn off automatic help
+.TP
+\fB-oldaln\fP
+use old alignment reader
+.TP
+\fB-oldasn\fP
+leave as old ASN.1
+.TP
+\fB-oldgph\fP
+use old graphic view
+.TP
+\fB-oldseq\fP
+use old sequence view
+.TP
+\fB-oldsource\fP
+use old flat-file source format
+.TP
+\fB-s\fP
+subtool mode
+.TP
+\fB-w\fP
+workbench mode
+.TP
+\fB-x\fP
+read from standard input
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.ad l
+.BR tbl2asn (1),
+sequin.htm,
+<http://www.ncbi.nlm.nih.gov/Sequin/>

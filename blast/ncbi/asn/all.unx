@@ -1,0 +1,11 @@
+#!/bin/sh
+
+rm -f asn.all
+FILES="\
+head.all general.asn biblio.asn medline.asn pubmed.asn medlars.asn pub.asn \
+seqloc.asn seq.asn seqset.asn seqcode.asn seqblock.asn \
+seqfeat.asn seqalign.asn seqres.asn submit.asn ../biostruc/cn3d/cn3d.asn \
+proj.asn access.asn featdef.asn ncbimime.asn objprt.asn gbseq.asn insdseq.asn \
+tinyseq.asn "
+cat $FILES > asn.all
+exit $?

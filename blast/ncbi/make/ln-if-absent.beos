@@ -1,0 +1,104 @@
+#!/bin/sh -f
+#
+# Make a symbolic link if the target is absent.
+#
+# Use this script instead "ln-if-absent" (rename it) on BeOS
+#
+# Untested. Contributed by Howard Feldman <feldman@mshri.on.ca>
+#
+# $Id: ln-if-absent.beos,v 6.1 2002/06/17 14:26:44 ivanov Exp $
+#
+
+if [ $# -lt 1 ]; then
+   echo "Usage: $0 source_file... target"
+   exit 1
+fi
+
+COUNT=$#
+NUMARG=$#
+LIST=
+while [ $COUNT -ge 1 ]; do
+    if [ $COUNT -eq 1 ]; then
+        TARGET=$1
+    else
+        export LIST="$1 $LIST"
+    fi
+    shift
+    let COUNT=$COUNT-1
+done
+FINAL=
+
+if [ -d $TARGET ]; then
+    for i in $LIST; do      
+        if [ -r $TARGET/$i:t ]; then
+            echo .
+        else
+            export FINAL="$FINAL $i"
+        fi 
+    done
+else
+    if [ $NUMARG -ne 2 ]; then
+        echo target argument should be a directory
+        exit 1
+    fi
+    if [ -r $LIST ]; then
+        echo .
+    else
+        exit 1
+    fi
+    if [ -r $TARGET ]; then
+        echo .
+    else 
+        ln -sf $LIST $TARGET
+    fi 
+    exit 0
+fi
+
+if [ ${#FINAL} == 1 ]; then
+    if [ -r $FINAL ]; then
+        echo .
+    else
+        exit 1
+    fi
+    ln -s $FINAL $TARGET
+    exit 0
+fi
+
+if [ ${#FINAL} -ne 0 ]; then
+    ln -s $FINAL $TARGET
+fi
+
+exit 0
+
+
+@ count=$#argv
+set target=$argv[$count]
+@ count--
+set list=($argv[-$count])
+set final=()
+
+if (-d $target) then
+	foreach i ($list)	
+		if (! -r $target/$i:t) set final=($final $i)
+	end
+else
+	if ($#argv != 2) then
+		echo target argument should not be a directory
+		exit 1
+	endif
+	if (! -r "$1") exit 1
+	if (! -r "$2") ln -sf "$1" "$2" 
+	exit 0
+endif
+
+if ( $#final == 1) then
+	if (! -r "$final") exit 1
+	ln -s $final $target
+	exit 0
+endif
+
+if ($#final != 0) then
+	ln -s $final $target
+endif
+
+exit 0

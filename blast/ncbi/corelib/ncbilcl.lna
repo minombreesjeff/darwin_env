@@ -1,0 +1,163 @@
+/*   ncbilcl.h
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  ncbilcl.h
+*
+* Author:  Gish, Kans, Ostell, Schuler, Epstein
+*
+* Version Creation Date:   11/18/97
+*
+* $Revision: 6.3 $
+*
+* File Description:
+*		system dependent header
+*       version for Linux on Alpha
+*
+* Modifications:
+* --------------------------------------------------------------------------
+* Date     Name          Description of modification
+* -------  ----------    ---------------------------------------------------
+*
+* $Log: ncbilcl.lna,v $
+* Revision 6.3  2002/11/22 20:05:04  lavr
+* Configure HAVE_STRDUP and HAVE_STRCASECMP
+*
+* Revision 6.2  1999/03/17 15:37:22  vakatov
+* Set the default(<ncbistd.h>) "Nlm_Int4" to "int" rather tnan "long";
+* the same for "Nlm_Uint4";  modifyed the concerned "ncbilcl.*" files
+* accordingly.
+*
+* Revision 6.1  1997/11/18 20:39:21  epstein
+* new file for Linux on Alpha chip
+*
+*
+*
+* ==========================================================================
+*/
+#ifndef _NCBILCL_
+#define _NCBILCL_
+
+/* PLATFORM DEFINITION FOR Linux on Alpha */
+
+#define COMP_SYSV
+#define OS_UNIX
+#define OS_UNIX_LINUX
+#define PROC_ALPHA
+#define WIN_DUMB
+
+/*----------------------------------------------------------------------*/
+/*      Desired or available feature list                               */
+/*----------------------------------------------------------------------*/
+#define SYSV_IPC_AVAIL	/* System V Interprocess Communication available */
+#define HAVE_STRCASECMP 1
+#define HAVE_STRDUP 1
+
+/*----------------------------------------------------------------------*/
+/*      #includes                                                       */
+/*----------------------------------------------------------------------*/
+#include <sys/types.h>
+#include <limits.h>
+#include <sys/stat.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+#include <malloc.h>
+#include <memory.h>
+#include <stdlib.h>
+#include <math.h>
+#include <errno.h>
+#include <float.h>
+#include <unistd.h>
+
+/*----------------------------------------------------------------------*/
+/*      Missing ANSI-isms                                               */
+/*----------------------------------------------------------------------*/
+#define noalias	
+
+#ifndef SEEK_SET
+#define SEEK_SET	0	/* Set file pointer to offset */
+#define SEEK_CUR	1	/* Set file pointer to current plus offset */
+#define SEEK_END	2	/* Set file pointer to EOF plus offset */
+#endif
+#ifndef FILENAME_MAX
+#define FILENAME_MAX 1024
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Aliased Logicals, Datatypes                                     */
+/*----------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------*/
+/*      Misc Macros                                                     */
+/*----------------------------------------------------------------------*/
+#define PROTO(x) x	/* Prototypes are acceptable */
+#define VPROTO(x) x   /* Prototype for variable argument list */
+#define DIRDELIMCHR     '/'
+#define DIRDELIMSTR     "/"
+#define CWDSTR          "."
+
+#define KBYTE           (1024)
+#define MBYTE           (1048576)
+
+#define IS_LITTLE_ENDIAN
+#define TEMPNAM_AVAIL
+
+/*----------------------------------------------------------------------*/
+/*      For importing MS_DOS code                                       */
+/*----------------------------------------------------------------------*/
+#define near
+#define far
+#define huge
+#define cdecl
+#define pascal
+#define _pascal
+#define _near
+#define _far
+#define _huge
+#define _cdecl
+
+/*----------------------------------------------------------------------*/
+/*      Aliased Logicals, Datatypes                                     */
+/*----------------------------------------------------------------------*/
+
+
+/*----------------------------------------------------------------------*/
+/*      Macros for Floating Point                                       */
+/*----------------------------------------------------------------------*/
+#define EXP2(x) exp((x)*LN2)
+#define LOG2(x) (log(x)*(1./LN2))
+#define EXP10(x) exp((x)*LN10)
+#define LOG10(x) log10(x)
+
+/*----------------------------------------------------------------------*/
+/*      Macros Defining Limits                                          */
+/*----------------------------------------------------------------------*/
+
+#define MAXALLOC	0x40000000 /* Largest permissible memory request */
+
+#endif
+
+

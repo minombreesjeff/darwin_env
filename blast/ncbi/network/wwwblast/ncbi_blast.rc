@@ -1,0 +1,28 @@
+# $Id: ncbi_blast.rc,v 1.1 2002/08/06 19:03:51 dondosha Exp $
+#
+#================================================================
+#
+#     This is dynamic configuration file for WWW BLAST service
+#              All lines started from '#' are ignored.
+#           "//" string considered as start of comments
+#
+#     Author Sergei B. Shavirin
+#
+# $Revision: 1.1 $
+#
+#
+##################################################################
+#
+#
+# Number of CPUs to use for a single request
+#
+NumCpuToUse     4
+#
+# Here are list of combinations program/database, 
+# that allowed by BLAST service. Format: <program> <db> <db> ...
+#
+blastn nr drosoph dbest est est_mouse est_human est_others kabat mito month dbsts sts vector pdb alu epd gss htgs ecoli yeast pat
+blastp nr drosoph kabat month swissprot pdb alu ecoli yeast pat mito
+blastx nr drosoph kabat month swissprot pdb alu ecoli yeast pat mito
+tblastn nr drosoph dbest est est_mouse est_human est_others kabat mito month dbsts sts vector pdb alu epd gss htgs ecoli yeast pat
+tblastx drosoph dbest est est_mouse est_human est_others kabat mito month dbsts sts vector pdb alu epd gss htgs ecoli yeast pat

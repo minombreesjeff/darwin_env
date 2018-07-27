@@ -1,0 +1,1 @@
+../biostruc/PubStructAsn.h

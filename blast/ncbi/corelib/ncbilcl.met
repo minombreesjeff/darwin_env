@@ -1,0 +1,411 @@
+/*   ncbilcl.h
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  ncbilcl.h
+*
+* Author:  Gish, Kans, Ostell, Schuler, Epstein
+*
+* Version Creation Date:   3/31/94
+*
+* $Revision: 6.11 $
+*
+* File Description:
+*		system dependent header
+*		Metrowerks and Darwin combined version
+*
+* Modifications:
+* --------------------------------------------------------------------------
+* Date     Name        Description of modification
+* -------  ----------  -----------------------------------------------------
+*
+* $Log: ncbilcl.met,v $
+* Revision 6.11  2003/11/07 18:32:41  rsmith
+* need pascal keyword on Mac builds.
+*
+* Revision 6.10  2003/05/05 15:01:53  rsmith
+* support for targeting Win32 systems with Codewarrior on Mac.
+*
+* Revision 6.9  2003/02/28 15:53:32  kans
+* initial consolidation of ncbilcl.met and ncbilcl.dwn
+*
+* Revision 6.8  2003/02/25 15:33:03  rsmith
+* OS_UNIX_DARWIN (Mach on Macs) uses tempnam for temporary files, not tmpnam.
+*
+* Revision 6.7  2002/12/19 14:52:27  kans
+* define _USE_CTYPE_INLINE_ (RGS)
+*
+* Revision 6.6  2002/12/18 22:16:02  kans
+* DIRDELIMCHR and STR / for UNIX and : for Mac
+*
+* Revision 6.5  2002/12/17 23:00:05  kans
+* support for OS_UNIX_DARWIN for Mach-O executables (RGS)
+*
+* Revision 6.4  2001/07/03 17:42:35  juran
+* Don't redefine NULL under C++.
+* Throw a preprocessor error if targeting 68K.
+* Fix newlines in previous log entry.
+*
+* Revision 6.3  2001/04/05 02:44:13  juran
+* Corrected capitalization for system include files.
+* Removed #ifdef NULL before redefining it, because NULL must be defined 
+* since we include headers like ctype.h.
+* And if it wasn't, the conditional would leave it undefined, which is Bad.
+*
+* Revision 6.2  1997/12/12 21:42:26  kans
+* Strings.h dragged in QuickDraw.h, so it is now out of the header
+*
+* Revision 6.1  1997/12/12 18:58:20  kans
+* added preferred __POWERPC__ symbol
+*
+* Revision 6.0  1997/08/25 18:16:03  madden
+* Revision changed to 6.0
+*
+* Revision 5.2  1997/01/28 22:50:27  kans
+* reverted (removed <fp.h>)
+*
+# Revision 5.0  1996/05/28  13:18:57  ostell
+# Set to revision 5.0
+#
+# Revision 4.1  1995/08/07  16:01:07  kans
+# redefined NULL to ncbistd.h style (compiler defines it as 0)
+#
+# Revision 4.0  1995/07/26  13:46:50  ostell
+# force revision to 4.0
+#
+# Revision 1.4  1995/05/15  18:45:58  ostell
+# added Log line
+#
+* ORIGINAL LOG FOR ncbilcl.dwn
+*
+* Revision 6.5  2003/02/28 14:59:40  kans
+* changed PROC_POWERPC to correct PROC_PPC platform symbol
+*
+* Revision 6.4  2002/11/22 20:05:04  lavr
+* Configure HAVE_STRDUP and HAVE_STRCASECMP
+*
+* Revision 6.3  2002/01/22 16:34:54  kans
+* contributor contact information copied from obsolete readme.macosx file
+*
+* Revision 6.2  2001/04/03 21:01:54  beloslyu
+* changed to big endian (according to Nathan Willard <willard@turbogenomics.com>)
+*
+* Revision 6.1  2001/01/19 20:28:42  kans
+* initial checkin - contributed by William Van Etten <vanetten@computefarm.com>
+*
+*   William Van Etten, PhD
+*   Blackstone Technology Group
+*   80 Summer Street
+*   Boston, MA 02110
+*   617-542-4770 x4003
+*   vanetten@computefarm.com
+*
+* Revision 1.1  2001/01/13 15:42:41  vanetten
+* port to Darwin 1.2
+*
+*
+*
+* ==========================================================================
+*/
+#ifndef _NCBILCL_
+#define _NCBILCL_
+
+#ifdef __MWERKS__
+
+/* PLATFORM DEFINITION FOR MACINTOSH UNDER METROWERKS C/C++ */
+
+#define COMP_METRO
+#ifdef __MACH__         /* Mach-O Executable */
+#define OS_UNIX
+#define OS_UNIX_DARWIN
+
+#elif defined(__INTEL__)    /* MS Windows Executable */
+#ifndef WIN32
+#define WIN32
+#endif
+
+#define OS_MSWIN
+#define WIN_MSWIN
+#define WIN_DUMB
+#define OS_NT
+
+#ifndef FAR
+#define FAR
+#define NEAR
+#endif
+
+#ifndef EXPORT
+#define EXPORT
+#endif
+
+
+#if defined(i386) || defined(X86) || defined(_X86_) || defined(_M_IX86)
+/* INTEL processor */
+#define PLATFORM_NAME "Win32i"
+#define PROC_I80X86
+#define PROC_I80_386
+#ifndef PASCAL
+#define PASCAL __stdcall
+#define CDECL  __cdecl
+#endif
+
+#else
+#error Unknown processor
+#endif
+
+#ifdef _MT
+#define WIN32_THREADS_AVAIL
+#endif
+#ifdef OS_NT
+#define OS_WINNT
+#endif
+
+#else               /* PEF (Carbon) Executable */
+
+#define OS_MAC
+#endif
+
+#ifndef OS_MSWIN
+#define PROC_PPC
+#define WIN_MAC
+#endif
+
+#else /* APPLE DEVELOPMENT SYSTEM GCC COMPILER */
+
+/* PLATFORM DEFINITION FOR MACINTOSH UNDER Darwin 1.2.* */
+
+#define COMP_BSD
+#define OS_UNIX
+#define OS_UNIX_DARWIN
+#define PROC_PPC
+#define WIN_DUMB
+
+#endif /* __MWERKS__ */
+
+/* PROC_MC680X0 (680x0 processor) no longer supported */
+
+/*----------------------------------------------------------------------*/
+/*      Desired or available feature list                               */
+/*----------------------------------------------------------------------*/
+#ifdef OS_MSWIN
+#define HAVE_STRDUP 1
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      #includes                                                       */
+/*----------------------------------------------------------------------*/
+
+/* needed to make ctype.h work when including it from /usr/include (not the MW version) */
+#define _USE_CTYPE_INLINE_
+#include <ctype.h>
+
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <errno.h>
+#include <float.h>
+
+#ifdef OS_UNIX_DARWIN
+/*
+the following should be found in /usr/include and such Unix-y
+places not in the ncbi tree or in the Metroworks tree
+*/
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/param.h>
+#include <stddef.h>
+#include <memory.h>
+#include <unistd.h>
+#include <fcntl.h>
+#elif   defined(OS_MSWIN)
+#include <stddef.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#else /* OS_MAC */
+#include <MacMemory.h>
+#endif /* OS_UNIX_DARWIN */
+
+/* Check if there are POSIX threads available */
+/*
+#ifdef OS_UNIX_DARWIN
+#ifdef _POSIX_THREADS
+#define POSIX_THREADS_AVAIL
+#endif
+#define HAVE_STRCASECMP 1
+#define HAVE_STRDUP 1
+#endif
+*/
+
+/*----------------------------------------------------------------------*/
+/*      Missing ANSI-isms                                               */
+/*----------------------------------------------------------------------*/
+#ifndef SEEK_SET
+#define SEEK_SET	0	/* Set file pointer to offset */
+#define SEEK_CUR	1	/* Set file pointer to current plus offset */
+#define SEEK_END	2	/* Set file pointer to EOF plus offset */
+#endif
+
+#ifdef COMP_METRO
+
+    #ifdef  OS_MSWIN
+        #ifndef FILENAME_MAX
+        #define FILENAME_MAX 63
+        #endif
+        #ifndef PATH_MAX
+        #define PATH_MAX 256
+        #endif
+    #else
+        #ifndef FILENAME_MAX
+        #define FILENAME_MAX 255
+        #endif
+        #ifndef PATH_MAX
+        #define PATH_MAX 255
+        #endif
+    #endif
+
+#else
+
+    #ifndef FILENAME_MAX
+    #define FILENAME_MAX 1024
+    #endif
+    #ifndef LOGNAME_MAX
+    #define LOGNAME_MAX	MAXLOGNAME
+    #endif
+    #ifndef PATH_MAX
+    #define PATH_MAX 1024
+    #endif
+
+#endif /* __MWERKS__ */
+
+/* 
+in /usr/include/ppc/param.h is a macro ALIGN which conflicts with
+our function in gapxdrop.c/h
+*/
+
+#ifdef ALIGN
+#undef ALIGN
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Aliased Logicals, Datatypes                                     */
+/*----------------------------------------------------------------------*/
+
+#ifdef __MWERKS__
+
+/* NULL may not be a (void *) in C++. */
+#ifndef __cplusplus
+#undef NULL
+#define NULL ((void *)0)
+#endif
+
+#ifdef OS_MSWIN
+#define PNTR FAR *
+#define HNDL NEAR *
+
+typedef int (FAR PASCAL *Nlm_FnPtr)();
+#define FnPtr Nlm_FnPtr
+#endif /* OS_MSWIN */
+
+#endif /* __MWERKS__ */
+
+#ifndef sigset
+#define sigset signal
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Misc Macros                                                     */
+/*----------------------------------------------------------------------*/
+#define PROTO(x)	x	/* Function prototypes are real */
+#define VPROTO(x)	x	/* Prototype for variable argument list */
+
+#ifdef OS_UNIX
+#define DIRDELIMCHR	'/'
+#define DIRDELIMSTR	"/"
+#elif defined(OS_MSWIN)
+#define DIRDELIMCHR     '\\'
+#define DIRDELIMSTR     "\\"
+#else
+#define DIRDELIMCHR	':'
+#define DIRDELIMSTR	":"
+#endif
+#define CWDSTR	"."
+
+#define KBYTE	(1024)
+#define MBYTE	(1048576)
+
+#ifdef OS_MSWIN
+#ifndef IS_BIG_ENDIAN
+#define IS_LITTLE_ENDIAN
+#endif
+#else
+#define IS_BIG_ENDIAN
+#endif
+
+#if defined(OS_UNIX_DARWIN) || ( defined(OS_MSWIN) && ! defined(COMP_METRO) )
+#define TEMPNAM_AVAIL
+#endif
+
+#ifdef OS_MSWIN
+/* get rid of some of the defines from dlgs.h */
+
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      For importing MS_DOS code                                       */
+/*----------------------------------------------------------------------*/
+#ifndef OS_MSWIN
+#define near
+#define far
+#define huge
+#define cdecl
+#define _pascal
+#define _near
+#define _far
+#define _huge
+#define _cdecl
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Macros for Floating Point                                       */
+/*----------------------------------------------------------------------*/
+#define EXP2(x) exp((x)*LN2)
+#define LOG2(x) (log(x)*(1./LN2))
+#define EXP10(x) exp((x)*LN10)
+#define LOG10(x) log10(x)
+
+#ifndef TIME_MAX
+#define TIME_MAX  INT4_MAX
+#endif
+/*----------------------------------------------------------------------*/
+/*      Macros Defining Limits                                          */
+/*----------------------------------------------------------------------*/
+#ifdef OS_MSWIN
+#define MAXALLOC        0x7F000000 /* Largest permissible memory request */
+#else
+#define MAXALLOC	0x40000000 /* Largest permissible memory request */
+#endif
+
+#endif

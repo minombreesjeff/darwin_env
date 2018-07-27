@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding='iso-8859-1'?>
+
+<doc>
+   <title>
+     Downloading Sequin Using FTP
+  </title>
+  <contents>
+            <div class="c6"></div>
+            <div class="c21">
+              <div class="c6">
+    <p>
+      The installation instructions linked to above
+      require downloading through your Web browser. If
+      you must (or prefer) to use ftp to download Sequin,
+      the information you need appears in the table
+      below. Once you have the file you need, return to
+      the install instructions for your platform, which
+      can be accessed from the links in the navigation
+      bar at left.
+    </p>
+                <table border="0" class="c13" cellpadding="4"
+                cellspacing="2">
+                  <tbody>
+                    <tr>
+                      <td class="c7">
+                        FTP server
+                      </td>
+                      <td class="codefont" rowspan="1" colspan="2">
+                        ftp.ncbi.nih.gov
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c7">
+                        Name
+                      </td>
+                      <td class="codefont" rowspan="1" colspan="2">
+                        anonymous
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c7">
+                        Password
+                      </td>
+                      <td class="c9" rowspan="1" colspan="2">
+                        your email address
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c7">
+                        Transfer mode
+                      </td>
+                      <td class="codefont" rowspan="1" colspan="2">
+                        binary
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c7">
+                        Directory
+                      </td>
+                      <td class="codefont" rowspan="1" colspan="2">
+                        sequin/CURRENT
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c7" rowspan="20">
+                        File to download
+                      </td>
+                      <td class="c11">
+                        Mac OS 9<br />
+                        OS X
+                      </td>
+                      <td class="codefont">
+                        <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.Mac.hqx">
+                        sequin.Mac.hqx</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c11" rowspan="1" colspan="1">
+                        Darwin<br />
+                        (Mac OS X command-line)
+                      </td>
+                      <td class="codefont" rowspan="1" colspan="1">
+                        <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.darwin.tar.Z">
+                        sequin.darwin.tar.Z</a><br />
+                         <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.darwin.tar.gz">
+                        sequin.darwin.tar.gz</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c11" rowspan="1" colspan="1">
+                        Linux
+                      </td>
+                      <td class="codefont" rowspan="1" colspan="1">
+                        <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.linux.tar.Z">
+                        sequin.linux.tar.Z</a><br />
+                         <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.linux.tar.gz">
+                        sequin.linux.tar.gz</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c11" rowspan="1" colspan="1">
+                        SGI Irix
+                      </td>
+                      <td class="codefont" rowspan="1" colspan="1">
+                        <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.sgi.tar.Z">
+                        sequin.sgi.tar.Z</a><br />
+                         <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.sgi.tar.gz">
+                        sequin.sgi.tar.gz</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c11" rowspan="1" colspan="1">
+                        Solaris/Sparc<br />
+                      </td>
+                      <td class="codefont" rowspan="1" colspan="1">
+                        <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.solaris.tar.Z">
+                        sequin.solaris.tar.Z</a><br />
+                         <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.solaris.tar.gz">
+                        sequin.solaris.tar.gz</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c11" rowspan="1" colspan="1">
+                        Solaris/Intel<br />
+                      </td>
+                      <td class="codefont" rowspan="1" colspan="1">
+                        <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.solarisintel.tar.Z">
+                        sequin.solarisintel.tar.Z</a><br />
+                         <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.solarisintel.tar.gz">
+                        sequin.solarisintel.tar.gz</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="c11">
+                        Windows (all)<br />
+                      </td>
+                      <td class="codefont">
+                        <a href="ftp://ftp.ncbi.nih.gov/sequin/CURRENT/sequin.win32.exe">
+                        sequin.win32.exe</a>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table><br />
+                </div>
+              </div>
+                <hr class="c14" />
+                 
+                <h4>
+                  Notes
+                </h4>
+                <ul>
+                  <li>
+                    An <span class="c15">ftp client</span> is a
+                    program that you use to transfer files between
+                    computers using the ftp protocol. The UNIX
+                    command-line program <span class="c16">ftp</span>
+                    is a text-based ftp client. (This client is also
+                    available on Windows and Macintosh OS X. ) FTP
+                    clients that offer a graphical user interface are
+                    available for most platforms.  Instructions on how
+                    to use the command-line version of ftp that is
+                    available for Windows, Unix, Linux, and Macintosh
+                    OS X can be found at
+                    <a href="http://www.tldp.org/HOWTO/FTP.html">
+                      http://www.tldp.org/HOWTO/FTP.html</a>.
+                  </li>
+                  <li class="c17">
+                    <br />
+                  </li>
+                  <li>
+                    Downloading through a Web browser is usually
+                    easier than using an ftp client. Try clicking
+                    the link for the file you want in the table
+                    above. Most modern browsers handle ftp
+                    downloads correctly. If you get no response or
+                    an error message, see
+                    <a href="seq_trouble.html">Troubleshooting</a>
+                    before trying to use ftp directly.<br />
+                  </li>
+                </ul>
+                <ul>
+                  <li>
+                    Be sure that your ftp program is set up to do
+                    <span class="c15">binary</span> transfers, not
+                    text transfers.<br />
+                  </li>
+                </ul>
+                <ul>
+                  <li>
+                    If you are in an organization with a firewall,
+                    you may want to try setting your ftp client to
+                    <span class="c15">passive mode</span> (ask your
+                    network administrator).
+                  </li>
+                </ul>
+                <ul>
+                  <li>
+                    <a name="passivemode"
+                    id="passivemode"></a>Instructions for
+                    configuring your browser for passive ftp
+                    mode:<br />
+                    <br />
+                  </li>
+                  <li class="c17">
+                    <ul>
+                      <li class="c18">
+                        For Internet Explorer:
+                        <a href="http://support.microsoft.com/?kbid=309816">
+                          http://support.microsoft.com/?kbid=309816</a><br></br>
+
+                        <a href="http://support.microsoft.com/?kbid=323446" target="_blank">
+                          http://support.microsoft.com/?kbid=323446</a><br></br>
+
+                          Internet Explorer 6.0 sometimes has problems
+                          with passive ftp; see:<br></br>
+                          <a href="http://support.microsoft.com/?kbid=816037" target="_blank">
+                            http://support.microsoft.com/?kbid=816037</a><br></br>
+                      </li>
+                      <li class="c18">
+                        Instructions for MacOS 9:
+                        <a href="http://docs.info.apple.com/article.html?artnum=31283"
+                            target="_blank">http://docs.info.apple.com/article.html?artnum=31283</a>.
+                      </li>
+                      <li class="c18">
+                        Instructions for OS X:
+                        <a
+                         href="http://docs.info.apple.com/article.html?artnum=151794"
+                         target="_blank">
+                          http://docs.info.apple.com/article.html?artnum=151794</a><br/>
+                        <a href="http://docs.info.apple.com/article.html?artnum=61422"
+                           target="_blank">http://docs.info.apple.com/article.html?artnum=61422</a><br/>
+                            When you're looking at the <span
+                            class="c1">Proxies</span> tab, check the
+                            checkbox <span class="c1">Use Passive FTP
+                            Mode (PASV)</span>.
+                      </li>
+                      <li class="c18">
+                        For other platforms: You can usually find
+                        the control for passive ftp in the
+                        browser's
+                        <span class="c1">Preferences...</span> or
+                        <span class="c1">Options...</span> dialog.
+                        Ask your system or network administrator if
+                        you need help.<br />
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+                <ul>
+                  <li>
+                    <a href="ftp_example.html">Click here</a> to see a
+                    sample session with a command-line ftp client on
+                    UNIX. User input is shown in
+                    <code><b>boldface</b>.</code> Note the use of the
+                    <span class="c16">bin</span> and <span
+                    class="c16">passive</span> commands.
+                  </li>
+                  <li>
+                    Not all ftp clients or browsers provide passive
+                    mode.
+                  </li>
+                </ul>
+                <ul>
+                  <li>
+                    Some ftp clients fail to show all of the files
+                    in the NCBI ftp directory. If you can't find
+                    the file you're looking for, get the file from
+                    the most recent subdirectory of the ftp
+                    directory <span class="c16">sequin/old</span>.
+                  </li>
+                </ul>
+                <ul>
+                  <li>
+                    NCBI does not currently offer secure transfers
+                    with sftp.
+                  </li>
+                </ul>
+  </contents>
+  <css>seq_ftp_download.css</css>
+</doc>

@@ -1,0 +1,65 @@
+
+General Information for BLAST Developers on IBM-AIX Systems
+===========================================================
+
+ To compile the toolkit under AIX follow the steps in readme.unx
+ SPECIAL NOTE:
+ To build the 64-bit version type:
+ $ env AIX_MODE=64 ./ncbi/make/makedis.csh or
+ $ env AIX_MODE=64 ./ncbi/make/makedis.csh 2> log 1>&2    ! Korn shell users
+ % env AIX_MODE=64 ./ncbi/make/makedis.csh >& log         ! C shell users
+
+ AIX Specific information
+ ------------------------
+
+ The following files are the main platform dependent files
+
+ 1.  makedis.csh in ./ncbi/make
+
+ 2.  ibm64_auto.ncbi.mk and ibm_auto.ncbi.mk in ./ncbi/platform
+
+ 3.  ncbilcl.ibm in ./ncbi/corelib
+
+
+makedis.csh:
+
+     This file identifies the machine model via uname -M and assigns
+     the corresponding architecture.  Currently, AIX Power3 is the
+     only architecture explicitly targeted.  All other architectures
+     are identified as auto.  auto refers to the compiler flag that
+     will check the architecture and build corresponding executables.
+     The auto flag assumes that the execution environment is the same
+     as the compilation environment.
+
+ibm_xxxx.ncbi.mk:
+
+     Currently xxxx can be either auto64 or auto.  auto64 builds the
+     64-bit version.
+     This file contains compiler and loader flags specific for IBM.
+
+ncbilcl.ibm:
+
+     Pre-processor defines / platform specific.
+
+
+
+Multi-threading
+---------------
+
+
+     When running multi-threaded it may be beneficial to set the
+     following environment variables:
+
+                 AIXTHREAD_SCOPE=S
+                 MALLOCMULTIHEAP=true
+
+     Addional benefit is possibly achieved by experimenting with 
+     the value of the environment variables SPINLOOPTIME and 
+     YIELDLOOPTIME. The user might initially try values of 500 
+     for each of these and vary them to see the effect.  These 
+     variables affect the behavior of a thread at the end of a 
+     parallel region. Generally, best application (though not
+     necessarily system throughput) performance is achieved by 
+     putting an idle thread into a busy wait rather than letting 
+     it sleep.  Setting SPINLOOPTIME and YIELDLOOPTIME to a suitable 
+     "large" number encourages the former behavior. 

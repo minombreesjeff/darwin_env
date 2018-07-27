@@ -1,0 +1,178 @@
+<HTML>
+    <TITLE>Tax BLAST Help</TITLE>
+    <HEAD>
+      <META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+      <META NAME="keywords" CONTENT="taxonomy,organizm,BLAST">
+      <META NAME="description" CONTENT="Taxonomy BLAST description.">
+      <LINK REL="stylesheet" href="http://www.ncbi.nlm.nih.gov/corehtml/ncbi_test.css">
+    </HEAD>
+  <BODY BGCOLOR="#FFFFFF" LINK="#0000FF" VLINK="#660099" ALINK="#660099">
+
+    <table border="0" width="100%" cellspacing="0" cellpadding="0">
+      <tr> 
+        <td width="140"><a href="http://www.ncbi.nlm.nih.gov"> <img src="http://www.ncbi.nlm.nih.gov/corehtml/left.GIF" width="130" height="45" border="0"></a></td>
+        <td valign="BOTTOM"><img src="http://www.ncbi.nlm.nih.gov/Taxonomy/taxonomyhome.html/html/taxonomylogo.gif" alt="Taxonomy Logo" border=0></td>
+      </tr>
+    </table>
+    <!--  the quicklinks bar   --> 
+    <table CLASS="TEXT" border="0" width="100%" cellspacing="0" cellpadding="3" bgcolor="#000000" fgcolor="#FFFFFF">
+      <tr CLASS="TEXT"  align="CENTER"> 
+        <td width=100><a href="http://www.ncbi.nlm.nih.gov/PubMed/" class="BAR">PubMed</a></td>
+        <td width=100><a href="http://www.ncbi.nlm.nih.gov/Entrez/" class="BAR">Entrez</a></td>
+        <td width=100><a href="http://www.ncbi.nlm.nih.gov/BLAST/" class="BAR">BLAST</a></td>
+        <td width=100><a href="http://www.ncbi.nlm.nih.gov/omim/" class="BAR">OMIM</a></td>
+        <td width=100><a href="/Taxonomy/taxonomyhome.html"  class="BAR">Taxonomy</a></td>
+        <td width=100><a href="http://www.ncbi.nlm.nih.gov/Structure/" class="BAR">Structure</a></td>
+      </tr>
+    </table>
+    
+<CENTER><H2>Taxonomy BLAST Help</H2></CENTER>
+<HR>
+The BLAST Taxonomy Reports page (Tax BLAST) presents three different 
+views of the results of a given BLAST run, based on the information in 
+<a href="http://www.ncbi.nlm.nih.gov/Taxonomy/taxonomyhome.html">the NCBI Taxonomy Database.</a> The Tax BLAST reports only include the organisms that 
+are found in the BLAST hitlist.
+
+<h3>Organism Report</h3>
+
+The simplest report is 'Organism Report'.
+<P>
+This report sorts the BLAST hits according to the species of the target 
+sequence, so that all of the hits to the same organism will appear 
+together. Within each species, the BLAST hits are sorted by score 
+(as for the normal BLAST output). The species themselves are sorted
+by the strength of their strongest BLAST hit scores.
+<P>
+Each organism entry in the organism report contains a header line
+with up to four pieces of information:
+<PRE>
+  Bombyx mori (domestic silkworm) [moths] taxid 7091
+  ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^   ^^^^^  ^^^^^^^^^^
+      1                2             3         4
+</PRE>
+    <OL>
+      <LI>the scientific name of the organism
+      <LI>a vernacular (common) name for the organism, if one is available
+      <LI>the 'blast name' 
+      <LI>the 'taxid'
+    </OL>
+The 'blast name' is a common name for a large group of organisms
+(e.g. 'mammals' 'flatworms' or 'fungi') that is intended to give a
+general idea of what kind of organism this is, when the scientific
+name is not familiar.
+<P>
+The 'taxid' is the stable unique identifier for this organism
+in the NCBI taxonomy database.
+<P>
+<b><i>note:</i></b> Some sequence entries may be annotated with names classified
+below the species level - these will be treated separately in the
+Tax BLAST reports. For example, there may be entries for both
+"Homo sapiens" and for "Homo sapiens neandertalensis".
+<P>
+<b><i>note:</i></b> If two sequence entries from different species are identical
+(e.g. EF-1 alpha from human AAA18502 and rabbit CAA27245), only one
+of them will appear in the Tax BLAST reports.
+<P>
+<b><i>note:</i></b> Some sequence entries do not have source organism 
+information 
+(most patent entries, for example). These will be included in the 
+Tax BLAST reports under the heading "Unresolved taxid".
+
+<h3>Lineage Report</h3>
+
+The lineage report gives a simplified view of the relationships 
+between the organisms, according to their classification in the
+taxonomy database. This report is 'focused' on the organism which 
+yielded the strongest BLAST hit. Note that if the query sequence 
+itself was taken from the database, then the lineage report will 
+be focuses on the organism yielded the strongest BLAST hit.
+<P>
+The lineage report answers the question "how closely are the 
+organisms in the BLAST hitlist related to the query sequence
+(focus organism) according to the taxonomy database".
+<P>
+The top part of the report shows an abbreviated lineage down
+to the focus organism:
+<PRE>
+Fungi/Metazoa group [eukaryotes]
+. Eumetazoa           [animals]
+. . Bilateria           [animals]
+. . . Coelomata           [animals]
+. . . . Deuterostomia       [animals]
+. . . . . Euteleostomi        [vertebrates]
+. . . . . . Tetrapoda           [vertebrates]
+. . . . . . . Amniota             [vertebrates]
+. . . . . . . . Eutheria            [mammals]
+. . . . . . . . . Homo sapiens (human) ------------------- ...
+</PRE>
+This list includes the smallest subset of taxonomic groups
+that are required to represent the relationships between the
+BLAST hitlist organisms and the focus species. The nested vernacular 
+'blast names' on the right give a rough approximation of the
+relationships of each species. The first name in the list gives the 
+taxonomic range of the BLAST hitlist organisms - all of the species
+in this list come from the "Fungi/Metazoa group".
+<P>
+The bottom part of the lineage report has a left and a right side.
+The left side of the report lists the species names (with a common
+name, if one is available) nested as they appear within the
+taxonomic groups in the top part of the report. Within each
+nesting, the species are sorted by the strength of the strongest
+BLAST hit.
+<PRE>
+. . . . Deuterostomia       [animals]
+. . . . . Euteleostomi        [vertebrates]
+. . . . . . Tetrapoda           [vertebrates]
+. . . . . . . Amniota             [vertebrates]
+. . . . . . . . Eutheria            [mammals]
+. . . . . . . . . Homo sapiens (human) -------------------  941 ...
+. . . . . . . . . Cricetulus griseus (Chinese hamster) ...  939 ...
+. . . . . . . . . Mus musculus (house mouse) .............  939 ...
+. . . . . . . . . Rattus norvegicus (Norway rat) .........  936 ...
+. . . . . . . . Gallus gallus (chicken) ------------------  938 ...
+. . . . . . . Xenopus laevis (African clawed frog) -------  914 ...
+. . . . . . Danio rerio (zebrafish) ----------------------  872 ...
+. . . . . . Oryzias latipes (Japanese medaka) ............  833 ...
+. . . . . . Seriola quinqueradiata (five-ray yellowtail) .  823 ...
+. . . . . . Sparus aurata (gilthead sea bream) ...........  820 ...
+. . . . . Anthocidaris crassispina -----------------------  782 ...
+</PRE>
+This report focuses on Homo sapiens, the source of the best hit.
+Cricetulus griseus, Mus musculus and Rattus norvegicus are all
+placental mammals (Eutheria) along with Homo sapiens, but none 
+are more closely related to Homo sapiens than thay are to one another.
+The next most closely related species is the chicken (an amniote), 
+and so on.
+<P>
+The right half of the report gives the BLAST score of the 
+strongest hit from each species (and the title of the corresponding
+sequence entry) the number of hits, and the 'blast name' associated
+with each of the species.
+
+<h3>Taxonomy Report</h3>
+
+This report summarizes everything that our classification has 
+to say about the relationships between all of the organisms found
+in the BLAST hitlist. The left side of the report gives an
+abbreviated subset of our classification - only those taxonomic
+groups that are required to distinguish each of the organisms
+from all of the rest. The number of blast hits and the number
+of species in the hitlist are accumulated up each branch of the
+tree. This allows you to do a BLAST search with a Drosophila
+protein (for example) and to see how many hits were found in
+the Mammalia, or the Archaea, or any taxonomic group that is
+not in the Drosophila lineage.
+<P>
+The right side of the report fills in the rest of the lineage 
+(if any) that was not required in the abbreviated
+classification given on the left. This allows you to search
+using browser "Find" menu command for any of the taxonomic groups
+found in the lineage
+of any of the species in the blast hitlist set. This is often
+useful delete (for structural reasons) some very well-recognized
+taxa (e.g., Insecta and Mammalia) will not often appear in the
+abbreviated classifications found in these reports. 'Mammalia',
+for example will only appear in the abbreviated classification
+of these taxonomy reports if the BLAST hitlist includes 
+sequences from one of the monotremes (platypus or echidna)
+as well as a sequence from one of the other mammals.

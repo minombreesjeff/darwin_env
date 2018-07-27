@@ -1,0 +1,887 @@
+--*********************************************************************
+--
+--  featdef.prt
+--
+--  Definitions for feature display attributes
+--  J.Ostell - 1994
+--
+--*********************************************************************
+
+FeatDefGroupSet ::= {
+	groups {
+  {
+	groupkey 0 ,
+	groupname "Unrecognized Features"
+  } ,	
+  {
+	groupkey 1 ,
+	groupname "Genes and Named Regions",
+  } ,
+  {
+	groupkey 2 ,
+	groupname "Coding Regions and Transcripts",
+  } ,
+  {
+	groupkey 3 ,
+	groupname "Structural RNAs",
+  } ,
+  {
+	groupkey 4 ,
+	groupname "Bibliographic and Comments",
+  } ,
+  {
+	groupkey 5 ,
+	groupname "Sites and Bonds",
+  }
+	} ,
+	defs {
+  {                   -- Unrecognized, unsupported feature
+    typelabel "???" ,
+    menulabel "Unsupported feature" ,
+    featdef-key 0 ,
+    seqfeat-key 0 ,
+    entrygroup 0 ,
+    displaygroup 0 ,
+    molgroup both
+  } ,
+  {                   -- Gene
+    typelabel "Gene" ,
+    menulabel "Gene" ,
+    featdef-key 1 ,
+    seqfeat-key 1 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Org
+    typelabel "Org" ,
+    menulabel "Organism" ,
+    featdef-key 2 ,
+    seqfeat-key 2 ,
+    entrygroup 4 ,
+    displaygroup 4 ,
+    molgroup both
+  } ,
+  {                   -- CdRegion
+    typelabel "CDS" ,
+    menulabel "Coding Region" ,
+    featdef-key 3 ,
+    seqfeat-key 3 ,
+    entrygroup 2 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- Prot
+    typelabel "Prot" ,
+    menulabel "Protein Names" ,
+    featdef-key 4 ,
+    seqfeat-key 4 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup aa
+  } ,
+  {                   -- precursor RNA
+    typelabel "preRNA" ,
+    menulabel "Precursor RNA" ,
+    featdef-key 5 ,
+    seqfeat-key 5 ,
+    entrygroup 2 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- mRNA
+    typelabel "mRNA" ,
+    menulabel "Mature Messenger RNA" ,
+    featdef-key 6 ,
+    seqfeat-key 5 ,
+    entrygroup 2 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- tRNA
+    typelabel "tRNA" ,
+    menulabel "Transfer RNA" ,
+    featdef-key 7 ,
+    seqfeat-key 5 ,
+    entrygroup 3 ,
+    displaygroup 3 ,
+    molgroup na
+  } ,
+  {                   -- rRNA
+    typelabel "rRNA" ,
+    menulabel "Ribosomal RNA" ,
+    featdef-key 8 ,
+    seqfeat-key 5 ,
+    entrygroup 3 ,
+    displaygroup 3 ,
+    molgroup na
+  } ,
+  {                   -- snRNA
+    typelabel "snRNA" ,
+    menulabel "Small Nuclear RNA" ,
+    featdef-key 9 ,
+    seqfeat-key 5 ,
+    entrygroup 3 ,
+    displaygroup 3 ,
+    molgroup na
+  } ,
+  {                   -- scRNA
+    typelabel "scRNA" ,
+    menulabel "Small Cytoplasmic RNA" ,
+    featdef-key 10 ,
+    seqfeat-key 5 ,
+    entrygroup 3 ,
+    displaygroup 3 ,
+    molgroup na
+  } ,
+  {                   -- other RNA
+    typelabel "RNA" ,
+    menulabel "Other Types of RNA" ,
+    featdef-key 11 ,
+    seqfeat-key 5 ,
+    entrygroup 3 ,
+    displaygroup 3 ,
+    molgroup na
+  } ,
+  {                   -- Pub
+    typelabel "Cit" ,
+    menulabel "Bibliographic Citations" ,
+    featdef-key 12 ,
+    seqfeat-key 6 ,
+    entrygroup 4 ,
+    displaygroup 4 ,
+    molgroup both
+  } ,
+  {                   -- seq
+    typelabel "Xref" ,
+    menulabel "Reference to Another Sequence" ,
+    featdef-key 13 ,
+    seqfeat-key 7 ,
+    entrygroup 4 ,
+    displaygroup 4 ,
+    molgroup both
+  } ,
+  {                   -- unclassified impfeat
+    typelabel "Import" ,
+    menulabel "Unclassified ImpFeat" ,
+    featdef-key 14 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 0 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "allele" ,
+    menulabel "Allelic Varient" ,
+    featdef-key 15 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "attenuator" ,
+    menulabel "Attenuator" ,
+    featdef-key 16 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "C_region" ,
+    menulabel "Immunoglobin/T-cell receptor constant region" ,
+    featdef-key 17 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "CAAT_signal" ,
+    menulabel "CAAT box" ,
+    featdef-key 18 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "CDS" ,
+    menulabel "Untranslatable coding region" ,
+    featdef-key 19 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "conflict" ,
+    menulabel "Sequence determinations differ" ,
+    featdef-key 20 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "D-loop" ,
+    menulabel "Displacement Loop" ,
+    featdef-key 21 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "D_segment" ,
+    menulabel "Diversity Segment of Immunoglobin" ,
+    featdef-key 22 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "enhancer" ,
+    menulabel "Enhancer" ,
+    featdef-key 23 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "exon" ,
+    menulabel "Exon" ,
+    featdef-key 24 ,
+    seqfeat-key 8 ,
+    entrygroup 2 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "GC_signal" ,
+    menulabel "GC box" ,
+    featdef-key 25 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "iDNA" ,
+    menulabel "intervening DNA" ,
+    featdef-key 26 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "intron" ,
+    menulabel "Intron" ,
+    featdef-key 27 ,
+    seqfeat-key 8 ,
+    entrygroup 2 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "J_segment" ,
+    menulabel "IG joining segment" ,
+    featdef-key 28 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "LTR" ,
+    menulabel "Long Terminal Repeat" ,
+    featdef-key 29 ,
+    seqfeat-key 8 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "mat_peptide" ,
+    menulabel "Mature Peptide labeled on Nuc Acid" ,
+    featdef-key 30 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "misc_binding" ,
+    menulabel "Miscellaneaous binding site" ,
+    featdef-key 31 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "misc_difference" ,
+    menulabel "Miscellaneous sequence difference" ,
+    featdef-key 32 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "misc_feature" ,
+    menulabel "Miscellaneaous feature" ,
+    featdef-key 33 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "misc_recomb" ,
+    menulabel "Miscellaneous recombination" ,
+    featdef-key 34 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "misc_RNA" ,
+    menulabel "Miscellaneous RNA" ,
+    featdef-key 35 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 3 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "misc_signal" ,
+    menulabel "Miscellaneous signal sequence" ,
+    featdef-key 36 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "misc_structure" ,
+    menulabel "Miscellaneous secondary structure" ,
+    featdef-key 37 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "modified_base" ,
+    menulabel "Modified base" ,
+    featdef-key 38 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "mutation" ,
+    menulabel "site of mutation in related strain" ,
+    featdef-key 39 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "N_region" ,
+    menulabel "Extra na in rearranged IG" ,
+    featdef-key 40 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "old_sequence" ,
+    menulabel "Location of sequence revision" ,
+    featdef-key 41 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "polyA_signal" ,
+    menulabel "PolyA addition recognition signal" ,
+    featdef-key 42 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "polyA_site" ,
+    menulabel "Point where polyA tail begins" ,
+    featdef-key 43 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "precursor_RNA" ,
+    menulabel "RNA which is a post-transcriptional intermediate" ,
+    featdef-key 44 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "prim_transcript" ,
+    menulabel "Primary transcript" ,
+    featdef-key 45 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "primer_bind" ,
+    menulabel "Primer binding site" ,
+    featdef-key 46 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "promoter" ,
+    menulabel "Promoter" ,
+    featdef-key 47 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "protein_bind" ,
+    menulabel "Protein binding site" ,
+    featdef-key 48 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "RBS" ,
+    menulabel "Ribosome binding site" ,
+    featdef-key 49 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "repeat_region" ,
+    menulabel "Region containing repeats" ,
+    featdef-key 50 ,
+    seqfeat-key 8 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "repeat_unit" ,
+    menulabel "Single repeat unit" ,
+    featdef-key 51 ,
+    seqfeat-key 8 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "rep_origin" ,
+    menulabel "Origin of replication" ,
+    featdef-key 52 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "S_region" ,
+    menulabel "IG switch region" ,
+    featdef-key 53 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "satellite" ,
+    menulabel "satellite repeat region" ,
+    featdef-key 54 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "sig_peptide" ,
+    menulabel "Signal Peptide annotated on Nuc Acid" ,
+    featdef-key 55 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "source" ,
+    menulabel "Source of Nuc Acid" ,
+    featdef-key 56 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "stem_loop" ,
+    menulabel "Stem loop structure" ,
+    featdef-key 57 ,
+    seqfeat-key 8 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "STS" ,
+    menulabel "Sequence tagged site" ,
+    featdef-key 58 ,
+    seqfeat-key 8 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "TATA_signal" ,
+    menulabel "TATA box" ,
+    featdef-key 59 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "terminator" ,
+    menulabel "Transcription terminator" ,
+    featdef-key 60 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- 
+    typelabel "transit_peptide" ,
+    menulabel "Transit peptide annotated on Nuc Acid" ,
+    featdef-key 61 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "unsure" ,
+    menulabel "Unsure of exact sequence" ,
+    featdef-key 62 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "V_region" ,
+    menulabel "IG variable region" ,
+    featdef-key 63 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "V_segment" ,
+    menulabel "IG variable segment" ,
+    featdef-key 64 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "variation" ,
+    menulabel "Strain differences" ,
+    featdef-key 65 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "virion" ,
+    menulabel "Viral genome" ,
+    featdef-key 66 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "3'clip" ,
+    menulabel "3' region of transcript clipped off in processing" ,
+    featdef-key 67 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "3'UTR" ,
+    menulabel "3' untranslated region" ,
+    featdef-key 68 ,
+    seqfeat-key 8 ,
+    entrygroup 2 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "5'clip" ,
+    menulabel "5' region of transcript clipped off in processing" ,
+    featdef-key 69 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "5'UTR" ,
+    menulabel "5' untranslated region" ,
+    featdef-key 70 ,
+    seqfeat-key 8 ,
+    entrygroup 2 ,
+    displaygroup 2 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "-10_signal" ,
+    menulabel "Pribnow box" ,
+    featdef-key 71 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "-35_signal" ,
+    menulabel "-35 region of transcription start" ,
+    featdef-key 72 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- Imp
+    typelabel "Site-ref" ,
+    menulabel "SITES type reference" ,
+    featdef-key 73 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- region
+    typelabel "Region" ,
+    menulabel "Named region of sequence" ,
+    featdef-key 74 ,
+    seqfeat-key 9 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup both
+  } ,
+  {                   -- comment
+    typelabel "Comment" ,
+    menulabel "Comment associated with sequence" ,
+    featdef-key 75 ,
+    seqfeat-key 10 ,
+    entrygroup 4 ,
+    displaygroup 4 ,
+    molgroup both
+  } ,
+  {                   -- bond
+    typelabel "Bond" ,
+    menulabel "Chemical bonds" ,
+    featdef-key 76 ,
+    seqfeat-key 11 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup aa
+  } ,
+  {                   -- site
+    typelabel "Site" ,
+    menulabel "Binding/Active Sites" ,
+    featdef-key 77 ,
+    seqfeat-key 12 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup both
+  } ,
+  {                   -- rsite
+    typelabel "Rsite" ,
+    menulabel "Restriction Sites" ,
+    featdef-key 78 ,
+    seqfeat-key 13 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- user
+    typelabel "User" ,
+    menulabel "User Defined feature" ,
+    featdef-key 79 ,
+    seqfeat-key 14 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup both
+  } ,
+  {                   -- txinit
+    typelabel "TxInit" ,
+    menulabel "Transcription Initiation Site" ,
+    featdef-key 80 ,
+    seqfeat-key 15 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+  {                   -- num
+    typelabel "Num" ,
+    menulabel "Numbering System for Sequence" ,
+    featdef-key 81 ,
+    seqfeat-key 16 ,
+    entrygroup 4 ,
+    displaygroup 4 ,
+    molgroup both
+  } ,
+  {                   -- psec-str
+    typelabel "SecStr" ,
+    menulabel "Protein Secondary Structure" ,
+    featdef-key 82 ,
+    seqfeat-key 17 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup aa
+  } ,
+  {                   -- non-std-residue
+    typelabel "NonStdRes" ,
+    menulabel "Non-standard Residue" ,
+    featdef-key 83 ,
+    seqfeat-key 18 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup aa
+  } ,
+  {                   -- het
+    typelabel "Het" ,
+    menulabel "Heterogen" ,
+    featdef-key 84 ,
+    seqfeat-key 19 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup aa
+  } ,
+  {                   -- biosrc
+    typelabel "Src" ,
+    menulabel "Biological Source" ,
+    featdef-key 85 ,
+    seqfeat-key 20 ,
+    entrygroup 4 ,
+    displaygroup 4 ,
+    molgroup both
+  } ,
+  {                   -- Prot
+    typelabel "proprotein" ,
+    menulabel "Proprotein" ,
+    featdef-key 86 ,
+    seqfeat-key 4 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup aa
+  } ,
+  {                   -- Prot
+    typelabel "mat_peptide" ,
+    menulabel "Mature Peptide" ,
+    featdef-key 87 ,
+    seqfeat-key 4 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup aa
+  } ,
+  {                   -- Prot
+    typelabel "sig_peptide" ,
+    menulabel "Signal Peptide" ,
+    featdef-key 88 ,
+    seqfeat-key 4 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup aa
+  } ,
+  {                   -- Prot
+    typelabel "transit_peptide" ,
+    menulabel "Transit Peptide" ,
+    featdef-key 89 ,
+    seqfeat-key 4 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup aa
+  } ,
+  {                   -- snoRNA
+    typelabel "snoRNA" ,
+    menulabel "Small Nucleolar RNA" ,
+    featdef-key 90 ,
+    seqfeat-key 5 ,
+    entrygroup 3 ,
+    displaygroup 3 ,
+    molgroup na
+  } ,
+  {                   -- Gap
+    typelabel "gap" ,
+    menulabel "Gap" ,
+    featdef-key 91 ,
+    seqfeat-key 8 ,
+    entrygroup 0 ,
+    displaygroup 4 ,
+    molgroup na
+  } ,
+  {                   -- Operon
+    typelabel "operon" ,
+    menulabel "Operon" ,
+    featdef-key 92 ,
+    seqfeat-key 8 ,
+    entrygroup 1 ,
+    displaygroup 1 ,
+    molgroup na
+  } ,
+  {                   -- OriT
+    typelabel "oriT" ,
+    menulabel "Origin of Transcription" ,
+    featdef-key 93 ,
+    seqfeat-key 8 ,
+    entrygroup 5 ,
+    displaygroup 5 ,
+    molgroup na
+  } ,
+
+}
+}
+

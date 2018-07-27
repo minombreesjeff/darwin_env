@@ -1,0 +1,82 @@
+Last updated: Fri, March 16, 2001
+File Locator: ftp://ftp.ncbi.nih.gov/toolbox/xml/asn2xml/README.asn2xml
+
+asn2xml
+
+Program Description: asn2xml is a utility program designed to read 
+sequence data in ASN.1 and output the sequence data as "full XML". For
+further description on "full XML", refer to the NCBI Data in XML Doc.
+
+Binary: ftp://ftp.ncbi.nih.gov/toolbox/xml/asn2xml/
+Source: ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools/ncbi.tar.Z   
+NCBI XML DTDs: ftp://ftp.ncbi.nih.gov/toolbox/xml/xmlspecs/
+NCBI Data in XML Doc: ftp://ftp.ncbi.nih.gov/toolbox/xml/ncbixml.txt
+
+BASIC INSTRUCTIONS:
+1. Obtain GenBank ASN.1 data file at
+ftp://ftp.ncbi.nih.gov/ncbi-asn1/
+
+/ncbi-asn1/daily/ directory: ASN.1 Cumulative Update: gbcu.aso.gz
+/ncbi-asn1/daily-nc/ directory: contains individual files for each day's
+new or updated entries since close-of-data for the last GenBank Release,
+in ASN.1 format.
+
+Additional documentation:
+/ncbi-asn1/README.asn1
+/ncbi-asn1/README.asn1.daily-nc
+/ncbi-asn1/README.asn1.daily
+
+2. Download the appropriate asn2xml binary for your platform
+ftp://ftp.ncbi.nih.gov/toolbox/xml/asn2xml/
+     asn2xml.alphaOSF1.tar.Z      OSF1 V5.1
+     asn2xml.linux.tar.Z          Intel x86/Linux
+     asn2xml.sgi.tar.Z            IRIX 6.4/IRIX 6.5 
+     asn2xml.sgi5.tar.Z           IRIX 5.3
+     asn2xml.solaris.tar.Z        Sparc/Solaris 2.6/2.7/8
+     asn2xml.solarisintel.tar.Z   Intel x86/Solaris 2.7/8
+     asn2xml.win32.exe            Intel x86/Microsoft NT or Windows 95 (32bit)
+
+3. Running the program. As usual with any NCBI application, providing a
+hyphen with no arguments provide a basic help.
+
+prompt> asn2xml -
+
+asn2xml 1.0   arguments:
+
+  -i  Filename for asn.1 input [File In]
+    default = stdin
+  -e  Input is a Seq-entry [T/F]  Optional
+    default = F
+  -b  Input asnfile in binary mode [T/F]  Optional
+    default = T
+  -o  Filename for XML output [File Out]  Optional
+    default = stdout
+  -l  Log errors to file named: [File Out]  Optional
+
+Example:
+(Efficient method)
+
+ftp://ftp.ncbi.nih.gov/ncbi-asn1/daily-nc/nc0305.aso.gz
+gunzip -c nc0305.aso.gz | asn2xml -l error.log > nc0305.xml
+
+or
+ftp://ftp.ncbi.nih.gov/ncbi-asn1/daily-nc/nc0305.aso.gz
+gunzip nc0305.aso.gz
+asn2xml -i nc0305.aso -o nc0305.xml2 -l error3.log
+
+
+
+----------------
+
+Notes:
+
+1. The uncompressed XML file is about 10 times the size of the compressed
+binary ASN.1 file. The uncompressed XML can be extremely big. Note, the
+ASN.1 contains more than the GenBank files; it includes other databases
+like PDB and RefSeq, gaps of HTG records, and shows the quality scores of
+HTG records. For further information, read 
+ftp://ftp.ncbi.nih.gov/ncbi-asn1/README.asn1
+
+
+Email any questions not answered in this documentation to:
+info@ncbi.nih.gov

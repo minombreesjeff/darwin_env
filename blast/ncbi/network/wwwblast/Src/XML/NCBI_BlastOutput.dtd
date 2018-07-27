@@ -1,0 +1,10 @@
+<!-- NCBI_BlastOutput.dtd
+  This file is built from a series of basic modules.
+  The actual ELEMENT and ENTITY declarations are in the modules.
+  This file is used to put them together.
+-->
+<!ENTITY % NCBI_Entity_module PUBLIC "-//NCBI//NCBI_Entity.mod//EN" "NCBI_Entity.mod">
+%NCBI_Entity_module;
+
+<!ENTITY % NCBI_BlastOutput_module PUBLIC "-//NCBI//NCBI_BlastOutput.mod//EN" "NCBI_BlastOutput.mod">
+%NCBI_BlastOutput_module;

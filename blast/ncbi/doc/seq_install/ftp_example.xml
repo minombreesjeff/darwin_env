@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding='iso-8859-1'?>
+
+<doc left_menu="no">
+   <title>
+     Sample download session with ftp
+  </title>
+  <contents>
+<div class="codeblock">
+<pre><code class="codefont">$ <b>ftp ftp.ncbi.nih.gov</b>
+Connected to ftp.ncbi.nih.gov.
+220-
+ Warning Notice!
+
+  This is a U.S. Government computer system, which may be accessed and used
+ only for authorized Government business by authorized personnel.
+ Unauthorized access or use of this computer system may subject violators to
+ criminal, civil, and/or administrative action.
+
+  All information on this computer system may be intercepted, recorded, read,
+ copied, and disclosed by and to authorized personnel for official purposes,
+ including criminal investigations. Such information includes sensitive data
+ encrypted to comply with confidentiality and privacy requirements. Access
+ or use of this computer system by any person, whether authorized or
+ unauthorized, constitutes consent to these terms. There is no right of
+ privacy in this system.
+ ---
+ Welcome to the NCBI ftp server. The official URL for NCBI ftp server is
+ "ftp://ftp.ncbi.nih.gov", please use it.
+
+  Public data may be downloaded by logging in as "anonymous" using your E-mail
+ address as a password.
+220 FTP Server ready.
+Name (ftp.ncbi.nih.gov:mjohnson): <b>anonymous</b>
+331 Anonymous login ok, send your complete email address as your password.
+Password:<i class="c19">(Enter email address here)</i>
+230 Anonymous access granted, restrictions apply.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp&gt; <b>cd sequin/CURRENT</b>
+250-CWD command successful.
+ftp&gt; <b>passive on</b> <span class="c20">(usually necessary only from behind a firewall)</span>
+Passive mode: on; fallback to active mode: off.
+ftp&gt; <b>bin</b>
+200 Type set to I
+ftp&gt; <b>get sequin.linux.tar.gz</b>
+local: sequin.linux.tar.gz remote: sequin.linux.tar.gz
+227 Entering Passive Mode (130,14,29,30,195,86).
+150 Opening BINARY mode data connection for sequin.linux.tar.gz (6358681 bytes)
+226 Transfer complete.
+6358681 bytes received in 00:01 (3.50 MB/s)
+ftp&gt; <b>bye</b>
+221 Goodbye.
+</code></pre>
+</div>
+  </contents>
+  <css>ftp_example.css</css>
+</doc>
+

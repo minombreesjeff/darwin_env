@@ -1,0 +1,64 @@
+.TH GETFEAT 1 2002-08-23 NCBI "NCBI Tools User's Manual"
+.SH NAME
+getfeat \- extract information about sequences' coding regions
+.SH SYNOPSIS
+.B getfeat
+[\|\fB\-\fP\|]
+[\|\fB\-a\fP\|]
+[\|\fB\-b\fP\|]
+[\|\fB\-g\fP\ \fIN\fP\|]
+[\|\fB\-i\fP\ \fIstr\fP\|]
+[\|\fB\-l\ F\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\fP\|]
+[\|\fB\-r\fP\ \fIN\fP\|]
+[\|\fB\-s\ F\fP\|]
+.SH DESCRIPTION
+\fBgetfeat\fP retrieves biological sequences over the network and
+extracts information about their coding regions.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-a\fP
+ID is GenBank accession
+.TP
+\fB\-b\fP
+ID is PIR accession
+.TP
+\fB\-g\fP\ \fIN\fP
+GenInfo Import ID
+.TP
+\fB\-i\fP\ \fIstr\fP
+Input string id (default = \fBANANIFDR1\fP)
+.TP
+\fB\-l\ F\fP
+ID is NOT GenBank locus
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Output File Name (default = \fBgetfeat.out\fP)
+.TP
+\fB\-p\fP
+ID is PIR locus
+.TP
+\fB\-r\fP\ \fIN\fP
+Return type:
+.RS
+.PD 0
+.IP 1
+Bioseq
+.IP 2
+Seg-set
+.IP 3
+Nuc-prot (default)
+.IP 4
+Pub-set
+.PD
+.RE
+.TP
+\fB\-s\ F\fP
+Do not output a Seq-entry.
+.SH AUTHOR
+The National Center for Biotechnology Information.

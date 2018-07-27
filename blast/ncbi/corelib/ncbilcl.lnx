@@ -1,0 +1,230 @@
+/*   ncbilcl.h
+* ===========================================================================
+*
+*                            PUBLIC DOMAIN NOTICE
+*               National Center for Biotechnology Information
+*
+*  This software/database is a "United States Government Work" under the
+*  terms of the United States Copyright Act.  It was written as part of
+*  the author's official duties as a United States Government employee and
+*  thus cannot be copyrighted.  This software/database is freely available
+*  to the public for use. The National Library of Medicine and the U.S.
+*  Government have not placed any restriction on its use or reproduction.
+*
+*  Although all reasonable efforts have been taken to ensure the accuracy
+*  and reliability of the software and data, the NLM and the U.S.
+*  Government do not and cannot warrant the performance or results that
+*  may be obtained by using this software or data. The NLM and the U.S.
+*  Government disclaim all warranties, express or implied, including
+*  warranties of performance, merchantability or fitness for any particular
+*  purpose.
+*
+*  Please cite the author in any work or product based on this material.
+*
+* ===========================================================================
+*
+* File Name:  ncbilcl.h
+*
+* Author:  Gish, Kans, Ostell, Schuler, Epstein, Vakatov
+*
+* Version Creation Date:   8/1/94
+*
+* $Revision: 6.9 $
+*
+* File Description:
+*		system dependent header
+*       version for Linux
+*
+* Modifications:
+* --------------------------------------------------------------------------
+* $Log: ncbilcl.lnx,v $
+* Revision 6.9  2004/01/21 22:31:20  ucko
+* Define PROC_X86_64 on x86-64 systems.
+*
+* Revision 6.8  2002/11/22 20:05:04  lavr
+* Configure HAVE_STRDUP and HAVE_STRCASECMP
+*
+* Revision 6.7  2002/11/06 21:23:47  ucko
+* Handle non-i386 platforms.
+* Enable large file support here, to ensure consistency.
+*
+* Revision 6.6  2002/07/11 22:13:06  vakatov
+* #define MMAP_AVAIL
+*
+* Revision 6.5  2002/07/11 19:26:31  ivanov
+* Added macro HAVE_MADVISE
+*
+* Revision 6.4  2000/06/15 16:47:13  beloslyu
+* fixes for new RedHat6.2
+*
+* Revision 6.3  2000/02/10 16:36:32  vakatov
+* Added _SVID_SOURCE
+*
+* Revision 6.2  1999/07/12 05:50:49  vakatov
+* Avoid redefinition of #_REENTRANT
+*
+* Revision 6.1  1998/12/10 17:04:07  vakatov
+* Fixed to compile under LINUX(Red Hat 2.XX, gcc, with POSIX threads)
+*
+* Revision 6.0  1997/08/25 18:16:01  madden
+* Revision changed to 6.0
+*
+* Revision 5.1  1996/06/10 17:41:33  epstein
+* added SYSV_IPC_AVAIL per Warren Gish
+* ==========================================================================
+*/
+#ifndef _NCBILCL_
+#define _NCBILCL_
+
+/* PLATFORM DEFINITION FOR Linux */
+
+#define COMP_SYSV
+#define OS_UNIX
+#define OS_UNIX_LINUX
+#if defined(__alpha__) || #cpu(alpha) || #machine(alpha)
+#define PROC_ALPHA
+#elif defined(__arm__) || #cpu(arm) || #machine(arm)
+#define PROC_ARM /* ? (only occurrence) */
+#elif defined(__hppa__) || #cpu(hppa) || #machine(hppa)
+#define PROC_HPPA
+#elif defined(__i386__) || #cpu(i386) || #machine(i386)
+#define PROC_I80X86
+#elif defined(__ia64__) || #cpu(ia64) || #machine(ia64)
+#define PROC_IA64 /* ? */
+#elif defined(m68k) || defined(mc68000) || #cpu(m68k) || #machine(m68k)
+#define PROC_MC680X0
+#elif defined(__mips__) || defined(_mips) || #cpu(mips) || #machine(mips)
+#define PROC_MIPS
+#elif defined(__powerpc__) || defined(__PPC__) || #cpu(powerpc) || #machine(powerpc)
+#define PROC_PPC
+#elif defined(__s390__) || #cpu(s390) || #machine(s390)
+#define PROC_S390 /* ? */
+#elif defined(__sh__) || #cpu(sh) || #machine(sh)
+#define PROC_SH /* ? */
+#elif defined(__sparc__) || #cpu(sparc) || #cpu(sparc64) || #machine(sparc) || #machine(sparc64)
+#define PROC_SPARC
+#elif defined(__x86_64__) || #cpu(x86_64)
+#define PROC_X86_64
+#else
+#warning Unknown processor type.  Please define something appropriate.
+#endif
+#define WIN_DUMB
+
+/*----------------------------------------------------------------------*/
+/*      Desired or available feature list                               */
+/*----------------------------------------------------------------------*/
+#define SYSV_IPC_AVAIL	/* System V Interprocess Communication available */
+#define MMAP_AVAIL
+#undef _POSIX_SOURCE
+#undef _POSIX_C_SOURCE
+#undef _XOPEN_SOURCE
+#define _POSIX_SOURCE	1
+#define _POSIX_C_SOURCE 199309L
+#define _XOPEN_SOURCE	500
+#define HAVE_STRCASECMP 1
+#define HAVE_STRDUP 1
+
+/* Only effective on glibc 2.1 and newer. */
+#define _LARGEFILE_SOURCE 1
+#define _LARGEFILE64_SOURCE 1
+#define _FILE_OFFSET_BITS 64 /* Should be safe, I think... */
+
+#ifndef _REENTRANT
+#define _REENTRANT
+#endif
+
+/* good for the EGCS C/C++ compiler on Linux(e.g. putenv(), tempnam() proto) */
+#define _SVID_SOURCE 1
+
+/*----------------------------------------------------------------------*/
+/*      #includes                                                       */
+/*----------------------------------------------------------------------*/
+#include <sys/types.h>
+#include <limits.h>
+#include <sys/stat.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+#include <malloc.h>
+#include <memory.h>
+#include <stdlib.h>
+#include <math.h>
+#include <errno.h>
+#include <float.h>
+#include <unistd.h>
+
+/* Check if there are POSIX threads available */
+#ifdef _POSIX_THREADS
+#define POSIX_THREADS_AVAIL
+#endif
+
+
+/*----------------------------------------------------------------------*/
+/*      Missing ANSI-isms                                               */
+/*----------------------------------------------------------------------*/
+#define noalias	
+
+#ifndef SEEK_SET
+#define SEEK_SET	0	/* Set file pointer to offset */
+#define SEEK_CUR	1	/* Set file pointer to current plus offset */
+#define SEEK_END	2	/* Set file pointer to EOF plus offset */
+#endif
+#ifndef FILENAME_MAX
+#define FILENAME_MAX 1024
+#endif
+
+/*----------------------------------------------------------------------*/
+/*      Aliased Logicals, Datatypes                                     */
+/*----------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------*/
+/*      Misc Macros                                                     */
+/*----------------------------------------------------------------------*/
+#define PROTO(x) x	/* Prototypes are acceptable */
+#define VPROTO(x) x   /* Prototype for variable argument list */
+#define DIRDELIMCHR     '/'
+#define DIRDELIMSTR     "/"
+#define CWDSTR          "."
+
+#define KBYTE           (1024)
+#define MBYTE           (1048576)
+
+#include <endian.h>
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+#define IS_LITTLE_ENDIAN
+#else
+#define IS_BIG_ENDIAN
+#endif
+#define TEMPNAM_AVAIL
+#define HAVE_MADVISE
+
+/*----------------------------------------------------------------------*/
+/*      For importing MS_DOS code                                       */
+/*----------------------------------------------------------------------*/
+#define near
+#define far
+#define huge
+#define cdecl
+#define pascal
+#define _pascal
+#define _near
+#define _far
+#define _huge
+#define _cdecl
+
+/*----------------------------------------------------------------------*/
+/*      Macros for Floating Point                                       */
+/*----------------------------------------------------------------------*/
+#define EXP2(x) exp((x)*LN2)
+#define LOG2(x) (log(x)*(1./LN2))
+#define EXP10(x) exp((x)*LN10)
+#define LOG10(x) log10(x)
+
+/*----------------------------------------------------------------------*/
+/*      Macros Defining Limits                                          */
+/*----------------------------------------------------------------------*/
+#define MAXALLOC	0x40000000 /* Largest permissible memory request */
+
+#endif
+

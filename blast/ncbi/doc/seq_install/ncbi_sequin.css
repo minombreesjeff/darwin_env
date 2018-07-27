@@ -1,0 +1,215 @@
+/* Adapted from ncbi2.css on 9/9/99 */
+
+page { 
+  margin: 0;
+}
+
+body { 
+  background-color: rgb(255, 255, 255);
+  background-image: url(bg.gif);
+  background-repeat: repeat-y;
+  color: rgb(0, 0, 0);
+}
+
+body a:hover {
+  text-decoration: underline;
+}
+
+.TEXT {
+  font-size: 90%;
+  font-family: arial,helvetica,sans-serif;
+}
+
+.TEXTWIDE {
+  font-size: 90%;
+  font-family: arial,helvetica,sans-serif;
+}
+
+.medium1 {
+  font-size: 75%;
+  font-family: arial,helvetica,sans-serif;
+}
+
+.medium2 {
+  font-size: 75%;
+  font-family: verdana;
+}
+
+.medium3 {
+  font-size: 75%;
+  font-family: courier;
+}
+
+.GUTTER1 {
+  font-size: 85%;
+  font-family: arial,helvetica,sans-serif;
+  color:#ffcc66;
+}
+
+.GUTTER2 {
+  font-size: 75%;
+  font-family: arial,helvetica,sans-serif;
+  color:#ccccff;
+}
+
+.GUTTER3 {
+  font-size: 75%;
+  font-family: arial,helvetica,sans-serif;
+  color:#ffffff;
+  text-decoration:none;
+}
+
+A.BAR {
+  font-size:85%;
+  color:#ffffff;
+  font-family: arial,helvetica,sans-serif;
+  text-decoration:none;
+}
+
+A.HELPBAR {
+  color:#000000;
+  font-size: 75%;
+  font-family: arial,helvetica,sans-serif;
+  text-decoration:none;
+}
+
+A.GUTTER {
+  color:#ffffff;
+  font-size: 85%;
+  font-family: arial,helvetica,sans-serif;
+  text-decoration:none;
+}   
+
+A.GUTTER1 {
+  color:#ffcc66;
+  font-size:85%;
+  font-family: arial,helvetica,sans-serif;
+  text-decoration:none;
+}
+
+A.GUTTER2 {
+  font-size: 75%;
+  font-family: arial,helvetica,sans-serif;
+  color:#ccccff;
+  text-decoration:none;
+}
+
+A.GUTTER3 {
+  font-size: 75%;
+  font-family: arial,helvetica,sans-serif;
+  color:#ffffff;
+  text-decoration:none;
+}
+
+.PAGEROW { 
+  width: 600px;
+  padding: 0;
+  margin: 0;
+}
+
+.LINKSBAR { 
+  border: none;
+  width: 600;
+}
+
+.TOPTITLE { 
+  text-align: center;
+  vertical-align: middle;
+  width: 470px;
+  padding: 0;
+  margin: 0;
+}
+
+
+A.BUTTON {
+  font-size: 75%;
+  font-family: arial,helvetica,sans-serif;
+  color:#000000;
+  text-decoration:none;
+}
+
+H1, .H1 {
+  font-size: 125%;
+  font-weight: bold;
+  font-family: arial,helvetica,sans-serif;
+  margin:0;
+}
+
+H2, .H2 {
+  font-size: 110%;
+  font-weight: bold;
+  font-style: italic;
+  font-family: arial,helvetica,sans-serif;
+  margin: 0;
+}
+
+H3, .H3 {
+  font-size: 100%
+  font-weight: bold;
+  font-family: arial,helvetica,sans-serif;
+}
+
+H4, .H4 {
+  font-size: 100%
+  font-weight: bold;
+  font-family: arial,helvetica,sans-serif;
+}
+
+H5, .H5 {
+  font-size: 85%;
+  font-weight: bold;
+  font-style: italic;
+  font-family: arial,helvetica,sans-serif;
+}
+
+code { 
+  font-size: 75%;
+  font-family: Courier,fixed;
+}
+
+.leftmenu { 
+  width: 60%;
+ }
+
+.pmlinka {
+  font-family: arial,helvetica,sans-serif;
+  font-size:85%;
+  font-weight:bold;
+  color: #336699;
+  text-align:center;
+  vertical-align:baseline;                        
+  text-decoration:none;
+}
+
+.pmlinkna {
+  font-family: arial,helvetica,sans-serif;
+  font-size:85%;
+  color: #336699;
+  text-align:center;
+  vertical-align:baseline;
+  text-decoration:none;
+}
+
+.taba {
+  background:#FFFFFF;
+  text-align:center;
+  vertical-align:baseline;
+}
+
+.tabna {
+  background:#CCCCCC;
+  text-align:center;
+  vertical-align:baseline;
+}
+
+.dblinks {        
+  font-size: 75%;
+  font-family: arial,helvetica,sans-serif;
+  color:#336699;
+  text-decoration:none;
+}
+
+.codefont {
+  font-family: Courier, Monaco, Monospace;
+  font-size: .75em;
+ }

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding='iso-8859-1'?>
+
+<doc>
+   <title>
+     Select Download Type
+  </title>
+  <contents>
+    <table cellspacing="2" cellpadding="4" border="0">
+      <tbody>
+        <tr>
+          <td class="c6" rowspan="1" colspan="3">
+          The latest versions of Sequin for Windows, Macintosh, and
+          Unix/Linux are available from the NCBI Web site.
+          <p />
+          You must first choose whether to download Sequin using your
+          Web browser or using ftp. Generally, downloading with a browser
+          is easier than using ftp. We recommend using ftp only if the
+          browser download does not work.
+          <p />
+          To download with a browser, please select your operating system:
+          <p />
+          <table border="0" cellpadding="4" cellspacing="4">
+            <tbody>
+              <tr>
+                <td class="c4"><a href="seq_win_download.html">Windows</a></td>
+                <td class="c5">95, 98, Me, 2000, NT 4.0+, XP</td>
+              </tr>
+              <tr>
+                <td class="c4"><a href="seq_mac_download.html">Macintosh</a></td>
+                <td class="c5">MacOS 9, OS X</td>
+              </tr>
+              <tr>
+                <td class="c4"><a href="seq_unix_download.html">Unix</a></td>
+                <td class="c5">Solaris/Sparc, Solaris/Intel, SGI IRIX
+                5.X, SGI IRIX 6.2 and higher, Linux/x86, and Compaq
+                Tru64 Unix (formerly known as Digital Unix or OSF/1)
+                on Alphas</td>
+              </tr>
+            </tbody>
+          </table>
+          <p />
+          <a href="seq_ftp_download.html">Click here for instructions
+          on how to download using ftp.</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </contents>
+  <css>seq_download.css</css>
+</doc>

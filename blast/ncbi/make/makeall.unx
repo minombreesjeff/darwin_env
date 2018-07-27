@@ -1,0 +1,942 @@
+#	makefile for asntool and ncbi core routines,
+#
+#	$Id: makeall.unx,v 6.232 2004/04/30 18:15:22 camacho Exp $
+#
+#	cdromlib data access functions, vibrant, and entrez
+#	SunOS with unbundled ANSI compiler [ make LCL=acc RAN=ranlib CC=acc ]
+#	SunOS with Gnu C [ make LCL=gcc RAN=ranlib CC=gcc ]
+#	Sun with Solaris 2.x OS [ make LCL=sol CC="cc -Xa" OTHERLIBS="-lm"]
+#	Sun with Solaris 2.x OS using gcc [ make LCL=sol CC=gcc OTHERLIBS="-lm"]
+#	Silicon Graphics [ make LCL=sgi OTHERLIBS="-lm -lPW -lsun" ]
+#	IBM 3090 with AIX [ make LCL=370 ]
+#  IBM rs6000 with AIX [ make LCL=r6k CC=xlc ]
+#	ULTRIX [ make LCL=ult RAN=ranlib ]
+#	Apple AUX [ make LCL=aux SHELL=\usr\bin ]
+#	NeXt [ make LCL=nxt CFLAGS1="-c -ansi" RAN=ranlib ]
+#	DEC Alpha under OSF/1 version 4.x [ make LCL=alf CC=cc RAN=ranlib ]
+#	DEC Alpha under OSF/1 version 3.x [ make LCL=alf CC="cc -DNCBI_NOTHREADS_AVAIL" RAN=ranlib OTHERLIBS="-lc_r -lm"]
+#   BeOS [  make OTHERLIBS="" ]
+#
+#	see README for other supported systems
+#	
+#	Subsequent makes should make ... nocopy instead of make ... all
+#	to avoid recopying the include files
+#
+#	To Make the Motif version of Vibrant libraries and add Vibrant front
+#	end to asntool, add:
+#	VIBLIBS="-lXm -lXmu -lXt -lX11" LIB4=libvibrant.a VIBFLAG="-I/am/Motif/include -DWIN_MOTIF"
+#	to the argument list.  Substitute the path to your Motif includes for
+#	/am/Motif/include.
+#
+#	Motif versions on Solaris 2.x are more complicated
+#
+#	make LCL=sol CC="cc -Xa"
+# VIBLIBS="-L/netopt/X11R5/lib -L/netopt/Motif1.2.2/lib -lXm -lXmu -lXt -lX11"
+# LIB4=libvibrant.a
+# VIBFLAG="-I/netopt/X11R5/include -I/netopt/Motif1.2.2/include -DWIN_MOTIF"
+# LIB20=libncbidesk.a
+#     
+#   (this can be sourced from ncbi/make/viball.sol)
+#   again, you must set the paths to the Motif libs properly for your system
+#
+#   The build for RedHat Linux 2.XX with X11R6 requires:
+#     CC="gcc -ansi"
+#     VIBLIBS="-L/usr/X11R6/lib -lXm -lXpm -lXmu -lXp -lXt -lX11 -lXext"
+#
+#   NOTE: It is now possible to build using shared libraries, which
+#     consumes significantly less disk space.  To use shared libraries, try:
+#       make ... NCBI_SHLIBS=shlib NCBI_LINKINGLIBDIR=../shlib
+#	      NCBI_OTHERLINKOPTIONS=-R`pwd`/../shlib
+#
+#   NOTE: It is no longer necessary to manually delete portions of this
+#     makefile; this issue has been finessed by using the DLIBXX and TLIBXX
+#     (e.g. DLIB4 and TLIB4) symbols below.
+#
+
+# default flags for compiling and loading
+
+.KEEP_STATE:
+
+RM_LIB = rm -f
+SUFFIXLCL = $(LCL)
+CFLAGS1 = -c -O
+LDFLAGS1 = -O
+CC = cc
+RAN = ls -l
+AR=ar
+OTHERLIBS = -lm
+VIBLIBS = 
+VIBFLAG =
+LIBCOPY = cp -p
+SRCCOPY = ./ln-if-absent
+BINCOPY = cp -p
+
+SUFFIXENV = unx
+ASNDIR = asnstat
+LIB1 = libncbi.a
+LIB2 = libncbiobj.a
+LIB3 = libncbicdr.a
+ULIB4 = libvibrant.a
+LIB4 = $(ULIB4)
+LIB4 =
+ULIB400 = libvibrantOGL.a
+LIB400 = $(ULIB400)
+LIB400 =
+LIB5 = libncbiacc.a
+LIB6 = libnetcli.a
+LIB7 = libnetentr.a
+LIB8 = libncbiNacc.a
+LIB9 = libncbiCacc.a
+# LIB10 is reserved for ncsasock
+LIB10 =
+# LIB20 is for the NCBI desktop utilities
+ULIB20 = libncbidesk.a
+LIB20 = $(ULIB20)
+LIB20 = 
+ULIB45 = libddvlib.a
+LIB45 = $(ULIB45)
+LIB45 = 
+LIB22 = libncbimmdb.a
+LIB23 = libncbitool.a
+ULIB28 = libvibgif.a
+LIB28 = $(ULIB28)
+LIB28 =
+ULIB30 = libncbicn3d.a
+LIB30 = $(ULIB30)
+LIB30 = 
+ULIB3000 = libncbicn3dOGL.a
+LIB3000 = $(ULIB3000)
+LIB3000 = 
+ULIB34 = libncbiindx.a
+LIB34= $(ULIB34)
+LIB34 = 
+ULIB37 = libncbiprs.a
+LIB37= $(ULIB37)
+LIB37 = 
+ULIB38 = libnlmzip.a
+LIB38= $(ULIB38)
+LIB38 = 
+ULIB39 = libideochr.a
+LIB39= $(ULIB39)
+LIB39 =
+LIB50 = libregexp.a
+LIB60 = libblast.a
+LIB61 = libblastapi.a
+#
+# Pseudo-dummy targets when Vibrant is not used
+#
+TLIB4 = D4$(ULIB4)
+TLIB400 = D400$(ULIB400)
+TLIB20 = D20$(ULIB20)
+TLIB45 = D45$(ULIB45)
+TLIB28 = D28$(ULIB28)
+TLIB30 = D30$(ULIB30)
+TLIB3000 = D3000$(ULIB3000)
+TLIB34 = D34$(ULIB34)
+TLIB37 = D37$(ULIB37)
+TLIB38 = D38$(ULIB38)
+TLIB39 = D39$(ULIB39)
+DLIB4 = D4$(LIB4)
+DLIB400 = D400$(LIB400)
+DLIB20 = D20$(LIB20)
+DLIB45 = D45$(LIB45)
+DLIB28 = D28$(LIB28)
+DLIB30 = D30$(LIB30)
+DLIB3000 = D3000$(LIB3000)
+DLIB34 = D34$(LIB34)
+DLIB37 = D37$(LIB37)
+DLIB38 = D38$(LIB38)
+DLIB39 = D39$(LIB39)
+NCBI_INCDIR = ../include
+NCBI_LIBDIR = ../lib
+NCBI_LINKINGLIBDIR = $(NCBI_LIBDIR)
+NCBI_OTHERLINKOPTIONS =
+NCBI_SHLIBS = shlib
+NCBI_SHLIBS =
+MAKESHLIB = ../make/makeshlb.unx
+
+CFLAGS = $(CFLAGS1) -I$(NCBI_INCDIR) $(VIBFLAG)
+LDFLAGS = $(LDFLAGS1) -I$(NCBI_INCDIR) $(VIBFLAG) $(NCBI_OTHERLINKOPTIONS) -L$(NCBI_LINKINGLIBDIR)
+
+##
+## some things to make
+##
+
+# sources needed for versions of asntool and entrez
+THR_SRC = ncbithr.c
+# NCBI_LBSM_SRC = ncbi_lbsmd_stub.c
+
+SRC1 =	ncbibs.c wwwutils.c ncbierr.c ncbienv.c ncbifile.c \
+	ncbiprop.c ncbimain.c ncbimath.c ncbimem.c ncbimisc.c \
+	ncbimsg.c ncbistr.c ncbisgml.c ncbitime.c ncbilang.c \
+	asnbufo.c asndebin.c asnenbin.c asngen.c asnio.c asnlex.c \
+	asnlext.c asnout.c asnprint.c asntypes.c asngenob.c \
+	gifgen.c togif.c ncbithr.c regex.c tsprintf.c ncbiargs.c tree.c \
+	ncbisock.c ncbi_socket.c ncbi_socket.c matrix.c ncbibuf.c \
+	ncbi_buffer.c ncbi_core.c ncbi_core_c.c ncbi_util.c ncbi_priv.c \
+	ncbi_ansi_ext.c ncbi_connection.c ncbi_connector.c ncbi_connutil.c \
+	ncbi_file_connector.c ncbi_heapmgr.c ncbi_http_connector.c \
+	ncbi_memory_connector.c $(NCBI_LBSM_SRC) \
+	ncbi_host_info.c ncbi_server_info.c ncbi_service.c \
+	ncbi_service_connector.c ncbi_dispd.c \
+	ncbi_socket_connector.c urlquery.c lbapi.c binary.c \
+	ncbi_sendmail.c asn_connection.c raw_scoremat.c \
+	drwnflpt.c drwnfspc.c drwnmfls.c
+
+SRC2 =	objacces.c objalign.c objall.c objbibli.c \
+	objfeat.c objgen.c objloc.c objmedli.c objpub.c \
+	objres.c objseq.c objblock.c objcode.c objsset.c \
+	objsub.c objprt.c objfdef.c objalignloc.c \
+	objpubme.c objmdrs.c objproj.c objgbseq.c objtseq.c \
+	objinsdseq.c objent2.c ent2api.c pmfapi.c \
+	qblastapi.c vecscnapi.c objmim.c mimapi.c cddapi.c seqport.c \
+	sequtil.c prtutil.c simple.c tofasta.c tofile.c tomedlin.c \
+	valid.c alignmgr.c aliparse.c aliread.c alignval.c sqnutil1.c sqnutil2.c sqnutil3.c \
+	subutil.c edutil.c asn2ff1.c asn2ff2.c asn2ff3.c asn2ff4.c \
+	asn2ff5.c asn2ff6.c asn2gnb1.c asn2gnb2.c asn2gnb3.c asn2gnb4.c \
+	asn2gnb5.c asn2gnb6.c ftusrstr.c gbfeat.c gbftglob.c \
+	gbparint.c utilpars.c utilpub.c ffprint.c wprint.c satutil.c \
+	seqmgr.c objmgr.c gather.c accmmdbs.c acccn3ds.c lsqfetch.c findrepl.c \
+	codon.c jzcoll.c jzmisc.c maputil.c mconsist.c \
+	salpedit.c salpstat.c salpacc.c salprop.c salsap.c salstruc.c salutil.c \
+	udvseq.c blocks.c pgppop.c samutil.c ddvcolor.c viewmgr.c ddvcreate.c \
+	jsavlt.c needleman.c txalign.c fdlobj.c alignmgr2.c alnread.c
+
+SRC3 =	cdentrez.c cdromlib.c cdnewlib.c casn.c cdconfig.c objentr.c
+
+SRC4 =	vibbutns.c vibextra.c vibfiles.c vibforms.c \
+	vibgroup.c viblists.c vibmenus.c vibprmpt.c \
+	vibsbars.c vibslate.c vibtexts.c \
+	vibutils.c vibwndws.c ncbidraw.c \
+	drawing.c mapping.c picture.c viewer.c \
+	document.c table.c palette.c diagnost.c image.c \
+	pictur3d.c prim3d1.c prim3d2.c prim3d3.c \
+	prim3d4.c prim3d5.c viewer3d.c vibmouse.c netscape.c \
+	imagelst.c treeview.c shim3d.c odlbox.c
+
+SRC5 =	accentr.c accutils.c
+
+SRC6 =  ni_lib.c ni_msg.c ni_error.c ni_encrs.c
+
+SRC7 =  netentr.c netlib.c objneten.c
+
+SRC11 = objmla.c medarch.c
+
+SRC12 = objtaxon.c taxarch.c
+
+SRC20 = drawseq.c dotmatrx.c fea2seg.c fstyle.c smdlg1.c smdlg2.c smdlg3.c \
+	smtools.c styleman.c stylemui.c glbpic.c \
+	layout.c saldist.c saled.c salfiles.c salpanel.c salparam.c \
+	salsa.c seqfltr.c seqgraph.c seqgrphx.c seqmtrx.c \
+	seqpcc.c seqanal.c aacomp.c seqscrl.c \
+	vsm.c vsmfile.c vsmutil.c udvgraph.c udvopen.c udvpanel.c dotvibrant.c \
+	dlgutil1.c dlgutil2.c e2trmlst.c e2docsum.c asn2graphic.c \
+	medview.c bspview.c gbfview.c gphview.c gphdraw.c gxydraw.c gtrdraw.c \
+	seqpanel.c ingengraph.c ingenext.c ingenwin.c \
+	biosrc.c cdrgn.c import.c pubdesc.c seqsub.c mapgene.c prtgene.c salogif.c
+
+SRC45 = ddvclick.c ddvgraph.c ddvopen.c ddvpanel.c
+
+SRC22 = corematx.c dvncode.c objmmdb1.c objmmdb2.c objmmdb3.c objcn3d.c \
+	mmdbapi.c mmdbapi1.c mmdbapi2.c mmdbapi3.c mmdbapi4.c mmdbentr.c \
+	vastsubs.c prunebsc.c objcdd.c cddutil.c cddposutil.c objmime.c \
+	strucapi.c thrdalgs.c thrdatd.c  thrdbwfi.c thrdcpal.c \
+	thrdcpll.c thrdcprl.c thrdcxei.c thrddgri.c thrdrsmp.c \
+	thrdsal0.c thrdsalr.c thrdsalu.c thrdsgoi.c thrdslo0.c \
+	thrdslor.c thrdslou.c thrdspci.c thrdspea.c thrdspel.c \
+	thrdspni.c thrdttb0.c thrdttbi.c thrdzsc.c
+
+SRC23 = csim.c db_slist.c dust.c falign.c g_any.c sim2.c sim3.c sim4.c \
+	simutil.c slist.c sec.c tfuns.c toasn3.c toporg.c \
+	pobutil.c stsutil.c suggadj.c suggest.c suggslp.c \
+	blast.c blastutl.c blastool.c blastconcat.c splutil.c gapxdrop.c bandalg0.c bandalg1.c \
+	bandalg2.c bandalg3.c bandalg4.c bandalg5.c bandalgn.c blastkar.c \
+	actutils.c posit.c lookup.c readdb.c ncbisam.c ncbisort.c \
+	salign.c salptool.c urkutil.c urkpcc.c urkptpf.c urkepi.c \
+	urkfltr.c urkdust.c urksigu.c seg.c urkbias.c urkcnsrt.c urktree.c \
+	pseed3.c pattern1.c impatool.c posit2.c mbalign.c \
+	vecscrn.c mblast.c rpsutil.c kappa.c xmlblast.c bxmlobj.c objscoremat.c \
+	dotseq.c spidey.c motif.c
+
+SRC28 = gdfontg.c gdfontmb.c gdfontt.c pictogif.c \
+	gdfontl.c gdfonts.c ncbidrwg.c drawing.c mapping.c picture.c ncbimain.c
+
+SRC30 = algorend.c cn3dmsel.c cn3dopen.c cn3dsave.c \
+	cn3dxprt.c cn3dwin.c cn3dentr.c \
+	cn3dmsg.c cn3dmatn.c cn3dmodl.c cn3dshim.c cn3dmesh.c \
+	cn3dstyl.c seqcons.c
+
+SRC34 =	block.c entry.c indx_blk.c utilfun.c em_index.c gb_index.c sp_index.c \
+	pir_index.c prf_index.c
+
+SRC37 = add.c asci_blk.c em_ascii.c em_unorg.c ftamain.c gb_ascii.c \
+	genref.c ind.c loadfeat.c nucprot.c ref.c sp_ascii.c sp_ref.c \
+	utilfeat.c utilref.c fta_qscore.c pir_ascii.c fta_clup.c fta_src.c prf_ascii.c
+
+SRC38 =  deflate.c inflate.c trees.c bits.c util.c dcompr.c streamprocs.c
+
+SRC39 = ideochrow.c humchrom_dat.c mschrom_dat.c ideochrom.c ideoorgs.c \
+	bands_abc.c
+
+SRC50 = chartables.c get.c maketables.c pcre.c pcreposix.c study.c
+
+SRC60 = aa_ungapped.c blast_dust.c blast_engine.c blast_extend.c \
+    blast_filter.c blast_gapalign.c blast_hits.c blast_lookup.c \
+    blast_message.c blast_options.c blast_seg.c blast_seqsrc.c \
+    blast_setup.c blast_stat.c blast_traceback.c blast_util.c \
+    gapinfo.c greedy_align.c link_hsps.c lookup_wrap.c mb_lookup.c \
+    ncbi_math.c ncbi_std.c pattern.c phi_extend.c phi_lookup.c \
+    lookup_util.c blast_encoding.c blast_psi_priv.c
+
+SRC61 = blast_input.c blast_seq.c blast_seqalign.c seqsrc_readdb.c \
+    blast_format.c multiseq_src.c twoseq_api.c
+
+# objects needed for versions of asntool and entrez
+
+THR_OBJ = ncbithr.o
+# NCBI_LBSM_OBJ = ncbi_lbsmd_stub.o
+
+OBJ1 =	ncbibs.o wwwutils.o ncbierr.o ncbienv.o ncbifile.o \
+	ncbimain.o ncbiprop.o ncbimath.o ncbimem.o ncbimisc.o \
+	ncbimsg.o ncbistr.o ncbisgml.o ncbitime.o ncbilang.o \
+	asnbufo.o asndebin.o asnenbin.o asngen.o asnio.o asnlex.o \
+	asnlext.o asnout.o asnprint.o asntypes.o asngenob.o \
+	gifgen.o togif.o ncbithrs.o regex.o tsprintf.o ncbiargs.o tree.o \
+	ncbisock.o ncbi_socket.o matrix.o ncbibuf.o ncbi_buffer.o \
+	ncbi_core.o ncbi_core_c.o ncbi_util.o ncbi_priv.o \
+	ncbi_ansi_ext.o ncbi_connection.o ncbi_connector.o ncbi_connutil.o \
+	ncbi_file_connector.o ncbi_heapmgr.o ncbi_http_connector.o \
+	ncbi_memory_connector.o $(NCBI_LBSM_OBJ) \
+	ncbi_host_info.o ncbi_server_info.o ncbi_service.o \
+	ncbi_service_connector.o ncbi_dispd.o \
+	ncbi_socket_connector.o urlquery.o lbapi.o binary.o \
+	ncbi_sendmail.o asn_connection.o raw_scoremat.o \
+	drwnflpt.o drwnfspc.o drwnmfls.o
+
+OBJ2 =	objacces.o objalign.o objall.o objbibli.o \
+	objfeat.o objgen.o objloc.o objmedli.o objpub.o \
+	objres.o objseq.o objblock.o objcode.o objsset.o \
+	objsub.o objprt.o objfdef.o objalignloc.o \
+	objpubme.o objmdrs.o objproj.o objgbseq.o objtseq.o \
+	objinsdseq.o objent2.o ent2api.o pmfapi.o \
+	qblastapi.o vecscnapi.o objmim.o mimapi.o cddapi.o seqport.o \
+	sequtil.o prtutil.o simple.o tofasta.o tofile.o tomedlin.o \
+	valid.o alignmgr.o aliparse.o aliread.o alignval.o sqnutil1.o sqnutil2.o sqnutil3.o \
+	subutil.o edutil.o asn2ff1.o asn2ff2.o asn2ff3.o asn2ff4.o \
+	asn2ff5.o asn2ff6.o asn2gnb1.o asn2gnb2.o asn2gnb3.o asn2gnb4.o \
+	asn2gnb5.o asn2gnb6.o ftusrstr.o gbfeat.o gbftglob.o \
+	gbparint.o utilpars.o utilpub.o ffprint.o wprint.o satutil.o \
+	seqmgr.o objmgr.o gather.o accmmdbs.o acccn3ds.o lsqfetch.o findrepl.o \
+	codon.o jzcoll.o jzmisc.o maputil.o mconsist.o \
+	salpedit.o salpstat.o salpacc.o salprop.o salsap.o salstruc.o salutil.o \
+	udvseq.o blocks.o pgppop.o samutil.o ddvcolor.o viewmgr.o ddvcreate.o \
+	jsavlt.o needleman.o txalign.o fdlobj.o alignmgr2.o alnread.o
+
+OBJ3 =  cdentrez.o cdromlib.o cdnewlib.o casn.o cdconfig.o objentr.o
+
+OBJ4 =	vibbutns.o vibextra.o vibfiles.o vibforms.o \
+	vibgroup.o viblists.o vibmenus.o vibprmpt.o \
+	vibsbars.o vibslate.o vibtexts.o \
+	vibutils.o vibwndws.o ncbidraw.o \
+	drawing.o mapping.o picture.o viewer.o \
+	document.o table.o palette.o diagnost.o image.o \
+	pictur3d.o prim3d1.o prim3d2.o prim3d3.o \
+	prim3d4.o prim3d5.o viewer3d.o vibmouse.o netscape.o \
+	imagelst.o treeview.o shim3d.o odlbox.o
+
+OBJ400 =	vibbutns.glo vibextra.glo vibfiles.glo vibforms.glo \
+	vibgroup.glo viblists.glo vibmenus.glo vibprmpt.glo \
+	vibsbars.glo vibslate.glo vibtexts.glo \
+	vibutils.glo vibwndws.glo ncbidraw.glo \
+	drawing.glo mapping.glo picture.glo viewer.glo \
+	document.glo table.glo palette.glo diagnost.glo image.glo \
+	pictur3d.glo prim3d1.glo prim3d2.glo prim3d3.glo \
+	prim3d4.glo prim3d5.glo viewer3d.glo vibmouse.glo netscape.glo \
+	imagelst.glo treeview.glo shim3d.glo odlbox.glo
+
+OBJ5 =	accentr.o accutils.o
+
+OBJ6 =  ni_lib.o ni_msg.o ni_error.o ni_list.o ni_encrs.o
+
+OBJ7 =  netentr.o netlib.o objneten.o
+
+OBJ11 = objmla.o medarch.o
+
+OBJ12 = objtaxon.o taxarch.o
+
+OBJ20 = drawseq.o dotmatrx.o fea2seg.o fstyle.o smdlg1.o smdlg2.o smdlg3.o \
+	smtools.o styleman.o stylemui.o glbpic.o \
+	layout.o saldist.o saled.o salfiles.o salpanel.o \
+	salparam.o salsa.o seqfltr.o seqgraph.o seqgrphx.o seqmtrx.o \
+	seqpcc.o seqanal.o aacomp.o seqscrl.o \
+	vsm.o vsmfile.o vsmutil.o udvgraph.o udvopen.o udvpanel.o dotvibrant.o \
+	dlgutil1.o dlgutil2.o e2trmlst.o e2docsum.o asn2graphic.o \
+	medview.o bspview.o gbfview.o gphview.o gphdraw.o gxydraw.o gtrdraw.o \
+	seqpanel.o ingengraph.o ingenext.o ingenwin.o \
+	biosrc.o cdrgn.o import.o pubdesc.o seqsub.o mapgene.o prtgene.o salogif.o
+
+OBJ45 = ddvclick.o ddvgraph.o ddvopen.o ddvpanel.o
+
+OBJ22 = corematx.o dvncode.o objmmdb1.o objmmdb2.o objmmdb3.o objcn3d.o \
+	mmdbapi.o mmdbapi1.o mmdbapi2.o mmdbapi3.o mmdbapi4.o mmdbentr.o \
+	vastsubs.o prunebsc.o objcdd.o cddutil.o cddposutil.o objmime.o \
+	strucapi.o thrdalgs.o thrdatd.o  thrdbwfi.o thrdcpal.o \
+	thrdcpll.o thrdcprl.o thrdcxei.o thrddgri.o thrdrsmp.o \
+	thrdsal0.o thrdsalr.o thrdsalu.o thrdsgoi.o thrdslo0.o \
+	thrdslor.o thrdslou.o thrdspci.o thrdspea.o thrdspel.o \
+	thrdspni.o thrdttb0.o thrdttbi.o thrdzsc.o
+
+
+OBJ23 = csim.o db_slist.o dust.o falign.o g_any.o sim2.o sim3.o sim4.o \
+	simutil.o slist.o sec.o tfuns.o toasn3.o toporg.o \
+	pobutil.o stsutil.o suggadj.o suggest.o suggslp.o \
+	blast.o blastutl.o blastool.o blastconcat.o splutil.o \
+	gapxdrop.o bandalg0.o bandalg1.o \
+	bandalg2.o bandalg3.o bandalg4.o bandalg5.o bandalgn.o blastkar.o \
+	actutils.o posit.o lookup.o readdb.o ncbisam.o ncbisort.o \
+	salign.o salptool.o urkutil.o urkpcc.o urkptpf.o urkepi.o \
+	urkfltr.o urkdust.o urksigu.o seg.o urkbias.o urkcnsrt.o urktree.o \
+	pseed3.o pattern1.o impatool.o posit2.o mbalign.o \
+	vecscrn.o mblast.o rpsutil.o kappa.o xmlblast.o bxmlobj.o objscoremat.o \
+	dotseq.o spidey.o motif.o
+
+OBJ28 = gdfontg.o gdfontmb.o gdfontt.o pictogif.o \
+	gdfontl.o gdfonts.o ncbidrwg.o drawing.o mapping.o picture.o ncbimain.o
+
+OBJ30 = algorend.o cn3dmsel.o cn3dopen.o cn3dsave.o \
+	cn3dxprt.o cn3dwin.o cn3dentr.o \
+	cn3dmsg.o cn3dmatn.o cn3dmodl.o cn3dshim.o cn3dmesh.o \
+	cn3dstyl.o seqcons.o
+
+OBJ3000 = algorend.glo cn3dmsel.glo cn3dopen.glo cn3dsave.glo \
+	cn3dxprt.glo cn3dwin.glo cn3dentr.glo \
+	cn3dmsg.glo cn3dmatn.glo cn3dmodl.glo cn3dshim.glo cn3dmesh.glo \
+	cn3dstyl.glo seqcons.glo
+
+OBJ34 =	block.o entry.o indx_blk.o utilfun.o em_index.o gb_index.o sp_index.o \
+	pir_index.o prf_index.o
+
+OBJ37 = add.o asci_blk.o em_ascii.o em_unorg.o ftamain.o gb_ascii.o \
+	genref.o ind.o loadfeat.o nucprot.o ref.o sp_ascii.o sp_ref.o \
+	utilfeat.o utilref.o fta_qscore.o pir_ascii.o fta_clup.o fta_src.o prf_ascii.o
+
+OBJ38 =  deflate.o inflate.o trees.o bits.o util.o dcompr.o streamprocs.o
+
+OBJ39 = ideochrow.o humchrom_dat.o mschrom_dat.o ideochrom.o ideoorgs.o \
+	bands_abc.o
+
+OBJ50 = chartables.o get.o maketables.o pcre.o pcreposix.o study.o
+
+OBJ60 = aa_ungapped.o blast_dust.o blast_engine.o blast_extend.o \
+    blast_filter.o blast_gapalign.o blast_hits.o blast_lookup.o \
+    blast_message.o blast_options.o blast_seg.o blast_seqsrc.o \
+    blast_setup.o blast_stat.o blast_traceback.o blast_util.o \
+    gapinfo.o greedy_align.o link_hsps.o lookup_wrap.o mb_lookup.o \
+    ncbi_math.o ncbi_std.o pattern.o phi_extend.o phi_lookup.o \
+    lookup_util.o blast_encoding.o blast_psi_priv.o
+
+OBJ61 = blast_input.o blast_seq.o blast_seqalign.o seqsrc_readdb.o \
+    blast_format.o multiseq_src.o twoseq_api.o
+
+
+# NOTE: if you enter an object file to an OBJxx greater than 30, you have to explicitly
+# enter the make actions below (e.g. ddvclick.o).  This is because the
+# implicit make rule for opengl objects (.glo) somehow causes the default make rule for .o
+# files to disappear.  OBJ30 is the first opengl dependent library and this
+# triggers this bug.
+
+
+## All things to make
+##
+all : ln-if-absent copy .WAIT nocopy asntool .WAIT $(DLIB39)
+
+ln-if-absent:	../make/ln-if-absent
+	rm -f ln-if-absent
+	ln -s ../make/ln-if-absent .
+
+nocopy : sources $(THR_OBJ) $(LIB1) $(LIB2) $(LIB3) $(DLIB4) $(DLIB400) \
+	$(LIB5) $(DLIB20) $(DLIB45) $(LIB22) $(LIB23) $(DLIB28) $(DLIB30) $(DLIB3000) \
+	$(DLIB34) $(DLIB37) $(DLIB38) $(LIB50) $(LIB60) $(LIB61) $(NCBI_SHLIBS)
+
+sources : $(THR_SRC) $(SRC1) $(SRC2) $(SRC3) $(SRC4) $(SRC5) $(SRC20) $(SRC22) \
+    $(SRC23) $(SRC28) $(SRC30) $(SRC50) $(SRC60) $(SRC61)
+
+## To clean out the directory without removing make
+##
+clean :
+	-rm -f *.[acho]
+
+.NO_PARALLEL:	copy $(ULIB4) $(ULIB30)
+
+.WAIT:
+	echo Waiting...go
+
+## Implicit actions
+##
+.SUFFIXES: .c .h .o .glo
+
+.c.o :
+	$(CC) $(CFLAGS) $<
+
+# this is ugly, because Solaris cc won't allow compile directly to .glo file
+.c.glo :
+	mv $*.o $*.tmp
+	$(CC) $(CFLAGS) -D_OPENGL $<
+	mv $*.o $*.glo
+	mv $*.tmp $*.o
+
+## Special case
+##
+
+lbapi.o : lbapi.c
+	$(CC) $(CFLAGS) $(IN_HOUSE_CFLAGS) lbapi.c
+ncbithrs.o: ncbithrs.c
+	$(CC) -DNCBI_NOTHREADS_AVAIL $(CFLAGS) ncbithrs.c
+ncbidrwg.o: ncbidrwg.c
+	$(CC) -DWIN_GIF $(CFLAGS) ncbidrwg.c
+regex.o : regex.c
+	$(CC) $(CFLAGS) -DHAVE_STRING_H -DREGEX_MALLOC regex.c
+block.o: block.c
+	$(CC) $(CFLAGS) $<
+entry.o: entry.c
+	$(CC) $(CFLAGS) $<
+indx_blk.o: indx_blk.c
+	$(CC) $(CFLAGS) $<
+utilfun.o: utilfun.c
+	$(CC) $(CFLAGS) $<
+em_index.o: em_index.c
+	$(CC) $(CFLAGS) $<
+gb_index.o: gb_index.c
+	$(CC) $(CFLAGS) $<
+sp_index.o: sp_index.c
+	$(CC) $(CFLAGS) $<
+pir_index.o: pir_index.c
+	$(CC) $(CFLAGS) $<
+prf_index.o: prf_index.c
+	$(CC) $(CFLAGS) $<
+add.o: add.c
+	$(CC) $(CFLAGS) $<
+asci_blk.o: asci_blk.c
+	$(CC) $(CFLAGS) $<
+em_ascii.o: em_ascii.c
+	$(CC) $(CFLAGS) $<
+em_unorg.o: em_unorg.c
+	$(CC) $(CFLAGS) $<
+ftamain.o: ftamain.c
+	$(CC) $(CFLAGS) $<
+prf_ascii.o: prf_ascii.c
+	$(CC) $(CFLAGS) $<
+gb_ascii.o: gb_ascii.c
+	$(CC) $(CFLAGS) $<
+genref.o: genref.c
+	$(CC) $(CFLAGS) $<
+ind.o: ind.c
+	$(CC) $(CFLAGS) $<
+loadfeat.o: loadfeat.c
+	$(CC) $(CFLAGS) $<
+nucprot.o: nucprot.c
+	$(CC) $(CFLAGS) $<
+ref.o: ref.c
+	$(CC) $(CFLAGS) $<
+sp_ascii.o: sp_ascii.c
+	$(CC) $(CFLAGS) $<
+sp_ref.o: sp_ref.c
+	$(CC) $(CFLAGS) $<
+utilfeat.o: utilfeat.c
+	$(CC) $(CFLAGS) $<
+utilref.o: utilref.c
+	$(CC) $(CFLAGS) $<
+fta_qscore.o: fta_qscore.c
+	$(CC) $(CFLAGS) $<
+pir_ascii.o: pir_ascii.c
+	$(CC) $(CFLAGS) $<
+fta_clup.o: fta_clup.c
+	$(CC) $(CFLAGS) $<
+fta_src.o: fta_src.c
+	$(CC) $(CFLAGS) $<
+
+deflate.o: deflate.c
+	$(CC) $(CFLAGS) $<
+inflate.o:  inflate.c
+	$(CC) $(CFLAGS) $<
+trees.o: trees.c
+	$(CC) $(CFLAGS) $<
+bits.o: bits.c
+	$(CC) $(CFLAGS) $<
+util.o: util.c
+	$(CC) $(CFLAGS) $<
+dcompr.o: dcompr.c
+	$(CC) $(CFLAGS) $<
+streamprocs.o: streamprocs.c
+	$(CC) $(CFLAGS) $<
+
+ideochrow.o:	ideochrow.c
+	$(CC) $(CFLAGS) $<
+humchrom_dat.o:	humchrom_dat.c
+	$(CC) $(CFLAGS) $<
+mschrom_dat.o:	mschrom_dat.c
+	$(CC) $(CFLAGS) $<
+ideochrom.o:	ideochrom.c
+	$(CC) $(CFLAGS) $<
+ideoorgs.o:	ideoorgs.c
+	$(CC) $(CFLAGS) $<
+bands_abc.o:	bands_abc.c
+	$(CC) $(CFLAGS) $<
+ideo_gen_obj.o:	ideo_gen_obj.c
+	$(CC) $(CFLAGS) $<
+ddvgraph.o: ddvgraph.c
+	$(CC) $(CFLAGS) $<
+ddvopen.o: ddvopen.c
+	$(CC) $(CFLAGS) $<
+ddvpanel.o: ddvpanel.c
+	$(CC) $(CFLAGS) $<
+ddvclick.o: ddvclick.c
+	$(CC) $(CFLAGS) $<
+mschrom_dat.c : ideo_gen_obj mschrom.dat
+	- ./ideo_gen_obj -d mschrom.dat -f mschrom_dat -o MS
+	- mv -f mschrom_dat.h ../include
+
+humchrom_dat.c : ideo_gen_obj humchrom.dat
+	- ./ideo_gen_obj -d humchrom.dat -f humchrom_dat -o HC
+	- mv -f humchrom_dat.h ../include
+
+ideo_gen_obj: ideo_gen_obj.o ideochrom.o ideoorgs.o
+	$(CC) $(LDFLAGS) -o ideo_gen_obj ideo_gen_obj.o ideochrom.o ideoorgs.o $(NCBI_LIBDIR)/$(LIB1) $(OTHERLIBS)
+
+## use subordinate makefile for building shared libraries
+##
+shlib : shlib.$(LCL)
+
+#
+# Solaris Intel shared libs are built the same in the same manner as for
+# Solaris Sparc
+#
+shlib.sin : shlib.sol
+
+shlib.sol :
+	-mkdir ../shlib
+	-rm -f ../shlib/*.a
+	ln $(NCBI_LIBDIR)/*.a ../shlib
+	cd ../shlib; make -f $(MAKESHLIB) `ls *.a | sed "s/\.a/.so/"` NCBI_OTHERLIBS=$(OTHERLIBS)
+	rm -f ../shlib/*.a
+
+#
+# Linux shared libs are built the same in the same manner as for SGI
+#
+shlib.lnx : shlib.sgi
+
+shlib.sgi :
+	-mkdir ../shlib
+	-rm -f ../shlib/*.a
+	ln $(NCBI_LIBDIR)/*.a ../shlib
+	cd ../shlib; make -f $(MAKESHLIB) `ls *.a | sed "s/\.a/.so/"` SH1="ld -o" SH2="-shared *.o"
+	rm -f ../shlib/*.a
+
+shlib.alf :
+	-mkdir ../shlib
+	-rm -f ../shlib/*.a
+	ln $(NCBI_LIBDIR)/*.a ../shlib
+	cd ../shlib; make -f $(MAKESHLIB) `ls *.a | sed "s/\.a/.so/"` SH1="ld -o" SH2="-expect_unresolved '*' -shared *.o"
+	rm -f ../shlib/*.a
+
+## get all the source files
+##
+
+copy :
+	-chmod -R ug+rw,o+r . ../include
+	$(SRCCOPY) ../corelib/tsprintf.h ../include
+	$(SRCCOPY) ../corelib/gifgen.h ../include
+	$(SRCCOPY) ../corelib/ncbi*.h ../include
+	$(SRCCOPY) ../corelib/tree*.h ../include
+	$(SRCCOPY) ../corelib/regex.h ../include
+	$(SRCCOPY) ../corelib/matrix.h ../include
+	$(SRCCOPY) ../corelib/binary.h ../include
+	$(SRCCOPY) ../corelib/morefile/*.h ../include
+	$(SRCCOPY) ../corelib/morefile/*.c .
+	$(SRCCOPY) ../link/macmet/MoreCarbonAccessors.h ../include
+	$(SRCCOPY) ../corelib/ncbilcl.$(SUFFIXLCL) ../include/ncbilcl.h
+	$(SRCCOPY) ../corelib/*.c .
+	$(SRCCOPY) ../corelib/core*.h .
+	$(SRCCOPY) ../asnlib/*.h .
+	mv asn.h ../include
+	$(SRCCOPY) ../asnlib/*.c .
+	$(SRCCOPY) ../connect/*.c .
+	$(SRCCOPY) ../connect/ncbi_ansi_ext.h .
+	$(SRCCOPY) ../connect/ncbi_priv.h .
+	$(SRCCOPY) ../connect/ncbi_comm.h .
+	$(SRCCOPY) ../connect/ncbi_config.h .
+	-$(SRCCOPY) ../connect/ncbi_lbsm.h .
+	-$(SRCCOPY) ../connect/ncbi_lbsm_ipc.h .
+	$(SRCCOPY) ../connect/ncbi_host_infop.h .
+	$(SRCCOPY) ../connect/ncbi_server_infop.h .
+	$(SRCCOPY) ../connect/ncbi_servicep.h .
+	$(SRCCOPY) ../connect/ncbi_dispd.h .
+	$(SRCCOPY) ../connect/ncbi_lbsmd.h .
+	$(SRCCOPY) ../connect/*.h ../include
+	-mkdir ../include/connect
+	-chmod ug+rw,o+r ../include/connect
+	-rm ../include/ncbi_*.h ../include/connect_export.h
+	cp -fp ../connect/ncbi_*.h ../connect/connect_export.h ../include/connect
+	$(SRCCOPY) ../util/tables/*.c .
+	-mkdir -p ../include/util/tables
+	cp -fp ../util/tables/*.h ../include/util/tables
+	$(SRCCOPY) ../util/creaders/*.c .
+	-mkdir -p ../include/util/creaders
+	cp -fp ../util/creaders/*.h ../include/util/creaders
+	$(SRCCOPY) ../ctools/*.c .
+	-mkdir ../include/ctools
+	-chmod ug+rw,o+r ../include/ctools
+	cp -fp ../ctools/*.h ../include/ctools
+	$(SRCCOPY) ../connect/lbapi/*.c .
+	$(SRCCOPY) ../connect/lbapi/*.h ../include
+	$(SRCCOPY) ../object/*.c .
+	$(SRCCOPY) ../object/*.h ../include
+	$(SRCCOPY) ../access/*.c .
+	$(SRCCOPY) ../access/*.h ../include
+	$(SRCCOPY) ../$(ASNDIR)/*.h ../include
+	$(SRCCOPY) ../api/*.h ../include
+	$(SRCCOPY) ../api/*.c .
+	$(SRCCOPY) ../cdromlib/*.h ../include
+	$(SRCCOPY) ../cdromlib/*.c .
+	$(SRCCOPY) ../vibrant/*.h ../include
+	$(SRCCOPY) ../vibrant/*.c .
+	$(SRCCOPY) ../desktop/*.h ../include
+	$(SRCCOPY) ../desktop/*.c .
+	$(SRCCOPY) ../biostruc/*.h ../include
+	$(SRCCOPY) ../biostruc/*.c .
+	$(SRCCOPY) ../biostruc/cdd/*.h ../include
+	$(SRCCOPY) ../biostruc/cdd/*.c .
+	$(SRCCOPY) ../biostruc/cn3d/*.h ../include
+	$(SRCCOPY) ../biostruc/cn3d/*.c .
+	$(SRCCOPY) ../tools/*.h ../include
+	$(SRCCOPY) ../tools/*.c .
+	$(SRCCOPY) ../cn3d/*.h ../include
+	$(SRCCOPY) ../cn3d/*.c .
+	$(SRCCOPY) ../gif/*.c .
+	$(SRCCOPY) ../gif/*.h ../include
+	$(SRCCOPY) ../ddv/*.h ../include
+	$(SRCCOPY) ../ddv/*.c .
+	$(SRCCOPY) ../regexp/*.c .
+	$(SRCCOPY) ../regexp/*.h ../include
+	- $(SRCCOPY) ../internal/compr/*.c .
+	- $(SRCCOPY) ../internal/compr/*.h ../include
+	- $(SRCCOPY) ../internal/libindx/*.c .
+	- $(SRCCOPY) ../internal/libindx/*.h ../include
+	- $(SRCCOPY) ../internal/libpars/*.c .
+	- $(SRCCOPY) ../internal/libpars/*.h ../include
+	- $(SRCCOPY) ../internal/ideogram/*.c .
+	- $(SRCCOPY) ../internal/ideogram/*.dat .
+	- $(SRCCOPY) ../internal/ideogram/ideochr*.h ../include
+	- $(SRCCOPY) ../internal/ideogram/ideoorgs.h .
+	- $(SRCCOPY) ../internal/ccap/*.c .
+	- $(SRCCOPY) ../internal/ccap/*.dat .
+	- $(SRCCOPY) ../internal/ccap/*.h ../include
+	$(SRCCOPY) ncbidraw.c ncbidrwg.c
+	$(SRCCOPY) ncbithr.c ncbithrs.c
+	$(SRCCOPY) ../network/nsclilib/*.h ../include
+	$(SRCCOPY) ../network/blast3/client/*.h ../include
+	$(SRCCOPY) ../network/id1arch/*.h ../include
+	-$(SRCCOPY) ../network/id2arch/*.h ../include
+	- mkdir -p ../include/algo/blast/core
+	$(SRCCOPY) ../algo/blast/core/*.c .
+	$(SRCCOPY) ../algo/blast/core/*.h .
+	cp -fp ../algo/blast/core/*.h ../include/algo/blast/core
+	- mkdir -p ../include/algo/blast/api
+	$(SRCCOPY) ../algo/blast/api/*.c .
+	cp -fp ../algo/blast/api/*.h ../include/algo/blast/api
+	- chmod -R ug+rw,o+r .
+
+
+## make libraries
+##
+$(THR_OBJ): $(THR_SRC)
+	$(CC) $(CFLAGS) $<
+	$(LIBCOPY) $(THR_OBJ) $(NCBI_LIBDIR)
+
+$(LIB1) : $(OBJ1)
+	- $(RM_LIB) $(LIB1)
+	$(AR) cru $(LIB1) $(OBJ1)
+	$(LIBCOPY) $(LIB1) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB1)
+
+$(LIB2) : $(OBJ2)
+	- $(RM_LIB) $(LIB2)
+	$(AR) cru $(LIB2) $(OBJ2)
+	$(LIBCOPY) $(LIB2) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB2)
+
+$(LIB3) : $(OBJ3)
+	- $(RM_LIB) $(LIB3)
+	$(AR) cru $(LIB3) $(OBJ3)
+	$(LIBCOPY) $(LIB3) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB3)
+
+#
+# Dummy targets used when Vibrant is not used
+#
+D4:
+
+D400:
+
+D20:
+
+D45:
+
+D28:
+
+D30:
+
+D3000:
+
+D34:
+
+D37:
+
+D38:
+
+D39:
+
+$(TLIB4) : $(ULIB4)
+
+$(TLIB400) : $(ULIB400)
+
+$(TLIB20) : $(ULIB20)
+
+$(TLIB45) : $(ULIB45)
+
+$(TLIB28) : $(ULIB28)
+
+$(TLIB30) : $(ULIB30)
+
+$(TLIB3000) : $(ULIB3000)
+
+$(TLIB34) : $(ULIB34)
+
+$(TLIB37) : $(ULIB37)
+
+$(TLIB38) : $(ULIB38)
+
+$(TLIB39) : $(ULIB39)
+
+$(ULIB4) : .WAIT $(OBJ4)
+	- $(RM_LIB) $(LIB4)
+	$(AR) cru $(LIB4) $(OBJ4)
+	$(LIBCOPY) $(LIB4) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB4)
+
+$(ULIB400) : $(OBJ400)
+	- $(RM_LIB) $(LIB400)
+	$(AR) cru $(LIB400) $(OBJ400)
+	$(LIBCOPY) $(LIB400) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB400)
+
+$(ULIB20) : $(OBJ20)
+	- $(RM_LIB) $(LIB20)
+	$(AR) cru $(LIB20) $(OBJ20)
+	$(LIBCOPY) $(LIB20) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB20)
+
+$(ULIB45) : $(OBJ45)
+	- $(RM_LIB) $(LIB45)
+	$(AR) cru $(LIB45) $(OBJ45)
+	$(LIBCOPY) $(LIB45) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB45)
+
+$(ULIB28) : $(OBJ28)
+	- $(RM_LIB) $(LIB28)
+	$(AR) cru $(LIB28) $(OBJ28)
+	$(LIBCOPY) $(LIB28) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB28)
+
+$(ULIB30) : .WAIT $(OBJ30)
+	- $(RM_LIB) $(LIB30)
+	$(AR) cru $(LIB30) $(OBJ30)
+	$(LIBCOPY) $(LIB30) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB30)
+
+$(ULIB3000) : .WAIT $(OBJ3000)
+	- $(RM_LIB) $(LIB3000)
+	$(AR) cru $(LIB3000) $(OBJ3000)
+	$(LIBCOPY) $(LIB3000) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB3000)
+
+$(ULIB34) : $(OBJ34)
+	- $(RM_LIB) $(LIB34)
+	$(AR) cru $(LIB34) $(OBJ34)
+	$(LIBCOPY) $(LIB34) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB34)
+
+$(ULIB37) : $(OBJ37)
+	- $(RM_LIB) $(LIB37)
+	$(AR) cru $(LIB37) $(OBJ37)
+	$(LIBCOPY) $(LIB37) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB37)
+
+$(ULIB38) : $(OBJ38)
+	- $(RM_LIB) $(LIB38)
+	$(AR) cru $(LIB38) $(OBJ38)
+	$(LIBCOPY) $(LIB38) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB38)
+
+$(ULIB39) : $(OBJ39)
+	- $(RM_LIB) $(LIB39)
+	$(AR) cru $(LIB39) $(OBJ39)
+	$(LIBCOPY) $(LIB39) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB39)
+
+$(LIB5) : $(OBJ5)
+	- $(RM_LIB) $(LIB5)
+	$(AR) cru $(LIB5) $(OBJ5)
+	$(LIBCOPY) $(LIB5) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB5)
+
+$(LIB22) : $(OBJ22)
+	- $(RM_LIB) $(LIB22)
+	$(AR) cru $(LIB22) $(OBJ22)
+	$(LIBCOPY) $(LIB22) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB22)
+
+$(LIB23) : $(OBJ23)
+	- $(RM_LIB) $(LIB23)
+	$(AR) cru $(LIB23) $(OBJ23)
+	$(LIBCOPY) $(LIB23) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB23)
+
+$(LIB50) : $(OBJ50)
+	- $(RM_LIB) $(LIB50)
+	$(AR) cru $(LIB50) $(OBJ50)
+	$(LIBCOPY) $(LIB50) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB50)
+
+$(LIB60) : $(OBJ60)
+	- $(RM_LIB) $(LIB60)
+	$(AR) cru $(LIB60) $(OBJ60)
+	$(LIBCOPY) $(LIB60) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB60)
+
+$(LIB61) : $(OBJ61)
+	- $(RM_LIB) $(LIB61)
+	$(AR) cru $(LIB61) $(OBJ61)
+	$(LIBCOPY) $(LIB61) $(NCBI_LIBDIR)
+	$(RAN) $(NCBI_LIBDIR)/$(LIB61)
+
+## make asntool application
+##  This is ALWAYS the command line version
+
+# asntool
+
+asntool : asntool.c $(LIB1)
+	$(CC) -o asntool $(LDFLAGS) asntool.c asncode.c $(NCBI_LIBDIR)/$(LIB1) $(OTHERLIBS)
+	$(BINCOPY) asntool ../bin
+
+# this is the setup for codecenter under solaris.
+# change the $SRC to include only those your application uses
+# copy ncbilcl.scr from /corelib to /include and rename as ncbilcl.h
+# call this file "makefile" in the /build directory
+# start codecenter from /build directory
+# give the command "make getmuid.src" (in this case)
+
+getmuid.src :
+	#load $(LDFLAGS) getmuid.c medutil.c \
+	$(SRC11) $(SRC8) $(SRC7) $(SRC6) $(SRC5) $(SRC3) \
+	$(SRC2) $(SRC1) $(OTHERLIBS) -lsocket -lnsl

@@ -1,0 +1,226 @@
+GENBANK FLATFILE GENERATOR
+
+A new flatfile generator has been written to replace the old asn2ff code.
+It is provided both as a stand-alone application, asn2gb, and as C
+functions in the NCBI software toolkit. There are several function
+parameters, with equivalent command-line arguments, that control the
+behavior of the new flatfile generator and customize its performance.
+
+SeqEntryToGnbk takes a SeqEntryPtr or SeqLocPtr and calls asn2gnbk_setup,
+asn2gnbk_format, and asn2gnbk_cleanup, which are available from a private
+header. It returns FALSE if there was a problem generating the flatfile.
+BioseqToGnbk is simply a convenience function that takes a BioseqPtr, looks
+up the parent SeqEntryPtr, and then calls SeqEntryToGnbk. To use these
+functions, #include <asn2gnbk.h>.
+
+NLM_EXTERN Boolean SeqEntryToGnbk (
+  SeqEntryPtr sep,
+  SeqLocPtr slp,
+  FmtType format,
+  ModType mode,
+  StlType style,
+  FlgType flags,
+  LckType locks,
+  CstType custom,
+  XtraPtr extra,
+  FILE *fp
+);
+
+NLM_EXTERN Boolean BioseqToGnbk (
+  BioseqPtr bsp,
+  SeqLocPtr slp,
+  FmtType format,
+  ModType mode,
+  StlType style,
+  FlgType flags,
+  LckType locks,
+  CstType custom,
+  XtraPtr extra,
+  FILE *fp
+);
+
+In the asn2gb application, format, mode, style, flags, locks, and custom
+parameters are specified by the -f, -m, -s, -g, -h and -u arguments,
+respectively.
+
+
+FORMATS include GENBANK_FMT, EMBL_FMT, GENPEPT_FMT, and FTABLE_FMT (Sequin's
+5-column parsable feature table). If the sep passed to SeqEntryToGnbk points
+to a Bioseq-set, the function processes all Bioseqs of the appropriate
+molecule type (nucleotide or protein) for the specified format.
+
+
+MODES are RELEASE_MODE, ENTREZ_MODE (release mode strictness except that it
+allows local IDs and does not require a valid CDS /protein_id accession),
+SEQUIN_MODE, and DUMP_MODE. RefSeq records can have otherwise illegal
+qualifiers (e.g., /transcript_id) and db_xrefs show up in release mode.
+Entrez mode should be used for web display, and can show new elements that
+haven't yet finished their 4-month quarantine period.
+
+
+STYLES are NORMAL_STYLE, SEGMENT_STYLE, MASTER_STYLE, and CONTIG_STYLE.
+Segment style is the traditional representation of segmented sequences,
+while contig style displays a CONTIG line with a join of accessions instead
+of a sequence. Normal style automatically chooses between segment and contig
+style, depending upon the kind of data. (Near segmented records will be done
+in segment style. Far segmented sequences or deltas with no literals will be
+done as if you chose contig style.) Master style shows features mapped to
+the segmented Bioseq's coordinates.
+
+
+FLAGS are bit flags controlling appearance or behavior, and are ORed together.
+
+One 2-bit flag tells asn2gnbk to create HTML with web links, flatfile in XML
+form, or flatfile in ASN.1 form. These settings are mutually exclusive. The
+setup for creating HTML links is within SeqEntryToGnbk itself.
+
+#define CREATE_HTML_FLATFILE      1
+#define CREATE_XML_GBSEQ_FILE     2
+#define CREATE_ASN_GBSEQ_FILE     3
+
+Others control feature display behavior in contig style, whether it was
+explicitly chosen or was called when a far segmented or far delta record was
+processed in normal style.
+
+#define SHOW_CONTIG_FEATURES      4
+#define SHOW_CONTIG_SOURCES       8
+
+Another set controls translation of CDS features with far products.
+
+#define SHOW_FAR_TRANSLATION     16
+#define TRANSLATE_IF_NO_PRODUCT  32
+#define ALWAYS_TRANSLATE_CDS     64
+
+Another 2-bit flag controls where to get features when using far segmented
+parts or far component delta Bioseqs.
+
+#define ONLY_NEAR_FEATURES      128
+#define FAR_FEATURES_SUPPRESS   256
+#define NEAR_FEATURES_SUPPRESS  384
+
+Other flags allow customization of reports from genomic product sets.
+
+#define COPY_GPS_CDS_UP         512
+#define COPY_GPS_GENE_DOWN     1024
+
+The CONTIG block can be shown along with the sequence block in master or
+segment style, when appropriate.
+
+#define SHOW_CONTIG_AND_SEQ    2048
+
+Still others are expected to be rarely used, or are for testing new features.
+
+#define DDBJ_VARIANT_FORMAT    4096
+#define USE_OLD_SOURCE_ORG     8192
+
+
+LOCKS are bits for controlling program performance, and are also ORed together.
+
+Sequin hangs onto a job pointer and does paragraph formatting in random order,
+so it should free the segment's SeqPort after each sequence block is printed.
+
+#define FREE_SEQPORT_EACH_TIME    1
+
+Another set is for locking far segmented or delta components, far feature
+location Bioseqs, or far feature product Bioseqs in advance. This prevents
+the object manager from uncaching components at an inopportune time, causing
+unnecessary thrashing. Far component Bioseqs are needed for displaying the
+sequence.
+
+#define LOCK_FAR_COMPONENTS       2
+#define LOCK_FAR_LOCATIONS        4
+#define LOCK_FAR_PRODUCTS         8
+
+A third set attempts to do bulk accession to gi lookups in advance, which is
+possible if PubSeqFetchEnable was called by the application. Remote fetching
+in asn2gb uses this new access mechanism. Far component IDs are needed for
+the CONTIG line, far location IDs for feature location joins, and far product
+IDs for the /protein_id and /transcript_id accessions.
+
+#define LOOKUP_FAR_COMPONENTS    16
+#define LOOKUP_FAR_LOCATIONS     32
+#define LOOKUP_FAR_PRODUCTS      64
+#define LOOKUP_FAR_HISTORY      128
+
+A final flag causes the sequence to be read by streaming at setup time, to
+speed up calculation of the base count and formatting of the sequence blocks.
+
+#define STREAM_SEQ_PORT_FIRST   256
+
+To use PubSeqFetchEnable, the application should #include <pmfapi.h>.
+
+
+CUSTOM are bit flags suppressing specific features, and are also ORed
+together.
+
+One set suppresses all import features, or all that don't have specific
+custom bits of their own.
+
+#define HIDE_IMP_FEATS            1
+#define HIDE_REM_IMP_FEATS        2
+
+Another set suppresses common individual import feature types.
+
+#define HIDE_SNP_FEATS            4
+#define HIDE_EXON_FEATS           8
+#define HIDE_INTRON_FEATS        16
+#define HIDE_MISC_FEATS          32
+
+Additional bits hide CDD regions, or all features on the CDS product.
+
+#define HIDE_CDD_FEATS           64
+#define HIDE_CDS_PROD_FEATS     128
+
+mRNAs and peptide features can show /transcription or /peptide sequence.
+
+#define SHOW_TRANCRIPTION       256
+#define SHOW_PEPTIDE            512
+
+GeneRIF references in RefSeq records can also be specifically hidden, non-
+GeneRIF records can be hidden, or only the most recent 10 GeneRIFs can be
+displayed.
+
+#define HIDE_GENE_RIFS         1024
+#define ONLY_GENE_RIFS         2048
+#define LATEST_GENE_RIFS       3072
+
+Protein feature tables and References in feature tables can also be shown.
+
+#define SHOW_PROT_FTABLE       4096
+#define SHOW_FTABLE_REFS       8192
+
+
+EXTRA is an opaque pointer used for preparing internal NCBI indices.  Most
+programs will pass NULL for this parameter.
+
+
+ASN2GB STANDALONE APPLICATION
+
+An asn2gb executable is now available on all platforms, and is packaged
+with the Sequin archive. The most commonly used arguments are shown below.
+
+  -i  Input File Name
+  -o  Output File Name
+
+  -f  Format (b GenBank, e EMBL, p GenPept, t Feature Table, x GBSet)
+  -m  Mode (r Release, e Entrez, s Sequin, d Dump)
+  -s  Style (n Normal, s Segment, m Master, c Contig)
+  -g  Bit Flags (1 HTML, 2 XML, 4 ContigFeats, 8 ContigSrcs, 16 FarTransl)
+  -h  Lock/Lookup Flags (8 LockProd, 16 LookupComp, 64 LookupProd)
+  -u Custom Flags (2 HideMostImpFeats, 4 HideSnpFeats)
+
+  -a  ASN.1 Type (a Any, e Seq-entry, b Bioseq, s Bioseq-set, m Seq-submit)
+
+Batch processing of Bioseq-set ASN.1 release files is also supported.
+
+  -t  Batch (1 Report, 2 Sequin/Release)
+  -b  Bioseq-set is Binary [T/F]
+  -c  Bioseq-set is Compressed [T/F]
+  -p  Propagate Top Descriptors [T/F]
+
+  -l  Log file
+
+Remote fetching allows gi to accession lookups and fetching of far components.
+
+  -r  Remote Fetching [T/F]
+

@@ -1,0 +1,47 @@
+#!/bin/csh -f
+# NOTE:  use "/bin/tcsh" above if "/bin/csh" is absent (e.g. on QNX OS)
+#        use a "ln-if-absent.beos" on the BeOS platform (rename it to ln-if-absent)
+#
+# Make a symbolic link if the target is absent
+#
+# $Id: ln-if-absent,v 1.6 2002/06/17 14:27:20 ivanov Exp $
+#
+
+set path=(/usr/bin /bin)
+
+if ($#argv < 2) then
+	echo "Usage: $0 source_file... target"
+	exit 1
+endif
+
+@ count=$#argv
+set target=$argv[$count]
+@ count--
+set list=($argv[-$count])
+set final=()
+
+if (-d $target) then
+	foreach i ($list)	
+		if (! -r $target/$i:t) set final=($final $i)
+	end
+else
+	if ($#argv != 2) then
+		echo target argument should not be a directory
+		exit 1
+	endif
+	if (! -r "$1") exit 1
+	if (! -r "$2") ln -sf "$1" "$2" 
+	exit 0
+endif
+
+if ( $#final == 1) then
+	if (! -r "$final") exit 1
+	ln -s $final $target
+	exit 0
+endif
+
+if ($#final != 0) then
+	ln -s $final $target
+endif
+
+exit 0

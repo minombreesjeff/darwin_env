@@ -1,0 +1,40 @@
+.TH GETPUB 1 2001-10-05 NCBI "NCBI Tools User's Manual"
+.SH NAME
+getpub \- look up Medline entries by UID
+.SH SYNOPSIS
+.B getpub
+[\|\fB\-\fP\|]
+[\|\fB\-b\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-t\fP\ \fIfilename\fP\|]
+[\|\fB\-u\fP\ \fIN\fP\|]
+.SH DESCRIPTION
+\fBgetpub\fP does an lookup for Medline entries by Medline UID.  It
+requires its input to have been indexed by \fBindexpub\fP(1).
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-b\fP
+Output data is binary (rather than ASCII text) ASN.1.
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Input data (binary Pub-set; default = \fBmedline.val\fP)
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Output data (default = \fBstdout\fP)
+.TP
+\fB\-t\fP\ \fIfilename\fP
+Input index table (default = \fBmedline.idx\fP)
+.TP
+\fB\-u\fP\ \fIN\fP
+Medline UID to find (default = \fB88055872\fP)
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.BR getmesh (1),
+.BR indexpub (1)
+

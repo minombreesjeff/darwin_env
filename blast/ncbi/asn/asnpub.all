@@ -1,0 +1,540 @@
+--$Revision: 6.4 $
+--**********************************************************************
+--
+--  NCBI General Data elements
+--  by James Ostell, 1990
+--  Version 3.0 - June 1994
+--
+--**********************************************************************
+
+NCBI-General DEFINITIONS ::=
+BEGIN
+
+EXPORTS Date, Person-id, Object-id, Dbtag, Int-fuzz, User-object;
+
+-- StringStore is really a VisibleString.  It is used to define very
+--   long strings which may need to be stored by the receiving program
+--   in special structures, such as a ByteStore, but it's just a hint.
+--   AsnTool stores StringStores in ByteStore structures.
+-- OCTET STRINGs are also stored in ByteStores by AsnTool
+-- 
+-- typedef struct bsunit {             /* for building multiline strings */
+   -- Nlm_Handle str;            /* the string piece */
+   -- Nlm_Int2 len_avail,
+       -- len;
+   -- struct bsunit PNTR next; }       /* the next one */
+-- Nlm_BSUnit, PNTR Nlm_BSUnitPtr;
+-- 
+-- typedef struct bytestore {
+   -- Nlm_Int4 seekptr,       /* current position */
+      -- totlen,             /* total stored data length in bytes */
+      -- chain_offset;       /* offset in ByteStore of first byte in curchain */
+   -- Nlm_BSUnitPtr chain,       /* chain of elements */
+      -- curchain;           /* the BSUnit containing seekptr */
+-- } Nlm_ByteStore, PNTR Nlm_ByteStorePtr;
+--
+-- AsnTool incorporates this as a primitive type, so the definition
+--   is here just for completeness
+-- 
+--  StringStore ::= [APPLICATION 1] IMPLICIT OCTET STRING
+--
+
+-- BigInt is really an INTEGER. It is used to warn the receiving code to expect
+--   a value bigger than Int4 (actually Int8). It will be stored in DataVal.bigintvalue
+--
+--   Like StringStore, AsnTool incorporates it as a primitive. The definition would be:
+--   BigInt ::= [APPLICATION 2] IMPLICIT INTEGER
+--
+
+-- Date is used to replace the (overly complex) UTCTtime, GeneralizedTime
+--  of ASN.1
+--  It stores only a date
+--
+
+Date ::= CHOICE {
+    str VisibleString ,        -- for those unparsed dates
+    std Date-std }             -- use this if you can
+
+Date-std ::= SEQUENCE {        -- NOTE: this is NOT a unix tm struct
+    year INTEGER ,             -- full year (including 1900)
+    month INTEGER OPTIONAL ,   -- month (1-12)
+    day INTEGER OPTIONAL ,     -- day of month (1-31)
+    season VisibleString OPTIONAL ,  -- for "spring", "may-june", etc
+    hour INTEGER OPTIONAL ,    -- hour of day (0-23)
+    minute INTEGER OPTIONAL ,  -- minute of hour (0-59)
+    second INTEGER OPTIONAL }  -- second of minute (0-59)
+
+-- Dbtag is generalized for tagging
+-- eg. { "Social Security", str "023-79-8841" }
+-- or  { "member", id 8882224 }
+
+Dbtag ::= SEQUENCE {
+    db VisibleString ,          -- name of database or system
+    tag Object-id }         -- appropriate tag
+
+-- Object-id can tag or name anything
+--
+
+Object-id ::= CHOICE {
+    id INTEGER ,
+    str VisibleString }
+
+-- Person-id is to define a std element for people
+--
+
+Person-id ::= CHOICE {
+    dbtag Dbtag ,               -- any defined database tag
+    name Name-std ,             -- structured name
+    ml VisibleString ,          -- MEDLINE name (semi-structured)
+                                --    eg. "Jones RM"
+    str VisibleString,          -- unstructured name
+    consortium VisibleString }  -- consortium name
+
+Name-std ::= SEQUENCE { -- Structured names
+    last VisibleString ,
+    first VisibleString OPTIONAL ,
+    middle VisibleString OPTIONAL ,
+    full VisibleString OPTIONAL ,    -- full name eg. "J. John Smith, Esq"
+    initials VisibleString OPTIONAL,  -- first + middle initials
+    suffix VisibleString OPTIONAL ,   -- Jr, Sr, III
+    title VisibleString OPTIONAL }    -- Dr., Sister, etc
+
+--**** Int-fuzz **********************************************
+--*
+--*   uncertainties in integer values
+
+Int-fuzz ::= CHOICE {
+    p-m INTEGER ,                    -- plus or minus fixed amount
+    range SEQUENCE {                 -- max to min
+        max INTEGER ,
+        min INTEGER } ,
+    pct INTEGER ,                    -- % plus or minus (x10) 0-1000
+    lim ENUMERATED {                 -- some limit value
+        unk (0) ,                    -- unknown
+        gt (1) ,                     -- greater than
+        lt (2) ,                     -- less than
+        tr (3) ,                     -- space to right of position
+        tl (4) ,                     -- space to left of position
+        circle (5) ,                 -- artificial break at origin of circle
+        other (255) } ,              -- something else
+    alt SET OF INTEGER }             -- set of alternatives for the integer
+
+
+--**** User-object **********************************************
+--*
+--*   a general object for a user defined structured data item
+--*    used by Seq-feat and Seq-descr
+
+User-object ::= SEQUENCE {
+    class VisibleString OPTIONAL ,   -- endeavor which designed this object
+    type Object-id ,                 -- type of object within class
+    data SEQUENCE OF User-field }    -- the object itself
+
+User-field ::= SEQUENCE {
+    label Object-id ,                -- field label
+    num INTEGER OPTIONAL ,           -- required for strs, ints, reals, oss
+    data CHOICE {                    -- field contents
+        str VisibleString ,
+        int INTEGER ,
+        real REAL ,
+        bool BOOLEAN ,
+        os OCTET STRING ,
+        object User-object ,         -- for using other definitions
+        strs SEQUENCE OF VisibleString ,
+        ints SEQUENCE OF INTEGER ,
+        reals SEQUENCE OF REAL ,
+        oss SEQUENCE OF OCTET STRING ,
+        fields SEQUENCE OF User-field ,
+        objects SEQUENCE OF User-object } }
+
+
+
+END
+
+--$Revision: 6.2 $
+--****************************************************************
+--
+--  NCBI Bibliographic data elements
+--  by James Ostell, 1990
+--
+--  Taken from the American National Standard for
+--      Bibliographic References
+--      ANSI Z39.29-1977
+--  Version 3.0 - June 1994
+--  PubMedId added in 1996
+--  ArticleIds and eprint elements added in 1999
+--
+--****************************************************************
+
+NCBI-Biblio DEFINITIONS ::=
+BEGIN
+
+EXPORTS Cit-art, Cit-jour, Cit-book, Cit-pat, Cit-let, Id-pat, Cit-gen,
+        Cit-proc, Cit-sub, Title, Author, PubMedId;
+
+IMPORTS Person-id, Date, Dbtag FROM NCBI-General;
+
+    -- Article Ids
+
+ArticleId ::= CHOICE {         -- can be many ids for an article
+	pubmed PubMedId ,      -- see types below
+	medline MedlineUID ,
+	doi DOI ,
+	pii PII ,
+	pmcid PmcID ,
+	pmcpid PmcPid ,
+        pmpid PmPid ,
+        other Dbtag  }    -- generic catch all
+    
+PubMedId ::= INTEGER           -- Id from the PubMed database at NCBI
+MedlineUID ::= INTEGER         -- Id from MEDLINE
+DOI ::= VisibleString          -- Document Object Identifier
+PII ::= VisibleString          -- Controlled Publisher Identifier
+PmcID ::= INTEGER              -- PubMed Central Id
+PmcPid ::= VisibleString       -- Publisher Id supplied to PubMed Central
+PmPid ::= VisibleString        -- Publisher Id supplied to PubMed
+
+ArticleIdSet ::= SET OF ArticleId
+
+    -- Status Dates
+
+PubStatus ::= INTEGER {            -- points of publication
+    received  (1) ,            -- date manuscript received for review
+    accepted  (2) ,            -- accepted for publication
+    epublish  (3) ,            -- published electronically by publisher
+    ppublish  (4) ,            -- published in print by publisher
+    revised   (5) ,            -- article revised by publisher/author
+    pmc       (6) ,            -- article first appeared in PubMed Central
+    pmcr      (7) ,            -- article revision in PubMed Central
+    pubmed    (8) ,            -- article citation first appeared in PubMed
+    pubmedr   (9) ,            -- article citation revision in PubMed
+    aheadofprint (10),         -- epublish, but will be followed by print
+    premedline (11),           -- date into PreMedline status
+    medline    (12),           -- date made a MEDLINE record
+    other    (255) }
+
+PubStatusDate ::= SEQUENCE {   -- done as a structure so fields can be added
+    pubstatus PubStatus ,
+    date Date }                -- time may be added later
+
+PubStatusDateSet ::= SET OF PubStatusDate
+    
+    -- Citation Types
+
+Cit-art ::= SEQUENCE {                  -- article in journal or book
+    title Title OPTIONAL ,              -- title of paper (ANSI requires)
+    authors Auth-list OPTIONAL ,        -- authors (ANSI requires)
+    from CHOICE {                       -- journal or book
+        journal Cit-jour ,
+        book Cit-book ,
+        proc Cit-proc } ,
+    ids ArticleIdSet OPTIONAL }         -- lots of ids
+
+Cit-jour ::= SEQUENCE {             -- Journal citation
+    title Title ,                   -- title of journal
+    imp Imprint }
+
+Cit-book ::= SEQUENCE {              -- Book citation
+    title Title ,                    -- Title of book
+    coll Title OPTIONAL ,            -- part of a collection
+    authors Auth-list,               -- authors
+    imp Imprint }
+
+Cit-proc ::= SEQUENCE {             -- Meeting proceedings
+    book Cit-book ,                 -- citation to meeting
+    meet Meeting }                  -- time and location of meeting
+
+    -- Patent number and date-issue were made optional in 1997 to
+    --   support patent applications being issued from the USPTO
+    --   Semantically a Cit-pat must have either a patent number or
+    --   an application number (or both) to be valid
+
+Cit-pat ::= SEQUENCE {                  -- patent citation
+    title VisibleString ,
+    authors Auth-list,                  -- author/inventor
+    country VisibleString ,             -- Patent Document Country
+    doc-type VisibleString ,            -- Patent Document Type
+    number VisibleString OPTIONAL,      -- Patent Document Number
+    date-issue Date OPTIONAL,           -- Patent Issue/Pub Date
+    class SEQUENCE OF VisibleString OPTIONAL ,      -- Patent Doc Class Code 
+    app-number VisibleString OPTIONAL , -- Patent Doc Appl Number
+    app-date Date OPTIONAL ,            -- Patent Appl File Date
+    applicants Auth-list OPTIONAL ,     -- Applicants
+    assignees Auth-list OPTIONAL ,      -- Assignees
+    priority SEQUENCE OF Patent-priority OPTIONAL , -- Priorities
+    abstract VisibleString OPTIONAL }   -- abstract of patent
+
+Patent-priority ::= SEQUENCE {
+    country VisibleString ,             -- Patent country code
+    number VisibleString ,              -- number assigned in that country
+    date Date }                         -- date of application
+
+Id-pat ::= SEQUENCE {                   -- just to identify a patent
+    country VisibleString ,             -- Patent Document Country
+    id CHOICE {
+        number VisibleString ,          -- Patent Document Number
+        app-number VisibleString } ,    -- Patent Doc Appl Number
+    doc-type VisibleString OPTIONAL }   -- Patent Doc Type
+
+Cit-let ::= SEQUENCE {                  -- letter, thesis, or manuscript
+    cit Cit-book ,                      -- same fields as a book
+    man-id VisibleString OPTIONAL ,     -- Manuscript identifier
+    type ENUMERATED {
+        manuscript (1) ,
+        letter (2) ,
+        thesis (3) } OPTIONAL }
+                                -- NOTE: this is just to cite a
+                                -- direct data submission, see NCBI-Submit
+                                -- for the form of a sequence submission
+Cit-sub ::= SEQUENCE {               -- citation for a direct submission
+    authors Auth-list ,              -- not necessarily authors of the paper
+    imp Imprint OPTIONAL ,			 -- this only used to get date.. will go
+    medium ENUMERATED {              -- medium of submission
+        paper   (1) ,
+        tape    (2) ,
+        floppy  (3) ,
+        email   (4) ,
+        other   (255) } OPTIONAL ,
+    date Date OPTIONAL ,              -- replaces imp, will become required
+    descr VisibleString OPTIONAL }    -- description of changes for public view
+    
+Cit-gen ::= SEQUENCE {      -- NOT from ANSI, this is a catchall
+    cit VisibleString OPTIONAL ,     -- anything, not parsable
+    authors Auth-list OPTIONAL ,
+    muid INTEGER OPTIONAL ,      -- medline uid
+    journal Title OPTIONAL ,
+    volume VisibleString OPTIONAL ,
+    issue VisibleString OPTIONAL ,
+    pages VisibleString OPTIONAL ,
+    date Date OPTIONAL ,
+    serial-number INTEGER OPTIONAL ,   -- for GenBank style references
+    title VisibleString OPTIONAL ,     -- eg. cit="unpublished",title="title"
+	pmid PubMedId OPTIONAL }           -- PubMed Id
+    
+    
+    -- Authorship Group
+Auth-list ::= SEQUENCE {
+        names CHOICE {
+            std SEQUENCE OF Author ,        -- full citations
+            ml SEQUENCE OF VisibleString ,  -- MEDLINE, semi-structured
+            str SEQUENCE OF VisibleString } , -- free for all
+        affil Affil OPTIONAL }        -- author affiliation
+
+Author ::= SEQUENCE {
+    name Person-id ,                        -- Author, Primary or Secondary
+    level ENUMERATED {
+        primary (1),
+        secondary (2) } OPTIONAL ,
+    role ENUMERATED {                   -- Author Role Indicator
+        compiler (1),
+        editor (2),
+        patent-assignee (3),
+        translator (4) } OPTIONAL ,
+    affil Affil OPTIONAL ,
+    is-corr BOOLEAN OPTIONAL }          -- TRUE if corresponding author
+
+Affil ::= CHOICE {
+    str VisibleString ,                 -- unparsed string
+    std SEQUENCE {                      -- std representation
+    affil VisibleString OPTIONAL ,      -- Author Affiliation, Name
+    div VisibleString OPTIONAL ,        -- Author Affiliation, Division
+    city VisibleString OPTIONAL ,       -- Author Affiliation, City
+    sub VisibleString OPTIONAL ,        -- Author Affiliation, County Sub
+    country VisibleString OPTIONAL ,    -- Author Affiliation, Country
+    street VisibleString OPTIONAL ,    -- street address, not ANSI
+    email VisibleString OPTIONAL ,
+    fax VisibleString OPTIONAL ,
+    phone VisibleString OPTIONAL ,
+    postal-code VisibleString OPTIONAL }}
+
+    -- Title Group
+    -- Valid for = A = Analytic (Cit-art)
+    --             J = Journals (Cit-jour)
+    --             B = Book (Cit-book)
+                                                 -- Valid for:
+Title ::= SET OF CHOICE {
+    name VisibleString ,    -- Title, Anal,Coll,Mono    AJB
+    tsub VisibleString ,    -- Title, Subordinate       A B
+    trans VisibleString ,   -- Title, Translated        AJB
+    jta VisibleString ,     -- Title, Abbreviated        J
+    iso-jta VisibleString , -- specifically ISO jta      J
+    ml-jta VisibleString ,  -- specifically MEDLINE jta  J
+    coden VisibleString ,   -- a coden                   J
+    issn VisibleString ,    -- ISSN                      J
+    abr VisibleString ,     -- Title, Abbreviated         B
+    isbn VisibleString }    -- ISBN                       B
+
+Imprint ::= SEQUENCE {                  -- Imprint group
+    date Date ,                         -- date of publication
+    volume VisibleString OPTIONAL ,
+    issue VisibleString OPTIONAL ,
+    pages VisibleString OPTIONAL ,
+    section VisibleString OPTIONAL ,
+    pub Affil OPTIONAL,                     -- publisher, required for book
+    cprt Date OPTIONAL,                     -- copyright date, "    "   "
+    part-sup VisibleString OPTIONAL ,       -- part/sup of volume
+    language VisibleString DEFAULT "ENG" ,  -- put here for simplicity
+    prepub ENUMERATED {                     -- for prepublication citations
+        submitted (1) ,                     -- submitted, not accepted
+        in-press (2) ,                      -- accepted, not published
+        other (255)  } OPTIONAL ,
+    part-supi VisibleString OPTIONAL ,      -- part/sup on issue
+    retract CitRetract OPTIONAL ,           -- retraction info
+    pubstatus PubStatus OPTIONAL ,          -- current status of this publication
+    history PubStatusDateSet OPTIONAL }     -- dates for this record
+
+CitRetract ::= SEQUENCE {
+    type ENUMERATED {                    -- retraction of an entry
+        retracted (1) ,               -- this citation retracted
+        notice (2) ,                  -- this citation is a retraction notice
+        in-error (3) ,                -- an erratum was published about this
+        erratum (4) } ,               -- this is a published erratum
+    exp VisibleString OPTIONAL }      -- citation and/or explanation
+
+Meeting ::= SEQUENCE {
+    number VisibleString ,
+    date Date ,
+    place Affil OPTIONAL }
+
+            
+END
+
+
+--$Revision: 6.0 $
+--**********************************************************************
+--
+--  MEDLINE data definitions
+--  James Ostell, 1990
+--
+--  enhanced in 1996 to support PubMed records as well by simply adding
+--    the PubMedId and making MedlineId optional
+--
+--**********************************************************************
+
+NCBI-Medline DEFINITIONS ::=
+BEGIN
+
+EXPORTS Medline-entry, Medline-si;
+
+IMPORTS Cit-art, PubMedId FROM NCBI-Biblio
+        Date FROM NCBI-General;
+
+                                -- a MEDLINE or PubMed entry
+Medline-entry ::= SEQUENCE {
+    uid INTEGER OPTIONAL ,      -- MEDLINE UID, sometimes not yet available if from PubMed
+    em Date ,                   -- Entry Month
+    cit Cit-art ,               -- article citation
+    abstract VisibleString OPTIONAL ,
+    mesh SET OF Medline-mesh OPTIONAL ,
+    substance SET OF Medline-rn OPTIONAL ,
+    xref SET OF Medline-si OPTIONAL ,
+    idnum SET OF VisibleString OPTIONAL ,  -- ID Number (grants, contracts)
+    gene SET OF VisibleString OPTIONAL ,
+    pmid PubMedId OPTIONAL ,               -- MEDLINE records may include the PubMedId
+    pub-type SET OF VisibleString OPTIONAL, -- may show publication types (review, etc)
+    mlfield SET OF Medline-field OPTIONAL ,  -- additional Medline field types
+    status INTEGER {
+	publisher (1) ,      -- record as supplied by publisher
+        premedline (2) ,     -- premedline record
+        medline (3) } DEFAULT medline }  -- regular medline record
+
+Medline-mesh ::= SEQUENCE {
+    mp BOOLEAN DEFAULT FALSE ,       -- TRUE if main point (*)
+    term VisibleString ,                   -- the MeSH term
+    qual SET OF Medline-qual OPTIONAL }    -- qualifiers
+
+Medline-qual ::= SEQUENCE {
+    mp BOOLEAN DEFAULT FALSE ,       -- TRUE if main point
+    subh VisibleString }             -- the subheading
+
+Medline-rn ::= SEQUENCE {       -- medline substance records
+    type ENUMERATED {           -- type of record
+        nameonly (0) ,
+        cas (1) ,               -- CAS number
+        ec (2) } ,              -- EC number
+    cit VisibleString OPTIONAL ,  -- CAS or EC number if present
+    name VisibleString }          -- name (always present)
+
+Medline-si ::= SEQUENCE {       -- medline cross reference records
+    type ENUMERATED {           -- type of xref
+        ddbj (1) ,              -- DNA Data Bank of Japan
+        carbbank (2) ,          -- Carbohydrate Structure Database
+        embl (3) ,              -- EMBL Data Library
+        hdb (4) ,               -- Hybridoma Data Bank
+        genbank (5) ,           -- GenBank
+        hgml (6) ,              -- Human Gene Map Library
+        mim (7) ,               -- Mendelian Inheritance in Man
+        msd (8) ,               -- Microbial Strains Database
+        pdb (9) ,               -- Protein Data Bank (Brookhaven)
+        pir (10) ,              -- Protein Identification Resource
+        prfseqdb (11) ,         -- Protein Research Foundation (Japan)
+        psd (12) ,              -- Protein Sequence Database (Japan)
+        swissprot (13) ,        -- SwissProt
+        gdb (14) } ,            -- Genome Data Base
+    cit VisibleString OPTIONAL }    -- the citation/accession number
+
+Medline-field ::= SEQUENCE {
+    type INTEGER {              -- Keyed type
+	other (0) ,             -- look in line code
+	comment (1) ,           -- comment line
+        erratum (2) } ,         -- retracted, corrected, etc
+    str VisibleString ,         -- the text
+    ids SEQUENCE OF DocRef OPTIONAL }  -- pointers relevant to this text
+
+DocRef ::= SEQUENCE {           -- reference to a document
+    type INTEGER {
+        medline (1) ,
+        pubmed (2) ,
+        ncbigi (3) } ,
+    uid INTEGER }
+
+END
+
+--$Revision: 6.0 $
+--********************************************************************
+--
+--  Publication common set
+--  James Ostell, 1990
+--
+--  This is the base class definitions for Publications of all sorts
+--
+--  support for PubMedId added in 1996
+--********************************************************************
+
+NCBI-Pub DEFINITIONS ::=
+BEGIN
+
+EXPORTS Pub, Pub-set, Pub-equiv;
+
+IMPORTS Medline-entry FROM NCBI-Medline
+        Cit-art, Cit-jour, Cit-book, Cit-proc, Cit-pat, Id-pat, Cit-gen,
+        Cit-let, Cit-sub, PubMedId FROM NCBI-Biblio;
+
+Pub ::= CHOICE {
+    gen Cit-gen ,        -- general or generic unparsed
+    sub Cit-sub ,        -- submission
+    medline Medline-entry ,
+    muid INTEGER ,       -- medline uid
+    article Cit-art ,
+    journal Cit-jour ,
+    book Cit-book ,
+    proc Cit-proc ,      -- proceedings of a meeting
+    patent Cit-pat ,
+    pat-id Id-pat ,      -- identify a patent
+    man Cit-let ,        -- manuscript, thesis, or letter
+    equiv Pub-equiv,     -- to cite a variety of ways
+	pmid PubMedId }      -- PubMedId
+
+Pub-equiv ::= SET OF Pub   -- equivalent identifiers for same citation
+
+Pub-set ::= CHOICE {
+    pub SET OF Pub ,
+    medline SET OF Medline-entry ,
+    article SET OF Cit-art ,
+    journal SET OF Cit-jour ,
+    book SET OF Cit-book ,
+    proc SET OF Cit-proc ,      -- proceedings of a meeting
+    patent SET OF Cit-pat }
+
+END
+

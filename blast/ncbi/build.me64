@@ -1,0 +1,56 @@
+#!/bin/sh
+#
+# $Id: build.me64,v 6.2 2002/03/01 18:04:07 beloslyu Exp $
+#
+# W A R N I N G ! ! !
+# That script is intended for internal use in NCBI only
+#
+#
+NCBI=/netopt/ncbi_tools/ncbi64
+PATH=/usr/bin:/bin:/sbin:/usr/sbin:/usr/ccs/bin:$NCBI/bin:$PATH
+export PATH NCBI
+
+#check that we're running withing NCBI
+MYDOMAIN=`grep '^domain' /etc/resolv.conf |awk '{print $2}'`
+if [ "$MYDOMAIN" != "nlm.nih.gov" ] ; then
+	echo That script is intended for internal use in NCBI only
+	exit 1
+fi
+
+echo "Building ASNs"
+( cd asn; rm -f asn.all asnpub.all ; chmod +x *.unx; sh all.unx; sh allpub.unx)
+
+if [ ! -d "asnstat" ] ; then
+	mkdir asnstat; ( cd asnstat; sh ../asn/makestat.unx )
+	test -f /am/ncbiapdata/scripts/rebuild_asn && /am/ncbiapdata/scripts/rebuild_asn .
+fi
+
+rm -f data/*.val
+asntool -m asn/asn.all -v data/seqcode.prt -e data/seqcode.val || exit 1
+asntool -m asn/asn.all -v data/featdef.prt -e data/featdef.val
+asntool -m asn/asn.all -v data/gc.prt -e data/gc.val
+cat biostruc/*.asn asn/asn.all >/tmp/big$$.asn
+asntool -m /tmp/big$$.asn -v data/bstdt.prt -e data/bstdt.val
+rm -f /tmp/big$$.asn
+
+#now make needed directories if they're absent
+mkdir -p include bin lib build altlib shlib >/dev/null 2>&1
+
+if [ ! -d "network/socks/socks.cstc.4.2" ]; then
+	cd network/socks; zcat socks.cstc.4.2.pre1.tar.Z | tar xf -;
+	rm -rf socks.cstc.4.2; mv socks.cstc.4.2.pre1 socks.cstc.4.2;
+	rm -rf socks.cstc.4.2/rtelnet; rm -rf socks.cstc.4.2/rftp;
+	cd ../..
+fi
+
+if [ ! -d "ncbi/network/encrypt/ripem" ]; then
+	cd network/encrypt; tar xf ripem.tar ripem/rsaref/source;
+	cd ../..
+fi
+
+echo "building the NCBI C toolkit on Solaris/Sparc in 64-bit mode"
+cd build
+dmake -j 3 -f /am/ncbiapdata/scripts/make.master LCL_TARGET=sol TARGET_INCLUDE=include \
+	DBUGEXTRA=-KPIC DBUGEXTRA2=-g COPYBIN=bin CLLIB=cllib all
+
+exit 0

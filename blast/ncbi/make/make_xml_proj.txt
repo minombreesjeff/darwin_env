@@ -1,0 +1,579 @@
+#!c:/perl/bin/perl.exe
+# This script will create the CodeWarrior projects for the C Toolkit Windows build.
+
+require Cwd;
+
+use Win32::OLE;
+
+$build_all = 0;
+#get args
+while ($arg = shift) {
+  if ($arg =~ /\-b/) {
+    $build_all = 1;
+  } else {
+    $project_list = $arg;
+  }
+}
+
+
+#Setup
+#Current working directory should be distrib\make
+$cwd = Cwd::getcwd();
+$cwd =~ s/\//\\/g;
+
+$distrib_root = $cwd;
+$distrib_root =~ s/\\[^\\]*$//;
+
+if (! -d "$distrib_root\\build") {
+  mkdir ("$distrib_root\\build") || die "Unable to make build directory\n";
+}
+if (! -d "$distrib_root\\lib") {
+  mkdir ("$distrib_root\\lib") || die "Unable to make lib directory\n";
+}
+
+#start CodeWarrior
+$CW = Win32::OLE->new("CodeWarrior.CodeWarriorApp");
+die "Unable to get app reference\n" unless $CW;
+
+#Create Projects
+open (PROJECTLIST, "$project_list") || die "Can't open $project_list\n";
+$project_name = "";
+$project = 0;
+while ($thisline = <PROJECTLIST>) {
+  chop $thisline;
+  if ($thisline =~ /(\S+)\s*:\s*/) {
+    $new_project_name = $1;
+    $new_dirs = $';
+    if ($project_name) {
+      # build previous project
+      &build_project_xml ($CW, $project_name, $distrib_root, $build_all,
+                          scalar (@files), @files,
+                          scalar (@includes), @includes, 
+                          scalar (@defines), @defines,
+                          scalar (@libs), @libs,
+                          scalar (@syslibs), @syslibs);
+      @files = ();
+      @includes = ();
+      @defines = ();
+      @libs = ();
+      @syslibs = ();
+    }
+    $project_name = $new_project_name;
+    $dirs = $new_dirs;
+    # create project
+    print "create project $project_name\n";
+  } else {
+    $dirs = $thisline;
+  }
+  @dirlist = split (/;/, $dirs);
+  foreach $dir (@dirlist) {
+    if ($dir =~ /^\s*\-I\s+/) {
+      $paths = $';
+      push (@includes, split (/\s+/, $paths));
+    } elsif ($dir =~ /^\s*\-D\s*/) {
+      $paths = $';
+      push (@defines, split (/\s+/, $paths));
+    } elsif ($dir =~ /^\s*\-L\s*/) {
+      $paths = $';
+      push (@libs, split (/\s+/, $paths));
+    } elsif ($dir =~ /^\s*\-S\s*/) {
+      $paths = $';
+      push (@syslibs, split (/\s+/, $paths));
+    } elsif ($dir =~ /(\S+),\s*/) {
+      $dir_name = $1;
+      $ex_files = $';
+      @ex_files = split (/\s+/, $ex_files);
+      # add this directory to the includes
+      push (@includes, $dir_name);
+      # add all files in directory to project except those listed 
+      $dir_name = "$distrib_root\\$dir_name";
+      push (@files, &dir_to_project ($dir_name, @ex_files));
+    } else {
+      $dir_name = "$distrib_root\\$dir";
+      if (-d $dir_name) {
+        # add this directory to the includes
+        push (@includes, $dir);
+        # add all files in directory to project
+        push (@files, &dir_to_project ($dir_name));
+      } else {
+        # add file to project
+        $file_name = $dir;
+        push (@files, $file_name);
+      }
+    }
+  }      
+}
+close (PROJECTLIST);
+
+if ($project_name) {
+  &build_project_xml ($CW, $project_name, $distrib_root, $build_all,
+                      scalar (@files), @files,
+                      scalar (@includes), @includes, 
+                      scalar (@defines), @defines,
+                      scalar (@libs), @libs,
+                      scalar (@syslibs), @syslibs);
+}
+
+sub project_file_from_project_name
+{
+  my ($distrib_root) = shift (@_);
+  my ($project_name) = shift (@_);
+  my ($project_file) = "";
+  my ($project_dir);
+
+  if ($project_name =~ /\.lib/) {
+    $project_dir = "$distrib_root\\lib";
+  } else {
+    $project_dir = "$distrib_root\\build";
+  }
+  $project_file = $project_name;
+  #truncate extension
+  $project_file =~ s/\..*$//;
+  $project_file = "$project_dir\\$project_file.mcp";
+  return $project_file;
+}
+
+sub build_project_xml
+{
+  my ($CW) = shift (@_);
+  my ($project_name) = shift (@_);
+  my ($distrib_root) = shift (@_);
+  my ($build_all) = shift (@_);
+  my ($num_files) = shift (@_);
+  my (@files) = splice (@_, 0, $num_files);
+  my ($num_includes) = shift (@_);
+  my (@includes) = splice (@_, 0, $num_includes);
+  my ($num_defines) = shift (@_);
+  my (@defines) = splice (@_, 0, $num_defines);
+  my ($num_libs) = shift (@_);
+  my (@libs) = splice (@_, 0, $num_libs);
+  my ($num_syslibs) = shift (@_);
+  my (@syslibs) = splice (@_, 0, $num_syslibs);
+  my ($project_file) = &project_file_from_project_name ($distrib_root, $project_name);
+  my ($proj_xml) = $project_file . ".xml";
+  my ($stationery_file);
+  my ($thisline);
+  my ($project);
+  my ($messages);
+
+  print "$project_name: $num_files files, $num_includes includes, $num_defines defines, $num_libs libs $num_syslibs syslibs\n";
+
+  if (-f $project_file) {
+    print "Project already exists\n";
+    if ($build_all) {
+      $project = $CW->OpenProject ($project_file, true, 0, 0);
+      if (! $project) {
+        die "Unable to open $project_file\n";
+      }
+    }
+  } else {
+    if ($project_name =~ /\.lib/) {
+      $stationery_file = "$distrib_root\\link\\winmet\\LibraryStationery\\LibraryStationery.mcp.xml";
+    } else {
+      $stationery_file = "$distrib_root\\link\\winmet\\ApplicationStationery\\GUIAppDefaults.mcp.xml";
+    }
+
+    open (XML_IN, $stationery_file) || die "Can't open $stationery_file\n";
+    open (XML_OUT, ">$proj_xml") || die "Can't open $proj_xml\n";
+    $thisline = &copy_to_replace_point();
+    while ($thisline) {
+      if (&line_has_setting_name($thisline, "UserSearchPaths")) {
+        &write_xml_user_paths (@includes);
+      } elsif (&line_has_setting_name ($thisline, "C_CPP_Preprocessor_PrefixText")) {
+        &write_prefix_text (@defines);
+      } elsif ($thisline =~ /\<FILELIST\>/) {
+        &write_file_text ("Debug", scalar(@files), @files,
+                        scalar (@libs), @libs, scalar (@syslibs), @syslibs);
+      } elsif ($thisline =~ /\<GROUPLIST\>/) {
+        if ($project_name =~ /\.lib/) {
+          @targets = ("Win32 x86 DLL Debug");
+        } else {
+          @targets = ("Debug Win32 x86");
+        }
+        &write_group_list (scalar (@targets), @targets,
+                           scalar (@files), @files,
+                           scalar (@libs), @libs,
+                           scalar (@syslibs), @syslibs);
+      }
+
+      $thisline = &skip_to_continue ($thisline);
+      print XML_OUT $thisline;
+      $thisline = &copy_to_replace_point($project_name);
+    }
+    close (XML_OUT);
+    close (XML_IN);
+
+    $project = $CW->ImportProject ($proj_xml, $project_file, true);
+    if (! $project) {
+      die "Unable to create $project_file\n";
+    }
+  }
+  if ($project) {
+    $messages = &build_debug ($project);
+    &print_build_messages ($messages);
+    $project->Close();
+  }
+}
+
+sub build_debug
+{
+  my ($project) = shift (@_);
+  my ($targets);
+  my ($num_targets);
+  my ($debug_target);
+  my ($messages);
+
+  $targets = $project->Targets();
+  if (! $targets) {
+    die "Project has no targets\n";
+  }
+  $num_targets = $targets->Count();
+  if ($num_targets == 0) {
+    die "Project has no targets\n";
+  }
+  $debug_target = $targets->Item(0);
+  $messages = $debug_target->BuildAndWaitToComplete();
+  return $messages;    
+}
+
+sub print_build_messages
+{
+  my ($messages) = shift (@_);
+  my ($errors);
+  my ($numerrors);
+  my ($warnings);
+  my ($num_warnings);
+  my ($informations);
+  my ($numinformations);
+  my ($definitions);
+  my ($numdefinitions);
+
+  $errors = $messages->Errors();
+  $numerrors = $messages->ErrorCount();
+  $warnings = $messages->Warnings();
+  $numwarnings = $messages->WarningCount();
+  $informations = $messages->Informations();
+  $numinformations = $messages->InformationCount();
+  $definitions = $messages->Definitions();
+  $numdefinitions = $messages->DefinitionCount();
+
+  print "$numerrors errors, $numwarnings warnings\n";
+  if ($numerrors > 0) {
+    die "Encountered errors\n";
+  }
+}
+
+sub copy_to_replace_point
+{
+  my ($project_name) = shift (@_);
+  my ($thisline);
+
+  while ($thisline = <XML_IN>) {
+    if (&line_has_setting_name ($thisline, "UserSearchPaths")
+        || &line_has_setting_name ($thisline, "C_CPP_Preprocessor_PrefixText")
+        || $thisline =~ /\<FILELIST\>/
+        || $thisline =~ /\<GROUPLIST\>/) {
+      return $thisline;
+    } elsif (&line_has_setting_name ($thisline, "AlwaysSearchUserPaths")) {
+      $thisline =~ s/false/true/;
+      print XML_OUT $thisline;
+    } elsif (&line_has_setting_name ($thisline, "SourceRelativeIncludes")) {
+      $thisline =~ s/false/true/;
+      print XML_OUT $thisline;
+    } elsif (&line_has_setting_name ($thisline, "MWProject_X86_outfile")) {
+      $thisline =~ s/\<VALUE\>.*\<\/VALUE\>/\<VALUE\>$project_name\<\/VALUE\>/;
+      print XML_OUT $thisline;
+    } else {
+      print XML_OUT $thisline;
+    }
+  }
+  return 0;
+}
+
+sub skip_to_continue
+{
+  my ($skip_type) = shift (@_);
+  my ($thisline);
+
+  if (&line_has_setting_name ($skip_type, "UserSearchPaths")) {
+    while ($thisline = <XML_IN>) {
+      if (&line_has_setting_name ($thisline, "SystemSearchPaths")) {
+        return $thisline;
+      }
+    }
+  } elsif ($skip_type =~ /\<FILELIST\>/) {
+    while ($thisline = <XML_IN>) {
+      if ($thisline =~ /\<\/LINKORDER\>/) {
+        $thisline = <XML_IN>;
+        return $thisline;
+      }
+    }
+  } elsif ($skip_type =~ /\<GROUPLIST\>/) {
+    while ($thisline = <XML_IN>) {
+      if ($thisline =~ /\<\/GROUPLIST\>/) {
+        $thisline = <XML_IN>;
+        return $thisline;
+      }
+    }    
+  } else {
+    $thisline = <XML_IN>;
+    return $thisline;
+  }
+}
+
+sub line_has_setting_name
+{
+  my ($thisline) = shift (@_);
+  my ($setting_name) = shift (@_);
+  my ($this_name);
+
+  if ($thisline =~ /\<SETTING\>\<NAME\>([^\<]*)\<\/NAME\>/) {
+    $this_name = $1;
+    if ($this_name eq $setting_name) {
+      return 1;
+    } else {
+      return 0;
+    }
+  } else {
+    return 0;
+  }
+}
+
+sub write_xml_user_paths
+{
+  my (@includes) = @_;
+  my ($path);
+  print XML_OUT "                <SETTING><NAME>UserSearchPaths</NAME>\n";
+  &write_one_xml_user_path ("");
+  &write_one_xml_user_path ("..");
+  foreach $path (@includes) {
+    &write_one_xml_user_path ("..\\$path");
+  }
+  print XML_OUT "                </SETTING>\n";
+}
+
+sub write_one_xml_user_path
+{
+  my ($path) = shift (@_);
+
+  print XML_OUT "                    <SETTING>\n";
+  print XML_OUT "                        <SETTING><NAME>SearchPath</NAME>\n";
+  print XML_OUT "                            <SETTING><NAME>Path</NAME><VALUE>$path</VALUE></SETTING>\n";
+  print XML_OUT "                            <SETTING><NAME>PathFormat</NAME><VALUE>Windows</VALUE></SETTING>\n";
+  print XML_OUT "                            <SETTING><NAME>PathRoot</NAME><VALUE>Project</VALUE></SETTING>\n";
+  print XML_OUT "                        </SETTING>\n";
+  print XML_OUT "                        <SETTING><NAME>Recursive</NAME><VALUE>true</VALUE></SETTING>\n";
+  print XML_OUT "                        <SETTING><NAME>FrameworkPath</NAME><VALUE>false</VALUE></SETTING>\n";
+  print XML_OUT "                        <SETTING><NAME>HostFlags</NAME><VALUE>All</VALUE></SETTING>\n";
+  print XML_OUT "                    </SETTING>\n";
+}
+
+sub write_prefix_text
+{
+  my (@defines) = @_;
+  my ($define);
+  print XML_OUT "                <SETTING><NAME>C_CPP_Preprocessor_PrefixText</NAME><VALUE>";
+  foreach $define (@defines) {
+    print XML_OUT "#define $define\n";
+  }
+  print XML_OUT "</VALUE></SETTING>\n";
+
+}
+
+sub write_file_text
+{
+  my ($file_flags) = shift (@_);
+  my ($num_files) = shift (@_);
+  my (@files) = splice (@_, 0, $num_files);
+  my ($num_libs) = shift (@_);
+  my (@libs) = splice (@_, 0, $num_libs);
+  my ($num_syslibs) = shift (@_);
+  my (@syslibs) = splice (@_, 0, $num_syslibs);
+  my ($file, $lib, $syslib, $libproj);
+  print XML_OUT "            <FILELIST>\n";
+  foreach $file (@files) {
+    &write_one_file_text ($file, $file_flags);
+  }
+  foreach $lib (@libs) {
+    $libproj = $lib;
+    $libproj =~ s/\.lib/\.mcp/;
+    &write_one_file_text ($libproj, $file_flags);
+    if ($file_flags) {
+      &write_one_file_text ($lib, "$file_flags, TargetOutputFile");
+    } else {
+      &write_one_file_text ($lib, "TargetOutputFile");
+    }
+  }
+  foreach $syslib (@syslibs) {
+    &write_one_file_text ($syslib, $file_flags);
+  }    
+  print XML_OUT "            </FILELIST>\n";
+
+  print XML_OUT "            <LINKORDER>\n";
+  foreach $file (@files) {
+    &write_one_file_link ($file);
+  }
+  foreach $lib (@libs) {
+    &write_one_file_link ($lib);
+  }
+  foreach $syslib (@syslibs) {
+    &write_one_file_link ($syslib);
+  }
+  print XML_OUT "            </LINKORDER>\n";
+  if ($num_libs) {
+    &write_subprojects ("WIN32 x86 DLL Debug", @libs);
+  }
+}
+
+sub write_one_file_text
+{
+  my ($file) = shift (@_);
+  my ($file_flags) = shift (@_);
+  my ($filekind);
+
+  if ($file =~ /\.lib/) {
+    $filekind = "Library";
+  } elsif ($file =~ /\.mcp/) {
+    $filekind = "Project";
+  } else {
+    $filekind = "Text";
+  }
+  print XML_OUT "                <FILE>\n";
+  print XML_OUT "                    <PATHTYPE>Name</PATHTYPE>\n";
+  print XML_OUT "                    <PATH>$file</PATH>\n";
+  print XML_OUT "                    <PATHFORMAT>Windows</PATHFORMAT>\n";
+  print XML_OUT "                    <FILEKIND>$filekind</FILEKIND>\n";
+  print XML_OUT "                    <FILEFLAGS>$file_flags</FILEFLAGS>\n";
+  print XML_OUT "                </FILE>\n";
+}
+
+sub write_one_file_link
+{
+  my ($file) = shift (@_);
+  my ($target_name) = shift (@_);
+  print XML_OUT "                <FILEREF>\n";
+  if ($target_name) {
+    print XML_OUT "            <TARGETNAME>$target_name</TARGETNAME>\n";
+  }
+  print XML_OUT "                    <PATHTYPE>Name</PATHTYPE>\n";
+  print XML_OUT "                    <PATH>$file</PATH>\n";
+  print XML_OUT "                    <PATHFORMAT>Windows</PATHFORMAT>\n";
+  print XML_OUT "                </FILEREF>\n";
+}
+
+sub write_subprojects
+{
+  my ($target) = shift (@_);
+  my (@libs) = @_;
+  my ($lib);
+  
+  print XML_OUT "            <SUBPROJECTLIST>\n";
+  foreach $lib (@libs) {
+    &write_one_subproject($lib, $target);
+  }
+  print XML_OUT "            </SUBPROJECTLIST>\n";
+}
+
+sub write_one_subproject
+{
+  my ($lib) = shift (@_);
+  my ($target) = shift (@_);
+  my ($libproj) = $lib;
+
+  $libproj =~ s/\.lib/\.mcp/;
+
+  print XML_OUT "                <SUBPROJECT>\n";
+  print XML_OUT "                    <FILEREF>\n";
+  print XML_OUT "                        <PATHTYPE>Name</PATHTYPE>\n";
+  print XML_OUT "                        <PATH>$libproj</PATH>\n";
+  print XML_OUT "                        <PATHFORMAT>Windows</PATHFORMAT>\n";
+  print XML_OUT "                    </FILEREF>\n";
+  print XML_OUT "                    <SUBPROJECTTARGETLIST>\n";
+  print XML_OUT "                        <SUBPROJECTTARGET>\n";
+  print XML_OUT "                            <TARGETNAME>$target</TARGETNAME>\n";
+  print XML_OUT "                            <ATTRIBUTES>LinkAgainst</ATTRIBUTES>\n";
+  print XML_OUT "                            <FILEREF>\n";
+  print XML_OUT "                                <PATHTYPE>Name</PATHTYPE>\n";
+  print XML_OUT "                                <PATH>$lib</PATH>\n";
+  print XML_OUT "                                <PATHFORMAT>Windows</PATHFORMAT>\n";
+  print XML_OUT "                            </FILEREF>\n";
+  print XML_OUT "                        </SUBPROJECTTARGET>\n";
+  print XML_OUT "                    </SUBPROJECTTARGETLIST>\n";
+  print XML_OUT "                </SUBPROJECT>\n";
+}
+
+sub write_group_list
+{
+  my ($num_targets) = shift (@_);
+  my (@targets) = splice (@_, 0, $num_targets);
+  my ($num_files) = shift (@_);
+  my (@files) = splice (@_, 0, $num_files);
+  my ($num_libs) = shift (@_);
+  my (@libs) = splice (@_, 0, $num_libs);
+  my ($num_syslibs) = shift (@_);
+  my (@syslibs) = splice (@_, 0, $num_syslibs);
+  my ($target, $file, $lib, $libproj, $syslib);
+
+  print XML_OUT "    <GROUPLIST>\n";
+  print XML_OUT "        <GROUP><NAME>Source</NAME>\n";
+  print XML_OUT "        </GROUP>\n";
+
+  foreach $target (@targets) {
+    foreach $file (@files) {
+      &write_one_file_link ($file, $target);
+    }
+    foreach $lib (@libs) {
+      $libproj = $lib;
+      $libproj =~ s/\.lib/\.mcp/;
+      &write_one_file_link ($libproj, $target);
+      &write_one_file_link ($lib, $target);
+    }
+    foreach $syslib (@syslibs) {
+      &write_one_file_link ($syslib, $target);
+    }   
+  }
+  print XML_OUT "    </GROUPLIST>\n";
+}  
+
+sub is_dir_to_skip
+{
+  my ($entry) = shift (@_);
+  my (@skip_files) = @_;
+  my ($badfile);
+
+  foreach $badfile (@skip_files) {
+    if ($badfile eq $entry) {
+      return 1;
+    }
+  }    
+  return 0;
+}
+
+sub dir_to_project
+{
+  my ($entry) = shift (@_);
+  my (@skip_files) = @_;
+  my (@files) = ();
+  my (@subdirs) = ();
+  my ($thisentry);
+
+  if (! -d $entry) {
+    print "$entry is not a directory\n";
+    return;
+  }
+  if (-s $entry) {
+    print "$entry exists\n";
+  }
+  opendir (MYDIR, $entry) || die "Can't open $entry ($!)\n";
+  while ($thisentry = readdir(MYDIR)) {
+    if (&is_dir_to_skip ($thisentry, @skip_files)) {
+      # do nothing
+    } elsif (-d $thisentry) {
+      # do nothing
+    } elsif ($thisentry =~ /\.c$/) {
+      push(@files, $thisentry);
+    }
+  }
+  closedir (MYDIR);
+  return @files;
+}

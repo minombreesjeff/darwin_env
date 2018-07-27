@@ -1,0 +1,6 @@
+#include <windows.h>
+#include "ncbirc.h"
+
+ICO_PROGRAM  ICON ncbilogo.ico
+ICO_NCBILOGO ICON ncbilogo.ico
+

@@ -1,0 +1,1 @@
+../tools/ncbisami.h

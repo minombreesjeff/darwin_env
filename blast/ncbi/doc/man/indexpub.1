@@ -1,0 +1,30 @@
+.TH INDEXPUB 1 2001-10-05 NCBI "NCBI Tools User's Manual"
+.SH NAME
+indexpub \- index an ASN.1 Pub-set by Medline UID
+.SH SYNOPSIS
+.B indexpub
+[\|\fB\-\fP\|]
+[\|\fB\-b\ F\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-t\fP\ \fIfilename\fP\|]
+.SH DESCRIPTION
+\fBindexpub\fP indexes an ASN.1 Pub-set by Medline UID for use with
+\fBgetpub\fP(1).
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-b\ F\fP
+Input data is ASCII text, not binary.
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Input data (default = \fBmedline.val\fP)
+.TP
+\fB\-t\fP\ \fIfilename\fP
+Output index table (default = \fBmedline.idx\fP)
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.BR getpub (1)

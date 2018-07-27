@@ -1,0 +1,50 @@
+.TH ASN2ASN 1 2002-08-30 NCBI "NCBI Tools User's Manual"
+.SH NAME
+asn2asn \- convert NCBI data between text and binary ASN.1
+.SH SYNOPSIS
+.B asn2asn
+[\|\fB\-\fP\|]
+[\|\fB\-b\fP\|]
+[\|\fB\-e\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIfilename\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-s\fP\|]
+[\|\fB\-x\fP\|]
+.SH DESCRIPTION
+\fBasn2asn\fP converts data in NCBI's ASN.1 format between binary and
+text subformats, or to isomorphic XML.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-b\fP
+Input asnfile in binary mode
+.TP
+\fB\-e\fP
+Input is a Seq-entry
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Read input from \fIfilename\fP rather than stdin
+.TP
+\fB\-l\fP\ \fIfilename\fP
+Log errors to \fIfilename\fP
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Write output to \fIfilename\fP rather than stdout
+.TP
+\fB\-s\fP
+Output asnfile in binary mode
+.TP
+\fB\-x\fP
+Output XML instead of ASN.1
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.ad l
+.BR asn2ff (1),
+.BR asn2gb (1),
+.BR asn2xml (1),
+.BR asndhuff (1)

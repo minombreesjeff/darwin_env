@@ -1,0 +1,27 @@
+--
+--********************************************************************
+--
+--  Spell checker for MEDLINE
+--  Jonathan Epstein
+--  June 1994
+--
+--
+--********************************************************************
+
+NCBI-SPELL DEFINITIONS ::=
+BEGIN
+
+Spell-request ::= CHOICE {
+    init NULL ,
+    spelltext VisibleString ,
+    fini NULL
+}
+
+Spell-response ::= CHOICE {
+    error INTEGER ,
+    init NULL ,
+    spelltext SEQUENCE OF VisibleString ,
+    fini NULL
+}
+
+END

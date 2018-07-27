@@ -1,0 +1,130 @@
+.TH ASNTOOL 1 2001-12-28 NCBI "NCBI Tools User's Manual"
+.SH NAME
+asntool \- process ASN.1 module specifications
+.SH SYNOPSIS
+.B asntool
+[\|\fB\-\fP\|]
+[\|\fB\-B\fP\ \fIfilename\fP\|]
+[\|\fB\-D\fP\ \fIN\fP\|]
+[\|\fB\-G\fP\|]
+[\|\fB\-I\fP\ \fIstr\fP\|]
+[\|\fB\-J\fP\ \fItype\fP\|]
+[\|\fB\-K\fP\ \fIstr\fP\|]
+[\|\fB\-L\fP\ \fIstr\fP\|]
+[\|\fB\-M\fP\ \fIfilename,...\fP\|]
+[\|\fB\-P\fP\ \fIstr\fP\|]
+[\|\fB\-S\fP\ \fIfilename\fP\|]
+[\|\fB\-T\fP\ \fIfilename\fP\|]
+[\|\fB\-X\fP\ \fIfilename\fP\|]
+[\|\fB\-Z\fP\|]
+[\|\fB\-b\fP\ \fIN\fP\|]
+[\|\fB\-d\fP\ \fIfilename\fP\|]
+[\|\fB\-e\fP\ \fIfilename\fP\|]
+[\|\fB\-f\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIfilename\fP\|]
+\fB\-m\fP\ \fIfilename\fP
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\fP\ \fIfilename\fP\|]
+[\|\fB\-t\fP\ \fIstr\fP\|]
+[\|\fB\-v\fP\ \fIfilename\fP\|]
+[\|\fB\-w\fP\ \fIN\fP\|]
+[\|\fB\-x\fP\ \fIfilename\fP\|]
+.SH DESCRIPTION
+\fBasntool\fP reads, validates, and displays ASN.1 module specifications.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-B\fP\ \fIfilename\fP
+Generate objects and code in files named \fIfilename\fP.*
+.TP
+\fB\-D\fP\ \fIN\fP
+Debugging level for code generation:
+.RS
+.PD 0
+.IP 0
+No debugging (default)
+.IP 1
+Shallow debugging
+.IP 2
+Deep debugging
+.IP 3-9
+Same as 2
+.PD
+.RE
+.TP
+\fB\-G\fP
+Generate object loader .c and .h files
+.TP
+\fB\-I\fP\ \fIstr\fP
+Put "#include \fIstr\fP" in generated .c file
+.TP
+\fB\-J\fP\ \fItype\fP
+Register type \fItype\fP with object manager
+.TP
+\fB\-K\fP\ \fIstr\fP
+In generated .c, force name of #included asn header to \fIstr\fP
+.TP
+\fB\-L\fP\ \fIstr\fP
+Label registered type as \fIstr\fP
+.TP
+\fB\-M\fP\ \fIfilename,...\fP
+Search the ASN.1 modules in \fIfilename,...\fP for external references
+.TP
+\fB\-P\fP\ \fIstr\fP
+XML module prefix for \fBDOCTYPE\fP
+.TP
+\fB\-S\fP\ \fIfilename\fP
+Send debugging output to \fIfilename\fP rather than stderr
+.TP
+\fB\-T\fP\ \fIfilename\fP
+Dump ASN.1 tree to \fIfilename\fP
+.TP
+\fB\-X\fP\ \fIfilename\fP
+Write XML DTD to \fIfilename\fP.  If \fIfilename\fP is "m", print each
+module to a separate file.
+.TP
+\fB\-Z\fP
+Bit twiddle for optional zero value base slots
+.TP
+\fB\-b\fP\ \fIN\fP
+Use \fIN\fP-byte buffers (default = 1024; anything between 512 and
+10000 is legal)
+.TP
+\fB\-d\fP\ \fIfilename\fP
+Read binary values from \fIfilename\fP (requires \fB\-t\fP)
+.TP
+\fB\-e\fP\ \fIfilename\fP
+Write binary values to \fIfilename\fP
+.TP
+\fB\-f\fP\ \fIfilename\fP
+Write ASN.1 module to \fIfilename\fP
+.TP
+\fB\-l\fP\ \fIfilename\fP
+Write ASN.1 loader to \fIfilename\fP
+.TP
+\fB\-m\fP\ \fIfilename\fP
+Read ASN.1 module from \fIfilename\fP
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Write header to \fIfilename\fP
+.TP
+\fB\-p\fP\ \fIfilename\fP
+Write print values to \fIfilename\fP
+.TP
+\fB\-t\fP\ \fIstr\fP
+Expect binary values to have type \fIstr\fP
+.TP
+\fB\-v\fP\ \fIfilename\fP
+Read print values from \fIfilename\fP
+.TP
+\fB\-w\fP\ \fIN\fP
+Limit values in #defines to \fIN\fP bits (default = 31; anything
+between 31 and 128 is legal)
+.TP
+\fB\-x\fP\ \fIfilename\fP
+Write XML data to \fIfilename\fP
+.SH AUTHOR
+The National Center for Biotechnology Information.

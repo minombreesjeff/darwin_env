@@ -1,0 +1,96 @@
+.TH BLASTCLUST 1 2002-08-30 NCBI "NCBI Tools User's Manual"
+.SH NAME
+blastclust \- BLAST score-based single-linkage clustering
+.SH SYNOPSIS
+.B blastclust
+[\|\fB\-\fP\|]
+[\|\fB\-C\fP\|]
+[\|\fB\-L\fP\ \fIX\fP\|]
+[\|\fB\-S\fP\ \fIX\fP\|]
+[\|\fB\-W\fP\ \fIN\fP\|]
+[\|\fB\-a\fP\ \fIN\fP\|]
+[\|\fB\-b\ F\fP\|]
+[\|\fB\-c\fP\ \fIfilename\fP\|]
+[\|\fB\-d\fP\ \fIfilename\fP\|]
+[\|\fB\-e\ F\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIfilename\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-p\ F\fP\|]
+[\|\fB\-r\fP\ \fIfilename\fP\|]
+[\|\fB\-s\fP\ \fIfilename\fP\|]
+[\|\fB\-v\fP\ [\|\fIfilename\fP\|]\|]
+.SH DESCRIPTION
+.PP
+\fBblastclust\fP automatically and systematically clusters protein or
+DNA sequences based on pairwise matches found using the BLAST
+algorithm in case of proteins or Mega BLAST algorithm for DNA. In the
+latter case a single Mega BLAST search is performed for all the
+sequences combined against a database created from the same
+sequences. \fBblastclust\fP finds pairs of sequences that have
+statistically significant matches and clusters them using
+single-linkage clustering.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-C\fP
+Complete unfinished clustering
+.TP
+\fB\-L\fP\ \fIX\fP
+Length coverage threshold (default = 0.9)
+.TP
+\fB\-S\fP\ \fIX\fP
+Score coverage threshold (bit score / length if < 3.0, percentage of
+identities otherwise; default = 1.75)
+.TP
+\fB\-W\fP\ \fIN\fP
+Use words of size \fIN\fP (length of best perfect match; zero invokes
+default behavior: 3 for proteins, 32 for nucleotides)
+.TP
+\fB\-a\fP\ \fIN\fP
+Number of CPU's to use (default = 1)
+.TP
+\fB\-b\ F\fP
+Do not require coverage on both neighbours
+.TP
+\fB\-c\fP\ \fIfilename\fP
+Read advanced options from configuration file \fIfilename\fP
+.TP
+\fB\-d\fP\ \fIfilename\fP
+Input as a database
+.TP
+\fB\-e\ F\fP
+Disable id parsing in database formatting
+.TP
+\fB\-i\fP\ \fIfilename\fP
+FASTA input file (program will format the database and remove files in
+the end; default = stdin)
+.TP
+\fB\-l\fP\ \fIfilename\fP
+Restrict reclustering to id list in \fIfilename\fP
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Output file for list of clusters (default = stdout)
+.TP
+\fB\-p\ F\fP
+Input is nucleotides, not proteins.
+.TP
+\fB\-r\fP\ \fIfilename\fP
+Restore neighbors for reclustering from \fIfilename\fP
+.TP
+\fB\-s\fP\ \fIfilename\fP
+Save all neighbours to \fIfilename\fP
+.TP
+\fB\-v\fP\ [\|\fIfilename\fP\|]
+Print verbose progress messages (to \fIfilename\fP)
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.ad l
+.BR blast (1),
+.BR formatdb (1),
+blastclust.txt,
+<http://www.ncbi.nlm.nih.gov/BLAST/>

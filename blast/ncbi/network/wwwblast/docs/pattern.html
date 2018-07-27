@@ -1,0 +1,139 @@
+<HTML>
+<TITLE>PHI Blast Pattern description</TITLE>
+<BODY BGCOLOR="#FFFFFF" LINK="#0000FF" VLINK="#660099" ALINK="#660099">
+<h2>Rules for pattern syntax for PHI-BLAST.</h2>
+
+The syntax for patterns in PHI-BLAST follows the conventions
+of PROSITE. When using the stand-alone program, it
+is permissible to have multiple patterns in a file separated
+by a blank line between patterns. When using the Web-page
+only one pattern is allowed per query.
+<P>
+Valid protein characters for PHI-BLAST patterns:
+<PRE>
+    ABCDEFGHIKLMNPQRSTVWXYZU
+</PRE>
+Valid DNA characters for PHI-BLAST patterns:
+<PRE>
+    ACGT
+</PRE>
+Other useful delimiters:
+<PRE>
+    [ ]    means any one of the characters enclosed in the brackets
+        e.g., [LFYT] means one occurrence of L or F or Y or T
+    -      means nothing (this is a spacer character used by PROSITE)
+    x with nothing following means any residue
+    x(5)  means 5 positions in which any residue is allowed (and similarly for any other
+          single number in parentheses after x)
+    x(2,4) means 2 to 4 positions where any residue is allowed,
+           and similarly for any other two numbers separated by a comma;
+           the first number should be < the second number.           
+    >      can occur only at the end of a pattern and means nothing
+           it may occur before a period
+           (another spacer used by PROSITE)
+
+    .      may be used at the end of the pattern and means nothing
+</PRE>
+When using the stand-alone program, the pattern should
+be in a file, with the first line starting:
+<PRE>
+ ID
+</PRE>
+followed by 2 spaces and a text string givign the pattern a name.
+<P>
+There should also be a line starting
+<PRE>
+ PA
+</PRE>
+followed by 2 spaces followed by the pattern description.
+<P>
+All other PROSITE codes in the first two columns are allowed,
+but only the HI code, described below is relevant to PHI-BLAST.
+<P>
+Here is an example from PROSITE.
+<PRE>
+ID   CNMP_BINDING_2; PATTERN.
+AC   PS00889;
+DT   OCT-1993 (CREATED); OCT-1993 (DATA UPDATE); NOV-1995 (INFO UPDATE).
+DE   Cyclic nucleotide-binding domain signature 2.
+PA   [LIVMF]-G-E-x-[GAS]-[LIVM]-x(5,11)-R-[STAQ]-A-x-[LIVMA]-x-[STACV].
+NR   /RELEASE=32,49340;
+NR   /TOTAL=57(36); /POSITIVE=57(36); /UNKNOWN=0(0); /FALSE_POS=0(0);
+NR   /FALSE_NEG=1; /PARTIAL=1;
+CC   /TAXO-RANGE=??EP?; /MAX-REPEAT=2;
+</PRE>
+The line starting
+<PRE>
+    ID
+</PRE>
+gives the pattern a name.
+The lines starting
+<PRE>
+     AC, DT, DE, NR, NR, CC
+</PRE>
+are relevant to PROSITE users, but irrelevant to PHI-BLAST.
+These lines are tolerated, but ignored by PHI-BLAST.
+<P>
+The line starting
+<PRE>
+     PA
+describes the pattern as:
+      one of LIVMF
+followed by
+      G
+followed by
+      E
+followed by 
+      any single character
+followed by
+      one of GAS
+followed by
+      one of LIVM
+followed by 
+      any 5 to 11 characters
+followed by
+      R
+followed by
+      one of STAQ
+followed by
+      A
+followed by
+      any single character
+followed by
+      one of LIVMA
+followed by
+      any single character
+followed by 
+      one of STACV
+</PRE>
+In this case the pattern ends with a period.
+It can end with nothing after the last specifying symbol
+or any number of > signs or periods or combination thereof.
+<P>
+Here is another example, illustrating the use of an HI line.
+<PRE>
+ID    ER_TARGET; PATTERN.
+PA  [KRHQSA]-[DENQ]-E-L>.
+HI (19 22)
+HI (201 204)
+</PRE>
+In this example, the HI lines specify that the pattern
+occurs twice, once from positions 19 through 22 in the
+sequence and once from positions 201 through 204 in the
+sequence.
+These specifications are relevant when stand-alone PHI-BLAST is
+used with the "seedp"
+option, in which the interesting occurrences of the pattern
+in the sequence are specified. In this case the
+HI lines specify which occurrence(s) of the pattern
+should be used to find good alignments.
+<P>
+In general, the seedp option is more useful than the
+standard patternp option ONLY when the
+pattern occurs K > 1 times in the sequence AND
+the user is interested in matching to J < K of those
+occurrences.
+Then using the HI lines enables the user to specify which
+occurrences are of interest.
+</BODY>
+</HTML>

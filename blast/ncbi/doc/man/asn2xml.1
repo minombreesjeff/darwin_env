@@ -1,0 +1,50 @@
+.TH ASN2XML 1 2003-07-12 NCBI "NCBI Tools User's Manual"
+.SH NAME
+asn2xml \- translate biological data from ASN.1 to XML
+.SH SYNOPSIS
+.B asn2xml
+[\|\fB\-\fP\|]
+[\|\fB\-b\ F\fP\|]
+[\|\fB\-e\fP\|]
+[\|\fB\-i\fP\ \fIfilename\fP\|]
+[\|\fB\-l\fP\ \fIfilename\fP\|]
+[\|\fB\-o\fP\ \fIfilename\fP\|]
+[\|\fB\-s\fP\|]
+.SH DESCRIPTION
+\fBasn2xml\fP converts an NCBI Seq-entry or Bioseq-set from ASN.1
+format to an isomorphic XML representation.  It differs from
+\fBasn2asn \-x\fP in that it converts packed sequence data back into
+human-readable ASCII text.
+.SH OPTIONS
+A summary of options is included below.
+.TP
+\fB\-\fP
+Print usage message
+.TP
+\fB\-b\ F\fP
+Input asnfile in text mode
+.TP
+\fB\-e\fP
+Input is a Seq-entry
+.TP
+\fB\-i\fP\ \fIfilename\fP
+Read ASN.1 from \fIfilename\fP (default is stdin)
+.TP
+\fB\-l\fP\ \fIfilename\fP
+Log errors to \fIfilename\fP (default is stderr)
+.TP
+\fB\-o\fP\ \fIfilename\fP
+Write XML to \fIfilename\fP (default is stdout)
+.TP
+\fB\-s\fP
+Input is a Seq-submit
+.SH AUTHOR
+The National Center for Biotechnology Information.
+.SH SEE ALSO
+.ad l
+.BR asn2asn (1),
+.BR asn2ff (1),
+.BR asn2gb (1),
+.BR asndhuff (1),
+README.asn2xml,
+ncbixml.txt

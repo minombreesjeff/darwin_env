@@ -1,0 +1,561 @@
+<html>
+<head>
+<!-- put your site name between the title tags and uncomment
+-->
+  <title>NCBI Dispatcher Parameters</title>
+
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<!-- if you use the following meta tags, uncomment them.
+-->
+  <META NAME="keywords" CONTENT="dispatcher toolkit">
+  <META NAME="description" CONTENT="NCBI dispatcher">
+  <link rel="stylesheet" href="http://www.ncbi.nlm.nih.gov/corehtml/ncbi2.css">
+</head>
+
+
+<body bgcolor="#FFFFFF" background="http://www.ncbi.nlm.nih.gov/corehtml/bkgd.gif" text="#000000" link="#CC6600" vlink="#CC6600">
+<!--  the header   --> 
+<table border="0" width="600" cellspacing="0" cellpadding="0">
+  <tr> 
+    <td width="140"><a href="http://www.ncbi.nlm.nih.gov"> <img src="http://www.ncbi.nlm.nih.gov/corehtml/left.GIF" width="130" height="45" border="0"></a></td>
+    <td width="360" class="head1" valign="BOTTOM"> <span class="H1">Network Configuration</span></td>
+    <td width="100" valign="BOTTOM"></td>
+  </tr>
+</table>
+<!--  the quicklinks bar   --> 
+<table CLASS="TEXT" border="0" width="600" cellspacing="0" cellpadding="3" bgcolor="#000000">
+  <tr CLASS="TEXT"  align="CENTER"> 
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/PubMed/" class="BAR">PubMed</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/Entrez/" class="BAR">Entrez</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/BLAST/" class="BAR">BLAST</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/omim/" class="BAR">OMIM</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/Taxonomy/taxonomyhome.html"  class="BAR">Taxonomy</a></td>
+    <td width="100"><a href="http://www.ncbi.nlm.nih.gov/Structure/" class="BAR">Structure</a></td>
+  </tr>
+</table>
+<!--  the contents   --> 
+<table border="0" width="600" cellspacing="0" cellpadding="0">
+  <tr valign="TOP"> <!--  left column   --> 
+    <td width="125"> 
+   <img src="http://www.ncbi.nlm.nih.gov/corehtml/spacer10.GIF" width="125" height="1" border="0">
+   <p>
+   <a href="#Switch" class="GUTTER">The Switch</a>
+   <p>
+   <a href="#OldDispatcher" class="GUTTER">Old Dispatcher</a>
+   <p>
+   <a href="#NewDispatcher" class="GUTTER">New Dispatcher</a>
+   <p>
+   <a href="#Firewalling" class="GUTTER">Firewalling</a>
+   <p>
+   <a href="#WorkAround" class="GUTTER">Work Arounds</a>
+   <p>
+   <a href="#Addendum" class="GUTTER">Additional Info</a>
+   </td>
+    <!-- extra column to force things over the gif border --> 
+    <td width="15"><img src="http://www.ncbi.nlm.nih.gov/corehtml/spacer10.GIF" width="15" height="1" border="0"> </td>
+    <!-- right content column  --> 
+    <td width="460"> 
+      <p>&nbsp;</p>
+
+
+<h1>NCBI Dispatcher Parameters</h1>
+
+<p>
+There are two pieces of code in C toolkit that allow an application to contact
+NCBI dispatchers, the new and the old one. The old dispatcher is being phased out
+and is no longer supported at NCBI. All new services that are added get configured
+with the new dispatcher. The code to access the new dispatcher had been placed
+in the toolkit a while ago, and should be ready for use in all applications
+compiled and linked against the toolkit released since beginning of 2002
+[recent repository check showed that actually the cut-off date can perhaps be half
+a year earlier, in early summer 2001].
+Older applications have to be upgraded by re-compiling/re-linking in order
+to take advantage of the new code.
+
+<p>
+In the beginning of August 2002, the switch was made in the toolkit's code that
+now directs all network requests to go through the new dispatcher. So all
+applications linked against the toolkit at a later date should be using
+the new dispatcher automatically.
+
+<p>
+Below is the description of parameters and differences between the two dispatchers,
+and instructions on how to set an existing application to use the new dispatcher's
+code without rebuilding.
+
+<p>
+Although the dispatcher should work behind the scenes absolutely transparently
+for the user, some applications may fail if for example there
+are on-site configurational discrepancies between the two dispatchers.
+In fact, every attempt was made to keep the configurations consistent
+at the time of the switch, but still there is a little chance that
+something could have been missed.
+
+<p>
+<hr>
+
+
+<h2><a name="Switch">The switch</a></h2>
+
+All <tt>SRV_...</tt> parameters, outlined below, can be set in either program
+environment prior to the application run (using "<tt>setenv</tt>" command
+in <tt>[t]csh</tt>, or "<tt>export</tt>" command in [ba]sh), or in the section
+<tt>[NET_SERV]</tt> of the <tt>.rc</tt> (or <tt>.ini</tt>) file, also known as
+a configuration (or registry) file of the application.<br>
+<u>Note</u>: Settings in the environment always take precedence and override those read from the registry file.<br>
+<u>Note</u>: On MS-Windows, the registry file usually resides in the master Windows directory, which is either
+<tt>WINDOWS</tt> or <tt>WINNT</tt>.
+
+<p>
+A dispatcher to use can be controlled by the environment
+variable <tt>SRV_CONN_MODE</tt> as follows:
+<p>
+<table border="1" cellspacing="1">
+<tr>
+<td><tt>SRV_CONN_MODE=SERVICE</tt></td>
+<td>chooses the new dispatcher [default for all programs built since mid August, 2002]</td>
+</tr>
+<tr>
+<td><tt>SRV_CONN_MODE=WWW</tt></td>
+<td>chooses the old dispatcher, without firewalling [this was the default prior to the switchover in mid August, 2002]</td>
+</tr>
+<tr>
+<td><tt>SRV_CONN_MODE=FIREWALL</tt></td>
+<td>chooses the old dispatcher, with firewalling</td>
+</tr>
+</table>
+
+<p>
+
+
+<h2><a name="OldDispatcher">Parameters of the OLD dispatcher</a></h2>
+
+The parameters, which control the OLD dispatcher (both with and without firewall), are in the table below.
+Please note that they can appear both in the environment or in the registry file (section <tt>[NET_SERV]</tt>),
+with those found in the environment taking the precedence.
+<p>
+<table border="1" cellspacing="1">
+<tr>
+<td><table border="0" cellspacing="0">
+<tr><td><tt>SRV_ENGINE_HOST</tt></td></tr>
+<tr><td><tt>SRV_ENGINE_PORT</tt></td></tr>
+</table></td>
+<td>host and port to locate dispatcher. Default&nbsp;=&nbsp;<tt>www.ncbi.nlm.nih.gov:80</tt>
+(should normally not be changed)</td>
+</tr>
+<tr>
+<td><tt>SRV_ENGINE_URL</tt></td>
+<td>path part of URI to locate dispatcher. Default&nbsp;=&nbsp;<tt>/Service/nph-dispd.cgi</tt>
+(should normally not be changed, either)</td>
+</tr>
+<tr>
+<td><tt>SRV_CONN_TIMEOUT</tt></td>
+<td>time (as a floating point value, seconds) to wait for network activity, at most. Default&nbsp;=&nbsp;30.
+Special value <tt>INFINITE</tt> is also recognized to set the timeout value to "wait forever".<br>
+<u>Note</u>: If you are in the United States, the default timeout of 30 seconds should
+suffice. From foreign countries with poor Internet connections to the U.S., you may
+want to increase this value.</td>
+</tr>
+<tr>
+<td><tt>SRV_CONN_TRY</tt></td>
+<td>how many connection attempts to perform if unsuccessful, default&nbsp;=&nbsp;3</td>
+</tr>
+<tr>
+<td><table border="0" cellspacing="0">
+<tr><td><tt>SRV_HTTP_PROXY_HOST</tt></td></tr>
+<tr><td><tt>SRV_HTTP_PROXY_PORT</tt></td></tr>
+</table></td>
+<td>host and port of transparent HTTP proxy (if in use at the client's end), default&nbsp;=&nbsp;none</td>
+</tr>
+<tr>
+<td><tt>SRV_PROXY_HOST</tt></td>
+<td>CERN-like (non-transparent) proxy host (if in use at the client's end), default&nbsp;=&nbsp;none</td>
+</tr>
+<tr>
+<td><tt>SRV_DEBUG_PRINTOUT</tt></td>
+<td>switch to print debugging/trace output, default&nbsp;=&nbsp;NO<br>Activate printing with YES, 1, or TRUE.</td>
+</tr>
+<tr>
+<td><tt>NI_SERVICE_NAME_&lt;<i>name</i>&gt;</tt></td>
+<td>reassignment of the service name, e.g.:<br>
+    <tt>NI_SERVICE_NAME_ID1&nbsp;ID1Prod</tt><br>
+used for temporary name override, if a developer instructed you to do so (usually, neither required nor advised).<br>
+<u>Note</u>: Service <tt><i>name</i></tt> must be all capitalized for this setting to work,
+e.g. "Entrez" becomes <tt>ENTREZ</tt>.</td>
+</tr>
+</table>
+
+<p>
+Atlernate service name can also be specified via the registry file by defining they key
+<tt>SERVICE_NAME</tt> with desired value, which should be located in the section having the
+service name in all capitals. The following registry fragment changes the name of the
+<tt>Entrez</tt> service:
+<pre>
+[ENTREZ]
+SERVICE_NAME=EntrezTest
+</pre>
+
+<p>
+<hr>
+
+<h2><a name="NewDispatcher">Parameters of the NEW dispatcher</a></h2>
+
+For the sake of backward compatibility, all the above (<tt>SRV_...</tt>) parameters are accepted.
+They could be either in the environment or in the registry file, section <tt>[NET_SERV]</tt>.
+
+<p>
+The following additional parameters are also recognized (and are the preferred way to
+tune up the new dispatcher). These parameters can be specified in the environment as
+printed in the table, or they can be read from the registry file's section <tt>[CONN]</tt>,
+but then without the prefix <tt>CONN</tt>. For example, the environment setting <tt>CONN_FIREWALL=TRUE</tt>
+is equivalent to the following registry file fragment:
+<pre>
+[CONN]
+FIREWALL=TRUE
+</pre>
+
+<p>
+There are also per-service settings, taking the form <tt>&lt;<i>NAME</i>&gt;_CONN_&lt;<i>PARAMETER</i>&gt;</tt>
+in the environment, or just like printed below if found in the section <tt>[&lt;<i>NAME</i>&gt;]</tt>
+in the registry file. For example, the following settings of <tt>FIREWALL</tt> in the
+environment and the registry file are equivalent, and affect <tt>Bounce</tt> service only (leaving
+all other services with default or their individual settings, if any):
+<ul>
+environment:
+<pre>
+BOUNCE_CONN_FIREWALL=TRUE
+</pre>
+</ul>
+<ul>
+registry file:
+<pre>
+[BOUNCE]
+CONN_FIREWALL=TRUE
+</pre>
+</ul>
+
+<p>
+The order of significance (from the most to the least) of specifications is as follows:
+<ol>
+<li>Per-service environment variable, e.g. <tt>BOUNCE_CONN_FILREWALL=TRUE</tt>;
+<li>Per-service registry key, e.g. <tt>CONN_FIREWALL=TRUE</tt> in the section <tt>[BOUNCE]</tt>;
+<li>Common environment setting, e.g. <tt>CONN_FIREWALL=TRUE</tt>;
+<li>Common registry key from section <tt>[CONN]</tt>, e.g. <tt>FIREWALL=TRUE</tt>;
+<li>Default setting.
+</ol>
+<p>
+<table border="1" cellspacing="1">
+<tr>
+<td><table border="0" cellspacing="0">
+<tr><td><tt>CONN_HOST</tt></td></tr>
+<tr><td><tt>CONN_PORT</tt></td></tr>
+</table></td>
+<td>see <tt>SRV_ENGINE_HOST</tt> and <tt>SRV_ENGINE_PORT</tt> above.</td>
+</tr>
+<tr>
+<td><tt>CONN_PATH</tt></td>
+<td>see <tt>SRV_ENGINE_URL</tt>, default&nbsp;=&nbsp;<tt>/Service/dispd.cgi</tt></td>
+</tr>
+<tr>
+<td><tt>CONN_ARGS</tt></td>
+<td>arguments for service/dispatcher, going after the '?' in CGI's parameters, default&nbsp;=&nbsp;none</td>
+</tr>
+<tr>
+<td><tt>CONN_REQ_METHOD</tt></td>
+<td>HTTP request method to use (default&nbsp;=&nbsp;<tt>POST</tt>, may also
+be one of <tt>ANY</tt> and <tt>GET</tt>).</td>
+</tr>
+<tr>
+<td><tt>CONN_TIMEOUT</tt></td>
+<td>see <tt>SRV_CONN_TIMEOUT</tt>.</td>
+</tr>
+<tr>
+<td><tt>CONN_MAX_TRY</tt></td>
+<td>see <tt>SRV_CONN_TRY</tt>.</td>
+</tr>
+<tr>
+<td><table border="0" cellspacing="0">
+<tr><td><tt>CONN_HTTP_PROXY_HOST</tt></td></tr>
+<tr><td><tt>CONN_HTTP_PROXY_PORT</tt></td></tr>
+</table></td>
+<td>see <tt>SRV_HTTP_PROXY_HOST</tt> and <tt>SRV_HTTP_PROXY_PORT</tt>.</td>
+</tr>
+<tr>
+<td><tt>CONN_PROXY_HOST</tt></td>
+<td>see <tt>SRV_PROXY_HOST</tt>.</td>
+</tr>
+<tr>
+<td><tt>CONN_DEBUG_PRINTOUT</tt></td>
+<td>see <tt>SRV_DEBUG_PRINTOUT</tt>. Additional value <tt>DATA</tt> is provided to print
+the network data as being transferred at the transport [TCP] layer.</td>
+</tr>
+<tr>
+<td><tt>CONN_STATELESS</tt></td>
+<td><tt>TRUE</tt> or <tt>FALSE</tt>, default&nbsp;=&nbsp;<tt>FALSE</tt>.<br>
+A proper value has to be set depending on the nature of the client
+(Web-browsers are <tt>CONN_STATELESS=TRUE</tt>).<br>
+For dispatching by default, this variable is not to be touched!</td>
+</tr>
+<tr>
+<td><tt>CONN_FIREWALL</tt></td>
+<td><tt>TRUE</tt> or <tt>FALSE</tt>, default&nbsp;=&nbsp;<tt>FALSE</tt>.<br>
+A proper value has to be chosen depending on whether the client is behind a firewall or not.
+Use <tt>TRUE</tt> if so!<br> This parameter of the new dispatcher is analogous to switching
+the old dispatcher into firewall  mode by specifying <tt>FIREWALL</tt> in <tt>SRV_CONN_MODE</tt>.</td>
+</tr>
+<tr>
+<td><tt>CONN_SERVICE_NAME_&lt;<i>name</i>&gt;</tt></td>
+<td>see description for <tt>NI_SERVICE_NAME_...</tt> above.</td>
+</tr>
+</table>
+
+<p>
+When intermixed with older (<tt>SRV_...</tt>) parameters, the order of consideration is the following:
+the new parameters (<tt>CONN_...</tt>) first as described in the table above, then <tt>SRV_...</tt>
+parameters, thus all <tt>SRV_...</tt> parameters taking precedence over all <tt>CONN_...</tt> parameters.
+The only exception is the service name override (<tt>{CONN|NI}_SERVICE_NAME_...</tt>), which works the different way:
+<ul>
+<li>All other parameters loaded, first <tt>CONN_...</tt> using the original service name as specified in the application
+(e.g. <tt>Entrez</tt>) from the registry/environment, followed by <tt>SRV_...</tt> found in the registry/environment.
+<li><tt>SERVICE_NAME</tt> registry key in the service's section followed by <tt>NI_SERVICE_NAME_...</tt> environment 
+variable (if exist) are then consulted for an alternate name.
+<li><tt>CONN_SERVICE_NAME_...</tt> environment variable (or service's registry section with <tt>SERVICE_NAME</tt> key)
+in then consulted, using a new name from the substitution above (if occurred). This process is recursive but with
+no loop detection, i.e. CONN_SERVICE_NAME_A=B and CONN_SERVICE_NAME_B=A would create an infinite loop, which
+breaks the application. The following registry/environment combination changes the name of the <tt>Entrez</tt>
+service into <tt>Entrez2</tt>:
+<p>
+environment:
+<pre>
+NI_SERVICE_NAME_ENTREZ=EntrezTest
+</pre>
+<p>
+registry:
+<pre>
+[ENTREZ]
+SERVICE_NAME=Entrez1 ; Note that this key is overriden in the env
+
+[ENTREZ_TEST]
+SERVICE_NAME=Entrez2
+</pre>
+</ul>
+
+<p>
+<u>Note</u> that if a client connects to new NCBI dispatcher, then
+the dispatcher might be able to switch the client into pseudo-firewall
+mode, should the dispatcher notice that this might be needed for the
+client to further succeed with the service requested. This however
+is <i>not</i> a substitute for <tt>CONN_FIREWALL</tt> parameter, and an application,
+which connects from behind a firewall, must still use <tt>CONN_FIREWALL=TRUE</tt>
+in order to function flawlessly.
+
+<p>
+Also note that C toolkit can have debugging printouts disabled in the core,
+thus <tt>{SRV|CONN}_DEBUG_PRINTOUT</tt> will have no or very little effect.
+In order to override the core settings, <i>environment</i> setting
+<tt>DEBUG_PRINTOUT=TRUE</tt> could be used. Unlike <tt>{SRV|CONN}_DEBUG_PRINTOUT</tt>
+the last key has no effect outside the environment (and thus specifying <tt>DEBUG_PRINTOUT</tt>
+in the registry file will not affect in-core logging settings). This override option
+was recently added to the toolkit, and applications built before mid August 2002 lack this feature.
+
+<p>
+For applications linked against C++ toolkit, <i>environment</i> settings
+<tt>DIAG_POST_LEVEL=0</tt> and <tt>DIAG_TRACE=1</tt> would enable the debugging printouts
+regardless of the in-core settings. You may also use these keys in the <tt>[DEBUG]</tt>
+section of the registry file (but <i>not</i> in the <tt>[NET_SERV]</tt> or
+<tt>[CONN]</tt> sections).
+
+<p>
+<hr>
+
+
+<h1><a name="Firewalling">Taking care of firewall connections</a></h1>
+
+<p>
+If you are behind a firewall, it must be configured correctly to access NCBI
+services. Your network administrators may have done this already. If not, please
+have them read the section below.
+
+<p>
+<b>The following section is intended for network administrators:</b>
+
+<p>
+Using NCBI services from behind a security firewall requires opening ports in
+your firewall. The ports to open are:
+
+<p align="center">
+<pre>
+Firewall Port        IP Address
+--------------------------------
+ 5860..5870         130.14.29.112
+    5845            130.14.22.12  (no access from outside NCBI!)
+</pre>
+
+<p>
+If your firewall is not transparent, the firewall port number
+should be mapped to the same port number on the external host.
+
+<p>
+While the not every port from the table above might be currently in use,
+we stongly recommend you to have them all configured on your firewall.
+
+<p>
+<u>TROUBLESHOOTING</u>:  You can test whether these ports are accessible from
+your host by just running, for example (see the "Ports to open" list above):
+<pre>
+  telnet 130.14.29.112 5861
+</pre>
+and entering a line of arbitrary text in the telnet session.
+If everything is fine, your TELNET session would look as follows
+(the line "test" is your input there):
+
+<pre>
+| > telnet 130.14.29.112 5861
+| Trying 130.14.29.112...
+| Connected to 130.14.29.112.
+| Escape character is '^]'.
+| test
+| NCBI Firewall Daemon:  Invalid ticket. Connection closed.
+| Connection closed by foreign host.
+</pre>
+
+<p>
+There is also an auxiliary UNIX shell script
+<a href="http://www.ncbi.nlm.nih.gov/cpp/network/fwd_check.sh">fwd_check.sh</a> to check all of the above
+addresses.
+
+<p>
+To check the ports as they are seen from within NCBI you can use
+<a href="http://www.ncbi.nlm.nih.gov/cpp/network/fwd_check.cgi">this test page</a>,
+which shows you whether the ports are open and the firewall daemon is
+listening on them. The page does not however provide you with the information
+whether these ports are accessible from your site. You still have to use
+<a href="http://www.ncbi.nlm.nih.gov/cpp/network/fwd_check.sh">fwd_check.sh</a>
+to check that.
+
+<p>
+<hr>
+
+
+<h1><a name="WorkAround">Working around connectivity problems</a></h1>
+
+<p>
+Executable <tt>Psrventr.REAL</tt>, which implements old <tt><b>Entrez</b></tt> service
+on Solaris sparc, was confirmed flaky, and had to be removed from configurations of both new and old
+dispatchers on the sparcs.
+
+<p>
+Although this should not affect the users of the new dispatcher (as the
+service had been moved to and is currently provided from a number of Intel machines),
+the users of the old dispatcher (which was not ported to <tt>Linux/Intel</tt> platform, and
+overall is considered for phasing out as inflexible and outdated) may be affected.
+
+<p>
+The workaround is to use the code in the toolkit that has been around long
+ago but was not made active until mid August 2002 - we then switched the toolkit
+to use the new dispatcher code by default.
+
+<p>
+For that, the user has to define <tt>SRV_CONN_MODE=SERVICE</tt> either in the environment,
+or in the configuration (<tt>.ini</tt>) file, section <tt>[NET_SERV]</tt>, and can do so <i>without</i> an
+absolute necessity of downloading the new toolkit code from NCBI and rebuilding. Only very-very old
+applications will not be able to use the switch, and have to be upgraded by linking against freshened libraries.
+
+<p>
+If an application runs from behind a firewall, then <tt>CONN_FIREWALL=TRUE</tt> should also be set in the environment
+(in addition to <tt>SRV_CONN_MODE=SERVICE</tt>). Please note that <tt>CONN_FIREWALL</tt>
+<i>must</i> remain set even if you switch into the newer toolkit release, which does not require setting
+<tt>SRV_CONN_MODE</tt> for the use of the new dispatcher.
+
+<p>
+<b>The overall rule</b> in the case when your application fails to connect to an NCBI service is to
+undertake the following sequence of steps:
+
+<p>
+<ol>
+<li>Try to force your application to use the new dispatcher code by setting <tt><b>SRV_CONN_MODE</b></tt>
+to <tt><b>SERVICE</b></tt> in the environment/registry;
+<li>If this does not help, or if you are connecting from behind a firewall, try to set
+<tt><b>CONN_FIREWALL</b></tt> to <tt><b>TRUE</b></tt> in addition to the above setting,
+and run your application again;
+<li>If you are still unable to connect, set <tt><b>SRV_DEBUG_PRINTOUT</b></tt> to <tt><b>TRUE</b></tt>,
+and collect the output. (You may also need to set <i>environment</i> variable <tt><b>DEBUG_PRINTOUT</b></tt> to
+<tt><b>TRUE</b></tt> in addition, if the in-core settings prevent debugging output from being released onto
+the terminal. Please note that unlike other <tt><b>{CONN|SRV}...</b></tt> keys described in this document,
+<tt><b>DEBUG_PRINTOUT</b></tt> is honored only if set in the environment and has <i>no</i> effect if
+put in the registry file.) Beware that debugging output may be copious.
+<ul>
+<li>If with all the above settings you can find references to either <tt><b>Service/nph-dispd.cgi</b></tt>
+or <tt><b>Service/nph-ncbid.cgi</b></tt> in the collected output, it means that your application was linked
+against very old version of the toolkit and has to be rebuilt;
+<li>If you cannot find references to either of these CGIs, then you can consider contacting
+<a href="mailto:info@ncbi.nlm.nih.gov">NCBI Help Desk</a> to resolve your problem.
+</ul>
+</ol>
+
+<p>
+Small reference on how to set the environment in various shells
+(to know the shell in UNIX/Linux, execute "<tt>echo&nbsp;$SHELL</tt>"):
+<ul>
+<li>C-like shells: <tt>csh</tt> or <tt>tcsh</tt>
+<pre>
+    setenv SRV_DEBUG_PRINTOUT TRUE
+</pre>
+<li>Born-like shells: <tt>sh</tt>, <tt>ash</tt>, <tt>ksh</tt>, <tt>zsh</tt>,
+or <tt>bash</tt>
+<pre>
+    SRV_DEBUG_PRINTOUT=TRUE; export SRV_DEBUG_PRINOUT
+</pre>
+In <tt>ksh</tt>, <tt>zsh</tt>, and <tt>bash</tt> the two commands above can be combined:
+<pre>
+    export SRV_DEBUG_PRINTOUT=TRUE
+</pre>
+<li>DOS shell (MS-Windows/DOS): <tt>command.com</tt> or <tt>cmd.exe</tt>
+<pre>
+    set SRV_DEBUG_PRINTOUT=TRUE
+</pre>
+</ul>
+
+<p>
+<hr>
+
+
+<h1><a name="Addendum">Additional Information</a></h1>
+
+<p>
+<u>Note</u>: Very old NCBI clients used different application configuration settings and
+ports than listed above. These clients are no longer supported by NCBI.
+
+<p>
+More technical and brief note on dispatcher selection and parameters is in
+<a href="http://www.ncbi.nlm.nih.gov/IEB/ToolBox/C_DOC/lxr/source/network/nsclilib/readme"><tt>network/nsclilib/readme</tt></a>
+located in the C toolkit source tree.
+
+<p>
+Description of the new NCBI dispatcher can be found <a href="http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/tools/dispatcher/DISPD.html">here</a>.
+
+<p>
+Discussion of firewall settings can be found <a href="http://www.ncbi.nlm.nih.gov/cpp/network/firewall.html">here</a> and also
+provided in directory <tt>doc</tt> of the <a href="http://www.ncbi.nlm.nih.gov/IEB/ToolBox/C_DOC/lxr/source/doc">C toolkit</a>.
+
+<p>
+If you have a problem, which you are unable to resolve on your own, or
+you have a question, please contact <a href="mailto:info@ncbi.nlm.nih.gov">
+<tt>info@ncbi.nlm.nih.gov</tt></a> for further information.
+<p>&nbsp;</p>
+
+<p>
+<hr>
+<table border="0" cellspasing="0">
+<tr><td>Source: distrib/doc/dispatcher.html</td><td>$Date: 2004/01/16 19:03:44 $</td><td>$Revision: 6.24 $</td></tr>
+</table>
+
+
+    </td>
+
+  </tr>
+</table>
+<!--  end of content  -->  
+
+</body>
+</html>
