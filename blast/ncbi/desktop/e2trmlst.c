@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   10/30/01
 *
-* $Revision: 6.37 $
+* $Revision: 6.38 $
 *
 * File Description: 
 *
@@ -534,8 +534,9 @@ printf ("TmpNam '%s'\n", tmp);
   return e2ry;
 }
 
-static Entrez2ReplyPtr EntrezTextSynchronousQuery (
-  Entrez2RequestPtr e2rq
+static Entrez2ReplyPtr EntrezSpecialSynchronousQuery (
+  Entrez2RequestPtr e2rq,
+  Boolean textmode
 )
 
 {
@@ -586,11 +587,19 @@ static Entrez2ReplyPtr EntrezTextSynchronousQuery (
     host_path = "/entrez/eutils/entrez2server.fcgi";
   }
 
-  conn = QUERY_OpenUrlQuery (host_machine, host_port, host_path, NULL,
-                             "Entrez2Text", 30, eMIME_T_NcbiData,
-                             eMIME_AsnText, eENCOD_None, 0);
+  if (textmode) {
+    conn = QUERY_OpenUrlQuery (host_machine, host_port, host_path, NULL,
+                               "Entrez2Text", 30, eMIME_T_NcbiData,
+                               eMIME_AsnText, eENCOD_None, 0);
 
-  aicp = QUERY_AsnIoConnOpen ("w", conn);
+    aicp = QUERY_AsnIoConnOpen ("w", conn);
+  } else {
+    conn = QUERY_OpenUrlQuery (host_machine, host_port, host_path, NULL,
+                               "Entrez2Text", 30, eMIME_T_NcbiData,
+                               eMIME_AsnBinary, eENCOD_None, 0);
+
+    aicp = QUERY_AsnIoConnOpen ("wb", conn);
+  }
 
   tempcookie = e2rq->cookie;
 
@@ -603,7 +612,11 @@ static Entrez2ReplyPtr EntrezTextSynchronousQuery (
 
   QUERY_SendQuery (conn);
 
-  e2ry = EntrezTextWaitForReply (conn);
+  if (textmode) {
+    e2ry = EntrezTextWaitForReply (conn);
+  } else {
+    e2ry = EntrezWaitForReply (conn);
+  }
 
   return e2ry;
 }
@@ -619,7 +632,10 @@ extern Entrez2ReplyPtr SpecialEntrezSynchronousQuery (
 {
 #ifdef OS_UNIX
   if (getenv ("ENTREZ2_TEXT_QUERY") != 0) {
-    return EntrezTextSynchronousQuery (e2rq);
+    return EntrezSpecialSynchronousQuery (e2rq, TRUE);
+  }
+  if (getenv ("ENTREZ2_BINARY_QUERY") != 0) {
+    return EntrezSpecialSynchronousQuery (e2rq, FALSE);
   }
 #endif
   return EntrezSynchronousQuery (e2rq);

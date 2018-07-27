@@ -1,1 +1,0 @@
-../biostruc/cdd/thrdatd.h

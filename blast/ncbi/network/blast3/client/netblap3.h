@@ -34,6 +34,9 @@
 *
 * RCS Modification History:
 * $Log: netblap3.h,v $
+* Revision 1.32  2004/06/30 12:34:14  madden
+* Add include for blfmtutl.h
+*
 * Revision 1.31  2003/01/10 21:45:06  bealer
 * - Modify to return errors from BLASTGetUidsFromQuery instead of logging them.
 *
@@ -133,6 +136,7 @@
 #include <ni_types.h>
 #include <blastdef.h>
 #include <blastpri.h>
+#include <blfmtutl.h>
 
 #undef NLM_EXTERN
 #ifdef NLM_IMPORT

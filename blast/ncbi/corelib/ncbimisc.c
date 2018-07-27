@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   10/23/91
 *
-* $Revision: 6.26 $
+* $Revision: 6.29 $
 *
 * File Description: 
 *   	miscellaneous functions
@@ -43,6 +43,15 @@
 * 02-16-94 Epstein     Retired Gestalt functions and definitions
 *
 * $Log: ncbimisc.c,v $
+* Revision 6.29  2005/04/13 21:36:18  kans
+* restored mac ifdefs around Nlm_P2Cstr and Nlm_C2Pstr functions
+*
+* Revision 6.28  2005/04/13 21:28:44  kans
+* Nlm_CtoPstr and Nlm_PtoCstr always uses our own code so we are not dependent on a particular version of Carbon
+*
+* Revision 6.27  2005/04/13 18:03:21  rsmith
+* On OSX don't define C2Pstr/P2Cstr, just implement Nlm_CtoPstr.
+*
 * Revision 6.26  2004/03/25 15:37:24  lavr
 * Change UINT64_MAX into UINT8_MAX back for the toolkit to compile portably
 *
@@ -1143,11 +1152,11 @@ NLM_EXTERN Nlm_Boolean LIBCALL NodeListDelete (ValNodePtr head, Nlm_Int2 item)
 
 #if defined(OS_MAC) || defined(OS_UNIX_DARWIN)
 
-// 2001-03-22:  Joshua Juran
-// C2PStr() and P2CStr() do not exist in Carbon, so we roll our own.
-# if TARGET_API_MAC_CARBON
-static void C2PStr(char *ioStr)
+/* C2PStr() and P2CStr() may or may not exist in Carbon, so we now always roll our own. */
+
+void Nlm_CtoPstr (Nlm_CharPtr str)
 {
+    char *ioStr = (char *) str;
 	size_t len = strlen(ioStr);
 	if (len > 255) {
 		len = 255;
@@ -1156,30 +1165,15 @@ static void C2PStr(char *ioStr)
 	ioStr[0] = len;
 }
 
-static void P2CStr(StringPtr ioStr)
+void Nlm_PtoCstr (Nlm_CharPtr str)
 {
+    StringPtr ioStr = (StringPtr) str;
 	Byte len = ioStr[0];
 	memmove(ioStr, ioStr + 1, len);
 	ioStr[len] = '\0';
 }
-# endif
 
-/*  p_churchill 12/99 removed conditional compilation support for 
- *  THINKC and MPW
- */
-void Nlm_CtoPstr (Nlm_CharPtr str)
-
-{
-  C2PStr ((char *) str);
-}
-
-void Nlm_PtoCstr (Nlm_CharPtr str)
-
-{
-  P2CStr ((StringPtr) str);
-}
 #endif
-
 
 
 NLM_EXTERN Nlm_Uint2 Nlm_SwitchUint2 (Nlm_Uint2 value)

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/29/99
 *
-* $Revision: 1.64 $
+* $Revision: 1.74 $
 *
 * File Description: 
 *
@@ -41,6 +41,7 @@
 
 #include <ent2api.h>
 #include <urlquery.h>
+#include <ncbithr.h>
 
 #ifdef OS_UNIX
 #include <sys/times.h>
@@ -266,7 +267,7 @@ NLM_EXTERN Entrez2ReplyPtr EntrezWaitForReply (
 
 /* ent2api silently maintains entrez2 server session cookie */
 
-static CharPtr e2cookie = NULL;
+static TNlmTls e2cookie_tls = NULL;
 
 /* high-level connection functions */
 
@@ -277,6 +278,7 @@ NLM_EXTERN Entrez2ReplyPtr EntrezSynchronousQuery (
 {
   AsnIoConnPtr     aicp;
   CONN             conn;
+  CharPtr          e2cookie = NULL;
   Entrez2ReplyPtr  e2ry;
   CharPtr          tempcookie = NULL;
 #ifdef OS_UNIX
@@ -294,11 +296,15 @@ NLM_EXTERN Entrez2ReplyPtr EntrezSynchronousQuery (
 
   conn = EntrezOpenConnection ();
 
+  if (conn == NULL) return NULL;
+
   aicp = QUERY_AsnIoConnOpen ("wb", conn);
 
   tempcookie = e2rq->cookie;
-  if (e2rq->cookie == NULL && e2cookie != NULL) {
-    e2rq->cookie = e2cookie;
+  if (NlmTlsGetValue (e2cookie_tls, (VoidPtr PNTR) &e2cookie)) {
+    if (e2rq->cookie == NULL && e2cookie != NULL) {
+      e2rq->cookie = e2cookie;
+    }
   }
 
   Entrez2RequestAsnWrite (e2rq, aicp->aip, NULL);
@@ -326,8 +332,11 @@ NLM_EXTERN Entrez2ReplyPtr EntrezSynchronousQuery (
 #endif
 
   if (e2ry != NULL && e2ry->cookie != NULL) {
-    e2cookie = MemFree (e2cookie);
-    e2cookie = StringSave (e2ry->cookie);
+    if (NlmTlsGetValue (e2cookie_tls, (VoidPtr PNTR) &e2cookie)) {
+      e2cookie = MemFree (e2cookie);
+      e2cookie = StringSave (e2ry->cookie);
+      NlmTlsSetValue (&e2cookie_tls, (VoidPtr PNTR) e2cookie, NULL);
+    }
   }
 
   return e2ry;
@@ -343,6 +352,7 @@ NLM_EXTERN Boolean EntrezAsynchronousQuery (
 {
   AsnIoConnPtr  aicp;
   CONN          conn;
+  CharPtr       e2cookie = NULL;
   CharPtr       tempcookie = NULL;
 
   if (e2rq == NULL) return FALSE;
@@ -354,8 +364,10 @@ NLM_EXTERN Boolean EntrezAsynchronousQuery (
   aicp = QUERY_AsnIoConnOpen ("wb", conn);
 
   tempcookie = e2rq->cookie;
-  if (e2rq->cookie == NULL && e2cookie != NULL) {
-    e2rq->cookie = e2cookie;
+  if (NlmTlsGetValue (e2cookie_tls, (VoidPtr PNTR) &e2cookie)) {
+    if (e2rq->cookie == NULL && e2cookie != NULL) {
+      e2rq->cookie = e2cookie;
+    }
   }
 
   Entrez2RequestAsnWrite (e2rq, aicp->aip, NULL);
@@ -385,6 +397,7 @@ NLM_EXTERN Entrez2ReplyPtr EntrezReadReply (
 
 {
   AsnIoConnPtr     aicp;
+  CharPtr          e2cookie = NULL;
   Entrez2ReplyPtr  e2ry = NULL;
 
   if (conn != NULL && status == eIO_Success) {
@@ -394,8 +407,11 @@ NLM_EXTERN Entrez2ReplyPtr EntrezReadReply (
   }
 
   if (e2ry != NULL && e2ry->cookie != NULL) {
-    e2cookie = MemFree (e2cookie);
-    e2cookie = StringSave (e2ry->cookie);
+    if (NlmTlsGetValue (e2cookie_tls, (VoidPtr PNTR) &e2cookie)) {
+      e2cookie = MemFree (e2cookie);
+      e2cookie = StringSave (e2ry->cookie);
+      NlmTlsSetValue (&e2cookie_tls, (VoidPtr PNTR) e2cookie, NULL);
+    }
   }
 
   return e2ry;
@@ -408,6 +424,7 @@ static Entrez2RequestPtr CreateRequest (
 )
 
 {
+  CharPtr            e2cookie = NULL;
   Entrez2RequestPtr  e2rq;
   ValNodePtr         vnp;
 
@@ -425,7 +442,9 @@ static Entrez2RequestPtr CreateRequest (
 
   e2rq->request = vnp;
 
-  e2rq->cookie = StringSaveNoNull (e2cookie);
+  if (NlmTlsGetValue (e2cookie_tls, (VoidPtr PNTR) &e2cookie)) {
+    e2rq->cookie = StringSaveNoNull (e2cookie);
+  }
 
   return e2rq;
 }
@@ -966,9 +985,11 @@ static int LIBCALLBACK SortVnpByStr (VoidPtr ptr1, VoidPtr ptr2)
   }
   return 0;
 }
-NLM_EXTERN Boolean ValidateEntrez2InfoPtr (
+
+NLM_EXTERN Boolean ValidateEntrez2InfoPtrEx (
   Entrez2InfoPtr e2ip,
-  ValNodePtr PNTR head
+  ValNodePtr PNTR head,
+  Boolean checkMenuNameVariants
 )
 
 {
@@ -1068,7 +1089,10 @@ NLM_EXTERN Boolean ValidateEntrez2InfoPtr (
       rsult = FALSE;
     }
     if (e2db->link_count < 1 || e2db->links == NULL) {
-      if (StringICmp (db, "books") != 0 && StringICmp (db, "mesh") != 0) {
+      if (StringICmp (db, "books") != 0 &&
+          StringICmp (db, "gensat") != 0 &&
+          StringICmp (db, "mesh") != 0 &&
+          StringICmp (db, "nlmcatalog") != 0) {
         sprintf (buf, "Database %s has no links", db);
         ValNodeCopyStr (head, 0, buf);
         rsult = FALSE;
@@ -1097,19 +1121,23 @@ NLM_EXTERN Boolean ValidateEntrez2InfoPtr (
           sprintf (buf, "Database %s field %s (%d) has no name", db, fld, (int) fldcount);
           ValNodeCopyStr (head, 0, buf);
         }
-      } else {
-        if (StringCmp (fld, "SLEN") == 0 ||
-            StringCmp (fld, "MLWT") == 0 ||
-            StringCmp (fld, "PMID") == 0 ||
-            StringCmp (fld, "LLID") == 0 ||
-            StringCmp (fld, "UID") == 0) {
-          if (! e2fip->is_numerical) {
-            sprintf (buf, "Database %s field %s does not have is_numerical set", db, fld);
-            ValNodeCopyStr (head, 0, buf);
-            rsult = FALSE;
-          }
-        } else if (StringCmp (fld, "TEXT") == 0) {
-          sprintf (buf, "Database %s field %s should be WORD", db, fld);
+      } else if (StringCmp (fld, "SLEN") == 0 ||
+          StringCmp (fld, "MLWT") == 0 ||
+          StringCmp (fld, "PMID") == 0 ||
+          StringCmp (fld, "LLID") == 0 ||
+          StringCmp (fld, "UID") == 0) {
+        if (! e2fip->is_numerical) {
+          sprintf (buf, "Database %s field %s does not have is_numerical set", db, fld);
+          ValNodeCopyStr (head, 0, buf);
+          rsult = FALSE;
+        }
+      } else if (StringCmp (fld, "TEXT") == 0) {
+        sprintf (buf, "Database %s field %s should be WORD", db, fld);
+        ValNodeCopyStr (head, 0, buf);
+        rsult = FALSE;
+      } else if (StringCmp (fld, "ORGN") == 0) {
+        if (e2fip->term_count == 0) {
+          sprintf (buf, "Database %s field %s term count is 0", db, fld);
           ValNodeCopyStr (head, 0, buf);
           rsult = FALSE;
         }
@@ -1272,7 +1300,7 @@ NLM_EXTERN Boolean ValidateEntrez2InfoPtr (
         sprintf (buf, "Menu names %s [%s] and %s [%s] differ in capitalization", last, dbnames [lastvnp->choice], str, dbnames [vnp->choice]);
         ValNodeCopyStr (head, 0, buf);
         rsult = FALSE;
-      } else {
+      } else if (checkMenuNameVariants) {
         len1 = StringLen (last);
         len2 = StringLen (str);
         if (len1 < len2) {
@@ -1285,6 +1313,18 @@ NLM_EXTERN Boolean ValidateEntrez2InfoPtr (
             } else if (StringICmp (last, "Rank") == 0 && StringICmp (str, "Ranked standard deviation") == 0) {
             } else if (StringICmp (last, "Book") == 0 && StringICmp (str, "Book's Topic") == 0) {
             } else if (StringICmp (last, "Gene Name") == 0 && StringICmp (str, "Gene Name or Description") == 0) {
+            } else if (StringICmp (last, "Submitter") == 0 && StringICmp (str, "Submitter Handle") == 0) {
+            } else if (StringICmp (last, "Abstract") == 0 && StringICmp (str, "Abstract/Index Tags") == 0) {
+            } else if (StringICmp (last, "Author") == 0 && StringICmp (str, "Author Full Name") == 0) {
+            } else if (StringICmp (last, "Expression") == 0 && StringICmp (str, "Expression Level") == 0) {
+            } else if (StringICmp (last, "Chromosome") == 0 && StringICmp (str, "Chromosome GI") == 0) {
+            } else if (StringICmp (last, "Disease") == 0 && StringICmp (str, "Disease or phenotype") == 0) {
+            } else if (StringICmp (last, "GC") == 0 && StringICmp (str, "GC Content") == 0) {
+            } else if (StringICmp (last, "Organism") == 0 && StringICmp (str, "Organism Motility") == 0) {
+            } else if (StringICmp (last, "Publisher") == 0 && StringICmp (str, "Publisher ID") == 0) {
+            } else if (StringICmp (last, "Disease") == 0 && StringICmp (str, "Disease-Stage") == 0) {
+            } else if (StringICmp (last, "ActiveAid") == 0 && StringICmp (str, "ActiveAidCount") == 0) {
+            } else if (StringICmp (last, "InactiveAid") == 0 && StringICmp (str, "InactiveAidCount") == 0) {
             } else {
               sprintf (buf, "Menu names %s [%s] and %s [%s] may be unintended variants", last, dbnames [lastvnp->choice], str, dbnames [vnp->choice]);
               ValNodeCopyStr (head, 0, buf);
@@ -1304,6 +1344,16 @@ NLM_EXTERN Boolean ValidateEntrez2InfoPtr (
   ValNodeFreeData (menuhead);
 
   return rsult;
+}
+
+
+NLM_EXTERN Boolean ValidateEntrez2InfoPtr (
+  Entrez2InfoPtr e2ip,
+  ValNodePtr PNTR head
+)
+
+{
+  return ValidateEntrez2InfoPtrEx (e2ip, head, FALSE);
 }
 
 /* network connection test functions */

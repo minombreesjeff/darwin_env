@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: copymat.c,v 6.36 2004/04/23 21:11:31 papadopo Exp $";
+static char const rcsid[] = "$Id: copymat.c,v 6.41 2005/02/14 14:11:55 camacho Exp $";
 
 /*
 * ===========================================================================
@@ -36,6 +36,22 @@ Contents: main routines for copymatrices program to convert
 score matrices output by makematrices into a single byte-encoded file.
    
 $Log: copymat.c,v $
+Revision 6.41  2005/02/14 14:11:55  camacho
+Changes to use SBlastScoreMatrix
+
+Revision 6.40  2005/01/10 13:48:20  madden
+Change to BLAST_FillInitialWordOptions prototype
+
+Revision 6.39  2004/09/15 17:40:21  papadopo
+change use of ListNode to use of BlastSeqLoc for lookup table creation
+
+Revision 6.38  2004/07/12 16:30:44  papadopo
+LookupTable->BlastLookupTable
+
+Revision 6.37  2004/06/22 16:45:56  camacho
+Changed the blast_type_* definitions for the EBlastProgramType enumeration from
+algo/blast.
+
 Revision 6.36  2004/04/23 21:11:31  papadopo
 force the thick backbone (dumped to the RPS .loo file) to contain the number of cells assumed by RPS blast
 
@@ -142,6 +158,7 @@ Changed a little format of RPS lookup tables file.
 #include <seqport.h>
 #include <tofasta.h>
 #include <algo/blast/core/blast_encoding.h>
+#include <algo/blast/core/blast_filter.h>
 
 #ifndef MAXLINELEN
 #   define MAXLINELEN 2000
@@ -400,7 +417,7 @@ static Int4 findTotalLength(FILE *matrixAuxiliaryFile, Int4 numProfiles,
     return(totalLength);
 }
 
-static Boolean RPSUpdateOffsets(LookupTable *lookup)
+static Boolean RPSUpdateOffsets(BlastLookupTable *lookup)
 {
     Uint4 len;
     Int4 index;
@@ -442,7 +459,7 @@ static Boolean RPSUpdateOffsets(LookupTable *lookup)
    pointers relative to the start of "mod_lookup_table_memory" chunk 
    RPS Blast will calculate real pointers in run time using these values
 */
-Boolean RPSUpdatePointers(LookupTable *lookup, Uint4 *new_overflow, Uint4 *new_overflow_size)
+Boolean RPSUpdatePointers(BlastLookupTable *lookup, Uint4 *new_overflow, Uint4 *new_overflow_size)
 {
     Uint4 len;
     Int4 index;
@@ -487,7 +504,7 @@ Boolean RPSUpdatePointers(LookupTable *lookup, Uint4 *new_overflow, Uint4 *new_o
    Write lookup table to the disk into file "*.loo", which will be
    used memory-mapped during RPS Blast search 
 */
-Boolean RPSDumpLookupTable(LookupTable *lookup, FILE *fd)
+Boolean RPSDumpLookupTable(BlastLookupTable *lookup, FILE *fd)
 {
     Uint4 *new_overflow;
     Uint4 new_overflow_size;
@@ -518,6 +535,36 @@ Boolean RPSDumpLookupTable(LookupTable *lookup, FILE *fd)
     
     return TRUE;
 }
+
+/* Copied verbatim from algo/blast/core/blast_traceback.c */
+void RPSPsiMatrixAttach(BlastScoreBlk* sbp, Int4** rps_pssm)
+{
+    ASSERT(sbp);
+
+    /* Create a dummy PSI-BLAST matrix structure, only to then free it as we'd
+     * like to piggy back on the already created structure to use the gapped
+     * alignment routines */
+    sbp->psi_matrix = (SPsiBlastScoreMatrix*) 
+        calloc(1, sizeof(SPsiBlastScoreMatrix));
+    ASSERT(sbp->psi_matrix);
+
+    sbp->psi_matrix->pssm = (SBlastScoreMatrix*)
+        calloc(1, sizeof(SBlastScoreMatrix));
+    ASSERT(sbp->psi_matrix->pssm);
+
+    /* The only data field that RPS-BLAST really needs */
+    sbp->psi_matrix->pssm->data = rps_pssm;
+}
+
+void RPSPsiMatrixDetach(BlastScoreBlk* sbp)
+{
+    ASSERT(sbp);
+    sbp->psi_matrix->pssm->data = NULL;
+    sfree(sbp->psi_matrix->pssm);
+    sfree(sbp->psi_matrix);
+}
+
+
 /* -- SSH --
    Create lookup table for the large sequence, that represented
    by all collection of PSSM matrixes and dump this table to disk
@@ -528,14 +575,13 @@ Boolean RPSCreateLookupFile(ScoreRow *combinedMatrix, Int4 numProfiles,
                             Nlm_FloatHi scalingFactor)
 {
     BlastScoreBlk *sbp;
-    SSeqRange *sequence_range;
     FILE *fd;
     Int4  **posMatrix;
     Int4 start, i, header_size, all_length, magicNumber;
     Int4Ptr offsets;
     Int4 num_lookups;
-    ListNode *lookup_segment=NULL;
-    LookupTable *lookup;
+    BlastSeqLoc *lookup_segment=NULL;
+    BlastLookupTable *lookup;
     LookupTableWrap* lookup_wrap_ptr=NULL;
     LookupTableOptions* lookup_options;
    
@@ -560,27 +606,23 @@ Boolean RPSCreateLookupFile(ScoreRow *combinedMatrix, Int4 numProfiles,
     }
 
     sbp = BlastScoreBlkNew(BLASTAA_SEQ_CODE, 1);
-    sbp->posMatrix = posMatrix;
-    LookupTableOptionsNew(blast_type_blastp, &lookup_options);
-    BLAST_FillLookupTableOptions(lookup_options, blast_type_blastp, FALSE, 
-	(Int4) (myargs[3].floatvalue*scalingFactor), myargs[4].intvalue, FALSE, FALSE, TRUE);  /* add last arg for psi-blast?? */
+    RPSPsiMatrixAttach(sbp, posMatrix);
+    LookupTableOptionsNew(eBlastTypeBlastp, &lookup_options);
+    BLAST_FillLookupTableOptions(lookup_options, eBlastTypeBlastp, FALSE, 
+	(Int4) (myargs[3].floatvalue*scalingFactor), myargs[4].intvalue, FALSE, TRUE);  /* add last arg for psi-blast?? */
 
 
-    sequence_range = (SSeqRange*) calloc(1, sizeof(SSeqRange));
-    sequence_range->left = 0;
-    sequence_range->right = all_length;
-
-    ListNodeAddPointer(&lookup_segment, 0, sequence_range);
+    BlastSeqLocNew(&lookup_segment, 0, all_length);
 
     /* Need query for psi-blast??  where to put the PSSM? */
     LookupTableWrapInit(NULL, lookup_options, lookup_segment, sbp, &lookup_wrap_ptr, NULL);
    
-    sbp->posMatrix = NULL;
+    RPSPsiMatrixDetach(sbp);
     sbp = BlastScoreBlkFree(sbp);
     lookup_options = LookupTableOptionsFree(lookup_options);
-    lookup_segment = ListNodeFreeData(lookup_segment);
+    lookup_segment = BlastSeqLocFree(lookup_segment);
 
-    lookup = (LookupTable*) lookup_wrap_ptr->lut;
+    lookup = (BlastLookupTable*) lookup_wrap_ptr->lut;
 
     /* Only Uint4 maximum length for lookup file allowed in current
        implementation */

@@ -17,7 +17,7 @@ extern "C" { /* } */
 /**************************************************
 *
 *    Generated objects for Module INSD-INSDSeq
-*    Generated using ASNCODE Revision: 6.14 at Apr 28, 2004  5:15 PM
+*    Generated using ASNCODE Revision: 6.14 at Jun 1, 2004 11:01 AM
 *
 **************************************************/
 
@@ -35,9 +35,9 @@ typedef struct struct_INSDSeq {
    Uint4 OBbits__;
    CharPtr   locus;
    Int4   length;
-   Int4   strandedness;
-   Int4   moltype;
-   Int4   topology;
+   CharPtr   strandedness;
+   CharPtr   moltype;
+   CharPtr   topology;
    CharPtr   division;
    CharPtr   update_date;
    CharPtr   create_date;

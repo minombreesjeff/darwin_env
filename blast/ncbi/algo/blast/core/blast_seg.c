@@ -1,51 +1,55 @@
-static char const rcsid[] = "$Id: blast_seg.c,v 1.21 2004/04/05 16:09:27 camacho Exp $";
-/*
-* ===========================================================================
-*
-*                            PUBLIC DOMAIN NOTICE                          
-*               National Center for Biotechnology Information
-*                                                                          
-*  This software/database is a "United States Government Work" under the   
-*  terms of the United States Copyright Act.  It was written as part of    
-*  the author's official duties as a United States Government employee and 
-*  thus cannot be copyrighted.  This software/database is freely available 
-*  to the public for use. The National Library of Medicine and the U.S.    
-*  Government have not placed any restriction on its use or reproduction.  
-*                                                                          
-*  Although all reasonable efforts have been taken to ensure the accuracy  
-*  and reliability of the software and data, the NLM and the U.S.          
-*  Government do not and cannot warrant the performance or results that    
-*  may be obtained by using this software or data. The NLM and the U.S.    
-*  Government disclaim all warranties, express or implied, including       
-*  warranties of performance, merchantability or fitness for any particular
-*  purpose.                                                                
-*                                                                          
-*  Please cite the author in any work or product based on this material.   
-*
-* ===========================================================================
-*
-* File Name:  blast_seg.c
-*
-* Author(s): Ilya Dondoshansky
-*   
-* Version Creation Date: 05/28/2003
-*
-* $Revision: 1.21 $
-*
-* File Description: A utility to find low complexity AA regions.
-*                   This parallels functionality of seg.c from the C toolkit,
-*                   but without using the structures generated from ASN.1 spec.
-* ==========================================================================
-*/
+/* $Id: blast_seg.c,v 1.35 2005/04/04 19:50:04 madden Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE                          
+ *               National Center for Biotechnology Information
+ *                                                                          
+ *  This software/database is a "United States Government Work" under the   
+ *  terms of the United States Copyright Act.  It was written as part of    
+ *  the author's official duties as a United States Government employee and 
+ *  thus cannot be copyrighted.  This software/database is freely available 
+ *  to the public for use. The National Library of Medicine and the U.S.    
+ *  Government have not placed any restriction on its use or reproduction.  
+ *                                                                          
+ *  Although all reasonable efforts have been taken to ensure the accuracy  
+ *  and reliability of the software and data, the NLM and the U.S.          
+ *  Government do not and cannot warrant the performance or results that    
+ *  may be obtained by using this software or data. The NLM and the U.S.    
+ *  Government disclaim all warranties, express or implied, including       
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.                                                                
+ *                                                                          
+ *  Please cite the author in any work or product based on this material.   
+ *
+ * ===========================================================================
+ *
+ * Author: Ilya Dondoshansky
+ *
+ */
+
+/** @file blast_seg.c
+ * A utility to find low complexity AA regions. This parallels functionality 
+ * of seg.c from the C toolkit, but without using the structures generated 
+ * from ASN.1 spec.
+ * @todo FIXME needs comments
+ */
+
+#ifndef SKIP_DOXYGEN_PROCESSING
+static char const rcsid[] = 
+    "$Id: blast_seg.c,v 1.35 2005/04/04 19:50:04 madden Exp $";
+#endif /* SKIP_DOXYGEN_PROCESSING */
 
 #include <algo/blast/core/blast_seg.h>
+#include <algo/blast/core/blast_filter.h>
 
-#ifdef WIN16
-float
-#else
-double
-#endif
-  lnfact[] = 
+
+/** Declared in blast_def.h. */
+const int kSegWindow = 12;
+const double kSegLocut = 2.2;
+const double kSegHicut = 2.5;
+
+/** Natural log of factorials: 0!, 1!, 2!, 3! */
+double lnfact[] = 
   {
    0.000000, 0.000000, 0.693147, 1.791759, 3.178054, 4.787492, 6.579251, 8.525161, 
    10.604603, 12.801827, 15.104413, 17.502308, 19.987214, 22.552164, 25.191221, 27.899271, 
@@ -1300,20 +1304,64 @@ double
    82108.927837 
   }; 
 
-/*---------------------------------------------------------------(SeqNew)---*/
 
-static Sequence* SeqNew(void)
+const int kProtAlphabet = 2;   /**< identifies protein alphabet (FIXME: needed?). */
+
+
+
+/** Information about the alphabet used by seg.
+ *  For proteins this version of seg uses ncbistdaa,
+ *  This keeps track of those.
+ */
+typedef struct Alpha
+  {
+   Int4 alphabet;              /**< which alphabet, kProtAlphabet for proteins. */
+   Int4 alphasize;             /**< size of above alphabet. */
+   double lnalphasize;         /**< nat. log of size of above alphabet. */
+   Int4* alphaindex;           /**< value in ncbistdaa. */
+   unsigned char* alphaflag;   /**< array of bools to indicate that letter is (not) valid?? */
+  } Alpha;
+
+
+/** General sequence information */
+typedef struct SSequence
+  {
+   struct SSequence* parent;   /**< SSequence window that encompasses the current one */
+   char* seq;                  /**< sequence in ncbistdaa. */
+   Alpha* palpha;              /**< alphabet information */
+   Int4 start;                 /**< starting offset to seg. */
+   Int4 length;                /**< Length of sequence to be segged. */
+   Int4 bogus;                 /**< tracks number of non-allowed residues (e.g., X) */
+   Boolean punctuation;        /**< FIXME: always FALSE, never set to TRUE? */
+   Int4* composition;          /**< totals number of each type of residue */
+   Int4* state;                /**< "state vector as described on pg. 151 of Wootton and Federhen
+                                  (Comput. Chem. 17, 149 (1993)).  Tracks number of each residue, 
+                                  like composition, but without gaps in array. */
+   double entropy;             /**< entropy of what this array refers to. */
+} SSequence;
+
+/** List of sequence segments (hits) */
+typedef struct SSeg
+  {
+   int begin;          /**< beginning of segment (hit). */
+   int end;            /**< end of segment (hit). */
+   struct SSeg *next;  /**< next object in linked list */
+  } SSeg;
+
+/** Initializes SSequence structure */
+static SSequence* 
+s_SSequenceNew(void)
 {
-   Sequence* seq;
+   SSequence* seq;
 
-   seq = (Sequence*) calloc(1, sizeof(Sequence));
+   seq = (SSequence*) calloc(1, sizeof(SSequence));
    if (seq==NULL)
      {
       /* raise error flag and etc. */
       return(seq);
      }
 
-   seq->parent = (Sequence*) NULL;
+   seq->parent = (SSequence*) NULL;
    seq->seq = (char*) NULL;
    seq->palpha = (Alpha*) NULL;
    seq->start = seq->length = 0;
@@ -1326,38 +1374,49 @@ static Sequence* SeqNew(void)
 
 /*------------------------------------------------------------(AlphaFree)---*/
 
-static void AlphaFree (Alpha* palpha)
+/** Frees the Alpha structure and underlying structures.
+ * @param palpha the object to be freed [in]
+ */
+static void 
+s_AlphaFree (Alpha* palpha)
 
   {
    if (!palpha) return;
 
    sfree (palpha->alphaindex);
    sfree (palpha->alphaflag);
-   sfree (palpha->alphachar);
    sfree (palpha);
 
    return;
  }
 
-/*--------------------------------------------------------------(SeqFree)---*/
+/*--------------------------------------------------------------(SSequenceFree)---*/
 
-static void SeqFree(Sequence* seq)
+/** Frees the SSequence structure and the underlying structure
+ * @param seq the object to be freed [in]
+ */
+static void 
+s_SSequenceFree(SSequence* seq)
 {
    if (seq==NULL) return;
 
    sfree(seq->seq);
-   AlphaFree(seq->palpha);
+   s_AlphaFree(seq->palpha);
    sfree(seq->composition);
    sfree(seq->state);
    sfree(seq);
    return;
 }
 
-/*--------------------------------------------------------------(SegFree)---*/
+/*--------------------------------------------------------------(SSegFree)---*/
 
-static void SegFree(Seg* seg)
+/** Frees the SSeg structure
+ * @param seg the object to be freed [in]
+ */
+static void 
+s_SegFree(SSeg* seg)
 {
-   Seg* nextseg;
+   SSeg* nextseg;
 
    while (seg)
      {
@@ -1371,9 +1430,14 @@ static void SegFree(Seg* seg)
 
 /*--------------------------------------------------------------(hasdash)---*/
 
-static Boolean hasdash(Sequence* win)
+/** Checks if sequence contains a dash.
+ * @param win SSequence structure for a piece of a sequence [in]
+ * @return TRUE if dash is found in the sequence, otherwise FALSE [in]
+ */
+static Boolean 
+s_HasDash(SSequence* win)
 {
-	register char	*seq, *seqmax;
+	char	*seq, *seqmax;
 
 	seq = win->seq;
 	seqmax = seq + win->length;
@@ -1387,7 +1451,9 @@ static Boolean hasdash(Sequence* win)
 
 /*------------------------------------------------------------(state_cmp)---*/
 
-static int state_cmp(const void* s1, const void* s2)
+/** State comparison function */
+static int 
+s_StateCmp(const void* s1, const void* s2)
 {
 	int *np1, *np2;
 
@@ -1399,7 +1465,11 @@ static int state_cmp(const void* s1, const void* s2)
 
 /*---------------------------------------------------------------(compon)---*/
 
-static void compon(Sequence* win)
+/** Calculates sequence composition array values. 
+ * @param win the object to be analyzed [in]
+ */
+static void 
+s_CompOn(SSequence* win)
 
 {
 	Int4* comp;
@@ -1422,7 +1492,8 @@ static void compon(Sequence* win)
 		letter = *seq++;
 		if (!alphaflag[letter])
 			comp[alphaindex[letter]]++;
-      else win->bogus++;
+                else 
+                        win->bogus++;
 	}
 
 	return;
@@ -1430,7 +1501,11 @@ static void compon(Sequence* win)
 
 /*--------------------------------------------------------------(stateon)---*/
 
-static void stateon(Sequence* win)
+/** Calculates state array values 
+ * @param win the object to be analyzed [in]
+ */
+static void 
+s_StateOn(SSequence* win)
 
 {
 	Int4 letter, nel, c;
@@ -1439,7 +1514,7 @@ static void stateon(Sequence* win)
         alphasize = win->palpha->alphasize;
 
 	if (win->composition == NULL)
-		compon(win);
+		s_CompOn(win);
 
 	win->state = (Int4*) calloc((alphasize+1), sizeof(win->state[0]));
 
@@ -1451,40 +1526,42 @@ static void stateon(Sequence* win)
 	for (letter = nel; letter < alphasize+1; ++letter)
 		win->state[letter] = 0;
 
-	qsort(win->state, nel, sizeof(win->state[0]), state_cmp);
+	qsort(win->state, nel, sizeof(win->state[0]), s_StateCmp);
 
 	return;
 }
 
-/*--------------------------------------------------------------(openwin)---*/
+/*--------------------------------------------------------------(s_OpenWin)---*/
 
-static Sequence* openwin(Sequence* parent, Int4 start, Int4 length)
+/** Initializes an SSequence structure for part of sequence contained in a
+ * window.
+ * @param parent Parent (whole) sequence [in]
+ * @param start Window start in parent [in]
+ * @param length Window length in parent [in]
+ * @return Pointer to the resulting SSequence structure.
+ */
+static SSequence* 
+s_OpenWin(SSequence* parent, Int4 start, Int4 length)
 {
-   Sequence* win;
+   SSequence* win;
 
    if (start<0 || length<0 || start+length>parent->length)
      {
-      return((Sequence*) NULL);
+      return((SSequence*) NULL);
      }
 
-   win = (Sequence*) calloc(1, sizeof(Sequence));
+      win = (SSequence*) calloc(1, sizeof(SSequence));
 
 /*---                                          ---[set links, up and down]---*/
 
-   win->parent = parent;
-   win->palpha = parent->palpha;
+      win->parent = parent;
+      win->palpha = parent->palpha;
 
 /*---                          ---[install the local copy of the sequence]---*/
 
-   win->start = start;
-   win->length = length;
-#if 0                                                    /* Hi Warren! */
-   win->seq = (char*) calloc(length + 1, sizeof(char));
-   memcpy(win->seq, (parent->seq)+start, length);
-   win->seq[length] = '\0';
-#else
+      win->start = start;
+      win->length = length;
 	win->seq = parent->seq + start;
-#endif
 
         win->bogus = 0;
 	win->punctuation = FALSE;
@@ -1493,16 +1570,21 @@ static Sequence* openwin(Sequence* parent, Int4 start, Int4 length)
 	win->state = (Int4*) NULL;
 	win->composition = (Int4*) NULL;
 
-	stateon(win);
+	s_StateOn(win);
 
 	return win;
 }
 
-/*--------------------------------------------------------------(entropy)---*/
+/*--------------------------------------------------------------(s_Entropy)---*/
 
-static double entropy(Int4* sv)
-
-  {double ent;
+/** Calculates entropy of an integer array 
+ * @param sv array to be analyzed [in]
+ * @return the entropy
+ */
+static double 
+s_Entropy(Int4* sv)
+{
+   double ent;
    Int4 i, total;
 
    total = 0;
@@ -1515,17 +1597,26 @@ static double entropy(Int4* sv)
    ent = 0.0;
    for (i=0; sv[i]!=0; i++)
      {
-      ent += ((double)sv[i])*log(((double)sv[i])/(double)total)/LN2;
+      ent += ((double)sv[i])*log(((double)sv[i])/(double)total)/NCBIMATH_LN2;
      }
 
    ent = fabs(ent/(double)total);
 
    return(ent);
-  }
+}
 
 /*----------------------------------------------------------(decrementsv)---*/
 
-static void decrementsv(Int4* sv, Int4 class)
+
+
+/** Decrements the value in the Int4 array for every element that matches class.
+ * There is also another criteria that the next element must have a vlaue
+ * less than class.
+ * @param sv the array to be examined and decremented [in|out]
+ * @param class criteria for decrementing an element [in]
+ */
+static void 
+s_DecrementSV(Int4* sv, Int4 class)
 
 {
 	Int4	svi;
@@ -1538,9 +1629,12 @@ static void decrementsv(Int4* sv, Int4 class)
 	}
 }
 
-/*----------------------------------------------------------(incrementsv)---*/
-
-static void incrementsv(Int4* sv, Int4 class)
+/** Increments the value in the Int4 array for every element that matches class.
+ * @param sv the array to be examined and incremented [in|out]
+ * @param class criteria for incrementing an element [in]
+ */
+static void 
+s_IncrementSV(Int4* sv, Int4 class)
 
 {
 	for (;;) {
@@ -1551,9 +1645,14 @@ static void incrementsv(Int4* sv, Int4 class)
 	}
 }
 
-/*------------------------------------------------------------(shiftwin1)---*/
+/** Moves over the "window" of sequence seg is currently working on.
+ *
+ * @param win object to be operated on [in]
+ * @return FALSE if nothing done, TRUE otherwise
+ */
 
-static Int4 shiftwin1(Sequence* win)
+static Boolean 
+s_ShiftWin1(SSequence* win)
 {
 	Int4 j, length;
 	Int4* comp;
@@ -1571,25 +1670,30 @@ static Int4 shiftwin1(Sequence* win)
 	}
 
 	if (!alphaflag[j = win->seq[0]])
-		decrementsv(win->state, comp[alphaindex[j]]--);
+		s_DecrementSV(win->state, comp[alphaindex[j]]--);
         else win->bogus--;
 
 	j = win->seq[length];
 	++win->seq;
 
 	if (!alphaflag[j])
-		incrementsv(win->state, comp[alphaindex[j]]++);
+		s_IncrementSV(win->state, comp[alphaindex[j]]++);
         else win->bogus++;
 
 	if (win->entropy > -2.)
-		win->entropy = entropy(win->state);
+		win->entropy = s_Entropy(win->state);
 
 	return TRUE;
 }
 
 /*-------------------------------------------------------------(closewin)---*/
 
-static void closewin(Sequence* win)
+/** Frees the SSequence structure corresponding to a sequence window 
+ * Does not free palpha like s_SSequenceFree (two functions needed?).
+ * @param win object to be freed
+ */
+static void 
+s_CloseWin(SSequence* win)
 {
    if (win==NULL) return;
 
@@ -1602,20 +1706,31 @@ static void closewin(Sequence* win)
 
 /*----------------------------------------------------------------(enton)---*/
 
-static void enton(Sequence* win)
+/** Calculates entropy of a sequence window 
+ * @param win object to be analyzed [in]
+ */
+static void 
+s_EntropyOn(SSequence* win)
 
   {
-   if (win->state==NULL) {stateon(win);}
+   if (win->state==NULL) {s_StateOn(win);}
 
-   win->entropy = entropy(win->state);
+   win->entropy = s_Entropy(win->state);
 
    return;
   }
 
-/*---------------------------------------------------------------(seqent)---*/
-static double* seqent(Sequence* seq, Int4 window, Int4 maxbogus)
+/** Calculates entropy for a given sequence and window
+ * 
+ * @param seq Sequence to examine [in]
+ * @param window amount of sequence to examine at once [in]
+ * @param maxbogus limit on non-allowed (e.g., X) characters [in]
+ * @return calculated entropy
+ */
+static double* 
+s_SeqEntropy(SSequence* seq, Int4 window, Int4 maxbogus)
 {
-   Sequence* win;
+   SSequence* win;
    double* H;
    Int4 i, first, last, downset, upset;
 
@@ -1634,99 +1749,121 @@ static double* seqent(Sequence* seq, Int4 window, Int4 maxbogus)
       H[i] = -1.;
      }
 
-   win = openwin(seq, 0, window);
-   enton(win);
+   win = s_OpenWin(seq, 0, window);
+   s_EntropyOn(win);
 
    first = downset;
    last = seq->length - upset;
 
    for (i=first; i<=last; i++)
      {
-      if (seq->punctuation && hasdash(win))
+      if (seq->punctuation && s_HasDash(win))
         {
          H[i] = -1.;
-         shiftwin1(win);
+         s_ShiftWin1(win);
          continue;
         }
       if (win->bogus > maxbogus)
         {
          H[i] = -1.;
-         shiftwin1(win);
+         s_ShiftWin1(win);
          continue;
         }
       H[i] = win->entropy;
-      shiftwin1(win);
+      s_ShiftWin1(win);
      }
 
-   closewin(win);
+   s_CloseWin(win);
    return(H);
 }
 
-/*------------------------------------------------------------(appendseg)---*/
-
+/** Appends second arg to end of first one.
+ * @param segs structure to be appended to [in]
+ * @param seg structure to append [in]
+ */
 static void
-appendseg(Seg* segs, Seg* seg)
+s_AppendSeg(SSeg* segs, SSeg* seg)
+{
+   SSeg* temp = segs;
 
-  {Seg* temp;
-
-   temp = segs;
    while (TRUE)
-     {
+   {
       if (temp->next==NULL)
-        {
+      {
          temp->next = seg;
          break;
-        }
+      }
       else
-        {
+      {
          temp = temp->next;
-        }
-     }
+      }
+   }
 
    return;
-  }
+}
 
-/*---------------------------------------------------------------(findlo)---*/
+/*---------------------------------------------------------------(s_FindLow)---*/
 
-static Int4 findlo(Int4 i, Int4 limit, double hicut, double* H)
+/** Finds the first element above hicut, looks from i to limit.
+ * @param i first element to check [in]
+ * @param limit last element to check [in]
+ * @param hicut value to check for [in]
+ * @param H the array to check.
+ * @return index of last element with value below hicut
+ */
+
+static Int4 s_FindLow(Int4 i, Int4 limit, double hicut, double* H)
 
   {
    Int4 j;
 
    for (j=i; j>=limit; j--)
      {
-      if (H[j]==-1) break;
+      if (H[j]==-1.0) break;
       if (H[j]>hicut) break;
      }
 
    return(j+1);
   }
 
-/*---------------------------------------------------------------(findhi)---*/
+/*---------------------------------------------------------------(s_FindHigh)---*/
 
-static Int4 findhi(Int4 i, Int4 limit, double hicut, double* H)
+/** Finds the last element below hicut, looks from i to limit.
+ * @param i first element to check [in]
+ * @param limit last element to check [in]
+ * @param hicut value to check for [in]
+ * @param H the array to check.
+ * @return index of last element with value below hicut
+ */
+static Int4 s_FindHigh(Int4 i, Int4 limit, double hicut, double* H)
 
   {
    Int4 j;
 
    for (j=i; j<=limit; j++)
      {
-      if (H[j]==-1) break;
+      if (H[j]==-1.0) break;
       if (H[j]>hicut) break;
      }
 
    return(j-1);
   }
 
-/*---------------------------------------------------------------(lnperm)---*/
 
-static double lnperm(Int4* sv, Int4 tot)
+/** calculate "K2" entropy per equation 3 of Wootton and Federhen
+ * (Comput. Chem. 17, 149 (1993).
+ * @param sv state vector [in]
+ * @param window_length length of window being examined
+ * @return K2
+ */ 
+static double 
+s_LnPerm(const Int4* sv, Int4 window_length)
 
   {
    double ans;
    Int4 i;
 
-   ans = lnfact[tot];
+   ans = lnfact[window_length];
 
    for (i=0; sv[i]!=0; i++) 
      {
@@ -1736,9 +1873,16 @@ static double lnperm(Int4* sv, Int4 tot)
    return(ans);
   }
 
-/*----------------------------------------------------------------(lnass)---*/
 
-static double lnass(Int4* sv, Int4 alphasize)
+/** Calculates natural log of "Farben" which is the number of compositions
+ * in any complexity state.  See equation 1 of Wootton and Federhen
+ * (Comput. Chem. 17, 149 (1993)).
+ * @param sv state vector [in]
+ * @param alphasize total letters in alphabet [in]
+ * @return number of compositions as described above
+ */
+static double 
+s_LnAss(const Int4* sv, Int4 alphasize)
 
 {
 	double	ans;
@@ -1780,113 +1924,110 @@ static double lnass(Int4* sv, Int4 alphasize)
 	return ans;
 }
 
-/*--------------------------------------------------------------(getprob)---*/
 
-static double getprob(Int4* sv, Int4 total, Alpha* palpha)
+/** This function calculates the natural log of the value P sub 0 from 
+ * equation 3 of Wootton and Federhen (Methods Enzymol. 1996;266:554-71).
+ * @param sv state vector [in]
+ * @param total window length of area examined [in]
+ * @param palpha structure for alphabet information [in]
+ * @return log of P sub 0 as mentioned above
+ */
+static double 
+s_GetProb(const Int4* sv, Int4 total, const Alpha* palpha)
 
   {
    double ans, ans1, ans2 = 0, totseq;
 
-   /* #define LN20	2.9957322735539909 */
-   /* #define LN4	1.3862943611198906 */
-
    totseq = ((double) total) * palpha->lnalphasize;
 
-/*
-   ans = lnass(sv, palpha->alphasize) + lnperm(sv, total) - totseq;
-*/
-   ans1 = lnass(sv, palpha->alphasize);
+   ans1 = s_LnAss(sv, palpha->alphasize);
    if (ans1 > -100000.0 && sv[0] != INT4_MIN)
    {
-	ans2 = lnperm(sv, total);
+	ans2 = s_LnPerm(sv, total);
    }
    else
    {
 #ifdef ERR_POST_EX_DEFINED
-        ErrPostEx (SEV_ERROR, 0, 0, "Illegal value returned by lnass");
+        ErrPostEx (SEV_ERROR, 0, 0, "Illegal value returned by s_LnAss");
 #endif
    }
    ans = ans1 + ans2 - totseq;
-/*
-fprintf(stderr, "%lf %lf %lf\n", ans, ans1, ans2);
-*/
 
    return ans;
   }
 
-/*-----------------------------------------------------------------(trim)---*/
+/** Trims view of sequence so as to minimize the probability returned by s_GetProb
+ * @param seq the part of sequence to be examined [in]
+ * @param leftend left-most end of sequence [in|out]
+ * @param rightend right-most end of sequence [in|out]
+ * @param sparamsp the SEG parameters [in]
+ */
+static void 
+s_Trim(SSequence* seq, Int4* leftend, Int4* rightend, const SegParameters* sparamsp)
 
-static void trim(Sequence* seq, Int4* leftend, Int4* rightend,
-                 SegParameters* sparamsp)
-
-  {
-   Sequence* win;
+{
    double prob, minprob;
-   Int4 shift, len, i;
+   Int4 len;
    Int4 lend, rend;
    Int4 minlen;
    Int4 maxtrim;
-
-/* fprintf(stderr, "%d %d\n", *leftend, *rightend);  */
 
    lend = 0;
    rend = seq->length - 1;
    minlen = 1;
    maxtrim = sparamsp->maxtrim;
-   if ((seq->length-maxtrim)>minlen) minlen = seq->length-maxtrim;
+   if ((seq->length-maxtrim)>minlen) 
+        minlen = seq->length-maxtrim;
 
    minprob = 1.;
-/*   fprintf(stderr, "\n");                                           -*/
    for (len=seq->length; len>minlen; len--)
-     {
-/*      fprintf(stderr, "%5d ", len);                                 -*/
-      win = openwin(seq, 0, len);
-      i = 0;
+   {
+      Boolean shift = TRUE;
+      Int4 i = 0;
+      SSequence* win = s_OpenWin(seq, 0, len);
 
-      shift = TRUE;
       while (shift)
-        {
-         prob = getprob(win->state, len, sparamsp->palpha);
-/*         realprob = exp(prob);                 (for tracing the trim)-*/
-/*         fprintf(stderr, "%2e ", realprob);                          -*/
+      {
+         prob = s_GetProb(win->state, len, win->palpha);
          if (prob<minprob)
-           {
+         {
             minprob = prob;
             lend = i;
             rend = len + i - 1;
-           }
-         shift = shiftwin1(win);
+         }
+         shift = s_ShiftWin1(win);
          i++;
-        }
-      closewin(win);
-/*      fprintf(stderr, "\n");                                       -*/
-     }
-
-/*   fprintf(stderr, "%d-%d ", *leftend, *rightend);                 -*/
+      }
+      s_CloseWin(win);
+   }
 
    *leftend = *leftend + lend;
    *rightend = *rightend - (seq->length - rend - 1);
 
-/*   fprintf(stderr, "%d-%d\n", *leftend, *rightend);                -*/
-
-   closewin(seq);
+   s_CloseWin(seq);
    return;
-  }
+}
 
-/*---------------------------------------------------------------(SegSeq)---*/
-
-static void SegSeq(Sequence* seq, SegParameters* sparamsp, Seg* *segs,
+/** High-level function to perform calculations to find 
+ * low-complexity segments.  Thi function calls itself 
+ * recursively
+ * 
+ * @param seq sequence to be checked [in]
+ * @param sparamsp seg parameters [in]
+ * @param segs low-complexity segments found [out]
+ * @param offset offset of sequence passed in [in]
+ */
+static void 
+s_SegSeq(SSequence* seq, SegParameters* sparamsp, SSeg* *segs,
                    Int4 offset)
 {
-   Seg* seg,* leftsegs;
-   Sequence* leftseq;
+   SSeg* seg = (SSeg*) NULL;
    Int4 window;
    double locut, hicut;
-   Int4 maxbogus;
    Int4 downset, upset;
    Int4 first, last, lowlim;
-   Int4 loi, hii, i;
-   Int4 leftend, rightend, lend, rend;
+   Int4 i;
+   Int4 leftend, rightend;
    double* H;
 
    if (sparamsp->window<=0) return;
@@ -1898,85 +2039,77 @@ static void SegSeq(Sequence* seq, SegParameters* sparamsp, Seg* *segs,
    hicut = sparamsp->hicut;
    downset = (window+1)/2 - 1;
    upset = window - downset;
-   maxbogus = sparamsp->maxbogus;
       
-   H = seqent(seq, window, maxbogus);
-   if (H==NULL) return;
+   H = s_SeqEntropy(seq, window, sparamsp->maxbogus);
+
+   if (H == NULL) 
+      return;
 
    first = downset;
    last = seq->length - upset;
    lowlim = first;
 
    for (i=first; i<=last; i++)
-     {
+   {
       if (H[i] <= locut && H[i] != -1.0)
         {
-         loi = findlo(i, lowlim, hicut, H);
-         hii = findhi(i, last, hicut, H);
+         Int4 loi = s_FindLow(i, lowlim, hicut, H);
+         Int4 hii = s_FindHigh(i, last, hicut, H);
 
          leftend = loi - downset;
          rightend = hii + upset - 1;
 
-         trim(openwin(seq, leftend, rightend-leftend+1), &leftend, &rightend,
+         s_Trim(s_OpenWin(seq, leftend, rightend-leftend+1), &leftend, &rightend,
               sparamsp);
 
          if (i+upset-1<leftend)   /* check for trigger window in left trim */
-           {
-            lend = loi - downset;
-            rend = leftend - 1;
+         {
+            Int4 lend = loi - downset;
+            Int4 rend = leftend - 1;
 
-            leftseq = openwin(seq, lend, rend-lend+1);
-            leftsegs = (Seg*) NULL;
-            SegSeq(leftseq, sparamsp, &leftsegs, offset+lend);
+            SSequence* leftseq = s_OpenWin(seq, lend, rend-lend+1);
+            SSeg *leftsegs = (SSeg*) NULL;
+            s_SegSeq(leftseq, sparamsp, &leftsegs, offset+lend);
             if (leftsegs!=NULL)
-              {
+            {
                if (*segs==NULL) *segs = leftsegs;
-               else appendseg(*segs, leftsegs);
-              }
-            closewin(leftseq);
+               else s_AppendSeg(*segs, leftsegs);
+            }
+            s_CloseWin(leftseq);
 
-/*          trim(openwin(seq, lend, rend-lend+1), &lend, &rend);
-            seg = (Seg*) calloc(1, sizeof(Seg));
-            seg->begin = lend;
-            seg->end = rend;
-            seg->next = (Seg*) NULL;
-            if (segs==NULL) segs = seg;
-            else appendseg(segs, seg);  */
-           }
+         }
 
-         seg = (Seg*) calloc(1, sizeof(Seg));
+         seg = (SSeg*) calloc(1, sizeof(SSeg));
          seg->begin = leftend + offset;
          seg->end = rightend + offset;
-         seg->next = (Seg*) NULL;
+         seg->next = (SSeg*) NULL;
 
          if (*segs==NULL) *segs = seg;
-         else appendseg(*segs, seg);
+         else s_AppendSeg(*segs, seg);
 
          i = MIN(hii, rightend+downset);
          lowlim = i + 1;
-/*       i = hii;     this ignores the trimmed residues... */
         }
-     }
+   }
    sfree(H);
    return;
 }
 
 /*------------------------------------------------------------(mergesegs)---*/
-/* merge together overlapping segments, 
-	hilenmin also does something, but we need to ask Scott Federhen what?
+/** merge together overlapping segments, 
+ * hilenmin also does something, but we need to ask Scott Federhen what?
+ * @param seq information about sequence [in]
+ * @param segs segment information [in]
 */
-
-static void mergesegs(Sequence* seq, Seg* segs, Boolean overlaps)
+static void 
+s_MergeSegs(SSequence* seq, SSeg* segs)
 {
-   Seg* seg,* nextseg;
+   SSeg* seg,* nextseg;
    Int4 hilenmin;		/* hilenmin yet unset */
    Int4 len;
 
    hilenmin = 0;               /* hilenmin - temporary default */
 
-   if (overlaps == FALSE) 
-	return;
-	
    if (segs==NULL) return;
 
    if (segs->begin<hilenmin) segs->begin = 0;
@@ -2020,53 +2153,66 @@ static void mergesegs(Sequence* seq, Seg* segs, Boolean overlaps)
    return;
 }
 
-static Int2 SegsToBlastSeqLoc(Seg* segs, Int4 offset, BlastSeqLoc** seg_locs)
+/** Converts the internal representation used by seg to that used by BLAST
+ *
+ * @param segs internal representation [in]
+ * @param offset fixed value to add to offsets [in]
+ * @param seg_locs the new BLAST specific representation [out]
+ * @return 0 on success, -1 if memory allocation failed.
+ */
+static Int2 
+s_SegsToBlastSeqLoc(SSeg* segs, Int4 offset, BlastSeqLoc** seg_locs)
 {
-   SSeqRange* dip;
-   BlastSeqLoc* last_slp = NULL,* head_slp = NULL;
+   BlastSeqLoc* last_slp = NULL;
 
    for ( ; segs; segs = segs->next) {
-      dip = (SSeqRange*) calloc(1, sizeof(SSeqRange));
-      dip->left = segs->begin + offset;
-      dip->right = segs->end + offset;
+      Int4 left = segs->begin + offset;
+      Int4 right = segs->end + offset;
 
       if (!last_slp) {
-         last_slp = ListNodeAddPointer(&head_slp, 0, dip);
+         last_slp = BlastSeqLocNew(seg_locs, left, right);
       } else {
-         last_slp = ListNodeAddPointer(&last_slp, 0, dip);
+         last_slp = BlastSeqLocNew(&last_slp, left, right);
       }
+      /* Check that allocation succeeded. */
+      if (!last_slp)
+          break;
    }
+   /* If not all segs have been processed, it means that memory allocation 
+      failed, hence return error status. */
+   if (segs)
+       return -1;
 
-   *seg_locs = head_slp;
    return 0;
 }
 
-/*------------------------------------------------------------(AA20alpha)---*/
-
-static Alpha* AA20alpha_std (void)
+/** Creats the Alphabet structure for standard protein alphabet. 
+ * @return pointer to the alphabet structure.
+ */
+static Alpha* 
+s_AA20alphaStd (void)
 {
    Alpha* palpha;
    Int4* alphaindex;
    unsigned char* alphaflag;
-   char* alphachar;
    Uint1 c, i;
+   const int kCharSet = 128;
+   const double kLn20 = 2.9957322735539909;
 
    palpha = (Alpha*) calloc(1, sizeof(Alpha));
 
-   palpha->alphabet = AA20;
+   palpha->alphabet = kProtAlphabet;
    palpha->alphasize = 20;
-   palpha->lnalphasize = LN20;
+   palpha->lnalphasize = kLn20;
 
-   alphaindex = (Int4*) calloc(CHAR_SET , sizeof(Int4));
-   alphaflag = (unsigned char*) calloc(CHAR_SET , sizeof(char));
-   alphachar = (char*) calloc(palpha->alphasize , sizeof(char));
+   alphaindex = (Int4*) calloc(kCharSet , sizeof(Int4));
+   alphaflag = (unsigned char*) calloc(kCharSet , sizeof(char));
 
-   for (c=0, i=0; c<128; c++)
+   for (c=0, i=0; c<kCharSet; c++)
      {
         if (c == 1 || (c >= 3 && c <= 20) || c == 22) {
            alphaflag[c] = FALSE; 
            alphaindex[c] = i; 
-           alphachar[i] = c;
            ++i;
         } else {
            alphaflag[c] = TRUE; alphaindex[c] = 20;
@@ -2075,47 +2221,42 @@ static Alpha* AA20alpha_std (void)
 
    palpha->alphaindex = alphaindex;
    palpha->alphaflag = alphaflag;
-   palpha->alphachar = alphachar;
 
    return (palpha);
 }
 
-/*-------------------------------------------------------(SegParametersNewAa)---*/
-
+/* Comments in blast_seg.h */
 SegParameters* SegParametersNewAa (void)
 {
    SegParameters* sparamsp;
 
    sparamsp = (SegParameters*) calloc(1, sizeof(SegParameters));
 
-   sparamsp->window = 12;
-   sparamsp->locut = 2.2;
-   sparamsp->hicut = 2.5;
+   sparamsp->window = kSegWindow;
+   sparamsp->locut = kSegLocut;
+   sparamsp->hicut = kSegHicut;
    sparamsp->period = 1;
    sparamsp->hilenmin = 0;
    sparamsp->overlaps = FALSE;
    sparamsp->maxtrim = 50;
    sparamsp->maxbogus = 2;
-   sparamsp->palpha = AA20alpha_std();
 
    return (sparamsp);
 }
 
-/*-------------------------------------------------------(SegParametersCheck)---*/
-
-static void SegParametersCheck (SegParameters* sparamsp)
+/** Checks SeqParameter struct for proteins, sets default values if not set. 
+ * @param sparamsp parameters to check [in]
+ */
+static void 
+s_SegParametersCheck (SegParameters* sparamsp)
 {
    if (!sparamsp) return;
 
    if (sparamsp->window <= 0) sparamsp->window = 12;
 
    if (sparamsp->locut < 0.0) sparamsp->locut = 0.0;
-/* if (sparamsp->locut > sparamsp->palpha->lnalphasize)
-       sparamsp->locut = sparamsp->palpha->lnalphasize; */
 
    if (sparamsp->hicut < 0.0) sparamsp->hicut = 0.0;
-/* if (sparamsp->hicut > sparamsp->palpha->lnalphasize)
-       sparamsp->hicut = sparamsp->palpha->lnalphasize; */
 
    if (sparamsp->locut > sparamsp->hicut)
        sparamsp->hicut = sparamsp->locut;
@@ -2131,95 +2272,58 @@ static void SegParametersCheck (SegParameters* sparamsp)
    return;
 }
 
-/*--------------------------------------------------------(SegParametersFree)---*/
-
+/* Comments in blast_seg.h */
 void SegParametersFree(SegParameters* sparamsp)
 {
-   if (!sparamsp) return;
-   AlphaFree(sparamsp->palpha);
+   if (!sparamsp) 
+      return;
    sfree(sparamsp);
    return;
 }
 
-/*------------------------------------------------------------(AlphaCopy)---*/
-
-static Alpha* AlphaCopy (Alpha* palpha)
-{
-   Alpha* pbeta;
-   Int2 i;
-
-   if (!palpha) return((Alpha*) NULL);
-
-   pbeta = (Alpha*) calloc(1, sizeof(Alpha));
-   pbeta->alphabet = palpha->alphabet;
-   pbeta->alphasize = palpha->alphasize;
-   pbeta->lnalphasize = palpha->lnalphasize;
-
-   pbeta->alphaindex = (Int4*) calloc(CHAR_SET , sizeof(Int4));
-   pbeta->alphaflag = (unsigned char*) calloc(CHAR_SET , sizeof(char));
-   pbeta->alphachar = (char*) calloc(palpha->alphasize , sizeof(char));
-
-   for (i=0; i<CHAR_SET; i++)
-     {
-      pbeta->alphaindex[i] = palpha->alphaindex[i];
-      pbeta->alphaflag[i] = palpha->alphaflag[i];
-     }
-
-   for (i=0; i<palpha->alphasize; i++)
-     {
-      pbeta->alphachar[i] = palpha->alphachar[i];
-     }
-
-   return(pbeta);
-}
-
+/* comments in blast_seg.h */
 Int2 SeqBufferSeg (Uint1* sequence, Int4 length, Int4 offset,
                      SegParameters* sparamsp, BlastSeqLoc** seg_locs)
 {
-   Sequence* seqwin;
-   Seg* segs;
+   SSequence* seqwin;
+   SSeg* segs;
    Boolean params_allocated = FALSE;
    
-   SegParametersCheck (sparamsp);
+   s_SegParametersCheck (sparamsp);
    
    /* check seg parameters */
    
    if (!sparamsp) {
       params_allocated = TRUE;
       sparamsp = SegParametersNewAa();
-      SegParametersCheck (sparamsp);
-      if (!sparamsp) {
-#ifdef ERR_POST_EX_DEFINED
-         ErrPostEx (SEV_WARNING, 0, 0, "null parameters object");
-         ErrShow();
-#endif
+      s_SegParametersCheck (sparamsp);
+      if (!sparamsp)
          return -1;
-      }
    }
    
    /* make an old-style genwin sequence window object */
     
-   seqwin = SeqNew();
+   seqwin = s_SSequenceNew();
    seqwin->seq = (char*) sequence;
    seqwin->length = length;
-   seqwin->palpha = AlphaCopy(sparamsp->palpha);
+   seqwin->palpha = s_AA20alphaStd();
    
    /* seg the sequence */
    
-   segs = (Seg*) NULL;
-   SegSeq (seqwin, sparamsp, &segs, 0);
+   segs = (SSeg*) NULL;
+   s_SegSeq (seqwin, sparamsp, &segs, 0);
 
    /* merge the segment if desired. */
    if (sparamsp->overlaps)
-      mergesegs(seqwin, segs, sparamsp->overlaps);
+      s_MergeSegs(seqwin, segs);
 
    /* convert segs to seqlocs */
-   SegsToBlastSeqLoc(segs, offset, seg_locs);   
+   s_SegsToBlastSeqLoc(segs, offset, seg_locs);   
    
    /* clean up & return */
    seqwin->seq = NULL;
-   SeqFree (seqwin);
-   SegFree (segs);
+   s_SSequenceFree (seqwin);
+   s_SegFree (segs);
 
    if(params_allocated)
        SegParametersFree(sparamsp);

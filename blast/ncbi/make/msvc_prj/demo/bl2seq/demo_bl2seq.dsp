@@ -40,7 +40,7 @@ RSC=rc.exe
 # PROP Target_Dir ""
 LIB32=link.exe -lib
 # ADD BASE CPP /nologo /MDd /W3 /GX /Z7 /Od /D "WIN32" /D "_DEBUG" /D "_NETENT_" /D "_WINDOWS" /D "_MBCS" /YX /FD /GZ /c
-# ADD CPP /nologo /MDd /W3 /GR /Z7 /Od /I "..\..\..\.." /I "..\..\..\..\corelib" /I "..\..\..\..\api" /I "..\..\..\..\asnstat" /I "..\..\..\..\asnlib" /I "..\..\..\..\object" /I "..\..\..\..\cdromlib" /I "..\..\..\..\biostruc" /I "..\..\..\..\tools" /I "..\..\..\..\network\id1arch" /D "_CONSOLE" /D "WIN32" /D "_DEBUG" /YX /FD /GZ /c
+# ADD CPP /nologo /MDd /W3 /GR /Z7 /Od /I "..\..\..\.." /I "..\..\..\..\corelib" /I "..\..\..\..\api" /I "..\..\..\..\access" /I "..\..\..\..\asnstat" /I "..\..\..\..\asnlib" /I "..\..\..\..\object" /I "..\..\..\..\cdromlib" /I "..\..\..\..\biostruc" /I "..\..\..\..\tools" /I "..\..\..\..\network\id1arch" /D "_CONSOLE" /D "WIN32" /D "_DEBUG" /YX /FD /GZ /c
 # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
 # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
 # ADD BASE RSC /l 0x409 /d "_DEBUG"

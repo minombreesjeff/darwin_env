@@ -1,1 +1,0 @@
-../desktop/asn2graphic.h

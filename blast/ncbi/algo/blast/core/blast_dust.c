@@ -1,47 +1,56 @@
-static char const rcsid[] = "$Id: blast_dust.c,v 1.23 2004/04/07 03:06:16 camacho Exp $";
-/* 
-* ===========================================================================
-*
-*                            PUBLIC DOMAIN NOTICE
-*               National Center for Biotechnology Information
-*
-*  This software/database is a "United States Government Work" under the
-*  terms of the United States Copyright Act.  It was written as part of
-*  the author's offical duties as a United States Government employee and
-*  thus cannot be copyrighted.  This software/database is freely available
-*  to the public for use. The National Library of Medicine and the U.S.
-*  Government have not placed any restriction on its use or reproduction.
-*
-*  Although all reasonable efforts have been taken to ensure the accuracy
-*  and reliability of the software and data, the NLM and the U.S.
-*  Government do not and cannot warrant the performance or results that
-*  may be obtained by using this software or data. The NLM and the U.S.
-*  Government disclaim all warranties, express or implied, including
-*  warranties of performance, merchantability or fitness for any particular
-*  purpose.
-*
-*  Please cite the author in any work or product based on this material.
-*
-*
-* File Name:  blast_dust.c
-*
-* Author(s): Richa Agarwala (based upon versions variously worked upon by Roma Tatusov,
-* John Kuzio, and Ilya Dondoshansky).
-*   
-* Version Creation Date: 02/09/2004
-*
-* $Revision: 1.23 $
-*
-* File Description: A utility to find low complexity NA regions.
-*                   This parallels functionality of dust.c from the C toolkit,
-*                   but without using the structures generated from ASN.1 spec.
-* ==========================================================================
-*/
+/* $Id: blast_dust.c,v 1.32 2005/03/17 13:42:31 madden Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ==========================================================================
+ *
+ * Authors: Richa Agarwala (based upon versions variously worked upon by Roma 
+ *          Tatusov, John Kuzio, and Ilya Dondoshansky).
+ *   
+ * ==========================================================================
+ */
 
+/** @file blast_dust.c
+ * A utility to find low complexity NA regions. This parallels functionality 
+ * of dust.c from the C toolkit, but without using the structures generated 
+ * from ASN.1 spec.
+ */
+
+#ifndef SKIP_DOXYGEN_PROCESSING
+static char const rcsid[] =
+    "$Id: blast_dust.c,v 1.32 2005/03/17 13:42:31 madden Exp $";
+#endif /* SKIP_DOXYGEN_PROCESSING */
 
 #include <algo/blast/core/blast_dust.h>
 #include <algo/blast/core/blast_util.h>
 #include <algo/blast/core/blast_encoding.h>
+#include <algo/blast/core/blast_filter.h>
+
+
+/** Declared in blast_def.h as extern const. */
+const int kDustLevel = 20;
+const int kDustWindow = 64;
+const int kDustLinker = 1;
+
 
 /* local, file scope, structures and variables */
 
@@ -51,12 +60,15 @@ typedef struct DREGION { /* endpoints */
 } DREGION;
 
 typedef struct DCURLOC { /* localcurrents */
-	Int4	curlevel, curstart, curend;
+	Int4	cursum, curstart, curend;
+	Int2	curlength;
 } DCURLOC;
+
+Uint1 *SUM_THRESHOLD;
 
 /* local functions */
 
-static void wo (Int4, Uint1*, Int4, DCURLOC*, Uint1*, Boolean, Int4);
+static void wo (Int4, Uint1*, Int4, DCURLOC*, Uint1*, Uint1, Int4);
 static Boolean wo1 (Int4, Uint1*, Int4, DCURLOC*);
 static Int4 dust_triplet_find (Uint1*, Int4, Int4, Uint1*);
 
@@ -64,7 +76,7 @@ static Int4 dust_triplet_find (Uint1*, Int4, Int4, Uint1*);
 
 static Int4 dust_segs (Uint1* sequence, Int4 length, Int4 start,
 		       DREGION* reg,
-		       Int4 level, Int4 windowsize, Int4 minwin, Int4 linker)
+		       Int4 level, Int4 windowsize, Int4 linker)
 {
    Int4    len;
    Int4	i;
@@ -74,30 +86,66 @@ static Int4 dust_segs (Uint1* sequence, Int4 length, Int4 start,
    Int4	nreg;
    
    /* defaults are more-or-less in keeping with original dust */
-   if (level < 2 || level > 64) level = 20;
-   if (windowsize < 8 || windowsize > 64) windowsize = 64;
-   if (minwin < 4 || minwin > 128) minwin = 4;
-   if (linker < 1 || linker > 32) linker = 1;
+   if (level < 2 || level > 64) level = kDustLevel;
+   if (windowsize < 8 || windowsize > 64) windowsize = kDustWindow;
+   if (linker < 1 || linker > 32) linker = kDustLinker;
    
    nreg = 0;
    seq = (Uint1*) calloc(1, windowsize);			/* triplets */
    if (!seq) {
       return -1;
    }
+   SUM_THRESHOLD = (Uint1 *) calloc(windowsize, sizeof(Uint1));  
+   if (!SUM_THRESHOLD) {
+      return -1;
+   }
+   SUM_THRESHOLD[0] = 1;
+   for (i=1; i < windowsize; i++)
+       SUM_THRESHOLD[i] = (level * i)/10;
 
-   len = (Int4) ((length > windowsize) ? windowsize : length);
-   len -= 2;
-   dust_triplet_find (sequence, 0, len-1, seq+1);
+   if (length < windowsize) windowsize = length;
 
-   for (i = 0; i < length-2; i++) {
+   /* Consider smaller windows in beginning of the sequence */
+   for (i = 2; i <= windowsize-1; i++) {
+      len = i-1;
+      wo (len, sequence, 0, &cloc, seq, 1, level);
+      
+      if (cloc.cursum*10 > level*cloc.curlength) {
+         if (nreg &&
+             regold->to + linker >= cloc.curstart+start &&
+             regold->from <= cloc.curend + start + linker) {
+            /* overlap windows nicely if needed */
+            if (regold->to < cloc.curend +  start)
+                regold->to = cloc.curend +  start;
+            if (regold->from > cloc.curstart + start)
+                regold->from = cloc.curstart + start;
+         } else	{
+            /* new window or dusted regions do not overlap */
+            reg->from = cloc.curstart + start;
+            reg->to = cloc.curend + start;
+            regold = reg;
+            reg = (DREGION*) calloc(1, sizeof(DREGION));
+            if (!reg) {
+               sfree(seq);
+               sfree(SUM_THRESHOLD);
+               return -1;
+            }
+            reg->next = NULL;
+            regold->next = reg;
+            nreg++;
+         }
+      }				/* end 'if' high score	*/
+   }					/* end for */
+
+   for (i = 1; i < length-2; i++) {
       len = (Int4) ((length > i+windowsize) ? windowsize : length-i);
       len -= 2;
-      if ((length >= i+windowsize) || (i==0))
-          wo (len, sequence, i, &cloc, seq, TRUE, level);
+      if (length >= i+windowsize)
+          wo (len, sequence, i, &cloc, seq, 2, level);
       else /* remaining portion of sequence is less than windowsize */
-          wo (len, sequence, i, &cloc, seq, FALSE, level);
+          wo (len, sequence, i, &cloc, seq, 3, level);
       
-      if (cloc.curlevel > level) {
+      if (cloc.cursum*10 > level*cloc.curlength) {
          if (nreg &&
              regold->to + linker >= cloc.curstart+i+start &&
              regold->from <= cloc.curend + i + start + linker) {
@@ -114,6 +162,7 @@ static Int4 dust_segs (Uint1* sequence, Int4 length, Int4 start,
             reg = (DREGION*) calloc(1, sizeof(DREGION));
             if (!reg) {
                sfree(seq);
+               sfree(SUM_THRESHOLD);
                return -1;
             }
             reg->next = NULL;
@@ -123,16 +172,18 @@ static Int4 dust_segs (Uint1* sequence, Int4 length, Int4 start,
       }				/* end 'if' high score	*/
    }					/* end for */
    sfree (seq);
+   sfree(SUM_THRESHOLD);
    return nreg;
 }
 
 static void wo (Int4 len, Uint1* seq_start, Int4 iseg, DCURLOC* cloc, 
-                Uint1* seq, Boolean FIND_TRIPLET, Int4 level)
+                Uint1* seq, Uint1 FIND_TRIPLET, Int4 level)
 {
 	Int4 smaller_window_start, mask_window_end;
         Boolean SINGLE_TRIPLET;
 
-	cloc->curlevel = 0;
+	cloc->cursum = 0;
+	cloc->curlength = 1;
 	cloc->curstart = 0;
 	cloc->curend = 0;
 
@@ -140,13 +191,18 @@ static void wo (Int4 len, Uint1* seq_start, Int4 iseg, DCURLOC* cloc,
 		return;
 
         /* get the chunk of sequence in triplets */
-	if (FIND_TRIPLET==TRUE) /* Copy suffix as prefix and find one */
+	if (FIND_TRIPLET==1) /* Append one */
+	{
+		seq[len-1] = seq[len] = seq[len+1] = 0;
+		dust_triplet_find (seq_start, iseg+len-1, 1, seq+len-1);
+	}
+	if (FIND_TRIPLET==2) /* Copy suffix as prefix and find one */
 	{
 		memmove(seq,seq+1,(len-1)*sizeof(Uint1));
 		seq[len-1] = seq[len] = seq[len+1] = 0;
 		dust_triplet_find (seq_start, iseg+len-1, 1, seq+len-1);
 	}
-	else /* Copy suffix */
+	if (FIND_TRIPLET==3) /* Copy suffix */
 		memmove(seq,seq+1,len*sizeof(Uint1));
 
         /* dust the chunk */
@@ -155,7 +211,7 @@ static void wo (Int4 len, Uint1* seq_start, Int4 iseg, DCURLOC* cloc,
         /* consider smaller windows only if anything interesting 
            found for starting position  and smaller windows have potential of
            being at higher level */
-	if ((cloc->curlevel > level) && (!SINGLE_TRIPLET)) {
+        if ((cloc->cursum*10 > level*cloc->curlength) && (!SINGLE_TRIPLET)) {
 		mask_window_end = cloc->curend-1;
 		smaller_window_start = 1;
                 while ((smaller_window_start < mask_window_end) &&
@@ -169,12 +225,11 @@ static void wo (Int4 len, Uint1* seq_start, Int4 iseg, DCURLOC* cloc,
 	cloc->curend += cloc->curstart;
 }
 
-/* returns TRUE if there is single triplet in the sequence considered */
+/** returns TRUE if there is single triplet in the sequence considered */
 static Boolean wo1 (Int4 len, Uint1* seq, Int4 iwo, DCURLOC* cloc)
 {
    Uint4 sum;
 	Int4 loop;
-	Int4 newlevel;
 
 	Int2* countsptr;
 	Int2 counts[4*4*4];
@@ -183,7 +238,6 @@ static Boolean wo1 (Int4 len, Uint1* seq, Int4 iwo, DCURLOC* cloc)
 	memset (counts, 0, sizeof (counts));
 /* zero everything */
 	sum = 0;
-	newlevel = 0;
 
 /* dust loop -- specific for triplets	*/
 	for (loop = 0; loop < len; loop++)
@@ -193,14 +247,16 @@ static Boolean wo1 (Int4 len, Uint1* seq, Int4 iwo, DCURLOC* cloc)
 		{
 			sum += (Uint4)(*countsptr);
 
-			newlevel = 10 * sum / loop;
-
-			if (cloc->curlevel < newlevel)
+		    if (sum >= SUM_THRESHOLD[loop])
+		    {
+			if (cloc->cursum*loop < sum*cloc->curlength)
 			{
-				cloc->curlevel = newlevel;
+				cloc->cursum = sum;
+				cloc->curlength = loop;
 				cloc->curstart = iwo;
 				cloc->curend = loop + 2; /* triplets */
 			}
+		    }
 		}
 		else
 			triplet_count++;
@@ -265,14 +321,10 @@ dust_triplet_find (Uint1* seq_start, Int4 icur, Int4 max, Uint1* s1)
    return n;
 }
 
-/* look for dustable locations (as slpDust from dust.c) */
-
+/** Look for dustable locations */
 static Int2 
-GetDustLocations (ListNode** loc, DREGION* reg, Int4 nreg)
+GetDustLocations (BlastSeqLoc** loc, DREGION* reg, Int4 nreg)
 {
-   Int4 i;
-   ListNode* last_loc = NULL;
-   SSeqRange* dintp;
         
    if (!loc)
       return -1;
@@ -281,17 +333,13 @@ GetDustLocations (ListNode** loc, DREGION* reg, Int4 nreg)
 
    /* point to dusted locations */
    if (nreg > 0) {
+      BlastSeqLoc* last_loc = NULL;
+      Int4 i;
       for (i = 0; reg && i < nreg; i++) {
-         dintp = (SSeqRange*) calloc(1, sizeof(SSeqRange));
-         if (!dintp) {
-            return -1;
-         }
-         dintp->left = reg->from;
-         dintp->right = reg->to;
          if (!last_loc)
-            last_loc = ListNodeAddPointer (loc, 0, dintp);
+            last_loc = BlastSeqLocNew (loc, reg->from, reg->to);
          else 
-            last_loc = ListNodeAddPointer (&last_loc, 0, dintp);
+            last_loc = BlastSeqLocNew (&last_loc, reg->from, reg->to);
          reg = reg->next;
       }
    }
@@ -299,7 +347,7 @@ GetDustLocations (ListNode** loc, DREGION* reg, Int4 nreg)
 }
 
 Int2 SeqBufferDust (Uint1* sequence, Int4 length, Int4 offset,
-                    Int2 level, Int2 window, Int2 minwin, Int2 linker,
+                    Int2 level, Int2 window, Int2 linker,
                     BlastSeqLoc** dust_loc)
 {
 	DREGION* reg,* regold;
@@ -312,7 +360,7 @@ Int2 SeqBufferDust (Uint1* sequence, Int4 length, Int4 offset,
            return -1;
 
         nreg = dust_segs (sequence, length, offset, reg, (Int4)level, 
-                  (Int4)window, (Int4)minwin, (Int4)linker);
+                  (Int4)window, (Int4)linker);
 
         status = GetDustLocations(dust_loc, reg, nreg);
 

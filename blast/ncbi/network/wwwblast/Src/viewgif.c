@@ -12,7 +12,7 @@ main(void)
     FILE *pp;
     char tmp_buff[1024];
     char *PidFile;
-
+    char *server;
     int  bytes;
     char *ContentGif  =  "Content-type: image/gif\r\n\r\n";
     struct sigaction sa;
@@ -30,15 +30,16 @@ main(void)
     sigaction(SIGPIPE, &sa, NULL);
     
     PidFile = (char *) getenv("QUERY_STRING"); 
-    
     sprintf(FileName, "TmpGifs/%s", PidFile);
     
-    if((pp = fopen(FileName, "r")) == NULL) {
+    server = (char *) getenv("SERVER_SOFTWARE");
 
+    if((pp = fopen(FileName, "r")) == NULL) {
         /* Just do nothing */
         sprintf(tmp_buff, "HTTP/1.0 204 Not Modified\n");
         write(1, tmp_buff, strlen(tmp_buff));
-        sprintf(tmp_buff, "Server: %s\n", (char *) getenv("SERVER_SOFTWARE"));
+        if (server)
+           sprintf(tmp_buff, "Server: %s\n", server);
         write(1, tmp_buff, strlen(tmp_buff));
         sprintf(tmp_buff, "MIME-Version: 1.0\n");
         write(1, tmp_buff, strlen(tmp_buff));
@@ -46,7 +47,8 @@ main(void)
     } else {
         sprintf(tmp_buff, "HTTP/1.0 200 OK\r\n");
         write(1, tmp_buff, strlen(tmp_buff));
-        sprintf(tmp_buff, "Server: %s\n", (char *) getenv("SERVER_SOFTWARE"));
+        if (server)
+           sprintf(tmp_buff, "Server: %s\n", server);
         write(1, tmp_buff, strlen(tmp_buff));
         sprintf(tmp_buff, "MIME-Version: 1.0\r\n");
         write(1, tmp_buff, strlen(tmp_buff));

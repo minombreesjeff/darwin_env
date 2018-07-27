@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/1/91
 *
-* $Revision: 6.1 $
+* $Revision: 6.2 $
 *
 * File Description: 
 *       Vibrant prompt functions
@@ -41,6 +41,9 @@
 *
 *
 * $Log: vibprmpt.c,v $
+* Revision 6.2  2004/07/19 13:36:43  bollin
+* replaced obsolete XmFontListCreate function to get rid of run-time warnings
+*
 * Revision 6.1  1997/11/26 21:30:33  vakatov
 * Fixed errors and warnings issued by C and C++ (GNU and Sun) compilers
 *
@@ -593,6 +596,7 @@ static void Nlm_NewPrompt (Nlm_PrompT p, Nlm_CharPtr title, Nlm_FonT font, Nlm_C
   XmString        label;
   Cardinal        n;
   Arg             wargs [15];
+  XmFontListEntry font_entry;
 #endif
 
   local [0] = '\0';
@@ -644,7 +648,10 @@ static void Nlm_NewPrompt (Nlm_PrompT p, Nlm_CharPtr title, Nlm_FonT font, Nlm_C
   if (font != NULL) {
     fntptr = (Nlm_FntPtr) Nlm_HandLock (font);
     if (fntptr != NULL && fntptr->handle != NULL) {
-      fontlist = XmFontListCreate (fntptr->handle, XmSTRING_DEFAULT_CHARSET);
+      font_entry = XmFontListEntryCreate (XmFONTLIST_DEFAULT_TAG,
+                                         XmFONT_IS_FONT,
+                                         fntptr->handle);
+      fontlist = XmFontListAppendEntry (fontlist, font_entry);
     }
     Nlm_HandUnlock (font);
   }

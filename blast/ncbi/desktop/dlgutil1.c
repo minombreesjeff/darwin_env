@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/22/95
 *
-* $Revision: 6.43 $
+* $Revision: 6.54 $
 *
 * File Description: 
 *
@@ -50,6 +50,8 @@
 #include <gbfeat.h>
 #include <gbftdef.h>
 #include <edutil.h>
+#include <explore.h>
+#include <sqnutils.h>
 
 #define NUMBER_OF_SUFFIXES    8
 
@@ -132,31 +134,11 @@ ENUM_ALIST(months_alist)
   {"Dec",  12},
 END_ENUM_ALIST
 
-extern Int2 LIBCALLBACK DescriptorPropagate (Pointer data)
-
+extern void SetDescriptorPropagate (BioseqSetPtr bssp)
 {
   BioseqPtr         bsp;
-  BioseqSetPtr      bssp = NULL;
-  OMProcControlPtr  ompcp;
   SeqEntryPtr       seqentry;
   ValNodePtr        sourcedescr;
-
-  ompcp = (OMProcControlPtr) data;
-  if (ompcp == NULL || ompcp->input_entityID == 0) {
-    Message (MSG_ERROR, "Please select a BioseqSet");
-    return OM_MSG_RET_ERROR;
-  }
-  switch (ompcp->input_itemtype) {
-    case OBJ_BIOSEQSET :
-      bssp = (BioseqSetPtr) ompcp->input_data;
-      break;
-    case 0 :
-      Message (MSG_ERROR, "Please select a BioseqSet");
-      return OM_MSG_RET_ERROR;
-    default :
-      Message (MSG_ERROR, "Please select a BioseqSet");
-      return OM_MSG_RET_ERROR;
-  }
 
   if (bssp != NULL) {
     sourcedescr = bssp->descr;
@@ -184,6 +166,32 @@ extern Int2 LIBCALLBACK DescriptorPropagate (Pointer data)
       SeqDescrFree (sourcedescr);
     }
   }
+}
+
+extern Int2 LIBCALLBACK DescriptorPropagate (Pointer data)
+
+{
+  BioseqSetPtr      bssp = NULL;
+  OMProcControlPtr  ompcp;
+
+  ompcp = (OMProcControlPtr) data;
+  if (ompcp == NULL || ompcp->input_entityID == 0) {
+    Message (MSG_ERROR, "Please select a BioseqSet");
+    return OM_MSG_RET_ERROR;
+  }
+  switch (ompcp->input_itemtype) {
+    case OBJ_BIOSEQSET :
+      bssp = (BioseqSetPtr) ompcp->input_data;
+      break;
+    case 0 :
+      Message (MSG_ERROR, "Please select a BioseqSet");
+      return OM_MSG_RET_ERROR;
+    default :
+      Message (MSG_ERROR, "Please select a BioseqSet");
+      return OM_MSG_RET_ERROR;
+  }
+
+  SetDescriptorPropagate (bssp);
 
   ObjMgrSetDirtyFlag (ompcp->input_entityID, TRUE);
   ObjMgrSendMsg (OM_MSG_UPDATE, ompcp->input_entityID, 0, 0);
@@ -345,6 +353,7 @@ typedef struct genegatherlist {
   Uint2           geneItemID;
   Uint2           geneItemtype;
   Boolean         geneFound;
+  SeqLocPtr       old_feature_location;
 } GeneGatherList, PNTR GeneGatherPtr;
 
 static Boolean GeneFindFunc (GatherContextPtr gcp)
@@ -437,11 +446,15 @@ extern void Nlm_LaunchGeneFeatEd (ButtoN b)
   }
 }
 
-static Boolean GeneUpdateFunc (GatherContextPtr gcp)
-
+extern void UpdateGeneLocation 
+(SeqFeatPtr gene,
+ SeqLocPtr  old_feat_loc,
+ SeqLocPtr  new_feat_loc,
+ Uint2      entityID)
 {
+  Uint1          strandfeat, strandgene, strandold;
   BioseqPtr      bsp;
-  GeneGatherPtr  ggp;
+  SeqLocPtr      tmpslp, slp;
   Boolean        hasNulls;
   Boolean        noLeft;
   Boolean        noRight;
@@ -449,9 +462,74 @@ static Boolean GeneUpdateFunc (GatherContextPtr gcp)
   Boolean        noLeftGene;
   Boolean        noRightFeat;
   Boolean        noRightGene;
+
+  if (gene == NULL || new_feat_loc == NULL)
+  {
+    return;
+  }
+  
+  strandfeat = SeqLocStrand (new_feat_loc);
+  strandgene = SeqLocStrand (gene->location); 
+  if (old_feat_loc == NULL)
+  {
+    strandold = strandfeat;
+  }
+  else
+  {
+    strandold = SeqLocStrand (old_feat_loc);
+  }
+          
+  /* only correct gene location if gene is on same strand as old feature
+   * location and contained in new feature location (on either strand).
+   */
+  if (SeqLocAinB (new_feat_loc, gene->location) <= 0
+      && ((strandold == Seq_strand_minus && strandgene == Seq_strand_minus)
+          || (strandold != Seq_strand_minus && strandgene != Seq_strand_minus))) 
+  {
+    bsp = GetBioseqGivenSeqLoc (gene->location, entityID);
+    if (bsp != NULL) {
+      hasNulls = LocationHasNullsBetween (gene->location);
+      if ((strandfeat == Seq_strand_minus && strandgene != Seq_strand_minus)
+          || (strandfeat != Seq_strand_minus && strandgene == Seq_strand_minus))
+      {
+        tmpslp = SeqLocCopyRegion (SeqLocId (gene->location), gene->location,
+                                   bsp, 0, bsp->length - 1, Seq_strand_minus, FALSE);
+        slp = SeqLocMerge (bsp, tmpslp, new_feat_loc, TRUE, FALSE, hasNulls);
+        tmpslp = SeqLocFree (tmpslp);
+      }
+      else
+      {
+        slp = SeqLocMerge (bsp, gene->location, new_feat_loc, TRUE, FALSE, hasNulls);
+      }
+
+      if (slp != NULL) {
+        CheckSeqLocForPartial (gene->location, &noLeftGene, &noRightGene);
+        gene->location = SeqLocFree (gene->location);
+        gene->location = slp;
+        CheckSeqLocForPartial (new_feat_loc, &noLeftFeat, &noRightFeat);
+        if (bsp->repr == Seq_repr_seg) {
+          slp = SegLocToPartsEx (bsp, gene->location, TRUE);
+          gene->location = SeqLocFree (gene->location);
+          gene->location = slp;
+          hasNulls = LocationHasNullsBetween (gene->location);
+          gene->partial = (gene->partial || hasNulls);
+        }
+        FreeAllFuzz (gene->location);
+        noLeft = (noLeftFeat || noLeftGene);
+        noRight = (noRightFeat || noRightGene);
+        SetSeqLocPartial (gene->location, noLeft, noRight);
+        gene->partial = (gene->partial || noLeft || noRight);
+      }
+    }
+  }
+}
+
+static Boolean GeneUpdateFunc (GatherContextPtr gcp)
+
+{
+  GeneGatherPtr  ggp;
   ObjMgrTypePtr  omtp;
   SeqFeatPtr     sfp;
-  SeqLocPtr      slp;
   Char           thislabel [41];
 
   if (gcp == NULL) return TRUE;
@@ -474,31 +552,7 @@ static Boolean GeneUpdateFunc (GatherContextPtr gcp)
       if (thislabel [0] != '\0') {
         ggp->idx++;
         if (ggp->idx == ggp->val) {
-          if (SeqLocAinB (ggp->slp, sfp->location) <= 0) {
-            bsp = GetBioseqGivenSeqLoc (sfp->location, gcp->entityID);
-            if (bsp != NULL) {
-              hasNulls = LocationHasNullsBetween (sfp->location);
-              slp = SeqLocMerge (bsp, sfp->location, ggp->slp, TRUE, FALSE, hasNulls);
-              if (slp != NULL) {
-                CheckSeqLocForPartial (sfp->location, &noLeftGene, &noRightGene);
-                sfp->location = SeqLocFree (sfp->location);
-                sfp->location = slp;
-                CheckSeqLocForPartial (ggp->slp, &noLeftFeat, &noRightFeat);
-                if (bsp->repr == Seq_repr_seg) {
-                  slp = SegLocToPartsEx (bsp, sfp->location, TRUE);
-                  sfp->location = SeqLocFree (sfp->location);
-                  sfp->location = slp;
-                  hasNulls = LocationHasNullsBetween (sfp->location);
-                  sfp->partial = (sfp->partial || hasNulls);
-                }
-                FreeAllFuzz (sfp->location);
-                noLeft = (noLeftFeat || noLeftGene);
-                noRight = (noRightFeat || noRightGene);
-                SetSeqLocPartial (sfp->location, noLeft, noRight);
-                sfp->partial = (sfp->partial || noLeft || noRight);
-              }
-            }
-          }
+          UpdateGeneLocation (sfp, ggp->old_feature_location, ggp->slp, gcp->entityID);
           return FALSE;
         }
       }
@@ -947,6 +1001,30 @@ static Boolean ReplaceFeatureExtras (GatherContextPtr gcp)
   return TRUE;
 }
 
+static Boolean GetOldFeatureLocation (GatherContextPtr gcp)
+{
+  SeqLocPtr PNTR  old_loc;
+  SeqFeatPtr      old_feat;
+
+  if (gcp == NULL || gcp->userdata == NULL)
+  {
+    return FALSE;
+  }
+  old_loc = (SeqLocPtr PNTR) gcp->userdata;
+  if (*old_loc != NULL)
+  {
+    return TRUE;
+  }
+  old_feat = gcp->thisitem;
+  if (old_feat != NULL)
+  {
+    *old_loc = (SeqLocPtr) AsnIoMemCopy (old_feat->location,
+                                         (AsnReadFunc) SeqLocAsnRead,
+                                         (AsnWriteFunc) SeqLocAsnWrite);
+  }
+  return TRUE;
+}
+
 static Boolean HasExceptionGBQual (SeqFeatPtr sfp)
 
 {
@@ -999,6 +1077,63 @@ static void AddProtRefXref (SeqFeatPtr sfp, TexT protXrefName)
   }
 }
 
+static Boolean IsPseudo (SeqFeatPtr sfp)
+{
+  Boolean   pseudo = FALSE;
+  GBQualPtr qual;
+  
+  if (sfp != NULL)
+  {
+    if (sfp->pseudo)
+    {
+      pseudo = TRUE;
+    }
+    else
+    {
+      qual = sfp->qual;
+      while (qual != NULL)
+      {
+        if (StringICmp (qual->qual, "pseudo") == 0) 
+        {
+          pseudo = TRUE;
+        }
+        qual = qual->next;
+      }
+    }
+  }
+  return pseudo;
+}
+
+static void RemoveProtXrefs (SeqFeatPtr sfp)
+{
+  SeqFeatXrefPtr  xref_prev = NULL, xref_next, xref;
+
+  if (sfp == NULL || sfp->xref == NULL) return;
+
+  for (xref = sfp->xref; xref != NULL; xref = xref_next)
+  {
+    xref_next = xref->next;
+    if (xref->data.choice == SEQFEAT_PROT)
+    {
+      if (xref_prev == NULL)
+      {
+        sfp->xref = xref->next;
+      }
+      else
+      {
+        xref_prev->next = xref->next;
+      }
+      xref->next = NULL;
+      xref->data.value.ptrvalue = ProtRefFree (xref->data.value.ptrvalue);
+      SeqFeatXrefFree (xref);
+    }
+    else
+    {
+      xref_prev = xref;
+    }
+  }  
+}
+
 extern Boolean FeatFormReplaceWithoutUpdateProc (ForM f)
 
 {
@@ -1008,9 +1143,12 @@ extern Boolean FeatFormReplaceWithoutUpdateProc (ForM f)
   Char            ch;
   Char            desc [128];
   Int2            expev;
+  SeqMgrFeatContext  fcontext;
   FeatureFormPtr  ffp;
+  SeqFeatPtr      gene;
   GeneGatherList  ggl;
   GeneRefPtr      grp;
+  GeneRefPtr      grpfeat;
   GatherScope     gs;
   SeqLocPtr       gslp;
   Boolean         hasNulls;
@@ -1029,11 +1167,15 @@ extern Boolean FeatFormReplaceWithoutUpdateProc (ForM f)
   SeqEntryPtr     sep;
   SeqFeatPtr      sfp;
   SeqLocPtr       slp;
+  CharPtr         str;
   Char            symbol [128];
   Int2            usexref;
   Int2            val;
   ValNodePtr      vnp;
   SeqFeatXrefPtr  xref;
+  SeqLocPtr       old_location = NULL; /* we need the old location of the feature 
+                                        * if we're going to do a gene update    
+                                        */
 
   rsult = FALSE;
   ffp = (FeatureFormPtr) GetObjectExtra (f);
@@ -1152,7 +1294,17 @@ extern Boolean FeatFormReplaceWithoutUpdateProc (ForM f)
             }
             if (vnp != NULL) {
               if (vnp->choice == 1) {
-                grp = CreateNewGeneRef ((CharPtr) vnp->data.ptrvalue, NULL, NULL, FALSE);
+                str = (CharPtr) vnp->data.ptrvalue;
+                if (StringDoesHaveText (str)) {
+                  grp = CreateNewGeneRef (str, NULL, NULL, FALSE);
+                  gene = SeqMgrGetFeatureByLabel (bsp, str, SEQFEAT_GENE, 0, &fcontext);
+                  if (gene != NULL && gene->data.choice == SEQFEAT_GENE) {
+                    grpfeat = (GeneRefPtr) gene->data.value.ptrvalue;
+                    if (grpfeat != NULL) {
+                      grp->locus_tag = StringSaveNoNull (grpfeat->locus_tag);
+                    }
+                  }
+                }
               } else if (vnp->choice == 3) {
                 grp = GeneRefNew ();
                 if (grp != NULL) {
@@ -1239,6 +1391,9 @@ extern Boolean FeatFormReplaceWithoutUpdateProc (ForM f)
         }
         rsult = TRUE;
       } else {
+        GatherItem (ompc.input_entityID, ompc.input_itemID, ompc.input_itemtype,
+                    (Pointer) &old_location, GetOldFeatureLocation);
+      
         rd.ffp = ffp;
         rd.sfp = sfp;
         GatherItem (ompc.input_entityID, ompc.input_itemID, ompc.input_itemtype,
@@ -1246,7 +1401,14 @@ extern Boolean FeatFormReplaceWithoutUpdateProc (ForM f)
         if (HasExceptionGBQual (sfp)) {
           sfp->excpt = TRUE;
         }
-        AddProtRefXref (sfp, ffp->protXrefName);
+        if (IsPseudo (sfp))
+        {
+          RemoveProtXrefs (sfp);
+        }
+        else
+        {
+          AddProtRefXref (sfp, ffp->protXrefName);
+        }
         if (! ReplaceDataForProc (&ompc, FALSE)) {
           Message (MSG_ERROR, "ReplaceDataForProc failed");
         }
@@ -1314,14 +1476,15 @@ extern Boolean FeatFormReplaceWithoutUpdateProc (ForM f)
           ggl.idx = 2;
           ggl.val = val;
           ggl.min = INT4_MAX;
+          ggl.old_feature_location = old_location;
           MemSet ((Pointer) (&gs), 0, sizeof (GatherScope));
           gs.seglevels = 1;
           gs.get_feats_location = TRUE;
-	      MemSet((Pointer)(gs.ignore), (int)(TRUE), (size_t)(OBJ_MAX * sizeof(Boolean)));
-	      gs.ignore[OBJ_BIOSEQ] = FALSE;
-	      gs.ignore[OBJ_BIOSEQ_SEG] = FALSE;
-	      gs.ignore[OBJ_SEQFEAT] = FALSE;
-	      gs.ignore[OBJ_SEQANNOT] = FALSE;
+	        MemSet((Pointer)(gs.ignore), (int)(TRUE), (size_t)(OBJ_MAX * sizeof(Boolean)));
+	        gs.ignore[OBJ_BIOSEQ] = FALSE;
+	        gs.ignore[OBJ_BIOSEQ_SEG] = FALSE;
+	        gs.ignore[OBJ_SEQFEAT] = FALSE;
+	        gs.ignore[OBJ_SEQANNOT] = FALSE;
           gs.scope = GetBestTopParentForItemID (ffp->input_entityID,
                                                 ffp->input_itemID,
                                                 ffp->input_itemtype);
@@ -1332,6 +1495,7 @@ extern Boolean FeatFormReplaceWithoutUpdateProc (ForM f)
       SeqEntrySetScope (oldscope);
     }
   }
+  old_location = SeqLocFree (old_location);
   return rsult;
 }
 
@@ -1457,44 +1621,6 @@ extern ValNodePtr AddStringToValNodeChain (ValNodePtr head, CharPtr str, Uint1 c
     vnp->data.ptrvalue = StringSave (str);
   }
   return head;
-}
-
-static void FirstNameToInitials (CharPtr first, CharPtr inits, size_t maxsize)
-
-{
-  Char  ch;
-  Int2  i;
-
-  if (inits != NULL && maxsize > 0) {
-    inits [0] = '\0';
-    if (first != NULL) {
-      i = 0;
-      ch = *first;
-      while (ch != '\0' && i < maxsize) {
-        while (ch != '\0' && (ch <= ' ' || ch == '-')) {
-          first++;
-          ch = *first;
-        }
-        if (IS_ALPHA (ch)) {
-          inits [i] = ch;
-          i++;
-          first++;
-          ch = *first;
-        }
-        while (ch != '\0' && ch > ' ' && ch != '-') {
-          first++;
-          ch = *first;
-        }
-        if (ch == '-') {
-          inits [i] = ch;
-          i++;
-          first++;
-          ch = *first;
-        }
-      }
-      inits [i] = '\0';
-    }
-  }
 }
 
 static void StripPeriods (CharPtr str)
@@ -2649,7 +2775,7 @@ typedef struct intervalpage {
   ButtoN             partial3;
   ButtoN             nullsBetween;
   Int2               count;
-  SeqEntryPtr        PNTR bsptr;
+  SeqIdPtr           PNTR sip_list;
   EnumFieldAssoc     PNTR alist;
   EnumFieldAssocPtr  alists [4];
   Int4               PNTR lengths;
@@ -2663,17 +2789,17 @@ typedef struct intervalpage {
 #define NUM_IVAL_ROWS  7
 #define EXTRA_HEIGHT   2
 
-static void AddToBsptrList (IntervalPagePtr ipp, SeqEntryPtr sep)
+static void AddToSipList (IntervalPagePtr ipp, SeqIdPtr sip)
 
 {
   Int2  j;
 
-  if (ipp == NULL || sep == NULL) return;
+  if (ipp == NULL || sip == NULL) return;
   for (j = 1; j <= ipp->count; j++) {
-    if (sep == ipp->bsptr [j]) return; /* already exists in list */
+    if (SeqIdComp (sip, ipp->sip_list [j]) == SIC_YES) return; /* already exists in list */
   }
   ipp->count++;
-  ipp->bsptr [ipp->count] = sep;
+  ipp->sip_list [ipp->count] = SeqIdDup (sip);
 }
 
 static void FillInProducts (SeqEntryPtr sep, Pointer mydata,
@@ -2692,7 +2818,7 @@ static void FillInProducts (SeqEntryPtr sep, Pointer mydata,
     if (bsp != NULL) {
       if ((ipp->nucsOK && ISA_na (bsp->mol)) ||
           (ipp->protsOK && ISA_aa (bsp->mol))) {
-        AddToBsptrList (ipp, sep);
+        AddToSipList (ipp, SeqIdFindBest (bsp->id, 0));
       }
       if (bsp->repr == Seq_repr_seg && bsp->seq_ext != NULL) {
         vn.choice = SEQLOC_MIX;
@@ -2704,13 +2830,11 @@ static void FillInProducts (SeqEntryPtr sep, Pointer mydata,
           if (sip != NULL) {
             bsp = BioseqFindCore (sip);
             if (bsp != NULL) {
-              sep = SeqMgrGetSeqEntryForData (bsp);
-              AddToBsptrList (ipp, sep);
+              AddToSipList (ipp, SeqIdFindBest (bsp->id, 0));
             } else {
               bsp = BioseqLockById (sip);
               if (bsp != NULL) {
-                sep = SeqMgrGetSeqEntryForData (bsp);
-                AddToBsptrList (ipp, sep);
+                AddToSipList (ipp, SeqIdFindBest (bsp->id, 0));
               }
               BioseqUnlockById (sip);
             }
@@ -2774,6 +2898,187 @@ static ENUM_ALIST(strand_alist)
 {"Other",         Seq_strand_other},    /* 255 */
 END_ENUM_ALIST
 
+static Boolean IsSeqIdInValNodeList (SeqIdPtr sip, ValNodePtr list)
+{
+  if (sip == NULL)
+  {
+    return FALSE;
+  }
+  while (list != NULL)
+  {
+    if (SeqIdComp (sip, list->data.ptrvalue) == SIC_YES)
+    {
+      return TRUE;
+    }
+    list = list->next;
+  }
+  return FALSE;
+}
+
+static Int4 FindLastStopForSeqId (SeqLocPtr slp, SeqIdPtr sip)
+{
+  Int4      last_stop = 0, new_stop;
+  SeqLocPtr tmp_slp;
+  SeqIdPtr  tmp_sip;
+  
+  tmp_slp = SeqLocFindNext (slp, NULL);
+  while (tmp_slp != NULL)
+  {
+    tmp_sip = SeqLocId (tmp_slp);
+    if (SeqIdComp (sip, tmp_sip) == SIC_YES)
+    {
+      new_stop = SeqLocStop (slp);
+      if (new_stop > last_stop)
+      {
+        last_stop = new_stop;
+      }
+    }
+    tmp_slp = SeqLocFindNext (slp, tmp_slp);
+  }
+  return last_stop;
+}
+
+extern void UpdateTagListPopupChoices (DialoG d, Int4 column);
+
+/* We need to make sure that all IDs in the location are found in the enum list
+ * for the interval editor ID Enum */
+static void CorrectIntervalEditorSeqIdEnum (IntervalPagePtr ipp, SeqLocPtr slp)
+{
+  SeqLocPtr           tmp_slp;
+  SeqIdPtr            sip;
+  Int4                j;
+  Boolean             found;
+  ValNodePtr          missing_list = NULL, missing_vnp;
+  Int4                new_count;
+  SeqIdPtr PNTR       new_sip_list;
+  EnumFieldAssoc PNTR new_alist;
+  Int4 PNTR           new_lengths;
+  BioseqPtr           bsp;
+  Char                str [128];
+  CharPtr             ptr;
+  Int4                id_column;
+  
+  if (ipp == NULL || slp == NULL)
+  {
+    return;
+  }
+  
+  tmp_slp = SeqLocFindNext (slp, NULL);
+  while (tmp_slp != NULL)
+  {
+    sip = SeqLocId (tmp_slp);
+    if (!IsSeqIdInValNodeList (sip, missing_list))
+    {
+      found = FALSE;
+      for (j = 1; j <= ipp->count && !found; j++)
+      {
+        if (SeqIdComp (sip, ipp->sip_list [j]) == SIC_YES)
+        {
+          found = TRUE;
+        }
+      }
+      /* this process takes longer, so don't combine it with the above
+       * loop
+       */
+      if (!found)
+      {
+        for (j = 1; j <= ipp->count && !found; j++)
+        {
+          bsp = BioseqFindCore (ipp->sip_list [j]);
+          if (bsp == NULL) {
+            bsp = BioseqLockById (ipp->sip_list [j]);
+            BioseqUnlockById (ipp->sip_list [j]);
+          }
+          if (bsp != NULL && SeqIdIn (sip, bsp->id))
+          {
+            found = TRUE;
+          }
+        }
+      }
+      if (!found)
+      {
+        ValNodeAddPointer (&missing_list, 0, sip);
+      }
+    }
+    
+    tmp_slp = SeqLocFindNext (slp, tmp_slp);
+  }
+  
+  if (missing_list != NULL)
+  {
+    new_count = ipp->count + 4 + ValNodeLen (missing_list);
+    new_sip_list = MemNew (sizeof (SeqIdPtr) * (size_t) new_count);
+    new_alist = MemNew (sizeof (EnumFieldAssoc) * (size_t) new_count);
+    new_lengths = MemNew (sizeof (Int4) * (size_t) new_count);
+    /* first one is blank, remainder are actual data */
+    for (j = 0; j < ipp->count + 1; j++)
+    {
+      new_sip_list [j] = ipp->sip_list [j];
+      ipp->sip_list [j] = NULL;
+      new_alist [j].name = ipp->alist [j].name;
+      ipp->alist [j].name = NULL;
+      new_alist [j].value = ipp->alist [j].value;
+      new_lengths [j] = ipp->lengths [j];
+    }
+    
+    missing_vnp = missing_list;
+    while (j < new_count - 1 && missing_vnp != NULL)
+    {
+      new_sip_list [j] = SeqIdDup (missing_vnp->data.ptrvalue);
+      new_alist [j].value = j;
+      
+      sip = new_sip_list [j];
+      bsp = BioseqFindCore (sip);
+      if (bsp == NULL) {
+        bsp = BioseqLockById (sip);
+        BioseqUnlockById (sip);
+      }
+      if (bsp != NULL)
+      {
+        new_lengths [j] = bsp->length;
+        sip = SeqIdFindWorst (bsp->id);
+      }
+      else
+      {
+        new_lengths [j] = FindLastStopForSeqId (slp, sip);
+      }
+      SeqIdWrite (sip, str, PRINTID_REPORT, sizeof (str));
+      ptr = StringChr (str, '|');
+      if (ptr == NULL) {
+        ptr = str;
+      } else {
+        ptr++;
+      }
+      new_alist [j].name = StringSave (ptr);
+      missing_vnp = missing_vnp->next;
+      j++;
+    }
+    /* set terminator for enum list */
+    new_alist [j].name = NULL;
+    new_alist [j].value = (UIEnum) 0;
+
+    ipp->sip_list = MemFree (ipp->sip_list);
+    ipp->sip_list = new_sip_list;
+    ipp->alist = MemFree (ipp->alist);
+    ipp->alist = new_alist;
+    ipp->lengths = MemFree (ipp->lengths);
+    ipp->lengths = new_lengths;
+    ipp->count = j;
+    
+    if (ipp->nucsOK) 
+    {
+      id_column = 3;
+    }
+    else
+    {
+      id_column = 2;
+    }
+    ipp->alists [id_column] = ipp->alist;
+    UpdateTagListPopupChoices (ipp->ivals, id_column);
+  }
+  missing_list = ValNodeFree (missing_list);
+}
+
 static void SeqLocPtrToIntervalPage (DialoG d, Pointer data)
 
 {
@@ -2794,7 +3099,6 @@ static void SeqLocPtrToIntervalPage (DialoG d, Pointer data)
   SeqEntryPtr      oldscope;
   Boolean          partial5;
   Boolean          partial3;
-  SeqEntryPtr      sep;
   Int2             seq;
   SeqIntPtr        sip;
   SeqLocPtr        slp;
@@ -2818,7 +3122,22 @@ static void SeqLocPtrToIntervalPage (DialoG d, Pointer data)
   partial3 = FALSE;
   head = NULL;
 
+  if (location == NULL)
+  {
+  	if (ipp->count == 1)
+  	{
+       sprintf (str, "\t\t\t1\n");
+       vnp = ValNodeNew (head);
+       if (head == NULL) {
+         head = vnp;
+       }
+       if (vnp != NULL) {
+         vnp->data.ptrvalue = StringSave (str);
+       }	
+  	}
+  }
   if (location != NULL) {
+    CorrectIntervalEditorSeqIdEnum (ipp, location);
     firstSlp = NULL;
     lastSlp = NULL;
     slp = SeqLocFindNext (location, NULL);
@@ -2842,80 +3161,82 @@ static void SeqLocPtrToIntervalPage (DialoG d, Pointer data)
               SeqEntrySetScope (oldscope);
             }
           }
-          if (bsp != NULL) {
-            isInterval = TRUE;
-            isPoint = FALSE;
-            StringCpy (fuzz_from_ch, "");
-            StringCpy (fuzz_to_ch, "");
+          isInterval = TRUE;
+          isPoint = FALSE;
+          StringCpy (fuzz_from_ch, "");
+          StringCpy (fuzz_to_ch, "");
+          if (bsp == NULL) {
+            start = SeqLocStart (slp);
+            stop = SeqLocStop (slp);
+          }
+          else
+          {
             start = GetOffsetInBioseq (slp, bsp, SEQLOC_START);
             stop = GetOffsetInBioseq (slp, bsp, SEQLOC_STOP);
-            if (start == stop && slp->choice == SEQLOC_PNT) {
-              spp = (SeqPntPtr) slp->data.ptrvalue;
-              if (spp != NULL) {
-                ifp = spp->fuzz;
-                if (ifp != NULL && ifp->choice == 4 && ifp->a ==  3) {
-                  isInterval = FALSE;
-                  isPoint = TRUE;
-                  StringCpy (fuzz_from_ch, "^");
-                  /* start--; */  /* compensate for other fix */
-                  stop++; /* compensate for other fix */
-                }
+          }
+          if (start == stop && slp->choice == SEQLOC_PNT) {
+            spp = (SeqPntPtr) slp->data.ptrvalue;
+            if (spp != NULL) {
+              ifp = spp->fuzz;
+              if (ifp != NULL && ifp->choice == 4 && ifp->a ==  3) {
+                isInterval = FALSE;
+                isPoint = TRUE;
+                StringCpy (fuzz_from_ch, "^");
+                /* start--; */  /* compensate for other fix */
+                stop++; /* compensate for other fix */
               }
             }
-            strand = SeqLocStrand (slp);
-            if (strand > Seq_strand_both_rev && strand != Seq_strand_other) {
-              strand = Seq_strand_unknown;
-            }
-            /*
-            if (strand == Seq_strand_unknown) {
-              strand = Seq_strand_plus;
-            }
-            */
-            if (! ipp->nucsOK) {
-              strand = 0;
-            }
-            seq = 0;
-            if (ipp->bsptr != NULL) {
-              for (j = 1; j <= ipp->count && seq == 0; j++) {
-                sep = ipp->bsptr [j];
-                if (sep != NULL && sep->choice == 1) {
-                  if (bsp == (BioseqPtr) sep->data.ptrvalue) {
-                    seq = j;
-                  }
-                }
+          }
+          strand = SeqLocStrand (slp);
+          if (strand > Seq_strand_both_rev && strand != Seq_strand_other) {
+            strand = Seq_strand_unknown;
+          }
+          /*
+          if (strand == Seq_strand_unknown) {
+            strand = Seq_strand_plus;
+          }
+          */
+          if (! ipp->nucsOK) {
+            strand = 0;
+          }
+          seq = 0;
+          if (ipp->sip_list != NULL) {
+            for (j = 1; j <= ipp->count && seq == 0; j++) {
+              if (SeqIdComp (SeqIdFindBest (bsp->id, 0), ipp->sip_list[j]) == SIC_YES) {
+                seq = j;
               }
             }
-            if (ipp->nucsOK) {
-              if (isInterval) {
-                sprintf (str, "%s%ld\t%s%ld\t%d\t%d\n",
-                         fuzz_from_ch, (long) (start + 1),
-                         fuzz_to_ch, (long) (stop + 1),
-                         (int) strand, (int) seq);
-              } else if (isPoint) {
-                /*
-                sprintf (str, "%s%ld\t%s%ld\t%d\t%d\n",
-                         fuzz_from_ch, (long) (start + 1),
-                         fuzz_to_ch, (long) (stop + 1),
-                         (int) strand, (int) seq);
-                */
-                sprintf (str, "%ld%s\t%ld%s\t%d\t%d\n",
-                         (long) (start + 1), fuzz_from_ch,
-                         (long) (stop + 1), fuzz_to_ch,
-                         (int) strand, (int) seq);
-              }
-            } else {
-              sprintf (str, "%s%ld\t%s%ld\t%d\n",
+          }
+          if (ipp->nucsOK) {
+            if (isInterval) {
+              sprintf (str, "%s%ld\t%s%ld\t%d\t%d\n",
                        fuzz_from_ch, (long) (start + 1),
                        fuzz_to_ch, (long) (stop + 1),
-                       (int) seq);
+                       (int) strand, (int) seq);
+            } else if (isPoint) {
+              /*
+              sprintf (str, "%s%ld\t%s%ld\t%d\t%d\n",
+                       fuzz_from_ch, (long) (start + 1),
+                       fuzz_to_ch, (long) (stop + 1),
+                       (int) strand, (int) seq);
+              */
+              sprintf (str, "%ld%s\t%ld%s\t%d\t%d\n",
+                       (long) (start + 1), fuzz_from_ch,
+                       (long) (stop + 1), fuzz_to_ch,
+                       (int) strand, (int) seq);
             }
-            vnp = ValNodeNew (head);
-            if (head == NULL) {
-              head = vnp;
-            }
-            if (vnp != NULL) {
-              vnp->data.ptrvalue = StringSave (str);
-            }
+          } else {
+            sprintf (str, "%s%ld\t%s%ld\t%d\n",
+                     fuzz_from_ch, (long) (start + 1),
+                     fuzz_to_ch, (long) (stop + 1),
+                     (int) seq);
+          }
+          vnp = ValNodeNew (head);
+          if (head == NULL) {
+            head = vnp;
+          }
+          if (vnp != NULL) {
+            vnp->data.ptrvalue = StringSave (str);
           }
         }
       }
@@ -2993,10 +3314,55 @@ static void SeqLocPtrToIntervalPage (DialoG d, Pointer data)
   CorrectBarPage (tlp->bar, tlp->rows - 1, tlp->rows - 1);
 }
 
+extern void SetSequenceAndStrandForIntervalPage (DialoG d)
+{
+  IntervalPagePtr  ipp;
+  TagListPtr       tlp;
+  ValNodePtr       vnp;
+  CharPtr          cp;
+  CharPtr          tabptr;
+  ValNodePtr       saved_list;
+  
+  ipp = (IntervalPagePtr) GetObjectExtra (d);
+  if (ipp == NULL) return;
+  tlp = GetObjectExtra (ipp->ivals);
+  if (tlp == NULL) return;
+  saved_list = tlp->vnp;
+  tlp->vnp = NULL;
+  SendMessageToDialog (tlp->dialog, VIB_MSG_RESET);
+  tlp->vnp = saved_list;
+  for (vnp = tlp->vnp; vnp != NULL; vnp = vnp->next) 
+  {
+    cp = vnp->data.ptrvalue;
+    if (cp != NULL)
+    {
+      tabptr = StringChr (cp, '\t');
+      if (tabptr != NULL)
+      {
+      	tabptr = StringChr (tabptr + 1, '\t');
+      }
+      if (tabptr != NULL)
+      {
+      	cp[0] = '\t';
+      	cp++;
+      	while (*tabptr != 0)
+      	{
+      	  *cp = *tabptr;
+      	  cp++;
+      	  tabptr++;
+      	}
+      	*cp = 0;
+      }
+    }
+  }
+
+  SendMessageToDialog (tlp->dialog, VIB_MSG_REDRAW);
+	
+}
+
 static Pointer IntervalPageToSeqLocPtr (DialoG d)
 
 {
-  BioseqPtr        bsp, prev_bsp;
   Char             ch;
   SeqLocPtr        firstSlp;
   Int4             from;
@@ -3018,8 +3384,8 @@ static Pointer IntervalPageToSeqLocPtr (DialoG d)
   Boolean          partial5;
   Boolean          partial3;
   CharPtr          ptr;
-  SeqEntryPtr      sep;
   SeqFeatPtr       sfp;
+  SeqIdPtr         seqid, prev_sip;
   SeqIntPtr        sip;
   SeqLocPtr        slp;
   SeqPntPtr        spp;
@@ -3039,7 +3405,7 @@ static Pointer IntervalPageToSeqLocPtr (DialoG d)
   tlp = GetObjectExtra (ipp->ivals);
   if (tlp == NULL) return NULL;
 
-  prev_bsp = NULL;
+  prev_sip = NULL;
   prev_strand = Seq_strand_unknown;
   slp = NULL;
   sfp = SeqFeatNew ();
@@ -3165,14 +3531,14 @@ static Pointer IntervalPageToSeqLocPtr (DialoG d)
             to = tmp;
           }
         }
-        bsp = NULL;
+        sip = NULL;
         txt = ExtractTagListColumn ((CharPtr) vnp->data.ptrvalue, ipp->nucsOK ? 3 : 2);
         if (txt != NULL) {
           if (! StrToInt (txt, &val2) || val2 <= 0)
           {
-            if (prev_bsp != NULL)
+            if (prev_sip != NULL)
             {
-              bsp = prev_bsp;
+              seqid = prev_sip;
             }
             else
             {
@@ -3181,14 +3547,8 @@ static Pointer IntervalPageToSeqLocPtr (DialoG d)
           }
           else if (val2 <= ipp->count)
           {
-            sep = ipp->bsptr [val2];
-            if (sep != NULL && sep->choice == 1)
-            {
-              bsp = (BioseqPtr) sep->data.ptrvalue;
-              prev_bsp = bsp;
-            } else {
-              okay = FALSE;
-            }
+            seqid = ipp->sip_list [val2];
+            prev_sip = seqid;
           } else {
             okay = FALSE;
           }
@@ -3225,10 +3585,10 @@ static Pointer IntervalPageToSeqLocPtr (DialoG d)
             strand = Seq_strand_plus;
           }
           if (isInterval) {
-            AddIntToSeqFeat (sfp, from - 1, to - 1, bsp,
+            AddIntToSeqLoc (&(sfp->location), from - 1, to - 1, seqid,
                              fuzz_from, fuzz_to, strand);
           } else if (isPoint) {
-            AddSeqFeatPoint (sfp, bsp, from, fuzz_before, fuzz_after, strand);
+            AddSeqLocPoint (&(sfp->location), seqid, from, fuzz_before, fuzz_after, strand);
           }
           notFirst = TRUE;
         }
@@ -3317,7 +3677,13 @@ static void CleanupIntervalPage (GraphiC g, VoidPtr data)
 
   ipp = (IntervalPagePtr) data;
   if (ipp != NULL) {
-    MemFree (ipp->bsptr);
+    if (ipp->sip_list != NULL)
+    {
+      for (j = 0; j <= ipp->count + 1; j++) {
+        ipp->sip_list [j] = SeqIdFree (ipp->sip_list [j]);
+      }
+    }
+    MemFree (ipp->sip_list);
     if (ipp->alist != NULL) {
       for (j = 0; j <= ipp->count + 1; j++) {
         MemFree (ipp->alist [j].name);
@@ -3507,22 +3873,29 @@ extern DialoG CreateIntervalEditorDialogEx (GrouP h, CharPtr title, Uint2 rows,
     if (sep != NULL) {
       count = SegmentedEntryCount (sep);
       count += 4;
-      ipp->bsptr = MemNew (sizeof (BioseqPtr) * (size_t) count);
+      ipp->sip_list = MemNew (sizeof (SeqIdPtr) * (size_t) count);
       ipp->alist = MemNew (sizeof (EnumFieldAssoc) * (size_t) count);
       ipp->lengths = MemNew (sizeof (Int4) * (size_t) count);
       ipp->count = 0;
 
-      if (ipp->bsptr != NULL && ipp->alist != NULL && ipp->lengths != NULL) {
+      if (ipp->sip_list != NULL && ipp->alist != NULL && ipp->lengths != NULL) {
         SeqEntryExplore (sep, (Pointer) ipp, FillInProducts);
         j = 0;
         ipp->alist [j].name = StringSave ("     ");
         ipp->alist [j].value = (UIEnum) 0;
         for (j = 1; j <= ipp->count; j++) {
-          sep = ipp->bsptr [j];
-          if (sep != NULL && sep->choice == 1 && sep->data.ptrvalue != NULL) {
-            bsp = (BioseqPtr) sep->data.ptrvalue;
-            ipp->lengths [j] = bsp->length;
-            sip = SeqIdFindWorst (bsp->id);
+          sip = ipp->sip_list [j];
+          if (sip != NULL) {
+            bsp = BioseqFindCore (sip);
+            if (bsp == NULL) {
+              bsp = BioseqLockById (sip);
+              BioseqUnlockById (sip);
+            }
+            if (bsp != NULL)
+            {
+              ipp->lengths [j] = bsp->length;
+              sip = SeqIdFindWorst (bsp->id);
+            }
             SeqIdWrite (sip, str, PRINTID_REPORT, sizeof (str));
             ptr = StringChr (str, '|');
             showIdTags = FALSE;

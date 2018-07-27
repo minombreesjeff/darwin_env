@@ -27,9 +27,6 @@ CFG=demo_nentrez_ogl - Win32 DebugDLL
 CPP=cl.exe
 MTL=midl.exe
 RSC=rc.exe
-
-!IF  "$(CFG)" == "demo_nentrez_ogl - Win32 DebugDLL"
-
 # PROP BASE Use_MFC 0
 # PROP BASE Use_Debug_Libraries 1
 # PROP BASE Output_Dir "DebugDLL"
@@ -42,8 +39,8 @@ RSC=rc.exe
 # PROP Ignore_Export_Lib 0
 # PROP Target_Dir ""
 LIB32=link.exe -lib
-# ADD BASE CPP /nologo /MDd /W3 /Gm /GX /Z7 /Od /D "WIN32" /D "_DEBUG" /D "_NETENT_" /D "_WINDOWS" /D "_MBCS" /YX /FD /GZ /c
-# ADD CPP /nologo /MDd /W3 /Gm /GR /Z7 /Od /I "..\..\..\.." /I "..\..\..\..\corelib" /I "..\..\..\..\api" /I "..\..\..\..\asnstat" /I "..\..\..\..\asnlib" /I "..\..\..\..\object" /I "..\..\..\..\desktop" /I "..\..\..\..\cdromlib" /I "..\..\..\..\biostruc" /I "..\..\..\..\vibrant" /I "..\..\..\..\network\vibnet" /I "..\..\..\..\network\id1arch" /D "_OPENGL" /D "WIN32" /D "_DEBUG" /YX /FD /GZ /c
+# ADD BASE CPP /nologo /MDd /W3 /GX /Z7 /Od /D "WIN32" /D "_DEBUG" /D "_NETENT_" /D "_WINDOWS" /D "_MBCS" /YX /FD /GZ /c
+# ADD CPP /nologo /MDd /W3 /GR /Z7 /Od /I "..\..\..\.." /I "..\..\..\..\corelib" /I "..\..\..\..\api" /I "..\..\..\..\access" /I "..\..\..\..\asnstat" /I "..\..\..\..\asnlib" /I "..\..\..\..\object" /I "..\..\..\..\desktop" /I "..\..\..\..\cdromlib" /I "..\..\..\..\biostruc" /I "..\..\..\..\vibrant" /I "..\..\..\..\network\vibnet" /I "..\..\..\..\network\id1arch" /D "_OPENGL" /D "WIN32" /D "_DEBUG" /YX /FD /GZ /c
 # ADD BASE MTL /nologo /D "_DEBUG" /mktyplib203 /win32
 # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
 # ADD BASE RSC /l 0x409 /d "_DEBUG"
@@ -52,12 +49,9 @@ BSC32=bscmake.exe
 # ADD BASE BSC32 /nologo
 # ADD BSC32 /nologo
 LINK32=link.exe
-# ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /incremental:yes /subsystem:windows /pdb:none /debug /machine:I386 /pdbtype:sept
-# ADD LINK32 oldnames.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib wsock32.lib opengl32.lib glu32.lib /nologo /incremental:yes /subsystem:windows /pdb:none /debug /machine:I386 /out:"DebugDLL/nentrez_ogl.exe" /pdbtype:sept
+# ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:windows /pdb:none /debug /machine:I386
+# ADD LINK32 oldnames.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib wsock32.lib opengl32.lib glu32.lib /nologo /subsystem:windows /debug /machine:I386 /out:"DebugDLL/nentrez_ogl.exe" /pdbtype:sept
 # SUBTRACT LINK32 /pdb:none
-
-!ENDIF 
-
 # Begin Target
 
 # Name "demo_nentrez_ogl - Win32 DebugDLL"

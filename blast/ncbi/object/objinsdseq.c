@@ -31,7 +31,7 @@ objinsdseqAsnLoad(void)
 
 /**************************************************
 *    Generated object loaders for Module INSD-INSDSeq
-*    Generated using ASNCODE Revision: 6.14 at Apr 28, 2004  5:15 PM
+*    Generated using ASNCODE Revision: 6.14 at Jun 1, 2004 11:01 AM
 *
 **************************************************/
 
@@ -47,9 +47,6 @@ INSDSeqNew(void)
 {
    INSDSeqPtr ptr = MemNew((size_t) sizeof(INSDSeq));
 
-   ptr -> strandedness = 0;
-   ptr -> moltype = 0;
-   ptr -> topology = 1;
    return ptr;
 
 }
@@ -69,6 +66,9 @@ INSDSeqFree(INSDSeqPtr ptr)
       return NULL;
    }
    MemFree(ptr -> locus);
+   MemFree(ptr -> strandedness);
+   MemFree(ptr -> moltype);
+   MemFree(ptr -> topology);
    MemFree(ptr -> division);
    MemFree(ptr -> update_date);
    MemFree(ptr -> create_date);
@@ -162,21 +162,21 @@ INSDSeqAsnRead(AsnIoPtr aip, AsnTypePtr orig)
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
-      ptr -> strandedness = av.intvalue;
+      ptr -> strandedness = av.ptrvalue;
       atp = AsnReadId(aip,amp, atp);
    }
    if (atp == INSDSEQ_moltype) {
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
-      ptr -> moltype = av.intvalue;
+      ptr -> moltype = av.ptrvalue;
       atp = AsnReadId(aip,amp, atp);
    }
    if (atp == INSDSEQ_topology) {
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
-      ptr -> topology = av.intvalue;
+      ptr -> topology = av.ptrvalue;
       atp = AsnReadId(aip,amp, atp);
    }
    if (atp == INSDSEQ_division) {
@@ -404,12 +404,18 @@ INSDSeqAsnWrite(INSDSeqPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
    }
    av.intvalue = ptr -> length;
    retval = AsnWrite(aip, INSDSEQ_length,  &av);
-   av.intvalue = ptr -> strandedness;
-   retval = AsnWrite(aip, INSDSEQ_strandedness,  &av);
-   av.intvalue = ptr -> moltype;
-   retval = AsnWrite(aip, INSDSEQ_moltype,  &av);
-   av.intvalue = ptr -> topology;
-   retval = AsnWrite(aip, INSDSEQ_topology,  &av);
+   if (ptr -> strandedness != NULL) {
+      av.ptrvalue = ptr -> strandedness;
+      retval = AsnWrite(aip, INSDSEQ_strandedness,  &av);
+   }
+   if (ptr -> moltype != NULL) {
+      av.ptrvalue = ptr -> moltype;
+      retval = AsnWrite(aip, INSDSEQ_moltype,  &av);
+   }
+   if (ptr -> topology != NULL) {
+      av.ptrvalue = ptr -> topology;
+      retval = AsnWrite(aip, INSDSEQ_topology,  &av);
+   }
    if (ptr -> division != NULL) {
       av.ptrvalue = ptr -> division;
       retval = AsnWrite(aip, INSDSEQ_division,  &av);
@@ -1304,7 +1310,6 @@ NLM_EXTERN
 INSDSetPtr LIBCALL
 INSDSetAsnRead(AsnIoPtr aip, AsnTypePtr orig)
 {
-   DataVal av;
    AsnTypePtr atp;
    Boolean isError = FALSE;
    AsnReadFunc func;
@@ -1360,7 +1365,6 @@ erret:
 NLM_EXTERN Boolean LIBCALL 
 INSDSetAsnWrite(INSDSetPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
 {
-   DataVal av;
    AsnTypePtr atp;
    Boolean retval = FALSE;
 

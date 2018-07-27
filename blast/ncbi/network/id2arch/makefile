@@ -25,10 +25,13 @@ id2sgen.o: id2sgen.c id2sgen.h id2map.h seqsplit.h
 
 id2sgen.c id2sgen.h: seqsplit.l all.l 
 	$(CODEGEN) -i id2map.h -l seqsplit.l,all.l -o id2sgen -d .
+	cat id2sgen.c | grep -v "^ *\* *Generated" >x && mv x id2sgen.c
+	cat id2sgen.h | grep -v "^ *\* *Generated" >x && mv x id2sgen.h
 
-id2.c: id2.l id2.h all.l seqsplit.l
+id2.c id2gen.h: id2.l id2.h all.l seqsplit.l
 	$(CODEGEN) -i id2map.h -l id2.l,seqsplit.l,all.l -o id2gen -d .
-	mv id2gen.c id2.c
+	cat id2gen.c | grep -v "^ *\* *Generated" > id2.c && rm -f id2gen.c
+	cat id2gen.h | grep -v "^ *\* *Generated" > x     && mv x id2gen.h
 
 id2.l : id2.asn
 	$(ASNTOOL) -m id2.asn -l x.h
@@ -48,6 +51,7 @@ all.l :
 
 id2.h : id2.asn
 	$(ASNTOOL) -m id2.asn -o id2.h
+	cat id2.h | grep -v "^ *\* *Generated" >x && mv x id2.h
 seqsplit.h : seqsplit.asn
 	$(ASNTOOL) -m seqsplit.asn -o seqsplit.h
 

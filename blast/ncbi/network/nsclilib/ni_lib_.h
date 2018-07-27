@@ -1,7 +1,7 @@
 #ifndef NI_LIB___H
 #define NI_LIB___H
 
-/*  $Id: ni_lib_.h,v 4.8 2002/04/16 21:33:50 lavr Exp $
+/*  $Id: ni_lib_.h,v 4.9 2004/11/18 15:18:36 lavr Exp $
 * ==========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -35,6 +35,9 @@
 *
 * --------------------------------------------------------------------------
 * $Log: ni_lib_.h,v $
+* Revision 4.9  2004/11/18 15:18:36  lavr
+* Retire obsoleted g_NII_ vtables
+*
 * Revision 4.8  2002/04/16 21:33:50  lavr
 * Change "ni_serv.c" -> "ni_service.c"
 *
@@ -158,10 +161,6 @@ typedef struct {
  * NOTE: although these are global, however they must *NOT* be referenced
  * anywhere but in this module!
  */
-extern const NIInterface *g_NII_Dispatcher;  /* "ni_disp.c"    */
-extern const NIInterface *g_NII_WWW;         /* "ni_www.c"     */
-extern const NIInterface *g_NII_WWWFirewall; /* "ni_www.c"     */
-extern const NIInterface *g_NII_WWWDirect;   /* "ni_www.c"     */
 extern const NIInterface *g_NII_Service;     /* "ni_service.c" */
 extern const NIInterface *g_NII_Debug;       /* "ni_debug.c"   */
 

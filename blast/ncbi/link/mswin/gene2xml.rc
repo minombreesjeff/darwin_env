@@ -1,0 +1,11 @@
+#include <windows.h>
+#include "ncbirc.h"
+
+STRINGTABLE
+   BEGIN
+   STR_PROGRAM, "gene2xml 1.00"
+   END
+
+ICO_PROGRAM  ICON ncbilogo.ico
+ICO_NCBILOGO ICON ncbilogo.ico
+

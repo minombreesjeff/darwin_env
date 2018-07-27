@@ -1,5 +1,5 @@
 #
-# $Id: netbsd.ncbi.mk,v 1.9 2003/11/17 16:05:41 coulouri Exp $
+# $Id: netbsd.ncbi.mk,v 1.10 2004/11/25 00:31:22 coulouri Exp $
 #
 # That platform is not supported and is contributed to NCBI by 
 #                     Brook Milligan <brook@trillium.NMSU.Edu>
@@ -23,7 +23,7 @@ NCBI_DISTVIBLIBS = -L/usr/X11R6/lib /usr/X11R6/lib/libXm.a /usr/X11R6/lib/libXp.
 NCBI_OTHERLIBS = -lm
 NCBI_RANLIB = ranlib
 # Used by makedis.csh
-NCBI_MT_OTHERLIBS = 
+NCBI_MT_OTHERLIBS = -lpthread
 NCBI_THREAD_OBJ = ncbithr.o
 NETENTREZVERSION = 2.02c2ASN1SPEC6 
 

@@ -1,1 +1,0 @@
-../cdromlib/objentr.h

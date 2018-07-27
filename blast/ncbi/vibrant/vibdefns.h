@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/1/91
 *
-* $Revision: 6.14 $
+* $Revision: 6.15 $
 *
 * File Description: 
 *       Vibrant alias definitions
@@ -37,6 +37,9 @@
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: vibdefns.h,v $
+* Revision 6.15  2005/01/24 15:01:25  kans
+* prototype UsePrimaryMonitor
+*
 * Revision 6.14  2004/02/05 16:25:06  kans
 * revert to Nlm_GetTextVScrollBar and Nlm_GetTextHScrollBar being static, implement setOffset and getOffset for scroll text, since Windows scroll text has its own scroll bar
 *
@@ -272,6 +275,7 @@ extern "C" {
 #define UseFullScreen Nlm_UseFullScreen
 #define UseLeftScreen Nlm_UseLeftScreen
 #define UseRightScreen Nlm_UseRightScreen
+#define UsePrimaryMonitor Nlm_UsePrimaryMonitor
 
 #define NormalGroup Nlm_NormalGroup
 #define HiddenGroup Nlm_HiddenGroup

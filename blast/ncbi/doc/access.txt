@@ -26,7 +26,7 @@ control back to your program, and are easier to code.  For example:
 
   PubmedEntryPtr pep = PubMedSynchronousQuery (pmid);
 
-  SeqEntryPtr sep = PubSeqSynchronousQuery (gi, 0);
+  SeqEntryPtr sep = PubSeqSynchronousQuery (gi, 0, 0);
 
 These do not automatically try to reconnect if the network request failed,
 and the client can decide whether to put these calls in a small retry loop.
@@ -44,7 +44,7 @@ cleans up the connection before returning to the timer event loop.
 Some NCBI toolkit library functions require the ability to fetch sequences
 from a registered service.  For this, you can call
 
-  PubMedFetchEnable ();
+  PubSeqFetchEnable ();
 
 to enable access and
 

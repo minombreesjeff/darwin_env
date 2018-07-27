@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   11-29-94
 *
-* $Revision: 6.4 $
+* $Revision: 6.10 $
 *
 * File Description: 
 *
@@ -46,6 +46,8 @@
 #include <tofasta.h>
 #include <objmgr.h>
 #include <dlogutil.h>
+#include <asn2gnbk.h>
+#include <explore.h>
 
 /*****************************************************************************
 *
@@ -70,6 +72,18 @@ Boolean LIBCALL VSMFileInit(void)
                            VSMGenericTextAsnOpen, PROC_PRIORITY_DEFAULT);
                         
                         /*** SAVE ***/   
+	ObjMgrProcLoad(OMPROC_SAVE, "Export Protein Feature Table","Protein Feature Table", 0,0,0,0,NULL,
+                           VSMExportProteinFeatureTable, PROC_PRIORITY_DEFAULT);
+
+	ObjMgrProcLoad(OMPROC_SAVE, "Export Nucleotide Feature Table Without Sources","Nucleotide Feature Table Without Sources", 0,0,0,0,NULL,
+                           VSMExportNucFeatureTableWithoutSources, PROC_PRIORITY_DEFAULT);
+
+	ObjMgrProcLoad(OMPROC_SAVE, "Export Nucleotide Feature Table","Nucleotide Feature Table", 0,0,0,0,NULL,
+                           VSMExportNucFeatureTable, PROC_PRIORITY_DEFAULT);
+                           
+	ObjMgrProcLoad(OMPROC_SAVE, "Save As Sorted FASTA Protein File","Sorted FASTA protein file", 0,0,0,0,NULL,
+                           VSMFastaSortedProtSave, PROC_PRIORITY_DEFAULT);
+                           
 	ObjMgrProcLoad(OMPROC_SAVE, "Save As FASTA Protein File","FASTA protein file", 0,0,0,0,NULL,
                            VSMFastaProtSave, PROC_PRIORITY_DEFAULT);
                            
@@ -81,7 +95,7 @@ Boolean LIBCALL VSMFileInit(void)
                            
 	ObjMgrProcLoad(OMPROC_SAVE, "Save As Text ASN1 File","ASN.1 text file", 0,0,0,0,NULL,
                            VSMGenericTextAsnSave, PROC_PRIORITY_DEFAULT);
-
+                           
 	return TRUE;
 }
 
@@ -326,9 +340,7 @@ static Int2 LIBCALLBACK VSMGenericFastaSave (OMProcControlPtr ompcp, Boolean is_
 	SeqEntryPtr sep = NULL;
 	SeqFeatPtr sfp;
 	SeqLocPtr slp;
-	SeqPortPtr spp;
 	Uint1 code;
-	Char buf[255];
 	BioseqPtr bsp;
 	
 	sfp = NULL;
@@ -382,16 +394,26 @@ static Int2 LIBCALLBACK VSMGenericFastaSave (OMProcControlPtr ompcp, Boolean is_
 			if (sfp->data.choice == SEQFEAT_CDREGION && (! is_na)) {
 			  slp = sfp->product;
 			}
+			/*
 			spp = SeqPortNewByLoc (slp, code);
+			*/
 			bsp = GetBioseqGivenSeqLoc (slp, ompcp->input_entityID);
+			/*
 			if (spp != NULL && bsp != NULL) {
 				while (FastaSeqLine(spp, buf, 70, is_na))
 					FastaFileFunc(bsp, FASTA_SEQLINE, buf, sizeof (buf), (Pointer)fp);
 				SeqPortFree(spp);
 				FastaFileFunc(bsp, FASTA_EOS, buf, sizeof (buf), (Pointer)fp);
 			}
+			*/
+			if (slp != NULL && bsp != NULL) {
+			    SeqLocFastaStream (slp, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL, 70, 0, 0);
+			}
 		} else {
+			/*
 			SeqEntryToFasta(sep, fp, is_na);
+			*/
+			SeqEntryFastaStream (sep, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL, 70, 0, 0, is_na, !is_na, FALSE);
 		}
 		FileClose(fp);
 		ArrowCursor();
@@ -410,37 +432,98 @@ Int2 LIBCALLBACK VSMFastaNucSave ( Pointer data )
 	return VSMGenericFastaSave((OMProcControlPtr)data, TRUE);
 }
 
-
-static Int2 LIBCALLBACK VSMGenericAsnSave (OMProcControlPtr ompcp, CharPtr mode )
+typedef struct alphaprot
 {
-	Char filename[255];
-	AsnIoPtr aip;
-	ObjMgrPtr omp;
-	ObjMgrTypePtr omtp;
-	Uint2 the_type;
-	Pointer the_data;
-#ifdef WIN_MAC
-	FILE * fp;
-#endif
+  BioseqPtr bsp;
+  CharPtr   prot_name;  
+} AlphaProtData, PNTR AlphaProtPtr;
 
-	omp = ObjMgrGet();
-	if (ompcp->input_choicetype)
+static void GetProtListCallback (BioseqPtr bsp, Pointer userdata)
+{
+  ValNodePtr PNTR   pList;
+  SeqFeatPtr        sfp;
+  SeqMgrFeatContext fcontext;
+  ProtRefPtr        prp;
+  AlphaProtPtr      app;
+  
+  if (bsp == NULL || userdata == NULL || ! ISA_aa (bsp->mol)) return;
+  pList = (ValNodePtr PNTR) userdata;
+  app = (AlphaProtPtr) MemNew (sizeof (AlphaProtData));
+  if (app == NULL) return;
+  app->bsp = bsp;
+  app->prot_name = NULL;
+  
+  sfp = SeqMgrGetNextFeature (bsp, NULL, SEQFEAT_PROT, 0, &fcontext);
+  if (sfp != NULL && sfp->data.value.ptrvalue != NULL) 
+  {
+    prp = (ProtRefPtr) sfp->data.value.ptrvalue;
+    if (prp->name != NULL)
+    {
+      app->prot_name = StringSave (prp->name->data.ptrvalue);
+    }
+    else
+    {
+      app->prot_name = StringSave (fcontext.label);
+    }
+  }
+  ValNodeAddPointer (pList, 0, app);
+}
+
+static int LIBCALLBACK SortProtByName (VoidPtr ptr1, VoidPtr ptr2)
+
+{
+  ValNodePtr   vnp1, vnp2;
+  AlphaProtPtr app1, app2;
+  
+  if (ptr1 != NULL && ptr2 != NULL) {
+    vnp1 = *((ValNodePtr PNTR) ptr1);
+    vnp2 = *((ValNodePtr PNTR) ptr2);
+    if (vnp1 != NULL && vnp2 != NULL) {
+      app1 = (AlphaProtPtr) vnp1->data.ptrvalue;
+      app2 = (AlphaProtPtr) vnp2->data.ptrvalue;
+      if (app1 != NULL && app2 != NULL) {
+        return StringCmp (app1->prot_name, app2->prot_name);
+      }
+    }
+  }
+  return 0;
+}
+
+Int2 LIBCALLBACK VSMFastaSortedProtSave (Pointer data)
+{
+  OMProcControlPtr ompcp;
+	Char filename[255];
+	FILE * fp;
+	ValNode vn;
+	SeqEntryPtr sep = NULL;
+	ValNodePtr   prot_list = NULL, vnp;
+	AlphaProtPtr app;
+
+  ompcp = (OMProcControlPtr)data;
+  if (ompcp == NULL) return OM_MSG_RET_ERROR;
+  
+	switch(ompcp->input_itemtype)
 	{
-		the_type = ompcp->input_choicetype;
-		the_data = (Pointer)(ompcp->input_choice);
+		case OBJ_SEQENTRY:
+		case OBJ_BIOSEQ:
+		case OBJ_BIOSEQSET:
+			break;
+		default:
+			ErrPostEx(SEV_ERROR, 0,0,"ToFasta: Can only write Seq-entry, Bioseq, or Bioseq-set");
+			return OM_MSG_RET_ERROR;
 	}
+	if (ompcp->input_choicetype == OBJ_SEQENTRY)
+		sep = (SeqEntryPtr)(ompcp->input_choice);
 	else
 	{
-		the_type = ompcp->input_itemtype;
-		the_data = ompcp->input_data;
+		vn.next = NULL;
+		vn.data.ptrvalue = ompcp->input_data;
+		if (ompcp->input_itemtype == OBJ_BIOSEQ)
+			vn.choice = 1;
+		else
+			vn.choice = 2;
+		sep = &vn;
 	}
-	
-	omtp = ObjMgrTypeFind(omp, the_type, NULL, NULL);
-	if (omtp == NULL)
-	{
-		ErrPostEx(SEV_ERROR,0,0,"Can't locate type record for [%d]", (int)the_type);
-		return OM_MSG_RET_ERROR;
-	}	
 		
 	filename[0] = '\0';
 	if (GetOutputFileName(filename, (size_t)254, NULL))
@@ -454,14 +537,246 @@ static Int2 LIBCALLBACK VSMGenericAsnSave (OMProcControlPtr ompcp, CharPtr mode 
 			FileCreate (filename, "TEXT", "ttxt");
 		}
 #endif
-		aip = AsnIoOpen(filename, mode);
-		(*(omtp->asnwrite))(the_data, aip, NULL);
-		AsnIoClose(aip);
+		fp = FileOpen(filename, "w");
+		
+    VisitBioseqsInSep (sep, &prot_list, GetProtListCallback);
+    prot_list = ValNodeSort (prot_list, SortProtByName);
+		for (vnp = prot_list; vnp != NULL; vnp = vnp->next)
+		{
+		  app = (AlphaProtPtr) vnp->data.ptrvalue;
+		  if (app == NULL) continue;
+		  BioseqToFasta (app->bsp, fp, FALSE);
+		}
+		for (vnp = prot_list; vnp != NULL; vnp = vnp->next)
+		{
+		  app = (AlphaProtPtr) vnp->data.ptrvalue;
+		  if (app == NULL) continue;
+		  app->prot_name = MemFree (app->prot_name);
+		  vnp->data.ptrvalue = MemFree (app);
+		}
+    prot_list = ValNodeFree (prot_list);		
+		FileClose(fp);
+		ArrowCursor();
+	}
+	
+	return OM_MSG_RET_DONE;  
+}
+
+typedef struct featuretableexport
+{
+  FILE *fp;
+  Boolean show_nucs;
+  Boolean show_prots;
+  Boolean hide_sources;
+} FeatureTableData, PNTR FeatureTablePtr;
+
+static void VSMExportFeatureTableBioseqCallback (BioseqPtr bsp, Pointer userdata)
+
+{
+  FeatureTablePtr ftp;
+  CstType         custom_flags = 0;
+  
+  if (bsp == NULL || userdata == NULL) return;
+  
+  ftp = (FeatureTablePtr) userdata;
+  if (ftp->fp == NULL) return;
+  if (!ftp->show_nucs && ISA_na (bsp->mol))
+  {
+    return;
+  }
+  if (!ftp->show_prots && ISA_aa (bsp->mol))
+  {
+    return;
+  }
+  if (ftp->hide_sources)
+  {
+    custom_flags |= HIDE_SOURCE_FEATS;
+  }
+  BioseqToGnbk (bsp, NULL, FTABLE_FMT, DUMP_MODE, NORMAL_STYLE, 0, 0, custom_flags, NULL, ftp->fp);    
+}
+
+static Int2 
+VSMExportFeatureTable 
+(OMProcControlPtr ompcp, 
+ Boolean show_nucs, 
+ Boolean show_prots,
+ Boolean hide_sources)
+
+{
+	Char filename[255];
+	ValNode vn;
+	SeqEntryPtr sep = NULL;
+	FeatureTableData ftd;
+	
+	switch(ompcp->input_itemtype)
+	{
+		case OBJ_SEQENTRY:
+		case OBJ_BIOSEQ:
+		case OBJ_BIOSEQSET:
+			break;
+		default:
+			ErrPostEx(SEV_ERROR, 0,0,"ToFasta: Can only write Seq-entry, Bioseq, or Bioseq-set");
+			return OM_MSG_RET_ERROR;
+	}
+	
+	ftd.show_nucs = show_nucs;
+	ftd.show_prots = show_prots;
+	ftd.hide_sources = hide_sources;
+	
+  if (ompcp->input_choicetype == OBJ_SEQENTRY)
+		sep = (SeqEntryPtr)(ompcp->input_choice);
+	else
+	{
+		vn.next = NULL;
+		vn.data.ptrvalue = ompcp->input_data;
+		if (ompcp->input_itemtype == OBJ_BIOSEQ)
+			vn.choice = 1;
+		else
+			vn.choice = 2;
+		sep = &vn;
+	}
+		
+	filename[0] = '\0';
+	if (GetOutputFileName(filename, (size_t)254, NULL))
+	{
+		WatchCursor();
+#ifdef WIN_MAC
+		ftd.fp = FileOpen (filename, "r");
+		if (ftd.fp != NULL) {
+			FileClose (ftd.fp);
+		} else {
+			FileCreate (filename, "TEXT", "ttxt");
+		}
+#endif
+		ftd.fp = FileOpen(filename, "w");
+		VisitBioseqsInSep (sep, &ftd, VSMExportFeatureTableBioseqCallback);
+		FileClose(ftd.fp);
+		ArrowCursor();
+	}
+	
+	return OM_MSG_RET_DONE;  
+}
+
+Int2 LIBCALLBACK VSMExportNucFeatureTable ( Pointer data )
+{
+  return VSMExportFeatureTable ((OMProcControlPtr)data, TRUE, FALSE, FALSE);
+}
+
+Int2 LIBCALLBACK VSMExportNucFeatureTableWithoutSources ( Pointer data )
+{
+  return VSMExportFeatureTable ((OMProcControlPtr)data, TRUE, FALSE, TRUE);
+}
+
+Int2 LIBCALLBACK VSMExportProteinFeatureTable (Pointer data)
+{
+  return VSMExportFeatureTable ((OMProcControlPtr)data, FALSE, TRUE, FALSE);
+}
+
+typedef struct selectedsave
+{
+	AsnIoPtr     aip;
+  SelStructPtr ssp;    
+	ObjMgrPtr    omp;
+} SelectedSaveData, PNTR SelectedSavePtr;
+
+NLM_EXTERN void AsnPrintNewLine PROTO((AsnIoPtr aip));
+static Boolean SaveOneSelectedItem (GatherObjectPtr gop)
+
+{
+  SelectedSavePtr ssp;
+  SelStructPtr    sel;
+	ObjMgrTypePtr   omtp;
+
+  if (gop == NULL || gop->dataptr == NULL) return TRUE;
+  ssp = (SelectedSavePtr) gop->userdata;
+  if (ssp == NULL || ssp->aip == NULL || ssp->ssp == NULL) return TRUE;
+
+  sel = ssp->ssp;
+  while (sel != NULL 
+         && (sel->entityID != gop->entityID 
+             || sel->itemtype != gop->itemtype 
+             || sel->itemID != gop->itemID))
+  {
+    sel = sel->next;
+  }
+
+  if (sel == NULL) return TRUE;
+   
+ 	omtp = ObjMgrTypeFind(ssp->omp, sel->itemtype, NULL, NULL);
+	if (omtp == NULL)
+	{
+		ErrPostEx(SEV_ERROR,0,0,"Can't locate type record for [%d]", (int)sel->itemtype);
+		return TRUE;
+	}	
+		
+  (*(omtp->asnwrite))(gop->dataptr, ssp->aip, NULL);
+  AsnPrintNewLine (ssp->aip);
+  AsnIoFlush (ssp->aip);
+ 
+  return TRUE;
+}
+
+
+static Int2 LIBCALLBACK VSMGenericAsnSave (OMProcControlPtr ompcp, CharPtr mode )
+{
+	Char filename[255];
+	SelStructPtr  ssp, sel;
+#ifdef WIN_MAC
+	FILE * fp;
+#endif
+  ValNodePtr entity_list = NULL, vnp;
+  SelectedSaveData ssd;
+
+  ssp = ObjMgrGetSelected();
+  if (ssp == NULL)
+	{
+		return OM_MSG_RET_ERROR;
+	}
+	
+	for (sel = ssp; sel != NULL; sel = sel->next)
+	{
+	  for (vnp = entity_list;
+	       vnp != NULL && vnp->data.intvalue != sel->entityID;
+	       vnp = vnp->next)
+	  {}
+	  if (vnp == NULL)
+	  {
+	    ValNodeAddInt (&entity_list, 0, sel->entityID);
+	  }
+	}
+
+	ssd.omp = ObjMgrGet();
+
+  /* get file name to use */	
+	filename[0] = '\0';
+	if (GetOutputFileName(filename, (size_t)254, NULL))
+	{
+		WatchCursor();
+#ifdef WIN_MAC
+		fp = FileOpen (filename, "r");
+		if (fp != NULL) {
+			FileClose (fp);
+		} else {
+			FileCreate (filename, "TEXT", "ttxt");
+		}
+#endif
+
+		ssd.aip = AsnIoOpen(filename, mode);
+		ssd.ssp = ssp;
+	
+	  for (vnp = entity_list; vnp != NULL; vnp = vnp->next)
+	  {
+      GatherObjectsInEntity (vnp->data.intvalue, 0, NULL, SaveOneSelectedItem, (Pointer) &ssd, NULL);
+	  }
+
+    ValNodeFree (entity_list);
+		AsnIoClose(ssd.aip);
 		ArrowCursor();
 	}
 	
 	return OM_MSG_RET_DONE;
 }
+
 
 Int2 LIBCALLBACK VSMGenericTextAsnSave ( Pointer data )
 {

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   9/2/97
 *
-* $Revision: 6.96 $
+* $Revision: 6.118 $
 *
 * File Description: 
 *
@@ -48,6 +48,7 @@
 #include <ncbi.h>
 #include <sequtil.h>
 #include <objpubme.h>
+#include <objentgene.h>
 #include <util/creaders/alnread.h>
 
 #undef NLM_EXTERN
@@ -69,6 +70,9 @@ NLM_EXTERN SeqEntryPtr LIBCALL GetBestTopParentForDataEx (Uint2 entityID, Bioseq
 NLM_EXTERN SeqEntryPtr LIBCALL GetBestTopParentForItemIDEx (Uint2 entityID, Uint2 itemID, Uint2 itemtype, Boolean skipGenProdSet);
 
 NLM_EXTERN SeqIdPtr SeqIdFindWorst (SeqIdPtr sip);
+NLM_EXTERN void ChangeSeqIdToWorstID (SeqIdPtr sip);
+NLM_EXTERN void ChangeSeqLocToWorstID (SeqLocPtr slp);
+
 NLM_EXTERN SeqIdPtr MakeSeqID (CharPtr str);
 NLM_EXTERN SeqIdPtr MakeUniqueSeqID (CharPtr prefix);
 
@@ -119,6 +123,8 @@ NLM_EXTERN void        ResetSeqFeatInterval (SeqFeatPtr sfp);
 NLM_EXTERN void        AddSeqFeatInterval (SeqFeatPtr sfp, BioseqPtr bsp, Int4 from, Int4 to,
                                        Boolean partial5, Boolean partial3);
 
+NLM_EXTERN void        AddSeqLocPoint (SeqLocPtr PNTR old_slp, SeqIdPtr sip, Int4 location,
+                                       Boolean fuzz_before, Boolean fuzz_after, Int2 strand);
 NLM_EXTERN void        AddSeqFeatPoint (SeqFeatPtr sfp, BioseqPtr bsp, Int4 location, Boolean fuzz_before, Boolean fuzz_after, Int2 strand);
 
 /* AddSeqEntryToSeqEntry and ReplaceSeqEntryWithSeqEntry leave
@@ -163,6 +169,11 @@ NLM_EXTERN SeqLocPtr SeqLocMerge (BioseqPtr target,
 NLM_EXTERN SeqLocPtr SeqLocMergeEx (BioseqPtr target, SeqLocPtr to, SeqLocPtr from,
                                     Boolean single_interval, Boolean fuse_joints,
                                     Boolean merge_overlaps, Boolean add_null);
+
+NLM_EXTERN SeqLocPtr SeqLocMergeExEx (BioseqPtr target, SeqLocPtr to, SeqLocPtr from,
+                                      Boolean single_interval, Boolean fuse_joints,
+                                      Boolean merge_overlaps, Boolean add_null,
+                                      Boolean ignore_mixed);
 
 NLM_EXTERN Boolean CheckSeqLocForPartial (SeqLocPtr location, BoolPtr p5ptr, BoolPtr p3ptr);
 NLM_EXTERN void SetSeqLocPartial (SeqLocPtr location, Boolean partial5, Boolean partial3);
@@ -299,6 +310,7 @@ NLM_EXTERN Uint1 FindTrnaAA (CharPtr str);
 NLM_EXTERN Uint1 FindTrnaAA3 (CharPtr str);
 NLM_EXTERN Uint1 ParseTRnaString (CharPtr strx, BoolPtr justTrnaText, Uint1Ptr codon, Boolean noSingleLetter);
 NLM_EXTERN CharPtr FindTrnaAAIndex (CharPtr str);
+NLM_EXTERN Char FindResidueByName (CharPtr res_name, SeqCodeTablePtr sctp);
 NLM_EXTERN ValNodePtr TokenizeTRnaString (CharPtr strx);
 NLM_EXTERN Boolean ParseDegenerateCodon (tRNAPtr trp, Uint1Ptr codon);
 NLM_EXTERN Boolean SerialNumberInString (CharPtr str);
@@ -307,6 +319,11 @@ NLM_EXTERN Boolean SerialNumberInString (CharPtr str);
 
 NLM_EXTERN int LIBCALLBACK SortVnpByString (VoidPtr ptr1, VoidPtr ptr2);
 NLM_EXTERN ValNodePtr UniqueValNode (ValNodePtr list);
+
+/* for sorting and uniquing valnode list by data.intvalue */
+
+NLM_EXTERN int LIBCALLBACK SortByIntvalue (VoidPtr ptr1, VoidPtr ptr2);
+NLM_EXTERN ValNodePtr UniqueIntValNode (ValNodePtr list);
 
 /* keytag sorts/uniques and then owns valnode character list */
 
@@ -383,6 +400,11 @@ NLM_EXTERN Pointer ReadAsnFastaOrFlatFile (FILE *fp, Uint2Ptr datatypeptr, Uint2
                                            Boolean forceNuc, Boolean forceProt,
                                            Boolean parseFastaSeqId, Boolean fastaAsSimpleSeq);
 
+/* ReadDeltaFasta reads a FASTA file, combining raw sequence and >?unk100 lines into
+a delta Bioseq.  The file pointer stops at the next FASTA with a real SeqID. */
+
+NLM_EXTERN BioseqPtr ReadDeltaFasta (FILE *fp, Uint2Ptr entityIDptr);
+
 /* PromoteXrefs expands generef or protref feature cross-references (made by reading a
 feature table with ReadAsnFastaOrFlatFile) to stand-alone gene features or protein features
 and protein bioseqs.  It processes ALL features in the list - you give it the FIRST sfp. */
@@ -390,6 +412,8 @@ and protein bioseqs.  It processes ALL features in the list - you give it the FI
 NLM_EXTERN void PromoteXrefs (SeqFeatPtr sfp, BioseqPtr bsp, Uint2 entityID);
 NLM_EXTERN void PromoteXrefsEx (SeqFeatPtr sfp, BioseqPtr bsp, Uint2 entityID, Boolean include_stop,
                                 Boolean remove_trailingX, Boolean gen_prod_set);
+NLM_EXTERN void PromoteXrefsExEx (SeqFeatPtr sfp, BioseqPtr bsp, Uint2 entityID, Boolean include_stop,
+                                  Boolean remove_trailingX, Boolean gen_prod_set, Boolean force_local_id);
 
 /* SetEmptyGeneticCodes imposes genetic code on all coding regions within a feature table */
 
@@ -418,6 +442,10 @@ require reindexing) */
 
 NLM_EXTERN void BasicSeqEntryCleanup (SeqEntryPtr sep);
 
+/* CleanUpSeqFeat componenet of BasicSeqEntryCleanup, can be called for external features */
+
+NLM_EXTERN void CleanUpSeqFeat (SeqFeatPtr sfp, Boolean isEmblOrDdbj, Boolean stripSerial, ValNodePtr PNTR publist);
+
 /* CautiousSeqEntryCleanup is a gradual consolidation and replacement of functions in SeriousSeqEntryCleanup,
 which does change the itemID structure, and is intended to be safe for a retrofit of the ID database */
 
@@ -426,6 +454,8 @@ NLM_EXTERN void CautiousSeqEntryCleanup (SeqEntryPtr sep, SeqEntryFunc taxfun, S
 /* Convert a segmented or delta Bioseq to a raw Bioseq */
 
 NLM_EXTERN void SegOrDeltaBioseqToRaw (BioseqPtr bsp);
+
+NLM_EXTERN void ConvertSegSetsToDeltaSequences (SeqEntryPtr sep);
 
 /* general purpose text finite state machine */
 /* based on Practical Algorithms for Programmers by Binstock and Rex */
@@ -556,6 +586,23 @@ NLM_EXTERN Int4 VisitBioSourcesInSep (SeqEntryPtr sep, Pointer userdata, VisitBi
 typedef void (*ScanBioseqSetFunc) (SeqEntryPtr sep, Pointer userdata);
 NLM_EXTERN Int4 ScanBioseqSetRelease (CharPtr inputFile, Boolean binary, Boolean compressed, Pointer userdata, ScanBioseqSetFunc callback);
 
+/* function to scan binary ASN.1 file of entrezgene release as Entrezgene-Set */
+
+typedef void (*ScanEntrezgeneSetFunc) (EntrezgenePtr egp, Pointer userdata);
+NLM_EXTERN Int4 ScanEntrezgeneSetRelease (CharPtr inputFile, Boolean binary, Boolean compressed, Pointer userdata, ScanEntrezgeneSetFunc callback);
+
+/* general file recursion function - directory must not be empty, proc callback function must not be NULL */
+
+typedef void (*DirExpProc) (CharPtr filename, Pointer userdata);
+
+NLM_EXTERN Int4 DirExplore (
+  CharPtr directory,
+  CharPtr filter,
+  CharPtr suffix,
+  DirExpProc proc,
+  Pointer userdata
+);
+
 /* PubMed registered fetch functionality */
 
 NLM_EXTERN PubmedEntryPtr LIBCALL GetPubMedForUid (Int4 uid);
@@ -565,6 +612,8 @@ NLM_EXTERN PubmedEntryPtr LIBCALL GetPubMedForUid (Int4 uid);
 typedef PubmedEntryPtr (LIBCALLBACK * PubMedFetchFunc) (Int4 uid);
 
 NLM_EXTERN void LIBCALL PubMedSetFetchFunc (PubMedFetchFunc func);
+
+NLM_EXTERN void FirstNameToInitials (CharPtr first, CharPtr inits, size_t maxsize);
 
 extern CharPtr MyFGetLine (FILE *fp, ValNodePtr PNTR current_data);
 
@@ -583,10 +632,17 @@ typedef struct readbuffer {
 
 extern void FreeBufferedReadList (ValNodePtr vnp);
 
+extern CharPtr AlignmentStringToSequenceString (CharPtr aln_str, Uint1 moltype);
 extern SeqEntryPtr MakeSequinDataFromAlignment (TAlignmentFilePtr afp, Uint1 moltype);
+extern SeqEntryPtr MakeSequinDataFromAlignmentEx (TAlignmentFilePtr afp, Uint1 moltype, Boolean check_ids);
 extern SeqEntryPtr make_seqentry_for_seqentry (SeqEntryPtr sep);
+extern void ProcessPseudoMiscFeatsForEntityID (Uint2 entityID);
+extern void ConvertPseudoCDSToMiscFeatsForEntityID (Uint2 entityID);
 
-
+extern SeqAlignPtr FindAlignmentsForBioseq (BioseqPtr bsp);
+extern ValNodePtr FindAlignSeqAnnotsForBioseq (BioseqPtr bsp);
+extern Boolean IsSequenceFirstInPairwise (SeqEntryPtr sep, SeqIdPtr sip);
+extern Boolean RemoveSequenceFromAlignments (SeqEntryPtr sep, SeqIdPtr sip);
 
 #ifdef __cplusplus
 }

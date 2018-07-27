@@ -1,37 +1,35 @@
-/* $Id: blast_rps.h,v 1.4 2004/04/09 14:23:35 papadopo Exp $
-* ===========================================================================
-*
-*                            PUBLIC DOMAIN NOTICE
-*               National Center for Biotechnology Information
-*
-*  This software/database is a "United States Government Work" under the
-*  terms of the United States Copyright Act.  It was written as part of
-*  the author's offical duties as a United States Government employee and
-*  thus cannot be copyrighted.  This software/database is freely available
-*  to the public for use. The National Library of Medicine and the U.S.
-*  Government have not placed any restriction on its use or reproduction.
-*
-*  Although all reasonable efforts have been taken to ensure the accuracy
-*  and reliability of the software and data, the NLM and the U.S.
-*  Government do not and cannot warrant the performance or results that
-*  may be obtained by using this software or data. The NLM and the U.S.
-*  Government disclaim all warranties, express or implied, including
-*  warranties of performance, merchantability or fitness for any particular
-*  purpose.
-*
-*  Please cite the author in any work or product based on this material.
-*
-* ===========================================================================*/
+/* $Id: blast_rps.h,v 1.8 2004/11/04 15:52:14 papadopo Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ===========================================================================
+ *
+ * Author:  Jason Papadopoulos
+ *
+ */
 
-/*****************************************************************************
-
-File name: blast_rps.h
-
-Author: Jason Papadopoulos
-
-Contents: RPS BLAST structure definitions
-
-*****************************************************************************/
+/** @file blast_rps.h
+ * RPS BLAST structure definitions.
+ */
 
 #ifndef BLAST_RPS__H
 #define BLAST_RPS__H
@@ -42,12 +40,12 @@ Contents: RPS BLAST structure definitions
 extern "C" {
 #endif
 
-#define RPS_MAGIC_NUM 0x1e16    /* RPS data files contain this number */
-#define NUM_EXPANSION_WORDS 3
+#define RPS_MAGIC_NUM 0x1e16    /**< RPS data files contain this number */
+#define NUM_EXPANSION_WORDS 3   /**< Intentionally unused words in .loo file */
 
 /** header of RPS blast '.loo' file */
 
-typedef struct RPSLookupFileHeader {
+typedef struct BlastRPSLookupFileHeader {
     Int4 magic_number;               /**< value should be RPS_MAGIC_NUM */
     Int4 num_lookup_tables;          /**< hardwired to 1 at present */
     Int4 num_hits;                   /**< number of hits in the lookup table */
@@ -56,11 +54,11 @@ typedef struct RPSLookupFileHeader {
     Int4 unused[NUM_EXPANSION_WORDS];/**< empty space in the on-disk format */
     Int4 start_of_backbone;          /**< byte offset of start of backbone */
     Int4 end_of_overflow;            /**< byte offset to end of overflow array */
-} RPSLookupFileHeader;
+} BlastRPSLookupFileHeader;
 
 /** header of RPS blast '.rps' file */
 
-typedef struct RPSProfileHeader {
+typedef struct BlastRPSProfileHeader {
     Int4 magic_number;     /**< value should be RPS_MAGIC_NUM */
     Int4 num_profiles;     /**< number of PSSMs in the file */
     Int4 start_offsets[1]; /**< start of an Int4 array that gives the starting 
@@ -73,15 +71,15 @@ typedef struct RPSProfileHeader {
 
     /* After the list of sequence start offsets comes the list
        of PSSM rows. There is one row for each letter in the RPS
-       sequence database, and each row has PSI_ALPHABET_SIZE entries.
+       sequence database, and each row has BLASTAA_SIZE entries.
        Because there is a sentinel byte at the end of each sequence,
        there is also a PSSM row for each sentinel byte */
 
-} RPSProfileHeader;
+} BlastRPSProfileHeader;
 
 /** information derived from RPS blast '.aux' file */
 
-typedef struct RPSAuxInfo {
+typedef struct BlastRPSAuxInfo {
     char* orig_score_matrix; /**< score matrix used to derive PSSMs */
     Int4 gap_open_penalty;   /**< gap open penalty used in deriving PSSMs */
     Int4 gap_extend_penalty; /**< gap extend penalty used in deriving PSSMs */
@@ -95,17 +93,17 @@ typedef struct RPSAuxInfo {
                                   all scores and all cutoff values must be
                                   similarly scaled during the search */
     double *karlin_k;        /**< one Karlin value for each DB sequence */
-} RPSAuxInfo;
+} BlastRPSAuxInfo;
 
 /** The RPS engine uses this structure to access all of the
  *  RPS blast related data (assumed to be collected in an 
  *  implementation-specific manner). 
  */
-typedef struct RPSInfo {
-    RPSLookupFileHeader *lookup_header; /**< for '.loo' file */
-    RPSProfileHeader *profile_header;   /**< for '.rps' file */
-    RPSAuxInfo aux_info;                /**< for '.aux' file */
-} RPSInfo;
+typedef struct BlastRPSInfo {
+    BlastRPSLookupFileHeader *lookup_header; /**< for '.loo' file */
+    BlastRPSProfileHeader *profile_header;   /**< for '.rps' file */
+    BlastRPSAuxInfo aux_info;                /**< for '.aux' file */
+} BlastRPSInfo;
 
 #ifdef __cplusplus
 }

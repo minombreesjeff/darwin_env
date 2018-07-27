@@ -32,8 +32,22 @@ Contents: definitions and prototypes used by blastkar.c to calculate BLAST
 
 ******************************************************************************/
 
-/* $Revision: 6.38 $ 
+/* $Revision: 6.39 $ 
 * $Log: blastkar.h,v $
+* Revision 6.39  2004/09/28 16:04:19  papadopo
+* From Michael Gertz:
+* 1. Pass the effective database size into BlastSmallGapSumE,
+*     BlastLargeGapSumE and BlastUnevenGapSumE.  The routines use this
+*     value in a simplified formula to compute the e-value of singleton sets.
+* 2. Caused all routines for calculating the significance of multiple
+*     distinct alignments (BlastSmallGapSumE, BlastLargeGapSumE and
+*     BlastUnevenGapSumE) to use
+*
+*        sum_{i in linked_set} (\lambda_i s_i - \ln K_i)
+*
+*     as the weighted sum score, where (\lambda_i, K_i) are taken from
+*     the appropriate query context.
+*
 * Revision 6.38  2004/04/28 14:36:34  madden
 * Changes from Mike Gertz:
 *  - Added a function prototype for BlastGapDecayDivisor
@@ -550,11 +564,11 @@ Nlm_FloatHi LIBCALL BlastKarlinStoLen PROTO((BLAST_KarlinBlkPtr kbp, BLAST_Score
 Nlm_FloatHi LIBCALL BlastSumP PROTO((Int4 r, Nlm_FloatHi s));
 
 /* Functions to calculate SumE (for large and small gaps). */
-Nlm_FloatHi LIBCALL BlastSmallGapSumE PROTO((BLAST_KarlinBlkPtr kbp, Int4 gap, Int2 num,  Nlm_FloatHi xsum, Int4 query_length, Int4 subject_length, Nlm_FloatHi weight_divisor));
+Nlm_FloatHi LIBCALL BlastSmallGapSumE PROTO((Int4 start_points, Int2 num,  Nlm_FloatHi xsum, Int4 query_length, Int4 subject_length, Int8 dblen_eff, Nlm_FloatHi weight_divisor));
 
-Nlm_FloatHi LIBCALL BlastUnevenGapSumE PROTO((BLAST_KarlinBlkPtr kbp, Int4 p_gap, Int4 n_gap, Int2 num, Nlm_FloatHi xsum, Int4 query_length, Int4 subject_length, Nlm_FloatHi weight_divisor));
+Nlm_FloatHi LIBCALL BlastUnevenGapSumE PROTO((Int4 query_start_points, Int4 subject_start_points, Int2 num, Nlm_FloatHi xsum, Int4 query_length, Int4 subject_length, Int8 dblen_eff, Nlm_FloatHi weight_divisor));
 
-Nlm_FloatHi LIBCALL BlastLargeGapSumE PROTO((BLAST_KarlinBlkPtr kbp, Int2 num,  Nlm_FloatHi xsum, Int4 query_length, Int4 subject_length, Nlm_FloatHi weight_divisor));
+Nlm_FloatHi LIBCALL BlastLargeGapSumE PROTO((Int2 num,  Nlm_FloatHi xsum, Int4 query_length, Int4 subject_length, Int8 dblen_eff, Nlm_FloatHi weight_divisor));
 
 /* Used to produce random sequences. */
 CharPtr  LIBCALL BlastRepresentativeResidues PROTO((Int2 length));

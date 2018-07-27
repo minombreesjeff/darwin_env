@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/1/91
 *
-* $Revision: 6.62 $
+* $Revision: 6.68 $
 *
 * File Description:
 *       Vibrant main, event loop, and window functions
@@ -37,6 +37,26 @@
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: vibwndws.c,v $
+* Revision 6.68  2005/01/24 15:02:40  kans
+* remove unnecessary and uninitialized StringMove (tmp...) in GetArgs_ST
+*
+* Revision 6.67  2005/01/13 18:47:01  kans
+* Nlm_showGetArgTag set by Nlm_GetReady, used by GetArg_ST
+*
+* Revision 6.66  2004/07/19 13:37:24  bollin
+* adjusted FixVisibilityIssues function to handle nesting of groups
+*
+* Revision 6.65  2004/07/16 18:47:29  bollin
+* added FixVisibilityIssues function to handle LessTif problems with not correctly hiding
+* widgets before the parent widget is managed.
+* Also replaced obsolete XmFontListCreate function to get rid of run-time warning.
+*
+* Revision 6.64  2004/06/02 15:53:17  bollin
+* fixed Nlm_ProcessKeyPress for MOTIF to handle arrow keys
+*
+* Revision 6.63  2004/06/02 14:54:33  bollin
+* fixed Nlm_ProcessKeyPress to also handle arrow keys
+*
 * Revision 6.62  2004/04/14 19:14:06  sinyakov
 * WIN_MSWIN: support X-Windows-like -bg color command line option
 *
@@ -833,6 +853,8 @@ static       char Nlm_AppName[PATH_MAX+1]  = "vibrant";
 
 Nlm_WindowTool  Nlm_currentWindowTool;
 Nlm_Boolean     Nlm_processUpdatesFirstVal = TRUE;
+
+static Nlm_Boolean     Nlm_showGetArgTag = FALSE;
 
 static Nlm_GphPrcsPtr  gphprcsptr = NULL;
 
@@ -3551,12 +3573,38 @@ static void Nlm_GetWindowPosition (Nlm_GraphiC w, Nlm_RectPtr r)
   }
 }
 
+#if defined(LESSTIF_VERSION)
+
+static void FixVisibilityIssues (Nlm_GraphiC g)
+{
+  Nlm_GraphiC child;
+
+  for (child = Nlm_GetChild (g);  child != NULL; child = Nlm_GetNext (child))
+  {
+    if (!Nlm_GetVisible (child))
+    {
+      Nlm_Show (child);
+      FixVisibilityIssues (child);
+      Nlm_Hide (child);
+    }
+    else
+    {
+      FixVisibilityIssues (child);
+    }
+  }
+}
+#endif
+
 extern void Nlm_RealizeWindow (Nlm_WindoW w)
 
 {
   if (w != NULL) {
     Nlm_DoShow ((Nlm_GraphiC) w, FALSE, TRUE);
   }
+
+#if defined(LESSTIF_VERSION)
+  FixVisibilityIssues ((Nlm_GraphiC) w);
+#endif
 }
 
 extern void Nlm_IconifyWindow(Nlm_WindoW w)
@@ -6306,6 +6354,7 @@ static Nlm_Boolean Nlm_SetupWindows (void)
   Nlm_Int4   width;
   int        xx_argc = (int)Nlm_GetArgc();
   char     **xx_argv =      Nlm_GetArgv();
+  XmFontListEntry font_entry;
 
   Nlm_desktopWindow = NULL;
   Nlm_systemWindow = NULL;
@@ -6428,7 +6477,8 @@ static Nlm_Boolean Nlm_SetupWindows (void)
   
   font = Nlm_XLoadStandardFont();
 
-  Nlm_XfontList = XmFontListCreate(font, "dummy");
+  font_entry = XmFontListEntryCreate  ("dummy", XmFONT_IS_FONT, font);
+  Nlm_XfontList = XmFontListAppendEntry(NULL, font_entry);
 
   Nlm_fileDialogShell = NULL;
 
@@ -6595,12 +6645,15 @@ static void Nlm_GetReady (void)
 
   GetKeys (keys);
   if ((keys [1] & 1) != 0) {
+    Nlm_showGetArgTag = TRUE;
     Nlm_GetSet ();
   }
 #endif
 #ifdef WIN_MSWIN
-  if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
+  if (GetAsyncKeyState(VK_SHIFT) & 0x8000) {
+    Nlm_showGetArgTag = TRUE;
     Nlm_GetSet();
+  }
 #endif
   Nlm_VibrantSetGUI();
   Nlm_InitCursorShapes();
@@ -7230,12 +7283,21 @@ extern void Nlm_KeyboardView (Nlm_KeyProc key)
 static void Nlm_ProcessKeyPress (LPMSG lpMsg)
 
 {
-  Nlm_Char  ch;
+  Nlm_Char  ch, sp_ch;
+  
+  if (keyAction == NULL) return;
 
-  if (lpMsg->message == WM_CHAR) {
-    ch = (Nlm_Char) lpMsg->wParam;
-    if (keyAction != NULL) {
-      keyAction (ch);
+  ch = (Nlm_Char) lpMsg->wParam;
+  if (lpMsg->message == WM_CHAR) 
+  {
+    keyAction (ch);
+  }
+  else if (lpMsg->message == WM_KEYDOWN)
+  {
+    sp_ch = Nlm_KeydownToChar (ch);
+    if (sp_ch != 0)
+    {
+	  keyAction (sp_ch);	
     }
   }
 }
@@ -7245,15 +7307,16 @@ static void Nlm_ProcessKeyPress (LPMSG lpMsg)
 static void Nlm_ProcessKeyPress (XEvent *event)
 
 {
-  Nlm_Char buffer[2];
+  Nlm_Char ch;
 
-  if (event->type == KeyPress  &&  keyAction != NULL  &&
-      XLookupString(&event->xkey, buffer, sizeof(buffer), NULL, NULL) == 1) {
-      Nlm_ctrlKey  = ((event->xkey.state & ControlMask) != 0);
-      Nlm_shftKey  = ((event->xkey.state & ShiftMask  ) != 0);
-      Nlm_cmmdKey = FALSE;
-      Nlm_optKey = FALSE;
-      keyAction( *buffer );
+  if (event->type == KeyPress  &&  keyAction != NULL)
+  {
+    ch = Nlm_GetInputChar (&event->xkey);
+    Nlm_ctrlKey  = ((event->xkey.state & ControlMask) != 0);
+    Nlm_shftKey  = ((event->xkey.state & ShiftMask  ) != 0);
+    Nlm_cmmdKey = FALSE;
+    Nlm_optKey = FALSE;
+    keyAction( ch );
   }
 }
 #endif
@@ -7886,7 +7949,7 @@ static Nlm_Boolean GetArgs_ST(const char* progname,
   Nlm_Int2       i, j;
   Nlm_ArgPtr     curarg;
   Nlm_Boolean   *resolved;
-  Nlm_Char       arg[256];
+  Nlm_Char       arg[512];
   Nlm_Int2       delta;
   Nlm_GrouP      g;
   Nlm_GrouP      h;
@@ -7894,6 +7957,7 @@ static Nlm_Boolean GetArgs_ST(const char* progname,
   Nlm_RecT       r1;
   Nlm_RecT       r2;
   Nlm_Boolean    smallScreen;
+  Nlm_Char       tag [16];
   Nlm_WindoW     w;
   Nlm_TexT       firstText;
   Nlm_CharPtr    tmp;
@@ -8048,7 +8112,7 @@ static Nlm_Boolean GetArgs_ST(const char* progname,
   if (Nlm_screenRect.bottom < 352)
     smallScreen = TRUE;
 #endif
-  g = Nlm_HiddenGroup (w, 4, 0, NULL);
+  g = Nlm_HiddenGroup (w, 5, 0, NULL);
   hp = (Nlm_HandlePtr) Nlm_MemNew (numargs * sizeof (Nlm_Handle));
 
   firstText = NULL;
@@ -8057,17 +8121,26 @@ static Nlm_Boolean GetArgs_ST(const char* progname,
     if ((smallScreen && j >= 10) || j >= 15) {
       j = 0;
       Nlm_Advance (w);
-      g = Nlm_HiddenGroup (w, 4, 0, NULL);
+      g = Nlm_HiddenGroup (w, 5, 0, NULL);
     }
+
     Nlm_StaticPrompt(g, (char*)s_TypeStrings[curarg->type], 0,
                      Nlm_dialogTextHeight, Nlm_systemFont, 'l');
 
+
+    tag [0] = '\0';
+    if (Nlm_showGetArgTag) {
+      sprintf (tag, " -%c", (char) curarg->tag);
+    }
+
     /* Populate the Arg-Query Dialog Box's input controls and
        initialize these by default values */
+
     switch (curarg->type) {
       case ARG_BOOLEAN:
         hp[i] = (Nlm_Handle)
           Nlm_CheckBox(g, (Nlm_CharPtr) curarg->prompt, NULL);
+        Nlm_StaticPrompt(g, tag, 0, Nlm_dialogTextHeight, Nlm_systemFont, 'l');
         Nlm_StaticPrompt (g, "", 0, 0, Nlm_systemFont, 'l');
         if (curarg->intvalue == 1) {
           Nlm_SetStatus (hp [i], TRUE);
@@ -8081,6 +8154,7 @@ static Nlm_Boolean GetArgs_ST(const char* progname,
       case ARG_DATA_IN:
       case ARG_DATA_OUT:
         Nlm_MultiLinePrompt (g, (Nlm_CharPtr) curarg->prompt, 0, Nlm_dialogTextHeight, Nlm_systemFont, 'l');
+        Nlm_StaticPrompt(g, tag, 0, Nlm_dialogTextHeight, Nlm_systemFont, 'l');
         hp[i] = (Nlm_Handle) Nlm_DialogText(g, (Nlm_CharPtr) curarg->defaultvalue, 10, NULL);
         if (firstText == NULL) {
           firstText = (Nlm_TexT) hp[i];

@@ -1,4 +1,4 @@
-/*  $Id: http_connector_hit.c,v 6.13 2004/04/01 14:14:02 lavr Exp $
+/*  $Id: http_connector_hit.c,v 6.16 2005/04/20 18:23:11 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -31,6 +31,7 @@
  */
 
 #include "../ncbi_ansi_ext.h"
+#include "../ncbi_assert.h"
 #include <connect/ncbi_http_connector.h>
 #include <connect/ncbi_util.h>
 /* This header must go last */
@@ -130,8 +131,8 @@ int main(int argc, const char* argv[])
     if (argc < 4) {
         fprintf(stderr,
                 "Usage:   %s host port path [args] [inp_file] [user_header]\n"
-                "Example: %s yar.ncbi.nlm.nih.gov 6224 "
-                "/tools/vakatov/con_url.cgi 'arg1+arg2+arg3'\n",
+                "Example: %s www.ncbi.nlm.nih.gov 80 "
+                "/Service/bounce.cgi 'arg1+arg2+arg3'\n",
                 argv[0], argv[0]);
         fprintf(stderr, "Too few arguments.\n");
         return 1;
@@ -199,6 +200,15 @@ int main(int argc, const char* argv[])
 /*
  * --------------------------------------------------------------------------
  * $Log: http_connector_hit.c,v $
+ * Revision 6.16  2005/04/20 18:23:11  lavr
+ * +"../ncbi_assert.h"
+ *
+ * Revision 6.15  2004/11/23 15:04:26  lavr
+ * Use public bounce.cgi from "www"
+ *
+ * Revision 6.14  2004/11/22 20:24:53  lavr
+ * "yar" replaced with "graceland"
+ *
  * Revision 6.13  2004/04/01 14:14:02  lavr
  * Spell "occurred", "occurrence", and "occurring"
  *

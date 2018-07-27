@@ -9,8 +9,8 @@
 #include <asn.h>
 #endif
 
-static char * asnfilename = "id2.h10";
-static AsnValxNode avnx[48] = {
+static char * asnfilename = "id2.h14";
+static AsnValxNode avnx[57] = {
     {20,"set-value" ,1,0.0,&avnx[1] } ,
     {20,"get-value" ,2,0.0,&avnx[2] } ,
     {20,"force-value" ,3,0.0,&avnx[3] } ,
@@ -58,9 +58,18 @@ static AsnValxNode avnx[48] = {
     {20,"nlmzip" ,2,0.0,&avnx[45] } ,
     {20,"bzip2" ,3,0.0,NULL } ,
     {3,NULL,0,0.0,NULL } ,
-    {3,NULL,0,0.0,NULL } };
+    {3,NULL,0,0.0,NULL } ,
+    {20,"reply" ,0,0.0,&avnx[49] } ,
+    {20,"last-octet-string" ,1,0.0,&avnx[50] } ,
+    {20,"nothing" ,2,0.0,NULL } ,
+    {20,"live" ,0,0.0,&avnx[52] } ,
+    {20,"suppressed-temp" ,1,0.0,&avnx[53] } ,
+    {20,"suppressed" ,2,0.0,&avnx[54] } ,
+    {20,"dead" ,3,0.0,&avnx[55] } ,
+    {20,"protected" ,4,0.0,&avnx[56] } ,
+    {20,"withdrawn" ,5,0.0,NULL } };
 
-static AsnType atx[142] = {
+static AsnType atx[146] = {
   {401, "Seq-id" ,1,0,0,0,0,0,1,0,NULL,NULL,NULL,0,&atx[1]} ,
   {402, "Seq-loc" ,1,0,0,0,0,0,1,0,NULL,NULL,NULL,0,&atx[2]} ,
   {403, "ID2S-Chunk-Id" ,1,0,0,0,0,0,1,0,NULL,NULL,NULL,0,&atx[3]} ,
@@ -73,7 +82,7 @@ static AsnType atx[142] = {
   {0, "params" ,128,1,0,1,0,0,0,0,NULL,&atx[10],NULL,0,&atx[21]} ,
   {407, "ID2-Params" ,1,0,0,0,0,0,0,0,NULL,&atx[17],&atx[11],0,&atx[25]} ,
   {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[12],NULL,0,NULL} ,
-  {430, "ID2-Param" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[13],0,NULL} ,
+  {431, "ID2-Param" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[13],0,NULL} ,
   {0, "name" ,128,0,0,0,0,0,0,0,NULL,&atx[14],NULL,0,&atx[15]} ,
   {323, "VisibleString" ,0,26,0,0,0,0,0,0,NULL,NULL,NULL,0,NULL} ,
   {0, "value" ,128,1,0,1,0,0,0,0,NULL,&atx[17],&atx[16],0,&atx[18]} ,
@@ -147,65 +156,69 @@ static AsnType atx[142] = {
   {0, "retry-delay" ,128,1,0,1,0,0,0,0,NULL,&atx[8],NULL,0,&atx[84]} ,
   {0, "message" ,128,2,0,1,0,0,0,0,NULL,&atx[14],NULL,0,NULL} ,
   {0, "end-of-reply" ,128,3,0,1,0,0,0,0,NULL,&atx[23],NULL,0,&atx[86]} ,
-  {0, "reply" ,128,4,0,0,0,0,0,0,NULL,&atx[35],&atx[87],0,NULL} ,
+  {0, "reply" ,128,4,0,0,0,0,0,0,NULL,&atx[35],&atx[87],0,&atx[139]} ,
   {0, "init" ,128,0,0,0,0,0,0,0,NULL,&atx[23],NULL,0,&atx[88]} ,
   {0, "empty" ,128,1,0,0,0,0,0,0,NULL,&atx[23],NULL,0,&atx[89]} ,
   {0, "get-package" ,128,2,0,0,0,0,0,0,NULL,&atx[90],NULL,0,&atx[93]} ,
   {419, "ID2-Reply-Get-Package" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[91],0,&atx[94]} ,
   {0, "name" ,128,0,0,0,0,0,0,0,NULL,&atx[14],NULL,0,&atx[92]} ,
   {0, "params" ,128,1,0,1,0,0,0,0,NULL,&atx[10],NULL,0,NULL} ,
-  {0, "get-seq-id" ,128,3,0,0,0,0,0,0,NULL,&atx[94],NULL,0,&atx[98]} ,
-  {420, "ID2-Reply-Get-Seq-id" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[95],0,&atx[99]} ,
+  {0, "get-seq-id" ,128,3,0,0,0,0,0,0,NULL,&atx[94],NULL,0,&atx[99]} ,
+  {420, "ID2-Reply-Get-Seq-id" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[95],0,&atx[100]} ,
   {0, "request" ,128,0,0,0,0,0,0,0,NULL,&atx[30],NULL,0,&atx[96]} ,
-  {0, "seq-id" ,128,1,0,1,0,0,0,0,NULL,&atx[17],&atx[97],0,NULL} ,
+  {0, "seq-id" ,128,1,0,1,0,0,0,0,NULL,&atx[17],&atx[97],0,&atx[98]} ,
   {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[0],NULL,0,NULL} ,
-  {0, "get-blob-id" ,128,4,0,0,0,0,0,0,NULL,&atx[99],NULL,0,&atx[105]} ,
-  {421, "ID2-Reply-Get-Blob-Id" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[100],0,&atx[106]} ,
-  {0, "seq-id" ,128,0,0,0,0,0,0,0,NULL,&atx[0],NULL,0,&atx[101]} ,
-  {0, "blob-id" ,128,1,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[102]} ,
-  {0, "split-version" ,128,2,0,0,1,0,0,0,&avnx[32],&atx[8],NULL,0,&atx[103]} ,
-  {0, "annot-info" ,128,3,0,1,0,0,0,0,NULL,&atx[17],&atx[104],0,NULL} ,
+  {0, "end-of-reply" ,128,2,0,1,0,0,0,0,NULL,&atx[23],NULL,0,NULL} ,
+  {0, "get-blob-id" ,128,4,0,0,0,0,0,0,NULL,&atx[100],NULL,0,&atx[107]} ,
+  {421, "ID2-Reply-Get-Blob-Id" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[101],0,&atx[108]} ,
+  {0, "seq-id" ,128,0,0,0,0,0,0,0,NULL,&atx[0],NULL,0,&atx[102]} ,
+  {0, "blob-id" ,128,1,0,1,0,0,0,0,NULL,&atx[47],NULL,0,&atx[103]} ,
+  {0, "split-version" ,128,2,0,0,1,0,0,0,&avnx[32],&atx[8],NULL,0,&atx[104]} ,
+  {0, "annot-info" ,128,3,0,1,0,0,0,0,NULL,&atx[17],&atx[105],0,&atx[106]} ,
   {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[3],NULL,0,NULL} ,
-  {0, "get-blob-seq-ids" ,128,5,0,0,0,0,0,0,NULL,&atx[106],NULL,0,&atx[116]} ,
-  {422, "ID2-Reply-Get-Blob-Seq-ids" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[107],0,&atx[117]} ,
-  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[108]} ,
-  {0, "ids" ,128,1,0,1,0,0,0,0,NULL,&atx[109],NULL,0,NULL} ,
-  {427, "ID2-Reply-Data" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[110],0,&atx[137]} ,
-  {0, "data-type" ,128,0,0,0,1,0,0,0,&avnx[37],&atx[8],&avnx[33],0,&atx[111]} ,
-  {0, "data-format" ,128,1,0,0,1,0,0,0,&avnx[41],&atx[8],&avnx[38],0,&atx[112]} ,
-  {0, "data-compression" ,128,2,0,0,1,0,0,0,&avnx[46],&atx[8],&avnx[42],0,&atx[113]} ,
-  {0, "data" ,128,3,0,0,0,0,0,0,NULL,&atx[17],&atx[114],0,NULL} ,
-  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[115],NULL,0,NULL} ,
+  {0, "end-of-reply" ,128,4,0,1,0,0,0,0,NULL,&atx[23],NULL,0,NULL} ,
+  {0, "get-blob-seq-ids" ,128,5,0,0,0,0,0,0,NULL,&atx[108],NULL,0,&atx[118]} ,
+  {422, "ID2-Reply-Get-Blob-Seq-ids" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[109],0,&atx[119]} ,
+  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[110]} ,
+  {0, "ids" ,128,1,0,1,0,0,0,0,NULL,&atx[111],NULL,0,NULL} ,
+  {428, "ID2-Reply-Data" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[112],0,&atx[141]} ,
+  {0, "data-type" ,128,0,0,0,1,0,0,0,&avnx[37],&atx[8],&avnx[33],0,&atx[113]} ,
+  {0, "data-format" ,128,1,0,0,1,0,0,0,&avnx[41],&atx[8],&avnx[38],0,&atx[114]} ,
+  {0, "data-compression" ,128,2,0,0,1,0,0,0,&avnx[46],&atx[8],&avnx[42],0,&atx[115]} ,
+  {0, "data" ,128,3,0,0,0,0,0,0,NULL,&atx[17],&atx[116],0,NULL} ,
+  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[117],NULL,0,NULL} ,
   {304, "OCTET STRING" ,0,4,0,0,0,0,0,0,NULL,NULL,NULL,0,NULL} ,
-  {0, "get-blob" ,128,6,0,0,0,0,0,0,NULL,&atx[117],NULL,0,&atx[121]} ,
-  {423, "ID2-Reply-Get-Blob" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[118],0,&atx[122]} ,
-  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[119]} ,
-  {0, "split-version" ,128,1,0,0,1,0,0,0,&avnx[47],&atx[8],NULL,0,&atx[120]} ,
-  {0, "data" ,128,2,0,1,0,0,0,0,NULL,&atx[109],NULL,0,NULL} ,
-  {0, "reget-blob" ,128,7,0,0,0,0,0,0,NULL,&atx[122],NULL,0,&atx[127]} ,
-  {424, "ID2-Reply-ReGet-Blob" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[123],0,&atx[128]} ,
-  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[124]} ,
-  {0, "split-version" ,128,1,0,0,0,0,0,0,NULL,&atx[8],NULL,0,&atx[125]} ,
-  {0, "offset" ,128,2,0,0,0,0,0,0,NULL,&atx[8],NULL,0,&atx[126]} ,
-  {0, "data" ,128,3,0,1,0,0,0,0,NULL,&atx[109],NULL,0,NULL} ,
-  {0, "get-split-info" ,128,8,0,0,0,0,0,0,NULL,&atx[128],NULL,0,&atx[132]} ,
-  {425, "ID2S-Reply-Get-Split-Info" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[129],0,&atx[133]} ,
-  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[130]} ,
-  {0, "split-version" ,128,1,0,0,0,0,0,0,NULL,&atx[8],NULL,0,&atx[131]} ,
-  {0, "data" ,128,2,0,1,0,0,0,0,NULL,&atx[109],NULL,0,NULL} ,
-  {0, "get-chunk" ,128,9,0,0,0,0,0,0,NULL,&atx[133],NULL,0,NULL} ,
-  {426, "ID2S-Reply-Get-Chunk" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[134],0,&atx[109]} ,
-  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[135]} ,
-  {0, "chunk-id" ,128,1,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[136]} ,
-  {0, "data" ,128,2,0,1,0,0,0,0,NULL,&atx[109],NULL,0,NULL} ,
-  {428, "ID2-Blob-Seq-ids" ,1,0,0,0,0,0,0,0,NULL,&atx[17],&atx[138],0,&atx[139]} ,
-  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[139],NULL,0,NULL} ,
-  {429, "ID2-Blob-Seq-id" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[140],0,&atx[12]} ,
-  {0, "seq-id" ,128,0,0,0,0,0,0,0,NULL,&atx[0],NULL,0,&atx[141]} ,
+  {0, "get-blob" ,128,6,0,0,0,0,0,0,NULL,&atx[119],NULL,0,&atx[123]} ,
+  {423, "ID2-Reply-Get-Blob" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[120],0,&atx[124]} ,
+  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[121]} ,
+  {0, "split-version" ,128,1,0,0,1,0,0,0,&avnx[47],&atx[8],NULL,0,&atx[122]} ,
+  {0, "data" ,128,2,0,1,0,0,0,0,NULL,&atx[111],NULL,0,NULL} ,
+  {0, "reget-blob" ,128,7,0,0,0,0,0,0,NULL,&atx[124],NULL,0,&atx[129]} ,
+  {424, "ID2-Reply-ReGet-Blob" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[125],0,&atx[130]} ,
+  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[126]} ,
+  {0, "split-version" ,128,1,0,0,0,0,0,0,NULL,&atx[8],NULL,0,&atx[127]} ,
+  {0, "offset" ,128,2,0,0,0,0,0,0,NULL,&atx[8],NULL,0,&atx[128]} ,
+  {0, "data" ,128,3,0,1,0,0,0,0,NULL,&atx[111],NULL,0,NULL} ,
+  {0, "get-split-info" ,128,8,0,0,0,0,0,0,NULL,&atx[130],NULL,0,&atx[134]} ,
+  {425, "ID2S-Reply-Get-Split-Info" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[131],0,&atx[135]} ,
+  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[132]} ,
+  {0, "split-version" ,128,1,0,0,0,0,0,0,NULL,&atx[8],NULL,0,&atx[133]} ,
+  {0, "data" ,128,2,0,1,0,0,0,0,NULL,&atx[111],NULL,0,NULL} ,
+  {0, "get-chunk" ,128,9,0,0,0,0,0,0,NULL,&atx[135],NULL,0,NULL} ,
+  {426, "ID2S-Reply-Get-Chunk" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[136],0,&atx[140]} ,
+  {0, "blob-id" ,128,0,0,0,0,0,0,0,NULL,&atx[47],NULL,0,&atx[137]} ,
+  {0, "chunk-id" ,128,1,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[138]} ,
+  {0, "data" ,128,2,0,1,0,0,0,0,NULL,&atx[111],NULL,0,NULL} ,
+  {0, "discard" ,128,5,0,1,0,0,0,0,NULL,&atx[19],&avnx[48],0,NULL} ,
+  {427, "ID2-Blob-State" ,1,0,0,0,0,0,0,0,NULL,&atx[19],&avnx[51],0,&atx[111]} ,
+  {429, "ID2-Blob-Seq-ids" ,1,0,0,0,0,0,0,0,NULL,&atx[17],&atx[142],0,&atx[143]} ,
+  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[143],NULL,0,NULL} ,
+  {430, "ID2-Blob-Seq-id" ,1,0,0,0,0,0,0,0,NULL,&atx[20],&atx[144],0,&atx[12]} ,
+  {0, "seq-id" ,128,0,0,0,0,0,0,0,NULL,&atx[0],NULL,0,&atx[145]} ,
   {0, "replaced" ,128,1,0,1,0,0,0,0,NULL,&atx[23],NULL,0,NULL} };
 
 static AsnModule ampx[1] = {
-  { "NCBI-ID2Access" , "id2.h10",&atx[0],NULL,NULL,0,0} };
+  { "NCBI-ID2Access" , "id2.h14",&atx[0],NULL,NULL,0,0} };
 
 static AsnValxNodePtr avn = avnx;
 static AsnTypePtr at = atx;
@@ -302,12 +315,13 @@ static AsnModulePtr amp = ampx;
 #define ID2_REPLY_reply_empty &at[88]
 #define ID2_REPLY_reply_get_package &at[89]
 #define ID2_REPLY_reply_get_seq_id &at[93]
-#define ID2_REPLY_reply_get_blob_id &at[98]
-#define REPLY_reply_get_blob_seq_ids &at[105]
-#define ID2_REPLY_reply_get_blob &at[116]
-#define ID2_REPLY_reply_reget_blob &at[121]
-#define ID2_REPLY_reply_get_split_info &at[127]
-#define ID2_REPLY_reply_get_chunk &at[132]
+#define ID2_REPLY_reply_get_blob_id &at[99]
+#define REPLY_reply_get_blob_seq_ids &at[107]
+#define ID2_REPLY_reply_get_blob &at[118]
+#define ID2_REPLY_reply_reget_blob &at[123]
+#define ID2_REPLY_reply_get_split_info &at[129]
+#define ID2_REPLY_reply_get_chunk &at[134]
+#define ID2_REPLY_discard &at[139]
 
 #define ID2_ERROR &at[81]
 #define ID2_ERROR_severity &at[82]
@@ -322,52 +336,56 @@ static AsnModulePtr amp = ampx;
 #define ID2_REPLY_GET_SEQ_ID_request &at[95]
 #define ID2_REPLY_GET_SEQ_ID_seq_id &at[96]
 #define ID2_REPLY_GET_SEQ_ID_seq_id_E &at[97]
+#define REPLY_GET_SEQ_ID_end_of_reply &at[98]
 
-#define ID2_REPLY_GET_BLOB_ID &at[99]
-#define ID2_REPLY_GET_BLOB_ID_seq_id &at[100]
-#define ID2_REPLY_GET_BLOB_ID_blob_id &at[101]
-#define GET_BLOB_ID_split_version &at[102]
-#define REPLY_GET_BLOB_ID_annot_info &at[103]
-#define REPLY_GET_BLOB_ID_annot_info_E &at[104]
+#define ID2_REPLY_GET_BLOB_ID &at[100]
+#define ID2_REPLY_GET_BLOB_ID_seq_id &at[101]
+#define ID2_REPLY_GET_BLOB_ID_blob_id &at[102]
+#define GET_BLOB_ID_split_version &at[103]
+#define REPLY_GET_BLOB_ID_annot_info &at[104]
+#define REPLY_GET_BLOB_ID_annot_info_E &at[105]
+#define REPLY_GET_BLOB_ID_end_of_reply &at[106]
 
-#define ID2_REPLY_GET_BLOB_SEQ_IDS &at[106]
-#define REPLY_GET_BLOB_SEQ_IDS_blob_id &at[107]
-#define ID2_REPLY_GET_BLOB_SEQ_IDS_ids &at[108]
+#define ID2_REPLY_GET_BLOB_SEQ_IDS &at[108]
+#define REPLY_GET_BLOB_SEQ_IDS_blob_id &at[109]
+#define ID2_REPLY_GET_BLOB_SEQ_IDS_ids &at[110]
 
-#define ID2_REPLY_GET_BLOB &at[117]
-#define ID2_REPLY_GET_BLOB_blob_id &at[118]
-#define REPLY_GET_BLOB_split_version &at[119]
-#define ID2_REPLY_GET_BLOB_data &at[120]
+#define ID2_REPLY_GET_BLOB &at[119]
+#define ID2_REPLY_GET_BLOB_blob_id &at[120]
+#define REPLY_GET_BLOB_split_version &at[121]
+#define ID2_REPLY_GET_BLOB_data &at[122]
 
-#define ID2_REPLY_REGET_BLOB &at[122]
-#define ID2_REPLY_REGET_BLOB_blob_id &at[123]
-#define REPLY_REGET_BLOB_split_version &at[124]
-#define ID2_REPLY_REGET_BLOB_offset &at[125]
-#define ID2_REPLY_REGET_BLOB_data &at[126]
+#define ID2_REPLY_REGET_BLOB &at[124]
+#define ID2_REPLY_REGET_BLOB_blob_id &at[125]
+#define REPLY_REGET_BLOB_split_version &at[126]
+#define ID2_REPLY_REGET_BLOB_offset &at[127]
+#define ID2_REPLY_REGET_BLOB_data &at[128]
 
-#define ID2S_REPLY_GET_SPLIT_INFO &at[128]
-#define REPLY_GET_SPLIT_INFO_blob_id &at[129]
-#define GET_SPLIT_INFO_split_version &at[130]
-#define ID2S_REPLY_GET_SPLIT_INFO_data &at[131]
+#define ID2S_REPLY_GET_SPLIT_INFO &at[130]
+#define REPLY_GET_SPLIT_INFO_blob_id &at[131]
+#define GET_SPLIT_INFO_split_version &at[132]
+#define ID2S_REPLY_GET_SPLIT_INFO_data &at[133]
 
-#define ID2S_REPLY_GET_CHUNK &at[133]
-#define ID2S_REPLY_GET_CHUNK_blob_id &at[134]
-#define ID2S_REPLY_GET_CHUNK_chunk_id &at[135]
-#define ID2S_REPLY_GET_CHUNK_data &at[136]
+#define ID2S_REPLY_GET_CHUNK &at[135]
+#define ID2S_REPLY_GET_CHUNK_blob_id &at[136]
+#define ID2S_REPLY_GET_CHUNK_chunk_id &at[137]
+#define ID2S_REPLY_GET_CHUNK_data &at[138]
 
-#define ID2_REPLY_DATA &at[109]
-#define ID2_REPLY_DATA_data_type &at[110]
-#define ID2_REPLY_DATA_data_format &at[111]
-#define ID2_REPLY_DATA_data_compression &at[112]
-#define ID2_REPLY_DATA_data &at[113]
-#define ID2_REPLY_DATA_data_E &at[114]
+#define ID2_BLOB_STATE &at[140]
 
-#define ID2_BLOB_SEQ_IDS &at[137]
-#define ID2_BLOB_SEQ_IDS_E &at[138]
+#define ID2_REPLY_DATA &at[111]
+#define ID2_REPLY_DATA_data_type &at[112]
+#define ID2_REPLY_DATA_data_format &at[113]
+#define ID2_REPLY_DATA_data_compression &at[114]
+#define ID2_REPLY_DATA_data &at[115]
+#define ID2_REPLY_DATA_data_E &at[116]
 
-#define ID2_BLOB_SEQ_ID &at[139]
-#define ID2_BLOB_SEQ_ID_seq_id &at[140]
-#define ID2_BLOB_SEQ_ID_replaced &at[141]
+#define ID2_BLOB_SEQ_IDS &at[141]
+#define ID2_BLOB_SEQ_IDS_E &at[142]
+
+#define ID2_BLOB_SEQ_ID &at[143]
+#define ID2_BLOB_SEQ_ID_seq_id &at[144]
+#define ID2_BLOB_SEQ_ID_replaced &at[145]
 
 #define ID2_PARAM &at[12]
 #define ID2_PARAM_name &at[13]

@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 11/3/93
 *
-* $Revision: 6.55 $
+* $Revision: 6.56 $
 *
 * File Description: Utilities for creating ASN.1 submissions
 *
@@ -40,6 +40,9 @@
 *
 *
 * $Log: subutil.c,v $
+* Revision 6.56  2005/03/30 21:13:49  bollin
+* added function AddIntToSeqLoc
+*
 * Revision 6.55  2003/10/16 17:16:33  mjohnson
 *
 * Added ORG_* and IS_ORG_* defines for origins. Use these constants
@@ -3294,17 +3297,22 @@ NLM_EXTERN Boolean AddIntervalToFeature (
 	return AddIntToSeqFeat(sfp, from, to, bsp, fuzz_from, fuzz_to, strand);
 }
 
-NLM_EXTERN Boolean AddIntToSeqFeat (SeqFeatPtr sfp, Int4 from, Int4 to, BioseqPtr bsp,
+NLM_EXTERN Boolean AddIntToSeqLoc (SeqLocPtr PNTR old_slp, Int4 from, Int4 to, SeqIdPtr sip,
 							Int2 fuzz_from, Int2 fuzz_to, Int2 strand)
 {
 	SeqLocPtr slp, tmp, tmp2;
 	SeqIntPtr sintp;
 	IntFuzzPtr ifp;
 
+  if (old_slp == NULL)
+  {
+    return FALSE;
+  }
+  
 	sintp = SeqIntNew();
 	sintp->from = from;
 	sintp->to = to;
-	sintp->id = SeqIdDup(SeqIdFindBest(bsp->id, 0));
+	sintp->id = SeqIdDup(sip);
 	sintp->strand = (Uint1)strand;
 	if (fuzz_from >= 0)
 	{
@@ -3325,13 +3333,13 @@ NLM_EXTERN Boolean AddIntToSeqFeat (SeqFeatPtr sfp, Int4 from, Int4 to, BioseqPt
 	slp->choice = SEQLOC_INT;
 	slp->data.ptrvalue = (Pointer)sintp;
 
-	if (sfp->location == NULL)
+	if (*old_slp == NULL)
 	{
-		sfp->location = slp;
+		*old_slp = slp;
 		return TRUE;
 	}
 
-	tmp = sfp->location;
+	tmp = *old_slp;
 	if (tmp->choice == SEQLOC_MIX)   /* second one already */
 	{
 		tmp2 = (ValNodePtr)(tmp->data.ptrvalue);
@@ -3345,10 +3353,17 @@ NLM_EXTERN Boolean AddIntToSeqFeat (SeqFeatPtr sfp, Int4 from, Int4 to, BioseqPt
 		tmp2->choice = SEQLOC_MIX;
 		tmp2->data.ptrvalue = (Pointer)tmp;
 		tmp->next = slp;
-		sfp->location = tmp2;
+		*old_slp = tmp2;
 	}
 
 	return TRUE;
+}
+
+NLM_EXTERN Boolean AddIntToSeqFeat (SeqFeatPtr sfp, Int4 from, Int4 to, BioseqPtr bsp,
+							Int2 fuzz_from, Int2 fuzz_to, Int2 strand)
+{
+  return AddIntToSeqLoc (&(sfp->location), from, to, SeqIdFindBest(bsp->id, 0),
+							fuzz_from, fuzz_to, strand);
 }
 
 NLM_EXTERN Boolean AddPntToSeqFeat (SeqFeatPtr sfp, Int4 point, BioseqPtr bsp, Int2 fuzz, Int2 strand)

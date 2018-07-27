@@ -1,5 +1,37 @@
-#include <algo/blast/core/mb_lookup.h>
+/* $Id: blast_inline.h,v 1.5 2005/02/24 15:39:34 madden Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ===========================================================================
+ *
+ */
+
+/** @file blast_inline.h
+ * Functions from algo/blast/core that should be inlined if possible.
+ */
+
 #include <algo/blast/core/blast_util.h>
+#include <algo/blast/core/blast_lookup.h>
+#include <algo/blast/core/mb_lookup.h>
 
 /** Given a word packed into an integer, compute a discontiguous word lookup 
  *  index.
@@ -263,7 +295,7 @@ static NCBI_INLINE Int4 BlastNaLookupAdjustIndex(Uint1* s, Int4 index,
  * @param index The lookup index [out]
  */
 static NCBI_INLINE Int2
-Na_LookupComputeIndex(LookupTable* lookup, Uint1* word, Int4* index)
+Na_LookupComputeIndex(BlastLookupTable* lookup, Uint1* word, Int4* index)
 {
    Int4 i;
    Int4 wordsize = lookup->reduced_wordsize*COMPRESSION_RATIO; /* i.e. 8 or 4 */
@@ -345,4 +377,28 @@ BlastNaMiniExtendRight(Uint1* q, const Uint1* s, Uint1 max_right)
       }
    }
    return right;
+}
+
+/** Returns the index in the MaskLoc given a context number for the query.
+ * If the query is nucleotide
+ *
+ * @param is_na the query is nucleotide
+ * @param context offset in the QueryInfo array
+ * @return index in the maskloc
+ */
+static NCBI_INLINE Int2 BlastGetMaskLocIndexFromContext(Boolean is_na, Int2 context)
+{
+     return (is_na ? context / 2 : context);
+}
+
+/** Determines whether this is a nucleotide query and whether this a minus strand or not
+ *
+ * @param is_na the query is nucleotide
+ * @param context offset in the QueryInfo array
+ * @return TRUE if this is minus strand
+ */
+static NCBI_INLINE Boolean BlastIsReverseStrand(Boolean is_na, Int2 context)
+{
+     return (is_na && ((context & 1) != 0));
+
 }

@@ -1,4 +1,4 @@
-/* $Id: psiblast.c,v 1.4 2003/11/21 17:51:32 dondosha Exp $
+/* $Id: psiblast.c,v 1.5 2004/11/05 15:39:54 coulouri Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -29,12 +29,15 @@
 *
 * Initial Version Creation Date: 04/21/2000
 *
-* $Revision: 1.4 $
+* $Revision: 1.5 $
 *
 * File Description:
 *         WWW PSI BLAST Main file
 *
 * $Log: psiblast.c,v $
+* Revision 1.5  2004/11/05 15:39:54  coulouri
+* bring in system includes after toolkit includes so that LONG_BIT is defined correctly on amd64
+*
 * Revision 1.4  2003/11/21 17:51:32  dondosha
 * Minor bug fix
 *
@@ -69,8 +72,8 @@
 * ==========================================================================
 */
 
-#include <signal.h>
 #include <wwwblast.h>
+#include <signal.h>
 
 static CharPtr non_printed_tag[] = { "PSI_MATRIX", "PHI_PATTERN", 
                                      "checked_GI", "PSI_KARLIN_K",

@@ -1,0 +1,104 @@
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head><title>Search Details</title>
+<link rel="stylesheet" href="cubby.css" type="text/css" media="all" />
+
+<body>
+  <div id="edit_search">    
+    <form method="post" action="saveSearch">
+    
+      <div id="formdiv" class="mainview">
+    
+        <div id="formtitle"><span class="stitle">Search Details</span></div>
+    
+        <div class="searchtable">
+          <table cellspacing="0">
+          
+            <tr class="oddrow">
+              <td class="col1">Enter a name for your search:</td>
+              <td class="col2"><input name="NAME" type="text" size="40" value="mouse adenylate cyclase"/></td>
+            </tr>
+    
+            <tr class="evenrow" id="subscribe">
+              <td class="col1">Would you like to receive email updates of new search results?</div></td>
+              <td class="col2">
+               <input name="subscribe" type="radio" value="0" checked="1">No</input><br/>
+               <input name="subscribe" type="radio" value="1">Yes</input>
+            </tr>
+    
+            <tr class="oddrow" id="schedule">
+              <td class="col1">How often?</td>
+              <td class="col2">
+               <input name="schedule" type="radio" value="daily">Daily</input><br/>
+               <input name="schedule" type="radio" value="weekly" checked="1">Weekly on</input>
+          
+            <select name="dow">
+              <option>Monday</option>
+              <option>Tuesday</option>
+              <option>Wednesday</option>
+              <option>Thursday</option>
+              <option>Friday</option>
+              <option selected="1">Saturday</option>
+              <option>Sunday</option>
+            </select><br/>
+          
+          <input name="schedule" type="radio" value="monthly">Monthly on day </input>
+          <select name="dom">  
+            <option selected="1">1</option>
+            <option>2</option>
+            <option>3</option>
+            <option>4</option>
+            <option>5</option>
+            <option>6</option>
+            <option>7</option>
+            <option>8</option>
+            <option>9</option>
+            <option>10</option>
+            <option>11</option>
+            <option>12</option>
+            <option>13</option>
+            <option>14</option>
+            <option>15</option>
+            <option>16</option>
+            <option>17</option>
+            <option>18</option>
+            <option>19</option>
+            <option>20</option>
+            <option>21</option>
+            <option>22</option>
+            <option>23</option>
+            <option>24</option>
+            <option>25</option>
+            <option>26</option>
+            <option>27</option>
+            <option>28</option>
+            <option>29</option>
+            <option>30</option>
+            <option>31</option>
+            <option value="0">last</option>
+          </select> of the month
+          </td>
+            </tr>
+      
+          </table>
+        </div>
+    
+        <div id="details">
+          <dl>
+            <dt>Your search</dt>
+            <dd>mouse AND adenylate cyclase</dd>
+            <dt>Search strategy</dt>
+            <dd>mouse [All Fields] AND adenylate cyclase</dd>
+          </dl>
+        </div>
+      
+        <div id="formbuttondiv">
+          <input type="button" class="button" value="Cancel" alt="Cancel" title="Click to cancel this save">
+          <input type="button" class="button" value="OK" alt="OK" title="Click to save this search"/>
+        </div> <!-- End formbuttondiv -->
+    
+      </div> <!-- End formdiv -->
+    
+    </form>
+   </div> 
+</body>
+</html>

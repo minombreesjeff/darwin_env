@@ -1,4 +1,4 @@
-/* $Id: wwwblast.h,v 1.2 2003/05/13 22:00:37 dondosha Exp $
+/* $Id: wwwblast.h,v 1.3 2004/06/30 21:06:21 madden Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -29,12 +29,15 @@
 *
 * Initial Creation Date: 03/15/2000
 *
-* $Revision: 1.2 $
+* $Revision: 1.3 $
 *
 * File Description:
 *        Definitions for standalone WWW Blast CGI program.
 *
 * $Log: wwwblast.h,v $
+* Revision 1.3  2004/06/30 21:06:21  madden
+* Add include for blfmtutl.h
+*
 * Revision 1.2  2003/05/13 22:00:37  dondosha
 * More changes to make alternative links work
 *
@@ -85,6 +88,7 @@
 #include <ddvcreate.h>
 #include <objblst3.h>
 #include <mblast.h>
+#include <blfmtutl.h>
 
 #ifdef NCBI_CLIENT_SERVER
 #include <netblap3.h>

@@ -1,4 +1,4 @@
-/* $Id: qbatch.c,v 6.10 2002/10/24 17:37:36 ucko Exp $
+/* $Id: qbatch.c,v 6.11 2004/08/13 02:01:21 beloslyu Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -29,12 +29,15 @@
 *
 * Version Creation Date: 05/04/2000
 *
-* $Revision: 6.10 $
+* $Revision: 6.11 $
 *
 * File Description:
 *         WWW and Command-line Batch Entrez using Entre2 and ID1
 *
 * $Log: qbatch.c,v $
+* Revision 6.11  2004/08/13 02:01:21  beloslyu
+* Changes for FreeBSD
+*
 * Revision 6.10  2002/10/24 17:37:36  ucko
 * Kludge around Darwin's lack of ctime_r.
 *
@@ -891,7 +894,7 @@ Boolean QSRV_Time(CharPtr string, Int4 len, time_t seconds)
         seconds = GetSecs();
     }
     
-#if defined(OS_UNIX_IRIX) || defined(OS_UNIX_LINUX) || defined(OS_UNIX_OSF1)
+#if defined(OS_UNIX_IRIX) || defined(OS_UNIX_LINUX) || defined(OS_UNIX_OSF1) || defined(OS_UNIX_FREEBSD)
     ctime_r(&seconds, string);
 #elif defined(OS_UNIX_DARWIN) /* no ctime_r :-/ */
     strncpy(string, ctime(&seconds), len - 1);

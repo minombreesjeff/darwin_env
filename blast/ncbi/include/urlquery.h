@@ -1,1 +1,0 @@
-../connect/urlquery.h

@@ -1,48 +1,47 @@
-/* $Id: blast_traceback.h,v 1.26 2004/05/05 15:26:55 dondosha Exp $
-* ===========================================================================
-*
-*                            PUBLIC DOMAIN NOTICE
-*               National Center for Biotechnology Information
-*
-*  This software/database is a "United States Government Work" under the
-*  terms of the United States Copyright Act.  It was written as part of
-*  the author's offical duties as a United States Government employee and
-*  thus cannot be copyrighted.  This software/database is freely available
-*  to the public for use. The National Library of Medicine and the U.S.
-*  Government have not placed any restriction on its use or reproduction.
-*
-*  Although all reasonable efforts have been taken to ensure the accuracy
-*  and reliability of the software and data, the NLM and the U.S.
-*  Government do not and cannot warrant the performance or results that
-*  may be obtained by using this software or data. The NLM and the U.S.
-*  Government disclaim all warranties, express or implied, including
-*  warranties of performance, merchantability or fitness for any particular
-*  purpose.
-*
-*  Please cite the author in any work or product based on this material.
-*
-* ===========================================================================*/
+/* $Id: blast_traceback.h,v 1.45 2005/04/27 19:49:35 dondosha Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ===========================================================================
+ *
+ * Author: Ilya Dondoshansky
+ *
+ */
 
-/*****************************************************************************
+/** @file blast_traceback.h
+ * Functions to do gapped alignment with traceback
+ */
 
-File name: blast_traceback.h
-
-Author: Ilya Dondoshansky
-
-Contents: Functions to do gapped alignment with traceback
-
-******************************************************************************
- * $Revision: 1.26 $
- * */
 #ifndef __BLAST_TRACEBACK__
 #define __BLAST_TRACEBACK__
+
+#include <algo/blast/core/blast_seqsrc.h>
+#include <algo/blast/core/blast_gapalign.h>
+#include <algo/blast/core/blast_hspstream.h>
+#include <algo/blast/core/pattern.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <algo/blast/core/blast_seqsrc.h>
-#include <algo/blast/core/blast_gapalign.h>
 
 /** Compute gapped alignment with traceback for all HSPs from a single
  * query/subject sequence pair. 
@@ -57,99 +56,108 @@ extern "C" {
  *        start of this query within the concatenated sequence [in]
  * @param gap_align Auxiliary structure used for gapped alignment [in]
  * @param sbp Statistical parameters [in]
- * @param score_options Scoring parameters [in]
+ * @param score_params Scoring parameters (esp. scale factor) [in]
  * @param ext_options Gapped extension options [in]
  * @param hit_params Hit saving parameters [in]
  * @param gen_code_string specifies genetic code [in]
- * @param psi_options Options specific to PSI BLAST [in]
  */
+NCBI_XBLAST_EXPORT
 Int2
-Blast_TracebackFromHSPList(Uint1 program_number, BlastHSPList* hsp_list,
-   BLAST_SequenceBlk* query_blk, BLAST_SequenceBlk* subject_blk,
-   BlastQueryInfo* query_info,
+Blast_TracebackFromHSPList(EBlastProgramType program_number, 
+   BlastHSPList* hsp_list, BLAST_SequenceBlk* query_blk, 
+   BLAST_SequenceBlk* subject_blk, BlastQueryInfo* query_info,
    BlastGapAlignStruct* gap_align, BlastScoreBlk* sbp,
-   const BlastScoringOptions* score_options,
+   const BlastScoringParameters* score_params,
    const BlastExtensionOptions* ext_options,
    const BlastHitSavingParameters* hit_params,
-   const Uint1* gen_code_string, 
-   const PSIBlastOptions* psi_options);
+   const Uint1* gen_code_string);
+
+/** Get the subject sequence encoding type for the traceback,
+ * given a program number.
+ */
+NCBI_XBLAST_EXPORT
+Uint1 Blast_TracebackGetEncoding(EBlastProgramType program_number);
+
+/** Modifies the HSP data after the final gapped alignment.
+ * Input includes only data that likely needs modification. This function
+ * could be static in blast_traceback.c, but for a unit test which checks its
+ * functionality.
+ * @param gap_align Structure containing gapped alignment information [in]
+ * @param hsp Original HSP from the preliminary stage [in] [out]
+ */
+Int2
+Blast_HSPUpdateWithTraceback(BlastGapAlignStruct* gap_align, BlastHSP* hsp);
+
 
 /** Given the preliminary alignment results from a database search, redo 
  * the gapped alignment with traceback, if it has not yet been done.
  * @param program_number Type of the BLAST program [in]
- * @param results Results of this BLAST search [in] [out]
+ * @param hsp_stream A stream for reading HSP lists [in]
  * @param query The query sequence [in]
  * @param query_info Information about the query [in]
- * @param bssp BLAST database structure [in]
+ * @param seq_src Source of subject sequences [in]
  * @param gap_align The auxiliary structure for gapped alignment [in]
- * @param score_options The scoring related options [in]
+ * @param score_params Scoring parameters (esp. scale factor) [in]
  * @param ext_params Gapped extension parameters [in]
  * @param hit_params Parameters for saving hits. Can change if not a 
                      database search [in]
  * @param eff_len_params Parameters for recalculating effective search 
  *                       space. Can change if not a database search. [in]
  * @param db_options Options containing database genetic code string [in]
- * @param psi_options Options specific to PSI BLAST [in]
+ * @param psi_options Options for iterative searches [in]
+ * @param rps_info RPS BLAST auxiliary data structure [in]
+ * @param pattern_blk PHI BLAST auxiliary data structure [in]
+ * @param results All results from the BLAST search [out]
  * @return nonzero indicates failure, otherwise zero
  */
-Int2 BLAST_ComputeTraceback(Uint1 program_number, BlastHSPResults* results, 
-        BLAST_SequenceBlk* query, BlastQueryInfo* query_info, 
-        const BlastSeqSrc* bssp, BlastGapAlignStruct* gap_align,
-        const BlastScoringOptions* score_options,
-        const BlastExtensionParameters* ext_params,
-        BlastHitSavingParameters* hit_params,
-        BlastEffectiveLengthsParameters* eff_len_params,
-        const BlastDatabaseOptions* db_options,
-        const PSIBlastOptions* psi_options);
+NCBI_XBLAST_EXPORT
+Int2 
+BLAST_ComputeTraceback(EBlastProgramType program_number, 
+   BlastHSPStream* hsp_stream, BLAST_SequenceBlk* query, 
+   BlastQueryInfo* query_info, const BlastSeqSrc* seq_src, 
+   BlastGapAlignStruct* gap_align, BlastScoringParameters* score_params,
+   const BlastExtensionParameters* ext_params,
+   BlastHitSavingParameters* hit_params,
+   BlastEffectiveLengthsParameters* eff_len_params,
+   const BlastDatabaseOptions* db_options,
+   const PSIBlastOptions* psi_options, const BlastRPSInfo* rps_info, 
+   SPHIPatternSearchBlk* pattern_blk, BlastHSPResults** results);
 
-/** Compute traceback information for alignments found by an
- *  RPS blast search. This function performs two major tasks:
- *  - Computes a composition-specific PSSM to be used during the
- *    traceback computation (non-translated searches only)
- *  - After traceback is computed, switch query offsets with 
- *    subject offsets and switch the edit blocks that describe
- *    the alignment. This is required because the entire RPS search
- *    was performed with these quatities reversed.
- * This call is also the first time that enough information 
- * exists to compute E-values for alignments that are found.
- *
- * @param program_number Type of the BLAST program [in]
- * @param results Structure containing the single HSPList 
- *                that is the result of a call to Blast_HSPResultsRPSUpdate.
- *                Traceback information is added to HSPs in list [in] [out]
- * @param concat_db The concatentation of all RPS DB sequences. 
- *                  The sequence data itself is not needed, 
- *                  only its size [in]
- * @param concat_db_info Used for the list of context offsets 
- *                       for concat_db [in]
- * @param query The original query sequence [in]
- * @param query_info Information associated with the original query. 
- *                   Only used for the search space [in]
- * @param gap_align The auxiliary structure for gapped alignment [in]
- * @param score_options The scoring related options [in]
- * @param ext_params Gapped extension parameters [in]
- * @param hit_params Parameters for saving hits. Can change if not a 
-                     database search [in]
- * @param db_options Options containing database genetic code string [in]
- * @param psi_options Options specific to PSI BLAST. Only used for
- *                    the scaling factor at present [in]
- * @param karlin_k Array of Karlin values, one for each database 
- *                 sequence. Used for E-value calculation [in]
- * @return nonzero indicates failure, otherwise zero
+/** Entry point from the API level to perform the traceback stage of a BLAST 
+ * search, given the source of HSP lists, obtained from the preliminary stage. 
+ * The parameters internal to the engine are calculated here independently of 
+ * the similar calculation in the preliminary stage, effectively making the two 
+ * stages independent of each other.
+ * @param program BLAST program type [in]
+ * @param query Query sequence(s) structure [in]
+ * @param query_info Additional query information [in]
+ * @param seq_src Source of subject sequences [in]
+ * @param score_options Scoring options [in]
+ * @param ext_options Word extension options, needed for cutoff scores 
+ *                    calculation only [in]
+ * @param hit_options Hit saving options [in]
+ * @param eff_len_options Options for calculating effective lengths [in]
+ * @param db_options Database options (database genetic code) [in]
+ * @param psi_options PSI BLAST options [in]
+ * @param sbp Scoring block with statistical parameters and matrix [in]
+ * @param hsp_stream Source of HSP lists. [in]
+ * @param rps_info RPS database information structure [in]
+ * @param pattern_blk PHI BLAST auxiliary data structure [in]
+ * @param results Where to save the results after traceback. [out]
  */
-Int2 BLAST_RPSTraceback(Uint1 program_number,
-        BlastHSPResults* results,
-        BLAST_SequenceBlk* concat_db,
-        BlastQueryInfo* concat_db_info,
-        BLAST_SequenceBlk* query,
-        BlastQueryInfo* query_info,
-        BlastGapAlignStruct* gap_align, 
-        const BlastScoringOptions* score_options,
-        const BlastExtensionParameters* ext_params,
-        BlastHitSavingParameters* hit_params,
-        const BlastDatabaseOptions* db_options,
-        const PSIBlastOptions* psi_options,
-        const double* karlin_k);
+NCBI_XBLAST_EXPORT
+Int2 
+Blast_RunTracebackSearch(EBlastProgramType program, 
+   BLAST_SequenceBlk* query, BlastQueryInfo* query_info, 
+   const BlastSeqSrc* seq_src, const BlastScoringOptions* score_options,
+   const BlastExtensionOptions* ext_options,
+   const BlastHitSavingOptions* hit_options,
+   const BlastEffectiveLengthsOptions* eff_len_options,
+   const BlastDatabaseOptions* db_options, 
+   const PSIBlastOptions* psi_options, BlastScoreBlk* sbp,
+   BlastHSPStream* hsp_stream, const BlastRPSInfo* rps_info, 
+   SPHIPatternSearchBlk* pattern_blk, BlastHSPResults** results);
+
 
 #ifdef __cplusplus
 }

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/1/91
 *
-* $Revision: 6.26 $
+* $Revision: 6.28 $
 *
 * File Description: 
 *       Vibrant edit text functions
@@ -37,6 +37,13 @@
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: vibtexts.c,v $
+* Revision 6.28  2004/07/19 13:36:43  bollin
+* replaced obsolete XmFontListCreate function to get rid of run-time warnings
+*
+* Revision 6.27  2004/06/24 15:34:48  bollin
+* added lines from Yoon Choi to make ctrl-A select all text in TextMode in
+* Sequin
+*
 * Revision 6.26  2004/03/17 16:09:14  sinyakov
 * WIN_MSWIN: fixed text box activation and text selection logic,
 * do not reset currentText when text window loses focus (to match Motif version),
@@ -2204,13 +2211,20 @@ static void MyCls_OnChar (HWND hwnd, UINT ch, int cRepeat)
   Nlm_Boolean  ishidden;
   Nlm_Boolean  iseditable;
   Nlm_TexT     t;
+  Nlm_TextTool h;
 
   t = (Nlm_TexT) GetProp (hwnd, (LPSTR) "Nlm_VibrantProp");
+  h = Nlm_GetTextHandle(t);
   handlechar = FALSE;
   ishidden = Nlm_IsHiddenOrSpecialText ((Nlm_TexT) t);
   iseditable = Nlm_GetTextEditable(t);
   if (ch == '\t' && ishidden) {
     Nlm_DoTabCallback (t);
+  } else if (ch == '\1') {
+    /* control-A should select all text */
+    if (h) {
+      SNDMSG(h, EM_SETSEL, (WPARAM)(0), (LPARAM)(MAKELONG(0, 0xffff)));
+    }
   } else if (ch == '\t'  && !Nlm_ctrlKey && iseditable && (GetWindowLong(hwnd, GWL_STYLE) & ES_MULTILINE)) {
     /* editable multiline boxes accept tab as input character not as focus change to stay 
        consistent with behavior on MOTIF */
@@ -3061,6 +3075,7 @@ static void Nlm_NewDialogText (Nlm_TexT t, Nlm_CharPtr dfault, Nlm_TxtActnProc a
   Nlm_FntPtr      fntptr;
   Cardinal        n;
   Arg             wargs [20];
+  XmFontListEntry font_entry;
 #endif
 
   Nlm_StringNCpy_0(local, dfault, sizeof(local));
@@ -3110,7 +3125,10 @@ static void Nlm_NewDialogText (Nlm_TexT t, Nlm_CharPtr dfault, Nlm_TxtActnProc a
 #ifdef WIN_MOTIF
   allowTextCallback = FALSE;
   fntptr = (Nlm_FntPtr) Nlm_HandLock (Nlm_systemFont);
-  fontlist = XmFontListCreate (fntptr->handle, XmSTRING_DEFAULT_CHARSET);
+  font_entry = XmFontListEntryCreate (XmFONTLIST_DEFAULT_TAG,
+                                      XmFONT_IS_FONT,
+                                      fntptr->handle);
+  fontlist = XmFontListAppendEntry (NULL, font_entry);
   Nlm_HandUnlock (Nlm_systemFont);
 
   n = 0;
@@ -3164,6 +3182,7 @@ static void Nlm_NewPasswordText (Nlm_TexT t, Nlm_CharPtr dfault, Nlm_TxtActnProc
   Nlm_FntPtr      fntptr;
   Cardinal        n;
   Arg             wargs [20];
+  XmFontListEntry font_entry;
 #endif
 
   Nlm_StringNCpy_0(local, dfault, sizeof(local));
@@ -3206,7 +3225,10 @@ static void Nlm_NewPasswordText (Nlm_TexT t, Nlm_CharPtr dfault, Nlm_TxtActnProc
 #ifdef WIN_MOTIF
   allowTextCallback = FALSE;
   fntptr = (Nlm_FntPtr) Nlm_HandLock (Nlm_systemFont);
-  fontlist = XmFontListCreate (fntptr->handle, XmSTRING_DEFAULT_CHARSET);
+  font_entry = XmFontListEntryCreate (XmFONTLIST_DEFAULT_TAG,
+                                      XmFONT_IS_FONT,
+                                      fntptr->handle);
+  fontlist = XmFontListAppendEntry (NULL, font_entry);
   Nlm_HandUnlock (Nlm_systemFont);
   Nlm_InsetRect (&r, 3, 3);
 
@@ -3263,6 +3285,7 @@ static void Nlm_NewHiddenText (Nlm_TexT t, Nlm_CharPtr dfault,
   Arg             wargs [20];
   XmFontList      fontlist;
   Nlm_FntPtr      fntptr;
+  XmFontListEntry font_entry;
 #endif
 
   Nlm_StringNCpy_0(local, dfault, sizeof(local));
@@ -3309,7 +3332,10 @@ static void Nlm_NewHiddenText (Nlm_TexT t, Nlm_CharPtr dfault,
 #ifdef WIN_MOTIF
   allowTextCallback = FALSE;
   fntptr = (Nlm_FntPtr) Nlm_HandLock (Nlm_systemFont);
-  fontlist = XmFontListCreate (fntptr->handle, XmSTRING_DEFAULT_CHARSET);
+  font_entry = XmFontListEntryCreate (XmFONTLIST_DEFAULT_TAG,
+                                      XmFONT_IS_FONT,
+                                      fntptr->handle);
+  fontlist = XmFontListAppendEntry (NULL, font_entry);
   Nlm_HandUnlock (Nlm_systemFont);
 
   n = 0;
@@ -3371,6 +3397,7 @@ static void Nlm_NewSpecialText (Nlm_TexT t, Nlm_CharPtr dfault,
   String          trans =
     "<Key>Tab:     do_tab()  \n\
      <Key>Return:  do_return()";
+  XmFontListEntry font_entry;
 #endif
 
   Nlm_StringNCpy_0(local, dfault, sizeof(local));
@@ -3420,7 +3447,10 @@ static void Nlm_NewSpecialText (Nlm_TexT t, Nlm_CharPtr dfault,
 #ifdef WIN_MOTIF
   allowTextCallback = FALSE;
   fntptr = (Nlm_FntPtr) Nlm_HandLock (Nlm_systemFont);
-  fontlist = XmFontListCreate (fntptr->handle, XmSTRING_DEFAULT_CHARSET);
+  font_entry = XmFontListEntryCreate (XmFONTLIST_DEFAULT_TAG,
+                                      XmFONT_IS_FONT,
+                                      fntptr->handle);
+  fontlist = XmFontListAppendEntry (NULL, font_entry);
   Nlm_HandUnlock (Nlm_systemFont);
   Nlm_InsetRect (&r, 3, 3);
 
@@ -3484,6 +3514,7 @@ static void Nlm_NewScrollText (Nlm_TexT t, Nlm_Int2 height,
   XmFontList      fontlist;
   Cardinal        n;
   Arg             wargs [15];
+  XmFontListEntry font_entry;
 #endif
 
   Nlm_GetRect ((Nlm_GraphiC) t, &r);
@@ -3580,7 +3611,10 @@ static void Nlm_NewScrollText (Nlm_TexT t, Nlm_Int2 height,
   if (font != NULL) {
     fntptr = (Nlm_FntPtr) Nlm_HandLock (font);
     if (fntptr != NULL && fntptr->handle != NULL) {
-      fontlist = XmFontListCreate (fntptr->handle, XmSTRING_DEFAULT_CHARSET);
+      font_entry = XmFontListEntryCreate (XmFONTLIST_DEFAULT_TAG,
+                                          XmFONT_IS_FONT,
+                                          fntptr->handle);
+      fontlist = XmFontListAppendEntry (NULL, font_entry);
     }
     Nlm_HandUnlock (font);
   }

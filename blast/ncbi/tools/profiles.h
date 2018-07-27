@@ -1,4 +1,4 @@
-/* $Id: profiles.h,v 6.14 2003/04/25 12:55:13 thiessen Exp $
+/* $Id: profiles.h,v 6.15 2004/09/21 14:45:26 camacho Exp $
 ***************************************************************************
 *                                                                         *
 *                             COPYRIGHT NOTICE                            *
@@ -34,7 +34,8 @@ Contents: utilities for IMPALA
 
 **************************************************************************/
 
-
+#ifndef __PROFILES_H
+#define __PROFILES_H
 
 #define MAXLINELEN 2000
 #define MAX_NAME_LENGTH 500
@@ -104,6 +105,10 @@ typedef struct proDemographicsItems {
   Nlm_FloatHi XinBits;
 } proDemographicsItems;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 Char * LIBCALL addSuffixToName PROTO((Char *prefix, Char *suffix));
 
 
@@ -132,3 +137,9 @@ BLAST_ScoreFreqPtr LIBCALL IMPALAfillSfp PROTO((BLAST_Score **matrix, Int4 matri
 ScorePtr LIBCALL addScoresToSeqAlign PROTO((Int4 rawScore, Nlm_FloatHi eValue, Nlm_FloatHi Lambda, Nlm_FloatHi logK));
 
 void LIBCALL pro_quicksort_hits PROTO((Int4 no_of_seq, SWResults **proResultsList));
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  /* __PROFILES_H */

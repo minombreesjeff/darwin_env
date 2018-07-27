@@ -29,7 +29,7 @@
 *
 * Version Creation Date: 12/3/97
 *
-* $Revision: 6.2 $
+* $Revision: 6.3 $
 *
 * File Description:
 *   Includes for building asntool and libraries
@@ -40,6 +40,9 @@
 * -------  ----------  -----------------------------------------------------
 *
 * $Log: asntool.h,v $
+* Revision 6.3  2005/01/24 17:12:11  kans
+* added force_choice_struct (-V) to force struct plus object instead of ValNode for choices - for compatibility with old hand-coded object loaders
+*
 * Revision 6.2  1998/03/25 23:31:32  kans
 * params to register new object manager type, give optional non-default label
 *
@@ -64,6 +67,7 @@ typedef struct struct_AsnCodeInfo {
    Boolean do_bit_twiddle; /* add slot in generated code to
                               track whether slots are present,
                               so a zero value can be output */
+   Boolean force_choice_struct; /* generate structure instead of ValNodePtr for choice */
    CharPtr include_filename; /* similar to loadname, except for .c file */
    CharPtr object_manager_entry; /* to create a registered object manager type */
    CharPtr object_label; /* label (defaults to object_manager_entry) */

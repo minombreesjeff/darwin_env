@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 4/12/93
 *
-* $Revision: 6.11 $
+* $Revision: 6.17 $
 *
 * File Description:  Converts fielded text into final report in a document
 *
@@ -41,6 +41,24 @@
 * 01-25-94 DGG + JK    Fixed MapDocPoint bug
 *
 * $Log: document.c,v $
+* Revision 6.17  2004/08/06 18:48:28  kans
+* subtle bug in DisplayFancy was missing one call to GetChar
+*
+* Revision 6.16  2004/07/29 01:56:47  kans
+* DisplayFancy can handle DOS line endings when run on Mac
+*
+* Revision 6.15  2004/07/12 18:21:32  kans
+* DrawTableItem had extra LineTo left over when drawing bar
+*
+* Revision 6.14  2004/07/11 16:31:03  kans
+* added is_old_win to DrawTableItem
+*
+* Revision 6.13  2004/07/09 17:43:04  kans
+* cache mechanism abandons binary tree in favor of separate field in itemPtr
+*
+* Revision 6.12  2004/06/17 16:06:46  kans
+* removed artifact on drawing vertical bar on non-Mac platform - always go to barBottom - 1
+*
 * Revision 6.11  2003/03/27 18:23:54  kans
 * increased 16000 character buffer to 24000 to handle long PubMed abstracts (e.g., pmid 12209194 technical report on toxicity studies)
 *
@@ -215,6 +233,7 @@ typedef struct itemdata {
   DocPrntProc   prtProc;
   Pointer       dataPtr;
   CharPtr       text;
+  CharPtr       cached;
   FonT          font;
   ColXPtr       colFmt;
   VoidPtr       extra;
@@ -243,13 +262,6 @@ typedef struct masterdata {
   ListDPtr  list [MAXLISTS];
 } MasterData, PNTR MasterPtr;
 
-typedef struct doccache {
-  Int2     item;
-  CharPtr  text;
-  struct doccache PNTR left;
-  struct doccache PNTR right;
-} DocCache, PNTR DocCachePtr;
-
 typedef struct docdata {
   DoC           doc;
   MasterPtr     master;
@@ -264,7 +276,6 @@ typedef struct docdata {
   DocUpdProc    upd;
   VoidPtr       data;
   DocFreeProc   cleanup;
-  DocCachePtr   PNTR cache;
   ValNodePtr    colFmts;
   Int2          numItems;
   Int4          numLines;
@@ -1266,6 +1277,9 @@ static Int2 PixelsBetween (DocDataPtr ddatptr, RectPtr r, Int4 firstLine,
 *
 *****************************************************************************/
 
+static Boolean is_old_win = FALSE;
+static Boolean old_win_set = FALSE;
+
 static Int2 DrawTableItem (DoC d, DocDataPtr ddatptr, ItemPtr itemPtr, RectPtr r,
                           Int2 item, Int2 frst, DocShadeProc grayProc,
                           DocShadeProc invertProc, DocShadeProc colorProc,
@@ -1296,6 +1310,18 @@ static Int2 DrawTableItem (DoC d, DocDataPtr ddatptr, ItemPtr itemPtr, RectPtr r
   Int2     rsult;
   CharPtr  text;
   CharPtr  tmp;
+
+#ifdef OS_MSWIN
+  if (! old_win_set) {
+    text = GetOpSysString ();
+    if (StringICmp (text, "MS WINDOWS 95/98/Me") == 0 ||
+        StringICmp (text, "MS WINDOWS 3.1") == 0) {
+      is_old_win = TRUE;
+    }
+    text = MemFree (text);
+    old_win_set = TRUE;
+  }
+#endif
 
   rsult = 0;
   if (d != NULL && ddatptr != NULL && itemPtr != NULL && r != NULL) {
@@ -1488,11 +1514,18 @@ static Int2 DrawTableItem (DoC d, DocDataPtr ddatptr, ItemPtr itemPtr, RectPtr r
           if (colFmt [col].bar) {
             drawBars = TRUE;
             MoveTo (rct.left, barTop);
+/*
 #ifdef WIN_MAC
             LineTo (rct.left, barBottom -1);
 #else
             LineTo (rct.left, barBottom);
 #endif
+*/
+            if (is_old_win) {
+              LineTo (rct.left, barBottom);
+            } else {
+              LineTo (rct.left, barBottom - 1);
+            }
           }
         }
         CopyMode ();
@@ -1534,10 +1567,6 @@ static void DrawDocument (PaneL d)
   RegioN   src;
 
   GetPanelExtra (d, &ddata);
-  if (ddata.cache == NULL) {
-    ddata.cache = (DocCachePtr *) MemNew(sizeof(DocCachePtr));
-    SetPanelExtra (d, &ddata);
-  }
   if (ddata.numItems > 0) {
     ObjectRect (d, &r);
     InsetRect (&r, 4, 4);
@@ -1640,10 +1669,6 @@ static void DocumentScrlProc (BaR sb, SlatE s, Int4 newval, Int4 oldval)
   if (s != NULL && oldval != newval) {
     if (Visible (s) && AllParentsVisible (s)) {
       GetPanelExtra ((PaneL) s, &ddata);
-      if (ddata.cache == NULL) {
-        ddata.cache = (DocCachePtr *) MemNew(sizeof(DocCachePtr));
-        SetPanelExtra ((PaneL) s, &ddata);
-      }
       ObjectRect (s, &r);
       InsetRect (&r, 4, 4);
       height = r.bottom - r.top;
@@ -1970,10 +1995,6 @@ extern void AdjustDocScroll (DoC d)
 
   if (d != NULL) {
     GetPanelExtra ((PaneL) d, &ddata);
-    if (ddata.cache == NULL) {
-      ddata.cache = (DocCachePtr *) MemNew(sizeof(DocCachePtr));
-      SetPanelExtra ((PaneL) d, &ddata);
-    }
     SelectFont (systemFont);
     sb = GetSlateVScrollBar ((SlatE) d);
     if (sb != NULL) {
@@ -2061,10 +2082,6 @@ extern void ForceFormat (DoC d, Int2 item)
 
   if (d != NULL && item > 0) {
     GetPanelExtra ((PaneL) d, &ddata);
-    if (ddata.cache == NULL) {
-      ddata.cache = (DocCachePtr *) MemNew(sizeof(DocCachePtr));
-      SetPanelExtra ((PaneL) d, &ddata);
-    }
     itemPtr = GetItemPtr (&ddata, item - 1);
     if (itemPtr != NULL) {
       ObjectRect (d, &r);
@@ -2820,10 +2837,6 @@ extern void BulkAppendItem (DoC d, Int2 numItems, DocPrntProc proc,
       ddata.master = (MasterPtr) MemNew (sizeof (MasterData));
       SetPanelExtra ((PaneL) d, &ddata);
     }
-    if (ddata.cache == NULL) {
-      ddata.cache = (DocCachePtr *) MemNew(sizeof(DocCachePtr));
-      SetPanelExtra ((PaneL) d, &ddata);
-    }
     numLists = (numItems / LISTSIZE) + 1;
     ObjectRect (d, &r);
     InsetRect (&r, 4, 4);
@@ -2884,6 +2897,7 @@ extern void BulkAppendItem (DoC d, Int2 numItems, DocPrntProc proc,
             itemPtr->prtProc = proc;
             itemPtr->dataPtr = NULL;
             itemPtr->text = NULL;
+            itemPtr->cached = NULL;
             itemPtr->font = font;
             itemPtr->numRows = MAX (estLines, 1);
             itemPtr->numCols = numCols;
@@ -2930,76 +2944,34 @@ extern void BulkAppendItem (DoC d, Int2 numItems, DocPrntProc proc,
 *
 *****************************************************************************/
 
-static DocCachePtr TraverseDocCacheTree (DocCachePtr PNTR head, Int2 item)
-
-{
-  DocCachePtr  list;
-
-  if (head == NULL) return NULL;
-  if (*head != NULL) {
-    list = *head;
-    if (list->item < item) {
-      return TraverseDocCacheTree (&(list->right), item);
-    } else if (list->item > item) {
-      return TraverseDocCacheTree (&(list->left), item);
-    } else {
-      return list;
-    }
-  } else {
-    list = (DocCachePtr) MemNew (sizeof(DocCache));
-    if (list != NULL) {
-      *head = list;
-      list->item = item;
-      list->left = NULL;
-      list->right = NULL;
-    }
-    return list;
-  }
-}
-
-static DocCachePtr FreeDocCacheTree (DocCachePtr PNTR head)
-
-{
-  DocCachePtr  list;
-
-  if (head != NULL && *head != NULL) {
-    list = *head;
-    FreeDocCacheTree (&(list->left));
-    FreeDocCacheTree (&(list->right));
-    MemFree (list->text);
-    MemFree (list);
-    *head = NULL;
-  }
-  return NULL;
-}
-
 extern void StdPutDocCache (DoC d, Int2 item, CharPtr text)
 
 {
-  DocCachePtr  dcp;
-  DocData     ddata;
+  DocData  ddata;
+  ItemPtr  itemPtr;
 
-  GetPanelExtra ((PaneL) d, &ddata);
-  dcp = TraverseDocCacheTree (ddata.cache, item);
-  if (dcp != NULL) {
-    dcp->text = (CharPtr) MemFree(dcp->text);
-    dcp->text = StringSave (text);
+  if (d != NULL && item > 0) {
+    GetPanelExtra ((PaneL) d, &ddata);
+    itemPtr = GetItemPtr (&ddata, item - 1);
+    if (itemPtr != NULL) {
+      itemPtr->cached = MemFree (itemPtr->cached);
+      itemPtr->cached = StringSave (text);
+    }
   }
 }
 
 extern CharPtr StdGetDocCache (DoC d, Int2 item)
 
 {
-  DocCachePtr  dcp;
-  DocData      ddata;
-  CharPtr      text;
+  DocData  ddata;
+  ItemPtr  itemPtr;
+  CharPtr  text = NULL;
 
-  text = NULL;
-  GetPanelExtra ((PaneL) d, &ddata);
-  dcp = TraverseDocCacheTree (ddata.cache, item);
-  if (dcp != NULL) {
-    if (dcp->text != NULL) {
-      text = StringSave (dcp->text);
+  if (d != NULL && item > 0) {
+    GetPanelExtra ((PaneL) d, &ddata);
+    itemPtr = GetItemPtr (&ddata, item - 1);
+    if (itemPtr != NULL) {
+      text = StringSave (itemPtr->cached);
     }
   }
   return text;
@@ -3009,9 +2981,16 @@ extern void StdResetDocCache (DoC d, Int2 from, Int2 to)
 
 {
   DocData  ddata;
+  Int2     i;
+  ItemPtr  itemPtr;
 
   GetPanelExtra ((PaneL) d, &ddata);
-  FreeDocCacheTree (ddata.cache);
+  for (i = 0; i < ddata.numItems; i++) {
+    itemPtr = GetItemPtr (&ddata, i);
+    if (itemPtr != NULL) {
+      itemPtr->cached = MemFree (itemPtr->cached);
+    }
+  }
   SetPanelExtra ((PaneL) d, &ddata);
 }
 
@@ -3050,6 +3029,7 @@ static void ResetDocument (PaneL d)
         itemPtr->dataPtr = NULL;
       }
       itemPtr->extra = MemFree (itemPtr->extra);
+      itemPtr->cached = MemFree (itemPtr->cached);
     }
   }
   if (ddata.master != NULL) {
@@ -3058,7 +3038,6 @@ static void ResetDocument (PaneL d)
       masterPtr->list [i] = (ListDPtr) MemFree(masterPtr->list [i]);
     }
   }
-  ddata.cache = (DocCachePtr *) MemFree(ddata.cache);
   ddata.colFmts = ValNodeFreeData (ddata.colFmts);
   ddata.numItems = 0;
   ddata.numLines = 0;
@@ -3110,7 +3089,6 @@ static void NewDocument (DoC d)
   ddata.upd = NULL;
   ddata.data = NULL;
   ddata.cleanup = NULL;
-  ddata.cache = NULL;
   ddata.colFmts = NULL;
   for (i = 0; i < MAXFONTS; i++) {
     fontHeights [i].font = NULL;
@@ -4088,10 +4066,6 @@ extern void UpdateDocument (DoC d, Int2 from, Int2 to)
 
   if (d != NULL && from >= 0 && to >= 0) {
     GetPanelExtra ((PaneL) d, &ddata);
-    if (ddata.cache == NULL) {
-      ddata.cache = (DocCachePtr *) MemNew(sizeof(DocCachePtr));
-      SetPanelExtra ((PaneL) d, &ddata);
-    }
     if (from == 0 || from > ddata.numItems) {
       start = 0;
       from = 0;
@@ -4110,6 +4084,7 @@ extern void UpdateDocument (DoC d, Int2 from, Int2 to)
         itemPtr->text = (CharPtr) MemFree (itemPtr->text);
         itemPtr->notCached = TRUE;
         itemPtr->neverCached = TRUE;
+        itemPtr->cached = (CharPtr) MemFree (itemPtr->cached);
       }
     }
     if (ddata.upd != NULL) {
@@ -4297,6 +4272,7 @@ extern void SaveDocument (DoC d, FILE *f)
       itemPtr = GetItemPtr (&ddata, i);
       if (itemPtr != NULL) {
         itemData.text = NULL;
+        itemData.cached = NULL;
         itemData.prtProc = itemPtr->prtProc;
         itemData.dataPtr = itemPtr->dataPtr;
         itemData.font = itemPtr->font;
@@ -4348,6 +4324,7 @@ extern void SaveDocumentItem (DoC d, FILE *f, Int2 item)
       itemPtr = GetItemPtr (&ddata, item - 1);
       if (itemPtr != NULL) {
         itemData.text = NULL;
+        itemData.cached = NULL;
         itemData.prtProc = itemPtr->prtProc;
         itemData.dataPtr = itemPtr->dataPtr;
         itemData.font = itemPtr->font;
@@ -4436,6 +4413,7 @@ extern void PrintDocument (DoC d)
             itemPtr = GetItemPtr (&ddata, item);
             if (itemPtr != NULL) {
               itemData.text = NULL;
+              itemData.cached = NULL;
               itemData.prtProc = itemPtr->prtProc;
               itemData.dataPtr = itemPtr->dataPtr;
               itemData.font = itemPtr->font;
@@ -4632,6 +4610,7 @@ extern void DisplayFancy (DoC d, CharPtr file, ParPtr parFmt,
   CharPtr  txt;
 #ifdef WIN_MAC
   CharPtr  p;
+  CharPtr  q;
 #endif
 #if (defined(OS_DOS) || defined (OS_NT))
   CharPtr  p;
@@ -4704,12 +4683,29 @@ extern void DisplayFancy (DoC d, CharPtr file, ParPtr parFmt,
 #endif
 #ifdef WIN_MAC
             p = text;
+            q = text;
             while (*p) {
-              if (*p == '\r') {
-                *p = '\n';
+              if (*p == '\n') {
+                *q = '\n';
+                p++;
+                q++;
+                if (*p == '\r') {
+                  p++;
+                }
+              } else if (*p == '\r') {
+                *q = '\n';
+                p++;
+                q++;
+                if (*p == '\n') {
+                  p++;
+                }
+              } else {
+                *q = *p;
+                p++;
+                q++;
               }
-              p++;
             }
+            *q = '\0';
 #endif
             AppendText (d, text, parFmt, colFmt, font);
             leftOver = 1;

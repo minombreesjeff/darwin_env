@@ -1,4 +1,4 @@
-/* $Id: mmdbsrv.c,v 6.28 2001/12/12 20:43:38 beloslyu Exp $
+/* $Id: mmdbsrv.c,v 6.29 2005/01/12 22:49:13 vakatov Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -29,12 +29,15 @@
 *
 * Version Creation Date: 6 January 1997
 *
-* $Revision: 6.28 $
+* $Revision: 6.29 $
 *
 * File Description:
 *        MMDB WWW-server 
 *
 * $Log: mmdbsrv.c,v $
+* Revision 6.29  2005/01/12 22:49:13  vakatov
+* /htbin-post/Taxonomy/wgetorg -> /Taxonomy/Browser/wwwtax.cgi
+*
 * Revision 6.28  2001/12/12 20:43:38  beloslyu
 * change the name of ftp site to ftp.ncbi.nih.gov
 *
@@ -299,7 +302,7 @@ Database = /net/dorothy/cbb3/vast/data/
 
 ; URL for link to taxonomy database (wgetorg for retrieval)
 [TAXLINK]
-TAXurl = http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wgetorg
+TAXurl = http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi
 
 -------------------- cut here --------------------
 ********************************************/
@@ -382,7 +385,7 @@ static Char MAILto[256];
 static Char MAILTO[PATH_MAX];
 static Char ARROW[PATH_MAX];
 
-static char* cvsId_ = "@(#)$Id: mmdbsrv.c,v 6.28 2001/12/12 20:43:38 beloslyu Exp $";
+static char* cvsId_ = "@(#)$Id: mmdbsrv.c,v 6.29 2005/01/12 22:49:13 vakatov Exp $";
 
 /*****************************************************
  * WWWPrintFileData looks in the current CGI-BIN directory 

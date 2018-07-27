@@ -44,6 +44,9 @@
 * RCS Modification History:
 * -------------------------
 * $Log: findrepl.c,v $
+* Revision 6.13  2005/04/26 21:33:52  kans
+* added SEQID_GPIPE
+*
 * Revision 6.12  2004/04/01 13:43:05  lavr
 * Spell "occurred", "occurrence", and "occurring"
 *
@@ -1151,6 +1154,7 @@ static void FindReplSeqId (
     case SEQID_TPG :
     case SEQID_TPE :
     case SEQID_TPD :
+    case SEQID_GPIPE :
       FindReplTextSeqId((TextSeqIdPtr) sip->data.ptrvalue, fsp);
       break;
     case SEQID_PATENT :

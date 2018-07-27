@@ -1,4 +1,4 @@
-/* $Id: blast_input.h,v 1.10 2003/12/03 17:30:25 dondosha Exp $
+/* $Id: blast_input.h,v 1.16 2005/04/06 23:27:53 dondosha Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -21,19 +21,15 @@
 *
 *  Please cite the author in any work or product based on this material.
 *
-* ===========================================================================*/
+* ===========================================================================
+*
+* Author: Ilya Dondoshansky
+*
+*/
 
-/*****************************************************************************
-
-File name: blast_input.h
-
-Author: Ilya Dondoshansky
-
-Contents: Reading FASTA sequences for BLAST
-
-$Revision: 1.10 $
-
-******************************************************************************/
+/** @file blast_input.h
+ * Reading FASTA sequences for BLAST
+ */
 
 #ifndef __BLAST_INPUT__
 #define __BLAST_INPUT__
@@ -49,35 +45,55 @@ extern "C" {
 #include <ncbi.h>
 #include <algo/blast/core/blast_def.h>
 
+/** @addtogroup CToolkitAlgoBlast
+ *
+ * @{
+ */
+
 /** Read the query sequences from a file, return a SeqLoc list.
  * @param infp The input file [in]
  * @param query_is_na Are sequences nucleotide (or protein)? [in]
  * @param strand Which strands should SeqLocs contain (0 for protein, 
  *               1 for plus, 2 for minus, 3 for both)? [in]
+ * @param max_total_length length of query sequences to be returned [in]
  * @param from Starting offset in query location [in]
  * @param to Ending offset in query location (-1 for end of sequence) [in]
  * @param lcase_mask The lower case masking locations (no lower case masking 
  *                   if NULL [out]
  * @param query_slp List of query SeqLocs [out]
- * @param ctr_start Number from which to start counting local ids [in]
+ * @param ctr Number from which to start counting local ids, will be 
+ *   incremented by number of queries read in  [in|out]
  * @param num_queries Number of sequences read [out]
- * @return Have all sequences been read?
+ * @param believe_query parse FASTA seqid if TRUE [in]
+ * @return number of letters read, negative number on error.
  */
-Boolean
-BLAST_GetQuerySeqLoc(FILE *infp, Boolean query_is_na, Uint1 strand,
-   Int4 from, Int4 to, BlastMaskLoc** lcase_mask, SeqLocPtr* query_slp, Int4 ctr_start,
-   Int4* num_queries);
+Int4
+BLAST_GetQuerySeqLoc(FILE *infp, Boolean query_is_na, Uint1 strand, 
+                     Int4 max_total_length, Int4 from, Int4 to, 
+                     SeqLoc** lcase_mask, SeqLocPtr* query_slp, Int2Ptr ctr,
+                     Int4* num_queries, Boolean believe_query);
 
-/** Given a file containing sequence(s) in fasta format,
- * read a sequence and fill out a BLAST_SequenceBlk structure.
- *
- * @param fasta_fp the file to read from, assumed to already be open
- * @param seq pointer to the sequence block to fill out
- * @return Zero if successful, one on any error.
- */
-Int4 MakeBlastSequenceBlkFromFasta(FILE *fasta_fp, BLAST_SequenceBlk* seq);
+/* @} */
 
 #ifdef __cplusplus
 }
 #endif
+
+/*
+* ===========================================================================
+*
+* $Log: blast_input.h,v $
+* Revision 1.16  2005/04/06 23:27:53  dondosha
+* Doxygen fixes
+*
+* Revision 1.15  2005/02/09 20:55:38  dondosha
+* Changed doxygen group from AlgoBlast, which is reserved for C++ toolkit, to CToolkitAlgoBlast
+*
+* Revision 1.14  2005/02/02 18:57:21  dondosha
+* Pass back lower case mask in a SeqLoc form; removed unused function
+*
+*
+* ===========================================================================
+*/
+
 #endif /* !__BLAST_INPUT__ */

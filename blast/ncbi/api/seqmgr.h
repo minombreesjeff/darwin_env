@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 9/94
 *
-* $Revision: 6.53 $
+* $Revision: 6.57 $
 *
 * File Description:  Manager for Bioseqs and BioseqSets
 *
@@ -40,6 +40,18 @@
 *
 *
 * $Log: seqmgr.h,v $
+* Revision 6.57  2005/04/01 20:57:48  kans
+* SIDPreCacheFunc and LookupFarSeqIDs take new argument for SP block and other places for gi numbers to hide
+*
+* Revision 6.56  2004/11/18 22:21:11  kans
+* made FetchFromGiSeqIdCache extern - needed to prevent unnecessary precache fetches
+*
+* Revision 6.55  2004/11/17 22:03:43  kans
+* added SeqMgrFindAnnotDescByID, fields in BspExtra structure - still need to finish indexing implementation
+*
+* Revision 6.54  2004/06/22 17:37:25  kans
+* added FreeSeqIdGiCache
+*
 * Revision 6.53  2004/02/24 20:57:45  kans
 * added genesByLocusTag field, SeqMgrGetNextGeneByLocusTag function, now that locus_tag should be a unique identifier
 *
@@ -298,7 +310,7 @@ typedef BioseqPtr (LIBCALLBACK * BSFetchTop)
 
 typedef BioseqPtr (LIBCALLBACK * BSFetch) PROTO((SeqIdPtr sip, Pointer data));
 
-typedef Int4 (LIBCALLBACK * SIDPreCacheFunc) (SeqEntryPtr sep, Boolean components, Boolean locations, Boolean products, Boolean alignments, Boolean history);
+typedef Int4 (LIBCALLBACK * SIDPreCacheFunc) (SeqEntryPtr sep, Boolean components, Boolean locations, Boolean products, Boolean alignments, Boolean history, Boolean others);
 typedef Int4 (LIBCALLBACK * SeqLenLookupFunc) (Int4 gi);
 typedef CharPtr (LIBCALLBACK * AccnVerLookupFunc) (Int4 gi);
 typedef SeqIdPtr (LIBCALLBACK * SeqIdSetLookupFunc) (Int4 gi);
@@ -845,12 +857,17 @@ NLM_EXTERN Int4 LIBCALL GetUniGeneIDForSeqId PROTO((SeqIdPtr sip));
 /*****************************************************************************
 *
 *   FetchFromSeqIdGiCache(gi, sipp)
+*   FetchFromGiSeqIdCache(sip, gip)
 *   RecordInSeqIdGiCache(gi, sip)
+*   FreeSeqIdGiCache()
 *     Internal functions to cache gi - SeqId associations
 *
 *****************************************************************************/
 NLM_EXTERN Boolean FetchFromSeqIdGiCache (Int4 gi, SeqIdPtr PNTR sipp);
+NLM_EXTERN Boolean FetchFromGiSeqIdCache (SeqIdPtr sip, Int4Ptr gip);
+
 NLM_EXTERN void RecordInSeqIdGiCache (Int4 gi, SeqIdPtr sip);
+NLM_EXTERN void FreeSeqIdGiCache (void);
 
 
 /*****************************************************************************
@@ -927,6 +944,8 @@ typedef struct bioseqextra {
   SMDescItemPtr PNTR  descrsBySdp;    /* array of all features on bioseq sorted by SeqDescrPtr */
   SMDescItemPtr PNTR  descrsByIndex;  /* array of all features on bioseq sorted by order of presentation */
 
+  AnnotDescPtr PNTR   annotDescByID;  /* array of all AnnotDesc (on entity) in original itemID order */
+
   SeqAlignPtr PNTR    alignsByID;     /* array of all alignments (on entity) in original itemID order */
 
   SMFeatItemPtr PNTR  featsByID;      /* array of all features on bioseq in original itemID order */
@@ -951,6 +970,7 @@ typedef struct bioseqextra {
   SMSeqIdxPtr PNTR    partsBySeqId;   /* array of parts on segmented bioseq sorted by reverse uppercase seqID */
 
   Int4                numdescs;       /* number of elements in descrsByID, descrsBySdp, and descrsByIndex arrays */
+  Int4                numannotdesc;   /* number of elements in annotDescByID array */
   Int4                numaligns;      /* number of elements in alignsByID array */
   Int4                numfeats;       /* number of elements in featsByID, featsBySfp and featsByPos arrays */
   Int4                numgenes;       /* number of elements in genesByPos array */
@@ -1041,10 +1061,12 @@ NLM_EXTERN void LIBCALL SeqMgrIndexAlignments (Uint2 entityID);
 
 /*****************************************************************************
 *
-*   SeqMgrFindSeqAlignByID uses new index to speed lookup of SeqAlignPtr
+*   SeqMgrFindAnnotDescByID and SeqMgrFindSeqAlignByID uses new indexes to speed
+*     lookup of AnnotDescPtr and SeqAlignPtr, respectively
 *
 *****************************************************************************/
 
+NLM_EXTERN AnnotDescPtr LIBCALL SeqMgrFindAnnotDescByID (Uint2 entityID, Uint2 itemID);
 NLM_EXTERN SeqAlignPtr LIBCALL SeqMgrFindSeqAlignByID PROTO((Uint2 entityID, Uint2 itemID));
 
 /*****************************************************************************
@@ -1080,7 +1102,8 @@ NLM_EXTERN Int4 LookupFarSeqIDs (
   Boolean locations,
   Boolean products,
   Boolean alignments,
-  Boolean history
+  Boolean history,
+  Boolean others
 );
 
 /*****************************************************************************

@@ -1,4 +1,4 @@
---$Revision: 1.11 $
+--$Revision: 1.16 $
 --********************************************************************
 --
 --  Network Id server network access
@@ -65,11 +65,11 @@ ID2-Request-Get-Packages ::= SEQUENCE {
 ID2-Request-Get-Seq-id ::= SEQUENCE {
         seq-id          ID2-Seq-id,
         seq-id-type     INTEGER {
-                any     (0),    -- return any one Seq-id
+                any     (0),    -- return any qualified Seq-id
                 gi      (1),    -- gi is preferred
                 text    (2),    -- text Seq-id (accession etc) is preferred
                 general (4),    -- general Seq-id is preferred
-                all     (127)   -- return all Seq-ids of the sequence
+                all     (127)   -- return all qualified Seq-ids of the sequence
         } DEFAULT any
 }
 
@@ -148,7 +148,10 @@ ID2S-Request-Get-Chunks ::= SEQUENCE {
         blob-id         ID2-Blob-Id,
 
         -- requests for specific chunks of splitted blob
-        chunks          SEQUENCE OF ID2S-Chunk-Id
+        chunks          SEQUENCE OF ID2S-Chunk-Id,
+
+        -- blob split version
+        split-version   INTEGER OPTIONAL
 }
 
 
@@ -279,7 +282,20 @@ ID2-Reply-Get-Seq-id ::= SEQUENCE {
 
         -- resolved Seq-id
         -- not set if error occurred
-        seq-id          SEQUENCE OF Seq-id OPTIONAL
+        seq-id          SEQUENCE OF Seq-id OPTIONAL,
+
+        -- this Seq-id is the last one in the request
+        end-of-reply    NULL OPTIONAL
+}
+
+
+ID2-Blob-State ::= ENUMERATED {
+        live            (0),
+        suppressed-temp (1),
+        suppressed      (2),
+        dead            (3),
+        protected       (4),
+        withdrawn       (5)
 }
 
 
@@ -289,7 +305,7 @@ ID2-Reply-Get-Blob-Id ::= SEQUENCE {
         seq-id          Seq-id,
 
         -- result
-        blob-id         ID2-Blob-Id,
+        blob-id         ID2-Blob-Id OPTIONAL,
 
         -- version of split data
         -- (0 for non split)
@@ -297,7 +313,10 @@ ID2-Reply-Get-Blob-Id ::= SEQUENCE {
 
         -- annotation types in this blob
         -- annotation are unknown if this field is omitted
-        annot-info      SEQUENCE OF ID2S-Seq-annot-Info OPTIONAL
+        annot-info      SEQUENCE OF ID2S-Seq-annot-Info OPTIONAL,
+
+        -- this Blob-id is the last one in the request
+        end-of-reply    NULL OPTIONAL
 }
 
 
@@ -423,9 +442,11 @@ ID2-Blob-Seq-id ::= SEQUENCE {
 ID2-Blob-Id ::= SEQUENCE {
         sat             INTEGER,
         sub-sat         INTEGER {
-                main    (0),
-                snp     (1),
-                mgc     (16)
+                main        (0),
+                snp         (1),
+                snp-graph   (4),
+                cdd         (8),
+                mgc         (16)
         } DEFAULT main,
         sat-key         INTEGER,
         -- version of blob, optional in some requests

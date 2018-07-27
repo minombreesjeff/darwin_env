@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   10/7/94
 *
-* $Revision: 6.38 $
+* $Revision: 6.43 $
 *
 * File Description: 
 *
@@ -39,6 +39,21 @@
 * -------  ----------  -----------------------------------------------------
 *
 * $Log: gather.c,v $
+* Revision 6.43  2004/11/24 19:05:34  kans
+* AttachDataProc supports OBJ_ANNOTDESC inserting in OBJ_ANNOTDESC list
+*
+* Revision 6.42  2004/11/24 15:31:15  kans
+* support for OBJ_ANNOTDESC drag and drop
+*
+* Revision 6.41  2004/11/23 19:39:07  kans
+* added GatherAnnotDesc for Desktop support of SeqAnnot.AnnotDesc items
+*
+* Revision 6.40  2004/11/17 19:33:00  kans
+* VisitAnnotDesc called by VisitSeqAnnot for finding AnnotDesc, to be used for pubs on separately fetched CDD annots
+*
+* Revision 6.39  2004/10/25 20:13:27  kans
+* added AssignIDsInEntityEx and GatherObjectsInEntityEx to index remotely fetched features
+*
 * Revision 6.38  2002/05/08 18:58:09  kans
 * itemID is Uint4
 *
@@ -3083,6 +3098,64 @@ static Boolean NEAR GatherSeqGraph(InternalGCCPtr gccp, SeqGraphPtr sgp,
 	return TRUE;
 }
 
+static Boolean NEAR GatherAnnotDesc(InternalGCCPtr gccp, AnnotDescPtr desc,
+	Uint1 ttype, Pointer tparent, Pointer PNTR prevlink, Boolean in_scope)
+{
+	GatherContextPtr gcp;
+	GatherScopePtr gsp;
+	Int2 LocateItem = 0;
+	Pointer LocateData = NULL;
+	Uint1 thistype;
+
+	if (desc == NULL) return TRUE;
+
+	gcp = &(gccp->gc);
+	gsp = &(gccp->scope);
+
+	if (gsp->ignore[OBJ_ANNOTDESC])
+		return TRUE;
+
+	if (gccp->locatetype == OBJ_ANNOTDESC)
+ 	{
+		LocateItem = gccp->locateID;
+		LocateData = gccp->locatePtr;
+	}
+
+	gcp->previtem = NULL;
+	gcp->prevtype = OBJ_ANNOTDESC;
+	gcp->parentitem = tparent;
+	gcp->parenttype = ttype;
+	thistype = OBJ_ANNOTDESC;
+
+	while (desc != NULL)
+	{
+		gccp->itemIDs[OBJ_ANNOTDESC]++;
+		if (LocateItem == gccp->itemIDs[OBJ_ANNOTDESC])
+			in_scope = TRUE;
+		if (LocateData == (Pointer)desc)
+			in_scope = TRUE;
+		if (in_scope)
+		{
+			gcp->itemID = gccp->itemIDs[OBJ_ANNOTDESC];
+			gcp->thisitem = (Pointer)desc;
+			gcp->thistype = thistype;
+			gcp->prevlink = prevlink;
+			GatherAddToStack(gcp);
+			if (! (*(gccp->userfunc))(gcp))
+				return FALSE;
+			if (LocateItem) return FALSE;
+			if (LocateData != NULL) return FALSE;
+		}
+
+		gcp->previtem = (Pointer)desc;
+		prevlink = (Pointer PNTR)&(desc->next);
+		desc = desc->next;
+	}
+
+	return TRUE;
+}
+
+
 static Boolean NEAR GatherSeqAnnot(InternalGCCPtr gccp, SeqAnnotPtr sap,
         Uint1 ttype, Pointer tparent, Pointer PNTR prevlink, Boolean in_scope)
 {
@@ -3140,6 +3213,8 @@ static Boolean NEAR GatherSeqAnnot(InternalGCCPtr gccp, SeqAnnotPtr sap,
 		}
 
 		gcp->indent++;
+		if (! GatherAnnotDesc(gccp, (AnnotDescPtr)(sap->desc), thistype, (Pointer)sap, (Pointer PNTR) &(sap->desc), in_scope))
+			return FALSE;
 		switch (sap->type)
 		{
 		
@@ -4379,7 +4454,8 @@ static void GatherEntityFunc (ObjMgrDataPtr omdp, InternalGCCPtr gccp, Boolean i
 					GatherSeqAnnot(gccp, (SeqAnnotPtr)ptr, 0,NULL,NULL, in_scope);
 					break;
 
-				case OBJ_ANNOTDESC:              /* NOT SUPPORTED YET */
+				case OBJ_ANNOTDESC:
+					GatherAnnotDesc(gccp, (AnnotDescPtr)ptr, 0,NULL,NULL, in_scope);
 					break;
 
 				case OBJ_SEQFEAT:
@@ -4688,6 +4764,10 @@ static Boolean NEAR GatherItemFunc (Uint2 entityID, Uint2 itemID, Uint2 itemtype
 		case OBJ_SEQFEAT_CIT:
 			gs.ignore[OBJ_SEQFEAT] = FALSE;
 			gs.ignore[OBJ_PUB_SET] = FALSE;
+			break;
+		case OBJ_ANNOTDESC:
+			gs.ignore[OBJ_SEQANNOT] = FALSE;
+			break;
 		case OBJ_SEQFEAT:
 			gs.ignore[OBJ_SEQANNOT] = FALSE;
 			break;
@@ -4854,6 +4934,10 @@ static Boolean DetachDataProc (GatherContextPtr gcp)
 			next = (Pointer)(((SeqAnnotPtr)(ptr))->next);
 			(((SeqAnnotPtr)(ptr))->next) = NULL;
 			break;
+		case OBJ_ANNOTDESC:
+			next = (Pointer)(((AnnotDescPtr)(ptr))->next);
+			(((AnnotDescPtr)(ptr))->next) = NULL;
+			break;
 		case OBJ_SEQALIGN:
 		case OBJ_SEQHIST_ALIGN:
 			next = (Pointer)(((SeqAlignPtr)(ptr))->next);
@@ -4969,6 +5053,26 @@ static void AddToAnnot(SeqAnnotPtr PNTR head, Int2 the_type, Pointer addptr)
 	AddToSeqAnnot(sap, the_type, addptr);
 
 	return;
+}
+
+static Boolean AddAnnotDesc (SeqAnnotPtr sap, Pointer addptr)
+{
+	AnnotDescPtr adp;
+	Pointer PNTR prevlink = NULL;
+
+	if (sap == NULL) return FALSE;
+
+	if (sap->desc == NULL) {
+		prevlink = (Pointer PNTR) &(sap->desc);
+	} else {
+		for (adp = (AnnotDescPtr) sap->desc; adp->next != NULL; adp = adp->next)
+			continue;
+		prevlink = (Pointer PNTR) &(adp->next);
+	}
+	if (prevlink != NULL)
+		*prevlink = addptr;
+
+	return TRUE;
 }
 
 static ValNodePtr PubFromDescr(ValNodePtr desc)
@@ -5398,12 +5502,34 @@ static Boolean AttachDataProc (GatherContextPtr gcp)
 					if (! AddToSeqAnnot(sap, 3, newptr))
 						no_good = TRUE;
 					break;
+				case OBJ_ANNOTDESC:
+					if (! AddAnnotDesc(sap, newptr))
+						no_good = TRUE;
+					break;
 				case OBJ_SEQANNOT:
 					sap = (SeqAnnotPtr)newptr;
 					if (gcp->prevlink != NULL)
 					{
 						sap->next = *(gcp->prevlink);
 						*(gcp->prevlink) = sap;
+					}
+					else
+						no_good = TRUE;
+					break;
+				default:
+					no_good = TRUE;
+					break;
+			}
+			break;
+		case OBJ_ANNOTDESC:
+			vnp = (ValNodePtr)newptr;
+			switch (newtype)
+			{
+				case OBJ_ANNOTDESC:
+					if (gcp->prevlink != NULL)
+					{
+						vnp->next = *(gcp->prevlink);
+						*(gcp->prevlink) = vnp;
 					}
 					else
 						no_good = TRUE;
@@ -6043,6 +6169,7 @@ NLM_EXTERN Boolean LIBCALL GatherOverWrite (Pointer oldptr, Pointer newptr, Uint
 		case OBJ_SEQLOC:
 		case OBJ_SEQID:
 		case OBJ_SEQENTRY:
+		case OBJ_ANNOTDESC:
 			vnp = (ValNodePtr)oldptr;
 			oldsrc = &(vnp->data);
 			size = sizeof(DataVal);
@@ -6297,6 +6424,47 @@ static Boolean VisitSeqGraph (InternalACCPtr iap, SeqGraphPtr sgp, Pointer paren
   return TRUE;
 }
 
+static Boolean VisitAnnotDesc (InternalACCPtr iap, AnnotDescrPtr adp, Pointer parent, Uint2 parenttype, Pointer PNTR prevlink)
+
+{
+  Uint1          itemtype = OBJ_ANNOTDESC;
+  ObjValNodePtr  ovp;
+
+  if (iap == NULL || adp == NULL) return TRUE;
+
+  if ((! iap->assignIDs) && iap->callback != NULL) {
+    if (iap->objMgrFilter != NULL && (! iap->objMgrFilter [itemtype])) {
+      return TRUE;
+    }
+  }
+
+  while (adp != NULL) {
+    (iap->itemIDs [itemtype])++;
+
+    if (iap->assignIDs) {
+      if (adp->extended != 0) {
+        ovp = (ObjValNodePtr) adp;
+        AssignIDs (iap, &(ovp->idx), itemtype, adp->choice, parent, parenttype, prevlink);
+      } else {
+        ErrPostEx (SEV_ERROR, 0, 0, "Annot descriptor item %d is not an ObjValNode",
+                   (int) iap->itemIDs [itemtype]);
+      }
+    }
+
+    if (iap->callback != NULL) {
+      if (adp->extended != 0) {
+        ovp = (ObjValNodePtr) adp;
+        if (! VisitCallback (iap, (Pointer) adp, itemtype, ovp->idx.subtype, parent, parenttype, prevlink)) return FALSE;
+      }
+    }
+
+    prevlink = (Pointer PNTR) &(adp->next);
+    adp = adp->next;
+  }
+
+  return TRUE;
+}
+
 static Boolean VisitSeqAnnot (InternalACCPtr iap, SeqAnnotPtr sap, Pointer parent, Uint2 parenttype, Pointer PNTR prevlink)
 
 {
@@ -6314,6 +6482,8 @@ static Boolean VisitSeqAnnot (InternalACCPtr iap, SeqAnnotPtr sap, Pointer paren
     if (iap->callback != NULL) {
       if (! VisitCallback (iap, (Pointer) sap, itemtype, sap->idx.subtype, parent, parenttype, prevlink)) return FALSE;
     }
+
+    if (! VisitAnnotDesc (iap, sap->desc, (Pointer) sap, itemtype, (Pointer PNTR) &(sap->desc))) return FALSE;
 
     switch (sap->type) {
       case 1 : /* feature table */
@@ -6665,16 +6835,28 @@ static Boolean VisitSeqSubmit (InternalACCPtr iap, SeqSubmitPtr ssp)
 *       every object type is visited, otherwise the array length should be OBJ_MAX, and
 *       the elements are from the OBJ_ list.
 *
+*   The Ex versions take a ValNodePtr parameter whose data.ptrvalue fields point to
+*       a Bioseq that contains a SeqAnnot with remotely fetched features.
+*
 *****************************************************************************/
 
-static Boolean VisitEntity (Uint2 entityID, Uint2 datatype, Pointer dataptr,
-                            Boolean assignIDs, GatherObjectProc callback,
-                            Pointer userdata, BoolPtr objMgrFilter)
+static Boolean VisitEntity (
+  Uint2 entityID,
+  Uint2 datatype,
+  Pointer dataptr,
+  Boolean assignIDs,
+  GatherObjectProc callback,
+  Pointer userdata,
+  BoolPtr objMgrFilter,
+  ValNodePtr extra
+)
 
 {
+  BioseqPtr      bsp;
   InternalACC    iac;
   ObjMgrDataPtr  omdp;
   ObjMgrPtr      omp;
+  ValNodePtr     vnp;
 
   MemSet ((Pointer) &iac, 0, sizeof (InternalACC));
   iac.entityID = entityID;
@@ -6711,6 +6893,9 @@ static Boolean VisitEntity (Uint2 entityID, Uint2 datatype, Pointer dataptr,
       break;
     case OBJ_SEQDESC :
       VisitSeqDescr (&iac, (SeqDescrPtr) dataptr, NULL, 0, NULL);
+      break;
+    case OBJ_ANNOTDESC :
+      VisitAnnotDesc (&iac, (AnnotDescrPtr) dataptr, NULL, 0, NULL);
       break;
     case OBJ_SEQANNOT :
       VisitSeqAnnot (&iac, (SeqAnnotPtr) dataptr, NULL, 0, NULL);
@@ -6752,21 +6937,64 @@ static Boolean VisitEntity (Uint2 entityID, Uint2 datatype, Pointer dataptr,
       return FALSE;
   }
 
+  /* handle remotely fetched features from ValNode list of Bioseqs */
+
+  for (vnp = extra; vnp != NULL; vnp = vnp->next) {
+    bsp = (BioseqPtr) vnp->data.ptrvalue;
+    if (bsp == NULL || bsp->annot == NULL) continue;
+    if (! VisitSeqAnnot (&iac, bsp->annot, (Pointer) bsp, OBJ_BIOSEQ, (Pointer PNTR) &(bsp->annot))) return FALSE;
+  }
+
   return TRUE;
 }
 
-NLM_EXTERN Boolean LIBCALL AssignIDsInEntity (Uint2 entityID, Uint2 datatype, Pointer dataptr)
+NLM_EXTERN Boolean LIBCALL AssignIDsInEntity (
+  Uint2 entityID,
+  Uint2 datatype,
+  Pointer dataptr
+)
 
 {
-  return VisitEntity (entityID, datatype, dataptr, TRUE, NULL, NULL, NULL);
+  return VisitEntity (entityID, datatype, dataptr, TRUE, NULL, NULL, NULL, NULL);
 }
 
-NLM_EXTERN Boolean LIBCALL GatherObjectsInEntity (Uint2 entityID, Uint2 datatype, Pointer dataptr,
-                                                  GatherObjectProc callback, Pointer userdata, BoolPtr objMgrFilter)
+NLM_EXTERN Boolean LIBCALL AssignIDsInEntityEx (
+  Uint2 entityID,
+  Uint2 datatype,
+  Pointer dataptr,
+  ValNodePtr extra
+)
+
+{
+  return VisitEntity (entityID, datatype, dataptr, TRUE, NULL, NULL, NULL, extra);
+}
+
+NLM_EXTERN Boolean LIBCALL GatherObjectsInEntity (
+  Uint2 entityID,
+  Uint2 datatype,
+  Pointer dataptr,
+  GatherObjectProc callback,
+  Pointer userdata,
+  BoolPtr objMgrFilter
+)
 
 {
   if (callback == NULL) return FALSE;
-  return VisitEntity (entityID, datatype, dataptr, FALSE, callback, userdata, objMgrFilter);
+  return VisitEntity (entityID, datatype, dataptr, FALSE, callback, userdata, objMgrFilter, NULL);
+}
+
+NLM_EXTERN Boolean LIBCALL GatherObjectsInEntityEx (
+  Uint2 entityID,
+  Uint2 datatype, Pointer dataptr,
+  GatherObjectProc callback,
+  Pointer userdata,
+  BoolPtr objMgrFilter,
+  ValNodePtr extra
+)
+
+{
+  if (callback == NULL) return FALSE;
+  return VisitEntity (entityID, datatype, dataptr, FALSE, callback, userdata, objMgrFilter, extra);
 }
 
 /*****************************************************************************

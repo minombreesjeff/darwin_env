@@ -1,1 +1,0 @@
-../asnstat/asnfdef.h

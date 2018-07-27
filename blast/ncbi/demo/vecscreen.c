@@ -25,6 +25,9 @@
 **************************************************************************/
 /* $Revision 1.0 $  
 * $Log: vecscreen.c,v $
+* Revision 6.7  2004/06/30 19:19:39  kans
+* include <blfmtutl.h>
+*
 * Revision 6.6  2003/05/13 16:02:42  coulouri
 * make ErrPostEx(SEV_FATAL, ...) exit with nonzero status
 *
@@ -62,6 +65,7 @@
 #include <sqnutils.h>
 #include <salsap.h>
 #include <vecscrn.h>
+#include <blfmtutl.h>
 
 
 #define NUMARG 4

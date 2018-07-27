@@ -1,4 +1,4 @@
-/*  $Id: ncbi_heapmgr.c,v 6.26 2003/10/02 14:52:23 lavr Exp $
+/*  $Id: ncbi_heapmgr.c,v 6.27 2005/01/27 19:00:17 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -181,7 +181,7 @@ HEAP HEAP_AttachEx(const void* base, TNCBI_Size size)
 {
     HEAP heap;
 
-    if (!base || !size || !(heap = malloc(sizeof(*heap))))
+    if (!base || !size || !(heap = (HEAP) malloc(sizeof(*heap))))
         return 0;
     if ((void*) HEAP_ALIGN(base) != base) {
         CORE_LOGF(eLOG_Warning,
@@ -573,6 +573,9 @@ int HEAP_Serial(const HEAP heap)
 /*
  * --------------------------------------------------------------------------
  * $Log: ncbi_heapmgr.c,v $
+ * Revision 6.27  2005/01/27 19:00:17  lavr
+ * Explicit cast of malloc()ed memory
+ *
  * Revision 6.26  2003/10/02 14:52:23  lavr
  * Wrapped long lines in the change log
  *

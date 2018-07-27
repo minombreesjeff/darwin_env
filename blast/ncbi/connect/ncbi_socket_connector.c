@@ -1,4 +1,4 @@
-/*  $Id: ncbi_socket_connector.c,v 6.19 2003/08/25 14:42:14 lavr Exp $
+/*  $Id: ncbi_socket_connector.c,v 6.20 2005/04/20 18:15:59 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -35,6 +35,7 @@
 
 #include "ncbi_ansi_ext.h"
 #include <connect/ncbi_socket_connector.h>
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -373,6 +374,9 @@ extern CONNECTOR SOCK_CreateConnectorOnTopEx
 /*
  * --------------------------------------------------------------------------
  * $Log: ncbi_socket_connector.c,v $
+ * Revision 6.20  2005/04/20 18:15:59  lavr
+ * +<assert.h>
+ *
  * Revision 6.19  2003/08/25 14:42:14  lavr
  * Employ new k..Timeout constants  --  log modification only
  *

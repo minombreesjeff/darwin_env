@@ -28,6 +28,10 @@
 * Author:  Karl Sirotkin
 *
 * $Log: gbparint.c,v $
+* Revision 6.8  2004/07/22 16:08:35  bazhin
+* Changes to parse gaps of unknown lengths (like "gap(unk100)")
+* within location strings.
+*
 * Revision 6.7  2004/03/03 17:32:19  kans
 * Nlm_gbparselex checks against NULL input
 *
@@ -98,7 +102,8 @@
 #define TAKE_FIRST 1
 #define TAKE_SECOND 2
 
-void Nlm_gbgap PROTO((ValNodePtr PNTR currentPt, ValNodePtr PNTR retval));
+void Nlm_gbgap PROTO((ValNodePtr PNTR currentPt, ValNodePtr PNTR retval,
+                      Boolean unknown));
 
 /*--------- do_Nlm_gbparse_error () ---------------*/
 
@@ -690,7 +695,10 @@ Nlm_gbloc(Boolean PNTR keep_rawPt, int PNTR parenPt, Boolean PNTR sitesPt, ValNo
 
 /* Interval, occurs on recursion */
 			case GBPARSE_INT_GAP:
-				Nlm_gbgap(currentPt, &retval);
+				Nlm_gbgap(currentPt, &retval, FALSE);
+				break;
+			case GBPARSE_INT_UNK_GAP:
+				Nlm_gbgap(currentPt, &retval, TRUE);
 				break;
 			case  GBPARSE_INT_ACCESION :
 			case  GBPARSE_INT_CARET : case  GBPARSE_INT_GT :
@@ -921,7 +929,10 @@ NLM_EXTERN SeqLocPtr Nlm_gbloc_ver(Boolean PNTR keep_rawPt, int PNTR parenPt,
 
 /* Interval, occurs on recursion */
 			case GBPARSE_INT_GAP:
-				Nlm_gbgap(currentPt, &retval);
+				Nlm_gbgap(currentPt, &retval, FALSE);
+				break;
+			case GBPARSE_INT_UNK_GAP:
+				Nlm_gbgap(currentPt, &retval, TRUE);
 				break;
 			case  GBPARSE_INT_ACCESION :
 			case  GBPARSE_INT_CARET : case  GBPARSE_INT_GT :
@@ -1063,7 +1074,8 @@ FATAL:
 }
 
 /**********************************************************/
-void Nlm_gbgap(ValNodePtr PNTR currentPt, ValNodePtr PNTR retval)
+void Nlm_gbgap(ValNodePtr PNTR currentPt, ValNodePtr PNTR retval,
+               Boolean unknown)
 {
     ValNodePtr vnp_first;
     ValNodePtr vnp_second;
@@ -1090,7 +1102,7 @@ void Nlm_gbgap(ValNodePtr PNTR currentPt, ValNodePtr PNTR retval)
         if(vnp_third == NULL || vnp_third->choice != GBPARSE_INT_RIGHT)
             return;
 
-        vvv = GapToSeqLoc(atoi((CharPtr) vnp_second->data.ptrvalue));
+        vvv = GapToSeqLocEx(atoi((CharPtr) vnp_second->data.ptrvalue), unknown);
         if(vvv == NULL)
             return;
 
@@ -2033,9 +2045,17 @@ Nlm_gbparselex(CharPtr linein, ValNodePtr PNTR lexed)
 				    current_col[3] == '\0'))
 				{
 				    current_token->choice = GBPARSE_INT_GAP;
-				    current_col += 2;
 				    current_token->data.ptrvalue = MemNew(4);
 				    StringCpy(current_token->data.ptrvalue, "gap");
+				    if(StringNICmp(current_col + 3, "(unk", 4) == 0)
+				    {
+					current_token->choice = GBPARSE_INT_UNK_GAP;
+					last_token = current_token;
+					current_token = ValNodeNew(current_token);
+					current_token->choice = GBPARSE_INT_LEFT;
+					current_col += 4;
+				    }
+				    current_col += 2;
 				    break;
 				}
 				if(StringNCmp(current_col, "gi|", 3) == 0) {
@@ -2411,9 +2431,17 @@ Nlm_gbparselex_ver(CharPtr linein, ValNodePtr PNTR lexed, Boolean accver)
 				    current_col[3] == '\0'))
 				{
 				    current_token->choice = GBPARSE_INT_GAP;
-				    current_col += 2;
 				    current_token->data.ptrvalue = MemNew(4);
 				    StringCpy(current_token->data.ptrvalue, "gap");
+				    if(StringNICmp(current_col + 3, "(unk", 4) == 0)
+				    {
+					current_token->choice = GBPARSE_INT_UNK_GAP;
+					last_token = current_token;
+					current_token = ValNodeNew(current_token);
+					current_token->choice = GBPARSE_INT_LEFT;
+					current_col += 4;
+				    }
+				    current_col += 2;
 				    break;
 				}
 				if(StringNCmp(current_col, "gi|", 3) == 0) {

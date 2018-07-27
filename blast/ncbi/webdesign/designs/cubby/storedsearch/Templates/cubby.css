@@ -1,0 +1,239 @@
+
+body { 
+  font-family: Verdana,Geneva,SansSerif;
+  font-size: 10pt;
+}
+
+#formtitle {
+  font-family: Verdana,Geneva,SansSerif;
+  font-size: 14pt;
+  font-weight: bold;
+  padding: 5px 0px 5px 0px;
+  color: #CAE1FF;
+  background-color: #06c;
+}
+
+#myformheader {
+  padding: 0px;
+  margin: 10px 0px 0px 0px;
+  vertical-align: bottom;
+}
+
+#mycolheaders img {
+  padding: 0px 0px 0px 3px;
+}
+
+#mytitle { 
+  padding: 3px 0px 5px 0px;
+
+  background-color: #06c;
+  color: #000;
+  font-family: Verdana,Geneva,SansSerif;
+  font-size: 14pt;
+  font-weight: bold;
+}
+
+.titlepos { 
+  color: #CAE1FF;
+  background-color: #06c;
+  padding: 0px 0px 0px 40px;
+}
+
+.stitle { 
+  padding: 0px 0px 0px 5px;
+}
+
+span.selectall {
+  margin-left: 8px;
+}
+
+#savedsearch {
+  font-family: Verdana,Geneva,SansSerif;
+  font-size: 14pt;
+  font-weight: bold;
+  padding: 0px 0px 5px 3px;
+  margin: 0px;
+  background-color:  #8B9BAB;
+}
+
+div.searchtable table {
+  width: 100%;
+  border-bottom: 2px solid #06c;
+  border-left: 2px solid #06c;
+  border-right: 2px solid #06c;
+}
+
+tr.database {
+  margin: 0px;
+  padding: 0px;
+  text-align: left;
+  vertical-align: bottom;
+  font-size: .7em;
+  font-weight: bold;
+  color: #06c;
+  background-color: #CAE1FF;
+}
+
+tr.database th { 
+  vertical-align: middle;
+  padding-left: 4px;
+}
+
+div.searchtable table tr td { 
+}
+
+tr.database th.dbname {
+  text-align: center;
+  padding: 8px 4px;
+}
+
+.mysearchhead { 
+  border-color: #808080;
+  padding: 0;
+  margin: 0;
+}
+
+.desttable { 
+  border-color: #808080;
+  padding: 0;
+  margin: 0;
+  width: 250px;
+}
+
+#formdiv { 
+  margin-left: 10px;
+}
+
+#formbuttondiv {
+  margin-top: .5em; 
+  text-align: right;
+}
+
+#formdiv tr td {
+  padding: 3px 5px 8px 5px;
+}
+
+.col1 { 
+  font-family: Verdana,Geneva,SansSerif;
+  font-size: 10pt;
+  font-weight: bold;
+  color: #06c;
+  text-align: left;
+  vertical-align: top;
+  width: 45%;
+}
+
+.col2 { 
+  font-family: Verdana,Geneva,SansSerif;
+  font-size: 10pt;
+}
+
+.col3 { 
+  width: 20px;
+  text-align: center;
+  vertical-align: top;
+}
+
+.buttons {
+  text-align: left;
+  border: 0;
+}
+
+.buttons input {
+  padding: 0px 4px 0px 0px;
+}
+
+.query, .age, .schedule {
+  font-size: 10pt;
+}
+
+span.querytext { 
+  margin-left: 40px;
+}
+
+.addemailaddress { 
+  font-family: Verdana,Geneva,SansSerif;
+  font-size: 10pt;
+  vertical-align: top;
+}
+
+.addemailaddress td {
+  vertical-align: top;
+}
+
+.small { 
+  font-size: 8pt;
+  font-weight: normal;
+}
+
+.oddrow {
+  background-color: #EEEEE0;
+}
+
+.evenrow { 
+  background-color: white;
+}
+
+.code {
+  font-family: Courier, Mononspace;
+  font-size: 10pt;
+}
+
+.emailname { 
+  font-weight: bold;
+ }
+
+/* This is an item that expands to fill the entire
+   view except for the navbar */
+.mainview {
+  margin: 1em;
+}
+
+
+.button {
+  font-family: Verdana, Arial, Sans-serif;
+  white-space: nowrap;
+  font-size: .8em;
+  background-color: #EEEEE0;
+  padding: .2em;
+  border: 2px solid #06c;
+  border-style: double;
+  font-weight: bold;
+  padding: 0em 1em;
+ }
+
+.button:hover {
+  cursor: pointer;
+  color: #00f;
+  background-color: #cae1ff;
+}
+
+div#details {
+  margin: 0em;
+  border-style: solid;
+  border-color:  #06c;
+  border-width: 0px 2px 2px 2px;
+  padding: 0px;
+}
+
+div#details dl {
+  margin: 0;
+  padding: 1em;
+  background-color: #eeeee0;
+  background-color: #cae1ff;
+}
+
+div#details  dl dt {
+  font-style: italic;
+  font-weight: bold;
+  color: #06c;
+}
+
+div#details dl dd {
+  font-family: courier, monospace;
+  margin-bottom: 0.25em;
+  color: black;
+}
+
+div#whats_new_summary {
+}

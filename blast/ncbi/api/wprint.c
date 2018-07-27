@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/15/95
 *
-* $Revision: 6.71 $
+* $Revision: 6.72 $
 *
 * File Description: 
 *
@@ -45,6 +45,10 @@
 /*************************************
 *
  * $Log: wprint.c,v $
+ * Revision 6.72  2005/01/12 22:53:04  vakatov
+ * /htbin-post/Taxonomy/wgetorg -> /Taxonomy/Browser/wwwtax.cgi
+ * /htbin-post/Taxonomy/wprintgc -> /Taxonomy/Utils/wprintgc.cgi
+ *
  * Revision 6.71  2002/08/08 14:00:37  kans
  * added FANTOM_DB hyperlink
  *
@@ -442,8 +446,8 @@ static Char link_fantom[MAX_WWWBUF];
 #define DEF_LINK_SEQ  "http://www.ncbi.nlm.nih.gov/entrez/viewer.fcgi?"
 #define DEF_LINK_MUID  "/entrez/utils/qmap.cgi?"
 
-#define DEF_LINK_TAX "/htbin-post/Taxonomy/wgetorg?"
-#define DEF_LINK_CODE "/htbin-post/Taxonomy/wprintgc?"
+#define DEF_LINK_TAX  "/Taxonomy/Browser/wwwtax.cgi?"
+#define DEF_LINK_CODE "/Taxonomy/Utils/wprintgc.cgi?"
 
 #define DEF_LINK_COG "http://www.ncbi.nlm.nih.gov/cgi-bin/COG/palox?"
 #define DEF_LINK_MGD "http://www.informatics.jax.org/searches/accession_report.cgi?id=MGI:"

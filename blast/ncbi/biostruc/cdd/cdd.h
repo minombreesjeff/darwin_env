@@ -9,7 +9,7 @@
 #include <asn.h>
 #endif
 
-static char * asnfilename = "cdd.h21";
+static char * asnfilename = "cdd.h24";
 static AsnValxNode avnx[86] = {
     {20,"unassigned" ,0,0.0,&avnx[1] } ,
     {20,"finished-ok" ,1,0.0,&avnx[2] } ,
@@ -98,7 +98,7 @@ static AsnValxNode avnx[86] = {
     {20,"server-generated" ,2,0.0,&avnx[85] } ,
     {20,"other" ,255,0.0,NULL } };
 
-static AsnType atx[218] = {
+static AsnType atx[220] = {
   {401, "Cdd-id" ,1,0,0,0,0,1,0,0,NULL,&atx[11],&atx[1],0,&atx[12]} ,
   {0, "uid" ,128,0,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[3]} ,
   {302, "INTEGER" ,0,2,0,0,0,0,0,0,NULL,NULL,NULL,0,NULL} ,
@@ -234,7 +234,7 @@ static AsnType atx[218] = {
   {0, "parentid" ,128,1,0,0,0,0,0,0,NULL,&atx[0],NULL,0,&atx[133]} ,
   {0, "seqannot" ,128,2,0,1,0,0,0,0,NULL,&atx[56],NULL,0,NULL} ,
   {0, "scoreparams" ,128,22,0,1,0,0,0,0,NULL,&atx[135],NULL,0,&atx[136]} ,
-  {423, "Score-matrix-parameters" ,1,0,0,0,0,0,1,0,NULL,NULL,NULL,0,&atx[183]} ,
+  {423, "PssmWithParameters" ,1,0,0,0,0,0,1,0,NULL,NULL,NULL,0,&atx[183]} ,
   {0, "seqtree" ,128,23,0,1,0,0,0,0,NULL,&atx[137],NULL,0,NULL} ,
   {442, "Sequence-tree" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[138],0,&atx[140]} ,
   {0, "cdAccession" ,128,0,0,1,0,0,0,0,NULL,&atx[6],NULL,0,&atx[139]} ,
@@ -263,7 +263,7 @@ static AsnType atx[218] = {
   {0, "seqRange" ,128,0,0,0,0,0,0,0,NULL,&atx[62],NULL,0,&atx[162]} ,
   {0, "rowId" ,128,1,0,1,0,0,0,0,NULL,&atx[2],NULL,0,NULL} ,
   {0, "annotation" ,128,4,0,1,0,0,0,0,NULL,&atx[164],NULL,0,NULL} ,
-  {445, "Node-annotation" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[165],0,&atx[204]} ,
+  {445, "Node-annotation" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[165],0,&atx[206]} ,
   {0, "presentInChildCD" ,128,0,0,1,0,0,0,0,NULL,&atx[6],NULL,0,&atx[166]} ,
   {0, "note" ,128,1,0,1,0,0,0,0,NULL,&atx[6],NULL,0,NULL} ,
   {404, "Cdd-set" ,1,0,0,0,0,1,0,0,NULL,&atx[53],&atx[168],0,&atx[169]} ,
@@ -278,48 +278,50 @@ static AsnType atx[218] = {
   {0, "neighbors" ,128,6,0,1,0,0,0,0,NULL,&atx[12],NULL,0,NULL} ,
   {406, "Cdd-tree-set" ,1,0,0,0,0,1,0,0,NULL,&atx[14],&atx[178],0,&atx[179]} ,
   {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[169],NULL,0,NULL} ,
-  {407, "Cdd-pref-nodes" ,1,0,0,0,0,1,0,0,NULL,&atx[10],&atx[180],0,&atx[194]} ,
-  {0, "preferred-nodes" ,128,0,0,0,0,0,0,0,NULL,&atx[181],NULL,0,&atx[186]} ,
-  {425, "Cdd-org-ref-set" ,1,0,0,0,0,0,0,0,NULL,&atx[53],&atx[182],0,&atx[191]} ,
+  {407, "Cdd-pref-nodes" ,1,0,0,0,0,1,0,0,NULL,&atx[10],&atx[180],0,&atx[196]} ,
+  {0, "preferred-nodes" ,128,0,0,0,0,0,0,0,NULL,&atx[181],NULL,0,&atx[188]} ,
+  {425, "Cdd-org-ref-set" ,1,0,0,0,0,0,0,0,NULL,&atx[53],&atx[182],0,&atx[193]} ,
   {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[183],NULL,0,NULL} ,
   {424, "Cdd-org-ref" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[184],0,&atx[181]} ,
   {0, "reference" ,128,0,0,0,0,0,0,0,NULL,&atx[30],NULL,0,&atx[185]} ,
-  {0, "active" ,128,1,0,0,1,0,0,0,&avnx[69],&atx[150],NULL,0,NULL} ,
-  {0, "model-organisms" ,128,1,0,1,0,0,0,0,NULL,&atx[181],NULL,0,&atx[187]} ,
-  {0, "optional-nodes" ,128,2,0,1,0,0,0,0,NULL,&atx[181],NULL,0,&atx[188]} ,
-  {0, "description" ,128,3,0,1,0,0,0,0,NULL,&atx[189],NULL,0,NULL} ,
-  {427, "Cdd-pref-node-descr-set" ,1,0,0,0,0,0,0,0,NULL,&atx[53],&atx[190],0,&atx[4]} ,
-  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[191],NULL,0,NULL} ,
-  {426, "Cdd-pref-node-descr" ,1,0,0,0,0,0,0,0,NULL,&atx[11],&atx[192],0,&atx[189]} ,
-  {0, "create-date" ,128,0,0,0,0,0,0,0,NULL,&atx[28],NULL,0,&atx[193]} ,
+  {0, "active" ,128,1,0,0,1,0,0,0,&avnx[69],&atx[150],NULL,0,&atx[186]} ,
+  {0, "parent-tax-id" ,128,2,0,1,0,0,0,0,NULL,&atx[2],NULL,0,&atx[187]} ,
+  {0, "rank" ,128,3,0,1,0,0,0,0,NULL,&atx[6],NULL,0,NULL} ,
+  {0, "model-organisms" ,128,1,0,1,0,0,0,0,NULL,&atx[181],NULL,0,&atx[189]} ,
+  {0, "optional-nodes" ,128,2,0,1,0,0,0,0,NULL,&atx[181],NULL,0,&atx[190]} ,
+  {0, "description" ,128,3,0,1,0,0,0,0,NULL,&atx[191],NULL,0,NULL} ,
+  {427, "Cdd-pref-node-descr-set" ,1,0,0,0,0,0,0,0,NULL,&atx[53],&atx[192],0,&atx[4]} ,
+  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[193],NULL,0,NULL} ,
+  {426, "Cdd-pref-node-descr" ,1,0,0,0,0,0,0,0,NULL,&atx[11],&atx[194],0,&atx[191]} ,
+  {0, "create-date" ,128,0,0,0,0,0,0,0,NULL,&atx[28],NULL,0,&atx[195]} ,
   {0, "description" ,128,1,0,0,0,0,0,0,NULL,&atx[6],NULL,0,NULL} ,
-  {408, "Cdd-Project" ,1,0,0,0,0,1,0,0,NULL,&atx[10],&atx[195],0,&atx[28]} ,
-  {0, "cds" ,128,0,0,0,0,0,0,0,NULL,&atx[14],&atx[196],0,&atx[197]} ,
+  {408, "Cdd-Project" ,1,0,0,0,0,1,0,0,NULL,&atx[10],&atx[197],0,&atx[28]} ,
+  {0, "cds" ,128,0,0,0,0,0,0,0,NULL,&atx[14],&atx[198],0,&atx[199]} ,
   {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[15],NULL,0,NULL} ,
-  {0, "cdcolor" ,128,1,0,0,0,0,0,0,NULL,&atx[14],&atx[198],0,&atx[199]} ,
+  {0, "cdcolor" ,128,1,0,0,0,0,0,0,NULL,&atx[14],&atx[200],0,&atx[201]} ,
   {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[2],NULL,0,NULL} ,
-  {0, "viewers" ,128,2,0,0,0,0,0,0,NULL,&atx[14],&atx[200],0,&atx[211]} ,
-  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[201],NULL,0,NULL} ,
-  {447, "Cdd-Viewer" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[202],0,&atx[214]} ,
-  {0, "ctrl" ,128,0,0,0,0,0,0,0,NULL,&atx[2],&avnx[70],0,&atx[203]} ,
-  {0, "rect" ,128,1,0,1,0,0,0,0,NULL,&atx[204],NULL,0,&atx[209]} ,
-  {446, "Cdd-Viewer-Rect" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[205],0,&atx[201]} ,
-  {0, "top" ,128,0,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[206]} ,
-  {0, "left" ,128,1,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[207]} ,
-  {0, "width" ,128,2,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[208]} ,
+  {0, "viewers" ,128,2,0,0,0,0,0,0,NULL,&atx[14],&atx[202],0,&atx[213]} ,
+  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[203],NULL,0,NULL} ,
+  {447, "Cdd-Viewer" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[204],0,&atx[216]} ,
+  {0, "ctrl" ,128,0,0,0,0,0,0,0,NULL,&atx[2],&avnx[70],0,&atx[205]} ,
+  {0, "rect" ,128,1,0,1,0,0,0,0,NULL,&atx[206],NULL,0,&atx[211]} ,
+  {446, "Cdd-Viewer-Rect" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[207],0,&atx[203]} ,
+  {0, "top" ,128,0,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[208]} ,
+  {0, "left" ,128,1,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[209]} ,
+  {0, "width" ,128,2,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[210]} ,
   {0, "height" ,128,3,0,0,0,0,0,0,NULL,&atx[2],NULL,0,NULL} ,
-  {0, "accessions" ,128,2,0,0,0,0,0,0,NULL,&atx[14],&atx[210],0,NULL} ,
+  {0, "accessions" ,128,2,0,0,0,0,0,0,NULL,&atx[14],&atx[212],0,NULL} ,
   {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[6],NULL,0,NULL} ,
-  {0, "log" ,128,3,0,0,0,0,0,0,NULL,&atx[6],NULL,0,&atx[212]} ,
-  {0, "scripts" ,128,4,0,1,0,0,0,0,NULL,&atx[14],&atx[213],0,NULL} ,
-  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[214],NULL,0,NULL} ,
-  {448, "Cdd-Script" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[215],0,NULL} ,
-  {0, "type" ,128,0,0,1,0,0,0,0,NULL,&atx[2],&avnx[82],0,&atx[216]} ,
-  {0, "name" ,128,1,0,1,0,0,0,0,NULL,&atx[6],NULL,0,&atx[217]} ,
+  {0, "log" ,128,3,0,0,0,0,0,0,NULL,&atx[6],NULL,0,&atx[214]} ,
+  {0, "scripts" ,128,4,0,1,0,0,0,0,NULL,&atx[14],&atx[215],0,NULL} ,
+  {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[216],NULL,0,NULL} ,
+  {448, "Cdd-Script" ,1,0,0,0,0,0,0,0,NULL,&atx[10],&atx[217],0,NULL} ,
+  {0, "type" ,128,0,0,1,0,0,0,0,NULL,&atx[2],&avnx[82],0,&atx[218]} ,
+  {0, "name" ,128,1,0,1,0,0,0,0,NULL,&atx[6],NULL,0,&atx[219]} ,
   {0, "commands" ,128,2,0,0,0,0,0,0,NULL,&atx[6],NULL,0,NULL} };
 
 static AsnModule ampx[1] = {
-  { "NCBI-Cdd" , "cdd.h21",&atx[0],NULL,NULL,0,0} };
+  { "NCBI-Cdd" , "cdd.h24",&atx[0],NULL,NULL,0,0} };
 
 static AsnValxNodePtr avn = avnx;
 static AsnTypePtr at = atx;
@@ -388,34 +390,36 @@ static AsnModulePtr amp = ampx;
 
 #define CDD_PREF_NODES &at[179]
 #define CDD_PREF_NODES_preferred_nodes &at[180]
-#define CDD_PREF_NODES_model_organisms &at[186]
-#define CDD_PREF_NODES_optional_nodes &at[187]
-#define CDD_PREF_NODES_description &at[188]
+#define CDD_PREF_NODES_model_organisms &at[188]
+#define CDD_PREF_NODES_optional_nodes &at[189]
+#define CDD_PREF_NODES_description &at[190]
 
-#define CDD_PROJECT &at[194]
-#define CDD_PROJECT_cds &at[195]
-#define CDD_PROJECT_cds_E &at[196]
-#define CDD_PROJECT_cdcolor &at[197]
-#define CDD_PROJECT_cdcolor_E &at[198]
-#define CDD_PROJECT_viewers &at[199]
-#define CDD_PROJECT_viewers_E &at[200]
-#define CDD_PROJECT_log &at[211]
-#define CDD_PROJECT_scripts &at[212]
-#define CDD_PROJECT_scripts_E &at[213]
+#define CDD_PROJECT &at[196]
+#define CDD_PROJECT_cds &at[197]
+#define CDD_PROJECT_cds_E &at[198]
+#define CDD_PROJECT_cdcolor &at[199]
+#define CDD_PROJECT_cdcolor_E &at[200]
+#define CDD_PROJECT_viewers &at[201]
+#define CDD_PROJECT_viewers_E &at[202]
+#define CDD_PROJECT_log &at[213]
+#define CDD_PROJECT_scripts &at[214]
+#define CDD_PROJECT_scripts_E &at[215]
 
 #define CDD_ORG_REF &at[183]
 #define CDD_ORG_REF_reference &at[184]
 #define CDD_ORG_REF_active &at[185]
+#define CDD_ORG_REF_parent_tax_id &at[186]
+#define CDD_ORG_REF_rank &at[187]
 
 #define CDD_ORG_REF_SET &at[181]
 #define CDD_ORG_REF_SET_E &at[182]
 
-#define CDD_PREF_NODE_DESCR &at[191]
-#define CDD_PREF_NODE_DESCR_create_date &at[192]
-#define CDD_PREF_NODE_DESCR_description &at[193]
+#define CDD_PREF_NODE_DESCR &at[193]
+#define CDD_PREF_NODE_DESCR_create_date &at[194]
+#define CDD_PREF_NODE_DESCR_description &at[195]
 
-#define CDD_PREF_NODE_DESCR_SET &at[189]
-#define CDD_PREF_NODE_DESCR_SET_E &at[190]
+#define CDD_PREF_NODE_DESCR_SET &at[191]
+#define CDD_PREF_NODE_DESCR_SET_E &at[192]
 
 #define GLOBAL_ID &at[4]
 #define GLOBAL_ID_accession &at[5]
@@ -543,19 +547,19 @@ static AsnModulePtr amp = ampx;
 #define NODE_ANNOTATION_presentInChildCD &at[165]
 #define NODE_ANNOTATION_note &at[166]
 
-#define CDD_VIEWER_RECT &at[204]
-#define CDD_VIEWER_RECT_top &at[205]
-#define CDD_VIEWER_RECT_left &at[206]
-#define CDD_VIEWER_RECT_width &at[207]
-#define CDD_VIEWER_RECT_height &at[208]
+#define CDD_VIEWER_RECT &at[206]
+#define CDD_VIEWER_RECT_top &at[207]
+#define CDD_VIEWER_RECT_left &at[208]
+#define CDD_VIEWER_RECT_width &at[209]
+#define CDD_VIEWER_RECT_height &at[210]
 
-#define CDD_VIEWER &at[201]
-#define CDD_VIEWER_ctrl &at[202]
-#define CDD_VIEWER_rect &at[203]
-#define CDD_VIEWER_accessions &at[209]
-#define CDD_VIEWER_accessions_E &at[210]
+#define CDD_VIEWER &at[203]
+#define CDD_VIEWER_ctrl &at[204]
+#define CDD_VIEWER_rect &at[205]
+#define CDD_VIEWER_accessions &at[211]
+#define CDD_VIEWER_accessions_E &at[212]
 
-#define CDD_SCRIPT &at[214]
-#define CDD_SCRIPT_type &at[215]
-#define CDD_SCRIPT_name &at[216]
-#define CDD_SCRIPT_commands &at[217]
+#define CDD_SCRIPT &at[216]
+#define CDD_SCRIPT_type &at[217]
+#define CDD_SCRIPT_name &at[218]
+#define CDD_SCRIPT_commands &at[219]

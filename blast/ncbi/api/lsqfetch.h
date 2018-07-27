@@ -29,7 +29,7 @@
 *
 * Version Creation Date: 5/25/95
 *
-* $Revision: 6.4 $
+* $Revision: 6.6 $
 *
 * File Description:  Utilities for fetching local sequences
 *
@@ -40,6 +40,12 @@
 *
 *
 * $Log: lsqfetch.h,v $
+* Revision 6.6  2004/08/03 17:51:49  kans
+* added AsnIndexedLibFetch enable and disable functions
+*
+* Revision 6.5  2004/08/02 19:10:14  kans
+* added CreateAsnIndex for indexing Bioseq-set ftp release files
+*
 * Revision 6.4  2003/11/12 23:38:49  kans
 * changing AltIndexedFastaLibFetchEnable prototype, implementation not yet finished
 *
@@ -265,6 +271,16 @@ NLM_EXTERN void AltIndexedFastaLibFetchDisable (void);
 /* common function for creating indexes of fasta library files */
 
 NLM_EXTERN void CreateFastaIndex (CharPtr file);
+
+/* indexed ASN.1 lib functions */
+
+NLM_EXTERN Boolean AsnIndexedLibFetchEnable (CharPtr path, Boolean binary);
+NLM_EXTERN void AsnIndexedLibFetchDisable (void);
+
+
+/* common function for creating indexes of ASN.1 Bioseq-set ftp release files */
+
+NLM_EXTERN void CreateAsnIndex (CharPtr file, Boolean binary);
 
 
 #ifdef __cplusplus

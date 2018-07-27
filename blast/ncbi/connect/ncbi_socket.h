@@ -1,7 +1,7 @@
 #ifndef CONNECT___NCBI_SOCKET__H
 #define CONNECT___NCBI_SOCKET__H
 
-/*  $Id: ncbi_socket.h,v 6.49 2004/03/23 02:26:55 lavr Exp $
+/*  $Id: ncbi_socket.h,v 6.54 2005/01/05 17:37:20 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -64,6 +64,7 @@
  *  SOCK_GetReadTimeout
  *  SOCK_GetWriteTimeout
  *  SOCK_Read (including "peek" and "persistent read")
+ *  SOCK_ReadLine
  *  SOCK_PushBack
  *  SOCK_Status
  *  SOCK_Write
@@ -77,6 +78,7 @@
  *  SOCK_SetInterruptOnSignal
  *  SOCK_SetReuseAddressAPI
  *  SOCK_SetReuseAddress
+ *  SOCK_DisableOSSendDelay
  *
  * Datagram Socket:
  *
@@ -94,6 +96,7 @@
  *  SOCK_IsDatagram
  *  SOCK_IsClientSide
  *  SOCK_IsServerSide
+ *  SOCK_IsUNIX
  *
  * Data logging:
  *
@@ -299,6 +302,14 @@ extern NCBI_XCONNECT_EXPORT EIO_Status SOCK_ShutdownAPI(void);
  *  LISTENING SOCKET
  */
 
+typedef enum {
+    fLSCE_LogOff     = eOff,      /* logging is inherited in Accept()ed SOCKs*/
+    fLSCE_LogOn      = eOn,       /*                    -"-                  */
+    fLSCE_LogDefault = eDefault,  /*                    -"-                  */
+    fLSCE_BindAny    = 0,         /* bind to 0.0.0.0, default                */
+    fLSCE_BindLocal  = 0x10       /* bind to 127.0.0.1 only                  */
+} FLSCE_Flags;
+typedef unsigned int TLSCE_Flags;
 
 /* [SERVER-side]  Create and initialize the server-side(listening) socket
  * (socket() + bind() + listen())
@@ -308,7 +319,7 @@ extern NCBI_XCONNECT_EXPORT EIO_Status LSOCK_CreateEx
 (unsigned short port,    /* [in]  the port to listen at                  */
  unsigned short backlog, /* [in]  maximal # of pending connections       */
  LSOCK*         lsock,   /* [out] handle of the created listening socket */
- ESwitch        log      /* [in]  whether to log activity (inherited)    */
+ TLSCE_Flags    flags    /* [in]  special modifiers                      */
  );
 
 extern NCBI_XCONNECT_EXPORT EIO_Status LSOCK_Create
@@ -417,6 +428,8 @@ extern NCBI_XCONNECT_EXPORT EIO_Status SOCK_CreateOnTopEx
  * NOTE2: the call is applicable to stream [not datagram] sockets only.
  * NOTE3: "timeout"==NULL is infinite; "timeout"=={0,0} causes no wait for
  *        connection to be established and to return immediately.
+ * NOTE4: UNIX sockets can only be reconnected to the same file thus both
+ *        host and port have to be passed as 0s.
  */
 extern NCBI_XCONNECT_EXPORT EIO_Status SOCK_Reconnect
 (SOCK            sock,    /* [in] handle of the socket to reconnect      */
@@ -616,6 +629,29 @@ extern NCBI_XCONNECT_EXPORT EIO_Status SOCK_Read
  );
 
 
+/*
+ * Read a line from SOCK.  A line is terminated by either '\n' or '\0'
+ * with optional preceding '\r'.  Returned result is always '\0'-
+ * terminated with preceding '\r' (if any) stripped. *n_read (if 'n_read'
+ * passed non-NULL) contains the numbed of characters written into
+ * 'buf' (not counting the terminating '\0').  If 'buf', whose size is
+ * specified via 'size' parameter, is not big enough to contain the
+ * line, all 'size' bytes will be filled, with *n_read == size upon
+ * return.  Note that there will be no terminating '\0' in this
+ * (and the only) case, which the caller can easily distinguish.
+ * Return code eIO_Success upon successful completion, other - upon
+ * an error.  Note that *n_read must be analyzed prior to return code,
+ * because the buffer could have received some contents before
+ * the indicated error occurred (especially when connection closed).
+ */
+extern NCBI_XCONNECT_EXPORT EIO_Status SOCK_ReadLine
+(SOCK           sock,
+ char*          buf,    /* [out] data buffer to read to          */
+ size_t         size,   /* [in]  max # of bytes to read to "buf" */
+ size_t*        n_read  /* [out] # of bytes read  (can be NULL)  */
+ );
+
+
 /* Push the specified data back to the socket input queue (in the socket's
  * internal read buffer). These can be any data, not necessarily the data
  * previously read from the socket.
@@ -744,6 +780,21 @@ extern NCBI_XCONNECT_EXPORT ESwitch SOCK_SetReadOnWriteAPI
 extern NCBI_XCONNECT_EXPORT ESwitch SOCK_SetReadOnWrite
 (SOCK    sock,
  ESwitch on_off
+ );
+
+
+/* Control OS-defined send strategy by disabling/enabling TCP
+ * Nagle algorithm that packs multiple requests into a single
+ * frame and thus transferring data in fewer transactions,
+ * miminizing the network traffic and bursting the throughput.
+ * Some applications, however, may find it useful to disable this
+ * default behavior for the sake of their performance increase
+ * (like in case of short transactions otherwise held by the system
+ * to be possibly coalesced into larger chunks).
+ */
+extern NCBI_XCONNECT_EXPORT void SOCK_DisableOSSendDelay
+(SOCK        sock,
+ int/*bool*/ on_off  /* NB: use true to disable; false to enable */
  );
 
 
@@ -877,6 +928,12 @@ extern NCBI_XCONNECT_EXPORT int/*bool*/ SOCK_IsClientSide(SOCK sock);
 extern NCBI_XCONNECT_EXPORT int/*bool*/ SOCK_IsServerSide(SOCK sock);
 
 
+/* Return non-zero value if socket "sock" was created by LSOCK_Accept().
+ * Return zero otherwise.
+ */
+extern NCBI_XCONNECT_EXPORT int/*bool*/ SOCK_IsUNIX(SOCK sock);
+
+
 
 /******************************************************************************
  *  AUXILIARY network-specific functions (added for the portability reasons)
@@ -958,6 +1015,21 @@ extern NCBI_XCONNECT_EXPORT char* SOCK_gethostbyaddr
 /*
  * ---------------------------------------------------------------------------
  * $Log: ncbi_socket.h,v $
+ * Revision 6.54  2005/01/05 17:37:20  lavr
+ * SOCK_ReadLine() documented in details
+ *
+ * Revision 6.53  2004/11/09 21:13:00  lavr
+ * +ReadLine
+ *
+ * Revision 6.52  2004/10/26 14:46:06  lavr
+ * <ncbi_socket.h> -> <ncbi_socket_unix.h>
+ *
+ * Revision 6.51  2004/10/19 18:05:07  lavr
+ * +SOCK_DisableOSSendDelay
+ *
+ * Revision 6.50  2004/07/23 19:04:38  lavr
+ * LSOCK_CreateEx(): last parameter to become flags (bitmask)
+ *
  * Revision 6.49  2004/03/23 02:26:55  lavr
  * Typo fix
  *

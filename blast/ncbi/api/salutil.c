@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/27/96
 *
-* $Revision: 6.7 $
+* $Revision: 6.9 $
 *
 * File Description: 
 *
@@ -67,28 +67,6 @@ static Uint2 OBJ_ (Uint2 feattype)
 {
   if ( feattype == FEATDEF_BAD ) return OBJ_BIOSEQ;
   return OBJ_SEQFEAT;
-}
-
-static void salutil_seqalign_write (SeqAlignPtr salp, CharPtr name)
-{
-  SeqAnnotPtr annot;
-  AsnIoPtr aip;
-
-  if (salp!=NULL)
-  {
-        annot = SeqAnnotNew();
-        if (annot==NULL)
-           return;
-        annot->type = 2;
-        annot->data = salp;
-
-        aip = AsnIoOpen(name, "w");
-        if(aip !=NULL)
-        {
-                        SeqAnnotAsnWrite(annot, aip, NULL);
-                        AsnIoClose(aip);
-        }
-  }
 }
 
 /****************************************************
@@ -674,7 +652,6 @@ NLM_EXTERN SeqEntryPtr StringToSeqEntry (CharPtr str, SeqIdPtr sip, Int4 length_
          str++;
   }
   if ( bsp->length == 0 ) {
-         BSFree (bs);
          BioseqFree (bsp);
          ValNodeFree (sep);
          return NULL;
@@ -1056,24 +1033,6 @@ NLM_EXTERN CharPtr matching_seqid (SeqIdPtr sip1)
   return NULL;
 }
 
-NLM_EXTERN CharPtr check_seqid (Uint2 choice, CharPtr ptr)
-{
-  CharPtr      str;
-  CharPtr      tmp;
-
-  if (choice == SEQID_GI) {
-     if (*ptr != '\0' && isdigit(*ptr)) {
-        str = StringSave (ptr);
-        tmp = ptr;
-        tmp = StringMove (tmp, "gi|"); 
-        tmp = StringMove (tmp, str); 
-        *tmp = '\0';
-        MemFree (str);
-     }
-  }
-  return ptr;
-}
-
 NLM_EXTERN SeqIdPtr ValNodeSeqIdListDup (ValNodePtr id_list)
 {
   ValNodePtr   vnp=NULL;
@@ -1131,6 +1090,33 @@ typedef struct ccid {
   BioseqPtr   bsp;
 } CcId, PNTR CcIdPtr;
 
+typedef struct replaceseqid
+{
+  SeqIdPtr old_id;
+  SeqIdPtr new_id;  
+} ReplaceSeqIdData, PNTR ReplaceSeqIdPtr;
+
+static void ReplaceSeqIdCallback (SeqFeatPtr sfp, Pointer userdata)
+{
+  ReplaceSeqIdPtr rsip;
+  SeqIdPtr        current_sip;
+  
+  if (sfp == NULL || userdata == NULL)
+  {
+    return;
+  }
+  rsip = (ReplaceSeqIdPtr) userdata;
+  if (rsip->old_id == NULL || rsip->new_id == NULL)
+  {
+    return;
+  }
+  current_sip = SeqLocId (sfp->location);
+  if (SeqIdIn (current_sip, rsip->old_id))
+  {
+    sfp->location = SeqLocReplaceID (sfp->location, rsip->new_id);
+  }
+}
+
 static void SeqAnnotReplaceID (SeqAnnotPtr sap, SeqIdPtr newsip)
 {
   SeqFeatPtr  sfp;
@@ -1150,13 +1136,24 @@ static void SeqAnnotReplaceID (SeqAnnotPtr sap, SeqIdPtr newsip)
 
 NLM_EXTERN BioseqPtr BioseqReplaceID (BioseqPtr bsp, SeqIdPtr newsip)
 {
-  if (bsp!=NULL)
+  Uint2            entityID;
+  SeqEntryPtr      sep;
+  ReplaceSeqIdData rsid;
+  
+  if (bsp == NULL || bsp->id == NULL || newsip == NULL) 
   {
-     SeqIdFree (bsp->id);
-     bsp->id = SeqIdDup(newsip);
-     SeqAnnotReplaceID (bsp->annot, newsip);
-     SeqMgrReplaceInBioseqIndex (bsp);
+    return bsp;
   }
+
+  entityID = ObjMgrGetEntityIDForPointer (bsp);  
+  sep = GetTopSeqEntryForEntityID (entityID);
+  rsid.old_id = bsp->id;
+  rsid.new_id = newsip;
+  
+  VisitFeaturesInSep (sep, &rsid, ReplaceSeqIdCallback);
+  SeqIdFree (bsp->id);
+  bsp->id = SeqIdDup (newsip);
+  SeqMgrReplaceInBioseqIndex (bsp);
   return bsp;
 }
 
@@ -1428,7 +1425,6 @@ NLM_EXTERN ValNodePtr SeqEntryToSeqLoc (SeqEntryPtr sep, Int2 *n, Uint1 bsp_mol)
 {
   CcId3              cc;
   ValNodePtr         vnp = NULL;
-  SeqAlignPtr        salp = NULL;
   Int2               j=0;
 
   cc.vnp=NULL;
@@ -2326,7 +2322,6 @@ NLM_EXTERN Int2 checkOMss_for_itemtype (Uint2 itemtype)
 NLM_EXTERN SelStructPtr getOMselect_for_itemtype (Uint2 itemtype)
 {
   SelStructPtr ssp = NULL;
-  Int2         nselect = 0;
 
   ssp = ObjMgrGetSelected ();
   for (; ssp != NULL; ssp = ssp->next) 
@@ -2384,8 +2379,13 @@ NLM_EXTERN Int2 checkCDSselect_forprotein (ValNodePtr seqfeathead, ValNodePtr fe
      {
         feat = get_feat_fromid (seqfeathead, FEATDEF_CDS, ssp->entityID, ssp->itemID, -1, NULL);
         if (feat != NULL)
-           if (with_prot && feat->data != NULL) nselect++;
-           else if (!with_prot && feat->data == NULL) nselect++;
+        {
+           if (with_prot && feat->data != NULL) {
+               nselect++;
+           } else if (!with_prot && feat->data == NULL) {
+               nselect++;
+           }
+        }
      }
      else if ( ssp->itemtype == OBJ_VIRT ) 
      {

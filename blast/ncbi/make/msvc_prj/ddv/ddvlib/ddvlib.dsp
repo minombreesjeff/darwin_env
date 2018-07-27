@@ -26,9 +26,6 @@ CFG=ddvlib - Win32 DebugDLL
 # PROP Scc_LocalPath ""
 CPP=cl.exe
 RSC=rc.exe
-
-!IF  "$(CFG)" == "ddvlib - Win32 DebugDLL"
-
 # PROP BASE Use_MFC 0
 # PROP BASE Use_Debug_Libraries 1
 # PROP BASE Output_Dir "DebugDLL"
@@ -39,9 +36,9 @@ RSC=rc.exe
 # PROP Output_Dir "DebugDLL"
 # PROP Intermediate_Dir "DebugDLL"
 # PROP Target_Dir ""
-# ADD BASE CPP /nologo /MDd /W3 /Gm /GX /Z7 /Od /D "WIN32" /D "_DEBUG" /D "_MBCS" /D "_LIB" /YX /FD /GZ /c
+# ADD BASE CPP /nologo /MDd /W3 /GX /Z7 /Od /D "WIN32" /D "_DEBUG" /D "_MBCS" /D "_LIB" /YX /FD /GZ /c
 # SUBTRACT BASE CPP /Fr
-# ADD CPP /nologo /MDd /W3 /Gm /GR /Z7 /Od /I "..\..\..\.." /I "..\..\..\..\ddv" /I "..\..\..\..\corelib" /I "..\..\..\..\vibrant" /I "..\..\..\..\desktop" /I "..\..\..\..\tools" /I "..\..\..\..\biostruc" /I "..\..\..\..\cdromlib" /I "..\..\..\..\api" /I "..\..\..\..\asnlib" /I "..\..\..\..\object" /D "WIN32" /D "_DEBUG" /YX /FD /GZ /c
+# ADD CPP /nologo /MDd /W3 /GR /Z7 /Od /I "..\..\..\.." /I "..\..\..\..\ddv" /I "..\..\..\..\corelib" /I "..\..\..\..\vibrant" /I "..\..\..\..\desktop" /I "..\..\..\..\tools" /I "..\..\..\..\biostruc" /I "..\..\..\..\cdromlib" /I "..\..\..\..\api" /I "..\..\..\..\access" /I "..\..\..\..\asnlib" /I "..\..\..\..\object" /D "WIN32" /D "_DEBUG" /YX /FD /GZ /c
 # ADD BASE RSC /l 0x409 /d "_DEBUG"
 # ADD RSC /l 0x409 /d "_DEBUG"
 BSC32=bscmake.exe
@@ -50,9 +47,6 @@ BSC32=bscmake.exe
 LIB32=link.exe -lib
 # ADD BASE LIB32 /nologo
 # ADD LIB32 /nologo
-
-!ENDIF 
-
 # Begin Target
 
 # Name "ddvlib - Win32 DebugDLL"

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   6/4/91
 *
-* $Revision: 6.25 $
+* $Revision: 6.26 $
 *
 * File Description:
 *   	portable memory handlers for Mac, PC, Unix
@@ -37,6 +37,9 @@
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: ncbimem.c,v $
+* Revision 6.26  2004/09/01 21:21:54  kans
+* if Windows but not DLL, handle functions now implemented with direct pointer
+*
 * Revision 6.25  2003/08/11 19:43:27  rsmith
 * Memory Handle functions apply to Mac OS Darwin (OSX) not just to OS_MAC (OS9)
 *
@@ -549,7 +552,11 @@ NLM_EXTERN Nlm_Handle LIBCALL  Nlm_HandGet (size_t size, Nlm_Boolean clear_out)
 #endif
 
 #ifdef OS_MSWIN
+#ifdef _DLL
     hnd = (Nlm_Handle) GlobalAlloc (GMEM_MOVEABLE, size);
+#else
+    hnd = (Nlm_Handle) malloc (size);
+#endif
 #endif
 
 #ifdef MSC_VIRT
@@ -620,7 +627,11 @@ NLM_EXTERN Nlm_Handle LIBCALL  Nlm_HandMore (Nlm_Handle hnd, size_t size)
 #endif
 
 #ifdef OS_MSWIN
-    hnd2 = (Nlm_Handle) GlobalReAlloc ((HANDLE)hnd, size, GHND);
+#ifdef _DLL
+    hnd2 = (Nlm_Handle) GlobalReAlloc ((HANDLE) hnd, size, GHND);
+#else
+    hnd2 = (Nlm_Handle) realloc (hnd, size);
+#endif
 #endif
 
 #ifdef MSC_VIRT
@@ -653,7 +664,11 @@ NLM_EXTERN Nlm_Handle LIBCALL  Nlm_HandFree (Nlm_Handle hnd)
 #endif
 
 #ifdef OS_MSWIN
+#ifdef _DLL
         GlobalFree ((HANDLE) hnd);
+#else
+        free (hnd);
+#endif
 #endif
 
 #ifdef MSC_VIRT
@@ -691,7 +706,11 @@ NLM_EXTERN Nlm_VoidPtr LIBCALL  Nlm_HandLock (Nlm_Handle hnd)
 #endif
 
 #ifdef OS_MSWIN
+#ifdef _DLL
     ptr = GlobalLock ((HANDLE) hnd);
+#else
+    ptr = hnd;
+#endif
 #endif
 
 #ifdef MSC_VIRT
@@ -721,7 +740,11 @@ NLM_EXTERN Nlm_VoidPtr LIBCALL  Nlm_HandUnlock (Nlm_Handle hnd)
 #endif
 
 #ifdef OS_MSWIN
+#ifdef _DLL
         GlobalUnlock ((HANDLE) hnd);
+#else
+        /* nothing */
+#endif
 #endif
 
 #ifdef MSC_VIRT

@@ -1,4 +1,4 @@
-/*  $Id: ncbi_memory_connector.c,v 6.5 2003/05/31 05:15:39 lavr Exp $
+/*  $Id: ncbi_memory_connector.c,v 6.8 2005/04/20 18:15:59 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -35,6 +35,7 @@
 
 #include <connect/ncbi_buffer.h>
 #include <connect/ncbi_memory_connector.h>
+#include <assert.h>
 #include <stdlib.h>
 
 
@@ -45,10 +46,11 @@
 /* All internal data necessary to perform the (re)connect and i/o
  */
 typedef struct {
-    BUF        buf;
-    MT_LOCK    lock;
-    EIO_Status r_status;
-    EIO_Status w_status;
+    BUF         buf;
+    MT_LOCK     lock;
+    int/*bool*/ own_buf;
+    EIO_Status  r_status;
+    EIO_Status  w_status;
 } SMemoryConnector;
 
 
@@ -106,7 +108,6 @@ static EIO_Status s_VT_Open
  const STimeout* timeout)
 {
     SMemoryConnector* xxx = (SMemoryConnector*) connector->handle;
-    xxx->buf = 0;
     xxx->r_status = eIO_Success;
     xxx->w_status = eIO_Success;
     return eIO_Success;
@@ -201,7 +202,7 @@ static EIO_Status s_VT_Close
  const STimeout* timeout)
 {
     SMemoryConnector* xxx = (SMemoryConnector*) connector->handle;
-    BUF_Destroy(xxx->buf);
+    BUF_Erase(xxx->buf);
     return eIO_Success;
 }
 
@@ -230,7 +231,8 @@ static void s_Destroy
 (CONNECTOR connector)
 {
     SMemoryConnector* xxx = (SMemoryConnector*) connector->handle;
-
+    if (xxx->own_buf)
+        BUF_Destroy(xxx->buf);
     free(xxx);
     connector->handle = 0;
     free(connector);
@@ -243,11 +245,19 @@ static void s_Destroy
 
 extern CONNECTOR MEMORY_CreateConnector(MT_LOCK lock)
 {
+    return MEMORY_CreateConnectorEx(0, lock);
+}
+
+
+extern CONNECTOR MEMORY_CreateConnectorEx(BUF buf, MT_LOCK lock)
+{
     CONNECTOR         ccc = (SConnector*) malloc(sizeof(SConnector));
     SMemoryConnector* xxx = (SMemoryConnector*) malloc(sizeof(*xxx));
 
     /* initialize internal data structures */
+    xxx->buf     = buf;
     xxx->lock    = lock;
+    xxx->own_buf = buf ? 0/*false*/ : 1/*true*/;
 
     /* initialize connector data */
     ccc->handle  = xxx;
@@ -263,6 +273,15 @@ extern CONNECTOR MEMORY_CreateConnector(MT_LOCK lock)
 /*
  * --------------------------------------------------------------------------
  * $Log: ncbi_memory_connector.c,v $
+ * Revision 6.8  2005/04/20 18:15:59  lavr
+ * +<assert.h>
+ *
+ * Revision 6.7  2004/10/27 19:16:33  lavr
+ * Reuse MEMORY_CreateConnectorEx() in MEMORY_CreateConnector()
+ *
+ * Revision 6.6  2004/10/27 18:44:56  lavr
+ * +MEMORY_CreateConnectorEx() and not-owned buffer management
+ *
  * Revision 6.5  2003/05/31 05:15:39  lavr
  * Add ARGSUSED where args are meant to be unused, remove Flush
  *

@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: taxblast.c,v 6.21 2003/09/16 16:03:19 rsmith Exp $";
+static char const rcsid[] = "$Id: taxblast.c,v 6.23 2004/09/08 11:40:09 bollin Exp $";
 
-/* $Id: taxblast.c,v 6.21 2003/09/16 16:03:19 rsmith Exp $
+/* $Id: taxblast.c,v 6.23 2004/09/08 11:40:09 bollin Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -31,12 +31,18 @@ static char const rcsid[] = "$Id: taxblast.c,v 6.21 2003/09/16 16:03:19 rsmith E
 *
 * Initial Version Creation Date: 04/04/2000
 *
-* $Revision: 6.21 $
+* $Revision: 6.23 $
 *
 * File Description:
 *        Utilities and functions for Tax-Blast program
 *
 * $Log: taxblast.c,v $
+* Revision 6.23  2004/09/08 11:40:09  bollin
+* removed network/taxon1 dependencies
+*
+* Revision 6.22  2004/08/30 13:43:54  madden
+* Change from htbin-post URL
+*
 * Revision 6.21  2003/09/16 16:03:19  rsmith
 * guard include of unistd.h to only those platforms that need it and can use it.
 *
@@ -134,9 +140,7 @@ static char const rcsid[] = "$Id: taxblast.c,v 6.21 2003/09/16 16:03:19 rsmith E
 #endif
 #include <sequtil.h>
 #include <treemgr.h>
-#include <taxinc.h>
 #include <taxext.h>
-#include <taxutil.h>
 #include <txclient.h>
 #include <objseq.h>
 #include <objgen.h>
@@ -1275,14 +1279,16 @@ static void TXBHtmlReportInternal (FILE *outfile, HitObjPtr hitobj,
         for (i=0; i<depth; i++) 
             fputs (". ", outfile);
 
-        fprintf (outfile, "<a href=http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wgetorg?id=%d>%s</a>", lo_next->taxid, lo_next->name);
+        fprintf (outfile, "<a href=http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=%ld>%s</a>", 
+           (long) lo_next->taxid, lo_next->name);
         
         bname = GetBlastName (lo_next->taxid, tree);
 
         if (bname && bname->name) {
             for (i=taxa_name_len[depth]; 
                  i<=longname; i++) fputc (' ', outfile);
-            fprintf (outfile, "[<a href=http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wgetorg?id=%d>%s</a>]", bname->taxid, bname->name);
+            fprintf (outfile, "[<a href=http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=%ld>%s</a>]", 
+               (long) bname->taxid, bname->name);
 	}
         fputc ('\n', outfile);
 
@@ -1329,7 +1335,8 @@ static void TXBHtmlReportInternal (FILE *outfile, HitObjPtr hitobj,
             orgoff = org->data.intvalue;
             taxid = orgobj->taxids[orgoff];
             for (j=0; j<depth; j++) fputs(". ", outfile);
-            fprintf (outfile, "<A HREF=http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wgetorg?id=%d>%s</A>", taxid, orgobj->names[orgoff]);
+            fprintf (outfile, "<A HREF=http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=%ld>%s</A>", 
+               (long) taxid, orgobj->names[orgoff]);
             if (orgobj->cnames[orgoff]->count > 0) {
                 cname = (CharPtr)orgobj->cnames[orgoff]->names->data.ptrvalue;
                 StrNCpy (buffer, cname, BUFFLEN);
@@ -1360,7 +1367,8 @@ static void TXBHtmlReportInternal (FILE *outfile, HitObjPtr hitobj,
             else fprintf(outfile, "<a href=#%d>%d hits</a>", taxid, numhits);
             
             if (size_bnames[i]>0)
-                fprintf (outfile, " [<a href=http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wgetorg?id=%d>%s</a>]", orgobj->bnames[orgoff]->taxid, orgobj->bnames[orgoff]->name);
+                fprintf (outfile, " [<a href=http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=%ld>%s</a>]", 
+                    (long) orgobj->bnames[orgoff]->taxid, orgobj->bnames[orgoff]->name);
             else fputs(" []", outfile);
             for (j=size_bnames[i]; j<=max_bnames; j++) fputc(' ', outfile);
 
@@ -1417,7 +1425,8 @@ static void TXBHtmlReportInternal (FILE *outfile, HitObjPtr hitobj,
     numorgs = orgobj->numorgs;
     for (i=0; i<numorgs; i++) {
         fprintf (outfile, "<a name=%d></a>", orgobj->taxids[i]);
-        fprintf (outfile, "  <b><a href=http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wgetorg?id=%d>%s</a></b>", orgobj->taxids[i], orgobj->names[i]);
+        fprintf (outfile, "  <b><a href=http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=%ld>%s</a></b>", 
+               (long) orgobj->taxids[i], orgobj->names[i]);
         
         if (orgobj->cnames[i]->count > 0) {
             cname= (CharPtr) orgobj->cnames[i]->names->data.ptrvalue;
@@ -1428,7 +1437,8 @@ static void TXBHtmlReportInternal (FILE *outfile, HitObjPtr hitobj,
 	}
         
         if (orgobj->bnames[i] && orgobj->bnames[i]->name) {
-            fprintf (outfile, " [<a href=http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wgetorg?id=%d>%s</a>]", orgobj->bnames[i]->taxid, orgobj->bnames[i]->name);
+            fprintf (outfile, " [<a href=http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=%ld>%s</a>]", 
+                 (long) orgobj->bnames[i]->taxid, orgobj->bnames[i]->name);
 	}
         
         fprintf (outfile, " taxid %d", orgobj->taxids[i]);

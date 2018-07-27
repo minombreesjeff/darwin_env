@@ -1,4 +1,4 @@
-/*  $Id: ncbi_connutil.c,v 6.64 2004/04/06 19:25:56 lavr Exp $
+/*  $Id: ncbi_connutil.c,v 6.72 2005/04/20 15:50:30 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -43,7 +43,7 @@ static const char* s_GetValue(const char* service, const char* param,
                               char* value, size_t value_size,
                               const char* def_value)
 {
-    char        key[250];
+    char        key[256];
     char*       sec;
     const char* val;
 
@@ -105,7 +105,7 @@ extern SConnNetInfo* ConnNetInfo_Create(const char* service)
                                                 (service  &&  *service
                                                  ? strlen(service) + 1 : 0));
     /* aux. storage for the string-to-int conversions, etc. */
-    char   str[32];
+    char   str[256];
     int    val;
     double dbl;
     char*  s;
@@ -146,8 +146,7 @@ extern SConnNetInfo* ConnNetInfo_Create(const char* service)
         info->timeout = 0;
     } else {
         info->timeout = &info->tmo;
-        dbl = atof(str);
-        if (dbl <= 0.0)
+        if (!*str || (dbl = atof(str)) < 0.0)
             dbl = DEF_CONN_TIMEOUT;
         info->timeout->sec  = (unsigned int) dbl;
         info->timeout->usec = (unsigned int)
@@ -210,8 +209,19 @@ extern SConnNetInfo* ConnNetInfo_Create(const char* service)
                          strcasecmp(str, "true") == 0  ||
                          strcasecmp(str, "yes" ) == 0));
 
-    /* has no user header yet... */
-    info->http_user_header = 0;
+    /* user header (with optional '\r\n' added automagically) */
+    REG_VALUE(REG_CONN_HTTP_USER_HEADER, str, DEF_CONN_HTTP_USER_HEADER);
+    if (*str) {
+        size_t len = strlen(str);
+        if (str[len - 1] != '\n'  &&  len < sizeof(str) - 2) {
+            str[len++] = '\r';
+            str[len++] = '\n';
+            str[len]   = '\0';
+        }
+        info->http_user_header = strdup(str);
+    } else
+        info->http_user_header = 0;
+
     /* not adjusted yet... */
     info->http_proxy_adjusted = 0/*false*/;
     /* store service name for which this structure has been created */
@@ -332,7 +342,7 @@ extern int/*bool*/ ConnNetInfo_ParseURL(SConnNetInfo* info, const char* url)
 
 
 extern int/*bool*/ ConnNetInfo_SetUserHeader(SConnNetInfo* info,
-                                      const char*   user_header)
+                                             const char*   user_header)
 {
     if (info->http_user_header)
         free((void*) info->http_user_header);
@@ -703,7 +713,7 @@ extern void ConnNetInfo_Log(const SConnNetInfo* info, LOG lg)
     s_SaveString    (s, "path",            info->path);
     s_SaveString    (s, "args",            info->args);
     s_SaveString    (s, "req_method",     (info->req_method == eReqMethod_Any
-                                           ? DEF_CONN_REQ_METHOD
+                                           ? "ANY"
                                            : (info->req_method
                                               == eReqMethod_Get
                                               ? "GET"
@@ -783,10 +793,15 @@ extern SOCK URL_Connect
         return 0/*error*/;
     }
 
+    /* select request method and its verbal representation */
+    if (req_method == eReqMethod_Any) {
+        req_method = content_length ? eReqMethod_Post : eReqMethod_Get;
+    } else if (req_method == eReqMethod_Get  &&  content_length) {
+        CORE_LOG(eLOG_Warning,
+                 "[URL_Connect]  Content length ignored with method GET");
+        content_length = 0;
+    }
     switch (req_method) {
-    case eReqMethod_Any:
-        x_req_r = DEF_CONN_REQ_METHOD " ";
-        break;
     case eReqMethod_Post:
         x_req_r = "POST ";
         break;
@@ -798,11 +813,6 @@ extern SOCK URL_Connect
                                " (%d)", (int) req_method));
         assert(0);
         return 0/*error*/;
-    }
-    if (content_length  &&  strcasecmp(x_req_r, "GET ") == 0) {
-        CORE_LOG(eLOG_Warning,
-                 "[URL_Connect]  Content length ignored with GET");
-        content_length = 0;
     }
 
     /* URL-encode "args", if any specified */
@@ -1250,6 +1260,163 @@ extern void URL_Encode
 
 
 
+extern void BASE64_Encode
+(const void* src_buf,
+ size_t      src_size,
+ size_t*     src_read,
+ void*       dst_buf,
+ size_t      dst_size,
+ size_t*     dst_written,
+ size_t*     line_len)
+{
+    static const char syms[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ" /*26*/
+        "abcdefghijklmnopqrstuvwxyz" /*52*/
+        "0123456789+/";              /*64*/
+    const size_t max_len = line_len ? *line_len : 76;
+    const size_t max_src =
+        ((dst_size - (max_len ? dst_size/(max_len + 1) : 0)) >> 2) * 3;
+    unsigned char* src = (unsigned char*) src_buf;
+    unsigned char* dst = (unsigned char*) dst_buf;
+    size_t len = 0, i = 0, j = 0;
+    unsigned char shift = 2;
+    unsigned char temp = 0;
+    if (!max_src) {
+        *src_read    = 0;
+        *dst_written = 0;
+        if (dst_size > 0) {
+            *dst = '\0';
+        }
+        return;
+    }
+    if (src_size > max_src) {
+        src_size = max_src;
+    }
+    for (;;) {
+        unsigned char c = i < src_size ? src[i] : 0;
+        unsigned char bits = (c >> shift) & 0x3F;
+        assert((temp | bits) < sizeof(syms) - 1);
+        dst[j++] = syms[temp | bits];
+        if (max_len  &&  ++len >= max_len) {
+            dst[j++] = '\n';
+            len = 0;
+        }
+        if (i >= src_size) {
+            break;
+        }
+        shift += 2;
+        shift &= 7;
+        if (shift) {
+            i++;
+        }
+        temp = (c << (8 - shift)) & 0x3F;
+    }
+    assert(j <= dst_size);
+    *src_read = i;
+    for (i = 0; i < (3 - src_size % 3) % 3; i++) {
+        dst[j++] = '=';
+        if (max_len  &&  ++len >= max_len) {
+            dst[j++] = '\n';
+            len = 0;
+        }
+    }
+    assert(j <= dst_size);
+    *dst_written = j;
+    if (j < dst_size) {
+        dst[j] = '\0';
+    }
+}
+
+
+extern int/*bool*/ BASE64_Decode
+(const void* src_buf,
+ size_t      src_size,
+ size_t*     src_read,
+ void*       dst_buf,
+ size_t      dst_size,
+ size_t*     dst_written)
+{
+    unsigned char* src = (unsigned char*) src_buf;
+    unsigned char* dst = (unsigned char*) dst_buf;
+    size_t i = 0, j = 0, k = 0, l;
+    unsigned int temp = 0;
+    if (src_size < 4  ||  dst_size < 3) {
+        *src_read    = 0;
+        *dst_written = 0;
+        return 0/*false*/;
+    }
+    for (;;) {
+        unsigned char c = i < src_size ? src[i++] : '=';
+        if (c == '=') {
+            c  = 64; /*end*/
+        } else if (c >= 'A'  &&  c <= 'Z') {
+            c -= 'A';
+        } else if (c >= 'a'  &&  c <= 'z') {
+            c -= 'a' - 26;
+        } else if (c >= '0'  &&  c <= '9') {
+            c -= '0' - 52;
+        } else if (c == '+') {
+            c  = 62;
+        } else if (c == '/') {
+            c  = 63;
+        } else {
+            continue;
+        }
+        temp <<= 6;
+        temp  |= c & 0x3F;
+        if (!(++k & 3)  ||  c == 64) {
+            if (c == 64) {
+                if (k < 2) {
+                    --i;
+                    break;
+                }
+                switch (k) {
+                case 2:
+                    temp >>= 4;
+                    break;
+                case 3:
+                    temp >>= 10;
+                    break;
+                case 4:
+                    temp >>= 8;
+                    break;
+                default:
+                    break;
+                }
+                for (l = k; l < 4; l++) {
+                    if (i < src_size  &&  src[i] == '=') {
+                        i++;
+                    }
+                }
+            } else {
+                k = 0;
+            }
+            switch (k) {
+            case 0:
+                dst[j++] = (temp & 0xFF0000) >> 16;
+                /*FALLTHRU*/;
+            case 4:
+                dst[j++] = (temp & 0xFF00) >> 8;
+                /*FALLTHRU*/
+            case 3:
+                dst[j++] = (temp & 0xFF);
+                break;
+            default:
+                break;
+            }
+            if (j + 3 >= dst_size  ||  c == 64) {
+                break;
+            }
+            temp = 0;
+        }
+    }
+    *src_read    = i;
+    *dst_written = j;
+    return i ? 1/*true*/ : 0/*false*/;
+}
+
+
+
 /****************************************************************************
  * NCBI-specific MIME content type and sub-types
  */
@@ -1436,8 +1603,10 @@ extern const char* StringToHostPort(const char*     str,
     size_t alen;
     int n = 0;
 
-    *host = 0;
-    *port = 0;
+    if (host)
+        *host = 0;
+    if (port)
+        *port = 0;
     for (s = str; *s; s++) {
         if (isspace((unsigned char)(*s)) || *s == ':')
             break;
@@ -1456,8 +1625,10 @@ extern const char* StringToHostPort(const char*     str,
             return alen ? 0 : str;
     } else
         p = 0;
-    *host = h;
-    *port = p;
+    if (host)
+        *host = h;
+    if (port)
+        *port = p;
     return s + n;
 }
 
@@ -1493,6 +1664,31 @@ extern size_t HostPortToString(unsigned int   host,
 /*
  * --------------------------------------------------------------------------
  * $Log: ncbi_connutil.c,v $
+ * Revision 6.72  2005/04/20 15:50:30  lavr
+ * ConnNetInfo_Create(): Allow zero timeout
+ * URL_Connect(): Automagically figure out ANY method based upon body size
+ *
+ * Revision 6.71  2005/03/21 17:10:03  lavr
+ * BASE64_Decode(): unnecessary re-init of "k" removed
+ *
+ * Revision 6.70  2005/03/21 17:04:35  lavr
+ * BASE64_{En|De}code few bugs fixed
+ *
+ * Revision 6.69  2005/03/19 02:13:55  lavr
+ * +BASE64_{En|De}code
+ *
+ * Revision 6.68  2005/02/28 17:58:31  lavr
+ * Cosmetics
+ *
+ * Revision 6.67  2005/02/24 19:03:11  lavr
+ * Always init SConnNetInfo::http_user_header
+ *
+ * Revision 6.66  2005/02/24 19:00:45  lavr
+ * +CONN_HTTP_USER_HEADER
+ *
+ * Revision 6.65  2004/10/14 13:51:42  lavr
+ * StringToHostPort() to allow NULL ptrs
+ *
  * Revision 6.64  2004/04/06 19:25:56  lavr
  * Fix ConnNetInfo_DeleteArg() to remove arg's trailing '&'
  *

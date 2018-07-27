@@ -29,7 +29,7 @@
  *
  * Version Creation Date:   7/15/95
  *
- * $Revision: 6.36 $
+ * $Revision: 6.37 $
  *
  * File Description: 
  *
@@ -39,6 +39,9 @@
  * -------  ----------  -----------------------------------------------------
  *
  * $Log: asn2ff2.c,v $
+ * Revision 6.37  2004/06/04 18:39:14  bollin
+ * removed unused variables, fixed compiler warning
+ *
  * Revision 6.36  2001/12/24 16:21:32  kans
  * initialize urf in GetStrForUserObject
  *
@@ -454,7 +457,9 @@ NLM_EXTERN void PrintCommentByNumber(Asn2ffJobPtr ajp, GBEntryPtr gbp)
 	if (gbp == NULL) {
 		return;
 	}
-	for (s = gbp->comm, i=0; s && i < index; s = s->next, i++);
+	for (s = gbp->comm, i=0; s && i < index; s = s->next, i++)
+	{	
+	}
 	newstring = CheckEndPunctuation(s->string, '.');
 	www_PrintComment(newstring, FALSE, (Uint1)ajp->format);
 	newstring = MemFree(newstring);
@@ -464,7 +469,6 @@ NLM_EXTERN void PrintFirstComment(Asn2ffJobPtr ajp, GBEntryPtr gbp)
 {
 	CharPtr newstring;
 	ComStructPtr s;
-	Int4 i, index = ajp->pap_index;
 	
 	if (gbp == NULL) {
 		return;
@@ -501,10 +505,9 @@ static ComStructPtr tie_next_comm(ComStructPtr head, ComStructPtr next)
 static CharPtr GetStrForBankit(UserObjectPtr uop)
 {
     ObjectIdPtr		oip;
-	UserFieldPtr	ufp, tmp, u;
-	CharPtr			ptr=NULL, ptr1 = NULL, str;
-	Int2			i=0, acclen, ptrlen = 0;
-	CharPtr			p;
+	UserFieldPtr	ufp;
+	CharPtr			ptr=NULL, ptr1 = NULL;
+	Int2			i=0, ptrlen = 0;
 	
 	if ((oip = uop->type) == NULL) return NULL;
 	if (StringCmp(oip->str, "Submission") != 0) return NULL;
@@ -669,9 +672,7 @@ static CharPtr GetStrForMap(DbtagPtr dbtag)
 static CharPtr GetEvidence(Asn2ffJobPtr ajp, GBEntryPtr gbp)
 {
 	CharPtr		retval=NULL;
-	SeqDescrPtr		descr;
 	UserObjectPtr	uop=NULL;
-    ObjectIdPtr		oip;
 	ValNodePtr tvnp, ds_vnp, vnp;
 	DescrStructPtr dsp;
 
@@ -681,7 +682,7 @@ static CharPtr GetEvidence(Asn2ffJobPtr ajp, GBEntryPtr gbp)
 	tvnp = GatherDescrListByChoice(ajp, gbp, Seq_descr_user); 
 	for (ds_vnp= tvnp; ds_vnp;) {
 		dsp = (DescrStructPtr) ds_vnp->data.ptrvalue;
-		if(vnp = dsp->vnp){
+		if((vnp = dsp->vnp) != NULL){
 			if(!retval){
 				uop = (UserObjectPtr) vnp->data.ptrvalue;
 				retval=mRNAEvidenceComment(uop, FALSE);
@@ -703,10 +704,9 @@ static CharPtr genanreftext4 = "~Also see:~    Documentation of NCBI's Annotatio
 
 static CharPtr GetAnnotationComment(Asn2ffJobPtr ajp, GBEntryPtr gbp)
 {
-	SeqDescrPtr		descr;
 	UserObjectPtr	uop=NULL;
     ObjectIdPtr		oip;
-	UserFieldPtr	ufp, tmp, u, urf;
+	UserFieldPtr	ufp;
 	CharPtr 		retval = NULL, name = NULL, method = NULL;
 	
 	ValNodePtr tvnp, ds_vnp, vnp;
@@ -1151,7 +1151,6 @@ NLM_EXTERN void GBDescrComFeat(Asn2ffJobPtr ajp, GBEntryPtr gbp)
 
 NLM_EXTERN Int2 GP_GetSeqDescrComms(Asn2ffJobPtr ajp, GBEntryPtr gbp)
 {
-	DescrStructPtr dsp;
 	ComStructPtr csp;
 	Boolean got_comment=FALSE;
 	CharPtr string;

@@ -1,4 +1,4 @@
-/* $Id: wblast2.c,v 1.8 2003/12/19 18:12:37 coulouri Exp $
+/* $Id: wblast2.c,v 1.20 2005/04/11 19:14:37 dondosha Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -27,12 +27,45 @@
 *
 * Initial Creation Date: 10/23/2000
 *
-* $Revision: 1.8 $
+* $Revision: 1.20 $
 *
 * File Description:
 *        BLAST 2 Sequences CGI program
 *
 * $Log: wblast2.c,v $
+* Revision 1.20  2005/04/11 19:14:37  dondosha
+* Changed blast_form.map to IMG USEMAP for standalone version
+*
+* Revision 1.19  2005/04/04 15:16:01  dondosha
+* If search returned error, display main page with an error and exit
+*
+* Revision 1.18  2005/03/15 21:36:42  dondosha
+* Rolled back last change, because Bioseq retrieved from BLAST database does not have feature information
+*
+* Revision 1.16  2005/01/18 17:13:36  dondosha
+* Set hint to eNone, so blastn is always used if megablast checkbox is not checked; fixed memory leaks; fixed uninitialized variable bug
+*
+* Revision 1.15  2004/10/26 15:51:35  dondosha
+* Removed unsupported matrices
+*
+* Revision 1.14  2004/10/12 20:49:55  dondosha
+* Correction due to change in SummaryReturn structure name and contents
+*
+* Revision 1.13  2004/08/16 19:39:35  dondosha
+* Use CreateMaskByteStore function from txalign.h; fixed bug in masking filtered locations for translated queries
+*
+* Revision 1.12  2004/08/09 15:40:51  dondosha
+* Propagated change in progotype for BLAST_TwoSeqLocSets
+*
+* Revision 1.11  2004/06/28 16:11:17  dondosha
+* Fixed constant name
+*
+* Revision 1.10  2004/06/24 21:17:07  dondosha
+* Boolean argument in ScoreAndEvalueToBuffers changed to Uint1
+*
+* Revision 1.9  2004/05/14 17:25:07  dondosha
+* Allow use of new BLAST engine
+*
 * Revision 1.8  2003/12/19 18:12:37  coulouri
 * fix name collision in aix
 *
@@ -179,6 +212,8 @@
 #include <tofasta.h>
 #include <wwwblast.h>
 #include <id1arch.h>
+#include <txalign.h>
+
 /* For rlimit stuff. */
 #if defined(OS_UNIX)
 #include <sys/resource.h>
@@ -192,16 +227,18 @@
 
 #include <blastpat.h>
 #ifndef BL2SEQ_STANDALONE
-#include <objBlobj.h>
 #include <qblastnet.h>
+#endif
+
+#ifndef USE_OLD_BLAST
+#include <algo/blast/api/twoseq_api.h>
 #endif
 
 #define MY_BLOSUM62 0
 #define MY_PAM30 1
 #define MY_PAM70 2
-#define MY_PAM250 3
-#define MY_BLOSUM90 4
-#define MY_BLOSUM50 5
+#define MY_BLOSUM45 3
+#define MY_BLOSUM80 4
 
 #define NR_SIZE_NA 2385885539
 #define NR_SIZE_AA 181542687
@@ -259,7 +296,7 @@ static void JavaScriptFun()
    printf("             document.bl2.strand.options[2].text='Reverse strand';\n");
    printf("             document.bl2.strand.options[2].value=2;\n");
    printf("	} else if (a.selectedIndex >= 1) {\n");
-   printf("             document.bl2.matrix.options.length = 7;\n");
+   printf("             document.bl2.matrix.options.length = 6;\n");
    printf("             document.bl2.matrix.options[0] = null;\n");
    printf("             document.bl2.matrix.options[0] = new Option('BLOSUM62');\n");
    printf("             document.bl2.matrix.options[0].selected = true;\n");
@@ -269,12 +306,10 @@ static void JavaScriptFun()
    printf("             document.bl2.matrix.options[1].value=1;\n");
    printf("             document.bl2.matrix.options[2].text='PAM70';\n");
    printf("             document.bl2.matrix.options[2].value=2;\n");
-   printf("             document.bl2.matrix.options[3].text='PAM250';\n");
+   printf("             document.bl2.matrix.options[3].text='BLOSUM45';\n");
    printf("             document.bl2.matrix.options[3].value=3;\n");
-   printf("             document.bl2.matrix.options[4].text='BLOSUM90';\n");
+   printf("             document.bl2.matrix.options[4].text='BLOSUM80';\n");
    printf("             document.bl2.matrix.options[4].value=4;\n");
-   printf("             document.bl2.matrix.options[5].text='BLOSUM50';\n");
-   printf("             document.bl2.matrix.options[5].value=5;\n");
    printf("		document.bl2.word.value=\"3\";\n");
    printf("		if (document.bl2.matrix.selectedIndex == 1) {\n");
    printf("			document.bl2.gopen.value = 9;\n");
@@ -283,14 +318,11 @@ static void JavaScriptFun()
    printf("			document.bl2.gopen.value = 10;\n");
    printf("			document.bl2.gext.value = 1;\n");
    printf("		} else if (document.bl2.matrix.selectedIndex == 3) {\n");
-   printf("			document.bl2.gopen.value = 14;\n");
+   printf("			document.bl2.gopen.value = 15;\n");
    printf("			document.bl2.gext.value = 2;\n");
    printf("		} else if (document.bl2.matrix.selectedIndex == 4) {\n");
    printf("			document.bl2.gopen.value =10;\n");
    printf("			document.bl2.gext.value = 1;\n");
-   printf("		} else if (document.bl2.matrix.selectedIndex == 5) {\n");
-   printf("			document.bl2.gopen.value = 13;\n");
-   printf("			document.bl2.gext.value = 2;\n");
    printf("		} else {\n");
    printf("			document.bl2.gopen.value = 11;\n");
    printf("			document.bl2.gext.value = 1;\n");
@@ -517,16 +549,12 @@ static void	Blast2SeqMainPage(CharPtr warning, CharPtr seq1, CharPtr seq2, CharP
            BlastKarlinGetMatrixValues("MY_PAM70", 
                                       &dgopen, &dgext, NULL, NULL, NULL, NULL);
            break;
-        case MY_PAM250:
-           BlastKarlinGetMatrixValues("MY_PAM250", 
+        case MY_BLOSUM80:
+           BlastKarlinGetMatrixValues("MY_BLOSUM80", 
                                       &dgopen, &dgext, NULL, NULL, NULL, NULL);
            break;
-        case MY_BLOSUM90:
-           BlastKarlinGetMatrixValues("MY_BLOSUM90", 
-                                      &dgopen, &dgext, NULL, NULL, NULL, NULL);
-           break;
-        case MY_BLOSUM50:
-           BlastKarlinGetMatrixValues("MY_BLOSUM50", 
+        case MY_BLOSUM45:
+           BlastKarlinGetMatrixValues("MY_BLOSUM45", 
                                       &dgopen, &dgext, NULL, NULL, NULL, NULL);
            break;
         case MY_BLOSUM62:
@@ -568,7 +596,7 @@ static void	Blast2SeqMainPage(CharPtr warning, CharPtr seq1, CharPtr seq2, CharP
            printf("</tr></table>\n");
         } else {
            printf("<CENTER><TABLE CELLSPACING=2 CELLPADDING=2 WIDTH=100%%>\n");
-           printf("<TR ALIGN=CENTER BaGCOLOR=#8dc7cc BGCOLOR=#0000ff><TD><B><I>\n");
+           printf("<TR ALIGN=CENTER BGCOLOR=#8dc7cc BGCOLOR=#0000ff><TD><B><I>\n");
            printf("<A HREF=http://www.ncbi.nlm.nih.gov/><font color=#ffffff>NCBI</font></A></I></B></TD>\n");
            printf("<TD><B><I>\n");
            printf("<A HREF=http://www.ncbi.nlm.nih.gov/Entrez><font color=#ffffff>Entrez</font></A>\n");
@@ -583,11 +611,21 @@ static void	Blast2SeqMainPage(CharPtr warning, CharPtr seq1, CharPtr seq2, CharP
         printf("<H2><CENTER><font color=#0000ff> BLAST 2 SEQUENCES</font></H2></CENTER>\n");
         printf("<FORM NAME=\"bl2\" method=\"Post\" action=\"wblast2.cgi?%d\" enctype=\"multipart/form-data\">\n", pagecount);
 #else /* defined BL2SEQ_STANDALONE */
-    printf("<BODY BGCOLOR=\"#F0F0FE\" LINK=\"#0000FF\" "
-           "VLINK=\"#660099\" ALINK=\"#660099\">\n");
-    printf("<A HREF=\"blast_form.map\">"
-           "<IMG SRC=\"images/bl2seq.gif\" BORDER=0 ISMAP></A>\n");
-    printf("<FORM NAME=\"bl2\" method=\"POST\" "
+        printf("<BODY BGCOLOR=\"#F0F0FE\" LINK=\"#0000FF\" "
+               "VLINK=\"#660099\" ALINK=\"#660099\">\n");
+        printf("<map name=img_map>\n");
+        printf("<area shape=rect coords=2,1,48,21 "
+               "href=\"http://www.ncbi.nlm.nih.gov\">\n");
+        printf("<area shape=rect coords=385,1,435,21 "
+               "href=\"index.html\">\n");
+        printf("<area shape=rect coords=436,1,486,21 "
+               "href=\"http://www.ncbi.nlm.nih.gov/Entrez/\">\n");
+        printf("<area shape=rect coords=487,1,508,21 "
+               "href=\"docs/blast_help.html\">\n");
+        printf("</map>\n"); 
+        printf("<IMG USEMAP=#img_map WIDTH=509 HEIGHT=22 "
+               "SRC=\"images/bl2seq.gif\" BORDER=0 ISMAP></A>\n");
+        printf("<FORM NAME=\"bl2\" method=\"POST\" "
 #ifdef NCBI_ENTREZ_CLIENT
            "action=\"wblast2_cs.cgi?%d\" "
 #else
@@ -635,9 +673,8 @@ static void	Blast2SeqMainPage(CharPtr warning, CharPtr seq1, CharPtr seq2, CharP
            printf("<option value=0>BLOSUM62\n");
            printf("<option value=1%s>PAM30\n", (mtrx == 1) ? " SELECTED" : "");
            printf("<option value=2%s>PAM70\n", (mtrx == 2) ? " SELECTED" : "");
-           printf("<option value=3%s>PAM250\n", (mtrx == 3) ? " SELECTED" : "");
-           printf("<option value=4%s>BLOSUM90\n", (mtrx == 4) ? " SELECTED" : "");
-           printf("<option value=5%s>BLOSUM50\n", (mtrx == 5) ? " SELECTED" : "");
+           printf("<option value=3%s>BLOSUM45\n", (mtrx == 3) ? " SELECTED" : "");
+           printf("<option value=4%s>BLOSUM80\n", (mtrx == 4) ? " SELECTED" : "");
         } else 
            printf("<option> Not Applicable\n");
         printf("</select>\n");
@@ -1042,109 +1079,27 @@ static Boolean sum_for_DenseSeg(DenseSegPtr dsp, AlignSumPtr asp)
 	return TRUE;
 }
 
-/* static functions from txalign.c needed for SEG masking */
-static void MaskWithLowComplexity(ByteStorePtr bsp, SeqLocPtr maskloc, Uint1 mol)
+/** Frees the part of the byte store list that has not been used for replacement
+ * of Bioseq data.
+ */
+static void 
+ByteStoreListFreeUnused (ValNodePtr bs_list, Uint1 frame_to_skip)
 {
-	SeqLocPtr slp = NULL;
-	Int4 start, stop;
-	Uint1 res = 'N';
-	
+   ByteStorePtr bsp;
+   ValNodePtr bs_next = NULL;
+   Boolean skip_done = FALSE;
 
-	if(mol == Seq_mol_aa)
-		res = 'X';
-
-	while(maskloc)
-	{
-		slp = NULL;
- 		while((slp = SeqLocFindNext(maskloc, slp))!=NULL)
-		{
-			start = SeqLocStart(slp);
-			stop = SeqLocStop(slp);
-			BSSeek(bsp, start, SEEK_SET);
-			for(; start <=stop; ++start)
-                BSPutByte(bsp, (Int2)res);
-		}
-		maskloc = maskloc->next;
-	}
-}
-
-static ByteStorePtr create_byte_store_from_bsp (BioseqPtr bsp)
-{
-	SeqPortPtr spp;
-	Uint1 code;
-	ByteStorePtr b_store;
-	Uint1 residue;
-
-	if(bsp == NULL)
-		return NULL;
-	if(bsp->mol == Seq_mol_aa)
-		code = Seq_code_iupacaa;
-	else
-		code = Seq_code_iupacna;
-
-	spp = SeqPortNew(bsp, 0, bsp->length-1, Seq_strand_plus, code);
-	b_store = BSNew(bsp->length +1);
-	BSSeek(b_store, 0, SEEK_SET);
-	while((residue = SeqPortGetResidue(spp)) != SEQPORT_EOF)
-		BSPutByte(b_store, (Int2)residue);
-	SeqPortFree(spp);
-	return b_store;
-}
-
-static ValNodePtr CreateMaskByteStore (ValNodePtr mask_list)
-{
-	BioseqPtr bsp;
-	SeqLocPtr slp;
-	SeqIdPtr sip;
-	ValNodePtr list, curr;
-	ByteStorePtr b_store, c_store;
-	Uint1 mol;
-
-	list = NULL;
-	b_store = NULL;
-	while(mask_list)
-	{
-		curr = ValNodeNew(list);
-		curr->choice = mask_list->choice;
-		if(list == NULL)
-			list = curr;
-		slp = mask_list->data.ptrvalue;
-		if(slp != NULL)
-		{
-			if(b_store == NULL)
-			{
-				sip = SeqLocId(slp);
-				if(sip != NULL)
-				{
-					bsp = BioseqLockById(sip);
-					if(bsp != NULL)
-					{
-						b_store = create_byte_store_from_bsp (bsp);
-						mol = bsp->mol;
-						BioseqUnlock(bsp);
-					}
-				}
-			}
-			if(b_store != NULL)
-			{
-				if(mask_list->next == NULL)
-				{
-					c_store = b_store;
-					b_store = NULL;
-				}
-				else
-					c_store = BSDup(b_store);
-				MaskWithLowComplexity(c_store, slp, mol);
-				curr->data.ptrvalue = c_store;
-			}
-		}
-
-		mask_list = mask_list->next;
-	}
-
-	if(b_store != NULL)
-		BSFree(b_store);
-	return list;
+   for( ; bs_list; bs_list = bs_next) {
+      bs_next = bs_list->next;
+      if (skip_done || bs_list->choice != frame_to_skip) {
+         bsp = (ByteStorePtr) bs_list->data.ptrvalue;
+         if(bsp != NULL)
+            BSFree(bsp);
+      } else {
+         skip_done = TRUE;
+      }
+      MemFree(bs_list);
+   }
 }
 
 /*******************************************************/
@@ -1153,45 +1108,27 @@ static void PrintOutScore(SeqAlignPtr sap, Boolean is_aa, Int4Ptr PNTR matrix, V
 {
 	Int4 number, score;
 	Nlm_FloatHi bit_score, evalue; 
-        CharPtr eval_buff_ptr;
-	static Char eval_buff[10], bit_score_buff[10];
+   CharPtr eval_buff_ptr;
+	Char eval_buff[10], bit_score_buff[10];
 	AlignSumPtr asp;
 	Int2 percent_identical, percent_positive;
-        ValNodePtr bs_list;
-        BioseqPtr q_bsp;
-        Int4 frame;
-        Uint1 code;
-        Uint1 repr;
-        ByteStorePtr seq_data;
+   ValNodePtr bs_list;
+   BioseqPtr q_bsp;
+   Int4 frame;
+   Uint1 code=0;
+   Uint1 repr=0;
+   ByteStorePtr seq_data=NULL;
+   Boolean local_matrix = FALSE;     
+   Boolean seq_data_replaced = FALSE;
 
 	printf("<pre>\n");
 	GetScoreAndEvalue(sap, &score, &bit_score, &evalue, &number);
-
+   
+   /* Evalue buffer for printing may be shifted if a digit is knocked off
+      before e. */
 	eval_buff_ptr = eval_buff;
-	if (evalue < 1.0e-180) {
-		sprintf(eval_buff, "0.0");
-	} else if (evalue < 1.0e-99) {
-		sprintf(eval_buff, "%2.0le", evalue);
-		eval_buff_ptr++;	/* Knock off digit. */
-	} else if (evalue < 0.0009) {
-		sprintf(eval_buff, "%3.0le", evalue);
-	} else if (evalue < 0.1) {
-		sprintf(eval_buff, "%4.3lf", evalue);
-	} else if (evalue < 1.0) {
-		sprintf(eval_buff, "%3.2lf", evalue);
-	} else if (evalue < 10.0) {
-		sprintf(eval_buff, "%2.1lf", evalue);
-	} else {
-		sprintf(eval_buff, "%5.0lf", evalue);
-	}
-
-	if (bit_score > 9999) {
-		sprintf(bit_score_buff, "%4.3le", bit_score);
-	} else if (bit_score > 99.9) {
-		sprintf(bit_score_buff, "%4.0ld", (long) bit_score);
-	} else {
-		sprintf(bit_score_buff, "%4.1lf", bit_score);
-	}
+   ScoreAndEvalueToBuffers(bit_score, evalue, bit_score_buff, 
+                           &eval_buff_ptr, TX_KNOCK_OFF_ALLOWED);
 
 	if (number == 1) {
 		printf("Score = %s bits (%ld), Expect = %s<BR>", 
@@ -1202,46 +1139,58 @@ static void PrintOutScore(SeqAlignPtr sap, Boolean is_aa, Int4Ptr PNTR matrix, V
 	}
 	asp = MemNew(sizeof(AlignSum));
 	asp->matrix = NULL;
-        if (is_aa) {
-           if (matrix != NULL)
-              asp->matrix = matrix;
-           else
-              asp->matrix = load_default_matrix();
+   if (is_aa) {
+      if (matrix != NULL)
+         asp->matrix = matrix;
+      else {
+         asp->matrix = load_default_matrix();
+         local_matrix = TRUE;
+      }
 	}
 	asp->is_aa = is_aa;
 	asp->totlen = 0;
 	asp->positive = 0;
 	asp->identical = 0;
 	asp->gaps = 0;
-        asp->master_sip = SeqIdDup(TxGetQueryIdFromSeqAlign(sap));
-        asp->target_sip = TxGetSubjectIdFromSeqAlign(sap);
+   asp->master_sip = SeqIdDup(TxGetQueryIdFromSeqAlign(sap));
+   asp->target_sip = TxGetSubjectIdFromSeqAlign(sap);
 
-        if (mask_loc) { /* Mask the query sequence */
-           bs_list = CreateMaskByteStore (mask_loc);
-           q_bsp = BioseqLockById(asp->master_sip);
-           if (ISA_na(q_bsp->mol) && sap->segtype == SAS_STD) {
-              StdSegPtr ssp = (StdSegPtr) sap->segs;
-              frame = SeqLocStart(ssp->loc);
-              if (SeqLocStrand(ssp->loc) == Seq_strand_minus) {
-                 frame += SeqLocLen(ssp->loc);
-                 frame = -(1+(q_bsp->length - frame)%3);
-              } else {
-                 frame = (1+frame%3);
-              }
-           } else
-              frame = 0;
-           repr = q_bsp->repr;
-           seq_data = q_bsp->seq_data;
-           code = q_bsp->seq_data_type;
-           if (!replace_bytestore_data(q_bsp, bs_list, (Uint1)frame)) {
-              q_bsp->repr = repr;
-              q_bsp->seq_data = seq_data;
-              q_bsp->seq_data_type = code;
-           }
-           BioseqUnlock(q_bsp);
-        }
+   if (mask_loc) { /* Mask the query sequence */
+      bs_list = CreateMaskByteStore (mask_loc);
+      q_bsp = BioseqLockById(asp->master_sip);
+      if (ISA_na(q_bsp->mol) && sap->segtype == SAS_STD) {
+         StdSegPtr ssp = (StdSegPtr) sap->segs;
+         frame = SeqLocStart(ssp->loc);
+         if (SeqLocStrand(ssp->loc) == Seq_strand_minus) {
+            frame += SeqLocLen(ssp->loc);
+            frame = -(1+(q_bsp->length - frame)%3);
+         } else {
+            frame = (1+frame%3);
+         }
+      } else
+         frame = 0;
+      repr = q_bsp->repr;
+      seq_data = q_bsp->seq_data;
+      code = q_bsp->seq_data_type;
+      seq_data_replaced = replace_bytestore_data(q_bsp, bs_list, (Uint1)frame);
+      if (!seq_data_replaced) {
+         q_bsp->repr = repr;
+         q_bsp->seq_data = seq_data;
+         q_bsp->seq_data_type = code;
+      }
+      BioseqUnlock(q_bsp);
+      ByteStoreListFreeUnused(bs_list, (Uint1)frame);
+   }
+   
+   find_score_in_align(sap, 1, asp);
 
-        find_score_in_align(sap, 1, asp);
+   /* Restore the unmasked sequence data. */
+   if (seq_data_replaced) {
+      q_bsp = BioseqLockById(asp->master_sip);
+      q_bsp->repr = repr;
+      q_bsp->seq_data = seq_data;
+      q_bsp->seq_data_type = code;
+   }
 
 	if (asp && asp->totlen > 0) {
            Char sign1, sign2;           
@@ -1283,8 +1232,11 @@ static void PrintOutScore(SeqAlignPtr sap, Boolean is_aa, Int4Ptr PNTR matrix, V
            printf("<BR><BR>");
 	}
 	printf("</pre>\n");		
-        SeqIdFree(asp->master_sip);
-        MemFree(asp);
+   
+   SeqIdFree(asp->master_sip);
+   if (local_matrix)
+      free_default_matrix(asp->matrix);
+   MemFree(asp);
 }
 
 static Int2 CreateRectAlign(SeqAlignPtr sap, PrymPtr PNTR rect, PrymPtr PNTR rectY, FloatHi scalex, FloatHi scaley, Int4 l1, Int4 l2, Int2 color, Int4 from, Int4 ffrom, Int4 to, Int4 tto)
@@ -1651,7 +1603,8 @@ static void PrintRectAlign(PrymPtr PNTR rect, Int2 k, Int2 color, Int2 height, I
 }
 
 #define LOCAL_BUFLEN 255
-static BioseqPtr FindSeqByAccession(CharPtr accver, Int2 id_num, Boolean is_na)
+static BioseqPtr 
+FindSeqByAccession(CharPtr accver, Int2 id_num, Boolean is_na)
 {
    BioseqPtr bsp = NULL;
 
@@ -1664,6 +1617,7 @@ static BioseqPtr FindSeqByAccession(CharPtr accver, Int2 id_num, Boolean is_na)
    SeqPortPtr spp;
    Int2 retval, buf_length=512;
    Uint1 buf[512];
+   ByteStorePtr old_seq_data = NULL;
 
    ID1BioseqFetchEnable ("wblast2", TRUE);
       
@@ -1731,6 +1685,7 @@ static BioseqPtr FindSeqByAccession(CharPtr accver, Int2 id_num, Boolean is_na)
    if (gi > 0) {
       ValNodeAddInt(&sip, SEQID_GI, gi);
       bsp = BioseqLockById(sip);
+      SeqIdFree(sip);
    } 
 
    if (bsp == NULL)
@@ -1759,6 +1714,7 @@ static BioseqPtr FindSeqByAccession(CharPtr accver, Int2 id_num, Boolean is_na)
    number = 0;
    
    bsp->repr = Seq_repr_raw;
+   old_seq_data = bsp->seq_data;
    bsp->seq_data = BSNew(bsp->length);
 
    while (number < bsp->length) {
@@ -1772,6 +1728,7 @@ static BioseqPtr FindSeqByAccession(CharPtr accver, Int2 id_num, Boolean is_na)
    }
     
    SeqPortFree(spp);
+   old_seq_data = BSFree(old_seq_data);
    BioseqPack(bsp);
    ID1BioseqFetchDisable();
    
@@ -1819,9 +1776,8 @@ static void PrintParam(Boolean is_prot, Int2 mtrx, Int2 ma, Int2 ms, BLAST_Optio
         printf("<option value=0>BLOSUM62\n");
         printf("<option value=1%s>PAM30\n", (mtrx == 1) ? " SELECTED" : "");
         printf("<option value=2%s>PAM70\n", (mtrx == 2) ? " SELECTED" : "");
-        printf("<option value=3%s>PAM250\n", (mtrx == 3) ? " SELECTED" : "");
-        printf("<option value=4%s>BLOSUM90\n", (mtrx == 4) ? " SELECTED" : "");
-        printf("<option value=5%s>BLOSUM50\n", (mtrx == 5) ? " SELECTED" : "");
+        printf("<option value=3%s>BLOSUM45\n", (mtrx == 3) ? " SELECTED" : "");
+        printf("<option value=4%s>BLOSUM80\n", (mtrx == 4) ? " SELECTED" : "");
         printf("</select>\n");
     } else {
        printf("Match:<INPUT TYPE=text name=match size=2 value=%d>\n", ma); 
@@ -1992,8 +1948,62 @@ static void* ConnectionThreadRun(void *p)
       if (run_status != WBLAST2_DONE) /* Sleep 4 seconds */
          poll(NULL, 0, 4000);
    }
-   
+
+   MemFree(fds);
+
    return NULL;
+}
+#endif
+
+#ifndef USE_OLD_BLAST
+static void BLASTOptions2SummaryOptions(BLAST_OptionsBlk* options,
+                                        Char* progname,
+                                        BLAST_SummaryOptions* s_options)
+{
+   if (!options || !s_options)
+      return;
+
+   s_options->hint = eNone;
+
+   if (options->is_megablast_search)
+      s_options->use_megablast = TRUE;
+
+   if (!strcmp(progname, "blastn"))
+      s_options->program = eBlastn;
+   else if (!strcmp(progname, "blastp"))
+      s_options->program = eBlastp;
+   else if (!strcmp(progname, "blastx"))
+      s_options->program = eBlastx;
+   else if (!strcmp(progname, "tblastn"))
+      s_options->program = eTblastn;
+   else if (!strcmp(progname, "tblastx"))
+      s_options->program = eTblastx;
+   else
+      s_options->program = eChoose;
+   
+   s_options->strand = options->strand_option;
+   s_options->cutoff_evalue = options->expect_value;
+   if (options->matrix)
+      s_options->matrix = strdup(options->matrix);
+
+
+   if (options->filter_string)
+      s_options->filter_string = strdup(options->filter_string);
+   else /* If filtering option not set, assume no filtering! */
+      s_options->filter_string = strdup("F");
+
+   s_options->word_size = options->wordsize;
+   s_options->gapped_calculation = options->gapped_calculation;
+   s_options->nucleotide_match = options->reward;
+   s_options->nucleotide_mismatch = options->penalty;
+   s_options->gap_open = options->gap_open;
+   s_options->gap_extend = options->gap_extend;
+   s_options->gap_x_dropoff = options->gap_x_dropoff;
+   s_options->db_length = options->db_length;
+   s_options->word_threshold = options->threshold_second;
+
+   if (!options->multiple_hits_only)
+      s_options->init_seed_method = eOneHit;
 }
 #endif
 
@@ -2001,7 +2011,7 @@ static void* ConnectionThreadRun(void *p)
 
 Int2 Main(void)
 {
-    SeqEntryPtr sep;
+    SeqEntryPtr query_sep = NULL, subject_sep = NULL;
     BioseqPtr fake_bsp, query_bsp = NULL, subject_bsp = NULL;
     SeqIntPtr sip1, sip2;
     Int2 index = 0;
@@ -2009,7 +2019,7 @@ Int2 Main(void)
     Int4 from=0, to=0, ffrom=0, tto=0;
     Int2 wordsize, filter=0;
     Int2 mtrx = 0, color=1;
-    SeqAlignPtr seqalign, sap, sapnext;
+    SeqAlignPtr seqalign = NULL, sap, sapnext;
     SeqAnnotPtr hsat= NULL, sat, satnext;
     FloatHi	expect;
     Boolean is_prot=FALSE, is_aa1=FALSE, is_aa2=FALSE, is_na1=TRUE, is_na2=TRUE;
@@ -2019,8 +2029,8 @@ Int2 Main(void)
     BLAST_OptionsBlkPtr options = NULL;
     Int4 ll, len1, len2, txoption;
     SeqIdPtr sip;
-    Int4Ptr PNTR txmatrix;
-    BLAST_MatrixPtr blast_matrix;
+    Int4Ptr PNTR txmatrix = NULL;
+    BLAST_MatrixPtr blast_matrix = NULL;
     SeqPortPtr spp;
     Uint1 code1, code2;
     ValNodePtr vnp, error_return=NULL;
@@ -2035,9 +2045,8 @@ Int2 Main(void)
     static PrymPtr PNTR rectY;
     SeqLocPtr    slp1=NULL, slp2=NULL, slp, sl, qslp = NULL;
     Uint1        align_type;
-    
-    ValNodePtr	   other_returns, mask, mask_head;
-    CharPtr		   buffer;
+    ValNodePtr	   other_returns, mask = NULL, mask_head = NULL;
+    CharPtr		   buffer = NULL;
     BLAST_KarlinBlkPtr ka_params=NULL, ka_gap_params=NULL;
     TxDfDbInfoPtr      dbinfo = NULL;
     BlastTimeKeeper    time_keeper;
@@ -2057,6 +2066,13 @@ Int2 Main(void)
     void *thrstat;
     CharPtr program_log, user_IP;
     int pid, time_start, results_size = 0;
+#endif
+
+#ifndef USE_OLD_BLAST 
+    BLAST_SummaryOptions* s_options = NULL;
+    Blast_SummaryReturn* s_return = NULL;
+    Boolean mask_at_hash = FALSE;
+    EBlastProgramType program_number; 
 #endif
 
 #ifdef RLIMIT_CPU
@@ -2134,6 +2150,12 @@ Int2 Main(void)
     
     progname = theInfo->program;
     
+    /* For tblastx, we still do a protein search, even though both sequences
+       are nucleotide. */
+    if (!(StringICmp(progname, "tblastx")))
+       is_prot = TRUE;
+
+
     if ((chptr = WWWGetValueByName(theInfo->info, "MEGABLAST")) != NULL)
        is_megablast = TRUE;
     options = BLASTOptionNewEx(progname, TRUE, is_megablast);
@@ -2293,8 +2315,8 @@ Int2 Main(void)
     }
     
     if (seq_1 != NULL) {
-        sep = FastaToSeqBuff(seq_1, &sq_1, !is_aa1);
-        query_bsp = (BioseqPtr) sep->data.ptrvalue;
+        query_sep = FastaToSeqBuff(seq_1, &sq_1, !is_aa1);
+        query_bsp = (BioseqPtr) query_sep->data.ptrvalue;
         is_na1 = FastaCheckDna(seq_1);
     } else if (one != NULL && *one != NULLB) {
        if ((rid = WWWGetValueByName(theInfo->info, "RID")) != NULL) {
@@ -2323,8 +2345,8 @@ Int2 Main(void)
           is_na1 = ISA_na(query_bsp->mol);
     }
     if (seq_2  != NULL) {
-        sep = FastaToSeqBuff(seq_2, &sq_2, !is_aa2);
-        subject_bsp = (BioseqPtr) sep->data.ptrvalue;
+        subject_sep = FastaToSeqBuff(seq_2, &sq_2, !is_aa2);
+        subject_bsp = (BioseqPtr) subject_sep->data.ptrvalue;
         is_na2 = FastaCheckDna(seq_2);
     } else if (two != NULL && *two != NULLB) {
        if (rid && database) {
@@ -2379,24 +2401,17 @@ Int2 Main(void)
            }
            break;
         case 3:
-           sprintf(mbuf, "PAM250");
+           sprintf(mbuf, "BLOSUM45");
            if (gopen == -1 || gext == -1) {
-              gopen = (gopen == -1) ? 14: gopen;
+              gopen = (gopen == -1) ? 15: gopen;
               gext = (gext == -1) ? 2: gext;
            }
            break;
         case 4:
-           sprintf(mbuf, "BLOSUM90");
+           sprintf(mbuf, "BLOSUM80");
            if (gopen == -1 || gext == -1) {
               gopen = (gopen == -1) ? 10: gopen;
               gext = (gext == -1) ? 1: gext;
-           }
-           break;
-        case 5:
-           sprintf(mbuf, "BLOSUM50");
-           if (gopen == -1 || gext == -1) {
-              gopen = (gopen == -1) ? 13: gopen;
-              gext = (gext == -1) ? 2: gext;
            }
            break;
         default:
@@ -2410,10 +2425,14 @@ Int2 Main(void)
 
         StringCpy(options->matrix, mbuf);
         
-        /* one-pass non-multiple hits search with low threshold */		
-        options->two_pass_method  = FALSE;                      			
-        options->multiple_hits_only  = FALSE;
-        options->threshold_second = 9;
+        /* Use one-pass initial word search with low threshold, except for 
+           tblastx. Also do not use multiple hits approach for finding initial 
+           seeds. */
+        options->two_pass_method  = FALSE;  
+        if (StrCmp(progname, "tblastx")) {
+           options->threshold_second = 9;
+           options->multiple_hits_only  = FALSE;
+        }
     } else {
         if (gopen == -1) 
             gopen = (is_megablast) ? 0 : 5;
@@ -2545,9 +2564,32 @@ Int2 Main(void)
     logmsg(0);
 #endif
 
+#ifndef USE_OLD_BLAST
+    BLAST_SummaryOptionsInit(&s_options);
+    BLASTOptions2SummaryOptions(options, progname, s_options);
+    BLAST_TwoSeqLocSets(s_options, slp1, slp2, NULL, &seqalign, &mask, &mask_at_hash,
+                        &s_return);
+    if (s_return->error) {
+        /* Print the error message. */
+        Blast2SeqMainPage(s_return->error->message, seq_1, seq_2, one, two, NULL,
+                          is_prot, options, mtrx, from, to, ffrom, tto, filter, 
+                          pagecount);    
+    } 
+
+    if (mask_at_hash) {
+       /* If masking was done for lookup table only, do not use mask locations
+          for formatting. */
+       while (mask) {
+          SeqLocSetFree(mask->data.ptrvalue);
+          mask = mask->next;
+       }
+    }
+        
+    BLAST_SummaryOptionsFree(s_options);
+#else
     seqalign =  BlastTwoSequencesByLocEx(slp1, slp2, progname, 
                                          options, &other_returns, NULL);
-
+#endif
     run_status = WBLAST2_FORMAT;    
     /*	seqalign =  BlastTwoSequencesEx(query_bsp, subject_bsp, progname, 
         options, &other_returns, NULL);*/
@@ -2566,16 +2608,11 @@ Int2 Main(void)
         PrintParam(is_prot, mtrx, ma, ms, options, seq_2, seq_1, one, two,
                    query_bsp, subject_bsp, len1, len2, from, to, ffrom, tto, pagecount);
         printf("<strong><font color=#0000EE>No significant similarity was found</font></strong>\n");
-        MemFree(seq_1);
-        MemFree(seq_2);
-#ifndef BL2SEQ_STANDALONE
-        run_status = WBLAST2_DONE;
-        NlmThreadJoin(connection_thread, &thrstat);
-        logmsg(0);
-#endif
-        return 0;
+
+        goto cleanup;
     }
 
+#ifdef USE_OLD_BLAST
     mask = NULL;
     for (vnp=other_returns; vnp; vnp = vnp->next) {
         switch (vnp->choice) {
@@ -2611,6 +2648,7 @@ Int2 Main(void)
     }	
     
     ValNodeFree(other_returns);
+#endif
     
     to = (to >0) ? to : fake_bsp->length;
     tto = (tto >0) ? tto : subject_bsp->length;
@@ -2622,8 +2660,6 @@ Int2 Main(void)
     PrintParam(is_prot, mtrx, ma, ms, options, seq_2, seq_1, one, two,
                query_bsp, subject_bsp, len1, len2, from, to, ffrom, tto, pagecount);
     
-    MemFree(seq_1);
-    MemFree(seq_2);
     align_type = BlastGetProgramNumber(progname);
     
     x_factor = y_factor = 1;
@@ -2941,16 +2977,19 @@ Int2 Main(void)
                                txoption, txmatrix, mask, NULL);
     }
 
+cleanup:
+    MemFree(seq_1);
+    MemFree(seq_2);
     SeqLocSetFree(slp1);
     SeqLocSetFree(slp2);
     if (one && *one != NULLB)
-       BioseqUnlock(query_bsp);
+        BioseqUnlock(query_bsp);
     else
-       BioseqFree(query_bsp);
+        SeqEntryFree(query_sep);
     if (two && *two != NULLB)
-       BioseqUnlock(subject_bsp);
+        BioseqUnlock(subject_bsp);
     else
-       BioseqFree(subject_bsp);
+        SeqEntryFree(subject_sep);
 
     BlastTimeFillStructure(&time_keeper);
     printf("<pre>\n");
@@ -2964,6 +3003,24 @@ Int2 Main(void)
     if (txmatrix)
         txmatrix = TxMatrixDestruct(txmatrix);
     dbinfo = TxDfDbInfoDestruct(dbinfo);
+#ifndef USE_OLD_BLAST
+    if (s_return) {
+        if (s_return->ka_params) {
+           PrintKAParameters(s_return->ka_params->Lambda, s_return->ka_params->K, 
+                             s_return->ka_params->H, 70, stdout, FALSE);
+        }
+        if (s_return->ka_params_gap) {
+           PrintKAParameters(s_return->ka_params_gap->Lambda, 
+                             s_return->ka_params_gap->K, 
+                             s_return->ka_params_gap->H, 70, stdout, TRUE);
+        }
+        BlastProgram2Number(progname, &program_number);
+        buffer = Blast_GetParametersBuffer(program_number, s_return);
+        PrintTildeSepLines(buffer, 70, stdout);
+        sfree(buffer);
+        Blast_SummaryReturnFree(s_return);
+    }
+#else
     if (ka_params) {
         PrintKAParameters(ka_params->Lambda, ka_params->K, ka_params->H, 
                           70, stdout, FALSE);
@@ -2977,12 +3034,14 @@ Int2 Main(void)
     PrintTildeSepLines(buffer, 70, stdout);
     MemFree(buffer);
     free_buff();
+#endif
     mask_head = mask;
     while (mask) {
         SeqLocSetFree(mask->data.ptrvalue);
         mask = mask->next;
     }
     ValNodeFree(mask_head);
+
     CreateTailHTML();
     run_status = WBLAST2_DONE;
     options = BLASTOptionDelete(options);

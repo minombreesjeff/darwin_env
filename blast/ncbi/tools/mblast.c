@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: mblast.c,v 6.202 2004/03/31 17:58:51 papadopo Exp $";
+static char const rcsid[] = "$Id: mblast.c,v 6.213 2005/03/07 16:30:57 dondosha Exp $";
 
 /* ===========================================================================
 *
@@ -40,9 +40,42 @@ Detailed Contents:
 	- Functions specific to Mega BLAST
 
 ******************************************************************************
- * $Revision: 6.202 $
+ * $Revision: 6.213 $
  *
  * $Log: mblast.c,v $
+ * Revision 6.213  2005/03/07 16:30:57  dondosha
+ * In reevaluation with ambiguities, if HSP start changed, update starting offsets in edit block
+ *
+ * Revision 6.212  2004/12/07 16:09:04  coulouri
+ * check malloc returncode
+ *
+ * Revision 6.211  2004/11/25 01:59:38  coulouri
+ * reinitialize full_query_length to prevent overflow of query_seq_combined when only minus strands are searched
+ *
+ * Revision 6.210  2004/11/22 20:54:15  coulouri
+ * initialize pointer variables
+ *
+ * Revision 6.209  2004/11/22 15:17:34  dondosha
+ * Do not calculate length adjustment for empty contexts, i.e. ones with null Karlin blocks
+ *
+ * Revision 6.208  2004/11/19 13:22:05  madden
+ * Remove no_check_score completely (from Mike Gertz)
+ *
+ * Revision 6.207  2004/11/05 15:34:53  coulouri
+ * bring in system includes after toolkit includes so that LONG_BIT is defined correctly on amd64
+ *
+ * Revision 6.206  2004/10/29 21:34:45  dondosha
+ * Calculate length adjustment for each context separately; do not allow effective query length to be less than 1
+ *
+ * Revision 6.205  2004/09/13 18:33:01  dondosha
+ * Advance mask pointer in the list when one of the queries in a set is discarded due to being too short, and also has a lower case mask
+ *
+ * Revision 6.204  2004/05/27 17:35:56  dondosha
+ * Do not flag HSPs for deletion in sorting before doing inclusion tests
+ *
+ * Revision 6.203  2004/05/21 13:53:04  dondosha
+ * Use BLAST_HSPFree to free BLAST_HSP structures, hence no need to call GapXEditBlockDelete in multiple places
+ *
  * Revision 6.202  2004/03/31 17:58:51  papadopo
  * Mike Gertz' changes for length adjustment calculations
  *
@@ -666,7 +699,6 @@ Detailed Contents:
  *
  * */
 
-#include <time.h>
 #include <ncbi.h>
 #include <blastpri.h>
 #include <lookup.h>
@@ -681,6 +713,7 @@ Detailed Contents:
 #include <dust.h>
 #include <mbalign.h>
 #include <mblast.h>
+#include <time.h>
 
 Int4
 MegaBlastWordFinder (BlastSearchBlkPtr search, LookupTablePtr lookup);
@@ -1121,21 +1154,20 @@ MegaBlastSetUpSearchInternalByLoc (BlastSearchBlkPtr search, SeqLocPtr
    Char buffer[128];
    Int2 retval, status;
    Int4 effective_query_length, query_length,
-      index, length, length_adjustment=0, last_length_adjustment,
+      index, length, length_adjustment=0,
       min_query_length, full_query_length=0;
    Int4 context, num_queries;
    Nlm_FloatHi avglen;
-   SeqIdPtr qid;
-   SeqLocPtr filter_slp=NULL, private_slp=NULL, private_slp_rev=NULL, slp,
-      tmp_slp;
+   SeqIdPtr qid=NULL;
+   SeqLocPtr filter_slp=NULL, private_slp=NULL, private_slp_rev=NULL, slp=NULL, tmp_slp=NULL;
    Uint1 residue;
-   Uint1Ptr query_seq, query_seq_start, query_seq_rev, query_seq_start_rev;
-   Uint1Ptr query_seq_combined;
-   CharPtr filter_string;
+   Uint1Ptr query_seq=NULL, query_seq_start=NULL, query_seq_rev=NULL, query_seq_start_rev=NULL;
+   Uint1Ptr query_seq_combined=NULL;
+   CharPtr filter_string=NULL;
    Uint4 query_gi;
    Int4 homo_gilist_size, mouse_gilist_size, rat_gilist_size;
-   BlastDoubleInt4Ptr homo_gilist, mouse_gilist, rat_gilist;
-   SeqLocPtr mask_slp, next_mask_slp;
+   BlastDoubleInt4Ptr homo_gilist=NULL, mouse_gilist=NULL, rat_gilist=NULL;
+   SeqLocPtr mask_slp=NULL, next_mask_slp=NULL;
    SeqPortPtr spp = NULL;
    
    if (options == NULL) {
@@ -1147,11 +1179,6 @@ MegaBlastSetUpSearchInternalByLoc (BlastSearchBlkPtr search, SeqLocPtr
       ErrPostEx(SEV_FATAL, 1, 0, "Query is NULL\n");
       return 1;
    }
-   
-   query_seq = NULL;	/* Gets rid of warning. */
-   query_seq_rev = NULL;	/* Gets rid of warning. */
-   query_seq_start = NULL;	/* Gets rid of warning. */
-   query_seq_start_rev = NULL;	/* Gets rid of warning. */
    
    context = search->first_context; 
    
@@ -1287,6 +1314,10 @@ MegaBlastSetUpSearchInternalByLoc (BlastSearchBlkPtr search, SeqLocPtr
          ErrPostEx(SEV_WARNING, 0, 0, 
                    "Query sequence %s removed: length %ld is less than wordsize %d", 
                    buffer, query_length, options->wordsize);
+         if (next_mask_slp &&
+            SeqIdComp(SeqLocId(next_mask_slp), SeqLocId(tmp_slp)) == SIC_YES) {
+            next_mask_slp = next_mask_slp->next;
+         }
          slp = slp->next;
          context += 2;
 	 continue;
@@ -1338,6 +1369,7 @@ MegaBlastSetUpSearchInternalByLoc (BlastSearchBlkPtr search, SeqLocPtr
       }
 
       query_seq_combined[0] = 0x0f;
+      full_query_length = 0;
 
       /* Extract the mask location corresponding to this query */
       if (next_mask_slp && 
@@ -1530,38 +1562,35 @@ MegaBlastSetUpSearchInternalByLoc (BlastSearchBlkPtr search, SeqLocPtr
    */
    if (retval)
       return retval;
-   context = search->first_context;
-
-   length = search->context[context].query->length;
    
-   /* Find first valid Karlin block - needed if first query is 
-      completely masked */
-   while (!search->sbp->kbp[context])
-      context++;
-
-   min_query_length = (Int4) 1/(search->sbp->kbp[context]->K);
-   
-   BlastComputeLengthAdjustment(search->sbp->kbp[context]->K,
-                                search->sbp->kbp[context]->logK,
-                                1/search->sbp->kbp[context]->H,
-                                0.0, 
-                                length,
-                                search->dblen, search->dbseq_num,
-                                &length_adjustment );
-
-   search->length_adjustment = length_adjustment;
- 
-   search->dblen_eff =
-     search->dblen - search->dbseq_num*search->length_adjustment;
+   /* Calculate length adjustments and effective query lengths for 
+      each query. */
    for( context=search->first_context;
         context<=search->last_context;
         context++ ) {
+      /* Skip those contexts where sequence is not searched. */
+      if (!search->sbp->kbp[context])
+         continue;
+      BlastComputeLengthAdjustment(search->sbp->kbp[context]->K,
+                                   search->sbp->kbp[context]->logK,
+                                   1/search->sbp->kbp[context]->H,
+                                   0.0, 
+                                   length,
+                                   search->dblen, search->dbseq_num,
+                                   &length_adjustment );
+
        length = search->query_context_offsets[context+1] -
            search->query_context_offsets[context] - 1;
-       effective_query_length = length - length_adjustment;
+       min_query_length = (Int4) 1/(search->sbp->kbp[context]->K);
+       effective_query_length = 
+          MAX(min_query_length, length - length_adjustment);
        search->context[context].query->effective_length =
            effective_query_length;
+       if (context == search->first_context)
+          search->length_adjustment = length_adjustment;
    }
+   search->dblen_eff =
+     search->dblen - search->dbseq_num*search->length_adjustment;
    /*if (search->searchsp_eff == 0)
       search->searchsp_eff = ((Nlm_FloatHi) search->dblen_eff) *
       ((Nlm_FloatHi) effective_query_length); */
@@ -1659,8 +1688,6 @@ available) this needs to be set higher up. */
    }
    
    search->pbp->dropoff_2nd_pass = - options->dropoff_2nd_pass;
-   
-   search->pbp->no_check_score = TRUE;
    
    avglen = BLAST_NT_AVGLEN;
    /* Use only one type of gap for blastn */
@@ -2809,6 +2836,10 @@ Int2 MegaBlastGappedAlign(BlastSearchBlkPtr search)
 
    e_hsp_array = (MegaBlastExactMatchPtr PNTR) 
       Malloc(hspcnt*sizeof(MegaBlastExactMatchPtr));
+
+   if (e_hsp_array == NULL)
+      return 1;
+
    for (index=0; index < hspcnt; index++) {
       e_hsp_array[index] = 
          &(search->current_hitlist->exact_match_array[index]);
@@ -3292,99 +3323,113 @@ static int LIBCALLBACK
 diag_compare_hsps(VoidPtr v1, VoidPtr v2)
 
 {
-	BLAST_HSPPtr h1, h2;
-	BLAST_HSPPtr PNTR hp1, PNTR hp2;
-
-	hp1 = (BLAST_HSPPtr PNTR) v1;
-	hp2 = (BLAST_HSPPtr PNTR) v2;
-	h1 = *hp1;
-	h2 = *hp2;
-	
-	if (h1==NULL && h2==NULL) return 0;
-	else if (h1==NULL) return 1;
-	else if (h2==NULL) return -1;
-
-        /* Separate different queries and/or strands */
-        if (h1->context < h2->context)
-           return -1;
-        else if (h1->context > h2->context)
-           return 1;
-
-	/* If the two HSP's have same coordinates, they are equal */
-	if (h1->query.offset == h2->query.offset && 
-	    h1->query.end == h2->query.end && 
-	    h1->subject.offset == h2->subject.offset &&
-	    h1->subject.end == h2->subject.end)
-	   return 0;
-
-	/* Check if one HSP is contained in the other, if so, 
-	   leave only the longer one, given it has lower evalue */
-	if (h1->query.offset >= h2->query.offset && 
-	    h1->query.end <= h2->query.end &&  
-	    h1->subject.offset >= h2->subject.offset && 
-	    h1->subject.end <= h2->subject.end && 
-            h1->evalue >= h2->evalue) { 
-	   *hp1 = BLAST_HSPFree(h1);
-	   return 1; 
-	} else if (h1->query.offset <= h2->query.offset &&  
-		   h1->query.end >= h2->query.end &&  
-		   h1->subject.offset <= h2->subject.offset && 
-		   h1->subject.end >= h2->subject.end && 
-                   h1->evalue <= h2->evalue) { 
-	   *hp2 = BLAST_HSPFree(h2);
-	   return -1; 
-	}
-
-        return (h1->query.offset - h1->subject.offset) -
-           (h2->query.offset - h2->subject.offset);
+   BLAST_HSPPtr h1, h2;
+   BLAST_HSPPtr PNTR hp1, PNTR hp2;
+   
+   hp1 = (BLAST_HSPPtr PNTR) v1;
+   hp2 = (BLAST_HSPPtr PNTR) v2;
+   h1 = *hp1;
+   h2 = *hp2;
+   
+   if (h1==NULL && h2==NULL) return 0;
+   else if (h1==NULL) return 1;
+   else if (h2==NULL) return -1;
+   
+   /* Separate different queries and/or strands */
+   if (h1->context < h2->context)
+      return -1;
+   else if (h1->context > h2->context)
+      return 1;
+   
+   return (h1->query.offset - h1->subject.offset) -
+      (h2->query.offset - h2->subject.offset);
 }
+
+typedef enum E_HSPInclusionStatus {
+   e_Equal = 0,      /**< Identical */
+   e_FirstInSecond,  /**< First included in rectangle formed by second */
+   e_SecondInFirst,  /**< Second included in rectangle formed by first */
+   e_DiagNear,       /**< Diagonals are near, but neither HSP is included in
+                       the other. */
+   e_DiagDistant     /**< Diagonals are far apart, or different contexts */
+} E_HSPInclusionStatus;
+
+/** HSP inclusion criterion for megablast: one HSP must be included in a
+ * diagonal strip of a certain width around the other, and also in a rectangle
+ * formed by the other HSP's endpoints.
+ */
+static E_HSPInclusionStatus 
+BLAST_HSPInclusionTest(BLAST_HSP* hsp1, BLAST_HSP* hsp2)
+{
+   if (hsp1->context != hsp2->context || 
+       !MB_HSP_CLOSE(hsp1->query.offset, hsp2->query.offset,
+                     hsp1->subject.offset, hsp2->subject.offset, 
+                     2*MB_DIAG_NEAR))
+      return e_DiagDistant;
+
+   if (hsp1->query.offset == hsp2->query.offset && 
+       hsp1->query.end == hsp2->query.end &&  
+       hsp1->subject.offset == hsp2->subject.offset && 
+       hsp1->subject.end == hsp2->subject.end && 
+       hsp1->score == hsp2->score) {
+      return e_Equal;
+   } else if (hsp1->query.offset >= hsp2->query.offset && 
+       hsp1->query.end <= hsp2->query.end &&  
+       hsp1->subject.offset >= hsp2->subject.offset && 
+       hsp1->subject.end <= hsp2->subject.end && 
+       hsp1->score < hsp2->score) { 
+      return e_FirstInSecond;
+   } else if (hsp1->query.offset <= hsp2->query.offset &&  
+              hsp1->query.end >= hsp2->query.end &&  
+              hsp1->subject.offset <= hsp2->subject.offset && 
+              hsp1->subject.end >= hsp2->subject.end && 
+              hsp1->score >= hsp2->score) { 
+      return e_SecondInFirst;
+   }
+   return e_DiagNear;
+}
+
+/** How many HSPs to check for inclusion for each new HSP? */
+#define MAX_NUM_CHECK_INCLUSION 20
 
 static void
 BlastSortUniqHspArray(BLAST_HitListPtr hitlist)
 {
-   Int4 index, new_hspcnt, index1, q_off, s_off, q_end, s_end, index2;
+   Int4 index, new_hspcnt, index1, index2;
    BLAST_HSPPtr PNTR hsp_array = hitlist->hsp_array;
    Boolean shift_needed = FALSE;
-   Int2 context;
-   FloatHi evalue;
+   E_HSPInclusionStatus inclusion_status = e_DiagNear;
 
    HeapSort(hitlist->hsp_array, hitlist->hspcnt, sizeof(BLAST_HSPPtr), 
             diag_compare_hsps);
+
    for (index=1, new_hspcnt=0; index<hitlist->hspcnt; index++) {
       if (hsp_array[index]==NULL) 
 	 continue;
-      q_off = hsp_array[index]->query.offset;
-      s_off = hsp_array[index]->subject.offset;
-      q_end = hsp_array[index]->query.end;
-      s_end = hsp_array[index]->subject.end;
-      evalue = hsp_array[index]->evalue;
-      context = hsp_array[index]->context;
-      for (index1 = new_hspcnt; index1 >= 0 && 
-              hsp_array[index1]->context == context && new_hspcnt-index1 < 10 && 
-           MB_HSP_CLOSE(q_off, hsp_array[index1]->query.offset,
-                        s_off, hsp_array[index1]->subject.offset, 
-                        2*MB_DIAG_NEAR);
+      inclusion_status = e_DiagNear;
+      for (index1 = new_hspcnt; inclusion_status != e_DiagDistant &&
+           index1 >= 0 && new_hspcnt-index1 < MAX_NUM_CHECK_INCLUSION;
            index1--) {
-         if (q_off >= hsp_array[index1]->query.offset && 
-             s_off >= hsp_array[index1]->subject.offset && 
-             q_end <= hsp_array[index1]->query.end && 
-             s_end <= hsp_array[index1]->subject.end &&
-             evalue >= hsp_array[index1]->evalue) {
+         inclusion_status = 
+            BLAST_HSPInclusionTest(hsp_array[index], hsp_array[index1]);
+         if (inclusion_status == e_FirstInSecond || 
+             inclusion_status == e_Equal) {
+            /* Free the new HSP and break out of the inclusion test loop */
             hsp_array[index] = BLAST_HSPFree(hsp_array[index]);
             break;
-         } else if (q_off <= hsp_array[index1]->query.offset && 
-             s_off <= hsp_array[index1]->subject.offset && 
-             q_end >= hsp_array[index1]->query.end && 
-             s_end >= hsp_array[index1]->subject.end &&
-             evalue <= hsp_array[index1]->evalue) {
+         } else if (inclusion_status == e_SecondInFirst) {
             hsp_array[index1] = BLAST_HSPFree(hsp_array[index1]);
             shift_needed = TRUE;
          }
       }
       
+      /* If some lower indexed HSPs have been removed, shift the subsequent 
+         HSPs */
       if (shift_needed) {
+         /* Find the first non-NULL HSP, going backwards */
          while (index1 >= 0 && !hsp_array[index1])
             index1--;
+         /* Go forward, and shift any non-NULL HSPs */
          for (index2 = ++index1; index1 <= new_hspcnt; index1++) {
             if (hsp_array[index1])
                hsp_array[index2++] = hsp_array[index1];
@@ -3558,7 +3603,7 @@ Boolean ReevaluateScoreWithAmbiguities(BlastSearchBlkPtr search,
    BLAST_ScorePtr PNTR    matrix;
    Uint1Ptr query_start, query, subject;
    Uint1Ptr new_q_start, new_s_start, new_q_end, new_s_end;
-   Int4 index, i, context, last_esp_num;
+   Int4 i, context, last_esp_num;
    Int2 factor;
    Uint1 mask = 0x0f;
    Boolean delete_hsp;
@@ -3672,9 +3717,10 @@ Boolean ReevaluateScoreWithAmbiguities(BlastSearchBlkPtr search,
       } else {
          hsp->query.length = new_q_end - new_q_start;
          hsp->subject.length = new_s_end - new_s_start;
-         hsp->query.offset = new_q_start - query_start;
+         hsp->query.offset = hsp->gap_info->start1 = new_q_start - query_start;
          hsp->query.end = hsp->query.offset + hsp->query.length;
-         hsp->subject.offset = new_s_start - subject_start;
+         hsp->subject.offset = hsp->gap_info->start2 = 
+             new_s_start - subject_start;
          hsp->subject.end = hsp->subject.offset + hsp->subject.length;
          /* Make corrections in edit block and free any parts that
             are no longer needed */
@@ -3683,8 +3729,7 @@ Boolean ReevaluateScoreWithAmbiguities(BlastSearchBlkPtr search,
             hsp->gap_info->esp = first_esp;
          }
          if (last_esp->next != NULL) {
-            GapXEditScriptDelete(last_esp->next);
-            last_esp->next = NULL;
+            last_esp->next = GapXEditScriptDelete(last_esp->next);
          }
          last_esp->num = last_esp_num;
          BlastHSPGetNumIdentical(search, hsp, NULL, &hsp->num_ident, 
@@ -3692,12 +3737,6 @@ Boolean ReevaluateScoreWithAmbiguities(BlastSearchBlkPtr search,
       }
    } else {
       delete_hsp = TRUE;
-   }
-
-   if (delete_hsp) { /* This HSP is now below the cutoff */
-      if (first_esp != NULL && first_esp != hsp->gap_info->esp)
-         GapXEditScriptDelete(first_esp);
-      hsp->gap_info = GapXEditBlockDelete(hsp->gap_info);
    }
 
    return delete_hsp;
@@ -3820,7 +3859,7 @@ MegaBlastReevaluateWithAmbiguities(BlastSearchBlkPtr search)
          ReevaluateScoreWithAmbiguities(search, subject_start, hsp);
 
       if (delete_hsp) { /* This HSP is now below the cutoff */
-         hsp_array[index] = MemFree(hsp_array[index]);
+         hsp_array[index] = BLAST_HSPFree(hsp);
          purge = TRUE;
       }
    }
@@ -3836,7 +3875,6 @@ MegaBlastReevaluateWithAmbiguities(BlastSearchBlkPtr search)
 
    if (current_hitlist->hspcnt > 1)
       BlastSortUniqHspArray(current_hitlist);
-
    
    if (search->pbp->hsp_num_max && 
        search->pbp->hsp_num_max < search->current_hitlist->hspcnt && 
@@ -4019,7 +4057,6 @@ MegaBlastSaveCurrentHitlist(BlastSearchBlkPtr search)
            if (search->pbp->mb_params->perc_identity > 0) {
               if (MegaBlastGetHspPercentIdentity(search, hsp) < 
                   search->pbp->mb_params->perc_identity) {
-  		 hsp->gap_info = GapXEditBlockDelete(hsp->gap_info);
                  index1++;
                  if (index1 >= hspmax)
                     break;
@@ -4052,7 +4089,6 @@ MegaBlastSaveCurrentHitlist(BlastSearchBlkPtr search)
                        been completed */
                     new_size = search->pbp->hsp_num_max;
                     if (new_size <= hsp_array_sizes[query_index]) {
-                       hsp->gap_info = GapXEditBlockDelete(hsp->gap_info);
                        do_not_reallocate[query_index] = TRUE;
                        continue;
                     }
@@ -4070,7 +4106,6 @@ MegaBlastSaveCurrentHitlist(BlastSearchBlkPtr search)
                  }
               } else {
 		/* hsp_array is already full and reallocation not allowed */
-    		 hsp->gap_info = GapXEditBlockDelete(hsp->gap_info);
                  continue;
 	      }
            } else 
@@ -4116,6 +4151,9 @@ MegaBlastSaveCurrentHitlist(BlastSearchBlkPtr search)
                  hsp->subject.gapped_start;
            }
            hsp_array[hsp_index].gap_info = hsp->gap_info;
+           /* Edit block pointer has been copied; remove it from hsp to avoid
+              double freeing */
+           hsp->gap_info = NULL;
            hsp_array[hsp_index].context = hsp->context; 
            hsp_array[hsp_index].query_offset = hsp->query.offset;
            hsp_array[hsp_index].query_length = hsp->query.length;

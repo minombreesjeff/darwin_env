@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: kappa.c,v 6.39 2004/03/31 18:12:13 papadopo Exp $";
+static char const rcsid[] = "$Id: kappa.c,v 6.57 2005/04/13 17:18:02 coulouri Exp $";
 
-/* $Id: kappa.c,v 6.39 2004/03/31 18:12:13 papadopo Exp $ 
+/* $Id: kappa.c,v 6.57 2005/04/13 17:18:02 coulouri Exp $ 
 *   ==========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -34,9 +34,99 @@ Authors: Alejandro Schaffer, Mike Gertz
 Contents: Utilities for doing Smith-Waterman alignments and adjusting
     the scoring system for each match in blastpgp
 
- $Revision: 6.39 $
+ $Revision: 6.57 $
 
  $Log: kappa.c,v $
+ Revision 6.57  2005/04/13 17:18:02  coulouri
+ changes to WindowsFromHSPs for tblastn composition-based statistics
+
+ Revision 6.56  2005/01/24 15:52:54  camacho
+ doxygen fixes from Mike Gertz
+
+ Revision 6.55  2005/01/20 16:28:59  camacho
+ doxygen fixes
+
+ Revision 6.54  2005/01/18 14:54:13  camacho
+ Change in tie-breakers for score comparison, suggestion by Mike Gertz
+
+ Revision 6.53  2004/11/24 15:42:33  coulouri
+ do not dereference null pointer
+
+ Revision 6.52  2004/11/23 21:29:02  camacho
+ Changes from Mike Gertz:
+ - If no alignments are found, I no longer create an empty HSP list and
+   process it; I just move on to the next match.
+ - For tblastn, culling by containment now occurs before link_hsps as
+   it should. This can not have any effect on the current output, as
+   tblastn + RedoAlignmentCore is not enabled.
+ - I changed some Nlm_Mallocs, etc. to MemNew.
+ - Other cosmetic changes, doxygen friendly comments
+
+ Revision 6.51  2004/11/01 20:43:48  camacho
+ Added error handling for missing PSSM
+
+ Revision 6.50  2004/10/27 21:00:02  camacho
+ Change the order of elements in Score* returned by GetScoreSetFromBlastHsp to
+ be consistent with score ordering in other contexts of BLAST.
+
+ Revision 6.49  2004/09/09 13:47:47  papadopo
+ from Michael Gertz: remove unnecessary check for the presence of Selenocysteine in translated sequences
+
+ Revision 6.48  2004/08/23 19:37:38  papadopo
+ From Michael Gertz: fix memory leak in getStartFreqRatios
+
+ Revision 6.47  2004/08/23 17:12:21  papadopo
+ From Michael Gertz: Backported some changes to
+ getStartFreqRatios and computeScaledStandardMatrix
+ from algo/blast/core/blast_kappa.c code. Also a few
+ straightforward changes to getStartFreqRatios,
+ because the code has diverged slightly
+
+ Revision 6.46  2004/07/28 17:19:54  kans
+ HeapSort callbacks are int LIBCALLBACK for compilation on the PC
+
+ Revision 6.45  2004/07/27 19:59:00  papadopo
+ Changes by Michael Gertz to allow RedoAlignmentCore to be used
+ for tblastn searches. The current version of the code uses two heuristics:
+ 1) a heuristic that skips doing re-alignment for an HSP if the old
+    alignment of the HSP is contained in a higher-scoring HSP that
+    has already been re-aligned.
+ 2) a heuristic that attempts to ensure that all alignments in the list
+    of redone alignments has distinct ends.
+ The original code also used these heuristics, but the code that
+ implements the heuristics has been rewritten. As a result,
+ RedoAlignmentCore will occasionally report better-scoring alignments.
+ This is still a heuristic; which HSPs are reported still depends on
+ the order in which they are re-aligned.
+
+ Revision 6.44  2004/06/23 14:53:58  camacho
+ Use renamed FreqRatios structure from posit.h
+
+ Revision 6.43  2004/06/22 14:16:56  camacho
+ Use SFreqRatios structure from algo/blast/core to obtain underlying matrices' frequency ratios.
+
+ Revision 6.42  2004/06/18 15:50:25  madden
+ For secondary alignments with Smith-Waterman on, use the E-value from the X-drop alignment computed by ALIGN that has more flexibility in which positions are allowed in the dynamic program.
+
+ Add a sort of alignments for the same query-subject pair because the use of X-drop alignments occasionally reorders such alignments.
+
+ Changes from Mike Gertz, submitted by Alejandro Schaffer.
+
+ Revision 6.41  2004/06/14 21:11:05  papadopo
+ From Michael Gertz:
+ - Added several casts where casts occur in blast_kappa.c.  These casts
+      should have no real effect; the log of blast_kappa.c indicates that
+      they suppress compiler warnings.
+ - Changed the type of one variable that holds a score from
+      Nlm_FloatHi to Int4.
+ - moved the definition Kappa_ForbiddenRanges and relevant
+      routines earlier in the file.
+ - fixed some comments.
+ - made a few (~5) changes in whitespace.
+
+ Revision 6.40  2004/06/03 16:10:50  dondosha
+ Fix in Kappa_SearchParametersNew: allocate correct number of rows for matrices
+
  Revision 6.39  2004/03/31 18:12:13  papadopo
  Mike Gertz' refactoring of RedoAlignmentCore
 
@@ -186,208 +276,461 @@ Contents: Utilities for doing Smith-Waterman alignments and adjusting
 #include <profiles.h>
 
 
-#define EVALUE_STRETCH 5 /*by what factor might initially reported E-value
-                           exceed true Evalue*/
+extern Nlm_FloatHi LIBCALL
+impalaKarlinLambdaNR PROTO((BLAST_ScoreFreqPtr sfp,
+                            Nlm_FloatHi initialLambda));
+
+
+/** by what factor might initially reported E-value exceed true Evalue */
+#define EVALUE_STRETCH 5
+/** number of real aminoacids (i.e.: does not include U, X, B, etc) */
 #define PRO_TRUE_ALPHABET_SIZE 20
-#define scoreRange 10000
+/** range of scores in a matrix */
+#define kScoreMatrixScoreRange 10000
 
+/** For translated subject sequences, the number of amino acids to
+    include before and after the existing aligned segment when
+    generating a composition-based scoring system. */
+#define KAPPA_WINDOW_BORDER 200
 
-extern Nlm_FloatHi LIBCALL impalaKarlinLambdaNR PROTO((BLAST_ScoreFreqPtr sfp, Nlm_FloatHi initialLambda));
+/**positions of true characters in protein alphabet*/
+static Int4 trueCharPositions[PRO_TRUE_ALPHABET_SIZE] =
+  {1,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,22};
 
-
-/*positions of true characters in protein alphabet*/
-Int4 charPositions[20] = {1,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,22};
 
 /**
- * SWResultsNew Create a new instance of the SWResults struct, initializing
- *              it with values common to different kinds of searches 
+ * Create a score set from the data in an HSP.
  *
- *              The parameters of this function correspond directly to fields
- *              in the SWResults data structure */ 
-static SWResults *
-SWResultsNew(Uint1Ptr sequence,
-             BLAST_Score newScore,
-             BLAST_Score bestScore,
-             Nlm_FloatHi newEvalue,
-             Nlm_FloatHi bestEvalue,
-             Boolean isFirstAlignment,
-             Nlm_FloatHi lambda,
-             Nlm_FloatHi logK,
-             Int4 subject_index,
-             SeqIdPtr subject_id)
+ * @param hsp               the HSP of interest [in]
+ * @param logK              Karlin-Altschul statistical parameter [in]
+ * @param lambda            Karlin-Altschul statistical parameter [in]
+ * @param scoreDivisor      the value by which reported scores are to be
+ *                          divided [in]
+ */
+static ScorePtr
+GetScoreSetFromBlastHsp(
+  const BLAST_HSPPtr hsp,
+  Nlm_FloatHi lambda,
+  Nlm_FloatHi logK,
+  Nlm_FloatHi scoreDivisor)
 {
-  SWResults *newSW;             /* The newly created instance of SWResults */
+  ScorePtr      score_set = NULL;       /* the new score set */
+  Int4          score;          /* the score, scaled using scaleDivisor */
+  Nlm_FloatHi   bit_score;      /* the integer-valued score, in bits */
+  Nlm_FloatHi   evalue;         /* the e-value, with numbers too close to zero
+                                   set to zero */
 
-  newSW = (SWResults *) MemNew(1 * sizeof(SWResults));
-  if(newSW) {
-    newSW->seq     = sequence;
-    newSW->score   = bestScore;
-    newSW->eValue  = bestEvalue;
-    newSW->Lambda  = lambda;
-    newSW->logK    = logK;
-
-    newSW->scoreThisAlign   = newScore;
-    newSW->eValueThisAlign  = newEvalue;
-    newSW->isFirstAlignment = isFirstAlignment;
-    newSW->subject_index    = subject_index;
-    newSW->subject_id       = SeqIdSetDup(subject_id);
-
-    newSW->next = NULL;
+  score = Nlm_Nint(((Nlm_FloatHi) hsp->score) / scoreDivisor);
+  if (score > 0) {
+    MakeBlastScore(&score_set, "score", 0.0, score);
   }
-  return newSW;
+
+  evalue = (hsp->evalue >= 1.0e-180) ? hsp->evalue : 0;
+  if (hsp->num > 1) {
+    MakeBlastScore(&score_set, "sum_e", evalue, 0);
+    MakeBlastScore(&score_set, "sum_n", 0.0, hsp->num);
+    if( hsp->ordering_method == BLAST_SMALL_GAPS) {
+      MakeBlastScore(&score_set, "small_gap", 0.0, 1);
+    }
+  } else {
+    MakeBlastScore(&score_set, "e_value", evalue, 0);
+  }
+
+  /* Compute the bit score using the newly computed scaled score. */
+  bit_score = (score*lambda*scoreDivisor - logK)/NCBIMATH_LN2;
+  if (bit_score >= 0.) {
+    MakeBlastScore(&score_set, "bit_score", bit_score, 0);
+  }
+
+  if (hsp->ordering_method > 3) {
+    /* In new tblastn this means splice junction was found */
+    MakeBlastScore(&score_set, "splice_junction", 0.0, 1);
+  }
+
+  if (hsp->num_ident > 0) {
+    MakeBlastScore(&score_set, "num_ident", 0.0, hsp->num_ident);
+  }
+
+  return score_set;
 }
 
 
 /**
- * An instance of struct Kappa_MatchRecord represents all alignments
- * of a query sequence to a matching subject sequence.
+ * Converts a collection of alignments represented by a BLAST_HitList
+ * into a collection of instances of SeqAlign. Returns the new
+ * collection.
  *
- * For a given query-subject pair, a Kappa_MatchRecord is created once it
- * is known that the eValue of the best alignment is small enough to be 
- * significant.  Then alignments of the two sequences are added to the
- * Kappa_MatchRecord one at a time, using one of the following two routines
- * 
- * - Kappa_MatchRecordInsertSeqAlign inserts the alignment represented
- *   by a single SeqAlign into the match record.
- * - Kappa_MatchRecordInsertSwAlign inserts an alignment computed by
- *   the Smith-Waterman algorithm into the match record.
- * 
- * Alignments should be specified in order of smallest (best) e-value to
- * largest (worst) e-value.
- *
- * The Kappa_MatchRecord::alignments field stores the alignments in
- * the reverse order, i.e. from largest (worst) e-value to smallest
- * (best) e-value.  The reason the alignments are stored in reverse
- * order is that this order is consistent with the order that matches
- * are returned by a SWheap (see below), i.e. worst to best. 
- */ 
-
-struct Kappa_MatchRecord {
-  Nlm_FloatHi  eValue;          /* best evalue of all alignments the record */
-  BLAST_Score  score;           /* best score of all alignments the record */  
-  Uint1Ptr     sequence;        /* the subject sequence */
-  Int4         subject_index;   /* the index number of the subject sequence */
-  SeqIdPtr     id;              /* the id structure of the subject sequence */
-  SWResults   *alignments;      /* a list of query-subject alignments */
-};
-typedef struct Kappa_MatchRecord Kappa_MatchRecord;
-
-
-/**
- * Initialize a Kappa_MatchRecord.  Parameters to this function correspond
- * directly to fields of Kappa_MatchRecord */
-static void
-Kappa_MatchRecordInitialize(Kappa_MatchRecord * self,
-                            Nlm_FloatHi eValue,
-                            BLAST_Score score,
-                            Uint1Ptr sequence,
-                            Int4 subject_index,
-                            SeqIdPtr id)
+ * @param hitlist           the hitlist to convert to SeqAligns [in]
+ * @param subject_id        the identifier of the subject sequence [in]
+ * @param query_id          the identifier of the query sequence [in]
+ * @param lambda            Karlin-Altschul statistical parameter [in]
+ * @param logK              Karlin-Altschul statistical parameter [in]
+ * @param scoreDivisor      value by which reported scores are to be
+ *                          divided [in]
+ * @param bestEvalue)       the best (smallest) e-value of all the alignments
+ *                          in the hitlist [out]
+ */
+static SeqAlignPtr
+SeqAlignsFromHitlist(
+  BLAST_HitListPtr hitlist,
+  SeqIdPtr subject_id,
+  SeqIdPtr query_id,
+  Nlm_FloatHi lambda,
+  Nlm_FloatHi logK,
+  Nlm_FloatHi scoreDivisor,
+  Nlm_FloatHi * bestEvalue)
 {
-  self->eValue   = eValue;
-  self->score    = score;
-  self->sequence = sequence;
-  self->id       = id;
-  self->subject_index = subject_index;
-  self->alignments    = NULL;
+  SeqAlignPtr aligns = NULL;  /* list of SeqAligns to be returned */
+  Int4        hsp_index;
+
+  *bestEvalue = INT4_MAX;
+  for( hsp_index = hitlist->hspcnt - 1; hsp_index >= 0; hsp_index-- ) {
+    /* iterate in reverse order over all HSPs in the hitlist */
+    BLAST_HSPPtr hsp;           /* HSP for this iteration */
+    SeqAlignPtr seqAlign;       /* the new SeqAlign */
+
+    hsp      = hitlist->hsp_array[hsp_index];
+    if( hsp->evalue < *bestEvalue ) *bestEvalue = hsp->evalue;
+
+    seqAlign = GapXEditBlockToSeqAlign(hsp->gap_info, subject_id, query_id);
+    seqAlign->score = GetScoreSetFromBlastHsp(hsp, lambda, logK, scoreDivisor);
+
+    seqAlign->next  = aligns;
+    aligns          = seqAlign;
+  }
+  return aligns;
 }
 
 
-/**  
- * Insert an alignment represented by a seqAlign into the match
- * record.
+/**
+ * Remove from a hitlist all HSPs that are completely contained in an
+ * HSP that occurs earlier in the list and that:
+ * - is on the same strand; and
+ * - has equal or greater score.  T
+ * The hitlist should be sorted by some measure of significance before
+ * this routine is called.
+ * @param hsp_array         array to be reaped
+ * @param hspcnt            length of hsp_array
  */
 static void
-Kappa_MatchRecordInsertSeqAlign(
-  Kappa_MatchRecord * self,     /* the match record to be altered */
-  SeqAlignPtr seqAlign,         /* the alignment to add to the match record */
-  BLASTResultHspPtr hsp,        /* the hsp corresponding to the alignment */
-  Nlm_FloatHi lambda,           /* a statistical parameter used to
-                                 * evaluate the significance of the
-                                 * match */
-  Nlm_FloatHi logK,             /* a statistical parameter used to
-                                 * evaluate the significance of the
-                                 * match */
-  Nlm_FloatHi localScalingFactor        /* the factor by which the
-                                         * scoring system has been
-                                         * scaled in order to obtain
-                                         * greater precision */
-) {
-  BLAST_Score newScore;         /* The evalue of the alignment to be 
-                                   inserted */
-  Nlm_FloatHi newEvalue;        /* The evalue of the alignment to be
-                                   inserted */
-  SWResults *newSW;             /* A new SWResults object that
-                                   represents the alignment to be
-                                   inserted */
+HitlistReapContained(
+  BLAST_HSPPtr * hsp_array,
+  Int4 * hspcnt)
+{
+  Int4 iread;       /* iteration index used to read the hitlist */
+  Int4 iwrite;      /* iteration index used to write to the hitlist */
+  Int4 old_hspcnt;  /* number of HSPs in the hitlist on entry */
 
-  newEvalue = hsp->e_value;
-  newScore  = Nlm_Nint(((Nlm_FloatHi) hsp->score) / localScalingFactor);
+  old_hspcnt = *hspcnt;
 
-  newSW =
-    SWResultsNew(self->sequence, newScore, self->score, newEvalue,
-                 self->eValue, (NULL == self->alignments),
-                 localScalingFactor * lambda, logK,
-                 self->subject_index, self->id);
+   for( iread = 1; iread < *hspcnt; iread++ ) {
+     /* for all HSPs in the hitlist */
+     Int4         ireadBack;    /* iterator over indices less than iread */
+     BLAST_HSPPtr hsp1;         /* an HSP that is a candidate for deletion */
 
-  newSW->seqAlign   = seqAlign;
-  newSW->queryStart = hsp->gap_info->start1;
-  newSW->seqStart   = hsp->gap_info->start2;
-  newSW->next       = self->alignments;
+     hsp1 = hsp_array[iread];
+     for( ireadBack = 0; ireadBack < iread && hsp1 != NULL; ireadBack++ ) {
+       /* for all HSPs before hsp1 in the hitlist and while hsp1 has not
+          been deleted */
+       BLAST_HSPPtr hsp2;       /* an HSP that occurs earlier in hsp_array
+                                 * than hsp1 */
+       hsp2 = hsp_array[ireadBack];
 
-  self->alignments = newSW;
+       if( hsp2 == NULL ) {  /* hsp2 was deleted in a prior iteration. */
+         continue;
+       }
+       if(SIGN(hsp2->query.frame)   == SIGN(hsp1->query.frame) &&
+          SIGN(hsp2->subject.frame) == SIGN(hsp1->subject.frame)) {
+         /* hsp1 and hsp2 are in the same query/subject frame. */
+         if(CONTAINED_IN_HSP
+            (hsp2->query.offset,   hsp2->query.end,   hsp1->query.offset,
+             hsp2->subject.offset, hsp2->subject.end,
+             hsp1->subject.offset) &&
+            CONTAINED_IN_HSP
+            (hsp2->query.offset,   hsp2->query.end,   hsp1->query.end,
+             hsp2->subject.offset, hsp2->subject.end,
+             hsp1->subject.end)    &&
+            hsp1->score <= hsp2->score) {
+           hsp1 = hsp_array[iread] = BLAST_HSPFree(hsp_array[iread]);
+         }
+       } /* end if hsp1 and hsp2 are in the same query/subject frame */
+     } /* end for all HSPs before hsp1 in the hitlist */
+   } /* end for all HSPs in the hitlist */
+
+   /* Condense the hsp_array, removing any NULL items. */
+   iwrite = 0;
+   for( iread = 0; iread < *hspcnt; iread++ ) {
+     if( hsp_array[iread] != NULL ) {
+       hsp_array[iwrite++] = hsp_array[iread];
+     }
+   }
+   *hspcnt = iwrite;
+   /* Fill the remaining memory in hsp_array with NULL pointers. */
+   for( ; iwrite < old_hspcnt; iwrite++ ) {
+     hsp_array[iwrite] = NULL;
+   }
 }
 
 
-/**  
- * Insert an alignment computed by the Smith-Waterman algorithm into
- * the match record.
+/**
+ * An object of type Kappa_DistinctAlignment represents a distinct
+ * alignment of the query sequence to the current subject sequence.
+ * These objects are typically part of a singly linked list of
+ * distinct alignments, stored in the reverse of the order in which
+ * they were computed.
+ */
+typedef struct Kappa_DistinctAlignment {
+  Int4 score;            /**< the score of this alignment */
+  Int4 queryStart;       /**< the start of the alignment in the query */
+  Int4 queryEnd;         /**< one past the end of the alignment in the query */
+  Int4 matchStart;       /**< the start of the alignment in the subject */
+  Int4 matchEnd;         /**< one past the end of the alignment in the
+                              subject */
+  Int4 frame;            /**< the subject frame */
+  GapXEditBlockPtr editBlock;   /**< the alignment info for a gapped
+                                     alignment */
+  struct Kappa_DistinctAlignment * next;  /**< the next alignment in the
+                                               list */
+} Kappa_DistinctAlignment;
+
+
+/**
+ * Recursively free all alignments in the singly linked list whose
+ * head is *palign. Set *palign to NULL.
+ *
+ * @param palign            pointer to the head of a singly linked list
+ *                          of alignments.
  */
 static void
-Kappa_MatchRecordInsertSwAlign(
-  Kappa_MatchRecord * self,     /* the match record to be altered */
-  BLAST_Score newScore,         /* the score of the alignment */
-  Nlm_FloatHi newEvalue,        /* the evalue of the alignment */
-  Nlm_FloatHi lambda,           /* a statistical parameter used to
-                                 * evaluate the significance of the
-                                 * match */
-  Nlm_FloatHi logK,             /* a statistical parameter used to
-                                 * evaluate the significance of the
-                                 * match */
-  Nlm_FloatHi localScalingFactor,        /* the factor by which the
-                                         * scoring system has been
-                                         * scaled in order to obtain
-                                         * greater precision */
-  Int4 matchStart,              /* start of the alignment in the subject */
-  Int4 matchAlignmentExtent,    /* length of the alignment in the subject */
-  Int4 queryStart,              /* start of the alignment in the query */  
-  Int4 queryAlignmentExtent,    /* length of the alignment in the query */
-  Int4 * reverseAlignScript     /* Alignment information (script)
-                                 * returned by the X-drop alignment algorithm */
+Kappa_DistinctAlignmentsFree(Kappa_DistinctAlignment ** palign)
+{
+  Kappa_DistinctAlignment * align;      /* represents the current
+                                           alignment in loops */
+  align = *palign;  *palign = NULL;
+  while(align != NULL) {
+    /* Save the value of align->next, because align is to be deleted. */
+    Kappa_DistinctAlignment * align_next = align->next;
+    align_next = align->next;
 
-) {
-  SWResults *newSW;             /* A new SWResults object that
-                                   represents the alignment to be
-                                   inserted */
-  if(NULL == self->alignments) {
-    /* This is the first sequence recorded for this match. Use the x-drop
-     * score, "newScore", as the score for the sequence */
-    self->score = newScore;
+    if(align->editBlock) {
+      GapXEditBlockDelete(align->editBlock);
+    }
+    MemFree(align);
+
+    align = align_next;
   }
-  newSW =
-    SWResultsNew(self->sequence, newScore, self->score, newEvalue,
-                 self->eValue, (NULL == self->alignments),
-                 lambda * localScalingFactor, logK, self->subject_index,
-                 self->id);
+}
 
-  newSW->seqStart   = matchStart;
-  newSW->seqEnd     = matchStart + matchAlignmentExtent;
-  newSW->queryStart = queryStart;
-  newSW->queryEnd   = queryStart + queryAlignmentExtent;
-  newSW->next       = self->alignments;
-  newSW->reverseAlignScript = reverseAlignScript;
 
-  self->alignments  = newSW;
+/**
+ * Converts a list of objects of type Kappa_DistinctAlignment to an
+ * new object of type BLAST_HitList and returns the result. Conversion
+ * in this direction is lossless.  The list passed to this routine is
+ * freed to ensure that there is no aliasing of fields between the
+ * list of Kappa_DistinctAlignments and the new hitlist.
+ *
+ * @param search            general search information
+ * @param alignments        a list of distinct alignments
+ */
+static BLAST_HitListPtr
+HitlistFromDistinctAlignments(
+  BlastSearchBlkPtr search,
+  Kappa_DistinctAlignment ** alignments)
+{
+  /* The context of the query is always zero in current
+   * implementations of RedoAlignmentCore. */
+  const Int4 context = 0;
+
+  BLAST_HitListPtr hitlist;             /* the new hitlist */
+  Kappa_DistinctAlignment * align;      /* represents the current
+                                         * alignment in loops */
+  if(search->current_hitlist != NULL) {
+    search->current_hitlist->hspcnt_max = search->current_hitlist->hspcnt;
+    BlastHitListPurge(search->current_hitlist);
+  } else {
+    search->current_hitlist =  BlastHitListNew(search);
+  }
+  hitlist = search->current_hitlist;
+  hitlist->do_not_reallocate = FALSE;
+
+  for(align = *alignments; align != NULL; align = align->next) {
+    BLAST_HSPPtr hsp;           /* the new HSP for this alignment */
+    /* queryExtent and matchExtent represent the extent of the
+       alignment in the query and subject sequences respectively. */
+    Int4 queryExtent = align->queryEnd - align->queryStart;
+    Int4 matchExtent = align->matchEnd - align->matchStart;
+
+    BlastSaveCurrentHsp(search, align->score, align->queryStart,
+                        align->matchStart, matchExtent, context);
+
+    hsp = hitlist->hsp_array[hitlist->hspcnt - 1];
+
+    hsp->query.length   = queryExtent;
+    hsp->query.end      = align->queryEnd;
+
+    hsp->subject.length = matchExtent;
+    hsp->subject.end    = align->matchEnd;
+
+    hsp->subject.frame  = align->frame;
+    hsp->evalue         = 0.0;  /* E-values are computed after the full
+                                   hitlist has been created. */
+    hsp->gap_info       = align->editBlock;
+
+    /* Break the aliasing between align->editBlock and hsp->gap_info. */
+    align->editBlock = NULL;
+  }
+
+  Kappa_DistinctAlignmentsFree(alignments);
+
+  return hitlist;
+}
+
+
+/**
+ * Given a list of alignments and a new alignment, create a new list
+ * of alignments that conditionally includes the new alignment.
+ *
+ * If there is an equal or higher-scoring alignment in the preexisting
+ * list of alignments that shares an endpoint with the new alignment,
+ * then preexisting list is returned.  Otherwise, a new list is
+ * returned with the new alignment as its head and the elements of
+ * preexisting list that do not share an endpoint with the new
+ * alignment as its tail. The order of elements is preserved.
+ *
+ * Typically, a list of alignments is built one alignment at a time
+ * through a call to withDistinctEnds. All alignments in the resulting
+ * list have distinct endpoints.  Which items are retained in the list
+ * depends on the order in which they were added.
+ *
+ * Note that an endpoint is a triple, specifying a frame, a location
+ * in the query and a location in the subject.  In other words,
+ * alignments that are not in the same frame never share endpoints.
+ *
+ * @param p_newAlign        on input the alignment that may be added to
+ *                          the list; on output NULL
+ * @param p_oldAlignment    on input the existing list of alignments;
+ *                          on output the new list
+ */
+static void
+withDistinctEnds(
+  Kappa_DistinctAlignment **p_newAlign,
+  Kappa_DistinctAlignment **p_oldAlignments)
+{
+  /* Deference the input parameters. */
+  Kappa_DistinctAlignment * newAlign      = *p_newAlign;
+  Kappa_DistinctAlignment * oldAlignments = *p_oldAlignments;
+  Kappa_DistinctAlignment * align;      /* represents the current
+                                          alignment in loops */
+  Boolean include_new_align;            /* true if the new alignment
+                                           may be added to the list */
+  *p_newAlign        = NULL;
+  include_new_align  = 1;
+
+  for(align = oldAlignments; align != NULL; align = align->next) {
+    if(align->frame == newAlign->frame &&
+       (   (   align->queryStart == newAlign->queryStart
+            && align->matchStart == newAlign->matchStart)
+        || (   align->queryEnd   == newAlign->queryEnd
+            && align->matchEnd   == newAlign->matchEnd))) {
+      /* At least one of the endpoints of newAlign matches an endpoint
+         of align. */
+      if( newAlign->score <= align->score ) {
+        /* newAlign cannot be added to the list. */
+        include_new_align = 0;
+        break;
+      }
+    }
+  }
+
+  if(include_new_align) {
+    Kappa_DistinctAlignment **tail;     /* tail of the list being created */
+
+    tail  = &newAlign->next;
+    align = oldAlignments;
+    while(align != NULL) {
+      /* Save align->next because align may be deleted. */
+      Kappa_DistinctAlignment * align_next = align->next;
+      align->next = NULL;
+      if(align->frame == newAlign->frame &&
+         (   (   align->queryStart == newAlign->queryStart
+              && align->matchStart == newAlign->matchStart)
+          || (   align->queryEnd   == newAlign->queryEnd
+              && align->matchEnd   == newAlign->matchEnd))) {
+        /* The alignment shares an end with newAlign; */
+        /* delete the alignment. */
+        Kappa_DistinctAlignmentsFree(&align);
+      } else { /* The alignment does not share an end with newAlign; */
+        /* add it to the output list. */
+        *tail =  align;
+        tail  = &align->next;
+      }
+      align = align_next;
+    } /* end while align != NULL */
+    *p_oldAlignments = newAlign;
+  } else { /* do not include_new_align */
+    Kappa_DistinctAlignmentsFree(&newAlign);
+  } /* end else do not include newAlign */
+}
+
+
+/**
+ * The number of bits by which the score of a previously computed
+ * alignment must exceed the score of the HSP under consideration for
+ * a containment relationship to be reported by the isAlreadyContained
+ * routine. */
+#define KAPPA_BIT_TOL 2
+
+
+/**
+ * Return true if the HSP is already contained in a
+ * previously-computed alignment of sufficiently high score.
+ *
+ * @param hsp                 HSP to be tested
+ * @param alignments          list of alignments
+ * @param lambda              Karlin-Altschul statistical parameter
+ * @param localScalingFactor  factor by which scores were scaled to
+ *                            obtain higher precision
+ */
+
+static Boolean
+isAlreadyContained(
+  BLASTResultHspPtr hsp,
+  Kappa_DistinctAlignment * alignments,
+  Nlm_FloatHi lambda,
+  Nlm_FloatHi localScalingFactor)
+{
+  Kappa_DistinctAlignment * align;     /* represents the current alignment
+                                          in the main loop */
+
+  /* Endpoints of the HSP, using the convention the right endpoint is
+   * one past the end of the HSP. */
+  Int4 hsp_query_offset    = hsp->query_offset;
+  Int4 hsp_query_end       = hsp_query_offset + hsp->query_length;
+  Int4 hsp_subject_offset  = hsp->subject_offset;
+  Int4 hsp_subject_end     = hsp_subject_offset + hsp->subject_length;
+
+  Nlm_FloatHi scoreTol;   /* the amount by which the score of the current
+                             alignment must exceed the score of the HSP for a
+                             containment relationship to be reported. */
+  scoreTol = KAPPA_BIT_TOL * NCBIMATH_LN2/lambda;
+
+  for( align = alignments; align != NULL; align = align->next ) {
+    /* for all elements of alignments */
+    if(SIGN(hsp->query_frame)   == SIGN(align->frame)) {
+      /* hsp1 and hsp2 are in the same query/subject frame */
+      if(CONTAINED_IN_HSP
+         (align->queryStart, align->queryEnd, hsp_query_offset,
+          align->matchStart, align->matchEnd, hsp_subject_offset) &&
+         CONTAINED_IN_HSP
+         (align->queryStart, align->queryEnd, hsp_query_end ,
+          align->matchStart, align->matchEnd, hsp_subject_end) &&
+                 hsp->score * localScalingFactor + scoreTol <= align->score) {
+        return 1;
+      }
+    } /* hsp1 and hsp2 are in the same query/subject frame */
+  } /* end for all items in alignments */
+
+  return 0;
 }
 
 
@@ -396,51 +739,48 @@ Kappa_MatchRecordInsertSwAlign(
  * internal structure of a SWheap (see below).  A SWheapRecord
  * represents all alignments of a query sequence to a particular
  * matching sequence.
- *
- * The SWResults::theseAlignments field is a linked list of alignments
- * of the query-subject pair.  The list is ordered by evalue in
- * descending order. Thus the first element has biggest (worst) evalue
- * and the last element has smallest (best) evalue. 
  */
 typedef struct SWheapRecord {
-  Nlm_FloatHi bestEvalue;       /* best (smallest) evalue of all alignments
-                                 * in the record */
-  SWResults *theseAlignments;   /* a list of alignments */
+  Nlm_FloatHi   bestEvalue;     /**< best (smallest) evalue of all alignments
+                                     in the record */
+  Int4          subject_index;  /**< index of the subject sequence in
+                                     the database */
+  SeqAlignPtr   theseAlignments;  /**< a list of alignments */
 } SWheapRecord;
 
 
-/*Compare two records in the heap.  */
+/** Compare two records in the heap.  */
 static Boolean
 SWheapRecordCompare(SWheapRecord * place1,
                     SWheapRecord * place2)
 {
-  return ((place1->bestEvalue > place2->bestEvalue) ||
-          (place1->bestEvalue == place2->bestEvalue &&
-           place1->theseAlignments->subject_index >
-           place2->theseAlignments->subject_index));
+  return ((place1->bestEvalue    >  place2->bestEvalue) ||
+          (place1->bestEvalue    == place2->bestEvalue &&
+           place1->subject_index >  place2->subject_index));
 }
 
 
-/*swap two records in the heap*/
+/** swap two records in the heap*/
 static void
 SWheapRecordSwap(SWheapRecord * heapArray,
                  Int4 i,
                  Int4 j)
 {
-  /* bestEvalue and theseAlignments are temporary variables used to
-   * perform the swap. */
+  /* bestEvalue, theseAlignments and subject_index are temporary
+   * variables used to perform the swap. */
   Nlm_FloatHi bestEvalue       = heapArray[i].bestEvalue;
-  SWResults *theseAlignments   = heapArray[i].theseAlignments;
+  SeqAlignPtr theseAlignments  = heapArray[i].theseAlignments;
+  Int4        subject_index    = heapArray[i].subject_index;
 
   heapArray[i].bestEvalue      = heapArray[j].bestEvalue;
   heapArray[i].theseAlignments = heapArray[j].theseAlignments;
+  heapArray[i].subject_index   = heapArray[j].subject_index;
 
   heapArray[j].bestEvalue      = bestEvalue;
   heapArray[j].theseAlignments = theseAlignments;
+  heapArray[j].subject_index   = subject_index;
 }
 
-
-#ifdef KAPPA_INTENSE_DEBUG
 
 /**
  * Verifies that the array heapArray[i] .. heapArray[n] is ordered so
@@ -466,6 +806,8 @@ SWheapIsValid(SWheapRecord * heapArray,
   return TRUE;
 }
 
+/** convenience debugging macro for this module */
+#ifdef KAPPA_INTENSE_DEBUG
 #define KAPPA_ASSERT(expr) ((expr) ? 0 : \
 (fprintf( stderr, "KAPPA_ASSERT failed line %d: %s", __LINE__, #expr ), \
 exit(1)))
@@ -474,9 +816,13 @@ exit(1)))
 #endif
 
 
-/* On entry, all but the first element of the array heapArray[i]
+/** On entry, all but the first element of the array heapArray[i]
  * .. heapArray[n] are in valid heap order.  This routine rearranges
- * the elements so that on exit they all are in heap order. */
+ * the elements so that on exit they all are in heap order.
+ * @param heapArray holds the heap [in][out]
+ * @param i element of heapArray that may be out of order [in]
+ * @param n size of heapArray [in]
+ */
 static void
 SWheapifyDown(SWheapRecord * heapArray,
               Int4 i,
@@ -506,9 +852,14 @@ SWheapifyDown(SWheapRecord * heapArray,
 }
 
 
-/* On entry, all but the last element of the array heapArray[i]
- * .. heapArray[n] are in valid heap order.  This routine rearranges
- * the elements so that on exit they all are in heap order. */
+/** On entry, all but the last element of the array heapArray[0]
+ * .. heapArray[i] are in valid heap order.  This routine rearranges
+ * the elements so that on exit they all are in heap order.
+ *
+ * @param heapArray      holds the heap [in][out]
+ * @param i              element in heap array that may be out of order [in]
+ * @param n              size of heapArray
+ */
 static void
 SWheapifyUp(SWheapRecord * heapArray,
             Int4 i,
@@ -559,30 +910,32 @@ SWheapifyUp(SWheapRecord * heapArray,
  * evalue.  The routines that operate on a SWheap should behave
  * properly whichever state the SWheap is in.
  */
-struct SWheap {
-  Int4 n;                       /* The current number of elements */
-  Int4 capacity;                /* The maximum number of elements that may be 
-                                   inserted before the SWheap must be resized 
-                                 */
-  Int4 heapThreshold;           /* see above */
-  Nlm_FloatHi ecutoff;          /* matches with evalue below ecutoff may
-                                   always be inserted in the SWheap */
-  Nlm_FloatHi worstEvalue;      /* the worst (biggest) evalue currently in
-                                   the heap */
+typedef struct SWheap {
+  Int4 n;                       /**< The current number of elements */
+  Int4 capacity;                /**< The maximum number of elements
+                                     that may be inserted before the
+                                     SWheap must be resized */
+  Int4 heapThreshold;           /**< see above */
+  Nlm_FloatHi ecutoff;          /**< matches with evalue below ecutoff may
+                                     always be inserted in the SWheap */
+  Nlm_FloatHi worstEvalue;      /**< the worst (biggest) evalue currently in
+                                     the heap */
 
-  SWheapRecord *array;          /* the SWheapRecord array if the SWheap is
-                                   being represented as an unordered array */
-  SWheapRecord *heapArray;      /* the SWheapRecord array if the SWheap is
-                                   being represented as an heap-ordered
-                                   array. At least one of (array, heapArray)
-                                   is NULL */
+  SWheapRecord *array;          /**< the SWheapRecord array if the SWheap is
+                                     being represented as an unordered array */
+  SWheapRecord *heapArray;      /**< the SWheapRecord array if the SWheap is
+                                     being represented as an heap-ordered
+                                     array. At least one of (array, heapArray)
+                                     is NULL */
 
-};
-typedef struct SWheap SWheap;
+} SWheap;
 
 
-/* Convert a SWheap from a representation as an unordered array to
- * a representation as a heap-ordered array. */
+/** Convert a SWheap from a representation as an unordered array to
+ *  a representation as a heap-ordered array.
+ *
+ *  @param self         the SWheap to convert
+ */
 static void
 ConvertToHeap(SWheap * self)
 {
@@ -601,14 +954,18 @@ ConvertToHeap(SWheap * self)
   KAPPA_ASSERT(SWheapIsValid(self->heapArray, 1, self->n));
 }
 
-/*When the heap is about to exceed its capacity, it will be grown by
- *the minimum of a multiplicative factor of SWHEAP_RESIZE_FACTOR
- *and an additive factor of SWHEAP_MIN_RESIZE. The heap never
- *decreases in size */
+/** When the heap is about to exceed its capacity, it will be grown by
+ * the minimum of a multiplicative factor of SWHEAP_RESIZE_FACTOR
+ * and an additive factor of SWHEAP_MIN_RESIZE. The heap never
+ * decreases in size */
 #define SWHEAP_RESIZE_FACTOR 1.5
+/** @sa SWHEAP_RESIZE_FACTOR */
 #define SWHEAP_MIN_RESIZE 100
 
-/* Return true if self would insert a match that had the given eValue */
+/** Return true if self would insert a match that had the given eValue
+ *  @param self         a SWheap
+ *  @param eValue       the evalue to be tested.
+ */
 static Boolean
 SWheapWouldInsert(SWheap * self,
                   Nlm_FloatHi eValue)
@@ -619,28 +976,39 @@ SWheapWouldInsert(SWheap * self,
 }
 
 
-/* Try to insert matchRecord into the SWheap. The alignments stored in
- * matchRecord are used directly, i.e. they are not copied, but are
- * rather stored in the SWheap or deleted */
+/**
+ * Try to insert matchRecord into the SWheap. The list of SeqAligns
+ * passed to this routine is used directly, i.e. the list is not copied,
+ * but is rather stored in the SWheap or deleted.
+ *
+ * @param self              the heap
+ * @param alignments        a list of alignments
+ * @param eValue            the best evalue among the alignments
+ * @param subject_index     the index of the subject sequence in the database
+ */
 static void
-SWheapInsert(SWheap * self,
-             Kappa_MatchRecord * matchRecord)
+SWheapInsert(
+  SWheap * self,
+  SeqAlignPtr alignments,
+  Nlm_FloatHi eValue,
+  Int4 subject_index)
 {
   if(self->array && self->n >= self->heapThreshold) {
     ConvertToHeap(self);
   }
   if(self->array != NULL) {
     /* "self" is currently a list. Add the new alignments to the end */
-    SWheapRecord *heapRecord;   /* destination for the new alignments */ 
+    SWheapRecord *heapRecord;   /* destination for the new alignments */
     heapRecord                  = &self->array[++self->n];
-    heapRecord->bestEvalue      = matchRecord->eValue;
-    heapRecord->theseAlignments = matchRecord->alignments;
-    if( self->worstEvalue < matchRecord->eValue ) {
-      self->worstEvalue = matchRecord->eValue;
+    heapRecord->bestEvalue      = eValue;
+    heapRecord->theseAlignments = alignments;
+    heapRecord->subject_index   = subject_index;
+    if( self->worstEvalue < eValue ) {
+      self->worstEvalue = eValue;
     }
   } else {                      /* "self" is currently a heap */
     if(self->n < self->heapThreshold ||
-       (matchRecord->eValue <= self->ecutoff &&
+       (eValue <= self->ecutoff &&
         self->worstEvalue <= self->ecutoff)) {
       SWheapRecord *heapRecord; /* Destination for the new alignments */
       /* The new alignments must be inserted into the heap, and all old
@@ -650,66 +1018,65 @@ SWheapInsert(SWheap * self,
         Int4 newCapacity;       /* capacity the heap will have after
                                  * it is resized */
         newCapacity      = MAX(SWHEAP_MIN_RESIZE + self->capacity,
-                               SWHEAP_RESIZE_FACTOR * self->capacity);
+                               (Int4) (SWHEAP_RESIZE_FACTOR * self->capacity));
         self->heapArray  = (SWheapRecord *)
           MemMore(self->heapArray, (newCapacity + 1) * sizeof(SWheapRecord));
         self->capacity   = newCapacity;
       }
       /* end if the heap must be resized */
       heapRecord    = &self->heapArray[++self->n];
-      heapRecord->bestEvalue      = matchRecord->eValue;
-      heapRecord->theseAlignments = matchRecord->alignments;
+      heapRecord->bestEvalue      = eValue;
+      heapRecord->theseAlignments = alignments;
+      heapRecord->subject_index   = subject_index;
 
       SWheapifyUp(self->heapArray, self->n, self->n);
     } else {
-      /* Some set of alignments must be discarded */
-      SWResults *discardedAlignments = NULL;      /* alignments that
-                                                   * will be discarded
-                                                   * so that the new
-                                                   * alignments may be
-                                                   * inserted. */
+      /* Some set of alignments must be discarded; discardedAlignments
+       * will hold a pointer to these alignments. */
+      SeqAlignPtr discardedAlignments = NULL;
 
-      if(matchRecord->eValue >= self->worstEvalue) {
-        /* the new alignments must be discarded */
-        discardedAlignments = matchRecord->alignments;
+      if(eValue >= self->worstEvalue) {
+        /* The new alignments must be discarded. */
+        discardedAlignments = alignments;
       } else {
-        /* the largest element in the heap must be discarded */
+        /* The largest element in the heap must be discarded. */
         SWheapRecord *heapRecord;     /* destination for the new alignments */
         discardedAlignments         = self->heapArray[1].theseAlignments;
 
         heapRecord                  = &self->heapArray[1];
-        heapRecord->bestEvalue      = matchRecord->eValue;
-        heapRecord->theseAlignments = matchRecord->alignments;
+        heapRecord->bestEvalue      = eValue;
+        heapRecord->theseAlignments = alignments;
+        heapRecord->subject_index   = subject_index;
 
         SWheapifyDown(self->heapArray, 1, self->n);
       }
       /* end else the largest element in the heap must be discarded */
       while(discardedAlignments != NULL) {
-        /* There are discarded alignments that have not been freed */
-        SWResults *thisAlignment;     /* the head of the list of
-                                       * discarded alignments */
+        /* There are discarded alignments that have not been freed. */
+        SeqAlignPtr thisAlignment;     /* the head of the list of
+                                        * discarded alignments */
         thisAlignment        = discardedAlignments;
         discardedAlignments  = thisAlignment->next;
 
-        MemFree(thisAlignment->reverseAlignScript);
-        SeqIdSetFree(thisAlignment->subject_id);
-        MemFree(thisAlignment);
+        SeqAlignFree(thisAlignment);
       }
       /* end while there are discarded alignments that have not been freed */
-    } 
+    }
     /* end else some set of alignments must be discarded */
-    
+
     self->worstEvalue = self->heapArray[1].bestEvalue;
     KAPPA_ASSERT(SWheapIsValid(self->heapArray, 1, self->n));
   }
   /* end else "self" is currently a heap. */
-
-  /* The matchRecord->alignments pointer is no longer valid */
-  matchRecord->alignments = NULL;
 }
 
 
-/* Return true if only matches with evalue <= self->ecutoff may be inserted. */
+/**
+ * Return true if only matches with evalue <= self->ecutoff may be
+ * inserted.
+ *
+ * @param self          a SWheap
+ */
 static Boolean
 SWheapWillAcceptOnlyBelowCutoff(SWheap * self)
 {
@@ -717,7 +1084,7 @@ SWheapWillAcceptOnlyBelowCutoff(SWheap * self)
 }
 
 
-/* Initialize a new SWheap; parameters to this function correspond
+/** Initialize a new SWheap; parameters to this function correspond
  * directly to fields in the SWheap */
 static void
 SWheapInitialize(SWheap * self,
@@ -738,8 +1105,12 @@ SWheapInitialize(SWheap * self,
 }
 
 
-/* Release the storage associated with the fields of a SWheap. Don't
- * delete the SWheap structure itself. */
+/**
+ * Release the storage associated with the fields of a SWheap. Don't
+ * delete the SWheap structure itself.
+ *
+ * @param self          SWheap whose storage will be released
+ */
 static void
 SWheapRelease(SWheap * self)
 {
@@ -751,11 +1122,15 @@ SWheapRelease(SWheap * self)
 }
 
 
-/* Remove and return the element in the SWheap with largest (worst) evalue */
-static SWResults *
+/**
+ * Remove and return the element in the SWheap with largest (worst) evalue
+ *
+ * @param self           a SWheap
+ */
+static SeqAlignPtr
 SWheapPop(SWheap * self)
 {
-  SWResults *results = NULL;
+  SeqAlignPtr results = NULL;   /* the list of SeqAligns to be returned */
 
   ConvertToHeap(self);
   if(self->n > 0) { /* The heap is not empty */
@@ -765,159 +1140,79 @@ SWheapPop(SWheap * self)
     last  = &self->heapArray[self->n];
 
     results = first->theseAlignments;
-    
+
     first->theseAlignments = last->theseAlignments;
     first->bestEvalue      = last->bestEvalue;
+    first->subject_index   = last->subject_index;
 
     SWheapifyDown(self->heapArray, 1, --self->n);
   }
-  
+
   KAPPA_ASSERT(SWheapIsValid(self->heapArray, 1, self->n));
 
   return results;
 }
 
 
-/* Convert a SWheap to a flat list of SWResults. Note that there
- * may be more than one alignment per match.  The list of all
- * alignments are sorted by the following keys:
- * - First by the evalue the best alignment between the query and a
- *   particular matching sequence;
- * - Second by the subject_index of the matching sequence; and
- * - Third by the evalue of each individual alignment.
+/**
+ * Convert a SWheap to a flat list of SeqAligns. Note that there may
+ * be more than one alignment per element in the heap.  The new list
+ * preserves the order of the SeqAligns associated with each
+ * HeapRecord.
+ *
+ * @param self           a SWheap
  */
-static SWResults *
+static SeqAlignPtr
 SWheapToFlatList(SWheap * self)
 {
-  SWResults *list = NULL;       /* the new list of SWResults */
-  SWResults *result;            /* the next list of alignments to be
-                                   prepended to "list" */
+  SeqAlignPtr list = NULL;
+  SeqAlignPtr result;
 
   while(NULL != (result = SWheapPop(self))) {
-    SWResults *head, *remaining;     /* The head and remaining
-                                        elements in a list of
-                                        alignments to be prepended to
-                                        "list" */
-    remaining = result;
-    while(NULL != (head = remaining)) {
-      remaining   = head->next;
-      head->next  = list;
-      list        = head;
+    SeqAlignPtr oldList = list;
+    list = result;
+    while( NULL != result->next ) {
+      result = result->next;
     }
+    result->next = oldList;
   }
 
   return list;
 }
 
 
-/*This procedure convert a list of SWAlign structures into a list of
-  SeqAlign structures, which is returned. In the process score-related
-  fields in the SeqAlign structures are set and the reverseAlignScript
-  associated with each SW alignment is freed*/
-SeqAlignPtr concatenateListOfSeqAligns(SWResults * SWAligns)
-{
-    SeqAlignPtr seqAlignList =NULL; /*list of SeqAligns to return*/
-    SeqAlignPtr nextSeqAlign; /*new one to add*/
-    SeqAlignPtr lastSeqAlign = NULL; /*last one on list*/
-    SWResults *curSW, *oldSW; /*used to iterate down list*/
-    ScorePtr thisScorePtr; /*stores the different types of score numbers
-                             associated with an alignment*/
-    Nlm_FloatHi bitScoreUnrounded; /*used to adjust bit score to unscaled 
-				     Lambda*/
-
-    curSW = SWAligns;
-    while (curSW != NULL) {
-      nextSeqAlign = curSW->seqAlign;
-      thisScorePtr = nextSeqAlign->score;
-      while ((thisScorePtr != NULL) &&
-	     (StringICmp(thisScorePtr->id->str, "score") != 0))
-	thisScorePtr = thisScorePtr->next;
-      if(NULL == thisScorePtr)
-	fprintf(stderr,"Could not find score\n");
-      else
-	thisScorePtr->value.intvalue = curSW->scoreThisAlign; 
-      bitScoreUnrounded = ((curSW->scoreThisAlign * curSW->Lambda) 
-			   - curSW->logK)/NCBIMATH_LN2;
-      thisScorePtr = nextSeqAlign->score;
-      while ((thisScorePtr != NULL) &&
-	     (StringICmp(thisScorePtr->id->str, "bit_score") != 0))
-	thisScorePtr = thisScorePtr->next;
-      if(NULL == thisScorePtr)
-	fprintf(stderr,"Could not find bit score\n");
-      else
-	thisScorePtr->value.realvalue = bitScoreUnrounded; 
-      if (NULL == seqAlignList)
-	seqAlignList = nextSeqAlign;
-      else
-	lastSeqAlign->next = nextSeqAlign;
-      lastSeqAlign = nextSeqAlign;
-      MemFree(curSW->reverseAlignScript);
-      oldSW = curSW;
-      curSW = curSW->next;
-      
-      SeqIdSetFree(oldSW->subject_id);
-      MemFree(oldSW);
-    }
-
-    return(seqAlignList);
-}
-
-/*take as input an amino acid  string and its length; compute a filtered
-  amino acid string and return the filtered string*/
-void segResult(BioseqPtr bsp,
-               Uint1 * inputString,
-               Uint1 * resultString,
-               Int4 length,
-               CharPtr instructions,
-               Uint1 mask_residue)
-{
-  SeqLocPtr seg_slp;  /*pointer to structure for seg filtering*/
-  Int4 i; /*loop index*/
-  Uint1 *buf, *bu; /*buffers for copying*/
-  Uint1 *tmp; /*loop index for copying*/
-
-   if (bsp->length != length)
-   {
-   	ErrPostEx(SEV_FATAL, 1, 0,
-              "segResult: length and bsp->length are different");
-	return;
-   }
-
-   seg_slp = BlastBioseqFilter(bsp, instructions );
-
-    for (i = 0; i < length; i++)
-      resultString[i] = inputString[i];
-
-    if (seg_slp) {
-      BlastMaskTheResidues(resultString,length,mask_residue,
-                             seg_slp,FALSE, 0);
-    }
-
-    seg_slp = SeqLocSetFree(seg_slp);
-}
-
-/*computes Smith-Waterman local alignment score and returns the
-  evalue
-  matchSeq is a database sequence matched by this query
-  matchSeqLength is the length of matchSeq in amino acids
-  query is the input query sequence
-  queryLength is the length of query
-  matrix is the position-specific matrix associated with query
-  gapOpen is the cost of opening a gap
-  gapExtend is the cost of extending an existing gap by 1 position
-  matchSeqEnd returns the final position in the matchSeq of an optimal
-   local alignment
-  queryEnd returns the final position in query of an optimal
-   local alignment
-  matchSeqEnd and queryEnd can be used to run the local alignment in reverse
-   to find optimal starting positions
-  score is used to pass back the optimal score
-  kbp holds the Karlin-Altschul parameters 
-  positionSpecific determines whether matrix is position specific or not*/
-
-Nlm_FloatHi BLbasicSmithWatermanScoreOnly(Uint1 * matchSeq, 
-   Int4 matchSeqLength, Uint1 *query, Int4 queryLength, BLAST_Score **matrix, 
-   Int4 gapOpen, Int4 gapExtend,  Int4 *matchSeqEnd, Int4 *queryEnd, Int4 *score,
+/**
+ * computes Smith-Waterman local alignment score and returns the
+ * evalue
+ *
+ * @param matchSeq          is a database sequence matched by this query [in]
+ * @param matchSeqLength    is the length of matchSeq in amino acids [in]
+ * @param query             is the input query sequence [in]
+ * @param queryLength       is the length of query [in]
+ * @param matrix            is the position-specific matrix associated with
+ *                          query [in]
+ * @param gapOpen           is the cost of opening a gap [in]
+ * @param gapExtend         is the cost of extending an existing gap by 1
+ *                          position [in]
+ * @param matchSeqEnd       returns the final position in the matchSeq of an
+ *                          optimal local alignment [in]
+ * @param queryEnd          returns the final position in query of an optimal
+ *                          local alignment [in]. matchSeqEnd and queryEnd can 
+ *                          be used to run the local alignment
+ *                          in reverse to find optimal starting positions [in]
+ * @param score             is used to pass back the optimal score [in]
+ * @param kbp               holds the Karlin-Altschul parameters [in]
+ * @param effSearchSpace    effective search space [in]
+ * @param positionSpecific  determines whether matrix is position
+ *                          specific or not [in]
+ * @return                  the expect value of the alignment
+ */
+Nlm_FloatHi
+BLbasicSmithWatermanScoreOnly(Uint1 * matchSeq,
+   Int4 matchSeqLength, Uint1 *query, Int4 queryLength,
+   BLAST_Score **matrix,
+   Int4 gapOpen, Int4 gapExtend,  Int4 *matchSeqEnd, Int4 *queryEnd,
+   Int4 *score,
    BLAST_KarlinBlkPtr kbp, Nlm_FloatHi effSearchSpace, Boolean positionSpecific)
 {
 
@@ -994,30 +1289,35 @@ Nlm_FloatHi BLbasicSmithWatermanScoreOnly(Uint1 * matchSeq,
    return(returnEvalue);
 }
 
-/*computes where optimal Smith-Waterman local alignment starts given the
-  ending positions
-  matchSeq is a database sequence matched by this query
-  matchSeqLength is the length of matchSeq in amino acids
-  query is the input query sequence 
-  queryLength is the length of query
-  matrix is the position-specific matrix associated with query
-    or the standard matrix
-  gapOpen is the cost of opening a gap
-  gapExtend is the cost of extending an existing gap by 1 position
-  matchSeqEnd is the final position in the matchSeq of an optimal
-   local alignment
-  queryEnd is the final position in query of an optimal
-   local alignment
-  matchSeqEnd and queryEnd can be used to run the local alignment in reverse
-   to find optimal starting positions
-  these are passed back in matchSeqStart and queryStart
-  the optimal score is passed in to check when it has
-   been reached going backwards
-  the score is also returned
-  positionSpecific determines whether matrix is position specific or not*/
-  
-Int4 BLSmithWatermanFindStart(Uint1 * matchSeq, 
-   Int4 matchSeqLength, Uint1 *query, Int4 queryLength, BLAST_Score **matrix, 
+
+/**
+ * computes where optimal Smith-Waterman local alignment starts given
+ * the ending positions and score matchSeqEnd and queryEnd can be used
+ * to run the local alignment in reverse to find optimal starting
+ * positions these are passed back in matchSeqStart and queryStart the
+ * optimal score is passed in to check when it has been reached going
+ * backwards the score is also returned
+ * @param matchSeq          is a database sequence matched by this query [in]
+ * @param matchSeqLength    is the length of matchSeq in amino acids [in]
+ * @param query             is the input query sequence  [in]
+ * @param matrix            is the position-specific matrix associated with
+ *                          query or the standard matrix [in]
+ * @param gapOpen           is the cost of opening a gap [in]
+ * @param gapExtend         is the cost of extending an existing gap by 1
+ *                          position [in]
+ * @param matchSeqEnd       is the final position in the matchSeq of an optimal
+ *                          local alignment [in]
+ * @param queryEnd          is the final position in query of an optimal
+ *                          local alignment [in]
+ * @param score optimal     score to be obtained [in]
+ * @param matchSeqStart     starting point of optimal alignment [out]
+ * @param queryStart        starting point of optimal alignment [out]
+ * @param positionSpecific  determines whether matrix is position specific
+ *                          or not
+ */
+Int4
+BLSmithWatermanFindStart(Uint1 * matchSeq,
+   Int4 matchSeqLength, Uint1 *query, Int4 queryLength, BLAST_Score **matrix,
    Int4 gapOpen, Int4 gapExtend,  Int4 matchSeqEnd, Int4 queryEnd, Int4 score,
    Int4 *matchSeqStart, Int4 *queryStart, Boolean positionSpecific)
 {
@@ -1096,30 +1396,37 @@ Int4 BLSmithWatermanFindStart(Uint1 * matchSeq,
 }
 
 
-/*computes Smith-Waterman local alignment score and returns the
-  evalue assuming some positions are forbidden
-  matchSeq is the matchSeq sequence
-  matchSeqLength is the length of matchSeq in amino acids
-  query is the input query sequence 
-  queryLength is the length of query
-  matrix is either the position-specific matrix associated with query
-    or the standard matrix
-  gapOpen is the cost of opening a gap
-  gapExtend is the cost of extending an existing gap by 1 position
-  matchSeqEnd returns the final position in the matchSeq of an optimal
-   local alignment
-  queryEnd returns the final position in query of an optimal
-   local alignment
-  matchSeqEnd and query can be used to run the local alignment in reverse
-   to find optimal starting positions
-  score is used to pass back the optimal score
-  kbp holds the Karlin-Altschul parameters 
-  positionSpecific determines whether matrix is position specific or not*/
-
-
-static Nlm_FloatHi BLspecialSmithWatermanScoreOnly(Uint1 * matchSeq, 
-   Int4 matchSeqLength, Uint1 *query, Int4 queryLength, BLAST_Score **matrix, 
-   Int4 gapOpen, Int4 gapExtend,  Int4 *matchSeqEnd, Int4 *queryEnd, Int4 *score,
+/**
+ * computes Smith-Waterman local alignment score and returns the
+ * evalue assuming some positions are forbidden matchSeqEnd and query
+ * can be used to run the local alignment in reverse to find optimal
+ * starting positions
+ * @param                   matchSeq is the matchSeq sequence [in]
+ * @param matchSeqLength    is the length of matchSeq in amino acids [in]
+ * @param query             is the input query sequence  [in]
+ * @param queryLength       is the length of query [in]
+ * @param matrix            is either the position-specific matrix associated
+ *                          with query or the standard matrix [in]
+ * @param gapOpen           is the cost of opening a gap [in]
+ * @param gapExtend         is the cost of extending an existing gap by 1
+ *                          position [in]
+ * @param matchSeqEnd       returns the final position in the matchSeq of an
+ *                          optimal local alignment [in]
+ * @param queryEnd          returns the final position in query of an optimal
+ *                          local alignment [in]
+ * @param score             is used to pass back the optimal score [out]
+ * @param kbp               holds the Karlin-Altschul parameters  [in]
+ * @param effSearchSpace    effective search space [in]
+ * @param numForbidden      number of forbidden ranges [in]
+ * @param forbiddenRanges   lists areas that should not be aligned [in]
+ * @param positionSpecific  determines whether matrix is position specific
+ *                          or not [in]
+ */
+static Nlm_FloatHi
+BLspecialSmithWatermanScoreOnly(Uint1 * matchSeq,
+   Int4 matchSeqLength, Uint1 *query, Int4 queryLength, BLAST_Score **matrix,
+   Int4 gapOpen, Int4 gapExtend,
+   Int4 *matchSeqEnd, Int4 *queryEnd, Int4 *score,
    BLAST_KarlinBlkPtr kbp,  Nlm_FloatHi effSearchSpace,
    Int4 *numForbidden, Int4 ** forbiddenRanges, Boolean positionSpecific)
 {
@@ -1211,27 +1518,38 @@ static Nlm_FloatHi BLspecialSmithWatermanScoreOnly(Uint1 * matchSeq,
    return(returnEvalue);
 }
 
-/*computes where optimal Smith-Waterman local alignment starts given the
-  ending positions
-  matchSeq is the matchSeq sequence
-  matchSeqLength is the length of matchSeq in amino acids
-  query is the sequence corresponding to some matrix profile
-  queryLength is the length of dbSequnece
-  matrix is the position-specific matrix associated with query
-  gapOpen is the cost of opening a gap
-  gapExtend is the cost of extending an existing gap by 1 position
-  matchSeqEnd is the final position in the matchSeq of an optimal
-   local alignment
-  queryEnd is the final position in query of an optimal
-   local alignment
-  matchSeqEnd and queryEnd can be used to run the local alignment in reverse
-   to find optimal starting positions
-  these are passed back in matchSeqStart and queryStart
-  the optimal score is passed in to check when it has
-   been reached going backwards
-  the score is also returned
-  positionSpecific determines whether matrix is position specific or not*/
 
+/**
+ * computes where optimal Smith-Waterman local alignment starts given
+ * the ending positions.  matchSeqEnd and queryEnd can be used to run
+ * the local alignment in reverse to find optimal starting positions
+ * these are passed back in matchSeqStart and queryStart the optimal
+ * score is passed in to check when it has been reached going
+ * backwards the score is also returned
+ * @param matchSeq          is the matchSeq sequence [in]
+ * @param matchSeqLength    is the length of matchSeq in amino acids [in]
+ * @param query             is the sequence corresponding to some matrix
+ *                          profile [in]
+ * @param matrix            is the position-specific matrix associated with
+ *                          query [in]
+ * @param gapOpen           is the cost of opening a gap [in]
+ * @param gapExtend         is the cost of extending an existing gap by 1
+ *                          position [in]
+ * @param matchSeqEnd       is the final position in the matchSeq of an optimal
+ *                          local alignment [in]
+ * @param queryEnd          is the final position in query of an optimal
+ *                          local alignment [in]
+ * @param score             optimal score is passed in to check when it has
+ *                          been reached going backwards [in]
+ * @param matchSeqStart     optimal starting point [in]
+ * @param queryStart        optimal starting point [in]
+ * @param numForbidden      array of regions not to be aligned. [in]
+ * @param numForbidden      array of regions not to be aligned. [in]
+ * @param forbiddenRanges   regions not to be aligned. [in]
+ * @param positionSpecific  determines whether matrix is position specific
+ *                          or not
+ * @return the score found
+ */
 static Int4 BLspecialSmithWatermanFindStart(Uint1 * matchSeq, 
    Int4 matchSeqLength, Uint1 *query, Int4 queryLength, BLAST_Score **matrix, 
    Int4 gapOpen, Int4 gapExtend,  Int4 matchSeqEnd, Int4 queryEnd, Int4 score,
@@ -1325,104 +1643,222 @@ static Int4 BLspecialSmithWatermanFindStart(Uint1 * matchSeq,
    return(bestScore);
 }
 
-/*The following procedure computes the number of identities in an
- * alignment of query_seq to the matching sequence stored in
- *  SWAlign. The alignment is encoded in gap_info*/
-static Int4 SWAlignGetNumIdentical(SWResults *SWAlign, Uint1Ptr query_seq, 
-                                   GapXEditBlockPtr gap_info)
+
+/**
+ * Kappa_SequenceData - represents a string of amino acids or nucleotides
+ */
+typedef struct Kappa_SequenceData {
+  Uint1Ptr data;                /**< amino acid or nucleotide data */
+  Int4 length;                  /**< the length of data. For amino acid data
+                                     &data[-1] is a valid address and
+                                     data[-1] == 0. */
+  Uint1Ptr buffer;              /**< if non-nil, points to memory that
+                                     must be freed when this instance of
+                                     Kappa_SequenceData is deleted. */
+} Kappa_SequenceData;
+
+
+/** Release the data associated with this object. */
+static void
+Kappa_SequenceDataRelease(Kappa_SequenceData * self)
 {
-   Uint1Ptr q, s;  /*hold aligned substrings of the query and the match*/
-   GapXEditScriptPtr esp; /*edit script describing the alignment*/
-   Int4 num_ident; /*number of identities to return*/
-   Int4 i; /*loop index*/
+  if(self->buffer) MemFree(self->buffer);
 
-   if (!gap_info)
-      return 0;
- 
-   q = &query_seq[SWAlign->queryStart];
-   s = &SWAlign->seq[SWAlign->seqStart];
-
-   num_ident = 0;
-
-   for (esp = gap_info->esp; esp; esp = esp->next) {
-      switch (esp->op_type) {
-      case GAPALIGN_SUB:
-         for (i=0; i<esp->num; i++) {
-            if (*q++ == *s++)
-               num_ident++;
-         }
-         break;
-      case GAPALIGN_DEL:
-         s += esp->num;
-         break;
-      case GAPALIGN_INS:
-         q += esp->num;
-         break;
-      default: 
-         s += esp->num;
-         q += esp->num;
-         break;
-      }
-   }
-   
-   return num_ident;
+  self->data   = NULL;
+  self->buffer = NULL;
 }
 
-/*converts the list of Smith-Waterman alignments to a corresponding list
-  of SeqAlignPtrs. kbp stores parameters for computing the score
-  Code is adapted from procedure output_hits of pseed3.c */
-static SeqAlignPtr newConvertSWalignsToSeqAligns(SWResults * SWAligns,  
-                                                 Uint1Ptr query,
-                                                 SeqIdPtr query_id,
-                                                 Boolean discontinuous)
+
+/**
+ * An instance of Kappa_ForbiddenRanges is used by the Smith-Waterman
+ * algorithm to represent ranges in the database that are not to be
+ * aligned.
+ */
+typedef struct Kappa_ForbiddenRanges {
+  Boolean  isEmpty;             /**< True if there are no forbidden ranges */
+  Int4    *numForbidden;        /**< how many forbidden ranges at each db
+                                     position */
+  Int4   **ranges;              /**< forbidden ranges for each database
+                                     position */
+  Int4     queryLength;         /**< length of the query sequence */
+} Kappa_ForbiddenRanges;
+
+
+/**
+ * Initialize a new, empty Kappa_ForbiddenRanges
+ *
+ * @param self              object to be initialized
+ * @param queryLength       the length of the query
+ */
+static void
+Kappa_ForbiddenRangesInitialize(
+  Kappa_ForbiddenRanges * self,
+  Int4 queryLength)
 {
-    SeqAlignPtr seqAlignList =NULL; /*list of SeqAligns to return*/
-    SeqAlignPtr nextSeqAlign; /*new one to add*/
-    SeqAlignPtr lastSeqAlign = NULL; /*last one on list*/
-    SWResults *curSW, *oldSW; /*used to iterate down list*/
-    GapXEditBlockPtr nextEditBlock;  /*intermediate structure towards seqlign*/
-    Int4 num_ident;
+  Int4 f;
+  self->queryLength  = queryLength;
+  self->numForbidden = (Int4 *) MemNew(queryLength * sizeof(Int4));
+  self->ranges       = (Int4 **) MemNew(queryLength * sizeof(Int4 *));
+  self->isEmpty      = TRUE;
 
-    curSW = SWAligns;
-    while (curSW != NULL) {
-        nextEditBlock = TracebackToGapXEditBlock(
-                     query - 1 + curSW->queryStart,
-		     curSW->seq - 1 + curSW->seqStart,
-		     curSW->queryEnd - curSW->queryStart, 
-                     curSW->seqEnd - curSW->seqStart,
-                     curSW->reverseAlignScript, curSW->queryStart, 
-		     curSW->seqStart);
-        nextEditBlock->discontinuous = discontinuous;
-        nextSeqAlign = GapXEditBlockToSeqAlign(nextEditBlock, curSW->subject_id, query_id);
-        nextSeqAlign->score = addScoresToSeqAlign(curSW->scoreThisAlign, 
-                                                  curSW->eValueThisAlign, curSW->Lambda, curSW->logK);
-        
+  for(f = 0; f < queryLength; f++) {
+    self->numForbidden[f] = 0;
+    self->ranges[f]       = (Int4 *) MemNew(2 * sizeof(Int4));
+    self->ranges[f][0]    = 0;
+    self->ranges[f][1]    = 0;
+  }
+}
 
-        num_ident = SWAlignGetNumIdentical(curSW, query, nextEditBlock);
-    
-        if (num_ident > 0)
-           MakeBlastScore(&nextSeqAlign->score, "num_ident", 0.0, num_ident);
 
-        nextEditBlock = GapXEditBlockDelete(nextEditBlock);
+/** Reset self to be empty */
+static void
+Kappa_ForbiddenRangesClear(Kappa_ForbiddenRanges * self)
+{
+  Int4 f;
+  for(f = 0; f < self->queryLength; f++) {
+    self->numForbidden[f] = 0;
+  }
+  self->isEmpty = TRUE;
+}
 
-        if (NULL == seqAlignList)
-            seqAlignList = nextSeqAlign;
-        else
-            lastSeqAlign->next = nextSeqAlign;
-        lastSeqAlign = nextSeqAlign;
-        oldSW = curSW;
-        curSW = curSW->next;
 
-        SeqIdSetFree(oldSW->subject_id);
-        MemFree(oldSW);
+/** Add some ranges to self
+ * @param self          an instance of Kappa_ForbiddenRanges [in][out]
+ * @param queryStart    start of the alignment in the query sequence
+ * @param queryAlignmentExtent  length of the alignment in the query sequence
+ * @param matchStart    start of the alignment in the subject sequence
+ * @param matchAlignmentExtent  length of the alignment in the
+ *                              subject sequence
+ */
+static void
+Kappa_ForbiddenRangesPush(
+  Kappa_ForbiddenRanges * self,
+  Int4 queryStart,
+  Int4 queryAlignmentExtent,
+  Int4 matchStart,
+  Int4 matchAlignmentExtent)
+{
+  Int4 f;
+  for(f = queryStart; f < (queryStart + queryAlignmentExtent); f++) {
+    Int4 last = 2 * self->numForbidden[f];
+    if(0 != last) {    /* we must resize the array */
+      self->ranges[f] =
+        (Int4 *) MemMore(self->ranges[f], (last + 2) * sizeof(Int4));
     }
+    self->ranges[f][last]     = matchStart;
+    self->ranges[f][last + 1] = matchStart + matchAlignmentExtent;
 
-    return(seqAlignList);
+    self->numForbidden[f]++;
+  }
+  self->isEmpty = FALSE;
 }
 
 
-/*allocate a score matrix with numPositions positions and return
-  the matrix*/
+/**
+ * Release the storage associated with the fields of self, but do not
+ * delete self
+ *
+ * @param self          an instance of Kappa_ForbiddenRanges [in][out]
+ */
+static void
+Kappa_ForbiddenRangesRelease(Kappa_ForbiddenRanges * self)
+{
+  Int4 f;
+  for(f = 0; f < self->queryLength; f++)  MemFree(self->ranges[f]);
+
+  MemFree(self->ranges);       self->ranges       = NULL;
+  MemFree(self->numForbidden); self->numForbidden = NULL;
+}
+
+
+/**
+ * Calls BLbasicSmithWatermanScoreOnly if forbiddenRanges is empty and
+ * calls BLspecialSmithWatermanScoreOnly otherwise.  This routine has
+ * the same parameters and return value as
+ * BLspecialSmithWatermanScoreOnly.
+ */
+static Nlm_FloatHi
+SmithWatermanScoreOnly(Kappa_SequenceData * subject,
+                       Kappa_SequenceData * query,
+                       BLAST_Score **matrix,
+                       Int4 gapOpen,
+                       Int4 gapExtend,
+                       Int4 *matchSeqEnd,
+                       Int4 *queryEnd,
+                       Int4 *score,
+                       BLAST_KarlinBlkPtr kbp,
+                       Nlm_FloatHi effSearchSpace,
+                       Boolean positionSpecific,
+                       Kappa_ForbiddenRanges * forbiddenRanges )
+{
+  if( forbiddenRanges->isEmpty ) {
+    return
+      BLbasicSmithWatermanScoreOnly(subject->data, subject->length,
+                                    query  ->data, query  ->length,
+                                    matrix, gapOpen, gapExtend, matchSeqEnd,
+                                    queryEnd, score, kbp, effSearchSpace,
+                                    positionSpecific);
+  } else {
+    return
+      BLspecialSmithWatermanScoreOnly(subject->data, subject->length,
+                                      query  ->data, query  ->length,
+                                      matrix, gapOpen, gapExtend, matchSeqEnd,
+                                      queryEnd, score, kbp, effSearchSpace,
+                                      forbiddenRanges->numForbidden,
+                                      forbiddenRanges->ranges,
+                                      positionSpecific);
+  }
+}
+
+
+/**
+ * Calls BLSmithWatermanFindStart if forbiddenRanges is empty and
+ * calls BLspecialSmithWatermanFindStart otherwise.  This routine has
+ * the same parameters and return value as
+ * BLspecialSmithWatermanFindStart.
+ */
+static Int4
+SmithWatermanFindStart(Kappa_SequenceData * subject,
+                       Kappa_SequenceData * query,
+                       BLAST_Score **matrix,
+                       Int4 gapOpen,
+                       Int4 gapExtend,
+                       Int4 matchSeqEnd,
+                       Int4 queryEnd,
+                       Int4 score,
+                       Int4 *matchSeqStart,
+                       Int4 *queryStart,
+                       Boolean positionSpecific,
+                       Kappa_ForbiddenRanges * forbiddenRanges)
+{
+  if( forbiddenRanges->isEmpty ) {
+    return
+      BLSmithWatermanFindStart(subject->data, subject->length,
+                               query  ->data, query  ->length,
+                               matrix, gapOpen, gapExtend,
+                               matchSeqEnd,   queryEnd,   score,
+                               matchSeqStart, queryStart,
+                               positionSpecific);
+  } else {
+    return
+      BLspecialSmithWatermanFindStart(subject->data, subject->length,
+                                      query  ->data, query  ->length,
+                                      matrix, gapOpen, gapExtend,
+                                      matchSeqEnd,   queryEnd,   score,
+                                      matchSeqStart, queryStart,
+                                      forbiddenRanges->numForbidden,
+                                      forbiddenRanges->ranges,
+                                      positionSpecific);
+  }
+}
+
+
+/**
+ * allocates  a score matrix with numPositions + 1 rows; all elements in row
+ * numPositions are set to  BLAST_SCORE_MIN
+ * @param numPositions length of matrix (or query) [in]
+ * @return matrix (BLAST_Score**)
+ */
 static BLAST_Score **allocateScaledMatrix(Int4 numPositions)
 {
   BLAST_Score **returnMatrix; /*allocated matrix to return*/
@@ -1437,7 +1873,7 @@ static BLAST_Score **allocateScaledMatrix(Int4 numPositions)
   return(returnMatrix);
 }
 
-/*deallocate a score matrix*/
+/** deallocate a score matrix*/
 static void freeScaledMatrix(BLAST_Score **matrix, Int4 numPositions)
 {
   int row; /*loop index*/
@@ -1447,8 +1883,13 @@ static void freeScaledMatrix(BLAST_Score **matrix, Int4 numPositions)
   MemFree(matrix);
 }
 
-/*allocate a frequency ratio matrix with numPositions positions and return
-  the matrix*/
+/**
+ * allocates a frequency ratio matrix with numPositions + 1 rows; all
+ * elements in row numPositions are set to BLAST_SCORE_MIN
+ *
+ * @param numPositions length of matrix (or query) [in]
+ * @return matrix (double**)
+ */
 static Nlm_FloatHi **allocateStartFreqs(Int4 numPositions)
 {
   Nlm_FloatHi **returnMatrix; /*allocated matrix to return*/
@@ -1463,6 +1904,7 @@ static Nlm_FloatHi **allocateStartFreqs(Int4 numPositions)
   return(returnMatrix);
 }
 
+
 /*deallocate a frequency ratio matrix*/
 static void freeStartFreqs(Nlm_FloatHi **matrix, Int4 numPositions)
 {
@@ -1473,32 +1915,36 @@ static void freeStartFreqs(Nlm_FloatHi **matrix, Int4 numPositions)
   MemFree(matrix);
 }
 
-/*matrix is a position-specific score matrix with matrixLength positions
-  queryProbArray is an array containing the probability of occurrence
-  of each residue in the query
-  scoreArray is an array of probabilities for each score that is
-    to be used as a field in return_sfp
-  return_sfp is a the structure to be filled in and returned
-  range is the size of scoreArray and is an upper bound on the
-   difference between maximum score and minimum score in the matrix
-  the routine posfillSfp computes the probability of each score weighted
-   by the probability of each query residue and fills those probabilities
-   into scoreArray and puts scoreArray as a field in
-   that in the structure that is returned
-   for indexing convenience the field storing scoreArray points to the
-   entry for score 0, so that referring to the -k index corresponds to
-   score -k */
+/**
+ * @param matrix          is a position-specific score matrix with matrixLength
+ *                        positions
+ * @param subjectProbArray  is an array containing the probability of
+ *                        occurrence of each residue in the subject
+ * @param queryProbArray  is an array containing the probability of
+ *                        occurrence of each residue in the query
+ * @param scoreArray      is an array of probabilities for each score that is
+ *                        to be used as a field in return_sfp
+ * @param return_sfp      is a the structure to be filled in and returned
+ * @param range           is the size of scoreArray and is an upper bound on
+ *                        the difference between maximum score and minimum
+ *                        score in the matrix
+ * the routine posfillSfp computes the probability of each score
+ * weighted by the probability of each query residue and fills those
+ * probabilities into scoreArray and puts scoreArray as a field in
+ * that in the structure that is returned for indexing convenience the
+ * field storing scoreArray points to the entry for score 0, so that
+ * referring to the -k index corresponds to score -k
+ */
 static BLAST_ScoreFreqPtr notposfillSfp(BLAST_Score **matrix, Nlm_FloatHi *subjectProbArray,  Nlm_FloatHi *queryProbArray, Nlm_FloatHi *scoreArray,  BLAST_ScoreFreqPtr return_sfp, Int4 range)
 {
   Int4 minScore, maxScore; /*observed minimum and maximum scores*/
   Int4 i,j,k; /* indices */
-  Nlm_FloatHi onePosFrac; /*1/matrix length as a double*/
 
   minScore = maxScore = 0;
 
   for(i = 0; i < PROTEIN_ALPHABET; i++) {
     for(j = 0 ; j < PRO_TRUE_ALPHABET_SIZE; j++) {
-      k = charPositions[j];
+      k = trueCharPositions[j];
       if ((matrix[i][k] != BLAST_SCORE_MIN) && (matrix[i][k] < minScore))
 	minScore = matrix[i][k];
       if (matrix[i][k] > maxScore)
@@ -1512,7 +1958,7 @@ static BLAST_ScoreFreqPtr notposfillSfp(BLAST_Score **matrix, Nlm_FloatHi *subje
   return_sfp->sprob = &(scoreArray[-minScore]); /*center around 0*/
   for(i = 0; i < PROTEIN_ALPHABET; i++) {
     for (j = 0; j < PRO_TRUE_ALPHABET_SIZE; j++) {
-      k = charPositions[j];
+      k = trueCharPositions[j];
       if(matrix[i][k] >= minScore) {
         return_sfp->sprob[matrix[i][k]] += (queryProbArray[i] * subjectProbArray[k]);
       }
@@ -1524,21 +1970,31 @@ static BLAST_ScoreFreqPtr notposfillSfp(BLAST_Score **matrix, Nlm_FloatHi *subje
   return(return_sfp);
 }
 
-/*matrix is a position-specific score matrix with matrixLength positions
-  subjectProbArray is an array containing the probability of occurrence
-  of each residue in the matching sequence often called the subject
-  scoreArray is an array of probabilities for each score that is
-    to be used as a field in return_sfp
-  return_sfp is a the structure to be filled in and returned
-  range is the size of scoreArray and is an upper bound on the
-   difference between maximum score and minimum score in the matrix
-  the routine posfillSfp computes the probability of each score weighted
-   by the probability of each query residue and fills those probabilities
-   into scoreArray and puts scoreArray as a field in
-   that in the structure that is returned
-   for indexing convenience the field storing scoreArray points to the
-   entry for score 0, so that referring to the -k index corresponds to
-   score -k */
+
+/**
+ *
+ * @param matrix            is a position-specific score matrix with
+ *                          matrixLength positions
+ * @param matrixLength      length of the position-specific matrix above
+ * @param subjectProbArray  is an array containing the probability of
+ *                          occurrence of each residue in the matching
+ *                          sequence often called the subject
+ * @param  scoreArray       is an array of probabilities for each score
+ *                          that is to be used as a field in return_sfp
+ * @param return_sfp        is a the structure to be filled in and returned
+ *                          range is the size of scoreArray and is an upper
+ *                          bound on the difference between maximum score
+ *                          and minimum score in the matrix
+ * @param range             is the size of scoreArray and is an upper bound on
+ *                          the difference between maximum score and minimum
+ *                          score in the matrix
+ * the routine posfillSfp computes the probability of each score
+ * weighted by the probability of each query residue and fills those
+ * probabilities into scoreArray and puts scoreArray as a field in
+ * that in the structure that is returned for indexing convenience the
+ * field storing scoreArray points to the entry for score 0, so that
+ * referring to the -k index corresponds to score -k
+ */
 static BLAST_ScoreFreqPtr posfillSfp(BLAST_Score **matrix, Int4 matrixLength, Nlm_FloatHi *subjectProbArray, Nlm_FloatHi *scoreArray,  BLAST_ScoreFreqPtr return_sfp, Int4 range)
 {
   Int4 minScore, maxScore; /*observed minimum and maximum scores*/
@@ -1549,7 +2005,7 @@ static BLAST_ScoreFreqPtr posfillSfp(BLAST_Score **matrix, Int4 matrixLength, Nl
 
   for(i = 0; i < matrixLength; i++) {
     for(j = 0 ; j < PRO_TRUE_ALPHABET_SIZE; j++) {
-      k = charPositions[j];
+      k = trueCharPositions[j];
       if ((matrix[i][k] != BLAST_SCORE_MIN) && (matrix[i][k] < minScore))
 	minScore = matrix[i][k];
       if (matrix[i][k] > maxScore)
@@ -1564,7 +2020,7 @@ static BLAST_ScoreFreqPtr posfillSfp(BLAST_Score **matrix, Int4 matrixLength, Nl
   onePosFrac = 1.0/ ((Nlm_FloatHi) matrixLength);
   for(i = 0; i < matrixLength; i++) {
     for (j = 0; j < PRO_TRUE_ALPHABET_SIZE; j++) {
-      k = charPositions[j];
+      k = trueCharPositions[j];
       if(matrix[i][k] >= minScore) {
         return_sfp->sprob[matrix[i][k]] += (onePosFrac * subjectProbArray[k]);
       }
@@ -1577,9 +2033,10 @@ static BLAST_ScoreFreqPtr posfillSfp(BLAST_Score **matrix, Int4 matrixLength, Nl
 }
 
 
-
-/*Given a sequence of 'length' amino acid residues, compute the
-  probability of each residue and put that in the array resProb*/
+/**
+ * Given a sequence of 'length' amino acid residues, compute the
+ * probability of each residue and put that in the array resProb
+ */
 static void fillResidueProbability(Uint1Ptr sequence, Int4 length, Nlm_FloatHi * resProb)
 {
   Int4 frequency[PROTEIN_ALPHABET]; /*frequency of each letter*/
@@ -1606,130 +2063,98 @@ static void fillResidueProbability(Uint1Ptr sequence, Int4 length, Nlm_FloatHi *
 
 #define posEpsilon 0.0001
 
-/*Return the a matrix of the frequency ratios that underlie the
-  score matrix being used on this pass. The returned matrix
-  is position-specific, so if we are in the first pass, use
-  query to convert the 20x20 standard matrix into a position-specific
-  variant. matrixName is the name of the underlying 20x20
-  score matrix used. numPositions is the length of the query;
-  startNumerator is the matrix of frequency ratios as stored
-  in posit.h. It needs to be divided by the frequency of the
-  second character to get the intended ratio */
+/**
+ * Return the a matrix of the frequency ratios that underlie the score
+ * matrix being used on this pass. The returned matrix is
+ * position-specific, so if we are in the first pass, use query to
+ * convert the 20x20 standard matrix into a position-specific
+ * variant. matrixName is the name of the underlying 20x20 score
+ * matrix used. numPositions is the length of the query;
+ * startNumerator is the matrix of frequency ratios as stored in
+ * posit.h. It needs to be divided by the frequency of the second
+ * character to get the intended ratio
+ *
+ * @param search            general search information [in]
+ * @param query             the query sequence [in]
+ * @param matrixName        name of the underlying matrix [in]
+ * @param startNumerator    matrix of frequency ratios [in]
+ * @param numPositions      length of the query [in]
+ * @param positionSpecific  is this a position-specific search? [in]
+ */
 static Nlm_FloatHi **getStartFreqRatios(BlastSearchBlkPtr search,
-					Uint1Ptr query,
-					Char *matrixName, 
-					Nlm_FloatHi **startNumerator,
-					Int4 numPositions, 
-					Boolean positionSpecific)
+                    Uint1Ptr query,
+                    Char *matrixName,
+                    Nlm_FloatHi **startNumerator,
+                    Int4 numPositions,
+                    Boolean positionSpecific)
 {
-   Nlm_FloatHi ** returnRatios; /*frequency ratios to start investigating each pair*/
-   BLAST_ResFreqPtr stdrfp; /* gets standard frequencies in prob field */
-   Nlm_FloatHi *standardProb; /*probabilities of each letter*/
+   Nlm_FloatHi ** returnRatios; /*frequency ratios to start
+                                  investigating each pair*/
    Int4 i,j;
+   FreqRatios * stdFreqRatios = NULL;
+
    returnRatios = allocateStartFreqs(numPositions);
+
+   stdFreqRatios = PSIMatrixFrequencyRatiosNew(matrixName);
    if (positionSpecific) {
+    for(i = 0; i < numPositions; i++) {
+       for(j = 0; j < PROTEIN_ALPHABET; j++) {
+         returnRatios[i][j] = stdFreqRatios->data[query[i]][j];
+       }
+     }
+   } else {
+     for (i = 0; i < PROTEIN_ALPHABET; i++) {
+         for (j = 0; j < PROTEIN_ALPHABET; j++) {
+             returnRatios[i][j] = stdFreqRatios->data[i][j];
+         }
+     }
+   }
+   stdFreqRatios = PSIMatrixFrequencyRatiosFree(stdFreqRatios);
+
+   if (positionSpecific) {
+     Nlm_FloatHi *standardProb; /*probabilities of each letter*/
+     BLAST_ResFreqPtr stdrfp; /* gets standard frequencies in prob field */
+
+     stdrfp = BlastResFreqNew(search->sbp);
+     BlastResFreqStdComp(search->sbp,stdrfp);
+     standardProb = &stdrfp->prob[0];
+
+     /*reverse multiplication done in posit.c*/
      for(i = 0; i < numPositions; i++) {
        for(j = 0; j < PROTEIN_ALPHABET; j++) {
-	 if ((0 == strcmp(matrixName,"BLOSUM62")) ||
-	     (0 == strcmp(matrixName,"BLOSUM62_20"))) {
-	   returnRatios[i][j] = BLOSUM62_FREQRATIOS[query[i]][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM62_20A")) {
-	   returnRatios[i][j] = 0.9666 * BLOSUM62_FREQRATIOS[query[i]][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM62_20B")) {
-	   returnRatios[i][j] = 0.9344 * BLOSUM62_FREQRATIOS[query[i]][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM45")) {
-	   returnRatios[i][j] = BLOSUM45_FREQRATIOS[query[i]][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM80")) {
-	   returnRatios[i][j] = BLOSUM80_FREQRATIOS[query[i]][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM50")) {
-	   returnRatios[i][j] = BLOSUM50_FREQRATIOS[query[i]][j];
-	 }
-
-	 if (0 == strcmp(matrixName,"BLOSUM90")) {
-	   returnRatios[i][j] = BLOSUM90_FREQRATIOS[query[i]][j];
-	 }
-	 if (0 == strcmp(matrixName,"PAM250")) {
-	   returnRatios[i][j] = PAM250_FREQRATIOS[query[i]][j];
-	 }
-	 if (0 == strcmp(matrixName,"PAM30")) {
-	   returnRatios[i][j] = PAM30_FREQRATIOS[query[i]][j];
-	 }
-	 if (0 == strcmp(matrixName,"PAM70")) {
-	   returnRatios[i][j] = PAM70_FREQRATIOS[query[i]][j];
-	 }
+         if ((standardProb[query[i]] > posEpsilon) &&
+             (standardProb[j] > posEpsilon) &&
+             (j != StarChar) && (j != Xchar) &&
+             (startNumerator[i][j] > posEpsilon))
+         {
+           returnRatios[i][j] = startNumerator[i][j]/standardProb[j];
+         }
        }
      }
-     stdrfp = BlastResFreqNew(search->sbp);
-     BlastResFreqStdComp(search->sbp,stdrfp); 
-     standardProb = MemNew(PROTEIN_ALPHABET * sizeof(Nlm_FloatHi));
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       standardProb[i] = stdrfp->prob[i];
-     /*reverse multiplication done in posit.c*/
-     for(i = 0; i < numPositions; i++) 
-       for(j = 0; j < PROTEIN_ALPHABET; j++) 
-	 if ((standardProb[query[i]] > posEpsilon) && (standardProb[j] > posEpsilon) &&     
-	     (j != StarChar) && (j != Xchar)
-	     && (startNumerator[i][j] > posEpsilon))
-	   returnRatios[i][j] = startNumerator[i][j]/standardProb[j];
      stdrfp = BlastResFreqDestruct(stdrfp);
-     standardProb = MemFree(standardProb);
    }
 
-   else {
-     for(i = 0; i < PROTEIN_ALPHABET; i++) {
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-	 if ((0 == strcmp(matrixName,"BLOSUM62")) ||
-	     (0 == strcmp(matrixName,"BLOSUM62_20"))) {
-	   returnRatios[i][j] = BLOSUM62_FREQRATIOS[i][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM62_20A")) {
-	   returnRatios[i][j] = 0.9666 * BLOSUM62_FREQRATIOS[i][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM62_20B")) {
-	   returnRatios[i][j] = 0.9344 * BLOSUM62_FREQRATIOS[i][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM45")) {
-	   returnRatios[i][j] = BLOSUM45_FREQRATIOS[i][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM80")) {
-	   returnRatios[i][j] = BLOSUM80_FREQRATIOS[i][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM50")) {
-	   returnRatios[i][j] = BLOSUM50_FREQRATIOS[i][j];
-	 }
-	 if (0 == strcmp(matrixName,"BLOSUM90")) {
-	   returnRatios[i][j] = BLOSUM90_FREQRATIOS[i][j];
-	 }
-	 if (0 == strcmp(matrixName,"PAM250")) {
-	   returnRatios[i][j] = PAM250_FREQRATIOS[i][j];
-	 }
-	 if (0 == strcmp(matrixName,"PAM30")) {
-	   returnRatios[i][j] = PAM30_FREQRATIOS[i][j];
-	 }
-	 if (0 == strcmp(matrixName,"PAM70")) {
-	   returnRatios[i][j] = PAM70_FREQRATIOS[i][j];
-	 }
-       }
-     }
-   }
    return(returnRatios);
 }
 
-/************************************************************************
- *take every entry of startFreqRatios that is not corresponding to
- * a score of BLAST_SCORE_MIN and take its log, divide by Lambda and
-*multiply  by LambdaRatio then round to the nearest integer and
-*put the result in the corresponding entry of matrix.
-*startMatrix and matrix have dimensions numPositions X PROTEIN_ALPHABET
-************************************************************************/
-static void scaleMatrix(BLAST_Score **matrix, BLAST_Score **startMatrix, 
-			Nlm_FloatHi **startFreqRatios, Int4 numPositions, 
-			Nlm_FloatHi Lambda, Nlm_FloatHi LambdaRatio)
+
+/**
+ * take every entry of startFreqRatios that is not corresponding to a
+ * score of BLAST_SCORE_MIN and take its log, divide by Lambda and
+ * multiply by LambdaRatio then round to the nearest integer and put
+ * the result in the corresponding entry of matrix. startMatrix and
+ * matrix have dimensions numPositions X PROTEIN_ALPHABET
+ *
+ * @param matrix preallocated matrix to be filled in [out]
+ * @param startMatrix matrix to be scaled up [in]
+ * @param startFreqRatios frequency ratios of starting matrix [in]
+ * @param numPositions length of query [in]
+ * @param Lambda A Karlin-Altschul parameter. [in]
+ * @param LambdaRatio ratio of correct Lambda to it's original value [in]
+ */
+static void scaleMatrix(BLAST_Score **matrix, BLAST_Score **startMatrix,
+            Nlm_FloatHi **startFreqRatios, Int4 numPositions,
+            Nlm_FloatHi Lambda, Nlm_FloatHi LambdaRatio)
 {
    Int4 p, c; /*indices over positions and characters*/
    Nlm_FloatHi temp; /*intermediate term in computation*/
@@ -1737,163 +2162,71 @@ static void scaleMatrix(BLAST_Score **matrix, BLAST_Score **startMatrix,
    for (p = 0; p < numPositions; p++) {
      for (c = 0; c < PROTEIN_ALPHABET; c++) {
        if (matrix[p][c] == BLAST_SCORE_MIN)
-	 matrix[p][c] = startMatrix[p][c];
+         matrix[p][c] = startMatrix[p][c];
        else {
          temp = log(startFreqRatios[p][c]);
          temp = temp/Lambda;
-	 temp = temp * LambdaRatio; 
-	 matrix[p][c] = Nlm_Nint(temp);
+         temp = temp * LambdaRatio;
+         matrix[p][c] = Nlm_Nint(temp);
        }
      }
    }
 }
 
-/*SCALING_FACTOR is a multiplicative factor used to get more bits of
+
+/** SCALING_FACTOR is a multiplicative factor used to get more bits of
  * precision in the integer matrix scores. It cannot be arbitrarily
  * large because we do not want total alignment scores to exceedto
  * -(BLAST_SCORE_MIN) */
 #define SCALING_FACTOR 32
-/************************************************************************
-Compute a scaled up version of the standard matrix encoded by matrix
-name. Standard matrices are in half-bit units.
-************************************************************************/
-static void  computeScaledStandardMatrix(BLAST_Score **matrix, Char *matrixName, Nlm_FloatHi Lambda)
-{
-   int i,j; /*loop indices*/
-   Nlm_FloatHi temp; /*intermediate term in computation*/
 
-   if ((0 == strcmp(matrixName,"BLOSUM62"  )) ||
-       (0 == strcmp(matrixName,"BLOSUM62_20"))) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == BLOSUM62_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp = log(BLOSUM62_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   if (0 == strcmp(matrixName,"BLOSUM62_20A")) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == BLOSUM62_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp =  log(0.9666 * BLOSUM62_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   if (0 == strcmp(matrixName,"BLOSUM62_20B")) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == BLOSUM62_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp = log(0.9344 * BLOSUM62_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   if (0 == strcmp(matrixName,"PAM30")) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == PAM30_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp = log(PAM30_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   if (0 == strcmp(matrixName,"PAM70")) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == PAM70_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp =  log(PAM70_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   if (0 == strcmp(matrixName,"BLOSUM45")) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == BLOSUM45_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp =  log(BLOSUM45_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   if (0 == strcmp(matrixName,"BLOSUM80")) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == BLOSUM80_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp =  log(BLOSUM80_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   if (0 == strcmp(matrixName,"BLOSUM50")) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == BLOSUM50_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp =  log(BLOSUM50_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   if (0 == strcmp(matrixName,"BLOSUM90")) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == BLOSUM90_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp = log(BLOSUM90_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   if (0 == strcmp(matrixName,"PAM250")) {
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       for(j = 0; j < PROTEIN_ALPHABET; j++) {
-         if(0.0 == PAM250_FREQRATIOS[i][j])
-	   matrix[i][j] = BLAST_SCORE_MIN;
-	 else {
-	   temp =  log(PAM250_FREQRATIOS[i][j])/Lambda;
-           matrix[i][j] = Nlm_Nint(temp);
-	 }
-       }
-     return;
-   }
-   ErrPostEx(SEV_FATAL, 1, 0, "blastpgp: Cannot adjust parameters for matrix %s\n", matrixName);
+
+/**
+ * Compute a scaled up version of the standard matrix encoded by
+ * matrix name.  Standard matrices are in half-bit units.
+ *
+ * @param matrix preallocated matrix [in][out]
+ * @param matrixName name of matrix (e.g., BLOSUM62, PAM30). [in]
+ * @param Lambda A Karlin-Altschul parameter. [in]
+ */
+static void
+computeScaledStandardMatrix(
+  BLAST_Score **matrix,
+  Char *matrixName,
+  Nlm_FloatHi Lambda)
+{
+  int i,j; /*loop indices*/
+  FreqRatios * freqRatios;  /* frequency ratios for the matrix */
+
+  freqRatios = PSIMatrixFrequencyRatiosNew(matrixName);
+  if(freqRatios == NULL) {
+    ErrPostEx(SEV_FATAL, 1, 0, "blastpgp: Cannot adjust parameters "
+              "for matrix %s\n", matrixName);
+  }
+  for(i = 0; i < PROTEIN_ALPHABET; i++) {
+    for(j = 0; j < PROTEIN_ALPHABET; j++) {
+      if(0.0 == freqRatios->data[i][j]) {
+        matrix[i][j] = BLAST_SCORE_MIN;
+      } else {
+        Nlm_FloatHi temp = log(freqRatios->data[i][j])/Lambda;
+        matrix[i][j] = Nlm_Nint(temp);
+      }
+    }
+  }
+  freqRatios = PSIMatrixFrequencyRatiosFree(freqRatios);
 }
 
-/************************************************************
-produce a scaled-up version of the position-specific matrix starting from
-posFreqs
-fillPosMatrix is the matrix to be filled
-nonposMatrix is the underlying position-independent matrix, used to
-fill positions where frequencies are irrelevant
-sbp stores various parameters of the search
-*****************************************************************/
+
+/**
+ * produce a scaled-up version of the position-specific matrix
+ * starting from posFreqs
+ *
+ * @param fillPosMatrix     is the matrix to be filled
+ * @param nonposMatrix      is the underlying position-independent matrix,
+ *                          used to fill positions where frequencies are
+ *                          irrelevant
+ * @param sbp               stores various parameters of the search
+ */
 void scalePosMatrix(BLAST_Score **fillPosMatrix, BLAST_Score **nonposMatrix, Char *matrixName, Nlm_FloatHi **posFreqs, Uint1 *query, Int4 queryLength, BLAST_ScoreBlkPtr sbp)
 {
 
@@ -1902,8 +2235,6 @@ void scalePosMatrix(BLAST_Score **fillPosMatrix, BLAST_Score **nonposMatrix, Cha
      Int4 i,j ; /*loop indices*/   
      BLAST_ResFreqPtr stdrfp; /* gets standard frequencies in prob field */
      Int4 a; /*index over characters*/
-     Nlm_FloatHi **standardFreqRatios; /*frequency ratios for standard score matrix*/
-     Int4 multiplier; /*bit scale factor for scores*/
 
 
      posSearch = (posSearchItems *) MemNew (1 * sizeof(posSearchItems));
@@ -1911,6 +2242,7 @@ void scalePosMatrix(BLAST_Score **fillPosMatrix, BLAST_Score **nonposMatrix, Cha
      posSearch->posMatrix = (BLAST_Score **) MemNew((queryLength + 1) * sizeof(BLAST_Score *));
      posSearch->posPrivateMatrix = fillPosMatrix;
      posSearch->posFreqs = posFreqs;
+     posSearch->stdFreqRatios = PSIMatrixFrequencyRatiosNew(matrixName);
      for(i = 0; i <= queryLength; i++) 
        posSearch->posMatrix[i] = (BLAST_Score *) MemNew(PROTEIN_ALPHABET * sizeof(BLAST_Score));
 
@@ -1934,306 +2266,231 @@ void scalePosMatrix(BLAST_Score **fillPosMatrix, BLAST_Score **nonposMatrix, Cha
        compactSearch->standardProb[a] = stdrfp->prob[a];
      stdrfp = BlastResFreqDestruct(stdrfp);
 
-     standardFreqRatios = (Nlm_FloatHi **) MemNew(PROTEIN_ALPHABET * sizeof(Nlm_FloatHi *));
-     for (i = 0; i < PROTEIN_ALPHABET; i++)
-       standardFreqRatios[i] = (Nlm_FloatHi *) MemNew(PROTEIN_ALPHABET * sizeof(Nlm_FloatHi));
-
-     if ((0 == strcmp(matrixName,"BLOSUM62")) ||
-	 (0 == strcmp(matrixName,"BLOSUM62_20"))) {
-       multiplier = 2;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = BLOSUM62_FREQRATIOS[i][j];
-     }
-     if (0 == strcmp(matrixName,"BLOSUM62_20A")) {
-       multiplier = 2;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = 0.9666 * BLOSUM62_FREQRATIOS[i][j];
-     }
-     if (0 == strcmp(matrixName,"BLOSUM62_20B")) {
-       multiplier = 2;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = 0.9344 * BLOSUM62_FREQRATIOS[i][j];
-     }
-     if (0 == strcmp(matrixName,"BLOSUM45")) {
-       multiplier = 3;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = BLOSUM45_FREQRATIOS[i][j];
-     }
-     if (0 == strcmp(matrixName,"BLOSUM80")) {
-       multiplier = 2;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = BLOSUM80_FREQRATIOS[i][j];
-     }
-     if (0 == strcmp(matrixName,"BLOSUM50")) {
-       multiplier = 2;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = BLOSUM50_FREQRATIOS[i][j];
-     }
-     if (0 == strcmp(matrixName,"BLOSUM90")) {
-       multiplier = 2;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = BLOSUM90_FREQRATIOS[i][j];
-     }
-     if (0 == strcmp(matrixName,"PAM250")) {
-       multiplier = 2;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = PAM250_FREQRATIOS[i][j];
-     }
-     if (0 == strcmp(matrixName,"PAM30")) {
-       multiplier = 2;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = PAM30_FREQRATIOS[i][j];
-     }
-     if (0 == strcmp(matrixName,"PAM70")) {
-       multiplier = 2;
-       for(i = 0; i < PROTEIN_ALPHABET; i++)
-	 for(j = 0; j < PROTEIN_ALPHABET; j++)
-	   standardFreqRatios[i][j] = PAM70_FREQRATIOS[i][j];
-     }
-
-     posFreqsToMatrix(posSearch,compactSearch, standardFreqRatios, multiplier);
+     posFreqsToMatrix(posSearch,compactSearch);
      impalaScaling(posSearch, compactSearch, ((Nlm_FloatHi) SCALING_FACTOR), FALSE);
 
      for(i = 0; i <= queryLength; i++)
        MemFree(posSearch->posMatrix[i]);
-     for(i = 0; i < PROTEIN_ALPHABET; i++)
-       MemFree(standardFreqRatios[i]);
 
-     MemFree(standardFreqRatios);
      MemFree(compactSearch->standardProb);
      MemFree(posSearch->posMatrix);
+     PSIMatrixFrequencyRatiosFree(posSearch->stdFreqRatios);
      MemFree(posSearch);
      MemFree(compactSearch);
 }
 
 
 /**
- * A Kappa_MatchingSequence represents a subject sequence to be aligned
- * with the query.  This abstract sequence is used to hide the
- * complexity associated with actually obtaining and releasing the
- * data for a matching sequence, e.g. reading the sequence from a DB
- * or translating it from a nucleotide sequence. */
-struct Kappa_MatchingSequence {
-  Int4      length;             /* length of the sequence */
-  Uint1Ptr  sequence;           /* the sequence data */
-  Uint1Ptr  filteredSequence;   /* a copy of the sequence data that
-                                 * has been filtered */
-  Uint1Ptr  filteredSequenceStart;      /* the address of the chunk of
-                                           memory that has been
-                                           allocated to hold
-                                           "filterSequence". */
-  BioseqPtr bsp_db;              /* info used to access the database */
-  Boolean   bioseq_needs_unlock; /* true if the sequence need to be unlocked
-                                    when it is released */
-};
-typedef struct Kappa_MatchingSequence Kappa_MatchingSequence;
-
-
-#define BLASTP_MASK_RESIDUE 21
-#define BLASTP_MASK_INSTRUCTIONS "S 10 1.8 2.1"
-
-/* Initialize a new matching sequence, obtaining the data from an
- * appropriate location */
-static void
-Kappa_MatchingSequenceInitialize(Kappa_MatchingSequence * self,
-                                 BlastSearchBlkPtr search,
-                                 Int4 subject_id)
+ * Kappa_WindowInfo - a struct whose instances represent a range
+ * of data in a sequence. */
+typedef struct Kappa_WindowInfo
 {
-  if(search->rdfp) {
-    Uint1Ptr db_sequence;       /* the raw sequence from the database */
-    Int4     db_length;         /* the length of "db_sequence" */
-
-    search->rdfp->parameters |= READDB_KEEP_HDR_AND_SEQ;
-
-    db_length =
-      readdb_get_sequence(search->rdfp, subject_id,
-                          (Uint1Ptr PNTR) & db_sequence);
-    self->bsp_db   = readdb_get_bioseq(search->rdfp, subject_id);
-    self->sequence = db_sequence;
-    self->length   = db_length;
-
-    self->bioseq_needs_unlock = FALSE;
-  } else {
-    SeqPortPtr spp = NULL;      /* a SeqPort used to read the sequence data */
-    Uint1      residue;         /* an individual residue */
-    Int4       idx;
-
-    self->length   = search->subject_info->length;
-    self->sequence = MemNew((self->length + 1) * sizeof(Uint1));
-    self->bsp_db   = BioseqLockById(search->subject_info->sip);
-    spp =
-      SeqPortNew(self->bsp_db, FIRST_RESIDUE, LAST_RESIDUE,
-                 Seq_strand_unknown, Seq_code_ncbistdaa);
-
-    idx = 0;
-    while((residue = SeqPortGetResidue(spp)) != SEQPORT_EOF) {
-      if(IS_residue(residue)) {
-        if(residue == 24) {     /* change selenocysteine to X */
-          residue = 21;
-          fprintf(stderr, "Selenocysteine (U) at position %ld replaced by X\n",
-                  (long) idx + 1);
-        }
-        self->sequence[idx++] = residue;
-      }
-    }
-    self->sequence[idx] = 0;    /* terminate the string */
-    spp = SeqPortFree(spp);
-
-    self->bioseq_needs_unlock = TRUE;
-  }
-  self->filteredSequenceStart = MemNew((self->length + 2) * sizeof(Uint1));
-  self->filteredSequence      = self->filteredSequenceStart + 1;
-
-#ifndef KAPPA_NO_SEG_SEQUENCE
-  segResult(self->bsp_db, self->sequence, self->filteredSequence,
-            self->length, BLASTP_MASK_INSTRUCTIONS, BLASTP_MASK_RESIDUE);
-#endif
-}
+  Int4 begin;  /**< the starting index of the range */
+  Int4 end;    /**< one beyond the last item in the range */
+  Int4 frame;  /**< the translation frame of this window */
+  Int4 hspcnt; /**< the number of HSPs aligned to a subset of the data
+                    in this window's range. */
+} Kappa_WindowInfo;
 
 
-/* Release the data associated with a matching sequence */
-static void
-Kappa_MatchingSequenceRelease(Kappa_MatchingSequence * self)
-{
-  if(self->sequence != self->filteredSequence) {
-    MemFree(self->filteredSequenceStart);
-  }
-  if(self->bsp_db) {
-    if(self->bioseq_needs_unlock) {
-      BioseqUnlock(self->bsp_db);
-      self->bsp_db   = NULL;
-      self->sequence = MemFree(self->sequence);
-    } else {
-      self->bsp_db   = BioseqFree(self->bsp_db);
-    }
-  }
-}
-
-
-/* An instance of Kappa_ForbiddenRanges is used by the Smith-Waterman
- * algorithm to represent ranges in the database that are not to be
- * aligned.
+/**
+ * A datatype used solely to enable a list of windows and of indices
+ * to be simultaneously sorted in the WindowsFromHSPs routine.
  */
+typedef struct Kappa_WindowIndexPair {
+  Kappa_WindowInfo * window;    /**< a window */
+  Int4 index;                   /**< an index associated with
+                                     "window," typically the index of
+                                     the window in a list, before the
+                                     list is sorted. */
+} Kappa_WindowIndexPair;
 
-struct Kappa_ForbiddenRanges { Int4 *numForbidden; /* how many
-  forbidden ranges at each db * position */
-  Int4 **ranges;                /* forbidden ranges for each database
-                                 * position */
-  Int4   queryLength;
-};
-typedef struct Kappa_ForbiddenRanges Kappa_ForbiddenRanges;
+/**
+ * A comparison routine used to sort a list of Kappa_WindowIndexPair
+ * objects first by frame and then by location.
+ */
+static int LIBCALLBACK
+location_compare_windows(void * vp1, void *vp2)
+{
+  /* w1 and w2 are the windows being compared */
+  Kappa_WindowInfo * w1 = ((Kappa_WindowIndexPair *) vp1)->window;
+  Kappa_WindowInfo * w2 = ((Kappa_WindowIndexPair *) vp2)->window;
 
-
-/* Initialize a new, empty Kappa_ForbiddenRanges */
-static void
-Kappa_ForbiddenRangesInitialize(
-  Kappa_ForbiddenRanges * self, /* object to be initialized */
-  Int4 queryLength              /* the length of the query */
-) {
-  Int4 f;
-  self->queryLength  = queryLength;
-  self->numForbidden = (Int4 *) MemNew(queryLength * sizeof(Int4));
-  self->ranges       = (Int4 **) MemNew(queryLength * sizeof(Int4 *));
-
-  for(f = 0; f < queryLength; f++) {
-    self->numForbidden[f] = 0;
-    self->ranges[f]       = (Int4 *) MemNew(2 * sizeof(Int4));
-    self->ranges[f][0]    = 0;
-    self->ranges[f][1]    = 0;
+  Int4 result;                   /* result of the comparison */
+  if(0 == (result = BLAST_CMP(w1->frame, w2->frame)) &&
+     0 == (result = BLAST_CMP(w1->begin, w2->begin))) {
+      result = BLAST_CMP(w1->end, w2->end);
   }
+  return (int) result;
 }
 
 
-/* Reset self to be empty */
+/**
+ * Reads a array of HSPs and creates a new array of pointers to
+ * Kappa_WindowInfo so that each element in the array of HSPs is
+ * contained in exactly one window
+ *
+ * @param hsp_array         hsp array to be read [in]
+ * @param hspcnt            length of hsp_array [in]
+ * @param border            Number of extra amino acids to include
+ *                          at the start and end of each HSP.
+ * @param sequence_length   length of the sequence containing these
+ *                          HSPs, in nucleotide coordinates.
+ * @param pwindows          a pointer to an array of windows;
+ *                          the array may be resized by this routine. [in][out]
+ * @param nWindows          the number of windows in *pwindows [in][out]
+ * @param lWindows          the allocated length of *pwindows [in][out]
+ * @param window_of_hsp     HSP i is contained in the bounds of
+ *                          window_of_hsp[i]  [in][out]
+ */
 static void
-Kappa_ForbiddenRangesClear(Kappa_ForbiddenRanges * self)
+WindowsFromHSPs(
+  BLASTResultHsp hsp_array[],
+  Int4 hspcnt,
+  Int4 border,
+  Int4 sequence_length,
+  Kappa_WindowInfo ***pwindows,
+  Int4 * nWindows,
+  Int4 * lWindows,
+  Int4 * window_of_hsp)
 {
-  Int4 f;
-  for(f = 0; f < self->queryLength; f++) {
-    self->numForbidden[f] = 0;
+  Int4 k, ell;
+  Kappa_WindowIndexPair * window_and_index;  /* an array of windows
+                                              * paired with the index
+                                              * of the HSP that
+                                              * generated them */
+  Kappa_WindowInfo     ** windows;      /* the output list of windows */
+  Int4 start_cluster;    /* start of a cluster of windows to be joined */
+  Int4 length_joined;    /* the current length of the list of joined windows */
+
+  windows = *pwindows;
+  /* Make the window list have exactly hspcnt windows. */
+  if( *lWindows < hspcnt ) {
+    *lWindows = 2 * hspcnt;
+    windows = *pwindows =
+      MemMore(*pwindows, *lWindows *  sizeof(Kappa_WindowInfo*));
   }
-}
+  for( k = *nWindows; k < hspcnt; k++ ) {
+    windows[k] = MemNew(sizeof(Kappa_WindowInfo));
+  }
+  for( k = hspcnt; k < *nWindows; k++ ) {
+    MemFree(windows[k]);
+  }
+  *nWindows = hspcnt;
 
+  window_and_index = MemNew(hspcnt * sizeof(Kappa_WindowIndexPair));
 
-/* Add some ranges to self */
-static void
-Kappa_ForbiddenRangesPush(
-  Kappa_ForbiddenRanges * self,
-  Int4 queryStart,      /* start of the alignment in the query sequence */
-  Int4 queryAlignmentExtent,   /* length of the alignment in the query sequence */
-  Int4 matchStart,      /* start of the alignment in the subject sequence */
-  Int4 matchAlignmentExtent)   /* length of the alignment in the subject  sequence */
-{
-  Int4 f;
-  for(f = queryStart; f < (queryStart + queryAlignmentExtent); f++) {
-    Int4 last = 2 * self->numForbidden[f];
-    if(0 != last) {    /* we must resize the array */
-      self->ranges[f] =
-        (Int4 *) MemMore(self->ranges[f], (last + 2) * sizeof(Int4));
+  for( k = 0; k < hspcnt; k++ ) { /* for all HSPs */
+    /* length of the translation of the nucleotide sequence in this frame */
+    Int4 translated_length;
+
+    windows[k]->frame = hsp_array[k].subject_frame;
+
+    if( windows[k]->frame > 0 ) {
+      translated_length = (sequence_length - windows[k]->frame + 1)/3;
+    } else {
+      translated_length = (sequence_length + windows[k]->frame - 1)/3;
     }
-    self->ranges[f][last]     = matchStart;
-    self->ranges[f][last + 1] = matchStart + matchAlignmentExtent;
+    windows[k]->begin = MAX(0, hsp_array[k].subject_offset - border);
+    windows[k]->end   = MIN(translated_length,
+                            hsp_array[k].subject_offset +
+                            hsp_array[k].subject_length + border);
+    windows[k]->hspcnt = 1;
 
-    self->numForbidden[f]++;
+    window_and_index[k].index  = k;
+    window_and_index[k].window = windows[k];
   }
+  HeapSort(window_and_index, hspcnt, sizeof(Kappa_WindowIndexPair),
+           location_compare_windows);
+
+  /* Join windows that overlap or are too close together.  */
+  start_cluster = 0;
+  length_joined = 0;
+  for( k = 0; k < hspcnt; k++ ) {       /* for all windows in the
+                                           original list */
+    Kappa_WindowInfo * window;          /* window at this value of k */
+    Kappa_WindowInfo * nextWindow;      /* window at the next value of k, or
+                                           NULL if no such window exists */
+    window     = window_and_index[k].window;
+    nextWindow = ( k + 1 < hspcnt ) ? window_and_index[k+1].window : NULL;
+
+    if(nextWindow != NULL                 && /* there is a next window; and */
+       window->frame == nextWindow->frame && /* it is in the same frame; and
+                                                it is very near this one */
+       window->end >= nextWindow->begin) {
+      /* Join the current window with the next window.  Do not add the
+         current window to the output list. */
+      nextWindow->begin = MIN(window->begin, nextWindow->begin);
+      nextWindow->end   = MAX(window->end,   nextWindow->end  );
+
+      MemFree(window);
+      window_and_index[k].window = NULL;  /* Set the now dangling
+                                             pointer to NULL */
+    } else {
+      /* Don't join the current window with the next window.  Add the
+         current window to the output list instead */
+      windows[length_joined] = window;
+      for( ell = start_cluster; ell <= k; ell++ ) {
+        window_of_hsp[window_and_index[ell].index] = length_joined;
+      }
+      length_joined++;
+      start_cluster = k + 1;
+    } /* end else don't join the current window with the next window */
+  } /* end for all windows in the original list */
+  *nWindows = length_joined;
+  for( k = length_joined; k < hspcnt; k++ ) {
+    windows[k] = NULL;
+  }
+  MemFree(window_and_index);
 }
 
 
-/* Release the storage associated with the fields of self, but do not 
- * delete self */
-static void
-Kappa_ForbiddenRangesRelease(Kappa_ForbiddenRanges * self)
-{
-  Int4 f;
-  for(f = 0; f < self->queryLength; f++)  MemFree(self->ranges[f]);
-  
-  MemFree(self->ranges);       self->ranges       = NULL;
-  MemFree(self->numForbidden); self->numForbidden = NULL;
-}
-
-
-/* Redo a S-W alignment using an x-drop alignment.  The result will
+/**
+ * Redo a S-W alignment using an x-drop alignment.  The result will
  * usually be the same as the S-W alignment. The call to ALIGN
  * attempts to force the endpoints of the alignment to match the
  * optimal endpoints determined by the Smith-Waterman algorithm.
  * ALIGN is used, so that if the data structures for storing BLAST
- * alignments are changed, the code will not break */
+ * alignments are changed, the code will not break
+ *
+ * @param query         the query data
+ * @param queryStart    start of the alignment in the query sequence
+ * @param queryEnd      end of the alignment in the query sequence,
+ *                      as computed by the Smith-Waterman algorithm
+ * @param subject       the subject (database) sequence
+ * @param matchStart    start of the alignment in the subject sequence
+ * @param matchEnd      end of the alignment in the query sequence,
+ *                      as computed by the Smith-Waterman algorithm
+ * @param gap_align     parameters for a gapped alignment
+ * @param score         score computed by the Smith-Waterman algorithm
+ * @param localScalingFactor    the factor by which the scoring system has
+ *                              been scaled in order to obtain greater
+ *                              precision
+ * @param queryAlignmentExtent  length of the alignment in the query sequence,
+ *                              as computed by the x-drop algorithm
+ * @param matchAlignmentExtent  length of the alignment in the subject
+ *                              sequence, as computed by the x-drop algorithm
+ * @param reverseAlignScript    alignment information (script) returned by a
+ *                              x-drop alignment algorithm
+ * @param newScore              alignment score computed by the x-drop
+ *                              algorithm
+ */
 static void
 Kappa_SWFindFinalEndsUsingXdrop(
-  Uint1Ptr query,       /* the query sequence */
-  Int4 queryLength,     /* length of the query sequence */
-  Int4 queryStart,      /* start of the alignment in the query sequence */
-  Int4 queryEnd,        /* end of the alignment in the query sequence,
-                           as computed by the Smith-Waterman algorithm */
-  Uint1Ptr match,       /* the subject (database) sequence */
-  Int4 matchLength,     /* length of the subject sequence */
-  Int4 matchStart,      /* start of the alignment in the subject sequence */
-  Int4 matchEnd,        /* end of the alignment in the query sequence,
-                           as computed by the Smith-Waterman algorithm */
-  GapAlignBlkPtr gap_align,     /* parameters for a gapped alignment */
-  Int4 score,           /* score computed by the Smith-Waterman algorithm */
-  Nlm_FloatHi localScalingFactor,       /* the factor by which the
-                                         * scoring system has been
-                                         * scaled in order to obtain
-                                         * greater precision */
-  Int4 * queryAlignmentExtent, /* length of the alignment in the query sequence,
-                           as computed by the x-drop algorithm */
-  Int4 * matchAlignmentExtent, /* length of the alignment in the subject sequence,
-                           as computed by the x-drop algorithm */
-  Int4 ** reverseAlignScript,   /* alignment information (script)
-                                 * returned by a x-drop alignment algorithm */
-  BLAST_Score * newScore        /* alignment score computed by the
-                                   x-drop algorithm */
-) {
+  Kappa_SequenceData * query,
+  Int4 queryStart,
+  Int4 queryEnd,
+  Kappa_SequenceData * subject,
+  Int4 matchStart,
+  Int4 matchEnd,
+  GapAlignBlkPtr gap_align,
+  Int4 score,
+  Nlm_FloatHi localScalingFactor,
+  Int4 * queryAlignmentExtent,
+  Int4 * matchAlignmentExtent,
+  Int4 ** reverseAlignScript,
+  BLAST_Score * newScore)
+{
   Int4 XdropAlignScore;         /* alignment score obtained using X-dropoff
                                  * method rather than Smith-Waterman */
   Int4 doublingCount = 0;       /* number of times X-dropoff had to be
@@ -2242,14 +2499,15 @@ Kappa_SWFindFinalEndsUsingXdrop(
     Int4 *alignScript;          /* the alignment script that will be
                                    generated below by the ALIGN
                                    routine. */
-    
+
     *reverseAlignScript = alignScript =
-      (Int4 *) MemNew((matchLength + queryLength + 3) * sizeof(Int4));
+      (Int4 *) MemNew((subject->length + query->length + 3) * sizeof(Int4));
 
     XdropAlignScore =
-      ALIGN(&(query[queryStart]) - 1, &(match[matchStart]) - 1,
+      ALIGN(&(query->data[queryStart]) - 1, &(subject->data[matchStart]) - 1,
             queryEnd - queryStart + 1, matchEnd - matchStart + 1,
-            *reverseAlignScript, queryAlignmentExtent, matchAlignmentExtent, &alignScript,
+            *reverseAlignScript, queryAlignmentExtent,
+            matchAlignmentExtent, &alignScript,
             gap_align, queryStart - 1, FALSE);
 
     gap_align->x_parameter *= 2;
@@ -2259,55 +2517,494 @@ Kappa_SWFindFinalEndsUsingXdrop(
     }
   } while((XdropAlignScore < score) && (doublingCount < 3));
 
-  *newScore = Nlm_Nint(((Nlm_FloatHi) XdropAlignScore) / localScalingFactor);
+
+  *newScore = XdropAlignScore;
 }
 
 
-/* A Kappa_SearchParameters represents the data needed by
+/**
+ * A Kappa_MatchingSequence represents a subject sequence to be aligned
+ * with the query.  This abstract sequence is used to hide the
+ * complexity associated with actually obtaining and releasing the
+ * data for a matching sequence, e.g. reading the sequence from a DB
+ * or translating it from a nucleotide sequence.
+ *
+ * We draw a distinction between a sequence itself, and strings of
+ * data that may be obtained from the sequence.  The amino
+ * acid/nucleotide data is represented by an object of type
+ * Kappa_SequenceData.  There may be more than one instance of
+ * Kappa_SequenceData per Kappa_MatchingSequence, each representing a
+ * different range in the sequence, or a different translation frame.
+ */
+typedef struct Kappa_MatchingSequence {
+  Int4          length;         /**< length of this matching sequence */
+  Int4          index;          /**< index of this sequence in the database */
+  Uint1         prog_number;    /**< identifies the type of blast search being
+                                     performed. The type of search determines
+                                     how sequence data should be obtained. */
+  CharPtr       genetic_code;   /**< genetic code for translated searches */
+  BioseqPtr     bsp_db;         /**< An object that represents this sequence
+                                   in low level routines. */
+  Boolean       bioseq_needs_unlock;    /**< true if the bsp_db must be
+                                           disposed of by a call to
+                                           BioseqUnlock, rather than
+                                           BioseqFree */
+  ReadDBFILEPtr rdfp;           /**< A pointer to a database from which
+                                     sequences may be obtained */
+} Kappa_MatchingSequence;
+
+
+/**
+ * Initialize a new matching sequence, obtaining information about the
+ * sequence from the search.
+ *
+ * @param self              object to be initialized
+ * @param search            search information
+ * @param subject_index     index of the matching sequence in the database
+ */
+static void
+Kappa_MatchingSequenceInitialize(
+  Kappa_MatchingSequence * self,
+  BlastSearchBlkPtr search,
+  Int4 subject_index)
+{
+  self->prog_number  = search->prog_number;
+  self->rdfp         = search->rdfp;
+  self->index        = subject_index;
+
+  if(self->prog_number ==  blast_type_tblastn) {
+    self->genetic_code = search->db_genetic_code;
+  } else {
+    self->genetic_code = NULL;  /* the sequence will not be translated */
+  }
+  if(self->rdfp) {
+    self->rdfp->parameters   |= READDB_KEEP_HDR_AND_SEQ;
+    self->bsp_db              = readdb_get_bioseq(self->rdfp, self->index );
+    self->bioseq_needs_unlock = FALSE;
+  } else {
+    self->bsp_db              = BioseqLockById(search->subject_info->sip);
+    self->bioseq_needs_unlock = TRUE;
+  }
+  self->length = self->bsp_db->length;
+}
+
+
+/** Release the resources associated with a matching sequence. */
+static void
+Kappa_MatchingSequenceRelease(Kappa_MatchingSequence * self)
+{
+  if(self->bsp_db) {
+    if(self->bioseq_needs_unlock) {
+      BioseqUnlock(self->bsp_db);
+      self->bsp_db        = NULL;
+    } else {
+      self->bsp_db        = BioseqFree(self->bsp_db);
+    }
+  }
+}
+
+
+/** NCBIstdaa encoding for 'X' character */
+#define BLASTP_MASK_RESIDUE 21
+/** Default instructions and mask residue for SEG filtering */
+#define BLASTP_MASK_INSTRUCTIONS "S 10 1.8 2.1"
+
+
+/**
+ * Obtain a string of translated data
+ *
+ * @param self          the sequence from which to obtain the data [in]
+ * @param window        the range and tranlation frame to get [in]
+ * @param seqData       the resulting data [out]
+ */
+static void
+Kappa_SequenceGetTranslatedWindow(Kappa_MatchingSequence * self,
+                                  Kappa_WindowInfo * window,
+                                  Kappa_SequenceData * seqData )
+{
+  Int4 i;
+  Int4 nucleotide_start;        /* position of the first nucleotide to be
+                                 * translated */
+  Int4 num_nucleotides;         /* number of nucleotides to translate */
+
+  nucleotide_start   = 3 * window->begin;
+  num_nucleotides    = 3 * (window->end - window->begin);
+  { /* scope of nucleotide_data */
+    Uint1Ptr nucleotide_data = MemNew((num_nucleotides + 1) * sizeof(Uint1));
+    { /* scope of spp */
+      SeqPortPtr spp;       /* a SeqPort used to read the sequence data */
+      Uint1 strand;         /* a flag indicating which strand to read */
+      Uint1 nucleotide;     /* an individual nucleotide */
+
+      strand = (window->frame >= 0) ? Seq_strand_plus : Seq_strand_minus;
+      spp    = SeqPortNew(self->bsp_db, FIRST_RESIDUE, LAST_RESIDUE, strand,
+                          Seq_code_ncbi4na);
+      SeqPortSeek(spp, nucleotide_start, SEEK_SET);
+
+      for(i = 0;
+          i < num_nucleotides &&
+            (nucleotide = SeqPortGetResidue(spp)) != SEQPORT_EOF;
+          i++ ) {
+        /* for all nucleotides in the translation range */
+        nucleotide_data[i] = nucleotide;
+      }
+
+      spp = SeqPortFree(spp);
+    }  /* end scope of spp */
+    seqData->buffer =
+      GetTranslation(nucleotide_data, num_nucleotides, window->frame,
+                     &seqData->length, self->genetic_code);
+    seqData->data = seqData->buffer + 1; /* This is a protein sequence,
+                                            so the first byte is nil. */
+    MemFree(nucleotide_data);
+  } /* end scope of nucleotide_data */
+
+#ifndef KAPPA_NO_SEG_SEQUENCE_TBLASTN
+  { /* scope of variables used for seg filtering */
+    BioseqPtr bsp_temp; /* a Bioseq for the translated sequence */
+    ObjectIdPtr oip;    /* a unique ObjectId for the translated sequence */
+    SeqLocPtr seg_slp;  /* a SeqLoc for SEG filtering */
+    bsp_temp     = BlastMakeTempProteinBioseq(seqData->data, seqData->length,
+                                              Seq_code_ncbistdaa);
+    bsp_temp->id = SeqIdSetFree(bsp_temp->id);
+
+    oip = (ObjectIdPtr) UniqueLocalId();
+    ValNodeAddPointer(&(bsp_temp->id), SEQID_LOCAL, oip);
+    SeqMgrAddToBioseqIndex(bsp_temp);
+
+    seg_slp = BlastBioseqFilter(bsp_temp, BLASTP_MASK_INSTRUCTIONS);
+    if (seg_slp) {
+      HackSeqLocId(seg_slp, self->bsp_db->id);
+      BlastMaskTheResidues(seqData->data, seqData->length,
+                           BLASTP_MASK_RESIDUE, seg_slp, FALSE, 0);
+      seg_slp = SeqLocSetFree(seg_slp);
+    }
+
+    SeqMgrDeleteFromBioseqIndex(bsp_temp);
+    bsp_temp->id = SeqIdSetFree(bsp_temp->id);
+    bsp_temp     = BioseqFree(bsp_temp);
+  } /* end scope of variables used for seg filtering */
+#endif
+}
+
+
+/**
+ * Obtain the sequence data that lies within the given window.
+ *
+ * @param self          sequence information [in]
+ * @param window        window specifying the range of data [in]
+ * @param seqData       the sequence data obtained [out]
+ */
+static void
+Kappa_SequenceGetWindow(
+  Kappa_MatchingSequence * self,
+  Kappa_WindowInfo * window,
+  Kappa_SequenceData * seqData )
+{
+  if(self->prog_number ==  blast_type_tblastn) {
+    /* The sequence must be translated. */
+    Kappa_SequenceGetTranslatedWindow(self, window, seqData);
+  } else {
+    /* The sequence does not need to be translated. */
+    /* Obtain the entire sequence (necessary for SEG filtering.) */
+    if(self->rdfp != NULL) {
+      Uint1Ptr origData;        /* data obtained from readdb_get_sequence;
+                                 * this data cannot be modified, so we copy
+                                 * it. */
+      seqData->length    = readdb_get_sequence(self->rdfp, self->index,
+                                               (Uint1Ptr PNTR) & origData );
+      seqData->buffer    = MemNew((seqData->length + 2) * sizeof(Uint1));
+      seqData->buffer[0] = '\0';
+      seqData->data      = &seqData->buffer[1];
+      MemCpy( seqData->data, origData, seqData->length + 1 );
+    } else { /* self->rdfp is NULL */
+      SeqPortPtr spp = NULL;      /* a SeqPort used to read the
+                                     sequence data */
+      Uint1      residue;         /* an individual residue */
+      Int4       idx;
+
+      seqData->length    = self->bsp_db->length;
+      seqData->buffer    = MemNew((seqData->length + 2) * sizeof(Uint1));
+      seqData->buffer[0] = '\0';
+      seqData->data      = seqData->buffer + 1;
+
+      spp =
+        SeqPortNew(self->bsp_db, FIRST_RESIDUE, LAST_RESIDUE,
+                   Seq_strand_unknown, Seq_code_ncbistdaa);
+
+      idx = 0;
+      while((residue = SeqPortGetResidue(spp)) != SEQPORT_EOF) {
+        if(IS_residue(residue)) {
+          /* Replace occurrences of amino acid number 24
+             (Selenocysteine) with number 21 (Undetermined or
+             atypical). */
+          if(residue == 24) {
+            residue = 21;
+            fprintf(stderr, "Selenocysteine (U) at position %ld"
+                    " replaced by X\n",
+                    (long) idx + 1);
+          }
+          seqData->data[idx++] = residue;
+        }
+      }
+      seqData->data[idx] = 0;    /* terminate the string */
+      spp = SeqPortFree(spp);
+    } /* end else self->rdfp is NULL */
+
+#ifndef KAPPA_BLASTP_NO_SEG_SEQUENCE
+    {
+      SeqLocPtr seg_slp;  /*pointer to structure for SEG filtering*/
+
+      seg_slp = BlastBioseqFilter(self->bsp_db, BLASTP_MASK_INSTRUCTIONS);
+      if (seg_slp) {
+        BlastMaskTheResidues(seqData->data, seqData->length,
+                             BLASTP_MASK_RESIDUE, seg_slp, FALSE, 0);
+        seg_slp = SeqLocSetFree(seg_slp);
+      }
+    }
+#endif
+    /* Fit the data to the window. */
+    seqData ->data    = &seqData->data[window->begin - 1];
+    *seqData->data++  = '\0';
+    seqData ->length  = window->end - window->begin;
+  } /* end else the sequence does not need to be translated */
+}
+
+
+/**
+ * Converts an HSP, obtained from a blast search, to a GapAlignBlk that
+ * is in a state in which it has all information necessary to redo the
+ * computation of a traceback.
+ *
+ * @param gap_align     the GapAlignBlk to be modified  [out]
+ * @param search        general information about the search [in]
+ * @param hsp           the HSP to be converted [in]
+ * @param window,       the window used to compute the traceback [in]
+ * @param query,        the query data [in]
+ * @param subject       the subject data [in]
+ */
+static void
+HitToGapAlign(
+  GapAlignBlkPtr gap_align,
+  BlastSearchBlkPtr search,
+  BLAST_HSPPtr       hsp,
+  Kappa_WindowInfo * window,
+  Kappa_SequenceData * query,
+  Kappa_SequenceData * subject)
+{
+  gap_align->query           = query->data;
+  gap_align->query_length    = query->length;
+  gap_align->query_frame     = 0;
+
+  gap_align->subject         = subject->data;
+  gap_align->subject_length  = subject->length;
+  gap_align->subject_frame   = hsp->subject.frame;
+
+  hsp->subject.offset       -= window->begin;
+  hsp->subject.gapped_start -= window->begin;
+  if(CheckStartForGappedAlignment(search, hsp, gap_align->query,
+                                   gap_align->subject, search->sbp->matrix)) {
+    /* We may use the starting point supplied by the HSP. */
+    gap_align->q_start = hsp->query.gapped_start;
+    gap_align->s_start = hsp->subject.gapped_start;
+  } else {
+    /* We must recompute the start for the gapped alignment, as the
+       one in the HSP was unacceptable.*/
+    gap_align->q_start =
+      GetStartForGappedAlignment(search, hsp, gap_align->query,
+                                 gap_align->subject, search->sbp->matrix);
+    gap_align->s_start =
+      (hsp->subject.offset - hsp->query.offset) + gap_align->q_start;
+  }
+}
+
+
+/**
+ * Create a new Kappa_DistinctAlignment and append the list of
+ * alignments represented by "next."
+ *
+ * @param query         query sequence data
+ * @param queryStart    the start of the alignment in the query
+ * @param queryEnd      the end of the alignment in the query
+ * @param subject       subject sequence data
+ * @param matchStart    the start of the alignment in the subject window
+ * @param matchEnd      the end of the alignment in the subject window
+ * @param score         the score of this alignment
+ * @param window        the subject window of this alignment
+ * @param gap_align     alignment info for gapped alignments
+ * @param localScalingFactor    the factor by which the scoring system has
+ *                              been scaled in order to obtain greater
+ *                              precision
+ * @param prog_number   the type of alignment being performed
+ * @param queryLength   length of the full query sequence
+ * @param subjectLength length of the full subject sequence
+ * @param next          preexisting list of alignments [out]
+ */
+static Kappa_DistinctAlignment *
+NewAlignmentUsingXdrop(
+  Kappa_SequenceData * query,
+  Int4 queryStart,
+  Int4 queryEnd,
+  Kappa_SequenceData * subject,
+  Int4 matchStart,
+  Int4 matchEnd,
+  Int4 score,
+  Kappa_WindowInfo * window,
+  GapAlignBlkPtr gap_align,
+  Nlm_FloatHi localScalingFactor,
+  Int4 prog_number,
+  Int4 queryLength,
+  Int4 subjectLength,
+  Kappa_DistinctAlignment * next)
+{
+  Int4 newScore;
+  /* Extent of the alignment as computed by an x-drop alignment
+   * (usually the same as (queryEnd - queryStart) and (matchEnd -
+   * matchStart)) */
+  Int4 queryExtent, matchExtent;
+  Int4 * reverseAlignScript;      /* alignment script returned by the
+                                     x-drop algorithm */
+  Kappa_DistinctAlignment * obj;  /* the new object */
+
+  Kappa_SWFindFinalEndsUsingXdrop(query,   queryStart, queryEnd,
+                                  subject, matchStart, matchEnd,
+                                  gap_align, score, localScalingFactor,
+                                  &queryExtent, &matchExtent,
+                                  &reverseAlignScript, &newScore);
+  obj = MemNew(sizeof(Kappa_DistinctAlignment));
+
+  obj->editBlock =
+    TracebackToGapXEditBlock(NULL, NULL, queryExtent, matchExtent,
+                             reverseAlignScript,
+                             queryStart,
+                             matchStart + window->begin);
+
+  reverseAlignScript = MemFree(reverseAlignScript);
+
+  obj->editBlock->discontinuous    = gap_align->discontinuous;
+  obj->editBlock->original_length1 = queryLength;
+  obj->editBlock->original_length2 = subjectLength;
+  obj->editBlock->translate2       = prog_number == blast_type_tblastn;
+  obj->editBlock->frame2           = window->frame;
+
+
+  obj->score      = newScore;
+  obj->queryStart = queryStart;
+  obj->queryEnd   = obj->queryStart + queryExtent;
+  obj->matchStart = matchStart      + window->begin;
+  obj->matchEnd   = obj->matchStart + matchExtent;
+  obj->frame      = window->frame;
+
+  obj->next       = next;
+
+  return obj;
+}
+
+
+/**
+ * Reads a GapAlignBlk that has been used to compute a traceback, and
+ * return a Kappa_DistinctAlignment representing the alignment.
+ *
+ * @param gap_align         the GapAlignBlk
+ * @param window            the window used to compute the traceback
+ * @param queryLength       original length of the query sequence
+ * @param subjectLength     original length of the subject sequence
+ */
+static Kappa_DistinctAlignment *
+NewAlignmentFromGapAlign(
+  GapAlignBlkPtr gap_align,
+  Kappa_WindowInfo * window,
+  Int4 queryLength,
+  Int4 subjectLength)
+{
+  Kappa_DistinctAlignment * obj; /* the new alignment */
+  obj = MemNew(sizeof(Kappa_DistinctAlignment));
+
+  obj->score      = gap_align->score;
+  obj->queryStart = gap_align->query_start;
+  obj->queryEnd   = gap_align->query_stop + 1;
+  obj->matchStart = gap_align->subject_start + window->begin;
+  obj->matchEnd   = gap_align->subject_stop  + window->begin + 1;
+  obj->frame      = gap_align->subject_frame;
+
+  if(gap_align->edit_block != NULL) {
+    gap_align->edit_block->start2           += window->begin;
+    gap_align->edit_block->length2          += window->begin;
+    gap_align->edit_block->original_length1  = queryLength;
+    gap_align->edit_block->original_length2  = subjectLength;
+  }
+  obj->editBlock        = gap_align->edit_block;
+  gap_align->edit_block = NULL; /* set to NULL to avoid aliasing */
+  obj->next             = NULL;
+
+  return obj;
+}
+
+
+/**
+ * A Kappa_SearchParameters represents the data needed by
  * RedoAlignmentCore to adjust the parameters of a search, including
- * the original value of these parameters */
-struct Kappa_SearchParameters {
-  Int4          gapOpen;        /* a penalty for the existence of a gap */
-  Int4          gapExtend;      /* a penalty for each residue (or nucleotide) 
-                                 * in the gap */
-  Int4          gapDecline;     /* a penalty for declining to align a pair of 
-                                 * residues */
-  Int4          mRows, nCols;   /* the number of rows an columns in a scoring 
-                                 * matrix */
-  Nlm_FloatHi   scaledUngappedLambda;   /* The value of Karlin-Altchul
-                                         * parameter lambda, rescaled
-                                         * to allow scores to have
-                                         * greater precision */
-  BLAST_Score **startMatrix, **origMatrix;
-  Nlm_FloatHi **startFreqRatios;        /* frequency ratios to start
-                                         * investigating each pair */
-  Nlm_FloatHi  *scoreArray;      /* array of score probabilities */
-  Nlm_FloatHi  *resProb;         /* array of probabilities for each residue in 
-                                  * a matching sequence */
-  Nlm_FloatHi  *queryProb;       /* array of probabilities for each residue in 
-                                  * the query */
-  Boolean       adjustParameters;
+ * the original value of these parameters
+ */
+typedef struct Kappa_SearchParameters {
+  Int4          gapOpen;        /**< a penalty for the existence of a gap */
+  Int4          gapExtend;      /**< a penalty for each residue (or
+                                      nucleotide) in the gap */
+  Int4          gapDecline;     /**< a penalty for declining to align a pair
+                                     of residues */
+  Int4          mRows;          /**< the number of rows in a scoring matrix. */
+  Int4          nCols;          /**< the number of columns in a scoring
+                                     matrix */
 
-  BLAST_ScoreFreqPtr return_sfp;        /* score frequency pointers to
-                                         * compute lambda */
-  BLAST_KarlinBlkPtr kbp_gap_orig, *orig_kbp_gap_array;
-};
-typedef struct Kappa_SearchParameters Kappa_SearchParameters;
+  Nlm_FloatHi   scaledUngappedLambda;   /**< The value of Karlin-Altschul
+                                             parameter lambda, rescaled
+                                             to allow scores to have
+                                             greater precision */
+  BLAST_Score **origMatrix;     /**< The original matrix values */
+  BLAST_Score **startMatrix;    /**< Rescaled values of the original matrix */
+                         
+  Nlm_FloatHi **startFreqRatios;        /**< frequency ratios to start
+                                             investigating each pair */
+  Nlm_FloatHi  *scoreArray;     /**< array of score probabilities */
+  Nlm_FloatHi  *resProb;        /**< array of probabilities for each residue
+                                     in a matching sequence */
+  Nlm_FloatHi  *queryProb;      /**< array of probabilities for each residue
+                                     in the query */
+  Boolean       adjustParameters;       /**< Use composition-based statistics
+                                             if true. */
+  GapAlignBlkPtr gap_align;
+
+  BLAST_ScoreFreqPtr return_sfp;        /**< score frequency pointers to
+                                             compute lambda */
+  BLAST_KarlinBlkPtr kbp_gap_orig;  /**< copy of the original gapped
+                                      Karlin-Altschul block corresponding to
+                                      the first context */
+  BLAST_KarlinBlkPtr * orig_kbp_gap_array;  /**< pointer to the array of gapped
+                                              Karlin-Altschul block for all
+                                              contexts (@todo is this really
+                                              needed?) */
+} Kappa_SearchParameters;
 
 
-/* Release the date associated with a Kappa_SearchParameters and
- * delete the object */
+/**
+ * Release the data associated with a Kappa_SearchParameters and
+ * delete the object
+ * @param searchParams the object to be deleted [in][out]
+ */
 static void
 Kappa_SearchParametersFree(Kappa_SearchParameters ** searchParams)
 {
   /* for convenience, remove one level of indirection from searchParams */
-  Kappa_SearchParameters *sp = *searchParams; 
+  Kappa_SearchParameters *sp = *searchParams;
 
   if(sp->kbp_gap_orig) BlastKarlinBlkDestruct(sp->kbp_gap_orig);
 
-  if(sp->startMatrix)     freeScaledMatrix(sp->startMatrix, sp->mRows);
-  if(sp->origMatrix)      freeScaledMatrix(sp->origMatrix, sp->mRows);
-  if(sp->startFreqRatios) freeStartFreqs(sp->startFreqRatios, sp->mRows);
+  if(sp->startMatrix)
+    freeScaledMatrix(sp->startMatrix, sp->mRows);
+  if(sp->origMatrix)
+    freeScaledMatrix(sp->origMatrix, sp->mRows);
+  if(sp->startFreqRatios)
+    freeStartFreqs(sp->startFreqRatios, sp->mRows);
 
   if(sp->return_sfp) MemFree(sp->return_sfp);
   if(sp->scoreArray) MemFree(sp->scoreArray);
@@ -2319,15 +3016,21 @@ Kappa_SearchParametersFree(Kappa_SearchParameters ** searchParams)
 }
 
 
-/* Create a new instance of Kappa_SearchParameters */
+/**
+ * Create a new instance of Kappa_SearchParameters
+ *
+ * @param rows              number of rows in the scoring matrix
+ * @param adjustParameters  if true, use composition-based statistics
+ * @param positionBased     if true, the search is position-based
+ */
 static Kappa_SearchParameters *
 Kappa_SearchParametersNew(
-  Int4 rows,                    /* number of rows in the scoring matrix */
-  Boolean adjustParameters,     /* if true, use composition-based statistics */
-  Boolean positionBased         /* if true, the search is position-based */
-) {
+  Int4 rows,
+  Boolean adjustParameters,
+  Boolean positionBased)
+{
   Kappa_SearchParameters *sp;   /* the new object */
-  sp = Nlm_Malloc(sizeof(Kappa_SearchParameters));
+  sp = MemNew(sizeof(Kappa_SearchParameters));
 
   sp->orig_kbp_gap_array = NULL;
   
@@ -2346,8 +3049,8 @@ Kappa_SearchParametersNew(
   
   if(adjustParameters) {
     sp->kbp_gap_orig = BlastKarlinBlkCreate();
-    sp->startMatrix  = allocateScaledMatrix(rows);
-    sp->origMatrix   = allocateScaledMatrix(rows);
+    sp->startMatrix  = allocateScaledMatrix(sp->mRows);
+    sp->origMatrix   = allocateScaledMatrix(sp->mRows);
     
     sp->resProb    =
       (Nlm_FloatHi *) MemNew(PROTEIN_ALPHABET * sizeof(Nlm_FloatHi));
@@ -2355,7 +3058,7 @@ Kappa_SearchParametersNew(
       (Nlm_FloatHi *) MemNew(scoreRange * sizeof(Nlm_FloatHi));
     sp->return_sfp =
       (BLAST_ScoreFreqPtr) MemNew(1 * sizeof(BLAST_ScoreFreq));
-    
+
     if(!positionBased) {
       sp->queryProb =
         (Nlm_FloatHi *) MemNew(PROTEIN_ALPHABET * sizeof(Nlm_FloatHi));
@@ -2367,17 +3070,26 @@ Kappa_SearchParametersNew(
 }
 
 
-/* Record the initial value of the search parameters that are to be
- * adjusted. */
+/**
+ * Record the initial value of the search parameters that are to be
+ * adjusted.
+ */
 static void
 Kappa_RecordInitialSearch(Kappa_SearchParameters * searchParams,
                           BlastSearchBlkPtr search)
 {
-  Uint1Ptr query;               /* the query sequence */
-  Int4 queryLength;             /* the length of the query sequence */
-
-  query      = search->context[0].query->sequence;
-  queryLength    = search->context[0].query->length;
+  /* Create a gap_align if there is none */
+  if(search->gap_align == NULL) {
+    search->gap_align                = GapAlignBlkNew(1, 1);
+  }
+  search->gap_align->matrix        = search->sbp->matrix;
+  search->gap_align->positionBased = search->positionBased;
+  if(search->positionBased) {
+    search->gap_align->posMatrix   = search->sbp->posMatrix;
+  }
+  search->gap_align->gap_open      = search->pbp->gap_open;
+  search->gap_align->gap_extend    = search->pbp->gap_extend;
+  search->gap_align->decline_align = search->pbp->decline_align;
 
   if(searchParams->adjustParameters) {
     Int4 i, j;
@@ -2385,6 +3097,11 @@ Kappa_RecordInitialSearch(Kappa_SearchParameters * searchParams,
                                  * query-subject pair */
     BLAST_Score **matrix;       /* matrix used to score a local
                                    query-subject alignment */
+    Uint1Ptr query;               /* the query sequence */
+    Int4 queryLength;             /* the length of the query sequence */
+
+    query      = search->context[0].query->sequence;
+    queryLength    = search->context[0].query->length;
 
     if(search->positionBased) {
       kbp    = search->sbp->kbp_gap_psi[0];
@@ -2404,6 +3121,7 @@ Kappa_RecordInitialSearch(Kappa_SearchParameters * searchParams,
     searchParams->kbp_gap_orig->K      = kbp->K;
     searchParams->kbp_gap_orig->logK   = kbp->logK;
     searchParams->kbp_gap_orig->H      = kbp->H;
+    searchParams->gap_align            = search->gap_align;
 
     for(i = 0; i < searchParams->mRows; i++) {
       for(j = 0; j < PROTEIN_ALPHABET; j++) {
@@ -2414,8 +3132,10 @@ Kappa_RecordInitialSearch(Kappa_SearchParameters * searchParams,
 }
 
 
-/* Rescale the search parameters in the search object and options object to
-   obtain more precision. */
+/**
+ * Rescale the search parameters in the search object and options
+ * object to obtain more precision.
+ */
 static Nlm_FloatHi
 Kappa_RescaleSearch(Kappa_SearchParameters * sp,
                     BlastSearchBlkPtr search,
@@ -2451,7 +3171,6 @@ Kappa_RescaleSearch(Kappa_SearchParameters * sp,
       search->pbp->decline_align =
         Nlm_Nint(sp->gapDecline * localScalingFactor);
     }
-
     search->gap_align->gap_open      = search->pbp->gap_open;
     search->gap_align->gap_extend    = search->pbp->gap_extend;
     search->gap_align->decline_align = search->pbp->decline_align;
@@ -2473,7 +3192,8 @@ Kappa_RescaleSearch(Kappa_SearchParameters * sp,
     }
     sp->scaledUngappedLambda = initialUngappedLambda / localScalingFactor;
     if(!search->positionBased) {
-      computeScaledStandardMatrix(sp->startMatrix, options->matrix,
+      computeScaledStandardMatrix(sp->startMatrix,
+                                  options->matrix,
                                   sp->scaledUngappedLambda);
     }
     if(search->positionBased) {
@@ -2489,22 +3209,28 @@ Kappa_RescaleSearch(Kappa_SearchParameters * sp,
 }
 
 
-/*LambdaRatioLowerBound is used when the expected score is too large
+/** LambdaRatioLowerBound is used when the expected score is too large
  * causing impalaKarlinLambdaNR to give a Lambda estimate that
  * is too small, or to fail entirely returning -1*/
 #define LambdaRatioLowerBound 0.5
 
-/* Adjust the search parameters */
+/**
+ * Adjust the search parameters
+ *
+ * @param sp            a record of the initial search parameters [in|out]
+ * @param search        the object to be adjusted [in|out]
+ * @param subject       data from the subject sequence [in]
+ * @param matrix        a scoring matrix to be adjusted [out]
+ * @return              scaling-factor to be used.
+ */
 static Int4
 Kappa_AdjustSearch(
-  Kappa_SearchParameters * sp,  /* a record of the initial search parameters */
-  BlastSearchBlkPtr search,     /* the object to be adjusted */
-  Uint1Ptr filteredSequence,    /* a filtered subject sequence */
-  Int4 length,                  /* length of the filtered sequence */
-  BLAST_Score ** matrix         /* a scoring matrix to be adjusted */
-) {   
-
-  Nlm_FloatHi LambdaRatio;      /* the ratio of the corrected lambda to the 
+  Kappa_SearchParameters * sp,
+  BlastSearchBlkPtr search,
+  Kappa_SequenceData * subject,
+  BLAST_Score ** matrix)
+{
+  Nlm_FloatHi LambdaRatio;      /* the ratio of the corrected lambda to the
                                  * original lambda */
   if(!sp->adjustParameters) {
     LambdaRatio = 1.0;
@@ -2516,7 +3242,7 @@ Kappa_AdjustSearch(
     Int4 queryLength;           /* the length of the query */
     queryLength =  search->context[0].query->length;
     /* compute and plug in new matrix here */
-    fillResidueProbability(filteredSequence, length, sp->resProb);
+    fillResidueProbability(subject->data, subject->length, sp->resProb);
 
     if(search->positionBased) {
       this_sfp =
@@ -2552,17 +3278,23 @@ Kappa_AdjustSearch(
 }
 
 
-/* Restore the parameters that were adjusted to their original values */
+/**
+ * Restore the parameters that were adjusted to their original values
+ * @param searchParams      a record of the original values [in]
+ * @param search            the search to be restored [out]
+ * @param options           the option block to be restored [out]
+ * @param matrix            the scoring matrix to be restored [out]
+ * @param SmithWaterman     if true, we have performed a Smith-Waterman
+ *                          alignment with these search parameters [in]
+ */
 static void
 Kappa_RestoreSearch(
-  Kappa_SearchParameters * searchParams,        /* a record of the
-                                                   original values */
-  BlastSearchBlkPtr search,     /* the search to be restored */
-  BLAST_OptionsBlkPtr options,  /* the option block to be restored */
-  BLAST_Score ** matrix,        /* the scoring matrix to be restored */
-  Boolean SmithWaterman /* if true, we have performed a Smith-Waterman
-                           alignment with these search parameters */
-) {
+  Kappa_SearchParameters * searchParams,
+  BlastSearchBlkPtr search,
+  BLAST_OptionsBlkPtr options,
+  BLAST_Score ** matrix,
+  Boolean SmithWaterman)
+{
   if(searchParams->adjustParameters) {
     BLAST_KarlinBlkPtr kbp;     /* statistical parameters used to
                                    evaluate the significance of
@@ -2578,6 +3310,10 @@ Kappa_RestoreSearch(
     search->pbp->gap_extend    = searchParams->gapExtend;
     search->pbp->decline_align = searchParams->gapDecline;
 
+    if(search->gap_align != searchParams->gap_align) {
+      GapAlignBlkDelete(search->gap_align);
+      search->gap_align = searchParams->gap_align;
+    }
     search->sbp->kbp_gap       = searchParams->orig_kbp_gap_array;
 
     if(search->positionBased) {
@@ -2599,30 +3335,33 @@ Kappa_RestoreSearch(
 }
 
 
-/************************************************************************
+/**
  *  Top level routine to recompute alignments for each
  *  match found by the gapped BLAST algorithm
- *  search is the structure with all the information about the search
- *  options is used to pass certain command line options taken in by BLAST
- *  hitlist_count is the number of old matches
- *  adjustParameters determines whether we are to adjust the Karlin-Altschul
- *  parameters and score matrix
- *  SmithWaterman determines whether the new local alignments should be
- *  computed by the optimal Smith-Waterman algorithm; SmithWaterman false
- *  means that alignments will be recomputed by the current X-drop
- *  algorithm as implemented in the procedure ALIGN.
- *  It is assumed that at least one of adjustParameters and SmithWaterman
- *  is true when this procedure is called
- *  A linked list of alignments is returned; the alignments are sorted
- *  according to the lowest E-value of the best alignment for each
- *  matching sequence; alignments for the same matching sequence
- *  are in the list consecutively regardless of the E-value of the
- *  secondary alignments. Ties in sorted order are much rarer than
- *  for the standard BLAST method, but are broken deterministically
- *  based on the index of the matching sequences in the database.
- *  
- ************************************************************************/
-
+ *
+ *  @param search           is the structure with all the information about
+ *                          the search
+ *  @param options          is used to pass certain command line options
+ *                          taken in by BLAST
+ *  @param hitlist_count    is the number of old matches
+ *  @param adjustParameters determines whether we are to adjust the
+ *                          Karlin-Altschul parameters and score matrix
+ *  @param SmithWaterman    determines whether the new local alignments
+ *                          should be computed by the optimal Smith-Waterman
+ *                          algorithm; SmithWaterman false means that
+ *                          alignments will be recomputed by the current
+ *                          X-drop algorithm as implemented in the procedure
+ *                          ALIGN.
+ *  It is assumed that at least one of adjustParameters and
+ *  SmithWaterman is true when this procedure is called A linked list
+ *  of alignments is returned; the alignments are sorted according to
+ *  the lowest E-value of the best alignment for each matching
+ *  sequence; alignments for the same matching sequence are in the
+ *  list consecutively regardless of the E-value of the secondary
+ *  alignments. Ties in sorted order are much rarer than for the
+ *  standard BLAST method, but are broken deterministically based on
+ *  the index of the matching sequences in the database.
+ */
 SeqAlignPtr
 RedoAlignmentCore(BlastSearchBlkPtr search,
                   BLAST_OptionsBlkPtr options,
@@ -2630,11 +3369,13 @@ RedoAlignmentCore(BlastSearchBlkPtr search,
                   Boolean adjustParameters,
                   Boolean SmithWaterman)
 {
-
-  Int4 index;                   /* index over matches */
-  SeqAlignPtr results = NULL;   /* list of seqAligns to return */
-  Uint1Ptr    query;            /* the query sequence */
-  Int4        queryLength;      /* the length of the query sequence */
+  Int4 match_index;                  /* index over matches */
+  Int4 cutoff_s;                /* minimum score that must be achieved
+                                   by a newly-computed alignment */
+  Boolean do_link_hsps;         /* if true, use BlastLinkHsps to
+                                   compute e-values */
+  SeqAlignPtr results = NULL;   /* list of SeqAligns to return */
+  Kappa_SequenceData query;     /* data for the query sequence */
   Nlm_FloatHi localScalingFactor;       /* the factor by which to
                                          * scale the scoring system in
                                          * order to obtain greater
@@ -2642,8 +3383,6 @@ RedoAlignmentCore(BlastSearchBlkPtr search,
 
   BLAST_Score      **matrix;    /* score matrix */
   BLAST_KarlinBlkPtr kbp;       /* stores Karlin-Altschul parameters */
-  GapAlignBlkPtr     gap_align; /* keeps track of gapped alignment params */
-
   Kappa_SearchParameters *searchParams; /* the values of the search
                                          * parameters that will be
                                          * recorded, altered in the
@@ -2657,6 +3396,24 @@ RedoAlignmentCore(BlastSearchBlkPtr search,
   SWheap  significantMatches;  /* a collection of alignments of the
                                 * query sequence with sequences from
                                 * the database */
+  Kappa_WindowInfo ** windows; /* windows containing HSPs for
+                                * a single query-subject pair */
+  Int4 nWindows;               /* number of windows in the array
+                                * "windows" */
+  Int4 lWindows;               /* allocated size of "windows" */
+  Int4 window_index;           /* window index for use in loops */
+  BLAST_HSPPtr temp_hsp;       /* an HSP that may be used as a
+                                * temporary object, for example if one
+                                * needs to convert a Result_HSP to an
+                                * HSP before calling a library
+                                * routine. */
+  temp_hsp  = MemNew(sizeof(BLAST_HSP));
+
+  /* Initialize the window list to have a single window -- the most
+     common case */
+  lWindows   = 1;   nWindows = 1;
+  windows    = MemNew(lWindows * sizeof(Kappa_WindowInfo *));
+  windows[0] = MemNew(sizeof(Kappa_WindowInfo));
 
   SWheapInitialize(&significantMatches, options->hitlist_size,
                    options->hitlist_size, options->ethresh);
@@ -2667,55 +3424,60 @@ RedoAlignmentCore(BlastSearchBlkPtr search,
                                  * adjustParameters is on */
   }
   /*****************/
-  query       = search->context[0].query->sequence;
-  queryLength = search->context[0].query->length;
+  query.data   = search->context[0].query->sequence;
+  query.length = search->context[0].query->length;
 
   if(SmithWaterman) {
-    Kappa_ForbiddenRangesInitialize(&forbidden, queryLength);
+    Kappa_ForbiddenRangesInitialize(&forbidden, query.length);
   }
-
-  /* Set up Gap align */
-  if(search->gap_align == NULL) {
-    search->gap_align = GapAlignBlkNew(1, 1);
-  }
-  gap_align                = search->gap_align;
-  gap_align->matrix        = NULL;
-  gap_align->positionBased = search->positionBased;
-  if(search->positionBased) {
-    gap_align->posMatrix   = search->sbp->posMatrix;
-    gap_align->matrix      = search->sbp->matrix;
-  } else {
-    gap_align->matrix      = search->sbp->matrix;
-  }
-  gap_align->gap_open      = search->pbp->gap_open;
-  gap_align->gap_extend    = search->pbp->gap_extend;
-  gap_align->decline_align = search->pbp->decline_align;
 
   if(search->positionBased) {
     kbp    = search->sbp->kbp_gap_psi[0];
     matrix = search->sbp->posMatrix;
-    if(search->sbp->posFreqs == NULL) {
-      search->sbp->posFreqs = allocatePosFreqs(queryLength, PROTEIN_ALPHABET);
+    if ( !matrix ) {
+        Char* msg = "Cannot perform position-specific search without a PSSM";
+        BlastConstructErrorMessage("RedoAlignmentCore", msg, 3,
+                                   &(search->error_return));
+        return NULL;
     }
-    } else {
+    if(search->sbp->posFreqs == NULL) {
+      search->sbp->posFreqs = allocatePosFreqs(query.length, PROTEIN_ALPHABET);
+    }
+  } else {
     kbp    = search->sbp->kbp_gap_std[0];
     matrix = search->sbp->matrix;
   }
 
   /* Initialize searchParams */
   searchParams =
-    Kappa_SearchParametersNew(queryLength, adjustParameters,
+    Kappa_SearchParametersNew(query.length, adjustParameters,
                               search->positionBased);
   Kappa_RecordInitialSearch(searchParams, search);
-
   localScalingFactor = Kappa_RescaleSearch(searchParams, search, options);
 
-  for(index = 0; index < hitlist_count; index++) {
+  do_link_hsps = search->prog_number == blast_type_tblastn;
+  if(do_link_hsps) {
+    cutoff_s = search->pbp->cutoff_s2 * localScalingFactor;
+  } else {
+    /* There is no cutoff score; we consider e-values instead */
+    cutoff_s = 0;
+  }
+  for(match_index = 0; match_index < hitlist_count; match_index++) {
     /* for all matching sequences */
     Kappa_MatchingSequence matchingSeq; /* the data for a matching
                                          * database sequence */
+    BLASTResultHitlistPtr thisMatch;    /* alignment data for the
+                                         * current query-subject
+                                         * match */
+    Int4 * window_of_hsp;               /* index of each HSP in the
+                                         * array "windows" */
+    Kappa_WindowInfo * window;          /* current window in the
+                                         * subject sequence */
+    Kappa_DistinctAlignment * alignments;   /* list of alignments for this
+                                             * query-subject pair */
+    alignments = NULL;
 
-    BLASTResultHitlistPtr thisMatch = search->result_struct->results[index];
+    thisMatch = search->result_struct->results[match_index];
     if(thisMatch->hsp_array == NULL) {
       continue;
     }
@@ -2723,13 +3485,13 @@ RedoAlignmentCore(BlastSearchBlkPtr search,
     if(SWheapWillAcceptOnlyBelowCutoff(&significantMatches)) {
       /* Only matches with evalue <= options->ethresh will be saved */
 
-      /* e-value for a sequence is the smallest e-value among the hsps
+      /* e-value for a sequence is the smallest e-value among the HSPs
        * matching a region of the sequence to the query */
       Nlm_FloatHi minEvalue = thisMatch->best_evalue;
       if(minEvalue > (EVALUE_STRETCH * options->ethresh)) {
         /* This match is likely to have an evalue > options->ethresh
          * and therefore, we assume that all other matches with higher
-         * input evalues are also unlikely to get sufficient
+         * input e-values are also unlikely to get sufficient
          * improvement in a redone alignment */
         break;
       }
@@ -2738,215 +3500,220 @@ RedoAlignmentCore(BlastSearchBlkPtr search,
     Kappa_MatchingSequenceInitialize(&matchingSeq, search,
                                      thisMatch->subject_id);
 
-    if(0 == Kappa_AdjustSearch(searchParams, search,
-                         matchingSeq.filteredSequence,
-                         matchingSeq.length, matrix)) {
-      /* Kappa_AdjustSearch ran without error. Compute the new alignments. */
-      if(SmithWaterman) {
-        /* We are performing a Smith-Waterman alignment */
-        Nlm_FloatHi newSwEvalue; /* the evalue computed by the SW algorithm */
-        BLAST_Score aSwScore;    /* a score computed by the SW algorithm */
-        Int4 matchStart, queryStart;    /* Start positions of a local
-                                         * S-W alignment */
-        Int4 queryEnd, matchEnd;        /* End positions of a local
-                                         * S-W alignment */
+    window_of_hsp = MemNew(thisMatch->hspcnt * sizeof(Int4));
+    if(search->prog_number == blast_type_tblastn) {
+      /* Find the multiple translation windows used by tblastn queries. */
+      WindowsFromHSPs(thisMatch->hsp_array, thisMatch->hspcnt,
+                      KAPPA_WINDOW_BORDER, matchingSeq.length,
+                      &windows, &nWindows, &lWindows, window_of_hsp);
+    } else { /* the program is not tblastn, i.e. it is blastp */
+      /* Initialize the single window used by blastp queries. */
+      windows[0]->frame  = 0;
+      windows[0]->hspcnt = thisMatch->hspcnt;
+      windows[0]->begin  = 0;
+      windows[0]->end    = matchingSeq.length;
+    } /* else the program is blastp */
+    if(SmithWaterman) {
+      /* We are performing a Smith-Waterman alignment */
+      for(window_index = 0; window_index < nWindows; window_index++) {
+        /* for all window */
+        Kappa_SequenceData subject;     /* sequence data for this window */
 
-        Kappa_ForbiddenRangesClear(&forbidden);
+        window = windows[window_index];
+        Kappa_SequenceGetWindow( &matchingSeq, window, &subject );
 
-        newSwEvalue =
-          BLbasicSmithWatermanScoreOnly(matchingSeq.filteredSequence,
-                                        matchingSeq.length, query,
-                                        queryLength, matrix,
-                                        gap_align->gap_open,
-                                        gap_align->gap_extend, &matchEnd,
-                                        &queryEnd, &aSwScore, kbp,
-                                        search->searchsp_eff,
-                                        search->positionBased);
-
-        if(newSwEvalue <= search->pbp->cutoff_e &&
-           SWheapWouldInsert(&significantMatches, newSwEvalue ) ) {
-          /* The initial local alignment is significant. Continue the
-           * computation */
-          Kappa_MatchRecord aSwMatch;   /* the newly computed
-                                         * alignments of the query to
-                                         * the current database
-                                         * sequence */
-        
-          Kappa_MatchRecordInitialize(&aSwMatch, newSwEvalue, aSwScore,
-                                      matchingSeq.sequence,
-                                      thisMatch->subject_id,
-                                      matchingSeq.bsp_db->id);
-
-          BLSmithWatermanFindStart(matchingSeq.filteredSequence,
-                                   matchingSeq.length, query, queryLength,
-                                   matrix, gap_align->gap_open,
-                                   gap_align->gap_extend, matchEnd, queryEnd,
-                                   aSwScore, &matchStart, &queryStart,
-                                   search->positionBased);
-
+        if(0 ==
+           Kappa_AdjustSearch(searchParams, search, &subject, matrix)) {
+          /* Kappa_AdjustSearch ran without error; compute the new
+             alignments. */
+          BLAST_Score aSwScore;             /* score computed by the
+                                             * Smith-Waterman algorithm. */
+          Boolean alignment_is_significant; /* True if the score/evalue of
+                                             * the Smith-Waterman alignment
+                                             * is significant. */
+          Kappa_ForbiddenRangesClear(&forbidden);
           do {
-            /* score computed by an x-drop alignment (usually the same
-             * as aSwScore */
-            BLAST_Score newXdropScore;  
-            /* Lengths of the alignment  as recomputed by an x-drop alignment,
-               in the query and the match*/
-            Int4 queryAlignmentExtent, matchAlignmentExtent;
-            /* Alignment information (script) returned by a x-drop
-             * alignment algorithm */
-            Int4 *reverseAlignScript;   
+            Nlm_FloatHi newSwEvalue;    /* evalue as computed by the
+                                         * Smith-Waterman algorithm */
+            Int4 matchEnd, queryEnd;    /* end points of the alignments
+                                         * computed by the Smith-Waterman
+                                         * algorithm. */
+            newSwEvalue =
+              SmithWatermanScoreOnly(&subject, &query, matrix,
+                                     search->gap_align->gap_open,
+                                     search->gap_align->gap_extend,
+                                     &matchEnd, &queryEnd, &aSwScore, kbp,
+                                     search->searchsp_eff,
+                                     search->positionBased,
+                                     &forbidden);
+            alignment_is_significant =
+              ( do_link_hsps && aSwScore >= cutoff_s) ||
+              (!do_link_hsps && newSwEvalue < search->pbp->cutoff_e &&
+               SWheapWouldInsert(&significantMatches, newSwEvalue));
 
-            gap_align->x_parameter =
+            if(alignment_is_significant) {
+              Int4 matchStart, queryStart;  /* the start of the
+                                             * alignment in the
+                                             * match/query sequence */
+
+              SmithWatermanFindStart(&subject, &query, matrix,
+                                     search->gap_align->gap_open,
+                                     search->gap_align->gap_extend,
+                                     matchEnd, queryEnd, aSwScore,
+                                     &matchStart, &queryStart,
+                                     search->positionBased, &forbidden);
+
+              search->gap_align->x_parameter =
+                (Int4) (options->gap_x_dropoff_final *
+                        NCBIMATH_LN2 / kbp->Lambda);
+
+              alignments =
+                NewAlignmentUsingXdrop(&query,   queryStart, queryEnd,
+                                       &subject, matchStart, matchEnd,
+                                       aSwScore, window, search->gap_align,
+                                       localScalingFactor,
+                                       search->prog_number, query.length,
+                                       matchingSeq.length, alignments);
+
+              Kappa_ForbiddenRangesPush(&forbidden,
+                                        queryStart,
+                                        alignments->queryEnd - queryStart,
+                                        matchStart,
+                                        alignments->matchEnd - matchStart);
+            }
+            /* end if the next local alignment is significant */
+          } while(alignment_is_significant && window->hspcnt > 1);
+          /* end do..while the next local alignment is significant, and
+           * the original blast search found more than one alignment. */
+        } /* end if Kappa_AdjustSearch ran without error.  */
+        Kappa_SequenceDataRelease(&subject);
+      } /* end for all windows */
+    } else {
+      /* else we are not performing a Smith-Waterman alignment */
+      Int4 hsp_index;
+      /* data for the current window */
+      Kappa_SequenceData subject = {NULL,0,NULL};
+      window_index  = -1;       /* -1 indicates that sequence data has
+                                 * not been obtained for any window in
+                                 * the list. */
+      window        = NULL;
+
+      for(hsp_index = 0; hsp_index < thisMatch->hspcnt; hsp_index++) {
+        /* for all HSPs in thisMatch */
+        if(!isAlreadyContained(&thisMatch->hsp_array[hsp_index], alignments,
+                               kbp->Lambda, localScalingFactor)) {
+          Kappa_DistinctAlignment * newAlign;   /* the new alignment */
+          Boolean adjust_search_failed = FALSE; /* if true, AdjustSearch was
+                                                 * called and failed. */
+          if( window_index != window_of_hsp[hsp_index] ) {
+            /* The current window doesn't contain this HSP. */
+            Kappa_SequenceDataRelease(&subject);
+
+            window_index = window_of_hsp[hsp_index];
+            window       = windows[window_index];
+            Kappa_SequenceGetWindow(&matchingSeq, window, &subject);
+
+            adjust_search_failed =
+              Kappa_AdjustSearch(searchParams, search, &subject, matrix);
+          }  /* end if the current window doesn't contain this HSP */
+          if(!adjust_search_failed) {
+            CopyResultHspToHSP(&thisMatch->hsp_array[hsp_index], temp_hsp);
+            HitToGapAlign(search->gap_align, search, temp_hsp, window,
+                          &query, &subject);
+
+            search->gap_align->x_parameter =
               options->gap_x_dropoff_final * NCBIMATH_LN2 / kbp->Lambda;
 
-            Kappa_SWFindFinalEndsUsingXdrop(query, queryLength, queryStart,
-                                            queryEnd,
-                                            matchingSeq.filteredSequence,
-                                            matchingSeq.length, matchStart,
-                                            matchEnd, gap_align, aSwScore,
-                                            localScalingFactor,
-                                            &queryAlignmentExtent, &matchAlignmentExtent,
-                                            &reverseAlignScript,
-                                            &newXdropScore);
+            PerformGappedAlignmentWithTraceback(search->gap_align);
 
-            Kappa_MatchRecordInsertSwAlign(&aSwMatch, newXdropScore,
-                                           newSwEvalue, kbp->Lambda,
-                                           kbp->logK, localScalingFactor,
-                                           matchStart, matchAlignmentExtent,
-                                           queryStart, queryAlignmentExtent,
-                                           reverseAlignScript);
+            newAlign = NewAlignmentFromGapAlign(search->gap_align, window,
+                                                query.length,
+                                                matchingSeq.length);
+            withDistinctEnds(&newAlign, &alignments);
+          } /* end if adjust search failed */
+        } /* end if not isAlreadyContained */
+      } /* for all HSPs in thisMatch */
+      Kappa_SequenceDataRelease(&subject);
+    } /* end else we are not performing a Smith-Waterman alignment */
+    MemFree(window_of_hsp);
 
-            Kappa_ForbiddenRangesPush(&forbidden, queryStart, queryAlignmentExtent,
-                                      matchStart, matchAlignmentExtent);
-            if(thisMatch->hspcnt > 1) {
-              /* There are more HSPs */
-              newSwEvalue =
-                BLspecialSmithWatermanScoreOnly(matchingSeq.filteredSequence,
-                                                matchingSeq.length, query,
-                                                queryLength, matrix,
-                                                gap_align->gap_open,
-                                                gap_align->gap_extend,
-                                                &matchEnd, &queryEnd,
-                                                &aSwScore, kbp,
-                                                search->searchsp_eff,
-                                                forbidden.numForbidden,
-                                                forbidden.ranges,
-                                                search->positionBased);
+    if( alignments != NULL) { /* alignments were found */
+      BLAST_HitListPtr hitlist; /* a hitlist containing the newly-computed
+                                 * alignments */
+      Nlm_FloatHi bestEvalue; /* best evalue among alignments in the hitlist */
+      Int4 hsp_index;
 
-              if(newSwEvalue <= search->pbp->cutoff_e) {
-                /* The next local alignment is significant */
-                BLspecialSmithWatermanFindStart(matchingSeq.filteredSequence,
-                                                matchingSeq.length, query,
-                                                queryLength, matrix,
-                                                gap_align->gap_open,
-                                                gap_align->gap_extend,
-                                                matchEnd, queryEnd, aSwScore,
-                                                &matchStart, &queryStart,
-                                                forbidden.numForbidden,
-                                                forbidden.ranges,
-                                                search->positionBased);
-              }
-              /* end if the next local alignment is significant */
-            }
-            /* end if there are more HSPs */
-          } while(thisMatch->hspcnt > 1 &&
-                  newSwEvalue <= search->pbp->cutoff_e);
-          /* end do..while there are more HSPs and the next local alignment
-           * is significant */
+      HitlistFromDistinctAlignments(search, &alignments);
+      hitlist = search->current_hitlist;
 
-          SWheapInsert(&significantMatches, &aSwMatch);
+      if(hitlist->hspcnt > 1) { /* if there is more than one HSP, */
+        /* then eliminate HSPs that are contained in a higher-scoring HSP. */
+        HeapSort(hitlist->hsp_array, hitlist->hspcnt, sizeof(BLAST_HSPPtr),
+                 score_compare_hsps);
+
+        if(!SmithWaterman || nWindows > 1) {
+          /* For SmithWaterman alignments in a single window, the
+           * forbidden ranges rule does not allow one alignment to be
+           * contained in another, so the call to HitlistReapContained is
+           * not needed. */
+          HitlistReapContained(hitlist->hsp_array, &hitlist->hspcnt);
         }
-        /* end if the initial local alignment is significant */
-      } else {
-        /* We are not doing a Smith-Waterman alignment */
-        SeqAlignPtr seqAligns;  /* returned list of realign seqAligns for
-                                 * non-SW case */
-
-        search->pbp->gap_x_dropoff_final =
-          options->gap_x_dropoff_final * NCBIMATH_LN2 / kbp->Lambda;
-        /* recall that index is the counter corresponding to
-         * thisMatch; by aliasing, thisMatch will get updated during
-         * the following call to BlastGetGapAlgnTbck, so that
-         * thisMatch stores newly computed alignments between the
-         * query and the matching sequence number index */
-        seqAligns =
-          BlastGetGapAlgnTbck(search, index, FALSE, FALSE,
-                              matchingSeq.filteredSequence,
-                              matchingSeq.length, NULL, 0);
-        if(seqAligns) {
-          /* There are alignments of the query to this matching sequence */
-          Nlm_FloatHi bestEvalue = thisMatch->best_evalue;
-
-          if(bestEvalue <= search->pbp->cutoff_e &&
-             SWheapWouldInsert(&significantMatches, bestEvalue ) ) {
-            /* The best alignment is significant */
-            Int4 alignIndex;            /* Iteration index */
-            Int4 numNewAlignments;      /* the number of alignments
-                                         * just computed */
-            Kappa_MatchRecord matchRecord;      /* the newly computed
-                                                 * alignments of the
-                                                 * query to the
-                                                 * current database
-                                                 * sequence */
-            Nlm_FloatHi bestScore;      /* the score of the highest
-                                         * scoring alignment */
-            numNewAlignments = thisMatch->hspcnt;  
-            bestScore =
-              Nlm_Nint(((Nlm_FloatHi) thisMatch->hsp_array[0].score) /
-                       localScalingFactor);
-
-            Kappa_MatchRecordInitialize(&matchRecord, bestEvalue, bestScore,
-                                        matchingSeq.sequence,
-                                        thisMatch->subject_id,
-                                        matchingSeq.bsp_db->id);
-
-
-            for(alignIndex = 0; alignIndex < numNewAlignments; alignIndex++) {
-              /* for all alignments of this matching sequence */
-              SeqAlignPtr seqAlign;     /* head of the list of seqAligns */
-              seqAlign             = seqAligns;
-              seqAligns            = seqAligns->next;
-              seqAlign->next       = NULL;
-
-              Kappa_MatchRecordInsertSeqAlign(&matchRecord, seqAlign,
-                                              &thisMatch->
-                                              hsp_array[alignIndex],
-                                              kbp->Lambda, kbp->logK,
-                                              localScalingFactor);
-            }
-            /* end for all alignments of this matching sequence */
-            SWheapInsert(&significantMatches, &matchRecord);
-          }
-          /* end if the best alignment is significant */
-        }
-        /* end there are alignments of the query to this matching sequence */
       }
-      /* end else we are not doing a Smith-Waterman alignment */
-    }
-    /* end if Kappa_AdjustSearch ran without error */
+
+      search->subject->length  = matchingSeq.bsp_db->length;
+      if(do_link_hsps) {
+        BlastLinkHsps(search);
+      } else {
+        BlastGetNonSumStatsEvalue(search);
+      }
+      /* Find the evalue of the best alignment in the list -- the list
+       * is typically sorted by score and not by evalue, so a search is
+       * necessary. */
+      bestEvalue = DBL_MAX;
+      for( hsp_index = 0; hsp_index < hitlist->hspcnt; hsp_index++ ) {
+        if( hitlist->hsp_array[hsp_index]->evalue < bestEvalue ) {
+          bestEvalue = hitlist->hsp_array[hsp_index]->evalue;
+        }
+      }
+      if(bestEvalue <= search->pbp->cutoff_e &&
+         SWheapWouldInsert(&significantMatches, bestEvalue)) {
+        /* If the best alignment is significant, then create and save
+         * a list of SeqAligns. */
+        SeqAlignPtr aligns;     /* SeqAligns for this query-subject pair */
+
+        BlastReapHitlistByEvalue(search);
+
+        aligns =
+          SeqAlignsFromHitlist(hitlist, matchingSeq.bsp_db->id,
+                               search->query_id, kbp->Lambda, kbp->logK,
+                               localScalingFactor, &bestEvalue );
+        SWheapInsert(&significantMatches, aligns, bestEvalue,
+                     thisMatch->subject_id );
+
+      } /* end if the best alignment is significant */
+    } /* end if any alignments were found */
+
     Kappa_MatchingSequenceRelease(&matchingSeq);
   }
   /* end for all matching sequences */
-  {
-    SWResults *SWAligns;        /* All new alignments, concatenated
-                                   into a single, flat list */
-    SWAligns = SWheapToFlatList(&significantMatches);
-    if(SWAligns != NULL) {
-      if(SmithWaterman) {
-        results =
-          newConvertSWalignsToSeqAligns(SWAligns, query, search->query_id,
-                                        search->pbp->discontinuous);
-      } else {
-        results = concatenateListOfSeqAligns(SWAligns);
-      }
-    }
-  }
+  results = SWheapToFlatList( &significantMatches );
+
   /* Clean up */
+  for( window_index = 0; window_index < nWindows; window_index++ ) {
+    MemFree(windows[window_index]);
+  }
+  MemFree(windows);
+  MemFree(temp_hsp);
+
+  if (search->current_hitlist) {
+    search->current_hitlist->hspcnt_max = search->current_hitlist->hspcnt;
+    search->current_hitlist = BlastHitListDestruct(search->current_hitlist);
+  }
+
   SWheapRelease(&significantMatches);
+  if(SmithWaterman) Kappa_ForbiddenRangesRelease(&forbidden);
 
-  if(SmithWaterman) 
-    Kappa_ForbiddenRangesRelease(&forbidden);
   Kappa_RestoreSearch(searchParams, search, options, matrix, SmithWaterman);
-
   Kappa_SearchParametersFree(&searchParams);
 
   return (results);

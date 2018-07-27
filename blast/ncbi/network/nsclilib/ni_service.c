@@ -1,4 +1,4 @@
-/*  $RCSfile: ni_service.c,v $  $Revision: 6.18 $  $Date: 2004/02/23 17:00:39 $
+/*  $RCSfile: ni_service.c,v $  $Revision: 6.22 $  $Date: 2005/04/20 14:30:55 $
  * ==========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -30,6 +30,19 @@
  *
  * --------------------------------------------------------------------------
  * $Log: ni_service.c,v $
+ * Revision 6.22  2005/04/20 14:30:55  lavr
+ * Allow zero timeout -- final
+ *
+ * Revision 6.21  2005/04/19 19:03:15  lavr
+ * Allow zero timeout -- correction
+ *
+ * Revision 6.20  2005/04/19 18:57:57  lavr
+ * Allow zero timeout
+ *
+ * Revision 6.19  2004/07/12 16:34:05  lavr
+ * Add "SRV_CONN_MODE" for alternate FIREWALL switching
+ * (Thanks to Svetlana Karamycheva for reporting this..)
+ *
  * Revision 6.18  2004/02/23 17:00:39  lavr
  * Fix n_written variable name typo
  *
@@ -105,6 +118,7 @@
 
 #define SRV_SECTION         "NET_SERV"
 
+#define ENV_CONN_MODE       "SRV_CONN_MODE"
 #define ENV_ENGINE_HOST     "SRV_ENGINE_HOST"
 #define ENV_ENGINE_PORT     "SRV_ENGINE_PORT"
 #define ENV_ENGINE_URL      "SRV_ENGINE_URL"
@@ -196,13 +210,19 @@ static NI_HandPtr s_GenericGetService
     /* Now override default parameters with legacy parameters
      * of older WWW service dispatcher -- should go obsolete soon... */
 
+    /* alternate firewall mode request */
+    NI_GetEnvParam(configFile, SRV_SECTION, ENV_CONN_MODE,
+                   str, sizeof(str), "");
+    if (*str  &&  StringICmp(str, "FIREWALL") == 0)
+        net_info->firewall = 1/*true*/;
+
     /* alternate dispatcher's host name & port */
     NI_GetEnvParam(configFile, SRV_SECTION, ENV_ENGINE_HOST,
                    net_info->host, sizeof(net_info->host), def_info->host);
 
     NI_GetEnvParam(configFile, SRV_SECTION, ENV_ENGINE_PORT,
                    str, sizeof(str), "");
-    if ((val = atoi(str)) != 0)
+    if (*str  &&  (val = atoi(str)) != 0)
         net_info->port = val;
 
     /* alternate the dispatcher's CGI path */
@@ -216,7 +236,7 @@ static NI_HandPtr s_GenericGetService
                    def_info->http_proxy_host);
     NI_GetEnvParam(configFile, SRV_SECTION, ENV_HTTP_PROXY_PORT,
                    str, sizeof(str), "");
-    if ((val = atoi(str)) != 0)
+    if (*str  &&  (val = atoi(str)) != 0)
         net_info->http_proxy_port = val;
 
     /* alternate non-transparent CERN-like firewall proxy server */
@@ -231,10 +251,8 @@ static NI_HandPtr s_GenericGetService
         if (strlen(str) > 2 && StringNICmp(str, "infinite", strlen(str)) == 0){
             net_info->timeout = 0;
         } else {
-            if (!net_info->timeout)
-                net_info->timeout = &net_info->tmo;
-            valf = atof(str);
-            if (valf <= 0.0)
+            net_info->timeout = &net_info->tmo;
+            if ((valf = atof(str)) < 0.0)
                 valf = DEF_CONN_TIMEOUT;
             net_info->timeout->sec  = (unsigned int) valf;
             net_info->timeout->usec = (unsigned int)
@@ -245,16 +263,18 @@ static NI_HandPtr s_GenericGetService
     /* alternate max. number of attempts to establish connection */
     NI_GetEnvParam(configFile, SRV_SECTION, ENV_CONN_TRY,
                    str, sizeof(str), "");
-    if ((val = atoi(str)) != 0)
+    if (*str  &&  (val = atoi(str)) != 0)
         net_info->max_try = val;
 
+    /* alternate debug printout request */
     NI_GetEnvParam(configFile, SRV_SECTION, ENV_DEBUG_PRINTOUT,
                    str, sizeof(str), "");
     if (*str  &&  (StringICmp(str, "1"   ) == 0 ||
                    StringICmp(str, "true") == 0 ||
                    StringICmp(str, "yes" ) == 0 ||
-                   StringICmp(str, "some") == 0))
+                   StringICmp(str, "some") == 0)) {
         net_info->debug_printout = eDebugPrintout_Some;
+    }
     if (*str  &&   StringICmp(str, "data") == 0)
         net_info->debug_printout = eDebugPrintout_Data;
 
@@ -263,8 +283,9 @@ static NI_HandPtr s_GenericGetService
                    str, sizeof(str), "");
     if (*str  &&  (StringICmp(str, "0"    ) != 0 &&
                    StringICmp(str, "false") != 0 &&
-                   StringICmp(str, "no"   ) != 0))
+                   StringICmp(str, "no"   ) != 0)) {
         net_info->lb_disable = 1/*true*/;
+    }
 
     {{ /* alternate service name */
         static const Char ENV_PREFIX[] = "NI_SERVICE_NAME_";
@@ -284,7 +305,7 @@ static NI_HandPtr s_GenericGetService
     if (!(c = SERVICE_CreateConnectorEx(str, fSERV_Any, net_info, 0)) ||
         CONN_Create(c, &conn) != eIO_Success) {
         ErrPostEx(SEV_ERROR, 0, 1, "[Service NI Client] "
-                  " Service \"%s\" unusable", str);
+                  " Service \"%s\" %s", str, c ? "unusable" : "not found");
         ConnNetInfo_Destroy(net_info);
         return 0;
     }
@@ -293,17 +314,19 @@ static NI_HandPtr s_GenericGetService
     CONN_SetTimeout(conn, eIO_Close,     net_info->timeout);
 
     /* open ASN i/o, etc. */
-    result = (NI_HandPtr) MemNew(sizeof(NI_Handle));
-    result->extra_proc_info = conn;
-    result->raip = AsnIoNew(ASNIO_BIN | ASNIO_IN,  (FILE*) 0,
-                            (void*) conn, s_AsnRead,  (IoFuncType) 0);
-    result->waip = AsnIoNew(ASNIO_BIN | ASNIO_OUT, (FILE*) 0,
-                            (void*) conn, (IoFuncType) 0, s_AsnWrite);
-    AsnIoSetErrorMsg(result->raip, s_AsnErrorFunc);
-    AsnIoSetErrorMsg(result->waip, s_AsnErrorFunc);
-    result->hostname = StringSave(net_info->client_host);
-    result->disp = disp;
-    disp->referenceCount++;
+    if ((result = (NI_HandPtr) MemNew(sizeof(NI_Handle))) != 0) {
+        result->extra_proc_info = conn;
+        result->raip = AsnIoNew(ASNIO_BIN | ASNIO_IN,  (FILE*) 0,
+                                (void*) conn, s_AsnRead,  (IoFuncType) 0);
+        result->waip = AsnIoNew(ASNIO_BIN | ASNIO_OUT, (FILE*) 0,
+                                (void*) conn, (IoFuncType) 0, s_AsnWrite);
+        AsnIoSetErrorMsg(result->raip, s_AsnErrorFunc);
+        AsnIoSetErrorMsg(result->waip, s_AsnErrorFunc);
+        result->hostname = StringSave(net_info->client_host);
+        result->disp = disp;
+        disp->referenceCount++;
+    } else
+        CONN_Close(conn);
     ConnNetInfo_Destroy(net_info);
 
     return result;

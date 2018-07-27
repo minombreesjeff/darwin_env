@@ -1,1 +1,0 @@
-../asnstat/asngbseq.h

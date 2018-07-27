@@ -22,7 +22,6 @@ asntool -m ../network/taxonomy/client/taxon.asn -o asntaxon.h
 asntool -m ../network/id0arch/client/id0.asn -o asnid0.h
 asntool -m ../network/spell/client/spell.asn -o spell.h
 asntool -m ../network/nsclilib/ni_msg.asn -o ni_asn.h
-asntool -m ../network/nsdemocl/echo.asn -o echo_asn.h
 asntool -m ../asn/objprt.asn -o asnprt.h
 asntool -m ../biostruc/mmdb1.asn -o mmdb1.h -w100
 asntool -m ../biostruc/mmdb2.asn -o mmdb2.h -w100
@@ -38,6 +37,8 @@ asntool -m ../asn/medlars.asn -o asnmdrs.h
 asntool -m ../asn/proj.asn -o asnproj.h
 asntool -m ../access/entrez2.asn -o asnent2.h
 asntool -m ../access/mim.asn -o asnmim.h
+asntool -m ../access/taxon3.asn -o asntax3.h
+asntool -m ../access/entrezgene.asn -o asnentgene.h
 asntool -m ../asn/gbseq.asn -o asngbseq.h
 asntool -m ../asn/insdseq.asn -o asninsdseq.h
 asntool -m ../asn/tinyseq.asn -o asntseq.h

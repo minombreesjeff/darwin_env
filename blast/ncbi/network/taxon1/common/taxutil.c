@@ -357,13 +357,19 @@ OrgRefPtr replace_org_err(OrgRefPtr orp, Boolean replace)
 ****************************************************************************/
 OrgRefPtr replace_org(OrgRefPtr orp, Boolean replace)
 {
+    CharPtr         common = NULL;
 	OrgRefPtr		new;	
 	Taxon1DataPtr	tax;
 
 	if (orp == NULL) {
 		return NULL;
 	}
+	common = orp->common;
+	if (StringDoesHaveText (orp->taxname) && StringDoesHaveText (orp->common)) {
+	    orp->common = NULL;
+	}
 	tax = tax1_lookup(orp, 1);
+	orp->common = common;
 	if (tax && tax->org) {
 		if (replace) {
 	         new = AsnIoMemCopy(tax->org, (AsnReadFunc) OrgRefAsnRead, 

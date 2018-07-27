@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 7/12/91
 *
-* $Revision: 6.131 $
+* $Revision: 6.142 $
 *
 * File Description:  various sequence objects to fasta output
 *
@@ -39,6 +39,39 @@
 * -------  ----------  -----------------------------------------------------
 *
 * $Log: tofasta.c,v $
+* Revision 6.142  2005/04/27 14:30:33  kans
+* gpipe was making TPA defline, moved to its own case
+*
+* Revision 6.141  2005/04/26 21:33:52  kans
+* added SEQID_GPIPE
+*
+* Revision 6.140  2005/03/21 22:15:09  kans
+* added SeqLocFastaStream
+*
+* Revision 6.139  2004/10/22 19:56:45  kans
+* UseOrgMods has strain before chromosome and other qualifiers
+*
+* Revision 6.138  2004/10/14 19:36:34  kans
+* CreateDefLineExEx has extProtTitle argument, normally only use first protein name in defline
+*
+* Revision 6.137  2004/09/29 17:29:49  kans
+* FastaReadSequenceChunk checks return result of fgets, nulls out sequence [1] if failed
+*
+* Revision 6.136  2004/09/24 20:09:40  bollin
+* use best SeqID instead of first SeqID when exporting FASTA
+*
+* Revision 6.135  2004/07/23 20:55:52  kans
+* added BioseqFastaMemStream that takes byte store instead of file pointer
+*
+* Revision 6.134  2004/07/16 19:37:37  kans
+* SeqPortStream and FastaStream functions return Int4, negative count if any fetch failures
+*
+* Revision 6.133  2004/06/02 20:11:14  kans
+* In SeqEntryToFasta, if defline is >?unk100, make special local ID, recognized by tbl2asn
+*
+* Revision 6.132  2004/05/07 20:55:54  kans
+* MakeCompleteChromTitle handles organelles with multiple chromosomes, e.g., Guillardia theta nucleomorph
+*
 * Revision 6.131  2004/05/03 15:32:07  kans
 * BioseqFastaStream uses larger buffer for seqid because some RefSeqs use more than 41 characters for FASTA_LONG
 *
@@ -859,6 +892,7 @@ void SeqEntryFasta (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
             case SEQID_TPG:
             case SEQID_TPE:
             case SEQID_TPD:
+            case SEQID_GPIPE:
               tsip = (TextSeqIdPtr)(sip->data.ptrvalue);
               if (tsip->accession != NULL)
                 mfp->accession = tsip->accession;
@@ -1331,9 +1365,10 @@ NLM_EXTERN Boolean BioseqToFastaX (BioseqPtr bsp, MyFsaPtr mfp, Boolean is_na)
     }
     else
     {
-	   buf[0] = '\0';
-		SeqIdWrite(bsp->id, buf, PRINTID_FASTA_LONG, 40);
-	ErrPostEx(SEV_ERROR,0,0,"ToFasta: [%s] Unrecognized bsp->mol = %d",
+	    buf[0] = '\0';
+	   
+		  SeqIdWrite(SeqIdFindBest(bsp->id, 0), buf, PRINTID_FASTA_LONG, 40);
+	    ErrPostEx(SEV_ERROR,0,0,"ToFasta: [%s] Unrecognized bsp->mol = %d",
 		  buf, (int)(bsp->mol));
 	mfp->bad_asn1 = TRUE;
 	return FALSE;
@@ -1431,15 +1466,16 @@ NLM_EXTERN Boolean BioseqToFastaX (BioseqPtr bsp, MyFsaPtr mfp, Boolean is_na)
 *****************************************************************************/
 
 typedef struct streamfsa {
-  FILE     *fp;
-  Char     buf [512];
-  Int2     idx;
-  Int2     lin;
-  Int2     blk;
-  Int2     grp;
-  Int2     linelen;
-  Int2     blocklen;
-  Int2     grouplen;
+  FILE          *fp;
+  ByteStorePtr  bs;
+  Char          buf [512];
+  Int2          idx;
+  Int2          lin;
+  Int2          blk;
+  Int2          grp;
+  Int2          linelen;
+  Int2          blocklen;
+  Int2          grouplen;
 } StreamFsa, PNTR StreamFsaPtr;
 
 static void LIBCALLBACK FsaStreamProc (
@@ -1480,13 +1516,22 @@ static void LIBCALLBACK FsaStreamProc (
       /* optionally separate groups with blank line */
 
       if (sfp->grp >= sfp->grouplen && sfp->grouplen > 0) {
-        fprintf (sfp->fp, "\n");
+        if (sfp->fp != NULL) {
+          fprintf (sfp->fp, "\n");
+        } else if (sfp->bs != NULL) {
+          BSWrite (sfp->bs, "\n", sizeof ("\n"));
+        }
         sfp->grp = 0;
       }
 
       /* print actual sequence line here */
 
-      fprintf (sfp->fp, "%s\n", sfp->buf);
+      if (sfp->fp != NULL) {
+        fprintf (sfp->fp, "%s\n", sfp->buf);
+      } else if (sfp->bs != NULL) {
+        BSWrite (sfp->bs, sfp->buf, StringLen (sfp->buf));
+        BSWrite (sfp->bs, "\n", sizeof ("\n"));
+      }
       sfp->idx = 0;
       sfp->lin = 0;
       sfp->blk = 0;
@@ -1498,9 +1543,11 @@ static void LIBCALLBACK FsaStreamProc (
   }
 }
 
-NLM_EXTERN void BioseqFastaStream (
+static Int4 BioseqFastaStreamInternal (
   BioseqPtr bsp,
+  SeqLocPtr slp,
   FILE *fp,
+  ByteStorePtr bs,
   StreamFlgType flags,
   Int2 linelen,
   Int2 blocklen,
@@ -1510,12 +1557,14 @@ NLM_EXTERN void BioseqFastaStream (
 
 {
   Char         buf [4096];
+  Int4         count = 0;
   Uint2        entityID;
   Char         id [128];
   SeqDescrPtr  sdp;
   StreamFsa    sf;
 
-  if (bsp == NULL || fp == NULL) return;
+  if (bsp == NULL && slp == NULL) return 0;
+  if (fp == NULL && bs == NULL) return 0;
 
   if (linelen > 128) {
     linelen = 128;
@@ -1536,6 +1585,17 @@ NLM_EXTERN void BioseqFastaStream (
     grouplen = 0;
   }
 
+  MemSet ((Pointer) &sf, 0, sizeof (StreamFsa));
+  sf.fp = fp;
+  sf.bs = bs;
+  sf.idx = 0;
+  sf.lin = 0;
+  sf.blk = 0;
+  sf.grp = 0;
+  sf.linelen = linelen;
+  sf.blocklen = blocklen;
+  sf.grouplen = grouplen;
+
   if (do_defline) {
     id [0] = '\0';
     SeqIdWrite (bsp->id, id, PRINTID_FASTA_LONG, sizeof (id) - 1);
@@ -1553,30 +1613,84 @@ NLM_EXTERN void BioseqFastaStream (
     buf [0] = '\0';
     CreateDefLine (NULL, bsp, buf, sizeof (buf) - 1, 0, NULL, NULL);
 
-    fprintf (fp, ">%s %s\n", id, buf);
+    if (sf.fp != NULL) {
+      fprintf (fp, ">%s %s\n", id, buf);
+    } else if (sf.bs != NULL) {
+      BSWrite (sf.bs, ">", sizeof (">"));
+      BSWrite (sf.bs, id, StringLen (id));
+      BSWrite (sf.bs, " ", sizeof (" "));
+      BSWrite (sf.bs, buf, StringLen (buf));
+      BSWrite (sf.bs, "\n", sizeof ("\n"));
+    }
   }
 
-  MemSet ((Pointer) &sf, 0, sizeof (StreamFsa));
-  sf.fp = fp;
-  sf.idx = 0;
-  sf.lin = 0;
-  sf.blk = 0;
-  sf.grp = 0;
-  sf.linelen = linelen;
-  sf.blocklen = blocklen;
-  sf.grouplen = grouplen;
-
-  SeqPortStream (bsp, flags, (Pointer) &sf, FsaStreamProc);
+  if (bsp != NULL) {
+    count = SeqPortStream (bsp, flags, (Pointer) &sf, FsaStreamProc);
+  } else if (slp != NULL) {
+    count = SeqPortStreamLoc (slp, flags, (Pointer) &sf, FsaStreamProc);
+  }
 
   /* print any remaining sequence */
 
   if (sf.lin > 0) {
     sf.buf [sf.idx] = '\0';
     if (sf.grp >= sf.grouplen && sf.grouplen > 0) {
-      fprintf (fp, "\n");
+      if (sf.fp != NULL) {
+        fprintf (fp, "\n");
+      } else if (sf.bs != NULL) {
+        BSWrite (sf.bs, "\n", sizeof ("\n"));
+      }
     }
-    fprintf (fp, "%s\n", sf.buf);
+    if (sf.fp != NULL) {
+      fprintf (fp, "%s\n", sf.buf);
+    } else if (sf.bs != NULL) {
+      BSWrite (sf.bs, sf.buf, StringLen (sf.buf));
+      BSWrite (sf.bs, "\n", sizeof ("\n"));
+    }
   }
+
+  return count;
+}
+
+NLM_EXTERN Int4 BioseqFastaStream (
+  BioseqPtr bsp,
+  FILE *fp,
+  StreamFlgType flags,
+  Int2 linelen,
+  Int2 blocklen,
+  Int2 grouplen,
+  Boolean do_defline
+)
+
+{
+  return BioseqFastaStreamInternal (bsp, NULL, fp, NULL, flags, linelen, blocklen, grouplen, do_defline);
+}
+
+NLM_EXTERN Int4 BioseqFastaMemStream (
+  BioseqPtr bsp,
+  ByteStorePtr bs,
+  StreamFlgType flags,
+  Int2 linelen,
+  Int2 blocklen,
+  Int2 grouplen,
+  Boolean do_defline
+)
+
+{
+  return BioseqFastaStreamInternal (bsp, NULL, NULL, bs, flags, linelen, blocklen, grouplen, do_defline);
+}
+
+NLM_EXTERN Int4 SeqLocFastaStream (
+  SeqLocPtr slp,
+  FILE *fp,
+  StreamFlgType flags,
+  Int2 linelen,
+  Int2 blocklen,
+  Int2 grouplen
+)
+
+{
+  return BioseqFastaStreamInternal (NULL, slp, fp, NULL, flags, linelen, blocklen, grouplen, FALSE);
 }
 
 /*****************************************************************************
@@ -1597,6 +1711,8 @@ typedef struct fastastreamdata {
   Boolean        do_na;
   Boolean        do_aa;
   Boolean        master_style;
+  Boolean        failed;
+  Int4           count;
 } FastaStreamData, PNTR FastaStreamPtr;
 
 static BioseqSetPtr GetSegParts (
@@ -1623,6 +1739,7 @@ static void FastaOneBioseq (
 )
 
 {
+  Int4            count;
   FastaStreamPtr  fsp;
   BioseqSetPtr    parts;
 
@@ -1655,11 +1772,17 @@ static void FastaOneBioseq (
       bsp->repr == Seq_repr_delta ||
       bsp->repr == Seq_repr_virtual) {
 
-    BioseqFastaStream (bsp, fsp->fp, fsp->flags, fsp->linelen, fsp->blocklen, fsp->grouplen, TRUE);
+    count = BioseqFastaStream (bsp, fsp->fp, fsp->flags, fsp->linelen, fsp->blocklen, fsp->grouplen, TRUE);
+    if (count < 0) {
+      fsp->failed = TRUE;
+      fsp->count -= count;
+    } else {
+      fsp->count += count;
+    }
   }
 }
 
-NLM_EXTERN void SeqEntryFastaStream (
+NLM_EXTERN Int4 SeqEntryFastaStream (
   SeqEntryPtr sep,
   FILE *fp,
   StreamFlgType flags,
@@ -1678,7 +1801,7 @@ NLM_EXTERN void SeqEntryFastaStream (
   FastaStreamData  fsd;
   SeqEntryPtr      oldscope;
 
-  if (sep == NULL || fp == NULL) return;
+  if (sep == NULL || fp == NULL) return 0;
 
   if (IS_Bioseq (sep)) {
     bsp = (BioseqPtr) sep->data.ptrvalue;
@@ -1688,7 +1811,7 @@ NLM_EXTERN void SeqEntryFastaStream (
     entityID = ObjMgrGetEntityIDForPointer (bssp);
   }
 
-  if (entityID == 0) return;
+  if (entityID == 0) return 0;
 
   /* AssignIDs sets bsp->seqentry so GetSegParts can work */
 
@@ -1702,6 +1825,8 @@ NLM_EXTERN void SeqEntryFastaStream (
   fsd.do_na = do_na;
   fsd.do_aa = do_aa;
   fsd.master_style = master_style;
+  fsd.failed = FALSE;
+  fsd.count = 0;
 
   oldscope = SeqEntrySetScope (sep);
 
@@ -1720,6 +1845,12 @@ NLM_EXTERN void SeqEntryFastaStream (
   }
 
   SeqEntrySetScope (oldscope);
+
+  if (fsd.failed) {
+    return -fsd.count;
+  }
+
+  return fsd.count;
 }
 
 /*****************************************************************************
@@ -1949,7 +2080,9 @@ static Int4 FastaReadSequenceChunk
 		return 0;
 	}
 	sequence[0] = (Uint1) ch;
-	fgets((CharPtr) sequence+1, length-1, fd);
+	if ((fgets((CharPtr) sequence+1, length-1, fd)) == NULL) {
+	    sequence [1] = '\0';
+	}
     } else {   /* type == FASTA_MEM_IO */
         if((firstchar = (const Char PNTR) input) == NULL)
             return 0;
@@ -2551,12 +2684,19 @@ static SeqEntryPtr FastaToSeqEntryInternalExEx
             }
         } else {
             /* Unknown Seq-id */ 
-            bsp->id = MakeSeqID ("lcl|gap");
-            bsp->repr = Seq_repr_virtual;
             
             ptr = defline + 1;
             while (IS_WHITESP(*ptr))
                 ptr++;
+
+            if (StringNCmp (ptr, "unk100", 6) == 0) {
+              bsp->id = MakeSeqID ("lcl|unk100");
+              ptr += 3;
+            } else {
+              bsp->id = MakeSeqID ("lcl|gap");
+            }
+            bsp->repr = Seq_repr_virtual;
+
             if(*ptr != '\0' && sscanf(ptr, "%ld", &len) == 1 && len > 0) {
                 bsp->length =  (Int4) len;
             } else {
@@ -3281,7 +3421,7 @@ static CharPtr FindNRDefLine (BioseqPtr bsp)
   return str;
 }
 
-static CharPtr FindProtDefLine(BioseqPtr bsp)
+static CharPtr FindProtDefLine(BioseqPtr bsp, Boolean extProtTitle)
 {
 	SeqFeatPtr sfp = NULL, f;
 	ProtRefPtr prp;
@@ -3320,10 +3460,12 @@ static CharPtr FindProtDefLine(BioseqPtr bsp)
                                         (CharPtr) prp->name->data.ptrvalue);
 			}
 			s += StringLen(title);
-			for (vnp=prp->name->next; vnp; vnp=vnp->next) {
-				sprintf(s, "; %s", 
-                                        (CharPtr) vnp->data.ptrvalue);
-				s += StringLen((CharPtr)vnp->data.ptrvalue) + 2;
+			if (extProtTitle) {
+	        	for (vnp=prp->name->next; vnp; vnp=vnp->next) {
+			    	sprintf(s, "; %s", 
+                                            (CharPtr) vnp->data.ptrvalue);
+				    s += StringLen((CharPtr)vnp->data.ptrvalue) + 2;
+		    	}
 			}
 			/* if hypothetical protein, append locus_tag */
 			if (StringICmp (title, "hypothetical protein") == 0) {
@@ -3734,6 +3876,10 @@ static CharPtr UseOrgMods(BioseqPtr bsp, CharPtr suffix)
 		def = StringCat(def, name);
 		MemFree(name);
 	}
+	if (str) {
+		def = StringCat(def, str);
+		MemFree(str);
+	}
 	if (chr) {
 		def = StringCat(def, chr);
 		MemFree(chr);
@@ -3745,10 +3891,6 @@ static CharPtr UseOrgMods(BioseqPtr bsp, CharPtr suffix)
 	if (map) {
 		def = StringCat(def, map);
 		MemFree(map);
-	}
-	if (str) {
-		def = StringCat(def, str);
-		MemFree(str);
 	}
 	if (suffix) {
 		def = StringCat(def, " ");
@@ -3839,7 +3981,7 @@ static CharPtr MakeCompleteChromTitle (BioseqPtr bsp, Uint1 biomol, Uint1 comple
 	SubSourcePtr  ssp;
 	CharPtr       name = NULL, chr = NULL, orgnl = NULL,
 	              seg = NULL, pls = NULL, def = NULL;
-	Int2          deflen = 70; /* starts with space for all fixed text */
+	Int2          deflen = 80; /* starts with space for all fixed text */
 	Char          ch;
 	Boolean       plasmid;
 	Uint1         genome;
@@ -3957,6 +4099,16 @@ static CharPtr MakeCompleteChromTitle (BioseqPtr bsp, Uint1 biomol, Uint1 comple
 		StringCat (def, name);
 	}
 	if (orgnl != NULL) {
+        if (chr != NULL) {
+            StringCat (def, " ");
+            StringCat (def, orgnl);
+            StringCat (def, " chromosome ");
+            StringCat(def, chr);
+            StringCat (def, completeseq);
+            ch = *def;
+            *def = TO_UPPER (ch);
+            return def;
+        }
 		StringCat (def, " ");
 		StringCat (def, orgnl);
 		StringCat (def, completegen);
@@ -4014,7 +4166,8 @@ static Boolean NotSpecialTaxName (CharPtr taxname)
 *		ItemInfoPtr iip is used in flat file generator to keep entityId, itemId
 *		and itemtype
 *****************************************************************************/
-NLM_EXTERN Boolean CreateDefLineEx (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf, Uint4 buflen, Uint1 tech, CharPtr accession, CharPtr organism, Boolean ignoreTitle)
+NLM_EXTERN Boolean CreateDefLineExEx (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf, Uint4 buflen, Uint1 tech,
+                                      CharPtr accession, CharPtr organism, Boolean ignoreTitle, Boolean extProtTitle)
 {
 	ValNodePtr vnp = NULL;
 	CharPtr tmp = NULL, title = NULL;
@@ -4086,6 +4239,9 @@ NLM_EXTERN Boolean CreateDefLineEx (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf,
 						}
 					}
 				}
+				break;
+		    case SEQID_GPIPE :
+				tsip = (TextSeqIdPtr) sip->data.ptrvalue;
 				break;
 			default :
 				break;
@@ -4238,7 +4394,7 @@ NLM_EXTERN Boolean CreateDefLineEx (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf,
 		}
 		if (vnp == NULL) {
 			if (ISA_aa(bsp->mol)) {
-				title = FindProtDefLine(bsp);
+				title = FindProtDefLine(bsp, extProtTitle);
 				vnp = SeqMgrGetNextDescriptor (bsp, NULL, Seq_descr_source, &dcontext);
 				if (vnp != NULL && organism == NULL) {
 					biop = (BioSourcePtr) vnp->data.ptrvalue;
@@ -4477,10 +4633,18 @@ NLM_EXTERN Boolean CreateDefLineEx (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf,
 	return TRUE;
 }
 
-NLM_EXTERN Boolean CreateDefLine (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf, Uint4 buflen, Uint1 tech, CharPtr accession, CharPtr organism)
+NLM_EXTERN Boolean CreateDefLineEx (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf, Uint4 buflen, Uint1 tech,
+                                    CharPtr accession, CharPtr organism, Boolean ignoreTitle)
 
 {
-  return CreateDefLineEx (iip, bsp, buf, buflen, tech, accession, organism, FALSE);
+  return CreateDefLineExEx (iip, bsp, buf, buflen, tech, accession, organism, ignoreTitle, FALSE);
+}
+
+NLM_EXTERN Boolean CreateDefLine (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf, Uint4 buflen,
+                                  Uint1 tech, CharPtr accession, CharPtr organism)
+
+{
+  return CreateDefLineExEx (iip, bsp, buf, buflen, tech, accession, organism, FALSE, FALSE);
 }
 
 /*****************************************************************************

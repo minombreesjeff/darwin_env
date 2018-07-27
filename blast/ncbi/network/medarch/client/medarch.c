@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   03/31/93
 *
-* $Revision: 6.1 $
+* $Revision: 6.2 $
 *
 * File Description: 
 *       API for Medline Archive service
@@ -53,6 +53,9 @@
 *
 * RCS Modification History:
 * $Log: medarch.c,v $
+* Revision 6.2  2005/04/28 19:11:49  kans
+* s_MedArchCitMatchPmId uses DEBUG_MED_ARCH_CIT_MATCH_PMID environment variable to save Mla-request to origmlarequest.txt file
+*
 * Revision 6.1  2004/04/01 13:43:07  lavr
 * Spell "occurred", "occurrence", and "occurring"
 *
@@ -959,16 +962,44 @@ static Int4
 /*+
 -*/
 /******************************************************************************/
+static Boolean debug_med_arch_cit_match_pmid = FALSE;
+static Boolean debug_med_arch_cit_match_pmid_set = FALSE;
+
 static Int4
 /*FCN*/s_MedArchCitMatchPmId (
   ValNodePtr pub
 ){
     MlaRequestPtr mlarp;
     Int4 pmid;
+#ifdef OS_UNIX
+    AsnIoPtr  aip;
+    CharPtr   str;
+#endif
 
     mlarp = ValNodeNew(NULL);
     mlarp->choice = MlaRequest_citmatchpmid;
     mlarp->data.ptrvalue = pub;
+#ifdef OS_UNIX
+    if (! debug_med_arch_cit_match_pmid_set) {
+      str = (CharPtr) getenv ("DEBUG_MED_ARCH_CIT_MATCH_PMID");
+      if (StringDoesHaveText (str)) {
+        if (StringICmp (str, "TRUE") == 0) {
+          debug_med_arch_cit_match_pmid = TRUE;
+        }
+      }
+      debug_med_arch_cit_match_pmid_set = TRUE;
+    }
+
+    if (debug_med_arch_cit_match_pmid) {
+      if (mlarp != NULL) {
+        aip = AsnIoOpen ("origmlarequest.txt", "w");
+        if (aip != NULL) {
+          MlaRequestAsnWrite (mlarp, aip, NULL);
+          AsnIoClose (aip);
+        }
+      }
+    }
+#endif
     MlaRequestAsnWrite (mlarp, asnout, NULL);
     AsnIoReset(asnout);
     mlarp->data.ptrvalue = NULL; /* for clean free */

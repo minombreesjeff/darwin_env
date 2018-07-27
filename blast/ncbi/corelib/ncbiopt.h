@@ -1,7 +1,7 @@
 #ifndef _NCBIOPT_
 #define _NCBIOPT_
 
-/*  $Id: ncbiopt.h,v 6.14 2004/03/25 17:10:57 lebedev Exp $
+/*  $Id: ncbiopt.h,v 6.15 2004/07/15 15:11:45 ucko Exp $
 * ==========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -34,6 +34,9 @@
 *
 * --------------------------------------------------------------------------
 * $Log: ncbiopt.h,v $
+* Revision 6.15  2004/07/15 15:11:45  ucko
+* Disable workaround for Linux distributions (RH7?) that misdefine LONG_BIT.
+*
 * Revision 6.14  2004/03/25 17:10:57  lebedev
 * Include stdint.h for Darwin, so undef will work for UINT8_MAX
 *
@@ -132,7 +135,7 @@ by including it first.
 #  endif
 
    /* on 64-bit operating systems, the long data type is already 8 bytes */
-#  if LONG_BIT==64  &&  !defined(OS_UNIX_LINUX)
+#  if LONG_BIT==64 /* &&  !defined(OS_UNIX_LINUX) */
 #    define Int8  long
 #    define Uint8 unsigned long
 

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   2/5/97
 *
-* $Revision: 6.73 $
+* $Revision: 6.85 $
 *
 * File Description: 
 *
@@ -504,7 +504,7 @@ static CharPtr FFPrintFunc (DoC d, Int2 index, Pointer data)
   if (oldsep != NULL) {
     SeqEntrySetScope (oldsep);
   }
-  if (bfp != NULL) {
+  if (bfp != NULL && bfp->userkey > 0) {
     paragraphs = fsp->paragraphs;
     if (paragraphs != NULL) {
       bbp = paragraphs [index - 1];
@@ -896,37 +896,40 @@ static void LookForTpa (
 static void PopulateFlatFile (BioseqViewPtr bvp, FmtType format, FlgType flags)
 
 {
-  BioseqPtr        bsp;
-  CstType          custom = 0;
-  DoC              doc;
-  Boolean          doLockFarComponents = FALSE;
-  Uint2            entityID;
-  FonT             fnt;
-  FILE             *fp;
-  Boolean          hastpaaligns;
-  Int2             into;
-  Boolean          isAEorCH;
-  Boolean          isGED;
-  Boolean          isNTorNW;
-  Boolean          isNC;
-  Boolean          isTPA;
-  Int2             item;
-  ErrSev           level;
-  Boolean          lockFar = FALSE;
-  Boolean          lookupFar = FALSE;
-  ModType          mode = SEQUIN_MODE;
-  SeqEntryPtr      oldsep;
-  Char             path [PATH_MAX];
-  BaR              sb = NULL;
-  SeqEntryPtr      sep;
-  Int4             startsAt;
-  CharPtr          str;
-  StlType          style = NORMAL_STYLE;
-  SeqViewProcsPtr  svpp;
-  SeqEntryPtr      topsep;
-  TexT             txt;
-  SeqEntryPtr      usethetop = NULL;
-  Int2             val;
+  BioseqPtr          bsp;
+  SeqMgrFeatContext  context;
+  CstType            custom = 0;
+  DoC                doc;
+  Boolean            doLockFarComponents = FALSE;
+  Uint2              entityID;
+  Int4               feats_with_product_count;
+  FonT               fnt;
+  FILE               *fp;
+  Boolean            hastpaaligns;
+  Int2               into;
+  Boolean            isAEorCH;
+  Boolean            isGED;
+  Boolean            isNTorNW;
+  Boolean            isNC;
+  Boolean            isTPA;
+  Int2               item;
+  ErrSev             level;
+  Boolean            lockFar = FALSE;
+  Boolean            lookupFar = FALSE;
+  ModType            mode = SEQUIN_MODE;
+  SeqEntryPtr        oldsep;
+  Char               path [PATH_MAX];
+  BaR                sb = NULL;
+  SeqEntryPtr        sep;
+  SeqFeatPtr         sfp;
+  Int4               startsAt;
+  CharPtr            str;
+  StlType            style = NORMAL_STYLE;
+  SeqViewProcsPtr    svpp;
+  SeqEntryPtr        topsep;
+  TexT               txt;
+  SeqEntryPtr        usethetop = NULL;
+  Int2               val;
 
   if (bvp == NULL) return;
   if (bvp->hasTargetControl && bvp->ffModeCtrl != NULL) {
@@ -990,8 +993,32 @@ static void PopulateFlatFile (BioseqViewPtr bvp, FmtType format, FlgType flags)
     }
   }
   if (bvp->hasTargetControl && bvp->ffCustomBtn != NULL) {
-    if (GetStatus (bvp->ffCustomBtn)) {
-      custom |= SHOW_TRANCRIPTION | SHOW_PEPTIDE;
+    if (GetValue (bvp->ffCustomBtn) == 2) {
+      flags |= REFSEQ_CONVENTIONS | SHOW_TRANCRIPTION | SHOW_PEPTIDE;
+    }
+  }
+  if (bvp->hasTargetControl && bvp->ffRifCtrl != NULL) {
+    val = GetValue (bvp->ffRifCtrl);
+    switch (val) {
+      case 1 :
+        break;
+      case 2 :
+        custom |= HIDE_GENE_RIFS;
+        break;
+      case 3 :
+        custom |= ONLY_GENE_RIFS;
+        break;
+      case 4 :
+        custom |= NEWEST_PUBS;
+        break;
+      case 5 :
+        custom |= OLDEST_PUBS;
+        break;
+      case 6 :
+        custom |= ONLY_REVIEW_PUBS;
+        break;
+      default :
+        break;
     }
   }
   doc = NULL;
@@ -1023,16 +1050,20 @@ static void PopulateFlatFile (BioseqViewPtr bvp, FmtType format, FlgType flags)
     }
   }
 
-  if (GetAppProperty ("OldFlatfileSource") != NULL) {
-    flags |= USE_OLD_SOURCE_ORG;
-  }
-
   svpp = (SeqViewProcsPtr) GetAppProperty ("SeqDisplayForm");
   if (svpp != NULL) {
     if (svpp->lockFarComponents) {
       doLockFarComponents = TRUE;
     }
   }
+
+  if (mode == ENTREZ_MODE) {
+    doLockFarComponents = FALSE;
+    lockFar = FALSE;
+    lookupFar = FALSE;
+    flags = flags ^ (SHOW_CONTIG_FEATURES | SHOW_CONTIG_SOURCES | SHOW_FAR_TRANSLATION);
+  }
+
   if (doLockFarComponents) {
     entityID = ObjMgrGetEntityIDForPointer (bsp);
     sep = GetTopSeqEntryForEntityID (entityID);
@@ -1040,9 +1071,25 @@ static void PopulateFlatFile (BioseqViewPtr bvp, FmtType format, FlgType flags)
       bvp->bsplist = LockFarComponentsEx (sep, TRUE, FALSE, FALSE, NULL);
     }
     if (lookupFar) {
+      feats_with_product_count = 0;
+      sfp = SeqMgrGetNextFeature (bsp, NULL, 0, 0, &context);
+      while (sfp != NULL) {
+        if (sfp->product != NULL) {
+          feats_with_product_count++;
+        }
+        sfp = SeqMgrGetNextFeature (bsp, sfp, 0, 0, &context);
+      }
+      if (feats_with_product_count > 500) {
+        /* too many to lookup with older caching implementation - now sufficiently fast */
+        /*
+        lookupFar = FALSE;
+        */
+      }
+    }
+    if (lookupFar) {
       hastpaaligns = FALSE;
       VisitDescriptorsInSep (sep, (Pointer) &hastpaaligns, LookForTpa);
-      LookupFarSeqIDs (sep, TRUE, TRUE, TRUE, FALSE, hastpaaligns);
+      LookupFarSeqIDs (sep, TRUE, TRUE, TRUE, FALSE, hastpaaligns, TRUE);
     }
   }
 
@@ -1190,6 +1237,7 @@ static void PopulateFasta (BioseqViewPtr bvp)
   Uint1            group_segs;
   Int2             into;
   Int2             item;
+  Boolean          master_style;
   Char             path [PATH_MAX];
   BaR              sb = NULL;
   SeqEntryPtr      sep;
@@ -1252,34 +1300,92 @@ static void PopulateFasta (BioseqViewPtr bvp)
       fnt = bvp->displayFont;
     }
     fastaOK = FALSE;
-    if (ISA_na (bsp->mol)) {
+    fastaNucOK = FALSE;
+    fastaPrtOK = FALSE;
+    if (ISA_na (bsp->mol)) {TRUE, 
       group_segs = 0;
+      master_style = FALSE;
       if (bvp->hasTargetControl) {
         if (bvp->viewWholeEntity) {
           if (bsp->repr == Seq_repr_seg) {
             group_segs = 2;
           }
+          /*
           fastaNucOK = SeqEntrysToFasta (sep, fp, TRUE, group_segs);
           fastaPrtOK = SeqEntrysToFasta (sep, fp, FALSE, 0);
+          */
+          if (SeqEntryFastaStream (sep, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL, 
+              70, 0, 0, TRUE, FALSE, master_style) > 0)
+          {
+            fastaNucOK = TRUE;
+          }
+          else 
+          {
+            fastaNucOK = FALSE;
+          }
+          if (SeqEntryFastaStream (sep, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL, 
+              70, 0, 0, FALSE, TRUE, master_style) > 0)
+          {
+            fastaPrtOK = TRUE;
+          }
+          else
+          {
+            fastaPrtOK = FALSE;
+          }
           fastaOK = fastaNucOK || fastaPrtOK;
         } else {
           if (bsp->repr == Seq_repr_seg) {
             group_segs = 1;
+            master_style = TRUE;
           } else if (bsp->repr == Seq_repr_delta) {
             group_segs = 3;
           }
+          /*
           fastaOK = SeqEntrysToFasta (sep, fp, TRUE, group_segs);
+          */
+          if (SeqEntryFastaStream (sep, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL,
+               70, 0, 0, TRUE, FALSE, master_style) > 0)
+          {
+            fastaOK = TRUE;
+          }
+          else
+          {
+            fastaOK = FALSE;
+          }
         }
       } else {
         if (bsp->repr == Seq_repr_seg) {
           group_segs = 1;
+          master_style = TRUE;
         } else if (bsp->repr == Seq_repr_delta) {
           group_segs = 3;
         }
+        /*
         fastaOK = SeqEntrysToFasta (sep, fp, TRUE, group_segs);
+        */
+        if (SeqEntryFastaStream (sep, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL,
+                                 70, 0, 0, TRUE, FALSE, master_style) > 0)
+        {
+          fastaOK = TRUE;
+        }
+        else
+        {
+          fastaOK = FALSE;
+        }
       }
     } else if (ISA_aa (bsp->mol)) {
+      /*
       fastaOK = SeqEntrysToFasta (sep, fp, FALSE, 0);
+      */
+      if (SeqEntryFastaStream (sep, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL,
+                               70, 0, 0, FALSE, TRUE, FALSE) > 0)
+      {
+        fastaOK = TRUE;
+      }
+      else
+      {
+        fastaOK = FALSE;
+      }
     }
     if (fastaOK) {
       FileClose (fp);
@@ -1443,6 +1549,7 @@ static void PopulateAsnOrXML (BioseqViewPtr bvp, CharPtr outmode, Boolean doGbse
   DoC          doc;
   Uint2        entityID;
   XtraPtr      extra = NULL;
+  FlgType      flags = CREATE_XML_GBSEQ_FILE;
   FonT         fnt;
   FmtType      format = GENBANK_FMT;
   GBSeq        gbsq;
@@ -1553,8 +1660,32 @@ static void PopulateAsnOrXML (BioseqViewPtr bvp, CharPtr outmode, Boolean doGbse
       }
     }
     if (bvp->hasTargetControl && bvp->ffCustomBtn != NULL) {
-      if (GetStatus (bvp->ffCustomBtn)) {
-        custom = SHOW_TRANCRIPTION | SHOW_PEPTIDE;
+      if (GetValue (bvp->ffCustomBtn) == 2) {
+        flags = REFSEQ_CONVENTIONS | SHOW_TRANCRIPTION | SHOW_PEPTIDE;
+      }
+    }
+    if (bvp->hasTargetControl && bvp->ffRifCtrl != NULL) {
+      val = GetValue (bvp->ffRifCtrl);
+      switch (val) {
+        case 1 :
+          break;
+        case 2 :
+          custom |= HIDE_GENE_RIFS;
+          break;
+        case 3 :
+          custom |= ONLY_GENE_RIFS;
+          break;
+        case 4 :
+          custom |= NEWEST_PUBS;
+          break;
+        case 5 :
+          custom |= OLDEST_PUBS;
+          break;
+        case 6 :
+          custom |= ONLY_REVIEW_PUBS;
+          break;
+        default :
+          break;
       }
     }
     if (GetAppParam ("NCBI", "SETTINGS", "XMLPREFIX", NULL, xmlbuf, sizeof (xmlbuf))) {
@@ -1575,7 +1706,7 @@ static void PopulateAsnOrXML (BioseqViewPtr bvp, CharPtr outmode, Boolean doGbse
     extra = &xtra;
     MemSet ((Pointer) &gbst, 0, sizeof (GBSet));
     AsnOpenStruct (aipout, atp, (Pointer) &gbst);
-    if (SeqEntryToGnbk (sep, NULL, format, mode, style, CREATE_XML_GBSEQ_FILE, 0, custom, extra, NULL)) {
+    if (SeqEntryToGnbk (sep, NULL, format, mode, style, flags, 0, custom, extra, NULL)) {
       AsnCloseStruct (aipout, atp, NULL);
       AsnPrintNewLine (aipout);
       AsnIoClose (aipout);
@@ -1654,6 +1785,7 @@ static void ShowFlatFile (BioseqViewPtr bvp, Boolean show)
     }
     SafeShow (bvp->baseCtgControlGrp);
     SafeShow (bvp->modeControlGrp);
+    SafeShow (bvp->extraControlGrp);
     SafeShow (bvp->docTxtControlGrp);
     SafeShow (bvp->clickMe);
   } else {
@@ -1671,6 +1803,7 @@ static void ShowFlatFile (BioseqViewPtr bvp, Boolean show)
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }
@@ -1688,6 +1821,7 @@ static void ShowFastaOrAsn (BioseqViewPtr bvp, Boolean show)
     }
     SafeHide (bvp->modeControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeShow (bvp->docTxtControlGrp);
     SafeHide (bvp->clickMe);
   } else {
@@ -1705,6 +1839,7 @@ static void ShowFastaOrAsn (BioseqViewPtr bvp, Boolean show)
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }
@@ -1722,6 +1857,7 @@ static void ShowGBSeq (BioseqViewPtr bvp, Boolean show)
     }
     SafeShow (bvp->modeControlGrp);
     SafeShow (bvp->baseCtgControlGrp);
+    SafeShow (bvp->extraControlGrp);
     SafeShow (bvp->docTxtControlGrp);
     SafeHide (bvp->clickMe);
   } else {
@@ -1739,6 +1875,7 @@ static void ShowGBSeq (BioseqViewPtr bvp, Boolean show)
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }

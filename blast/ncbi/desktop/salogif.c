@@ -1,4 +1,4 @@
-/*  $RCSfile: salogif.c,v $  $Revision: 6.7 $  $Date: 2004/02/02 23:40:25 $
+/*  $RCSfile: salogif.c,v $  $Revision: 6.8 $  $Date: 2005/03/11 22:07:56 $
 * ==========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -25,13 +25,16 @@
 *
 * Author:	Jinghui Zhang
 *
-* $Revision: 6.7 $
+* $Revision: 6.8 $
 *
 * File Description:
 *	 The Blast Search result visualization utilities  
 *
 * --------------------------------------------------------------------------
 * $Log: salogif.c,v $
+* Revision 6.8  2005/03/11 22:07:56  merezhuk
+* GIFTMP_BASE environment variable introduced to changed TmpGifs directory location.
+*
 * Revision 6.7  2004/02/02 23:40:25  dondosha
 * Modify query bioseq id so it is a gi id, if possible, because this is the rule in seqaligns coming from BLAST
 *
@@ -723,8 +726,10 @@ NLM_EXTERN Boolean PrintOneAlignmentOverview
   SeqIdPtr sip;
   FILE *gif_fp;
   Int4 align_num;
-  Char title_buf[201], tmpbuf[64];
+  Char title_buf[201], tmpbuf[1024];
   SeqIdPtr idtemp, idtail;
+  char *tmp_base_ptr = NULL;
+  char tmp_base[1024];
 
   if(h_annot == NULL || fp == NULL)
     return FALSE;
@@ -810,9 +815,16 @@ NLM_EXTERN Boolean PrintOneAlignmentOverview
     /*print out the title*/
     MuskSeqIdWrite (bsp->id, label, 100, PRINTID_FASTA_LONG, TRUE, TRUE);
 
-    /* These temporary gifs will be stored in the TmpGif directory */
-    sprintf(tmpbuf, "%s/%s", TMP_GIF_DIR, gif_name);
-
+    /* These temporary gifs will be stored in the {TMP_BASE} + TmpGif directory */
+    tmp_base_ptr = getenv("GIFTMP_BASE");
+    if( tmp_base_ptr ){
+       strcpy(tmp_base,tmp_base_ptr);
+       if( tmp_base[ strlen(tmp_base) -1 ] != '/') strcat(tmp_base,"/");
+       sprintf(tmpbuf, "%s%s/%s",tmp_base, TMP_GIF_DIR, gif_name);
+    }
+    else {  
+       sprintf(tmpbuf, "%s/%s", TMP_GIF_DIR, gif_name);
+    }
     gif_fp = FileOpen(tmpbuf, "wb");
 
     if ( !gif_fp ) {

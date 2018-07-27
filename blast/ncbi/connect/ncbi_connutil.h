@@ -1,7 +1,7 @@
 #ifndef CONNECT___NCBI_CONNUTIL__H
 #define CONNECT___NCBI_CONNUTIL__H
 
-/*  $Id: ncbi_connutil.h,v 6.35 2004/01/14 18:51:41 lavr Exp $
+/*  $Id: ncbi_connutil.h,v 6.42 2005/04/20 15:47:24 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -56,22 +56,27 @@
  *       URL_Connect()
  *       
  *    3.Perform URL encoding/decoding of data:
+ *       URL_Encode()
  *       URL_Decode()
  *       URL_DecodeEx()
- *       URL_Encode()
  *
- *    4.Compose or parse NCBI-specific Content-Type's:
+ *    4.Perform BASE64 (RFC 1521) encoding/decoding of data:
+ *       BASE64_Encode()
+ *       BASE64_Decode()
+ *
+ *    5.Compose or parse NCBI-specific Content-Type's:
+ *       EMIME_Type
  *       EMIME_SubType
  *       EMIME_Encoding
  *       MIME_ComposeContentType()
  *       MIME_ParseContentType()
  *
- *    5.Search for a token in the input stream (either CONN or SOCK):
+ *    6.Search for a token in the input stream (either CONN or SOCK):
  *       CONN_StripToPattern()
  *       SOCK_StripToPattern()
  *       BUF_StripToPattern()
  *
- *    6.Convert "[host][:port]" from verbal into binary form and vice versa:
+ *    7.Convert "[host][:port]" from verbal into binary form and vice versa:
  *       StringToHostPort()
  *       HostPortToString()
  *
@@ -154,7 +159,7 @@ typedef struct {
 #define DEF_CONN_ARGS             ""
 
 #define REG_CONN_REQ_METHOD       "REQ_METHOD"
-#define DEF_CONN_REQ_METHOD       "POST"
+#define DEF_CONN_REQ_METHOD       "ANY"
 
 #define REG_CONN_TIMEOUT          "TIMEOUT"
 #define DEF_CONN_TIMEOUT          30.0
@@ -183,6 +188,9 @@ typedef struct {
 #define REG_CONN_LB_DISABLE       "LB_DISABLE"
 #define DEF_CONN_LB_DISABLE       ""
 
+#define REG_CONN_HTTP_USER_HEADER "HTTP_USER_HEADER"
+#define DEF_CONN_HTTP_USER_HEADER 0
+
 
 /* This function to fill out the "*info" structure using
  * registry entries named (see above) in macros REG_CONN_<NAME>:
@@ -203,6 +211,7 @@ typedef struct {
  *  debug_printout    DEBUG_PRINTOUT
  *  client_mode       CLIENT_MODE
  *  lb_disable        LB_DISABLE
+ *  http_user_header  HTTP_USER_HEADER  "\r\n" if missing is appended
  *
  * A value of the field NAME is first looked for in the environment variable
  * of the form service_CONN_NAME; then in the current corelib registry,
@@ -360,6 +369,7 @@ extern NCBI_XCONNECT_EXPORT void ConnNetInfo_Log
 extern NCBI_XCONNECT_EXPORT void ConnNetInfo_Destroy(SConnNetInfo* info);
 
 
+
 /* Hit URL "http://host:port/path?args" with:
  *    {POST|GET} <path>?<args> HTTP/1.0\r\n
  *    <user_header\r\n>
@@ -400,6 +410,7 @@ extern NCBI_XCONNECT_EXPORT SOCK URL_Connect
  );
 
 
+
 /* Discard all input data before(and including) the first occurrence of
  * "pattern". If "buf" is not NULL then add the discarded data(including
  * the "pattern") to it. If "n_discarded" is not NULL then "*n_discarded"
@@ -431,12 +442,29 @@ extern NCBI_XCONNECT_EXPORT EIO_Status BUF_StripToPattern
  );
 
 
+
+/* URL-encode up to "src_size" symbols(bytes) from buffer "src_buf".
+ * Write the encoded data to buffer "dst_buf", but no more than "dst_size"
+ * bytes.
+ * Assign "*src_read" to the # of bytes successfully encoded from "src_buf".
+ * Assign "*dst_written" to the # of bytes written to buffer "dst_buf".
+ */
+extern NCBI_XCONNECT_EXPORT void URL_Encode
+(const void* src_buf,    /* [in]     non-NULL */
+ size_t      src_size,   /* [in]              */
+ size_t*     src_read,   /* [out]    non-NULL */
+ void*       dst_buf,    /* [in/out] non-NULL */
+ size_t      dst_size,   /* [in]              */
+ size_t*     dst_written /* [out]    non-NULL */
+ );
+
+
 /* URL-decode up to "src_size" symbols(bytes) from buffer "src_buf".
  * Write the decoded data to buffer "dst_buf", but no more than "dst_size"
  * bytes.
  * Assign "*src_read" to the # of bytes successfully decoded from "src_buf".
  * Assign "*dst_written" to the # of bytes written to buffer "dst_buf".
- * Return FALSE only if cannot decode nothing, and an unrecoverable
+ * Return FALSE (0) only if cannot decode anything, and an unrecoverable
  * URL-encoding error (such as an invalid symbol or a bad "%.." sequence)
  * has occurred.
  * NOTE:  the unfinished "%.." sequence is fine -- return TRUE, but dont
@@ -469,13 +497,40 @@ extern NCBI_XCONNECT_EXPORT int/*bool*/ URL_DecodeEx
  );
 
 
-/* URL-encode up to "src_size" symbols(bytes) from buffer "src_buf".
+
+/* BASE64-encode up to "src_size" symbols(bytes) from buffer "src_buf".
  * Write the encoded data to buffer "dst_buf", but no more than "dst_size"
  * bytes.
  * Assign "*src_read" to the # of bytes successfully encoded from "src_buf".
  * Assign "*dst_written" to the # of bytes written to buffer "dst_buf".
+ * Resulting lines will not exceed "*line_len" (or the standard default
+ * if "line_len" is NULL) bytes;  *line_len == 0 disables line breaks.
+ * To estimate required destination buffer size, you can take into account
+ * that BASE64 coding converts every 3 bytes of source into 4 bytes on
+ * destination, not including the line breaks ('\n').
  */
-extern NCBI_XCONNECT_EXPORT void URL_Encode
+extern NCBI_XCONNECT_EXPORT void BASE64_Encode
+(const void* src_buf,    /* [in]     non-NULL */
+ size_t      src_size,   /* [in]              */
+ size_t*     src_read,   /* [out]    non-NULL */
+ void*       dst_buf,    /* [in/out] non-NULL */
+ size_t      dst_size,   /* [in]              */
+ size_t*     dst_written,/* [out]    non-NULL */
+ size_t*     line_len    /* [in]  may be NULL */
+ );
+
+
+/* BASE64-decode up to "src_size" symbols(bytes) from buffer "src_buf".
+ * Write the decoded data to buffer "dst_buf", but no more than "dst_size"
+ * bytes.
+ * Assign "*src_read" to the # of bytes successfully decoded from "src_buf".
+ * Assign "*dst_written" to the # of bytes written to buffer "dst_buf".
+ * Return FALSE (0) only if cannot decode anything.
+ * Destination buffer size, as a worst case, equal to the source size
+ * will accomodate the entire input.  As a rule, each 4 bytes of source
+ * (line breaks skipped) are converted into 3 bytes on output.
+ */
+extern NCBI_XCONNECT_EXPORT int/*bool*/ BASE64_Decode
 (const void* src_buf,    /* [in]     non-NULL */
  size_t      src_size,   /* [in]              */
  size_t*     src_read,   /* [out]    non-NULL */
@@ -642,6 +697,27 @@ extern NCBI_XCONNECT_EXPORT size_t HostPortToString
 /*
  * --------------------------------------------------------------------------
  * $Log: ncbi_connutil.h,v $
+ * Revision 6.42  2005/04/20 15:47:24  lavr
+ * DEF_CONN_REQ_METHOD changed to ANY
+ *
+ * Revision 6.41  2005/03/21 17:04:10  lavr
+ * BASE64_{En|De}code buffer size estimation hints added
+ *
+ * Revision 6.40  2005/03/19 02:13:55  lavr
+ * +BASE64_{En|De}code
+ *
+ * Revision 6.39  2005/02/28 17:23:20  lavr
+ * Fix HTTP_USER_HEADER env.var. name ("HTTP" was missing)
+ *
+ * Revision 6.38  2005/02/24 19:51:24  lavr
+ * Document CONN_HTTP_USER_HEADER environment
+ *
+ * Revision 6.37  2005/02/24 19:00:33  lavr
+ * +CONN_HTTP_USER_HEADER
+ *
+ * Revision 6.36  2004/09/16 16:19:16  lavr
+ * Mention [in opening comment summary] that EMIME_Type is defined here
+ *
  * Revision 6.35  2004/01/14 18:51:41  lavr
  * +eMIME_XmlSoap
  *

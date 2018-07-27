@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 1/1/94
 *
-* $Revision: 6.12 $
+* $Revision: 6.19 $
 *
 * File Description:  Sequence editing utilities
 *
@@ -39,6 +39,27 @@
 * -------  ----------  -----------------------------------------------------
 *
 * $Log: valid.h,v $
+* Revision 6.19  2004/12/23 20:50:51  kans
+* added context field to new callback
+*
+* Revision 6.18  2004/12/22 21:56:40  kans
+* CustValErr supports ValidErrorFunc callback for finer error reporting
+*
+* Revision 6.17  2004/12/20 22:57:16  kans
+* added verbosityLevel argument - to be used for finer control over error reporting by asn2val
+*
+* Revision 6.16  2004/10/04 15:50:22  kans
+* added vsp->justShowAccession for extremely terse output
+*
+* Revision 6.15  2004/09/10 17:52:05  kans
+* changed ValidateLimit enum to Int2 defines
+*
+* Revision 6.14  2004/09/10 15:31:43  kans
+* added farFetchMRNAproducts, locusTagGeneralMatch, validationLimit flags to vsp
+*
+* Revision 6.13  2004/05/06 19:42:22  kans
+* new function GetValidCountryList for access to country code list, which is now NULL terminated
+*
 * Revision 6.12  2003/12/02 15:37:37  kans
 * added vsp->seqSubmitParent for use by tbl2asn, which usually has a Seq-submit wrapper that is added on-the-fly and not indexed
 *
@@ -141,8 +162,32 @@ extern "C" {
 typedef void (*SpellCallBackFunc) (char * str);
 typedef int (* SpellCheckFunc) (char *String, SpellCallBackFunc);
 
+/* callback type for finer error reporting */
+
+typedef void (LIBCALLBACK *ValidErrorFunc) (
+  ErrSev severity,
+  int errcode,
+  int subcode,
+  CharPtr accession,
+  CharPtr message,
+  CharPtr objtype,
+  CharPtr label,
+  CharPtr context,
+  CharPtr location,
+  CharPtr product,
+  Pointer userdata
+);
 
 #define SET_DEPTH 20
+
+#define VALIDATE_ALL 0
+#define VALIDATE_INST 1
+#define VALIDATE_HIST 2
+#define VALIDATE_CONTEXT 3
+#define VALIDATE_GRAPH 4
+#define VALIDATE_SET 5
+#define VALIDATE_FEAT 6
+#define VALIDATE_DESC 7
 
 typedef struct validstruct {
 	Int2 cutoff;                   /* lowest errmsg to show 0=default */
@@ -174,18 +219,30 @@ typedef struct validstruct {
 	Boolean doSeqHistAssembly;     /* do alignment validation in Seq-hist.assembly */
 	Boolean alwaysRequireIsoJTA;   /* force check for iso_jta */
 	Boolean farFetchCDSproducts;   /* lock CDS->products for CdTransCheck, if necessary */
+	Boolean farFetchMRNAproducts;  /* lock MRNA->products for MrnaTransCheck, if necessary */
+	Boolean locusTagGeneralMatch;  /* expect locus_tag to match Seq-id.general of CDS and mRNA product */
 	Boolean validateIDSet;         /* look for gain or loss of general IDs on sequence update */
 	Boolean seqSubmitParent;       /* flag from tbl2asn to suppress no pub message */
+	Boolean justShowAccession;     /* extremely terse output with accession and error type */
+	Int2 validationLimit;          /* limit validation to major classes in Valid1GatherProc */
 	TextFsaPtr sourceQualTags;     /* for detecting structured qual tags in notes */
+								   /* this section used for finer error reporting callback */
+	ValidErrorFunc errfunc;
+	Pointer userdata;
+	Boolean convertGiToAccn;
 } ValidStruct, PNTR ValidStructPtr;
 
 NLM_EXTERN Boolean ValidateSeqEntry PROTO((SeqEntryPtr sep, ValidStructPtr vsp));
 NLM_EXTERN void ValidStructClear (ValidStructPtr vsp);  /* 0 out a ValidStruct */
 NLM_EXTERN ValidStructPtr ValidStructNew (void);
 NLM_EXTERN ValidStructPtr ValidStructFree (ValidStructPtr vsp);
-NLM_EXTERN void ReportNonAscii PROTO((ValidStructPtr vsp, SeqEntryPtr sep));
 NLM_EXTERN void SpellCallBack (char * str);
 NLM_EXTERN Boolean IsNuclAcc (CharPtr name);
+
+NLM_EXTERN CharPtr GetValidCategoryName (int errcode);
+NLM_EXTERN CharPtr GetValidErrorName (int errcode, int subcode);
+
+NLM_EXTERN CharPtr PNTR GetValidCountryList (void);
 
 #ifdef __cplusplus
 }

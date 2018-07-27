@@ -37,7 +37,7 @@ RSC=rc.exe
 # PROP Intermediate_Dir "DebugDLL"
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_MBCS" /D "_LIB" /YX /FD /GZ /c
-# ADD CPP /nologo /MDd /W3 /Gm /GX /ZI /Od /I "..\..\..\..\.." /I "..\..\..\..\..\corelib" /I "..\..\..\..\..\api" /I "..\..\..\..\..\object" /I "..\..\..\..\..\asnlib" /I "..\..\..\..\..\tools" /D "WIN32" /D "_DEBUG" /D "_MBCS" /D "_LIB" /YX /FD /GZ /c
+# ADD CPP /nologo /MDd /W3 /Gm /GX /ZI /Od /I "..\..\..\..\.." /I "..\..\..\..\..\corelib" /I "..\..\..\..\..\api" /I "..\..\..\..\..\access" /I "..\..\..\..\..\object" /I "..\..\..\..\..\asnlib" /I "..\..\..\..\..\tools" /D "WIN32" /D "_DEBUG" /D "_MBCS" /D "_LIB" /YX /FD /GZ /c
 # ADD BASE RSC /l 0x409 /d "_DEBUG"
 # ADD RSC /l 0x409 /d "_DEBUG"
 BSC32=bscmake.exe
@@ -54,11 +54,31 @@ LIB32=link.exe -lib
 # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
 # Begin Source File
 
+SOURCE=..\..\..\..\..\algo\blast\api\blast_api.c
+# End Source File
+# Begin Source File
+
 SOURCE=..\..\..\..\..\algo\blast\api\blast_format.c
 # End Source File
 # Begin Source File
 
 SOURCE=..\..\..\..\..\algo\blast\api\blast_input.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\blast_mtlock.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\blast_options_api.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\blast_prelim.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\blast_returns.c
 # End Source File
 # Begin Source File
 
@@ -70,7 +90,19 @@ SOURCE=..\..\..\..\..\algo\blast\api\blast_seqalign.c
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\..\..\..\algo\blast\api\multiseq_src.c
+SOURCE=..\..\..\..\..\algo\blast\api\blast_tabular.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\hspstream_queue.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\repeats_filter.c
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\seqsrc_multiseq.c
 # End Source File
 # Begin Source File
 
@@ -86,11 +118,31 @@ SOURCE=..\..\..\..\..\algo\blast\api\twoseq_api.c
 # PROP Default_Filter "h;hpp;hxx;hm;inl"
 # Begin Source File
 
+SOURCE=..\..\..\..\..\algo\blast\api\blast_api.h
+# End Source File
+# Begin Source File
+
 SOURCE=..\..\..\..\..\algo\blast\api\blast_format.h
 # End Source File
 # Begin Source File
 
 SOURCE=..\..\..\..\..\algo\blast\api\blast_input.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\blast_mtlock.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\blast_options_api.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\blast_prelim.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\blast_returns.h
 # End Source File
 # Begin Source File
 
@@ -102,7 +154,19 @@ SOURCE=..\..\..\..\..\algo\blast\api\blast_seqalign.h
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\..\..\..\algo\blast\api\multiseq_src.h
+SOURCE=..\..\..\..\..\algo\blast\api\blast_tabular.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\hspstream_queue.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\repeats_filter.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\..\..\..\..\algo\blast\api\seqsrc_multiseq.h
 # End Source File
 # Begin Source File
 

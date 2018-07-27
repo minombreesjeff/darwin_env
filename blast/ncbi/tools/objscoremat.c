@@ -33,22 +33,24 @@ objscorematAsnLoad(void)
 
 /**************************************************
 *    Generated object loaders for Module NCBI-ScoreMat
-*    Generated using ASNCODE Revision: 6.14 at Aug 26, 2003  5:18 PM
+*    Generated using ASNCODE Revision: 6.15 at Oct 7, 2004  2:31 PM
 *
 **************************************************/
 
 
 /**************************************************
 *
-*    ScoreMatrixNew()
+*    PssmNew()
 *
 **************************************************/
 NLM_EXTERN 
-ScoreMatrixPtr LIBCALL
-ScoreMatrixNew(void)
+PssmPtr LIBCALL
+PssmNew(void)
 {
-   ScoreMatrixPtr ptr = MemNew((size_t) sizeof(ScoreMatrix));
+   PssmPtr ptr = MemNew((size_t) sizeof(Pssm));
 
+   ptr -> isProtein = 1;
+   ptr -> byRow = 0;
    return ptr;
 
 }
@@ -56,43 +58,40 @@ ScoreMatrixNew(void)
 
 /**************************************************
 *
-*    ScoreMatrixFree()
+*    PssmFree()
 *
 **************************************************/
 NLM_EXTERN 
-ScoreMatrixPtr LIBCALL
-ScoreMatrixFree(ScoreMatrixPtr ptr)
+PssmPtr LIBCALL
+PssmFree(PssmPtr ptr)
 {
 
    if(ptr == NULL) {
       return NULL;
    }
    ObjectIdFree(ptr -> identifier);
-   AsnGenericBaseSeqOfFree(ptr -> comments ,ASNCODE_PTRVAL_SLOT);
-   AsnGenericBaseSeqOfFree(ptr -> row_labels ,ASNCODE_PTRVAL_SLOT);
-   AsnGenericBaseSeqOfFree(ptr -> scores ,ASNCODE_INTVAL_SLOT);
-   AsnGenericBaseSeqOfFree(ptr -> posFreqs ,ASNCODE_INTVAL_SLOT);
+   AsnGenericBaseSeqOfFree(ptr -> rowLabels ,ASNCODE_PTRVAL_SLOT);
    SeqEntryFree(ptr -> query);
-   AsnGenericBaseSeqOfFree(ptr -> rawFreqs ,ASNCODE_INTVAL_SLOT);
-   AsnGenericBaseSeqOfFree(ptr -> weights ,ASNCODE_INTVAL_SLOT);
+   PssmIntermediateDataFree(ptr -> intermediateData);
+   PssmFinalDataFree(ptr -> finalData);
    return MemFree(ptr);
 }
 
 
 /**************************************************
 *
-*    ScoreMatrixAsnRead()
+*    PssmAsnRead()
 *
 **************************************************/
 NLM_EXTERN 
-ScoreMatrixPtr LIBCALL
-ScoreMatrixAsnRead(AsnIoPtr aip, AsnTypePtr orig)
+PssmPtr LIBCALL
+PssmAsnRead(AsnIoPtr aip, AsnTypePtr orig)
 {
    DataVal av;
    AsnTypePtr atp;
    Boolean isError = FALSE;
    AsnReadFunc func;
-   ScoreMatrixPtr ptr;
+   PssmPtr ptr;
 
    if (! loaded)
    {
@@ -105,17 +104,17 @@ ScoreMatrixAsnRead(AsnIoPtr aip, AsnTypePtr orig)
       return NULL;
    }
 
-   if (orig == NULL) {         /* ScoreMatrix ::= (self contained) */
-      atp = AsnReadId(aip, amp, SCORE_MATRIX);
+   if (orig == NULL) {         /* Pssm ::= (self contained) */
+      atp = AsnReadId(aip, amp, PSSM);
    } else {
-      atp = AsnLinkType(orig, SCORE_MATRIX);
+      atp = AsnLinkType(orig, PSSM);
    }
    /* link in local tree */
    if (atp == NULL) {
       return NULL;
    }
 
-   ptr = ScoreMatrixNew();
+   ptr = PssmNew();
    if (ptr == NULL) {
       goto erret;
    }
@@ -126,144 +125,67 @@ ScoreMatrixAsnRead(AsnIoPtr aip, AsnTypePtr orig)
    atp = AsnReadId(aip,amp, atp);
    func = NULL;
 
-   if (atp == SCORE_MATRIX_is_protein) {
+   if (atp == PSSM_isProtein) {
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
-      ptr -> is_protein = av.boolvalue;
+      ptr -> isProtein = av.boolvalue;
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_identifier) {
+   if (atp == PSSM_identifier) {
       ptr -> identifier = ObjectIdAsnRead(aip, atp);
       if (aip -> io_failure) {
          goto erret;
       }
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_comments) {
-      ptr -> comments = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_PTRVAL_SLOT, &isError);
-      if (isError && ptr -> comments == NULL) {
-         goto erret;
-      }
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_nrows) {
+   if (atp == PSSM_numRows) {
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
-      ptr -> nrows = av.intvalue;
+      ptr -> numRows = av.intvalue;
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_ncolumns) {
+   if (atp == PSSM_numColumns) {
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
-      ptr -> ncolumns = av.intvalue;
+      ptr -> numColumns = av.intvalue;
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_row_labels) {
-      ptr -> row_labels = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_PTRVAL_SLOT, &isError);
-      if (isError && ptr -> row_labels == NULL) {
+   if (atp == PSSM_rowLabels) {
+      ptr -> rowLabels = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_PTRVAL_SLOT, &isError);
+      if (isError && ptr -> rowLabels == NULL) {
          goto erret;
       }
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_scores) {
-      ptr -> scores = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_INTVAL_SLOT, &isError);
-      if (isError && ptr -> scores == NULL) {
-         goto erret;
-      }
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_score_scale_factor) {
+   if (atp == PSSM_byRow) {
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
-      ptr -> score_scale_factor = av.intvalue;
+      ptr -> byRow = av.boolvalue;
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_posFreqs) {
-      ptr -> posFreqs = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_INTVAL_SLOT, &isError);
-      if (isError && ptr -> posFreqs == NULL) {
-         goto erret;
-      }
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_posFreqs_scale_factor) {
-      if ( AsnReadVal(aip, atp, &av) <= 0) {
-         goto erret;
-      }
-      ptr -> posFreqs_scale_factor = av.intvalue;
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_pseudocounts) {
-      if ( AsnReadVal(aip, atp, &av) <= 0) {
-         goto erret;
-      }
-      ptr -> pseudocounts = av.intvalue;
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_freq_Ratios) {
-      if ( AsnReadVal(aip, atp, &av) <= 0) {
-         goto erret;
-      }
-      ptr -> freq_Ratios = av.intvalue;
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_gapOpen) {
-      if ( AsnReadVal(aip, atp, &av) <= 0) {
-         goto erret;
-      }
-      ptr -> gapOpen = av.intvalue;
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_gapExtend) {
-      if ( AsnReadVal(aip, atp, &av) <= 0) {
-         goto erret;
-      }
-      ptr -> gapExtend = av.intvalue;
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_query) {
+   if (atp == PSSM_query) {
       ptr -> query = SeqEntryAsnRead(aip, atp);
       if (aip -> io_failure) {
          goto erret;
       }
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_rawFreqs) {
-      ptr -> rawFreqs = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_INTVAL_SLOT, &isError);
-      if (isError && ptr -> rawFreqs == NULL) {
+   if (atp == PSSM_intermediateData) {
+      ptr -> intermediateData = PssmIntermediateDataAsnRead(aip, atp);
+      if (aip -> io_failure) {
          goto erret;
       }
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_rawFreqs_scale_factor) {
-      if ( AsnReadVal(aip, atp, &av) <= 0) {
+   if (atp == PSSM_finalData) {
+      ptr -> finalData = PssmFinalDataAsnRead(aip, atp);
+      if (aip -> io_failure) {
          goto erret;
       }
-      ptr -> rawFreqs_scale_factor = av.intvalue;
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_weights) {
-      ptr -> weights = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_INTVAL_SLOT, &isError);
-      if (isError && ptr -> weights == NULL) {
-         goto erret;
-      }
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_weights_scale_factor) {
-      if ( AsnReadVal(aip, atp, &av) <= 0) {
-         goto erret;
-      }
-      ptr -> weights_scale_factor = av.intvalue;
-      atp = AsnReadId(aip,amp, atp);
-   }
-   if (atp == SCORE_MATRIX_byrow) {
-      if ( AsnReadVal(aip, atp, &av) <= 0) {
-         goto erret;
-      }
-      ptr -> byrow = av.boolvalue;
       atp = AsnReadId(aip,amp, atp);
    }
 
@@ -278,7 +200,7 @@ ret:
 
 erret:
    aip -> io_failure = TRUE;
-   ptr = ScoreMatrixFree(ptr);
+   ptr = PssmFree(ptr);
    goto ret;
 }
 
@@ -286,11 +208,11 @@ erret:
 
 /**************************************************
 *
-*    ScoreMatrixAsnWrite()
+*    PssmAsnWrite()
 *
 **************************************************/
 NLM_EXTERN Boolean LIBCALL 
-ScoreMatrixAsnWrite(ScoreMatrixPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
+PssmAsnWrite(PssmPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
 {
    DataVal av;
    AsnTypePtr atp;
@@ -307,7 +229,7 @@ ScoreMatrixAsnWrite(ScoreMatrixPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
       return FALSE;
    }
 
-   atp = AsnLinkType(orig, SCORE_MATRIX);   /* link local tree */
+   atp = AsnLinkType(orig, PSSM);   /* link local tree */
    if (atp == NULL) {
       return FALSE;
    }
@@ -317,46 +239,35 @@ ScoreMatrixAsnWrite(ScoreMatrixPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
       goto erret;
    }
 
-   av.boolvalue = ptr -> is_protein;
-   retval = AsnWrite(aip, SCORE_MATRIX_is_protein,  &av);
+   av.boolvalue = ptr -> isProtein;
+   retval = AsnWrite(aip, PSSM_isProtein,  &av);
    if (ptr -> identifier != NULL) {
-      if ( ! ObjectIdAsnWrite(ptr -> identifier, aip, SCORE_MATRIX_identifier)) {
+      if ( ! ObjectIdAsnWrite(ptr -> identifier, aip, PSSM_identifier)) {
          goto erret;
       }
    }
-   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> comments ,ASNCODE_PTRVAL_SLOT, aip, SCORE_MATRIX_comments, SCORE_MATRIX_comments_E);
-   av.intvalue = ptr -> nrows;
-   retval = AsnWrite(aip, SCORE_MATRIX_nrows,  &av);
-   av.intvalue = ptr -> ncolumns;
-   retval = AsnWrite(aip, SCORE_MATRIX_ncolumns,  &av);
-   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> row_labels ,ASNCODE_PTRVAL_SLOT, aip, SCORE_MATRIX_row_labels, SCORE_MATRIX_row_labels_E);
-   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> scores ,ASNCODE_INTVAL_SLOT, aip, SCORE_MATRIX_scores, SCORE_MATRIX_scores_E);
-   av.intvalue = ptr -> score_scale_factor;
-   retval = AsnWrite(aip, SCORE_MATRIX_score_scale_factor,  &av);
-   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> posFreqs ,ASNCODE_INTVAL_SLOT, aip, SCORE_MATRIX_posFreqs, SCORE_MATRIX_posFreqs_E);
-   av.intvalue = ptr -> posFreqs_scale_factor;
-   retval = AsnWrite(aip, SCORE_MATRIX_posFreqs_scale_factor,  &av);
-   av.intvalue = ptr -> pseudocounts;
-   retval = AsnWrite(aip, SCORE_MATRIX_pseudocounts,  &av);
-   av.intvalue = ptr -> freq_Ratios;
-   retval = AsnWrite(aip, SCORE_MATRIX_freq_Ratios,  &av);
-   av.intvalue = ptr -> gapOpen;
-   retval = AsnWrite(aip, SCORE_MATRIX_gapOpen,  &av);
-   av.intvalue = ptr -> gapExtend;
-   retval = AsnWrite(aip, SCORE_MATRIX_gapExtend,  &av);
+   av.intvalue = ptr -> numRows;
+   retval = AsnWrite(aip, PSSM_numRows,  &av);
+   av.intvalue = ptr -> numColumns;
+   retval = AsnWrite(aip, PSSM_numColumns,  &av);
+   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> rowLabels ,ASNCODE_PTRVAL_SLOT, aip, PSSM_rowLabels, PSSM_rowLabels_E);
+   av.boolvalue = ptr -> byRow;
+   retval = AsnWrite(aip, PSSM_byRow,  &av);
    if (ptr -> query != NULL) {
-      if ( ! SeqEntryAsnWrite(ptr -> query, aip, SCORE_MATRIX_query)) {
+      if ( ! SeqEntryAsnWrite(ptr -> query, aip, PSSM_query)) {
          goto erret;
       }
    }
-   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> rawFreqs ,ASNCODE_INTVAL_SLOT, aip, SCORE_MATRIX_rawFreqs, SCORE_MATRIX_rawFreqs_E);
-   av.intvalue = ptr -> rawFreqs_scale_factor;
-   retval = AsnWrite(aip, SCORE_MATRIX_rawFreqs_scale_factor,  &av);
-   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> weights ,ASNCODE_INTVAL_SLOT, aip, SCORE_MATRIX_weights, SCORE_MATRIX_weights_E);
-   av.intvalue = ptr -> weights_scale_factor;
-   retval = AsnWrite(aip, SCORE_MATRIX_weights_scale_factor,  &av);
-   av.boolvalue = ptr -> byrow;
-   retval = AsnWrite(aip, SCORE_MATRIX_byrow,  &av);
+   if (ptr -> intermediateData != NULL) {
+      if ( ! PssmIntermediateDataAsnWrite(ptr -> intermediateData, aip, PSSM_intermediateData)) {
+         goto erret;
+      }
+   }
+   if (ptr -> finalData != NULL) {
+      if ( ! PssmFinalDataAsnWrite(ptr -> finalData, aip, PSSM_finalData)) {
+         goto erret;
+      }
+   }
    if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
       goto erret;
    }
@@ -371,14 +282,14 @@ erret:
 
 /**************************************************
 *
-*    ScoreMatrixParametersNew()
+*    PssmIntermediateDataNew()
 *
 **************************************************/
 NLM_EXTERN 
-ScoreMatrixParametersPtr LIBCALL
-ScoreMatrixParametersNew(void)
+PssmIntermediateDataPtr LIBCALL
+PssmIntermediateDataNew(void)
 {
-   ScoreMatrixParametersPtr ptr = MemNew((size_t) sizeof(ScoreMatrixParameters));
+   PssmIntermediateDataPtr ptr = MemNew((size_t) sizeof(PssmIntermediateData));
 
    return ptr;
 
@@ -387,37 +298,38 @@ ScoreMatrixParametersNew(void)
 
 /**************************************************
 *
-*    ScoreMatrixParametersFree()
+*    PssmIntermediateDataFree()
 *
 **************************************************/
 NLM_EXTERN 
-ScoreMatrixParametersPtr LIBCALL
-ScoreMatrixParametersFree(ScoreMatrixParametersPtr ptr)
+PssmIntermediateDataPtr LIBCALL
+PssmIntermediateDataFree(PssmIntermediateDataPtr ptr)
 {
 
    if(ptr == NULL) {
       return NULL;
    }
-   ScoreMatrixFree(ptr -> matrix);
-   CoreDefFree(ptr -> constraints);
+   AsnGenericBaseSeqOfFree(ptr -> resFreqsPerPos ,ASNCODE_INTVAL_SLOT);
+   AsnGenericBaseSeqOfFree(ptr -> weightedResFreqsPerPos ,ASNCODE_REALVAL_SLOT);
+   AsnGenericBaseSeqOfFree(ptr -> freqRatios ,ASNCODE_REALVAL_SLOT);
    return MemFree(ptr);
 }
 
 
 /**************************************************
 *
-*    ScoreMatrixParametersAsnRead()
+*    PssmIntermediateDataAsnRead()
 *
 **************************************************/
 NLM_EXTERN 
-ScoreMatrixParametersPtr LIBCALL
-ScoreMatrixParametersAsnRead(AsnIoPtr aip, AsnTypePtr orig)
+PssmIntermediateDataPtr LIBCALL
+PssmIntermediateDataAsnRead(AsnIoPtr aip, AsnTypePtr orig)
 {
    DataVal av;
    AsnTypePtr atp;
    Boolean isError = FALSE;
    AsnReadFunc func;
-   ScoreMatrixParametersPtr ptr;
+   PssmIntermediateDataPtr ptr;
 
    if (! loaded)
    {
@@ -430,17 +342,17 @@ ScoreMatrixParametersAsnRead(AsnIoPtr aip, AsnTypePtr orig)
       return NULL;
    }
 
-   if (orig == NULL) {         /* ScoreMatrixParameters ::= (self contained) */
-      atp = AsnReadId(aip, amp, SCORE_MATRIX_PARAMETERS);
+   if (orig == NULL) {         /* PssmIntermediateData ::= (self contained) */
+      atp = AsnReadId(aip, amp, PSSMINTERMEDIATEDATA);
    } else {
-      atp = AsnLinkType(orig, SCORE_MATRIX_PARAMETERS);
+      atp = AsnLinkType(orig, PSSMINTERMEDIATEDATA);
    }
    /* link in local tree */
    if (atp == NULL) {
       return NULL;
    }
 
-   ptr = ScoreMatrixParametersNew();
+   ptr = PssmIntermediateDataNew();
    if (ptr == NULL) {
       goto erret;
    }
@@ -451,35 +363,379 @@ ScoreMatrixParametersAsnRead(AsnIoPtr aip, AsnTypePtr orig)
    atp = AsnReadId(aip,amp, atp);
    func = NULL;
 
-   if (atp == SCORE_MATRIX_PARAMETERS_matrix) {
-      ptr -> matrix = ScoreMatrixAsnRead(aip, atp);
-      if (aip -> io_failure) {
+   if (atp == PSSMINTERMEDIATEDATA_resFreqsPerPos) {
+      ptr -> resFreqsPerPos = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_INTVAL_SLOT, &isError);
+      if (isError && ptr -> resFreqsPerPos == NULL) {
          goto erret;
       }
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_PARAMETERS_lambda) {
+   if (atp == PSSMINTERMEDIATEDATA_weightedResFreqsPerPos) {
+      ptr -> weightedResFreqsPerPos = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_REALVAL_SLOT, &isError);
+      if (isError && ptr -> weightedResFreqsPerPos == NULL) {
+         goto erret;
+      }
+      atp = AsnReadId(aip,amp, atp);
+   }
+   if (atp == PSSMINTERMEDIATEDATA_freqRatios) {
+      ptr -> freqRatios = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_REALVAL_SLOT, &isError);
+      if (isError && ptr -> freqRatios == NULL) {
+         goto erret;
+      }
+      atp = AsnReadId(aip,amp, atp);
+   }
+
+   if (AsnReadVal(aip, atp, &av) <= 0) {
+      goto erret;
+   }
+   /* end struct */
+
+ret:
+   AsnUnlinkType(orig);       /* unlink local tree */
+   return ptr;
+
+erret:
+   aip -> io_failure = TRUE;
+   ptr = PssmIntermediateDataFree(ptr);
+   goto ret;
+}
+
+
+
+/**************************************************
+*
+*    PssmIntermediateDataAsnWrite()
+*
+**************************************************/
+NLM_EXTERN Boolean LIBCALL 
+PssmIntermediateDataAsnWrite(PssmIntermediateDataPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
+{
+   DataVal av;
+   AsnTypePtr atp;
+   Boolean retval = FALSE;
+
+   if (! loaded)
+   {
+      if (! objscorematAsnLoad()) {
+         return FALSE;
+      }
+   }
+
+   if (aip == NULL) {
+      return FALSE;
+   }
+
+   atp = AsnLinkType(orig, PSSMINTERMEDIATEDATA);   /* link local tree */
+   if (atp == NULL) {
+      return FALSE;
+   }
+
+   if (ptr == NULL) { AsnNullValueMsg(aip, atp); goto erret; }
+   if (! AsnOpenStruct(aip, atp, (Pointer) ptr)) {
+      goto erret;
+   }
+
+   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> resFreqsPerPos ,ASNCODE_INTVAL_SLOT, aip, PSSMINTERMEDIATEDATA_resFreqsPerPos, PSSMINTERMEDIATEDATA_resFreqsPerPos_E);
+   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> weightedResFreqsPerPos ,ASNCODE_REALVAL_SLOT, aip, PSSMINTERMEDIATEDATA_weightedResFreqsPerPos, PSSMINTERMEDIATEDATA_weightedResFreqsPerPos_E);
+   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> freqRatios ,ASNCODE_REALVAL_SLOT, aip, PSSMINTERMEDIATEDATA_freqRatios, PSSMINTERMEDIATEDATA_freqRatios_E);
+   if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
+      goto erret;
+   }
+   retval = TRUE;
+
+erret:
+   AsnUnlinkType(orig);       /* unlink local tree */
+   return retval;
+}
+
+
+
+/**************************************************
+*
+*    PssmFinalDataNew()
+*
+**************************************************/
+NLM_EXTERN 
+PssmFinalDataPtr LIBCALL
+PssmFinalDataNew(void)
+{
+   PssmFinalDataPtr ptr = MemNew((size_t) sizeof(PssmFinalData));
+
+   ptr -> scalingFactor = 1;
+   return ptr;
+
+}
+
+
+/**************************************************
+*
+*    PssmFinalDataFree()
+*
+**************************************************/
+NLM_EXTERN 
+PssmFinalDataPtr LIBCALL
+PssmFinalDataFree(PssmFinalDataPtr ptr)
+{
+
+   if(ptr == NULL) {
+      return NULL;
+   }
+   AsnGenericBaseSeqOfFree(ptr -> scores ,ASNCODE_INTVAL_SLOT);
+   return MemFree(ptr);
+}
+
+
+/**************************************************
+*
+*    PssmFinalDataAsnRead()
+*
+**************************************************/
+NLM_EXTERN 
+PssmFinalDataPtr LIBCALL
+PssmFinalDataAsnRead(AsnIoPtr aip, AsnTypePtr orig)
+{
+   DataVal av;
+   AsnTypePtr atp;
+   Boolean isError = FALSE;
+   AsnReadFunc func;
+   PssmFinalDataPtr ptr;
+
+   if (! loaded)
+   {
+      if (! objscorematAsnLoad()) {
+         return NULL;
+      }
+   }
+
+   if (aip == NULL) {
+      return NULL;
+   }
+
+   if (orig == NULL) {         /* PssmFinalData ::= (self contained) */
+      atp = AsnReadId(aip, amp, PSSMFINALDATA);
+   } else {
+      atp = AsnLinkType(orig, PSSMFINALDATA);
+   }
+   /* link in local tree */
+   if (atp == NULL) {
+      return NULL;
+   }
+
+   ptr = PssmFinalDataNew();
+   if (ptr == NULL) {
+      goto erret;
+   }
+   if (AsnReadVal(aip, atp, &av) <= 0) { /* read the start struct */
+      goto erret;
+   }
+
+   atp = AsnReadId(aip,amp, atp);
+   func = NULL;
+
+   if (atp == PSSMFINALDATA_scores) {
+      ptr -> scores = AsnGenericBaseSeqOfAsnRead(aip, amp, atp, ASNCODE_INTVAL_SLOT, &isError);
+      if (isError && ptr -> scores == NULL) {
+         goto erret;
+      }
+      atp = AsnReadId(aip,amp, atp);
+   }
+   if (atp == PSSMFINALDATA_lambda) {
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
       ptr -> lambda = av.realvalue;
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_PARAMETERS_kappa) {
+   if (atp == PSSMFINALDATA_kappa) {
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
       ptr -> kappa = av.realvalue;
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_PARAMETERS_h) {
+   if (atp == PSSMFINALDATA_h) {
       if ( AsnReadVal(aip, atp, &av) <= 0) {
          goto erret;
       }
       ptr -> h = av.realvalue;
       atp = AsnReadId(aip,amp, atp);
    }
-   if (atp == SCORE_MATRIX_PARAMETERS_constraints) {
+   if (atp == PSSMFINALDATA_scalingFactor) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> scalingFactor = av.intvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
+
+   if (AsnReadVal(aip, atp, &av) <= 0) {
+      goto erret;
+   }
+   /* end struct */
+
+ret:
+   AsnUnlinkType(orig);       /* unlink local tree */
+   return ptr;
+
+erret:
+   aip -> io_failure = TRUE;
+   ptr = PssmFinalDataFree(ptr);
+   goto ret;
+}
+
+
+
+/**************************************************
+*
+*    PssmFinalDataAsnWrite()
+*
+**************************************************/
+NLM_EXTERN Boolean LIBCALL 
+PssmFinalDataAsnWrite(PssmFinalDataPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
+{
+   DataVal av;
+   AsnTypePtr atp;
+   Boolean retval = FALSE;
+
+   if (! loaded)
+   {
+      if (! objscorematAsnLoad()) {
+         return FALSE;
+      }
+   }
+
+   if (aip == NULL) {
+      return FALSE;
+   }
+
+   atp = AsnLinkType(orig, PSSMFINALDATA);   /* link local tree */
+   if (atp == NULL) {
+      return FALSE;
+   }
+
+   if (ptr == NULL) { AsnNullValueMsg(aip, atp); goto erret; }
+   if (! AsnOpenStruct(aip, atp, (Pointer) ptr)) {
+      goto erret;
+   }
+
+   retval = AsnGenericBaseSeqOfAsnWrite(ptr -> scores ,ASNCODE_INTVAL_SLOT, aip, PSSMFINALDATA_scores, PSSMFINALDATA_scores_E);
+   av.realvalue = ptr -> lambda;
+   retval = AsnWrite(aip, PSSMFINALDATA_lambda,  &av);
+   av.realvalue = ptr -> kappa;
+   retval = AsnWrite(aip, PSSMFINALDATA_kappa,  &av);
+   av.realvalue = ptr -> h;
+   retval = AsnWrite(aip, PSSMFINALDATA_h,  &av);
+   av.intvalue = ptr -> scalingFactor;
+   retval = AsnWrite(aip, PSSMFINALDATA_scalingFactor,  &av);
+   if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
+      goto erret;
+   }
+   retval = TRUE;
+
+erret:
+   AsnUnlinkType(orig);       /* unlink local tree */
+   return retval;
+}
+
+
+
+/**************************************************
+*
+*    PssmParametersNew()
+*
+**************************************************/
+NLM_EXTERN 
+PssmParametersPtr LIBCALL
+PssmParametersNew(void)
+{
+   PssmParametersPtr ptr = MemNew((size_t) sizeof(PssmParameters));
+
+   return ptr;
+
+}
+
+
+/**************************************************
+*
+*    PssmParametersFree()
+*
+**************************************************/
+NLM_EXTERN 
+PssmParametersPtr LIBCALL
+PssmParametersFree(PssmParametersPtr ptr)
+{
+
+   if(ptr == NULL) {
+      return NULL;
+   }
+   FormatRpsDbParametersFree(ptr -> rpsdbparams);
+   CoreDefFree(ptr -> constraints);
+   return MemFree(ptr);
+}
+
+
+/**************************************************
+*
+*    PssmParametersAsnRead()
+*
+**************************************************/
+NLM_EXTERN 
+PssmParametersPtr LIBCALL
+PssmParametersAsnRead(AsnIoPtr aip, AsnTypePtr orig)
+{
+   DataVal av;
+   AsnTypePtr atp;
+   Boolean isError = FALSE;
+   AsnReadFunc func;
+   PssmParametersPtr ptr;
+
+   if (! loaded)
+   {
+      if (! objscorematAsnLoad()) {
+         return NULL;
+      }
+   }
+
+   if (aip == NULL) {
+      return NULL;
+   }
+
+   if (orig == NULL) {         /* PssmParameters ::= (self contained) */
+      atp = AsnReadId(aip, amp, PSSMPARAMETERS);
+   } else {
+      atp = AsnLinkType(orig, PSSMPARAMETERS);
+   }
+   /* link in local tree */
+   if (atp == NULL) {
+      return NULL;
+   }
+
+   ptr = PssmParametersNew();
+   if (ptr == NULL) {
+      goto erret;
+   }
+   if (AsnReadVal(aip, atp, &av) <= 0) { /* read the start struct */
+      goto erret;
+   }
+
+   atp = AsnReadId(aip,amp, atp);
+   func = NULL;
+
+   if (atp == PSSMPARAMETERS_pseudocount) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> pseudocount = av.intvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
+   if (atp == PSSMPARAMETERS_rpsdbparams) {
+      ptr -> rpsdbparams = FormatRpsDbParametersAsnRead(aip, atp);
+      if (aip -> io_failure) {
+         goto erret;
+      }
+      atp = AsnReadId(aip,amp, atp);
+   }
+   if (atp == PSSMPARAMETERS_constraints) {
       ptr -> constraints = CoreDefAsnRead(aip, atp);
       if (aip -> io_failure) {
          goto erret;
@@ -498,7 +754,7 @@ ret:
 
 erret:
    aip -> io_failure = TRUE;
-   ptr = ScoreMatrixParametersFree(ptr);
+   ptr = PssmParametersFree(ptr);
    goto ret;
 }
 
@@ -506,11 +762,11 @@ erret:
 
 /**************************************************
 *
-*    ScoreMatrixParametersAsnWrite()
+*    PssmParametersAsnWrite()
 *
 **************************************************/
 NLM_EXTERN Boolean LIBCALL 
-ScoreMatrixParametersAsnWrite(ScoreMatrixParametersPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
+PssmParametersAsnWrite(PssmParametersPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
 {
    DataVal av;
    AsnTypePtr atp;
@@ -527,7 +783,7 @@ ScoreMatrixParametersAsnWrite(ScoreMatrixParametersPtr ptr, AsnIoPtr aip, AsnTyp
       return FALSE;
    }
 
-   atp = AsnLinkType(orig, SCORE_MATRIX_PARAMETERS);   /* link local tree */
+   atp = AsnLinkType(orig, PSSMPARAMETERS);   /* link local tree */
    if (atp == NULL) {
       return FALSE;
    }
@@ -537,19 +793,184 @@ ScoreMatrixParametersAsnWrite(ScoreMatrixParametersPtr ptr, AsnIoPtr aip, AsnTyp
       goto erret;
    }
 
-   if (ptr -> matrix != NULL) {
-      if ( ! ScoreMatrixAsnWrite(ptr -> matrix, aip, SCORE_MATRIX_PARAMETERS_matrix)) {
+   av.intvalue = ptr -> pseudocount;
+   retval = AsnWrite(aip, PSSMPARAMETERS_pseudocount,  &av);
+   if (ptr -> rpsdbparams != NULL) {
+      if ( ! FormatRpsDbParametersAsnWrite(ptr -> rpsdbparams, aip, PSSMPARAMETERS_rpsdbparams)) {
          goto erret;
       }
    }
-   av.realvalue = ptr -> lambda;
-   retval = AsnWrite(aip, SCORE_MATRIX_PARAMETERS_lambda,  &av);
-   av.realvalue = ptr -> kappa;
-   retval = AsnWrite(aip, SCORE_MATRIX_PARAMETERS_kappa,  &av);
-   av.realvalue = ptr -> h;
-   retval = AsnWrite(aip, SCORE_MATRIX_PARAMETERS_h,  &av);
    if (ptr -> constraints != NULL) {
-      if ( ! CoreDefAsnWrite(ptr -> constraints, aip, SCORE_MATRIX_PARAMETERS_constraints)) {
+      if ( ! CoreDefAsnWrite(ptr -> constraints, aip, PSSMPARAMETERS_constraints)) {
+         goto erret;
+      }
+   }
+   if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
+      goto erret;
+   }
+   retval = TRUE;
+
+erret:
+   AsnUnlinkType(orig);       /* unlink local tree */
+   return retval;
+}
+
+
+
+/**************************************************
+*
+*    PssmWithParametersNew()
+*
+**************************************************/
+NLM_EXTERN 
+PssmWithParametersPtr LIBCALL
+PssmWithParametersNew(void)
+{
+   PssmWithParametersPtr ptr = MemNew((size_t) sizeof(PssmWithParameters));
+
+   return ptr;
+
+}
+
+
+/**************************************************
+*
+*    PssmWithParametersFree()
+*
+**************************************************/
+NLM_EXTERN 
+PssmWithParametersPtr LIBCALL
+PssmWithParametersFree(PssmWithParametersPtr ptr)
+{
+
+   if(ptr == NULL) {
+      return NULL;
+   }
+   PssmFree(ptr -> pssm);
+   PssmParametersFree(ptr -> params);
+   return MemFree(ptr);
+}
+
+
+/**************************************************
+*
+*    PssmWithParametersAsnRead()
+*
+**************************************************/
+NLM_EXTERN 
+PssmWithParametersPtr LIBCALL
+PssmWithParametersAsnRead(AsnIoPtr aip, AsnTypePtr orig)
+{
+   DataVal av;
+   AsnTypePtr atp;
+   Boolean isError = FALSE;
+   AsnReadFunc func;
+   PssmWithParametersPtr ptr;
+
+   if (! loaded)
+   {
+      if (! objscorematAsnLoad()) {
+         return NULL;
+      }
+   }
+
+   if (aip == NULL) {
+      return NULL;
+   }
+
+   if (orig == NULL) {         /* PssmWithParameters ::= (self contained) */
+      atp = AsnReadId(aip, amp, PSSMWITHPARAMETERS);
+   } else {
+      atp = AsnLinkType(orig, PSSMWITHPARAMETERS);
+   }
+   /* link in local tree */
+   if (atp == NULL) {
+      return NULL;
+   }
+
+   ptr = PssmWithParametersNew();
+   if (ptr == NULL) {
+      goto erret;
+   }
+   if (AsnReadVal(aip, atp, &av) <= 0) { /* read the start struct */
+      goto erret;
+   }
+
+   atp = AsnReadId(aip,amp, atp);
+   func = NULL;
+
+   if (atp == PSSMWITHPARAMETERS_pssm) {
+      ptr -> pssm = PssmAsnRead(aip, atp);
+      if (aip -> io_failure) {
+         goto erret;
+      }
+      atp = AsnReadId(aip,amp, atp);
+   }
+   if (atp == PSSMWITHPARAMETERS_params) {
+      ptr -> params = PssmParametersAsnRead(aip, atp);
+      if (aip -> io_failure) {
+         goto erret;
+      }
+      atp = AsnReadId(aip,amp, atp);
+   }
+
+   if (AsnReadVal(aip, atp, &av) <= 0) {
+      goto erret;
+   }
+   /* end struct */
+
+ret:
+   AsnUnlinkType(orig);       /* unlink local tree */
+   return ptr;
+
+erret:
+   aip -> io_failure = TRUE;
+   ptr = PssmWithParametersFree(ptr);
+   goto ret;
+}
+
+
+
+/**************************************************
+*
+*    PssmWithParametersAsnWrite()
+*
+**************************************************/
+NLM_EXTERN Boolean LIBCALL 
+PssmWithParametersAsnWrite(PssmWithParametersPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
+{
+   DataVal av;
+   AsnTypePtr atp;
+   Boolean retval = FALSE;
+
+   if (! loaded)
+   {
+      if (! objscorematAsnLoad()) {
+         return FALSE;
+      }
+   }
+
+   if (aip == NULL) {
+      return FALSE;
+   }
+
+   atp = AsnLinkType(orig, PSSMWITHPARAMETERS);   /* link local tree */
+   if (atp == NULL) {
+      return FALSE;
+   }
+
+   if (ptr == NULL) { AsnNullValueMsg(aip, atp); goto erret; }
+   if (! AsnOpenStruct(aip, atp, (Pointer) ptr)) {
+      goto erret;
+   }
+
+   if (ptr -> pssm != NULL) {
+      if ( ! PssmAsnWrite(ptr -> pssm, aip, PSSMWITHPARAMETERS_pssm)) {
+         goto erret;
+      }
+   }
+   if (ptr -> params != NULL) {
+      if ( ! PssmParametersAsnWrite(ptr -> params, aip, PSSMWITHPARAMETERS_params)) {
          goto erret;
       }
    }
@@ -1247,6 +1668,179 @@ CoreDefAsnWrite(CoreDefPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
    retval = AsnWrite(aip, COREDEF_nblocks,  &av);
    AsnGenericUserSeqOfAsnWrite(ptr -> blocks, (AsnWriteFunc) CoreBlockAsnWrite, aip, COREDEF_blocks, COREDEF_blocks_E);
    AsnGenericUserSeqOfAsnWrite(ptr -> loops, (AsnWriteFunc) LoopConstraintAsnWrite, aip, COREDEF_loops, COREDEF_loops_E);
+   if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
+      goto erret;
+   }
+   retval = TRUE;
+
+erret:
+   AsnUnlinkType(orig);       /* unlink local tree */
+   return retval;
+}
+
+
+
+/**************************************************
+*
+*    FormatRpsDbParametersNew()
+*
+**************************************************/
+NLM_EXTERN 
+FormatRpsDbParametersPtr LIBCALL
+FormatRpsDbParametersNew(void)
+{
+   FormatRpsDbParametersPtr ptr = MemNew((size_t) sizeof(FormatRpsDbParameters));
+
+   return ptr;
+
+}
+
+
+/**************************************************
+*
+*    FormatRpsDbParametersFree()
+*
+**************************************************/
+NLM_EXTERN 
+FormatRpsDbParametersPtr LIBCALL
+FormatRpsDbParametersFree(FormatRpsDbParametersPtr ptr)
+{
+
+   if(ptr == NULL) {
+      return NULL;
+   }
+   MemFree(ptr -> matrixName);
+   return MemFree(ptr);
+}
+
+
+/**************************************************
+*
+*    FormatRpsDbParametersAsnRead()
+*
+**************************************************/
+NLM_EXTERN 
+FormatRpsDbParametersPtr LIBCALL
+FormatRpsDbParametersAsnRead(AsnIoPtr aip, AsnTypePtr orig)
+{
+   DataVal av;
+   AsnTypePtr atp;
+   Boolean isError = FALSE;
+   AsnReadFunc func;
+   FormatRpsDbParametersPtr ptr;
+
+   if (! loaded)
+   {
+      if (! objscorematAsnLoad()) {
+         return NULL;
+      }
+   }
+
+   if (aip == NULL) {
+      return NULL;
+   }
+
+   if (orig == NULL) {         /* FormatRpsDbParameters ::= (self contained) */
+      atp = AsnReadId(aip, amp, FORMATRPSDBPARAMETERS);
+   } else {
+      atp = AsnLinkType(orig, FORMATRPSDBPARAMETERS);
+   }
+   /* link in local tree */
+   if (atp == NULL) {
+      return NULL;
+   }
+
+   ptr = FormatRpsDbParametersNew();
+   if (ptr == NULL) {
+      goto erret;
+   }
+   if (AsnReadVal(aip, atp, &av) <= 0) { /* read the start struct */
+      goto erret;
+   }
+
+   atp = AsnReadId(aip,amp, atp);
+   func = NULL;
+
+   if (atp == FORMATRPSDBPARAMETERS_matrixName) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> matrixName = av.ptrvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
+   if (atp == FORMATRPSDBPARAMETERS_gapOpen) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> gapOpen = av.intvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
+   if (atp == FORMATRPSDBPARAMETERS_gapExtend) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> gapExtend = av.intvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
+
+   if (AsnReadVal(aip, atp, &av) <= 0) {
+      goto erret;
+   }
+   /* end struct */
+
+ret:
+   AsnUnlinkType(orig);       /* unlink local tree */
+   return ptr;
+
+erret:
+   aip -> io_failure = TRUE;
+   ptr = FormatRpsDbParametersFree(ptr);
+   goto ret;
+}
+
+
+
+/**************************************************
+*
+*    FormatRpsDbParametersAsnWrite()
+*
+**************************************************/
+NLM_EXTERN Boolean LIBCALL 
+FormatRpsDbParametersAsnWrite(FormatRpsDbParametersPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
+{
+   DataVal av;
+   AsnTypePtr atp;
+   Boolean retval = FALSE;
+
+   if (! loaded)
+   {
+      if (! objscorematAsnLoad()) {
+         return FALSE;
+      }
+   }
+
+   if (aip == NULL) {
+      return FALSE;
+   }
+
+   atp = AsnLinkType(orig, FORMATRPSDBPARAMETERS);   /* link local tree */
+   if (atp == NULL) {
+      return FALSE;
+   }
+
+   if (ptr == NULL) { AsnNullValueMsg(aip, atp); goto erret; }
+   if (! AsnOpenStruct(aip, atp, (Pointer) ptr)) {
+      goto erret;
+   }
+
+   if (ptr -> matrixName != NULL) {
+      av.ptrvalue = ptr -> matrixName;
+      retval = AsnWrite(aip, FORMATRPSDBPARAMETERS_matrixName,  &av);
+   }
+   av.intvalue = ptr -> gapOpen;
+   retval = AsnWrite(aip, FORMATRPSDBPARAMETERS_gapOpen,  &av);
+   av.intvalue = ptr -> gapExtend;
+   retval = AsnWrite(aip, FORMATRPSDBPARAMETERS_gapExtend,  &av);
    if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
       goto erret;
    }

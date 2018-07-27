@@ -1,1 +1,0 @@
-../asnstat/asnmedli.h

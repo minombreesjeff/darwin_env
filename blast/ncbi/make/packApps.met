@@ -16,8 +16,8 @@ with timeout of 600 seconds
 			end if
 		end repeat
 		repeat with f in pApps2Pack
-			if not (exists file (gProjectsDir & f)) then
-				error "Carbon Application " & (gProjectsDir & f) & return & " does not exist."
+			if not (exists file (gProjectsDir & f & "OS9")) then
+				error "Carbon Application " & (gProjectsDir & f & "OS9") & return & " does not exist."
 			end if
 			if not (exists file (gProjectsDir & f & "OSX.app")) then
 				error "Mach-O Application " & (gProjectsDir & f & "OSX.app") & return & " does not exist."
@@ -63,7 +63,7 @@ with timeout of 600 seconds
 		duplicate file (gDistribRoot & "doc:sequin.htm") to gArchiveFolder
 		
 		repeat with ap in pApps2Pack
-			move file (gProjectsDir & ap) to gArchiveFolder
+			move file (gProjectsDir & ap & "OS9") to gArchiveFolder
 			move file (gProjectsDir & ap & "OSX.app") to gArchiveFolder
 		end repeat
 		
@@ -132,12 +132,14 @@ on MWRootDir()
 		gStartupDisk & "Applications (Mac OS 9):", gHomeDir, gHomeDir & "Applications:", Â
 		gHomeDir & "Applications:", gHomeDir & "AppsLocal (Mac OS 9):"}
 	repeat with mwVersion from 8 to 9
-		set dirName to "Metrowerks CodeWarrior " & mwVersion & ".0"
-		repeat with mwLoc in mwLocations
-			try
-				set mwRoot to ResolveAlias(mwLoc & dirName)
-				return mwRoot
-			end try
+		repeat with mwSubVersion from 0 to 5
+			set dirName to "Metrowerks CodeWarrior " & mwVersion & "." & mwSubVersion
+			repeat with mwLoc in mwLocations
+				try
+					set mwRoot to ResolveAlias(mwLoc & dirName)
+					return mwRoot
+				end try
+			end repeat
 		end repeat
 	end repeat
 	

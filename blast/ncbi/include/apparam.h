@@ -1,1 +1,0 @@
-../desktop/apparam.h

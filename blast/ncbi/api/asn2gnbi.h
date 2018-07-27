@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   12/30/03
 *
-* $Revision: 1.4 $
+* $Revision: 1.29 $
 *
 * File Description:  New GenBank flatfile generator, internal header
 *
@@ -42,6 +42,7 @@
 #define _ASN2NGNBI_
 
 #include <asn2gnbp.h>
+#include <explore.h>
 
 #undef NLM_EXTERN
 #ifdef NLM_IMPORT
@@ -93,6 +94,7 @@ typedef struct asn2gbflags {
   Boolean             goQualsToNote;
   Boolean             geneSynsToNote;
   Boolean             selenocysteineToNote;
+  Boolean             extraProductsToNote;
   Boolean             forGbRelease;
 } Asn2gbFlags, PNTR Asn2gbFlagsPtr;
 
@@ -100,7 +102,6 @@ typedef struct asn2gbflags {
 
 typedef struct int_Asn2gbSect {
   Asn2gbSect  asp;
-  SeqPortPtr  spp;
 } IntAsn2gbSect, PNTR IntAsn2gbSectPtr;
 
 /* string structure */
@@ -118,28 +119,68 @@ typedef struct stringitem {
 /* internal asn2gbjob structure has fields on top of Asn2gbJob fields */
 
 typedef struct int_asn2gb_job {
-  Asn2gbJob      ajp;
-  FmtType        format;
-  ModType        mode;
-  Asn2gbFlags    flags;
-  Boolean        showFarTransl;
-  Boolean        transIfNoProd;
-  Boolean        alwaysTranslCds;
-  Boolean        showTranscript;
-  Boolean        showPeptide;
-  Boolean        transientSeqPort;
-  Boolean        masterStyle;
-  Boolean        newSourceOrg;
-  Boolean        produceInsdSeq;
-  ValNodePtr     lockedBspList;
-  Boolean        relModeError;
-  Boolean        skipProts;
-  Boolean        skipMrnas;
-  IndxPtr        index;
-  GBSeqPtr       gbseq;
-  StringItemPtr  pool;
-  Boolean        www;
+  Asn2gbJob       ajp;
+  FmtType         format;
+  ModType         mode;
+  Asn2gbFlags     flags;
+  Boolean         showFarTransl;
+  Boolean         transIfNoProd;
+  Boolean         alwaysTranslCds;
+  Boolean         showTranscript;
+  Boolean         showPeptide;
+  Boolean         masterStyle;
+  Boolean         newSourceOrg;
+  Boolean         produceInsdSeq;
+  Boolean         refseqConventions;
+  ValNodePtr      lockedBspList;
+  ValNodePtr      gapvnp;
+  ValNodePtr      remotevnp;
+  Asn2gbLockFunc  remotelock;
+  Asn2gbFreeFunc  remotefree;
+  Pointer         remotedata;
+  Boolean         relModeError;
+  Boolean         skipProts;
+  Boolean         skipMrnas;
+  IndxPtr         index;
+  GBSeqPtr        gbseq;
+  AsnIoPtr        aip;
+  AsnTypePtr      atp;
+  StringItemPtr   pool;
+  Boolean         www;
 } IntAsn2gbJob, PNTR IntAsn2gbJobPtr;
+
+/* array for assigning biosource and feature data fields to qualifiers */
+/* should be allocated to MAX (ASN2GNBK_TOTAL_SOURCE, ASN2GNBK_TOTAL_FEATUR) */
+
+typedef union qualval {
+  CharPtr        str;
+  Boolean        ble;
+  Int4           num;
+  ValNodePtr     vnp;
+  GBQualPtr      gbq;
+  OrgModPtr      omp;
+  SubSourcePtr   ssp;
+  CodeBreakPtr   cbp;
+  SeqLocPtr      slp;
+  SeqIdPtr       sip;
+  tRNAPtr        trp;
+  UserObjectPtr  uop;
+  UserFieldPtr   ufp;
+} QualVal, PNTR QualValPtr;
+
+/* structure passed to individual paragraph format functions */
+
+typedef struct asn2gbformat {
+  IntAsn2gbJobPtr  ajp;
+  Asn2gbSectPtr    asp;
+  QualValPtr       qvp;
+  FmtType          format;
+  Asn2gbWriteFunc  ffwrite;
+  Pointer          userdata;
+  FILE             *fp;
+  AsnIoPtr         aip;
+  AsnTypePtr       atp;
+} Asn2gbFormat, PNTR Asn2gbFormatPtr;
 
 /* structure for storing working parameters while building asn2gb_job structure */
 
@@ -166,6 +207,10 @@ typedef struct asn2gbwork {
 
   Int4             currsection;
 
+  /* set if doing immediate write at time of creation for web speed */
+
+  Asn2gbFormatPtr  afp;
+
   /* section fields needed for populating blocks */
 
   Asn2gbSectPtr    asp;
@@ -185,6 +230,7 @@ typedef struct asn2gbwork {
   Boolean          contig;
   Boolean          showconfeats;
   Boolean          showconsource;
+  Boolean          smartconfeats;
 
   Boolean          onlyNearFeats;
   Boolean          farFeatsSuppress;
@@ -206,9 +252,14 @@ typedef struct asn2gbwork {
 
   Boolean          hideGeneRIFs;
   Boolean          onlyGeneRIFs;
-  Boolean          latestGeneRIFs;
+  Boolean          onlyReviewPubs;
+  Boolean          newestPubs;
+  Boolean          oldestPubs;
 
   Boolean          showRefs;
+  Boolean          hideGaps;
+  Boolean          hideSources;
+  Boolean          hideSequence;
 
   Boolean          isGPS;
   Boolean          copyGpsCdsUp;
@@ -229,39 +280,8 @@ typedef struct asn2gbwork {
   SeqSubmitPtr     ssp;
   Boolean          hup;
 
-  Boolean          stream;
-
   Boolean          failed;
 } Asn2gbWork, PNTR Asn2gbWorkPtr;
-
-/* array for assigning biosource and feature data fields to qualifiers */
-/* should be allocated to MAX (ASN2GNBK_TOTAL_SOURCE, ASN2GNBK_TOTAL_FEATUR) */
-
-typedef union qualval {
-  CharPtr        str;
-  Boolean        ble;
-  Int4           num;
-  ValNodePtr     vnp;
-  GBQualPtr      gbq;
-  OrgModPtr      omp;
-  SubSourcePtr   ssp;
-  CodeBreakPtr   cbp;
-  SeqLocPtr      slp;
-  SeqIdPtr       sip;
-  tRNAPtr        trp;
-  UserObjectPtr  uop;
-  UserFieldPtr   ufp;
-} QualVal, PNTR QualValPtr;
-
-/* structure passed to individual paragraph format functions */
-
-typedef struct asn2gbformat {
-  IntAsn2gbJobPtr ajp;
-  Asn2gbSectPtr   asp;
-  QualValPtr      qvp;
-
-  FmtType         format;
-} Asn2gbFormat, PNTR Asn2gbFormatPtr;
 
 
 /* Seq-hist replacedBy is preformatted into string field, */
@@ -350,6 +370,7 @@ typedef enum {
   Qual_class_label,
   Qual_class_number,
   Qual_class_paren,
+  Qual_class_usedin,
   Qual_class_region,
   Qual_class_replace,
   Qual_class_consplice,
@@ -363,6 +384,7 @@ typedef enum {
   Qual_class_code_break,
   Qual_class_anti_codon,
   Qual_class_codon,
+  Qual_class_compare,
   Qual_class_method,
   Qual_class_pubset,
   Qual_class_db_xref,
@@ -405,6 +427,8 @@ typedef enum {
   SCQUAL_citation,
   SCQUAL_clone,
   SCQUAL_clone_lib,
+  SCQUAL_collected_by,
+  SCQUAL_collection_date,
   SCQUAL_common,
   SCQUAL_common_name,
   SCQUAL_country,
@@ -421,6 +445,8 @@ typedef enum {
   SCQUAL_forma,
   SCQUAL_forma_specialis,
   SCQUAL_frequency,
+  SCQUAL_fwd_primer_name,
+  SCQUAL_fwd_primer_seq,
   SCQUAL_gb_acronym,
   SCQUAL_gb_anamorph,
   SCQUAL_gb_synonym,
@@ -428,11 +454,13 @@ typedef enum {
   SCQUAL_germline,
   SCQUAL_group,
   SCQUAL_haplotype,
+  SCQUAL_identified_by,
   SCQUAL_ins_seq_name,
   SCQUAL_isolate,
   SCQUAL_isolation_source,
   SCQUAL_lab_host,
   SCQUAL_label,
+  SCQUAL_lat_lon,
   SCQUAL_macronuclear,
   SCQUAL_map,
   SCQUAL_mol_type,
@@ -447,6 +475,8 @@ typedef enum {
   SCQUAL_plastid_name,
   SCQUAL_pop_variant,
   SCQUAL_rearranged,
+  SCQUAL_rev_primer_name,
+  SCQUAL_rev_primer_seq,
   SCQUAL_segment,
   SCQUAL_seqfeat_note,
   SCQUAL_sequenced_mol,
@@ -491,6 +521,7 @@ typedef enum {
   FTQUAL_citation,
   FTQUAL_clone,
   FTQUAL_coded_by,
+  FTQUAL_compare,
   FTQUAL_codon,
   FTQUAL_codon_start,
   FTQUAL_cons_splice,
@@ -499,9 +530,11 @@ typedef enum {
   FTQUAL_direction,
   FTQUAL_EC_number,
   FTQUAL_encodes,
+  FTQUAL_estimated_length,
   FTQUAL_evidence,
   FTQUAL_exception,
   FTQUAL_exception_note,
+  FTQUAL_extra_products,
   FTQUAL_figure,
   FTQUAL_frequency,
   FTQUAL_function,
@@ -527,6 +560,7 @@ typedef enum {
   FTQUAL_modelev,
   FTQUAL_note,
   FTQUAL_number,
+  FTQUAL_old_locus_tag,
   FTQUAL_operon,
   FTQUAL_organism,
   FTQUAL_partial,
@@ -590,6 +624,8 @@ NLM_EXTERN Char link_tax [MAX_WWWBUF];
 NLM_EXTERN Char link_muid [MAX_WWWBUF];
 NLM_EXTERN Char link_code [MAX_WWWBUF];
 NLM_EXTERN Char link_encode [MAX_WWWBUF];
+NLM_EXTERN Char link_go [MAX_WWWBUF];
+NLM_EXTERN Char link_sp [MAX_WWWBUF];
 
 NLM_EXTERN void FF_www_db_xref(
   IntAsn2gbJobPtr ajp,
@@ -609,7 +645,7 @@ typedef struct sourcequal {
 
 NLM_EXTERN SourceQual asn2gnbk_source_quals [ASN2GNBK_TOTAL_SOURCE];
 
-NLM_EXTERN SourceType subSourceToSourceIdx [30];
+NLM_EXTERN SourceType subSourceToSourceIdx [38];
 
 NLM_EXTERN void DoOneSection (
   BioseqPtr target,
@@ -933,15 +969,13 @@ NLM_EXTERN void AddContigBlock (
   Asn2gbWorkPtr awp
 );
 NLM_EXTERN void AddBasecountBlock (
-  Asn2gbWorkPtr awp,
-  CharPtr bases
+  Asn2gbWorkPtr awp
 );
 NLM_EXTERN void AddOriginBlock (
   Asn2gbWorkPtr awp
 );
 NLM_EXTERN void AddSequenceBlock (
-  Asn2gbWorkPtr awp,
-  CharPtr bases
+  Asn2gbWorkPtr awp
 );
 NLM_EXTERN void AddSlashBlock (
   Asn2gbWorkPtr awp
@@ -964,6 +998,10 @@ NLM_EXTERN CharPtr FormatReferenceBlock (
   BaseBlockPtr bbp
 );
 NLM_EXTERN CharPtr FormatCommentBlock (
+  Asn2gbFormatPtr afp,
+  BaseBlockPtr bbp
+);
+NLM_EXTERN CharPtr FormatFeatHeaderBlock (
   Asn2gbFormatPtr afp,
   BaseBlockPtr bbp
 );
@@ -992,6 +1030,34 @@ NLM_EXTERN CharPtr FormatSlashBlock (
   BaseBlockPtr bbp
 );
 
+NLM_EXTERN void PrintFtableIntervals (
+  ValNodePtr PNTR head,
+  BioseqPtr target,
+  SeqLocPtr location,
+  CharPtr label
+);
+NLM_EXTERN void PrintFtableLocAndQuals (
+  IntAsn2gbJobPtr ajp,
+  ValNodePtr PNTR head,
+  BioseqPtr target,
+  SeqFeatPtr sfp,
+  SeqMgrFeatContextPtr context
+);
+NLM_EXTERN CharPtr FormatFtableSourceFeatBlock (
+  BaseBlockPtr bbp,
+  BioseqPtr target
+);
+
+NLM_EXTERN void DoImmediateRemoteFeatureFormat (
+  Asn2gbFormatPtr afp,
+  BaseBlockPtr bbp,
+  SeqFeatPtr sfp
+);
+
+NLM_EXTERN void DoImmediateFormat (
+  Asn2gbFormatPtr afp,
+  BaseBlockPtr bbp
+);
 
 
 #ifdef __cplusplus

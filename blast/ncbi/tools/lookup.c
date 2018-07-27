@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: lookup.c,v 6.56 2003/05/30 17:25:36 coulouri Exp $";
+static char const rcsid[] = "$Id: lookup.c,v 6.58 2004/11/15 22:28:41 kans Exp $";
 
 /*
 * ===========================================================================
@@ -53,7 +53,7 @@ Detailed Contents:
 *
 * Version Creation Date:   10/26/95
 *
-* $Revision: 6.56 $
+* $Revision: 6.58 $
 *
 * File Description: 
 *       Functions to store "words" from a query and perform lookups against
@@ -69,6 +69,13 @@ Detailed Contents:
 *
 * RCS Modification History:
 * $Log: lookup.c,v $
+* Revision 6.58  2004/11/15 22:28:41  kans
+* in MegaBlastBuildLookupTable, changed total_len (et al.) to Int8 and total_num (et al.) to Int4, from unsigned, which conflicted with pointer arguments to readdb_get_totals_ex
+*
+* Revision 6.57  2004/11/15 21:35:35  coulouri
+*
+* Manually overriding the effective database length can cause av_len to overflow an Int4; use Uint8 instead.
+*
 * Revision 6.56  2003/05/30 17:25:36  coulouri
 * add rcsid
 *
@@ -848,8 +855,8 @@ BLAST_WordFinderNew (Int2 alphabet_size, Int2 wordsize, Int2 compression_ratio, 
 #if BLAST_ALTIVEC
 				Int4	lookup_wordsize = (wordsize-3)/compression_ratio;
 #endif				
-				
-				
+
+
                 reduced_wordsize = (Int2) MIN(2, ((wordsize-3)/compression_ratio));
 
 #if BLAST_ALTIVEC
@@ -858,16 +865,16 @@ BLAST_WordFinderNew (Int2 alphabet_size, Int2 wordsize, Int2 compression_ratio, 
 					lookup_wordsize = reduced_wordsize;
 				}
 #endif								
-				
+
                 wfp->lookup = lookup_new(alphabet_size, (Int2) ((wordsize-3)/compression_ratio), (Int2) reduced_wordsize);
+
 #if BLAST_ALTIVEC                
 				if (wordsize < 8 && wordsize > 4) {
 	                wfp->lookup->true_wordsize_bits = wordsize;
 	            }
 #endif                
-				
-            
-			} else {
+
+            } else {
                 reduced_wordsize = wordsize/compression_ratio;
                 wfp->lookup = lookup_new(alphabet_size, (wordsize/compression_ratio), (Int2) reduced_wordsize);
             }
@@ -1279,8 +1286,8 @@ MegaBlastBuildLookupTable(BlastSearchBlkPtr search)
       otherwise will use diagonal array (ewp and ewp_params structures) */
    if (query_length > MAX_DIAG_ARRAY || 
         search->pbp->mb_params->word_weight >= 11) {
-      Int8 total_len, av_search_space;
-      Int4 total_num, av_len, stack_size, num_stacks;
+      Int8 total_len=0, av_search_space=0, av_len=0;
+      Int4 total_num=0, stack_size=0, num_stacks=0;
       if (search->rdfp) {
          if (search->dblen > 0 && search->dbseq_num > 0) {
             total_len = search->dblen;

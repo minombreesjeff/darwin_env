@@ -1,4 +1,4 @@
-/*  $Id: ncbi_dispd.c,v 6.61 2003/10/14 14:40:07 lavr Exp $
+/*  $Id: ncbi_dispd.c,v 6.65 2005/04/25 18:46:13 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -42,6 +42,10 @@
 #include <stdlib.h>
 #include <time.h>
 
+#if 0/*defined(_DEBUG) && !defined(NDEBUG)*/
+#  define SERV_DISPD_DEBUG 1
+#endif /*_DEBUG && !NDEBUG*/
+
 /* Lower bound of up-to-date/out-of-date ratio */
 #define SERV_DISPD_STALE_RATIO_OK  0.8
 /* Default rate increase if svc runs locally */
@@ -55,7 +59,7 @@ static FDISP_MessageHook s_MessageHook = 0;
 
 #ifdef __cplusplus
 extern "C" {
-#endif
+#endif /*__cplusplus*/
     static void        s_Reset      (SERV_ITER);
     static SSERV_Info* s_GetNextInfo(SERV_ITER, HOST_INFO*);
     static int/*bool*/ s_Update     (SERV_ITER, TNCBI_Time, const char*);
@@ -66,7 +70,7 @@ extern "C" {
     };
 #ifdef __cplusplus
 } /* extern "C" */
-#endif
+#endif /*__cplusplus*/
 
 
 static int s_RandomSeed = 0;
@@ -174,9 +178,10 @@ static int/*bool*/ s_Resolve(SERV_ITER iter)
     if (*net_info->client_host && !strchr(net_info->client_host, '.') &&
         (ip = SOCK_gethostbyname(net_info->client_host)) != 0 &&
         SOCK_ntoa(ip, addr, sizeof(addr)) == 0) {
-        if ((s= malloc(strlen(net_info->client_host) + strlen(addr) + 3)) != 0)
+        if ((s = (char*) malloc(strlen(net_info->client_host) +
+                                strlen(addr) + 3)) != 0) {
             sprintf(s, "%s(%s)", net_info->client_host, addr);
-        else
+        } else
             s = net_info->client_host;
     } else
         s = net_info->client_host;
@@ -209,7 +214,7 @@ static int/*bool*/ s_Resolve(SERV_ITER iter)
              " (C++ Toolkit)"
 #else
              " (C Toolkit)"
-#endif
+#endif /*NCBI_CXX_TOOLKIT*/
              "\r\n");
         data->disp_fail = 0;
         /* All the rest in the net_info structure is fine with us */
@@ -264,7 +269,7 @@ static int/*bool*/ s_Update(SERV_ITER iter, TNCBI_Time now, const char* text)
             p++;
         if (data->net_info->debug_printout)
             CORE_LOGF(eLOG_Warning, ("[DISPATCHER]  %s", p));
-#endif
+#endif /*_DEBUG && !NDEBUG*/
         data->disp_fail = 1;
         return 1/*updated*/;
     } else if (len >= sizeof(HTTP_DISP_MESSAGE) &&
@@ -334,11 +339,13 @@ static SSERV_Info* s_GetNextInfo(SERV_ITER iter, HOST_INFO* host_info)
         status = info->rate;
         assert(status != 0.0);
 
-        if (info->host == iter->preferred_host) {
-            if (info->coef <= 0.0 || iter->preference) {
+        if (iter->preferred_host == info->host  ||
+            (!iter->preferred_host  &&
+             info->locl  &&  info->coef < 0.0)) {
+            if (iter->preference  ||  info->coef <= 0.0) {
                 status *= SERV_DISPD_LOCAL_SVC_BONUS;
                 if (access < status &&
-                    (iter->preference || info->coef < 0.0)) {
+                    (iter->preference  ||  info->coef < 0.0)) {
                     access =  status;
                     point  =  total + status; /* Latch this local server */
                     p      = -info->coef;
@@ -351,19 +358,35 @@ static SSERV_Info* s_GetNextInfo(SERV_ITER iter, HOST_INFO* host_info)
         data->s_node[i].status = total;
     }
 
-    if (point > 0.0 && iter->preference) {
+    if (point > 0.0  &&  iter->preference) {
         if (total != access) {
             p = SERV_Preference(iter->preference, access/total, data->n_node);
+#ifdef SERV_DISPD_DEBUG
+            CORE_LOGF(eLOG_Note, ("(P = %lf, A = %lf, T = %lf, N = %d)"
+                                  " -> Pref = %lf", iter->preference,
+                                  access, total, (int) data->n_node, p));
+#endif /*SERV_DISPD_DEBUG*/
             status = total*p;
             p = total*(1.0 - p)/(total - access);
             for (i = 0; i < data->n_node; i++) {
                 data->s_node[i].status *= p;
-                if (p*point <= data->s_node[i].status)
+                if (p*point <= data->s_node[i].status) 
                     data->s_node[i].status += status - p*access;
             }
+#ifdef SERV_DISPD_DEBUG
+            for (i = 0; i < data->n_node; i++) {
+                char addr[16];
+                SOCK_ntoa(data->s_node[i].info->host, addr, sizeof(addr));
+                status = data->s_node[i].status -
+                    (i ? data->s_node[i-1].status : 0.0);
+                CORE_LOGF(eLOG_Note, ("%s %lf %.2lf%%", addr,
+                                      status, status/total*100.0));
+            }
+#endif /*SERV_DISPD_DEBUG*/
         }
         point = -1.0;
     }
+
     /* We take pre-chosen local server only if its status is not less than
        p% of the average remaining status; otherwise, we ignore the server,
        and apply the generic procedure by seeding a random point. */
@@ -431,9 +454,9 @@ const SSERV_VTable* SERV_DISPD_Open(SERV_ITER iter,
         srand(s_RandomSeed);
     }
     data->net_info = ConnNetInfo_Clone(net_info); /*called with non-NULL*/
-    if (iter->type & fSERV_StatelessOnly)
+    if (iter->types & fSERV_StatelessOnly)
         data->net_info->stateless = 1/*true*/;
-    if (iter->type & fSERV_Firewall)
+    if (iter->types & fSERV_Firewall)
         data->net_info->firewall = 1/*true*/;
     iter->data = data;
 
@@ -466,6 +489,18 @@ void DISP_SetMessageHook(FDISP_MessageHook hook)
 /*
  * --------------------------------------------------------------------------
  * $Log: ncbi_dispd.c,v $
+ * Revision 6.65  2005/04/25 18:46:13  lavr
+ * Made parallel with ncbi_lbsmd.c
+ *
+ * Revision 6.64  2005/03/16 20:15:25  lavr
+ * Allow local B services to have a preference
+ *
+ * Revision 6.63  2005/01/27 19:00:05  lavr
+ * Explicit cast of malloc()ed memory
+ *
+ * Revision 6.62  2004/08/19 15:48:15  lavr
+ * SERV_ITER::type renamed into SERV_ITER::types to reflect its bitmask nature
+ *
  * Revision 6.61  2003/10/14 14:40:07  lavr
  * Fix to avoid resolving empty client's host name
  *

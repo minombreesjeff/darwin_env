@@ -1,0 +1,87 @@
+GENE2XML CONVERTER PROGRAM
+
+gene2xml is a stand-alone program that converts Entrez Gene ASN.1 into XML.
+It is available for several computer platforms (Alpha, Linux, Macintosh,
+Solaris, and Windows) and is distributed in the asn1-converters area of the
+NCBI public ftp site. From asn1-converters, navigate into by_program and
+then gene2xml, and download and extract the appropriate file.
+
+Entrez Gene data are stored as compressed binary Entrezgene-Set ASN.1 files
+on the NCBI ftp site, and have the suffix .ags.gz. These are several-fold
+smaller than compressed XML files, resulting in a significant savings of
+disk storage and network bandwidth. Normal processing by gene2xml produces
+text XML files with the same name but with .xgs as the suffix.
+
+The command-line arguments to gene2xml are described below.
+
+  -p  Path to Files [String]  Optional
+
+Use -p if you want to process a entire directory of files. In this case,
+gene2xml ignores the -i and -o arguments. Otherwise it takes -a as the
+single input file, regardless of suffix.
+
+  -r  Path for Results [String]  Optional
+
+If -p is given but no -r results path is provided, results are written in
+the same directory as the input file. The -p argument recursively explores
+any subdirectories, so there can be multiple places where output is written.
+
+  -i  Single Input File [File In]  Optional
+    default = stdin
+
+  -o  Single Output File [File Out]  Optional
+    default = stdout
+
+If -p is not given, -i is used for the input file, and -o is used for the
+output file. Suffix conventions are ignored in this case.
+
+  -b  File is Binary [T/F]  Optional
+    default = F
+
+  -c  File is Compressed [T/F]  Optional
+    default = F
+
+On UNIX platforms you can decompress .ags.gz files on-the-fly by using both
+-b and -c. On the PC you will need to manually decompress into .ags files
+and then only use the -b flag.
+
+  -t  Taxon ID to Filter [Integer]  Optional
+    default = 0
+
+If you want to extract only records for a particular organism, pass the
+NCBI taxon database number with the -t argument.  For example
+
+  gene2xml -i All_Mammalia.ags.gz -b -c -t 9685 -o cats.xgs
+
+will only send gene records for cats (taxonomy ID 9685) to the file
+cats.xgs.
+
+  -l  Log Processing [T/F]  Optional
+    default = F
+
+When you are processing an entire directory of files, passing -l on the
+command-line causes gene2xml to print the current file name as it
+progresses through the directory.
+
+The following arguments, -x, -y, and -z, are normally not used, and
+gene2xml will default to writing Entrezgene-Set XML, which is the normal
+situation.
+
+  -x  Extract .ags -> text .agc [T/F]  Optional
+    default = F
+
+To accommodate existing programs, the -x argument will convert .ags files
+to the catenated Entrezgene text ASN.1 files that were previously
+distributed.
+
+  -y  Combine .agc -> text .ags (for testing) [T/F]  Optional
+    default = F
+
+  -z  Combine .agc -> binary .ags, then gzip [T/F]  Optional
+    default = F
+
+NCBI uses gene2xml with the -y or -z arguments to process internal data
+into the compressed binary Entrezgene-Set ASN.1 files that are placed on
+the NCBI ftp site. It is not expected that anyone outside of NCBI would use
+these arguments.
+

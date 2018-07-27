@@ -1,0 +1,255 @@
+.sidebar li {color: #ffccff;}
+.sidebar { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: White; }
+A.sidebar:link { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: White; }
+A.sidebar:visited { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: White; }
+A.sidebar:active { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: #b0ffff; }
+A.sidebar:hover { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: Yellow; }
+
+/* %%% Added by mj */
+.formtop {
+padding: 1em 1em 0.5em 0.5em;
+}
+
+#topform { 
+  padding: 5px;
+  background-color: #CAE1FF;
+  width: 100%;
+}
+
+#catname { 
+  display: block;
+  color: #06c;
+  font-family: Verdana, Arial, Sans-serif;
+  font-weight: bold;
+  font-size: 12pt;
+  padding: .1in .1in 0in .25in;
+  background-color: #CAE1FF;
+  font-size: 0.8em;
+}
+
+.odd {
+  background-color: #eeeee0;
+}
+
+.even { 
+  background-color #fff;
+}
+
+#catname a { 
+  color: #0000ff;
+}
+
+#fils, #cats {
+  background-color: #eeeee0;
+  margin: 0em 1em 1em 1em;
+}
+
+#cathead, #filhead {
+  color: #9cf;
+  background-color: #06c;
+  font-family: Verdana, Arial, Sans-serif;
+  font-size: 12pt;
+  font-style: bold;
+  padding: 0px 3px 3px 3px;
+  margin: .25em 1em 0em 1em;
+}
+
+#cats .cat-even, #fils .fil-even { 
+  padding: .25em .25em .25em 1em;
+  font-family: Verdana, Arial, Sans-serif;
+  font-size: 10pt;
+  background-color: #fff;
+}
+
+#cats .cat-odd, #fils .fil-odd { 
+  padding: .25em .25em .25em 1em;
+  font-family: Verdana, Arial, Sans-serif;
+  font-size: 10pt;
+  background-color: #eeee0;
+}
+
+/* This is an item that expands to fill the entire
+   view except for the navbar */
+div.mainview {
+  margin: 1em;
+}
+
+/* For "checkall" box on page for single category */
+.checkall {
+  font-size: .8em;
+}
+
+.filtertable { 
+  font-family: Verdana, Arial, Sans-serif;
+  font-size: .75em;
+ }
+
+.filtertable tr th {
+  font-family: Verdana, Arial, Sans-serif;
+  font-size: 8pt;
+  font-weight: bold;
+  color: #369;
+  text-align: center;
+  vertical-align: middle;
+  background-color: #9cf;
+  padding: 2px;
+}
+
+.filtertable tr th.col0 { 
+  width: 3em;
+}
+.filtertable tr th.col1 { 
+  width: 3em;
+}
+.filtertable tr th.col2 { 
+  width: 100%;
+}
+
+.filtertable tr td { 
+  padding: 3px 0px;
+ }
+
+.filtertable tr td.col0 { 
+  width: 3em;
+  text-align: center;
+}
+
+.filtertable tr td.col1 { 
+  text-align: center;
+  width: 3em;
+}
+
+.filtertable tr.even { 
+  background-color: white;
+}
+
+
+tr.selectall { 
+  background-color: #def;
+}
+
+tr.selectall td {
+  padding: 4px 0;
+  border-bottom: 2px solid #69c;
+  border-top: 2px solid #69c;
+}
+
+tr td em {
+  font-weight: bold;
+  font-style: normal;
+}
+
+tr.selectall td.col0 { 
+  border-left: 2px solid #69c;
+}
+tr.selectall td.col2 { 
+  border-right: 2px solid #69c;
+}
+
+#tablabel {
+padding: 0.5em;
+font-family: Verdana, Arial, Sans-serif;
+font-size: .80em;
+background-color: #CAE1FF;
+clear: both;
+}
+
+#cats #subcats {
+  font-family: Verdana, Arial, Sans-serif;
+  font-size: 8pt;
+  padding: 0px 5em 4px 5em;
+}
+
+#cats #subcats em { 
+  font-weight: bold;
+  font-style: none;
+}
+
+#cats #subcats a {
+  font-family: Verdana, Arial, Sans-serif;
+  white-space: nowrap;
+  padding: 0px 3px;
+}
+
+.button {
+  font-family: Verdana, Arial, Sans-serif;
+  white-space: nowrap;
+  font-size: .8em;
+  background-color: #EEEEE0;
+  padding: .2em;
+  border-style: double;
+  font-weight: bold;
+  border: 2px solid #69c;
+ }
+
+.button:hover {
+  color: #00f;
+  background-color: #cae1ff;
+}
+
+.formtable {
+padding: 0.5em 0.5em 1em 0.5em;
+background-color: #cae1ff;
+}
+
+.theform {
+padding: 0.5em;
+}
+
+td.internal_heading {
+font-family: Verdana, Arial, Sans-Serif;
+padding: 0.5em 0.5em 0.5em 0.5em;
+font-size: larger;
+}
+
+td.listitem {
+padding: 0.5em 0.5em 0.5em 1.5em;
+}
+
+td.lastlistitem {
+padding: 0.25em 0.5em 1.5em 1.5em;
+}
+
+.update_button {
+padding: .5em 0em 0em 0.5em;
+}
+
+#formbuttondiv {
+  text-align: right;
+  margin-top: .5em;
+  padding-right: 1em;
+}
+
+div.tabs ul {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+li.tab {  
+  margin-left: 0;
+  padding-left: 0;
+  list-style: none;
+  display: inline;
+  cursor: pointer;
+  float: left;
+  white-space: nowrap;
+  background-color: #eeeee0;
+  padding: .2em .6em;
+  border-right: 7px solid white;
+  font-family: Verdana, Arial, Helvetica, sans-serif;
+  font-size: .9em;
+}
+li.tab.selected { 
+  background-color: #cae1ff;
+  font-weight: bold;
+  color: #06c;
+  cursor: default;
+}
+
+li.myfilters {
+  border-right: 0px;
+  float: right;
+  width: 6em;
+}
+
+/* %%% End added by mj */

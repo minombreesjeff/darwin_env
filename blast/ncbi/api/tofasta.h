@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 7/12/91
 *
-* $Revision: 6.23 $
+* $Revision: 6.27 $
 *
 * File Description:  various sequence objects to fasta output
 *
@@ -39,6 +39,18 @@
 * -------  ----------  -----------------------------------------------------
 *
 * $Log: tofasta.h,v $
+* Revision 6.27  2005/03/21 22:15:09  kans
+* added SeqLocFastaStream
+*
+* Revision 6.26  2004/10/14 19:36:34  kans
+* CreateDefLineExEx has extProtTitle argument, normally only use first protein name in defline
+*
+* Revision 6.25  2004/07/23 20:55:52  kans
+* added BioseqFastaMemStream that takes byte store instead of file pointer
+*
+* Revision 6.24  2004/07/16 19:37:37  kans
+* SeqPortStream and FastaStream functions return Int4, negative count if any fetch failures
+*
 * Revision 6.23  2004/04/21 14:42:36  kans
 * added blocklen and grouplen parameters to BioseqFastaStream and SeqEntryFastaStream, former also has do_defline parameter
 *
@@ -248,14 +260,16 @@ NLM_EXTERN Boolean BioseqToFastaX PROTO((BioseqPtr bsp, MyFsaPtr mfp, Boolean is
 
 /*****************************************************************************
 *
-*   BioseqFastaStream(bsp, fp, flags, linelen, blocklen, grouplen, do_defline)
+*   BioseqFastaStream (bsp, fp, flags, linelen, blocklen, grouplen, do_defline)
+*   BioseqFastaMemStream (bsp, bs, flags, linelen, blocklen, grouplen, do_defline)
+*   SeqLocFastaStream (slp, bs, flags, linelen, blocklen, grouplen)
 *   SeqEntryFastaStream (sep, fp, flags, linelen, blocklen, grouplen,
 *                        do_na, do_aa, master_style)
 *
 *   	Rapid FASTA generators using SeqPortStream
 *
 *****************************************************************************/
-NLM_EXTERN void BioseqFastaStream (
+NLM_EXTERN Int4 BioseqFastaStream (
   BioseqPtr bsp,
   FILE *fp,
   StreamFlgType flags,
@@ -265,7 +279,26 @@ NLM_EXTERN void BioseqFastaStream (
   Boolean do_defline
 );
 
-NLM_EXTERN void SeqEntryFastaStream (
+NLM_EXTERN Int4 BioseqFastaMemStream (
+  BioseqPtr bsp,
+  ByteStorePtr bs,
+  StreamFlgType flags,
+  Int2 linelen,
+  Int2 blocklen,
+  Int2 grouplen,
+  Boolean do_defline
+);
+
+NLM_EXTERN Int4 SeqLocFastaStream (
+  SeqLocPtr slp,
+  FILE *fp,
+  StreamFlgType flags,
+  Int2 linelen,
+  Int2 blocklen,
+  Int2 grouplen
+);
+
+NLM_EXTERN Int4 SeqEntryFastaStream (
   SeqEntryPtr sep,
   FILE *fp,
   StreamFlgType flags,
@@ -418,8 +451,12 @@ NLM_EXTERN Boolean FastaId PROTO((BioseqPtr bsp, CharPtr buf, Uint4 buflen));
 *****************************************************************************/
 NLM_EXTERN Boolean FastaDefLine PROTO((BioseqPtr bsp, CharPtr buf, Uint4 buflen, CharPtr accession, CharPtr organism, Uint1 tech));
 
-NLM_EXTERN Boolean CreateDefLine PROTO((ItemInfoPtr dip, BioseqPtr bsp, CharPtr buf, Uint4 buflen, Uint1 tech, CharPtr accession, CharPtr organism));
-NLM_EXTERN Boolean CreateDefLineEx (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf, Uint4 buflen, Uint1 tech, CharPtr accession, CharPtr organism, Boolean ignoreTitle);
+NLM_EXTERN Boolean CreateDefLine PROTO((ItemInfoPtr dip, BioseqPtr bsp, CharPtr buf, Uint4 buflen,
+                                        Uint1 tech, CharPtr accession, CharPtr organism));
+NLM_EXTERN Boolean CreateDefLineEx (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf, Uint4 buflen, Uint1 tech,
+                                    CharPtr accession, CharPtr organism, Boolean ignoreTitle);
+NLM_EXTERN Boolean CreateDefLineExEx (ItemInfoPtr iip, BioseqPtr bsp, CharPtr buf, Uint4 buflen, Uint1 tech,
+                                      CharPtr accession, CharPtr organism, Boolean ignoreTitle, Boolean extProtTitle);
 /*****************************************************************************
 *
 *   FastaSeqPort(bsp, is_na, do_virtual)

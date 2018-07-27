@@ -1,5 +1,5 @@
-		  Apple/Genentech BLAST 2.2.9
-			June 4th, 2004
+		  Apple/Genentech BLAST 2.2.10
+			June 22nd, 2005
 
 Apple/Genentech (A/G) BLAST is an enhanced, platform-specific
 optimization of NCBI's standalone Basic Local Alignment Search Tool
@@ -26,7 +26,7 @@ modifications.  If you have already installed this version of NCBI
 blast, you can simply unarchive the binary and change the permissions
 to replace your current version of blastall.
 
-	$ gunzip blastall-2.2.9.gz
+	$ gunzip blastall-2.2.10.gz
 	$ chmod a+x blastall
 	$ mv -f blastall dest-dir # e.g., ncbi/builds
 
@@ -47,8 +47,8 @@ following:
 
 	Launch /Applications/Utilities/Terminal.app
 	$ cd ~/Desktop
-	$ gnutar -xzf agblast-2.2.9.tgz # if not already extracted
-	$ cd agblast-2.2.9
+	$ gnutar -xzf agblast-2.2.10.tgz # if not already extracted
+	$ cd agblast-2.2.10
 	$ ./ncbi/make/makedis.csh
 
 This will run the build shell script.  The build process takes several
@@ -80,14 +80,8 @@ which also includes a tutorial on using BLAST.
 Changes from Previous Versions
 ------------------------------
 
-NEW IN VERSION 2.2.9:
+NEW IN VERSION 2.2.10:
 
-- readdb_get_sequence_ex has been vectorized
+- updated original source to NCBI version 2.2.10, enabling A/G BLAST to
+  compile and run on OS X 10.4
 
-- standard BlastNtWordFinder logic has been changed back for word
-  length 12.  In the previous version, the original logic was used 
-  only at wordlength 11. Since timings showed the custom logic to
-  also be slower at length 12, the original logic is now used for
-  both 11 & 12.
-
-- compiler flags were changed to PPC 970 optimization (G5)

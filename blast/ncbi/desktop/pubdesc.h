@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/28/95
 *
-* $Revision: 6.1 $
+* $Revision: 6.2 $
 *
 * File Description: 
 *
@@ -59,7 +59,7 @@ extern "C" {
  *  pointers specific for a given application.
  */
 
-typedef ValNodePtr (*PubEquivLookupProc) PROTO((ValNodePtr pep));
+typedef ValNodePtr (*PubEquivLookupProc) PROTO((ValNodePtr pep, BoolPtr success));
 typedef Boolean (*LookupJournalProc) PROTO((CharPtr title, size_t maxsize, Int1Ptr jtaType));
 
 typedef struct pubdesceditprocs {

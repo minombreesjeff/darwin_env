@@ -1,4 +1,4 @@
-/* $Id: ni_debug.c,v 6.4 2003/10/27 14:11:10 lavr Exp $
+/* $Id: ni_debug.c,v 6.6 2004/11/18 19:39:23 kans Exp $
  * ==========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -31,6 +31,12 @@
  *
  * --------------------------------------------------------------------------
  * $Log: ni_debug.c,v $
+ * Revision 6.6  2004/11/18 19:39:23  kans
+ * calls to SOCK_Read and SOCK_Write needed to pass size_t pointer in order to compile under CodeWarrior
+ *
+ * Revision 6.5  2004/11/18 14:46:18  lavr
+ * Use newer ncbi_socket.h API
+ *
  * Revision 6.4  2003/10/27 14:11:10  lavr
  * Old (Shavirin's) dispatchers disabled unconditionally
  *
@@ -48,7 +54,7 @@
 
 #include <ncbi.h>
 #include <ncbinet.h>
-#include <ncbisock.h>
+#include <connect/ncbi_socket.h>
 
 
 /*********************************
@@ -70,16 +76,16 @@
 
 static Int2 LIBCALLBACK s_AsnRead(Pointer p, CharPtr buff, Uint2 len)
 {
-  Uint4 n_read = 0;
-  SOCK_Read((SOCK)p, buff, len, &n_read);
+  size_t n_read = 0;
+  SOCK_Read((SOCK)p, buff, len, &n_read, eIO_ReadPlain);
   return (Int2)n_read;
 }
 
 
 static Int2 LIBCALLBACK s_AsnWrite(Pointer p, CharPtr buff, Uint2 len)
 {
-  Uint4 n_written = 0;
-  SOCK_Write((SOCK)p, buff, len, &n_written);
+  size_t n_written = 0;
+  SOCK_Write((SOCK)p, buff, len, &n_written, eIO_WritePlain);
   return (Int2)n_written;
 }
 
@@ -161,7 +167,7 @@ static NI_HandPtr s_GenericGetService
 
   /* establish connection to the server */
   for (sock = 0;  !sock  &&  conn_try;  conn_try--) {
-    if (SOCK_Create(srv_host, srv_port, 0, &sock) != eSOCK_ESuccess) {
+    if (SOCK_Create(srv_host, srv_port, 0, &sock) != eIO_Success) {
       ErrPostEx(SEV_WARNING, 0, 1,
                 "[Debug NI Client]  Cannot connect to host \"%s\", port %d;",
                 srv_host, (int)srv_port);

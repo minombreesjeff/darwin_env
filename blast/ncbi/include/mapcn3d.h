@@ -1,1 +1,0 @@
-../biostruc/cn3d/mapcn3d.h

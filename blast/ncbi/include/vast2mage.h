@@ -1,1 +1,0 @@
-../biostruc/vast2mage.h

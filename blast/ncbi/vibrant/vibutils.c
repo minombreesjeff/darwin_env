@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/1/91
 *
-* $Revision: 6.62 $
+* $Revision: 6.64 $
 *
 * File Description:
 *       Vibrant miscellaneous functions
@@ -37,6 +37,16 @@
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: vibutils.c,v $
+* Revision 6.64  2005/04/19 14:52:23  rsmith
+* handle unix style paths in Nlm_SendOpenDocAppleEventEx
+*
+* Revision 6.63  2004/05/28 20:10:32  sinyakov
+* WIN_MSWIN: by Yoon Choi:
+* Modified Nlm_GetOutputFileName to use Nlm_FileLengthEx instead
+* of Nlm-FileOpen/Nlm_FileClose to determine whether file exists or
+* not.  The old way popped up an info box when it did not find an
+* existing file.
+*
 * Revision 6.62  2004/05/04 16:34:23  shomrat
 * Remove file name restrictions for MSWIN
 *
@@ -5334,12 +5344,10 @@ extern Nlm_Boolean Nlm_GetOutputFileName (Nlm_CharPtr fileName, size_t maxsize,
   if (GetSaveFileName (&ofn) && fileName != NULL) {
     Nlm_StringNCpy_0(fileName, ofn.lpstrFile, maxsize);
     AnsiToOemBuff (fileName, fileName, maxsize);
-    f = Nlm_FileOpen (fileName, "r");
-    if (f != NULL) {
-      Nlm_FileClose (f);
+    if (Nlm_FileLengthEx(fileName) != -1) {
       if (Nlm_Message (MSG_YN, "Replace existing file?") == ANS_NO) {
         return FALSE;
-      }
+      }      
     }
     return TRUE;
   } else {
@@ -5771,9 +5779,18 @@ extern void Nlm_SendOpenDocAppleEventEx (Nlm_CharPtr datafile, Nlm_CharPtr sig, 
       if (theErr == noErr) {
         theErr = AECreateList(NULL, 0, FALSE, &theList);
         if (theErr == noErr) {
-          Nlm_StringNCpy_0(temp, datafile, sizeof(temp) - 1);
-          Nlm_CtoPstr ((Nlm_CharPtr) temp);
-          theErr = FSMakeFSSpec (0, 0, (ConstStr255Param) temp, &fss);
+          /*make fss from path */
+          if (datafile[0] == '/') {
+            FSRef fsref;
+            theErr = FSPathMakeRef((unsigned char *) datafile, &fsref, NULL);
+            if (theErr == noErr) {
+              theErr = FSGetCatalogInfo(&fsref, kFSCatInfoNone, NULL, NULL, &fss, NULL);
+            }
+          } else {
+            Nlm_StringNCpy_0(temp, datafile, sizeof(temp) - 1);
+            Nlm_CtoPstr ((Nlm_CharPtr) temp);
+            theErr = FSMakeFSSpec (0, 0, (ConstStr255Param) temp, &fss);
+          }
           if (theErr == noErr) {
             theErr = AECreateDesc(typeFSS, (Ptr)&fss, sizeof(fss), &docDesc);
             if (theErr == noErr) {

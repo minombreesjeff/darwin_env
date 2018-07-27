@@ -37,68 +37,36 @@
 * Date     Name        Description of modification
 *
 * $Log: lsqfetch.c,v $
-* Revision 6.20  2004/04/13 16:58:32  kans
-* allow alt index to have gi numbers, also test .fsa if .fa fails
+* Revision 6.30  2004/10/27 20:07:14  kans
+* LsqFetch_AsnIoOpen to suppress missing file warning, similar to LsqFetch_FileOpen
 *
-* Revision 6.19  2003/11/13 17:18:02  kans
-* added SearchAltIndex, finished Alt fetch for chimp revision
+* Revision 6.29  2004/10/26 14:45:30  kans
+* LsqFetch_FileOpen suppresses FileOpen failure INFO message
 *
-* Revision 6.18  2003/11/12 23:49:11  kans
-* SortIfpByID needed LIBCALLBACK for PC
+* Revision 6.28  2004/10/05 19:11:23  kans
+* separate internal CreateBinaryAsnIndex and CreateTextAsnIndex functions
 *
-* Revision 6.17  2003/11/12 23:38:48  kans
-* changing AltIndexedFastaLibFetchEnable prototype, implementation not yet finished
+* Revision 6.27  2004/10/05 18:56:48  kans
+* AsnIndexedLibFetchEnable only works in text mode, backed out SeqEntryAsnRead change - will later implement use of catenated Seq-entry instead of se2bss processed input if text
 *
-* Revision 6.16  2003/08/27 21:24:05  kans
-* enable alt indexed fasta looks up previously registered function, changes settings for new path
+* Revision 6.26  2004/10/05 17:34:16  kans
+* protect all binary search functions against R out of range
 *
-* Revision 6.15  2003/08/27 19:27:43  kans
-* added AltIndexedFastaLibFetch functions for chimpanzee genome project
+* Revision 6.25  2004/10/05 17:25:04  kans
+* AsnIndexedLibBioseqFetchFunc handles all Seq-id types, passes atp_se to SeqEntryAsnRead
 *
-* Revision 6.14  2002/11/13 23:07:37  johnson
-* Changed make_lib such that it looks to see if it matches the *whole* seq-id
-* (defined by the next character being non-alphanumeric).
+* Revision 6.24  2004/10/05 16:21:37  kans
+* LocalSeqFetchInit checks for INDEXED_TEXT_ASN and INDEXED_BIN_ASN, calls AsnIndexedLibFetchEnable
 *
-* Revision 6.13  2002/07/19 20:16:33  johnson
-* bug fix in make_lib -- wasn't properly handling sequences >=1000 residues
+* Revision 6.23  2004/08/04 20:21:04  kans
+* record alfp->binary at correct place in asn indexed fetch enable function
 *
-* Revision 6.12  2002/01/22 19:50:32  kans
-* IndexedFastaLibBioseqFetchFunc looks for prefix with upper case followed by lower case
+* Revision 6.22  2004/08/03 17:51:49  kans
+* added AsnIndexedLibFetch enable and disable functions
 *
-* Revision 6.11  2001/09/21 20:02:04  kans
-* allow U and u to be DNA in CheckDnaResidue for the BLAST guys, even though it is amino acid Selenocysteine in most places
+* Revision 6.21  2004/08/02 19:10:14  kans
+* added CreateAsnIndex for indexing Bioseq-set ftp release files
 *
-* Revision 6.10  2001/03/13 16:48:58  kans
-* fixes to saving path, binary search results
-*
-* Revision 6.9  2001/03/12 23:19:33  kans
-* added IndexedFastaLib functions - currently uses genome contig naming conventions
-*
-* Revision 6.8  2001/01/09 00:12:39  kans
-* now handles SEQID_GI
-*
-* Revision 6.7  1999/10/07 16:21:13  kans
-* removed static AddSeqId and SeqIdDupList which were identical to public sequtil functions
-*
-* Revision 6.6  1999/07/20 21:18:39  sicotte
-* add static AddSeqId for linker conflicts
-*
-* Revision 6.5  1999/07/20 21:16:49  sicotte
-* add static SeqIdDupList for linker conflicts
-*
-* Revision 6.4  1999/04/01 22:26:13  sicotte
-* Make lsqfetch Attempt to Parse the fasta defline, otherwise use the supplied SeqId
-*
-* Revision 6.3  1999/03/11 23:39:33  kans
-* sprintf and sscanf casts
-*
-* Revision 6.2  1998/02/06 17:41:33  zjing
-* make the function CheckDnaResidue external
-*
-* Revision 6.0  1997/08/25 18:06:28  madden
-* Revision changed to 6.0
-*
-* $Log: lsqfetch.c,v $
 * Revision 6.20  2004/04/13 16:58:32  kans
 * allow alt index to have gi numbers, also test .fsa if .fa fails
 *
@@ -214,6 +182,37 @@
 #else
 	static CharPtr seqinfo_file = ".seqinfo";
 #endif
+
+/********************************************************************
+*
+*	Local versions of FileOpen and AsnIoOpen suppress missing file error report
+*
+*********************************************************************/
+
+static FILE* LIBCALL LsqFetch_FileOpen (const char *filename, const char *mode)
+
+{
+  FILE    *fp;
+  ErrSev  sev;
+
+  sev = ErrSetMessageLevel (SEV_ERROR);
+  fp = FileOpen (filename, mode);
+  ErrSetMessageLevel (sev);
+  return fp;
+}
+
+static AsnIoPtr LIBCALL  LsqFetch_AsnIoOpen (CharPtr file_name, CharPtr mode)
+
+{
+  AsnIoPtr  aip;
+  ErrSev    sev;
+
+  sev = ErrSetMessageLevel (SEV_ERROR);
+  aip = AsnIoOpen (file_name, mode);
+  ErrSetMessageLevel (sev);
+  return aip;
+}
+
 
 /***********************************************************************
 ***
@@ -527,7 +526,7 @@ static Int2 LIBCALLBACK FastaLibBioseqFetchFunc (Pointer data)
 	{
 		if(flp->state == FASTALIB_CLOSE)
 		{
-			flp->fp = FileOpen(flp->file_name, "r");
+			flp->fp = LsqFetch_FileOpen(flp->file_name, "r");
 			if(flp->fp == NULL)
 				flp->state = FASTALIB_ERROR;
 			else
@@ -566,7 +565,7 @@ NLM_EXTERN Boolean FastaLibBioseqFetchEnable(ValNodePtr libs, Boolean now)
 		file_name = libs->data.ptrvalue;
 		if(now)
 		{
-			if((fp = FileOpen(file_name, "r")) == NULL)
+			if((fp = LsqFetch_FileOpen(file_name, "r")) == NULL)
 				ok = FALSE;
 		}
 		if(ok)
@@ -772,7 +771,7 @@ static Int2 LIBCALLBACK FileBioseqFetchFunc (Pointer data)
 		switch(sbfp->choice)
 		{
 			case FASTA_FILE:
-				if((fp = FileOpen(c_name, "r")) != NULL)
+				if((fp = LsqFetch_FileOpen(c_name, "r")) != NULL)
 				{
 					sep = fasta_lib_sep(fp, NULL, sip);
 					FileClose(fp);
@@ -782,7 +781,7 @@ static Int2 LIBCALLBACK FileBioseqFetchFunc (Pointer data)
 			case TEXT_ASN:	
 			case BIN_ASN:
 				bin = (sbfp->choice == BIN_ASN);
-				if((aip = AsnIoOpen(c_name, bin?"rb":"r")) != NULL) 
+				if((aip = LsqFetch_AsnIoOpen(c_name, bin?"rb":"r")) != NULL) 
 				{
 					sep = SeqEntryAsnRead(aip, NULL);
 					AsnIoClose(aip);
@@ -981,6 +980,9 @@ static Boolean load_seq_info(CharPtr word, CharPtr val, ValNodePtr PNTR libs, Va
 *	Reads TYPE, PATH and EXT fields from the LSQFETCH configuration file 
 *	TYPE is TEXT_ASN, BIN_ASN, FASTA_FILE, or FASTA_LIB.
 *
+*   Now also looks for INDEXED_BIN_ASN for easy
+*   access to AsnIndexedLib fetch mechanism.
+*
 *********************************************************************/
 		
 static void ReadFetchConfigFile (CharPtr sect, ValNodePtr PNTR libs, ValNodePtr PNTR path, ValNodePtr PNTR ext)
@@ -991,6 +993,20 @@ static void ReadFetchConfigFile (CharPtr sect, ValNodePtr PNTR libs, ValNodePtr 
 
 	if (GetAppParam ("LSQFETCH", sect, "PATH", "", str, sizeof (str) - 1)) {
 		if (GetAppParam ("LSQFETCH", sect, "TYPE", "", temp, sizeof (temp) - 1)) {
+
+			/* first check for indexed asn tags */
+
+			if (StringICmp (temp, "INDEXED_BIN_ASN") == 0) {
+				AsnIndexedLibFetchEnable (str, TRUE);
+				return;
+			}
+			if (StringICmp (temp, "INDEXED_TEXT_ASN") == 0) {
+				AsnIndexedLibFetchEnable (str, FALSE);
+				return;
+			}
+
+			/* now look for regular lsqfetch files */
+
 			load_seq_info (temp, str, libs, path, ext);
 			if (GetAppParam ("LSQFETCH", sect, "EXT", "", str, sizeof (str) - 1)) {
 				load_seq_info ("EXT", str, libs, path, ext);
@@ -1029,7 +1045,7 @@ NLM_EXTERN Boolean LocalSeqFetchInit(Boolean now)
 	}
 
 	seq_file = seqinfo_file;	/*check the current search path*/
-	if((fp = FileOpen(seq_file, "r")) != NULL)
+	if((fp = LsqFetch_FileOpen(seq_file, "r")) != NULL)
 	{
    		while(FileGets(str, 100, fp) != NULL)   /*find the right seq*/
 		{
@@ -1134,10 +1150,12 @@ static Int4 SearchFastaIndex (
     }
   }
 
-  if (StringICmp (fip->seqids [R], seqid) == 0) {
-    if (fip->offsets [R] != NULL &&
-        sscanf (fip->offsets [R], "%ld", &val) == 1) {
-      return (Int4) val;
+  if (R >= 0 && R < fip->numlines) {
+    if (StringICmp (fip->seqids [R], seqid) == 0) {
+      if (fip->offsets [R] != NULL &&
+          sscanf (fip->offsets [R], "%ld", &val) == 1) {
+        return (Int4) val;
+      }
     }
   }
 
@@ -1181,7 +1199,7 @@ static FastaIndexPtr ReadFastaIndex (
   fip = (FastaIndexPtr) MemNew (sizeof (FastaIndex));
   if (fip == NULL) return NULL;
   
-  fp = FileOpen (file, "r");
+  fp = LsqFetch_FileOpen (file, "r");
   if (fp == NULL) {
     MemFree (fip);
     return NULL;
@@ -1335,7 +1353,7 @@ static Int2 LIBCALLBACK IndexedFastaLibBioseqFetchFunc (Pointer data)
           sprintf (file, "chr%s.fa", tmp);
           StringNCpy_0 (path, flfp->path, sizeof (path));
           FileBuildPath (path, NULL, file);
-          fp = FileOpen (path, "r");
+          fp = LsqFetch_FileOpen (path, "r");
           if (fp == NULL) return OM_MSG_RET_ERROR;
           fseek (fp, offset, SEEK_SET);
           dataptr = ReadAsnFastaOrFlatFile (fp, &datatype, &entityID,
@@ -1452,8 +1470,10 @@ static FastaIndexPtr SearchAltIndex (
     }
   }
 
-  if (StringICmp (ifp [R].seqid, seqid) == 0) {
-    return ifp [R].fip;
+  if (R >= 0 && R < alfp->numids) {
+    if (StringICmp (ifp [R].seqid, seqid) == 0) {
+      return ifp [R].fip;
+    }
   }
 
   return NULL;
@@ -1500,7 +1520,7 @@ static Int2 LIBCALLBACK AltIndexedFastaLibBioseqFetchFunc (Pointer data)
       StringCat (file, ".fa");
       StringNCpy_0 (path, fip->path, sizeof (path));
       FileBuildPath (path, NULL, file);
-      fp = FileOpen (path, "r");
+      fp = LsqFetch_FileOpen (path, "r");
       if (fp == NULL) {
         tmp = StringStr (file, ".fa");
         if (tmp != NULL) {
@@ -1508,7 +1528,7 @@ static Int2 LIBCALLBACK AltIndexedFastaLibBioseqFetchFunc (Pointer data)
           StringCat (file, ".fsa");
           StringNCpy_0 (path, fip->path, sizeof (path));
           FileBuildPath (path, NULL, file);
-          fp = FileOpen (path, "r");
+          fp = LsqFetch_FileOpen (path, "r");
         }
       }
       if (fp == NULL) return OM_MSG_RET_ERROR;
@@ -1676,10 +1696,10 @@ NLM_EXTERN void CreateFastaIndex (
   }
   StringCat (path, ".idx");
 
-  ifp = FileOpen (file, "r");
+  ifp = LsqFetch_FileOpen (file, "r");
   if (ifp == NULL) return;
 
-  ofp = FileOpen (path, "w");
+  ofp = LsqFetch_FileOpen (path, "w");
   if (ofp != NULL) {
 
     /* get initial file offset */
@@ -1734,6 +1754,445 @@ NLM_EXTERN void CreateFastaIndex (
   }
 
   FileClose (ifp);
+
+  ValNodeFreeData (head);
 }
 
+/* object manager registerable fetch function for local ASN.1 indexed files */
+
+static CharPtr asnlibfetchproc = "AsnIndexedLibBioseqFetch";
+
+typedef struct asnlibftch {
+  CharPtr     path;
+  ValNodePtr  fiplist;
+  IdFipPtr    index;
+  Int4        numids;
+  Boolean     binary;
+} AsnLibFetchData, PNTR AsnLibFetchPtr;
+
+static FastaIndexPtr SearchAsnIndex (
+  AsnLibFetchPtr alfp,
+  CharPtr seqid
+)
+
+{
+  int       compare;
+  IdFipPtr  ifp;
+  Int4      L, R, mid;
+
+  if (alfp == NULL || alfp->index == NULL) return NULL;
+  ifp = alfp->index;
+  if (StringHasNoText (seqid)) return NULL;
+
+  L = 0;
+  R = alfp->numids - 1;
+  while (L < R) {
+    mid = (L + R) / 2;
+    compare = StringICmp (ifp [mid].seqid, seqid);
+    if (compare < 0) {
+      L = mid + 1;
+    } else {
+      R = mid;
+    }
+  }
+
+  if (R >= 0 && R < alfp->numids) {
+    if (StringICmp (ifp [R].seqid, seqid) == 0) {
+      return ifp [R].fip;
+    }
+  }
+
+  return NULL;
+}
+
+static Int2 LIBCALLBACK AsnIndexedLibBioseqFetchFunc (Pointer data)
+
+{
+  AsnIoPtr          aip;
+  AsnLibFetchPtr    alfp;
+  BioseqPtr         bsp;
+  Char              file [FILENAME_MAX], path [PATH_MAX], id [41];
+  FastaIndexPtr     fip;
+  Int4              offset;
+  OMProcControlPtr  ompcp;
+  ObjMgrProcPtr     ompp;
+  SeqEntryPtr       sep = NULL;
+  SeqIdPtr          sip;
+  CharPtr           tmp;
+
+  ompcp = (OMProcControlPtr) data;
+  if (ompcp == NULL) return OM_MSG_RET_ERROR;
+  ompp = ompcp->proc;
+  if (ompp == NULL) return OM_MSG_RET_ERROR;
+  alfp = (AsnLibFetchPtr) ompp->procdata;
+  if (alfp == NULL) return OM_MSG_RET_ERROR;
+  sip = (SeqIdPtr) ompcp->input_data;
+  if (sip == NULL) return OM_MSG_RET_ERROR;
+
+  SeqIdWrite (sip, id, PRINTID_REPORT, sizeof (id));
+  fip = SearchAsnIndex (alfp, id);
+  if (fip != NULL) {
+    offset = SearchFastaIndex (fip, id);
+    if (offset < 0) return OM_MSG_RET_ERROR;
+    StringCpy (file, fip->file);
+    tmp = StringStr (file, ".idx");
+    if (tmp != NULL) {
+      *tmp = '\0';
+    }
+    StringCat (file, ".aso");
+    StringNCpy_0 (path, fip->path, sizeof (path));
+    FileBuildPath (path, NULL, file);
+    aip = LsqFetch_AsnIoOpen (path, alfp->binary? "rb" : "r");
+    if (aip == NULL) {
+      tmp = StringStr (file, ".aso");
+      if (tmp != NULL) {
+        *tmp = '\0';
+        StringCat (file, ".asn");
+        StringNCpy_0 (path, fip->path, sizeof (path));
+        FileBuildPath (path, NULL, file);
+        aip = LsqFetch_AsnIoOpen (path, alfp->binary? "rb" : "r");
+      }
+    }
+    if (aip == NULL) return OM_MSG_RET_ERROR;
+    AsnIoSeek (aip, offset);
+    sep = SeqEntryAsnRead (aip, NULL);
+    AsnIoClose (aip);
+  }
+
+  if (sep == NULL) return OM_MSG_RET_ERROR;
+  bsp = BioseqFindInSeqEntry (sip, sep);
+  ompcp->output_data = (Pointer) bsp;
+  ompcp->output_entityID = ObjMgrGetEntityIDForChoice (sep);
+  return OM_MSG_RET_DONE;
+}
+
+NLM_EXTERN Boolean AsnIndexedLibFetchEnable (CharPtr path, Boolean binary)
+
+{
+  AsnLibFetchPtr  alfp = NULL;
+  Char            file [FILENAME_MAX];
+  FastaIndexPtr   fip;
+  ValNodePtr      head;
+  Int4            i;
+  IdFipPtr        ifp;
+  Boolean         is_new = FALSE;
+  Int4            j;
+  Int4            numids = 0;
+  ObjMgrPtr       omp;
+  ObjMgrProcPtr   ompp;
+  Char            str [PATH_MAX];
+  CharPtr         tmp;
+  ValNodePtr      vnp;
+
+  StringNCpy_0 (str, path, sizeof (str));
+  TrimSpacesAroundString (str);
+  omp = ObjMgrGet ();
+  ompp = ObjMgrProcFind (omp, 0, asnlibfetchproc, OMPROC_FETCH);
+  if (ompp != NULL) {
+    alfp = (AsnLibFetchPtr) ompp->procdata;
+    if (alfp != NULL) {
+      alfp->path = MemFree (alfp->path);
+      for (vnp = alfp->fiplist; vnp != NULL; vnp = vnp->next) {
+        fip = (FastaIndexPtr) vnp->data.ptrvalue;
+        FreeFastaIndex (fip);
+      }
+      alfp->fiplist = ValNodeFree (alfp->fiplist);
+      alfp->index = MemFree (alfp->index);
+    }
+  } else {
+    alfp = (AsnLibFetchPtr) MemNew (sizeof (AsnLibFetchData));
+    is_new = TRUE;
+    if (alfp != NULL) {
+      alfp->binary = binary;
+    }
+  }
+  if (alfp != NULL) {
+    alfp->path = StringSave (str);
+    head = DirCatalog (str);
+    for (vnp = head; vnp != NULL; vnp = vnp->next) {
+      if (vnp->choice == 0) {
+        tmp = (CharPtr) vnp->data.ptrvalue;
+        if (StringStr (tmp, ".idx") != NULL) {
+          StringCpy (str, alfp->path);
+          sprintf (file, "%s", tmp);
+          FileBuildPath (str, NULL, file);
+          fip = ReadFastaIndex (str);
+          if (fip != NULL) {
+            ValNodeAddPointer (&(alfp->fiplist), 0, (Pointer) fip);
+            numids += fip->numlines;
+          }
+        }
+      }
+    }
+    ValNodeFreeData (head);
+    ifp = (IdFipPtr) MemNew (sizeof (IdFip) * (numids + 2));
+    alfp->index = ifp;
+    alfp->numids = numids;
+    if (ifp != NULL) {
+      i = 0;
+      for (vnp = alfp->fiplist; vnp != NULL; vnp = vnp->next) {
+        fip = (FastaIndexPtr) vnp->data.ptrvalue;
+        if (fip != NULL) {
+          for (j = 0; j < fip->numlines; j++, i++) {
+            ifp [i].seqid = fip->seqids [j];
+            ifp [i].fip = fip;
+          }
+        }
+      }
+      HeapSort (ifp, (size_t) numids, sizeof (IdFip), SortIfpByID);
+    }
+  }
+  if (is_new) {
+    ObjMgrProcLoad (OMPROC_FETCH, asnlibfetchproc, asnlibfetchproc,
+                    OBJ_SEQID, 0, OBJ_BIOSEQ, 0, (Pointer) alfp,
+                    AsnIndexedLibBioseqFetchFunc, PROC_PRIORITY_DEFAULT);
+  }
+  return TRUE;
+}
+
+NLM_EXTERN void AsnIndexedLibFetchDisable (void)
+
+{
+  AsnLibFetchPtr  alfp;
+  FastaIndexPtr   fip;
+  ObjMgrPtr       omp;
+  ObjMgrProcPtr   ompp;
+  ValNodePtr      vnp;
+
+  omp = ObjMgrGet ();
+  ompp = ObjMgrProcFind (omp, 0, asnlibfetchproc, OMPROC_FETCH);
+  if (ompp == NULL) return;
+  ObjMgrFreeUserData (0, ompp->procid, OMPROC_FETCH, 0);
+  alfp = (AsnLibFetchPtr) ompp->procdata;
+  if (alfp == NULL) return;
+  alfp->path = MemFree (alfp->path);
+  for (vnp = alfp->fiplist; vnp != NULL; vnp = vnp->next) {
+    fip = (FastaIndexPtr) vnp->data.ptrvalue;
+    FreeFastaIndex (fip);
+  }
+  alfp->fiplist = ValNodeFree (alfp->fiplist);
+  alfp->index = MemFree (alfp->index);
+  MemFree (alfp);
+}
+
+/* common function for creating indexes of ASN.1 Bioseq-set ftp release files */
+
+typedef struct asnidxdata {
+  FILE        *ofp;
+  Int4        offset;
+  ValNodePtr  head;
+  ValNodePtr  last;
+} AsnIdxData, PNTR AsnIdxPtr;
+
+static void SaveAsnIdxOffset (
+  BioseqPtr bsp,
+  Pointer userdata
+)
+
+{
+  AsnIdxPtr  aip;
+  Char       id [41], tmp [64];
+  SeqIdPtr   sip;
+
+  aip = (AsnIdxPtr) userdata;
+  if (bsp == NULL || aip == NULL) return;
+
+  sip = SeqIdFindBest (bsp->id, SEQID_GI);
+  if (sip == NULL) {
+    sip = SeqIdFindBest (bsp->id, 0);
+  }
+
+  SeqIdWrite (sip, id, PRINTID_REPORT, sizeof (id));
+  if (! StringHasNoText (id)) {
+
+    /* save ID and offset separated by tab character */
+
+    sprintf (tmp, "%s\t%ld", id, (long) aip->offset);
+    aip->last = ValNodeNew (aip->last);
+    if (aip->head == NULL) {
+      aip->head = aip->last;
+    }
+    if (aip->last != NULL) {
+      aip->last->data.ptrvalue = StringSave (tmp);
+    }
+  }
+}
+
+static void CreateBinaryAsnIndex (
+  CharPtr file
+)
+
+{
+  AsnIdxData    aid;
+  AsnIoPtr      aip;
+  AsnModulePtr  amp;
+  AsnTypePtr    atp, atp_bss, atp_se;
+  FILE          *ofp;
+  ObjMgrPtr     omp;
+  Char          path [PATH_MAX];
+  CharPtr       ptr;
+  SeqEntryPtr   sep;
+  ValNodePtr    vnp;
+
+  if (StringHasNoText (file)) return;
+
+  /* replace extension by .idx for index file */
+
+  StringNCpy_0 (path, file, sizeof (path));
+  ptr = StringRChr (path, '.');
+  if (ptr != NULL) {
+    *ptr = '\0';
+  }
+  StringCat (path, ".idx");
+
+  aip = LsqFetch_AsnIoOpen (file, "rb");
+  if (aip == NULL) return;
+
+  ofp = LsqFetch_FileOpen (path, "w");
+  if (ofp != NULL) {
+
+    MemSet ((Pointer) &aid, 0, sizeof (AsnIdxData));
+    aid.head = NULL;
+    aid.last = NULL;
+    aid.ofp = ofp;
+
+    amp = AsnAllModPtr ();
+
+    atp_bss = AsnFind ("Bioseq-set");
+    atp_se = AsnFind ("Bioseq-set.seq-set.E");
+
+    atp = atp_bss;
+
+    /* get initial file offset */
+
+    aid.offset = AsnIoTell (aip);
+
+    /* read next ASN.1 component */
+
+    while ((atp = AsnReadId (aip, amp, atp)) != NULL) {
+      if (atp == atp_se) {
+
+        sep = SeqEntryAsnRead (aip, atp);
+        VisitBioseqsInSep (sep, (Pointer) &aid, SaveAsnIdxOffset);
+
+        SeqEntryFree (sep);
+        omp = ObjMgrGet ();
+        ObjMgrReapOne (omp);
+        ObjMgrFreeCache (0);
+
+      } else {
+
+        AsnReadVal (aip, atp, NULL);
+      }
+
+      /* get file offset of next ASN.1 component */
+
+      aid.offset = AsnIoTell (aip);
+    }
+
+    /* sort by ID */
+
+    aid.head = ValNodeSort (aid.head, SortVnpByString);
+    aid.head = UniqueValNode (aid.head);
+
+    /* write ID and offset index */
+
+    for (vnp = aid.head; vnp != NULL; vnp = vnp->next) {
+      fprintf (ofp, "%s\n", (CharPtr) vnp->data.ptrvalue);
+    }
+
+    FileClose (ofp);
+  }
+
+  AsnIoClose (aip);
+
+  ValNodeFreeData (aid.head);
+}
+
+static void CreateTextAsnIndex (
+  CharPtr file
+)
+
+{
+  AsnIdxData   aid;
+  Pointer      dataptr = NULL;
+  Uint2        datatype, entityID = 0;
+  FILE         *ifp, *ofp;
+  Char         path [PATH_MAX];
+  CharPtr      ptr;
+  SeqEntryPtr  sep;
+  ValNodePtr   vnp;
+
+  if (StringHasNoText (file)) return;
+
+  /* replace extension by .idx for index file */
+
+  StringNCpy_0 (path, file, sizeof (path));
+  ptr = StringRChr (path, '.');
+  if (ptr != NULL) {
+    *ptr = '\0';
+  }
+  StringCat (path, ".idx");
+
+  ifp = LsqFetch_FileOpen (file, "r");
+  if (ifp == NULL) return;
+
+  ofp = LsqFetch_FileOpen (path, "w");
+  if (ofp != NULL) {
+
+    MemSet ((Pointer) &aid, 0, sizeof (AsnIdxData));
+    aid.head = NULL;
+    aid.last = NULL;
+    aid.ofp = ofp;
+
+    /* get initial file offset */
+
+    aid.offset = ftell (ifp);
+
+    /* read next ASN.1 component */
+
+    while ((dataptr = ReadAsnFastaOrFlatFile (ifp, &datatype, &entityID,
+                                              FALSE, FALSE, TRUE, FALSE)) != NULL) {
+
+      sep = GetTopSeqEntryForEntityID (entityID);
+      VisitBioseqsInSep (sep, (Pointer) &aid, SaveAsnIdxOffset);
+
+      ObjMgrFreeByEntityID (entityID);
+
+      /* get file offset of next ASN.1 component */
+
+      aid.offset = ftell (ifp);
+    }
+
+    /* sort by ID */
+
+    aid.head = ValNodeSort (aid.head, SortVnpByString);
+    aid.head = UniqueValNode (aid.head);
+
+    /* write ID and offset index */
+
+    for (vnp = aid.head; vnp != NULL; vnp = vnp->next) {
+      fprintf (ofp, "%s\n", (CharPtr) vnp->data.ptrvalue);
+    }
+
+    FileClose (ofp);
+  }
+
+  FileClose (ifp);
+
+  ValNodeFreeData (aid.head);
+}
+
+NLM_EXTERN void CreateAsnIndex (
+  CharPtr file,
+  Boolean binary
+)
+
+{
+  if (binary) {
+    CreateBinaryAsnIndex (file);
+  } else {
+    CreateTextAsnIndex (file);
+  }
+}
 

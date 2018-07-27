@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: profiles.c,v 6.36 2003/05/30 17:31:10 coulouri Exp $";
+static char const rcsid[] = "$Id: profiles.c,v 6.37 2004/06/30 12:33:30 madden Exp $";
 
-/* $Id: profiles.c,v 6.36 2003/05/30 17:31:10 coulouri Exp $
+/* $Id: profiles.c,v 6.37 2004/06/30 12:33:30 madden Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -36,9 +36,12 @@ Contents: main routines for impala program to search a database of
   PSI-BLAST-generated position-specific score matrices
 
 =======
- $Revision: 6.36 $
+ $Revision: 6.37 $
 
  $Log: profiles.c,v $
+ Revision 6.37  2004/06/30 12:33:30  madden
+ Add include for blfmtutl.h
+
  Revision 6.36  2003/05/30 17:31:10  coulouri
  add rcsid
 
@@ -89,6 +92,7 @@ Contents: main routines for impala program to search a database of
 #include <posit.h>
 #include <profiles.h>
 #include <gapxdrop.h>
+#include <blfmtutl.h>
 #include <stdlib.h>
 /*
 #include <sys/types.h>

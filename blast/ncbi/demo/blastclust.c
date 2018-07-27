@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: blastclust.c,v 6.43 2004/05/03 19:59:48 dondosha Exp $";
+static char const rcsid[] = "$Id: blastclust.c,v 6.45 2004/08/02 20:08:49 dondosha Exp $";
 
-/*  $RCSfile: blastclust.c,v $  $Revision: 6.43 $  $Date: 2004/05/03 19:59:48 $
+/*  $RCSfile: blastclust.c,v $  $Revision: 6.45 $  $Date: 2004/08/02 20:08:49 $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -33,6 +33,12 @@ static char const rcsid[] = "$Id: blastclust.c,v 6.43 2004/05/03 19:59:48 dondos
 *
 * ---------------------------------------------------------------------------
 * $Log: blastclust.c,v $
+* Revision 6.45  2004/08/02 20:08:49  dondosha
+* Write and read header integers separately instead of as a structure; changed first number from 1 byte to 4, to prevent padding with garbage
+*
+* Revision 6.44  2004/06/30 21:03:57  madden
+* Add include for blfmtutl.h
+*
 * Revision 6.43  2004/05/03 19:59:48  dondosha
 * Display version number when run with no arguments
 *
@@ -179,6 +185,7 @@ static char const rcsid[] = "$Id: blastclust.c,v 6.43 2004/05/03 19:59:48 dondos
 #include <sqnutils.h>
 #include <mbalign.h>
 #include <mblast.h>
+#include <blfmtutl.h>
 
 #define DEBUG 0
 
@@ -207,12 +214,6 @@ typedef struct cluster_parameters
    FloatHi score_threshold;
    FILE *logfp;
 } ClusterParameters, PNTR ClusterParametersPtr;
-
-typedef struct cluster_log_header
-{
-   Boolean numeric_id_type;
-   Int4 size;
-} ClusterLogHeader, PNTR ClusterLogHeaderPtr;
 
 static ClusterParametersPtr global_parameters;
 
@@ -401,20 +402,20 @@ static Int4 ReclusterFromFile(FILE *infofp, FILE *outfp, Int4Ptr PNTR gilp,
    CharPtr PNTR id_list = NULL;
    CharPtr ptr, id_string;
    FloatHi length_coverage, score_coverage; 
-   ClusterLogHeaderPtr header;
+   Uint4 header_size, numeric_id_type;
    Int4 last_seq = -1;
    CharPtr id = NULL;
    Boolean PNTR used_id_index = NULL;
 
-   header = (ClusterLogHeaderPtr) MemNew(sizeof(ClusterLogHeader));
-   FileRead(header, sizeof(ClusterLogHeader), 1, infofp);
+   FileRead(&numeric_id_type, sizeof(Int4), 1, infofp);
+   FileRead(&header_size, sizeof(Int4), 1, infofp);
 
-   if (header->numeric_id_type) {
-      num_queries = header->size;
+   if (numeric_id_type) {
+      num_queries = header_size;
       gi_list = (Int4Ptr) MemNew(num_queries*sizeof(Int4));
       FileRead(gi_list, sizeof(Int4), num_queries, infofp);
    } else {
-      total_id_len = header->size;
+      total_id_len = header_size;
       num_queries = 0;
       id_string = (CharPtr) MemNew(total_id_len+1);
       FileRead(id_string, sizeof(Char), total_id_len, infofp);
@@ -869,9 +870,9 @@ Int2 Main (void)
     Int8 total_length;
     Int4Ptr gi_list = NULL, seq_len = NULL;
     CharPtr PNTR id_list = NULL, id_string = NULL;
-    Boolean db_formatted = FALSE, numeric_id_type = TRUE;
+    Boolean db_formatted = FALSE;
+    Boolean numeric_id_type = TRUE;
     Char db_file[BUFFER_SIZE];
-    ClusterLogHeaderPtr header;
     Boolean print_progress, finish_incomplete, is_prot, parse_mode;
     FDB_optionsPtr fdb_options;
     Char timestr[24];
@@ -1075,6 +1076,8 @@ Int2 Main (void)
        first_seq = ReclusterFromFile(global_parameters->logfp, NULL, &gi_list,
 				    &id_list, &seq_len, NULL);
     } else {
+       Uint4 header_size = 0;
+       Uint4 header_numeric_id_type = 0;
        first_seq = 0;
        for (index=0; index<num_queries; index++)
 	  root[index] = index;
@@ -1108,12 +1111,10 @@ Int2 Main (void)
           sip = SeqIdSetFree(sip);
        }
 
-       header = (ClusterLogHeaderPtr) MemNew(sizeof(ClusterLogHeader));
-       header->numeric_id_type = numeric_id_type;
-       
        if (numeric_id_type) {
 	  id_list = MemFree(id_list);
-	  header->size = num_queries;
+	  header_size = num_queries;
+          header_numeric_id_type = 1;
        } else {
 	  total_id_len = 0;
 	  /* Check if some ids were gis and convert them to strings */
@@ -1130,13 +1131,12 @@ Int2 Main (void)
 	     StringCat(id_string, id_list[i]);
 	     StringCat(id_string, " ");
 	  }
-	  header->size = total_id_len;
+	  header_size = total_id_len;
        }
        
-       FileWrite(header, sizeof(ClusterLogHeader), 1, 
-		 global_parameters->logfp);
-
-       header = (ClusterLogHeaderPtr) MemFree(header);
+       FileWrite(&header_numeric_id_type, sizeof(Uint4), 1, 
+                 global_parameters->logfp);
+       FileWrite(&header_size, sizeof(Uint4), 1, global_parameters->logfp);
 
        if (numeric_id_type) 
 	  FileWrite(gi_list, sizeof(Int4), num_queries, 

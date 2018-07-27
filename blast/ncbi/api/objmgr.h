@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 9/94
 *
-* $Revision: 6.37 $
+* $Revision: 6.38 $
 *
 * File Description:  Manager for Bioseqs and BioseqSets
 *
@@ -40,6 +40,9 @@
 *
 *
 * $Log: objmgr.h,v $
+* Revision 6.38  2005/04/08 21:23:08  kans
+* added ObjMgrStatusString function for debugging
+*
 * Revision 6.37  2004/04/01 13:43:05  lavr
 * Spell "occurred", "occurrence", and "occurring"
 *
@@ -1323,9 +1326,10 @@ NLM_EXTERN Pointer LIBCALL ObjMgrFreeByEntityID PROTO((Uint2 entityID));
 
 NLM_EXTERN void LIBCALL ObjMgrResetAll PROTO((void));
 
-/* debugging function */
+/* debugging functions */
 
 NLM_EXTERN void LIBCALL ObjMgrReportFunc (CharPtr filename);
+NLM_EXTERN Boolean LIBCALL ObjMgrStatusString (CharPtr str, size_t len);
 
 
 NLM_EXTERN void LIBCALL ObjMgrAddIndexOnEntityID PROTO((ObjMgrPtr omp,Uint2 entityID,ObjMgrDataPtr omdp));

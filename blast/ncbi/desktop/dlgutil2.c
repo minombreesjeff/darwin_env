@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/22/95
 *
-* $Revision: 6.48 $
+* $Revision: 6.65 $
 *
 * File Description: 
 *
@@ -387,7 +387,7 @@ typedef struct citlist {
 } CitListData, PNTR CitListDataPtr;
 
 typedef struct featcitedit {
-  FeatureFormPtr  ffp;
+  DIALOG_MESSAGE_BLOCK
   DoC             allcitdoc;
   Int2            clickedItem;
   Int2            clickedRow;
@@ -398,6 +398,7 @@ typedef struct featcitedit {
   ValNodePtr      citlist;
   ValNodePtr      psp;
   ObjMgrPtr       omp;
+  Int2            entityID;
 } FeatCitEdit, PNTR FeatCitEditPtr;
 
 static void CleanupFeatCitForm (GraphiC g, VoidPtr data)
@@ -669,56 +670,6 @@ static Boolean MakeMinimalCitOnFeatItem (GatherContextPtr gcp)
   return TRUE;
 }
 
-static void AcceptFeatCit (ButtoN b)
-
-{
-  Pointer         data;
-  unsigned int    entityID;
-  FeatCitEditPtr  fcep;
-  FeatureFormPtr  ffp;
-  Int2            i;
-  unsigned int    itemID;
-  unsigned int    itemtype;
-  Int2            numItems;
-  ValNodePtr      ppr;
-  ValNodePtr      psp;
-  CharPtr         str;
-
-  fcep = (FeatCitEditPtr) GetObjectExtra (b);
-  if (fcep != NULL && fcep->chosen != NULL) {
-    psp = NULL;
-    ppr = NULL;
-    GetDocParams (fcep->allcitdoc, &numItems, NULL);
-    for (i = 1; i <= numItems; i++) {
-      if (fcep->chosen [i - 1]) {
-        GetItemParams (fcep->allcitdoc, i, NULL, NULL, NULL, NULL, &data);
-        if (data != NULL) {
-          str = (CharPtr) data;
-          if (sscanf (str, "%u %u %u", &entityID, &itemID, &itemtype) == 3) {
-            GatherItem ((Uint2) entityID, (Uint2) itemID, (Uint2) itemtype,
-                        (Pointer) &ppr, MakeMinimalCitOnFeatItem);
-          }
-        }
-      }
-    }
-    ffp = (FeatureFormPtr) fcep->ffp;
-    if (ffp != NULL) {
-      if (ppr != NULL) {
-        psp = ValNodeNew (NULL);
-        if (psp != NULL) {
-          psp->choice = 1;
-          psp->data.ptrvalue = ppr;
-          PointerToDialog (ffp->featcits, (Pointer) psp);
-        }
-        PubSetFree (psp);
-      } else {
-        PointerToDialog (ffp->featcits, NULL);
-      }
-    }
-  }
-  Remove (ParentWindow (b));
-}
-
 static Boolean MatchMinimalCits (GatherContextPtr gcp)
 
 {
@@ -765,16 +716,12 @@ static Boolean MatchMinimalCits (GatherContextPtr gcp)
   return TRUE;
 }
 
-static void EditFeatCitsProc (ButtoN b)
-
+static void CitListToDialog (DialoG d, Pointer userdata)
 {
-  ButtoN          btn;
-  GrouP           c;
+  FeatCitEditPtr  fcep;
   CitListDataPtr  cldp;
   CitListDataPtr  cldpp;
   Int2            count;
-  FeatCitEditPtr  fcep;
-  FeatureFormPtr  ffp;
   GatherScope     gs;
   Int2            i;
   Int2            j;
@@ -783,90 +730,226 @@ static void EditFeatCitsProc (ButtoN b)
   RecT            r;
   Char            str [34];
   ValNodePtr      vnp;
-  WindoW          w;
 
-  ffp = (FeatureFormPtr) GetObjectExtra (b);
-  if (ffp != NULL) {
-    fcep = (FeatCitEditPtr) MemNew (sizeof (FeatCitEdit));
-    if (fcep != NULL) {
-      fcep->ffp = ffp;
-      fcep->omp = ObjMgrGet ();
-      fcep->numitems = 0;
-      WatchCursor ();
-      Update ();
-      w = MovableModalWindow (-50, -33, -10, -10, "Citations", NULL);
-      SetObjectExtra (w, fcep, CleanupFeatCitForm);
-      fcep->allcitdoc = DocumentPanel (w, 25 * stdCharWidth, 15 * stdLineHeight);
-      SetObjectExtra (fcep->allcitdoc, fcep, NULL);
-      SetDocProcs (fcep->allcitdoc, ClickFeatCit, NULL, ReleaseFeatCit, NULL);
-      SetDocShade (fcep->allcitdoc, DrawFeatCit, NULL, NULL, NULL);
-      c = HiddenGroup (w, 4, 0, NULL);
-      SetGroupSpacing (c, 10, 3);
-      btn = PushButton (c, "Accept", AcceptFeatCit);
-      SetObjectExtra (btn, fcep, NULL);
-      PushButton (c, "Cancel", StdCancelButtonProc);
-      AlignObjects (ALIGN_CENTER, (HANDLE) fcep->allcitdoc, (HANDLE) c, NULL);
-      RealizeWindow (w);
-      SelectFont (programFont);
-      fcep->lineheight = LineHeight ();
-      SelectFont (systemFont);
-      MemSet ((Pointer) (&gs), 0, sizeof (GatherScope));
-      MemSet ((Pointer) (gs.ignore), (int) (TRUE), (size_t) (OBJ_MAX * sizeof (Boolean)));
-      gs.ignore [OBJ_SEQDESC] = FALSE;
-      gs.ignore [OBJ_SEQANNOT] = FALSE;
-      gs.ignore [OBJ_SEQFEAT] = FALSE;
-      gs.seglevels = 1;
-      GatherEntity (ffp->input_entityID, (Pointer) fcep, GatherAllCits, &gs);
-      count = fcep->numitems;
-      cldpp = (CitListDataPtr) MemNew (sizeof (CitListData) * (size_t) (count + 1));
-      if (cldpp != NULL) {
-        for (i = 0, vnp = fcep->citlist; i < count && vnp != NULL; i++, vnp = vnp->next) {
-          cldp = vnp->data.ptrvalue;
-          if (cldp != NULL) {
-            cldpp [i] = *cldp;
-            cldp->label = NULL;
-          }
-        }
-        fcep->citlist = ValNodeFreeData (fcep->citlist);
-        HeapSort (cldpp, count, sizeof (CitListData), CompareCitList);
-        last [0] = '\0';
-        ObjectRect (fcep->allcitdoc, &r);
-        InsetRect (&r, 4, 4);
-        cofeColFmt.pixWidth = r.right - r.left;
-        cofeColFmt.pixInset = 20;
-        fcep->numitems = 0;
-        fcep->chosen = MemNew (sizeof (Boolean) * (size_t) (count + 1));
-        fcep->psp = DialogToPointer (ffp->featcits);
-        for (i = 0, j = 0; i < count; i++) {
-          cldp = &(cldpp [i]);
-          if (cldp != NULL) {
-            if (last == NULL || StringCmp (cldp->label, last) != 0) {
-              sprintf (str, "%d %d %d", (int) cldp->entityID,
-                       (int) cldp->itemID, (int) cldp->itemtype);
-              ptr = StringSave (str);
-              (fcep->numitems)++;
-              AppendItem (fcep->allcitdoc, CitOnFeatPrintProc, (Pointer) ptr,
-                          TRUE, 5, &cofeParFmt, &cofeColFmt, programFont);
-              if (fcep->chosen != NULL) {
-                fcep->index = j;
-                GatherItem ((Uint2) cldp->entityID, (Uint2) cldp->itemID,
-                            (Uint2) cldp->itemtype, (Pointer) fcep, MatchMinimalCits);
-              }
-              j++;
-            }
-            StringNCpy_0 (last, cldp->label, sizeof (last));
-            cldpp [i].label = MemFree (cldpp [i].label);
-          }
-        }
-        PubSetFree (fcep->psp);
+  fcep = (FeatCitEditPtr) GetObjectExtra (d);
+  if (fcep == NULL)
+  {
+    return;
+  }
+  Reset (fcep->allcitdoc);
+  
+  fcep->citlist = ValNodeFree (fcep->citlist);
+  fcep->numitems = 0;
+  fcep->chosen = MemFree (fcep->chosen);
+  
+  MemSet ((Pointer) (&gs), 0, sizeof (GatherScope));
+  MemSet ((Pointer) (gs.ignore), (int) (TRUE), (size_t) (OBJ_MAX * sizeof (Boolean)));
+  gs.ignore [OBJ_SEQDESC] = FALSE;
+  gs.ignore [OBJ_SEQANNOT] = FALSE;
+  gs.ignore [OBJ_SEQFEAT] = FALSE;
+  gs.seglevels = 1;
+  GatherEntity (fcep->entityID, (Pointer) fcep, GatherAllCits, &gs);
+  count = fcep->numitems;
+  cldpp = (CitListDataPtr) MemNew (sizeof (CitListData) * (size_t) (count + 1));
+  if (cldpp != NULL) {
+    for (i = 0, vnp = fcep->citlist; i < count && vnp != NULL; i++, vnp = vnp->next) {
+      cldp = vnp->data.ptrvalue;
+      if (cldp != NULL) {
+        cldpp [i] = *cldp;
+        cldp->label = NULL;
       }
-      MemFree (cldpp);
-      Show (w);
-      Select (w);
-      ArrowCursor ();
-      Update ();
+    }
+    fcep->citlist = ValNodeFreeData (fcep->citlist);
+    HeapSort (cldpp, count, sizeof (CitListData), CompareCitList);
+    last [0] = '\0';
+    ObjectRect (fcep->allcitdoc, &r);
+    InsetRect (&r, 4, 4);
+    cofeColFmt.pixWidth = r.right - r.left;
+    cofeColFmt.pixInset = 20;
+    fcep->numitems = 0;
+    fcep->chosen = MemNew (sizeof (Boolean) * (size_t) (count + 1));
+
+    fcep->psp = (ValNodePtr) userdata;
+    for (i = 0, j = 0; i < count; i++) {
+      cldp = &(cldpp [i]);
+      if (cldp != NULL) {
+        if (last == NULL || StringCmp (cldp->label, last) != 0) {
+          sprintf (str, "%d %d %d", (int) cldp->entityID,
+                   (int) cldp->itemID, (int) cldp->itemtype);
+          ptr = StringSave (str);
+          (fcep->numitems)++;
+          AppendItem (fcep->allcitdoc, CitOnFeatPrintProc, (Pointer) ptr,
+                      TRUE, 5, &cofeParFmt, &cofeColFmt, programFont);
+          if (fcep->chosen != NULL) {
+            fcep->index = j;
+            GatherItem ((Uint2) cldp->entityID, (Uint2) cldp->itemID,
+                        (Uint2) cldp->itemtype, (Pointer) fcep, MatchMinimalCits);
+          }
+          j++;
+        }
+        StringNCpy_0 (last, cldp->label, sizeof (last));
+        cldpp [i].label = MemFree (cldpp [i].label);
+      }
+    }
+    fcep->psp = NULL;
+  }
+}
+
+static Pointer DialogToMinimizedCitList (DialoG d)
+{
+  FeatCitEditPtr  fcep;
+  Pointer         data;
+  unsigned int    entityID;
+  Int2            i;
+  unsigned int    itemID;
+  unsigned int    itemtype;
+  Int2            numItems;
+  ValNodePtr      ppr = NULL, psp = NULL;
+  CharPtr         str;
+  
+  fcep = (FeatCitEditPtr) GetObjectExtra (d);
+  if (fcep == NULL)
+  {
+    return NULL;
+  }
+  
+  if (fcep->chosen != NULL) {
+    GetDocParams (fcep->allcitdoc, &numItems, NULL);
+    for (i = 1; i <= numItems; i++) {
+      if (fcep->chosen [i - 1]) {
+        GetItemParams (fcep->allcitdoc, i, NULL, NULL, NULL, NULL, &data);
+        if (data != NULL) {
+          str = (CharPtr) data;
+          if (sscanf (str, "%u %u %u", &entityID, &itemID, &itemtype) == 3) {
+            GatherItem ((Uint2) entityID, (Uint2) itemID, (Uint2) itemtype,
+                        (Pointer) &ppr, MakeMinimalCitOnFeatItem);
+          }
+        }
+      }
     }
   }
+ 
+  if (ppr != NULL)
+  {
+    psp = ValNodeNew (NULL);
+    if (psp != NULL) {
+      psp->choice = 1;
+      psp->data.ptrvalue = ppr;
+    }
+  }
+  return psp;
+}
+
+extern DialoG FeatCitEditDialog (GrouP parent, Uint2 entityID)
+{
+  FeatCitEditPtr  fcep;
+  GrouP           p;
+  
+  fcep = (FeatCitEditPtr) MemNew (sizeof (FeatCitEdit));
+  if (fcep == NULL)
+  {
+    return NULL;
+  }
+
+  p = HiddenGroup (parent, -1, 0, NULL);
+  SetObjectExtra (p, fcep, CleanupFeatCitForm);
+
+  fcep->dialog = (DialoG) p;
+  fcep->todialog = CitListToDialog;
+  fcep->fromdialog = DialogToMinimizedCitList;
+  fcep->dialogmessage = NULL;
+  fcep->testdialog = NULL;
+
+  fcep->entityID = entityID;
+  fcep->omp = ObjMgrGet ();
+  fcep->numitems = 0;
+
+  fcep->allcitdoc = DocumentPanel (p, 25 * stdCharWidth, 15 * stdLineHeight);
+  SetObjectExtra (fcep->allcitdoc, fcep, NULL);
+  SetDocProcs (fcep->allcitdoc, ClickFeatCit, NULL, ReleaseFeatCit, NULL);
+  SetDocShade (fcep->allcitdoc, DrawFeatCit, NULL, NULL, NULL);
+  
+  SelectFont (programFont);
+  fcep->lineheight = LineHeight ();
+  SelectFont (systemFont);
+
+  return (DialoG) p;
+}
+
+typedef struct featcitationform
+{
+  FeatureFormPtr ffp;
+  DialoG         citation_list;
+   
+} FeatCitationFormData, PNTR FeatCitationFormPtr;
+
+static void AcceptFeatCit (ButtoN b)
+
+{
+  FeatCitationFormPtr  fcfp;
+  FeatureFormPtr       ffp;
+  ValNodePtr           psp = NULL;
+
+  fcfp = (FeatCitationFormPtr) GetObjectExtra (b);
+  if (fcfp == NULL)
+  {
+    return;
+  }
+  
+  psp = DialogToPointer (fcfp->citation_list);
+  ffp = (FeatureFormPtr) fcfp->ffp;
+  if (ffp != NULL) {
+    PointerToDialog (ffp->featcits, (Pointer) psp);
+    PubSetFree (psp);
+  }
+  Remove (ParentWindow (b));
+}
+
+static void EditFeatCitsProc (ButtoN b)
+
+{
+  ButtoN          btn;
+  GrouP           c;
+  FeatCitationFormPtr  fcfp;
+  FeatureFormPtr  ffp;
+  WindoW          w;
+  ValNodePtr      psp;
+
+  ffp = (FeatureFormPtr) GetObjectExtra (b);
+  if (ffp == NULL)
+  {
+    return;
+  }
+  fcfp = (FeatCitationFormPtr) MemNew (sizeof (FeatCitationFormData));
+  if (fcfp == NULL) 
+  {
+    return;
+  }
+
+  WatchCursor ();
+  Update ();
+  w = MovableModalWindow (-50, -33, -10, -10, "Citations", NULL);
+  SetObjectExtra (w, fcfp, StdCleanupExtraProc);
+  
+  fcfp->ffp = ffp;
+  fcfp->citation_list = FeatCitEditDialog (w, ffp->input_entityID);
+
+  c = HiddenGroup (w, 4, 0, NULL);
+  SetGroupSpacing (c, 10, 3);
+  btn = PushButton (c, "Accept", AcceptFeatCit);
+  SetObjectExtra (btn, fcfp, NULL);
+  PushButton (c, "Cancel", StdCancelButtonProc);
+  AlignObjects (ALIGN_CENTER, (HANDLE) fcfp->citation_list, (HANDLE) c, NULL);
+  RealizeWindow (w);
+  
+  psp = DialogToPointer (ffp->featcits);
+  PointerToDialog (fcfp->citation_list, psp);
+  PubSetFree (psp);
+
+  Show (w);
+  Select (w);
+  ArrowCursor ();
+  Update ();
 }
 
 static void ChangeGenePopupOrList (Handle gene)
@@ -1264,7 +1347,7 @@ static void ChangeCannedMessage (PopuP p)
       SetStatus (ffp->exception, TRUE);
       break;
     case 5 :
-      SetTitle (ffp->exceptText, "trans splicing");
+      SetTitle (ffp->exceptText, "trans-splicing");
       SetStatus (ffp->exception, TRUE);
       break;
     case 6 :
@@ -1419,7 +1502,7 @@ extern GrouP CreateCommonFeatureGroupEx (GrouP h, FeatureFormPtr ffp,
       PopupItem (canned, "RNA editing");
       PopupItem (canned, "reasons given in citation");
       PopupItem (canned, "ribosomal slippage");
-      PopupItem (canned, "trans splicing");
+      PopupItem (canned, "trans-splicing");
       PopupItem (canned, "artificial frameshift");
       PopupItem (canned, "nonconsensus splice site");
       PopupItem (canned, "rearrangement required");
@@ -1433,8 +1516,8 @@ extern GrouP CreateCommonFeatureGroupEx (GrouP h, FeatureFormPtr ffp,
         } else if (StringICmp (sfp->except_text, "ribosomal slippage") == 0 ||
                    StringICmp (sfp->except_text, "ribosome slippage") == 0) {
           SetValue (canned, 4);
-        } else if (StringICmp (sfp->except_text, "trans splicing") == 0 ||
-                   StringICmp (sfp->except_text, "trans-splicing") == 0) {
+        } else if (StringICmp (sfp->except_text, "trans-splicing") == 0 ||
+                   StringICmp (sfp->except_text, "trans splicing") == 0) {
           SetValue (canned, 5);
         } else if (StringICmp (sfp->except_text, "artificial frameshift") == 0) {
           SetValue (canned, 6);
@@ -2089,20 +2172,82 @@ static void FindInGeneralText (ButtoN b)
   }
 }
 
-static void LaunchGeneralTextViewerEx (CharPtr path, CharPtr title, Boolean useScrollText)
+typedef struct repopulateviewer
+{
+  Nlm_RepopulateViewer   repopulate_func; 
+  Pointer                repopulate_data;
+  Nlm_RepopulateDataFree free_data_func;
+  TextViewFormPtr        tfp;
+  FonT                   fnt;
+} RepopulateViewerData, PNTR RepopulateViewerPtr;
+
+static void CleanupRepopulateViewer (Nlm_GraphiC g, Nlm_VoidPtr data)
+{
+  RepopulateViewerPtr rp;
+  
+  rp = (RepopulateViewerPtr) data;
+  if (rp != NULL && rp->free_data_func != NULL)
+  {
+    (rp->free_data_func)(rp->repopulate_data);
+  }
+  
+  StdCleanupExtraProc (g, data);
+}
+
+static void RepopulateViewer (ButtoN b)
+{
+  RepopulateViewerPtr rp;
+  CharPtr             new_path;
+  
+  rp = (RepopulateViewerPtr) GetObjectExtra (b);
+  
+  if (rp == NULL || rp->repopulate_func == NULL)
+  {
+    return;
+  }
+  
+  new_path = (rp->repopulate_func) (rp->repopulate_data);
+  if (new_path == NULL)
+  {
+    return;
+  }
+  
+  if (rp->tfp->text != NULL)
+  {
+    FileToScrollText (rp->tfp->text, new_path);
+  }
+  else if (rp->tfp->doc != NULL)
+  {
+    txtColFmt.pixWidth = screenRect.right - screenRect.left;
+    txtColFmt.pixInset = 8;
+    DisplayFancy (rp->tfp->doc, new_path, &txtParFmt, &txtColFmt, rp->fnt, 0);
+  }
+  new_path = MemFree (new_path);
+  FileRemove (new_path);
+}
+
+static void 
+LaunchGeneralTextViewerEx 
+(CharPtr path,
+ CharPtr title, 
+ Boolean useScrollText,
+ Nlm_RepopulateViewer   repopulate_func, 
+ Pointer                repopulate_data,
+ Nlm_RepopulateDataFree free_data_func)
 
 {
-  ButtoN             b;
-  FonT               fnt;
-  GrouP              g;
-  Int2               pixheight;
-  Int2               pixwidth;
-  StdEditorProcsPtr  sepp;
-  TextViewFormPtr    tfp;
-  TextViewProcsPtr   tvpp;
-  WindoW             w;
+  ButtoN              b;
+  FonT                fnt;
+  GrouP               g;
+  Int2                pixheight;
+  Int2                pixwidth;
+  StdEditorProcsPtr   sepp;
+  TextViewFormPtr     tfp;
+  TextViewProcsPtr    tvpp;
+  RepopulateViewerPtr rp;
+  WindoW              w;
 #ifndef WIN_MAC
-  MenU               m;
+  MenU                m;
 #endif
 
   tfp = (TextViewFormPtr) MemNew (sizeof (TextViewForm));
@@ -2156,6 +2301,20 @@ static void LaunchGeneralTextViewerEx (CharPtr path, CharPtr title, Boolean useS
     b = PushButton (g, "Find", FindInGeneralText);
     SetObjectExtra (b, tfp, NULL);
     tfp->find = DialogText (g, "", 10, NULL);
+    if (repopulate_func != NULL)
+    {
+      rp = (RepopulateViewerPtr) MemNew (sizeof (RepopulateViewerData));
+      if (rp != NULL)
+      {
+        rp->repopulate_func = repopulate_func;
+        rp->repopulate_data = repopulate_data;
+        rp->free_data_func = free_data_func;
+        rp->tfp = tfp;
+        rp->fnt = fnt;
+        b = PushButton (g, "Repopulate", RepopulateViewer);
+        SetObjectExtra (b, rp, StdCleanupExtraProc);
+      }
+    }
   }
 
   if (useScrollText) {
@@ -2167,7 +2326,8 @@ static void LaunchGeneralTextViewerEx (CharPtr path, CharPtr title, Boolean useS
     if (! FileToScrollText (tfp->text, path)) {
       /* SetTitle (tfp->text, "(Text is too large to be displayed in this control.)"); */
       Remove (w);
-      LaunchGeneralTextViewerEx (path, title, FALSE);
+      LaunchGeneralTextViewerEx (path, title, FALSE,
+                                 repopulate_func, repopulate_data, free_data_func);
       return;
     }
   } else {
@@ -2184,6 +2344,25 @@ static void LaunchGeneralTextViewerEx (CharPtr path, CharPtr title, Boolean useS
   Update ();
 }
 
+extern void LaunchGeneralTextViewerWithRepopulate 
+(CharPtr                path,
+ CharPtr                title, 
+ Nlm_RepopulateViewer   repopulate_func,
+ Pointer                repopulate_data,
+ Nlm_RepopulateDataFree free_data_func)
+{
+  TextViewProcsPtr tvpp;
+
+  tvpp = (TextViewProcsPtr) GetAppProperty ("TextDisplayForm");
+  if (tvpp != NULL && tvpp->useScrollText) {
+    LaunchGeneralTextViewerEx (path, title, TRUE, 
+                               repopulate_func, repopulate_data, free_data_func);
+  } else {
+    LaunchGeneralTextViewerEx (path, title, FALSE, 
+                               repopulate_func, repopulate_data, free_data_func);
+  }
+}
+
 extern void LaunchGeneralTextViewer (CharPtr path, CharPtr title)
 
 {
@@ -2191,10 +2370,31 @@ extern void LaunchGeneralTextViewer (CharPtr path, CharPtr title)
 
   tvpp = (TextViewProcsPtr) GetAppProperty ("TextDisplayForm");
   if (tvpp != NULL && tvpp->useScrollText) {
-    LaunchGeneralTextViewerEx (path, title, TRUE);
+    LaunchGeneralTextViewerEx (path, title, TRUE, NULL, NULL, NULL);
   } else {
-    LaunchGeneralTextViewerEx (path, title, FALSE);
+    LaunchGeneralTextViewerEx (path, title, FALSE, NULL, NULL, NULL);
   }
+}
+
+extern void LaunchAsnTextViewer (Pointer from, AsnWriteFunc writefunc, CharPtr title)
+
+{
+  AsnIoPtr  aip;
+  Char      path [PATH_MAX];
+
+  if (from == NULL || writefunc == NULL) return;
+  if (StringHasNoText (title)) {
+    title = "General ASN.1 Text Viewer";
+  }
+
+  TmpNam (path);
+  aip = AsnIoOpen (path, "w");
+  if (aip != NULL) {
+    (*writefunc) (from, aip, NULL);
+    AsnIoClose (aip);
+    LaunchGeneralTextViewer (path, title);
+  }
+  FileRemove (path);
 }
 
 #ifndef WIN_MAC
@@ -2737,3 +2937,1347 @@ NLM_EXTERN void LaunchEntrezURL (CharPtr database, Int4 uid, CharPtr format)
 #endif
 }
 
+extern void ModalAcceptButton (ButtoN b)
+{
+  ModalAcceptCancelPtr acp;
+  
+  acp = (ModalAcceptCancelPtr) GetObjectExtra (b);
+  if (acp != NULL)
+  {
+    acp->accepted = TRUE;
+  }
+}
+
+extern void ModalCancelButton (ButtoN b)
+{
+  ModalAcceptCancelPtr acp;
+  
+  acp = (ModalAcceptCancelPtr) GetObjectExtra (b);
+  if (acp != NULL)
+  {
+    acp->cancelled = TRUE;
+  }
+}
+
+typedef struct tabledisplay 
+{
+  DIALOG_MESSAGE_BLOCK
+  PaneL panel;
+  ValNodePtr row_list;
+  Int4 frozen_header;
+  Int4 frozen_left;
+  Int4 table_inset;
+  Int4 char_width;
+  Int4 descent;
+  FonT display_font;
+  TableDisplayDblClick dbl_click;
+  Pointer dbl_click_data;
+} TableDisplayData, PNTR TableDisplayPtr;
+
+extern ValNodePtr FreeTableDisplayRowList (ValNodePtr row_list)
+{
+  ValNodePtr row_vnp, column_list;
+  
+  if (row_list != NULL)
+  {
+    /* free table text */
+    for (row_vnp = row_list; row_vnp != NULL; row_vnp = row_vnp->next)
+    {
+      column_list = (ValNodePtr) row_vnp->data.ptrvalue;
+      row_vnp->data.ptrvalue = ValNodeFreeData (column_list);
+    }
+    row_list = ValNodeFree (row_list);
+  }
+  return row_list;
+}
+
+extern void PrintTableDisplayRowListToFile (ValNodePtr row_list, FILE *fp)
+{
+  ValNodePtr row_vnp, col_vnp, column_list;
+  CharPtr    txt_val;
+  
+  if (row_list == NULL || fp == NULL)
+  {
+    return;
+  }
+  
+  for (row_vnp = row_list; row_vnp != NULL; row_vnp = row_vnp->next)
+  {
+    column_list = (ValNodePtr) row_vnp->data.ptrvalue;
+    for (col_vnp = column_list; col_vnp != NULL; col_vnp = col_vnp->next)
+    {
+      txt_val = (CharPtr) col_vnp->data.ptrvalue;
+      if (!StringHasNoText (txt_val))
+      {
+        fprintf (fp, "%s", txt_val);
+      }
+      if (col_vnp->next == NULL)
+      {
+        fprintf (fp, "\n");
+      }
+      else
+      {
+        fprintf (fp, "\t");
+      }
+    }
+  }
+}
+
+static ValNodePtr ValNodeStringListCopy (ValNodePtr orig_list)
+{
+  ValNodePtr new_list = NULL;
+  
+  if (orig_list == NULL)
+  {
+    return NULL;
+  }
+  
+  new_list = ValNodeNew (NULL);
+  new_list->choice = orig_list->choice;
+  new_list->data.ptrvalue = StringSave (orig_list->data.ptrvalue);
+  new_list->next = ValNodeStringListCopy (orig_list->next);
+  return new_list;
+}
+
+extern ValNodePtr CopyTableDisplayRowList (ValNodePtr row_list)
+{
+  ValNodePtr new_row_list = NULL;
+  
+  if (row_list == NULL)
+  {
+    return NULL; 
+  }
+  
+  new_row_list = ValNodeNew (NULL);
+  new_row_list->choice = row_list->choice;
+  new_row_list->data.ptrvalue = ValNodeStringListCopy (row_list->data.ptrvalue);
+  new_row_list->next = CopyTableDisplayRowList (row_list->next);
+  return new_row_list;
+}
+
+static void CleanupTableDisplayDialog (GraphiC g, VoidPtr data)
+{
+  TableDisplayPtr dlg;
+
+  dlg = (TableDisplayPtr) data;
+  if (dlg != NULL) {
+    dlg->row_list = FreeTableDisplayRowList (dlg->row_list);
+  }
+  StdCleanupExtraProc (g, data);
+}
+
+static void RowsToTableDisplayDialog (DialoG d, Pointer userdata)
+{
+  TableDisplayPtr dlg;
+  RecT            r;
+	WindoW          temport;
+
+  dlg = (TableDisplayPtr) GetObjectExtra (d);
+  if (dlg == NULL)
+  {
+    return;
+  }
+  
+  dlg->row_list = FreeTableDisplayRowList (dlg->row_list);
+  dlg->row_list = CopyTableDisplayRowList (userdata);
+  temport = SavePort (dlg->panel);
+  ObjectRect (dlg->panel, &r);
+  InvalRect (&r);  
+  Update ();
+  RestorePort (temport);
+}
+
+static Pointer TableDisplayDialogToRows (DialoG d)
+{
+  TableDisplayPtr dlg;
+
+  dlg = (TableDisplayPtr) GetObjectExtra (d);
+  if (dlg == NULL)
+  {
+    return NULL;
+  }
+  
+  return CopyTableDisplayRowList (dlg->row_list);
+}
+
+static Int4 
+PrepareTableDisplayTextBuffer 
+(CharPtr buf,
+ Int4    remaining_chars_in_row,
+ Int4    col_width,
+ CharPtr data)
+{
+  Int4 chars_to_paint = 0;
+  if (buf == NULL)
+  {
+    return 0;
+  }
+  
+  if (remaining_chars_in_row < col_width)
+  {
+    chars_to_paint = remaining_chars_in_row;
+    StringNCpy (buf, data, chars_to_paint);
+    buf [chars_to_paint] = 0;
+  }
+  else
+  {
+    chars_to_paint = col_width;
+    StringNCpy (buf, data, chars_to_paint);
+    buf [chars_to_paint] = 0;
+    if (StringLen (data) > chars_to_paint && chars_to_paint > 2)
+    {
+      buf [chars_to_paint - 1] = '.';
+      buf [chars_to_paint - 2] = '.';
+      buf [chars_to_paint - 3] = '.';
+    }
+  }
+  return chars_to_paint;
+}
+
+static void DrawTableDisplayLine (Int4 x, Int4 y, 
+ ValNodePtr header_row,
+ ValNodePtr data_row,
+ CharPtr    buf,
+ Int4       row_length,
+ Int4       frozen_left,
+ Int4       start_col,
+ Int4       char_width,
+ Int4       descent)
+{
+  ValNodePtr header_vnp, data_vnp;
+  Int4       x_offset, chars_to_paint, col_num;
+  PoinT      pt1, pt2;
+  RecT       rct;
+  
+  /* draw left margin */
+  
+  for (header_vnp = header_row, data_vnp = data_row, x_offset = 0, col_num = 0;
+       header_vnp != NULL && data_vnp != NULL && x_offset < row_length && col_num < frozen_left;
+       header_vnp = header_vnp->next, data_vnp = data_vnp->next, col_num++)
+  {
+    Gray ();
+    InvertColors ();
+    chars_to_paint = PrepareTableDisplayTextBuffer (buf, 
+                                   (row_length - x_offset) / char_width,
+                                   header_vnp->choice,
+                                   data_vnp->data.ptrvalue);
+        
+    LoadRect (&rct, x + x_offset, y + descent,
+              x + x_offset + (chars_to_paint + 2) * char_width, 
+              y - stdLineHeight + descent);
+    EraseRect (&rct);
+
+    PaintStringEx ( (CharPtr)buf, x + x_offset, y);
+    x_offset += (chars_to_paint + 2) * char_width;
+    InvertColors ();
+    Black ();
+  }
+  
+  if (frozen_left > 0)
+  {
+    pt1.x = x + x_offset - 1;
+    pt1.y = y;
+    pt2.x = x + x_offset - 1;
+    pt2.y = y - stdLineHeight;
+    DrawLine (pt1, pt2);
+  }
+
+  
+  while (col_num < start_col && header_vnp != NULL && data_vnp != NULL)
+  {
+    col_num++;
+    header_vnp = header_vnp->next;
+    data_vnp = data_vnp->next;
+  }
+  
+  /* draw unfrozen columns */
+  while (header_vnp != NULL && data_vnp != NULL && x_offset < row_length)
+  {
+    chars_to_paint = MIN (header_vnp->choice, (row_length - x_offset)/char_width);
+    StringNCpy (buf, data_vnp->data.ptrvalue, chars_to_paint);
+    buf [chars_to_paint] = 0;
+    chars_to_paint = PrepareTableDisplayTextBuffer (buf, 
+                                   (row_length - x_offset) / char_width,
+                                   header_vnp->choice,
+                                   data_vnp->data.ptrvalue);
+
+    PaintStringEx ( (CharPtr)buf, x + x_offset, y);
+    x_offset += (chars_to_paint + 2) * char_width;
+    header_vnp = header_vnp->next;
+    data_vnp = data_vnp->next;
+  }
+}
+
+static void OnDrawTableDisplay (PaneL p)
+{
+  TableDisplayPtr dlg;
+  BaR             sb_vert, sb_horiz;
+  Int4            start_row, start_col;
+  RecT            r;
+  Int4            x, y, row, row_length;
+  CharPtr         row_buffer;
+  ValNodePtr      row_vnp;
+  Int4            num_rows, num_columns, visible_rows;
+  PoinT           pt1, pt2;
+  Int4            new_vmax, new_hmax, old_vmax, old_hmax;
+
+  dlg = (TableDisplayPtr) GetObjectExtra (p);
+  if (dlg == NULL)
+  {
+    return;
+  }
+  
+  SelectFont (dlg->display_font);
+  
+  sb_vert  = GetSlateVScrollBar ((SlatE) p);
+  sb_horiz = GetSlateHScrollBar ((SlatE) p);
+  
+  start_row = GetBarValue (sb_vert) + dlg->frozen_header;
+  start_col = GetBarValue (sb_horiz) + dlg->frozen_left;
+  
+  if (dlg->row_list == NULL)
+  {
+    num_rows = 0;
+    num_columns = 0;
+  }
+  else
+  {
+    num_rows = ValNodeLen (dlg->row_list);
+    num_columns = ValNodeLen (dlg->row_list->data.ptrvalue);
+  }
+
+  ObjectRect (p, &r);
+  InsetRect (&r, dlg->table_inset, dlg->table_inset);
+  x = r.left + 1;
+  y = r.top + stdLineHeight;
+  SelectFont (programFont); 
+    
+  visible_rows = (r.bottom - r.top - 2 * dlg->table_inset) / stdLineHeight - dlg->frozen_header;
+  new_vmax = num_rows - visible_rows - 1;
+  new_hmax = num_columns -dlg->frozen_left - 1;
+  if (new_vmax < 0)
+  {
+    new_vmax = 0;
+  }
+  if (new_hmax < 0)
+  {
+    new_hmax = 0;
+  }
+  old_vmax = GetBarMax (sb_vert);
+  old_hmax = GetBarMax (sb_horiz);
+  
+  if (old_vmax != new_vmax)
+  {
+    CorrectBarMax (sb_vert, new_vmax);
+    if (start_row > new_vmax + dlg->frozen_header)
+    {
+      start_row = new_vmax + dlg->frozen_header;
+    }
+    CorrectBarValue (sb_vert, start_row - dlg->frozen_header);
+    CorrectBarPage (sb_vert, 1, 1);
+  }
+  
+  if (old_hmax != new_hmax)
+  {
+    CorrectBarMax (sb_horiz, new_hmax);
+    if (start_col > new_hmax + dlg->frozen_left)
+    {
+      start_col = new_hmax + dlg->frozen_left;
+    }
+    CorrectBarValue (sb_horiz, start_col - dlg->frozen_left);
+    CorrectBarPage (sb_horiz, 1, 1);
+  }
+  
+  row_length = r.right - r.left - 2;
+  row_buffer = (CharPtr) MemNew (((row_length / dlg->char_width) + 1) * sizeof (Char));
+  
+  for (row = 0, row_vnp = dlg->row_list;
+       row < dlg->frozen_header && y <= r.bottom - 2 * dlg->table_inset && row_vnp != NULL;
+       row++, row_vnp = row_vnp->next)
+  {
+    DrawTableDisplayLine (x, y, dlg->row_list->data.ptrvalue, row_vnp->data.ptrvalue,
+                          row_buffer, row_length, dlg->frozen_left, start_col, 
+                          dlg->char_width, dlg->descent);
+    y += stdLineHeight;
+  }
+  
+  while (row < start_row && row_vnp != NULL)
+  {
+    row++;
+    row_vnp = row_vnp->next;
+  }
+  
+  while (row_vnp != NULL && y <= r.bottom - 2 * dlg->table_inset)
+  {
+    DrawTableDisplayLine (x, y, dlg->row_list->data.ptrvalue, row_vnp->data.ptrvalue,
+                          row_buffer, row_length, dlg->frozen_left, start_col,
+                          dlg->char_width, dlg->descent);
+    row_vnp = row_vnp->next;
+    y += stdLineHeight;
+  }
+  
+  /* draw line to separate header from remaining lines */
+  if (dlg->frozen_header > 0)
+  {
+    Black ();
+    pt1.x = x;
+    pt1.y = r.top + stdLineHeight + dlg->descent;
+    pt2.x = x + row_length;
+    pt2.y = r.top + stdLineHeight + dlg->descent;
+    DrawLine (pt1, pt2);
+  }
+  
+
+}
+
+static void OnVScrollTableDisplay (BaR sb, SlatE s, Int4 newval, Int4 oldval)
+{
+  RecT r;
+  
+  ObjectRect (s, &r);
+  InvalRect (&r);
+}
+
+static void OnHScrollTableDisplay (BaR sb, SlatE s, Int4 newval, Int4 oldval)
+{
+  RecT r;
+  
+  ObjectRect (s, &r);
+  InvalRect (&r);
+}
+
+static PoinT GetTableDisplayCell (TableDisplayPtr dlg, PoinT pt)
+{
+  BaR sb_horiz;
+  BaR sb_vert;
+  Int4 start_row, start_col;
+  RecT r;
+  PoinT cell_coord;
+  Int4  x, y;
+  ValNodePtr header_vnp;
+  Int4  col_width;
+  
+  cell_coord.x = 0;
+  cell_coord.y = 0;
+  
+  if (dlg == NULL || dlg->row_list == NULL)
+  {
+    return cell_coord;
+  }
+  
+  sb_vert  = GetSlateVScrollBar ((SlatE) dlg->panel);
+  sb_horiz = GetSlateHScrollBar ((SlatE) dlg->panel);
+  
+  start_row = GetBarValue (sb_vert) + dlg->frozen_header;
+  start_col = GetBarValue (sb_horiz) + dlg->frozen_left;
+  
+  ObjectRect (dlg->panel, &r);
+  InsetRect (&r, dlg->table_inset, dlg->table_inset);
+  x = pt.x - r.left;
+  y = pt.y - r.top;
+  
+  cell_coord.y = y / stdLineHeight;
+  
+  if (cell_coord.y >= dlg->frozen_header)
+  {
+    cell_coord.y += GetBarValue (sb_vert);
+  }
+
+  header_vnp = dlg->row_list->data.ptrvalue;
+  
+  col_width = 0;
+  while (header_vnp != NULL && col_width + (header_vnp->choice + 2) * dlg->char_width < x
+         && cell_coord.x < dlg->frozen_left)
+  {
+    cell_coord.x++;
+    col_width += (header_vnp->choice + 2) * dlg->char_width;
+    header_vnp = header_vnp->next;
+  }
+  
+  if (cell_coord.x >= dlg->frozen_left)
+  {
+    /* skip over unfrozen columns not currently displayed */
+    while (header_vnp != NULL && cell_coord.x < start_col)
+    {
+      header_vnp = header_vnp->next;
+      cell_coord.x++;
+    }
+  
+    while (header_vnp != NULL && col_width + (header_vnp->choice + 2) * dlg->char_width < x)
+    {
+      cell_coord.x++;
+      col_width += (header_vnp->choice + 2) * dlg->char_width;
+      header_vnp = header_vnp->next;
+    }
+  }
+  return cell_coord;
+}
+
+static CharPtr TableDisplayGetTextForCell (TableDisplayPtr dlg, PoinT pt)
+{
+  ValNodePtr row_vnp, col_vnp;
+  Int4       row_num, col_num;
+  
+  if (dlg == NULL || dlg->row_list == NULL || pt.x < 0 || pt.y < 0)
+  {
+    return NULL;
+  }
+  
+  for (row_vnp = dlg->row_list, row_num = 0;
+       row_vnp != NULL && row_num < pt.y;
+       row_vnp = row_vnp->next, row_num++)
+  {
+  }
+  if (row_num != pt.y || row_vnp == NULL)
+  {
+    return NULL;
+  }
+  for (col_vnp = row_vnp->data.ptrvalue, col_num = 0;
+       col_vnp != NULL && col_num < pt.x;
+       col_vnp = col_vnp->next, col_num++)
+  {
+  }
+  if (col_num != pt.x || col_vnp == NULL)
+  {
+    return NULL;
+  }
+  else
+  {
+    return StringSave (col_vnp->data.ptrvalue);
+  }  
+}
+
+static void TableDisplayOnClick (PaneL p, PoinT pt)
+{
+  TableDisplayPtr dlg;
+  Boolean         dbl_click;
+  PoinT           cell_coord;
+  PoinT           header_coord;
+  CharPtr         cell_text;
+  CharPtr         header_text;
+  
+  dlg = (TableDisplayPtr) GetObjectExtra (p);
+  if (dlg == NULL)
+  {
+    return;
+  }
+  
+  dbl_click = dblClick;
+  if (dbl_click && dlg->dbl_click != NULL)
+  {
+    cell_coord = GetTableDisplayCell (dlg, pt);
+    cell_text = TableDisplayGetTextForCell (dlg, cell_coord);
+    header_coord.x = cell_coord.x;
+    header_coord.y = 0;
+    header_text = TableDisplayGetTextForCell (dlg, header_coord);
+    (dlg->dbl_click) (cell_coord, header_text, cell_text, dlg->dbl_click_data);
+    MemFree (cell_text);
+    MemFree (header_text);
+  }
+}
+
+extern DialoG TableDisplayDialog (GrouP parent, Int4 width, Int4 height,
+                                  Int4 frozen_header, Int4 frozen_left,
+                                  TableDisplayDblClick dbl_click,
+                                  Pointer dbl_click_data)
+{
+  TableDisplayPtr dlg;
+  GrouP           p;
+  
+  dlg = (TableDisplayPtr) MemNew (sizeof (TableDisplayData));
+  if (dlg == NULL)
+  {
+    return NULL;
+  }
+  p = HiddenGroup (parent, -1, 0, NULL);
+  SetObjectExtra (p, dlg, CleanupTableDisplayDialog);
+  
+  dlg->dialog = (DialoG) p;
+  dlg->todialog = RowsToTableDisplayDialog;
+  dlg->fromdialog = TableDisplayDialogToRows;
+  dlg->dialogmessage = NULL;
+  dlg->testdialog = NULL;
+  
+  dlg->row_list = NULL;
+  dlg->frozen_header = frozen_header;
+  dlg->frozen_left = frozen_left;
+  dlg->table_inset = 4;
+  dlg->dbl_click = dbl_click;
+  dlg->dbl_click_data = dbl_click_data;
+
+#ifdef WIN_MAC
+  dlg->display_font = ParseFont ("Monaco, 9");
+#endif
+#ifdef WIN_MSWIN
+  dlg->display_font = ParseFont ("Courier, 9");
+#endif
+#ifdef WIN_MOTIF
+  dlg->display_font = ParseFont ("fixed, 12");
+#endif
+  SelectFont (dlg->display_font);
+  dlg->char_width  = CharWidth ('0');
+  dlg->descent = Descent ();
+  
+  dlg->panel = AutonomousPanel4 (p, width, height, OnDrawTableDisplay,
+                               OnVScrollTableDisplay, OnHScrollTableDisplay,
+                               sizeof (TableDisplayData), NULL, NULL); 
+  SetObjectExtra (dlg->panel, dlg, NULL);
+  SetPanelClick(dlg->panel, TableDisplayOnClick, NULL, NULL, NULL);
+  
+  return (DialoG) p;  
+}
+
+typedef struct selectiondialog
+{
+  DIALOG_MESSAGE_BLOCK
+  LisT       list_ctrl;
+  PopuP      popup_ctrl;
+  ValNodePtr selected_list; 
+  Boolean    allow_multi; 
+  Int4       num_choices;
+  CharPtr    err_msg;
+  Nlm_ChangeNotifyProc     change_notify;
+  Pointer                  change_userdata;
+} SelectionDialogData, PNTR SelectionDialogPtr;
+
+static void CleanupSelectionDialogForm (GraphiC g, VoidPtr data)
+
+{
+  SelectionDialogPtr dlg;
+
+  dlg = (SelectionDialogPtr) data;
+  if (dlg != NULL) {
+    dlg->selected_list = ValNodeFree (dlg->selected_list);
+  }
+  StdCleanupExtraProc (g, data);
+}
+
+static void ResetSelectionDialog (SelectionDialogPtr dlg)
+{
+  Int4       i;
+  
+  if (dlg != NULL)
+  {
+    if (dlg->allow_multi)
+    {
+      /* set ALL choice to FALSE */
+      SetItemStatus (dlg->list_ctrl, 1, FALSE);
+      
+      for (i = 2; i <= dlg->num_choices; i++)
+      {
+        SetItemStatus (dlg->list_ctrl, i, FALSE);
+      }
+      dlg->selected_list = ValNodeFree (dlg->selected_list);
+    }
+    else if (dlg->list_ctrl != NULL)
+    {
+      SetValue (dlg->list_ctrl, 0);
+    }
+    else if (dlg->popup_ctrl != NULL)
+    {
+      SetValue (dlg->popup_ctrl, 0);
+    }
+  } 
+}
+
+static Int4 GetNewSelection (SelectionDialogPtr dlg)
+{
+  ValNodePtr vnp;
+  Int4       i;
+  
+  if (dlg == NULL)
+  {
+    return 0;
+  }
+  
+  if (dlg->allow_multi)
+  {
+    for (i = 1; i <= dlg->num_choices; i++)
+    {
+      if (GetItemStatus (dlg->list_ctrl, i))
+      {
+        for (vnp = dlg->selected_list; vnp != NULL && vnp->data.intvalue < i; vnp = vnp->next)
+        {}
+        if (vnp == NULL || vnp->data.intvalue > i)
+        {
+          /* this was not on the previous list, so it is the new choice */
+          return i;
+        }
+      }
+    }
+    /* nothing new was selected */
+    return 0;
+  }
+  
+  else if (dlg->list_ctrl != NULL)
+  {
+    return GetValue (dlg->list_ctrl);
+  }
+  else if (dlg->popup_ctrl != NULL)
+  {
+    return GetValue (dlg->popup_ctrl);
+  }
+  else
+  {
+    return 0;
+  }
+}
+
+static ValNodePtr GetCurrentSelections (SelectionDialogPtr dlg)
+{
+  ValNodePtr sel_list = NULL;
+  Int4       i;
+  
+  if (dlg == NULL)
+  {
+    return NULL;
+  }
+  
+  if (dlg->list_ctrl != NULL)
+  {
+    for (i = 1; i <= dlg->num_choices; i++)
+    {
+      if (GetItemStatus (dlg->list_ctrl, i))
+      {
+        ValNodeAddInt (&sel_list, 0, i);
+      }
+    }
+  }
+  else if (dlg->popup_ctrl != NULL)
+  {
+    i = GetValue (dlg->popup_ctrl);
+    if (i != 0)
+    {
+      ValNodeAddInt (&sel_list, 0, i);
+    }
+  }
+  return sel_list;
+}
+
+static void SelectionDialogChanged (LisT l)
+{
+  SelectionDialogPtr dlg;
+  Int4               new_sel;
+  Int4               i;
+
+  dlg = (SelectionDialogPtr) GetObjectExtra (l);
+  if (dlg == NULL)
+  {
+    return;
+  }
+  
+  if (dlg->allow_multi)
+  {
+    new_sel = GetNewSelection (dlg);
+    if (new_sel == 1)
+    {
+      for (i = 2; i <= dlg->num_choices; i++)
+      {
+        SetItemStatus (dlg->list_ctrl, i, FALSE);
+      }        
+    }
+    else
+    {
+      SetItemStatus (dlg->list_ctrl, 1, FALSE);
+    }
+    dlg->selected_list = GetCurrentSelections (dlg);
+  }
+  
+  
+  if (dlg->change_notify != NULL)
+  {
+    (dlg->change_notify)(dlg->change_userdata);
+  } 
+}
+
+static void SelectionDialogPopupChanged (PopuP p)
+{
+  SelectionDialogPtr dlg;
+ 
+  dlg = (SelectionDialogPtr) GetObjectExtra (p);
+  if (dlg == NULL)
+  {
+    return;
+  }
+    
+  if (dlg->change_notify != NULL)
+  {
+    (dlg->change_notify)(dlg->change_userdata);
+  } 
+}
+
+static void SelectionListToSelectionDialog (DialoG d, Pointer userdata)
+{
+  SelectionDialogPtr dlg;
+  ValNodePtr         selected_list, vnp_list;
+  Boolean            show_all = FALSE;
+
+  dlg = (SelectionDialogPtr) GetObjectExtra (d);
+  if (dlg == NULL)
+  {
+    return;
+  }
+  
+  ResetSelectionDialog (dlg);  
+  selected_list = (ValNodePtr) userdata;
+  for (vnp_list = selected_list; vnp_list != NULL && ! show_all; vnp_list = vnp_list->next)
+  {
+    if (vnp_list->data.intvalue < 1)
+    {
+      continue;
+    }
+    if (dlg->allow_multi)
+    {
+      if (vnp_list->data.intvalue == 1)
+      {
+        show_all = TRUE;
+      }
+      else
+      {
+        SetItemStatus (dlg->list_ctrl, vnp_list->data.intvalue, TRUE);
+      } 
+    }
+    else if (dlg->list_ctrl != NULL)
+    {
+      SetValue (dlg->list_ctrl, vnp_list->data.intvalue);
+      return;
+    }
+    else if (dlg->popup_ctrl != NULL)
+    {
+      SetValue (dlg->popup_ctrl, vnp_list->data.intvalue);
+      return;
+    }
+  }
+  dlg->selected_list = GetCurrentSelections (dlg);
+}
+
+
+static Pointer SelectionDialogToSelectionList (DialoG d)
+{
+  SelectionDialogPtr dlg;
+  ValNodePtr         sel_list = NULL;
+  Boolean            all_selected = FALSE;
+  Int4               i = 0;
+
+  dlg = (SelectionDialogPtr) GetObjectExtra (d);
+  if (dlg == NULL)
+  {
+    return NULL;
+  }
+  
+  if (dlg->allow_multi)
+  {
+    all_selected = GetItemStatus (dlg->list_ctrl, 1);
+    for (i = 2; i <= dlg->num_choices; i++)
+    {
+      if (all_selected || GetItemStatus (dlg->list_ctrl, i))
+      {
+        ValNodeAddInt (&sel_list, 0, i - 1);
+      }
+    }
+  }
+  else
+  {
+    if (dlg->list_ctrl != NULL)
+    {
+      i = GetValue (dlg->list_ctrl);
+    }
+    else if (dlg->popup_ctrl != NULL)
+    {
+      i = GetValue (dlg->popup_ctrl);
+    }
+    if (i > 0)
+    {
+      ValNodeAddInt (&sel_list, 0, i);
+    }
+  }
+  return (Pointer) sel_list;
+}
+
+static void SelectionDialogMessage (DialoG d, Int2 mssg)
+
+{
+  SelectionDialogPtr dlg;
+
+  dlg = (SelectionDialogPtr) GetObjectExtra (d);
+  if (dlg != NULL) {
+    switch (mssg) {
+      case VIB_MSG_INIT :
+        /* reset list */
+        ResetSelectionDialog (dlg);
+        break;
+      case VIB_MSG_ENTER :
+        if (dlg->list_ctrl != NULL)
+        {
+          Select (dlg->list_ctrl);
+        }
+        else if (dlg->popup_ctrl != NULL)
+        {
+          Select (dlg->popup_ctrl);
+        }
+        break;
+      case NUM_VIB_MSG + 1:
+        if (dlg->list_ctrl != NULL)
+        {
+          SetItemStatus (dlg->list_ctrl, 1, TRUE);
+        }
+        else if (dlg->popup_ctrl != NULL)
+        {
+          SetValue (dlg->popup_ctrl, 1);
+        }
+        SelectionDialogChanged (dlg->list_ctrl);
+        break;
+      default :
+        break;
+    }
+  }
+}
+
+static ValNodePtr TestSelectionDialog (DialoG d)
+
+{
+  SelectionDialogPtr dlg;
+  ValNodePtr         head = NULL;
+  Int4               sel_num;
+  Boolean            any_selected = FALSE;
+
+  dlg = (SelectionDialogPtr) GetObjectExtra (d);
+  if (dlg != NULL) {
+    if (dlg->allow_multi)
+    {
+      for (sel_num = 1; sel_num <= dlg->num_choices && !any_selected; sel_num++)
+      {
+        any_selected = GetItemStatus (dlg->list_ctrl, sel_num);
+      }
+    }
+    else if (dlg->list_ctrl != NULL)
+    {
+      if (GetValue (dlg->list_ctrl) > 0)
+      {
+        any_selected = TRUE;
+      }
+    }
+    else if (dlg->popup_ctrl != NULL)
+    {
+      if (GetValue (dlg->popup_ctrl) > 0)
+      {
+        any_selected = TRUE;
+      }
+    }
+    if (!any_selected)
+    {
+      head = AddStringToValNodeChain (head, dlg->err_msg, 1);
+    }
+  }
+  return head;
+}
+
+/* err_msg is the message to put in the results from TestDialog if nothing is selected */
+/* choice_list should be a valnode list of strings to use for the names of the choices. */
+/* All is automatically included as a choice if allow_multi is true. */
+/* The ValNodeList returned is a list of integers indicating the position of the item
+ * in the list - 1 is the first item, 2 is the second item, etc. */
+extern DialoG SelectionDialog 
+(GrouP h,
+ Nlm_ChangeNotifyProc     change_notify,
+ Pointer                  change_userdata,
+ Boolean                  allow_multi,
+ CharPtr                  err_msg,
+ ValNodePtr               choice_list,
+ Int2                     list_height)
+
+{
+  SelectionDialogPtr  dlg;
+  GrouP               p;
+  ValNodePtr          vnp;
+  Int4                num_choices;
+  
+  if (choice_list == NULL)
+  {
+    return NULL;
+  }
+  
+  dlg = (SelectionDialogPtr) MemNew (sizeof (SelectionDialogData));
+  if (dlg == NULL)
+  {
+    return NULL;
+  }
+  
+  p = HiddenGroup (h, 0, 2, NULL);
+  SetObjectExtra (p, dlg, CleanupSelectionDialogForm);
+
+  dlg->dialog = (DialoG) p;
+  dlg->todialog = SelectionListToSelectionDialog;
+  dlg->fromdialog = SelectionDialogToSelectionList;
+  dlg->dialogmessage = SelectionDialogMessage;
+  dlg->testdialog = TestSelectionDialog;
+  dlg->change_notify = change_notify;
+  dlg->change_userdata = change_userdata;
+  dlg->allow_multi = allow_multi;
+  dlg->err_msg = err_msg;
+  dlg->selected_list = NULL;
+  
+  num_choices = ValNodeLen (choice_list);
+  
+  if (allow_multi)
+  {
+    dlg->list_ctrl = MultiList (p, 8, list_height, SelectionDialogChanged);
+    SetObjectExtra (dlg->list_ctrl, dlg, NULL);
+  }
+  else
+  {
+    if (num_choices < 20)
+    {
+      dlg->popup_ctrl = PopupList (p, TRUE, SelectionDialogPopupChanged);
+      SetObjectExtra (dlg->popup_ctrl, dlg, NULL);
+    }
+    else
+    {
+      dlg->list_ctrl = SingleList (p, 8, list_height, SelectionDialogChanged);
+      SetObjectExtra (dlg->list_ctrl, dlg, NULL);
+    }
+  }
+  
+  /* populate list choices */
+  dlg->num_choices = 0;
+  if (dlg->allow_multi)
+  {
+    ListItem (dlg->list_ctrl, "All");
+    dlg->num_choices ++;
+  }
+  
+  if (dlg->list_ctrl != NULL)
+  {
+    for (vnp = choice_list; vnp != NULL; vnp = vnp->next) {
+      ListItem (dlg->list_ctrl, vnp->data.ptrvalue);
+      dlg->num_choices ++;
+    }
+  }
+  else if (dlg->popup_ctrl != NULL)
+  {
+    for (vnp = choice_list; vnp != NULL; vnp = vnp->next) {
+      PopupItem (dlg->popup_ctrl, vnp->data.ptrvalue);
+      dlg->num_choices ++;
+    }
+  }
+  return (DialoG) p;
+}
+
+typedef struct valnodeselection
+{
+  DIALOG_MESSAGE_BLOCK
+  DialoG           list_dlg;
+  ValNodePtr       choice_list;
+  
+  FreeValNodeProc     free_vn_proc;
+  CopyValNodeDataProc copy_vn_proc;
+  MatchValNodeProc    match_vn_proc;
+  RemapValNodeProc    remap_vn_proc;
+  
+} ValNodeSelectionData, PNTR ValNodeSelectionPtr;
+
+static void ValNodeSelectionListToDialog (DialoG d, Pointer userdata)
+{
+  ValNodeSelectionPtr dlg;
+  ValNodePtr          item_list, vnp_list, vnp_sel, pos_list = NULL;
+  Int4                i;
+  Boolean             found;
+
+  dlg = (ValNodeSelectionPtr) GetObjectExtra (d);
+  if (dlg == NULL)
+  {
+    return;
+  }
+  
+  /* reset list control */
+  PointerToDialog (dlg->list_dlg, NULL);  
+  
+  item_list = (ValNodePtr) userdata;
+  for (vnp_list = item_list; vnp_list != NULL; vnp_list = vnp_list->next)
+  {
+    found = FALSE;
+    for (vnp_sel = dlg->choice_list, i = 1;
+         vnp_sel != NULL && !found;
+         vnp_sel = vnp_sel->next, i++)
+    {
+      if ((dlg->match_vn_proc)(vnp_sel, vnp_list))
+      {
+        found = TRUE;
+        ValNodeAddInt (&pos_list, 0, i);
+      }
+    }
+  }
+  PointerToDialog (dlg->list_dlg, pos_list);
+  ValNodeFree (pos_list);  
+}
+
+static Pointer ValNodeSelectionDialogToList (DialoG d)
+{
+  ValNodeSelectionPtr dlg;
+  ValNodePtr          item_list = NULL, vnp_list, pos_list, vnp_pos;
+  ValNodePtr          vnp_copy, vnp_last = NULL, vnp_test;
+  Int4                i;
+  Boolean             found;
+
+  dlg = (ValNodeSelectionPtr) GetObjectExtra (d);
+  if (dlg == NULL)
+  {
+    return NULL;
+  }
+  
+  pos_list = DialogToPointer (dlg->list_dlg);
+  for (vnp_pos = pos_list; vnp_pos != NULL; vnp_pos = vnp_pos->next)
+  {
+    for (i = 1, vnp_list = dlg->choice_list;
+         i < vnp_pos->data.intvalue && vnp_list != NULL;
+         i++, vnp_list = vnp_list->next)
+    {
+    }
+    if (i == vnp_pos->data.intvalue && vnp_list != NULL)
+    {
+      /* make sure we don't already have this value in the list */
+      for (vnp_test = item_list, found = FALSE;
+           vnp_test != NULL && !found;
+           vnp_test = vnp_test->next)
+      {
+        found = (dlg->match_vn_proc) (vnp_list, vnp_test);
+      }
+      
+      if (found)
+      {
+        continue;
+      }
+      vnp_copy = (dlg->copy_vn_proc) (vnp_list);
+      if (vnp_last == NULL)
+      {
+        item_list = vnp_copy;
+      }
+      else
+      {
+        vnp_last->next = vnp_copy;
+      }
+      vnp_last = vnp_copy;
+    }
+  }
+  if (dlg->remap_vn_proc != NULL)
+  {
+    item_list = (dlg->remap_vn_proc) (item_list);
+  }
+  return item_list;  
+}
+
+static void CleanupValNodeSelectionDialogForm (GraphiC g, VoidPtr data)
+
+{
+  ValNodeSelectionPtr dlg;
+  ValNodePtr          vnp;
+
+  dlg = (ValNodeSelectionPtr) data;
+  if (dlg != NULL) {
+    if (dlg->free_vn_proc != NULL)
+    {
+      for (vnp = dlg->choice_list; vnp != NULL; vnp = vnp->next)
+      {
+        (dlg->free_vn_proc) (vnp);
+      }
+    }
+    dlg->choice_list = ValNodeFree (dlg->choice_list);
+  }
+  StdCleanupExtraProc (g, data);
+}
+
+static void ValNodeSelectionDialogMessage (DialoG d, Int2 mssg)
+
+{
+  ValNodeSelectionPtr dlg;
+
+  dlg = (ValNodeSelectionPtr) GetObjectExtra (d);
+  if (dlg != NULL) {
+    switch (mssg) {
+      case VIB_MSG_INIT :
+        /* reset list */
+        PointerToDialog (dlg->list_dlg, NULL);
+        break;
+      case VIB_MSG_SELECT:
+        Select (dlg->list_dlg);
+        break;
+      case VIB_MSG_ENTER :
+        Select (dlg->list_dlg);
+        break;
+      case NUM_VIB_MSG + 1:
+        SendMessageToDialog (dlg->list_dlg, NUM_VIB_MSG + 1);
+        break;
+      default :
+        break;
+    }
+  }
+}
+
+static ValNodePtr TestValNodeSelectionDialog (DialoG d)
+
+{
+  ValNodeSelectionPtr  dlg;
+  ValNodePtr           head = NULL;
+
+  dlg = (ValNodeSelectionPtr) GetObjectExtra (d);
+  if (dlg != NULL) {
+    head = TestDialog (dlg->list_dlg);
+  }
+  return head;
+}
+
+extern DialoG ValNodeSelectionDialogEx
+(GrouP h,
+ ValNodePtr               choice_list,
+ Int2                     list_height,
+ NameFromValNodeProc      name_proc,
+ FreeValNodeProc          free_vn_proc,
+ CopyValNodeDataProc      copy_vn_proc,
+ MatchValNodeProc         match_vn_proc,
+ CharPtr                  err_name,
+ Nlm_ChangeNotifyProc     change_notify,
+ Pointer                  change_userdata,
+ Boolean                  allow_multi,
+ RemapValNodeProc         remap_vn_proc)
+{
+  ValNodeSelectionPtr  dlg;
+  GrouP                p;
+  ValNodePtr           choice_name_list = NULL, vnp;
+
+  if (choice_list == NULL || name_proc == NULL
+      || copy_vn_proc == NULL || match_vn_proc == NULL)
+  {
+    return NULL;
+  }
+  
+  dlg = (ValNodeSelectionPtr) MemNew (sizeof (ValNodeSelectionData));
+  if (dlg == NULL)
+  {
+    return NULL;
+  }
+  
+  p = HiddenGroup (h, 1, 0, NULL);
+  SetObjectExtra (p, dlg, CleanupValNodeSelectionDialogForm);
+  
+  dlg->dialog = (DialoG) p;
+  dlg->todialog = ValNodeSelectionListToDialog;
+  dlg->fromdialog = ValNodeSelectionDialogToList;
+  dlg->dialogmessage = ValNodeSelectionDialogMessage;
+  dlg->testdialog = TestValNodeSelectionDialog;
+  
+  dlg->choice_list = choice_list;
+  dlg->free_vn_proc = free_vn_proc;
+  dlg->copy_vn_proc = copy_vn_proc;
+  dlg->match_vn_proc = match_vn_proc;
+  dlg->remap_vn_proc = remap_vn_proc;
+
+  for (vnp = choice_list; vnp != NULL; vnp = vnp->next)
+  {
+    ValNodeAddPointer (&choice_name_list, 0, (name_proc) (vnp));
+  }
+
+  dlg->list_dlg = SelectionDialog (p, change_notify, change_userdata,
+                                   allow_multi, err_name, choice_name_list, list_height);
+  ValNodeFreeData (choice_name_list);  
+  
+  return (DialoG) p;
+}
+
+extern DialoG ValNodeSelectionDialog
+(GrouP h,
+ ValNodePtr               choice_list,
+ Int2                     list_height,
+ NameFromValNodeProc      name_proc,
+ FreeValNodeProc          free_vn_proc,
+ CopyValNodeDataProc      copy_vn_proc,
+ MatchValNodeProc         match_vn_proc,
+ CharPtr                  err_name,
+ Nlm_ChangeNotifyProc     change_notify,
+ Pointer                  change_userdata,
+ Boolean                  allow_multi)
+{
+  ValNodeSelectionDialogEx (h, choice_list, list_height, name_proc, free_vn_proc,
+                            copy_vn_proc, match_vn_proc, err_name, change_notify,
+                            change_userdata, allow_multi, NULL);
+}
+
+extern DialoG EnumAssocSelectionDialog 
+(GrouP                 h,
+ Nlm_EnumFieldAssocPtr eap,
+ CharPtr               err_name,
+ Boolean               allow_multi,
+ Nlm_ChangeNotifyProc  change_notify,
+ Pointer               change_userdata)
+
+{
+  DialoG     dlg;
+  ValNodePtr choice_list = NULL;
+  
+  if (eap == NULL)
+  {
+    return NULL;
+  }
+
+  while (eap->name != NULL)
+  {
+    if (!StringHasNoText (eap->name))
+    {
+      ValNodeAddPointer (&choice_list, eap->value, StringSave (eap->name));
+    }
+    eap++;
+  }
+  
+  /* note - the ValNodeSelectionDialog will free the qual_choice_list when done */                                            
+  dlg = ValNodeSelectionDialog (h, choice_list, TALL_SELECTION_LIST, ValNodeStringName,
+                                ValNodeSimpleDataFree, ValNodeStringCopy,
+                                ValNodeChoiceMatch, err_name, 
+                                change_notify, change_userdata, allow_multi);
+
+  return dlg;
+}
+
+extern CharPtr ValNodeStringName (ValNodePtr vnp)
+{
+  if (vnp == NULL || vnp->data.ptrvalue == NULL)
+  {
+    return NULL;
+  }
+  else
+  {
+    return StringSave (vnp->data.ptrvalue);
+  }
+}
+
+extern void ValNodeSimpleDataFree (ValNodePtr vnp)
+{
+  if (vnp != NULL && vnp->data.ptrvalue != NULL)
+  {
+    vnp->data.ptrvalue = MemFree (vnp->data.ptrvalue);
+  }
+}
+
+extern ValNodePtr ValNodeStringCopy (ValNodePtr vnp)
+{
+  ValNodePtr vnp_copy = NULL;
+  if (vnp != NULL)
+  {
+    ValNodeAddPointer (&vnp_copy, vnp->choice, StringSave (vnp->data.ptrvalue));
+  }
+  return vnp_copy;
+}
+
+extern Boolean ValNodeChoiceMatch (ValNodePtr vnp1, ValNodePtr vnp2)
+{
+  if (vnp1 == NULL || vnp2 == NULL)
+  {
+    return FALSE;
+  }
+  if (vnp1->choice == vnp2->choice)
+  {
+    return TRUE;
+  }
+  else
+  {
+    return FALSE;
+  }
+}

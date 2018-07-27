@@ -23,9 +23,9 @@
 *
 * ===========================================================================
 *
-* $Id: ncbierr.c,v 6.21 2003/03/25 14:56:08 ivanov Exp $
+* $Id: ncbierr.c,v 6.22 2005/04/06 19:34:13 lavr Exp $
 *
-* $Revision: 6.21 $
+* $Revision: 6.22 $
 *
 * Authors:  Schuler, Sirotkin (UserErr stuff)
 *
@@ -71,6 +71,9 @@
 * 03-06-95 Schuler     Fixed problem with ErrMsgRoot_fopen
 *
 * $Log: ncbierr.c,v $
+* Revision 6.22  2005/04/06 19:34:13  lavr
+* Reassign severity (if found in message file) in case of C++ Tkit hook
+*
 * Revision 6.21  2003/03/25 14:56:08  ivanov
 * Nlm_AbnormalExitPure(): FatalAppExit() call changed to exit() under MS Windows (by Howard Feldman feldman@mshri.on.ca)
 *
@@ -521,6 +524,7 @@ NLM_EXTERN int LIBCALL Nlm_ErrPostStr (ErrSev sev, int lev1, int lev2, const cha
   if (info->hook != NULL)
     {
       int retval;
+      info->desc.severity = severity;
       if ((retval = (*info->hook)(&info->desc)) != 0)
         {
           ErrClear();
@@ -529,7 +533,7 @@ NLM_EXTERN int LIBCALL Nlm_ErrPostStr (ErrSev sev, int lev1, int lev2, const cha
     }
 
   if ( s_HookOnly ) {
-      die_if_necessary(sev, info);
+      die_if_necessary(severity, info);
       ErrClear();
       return ANS_NONE;
   }

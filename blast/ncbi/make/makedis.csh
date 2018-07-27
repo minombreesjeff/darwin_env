@@ -1,6 +1,6 @@
 #!/bin/csh -f
 #
-# $Id: makedis.csh,v 1.99 2004/05/03 18:12:03 beloslyu Exp $
+# $Id: makedis.csh,v 1.108 2005/04/05 18:21:45 ucko Exp $
 #
 ##                            PUBLIC DOMAIN NOTICE                          
 #               National Center for Biotechnology Information
@@ -143,6 +143,8 @@ case OSF1:
 	end
 	breaksw
 case Linux:
+case GNU/Linux:
+	lsb_release -a
     echo "libs version is:"
 	ls -l /lib/libc.so*
 	echo "the gcc version is:"
@@ -164,8 +166,18 @@ case Linux:
 	case "i?86":
 		set platform=linux-x86
 		breaksw
+	case "alpha":
+		set platform=linux-alpha
+		breaksw
+	case "ppc64":
+		set platform=linux-power
+		breaksw
 	default:
-		set platform=linux
+		if (-d /usr/X11R6/lib64) then
+			set platform=linux64
+		else
+			set platform=linux
+		endif
 		breaksw
 	endsw
 	#check do we have Motif on linux installed
@@ -350,7 +362,7 @@ if ( "$HAVE_MOTIF" == 1 ) then
 		OGLLIBS=\"$OGL_LIBS $PNG_LIBS\" \
 		VIBFLAG=\"$NCBI_VIBFLAG\" \
 		VIB=\"Psequin Nentrez udv ddv blastcl3 \
-		idfetch bl2seq asn2gb entrez2 gbseqget \
+		idfetch bl2seq asn2gb tbl2asn entrez2 gbseqget \
 		$WWWBLAST $OGL_TARGETS\") 
 else if ( "$HAVE_MAC" == 1 ) then
 	set ALL_VIB=(LIB30=libncbicn3d.a \
@@ -373,7 +385,7 @@ else if ( "$HAVE_MAC" == 1 ) then
 		VIBFLAG=\"$NCBI_VIBFLAG\" \
 		VIB_POST_LINK=\"/Developer/Tools/Rez -t APPL ../link/macmet/Carbon.r -o\" \
 		VIB=\"Psequin udv ddv blastcl3 \
-		idfetch bl2seq asn2gb entrez2 gbseqget $WWWBLAST \") 
+		idfetch bl2seq asn2gb tbl2asn entrez2 gbseqget $WWWBLAST \") 
 else # no Motif, build only ascii-based applications
     set OGL_NCBI_LIBS=""
     set OGL_INCLUDE=""
@@ -382,7 +394,7 @@ else # no Motif, build only ascii-based applications
 
 	set ALL_VIB=()
 	set DEMO_VIB=()
-	set NET_VIB=(VIB=\"blastcl3 idfetch bl2seq asn2gb $NONVIBWWWBLAST \") 
+	set NET_VIB=(VIB=\"blastcl3 idfetch bl2seq asn2gb tbl2asn $NONVIBWWWBLAST \") 
 endif
 
 set CMD='make $MFLG \
@@ -420,7 +432,7 @@ set demo_stat = $status
 #  Might repeat what is done above on some platforms.
 #
 
-set mtapps = "blastall blastpgp seedtop megablast rpsblast blastclust"
+set mtapps = "blast blastall blastpgp seedtop megablast rpsblast blastclust"
 
 rm -f $mtapps
 
@@ -435,12 +447,13 @@ eval echo $CMD | sh
 
 set threaded_demo_stat = $status
 
-if ("$?THREAD_OTHERLIBS" == "1") then
+if ("$?NCBI_MT_OTHERLIBS" == "1") then
 	set CMD='make $MFLG -f makenet.unx \
 		CFLAGS1=\"$NCBI_OPTFLAG $NCBI_CFLAGS1 $OGL_INCLUDE\" \
 		LDFLAGS1=\"$NCBI_LDFLAGS1\" SHELL=\"$NCBI_MAKE_SHELL\" \
 		AR=\"$NCBI_AR\" CC=\"$NCBI_CC\" RAN=\"$NCBI_RANLIB\" OTHERLIBS=\"$NCBI_OTHERLIBS\" \
-		THREAD_OTHERLIBS=\"$NCBI_THREAD_OTHERLIBS\" \
+		THREAD_OBJ=$NCBI_THREAD_OBJ \
+		THREAD_OTHERLIBS=\"$NCBI_MT_OTHERLIBS\" \
 		NETENTREZVERSION=\"$NETENTREZVERSION\" $NET_VIB'
 else
 	set CMD='make $MFLG -f makenet.unx \
@@ -473,11 +486,11 @@ else
    echo "The version number of each individual application" >> ../VERSION
    echo "may be found in the appropriate documentation files in ./ncbi/doc/" >> ../VERSION
    echo "uname -a ouput is: `uname -a`" >> ../VERSION
-   foreach i ( Nentrez Psequin asn2ff asn2xml asn2gb asndhuff asntool bl2seq \
+   foreach i ( Nentrez Psequin asn2ff asn2xml asn2gb asn2idx asndhuff asntool bl2seq \
 	blastall blastcl3 blastclust blastpgp cdscan checksub \
 	copymat ddv demo_regexp demo_regexp_grep dosimple entrcmd entrez \
-	errhdr fa2htgs fastacmd findspl fmerge formatdb getfeat getmesh \
-	getpub getseq gil2bin idfetch impala indexpub makemat makeset \
+	errhdr fa2htgs fastacmd findspl fmerge formatdb formatrpsdb getfeat \
+        getmesh getpub getseq gil2bin idfetch impala indexpub makemat makeset \
 	megablast ncbisort netentcf rpsblast seedtop seqtest sequin entrez2 \
 	tbl2asn test_regexp testcore testobj testval udv vecscreen Cn3D \
 	blast debruijn $WWWBLAST )

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   3/4/91
 *
-* $Revision: 6.34 $
+* $Revision: 6.38 $
 *
 * File Description: 
 *     portable file routines
@@ -43,6 +43,18 @@
 * 11-27-94 Ostell      moved includes to ncbiwin.h to avoid conflict MSC
 *
 * $Log: ncbifile.c,v $
+* Revision 6.38  2005/04/20 20:14:31  lavr
+* +<assert.h>
+*
+* Revision 6.37  2004/07/21 18:08:30  kans
+* FileCacheSetup calls _setmode (_fileno (fp), _O_BINARY) if OS_MSWIN
+*
+* Revision 6.36  2004/07/20 19:37:30  kans
+* FileCacheSeek always initializes fields, calls fseek to keep file pointer in sync
+*
+* Revision 6.35  2004/05/07 15:57:14  kans
+* added FileCache functions for buffered read, graceful handing of Unix, Mac, and DOS line endings
+*
 * Revision 6.34  2004/01/23 20:07:16  kans
 * fix to FileGets under Darwin, was losing last character if buffer was shorter than line being read
 *
@@ -195,6 +207,7 @@ Removed disabled CD routines.
 #define THIS_FILE  _this_file
 
 #include <ncbilcl.h>
+#include <assert.h>
 
 #include "corepriv.h"
 #ifdef OS_MAC
@@ -1360,5 +1373,250 @@ NLM_EXTERN Nlm_CharPtr LIBCALL Nlm_TmpNam (Nlm_CharPtr s)
     }
 #endif
 #endif
+}
+
+/* FileCache provides buffered text read for handling Unix, Mac, and DOS line endings gracefully */
+
+/* attach file pointer (text read mode expected) to cache object (usually on stack) */
+
+#ifdef OS_MSWIN
+#include <fcntl.h>
+#include <io.h>
+#endif
+
+NLM_EXTERN Nlm_Boolean Nlm_FileCacheSetup (
+  Nlm_FileCache PNTR fcp,
+  FILE *fp
+)
+
+{
+  if (fp == NULL || fcp == NULL) return FALSE;
+
+#ifdef OS_MSWIN
+  _setmode (_fileno (fp), _O_BINARY);
+#endif
+
+  MemSet ((Nlm_VoidPtr) fcp, 0, sizeof (Nlm_FileCache));
+
+  fcp->fp = fp;
+  fcp->offset = ftell (fp);
+
+  return TRUE;
+}
+
+static void Nlm_FileCacheReadBlock (
+  Nlm_FileCache PNTR fcp
+)
+
+{
+  int  total;
+
+  if (fcp == NULL || fcp->fp == NULL) return;
+
+  if (fcp->ctr >= fcp->total) {
+    fcp->offset += (Nlm_Int4) fcp->total;
+    fcp->ctr = 0;
+    fcp->total = 0;
+
+    fcp->buf [0] = '\0';
+    total = (int) Nlm_FileRead ((Nlm_VoidPtr) fcp->buf, sizeof (Nlm_Char), (size_t) 512, fcp->fp);
+    if (total < 0 || total > 512) {
+      total = 512;
+    }
+
+    fcp->buf [total] = '\0';
+    fcp->total = Nlm_StringLen (fcp->buf);
+  }
+}
+
+/* equivalent of getc */
+
+static Nlm_Char Nlm_FileCacheGetChar (
+  Nlm_FileCache PNTR fcp
+)
+
+{
+  Nlm_Char  ch = '\0', nxt;
+
+  if (fcp == NULL || fcp->fp == NULL) return ch;
+
+  /* read a fresh block if buffer is empty */
+
+  if (fcp->ctr >= fcp->total) {
+    Nlm_FileCacheReadBlock (fcp);
+  }
+
+  /* get next character in buffer */
+
+  if (fcp->ctr < fcp->total) {
+    ch = fcp->buf [(int) fcp->ctr];
+    (fcp->ctr)++;
+  }
+
+  if (ch == '\n' || ch == '\r') {
+    if (fcp->ctr >= fcp->total) {
+      Nlm_FileCacheReadBlock (fcp);
+    }
+    if (fcp->ctr < fcp->total) {
+
+      /* look for carriage return / linefeed pair - DOS file read on Mac or Unix platform */
+
+      nxt = fcp->buf [(int) fcp->ctr];
+
+      /* advance past second character in cr/lf pair */
+
+      if (ch == '\n' && nxt == '\r') {
+        (fcp->ctr)++;
+      } else if (ch == '\r' && nxt == '\n') {
+        (fcp->ctr)++;
+      }
+    }
+
+    /* cr or lf returned as newline */
+
+    ch = '\n';
+  }
+
+  return ch;
+}
+
+/* equivalent of fgets, leaves /n at end of string */
+
+NLM_EXTERN Nlm_CharPtr Nlm_FileCacheGetString (
+  Nlm_FileCache PNTR fcp,
+  Nlm_CharPtr str,
+  size_t size
+)
+
+{
+  Nlm_Char     ch;
+  Nlm_Int2     count;
+  Nlm_CharPtr  ptr;
+
+  if (fcp == NULL || fcp->fp == NULL || str == NULL || size < 1) return NULL;
+
+  ch = Nlm_FileCacheGetChar (fcp);
+  count = 0;
+  ptr = str;
+
+  while (ch != '\0' && ch != '\n' && ch != '\r' && count < size - 2) {
+    *ptr = ch;
+    ptr++;
+    count++;
+    ch = Nlm_FileCacheGetChar (fcp);
+  }
+
+  if (ch == '\n' || ch == '\r') {
+    *ptr = '\n';
+    ptr++;
+    count++;
+  } else if (ch != '\0') {
+    *ptr = ch;
+    ptr++;
+    count++;
+  }
+  *ptr = '\0';
+
+  if (count < 1) return NULL;
+
+  return str;
+}
+
+/* smarter fgets removes newline from end of string */
+
+NLM_EXTERN Nlm_CharPtr Nlm_FileCacheReadLine (
+  Nlm_FileCache PNTR fcp,
+  Nlm_CharPtr str,
+  size_t size,
+  Nlm_BoolPtr nonewline
+)
+
+{
+  Nlm_Char     ch;
+  Nlm_CharPtr  ptr;
+  Nlm_CharPtr  tmp;
+
+  if (fcp == NULL || fcp->fp == NULL || str == NULL || size < 1) return NULL;
+  *str = '\0';
+  tmp = Nlm_FileCacheGetString (fcp, str, size);
+  if (tmp != NULL) {
+    ptr = str;
+    ch = *ptr;
+    while (ch != '\0' && ch != '\n' && ch != '\r') {
+      ptr++;
+      ch = *ptr;
+    }
+    *ptr = '\0';
+    if (nonewline != NULL) {
+      if (ch != '\n' && ch != '\r') {
+        *nonewline = TRUE;
+      } else {
+        *nonewline = FALSE;
+      }
+    }
+  }
+  return tmp;
+}
+
+NLM_EXTERN void Nlm_FileCacheSeek (
+  Nlm_FileCache PNTR fcp,
+  Nlm_Int4 pos
+)
+
+{
+  if (fcp == NULL || fcp->fp == NULL) return;
+
+  /*
+  if (fcp->offset <= pos && fcp->offset + (Nlm_Int4) fcp->total >= pos) {
+    fcp->ctr = (Nlm_Int2) (pos - fcp->offset);
+    return;
+  }
+  */
+
+  fcp->ctr = 0;
+  fcp->total = 0;
+  fcp->offset = pos;
+
+  fseek (fcp->fp, pos, SEEK_SET);
+}
+
+NLM_EXTERN Nlm_Int4 Nlm_FileCacheTell (
+  Nlm_FileCache PNTR fcp
+)
+
+{
+  Nlm_Int4  bytes;
+  Nlm_Int4  offset;
+
+  if (fcp == NULL || fcp->fp == NULL) return 0L;
+
+  offset = ftell (fcp->fp);
+  bytes = (Nlm_Int4) (fcp->total - fcp->ctr);
+  offset -= bytes;
+
+  return offset;
+}
+
+NLM_EXTERN Nlm_Boolean Nlm_FileCacheFree (
+  Nlm_FileCache PNTR fcp,
+  Nlm_Boolean restoreFilePos
+)
+
+{
+  Nlm_Int4  pos;
+
+  if (fcp == NULL || fcp->fp == NULL) return FALSE;
+
+  if (restoreFilePos) {
+
+    /* correct position of file pointer */
+
+    pos = Nlm_FileCacheTell (fcp);
+    fseek (fcp->fp, pos, SEEK_SET); 
+  }
+
+  MemSet ((Nlm_VoidPtr) fcp, 0, sizeof (Nlm_FileCache));
+
+  return TRUE;
 }
 

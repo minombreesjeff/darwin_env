@@ -1,1 +1,0 @@
-../corelib/ncbiopt.h

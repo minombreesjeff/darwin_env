@@ -268,14 +268,14 @@ typedef struct _gapalign_blk {
     Boolean is_ooframe;
     Boolean discontinuous;
     GapXDPPtr dyn_prog;
-	
-	
+
+
 #if BLAST_ALTIVEC
     void*	dyn_prog_save_PTR;
     Uint4	dyn_prog_save_SIZE;
 #endif    	
-	
-	
+
+
 } GapAlignBlk, PNTR GapAlignBlkPtr;
 
 GapXDropStateArrayStructPtr GapXDropStateDestroy PROTO((GapXDropStateArrayStructPtr state_struct));

@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: blastconcat.c,v 1.9 2004/04/21 19:25:04 coulouri Exp $";
+static char const rcsid[] = "$Id: blastconcat.c,v 1.10 2005/01/10 18:52:29 coulouri Exp $";
 
 /* ===========================================================================
 *
@@ -33,8 +33,11 @@ Contents: implementation of functions needed for query multiplexing
           functionality.
 
 ******************************************************************************/
-/* $Revision: 1.9 $ 
+/* $Revision: 1.10 $ 
 *  $Log: blastconcat.c,v $
+*  Revision 1.10  2005/01/10 18:52:29  coulouri
+*  fixes from morgulis to allow concatenation of >255 queries in [t]blastn
+*
 *  Revision 1.9  2004/04/21 19:25:04  coulouri
 *  do not cast lvalues
 *
@@ -532,11 +535,14 @@ SeqAlignPtrArray LIBCALL DivideSeqAligns PROTO(( BLAST_OptionsBlkPtr options,
 	  Uint4 i = 0;
 	  DenseSegPtr dsp = (DenseSegPtr)(sap->segs);
 
-	  for( ; i < dsp->numseg; ++i )
+	  for( ; i < (dsp->dim)*(dsp->numseg); i += dsp->dim )
 	  {
             start = dsp->starts[i];
 	    query = mult_queries->WhichQuery[start + 1] - 1;
-	    start = start - mult_queries->QueryStarts[query];
+	    
+	    if( start != -1 )
+	      start = start - mult_queries->QueryStarts[query];
+
             dsp->starts[i] = start;
 	  }
 
@@ -620,7 +626,7 @@ SeqAlignPtrArray LIBCALL DivideSeqAligns PROTO(( BLAST_OptionsBlkPtr options,
    AM: Changes to align on the byte boundaries.
 */
 BioseqPtr LIBCALL 
-BlastMakeFakeBspConcat PROTO((BspArray bsp_arr, Uint1 num_bsps, Boolean is_na, Uint4 num_spacers)){
+BlastMakeFakeBspConcat PROTO((BspArray bsp_arr, Uint4 num_bsps, Boolean is_na, Uint4 num_spacers)){
 	BioseqPtr tot;
 	Int4 bsp_iter, letter_iter;
 		/* "compact" len refers to #bytes to store the seq, not to #of letters */
@@ -830,8 +836,8 @@ QueriesPtr LIBCALL BlastDuplicateMultQueries PROTO(( QueriesPtr source ))
          based on numbering beginning with 1, not 0 for queries and positions
 */
 QueriesPtr LIBCALL 
-BlastMakeMultQueries PROTO((BspArray bsp_arr, Uint1 num_queries, Boolean is_na, Uint1 spacer_len,
-                            SeqLocPtr PNTR lcase_mask_arr)) {
+BlastMakeMultQueries PROTO((BspArray bsp_arr, Uint4 num_queries, Boolean is_na, Uint4 num_spacers, SeqLocPtr PNTR lcase_mask_arr))
+{
 	QueriesPtr queries;
 	Int4 bsp_iter, pos_iter;
 	BioseqPtr curr_bsp;
@@ -879,11 +885,11 @@ BlastMakeMultQueries PROTO((BspArray bsp_arr, Uint1 num_queries, Boolean is_na, 
 		starts[bsp_iter] = curr_index;
 		curr_index += curr_length;
 		ends[bsp_iter] = curr_index - 1;
-		curr_index += spacer_len;
+		curr_index += num_spacers;
 
 		if( is_na && bsp_iter != num_queries - 1 && curr_length%2 ) ++curr_index;
 	}
-	curr_index -= spacer_len;
+	curr_index -= num_spacers;
 	/* now curr_index = total number of letters in concat. query */
 	queries->QueryStarts = starts;
 	queries->QueryEnds = ends;

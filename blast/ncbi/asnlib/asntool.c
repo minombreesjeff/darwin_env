@@ -29,7 +29,7 @@
 *
 * Version Creation Date: 1/1/91
 *
-* $Revision: 6.14 $
+* $Revision: 6.16 $
 *
 * File Description:
 *   Main routine for asntool.  Uses the ASN.1 library routines to perform
@@ -43,6 +43,12 @@
 *
 *
 * $Log: asntool.c,v $
+* Revision 6.16  2005/01/24 17:12:11  kans
+* added force_choice_struct (-V) to force struct plus object instead of ValNode for choices - for compatibility with old hand-coded object loaders
+*
+* Revision 6.15  2004/07/08 15:27:37  kans
+* commented out second unnecessary call to GetArgs
+*
 * Revision 6.14  2004/04/01 13:43:05  lavr
 * Spell "occurred", "occurrence", and "occurring"
 *
@@ -132,7 +138,7 @@ extern void AsnTxtReadValFile PROTO((AsnModulePtr amp, AsnIoPtr aip, AsnIoPtr ai
 extern void AsnBinReadValFile PROTO((AsnTypePtr atp, AsnIoPtr aip, AsnIoPtr aipout,
 				     AsnIoPtr encode, AsnIoPtr xaipout));
 
-#define NUMARGS 25
+#define NUMARGS 26
 
 Args asnargs[NUMARGS] = {
 	{"ASN.1 Module File",NULL,NULL,NULL,FALSE,'m',ARG_FILE_IN,0.0,0,NULL},
@@ -162,7 +168,8 @@ Args asnargs[NUMARGS] = {
    {"In generated .c, forces name of #included asn header", NULL, NULL, NULL, TRUE, 'K', ARG_STRING, 0.0, 0, NULL},
    {"Register type with object manager", NULL, NULL, NULL, TRUE, 'J', ARG_STRING, 0.0, 0, NULL},
    {"Label for registered type", NULL, NULL, NULL, TRUE, 'L', ARG_STRING, 0.0, 0, NULL},
-   {"XML module prefix for DOCTYPE", NULL, NULL, NULL, TRUE, 'P', ARG_STRING, 0.0, 0, NULL}
+   {"XML module prefix for DOCTYPE", NULL, NULL, NULL, TRUE, 'P', ARG_STRING, 0.0, 0, NULL},
+   {"Force choice to use structure instead of ValNodePtr","F",NULL,NULL,TRUE,'V',ARG_BOOLEAN,0.0,0,NULL},
    /*-- not used now {"Asnload directory [for parsetrees]", NULL, NULL, NULL, TRUE, 'd', ARG_FILE_IN, 0.0, 0, NULL}, -----------*/
 
 };
@@ -182,7 +189,8 @@ Int2 Main (void)
 	, B_argCodeFileName = 16, D_argCodeGenDebugLevel = 17
 	, S_argDebugFileName = 18, I_argExtraIncludeName = 19
 	, Z_argBitTwiddle = 20, K_argLoadName = 21
-	, J_objMgrEntry = 22, L_objMgrLabel = 23, P_argXMLmodulePrefix = 24;
+	, J_objMgrEntry = 22, L_objMgrLabel = 23, P_argXMLmodulePrefix = 24
+	, V_argChoiceStruct = 25;
 
 	AsnIoPtr aip = NULL,
 		aipout = NULL,
@@ -210,9 +218,11 @@ Int2 Main (void)
 
     AsnSetXMLmodulePrefix((CharPtr)(asnargs[P_argXMLmodulePrefix].strvalue));
 
+	/*
 	if (! GetArgs("AsnTool 4", NUMARGS, asnargs))
 		return 1;
         ErrClear();
+    */
 
     if (! AsnIoSetBufsize(NULL, (Int2)asnargs[b_argBufferSize].intvalue))
         return 1;
@@ -496,6 +506,7 @@ Int2 Main (void)
 	{
 	    acip ->  filename = asnargs[B_argCodeFileName].strvalue;
 	    acip ->  do_bit_twiddle = asnargs[Z_argBitTwiddle].intvalue;
+	    acip ->  force_choice_struct = asnargs[V_argChoiceStruct].intvalue;
 	    acip ->  include_filename = asnargs[I_argExtraIncludeName].strvalue;
 	    acip ->  maxDefineLength = asnargs[w_argTokenMax].intvalue;
 	    acip -> debug_level = asnargs[D_argCodeGenDebugLevel ].intvalue;

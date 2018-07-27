@@ -1,7 +1,7 @@
 #ifndef CONNECT___NCBI_CONNECTION__H
 #define CONNECT___NCBI_CONNECTION__H
 
-/*  $Id: ncbi_connection.h,v 6.17 2004/02/23 15:23:36 lavr Exp $
+/*  $Id: ncbi_connection.h,v 6.21 2004/10/26 14:47:42 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -194,11 +194,11 @@ extern NCBI_XCONNECT_EXPORT EIO_Status CONN_PushBack
  *         So does CONN_Close() but only if connection is was open before.
  */
 extern NCBI_XCONNECT_EXPORT EIO_Status CONN_Flush
-(CONN conn              /* [in] connection handle                      */ 
+(CONN        conn   /* [in] connection handle                      */
  );
 
 
-/* Read up to "size" bytes from the connection to mem.buffer pointed by "buf".
+/* Read up to "size" bytes from a connection to the buffer to pointed by "buf".
  * In "*n_read", return the number of successfully read bytes.
  * If there is absolutely no data available to read and the timeout (see
  * CONN_SetTimeout()) is expired then return eIO_Timeout (and "*n_read" := 0).
@@ -215,6 +215,27 @@ extern NCBI_XCONNECT_EXPORT EIO_Status CONN_Read
  size_t         size,   /* [in]  max. # of bytes to read            */
  size_t*        n_read, /* [out, non-NULL] # of actually read bytes */
  EIO_ReadMethod how     /* [in]  read/peek | persist                */
+ );
+
+
+/* Read up to "size" bytes from a connection into the string buffer pointed
+ * to by "line".  Stop reading if either '\n' or an error is encountered.
+ * Replace '\n' with '\0'.  Upon return "*n_read" contains the number
+ * of characters written to "line", not including the terminating '\0'.
+ * If not enough space provided in "line" to accomodate the '\0'-terminated
+ * line, then all "size" bytes are used and "*n_read" equals "size" on return.
+ * This is the only case when "line" will not be '\0'-terminated.
+ * Return code advises the caller whether another line read can be attempted:
+ *   eIO_Success -- read completed successfully, keep reading;
+ *   other code  -- an error occurred, and further attempt may fail.
+ *
+ * This call utilizes eIO_Read timeout as set by CONN_SetTimeout().
+ */
+extern NCBI_XCONNECT_EXPORT EIO_Status CONN_ReadLine
+(CONN    conn,
+ char*   line,
+ size_t  size,
+ size_t* n_read
  );
 
 
@@ -247,8 +268,8 @@ extern NCBI_XCONNECT_EXPORT EIO_Status CONN_Close
  */
 typedef enum {
     eCONN_OnClose = 0
-#define CONN_N_CALLBACKS 1
 } ECONN_Callback;
+#define CONN_N_CALLBACKS 1
 
 typedef void (*FConnCallback)(CONN conn, ECONN_Callback type, void* data);
 
@@ -305,6 +326,18 @@ extern EIO_Status CONN_WaitAsync
 /*
  * ---------------------------------------------------------------------------
  * $Log: ncbi_connection.h,v $
+ * Revision 6.21  2004/10/26 14:47:42  lavr
+ * Slight formatting
+ *
+ * Revision 6.20  2004/06/09 14:03:06  jcherry
+ * Moved #define out of enum body (SWIG was choking on this)
+ *
+ * Revision 6.19  2004/05/24 19:58:29  lavr
+ * +NCBI_XCONNECT_EXPORT for CONN_ReadLine()
+ *
+ * Revision 6.18  2004/05/24 19:53:30  lavr
+ * +CONN_ReadLine()
+ *
  * Revision 6.17  2004/02/23 15:23:36  lavr
  * New (last) parameter "how" added in CONN_Write() API call
  *

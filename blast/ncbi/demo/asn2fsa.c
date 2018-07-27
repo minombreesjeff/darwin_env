@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   3/4/04
 *
-* $Revision: 1.13 $
+* $Revision: 1.29 $
 *
 * File Description:
 *
@@ -60,6 +60,10 @@
 #ifdef INTERNAL_NCBI_ASN2FSA
 #include <accpubseq.h>
 #endif
+
+#define ASN2FSA_APP_VER "1.4"
+
+CharPtr ASN2FSA_APPLICATION = ASN2FSA_APP_VER;
 
 static ValNodePtr  requested_uid_list = NULL;
 static TNlmMutex   requested_uid_mutex = NULL;
@@ -249,6 +253,7 @@ static ValNodePtr ExtractBspList (
 typedef struct fastaflags {
   Boolean  master_style;
   Boolean  expand_gaps;
+  Boolean  use_dashes;
   Boolean  far_genomic_qual;
   Boolean  qual_gap_is_zero;
   Boolean  batch;
@@ -261,10 +266,12 @@ typedef struct fastaflags {
   CharPtr  blastdbname;
   Int2     type;
   Int2     linelen;
+  Boolean  failed;
   FILE     *nt;
   FILE     *aa;
   FILE     *ql;
   FILE     *fr;
+  FILE     *logfp;
 } FastaFlagData, PNTR FastaFlagPtr;
 
 static VoidPtr DoAsyncLookup (
@@ -278,7 +285,7 @@ static VoidPtr DoAsyncLookup (
   ValNode       vn;
 
   ffp = (FastaFlagPtr) arg;
-  if (ffp == NULL) return;
+  if (ffp == NULL) return NULL;
 
 #ifdef INTERNAL_NCBI_ASN2FSA
   if (ffp->usePUBSEQ) {
@@ -314,6 +321,8 @@ static VoidPtr DoAsyncLookup (
     PUBSEQFini ();
   }
 #endif
+
+  return NULL;
 }
 
 #define NUM_ASYNC_LOOKUP_THREADS 5
@@ -405,6 +414,9 @@ static ValNodePtr DoLockFarComponents (
 
   if (NlmThreadsAvailable () && ffp->useThreads) {
     rsult = AsyncLockFarComponents (sep, ffp);
+  } else if (ffp->useThreads) {
+    Message (MSG_POST, "Threads not available in this executable");
+    rsult = LockFarComponents (sep);
   } else {
     rsult = LockFarComponents (sep);
   }
@@ -446,14 +458,17 @@ static Boolean SegHasParts (
   return FALSE;
 }
 
-static void CacheFarComponents (FILE *fr, ValNodePtr bsplist, Int2 linelen)
+static void CacheFarComponents (
+  FastaFlagPtr ffp,
+  ValNodePtr bsplist
+)
 
 {
   BioseqPtr   bsp;
   Uint2       entityID;
   ValNodePtr  vnp;
 
-  if (fr == NULL || bsplist == NULL) return;
+  if (ffp == NULL || ffp->fr == NULL || bsplist == NULL) return;
 
   for (vnp = bsplist; vnp != NULL; vnp = vnp->next) {
     bsp = (BioseqPtr) vnp->data.ptrvalue;
@@ -464,18 +479,24 @@ static void CacheFarComponents (FILE *fr, ValNodePtr bsplist, Int2 linelen)
     switch (bsp->repr) {
         case Seq_repr_raw :
         case Seq_repr_const :
-          BioseqFastaStream (bsp, fr, 0, linelen, 0, 0, TRUE);
+          if (BioseqFastaStream (bsp, ffp->fr, 0, ffp->linelen, 0, 0, TRUE) < 0) {
+            ffp->failed = TRUE;
+          }
           break;
         case Seq_repr_seg :
           entityID = ObjMgrGetEntityIDForPointer (bsp);
           AssignIDsInEntity (entityID, 0, NULL);
           if (SegHasParts (bsp)) {
-            BioseqFastaStream (bsp, fr, 0, linelen, 0, 0, TRUE);
+            if (BioseqFastaStream (bsp, ffp->fr, 0, ffp->linelen, 0, 0, TRUE) < 0) {
+              ffp->failed = TRUE;
+            }
           }
           break;
         case Seq_repr_delta :
           if (DeltaLitOnly (bsp)) {
-            BioseqFastaStream (bsp, fr, 0, linelen, 0, 0, TRUE);
+            if (BioseqFastaStream (bsp, ffp->fr, 0, ffp->linelen, 0, 0, TRUE) < 0) {
+              ffp->failed = TRUE;
+            }
           }
           break;
         default :
@@ -531,8 +552,9 @@ static void ProcessSingleRecord (
   Pointer        dataptr = NULL;
   Uint2          datatype, entityID = 0;
   Char           file [FILENAME_MAX], path [PATH_MAX];
-  StreamFlgType  flags = 0;
+  StreamFlgType  flags = STREAM_CORRECT_INVAL;
   FILE           *fp, *ofp = NULL;
+  ObjMgrPtr      omp;
   SeqEntryPtr    sep;
 
   if (ffp == NULL) return;
@@ -630,23 +652,33 @@ static void ProcessSingleRecord (
     }
 
     if (sep != NULL) {
-      if (ffp->expand_gaps) {
-        flags = STREAM_EXPAND_GAPS;
+      if (ffp->expand_gaps && ffp->use_dashes) {
+        flags |= EXPAND_GAPS_TO_DASHES;
+      } else if (ffp->expand_gaps) {
+        flags |= STREAM_EXPAND_GAPS;
+      } else if (ffp->use_dashes) {
+        flags |= GAP_TO_SINGLE_DASH;
       }
 
       bsplist = NULL;
       if (ffp->lock) {
         bsplist = DoLockFarComponents (sep, ffp);
         if (bsplist != NULL && ffp->fr != NULL) {
-          CacheFarComponents (ffp->fr, bsplist, ffp->linelen);
+          CacheFarComponents (ffp, bsplist);
         }
       }
 
       if (ffp->nt != NULL) {
-        SeqEntryFastaStream (sep, ffp->nt, flags, ffp->linelen, 0, 0, TRUE, FALSE, ffp->master_style);
+        if (SeqEntryFastaStream (sep, ffp->nt, flags, ffp->linelen, 0, 0,
+                                 TRUE, FALSE, ffp->master_style) < 0) {
+          ffp->failed = TRUE;
+        }
       }
       if (ffp->aa != NULL) {
-        SeqEntryFastaStream (sep, ffp->aa, flags, ffp->linelen, 0, 0, FALSE, TRUE, ffp->master_style);
+        if (SeqEntryFastaStream (sep, ffp->aa, flags, ffp->linelen, 0, 0,
+                                 FALSE, TRUE, ffp->master_style) < 0) {
+          ffp->failed = TRUE;
+        }
       }
       if (ffp->ql != NULL) {
         VisitBioseqsInSep (sep, (Pointer) ffp, PrintQualScores);
@@ -660,6 +692,9 @@ static void ProcessSingleRecord (
   }
 
   ObjMgrFree (datatype, dataptr);
+  omp = ObjMgrGet ();
+  ObjMgrReapOne (omp);
+  ObjMgrFreeCache (0);
 }
 
 static void ProcessMultipleRecord (
@@ -673,13 +708,15 @@ static void ProcessMultipleRecord (
   AsnIoPtr       aip;
   AsnModulePtr   amp;
   AsnTypePtr     atp, atp_bss, atp_desc, atp_se;
+  BioseqPtr      bsp;
   ValNodePtr     bsplist;
-  Char           cmmd [256], file [FILENAME_MAX], path [PATH_MAX];
-  Char           path1 [PATH_MAX], path2 [PATH_MAX], path3 [PATH_MAX];
-  StreamFlgType  flags = 0;
-  FILE           *fp, *tfp;
+  Char           buf [64], cmmd [256], file [FILENAME_MAX], path [PATH_MAX], longest [64];
+  StreamFlgType  flags = STREAM_CORRECT_INVAL;
+  FILE           *fp;
+  Int4           numrecords = 0;
+  SeqEntryPtr    fsep, sep;
   ObjMgrPtr      omp;
-  SeqEntryPtr    sep;
+  time_t         starttime, stoptime, worsttime;
 #ifdef OS_UNIX
   CharPtr        gzcatprog;
   int            ret;
@@ -733,7 +770,7 @@ static void ProcessMultipleRecord (
 
 #ifdef OS_UNIX
   if (ffp->compressed) {
-    gzcatprog = getenv ("NCBI_UNCOMPRESS-BINARY");
+    gzcatprog = getenv ("NCBI_UNCOMPRESS_BINARY");
     if (gzcatprog != NULL) {
       sprintf (cmmd, "%s %s", gzcatprog, path);
     } else {
@@ -775,36 +812,43 @@ static void ProcessMultipleRecord (
     return;
   }
 
-  TmpNam (path1);
-  tfp = FileOpen (path1, "w");
-  fprintf (tfp, "\n");
-  FileClose (tfp);
-
-  TmpNam (path2);
-  tfp = FileOpen (path2, "w");
-  fprintf (tfp, "\n");
-  FileClose (tfp);
-
-  TmpNam (path3);
-  tfp = FileOpen (path3, "w");
-  fprintf (tfp, "\n");
-  FileClose (tfp);
-
   atp = atp_bss;
 
-  if (ffp->expand_gaps) {
-    flags = STREAM_EXPAND_GAPS;
+  if (ffp->expand_gaps && ffp->use_dashes) {
+    flags |= EXPAND_GAPS_TO_DASHES;
+  } else if (ffp->expand_gaps) {
+    flags |= STREAM_EXPAND_GAPS;
+  } else if (ffp->use_dashes) {
+    flags |= GAP_TO_SINGLE_DASH;
   }
+
+  longest [0] = '\0';
+  worsttime = 0;
 
   while ((atp = AsnReadId (aip, amp, atp)) != NULL) {
     if (atp == atp_se) {
       sep = SeqEntryAsnRead (aip, atp);
 
+      starttime = GetSecs ();
+      buf [0] = '\0';
+
+      if (ffp->logfp != NULL) {
+        fsep = FindNthBioseq (sep, 1);
+        if (fsep != NULL && fsep->choice == 1) {
+          bsp = (BioseqPtr) fsep->data.ptrvalue;
+          if (bsp != NULL) {
+            SeqIdWrite (bsp->id, buf, PRINTID_FASTA_LONG, sizeof (buf));
+            fprintf (ffp->logfp, "%s\n", buf);
+            fflush (ffp->logfp);
+          }
+        }
+      }
+
       bsplist = NULL;
       if (ffp->lock) {
         bsplist = DoLockFarComponents (sep, ffp);
         if (bsplist != NULL && ffp->fr != NULL) {
-          CacheFarComponents (ffp->fr, bsplist, ffp->linelen);
+          CacheFarComponents (ffp, bsplist);
         }
       }
 
@@ -819,6 +863,13 @@ static void ProcessMultipleRecord (
       }
 
       bsplist = UnlockFarComponents (bsplist);
+
+      stoptime = GetSecs ();
+      if (stoptime - starttime > worsttime && StringDoesHaveText (buf)) {
+        worsttime = stoptime - starttime;
+        StringCpy (longest, buf);
+      }
+      numrecords++;
 
       SeqEntryFree (sep);
       omp = ObjMgrGet ();
@@ -841,8 +892,12 @@ static void ProcessMultipleRecord (
   FileClose (fp);
 #endif
 
-  sprintf (cmmd, "rm %s; rm %s; rm %s", path1, path2, path3);
-  system (cmmd);
+  if (ffp->logfp != NULL && (! StringHasNoText (longest))) {
+    fprintf (ffp->logfp, "Longest processing time %ld seconds on %s\n",
+             (long) worsttime, longest);
+    fprintf (ffp->logfp, "Total number of records %ld\n", (long) numrecords);
+    fflush (ffp->logfp);
+  }
 }
 
 static void ProcessOneRecord (
@@ -860,6 +915,53 @@ static void ProcessOneRecord (
   } else {
     ProcessSingleRecord (directory, base, suffix, ffp);
   }
+}
+
+static void ProcessOneSeqEntry (
+  SeqEntryPtr sep,
+  FastaFlagPtr ffp
+)
+
+
+{
+  ValNodePtr     bsplist;
+  StreamFlgType  flags = STREAM_CORRECT_INVAL;
+
+  if (sep == NULL || ffp == NULL) return;
+
+  if (ffp->expand_gaps && ffp->use_dashes) {
+    flags |= EXPAND_GAPS_TO_DASHES;
+  } else if (ffp->expand_gaps) {
+    flags |= STREAM_EXPAND_GAPS;
+  } else if (ffp->use_dashes) {
+    flags |= GAP_TO_SINGLE_DASH;
+  }
+
+  bsplist = NULL;
+  if (ffp->lock) {
+    bsplist = DoLockFarComponents (sep, ffp);
+    if (bsplist != NULL && ffp->fr != NULL) {
+      CacheFarComponents (ffp, bsplist);
+    }
+  }
+
+  if (ffp->nt != NULL) {
+    if (SeqEntryFastaStream (sep, ffp->nt, flags, ffp->linelen, 0, 0,
+                             TRUE, FALSE, ffp->master_style) < 0) {
+      ffp->failed = TRUE;
+    }
+  }
+  if (ffp->aa != NULL) {
+    if (SeqEntryFastaStream (sep, ffp->aa, flags, ffp->linelen, 0, 0,
+                             FALSE, TRUE, ffp->master_style) < 0) {
+      ffp->failed = TRUE;
+    }
+  }
+  if (ffp->ql != NULL) {
+    VisitBioseqsInSep (sep, (Pointer) ffp, PrintQualScores);
+  }
+
+  bsplist = UnlockFarComponents (bsplist);
 }
 
 static void FileRecurse (
@@ -914,6 +1016,53 @@ static void FileRecurse (
   ValNodeFreeData (head);
 }
 
+static SeqEntryPtr SeqEntryFromAccnOrGi (
+  CharPtr accn
+)
+
+{
+  Boolean      alldigits;
+  Char         ch;
+  CharPtr      ptr;
+  SeqEntryPtr  sep = NULL;
+  SeqIdPtr     sip;
+  Int4         uid = 0;
+  long int     val;
+
+  if (StringHasNoText (accn)) return NULL;
+
+  TrimSpacesAroundString (accn);
+
+  alldigits = TRUE;
+  ptr = accn;
+  ch = *ptr;
+  while (ch != '\0') {
+    if (! IS_DIGIT (ch)) {
+      alldigits = FALSE;
+    }
+    ptr++;
+    ch = *ptr;
+  }
+
+  if (alldigits) {
+    if (sscanf (accn, "%ld", &val) == 1) {
+      uid = (Int4) val;
+    }
+  } else {
+    sip = SeqIdFromAccessionDotVersion (accn);
+    if (sip != NULL) {
+      uid = GetGIForSeqId (sip);
+      SeqIdFree (sip);
+    }
+  }
+
+  if (uid > 0) {
+    sep = PubSeqSynchronousQuery (uid, 0, -1);
+  }
+
+  return sep;
+}
+
 /* Args structure contains command-line arguments */
 
 #define p_argInputPath     0
@@ -925,10 +1074,10 @@ static void FileRecurse (
 #define u_argRecurse       6
 #define m_argMaster        7
 #define g_argExpandGaps    8
-#define s_argGenomicQual   9
-#define z_argZeroQualGap  10
-#define a_argType         11
-#define t_argBatch        12
+#define D_argUseDashes     9
+#define s_argGenomicQual  10
+#define z_argZeroQualGap  11
+#define a_argType         12
 #define b_argBinary       13
 #define c_argCompressed   14
 #define r_argRemote       15
@@ -939,11 +1088,13 @@ static void FileRecurse (
 #define h_argFarOutFile   20
 #define e_argLineLength   21
 #define T_argThreads      22
+#define L_argLogFile      23
+#define A_argAccession    24
 
 Args myargs [] = {
   {"Path to ASN.1 Files", NULL, NULL, NULL,
     TRUE, 'p', ARG_STRING, 0.0, 0, NULL},
-  {"Single Input File", NULL, NULL, NULL,
+  {"Single Input File", "stdin", NULL, NULL,
     TRUE, 'i', ARG_FILE_IN, 0.0, 0, NULL},
   {"Nucleotide Output File Name", NULL, NULL, NULL,
     TRUE, 'o', ARG_FILE_OUT, 0.0, 0, NULL},
@@ -959,14 +1110,14 @@ Args myargs [] = {
     TRUE, 'm', ARG_BOOLEAN, 0.0, 0, NULL},
   {"Expand Delta Gaps into Ns", "F", NULL, NULL,
     TRUE, 'g', ARG_BOOLEAN, 0.0, 0, NULL},
+  {"Use Dash for Gap", "F", NULL, NULL,
+    TRUE, 'D', ARG_BOOLEAN, 0.0, 0, NULL},
   {"Far Genomic Contig for Quality Scores", "F", NULL, NULL,
     TRUE, 's', ARG_BOOLEAN, 0.0, 0, NULL},
   {"Print Quality Score Gap as -1", "F", NULL, NULL,
     TRUE, 'z', ARG_BOOLEAN, 0.0, 0, NULL},
-  {"ASN.1 Type (a Any, e Seq-entry, b Bioseq, s Bioseq-set, m Seq-submit)", "a", NULL, NULL,
+  {"ASN.1 Type (a Any, e Seq-entry, b Bioseq, s Bioseq-set, m Seq-submit, t Batch Processing)", "a", NULL, NULL,
     TRUE, 'a', ARG_STRING, 0.0, 0, NULL},
-  {"Batch Processing of Bioseq-set", "F", NULL, NULL,
-    TRUE, 't', ARG_BOOLEAN, 0.0, 0, NULL},
   {"Bioseq-set is Binary", "F", NULL, NULL,
     TRUE, 'b', ARG_BOOLEAN, 0.0, 0, NULL},
   {"Bioseq-set is Compressed", "F", NULL, NULL,
@@ -987,21 +1138,26 @@ Args myargs [] = {
     TRUE, 'e', ARG_INT, 0.0, 0, NULL},
   {"Use Threads", "F", NULL, NULL,
     TRUE, 'T', ARG_BOOLEAN, 0.0, 0, NULL},
+  {"Log File", NULL, NULL, NULL,
+    TRUE, 'L', ARG_FILE_OUT, 0.0, 0, NULL},
+  {"Accession to Fetch", NULL, NULL, NULL,
+    TRUE, 'A', ARG_STRING, 0.0, 0, NULL},
 };
 
 Int2 Main (void)
 
 {
-  CharPtr        base, blastdb, directory, fastaidx, ntout,
-                 aaout, qlout, frout, ptr, str, suffix;
+  Char           app [64], sfx [32];
+  CharPtr        accn, base, blastdb, directory, fastaidx, ntout,
+                 aaout, qlout, frout, logfile, ptr, str, suffix;
   Boolean        batch, binary, blast, compressed, dorecurse,
                  expandgaps, fargenomicqual, fasta, local, lock,
-                 masterstyle, qualgapzero, remote, usethreads;
+                 masterstyle, qualgapzero, remote, usedashes,
+                 usethreads;
   FastaFlagData  ffd;
-  FILE           *fp = NULL;
   Int2           linelen, type = 0;
   time_t         run_time, start_time, stop_time;
-  Char           sfx [32];
+  SeqEntryPtr    sep;
 
   /* standard setup */
 
@@ -1034,7 +1190,8 @@ Int2 Main (void)
 
   /* process command line arguments */
 
-  if (! GetArgs ("asn2fsa", sizeof (myargs) / sizeof (Args), myargs)) {
+  sprintf (app, "asn2fsa %s", ASN2FSA_APPLICATION);
+  if (! GetArgs (app, sizeof (myargs) / sizeof (Args), myargs)) {
     return 0;
   }
 
@@ -1045,6 +1202,7 @@ Int2 Main (void)
   directory = (CharPtr) myargs [p_argInputPath].strvalue;
   suffix = (CharPtr) myargs [x_argSuffix].strvalue;
   base = (CharPtr) myargs [i_argInputFile].strvalue;
+  accn = (CharPtr) myargs [A_argAccession].strvalue;
   dorecurse = (Boolean) myargs [u_argRecurse].intvalue;
   remote = (Boolean ) myargs [r_argRemote].intvalue;
   fastaidx = (CharPtr) myargs [f_argFastaIdx].strvalue;
@@ -1054,13 +1212,14 @@ Int2 Main (void)
   local = (Boolean) myargs [k_argLocalFetch].intvalue;
   lock = (Boolean) myargs [l_argLockFar].intvalue;
   linelen = (Int2) myargs [e_argLineLength].intvalue;
-  usethreads = (Int2) myargs [T_argThreads].intvalue;
+  usethreads = (Boolean) myargs [T_argThreads].intvalue;
 
   expandgaps = (Boolean) myargs [g_argExpandGaps].intvalue;
+  usedashes = (Boolean) myargs [D_argUseDashes].intvalue;
   masterstyle = (Boolean) myargs [m_argMaster].intvalue;
   fargenomicqual = (Boolean) myargs [s_argGenomicQual].intvalue;
   qualgapzero = (Boolean) myargs [z_argZeroQualGap].intvalue;
-  batch = (Boolean) myargs [t_argBatch].intvalue;
+  batch = FALSE;
   binary = (Boolean) myargs [b_argBinary].intvalue;
   compressed = (Boolean) myargs [c_argCompressed].intvalue;
 
@@ -1075,6 +1234,9 @@ Int2 Main (void)
     type = 4;
   } else if (StringICmp (str, "m") == 0) {
     type = 5;
+  } else if (StringICmp (str, "t") == 0) {
+    type = 1;
+    batch = TRUE;
   } else {
     type = 1;
   }
@@ -1086,10 +1248,17 @@ Int2 Main (void)
     }
   }
 
+  if (StringHasNoText (directory) && StringHasNoText (base)) {
+    Message (MSG_FATAL, "Input path or input file must be specified");
+    return 1;
+  }
+
   ntout = (CharPtr) myargs [o_argNtOutFile].strvalue;
   aaout = (CharPtr) myargs [v_argAaOutFile].strvalue;
   qlout = (CharPtr) myargs [q_argQlOutFile].strvalue;
   frout = (CharPtr) myargs [h_argFarOutFile].strvalue;
+
+  logfile = (CharPtr) myargs [L_argLogFile].strvalue;
 
   /* default to stdout for nucleotide output if nothing specified */
 
@@ -1104,6 +1273,7 @@ Int2 Main (void)
   /* populate parameter structure */
 
   ffd.expand_gaps = expandgaps;
+  ffd.use_dashes = usedashes;
   ffd.master_style = masterstyle;
   ffd.far_genomic_qual = fargenomicqual;
   ffd.qual_gap_is_zero = (Boolean) (! qualgapzero);
@@ -1114,10 +1284,12 @@ Int2 Main (void)
   ffd.useThreads = usethreads;
   ffd.type = type;
   ffd.linelen = linelen;
+  ffd.failed = FALSE;
   ffd.nt = NULL;
   ffd.aa = NULL;
   ffd.ql = NULL;
   ffd.fr = NULL;
+  ffd.logfp = NULL;
 
   if (! StringHasNoText (ntout)) {
     ffd.nt = FileOpen (ntout, "w");
@@ -1152,6 +1324,14 @@ Int2 Main (void)
     ffd.lock = TRUE;
   }
 
+  if (! StringHasNoText (logfile)) {
+    ffd.logfp = FileOpen (logfile, "w");
+    if (ffd.logfp == NULL) {
+      Message (MSG_FATAL, "Unable to open log file");
+      return 1;
+    }
+  }
+
   /* register fetch functions */
 
   if (remote) {
@@ -1161,6 +1341,7 @@ Int2 Main (void)
       return 1;
     }
     ffd.usePUBSEQ = TRUE;
+    ffd.useThreads = FALSE;
 #else
     PubSeqFetchEnable ();
 #endif
@@ -1198,17 +1379,29 @@ Int2 Main (void)
 
   /* recurse through all files within source directory or subdirectories */
 
-  if (! StringHasNoText (base)) {
+  if (StringDoesHaveText (accn)) {
+
+    if (remote) {
+      sep = SeqEntryFromAccnOrGi (accn);
+      if (sep != NULL) {
+        ProcessOneSeqEntry (sep, &ffd);
+        SeqEntryFree (sep);
+      }
+    }
+
+  } else if (StringDoesHaveText (directory)) {
+
+    FileRecurse (directory, NULL, suffix, dorecurse, &ffd);
+
+  } else if (StringDoesHaveText (base)) {
+
     ptr = StringRChr (base, '.');
+    sfx[0] = '\0';
     if (ptr != NULL) {
       StringNCpy_0 (sfx, ptr, sizeof (sfx));
       *ptr = '\0';
     }
     ProcessOneRecord (directory, base, sfx, &ffd);
-
-  } else {
-
-    FileRecurse (directory, NULL, suffix, dorecurse, &ffd);
   }
 
   if (ffd.nt != NULL) {
@@ -1227,7 +1420,11 @@ Int2 Main (void)
 
   stop_time = GetSecs ();
   run_time = stop_time - start_time;
-  Message (MSG_POST, "Ran in %ld seconds", (long) run_time);
+
+  if (ffd.logfp != NULL) {
+    fprintf (ffd.logfp, "Finished in %ld seconds\n", (long) run_time);
+    FileClose (ffd.logfp);
+  }
 
   /* close fetch functions */
 
@@ -1249,6 +1446,10 @@ Int2 Main (void)
 #else
     PubSeqFetchDisable ();
 #endif
+  }
+
+  if (ffd.failed) {
+    return 1;
   }
 
   return 0;

@@ -32,8 +32,14 @@ Contents: prototypes for "private" BLAST functions, these should not be called
 
 ******************************************************************************/
 
-/* $Revision: 6.112 $ 
+/* $Revision: 6.114 $ 
 * $Log: blastpri.h,v $
+* Revision 6.114  2004/08/23 17:03:52  papadopo
+* From Michael Gertz: make CopyResultHspToHSP public
+*
+* Revision 6.113  2004/06/30 12:28:20  madden
+* Removed some function prototypes and moved to blfmtutl.h
+*
 * Revision 6.112  2004/03/31 17:58:51  papadopo
 * Mike Gertz' changes for length adjustment calculations
 *
@@ -640,18 +646,6 @@ Contents: prototypes for "private" BLAST functions, these should not be called
 extern "C" {
 #endif
 
-typedef struct _txdbinfo {
-   struct _txdbinfo PNTR next;
-   Boolean   is_protein;
-   CharPtr   name;
-   CharPtr   definition;
-   CharPtr   date;
-   Int8   total_length;
-   Int4   number_seqs;
-   Boolean subset;	/* Print the subset message. */
-} TxDfDbInfo, *TxDfDbInfoPtr;
-	
-
 /*
 	Defines for the return values in "other_returns".
 */
@@ -672,43 +666,10 @@ typedef struct _txdbinfo {
 #define EFF_HSP_LENGTH 17
 	
 /*
-	Allocates memory for TxDfDbInfoPtr.
-	Link up new (returned) value to 'old', if non-NULL.
-*/
-TxDfDbInfoPtr LIBCALL TxDfDbInfoNew PROTO((TxDfDbInfoPtr old));
-
-/*
-	Deallocates memory (including strings for name, definition, and date).
-*/
-TxDfDbInfoPtr LIBCALL TxDfDbInfoDestruct PROTO((TxDfDbInfoPtr dbinfo));
-
-/*
-Print a summary of the query.
-*/
-Boolean LIBCALL AcknowledgeBlastQuery PROTO((BioseqPtr bsp, Int4 line_length, FILE *outfp, Boolean believe_query, Boolean html));
-
-/*
-	Print a report of the database used.
-*/
-Boolean LIBCALL PrintDbReport PROTO((TxDfDbInfoPtr dbinfo, Int4 line_length, FILE *outfp));
-
-/*
 	Print a warning about the filtering used.
 */
 Boolean LIBCALL BlastPrintFilterWarning PROTO((CharPtr filter_string, Int4 line_length, FILE *outfp, Boolean html));
 
-
-/*
-	print out some of the Karlin-Altschul parameters.
-*/
-Boolean LIBCALL PrintKAParameters PROTO((Nlm_FloatHi Lambda, Nlm_FloatHi K, Nlm_FloatHi H, Int4 line_length, FILE *outfp, Boolean gapped));
-Boolean LIBCALL PrintKAParametersExtra PROTO((Nlm_FloatHi Lambda, Nlm_FloatHi K, Nlm_FloatHi H, Nlm_FloatHi C, Int4 line_length, FILE *outfp, Boolean gapped));
-
-/*
-	Print a CharPtr (VisibleString), printing a new line every time
-	a tilde is encountered.
-*/
-Boolean LIBCALL PrintTildeSepLines PROTO((CharPtr buffer, Int4 line_length, FILE *outfp));
 
 /* How many interations should be done in the bisection. */
 #define BLAST_SAVE_ITER_MAX 20
@@ -810,6 +771,8 @@ BLASTResultHitlistPtr LIBCALL BLASTResultHitlistFree PROTO((BLASTResultHitlistPt
 BLASTResultHitlistPtr LIBCALL BLASTResultHitlistFreeEx PROTO((BlastSearchBlkPtr search, BLASTResultHitlistPtr result));
 
 BLASTResultHitlistPtr LIBCALL BLASTResultHitlistNew PROTO((Int4 hspcnt));
+Boolean LIBCALL
+CopyResultHspToHSP PROTO((BLASTResultHspPtr result_hsp, BLAST_HSPPtr hsp));
 
 Nlm_FloatHi LIBCALL GetDbSubjRatio PROTO((BlastSearchBlkPtr search, Int4 subject_length));
 
@@ -876,10 +839,6 @@ SeqLocPtr SeqLocSeg PROTO((SeqLocPtr slp));
 Boolean BlastConvertProteinSeqLoc PROTO((SeqLocPtr slp, Int2 frame, Int4 full_length));
 
 Boolean BlastConvertDNASeqLoc (SeqLocPtr slp, Int2 frame, Int4 full_length);
-
-BlastPruneSapStructPtr BlastPruneSapStructDestruct PROTO((BlastPruneSapStructPtr prune));
-
-BlastPruneSapStructPtr BlastPruneHitsFromSeqAlign PROTO((SeqAlignPtr sap, Int4 number, BlastPruneSapStructPtr prune));
 
 Uint1 LIBCALL BlastGetTypes PROTO((CharPtr blast_program, Boolean PNTR query_is_na, Boolean PNTR db_is_na));
 

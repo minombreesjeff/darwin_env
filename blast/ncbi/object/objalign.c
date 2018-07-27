@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 4/1/91
 *
-* $Revision: 6.10 $
+* $Revision: 6.11 $
 *
 * File Description:  Object manager for module NCBI-Seqalign
 *
@@ -628,6 +628,7 @@ ret:
 	AsnUnlinkType(orig);       /* unlink local tree */
 	return sap;
 erret:
+    aip->io_failure = TRUE;
     sap = SeqAlignFree(sap);
     goto ret;
 }

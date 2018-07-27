@@ -1,1 +1,0 @@
-../vibrant/pictur3d.h

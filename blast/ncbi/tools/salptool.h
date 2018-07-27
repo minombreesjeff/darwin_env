@@ -14,14 +14,9 @@ typedef struct p_seqaligninfo{
 
 NLM_EXTERN void SeqAlignReverseOrder(SeqAlignPtr align);
 NLM_EXTERN void SeqAlignSwapSeqs(SeqAlignPtr align);
-NLM_EXTERN SeqAlignPtr BlastTwoSequencesByLocBOTH(SeqLocPtr slp1, SeqLocPtr slp2, CharPtr program, BLAST_OptionsBlkPtr options);
-NLM_EXTERN SeqAlignPtr SeqAlignSplitBlastTwoSeq(SeqLocPtr slp1, SeqLocPtr slp2, 
-		Int4 split_len, Int4 overlap_len, BLAST_OptionsBlkPtr options);
 NLM_EXTERN PSeqAlignInfoPtr SeqAlignToPSeqAlignInfo (SeqAlignPtr sap);
 NLM_EXTERN SeqAlignPtr ReassembleSeqAlignFromPSeqAlignInfo(PSeqAlignInfoPtr alip);
-NLM_EXTERN SeqAlignPtr SeqAlignSplitGappedBlast(SeqLocPtr slp1, CharPtr progname, CharPtr database, ValNodePtr *other_returns, ValNodePtr *error_returns, Int4 split_len, Int4 overlap_len, BLAST_OptionsBlkPtr options);
 NLM_EXTERN SeqAlignPtr SeqAlignSetGlobalFromLocal(SeqAlignPtr align,SeqLocPtr loc_1, SeqLocPtr loc_2, BioseqPtr bsp_1, BioseqPtr bsp_2, FILE *err_fp,Int4 MaxGap);
-NLM_EXTERN SeqAlignPtr compute_alignment(SeqLocPtr loc_1, SeqLocPtr loc_2, BioseqPtr bsp_1, BioseqPtr bsp_2, FILE *err_fp, BLAST_OptionsBlkPtr options, Boolean ck_polyA);
 
 /****************************************************
  ValidateSeqAlignandACC
@@ -46,5 +41,7 @@ NLM_EXTERN Boolean ValidateSeqAlignandACCInSeqEntry (SeqEntryPtr sep,
                    Boolean msg_success, Boolean find_remote_bsp, 
                    Boolean find_acc_bsp,
                    Boolean delete_bsp, Boolean delete_salp);
+
+NLM_EXTERN void    CalculateAlignmentOffsets (SeqEntryPtr sepnew, SeqEntryPtr sepold);
 
 #endif

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/29/99
 *
-* $Revision: 1.25 $
+* $Revision: 1.26 $
 *
 * File Description: 
 *
@@ -308,6 +308,12 @@ NLM_EXTERN Uint4 EntrezGetUIDforSeqIdString (
 NLM_EXTERN Boolean ValidateEntrez2InfoPtr (
   Entrez2InfoPtr e2ip,
   ValNodePtr PNTR head
+);
+
+NLM_EXTERN Boolean ValidateEntrez2InfoPtrEx (
+  Entrez2InfoPtr e2ip,
+  ValNodePtr PNTR head,
+  Boolean checkMenuNameVariants
 );
 
 /* sample synchronous query code:

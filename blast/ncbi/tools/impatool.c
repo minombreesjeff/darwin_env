@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: impatool.c,v 6.11 2003/05/30 17:25:36 coulouri Exp $";
+static char const rcsid[] = "$Id: impatool.c,v 6.15 2004/10/04 13:35:53 camacho Exp $";
 
-/* $Id: impatool.c,v 6.11 2003/05/30 17:25:36 coulouri Exp $
+/* $Id: impatool.c,v 6.15 2004/10/04 13:35:53 camacho Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -34,9 +34,21 @@ Author: Alejandro Schaffer
 
 Contents: utility routines for IMPALA.
 
- $Revision: 6.11 $
+ $Revision: 6.15 $
 
  $Log: impatool.c,v $
+ Revision 6.15  2004/10/04 13:35:53  camacho
+ Do not use hard coded constants in IMPALAfindUngappedLambda
+
+ Revision 6.14  2004/06/30 14:14:50  madden
+ Remove add_string_to_bufferEx, already defined in blfmtutl.c
+
+ Revision 6.13  2004/06/30 13:57:27  kans
+ add_string_to_bufferEx had to be LIBCALL because of blfmtutl.h prototype
+
+ Revision 6.12  2004/06/30 13:42:27  kans
+ include <blfmtutl.h> to clear up Mac compiler missing prototype errors
+
  Revision 6.11  2003/05/30 17:25:36  coulouri
  add rcsid
 
@@ -67,6 +79,7 @@ Contents: utility routines for IMPALA.
 #include <simutil.h>
 #include <posit.h>
 #include <profiles.h>
+#include <blfmtutl.h>
 
 
 /*convert a residue character to its integer representation*/
@@ -130,52 +143,6 @@ Char LIBCALL getRes(Char input)
         return('?');
     }
 } 
-
-/*
-	adds the new string to the buffer, separating by a tilde.
-	Checks the size of the buffer for FormatBlastParameters and
-	allocates longer replacement if needed.
-*/
-
-static Boolean 
-add_string_to_bufferEx(CharPtr buffer, CharPtr *old, Int2Ptr old_length, Boolean add_tilde)
-
-{
-	CharPtr new, ptr;
-	Int2 length, new_length;
-
-	length = (StringLen(*old));
-
-	if((StringLen(buffer)+length+3) > *old_length)
-	{
-		new_length = *old_length + 255;
-		new = MemNew(new_length*sizeof(Char));
-		if (*old_length > 0 && *old != NULL)
-		{
-			MemCpy(new, *old, *old_length);
-			*old = MemFree(*old);
-		}
-		*old = new;
-		*old_length = new_length;
-	}
-
-	ptr = *old;
-	ptr += length;
-	if (add_tilde)
-	{
-		*ptr = '~';
-		ptr++;
-
-	}
-
-	while (*buffer != NULLB)
-	{
-		*ptr = *buffer;
-		buffer++; ptr++;
-	}
-
-	return TRUE;
-}
 
 
 /*get the citation for IMPALA*/
@@ -421,23 +388,17 @@ void  LIBCALL impalaMakeFileNames(Char * matrixDbName,
 Nlm_FloatHi LIBCALL
 IMPALAfindUngappedLambda(Char *matrixName)
 {
-   if (0 == strcmp(matrixName, "BLOSUM62"))
-     return(0.3176);
-   if (0 == strcmp(matrixName, "BLOSUM90"))
-     return(0.3346);
-   if (0 == strcmp(matrixName, "BLOSUM80"))
-     return(0.3430);
-   if (0 == strcmp(matrixName, "BLOSUM50"))
-     return(0.232);
-   if (0 == strcmp(matrixName, "BLOSUM45"))
-     return(0.2291);
-   if (0 == strcmp(matrixName, "PAM30"))
-     return(0.340);
-   if (0 == strcmp(matrixName, "PAM70"))
-     return(0.3345);
-   if (0 == strcmp(matrixName, "PAM250"))
-     return(0.229);
-   return(0);
+    Nlm_FloatHi* lambda_array = NULL;
+    int num_lambdas = BlastKarlinGetMatrixValues(matrixName, NULL, NULL, 
+                                                 &lambda_array, NULL, NULL, 
+                                                 NULL);
+    if (num_lambdas > 0) {
+        Nlm_FloatHi retval = lambda_array[0];
+        lambda_array = MemFree(lambda_array);
+        return retval;
+    } else {
+        return 0.0;
+    }
 }
 
 /*Given a sequence of 'length' amino acid residues, compute the

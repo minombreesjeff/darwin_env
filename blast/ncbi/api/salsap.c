@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/27/96
 *
-* $Revision: 6.9 $
+* $Revision: 6.11 $
 *
 * File Description: 
 *
@@ -2007,7 +2007,7 @@ NLM_EXTERN SeqAlignPtr LIBCALL SeqAlignDeleteByLoc (SeqLocPtr slp, SeqAlignPtr s
   Int4        from;
   Int4        sumlens = 0;
   Int4        seqlens = 0;
-  Int4        lensplus;
+  Int4        lensplus = 0;
   Int4        position;
   Int2        newseg;
   Int2        j, tmp;
@@ -3172,6 +3172,59 @@ static void FindSeqAlignCallback (SeqEntryPtr sep, Pointer mydata,
   }
 }
 
+static Boolean IsIdInAlignment (SeqIdPtr sip, SeqAlignPtr sap)
+{
+  SeqAlignPtr sap_tmp;
+  Boolean     found = FALSE;
+  DenseSegPtr dsp;
+  
+  if (sip == NULL || sap == NULL) return FALSE;
+  
+  if (sap->segtype == SAS_DISC)
+  {
+  	sap_tmp = (SeqAlignPtr) sap->segs;
+  	while (!found && sap_tmp != NULL)
+  	{
+  	  found = IsIdInAlignment (sip, sap_tmp);
+  	  sap_tmp = sap_tmp->next;
+  	}
+  }
+  else if (sap->segtype == SAS_DENSEG)
+  {
+  	dsp = (DenseSegPtr) sap->segs;
+  	if (SeqIdOrderInBioseqIdList (sip, dsp->ids) > 0)
+  	{
+  	  found = TRUE;
+  	}
+  }
+  return found;
+}
+
+static void FindSeqAlignVisitCallback (SeqAnnotPtr sap, Pointer userdata)
+{
+  CcId2Ptr           cip;
+  SeqAlignPtr        salp;
+  Boolean            found = FALSE;
+
+  if (sap == NULL || sap->type != 2 || (cip = (CcId2Ptr) userdata) == NULL || cip->sap != NULL) return;
+
+  for (salp = sap->data; salp != NULL && cip->sap == NULL; salp = salp->next)
+  {
+    if (cip->sip == NULL || IsIdInAlignment (cip->sip, salp)) 
+    {
+      if (cip->choice == OBJ_SEQALIGN)
+      {
+      	cip->sap = (Pointer) salp;
+      }
+      else
+      {
+      	cip->sap = sap;
+      }
+    }
+  }
+}
+
+
 NLM_EXTERN Pointer LIBCALL FindSeqAlignInSeqEntry (SeqEntryPtr sep, Uint1 choice)
 {
   SeqEntryPtr      sep_head;
@@ -3193,7 +3246,7 @@ NLM_EXTERN Pointer LIBCALL FindSeqAlignInSeqEntry (SeqEntryPtr sep, Uint1 choice
   }
   entityID = ObjMgrGetEntityIDForChoice (sep);
   sep_head = GetTopSeqEntryForEntityID (entityID);
-  SeqEntryExplore (sep_head, (Pointer)&ci, FindSeqAlignCallback);
+  VisitAnnotsInSep (sep_head, (Pointer)&ci, FindSeqAlignVisitCallback);
   if (ci.sip != NULL)
      SeqIdFree (ci.sip);
   return ci.sap;

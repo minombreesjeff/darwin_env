@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/27/96
 *
-* $Revision: 6.59 $
+* $Revision: 6.60 $
 *
 * File Description: 
 *
@@ -2558,6 +2558,11 @@ extern void on_draw (PaneL p)
                         sip = SeqLocId((SeqLocPtr) curssp->region);
                         start=AlignCoordToSeqCoord(from_inseq, sip,salp, adp->sqloc_list, 0) +1;
                         stridp = seqid_tolabel (sip, adp->printid);
+                        /* seqid_to_label calls BioseqLockById, which will
+                         * refresh the Desktop if it is open and will change
+                         * the font setting - need to put the font back.
+                         */
+                        SelectFont ((FonT)(adp->font));
                         draw_id (adp, &ptlh, rang(adp->input_format, curssp), stridp, curtdp->strand, start, curssp->itemtype, FALSE, is_master, group);
                      }
                    }

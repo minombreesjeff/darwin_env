@@ -21,7 +21,7 @@
  *  Please cite the author in any work or product based on this material.
  *
  * ===========================================================================
- * $Id: salpacc.c,v 6.28 2004/04/07 17:36:48 bollin Exp $
+ * $Id: salpacc.c,v 6.32 2004/12/29 13:49:01 bollin Exp $
  Collection of SeqAlign Accession utilities.
  Maintainer: Hugues Sicotte
  Authors of the original routines: Hugues Sicotte, Colombe Chappey, Tom Madden, Jinghui Zhang
@@ -354,6 +354,29 @@ NLM_EXTERN Uint1 LIBCALL SeqAlignStrand (SeqAlignPtr salp, Int2 index)
               ssp=NULL;
       }
   }
+  else if (salp->segtype == SAS_DISC)
+  {
+    SeqAlignPtr sap;
+    Int4        offset;
+    
+    if (index == 0 || index == 1)
+    {
+      sap = (SeqAlignPtr) salp->segs;
+      strand = SeqAlignStrand (sap, index);
+    }
+    else
+    {
+      for (sap = (SeqAlignPtr) salp->segs, offset = 1;
+           sap != NULL && offset != index;
+           sap = sap->next, offset++)
+      { 
+      }
+      if (sap != NULL)
+      {
+        strand = SeqAlignStrand (sap, 1);
+      }
+    }
+  }
   return strand;
 }
 
@@ -567,23 +590,29 @@ NLM_EXTERN Uint1 LIBCALL SeqAlignMolType (SeqAlignPtr salp)
   Int2         dim;
   Uint1        moltype = 0;
   Boolean      molb;
+  SeqAlignPtr  tmpsalp;
  
   if (salp==NULL)
      return FALSE;
-  if (salp->segtype == 1) {
+  if (salp->segtype == SAS_DENDIAG) {
      ddp = (DenseDiagPtr) salp->segs;
      sip = ddp->id;
      dim = ddp->dim;
   }
-  else if (salp->segtype == 2) {
+  else if (salp->segtype == SAS_DENSEG) {
      dsp = (DenseSegPtr) salp->segs;
      sip = dsp->ids;
      dim = dsp->dim;
   }
-  else if (salp->segtype == 3) {
+  else if (salp->segtype == SAS_STD) {
      ssp = (StdSegPtr) salp->segs;
      sip = ssp->ids;
      dim = ssp->dim; 
+  }
+  else if (salp->segtype == SAS_DISC) 
+  {
+  	 tmpsalp = (SeqAlignPtr) salp->segs;
+  	 return SeqAlignMolType (tmpsalp);
   }
   if (sip!=NULL) {
    for (k = 0; k < dim && sip!=NULL; k++, sip = sip->next)

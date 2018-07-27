@@ -1,6 +1,6 @@
 #	makefile for asntool and ncbi core routines,
 #
-#	$Id: makeall.unx,v 6.232 2004/04/30 18:15:22 camacho Exp $
+#	$Id: makeall.unx,v 6.260 2005/04/27 20:03:42 dondosha Exp $
 #
 #	cdromlib data access functions, vibrant, and entrez
 #	SunOS with unbundled ANSI compiler [ make LCL=acc RAN=ranlib CC=acc ]
@@ -170,16 +170,15 @@ SRC1 =	ncbibs.c wwwutils.c ncbierr.c ncbienv.c ncbifile.c \
 	ncbiprop.c ncbimain.c ncbimath.c ncbimem.c ncbimisc.c \
 	ncbimsg.c ncbistr.c ncbisgml.c ncbitime.c ncbilang.c \
 	asnbufo.c asndebin.c asnenbin.c asngen.c asnio.c asnlex.c \
-	asnlext.c asnout.c asnprint.c asntypes.c asngenob.c \
-	gifgen.c togif.c ncbithr.c regex.c tsprintf.c ncbiargs.c tree.c \
-	ncbisock.c ncbi_socket.c ncbi_socket.c matrix.c ncbibuf.c \
-	ncbi_buffer.c ncbi_core.c ncbi_core_c.c ncbi_util.c ncbi_priv.c \
-	ncbi_ansi_ext.c ncbi_connection.c ncbi_connector.c ncbi_connutil.c \
-	ncbi_file_connector.c ncbi_heapmgr.c ncbi_http_connector.c \
-	ncbi_memory_connector.c $(NCBI_LBSM_SRC) \
+	asnlext.c asnout.c asnprint.c asntypes.c asngenob.c gifgen.c \
+	togif.c ncbithr.c regex.c tsprintf.c ncbiargs.c tree.c matrix.c \
+	ncbi_socket.c ncbi_buffer.c ncbi_core.c ncbi_core_c.c ncbi_util.c \
+	ncbi_priv.c ncbi_ansi_ext.c ncbi_connection.c ncbi_connector.c \
+	ncbi_connutil.c ncbi_file_connector.c ncbi_heapmgr.c \
+	ncbi_http_connector.c ncbi_memory_connector.c $(NCBI_LBSM_SRC) \
 	ncbi_host_info.c ncbi_server_info.c ncbi_service.c \
-	ncbi_service_connector.c ncbi_dispd.c \
-	ncbi_socket_connector.c urlquery.c lbapi.c binary.c \
+	ncbi_service_connector.c ncbi_ftp_connector.c ncbi_dispd.c \
+	ncbi_socket_connector.c urlquery.c binary.c \
 	ncbi_sendmail.c asn_connection.c raw_scoremat.c \
 	drwnflpt.c drwnfspc.c drwnmfls.c
 
@@ -187,8 +186,8 @@ SRC2 =	objacces.c objalign.c objall.c objbibli.c \
 	objfeat.c objgen.c objloc.c objmedli.c objpub.c \
 	objres.c objseq.c objblock.c objcode.c objsset.c \
 	objsub.c objprt.c objfdef.c objalignloc.c \
-	objpubme.c objmdrs.c objproj.c objgbseq.c objtseq.c \
-	objinsdseq.c objent2.c ent2api.c pmfapi.c \
+	objpubme.c objmdrs.c objproj.c objgbseq.c objtseq.c objinsdseq.c \
+	objent2.c ent2api.c pmfapi.c objtax3.c tax3api.c objegkludge.c objentgene.c \
 	qblastapi.c vecscnapi.c objmim.c mimapi.c cddapi.c seqport.c \
 	sequtil.c prtutil.c simple.c tofasta.c tofile.c tomedlin.c \
 	valid.c alignmgr.c aliparse.c aliread.c alignval.c sqnutil1.c sqnutil2.c sqnutil3.c \
@@ -256,7 +255,7 @@ SRC23 = csim.c db_slist.c dust.c falign.c g_any.c sim2.c sim3.c sim4.c \
 	urkfltr.c urkdust.c urksigu.c seg.c urkbias.c urkcnsrt.c urktree.c \
 	pseed3.c pattern1.c impatool.c posit2.c mbalign.c \
 	vecscrn.c mblast.c rpsutil.c kappa.c xmlblast.c bxmlobj.c objscoremat.c \
-	dotseq.c spidey.c motif.c
+	dotseq.c spidey.c motif.c blfmtutl.c
 
 SRC28 = gdfontg.c gdfontmb.c gdfontt.c pictogif.c \
 	gdfontl.c gdfonts.c ncbidrwg.c drawing.c mapping.c picture.c ncbimain.c
@@ -280,16 +279,20 @@ SRC39 = ideochrow.c humchrom_dat.c mschrom_dat.c ideochrom.c ideoorgs.c \
 
 SRC50 = chartables.c get.c maketables.c pcre.c pcreposix.c study.c
 
-SRC60 = aa_ungapped.c blast_dust.c blast_engine.c blast_extend.c \
-    blast_filter.c blast_gapalign.c blast_hits.c blast_lookup.c \
-    blast_message.c blast_options.c blast_seg.c blast_seqsrc.c \
+SRC60 = aa_ungapped.c blast_diagnostics.c blast_dust.c blast_engine.c \
+    blast_extend.c blast_filter.c blast_gapalign.c blast_hits.c blast_itree.c \
+    blast_lookup.c blast_message.c blast_options.c blast_seg.c blast_seqsrc.c \
     blast_setup.c blast_stat.c blast_traceback.c blast_util.c \
-    gapinfo.c greedy_align.c link_hsps.c lookup_wrap.c mb_lookup.c \
-    ncbi_math.c ncbi_std.c pattern.c phi_extend.c phi_lookup.c \
-    lookup_util.c blast_encoding.c blast_psi_priv.c
+    gapinfo.c greedy_align.c hspstream_collector.c link_hsps.c lookup_wrap.c \
+    mb_lookup.c ncbi_math.c ncbi_std.c pattern.c phi_extend.c phi_lookup.c \
+    lookup_util.c blast_encoding.c blast_psi.c blast_psi_priv.c blast_kappa.c \
+    matrix_freq_ratios.c blast_hspstream.c blast_parameters.c blast_posit.c \
+    phi_gapalign.c
 
-SRC61 = blast_input.c blast_seq.c blast_seqalign.c seqsrc_readdb.c \
-    blast_format.c multiseq_src.c twoseq_api.c
+SRC61 = blast_api.c blast_format.c blast_input.c blast_mtlock.c \
+        blast_options_api.c blast_prelim.c blast_returns.c blast_seq.c \
+        blast_seqalign.c blast_tabular.c hspstream_queue.c \
+        repeats_filter.c seqsrc_multiseq.c seqsrc_readdb.c twoseq_api.c
 
 # objects needed for versions of asntool and entrez
 
@@ -300,16 +303,15 @@ OBJ1 =	ncbibs.o wwwutils.o ncbierr.o ncbienv.o ncbifile.o \
 	ncbimain.o ncbiprop.o ncbimath.o ncbimem.o ncbimisc.o \
 	ncbimsg.o ncbistr.o ncbisgml.o ncbitime.o ncbilang.o \
 	asnbufo.o asndebin.o asnenbin.o asngen.o asnio.o asnlex.o \
-	asnlext.o asnout.o asnprint.o asntypes.o asngenob.o \
-	gifgen.o togif.o ncbithrs.o regex.o tsprintf.o ncbiargs.o tree.o \
-	ncbisock.o ncbi_socket.o matrix.o ncbibuf.o ncbi_buffer.o \
-	ncbi_core.o ncbi_core_c.o ncbi_util.o ncbi_priv.o \
-	ncbi_ansi_ext.o ncbi_connection.o ncbi_connector.o ncbi_connutil.o \
-	ncbi_file_connector.o ncbi_heapmgr.o ncbi_http_connector.o \
-	ncbi_memory_connector.o $(NCBI_LBSM_OBJ) \
+	asnlext.o asnout.o asnprint.o asntypes.o asngenob.o gifgen.o \
+	togif.o ncbithrs.o regex.o tsprintf.o ncbiargs.o tree.o matrix.o \
+	ncbi_socket.o ncbi_buffer.o ncbi_core.o ncbi_core_c.o ncbi_util.o \
+	ncbi_priv.o ncbi_ansi_ext.o ncbi_connection.o ncbi_connector.o \
+	ncbi_connutil.o ncbi_file_connector.o ncbi_heapmgr.o \
+	ncbi_http_connector.o ncbi_memory_connector.o $(NCBI_LBSM_OBJ) \
 	ncbi_host_info.o ncbi_server_info.o ncbi_service.o \
-	ncbi_service_connector.o ncbi_dispd.o \
-	ncbi_socket_connector.o urlquery.o lbapi.o binary.o \
+	ncbi_service_connector.o ncbi_ftp_connector.o ncbi_dispd.o \
+	ncbi_socket_connector.o urlquery.o binary.o \
 	ncbi_sendmail.o asn_connection.o raw_scoremat.o \
 	drwnflpt.o drwnfspc.o drwnmfls.o
 
@@ -317,8 +319,8 @@ OBJ2 =	objacces.o objalign.o objall.o objbibli.o \
 	objfeat.o objgen.o objloc.o objmedli.o objpub.o \
 	objres.o objseq.o objblock.o objcode.o objsset.o \
 	objsub.o objprt.o objfdef.o objalignloc.o \
-	objpubme.o objmdrs.o objproj.o objgbseq.o objtseq.o \
-	objinsdseq.o objent2.o ent2api.o pmfapi.o \
+	objpubme.o objmdrs.o objproj.o objgbseq.o objtseq.o objinsdseq.o \
+	objent2.o ent2api.o pmfapi.o objtax3.o tax3api.o objegkludge.o objentgene.o \
 	qblastapi.o vecscnapi.o objmim.o mimapi.o cddapi.o seqport.o \
 	sequtil.o prtutil.o simple.o tofasta.o tofile.o tomedlin.o \
 	valid.o alignmgr.o aliparse.o aliread.o alignval.o sqnutil1.o sqnutil2.o sqnutil3.o \
@@ -398,7 +400,7 @@ OBJ23 = csim.o db_slist.o dust.o falign.o g_any.o sim2.o sim3.o sim4.o \
 	urkfltr.o urkdust.o urksigu.o seg.o urkbias.o urkcnsrt.o urktree.o \
 	pseed3.o pattern1.o impatool.o posit2.o mbalign.o \
 	vecscrn.o mblast.o rpsutil.o kappa.o xmlblast.o bxmlobj.o objscoremat.o \
-	dotseq.o spidey.o motif.o
+	dotseq.o spidey.o motif.o blfmtutl.o
 
 OBJ28 = gdfontg.o gdfontmb.o gdfontt.o pictogif.o \
 	gdfontl.o gdfonts.o ncbidrwg.o drawing.o mapping.o picture.o ncbimain.o
@@ -427,16 +429,20 @@ OBJ39 = ideochrow.o humchrom_dat.o mschrom_dat.o ideochrom.o ideoorgs.o \
 
 OBJ50 = chartables.o get.o maketables.o pcre.o pcreposix.o study.o
 
-OBJ60 = aa_ungapped.o blast_dust.o blast_engine.o blast_extend.o \
-    blast_filter.o blast_gapalign.o blast_hits.o blast_lookup.o \
+OBJ60 = aa_ungapped.o blast_diagnostics.o blast_dust.o blast_engine.o blast_extend.o \
+    blast_filter.o blast_gapalign.o blast_hits.o blast_itree.o blast_lookup.o \
     blast_message.o blast_options.o blast_seg.o blast_seqsrc.o \
     blast_setup.o blast_stat.o blast_traceback.o blast_util.o \
-    gapinfo.o greedy_align.o link_hsps.o lookup_wrap.o mb_lookup.o \
-    ncbi_math.o ncbi_std.o pattern.o phi_extend.o phi_lookup.o \
-    lookup_util.o blast_encoding.o blast_psi_priv.o
+    gapinfo.o greedy_align.o hspstream_collector.o link_hsps.o lookup_wrap.o \
+    mb_lookup.o ncbi_math.o ncbi_std.o pattern.o phi_extend.o phi_lookup.o \
+    lookup_util.o blast_encoding.o blast_psi.o blast_psi_priv.o blast_kappa.o \
+    matrix_freq_ratios.o blast_hspstream.o blast_parameters.o blast_posit.o \
+    phi_gapalign.o
 
-OBJ61 = blast_input.o blast_seq.o blast_seqalign.o seqsrc_readdb.o \
-    blast_format.o multiseq_src.o twoseq_api.o
+OBJ61 = blast_api.o blast_input.o blast_format.o blast_mtlock.o \
+        blast_options_api.o blast_prelim.o blast_returns.o blast_seq.o \
+        blast_seqalign.o blast_tabular.o hspstream_queue.o repeats_filter.o \
+        seqsrc_multiseq.o seqsrc_readdb.o twoseq_api.o
 
 
 # NOTE: if you enter an object file to an OBJxx greater than 30, you have to explicitly
@@ -488,8 +494,6 @@ clean :
 ## Special case
 ##
 
-lbapi.o : lbapi.c
-	$(CC) $(CFLAGS) $(IN_HOUSE_CFLAGS) lbapi.c
 ncbithrs.o: ncbithrs.c
 	$(CC) -DNCBI_NOTHREADS_AVAIL $(CFLAGS) ncbithrs.c
 ncbidrwg.o: ncbidrwg.c
@@ -662,6 +666,7 @@ copy :
 	$(SRCCOPY) ../asnlib/*.c .
 	$(SRCCOPY) ../connect/*.c .
 	$(SRCCOPY) ../connect/ncbi_ansi_ext.h .
+	$(SRCCOPY) ../connect/ncbi_assert.h .
 	$(SRCCOPY) ../connect/ncbi_priv.h .
 	$(SRCCOPY) ../connect/ncbi_comm.h .
 	$(SRCCOPY) ../connect/ncbi_config.h .
@@ -687,8 +692,6 @@ copy :
 	-mkdir ../include/ctools
 	-chmod ug+rw,o+r ../include/ctools
 	cp -fp ../ctools/*.h ../include/ctools
-	$(SRCCOPY) ../connect/lbapi/*.c .
-	$(SRCCOPY) ../connect/lbapi/*.h ../include
 	$(SRCCOPY) ../object/*.c .
 	$(SRCCOPY) ../object/*.h ../include
 	$(SRCCOPY) ../access/*.c .

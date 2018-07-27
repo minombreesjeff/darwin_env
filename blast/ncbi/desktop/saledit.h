@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   2/19/97
 *
-* $Revision: 6.27 $
+* $Revision: 6.30 $
 *
 * File Description: 
 *
@@ -199,6 +199,7 @@ extern Int2 LIBCALLBACK SeqEditFunc PROTO((Pointer data));
 extern Int2 LIBCALLBACK AlgEditFunc PROTO((Pointer data));
 extern Int2 LIBCALLBACK AnnotAlgEditFunc PROTO((Pointer data));
 extern Int2 LIBCALLBACK AlgViewFunc (Pointer data);
+extern void OldAlignmentEditor (IteM i);
 
 extern void LaunchAnnotAlignEditor (SeqAnnotPtr sap);
 extern void LaunchAlignEditor (SeqAlignPtr salp);

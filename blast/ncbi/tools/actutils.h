@@ -1,4 +1,4 @@
-/* $Id: actutils.h,v 6.12 2002/03/27 17:35:39 todorov Exp $
+/* $Id: actutils.h,v 6.15 2004/11/22 16:45:24 bollin Exp $
  *===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -29,13 +29,25 @@
 *
 * Version Creation Date:   2/00
 *
-* $Revision: 6.12 $
+* $Revision: 6.15 $
 *
 * File Description: utility functions for alignments
 *
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: actutils.h,v $
+* Revision 6.15  2004/11/22 16:45:24  bollin
+* created global alignment function with callback method to allow use of new
+* BLAST library
+*
+* Revision 6.14  2004/11/02 18:53:39  bollin
+* made act_get_eval available to other libraries
+*
+* Revision 6.13  2004/07/30 13:36:47  bollin
+* created separate function for reversing features on a sequence, changed code
+* to swap plus to minus and minus to plus instead of moving all features to
+* minus strand
+*
 * Revision 6.12  2002/03/27 17:35:39  todorov
 * recreated ACT_MakeProfileFromSA
 *
@@ -190,13 +202,20 @@ NLM_EXTERN int LIBCALLBACK ACT_CompareProfileConfidence(VoidPtr base, VoidPtr la
 NLM_EXTERN ACTProfilePtr ACT_MakeProfileFromSA(SeqAlignPtr sap);
 NLM_EXTERN ACT_TopScorePtr PNTR ACT_SortAndTruncate(ACT_TopScorePtr PNTR ats);
 NLM_EXTERN ACT_TopScorePtr ACT_FindPeakScores(FloatHiPtr scorearray, Int4 len);
+NLM_EXTERN FloatHi act_get_eval(Int4 exp);
 NLM_EXTERN ACT_PositionPtr ACT_PlaceByScore(ACT_PlaceBoundsPtr abp);
 NLM_EXTERN FloatHi ACT_CalcScore(ACT_PlaceBoundsPtr abp);
 NLM_EXTERN SeqAlignPtr Sqn_GlobalAlign2Seq (BioseqPtr bsp1, BioseqPtr bsp2, BoolPtr revcomp);
+NLM_EXTERN void ReverseBioseqFeatureStrands (BioseqPtr bsp);
 NLM_EXTERN void ACT_GetNthSeqRangeInSASet(SeqAlignPtr sap, Int4 n, Int4Ptr start, Int4Ptr stop);
 NLM_EXTERN SeqAlignPtr ACT_FindPiece(BioseqPtr bsp1, BioseqPtr bsp2, Int4 start1, Int4 stop1, Int4 start2, Int4 stop2, Uint1 strand, Int4 which_side);
 NLM_EXTERN void SQN_ExtendAlnAlg(SeqAlignPtr sap, Int4 ovl, Int4 which_side, Uint1 strand);
 NLM_EXTERN SeqAlignPtr ACT_CleanUpAlignments(SeqAlignPtr sap, Int4 len1, Int4 len2);
+extern void ACT_RemoveInconsistentAlnsFromSet (SeqAlignPtr sap, Int4 fuzz, Int4 n);
+
+typedef SeqAlignPtr (LIBCALLBACK *GetAlignmentFunc) (BioseqPtr bsp1, BioseqPtr bsp2);
+
+NLM_EXTERN SeqAlignPtr Sqn_GlobalAlign2SeqEx (BioseqPtr bsp1, BioseqPtr bsp2, BoolPtr revcomp, GetAlignmentFunc aln_func);
 
 /***************************************************************************
 *

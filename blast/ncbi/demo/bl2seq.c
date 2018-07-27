@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: bl2seq.c,v 6.60 2004/02/26 16:25:06 camacho Exp $";
+static char const rcsid[] = "$Id: bl2seq.c,v 6.75 2005/03/16 00:43:40 dondosha Exp $";
 
 /**************************************************************************
 *                                                                         *
@@ -27,6 +27,51 @@ static char const rcsid[] = "$Id: bl2seq.c,v 6.60 2004/02/26 16:25:06 camacho Ex
 ***************************************************************************
 *
 * $Log: bl2seq.c,v $
+* Revision 6.75  2005/03/16 00:43:40  dondosha
+* Correction to previous commit to make reported deflines the same as before
+*
+* Revision 6.74  2005/03/15 20:59:16  dondosha
+* When retrieving Bioseq by gi, try BLAST databases first
+*
+* Revision 6.73  2005/03/03 15:05:47  dondosha
+* Blast_FindRepeatFilterLoc renamed to Blast_FindRepeatFilterSeqLoc
+*
+* Revision 6.72  2005/02/08 20:43:03  dondosha
+* Added repeats filtering for new engine
+*
+* Revision 6.71  2005/02/07 15:30:39  dondosha
+* Removed restriction on the value of longest intron option
+*
+* Revision 6.70  2005/02/03 18:02:07  dondosha
+* Pass summary returns to BLAST_FormatResults, needed for XML output
+*
+* Revision 6.69  2005/02/02 19:01:36  dondosha
+* Use new high level API for performing the search
+*
+* Revision 6.68  2004/12/29 16:06:20  dondosha
+* Small memory leak fix; correction in mask array allocation for non-translated search
+*
+* Revision 6.67  2004/12/29 15:20:55  dondosha
+* Set gapped_calculation option for new engine; allocate appropriate size BlastSeqLoc array in BlastMaskLoc before formatting
+*
+* Revision 6.66  2004/10/04 14:05:06  madden
+* Use Blast_PrintOutputFooter rather than BLAST_PrintSummaryReturns
+*
+* Revision 6.65  2004/09/13 15:15:54  madden
+* Changes for BlastSeqLoc and BlastMaskLoc
+*
+* Revision 6.64  2004/08/16 14:26:47  madden
+* Fix bad frees for blastx filtering locations
+*
+* Revision 6.63  2004/08/09 13:08:15  madden
+* Bl2seq now can run queries with new blast engine
+*
+* Revision 6.62  2004/08/03 14:02:02  madden
+* Introduce enum to make myargs more readable
+*
+* Revision 6.61  2004/06/30 16:03:48  kans
+* include <blfmtutl.h>
+*
 * Revision 6.60  2004/02/26 16:25:06  camacho
 * Fix uninitialized variable errors that caused core dumps on empty input files
 *
@@ -216,26 +261,33 @@ static char const rcsid[] = "$Id: bl2seq.c,v 6.60 2004/02/26 16:25:06 camacho Ex
 #include <sqnutils.h>
 #include <mblast.h>
 #include <accid1.h>
+#include <blfmtutl.h>
+
+#include <algo/blast/api/twoseq_api.h>
+#include <algo/blast/api/blast_format.h>
+#include <algo/blast/api/blast_seq.h>
+#include <algo/blast/api/repeats_filter.h>
+#include <algo/blast/core/blast_util.h>
+
 
 /* Used by the callback function. */
 FILE *global_fp=NULL;
 
 #define LOCAL_BUFLEN 255
 static BioseqPtr
-BioseqFromAccession(CharPtr accver, Int2 id_num, Boolean is_na, 
-                    Boolean believe_defline)
+BioseqFromAccession(CharPtr accver, Boolean is_query, Boolean is_na)
 {
-   CharPtr accession, new_defline, version_str;
-   Int4 version=0, gi, number, title_length, id_length;
+   CharPtr accession, version_str;
+   Int4 version=0, gi, number;
    SeqIdPtr sip = NULL;
    TextSeqIdPtr tsip;
    PDBSeqIdPtr  psip;
    BioseqPtr bsp = NULL, bsp_tmp = NULL;
-   ObjectIdPtr  oid;
    SeqPortPtr spp;
    Int2 retval, buf_length=512;
    Uint1 buf[512];
-   Char tmp[LOCAL_BUFLEN];
+   char* defline;
+   char* dummy_ptr = NULL;
 
    if (!ID1BioseqFetchEnable ("bl2seq", TRUE))
       ErrPostEx(SEV_FATAL, 1, 0, 
@@ -305,13 +357,30 @@ BioseqFromAccession(CharPtr accver, Int2 id_num, Boolean is_na,
    } else
       gi = atoi(accver);
 
+   ID1BioseqFetchDisable();
+
    if (gi > 0) {
-      ValNodeAddInt(&sip, SEQID_GI, gi);
-      if ((bsp_tmp = BioseqLockById(sip)) == NULL) {
-         ErrPostEx(SEV_WARNING, 0, 0, "Gi %ld not found", gi);
-         return NULL;
-      }
-   } 
+       /* First attempt to retrieve Bioseq from BLAST databases. */
+       char* db_name = (is_na ? "nucl_dbs" : "prot_dbs");
+
+       ValNodeAddInt(&sip, SEQID_GI, gi);
+       ReadDBBioseqFetchEnable ("bl2seq", db_name, is_na, TRUE);
+       bsp_tmp = BioseqLockById(sip);
+       ReadDBBioseqFetchDisable();
+
+       if (!bsp_tmp) {
+           /* Try ID1 again as a last resort. */
+           ID1BioseqFetchEnable("bl2seq", TRUE);
+           bsp_tmp = BioseqLockById(sip);
+           ID1BioseqFetchDisable();
+       }
+       sip = SeqIdFree(sip);
+   }
+   
+   if (!bsp_tmp) {
+       ErrPostEx(SEV_WARNING, 0, 0, "Gi %ld not found", gi);
+       return NULL;
+   }
    
    if (ISA_na(bsp_tmp->mol) != is_na) {
       BioseqUnlock(bsp_tmp);
@@ -329,8 +398,6 @@ BioseqFromAccession(CharPtr accver, Int2 id_num, Boolean is_na,
    bsp = BioseqNew();
    bsp->length = bsp_tmp->length;
    bsp->mol = bsp_tmp->mol;
-   bsp->repr = Seq_repr_raw;
-   bsp->seq_data = BSNew(bsp->length);
                    
    if (ISA_na(bsp->mol)) {
       spp = SeqPortNew(bsp_tmp, 0, -1, Seq_strand_plus, 
@@ -359,99 +426,542 @@ BioseqFromAccession(CharPtr accver, Int2 id_num, Boolean is_na,
    }
    
    SeqPortFree(spp);
-   if (believe_defline) {
-      new_defline = StringSave(BioseqGetTitle(bsp_tmp));
-   } else {
-      title_length = StringLen(BioseqGetTitle(bsp_tmp));
-      SeqIdWrite(bsp_tmp->id, tmp, PRINTID_FASTA_LONG, LOCAL_BUFLEN);
-      id_length = StringLen(tmp);
-      title_length += id_length;
-      title_length +=3;
-      new_defline = (CharPtr) MemNew(title_length*sizeof(Char));
-      StringCpy(new_defline, tmp);
-      *(new_defline+id_length) = ' ';
-      StringCpy(new_defline+id_length+1, BioseqGetTitle(bsp_tmp));
-      *(new_defline+title_length-1) = NULLB;
-   }
+   defline = StringSave(BioseqGetTitle(bsp_tmp));
+   /* Cut off any defline extensions due to combining of sequences in the BLAST
+      database. */
+   defline = StringTokMT(defline, ">", &dummy_ptr);
+   /* If there did exist a second defline, then there is an extra space in front
+      of the ">" sign, which should be removed. */
+   if (dummy_ptr)
+       defline[strlen(defline)-1] = NULLB;
 
-   bsp->descr = ValNodeAddStr(NULL, Seq_descr_title, new_defline);
-   bsp->id = ValNodeNew(NULL);
-   oid = ObjectIdNew();
-   oid->str = (char*) Malloc(LOCAL_BUFLEN+1);
-   if (believe_defline) {
-      SeqIdWrite(bsp_tmp->id, oid->str, PRINTID_FASTA_LONG, LOCAL_BUFLEN);
+   if (is_query) {
+       ObjectIdPtr oid = ObjectIdNew();
+       oid->str = (char*) Malloc(LOCAL_BUFLEN+1);
+       SeqIdWrite(bsp_tmp->id, oid->str, PRINTID_FASTA_LONG, LOCAL_BUFLEN);
+       ValNodeAddPointer(&bsp->id, SEQID_LOCAL, oid);
+       bsp->descr = ValNodeAddStr(NULL, Seq_descr_title, defline);
    } else {
-      sprintf(oid->str, "%d", id_num);
+       Char seqid_buf[LOCAL_BUFLEN];
+       char* title;
+       DbtagPtr dbtagptr = DbtagNew();
+       dbtagptr->db = StringSave("BL_ORD_ID");
+       dbtagptr->tag = ObjectIdNew();
+       ValNodeAddPointer(&bsp->id, SEQID_GENERAL, dbtagptr);
+       
+       SeqIdWrite(bsp_tmp->id, seqid_buf, PRINTID_FASTA_LONG, 
+                  LOCAL_BUFLEN);
+       
+       title = (char*) Malloc(strlen(seqid_buf) + strlen(defline) + 2);
+       sprintf(title, "%s %s", seqid_buf, defline);
+       defline = MemFree(defline);
+       bsp->descr = ValNodeAddStr(NULL, Seq_descr_title, title);
    }
-   bsp->id->choice = SEQID_LOCAL;
-   bsp->id->data.ptrvalue = (Pointer) oid;
    SeqMgrDeleteFromBioseqIndex(bsp_tmp);
    BioseqUnlock(bsp_tmp);
    BioseqPack(bsp);
-   ID1BioseqFetchDisable();
    return bsp;
 }
 		
 #define NUMARG (sizeof(myargs)/sizeof(myargs[0]))
 
+typedef enum {
+   ARG_QUERY = 0,
+   ARG_SUBJECT,
+   ARG_PROGRAM,
+   ARG_GAPPED,
+   ARG_OUT,
+   ARG_DBSIZE,
+   ARG_ASNOUT,
+   ARG_GAPOPEN,
+   ARG_GAPEXT,
+   ARG_XDROP,
+   ARG_WORDSIZE,
+   ARG_MATRIX,
+   ARG_MISMATCH,
+   ARG_MATCH,
+   ARG_FILTER,
+   ARG_EVALUE,
+   ARG_STRAND,
+   ARG_HTML,
+   ARG_USEMEGABLAST,
+   ARG_SEARCHSP,
+   ARG_INTRON,
+   ARG_LOC1,
+   ARG_LOC2,
+   ARG_FORMAT,
+   ARG_LCASE,
+   ARG_ACCN,
+   ARG_FORCE_OLD
+} BlastArguments;
+
 static Args myargs [] = {
   { "First sequence",            
-	NULL, NULL, NULL, FALSE, 'i', ARG_FILE_IN, 0.0, 0, NULL}, /* 0 */
+	NULL, NULL, NULL, FALSE, 'i', ARG_FILE_IN, 0.0, 0, NULL}, /* ARG_QUERY */
   { "Second sequence",
-	NULL, NULL, NULL, FALSE, 'j', ARG_FILE_IN, 0.0, 0, NULL}, /* 1 */
+	NULL, NULL, NULL, FALSE, 'j', ARG_FILE_IN, 0.0, 0, NULL}, /* ARG_SUBJECT */
   { "Program name: blastp, blastn, blastx, tblastn, tblastx. For blastx 1st sequence should be nucleotide, tblastn 2nd sequence nucleotide",
-        NULL, NULL, NULL, FALSE, 'p', ARG_STRING, 0.0, 0, NULL},/* 2 */
+        NULL, NULL, NULL, FALSE, 'p', ARG_STRING, 0.0, 0, NULL}, /* ARG_PROGRAM */
   { "Gapped",
-        "T", NULL, NULL, FALSE, 'g', ARG_BOOLEAN, 0.0, 0, NULL},/* 3 */
+        "T", NULL, NULL, FALSE, 'g', ARG_BOOLEAN, 0.0, 0, NULL}, /* ARG_GAPPED */
   { "alignment output file",
-	"stdout", NULL, NULL, FALSE, 'o', ARG_FILE_OUT, 0.0, 0, NULL},/* 4 */
+	"stdout", NULL, NULL, FALSE, 'o', ARG_FILE_OUT, 0.0, 0, NULL}, /* ARG_OUT */
   { "theor. db size (zero is real size)", 
-	"0", NULL, NULL, FALSE, 'd', ARG_FLOAT, 0.0, 0, NULL},/* 5 */
+	"0", NULL, NULL, FALSE, 'd', ARG_FLOAT, 0.0, 0, NULL}, /* ARG_DBSIZE */
   { "SeqAnnot output file",
-	NULL, NULL, NULL, TRUE, 'a', ARG_FILE_OUT, 0.0, 0, NULL},/* 6 */
+	NULL, NULL, NULL, TRUE, 'a', ARG_FILE_OUT, 0.0, 0, NULL}, /* ARG_ASNOUT */
   { "Cost to open a gap (-1 invokes default behavior; non-default values can result in unreliable statistics)",
-        "-1", NULL, NULL, FALSE, 'G', ARG_INT, 0.0, 0, NULL},/* 7 */
+        "-1", NULL, NULL, FALSE, 'G', ARG_INT, 0.0, 0, NULL}, /* ARG_GAPOPEN */
   { "Cost to extend a gap (-1 invokes default behavior; non-default values can result in unreliable statistics)",
-        "-1", NULL, NULL, FALSE, 'E', ARG_INT, 0.0, 0, NULL},/* 8 */
+        "-1", NULL, NULL, FALSE, 'E', ARG_INT, 0.0, 0, NULL}, /* ARG_GAPEXT */
   { "X dropoff value for gapped alignment (in bits) (zero invokes default "
     "behavior)\n      blastn 30, megablast 20, tblastx 0, all others 15",
-        "0", NULL, NULL, FALSE, 'X', ARG_INT, 0.0, 0, NULL},/* 9 */
+        "0", NULL, NULL, FALSE, 'X', ARG_INT, 0.0, 0, NULL}, /* ARG_XDROP */
   { "Word size, default if zero (blastn 11, megablast 28, "
         "all others 3)",
-        "0", NULL, NULL, FALSE, 'W', ARG_INT, 0.0, 0, NULL},/* 10 */
+        "0", NULL, NULL, FALSE, 'W', ARG_INT, 0.0, 0, NULL}, /* ARG_WORDSIZE */
   { "Matrix",
-        "BLOSUM62", NULL, NULL, FALSE, 'M', ARG_STRING, 0.0, 0, NULL},/* 11 */
+        "BLOSUM62", NULL, NULL, FALSE, 'M', ARG_STRING, 0.0, 0, NULL}, /* ARG_MATRIX */
   { "Penalty for a nucleotide mismatch (blastn only)",
-        "-3", NULL, NULL, FALSE, 'q', ARG_INT, 0.0, 0, NULL},/* 12 */
+        "-3", NULL, NULL, FALSE, 'q', ARG_INT, 0.0, 0, NULL}, /* ARG_MISMATCH */
   { "Reward for a nucleotide match (blastn only)",
-        "1", NULL, NULL, FALSE, 'r', ARG_INT, 0.0, 0, NULL},/* 13 */
+        "1", NULL, NULL, FALSE, 'r', ARG_INT, 0.0, 0, NULL}, /* ARG_MATCH */
   { "Filter query sequence (DUST with blastn, SEG with others)",
-        "T", NULL, NULL, FALSE, 'F', ARG_STRING, 0.0, 0, NULL},/* 14 */
+        "T", NULL, NULL, FALSE, 'F', ARG_STRING, 0.0, 0, NULL}, /* ARG_FILTER */
   { "Expectation value (E)",
-        "10.0", NULL, NULL, FALSE, 'e', ARG_FLOAT, 0.0, 0, NULL},/* 15 */
+        "10.0", NULL, NULL, FALSE, 'e', ARG_FLOAT, 0.0, 0, NULL}, /* ARG_EVALUE */
   { "Query strands to search against database (blastn only).  3 is both, 1 is top, 2 is bottom",
-        "3", NULL, NULL, FALSE, 'S', ARG_INT, 0.0, 0, NULL},/* 16 */
+        "3", NULL, NULL, FALSE, 'S', ARG_INT, 0.0, 0, NULL}, /* ARG_STRAND */
   { "Produce HTML output",
-        "F", NULL, NULL, FALSE, 'T', ARG_BOOLEAN, 0.0, 0, NULL},/* 17 */
+        "F", NULL, NULL, FALSE, 'T', ARG_BOOLEAN, 0.0, 0, NULL}, /* ARG_HTML */
   { "Use Mega Blast for search",
-        "F", NULL, NULL, TRUE, 'm', ARG_BOOLEAN, 0.0, 0, NULL},/* 18 */
+        "F", NULL, NULL, TRUE, 'm', ARG_BOOLEAN, 0.0, 0, NULL}, /* ARG_USEMEGABLAST */
   { "Effective length of the search space (use zero for the real size)",
-        "0", NULL, NULL, FALSE, 'Y', ARG_FLOAT, 0.0, 0, NULL}, /* 19 */
+        "0", NULL, NULL, FALSE, 'Y', ARG_FLOAT, 0.0, 0, NULL}, /* ARG_SEARCHSP */
   { "Length of the largest intron allowed in tblastn for linking HSPs",
-        "0", NULL, NULL, FALSE, 't', ARG_INT, 0.0, 0, NULL},/* 20 */
+        "0", NULL, NULL, FALSE, 't', ARG_INT, 0.0, 0, NULL}, /* ARG_INTRON */
   { "Location on first sequence",
-        NULL, NULL, NULL, TRUE, 'I', ARG_STRING, 0.0, 0, NULL},/* 21 */
+        NULL, NULL, NULL, TRUE, 'I', ARG_STRING, 0.0, 0, NULL}, /* ARG_LOC1 */
   { "Location on second sequence",
-        NULL, NULL, NULL, TRUE, 'J', ARG_STRING, 0.0, 0, NULL},/* 22 */
+        NULL, NULL, NULL, TRUE, 'J', ARG_STRING, 0.0, 0, NULL}, /* ARG_LOC2 */
   { "Output format: 0 - traditional, 1 - tabular", 
-        "0", NULL, NULL, FALSE, 'D', ARG_INT, 0.0, 0, NULL}, /* 23 */
+        "0", NULL, NULL, FALSE, 'D', ARG_INT, 0.0, 0, NULL}, /* ARG_FORMAT */
   { "Use lower case filtering for the query sequence",
-        "F", NULL, NULL, TRUE, 'U', ARG_BOOLEAN, 0.0, 0, NULL},/* 24 */
+        "F", NULL, NULL, TRUE, 'U', ARG_BOOLEAN, 0.0, 0, NULL}, /* ARG_LCASE */
   { "Input sequences in the form of accession.version",
-        "F", NULL, NULL, FALSE, 'A', ARG_BOOLEAN, 0.0, 0, NULL} /* 25 */
+        "F", NULL, NULL, FALSE, 'A', ARG_BOOLEAN, 0.0, 0, NULL}, /* ARG_ACCN */
+  {"Force use of old engine",
+        "T", NULL, NULL, TRUE, 'V', ARG_BOOLEAN, 0.0, 0, NULL}  /* ARG_FORCE_OLD */
 };
 
-Int2 Main (void)
+/**
+ * Fetches sequences filling in either just the Bioseq's (if fetch from Entrez) or
+ * both the BioseqPtr's and the SeqEntryPtr's (if read from FASTA).  The lcase_mask 
+ * is also filled in with letters in query that were lower-case if myargs[ARG_LCASE].intvalue
+ * is non-zero.
+ *
+ * @param seq1_is_na the query sequence is DNA if true [in]
+ * @param seq2_is_na the subject sequence is DNA if true [in]
+ * @param query_bsp pointer to query BioseqPtr, to be filled in [out]
+ * @param subject_bsp pointer to subject BioseqPtr, to be filled in [out]
+ * @param sep pointer to query SeqEntryPtr, to be filled in [out]
+ * @param sep1 pointer to subject SeqEntryPtr, to be filled in [out]
+ * @param lcase_mask pointer to lower-case masking data to be filled in [out]
+ * @return TRUE on success, FALSE on failure.
+*/
+
+static Int4
+BL2SEQ_GetSequences(Boolean seq1_is_na, Boolean seq2_is_na, BioseqPtr *query_bsp, BioseqPtr *subject_bsp, 
+    SeqEntryPtr *sep, SeqEntryPtr *sep1, SeqLocPtr *lcase_mask, Boolean believe_query)
+{
+        Boolean entrez_lookup = (Boolean) myargs[ARG_ACCN].intvalue;
+        char *query_accver = NULL, *subject_accver = NULL;  /* Used if entrez_lookup. */
+	char *blast_inputfile = NULL, *blast_inputfile1 = NULL;  /* Used if FASTA read. */
+        
+        if (entrez_lookup) {
+           query_accver = myargs [ARG_QUERY].strvalue;
+           subject_accver = myargs [ARG_SUBJECT].strvalue;
+        } else {
+           blast_inputfile = myargs [ARG_QUERY].strvalue;
+           blast_inputfile1 = myargs [ARG_SUBJECT].strvalue;
+        }
+
+        if (entrez_lookup) {
+           *query_bsp = BioseqFromAccession(query_accver, TRUE, seq1_is_na);
+        } else {
+           FILE *infp;
+	   if ((infp = FileOpen(blast_inputfile, "r")) == NULL)
+	   {
+		ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open input file %s\n", blast_inputfile);
+		return FALSE;
+	   }
+           if (myargs[ARG_LCASE].intvalue)
+              *sep = FastaToSeqEntryForDb(infp, seq1_is_na, NULL, 
+                                         believe_query, NULL, NULL, 
+                                         lcase_mask);
+           else
+              *sep = FastaToSeqEntryEx(infp, seq1_is_na, NULL, believe_query);
+
+           FileClose(infp);
+
+           if (*sep != NULL) {
+              *query_bsp = NULL;
+              if (seq1_is_na)
+                 SeqEntryExplore(*sep, query_bsp, FindNuc);
+              else
+                 SeqEntryExplore(*sep, query_bsp, FindProt);
+
+           }
+        }
+        if (*query_bsp == NULL) {
+           ErrPostEx(SEV_FATAL, 1, 0, "Unable to obtain bioseq\n");
+           return FALSE;
+        }
+
+        if (entrez_lookup) {
+           *subject_bsp = 
+              BioseqFromAccession(subject_accver, FALSE, seq2_is_na);
+        } else {
+           FILE *infp1;
+	   if ((infp1 = FileOpen(blast_inputfile1, "r")) == NULL)
+	   {
+		ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open input file %s\n", blast_inputfile1);
+		return FALSE;
+	   }
+           *sep1 = FastaToSeqEntryEx(infp1, seq2_is_na, NULL, FALSE);
+
+           FileClose(infp1);
+
+           if (*sep1 != NULL) {
+              *subject_bsp = NULL;
+              if (seq2_is_na)
+                 SeqEntryExplore(*sep1, subject_bsp, FindNuc);
+              else
+                 SeqEntryExplore(*sep1, subject_bsp, FindProt);
+              
+           }
+        }
+        
+        if (*subject_bsp == NULL) {
+           ErrPostEx(SEV_FATAL, 1, 0, "Unable to obtain bioseq\n");
+           return FALSE;
+        }
+
+        return TRUE;
+}
+
+/**
+ * Creates SeqLoc's from the given BioseqPtr's.  if myargs for ARG_LOC1 or ARG_LOC2 are non-NULL, 
+ * these are used in the creation of the SeqLoc's.
+ *
+ * @param bsp1 the query BioseqPtr [in]
+ * @param bsp2 the subject BioseqPtr [in]
+ * @param slp1 the query SeqLocPtr to be filled in [out]
+ * @param slp2 the subject SeqLocPtr to be filled in [out]
+ * @param strand_option specifies strand of slp1 [in]
+ * @return TRUE on success, FALSE on failure.
+*/
+
+static Boolean
+BL2SEQ_MakeSeqLoc(const BioseqPtr bsp1, const BioseqPtr bsp2, SeqLocPtr *slp1, SeqLocPtr *slp2, Uint1 strand_option)
+{
+       const char* k_delimiters = " ,;";
+       CharPtr location;
+       Int4 from, to;
+
+       *slp1 = NULL;
+       *slp2 = NULL;
+
+       location = myargs[ARG_LOC1].strvalue;
+       if (location) {
+           from = atoi(StringTokMT(location, k_delimiters, &location)) - 1;
+           to = atoi(location) - 1;
+
+            from = MAX(from, 0);
+            if (to < 0) 
+                 to = bsp1->length - 1;
+            to = MIN(to, bsp1->length - 1);
+            if (from >= bsp1->length) {
+                 ErrPostEx(SEV_FATAL, 1, 0, 
+                           "Location outside of the first sequence range\n");
+                 return FALSE;
+            }
+            *slp1 = SeqLocIntNew(from, to, strand_option,
+                                 SeqIdFindBestAccession(bsp1->id));
+        } else if (strand_option != Seq_strand_both) {
+            *slp1 = SeqLocIntNew(0, bsp1->length-1, strand_option,
+                                 SeqIdFindBestAccession(bsp1->id));
+        } else
+              ValNodeAddPointer(slp1, SEQLOC_WHOLE, SeqIdDup(SeqIdFindBestAccession(bsp1->id)));
+
+        location = myargs[ARG_LOC2].strvalue;
+        if (location) {
+            from = atoi(StringTokMT(location, k_delimiters, &location)) - 1;
+            to = atoi(location) - 1;
+
+            from = MAX(from, 0);
+            if (to < 0) 
+                to = bsp2->length - 1;
+            to = MIN(to, bsp2->length - 1);
+            if (from >= bsp2->length) {
+               ErrPostEx(SEV_FATAL, 1, 0, 
+                           "Location outside of the second sequence range\n");
+               return FALSE;
+            }
+            *slp2 = SeqLocIntNew(from, to, Seq_strand_plus, SeqIdFindBestAccession(bsp2->id));
+         } else
+            ValNodeAddPointer(slp2, SEQLOC_WHOLE, SeqIdDup(SeqIdFindBestAccession(bsp2->id)));
+
+       return TRUE;
+}
+
+/**
+ * Initializes and sets the summary options based upon the command-line args.
+ *
+ * @param ret_options object to be initialized and filled in [out]
+ * @param program_number specifies blastn/blastp/blastx etc. [in]
+ * @return TRUE on success, FALSE on failure.
+ */
+static Boolean
+Bl2SEQ_SummaryOptionsSet(BLAST_SummaryOptions* *ret_options, EBlastProgramType program_number)
+{
+        BLAST_SummaryOptions* options;
+
+        if (BLAST_SummaryOptionsInit(&options) != 0)
+        {
+                ErrPostEx(SEV_FATAL, 1, 0, "SummaryOptionsInit failed.");
+                return FALSE;
+        }
+
+        options->hint = eNone;
+
+        switch (program_number) {
+            case eBlastTypeBlastn:
+               options->program = eBlastn;
+               break;
+            case eBlastTypeBlastp:
+               options->program = eBlastp;
+               break;
+            case eBlastTypeBlastx:
+               options->program = eBlastx;
+               break;
+            case eBlastTypeTblastn:
+               options->program = eTblastn;
+               break;
+            case eBlastTypeTblastx:
+               options->program = eTblastx;
+               break;
+            default:  
+               ErrPostEx(SEV_FATAL, 1, 0, "Program_number (%ld) not valid in Bl2SEQ_SummaryOptionsSet", (long) program_number);
+               BLAST_SummaryOptionsFree(options);
+               return FALSE;
+        }
+
+        options->cutoff_evalue = (Nlm_FloatHi) myargs [ARG_EVALUE].floatvalue;
+
+        if (options->program == eBlastn)
+        {
+            options->nucleotide_mismatch = myargs[ARG_MISMATCH].intvalue;
+            options->nucleotide_match = myargs[ARG_MATCH].intvalue;
+            if (myargs[ARG_USEMEGABLAST].intvalue > 0)
+                options->use_megablast = TRUE;
+        }
+
+        if (myargs[ARG_GAPOPEN].intvalue != -1)
+              options->gap_open = myargs[ARG_GAPOPEN].intvalue;
+
+        if (myargs[ARG_GAPEXT].intvalue != -1)
+               options->gap_extend = myargs[ARG_GAPEXT].intvalue;
+
+        options->strand = myargs[ARG_STRAND].intvalue;
+
+        if (myargs[ARG_WORDSIZE].intvalue != 0)
+               options->word_size = myargs[ARG_WORDSIZE].intvalue;
+
+        if (myargs[ARG_MATRIX].strvalue)
+               options->matrix = StringSave(myargs[ARG_MATRIX].strvalue);
+
+        if (myargs[ARG_FILTER].strvalue)
+               options->filter_string = StringSave(myargs[ARG_FILTER].strvalue);
+
+        if (myargs[ARG_XDROP].intvalue != 0)
+        {
+               options->gap_x_dropoff = myargs[ARG_XDROP].intvalue;
+        }
+
+        if (program_number != eBlastTypeTblastx)
+            options->gapped_calculation = (Boolean) myargs[ARG_GAPPED].intvalue;
+        else
+            options->gapped_calculation = FALSE;
+
+        options->db_length = myargs[ARG_DBSIZE].floatvalue;
+
+        *ret_options = options;
+
+        return TRUE;
+}
+
+Int2 Main_new(void)
+
+{
+        BioseqPtr query_bsp=NULL, subject_bsp=NULL;
+        BioseqPtr bsp1=NULL, bsp2=NULL;
+        BioseqPtr fake_bsp=NULL, fake_subject_bsp=NULL;
+        BlastFormattingOptions* format_options;
+        BLAST_SummaryOptions* options=NULL;
+        Blast_SummaryReturn* extra_returns=NULL;
+        Boolean believe_query= FALSE;
+        Boolean seq1_is_na, seq2_is_na;  /* seq1/2 is DNA if TRUE. */
+        Boolean seqannot_output;   /* SeqAlign will be output. */
+        Boolean entrez_lookup;     /* QUery/subject fetched from Entrez. */
+        Boolean mask_at_hash=FALSE;  /* masking only on lookup table if TRUE. */
+        DbtagPtr        dbtagptr;
+        EBlastProgramType program_number;
+        Int2 status; /* return value */
+        Int4 align_view=0; /* Used for formatting */
+        SeqAlignPtr seqalign=NULL;
+        SeqEntryPtr sep=NULL, sep1=NULL;
+        SeqLocPtr slp1, slp2;   /* Used for actual search. */
+        SeqLocPtr filter_loc=NULL;  /* Location of regions filtered (returned by engine) */
+        SeqLocPtr lcase_mask=NULL;    /* For lower-case masking info from query FASTA. */
+        SeqLoc* repeat_mask = NULL; /* Repeat mask locations */
+        Uint1 strand_option = 0; /* FIXME */
+        
+        strand_option = (Uint1) myargs[ARG_STRAND].intvalue;
+
+        entrez_lookup = (Boolean) myargs[ARG_ACCN].intvalue;
+        seqannot_output = (myargs[ARG_ASNOUT].strvalue != NULL);
+        believe_query = (seqannot_output || entrez_lookup); 
+        if (myargs[ARG_FORMAT].intvalue != 0)
+           align_view = 9;  /* Means tabular output. */
+
+        BlastProgram2Number(myargs[ARG_PROGRAM].strvalue, &program_number);
+
+        seq1_is_na = (program_number == eBlastTypeBlastn ||
+                  program_number == eBlastTypeBlastx ||
+                  program_number == eBlastTypeRpsTblastn ||
+                  program_number == eBlastTypeTblastx);
+
+        seq2_is_na = (program_number == eBlastTypeBlastn ||
+               program_number == eBlastTypeTblastn ||
+               program_number == eBlastTypeTblastx);
+
+        if (BL2SEQ_GetSequences(seq1_is_na, seq2_is_na, &query_bsp, &subject_bsp,
+                                &sep, &sep1, &lcase_mask, believe_query) 
+            == FALSE)
+        {
+                ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to get sequences");
+                return (1);
+        }
+
+        if (!entrez_lookup) {
+            if (!believe_query)
+                fake_bsp = BlastMakeFakeBioseq(query_bsp, NULL);
+            
+            fake_subject_bsp = BioseqNew();
+            fake_subject_bsp->descr = subject_bsp->descr;
+            fake_subject_bsp->repr = subject_bsp->repr;
+            fake_subject_bsp->mol = subject_bsp->mol;
+            fake_subject_bsp->length = subject_bsp->length;
+            fake_subject_bsp->seq_data = subject_bsp->seq_data;
+            fake_subject_bsp->seq_data_type = subject_bsp->seq_data_type;
+            dbtagptr = DbtagNew();
+            dbtagptr->db = StringSave("BL_ORD_ID");
+            dbtagptr->tag = ObjectIdNew();
+            dbtagptr->tag->str = StringSave(BioseqGetTitle(subject_bsp));
+            ValNodeAddPointer(&fake_subject_bsp->id, SEQID_GENERAL, dbtagptr);
+            bsp1 = (believe_query ? query_bsp : fake_bsp);
+            bsp2 = fake_subject_bsp;
+        } else { /* Query and subject Bioseqs are already "fake". */
+            bsp1 = query_bsp;
+            bsp2 = subject_bsp;
+        }
+
+        if (BL2SEQ_MakeSeqLoc(bsp1, bsp2, &slp1, &slp2, strand_option) == FALSE)
+                return 1;
+
+        if (Bl2SEQ_SummaryOptionsSet(&options, program_number) == FALSE)
+                return 1;
+
+        /* Find repeat mask, if necessary */
+        Blast_FindRepeatFilterSeqLoc(slp1, myargs[ARG_FILTER].strvalue, 
+                                  &repeat_mask);
+        /* Combine repeat mask with lower case mask */
+        if (repeat_mask)
+            lcase_mask = ValNodeLink(&lcase_mask, repeat_mask);
+        
+        status = BLAST_TwoSeqLocSets(options, slp1, slp2, lcase_mask, &seqalign, 
+                                     &filter_loc, &mask_at_hash, 
+                                     &extra_returns);
+
+        /* Free the lower case mask in SeqLoc form. */
+        lcase_mask = Blast_ValNodeMaskListFree(lcase_mask);
+
+        /* Post warning or error messages, no matter what the search status 
+           was. */
+        Blast_SummaryReturnsPostError(extra_returns);
+
+        if (status != 0)
+        {
+                ErrPostEx(SEV_FATAL, 1, 0, "BLAST_TwoSeqLocSets failed");
+                return status;
+        }
+
+        if (myargs[ARG_ASNOUT].strvalue) {
+            AsnIoPtr asnout =
+               AsnIoOpen(myargs[ARG_ASNOUT].strvalue, (char*)"w");
+            GenericSeqAlignSetAsnWrite(seqalign, asnout);
+            asnout = AsnIoClose(asnout);
+        }
+
+        if ((status = BlastFormattingOptionsNew(program_number, 
+                          myargs[ARG_OUT].strvalue, 0, 1, align_view, 
+                          &format_options)) != 0)
+           return status;
+
+        if (myargs[ARG_HTML].intvalue) {
+           format_options->html = TRUE;
+           format_options->align_options += TXALIGN_HTML;
+           format_options->print_options += TXALIGN_HTML;
+        }
+        format_options->believe_query = believe_query;
+
+        if (mask_at_hash) {
+            /* Masking locations in SeqLoc form are no longer needed */
+            filter_loc = Blast_ValNodeMaskListFree(filter_loc);
+        }
+
+        /* Format the results */
+        status = 
+            BLAST_FormatResults(seqalign, NULL, myargs[ARG_PROGRAM].strvalue,
+                                1, slp1, filter_loc, format_options, FALSE, NULL,
+                                extra_returns);
+        
+        status = Blast_PrintOutputFooter(program_number, format_options, NULL, extra_returns);
+
+        format_options = BlastFormattingOptionsFree(format_options);
+        extra_returns = Blast_SummaryReturnFree(extra_returns);
+
+        if (entrez_lookup) {
+           BioseqFree(query_bsp);
+           BioseqFree(subject_bsp);
+        } else {
+           SeqEntryFree(sep);
+           SeqEntryFree(sep1);
+        }
+
+        options = BLAST_SummaryOptionsFree(options);
+        seqalign = SeqAlignSetFree(seqalign);
+        slp1 = SeqLocSetFree(slp1);
+        slp2 = SeqLocSetFree(slp2);
+
+        fake_bsp = BlastDeleteFakeBioseq(fake_bsp);
+
+        return 0;
+
+}
+
+Int2 Main_old (void)
  
 {
 	
@@ -460,7 +970,7 @@ Int2 Main (void)
                   subject_bsp = NULL;
         BioseqPtr bsp1, bsp2;
 	BLAST_KarlinBlkPtr ka_params=NULL, ka_params_gap=NULL;
-	BLAST_OptionsBlkPtr options;
+	BLAST_OptionsBlkPtr options=NULL;
 	Boolean seq1_is_na, seq2_is_na;
 	CharPtr params_buffer=NULL;
         DbtagPtr        dbtagptr;
@@ -469,45 +979,24 @@ Int2 Main (void)
 	SeqAlignPtr  seqalign;
         SeqAnnotPtr seqannot;
 	SeqEntryPtr sep = NULL, sep1 = NULL;
-	CharPtr blast_inputfile, blast_inputfile1, program_name, blast_outputfile;
-	FILE *infp, *infp1, *outfp;
+	CharPtr program_name, blast_outputfile;
+	FILE *outfp;
 	ValNodePtr  mask_loc, mask_loc_start, vnp, other_returns=NULL, error_returns=NULL;
 	BLAST_MatrixPtr matrix;
         Int4Ptr PNTR txmatrix;
         int (LIBCALLBACK *handle_results)PROTO((VoidPtr search)) = NULL;
         Boolean entrez_lookup = FALSE;
-        CharPtr query_accver = NULL, subject_accver = NULL;
-        Char buf[256] = { '\0' };
         Boolean html, seqannot_output, believe_query;
         Uint1 tabular_output;
         Boolean gapped_calculation;
 
-    StringCpy(buf, "bl2seq ");
-    StringNCat(buf, BlastGetVersionNumber(), sizeof(buf)-StringLen(buf)-1);
-    if (! GetArgs (buf, NUMARG, myargs)) {
-        return (1);
-    }
+        entrez_lookup = (Boolean) myargs[ARG_ACCN].intvalue;
+        html = (Boolean) myargs[ARG_HTML].intvalue;
+        seqannot_output = (myargs[ARG_ASNOUT].strvalue != NULL);
 
-	UseLocalAsnloadDataAndErrMsg ();
+        blast_outputfile = myargs [ARG_OUT].strvalue;
 
-        if (! SeqEntryLoad())
-                return 1;
-
-	ErrSetMessageLevel(SEV_WARNING);
-        entrez_lookup = (Boolean) myargs[25].intvalue;
-        html = (Boolean) myargs[17].intvalue;
-        seqannot_output = (myargs[6].strvalue != NULL);
-
-        if (entrez_lookup) {
-           query_accver = myargs [0].strvalue;
-           subject_accver = myargs [1].strvalue;
-        } else {
-           blast_inputfile = myargs [0].strvalue;
-           blast_inputfile1 = myargs [1].strvalue;
-        }
-        blast_outputfile = myargs [4].strvalue;
-
-	program_name = StringSave(myargs[2].strvalue);
+	program_name = StringSave(myargs[ARG_PROGRAM].strvalue);
 	if (StringCmp(program_name, "blastn") && 
 	    StringCmp(program_name, "blastp") && 
 	    StringCmp(program_name, "blastx") && 
@@ -519,18 +1008,6 @@ Int2 Main (void)
 	   
 	align_type = BlastGetTypes(program_name, &seq1_is_na, &seq2_is_na);
 
-	if (!entrez_lookup && (infp = FileOpen(blast_inputfile, "r")) == NULL)
-	{
-		ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open input file %s\n", blast_inputfile);
-		return (1);
-	}
-
-	if (!entrez_lookup && (infp1 = FileOpen(blast_inputfile1, "r")) == NULL)
-	{
-		ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open input file %s\n", blast_inputfile1);
-		return (1);
-	}
-
 	if ((outfp = FileOpen(blast_outputfile, "w")) == NULL)
 	{
 		ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open output file %s\n", blast_outputfile);
@@ -538,172 +1015,96 @@ Int2 Main (void)
 	}
 
         global_fp = outfp;
-        gapped_calculation = (Boolean) myargs[3].intvalue;
-
-	options = BLASTOptionNewEx(program_name, gapped_calculation,
-                                   (Boolean) myargs[18].intvalue);
-        tabular_output = (Uint1) myargs[23].intvalue; 
+        gapped_calculation = (Boolean) myargs[ARG_GAPPED].intvalue;
         believe_query = (seqannot_output || entrez_lookup); 
-        if (entrez_lookup) {
-           query_bsp = BioseqFromAccession(query_accver, 1, seq1_is_na, TRUE);
+
+        options = BLASTOptionNewEx(program_name, gapped_calculation,
+                                   (Boolean) myargs[ARG_USEMEGABLAST].intvalue);
+
+        if (BL2SEQ_GetSequences(seq1_is_na, seq2_is_na, &query_bsp, &subject_bsp,
+                                &sep, &sep1, &(options->query_lcase_mask), 
+                                believe_query) == FALSE)
+        {
+            ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to get sequences");
+            return (1);
+        }
+
+        if (!entrez_lookup) {
+            if (!believe_query)
+                fake_bsp = BlastMakeFakeBioseq(query_bsp, NULL);
+            
+            fake_subject_bsp = BioseqNew();
+            fake_subject_bsp->descr = subject_bsp->descr;
+            fake_subject_bsp->repr = subject_bsp->repr;
+            fake_subject_bsp->mol = subject_bsp->mol;
+            fake_subject_bsp->length = subject_bsp->length;
+            fake_subject_bsp->seq_data = subject_bsp->seq_data;
+            fake_subject_bsp->seq_data_type = subject_bsp->seq_data_type;
+            dbtagptr = DbtagNew();
+            dbtagptr->db = StringSave("BL_ORD_ID");
+            dbtagptr->tag = ObjectIdNew();
+            dbtagptr->tag->str = StringSave(BioseqGetTitle(subject_bsp));
+            ValNodeAddPointer(&fake_subject_bsp->id, SEQID_GENERAL, dbtagptr);
+            bsp1 = (believe_query ? query_bsp : fake_bsp);
+            bsp2 = fake_subject_bsp;
         } else {
-           if (myargs[24].intvalue)
-              sep = FastaToSeqEntryForDb(infp, seq1_is_na, NULL, 
-                                         believe_query, NULL, NULL, 
-                                         &options->query_lcase_mask);
-           else
-              sep = FastaToSeqEntryEx(infp, seq1_is_na, NULL, believe_query);
-
-           if (sep != NULL) {
-              query_bsp = NULL;
-              if (seq1_is_na)
-                 SeqEntryExplore(sep, &query_bsp, FindNuc);
-              else
-                 SeqEntryExplore(sep, &query_bsp, FindProt);
-
-           }
-        }
-        if (query_bsp == NULL) {
-           ErrPostEx(SEV_FATAL, 1, 0, "Unable to obtain bioseq\n");
-           return 2;
+            bsp1 = query_bsp;
+            bsp2 = subject_bsp;
         }
 
-        if (!believe_query)
-           fake_bsp = BlastMakeFakeBioseq(query_bsp, NULL);
-        if (entrez_lookup) {
-           subject_bsp = 
-              BioseqFromAccession(subject_accver, 2, seq2_is_na, FALSE);
-        } else {
-           /*if (believe_query || html != 0)
-             sep1 = FastaToSeqEntry(infp1, seq2_is_na);
-             else*/
-           sep1 = FastaToSeqEntryEx(infp1, seq2_is_na, NULL, FALSE);
-           
-           if (sep1 != NULL) {
-              subject_bsp = NULL;
-              if (seq2_is_na)
-                 SeqEntryExplore(sep1, &subject_bsp, FindNuc);
-              else
-                 SeqEntryExplore(sep1, &subject_bsp, FindProt);
-              
-           }
-        }
-        
-        if (subject_bsp == NULL) {
-           ErrPostEx(SEV_FATAL, 1, 0, "Unable to obtain bioseq\n");
-           return 2;
-        }
-
-        fake_subject_bsp = BioseqNew();
-        fake_subject_bsp->descr = subject_bsp->descr;
-        fake_subject_bsp->repr = subject_bsp->repr;
-        fake_subject_bsp->mol = subject_bsp->mol;
-        fake_subject_bsp->length = subject_bsp->length;
-        fake_subject_bsp->seq_data = subject_bsp->seq_data;
-        fake_subject_bsp->seq_data_type = subject_bsp->seq_data_type;
-        dbtagptr = DbtagNew();
-        dbtagptr->db = StringSave("BL_ORD_ID");
-        dbtagptr->tag = ObjectIdNew();
-        dbtagptr->tag->str = StringSave(BioseqGetTitle(subject_bsp));
-        ValNodeAddPointer(&fake_subject_bsp->id, SEQID_GENERAL, dbtagptr);
-
-    	if (myargs[19].floatvalue)
-           options->searchsp_eff = (Nlm_FloatHi) myargs[19].floatvalue;
+        tabular_output = (Uint1) myargs[ARG_FORMAT].intvalue; 
 
 
-	options->filter_string = StringSave(myargs[14].strvalue);
-	options->expect_value  = (Nlm_FloatHi) myargs [15].floatvalue;
+    	if (myargs[ARG_SEARCHSP].floatvalue)
+           options->searchsp_eff = (Nlm_FloatHi) myargs[ARG_SEARCHSP].floatvalue;
+
+
+	options->filter_string = StringSave(myargs[ARG_FILTER].strvalue);
+	options->expect_value  = (Nlm_FloatHi) myargs [ARG_EVALUE].floatvalue;
 
         if (StringICmp("blastn", program_name) == 0)
         {
-                options->penalty = myargs[12].intvalue;
-                options->reward = myargs[13].intvalue;
+                options->penalty = myargs[ARG_MISMATCH].intvalue;
+                options->reward = myargs[ARG_MATCH].intvalue;
         }
 
-	options->db_length = (Int8) myargs[5].floatvalue;
+	options->db_length = (Int8) myargs[ARG_DBSIZE].floatvalue;
 
 	options->discontinuous = FALSE;
 
-        if (myargs[9].intvalue != 0)
+        if (myargs[ARG_XDROP].intvalue != 0)
 	{
-               options->gap_x_dropoff = myargs[9].intvalue;
+               options->gap_x_dropoff = myargs[ARG_XDROP].intvalue;
 	}
-        if (myargs[10].intvalue != 0)
-               options->wordsize = (Int2) myargs[10].intvalue;
+        if (myargs[ARG_WORDSIZE].intvalue != 0)
+               options->wordsize = (Int2) myargs[ARG_WORDSIZE].intvalue;
 
 	if (options->is_megablast_search) {
 	   options->cutoff_s2 = options->wordsize*options->reward;
         }
 	options->matrix = MemFree(options->matrix);
-        BLASTOptionSetGapParams(options, myargs[11].strvalue, 0, 0); 
+        BLASTOptionSetGapParams(options, myargs[ARG_MATRIX].strvalue, 0, 0); 
 
-        if (myargs[7].intvalue != -1)
-              options->gap_open = myargs[7].intvalue;
-        if (myargs[8].intvalue != -1)
-               options->gap_extend = myargs[8].intvalue;
+        if (myargs[ARG_GAPOPEN].intvalue != -1)
+              options->gap_open = myargs[ARG_GAPOPEN].intvalue;
+        if (myargs[ARG_GAPEXT].intvalue != -1)
+               options->gap_extend = myargs[ARG_GAPEXT].intvalue;
 
-	options->strand_option = myargs[16].intvalue;
+	options->strand_option = myargs[ARG_STRAND].intvalue;
 
         /* Input longest intron length is in nucleotide scale; in the lower 
            level code it will be used in protein scale */
-        if (myargs[20].intvalue > 0) 
-           options->longest_intron = 
-              MAX(myargs[20].intvalue, MAX_INTRON_LENGTH);
+        if (myargs[ARG_INTRON].intvalue > 0) 
+           options->longest_intron = myargs[ARG_INTRON].intvalue;
 
-        if (believe_query) {
-           bsp1 = query_bsp;
-        } else {
-           bsp1 = fake_bsp;
-        }
 
-        bsp2 = fake_subject_bsp;
-
-        if (!myargs[21].strvalue && !myargs[22].strvalue) {
+        if (!myargs[ARG_LOC1].strvalue && !myargs[ARG_LOC2].strvalue) {
            seqalign = BlastTwoSequencesWithCallback(bsp1, bsp2, program_name, 
               options, &other_returns, &error_returns, handle_results);
         } else {
-           /* Location(s) are provided */
-           CharPtr delimiters = " ,;";
-           CharPtr location;
-           Int4 from, to;
-           SeqLocPtr slp1 = NULL, slp2 = NULL;
-           location = myargs[21].strvalue;
-           if (location) {
-              from = atoi(StringTokMT(location, delimiters, &location)) - 1;
-              to = atoi(location) - 1;
-
-              from = MAX(from, 0);
-              if (to < 0) 
-                 to = bsp1->length - 1;
-              to = MIN(to, bsp1->length - 1);
-              if (from >= bsp1->length) {
-                 ErrPostEx(SEV_FATAL, 1, 0, 
-                           "Location outside of the first sequence range\n");
-                 return 3;
-              }
-              slp1 = SeqLocIntNew(from, to, options->strand_option,
-                                  SeqIdFindBestAccession(bsp1->id));
-           } else
-              ValNodeAddPointer(&slp1, SEQLOC_WHOLE, SeqIdDup(SeqIdFindBestAccession(bsp1->id)));
-
-           location = myargs[22].strvalue;
-           if (location) {
-              from = atoi(StringTokMT(location, delimiters, &location)) - 1;
-              to = atoi(location) - 1;
-
-              from = MAX(from, 0);
-              if (to < 0) 
-                 to = bsp2->length - 1;
-              to = MIN(to, bsp2->length - 1);
-              if (from >= bsp2->length) {
-                 ErrPostEx(SEV_FATAL, 1, 0, 
-                           "Location outside of the second sequence range\n");
-                 return 3;
-              }
-              slp2 = SeqLocIntNew(from, to, Seq_strand_plus, SeqIdFindBestAccession(bsp2->id));
-           } else
-              ValNodeAddPointer(&slp2, SEQLOC_WHOLE, SeqIdDup(SeqIdFindBestAccession(bsp2->id)));
-           
+            SeqLocPtr slp1=NULL, slp2=NULL;
+            if (BL2SEQ_MakeSeqLoc(bsp1, bsp2, &slp1, &slp2, options->strand_option) == FALSE)
+                return 1;
            seqalign = BlastTwoSequencesByLocWithCallback(slp1, slp2, program_name, options, &other_returns, &error_returns, handle_results, NULL);
            SeqLocFree(slp1);
            SeqLocFree(slp2);
@@ -771,7 +1172,7 @@ Int2 Main (void)
            seqannot->data = seqalign;
            aip = NULL;
            if (seqannot_output)
-              aip = AsnIoOpen (myargs[6].strvalue,"w");
+              aip = AsnIoOpen (myargs[ARG_ASNOUT].strvalue,"w");
            
            if (aip && seqannot) {
               SeqAnnotAsnWrite((SeqAnnotPtr) seqannot, aip, NULL);
@@ -836,6 +1237,34 @@ Int2 Main (void)
            SeqEntryFree(sep1);
         }
 	return 0;
+}
+
+
+Int2 Main (void)
+
+{
+    Char buf[256] = { '\0' };  /* Used below for name and version. */
+    Int2 status = 0;    /* return value of function. */
+
+    StringCpy(buf, "bl2seq ");
+    StringNCat(buf, BlastGetVersionNumber(), sizeof(buf)-StringLen(buf)-1);
+    if (! GetArgs (buf, NUMARG, myargs)) {
+        return (1);
+    }
+
+    UseLocalAsnloadDataAndErrMsg ();
+
+    if (! SeqEntryLoad())
+                return 1;
+
+    ErrSetMessageLevel(SEV_WARNING);
+
+    if (myargs[ARG_FORCE_OLD].intvalue != 0)
+        status = Main_old();
+    else
+        status = Main_new();
+
+    return status;
 }
 	
 

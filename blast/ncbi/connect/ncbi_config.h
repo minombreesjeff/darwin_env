@@ -1,7 +1,7 @@
 #ifndef CONNECT___NCBI_CONFIG__H
 #define CONNECT___NCBI_CONFIG__H
 
-/*  $Id: ncbi_config.h,v 6.7 2003/04/02 16:20:53 rsmith Exp $
+/*  $Id: ncbi_config.h,v 6.8 2004/10/19 19:33:51 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -37,21 +37,28 @@
  */
 #include <ncbilcl.h>
 
+#ifdef NCBI_COMPILER_MW_MSL
+#  undef NCBI_COMPILER_MW_MSL
+#endif
+
 #if defined(OS_UNIX)
 #  define NCBI_OS_UNIX 1
 #  ifdef OS_UNIX_IRIX
-#      define NCBI_OS_IRIX
+#    define NCBI_OS_IRIX
 #  endif
 #  ifdef OS_UNIX_SOL
-#      define NCBI_OS_SOLARIS
+#    define NCBI_OS_SOLARIS
 #  endif
 #  ifdef OS_UNIX_BEOS
-#      define NCBI_OS_BEOS
+#    define NCBI_OS_BEOS
 #  endif
 #  ifdef OS_UNIX_DARWIN
-#      define NCBI_OS_DARWIN 1
+#    define NCBI_OS_DARWIN 1
 #    ifdef COMP_METRO
 #      define NCBI_COMPILER_METROWERKS 1
+#      if _MSL_USING_MW_C_HEADERS
+#        define NCBI_COMPILER_MW_MSL
+#      endif
 #    endif
 #  endif
 #  if !defined(HAVE_GETHOSTBYNAME_R)
@@ -65,6 +72,9 @@
 #  endif
 #elif defined(OS_MSWIN)
 #  define NCBI_OS_MSWIN 1
+#  ifdef COMP_METRO
+#    define NCBI_COMPILER_METROWERKS 1
+#  endif
 #elif defined(OS_MAC)
 #  define NCBI_OS_MAC 1
 #endif

@@ -5,7 +5,7 @@
 *       check for stop codons
 *       Check for and fix non 3.0 asn spec things
 *
-* $Id: rtestval.c,v 1.11 2003/11/14 18:07:54 kans Exp $
+* $Id: rtestval.c,v 1.15 2004/10/07 21:31:19 kans Exp $
 *
 *****************************************************************************/
 #include <accid1.h>
@@ -13,9 +13,9 @@
 #include <valid.h>
 #include <seqmgr.h>
 #include <pmfapi.h>
+#include <lsqfetch.h>
 
-#define NUMARG 18
-Args myargs[NUMARG] = {
+Args myargs [] = {
 	{"Filename for asn.1 input","stdin",NULL,NULL,TRUE,'i',ARG_FILE_IN,0.0,0,NULL},
 	{"Input is a Seq-entry","F", NULL ,NULL ,TRUE,'e',ARG_BOOLEAN,0.0,0,NULL},
 	{"Input is a Seq-submit","F", NULL ,NULL ,TRUE,'s',ARG_BOOLEAN,0.0,0,NULL},
@@ -33,7 +33,9 @@ Args myargs[NUMARG] = {
 	{"Require ISO-JTA?","F",NULL,NULL,TRUE,'j',ARG_BOOLEAN,0.0,0,NULL},
 	{"Use remote Fetch?","F",NULL,NULL,TRUE,'f',ARG_BOOLEAN,0.0,0,NULL},
 	{"Remote fetch of CDS products?","F",NULL,NULL,TRUE,'z',ARG_BOOLEAN,0.0,0,NULL},
-	{"Check against old IDs?","F",NULL,NULL,TRUE,'y',ARG_BOOLEAN,0.0,0,NULL}};
+	{"Match locus_tag against general ID?","F",NULL,NULL,TRUE,'m',ARG_BOOLEAN,0.0,0,NULL},
+	{"Check against old IDs?","F",NULL,NULL,TRUE,'y',ARG_BOOLEAN,0.0,0,NULL}
+};
 
 CharPtr AsnIoGets PROTO((AsnIoPtr aip));  /* from asnio.h */
 void LIBCALLBACK error_ret PROTO((Int2 value, CharPtr msg));
@@ -45,6 +47,7 @@ Int2 Main(void)
 	SeqEntryPtr sep;
 	AsnTypePtr atp, atp2;
 	AsnModulePtr amp;
+	ObjMgrPtr omp;
 	ValidStructPtr vsp;
 	Int2 numerrors, found_one, fatal_error = 0, error_level, i, spec_version;
 	CharPtr tmp;
@@ -52,7 +55,7 @@ Int2 Main(void)
 	DataVal av;
 
 					/* check command line arguments */
-	if ( ! GetArgs("testval",NUMARG, myargs))
+	if ( ! GetArgs("testval", sizeof (myargs) / sizeof (Args), myargs))
 		return 1;
 
 					/* load the sequence alphabets  */
@@ -147,7 +150,8 @@ Int2 Main(void)
 			ErrPostEx(SEV_FATAL, 1,0, "Can't initialize ID1");
 			return 1;
 		}
-		if (myargs[17].intvalue) /* enable seqid set fetching */
+		LocalSeqFetchInit (FALSE);
+		if (myargs[18].intvalue) /* enable seqid set fetching */
 		{
 			SeqMgrSetSeqIdSetFunc (GiRevHistLookupSeqIdSet);
 		}
@@ -165,7 +169,9 @@ Int2 Main(void)
 	vsp->farIDsInAlignments = (Boolean)(myargs[13].intvalue);
 	vsp->alwaysRequireIsoJTA = (Boolean)(myargs[14].intvalue);
 	vsp->farFetchCDSproducts = (Boolean) (myargs[15].intvalue && myargs[16].intvalue);
-	vsp->validateIDSet = (Boolean)(myargs[17].intvalue);
+	vsp->farFetchMRNAproducts = (Boolean) (myargs[15].intvalue && myargs[16].intvalue);
+	vsp->locusTagGeneralMatch = (Boolean)(myargs[17].intvalue);
+	vsp->validateIDSet = (Boolean)(myargs[18].intvalue);
 
 	if (myargs[8].intvalue)   /* continue on ASN.1 error */
 		AsnIoSetErrorMsg(aip, error_ret);
@@ -234,6 +240,9 @@ Int2 Main(void)
 						fatal_error += vsp->errors[i];
 				}
 				ValidStructClear(vsp);
+				omp = ObjMgrGet ();
+				ObjMgrReapOne (omp);
+				ObjMgrFreeCache (0);
 			}
 			else
 			{
@@ -250,6 +259,10 @@ Int2 Main(void)
 
 	ValidStructFree(vsp);
 
+	if (myargs[15].intvalue) {
+		ID1BioseqFetchDisable ();
+		LocalSeqFetchDisable ();
+	}
 	if (myargs[5].strvalue == NULL)   /* no output file */
 	{
 		if (! numerrors)

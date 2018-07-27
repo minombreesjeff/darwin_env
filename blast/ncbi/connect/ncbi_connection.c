@@ -1,4 +1,4 @@
-/*  $Id: ncbi_connection.c,v 6.39 2004/03/23 02:27:37 lavr Exp $
+/*  $Id: ncbi_connection.c,v 6.44 2004/11/15 19:33:42 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -305,9 +305,9 @@ extern EIO_Status CONN_SetTimeout
         }
         break;
     default:
+        status = eIO_InvalidArg;
         CONN_LOG(eLOG_Error,
                  "[CONN_SetTimeout]  Unknown event to set timeout for");
-        status = eIO_InvalidArg;
         assert(0);
         break;
     }
@@ -454,7 +454,8 @@ extern EIO_Status CONN_Write
     if (!n_written)
         return eIO_InvalidArg;
     *n_written = 0;
-
+    if (size  &&  !buf)
+        return eIO_InvalidArg;
     CONN_NOT_NULL(Write);
 
     if (conn->state == eCONN_Unusable)
@@ -539,11 +540,13 @@ static EIO_Status s_CONN_Read
     }
 
     /* read data from the internal peek buffer, if any */
-    *n_read = peek
-        ? BUF_Peek(conn->buf, buf, size) : BUF_Read(conn->buf, buf, size);
-    if (*n_read == size)
-        return eIO_Success;
-    buf = (char*) buf + *n_read;
+    if ( size ) {
+        *n_read = peek
+            ? BUF_Peek(conn->buf, buf, size) : BUF_Read(conn->buf, buf, size);
+        if (*n_read == size)
+            return eIO_Success;
+        buf = (char*) buf + *n_read;
+    }
 
     /* read data from the connection */
     {{
@@ -553,7 +556,7 @@ static EIO_Status s_CONN_Read
                                  conn->r_timeout == kDefaultTimeout ?
                                  conn->meta.default_timeout : conn->r_timeout);
         *n_read += x_read;
-        if (peek  &&  x_read)  /* save data in the internal peek buffer */
+        if ( peek )  /* save data in the internal peek buffer */
             verify(BUF_Write(&conn->buf, buf, x_read));
     }}
 
@@ -614,6 +617,8 @@ extern EIO_Status CONN_Read
     if (!n_read)
         return eIO_InvalidArg;
     *n_read = 0;
+    if (size  &&  !buf)
+        return eIO_InvalidArg;
 
     CONN_NOT_NULL(Read);
 
@@ -644,6 +649,73 @@ extern EIO_Status CONN_Read
         break;
     }
     return eIO_Unknown;
+}
+
+
+extern EIO_Status CONN_ReadLine
+(CONN    conn,
+ char*   line,
+ size_t  size,
+ size_t* n_read
+ )
+{
+    EIO_Status  status = eIO_Success;
+    int/*bool*/ done = 0/*false*/;
+    size_t      len;
+
+    if (!n_read)
+        return eIO_InvalidArg;
+    *n_read = 0;
+    if (size  &&  !line)
+        return eIO_InvalidArg;
+
+    CONN_NOT_NULL(ReadLine);
+
+    /* perform open, if not opened yet */
+    if (conn->state != eCONN_Open)
+        status = s_Open(conn);
+
+    if (status == eIO_Success) {
+        assert(conn->state == eCONN_Open  &&  conn->meta.list != 0);
+        /* flush the unwritten output data (if any) */
+        if ( conn->meta.flush ) {
+            conn->meta.flush(conn->meta.c_flush,
+                             conn->r_timeout == kDefaultTimeout ?
+                             conn->meta.default_timeout : conn->r_timeout);
+        }
+    }
+
+    len = 0;
+    while (status == eIO_Success) {
+        size_t i;
+        char   w[1024];
+        size_t x_read = 0;
+        size_t x_size = BUF_Size(conn->buf);
+        char*  x_buf  = size - len < sizeof(w) ? w : line + len;
+        if (x_size == 0  ||  x_size > sizeof(w))
+            x_size = sizeof(w);
+        status = s_CONN_Read(conn, x_buf, size ? x_size : 0, &x_read, 0);
+        for (i = 0; i < x_read  &&  len < size; i++) {
+            char c = x_buf[i];
+            if (c == '\n') {
+                done = 1/*true*/;
+                i++;
+                break;
+            }
+            if (x_buf == w)
+                line[len] = c;
+            len++;
+        }
+        if (i < x_read  &&  !BUF_PushBack(&conn->buf, x_buf + i, x_read - i))
+            status = eIO_Unknown;
+        if (done  ||  len >= size)
+            break;
+    }
+    if (len < size)
+        line[len] = '\0';
+    *n_read = len;
+
+    return status;
 }
 
 
@@ -783,6 +855,21 @@ extern EIO_Status CONN_WaitAsync
 /*
  * --------------------------------------------------------------------------
  * $Log: ncbi_connection.c,v $
+ * Revision 6.44  2004/11/15 19:33:42  lavr
+ * Speed-up CONN_ReadLine()
+ *
+ * Revision 6.43  2004/11/15 17:39:26  lavr
+ * Fix CONN_ReadLine() to always perform connector's read method
+ *
+ * Revision 6.42  2004/05/26 16:00:06  lavr
+ * Minor status fixes in CONN_SetTimeout() and CONN_ReadLine()
+ *
+ * Revision 6.41  2004/05/24 20:19:19  lavr
+ * Fix eIO_InvalidArg conditions (size and no buffer)
+ *
+ * Revision 6.40  2004/05/24 19:54:59  lavr
+ * +CONN_ReadLine()
+ *
  * Revision 6.39  2004/03/23 02:27:37  lavr
  * Code formatting
  *

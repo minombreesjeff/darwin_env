@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   11-29-94
 *
-* $Revision: 6.15 $
+* $Revision: 6.19 $
 *
 * File Description: 
 *
@@ -356,6 +356,7 @@ static void VSeqMgrSaveProc (ChoicE c)
 	if (! GatherDataForProc(&ompc, TRUE))  /* anything selected? */
 	{
 		ErrShow();
+		Message (MSG_ERROR, "Nothing selected");
 		return;
 	}
 
@@ -959,9 +960,6 @@ static void FindAlignmentCallback (SeqAnnotPtr sap, Pointer userdata)
 {
     WarnIfAlignmentPtr wiap;
 	SeqAlignPtr        salp;
-	SeqIdPtr           sip_list, sip;
-	BioseqPtr bsp;
-	SeqIdPtr  bsp_id;
 
 	if (sap == NULL || sap->type != 2 || userdata == NULL) {
 		return;
@@ -971,20 +969,6 @@ static void FindAlignmentCallback (SeqAnnotPtr sap, Pointer userdata)
     salp = (SeqAlignPtr) sap->data;
 	if (salp == NULL) return;
 	wiap->found = IsSeqEntryInAlignment (salp, wiap->lookingfor);
-
-#if 0
-	if (IS_Bioseq (sep)) {
-        bsp = (BioseqPtr)wiap->lookingfor->data.ptrvalue;
-        sip_list = SeqIdPtrFromSeqAlign(salp);
-	    for (sip = sip_list; sip != NULL && !wiap->found; sip = sip->next) {
-		    for (bsp_id = bsp->id; bsp_id != NULL && !wiap->found; bsp_id = bsp_id->next) {
-			    if (SeqIdComp (sip, bsp_id) == SIC_YES) {
-				    wiap->found = TRUE;
-				}
-			}
-		}
-#endif
-
 }
 
 static void WarnIfAlignment (Uint2 type, Pointer ptr, Uint2 input_entityID)
@@ -1062,10 +1046,20 @@ static void VSMDragAndDrop(VSMWinPtr vsmwp, Uint2 entityID, Uint2 itemID, Uint2 
 	ompc.input_itemtype = vsmwp->itemtype1;
  	ompc.do_not_reload_from_cache = TRUE;
 
+
 	if (! DetachDataForProc(&ompc, FALSE))
 	{
 		ErrShow();
 		return;
+	}
+
+	if (ompc.input_choicetype)
+	{
+	    WarnIfAlignment (ompc.input_choicetype, ompc.input_choice, ompc.input_entityID);
+	}
+	else
+	{
+	    WarnIfAlignment (ompc.input_itemtype, ompc.input_data, ompc.input_entityID);
 	}
 
 	if (! ompc.whole_entity)   /* just a part gone, so need an update */
@@ -2374,6 +2368,20 @@ static Boolean VSMGatherPictProc (GatherContextPtr gcp)
 			add_frame(seg, left+vsmp->charw, top, (left+width), (top-lineheight), (Uint2)(gcp->itemID));
 			vsmgp->currline--;
 			break;
+		case OBJ_ANNOTDESC:
+			if (vsmgp->level[OBJ_ANNOTDESC] < 2)
+				buflen = 40;
+			else
+				buflen = 80;
+			seg = CreateSegment(vsmgp->segs[gcp->indent], (Uint2)(gcp->thistype), 0);
+			vsmgp->segs[i] = seg;
+			(*(omtp->labelfunc))(gcp->thisitem, buf, buflen, OM_LABEL_BOTH);
+			width = StringWidth(buf) + (2 * vsmp->charw);
+			add_frame(seg, left, top-2, (left+width), (top-lineheight+2), (Uint2)(gcp->itemID));
+			AddAttribute(seg, COLOR_ATT , CYAN_COLOR, 0, 0,0,0);
+			AddTextLabel(seg, left + vsmp->charw, top, buf, vsmp->font,0, LOWER_RIGHT,(Uint2)(gcp->itemID));
+			vsmgp->currline--;
+			break;
 		case OBJ_SEQGRAPH:
 			if (vsmgp->level[OBJ_SEQGRAPH] < 2)
 				buflen = 40;
@@ -2567,6 +2575,7 @@ SegmenT VSMEntityDraw (ObjMgrDataPtr omdp, VSMPictPtr vsmpp, VSeqMgrPtr vsmp)
 					vsg.level[OBJ_BIOSEQ] = 2;
 					vsg.level[OBJ_SEQDESC] = 1;
 					vsg.level[OBJ_SEQANNOT] = 1;
+					vsg.level[OBJ_ANNOTDESC] = 1;
 					vsg.level[OBJ_SEQFEAT] = 1;
 					vsg.level[OBJ_SEQGRAPH] = 1;
 					vsg.level[OBJ_SEQALIGN] = 1;
@@ -2576,6 +2585,7 @@ SegmenT VSMEntityDraw (ObjMgrDataPtr omdp, VSMPictPtr vsmpp, VSeqMgrPtr vsmp)
 					vsg.level[OBJ_BIOSEQ] = 3;
 					vsg.level[OBJ_SEQDESC] = 2;
 					vsg.level[OBJ_SEQANNOT] = 2;
+					vsg.level[OBJ_ANNOTDESC] = 2;
 					vsg.level[OBJ_SEQFEAT] = 2;
 					vsg.level[OBJ_SEQGRAPH] = 2;
 					vsg.level[OBJ_SEQALIGN] = 2;
@@ -2592,12 +2602,14 @@ SegmenT VSMEntityDraw (ObjMgrDataPtr omdp, VSMPictPtr vsmpp, VSeqMgrPtr vsmp)
 				if (expansion > 1)
 				{
 					vsg.level[OBJ_SEQANNOT] = 1;
+					vsg.level[OBJ_ANNOTDESC] = 1;
 					vsg.level[OBJ_SEQFEAT] = 1;
 					vsg.level[OBJ_SEQGRAPH] = 1;
 					vsg.level[OBJ_SEQALIGN] = 1;
 				}
 				if (expansion > 2)
 				{
+					vsg.level[OBJ_ANNOTDESC] = 2;
 					vsg.level[OBJ_SEQFEAT] = 2;
 					vsg.level[OBJ_SEQGRAPH] = 2;
 					vsg.level[OBJ_SEQALIGN] = 2;

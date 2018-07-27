@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: makemat.c,v 6.13 2003/05/30 17:31:09 coulouri Exp $";
+static char const rcsid[] = "$Id: makemat.c,v 6.16 2004/12/20 15:22:30 camacho Exp $";
 
 /*
 * ===========================================================================
@@ -180,6 +180,10 @@ static Boolean takeMatrixCheckpoint(compactSearchItems * compactSearch,
         localChar = getRes(compactSearch->query[i]);
 
         fprintf(checkFile,"%c",localChar);
+
+        /* The following 2 lines are needed to preserve compatibility with the
+         * checkpoint file libraries distributed with IMPALA (from personal
+         * communication with IMPALA's author) */
         posSearch->posMatrix[i][Xchar] = Xscore;
         posSearch->posPrivateMatrix[i][Xchar] = Xscore * scalingFactor;
     }  
@@ -240,10 +244,6 @@ Nlm_FloatHi scalingFactor, Char *directoryPrefix)
     BLAST_ScoreBlkPtr sbp;
     BioseqPtr query_bsp;  /*structure to hold query information*/
     SeqEntryPtr sep;      /*structure to hold query retrieval result*/
-    Int4 array_size;  /*holds returns from computing the Karlin-Altschul
-                        parameters*/
-    Int4Ptr open, extend; /*gap open and extension costs*/
-    Nlm_FloatHiPtr lambda, K, H; /*Karlin_Altschul score paramters*/
     Int4 index; /*loop index for array_size*/
     Int4 *lengthArray; /*array of sequence lengths*/
     Nlm_FloatHi *KArray;  /*array of K values, one per sequence*/
@@ -270,6 +270,9 @@ Nlm_FloatHi scalingFactor, Char *directoryPrefix)
         prefixLength = strlen(directoryPrefix);
     }     
     
+    posSearch->stdFreqRatios = 
+                      PSIMatrixFrequencyRatiosNew(underlyingMatrixName);
+
     for(i = 0; i < count; i++) {
         if ('\0' == directoryPrefix[0])
             fscanf(profilesFile,"%s", profileFileName); 
@@ -322,6 +325,8 @@ Nlm_FloatHi scalingFactor, Char *directoryPrefix)
         BlastScoreBlkMatFill(sbp, underlyingMatrixName);
         compactSearch->matrix = sbp->matrix;
         compactSearch->gapped_calculation = TRUE;
+        /* Note that these two assignments are not really needed for
+         * makemat's operation and thus their values are irrelevant */
         compactSearch->pseudoCountConst = 10;
         compactSearch->ethresh = 0.001;
         BlastScoreBlkFill(sbp,  (CharPtr) query, queryLength, 0);
@@ -346,22 +351,6 @@ Nlm_FloatHi scalingFactor, Char *directoryPrefix)
             return(-1);
         }
         
-        array_size = BlastKarlinGetMatrixValues(sbp->name, &open, &extend, &lambda, &K, &H, NULL);
-        if (array_size > 0) {
-            for (index=0; index<array_size; index++) {
-                if (open[index] == INT2_MAX && extend[index] == INT2_MAX) {
-                    sbp->kbp_ideal = BlastKarlinBlkCreate();
-                    sbp->kbp_ideal->Lambda = lambda[index];
-                    sbp->kbp_ideal->K = K[index];
-                    sbp->kbp_ideal->H = H[index];
-                }
-            }
-            MemFree(open);
-            MemFree(extend);
-            MemFree(lambda);
-            MemFree(K);
-            MemFree(H);
-        }
         if (sbp->kbp_ideal == NULL)
             sbp->kbp_ideal = BlastKarlinBlkStandardCalcEx(sbp);
         compactSearch->lambda =  sbp->kbp_gap_std[0]->Lambda;
@@ -384,6 +373,7 @@ Nlm_FloatHi scalingFactor, Char *directoryPrefix)
         
         posSearch->posInformation = NULL;
         success = impalaReadCheckpoint(posSearch, compactSearch, profileFileName, &error_return, scalingFactor);
+
         if (!success) {
             ErrPostEx(SEV_FATAL, 1,0, "Unable to recover checkpoint from %s\n",profileFileName);
             return(1);
@@ -443,6 +433,7 @@ Nlm_FloatHi scalingFactor, Char *directoryPrefix)
     FileClose(matricesFile);
     FileClose(auxiliaryFile);
     compactSearchDestruct(compactSearch);
+    PSIMatrixFrequencyRatiosFree(posSearch->stdFreqRatios);
     MemFree(posSearch);
     BLAST_ScoreBlkDestruct(sbp);
     return(0);

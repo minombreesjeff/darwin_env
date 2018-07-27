@@ -359,9 +359,8 @@ static void TestE2 (Boolean dohuge, Boolean showuids, Boolean showinfo)
   e2rq = Entrez2RequestFree (e2rq);
   if (e2ry != NULL) {
     SaveEntrezReply (e2ry);
-    pos = EntrezExtractTermPosReply (e2ry);
+    pos = EntrezExtractTermPosReply (e2ry); /* also frees e2ry */
     printf ("Zea position is %ld\n", pos);
-    Entrez2ReplyFree (e2ry);
   } else {
     printf ("GetTermPosition request failed\n");
   }

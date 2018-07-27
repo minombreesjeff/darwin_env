@@ -1,5 +1,5 @@
 /*----------------*/
-/* $Id: tc2proc.c,v 1.34 2004/02/25 19:21:21 soussov Exp $           */
+/* $Id: tc2proc.c,v 1.36 2005/04/04 21:32:13 soussov Exp $           */
 /*----------------*/
 
 #include <stdlib.h>
@@ -780,8 +780,12 @@ static Int2 getSubtypeFromName(CharPtr name)
     if(strchr(name, '.') == NULL) return 0;
 
     /* ignore subsp. cf. and subsp. aff. */
-    if (StringStr (name, "subsp. cf.") != NULL) return 0;
-    if (StringStr (name, "subsp. aff.") != NULL) return 0;
+#if 0
+    if (StringStr (name, " subsp. cf.") != NULL) return 0;
+    if (StringStr (name, " subsp. aff.") != NULL) return 0;
+#endif
+    if (StringStr (name, " cf.") != NULL) return 0;
+    if (StringStr (name, " aff.") != NULL) return 0;
 
     /* check for subsp */
     c= StringStr(name, "subsp.");
@@ -817,7 +821,7 @@ static Int2 getSubtypeFromName(CharPtr name)
     c= StringStr(name, "var.");
     if(c == name) {
         rmWord(name, c, 4);
-        return 6;
+        return (nof_tokens(c) == 1)? 6 : 0;
     }
     c= StringStr(name, "sv.");
     if(c == name) {
@@ -842,12 +846,12 @@ static Int2 getSubtypeFromName(CharPtr name)
     c= StringStr(name, "f.");
     if(c == name) {
         rmWord(name, c, 2);
-        return 25;
+        return (nof_tokens(c) == 1)? 25 : 0;
     }
     c= StringStr(name, "fo.");
     if(c == name) {
         rmWord(name, c, 3);
-        return 25;
+        return (nof_tokens(c) == 1)? 25 : 0;
     }
     c= StringStr(name, "grp.");
     if(c == name) {
@@ -894,10 +898,17 @@ static OrgModPtr bldOrgMod(TreeCursorPtr cursor)
     if(orgMdf->subtype == 22 && rank != SubspeciesRank + 1) 
         orgMdf->subtype= 0;
 
+    if(orgMdf->subtype == 6 && rank != tax_getRankId("varietas") + 1) 
+        orgMdf->subtype= 0;
+
+    if(orgMdf->subtype == 25 && rank != tax_getRankId("forma") + 1) 
+        orgMdf->subtype= 0;
+
     if(orgMdf->subtype <= 0) {
         if(--rank == SubspeciesRank) {
             if(nof_tokens(me->node_label) == 3) orgMdf->subtype= 22; /* subspecies */
         }
+#if 0
         else if(rank == tax_getRankId("varietas")) {
             orgMdf->subtype= 6; /* variety */
         }
@@ -907,6 +918,7 @@ static OrgModPtr bldOrgMod(TreeCursorPtr cursor)
         else if((parent != NULL) && (prank == SubspeciesRank)) {
             orgMdf->subtype= 2; /* strain */
         }
+#endif
         else {
             orgMdf->subtype= 0; /* other */
         }
@@ -1094,6 +1106,7 @@ static CharPtr bldLineage(TreeCursorPtr cursor, int* is_uncultured, NameListPtr*
                 *blast_name= node;
                 blast_name= &(node->next);
             }
+#if 0
             rank= tnp->flags & 0xFF;
             if(rank > SpeciesRank) {
                 if(lineage != NULL) {
@@ -1101,6 +1114,7 @@ static CharPtr bldLineage(TreeCursorPtr cursor, int* is_uncultured, NameListPtr*
                 }
                 continue;
             }
+#endif
             
             if((tnp->flags & TXC_GBHIDE) == 0) {
                 s= StringLen(tnp->node_label);
@@ -1379,6 +1393,7 @@ static void loadInBuff(Int4 id)
         if(!bldOrgRef(id, or_buff[k].p_org_ref, &or_buff[k].is_species, 
                       &or_buff[k].is_uncultured, &(or_buff[k].blast_name))) {
             OrgRefFree(or_buff[k].p_org_ref);
+            or_buff[k].p_org_ref= NULL;
             or_buff[k].tax_id= 0;
         }
     }

@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: blastool.c,v 6.264 2004/04/30 15:25:20 dondosha Exp $";
+static char const rcsid[] = "$Id: blastool.c,v 6.280 2005/02/15 21:10:47 dondosha Exp $";
 
 /* ===========================================================================
 *
@@ -34,8 +34,56 @@ Contents: Utilities for BLAST
 
 ******************************************************************************/
 /*
-* $Revision: 6.264 $
+* $Revision: 6.280 $
 * $Log: blastool.c,v $
+* Revision 6.280  2005/02/15 21:10:47  dondosha
+* Set X-dropoff for the traceback in MegaBlastPrintAlignInfo to final X-dropoff parameter
+*
+* Revision 6.279  2004/12/09 16:21:21  camacho
+* Do not do the traceback for non-Smith-Waterman blastpgp runs [by Mike Gertz]
+*
+* Revision 6.278  2004/11/19 13:22:05  madden
+* Remove no_check_score completely (from Mike Gertz)
+*
+* Revision 6.277  2004/11/17 13:03:56  madden
+* Always set no_score_check to TRUE
+*
+* Revision 6.276  2004/11/01 20:43:15  camacho
+* + BlastErrorToString
+*
+* Revision 6.275  2004/08/31 17:07:14  dondosha
+* For PRINT_SEQUENCES option in tabular output, always show query on forward strand; reverse complement subject is necessary
+*
+* Revision 6.274  2004/08/26 19:01:35  dondosha
+* Retrieve Bioseq before attempting to calculate number of identities in alignment segments
+*
+* Revision 6.273  2004/08/16 19:37:26  dondosha
+* Enabled uneven gap HSP linking for blastx
+*
+* Revision 6.272  2004/07/15 21:00:17  dondosha
+* Print Accession.Version in megablast tabular output subject ids; print number of sequences in # Query comment if multiple queries
+*
+* Revision 6.271  2004/06/30 13:42:27  kans
+* include <blfmtutl.h> to clear up Mac compiler missing prototype errors
+*
+* Revision 6.270  2004/06/30 12:29:39  madden
+* Moved some functions to blfmtutl.c
+*
+* Revision 6.269  2004/06/24 21:16:34  dondosha
+* Boolean argument in ScoreAndEvalueToBuffers changed to Uint1, so pass 0 instead of FALSE
+*
+* Revision 6.268  2004/05/21 13:53:04  dondosha
+* Use BLAST_HSPFree to free BLAST_HSP structures, hence no need to call GapXEditBlockDelete in multiple places
+*
+* Revision 6.267  2004/05/14 15:38:11  dondosha
+* Use newly public function ScoreAndEvalueToBuffers from txalign.h instead of a static function
+*
+* Revision 6.266  2004/05/14 14:41:03  bealer
+* - Er. I mean .002, as per blastpgp.
+*
+* Revision 6.265  2004/05/14 14:39:45  bealer
+* - Adjust ethresh to .001 for PSI blast.
+*
 * Revision 6.264  2004/04/30 15:25:20  dondosha
 * Added argument in call to BXMLGetHspFromSeqAlign
 *
@@ -868,6 +916,7 @@ Contents: Utilities for BLAST
 #include <mblast.h>
 #include <simutil.h>
 #include <vecscrn.h>
+#include <blfmtutl.h>
 
 int (*blastool_fprintf)(FILE*, const char *, ...) = fprintf;
 #define fprintf blastool_fprintf
@@ -891,62 +940,9 @@ typedef struct _SappSet {
 #define BUFFER_LENGTH 255
 
 /*
-	adds the new string to the buffer, separating by a tilde.
-	Checks the size of the buffer for FormatBlastParameters and
-	allocates longer replacement if needed.
-*/
-
-static Boolean 
-add_string_to_bufferEx(CharPtr buffer, CharPtr *old, Int2Ptr old_length, Boolean add_tilde)
-
-{
-	CharPtr new, ptr;
-	Int2 length, new_length;
-
-	length = (StringLen(*old));
-
-	if((StringLen(buffer)+length+3) > *old_length)
-	{
-		new_length = *old_length + 255;
-		new = MemNew(new_length*sizeof(Char));
-		if (*old_length > 0 && *old != NULL)
-		{
-			MemCpy(new, *old, *old_length);
-			*old = MemFree(*old);
-		}
-		*old = new;
-		*old_length = new_length;
-	}
-
-	ptr = *old;
-	ptr += length;
-	if (add_tilde)
-	{
-		*ptr = '~';
-		ptr++;
-	}
-
-	while (*buffer != NULLB)
-	{
-		*ptr = *buffer;
-		buffer++; ptr++;
-	}
-
-	return TRUE;
-}
-
-static Boolean 
-add_string_to_buffer(CharPtr buffer, CharPtr *old, Int2Ptr old_length)
-
-{
-	return add_string_to_bufferEx(buffer, old, old_length, TRUE);
-}
-
-/*
 	Formats the BLAST parameters for the BLAST report.
 	One CharPtr is returned, newlines are indicated by tildes ('~').
 */	
-
 
 CharPtr
 FormatBlastParameters(BlastSearchBlkPtr search)
@@ -1095,7 +1091,7 @@ FormatBlastParameters(BlastSearchBlkPtr search)
            add_string_to_buffer(buffer, &ret_buffer, &ret_buffer_length);
            sprintf(buffer, "A: %ld", (long) search->pbp->window_size);
            add_string_to_buffer(buffer, &ret_buffer, &ret_buffer_length);
-           sprintf(buffer, "X1: %ld (%4.1f bits)", (long) (-search->pbp->dropoff_1st_pass), ((-search->pbp->dropoff_1st_pass)*(search->sbp->kbp[search->first_context]->Lambda/NCBIMATH_LN2)));
+           sprintf(buffer, "X1: %ld (%4.1f bits)", (long) (-search->pbp->dropoff_2nd_pass), ((-search->pbp->dropoff_2nd_pass)*(search->sbp->kbp[search->first_context]->Lambda/NCBIMATH_LN2)));
            add_string_to_buffer(buffer, &ret_buffer, &ret_buffer_length);
            if (StringCmp(search->prog_name, "blastn") == 0 || search->pbp->gapped_calculation == FALSE) {
               sprintf(buffer, "X2: %ld (%4.1f bits)", (long) search->pbp->gap_x_dropoff, ((search->pbp->gap_x_dropoff)*(search->sbp->kbp[search->first_context]->Lambda/NCBIMATH_LN2)));
@@ -1154,87 +1150,6 @@ FormatBlastParameters(BlastSearchBlkPtr search)
           add_string_to_buffer(buffer, &ret_buffer, &ret_buffer_length);
         }
         return ret_buffer;
-}
-
-/*
-	Print the buffer, adding newlines where tildes are found.
-*/
-
-Boolean LIBCALL
-PrintTildeSepLines(CharPtr buffer, Int4 line_length, FILE *outfp)
-
-{
-	if (outfp == NULL || buffer == NULL)
-		return FALSE;
-
-	asn2ff_set_output(outfp, NULL);
-
-	ff_StartPrint(0, 0, line_length, NULL);
-	while (*buffer != NULLB)
-	{
-		if (*buffer != '~')
-			ff_AddChar(*buffer);
-		else
-			NewContLine();
-		buffer++;
-	}
-	ff_EndPrint();
-
-	return TRUE;
-}
-
-/*
-	Print the Karlin-Altschul parameters.
-
-	if gapped is TRUE, then slightly different formatting is used.
-*/
-
-Boolean LIBCALL
-PrintKAParameters(Nlm_FloatHi Lambda, Nlm_FloatHi K, Nlm_FloatHi H, Int4 line_length, FILE *outfp, Boolean gapped)
-
-{
-	return PrintKAParametersExtra(Lambda, K, H, 0.0, line_length, outfp, gapped);
-}
-
-Boolean LIBCALL
-PrintKAParametersExtra(Nlm_FloatHi Lambda, Nlm_FloatHi K, Nlm_FloatHi H, Nlm_FloatHi C, Int4 line_length, FILE *outfp, Boolean gapped)
-
-{
-	Char buffer[BUFFER_LENGTH];
-
-	if (outfp == NULL)
-		return FALSE;
-
-	asn2ff_set_output(outfp, NULL);
-
-	ff_StartPrint(0, 0, line_length, NULL);
-	if (gapped)
-	{
-		ff_AddString("Gapped");
-		NewContLine();
-	}
-	
-	if (C == 0.0)
-		ff_AddString("Lambda     K      H");
-	else
-		ff_AddString("Lambda     K      H      C");
-	NewContLine();
-	sprintf(buffer, "%#8.3g ", Lambda);
-	ff_AddString(buffer);
-	sprintf(buffer, "%#8.3g ", K);
-	ff_AddString(buffer);
-	sprintf(buffer, "%#8.3g ", H);
-	ff_AddString(buffer);
-	if (C != 0.0)
-	{
-		sprintf(buffer, "%#8.3g ", C);
-		ff_AddString(buffer);
-	}
-	NewContLine();
-	ff_EndPrint();
-
-	return TRUE;
-
 }
 
 /*
@@ -1316,7 +1231,6 @@ ValNodePtr BlastErrorChainDestroy(ValNodePtr vnp)
 */
 
 void LIBCALL BlastErrorPrint(ValNodePtr error_return)
-
 {
 	BlastErrorMsgPtr error_msg;
 
@@ -1348,6 +1262,65 @@ void LIBCALL BlastErrorPrint(ValNodePtr error_return)
 	}
 	return;
 	
+}
+
+CharPtr LIBCALL BlastErrorToString(ValNodePtr error_return)
+{
+	BlastErrorMsgPtr error_msg;
+    ValNodePtr tmp = NULL;
+    Uint4 length = 0;
+    CharPtr retval = NULL;
+
+	if ( !error_return ) {
+		return NULL;
+    }
+
+    /* First, determine the length of the error messages */
+    for (tmp = error_return; tmp; tmp = tmp->next) {
+        error_msg = (BlastErrorMsgPtr) tmp->data.ptrvalue;
+        length += StringLen(error_msg->msg);
+        switch (error_msg->level) {
+        case 0: length += 4; break;     /* INFO */
+        case 1: length += 7; break;     /* WARNING */
+        case 2: length += 5; break;     /* ERROR */
+        case 3: length += 5; break;     /* FATAL */
+        default: break;
+        }
+        length += 2;        /* for space and ':' */
+        length += 2;        /* for newline/NULL byte */
+    }
+
+    retval = (CharPtr) Malloc(sizeof(Char)*length);
+    if ( !retval ) {
+        return NULL;
+    }
+    *retval = NULLB;
+
+    for (tmp = error_return; tmp; tmp = tmp->next) {
+        Char buffer[BUFFER_LENGTH] = { NULLB };
+        error_msg = (BlastErrorMsgPtr) tmp->data.ptrvalue;
+
+		switch (error_msg->level)
+		{
+        case 0:
+            sprintf(buffer, "%s: %s\n", "INFO", error_msg->msg);
+            break;
+        case 1:
+            sprintf(buffer, "%s: %s\n", "WARNING", error_msg->msg);
+            break;
+        case 2:
+            sprintf(buffer, "%s: %s\n", "ERROR", error_msg->msg);
+            break;
+        case 3:
+            sprintf(buffer, "%s: %s\n", "FATAL", error_msg->msg);
+            break;
+        default:
+            ErrPostEx(SEV_WARNING, 0, 0, "Unknown BLAST error level");
+            break;
+		}
+        StringNCat(retval, buffer, length);
+	}
+	return retval;
 }
 
 void LIBCALL BlastErrorPrintExtra(ValNodePtr error_return, Boolean errpostex, FILE* fp)
@@ -1385,290 +1358,6 @@ void LIBCALL BlastErrorPrintExtra(ValNodePtr error_return, Boolean errpostex, FI
     return;
 }
 
-
-TxDfDbInfoPtr LIBCALL 
-TxDfDbInfoNew (TxDfDbInfoPtr old)
-
-{
-	TxDfDbInfoPtr dbinfo;
-	dbinfo = MemNew(sizeof(TxDfDbInfo));
-	if (old)
-		old->next = dbinfo;
-	return dbinfo;
-}
-
-TxDfDbInfoPtr LIBCALL 
-TxDfDbInfoDestruct (TxDfDbInfoPtr dbinfo)
-
-{
-	TxDfDbInfoPtr next;
-
-	if (dbinfo == NULL)
-		return NULL;
-
-	while (dbinfo)
-	{
-		dbinfo->name = MemFree(dbinfo->name);
-		dbinfo->definition = MemFree(dbinfo->definition);
-		dbinfo->date = MemFree(dbinfo->date);
-		next = dbinfo->next;
-		dbinfo = MemFree(dbinfo);
-		dbinfo = next;
-	}
-
-	return dbinfo;
-}
-
-Boolean LIBCALL
-PrintDbReport(TxDfDbInfoPtr dbinfo, Int4 line_length, FILE *outfp)
-
-{
-
-	if (dbinfo == NULL || outfp == NULL)
-		return FALSE;
-
-	asn2ff_set_output(outfp, NULL);
-
-	ff_StartPrint(2, 2, line_length, NULL);
-
-	if (dbinfo->subset == FALSE)
-	{
-		ff_AddString("Database: ");
-		ff_AddString(dbinfo->definition);
-		NewContLine();
-		ff_AddString("  Posted date:  ");
-		ff_AddString(dbinfo->date);
-		NewContLine();
-		ff_AddString("Number of letters in database: "); 
-		ff_AddString(Nlm_Int8tostr((Int8) dbinfo->total_length, 1));
-		NewContLine();
-		ff_AddString("Number of sequences in database:  ");
-		ff_AddString(Ltostr((long) dbinfo->number_seqs, 1));
-		NewContLine();
-	}
-	else
-	{
-		ff_AddString("Subset of the database(s) listed below");
-		NewContLine();
-		ff_AddString("   Number of letters searched: "); 
-		ff_AddString(Nlm_Int8tostr((Int8) dbinfo->total_length, 1));
-		NewContLine();
-		ff_AddString("   Number of sequences searched:  ");
-		ff_AddString(Ltostr((long) dbinfo->number_seqs, 1));
-		NewContLine();
-	}
-	ff_EndPrint();
-
-	return TRUE;
-}
-
-/*
-	Prints an acknowledgement of the Blast Query, in the standard
-	BLAST format.
-*/
-
-
-Boolean LIBCALL
-AcknowledgeBlastQuery(BioseqPtr bsp, Int4 line_length, FILE *outfp, Boolean believe_query, Boolean html)
-
-{
-	Char buffer[BUFFER_LENGTH];
-
-	if (bsp == NULL || outfp == NULL)
-		return FALSE;
-	
-	asn2ff_set_output(outfp, NULL);
-
-	ff_StartPrint(0, 0, line_length, NULL);
-	if (html)
-		ff_AddString("<b>Query=</b> ");
-	else
-		ff_AddString("Query= ");
-	if (bsp->id && (bsp->id->choice != SEQID_LOCAL || believe_query))
-	{
-		SeqIdWrite(bsp->id, buffer, PRINTID_FASTA_LONG, BUFFER_LENGTH);
-		if (StringNCmp(buffer, "lcl|", 4) == 0)
-			ff_AddString(buffer+4);
-		else
-			ff_AddString(buffer);
-		ff_AddChar(' ');
-	}
-	ff_AddString(BioseqGetTitle(bsp));
-	NewContLine();
-	TabToColumn(10);
-	ff_AddChar('(');
-	ff_AddString(Ltostr((long) BioseqGetLen(bsp), 1));
-	ff_AddString(" letters)");
-	NewContLine();
-        ff_EndPrint();
-
-        return TRUE;
-}
-
-/*
-	return the version of BLAST as a char. string.
-*/
-CharPtr LIBCALL
-BlastGetReleaseDate (void)
-
-{
-	return BLAST_RELEASE_DATE;
-}
-
-
-/*
-	return the version of BLAST as a char. string.
-*/
-CharPtr LIBCALL
-BlastGetVersionNumber (void)
-
-{
-	return BLAST_ENGINE_VERSION;
-}
-
-Boolean BlastPrintVersionInfo (CharPtr program, Boolean html, FILE *outfp)
-
-{
-	return BlastPrintVersionInfoEx(program, html, BlastGetVersionNumber(), BlastGetReleaseDate(), outfp);
-}
-
-Boolean BlastPrintVersionInfoEx (CharPtr program, Boolean html, CharPtr version, CharPtr date, FILE *outfp)
-
-{
-	CharPtr ret_buffer;
-
-
-	if (outfp == NULL)
-		return FALSE;
-
-	ret_buffer = StringSave(program);
-	Nlm_StrUpper(ret_buffer);
-	if (html)
-		fprintf(outfp, "<b>%s %s [%s]</b>\n", ret_buffer, version, date);
-	else
-		fprintf(outfp, "%s %s [%s]\n", ret_buffer, version, date);
-	ret_buffer = MemFree(ret_buffer);
-
-	return TRUE;
-}
-
-/* 
-	Returns a reference for the header.
-	The newlines are represented by tildes, use PrintTildeSepLines
-	to print this.
-*/
-
-CharPtr LIBCALL
-BlastGetReference(Boolean html)
-
-{
-	CharPtr ret_buffer;
-	Int2 ret_buffer_length;
-
-	ret_buffer = NULL;
-	ret_buffer_length = 0;
-
-	
-	if (html) {
-		add_string_to_bufferEx("<b><a href=\"http://www.ncbi.nlm.nih.gov/htbin-post/Entrez/query?uid=9254694&form=6&db=m&Dopt=r\">Reference</a>:</b>", &ret_buffer, &ret_buffer_length, TRUE);
-		add_string_to_bufferEx("Altschul, Stephen F., Thomas L. Madden, Alejandro A. Sch&auml;ffer, ", &ret_buffer, &ret_buffer_length, TRUE);
-	} else
-		add_string_to_bufferEx("Reference: Altschul, Stephen F., Thomas L. Madden, Alejandro A. Schaffer, ", &ret_buffer, &ret_buffer_length, TRUE);
-	add_string_to_bufferEx("Jinghui Zhang, Zheng Zhang, Webb Miller, and David J. Lipman (1997), ", &ret_buffer, &ret_buffer_length, TRUE);
-	add_string_to_bufferEx("\"Gapped BLAST and PSI-BLAST: a new generation of protein database search", &ret_buffer, &ret_buffer_length, TRUE);
-	add_string_to_bufferEx("programs\",  Nucleic Acids Res. 25:3389-3402.", &ret_buffer, &ret_buffer_length, TRUE);
-	
-	return ret_buffer;
-}
-
-Boolean LIBCALL
-MegaBlastPrintReference(Boolean html, Int4 line_length, FILE *outfp)
-
-{
-	CharPtr ret_buffer;
-	Int2 ret_buffer_length;
-
-	ret_buffer = NULL;
-	ret_buffer_length = 0;
-
-	if (outfp == NULL)
-		return FALSE;
-	
-	if (html) {
-           add_string_to_bufferEx("<b><a href=\"http://www.ncbi.nlm.nih.gov/htbin-post/Entrez/query?uid=10890397&form=6&db=m&Dopt=r\">Reference</a>:</b>", &ret_buffer, &ret_buffer_length, TRUE);
-           add_string_to_bufferEx("Zheng Zhang, Scott Schwartz, Lukas Wagner, and Webb Miller (2000),", &ret_buffer, &ret_buffer_length, TRUE);
-	} else
-           add_string_to_bufferEx("Reference: Zheng Zhang, Scott Schwartz, Lukas Wagner, and Webb Miller (2000), ", &ret_buffer, &ret_buffer_length, TRUE);
-	add_string_to_bufferEx("\"A greedy algorithm for aligning DNA sequences\", ", 
-                               &ret_buffer, &ret_buffer_length, TRUE);
-	add_string_to_bufferEx("J Comput Biol 2000; 7(1-2):203-14.", 
-                               &ret_buffer, &ret_buffer_length, TRUE);
-	
-        PrintTildeSepLines(ret_buffer, line_length, outfp);
-        ret_buffer = MemFree(ret_buffer);
-	return TRUE;
-}
-
-Boolean LIBCALL
-BlastPrintReference(Boolean html, Int4 line_length, FILE *outfp)
-
-{
-	CharPtr ret_buffer;
-	
-	if (outfp == NULL)
-		return FALSE;
-	
-        ret_buffer = BlastGetReference(html);
-        PrintTildeSepLines(ret_buffer, line_length, outfp);
-        ret_buffer = MemFree(ret_buffer);
-
-	return TRUE;
-}
-
-/* 
-	Returns a reference for the header.
-	The newlines are represented by tildes, use PrintTildeSepLines
-	to print this.
-*/
-
-CharPtr LIBCALL
-BlastGetPhiReference(Boolean html)
-
-{
-	CharPtr ret_buffer;
-	Int2 ret_buffer_length;
-
-	ret_buffer = NULL;
-	ret_buffer_length = 0;
-
-	
-	if (html) {
-		add_string_to_bufferEx("<b><a href=\"http://www.ncbi.nlm.nih.gov/htbin-post/Entrez/query?uid=9705509&form=6&db=m&Dopt=r\">Reference</a>:</b>", &ret_buffer, &ret_buffer_length, TRUE);
-		add_string_to_bufferEx("Zhang, Zheng, Alejandro A. Sch&auml;ffer, Webb Miller, Thomas L. Madden, ", &ret_buffer, &ret_buffer_length, TRUE);
-	} else
-		add_string_to_bufferEx("Reference: Zhang, Zheng, Alejandro A. Schaffer, Webb Miller, Thomas L. Madden, ", &ret_buffer, &ret_buffer_length, TRUE);
-	add_string_to_bufferEx("David J. Lipman, Eugene V. Koonin, and Stephen F. Altschul (1998), ", &ret_buffer, &ret_buffer_length, TRUE);
-	add_string_to_bufferEx("\"Protein sequence similarity searches using patterns as seeds\", ", &ret_buffer, &ret_buffer_length, TRUE);
-	add_string_to_bufferEx("Nucleic Acids Res. 26:3986-3990.", &ret_buffer, &ret_buffer_length, TRUE);
-	
-	return ret_buffer;
-}
-
-Boolean LIBCALL
-BlastPrintPhiReference(Boolean html, Int4 line_length, FILE *outfp)
-
-{
-	CharPtr ret_buffer;
-	
-	if (outfp == NULL)
-		return FALSE;
-	
-        ret_buffer = BlastGetPhiReference(html);
-        PrintTildeSepLines(ret_buffer, line_length, outfp);
-        ret_buffer = MemFree(ret_buffer);
-
-	return TRUE;
-}
 CharPtr scan_to_break (CharPtr ptr)
 {
 
@@ -1787,7 +1476,7 @@ BLASTOptionNewEx(CharPtr progname, Boolean gapped, Boolean is_megablast)
 	{
 		options->gap_decay_rate = 0.5;
 		options->gap_prob = 0.5;
-		options->gap_size = 50;
+		options->gap_size = 40;
 		options->threshold_second = WORD_THRESHOLD_BLASTN;
 		options->expect_value  = 10;
 		options->hitlist_size = 500;
@@ -1825,7 +1514,6 @@ BLASTOptionNewEx(CharPtr progname, Boolean gapped, Boolean is_megablast)
                 options->gap_x_dropoff_final  = GAP_X_DROPOFF_FINAL_NUCL;
                 options->gap_trigger  = 25.0;
                 options->strand_option  = BLAST_BOTH_STRAND;
-                options->no_check_score  = FALSE;
                 if (gapped)
                    options->do_sum_stats = FALSE;
                 else
@@ -1833,7 +1521,7 @@ BLASTOptionNewEx(CharPtr progname, Boolean gapped, Boolean is_megablast)
 	}
 	else
 	{
-		options->gap_size = 50;
+		options->gap_size = 40;
 		options->window_size = WINDOW_SIZE_PROT;
 		options->expect_value  = 10;
 		options->hitlist_size = 500;
@@ -1849,7 +1537,6 @@ BLASTOptionNewEx(CharPtr progname, Boolean gapped, Boolean is_megablast)
 		options->reward  = 0;
 		options->gap_decay_rate = 0.5;
 		options->gap_prob = 0.5;
-		options->no_check_score  = TRUE;
 
 		options->gap_open  = GAP_OPEN_PROT;
 		options->gap_extend  = GAP_EXTN_PROT;
@@ -3057,7 +2744,7 @@ BlastProcessGiLists(BlastSearchBlkPtr search, BLAST_OptionsBlkPtr options,
 
     if (options->gifile) {
 
-        if (tmp_list = GetGisFromFile(options->gifile, &ngis)) {
+        if ((tmp_list = GetGisFromFile(options->gifile, &ngis))) {
             if (bglp) {
                 bglp_tmp = IntersectBlastGiLists(tmp_list, ngis,
                             bglp->gi_list, bglp->total);
@@ -3846,7 +3533,7 @@ BlastInsertList2Heap(BlastSearchBlkPtr search, BLASTResultHitlistPtr result_hitl
       }
       for (hp = search->result_struct->heap_ptr; hp; hp = hp->next) 
 	if (hp->cutvalue >= begin) break;
-      if (hp && hp->num_in_heap < hsp_range_max || small(hp->heap[0], hsp)) {
+      if (hp && (hp->num_in_heap < hsp_range_max || small(hp->heap[0], hsp))) {
 	if (!hp->prev || hp->prev->cutvalue != begin-1) {
 	  BlastInsertWholeHeap(search, hp, begin-1);
 	}
@@ -3873,7 +3560,7 @@ BlastInsertList2Heap(BlastSearchBlkPtr search, BLASTResultHitlistPtr result_hitl
 	} 
       }
       hp = search->result_struct->heap_ptr;
-      if (hp && hp->num_in_heap < hsp_range_max || small(hp->heap[0], hsp)) {
+      if (hp && (hp->num_in_heap < hsp_range_max || small(hp->heap[0], hsp))) {
 	if (end != hp->cutvalue) {
 	  BlastInsertWholeHeap(search, hp, end);
 	  hp = hp->prev;
@@ -4933,28 +4620,6 @@ BlastGetNumIdentical(Uint1Ptr query, Uint1Ptr subject, Int4 q_start,
    return ident;
 }
 
-static void ScoreAndEvalueToBuffers(FloatHi bit_score, FloatHi evalue, 
-                                  CharPtr *bit_score_buf, CharPtr *evalue_buf)
-{
-   if (evalue < 1.0e-180)
-      sprintf(*evalue_buf, "0.0");
-   else if (evalue < 1.0e-99)
-      sprintf(*evalue_buf, "%2.0le", evalue);
-   else if (evalue < 0.0009) 
-         sprintf(*evalue_buf, "%3.1le", evalue);
-   else if (evalue < 1.0) 
-      sprintf(*evalue_buf, "%4.3lf", evalue);
-   else 
-      sprintf(*evalue_buf, "%5.1lf", evalue);
-   
-   if (bit_score > 9999)
-      sprintf(*bit_score_buf, "%4.3le", bit_score);
-   else if (bit_score > 99.9)
-      sprintf(*bit_score_buf, "%4.1lf", bit_score);
-   else
-      sprintf(*bit_score_buf, "%4.2lf", bit_score);
-}
-
 /* 
    Function to print results in tab-delimited format, given a SeqAlign list.
    q_shift and s_shift are the offsets in query and subject in case of a
@@ -4984,17 +4649,6 @@ void BlastPrintTabulatedResultsEx(SeqAlignPtr seqalign, BioseqPtr query_bsp,
       q_shift, s_shift, fp, num_formatted, print_query_info);
 }
 
-static Int4 FindNumIdentInScore(ScorePtr score)
-{
-   Int4 num_ident = 0;
-   for ( ; score; score = score->next) {
-      if (!strcmp(score->id->str, "num_ident")) {
-         num_ident = score->value.intvalue;
-      }
-   }
-   return num_ident;
-}
-
 void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
         SeqLocPtr query_slp, Int4 num_alignments, CharPtr blast_program, 
         Boolean is_ungapped, Boolean is_ooframe, Boolean believe_query, 
@@ -5006,7 +4660,8 @@ void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
    Int4 numseg, num_gap_opens, num_mismatches, num_ident, score;
    Int4 number, align_length, index, i;
    Int4 q_start, q_end, s_start, s_end;
-   CharPtr eval_buff, bit_score_buff;
+   Char bit_score_buff[10];
+   CharPtr eval_buff;
    Boolean is_translated;
    SeqIdPtr query_id, old_query_id = NULL, subject_id, old_subject_id = NULL;
    BioseqPtr subject_bsp=NULL;
@@ -5022,8 +4677,6 @@ void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
    is_translated = (StringCmp(blast_program, "blastn") &&
                     StringCmp(blast_program, "blastp"));
    
-   eval_buff = Malloc(10);
-   bit_score_buff = Malloc(10);
    if (is_translated) {
       asp = MemNew(sizeof(AlignSum));
       asp->matrix = load_default_matrix();
@@ -5031,13 +4684,16 @@ void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
       asp->ooframe = is_ooframe;
    }
 
-
    if (is_ungapped)
       sap_tmp = SeqAlignNew();
 
    slp = query_slp;
    if (query_bsp)
       query_id = query_bsp->id;
+
+   /* Evalue buffer is dynamically allocated to avoid compiler warnings 
+      in calls to ScoreAndEvalueToBuffers. */
+   eval_buff = Malloc(10);
 
    for (sap = seqalign; sap; sap = sap->next) {
       if (query_slp)
@@ -5113,31 +4769,43 @@ void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
 
       GetScoreAndEvalue(sap, &score, &bit_score, &evalue, &number);
 
+      /* Do not allow knocking off digit in evalue buffer, so parsers are 
+         not confused. */
       ScoreAndEvalueToBuffers(bit_score, evalue, 
-                              &bit_score_buff, &eval_buff);
+                              bit_score_buff, &eval_buff, 0);
 
       /* Loop on segments within this seqalign (in ungapped case) */
       while (TRUE) {
          if (sap->segtype == SAS_DENSEG) {
+            Boolean get_num_ident = TRUE;
             dsp = (DenseSegPtr) sap->segs;
             numseg = dsp->numseg;
-            
+            /* Query Bioseq is needed for calculating number of identities.
+               NB: even if number of identities is already filled in the 
+               seqalign score list, that is not enough here, because we need to
+               know number of identities in each segment in order to calculate
+               number of mismatches correctly. */
+            if (!query_bsp) {
+               query_bsp = BioseqLockById(query_id);
+            }
+
             for (i=0; i<numseg; i++) {
                align_length += dsp->lens[i];
                if (dsp->starts[2*i] != -1 && dsp->starts[2*i+1] != -1) {
-                  num_ident = BlastBioseqGetNumIdentical(query_bsp, subject_bsp, 
-                                 dsp->starts[2*i], dsp->starts[2*i+1], 
-                                 dsp->lens[i], 
-                                 dsp->strands[2*i], dsp->strands[2*i+1]);
-                  perc_ident += num_ident;
-                  num_mismatches += dsp->lens[i] - num_ident;
-               } else
+                  if (get_num_ident) {
+                     num_ident = BlastBioseqGetNumIdentical(query_bsp, subject_bsp, 
+                                    dsp->starts[2*i], dsp->starts[2*i+1], 
+                                    dsp->lens[i], dsp->strands[2*i], 
+                                    dsp->strands[2*i+1]);
+                     perc_ident += num_ident;
+                     num_mismatches += dsp->lens[i] - num_ident;
+                  }
+               } else {
                   num_gap_opens++;
+               }
             }
-            if ((num_ident = FindNumIdentInScore(sap->score)) > 0)
-               perc_ident = num_ident;
             perc_ident = perc_ident / align_length * 100;
-            
+
             if (dsp->strands[0] != dsp->strands[1]) {
                q_start = dsp->starts[2*numseg-2] + 1;
                q_end = dsp->starts[0] + dsp->lens[0];
@@ -5158,7 +4826,7 @@ void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
                sap_tmp->segs = ssp;
                GetScoreAndEvalue(sap_tmp, &score, &bit_score, &evalue, &number);
                ScoreAndEvalueToBuffers(bit_score, evalue, 
-                                       &bit_score_buff, &eval_buff);
+                                       bit_score_buff, &eval_buff, 0);
                find_score_in_align(sap_tmp, 1, asp);
             } else
                find_score_in_align(sap, 1, asp);
@@ -5200,7 +4868,7 @@ void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
             sap_tmp->segs = ddp;
             GetScoreAndEvalue(sap_tmp, &score, &bit_score, &evalue, &number);
             ScoreAndEvalueToBuffers(bit_score, evalue, 
-                                    &bit_score_buff, &eval_buff);
+                                    bit_score_buff, &eval_buff, 0);
 
             align_length = ddp->len;
             if (ddp->strands[0] == Seq_strand_minus) {
@@ -5219,6 +4887,15 @@ void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
                s_end = ddp->starts[1] + align_length;
             }
             num_gap_opens = 0;
+            /* Query Bioseq is needed for calculating number of identities.
+               NB: even if number of identities is already filled in the 
+               seqalign score list, that is not enough here, because we need to
+               know number of identities in each segment in order to calculate
+               number of mismatches correctly. */
+            if (!query_bsp) {
+               query_bsp = BioseqLockById(query_id);
+            }
+
             num_ident = BlastBioseqGetNumIdentical(query_bsp, subject_bsp, 
                            ddp->starts[0], ddp->starts[1], align_length, 
                            ddp->strands[0], ddp->strands[1]);
@@ -5254,6 +4931,8 @@ void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
       }
    }
 
+   eval_buff = MemFree(eval_buff);
+
    if (is_ungapped)
       sap_tmp = MemFree(sap_tmp);
 
@@ -5261,8 +4940,7 @@ void BlastPrintTabularResults(SeqAlignPtr seqalign, BioseqPtr query_bsp,
       free_default_matrix(asp->matrix);
       MemFree(asp);
    }
-   MemFree(eval_buff);
-   MemFree(bit_score_buff);
+
    BioseqUnlock(subject_bsp);
    if (query_slp)
       BioseqUnlock(query_bsp);
@@ -5280,7 +4958,8 @@ int LIBCALLBACK BlastPrintAlignInfo(VoidPtr srch)
    Int4 num_mismatches, num_gap_opens, align_length, num_ident;
    Uint1Ptr query_seq, subject_start=NULL, subject_seq, rev_subject=NULL;
    FloatHi perc_ident, bit_score, evalue;
-   Char eval_buff[10], bit_score_buff[10];
+   Char bit_score_buff[10];
+   CharPtr eval_buff = NULL;
    Int4 length=0, query_length, subject_length=0, rev_subject_length=0;
    Int4 q_start, q_end, s_start, s_end, q_shift=0, s_shift=0;
    CharPtr subject_descr = NULL;
@@ -5510,12 +5189,6 @@ int LIBCALLBACK BlastPrintAlignInfo(VoidPtr srch)
 
    subject_id = SeqIdSetFree(subject_id);
 
-   for (index=0; index<hspcnt; index++) {
-      if (search->current_hitlist->hsp_array[index] != NULL)
-         search->current_hitlist->hsp_array[index]->gap_info = 
-            GapXEditBlockDelete(search->current_hitlist->hsp_array[index]->gap_info);
-   }
-
    if (is_translated || !search->pbp->gapped_calculation) {
       asp = MemNew(sizeof(AlignSum));
       asp->matrix = NULL;
@@ -5524,6 +5197,10 @@ int LIBCALLBACK BlastPrintAlignInfo(VoidPtr srch)
       if (is_translated)
          AdjustOffSetsInSeqAlign(seqalign, search->query_slp, subject_slp);
    }
+
+   /* Evalue buffer is dynamically allocated to avoid compiler warnings 
+      in calls to ScoreAndEvalueToBuffers. */
+   eval_buff = Malloc(10);
 
    /* Now print the tab-delimited fields, using seqalign */
    for (sap = seqalign; sap; sap = sap->next) {
@@ -5534,23 +5211,10 @@ int LIBCALLBACK BlastPrintAlignInfo(VoidPtr srch)
 
       GetScoreAndEvalue(sap, &score, &bit_score, &evalue, &number);
 
-      if (evalue < 1.0e-180)
-         sprintf(eval_buff, "0.0");
-      else if (evalue < 1.0e-99)
-         sprintf(eval_buff, "%2.0le", evalue);
-      else if (evalue < 0.0009) 
-         sprintf(eval_buff, "%3.1le", evalue);
-      else if (evalue < 1.0) 
-         sprintf(eval_buff, "%4.3lf", evalue);
-      else 
-         sprintf(eval_buff, "%5.1lf", evalue);
-      
-      if (bit_score > 9999)
-         sprintf(bit_score_buff, "%4.3le", bit_score);
-      else if (bit_score > 99.9)
-         sprintf(bit_score_buff, "%4.1lf", bit_score);
-      else
-         sprintf(bit_score_buff, "%4.2lf", bit_score);
+      /* Do not allow knocking off digit in evalue buffer, so parsers are 
+         not confused. */
+      ScoreAndEvalueToBuffers(bit_score, evalue, 
+                              bit_score_buff, &eval_buff, 0);
 
       query_seq = search->context[search->first_context].query->sequence;
 
@@ -5647,6 +5311,8 @@ int LIBCALLBACK BlastPrintAlignInfo(VoidPtr srch)
               q_end, s_start, s_end, eval_buff, bit_score_buff);
    }
 
+   eval_buff = MemFree(eval_buff);
+
    if (is_translated) {
       free_default_matrix(asp->matrix);
       MemFree(asp);
@@ -5663,33 +5329,75 @@ int LIBCALLBACK BlastPrintAlignInfo(VoidPtr srch)
    return 0;
 }
 
-static void FillSequenceBuffers(Uint1Ptr query_ptr, Uint1Ptr subject_ptr, 
-            CharPtr query_buffer, CharPtr subject_buffer, Int4 length)
+static void 
+FillSequenceBuffers(Uint1* query_seq, Uint1* subject_seq, 
+                    Int4* starts, Int4* lengths, Int4 numseg,
+                    char* query_buffer, char* subject_buffer, 
+                    Boolean reverse)
 {
-   Int4 index;
-   CharPtr blastna_to_iupacna = "ACGTRYMKWSBDHVN-";
-   
-   if (!query_ptr) {
-      MemSet(query_buffer, '-', length);
-   } else {
-      for (index = 0; index < length; ++index) {
-         *query_buffer = blastna_to_iupacna[*query_ptr];
-         query_buffer++;
-         query_ptr++;
-      }
-   }
+   Int4 index, index1;
+   const char* blastna_to_iupacna     = "ACGTRYMKWSBDHVN-";
+   const char* blastna_to_iupacna_rev = "TGCAYRKMSWVHDBN-"; 
+   Uint1* query_ptr;
+   Uint1* subject_ptr;
+   Int4 offset;
+   char* buffer;
 
-   if (!subject_ptr) {
-      MemSet(subject_buffer, '-', length);
+   offset = 0;
+   if (!reverse) {
+      for (index = 0; index < numseg; ++index) {
+         buffer = &query_buffer[offset];
+         if (starts[2*index] != -1) {
+            query_ptr = &query_seq[starts[2*index]];
+            for (index1 = 0; index1 < lengths[index]; ++index1) {
+               *buffer = blastna_to_iupacna[*query_ptr];
+               buffer++;
+               query_ptr++;
+            }
+         } else {
+            memset(buffer, '-', lengths[index]);
+         }
+         buffer = &subject_buffer[offset];
+         if (starts[2*index+1] != -1) {
+            subject_ptr = &subject_seq[starts[2*index+1]];
+            for (index1 = 0; index1 < lengths[index]; ++index1) {
+               *buffer = blastna_to_iupacna[*subject_ptr];
+               buffer++;
+               subject_ptr++;
+            }
+         } else {
+            memset(buffer, '-', lengths[index]);
+         }
+         offset += lengths[index];
+      }
    } else {
-      for (index = 0; index < length; ++index) {
-         *subject_buffer = blastna_to_iupacna[*subject_ptr];
-         subject_buffer++;
-         subject_ptr++;
+      for (index = numseg-1; index >=0; --index) {
+         buffer = &query_buffer[offset];
+         if (starts[2*index] != -1) {
+            query_ptr = &query_seq[starts[2*index]+lengths[index]-1];
+            for (index1 = 0; index1 < lengths[index]; ++index1) {
+               *buffer = blastna_to_iupacna_rev[*query_ptr];
+               buffer++;
+               query_ptr--;
+            }
+         } else {
+            memset(buffer, '-', lengths[index]);
+         }
+         buffer = &subject_buffer[offset];
+         if (starts[2*index+1] != -1) {
+            subject_ptr = &subject_seq[starts[2*index+1]+lengths[index]-1];
+            for (index1 = 0; index1 < lengths[index]; ++index1) {
+               *buffer = blastna_to_iupacna_rev[*subject_ptr];
+               buffer++;
+               subject_ptr--;
+            }
+         } else {
+            memset(buffer, '-', lengths[index]);
+         }
+         offset += lengths[index];
       }
    }
 }
-
 
 int LIBCALLBACK
 MegaBlastPrintAlignInfo(VoidPtr ptr)
@@ -5705,7 +5413,8 @@ MegaBlastPrintAlignInfo(VoidPtr ptr)
    BLAST_KarlinBlkPtr kbp;
    Uint1Ptr query_seq, subject_seq = NULL;
    FloatHi perc_ident, bit_score;
-   Char eval_buff[10], bit_score_buff[10];
+   Char bit_score_buff[10];
+   CharPtr eval_buff = NULL;
    GapXEditScriptPtr esp;
    Int4 q_start, q_end, s_start, s_end, query_length, numseg;
    Int4 q_off, q_shift = 0, s_off, s_shift = 0;
@@ -5754,9 +5463,11 @@ MegaBlastPrintAlignInfo(VoidPtr ptr)
       if (search->pbp->mb_params->full_seqids) { 
          subject_buffer = (CharPtr) Malloc(BUFFER_LENGTH + 1);
          SeqIdWrite(subject_id, subject_buffer, PRINTID_FASTA_LONG, BUFFER_LENGTH);
-      } else
-         numeric_sip_type = GetAccessionFromSeqId(subject_id, &subject_gi, 
-                                                  &subject_buffer);
+      } else {
+         numeric_sip_type = 
+            GetAccessionVersionFromSeqId(subject_id, &subject_gi, 
+                                         &subject_buffer, TRUE);
+      }
    } else {
       subject_buffer = StringTokMT(subject_descr, " \t", &subject_descr);
       subject_descr = subject_buffer;
@@ -5771,12 +5482,14 @@ MegaBlastPrintAlignInfo(VoidPtr ptr)
    /* Get offset shift if query is a subsequence */
    q_shift = SeqLocStart(search->query_slp);
 
+   /* Evalue buffer is dynamically allocated to avoid compiler warnings 
+      in calls to ScoreAndEvalueToBuffers. */
+   eval_buff = Malloc(10);
+
    for (hsp_index=0; hsp_index<search->current_hitlist->hspcnt; hsp_index++) {
       hsp = search->current_hitlist->hsp_array[hsp_index];
       if (hsp==NULL || (search->pbp->cutoff_e > 0 && 
                         hsp->evalue > search->pbp->cutoff_e)) {
-         hsp->gap_info = 
-            GapXEditBlockDelete(hsp->gap_info); /* Don't need it anymore */
 	 continue;
       }
       context = hsp->context;
@@ -5800,6 +5513,8 @@ MegaBlastPrintAlignInfo(VoidPtr ptr)
          FloatHi searchsp_eff;
          Int4 max_offset, max_start = MAX_DBSEQ_LEN / 2, start_shift;
 
+         /* Set the X-dropoff to the final X dropoff parameter. */
+         gap_align->x_parameter = search->pbp->gap_x_dropoff_final;
          gap_align->query = query_seq;
          gap_align->query_length = query_length;
          gap_align->subject = subject_seq;
@@ -5847,37 +5562,34 @@ MegaBlastPrintAlignInfo(VoidPtr ptr)
          hsp->evalue = 
             BlastKarlinStoE_simple(hsp->score, kbp, searchsp_eff);
          if (hsp->evalue > search->pbp->cutoff_e) {
-            hsp->gap_info = 
-               GapXEditBlockDelete(hsp->gap_info); /* Don't need it anymore */
             continue;
          }
       }
 
       if (query_id->choice == SEQID_LOCAL && 
-       search->pbp->mb_params->full_seqids) {
-         BioseqPtr query_bsp = BioseqLockById(query_id);
-         title = StringSave(BioseqGetTitle(query_bsp));
-         if (title)
-            query_buffer = StringTokMT(title, " ", &title);
-         else {
-            Int4 query_gi;
-            Boolean numeric_query_id =
-               GetAccessionFromSeqId(query_bsp->id, &query_gi,
-                                     &query_buffer);
-            if (numeric_query_id) {
-               query_buffer = (CharPtr) Malloc(16);
-               sprintf(query_buffer, "%ld", (long) query_gi);
-            }
-         }  
-         BioseqUnlock(query_bsp);
+          search->pbp->mb_params->full_seqids) {
+         Int4 local_index;
+         if (GetAccessionVersionFromSeqId(query_id, &local_index,
+                                          &query_buffer, TRUE)) {
+            /* If local id is numeric, it is a fake id, so try to retrieve the
+               real one */
+            BioseqPtr query_bsp = BioseqLockById(query_id);
+            title = StringSave(BioseqGetTitle(query_bsp));
+            if (title)
+               query_buffer = StringTokMT(title, " ", &title);
+            else /* Failed to find any string for this id */
+               query_buffer = StringSave("QUERY");
+            BioseqUnlock(query_bsp);
+         }
       } else {
          query_buffer = (CharPtr) Malloc(BUFFER_LENGTH + 1);
          if (!search->pbp->mb_params->full_seqids) {
             SeqIdWrite(SeqIdFindBestAccession(query_id), query_buffer,
                        PRINTID_TEXTID_ACC_VER, BUFFER_LENGTH);
-         } else 
+         } else {
             SeqIdWrite(query_id, query_buffer, PRINTID_FASTA_LONG,
                        BUFFER_LENGTH);
+         }
       }
 
       bit_score = (hsp->score*kbp->Lambda - kbp->logK) / NCBIMATH_LN2;
@@ -5892,8 +5604,6 @@ MegaBlastPrintAlignInfo(VoidPtr ptr)
       GXECollectDataForSeqalign(hsp->gap_info, hsp->gap_info->esp, numseg,
 				&start, &length, &strands, 
 				&q_off, &s_off);
-      hsp->gap_info = 
-         GapXEditBlockDelete(hsp->gap_info); /* Don't need it anymore */
 
       if (start[0] < 0) {
          length[0] += start[0];
@@ -5936,21 +5646,9 @@ MegaBlastPrintAlignInfo(VoidPtr ptr)
          /* Fill the query and subject sequence buffers */
          query_seq_buffer = MemNew((align_length+1));
          subject_seq_buffer = MemNew((align_length+1));
-         align_length = 0;
-         for (i=0; i<numseg; i++) {
-            if (start[2*i] != -1)
-               query_ptr = &query_seq[start[2*i]];
-            else
-               query_ptr = NULL;
-            if (start[2*i+1] != -1)
-               subject_ptr = &subject_seq[start[2*i+1]];
-            else
-               subject_ptr = NULL;
-            FillSequenceBuffers(query_ptr, subject_ptr, 
-               &query_seq_buffer[align_length], 
-               &subject_seq_buffer[align_length], length[i]);
-            align_length += length[i];
-         }
+         FillSequenceBuffers(query_seq, subject_seq, start, length, numseg, 
+                             query_seq_buffer, subject_seq_buffer, 
+                             (context%2 == 1));
       }
 
       if (hsp->context) {
@@ -5977,24 +5675,10 @@ MegaBlastPrintAlignInfo(VoidPtr ptr)
       s_start += s_shift;
       s_end += s_shift;
 
-      if (hsp->evalue < 1.0e-180)
-         sprintf(eval_buff, "0.0");
-      else if (hsp->evalue < 1.0e-99)
-         sprintf(eval_buff, "%2.0le", hsp->evalue);
-      else if (hsp->evalue < 0.0009) 
-         sprintf(eval_buff, "%3.1le", hsp->evalue);
-      else if (hsp->evalue < 1.0) 
-         sprintf(eval_buff, "%4.3lf", hsp->evalue);
-      else 
-         sprintf(eval_buff, "%5.1lf", hsp->evalue);
-      
-      if (bit_score > 9999)
-         sprintf(bit_score_buff, "%4.3le", bit_score);
-      else if (bit_score > 99.9)
-         sprintf(bit_score_buff, "%4.1lf", bit_score);
-      else
-         sprintf(bit_score_buff, "%4.2lf", bit_score);
-
+      /* Do not allow knocking off digit in evalue buffer, so parsers are 
+         not confused. */
+      ScoreAndEvalueToBuffers(bit_score, hsp->evalue, 
+                              bit_score_buff, &eval_buff, 0);
 
       if (print_sequences) {
          if (numeric_sip_type) {
@@ -6043,6 +5727,8 @@ MegaBlastPrintAlignInfo(VoidPtr ptr)
       MemFree(subject_buffer);
    MemFree(subject_descr);
    MemFree(buffer);
+   MemFree(eval_buff);
+
    sip = SeqIdSetFree(sip);
    fflush(fp);
    return 0;
@@ -6054,7 +5740,7 @@ void PrintTabularOutputHeader(CharPtr blast_database, BioseqPtr query_bsp,
                               FILE *outfp)
 {
    Char buffer[BUFFER_LENGTH+1];
-   Boolean no_bioseq = (query_bsp == NULL);
+   Boolean unlock_bioseq = FALSE;
 
    asn2ff_set_output(outfp, NULL);
    
@@ -6082,30 +5768,43 @@ void PrintTabularOutputHeader(CharPtr blast_database, BioseqPtr query_bsp,
       Int4 string_length = StrLen(str);
 
       ff_AddString(str);
-      if (no_bioseq)
-         query_bsp = BioseqLockById(SeqLocId(query_slp));
-      if (query_bsp->id && believe_query) {
-         SeqIdWrite(query_bsp->id, buffer, PRINTID_FASTA_LONG, 
-                    BUFFER_LENGTH);
-         if (StringNCmp(buffer, "lcl|", 4) == 0) {
-            ff_AddString(buffer+4);
+
+      if (!query_bsp) {
+         Int4 num_queries = ValNodeLen(query_slp);
+         if (num_queries > 1) {
+            /* Multiple queries: just print the number, without deflines. */
+            sprintf(buffer, "%ld sequences", (long)num_queries);
+            ff_AddString(buffer);
          } else {
+            query_bsp = BioseqLockById(SeqLocId(query_slp));
+            unlock_bioseq = TRUE;
+         }
+      }
+      if (query_bsp) {
+         if (query_bsp->id && believe_query) {
+            SeqIdWrite(query_bsp->id, buffer, PRINTID_FASTA_LONG, 
+                       BUFFER_LENGTH);
+            if (StringNCmp(buffer, "lcl|", 4) == 0) {
+               ff_AddString(buffer+4);
+            } else {
+               ff_AddString(buffer);
+            }
+            string_length += StrLen(buffer);
+            ff_AddChar(' ');
+            string_length++; /* to account for the space above. */
+         }
+
+         if ((title = BioseqGetTitle(query_bsp)) != NULL) { 
+            /* We do this to keep the entire title on one line 
+               (of length BUFFER_LENGTH). */
+            StrNCpy(buffer, title, BUFFER_LENGTH - string_length);
+            buffer[BUFFER_LENGTH - string_length] = NULLB;
             ff_AddString(buffer);
          }
-	 string_length += StrLen(buffer);
-         ff_AddChar(' ');
-	 string_length++; /* to account for the space above. */
-      }
 
-      if ((title = BioseqGetTitle(query_bsp)) != NULL)
-      { /* We do this to keep the entire title on one line (of length BUFFER_LENGTH). */
-	StrNCpy(buffer, title, BUFFER_LENGTH - string_length);
-        buffer[BUFFER_LENGTH - string_length] = NULLB;
-        ff_AddString(buffer);
+         if (unlock_bioseq)
+            BioseqUnlock(query_bsp);
       }
-
-      if (no_bioseq)
-         BioseqUnlock(query_bsp);
       NewContLine();
    }
    if (blast_database) {
@@ -6425,11 +6124,10 @@ void
 BLASTPostSearchLogic(BlastSearchBlkPtr search, BLAST_OptionsBlkPtr options,
                      SeqAlignPtr PNTR seqalignp, Boolean single_chain)
 {
-   StdSegPtr ssp;
    BLASTResultHspPtr hsp;
    GapXEditBlockPtr edit_block;
    SeqIdPtr gi_list=NULL,subject_id;
-   SeqAlignPtr head,seqalign,tail,sap;
+   SeqAlignPtr head,seqalign,tail;
    BLASTResultsStructPtr result_struct;
    BLASTResultHitlistPtr   result_hitlist;
    Uint1Ptr sequence;
@@ -6584,9 +6282,10 @@ BLASTPostSearchLogic(BlastSearchBlkPtr search, BLAST_OptionsBlkPtr options,
    {
       result_struct = search->result_struct;
       hitlist_count = result_struct->hitlist_count;
-      
-      if (!options || !(options->smith_waterman)) {
-         
+
+      if (!options || !(options->smith_waterman ||
+                        options->tweak_parameters)) {
+
          for (index=0; index<hitlist_count; index++) {
             seqalign = BlastGetGapAlgnTbckWithReaddb(search, index, FALSE);
             result_struct->results[index]->seqalign = seqalign;
@@ -7029,7 +6728,7 @@ BLAST_Wizard(
 
         /* set some defaults for backward compat. with blastcgicmd.cpp */
         if(!StringCmp(service, "psi"))
-            out->ethresh = 0.005;
+            out->ethresh = 0.002;
 	else if (!StringCmp(service, "rpsblast"))
             out->is_rps_blast = TRUE;
 
@@ -7159,7 +6858,7 @@ BLAST_Wizard(
     if(!strcmp(service, "psi")) {
         out->ethresh = mask->ethresh ?
             options->ethresh :
-            0.005;
+            0.002;
         out->tweak_parameters = mask->tweak_parameters ?
             options->tweak_parameters :
             TRUE;

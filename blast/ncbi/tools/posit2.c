@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: posit2.c,v 6.9 2003/05/30 17:25:37 coulouri Exp $";
+static char const rcsid[] = "$Id: posit2.c,v 6.10 2004/06/22 14:16:56 camacho Exp $";
 
-/* $Id: posit2.c,v 6.9 2003/05/30 17:25:37 coulouri Exp $
+/* $Id: posit2.c,v 6.10 2004/06/22 14:16:56 camacho Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -34,12 +34,15 @@ Author: Alejandro Schaffer
 
 Contents: utilities for makematrices.
 
-$Revision: 6.9 $
+$Revision: 6.10 $
 
 *****************************************************************************/
 
 /*
  * $Log: posit2.c,v $
+ * Revision 6.10  2004/06/22 14:16:56  camacho
+ * Changed invocation of posFreqsToMatrix to conform with new signature
+ *
  * Revision 6.9  2003/05/30 17:25:37  coulouri
  * add rcsid
  *
@@ -437,7 +440,7 @@ Boolean LIBCALL  impalaReadCheckpoint(posSearchItems * posSearch, compactSearchI
         }
     }
     getCkptFreqMatrix(posSearch->posFreqs,length1,compactSearch->alphabetSize,checkFile);
-    posFreqsToMatrix(posSearch,compactSearch, NULL, 1);
+    posFreqsToMatrix(posSearch,compactSearch);
     impalaScaling(posSearch, compactSearch, scalingFactor, TRUE);
 
     ErrPostEx(SEV_INFO, 0, 0, "Data recovered successfully");

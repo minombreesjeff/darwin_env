@@ -29,13 +29,40 @@
 *   
 * Version Creation Date: 9/94
 *
-* $Revision: 6.52 $
+* $Revision: 6.61 $
 *
 * File Description:  Manager for Bioseqs and BioseqSets
 *
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: objmgr.c,v $
+* Revision 6.61  2005/04/13 21:22:17  kans
+* ObjMgrRecycleEntityID and ObjMgrRemoveEntityIDFromRecycle cast to Uint4 for calculations, just like ObjMgrNextAvailEntityID already did
+*
+* Revision 6.60  2005/04/08 21:23:08  kans
+* added ObjMgrStatusString function for debugging
+*
+* Revision 6.59  2005/02/01 19:51:58  kans
+* print actual entityID if ObjMgrRecycleEntityID has bad idx or jdx
+*
+* Revision 6.58  2004/10/28 16:00:42  kans
+* ObjMgrFreeCacheFunc uses type == OBJ_MAX to not free temp loaded objects that are still locked, called from ObjMgrAddFunc when autoclean is triggered
+*
+* Revision 6.57  2004/10/15 19:08:36  bollin
+* when removing an object, make sure to also deselect it
+*
+* Revision 6.56  2004/09/07 14:08:27  kans
+* post errors on failure of ObjMgrNextAvailEntityID and ObjMgrRecycleEntityID
+*
+* Revision 6.55  2004/06/09 01:56:43  kans
+* initialize assigned id array from all functions that use it
+*
+* Revision 6.54  2004/06/08 20:48:09  kans
+* changed entityID recycling from small array of integers to bit array of all possible values
+*
+* Revision 6.53  2004/06/08 18:19:01  kans
+* ObjMgrFreeCacheFunc frees all TL_CACHED, and frees TL_LOADED if type == 0
+*
 * Revision 6.52  2004/04/21 19:40:51  kans
 * ObjMgrReap calculate tempcnt based on temp loaded records, but excluded locked ones - more work still to do in other functions to completely avoid unnecessary thrashing
 *
@@ -85,7 +112,7 @@
 * added ObjMgrReapOne, DEFAULT_MAXOBJ, autoclean reaps and frees one entity at a time, as needed
 *
 * Revision 6.36  2001/05/31 22:33:02  kans
-* added autoclean and maxobj to ObjMgr structure, ObjMgrAddFunc optionally calls ObjMgrReap and ObjMgrFreeCache to completely clear out least recently accessed objects if currobj >= maxobj
+* added autoclean and maxobj to ObjMgr structure,  optionally calls ObjMgrReap and ObjMgrFreeCache to completely clear out least recently accessed objects if currobj >= maxobj
 *
 * Revision 6.35  2001/05/24 21:54:34  kans
 * check for incrementing totobj or currobj above UINT2_MAX, reducing currobj below 0
@@ -545,65 +572,147 @@ NLM_EXTERN ObjMgrDataPtr LIBCALL ObjMgrFindByData (ObjMgrPtr omp, Pointer ptr)
 	return NULL;
 }
 
-#define ENTITY_ID_STACK_SIZE  100
+static Uint4    assignedIDsArray [2050];
+static Int2     assignedIDStackPt = 0;
+static Boolean  assignedIDsInited = FALSE;
 
-static Uint2 recycledEntityIDs [ENTITY_ID_STACK_SIZE];
-static Int4  recycledIDStackPt = 0;
+static Uint4    assignedIDsBitIdx [32];
 
-extern void ObjMgrRemoveEntityIDFromRecycle (Uint2 entityID, ObjMgrPtr omp);
-extern void ObjMgrRemoveEntityIDFromRecycle (Uint2 entityID, ObjMgrPtr omp)
+static Uint2 ObjMgrInitAssignedIDArray (void)
 
 {
-	Int4  i;
+  Uint4  bit;
+  Int2   jdx;
 
-	if (entityID < 1) return;
-	if (omp != NULL) {
-		for (i = 0; i < recycledIDStackPt; i++) {
-			if (entityID == recycledEntityIDs [i]) {
-				recycledEntityIDs [i] = 0; /* remove from recycle list */
-				if (recycledIDStackPt > i + 1) {
-					recycledIDStackPt--;
-					recycledEntityIDs [i] = recycledEntityIDs [recycledIDStackPt];
-				} else {
-					recycledIDStackPt--;
-				}
-			}
-		}
-	}
+  if (! assignedIDsInited) {
+    MemSet ((Pointer) &assignedIDsArray, 0, sizeof assignedIDsArray);
+    MemSet ((Pointer) &assignedIDsBitIdx, 0, sizeof (assignedIDsBitIdx));
+  
+    /* initialize bit index array */
+
+    bit = 1;
+    for (jdx = 0; jdx < 32; jdx++) {
+      assignedIDsBitIdx [jdx] = bit;
+      bit = bit << 1;
+    }
+  
+    /* entityID 0 is not available for use */
+
+    assignedIDsArray [0] = assignedIDsBitIdx [0];
+
+    assignedIDStackPt = 0;
+    assignedIDsInited = TRUE;
+  }
 }
 
 static Uint2 ObjMgrNextAvailEntityID (ObjMgrPtr omp)
 
 {
-	Uint2      entityID = 0;
-	if (omp != NULL) {
-		if (recycledIDStackPt > 0) {
-			recycledIDStackPt--;
-			entityID = recycledEntityIDs [recycledIDStackPt];
-		} else {
-			entityID = ++(omp->HighestEntityID);
-		}
-	}
-	return entityID;
+  Uint2  entityID;
+  Int2   idx, jdx;
+  Uint4  val;
+
+  if (! assignedIDsInited) {
+    ObjMgrInitAssignedIDArray ();
+  }
+
+  /* find first 32 bit word with an available entityID */
+
+  idx = assignedIDStackPt;
+  while (idx < 2048 && assignedIDsArray [idx] == 0xFFFFFFFF) {
+    idx++;
+  }
+  if (idx >= 2048) {
+    ErrPostEx (SEV_ERROR, 0, 0, "ObjMgrNextAvailEntityID failed with idx %d", (int) idx);
+    return 0;
+  }
+
+  /* reset starting point, everything below should be in use */
+
+  assignedIDStackPt = idx;
+
+  /* find first empty bit in array element */
+
+  val = assignedIDsArray [idx];
+  jdx = 0;
+  while (jdx < 32 && (val & assignedIDsBitIdx [jdx]) != 0) {
+    jdx++;
+  }
+  if (jdx >= 32) {
+    ErrPostEx (SEV_ERROR, 0, 0, "ObjMgrNextAvailEntityID failed with jdx %d", (int) jdx);
+    return 0;
+  }
+
+  /* set bit to mark new entityID as in use */
+
+  assignedIDsArray [idx] |= assignedIDsBitIdx [jdx];
+
+  /* calculate entityID */
+
+  entityID = (Uint2) ((Int4) idx) * 32L + (Int4) jdx;
+
+  if (omp != NULL && omp->HighestEntityID < entityID) {
+    omp->HighestEntityID = entityID;
+  }
+
+  return entityID;
 }
 
 static void ObjMgrRecycleEntityID (Uint2 entityID, ObjMgrPtr omp)
 
 {
+  Int2   idx, jdx;
 
-	Int4  i;
+  if (! assignedIDsInited) {
+    ObjMgrInitAssignedIDArray ();
+  }
 
-	if (entityID < 1) return;
-	if (omp != NULL) {
-		/* check to see if entity is already on stack (e.g., entity 1), abort if so */
-		for (i = 0; i < recycledIDStackPt; i++) {
-			if (entityID == recycledEntityIDs [i]) return;
-		}
-		if (recycledIDStackPt < ENTITY_ID_STACK_SIZE) {
-			recycledEntityIDs [recycledIDStackPt] = entityID;
-			recycledIDStackPt++;
-		}
-	}
+  if (entityID < 1) return;
+
+  idx = (Int2) ((Uint4) entityID / 32L);
+  jdx = (Int2) ((Uint4) entityID % 32L);
+
+  if (idx >= 2048 || idx < 0) {
+    ErrPostEx (SEV_ERROR, 0, 0, "ObjMgrRecycleEntityID %d failed with idx %d", (int) entityID, (int) idx);
+    return;
+  }
+  if (jdx >= 32 || jdx < 0) {
+    ErrPostEx (SEV_ERROR, 0, 0, "ObjMgrRecycleEntityID %d failed with jdx %d", (int) entityID, (int) jdx);
+    return;
+  }
+
+  /* clear bit to mark old entityID as available */
+
+  assignedIDsArray [idx] ^= assignedIDsBitIdx [jdx];
+
+  /* reset starting point, everything below should be in use */
+
+  if (idx < assignedIDStackPt) {
+    assignedIDStackPt = idx;
+  }
+}
+
+extern void ObjMgrRemoveEntityIDFromRecycle (Uint2 entityID, ObjMgrPtr omp);
+extern void ObjMgrRemoveEntityIDFromRecycle (Uint2 entityID, ObjMgrPtr omp)
+
+{
+  Int2   idx, jdx;
+
+  if (! assignedIDsInited) {
+    ObjMgrInitAssignedIDArray ();
+  }
+
+  if (entityID < 1) return;
+
+  idx = (Int2) ((Uint4) entityID / 32L);
+  jdx = (Int2) ((Uint4) entityID % 32L);
+
+  if (idx >= 2048 || idx < 0) return;
+  if (jdx >= 32 || jdx < 0) return;
+
+  /* set bit to restore old entityID status to in use */
+
+  assignedIDsArray [idx] |= assignedIDsBitIdx [jdx];
 }
 
 NLM_EXTERN Uint2 LIBCALL ObjMgrAddEntityID (ObjMgrPtr omp, ObjMgrDataPtr omdp)
@@ -1212,7 +1321,7 @@ static Boolean NEAR ObjMgrAddFunc (ObjMgrPtr omp, Uint2 type, Pointer data)
 	/* if autoclean is set and above maxobj, remove least recently accessed objects */
 	if (omp->autoclean && omp->currobj >= omp->maxobj) {
 		ObjMgrReapOne (omp);
-		ObjMgrFreeCache (0);
+		ObjMgrFreeCache (OBJ_MAX); /* only frees unlocked objects */
 	}
 
 	if (omp->currobj >= omp->totobj)
@@ -2251,6 +2360,7 @@ NLM_EXTERN Boolean LIBCALL ObjMgrFreeCache (Uint2 type)
 *   	Finds next cached objects of type and subtypes of type
 *   		based on ObjMgrMatch()
 *   	if type == 0, frees all cached objects
+*   	if type == OBJ_MAX, frees unlocked cached objects
 *   	returns TRUE if no more found
 *
 *****************************************************************************/
@@ -2268,9 +2378,11 @@ static Boolean NEAR ObjMgrFreeCacheFunc (ObjMgrPtr omp, Uint2 type, Uint2Ptr ret
     {
 		omdp = omdpp[i];
 		if ((omdp->parentptr == NULL) &&     /* top level */
-			(omdp->tempload == TL_CACHED))   /* cached */
+			(omdp->tempload == TL_CACHED ||   /* cached or */
+			(type == 0 && omdp->tempload == TL_LOADED) ||   /* temp loaded but not cached out */
+			(type == OBJ_MAX && omdp->tempload == TL_LOADED && omdp->lockcnt == 0)))   /* unlocked but not cached out */
 		{
-			if ((! type) ||
+			if (type == 0 || type == OBJ_MAX ||
 				(ObjMgrMatch(type, omdp->datatype)) ||
 				(ObjMgrMatch(type, omdp->choicetype)))
 			{
@@ -2309,7 +2421,7 @@ static Boolean NEAR ObjMgrFreeCacheFunc (ObjMgrPtr omp, Uint2 type, Uint2Ptr ret
 		}
     }
     return FALSE;
-	
+
 }
 
 
@@ -4441,8 +4553,10 @@ NLM_EXTERN Boolean LIBCALL ObjMgrSendMsg(Uint2 msg, Uint2 entityID, Uint2 itemID
 
 	if (msg == OM_MSG_UPDATE) {
 		SeqMgrClearFeatureIndexes (entityID, NULL);
-	} else if (msg == OM_MSG_DEL)
+	} else if (msg == OM_MSG_DEL) {
 		SeqMgrClearFeatureIndexes (entityID, NULL);
+	  ObjMgrDeSelect (entityID, itemID, itemtype, 0, NULL);
+	}
 	omp = ObjMgrReadLock();
 	omdp = ObjMgrFindByEntityID(omp, entityID, NULL);
 	if (omdp != NULL)
@@ -4838,6 +4952,53 @@ NLM_EXTERN void LIBCALL ObjMgrReportFunc (CharPtr filename)
   FileClose (fp);
 }
 
+
+static Uint4 LIBCALL ObjMgrCountAssignedEntityIDs (void)
+
+{
+  Uint4  count = 0, val;
+  Int2   idx, jdx;
+
+  if (! assignedIDsInited) {
+    ObjMgrInitAssignedIDArray ();
+  }
+
+  for (idx = 0; idx < 2048; idx++) {
+    val = assignedIDsArray [idx];
+    if (val == 0xFFFFFFFF) {
+      count += 32;
+    } else if (val > 0) {
+      for (jdx = 0; jdx < 32; jdx++) {
+        if ((val & assignedIDsBitIdx [jdx]) != 0) {
+          count++;
+        }
+      }
+    }
+  }
+
+  return count;
+}
+
+NLM_EXTERN Boolean LIBCALL ObjMgrStatusString (CharPtr str, size_t len)
+
+{
+  Char       buf [256];
+  ObjMgrPtr  omp;
+
+  if (str == NULL || len < 1) return FALSE;
+  *str = '\0';
+  buf [0] = '\0';
+  omp = ObjMgrGet ();
+  if (omp == NULL) return FALSE;
+
+  sprintf (buf, "HighID %5d  NumIDs %5d  TotObj %5d  TempObj %5d",
+           (int) omp->HighestEntityID,
+           (int) ObjMgrCountAssignedEntityIDs (),
+           (int) omp->totobj, (int) omp->tempcnt);
+
+  StringNCpy_0 (str, buf, len);
+  return TRUE;
+}
 
 NLM_EXTERN void LIBCALL
 ObjMgrAddIndexOnEntityID(ObjMgrPtr omp,Uint2 entityID,ObjMgrDataPtr omdp)

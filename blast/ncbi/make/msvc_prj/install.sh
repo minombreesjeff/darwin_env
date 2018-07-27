@@ -1,5 +1,5 @@
 #! /bin/sh
-# $Id: install.sh,v 1.36 2004/04/14 17:14:08 ivanov Exp $
+# $Id: install.sh,v 1.40 2005/01/26 18:41:55 ivanov Exp $
 # Authors:  Denis Vakatov    (vakatov@ncbi.nlm.nih.gov)
 #           Vladimir Ivanov  (ivanov@ncbi.nlm.nih.gov)
 #           Anton Lavrentiev (lavr@ncbi.nlm.nih.gov)
@@ -61,10 +61,18 @@ test -d "$target"  ||  error "Cannot create target dir \"$target\""
 
 # Make all dirs
 makedir "$incdir" -p
+makedir "$incdir"/algo
+makedir "$incdir"/algo/blast
+makedir "$incdir"/algo/blast/api
+makedir "$incdir"/algo/blast/core
 makedir "$incdir"/connect
 makedir "$incdir"/ctools
 makedir "$srcdir" -p
 makedir "$srcdir"/access
+makedir "$srcdir"/algo
+makedir "$srcdir"/algo/blast
+makedir "$srcdir"/algo/blast/api
+makedir "$srcdir"/algo/blast/core
 makedir "$srcdir"/api
 makedir "$srcdir"/asnlib
 makedir "$srcdir"/biostruc
@@ -85,7 +93,6 @@ makedir "$srcdir"/network/entrez/client  -p
 makedir "$srcdir"/network/id1arch        -p
 makedir "$srcdir"/network/medarch/client -p
 makedir "$srcdir"/network/nsclilib       -p
-makedir "$srcdir"/network/nsdemocl       -p
 makedir "$srcdir"/network/spell/client   -p
 makedir "$srcdir"/network/taxon1/common  -p
 makedir "$srcdir"/network/taxon1/taxon2  -p
@@ -94,6 +101,8 @@ makedir "$srcdir"/object
 makedir "$srcdir"/sequin
 makedir "$srcdir"/tools
 makedir "$srcdir"/vibrant
+makedir "$srcdir"/util/creaders          -p
+makedir "$srcdir"/util/tables            -p
 makedir "$bindir"   -p
 makedir "$datdir"   -p
 makedir "$errdir"   -p
@@ -115,8 +124,12 @@ cp -p "$builddir"/corelib/binary.h              "$incdir"
 cp -p "$builddir"/corelib/*.c                   "$srcdir"/corelib
 cp -p "$builddir"/corelib/core*.h               "$srcdir"/corelib
 cp -p "$builddir"/corelib/regex.h               "$incdir"
+cp -p "$builddir"/algo/blast/api/*.c            "$srcdir"/algo/blast/api
+cp -p "$builddir"/algo/blast/api/*.h            "$incdir"/algo/blast/api
+cp -p "$builddir"/algo/blast/core/*.c           "$srcdir"/algo/blast/core
+cp -p "$builddir"/algo/blast/core/*.h           "$incdir"/algo/blast/core
 cp -p "$builddir"/asnlib/*.h                    "$srcdir"/asnlib
-mv "$srcdir"/asnlib/asn.h                 "$incdir"
+mv "$srcdir"/asnlib/asn.h                       "$incdir"
 cp -p "$builddir"/asnlib/*.c                    "$srcdir"/asnlib
 cp -p "$builddir"/connect/*.c                   "$srcdir"/connect
 cp -p "$builddir"/connect/ncbi_priv.h           "$srcdir"/connect
@@ -160,6 +173,10 @@ cp -p "$builddir"/cn3d/*.c                      "$srcdir"/cn3d
 cp -p "$builddir"/cn3d/*.h                      "$incdir"
 cp -p "$builddir"/ddv/*.c                       "$srcdir"/ddv
 cp -p "$builddir"/ddv/*.h                       "$incdir"
+cp -p "$builddir"/util/creaders/*.c             "$srcdir"/util/creaders
+cp -p "$builddir"/util/creaders/*.h             "$incdir"
+cp -p "$builddir"/util/tables/*.c               "$srcdir"/util/tables
+cp -p "$builddir"/util/tables/*.h               "$incdir"
 
 
 # Copy network files
@@ -178,7 +195,6 @@ cp -p "$builddir"/network/blast3/client/*.c     "$srcdir"/network/blast3/client
 cp -p "$builddir"/network/blast3/client/*.h     "$incdir"
 cp -p "$builddir"/network/id1arch/*.c           "$srcdir"/network/id1arch
 cp -p "$builddir"/network/id1arch/*.h           "$incdir"
-cp -p "$builddir"/network/nsdemocl/*.[hc]       "$srcdir"/network/nsdemocl
 cp -p "$builddir"/network/spell/client/*.c      "$srcdir"/network/spell/client
 cp -p "$builddir"/network/spell/client/*.h      "$incdir"
 cp -p "$builddir"/demo/*.c                      "$srcdir"/demo

@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 1/1/91
 *
-* $Revision: 6.2 $
+* $Revision: 6.3 $
 *
 * File Description:  Object manager for module NCBI-Submit
 *
@@ -41,6 +41,9 @@
 *
 *
 * $Log: objsub.c,v $
+* Revision 6.3  2004/05/12 20:41:57  kans
+* set aip->io_failure in several erret blocks for compatibility of old object loaders with new ones
+*
 * Revision 6.2  2004/04/01 13:43:08  lavr
 * Spell "occurred", "occurrence", and "occurring"
 *
@@ -606,6 +609,7 @@ ret:
 	AsnUnlinkType(orig);       /* unlink local tree */
 	return ssp;
 erret:
+    aip->io_failure = TRUE;
     ssp = SeqSubmitFree(ssp);
     goto ret;
 }
@@ -801,6 +805,7 @@ ret:
 	AsnUnlinkType(orig);       /* unlink local tree */
 	return sbp;
 erret:
+    aip->io_failure = TRUE;
     sbp = SubmitBlockFree(sbp);
     goto ret;
 }

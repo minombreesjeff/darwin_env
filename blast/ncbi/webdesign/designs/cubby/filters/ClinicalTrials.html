@@ -1,0 +1,271 @@
+<html><head>
+ 
+ <title>Cubby</title><link rel="stylesheet" href="ClinicalTrials_files/ncbi_test.css">
+<link rel="stylesheet" href="ClinicalTrials_files/filters.css">
+ <script language="JavaScript" src="ClinicalTrials_files/query.js"></script>
+
+ <style type="text/css">
+    .sidebar li {color: #ffccff;}
+    .sidebar { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: White; }
+    A.sidebar:link { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: White; }
+    A.sidebar:visited { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: White; }
+    A.sidebar:active { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: Pink; }
+    A.sidebar:hover { text-decoration: none; font-family: Verdana, Arial, Sans-serif; font-size: 75%; color: Yellow; }
+ </style>
+ 
+ <script type="text/javascript" language="JavaScript">
+    function SelAll(ch,nm) { 
+      var frm = ch.form;
+      var val = ch.checked;
+      var sz = frm.elements.length;
+      for(i=0; i<sz; ++i ) {
+        if( frm.elements[i].name == nm ) {
+          frm.elements[i].checked = val;
+        }
+      }
+    }
+    function hl(o, clr) {
+      o.style.color = clr
+    }
+    function gotoTab(name) {
+       window.location = 'http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.EFilt.PubMed~0.' +
+          name;
+    }
+ </script></head>
+<body bgcolor="#ffffff" text="#000000" link="#0033cc" vlink="#cc3300" background="ClinicalTrials_files/bkgd.gif" topmargin="0" marginheight="0">
+ <!-- logo -->
+ <table border="0" cellpadding="0" cellspacing="0">
+    <tbody><tr>
+     <td align="left"><a href="http://www.ncbi.nlm.nih.gov/"><img src="ClinicalTrials_files/left.GIF" width="130" height="45" border="0"></a></td>
+     <td align="left"><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.CubbyQuery..ShowAll"><img src="ClinicalTrials_files/cubby.jfif" width="456" height="60" align="left" border="0"></a></td>
+    </tr> 
+   </tbody></table>
+ <!-- query box -->  
+ <table width="100%" border="0" cellpadding="0" cellspacing="0">
+ <tbody><tr>
+  <!--site map-->
+  <td>
+   <form enctype="application/x-www-form-urlencoded" name="frmQueryBox" action="/entrez/query.fcgi?SUBMIT=y" method="get" onsubmit="if(inGo!=true){document.frmQueryBox.cmd.value='';}">
+    <input name="CMD" type="hidden" value="" disabled="disabled">
+    <input name="cmd_current" type="hidden" value="" disabled="disabled">
+    <table class="TEXT" border="0" cellspacing="0" cellpadding="2" bgcolor="#000000" width="100%">
+     <tbody><tr class="TEXT" align="center">
+      <td><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query.fcgi?db=PubMed" class="GUTTER3"><font color="#ffffff">PubMed</font></a></td>
+      <td><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query.fcgi?db=Nucleotide" class="GUTTER3"><font color="#ffffff">Nucleotide</font></a></td>
+      <td><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query.fcgi?db=Protein" class="GUTTER3"><font color="#ffffff">Protein</font></a></td>
+      <td><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query.fcgi?db=Genome" class="GUTTER3"><font color="#ffffff">Genome</font></a></td>
+      <td><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query.fcgi?db=Structure" class="GUTTER3"><font color="#ffffff">Structure</font></a></td>
+      <td><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query.fcgi?db=Popset" class="GUTTER3"><font color="#ffffff">PopSet</font></a></td>
+      <td><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query.fcgi?db=Taxonomy" class="GUTTER3"><font color="#ffffff">Taxonomy</font></a></td>
+      <td><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query.fcgi?db=OMIM" class="GUTTER3"><font color="#ffffff">OMIM</font></a></td>
+      <td><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query.fcgi?db=Books" class="GUTTER3"><font color="#ffffff">Books</font></a></td>
+     </tr>
+    </tbody></table>
+   </form></td>
+  </tr>
+  <tr>
+   <!--query box-->
+   <td>
+    <table width="100%" border="0" bgcolor="#cccccc" cellspacing="0" cellpadding="1">     
+     <tbody><tr> 
+      <td class="SMALL1"> Search <small><select name="db" onchange="DbChange(this);"><option selected="selected" value="pubmed">PubMed</option><option value="protein">Protein</option><option value="nucleotide">Nucleotide</option><option value="structure">Structure</option><option value="genome">Genome</option><option value="linkout">LinkOut</option><option value="popset">PopSet</option><option value="omim">OMIM</option><option value="taxonomy">Taxonomy</option><option value="books">Books</option><option value="geo">ProbeSet</option><option value="domains">3D Domains</option></select>
+       <input name="orig_db" type="hidden" value="PubMed"></small>for
+       <input name="term" size="45" type="text" onkeypress="KeyPress('search',event)" value="">
+       <input type="button" value="Go" onclick="Go('search');">
+       <input name="Clear" type="button" value="Clear" onclick="this.form.term.value='';this.form.term.focus();">
+       <input name="cmd" type="hidden" value="">
+      </td>				
+     </tr>
+    </tbody></table>
+   </td>
+  </tr>
+  <tr>
+   <td>
+    <table width="100%" border="0" cellspacing="0" cellpadding="0">  		
+     <tbody><tr>
+      <td width="140">
+       <img src="ClinicalTrials_files/transparent.gif" width="140" height="1" border="0">
+      </td>
+      <td width="">
+       <!-- toolbar -->		  					
+       <table border="0" bgcolor="#cccccc" cellpadding="0" cellspacing="0" width="100%">
+	<tbody><tr> 
+         <td class="tabna" width="5"> </td>
+         <td class="tabna" nowrap="nowrap" width="111"><a class="pmlinkna" href="javascript:Go('Limits')">Limits</a></td>
+         <td class="tabna" nowrap="nowrap" width="111"><a class="pmlinkna" href="javascript:Go('Index')">Preview/Index</a></td>
+         <td class="tabna" nowrap="nowrap" width="111"><a class="pmlinkna" href="javascript:Go('History')">History</a></td>
+         <td class="tabna" nowrap="nowrap" width="111"><a class="pmlinkna" href="javascript:Go('Clipboard')">Clipboard</a></td>
+         <td class="tabna" nowrap="nowrap" width="111"><a class="pmlinkna" href="javascript:Go('Details')">Details</a></td>
+         <td class="tabna" width="5"> </td>
+         <td bgcolor="#cccccc" width="100%"> </td>
+	</tr>
+       </tbody></table> 
+      </td>
+     </tr>
+    </tbody></table>
+   
+  </td>
+ </tr>		  
+</tbody></table>
+
+	 <!--start of 2nd table -->		
+	 <table cellspacing="0" cellpadding="0" width="100%" border="0">
+		<tbody><tr valign="top"> 
+		  <!--  left column   -->          
+		  <td width="125">			
+			 <!------ left column ------>
+    <table border="0" width="125" cellspacing="0" cellpadding="0">
+        <tbody><tr valign="bottom">
+            <td width="120">
+                <a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/Database/index.html">About Entrez</a><br>
+                <img src="ClinicalTrials_files/transparent.gif" width="1" height="4">
+            </td>
+            <td width="8" align="right">
+                <img src="ClinicalTrials_files/GoUp1.gif" width="8" height="19">
+            </td>
+        </tr>
+        <tr align="right">
+            <td colspan="2">
+                <img src="ClinicalTrials_files/GoUp2.gif" width="125" height="12">
+            </td>
+        </tr>
+    </tbody></table>
+<br><span class="GUTTER1"><font color="#ffcc66">Entrez PubMed</font></span><br>
+<a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query/static/overview.html">Overview</a><br>
+<a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query/static/help/pmhelp.html#Cubby">Help</a><span class="GUTTER3"> | </span>
+<a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/query/static/faq.html">FAQ</a><br><br>
+<span class="GUTTER1"><font color="#ffcc66">Cubby Resources</font></span><br>
+<div class="sidebar">Searches
+<li type="square"><a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.CubbyQuery..ShowAll">Stored Searches</a></li>
+<li type="square"><a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.Schedule..ShowAll">Schedules<img border="0" src="ClinicalTrials_files/new.gif"></a></li>
+<li type="square"><a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.AddrBook..ShowAll">Address Book<img border="0" src="ClinicalTrials_files/new.gif"></a></li>
+<li type="square"><a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.Dispatch..ShowAll">Automatic<br>E-mail Updates<img border="0" src="ClinicalTrials_files/new.gif"></a></li>
+</div><p></p>
+<div class="sidebar">LinkOut
+<li type="square"><a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.EFilt..ShowDbs">Filters<img border="0" src="ClinicalTrials_files/new.gif"></a></li>
+<!--<li type="square"><a class="sidebar" href="/entrez/cubby.fcgi?call=QueryExt.HistProv.~A.ShowAll">Providers</a></li>
+<li type="square"><a class="sidebar" href="/entrez/cubby.fcgi?call=QueryExt.ProvSubj..ShowAll">Provider Categories</a></li>
+<li type="square"><a class="sidebar" href="/entrez/cubby.fcgi?call=QueryExt.HistProv..ShowPref">Preferences</a></li>-->
+<li type="square"><a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.DocDlv..ShowAll">Document Delivery Services</a></li>
+<li type="square"><a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.OutTool..ShowAll">Outside Tool</a></li>
+<p></p>
+</div>
+<a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.UserPref..ShowAll">User Preferences</a><br>
+<br>
+<a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/login.fcgi?call=so.SignOn..Change">Change Password</a><br>
+<a class="sidebar" href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.Session..End">Log Out</a><br>
+
+
+<!------- end of left column ------->
+	
+		  </td>
+		  <!-- extra column to force things over the gif border --> 
+		  <td width="15"><img src="ClinicalTrials_files/transparent.gif" width="15" height="8" border="0"> 
+		  </td>
+
+		  <!-- right content column  --> 
+		  <td>
+                    <div class="mainview">
+                    <!-- -------- view --------- -->                   
+                      <form name="frmCubby" action="/entrez/cubby.fcgi" method="get">
+  
+                      <!-- Message -->
+                      
+<div class="tabs"> 
+<ul> 
+<li class="tab" onclick="gotoTab('Choose');" title="Choose from a list of most commonly-requested filters"> 
+<a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.EFilt.PubMed%7E0.Choose">Choose
+</a>
+</li> 
+<li class="tab selected" class="tab selected">Browse
+</li> 
+<li class="tab" onclick="gotoTab('Search');" title="Search all of the available filters for this database"> 
+<a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.EFilt.PubMed%7E0.Search">Search
+</a> 
+</li> 
+<li class="tab myfilters" onclick="gotoTab('Selection');" title="The filters you have selected for this database"> 
+<a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.EFilt.PubMed%7E0.Selection">My Filters
+</a> 
+</li> 
+</ul>                       
+</div>
+  
+                      <div id="tablabel">Browse filters by Category.</div>
+                      <div id="catname"><a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.EFilt..ShowDbs">Select Filters</a> &gt; <a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.EFilt.pubmed%7E0.Browse&amp;callpath=QueryExt.EFilt.PubMed%7E0.Browse;QueryExt.EFilt.pubmed%7E1851.Browse;QueryExt.EFilt.pubmed%7E1878.Browse">PubMed</a> &gt; <a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.EFilt.pubmed%7E1851.Browse&amp;callpath=QueryExt.EFilt.PubMed%7E0.Browse;QueryExt.EFilt.pubmed%7E1851.Browse;QueryExt.EFilt.pubmed%7E1878.Browse">LinkOut</a> &gt; <a href="http://schroeder.ncbi.nlm.nih.gov:2441/entrez/cubby.fcgi?call=QueryExt.EFilt.pubmed%7E1878.Browse&amp;callpath=QueryExt.EFilt.PubMed%7E0.Browse;QueryExt.EFilt.pubmed%7E1851.Browse;QueryExt.EFilt.pubmed%7E1878.Browse">Medical Resources</a> &gt; Clinical Trials</div>
+  <div id="topform">
+   <div id="filhead">Filters</div>
+    <div id="fils">
+      <table class="filtertable" cellpadding="0" cellspacing="0">
+        <tbody><tr>
+          <th class="col0">Filter</th>
+          <th class="col1">Add Icon</th>
+          <th class="col2">Filter name and description</th>
+        </tr>
+  
+        <tr class="selectall">
+          <td class="col0">
+            <input id="grp1315" name="fid" type="checkbox" value="1315" />
+          </td>
+          <td class="col1">
+            <input id="grp20" name="subjid" type="checkbox" value="20" />
+          </td>
+          <td class="col2">
+            <em>Select all.</em> Select all filters and/or icons in this category.
+          </td>        
+        </tr>
+  
+        </tr>
+        <tr class="even"><td class="col0"><input name="fid" type="checkbox" value="277"></td>
+  <td class="col1"></td>
+  <td class="col2"><em>Cancer.Gov</em> Cancer.Gov - A Service of the
+  National Cancer Institute. Credible. Current. Comprehensive. Your
+  gateway to the most recent and accurate cancer information from the
+  National Cancer Institute, a component of the National Institutes of
+  Health.</td>
+  </tr>
+  <tr><td class="col0"><input name="fid" type="checkbox" value="338"></td>
+  <td class="col1"><input name="provid" type="checkbox" value="3654"></td>
+  <td class="col2"><em>ClinicalTrials.gov</em> (ctgov) ClinicalTrials.gov provides members of the public current information .</td>
+  </tr>
+  
+      </tbody></table>
+    </div>
+  </div>
+  <br>
+  
+  <input name="filters" type="hidden" value="1315,277,338">
+  <input name="providers" type="hidden" value="3654">
+  <input name="subjects" type="hidden" value="20">
+  <input type="hidden" name="call" value="">
+  <input type="hidden" name="callpath" value="QueryExt.EFilt.PubMed~0.Browse;QueryExt.EFilt.pubmed~1851.Browse;QueryExt.EFilt.pubmed~1878.Browse;QueryExt.EFilt.pubmed~1879.Browse">
+  <input name="Update Filter Preferences" class="button" onclick="this.form.call.value='QueryExt.EFilt.pubmed.Update;QueryExt.Session.0.Back';this.form.submit();" type="button" title="Apply changes made on this form" value="Update Filter Preferences"/>
+  			 </form>
+                </div> <!-- Mainview -->
+		</td></tr>
+		<tr valign="top"> 
+		  <td width="125"> </td>
+		  <td width="15"> </td>
+		  <td width="100%"> </td>
+		</tr>
+		<tr valign="top"> 
+		  <td width="125" class="GUTTER1"> </td>
+		  <td width="15"> </td>
+		  <td width="100%"> 
+			 
+		  </td>
+		</tr>
+		</tbody></table>                
+	 
+<div class="medium1">
+<center> <a href="mailto:pubmednew@ncbi.nlm.nih.gov">Write to the
+Help Desk</a>
+<br><a href="http://www.ncbi.nlm.nih.gov/">NCBI</a> | <a href="http://www.nlm.nih.gov/">NLM</a>
+| <a href="http://www.nih.gov/">NIH</a>
+<br><a href="http://www.os.dhhs.gov/">Department of Health &amp; Human
+Services</a>
+<br><a href="http://www.nih.gov/icd/od/foia/index.htm">Freedom of Information
+Act</a> | <a href="http://www.ncbi.nlm.nih.gov/About/disclaimer.html">Disclaimer</a></center>
+</div>
+
+	 <script language="JavaScript">document.frmQueryBox.term.focus();</script>
+  </body></html>

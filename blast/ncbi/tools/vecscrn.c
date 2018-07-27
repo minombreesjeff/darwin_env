@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: vecscrn.c,v 6.135 2003/05/30 17:25:38 coulouri Exp $";
+static char const rcsid[] = "$Id: vecscrn.c,v 6.136 2004/07/27 14:26:54 madden Exp $";
 
 /* ===========================================================================
 *
@@ -33,9 +33,12 @@ Author: Tom Madden
 Contents: functions for Vector screening.
 
 ******************************************************************************
- * $Revision: 6.135 $
+ * $Revision: 6.136 $
  *
  * $Log: vecscrn.c,v $
+ * Revision 6.136  2004/07/27 14:26:54  madden
+ * New location for tunf.cgi
+ *
  * Revision 6.135  2003/05/30 17:25:38  coulouri
  * add rcsid
  *
@@ -1038,7 +1041,7 @@ VSPrintOverviewFromSeqLocs (ValNodePtr vnp, Int4 query_length, FILE *outfp)
 
 
 	fprintf(outfp, "<B>Distribution of Vector Matches on the Query Sequence</B>\n\n");
-	fprintf(outfp, "<IMG hspace=1 SRC=http://www.ncbi.nlm.nih.gov/cgi-bin/Entrez/tunf?450x12-1(1)150(%ld)300(%ld)450(%ld)600(%ld)\n", (long) query_length/4, (long) query_length/2, (long) 3*query_length/4, (long) query_length); 
+	fprintf(outfp, "<IMG hspace=1 SRC=http://www.ncbi.nlm.nih.gov/sutils/tunf.cgi?450x12-1(1)150(%ld)300(%ld)450(%ld)600(%ld)\n", (long) query_length/4, (long) query_length/2, (long) 3*query_length/4, (long) query_length); 
 	fprintf(outfp, ">\n");
 	fprintf(outfp, "<IMG hspace=1 SRC=http://www.ncbi.nlm.nih.gov/gorf/gun2.cgi?0M(009g)");
 	if (buffer20)

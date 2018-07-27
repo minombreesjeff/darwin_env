@@ -28,7 +28,7 @@
 *
 * Version Creation Date:   11/8/01
 *
-* $Revision: 6.119 $
+* $Revision: 6.125 $
 *
 * File Description:
 *
@@ -46,9 +46,9 @@
 #include <alignmgr2.h>
 
 /* type used to accumulate align score weights, should be small to save space, but large enough we do not overflow. */
-typedef Uint2 AccumValue_t;
+typedef Int2 AccumValue_t;
 typedef AccumValue_t PNTR AccumValuePtr_t;
-#define ACCUMVALUE_MAX  UINT2_MAX
+#define ACCUMVALUE_MAX  INT4_MAX
 
 /*
   Given a sequence alignment, look at its score
@@ -153,6 +153,7 @@ typedef struct filterProcessState {
   FilterItemPtr    currentFIP;
   ValNodePtr       currentFilterVNP;
   ValNodePtr       needFreeList; /* things to be freed with ValNodeFreeData() after finishing this filter */
+  ValNodePtr       lastInFreeList;
   SegmenT          labelSegs [APPEARANCEITEM_MAX];
   SegmenT          drawSegs [APPEARANCEITEM_MAX];
   Int4             ceiling;
@@ -2997,6 +2998,7 @@ static RelevantFeatureItemPtr GetNextRFIPinAlignmentFilter (
     Char                    labelbuf[150];
     Uint1                   strand;
     AlignSegIterator        asi;
+    ValNodePtr              vnp;
     
     if (FPSP == NULL) return NULL;
     vContext = FPSP->vContext;
@@ -3015,10 +3017,19 @@ static RelevantFeatureItemPtr GetNextRFIPinAlignmentFilter (
 
     /* create new RFIP based on this SeqAlignPtr */
     finalRFIP = MemNew (sizeof (RelevantFeatureItem));
-    if (finalRFIP == NULL || (ValNodeAddPointer (&FPSP->needFreeList, 0, finalRFIP)) == NULL) {
+    if (finalRFIP == NULL) {
         MemFree (finalRFIP);
         return NULL;
     }
+    vnp = ValNodeAddPointer (&FPSP->lastInFreeList, 0, finalRFIP);
+    if (vnp == NULL) {
+        MemFree (finalRFIP);
+        return NULL;
+    }
+    if (FPSP->needFreeList == NULL) {
+      FPSP->needFreeList = FPSP->lastInFreeList;
+    }
+    FPSP->lastInFreeList = vnp;
 
    /* where does this alignment start & stop in bioseq coords? */
     nsegs = AlignSegIteratorCreate(SAlnP, SID, &asi);
@@ -3180,17 +3191,29 @@ static RelevantFeatureItemPtr GetNextRFIPinAlignmentFilter (
     }
 
     /* remember to delete the final ivals array & label space */
-    if (finalRFIP->numivals > 1 && ValNodeAddPointer(&FPSP->needFreeList, 0, finalRFIP->ivals) == NULL)
+    if (finalRFIP->numivals > 1)
+    {
+        vnp = ValNodeAddPointer(&FPSP->lastInFreeList, 0, finalRFIP->ivals);
+        if (vnp == NULL) {
+            MemFree(finalRFIP->ContentLabel);
+            MemFree(finalRFIP->ivals);
+            return NULL;
+        }
+        if (FPSP->needFreeList == NULL) {
+          FPSP->needFreeList = FPSP->lastInFreeList;
+        }
+        FPSP->lastInFreeList = vnp;
+    }
+    vnp = ValNodeAddPointer(&FPSP->lastInFreeList, 0, finalRFIP->ContentLabel);
+    if (vnp == NULL)
     {
         MemFree(finalRFIP->ContentLabel);
-        MemFree(finalRFIP->ivals);
         return NULL;
     }
-    if (ValNodeAddPointer(&FPSP->needFreeList, 0, finalRFIP->ContentLabel) == NULL)
-    {
-        MemFree(finalRFIP->ContentLabel);
-        return NULL;
+    if (FPSP->needFreeList == NULL) {
+      FPSP->needFreeList = FPSP->lastInFreeList;
     }
+    FPSP->lastInFreeList = vnp;
             
     return finalRFIP;
 }
@@ -3305,7 +3328,8 @@ void  MakeIvals(Int1* accumulator, Int4 accumBegin, Int4 accumLen, Int4Ptr ivals
   return a pointer to that iterator struct that must be deallocated.
    return the number of segments.
 */
-static Int4 AlignSegIteratorCreate(SeqAlignPtr sap, SeqIdPtr sip,  AlignSegIteratorPtr asip)
+static 
+Int4 AlignSegIteratorCreate(SeqAlignPtr sap, SeqIdPtr sip,  AlignSegIteratorPtr asip)
 {
   Boolean             stdSeg;
   Int4                swap;
@@ -3351,7 +3375,8 @@ static Int4 AlignSegIteratorCreate(SeqAlignPtr sap, SeqIdPtr sip,  AlignSegItera
   Return false if there are no more segments in which case the output arguments
   will not be changed.
 */
-static Boolean AlignSegIteratorNext(
+static 
+Boolean AlignSegIteratorNext(
   AlignSegIteratorPtr asip, 
   Int4Ptr       startOut, 
   Int4Ptr       stopOut, 
@@ -4005,7 +4030,7 @@ static Uint2 SingleRowLayout (
 
 {
   RelevantFeatureItemPtr RFIP, lastRFIP;
-  ValNodePtr       freeVNP;
+  ValNodePtr       freeVNP, vnp;
   Uint4            smearStart, smearStop;
   Uint1            smearFeatdeftype;
   ViewerContextPtr vContext;
@@ -4061,7 +4086,11 @@ static Uint2 SingleRowLayout (
       lastRFIP->circularSpanningOrigin = FALSE;
       lastRFIP->featdeftype = smearFeatdeftype;
       lastRFIP->numivals = 1;
-      ValNodeAddPointer (&FPSP->needFreeList, 0, lastRFIP);
+      vnp = ValNodeAddPointer (&FPSP->lastInFreeList, 0, lastRFIP);
+      if (FPSP->needFreeList == NULL) {
+        FPSP->needFreeList = FPSP->lastInFreeList;
+      }
+      FPSP->lastInFreeList = vnp;
       smearing = FALSE;
       AddFeatureToRow (firstRow, lastRFIP, TRUE, FPSP);
       justSmeared = FALSE;
@@ -4101,7 +4130,8 @@ static Uint2 SingleRowLayout (
   will be drawn in as a result of this call to FilterAndLayout in the current sanLevelSeg.
   return FALSE if there is an error. Return true whether we draw anything or not.
 */
-static Boolean DrawNamedAnnotBox(FilterProcessStatePtr FPSP)
+static 
+Boolean DrawNamedAnnotBox(FilterProcessStatePtr FPSP)
 {
   ViewerContextPtr vContext;
   CharPtr          annotName;
@@ -4541,7 +4571,7 @@ static Boolean LIBCALLBACK Asn2gphSegmentExploreProc (
   bsp = vContext->BSP;
   ValNodeAddPointer (&vContext->BSPsegmentVNP, 0, RFIP);
   sip = SeqLocId (slp);
-  if (sip != NULL && sip->choice == SEQID_GI && BioseqFindCore (sip) != NULL) {
+  if (sip != NULL && sip->choice == SEQID_GI /* && BioseqFindCore (sip) != NULL */) {
     gi = sip->data.intvalue;
     newid = SeqIdStripLocus (GetSeqIdForGI (gi));
     sip = newid;
@@ -4659,7 +4689,8 @@ static Int4 DrawBioseqSegments (
     DrawFeatureAndLabel (&FPS.renderParm, vContext);
   }
   if (FPS.needFreeList != NULL) {
-    ValNodeFreeData (FPS.needFreeList);
+    FPS.needFreeList = ValNodeFreeData (FPS.needFreeList);
+    FPS.lastInFreeList = NULL;
   }
   ValNodeFreeData (listHead);
   vContext->BSPsegmentVNP = NULL;
@@ -5551,350 +5582,249 @@ static Int4 WeightFromAlignScore(SeqAlignPtr sap, Uint1 scoreType)
   return weight;
 }
 
-/* uncomment to use 'chunked' arrays (all allocations in 64K chunks) for making the Alignment Smear */
-/* #define CHUNKED_ACCUMULATOR 1 /* */
-
-#ifdef CHUNKED_ACCUMULATOR
-/*
-  ChunkedArray 
-  An array allocated, not continguously in memory, but in chunks to reduce
-  the memory allocation strain.
-  Use AccumValue_t as the data type of the array elements.
-  memory accesses are unchecked.
-*/
-/* should be a power of 8 so as to be evenly divisble by sizeof(AccumValue_t) */
-#define CA_CHUNK_SIZE   (64*1024) 
-#define CA_ITEMSPERCHUNK  (CA_CHUNK_SIZE/sizeof(AccumValue_t))
-
-typedef struct ChunkedArray_struct { 
-  AccumValuePtr_t  PNTR chunks;   /* for data access */
-  ValNodePtr    chunkList;  /* for memory management */
-  size_t        nchunks;
-} PNTR ChunkedArray;
-
-
-static void FreeChunkedArray(ChunkedArray* ca);
-
-static ChunkedArray
-NewChunkedArray(size_t size)
-{
-  ChunkedArray    newca;
-  AccumValuePtr_t   aChunk;
-  size_t itemsPerChunk = CA_ITEMSPERCHUNK;
-  size_t nchunks = 1 + size / itemsPerChunk;
-  Int4    i;
-  
-  newca = MemNew(sizeof(struct ChunkedArray_struct));
-  if (newca == NULL)
-    return NULL;
-    
-  newca->nchunks = nchunks;
-  newca->chunks = MemNew(sizeof(AccumValuePtr_t) * nchunks);
-  if ( newca->chunks == NULL) {
-    FreeChunkedArray(&newca);
-    return NULL;
-  }
-  
-  for (i = 0; i < nchunks; ++i) {
-    aChunk = MemNew(CA_CHUNK_SIZE);
-    if (aChunk == NULL || ValNodeAddPointer (&newca->chunkList, 0, aChunk) == NULL) {
-      FreeChunkedArray(&newca);
-      return NULL;
-    }
-    newca->chunks[i] = aChunk;
-  }
-  
-  return newca;
-}
-
-static void
-FreeChunkedArray(ChunkedArray* ca)
-{
-     
-  if (ca == NULL || *ca == NULL)
-    return;
-
-  ValNodeFreeData((*ca)->chunkList);
-  MemFree((*ca)->chunks);
-  MemFree(*ca);
-  *ca = NULL;
-}
-
-static void 
-SetCA(ChunkedArray ca, size_t index, AccumValue_t value)
-{
-  size_t  chunk_index = index / CA_ITEMSPERCHUNK;
-  size_t  val_index = index % CA_ITEMSPERCHUNK;
-  
-  if (chunk_index > ca->nchunks)
-    return;
-  ca->chunks[chunk_index][val_index] = value;
-}
-
-static AccumValue_t 
-GetCA(ChunkedArray ca, size_t index)
-{
-  size_t  chunk_index = index / CA_ITEMSPERCHUNK;
-  size_t  val_index = index % CA_ITEMSPERCHUNK;
-  
-  if (chunk_index > ca->nchunks)
-    return 0;
-  return ca->chunks[chunk_index][val_index];
-}
-
-#endif /* CHUNKED_ACCUMULATOR */
 
 /*
   Interval Accumulator
   An object which can add or in some way (specified by accumop) intervals on a sequence,
   then from which can be extracted the resulting intervals.
 */
+
+#define ACCUMVALUE_GAP  -1
+
 typedef enum AccumlatorOp {
  NLM_SUM_WEIGHT = 0,
  NLM_MAX_WEIGHT
 } AccumulatorOp;
 
-typedef struct IntervalAccumulator {
-#ifdef CHUNKED_ACCUMULATOR
-  ChunkedArray        densities;
-  ChunkedArray        gapDensities;
-#else
-  AccumValuePtr_t     densities;
-  BoolPtr             gapDensities;
-#endif
-  Uint4               densitiesLength;
-  AccumulatorOp       accumOp;
-  Uint2               minDensity;
-} IntervalAccumulator, PNTR IntervalAccumulatorPtr;
 
-static IntervalAccumulatorPtr
-NewIntervalAccumulator(Uint4 length, AccumulatorOp accumOp, AccumValue_t minDensity)
+typedef struct AccumNode_s {
+  Uint4         coord;
+  AccumValue_t  weight;
+  struct AccumNode_s * next;  /* makes a single-linked list. */
+} AccumNode, *AccumNodePtr;
+
+
+static AccumNodePtr
+InsertNodeAfter(AccumNodePtr node, Uint4 coord, AccumValue_t weight)
 {
-  IntervalAccumulatorPtr iap = NULL;
+  AccumNodePtr new_node = (AccumNodePtr) Nlm_MemNew(sizeof(AccumNode));
+  if (new_node == NULL) return NULL;
   
-  iap = MemNew(sizeof(IntervalAccumulator));
-  if (NULL == iap) 
-    return NULL;
-    
-  iap->accumOp = accumOp;
-  iap->densitiesLength = length;
-  if (minDensity == 0)
-    minDensity = 1;
-  iap->minDensity = minDensity; /* the smallest density we will report as an interval */
-#ifdef CHUNKED_ACCUMULATOR
-  iap->densities = NewChunkedArray(length);
-#else
-  iap->densities = MemNew(length * sizeof(AccumValue_t));
-#endif
-  if (NULL == iap->densities) {
-    MemFree(iap);
-    return NULL;
+  new_node->coord = coord;
+  new_node->weight = weight;
+  if (node != NULL) {
+    new_node->next = node->next;
+    node->next = new_node;
   }
-#ifdef CHUNKED_ACCUMULATOR
-  iap->gapDensities = NewChunkedArray(length);
-  if (NULL == iap->gapDensities) {
-    FreeChunkedArray(&iap->densities);
-    MemFree(iap);
-    iap = NULL;
+  return new_node;
+}
+
+static AccumNodePtr
+AppendNode(AccumNodePtr head, Uint4 coord, AccumValue_t weight)
+{
+  while (head->next != NULL)
+    head = head->next;
+  return InsertNodeAfter(head, coord, weight);
+}
+
+static void 
+FreeAccumNodes(AccumNodePtr node)
+{
+  AccumNodePtr del_me;
+  while (node) {
+    del_me = node;
+    node = node->next;
+    Nlm_MemFree(del_me);
   }
-#else
-  iap->gapDensities = MemNew(length * sizeof(Boolean));
-  if (NULL == iap->gapDensities) {
-    MemFree(iap->densities);
-    MemFree(iap);
-    iap = NULL;
-  }
-#endif
-  return iap;
-} 
+}
 
 static void
-FreeIntervalAccumulator(IntervalAccumulatorPtr PNTR iapp)
+AccumulateWeight(AccumNodePtr node, AccumValue_t w2, AccumulatorOp op)
 {
-  IntervalAccumulatorPtr iap;
+  AccumValue_t w1;
   
+  if (w2 == 0)
+    return;
+  
+  w1 = node->weight;
+  
+  /* gap trumps 0, any weight trumps a gap. */
+  if ((w1 == ACCUMVALUE_GAP  &&  w2 <= 0)  ||
+      (w2 == ACCUMVALUE_GAP  &&  w1 <= 0)) {
+    node->weight = ACCUMVALUE_GAP;
+  } else if (w1 == ACCUMVALUE_GAP){
+    node->weight = w2; 
+  } else if (w2 == ACCUMVALUE_GAP){
+    node->weight = w1; 
+  } else if (op  == NLM_MAX_WEIGHT) {
+    /* max of the weights. */
+    if (w2 > w1)
+      node->weight = w2;
+  } else {
+    /* NLM_SUM_WEIGHT */
+    if (node->weight < ACCUMVALUE_MAX - w2) /* avoid overflow. */
+      node->weight += w2;
+    else
+      node->weight = ACCUMVALUE_MAX;
+  }
+}
+
+
+typedef struct IntervalAccumulator {
+  AccumNodePtr        nodes;
+  AccumulatorOp       accumOp;
+  AccumValue_t        maxWeight;
+} IntervalAccumulator, PNTR IntervalAccumulatorPtr;
+
+
+static IntervalAccumulatorPtr
+NewIntervalAccumulator(Uint4 len, AccumulatorOp op)
+{
+  AccumNodePtr tail_node;
+  IntervalAccumulatorPtr IAP;
+
+  IAP = (IntervalAccumulatorPtr) Nlm_MemNew(sizeof(IntervalAccumulator));
+  if (IAP == NULL) return NULL;
+  IAP->nodes = InsertNodeAfter(NULL, 0, 0); /* header node. coord 0. */
+  if (IAP->nodes == NULL) {
+    Nlm_MemFree(IAP);
+    return NULL;
+  }
+  tail_node = AppendNode(IAP->nodes, len, 0); /* tail node. max coord. */
+  if (tail_node == NULL) {
+    FreeAccumNodes(IAP->nodes);
+    Nlm_MemFree(IAP);
+    return NULL;
+  }
+  IAP->accumOp = op;
+  return IAP;
+}
+
+static void
+FreeIntervalAccumulator(IntervalAccumulatorPtr *iapp)
+{
+  IntervalAccumulatorPtr IAP;
+
   if (iapp == NULL || *iapp == NULL) return;
-  iap = *iapp;
-#ifdef CHUNKED_ACCUMULATOR
-  FreeChunkedArray(&iap->gapDensities);
-  FreeChunkedArray(&iap->densities);
-#else
-  MemFree(iap->gapDensities);
-  MemFree(iap->densities);
-#endif
-  MemFree(iap);
+  IAP = *iapp;
+  FreeAccumNodes(IAP->nodes);
+  Nlm_MemFree(IAP);
   *iapp = NULL;
 }
 
+
+/* merge in a list of segments. */
 static void
-AccumulateInterval(IntervalAccumulatorPtr iap, Uint4 start, Uint4 stop, AccumValue_t weight, Boolean isGap)
+AccumSegments(IntervalAccumulatorPtr accum, AccumNodePtr new_nodes)
 {
-  Int4  i;
-#ifdef CHUNKED_ACCUMULATOR
-  AccumValue_t  av;
-#endif
-  
-  if (NULL == iap) return;
-  if (iap->densitiesLength <= start) return;
-  if (weight <= 0) return;
-  
-  stop = MIN(stop, iap->densitiesLength - 1);
 
-  if (!isGap) {
-    switch (iap->accumOp)  {
-    case NLM_MAX_WEIGHT :
-      for (i = start; i <= stop; i++) {
-#ifdef CHUNKED_ACCUMULATOR
-        if (weight > GetCA(iap->densities, i))
-          SetCA(iap->densities, i, weight);
-#else
-        if (weight > iap->densities[i])
-          iap->densities[i] = weight;
-#endif
-      }
-      break;
-    case NLM_SUM_WEIGHT :
-    default :
-      for (i = start; i <= stop; i++) {
-#ifdef CHUNKED_ACCUMULATOR
-        av = GetCA(iap->densities, i) + weight;
-        if (av < ACCUMVALUE_MAX)
-          SetCA(iap->densities, i, av);
-#else
-        if (iap->densities[i] + weight < ACCUMVALUE_MAX)
-          iap->densities[i] += weight;
-#endif
-      }
-      break;
-    }
-  }
-  else {
-    /* ignore weight in gaps */
-    for (i = start; i <= stop; i++) {
-#ifdef CHUNKED_ACCUMULATOR
-      SetCA(iap->gapDensities, i, TRUE);
-#else
-      iap->gapDensities[i] = TRUE;  
-#endif
-    }
-  }
+	AccumNodePtr prev_node = accum->nodes; 	/* add our node right before this one. */
+  AccumValue_t old_weight = 0;    /* the weight of the last old node passed. */
+	AccumValue_t in_weight = 0; 		/* the weight of the last new node entered. */
+	
+	AccumNodePtr in_node;
+	
+	in_node = new_nodes;
+  /* skip header node in the input, if we have one. */
+	if (in_node->weight == 0  &&  in_node->coord == 0)
+	  in_node = in_node->next;
+		
+  for (; in_node != NULL; in_node = in_node->next) {
+	
+		/* we are adding in_node now. */
+		
+		/* Find where to insert in_node.  */
+		/* while extending the range of the last node added. */
+		while (prev_node->next != NULL  && 
+			   in_node->coord > prev_node->next->coord) {
+			prev_node = prev_node->next;
+			old_weight = prev_node->weight;
+			AccumulateWeight(prev_node, in_weight, accum->accumOp); 
+		}
+		in_weight = in_node->weight;
+
+		/* insert at node. */
+		if (in_node->coord == prev_node->next->coord) {
+		  prev_node = prev_node->next;
+			old_weight = prev_node->weight;
+			AccumulateWeight(prev_node, in_weight, accum->accumOp); 
+		} else {
+		  AccumulateWeight(in_node, old_weight, accum->accumOp);
+  		InsertNodeAfter(prev_node, in_node->coord, in_node->weight);
+  		prev_node = prev_node->next; /* skip the one we just inserted. */
+		} 
+	}
+	
+	ASSERT(in_weight > 0);
+  /* extend last range to the end of the accumulator. 
+	if (in_weight > 0) {
+		while (prev_node->next != NULL) {
+			prev_node = prev_node->next;
+			AccumulateWeight(prev_node, in_weight, accum->accumOp); 
+		}
+	}
+	*/
 }
 
-static Uint2 GetMaxDensity(IntervalAccumulatorPtr iap)
+
+
+
+/* Retrieve information. */
+
+static AccumValue_t
+GetMaxWeight(const IntervalAccumulatorPtr IAP) 
 {
-  AccumValue_t maxDensity = 0, av;
-  Int4  i;
-  
-  if (NULL == iap) return 0;
-  for (i = 0; i < iap->densitiesLength; i++) {
-#ifdef CHUNKED_ACCUMULATOR
-    av = GetCA(iap->densities, i);
-#else
-    av = iap->densities[i];
-#endif
-    if (av > maxDensity)
-      maxDensity = av;
-  }
-  return maxDensity;
+  AccumNodePtr node; 
+  AccumValue_t max_weight = 0;
+
+	for (node = IAP->nodes->next; /* skip the header node. */
+	     node->next != NULL;  /* skip the last (dummy) node. */
+	     node = node->next) { 
+    if (max_weight < node->weight)
+      max_weight = node->weight;
+	}
+	return max_weight;
 }
 
-static Uint4
+
+static AccumNodePtr
 GetIntervalFromAccumulator(
   IntervalAccumulatorPtr iap, 
-  Uint4 n, 
+  AccumNodePtr nextPos, 
   Uint4Ptr startp, 
   Uint4Ptr stopp, 
-  AccumValuePtr_t densityp, 
-  BoolPtr isGapp
+  AccumValuePtr_t weightp
 )
 {
   Uint4             start, stop;
-  AccumValue_t      density = 0;
-  Boolean           isGap = FALSE;
+  AccumValue_t      weight = 0;
   
-  if (NULL == iap) return FALSE;
+  if (NULL == iap  &&  nextPos == NULL) return NULL;
 
-  /* skip over empty spaces */
-/* Don't skip over them. Report them as an interval with gap = false and density = 0.
-  for ( ; n < iap->densitiesLength; n++) {
-#ifdef CHUNKED_ACCUMULATOR
-    if (GetCA(iap->densities, n) >= iap->minDensity ||
-        GetCA(iap->gapDensities, n))
-#else
-    if (iap->densities[n] >= iap->minDensity ||
-        iap->gapDensities[n]) 
-#endif
-      break;
-  }
-*/
-  if (n >= iap->densitiesLength)
-    return 0;
-    
-  start = n;
-#ifdef CHUNKED_ACCUMULATOR
-  if (GetCA(iap->densities, start) >= iap->minDensity)
-#else
-  if (iap->densities[start] >= iap->minDensity) 
-#endif
-  { 
-    /* an block */
-#ifdef CHUNKED_ACCUMULATOR
-    density = GetCA(iap->densities, start);
-#else
-    density = iap->densities[start];
-#endif
-    isGap = FALSE;
-    /* scan for end of block */ 
-    for ( ; n < iap->densitiesLength; n++) {
-#ifdef CHUNKED_ACCUMULATOR
-      if (GetCA(iap->densities, start) != GetCA(iap->densities, n))
-#else
-      if (iap->densities[start] != iap->densities[n]) 
-#endif
-        break;
-    }
-  }
-#ifdef CHUNKED_ACCUMULATOR
-  else if (GetCA(iap->gapDensities, start))
-#else
-  else if (iap->gapDensities[start])
-#endif
-  {  /* assert gapDensities[n] ==  TRUE && densities[n] < minDensity */
-    /* a gap */
-    density = 0;
-    isGap = TRUE;
-    /* scan for end of the gap */ 
-    for ( ; n < iap->densitiesLength; n++) {
-#ifdef CHUNKED_ACCUMULATOR
-      if (! GetCA(iap->gapDensities, n) || GetCA(iap->densities, n) > 0)
-#else
-      if (!iap->gapDensities[n] || iap->densities[n] > 0) 
-#endif
-        break;
-    }
-  } else { /* a space, not a gap or a block */
-    density = 0;
-    isGap = FALSE;
-    /* scan for end of space */
-    for ( ; n < iap->densitiesLength; n++) {
-#ifdef CHUNKED_ACCUMULATOR
-      if (GetCA(iap->gapDensities, n) || GetCA(iap->densities, n) > 0)
-#else
-      if (iap->gapDensities[n] || iap->densities[n] > 0) 
-#endif
-        break;
-    }
-  }
+  if (iap  &&  nextPos == NULL)
+    nextPos = iap->nodes->next;  /* skip leading 0,0 node. */
   
-  stop = n;
+  /* are we at the end? */
+  if (nextPos == NULL  ||  nextPos->next == NULL)  /* nextPos == NULL would be an error. */
+    return NULL;
+  
+  start = nextPos->coord;
+  weight = nextPos->weight;
+  
+  /* go to the next node. */
+  nextPos = nextPos->next;
+  /* skip redundant nodes. Those with the same weight as the preceding one. */
+  while (nextPos->next  &&  nextPos->weight == weight)
+    nextPos = nextPos->next;
+  stop = nextPos->coord;
   
   if (startp) *startp = start;
   if (stopp)  *stopp  = stop;
-  if (densityp) *densityp = density;
-  if (isGapp) *isGapp = isGap;
+  if (weightp) *weightp = weight;
   
-  return n;
+  return nextPos;
 }
+
 
 
 static Uint2 SmearAlignments (
@@ -5918,11 +5848,11 @@ static Uint2 SmearAlignments (
   Uint1                    minCol = 224; /* density == min -> light gray */
   Uint1                    maxCol = 0;   /* density == max -> black */
   
-  IntervalAccumulatorPtr   plusIAP = NULL, minusIAP = NULL;
-  Uint4                    accumPos;
+  IntervalAccumulatorPtr   plusIAP = NULL, minusIAP = NULL;  /* Smear accumulators */
+  AccumNodePtr             thisAlignSegs = NULL;  /* input to the accumulators per alignment */
+  AccumNodePtr             accumPos;              /* output iterator on the accumulators. */
   Uint4                    begin, end;
   Int4                     space_pixs;
-  Boolean                  isGap;
   AccumValue_t             weight;
   AccumValue_t             density;
 
@@ -5960,9 +5890,9 @@ static Uint2 SmearAlignments (
   else if (StringStr(annotName, "BLASTN - nr"))
     separateStrands = FALSE;
 
-  plusIAP =  NewIntervalAccumulator(vContext->seqLength, sumOrMax, minDensity);
+  plusIAP =  NewIntervalAccumulator(vContext->seqLength, sumOrMax);
   if (plusIAP == NULL)  goto smearAlignmentsDone;
-  minusIAP = NewIntervalAccumulator(vContext->seqLength, sumOrMax, minDensity);
+  minusIAP = NewIntervalAccumulator(vContext->seqLength, sumOrMax);
   if (minusIAP == NULL)  goto smearAlignmentsDone;
     
   /* 
@@ -6000,12 +5930,21 @@ static Uint2 SmearAlignments (
         alignSorted[alignIndex - 1].stop < alignSorted[alignIndex].start)
     {
       start = alignSorted[alignIndex - 1].stop;
-      stop  = alignSorted[alignIndex].start;
-
-      if (strand != Seq_strand_minus || !separateStrands)
-        AccumulateInterval(plusIAP, start, stop, alignSorted[alignIndex].normScore, TRUE);
-      else
-        AccumulateInterval(minusIAP, start, stop, alignSorted[alignIndex].normScore, TRUE);
+      AppendNode(thisAlignSegs, start, ACCUMVALUE_GAP );
+    } else {
+      /* we are starting a new alignment.  */
+      /* Smear the last alignment's segments. */
+      if (alignIndex > 0) {
+        AppendNode(thisAlignSegs, alignSorted[alignIndex - 1].stop, 0);
+        if (alignSorted[alignIndex - 1].strand != Seq_strand_minus || !separateStrands )
+          AccumSegments(plusIAP, thisAlignSegs);
+        else
+          AccumSegments(minusIAP, thisAlignSegs);
+      }
+      
+      /* Prepare space for the new alignment's segment info.  */
+      FreeAccumNodes(thisAlignSegs);
+      thisAlignSegs = InsertNodeAfter(NULL, 0, 0);
     }
         
     /*
@@ -6020,27 +5959,29 @@ static Uint2 SmearAlignments (
       if (segType == AM_INSERT || start < 0 || stop < 0)
         continue;
         
-      if (segType == AM_GAP ) 
-      {  /* a gap */
-        if (strand != Seq_strand_minus || !separateStrands)
-          AccumulateInterval(plusIAP, start, stop, weight, TRUE);
-        else
-          AccumulateInterval(minusIAP, start, stop, weight, TRUE);
+      if (segType == AM_GAP ) {  /* a gap */
+        AppendNode(thisAlignSegs, start, ACCUMVALUE_GAP );
       }
-      else if (segType == AM_SEQ)
-      { /* a real alignment. */
+      else if (segType == AM_SEQ) { /* a real alignment. */
+        AppendNode(thisAlignSegs, start, weight );
         if (strand != Seq_strand_minus || !separateStrands) {
           smearedAlignsPlus = TRUE;
-          AccumulateInterval(plusIAP, start, stop, weight, FALSE);
-        }
-        else {
+        } else {
           smearedAlignsMinus = TRUE;
-          AccumulateInterval(minusIAP, start, stop, weight, FALSE);
         }
       }
-        
+  
     } /* for all segments in an alignment */
   } /* for all alignments in an annotation */
+  
+    /* Smear the last alignment's segments. */
+   if (alignIndex > 0) {
+    AppendNode(thisAlignSegs, alignSorted[alignIndex - 1].stop, 0);
+    if (alignSorted[alignIndex - 1].strand != Seq_strand_minus || !separateStrands )
+      AccumSegments(plusIAP, thisAlignSegs);
+    else
+      AccumSegments(minusIAP, thisAlignSegs);
+  }
 
   if (!smearedAlignsPlus && !smearedAlignsMinus) 
     goto smearAlignmentsDone; /* there was nothing to show. */
@@ -6053,12 +5994,12 @@ static Uint2 SmearAlignments (
 
   if (smearedAlignsPlus || !separateStrands) {
     height += space_line_height;
-    maxDensity = GetMaxDensity(plusIAP);
+    maxDensity = GetMaxWeight(plusIAP);
 
-    accumPos = GetIntervalFromAccumulator(plusIAP, 0, &begin, &end, &density, &isGap);
-    while (accumPos > 0) {
+    accumPos = GetIntervalFromAccumulator(plusIAP, NULL, &begin, &end, &density);
+    while (accumPos != NULL) {
     
-      if (density > 0) {
+      if (density > 0  && density != ACCUMVALUE_GAP) {
           /* convert  (1 - maxDensity) to "color" number (224 - 0) */
         if (maxDensity == minDensity) {
           col = minCol;
@@ -6070,14 +6011,14 @@ static Uint2 SmearAlignments (
         AddRectangle (seg, begin, FPSP->ceiling - height, 
                            end,   FPSP->ceiling - height - (AIP->Height), NO_ARROW, TRUE, 0);
       }
-      else if (isGap) {
+      else if (density == ACCUMVALUE_GAP) {
         AddAttribute (seg, COLOR_ATT, NULL, 0, 0, 1, 0);
         AddLine (seg, begin, FPSP->ceiling - height - (AIP->Height)/2, 
                       end,   FPSP->ceiling - height - (AIP->Height)/2, NO_ARROW, 0);
-      } else { 
+      } else { /* density == 0 */
         /* put a small line above spaces between blocks we draw */
         if (0 < begin  &&  end < vContext->seqLength) { /* ignore gaps at beginning and end of bioseq */
-          ASSERT(!isGap && density == 0);
+          ASSERT(density == 0);
           space_pixs = (end - begin)/vContext->viewScale;
           /* if (3 <= space_pixs  &&  space_pixs <= 10  &&  end < vContext->seqLength) { */
           if (space_pixs <= 20) { /* don't draw this line if it is more than 20 pixels long. */
@@ -6092,7 +6033,7 @@ static Uint2 SmearAlignments (
           }
         }
       }
-      accumPos = GetIntervalFromAccumulator(plusIAP, accumPos, &begin, &end, &density, &isGap);
+      accumPos = GetIntervalFromAccumulator(NULL, accumPos, &begin, &end, &density);
     }
     /* put a little arrow to show this is the plus strand */
     if (separateStrands) {
@@ -6104,12 +6045,12 @@ static Uint2 SmearAlignments (
   }
   
   if (smearedAlignsMinus) {
-    maxDensity = GetMaxDensity(minusIAP);
+    maxDensity = GetMaxWeight(minusIAP);
 
-    accumPos = GetIntervalFromAccumulator(minusIAP, 0, &begin, &end, &density, &isGap);
-    while (accumPos > 0) {
+    accumPos = GetIntervalFromAccumulator(minusIAP, NULL, &begin, &end, &density);
+    while (accumPos != NULL) {
     
-      if (density > 0) {
+      if (density > 0  && density != ACCUMVALUE_GAP) {
           /* convert  (1 - maxDensity) to "color" number (224 - 0) */
         if (maxDensity == minDensity) {
           col = minCol;
@@ -6121,14 +6062,14 @@ static Uint2 SmearAlignments (
         AddRectangle (seg, begin, FPSP->ceiling - height, 
                            end,   FPSP->ceiling - height - (AIP->Height), NO_ARROW, TRUE, 0);
       }
-      else if (isGap) {
+      else if (density == ACCUMVALUE_GAP) {
         AddAttribute (seg, COLOR_ATT, NULL, 0, 0, 1, 0);
         AddLine (seg, begin, FPSP->ceiling - height - (AIP->Height)/2, 
                       end,   FPSP->ceiling - height - (AIP->Height)/2, NO_ARROW, 0);
       } else { 
         /* put a small line above spaces between blocks we draw */
         if (0 < begin  &&  end < vContext->seqLength) { /* ignore gaps at beginning and end of bioseq */
-          ASSERT(!isGap && density == 0);
+          ASSERT(density == 0);
           space_pixs = (end - begin)/vContext->viewScale;
           /* if (3 <= space_pixs  &&  space_pixs <= 10  &&  end < vContext->seqLength) { */
           if (space_pixs <= 20) { /* don't draw this line if it is more than 20 pixels long. */
@@ -6143,7 +6084,7 @@ static Uint2 SmearAlignments (
           }
         }
       }
-      accumPos = GetIntervalFromAccumulator(minusIAP, accumPos, &begin, &end, &density, &isGap);
+      accumPos = GetIntervalFromAccumulator(NULL, accumPos, &begin, &end, &density);
     }
     AddAttribute (seg, COLOR_ATT, NULL, 0, 0, 1, 0);
     AddTextLabel (seg, 0, FPSP->ceiling - height - (AIP->Height)/2, 
@@ -6417,8 +6358,8 @@ static Boolean FilterAndLayout (
     }
     FPS.ceiling -= height + FIP->GroupPadding;
     if (FPS.needFreeList != NULL) {
-      ValNodeFreeData (FPS.needFreeList);
-      FPS.needFreeList = NULL;
+      FPS.needFreeList = ValNodeFreeData (FPS.needFreeList);
+      FPS.lastInFreeList = NULL;
     }
   } /* for ( FP->FilterItemList->next ) */
 
@@ -6445,8 +6386,8 @@ static Boolean FilterAndLayout (
     FPS.ceiling -= 20;
   }
   if (FPS.needFreeList != NULL) {
-    ValNodeFreeData (FPS.needFreeList);
-    FPS.needFreeList = NULL;
+    FPS.needFreeList = ValNodeFreeData (FPS.needFreeList);
+    FPS.lastInFreeList = NULL;
   }
 
   if (vContext->ceiling != NULL) {
@@ -6844,7 +6785,6 @@ static ConfigFileLine defaultStyleLines12 [] = {
   {"showtype", "no"},
   {"showcontent", "yes"},
   {"format", "accession"},
-  {"displaywith", "outlinebox"},
   {NULL, NULL}
 };
 
@@ -6922,7 +6862,6 @@ static ConfigFileLine defaultStyleLines19 [] = {
   {"showtype", "no"},
   {"showcontent", "yes"},
   {"format", "accession"},
-  {"displaywith", "outlinebox"},
   {NULL, NULL}
 };
 
@@ -6973,11 +6912,12 @@ static ConfigFileLine defaultStyleLines24 [] = {
 static ConfigFileLine defaultStyleLines25 [] = {
   {"name", "Default"},
   {"layout", "compact"},
-  {"group1", "defaultFilt-gene-cds-prot-mrna"},
-  {"group2", "defaultFilt-other-rnas"},
-  {"group3", "defaultFilt-exon-intron-label"},
-  {"group4", "defaultFilt-variations"},
-  {"group5", "defaultFilt-conflicts"},
+  {"group1", "defaultFilt-operons"},
+  {"group2", "defaultFilt-gene-cds-prot-mrna"},
+  {"group3", "defaultFilt-other-rnas"},
+  {"group4", "defaultFilt-exon-intron-label"},
+  {"group5", "defaultFilt-variations"},
+  {"group6", "defaultFilt-conflicts"},
   {"group7", "defaultFilt-STS"},
   {"group8", "defaultFilt-impfeats"},
   {"group9", "defaultFilt-alignments"},
@@ -7009,8 +6949,17 @@ static ConfigFileLine defaultStyleLines27 [] = {
   {NULL, NULL}
 };
 
-/* [filters.defaultFilt-exon-intron-label] */
+/* [filters.defaultFilt-operons] */
 static ConfigFileLine defaultStyleLines28 [] = {
+  {"feature1", "operon"},
+  {"name", "Operons"},
+  {"grouplabel", "none"},
+  {"label", "above"},
+  {NULL, NULL}
+};
+
+/* [filters.defaultFilt-exon-intron-label] */
+static ConfigFileLine defaultStyleLines29 [] = {
   {"feature1", "exon"},
   {"feature2", "intron"},
   {"name", "Introns and Exons"},
@@ -7020,7 +6969,7 @@ static ConfigFileLine defaultStyleLines28 [] = {
 };
 
 /* [filters.defaultFilt-variations] */
-static ConfigFileLine defaultStyleLines29 [] = {
+static ConfigFileLine defaultStyleLines30 [] = {
   {"feature1", "variation"},
   {"name", "Variations"},
   {"groupbox", "true"},
@@ -7033,7 +6982,7 @@ static ConfigFileLine defaultStyleLines29 [] = {
 };
 
 /* [filters.defaultFilt-conflicts] */
-static ConfigFileLine defaultStyleLines30 [] = {
+static ConfigFileLine defaultStyleLines31 [] = {
   {"feature1", "conflict"},
   {"name", "Conflicts"},
   {"groupbox", "true"},
@@ -7046,7 +6995,7 @@ static ConfigFileLine defaultStyleLines30 [] = {
 };
 
 /* [filters.defaultFilt-STS] */
-static ConfigFileLine defaultStyleLines31 [] = {
+static ConfigFileLine defaultStyleLines32 [] = {
   {"feature1", "STS"},
   {"name", "STS"},
   {"groupbox", "true"},
@@ -7059,7 +7008,7 @@ static ConfigFileLine defaultStyleLines31 [] = {
 };
 
 /* [filters.defaultFilt-impfeats] */
-static ConfigFileLine defaultStyleLines32 [] = {
+static ConfigFileLine defaultStyleLines33 [] = {
   {"feature1", "import"},
   {"name", "Import Features"},
   {"grouplabel", "none"},
@@ -7068,7 +7017,7 @@ static ConfigFileLine defaultStyleLines32 [] = {
 };
 
 /* [filters.defaultFilt-alignments] */
-static ConfigFileLine defaultStyleLines33 [] = {
+static ConfigFileLine defaultStyleLines34 [] = {
   {"feature1", "align"},
   {"name", "Alignments"},
   {"grouplabel", "none"},
@@ -7079,7 +7028,7 @@ static ConfigFileLine defaultStyleLines33 [] = {
 };
 
 /* [filters.defaultFilt-everything-else-label] */
-static ConfigFileLine defaultStyleLines34 [] = {
+static ConfigFileLine defaultStyleLines35 [] = {
   {"feature1", "everything"},
   {"grouplabel", "none"},
   {"label", "above"},
@@ -7087,7 +7036,7 @@ static ConfigFileLine defaultStyleLines34 [] = {
 };
 
 /* [summary] */
-static ConfigFileLine defaultStyleLines35 [] = {
+static ConfigFileLine defaultStyleLines36 [] = {
   {"group1", "summary-gene-rna-cds-nolabel"},
   {"group2", "summary-allelse"},
   {"group3", "summary-aligns-nolabel"},
@@ -7101,7 +7050,7 @@ static ConfigFileLine defaultStyleLines35 [] = {
 };
 
 /* [filters.summary-gene-rna-cds-nolabel] */
-static ConfigFileLine defaultStyleLines36 [] = {
+static ConfigFileLine defaultStyleLines37 [] = {
   {"feature1", "gene"},
   {"feature2", "rna"},
   {"feature3", "cds"},
@@ -7111,14 +7060,14 @@ static ConfigFileLine defaultStyleLines36 [] = {
 };
 
 /* [filters.summary-aligns-nolabel] */
-static ConfigFileLine defaultStyleLines37 [] = {
+static ConfigFileLine defaultStyleLines38 [] = {
   {"feature1", "align"},
   {"label", "none"},
   {NULL, NULL}
 };
 
  /* [filters.summary-allelse] */
-static ConfigFileLine defaultStyleLines38 [] = {
+static ConfigFileLine defaultStyleLines39 [] = {
   {"feature1", "everything"},
   {"layout", "smear"},
   {"label", "none"},
@@ -7154,17 +7103,18 @@ static StaticConfigFile defaultStyle [] = {
   {defaultStyleLines25, "defaultFilt"},
   {defaultStyleLines26, "filters.defaultFilt-gene-cds-prot-mrna"},
   {defaultStyleLines27, "filters.defaultFilt-other-rnas"},
-  {defaultStyleLines28, "filters.defaultFilt-exon-intron-label"},
-  {defaultStyleLines29, "filters.defaultFilt-variations"},
-  {defaultStyleLines30, "filters.defaultFilt-conflicts"},
-  {defaultStyleLines31, "filters.defaultFilt-STS"},
-  {defaultStyleLines32, "filters.defaultFilt-impfeats"},
-  {defaultStyleLines33, "filters.defaultFilt-alignments"},
-  {defaultStyleLines34, "filters.defaultFilt-everything-else-label"},
-  {defaultStyleLines35, "summary"},
-  {defaultStyleLines36, "filters.summary-gene-rna-cds-nolabel"},
-  {defaultStyleLines37, "filters.summary-aligns-nolabel"},
-  {defaultStyleLines38, "filters.summary-allelse"},
+  {defaultStyleLines28, "filters.defaultFilt-operons"},
+  {defaultStyleLines29, "filters.defaultFilt-exon-intron-label"},
+  {defaultStyleLines30, "filters.defaultFilt-variations"},
+  {defaultStyleLines31, "filters.defaultFilt-conflicts"},
+  {defaultStyleLines32, "filters.defaultFilt-STS"},
+  {defaultStyleLines33, "filters.defaultFilt-impfeats"},
+  {defaultStyleLines34, "filters.defaultFilt-alignments"},
+  {defaultStyleLines35, "filters.defaultFilt-everything-else-label"},
+  {defaultStyleLines36, "summary"},
+  {defaultStyleLines37, "filters.summary-gene-rna-cds-nolabel"},
+  {defaultStyleLines38, "filters.summary-aligns-nolabel"},
+  {defaultStyleLines39, "filters.summary-allelse"},
   {NULL, NULL}
 };
 

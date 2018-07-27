@@ -29,7 +29,7 @@
 *
 * Version Creation Date:        1/1/92
 *
-* $Revision: 6.5 $
+* $Revision: 6.7 $
 *
 * File Description: 
 *
@@ -37,6 +37,9 @@
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: ni_types.h,v $
+* Revision 6.7  2004/11/19 14:11:03  lavr
+* Reinstate OBSOLETED eNII_ constants which still may be in use in some DEAD code in the toolkit
+*
 * Revision 6.5  2002/08/08 01:52:28  lavr
 * Default dispatcher set to SERVICE
 *
@@ -226,10 +229,10 @@ typedef struct NI_Uid {
 typedef enum {
   /* Refer to "s_NII" in "ni_lib_.c" when changing the enumerator ordering
    * or adding new interfaces */
-  eNII_Dispatcher = 0,  /* old-fashioned NCBI dispatched-based connection   */
-  eNII_WWW,             /* WWW-based connection                             */
-  eNII_WWWFirewall,     /* eNII_WWW + pass through the NCBI firewall daemon */
-  eNII_WWWDirect,       /* WWW-based stateless connection                   */
+  eNII_Dispatcher = 0,  /* old-fashioned NCBI dispatched-based connection  | OBSOLETE */
+  eNII_WWW,             /* WWW-based connection                            | OBSOLETE */
+  eNII_WWWFirewall,     /* eNII_WWW + pass through the NCBI firewall daemon| OBSOLETE */
+  eNII_WWWDirect,       /* WWW-based stateless connection                  | OBSOLETE */
   eNII_Service,         /* SERVICE-based connection                         */
   eNII_Debug,           /* direct client-server connection                  */
 

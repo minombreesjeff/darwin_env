@@ -16,8 +16,6 @@ extern "C" { /* } */
 
 /**************************************************
 *
-*    Generated objects for Module NCBI-ID2Access
-*    Generated using ASNCODE Revision: 6.0 at May 3, 2004  6:18 PM
 *
 **************************************************/
 
@@ -334,6 +332,12 @@ typedef struct struct_ID2_Reply {
    struct struct_ID2_Error PNTR   error;
    Uint1   end_of_reply;
    ValNodePtr   Reply_reply;
+   Uint2   discard;
+   /* following #defines are for enumerated type, not used by object loaders */
+#define ID2_Reply_discard_reply 0
+#define ID2_Reply_discard_last_octet_string 1
+#define ID2_Reply_discard_nothing 2
+
 } ID2Reply, PNTR ID2ReplyPtr;
 
 
@@ -427,6 +431,7 @@ NLM_EXTERN Boolean LIBCALL ID2ReplyGetPackageAsnWrite PROTO (( ID2ReplyGetPackag
 typedef struct struct_ID2_Reply_Get_Seq_id {
    struct struct_ID2_Request_Get_Seq_id PNTR   request;
    ValNodePtr   seq_id;
+   Uint1   end_of_reply;
 } ID2ReplyGetSeqId, PNTR ID2ReplyGetSeqIdPtr;
 
 
@@ -447,6 +452,7 @@ typedef struct struct_ID2_Reply_Get_Blob_Id {
    struct struct_ID2_Blob_Id PNTR   blob_id;
    Int4   split_version;
    struct struct_ID2S_Seq_annot_Info PNTR   annot_info;
+   Uint1   end_of_reply;
 } ID2ReplyGetBlobId, PNTR ID2ReplyGetBlobIdPtr;
 
 
@@ -549,6 +555,14 @@ NLM_EXTERN ID2SReplyGetChunkPtr LIBCALL ID2SReplyGetChunkFree PROTO ((ID2SReplyG
 NLM_EXTERN ID2SReplyGetChunkPtr LIBCALL ID2SReplyGetChunkNew PROTO (( void ));
 NLM_EXTERN ID2SReplyGetChunkPtr LIBCALL ID2SReplyGetChunkAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
 NLM_EXTERN Boolean LIBCALL ID2SReplyGetChunkAsnWrite PROTO (( ID2SReplyGetChunkPtr , AsnIoPtr, AsnTypePtr));
+
+/* following #defines are for enumerated type, not used by object loaders */
+#define ID2_Blob_State_live 0
+#define ID2_Blob_State_suppressed_temp 1
+#define ID2_Blob_State_suppressed 2
+#define ID2_Blob_State_dead 3
+#define ID2_Blob_State_protected__ 4
+#define ID2_Blob_State_withdrawn 5
 
 
 

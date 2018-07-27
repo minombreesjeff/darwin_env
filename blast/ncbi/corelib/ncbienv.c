@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/7/91
 *
-* $Revision: 6.36 $
+* $Revision: 6.38 $
 *
 * File Description:
 *       portable environment functions, companions for ncbimain.c
@@ -37,6 +37,12 @@
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: ncbienv.c,v $
+* Revision 6.38  2004/10/27 20:00:44  kans
+* Ncbienv_FileOpen suppresses missing file error post
+*
+* Revision 6.37  2004/08/06 20:56:27  kans
+* G/SetAppParam on PC no longer uses PrivateProfileString functions - instead it checks USERPROFILE, SYSTEMROOT, and then NCBI environment variables
+*
 * Revision 6.36  2004/02/11 18:40:00  kans
 * enhanced GetOpSysString to report specific version of MS Windows
 *
@@ -303,7 +309,6 @@ static void Nlm_TransientLogSetApp(const Nlm_Char* file, const Nlm_Char* section
 static void Nlm_FreeEnvData(Nlm_env_sectPtr esp);
 static void Nlm_FreeTransientData(void);
 
-#ifndef OS_MSWIN
 static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm_Boolean create);
 static Nlm_Char* Nlm_TrimString(Nlm_Char* str);
 static Nlm_Boolean Nlm_ReadConfigFile(FILE* fp);
@@ -334,6 +339,18 @@ static Nlm_Boolean destroyDeadComments = FALSE;
 *      if configuration file is found, tries to read the parameter from it.
 *
 *****************************************************************************/
+
+static FILE* LIBCALL Ncbienv_FileOpen (const char *filename, const char *mode)
+
+{
+  FILE    *fp;
+  ErrSev  sev;
+
+  sev = ErrSetMessageLevel (SEV_ERROR);
+  fp = FileOpen (filename, mode);
+  ErrSetMessageLevel (sev);
+  return fp;
+}
 
 static Nlm_Int2 
 Nlm_WorkGetAppParam(const Nlm_Char* file, 
@@ -681,6 +698,7 @@ static Nlm_Boolean Nlm_GetHome(Nlm_Char* buf, Nlm_Int2 buflen)
 static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm_Boolean create)
 
 {
+  Nlm_Char  ch;
   FILE      *fp;
   Nlm_Int2  i;
   Nlm_Int2  len;
@@ -703,21 +721,22 @@ static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm
     /* if the name isn't all lowercase, make it so now */
     len = (Nlm_Int2) Nlm_StringLen (str);
     for (i = 0; i < len; i++) {
-      str [i] = TO_LOWER (str [i]);
+      ch = str [i];
+      str [i] = TO_LOWER (ch);
     }
     if (Nlm_GetHome (path, sizeof (path))) {
       Nlm_FileBuildPath(path, "Library", NULL);
       Nlm_FileBuildPath(path, "Preferences", NULL);
       Nlm_FileBuildPath(path, NULL, str);
-      fp = Nlm_FileOpen (path, "r");
+      fp = Ncbienv_FileOpen (path, "r");
       if (fp == NULL && create) {
-        fp = Nlm_FileOpen (path, "w");
+        fp = Ncbienv_FileOpen (path, "w");
         Nlm_FileClose (fp);
-        fp = Nlm_FileOpen (path, "r");
+        fp = Ncbienv_FileOpen (path, "r");
       }
       if (writeMode && fp != NULL) {
         Nlm_FileClose (fp);
-        fp = Nlm_FileOpen (path, "w");
+        fp = Ncbienv_FileOpen (path, "w");
       }
       if (fp != NULL) {
         return fp;
@@ -729,7 +748,7 @@ static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm
       FileBuildPath(path, "Contents", NULL);
       FileBuildPath (path, "Resources", NULL);
       Nlm_FileBuildPath (path, NULL, str);
-      fp = Nlm_FileOpen (path, "r");
+      fp = Ncbienv_FileOpen (path, "r");
       if (fp != NULL) {
         return fp;
       }
@@ -745,12 +764,13 @@ static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm
     }
     len = (Nlm_Int2) Nlm_StringLen (str);
     for (i = 0; i < len; i++) {
-      str [i] = TO_LOWER (str [i]);
+      ch = str [i];
+      str [i] = TO_LOWER (ch);
     }
     Nlm_StringNCpy_0(path, str, sizeof(path));
 
     if (! dontUseLocalConfig)
-      fp = Nlm_FileOpen (path, "r");
+      fp = Ncbienv_FileOpen (path, "r");
     if (fp == NULL) {
       if (Nlm_GetHome (path, sizeof (path))) {
         Nlm_FileBuildPath(path, NULL, str);
@@ -758,11 +778,11 @@ static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm
         Nlm_StringNCpy_0(path, str, sizeof(path));
       }
       if (! dontUseLocalConfig)
-        fp = Nlm_FileOpen (path, "r");
+        fp = Ncbienv_FileOpen (path, "r");
       if (fp == NULL && create) {
-        newfp = Nlm_FileOpen (path, "w");
+        newfp = Ncbienv_FileOpen (path, "w");
         Nlm_FileClose (newfp);
-        newfp = Nlm_FileOpen (path, "r");
+        newfp = Ncbienv_FileOpen (path, "r");
       }
     }
     if (fp == NULL) {
@@ -770,11 +790,11 @@ static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm
       pth = getenv ("NCBI");
       if (pth != NULL) {
         Nlm_FileBuildPath(path, pth, str + 1);
-        fp = Nlm_FileOpen (path, "r");
+        fp = Ncbienv_FileOpen (path, "r");
         if (fp == NULL) {
           path[0] = '\0';
           Nlm_FileBuildPath(path, pth, str);
-          fp = Nlm_FileOpen (path, "r");
+          fp = Ncbienv_FileOpen (path, "r");
         }
       }
     }
@@ -788,13 +808,116 @@ static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm
     }
     if (writeMode && fp != NULL) {
       Nlm_FileClose (fp);
-      fp = Nlm_FileOpen (path, "w");
+      fp = Ncbienv_FileOpen (path, "w");
     }
   }
   return fp;
 }
 
 #endif /* OS_UNIX */
+
+#ifdef OS_MSWIN
+/*****************************************************************************
+*
+*   Nlm_OpenConfigFile (file, writeMode, create)
+*      returns a file pointer to the specified configuration file.
+*      1)  looks in the current directory for "file.ini", but will not
+*          create a new file in this directory.
+*      2)  then looks in the home directory for ".filerc".
+*      3)  then looks for an environment variable "NCBI" and takes its
+*          value as a complete path to a directory containing the
+*          configuration file "filerc" or ".filerc".
+*
+*      Steps (1) and (2) above are omitted if the NCBI_DONT_USE_LOCAL_CONFIG
+*      environment variable is set.  This can be used to allow specific
+*      production applications to avoid stray .ncbirc files which may have
+*      been erroneously generated.
+*
+*****************************************************************************/
+
+static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm_Boolean create)
+
+{
+  Nlm_Char  ch;
+  FILE      *fp;
+  Nlm_Int2  i;
+  Nlm_Int2  len;
+  FILE      *newfp;
+  Nlm_Char  path [PATH_MAX+1];
+  Nlm_Char  str [FILENAME_MAX+1];
+  Nlm_CharPtr  tmp;
+
+  fp = NULL;
+  newfp = NULL;
+
+  if (file != NULL) {
+
+    /* normalize file name */
+    Nlm_StringNCpy_0(str, file, sizeof(str) - 4);
+    if ( ! Nlm_Qualified (str) ) {
+        /* if the user has already supplied a name with .xxx use that name
+         * otherwise add the .ini here */
+        Nlm_StringCat(str, ".INI");
+    }
+    /* if the name isn't all uppercase, make it so now */
+    len = (Nlm_Int2) Nlm_StringLen (str);
+    for (i = 0; i < len; i++) {
+      ch = str [i];
+      str [i] = TO_UPPER (ch);
+    }
+
+    /* first try user directory */
+
+    tmp = getenv ("USERPROFILE");
+    if (tmp != NULL && *tmp != '\0') {
+      StringNCpy_0 (path, tmp, sizeof (path));
+      Nlm_FileBuildPath(path, NULL, str);
+      fp = Ncbienv_FileOpen (path, "r");
+      if (fp == NULL && create) {
+        newfp = Ncbienv_FileOpen (path, "w");
+        Nlm_FileClose (newfp);
+        newfp = Ncbienv_FileOpen (path, "r");
+      }
+    }
+
+    /* next try c:\winnt for backward compatibility - read only */
+
+    if (fp == NULL) {
+      tmp = getenv ("SYSTEMROOT");
+      if (tmp != NULL && *tmp != '\0') {
+        StringNCpy_0 (path, tmp, sizeof (path));
+        Nlm_FileBuildPath(path, NULL, str);
+        fp = Ncbienv_FileOpen (path, "r");
+      }
+    }
+
+    /* last try environment variable path - read only */
+
+    if (fp == NULL) {
+      tmp = getenv ("NCBI");
+      if (tmp != NULL && *tmp != '\0') {
+        StringNCpy_0 (path, tmp, sizeof (path));
+        Nlm_FileBuildPath(path, NULL, str);
+        fp = Ncbienv_FileOpen (path, "r");
+      }
+    }
+
+    if (newfp != NULL) {
+      if (fp != NULL) {
+        Nlm_FileClose (newfp);
+        newfp = NULL;
+      } else {
+        fp = newfp;
+      }
+    }
+    if (writeMode && fp != NULL) {
+      Nlm_FileClose (fp);
+      fp = Ncbienv_FileOpen (path, "w");
+    }
+  }
+  return fp;
+}
+#endif /* OS_MSWIN */
 
 
 #if defined(OS_MAC) && !defined(OS_UNIX_DARWIN)
@@ -832,6 +955,7 @@ Nlm_OpenConfigFile(const Nlm_Char* file,
                    Nlm_Boolean writeMode,
                    Nlm_Boolean create )
 {
+    Nlm_Char    ch;
     Nlm_Char    str [FILENAME_MAX+1];
     Nlm_Int2    len;
     long        gesResponse;
@@ -857,7 +981,8 @@ Nlm_OpenConfigFile(const Nlm_Char* file,
     /* if the name isn't all lowercase, make it so now */
     len = (Nlm_Int2) Nlm_StringLen (str);
     for (i = 0; i < len; i++) {
-      str [i] = TO_LOWER (str [i]);
+      ch = str [i];
+      str [i] = TO_LOWER (ch);
     }
     
     /* convert to pascal string for Mac toolbox */
@@ -956,6 +1081,7 @@ static Nlm_Boolean Nlm_GetHome(Nlm_Char* buf, Nlm_Int2 buflen)
 static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm_Boolean create)
 
 {
+  Nlm_Char  ch;
   FILE      *fp;
   Nlm_Int2  i;
   Nlm_Int2  len;
@@ -974,22 +1100,23 @@ static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm
     }
     len = (Nlm_Int2) Nlm_StringLen (str);
     for (i = 0; i < len; i++) {
-      str [i] = TO_LOWER (str [i]);
+      ch = str [i];
+      str [i] = TO_LOWER (ch);
     }
     Nlm_StringNCpy_0(path, str, sizeof(path));
 
-    fp = Nlm_FileOpen (path, "r");  /* File exists? */
+    fp = Ncbienv_FileOpen (path, "r");  /* File exists? */
     if (fp == NULL) {
       if (Nlm_GetHome (path, sizeof (path))) {
         Nlm_FileBuildPath(path, NULL, str);
       } else {
         Nlm_StringNCpy_0(path, str, sizeof(path));
       }
-      fp = Nlm_FileOpen (path, "r");   /* File exists? */
+      fp = Ncbienv_FileOpen (path, "r");   /* File exists? */
       if (fp == NULL && create) {
-        newfp = Nlm_FileOpen (path, "w");
+        newfp = Ncbienv_FileOpen (path, "w");
         Nlm_FileClose (newfp);
-        newfp = Nlm_FileOpen (path, "r");
+        newfp = Ncbienv_FileOpen (path, "r");
       }
     }
 
@@ -998,7 +1125,7 @@ static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm
       pth = getenv ("NCBI");
       if (pth != NULL) {
         Nlm_FileBuildPath(path, pth, str);
-        fp = Nlm_FileOpen (path, "r");
+        fp = Ncbienv_FileOpen (path, "r");
       }
     }
 
@@ -1031,7 +1158,7 @@ static FILE* Nlm_OpenConfigFile(const Nlm_Char* file, Nlm_Boolean writeMode, Nlm
       fgetname(fp,temp);
       Nlm_FileClose (fp);
       delete(temp);
-      fp = Nlm_FileOpen (path, "w");
+      fp = Ncbienv_FileOpen (path, "w");
     }
   }
   return fp;
@@ -1406,89 +1533,6 @@ static void Nlm_PutComment(const Nlm_Char* s, FILE* fp)
   if (s != NULL)
     fputs(s, fp);
 }
-
-#else /* ndef OS_MSWIN */
-
-static void        Nlm_FlushAppParam_ST(void) {}
-static Nlm_Boolean Nlm_CacheAppParam_ST(Nlm_Boolean value)  { return TRUE; }
-
-/*****************************************************************************
-*
-* The "guts" of:
-*   Nlm_GetAppParam (file, section, type, buf, buflen)
-*      finds parameters from configuration files
-*      if configuration file is found, trys to read the parameter from it.
-*
-*****************************************************************************/
-static Nlm_Int2 Nlm_WorkGetAppParam(const Nlm_Char* file, const Nlm_Char* section, const Nlm_Char* type, const Nlm_Char* dflt, Nlm_Char* buf, Nlm_Int2 buflen, Nlm_Boolean searchTransient)
-{
-  static char _empty_string[] = "";
-  Nlm_Char path[PATH_MAX + 1];
-
-  if (buf == NULL  ||  buflen <= 0)
-    return 0;
-
-  *buf = '\0';
-  if (searchTransient  &&
-      Nlm_TransientLookup(file, section, type, dflt, buf, buflen))
-    {
-      return (Nlm_Int2)Nlm_StringLen(buf);
-    }
-
-  if ( dflt )
-    Nlm_StringNCpy_0(buf, dflt, buflen);
-
-  if (file != NULL && *file != '\0' && section != NULL && *section != '\0')
-    {
-      Nlm_StringNCpy_0(path, file, sizeof(path) - 4);
-      if ( !Nlm_Qualified( path ) )
-        Nlm_StringCat(path, ".INI");
-      if (dflt == NULL)
-        dflt = _empty_string;  /* can't use NULL, must be empty string */
-      return (Nlm_Int2)GetPrivateProfileString(section,
-                                               type, dflt, buf, buflen, path);
-    }
-  else
-    return (Nlm_Int2)Nlm_StringLen( buf );
-}
-
-/*****************************************************************************
-*
-*   Nlm_SetAppParam (file, section, type, value)
-*      finds paths for types of data and fills in path in buf
-*      if configuration file is found, trys to write the parameter to it.
-*
-*****************************************************************************/
-
-static Nlm_Boolean Nlm_SetAppParam_ST(const Nlm_Char* file, const Nlm_Char* section, const Nlm_Char* type, const Nlm_Char* value)
-{
-  Nlm_Char     path [PATH_MAX+1];
-  Nlm_Boolean  rsult;
-
-  rsult = FALSE;
-  if (file != NULL && *file != '\0' && section != NULL && *section != '\0') {
-    Nlm_StringNCpy_0(path, file, sizeof(path) - 4);
-    if ( ! Nlm_Qualified (path) ) {
-      Nlm_StringCat (path, ".INI");
-    }
-    Nlm_TransientLogSetApp (file, section, type, value);
-    if (WritePrivateProfileString (section, type, value, path)) {
-      rsult = TRUE;
-    }
-  }
-  return rsult;
-}
-
-/*****************************************************************************
-*   Nlm_FreeConfigStruct ()
-*      frees parameter structure in memory
-*****************************************************************************/
-static void Nlm_FreeConfigStruct_ST(void)
-{
-  Nlm_FreeTransientData ();
-}
-
-#endif /* else !OS_MSWIN */
 
 
 /*****************************************************************************

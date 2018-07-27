@@ -29,8 +29,8 @@
 *
 * Version Creation Date:   7/15/95
 *
-* $Revision: 6.116 $
-* $Revision: 6.116 $
+* $Revision: 6.118 $
+* $Revision: 6.118 $
 *
 * File Description:  files that go with "asn2ff"
 *
@@ -396,7 +396,6 @@ Asn2ffJobPtr Asn2ffJobCreate(SeqEntryPtr sep, SeqSubmitPtr ssp, SeqLocPtr slp, F
 /**********************************************************/
 NLM_EXTERN LinkStrPtr asn2ff_print_to_mem(Asn2ffJobPtr ajp, LinkStrPtr lsp)
 {
-    AsnIoPtr        aip;
     CharPtr         string;
     FFPrintArrayPtr pap = NULL;
     Int4            index, pap_size;
@@ -496,7 +495,6 @@ NLM_EXTERN Boolean SeqEntryToEntrez (SeqEntryPtr sep, FILE *fp, SeqIdPtr seqid, 
 	BioseqPtr 			bsp;
 	BioseqSetPtr		bssp;
 	SeqLocPtr 			slp = NULL;
-	DeltaSeqPtr			dsp;
 	SeqLoc				sl;
 	SeqInt				seqint;
 	StdPrintOptionsPtr  Spop = NULL;
@@ -844,9 +842,6 @@ NLM_EXTERN LinkStrPtr SeqEntryToStrArrayEx(SeqEntryPtr sep, Uint1 format,
     StdPrintOptionsPtr	Spop = NULL;
     LinkStrPtr   lsp;
     LinkStrPtr   tlsp;
-    CharPtr PNTR res;
-    CharPtr PNTR tres;
-    Int4         num;
 	Asn2ffJobPtr ajp;
 	ValNodePtr v;
 	BioseqPtr bsp;
@@ -931,9 +926,6 @@ NLM_EXTERN LinkStrPtr SeqEntryToStrArrayQEx(SeqEntryPtr sep,  Uint1 format, Int4
     StdPrintOptionsPtr	Spop = NULL;
     LinkStrPtr   lsp;
     LinkStrPtr   tlsp;
-    CharPtr PNTR res;
-    CharPtr PNTR tres;
-    Int4         num;
 	Asn2ffJobPtr ajp;
 	ValNodePtr v;
 	BioseqPtr bsp;
@@ -1068,8 +1060,6 @@ NLM_EXTERN ByteStorePtr AjpToByteStore(Asn2ffJobPtr ajp)
     StdPrintOptionsPtr Spop = NULL;
     ByteStorePtr       bs;
     BioseqSetPtr       bssp;
-    SeqSubmitPtr       ssp;
-    SeqEntryPtr        sep;
     SeqEntryPtr        tsep;
 
     if(ajp == NULL)
@@ -1583,12 +1573,12 @@ NLM_EXTERN Int4 asn2ff_setup (Asn2ffJobPtr ajp, FFPrintArrayPtr PNTR papp)
 {
 	Int4 pap_size = -1;
 	Asn2ffWEPtr awp;
-	SeqIdPtr sip;
-	Uint2 itemID;
 	GatherScope gs;
 	Uint1 focus;
 	BioseqPtr bsp;
 	SeqEntryPtr sep = NULL;
+
+Message (MSG_POSTERR, "The asn2ff flatfile generator is obsolete and unsupported.  Please switch to using asn2gb/SeqEntryToGnbk in the future.");
 
 	if (ajp->sep != NULL) {
 	  sep = ajp->sep;
@@ -2241,7 +2231,6 @@ Int4 asn2gb_setup(Asn2ffJobPtr ajp, FFPrintArrayPtr PNTR papp)
 	SeqIdPtr sip;
 	TextSeqIdPtr tsip;
 	BioseqPtr bsp;
-	BioseqSetPtr bssp;
 
 	GetLocusPartsAwp(ajp);
 	if ((gbp=ajp->asn2ffwep->gbp) != NULL) {
@@ -2495,9 +2484,8 @@ Int4 asn2gb_setup(Asn2ffJobPtr ajp, FFPrintArrayPtr PNTR papp)
 Int4 asn2gr_setup(Asn2ffJobPtr ajp, FFPrintArrayPtr PNTR papp)
 {
 	FFPrintArrayPtr pap;
-	Int4 index, total, pub_num, seqblks_num;
+	Int4 index, total, pub_num;
 	GBEntryPtr gbp;
-	SeqIdPtr sip;
 
 	GetLocusPartsAwp(ajp);
 	total=0;
@@ -4327,7 +4315,6 @@ static void print_taxinfo(Asn2ffJobPtr ajp, GBEntryPtr gbp, OrgRefPtr orp, CharP
 	DbtagPtr dbp;
 	Int4	id = -1, gcode=1;
 	CharPtr organelle, taxonomy=NULL;
-	OrgNamePtr onp;
 	static Char tmp[3];
 
 	if (orp) {
@@ -5426,8 +5413,8 @@ static void PrintSeqRegion (Asn2ffJobPtr ajp, GBEntryPtr gbp)
 {
 	SeqPortPtr spp;
 	Uint1 residue;
-	Char buffer[MAX_BTP_BUF], num_buffer[10];
-	CharPtr ptr = &(buffer[0]), num_ptr;
+	Char buffer[MAX_BTP_BUF];
+	CharPtr ptr = &(buffer[0]);
 	Int4 total;
 	BioseqPtr bsp;
 

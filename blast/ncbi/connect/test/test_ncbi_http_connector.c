@@ -1,4 +1,4 @@
-/*  $Id: test_ncbi_http_connector.c,v 6.15 2004/04/01 14:14:02 lavr Exp $
+/*  $Id: test_ncbi_http_connector.c,v 6.18 2004/11/23 15:04:39 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -41,9 +41,9 @@
 /* Hard-coded pseudo-registry getter
  */
 
-#define TEST_HOST            "yar.ncbi.nlm.nih.gov"
-#define TEST_PORT            "6224"
-#define TEST_PATH            "/tools/vakatov/con_url.cgi"
+#define TEST_HOST            "www.ncbi.nlm.nih.gov"
+#define TEST_PORT            "80"
+#define TEST_PATH            "/Service/bounce.cgi"
 #define TEST_ARGS            "arg1+arg2+arg3"
 #define TEST_DEBUG_PRINTOUT  "yes"
 #define TEST_REQ_METHOD      "any"
@@ -142,6 +142,15 @@ int main(void)
 /*
  * --------------------------------------------------------------------------
  * $Log: test_ncbi_http_connector.c,v $
+ * Revision 6.18  2004/11/23 15:04:39  lavr
+ * Use public bounce.cgi from "www"
+ *
+ * Revision 6.17  2004/11/22 20:27:32  lavr
+ * Weird 5.123456 timeout restored to the form it used to be
+ *
+ * Revision 6.16  2004/11/22 20:25:27  lavr
+ * "yar" replaced with "graceland"
+ *
  * Revision 6.15  2004/04/01 14:14:02  lavr
  * Spell "occurred", "occurrence", and "occurring"
  *

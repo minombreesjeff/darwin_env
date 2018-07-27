@@ -1,7 +1,7 @@
 #ifndef CONNECT___NCBI_CORE__H
 #define CONNECT___NCBI_CORE__H
 
-/*  $Id: ncbi_core.h,v 6.25 2004/03/12 23:26:22 gorelenk Exp $
+/*  $Id: ncbi_core.h,v 6.27 2005/04/20 18:10:53 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -65,27 +65,6 @@
 #include <connect/ncbi_types.h>
 
 
-/* Run-time debugging */
-#if defined(verify)
-#undef verify
-#endif
-
-#if !defined(NDEBUG)  &&  !defined(_DEBUG)
-#  define NDEBUG
-#endif
-#include <assert.h>
-#if defined(NDEBUG)
-#  define verify(expr)  (void)(expr)
-#else
-/* The following 2 headers are actually only required for Codewarrior
- * on Mac to prototype printf() and abort() respectively :-/
- */
-#  include <stdio.h>
-#  include <stdlib.h>
-#  define verify(expr)  assert(expr)
-#endif
-
-
 /** @addtogroup UtilityFunc
  *
  * @{
@@ -119,7 +98,8 @@ typedef enum {
  */
 typedef enum {
     eIO_WritePlain,
-    eIO_WritePersist
+    eIO_WritePersist,
+    eIO_WriteOutOfBand
 } EIO_WriteMethod;
 
 
@@ -480,6 +460,12 @@ extern NCBI_XCONNECT_EXPORT void REG_Set
  * ===========================================================================
  *
  * $Log: ncbi_core.h,v $
+ * Revision 6.27  2005/04/20 18:10:53  lavr
+ * verify() moved away into a private header (ncbi_assert.h)
+ *
+ * Revision 6.26  2004/12/27 15:30:08  lavr
+ * +eIO_WriteOutOfBand
+ *
  * Revision 6.25  2004/03/12 23:26:22  gorelenk
  * Added export prefixes.
  *

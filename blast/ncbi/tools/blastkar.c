@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: blastkar.c,v 6.100 2004/04/28 14:36:00 madden Exp $";
+static char const rcsid[] = "$Id: blastkar.c,v 6.105 2005/04/27 17:20:45 papadopo Exp $";
 
 /* ===========================================================================
 *
@@ -49,8 +49,34 @@ Detailed Contents:
 	- calculate pseuod-scores from p-values.
 
 ****************************************************************************** 
- * $Revision: 6.100 $
+ * $Revision: 6.105 $
  * $Log: blastkar.c,v $
+ * Revision 6.105  2005/04/27 17:20:45  papadopo
+ * copy X scores to U scores when building score matrix
+ *
+ * Revision 6.104  2005/04/20 19:02:15  lavr
+ * +<assert.h>
+ *
+ * Revision 6.103  2005/01/31 17:02:03  dondosha
+ * Fixed bug in BlastKarlinLHtoK for blastn with penalty == -reward
+ *
+ * Revision 6.102  2004/09/28 16:04:19  papadopo
+ * From Michael Gertz:
+ * 1. Pass the effective database size into BlastSmallGapSumE,
+ *     BlastLargeGapSumE and BlastUnevenGapSumE.  The routines use this
+ *     value in a simplified formula to compute the e-value of singleton sets.
+ * 2. Caused all routines for calculating the significance of multiple
+ *     distinct alignments (BlastSmallGapSumE, BlastLargeGapSumE and
+ *     BlastUnevenGapSumE) to use
+ *
+ *        sum_{i in linked_set} (\lambda_i s_i - \ln K_i)
+ *
+ *     as the weighted sum score, where (\lambda_i, K_i) are taken from
+ *     the appropriate query context.
+ *
+ * Revision 6.101  2004/06/07 20:03:23  coulouri
+ * use floating point constants for comparisons with floating point variables
+ *
  * Revision 6.100  2004/04/28 14:36:00  madden
  * Changes from Mike Gertz:
  * - I created the new routine BlastGapDecayDivisor that computes a
@@ -584,6 +610,7 @@ Detailed Contents:
  *
  * */
 #include <ncbi.h>
+#include <assert.h>
 #include <ncbimath.h>
 #include <objcode.h>
 #include <objseq.h>
@@ -1783,6 +1810,9 @@ static Char ASCII_TO_BLASTNA_CONVERT[128]={
 15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,
 15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15};
 
+#define X_CODE 21
+#define U_CODE 24
+
 Int2 LIBCALL
 BlastScoreBlkMatRead(BLAST_ScoreBlkPtr sbp, FILE *fp)
 {
@@ -1950,6 +1980,15 @@ BlastScoreBlkMatRead(BLAST_ScoreBlkPtr sbp, FILE *fp)
     
     if (sbp->alphabet_code != BLASTNA_SEQ_CODE) {
         sbp->mat_dim1 = a1cnt;
+
+        /* For protein matrices, copy the X scores to the
+           U scores. Keeping the U scores as BLAST_SCORE_MIN
+           means that U never aligns with another letter,
+           even another U */
+        for (index1 = 0; index1 < a2cnt; index1++) {
+            matrix[U_CODE][index1] = matrix[X_CODE][index1];
+            matrix[index1][U_CODE] = matrix[index1][X_CODE];
+        }
     }
     
     NlmMutexUnlock(read_matrix_mutex); 
@@ -3209,7 +3248,7 @@ BlastKarlinLtoH(BLAST_ScoreFreqPtr sfp, Nlm_FloatHi	lambda)
   }
 
   scale = Nlm_Powi( etonlam, high );
-  if( scale > 0 ) {
+  if( scale > 0.0 ) {
     H = lambda * sum/scale;
   } else { /* Underflow of exp( -lambda * high ) */
     H = lambda * exp( lambda * high + log(sum) );
@@ -3421,7 +3460,7 @@ BlastKarlinLHtoK(BLAST_ScoreFreqPtr sfp, Nlm_FloatHi    lambda, Nlm_FloatHi H)
     /* Look for the greatest common divisor ("delta" in Appendix of PNAS 87 of
        Karlin&Altschul (1990) */
     for (i = 1, divisor = -low; i <= range && divisor > 1; ++i) {
-        if (probArrayStartLow[i])
+        if (probArrayStartLow[i] != 0.0)
             divisor = Nlm_Gcd(divisor, i);
     }
 
@@ -3435,15 +3474,14 @@ BlastKarlinLHtoK(BLAST_ScoreFreqPtr sfp, Nlm_FloatHi    lambda, Nlm_FloatHi H)
     expMinusLambda      = exp((Nlm_FloatHi) -lambda);
 
     if (low == -1 && high == 1) {
-        K = (sfp->sprob[low] - sfp->sprob[high]) *
-            (sfp->sprob[low] - sfp->sprob[high]) / sfp->sprob[low];
+        K = (sfp->sprob[low*divisor] - sfp->sprob[high*divisor]) *
+            (sfp->sprob[low*divisor] - sfp->sprob[high*divisor]) / 
+            sfp->sprob[low*divisor];
         return(K);
     }
 
     if (low == -1 || high == 1) {
-        if (high == 1)
-            ;
-        else {
+        if (high != 1) {
             score_avg = sfp->score_avg / divisor;
             firstTermClosedForm
                 = (score_avg * score_avg) / firstTermClosedForm;
@@ -3691,7 +3729,7 @@ BlastKarlinLambdaNR(BLAST_ScoreFreqPtr sfp)
 	sprob = sfp->sprob;
 	/* Find greatest common divisor of all scores */
 	for (i = 1, d = -low; i <= high-low && d > 1; ++i) {
-		if (sprob[i+low] != 0) {
+		if (sprob[i+low] != 0.0) {
 			d = Nlm_Gcd(d, i);
 		}
 	}
@@ -4177,34 +4215,43 @@ f(Nlm_FloatHi	x, Nlm_VoidPtr	vp)
 
 Nlm_FloatHi LIBCALL
 BlastSmallGapSumE(
-    BLAST_KarlinBlkPtr kbp,     /* statistical parameters */
-    Int4 gap,                   /* maximum size of gaps between alignments */
+    Int4 starting_points,       /* the number of starting points
+                                 * permitted between adjacent
+                                 * alignments;
+                                 * max_overlap + max_gap + 1 */
     Int2 num,                   /* the number of distinct alignments in this
                                  * collection */
-    Nlm_FloatHi score_prime,    /* the sum of the scores of these alignments
+    Nlm_FloatHi xsum,           /* the sum of the scores of these alignments
                                  * each weighted by an appropriate value of
-                                 * Lambda */
+                                 * Lambda and logK */
     Int4 query_length,          /* the effective len of the query seq */
     Int4 subject_length,        /* the effective len of the database seq */
+    Int8 dblen_eff,             /* the effective len of the database */
     Nlm_FloatHi weight_divisor) /* a divisor used to weight the e-value
                                  * when multiple collections of alignments
                                  * are being considered by the calling
                                  * routine */
 {
     Nlm_FloatHi search_space;   /* The effective size of the search space */
-    Nlm_FloatHi sum_p;          /* The p-value of this set of alignments */
     Nlm_FloatHi sum_e;          /* The e-value of this set of alignments */
 
-    search_space = (Nlm_FloatHi)subject_length*(Nlm_FloatHi)query_length;
+    if(num == 1) {
+        search_space = (Nlm_FloatHi) query_length * (Nlm_FloatHi)dblen_eff;
 
-    score_prime -= kbp->logK +
-        log(search_space) + (num-1)*(kbp->logK + 2*log((Nlm_FloatHi)gap));
-    score_prime -= LnFactorial((Nlm_FloatHi) num);
+        sum_e = search_space * exp(-xsum);
+    } else {
+        Nlm_FloatHi sum_p;      /* The p-value of this set of alignments */
 
-    sum_p = BlastSumP(num, score_prime);
+        search_space = (Nlm_FloatHi)subject_length * (Nlm_FloatHi)query_length;
 
-    sum_e = BlastKarlinPtoE(sum_p);
+        xsum -=
+          log(search_space) + 2 * (num-1)*log((Nlm_FloatHi)starting_points);
+        xsum -= LnFactorial((Nlm_FloatHi) num);
 
+        sum_p = BlastSumP(num, xsum);
+        sum_e = BlastKarlinPtoE(sum_p) *
+            ((Nlm_FloatHi) dblen_eff / (Nlm_FloatHi) subject_length);
+    }
     if( weight_divisor == 0 || (sum_e /= weight_divisor) > INT4_MAX ) {
         sum_e = INT4_MAX;
     }
@@ -4225,38 +4272,48 @@ BlastSmallGapSumE(
 
 Nlm_FloatHi LIBCALL
 BlastUnevenGapSumE(
-    BLAST_KarlinBlkPtr kbp,     /* statistical parameters */
-    Int4 p_gap,                 /* maximum size of gaps between alignments,
-                                 * in one sequence */
-    Int4 n_gap,                 /* maximum size of gaps between alignments,
-                                 * in the other sequence */
+    Int4 query_start_points,    /* the number of starting points in
+                                 * the query sequence permitted
+                                 * between adjacent alignments;
+                                 * max_overlap + max_gap + 1 */
+    Int4 subject_start_points,  /* the number of starting points in
+                                 * the subject sequence permitted
+                                 * between adjacent alignments */
     Int2 num,                   /* the number of distinct alignments in this
                                  * collection */
-    Nlm_FloatHi score_prime,    /* the sum of the scores of these alignments
+    Nlm_FloatHi xsum,           /* the sum of the scores of these alignments
                                  * each weighted by an appropriate value of
-                                 * Lambda */
+                                 * Lambda and logK */
     Int4 query_length,          /* the effective len of the query seq */
     Int4 subject_length,        /* the effective len of the database seq */
+    Int8 dblen_eff,             /* the effective len of the database */
     Nlm_FloatHi weight_divisor) /* a divisor used to weight the e-value
                                  * when multiple collections of alignments
                                  * are being considered by the calling
                                  * routine */
 {
     Nlm_FloatHi search_space;   /* The effective size of the search space */
-    Nlm_FloatHi sum_p;          /* The p-value of this set of alignments */
     Nlm_FloatHi sum_e;          /* The e-value of this set of alignments */
 
-    search_space = (Nlm_FloatHi)subject_length*(Nlm_FloatHi)query_length;
+    if( num == 1 ) {
+        search_space = (Nlm_FloatHi)query_length * (Nlm_FloatHi)dblen_eff;
 
-    score_prime -=
-        kbp->logK + log(search_space) +
-        (num-1)*(kbp->logK + log((Nlm_FloatHi)p_gap) + log((Nlm_FloatHi)n_gap));
-    score_prime -= LnFactorial((Nlm_FloatHi) num);
+        sum_e = search_space * exp(-xsum);
+    } else {
+        Nlm_FloatHi sum_p;        /* The p-value of this set of alignments */
 
-    sum_p = BlastSumP(num, score_prime);
+        search_space = (Nlm_FloatHi)subject_length * (Nlm_FloatHi)query_length;
 
-    sum_e = BlastKarlinPtoE(sum_p);
+        xsum -= log(search_space) +
+            (num-1)*(log((Nlm_FloatHi) query_start_points) +
+                     log((Nlm_FloatHi) subject_start_points));
+        xsum -= LnFactorial((Nlm_FloatHi) num);
 
+        sum_p = BlastSumP(num, xsum);
+
+        sum_e = BlastKarlinPtoE(sum_p) *
+            ((Nlm_FloatHi) dblen_eff / (Nlm_FloatHi) subject_length);
+    }
     if( weight_divisor == 0 || (sum_e /= weight_divisor) > INT4_MAX ) {
         sum_e = INT4_MAX;
     }
@@ -4271,14 +4328,14 @@ BlastUnevenGapSumE(
 
 Nlm_FloatHi LIBCALL
 BlastLargeGapSumE(
-    BLAST_KarlinBlkPtr kbp,     /* statistical parameters */
     Int2 num,                   /* the number of distinct alignments in this
                                  * collection */
-    Nlm_FloatHi score_prime,    /* the sum of the scores of these alignments
+    Nlm_FloatHi xsum,           /* the sum of the scores of these alignments
                                  * each weighted by an appropriate value of
-                                 * Lambda */
+                                 * Lambda and logK */
     Int4 query_length,          /* the effective len of the query seq */
     Int4 subject_length,        /* the effective len of the database seq */
+    Int8 dblen_eff,             /* the effective len of the database */
     Nlm_FloatHi weight_divisor) /* a divisor used to weight the e-value
                                  * when multiple collections of alignments
                                  * are being considered by the calling
@@ -4294,13 +4351,17 @@ BlastLargeGapSumE(
     lcl_query_length = (Nlm_FloatHi) query_length;
     lcl_subject_length = (Nlm_FloatHi) subject_length;
 
-    score_prime -= num*(kbp->logK + log(lcl_subject_length*lcl_query_length))
-        - LnFactorial((Nlm_FloatHi) num);
+    if( num == 1 ) {
+        sum_e = lcl_query_length * (Nlm_FloatHi) dblen_eff * exp(-xsum);
+    } else {
+        xsum -= num*log(lcl_subject_length*lcl_query_length)
+            - LnFactorial((Nlm_FloatHi) num);
 
-    sum_p = BlastSumP(num, score_prime);
+        sum_p = BlastSumP(num, xsum);
 
-    sum_e = BlastKarlinPtoE(sum_p);
-
+        sum_e = BlastKarlinPtoE(sum_p) *
+            ((Nlm_FloatHi) dblen_eff / (Nlm_FloatHi) subject_length);
+    }
     if( weight_divisor == 0 || (sum_e /= weight_divisor) > INT4_MAX ) {
         sum_e = INT4_MAX;
     }

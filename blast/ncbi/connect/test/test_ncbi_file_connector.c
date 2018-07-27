@@ -1,4 +1,4 @@
-/*  $Id: test_ncbi_file_connector.c,v 6.5 2004/02/23 15:23:43 lavr Exp $
+/*  $Id: test_ncbi_file_connector.c,v 6.6 2005/04/20 18:23:11 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -30,6 +30,7 @@
  *
  */
 
+#include "../ncbi_assert.h"
 #include <connect/ncbi_connection.h>
 #include <connect/ncbi_file_connector.h>
 #include <connect/ncbi_util.h>
@@ -120,6 +121,9 @@ int main(int argc, const char* argv[])
 /*
  * --------------------------------------------------------------------------
  * $Log: test_ncbi_file_connector.c,v $
+ * Revision 6.6  2005/04/20 18:23:11  lavr
+ * +"../ncbi_assert.h"
+ *
  * Revision 6.5  2004/02/23 15:23:43  lavr
  * New (last) parameter "how" added in CONN_Write() API call
  *

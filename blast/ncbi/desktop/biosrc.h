@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/22/95
 *
-* $Revision: 6.2 $
+* $Revision: 6.5 $
 *
 * File Description: 
 *
@@ -64,6 +64,7 @@ extern void FreeOrganismTable (void);
 
 extern void SetupGeneticCodes (void);
 extern void FreeGeneticCodes (void);
+extern ValNodePtr GetGeneticCodeValNodeList (void);
 
 /*
  *  The BioSourceEditProcsPtr may be registered with a call to SetAppProperty
@@ -96,6 +97,25 @@ extern Boolean BioSourceDialogToGenBankDivision (DialoG d, CharPtr div, size_t m
 
 extern Boolean SetBioSourceDialogTaxName (DialoG d, CharPtr taxname);
 
+/* This structure should be passed in as userdata for
+ * RemoveTextFromTextFreeSubSourceModifiers, with the
+ * members all initialized to FALSE.
+ */
+typedef struct modtextfix 
+{
+  Boolean remove_this;
+  Boolean move_this;
+  Boolean remove_all_germline;
+  Boolean remove_all_transgenic;
+  Boolean remove_all_environmental;
+  Boolean remove_all_rearranged;
+  Boolean move_all_germline;
+  Boolean move_all_transgenic;
+  Boolean move_all_environmental;
+  Boolean move_all_rearranged;
+} ModTextFixData, PNTR ModTextFixPtr;
+extern ModTextFixPtr ModTextFixNew (void);
+extern void RemoveTextFromTextFreeSubSourceModifiers (BioSourcePtr biop, Pointer userdata);
 
 #ifdef __cplusplus
 }

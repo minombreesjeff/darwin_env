@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: spidey.c,v 6.69 2004/04/09 16:05:21 kskatz Exp $";
+static char const rcsid[] = "$Id: spidey.c,v 6.71 2005/04/26 21:34:39 kans Exp $";
 
 /* ===========================================================================
 *
@@ -30,13 +30,19 @@ static char const rcsid[] = "$Id: spidey.c,v 6.69 2004/04/09 16:05:21 kskatz Exp
 *
 * Version Creation Date:   5/01
 *
-* $Revision: 6.69 $
+* $Revision: 6.71 $
 *
 * File Description: mrna-to-genomic alignment algorithms and functions
 *
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: spidey.c,v $
+* Revision 6.71  2005/04/26 21:34:39  kans
+* added SEQID_GPIPE
+*
+* Revision 6.70  2005/02/22 17:41:59  kskatz
+* fixed potential dividing by zero in SPI_is_acceptor* and SPI_is_donor* probability calculations
+*
 * Revision 6.69  2004/04/09 16:05:21  kskatz
 * Added sanity check (must be 3 intervals to go through the loop) to SPI_CheckMrnaOrder()
 *
@@ -7321,19 +7327,19 @@ static void SPI_is_donor_user(Uint1Ptr sequence, Int4 seqlen, FloatHiPtr score, 
    ssp = spot->dssp_head;
    /* now calculate for each base the log, adding values to get the score */
    for (j=0; j<seqlen; j++){
-       if (sequence[j] == 0){
+       if (sequence[j] == 0 && ssp->a > 0){
            prob_seqgsite += 
                log10((ssp->a/((FloatHi)acgt[sequence[j]])/seqlen));
        }
-       else if (sequence[j] == 1){
+       else if (sequence[j] == 1 && ssp->c > 0){
            prob_seqgsite +=
                log10((ssp->c/((FloatHi)acgt[sequence[j]])/seqlen));
        }
-       else if (sequence[j] == 2){
+       else if (sequence[j] == 2 && ssp->g > 0){
            prob_seqgsite += 
                log10((ssp->g/((FloatHi)acgt[sequence[j]])/seqlen));
        }
-       else if (sequence[j] == 3){
+       else if (sequence[j] == 3 && ssp->t > 0){
            prob_seqgsite +=
                log10((ssp->t/((FloatHi)acgt[sequence[j]])/seqlen));
        }
@@ -7385,8 +7391,10 @@ static void SPI_is_donor_vert (Uint1Ptr sequence, Int4 seqlen, FloatHiPtr score)
     /* now calculate for each base the log, adding values to get the score */
     for (j=0; j<seqlen; j++){
         if (sequence[j] != 4){
-            prob_seqgsite += 
-                log10((d[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
+            if (d[j][sequence[j]] > 0){
+                prob_seqgsite += 
+                    log10((d[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/(FloatHi)seqlen));
+            }
         }
     }
     *score = pow(10, prob_seqgsite);
@@ -7438,8 +7446,10 @@ static void SPI_is_donor_fly (Uint1Ptr sequence, Int4 seqlen, FloatHiPtr score)
    /* now calculate for each base the log, adding values to get the score */
    for (j=0; j<seqlen; j++){
        if (sequence[j] != 4){
-           prob_seqgsite += 
-               log10((d[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
+           if (d[j][sequence[j]] > 0){
+               prob_seqgsite += 
+                   log10((d[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
+           }
        }
    }
    *score = pow(10, prob_seqgsite);
@@ -7485,8 +7495,10 @@ static void SPI_is_donor_plant (Uint1Ptr sequence, Int4 seqlen, FloatHiPtr score
    /* now calculate for each base the log, adding values to get the score */
    for (j=0; j<seqlen; j++){
        if (sequence[j] != 4){
-           prob_seqgsite += 
-               log10((d[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
+           if (d[j][sequence[j]] > 0){
+               prob_seqgsite += 
+                   log10((d[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
+           }
        }
    }
    *score = pow(10, prob_seqgsite);
@@ -7537,8 +7549,10 @@ static void SPI_is_donor_cele (Uint1Ptr sequence, Int4 seqlen, FloatHiPtr score)
    /* now calculate for each base the log, adding values to get the score */
    for (j=0; j<seqlen; j++){
        if (sequence[j] != 4){
-           prob_seqgsite += 
-               log10((d[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
+           if (d[j][sequence[j]] > 0){
+               prob_seqgsite += 
+                   log10((d[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
+           }
        }
    }
    *score = pow(10, prob_seqgsite);
@@ -7691,19 +7705,19 @@ static void SPI_is_acceptor_user(Uint1Ptr sequence, Int4 seqlen, FloatHiPtr scor
    ssp = spot->assp_head;
    /* now calculate for each base the log, adding values to get the score */
    for (j=0; j<seqlen; j++){
-       if (sequence[j] == 0){
+       if (sequence[j] == 0 && ssp->a > 0){
            prob_seqgsite += 
                log10((ssp->a/((FloatHi)acgt[sequence[j]])/seqlen));
        }
-       else if (sequence[j] == 1){
+       else if (sequence[j] == 1 && ssp->c > 0){
            prob_seqgsite +=
                log10((ssp->c/((FloatHi)acgt[sequence[j]])/seqlen));
        }
-       else if (sequence[j] == 2){
+       else if (sequence[j] == 2 && ssp->g > 0){
            prob_seqgsite += 
                log10((ssp->g/((FloatHi)acgt[sequence[j]])/seqlen));
        }
-       else if (sequence[j] == 3){
+       else if (sequence[j] == 3 && ssp->t > 0){
            prob_seqgsite +=
                log10((ssp->t/((FloatHi)acgt[sequence[j]])/seqlen));
        }
@@ -7763,7 +7777,7 @@ static void SPI_is_acceptor_vert (Uint1Ptr sequence, Int4 seqlen, FloatHiPtr sco
    }
    /* now calculate for each base the log, adding values to get the score */
    for (j=0; j<seqlen; j++){
-       if (sequence[j] != 4){
+       if (sequence[j] != 4 && a[j][sequence[j]] > 0 ){
            prob_seqgsite +=
                log10((a[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
        }
@@ -7822,7 +7836,7 @@ static void SPI_is_acceptor_fly (Uint1Ptr sequence, Int4 seqlen, FloatHiPtr scor
     }
     /* now calculate for each base the log, adding values to get the score */
     for (j=0; j<seqlen; j++){
-        if (sequence[j] != 4){
+        if (sequence[j] != 4 && a[j][sequence[j]] > 0){
             prob_seqgsite +=
                 log10((a[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
         }
@@ -7902,7 +7916,7 @@ static void SPI_is_acceptor_plant (Uint1Ptr sequence, Int4 seqlen, FloatHiPtr sc
    }
    /* now calculate for each base the log, adding values to get the score */
    for (j=0; j<seqlen; j++){
-       if (sequence[j] != 4){
+       if (sequence[j] != 4 && a[j][sequence[j]] > 0){
            prob_seqgsite += 
                log10((a[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
        }
@@ -7960,7 +7974,7 @@ static void SPI_is_acceptor_cele (Uint1Ptr sequence, Int4 seqlen, FloatHiPtr sco
     }
     /* now calculate for each base the log, adding values to get the score */
     for (j=0; j<seqlen; j++){
-        if (sequence[j] != 4){
+        if (sequence[j] != 4 && a[j][sequence[j]] > 0){
             prob_seqgsite += 
                 log10((a[j][sequence[j]])/((FloatHi)acgt[sequence[j]]/seqlen));
         }
@@ -10407,7 +10421,7 @@ static Boolean SPI_GetAccessionFromSeqId(SeqIdPtr sip, Int4Ptr gi, CharPtr PNTR 
       break;
    case SEQID_GENBANK: case SEQID_EMBL: case SEQID_PIR: case SEQID_TPG: case SEQID_TPE: case SEQID_TPD:
    case SEQID_SWISSPROT: case SEQID_DDBJ: case SEQID_PRF:
-   case SEQID_OTHER:
+   case SEQID_OTHER: case SEQID_GPIPE:
       textsip = (TextSeqIdPtr)sip->data.ptrvalue;
       id_len = StringLen(textsip->accession);
       *id = (CharPtr) MemNew(id_len+1);

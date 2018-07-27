@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   9/3/2003
 *
-* $Revision: 1.213 $
+* $Revision: 1.265 $
 *
 * File Description: 
 *
@@ -69,16 +69,16 @@ static void ListClauses (
   Boolean    suppress_final_and
 );
 
-static void LabelClauses (
-  ValNodePtr clause_list,
-  Uint1 biomol,
-  BioseqPtr bsp
-);
+static void LabelClauses 
+( ValNodePtr clause_list,
+  Uint1      biomol,
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag);
 
-static CharPtr GetProductName (
-  SeqFeatPtr cds,
-  BioseqPtr bsp
-);
+static CharPtr GetProductName 
+( SeqFeatPtr cds,
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag);
 
 #define DEFLINE_FEATLIST    1
 #define DEFLINE_CLAUSEPLUS  2
@@ -99,6 +99,7 @@ typedef struct featureclause {
   CharPtr          allelename;
   CharPtr          interval;
   Boolean          is_alt_spliced;
+  Boolean          has_mrna;
   SeqLocPtr        slp;
   GeneRefPtr       grp;
   Boolean          clause_info_only;
@@ -112,8 +113,8 @@ typedef struct featureclause {
 
 FeatureClausePtr NewFeatureClause (
   SeqFeatPtr sfp,
-  BioseqPtr bsp
-);
+  BioseqPtr bsp,
+  Boolean   suppress_locus_tag);
 
 static void PluralizeConsolidatedClauseDescription (
   FeatureClausePtr fcp
@@ -126,7 +127,8 @@ typedef Boolean (LIBCALLBACK *ShouldRemoveFunction) (
   BioseqPtr        bsp,
   Boolean          isLonely,
   Boolean          isRequested,
-  Boolean          isSegment
+  Boolean          isSegment,
+  Boolean          suppress_locus_tag
 );
 
 /* This section of the code contains some functions for dealing with
@@ -324,6 +326,8 @@ static ModifierItemGlobalData DefLineModifiers[] = {
   { "Chromosome"           , FALSE, SUBSRC_chromosome           , FALSE },
   { "Clone"                , FALSE, SUBSRC_clone                , FALSE },
   { "Clone-lib"            , FALSE, SUBSRC_clone_lib            , FALSE },
+  { "Collected-by"         , FALSE, SUBSRC_collected_by         , FALSE },
+  { "Collection-date"      , FALSE, SUBSRC_collection_date      , FALSE },
   { "Common"               , TRUE , ORGMOD_common               , FALSE },
   { "Country"              , FALSE, SUBSRC_country              , FALSE },
   { "Cultivar"             , TRUE , ORGMOD_cultivar             , FALSE },
@@ -335,15 +339,21 @@ static ModifierItemGlobalData DefLineModifiers[] = {
   { "Forma"                , TRUE , ORGMOD_forma                , FALSE },
   { "Forma-specialis"      , TRUE , ORGMOD_forma_specialis      , FALSE },
   { "Frequency"            , FALSE, SUBSRC_frequency            , FALSE },
+  { "Fwd-primer-name"      , FALSE, SUBSRC_fwd_primer_name      , FALSE },
+  { "Fwd-primer-seq"       , FALSE, SUBSRC_fwd_primer_seq       , FALSE },
   { "Genotype"             , FALSE, SUBSRC_genotype             , FALSE },
   { "Germline"             , FALSE, SUBSRC_germline             , FALSE },
   { "Group"                , TRUE , ORGMOD_group                , FALSE },
   { "Haplotype"            , FALSE, SUBSRC_haplotype            , FALSE },
+  { "Identified-by"        , FALSE, SUBSRC_identified_by        , FALSE },
   { "Ins-seq-name"         , FALSE, SUBSRC_insertion_seq_name   , FALSE },
   { "Isolate"              , TRUE , ORGMOD_isolate              , FALSE },
   { "Isolation-source"     , FALSE, SUBSRC_isolation_source     , FALSE },
   { "Lab-host"             , FALSE, SUBSRC_lab_host             , FALSE },
+  { "Lat-lon"              , FALSE, SUBSRC_lat_lon              , FALSE },
   { "Map"                  , FALSE, SUBSRC_map                  , FALSE },
+  {	"Note-OrgMod"          , TRUE,  ORGMOD_other                , FALSE },
+  {	"Note-SubSrc"          , FALSE, SUBSRC_other                , FALSE },
   { "Old-lineage"          , TRUE , ORGMOD_old_lineage          , FALSE },
   { "Old-name"             , TRUE , ORGMOD_old_name             , FALSE },
   { "Pathovar"             , TRUE , ORGMOD_pathovar             , FALSE },
@@ -351,6 +361,8 @@ static ModifierItemGlobalData DefLineModifiers[] = {
   { "Plastid-name"         , FALSE, SUBSRC_plastid_name         , FALSE },
   { "Pop-variant"          , FALSE, SUBSRC_pop_variant          , FALSE },
   { "Rearranged"           , FALSE, SUBSRC_rearranged           , FALSE },
+  { "Rev-primer-name"      , FALSE, SUBSRC_rev_primer_name      , FALSE },
+  { "Rev-primer-seq"       , FALSE, SUBSRC_rev_primer_seq       , FALSE },
   { "Segment"              , FALSE, SUBSRC_segment              , FALSE },
   { "Serogroup"            , TRUE , ORGMOD_serogroup            , FALSE },
   { "Serotype"             , TRUE , ORGMOD_serotype             , FALSE },
@@ -387,6 +399,8 @@ typedef enum {
   DEFLINE_POS_Chromosome,
   DEFLINE_POS_Clone,
   DEFLINE_POS_Clone_lib,
+  DEFLINE_POS_Collected_by,
+  DEFLINE_POS_Collection_date,
   DEFLINE_POS_Common,
   DEFLINE_POS_Country,
   DEFLINE_POS_Cultivar,
@@ -398,15 +412,21 @@ typedef enum {
   DEFLINE_POS_Forma,
   DEFLINE_POS_Forma_specialis,
   DEFLINE_POS_Frequency,
+  DEFLINE_POS_Fwd_primer_name,
+  DEFLINE_POS_Fwd_primer_seq,
   DEFLINE_POS_Genotype,
   DEFLINE_POS_Germline,
   DEFLINE_POS_Group,
   DEFLINE_POS_Haplotype,
+  DEFLINE_POS_Identified_by,
   DEFLINE_POS_Ins_seq_name,
   DEFLINE_POS_Isolate,
   DEFLINE_POS_Isolation_source,
   DEFLINE_POS_Lab_host,
+  DEFLINE_POS_Lat_lon,
   DEFLINE_POS_Map,
+  DEFLINE_POS_Note_orgmod,
+  DEFLINE_POS_Note_subsrc,
   DEFLINE_POS_Old_lineage,
   DEFLINE_POS_Old_name,
   DEFLINE_POS_Pathovar,
@@ -414,6 +434,8 @@ typedef enum {
   DEFLINE_POS_Plastid_name,
   DEFLINE_POS_Pop_variant,
   DEFLINE_POS_Rearranged,
+  DEFLINE_POS_Rev_primer_name,
+  DEFLINE_POS_Rev_primer_seq,
   DEFLINE_POS_Segment,
   DEFLINE_POS_Serogroup,
   DEFLINE_POS_Serotype,
@@ -438,6 +460,45 @@ typedef enum {
 } DefLinePos;
 
 #define NumDefLineModifiers (sizeof (DefLineModifiers) / sizeof (ModifierItemGlobalData))
+
+static Boolean IsNonTextModifierIndex (Int4 mod_index)
+{
+  if (mod_index == DEFLINE_POS_Environmental_sample
+      || mod_index == DEFLINE_POS_Germline
+      || mod_index == DEFLINE_POS_Transgenic
+      || mod_index == DEFLINE_POS_Rearranged)
+  {
+    return TRUE;
+  }
+  else
+  {
+    return FALSE;
+  }
+}
+
+extern ValNodePtr GetSourceQualDescList (Boolean get_subsrc, Boolean get_orgmod)
+{
+  Int4              index;
+  ValNodePtr        source_qual_list = NULL;
+  SourceQualDescPtr sqdp;
+  
+  for (index = 0; index < NumDefLineModifiers; index++)
+  {
+    if ((get_orgmod && DefLineModifiers [index].isOrgMod)
+        || (get_subsrc && ! DefLineModifiers [index].isOrgMod))
+    {
+      sqdp = (SourceQualDescPtr) MemNew (sizeof (SourceQualDescData));
+      if (sqdp != NULL)
+      {
+        sqdp->name = DefLineModifiers [index].name;
+        sqdp->isOrgMod = DefLineModifiers [index].isOrgMod;
+        sqdp->subtype = DefLineModifiers [index].subtype;
+        ValNodeAddPointer (&source_qual_list, 0, sqdp);
+      }
+    }
+  }
+  return source_qual_list;
+}
 
 typedef enum {
   clone_isolate_HIV_rule_prefer_clone = 1,
@@ -1716,26 +1777,90 @@ static void AddHIVModifierIndices (
     if (*modifier_indices == NULL) *modifier_indices = vnp;
   }
 
-  if ( ! have_isolate_in_list
-      && have_isolate_mod
-      && ( clone_isolate_HIV_rule_num == clone_isolate_HIV_rule_prefer_isolate
-        || clone_isolate_HIV_rule_num == clone_isolate_HIV_rule_want_both
-        || ! have_clone_mod))
+  if ((have_clone_in_list && have_clone_mod)
+      || (have_isolate_in_list && have_isolate_mod))
   {
-    vnp = ValNodeNew (*modifier_indices);
-    vnp->data.intvalue = DEFLINE_POS_Isolate;
-    if (*modifier_indices == NULL) *modifier_indices = vnp;
+    /* don't need HIV rule */
   }
-    
-  if ( ! have_clone_in_list
-      && have_clone_mod
-      && ( clone_isolate_HIV_rule_num == clone_isolate_HIV_rule_prefer_clone
-        || clone_isolate_HIV_rule_num == clone_isolate_HIV_rule_want_both
-        || ! have_isolate_mod))
+  else
   {
-    vnp = ValNodeNew (*modifier_indices);
-    vnp->data.intvalue = DEFLINE_POS_Clone;
-    if (*modifier_indices == NULL) *modifier_indices = vnp;
+    if ( ! have_isolate_in_list
+        && have_isolate_mod
+        && ( clone_isolate_HIV_rule_num == clone_isolate_HIV_rule_prefer_isolate
+          || clone_isolate_HIV_rule_num == clone_isolate_HIV_rule_want_both
+          || ! have_clone_mod))
+    {
+      vnp = ValNodeNew (*modifier_indices);
+      vnp->data.intvalue = DEFLINE_POS_Isolate;
+      if (*modifier_indices == NULL) *modifier_indices = vnp;
+    }
+    
+    if ( ! have_clone_in_list
+        && have_clone_mod
+        && ( clone_isolate_HIV_rule_num == clone_isolate_HIV_rule_prefer_clone
+          || clone_isolate_HIV_rule_num == clone_isolate_HIV_rule_want_both
+          || ! have_isolate_mod))
+    {
+      vnp = ValNodeNew (*modifier_indices);
+      vnp->data.intvalue = DEFLINE_POS_Clone;
+      if (*modifier_indices == NULL) *modifier_indices = vnp;
+    }
+  }
+}
+
+/* This function looks for an OrgMod note that contains the phrase
+ * "type strain of".  This function is used to determine whether
+ * strain is a required modifier for the defline for this source.
+ */
+static Boolean HasTypeStrainComment (BioSourcePtr biop)
+{
+  OrgModPtr mod;
+  
+  if (biop == NULL || biop->org == NULL || biop->org->orgname == NULL)
+  {
+    return FALSE;
+  }
+  
+  mod = biop->org->orgname->mod;
+  while (mod != NULL)
+  {
+    if (mod->subtype == 255
+        && StringISearch (mod->subname, "type strain of") != NULL)
+    {
+      return TRUE;
+    }
+    mod = mod->next;
+  }
+  return FALSE;
+}
+
+/* This function checks to see if there is a type strain comment on
+ * the bio source.  If there is one, it checks to see whether strain
+ * is already in the list of modifiers for the definition line.
+ * If strain is not already in the list, it is added.
+ */
+static void 
+AddTypeStrainModifierIndices 
+(ValNodePtr PNTR modifier_indices,
+ BioSourcePtr    biop)
+{
+  ValNodePtr vnp;
+  Boolean    found_strain_in_list = FALSE;
+  
+  if (modifier_indices == NULL || biop == NULL || ! HasTypeStrainComment (biop))
+  {
+    return;
+  }
+
+  for (vnp = *modifier_indices;
+       vnp != NULL && vnp->data.intvalue != DEFLINE_POS_Strain;
+       vnp = vnp->next)
+  {
+  }
+  
+  if (vnp == NULL)
+  {
+    ValNodeAddInt (modifier_indices, 0, DEFLINE_POS_Strain);
   }
 }
 
@@ -1970,19 +2095,19 @@ static CharPtr GetOrganismDescription (
   OrganismDescriptionModifiersPtr odmp
 )
 {
-  Char    taxName [196];
-  Char    modifier_text [256];
-  ValNodePtr  strings;
-  BioSourcePtr  biop;
-  OrgModPtr  mod;
-  SubSourcePtr  ssp;
-  ValNodePtr  modifier_indices;
-  ValNodePtr  vnp;
-  Int2    feature_index;
-  CharPtr  org_desc;
-  CharPtr  cp;
-  Int4    no_semicolon_len;
-  Int4    label_len;
+  Char         taxName [196];
+  Char         modifier_text [256];
+  ValNodePtr   strings;
+  BioSourcePtr biop;
+  OrgModPtr    mod;
+  SubSourcePtr ssp;
+  ValNodePtr   modifier_indices;
+  ValNodePtr   vnp;
+  Int2         feature_index;
+  CharPtr      org_desc;
+  CharPtr      cp;
+  Int4         no_semicolon_len;
+  Int4         label_len;
 
   biop = NULL;
   strings = NULL;
@@ -2009,9 +2134,15 @@ static CharPtr GetOrganismDescription (
 
   ValNodeAddStr (&strings, 0, StringSave (taxName));
 
+  if (HasTypeStrainComment (biop))
+  {
+    
+  } 
+
   modifier_indices = CopyModifierIndices (m->modifier_indices);
   AddHIVModifierIndices (&modifier_indices, biop, modList, taxName,
                          odmp->clone_isolate_HIV_rule_num);
+  AddTypeStrainModifierIndices (&modifier_indices, biop);
   modifier_indices = SortValNode (modifier_indices, SortByImportance);
   for (vnp = modifier_indices;
        vnp != NULL && (odmp->max_mods == -99 || odmp->max_mods > 0);
@@ -2111,6 +2242,7 @@ static CharPtr GetOrganismDescription (
       }
     }
   }
+  
   org_desc = MergeValNodeStrings (strings, FALSE);
   ValNodeFreeData (strings);
   ValNodeFree (modifier_indices);
@@ -2316,16 +2448,15 @@ static Boolean LIBCALLBACK IsGene (
   return TRUE;
 }
 
-static CharPtr GetGeneName (
-GeneRefPtr grp
-)
+static CharPtr GetGeneName (GeneRefPtr grp, Boolean suppress_locus_tag)
 {
   ValNodePtr syn;
 
   if (grp == NULL) return NULL;
   if (SeqMgrGeneIsSuppressed (grp)) return NULL;
   if (StringDoesHaveText (grp->locus)) return grp->locus;
-  if (StringDoesHaveText (grp->locus_tag)) return grp->locus_tag;
+  if (! suppress_locus_tag && StringDoesHaveText (grp->locus_tag)) 
+      return grp->locus_tag;
   if (StringDoesHaveText (grp->desc)) return grp->desc;
   for (syn = grp->syn; syn != NULL; syn = syn->next)
   {
@@ -2335,9 +2466,7 @@ GeneRefPtr grp
   return NULL;
 }
 
-static CharPtr GetAlleleName (
-GeneRefPtr grp
-)
+static CharPtr GetAlleleName (GeneRefPtr grp, Boolean suppress_locus_tag)
 {
   size_t  lenallele;
   size_t  lengenename;
@@ -2346,7 +2475,7 @@ GeneRefPtr grp
 
   if (grp == NULL) return NULL;
   if (StringHasNoText (grp->allele)) return NULL;
-  gene_name = GetGeneName (grp);
+  gene_name = GetGeneName (grp, suppress_locus_tag);
   if (StringHasNoText (gene_name)) return NULL;
   lenallele = StringLen (grp->allele);
   lengenename = StringLen (gene_name);
@@ -2378,20 +2507,20 @@ GeneRefPtr grp
 /* This function compares the gene names and allele names of the gene
  * to see if they match.
  */
-static Boolean DoGenesMatch (
-  GeneRefPtr grp1,
-  GeneRefPtr grp2
-)
+static Boolean DoGenesMatch 
+(GeneRefPtr grp1,
+ GeneRefPtr grp2,
+ Boolean suppress_locus_tag)
 {
   CharPtr name1;
   CharPtr name2;
 
-  name1 = GetGeneName (grp1);
-  name2 = GetGeneName (grp2);
+  name1 = GetGeneName (grp1, suppress_locus_tag);
+  name2 = GetGeneName (grp2, suppress_locus_tag);
   if (StringCmp (name1, name2) != 0) return FALSE;
   
-  name1 = GetAlleleName (grp1);
-  name2 = GetAlleleName (grp2);
+  name1 = GetAlleleName (grp1, suppress_locus_tag);
+  name2 = GetAlleleName (grp2, suppress_locus_tag);
   if ((name1 == NULL && name2 != NULL)
     || (name1 != NULL && name2 == NULL))
   {
@@ -2661,6 +2790,64 @@ static Boolean LIBCALLBACK IsControlRegion (
   return TRUE;
 }
 
+static Boolean LIBCALLBACK IsGeneCluster (
+  SeqFeatPtr sfp
+)
+{
+  if (sfp == NULL
+    || sfp->idx.subtype != FEATDEF_misc_feature
+    || sfp->comment == NULL
+    || (StringStr (sfp->comment, "gene cluster") == NULL
+        && StringStr (sfp->comment, "gene locus") == NULL))
+  {
+    return FALSE;
+  }
+  return TRUE;
+}
+
+
+static void LIBCALLBACK GetGeneClusterFeatureLabel (
+  ValNodePtr      featlist,
+  BioseqPtr       bsp,
+  Uint1           biomol,
+  FeatureLabelPtr flp
+)
+{
+  SeqFeatPtr main_feat;
+  CharPtr    cp;
+  Int4       datalen;
+
+  if (featlist == NULL || featlist->data.ptrvalue == NULL) return;
+  main_feat = featlist->data.ptrvalue;
+  if (StringHasNoText (main_feat->comment)) return;
+  cp = StringStr (main_feat->comment, "gene cluster");
+  if (cp == NULL)
+  {
+    cp = StringStr (main_feat->comment, "gene locus");
+    if (cp == NULL) return;
+    flp->typeword = StringSave ("gene locus");
+  }
+  else
+  {
+    flp->typeword = StringSave ("gene cluster");
+  }
+  flp->pluralizable = FALSE;
+  flp->is_typeword_first = FALSE;
+  datalen = cp - main_feat->comment;
+  if (datalen > 0)
+  {
+    flp->description = (CharPtr) MemNew ((datalen + 1) * sizeof (Char));
+    StringNCpy (flp->description, main_feat->comment, datalen);
+    flp->description [datalen] = 0;
+    TrimSpacesAroundString (flp->description);
+  }
+  else
+  {
+    flp->description = NULL;
+  }
+}
+
+
 static Boolean LIBCALLBACK IsIntergenicSpacer (
   SeqFeatPtr sfp
 )
@@ -2705,13 +2892,19 @@ static void LIBCALLBACK GetIntergenicSpacerFeatureLabel (
   {
     flp->is_typeword_first = TRUE;
     offset = StringLen ("intergenic spacer") + 1;
-    if (StringNCmp (cp + offset, "and ", 4) == 0)
+    if (StringNCmp (cp + offset, "and ", 4) == 0
+        || *(cp + StringLen("intergenic spacer")) == 0)
     {
       flp->description = NULL;
     }
     else
     {
       flp->description = StringSave (cp + StringLen ("intergenic spacer") + 1);
+      cp = StringChr (flp->description, ';');
+      if (cp != NULL)
+      {
+        *cp = 0;
+      }
     }
   }
   else
@@ -2902,8 +3095,8 @@ static void LIBCALLBACK GetTransposonFeatureLabel (
 }
 
 static CharPtr noncoding_feature_keywords[] = {
-  "contains ",
-  "similar to "
+  "similar to ",
+  "contains "
 };
 
 static CharPtr find_noncoding_feature_keyword (
@@ -3059,6 +3252,7 @@ static Boolean IsRecognizedFeature (
     || IsSatelliteSequence (sfp)
     || IsControlRegion (sfp)
     || IsIntergenicSpacer (sfp)
+    || IsGeneCluster (sfp)
     || IsTransposon (sfp)
     || IsNoncodingProductFeat (sfp)
     || IsPromoter (sfp)
@@ -3311,7 +3505,7 @@ static MatchRulePtr InitializeGroupingRules()
   if (grouping_rules == NULL) return NULL;
 
   grouping_rules[0].is_item = IsExon;
-  grouping_rules[0].num_match_rules = 7;
+  grouping_rules[0].num_match_rules = 8;
   grouping_rules[0].match_rules = MemNew (grouping_rules[0].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[0].match_rules == NULL) return NULL;
@@ -3322,9 +3516,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[0].match_rules[4] = IsGene;
   grouping_rules[0].match_rules[5] = IsEndogenousVirusSourceFeature;
   grouping_rules[0].match_rules[6] = IsOperon;
+  grouping_rules[0].match_rules[7] = IsGeneCluster;
 
   grouping_rules[1].is_item = IsIntron;
-  grouping_rules[1].num_match_rules = 7;
+  grouping_rules[1].num_match_rules = 8;
   grouping_rules[1].match_rules = MemNew (grouping_rules[1].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[1].match_rules == NULL) return NULL;
@@ -3335,9 +3530,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[1].match_rules[4] = IsGene;
   grouping_rules[1].match_rules[5] = IsEndogenousVirusSourceFeature;
   grouping_rules[1].match_rules[6] = IsOperon;
+  grouping_rules[1].match_rules[7] = IsGeneCluster;
   
   grouping_rules[2].is_item = IsPromoter;
-  grouping_rules[2].num_match_rules = 5;
+  grouping_rules[2].num_match_rules = 6;
   grouping_rules[2].match_rules = MemNew (grouping_rules[2].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[2].match_rules == NULL) return NULL;
@@ -3346,9 +3542,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[2].match_rules[2] = IsGene;
   grouping_rules[2].match_rules[3] = IsEndogenousVirusSourceFeature;
   grouping_rules[2].match_rules[4] = IsOperon;
+  grouping_rules[2].match_rules[5] = IsGeneCluster;
  
   grouping_rules[3].is_item = IsCDS;
-  grouping_rules[3].num_match_rules = 5;
+  grouping_rules[3].num_match_rules = 6;
   grouping_rules[3].match_rules = MemNew (grouping_rules[3].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[3].match_rules == NULL) return NULL;
@@ -3357,9 +3554,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[3].match_rules[2] = IsTransposon;
   grouping_rules[3].match_rules[3] = IsEndogenousVirusSourceFeature;
   grouping_rules[3].match_rules[4] = IsOperon;
+  grouping_rules[3].match_rules[5] = IsGeneCluster;
   
   grouping_rules[4].is_item = IsInsertionSequence;
-  grouping_rules[4].num_match_rules = 4;
+  grouping_rules[4].num_match_rules = 5;
   grouping_rules[4].match_rules = MemNew (grouping_rules[4].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[4].match_rules == NULL) return NULL;
@@ -3367,9 +3565,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[4].match_rules[1] = IsInsertionSequence;
   grouping_rules[4].match_rules[2] = IsEndogenousVirusSourceFeature;
   grouping_rules[4].match_rules[3] = IsOperon;
+  grouping_rules[4].match_rules[4] = IsGeneCluster;
  
   grouping_rules[5].is_item = Is3UTR;
-  grouping_rules[5].num_match_rules = 5;
+  grouping_rules[5].num_match_rules = 6;
   grouping_rules[5].match_rules = MemNew (grouping_rules[5].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[5].match_rules == NULL) return NULL;
@@ -3378,9 +3577,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[5].match_rules[2] = IsGene;
   grouping_rules[5].match_rules[3] = IsEndogenousVirusSourceFeature;
   grouping_rules[5].match_rules[4] = IsOperon;
+  grouping_rules[5].match_rules[5] = IsGeneCluster;
  
   grouping_rules[6].is_item = Is5UTR;
-  grouping_rules[6].num_match_rules = 5;
+  grouping_rules[6].num_match_rules = 6;
   grouping_rules[6].match_rules = MemNew (grouping_rules[6].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[6].match_rules == NULL) return NULL;
@@ -3389,9 +3589,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[6].match_rules[2] = IsGene;
   grouping_rules[6].match_rules[3] = IsEndogenousVirusSourceFeature;
   grouping_rules[6].match_rules[4] = IsOperon;
+  grouping_rules[6].match_rules[5] = IsGeneCluster;
  
   grouping_rules[7].is_item = IsLTR;
-  grouping_rules[7].num_match_rules = 5;
+  grouping_rules[7].num_match_rules = 6;
   grouping_rules[7].match_rules = MemNew (grouping_rules[7].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[7].match_rules == NULL) return NULL;
@@ -3400,9 +3601,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[7].match_rules[2] = IsGene;
   grouping_rules[7].match_rules[3] = IsEndogenousVirusSourceFeature;
   grouping_rules[7].match_rules[4] = IsOperon;
+  grouping_rules[7].match_rules[5] = IsGeneCluster;
  
   grouping_rules[8].is_item = IsGene;
-  grouping_rules[8].num_match_rules = 4;
+  grouping_rules[8].num_match_rules = 5;
   grouping_rules[8].match_rules = MemNew (grouping_rules[8].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[8].match_rules == NULL) return NULL;
@@ -3410,9 +3612,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[8].match_rules[1] = IsInsertionSequence;
   grouping_rules[8].match_rules[2] = IsEndogenousVirusSourceFeature;
   grouping_rules[8].match_rules[3] = IsOperon;
+  grouping_rules[8].match_rules[4] = IsGeneCluster;
 
   grouping_rules[9].is_item = IsTransposon;
-  grouping_rules[9].num_match_rules = 4;
+  grouping_rules[9].num_match_rules = 5;
   grouping_rules[9].match_rules = MemNew (grouping_rules[9].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[9].match_rules == NULL) return NULL;
@@ -3420,9 +3623,10 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[9].match_rules[1] = IsInsertionSequence;
   grouping_rules[9].match_rules[2] = IsEndogenousVirusSourceFeature;
   grouping_rules[9].match_rules[3] = IsOperon;
+  grouping_rules[9].match_rules[4] = IsGeneCluster;
  
   grouping_rules[10].is_item = IsNoncodingProductFeat;
-  grouping_rules[10].num_match_rules = 4;
+  grouping_rules[10].num_match_rules = 5;
   grouping_rules[10].match_rules = MemNew (grouping_rules[10].num_match_rules
                                     * sizeof (matchFunction));
   if (grouping_rules[10].match_rules == NULL) return NULL;
@@ -3430,6 +3634,7 @@ static MatchRulePtr InitializeGroupingRules()
   grouping_rules[10].match_rules[1] = IsInsertionSequence;
   grouping_rules[10].match_rules[2] = IsEndogenousVirusSourceFeature;
   grouping_rules[10].match_rules[3] = IsOperon;
+  grouping_rules[10].match_rules[4] = IsGeneCluster;
  
   return grouping_rules; 
 }
@@ -3466,11 +3671,13 @@ static Boolean GroupClauseByMatch (
 )
 {
   ValNodePtr       search_clause, newfeat;
-  SeqFeatPtr       addsfp;
+  SeqFeatPtr       addsfp, clause_sfp;
   FeatureClausePtr searchfcp;
   SeqLocPtr        slp;
 
   if (clause == NULL || clause->slp == NULL) return FALSE;
+  
+  clause_sfp = (SeqFeatPtr) (clause->featlist->data.ptrvalue);
 
   for (search_clause = search_list;
        search_clause != NULL;
@@ -3505,7 +3712,7 @@ static Boolean GroupClauseByMatch (
              || match == IsEndogenousVirusSourceFeature)
             && SeqLocAinB (clause->slp, slp) > -1)
           || IsLocAInBonSameStrand (clause->slp, slp)
-          || ( IsPromoter (clause->featlist->data.ptrvalue)
+          || ( IsPromoter (clause_sfp)
             && IsAAdjacentToB (clause->slp, search_parent->slp, bsp,
                                ADJACENT_TYPE_UPSTREAM, TRUE)))
         {
@@ -3556,6 +3763,69 @@ static Boolean GroupClauseByRule (
     }
   }
   return FALSE;
+}
+
+
+/* This function determines whether a subclause contains just a 3' UTR feature
+ * and no other details.
+ */
+static Boolean Is3UTRClause (FeatureClausePtr clause)
+{  
+  if (clause == NULL
+      || clause->featlist == NULL 
+      || clause->featlist->choice != DEFLINE_FEATLIST
+      || clause->featlist->data.ptrvalue == NULL
+      || clause->featlist->next != NULL)
+  {
+    return FALSE;
+  }
+  return Is3UTR(clause->featlist->data.ptrvalue);
+}
+
+/* This function will move 3' UTRs to the end of any subfeat lists
+ * so that they can be listed after the partial/complete CDS.
+ */
+static void Move3UTRToEndOfSubFeatList (ValNodePtr clause_list)
+{
+  ValNodePtr vnp, prev, last_vnp;
+  FeatureClausePtr clause;
+  
+  if (clause_list == NULL || clause_list->next == NULL) 
+  {
+    return;
+  }
+  prev = clause_list;
+  for (vnp = clause_list->next; vnp != NULL; vnp = vnp->next)
+  {
+    if (vnp->data.ptrvalue != NULL && vnp->choice == DEFLINE_CLAUSEPLUS)
+    {
+      clause = vnp->data.ptrvalue;
+      if (Is3UTRClause (clause))
+      {
+        if (vnp->next != NULL)
+        {
+          /* move to end of clause list */
+          last_vnp = vnp->next;
+          while (last_vnp->next != NULL)
+          {
+            last_vnp = last_vnp->next;
+          }
+          prev->next = vnp->next;
+          last_vnp->next = vnp;
+          vnp->next = NULL;
+        }
+      }
+      else
+      {
+        prev = vnp;
+        Move3UTRToEndOfSubFeatList (clause->featlist);
+      }
+    }
+    else
+    {
+      prev = vnp;
+    }
+  }  
 }
 
 /* This function iterates over the list of features, attempting to find and
@@ -3631,6 +3901,7 @@ static void GroupAllClauses (
     }
   }
   
+  Move3UTRToEndOfSubFeatList (*clause_list);
 }
 
 /* This function exists to handle the special case where two or more exons
@@ -3710,8 +3981,8 @@ static void GroupAltSplicedExons (
  */
 static void ExpandAltSplicedExons (
   ValNodePtr clause_list,
-  BioseqPtr  bsp
-)
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag)
 {
   ValNodePtr clause, rest_of_list, featlist, new_clause;
   FeatureClausePtr fcp, new_fcp;
@@ -3744,7 +4015,7 @@ static void ExpandAltSplicedExons (
       {
         new_clause = ValNodeNew (clause);
         if (new_clause == NULL) return;
-        new_fcp = NewFeatureClause (featlist->data.ptrvalue, bsp);
+        new_fcp = NewFeatureClause (featlist->data.ptrvalue, bsp, suppress_locus_tag);
         if (new_fcp == NULL) return;
         new_fcp->grp = fcp->grp;
         new_fcp->is_alt_spliced = fcp->is_alt_spliced;
@@ -3765,10 +4036,127 @@ static void ExpandAltSplicedExons (
     }
     else
     {
-      ExpandAltSplicedExons (fcp->featlist, bsp);
+      ExpandAltSplicedExons (fcp->featlist, bsp, suppress_locus_tag);
     }
   }
 }
+
+static Boolean DoFeaturesShareGene (SeqFeatPtr sfp1, SeqFeatPtr sfp2)
+{
+  Boolean share_gene = FALSE;
+  SeqFeatPtr found_gene1, found_gene2;
+  
+  if (sfp1 != NULL && sfp2 != NULL)
+  {
+    found_gene1 = SeqMgrGetOverlappingGene (sfp1->location, NULL);
+    found_gene2 = SeqMgrGetOverlappingGene (sfp2->location, NULL);
+    if (found_gene1 == found_gene2 && found_gene1 != NULL)
+    {
+      share_gene = TRUE;
+    }
+  }
+  return share_gene;
+}
+
+/* This function determines whether two features share the same product name */
+static Boolean 
+DoProductNamesMatch 
+(SeqFeatPtr sfp1,
+ SeqFeatPtr sfp2, 
+ BioseqPtr  bsp,
+ Boolean    suppress_locus_tag)
+{
+  CharPtr productname1;
+  CharPtr productname2;
+  Boolean names_match = FALSE;
+   
+  productname1 = GetProductName (sfp1, bsp, suppress_locus_tag);
+  productname2 = GetProductName (sfp2, bsp, suppress_locus_tag);
+  if (StringHasNoText (productname1) && StringHasNoText (productname2))
+  {
+    names_match = TRUE;
+  }
+  else if (StringCmp (productname1, productname2) == 0)
+  {
+    names_match = TRUE;
+  }
+  
+  productname1 = MemFree (productname1);
+  productname2 = MemFree (productname2);
+  
+  return names_match;  
+}
+
+/* This function should combine CDSs that do not have a joined location
+ * but are part of the same gene and have the same protein name.
+ */
+static void GroupSegmentedCDSs (
+  ValNodePtr PNTR clause_list,
+  BioseqPtr       bsp,
+  Boolean         delete_now,
+  Boolean         suppress_locus_tag
+)
+{
+  ValNodePtr       clause, search_clause, vnp;
+  FeatureClausePtr fcp, search_fcp;
+  SeqFeatPtr       sfp, search_sfp;
+  SeqLocPtr        new_slp;
+
+  if (clause_list == NULL) return;
+ 
+  for (clause = *clause_list; clause != NULL; clause = clause->next)
+  {
+    if (clause->choice != DEFLINE_CLAUSEPLUS
+      || clause->data.ptrvalue == NULL)
+    {
+      continue;
+    }
+    fcp = clause->data.ptrvalue;
+    if (fcp->delete_me
+      || fcp->featlist == NULL
+      || fcp->featlist->choice != DEFLINE_FEATLIST)
+    {
+      continue;
+    }
+    sfp = fcp->featlist->data.ptrvalue;
+    if ( ! IsCDS (sfp))
+    {
+      continue;
+    }
+
+    for ( search_clause = clause->next; 
+          search_clause != NULL;
+          search_clause = search_clause->next)
+    {
+      if (search_clause->choice != DEFLINE_CLAUSEPLUS
+          || search_clause->data.ptrvalue == NULL
+          || (search_fcp = search_clause->data.ptrvalue) == NULL
+          || search_fcp->delete_me
+          || search_fcp->featlist == NULL
+          || search_fcp->featlist->choice != DEFLINE_FEATLIST
+          || (search_sfp = search_fcp->featlist->data.ptrvalue) == NULL
+          || ! IsCDS (search_sfp)
+          || ! DoFeaturesShareGene (sfp, search_sfp)
+          || ! DoProductNamesMatch (sfp, search_sfp, bsp, suppress_locus_tag))
+      {
+        continue;
+      }
+      vnp = ValNodeNew (fcp->featlist);
+      if (vnp == NULL) return;
+      vnp->choice = DEFLINE_FEATLIST;
+      vnp->data.ptrvalue = search_sfp;
+      search_fcp->delete_me = TRUE;
+      new_slp = SeqLocIntersection (fcp->slp, search_fcp->slp, bsp);
+      SeqLocFree (fcp->slp);
+      fcp->slp = new_slp;
+    }
+  }
+  if (delete_now)
+  {
+    DeleteFeatureClauses (clause_list);
+  }
+}
+
 
 /* This function searches this list for clauses to which this gene should
  * apply.  This is not taken care of by the GroupAllClauses function
@@ -3777,11 +4165,11 @@ static void ExpandAltSplicedExons (
  * than one clause, while other features should really only belong to
  * one clause.
  */
-static Boolean AddGeneToClauses (
-  SeqFeatPtr gene,
+static Boolean AddGeneToClauses 
+( SeqFeatPtr gene,
   CharPtr    gene_productname,
-  ValNodePtr clause_list
-)
+  ValNodePtr clause_list,
+  Boolean    suppress_locus_tag)
 {
   ValNodePtr    clause;
   FeatureClausePtr fcp;
@@ -3817,7 +4205,7 @@ static Boolean AddGeneToClauses (
         }
       }
 
-      if (fcp->grp != NULL && DoGenesMatch (fcp->grp, grp))
+      if (fcp->grp != NULL && DoGenesMatch (fcp->grp, grp, suppress_locus_tag))
       {
         used_gene = TRUE;
         if (gene_productname != NULL
@@ -3849,9 +4237,7 @@ static Boolean AddGeneToClauses (
 /* This function iterates through the list of features and calls
  * AddGeneToClauses for each gene feature it finds.
  */
-static void GroupGenes (
-  ValNodePtr PNTR clause_list
-)
+static void GroupGenes (ValNodePtr PNTR clause_list, Boolean suppress_locus_tag)
 {
   ValNodePtr  vnp;
   ValNodePtr  featlist;
@@ -3870,7 +4256,7 @@ static void GroupGenes (
     {
       AddGeneToClauses (featlist->data.ptrvalue,
                         fcp->feature_label_data.productname,
-                        vnp->next);
+                        vnp->next, suppress_locus_tag);
     }
   } 
 }
@@ -3883,11 +4269,11 @@ static void GroupGenes (
  * mRNA can apply to more than one clause, while other features should 
  * really only belong to one clause.
  */
-static Boolean AddmRNAToClauses (
-  SeqFeatPtr mRNA,
+static Boolean AddmRNAToClauses 
+( SeqFeatPtr mRNA,
   ValNodePtr clause_list,
-  BioseqPtr bsp
-)
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag)
 {
   ValNodePtr    clause;
   FeatureClausePtr fcp;
@@ -3900,7 +4286,7 @@ static Boolean AddmRNAToClauses (
   if (clause_list == NULL) return FALSE;
 
   used_mRNA = FALSE;
-  productname = GetProductName (mRNA, bsp);
+  productname = GetProductName (mRNA, bsp, suppress_locus_tag);
   if (productname == NULL) return TRUE;
 
   for (clause = clause_list; clause != NULL; clause = clause->next)
@@ -3916,6 +4302,7 @@ static Boolean AddmRNAToClauses (
       && StringCmp (fcp->feature_label_data.productname, productname) == 0)
     {
       used_mRNA = TRUE;
+      fcp->has_mrna = TRUE;
       if (IsLocAInBonSameStrand (sfp->location, mRNA->location))
       {
         new_slp = SeqLocMerge (bsp, fcp->slp, mRNA->location,
@@ -3935,6 +4322,7 @@ static Boolean AddmRNAToClauses (
     {
       fcp->feature_label_data.productname = StringSave (productname);
       used_mRNA = TRUE;
+      fcp->has_mrna = TRUE;
       new_slp = SeqLocMerge (bsp, fcp->slp, mRNA->location,
                                  FALSE, TRUE, FALSE);
       if (new_slp == NULL) return FALSE;
@@ -3953,7 +4341,8 @@ static Boolean AddmRNAToClauses (
  */
 static void GroupmRNAs (
   ValNodePtr PNTR clause_list,
-  BioseqPtr  bsp
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag
 )
 {
   ValNodePtr  vnp;
@@ -3971,7 +4360,7 @@ static void GroupmRNAs (
       && featlist->choice == DEFLINE_FEATLIST
       && IsmRNA (featlist->data.ptrvalue))
     {
-      if (AddmRNAToClauses (featlist->data.ptrvalue, *clause_list, bsp))
+      if (AddmRNAToClauses (featlist->data.ptrvalue, *clause_list, bsp, suppress_locus_tag))
       {
         fcp->delete_me = TRUE;
       }
@@ -4130,10 +4519,10 @@ static CharPtr GetFeatureTypeWord (
  * If none of the above conditions apply, the sequence indexing context label
  * will be used to obtain the product name for the feature.
  */
-static CharPtr GetProductName (
-  SeqFeatPtr cds,
-  BioseqPtr bsp
-)
+static CharPtr GetProductName 
+( SeqFeatPtr cds,
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag)
 {
   CharPtr protein_name;
   CharPtr semicolon;
@@ -4172,13 +4561,13 @@ static CharPtr GetProductName (
   {
     grp = (GeneRefPtr) cds->data.value.ptrvalue;
     if (grp == NULL) return NULL;
-    gene_name = GetGeneName (grp);
+    gene_name = GetGeneName (grp, suppress_locus_tag);
     if (grp->desc != NULL
       && StringCmp (grp->desc, gene_name) != 0)
     {
       return StringSave (grp->desc);
     }
-    if (grp->locus_tag != NULL
+    if (grp->locus_tag != NULL && ! suppress_locus_tag
       && StringCmp (grp->locus_tag, gene_name) != 0)
     {
       return StringSave (grp->locus_tag);
@@ -4222,8 +4611,8 @@ static CharPtr GetProductName (
 static FeatureClausePtr FindProductInFeatureList (
   FeatureClausePtr fcp,
   ValNodePtr       clause_list,
-  matchFunction    itemmatch
-)
+  matchFunction    itemmatch,
+  Boolean          suppress_locus_tag)
 {
   ValNodePtr       vnp;
   FeatureClausePtr vnp_fcp;
@@ -4233,7 +4622,7 @@ static FeatureClausePtr FindProductInFeatureList (
     if (vnp->choice == DEFLINE_CLAUSEPLUS && vnp->data.ptrvalue != NULL)
     {
       vnp_fcp = vnp->data.ptrvalue;
-      if (DoGenesMatch (vnp_fcp->grp, fcp->grp)
+      if (DoGenesMatch (vnp_fcp->grp, fcp->grp, suppress_locus_tag)
         && vnp_fcp->featlist != NULL
         && vnp_fcp->featlist->choice == DEFLINE_FEATLIST
         && itemmatch (vnp_fcp->featlist->data.ptrvalue))
@@ -4242,7 +4631,8 @@ static FeatureClausePtr FindProductInFeatureList (
       }
       else
       {
-        vnp_fcp = FindProductInFeatureList (fcp, vnp_fcp->featlist, itemmatch);
+        vnp_fcp = FindProductInFeatureList (fcp, vnp_fcp->featlist,
+                                            itemmatch, suppress_locus_tag);
         if (vnp_fcp != NULL) return vnp_fcp;
       }
     }
@@ -4258,10 +4648,10 @@ static FeatureClausePtr FindProductInFeatureList (
  * If there is a gene and a product, the description will be the name of
  * the product followed by the name of the gene in parentheses.
  */
-static CharPtr GetGeneProtDescription (
-  FeatureClausePtr fcp,
-  BioseqPtr        bsp
-)
+static CharPtr GetGeneProtDescription 
+( FeatureClausePtr fcp,
+  BioseqPtr        bsp,
+  Boolean          suppress_locus_tag)
 {
   SeqFeatPtr    sfp;
   CharPtr    protein_name;
@@ -4285,7 +4675,7 @@ static CharPtr GetGeneProtDescription (
   }
   else
   {
-    protein_name = GetProductName (sfp, bsp);
+    protein_name = GetProductName (sfp, bsp, suppress_locus_tag);
     if (protein_name == NULL && IsGene (sfp))
     {
       
@@ -4296,7 +4686,7 @@ static CharPtr GetGeneProtDescription (
     description_length += StringLen (protein_name);
   }
      
-  gene_name = GetGeneName (fcp->grp);
+  gene_name = GetGeneName (fcp->grp, suppress_locus_tag);
   if (gene_name != NULL)
   {
     description_length += StringLen (gene_name);
@@ -4339,10 +4729,10 @@ static matchFunction productfeatures[] = {
 /* This function finds gene features without products and looks for 
  * features that might provide products for them.
  */
-static void FindGeneProducts (
-  ValNodePtr clause_list,
-  BioseqPtr  bsp
-)
+static void FindGeneProducts 
+( ValNodePtr clause_list,
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag)
 {
   ValNodePtr       vnp;
   FeatureClausePtr fcp, productfcp;
@@ -4364,7 +4754,8 @@ static void FindGeneProducts (
         for (i=0; i < NumProductFeatureTypes && productfcp == NULL; i++)
         {
           productfcp = FindProductInFeatureList (fcp, clause_list,
-                                                 productfeatures[i]);
+                                                 productfeatures[i],
+                                                 suppress_locus_tag);
         }
         if (productfcp != NULL)
         {
@@ -4377,7 +4768,8 @@ static void FindGeneProducts (
           else
           {
             fcp->feature_label_data.productname
-                  = GetProductName (productfcp->featlist->data.ptrvalue, bsp);
+                  = GetProductName (productfcp->featlist->data.ptrvalue, 
+                                    bsp, suppress_locus_tag);
           }
           if (fcp->feature_label_data.description != NULL)
           {
@@ -4385,12 +4777,12 @@ static void FindGeneProducts (
             fcp->feature_label_data.description = NULL;
           }
           fcp->feature_label_data.description =
-            GetGeneProtDescription (fcp, bsp);
+            GetGeneProtDescription (fcp, bsp, suppress_locus_tag);
         }
       }
       else
       {
-        FindGeneProducts (fcp->featlist, bsp);
+        FindGeneProducts (fcp->featlist, bsp, suppress_locus_tag);
       }
     }
   }
@@ -4434,10 +4826,10 @@ static CharPtr GetExonDescription (
   return label;
 }
 
-static CharPtr GetFeatureDescription (
-  FeatureClausePtr fcp,
-  BioseqPtr bsp
-)
+static CharPtr GetFeatureDescription 
+( FeatureClausePtr fcp,
+  BioseqPtr        bsp,
+  Boolean          suppress_locus_tag)
 {
   SeqFeatPtr    sfp;
 
@@ -4488,7 +4880,7 @@ static CharPtr GetFeatureDescription (
   }
   else
   {
-    return GetGeneProtDescription (fcp, bsp);
+    return GetGeneProtDescription (fcp, bsp, suppress_locus_tag);
   }
 }
 
@@ -4541,6 +4933,40 @@ static void LIBCALLBACK GetPromoterFeatureLabel (
 
 }
 
+/* This function temporarily removes a 3' UTR clause from the end of
+ * a clause list so that it will not be included in the list of subfeatures
+ * before a CDS in the definition line.
+ * The 3' UTR clause should be put back if it was not the only clause in the
+ * list.
+ */
+static ValNodePtr Remove3UTRFromEndOfFeatList (ValNodePtr PNTR featlist)
+{
+  ValNodePtr vnp, prev = NULL;
+  
+  if (featlist == NULL || *featlist == NULL) return NULL;
+  
+  for (vnp = *featlist; vnp != NULL && vnp->next != NULL; vnp = vnp->next)
+  {
+    prev = vnp;
+  }
+  if (vnp->choice == DEFLINE_CLAUSEPLUS && Is3UTRClause (vnp->data.ptrvalue))
+  {
+    if (prev == NULL)
+    {
+      *featlist = NULL;
+    }
+    else
+    {
+      prev->next = NULL;        
+    }
+  }
+  else
+  {
+    vnp = NULL;
+  }
+  return vnp;
+}
+
 /* This function calculates the "interval" for a clause in the definition
  * line.  The interval could be an empty string, it could indicate whether
  * the location of the feature is partial or complete and whether or not
@@ -4548,11 +4974,11 @@ static void LIBCALLBACK GetPromoterFeatureLabel (
  * subfeatures of the clause, or the interval could be a combination of the
  * last two items if the feature is a CDS.
  */
-static CharPtr GetGenericInterval (
-  FeatureClausePtr fcp,
-  Uint1 biomol,
-  BioseqPtr bsp
-)
+static CharPtr GetGenericInterval 
+( FeatureClausePtr fcp,
+  Uint1            biomol,
+  BioseqPtr        bsp,
+  Boolean          suppress_locus_tag)
 {
   CharPtr interval;
   Boolean partial5, partial3;
@@ -4561,6 +4987,8 @@ static CharPtr GetGenericInterval (
   CharPtr subfeatlist;
   Int4 len;
   Boolean suppress_final_and;
+  ValNodePtr utr3vnp = NULL;
+  ValNodePtr last_feat;
 
   if ( fcp == NULL || fcp->featlist == NULL) return NULL;
   if (fcp->is_unknown) return NULL;
@@ -4582,20 +5010,29 @@ static CharPtr GetGenericInterval (
   {
     featlist = featlist->next;
   }
+  if (IsCDS (sfp))
+  {
+    utr3vnp = Remove3UTRFromEndOfFeatList (&featlist);
+  }
   if (featlist != NULL)
   {
     suppress_final_and = FALSE;
-    if ( IsCDS (sfp) && ! fcp->clause_info_only)
+    if (( IsCDS (sfp) && ! fcp->clause_info_only)
+        || utr3vnp != NULL)
     {
       suppress_final_and = TRUE;
     }
-    LabelClauses (featlist, biomol, bsp);
+    LabelClauses (featlist, biomol, bsp, suppress_locus_tag);
     ListClauses (featlist, &strings, FALSE, suppress_final_and);
     subfeatlist = MergeValNodeStrings (strings, FALSE);
-	ValNodeFreeData (strings);
+	  ValNodeFreeData (strings);
     len += StringLen (subfeatlist) + 7;
-  }
     
+    if (utr3vnp != NULL)
+    {
+      len += 14;
+    }
+  }
 
   interval = (CharPtr) MemNew (len * sizeof (Char));
   if (interval == NULL) return NULL;
@@ -4606,14 +5043,37 @@ static CharPtr GetGenericInterval (
     StringCat (interval, subfeatlist);
     if ( ! IsCDS (sfp) || fcp->clause_info_only)
     {
+      if (utr3vnp != NULL)
+      {
+        if (featlist->next != NULL)
+        {
+          StringCat (interval, ",");
+        }
+        StringCat (interval, " and 3' UTR");
+        /* put 3' UTR back at end of featlist */
+        if (featlist != NULL)
+        {
+          last_feat = featlist;
+          while (last_feat != NULL && last_feat->next != NULL)
+          {
+            last_feat = last_feat->next;
+          }
+          last_feat->next = utr3vnp;
+        }
+      }
       if (subfeatlist != NULL) MemFree (subfeatlist);
       return interval;
     }
-    StringCat (interval, " and ");
+    if (utr3vnp == NULL)
+    {
+      StringCat (interval, " and ");
+    }
+    else
+    {
+      StringCat (interval, ", ");
+    }
   }
 
-  if (subfeatlist != NULL) MemFree (subfeatlist);
-    
   if (partial5 || partial3)
   {
     StringCat (interval, "partial ");
@@ -4636,6 +5096,30 @@ static CharPtr GetGenericInterval (
       StringCat (interval, ", alternatively spliced");
     }
   }
+  
+  if (utr3vnp != NULL)
+  {
+    /* tack UTR3 on at end of clause */
+    if (StringDoesHaveText (subfeatlist))
+    {
+      StringCat (interval, ",");
+    }
+    StringCat (interval, " and 3' UTR");
+    
+    /* put 3' UTR back at end of featlist */
+    if (featlist != NULL)
+    {
+      last_feat = featlist;
+      while (last_feat != NULL && last_feat->next != NULL)
+      {
+        last_feat = last_feat->next;
+      }
+      last_feat->next = utr3vnp;
+    }
+  }
+  
+  if (subfeatlist != NULL) MemFree (subfeatlist);    
+
   return interval;
 } 
 
@@ -4647,12 +5131,12 @@ static CharPtr GetGenericInterval (
  * for more of the specific feature types, to reduce the number of times
  * that the feature must be identified as being a certain type.
  */ 
-static void LIBCALLBACK GetGenericFeatureLabel (
-  FeatureClausePtr fcp,
-  BioseqPtr       bsp,
-  Uint1           biomol,
-  FeatureLabelPtr flp
-)
+static void LIBCALLBACK GetGenericFeatureLabel 
+( FeatureClausePtr fcp,
+  BioseqPtr        bsp,
+  Uint1            biomol,
+  FeatureLabelPtr  flp,
+  Boolean          suppress_locus_tag)
 {
   SeqFeatPtr main_feat;
   
@@ -4673,13 +5157,13 @@ static void LIBCALLBACK GetGenericFeatureLabel (
   }
   if (flp->productname == NULL)
   {
-    flp->productname = GetProductName (main_feat, bsp);
+    flp->productname = GetProductName (main_feat, bsp, suppress_locus_tag);
   }
   if (flp->description == NULL
     && (! IsMiscRNA (main_feat)
       || StringStr (flp->productname, "spacer") == NULL ))
   {
-    flp->description = GetFeatureDescription (fcp, bsp);
+    flp->description = GetFeatureDescription (fcp, bsp, suppress_locus_tag);
   }
 
 }
@@ -4700,7 +5184,8 @@ static MatchLabelFunctionData label_functions[] = {
  { IsSatelliteSequence, GetSatelliteFeatureLabel         },
  { IsTransposon,        GetTransposonFeatureLabel        },
  { IsPromoter,          GetPromoterFeatureLabel          },
- { IsIntergenicSpacer,  GetIntergenicSpacerFeatureLabel  }
+ { IsIntergenicSpacer,  GetIntergenicSpacerFeatureLabel  },
+ { IsGeneCluster,       GetGeneClusterFeatureLabel       }
 };
 
 typedef enum {
@@ -4708,14 +5193,15 @@ typedef enum {
  DEFLINE_FEATLABEL_Transposon,
  DEFLINE_FEATLABEL_Promoter,
  DEFLINE_FEATLABEL_IntergenicSpacer,
+ DEFLINE_FEATLABEL_GeneCluster,
  NumDefLineFeatLabels
 } DefLineFeatLabel;
 
-static void LabelFeature (
-  BioseqPtr       bsp,
-  Uint1           biomol,
-  FeatureClausePtr new_clauseplus
-)
+static void LabelFeature 
+( BioseqPtr        bsp,
+  Uint1            biomol,
+  FeatureClausePtr new_clauseplus,
+  Boolean          suppress_locus_tag)
 {
   Int4             i;
   SeqFeatPtr       main_feat;
@@ -4726,11 +5212,12 @@ static void LabelFeature (
   {
     main_feat = (SeqFeatPtr) new_clauseplus->featlist->data.ptrvalue;
     
-    new_clauseplus->allelename = GetAlleleName (new_clauseplus->grp);
+    new_clauseplus->allelename = GetAlleleName (new_clauseplus->grp,
+                                                suppress_locus_tag);
     if (new_clauseplus->interval == NULL)
     {
       new_clauseplus->interval =
-                  GetGenericInterval (new_clauseplus, biomol, bsp);
+                  GetGenericInterval (new_clauseplus, biomol, bsp, suppress_locus_tag);
     }
 
     for (i=0; i < NumDefLineFeatLabels; i++)
@@ -4745,7 +5232,7 @@ static void LabelFeature (
     }
 
     GetGenericFeatureLabel ( new_clauseplus, bsp, biomol, 
-                           &new_clauseplus->feature_label_data);
+                           &new_clauseplus->feature_label_data, suppress_locus_tag);
     return;
   }
 }
@@ -4919,11 +5406,11 @@ static void TrimUnwantedWordsFromAltSpliceProductName (
  * must have the same gene, must share a complete interval, and must have
  * similarly named products.
  */
-static CharPtr MeetAltSpliceRules (
-  FeatureClausePtr cdsfcp1,
+static CharPtr MeetAltSpliceRules 
+( FeatureClausePtr cdsfcp1,
   FeatureClausePtr cdsfcp2,
-  BioseqPtr bsp
-)
+  BioseqPtr        bsp,
+  Boolean          suppress_locus_tag)
 {
   SeqFeatPtr cds1, cds2;
   CharPtr match_string;
@@ -4937,7 +5424,7 @@ static CharPtr MeetAltSpliceRules (
 
   cds1 = cdsfcp1->featlist->data.ptrvalue;
   cds2 = cdsfcp2->featlist->data.ptrvalue;
-  if (! DoGenesMatch (cdsfcp1->grp, cdsfcp2->grp))
+  if (! DoGenesMatch (cdsfcp1->grp, cdsfcp2->grp, suppress_locus_tag))
     return NULL;
 
   if ( (res = TestFeatOverlap (cds1, cds2, COMMON_INTERVAL)) != -1)
@@ -5048,10 +5535,10 @@ static void MoveSubclauses (
 /* a comment and a data.choice value that indicates alt splicing */
 /* we remove the second alternatively spliced CDS feature from the list */
 
-static void FindAltSplices (
-  ValNodePtr clause_list,
-  BioseqPtr bsp
-)
+static void FindAltSplices 
+( ValNodePtr clause_list,
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag)
 {
   FeatureClausePtr  fcp1, fcp2;
   ValNodePtr cdsclause1, cdsclause2;
@@ -5069,7 +5556,7 @@ static void FindAltSplices (
     if (fcp1->feature_label_data.productname == NULL)
     {
       fcp1->feature_label_data.productname = 
-           GetProductName (fcp1->featlist->data.ptrvalue, bsp);
+           GetProductName (fcp1->featlist->data.ptrvalue, bsp, suppress_locus_tag);
     }
     searchclause = cdsclause1->next;
     cdsclause2 = FindNextCDSClause (searchclause);
@@ -5079,9 +5566,9 @@ static void FindAltSplices (
       if (fcp2->feature_label_data.productname == NULL)
       {
         fcp2->feature_label_data.productname =
-           GetProductName (fcp2->featlist->data.ptrvalue, bsp);
+           GetProductName (fcp2->featlist->data.ptrvalue, bsp, suppress_locus_tag);
       }
-      combined_protein_name = MeetAltSpliceRules (fcp1, fcp2, bsp);
+      combined_protein_name = MeetAltSpliceRules (fcp1, fcp2, bsp, suppress_locus_tag);
       if (combined_protein_name != NULL)
       {
         /* get rid of variant, splice variant, splice product, isoform, etc.*/
@@ -5134,18 +5621,18 @@ static void FindAltSplices (
   DeleteFeatureClauses (&clause_list);
 }
 
-static void LabelClauses (
-  ValNodePtr clause_list,
-  Uint1 biomol,
-  BioseqPtr bsp
-)
+static void LabelClauses 
+( ValNodePtr clause_list,
+  Uint1      biomol,
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag)
 {
   ValNodePtr clause;
  
   clause = clause_list;
   while (clause != NULL)
   { 
-    LabelFeature ( bsp, biomol, clause->data.ptrvalue);
+    LabelFeature ( bsp, biomol, clause->data.ptrvalue, suppress_locus_tag);
     clause = clause->next;
   }
 }
@@ -5176,10 +5663,10 @@ static CharPtr separators [] = {
 
 #define num_separators 3
 
-static ValNodePtr GetMiscRNAelements (
-  SeqFeatPtr misc_rna,
-  BioseqPtr  bsp
-)
+static ValNodePtr GetMiscRNAelements 
+( SeqFeatPtr misc_rna,
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag)
 {
   CharPtr buffer;
   Int4    i, best_i;
@@ -5198,7 +5685,7 @@ static ValNodePtr GetMiscRNAelements (
   to_free = NULL;
 
   if (misc_rna == NULL) return NULL;
-  buffer = GetProductName (misc_rna, bsp);
+  buffer = GetProductName (misc_rna, bsp, suppress_locus_tag);
   to_free = buffer;
   if (buffer == NULL) 
   {
@@ -5265,7 +5752,7 @@ static ValNodePtr GetMiscRNAelements (
          word_i++) {}
     if (word_i < NUM_MISC_RNA_WORDS)
     {
-      fcp = NewFeatureClause ( misc_rna, bsp);
+      fcp = NewFeatureClause ( misc_rna, bsp, suppress_locus_tag);
       if (fcp == NULL) return NULL;
       if (word_i == MISC_RNA_WORD_INTERNAL_SPACER
         || word_i == MISC_RNA_WORD_EXTERNAL_SPACER
@@ -5345,8 +5832,8 @@ static ValNodePtr GetMiscRNAelements (
  */
 static void ReplaceRNAClauses (
   ValNodePtr PNTR clause_list,
-  BioseqPtr       bsp
-)
+  BioseqPtr       bsp,
+  Boolean         suppress_locus_tag)
 {
   FeatureClausePtr fcp;
   SeqFeatPtr main_feat;
@@ -5368,7 +5855,7 @@ static void ReplaceRNAClauses (
   
     if (IsrRNA (main_feat) || IsMiscRNA (main_feat))
     {
-      replacement_clauses = GetMiscRNAelements ( main_feat, bsp );
+      replacement_clauses = GetMiscRNAelements ( main_feat, bsp, suppress_locus_tag );
       if (replacement_clauses != NULL)
       {
         for (vnp = replacement_clauses; vnp->next != NULL; vnp = vnp->next) {}
@@ -5419,6 +5906,7 @@ static void RenameMiscFeats (ValNodePtr clause_list, Uint1 biomol)
       if (sfp->idx.subtype != FEATDEF_misc_feature
         || sfp->comment == NULL
         || IsIntergenicSpacer (sfp)
+        || IsGeneCluster (sfp)
         || IsControlRegion (sfp)) 
       {
         continue;
@@ -5429,7 +5917,8 @@ static void RenameMiscFeats (ValNodePtr clause_list, Uint1 biomol)
                    = MemFree (fcp->feature_label_data.description);
       }
       name_len = StringCSpn (sfp->comment, ";");
-      fcp->feature_label_data.description = MemNew (name_len * sizeof (Char));
+	  /* make sure we have space for terminating NULL */
+      fcp->feature_label_data.description = MemNew ((name_len + 1) * sizeof (Char));
       if (fcp->feature_label_data.description == NULL) return;
       StringNCpy (fcp->feature_label_data.description, sfp->comment, name_len);
       fcp->feature_label_data.description [ name_len ] = 0;
@@ -5490,7 +5979,8 @@ static void RemoveUnwantedMiscFeats (
       if ( sfp->idx.subtype == FEATDEF_misc_feature
         && ! IsNoncodingProductFeat (sfp)
         && ! IsControlRegion (sfp)
-        && ! IsIntergenicSpacer (sfp))
+        && ! IsIntergenicSpacer (sfp)
+        && ! IsGeneCluster (sfp))
       {
         fcp->delete_me = TRUE;
       }
@@ -5808,40 +6298,28 @@ static CharPtr organelleByPopup [] = {
 };
 #define DEFAULT_ORGANELLE_CLAUSE 10
 
-/*---------------------------------------------------------------------*/
-/*                                                                     */
-/* AutoDef_AddEnding () -- Add an ending on to the definition line     */
-/*                         after the last feature.                     */
-/*                                                                     */
-/*---------------------------------------------------------------------*/
-
-static void AutoDef_AddEnding (
-  ValNodePtr   clause_list,
-  ValNodePtr PNTR strings,
-  BioseqPtr    bsp,
-  Int2         mitochloroflag,
-  Boolean      alternate_splice_flag
-)
+static void 
+AddProductEnding 
+(CharPtr    str, 
+ BioseqPtr  bsp,
+ Int2       mitochloroflag,
+ ValNodePtr strings)
 {
   Char orgnelle [80];
-  Char str [200];
   BioSourcePtr  biop;
   ValNodePtr last_string;
-  Int4 new_data_len;
-  CharPtr new_data;
   Int4 num_genes;
   SubSourcePtr  ssp;
 
-  str[0] = 0;
   num_genes = 0;
   biop = GetBiopForBsp (bsp);
 
   if (biop != NULL) {
-    if (FindStringInStrings (*strings, "genes"))
+    if (FindStringInStrings (strings, "genes"))
     {
       num_genes = 2;
     }
-    else if ((last_string = FindStringInStrings (*strings, "gene")) != NULL
+    else if ((last_string = FindStringInStrings (strings, "gene")) != NULL
       && last_string->next != NULL
       && (last_string = FindStringInStrings (last_string->next, "gene")) != NULL)
     {
@@ -5905,9 +6383,33 @@ static void AutoDef_AddEnding (
       }
       break;
     }
-  }
+  }  
+}
+
+/*---------------------------------------------------------------------*/
+/*                                                                     */
+/* AutoDef_AddEnding () -- Add an ending on to the definition line     */
+/*                         after the last feature.                     */
+/*                                                                     */
+/*---------------------------------------------------------------------*/
+
+static void AutoDef_AddEnding (
+  ValNodePtr   clause_list,
+  ValNodePtr PNTR strings,
+  BioseqPtr    bsp,
+  Int2         mitochloroflag,
+  Boolean      alternate_splice_flag
+)
+{
+  Char str [200];
+  ValNodePtr last_string;
+  Int4 new_data_len;
+  CharPtr new_data;
+
+  str[0] = 0;
+  AddProductEnding (str, bsp, mitochloroflag, *strings);
   if (alternate_splice_flag) {
-    StringCat (str, "; alternatively spliced");
+    StringCat (str, ", alternatively spliced");
   }
 
   StringCat (str, ".");
@@ -6309,7 +6811,7 @@ static void ListClauses (
                       "pseudogene mRNA")==0)
       && clause_len > StringLen ("precursor")
       && StringCmp ( thisclause->feature_label_data.description
-                     + clause_len - StringLen ("precursor"),
+                     + clause_len - StringLen ("precursor") - 1,
                      "precursor") == 0)
     {
       print_comma_between_description_and_typeword = TRUE;
@@ -6483,7 +6985,8 @@ static Boolean LIBCALLBACK ShouldRemoveExon (
   BioseqPtr bsp,
   Boolean isLonely,
   Boolean isRequested,
-  Boolean isSegment
+  Boolean isSegment,
+  Boolean suppress_locus_tag
 )
 {
   Boolean partial3, partial5;
@@ -6503,6 +7006,10 @@ static Boolean LIBCALLBACK ShouldRemoveExon (
     CheckSeqLocForPartial (main_feat->location, &partial5, &partial3);
     if (partial5 || partial3) return FALSE;
   }
+  else if (IsmRNA (main_feat))
+  {
+    return FALSE;
+  }
   return TRUE;
 }
 
@@ -6513,13 +7020,13 @@ static Boolean LIBCALLBACK ShouldRemoveCDS (
   BioseqPtr bsp,
   Boolean isLonely,
   Boolean isRequested,
-  Boolean isSegment
-)
+  Boolean isSegment,
+  Boolean suppress_locus_tag)
 {
   CharPtr description;
   Boolean retval = FALSE;
 
-  description = GetGeneProtDescription (this_fcp, bsp);
+  description = GetGeneProtDescription (this_fcp, bsp, suppress_locus_tag);
   if (StringHasNoText (description))
   {
     retval = TRUE;
@@ -6534,7 +7041,8 @@ static Boolean LIBCALLBACK ShouldRemoveNoncodingProductFeat (
   FeatureClausePtr this_fcp,
   BioseqPtr bsp, Boolean isLonely,
   Boolean isRequested,
-  Boolean isSegment
+  Boolean isSegment,
+  Boolean suppress_locus_tag
 )
 {
   if (isRequested) return FALSE;
@@ -6547,11 +7055,32 @@ static Boolean LIBCALLBACK ShouldRemovePromoter (
   FeatureClausePtr this_fcp,
   BioseqPtr bsp, Boolean isLonely,
   Boolean isRequested,
-  Boolean isSegment
+  Boolean isSegment,
+  Boolean suppress_locus_tag
 )
 {
-  if (isLonely || isRequested) return FALSE;
-  else return TRUE;
+  /* remove a promoter if it is in an mRNA or gene clause */
+  if (isRequested)
+  {
+    return FALSE;
+  }
+  else if (parent_fcp != NULL 
+      && (parent_fcp->has_mrna 
+        || (parent_fcp->featlist != NULL
+           && parent_fcp->featlist->choice == DEFLINE_FEATLIST
+           && parent_fcp->featlist->data.ptrvalue != NULL
+           && IsmRNA (parent_fcp->featlist->data.ptrvalue))))
+  {
+    return TRUE;
+  }
+  else if (isLonely)
+  {
+    return FALSE;
+  }
+  else
+  {
+    return TRUE;
+  }
 }
 
 static Boolean LIBCALLBACK ShouldRemoveLTR (
@@ -6561,10 +7090,19 @@ static Boolean LIBCALLBACK ShouldRemoveLTR (
   BioseqPtr bsp,
   Boolean isLonely,
   Boolean isRequested,
-  Boolean isSegment
+  Boolean isSegment,
+  Boolean suppress_locus_tag
 )
 {
-  if (isLonely || isRequested)
+  if (isRequested)
+  {
+    return FALSE;
+  }
+  else if (parent_fcp != NULL)
+  {
+    return TRUE;
+  }
+  else if (isLonely)
     return FALSE;
   else
     return TRUE;
@@ -6577,9 +7115,10 @@ static Boolean LIBCALLBACK ShouldRemove3UTR (
   BioseqPtr bsp,
   Boolean isLonely,
   Boolean isRequested,
-  Boolean isSegment
+  Boolean isSegment,
+  Boolean suppress_locus_tag
 )
-{
+{ 
   if (isLonely || isRequested)
     return FALSE;
   else
@@ -6593,7 +7132,8 @@ static Boolean LIBCALLBACK ShouldRemove5UTR (
   BioseqPtr bsp,
   Boolean isLonely,
   Boolean isRequested,
-  Boolean isSegment
+  Boolean isSegment,
+  Boolean suppress_locus_tag
 )
 {
   if (isLonely || isRequested)
@@ -6608,28 +7148,48 @@ static Boolean LIBCALLBACK ShouldRemoveIntron (
   FeatureClausePtr this_fcp,
   BioseqPtr bsp, Boolean isLonely,
   Boolean isRequested,
-  Boolean isSegment
+  Boolean isSegment,
+  Boolean suppress_locus_tag
 )
 {
-  if (isLonely || isRequested) return FALSE;
-  else return TRUE;
+  if (isRequested)
+  {
+    return FALSE;
+  }
+  else if (parent_fcp != NULL 
+      && (parent_fcp->has_mrna 
+        || (parent_fcp->featlist != NULL
+           && parent_fcp->featlist->choice == DEFLINE_FEATLIST
+           && parent_fcp->featlist->data.ptrvalue != NULL
+           && IsmRNA (parent_fcp->featlist->data.ptrvalue))))
+  {
+    return TRUE;
+  }
+  else if (isLonely)
+  {
+    return FALSE;
+  }
+  else
+  {
+    return TRUE;
+  }
 }
 
-static Boolean LIBCALLBACK ShouldRemoveGeneric (
-  SeqFeatPtr sfp,
+static Boolean LIBCALLBACK ShouldRemoveGeneric 
+( SeqFeatPtr sfp,
   FeatureClausePtr parent_fcp,
   FeatureClausePtr this_fcp,
   BioseqPtr bsp,
   Boolean isLonely,
   Boolean isRequested,
-  Boolean isSegment
-)
+  Boolean isSegment,
+  Boolean suppress_locus_tag)
 {
   CharPtr productname;
   Boolean rval;
 
   rval = FALSE;
-  if (IsMiscRNA (sfp) && ( productname = GetProductName (sfp, bsp)) != NULL)
+  if (IsMiscRNA (sfp) && ( productname = GetProductName (sfp, bsp, suppress_locus_tag)) != NULL)
   {
     if (StringStr (productname, "trans-spliced leader") != NULL)
     {
@@ -6688,6 +7248,7 @@ typedef struct deflinefeaturerequestlist {
   Boolean                remove_subfeatures;
   DefLineType            feature_list_type;
   Int4                   misc_feat_parse_rule;
+  Boolean                suppress_locus_tags;
 } DeflineFeatureRequestList, PNTR DeflineFeatureRequestListPtr;
 
 static void InitFeatureRequests (
@@ -6704,6 +7265,7 @@ static void InitFeatureRequests (
   feature_requests->remove_subfeatures = FALSE;
   feature_requests->feature_list_type = DEFLINE_USE_FEATURES;
   feature_requests->misc_feat_parse_rule = 2;
+  feature_requests->suppress_locus_tags = FALSE;
 }
 
 static Boolean RemoveCondition (
@@ -6722,17 +7284,19 @@ static Boolean RemoveCondition (
   {
     if (remove_items[i].itemmatch (sfp))
       return remove_items[i].ShouldRemove (sfp, parent_fcp, this_fcp, bsp,
-      isLonely, feature_requests->items[i].keep, isSegment);
+                                           isLonely, feature_requests->items[i].keep,
+                                           isSegment,
+                                           feature_requests->suppress_locus_tags);
   }
   return ShouldRemoveGeneric(sfp, parent_fcp, this_fcp, bsp, isLonely, FALSE,
-                             isSegment);
+                             isSegment, feature_requests->suppress_locus_tags);
 }
 
-static Boolean FindOtherGeneClause (
-  ValNodePtr feature_list,
+static Boolean FindOtherGeneClause 
+( ValNodePtr feature_list,
   ValNodePtr me,
-  GeneRefPtr grp
-)
+  GeneRefPtr grp,
+  Boolean    suppress_locus_tag)
 {
   ValNodePtr vnp;
   FeatureClausePtr fcp;
@@ -6747,11 +7311,11 @@ static Boolean FindOtherGeneClause (
       fcp = vnp->data.ptrvalue;
       if (fcp->delete_me) continue;
       if ( fcp->grp == grp
-        || (fcp->grp != NULL && DoGenesMatch (fcp->grp, grp)))
+        || (fcp->grp != NULL && DoGenesMatch (fcp->grp, grp, suppress_locus_tag)))
       {
         return TRUE;
       }
-      if ( FindOtherGeneClause (fcp->featlist, me, grp))
+      if ( FindOtherGeneClause (fcp->featlist, me, grp, suppress_locus_tag))
       {
         return TRUE;
       }
@@ -6760,11 +7324,11 @@ static Boolean FindOtherGeneClause (
   return FALSE;
 }
  
-static void RemoveGenesMentionedElsewhere (
-  ValNodePtr PNTR feature_list,
-  ValNodePtr search_list,
-  Boolean    delete_now
-)
+static void RemoveGenesMentionedElsewhere 
+( ValNodePtr PNTR feature_list,
+  ValNodePtr      search_list,
+  Boolean         delete_now,
+  Boolean         suppress_locus_tag)
 {
   ValNodePtr vnp;
   FeatureClausePtr fcp;
@@ -6780,13 +7344,13 @@ static void RemoveGenesMentionedElsewhere (
       }
       if ( IsGene (fcp->featlist->data.ptrvalue)
         && fcp->featlist->next == NULL
-        && FindOtherGeneClause ( search_list, vnp, fcp->grp))
+        && FindOtherGeneClause ( search_list, vnp, fcp->grp, suppress_locus_tag))
       {
         fcp->delete_me = TRUE;
       }
       else
       {
-        RemoveGenesMentionedElsewhere ( &(fcp->featlist), search_list, FALSE);
+        RemoveGenesMentionedElsewhere ( &(fcp->featlist), search_list, FALSE, suppress_locus_tag);
       }
     }
   }
@@ -6809,6 +7373,7 @@ static void MarkUnwantedFeatureClauseForRemoval (
   ValNodePtr       featlist;
   ValNodePtr       firstfeat;
   Int4             clause_count;
+  SeqFeatPtr       sfp;
 
   if (clause == NULL
     || clause->choice != DEFLINE_CLAUSEPLUS
@@ -6838,11 +7403,18 @@ static void MarkUnwantedFeatureClauseForRemoval (
   while (featlist != NULL)
   {  
     if (featlist->choice == DEFLINE_FEATLIST
-      && featlist->data.ptrvalue != NULL
-      && RemoveCondition (featlist->data.ptrvalue, parent_fcp, fcp, bsp, 
-                          isLonely, isSegment, feature_requests))
+      && featlist->data.ptrvalue != NULL)
     {
-      fcp->delete_me = TRUE;
+      sfp = (SeqFeatPtr) featlist->data.ptrvalue;
+      if (RemoveCondition (featlist->data.ptrvalue, parent_fcp, fcp, bsp, 
+                          isLonely, isSegment, feature_requests))
+      {
+        fcp->delete_me = TRUE;
+      }
+      else if (! IsGene (sfp) && ! IsmRNA (sfp))
+      {
+        isLonely = FALSE;
+      }
     }
     else if (featlist->choice == DEFLINE_CLAUSEPLUS 
       && featlist->data.ptrvalue != NULL)
@@ -6931,7 +7503,7 @@ static void DeleteSubfeatures (
   }
 }
 
-static void DeleteOperonSubfeatures (
+static void DeleteOperonAndGeneClusterSubfeatures (
   ValNodePtr PNTR feature_list,
   Boolean         delete_now
 )
@@ -6949,7 +7521,8 @@ static void DeleteOperonSubfeatures (
       continue;
     }
     if (clause_fcp->featlist->choice == DEFLINE_FEATLIST
-      && IsOperon (clause_fcp->featlist->data.ptrvalue))
+      && (IsOperon (clause_fcp->featlist->data.ptrvalue) 
+          || IsGeneCluster (clause_fcp->featlist->data.ptrvalue)))
     {
       for (featlist = clause_fcp->featlist->next;
            featlist != NULL;
@@ -7295,8 +7868,8 @@ static void ConsolidateClauses (
   ValNodePtr PNTR list,
   BioseqPtr  bsp,
   Uint1      biomol,
-  Boolean    delete_now
-)
+  Boolean    delete_now,
+  Boolean    suppress_locus_tag)
 {
   ValNodePtr       vnp;
   FeatureClausePtr fcp;
@@ -7317,14 +7890,14 @@ static void ConsolidateClauses (
       continue;
     }
 
-    ConsolidateClauses (&(fcp->featlist), bsp, biomol, FALSE);
+    ConsolidateClauses (&(fcp->featlist), bsp, biomol, FALSE, suppress_locus_tag);
 
     if (last_cds_fcp == NULL)
     {
       last_cds_fcp = fcp;
       if (fcp->feature_label_data.description == NULL)
       {
-        last_desc = GetGeneProtDescription (fcp, bsp);
+        last_desc = GetGeneProtDescription (fcp, bsp, suppress_locus_tag);
       }
       else
       {
@@ -7344,7 +7917,7 @@ static void ConsolidateClauses (
     {
       if (fcp->feature_label_data.description == NULL)
       {
-        new_desc = GetGeneProtDescription (fcp, bsp);
+        new_desc = GetGeneProtDescription (fcp, bsp, suppress_locus_tag);
       }
       else
       {
@@ -7385,7 +7958,7 @@ static void ConsolidateClauses (
           MemFree (last_cds_fcp->interval);
         }
         last_cds_fcp->interval =
-                  GetGenericInterval (last_cds_fcp, biomol, bsp);
+                  GetGenericInterval (last_cds_fcp, biomol, bsp, suppress_locus_tag);
         MemFree (new_desc);
       }
       else
@@ -7405,8 +7978,8 @@ static void ConsolidateClauses (
 
 static void CountUnknownGenes (
   ValNodePtr PNTR clause_list,
-  BioseqPtr bsp
-)
+  BioseqPtr       bsp,
+  Boolean         suppress_locus_tag)
 {
   FeatureClausePtr fcp, new_fcp;
   ValNodePtr vnp, new_vnp;
@@ -7423,8 +7996,8 @@ static void CountUnknownGenes (
       && (fcp = vnp->data.ptrvalue) != NULL
       && ! fcp->is_unknown) 
     {
-      CountUnknownGenes (&(fcp->featlist), bsp);
-      gene_name = GetGeneProtDescription (fcp, bsp);
+      CountUnknownGenes (&(fcp->featlist), bsp, suppress_locus_tag);
+      gene_name = GetGeneProtDescription (fcp, bsp, suppress_locus_tag);
       if (StringCmp (gene_name, "unknown") == 0
         && fcp->featlist != NULL
         && fcp->featlist->choice == DEFLINE_FEATLIST)
@@ -7433,7 +8006,8 @@ static void CountUnknownGenes (
         {
           new_vnp = ValNodeNew (*clause_list);
           if (new_vnp == NULL) return;
-          new_fcp = NewFeatureClause (fcp->featlist->data.ptrvalue, bsp);
+          new_fcp = NewFeatureClause (fcp->featlist->data.ptrvalue, 
+                                      bsp, suppress_locus_tag);
           new_fcp->is_unknown = TRUE;
           new_vnp->choice = DEFLINE_CLAUSEPLUS;
           new_vnp->data.ptrvalue = new_fcp;
@@ -7481,10 +8055,10 @@ static void ReplaceDefinitionLine (
   MemFree (defline);
 }
 
-FeatureClausePtr NewFeatureClause (
-  SeqFeatPtr sfp,
-  BioseqPtr  bsp
-)
+FeatureClausePtr NewFeatureClause 
+( SeqFeatPtr sfp,
+  BioseqPtr  bsp,
+  Boolean    suppress_locus_tag)
 {
   FeatureClausePtr fcp;
   Boolean          partial5, partial3;
@@ -7530,7 +8104,7 @@ FeatureClausePtr NewFeatureClause (
   }
   if (IsCDS (sfp))
   {
-    fcp->feature_label_data.productname = GetProductName (sfp, bsp);
+    fcp->feature_label_data.productname = GetProductName (sfp, bsp, suppress_locus_tag);
   }
   fcp->featlist = ValNodeNew (NULL);
   if (fcp->featlist == NULL)
@@ -7545,9 +8119,7 @@ FeatureClausePtr NewFeatureClause (
   return fcp;
 }
 
-static ValNodePtr GetFeatureList (
-  BioseqPtr bsp
-)
+static ValNodePtr GetFeatureList (BioseqPtr bsp, Boolean suppress_locus_tag)
 {
   ValNodePtr        head, vnp;
   SeqFeatPtr        sfp;
@@ -7563,7 +8135,7 @@ static ValNodePtr GetFeatureList (
   {
     if (IsRecognizedFeature (sfp))
     {
-      fcp = NewFeatureClause (sfp, bsp);
+      fcp = NewFeatureClause (sfp, bsp, suppress_locus_tag);
       if (fcp == NULL) return NULL;
       fcp->numivals = fcontext.numivals;
       fcp->ivals = fcontext.ivals;
@@ -7660,10 +8232,11 @@ static FeatureClausePtr CopyMatchingClauses (
   new_fcp->interval = StringSave (fcp->interval);
   new_fcp->is_alt_spliced = fcp->is_alt_spliced;
   CheckSeqLocForPartial (fcp->slp, &partial5, &partial3);
-  new_fcp->slp = SeqLocMerge (BioseqFindFromSeqLoc (fcp->slp), fcp->slp, NULL,
-                                 FALSE, TRUE, FALSE);
+  new_fcp->slp = (SeqLocPtr) AsnIoMemCopy (fcp->slp, (AsnReadFunc) SeqLocAsnRead,
+                                           (AsnWriteFunc) SeqLocAsnWrite);
   SetSeqLocPartial (new_fcp->slp, partial5, partial3);
   new_fcp->grp = fcp->grp;
+  new_fcp->has_mrna = fcp->has_mrna;
   new_fcp->delete_me = FALSE;
   new_fcp->clause_info_only = fcp->clause_info_only;
   new_fcp->featlist = NULL;
@@ -7834,7 +8407,8 @@ static Boolean IntervalIntersectsIvals
 static ValNodePtr GrabTraversingGenes 
 (ValNodePtr              parent_feature_list,
  SeqMgrSegmentContextPtr context,
- BioseqPtr               parent_bsp)
+ BioseqPtr               parent_bsp,
+ Boolean                 suppress_locus_tag)
 {
   FeatureClausePtr  fcp, new_fcp;
   ValNodePtr        clause;
@@ -7855,7 +8429,8 @@ static ValNodePtr GrabTraversingGenes
         &&  fcp->ivals != NULL && fcp->numivals > 0)
     {
       if (IntervalIntersectsIvals (fcp->numivals, fcp->ivals, context)) {
-        new_fcp = NewFeatureClause (fcp->featlist->data.ptrvalue, parent_bsp);
+        new_fcp = NewFeatureClause (fcp->featlist->data.ptrvalue, parent_bsp,
+                                    suppress_locus_tag);
         if (new_fcp == NULL) return FALSE;
         vnp = ValNodeNew (segment_feature_list);
         if (vnp == NULL) return FALSE;
@@ -7883,8 +8458,7 @@ static CharPtr BuildFeatureClauses (
 
 static Boolean LIBCALLBACK GetFeatureClauseForSeg (
   SeqLocPtr slp,
-  SeqMgrSegmentContextPtr context
-)
+  SeqMgrSegmentContextPtr context)
 {
   SegmentDefLineFeatureClausePtr sdlp;
   ValNodePtr        clause, tmp_parent_list;
@@ -7932,7 +8506,8 @@ static Boolean LIBCALLBACK GetFeatureClauseForSeg (
            && stop >= context->cumOffset)
       {
         new_fcp = NewFeatureClause (fcp->featlist->data.ptrvalue,
-                                    sdlp->parent_bsp);
+                                    sdlp->parent_bsp, 
+                                    sdlp->feature_requests->suppress_locus_tags);
         if (new_fcp == NULL) return FALSE;
         vnp = ValNodeNew (segment_feature_list);
         if (vnp == NULL) return FALSE;
@@ -7945,7 +8520,8 @@ static Boolean LIBCALLBACK GetFeatureClauseForSeg (
 
   if (segment_feature_list == NULL) {
     segment_feature_list = GrabTraversingGenes (sdlp->parent_feature_list,
-                                                context, sdlp->parent_bsp);
+                                                context, sdlp->parent_bsp,
+                                                sdlp->feature_requests->suppress_locus_tags);
   }
 
   entityID = ObjMgrGetEntityIDForPointer (bsp);
@@ -7976,6 +8552,61 @@ static Boolean LIBCALLBACK GetFeatureClauseForSeg (
   return TRUE;
 }
 
+static void ShowFeatureList (ValNodePtr feature_list, FILE *fp, CharPtr title)
+{
+  Boolean          show_file = FALSE;
+  Char             path[PATH_MAX];
+  SeqFeatPtr       sfp;
+  FeatureClausePtr fcp;
+  SeqMgrFeatContext  context;
+  
+  if (fp == NULL)
+  {
+    TmpNam (path);
+    fp = FileOpen (path, "wb");
+    show_file = TRUE;
+  }
+  while (feature_list != NULL)
+  {
+    if (feature_list->choice == DEFLINE_CLAUSEPLUS)
+    {
+      fcp = (FeatureClausePtr) feature_list->data.ptrvalue;
+      if (fcp == NULL)
+      {
+        fprintf (fp, "Empty clause\n");
+      }
+      else
+      {
+        fprintf (fp, "Clause\n");
+        if (fcp->has_mrna)
+        {
+          fprintf (fp, "Has mRNA\n");
+        }
+        if (fcp->slp == NULL)
+        {
+          fprintf (fp, "Has empty location\n");
+        }
+        ShowFeatureList (fcp->featlist, fp, title);
+        fprintf (fp, "End Clause\n");
+      }
+    }
+    else if (feature_list->choice == DEFLINE_FEATLIST)
+    {
+      sfp = (feature_list->data.ptrvalue);
+      sfp = SeqMgrGetDesiredFeature (sfp->idx.entityID, NULL, 0, 0, sfp, &context);
+      fprintf (fp, "%d:%s\n", sfp->idx.subtype, context.label);
+    }
+    
+    feature_list = feature_list->next;
+  }
+  if (show_file)
+  {
+    FileClose (fp);
+    LaunchGeneralTextViewer (path, title);
+    FileRemove (path);
+  }
+}
+
 static CharPtr BuildFeatureClauses (
   BioseqPtr bsp,
   Uint1      molecule_type,
@@ -7988,33 +8619,38 @@ static CharPtr BuildFeatureClauses (
   DeflineFeatureRequestList PNTR feature_requests
 )
 {
-  ValNodePtr strings = NULL;
-  ValNodePtr clause;
-  CharPtr    str = NULL;
-  ValNodePtr tmp_feat_list;
+  ValNodePtr   strings = NULL;
+  ValNodePtr   clause;
+  CharPtr      str = NULL;
+  Char         ending_str [200];
+  ValNodePtr   tmp_feat_list;
+  BioSourcePtr biop;
 
   if (feature_requests->feature_list_type == DEFLINE_USE_FEATURES
-    && ( ! isSegment || (seg_feature_list != NULL && *seg_feature_list != NULL)))
+      && (! isSegment || (seg_feature_list != NULL && *seg_feature_list != NULL)))
   {
-    GroupmRNAs (feature_list, bsp);
+    GroupmRNAs (feature_list, bsp, feature_requests->suppress_locus_tags);
 
     /* genes are added to other clauses */
-    GroupGenes (feature_list);
+    GroupGenes (feature_list, feature_requests->suppress_locus_tags);
 
     if (! feature_requests->suppress_alt_splice_phrase)
     {
       /* find alt-spliced CDSs */
-      FindAltSplices (*feature_list, bsp);
+      FindAltSplices (*feature_list, bsp, feature_requests->suppress_locus_tags);
     }
 
     GroupAltSplicedExons (feature_list, bsp, TRUE);
+    
+    /* group CDSs that have the same name and are under the same gene together */
+    GroupSegmentedCDSs (feature_list, bsp, TRUE, feature_requests->suppress_locus_tags);
 
     /* now group clauses */
     GroupAllClauses ( feature_list, bsp );
 
-    ExpandAltSplicedExons (*feature_list, bsp);
+    ExpandAltSplicedExons (*feature_list, bsp, feature_requests->suppress_locus_tags);
 
-    FindGeneProducts (*feature_list, bsp);
+    FindGeneProducts (*feature_list, bsp, feature_requests->suppress_locus_tags);
 
     if (seg_feature_list != NULL && *seg_feature_list != NULL)
     {
@@ -8027,16 +8663,17 @@ static CharPtr BuildFeatureClauses (
     /* remove exons and other unwanted features */
     RemoveUnwantedFeatures (feature_list, bsp, isSegment, feature_requests);
 
-    RemoveGenesMentionedElsewhere (feature_list, *feature_list, TRUE);
+    RemoveGenesMentionedElsewhere (feature_list, *feature_list, TRUE,
+                                   feature_requests->suppress_locus_tags);
 
     if (feature_requests->remove_subfeatures)
     {
       DeleteSubfeatures (feature_list, TRUE);
     }
 
-    DeleteOperonSubfeatures (feature_list, TRUE);
+    DeleteOperonAndGeneClusterSubfeatures (feature_list, TRUE);
 
-    CountUnknownGenes (feature_list, bsp);
+    CountUnknownGenes (feature_list, bsp, feature_requests->suppress_locus_tags);
 
     if (feature_requests->misc_feat_parse_rule == 1)
     {
@@ -8047,7 +8684,7 @@ static CharPtr BuildFeatureClauses (
       RemoveUnwantedMiscFeats (feature_list, TRUE);
     }
 
-    ReplaceRNAClauses (feature_list, bsp);
+    ReplaceRNAClauses (feature_list, bsp, feature_requests->suppress_locus_tags);
 
     /* take any exons on the minus strand */
     /* and reverse their order within the clause */
@@ -8055,9 +8692,11 @@ static CharPtr BuildFeatureClauses (
 
     RenameExonSequences ( feature_list, bsp, TRUE);
 
-    LabelClauses (*feature_list, molecule_type, bsp);
+    LabelClauses (*feature_list, molecule_type, bsp, 
+                  feature_requests->suppress_locus_tags);
 
-    ConsolidateClauses (feature_list, bsp, molecule_type, TRUE);
+    ConsolidateClauses (feature_list, bsp, molecule_type, TRUE,
+                        feature_requests->suppress_locus_tags);
 
     /* this allows genes to be listed together even if they are from */
     /* separate sequences */
@@ -8068,22 +8707,49 @@ static CharPtr BuildFeatureClauses (
 
     AutoDef_AddEnding (clause, &strings, bsp, 
                        product_flag, alternate_splice_flag);
-
     str = MergeValNodeStrings (strings, FALSE);
-	ValNodeFreeData (strings);
+	  ValNodeFreeData (strings);
   }
-  else if ( feature_requests->feature_list_type == DEFLINE_COMPLETE_SEQUENCE)
+  else if (feature_requests->feature_list_type == DEFLINE_COMPLETE_SEQUENCE)
   {
     str = StringSave (", complete sequence.");
   }
-  else if ( feature_requests->feature_list_type == DEFLINE_COMPLETE_GENOME)
+  else if (feature_requests->feature_list_type == DEFLINE_COMPLETE_GENOME)
   {
-    str = StringSave (", complete genome.");
+    ending_str [0] = 0;
+    biop = GetBiopForBsp (bsp);
+    if (biop != NULL)
+    {
+      switch (biop->genome) {
+        case GENOME_macronuclear :
+          sprintf (ending_str, "macronuclear");
+          break;
+        case GENOME_nucleomorph :
+          sprintf (ending_str, "nucleomorph");
+          break;
+        case GENOME_mitochondrion :
+          sprintf (ending_str, "mitochondrion");
+          break;
+        case GENOME_apicoplast :
+        case GENOME_chloroplast :
+        case GENOME_chromoplast :
+        case GENOME_kinetoplast :
+        case GENOME_plastid :
+        case GENOME_cyanelle :
+        case GENOME_leucoplast :
+        case GENOME_proplastid :
+          sprintf (ending_str, "%s", organelleByGenome [biop->genome]);
+          break;
+      }
+    }
+    StringCat (ending_str, ", complete genome.");
+    str = StringSave (ending_str);
   }
   else
   {
     str = StringSave ("");
   }
+  
   return str;
 }
 
@@ -8096,17 +8762,26 @@ static Int2 GetProductFlagFromCDSProductNames (BioseqPtr bsp)
   SeqFeatPtr        cds = NULL;
   Int2              product_flag;
   Int2              i;
+  CharPtr           found;
+  Char              ch;
 
   product_flag = 0;
-  for (cds = SeqMgrGetNextFeature (bsp, cds, SEQFEAT_CDREGION, 0, &context); cds != NULL && product_flag == 0; cds = cds->next)
+  for (cds = SeqMgrGetNextFeature (bsp, cds, SEQFEAT_CDREGION, 0, &context);
+       cds != NULL && product_flag == 0;
+       cds = cds->next)
   {
-	for (i = 1; organelleByPopup[i] != NULL && product_flag == 0; i++)
-	{
-      if (StringStr (context.label, organelleByPopup[i]))
-	  {
-	    product_flag = i;
-	  }
-	}
+    for (i = 1; organelleByPopup[i] != NULL && product_flag == 0; i++)
+    {
+      found = StringStr (context.label, organelleByPopup[i]);
+      if (found != NULL)
+      {
+        ch = *(found + StringLen (organelleByPopup[i]));
+        if (ch == 0 || ch == ' ')
+        {
+          product_flag = i;
+        }
+      }
+    }
   }
 
   return product_flag;
@@ -8136,7 +8811,8 @@ static void BuildDefLineFeatClauseList (
   {
     bssp = (BioseqSetPtr) sep->data.ptrvalue;
     if (bssp == NULL) return;
-    if ( bssp->_class == 7 || IsPopPhyEtcSet (bssp->_class))
+    if ( bssp->_class == 7 || IsPopPhyEtcSet (bssp->_class)
+        || bssp->_class == BioseqseqSet_class_gen_prod_set)
     {
       for (sep = bssp->seq_set; sep != NULL; sep = sep->next)
       {
@@ -8162,7 +8838,8 @@ static void BuildDefLineFeatClauseList (
 
       sdld.parent_bsp = bsp;
       sdld.molecule_type = GetMoleculeType (bsp, entityID);
-      sdld.parent_feature_list = GetFeatureList (bsp);
+      sdld.parent_feature_list = GetFeatureList (bsp, 
+                                                 feature_requests->suppress_locus_tags);
 
       sdld.feature_requests =  feature_requests;
       sdld.product_flag = product_flag;
@@ -8173,7 +8850,6 @@ static void BuildDefLineFeatClauseList (
       if (deflist == NULL) return;
       deflist->sep = SeqMgrGetSeqEntryForData (bsp),
       deflist->bsp = bsp;
-
 
       deflist->clauselist = BuildFeatureClauses (bsp,
                             sdld.molecule_type,
@@ -8201,7 +8877,7 @@ static void BuildDefLineFeatClauseList (
   if (bsp == NULL) return;
   if ( SpecialHandlingForSpecialTechniques (bsp)) return;
   molecule_type = GetMoleculeType (bsp, entityID);
-  head = GetFeatureList (bsp);
+  head = GetFeatureList (bsp, feature_requests->suppress_locus_tags);
 
   /* get default product flag if necessary */
   if (product_flag == -1 || product_flag == DEFAULT_ORGANELLE_CLAUSE) {
@@ -8280,6 +8956,7 @@ typedef struct deflineformdata {
   GrouP     featureOptsGrp;
   PopuP     misc_feat_parse_rule;
   ButtoN    alternate_splice_flag;
+  ButtoN    suppress_locus_tags;
 } DefLineFormData, PNTR DefLineFormPtr;
 
 static void DefLineFormMessageProc (ForM f, Int2 mssg)
@@ -8347,6 +9024,55 @@ static void ChangeFeaturePopup (PopuP p)
     SafeEnable (dlfp->featureOptsGrp);
   }
 }
+
+
+/* This removes redundant titles on nuc-prot sets, which will not be
+ * visible in the flat file if all sequences in the nuc-prot set have
+ * their own title.
+ */
+static void RemoveNucProtSetTitles (SeqEntryPtr sep)
+{
+  BioseqSetPtr bssp;
+  SeqEntryPtr  this_sep;
+  SeqDescrPtr  sdp, prev = NULL;
+  
+  if (sep == NULL || ! IS_Bioseq_set (sep))
+  {
+    return;
+  }
+  bssp = (BioseqSetPtr) sep->data.ptrvalue;
+  if (bssp == NULL) return;
+  for (this_sep = bssp->seq_set; this_sep != NULL; this_sep = this_sep->next)
+  {
+    RemoveNucProtSetTitles (this_sep);
+  }
+  
+  if (bssp->_class != BioseqseqSet_class_nuc_prot) 
+  {
+    return;
+  }
+  for (sdp = bssp->descr; sdp != NULL; sdp = sdp->next)
+  {
+    if (sdp->choice == Seq_descr_title)
+    {
+      if (prev == NULL)
+      {
+        bssp->descr = sdp->next;
+      }
+      else
+      {
+        prev->next = sdp->next;
+      }
+      sdp->next = NULL;
+      SeqDescrFree (sdp);
+    }
+    else
+    {
+      prev = sdp;
+    }
+  }
+}
+
 
 static void DoAutoDefLine (ButtoN b)
 {
@@ -8435,6 +9161,9 @@ static void DoAutoDefLine (ButtoN b)
   dlfp->feature_requests.remove_subfeatures = 
                  GetStatus (dlfp->remove_subfeatures);
 
+  dlfp->feature_requests.suppress_locus_tags = 
+                 GetStatus (dlfp->suppress_locus_tags);
+
   dlfp->feature_requests.misc_feat_parse_rule = 
                  GetValue (dlfp->misc_feat_parse_rule);
 
@@ -8461,6 +9190,8 @@ static void DoAutoDefLine (ButtoN b)
   }
   if (sep == NULL) return;
 
+  RemoveNucProtSetTitles (sep);
+  
   SeqEntrySetScope (sep);
 
   BuildDefLineFeatClauseList (sep, dlfp->input_entityID,
@@ -8611,13 +9342,11 @@ static void SetHIVRuleEnable (Handle a)
   if (dlfp == NULL) return;
   if (dlfp->clone_isolate_HIV_rule_num == NULL) return;
   if (dlfp->modList == NULL) return;
-  if (dlfp->modList [DEFLINE_POS_Clone].button != NULL
-    && GetStatus (dlfp->modList [DEFLINE_POS_Clone].button)
-    && dlfp->modList [DEFLINE_POS_Isolate].button != NULL
-    && GetStatus (dlfp->modList [DEFLINE_POS_Isolate].button))
+  if ((dlfp->modList [DEFLINE_POS_Clone].button != NULL
+       && GetStatus (dlfp->modList [DEFLINE_POS_Clone].button))
+      || (dlfp->modList [DEFLINE_POS_Isolate].button != NULL
+          && GetStatus (dlfp->modList [DEFLINE_POS_Isolate].button)))
   {
-    SetValue (dlfp->clone_isolate_HIV_rule_num, 
-              clone_isolate_HIV_rule_want_both);
     Disable (dlfp->clone_isolate_HIV_rule_num);
   }
   else
@@ -8785,7 +9514,9 @@ static GrouP CreateDefLineFormFeatureOptionsGroup (
   q = CreateDefLineFormFeatureListPopuP (p, dlfp);
 
   dlfp->featureOptsGrp = HiddenGroup (p, -1, 0, NULL);
+  
   dlfp->organelle_popup = CreateDefLineFormOrganellePopup (dlfp->featureOptsGrp);
+
   dlfp->alternate_splice_flag = CheckBox (dlfp->featureOptsGrp,
 	                "Append 'alternatively spliced' to end of defline", NULL);
   dlfp->suppress_alt_splice_phrase = CheckBox (dlfp->featureOptsGrp, 
@@ -8795,6 +9526,10 @@ static GrouP CreateDefLineFormFeatureOptionsGroup (
   dlfp->remove_subfeatures = CheckBox (dlfp->featureOptsGrp, 
             "Suppress transposon and insertion sequence subfeatures", NULL);
   SetStatus (dlfp->remove_subfeatures, FALSE);
+
+  dlfp->suppress_locus_tags = CheckBox (dlfp->featureOptsGrp, 
+            "Suppress locus tags", NULL);
+  SetStatus (dlfp->suppress_locus_tags, FALSE);
 
   g = NormalGroup (dlfp->featureOptsGrp, 3, 0,
                    "Optional Features", programFont, NULL);
@@ -8824,6 +9559,7 @@ static GrouP CreateDefLineFormFeatureOptionsGroup (
                  (HANDLE) dlfp->alternate_splice_flag,
                  (HANDLE) dlfp->suppress_alt_splice_phrase,
                  (HANDLE) dlfp->remove_subfeatures,
+                 (HANDLE) dlfp->suppress_locus_tags,
                  (HANDLE) g,
                  (HANDLE) r,
                  NULL);
@@ -8967,6 +9703,7 @@ static void BuildDefinitionLinesFromFeatureClauseLists (
   }
 }
 
+
 extern void AutoDefBaseFormCommon (
   BaseFormPtr bfp,
   Boolean use_form,
@@ -8999,6 +9736,7 @@ extern void AutoDefBaseFormCommon (
   }
   else
   {
+    RemoveNucProtSetTitles (sep);
     SeqEntrySetScope (sep);
     WatchCursor ();
     Update ();
@@ -9182,7 +9920,14 @@ typedef struct orgmodloadformdata {
   Boolean           replace_with_blank;
   ButtoN            replace_with_blank_btn;
   ButtoN            accept_button;
+  ButtoN            leave_dlg_up_btn;
   
+  /* These members are for importing modifiers in the
+   * submission dialogs.
+   */
+  SeqEntryPtr       seq_list;
+  Boolean           done;
+  Boolean           mods_added;
 } OrgModLoadFormData, PNTR OrgModLoadFormPtr;
  
 static void SetFormModsAcceptButton (Handle a)
@@ -9204,7 +9949,7 @@ static void SetFormModsAcceptButton (Handle a)
     if ( GetValue (form_data->line_forms [ column_index].action_choice) == 2)
     {
       apply_choice = GetValue (form_data->line_forms[column_index].apply_choice);
-      if ( apply_choice > 0 && apply_choice < NumDefLineModifiers)
+      if ( apply_choice > 0 && apply_choice <= NumDefLineModifiers + 1)
       {
         have_apply = TRUE;
       }
@@ -9240,6 +9985,39 @@ static void SetFormModsAcceptButton (Handle a)
     Disable (form_data->accept_button);
   }
 }
+
+
+extern CharPtr GetModifierPopupPositionName (Int2 val)
+{
+  if (val <= 1)
+  {
+    return NULL;
+  }
+  else if (val > NumDefLineModifiers + 1)
+  {
+    return "Organism";
+  }
+  else
+  {
+    return DefLineModifiers[val - 2].name;
+  }  
+}
+
+extern Int4 GetNumDeflineModifiers (void)
+{
+  return NumDefLineModifiers;
+}
+
+extern CharPtr GetSelectedModifierPopupName (PopuP p)
+{
+  Int2                     val;
+  
+  val = GetValue (p);
+  return GetModifierPopupPositionName (val);
+}
+
+
+
 
 static void BuildOrgModLineForm (
   CharPtr           value_string,
@@ -9284,6 +10062,7 @@ static void BuildOrgModLineForm (
   {
     ListItem (omlfp->apply_choice, DefLineModifiers[index].name);
   }
+  ListItem (omlfp->apply_choice, "Tax Name");
 
   SetValue (omlfp->action_choice, 1);
 }
@@ -9382,6 +10161,70 @@ static void AddOneQualToOrg (
     }
   }
 }
+
+static void ApplyTaxNameToOrg (BioSourcePtr biop, CharPtr value_string)
+{
+  if (biop == NULL) return;
+  if (biop->org == NULL)
+  {
+  	biop->org = OrgRefNew ();
+  }
+  if (biop->org == NULL) return;
+  if (biop->org->taxname != NULL)
+  {
+  	biop->org->taxname = MemFree (biop->org->taxname);
+  }
+  biop->org->taxname = StringSave (value_string);
+}
+
+static Uint1 GetGenomeValFromString (CharPtr value_string)
+{
+  static CharPtr genome_names[] = 
+  {
+    "",
+    "genomic",
+    "chloroplast",
+    "chromoplast",
+    "kinteoplast",
+    "mitochondrion",
+    "plastid",
+    "macronuclear",
+    "extrachrom",
+    "plasmid",
+    "transposon",
+    "insertion_seq",
+    "cyanelle",
+    "proviral",
+    "virion",
+    "nucleomorph",
+    "apicoplast",
+    "leucoplast",
+    "proplastid",
+    "endogenous_virus",
+  };
+  Uint1 genome_val;
+  
+  if (StringHasNoText (value_string))
+  {
+    return 0;
+  }
+  for (genome_val = 1; genome_val < sizeof (genome_names); genome_val++)
+  {
+    if (StringICmp (value_string, genome_names[genome_val]) == 0)
+    {
+      return genome_val;
+    }
+  }
+  return 0;
+}
+
+static void ApplyLocationToOrg (BioSourcePtr biop, CharPtr value_string)
+{
+  if (biop != NULL)
+  {
+    biop->genome = GetGenomeValFromString (value_string);
+  }
+}
   
 static void ApplyQualsToOrg (
   BioSourcePtr biop, 
@@ -9402,11 +10245,23 @@ static void ApplyQualsToOrg (
   {
     apply_choice = GetValue (form_data->line_forms[column_index].apply_choice);
     if (GetValue (form_data->line_forms[column_index].action_choice) == 2
-      && apply_choice > 0 && apply_choice < NumDefLineModifiers)
+      && apply_choice > 0)
     {
-      if (form_data->replace_with_blank || ! StringHasNoText (part->data.ptrvalue)) {
-        AddOneQualToOrg (biop, part->data.ptrvalue, 
-          GetValue (form_data->line_forms[column_index].apply_choice) - 1);
+      if (form_data->replace_with_blank || ! StringHasNoText (part->data.ptrvalue)) 
+      {
+        if (apply_choice < NumDefLineModifiers + 1)
+        {
+          AddOneQualToOrg (biop, part->data.ptrvalue,
+              GetValue (form_data->line_forms[column_index].apply_choice) - 1);
+        }
+        else if (apply_choice == NumDefLineModifiers + 1)
+        {  
+          ApplyTaxNameToOrg (biop, part->data.ptrvalue);   
+        }
+        else if (apply_choice == NumDefLineModifiers + 2)
+        {
+          ApplyLocationToOrg (biop, part->data.ptrvalue);
+        }
       }
     }
     part = part->next;
@@ -9539,12 +10394,22 @@ static Boolean IDListHasValue (
           return TRUE;
         }
       } else {
-        match_len = StringCSpn (acc_str, ".");
-        match_len2 = StringCSpn (id, ".");
-        if (match_len == match_len2
-          && match_len > 0 && StringNCmp (id, acc_str, match_len) == 0)
+        if (only_local)
         {
-          return TRUE;
+          if (StringCmp (id, acc_str) == 0)
+          {
+          	return TRUE;
+          }
+        }
+        else 
+        {
+          match_len = StringCSpn (acc_str, ".");
+          match_len2 = StringCSpn (id, ".");
+          if (match_len == match_len2
+            && match_len > 0 && StringNCmp (id, acc_str, match_len) == 0)
+          {
+            return TRUE;
+          }
         }
       }
     }
@@ -9694,34 +10559,38 @@ static void DoAcceptFormMods (ButtoN b)
   Update ();
   ObjMgrSetDirtyFlag (form_data->entityID, TRUE);
   ObjMgrSendMsg (OM_MSG_UPDATE, form_data->entityID, 0, 0);
-  Remove (form_data->form);
+  if (!GetStatus (form_data->leave_dlg_up_btn))
+  {
+    Remove (form_data->form);
+  }
 }
 
 static ValNodePtr ReadTableData (void)
 {
   Char          path [PATH_MAX];
-  FILE          *fp;
-  Char          str [8192];
   size_t        len = 8192;
   Int4          max_columns;
   ValNodePtr    header_line;
   ValNodePtr    line_list;
   TableLinePtr  tlp;
   ValNodePtr    vnp;
+  ReadBufferData rbd;
+  CharPtr        line;
 
   path [0] = '\0';
   if (! GetInputFileName (path, sizeof (path), NULL, "TEXT")) return NULL;
   
-  fp = FileOpen (path, "r");
-  if (fp == NULL) return NULL;
+  rbd.fp = FileOpen (path, "r");
+  if (rbd.fp == NULL) return NULL;
+  rbd.current_data = NULL;
 
   line_list = NULL;
   max_columns = 0;
   header_line = NULL;
-  ReadLine (fp, str, len);
-  while (Nlm_fileDone) 
+  line = AbstractReadFunction (&rbd);
+  while (line != NULL) 
   {
-    tlp = MakeTableData (str);
+    tlp = MakeTableData (line);
     if (tlp != NULL)
     {
       vnp = ValNodeNew (line_list);
@@ -9734,9 +10603,10 @@ static ValNodePtr ReadTableData (void)
         header_line = vnp;
       }
     }
-    ReadLine (fp, str, len);
+    line = MemFree (line);
+    line = AbstractReadFunction (&rbd);
   }
-  FileClose (fp);
+  FileClose (rbd.fp);
   /* throw out all lines before header line */
   if (header_line != line_list)
   {
@@ -9812,6 +10682,7 @@ extern void LoadOrganismModifierTable (IteM i)
   SetObjectExtra (form_data->accept_button, form_data, NULL);
   Disable (form_data->accept_button);
   PushButton (c, "Cancel", StdCancelButtonProc);
+  form_data->leave_dlg_up_btn = CheckBox (c, "Leave Dialog Up", NULL);
 
   AlignObjects (ALIGN_CENTER, (HANDLE) g, (HANDLE) k, (HANDLE) c, NULL);
 
@@ -9819,6 +10690,1593 @@ extern void LoadOrganismModifierTable (IteM i)
   Show (w);
   Update ();
 }
+
+static CharPtr FindModifierIndexInTitle (Int4 modifier_index, CharPtr title_text)
+{
+  Char    look_for[128];
+  Char    look_for2[128];
+  CharPtr mod_found = NULL;
+  
+  if (modifier_index > NumDefLineModifiers + 2 || modifier_index < 0)
+  {
+    return NULL;
+  }
+  if (modifier_index < NumDefLineModifiers)
+  {
+    if (modifier_index == DEFLINE_POS_Specimen_voucher)
+	  {
+      sprintf (look_for, "[specimen-voucher=");
+	  } 
+	  else
+	  {
+      sprintf (look_for, "[%s=", DefLineModifiers [modifier_index].name);
+	  }
+    look_for2[0] = 0;
+  }
+  else if (modifier_index == NumDefLineModifiers)
+  {
+    sprintf (look_for, "[Organism=");
+    sprintf (look_for2, "[Org=");
+  }
+  else if (modifier_index == NumDefLineModifiers + 1)
+  {
+    sprintf (look_for, "[location=");
+  }
+  else if (modifier_index == NumDefLineModifiers + 2)
+  {
+    sprintf (look_for, "[lineage=");
+  }
+  
+  /* if title text is not NULL, need to make sure old value is not present */
+  mod_found = StringISearch (title_text, look_for);
+  if (mod_found == NULL && modifier_index == NumDefLineModifiers)
+  {
+    mod_found = StringISearch (title_text, look_for2);
+  }
+  return mod_found;
+}
+
+static CharPtr AddOneModToTitle 
+(CharPtr title_text,
+ CharPtr value_string,
+ Int4    modifier_index,
+ Boolean erase_where_blank)
+{
+  Char    look_for[128];
+  Char    look_for2[128];
+  CharPtr mod_found = NULL;
+  CharPtr end_mod;
+  Int4    new_len;
+  CharPtr new_title;
+ 
+  if (modifier_index > NumDefLineModifiers + 2 || modifier_index < 0)
+  {
+    return StringSave (title_text);
+  }
+  if (!erase_where_blank && StringHasNoText (value_string))
+  {
+    return StringSave (title_text);
+  }
+  if (modifier_index < NumDefLineModifiers)
+  {
+    if (modifier_index == DEFLINE_POS_Specimen_voucher)
+	  {
+      sprintf (look_for, "[specimen-voucher=");
+	  } 
+	  else
+	  {
+      sprintf (look_for, "[%s=", DefLineModifiers [modifier_index].name);
+	  }
+    look_for2[0] = 0;
+  }
+  else if (modifier_index == NumDefLineModifiers)
+  {
+    sprintf (look_for, "[Organism=");
+    sprintf (look_for2, "[Org=");
+  }
+  else if (modifier_index == NumDefLineModifiers + 1)
+  {
+    sprintf (look_for, "[location=");
+  }
+  else if (modifier_index == NumDefLineModifiers + 2)
+  {
+    sprintf (look_for, "[lineage=");
+  }
+  
+  /* if title text is not NULL, need to make sure old value is not present */
+  mod_found = StringISearch (title_text, look_for);
+  if (mod_found == NULL && modifier_index == NumDefLineModifiers)
+  {
+    mod_found = StringISearch (title_text, look_for2);
+  }
+  if (mod_found)
+  {
+    end_mod = StringChr (mod_found, ']');
+    if (end_mod != NULL)
+    {
+      StringCpy (mod_found, end_mod + 1);
+    }
+  }
+  
+  new_len = StringLen (title_text) + StringLen (look_for) + StringLen (value_string) + 3;
+  new_title = (CharPtr) MemNew (sizeof (Char) * new_len);
+  if (new_title != NULL)
+  {
+    new_title [0] = 0;
+    if (!StringHasNoText (title_text))
+    {
+      StringCpy (new_title, title_text);
+      StringCat (new_title, " ");
+    }
+    StringCat (new_title, look_for);
+    if (! IsNonTextModifierIndex (modifier_index) && !StringHasNoText (value_string))
+    {
+      StringCat (new_title, value_string);
+    }
+    StringCat (new_title, "]");
+  }
+  return new_title;
+}
+
+typedef struct orgmodlinedata 
+{
+  Int4    column_number;
+  Int4    apply_choice;  
+} OrgModLineData, PNTR OrgModLinePtr;
+
+static void 
+AddModsToTitle 
+(BioseqPtr         bsp,
+ ValNodePtr        parts,
+ Int4              num_columns,
+ OrgModLinePtr     line_data,
+ Boolean           erase_where_blank)
+{
+  Int4        column_index;
+  ValNodePtr  part;
+  CharPtr     title_text = NULL;
+  SeqDescrPtr sdp;
+  
+  if (bsp == NULL || parts == NULL || line_data == NULL) return;
+  sdp = bsp->descr;
+  while (sdp != NULL && sdp->choice != Seq_descr_title)
+  {
+    sdp = sdp->next;
+  }
+  if (sdp == NULL)
+  {
+    sdp = ValNodeNew (bsp->descr);
+    if (bsp->descr == NULL)
+    {
+      bsp->descr = sdp;
+    }
+    sdp->choice = Seq_descr_title;
+    sdp->data.ptrvalue = NULL;
+  }
+
+  title_text = sdp->data.ptrvalue;
+  /* skip over first column, it has ID */
+  for (column_index = 1, part = parts->next;
+       column_index < num_columns && part != NULL;
+       column_index ++, part = part->next)
+  {
+    title_text = AddOneModToTitle (title_text, part->data.ptrvalue,
+                                   line_data[column_index].apply_choice - 1,
+                                   erase_where_blank);
+	  sdp->data.ptrvalue = MemFree (sdp->data.ptrvalue);
+	  sdp->data.ptrvalue = title_text;
+  }
+  if (erase_where_blank)
+  {
+    while (column_index < num_columns)
+    {
+      title_text = AddOneModToTitle (title_text, NULL,
+                                     line_data[column_index].apply_choice - 1,
+                                     erase_where_blank);
+	    sdp->data.ptrvalue = MemFree (sdp->data.ptrvalue);
+	    sdp->data.ptrvalue = title_text;
+	    column_index ++;
+    }
+  }
+}
+
+static Boolean BioseqHasStringID (BioseqPtr bsp, CharPtr id)
+{
+  Boolean  found_id = FALSE;
+  SeqIdPtr sip, tmp_sip;
+  Char     acc_str [256];
+  Int4     match_len, match_len2;
+  
+  if (bsp == NULL || id == NULL)
+  {
+    return FALSE;
+  }
+
+  for (sip = bsp->id; sip != NULL && !found_id; sip = sip->next)
+  {
+    tmp_sip = sip->next;
+    sip->next = NULL;
+    
+    SeqIdWrite (sip, acc_str, PRINTID_REPORT, sizeof (acc_str));
+    if (StringCmp (id, acc_str) == 0)
+    {
+      found_id = TRUE;
+    }
+    else if (StringNCmp (acc_str, "TMSMART:", 8) == 0
+        && StringCmp (id, acc_str + 8) == 0)
+    {
+      found_id = TRUE;
+    } else if (IDIsInTextList (id, acc_str, TRUE)) {
+     found_id = TRUE;
+    } else {
+      match_len = StringCSpn (acc_str, ".");
+      match_len2 = StringCSpn (id, ".");
+      if (match_len == match_len2
+          && match_len > 0 && StringNCmp (id, acc_str, match_len) == 0)
+      {
+        found_id = TRUE;
+      }
+    }
+    sip->next = tmp_sip;
+  }
+  return found_id;
+}
+
+static Boolean 
+AddModsToOneSep 
+(SeqEntryPtr   sep,
+ ValNodePtr    line_list, 
+ OrgModLinePtr column_info,
+ Int4          num_columns,
+ Boolean       erase_where_blank)
+{
+  BioseqPtr         bsp;
+  ValNodePtr        line, part;
+  TableLinePtr      tlp;
+  Boolean           rval = FALSE;
+  
+  if (line_list == NULL || column_info == NULL || sep == NULL) return rval;
+  
+  if (IS_Bioseq (sep))
+  {
+    bsp = (BioseqPtr) sep->data.ptrvalue;
+  }
+  else
+  {
+    sep = FindNucSeqEntry (sep);
+    if (sep != NULL && IS_Bioseq (sep))
+    {
+      bsp = (BioseqPtr) sep->data.ptrvalue;
+    }
+  }
+  if (bsp == NULL) return rval;
+
+  /* the first column contains the ID */
+  for (line = line_list; line != NULL; line = line->next)
+  {    
+    tlp = line->data.ptrvalue;
+    if (tlp == NULL) 
+    {
+      continue;
+    }
+    part = tlp->parts;
+    if (part == NULL || StringHasNoText (part->data.ptrvalue))
+    {
+      continue;
+    }
+    if (BioseqHasStringID (bsp, (CharPtr) part->data.ptrvalue))
+    {
+      AddModsToTitle (bsp, tlp->parts, num_columns, column_info, erase_where_blank);
+      rval = TRUE;
+    }
+  }
+  return rval;
+}
+
+static Boolean ReplaceImportModifierName (CharPtr PNTR orig_name, Int4 col_num)
+{
+  ModalAcceptCancelData acd;
+  WindoW                w;
+  Char                  title[128];
+  PopuP                 p;
+  GrouP                 g, k, c;
+  ButtoN                b;
+  Int4                  index;
+  
+  if (orig_name == NULL)
+  {
+    return FALSE;
+  }
+  acd.accepted = FALSE;
+  acd.cancelled = FALSE;
+  
+  sprintf (title, "Choose import modifier for column %d", col_num);
+  w = MovableModalWindow(-20, -13, -10, -10, title, NULL);
+  g = HiddenGroup (w, -1, 0, NULL);
+  
+  k = NULL;
+  if (!StringHasNoText (*orig_name))
+  {
+    k = HiddenGroup (g, 2, 0, NULL);
+    StaticPrompt (k, "Unrecognized column name:", 0, popupMenuHeight, programFont, 'r');
+    StaticPrompt (k, *orig_name, 0, popupMenuHeight, programFont, 'l');
+  }
+  
+  p = PopupList (g, TRUE, NULL);
+  PopupItem (p, "Ignore Column");
+  for (index = 0; index < NumDefLineModifiers; index++)
+  {
+    PopupItem (p, DefLineModifiers[index].name);
+  }
+  PopupItem (p, "organism");
+  PopupItem (p, "location");
+  SetValue (p, 1);
+  c = HiddenGroup (g, 2, 0, NULL);
+  b = PushButton (c, "Accept", ModalAcceptButton);
+  SetObjectExtra (b, &acd, NULL);
+  b = PushButton (c, "Cancel", ModalCancelButton);
+  SetObjectExtra (b, &acd, NULL);
+  if (k == NULL)
+  {
+    AlignObjects (ALIGN_CENTER, (HANDLE) p, (HANDLE) c, NULL);
+  }
+  else
+  {
+    AlignObjects (ALIGN_CENTER, (HANDLE) k, (HANDLE) p, (HANDLE) c, NULL);
+  }
+  Show (w);
+  Select (w);
+  acd.accepted = FALSE;
+  acd.cancelled = FALSE;
+  while (!acd.accepted && ! acd.cancelled)
+  {
+    ProcessExternalEvent ();
+    Update ();
+  }
+  ProcessAnEvent ();
+  index = GetValue (p);
+  Remove (w);
+  if (acd.cancelled)
+  {
+    return FALSE;
+  }
+  else
+  {
+    *orig_name = MemFree (*orig_name);
+    if (index == NumDefLineModifiers + 2)
+    {
+      *orig_name = StringSave ("organism");
+    }
+    else if (index == NumDefLineModifiers + 3)
+    {
+      *orig_name = StringSave ("location");
+    }
+    else if (index > 1 && index < NumDefLineModifiers + 2)
+    {
+      *orig_name = StringSave (DefLineModifiers[index - 2].name);
+    }
+    return TRUE;
+  }
+}
+
+static CharPtr FixCommonModifierNameProblems (CharPtr orig_name)
+{
+  CharPtr cp;
+
+  if (StringHasNoText (orig_name))
+  {
+    return orig_name;
+  }
+  
+  TrimSpacesAroundString (orig_name);
+
+  cp = StringChr (orig_name, ' ');
+  while (cp != NULL)
+  {
+    *cp = '-';
+    cp = StringChr (cp, ' ');
+  }
+  
+  if (StringICmp (orig_name, "Lat-long") == 0
+      || StringICmp (orig_name, "Latitude-Longitude") == 0)
+  {
+    sprintf (orig_name, "lat-lon");
+  }
+  else if (StringICmp (orig_name, "org") == 0)
+  {
+    orig_name = StringSave ("organism");
+  }
+  else if (StringICmp (orig_name, "specimen-voucher") == 0)
+  {
+    orig_name = StringSave ("specimen voucher");
+  }
+  else if (StringICmp (orig_name, "environmental_sample") == 0)
+  {
+    orig_name = StringSave ("environmental-sample");
+  }
+  else if (StringICmp (orig_name, "note") == 0)
+  {
+    orig_name = StringSave ("Note-Subsrc");
+  }
+  return orig_name;
+}
+
+static ValNodePtr CreateHeaderLine (void)
+{
+  ModalAcceptCancelData acd;
+  WindoW                w;
+  PopuP                 p;
+  GrouP                 g, c;
+  ButtoN                b;
+  Int4                  index;
+  TableLinePtr          tlp;
+  ValNodePtr            header_line = NULL;
+  
+  acd.accepted = FALSE;
+  acd.cancelled = FALSE;
+  
+  w = MovableModalWindow(-20, -13, -10, -10, 
+                         "Choose import modifier for values in second column",
+                         NULL);
+  g = HiddenGroup (w, -1, 0, NULL);
+    
+  p = PopupList (g, TRUE, NULL);
+  for (index = 0; index < NumDefLineModifiers; index++)
+  {
+    PopupItem (p, DefLineModifiers[index].name);
+  }
+  PopupItem (p, "organism");
+  SetValue (p, 1);
+  c = HiddenGroup (g, 2, 0, NULL);
+  b = PushButton (c, "Accept", ModalAcceptButton);
+  SetObjectExtra (b, &acd, NULL);
+  b = PushButton (c, "Cancel", ModalCancelButton);
+  SetObjectExtra (b, &acd, NULL);
+  AlignObjects (ALIGN_CENTER, (HANDLE) p, (HANDLE) c, NULL);
+  Show (w);
+  Select (w);
+  acd.accepted = FALSE;
+  acd.cancelled = FALSE;
+  while (!acd.accepted && ! acd.cancelled)
+  {
+    ProcessExternalEvent ();
+    Update ();
+  }
+  ProcessAnEvent ();
+  index = GetValue (p);
+  Remove (w);
+  if (acd.cancelled)
+  {
+    return NULL;
+  }
+  
+  tlp = (TableLinePtr) MemNew (sizeof (TableLineData));
+  if (tlp != NULL)
+  {
+    tlp->num_parts = 2;
+    tlp->parts = ValNodeNew (NULL);
+    tlp->parts->data.ptrvalue = StringSave ("local_id");
+    if (index == NumDefLineModifiers + 1)
+    {
+      ValNodeAddPointer (&(tlp->parts), 0, StringSave ("organism"));
+    }
+    else
+    {
+      ValNodeAddPointer (&(tlp->parts), 0, 
+                         StringSave (DefLineModifiers[index - 1].name));
+    }
+    header_line = ValNodeNew (NULL);
+    if (header_line != NULL)
+    {
+      header_line->data.ptrvalue = tlp;
+      header_line->next = NULL;
+    }
+  }
+  return header_line;
+}
+
+
+static ValNodePtr FreeTableData (ValNodePtr lines)
+{
+  TableLinePtr tlp;
+  
+  if (lines == NULL)
+  {
+    return NULL;
+  }
+  lines->next = FreeTableData (lines->next);
+  tlp = (lines->data.ptrvalue);
+  if (tlp != NULL)
+  {
+    tlp->parts = ValNodeFreeData (tlp->parts);
+    tlp = MemFree (tlp);
+    lines->data.ptrvalue = NULL;
+  }
+  return ValNodeFree (lines);
+}
+
+static Boolean ChoiceAlreadyInList (Uint1 choice, ValNodePtr list)
+{
+  while (list != NULL)
+  {
+    if (list->choice == choice)
+    {
+      return TRUE;
+    }
+    list = list->next;
+  }
+  return FALSE;
+}
+
+static Boolean StringAlreadyInList (ValNodePtr list, CharPtr str)
+{
+  while (list != NULL)
+  {
+    if (StringICmp (list->data.ptrvalue, str) == 0)
+    {
+      return TRUE;
+    }
+    list = list->next;
+  }
+  return FALSE;
+}
+
+extern EnumFieldAssoc  biosource_genome_simple_alist [];
+
+static Boolean 
+TableContainsBadValues 
+(ValNodePtr    data_lines,
+ OrgModLinePtr column_info)
+{
+  ValNodePtr        data_line, column_vnp;
+  Int4              col_num;
+  TableLinePtr      tlp;
+  EnumFieldAssocPtr eap;
+  Boolean           found;
+  ValNodePtr        bad_loc_list = NULL, bad_nontext_list = NULL;
+  CharPtr           loc_err_msg = NULL, nontext_err_msg = NULL;
+  ValNodePtr        good_loc_list = NULL;
+  CharPtr           good_msg = NULL;
+  Boolean           rval = FALSE;
+  Int4              col_mod_index;
+  
+  if (column_info == NULL)
+  {
+    return FALSE;
+  }
+  
+  for (data_line = data_lines; data_line != NULL; data_line = data_line->next)
+  {
+    tlp = (TableLinePtr) data_line->data.ptrvalue;
+    if (tlp == NULL)
+    {
+      continue;
+    }
+    for (column_vnp = tlp->parts, col_num = 0;
+         column_vnp != NULL; 
+         column_vnp = column_vnp->next, col_num++)
+    {
+      col_mod_index = column_info[col_num].apply_choice - 1;
+      if (col_mod_index < 0)
+      {
+        continue;
+      }
+      else if (col_mod_index == NumDefLineModifiers + 1)
+      {
+        /* location */
+        found = FALSE;
+        if (StringHasNoText (column_vnp->data.ptrvalue))
+        {
+          found = TRUE;
+        }
+        for (eap = biosource_genome_simple_alist;
+             eap != NULL && eap->name != NULL && !found;
+             eap++)
+        {
+          if (StringICmp (eap->name, column_vnp->data.ptrvalue) == 0)
+          {
+            found = TRUE;
+          }
+        }
+        if (!found)
+        {
+          if (!StringAlreadyInList (bad_loc_list, tlp->parts->data.ptrvalue))
+          {
+            ValNodeAddPointer (&bad_loc_list, 0, tlp->parts->data.ptrvalue);
+          }
+        }
+      }
+      else if (col_mod_index < NumDefLineModifiers 
+               && IsNonTextModifier (DefLineModifiers[col_mod_index].name))
+      {
+        if (StringICmp (column_vnp->data.ptrvalue, "false") == 0)
+        {
+          column_vnp->data.ptrvalue = MemFree (column_vnp->data.ptrvalue);
+        }
+        else if (StringICmp (column_vnp->data.ptrvalue, "true") != 0)
+        {
+          if (!ChoiceAlreadyInList (col_mod_index, bad_nontext_list))
+          {
+            ValNodeAddPointer (&bad_nontext_list, col_mod_index, 
+                               DefLineModifiers[col_mod_index].name);
+          }
+        }
+      }
+    }
+  }
+  if (bad_loc_list != NULL)
+  {
+    loc_err_msg = CreateListMessage (NULL, NULL, bad_loc_list);
+    for (eap = biosource_genome_simple_alist;
+         eap != NULL && eap->name != NULL && !found;
+         eap++)
+    {
+      if (!StringHasNoText (eap->name))
+      {
+        ValNodeAddPointer (&good_loc_list, 0, eap->name);
+      }
+    }
+    good_msg = CreateListMessage ("Valid location value", "Please edit your file.", good_loc_list);
+    good_loc_list = ValNodeFree (good_loc_list);
+    
+    if (bad_loc_list->next == NULL)
+    {
+      Message (MSG_ERROR, "%s contains an invalid location value.  %s", loc_err_msg, good_msg);
+    }
+    else
+    {
+      Message (MSG_ERROR, "%s contain invalid location values. %s", loc_err_msg, good_msg);
+    }
+    rval = TRUE;
+  }
+  
+  if (!rval && bad_nontext_list != NULL)
+  {
+    nontext_err_msg = CreateListMessage ("Column", NULL, bad_nontext_list);
+    if (bad_nontext_list->next == NULL)
+    {
+      if (ANS_CANCEL == Message (MSG_OKC, "%s contains a value other than TRUE or FALSE.  "
+                                 "This modifier does not allow other text.  Click OK to "
+                                 "discard this text and mark the values as TRUE.  If you "
+                                 "wish to preserve this text under another modifier, click "
+                                 "Cancel and change the column header in your file.",
+                                 nontext_err_msg))
+      {
+        rval = TRUE;
+      }
+    }
+    else
+    {
+      if (ANS_CANCEL == Message (MSG_OKC, "%s contain values other than TRUE or FALSE.  "
+                                 "These modifiers do not allow other text.  Click OK to "
+                                 "discard this text and mark the values as TRUE.  If you "
+                                 "wish to preserve this text under another modifier, click "
+                                 "Cancel and change the column header in your file.",
+                                 nontext_err_msg))
+      {
+        rval = TRUE;
+      }
+    }
+  }
+  
+  bad_loc_list = ValNodeFree (bad_loc_list);
+  bad_nontext_list = ValNodeFree (bad_nontext_list);
+  loc_err_msg = MemFree (loc_err_msg);
+  good_msg = MemFree (good_msg);
+  nontext_err_msg = MemFree (nontext_err_msg);
+  return rval;
+}
+
+
+static Int4 
+PrepareTableDataForImport 
+(ValNodePtr    PNTR pheader_line, 
+ OrgModLinePtr PNTR pcolumn_info)
+{
+  ValNodePtr    header_line, vnp;
+  Int4          index, col_num;
+  TableLinePtr      tlp;
+  Int4          max_columns;
+  CharPtr       new_val;
+  Boolean       found;
+  OrgModLinePtr column_info;
+  
+  if (pheader_line == NULL || pcolumn_info == NULL)
+  {
+    return -1;
+  }
+
+  *pheader_line = NULL;
+  *pcolumn_info = NULL;
+  
+  header_line = ReadTableData ();
+  if (header_line == NULL || header_line->data.ptrvalue == NULL) return -1;
+  
+  tlp = header_line->data.ptrvalue;
+  if (tlp == NULL || tlp->parts == NULL)
+  {
+    Message (MSG_ERROR, "Error reading table");
+    header_line = FreeTableData (header_line);
+    return -1;
+  }
+  if (tlp->parts->next == NULL)
+  {
+    Message (MSG_ERROR, "Table contains only one column!  You must supply at least local_id column and one column of modifiers.");
+    header_line = FreeTableData (header_line);
+    return -1;
+  }
+  
+  if (StringICmp (tlp->parts->data.ptrvalue, "local_id") != 0
+      && StringICmp (tlp->parts->data.ptrvalue, "local id") != 0
+      && StringICmp (tlp->parts->data.ptrvalue, "seq_id") != 0
+      && StringICmp (tlp->parts->data.ptrvalue, "seq id") != 0
+      && StringICmp (tlp->parts->data.ptrvalue, "sequence_id") != 0
+      && StringICmp (tlp->parts->data.ptrvalue, "sequence id") != 0
+      )
+  {
+    Message (MSG_ERROR, "Table file is missing header line!  Make sure first column header is seq_id");
+    header_line = FreeTableData (header_line);
+    return -1;      
+  }
+  else
+  {  
+    max_columns = 1;
+    for (vnp = tlp->parts->next; vnp != NULL; vnp = vnp->next)
+    {
+      /* make sure text matches source qualifier name */
+	    new_val = FixCommonModifierNameProblems (vnp->data.ptrvalue);
+	    if (new_val != vnp->data.ptrvalue)
+      {
+        vnp->data.ptrvalue = MemFree (vnp->data.ptrvalue);
+		    vnp->data.ptrvalue = new_val;
+	    }
+      
+      found = FALSE;
+      if (StringICmp (vnp->data.ptrvalue, "organism") == 0)
+      {
+        found = TRUE;
+      }
+      else if (StringICmp (vnp->data.ptrvalue, "location") == 0)
+      {
+        found = TRUE;
+      }
+      else if (StringICmp (vnp->data.ptrvalue, "lineage") == 0)
+      {
+        found = TRUE;
+      }
+     
+      for (index = 0; index < NumDefLineModifiers && !found; index++)
+      {
+        if (StringICmp (DefLineModifiers[index].name, vnp->data.ptrvalue) == 0)
+        {
+          found = TRUE;
+        }
+      }
+      if (!found)
+      {
+        if (!ReplaceImportModifierName ((CharPtr PNTR)(&(vnp->data.ptrvalue)), max_columns))
+        {
+          header_line = FreeTableData (header_line);
+          return -1;
+        }
+      }
+      max_columns ++;
+    }
+  }
+  
+  column_info = (OrgModLinePtr)MemNew (max_columns * sizeof (OrgModLineData));
+  if (column_info == NULL) return -1;
+
+  /* first column is local ID */
+  column_info [0].column_number = 0;
+  column_info [0].apply_choice = 0;
+
+  /* remaining columns are organism modifiers */
+  for (vnp = tlp->parts->next, col_num = 1; vnp != NULL; vnp = vnp->next, col_num ++)
+  {
+    /* make sure text matches source qualifier name */
+    found = FALSE;
+    if (StringICmp (vnp->data.ptrvalue, "organism") == 0)
+    {
+      found = TRUE;
+      column_info [col_num].column_number = col_num;
+      column_info [col_num].apply_choice = NumDefLineModifiers + 1;
+    }
+    else if (StringICmp (vnp->data.ptrvalue, "location") == 0)
+    {
+      found = TRUE;
+      column_info [col_num].column_number = col_num;
+      column_info [col_num].apply_choice = NumDefLineModifiers + 2;
+    }
+    else if (StringICmp (vnp->data.ptrvalue, "lineage") == 0)
+    {
+      found = TRUE;
+      column_info [col_num].column_number = col_num;
+      column_info [col_num].apply_choice = NumDefLineModifiers + 3;
+    }
+
+    for (index = 0; index < NumDefLineModifiers && !found; index++)
+    {
+      if (StringICmp (DefLineModifiers[index].name, vnp->data.ptrvalue) == 0)
+      {
+        found = TRUE;
+        column_info [col_num].column_number = col_num;
+        column_info [col_num].apply_choice = index + 1;
+      }
+    }
+    if (!found)
+    {
+      column_info [col_num].column_number = col_num;
+      column_info [col_num].apply_choice = 0;
+    }
+  }
+  
+  if (TableContainsBadValues (header_line->next, column_info))
+  {
+    header_line = FreeTableData (header_line);
+    return -1;      
+  }
+
+  *pheader_line = header_line;  
+  *pcolumn_info = column_info;
+  
+  return max_columns;
+}
+
+static BioseqPtr GetBioseqForSeqListSep (SeqEntryPtr sep)
+{
+  SeqEntryPtr nuc_sep;
+  BioseqPtr   bsp;
+  
+  if (sep == NULL)
+  {
+    return NULL;
+  }
+  if (IS_Bioseq (sep))
+  {
+    bsp = (BioseqPtr) sep->data.ptrvalue;
+  }
+  else if (IS_Bioseq_set (sep))
+  {
+    nuc_sep = FindNucSeqEntry (sep);
+    if (nuc_sep != NULL && IS_Bioseq (nuc_sep))
+    {
+      bsp = (BioseqPtr) nuc_sep->data.ptrvalue;
+    }
+  }
+  return bsp;
+}
+
+static Boolean 
+TableHasBadIDs 
+(ValNodePtr   table_lines,
+ SeqEntryPtr  seq_list,
+ CharPtr PNTR id_list,
+ Int4         num_ids)
+{
+  ValNodePtr   data_line, other_line;
+  TableLinePtr tlp, other_tlp;
+  SeqEntryPtr  sep;
+  Boolean      found, found_too_many;
+  ValNodePtr   not_found = NULL;
+  ValNodePtr   found_more_than_once = NULL;
+  BioseqPtr    bsp;
+  CharPtr      too_many_msg = NULL, not_found_msg = NULL;
+  Boolean      rval = FALSE;
+  Int4         msg_len = 0;
+  CharPtr      too_many_fmt = " found more than once\n";
+  CharPtr      not_found_fmt = " not found\n";
+  CharPtr      err_msg = NULL;
+  Int4         i;
+  
+  if (table_lines == NULL)
+  {
+    return FALSE;
+  }
+  
+  if (seq_list == NULL && id_list == NULL)
+  {
+    return TRUE;
+  }
+  
+  for (data_line = table_lines->next; data_line != NULL; data_line = data_line->next)
+  {
+    tlp = data_line->data.ptrvalue;
+    if (tlp->parts != NULL)
+    {
+      found = FALSE;
+      found_too_many = FALSE;
+      if (seq_list == NULL)
+      {
+        for (i = 0; i < num_ids; i++)
+        {
+          if (StringICmp (id_list [i], tlp->parts->data.ptrvalue) == 0)
+          {
+            found = TRUE;
+          }
+        }
+      }
+      else
+      {
+        for (sep = seq_list; sep != NULL; sep = sep->next)
+        {
+          bsp = GetBioseqForSeqListSep (sep);
+          if (BioseqHasStringID (bsp, tlp->parts->data.ptrvalue))
+          {
+            found = TRUE;
+          }
+        }
+      }
+      if (found)
+      {
+        for (other_line = data_line->next; 
+             other_line != NULL && ! found_too_many;
+             other_line = other_line->next)
+        {
+          other_tlp = other_line->data.ptrvalue;
+          if (other_tlp != NULL && other_tlp->parts != NULL)
+          {
+            if (StringICmp (other_tlp->parts->data.ptrvalue, tlp->parts->data.ptrvalue) == 0)
+            {
+              found_too_many = TRUE;
+            }
+          }
+        }
+      }
+      
+      if (found_too_many
+          && ! StringAlreadyInList (found_more_than_once, tlp->parts->data.ptrvalue))
+      {
+        ValNodeAddPointer (&found_more_than_once, 0, StringSave (tlp->parts->data.ptrvalue));
+      }
+      else if (!found)
+      {
+        ValNodeAddPointer (&not_found, 0, StringSave (tlp->parts->data.ptrvalue));
+      }
+    }
+  }
+  
+  if (found_more_than_once != NULL || not_found != NULL)
+  {
+    if (found_more_than_once != NULL)
+    {
+      too_many_msg = CreateListMessage ("Sequence ID", NULL, found_more_than_once);
+      rval = TRUE;
+      msg_len += StringLen (too_many_msg) + StringLen (too_many_fmt) + 5;
+    }
+    if (not_found != NULL)
+    {
+      not_found_msg = CreateListMessage ("Sequence ID", NULL, not_found);
+      msg_len += StringLen (not_found_msg) + StringLen (not_found_fmt) + 5;
+    }
+    
+    err_msg = (CharPtr) MemNew ((msg_len + 1) * sizeof (Char));
+    if (err_msg != NULL)
+    {
+      if (too_many_msg != NULL)
+      {
+        StringCat (err_msg, too_many_msg);
+        if (found_more_than_once->next != NULL)
+        {
+          StringCat (err_msg, " were");
+        }
+        else
+        {
+          StringCat (err_msg, " was");
+        }
+        StringCat (err_msg, too_many_fmt);
+      }
+      if (not_found_msg != NULL)
+      {
+        StringCat (err_msg, not_found_msg);
+        if (not_found->next != NULL)
+        {
+          StringCat (err_msg, " were");
+        }
+        else
+        {
+          StringCat (err_msg, " was");
+        }
+        StringCat (err_msg, not_found_fmt);
+      }
+      if (!rval)
+      {
+        if (ANS_NO == Message (MSG_YN, "%sContinue anyway?", err_msg))
+        {
+          rval = TRUE;
+        }
+      }
+      else
+      {
+        Message (MSG_ERROR, "%sPlease correct your file.", err_msg);
+      }
+    }
+    too_many_msg = MemFree (too_many_msg);
+    not_found_msg = MemFree (not_found_msg);
+    err_msg = MemFree (err_msg);
+  }
+  return rval;
+}
+
+static CharPtr 
+GetRelevantTitle 
+(CharPtr      id,
+ SeqEntryPtr  seq_list, 
+ CharPtr PNTR id_list,
+ CharPtr PNTR defline_list,
+ Int4         num_ids)
+{
+  Int4         i;
+  BioseqPtr    bsp;
+  SeqDescrPtr  sdp;
+  SeqEntryPtr  sep;
+  
+  if (StringHasNoText (id)
+      || (seq_list == NULL && (id_list == NULL || defline_list == NULL)))
+  {
+    return NULL;
+  }
+  
+  if (seq_list == NULL)
+  {
+    for (i = 0; i < num_ids; i++)
+    {
+      if (StringICmp (id_list [i], id) == 0)
+      {
+        return defline_list [i];
+      }
+    }
+  }
+  else
+  {
+    for (sep = seq_list; sep != NULL; sep = sep->next)
+    {
+      bsp = GetBioseqForSeqListSep (sep);
+      if (BioseqHasStringID (bsp, id))
+      {
+        sdp = SeqEntryGetSeqDescr (sep, Seq_descr_title, NULL);
+        if (sdp != NULL)
+        {
+          return sdp->data.ptrvalue;
+        }
+      }
+    }
+  }
+  return NULL;
+}
+
+static Boolean CheckForOverwrite 
+(ValNodePtr    table_lines,
+ OrgModLinePtr column_info,
+ Int4          num_columns,
+ SeqEntryPtr   seq_list,
+ CharPtr PNTR  id_list,
+ CharPtr PNTR  defline_list,
+ Int4          num_ids,
+ BoolPtr       erase_where_blank)
+{
+  ValNodePtr   data_line, column_vnp;  
+  TableLinePtr tlp;
+  CharPtr      title;
+  Int4         col_num;
+  Int4         col_mod_index;
+  ValNodePtr   bad_column_list = NULL;
+  Boolean      rval = FALSE;
+  CharPtr      err_msg = NULL;
+  ValNodePtr   blanks = NULL;
+  MsgAnswer    ans;
+  
+  if (table_lines == FALSE 
+      || (seq_list == NULL && (id_list == NULL || defline_list == NULL))
+      || column_info == NULL || erase_where_blank == NULL)
+  {
+    return FALSE;
+  }
+  
+  *erase_where_blank = FALSE;
+    
+  for (data_line = table_lines->next;
+       data_line != NULL;
+       data_line = data_line->next)
+  {
+    /* first find sequence to apply to */
+    tlp = data_line->data.ptrvalue;
+    if (tlp->parts != NULL)
+    {
+      title = GetRelevantTitle (tlp->parts->data.ptrvalue,
+                                seq_list,
+                                id_list,
+                                defline_list,
+                                num_ids);
+      if (title != NULL)
+      {
+        for (column_vnp = tlp->parts->next, col_num = 1;
+             column_vnp != NULL;
+             column_vnp = column_vnp->next, col_num++)
+        {
+          col_mod_index = column_info[col_num].apply_choice - 1;
+          if (col_mod_index < 0)
+          {
+            continue;
+          }
+          if (FindModifierIndexInTitle (col_mod_index, title))
+          {
+            if (StringHasNoText (column_vnp->data.ptrvalue))
+            {
+              if (ChoiceAlreadyInList (col_mod_index, blanks))
+              {
+                continue;
+              }
+              if (col_mod_index < NumDefLineModifiers)
+              {
+                ValNodeAddPointer (&blanks,
+                                   col_mod_index,
+                                   DefLineModifiers [col_mod_index].name);
+              }
+              else if (col_mod_index == NumDefLineModifiers)
+              {
+                ValNodeAddPointer (&blanks,
+                                   col_mod_index,
+                                   "Organism");
+              }
+              else if (col_mod_index == NumDefLineModifiers + 1)
+              {
+                ValNodeAddPointer (&blanks,
+                                   col_mod_index,
+                                   "Location");
+              }
+              else if (col_mod_index == NumDefLineModifiers + 2)
+              {
+                ValNodeAddPointer (&blanks,
+                                   col_mod_index,
+                                   "Lineage");
+              }
+            }
+            else if (!ChoiceAlreadyInList (col_mod_index, bad_column_list))
+            {
+              if (col_mod_index < NumDefLineModifiers)
+              {
+                ValNodeAddPointer (&bad_column_list,
+                                   col_mod_index,
+                                   DefLineModifiers [col_mod_index].name);
+              }
+              else if (col_mod_index == NumDefLineModifiers)
+              {
+                ValNodeAddPointer (&bad_column_list,
+                                   col_mod_index,
+                                   "Organism");
+              }
+              else if (col_mod_index == NumDefLineModifiers + 1)
+              {
+                ValNodeAddPointer (&bad_column_list,
+                                   col_mod_index,
+                                   "Location");
+              }
+              else if (col_mod_index == NumDefLineModifiers + 2)
+              {
+                ValNodeAddPointer (&bad_column_list,
+                                   col_mod_index,
+                                   "Lineage");
+              }
+            }
+          }
+        }
+        while (col_num < num_columns)
+        {
+          col_mod_index = column_info[col_num].apply_choice - 1;
+          if (col_mod_index < 0)
+          {
+            col_num++;
+            continue;
+          }
+          if (FindModifierIndexInTitle (col_mod_index, title))
+          {
+            if (ChoiceAlreadyInList (col_mod_index, blanks))
+            {
+              col_num++;
+              continue;
+            }
+            if (col_mod_index < NumDefLineModifiers)
+            {
+              ValNodeAddPointer (&blanks,
+                                 col_mod_index,
+                                 DefLineModifiers [col_mod_index].name);
+            }
+            else if (col_mod_index == NumDefLineModifiers)
+            {
+              ValNodeAddPointer (&blanks,
+                                 col_mod_index,
+                                 "Organism");
+            }
+            else if (col_mod_index == NumDefLineModifiers + 1)
+            {
+              ValNodeAddPointer (&blanks,
+                                 col_mod_index,
+                                 "Location");
+            }
+            else if (col_mod_index == NumDefLineModifiers + 2)
+            {
+              ValNodeAddPointer (&blanks,
+                                 col_mod_index,
+                                 "Lineage");
+            }
+          }
+          col_num++;
+        }
+      }
+    }
+  }
+  if (bad_column_list != NULL)
+  {
+    err_msg = CreateListMessage ("Record already contains values for column",
+                                 " also found in the import table.\n"
+                                 "Do you wish to overwrite these values?",
+                                 bad_column_list);
+    if (ANS_NO == Message (MSG_YN, err_msg))
+    {
+      rval = TRUE;
+    }
+    err_msg = MemFree (err_msg);
+    ValNodeFree (bad_column_list);
+  }
+  
+  if (blanks != NULL && !rval)
+  {
+    err_msg = CreateListMessage ("Your import table contains blanks in column",
+                                 " where data already exists in the sequences.\n"
+                                 "Do you wish to erase these values in the sequences?\n"
+                                 "If you say no, the old values will remain.",
+                                 blanks);
+    ans = Message (MSG_YNC, err_msg);
+    err_msg = MemFree (err_msg);
+    if (ans == ANS_CANCEL)
+    {
+      rval = TRUE;
+    }
+    else if (ans == ANS_YES)
+    {
+      *erase_where_blank = TRUE;
+    }
+  }
+  blanks = ValNodeFree (blanks);
+  
+  return rval;
+}
+
+extern Boolean ImportOrganismModifiersForSubmit (SeqEntryPtr seq_list)
+{
+  ValNodePtr         header_line;
+  OrgModLinePtr      column_info;
+  Int4               max_columns;
+  Boolean            rval = FALSE;
+  SeqEntryPtr        sep;
+  Boolean            erase_where_blank = FALSE;
+  
+  if (seq_list == NULL) return FALSE;
+  
+  max_columns = PrepareTableDataForImport (&header_line, &column_info);
+  if (max_columns < 1)
+  {
+    return FALSE;
+  }
+  
+  if (TableHasBadIDs (header_line, seq_list, NULL, 0))
+  {
+    header_line = FreeTableData (header_line);
+    return FALSE;
+  }
+  if (CheckForOverwrite (header_line, column_info, max_columns, seq_list,
+                         NULL, NULL, 0, 
+                         &erase_where_blank))
+  {
+    header_line = FreeTableData (header_line);
+    return FALSE;
+  }
+  
+  for (sep = seq_list; sep != NULL; sep = sep->next)
+  {
+    rval |= AddModsToOneSep (sep, header_line, column_info, max_columns, erase_where_blank);
+  }
+
+  header_line = FreeTableData (header_line);
+  column_info = MemFree (column_info);
+  return rval;
+}
+
+extern Boolean 
+ImportOrganismModifiersForSourceAssistant
+(Int4 num_sequences,
+ CharPtr PNTR id_list,
+ CharPtr PNTR defline_list)
+{
+  ValNodePtr    header_line, line, part;
+  Int4          index, col_num;
+  TableLinePtr  tlp;
+  Int4          max_columns;
+  CharPtr       id;
+  Boolean       found_id;
+  OrgModLinePtr column_info;
+  Boolean       erase_where_blank = FALSE;
+  
+  if (num_sequences < 1 || id_list == NULL || defline_list == NULL)
+  {
+    return FALSE;
+  }
+  
+  max_columns = PrepareTableDataForImport (&header_line, &column_info);
+  if (max_columns < 1)
+  {
+    return FALSE;
+  }
+
+  if (TableHasBadIDs (header_line, NULL, id_list, num_sequences))
+  {
+    header_line = FreeTableData (header_line);
+    return FALSE;
+  }
+  if (CheckForOverwrite (header_line, column_info, max_columns, NULL, 
+                         id_list, defline_list, num_sequences,
+                         &erase_where_blank))
+  {
+    header_line = FreeTableData (header_line);
+    return FALSE;
+  }
+
+  for (line = header_line->next; line != NULL; line = line->next)
+  {    
+    tlp = line->data.ptrvalue;
+    if (tlp == NULL) 
+    {
+      continue;
+    }
+    part = tlp->parts;
+    if (part == NULL || StringHasNoText (part->data.ptrvalue))
+    {
+      continue;
+    }
+    id = (CharPtr) part->data.ptrvalue;
+    found_id = FALSE;
+    for (index = 0; index < num_sequences; index++)
+    {
+      if (StringCmp (id_list[index], id) == 0)
+      {
+        for (col_num = 1, part = part->next;
+             col_num < max_columns && part != NULL;
+             col_num ++, part = part->next)
+        {
+          defline_list [index] = AddOneModToTitle (defline_list [index],
+                                       part->data.ptrvalue, 
+                                       column_info[col_num].apply_choice - 1,
+                                       erase_where_blank);
+        }
+      }
+    }
+  }
+  
+  header_line = FreeTableData (header_line);
+  column_info = MemFree (column_info);
+  return TRUE;
+}
+
+
+typedef struct exportorgtable
+{
+  ModifierItemLocalPtr modList;
+  BioseqPtr            bsp;
+  FILE *fp;  
+} ExportOrgTableData, PNTR ExportOrgTablePtr;
+
+static void ExportOneOrganism (BioSourcePtr biop, Pointer userdata)
+{
+  ExportOrgTablePtr eotp;
+  Char              acc_str [256];
+  SeqIdPtr          sip;
+  SeqIdPtr          acc_sip = NULL, local_sip = NULL, gen_sip = NULL;
+  Int4              i;
+  OrgModPtr         mod;
+  SubSourcePtr      ssp;
+  
+  if (biop == NULL || userdata == NULL) return;
+  eotp = (ExportOrgTablePtr) userdata;
+  
+  if (eotp->bsp == NULL || eotp->modList == NULL || eotp->fp == NULL) return;
+  
+  for (sip = eotp->bsp->id;
+       sip != NULL && (acc_sip == NULL || local_sip == NULL);
+       sip = sip->next)
+  {
+    if (acc_sip == NULL && sip->choice == SEQID_GENBANK)
+    {
+      acc_sip = sip;
+    }
+    else if (local_sip == NULL && sip->choice == SEQID_LOCAL)
+    {
+      local_sip = sip;
+    }
+    else if (gen_sip == NULL && sip->choice == SEQID_GENERAL)
+    {
+      gen_sip = sip;
+    }
+  }
+
+  /* get accession number and print to column */
+  if (acc_sip == NULL)
+  {
+    fprintf (eotp->fp, " \t");
+  }
+  else
+  {
+    sip = acc_sip->next;
+    acc_sip->next = NULL;
+    SeqIdWrite (acc_sip, acc_str, PRINTID_TEXTID_ACC_VER, sizeof (acc_str));
+    acc_sip->next = sip;
+    fprintf (eotp->fp, "%s\t", acc_str);
+  }    
+  
+  /* get local ID and print to column */
+  if (local_sip == NULL)
+  {
+    fprintf (eotp->fp, " \t");
+  }
+  else
+  {
+    sip = local_sip->next;
+    local_sip->next = NULL;
+    SeqIdWrite (local_sip, acc_str, PRINTID_TEXTID_ACCESSION, sizeof (acc_str));
+    local_sip->next = sip;
+    fprintf (eotp->fp, "%s\t", acc_str);
+  }    
+  
+  /* get general ID and print to column */
+  if (gen_sip == NULL)
+  {
+    fprintf (eotp->fp, " \t");
+  }
+  else
+  {
+    sip = gen_sip->next;
+    gen_sip->next = NULL;
+    SeqIdWrite (gen_sip, acc_str, PRINTID_TEXTID_ACCESSION, sizeof (acc_str));
+    gen_sip->next = sip;
+    fprintf (eotp->fp, "%s\t", acc_str);
+  }    
+  
+  /* get tax name and print to column */
+  if (biop->org != NULL && ! StringHasNoText (biop->org->taxname))
+  {
+    fprintf (eotp->fp, "%s", biop->org->taxname);
+  }
+  else
+  {
+    fprintf (eotp->fp, " ");
+  }
+  
+  /* print modifiers for each available column */
+  for (i= 0; i < NumDefLineModifiers; i++)
+  {
+    if (eotp->modList[i].any_present)
+    {
+      mod = NULL;
+      ssp = NULL;
+      if (DefLineModifiers[i].isOrgMod)
+      {
+        if ( biop->org != NULL && biop->org->orgname != NULL) 
+        {
+          mod = biop->org->orgname->mod;
+          while (mod != NULL
+                 && mod->subtype != DefLineModifiers[i].subtype)
+          {
+            mod = mod->next;
+          }
+        }
+      }
+      else
+      {
+        ssp = biop->subtype;
+        while (ssp != NULL && ssp->subtype != DefLineModifiers[i].subtype)
+        {
+          ssp = ssp->next;
+        }
+      }
+      if (mod != NULL && !StringHasNoText (mod->subname))
+      {
+        fprintf (eotp->fp, "\t%s", mod->subname);
+      }
+      else if (ssp != NULL && !StringHasNoText (ssp->name))
+      {
+        fprintf (eotp->fp, "\t%s", ssp->name);
+      }
+      else
+      {
+        fprintf (eotp->fp, "\t ");
+      }
+    }
+  }
+  fprintf (eotp->fp, "\n");
+}
+
+static void ExportOrganisms (SeqEntryPtr sep, ExportOrgTablePtr eotp)
+{
+  BioseqSetPtr bssp;
+  SeqEntryPtr  nsep;
+  
+  if (sep == NULL || eotp == NULL || sep->data.ptrvalue == NULL) return;
+  
+  if (IS_Bioseq (sep))
+  {
+    eotp->bsp = (BioseqPtr) sep->data.ptrvalue;
+    VisitBioSourcesOnBsp (eotp->bsp, eotp, ExportOneOrganism);  
+  }
+  else if (IS_Bioseq_set (sep))
+  {
+    bssp = (BioseqSetPtr) sep->data.ptrvalue;
+    if (bssp->_class == BioseqseqSet_class_nuc_prot)
+    {
+      nsep = FindNucSeqEntry (sep);
+      if (nsep != NULL)
+      {
+        eotp->bsp = (BioseqPtr) nsep->data.ptrvalue;
+        VisitBioSourcesOnSep (sep, eotp, ExportOneOrganism);
+      }
+    }
+    else
+    {
+      for (sep = bssp->seq_set; sep != NULL; sep = sep->next)
+      {
+        ExportOrganisms (sep, eotp);
+      }
+    }
+  }
+}
+
+extern void ExportOrganismTable (IteM i)
+{
+  BaseFormPtr        bfp;
+  SeqEntryPtr        sep;
+  ExportOrgTableData eotd;
+  Char               path [PATH_MAX];
+  Int4               idx;
+
+#ifdef WIN_MAC
+  bfp = currentFormDataPtr;
+#else
+  bfp = GetObjectExtra (i);
+#endif
+  if (bfp == NULL) return;
+
+  sep = GetTopSeqEntryForEntityID (bfp->input_entityID);
+  if (sep == NULL) return;
+
+  if (! GetOutputFileName (path, sizeof (path), NULL)) return;
+  eotd.fp = FileOpen (path, "w");
+  if (eotd.fp == NULL) return;
+
+  eotd.modList = MemNew (NumDefLineModifiers * sizeof (ModifierItemLocalData));
+  if (eotd.modList != NULL) 
+  {
+    CountModifiers (eotd.modList, sep);
+    /* print a header line */
+    fprintf (eotd.fp, "Accession Number\tLocal ID\tGeneral ID\tTax Name");
+    for (idx = 0; idx < NumDefLineModifiers; idx++)
+    {
+      if (eotd.modList[idx].any_present)
+      {
+        fprintf (eotd.fp, "\t%s", DefLineModifiers [idx].name);
+      }
+    }
+    fprintf (eotd.fp, "\n");
+        
+    ExportOrganisms  (sep, &eotd);
+  }
+  FileClose (eotd.fp);
+  for (idx=0; idx < NumDefLineModifiers; idx++)
+  {
+    ValNodeFree (eotd.modList[idx].values_seen);
+  }
+  MemFree (eotd.modList);
+
+}
+
 
 typedef struct qualifierselect {
   LisT gene_quals;

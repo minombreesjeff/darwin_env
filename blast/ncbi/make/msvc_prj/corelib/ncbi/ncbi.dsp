@@ -26,9 +26,6 @@ CFG=ncbi - Win32 DebugDLL
 # PROP Scc_LocalPath ""
 CPP=cl.exe
 RSC=rc.exe
-
-!IF  "$(CFG)" == "ncbi - Win32 DebugDLL"
-
 # PROP BASE Use_MFC 0
 # PROP BASE Use_Debug_Libraries 1
 # PROP BASE Output_Dir "DebugDLL"
@@ -39,9 +36,9 @@ RSC=rc.exe
 # PROP Output_Dir "DebugDLL"
 # PROP Intermediate_Dir "DebugDLL"
 # PROP Target_Dir ""
-# ADD BASE CPP /nologo /MDd /W3 /Gm /GX /Z7 /Od /D "WIN32" /D "_DEBUG" /D "_MBCS" /D "_LIB" /YX /FD /GZ /c
+# ADD BASE CPP /nologo /MDd /W3 /GX /Z7 /Od /D "WIN32" /D "_DEBUG" /D "_MBCS" /D "_LIB" /YX /FD /GZ /c
 # SUBTRACT BASE CPP /Fr
-# ADD CPP /nologo /MDd /W3 /Gm /GR /Z7 /Od /I "..\..\..\.." /I "..\..\..\..\corelib" /I "..\..\..\..\connect" /I "..\..\..\..\asnlib" /D "WIN32" /D "_DEBUG" /D "_MBCS" /YX /FD /GZ /c
+# ADD CPP /nologo /MDd /W3 /GR /Z7 /Od /I "..\..\..\.." /I "..\..\..\..\corelib" /I "..\..\..\..\connect" /I "..\..\..\..\asnlib" /D "WIN32" /D "_DEBUG" /D "_MBCS" /YX /FD /GZ /c
 # ADD BASE RSC /l 0x409 /d "_DEBUG"
 # ADD RSC /l 0x409 /d "_DEBUG"
 BSC32=bscmake.exe
@@ -50,9 +47,6 @@ BSC32=bscmake.exe
 LIB32=link.exe -lib
 # ADD BASE LIB32 /nologo
 # ADD LIB32 /nologo
-
-!ENDIF 
-
 # Begin Target
 
 # Name "ncbi - Win32 DebugDLL"
@@ -121,99 +115,11 @@ SOURCE=..\..\..\..\corelib\matrix.c
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\..\..\connect\ncbi_ansi_ext.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_buffer.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_connection.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_connector.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_connutil.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_core.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_core_c.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_file_connector.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_host_info.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_http_connector.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_memory_connector.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_priv.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_sendmail.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_server_info.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_service.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_service_connector.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_dispd.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_lbsmd_stub.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_socket.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_socket_connector.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_util.c
-# End Source File
-# Begin Source File
-
 SOURCE=..\..\..\..\corelib\ncbiargs.c
 # End Source File
 # Begin Source File
 
 SOURCE=..\..\..\..\corelib\ncbibs.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbibuf.c
 # End Source File
 # Begin Source File
 
@@ -254,10 +160,6 @@ SOURCE=..\..\..\..\corelib\ncbiprop.c
 # Begin Source File
 
 SOURCE=..\..\..\..\corelib\ncbisgml.c
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbisock.c
 # End Source File
 # Begin Source File
 
@@ -363,91 +265,7 @@ SOURCE=..\..\..\..\corelib\ncbi.h
 # End Source File
 # Begin Source File
 
-SOURCE=..\..\..\..\connect\ncbi_ansi_ext.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_buffer.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_config.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_connection.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_connector.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_connutil.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_core.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_core_c.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_file_connector.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_host_info.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_http_connector.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_memory_connector.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_priv.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_sendmail.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_server_info.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_service.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_service_connector.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_socket.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_socket_connector.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbi_util.h
-# End Source File
-# Begin Source File
-
 SOURCE=..\..\..\..\corelib\ncbibs.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbibuf.h
 # End Source File
 # Begin Source File
 
@@ -468,18 +286,6 @@ SOURCE=..\..\..\..\corelib\ncbilang.h
 # Begin Source File
 
 SOURCE=..\..\..\..\corelib\ncbilcl.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\corelib\ncbilcl.msw
-# Begin Custom Build
-InputDir=..\..\..\..\corelib
-InputPath=..\..\..\..\corelib\ncbilcl.msw
-
-"$(InputDir)\ncbilcl.h" : $(SOURCE) "$(INTDIR)" "$(OUTDIR)"
-	copy $(InputPath) $(InputDir)\ncbilcl.h
-
-# End Custom Build
 # End Source File
 # Begin Source File
 
@@ -504,10 +310,6 @@ SOURCE=..\..\..\..\corelib\ncbiprop.h
 # Begin Source File
 
 SOURCE=..\..\..\..\corelib\ncbisgml.h
-# End Source File
-# Begin Source File
-
-SOURCE=..\..\..\..\connect\ncbisock.h
 # End Source File
 # Begin Source File
 

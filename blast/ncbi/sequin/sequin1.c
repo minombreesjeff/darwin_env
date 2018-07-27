@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/22/95
 *
-* $Revision: 6.450 $
+* $Revision: 6.505 $
 *
 * File Description: 
 *
@@ -88,6 +88,8 @@ static char *time_of_compilation = "now";
 #include <ingenwin.h>
 #include <util/creaders/alnread.h>
 #include <sqnutils.h>
+#include <tax3api.h>
+#include <validerr.h>
 
 /* USE_SMARTNET */
 #ifdef USE_SMARTNET
@@ -115,12 +117,6 @@ static char *time_of_compilation = "now";
 #include <medarch.h>
 #include <medutil.h>
 
-/*#ifdef USE_TAXON*/
-/*
-#include <taxondt.h>
-*/
-#include <taxutil.h>
-
 #ifdef USE_SPELL
 #include <spellapi.h>
 #endif
@@ -129,7 +125,7 @@ static char *time_of_compilation = "now";
 #include <Gestalt.h>
 #endif
 
-#define SEQ_APP_VER "5.22"
+#define SEQ_APP_VER "5.51"
 
 #ifndef CODECENTER
 static char* sequin_version_binary = "Sequin Indexer Services Version " SEQ_APP_VER " " __DATE__ " " __TIME__;
@@ -214,7 +210,6 @@ static IteM  validateItem = NULL;
 static MenU  validateMenu = NULL;
 static IteM  spellItem = NULL;
 static IteM  vectorScreenItem = NULL;
-static IteM  powerBlastItem = NULL;
 static IteM  cddBlastItem = NULL;
 static MenU  cddSearchMenu = NULL;
 static IteM  cddSearchItem = NULL;
@@ -303,16 +298,10 @@ static Int4 SMReadBioseqObj(VoidPtr data, CharPtr buffer,
 #define DUMB_KEY 1314
 #endif
 
-static void Sequin_RemoveInconsistentAlnsFromSet(SeqAlignPtr sap, Int4 fuzz, Int4 n);
-static SeqAlignPtr Sequin_FindBestAlnByDotPlot(SeqLocPtr slp1, SeqLocPtr slp2);
-static void SQN_ExtendAlnRight(SeqAlignPtr sap, Int4 which_row, Int4 start, Int4 stop);
-
 
 static FormatBlock globalFormatBlock = {SEQ_PKG_SINGLE, SEQ_FMT_FASTA, 0, SEQ_ORIG_SUBMISSION};
 
 ForM  helpForm = NULL;
-
-static void write_annot(SeqAlignPtr align);
 
 static CharPtr validFailMsg =
 "Submission failed validation test.  Continue?\n\
@@ -1099,7 +1088,7 @@ static void SmartResetProc (IteM i)
             status = sm_usr_data->header->status;
             sm_usr_data->header->status = SMStatClosed;
             SMSendMsgToClient(sm_usr_data);
-            sm_usr_data->header->status = status;
+            sm_usr_data->header->status = (SMStatusCode)status;
             return;
         }
     }
@@ -1478,6 +1467,7 @@ static void ProcessDoneButton (ForM f)
           }
           HideValidateDoc ();
           vsp->suppressContext = ShouldSetSuppressContext ();
+          vsp->justShowAccession = ShouldSetJustShowAccession ();
           oldErrHook = ErrSetHandler (ValidErrHook);
           oldErrSev = ErrSetMessageLevel (SEV_NONE);
           vsp->validateAlignments = TRUE;
@@ -1596,7 +1586,208 @@ static void Cn3DWinShowProc (IteM i)
 #endif
 */
 
-extern void ValSeqEntryFormEx (ForM f, Boolean doAligns)
+typedef struct tax3val {
+  Uint2       entityID;
+  Uint4       itemID;
+  Uint2       itemtype;
+  Uint1       organelle;
+  OrgRefPtr   orp;
+  BioseqPtr   bsp;
+  SeqFeatPtr  sfp;
+} TaxVal, PNTR TaxValPtr;
+
+typedef struct tax3lst {
+  ValNodePtr  head;
+  ValNodePtr  tail;
+} TaxLst, PNTR TaxLstPtr;
+
+static void RecordSrc (Uint2 entityID, Uint4 itemID, Uint2 itemtype, OrgRefPtr orp,
+                       Uint1 organelle, TaxLstPtr tlp, SeqDescrPtr sdp, SeqFeatPtr sfp)
+
+{
+  BioseqPtr      bsp;
+  BioseqSetPtr   bssp;
+  ObjValNodePtr  ovp;
+  SeqEntryPtr    sep;
+  TaxValPtr      tvp;
+  ValNodePtr     vnp;
+
+  if (orp == NULL || tlp == NULL) return;
+
+  tvp = (TaxValPtr) MemNew (sizeof (TaxVal));
+  if (tvp == NULL) return;
+
+  vnp = ValNodeNew (tlp->tail);
+  if (vnp == NULL) return;
+
+  if (tlp->head == NULL) {
+    tlp->head = vnp;
+  }
+  tlp->tail = vnp;
+
+  tvp->entityID = entityID;
+  tvp->itemID = itemID;
+  tvp->itemtype = itemtype;
+  tvp->organelle = organelle;
+  tvp->orp = orp;
+  if (sdp != NULL && sdp->extended != 0) {
+    ovp = (ObjValNodePtr) sdp;
+    if (ovp->idx.parenttype == OBJ_BIOSEQ) {
+      bsp = (BioseqPtr) ovp->idx.parentptr;
+      if (bsp != NULL) {
+        tvp->bsp = bsp;
+      }
+    } else if (ovp->idx.parenttype == OBJ_BIOSEQSET) {
+      bssp = (BioseqSetPtr) ovp->idx.parentptr;
+      if (bssp != NULL) {
+        sep = bssp->seqentry;
+        if (sep != NULL) {
+          sep = FindNthBioseq (sep, 1);
+          if (sep != NULL) {
+            bsp = (BioseqPtr) sep->data.ptrvalue;
+            if (bsp != NULL) {
+              tvp->bsp = bsp;
+            }
+          }
+        }
+      }
+    }
+  } else if (sfp != NULL) {
+    tvp->sfp = sfp;
+  }
+
+  vnp->data.ptrvalue = tvp;
+}
+
+static void GetSrcDesc (SeqDescrPtr sdp, Pointer userdata)
+
+{
+  BioSourcePtr   biop;
+  ObjValNodePtr  ovp;
+  TaxLstPtr      tlp;
+
+  if (sdp == NULL || sdp->choice != Seq_descr_source) return;
+  tlp = (TaxLstPtr) userdata;
+
+  biop = (BioSourcePtr) sdp->data.ptrvalue;
+  if (biop == NULL) return;
+
+  if (sdp->extended != 0) {
+    ovp = (ObjValNodePtr) sdp;
+    RecordSrc (ovp->idx.entityID, ovp->idx.itemID, OBJ_SEQDESC, biop->org, biop->genome, tlp, sdp, NULL);
+  }
+}
+
+static void GetSrcFeat (SeqFeatPtr sfp, Pointer userdata)
+
+{
+  BioSourcePtr  biop;
+  TaxLstPtr     tlp;
+
+  if (sfp == NULL || sfp->data.choice != SEQFEAT_BIOSRC) return;
+  tlp = (TaxLstPtr) userdata;
+
+  biop = (BioSourcePtr) sfp->data.value.ptrvalue;
+  if (biop == NULL) return;
+
+  RecordSrc (sfp->idx.entityID, sfp->idx.itemID, OBJ_SEQFEAT, biop->org, biop->genome, tlp, NULL, sfp);
+}
+
+NLM_EXTERN void CDECL  ValidErr VPROTO((ValidStructPtr vsp, int severity, int code1, int code2, const char *fmt, ...));
+
+static void TaxonValidate (SeqEntryPtr sep, ValidStructPtr vsp)
+
+{
+  GatherContext     gc;
+  Boolean           has_nucleomorphs;
+  Boolean           is_nucleomorph;
+  Boolean           is_species_level;
+  OrgRefPtr         orp;
+  TaxLst            srclist;
+  Taxon3RequestPtr  t3rq;
+  Taxon3ReplyPtr    t3ry;
+  T3DataPtr         tdp;
+  T3StatusFlagsPtr  tfp;
+  T3ReplyPtr        trp;
+  TaxValPtr         tvp;
+  ValNodePtr        val;
+  ValNodePtr        vnp;
+
+  if (sep == NULL || vsp == NULL) return;
+  MemSet ((Pointer) &gc, 0, sizeof (GatherContext));
+  vsp->gcp = &gc;
+
+  srclist.head = NULL;
+  srclist.tail = NULL;
+  VisitDescriptorsInSep (sep, (Pointer) &srclist, GetSrcDesc);
+  VisitFeaturesInSep (sep, (Pointer) &srclist, GetSrcFeat);
+  if (srclist.head == NULL) return;
+
+  t3rq = Taxon3RequestNew ();
+  if (t3rq == NULL) return;
+
+  for (vnp = srclist.head; vnp != NULL; vnp = vnp->next) {
+    tvp = (TaxValPtr) vnp->data.ptrvalue;
+    if (tvp == NULL) continue;
+    orp = AsnIoMemCopy (tvp->orp,
+                        (AsnReadFunc) OrgRefAsnRead,
+                        (AsnWriteFunc) OrgRefAsnWrite);
+    ValNodeAddPointer (&(t3rq->request), 3, (Pointer) orp);
+  }
+
+  t3ry = Tax3SynchronousQuery (t3rq);
+  Taxon3RequestFree (t3rq);
+  if (t3ry == NULL) return;
+
+  for (trp = t3ry->reply, vnp = srclist.head;
+       trp != NULL && vnp != NULL;
+       trp = trp->next, vnp = vnp->next) {
+    tvp = (TaxValPtr) vnp->data.ptrvalue;
+    if (tvp == NULL) continue;
+    if (trp->choice != T3Reply_data) continue;
+    tdp = (T3DataPtr) trp->data.ptrvalue;
+    if (tdp == NULL) continue;
+
+    vsp->bssp = NULL;
+    vsp->bsp = tvp->bsp;
+    vsp->sfp = tvp->sfp;
+    vsp->descr = NULL;
+
+    is_species_level = FALSE;
+    has_nucleomorphs = FALSE;
+    for (tfp = tdp->status; tfp != NULL; tfp = tfp->next) {
+      if (StringICmp (tfp->property, "is_species_level") == 0) {
+        val = tfp->Value_value;
+        if (val != NULL && val->choice == Value_value_bool) {
+          is_species_level = (Boolean) (val->data.intvalue != 0);
+          if (! is_species_level) {
+            gc.entityID = tvp->entityID;
+            gc.itemID = tvp->itemID;
+            gc.thistype = tvp->itemtype;
+
+            ValidErr (vsp, SEV_WARNING, ERR_SEQ_DESCR_TaxonomyLookupProblem, "Taxonomy lookup reports is_species_level FALSE");
+          }
+        }
+      } else if (StringICmp (tfp->property, "has_nucleomorphs") == 0) {
+        val = tfp->Value_value;
+        if (val != NULL && val->choice == Value_value_bool) {
+          has_nucleomorphs = (Boolean) (val->data.intvalue != 0);
+          if (has_nucleomorphs) {
+            is_nucleomorph = TRUE;
+          }
+        }
+      }
+    }
+    if (tvp->organelle == GENOME_nucleomorph && (! is_nucleomorph)) {
+      ValidErr (vsp, SEV_WARNING, ERR_SEQ_DESCR_TaxonomyLookupProblem, "Taxonomy lookup does not have expected nucleomorph flag");
+    }
+  }
+
+  Taxon3ReplyFree (t3ry);
+  ValNodeFreeData (srclist.head);
+}
+
+static void ValSeqEntryFormEx (ForM f, Boolean doAligns, Int2 limit)
 
 {
   Boolean         allRawOrSeg = TRUE;
@@ -1632,9 +1823,13 @@ extern void ValSeqEntryFormEx (ForM f, Boolean doAligns)
         }
         if (indexerVersion) {
           vsp->alwaysRequireIsoJTA = TRUE;
+          vsp->farFetchCDSproducts = TRUE;
+          vsp->farFetchMRNAproducts = TRUE;
         }
+        vsp->validationLimit = limit;
         HideValidateDoc ();
         vsp->suppressContext = ShouldSetSuppressContext ();
+        vsp->justShowAccession = ShouldSetJustShowAccession ();
         if (doAligns) {
           vsp->validateAlignments = TRUE;
           vsp->alignFindRemoteBsp = TRUE;
@@ -1652,6 +1847,9 @@ extern void ValSeqEntryFormEx (ForM f, Boolean doAligns)
           vsp->errors [j] = 0;
         }
         ValidateSeqEntry (sep, vsp);
+        if (indexerVersion) {
+          TaxonValidate (sep, vsp);
+        }
         ErrSetMessageLevel (oldErrSev);
         ErrSetHandler (oldErrHook);
         ErrClear ();
@@ -1679,7 +1877,7 @@ extern void ValSeqEntryFormEx (ForM f, Boolean doAligns)
 extern void ValSeqEntryForm (ForM f)
 
 {
-  ValSeqEntryFormEx (f, TRUE);
+  ValSeqEntryFormEx (f, TRUE, VALIDATE_ALL);
 }
 
 static void ValSeqEntryProc (IteM i)
@@ -1708,8 +1906,65 @@ static void ValSeqEntryProcNoAln (IteM i)
   bfp = (BaseFormPtr) GetObjectExtra (i);
 #endif
   if (bfp != NULL) {
-    ValSeqEntryFormEx (bfp->form, FALSE);
+    ValSeqEntryFormEx (bfp->form, FALSE, VALIDATE_ALL);
   }
+}
+
+static void ValSeqEntryProcSpec (IteM i, Int2 limit)
+
+{
+  BaseFormPtr  bfp;
+
+#ifdef WIN_MAC
+  bfp = (BaseFormPtr) currentFormDataPtr;
+#else
+  bfp = (BaseFormPtr) GetObjectExtra (i);
+#endif
+  if (bfp != NULL) {
+    ValSeqEntryFormEx (bfp->form, FALSE, limit);
+  }
+}
+
+static void ValSeqEntryProcInst (IteM i)
+
+{
+  ValSeqEntryProcSpec (i, VALIDATE_INST);
+}
+
+static void ValSeqEntryProcHist (IteM i)
+
+{
+  ValSeqEntryProcSpec (i, VALIDATE_HIST);
+}
+
+static void ValSeqEntryProcContext (IteM i)
+
+{
+  ValSeqEntryProcSpec (i, VALIDATE_CONTEXT);
+}
+
+static void ValSeqEntryProcGraph (IteM i)
+
+{
+  ValSeqEntryProcSpec (i, VALIDATE_GRAPH);
+}
+
+static void ValSeqEntryProcSet (IteM i)
+
+{
+  ValSeqEntryProcSpec (i, VALIDATE_SET);
+}
+
+static void ValSeqEntryProcFeat (IteM i)
+
+{
+  ValSeqEntryProcSpec (i, VALIDATE_FEAT);
+}
+
+static void ValSeqEntryProcDesc (IteM i)
+
+{
+  ValSeqEntryProcSpec (i, VALIDATE_DESC);
 }
 
 #ifdef USE_SPELL
@@ -1762,6 +2017,7 @@ static void SpellCheckTheForm (ForM f)
         }
         HideValidateDoc ();
         vsp->suppressContext = ShouldSetSuppressContext ();
+        vsp->justShowAccession = ShouldSetJustShowAccession ();
         oldErrHook = ErrSetHandler (ValidErrHook);
         oldErrSev = ErrSetMessageLevel (SEV_NONE);
         for (j = 0; j < 6; j++) {
@@ -1902,7 +2158,7 @@ static Boolean DisplayTestResults (ValNodePtr head)
       return FALSE;
     }
 
-    if (warnings > 0) {
+    if (warnings > 0 && (! indexerVersion)) {
       StringCat (str, "The following desired information is missing:\n\n");
       onthisline = 0;
       remaining = warnings;
@@ -2073,11 +2329,8 @@ static void GenomeFormActivateProc (WindoW w);
 CharPtr repackageMsg =
 "Do you plan to submit this as an update to one of the databases?";
 
-static DialoG hiddengenbio = NULL;
-
-extern Boolean ProcessOneNucleotideTitle (Int2 seqPackage, DialoG genbio, PopuP genome,
-                                          PopuP gencode, SeqEntryPtr nsep, SeqEntryPtr top,
-                                          BioSourcePtr masterbiop);
+extern Boolean ProcessOneNucleotideTitle (Int2 seqPackage,
+                                          SeqEntryPtr nsep, SeqEntryPtr top);
 
 static void LookForTaxonID (BioSourcePtr biop, Pointer userdata)
 
@@ -2116,7 +2369,6 @@ static Boolean HandleOneNewAsnProc (BaseFormPtr bfp, Boolean removeold, Boolean 
   Boolean       processonenuc;
   SeqEntryPtr   sep;
   ForM          w;
-  WindoW        wnd;
 
   if (dataptr != NULL && entityID > 0) {
     if (datatype == OBJ_SEQSUB || datatype == OBJ_SEQENTRY ||
@@ -2149,11 +2401,6 @@ static Boolean HandleOneNewAsnProc (BaseFormPtr bfp, Boolean removeold, Boolean 
         }
         */
         nsep = FindNucSeqEntry (sep);
-        if (hiddengenbio == NULL) {
-          wnd = FixedWindow (-50, -33, -10, -10, "you should not see me", NULL);
-          hiddengenbio = CreateSimpleBioSourceDialog (wnd, "");
-          RealizeWindow (wnd); /* never show this window - just for biosource dialog */
-        }
         processonenuc = TRUE;
         if (IS_Bioseq_set (sep)) {
           bssp = (BioseqSetPtr) sep->data.ptrvalue;
@@ -2172,7 +2419,7 @@ static Boolean HandleOneNewAsnProc (BaseFormPtr bfp, Boolean removeold, Boolean 
           }
         }
         if (processonenuc) {
-          ProcessOneNucleotideTitle (SEQ_PKG_SINGLE, hiddengenbio, NULL, NULL, nsep, sep, NULL);
+          ProcessOneNucleotideTitle (SEQ_PKG_SINGLE, nsep, sep);
         }
         if (! leaveAsOldAsn) {
           notaxid = FALSE;
@@ -2664,40 +2911,9 @@ static Boolean DoReadAnythingLoop (BaseFormPtr bfp, CharPtr filename, CharPtr pa
 
 /* Sarah's stuff */
 
-static CharPtr FGetLine (FILE *fp)
-{
-  ValNodePtr charp=NULL,
-             vnp;
-  CharPtr    buffer = NULL;
-  int        c;
-  Int4       j, len=0;
-
-  c = fgetc(fp);
-  while (c!=255 && c!=NULLB && c!=EOF && c!='\0' && c!='\n' && c != '\r')
-  {
-     if (c!='\t' && c!='\015' && c != '\013') {
-        ValNodeAddInt (&charp, 1, (Int4)c);
-        len++;
-     }
-     c = fgetc(fp);
-  }
-  if (charp) {
-     buffer = (CharPtr)MemNew((size_t)((len+5)*sizeof(Char)));
-     for (j=0, vnp=charp; vnp!=NULL; vnp=vnp->next, j++)
-        buffer[j] = (Char) vnp->data.intvalue;
-     buffer[j]='\0';
-     ValNodeFree (charp);
-  }
-  else if (c=='\0' || c=='\n' || c == '\r') {
-     buffer = (CharPtr)MemNew((size_t)(sizeof(Char)));
-     buffer[0]='\0';
-  }
-  return buffer;
-}
-
 #define SQACT_TXTALN 1
 #define SQACT_NOTTXTALN 2
-
+#define SQACT_UNPRINTABLECHARS 3
 
 static Int4 SQACT_GuessWhatIAm (FILE *fp)
 {
@@ -2708,6 +2924,7 @@ static Int4 SQACT_GuessWhatIAm (FILE *fp)
    Int4     seq;
    CharPtr  tmp;
    ValNodePtr current_data = NULL;
+   CharPtr    cp;
 
    if (fp == NULL) return SQACT_NOTTXTALN;
    line = MyFGetLine (fp, &current_data);
@@ -2730,6 +2947,17 @@ static Int4 SQACT_GuessWhatIAm (FILE *fp)
      FreeBufferedReadList (current_data);
      return -1;
    }
+
+   /* look for unprintable characters */      
+   for (cp = line; *cp != 0; cp++)
+   {
+      if (! isprint ((Int4)(*cp)) && ! isspace ((Int4)(*cp)))
+      {
+         FreeBufferedReadList (current_data);
+         return SQACT_UNPRINTABLECHARS;
+      }
+   }
+
    tmp = StringStr(line, "::="); /* ASN.1 */
    if (tmp != NULL)
    {
@@ -2979,19 +3207,33 @@ static Boolean CommonReadNewAsnProc (Handle obj, Boolean removeold, Boolean askF
     }
     type = SQACT_GuessWhatIAm (fp);
     FileClose (fp);
-    if (type == SQACT_TXTALN) {
-      sep = ReadAnyAlignment (TRUE, path);
-      if (sep == NULL) {
+    if (type == SQACT_UNPRINTABLECHARS || type == SQACT_TXTALN)
+    {
+      sep = NULL;
+      if (type == SQACT_TXTALN)
+      {
+        sep = ReadAnyAlignment (TRUE, path);
+      }
+      if (sep == NULL)
+      {
         aip = AsnIoOpen (path, "rb");
         if (aip != NULL) {
           sep = SeqEntryAsnRead (aip, NULL);
           AsnIoClose (aip);
         }
-        if (sep == NULL) {
+        if (sep == NULL)
+        {
           ArrowCursor ();
-          ErrPostEx (SEV_WARNING, 0, 0, "Error reading file");
-          return rsult;
-        }
+          if (type == SQACT_UNPRINTABLECHARS)
+          {
+            ErrPostEx (SEV_WARNING, 0, 0, "File '%s' contains unprintable characters.  If this is a Word document, you need to save it as plain text.", path);
+          }
+          else
+          {
+            ErrPostEx (SEV_WARNING, 0, 0, "Error reading file");
+          }
+          return FALSE;
+        }        
       }
       VisitBioseqsInSep (sep, NULL, SQACT_FixBioseqs);
       if (IS_Bioseq (sep)) {
@@ -3002,7 +3244,8 @@ static Boolean CommonReadNewAsnProc (Handle obj, Boolean removeold, Boolean askF
       dataptr = (Pointer) sep->data.ptrvalue;
       entityID = ObjMgrRegister (datatype, dataptr);
       rsult = HandleOneNewAsnProc (bfp, FALSE, askForSubmit, path, dataptr, datatype, entityID, &updateEntityID);
-      if (updateEntityID != 0) {
+      if (updateEntityID != 0) 
+      {
         ObjMgrSetDirtyFlag (updateEntityID, TRUE);
         ObjMgrSendMsg (OM_MSG_UPDATE, updateEntityID, 0, 0);
       }
@@ -3084,7 +3327,7 @@ static void PrintExtraErrorInstructions (FILE *fp, CharPtr message)
 "\nMiddle gap characters are used to maintain the spacing "
 "inside an alignment.  These are not nucleotides and will "
 "not appear as part of your sequence file.\n"
-"Missing characters are used to represent indeterminate/ambiguous "
+"Ambiguous/unknown characters are used to represent indeterminate/ambiguous "
 "nucleotides.  These will appear in your sequence file as 'n'.\n"
 "Match characters are used to indicate positions where "
 "sequences are identical to the first sequence.  These will be "
@@ -3131,9 +3374,25 @@ static void WalkErrorList (TErrorInfoPtr list, FILE *fp)
 
 }
 
+static Int4 CountNucleotides (CharPtr sequence)
+{
+  Int4    num = 0;
+  CharPtr cp;
+  
+  if (sequence == NULL) return 0;	
+  for (cp = sequence; *cp != 0; cp++)
+  {
+  	if (*cp != '-') 
+  	{
+  	  num++;
+  	}
+  }
+  return num;
+}
+
 static void PrintAlignmentSummary (TAlignmentFilePtr afp, FILE *fp)
 {
-  Int4         index;
+  Int4 index;
 
   if (fp == NULL) return;
 
@@ -3142,23 +3401,40 @@ static void PrintAlignmentSummary (TAlignmentFilePtr afp, FILE *fp)
   } else {
     fprintf (fp, "Found %d sequences\n", afp->num_sequences);
     fprintf (fp, "Found %d organisms\n", afp->num_organisms);
-    for (index = 0; index < afp->num_sequences; index++)
+    if (afp->num_sequences == afp->num_segments * afp->num_organisms)
     {
-      fprintf (fp, "\t%s\t", afp->ids [index]);
-      if (index < afp->num_organisms) {
-        fprintf (fp, "%s\n", afp->organisms [index]);
-      } else {
-        fprintf (fp, "No organism information\n");
-      }
+      for (index = 0; index < afp->num_sequences; index++)
+      {
+        fprintf (fp, "\t%s\t%d nucleotides\t", afp->ids [index],
+                 CountNucleotides (afp->sequences[index]));
+        if (index / afp->num_segments < afp->num_organisms) {
+          fprintf (fp, "%s\n", afp->organisms [index / afp->num_segments]);
+        } else {
+          fprintf (fp, "No organism information\n");
+        }
+      }    	
     }
-    while (index < afp->num_organisms) {
-      fprintf (fp, "Unclaimed organism: %s\n", afp->organisms [index]);
-      index++;
+    else
+    {
+      for (index = 0; index < afp->num_sequences; index++)
+      {
+        fprintf (fp, "\t%s\t%d nucleotides\t", afp->ids [index], 
+                 CountNucleotides (afp->sequences[index]));
+        if (index < afp->num_organisms) {
+          fprintf (fp, "%s\n", afp->organisms [index]);
+        } else {
+          fprintf (fp, "No organism information\n");
+        }
+      }
+      while (index < afp->num_organisms) {
+        fprintf (fp, "Unclaimed organism: %s\n", afp->organisms [index]);
+        index++;
+      }	
     }
   }
 }
 
-static void 
+extern void 
 ProduceAlignmentNotes 
 (TAlignmentFilePtr afp,
  TErrorInfoPtr error_list)
@@ -3194,19 +3470,33 @@ typedef struct alphabetformdata {
 
 static Boolean DoSequenceLengthsMatch (TAlignmentFilePtr afp)
 {
-  int    seq_index;
-  Int4   seq_len;
+  int     seq_index;
+  int     curr_seg;
+  Int4Ptr seq_len;
+  Boolean rval;
 
   if (afp == NULL || afp->sequences == NULL || afp->num_sequences == 0) {
     return TRUE;
   }
-  seq_len = StringLen (afp->sequences[0]);
-  for (seq_index = 1; seq_index < afp->num_sequences; seq_index++) {
-    if (StringLen (afp->sequences[seq_index]) != seq_len) {
-      return FALSE;
-    }
+
+  seq_len = (Int4Ptr) MemNew (sizeof (Int4) * afp->num_segments);
+  if (seq_len == NULL) return FALSE;
+  for (seq_index = 0; seq_index < afp->num_segments; seq_index ++)
+  {
+    seq_len [seq_index] = StringLen (afp->sequences[seq_index]);
   }
-  return TRUE;
+
+  curr_seg = 0;
+  rval = TRUE;
+  for (seq_index = afp->num_segments; seq_index < afp->num_sequences && rval; seq_index++) {
+    if (StringLen (afp->sequences[seq_index]) != seq_len[curr_seg]) {
+      rval = FALSE;
+    }
+	curr_seg ++;
+	if (curr_seg >= afp->num_segments) curr_seg = 0;
+  }
+  MemFree (seq_len);
+  return rval;
 }
 
 extern SeqEntryPtr 
@@ -3260,7 +3550,7 @@ SeqEntryFromAlignmentFile
   if (afp != NULL) {
     if (afp->num_organisms == 0 && no_org_err_msg != NULL) {
       Message (MSG_ERROR, no_org_err_msg);
-    } else if (afp->num_organisms != 0 && afp->num_organisms != afp->num_sequences) {
+    } else if (afp->num_organisms != 0 && afp->num_organisms != afp->num_sequences && afp->num_organisms * afp->num_segments != afp->num_sequences) {
       Message (MSG_ERROR, "Number of organisms must match number of sequences!");
     } else {
       ans = ANS_YES;
@@ -3405,16 +3695,16 @@ static void BuildGetAlphabetDialog (IteM i)
   SetGroupSpacing (h, 10, 10);
   
   g = HiddenGroup (h, 2, 4, NULL);
-  StaticPrompt (g, "Missing", 0, dialogTextHeight, programFont, 'c');
-  afp->missing = DialogText (g, "?", 5, NULL);
+  StaticPrompt (g, "Ambiguous/Unknown", 0, dialogTextHeight, programFont, 'c');
+  afp->missing = DialogText (g, "?Nn", 5, NULL);
   StaticPrompt (g, "Match", 0, dialogTextHeight, programFont, 'c');
   afp->match = DialogText (g, ".", 5, NULL);
   StaticPrompt (g, "Beginning Gap", 0, dialogTextHeight, programFont, 'c');
-  afp->beginning_gap = DialogText (g, "-.nN", 5, NULL);
+  afp->beginning_gap = DialogText (g, "-.?nN", 5, NULL);
   StaticPrompt (g, "Middle Gap", 0, dialogTextHeight, programFont, 'c');
-  afp->middle_gap = DialogText (g, "-nN", 5, NULL);
+  afp->middle_gap = DialogText (g, "-", 5, NULL);
   StaticPrompt (g, "End Gap", 0, dialogTextHeight, programFont, 'c');
-  afp->end_gap = DialogText (g, "-?", 5, NULL);
+  afp->end_gap = DialogText (g, "-.?nN", 5, NULL);
   StaticPrompt (g, "Sequence Type", 0, dialogTextHeight, programFont, 'c');
   afp->sequence_type = PopupList (g, TRUE, NULL);
   PopupItem (afp->sequence_type, "Nucleotide");
@@ -3443,12 +3733,6 @@ static void ReadNewAsnProc (IteM i)
 
 {
   CommonReadNewAsnProc ((Handle) i, FALSE, FALSE);
-}
-
-static void ReadNewAsnAndDeleteProc (IteM i)
-
-{
-  CommonReadNewAsnProc ((Handle) i, TRUE, FALSE);
 }
 
 extern Boolean LIBCALLBACK SequinOpenMimeFile (CharPtr filename)
@@ -3775,7 +4059,6 @@ static void BioseqViewFormActivated (WindoW w)
   Enable (specialMenu);
   Enable (analysisMenu);
   Enable (vectorScreenItem);
-  Enable (powerBlastItem);
   Enable (cddBlastItem);
   Enable (cddSearchMenu);
   Enable (cddSearchItem);
@@ -4070,7 +4353,6 @@ static void MacDeactProc (WindoW w)
   Disable (aluItem);
   Disable (submitItem);
   Disable (vectorScreenItem);
-  Disable (powerBlastItem);
   Disable (cddBlastItem);
   Disable (cddSearchMenu);
   Disable (cddSearchItem);
@@ -4132,7 +4414,11 @@ static void DisplayHelpFormProc (IteM i)
 }
 
 /*#ifdef USE_MEDARCH*/
-static ValNodePtr LookupAnArticleFunc (ValNodePtr oldpep)
+
+static Boolean debug_fix_pub_equiv = FALSE;
+static Boolean debug_fix_pub_set = FALSE;
+
+static ValNodePtr LookupAnArticleFunc (ValNodePtr oldpep, BoolPtr success)
 
 {
   FindPubOption  fpo;
@@ -4142,6 +4428,10 @@ static ValNodePtr LookupAnArticleFunc (ValNodePtr oldpep)
   Int4           pmid = 0;
   ValNodePtr     pub;
   ValNodePtr     vnp;
+#ifdef OS_UNIX
+  AsnIoPtr       aip;
+  CharPtr        str;
+#endif
 
   pub = NULL;
   if (oldpep != NULL) {
@@ -4150,6 +4440,17 @@ static ValNodePtr LookupAnArticleFunc (ValNodePtr oldpep)
     MonitorStrValue (mon, "Connecting to MedArch");
     Update ();
     if (MedArchInit ()) {
+#ifdef OS_UNIX
+      if (! debug_fix_pub_set) {
+        str = (CharPtr) getenv ("DEBUG_FIX_PUB_EQUIV");
+        if (StringDoesHaveText (str)) {
+          if (StringICmp (str, "TRUE") == 0) {
+            debug_fix_pub_equiv = TRUE;
+          }
+        }
+        debug_fix_pub_set = TRUE;
+      }
+#endif
       pep = AsnIoMemCopy (oldpep, (AsnReadFunc) PubEquivAsnRead,
                           (AsnWriteFunc) PubEquivAsnWrite);
       fpo.always_look = TRUE;
@@ -4160,7 +4461,32 @@ static ValNodePtr LookupAnArticleFunc (ValNodePtr oldpep)
       fpo.fetches_succeeded = 0;
       MonitorStrValue (mon, "Performing Lookup");
       Update ();
+#ifdef OS_UNIX
+      if (debug_fix_pub_equiv) {
+        if (pep != NULL) {
+          aip = AsnIoOpen ("origpubequiv.txt", "w");
+          if (aip != NULL) {
+            PubEquivAsnWrite (pep, aip, NULL);
+            AsnIoClose (aip);
+          }
+        }
+      }
+#endif
       pub = FixPubEquiv (pep, &fpo);
+      if (fpo.fetches_succeeded && success != NULL) {
+        *success = TRUE;
+      }
+#ifdef OS_UNIX
+      if (debug_fix_pub_equiv) {
+        if (pub != NULL) {
+          aip = AsnIoOpen ("fixpubequiv.txt", "w");
+          if (aip != NULL) {
+            PubEquivAsnWrite (pub, aip, NULL);
+            AsnIoClose (aip);
+          }
+        }
+      }
+#endif
       if (! fpo.fetches_succeeded) {
         ErrShow ();
         Update ();
@@ -4346,19 +4672,20 @@ extern void QuitProc (void)
 static void CloseProc (BaseFormPtr bfp)
 
 {
-  Uint2          entityID;
-  Boolean        freeEditors = FALSE;
-  Int2           j;
-  Int2           num;
-  Boolean        numview;
-  ObjMgrPtr      omp;
-  ObjMgrDataPtr  PNTR omdpp;
-  OMUserDataPtr  omudp;
-  ObjMgrDataPtr  tmp;
+  BioseqViewFormPtr  bvfp;
+  Uint2              entityID;
+  Boolean            freeEditors = FALSE;
+  Int2               j;
+  Int2               num;
+  Boolean            numview;
+  ObjMgrPtr          omp;
+  ObjMgrDataPtr      PNTR omdpp;
+  OMUserDataPtr      omudp;
+  ObjMgrDataPtr      tmp;
+  Uint2              userkey;
+  ValNodePtr         vnp;
 #ifdef USE_SMARTNET
-  ObjMgrDataPtr  PNTR omdp;
-  int fd;
-  SMUserDataPtr sm_usr_data = NULL;
+  SMUserDataPtr     sm_usr_data = NULL;
 #endif
 
 #ifdef WIN_MAC
@@ -4385,6 +4712,24 @@ static void CloseProc (BaseFormPtr bfp)
           }
           freeEditors = TRUE;
         }
+      }
+    }
+    if (freeEditors) {
+      bvfp = (BioseqViewFormPtr) bfp;
+      if (bvfp->input_entityID > 0 && bvfp->userkey > 0) {
+        userkey = bvfp->userkey;
+        bvfp->userkey = 0;
+        /* ObjMgrFreeUserData (bvfp->input_entityID, bvfp->procid, bvfp->proctype, userkey); */
+        /* this may trigger another remove, hence bvfp->userkey first set to 0 */
+        for (vnp = bvfp->bvd.entityList; vnp != NULL; vnp = vnp->next) {
+          if (bvfp->input_entityID != (Uint2) vnp->data.intvalue) {
+            ObjMgrFreeUserData ((Uint2) vnp->data.intvalue, bvfp->procid, bvfp->proctype, userkey);
+          }
+        }
+        bvfp->userkey = userkey;
+      }
+      if (bvfp->bvd.entityList != NULL) {
+        bvfp->bvd.entityList = ValNodeFree (bvfp->bvd.entityList);
       }
     }
     numview = 0;
@@ -4962,1210 +5307,12 @@ void NetConfigureProc (IteM i)
                      ConfigTurnedOff, netCurrentlyOn);
 }
 
-/*
-static void DoUpdateSeq (IteM i, CharPtr label, Uint2 import_format)
-
-{
-  BaseFormPtr  bfp;
-  BioseqPtr    bsp;
-  SeqEntryPtr  sep;
-
-#ifdef WIN_MAC
-  bfp = currentFormDataPtr;
-#else
-  bfp = GetObjectExtra (i);
-#endif
-  if (bfp == NULL) return;
-  sep = GetTopSeqEntryForEntityID (bfp->input_entityID);
-  if (sep == NULL) return;
-  bsp = GetBioseqGivenIDs (bfp->input_entityID, bfp->input_itemID, bfp->input_itemtype);
-  if (bsp == NULL) return;
-  SetAppProperty ("ReadAlignViewType", label);
-  ReadAlignView (bsp, import_format);
-  SetAppProperty ("ReadAlignViewType", NULL);
-}
-
-static void ReplaceSeq (IteM i)
-
-{
-  DoUpdateSeq (i, "Replace", SALSA_FASTA);
-}
-
-static void ExtendSeq5 (IteM i)
-
-{
-  DoUpdateSeq (i, "Extend5", SALSA_FASTA);
-}
-
-static void ExtendSeq3 (IteM i)
-
-{
-  DoUpdateSeq (i, "Extend3", SALSA_FASTA);
-}
-
-static void CombineRecs (IteM i)
-
-{
-  DoUpdateSeq (i, "CombineRecs", SALSA_ASN1);
-}
-*/
-
-static void HasPubsCallback (SeqEntryPtr sep, Pointer mydata, Int4 index, Int2 indent)
-
-{
-  BioseqPtr     bsp;
-  BioseqSetPtr  bssp;
-  BoolPtr       rsult;
-  ValNodePtr    sdp;
-
-  if (sep == NULL || sep->data.ptrvalue == NULL) return;
-  rsult = (BoolPtr) mydata;
-  if (IS_Bioseq (sep)) {
-    bsp = (BioseqPtr) sep->data.ptrvalue;
-    sdp = bsp->descr;
-  } else if (IS_Bioseq_set (sep)) {
-    bssp = (BioseqSetPtr) sep->data.ptrvalue;
-    sdp = bssp->descr;
-  } else return;
-  while (sdp != NULL) {
-    if (sdp->choice == Seq_descr_pub) {
-      *rsult = TRUE;
-      return;
-    }
-    sdp = sdp->next;
-  }
-}
-
-static Boolean LIBCALL SeqEntryHasPubs (SeqEntryPtr sep)
-
-{
-  Boolean  rsult;
-
-  rsult = FALSE;
-  if (sep != NULL) {
-    SeqEntryExplore (sep, (Pointer) &rsult, HasPubsCallback);
-  }
-  return rsult;
-}
-
-static CharPtr convPubDescMssg =
-"Do you wish to convert publications to apply only to the appropriate ranges?";
-
-static FloatHi act_get_eval(Int4 exp)
-{
-  FloatHi eval;
-  Int4 i;
-
-  eval = 1;
-  for (i=1; i<=exp; i++)
-  {
-     eval = eval/10;
-  }
-  return eval;
-}
-
-static void Sequin_GetNthSeqRangeInSASet(SeqAlignPtr sap, Int4 n, Int4Ptr start, Int4Ptr stop)
-{
-   SeqAlignPtr  salp;
-   Int4         start_tmp;
-   Int4         stop_tmp;
-   Int4         tmp1;
-   Int4         tmp2;
-  
-   if (sap == NULL || sap->saip == NULL || sap->saip->indextype != INDEX_PARENT)
-      return;
-   salp = (SeqAlignPtr)(sap->segs);
-   start_tmp = stop_tmp = -1;
-   while (salp != NULL)
-   {
-      if (n > salp->dim)
-      {
-         if (start)
-            *start = -1;
-         if (stop)
-            *stop = -1;
-         return;
-      }
-      AlnMgr2GetNthSeqRangeInSA(salp, n, &tmp1, &tmp2);
-      if (tmp1 < start_tmp || start_tmp == -1)
-         start_tmp = tmp1;
-      if (tmp2 > stop_tmp)
-         stop_tmp = tmp2;
-      salp = salp->next;
-   }
-   if (start)
-      *start = start_tmp;
-   if (stop)
-      *stop = stop_tmp;
-}
-
-static SeqAlignPtr Sequin_FindPiece(BioseqPtr bsp1, BioseqPtr bsp2, Int4 start1, Int4 stop1, Int4 start2, Int4 stop2, Uint1 strand)
-{
-   AMAlignIndex2Ptr      amaip;
-   Int4                 i;
-   Int4                 nstart1;
-   Int4                 nstart2;
-   Int4                 nstop1;
-   Int4                 nstop2;
-   BLAST_OptionsBlkPtr  options;
-   CharPtr              program;
-   SeqAlignPtr          sap;
-   SeqAlignPtr          sap_head;
-   SeqAlignPtr          sap_new;
-   SeqAlignPtr          sap_prev;
-   SeqLocPtr            slp1;
-   SeqLocPtr            slp2;
-
-   if (stop1 - start1 < 4 || stop2 - start2 < 4) /* too small even for dotplot */
-      return NULL;
-   if (stop1 - start1 < 7 || stop2 - start2 < 7) /* can't do these by BLAST -- wordsize can't go that small */
-   {
-      slp1 = SeqLocIntNew(start1, stop1, Seq_strand_plus, bsp1->id);
-      slp2 = SeqLocIntNew(start2, stop2, strand, bsp2->id);
-      sap = Sequin_FindBestAlnByDotPlot(slp1, slp2);
-      SeqLocFree(slp1);
-      SeqLocFree(slp2);
-      return sap;
-   }
-   if (ISA_aa(bsp1->mol))
-   {
-      if (ISA_aa(bsp2->mol))
-         program = StringSave("blastp");
-      else
-         return NULL;
-   } else if (ISA_na(bsp1->mol))
-   {
-      if (ISA_na(bsp2->mol))
-         program = StringSave("blastn");
-      else
-         return NULL;
-   }
-   options = BLASTOptionNew(program, TRUE);
-   options->gapped_calculation = TRUE;
-   options->expect_value = 10;
-   options->gap_x_dropoff_final = 100;
-   options->gap_open = 5;
-   options->gap_extend = 1;
-   options->penalty = -1;
-   options->wordsize = 7;
-   slp1 = SeqLocIntNew(start1, stop1, Seq_strand_plus, bsp1->id);
-   slp2 = SeqLocIntNew(start2, stop2, strand, bsp2->id);
-   sap = BlastTwoSequencesByLoc(slp1, slp2, program, options);
-   BLASTOptionDelete(options);
-   MemFree(program);
-   if (sap == NULL)
-      sap = Sequin_FindBestAlnByDotPlot(slp1, slp2);
-   SeqLocFree(slp1);
-   SeqLocFree(slp2);
-   if (sap == NULL)
-      return NULL;
-   AlnMgr2IndexLite(sap);
-   Sequin_RemoveInconsistentAlnsFromSet(sap, 20, 1);
-   amaip = (AMAlignIndex2Ptr)(sap->saip);
-   AlnMgr2SortAlnSetByNthRowPos(sap, 1);
-   Sequin_GetNthSeqRangeInSASet(sap, 1, &nstart1, &nstop1);
-   Sequin_GetNthSeqRangeInSASet(sap, 2, &nstart2, &nstop2);
-   strand = AlnMgr2GetNthStrand(amaip->saps[0], 2);
-   sap_head = NULL;
-   sap_prev = NULL;
-   if (strand != Seq_strand_minus)
-   {
-      if (nstart1 > start1+20 && nstart2 > start2+20)
-      {
-         slp1 = SeqLocIntNew(start1, nstart1, Seq_strand_plus, bsp1->id);
-         slp2 = SeqLocIntNew(start2, nstart2, strand, bsp2->id);
-         sap_head = Sequin_FindBestAlnByDotPlot(slp1, slp2);
-         SeqLocFree(slp1);
-         SeqLocFree(slp2);
-      }
-   } else
-   {
-      if (nstart1 > start1+20 && nstop2 < stop2 - 20)
-      {
-         slp1 = SeqLocIntNew(start1, nstart1, Seq_strand_plus, bsp1->id);
-         slp2 = SeqLocIntNew(nstop2, stop2, strand, bsp2->id);
-         sap_head = Sequin_FindBestAlnByDotPlot(slp1, slp2);
-         SeqLocFree(slp1);
-         SeqLocFree(slp2);
-      }
-   }
-   sap_prev = sap_head;
-   for (i=0; i<amaip->numsaps-1; i++)
-   {
-      AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 1, NULL, &nstart1);
-      AlnMgr2GetNthSeqRangeInSA(amaip->saps[i+1], 1, &nstop1, NULL);
-      if (strand != Seq_strand_minus)
-      {
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, NULL, &nstart2);
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i+1], 2, &nstop2, NULL);
-      } else
-      {
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, &nstop2, NULL);
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i+1], 2, NULL, &nstart2);
-      }
-      if (nstart1 < nstop1 - 5 && nstart2 < nstop2 - 5)
-      {
-         slp1 = SeqLocIntNew(nstart1, nstop1, Seq_strand_plus, bsp1->id);
-         slp2 = SeqLocIntNew(nstart2, nstop2, strand, bsp2->id);
-         sap_new = Sequin_FindBestAlnByDotPlot(slp1, slp2);
-         SeqLocFree(slp1);
-         SeqLocFree(slp2);
-         if (sap_new != NULL)
-         {
-            if (sap_prev != NULL)
-            {
-               sap_prev->next = sap_new;
-               if (sap_new != NULL)
-                  sap_prev = sap_new;
-            } else
-               sap_head = sap_prev = sap_new;
-         }
-      }
-   }
-   Sequin_GetNthSeqRangeInSASet(sap, 1, &nstart1, &nstop1);
-   Sequin_GetNthSeqRangeInSASet(sap, 2, &nstart2, &nstop2);
-   if (strand != Seq_strand_minus)
-   {
-      if (nstop1 < stop1-20 && nstop2 < stop2-20)  /* missing piece at the end */
-      {
-         slp1 = SeqLocIntNew(nstop1, stop1, Seq_strand_plus, bsp1->id);
-         slp2 = SeqLocIntNew(nstop2, stop2, strand, bsp2->id);
-         sap_new = Sequin_FindBestAlnByDotPlot(slp1, slp2);
-         SeqLocFree(slp1);
-         SeqLocFree(slp2);
-         if (sap_new != NULL)
-         {
-            if (sap_prev != NULL)
-            {
-               sap_prev->next = sap_new;
-               sap_prev = sap_new;
-            } else
-              sap_head = sap_prev = sap_new;
-         }
-      }
-   } else
-   {
-      if (nstop1 < stop1-20 && nstart2 > start2 + 20)
-      {
-         slp1 = SeqLocIntNew(nstop1, stop1, Seq_strand_plus, bsp1->id);
-         slp2 = SeqLocIntNew(start2, nstart2, strand, bsp2->id);
-         sap_new = Sequin_FindBestAlnByDotPlot(slp1, slp2);
-         SeqLocFree(slp1);
-         SeqLocFree(slp2);
-         if (sap_new != NULL)
-         {
-            if (sap_prev != NULL)
-            {
-               sap_prev->next = sap_new;
-               sap_prev = sap_new;
-            } else
-               sap_head = sap_prev = sap_new;
-         }
-      }
-   }
-   sap_new = (SeqAlignPtr)(sap->segs);
-   while (sap_new->next != NULL)
-   {
-      sap_new = sap_new->next;
-   }
-   sap_new->next = sap_head;
-   sap_head = (SeqAlignPtr)(sap->segs);
-   sap->segs = NULL;
-   SeqAlignFree(sap);
-   return sap_head;
-}
-
-static SeqAlignPtr SPI_CreateContinuousAln(SeqAlignPtr PNTR saps, Int4 numsaps)
-{
-   DenseSegPtr  dsp;
-   DenseSegPtr  dsp_tmp;
-   Int4         i;
-   Int4         j;
-   Int4         n1;
-   Int4         n2;
-   Int4         numseg;
-   SeqAlignPtr  salp;
-   Int4         start1;
-   Int4         start2;
-   Int4         stop1;
-   Int4         stop2;
-   Uint1        strand;
-
-   for (i=0; i<numsaps-1; i++)
-   {
-      AlnMgr2GetNthSeqRangeInSA(saps[i], 1, &start1, &stop1);
-      AlnMgr2GetNthSeqRangeInSA(saps[i+1], 1, &start2, &stop2);
-      if (start2 - stop1 > 1)
-         SQN_ExtendAlnRight(saps[i], 1, stop1+1, start2-1);
-      AlnMgr2GetNthSeqRangeInSA(saps[i], 2, &start1, &stop1);
-      AlnMgr2GetNthSeqRangeInSA(saps[i+1], 2, &start2, &stop2);
-      strand = AlnMgr2GetNthStrand(saps[i], 2);
-      if (strand == Seq_strand_minus)
-      {
-         if (start1 - stop2 > 1)
-            SQN_ExtendAlnRight(saps[i], 2, stop2+1, start1-1);
-      } else
-      {
-         if (start2 - stop1 > 1)
-            SQN_ExtendAlnRight(saps[i], 2, stop1+1, start2-1);
-      }
-   }
-   numseg = 0;
-   for (i=0; i<numsaps; i++)
-   {
-      dsp_tmp = (DenseSegPtr)(saps[i]->segs);
-      numseg += dsp_tmp->numseg;
-   }
-   dsp = DenseSegNew();
-   dsp->dim = 2;
-   dsp->numseg = numseg;
-   dsp->starts = (Int4Ptr)MemNew(2*numseg*sizeof(Int4));
-   dsp->lens = (Int4Ptr)MemNew(numseg*sizeof(Int4));
-   dsp->strands = (Uint1Ptr)MemNew(2*numseg*sizeof(Uint1));
-   n1 = n2 = 0;
-   for (i=0; i<numsaps; i++)
-   {
-      dsp_tmp = (DenseSegPtr)(saps[i]->segs);
-      if (dsp->ids == NULL)
-         dsp->ids = SeqIdDupList(dsp_tmp->ids);
-      for (j=0; j<2*dsp_tmp->numseg; j++)
-      {
-         dsp->starts[n1+j] = dsp_tmp->starts[j];
-         dsp->strands[n1+j] = dsp_tmp->strands[j];
-      }
-      for (j=0; j<dsp_tmp->numseg; j++)
-      {
-         dsp->lens[n2+j] = dsp_tmp->lens[j];
-      }
-      n1 += 2*dsp_tmp->numseg;
-      n2 += dsp_tmp->numseg;
-   }
-   salp = SeqAlignNew();
-   salp->type = SAT_PARTIAL;
-   salp->segtype = SAS_DENSEG;
-   salp->dim = 2;
-   salp->segs = (Pointer)(dsp);
-   AlnMgr2IndexSingleChildSeqAlign(salp);
-   return salp;
-}
-
-static void SQN_ExtendAlnRight(SeqAlignPtr sap, Int4 which_row, Int4 start, Int4 stop)
-{
-   DenseSegPtr  dsp;
-   Int4         i;
-   Int4Ptr      lens;
-   Int4Ptr      starts;
-   Uint1Ptr     strands;
- 
-   if (sap == NULL)
-      return;
-   if (which_row > 2)
-      return;
-   dsp = (DenseSegPtr)(sap->segs);
-   if (dsp->starts[2*(dsp->numseg-1) + which_row - 1] == -1 || dsp->starts[2*(dsp->numseg-1) + (2-which_row)] != -1)
-   {
-      starts = (Int4Ptr)MemNew((dsp->numseg+1)*2*sizeof(Int4));
-      strands = (Uint1Ptr)MemNew((dsp->numseg+1)*2*sizeof(Uint1));
-      lens = (Int4Ptr)MemNew((dsp->numseg+1)*sizeof(Int4));
-      for (i=0; i<dsp->numseg; i++)
-      {
-         lens[i] = dsp->lens[i];
-      }
-      for (i=0; i<=(dsp->dim)*(dsp->numseg-1)+1; i++)
-      {
-         starts[i] = dsp->starts[i];
-         strands[i] = dsp->strands[i];
-      }
-      lens[dsp->numseg] = stop - start + 1;
-      if (dsp->strands[which_row-1] != Seq_strand_minus)
-         starts[(dsp->dim)*(dsp->numseg) + which_row - 1] = start;
-      else
-         starts[(dsp->dim)*(dsp->numseg) + which_row - 1] = stop;
-      starts[(dsp->dim)*(dsp->numseg) + (2-which_row)] = -1;
-      strands[(dsp->dim)*(dsp->numseg) + which_row - 1] = dsp->strands[which_row-1];
-      strands[(dsp->dim)*(dsp->numseg) + (2-which_row)] = dsp->strands[2-which_row];
-      MemFree(dsp->starts);
-      MemFree(dsp->lens);
-      MemFree(dsp->strands);
-      dsp->numseg++;
-      dsp->starts = starts;
-      dsp->strands = strands;
-      dsp->lens = lens;
-   } else
-   {
-      dsp->lens[dsp->numseg-1] += stop - start + 1;
-      if (dsp->strands[which_row-1] == Seq_strand_minus)
-         dsp->starts[(dsp->dim)*(dsp->numseg-1) + which_row - 1] = stop;
-   }
-   SAIndex2Free2(sap->saip);
-   sap->saip = NULL;
-   AlnMgr2IndexSingleChildSeqAlign(sap);
-}
-
-static SeqAlignPtr Sequin_CleanUpAlignments(SeqAlignPtr sap, Int4 len1, Int4 len2)
-{
-   AMAlignIndex2Ptr  amaip;
-   Int4             diff;
-   DenseSegPtr      dsp;
-   Int4             i;
-   Int4             j;
-   Int4             numseg;
-   SeqAlignPtr      sap_head;
-   SeqAlignPtr      sap_prev;
-   Int4             start1;
-   Int4             start2;
-   Int4             stop1;
-   Int4             stop2;
-   Uint1            strand;
-   Int4             tmp;
-
-   if (sap == NULL)
-      return NULL;
-   AlnMgr2SortAlnSetByNthRowPos(sap, 1);
-   amaip = (AMAlignIndex2Ptr)(sap->saip);
-   strand = AlnMgr2GetNthStrand(amaip->saps[0], 2);
-   numseg = 0;
-   AlnMgr2GetNthSeqRangeInSA(amaip->saps[0], 1, &start1, NULL);
-   AlnMgr2GetNthSeqRangeInSA(amaip->saps[0], 2, &start2, &stop2);
-   if (strand != Seq_strand_minus)
-      diff = start2;
-   else
-      diff = len2 - stop2;
-   if (start1 > 0 && diff > 0)
-      numseg += 2;
-   for (i=0; i<amaip->numsaps-1; i++)
-   {
-      while (amaip->saps[i] == NULL && i<amaip->numsaps-1)
-      {
-         i++;
-      }
-      j = i+1;
-      while (amaip->saps[j] == NULL && j<amaip->numsaps)
-      {
-         j++;
-      }
-      if (j < amaip->numsaps && amaip->saps[i] != NULL && amaip->saps[j] != NULL)
-      {
-         dsp = (DenseSegPtr)(amaip->saps[i]->segs);
-         numseg += dsp->numseg;
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 1, NULL, &start1);
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[j], 1, &stop1, &tmp);
-         if (stop1 < start1+1)
-         {
-            if (!AlnMgrTruncateSAP(amaip->saps[j], start1+1, tmp, 1))
-            {
-               SeqAlignFree(amaip->saps[j]);
-               amaip->saps[j] = NULL;
-            }
-         }
-         if (amaip->saps[j] != NULL)
-         {
-            if (strand != Seq_strand_minus)
-            {
-               AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, NULL, &start2);
-               AlnMgr2GetNthSeqRangeInSA(amaip->saps[j], 2, &stop2, &tmp);
-               if (stop2 < start2+1)
-               {
-                  if (!AlnMgrTruncateSAP(amaip->saps[j], start2+1, tmp, 2))
-                  {
-                     SeqAlignFree(amaip->saps[j]);
-                     amaip->saps[j] = NULL;
-                  }
-               }
-            } else
-            {
-               AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, &stop2, &tmp);
-               AlnMgr2GetNthSeqRangeInSA(amaip->saps[j], 2, NULL, &start2);
-               if (stop2 < start2 + 1)
-               {
-                  if (!AlnMgrTruncateSAP(amaip->saps[i], start2+1, tmp, 2))
-                  {
-                     SeqAlignFree(amaip->saps[i]);
-                     amaip->saps[i] = NULL;
-                  }
-               }
-            }
-            if (amaip->saps[i] != NULL && amaip->saps[j] != NULL)
-            {
-               AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 1, NULL, &start1);
-               AlnMgr2GetNthSeqRangeInSA(amaip->saps[j], 1, &stop1, &tmp);
-               if (strand != Seq_strand_minus)
-               {
-                  AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, NULL, &start2);
-                  AlnMgr2GetNthSeqRangeInSA(amaip->saps[j], 2, &stop2, &tmp);
-               } else
-               {
-                  AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, &stop2, &tmp);
-                  AlnMgr2GetNthSeqRangeInSA(amaip->saps[j], 2, NULL, &start2);
-               }
-               if (stop1 > start1+1)
-                  numseg++;
-               if (stop2 > start2+1)
-                  numseg++;
-            } else if (amaip->saps[j] == NULL)
-               i--;
-         }
-      }
-   }
-   sap_head = sap_prev = NULL;
-   j = 0;
-   for (i=0; i<amaip->numsaps; i++)
-   {
-      if (amaip->saps[i] != NULL)
-      {
-         j++;
-         if (sap_head != NULL)
-         {
-            sap_prev->next = amaip->saps[i];
-            amaip->saps[i]->next = NULL;
-            sap_prev = amaip->saps[i];
-         } else
-         {
-            sap_head = sap_prev = amaip->saps[i];
-            sap_head->next = NULL;
-         }
-      }
-   }
-   amaip->numsaps = j;
-   MemFree(amaip->saps);
-   amaip->saps = (SeqAlignPtr PNTR)MemNew(j*sizeof(SeqAlignPtr));
-   sap_prev = sap_head;
-   for (i=0; i<amaip->numsaps; i++)
-   {
-      amaip->saps[i] = sap_prev;
-      sap_prev = sap_prev->next;
-   }
-   sap->segs = (Pointer)sap_head;
-   dsp = (DenseSegPtr)(amaip->saps[amaip->numsaps-1]->segs);
-   numseg += dsp->numseg;
-   AlnMgr2GetNthSeqRangeInSA(amaip->saps[amaip->numsaps-1], 1, NULL, &stop1);
-   AlnMgr2GetNthSeqRangeInSA(amaip->saps[amaip->numsaps-1], 2, &start2, &stop2);
-   if (strand != Seq_strand_minus)
-      diff = len2 - stop2;
-   else
-      diff = start2;
-   if (stop1 < len1 && diff > 0)
-      numseg += 2;
-   return (SPI_CreateContinuousAln(amaip->saps, amaip->numsaps));
-}
-
-static Int4 Sequin_FixEnds(SeqAlignPtr sap, Int4 len1, Int4 len2, Int4 overhang)
-{
-   Int4         chlen;
-   DenseSegPtr  dsp;
-   DenseSegPtr  dsp_new;
-   Int4         i;
-   Int4         n;
-   Int4         seg;
-   Int4         start1;
-   Int4         start2;
-   Int4         stop1;
-   Int4         stop2;
-   Uint1        strand;
-
-   n = 0;
-   if (sap == NULL)
-      return 0;
-   if (sap->saip == NULL)
-      AlnMgr2IndexSingleChildSeqAlign(sap);
-   AlnMgr2GetNthSeqRangeInSA(sap, 1, &start1, &stop1);
-   chlen = 0;
-   if (start1 < overhang && start1 > 0)
-   {
-      chlen += start1;
-      n++;
-   }
-   if (len1 - stop1 > 1 && len1 - stop1 < overhang)
-   {
-      chlen += len1 - stop1 - 1;
-      n++;
-   }
-   AlnMgr2GetNthSeqRangeInSA(sap, 2, &start2, &stop2);
-   if (start2 < overhang && start2 > 0)
-   {
-      chlen += start2;
-      n++;
-   }
-   if (len2 - stop2 > 1 && len2 - stop2 < overhang)
-   {
-      chlen += len2 - stop2 - 1;
-      n++;
-   }
-   if (n == 0)
-      return 0; /* didn't change alignments */
-   dsp = (DenseSegPtr)(sap->segs);
-   dsp_new = DenseSegNew();
-   dsp_new->dim = dsp->dim;
-   dsp_new->numseg = dsp->numseg + n;
-   dsp_new->ids = dsp->ids;
-   dsp->ids = NULL;
-   dsp_new->starts = (Int4Ptr)MemNew(dsp_new->dim*dsp_new->numseg*sizeof(Int4));
-   dsp_new->lens = (Int4Ptr)MemNew(dsp_new->numseg*sizeof(Int4));
-   strand = AlnMgr2GetNthStrand(sap, 2);
-   dsp_new->strands = (Uint1Ptr)MemNew(dsp_new->dim*dsp_new->numseg*sizeof(Uint1));
-   for (i=0; i<dsp_new->numseg; i++)
-   {
-      dsp_new->strands[dsp_new->dim*i] = Seq_strand_plus;
-      dsp_new->strands[dsp_new->dim*i+1] = strand;
-   }
-   seg = 0;
-   if (start1 < overhang && start1 > 0)
-   {
-      dsp_new->starts[0] = 0;
-      dsp_new->starts[1] = -1;
-      dsp_new->lens[0] = start1;
-      seg = 1;
-   }
-   if (strand == Seq_strand_minus)
-   {
-      if (len2 - stop2 > 1 && len2 - stop2 < overhang)
-      {
-         dsp_new->starts[2*seg+1] = stop2+1;
-         dsp_new->starts[2*seg] = -1;
-         dsp_new->lens[seg] = len2 - stop2 - 1;
-         seg++;
-      }
-   } else
-   {
-      if (start2 < overhang && start2 > 0)
-      {
-         dsp_new->starts[2*seg] = -1;
-         dsp_new->starts[2*seg+1] = 0;
-         dsp_new->lens[seg] = start2;
-         seg++;
-      }
-   }
-   for (i=seg; i<dsp->numseg+seg; i++)
-   {
-      dsp_new->starts[i*dsp_new->dim] = dsp->starts[(i-seg)*dsp_new->dim];
-      dsp_new->starts[i*dsp_new->dim+1] = dsp->starts[(i-seg)*dsp_new->dim+1];
-      dsp_new->lens[i] = dsp->lens[i-seg];
-   }
-   seg = dsp_new->numseg - 1; /* fill last seg 1st */
-   if (len1 - stop1 > 1 && len1 - stop1 < overhang)
-   {
-      dsp_new->starts[(dsp_new->numseg-1)*dsp_new->dim] = stop1+1;
-      dsp_new->starts[(dsp_new->numseg-1)*dsp_new->dim+1] = -1;
-      dsp_new->lens[dsp_new->numseg-1] = len1-stop1-1;
-      seg--;
-   }
-   if (strand == Seq_strand_minus)
-   {
-      if (start2 < overhang && start2 > 0)
-      {
-         dsp_new->starts[seg*dsp_new->dim+1] = 0;
-         dsp_new->starts[seg*dsp_new->dim] = -1;
-         dsp_new->lens[seg] = start2;
-      }
-   } else
-   {
-      if (len2 - stop2 > 1 && len2 - stop2 < overhang)
-      {
-         dsp_new->starts[seg*dsp_new->dim+1] = stop2+1;
-         dsp_new->starts[seg*dsp_new->dim] = -1;
-         dsp_new->lens[seg] = len2 - stop2 - 1;
-      }
-   }
-   sap->segs = (Pointer)(dsp_new);
-   DenseSegFree(dsp);
-   SAIndex2Free2(sap->saip);
-   sap->saip = NULL;
-   AlnMgr2IndexSingleChildSeqAlign(sap);
-   return chlen; /* did change the alignments -> need to warn */
-}
-
-
-extern SeqAlignPtr Sequin_GlobalAlignTwoSeq (BioseqPtr bsp1, BioseqPtr bsp2, Int4Ptr endsfixed)
-{
-   AMAlignIndex2Ptr      amaip;
-   Int4                 chlen;
-   Int4                 i;
-   BLAST_OptionsBlkPtr  options;
-   CharPtr              program;
-   SeqAlignPtr          sap;
-   SeqAlignPtr          sap_final;
-   SeqAlignPtr          sap_head;
-   SeqAlignPtr          sap_new;
-   SeqAlignPtr          sap_prev;
-   Int4                 start1;
-   Int4                 start2;
-   Int4                 stop1;
-   Int4                 stop2;
-   Uint1                strand;
-
-   if (bsp1 == NULL || bsp2 == NULL)
-      return NULL;
-   if (ISA_aa(bsp1->mol))
-   {
-      if (ISA_aa(bsp2->mol))
-         program = StringSave("blastp");
-      else
-         return NULL;
-   } else if (ISA_na(bsp1->mol))
-   {
-      if (ISA_na(bsp2->mol))
-         program = StringSave("blastn");
-      else
-         return NULL;
-   }
-   options = BLASTOptionNew(program, TRUE);
-   options->gapped_calculation = TRUE;
-   options->expect_value = 0.001;
-   if (bsp1->length > 10000 || bsp2->length > 10000)
-   {
-      options->expect_value = act_get_eval(60);
-      options->wordsize = 20;
-      options->filter_string = StringSave ("m L");
-   }
-   sap = BlastTwoSequences(bsp1, bsp2, program, options);
-   BLASTOptionDelete(options);
-   MemFree(program);
-   if (sap == NULL)
-   {
-      Message(MSG_OK,"BLAST finds no sequence similarity");
-      return NULL;
-   }
-   AlnMgr2IndexLite(sap);
-   Sequin_RemoveInconsistentAlnsFromSet(sap, 20, 1);
-   amaip = (AMAlignIndex2Ptr)(sap->saip);
-   AlnMgr2SortAlnSetByNthRowPos(sap, 1);
-   Sequin_GetNthSeqRangeInSASet(sap, 1, &start1, &stop1);
-   Sequin_GetNthSeqRangeInSASet(sap, 2, &start2, &stop2);
-   strand = AlnMgr2GetNthStrand(amaip->saps[0], 2);
-   sap_head = NULL;
-   if (strand != Seq_strand_minus)
-   {
-      if (start1 > 6 && start2 > 6) /* missing a piece at the beginning */
-         sap_head = Sequin_FindPiece(bsp1, bsp2, 0, start1, 0, start2, strand);
-   } else
-   {
-      if (start1 > 6 && stop2 < bsp2->length - 6)
-         sap_head = Sequin_FindPiece(bsp1, bsp2, 0, start1, stop2, bsp2->length-1, strand);
-   }
-   if (sap_head != NULL)
-   {
-      sap_prev = sap_head;
-      while (sap_prev->next != NULL)
-      {
-         sap_prev = sap_prev->next;
-      }
-   }
-   for (i=0; i<amaip->numsaps-1; i++)
-   {
-      AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 1, NULL, &start1);
-      AlnMgr2GetNthSeqRangeInSA(amaip->saps[i+1], 1, &stop1, NULL);
-      if (strand != Seq_strand_minus)
-      {
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, NULL, &start2);
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i+1], 2, &stop2, NULL);
-      } else
-      {
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, &stop2, NULL);
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i+1], 2, NULL, &start2);
-      }
-      sap_new = Sequin_FindPiece(bsp1, bsp2, start1, stop1, start2, stop2, strand);
-      if (sap_new != NULL && sap_head != NULL)
-      {
-         sap_prev->next = sap_new;
-         if (sap_new != NULL)
-            sap_prev = sap_new;
-      } else if (sap_new != NULL)
-         sap_head = sap_prev = sap_new;
-   }
-   Sequin_GetNthSeqRangeInSASet(sap, 1, &start1, &stop1);
-   Sequin_GetNthSeqRangeInSASet(sap, 2, &start2, &stop2);
-   if (strand != Seq_strand_minus)
-   {
-      if (stop1 < bsp1->length-6 && stop2 < bsp2->length-6)  /* missing piece at the end */
-      {
-         sap_new = Sequin_FindPiece(bsp1, bsp2, stop1, bsp1->length-1, stop2, bsp2->length-1, strand);
-         if (sap_new != NULL)
-         {
-            if (sap_head != NULL)
-            {
-               sap_prev->next = sap_new;
-               sap_prev = sap_new;
-            } else
-              sap_head = sap_new;
-         }
-      }
-   } else
-   {
-      if (stop1 < bsp1->length-6 && start2 > 6)
-      {
-         sap_new = Sequin_FindPiece(bsp1, bsp2, stop1, bsp1->length-1, 0, start2, strand);
-         if (sap_new != NULL)
-         {
-            if (sap_head != NULL)
-            {
-               sap_prev->next = sap_new;
-               sap_prev = sap_new;
-            } else
-               sap_head = sap_new;
-         }
-      }
-   }
-   sap_new = (SeqAlignPtr)(sap->segs);
-   while (sap_new->next != NULL)
-   {
-      sap_new = sap_new->next;
-   }
-   sap_new->next = sap_head;  /* put the new alignments in the original set */
-   AMAlignIndex2Free2(amaip);
-   sap->saip = NULL;
-   AlnMgr2IndexLite(sap);  /* reindex the alignments */
-   sap_final = Sequin_CleanUpAlignments(sap, bsp1->length, bsp2->length);
-   chlen = Sequin_FixEnds(sap_final, bsp1->length, bsp2->length, 1000);
-   if (endsfixed != NULL)
-      *endsfixed = chlen;
-   return sap_final;
-}
-
-
-static SeqAlignPtr Sequin_FindBestAlnByDotPlot(SeqLocPtr slp1, SeqLocPtr slp2)
-{
-   DOTDiagPtr      ddp;
-   DenseSegPtr     dsp;
-   Int4            i;
-   DOTMainDataPtr  mip;
-   SeqAlignPtr     sap;
-   SeqAlignPtr     sap_head;
-   SeqAlignPtr     sap_prev;
-   ScorePtr        scp;
-   Int4            start1;
-   Int4            start2;
-   Uint1           strand;
-
-   ErrSetMessageLevel(SEV_MAX);
-   mip = DOT_CreateAndStorebyLoc (slp1, slp2, 6, 10);
-   ErrSetMessageLevel(SEV_WARNING);
-   sap = sap_head = sap_prev = NULL;
-   if (mip == NULL || mip->hitlist == NULL)
-      return NULL;
-   i = 0;
-   ddp = mip->hitlist[i];
-   start1 = SeqLocStart(slp1);
-   start2 = SeqLocStart(slp2);
-   strand = SeqLocStrand(slp2);
-   /* copy each ddp (a single ungapped alignment) into a one-segment dense-seg alignment */
-   while (ddp != NULL && i < mip->index)
-   {
-      ddp = mip->hitlist[i];
-      i++;
-      sap = SeqAlignNew();
-      dsp = DenseSegNew();
-      sap->type = SAT_PARTIAL;
-      sap->segtype = SAS_DENSEG;
-      sap->dim = 2;
-      dsp->dim = 2;
-      dsp->numseg = 1;
-      dsp->ids = SeqIdDup(SeqLocId(slp1));
-      dsp->ids->next = SeqIdDup(SeqLocId(slp2));
-      dsp->strands = (Uint1Ptr)MemNew(2*sizeof(Uint1));
-      dsp->strands[0] = SeqLocStrand(slp1);
-      dsp->strands[1] = SeqLocStrand(slp2);
-      dsp->starts = (Int4Ptr)MemNew(2*sizeof(Int4));
-      dsp->lens = (Int4Ptr)MemNew(sizeof(Int4));
-      dsp->starts[0] = ddp->q_start;
-      if (dsp->strands[1] == Seq_strand_minus)
-         dsp->starts[1] = ddp->s_start - ddp->length + 1;
-      else
-         dsp->starts[1] = ddp->s_start;
-      if (ddp->length > SeqLocLen(slp2))
-         dsp->lens[0] = SeqLocLen(slp2);
-      else
-         dsp->lens[0] = ddp->length - 1;
-      scp = ScoreNew();
-      scp->id = ObjectIdNew();
-      scp->id->str = StringSave("score");
-      scp->choice = 1;
-      scp->value.intvalue = ddp->score;
-      dsp->scores = scp;
-      sap->segs = (Pointer)(dsp);
-      if (sap_head != NULL)
-      {
-         sap_prev->next = sap;
-         sap_prev = sap;
-      } else
-         sap_head = sap_prev = sap;
-   }
-   if (sap_head == NULL)
-      return NULL;
-   AlnMgr2IndexLite(sap_head);
-   Sequin_RemoveInconsistentAlnsFromSet(sap_head, 6, 1);
-   sap = (SeqAlignPtr)(sap_head->segs);
-   sap_head->segs = NULL;
-   SeqAlignFree(sap_head);
-   MemFree(mip->matrix);
-   MemFree(mip->qseq);
-   MemFree(mip->sseq);
-   MemFree(mip->qname);
-   MemFree(mip->sname);
-   i = 0;
-   ddp = mip->hitlist[i];
-   while (ddp != NULL && i < mip->index)
-   {
-      ddp = mip->hitlist[i];
-      MemFree(ddp);
-      i++;
-   }
-   MemFree(mip->hitlist);
-   return sap;
-}
-
-typedef struct seq_spin {
-   Int4  n1;
-   Int4  n2;
-   Int4  n3;
-   Int4  n4;
-   Int4  n5;
-} SQN_n, PNTR SQN_nPtr;
-
-static int LIBCALLBACK SQN_CompareSpins(VoidPtr ptr1, VoidPtr ptr2)
-{
-   SQN_nPtr  spin1;
-   SQN_nPtr  spin2;
-
-   spin1 = *((SQN_nPtr PNTR) ptr1);
-   spin2 = *((SQN_nPtr PNTR) ptr2);
-   if (spin1 == NULL || spin2 == NULL)
-      return 0;
-   if (spin1->n3 > spin2->n3)
-      return -1;
-   if (spin1->n3 < spin2->n3)
-      return 1;
-   if (spin1->n2 < spin2->n2)
-      return -1;
-   if (spin1->n2 > spin2->n2)
-      return 1;
-   return 0;
-}
-
-static void Sequin_RemoveInconsistentAlnsFromSet(SeqAlignPtr sap, Int4 fuzz, Int4 n)
-{
-   AMAlignIndex2Ptr  amaip;
-   Boolean          conflict;
-   Int4             curr;
-   Int4             i;
-   Int4             indextype;
-   SeqAlignPtr      salp;
-   SeqAlignPtr      salp_head;
-   SeqAlignPtr      salp_prev;
-   SQN_nPtr         PNTR spin;
-   Int4             start;
-   Int4             stop;
-   Int4             strand;
-
-   if (sap == NULL || sap->saip == NULL || sap->saip->indextype != INDEX_PARENT)
-      return;
-   if (n > 2)
-      return;
-   amaip = (AMAlignIndex2Ptr)(sap->saip);
-   indextype = amaip->alnstyle;
-   /* make sure that everything is on the plus strand of the nth sequence */
-   for (i=0; i<amaip->numsaps; i++)
-   {
-      salp = amaip->saps[i];
-      strand = AlnMgr2GetNthStrand(salp, n);
-      if (strand == Seq_strand_minus)
-      {
-         SAIndex2Free2(salp->saip);
-         salp->saip = NULL;
-         salp->next = NULL;
-         SeqAlignListReverseStrand(salp);
-         AlnMgr2IndexSingleChildSeqAlign(salp);
-      }
-   }
-   /* spin structure: n1 = which alignment, n2 = start on first row, n3 =
-      alignment length on 1st row, n4 = start on 2nd row, n5 = 2nd strand */
-   spin = (SQN_nPtr PNTR)MemNew((amaip->numsaps)*sizeof(SQN_nPtr));
-   for (i=0; i<amaip->numsaps; i++)
-   {
-      spin[i] = (SQN_nPtr)MemNew(sizeof(SQN_n));
-      salp = amaip->saps[i];
-      spin[i]->n1 = i;
-      AlnMgr2GetNthSeqRangeInSA(salp, n, &start, &stop);
-      spin[i]->n3 = stop - start;
-      spin[i]->n2 = start;
-      AlnMgr2GetNthSeqRangeInSA(salp, 3-n, &start, &stop);
-      spin[i]->n4 = start;
-      strand = AlnMgr2GetNthStrand(salp, 3-n);
-      if (strand == Seq_strand_minus)
-         spin[i]->n5 = -1;
-      else
-         spin[i]->n5 = 1;
-   }
-   HeapSort((Pointer)spin, (size_t)(amaip->numsaps), sizeof(SQN_nPtr), SQN_CompareSpins);
-   strand = spin[0]->n5;
-   for (i=1; i<amaip->numsaps; i++)
-   {
-      if (spin[i]->n5 != strand)
-      {
-         salp = amaip->saps[spin[i]->n1];
-         salp->next = NULL;
-         SeqAlignFree(salp);
-         amaip->saps[spin[i]->n1] = NULL;
-         spin[i]->n1 = -1;
-      }
-   }
-   for (curr=0; curr<amaip->numsaps; curr++)
-   {
-      if (spin[curr]->n1 != -1)
-      {
-         for (i=curr+1; i<amaip->numsaps; i++)
-         {
-            if (spin[i]->n1 != -1)
-            {
-               conflict = FALSE;
-            /* check first for conflict on first row */
-               if (spin[i]->n2 + spin[i]->n3 - 1 > spin[curr]->n2 + fuzz)
-               {
-                  if (spin[i]->n2 < spin[curr]->n2)
-                     conflict = TRUE;
-               }
-               if (spin[i]->n2 < spin[curr]->n2 + spin[curr]->n3 - 1 - fuzz)
-               {
-                  if (spin[i]->n2 + spin[i]->n3 - 1 > spin[curr]->n2 + spin[curr]->n3 - 1)
-                     conflict = TRUE;
-               }
-               if (spin[i]->n2 >= spin[curr]->n2)
-               {
-                  if (spin[i]->n2 + spin[i]->n3 - 1 <= spin[curr]->n2 + spin[curr]->n3 - 1)
-                     conflict = TRUE;
-               }
-            /* then check for conflict and consistency on second row */
-               if (spin[i]->n2 + spin[i]->n3 - 1 < spin[curr]->n2 + fuzz)
-               {
-                  if (strand == 1)
-                  {
-                     if (spin[i]->n4 + spin[i]->n3 - 1 > spin[curr]->n4 + fuzz)
-                        conflict = TRUE;
-                  } else if (strand == -1)
-                  {
-                     if (spin[curr]->n4 + spin[curr]->n3 - 1 - fuzz > spin[i]->n4)
-                        conflict = TRUE;
-                  }
-               } else
-               {
-                  if (strand == 1)
-                  {
-                     if (spin[i]->n4 < spin[curr]->n4 + spin[curr]->n3 - fuzz)
-                        conflict = TRUE;
-                  } else if (strand == -1)
-                  {
-                     if (spin[i]->n4 + spin[i]->n3 - 1 - fuzz > spin[curr]->n4)
-                        conflict = TRUE;
-                  }
-               }
-               if (conflict)
-               {
-                  salp = amaip->saps[spin[i]->n1];
-                  salp->next = NULL;
-                  SeqAlignFree(salp);
-                  amaip->saps[spin[i]->n1] = NULL;
-                  spin[i]->n1 = -1;
-               }
-            }
-         }
-      }
-   }
-   salp_head = salp_prev = NULL;
-   for (i=0; i<amaip->numsaps; i++)
-   {
-      MemFree(spin[i]);
-      if (amaip->saps[i] != NULL)
-      {
-         amaip->saps[i]->next = NULL;
-         if (salp_prev != NULL)
-         {
-            salp_prev->next = amaip->saps[i];
-            salp_prev = salp_prev->next;
-         } else
-            salp_head = salp_prev = amaip->saps[i];
-      }
-   }
-   sap->segs = (Pointer)(salp_head);
-   if (indextype == AM2_LITE)
-   {
-      AMAlignIndex2Free2(sap->saip);
-      sap->saip = NULL;
-      AlnMgr2IndexLite(sap);
-   } else
-      AlnMgr2ReIndexSeqAlign(sap);
-   MemFree(spin);
-}
-
-static void SqnReadAlignViewEx (BioseqPtr target_bsp, SeqEntryPtr source_sep, Int2 choice)
-
-{
-  /*
-  ValNodePtr  vnp=NULL;  
-  SeqLocPtr   slp=NULL;
-  SeqLocPtr   source_slp;
-  */
-  SeqIdPtr    sip /* , source_sip */;
-  SeqAlignPtr salp; 
-  BioseqPtr   source_bsp = NULL;
-  MsgAnswer   ans;
-  SeqEntryPtr target_sep;
-  Uint2       entityID;
-  Boolean     asked_about_prop = FALSE;
-  Boolean     propagate_descriptors = FALSE;
- 
-  if (target_bsp==NULL)  
-     return;
-  entityID = ObjMgrGetEntityIDForPointer (target_bsp);
-  target_sep = GetBestTopParentForData (entityID, target_bsp);
-  if (source_sep!=NULL && source_sep->data.ptrvalue != NULL) {
-     if (SeqEntryHasPubs (source_sep) || SeqEntryHasPubs (target_sep)) {
-       ans = Message (MSG_YN, convPubDescMssg);
-       if (ans == ANS_YES) {
-         ConvertPubSrcComDescsToFeats (source_sep, TRUE, FALSE, FALSE, FALSE, &asked_about_prop, &propagate_descriptors, NULL);
-         ConvertPubSrcComDescsToFeats (target_sep, TRUE, FALSE, FALSE, FALSE, &asked_about_prop, &propagate_descriptors, NULL);
-       }
-     }
-     if (IS_Bioseq_set(source_sep))
-        source_sep = FindNucSeqEntry(source_sep);
-     if (IS_Bioseq(source_sep)) 
-     {
-        if (! ISA_na (target_bsp->mol)) {
-          Message (MSG_ERROR, "Target Bioseq is not a Nucleotide");
-          return;
-        }
-        sip = SeqIdFindBest(target_bsp->id, 0);
-        /* slp = SeqLocIntNew (0, target_bsp->length - 1, Seq_strand_plus, sip); */
-        SeqEntryReplaceSeqID (source_sep, sip);
-        source_bsp = (BioseqPtr)source_sep->data.ptrvalue;
-        if (! ISA_na (source_bsp->mol)) {
-          Message (MSG_ERROR, "Source Bioseq is not a Nucleotide");
-          return;
-        }
-        /*
-        source_sip = SeqIdFindBest(source_bsp->id, 0);
-        if (source_sip==NULL)
-           source_sip = source_bsp->id;
-        source_slp = SeqLocIntNew (0, source_bsp->length-1, Seq_strand_plus, source_sip);
-        ValNodeAddPointer(&vnp, 0, (Pointer)slp);
-        ValNodeAddPointer(&vnp, 0, (Pointer)source_slp);
-        salp = SeqLocListToSeqAlign (vnp, choice, NULL);
-        */
-        salp = Sequin_GlobalAlignTwoSeq (target_bsp, source_bsp, NULL);
-        if (salp != NULL) {
-           LaunchAlignViewer (salp);
-        }
-     }
-  }
-}
-
 
 extern void SqnReadAlignView (BaseFormPtr bfp, BioseqPtr target_bsp, SeqEntryPtr source_sep, Boolean do_update)
 
 {
   BioseqPtr  nbsp;
 
-  /*
-  SqnReadAlignViewEx (target_bsp, source_sep, PRGALIGNDEFAULT);
-  */
   if (target_bsp == NULL || source_sep == NULL) return;
   nbsp = FindNucBioseq (source_sep);
   if (nbsp == NULL) return;
@@ -6206,129 +5353,7 @@ static void ExtendSeqWithRec (IteM i)
 }
 
 /*******COLOMBE ***********/
-typedef struct ccid3 {
-  SeqEntryPtr target_sep;
-  ValNode     sal;
-} CcId3, PNTR CcId3Ptr;
 
-typedef struct ccid2 {
-  CharPtr     source_sip;
-  BioseqPtr   source_bsp;
-  ValNode     sal;
-} CcId2, PNTR CcId2Ptr;
-
-static void FindBioseqCB2 (SeqEntryPtr sep, Pointer mydata,
-                                          Int4 index, Int2 indent)
-{
-  BioseqPtr          target_bsp,
-                     source_bsp;
-  SeqIdPtr           tmp_sip;
-  Char               target_str[120];
-  CcId2Ptr           ci2p;
-  SeqLocPtr          slp;
-  ValNodePtr         vnp=NULL;
-  SeqEntryPtr        source_sep;
-
-  if (sep != NULL && sep->data.ptrvalue && mydata != NULL) {
-     ci2p = (CcId2Ptr)mydata;
-     if (ci2p->sal.data.ptrvalue==NULL && IS_Bioseq(sep)) 
-     {
-        target_bsp = (BioseqPtr) sep->data.ptrvalue;
-        if (target_bsp->id)
-        {
-           SeqIdWrite (target_bsp->id, target_str, PRINTID_FASTA_LONG, 120);
-           if ((StringStr(target_str, ci2p->source_sip))!=NULL)
-           {
-              source_bsp = ci2p->source_bsp;
-              source_sep = SeqMgrGetSeqEntryForData (source_bsp);
-              tmp_sip = MakeSeqID (ci2p->source_sip);
-              SeqEntryReplaceSeqID (source_sep, source_bsp->id);
-              slp=SeqLocIntNew(0, target_bsp->length-1, Seq_strand_plus, target_bsp->id);
-              ValNodeAddPointer (&vnp, 0, (Pointer)slp);
-              slp=SeqLocIntNew(0, source_bsp->length-1, Seq_strand_plus, source_bsp->id);
-              ValNodeAddPointer (&vnp, 0, (Pointer)slp);
-              ci2p->sal.data.ptrvalue=SeqLocListToSeqAlign (vnp, PRGALIGNDEFAULT, NULL);
-
-           }
-        }
-     }
-  }
-}
-
-static void FindBioseqCB1 (SeqEntryPtr sep, Pointer mydata,
-                                          Int4 index, Int2 indent)
-{
-  BioseqPtr          source_bsp;
-  SeqIdPtr           sip;
-  CcId3Ptr            cip;
-  CcId2              ci2;
-  ObjectIdPtr        oid;
-
-  if (sep != NULL && sep->data.ptrvalue && mydata != NULL) {
-     cip = (CcId3Ptr)mydata;
-     if (IS_Bioseq(sep)) {
-        source_bsp = (BioseqPtr) sep->data.ptrvalue;
-        if (source_bsp!=NULL && ISA_na (source_bsp->mol)) {
-           sip = SeqIdFindBest(source_bsp->id, 0);
-           if (sip->choice==SEQID_LOCAL) {
-              oid = (ObjectIdPtr) sip->data.ptrvalue;
-              if (oid != NULL && oid->str != NULL) {
-                 ci2.source_sip = oid->str;
-                 ci2.source_bsp = source_bsp;
-                 ci2.sal.data.ptrvalue = NULL;
-                 SeqEntryExplore (cip->target_sep, &ci2, FindBioseqCB2);
-                 if (ci2.sal.data.ptrvalue) {
-                    if (cip->sal.data.ptrvalue==NULL)
-                       cip->sal.data.ptrvalue=ci2.sal.data.ptrvalue;
-                    else
-                       SeqAlignLink(cip->sal.data.ptrvalue, ci2.sal.data.ptrvalue);
-                    ci2.sal.data.ptrvalue=NULL;
-                 }
-              }
-           }
-        }
-     }
-  }
-}
-
-static void Updates (SeqEntryPtr target_sep, SeqEntryPtr source_sep)
-{
-  CcId3         cc;
-  SeqAlignPtr  salp=NULL;
-
-  if (target_sep==NULL || source_sep==NULL)
-     return;
-  if (IS_Bioseq_set (target_sep) && IS_Bioseq_set (source_sep))
-  {
-     cc.target_sep = target_sep;
-     cc.sal.data.ptrvalue = NULL;
-     SeqEntryExplore (source_sep, &cc, FindBioseqCB1);
-     if (cc.sal.data.ptrvalue) {
-        salp = (SeqAlignPtr)cc.sal.data.ptrvalue;
-        LaunchAlignViewer (salp);
-     }
-  }
-}
-
-
-static void DoUpdatesSeq (IteM i)
-{
-  BaseFormPtr  bfp;
-  SeqEntryPtr  sep;
-  SeqEntryPtr  source_sep = NULL;
-
-#ifdef WIN_MAC
-  bfp = currentFormDataPtr;
-#else
-  bfp = GetObjectExtra (i);
-#endif
-  if (bfp == NULL) return;
-  sep = GetTopSeqEntryForEntityID (bfp->input_entityID);
-  if (sep == NULL) return;
-  SendHelpScrollMessage (helpForm, "Edit Menu", "Update Sequence");
-  source_sep = FastaRead (NULL, Seq_mol_na);
-  Updates (sep, source_sep);
-}
 
 static void CommonAddSeq (IteM i, Int2 type)
 
@@ -6634,16 +5659,6 @@ static void ExtendSeqWithAcc (IteM i)
 }
 /*#endif*/
 
-static CharPtr obsoletemsg =
-"Please use Import and Export items to load and save Uid lists.\n\
-The Load and Save Uid List items are obsolete, and will disappear\n\
-in the next release.";
-
-static void ObsoleteUidListProc (IteM i)
-
-{
-  Message (MSG_OK, "%s", obsoletemsg);
-}
 
 #ifndef WIN_MAC
 extern void CreateNewLayoutMenu (MenU m, BaseFormPtr bp);
@@ -6677,7 +5692,6 @@ static void MedlineViewFormMenus (WindoW w)
   }
 }
 
-extern void NewUpdateSequenceNewBlast (IteM i);
 
 static void BioseqViewFormMenus (WindoW w)
 
@@ -6842,8 +5856,6 @@ static void BioseqViewFormMenus (WindoW w)
     SetFormMenuItem (bfp, mssgupd, (IteM) sub);
     i = CommandItem (sub, "Read FASTA File...", UpdateSeqWithFASTA);
     SetObjectExtra (i, bfp, NULL);
-    i = CommandItem (sub, "Read FASTA File, Use New BLAST...", NewUpdateSequenceNewBlast);
-    SetObjectExtra (i, bfp, NULL);
     i = CommandItem (sub, "Read Sequence Record...", UpdateSeqWithRec);
     SetObjectExtra (i, bfp, NULL);
     if (useEntrez) {
@@ -6852,19 +5864,16 @@ static void BioseqViewFormMenus (WindoW w)
       mssgupwthaln = RegisterFormMenuItemName ("SequinUpdateWithAlignment");
       FormCommandItem (sub, "Selected Alignment...", bfp, mssgupwthaln);
     }
-    if (indexerVersion) {
-      SeparatorItem (sub);
-      i = CommandItem (sub, "FASTA Set", UpdateFastaSet);
-      /*
-      i = CommandItem (sub, "FASTA Set", DoUpdatesSeq);
-      */
-      SetObjectExtra (i, bfp, NULL);
-    }
+    SeparatorItem (sub);
+    i = CommandItem (sub, "FASTA or ASN.1 Set", UpdateFastaSet);
+    SetObjectExtra (i, bfp, NULL);
     sub = SubMenu (m, "Extend Sequence");
     SetFormMenuItem (bfp, mssgext, (IteM) sub);
     i = CommandItem (sub, "Read FASTA File...", ExtendSeqWithFASTA);
     SetObjectExtra (i, bfp, NULL);
     i = CommandItem (sub, "Read Sequence Record...", ExtendSeqWithRec);
+    SetObjectExtra (i, bfp, NULL);
+    i = CommandItem (sub, "Read FASTA or ASN.1 Set", ExtendFastaSet);
     SetObjectExtra (i, bfp, NULL);
     if (useEntrez) {
       i = CommandItem (sub, "Download Accession...", ExtendSeqWithAcc);
@@ -6906,6 +5915,21 @@ static void BioseqViewFormMenus (WindoW w)
       SetObjectExtra (i, bfp, NULL);
       i = CommandItem (sub, "Validate no Alignments/ A", ValSeqEntryProcNoAln);
       SetObjectExtra (i, bfp, NULL);
+      SeparatorItem (sub);
+      i = CommandItem (sub, "Validate Inst", ValSeqEntryProcInst);
+      SetObjectExtra (i, bfp, NULL);
+      i = CommandItem (sub, "Validate Hist", ValSeqEntryProcHist);
+      SetObjectExtra (i, bfp, NULL);
+      i = CommandItem (sub, "Validate Context", ValSeqEntryProcContext);
+      SetObjectExtra (i, bfp, NULL);
+      i = CommandItem (sub, "Validate Graph", ValSeqEntryProcGraph);
+      SetObjectExtra (i, bfp, NULL);
+      i = CommandItem (sub, "Validate Set", ValSeqEntryProcSet);
+      SetObjectExtra (i, bfp, NULL);
+      i = CommandItem (sub, "Validate Feat", ValSeqEntryProcFeat);
+      SetObjectExtra (i, bfp, NULL);
+      i = CommandItem (sub, "Validate Desc", ValSeqEntryProcDesc);
+      SetObjectExtra (i, bfp, NULL);
     } else {
       i = CommandItem (m, "Validate/ V", ValSeqEntryProc);
       SetObjectExtra (i, bfp, NULL);
@@ -6917,11 +5941,6 @@ static void BioseqViewFormMenus (WindoW w)
 #endif
 /*#ifdef USE_BLAST*/
     if (useBlast) {
-      /*
-      SeparatorItem (m);
-      i = CommandItem (m, "Power BLAST...", SimplePowerBlastProc);
-      SetObjectExtra (i, bfp, NULL);
-      */
       SeparatorItem (m);
       if (indexerVersion) {
         i = CommandItem (m, "CDD BLAST...", SimpleCDDBlastProc);
@@ -6937,10 +5956,6 @@ static void BioseqViewFormMenus (WindoW w)
         i = CommandItem (m, "CDD Search", SimpleCDDSearchFeatProc);
         SetObjectExtra (i, bfp, NULL);
       }
-      /*
-      i = CommandItem (m, "Vector Screen...", VectorScreenProc);
-      SetObjectExtra (i, bfp, NULL);
-      */
     }
 /*#endif*/
     SeparatorItem (m);
@@ -7011,6 +6026,8 @@ static void BioseqViewFormMenus (WindoW w)
     SeparatorItem (m);
     i = CommandItem (m, "Generate Definition Line", testAutoDef);
     SetObjectExtra (i, bfp, NULL);
+    i = CommandItem (m, "Sort Unique Count By Group", SUCSubmitterProc);
+    SetObjectExtra (i, bfp, NULL);
 
     if (indexerVersion) {
       m = PulldownMenu (w, "Options");
@@ -7045,13 +6062,6 @@ static void TermListFormMenus (WindoW w)
       FormCommandItem (m, "Import Uid List...", bfp, VIB_MSG_IMPORT);
       FormCommandItem (m, "Export Uid List...", bfp, VIB_MSG_EXPORT);
       SeparatorItem (m);
-      /*
-      i = CommandItem (m, "Load Uid List...", ObsoleteUidListProc);
-      SetObjectExtra (i, bfp, NULL);
-      i = CommandItem (m, "Save Uid List...", ObsoleteUidListProc);
-      SetObjectExtra (i, bfp, NULL);
-      SeparatorItem (m);
-      */
     }
     FormCommandItem (m, "Quit/Q", bfp, VIB_MSG_QUIT);
 
@@ -7105,15 +6115,6 @@ static void DocSumFormMenus (WindoW w)
     FormCommandItem (m, "Save As...", bfp, VIB_MSG_SAVE_AS);
     SeparatorItem (m);
     */
-    if (loadSaveUidListOK) {
-      /*
-      i = CommandItem (m, "Load Uid List...", ObsoleteUidListProc);
-      SetObjectExtra (i, bfp, NULL);
-      i = CommandItem (m, "Save Uid List...", ObsoleteUidListProc);
-      SetObjectExtra (i, bfp, NULL);
-      SeparatorItem (m);
-      */
-    }
     FormCommandItem (m, "Print...", bfp, VIB_MSG_PRINT);
 
     m = PulldownMenu (w, "Edit");
@@ -7631,9 +6632,6 @@ static Boolean UpdateOrExtendWithAln (GatherContextPtr gcp, Boolean do_update)
           entityID = BioseqFindEntity (sip, &itemID);
           sep = GetBestTopParentForData (entityID, bsp);
           if (sep != NULL) {
-            /*
-            SqnReadAlignViewEx (updateTargetBspKludge, sep, PRGALIGNALL);
-            */
             SqnReadAlignView (bfp, updateTargetBspKludge, sep, do_update);
           }
           BioseqUnlockById (sip);
@@ -8648,30 +7646,37 @@ static Int2 LIBCALLBACK DeltaToRawConvertFunc (Pointer data)
 {
   BioseqPtr         bsp = NULL;
   OMProcControlPtr  ompcp;
-
-  ompcp = (OMProcControlPtr) data;
-  if (ompcp == NULL || ompcp->proc == NULL) 
-     return OM_MSG_RET_ERROR;
-  switch (ompcp->input_itemtype) {
-    case OBJ_BIOSEQ :
-      bsp = (BioseqPtr) ompcp->input_data;
-      break;
-   case 0 :
+  
+  if (indexerVersion)
+  {
+    SeqEditFunc (data);
+  }
+  else
+  {
+    ompcp = (OMProcControlPtr) data;
+    if (ompcp == NULL || ompcp->proc == NULL) 
       return OM_MSG_RET_ERROR;
-    default :
-      return OM_MSG_RET_ERROR;
+    switch (ompcp->input_itemtype) {
+      case OBJ_BIOSEQ :
+        bsp = (BioseqPtr) ompcp->input_data;
+        break;
+      case 0 :
+        return OM_MSG_RET_ERROR;
+      default :
+        return OM_MSG_RET_ERROR;
+    }
+    if (bsp == NULL) {
+       return OM_MSG_RET_ERROR;
+    }
+    if (! DeltaLitOnly (bsp)) {
+      return OM_MSG_RET_OK;
+    }
+    if (Message (MSG_YN, "Convert near delta Bioseq to raw Bioseq?") == ANS_NO) {
+      return OM_MSG_RET_DONE;
+    }
+    SegOrDeltaBioseqToRaw (bsp);
+    Message (MSG_OK, "Converted to raw, now launch editor again");
   }
-  if (bsp == NULL) {
-     return OM_MSG_RET_ERROR;
-  }
-  if (! DeltaLitOnly (bsp)) {
-    return OM_MSG_RET_OK;
-  }
-  if (Message (MSG_YN, "Convert near delta Bioseq to raw Bioseq?") == ANS_NO) {
-    return OM_MSG_RET_DONE;
-  }
-  SegOrDeltaBioseqToRaw (bsp);
-  Message (MSG_OK, "Converted to raw, now launch editor again");
   return OM_MSG_RET_DONE;
 }
 
@@ -8681,6 +7686,7 @@ static void SetupDesktop (void)
 
 {
   Boolean     allowalign;
+  Boolean     cdsMrnaOneToOne;
   FeatDefPtr  curr;
   Uint1       key;
   CharPtr     label = NULL;
@@ -9127,6 +8133,16 @@ static void SetupDesktop (void)
   SetAppProperty ("SpliceValidateAsError", (void *) 1024);
   */
 
+  cdsMrnaOneToOne = FALSE;
+  if (GetSequinAppParam ("PREFERENCES", "VALIDATECDSMRNA", NULL, str, sizeof (str))) {
+    if (StringICmp (str, "TRUE") == 0) {
+      cdsMrnaOneToOne = FALSE;
+    }
+  }
+  if (cdsMrnaOneToOne) {
+    SetAppProperty ("ValidateCDSmRNAoneToOne", (void *) 1024);
+  }
+
   /*
   if (GetSequinAppParam ("SETTINGS", "NUCFIELD", NULL, str, sizeof (str))) {
     if (StrToInt (str, &val) && val >= 0) {
@@ -9434,12 +8450,6 @@ static void SetupCommonFonts (void)
 #endif
 }
 
-static void ToggleOldAsnProc (IteM i)
-
-{
-  leaveAsOldAsn = GetStatus (i);
-}
-
 static void RevStringUpper (CharPtr str)
 {
 	CharPtr nd;
@@ -9517,6 +8527,13 @@ static void ObjMgrReport (IteM i)
 }
 
 #ifdef WIN_MAC
+
+static void ToggleOldAsnProc (IteM i)
+
+{
+  leaveAsOldAsn = GetStatus (i);
+}
+
 static void SetupMacMenus (void)
 
 {
@@ -9555,13 +8572,6 @@ static void SetupMacMenus (void)
   submitItem = CommandItem (m, "Submit to NCBI", SubmitToNCBI);
   */
   SeparatorItem (m);
-  if (loadSaveUidListOK) {
-    /*
-    loadUidItem = CommandItem (m, "Load Uid List...", ObsoleteUidListProc);
-    saveUidItem = CommandItem (m, "Save Uid List...", ObsoleteUidListProc);
-    SeparatorItem (m);
-    */
-  }
   printItem = FormCommandItem (m, "Print", NULL, VIB_MSG_PRINT);
   SeparatorItem (m);
   FormCommandItem (m, "Quit/Q", NULL, VIB_MSG_QUIT);
@@ -9608,14 +8618,13 @@ static void SetupMacMenus (void)
     mssgupwthaln = RegisterFormMenuItemName ("SequinUpdateWithAlignment");
     updalignitem = FormCommandItem (updateSeqMenu, "Selected Alignment...", NULL, mssgupwthaln);
   }
-  if (indexerVersion) {
-    SeparatorItem (updateSeqMenu);
-    CommandItem (updateSeqMenu, "FASTA Set", DoUpdatesSeq);
-  }
+  SeparatorItem (updateSeqMenu);
+  CommandItem (updateSeqMenu, "FASTA or ASN.1 Set", UpdateFastaSet);
   extendSeqMenu = SubMenu (m, "Extend Sequence");
   SetFormMenuItem (NULL, mssgext, (IteM) extendSeqMenu);
   CommandItem (extendSeqMenu, "Read FASTA File...", ExtendSeqWithFASTA);
   CommandItem (extendSeqMenu, "Read Sequence Record...", ExtendSeqWithRec);
+  CommandItem (extendSeqMenu, "Read FASTA or ASN.1 Set...", ExtendFastaSet);
   if (useEntrez) {
     CommandItem (extendSeqMenu, "Download Accession...", ExtendSeqWithAcc);
     mssgupwthaln = RegisterFormMenuItemName ("SequinUpdateWithAlignment");
@@ -9645,6 +8654,14 @@ static void SetupMacMenus (void)
     validateMenu = SubMenu (m, "Validate");
     CommandItem (validateMenu, "Validate Record/ V", ValSeqEntryProc);
     CommandItem (validateMenu, "Validate no Alignments", ValSeqEntryProcNoAln);
+    SeparatorItem (validateMenu);
+    CommandItem (validateMenu, "Validate Inst", ValSeqEntryProcInst);
+    CommandItem (validateMenu, "Validate Hist", ValSeqEntryProcHist);
+    CommandItem (validateMenu, "Validate Context", ValSeqEntryProcContext);
+    CommandItem (validateMenu, "Validate Graph", ValSeqEntryProcGraph);
+    CommandItem (validateMenu, "Validate Set", ValSeqEntryProcSet);
+    CommandItem (validateMenu, "Validate Feat", ValSeqEntryProcFeat);
+    CommandItem (validateMenu, "Validate Desc", ValSeqEntryProcDesc);
   } else {
     validateItem = CommandItem (m, "Validate", ValSeqEntryProc);
   }
@@ -9654,10 +8671,6 @@ static void SetupMacMenus (void)
 #endif
 /*#ifdef USE_BLAST*/
   if (useBlast) {
-    /*
-    SeparatorItem (m);
-    powerBlastItem = CommandItem (m, "Power BLAST...", SimplePowerBlastProc);
-    */
     SeparatorItem (m);
     if (indexerVersion) {
       cddBlastItem = CommandItem (m, "CDD BLAST...", SimpleCDDBlastProc);
@@ -9669,9 +8682,6 @@ static void SetupMacMenus (void)
     } else {
       cddSearchItem = CommandItem (m, "CDD Search", SimpleCDDSearchFeatProc);
     }
-    /*
-    vectorScreenItem = CommandItem (m, "Vector Screen...", VectorScreenProc);
-    */
   }
 /*#endif*/
   SeparatorItem (m);
@@ -9801,15 +8811,20 @@ static void s_GetTpaInfo (SequencesFormPtr sqfp)
   Update ();
 }
 
+static CharPtr  tpaString = NULL;
+
 static void FinishPuttingTogether (ForM f)
 
 {
-  BaseFormPtr   bfp;
-  BioseqSetPtr  bssp;
-  Uint2         entityID = 0;
-  Int2          handled;
-  SeqEntryPtr   sep = NULL;
+  BaseFormPtr       bfp;
+  BioseqSetPtr      bssp;
+  Uint2             entityID = 0;
+  Int2              handled;
+  ObjMgrDataPtr     omdp;
+  SubmitBlockPtr    sbp;
+  SeqEntryPtr       sep = NULL;
   SequencesFormPtr  sqfp;
+  SeqSubmitPtr      ssp;
 
   bfp = (BaseFormPtr) GetObjectExtra (f);
   if (bfp != NULL) {
@@ -9821,6 +8836,22 @@ static void FinishPuttingTogether (ForM f)
       }
 /*#endif*/
       entityID = PackageFormResults (globalsbp, sep, TRUE);
+      sqfp = (SequencesFormPtr) bfp;
+      if (SEQ_TPA_SUBMISSION == sqfp->submType && entityID > 0) {
+        omdp = ObjMgrGetData (entityID);
+        if (omdp != NULL && omdp->datatype == OBJ_SEQSUB) {
+          ssp = (SeqSubmitPtr) omdp->dataptr;
+          if (ssp != NULL && ssp->datatype == 1) {
+            sbp = ssp->sub;
+            if (sbp != NULL) {
+              if (sbp->comment == NULL && StringDoesHaveText (tpaString)) {
+                sbp->comment = tpaString;
+                tpaString = NULL;
+              }
+            }
+          }
+        }
+      }
       globalsbp = NULL;
       WatchCursor ();
       seqviewprocs.forceSeparateViewer = TRUE;
@@ -9931,23 +8962,12 @@ static void BackToFormat (ButtoN b)
   }
 }
 
-static void GetOrgAndSeq (ButtoN b)
+static void FinishOrgAndSeq (void)
 
 {
-  FormatBlockPtr  fbp;
-  MonitorPtr      mon;
-  ForM            w;
+  MonitorPtr  mon;
+  ForM        w;
 
-  WatchCursor ();
-  Hide (formatForm);
-  fbp = (FormatBlockPtr) FormToPointer (formatForm);
-  if (fbp != NULL) {
-    globalFormatBlock.seqPackage = fbp->seqPackage;
-    globalFormatBlock.seqFormat = fbp->seqFormat;
-    globalFormatBlock.numSeqs = fbp->numSeqs;
-    globalFormatBlock.submType = fbp->submType;
-  }
-  MemFree (fbp);
   WatchCursor ();
   mon = MonitorStrNewEx ("Sequin New Submission", 30, FALSE);
   MonitorStrValue (mon, "Creating Sequences Form");
@@ -9968,6 +8988,27 @@ static void GetOrgAndSeq (ButtoN b)
     Message (MSG_FATAL, "Unable to create window.");
   }
   Update ();
+}
+
+static void BackToSubmitter (ButtoN b)
+
+{
+  MsgAnswer    ans;
+
+  ans = Message (MSG_OKC, "Are you sure?  Format information will be lost.");
+  if (ans == ANS_CANCEL) return;
+  Hide (formatForm);
+  Update ();
+  PointerToForm (initSubmitForm, globalsbp);
+  globalsbp = SequinBlockFree (globalsbp);
+  Show (initSubmitForm);
+  Select (initSubmitForm);
+  SendHelpScrollMessage (helpForm, "Submitting Authors Form", NULL);
+  Update ();
+  globalFormatBlock.seqPackage = SEQ_PKG_SINGLE;
+  globalFormatBlock.seqFormat = SEQ_FMT_FASTA;
+  globalFormatBlock.numSeqs = 0;
+  globalFormatBlock.submType = SEQ_ORIG_SUBMISSION;
 }
 
 static void GetFormat (ButtoN b)
@@ -9995,25 +9036,118 @@ static void GetFormat (ButtoN b)
   Update ();
 }
 
-static void BackToSubmitter (ButtoN b)
+static WindoW   tpaWindow = NULL;
+static TexT     tpaText = NULL;
+static ButtoN   tpaNext = NULL;
+/* tpaString defined above FinishPuttingTogether */
+
+static void TpaPrev (ButtoN b)
 
 {
-  MsgAnswer    ans;
+  Hide (tpaWindow);
+  tpaString = MemFree (tpaString);
+  SetTitle (tpaText, "");
+  Show (formatForm);
+  Select (formatForm);
+  SendHelpScrollMessage (helpForm, "Sequence Format Form", NULL);
+  Update ();
+}
 
-  ans = Message (MSG_OKC, "Are you sure?  Format information will be lost.");
-  if (ans == ANS_CANCEL) return;
+static void TpaNext (ButtoN b)
+
+{
+  tpaString = MemFree (tpaString);
+  tpaString = SaveStringFromText (tpaText);
+  if (StringHasNoText (tpaString)) {
+    Message (MSG_OK, "The requested information is required in order for you to be able to proceed with a TPA submission");
+    return;
+  }
+  Hide (tpaWindow);
+  WatchCursor ();
+  FinishOrgAndSeq ();
+}
+
+static void TpaText (TexT t)
+
+{
+  if (TextHasNoText (t)) {
+    SafeDisable (tpaNext);
+  } else {
+    SafeEnable (tpaNext);
+  }
+}
+
+static CharPtr tpaMssg = "\
+Third party annotation records require a publication describing the biological \
+experiments used as evidence for the annotation.  Please provide information \
+regarding the nature of these experiments.";
+
+static void DoTpaForm (void)
+
+{
+  GrouP   c, h, p;
+
+  if (tpaWindow == NULL) {
+    tpaWindow = FixedWindow (-50, -33, -10, -10, "TPA Evidence", NULL);
+    h = HiddenGroup (tpaWindow, -1, 0, NULL);
+    SetGroupSpacing (h, 10, 10);
+
+    p = MultiLinePrompt (h, tpaMssg, 30 * stdCharWidth, programFont);
+
+    tpaText = ScrollText (h, 30, 5, programFont, TRUE, TpaText);
+
+    c = HiddenGroup (h, 2, 0, NULL);
+    PushButton (c, "<< Prev Form", TpaPrev);
+    tpaNext = PushButton (c, "Next Form >>", TpaNext);
+
+    AlignObjects (ALIGN_CENTER, (HANDLE) p, (HANDLE) tpaText, (HANDLE) c, NULL);
+
+    RealizeWindow (tpaWindow);
+  }
+  tpaString = MemFree (tpaString);
+  SafeSetTitle (tpaText, "");
+  SafeDisable (tpaNext);
+  Show (tpaWindow);
+  Select (tpaWindow);
+}
+
+static void GetOrgAndSeq (ButtoN b)
+
+{
+  /*
+  MsgAnswer       ans;
+  */
+  FormatBlockPtr  fbp;
+  Boolean         is_tpa = FALSE;
+
   Hide (formatForm);
-  Update ();
-  PointerToForm (initSubmitForm, globalsbp);
-  globalsbp = SequinBlockFree (globalsbp);
-  Show (initSubmitForm);
-  Select (initSubmitForm);
-  SendHelpScrollMessage (helpForm, "Submitting Authors Form", NULL);
-  Update ();
-  globalFormatBlock.seqPackage = SEQ_PKG_SINGLE;
-  globalFormatBlock.seqFormat = SEQ_FMT_FASTA;
-  globalFormatBlock.numSeqs = 0;
-  globalFormatBlock.submType = SEQ_ORIG_SUBMISSION;
+  fbp = (FormatBlockPtr) FormToPointer (formatForm);
+  if (fbp != NULL) {
+    globalFormatBlock.seqPackage = fbp->seqPackage;
+    globalFormatBlock.seqFormat = fbp->seqFormat;
+    globalFormatBlock.numSeqs = fbp->numSeqs;
+    globalFormatBlock.submType = fbp->submType;
+    is_tpa = (Boolean) (globalFormatBlock.submType == SEQ_TPA_SUBMISSION);
+  }
+  MemFree (fbp);
+  if (is_tpa) {
+    DoTpaForm ();
+    /*
+    ans = Message (MSG_YN, "%s", tpaMssg);
+    if (ans == ANS_YES) {
+      WatchCursor ();
+      FinishOrgAndSeq ();
+    } else {
+      Show (formatForm);
+      Select (formatForm);
+      SendHelpScrollMessage (helpForm, "Sequence Format Form", NULL);
+      Update ();
+    }
+    */
+  } else {
+    WatchCursor ();
+    FinishOrgAndSeq ();
+  }
 }
 
 static void BackToStartup (ButtoN b)
@@ -10495,8 +9629,15 @@ extern Pointer ReadFromDirSub (CharPtr accn, Uint2Ptr datatype, Uint2Ptr entityI
 
   TmpNam (path);
 
+#ifdef OS_UNIX
   sprintf (cmmd, "csh %s %s > %s", dirsubfetchcmd, accn, path);
   system (cmmd);
+#endif
+#ifdef OS_MSWIN
+  sprintf (cmmd, "%s %s -o %s", dirsubfetchcmd, accn, path);
+  system (cmmd);
+#endif
+
   fp = FileOpen (path, "r");
   if (fp == NULL) {
     FileRemove (path);
@@ -10545,8 +9686,15 @@ static Int2 LIBCALLBACK DirSubBioseqFetchFunc (Pointer data)
 
   TmpNam (path);
 
+#ifdef OS_UNIX
   sprintf (cmmd, "csh %s %s > %s", dirsubfetchcmd, tsip->accession, path);
   system (cmmd);
+#endif
+#ifdef OS_MSWIN
+  sprintf (cmmd, "%s %s -o %s", dirsubfetchcmd, tsip->accession, path);
+  system (cmmd);
+#endif
+
   fp = FileOpen (path, "r");
   if (fp == NULL) {
     FileRemove (path);
@@ -10606,8 +9754,15 @@ extern Pointer ReadFromSmart (CharPtr accn, Uint2Ptr datatype, Uint2Ptr entityID
 
   TmpNam (path);
 
+#ifdef OS_UNIX
   sprintf (cmmd, "csh %s %s > %s", smartfetchcmd, accn, path);
   system (cmmd);
+#endif
+#ifdef OS_MSWIN
+  sprintf (cmmd, "%s %s -o %s", smartfetchcmd, accn, path);
+  system (cmmd);
+#endif
+
   fp = FileOpen (path, "r");
   if (fp == NULL) {
     FileRemove (path);
@@ -10656,8 +9811,15 @@ static Int2 LIBCALLBACK SmartBioseqFetchFunc (Pointer data)
 
   TmpNam (path);
 
+#ifdef OS_UNIX
   sprintf (cmmd, "csh %s %s > %s", smartfetchcmd, tsip->accession, path);
   system (cmmd);
+#endif
+#ifdef OS_MSWIN
+  sprintf (cmmd, "%s %s -o %s", smartfetchcmd, tsip->accession, path);
+  system (cmmd);
+#endif
+
   fp = FileOpen (path, "r");
   if (fp == NULL) {
     FileRemove (path);
@@ -10717,8 +9879,15 @@ extern Pointer ReadFromTPASmart (CharPtr accn, Uint2Ptr datatype, Uint2Ptr entit
 
   TmpNam (path);
 
+#ifdef OS_UNIX
   sprintf (cmmd, "csh %s %s > %s", tpasmartfetchcmd, accn, path);
   system (cmmd);
+#endif
+#ifdef OS_MSWIN
+  sprintf (cmmd, "%s %s -o %s", tpasmartfetchcmd, accn, path);
+  system (cmmd);
+#endif
+
   fp = FileOpen (path, "r");
   if (fp == NULL) {
     FileRemove (path);
@@ -10767,8 +9936,15 @@ static Int2 LIBCALLBACK TPASmartBioseqFetchFunc (Pointer data)
 
   TmpNam (path);
 
+#ifdef OS_UNIX
   sprintf (cmmd, "csh %s %s > %s", tpasmartfetchcmd, tsip->accession, path);
   system (cmmd);
+#endif
+#ifdef OS_MSWIN
+  sprintf (cmmd, "%s %s -o %s", tpasmartfetchcmd, tsip->accession, path);
+  system (cmmd);
+#endif
+
   fp = FileOpen (path, "r");
   if (fp == NULL) {
     FileRemove (path);
@@ -11118,6 +10294,70 @@ static Int4 SMWriteBioseqObj(VoidPtr bio_data,
 }
 #endif
 
+static CharPtr comp_months [] = {
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", NULL
+};
+
+static Boolean MoreThanYearOld (void)
+
+{
+  Int4      compday, compmonth, compyear, currday, currmonth, curryear;
+  DayTime   dt;
+  Int2      i;
+  CharPtr   ptr, str;
+  Char      tmp [80];
+  long int  val;
+
+  if (! GetDayTime (&dt)) return FALSE;
+  currmonth = dt.tm_mon + 1;
+  currday = dt.tm_mday;
+  curryear = dt.tm_year + 1900;
+
+  compmonth = 0;
+  compday = 0;
+  compyear = 0;
+
+  sprintf (tmp, "%s", date_of_compilation);
+
+  ptr = StringChr (tmp, ' ');
+  if (ptr != NULL) {
+    *ptr = '\0';
+    ptr++;
+    if (*ptr == ' ') {
+      ptr++;
+    }
+    for (i = 0; i < 12; i++) {
+      if (StringCmp (tmp, comp_months [i]) == 0) {
+        compmonth = (Int4) i + 1;
+        break;
+      }
+    }
+    str = StringChr (ptr, ' ');
+    if (str != NULL) {
+      *str = '\0';
+      str++;
+      if (sscanf (ptr, "%ld", &val) == 1) {
+        compday = (Int4) val;
+      }
+      if (sscanf (str, "%ld", &val) == 1) {
+        compyear = (Int4) val;
+      }
+    }
+  }
+
+  if (compmonth == 0 || compyear == 0) return FALSE;
+
+  if (curryear > compyear + 1) return TRUE;
+  if (curryear == compyear + 1) {
+    if (currmonth > compmonth) return TRUE;
+    if (currmonth == compmonth) {
+      if (currday > compday) return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
 extern CharPtr objPrtMemStr;
 
 Int2 Main (void)
@@ -11167,10 +10407,14 @@ Int2 Main (void)
   if ( Gestalt (gestaltSystemVersion, &sysVer) == noErr) {
     /* system version in low order word is hexadecimal */
     if (sysVer >= 4096) {
-      Message (MSG_OK, "You should consider running the MacOS X native version, SequinOSX");
+      Message (MSG_OK, "You are running on MacOS X and should use the native version of Sequin, not SequinOS9");
     }
   }
 #endif
+
+  if (MoreThanYearOld ()) {
+    Message (MSG_OK, "This copy of Sequin is more than a year old.  Please download the current version.");
+  }
 
   ReadSettings ();
 
@@ -11796,19 +11040,69 @@ Int2 Main (void)
   return 0;
 }
 
-static void write_annot(SeqAlignPtr align)
+extern SubmitBlockPtr ConvertSequinBlockToSubmitBlock (SequinBlockPtr sqp);
+
+extern Boolean ExportSubmitterBlockTemplate (SeqEntryPtr sep, SeqDescrPtr sdp)
 {
-        SeqAnnotPtr annot;
-        AsnIoPtr aip;
+  SeqSubmitPtr ssp;
+  Char         path [PATH_MAX];
+  AsnIoPtr     aip;
+  FILE         *fp;
+  
+  if (globalsbp == NULL)
+  {
+    Message (MSG_ERROR, "No submit block!");
+    return FALSE;
+  }
+  
+  if (!GetOutputFileName (path, sizeof (path), NULL))
+  {
+    return FALSE;
+  }
+  
+  fp = FileOpen (path, "w");
+  if (fp == NULL)
+  {
+    Message (MSG_ERROR, "Unable to open %s", path);
+    return FALSE;
+  }
+  
+  ssp = SeqSubmitNew ();
+  if (ssp == NULL)
+  {
+    Message (MSG_ERROR, "Unable to allocate memory for seq-submit");
+    return FALSE;
+  }
 
-        annot = SeqAnnotNew();
-        annot->type = 2;
-        annot->data = align;
+  ssp->datatype = 1;
+  ssp->data = (Pointer) sep;
 
-        aip = AsnIoOpen("temp2.sat", "w");
-        SeqAnnotAsnWrite(annot, aip, NULL);
-        AsnIoClose(aip); 
+  /* need to store copy of globalbsp in form */
+  PointerToForm (initSubmitForm, globalsbp);
+  ssp->sub = ConvertSequinBlockToSubmitBlock (globalsbp);
+  /* get globalbsp back */
+  globalsbp = FormToPointer (initSubmitForm);
+  aip = AsnIoNew(ASNIO_TEXT_OUT, fp, NULL, NULL, NULL);
+  SeqSubmitAsnWrite(ssp, aip, NULL);
+  
+	AsnIoFlush(aip);
+  AsnIoReset(aip);
+  SeqDescAsnWrite (sdp, aip, NULL);
+  
+	AsnIoFlush(aip);
+  AsnIoReset(aip);
+  AsnIoClose (aip);
+  
+  ssp = SeqSubmitFree (ssp);
 
-        annot->data = NULL;
-        SeqAnnotFree(annot);
+  globalsbp = SequinBlockFree (globalsbp);
+  Hide (initSubmitForm);
+  Hide (formatForm);
+  Update ();
+  Show (startupForm);
+  Select (startupForm);
+  SendHelpScrollMessage (helpForm, "Introduction", NULL);
+  Update ();    
+  return TRUE;
 }
+

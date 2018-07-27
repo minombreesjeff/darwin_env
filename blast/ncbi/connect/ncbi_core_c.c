@@ -1,4 +1,4 @@
-/*  $Id: ncbi_core_c.c,v 6.9 2002/10/31 17:53:33 lavr Exp $
+/*  $Id: ncbi_core_c.c,v 6.10 2005/04/20 20:38:42 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -34,6 +34,7 @@
  */
 
 #include "ncbi_config.h"
+#include "ncbi_assert.h"
 #include <connect/ncbi_ansi_ext.h>
 #include <connect/ncbi_core_c.h>
 #include <connect/ncbi_util.h>
@@ -231,6 +232,9 @@ extern void CONNECT_Init(const char* conf_file)
 /*
  * ---------------------------------------------------------------------------
  * $Log: ncbi_core_c.c,v $
+ * Revision 6.10  2005/04/20 20:38:42  lavr
+ * +"ncbi_assert.h"
+ *
  * Revision 6.9  2002/10/31 17:53:33  lavr
  * Clear error in case of a trace message
  *

@@ -3,6 +3,9 @@
 *   -- GenBank Feature table define file
 *
 * $Log: gbftdef.h,v $
+* Revision 6.18  2004/08/17 15:50:52  kans
+* added GBQUAL_old_locus_tag and GBQUAL_compare
+*
 * Revision 6.17  2003/10/07 13:50:36  kans
 * added gap, operon, oriT features and ecotype, estimated_length and operon qualifiers
 *
@@ -189,8 +192,10 @@
 #define GBQUAL_ecotype           84
 #define GBQUAL_estimated_length  85
 #define GBQUAL_operon            86
+#define GBQUAL_old_locus_tag     87
+#define GBQUAL_compare           88
 
-#define ParFlat_TOTAL_GBQUAL     87
+#define ParFlat_TOTAL_GBQUAL     89
 #define ParFlat_TOTAL_IntOr       3
 #define ParFlat_TOTAL_LRB         3
 #define ParFlat_TOTAL_Exp         2

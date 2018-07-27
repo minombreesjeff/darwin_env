@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 4/1/91
 *
-* $Revision: 6.3 $
+* $Revision: 6.5 $
 *
 * File Description:  Object manager interface for module NCBI-Seqloc
 *
@@ -40,6 +40,12 @@
 *
 *
 * $Log: objloc.h,v $
+* Revision 6.5  2005/04/26 21:33:00  kans
+* added SEQID_GPIPE
+*
+* Revision 6.4  2005/03/10 17:18:43  kans
+* added SeqLocCopy as a convenience function in ncbiobj library
+*
 * Revision 6.3  2001/08/06 20:07:26  ostell
 * added SEQID_TPG, TPE, TPD types
 *
@@ -116,7 +122,7 @@ NLM_EXTERN Boolean	LIBCALL SeqLocAsnLoad PROTO((void));
 *      except integers, in data.intvalue
 *   choice:
 *   0 = not set
-    1 = local Object-id ,      -- local use
+    1 = local Object-id ,        -- local use
     2 = gibbsq INTEGER ,         -- Geninfo backbone seqid
     3 = gibbmt INTEGER ,         -- Geninfo backbone moltype
     4 = giim Giimport-id ,       -- Geninfo import id
@@ -125,16 +131,16 @@ NLM_EXTERN Boolean	LIBCALL SeqLocAsnLoad PROTO((void));
     7 = pir Textseq-id ,
     8 = swissprot Textseq-id ,
     9 = patent Patent-seq-id ,
-    10 = other Textseq-id ,       -- catch all
-    11 = general Dbtag          -- for other databases
-    12 = gi  INTEGER          -- GenInfo Integrated Database
-    13 = ddbj Textseq-id
-	14 = prf Textseq-id ,         -- PRF SEQDB
+    10 = other Textseq-id ,      -- catch all
+    11 = general Dbtag }         -- for other databases
+    12 = gi  INTEGER             -- GenInfo Integrated Database
+    13 = ddbj Textseq-id         -- ddbj
+	14 = prf Textseq-id ,        -- PRF SEQDB
 	15 = pdb PDB-seq-id          -- PDB sequence
-    16 = tpg Textseq-id ,         -- Third Party Annot/Seq Genbank
-    17 = tpe Textseq-id ,         -- Third Party Annot/Seq EMBL
-    18 = tpd Textseq-id }         -- Third Party Annot/Seq DDBJ
-
+    16 = tpg Textseq-id ,        -- Third Party Annot/Seq Genbank
+    17 = tpe Textseq-id ,        -- Third Party Annot/Seq EMBL
+    18 = tpd Textseq-id ,        -- Third Party Annot/Seq DDBJ
+    19 = gpipe Textseq-id        -- Internal NCBI genome pipeline processing ID }
 
 	WARNING: Some routines in sequtil.c (e.g. SeqIdPrint, SeqIdParse)
         and tofasta.c  use
@@ -143,7 +149,7 @@ NLM_EXTERN Boolean	LIBCALL SeqLocAsnLoad PROTO((void));
 *
 *****************************************************************************/
 
-#define NUM_SEQID 19     /* total number of SeqId types */
+#define NUM_SEQID 20     /* total number of SeqId types */
 
 #define SEQID_NOT_SET ( (Uint1)0)
 #define SEQID_LOCAL ( (Uint1)1)
@@ -168,6 +174,8 @@ NLM_EXTERN Boolean	LIBCALL SeqLocAsnLoad PROTO((void));
 #define SEQID_TPG ((Uint1)16)
 #define SEQID_TPE ((Uint1)17)
 #define SEQID_TPD ((Uint1)18)
+
+#define SEQID_GPIPE  ((Uint1)19)
 
 NLM_EXTERN Boolean	 LIBCALL SeqIdAsnWrite PROTO((SeqIdPtr anp, AsnIoPtr aip, AsnTypePtr atp));
 NLM_EXTERN SeqIdPtr LIBCALL SeqIdAsnRead PROTO((AsnIoPtr aip, AsnTypePtr atp));
@@ -285,6 +293,7 @@ NLM_EXTERN PDBSeqIdPtr LIBCALL PDBSeqIdFree PROTO((PDBSeqIdPtr tsip));
 NLM_EXTERN Boolean   LIBCALL SeqLocAsnWrite PROTO((SeqLocPtr anp, AsnIoPtr aip, AsnTypePtr atp));
 NLM_EXTERN SeqLocPtr LIBCALL SeqLocAsnRead PROTO((AsnIoPtr aip, AsnTypePtr atp));
 NLM_EXTERN SeqLocPtr LIBCALL SeqLocFree PROTO((SeqLocPtr anp));
+NLM_EXTERN SeqLocPtr LIBCALL SeqLocCopy PROTO((SeqLocPtr anp));
 NLM_EXTERN Int2 LIBCALL SeqLocLabel PROTO((SeqLocPtr slp, CharPtr buffer, Int2 buflen, Uint1 content));
 
 /*****************************************************************************

@@ -28,13 +28,16 @@
 *
 * Version Creation Date:   7/99
 *
-* $Revision: 6.178 $
+* $Revision: 6.179 $
 *
 * File Description: SeqAlign indexing and messaging functions
 *
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: alignmgr.c,v $
+* Revision 6.179  2004/05/20 19:44:28  bollin
+* removed unused variables
+*
 * Revision 6.178  2001/11/09 17:22:34  wheelan
 * fixed bug in TruncateSeqAlign
 *
@@ -8866,7 +8869,6 @@ NLM_EXTERN SeqAlignPtr AlnMgrGetSubAlign(SeqAlignPtr sap, SeqIdPtr which_master,
    SeqAlignPtr      salp;
    SeqAlignPtr      salp_head;
    SeqAlignPtr      salp_prev;
-   SeqAlignPtr      sap_parent;
    SeqIdPtr         sip;
    SeqIdPtr         sip_curr,sip_next;
    SeqIdPtr         sip_prev;
@@ -10750,7 +10752,6 @@ NLM_EXTERN Int4 AlnMgrIsEditable(SeqAlignPtr sap)
    DenseDiagPtr  ddp;
    DenseSegPtr   dsp;
    Boolean       gapped;
-   Int4          ibm;
    SeqIdPtr      id_prev;
    SeqAlignPtr   salp;
    
@@ -10808,7 +10809,7 @@ NLM_EXTERN Int4 AlnMgrIsEditable(SeqAlignPtr sap)
 NLM_EXTERN Int4  AlnMgrMapBioseqToBioseq(SeqAlignPtr salp,Int4 pos,Int4 source_row,Int4 target_row,Boolean GetNextNonGap,Int4Ptr PostGap) {
     Int4 aln_coord,pos_target;
     AlnMsgPtr amp1;
-    Boolean gap,status;
+    Boolean   status;
     if(!salp)
         return -1;
     aln_coord = AlnMgrMapBioseqToSeqAlign(salp, pos, source_row, NULL);
@@ -10899,7 +10900,7 @@ NLM_EXTERN DenseSegPtr DenseDiagToGlobalDenseSeg(DenseDiagPtr ddp_head) {
 
 NLM_EXTERN DenseDiagPtr AlnMgrSeqAlignToDDP(SeqAlignPtr sap,Int4 aln_cut_from,Int4 aln_cut_to,Int4Ptr numseg_ptr) {
     AlnMsgPtr amp1;
-    Int4 numseg=0,curr_m,from_q,from_s,to_q,to_s,len,i;
+    Int4 numseg=0,curr_m,from_q,to_q,len,i;
     DenseDiagPtr ddp,ddp_head=NULL,ddp_last=NULL;
     SeqAlignPtr salp;
     Boolean gap,status;
@@ -11085,13 +11086,11 @@ NLM_EXTERN DenseDiagPtr AlnMgrSeqAlignToDDP(SeqAlignPtr sap,Int4 aln_cut_from,In
 */
 
 NLM_EXTERN SeqAlignPtr AlnMgrMerge3OverlappingSeqAligns(SeqAlignPtr salp1,SeqAlignPtr salp_merging,SeqAlignPtr salp2,Int4 master_cut_pos1, Int4 master_cut_pos2) {
-    Int4 diff;
     Int4 i,aln_cut_pos1,aln_cut_pos2;
     Int4 numseg=0,this_numseg;
-    SeqIdPtr sip_q,sip_s;
     DenseDiagPtr ddp,ddp_head=NULL,ddp_last,ddp_next;
     DenseSegPtr dsp;
-    Boolean gap,sstrand_plus,qstrand_plus;
+    Boolean sstrand_plus,qstrand_plus;
     SeqAlignPtr sap=NULL;
 
 

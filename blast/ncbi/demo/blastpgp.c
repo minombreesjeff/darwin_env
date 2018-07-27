@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: blastpgp.c,v 6.120 2004/04/29 19:56:00 dondosha Exp $";
+static char const rcsid[] = "$Id: blastpgp.c,v 6.127 2005/04/04 14:57:47 papadopo Exp $";
 
-/* $Id: blastpgp.c,v 6.120 2004/04/29 19:56:00 dondosha Exp $ */
+/* $Id: blastpgp.c,v 6.127 2005/04/04 14:57:47 papadopo Exp $ */
 /**************************************************************************
 *                                                                         *
 *                             COPYRIGHT NOTICE                            *
@@ -26,8 +26,29 @@ static char const rcsid[] = "$Id: blastpgp.c,v 6.120 2004/04/29 19:56:00 dondosh
 * appreciated.                                                            *
 *                                                                         *
 **************************************************************************
- * $Revision: 6.120 $ 
+ * $Revision: 6.127 $ 
  * $Log: blastpgp.c,v $
+ * Revision 6.127  2005/04/04 14:57:47  papadopo
+ * remove requirement for a fasta format query file if restarting from scoremat
+ *
+ * Revision 6.126  2004/10/12 15:14:39  papadopo
+ * add gap open and extend penalties to [BC]posComputation calls
+ *
+ * Revision 6.125  2004/07/19 17:16:19  papadopo
+ * add capability to perform input and output of residue frequencies in scoremat form
+ *
+ * Revision 6.124  2004/06/30 12:33:30  madden
+ * Add include for blfmtutl.h
+ *
+ * Revision 6.123  2004/06/25 20:58:49  dondosha
+ * Ungapped option not supported for multi-iterational search, but OK otherwise
+ *
+ * Revision 6.122  2004/06/24 21:48:16  dondosha
+ * Made ungapped search option deprecated
+ *
+ * Revision 6.121  2004/06/24 19:02:23  dondosha
+ * Exit with error status if PGPReadBlastOptions returns NULL
+ *
  * Revision 6.120  2004/04/29 19:56:00  dondosha
  * Mask filtered locations in query sequence lines in XML output
  *
@@ -475,6 +496,8 @@ static char const rcsid[] = "$Id: blastpgp.c,v 6.120 2004/04/29 19:56:00 dondosh
 #include <sqnutils.h>
 #include <xmlblast.h>
 #include <ddvcreate.h>
+#include <blfmtutl.h>
+#include <objscoremat.h>
 
 /* Used by the callback function. */
 FILE *global_fp=NULL;
@@ -512,8 +535,8 @@ star_callback(Int4 sequence_number, Int4 number_of_positive_hits)
 static Args myargs[] = {
     { "Database",               /* 0 */
       "nr", NULL, NULL, FALSE, 'd', ARG_STRING, 0.0, 0, NULL},
-    { "Query File",             /* 1 */
-      "stdin", NULL, NULL, FALSE, 'i', ARG_FILE_IN, 0.0, 0, NULL},
+    { "Query File (not needed if restarting from scoremat)", /* 1 */
+      "stdin", NULL, NULL, TRUE, 'i', ARG_FILE_IN, 0.0, 0, NULL},
     { "Multiple Hits window size", /* 2 */
       "40", NULL, NULL, FALSE, 'A', ARG_INT, 0.0, 0, NULL},
     { "Threshold for extending hits", /* 3 */
@@ -596,8 +619,18 @@ static Args myargs[] = {
      "F", NULL,NULL,TRUE,'U',ARG_BOOLEAN, 0.0,0,NULL},
     { "Use composition based statistics", /* 42 */
       "T", NULL, NULL, FALSE, 't', ARG_BOOLEAN, 0.0, 0, NULL},
+    { "ASN.1 Scoremat input of checkpoint data:\n"
+      "0: no scoremat input\n"
+      "1: Restart is from ASCII scoremat checkpoint file,\n"
+      "2: Restart is from binary scoremat checkpoint file", /* 43 */
+      "0", NULL, NULL, TRUE, 'q', ARG_INT, 0.0, 0, NULL},
+    { "ASN.1 Scoremat output of checkpoint data:\n"
+      "0: no scoremat output\n"
+      "1: Output is ASCII scoremat checkpoint file (requires -J),\n"
+      "2: Output is binary scoremat checkpoint file (requires -J)", /* 44 */
+      "0", NULL, NULL, TRUE, 'u', ARG_INT, 0.0, 0, NULL},
 #ifdef YES_TO_DECLINE_TO_ALIGN
-    { "Cost to decline alignment (disabled when 0)", /* 43 */
+    { "Cost to decline alignment (disabled when 0)", /* 45 */
       "0", NULL, NULL, FALSE, 'L', ARG_INT, 0.0, 0, NULL},
 #endif
 };
@@ -698,12 +731,6 @@ PGPBlastOptionsPtr PGPReadBlastOptions(void)
     
     bop->blast_database   = StringSave(myargs[0].strvalue);
 
-    if ((bop->infp = FileOpen(myargs[1].strvalue, "r")) == NULL) {
-        ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open input file %s\n", 
-                  myargs[1].strvalue);
-        return NULL;
-    }
-    
     if (align_view != 7 && align_view != 10 && align_view != 11 && myargs[6].strvalue != NULL) {
         if ((bop->outfp = FileOpen(myargs[6].strvalue, "w")) == NULL) {
             ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open output "
@@ -718,6 +745,26 @@ PGPBlastOptionsPtr PGPReadBlastOptions(void)
     if (myargs[22].intvalue != 0)
         bop->believe_query = TRUE;
     
+    if (myargs[43].intvalue != NO_SCOREMAT_IO && 
+        myargs[43].intvalue != ASCII_SCOREMAT &&
+        myargs[43].intvalue != BINARY_SCOREMAT) {
+        ErrPostEx(SEV_FATAL, 1, 0,"Invalid choice for scoremat input\n");
+        return NULL;
+    }
+    if (myargs[44].intvalue != NO_SCOREMAT_IO && 
+        myargs[44].intvalue != ASCII_SCOREMAT &&
+        myargs[44].intvalue != BINARY_SCOREMAT) {
+        ErrPostEx(SEV_FATAL, 1, 0,"Invalid choice for scoremat output\n");
+        return NULL;
+    }
+    if (myargs[44].intvalue != NO_SCOREMAT_IO) {
+        if (bop->believe_query == FALSE) {
+            ErrPostEx(SEV_FATAL, 1, 0, 
+                      "-J option must be TRUE for scoremat output");
+            return NULL;
+        }
+    }
+
     if (myargs[24].strvalue != NULL) {
         
         if (bop->believe_query == FALSE) {
@@ -751,30 +798,92 @@ PGPBlastOptionsPtr PGPReadBlastOptions(void)
             bop->asn1_mode = StringSave("wb");
     }
 
-    options = BLASTOptionNew("blastp", (Boolean)myargs[14].intvalue);
-    bop->options = options;
+    if (!myargs[14].intvalue && myargs[21].intvalue > 1) {
+       ErrPostEx(SEV_ERROR, 1, 0, "Ungapped search option is not supported"
+                 " with more than one iteration\n");
+       return NULL;
+    }
 
-    if(myargs[41].intvalue) {
-        if((sep = FastaToSeqEntryForDb (bop->infp, FALSE, NULL, bop->believe_query, NULL, NULL, &options->query_lcase_mask)) == NULL) {
-            ErrPostEx(SEV_FATAL, 1, 0, "Unable to read input FASTA file\n");
+    options = BLASTOptionNew("blastp", TRUE);
+    bop->options = options;
+    
+    /* read the query sequence */
+
+    if (myargs[43].intvalue == NO_SCOREMAT_IO) {
+        if ((bop->infp = FileOpen(myargs[1].strvalue, "r")) == NULL) {
+            ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open input file %s\n", 
+                      myargs[1].strvalue);
             return NULL;
         }
-    } else {
-        if((sep = FastaToSeqEntryEx(bop->infp, FALSE, NULL, bop->believe_query)) == NULL) {
-            ErrPostEx(SEV_FATAL, 1, 0, "Unable to read input FASTA file\n");
+        if(myargs[41].intvalue) {
+            if((sep = FastaToSeqEntryForDb (bop->infp, FALSE, NULL, bop->believe_query, NULL, NULL, &options->query_lcase_mask)) == NULL) {
+                ErrPostEx(SEV_FATAL, 1, 0, "Unable to read input FASTA file\n");
+                return NULL;
+            }
+        } else {
+            if((sep = FastaToSeqEntryEx(bop->infp, FALSE, NULL, bop->believe_query)) == NULL) {
+                ErrPostEx(SEV_FATAL, 1, 0, "Unable to read input FASTA file\n");
+                return NULL;
+            }
+        }
+        
+        SeqEntryExplore(sep, &bop->query_bsp, FindProt);    
+        if (bop->query_bsp == NULL) {
+            ErrPostEx(SEV_FATAL, 1, 0, "Unable to obtain bioseq\n");
+            return NULL;
+        }    
+    }
+    else {                      /* recover the query sequence from scoremat */
+        AsnIoPtr scorematfile;
+        PssmWithParametersPtr scoremat = NULL;
+
+        if (myargs[29].strvalue == NULL) {
+            ErrPostEx(SEV_FATAL, 1, 0, "No restart file specified\n");
             return NULL;
         }
+
+        if (myargs[43].intvalue == ASCII_SCOREMAT)
+            scorematfile = AsnIoOpen(myargs[29].strvalue, "r");
+        else  /* binary scoremat */
+            scorematfile = AsnIoOpen(myargs[29].strvalue, "rb");
+
+        if (scorematfile == NULL) {
+            ErrPostEx(SEV_FATAL, 1, 0, "Unable to open scoremat file\n");
+            return NULL;
+        }    
+        
+        scoremat = PssmWithParametersAsnRead(scorematfile, NULL);
+        AsnIoClose(scorematfile);
+        if (scoremat == NULL) {
+            ErrPostEx(SEV_FATAL, 1, 0, "Could not read scoremat "
+                                       "for query sequence\n");
+            return NULL;
+        }
+
+        if (scoremat->pssm == NULL ||
+            scoremat->pssm->query == NULL ||
+            scoremat->pssm->query->data.ptrvalue == NULL) {
+            ErrPostEx(SEV_FATAL, 1, 0, "Cannot read query sequence "
+                                       "from scoremat\n");
+            return NULL;
+        }
+
+        /* use the bioseq from 'scoremat'; remove from that
+           structure so the bioseq is not freed along with the
+           rest of the scoremat. Note that only the first
+           bioseq in a bioseq-set is used */
+
+        bop->query_bsp = (BioseqPtr)(scoremat->pssm->query->data.ptrvalue);
+        scoremat->pssm->query = ValNodeFree(scoremat->pssm->query);
+        PssmWithParametersFree(scoremat);
     }
     
-    SeqEntryExplore(sep, &bop->query_bsp, FindProt);    
-    /*    sep->data.ptrvalue = NULL;
-          SeqEntryFree(sep); */
-    
+    /* without a bioseq we cannot continue */
     if (bop->query_bsp == NULL) {
         ErrPostEx(SEV_FATAL, 1, 0, "Unable to obtain bioseq\n");
         return NULL;
     }    
-    
+
     /* Set default gap params for matrix. */
     BLASTOptionSetGapParams(options, myargs[25].strvalue, 0, 0);
 
@@ -802,32 +911,30 @@ PGPBlastOptionsPtr PGPReadBlastOptions(void)
     options->hitlist_size = MAX(bop->number_of_descriptions, 
                                 bop->number_of_alignments);
     
-    if (myargs[14].intvalue != 0) {
-        if (myargs[8].intvalue == 1) {
-            options->two_pass_method  = FALSE;
-            options->multiple_hits_only  = FALSE;
-        } else { 
-            /* all other inputs, including the default 0 use 2-hit method */
-            options->two_pass_method  = FALSE;
-            options->multiple_hits_only  = TRUE;
-        }
-        options->gap_open = myargs[10].intvalue;
-        options->gap_extend = myargs[11].intvalue;
-        
-#ifdef YES_TO_DECLINE_TO_ALIGN
-        if(myargs[43].intvalue != 0) {
-            options->discontinuous = TRUE;
-            options->decline_align = myargs[43].intvalue;
-        } else {
-            options->discontinuous = FALSE;
-            options->decline_align = INT2_MAX;
-        }
-#endif
-
-        options->gap_x_dropoff = myargs[12].intvalue;
-        options->gap_x_dropoff_final = myargs[23].intvalue;
-        options->gap_trigger = myargs[13].floatvalue;
+    if (myargs[8].intvalue == 1) {
+       options->two_pass_method  = FALSE;
+       options->multiple_hits_only  = FALSE;
+    } else { 
+       /* all other inputs, including the default 0 use 2-hit method */
+       options->two_pass_method  = FALSE;
+       options->multiple_hits_only  = TRUE;
     }
+    options->gap_open = myargs[10].intvalue;
+    options->gap_extend = myargs[11].intvalue;
+    
+#ifdef YES_TO_DECLINE_TO_ALIGN
+    if(myargs[45].intvalue != 0) {
+       options->discontinuous = TRUE;
+       options->decline_align = myargs[45].intvalue;
+    } else {
+       options->discontinuous = FALSE;
+       options->decline_align = INT2_MAX;
+    }
+#endif
+    
+    options->gap_x_dropoff = myargs[12].intvalue;
+    options->gap_x_dropoff_final = myargs[23].intvalue;
+    options->gap_trigger = myargs[13].floatvalue;
     
     if (StringICmp(myargs[9].strvalue, "T") == 0) {
         options->filter_string = StringSave("S");
@@ -929,6 +1036,11 @@ Boolean PGPReadNextQuerySequence(PGPBlastOptionsPtr bop)
         BioseqFree(bop->query_bsp);
     } else {
         BioseqFree(bop->fake_bsp);
+    }
+
+    /* scoremats contain only one sequence */
+    if(myargs[29].intvalue != NO_SCOREMAT_IO) { 
+        return FALSE;
     }
 
     if(myargs[41].intvalue) {
@@ -1122,8 +1234,8 @@ SeqAlignPtr PGPSeedSearch(PGPBlastOptionsPtr bop, BlastSearchBlkPtr search,
     search->gap_align->decline_align = INT2_MAX;
 
 #ifdef YES_TO_DECLINE_TO_ALIGN
-    if(myargs[43].intvalue != 0) {
-        search->gap_align->decline_align = myargs[43].intvalue;
+    if(myargs[45].intvalue != 0) {
+        search->gap_align->decline_align = myargs[45].intvalue;
     } else {
         search->gap_align->decline_align = INT2_MAX;
     }
@@ -1431,7 +1543,8 @@ Int2 Main (void)
     if (! SeqEntryLoad())
         return 1;    
     
-    bop = PGPReadBlastOptions();
+    if ((bop = PGPReadBlastOptions()) == NULL)
+       return 1;
 
     if(bop->is_xml_output) {
        if((aip = AsnIoOpen(myargs[6].strvalue, "wx")) == NULL)
@@ -1497,13 +1610,13 @@ Int2 Main (void)
             posInitializeInformation(posSearch,search);
             /*AAS*/
             if (freqCheckpoint) {
-                checkReturn = posReadCheckpoint(posSearch, compactSearch, myargs[29].strvalue, &(search->error_return));
+                checkReturn = posReadCheckpoint(posSearch, compactSearch, myargs[29].strvalue, myargs[43].intvalue, &(search->error_return));
                 search->sbp->posMatrix = posSearch->posMatrix;
                 if (NULL == search->sbp->posFreqs)
                     search->sbp->posFreqs =  allocatePosFreqs(compactSearch->qlength, compactSearch->alphabetSize);
                 copyPosFreqs(posSearch->posFreqs,search->sbp->posFreqs, compactSearch->qlength, compactSearch->alphabetSize);
             } else {
-                search->sbp->posMatrix = BposComputation(posSearch, search, compactSearch, myargs[39].strvalue, myargs[28].strvalue, &(search->error_return)); 
+                search->sbp->posMatrix = BposComputation(posSearch, search, compactSearch, myargs[39].strvalue, myargs[28].strvalue, myargs[44].intvalue, bop->query_bsp, myargs[10].intvalue, myargs[11].intvalue, &(search->error_return)); 
 		posComputationCalled = TRUE;
                 if (NULL == search->sbp->posMatrix)
                     checkReturn = FALSE;
@@ -1673,7 +1786,11 @@ Int2 Main (void)
                         CposComputation(posSearch, search, compactSearch, 
                                         head, myargs[28].strvalue, 
                                         (bop->options->isPatternSearch && 
-                                         (1== thisPassNum)), 
+                                         (1== thisPassNum)),
+                                        myargs[44].intvalue, 
+                                        bop->query_bsp,  
+                                        myargs[10].intvalue,
+                                        myargs[11].intvalue,
                                         &(search->error_return), 1.0); /*AAS*/
 		    posComputationCalled = TRUE;
                     if (search->error_return) {

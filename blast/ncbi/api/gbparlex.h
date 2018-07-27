@@ -28,6 +28,10 @@
 * Author:  Karl Sirotkin
 *
 * $Log: gbparlex.h,v $
+* Revision 6.2  2004/07/22 15:26:24  bazhin
+* Added "#define GBPARSE_INT_UNK_GAP 20" to handle gaps of unknown
+* lengths within location strings.
+*
 * Revision 6.1  1997/10/24 18:44:42  bazhin
 * Added "#define GBPARSE_INT_GAP 20".
 *
@@ -71,6 +75,7 @@
 #define GBPARSE_INT_STRING 18
 #define GBPARSE_INT_ONE_OF_NUM 19
 #define GBPARSE_INT_GAP 20
+#define GBPARSE_INT_UNK_GAP 21
 
 #define ERR_NCBIGBPARSE_LEX 1
 #define ERR_NCBIGBPARSE_INT 2

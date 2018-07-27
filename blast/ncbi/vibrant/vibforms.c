@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/22/95
 *
-* $Revision: 6.14 $
+* $Revision: 6.16 $
 *
 * File Description: 
 *
@@ -40,6 +40,15 @@
 *
 *
 * $Log: vibforms.c,v $
+* Revision 6.16  2005/04/05 13:09:32  bollin
+* avoid SetEnumPopup error when resetting a TagList with a Popup control for
+* which the alist has no 0 value.
+*
+* Revision 6.15  2005/03/30 21:09:33  bollin
+* added function UpdateTagListPopupChoices so that if the user changes the
+* values in the alist array passed to CreateTagListDialog, the changes can
+* be reflected in the popup displayed
+*
 * Revision 6.14  2004/03/06 20:00:38  kans
 * SetEnumPopupEx and SetEnumPopupByNameEx set popup to 0 if desired choice not found
 *
@@ -1878,6 +1887,27 @@ static void TagRtnProc (TexT t)
   }
 }
 
+static UIEnum GetDefaultEnumValue (EnumFieldAssocPtr alist)
+{
+  EnumFieldAssocPtr eap;
+  
+  if (alist == NULL)
+  {
+    return 0;
+  }
+  
+  eap = alist;
+  while (eap != NULL && eap->name != NULL)
+  {
+    if (eap->value == 0)
+    {
+      return 0;
+    }
+    eap++;
+  }
+  return alist->value;
+}
+
 static void ResetTagList (DialoG d)
 
 {
@@ -1897,7 +1927,8 @@ static void ResetTagList (DialoG d)
           case TAGLIST_POPUP :
           case TAGLIST_LIST :
             if (tlp->alists != NULL) {
-              SetEnumPopup ((PopuP) GetTagListControl (tlp, i, j), tlp->alists [j], (UIEnum) 0);
+              SetEnumPopup ((PopuP) GetTagListControl (tlp, i, j), tlp->alists [j],
+                                                       GetDefaultEnumValue (tlp->alists [j]));
             } else {
               SafeSetValue (GetTagListControl (tlp, i, j), 0);
             }
@@ -2090,6 +2121,36 @@ extern DialoG CreateTagListDialog (GrouP h, Uint2 rows, Uint2 cols, Int2 spacing
                                 alists, TRUE, FALSE, tofunc, fromfunc);
 }
 
+extern void UpdateTagListPopupChoices (DialoG d, Int4 column);
+
+extern void UpdateTagListPopupChoices (DialoG d, Int4 column)
+{
+  Int4              i, j;
+  TagListPtr        tlp;
+  PopuP             p;
+
+  tlp = (TagListPtr) GetObjectExtra (d);
+  if (tlp == NULL || tlp->alists == NULL)
+  {
+    return;
+  }
+  
+  for (i = 0; i < tlp->rows; i++) {
+    for (j = 0; j < tlp->cols; j++) {
+      if (j != column && column > 0)
+      {
+        continue;
+      }
+      if (tlp->types [j] != TAGLIST_POPUP)
+      {
+        continue;
+      }
+      p = (PopuP) tlp->control [i * MAX_TAGLIST_COLS + j];
+      Reset (p);
+      InitEnumPopup (p, tlp->alists[j], NULL);
+    }
+  }
+}
 
 extern void JustInvalObject (Nlm_Handle a)
 

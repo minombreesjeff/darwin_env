@@ -2550,7 +2550,7 @@ static Boolean PrintMarkerToFile (ValNodePtr msp_1_list, ValNodePtr msp_2_list, 
 */
 ValNodePtr LoadContigAlign (SeqLocPtr slp, Boolean include_amb, Uint1 db, SeqIdPtr chr_id)
 {
-	ValNodePtr aligns, curr;
+	ValNodePtr aligns;
 	CollectAlignOption ca_option;
 	Uint2 entityID;
 	BioseqPtr bsp;
@@ -2940,7 +2940,6 @@ static YACBacPtr bin_search_yac(CharPtr yac_name, ValNodePtr PNTR list, Int4 low
 	Int4 mid;
 	ValNodePtr vnp;
 	Int4 val;
-	YACBacPtr ybp;
 
 	if(low > high)
 		return NULL;
@@ -3233,7 +3232,6 @@ static Boolean add_link_to_seqcenter(FILE *fp, CharPtr band_name)
 	Char band[21];
 	Char www_add[201];
 	Int4 val;
-	Char gif_name[21];
 	Boolean first = TRUE;
 
 	s_fp = FileOpen(SEQ_CENTER_LINK_FILE, "r");
@@ -3398,7 +3396,6 @@ void PrintDataBaseLink(FILE *fp, Uint1 db_option)
 Boolean PrintContigForOneMap(SeqIdPtr chr_id, ValNodePtr contig_list, 
 		CharPtr band_name, Boolean include_amb, BoolPtr pfirst, FILE *fp)
 {
-	Char buf[101];
 
 	if(contig_list == NULL || fp == NULL)
 		return FALSE;
@@ -3576,7 +3573,6 @@ Boolean MakeTxLink(SeqLocPtr chr_slp, CharPtr buf, Uint1 chr, Uint1 end_band)
 {
 	BioseqPtr bsp;
 	CharPtr link;
-	Char cM_label[101];
 	Char name[101];
 	Char first_name[101], last_name[101];
 

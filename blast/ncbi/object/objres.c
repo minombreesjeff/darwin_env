@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 4/1/91
 *
-* $Revision: 6.5 $
+* $Revision: 6.6 $
 *
 * File Description:  Object manager for module NCBI-Seqres
 *
@@ -41,6 +41,9 @@
 *
 *
 * $Log: objres.c,v $
+* Revision 6.6  2004/05/12 20:41:56  kans
+* set aip->io_failure in several erret blocks for compatibility of old object loaders with new ones
+*
 * Revision 6.5  2004/04/01 13:43:08  lavr
 * Spell "occurred", "occurrence", and "occurring"
 *
@@ -498,6 +501,7 @@ ret:
 	AsnUnlinkType(orig);       /* unlink local tree */
 	return sgp;
 erret:
+    aip->io_failure = TRUE;
     sgp = SeqGraphFree(sgp);
     goto ret;
 }

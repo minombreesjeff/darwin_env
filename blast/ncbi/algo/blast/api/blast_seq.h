@@ -1,4 +1,4 @@
-/* $Id: blast_seq.h,v 1.10 2004/03/12 15:18:53 coulouri Exp $
+/* $Id: blast_seq.h,v 1.25 2005/04/06 23:27:53 dondosha Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -21,22 +21,13 @@
 *
 *  Please cite the author in any work or product based on this material.
 *
+*  Author: Ilya Dondoshansky
 * ===========================================================================*/
 
-/*****************************************************************************
+/** @file blast_seq.h
+ * Functions converting from SeqLocs to structures used in BLAST and back.
+ */
 
-File name: blast_seq.h
-
-Author: Ilya Dondoshansky
-
-Contents: Functions converting from SeqLocs to structures used in BLAST and 
-          back.
-
-Detailed Contents: 
-
-******************************************************************************
- * $Revision: 1.10 $
- * */
 #ifndef __BLAST_SEQ__
 #define __BLAST_SEQ__
 
@@ -52,34 +43,38 @@ extern "C" {
 #include <algo/blast/core/blast_def.h>
 #include <algo/blast/core/blast_options.h>
 
-#define NUM_FRAMES 6
-
-/** Convert a SeqLoc of type int or packed_int to a BlastMaskLoc structure.
- * @param mask_slp The SeqLoc to be converted [in]
- * @param index The ordinal number of the sequence to be assigned to the new 
- *              BlastMaskLoc
- * @return Pointer to the allocated BlastMaskLoc structure.
+/** @addtogroup CToolkitAlgoBlast
+ *
+ * @{
  */
-BlastMaskLoc* BlastMaskLocFromSeqLoc(SeqLocPtr mask_slp, Int4 index);
 
 /** Convert a BlastMaskLoc list to a list of SeqLocs, used for formatting 
  * BLAST results.
+ * @param program_number identifies blastn, blastp, etc. [in]
+ * @param mask_loc internal mask structure [in]
+ * @param slp SeqLoc of query [in]
+ * @return Pointer to SeqLoc
  */
-SeqLocPtr BlastMaskLocToSeqLoc(Uint1 program_number, BlastMaskLoc* mask_loc, 
-                            SeqLocPtr slp);
+SeqLocPtr 
+BlastMaskLocToSeqLoc(EBlastProgramType program_number, 
+                     const BlastMaskLoc* mask_loc, 
+                     const SeqLoc* slp);
+/** Convert a list of mask locations in a form of SeqLoc into a BlastMaskLoc
+ * structure. In case of multiple queries, it is not required to create a mask 
+ * SeqLoc for every query.
+ * @param mask_locs Masking locations [in]
+ * @param seq_locs Sequence locations [in]
+ * @return Allocated and populated BlastMaskLoc structure.
+ */
+BlastMaskLoc* 
+BlastMaskLocFromSeqLoc(SeqLoc* mask_locs, SeqLoc* seq_locs);
 
-/** Duplicate masks in 6 frames for each nucleotide sequence, converting
- * all masks' coordinates from DNA to protein.
- * @param mask_loc_ptr Masks list to be modified [in] [out]
- * @param slp List of nucleotide query SeqLoc's [in]
+/** Frees a special type of SeqLoc list, used in BLAST for masking locations.
+ * @param mask_loc Input list of mask SeqLocs [in]
+ * @return NULL
  */
-Int2 BlastMaskLocDNAToProtein(BlastMaskLoc** mask_loc_ptr, SeqLocPtr slp);
-
-/** Convert all masks' protein coordinates to nucleotide.
- * @param mask_loc_ptr Masks list to be modified [in] [out]
- * @param slp List of nucleotide query SeqLoc's [in]
- */
-Int2 BlastMaskLocProteinToDNA(BlastMaskLoc** mask_loc_ptr, SeqLocPtr slp);
+SeqLoc*
+Blast_ValNodeMaskListFree(SeqLoc* mask_loc);
 
 /** Given a list of query SeqLoc's, create the sequence block and the query
  * info structure. This is the last time SeqLoc is needed before formatting.
@@ -87,12 +82,14 @@ Int2 BlastMaskLocProteinToDNA(BlastMaskLoc** mask_loc_ptr, SeqLocPtr slp);
  * @param query_options Query setup options, containing genetic code for
  *                      translation [in]
  * @param program_number Type of BLAST program [in]
+ * @param masking_locs Masking locations, e.g. from lower case of repeats
+ *                     filtering. [in]
  * @param query_info Query information structure, containing offsets into 
  *                   the concatenated sequence [out]
  * @param query_blk Query block, containing (concatenated) sequence [out]
  */
-Int2 BLAST_SetUpQuery(Uint1 program_number, SeqLocPtr query_slp, 
-        const QuerySetUpOptions* query_options, 
+Int2 BLAST_SetUpQuery(EBlastProgramType program_number, SeqLocPtr query_slp, 
+        const QuerySetUpOptions* query_options, SeqLoc* masking_locs,
         BlastQueryInfo** query_info, BLAST_SequenceBlk* *query_blk);
 
 /** Set up the subject sequence block in case of two sequences BLAST.
@@ -100,7 +97,7 @@ Int2 BLAST_SetUpQuery(Uint1 program_number, SeqLocPtr query_slp,
  * @param subject_slp SeqLoc for the subject sequence [in]
  * @param subject Subject sequence block [out]
  */
-Int2 BLAST_SetUpSubject(Uint1 program_number, 
+Int2 BLAST_SetUpSubject(EBlastProgramType program_number, 
         SeqLocPtr subject_slp, BLAST_SequenceBlk** subject);
 
 /** Find a genetic code string in ncbistdaa encoding, given an integer
@@ -108,10 +105,12 @@ Int2 BLAST_SetUpSubject(Uint1 program_number,
  * @param gc genetic code value [in]
  * @param genetic_code genetic code string [out]
  */
-
 Int2 BLAST_GeneticCodeFind(Int4 gc, Uint1** genetic_code);
+
+/* @} */
 
 #ifdef __cplusplus
 }
 #endif
+
 #endif /* !__BLAST_SEQ__ */

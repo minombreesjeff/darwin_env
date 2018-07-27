@@ -558,7 +558,6 @@ static Int4 ALIGN_packed_nucl(Uint1Ptr B, Uint1Ptr A, Int4 N, Int4 M,
   if (gap_align->dyn_prog)
      dyn_prog = gap_align->dyn_prog;
   else {
-
 #if BLAST_ALTIVEC
 	  if (j > gap_align->dyn_prog_save_SIZE) {
 		  if (gap_align->dyn_prog_save_PTR) MemFree(gap_align->dyn_prog_save_PTR);
@@ -578,10 +577,8 @@ static Int4 ALIGN_packed_nucl(Uint1Ptr B, Uint1Ptr A, Int4 N, Int4 M,
 		  return -1;
 	  }
 #endif  
-	  
   }
-	  
-	  
+
   dyn_prog[0].CC = 0; c = dyn_prog[0].DD = -m;
   dyn_prog[0].FF = -m;
   for(i = 1; i <= N; i++) {
@@ -687,6 +684,7 @@ static Int4 ALIGN_packed_nucl(Uint1Ptr B, Uint1Ptr A, Int4 N, Int4 M,
 	  dyn_prog[j].DD = dyn_prog[j].CC = dyn_prog[j].FF = MININT; j++;
       }
   }
+  
   if (!gap_align->dyn_prog) {
 #if BLAST_ALTIVEC
 	  // do nothing, will be dealloced later
@@ -694,8 +692,7 @@ static Int4 ALIGN_packed_nucl(Uint1Ptr B, Uint1Ptr A, Int4 N, Int4 M,
 	  MemFree(dyn_prog);
 #endif
   }
-  
-  
+
   return best_score;
 }
 /*
@@ -927,7 +924,7 @@ ALIGN_EX(Uint1Ptr A, Uint1Ptr B, Int4 M, Int4 N, Int4Ptr S, Int4Ptr pei,
 
   MemFree(state);
 
-if (!gap_align->dyn_prog) {
+ if (!gap_align->dyn_prog) {
 #if BLAST_ALTIVEC
 	// do nothing, will be dealloced later
 #else
@@ -1754,12 +1751,12 @@ GapAlignBlkDelete(GapAlignBlkPtr gap_align)
 {
     if (gap_align == NULL)
         return NULL;
-    
+
 #if BLAST_ALTIVEC
 	if (gap_align->dyn_prog_save_PTR) MemFree(gap_align->dyn_prog_save_PTR);
 #endif    	
-	
-	
+
+    
     gap_align->state_struct = GapXDropStateDestroy(gap_align->state_struct);
     /* GapXEditBlockDelete(gap_align->edit_block); */
     
@@ -1793,7 +1790,7 @@ GapAlignBlkNew(Int4 state_column_length, Int4 state_row_length)
 	gap_align->dyn_prog_save_PTR = NULL;
 	gap_align->dyn_prog_save_SIZE = 0;
 #endif
-	
+
 	/* gap_align->decline_align = INT2_MAX; */
 	return gap_align;
 }

@@ -31,8 +31,6 @@ id2genAsnLoad(void)
 
 
 /**************************************************
-*    Generated object loaders for Module NCBI-ID2Access
-*    Generated using ASNCODE Revision: 6.0 at May 3, 2004  6:18 PM
 *
 **************************************************/
 
@@ -2769,6 +2767,13 @@ ID2ReplyAsnRead(AsnIoPtr aip, AsnTypePtr orig)
       }
       atp = AsnReadId(aip,amp, atp);
    }
+   if (atp == ID2_REPLY_discard) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> discard = av.intvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
 
    if (AsnReadVal(aip, atp, &av) <= 0) {
       goto erret;
@@ -2954,6 +2959,8 @@ ID2ReplyAsnWrite(ID2ReplyPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
          goto erret;
       }
    }
+   av.intvalue = ptr -> discard;
+   retval = AsnWrite(aip, ID2_REPLY_discard,  &av);
    if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
       goto erret;
    }
@@ -3497,6 +3504,13 @@ ID2ReplyGetSeqIdAsnRead(AsnIoPtr aip, AsnTypePtr orig)
       }
       atp = AsnReadId(aip,amp, atp);
    }
+   if (atp == REPLY_GET_SEQ_ID_end_of_reply) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> end_of_reply = av.boolvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
 
    if (AsnReadVal(aip, atp, &av) <= 0) {
       goto erret;
@@ -3554,6 +3568,8 @@ ID2ReplyGetSeqIdAsnWrite(ID2ReplyGetSeqIdPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
       }
    }
    AsnGenericChoiceSeqOfAsnWrite(ptr -> seq_id, (AsnWriteFunc) SeqIdAsnWrite, aip, ID2_REPLY_GET_SEQ_ID_seq_id, ID2_REPLY_GET_SEQ_ID_seq_id_E);
+   av.boolvalue = ptr -> end_of_reply;
+   retval = AsnWrite(aip, REPLY_GET_SEQ_ID_end_of_reply,  &av);
    if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
       goto erret;
    }
@@ -3678,6 +3694,13 @@ ID2ReplyGetBlobIdAsnRead(AsnIoPtr aip, AsnTypePtr orig)
       }
       atp = AsnReadId(aip,amp, atp);
    }
+   if (atp == REPLY_GET_BLOB_ID_end_of_reply) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> end_of_reply = av.boolvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
 
    if (AsnReadVal(aip, atp, &av) <= 0) {
       goto erret;
@@ -3742,6 +3765,8 @@ ID2ReplyGetBlobIdAsnWrite(ID2ReplyGetBlobIdPtr ptr, AsnIoPtr aip, AsnTypePtr ori
    av.intvalue = ptr -> split_version;
    retval = AsnWrite(aip, GET_BLOB_ID_split_version,  &av);
    AsnGenericUserSeqOfAsnWrite(ptr -> annot_info, (AsnWriteFunc) ID2SSeqAnnotInfoAsnWrite, aip, REPLY_GET_BLOB_ID_annot_info, REPLY_GET_BLOB_ID_annot_info_E);
+   av.boolvalue = ptr -> end_of_reply;
+   retval = AsnWrite(aip, REPLY_GET_BLOB_ID_end_of_reply,  &av);
    if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
       goto erret;
    }

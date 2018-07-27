@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   3/3/95
 *
-* $Revision: 6.29 $
+* $Revision: 6.33 $
 *
 * File Description: 
 *
@@ -83,6 +83,7 @@ typedef struct validextra {
   Boolean        shftKey;
   ErrNotifyProc  notify;
   ValNodePtr     messages;
+  ValNodePtr     lastmessage;
   ValNodePtr     errorfilter;
   BaseFormPtr    bfp;
   FormActnFunc   revalProc;
@@ -93,6 +94,7 @@ typedef struct validextra {
 static WindoW  validWindow = NULL;
 
 static ParData valParFmt = {TRUE, FALSE, FALSE, FALSE, FALSE, 0, 0};
+static ParData justAccnParFmt = {FALSE, FALSE, FALSE, FALSE, FALSE, 0, 0};
 
 static ColData valColFmt [] = {
   {0,  7, 15,  0, NULL, 'l', FALSE, FALSE, FALSE, FALSE, FALSE}, /* severity */
@@ -219,7 +221,10 @@ static void ValDoNotify (ValidExtraPtr vep, Int2 item, Boolean select, Boolean t
             bsp = GetBioseqGivenIDs (entityID, itemID, itemtype);
           } else {
             sfp = GetSeqFeatGivenIDs (entityID, itemID, itemtype);
-            bsp = GetBioseqGivenSeqLoc (sfp->location, entityID);
+            if (sfp != NULL)
+            {
+              bsp = GetBioseqGivenSeqLoc (sfp->location, entityID);
+            }
           }
           if (bsp != NULL) {
             sip = SeqIdFindWorst (bsp->id);
@@ -354,6 +359,7 @@ extern void ClearValidateWindow (void)
       Reset (vep->doc);
       vep->selected = 0;
       vep->messages = ValNodeFreeData (vep->messages);
+      vep->lastmessage = NULL;
       for (vnp = vep->errorfilter; vnp != NULL; vnp = vnp->next) {
         efp = (ErrFltrPtr) vnp->data.ptrvalue;
         if (efp != NULL) {
@@ -443,6 +449,7 @@ static void RepopVal (PopuP p)
   int            subcode;
   CharPtr        str;
   Char           tmp [32];
+  Int2           val;
   ValidExtraPtr  vep;
   ValNodePtr     vnp;
 
@@ -453,6 +460,7 @@ static void RepopVal (PopuP p)
     vep->selected = 0;
     minlev = GetValue (vep->minlevel);
     filt = GetValue (vep->filter);
+    val = GetValue (vep->verbose);
     efp = NULL;
     if (vep->errorfilter != NULL && filt > 1) {
       vnp = vep->errorfilter;
@@ -482,9 +490,15 @@ static void RepopVal (PopuP p)
           }
           if (okay) {
             (vep->addedcount)++;
-            AppendItem (vep->doc, CharPrtProc, vnp->data.ptrvalue, FALSE,
-                        (StringLen (vnp->data.ptrvalue) / 50) + 1,
-                        &valParFmt, valColFmt, vep->font);
+            if (val == 4) {
+              AppendItem (vep->doc, CharPrtProc, vnp->data.ptrvalue, FALSE,
+                          (StringLen (vnp->data.ptrvalue) / 50) + 1,
+                          &justAccnParFmt, valColFmt, vep->font);
+            } else {
+              AppendItem (vep->doc, CharPrtProc, vnp->data.ptrvalue, FALSE,
+                          (StringLen (vnp->data.ptrvalue) / 50) + 1,
+                          &valParFmt, valColFmt, vep->font);
+            }
           }
         }
       }
@@ -505,8 +519,11 @@ static void RepopVal (PopuP p)
 static Boolean ValExportProc (ForM f, CharPtr filename)
 
 {
+  Char           buf [128];
   FILE           *fp;
+  Int2           i, numItems;
   Char           path [PATH_MAX];
+  CharPtr        str;
   ValidExtraPtr  vep;
 
   vep = (ValidExtraPtr) GetObjectExtra (f);
@@ -524,7 +541,28 @@ static Boolean ValExportProc (ForM f, CharPtr filename)
 #endif
       fp = FileOpen (path, "w");
       if (fp != NULL) {
-        SaveDocument (vep->doc, fp);
+        if (GetValue (vep->verbose) == 4) {
+           GetDocParams (vep->doc, &numItems, NULL);
+          for (i = 1; i <= numItems; i++) {
+            buf [0] = '\0';
+            str = GetDocText (vep->doc, i, 1, 1);
+            StringCat (buf, str);
+            StringCat (buf, "                ");
+            buf [16] = '\0';
+            MemFree (str);
+            str = GetDocText (vep->doc, i, 1, 2);
+            StringCat (buf, str);
+            StringCat (buf, "                ");
+            buf [32] = '\0';
+            MemFree (str);
+            str = GetDocText (vep->doc, i, 1, 3);
+            StringCat (buf, str);
+            MemFree (str);
+            fprintf (fp, "%s\n", buf);
+          }
+        } else {
+          SaveDocument (vep->doc, fp);
+        }
         FileClose (fp);
         return TRUE;
       }
@@ -675,19 +713,34 @@ extern Boolean ShouldSetSuppressContext (void)
   return doSuppressContext;
 }
 
+static Boolean doJustShowAccession = FALSE;
+
+extern Boolean ShouldSetJustShowAccession (void)
+
+{
+  return doJustShowAccession;
+}
+
 static void SetVerbosityAndRevalidate (PopuP p)
 
 {
   BaseFormPtr    bfp;
   int            i;
+  Int2           val;
   ValidExtraPtr  vep;
 
   vep = GetObjectExtra (p);
   if (vep != NULL) {
-    if (GetValue (vep->verbose) > 1) {
+    val = GetValue (vep->verbose);
+    if (val > 3) {
       doSuppressContext = TRUE;
+      doJustShowAccession = TRUE;
+    } else if (val > 1) {
+      doSuppressContext = TRUE;
+      doJustShowAccession = FALSE;
     } else {
       doSuppressContext = FALSE;
+      doJustShowAccession = FALSE;
     }
     for (i = SEV_NONE; i <= SEV_MAX; i++) {
       vep->counts [i] = 0;
@@ -715,6 +768,7 @@ static void CleanupValidProc (GraphiC g, VoidPtr data)
   vep = (ValidExtraPtr) data;
   if (vep != NULL) {
     vep->messages = ValNodeFreeData (vep->messages);
+    vep->lastmessage = NULL;
     for (vnp = vep->errorfilter; vnp != NULL; vnp = vnp->next) {
       efp = (ErrFltrPtr) vnp->data.ptrvalue;
       if (efp != NULL) {
@@ -898,15 +952,19 @@ extern void CreateValidateWindowEx (ErrNotifyProc notify, CharPtr title,
         PopupItem (vep->verbose, "Verbose");
         PopupItem (vep->verbose, "Normal");
         PopupItem (vep->verbose, "Terse");
+        PopupItem (vep->verbose, "Table");
         if (GetAppProperty ("InternalNcbiSequin") != NULL) {
           SetValue (vep->verbose, 1);
           doSuppressContext = FALSE;
+          doJustShowAccession = FALSE;
         } else if (verbose) {
           SetValue (vep->verbose, 2);
           doSuppressContext = TRUE;
+          doJustShowAccession = FALSE;
         } else {
           SetValue (vep->verbose, 3);
           doSuppressContext = TRUE;
+          doJustShowAccession = FALSE;
         }
         StaticPrompt (c, "Severity", 0, popupMenuHeight, programFont, 'l');
         vep->minlevel = PopupList (c, FALSE, RepopVal); /* was SetVerbosityAndRevalidate */
@@ -1125,9 +1183,11 @@ static CharPtr severityLabel [] = {
 
 static void FillValidBuffer (CharPtr buf, CharPtr text1, CharPtr text2,
                              CharPtr text3, CharPtr hidden, CharPtr message,
-                             CharPtr expanded, ValNodePtr context)
+                             CharPtr expanded, ValNodePtr context,
+                             Boolean justShowAccession)
 {
-  CharPtr     ptr;
+  CharPtr  ptr;
+  Char     temp [256];
   /*
   CharPtr     ctxstr;
   Boolean     notfirst;
@@ -1155,14 +1215,24 @@ static void FillValidBuffer (CharPtr buf, CharPtr text1, CharPtr text2,
       ptr = StringMoveAndConvertTabs (ptr, NULL, "\n");
     }
     */
-    ptr = StringMoveAndConvertTabs (ptr, text1, "\t");
-    ptr = StringMoveAndConvertTabs (ptr, text2, "\t");
-    ptr = StringMoveAndConvertTabs (ptr, text3, "\t");
-    ptr = StringMoveAndConvertTabs (ptr, hidden, "\n\t\t\t\t");
-    ptr = StringMoveAndConvertTabs (ptr, message, "\n");
-    if (expanded != NULL && expanded [0] != '\0') {
-      ptr = StringMoveAndConvertTabs (ptr, NULL, "\n\t\t\t\t");
-      ptr = StringMoveAndConvertTabs (ptr, expanded, "\n");
+    if (justShowAccession) {
+      ptr = StringMoveAndConvertTabs (ptr, message, "\t");
+      ptr = StringMoveAndConvertTabs (ptr, text1, "\t");
+      StringCpy (temp, text2);
+      StringCat (temp, "_");
+      StringCat (temp, text3);
+      ptr = StringMoveAndConvertTabs (ptr, temp, "\t");
+      ptr = StringMoveAndConvertTabs (ptr, hidden, "\n");
+    } else {
+      ptr = StringMoveAndConvertTabs (ptr, text1, "\t");
+      ptr = StringMoveAndConvertTabs (ptr, text2, "\t");
+      ptr = StringMoveAndConvertTabs (ptr, text3, "\t");
+      ptr = StringMoveAndConvertTabs (ptr, hidden, "\n\t\t\t\t");
+      ptr = StringMoveAndConvertTabs (ptr, message, "\n");
+      if (expanded != NULL && expanded [0] != '\0') {
+        ptr = StringMoveAndConvertTabs (ptr, NULL, "\n\t\t\t\t");
+        ptr = StringMoveAndConvertTabs (ptr, expanded, "\n");
+      }
     }
   }
 }
@@ -1288,12 +1358,18 @@ static void ProcessValidMessage (ValidExtraPtr vep, CharPtr text1, CharPtr text2
 
 {
   CharPtr     buf;
+  Boolean     justShowAccession = FALSE;
   size_t      len;
   /* Int2        numItems; */
   Char        str [64];
+  Int2        val;
   ValNodePtr  vnp;
 
   if (vep != NULL) {
+    val = GetValue (vep->verbose);
+    if (val == 4) {
+      justShowAccession = TRUE;
+    }
     len = StringLen (text1) + StringLen (text2) + StringLen (text3) +
           StringLen (message) + StringLen (expanded) + 50 + ctxlen;
     buf = MemGet (len, MGET_CLEAR);
@@ -1302,13 +1378,14 @@ static void ProcessValidMessage (ValidExtraPtr vep, CharPtr text1, CharPtr text2
                (int) subcode, (unsigned int) entityID,
                (unsigned int) itemID, (unsigned int) itemtype);
       FillValidBuffer (buf, text1, text2, text3, str,
-                       message, expanded, context);
+                       message, expanded, context, justShowAccession);
       AppendFilter (vep, text1, text2, NULL, sev, errcode, INT_MIN);
       AppendFilter (vep, text1, text2, text3, sev, errcode, subcode);
-      vnp = ValNodeNew (vep->messages);
+      vnp = ValNodeNew (vep->lastmessage);
       if (vep->messages == NULL) {
         vep->messages = vnp;
       }
+      vep->lastmessage = vnp;
       if (vnp != NULL) {
         vnp->data.ptrvalue = buf;
         if (sev >= minlev || sev == SEV_NONE) {

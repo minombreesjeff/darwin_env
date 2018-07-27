@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: posit.c,v 6.61 2003/08/04 20:43:55 dondosha Exp $";
+static char const rcsid[] = "$Id: posit.c,v 6.72 2004/10/12 15:06:57 papadopo Exp $";
 
-/* $Id: posit.c,v 6.61 2003/08/04 20:43:55 dondosha Exp $
+/* $Id: posit.c,v 6.72 2004/10/12 15:06:57 papadopo Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -32,10 +32,51 @@ static char const rcsid[] = "$Id: posit.c,v 6.61 2003/08/04 20:43:55 dondosha Ex
 
   Contents: utilities for position-based BLAST.
 
-  $Revision: 6.61 $ 
+  $Revision: 6.72 $ 
  *****************************************************************************
 
  * $Log: posit.c,v $
+ * Revision 6.72  2004/10/12 15:06:57  papadopo
+ * 1. Modify residue frequency IO to comply with new scoremat spec
+ * 2. Remove check that residue frequencies read from scoremat are <= 1.0
+ * 3. Pass gap open and gap extend penalties into BposComputation and
+ * 	CposComputation, so that scoremats can contain them
+ *
+ * Revision 6.71  2004/08/23 17:09:22  papadopo
+ * From Michael Gertz: move static arrays out of header and into the one file that needs them
+ *
+ * Revision 6.70  2004/08/05 17:30:53  camacho
+ * Remove initialization of identifier as it is no longer required
+ *
+ * Revision 6.69  2004/07/24 18:56:01  camacho
+ * Fix in posDemographics when GetSequenceWithDenseSeg cannot find sequence data
+ *
+ * Revision 6.68  2004/07/19 17:13:13  papadopo
+ * add capability to perform input and output of residue frequencies in scoremat form; also call PSIMatrixFrequencyRatiosNew before restarting from checkpoint
+ *
+ * Revision 6.67  2004/07/13 13:54:15  camacho
+ * Fix memory leak
+ *
+ * Revision 6.66  2004/06/25 21:54:51  dondosha
+ * Choose ideal values for lambda and K correctly for ungapped search
+ *
+ * Revision 6.65  2004/06/23 14:53:29  camacho
+ * Copy renamed versions of SFreqRatios and its *{New,Free} functions to avoid
+ * dependency ncbitool -> blast
+ *
+ * Revision 6.64  2004/06/22 14:16:46  camacho
+ * Changed signature of posFreqsToMatrix, added use of SFreqRatios structure from
+ * algo/blast/core/ to obtain underlying matrices' frequency ratios.
+ * This change results in using the frequency ratios to provide the scores
+ * for the PSSM in columns where all residue frequencies are 0. Previously the
+ * standard scoring matrix were used.
+ *
+ * Revision 6.63  2004/06/08 14:03:48  camacho
+ * Alejandro Schaffer's fix to spread out gap costs in posDemographics.
+ *
+ * Revision 6.62  2004/05/14 12:13:09  camacho
+ * Made posDemographics non-static for testing purposes.
+ *
  * Revision 6.61  2003/08/04 20:43:55  dondosha
  * Test for selenocysteines when comparing checkpoint sequences with query
  *
@@ -295,6 +336,7 @@ static char const rcsid[] = "$Id: posit.c,v 6.61 2003/08/04 20:43:55 dondosha Ex
 #include <objcode.h>
 #include <objseq.h>
 #include <objsset.h>
+#include <objscoremat.h>
 #include <sequtil.h>
 #include <posit.h>
 #include <txalign.h>
@@ -422,6 +464,9 @@ void LIBCALL posAllocateMemory(posSearchItems * posSearch,
    posSearch->posRowSigma = (Nlm_FloatHi *) MemNew((numSequences + 1) * sizeof(Nlm_FloatHi));
    if (NULL == posSearch->posRowSigma)
      exit(EXIT_FAILURE);
+
+   /* populated in posComputePseudoFreqs or on demand */
+   posSearch->stdFreqRatios = NULL; 
 }
 
 static void freePosFreqs(Nlm_FloatHi ** posFreqs, Int4 length)
@@ -483,6 +528,7 @@ static void posFreeMemory(posSearchItems *posSearch, Int4 querySize)
   MemFree(posSearch->posRowSigma);
   MemFree(posSearch->posIntervalSizes);
   MemFree(posSearch->posUseSequences);
+  posSearch->stdFreqRatios = PSIMatrixFrequencyRatiosFree(posSearch->stdFreqRatios);
   freePosFreqs(posSearch->posFreqs,querySize);
 }
 
@@ -799,8 +845,9 @@ void LIBCALL posPurgeMatches(posSearchItems *posSearch, compactSearchItems * com
         break;
       }
     }
-    if (matchesQuery)
+    if (matchesQuery) {
       posSearch->posUseSequences[i] = FALSE;
+    }
   }
   for(j = 1; j <= posSearch->posNumSequences; j++) {
     if (!posSearch->posUseSequences[j])
@@ -904,7 +951,9 @@ void LIBCALL posPurgeMatches(posSearchItems *posSearch, compactSearchItems * com
 /*Compute general information about the sequences that matched on the
   i-th pass such as how many matched at each query position and what letter
   matched*/
-static void posDemographics(posSearchItems *posSearch, compactSearchItems * compactSearch, SeqAlignPtr listOfSeqAligns)
+void LIBCALL posDemographics(posSearchItems *posSearch, 
+                             compactSearchItems * compactSearch, 
+                             SeqAlignPtr listOfSeqAligns)
 {
    Uint1Ptr q; /*pointers into query */
    Uint1Ptr s; /*pointer into a matching string */
@@ -973,6 +1022,17 @@ static void posDemographics(posSearchItems *posSearch, compactSearchItems * comp
            seqIndex++;
        
        s = GetSequenceWithDenseSeg(curSegs, FALSE, &retrievalOffset, &subjectLength);
+       if (s == NULL) {
+           /* Kludge: set all of this sequence's residues to those of the query
+            * so that it can be purged in posPurgeMatches */
+           for (c = 0; c < length; c++) {
+               posSearch->posDescMatrix[seqIndex+1][c].letter = (Int1) q[c];
+               posSearch->posDescMatrix[seqIndex+1][c].used = TRUE;
+               posSearch->posDescMatrix[seqIndex+1][c].e_value =
+                   compactSearch->ethresh/2;
+           }
+           continue;
+       }
        startQ = 0;
        startS = 1;
        numsegs = curSegs->numseg;
@@ -990,24 +1050,29 @@ static void posDemographics(posSearchItems *posSearch, compactSearchItems * comp
 	     if ((GAP_HERE) == subjectOffset) { /*XX*/
                    for(c = 0, qplace = queryOffset;
                        c < matchLength; c++, qplace++) {
-                       posSearch->posDescMatrix[seqIndex + 1][qplace].used = TRUE;
-                       posSearch->posDescMatrix[seqIndex + 1][qplace].letter = GAP_CHAR;
-                       posSearch->posDescMatrix[seqIndex + 1][qplace].e_value = 1.0;
+                     /*Keep the following test if spreading out gap costs, 
+                       so that in that case a lower E-value non-gap trumps
+                       a higher E-value gap; if not spreading out gap costs
+                       then comment out the test, so that a higher E-value
+                       gap trumps a lower E-value letter*/
+		     if (!posSearch->posDescMatrix[seqIndex+1][qplace].used)
+		       {
+			 posSearch->posDescMatrix[seqIndex + 1][qplace].used = TRUE;
+			 posSearch->posDescMatrix[seqIndex + 1][qplace].letter = GAP_CHAR;
+			 posSearch->posDescMatrix[seqIndex + 1][qplace].e_value = 1.0;
+		       }
                    }
                }
                else {  /*no gap*/
                    for(c = 0, qplace = queryOffset, splace = subjectOffset;
                        c < matchLength; c++, qplace++, splace++) {
-                       if ((!posSearch->posDescMatrix[seqIndex+1][qplace].used) ||
-                           (thisEvalue 
-                            < posSearch->posDescMatrix[seqIndex+1][qplace].e_value)) 
-                           if (!posSearch->posDescMatrix[seqIndex+1][qplace].used)
-                               {
-                                   posSearch->posDescMatrix[seqIndex+1][qplace].letter = (Int1) s[splace]; 
-                                   posSearch->posDescMatrix[seqIndex+1][qplace].used = TRUE; 
-                                   posSearch->posDescMatrix[seqIndex+1][qplace].e_value = 
-                                       thisEvalue;
-                               }
+		     if (!posSearch->posDescMatrix[seqIndex+1][qplace].used)
+		       {
+			 posSearch->posDescMatrix[seqIndex+1][qplace].letter = (Int1) s[splace]; 
+			 posSearch->posDescMatrix[seqIndex+1][qplace].used = TRUE; 
+			 posSearch->posDescMatrix[seqIndex+1][qplace].e_value = 
+			   thisEvalue;
+		       }
                    }
                }
            startQ += 2;
@@ -1305,7 +1370,8 @@ static void  posFreqsToInformation(posSearchItems * posSearch, compactSearchItem
 
 /*Convert pseudo-count frequencies to a score matrix, where standard
 matrix is represented by its frequencies */
-void LIBCALL posFreqsToMatrix(posSearchItems *posSearch, compactSearchItems * compactSearch, Nlm_FloatHi **standardFreqRatios, Int4 multiplier)
+void LIBCALL posFreqsToMatrix(posSearchItems *posSearch, 
+                              compactSearchItems *compactSearch)
 {
    Uint1Ptr q;  /*pointer to the query*/
    Int4 length;  /*length of the query*/
@@ -1345,26 +1411,22 @@ void LIBCALL posFreqsToMatrix(posSearchItems *posSearch, compactSearchItems * co
 	   compactSearch->matrix[q[c]][a] * POSIT_SCALE_FACTOR;
      }
      if (allZeros) {
-       if (NULL == standardFreqRatios) {
-	 for(a = 0; a < alphabetSize; a++) {
-	   posSearch->posMatrix[c][a] = compactSearch->matrix[q[c]][a];
-	   if (compactSearch->matrix[q[c]][a] == BLAST_SCORE_MIN)
-	     posSearch->posPrivateMatrix[c][a] = BLAST_SCORE_MIN;
-	   else
-	     posSearch->posPrivateMatrix[c][a] = POSIT_SCALE_FACTOR*compactSearch->matrix[q[c]][a];
-	 }
+       if ( !posSearch->stdFreqRatios ) {
+         ErrPostEx(SEV_FATAL, 1, 0, "Frequency ratios for %s scoring matrix are not available\n", compactSearch->standardMatrixName);
+         return;
        }
-       else {
+
 	 for(a = 0; a < alphabetSize; a++) {
 	   posSearch->posMatrix[c][a] = compactSearch->matrix[q[c]][a];
 	   if (compactSearch->matrix[q[c]][a] == BLAST_SCORE_MIN)
 	     posSearch->posPrivateMatrix[c][a] = BLAST_SCORE_MIN;
 	   else {
-	     intermediateValue = POSIT_SCALE_FACTOR * multiplier * log(standardFreqRatios[q[c]][a])/NCBIMATH_LN2;
+	     intermediateValue = POSIT_SCALE_FACTOR * 
+             posSearch->stdFreqRatios->bit_scale_factor * 
+             log(posSearch->stdFreqRatios->data[q[c]][a])/NCBIMATH_LN2;
 	     posSearch->posPrivateMatrix[c][a] = Nlm_Nint(intermediateValue);
 	   }
 	 }
-       }
      }
    }
    for(a = 0; a < alphabetSize; a++) {
@@ -1412,7 +1474,6 @@ Nlm_FloatHi ** LIBCALL posComputePseudoFreqs(posSearchItems *posSearch, compactS
    Nlm_FloatHi pseudo, numerator, denominator, qOverPEstimate; /*intermediate terms*/
    Nlm_FloatHi infoSum; /*sum used for information content*/
    Nlm_FloatHi **posFreqs; /*store frequencies*/
-   Nlm_FloatHi **frequencyRatios; /*matrix-specific frequency ratios*/
 
    q = compactSearch->query;
    length = compactSearch->qlength;
@@ -1421,81 +1482,11 @@ Nlm_FloatHi ** LIBCALL posComputePseudoFreqs(posSearchItems *posSearch, compactS
    lambda = compactSearch->lambda_ideal;
    posFreqs = allocatePosFreqs(length, alphabetSize);
 
-   frequencyRatios = allocatePosFreqs(alphabetSize, alphabetSize);
-   if (0 == strcmp(compactSearch->standardMatrixName,"BLOSUM62")) {
-     for(c = 0; c < alphabetSize; c++) {
-       for(a = 0; a < alphabetSize; a++)
-	 frequencyRatios[c][a] = BLOSUM62_FREQRATIOS[c][a];
-     }
+   if (!posSearch->stdFreqRatios) {
+     posSearch->stdFreqRatios =
+           PSIMatrixFrequencyRatiosNew(compactSearch->standardMatrixName);
    }
-   else {
-     if (0 == strcmp(compactSearch->standardMatrixName,"BLOSUM45")) {
-       for(c = 0; c < alphabetSize; c++) {
-	 for(a = 0; a < alphabetSize; a++)
-	   frequencyRatios[c][a] = BLOSUM45_FREQRATIOS[c][a];
-       }
-     }
-     else {
-       if (0 == strcmp(compactSearch->standardMatrixName,"BLOSUM80")) {
-	 for(c = 0; c < alphabetSize; c++) {
-	   for(a = 0; a < alphabetSize; a++)
-	     frequencyRatios[c][a] = BLOSUM80_FREQRATIOS[c][a];
-	 }
-       }
-       else {
-	 if (0 == strcmp(compactSearch->standardMatrixName,"BLOSUM50")) {
-	   for(c = 0; c < alphabetSize; c++) {
-	     for(a = 0; a < alphabetSize; a++)
-	       frequencyRatios[c][a] = BLOSUM50_FREQRATIOS[c][a];
-	   }
-	 }
-	 else {
-	   if (0 == strcmp(compactSearch->standardMatrixName,"BLOSUM90")) {
-	     for(c = 0; c < alphabetSize; c++) {
-	       for(a = 0; a < alphabetSize; a++)
-		 frequencyRatios[c][a] = BLOSUM90_FREQRATIOS[c][a];
-	     }
-	   }
-	   else {
-	     if (0 == strcmp(compactSearch->standardMatrixName,"PAM30")) {
-	       for(c = 0; c < alphabetSize; c++) {
-		 for(a = 0; a < alphabetSize; a++)
-		   frequencyRatios[c][a] = PAM30_FREQRATIOS[c][a];
-	       }
-	     }
-	     else {
-	       if (0 == strcmp(compactSearch->standardMatrixName,"PAM70")) {
-		 for(c = 0; c < alphabetSize; c++) {
-		   for(a = 0; a < alphabetSize; a++)
-		     frequencyRatios[c][a] = PAM70_FREQRATIOS[c][a];
-		 }
-	       }
-	       else {
-		 if (0 == strcmp(compactSearch->standardMatrixName,"PAM250")) {
-		   for(c = 0; c < alphabetSize; c++) {
-		     for(a = 0; a < alphabetSize; a++)
-		       frequencyRatios[c][a] = PAM250_FREQRATIOS[c][a];
-		   }
-		 }
-		 else {
-		   if ((0 == strcmp(compactSearch->standardMatrixName,"BLOSUM62_20"))
-		       || (0 == strcmp(compactSearch->standardMatrixName,"BLOSUM62_20A")) ||
-		       (0 == strcmp(compactSearch->standardMatrixName,"BLOSUM62_20B"))) {
-		     for(c = 0; c < alphabetSize; c++) {
-		       for(a = 0; a < alphabetSize; a++)
-			 frequencyRatios[c][a] = BLOSUM62_FREQRATIOS[c][a];
-		     }
-		   }
-		   else
-		     ErrPostEx(SEV_FATAL, 1, 0, "blastpgp: Cannot find aa frequencies for matrix %s\n", compactSearch->standardMatrixName);
-		 }
-	       }
-	     }
-	   }
-	 }
-       }
-     }
-   }
+
    for(c = 0; c < length; c++) {
      if (Xchar != q[c]) {
        infoSum = 0;
@@ -1506,7 +1497,7 @@ Nlm_FloatHi ** LIBCALL posComputePseudoFreqs(posSearchItems *posSearch, compactS
 	   for (aSub = 0; aSub < alphabetSize; aSub++)
 	     if(compactSearch->matrix[a][aSub] != BLAST_SCORE_MIN) 
 	       pseudo += (posSearch->posMatchWeights[c][aSub] *
-			frequencyRatios[a][aSub]);
+			posSearch->stdFreqRatios->data[a][aSub]);
 	   pseudo *= (compactSearch->pseudoCountConst);
            Sigma = posSearch->posSigma[c];
            intervalLength = posSearch->posIntervalSizes[c];
@@ -1518,10 +1509,6 @@ Nlm_FloatHi ** LIBCALL posComputePseudoFreqs(posSearchItems *posSearch, compactS
 	   /*Note artificial multiplication by standard probability to
              normalize*/
            posFreqs[c][a] = qOverPEstimate * compactSearch->standardProb[a];
-	   if (0 == strcmp(compactSearch->standardMatrixName,"BLOSUM62_20A"))
-	     posFreqs[c][a] *= 0.9666;
-	   if (0 == strcmp(compactSearch->standardMatrixName,"BLOSUM62_20B"))
-	     posFreqs[c][a] *= 0.9344;
 	 if (0.0 != qOverPEstimate && (compactSearch->standardProb[a] > posEpsilon))
 	   infoSum += qOverPEstimate * compactSearch->standardProb[a] * log(qOverPEstimate)/ NCBIMATH_LN2;
 	 }
@@ -1536,7 +1523,6 @@ Nlm_FloatHi ** LIBCALL posComputePseudoFreqs(posSearchItems *posSearch, compactS
          posFreqs[c][a] = 0;
        }
    }
-  freePosFreqs(frequencyRatios, alphabetSize);
   return(posFreqs);
 }
 
@@ -1565,7 +1551,7 @@ void LIBCALL posScaling(posSearchItems *posSearch, compactSearchItems * compactS
 }
 
 
-Int4Ptr * LIBCALL CposComputation(posSearchItems *posSearch, BlastSearchBlkPtr search, compactSearchItems * compactSearch, SeqAlignPtr listOfSeqAligns, Char *ckptFileName, Boolean patternSearchStart, ValNodePtr * error_return, Nlm_FloatHi weightExponent)
+Int4Ptr * LIBCALL CposComputation(posSearchItems *posSearch, BlastSearchBlkPtr search, compactSearchItems * compactSearch, SeqAlignPtr listOfSeqAligns, Char *ckptFileName, Boolean patternSearchStart, Int4 scorematOutput, Bioseq *query_bsp, Int4 gap_open, Int4 gap_extend, ValNodePtr * error_return, Nlm_FloatHi weightExponent)
 {
     Int4 numalign, numseq; /*number of alignments and matches in previous round*/
     
@@ -1588,9 +1574,15 @@ Int4Ptr * LIBCALL CposComputation(posSearchItems *posSearch, BlastSearchBlkPtr s
     if (NULL == search->sbp->posFreqs)
       search->sbp->posFreqs =  allocatePosFreqs(compactSearch->qlength, compactSearch->alphabetSize);
     copyPosFreqs(posSearch->posFreqs,search->sbp->posFreqs, compactSearch->qlength, compactSearch->alphabetSize);
-    if (NULL != ckptFileName)
+    if (NULL != ckptFileName) {
+      if (scorematOutput == NO_SCOREMAT_IO)
         posTakeCheckpoint(posSearch, compactSearch, ckptFileName, error_return);
-    posFreqsToMatrix(posSearch,compactSearch, NULL, 1);
+      else
+        posTakeScoremat(posSearch, compactSearch, ckptFileName,
+                        scorematOutput, query_bsp, gap_open,
+                        gap_extend, error_return);
+    }
+    posFreqsToMatrix(posSearch,compactSearch);
     posScaling(posSearch, compactSearch);
     return posSearch->posMatrix;
 }
@@ -1604,6 +1596,7 @@ Int4Ptr * LIBCALL WposComputation(compactSearchItems * compactSearch, SeqAlignPt
     Int2 alphabetSize;
     Int4Ptr *posMatrix;
     
+    /* Why isn't posAllocateMemory() called? */
     posSearch = (posSearchItems *) MemNew(1 * sizeof(posSearchItems));
     qlength = compactSearch->qlength;
     alphabetSize = compactSearch->alphabetSize;
@@ -1629,6 +1622,9 @@ Int4Ptr * LIBCALL WposComputation(compactSearchItems * compactSearch, SeqAlignPt
           are passed as input from PSSM.
        */
        posSearch->posFreqs = posFreqs;
+       ASSERT(compactSearch->standardMatrixName);
+       posSearch->stdFreqRatios =
+           PSIMatrixFrequencyRatiosNew(compactSearch->standardMatrixName);
        posSearch->posMatrix = (BLAST_Score **) MemNew((qlength + 1) * sizeof(BLAST_Score *));
        posSearch->posPrivateMatrix = (BLAST_Score **) MemNew((qlength + 1) * sizeof(BLAST_Score *));
        for(i = 0; i <= qlength; i++) {
@@ -1636,10 +1632,11 @@ Int4Ptr * LIBCALL WposComputation(compactSearchItems * compactSearch, SeqAlignPt
           posSearch->posPrivateMatrix[i] = (BLAST_Score *) MemNew(alphabetSize * sizeof(BLAST_Score));
        }
     }
-    posFreqsToMatrix(posSearch,compactSearch, NULL, 1);
+    posFreqsToMatrix(posSearch,compactSearch);
     posScaling(posSearch, compactSearch);
     posMatrix = posSearch->posMatrix;
     
+    /* Why isn't posFreeMemory() called? */
     if (listOfSeqAligns != NULL) {
        for(i = 0; i <= qlength ; i++) {
           MemFree(posSearch->posFreqs[i]);
@@ -1666,6 +1663,7 @@ Int4Ptr * LIBCALL WposComputation(compactSearchItems * compactSearch, SeqAlignPt
     for(i = 0; i <= qlength ; i++)
        MemFree(posSearch->posPrivateMatrix[i]);
     MemFree(posSearch->posPrivateMatrix);
+    posSearch->stdFreqRatios = PSIMatrixFrequencyRatiosFree(posSearch->stdFreqRatios);
     MemFree(posSearch);
 
     return posMatrix;
@@ -2004,8 +2002,14 @@ void LIBCALL copySearchItems(compactSearchItems * compactSearch, BlastSearchBlkP
    compactSearch->kbp_gap_psi = search->sbp->kbp_gap_psi;
    compactSearch->kbp_std = search->sbp->kbp_std;
    compactSearch->kbp_gap_std = search->sbp->kbp_gap_std;
-   compactSearch->lambda_ideal = search->sbp->kbp_ideal->Lambda;
-   compactSearch->K_ideal = search->sbp->kbp_ideal->K;
+   if (search->pbp->gapped_calculation) {
+     compactSearch->lambda_ideal = search->sbp->kbp_ideal->Lambda;
+     compactSearch->K_ideal = search->sbp->kbp_ideal->K;
+   }
+   else {
+     compactSearch->lambda_ideal = search->sbp->kbp[0] ->Lambda;
+     compactSearch->K_ideal = search->sbp->kbp[0]->K;
+   }
    compactSearch->use_best_align = search->pbp->use_best_align;
 
    stdrfp = BlastResFreqNew(search->sbp);
@@ -2203,35 +2207,312 @@ Boolean LIBCALL posTakeCheckpoint(posSearchItems * posSearch, compactSearchItems
   return(TRUE);
 }
 
-/*Read a checkpoint from the end of a previous PSI-BLAST round, get
-query length, query, and position-specific target frequencies.
-Returns TRUE if checkpoint was read sucessfully and FALSE otherwise. */
-Boolean LIBCALL  posReadCheckpoint(posSearchItems * posSearch, compactSearchItems * compactSearch, CharPtr fileName, ValNodePtr * error_return)
+/* Like posTakeCheckpoint, posTakeScoremat will emit the position
+   frequencies that have been generated. Unlike that routine, the
+   file to be written is an ASN.1 encoded PssmWithParameters object. */
+
+Boolean LIBCALL posTakeScoremat(posSearchItems *posSearch, 
+                       compactSearchItems *compactSearch, 
+                       CharPtr filename, Int4 scorematOutput,
+                       Bioseq *query_bsp, Int4 gap_open, 
+                       Int4 gap_extend, ValNodePtr *error_return)
+{
+  AsnIoPtr outfile = NULL;
+  PssmWithParametersPtr scoremat = NULL;
+  PssmIntermediateDataPtr freqs = NULL;
+  PssmParametersPtr params = NULL;
+  FormatRpsDbParametersPtr rpsparams = NULL;
+  PssmPtr pssm = NULL;
+  Int4 i, j;
+  Boolean status = FALSE;
+  Bioseq *bsp;
+
+  scoremat = PssmWithParametersNew();
+  if (scoremat == NULL) {
+    BlastConstructErrorMessage("posTakeScoremat", 
+               "Could not allocate PssmWithParameters", 1, error_return);
+    goto bail_out;
+  }
+
+  /* Add information about the underlying score matrix.
+     Note that blastpgp will ignore this information */
+
+  params = scoremat->params = PssmParametersNew();
+  if (params == NULL) {
+    BlastConstructErrorMessage("posTakeScoremat", 
+               "Could not allocate PssmParameters", 1, error_return);
+    goto bail_out;
+  }
+  rpsparams = params->rpsdbparams = FormatRpsDbParametersNew();
+  if (params == NULL) {
+    BlastConstructErrorMessage("posTakeScoremat", 
+               "Could not allocate RpsDbParameters", 1, error_return);
+    goto bail_out;
+  }
+  rpsparams->matrixName = strdup(compactSearch->standardMatrixName);
+  rpsparams->gapOpen = gap_open;
+  rpsparams->gapExtend = gap_extend;
+
+  /* Build up the objects describing the residue frequencies */
+
+  pssm = scoremat->pssm = PssmNew();
+  if (pssm == NULL) {
+    BlastConstructErrorMessage("posTakeScoremat", 
+               "Could not allocate PSSM object", 1, error_return);
+    goto bail_out;
+  }
+  freqs = pssm->intermediateData = PssmIntermediateDataNew();
+  if (freqs == NULL) {
+    BlastConstructErrorMessage("posTakeScoremat", 
+               "Could not allocate PssmIntermediateData", 1, error_return);
+    goto bail_out;
+  }
+
+  pssm->isProtein = TRUE;
+  pssm->numRows = compactSearch->alphabetSize;
+  pssm->numColumns = compactSearch->qlength;
+
+  for (i = 0; i < pssm->numColumns; i++) {
+    for (j = 0; j < pssm->numRows; j++) {
+      ValNodeAddFloat(&freqs->freqRatios, 0, posSearch->posFreqs[i][j]);
+    }
+  }
+
+  /* Do not make a copy of the query bioseq; use it directly.
+     The '1' below indicates a single bioseq (not a bioseq-set) */
+
+  ValNodeAddPointer(&pssm->query, 1, query_bsp);
+  if (pssm->query == NULL) {
+    BlastConstructErrorMessage("posTakeScoremat", 
+               "Could not attach bioseq to scoremat", 1, error_return);
+    goto bail_out;
+  }
+
+  if (scorematOutput == ASCII_SCOREMAT)
+     outfile = AsnIoOpen(filename, "w");
+  else
+     outfile = AsnIoOpen(filename, "wb");
+
+  if (outfile == NULL) {
+    ErrPostEx(SEV_FATAL, 1, 0, "Unable to open matrix output file %s\n", 
+          filename);
+    goto bail_out;
+  }
+
+  PssmWithParametersAsnWrite(scoremat, outfile, NULL);
+  status = TRUE;
+
+bail_out:
+  AsnIoClose(outfile);
+
+  /* explicitly free the ValNode pointing to the query bioseq.
+     This will prevent the ScoreMatrix freeing routine
+     from also freeing the query bioseq, which we did not
+     allocate */
+
+  pssm->query = ValNodeFree(pssm->query);
+
+  /* free everything else */
+
+  scoremat = PssmWithParametersFree(scoremat);
+  return status;
+}
+
+Boolean LIBCALL posReadPosFreqsScoremat(posSearchItems * posSearch, compactSearchItems * compactSearch, CharPtr fileName, Int4 scorematInput, ValNodePtr * error_return)
+{
+  AsnIoPtr infile = NULL;
+  PssmWithParametersPtr scoremat = NULL;
+  PssmPtr pssm = NULL;
+  PssmIntermediateDataPtr freqs = NULL;
+  Int4 i, j, c;
+  ValNodePtr freq_list;
+  Bioseq *bsp;
+
+  if (scorematInput == ASCII_SCOREMAT)
+     infile = AsnIoOpen(fileName, "r");
+  else
+     infile = AsnIoOpen(fileName, "rb");
+
+  if (infile == NULL) {
+    ErrPostEx(SEV_WARNING, 0, 0,"Could not open scoremat file\n");
+    return FALSE;
+  }
+
+  scoremat = PssmWithParametersAsnRead(infile, NULL);
+  AsnIoClose(infile);
+  if (scoremat == NULL) {
+    ErrPostEx(SEV_WARNING, 0, 0, "Could not read scoremat from input file\n");
+    return FALSE;
+  }
+  pssm = scoremat->pssm;
+  if (pssm == NULL) {
+    ErrPostEx(SEV_WARNING, 0, 0,"Scoremat is empty\n");
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  freqs = pssm->intermediateData;
+  if (freqs == NULL) {
+    ErrPostEx(SEV_WARNING, 0, 0,"Scoremat doesn't contain intermediate data\n");
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  if (freqs->freqRatios == NULL) {
+    ErrPostEx(SEV_WARNING, 0, 0,
+            "Scoremat does not contain position frequencies\n");
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  if (pssm->numRows != compactSearch->alphabetSize) {
+    ErrPostEx(SEV_WARNING, 0, 0, "Wrong alphabet size of %d in "
+              "input scoremat\n", pssm->numRows);
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  if (!pssm->query || !pssm->query->data.ptrvalue) {
+    ErrPostEx(SEV_WARNING, 0, 0, "Missing sequence data in input scoremat\n");
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  bsp = (Bioseq *)(pssm->query->data.ptrvalue);
+  if (pssm->numColumns != bsp->length) {
+    ErrPostEx(SEV_WARNING, 0, 0, "Different sequence lengths "
+              "(%d and %d) in input scoremat\n", pssm->numColumns, bsp->length);
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  if (pssm->numColumns != compactSearch->qlength) {
+    ErrPostEx(SEV_WARNING, 0, 0, "Scoremat sequence length "
+              "(%d) does not match query length (%d)\n", 
+              pssm->numColumns, compactSearch->qlength);
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  if (!bsp->seq_data || !ISA_aa(bsp->mol) || 
+      bsp->seq_data_type != Seq_code_ncbieaa) {
+    ErrPostEx(SEV_WARNING, 0, 0, 
+              "Sequence within checkpoint file has the wrong format\n");
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  BSSeek(bsp->seq_data, 0, SEEK_SET);
+
+  /* verify the input query is the same as the sequence
+     within the checkpoint file */
+
+  for (i = 0; i < compactSearch->qlength; i++) {
+    c = BSGetByte(bsp->seq_data);
+    if (c == EOF) {
+      ErrPostEx(SEV_WARNING, 0, 0, "Premature end of sequence data\n");
+      PssmWithParametersFree(scoremat);
+      return FALSE;
+    }
+    c = ResToInt((Char)c);
+    if (c != compactSearch->query[i]) {
+      if (compactSearch->query[i] == Xchar) {
+        ErrPostEx(SEV_WARNING, 0, 0, 
+                     "Query sequence contains '%c' at position %d; "
+                     "if filtering was used, rerun the search with "
+                     "filtering turned off ('-F F')\n", getRes(Xchar), i);
+      }
+      else {
+        ErrPostEx(SEV_WARNING, 0, 0, 
+                     "Query sequence contains '%c' at position %d, "
+                     "while sequence withing checkpoint file contains "
+                     "'%c' at this position\n", 
+                     getRes(compactSearch->query[i]), i, getRes(c));
+      }
+      PssmWithParametersFree(scoremat);
+      return FALSE;
+    }
+  }
+
+  /* Read in the residue frequencies, verify they fall
+     in the correct range, and verify that the linked list
+     of residue frequencies is exactly as long as it should be */
+
+  freq_list = freqs->freqRatios;
+  if (pssm->byRow == FALSE) {
+    for (i = 0; i < pssm->numColumns; i++) {
+      for (j = 0; j < pssm->numRows; j++) {
+        if (freq_list == NULL)
+          break;
+        posSearch->posFreqs[i][j] = freq_list->data.realvalue;
+
+        if (posSearch->posFreqs[i][j] < 0.0) {
+          ErrPostEx(SEV_WARNING, 0, 0, "position frequency (%d,%d) "
+                    "out of bounds\n", i, j);
+          PssmWithParametersFree(scoremat);
+          return FALSE;
+        }
+
+        freq_list = freq_list->next;
+      }
+      if (j < pssm->numRows)
+        break;
+    }
+  }
+  else {
+    for (j = 0; j < pssm->numRows; j++) {
+      for (i = 0; i < pssm->numColumns; i++) {
+        if (freq_list == NULL)
+          break;
+        posSearch->posFreqs[i][j] = freq_list->data.realvalue;
+
+        if (posSearch->posFreqs[i][j] < 0.0) {
+          ErrPostEx(SEV_WARNING, 0, 0, "position frequency (%d,%d) "
+                    "out of bounds\n", i, j);
+          PssmWithParametersFree(scoremat);
+          return FALSE;
+        }
+
+        freq_list = freq_list->next;
+      }
+      if (i < pssm->numColumns)
+        break;
+    }
+  }
+
+  if (i < pssm->numColumns || j < pssm->numRows) {
+    ErrPostEx(SEV_WARNING, 0, 0, "Not enough position "
+              "frequencies in input scoremat\n");
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  if (freq_list != NULL) {
+    ErrPostEx(SEV_WARNING, 0, 0, "Too many position "
+              "frequencies in input scoremat\n");
+    PssmWithParametersFree(scoremat);
+    return FALSE;
+  }
+  PssmWithParametersFree(scoremat);
+  return TRUE;
+}
+
+static Boolean posReadPosFreqsStandard(posSearchItems * posSearch, compactSearchItems * compactSearch, CharPtr fileName, ValNodePtr * error_return)
 {
   FILE * checkFile; /*file in which to take the checkpoint*/
   Int4 length1, length2, c; /*length of query sequence, and an index for it*/
   Char  nextRes; /*next residue in stored copy of the query sequence*/
   Uint1Ptr oldQuery; /*array to hold the query sequence*/
-  Int4 i,j; /*indices for position and character in alphabet*/
 
-  BlastConstructErrorMessage("posReadCheckpoint", "Attempting to recover data from previous checkpoint\n", 1, error_return);
+  length1 = compactSearch->qlength;
+
   checkFile = FileOpen(fileName, "rb");  
   if (NULL == checkFile) {
-    BlastConstructErrorMessage("posReadCheckpoint", "Could not open checkpoint file\n", 1, error_return);
+    BlastConstructErrorMessage("posReadPosFreqsStandard", "Could not open checkpoint file\n", 1, error_return);
     return(FALSE);
   }
-  length1 = compactSearch->qlength;
   getCkptInt4(length2,checkFile);
   if (length1 != length2) {
     ErrPostEx(SEV_WARNING, 0, 0, "Invalid usage of checkpoint recovery; old query has length %ld, new query has length %ld", (long) length2,  (long) length1);
-    BlastConstructErrorMessage("posReadCheckpoint", "Failed to recover data\n", 1, error_return);
+    BlastConstructErrorMessage("posReadPosFreqsStandard", "Failed to recover data\n", 1, error_return);
     FileClose(checkFile);
     return(FALSE);
   }
   oldQuery = (Uint1Ptr) MemNew(length1 * sizeof(Uint1));
   if (NULL == oldQuery) {
-    BlastConstructErrorMessage("posReadCheckpoint", "Failed to reconstruct previous query\n", 1, error_return);
-    BlastConstructErrorMessage("posReadCheckpoint", "Failed to recover data\n", 1, error_return);
+    BlastConstructErrorMessage("posReadPosFreqsStandard", "Failed to reconstruct previous query\n", 1, error_return);
+    BlastConstructErrorMessage("posReadPosFreqsStandard", "Failed to recover data\n", 1, error_return);
     FileClose(checkFile);
     return(FALSE);
   }  
@@ -2243,7 +2524,6 @@ Boolean LIBCALL  posReadCheckpoint(posSearchItems * posSearch, compactSearchItem
     if ((oldQuery[c] != compactSearch->query[c]) && (oldQuery[c] != Xchar)) {
                                 /* Error massage Added by Natsuhiko */
       if (compactSearch->query[c] == Xchar) {
-        /* printf("\n oldQuery[c]=%c Xchar=%c", getRes(oldQuery[c]), getRes(Xchar));  */
         ErrPostEx(SEV_WARNING, 0, 0, "\nStored query has a %c at position %ld, while new query has a %c there.\n%c appears in query sequence: The query could be filtered. Run with \"-F F\" option to turn the filter off.",getRes(oldQuery[c]), (long) c, getRes(compactSearch->query[c]),
                   getRes(compactSearch->query[c]));
       }
@@ -2251,7 +2531,7 @@ Boolean LIBCALL  posReadCheckpoint(posSearchItems * posSearch, compactSearchItem
       ErrPostEx(SEV_WARNING, 0, 0, "Stored query has a %c at position %ld, while new query has a %c there",getRes(oldQuery[c]), (long) c, getRes(compactSearch->query[c]));
       }
 
-      BlastConstructErrorMessage("posReadCheckpoint", "Failed to recover data\n", 1, error_return);
+      BlastConstructErrorMessage("posReadPosFreqsStandard", "Failed to recover data\n", 1, error_return);
       MemFree(oldQuery);
       FileClose(checkFile);
       return(FALSE);
@@ -2261,15 +2541,36 @@ Boolean LIBCALL  posReadCheckpoint(posSearchItems * posSearch, compactSearchItem
                 getRes(compactSearch->query[c]), getRes(oldQuery[c])); }
 
   }
+  getCkptFreqMatrix(posSearch->posFreqs,length1,compactSearch->alphabetSize,checkFile);
+  MemFree(oldQuery);
+  FileClose(checkFile);
+  return(TRUE);
+}
+
+/*Read a checkpoint from the end of a previous PSI-BLAST round, get
+query length, query, and position-specific target frequencies.
+Returns TRUE if checkpoint was read sucessfully and FALSE otherwise. */
+Boolean LIBCALL  posReadCheckpoint(posSearchItems * posSearch, compactSearchItems * compactSearch, CharPtr fileName, Int4 scorematInput, ValNodePtr * error_return)
+{
+  Int4 length1;    /*length of query sequence*/
+  Int4 i,j;      /*indices for position and character in alphabet*/
+  Boolean FreqsRead;
+
+  BlastConstructErrorMessage("posReadCheckpoint", "Attempting to recover data from previous checkpoint\n", 1, error_return);
+  length1 = compactSearch->qlength;
+
+  /* allocate memory for the PSSMs and position frequency matrix */
+
   posSearch->posMatrix = (BLAST_Score **) MemNew((length1 + 1) * sizeof(BLAST_Score *));
   posSearch->posPrivateMatrix = (BLAST_Score **) MemNew((length1 + 1) * sizeof(BLAST_Score *));
   posSearch->posFreqs = (Nlm_FloatHi **) MemNew((length1 + 1) * sizeof(Nlm_FloatHi *));
+  ASSERT(compactSearch->standardMatrixName);
+  posSearch->stdFreqRatios =
+           PSIMatrixFrequencyRatiosNew(compactSearch->standardMatrixName);
   if ((NULL == posSearch->posMatrix) || (NULL == posSearch->posPrivateMatrix) || (NULL == posSearch->posFreqs)) {
 
     BlastConstructErrorMessage("posReadCheckpoint", "Failed to allocate position-specific score matrix", 1, error_return);
     BlastConstructErrorMessage("posReadCheckpoint", "Failed to recover data\n", 1, error_return);
-    MemFree(oldQuery);
-    FileClose(checkFile);
     return(FALSE);
   }
   for(i = 0; i <= length1; i++) {
@@ -2280,21 +2581,30 @@ Boolean LIBCALL  posReadCheckpoint(posSearchItems * posSearch, compactSearchItem
     if ((NULL == posSearch->posMatrix[i]) || (NULL == posSearch->posPrivateMatrix[i]) || (NULL == posSearch->posFreqs[i])) {
       BlastConstructErrorMessage("posReadCheckpoint", "Failed to allocate position-specific score matrix", 1, error_return);
       BlastConstructErrorMessage("posReadCheckpoint", "Failed to recover data\n", 1, error_return);
-      MemFree(oldQuery);
-      FileClose(checkFile);
       return(FALSE);
     }
     for(j = 0; j < compactSearch->alphabetSize; j++) {
       posSearch->posFreqs[i][j] = 0.0;
     }
   }
-  getCkptFreqMatrix(posSearch->posFreqs,length1,compactSearch->alphabetSize,checkFile);
+
+  if (scorematInput == NO_SCOREMAT_IO) {
+    FreqsRead = posReadPosFreqsStandard(posSearch, compactSearch, 
+                      fileName, error_return);
+  }
+  else {
+    FreqsRead = posReadPosFreqsScoremat(posSearch, compactSearch, 
+                      fileName, scorematInput, error_return);
+  }
+  if (FreqsRead != TRUE) {
+    BlastConstructErrorMessage("posReadCheckpoint", "Data recovery failed\n", 
+                                                1, error_return);
+    return(FALSE);
+  }
   posFreqsToInformation(posSearch,compactSearch);
-  posFreqsToMatrix(posSearch,compactSearch, NULL, 1);
+  posFreqsToMatrix(posSearch,compactSearch);
   posScaling(posSearch, compactSearch);
   BlastConstructErrorMessage("posReadCheckpoint", "Data recovered successfully\n", 1, error_return);
-  MemFree(oldQuery);
-  FileClose(checkFile);
   return(TRUE);
 }
 
@@ -2663,7 +2973,8 @@ static void posProcessAlignment(posSearchItems *posSearch, compactSearchItems *c
 one round to recover from a multiple alignment checkpoint. */
 Int4Ptr * LIBCALL BposComputation(posSearchItems *posSearch, BlastSearchBlkPtr
    search, compactSearchItems * compactSearch, Char *ckptFileName, 
-   Char *takeCkptFileName, ValNodePtr * error_return)
+   Char *takeCkptFileName, Int4 scorematOutput, Bioseq *query_bsp,
+   Int4 gap_open, Int4 gap_extend, ValNodePtr * error_return)
 {
   Int4 numSeqs, numBlocks, alignLength; /*number of sequences, number of pieces
                         of alignment, total length of the alignment*/
@@ -2698,10 +3009,830 @@ Int4Ptr * LIBCALL BposComputation(posSearchItems *posSearch, BlastSearchBlkPtr
   if (NULL == search->sbp->posFreqs)
     search->sbp->posFreqs =  allocatePosFreqs(compactSearch->qlength, compactSearch->alphabetSize);
   copyPosFreqs(posSearch->posFreqs,search->sbp->posFreqs, compactSearch->qlength, compactSearch->alphabetSize);
-  if (NULL != takeCkptFileName)
-    posTakeCheckpoint(posSearch, compactSearch, takeCkptFileName, error_return);
-  posFreqsToMatrix(posSearch,compactSearch, NULL, 1);
+  if (NULL != takeCkptFileName) {
+    if (scorematOutput == NO_SCOREMAT_IO)
+      posTakeCheckpoint(posSearch, compactSearch, takeCkptFileName, error_return);
+    else
+      posTakeScoremat(posSearch, compactSearch, takeCkptFileName, scorematOutput, query_bsp, gap_open, gap_extend, error_return);
+  }
+  posFreqsToMatrix(posSearch,compactSearch);
   posScaling(posSearch, compactSearch);
   return posSearch->posMatrix;
 }
 
+/****************************************************************************/
+/* PLEASE NOTE: The following structure and the PSIMatrixFrequencyRatios*
+ * functions have been copied and renamed from
+ * algo/blast/core/matrix_freq_ratios.[hc] to eliminate a dependency from the
+ * ncbitool library to the blast library. 
+ */
+#ifndef BLOSUM62_20A_SCALE_MULTIPLIER
+#define BLOSUM62_20A_SCALE_MULTIPLIER 0.9666
+#endif
+
+#ifndef BLOSUM62_20B_SCALE_MULTIPLIER
+#define BLOSUM62_20B_SCALE_MULTIPLIER 0.9344
+#endif
+
+
+/*underlying Amino Acid frequecies for specific score matrices according
+  to Jorja Henikoff for BLOSUMs*/
+static Nlm_FloatHi BLOSUM45_FREQUENCIES[PROTEIN_ALPHABET] = {
+  0.000, 0.078, 0.000, 0.024, 0.050, 0.058, 0.046, 0.075, 0.025, 0.062, 0.060,
+  0.094, 0.025, 0.042, 0.043, 0.036, 0.052, 0.061, 0.052, 0.070, 0.013, 0.000,
+  0.034, 0.000, 0.000, 0.000
+};
+
+static Nlm_FloatHi BLOSUM62_FREQUENCIES[PROTEIN_ALPHABET] = {
+  0.000,   0.07422, 0.000,   0.02469, 0.05363, 0.05431, 0.04742, 0.07415,
+  0.02621, 0.06792, 0.05816, 0.09891, 0.02499, 0.04465, 0.03854, 0.03426,
+  0.05161, 0.05723, 0.05089, 0.07292, 0.01303, 0.000,   0.03228, 0.000,
+  0.000,   0.000
+};
+
+
+static Nlm_FloatHi BLOSUM80_FREQUENCIES[PROTEIN_ALPHABET] = {
+  0.000, 0.073, 0.000, 0.029, 0.054, 0.055, 0.047, 0.077, 0.025, 0.067, 0.055,
+  0.100, 0.024, 0.043, 0.038, 0.034, 0.050, 0.057, 0.050, 0.073, 0.014, 0.000,
+  0.035, 0.000, 0.000, 0.000
+};
+
+/*underlying frequency ratios for BLOSUM62 as determined by Stephen Altschul;
+  Stephen and Jorja Henikoff used different number for B,Z,X*/
+static Nlm_FloatHi BLOSUM62_FREQRATIOS[PROTEIN_ALPHABET][PROTEIN_ALPHABET] = {
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.250},
+  {0.000, 3.903, 0.565, 0.868, 0.545, 0.741, 0.465, 1.057, 0.569, 0.632,
+   0.775, 0.602, 0.723, 0.588, 0.754, 0.757, 0.613, 1.472, 0.984, 0.936,
+   0.416, 0.750, 0.543, 0.747, 0.000, 0.250},
+  {0.000, 0.565, 4.438, 0.345, 4.743, 1.335, 0.324, 0.739, 0.925, 0.334,
+   0.855, 0.297, 0.405, 4.071, 0.554, 0.944, 0.703, 1.058, 0.826, 0.351,
+   0.253, 0.750, 0.409, 1.184, 0.000, 0.250},
+  {0.000, 0.868, 0.345, 19.577, 0.301, 0.286, 0.439, 0.420, 0.355, 0.653,
+   0.349, 0.642, 0.611, 0.398, 0.380, 0.366, 0.309, 0.738, 0.741, 0.756,
+   0.450, 0.750, 0.434, 0.317, 0.000, 0.250},
+  {0.000, 0.545, 4.743, 0.301, 7.398, 1.688, 0.299, 0.634, 0.679, 0.339,
+   0.784, 0.287, 0.346, 1.554, 0.599, 0.897, 0.573, 0.913, 0.695, 0.337,
+   0.232, 0.750, 0.346, 1.382, 0.000, 0.250},
+  {0.000, 0.741, 1.335, 0.286, 1.688, 5.470, 0.331, 0.481, 0.960, 0.331,
+   1.308, 0.373, 0.500, 0.911, 0.679, 1.902, 0.961, 0.950, 0.741, 0.429,
+   0.374, 0.750, 0.496, 4.090, 0.000, 0.250},
+  {0.000, 0.465, 0.324, 0.439, 0.299, 0.331, 8.129, 0.341, 0.652, 0.946,
+   0.344, 1.155, 1.004, 0.354, 0.287, 0.334, 0.381, 0.440, 0.482, 0.745,
+   1.374, 0.750, 2.769, 0.332, 0.000, 0.250},
+  {0.000, 1.057, 0.739, 0.420, 0.634, 0.481, 0.341, 6.876, 0.493, 0.275,
+   0.589, 0.284, 0.396, 0.864, 0.477, 0.539, 0.450, 0.904, 0.579, 0.337,
+   0.422, 0.750, 0.349, 0.503, 0.000, 0.250},
+  {0.000, 0.569, 0.925, 0.355, 0.679, 0.960, 0.652, 0.493, 13.506, 0.326,
+   0.779, 0.381, 0.584, 1.222, 0.473, 1.168, 0.917, 0.737, 0.557, 0.339,
+   0.444, 0.750, 1.798, 1.040, 0.000, 0.250},
+  {0.000, 0.632, 0.334, 0.653, 0.339, 0.331, 0.946, 0.275, 0.326, 3.998,
+   0.396, 1.694, 1.478, 0.328, 0.385, 0.383, 0.355, 0.443, 0.780, 2.417,
+   0.409, 0.750, 0.630, 0.351, 0.000, 0.250},
+  {0.000, 0.775, 0.855, 0.349, 0.784, 1.308, 0.344, 0.589, 0.779, 0.396,
+   4.764, 0.428, 0.625, 0.940, 0.704, 1.554, 2.077, 0.932, 0.793, 0.457,
+   0.359, 0.750, 0.532, 1.403, 0.000, 0.250},
+  {0.000, 0.602, 0.297, 0.642, 0.287, 0.373, 1.155, 0.284, 0.381, 1.694,
+   0.428, 3.797, 1.994, 0.310, 0.371, 0.477, 0.474, 0.429, 0.660, 1.314,
+   0.568, 0.750, 0.692, 0.413, 0.000, 0.250},
+  {0.000, 0.723, 0.405, 0.611, 0.346, 0.500, 1.004, 0.396, 0.584, 1.478,
+   0.625, 1.994, 6.481, 0.474, 0.424, 0.864, 0.623, 0.599, 0.794, 1.269,
+   0.610, 0.750, 0.708, 0.641, 0.000, 0.250},
+  {0.000, 0.588, 4.071, 0.398, 1.554, 0.911, 0.354, 0.864, 1.222, 0.328,
+   0.940, 0.310, 0.474, 7.094, 0.500, 1.001, 0.859, 1.232, 0.984, 0.369,
+   0.278, 0.750, 0.486, 0.946, 0.000, 0.250},
+  {0.000, 0.754, 0.554, 0.380, 0.599, 0.679, 0.287, 0.477, 0.473, 0.385,
+   0.704, 0.371, 0.424, 0.500, 12.838, 0.641, 0.481, 0.755, 0.689, 0.443,
+   0.282, 0.750, 0.363, 0.664, 0.000, 0.250},
+  {0.000, 0.757, 0.944, 0.366, 0.897, 1.902, 0.334, 0.539, 1.168, 0.383,
+   1.554, 0.477, 0.864, 1.001, 0.641, 6.244, 1.406, 0.966, 0.791, 0.467,
+   0.509, 0.750, 0.611, 3.582, 0.000, 0.250},
+  {0.000, 0.613, 0.703, 0.309, 0.573, 0.961, 0.381, 0.450, 0.917, 0.355,
+   2.077, 0.474, 0.623, 0.859, 0.481, 1.406, 6.666, 0.767, 0.678, 0.420,
+   0.395, 0.750, 0.556, 1.133, 0.000, 0.250},
+  {0.000, 1.472, 1.058, 0.738, 0.913, 0.950, 0.440, 0.904, 0.737, 0.443,
+   0.932, 0.429, 0.599, 1.232, 0.755, 0.966, 0.767, 3.843, 1.614, 0.565,
+   0.385, 0.750, 0.557, 0.956, 0.000, 0.250},
+  {0.000, 0.984, 0.826, 0.741, 0.695, 0.741, 0.482, 0.579, 0.557, 0.780,
+   0.793, 0.660, 0.794, 0.984, 0.689, 0.791, 0.678, 1.614, 4.832, 0.981,
+   0.431, 0.750, 0.573, 0.761, 0.000, 0.250},
+  {0.000, 0.936, 0.351, 0.756, 0.337, 0.429, 0.745, 0.337, 0.339, 2.417,
+   0.457, 1.314, 1.269, 0.369, 0.443, 0.467, 0.420, 0.565, 0.981, 3.692,
+   0.374, 0.750, 0.658, 0.444, 0.000, 0.250},
+  {0.000, 0.416, 0.253, 0.450, 0.232, 0.374, 1.374, 0.422, 0.444, 0.409,
+   0.359, 0.568, 0.610, 0.278, 0.282, 0.509, 0.395, 0.385, 0.431, 0.374,
+   38.108, 0.750, 2.110, 0.426, 0.000, 0.250},
+  {0.000, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.000, 0.250},
+  {0.000, 0.543, 0.409, 0.434, 0.346, 0.496, 2.769, 0.349, 1.798, 0.630,
+   0.532, 0.692, 0.708, 0.486, 0.363, 0.611, 0.556, 0.557, 0.573, 0.658,
+   2.110, 0.750, 9.832, 0.541, 0.000, 0.250},
+  {0.000, 0.747, 1.184, 0.317, 1.382, 4.090, 0.332, 0.503, 1.040, 0.351,
+   1.403, 0.413, 0.641, 0.946, 0.664, 3.582, 1.133, 0.956, 0.761, 0.444,
+   0.426, 0.750, 0.541, 3.893, 0.000, 0.250},
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.250},
+  {0.250, 0.250, 0.250, 0.250, 0.250, 0.250, 0.250, 0.250, 0.250, 0.250,
+   0.250, 0.250, 0.250, 0.250, 0.250, 0.250, 0.250, 0.250, 0.250, 0.250,
+   0.250, 0.250, 0.250, 0.250, 0.250, 1.333},
+};
+
+static Nlm_FloatHi PAM30_FREQRATIOS[PROTEIN_ALPHABET][PROTEIN_ALPHABET] = {
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.003},
+  {0.000, 7.789, 0.302, 0.108, 0.317, 0.453, 0.057, 0.576, 0.083, 0.199,
+   0.095, 0.115, 0.189, 0.285, 0.593, 0.235, 0.091, 0.875, 0.827, 0.477,
+   0.010, 0.750, 0.070, 0.358, 0.000, 0.003},
+  {0.000, 0.302, 8.118, 0.015, 8.456, 1.472, 0.027, 0.338, 0.664, 0.126,
+   0.441, 0.049, 0.034, 7.726, 0.102, 0.368, 0.082, 0.604, 0.353, 0.067,
+   0.032, 0.750, 0.114, 0.991, 0.000, 0.003},
+  {0.000, 0.108, 0.015, 27.591, 0.008, 0.008, 0.012, 0.042, 0.078, 0.119,
+   0.008, 0.006, 0.009, 0.024, 0.063, 0.008, 0.068, 0.379, 0.068, 0.132,
+   0.005, 0.750, 0.258, 0.008, 0.000, 0.003},
+  {0.000, 0.317, 8.456, 0.008, 14.236, 2.342, 0.006, 0.326, 0.271, 0.080,
+   0.220, 0.014, 0.023, 1.756, 0.068, 0.427, 0.029, 0.286, 0.200, 0.065,
+   0.005, 0.750, 0.020, 1.508, 0.000, 0.003},
+  {0.000, 0.453, 1.472, 0.008, 2.343, 13.663, 0.008, 0.232, 0.181, 0.150,
+   0.226, 0.043, 0.092, 0.464, 0.153, 1.507, 0.043, 0.226, 0.130, 0.110,
+   0.003, 0.750, 0.057, 8.365, 0.000, 0.003},
+  {0.000, 0.057, 0.027, 0.012, 0.006, 0.008, 21.408, 0.044, 0.132, 0.473,
+   0.009, 0.416, 0.250, 0.051, 0.036, 0.011, 0.042, 0.114, 0.051, 0.067,
+   0.213, 0.750, 1.786, 0.009, 0.000, 0.003},
+  {0.000, 0.576, 0.338, 0.042, 0.326, 0.232, 0.044, 9.314, 0.048, 0.024,
+   0.086, 0.028, 0.057, 0.351, 0.122, 0.094, 0.040, 0.553, 0.135, 0.149,
+   0.006, 0.750, 0.009, 0.172, 0.000, 0.003},
+  {0.000, 0.083, 0.664, 0.078, 0.271, 0.181, 0.132, 0.048, 22.927, 0.044,
+   0.120, 0.123, 0.028, 1.119, 0.248, 1.359, 0.587, 0.132, 0.086, 0.115,
+   0.081, 0.750, 0.324, 0.695, 0.000, 0.003},
+  {0.000, 0.199, 0.126, 0.119, 0.080, 0.150, 0.473, 0.024, 0.044, 18.632,
+   0.127, 0.643, 0.793, 0.179, 0.053, 0.070, 0.159, 0.097, 0.444, 1.938,
+   0.009, 0.750, 0.119, 0.115, 0.000, 0.003},
+  {0.000, 0.095, 0.441, 0.008, 0.220, 0.226, 0.009, 0.086, 0.120, 0.127,
+   9.988, 0.061, 0.563, 0.697, 0.106, 0.384, 1.111, 0.260, 0.336, 0.046,
+   0.018, 0.750, 0.042, 0.295, 0.000, 0.003},
+  {0.000, 0.115, 0.049, 0.006, 0.014, 0.043, 0.416, 0.028, 0.123, 0.643,
+   0.061, 10.019, 1.242, 0.090, 0.090, 0.185, 0.053, 0.058, 0.103, 0.463,
+   0.127, 0.750, 0.095, 0.105, 0.000, 0.003},
+  {0.000, 0.189, 0.034, 0.009, 0.023, 0.092, 0.250, 0.057, 0.028, 0.792,
+   0.563, 1.242, 46.604, 0.047, 0.065, 0.272, 0.243, 0.161, 0.263, 0.631,
+   0.013, 0.750, 0.021, 0.171, 0.000, 0.003},
+  {0.000, 0.285, 7.726, 0.024, 1.756, 0.464, 0.051, 0.351, 1.119, 0.179,
+   0.697, 0.090, 0.047, 14.647, 0.142, 0.299, 0.144, 0.972, 0.531, 0.070,
+   0.064, 0.750, 0.223, 0.392, 0.000, 0.003},
+  {0.000, 0.593, 0.102, 0.063, 0.068, 0.153, 0.036, 0.122, 0.248, 0.053,
+   0.106, 0.090, 0.065, 0.142, 15.809, 0.376, 0.270, 0.571, 0.240, 0.140,
+   0.009, 0.750, 0.010, 0.251, 0.000, 0.003},
+  {0.000, 0.235, 0.368, 0.008, 0.427, 1.507, 0.011, 0.094, 1.360, 0.070,
+   0.384, 0.185, 0.272, 0.299, 0.376, 18.136, 0.585, 0.168, 0.150, 0.103,
+   0.012, 0.750, 0.017, 8.754, 0.000, 0.003},
+  {0.000, 0.091, 0.082, 0.068, 0.029, 0.043, 0.042, 0.040, 0.587, 0.159,
+   1.111, 0.053, 0.243, 0.144, 0.270, 0.585, 18.926, 0.355, 0.106, 0.074,
+   0.517, 0.750, 0.030, 0.279, 0.000, 0.003},
+  {0.000, 0.875, 0.604, 0.379, 0.286, 0.226, 0.114, 0.553, 0.132, 0.097,
+   0.260, 0.058, 0.161, 0.972, 0.571, 0.168, 0.355, 9.028, 1.145, 0.118,
+   0.179, 0.750, 0.097, 0.200, 0.000, 0.003},
+  {0.000, 0.827, 0.353, 0.068, 0.200, 0.130, 0.051, 0.135, 0.086, 0.444,
+   0.336, 0.103, 0.263, 0.531, 0.240, 0.150, 0.106, 1.145, 11.695, 0.391,
+   0.013, 0.750, 0.112, 0.139, 0.000, 0.003},
+  {0.000, 0.477, 0.067, 0.132, 0.065, 0.110, 0.067, 0.149, 0.115, 1.938,
+   0.046, 0.463, 0.631, 0.070, 0.141, 0.103, 0.074, 0.118, 0.391, 11.609,
+   0.005, 0.750, 0.081, 0.107, 0.000, 0.003},
+  {0.000, 0.010, 0.032, 0.005, 0.005, 0.003, 0.213, 0.006, 0.081, 0.009,
+   0.018, 0.127, 0.013, 0.064, 0.009, 0.012, 0.517, 0.179, 0.013, 0.005,
+   88.722, 0.750, 0.173, 0.007, 0.000, 0.003},
+  {0.000, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.000, 0.003},
+  {0.000, 0.070, 0.114, 0.258, 0.020, 0.057, 1.786, 0.009, 0.324, 0.119,
+   0.042, 0.095, 0.021, 0.223, 0.010, 0.017, 0.030, 0.097, 0.112, 0.081,
+   0.173, 0.750, 28.442, 0.039, 0.000, 0.003},
+  {0.000, 0.358, 0.991, 0.008, 1.508, 8.365, 0.009, 0.172, 0.695, 0.115,
+   0.295, 0.105, 0.171, 0.392, 0.251, 8.754, 0.279, 0.200, 0.139, 0.107,
+   0.007, 0.750, 0.039, 8.535, 0.000, 0.003},
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.003},
+  {0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003,
+   0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003,
+   0.003, 0.003, 0.003, 0.003, 0.003, 1.333},
+};
+
+static Nlm_FloatHi PAM70_FREQRATIOS[PROTEIN_ALPHABET][PROTEIN_ALPHABET] = {
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.002},
+  {0.000, 4.900, 0.605, 0.242, 0.619, 0.771, 0.135, 1.015, 0.221, 0.434,
+   0.249, 0.250, 0.376, 0.589, 1.030, 0.466, 0.227, 1.350, 1.327, 0.809,
+   0.043, 0.750, 0.154, 0.638, 0.000, 0.002},
+  {0.000, 0.605, 5.422, 0.066, 5.890, 2.249, 0.079, 0.649, 1.099, 0.253,
+   0.778, 0.120, 0.140, 4.879, 0.274, 0.790, 0.253, 0.955, 0.654, 0.185,
+   0.078, 0.750, 0.223, 1.613, 0.000, 0.002},
+  {0.000, 0.242, 0.066, 24.836, 0.040, 0.039, 0.055, 0.116, 0.165, 0.246,
+   0.038, 0.030, 0.044, 0.097, 0.159, 0.039, 0.151, 0.665, 0.186, 0.274,
+   0.022, 0.750, 0.523, 0.039, 0.000, 0.002},
+  {0.000, 0.618, 5.890, 0.040, 8.900, 3.357, 0.034, 0.639, 0.600, 0.193,
+   0.484, 0.064, 0.103, 2.400, 0.213, 0.922, 0.139, 0.600, 0.442, 0.173,
+   0.026, 0.750, 0.080, 2.296, 0.000, 0.002},
+  {0.000, 0.771, 2.249, 0.039, 3.357, 8.654, 0.038, 0.492, 0.480, 0.284,
+   0.466, 0.117, 0.212, 0.965, 0.347, 2.258, 0.179, 0.479, 0.338, 0.247,
+   0.019, 0.750, 0.119, 5.867, 0.000, 0.002},
+  {0.000, 0.135, 0.079, 0.055, 0.034, 0.038, 17.455, 0.100, 0.277, 0.846,
+   0.041, 0.824, 0.508, 0.131, 0.089, 0.052, 0.099, 0.216, 0.138, 0.208,
+   0.452, 0.750, 3.378, 0.044, 0.000, 0.002},
+  {0.000, 1.015, 0.649, 0.116, 0.639, 0.492, 0.100, 7.309, 0.145, 0.107,
+   0.210, 0.081, 0.144, 0.660, 0.308, 0.237, 0.122, 0.964, 0.370, 0.313,
+   0.027, 0.750, 0.044, 0.381, 0.000, 0.002},
+  {0.000, 0.221, 1.099, 0.165, 0.600, 0.480, 0.277, 0.145, 16.422, 0.140,
+   0.335, 0.259, 0.122, 1.677, 0.493, 2.188, 1.058, 0.327, 0.230, 0.233,
+   0.186, 0.750, 0.611, 1.224, 0.000, 0.002},
+  {0.000, 0.434, 0.253, 0.246, 0.193, 0.284, 0.846, 0.107, 0.140, 11.749,
+   0.266, 1.192, 1.369, 0.322, 0.160, 0.189, 0.301, 0.254, 0.761, 3.004,
+   0.044, 0.750, 0.281, 0.242, 0.000, 0.002},
+  {0.000, 0.249, 0.778, 0.038, 0.484, 0.466, 0.041, 0.210, 0.335, 0.266,
+   7.610, 0.153, 0.948, 1.119, 0.256, 0.722, 1.937, 0.520, 0.620, 0.139,
+   0.079, 0.750, 0.101, 0.578, 0.000, 0.002},
+  {0.000, 0.250, 0.120, 0.030, 0.064, 0.117, 0.824, 0.081, 0.259, 1.192,
+   0.153, 8.228, 2.130, 0.185, 0.199, 0.351, 0.137, 0.149, 0.240, 0.908,
+   0.267, 0.750, 0.239, 0.219, 0.000, 0.002},
+  {0.000, 0.376, 0.140, 0.044, 0.103, 0.212, 0.508, 0.144, 0.122, 1.369,
+   0.948, 2.129, 28.592, 0.182, 0.176, 0.486, 0.488, 0.319, 0.498, 1.133,
+   0.060, 0.750, 0.097, 0.332, 0.000, 0.002},
+  {0.000, 0.589, 4.879, 0.097, 2.400, 0.965, 0.131, 0.660, 1.677, 0.322,
+   1.119, 0.185, 0.182, 7.754, 0.344, 0.637, 0.387, 1.366, 0.899, 0.199,
+   0.138, 0.750, 0.390, 0.822, 0.000, 0.002},
+  {0.000, 1.030, 0.274, 0.159, 0.213, 0.347, 0.089, 0.308, 0.493, 0.160,
+   0.256, 0.199, 0.176, 0.344, 11.871, 0.684, 0.527, 0.979, 0.531, 0.307,
+   0.042, 0.750, 0.047, 0.494, 0.000, 0.002},
+  {0.000, 0.466, 0.790, 0.039, 0.923, 2.258, 0.052, 0.237, 2.188, 0.189,
+   0.722, 0.351, 0.486, 0.637, 0.684, 11.469, 1.024, 0.373, 0.329, 0.232,
+   0.055, 0.750, 0.074, 6.272, 0.000, 0.002},
+  {0.000, 0.227, 0.253, 0.151, 0.139, 0.179, 0.099, 0.122, 1.058, 0.301,
+   1.937, 0.137, 0.488, 0.387, 0.527, 1.024, 13.660, 0.610, 0.284, 0.176,
+   0.991, 0.750, 0.086, 0.547, 0.000, 0.002},
+  {0.000, 1.350, 0.955, 0.665, 0.600, 0.479, 0.216, 0.964, 0.327, 0.254,
+   0.520, 0.149, 0.319, 1.366, 0.979, 0.373, 0.610, 5.204, 1.695, 0.303,
+   0.324, 0.750, 0.208, 0.433, 0.000, 0.002},
+  {0.000, 1.327, 0.654, 0.186, 0.442, 0.338, 0.138, 0.370, 0.230, 0.761,
+   0.620, 0.240, 0.498, 0.899, 0.531, 0.329, 0.284, 1.695, 7.337, 0.719,
+   0.055, 0.750, 0.228, 0.334, 0.000, 0.002},
+  {0.000, 0.809, 0.185, 0.275, 0.173, 0.247, 0.208, 0.313, 0.233, 3.003,
+   0.139, 0.908, 1.133, 0.199, 0.307, 0.232, 0.176, 0.303, 0.719, 8.211,
+   0.027, 0.750, 0.181, 0.240, 0.000, 0.002},
+  {0.000, 0.043, 0.078, 0.022, 0.026, 0.019, 0.452, 0.027, 0.186, 0.044,
+   0.079, 0.267, 0.060, 0.138, 0.042, 0.055, 0.991, 0.324, 0.054, 0.027,
+   80.645, 0.750, 0.377, 0.035, 0.000, 0.002},
+  {0.000, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.000, 0.002},
+  {0.000, 0.154, 0.223, 0.523, 0.080, 0.119, 3.379, 0.044, 0.611, 0.281,
+   0.101, 0.239, 0.097, 0.390, 0.047, 0.074, 0.086, 0.208, 0.228, 0.181,
+   0.377, 0.750, 23.141, 0.099, 0.000, 0.002},
+  {0.000, 0.638, 1.613, 0.039, 2.296, 5.867, 0.044, 0.381, 1.224, 0.242,
+   0.578, 0.219, 0.332, 0.822, 0.494, 6.272, 0.547, 0.433, 0.334, 0.240,
+   0.035, 0.750, 0.099, 6.043, 0.000, 0.002},
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.002},
+  {0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002,
+   0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002,
+   0.002, 0.002, 0.002, 0.002, 0.002, 1.333},
+};
+
+static Nlm_FloatHi BLOSUM45_FREQRATIOS[PROTEIN_ALPHABET][PROTEIN_ALPHABET] = {
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.290},
+  {0.000, 2.950, 0.735, 0.800, 0.689, 0.825, 0.587, 1.080, 0.654, 0.747,
+   0.786, 0.712, 0.821, 0.789, 0.709, 0.867, 0.700, 1.300, 1.001, 1.010,
+   0.565, 0.750, 0.639, 0.841, 0.000, 0.290},
+  {0.000, 0.735, 3.260, 0.600, 3.594, 1.300, 0.496, 0.886, 1.088, 0.497,
+   1.023, 0.472, 0.580, 2.862, 0.686, 0.992, 0.829, 1.053, 0.985, 0.520,
+   0.381, 0.750, 0.627, 1.182, 0.000, 0.290},
+  {0.000, 0.800, 0.600, 17.090, 0.533, 0.545, 0.602, 0.557, 0.491, 0.543,
+   0.547, 0.673, 0.604, 0.680, 0.411, 0.486, 0.472, 0.797, 0.822, 0.715,
+   0.334, 0.750, 0.489, 0.523, 0.000, 0.290},
+  {0.000, 0.689, 3.594, 0.533, 5.356, 1.643, 0.431, 0.740, 0.976, 0.440,
+   0.942, 0.463, 0.494, 1.502, 0.724, 0.958, 0.771, 0.929, 0.876, 0.494,
+   0.373, 0.750, 0.645, 1.381, 0.000, 0.290},
+  {0.000, 0.825, 1.300, 0.545, 1.643, 3.873, 0.498, 0.576, 0.962, 0.485,
+   1.277, 0.571, 0.615, 0.893, 0.911, 1.531, 1.011, 0.912, 0.833, 0.555,
+   0.519, 0.750, 0.617, 2.978, 0.000, 0.290},
+  {0.000, 0.587, 0.496, 0.602, 0.431, 0.498, 5.748, 0.480, 0.679, 1.064,
+   0.529, 1.303, 1.063, 0.572, 0.451, 0.444, 0.590, 0.610, 0.716, 0.953,
+   1.355, 0.750, 2.185, 0.477, 0.000, 0.290},
+  {0.000, 1.080, 0.886, 0.557, 0.740, 0.576, 0.480, 5.071, 0.662, 0.416,
+   0.678, 0.450, 0.585, 1.059, 0.702, 0.687, 0.570, 1.058, 0.693, 0.479,
+   0.591, 0.750, 0.549, 0.619, 0.000, 0.290},
+  {0.000, 0.654, 1.088, 0.491, 0.976, 0.962, 0.679, 0.662, 9.512, 0.453,
+   0.890, 0.670, 0.918, 1.220, 0.661, 1.151, 0.973, 0.854, 0.706, 0.457,
+   0.452, 0.750, 1.472, 1.034, 0.000, 0.290},
+  {0.000, 0.747, 0.497, 0.543, 0.440, 0.485, 1.064, 0.416, 0.453, 3.233,
+   0.532, 1.596, 1.455, 0.564, 0.610, 0.578, 0.488, 0.618, 0.848, 2.176,
+   0.565, 0.750, 0.906, 0.521, 0.000, 0.290},
+  {0.000, 0.786, 1.023, 0.547, 0.942, 1.277, 0.529, 0.678, 0.890, 0.532,
+   3.327, 0.554, 0.738, 1.119, 0.781, 1.330, 1.943, 0.890, 0.885, 0.592,
+   0.562, 0.750, 0.737, 1.297, 0.000, 0.290},
+  {0.000, 0.712, 0.472, 0.673, 0.463, 0.571, 1.303, 0.450, 0.670, 1.596,
+   0.554, 2.997, 1.731, 0.484, 0.478, 0.642, 0.601, 0.556, 0.781, 1.334,
+   0.671, 0.750, 0.965, 0.598, 0.000, 0.290},
+  {0.000, 0.821, 0.580, 0.604, 0.494, 0.615, 1.063, 0.585, 0.918, 1.455,
+   0.738, 1.731, 4.114, 0.682, 0.644, 0.941, 0.776, 0.660, 0.860, 1.236,
+   0.634, 0.750, 1.023, 0.739, 0.000, 0.290},
+  {0.000, 0.789, 2.862, 0.680, 1.502, 0.893, 0.572, 1.059, 1.220, 0.564,
+   1.119, 0.484, 0.682, 4.478, 0.640, 1.032, 0.898, 1.200, 1.115, 0.552,
+   0.390, 0.750, 0.606, 0.946, 0.000, 0.290},
+  {0.000, 0.709, 0.686, 0.411, 0.724, 0.911, 0.451, 0.702, 0.661, 0.610,
+   0.781, 0.478, 0.644, 0.640, 8.819, 0.716, 0.582, 0.750, 0.856, 0.540,
+   0.525, 0.750, 0.479, 0.836, 0.000, 0.290},
+  {0.000, 0.867, 0.992, 0.486, 0.958, 1.531, 0.444, 0.687, 1.151, 0.578,
+   1.330, 0.642, 0.941, 1.032, 0.716, 4.407, 1.329, 1.092, 0.781, 0.547,
+   0.645, 0.750, 0.829, 2.630, 0.000, 0.290},
+  {0.000, 0.700, 0.829, 0.472, 0.771, 1.011, 0.590, 0.570, 0.973, 0.488,
+   1.943, 0.601, 0.776, 0.898, 0.582, 1.329, 4.747, 0.799, 0.715, 0.578,
+   0.580, 0.750, 0.807, 1.132, 0.000, 0.290},
+  {0.000, 1.300, 1.053, 0.797, 0.929, 0.912, 0.610, 1.058, 0.854, 0.618,
+   0.890, 0.556, 0.660, 1.200, 0.750, 1.092, 0.799, 2.782, 1.472, 0.728,
+   0.428, 0.750, 0.706, 0.981, 0.000, 0.290},
+  {0.000, 1.001, 0.985, 0.822, 0.876, 0.833, 0.716, 0.693, 0.706, 0.848,
+   0.885, 0.781, 0.860, 1.115, 0.856, 0.781, 0.715, 1.472, 3.139, 1.040,
+   0.454, 0.750, 0.744, 0.813, 0.000, 0.290},
+  {0.000, 1.010, 0.520, 0.715, 0.494, 0.555, 0.953, 0.479, 0.457, 2.176,
+   0.592, 1.334, 1.236, 0.552, 0.540, 0.547, 0.578, 0.728, 1.040, 2.871,
+   0.473, 0.750, 0.809, 0.552, 0.000, 0.290},
+  {0.000, 0.565, 0.381, 0.334, 0.373, 0.519, 1.355, 0.591, 0.452, 0.565,
+   0.562, 0.671, 0.634, 0.390, 0.525, 0.645, 0.580, 0.428, 0.454, 0.473,
+   29.702, 0.750, 1.801, 0.567, 0.000, 0.290},
+  {0.000, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.000, 0.290},
+  {0.000, 0.639, 0.627, 0.489, 0.645, 0.617, 2.185, 0.549, 1.472, 0.906,
+   0.737, 0.965, 1.023, 0.606, 0.479, 0.829, 0.807, 0.706, 0.744, 0.809,
+   1.801, 0.750, 5.753, 0.698, 0.000, 0.290},
+  {0.000, 0.841, 1.182, 0.523, 1.381, 2.978, 0.477, 0.619, 1.034, 0.521,
+   1.297, 0.598, 0.739, 0.946, 0.836, 2.630, 1.132, 0.981, 0.813, 0.552,
+   0.567, 0.750, 0.698, 2.845, 0.000, 0.290},
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.290},
+  {0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290,
+   0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290,
+   0.290, 0.290, 0.290, 0.290, 0.290, 1.333},
+};
+
+static Nlm_FloatHi BLOSUM80_FREQRATIOS[PROTEIN_ALPHABET][PROTEIN_ALPHABET] = {
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.140},
+  {0.000, 4.773, 0.477, 0.732, 0.451, 0.703, 0.397, 0.957, 0.514, 0.543,
+   0.723, 0.505, 0.625, 0.510, 0.771, 0.696, 0.555, 1.535, 0.980, 0.866,
+   0.309, 0.750, 0.436, 0.700, 0.000, 0.140},
+  {0.000, 0.477, 5.362, 0.252, 5.759, 1.269, 0.252, 0.639, 0.830, 0.234,
+   0.793, 0.221, 0.310, 4.868, 0.428, 0.850, 0.609, 0.948, 0.743, 0.268,
+   0.179, 0.750, 0.307, 1.109, 0.000, 0.140},
+  {0.000, 0.732, 0.252, 20.702, 0.214, 0.180, 0.395, 0.272, 0.221, 0.581,
+   0.241, 0.493, 0.499, 0.300, 0.269, 0.295, 0.233, 0.576, 0.602, 0.634,
+   0.302, 0.750, 0.308, 0.224, 0.000, 0.140},
+  {0.000, 0.451, 5.759, 0.214, 9.106, 1.635, 0.234, 0.541, 0.594, 0.214,
+   0.677, 0.197, 0.252, 1.584, 0.452, 0.763, 0.477, 0.774, 0.611, 0.245,
+   0.145, 0.750, 0.245, 1.303, 0.000, 0.140},
+  {0.000, 0.703, 1.269, 0.180, 1.635, 6.995, 0.249, 0.399, 0.901, 0.264,
+   1.195, 0.276, 0.429, 0.811, 0.581, 1.906, 0.832, 0.845, 0.685, 0.369,
+   0.241, 0.750, 0.333, 5.054, 0.000, 0.140},
+  {0.000, 0.397, 0.252, 0.395, 0.234, 0.249, 9.486, 0.249, 0.572, 0.841,
+   0.283, 1.114, 0.893, 0.273, 0.237, 0.285, 0.287, 0.369, 0.445, 0.649,
+   1.089, 0.750, 2.780, 0.263, 0.000, 0.140},
+  {0.000, 0.957, 0.639, 0.272, 0.541, 0.399, 0.249, 7.882, 0.387, 0.184,
+   0.483, 0.210, 0.286, 0.761, 0.347, 0.425, 0.377, 0.784, 0.492, 0.251,
+   0.264, 0.750, 0.230, 0.409, 0.000, 0.140},
+  {0.000, 0.514, 0.830, 0.221, 0.594, 0.901, 0.572, 0.387, 16.070, 0.258,
+   0.740, 0.314, 0.432, 1.124, 0.420, 1.316, 0.925, 0.661, 0.540, 0.289,
+   0.390, 0.750, 1.819, 1.059, 0.000, 0.140},
+  {0.000, 0.543, 0.234, 0.581, 0.214, 0.264, 0.841, 0.184, 0.258, 4.868,
+   0.313, 1.665, 1.512, 0.258, 0.286, 0.309, 0.299, 0.379, 0.701, 2.496,
+   0.343, 0.750, 0.539, 0.281, 0.000, 0.140},
+  {0.000, 0.723, 0.793, 0.241, 0.677, 1.195, 0.283, 0.483, 0.740, 0.313,
+   6.326, 0.357, 0.534, 0.938, 0.597, 1.524, 2.192, 0.820, 0.736, 0.370,
+   0.241, 0.750, 0.408, 1.320, 0.000, 0.140},
+  {0.000, 0.505, 0.221, 0.493, 0.197, 0.276, 1.114, 0.210, 0.314, 1.665,
+   0.357, 4.463, 2.123, 0.250, 0.303, 0.407, 0.363, 0.368, 0.561, 1.220,
+   0.439, 0.750, 0.581, 0.326, 0.000, 0.140},
+  {0.000, 0.625, 0.310, 0.499, 0.252, 0.429, 0.893, 0.286, 0.432, 1.512,
+   0.534, 2.123, 8.883, 0.382, 0.362, 0.887, 0.506, 0.498, 0.758, 1.224,
+   0.561, 0.750, 0.550, 0.603, 0.000, 0.140},
+  {0.000, 0.510, 4.868, 0.300, 1.584, 0.811, 0.273, 0.761, 1.124, 0.258,
+   0.938, 0.250, 0.382, 8.963, 0.398, 0.958, 0.773, 1.165, 0.908, 0.297,
+   0.221, 0.750, 0.385, 0.867, 0.000, 0.140},
+  {0.000, 0.771, 0.428, 0.269, 0.452, 0.581, 0.237, 0.347, 0.420, 0.286,
+   0.597, 0.303, 0.362, 0.398, 15.155, 0.538, 0.446, 0.652, 0.560, 0.370,
+   0.178, 0.750, 0.258, 0.565, 0.000, 0.140},
+  {0.000, 0.696, 0.850, 0.295, 0.763, 1.906, 0.285, 0.425, 1.316, 0.309,
+   1.524, 0.407, 0.887, 0.958, 0.538, 8.340, 1.394, 0.859, 0.724, 0.411,
+   0.408, 0.750, 0.462, 4.360, 0.000, 0.140},
+  {0.000, 0.555, 0.609, 0.233, 0.477, 0.832, 0.287, 0.377, 0.925, 0.299,
+   2.192, 0.363, 0.506, 0.773, 0.446, 1.394, 8.245, 0.695, 0.598, 0.354,
+   0.294, 0.750, 0.418, 1.046, 0.000, 0.140},
+  {0.000, 1.535, 0.948, 0.576, 0.774, 0.845, 0.369, 0.784, 0.661, 0.379,
+   0.820, 0.368, 0.498, 1.165, 0.652, 0.859, 0.695, 5.106, 1.663, 0.494,
+   0.271, 0.750, 0.462, 0.850, 0.000, 0.140},
+  {0.000, 0.980, 0.743, 0.602, 0.611, 0.685, 0.445, 0.492, 0.540, 0.701,
+   0.736, 0.561, 0.758, 0.908, 0.560, 0.724, 0.598, 1.663, 6.205, 0.891,
+   0.285, 0.750, 0.474, 0.700, 0.000, 0.140},
+  {0.000, 0.866, 0.268, 0.634, 0.245, 0.369, 0.649, 0.251, 0.289, 2.496,
+   0.370, 1.220, 1.224, 0.297, 0.370, 0.411, 0.354, 0.494, 0.891, 4.584,
+   0.342, 0.750, 0.489, 0.385, 0.000, 0.140},
+  {0.000, 0.309, 0.179, 0.302, 0.145, 0.241, 1.089, 0.264, 0.390, 0.343,
+   0.241, 0.439, 0.561, 0.221, 0.178, 0.408, 0.294, 0.271, 0.285, 0.342,
+   41.552, 0.750, 2.036, 0.304, 0.000, 0.140},
+  {0.000, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.000, 0.140},
+  {0.000, 0.436, 0.307, 0.308, 0.245, 0.333, 2.780, 0.230, 1.819, 0.539,
+   0.408, 0.581, 0.550, 0.385, 0.258, 0.462, 0.418, 0.462, 0.474, 0.489,
+   2.036, 0.750, 12.194, 0.382, 0.000, 0.140},
+  {0.000, 0.700, 1.109, 0.224, 1.303, 5.054, 0.263, 0.409, 1.059, 0.281,
+   1.320, 0.326, 0.603, 0.867, 0.565, 4.360, 1.046, 0.850, 0.700, 0.385,
+   0.304, 0.750, 0.382, 4.789, 0.000, 0.140},
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.140},
+  {0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.140,
+   0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.140, 0.140,
+   0.140, 0.140, 0.140, 0.140, 0.140, 1.333},
+};
+
+static Nlm_FloatHi BLOSUM50_FREQRATIOS[PROTEIN_ALPHABET][PROTEIN_ALPHABET] = {
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.290},
+  {0.000, 3.273, 0.687, 0.888, 0.660, 0.797, 0.546, 1.101, 0.641, 0.715,
+   0.748, 0.657, 0.854, 0.720, 0.715, 0.820, 0.668, 1.364, 0.967, 0.982,
+   0.464, 0.750, 0.596, 0.806, 0.000, 0.290},
+  {0.000, 0.687, 3.676, 0.507, 4.021, 1.319, 0.384, 0.848, 1.118, 0.407,
+   0.968, 0.391, 0.516, 3.269, 0.661, 0.998, 0.759, 1.061, 0.955, 0.446,
+   0.339, 0.750, 0.556, 1.196, 0.000, 0.290},
+  {0.000, 0.888, 0.507, 18.231, 0.428, 0.456, 0.565, 0.524, 0.517, 0.587,
+   0.460, 0.650, 0.681, 0.601, 0.403, 0.481, 0.428, 0.830, 0.818, 0.809,
+   0.312, 0.750, 0.539, 0.466, 0.000, 0.290},
+  {0.000, 0.660, 4.021, 0.428, 6.112, 1.658, 0.337, 0.745, 0.884, 0.370,
+   0.890, 0.373, 0.435, 1.558, 0.710, 0.967, 0.678, 0.921, 0.825, 0.432,
+   0.307, 0.750, 0.504, 1.394, 0.000, 0.290},
+  {0.000, 0.797, 1.319, 0.456, 1.658, 4.437, 0.456, 0.540, 0.911, 0.416,
+   1.331, 0.478, 0.605, 0.920, 0.839, 1.671, 0.976, 0.882, 0.819, 0.479,
+   0.548, 0.750, 0.652, 3.380, 0.000, 0.290},
+  {0.000, 0.546, 0.384, 0.565, 0.337, 0.456, 6.636, 0.414, 0.755, 0.990,
+   0.445, 1.262, 1.052, 0.439, 0.376, 0.417, 0.462, 0.553, 0.570, 0.860,
+   1.348, 0.750, 2.424, 0.441, 0.000, 0.290},
+  {0.000, 1.101, 0.848, 0.524, 0.745, 0.540, 0.414, 5.792, 0.601, 0.370,
+   0.655, 0.377, 0.519, 0.969, 0.620, 0.641, 0.517, 0.999, 0.636, 0.403,
+   0.505, 0.750, 0.467, 0.579, 0.000, 0.290},
+  {0.000, 0.641, 1.118, 0.517, 0.884, 0.911, 0.755, 0.601, 10.449, 0.411,
+   0.946, 0.547, 0.760, 1.394, 0.582, 1.209, 0.982, 0.823, 0.653, 0.414,
+   0.475, 0.750, 1.570, 1.025, 0.000, 0.290},
+  {0.000, 0.715, 0.407, 0.587, 0.370, 0.416, 0.990, 0.370, 0.411, 3.411,
+   0.468, 1.697, 1.438, 0.451, 0.511, 0.503, 0.435, 0.546, 0.861, 2.313,
+   0.522, 0.750, 0.826, 0.449, 0.000, 0.290},
+  {0.000, 0.748, 0.968, 0.460, 0.890, 1.331, 0.445, 0.655, 0.946, 0.468,
+   3.881, 0.479, 0.685, 1.060, 0.764, 1.419, 2.065, 0.893, 0.845, 0.523,
+   0.462, 0.750, 0.668, 1.365, 0.000, 0.290},
+  {0.000, 0.657, 0.391, 0.650, 0.373, 0.478, 1.262, 0.377, 0.547, 1.697,
+   0.479, 3.328, 1.790, 0.413, 0.444, 0.563, 0.554, 0.511, 0.759, 1.324,
+   0.602, 0.750, 0.858, 0.511, 0.000, 0.290},
+  {0.000, 0.854, 0.516, 0.681, 0.435, 0.605, 1.052, 0.519, 0.760, 1.438,
+   0.685, 1.790, 4.816, 0.612, 0.545, 0.960, 0.678, 0.682, 0.882, 1.213,
+   0.761, 0.750, 0.918, 0.741, 0.000, 0.290},
+  {0.000, 0.720, 3.269, 0.601, 1.558, 0.920, 0.439, 0.969, 1.394, 0.451,
+   1.060, 0.413, 0.612, 5.285, 0.604, 1.035, 0.854, 1.224, 1.109, 0.463,
+   0.376, 0.750, 0.617, 0.964, 0.000, 0.290},
+  {0.000, 0.715, 0.661, 0.403, 0.710, 0.839, 0.376, 0.620, 0.582, 0.511,
+   0.764, 0.444, 0.545, 0.604, 10.204, 0.750, 0.519, 0.759, 0.749, 0.524,
+   0.420, 0.750, 0.468, 0.805, 0.000, 0.290},
+  {0.000, 0.820, 0.998, 0.481, 0.967, 1.671, 0.417, 0.641, 1.209, 0.503,
+   1.419, 0.563, 0.960, 1.035, 0.750, 4.697, 1.357, 1.069, 0.810, 0.557,
+   0.715, 0.750, 0.742, 2.828, 0.000, 0.290},
+  {0.000, 0.668, 0.759, 0.428, 0.678, 0.976, 0.462, 0.517, 0.982, 0.435,
+   2.065, 0.554, 0.678, 0.854, 0.519, 1.357, 5.378, 0.804, 0.737, 0.512,
+   0.529, 0.750, 0.727, 1.122, 0.000, 0.290},
+  {0.000, 1.364, 1.061, 0.830, 0.921, 0.882, 0.553, 0.999, 0.823, 0.546,
+   0.893, 0.511, 0.682, 1.224, 0.759, 1.069, 0.804, 3.143, 1.497, 0.679,
+   0.392, 0.750, 0.651, 0.953, 0.000, 0.290},
+  {0.000, 0.967, 0.955, 0.818, 0.825, 0.819, 0.570, 0.636, 0.653, 0.861,
+   0.845, 0.759, 0.882, 1.109, 0.749, 0.810, 0.737, 1.497, 3.553, 1.060,
+   0.503, 0.750, 0.691, 0.816, 0.000, 0.290},
+  {0.000, 0.982, 0.446, 0.809, 0.432, 0.479, 0.860, 0.403, 0.414, 2.313,
+   0.523, 1.324, 1.213, 0.463, 0.524, 0.557, 0.512, 0.679, 1.060, 3.118,
+   0.485, 0.750, 0.727, 0.509, 0.000, 0.290},
+  {0.000, 0.464, 0.339, 0.312, 0.307, 0.548, 1.348, 0.505, 0.475, 0.522,
+   0.462, 0.602, 0.761, 0.376, 0.420, 0.715, 0.529, 0.392, 0.503, 0.485,
+   31.361, 0.750, 1.765, 0.612, 0.000, 0.290},
+  {0.000, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.000, 0.290},
+  {0.000, 0.596, 0.556, 0.539, 0.504, 0.652, 2.424, 0.467, 1.570, 0.826,
+   0.668, 0.858, 0.918, 0.617, 0.468, 0.742, 0.727, 0.651, 0.691, 0.727,
+   1.765, 0.750, 6.893, 0.686, 0.000, 0.290},
+  {0.000, 0.806, 1.196, 0.466, 1.394, 3.380, 0.441, 0.579, 1.025, 0.449,
+   1.365, 0.511, 0.741, 0.964, 0.805, 2.828, 1.122, 0.953, 0.816, 0.509,
+   0.612, 0.750, 0.686, 3.169, 0.000, 0.290},
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.290},
+  {0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290,
+   0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290, 0.290,
+   0.290, 0.290, 0.290, 0.290, 0.290, 1.333},
+};
+
+static Nlm_FloatHi BLOSUM90_FREQRATIOS[PROTEIN_ALPHABET][PROTEIN_ALPHABET] = {
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.120},
+  {0.000, 4.773, 0.477, 0.732, 0.451, 0.703, 0.397, 0.957, 0.514, 0.543,
+   0.723, 0.505, 0.625, 0.510, 0.771, 0.696, 0.555, 1.535, 0.980, 0.866,
+   0.309, 0.707, 0.436, 0.700, 0.000, 0.120},
+  {0.000, 0.477, 5.362, 0.252, 5.759, 1.269, 0.252, 0.639, 0.830, 0.234,
+   0.793, 0.221, 0.310, 4.868, 0.428, 0.850, 0.609, 0.948, 0.743, 0.268,
+   0.179, 0.707, 0.307, 1.109, 0.000, 0.120},
+  {0.000, 0.732, 0.252, 20.702, 0.214, 0.180, 0.395, 0.272, 0.221, 0.581,
+   0.241, 0.493, 0.499, 0.300, 0.269, 0.295, 0.233, 0.576, 0.602, 0.634,
+   0.302, 0.707, 0.308, 0.224, 0.000, 0.120},
+  {0.000, 0.451, 5.759, 0.214, 9.106, 1.635, 0.234, 0.541, 0.594, 0.214,
+   0.677, 0.197, 0.252, 1.584, 0.452, 0.763, 0.477, 0.774, 0.611, 0.245,
+   0.145, 0.707, 0.245, 1.303, 0.000, 0.120},
+  {0.000, 0.703, 1.269, 0.180, 1.635, 6.995, 0.249, 0.399, 0.901, 0.264,
+   1.195, 0.276, 0.429, 0.811, 0.581, 1.906, 0.832, 0.845, 0.685, 0.369,
+   0.241, 0.707, 0.333, 5.054, 0.000, 0.120},
+  {0.000, 0.397, 0.252, 0.395, 0.234, 0.249, 9.486, 0.249, 0.572, 0.841,
+   0.283, 1.114, 0.893, 0.273, 0.237, 0.285, 0.287, 0.369, 0.445, 0.649,
+   1.089, 0.707, 2.780, 0.263, 0.000, 0.120},
+  {0.000, 0.957, 0.639, 0.272, 0.541, 0.399, 0.249, 7.882, 0.387, 0.184,
+   0.483, 0.210, 0.286, 0.761, 0.347, 0.425, 0.377, 0.784, 0.492, 0.251,
+   0.264, 0.707, 0.230, 0.409, 0.000, 0.120},
+  {0.000, 0.514, 0.830, 0.221, 0.594, 0.901, 0.572, 0.387, 16.070, 0.258,
+   0.740, 0.314, 0.432, 1.124, 0.420, 1.316, 0.925, 0.661, 0.540, 0.289,
+   0.390, 0.707, 1.819, 1.059, 0.000, 0.120},
+  {0.000, 0.543, 0.234, 0.581, 0.214, 0.264, 0.841, 0.184, 0.258, 4.868,
+   0.313, 1.665, 1.512, 0.258, 0.286, 0.309, 0.299, 0.379, 0.701, 2.496,
+   0.343, 0.707, 0.539, 0.281, 0.000, 0.120},
+  {0.000, 0.723, 0.793, 0.241, 0.677, 1.195, 0.283, 0.483, 0.740, 0.313,
+   6.326, 0.357, 0.534, 0.938, 0.597, 1.524, 2.192, 0.820, 0.736, 0.370,
+   0.241, 0.707, 0.408, 1.320, 0.000, 0.120},
+  {0.000, 0.505, 0.221, 0.493, 0.197, 0.276, 1.114, 0.210, 0.314, 1.665,
+   0.357, 4.463, 2.123, 0.250, 0.303, 0.407, 0.363, 0.368, 0.561, 1.220,
+   0.439, 0.707, 0.581, 0.326, 0.000, 0.120},
+  {0.000, 0.625, 0.310, 0.499, 0.252, 0.429, 0.893, 0.286, 0.432, 1.512,
+   0.534, 2.123, 8.883, 0.382, 0.362, 0.887, 0.506, 0.498, 0.758, 1.224,
+   0.561, 0.707, 0.550, 0.603, 0.000, 0.120},
+  {0.000, 0.510, 4.868, 0.300, 1.584, 0.811, 0.273, 0.761, 1.124, 0.258,
+   0.938, 0.250, 0.382, 8.963, 0.398, 0.958, 0.773, 1.165, 0.908, 0.297,
+   0.221, 0.707, 0.385, 0.867, 0.000, 0.120},
+  {0.000, 0.771, 0.428, 0.269, 0.452, 0.581, 0.237, 0.347, 0.420, 0.286,
+   0.597, 0.303, 0.362, 0.398, 15.155, 0.538, 0.446, 0.652, 0.560, 0.370,
+   0.178, 0.707, 0.258, 0.565, 0.000, 0.120},
+  {0.000, 0.696, 0.850, 0.295, 0.763, 1.906, 0.285, 0.425, 1.316, 0.309,
+   1.524, 0.407, 0.887, 0.958, 0.538, 8.340, 1.394, 0.859, 0.724, 0.411,
+   0.408, 0.707, 0.462, 4.360, 0.000, 0.120},
+  {0.000, 0.555, 0.609, 0.233, 0.477, 0.832, 0.287, 0.377, 0.925, 0.299,
+   2.192, 0.363, 0.506, 0.773, 0.446, 1.394, 8.245, 0.695, 0.598, 0.354,
+   0.294, 0.707, 0.418, 1.046, 0.000, 0.120},
+  {0.000, 1.535, 0.948, 0.576, 0.774, 0.845, 0.369, 0.784, 0.661, 0.379,
+   0.820, 0.368, 0.498, 1.165, 0.652, 0.859, 0.695, 5.106, 1.663, 0.494,
+   0.271, 0.707, 0.462, 0.850, 0.000, 0.120},
+  {0.000, 0.980, 0.743, 0.602, 0.611, 0.685, 0.445, 0.492, 0.540, 0.701,
+   0.736, 0.561, 0.758, 0.908, 0.560, 0.724, 0.598, 1.663, 6.205, 0.891,
+   0.285, 0.707, 0.474, 0.700, 0.000, 0.120},
+  {0.000, 0.866, 0.268, 0.634, 0.245, 0.369, 0.649, 0.251, 0.289, 2.496,
+   0.370, 1.220, 1.224, 0.297, 0.370, 0.411, 0.354, 0.494, 0.891, 4.584,
+   0.342, 0.707, 0.489, 0.385, 0.000, 0.120},
+  {0.000, 0.309, 0.179, 0.302, 0.145, 0.241, 1.089, 0.264, 0.390, 0.343,
+   0.241, 0.439, 0.561, 0.221, 0.178, 0.408, 0.294, 0.271, 0.285, 0.342,
+   41.552, 0.707, 2.036, 0.304, 0.000, 0.120},
+  {0.000, 0.707, 0.707, 0.707, 0.707, 0.707, 0.707, 0.707, 0.707, 0.707,
+   0.707, 0.707, 0.707, 0.707, 0.707, 0.707, 0.707, 0.707, 0.707, 0.707,
+   0.707, 0.707, 0.707, 0.707, 0.000, 0.120},
+  {0.000, 0.436, 0.307, 0.308, 0.245, 0.333, 2.780, 0.230, 1.819, 0.539,
+   0.408, 0.581, 0.550, 0.385, 0.258, 0.462, 0.418, 0.462, 0.474, 0.489,
+   2.036, 0.707, 12.194, 0.382, 0.000, 0.120},
+  {0.000, 0.700, 1.109, 0.224, 1.303, 5.054, 0.263, 0.409, 1.059, 0.281,
+   1.320, 0.326, 0.603, 0.867, 0.565, 4.360, 1.046, 0.850, 0.700, 0.385,
+   0.304, 0.707, 0.382, 4.789, 0.000, 0.120},
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.120},
+  {0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120,
+   0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120,
+   0.120, 0.120, 0.120, 0.120, 0.120, 1.333},
+};
+
+static Nlm_FloatHi PAM250_FREQRATIOS[PROTEIN_ALPHABET][PROTEIN_ALPHABET] = {
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.170},
+  {0.000, 1.516, 1.056, 0.627, 1.070, 1.075, 0.446, 1.339, 0.732, 0.889,
+   0.766, 0.646, 0.770, 1.040, 1.294, 0.903, 0.701, 1.290, 1.317, 1.045,
+   0.264, 0.750, 0.450, 1.000, 0.000, 0.170},
+  {0.000, 1.056, 1.843, 0.365, 2.052, 1.825, 0.354, 1.119, 1.297, 0.617,
+   1.130, 0.453, 0.605, 1.600, 0.846, 1.339, 0.862, 1.117, 1.032, 0.638,
+   0.297, 0.750, 0.486, 1.613, 0.000, 0.170},
+  {0.000, 0.627, 0.365, 15.630, 0.307, 0.295, 0.371, 0.459, 0.452, 0.588,
+   0.286, 0.248, 0.299, 0.433, 0.527, 0.289, 0.430, 0.990, 0.601, 0.639,
+   0.169, 0.750, 1.078, 0.293, 0.000, 0.170},
+  {0.000, 1.070, 2.052, 0.307, 2.433, 2.197, 0.274, 1.147, 1.173, 0.580,
+   1.020, 0.398, 0.548, 1.610, 0.806, 1.461, 0.743, 1.069, 0.968, 0.612,
+   0.213, 0.750, 0.369, 1.877, 0.000, 0.170},
+  {0.000, 1.075, 1.825, 0.295, 2.197, 2.414, 0.287, 1.044, 1.165, 0.626,
+   0.988, 0.464, 0.614, 1.393, 0.880, 1.771, 0.782, 0.999, 0.914, 0.660,
+   0.201, 0.750, 0.372, 2.134, 0.000, 0.170},
+  {0.000, 0.446, 0.354, 0.371, 0.274, 0.287, 8.028, 0.332, 0.659, 1.262,
+   0.298, 1.518, 1.043, 0.447, 0.351, 0.343, 0.359, 0.478, 0.488, 0.766,
+   1.077, 0.750, 4.975, 0.311, 0.000, 0.170},
+  {0.000, 1.339, 1.119, 0.459, 1.147, 1.044, 0.332, 2.991, 0.616, 0.557,
+   0.678, 0.395, 0.525, 1.087, 0.894, 0.757, 0.555, 1.278, 0.999, 0.735,
+   0.200, 0.750, 0.300, 0.919, 0.000, 0.170},
+  {0.000, 0.732, 1.297, 0.452, 1.173, 1.165, 0.660, 0.616, 4.475, 0.571,
+   0.990, 0.620, 0.610, 1.440, 0.947, 1.962, 1.431, 0.830, 0.741, 0.597,
+   0.544, 0.750, 0.979, 1.512, 0.000, 0.170},
+  {0.000, 0.889, 0.617, 0.588, 0.580, 0.626, 1.262, 0.557, 0.571, 2.830,
+   0.641, 1.749, 1.650, 0.660, 0.627, 0.625, 0.629, 0.723, 1.017, 2.338,
+   0.303, 0.750, 0.800, 0.626, 0.000, 0.170},
+  {0.000, 0.766, 1.130, 0.286, 1.020, 0.988, 0.298, 0.678, 0.990, 0.641,
+   2.926, 0.519, 1.100, 1.258, 0.770, 1.184, 2.182, 0.962, 0.996, 0.570,
+   0.451, 0.750, 0.360, 1.073, 0.000, 0.170},
+  {0.000, 0.646, 0.453, 0.248, 0.398, 0.464, 1.518, 0.395, 0.620, 1.749,
+   0.519, 3.930, 2.338, 0.516, 0.556, 0.665, 0.501, 0.524, 0.677, 1.532,
+   0.647, 0.750, 0.815, 0.551, 0.000, 0.170},
+  {0.000, 0.770, 0.605, 0.299, 0.548, 0.614, 1.043, 0.525, 0.609, 1.650,
+   1.100, 2.338, 4.404, 0.670, 0.621, 0.796, 0.905, 0.699, 0.873, 1.510,
+   0.375, 0.750, 0.568, 0.693, 0.000, 0.170},
+  {0.000, 1.040, 1.600, 0.433, 1.610, 1.393, 0.447, 1.087, 1.440, 0.660,
+   1.258, 0.516, 0.671, 1.588, 0.893, 1.197, 1.000, 1.173, 1.107, 0.668,
+   0.394, 0.750, 0.621, 1.307, 0.000, 0.170},
+  {0.000, 1.294, 0.846, 0.527, 0.806, 0.880, 0.351, 0.894, 0.946, 0.627,
+   0.770, 0.556, 0.621, 0.893, 3.841, 1.055, 0.960, 1.243, 1.076, 0.758,
+   0.275, 0.750, 0.321, 0.956, 0.000, 0.170},
+  {0.000, 0.903, 1.339, 0.290, 1.462, 1.772, 0.343, 0.757, 1.962, 0.625,
+   1.184, 0.665, 0.796, 1.197, 1.056, 2.541, 1.335, 0.890, 0.833, 0.649,
+   0.335, 0.750, 0.395, 2.107, 0.000, 0.170},
+  {0.000, 0.701, 0.862, 0.430, 0.743, 0.782, 0.359, 0.555, 1.430, 0.629,
+   2.182, 0.501, 0.905, 1.000, 0.960, 1.335, 4.078, 0.928, 0.820, 0.561,
+   1.652, 0.750, 0.379, 1.023, 0.000, 0.170},
+  {0.000, 1.290, 1.117, 0.990, 1.069, 0.999, 0.478, 1.278, 0.830, 0.722,
+   0.962, 0.524, 0.699, 1.173, 1.244, 0.890, 0.928, 1.441, 1.362, 0.799,
+   0.566, 0.750, 0.520, 0.951, 0.000, 0.170},
+  {0.000, 1.317, 1.032, 0.601, 0.968, 0.914, 0.488, 0.999, 0.741, 1.016,
+   0.996, 0.677, 0.873, 1.107, 1.075, 0.833, 0.820, 1.362, 1.806, 1.068,
+   0.306, 0.750, 0.530, 0.879, 0.000, 0.170},
+  {0.000, 1.045, 0.638, 0.639, 0.612, 0.660, 0.766, 0.735, 0.597, 2.338,
+   0.570, 1.532, 1.511, 0.668, 0.758, 0.649, 0.561, 0.799, 1.068, 2.698,
+   0.237, 0.750, 0.566, 0.656, 0.000, 0.170},
+  {0.000, 0.264, 0.297, 0.169, 0.213, 0.201, 1.077, 0.200, 0.544, 0.303,
+   0.450, 0.647, 0.375, 0.394, 0.275, 0.335, 1.651, 0.566, 0.306, 0.237,
+   52.679, 0.750, 0.970, 0.259, 0.000, 0.170},
+  {0.000, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750, 0.750,
+   0.750, 0.750, 0.750, 0.750, 0.000, 0.170},
+  {0.000, 0.450, 0.486, 1.078, 0.369, 0.372, 4.976, 0.300, 0.979, 0.800,
+   0.360, 0.815, 0.568, 0.621, 0.321, 0.395, 0.379, 0.520, 0.530, 0.566,
+   0.970, 0.750, 10.338, 0.382, 0.000, 0.170},
+  {0.000, 1.000, 1.613, 0.293, 1.877, 2.134, 0.311, 0.919, 1.512, 0.626,
+   1.073, 0.551, 0.693, 1.307, 0.956, 2.107, 1.023, 0.951, 0.879, 0.656,
+   0.259, 0.750, 0.382, 2.122, 0.000, 0.170},
+  {0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000,
+   0.000, 0.000, 0.000, 0.000, 0.000, 0.170},
+  {0.170, 0.170, 0.170, 0.170, 0.170, 0.170, 0.170, 0.170, 0.170, 0.170,
+   0.170, 0.170, 0.170, 0.170, 0.170, 0.170, 0.170, 0.170, 0.170, 0.170,
+   0.170, 0.170, 0.170, 0.170, 0.170, 1.333},
+};
+
+
+FreqRatios*
+PSIMatrixFrequencyRatiosNew(const char* matrix_name)
+{
+    unsigned int i, j;          /* loop indices */
+    FreqRatios* retval = NULL;  /* the return value */
+
+    ASSERT(matrix_name);
+
+    retval = (FreqRatios*) Malloc(sizeof(FreqRatios));
+    if ( !retval ) {
+        return NULL;
+    }
+
+    retval->data = (double**) Malloc(sizeof(double*)*PROTEIN_ALPHABET);
+    if ( !retval->data ) {
+        return PSIMatrixFrequencyRatiosFree(retval);
+    }
+
+    for (i = 0; i < PROTEIN_ALPHABET; i++) {
+        retval->data[i] = (double*) Malloc(sizeof(double)*PROTEIN_ALPHABET);
+        if ( !retval->data[i] ) {
+            for (j = 0; j < i; j++) {
+                retval->data[j] = MemFree(retval->data[j]);
+            }
+            return PSIMatrixFrequencyRatiosFree(retval);
+        }
+    }
+
+    if ( !strcmp(matrix_name, "BLOSUM62") ||
+         !strcmp(matrix_name, "BLOSUM62_20")) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] = BLOSUM62_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 2;
+    } else if ( !strcmp(matrix_name, "BLOSUM62_20A")) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] = 
+                    BLOSUM62_20A_SCALE_MULTIPLIER * BLOSUM62_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 2;
+    } else if ( !strcmp(matrix_name, "BLOSUM62_20B")) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] =
+                    BLOSUM62_20B_SCALE_MULTIPLIER * BLOSUM62_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 2;
+    } else if ( !strcmp(matrix_name, "BLOSUM45") ) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] = BLOSUM45_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 3;
+    } else if ( !strcmp(matrix_name, "BLOSUM80") ) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] = BLOSUM80_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 2;
+    } else if ( !strcmp(matrix_name, "BLOSUM50") ) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] = BLOSUM50_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 2;
+    } else if ( !strcmp(matrix_name, "BLOSUM90") ) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] = BLOSUM90_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 2;
+    } else if ( !strcmp(matrix_name, "PAM30") ) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] = PAM30_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 2;
+    } else if ( !strcmp(matrix_name, "PAM70") ) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] = PAM70_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 2;
+    } else if ( !strcmp(matrix_name, "PAM250") ) {
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            for (j = 0; j < PROTEIN_ALPHABET; j++) {
+                retval->data[i][j] = PAM250_FREQRATIOS[i][j];
+            }
+        }
+        retval->bit_scale_factor = 2;
+    } else {
+        retval = PSIMatrixFrequencyRatiosFree(retval);
+    }
+
+    return retval;
+}
+
+FreqRatios*
+PSIMatrixFrequencyRatiosFree(FreqRatios* freq_ratios)
+{
+    if ( !freq_ratios )
+        return NULL;
+
+    if (freq_ratios->data) {
+        Uint4 i;
+        for (i = 0; i < PROTEIN_ALPHABET; i++) {
+            freq_ratios->data[i] = MemFree(freq_ratios->data[i]);
+        }
+        freq_ratios->data = MemFree(freq_ratios->data);
+    }
+
+    freq_ratios = MemFree(freq_ratios);
+    return NULL;
+}
+
+/* END of copied code */
+/****************************************************************************/

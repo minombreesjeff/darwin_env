@@ -31,7 +31,7 @@
 *   
 * Version Creation Date: 11/3/93
 *
-* $Revision: 6.46 $
+* $Revision: 6.49 $
 *
 * File Description: Utilities for creating ASN.1 submissions
 *
@@ -42,6 +42,15 @@
 *
 *
 * $Log: subutil.h,v $
+* Revision 6.49  2005/03/30 21:13:49  bollin
+* added function AddIntToSeqLoc
+*
+* Revision 6.48  2005/01/13 22:04:53  kans
+* changed [left/right]_primer to [fwd/rev]_primer_[seq/name]
+*
+* Revision 6.47  2004/12/15 22:48:52  kans
+* added lat_lon through right_primer subsource defines for Barcode of Life project
+*
 * Revision 6.46  2003/10/21 18:16:05  bazhin
 * Replaced C++ comments with C ones.
 *
@@ -883,6 +892,14 @@ NLM_EXTERN Boolean AddGenomeToEntry (
 #define SUBSRC_transgenic 26
 #define SUBSRC_environmental_sample 27
 #define SUBSRC_isolation_source 28
+#define SUBSRC_lat_lon 29
+#define SUBSRC_collection_date 30
+#define SUBSRC_collected_by 31
+#define SUBSRC_identified_by 32
+#define SUBSRC_fwd_primer_seq 33
+#define SUBSRC_rev_primer_seq 34
+#define SUBSRC_fwd_primer_name 35
+#define SUBSRC_rev_primer_name 36
 #define SUBSRC_other 255
 
 /*********************************************
@@ -1365,6 +1382,15 @@ NLM_EXTERN Boolean AddIntervalToFeature (
 	Boolean on_plus_strand ,
 	Boolean start_before_from ,
 	Boolean stop_after_to );
+
+NLM_EXTERN Boolean AddIntToSeqLoc (
+  SeqLocPtr PNTR old_slp, 
+  Int4 from, 
+  Int4 to, 
+  SeqIdPtr sip,
+  Int2 fuzz_from, 
+  Int2 fuzz_to, 
+  Int2 strand);
 
 NLM_EXTERN Boolean AddIntToSeqFeat (
 	SeqFeatPtr sfp,

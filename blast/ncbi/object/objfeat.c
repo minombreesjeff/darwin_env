@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 4/1/91
 *
-* $Revision: 6.22 $
+* $Revision: 6.24 $
 *
 * File Description:  Object manager for module NCBI-SeqFeat
 *
@@ -512,6 +512,7 @@ ret:
 	AsnUnlinkType(orig);       /* unlink local tree */
 	return sfp;
 erret:
+    aip->io_failure = TRUE;
     sfp = SeqFeatFree(sfp);
     goto ret;
 }
@@ -1841,7 +1842,7 @@ static CharPtr genCodeTblMemStr = "Genetic-code-table ::= {\n" \
 "sncbieaa \"-------------------M---------------M----------------------------\" } ,\n" \
 "{ name \"Ascidian Mitochondrial\" , id 13 ,\n" \
 "ncbieaa  \"FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIMMTTTTNNKKSSGGVVVVAAAADDEEGGGG\",\n" \
-"sncbieaa \"-----------------------------------M----------------------------\" } ,\n" \
+"sncbieaa \"---M------------------------------MM---------------M------------\" } ,\n" \
 "{ name \"Alternative Flatworm Mitochondrial\" , id 14 ,\n" \
 "ncbieaa  \"FFLLSSSSYYY*CCWWLLLLPPPPHHQQRRRRIIIMTTTTNNNKSSSSVVVVAAAADDEEGGGG\",\n" \
 "sncbieaa \"-----------------------------------M----------------------------\" } ,\n" \

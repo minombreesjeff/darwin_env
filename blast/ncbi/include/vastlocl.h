@@ -1,1 +1,0 @@
-../biostruc/vastlocl.h

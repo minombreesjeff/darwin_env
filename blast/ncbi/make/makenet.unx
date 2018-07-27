@@ -1,6 +1,6 @@
 #   makefile for network demo programs and network entrez
 #
-#	$Id: makenet.unx,v 6.172 2004/05/05 02:01:08 kans Exp $
+#	$Id: makenet.unx,v 6.197 2005/03/03 18:53:35 beloslyu Exp $
 #   test, ignore
 #
 #   Sun with unbundled ANSI compiler [ make CC=acc RAN=ranlib ]
@@ -72,7 +72,7 @@ THREAD_OBJ =
 VIBLIBS = 
 VIBFLAG = -I/am/Motif/include -DWIN_MOTIF
 VIBFLAG =
-VIB = vclient Nentrez ddv udv
+VIB = Nentrez ddv udv
 VIB =
 VIBLIBS= -lXm -lXmu -lXt -lX11
 VIBLIBS=
@@ -283,9 +283,8 @@ VIB_POST_LINK = :
 
 ## sources for libraries
 
-SRC6  = ni_lib_.c ni_www.c ni_debug.c ncbicli.c ncbiurl.c \
-        ni_disp.c ni_msg.c ni_error.c ni_encrs.c ni_service.c
-#SRC6_ = ni_lib.c ni_msg.c ni_error.c ni_encrs.c
+SRC6  = ni_lib_.c ni_service.c ni_debug.c \
+        ni_disp.c ni_msg.c ni_error.c ni_encrs.c
 
 SRC7 =	netentr.c netlib.c objneten.c
 
@@ -305,11 +304,11 @@ SRCRSAREF = desc.c digit.c digitas.c md2c.c md5c.c nn.c prime.c r_encode.c \
 SRCSOCKS = Rconnect.c SendGetDst.c check_cconf.c check_user.c \
 	   percent_x.c porttoserv.c saddrtoname.c shell_cmd.c
 
-SRC15 = ncbiurl.c ni_lib.c ni_msg.c ni_error.c ni_encr.c $(SRCRSAREF)
+SRC15 = ni_lib.c ni_msg.c ni_error.c ni_encr.c $(SRCRSAREF)
 
-SRC16 = ncbiurl.c ni_lib.c ni_msg.c ni_error.c ni_encrs.c $(SRCSOCKS)
+SRC16 = ni_lib.c ni_msg.c ni_error.c ni_encrs.c $(SRCSOCKS)
 
-SRC17 = ncbiurl.c ni_lib.c ni_msg.c ni_error.c ni_encr.c $(SRCSOCKS) \
+SRC17 = ni_lib.c ni_msg.c ni_error.c ni_encr.c $(SRCSOCKS) \
 	$(SRCRSAREF)
 
 SRC19 = objspell.c spellapi.c
@@ -349,9 +348,8 @@ NET_LIBS_SRC = $(SRC6) $(SRC7) $(SRC8) $(SRC9)
 
 # objects for libraries
 
-OBJ6  = ni_lib_.o ncbicli.o ncbiurl.o ni_www.o ni_debug.o \
-        ni_disp.o ni_msg.o ni_error.o ni_encrs.o ni_service.o
-#OBJ6_ = ni_lib.o ni_msg.o ni_error.o ni_encrs.o
+OBJ6  = ni_lib_.o ni_debug.o ni_service.o \
+        ni_disp.o ni_msg.o ni_error.o ni_encrs.o
 
 OBJ7 =	netentr.o netlib.o objneten.o
 
@@ -371,15 +369,15 @@ OBJRSAREF = desc.o digit.o digitas.o md2c.o md5c.o nn.o prime.o r_encode.o \
 OBJSOCKS = Rconnect.o SendGetDst.o check_cconf.o check_user.o \
 	   percent_x.o porttoserv.o saddrtoname.o shell_cmd.o $(SOCKS_GETPASS)
 
-OBJ15BASE = ncbiurl.o ni_lib.o ni_msg.o ni_error.o ni_encr.o
+OBJ15BASE = ni_lib.o ni_msg.o ni_error.o ni_encr.o
 
 OBJ15 = $(OBJ15BASE) $(OBJRSAREF)
 
-OBJ16BASE = ncbiurl.o Sni_lib.o ni_msg.o ni_error.o ni_encrs.o
+OBJ16BASE = Sni_lib.o ni_msg.o ni_error.o ni_encrs.o
 
 OBJ16 = $(OBJ16BASE) $(OBJSOCKS)
 
-OBJ17BASE = ncbiurl.o Sni_lib.o ni_msg.o ni_error.o ni_encr.o
+OBJ17BASE = Sni_lib.o ni_msg.o ni_error.o ni_encr.o
 
 OBJ17 = $(OBJ17BASE) $(OBJSOCKS) $(OBJRSAREF)
 
@@ -415,31 +413,9 @@ OBJ46 = id2.o id2sgen.o
 
 # objects & sources needed for versions of network demo programs
 
-OBJVCLIENT =	vclient.o
-
 OBJDDV = ddvmain.o
 
 OBJUDV = udvmain.o
-
-OBJDISPD =	dispd.o ni_servlib.o ni_buff.o ni_callmgr.o
-
-OBJNCBID =	ncbid.o ni_servlib.o ni_buff.o
-
-OBJSVBROKER =	svbroker.o
-
-OBJENCRUTIL =   encrutil.o
-
-OBJECHOD =	echoserv.o
-
-EXEDISPD =	dispd
-
-EXENCBID =	ncbid
-
-EXESVBROKER =   svbroker
-
-EXEENCRUTIL =	encrutil
-
-EXEECHOD =	echoserv
 
 EXESUGGSRV =	suggsrv
 
@@ -451,23 +427,9 @@ EXESEQUIN =	sequin
 
 EXEPSEQUIN =	Psequin
 
-EXESESSION =	session
-
-SRCVCLIENT =	vclient.c
-
 SRCDDV = ddvmain.c
 
 SRCUDV = udvmain.c
-
-SRCDISPD =	dispd.c ni_servlib.c ni_buff.c ni_callmgr.c
-
-SRCNCBID =	ncbid.c ni_servlib.c ni_buff.c
-
-SRCSVBROKER =   svbroker.c
-
-SRCENCRUTIL =	encrutil.c
-
-SRCECHOD =	echoserv.c
 
 SRCUTILCOPY = ../demo/srchnt.c ../demo/srchaa.c ../demo/mts.c ../demo/sigme.c \
 	../demo/dst.c ../demo/ccp.c ../demo/epi.c ../demo/twop.c \
@@ -482,21 +444,15 @@ EXEUTILVIB = ccpv dustv epiv sigmev twopv cnsrtv cnsgnv searchv
 SRCSEQUIN = sequin1.c sequin2.c sequin3.c sequin4.c sequin5.c sequin6.c \
 	sequin7.c sequin8.c sequin9.c sequin10.c sequinx.c
 
-SRCSESSION =	session.c
 
-
-
-CLI_SRC = $(SRCVCLIENT) $(SRCDDV) $(SRCUDV)
+CLI_SRC = $(SRCDDV) $(SRCUDV)
 
 CLIENTS = suggcli
 CLIENTS =
 
-SERV_SRC = $(SRCDISPD) $(SRCNCBID) $(SRCECHOD) $(SRCENTSRV) $(SRCSVBROKER) \
-	$(SRCENCRUTIL)
+SERV_SRC = $(SRCENTSRV)
 
-SERVERS = $(EXEDISPD) $(EXENCBID) $(EXEECHOD) $(EXESVBROKER) \
-	$(EXEENCRUTIL) $(EXESUGGSRV) $(EXEQUERY) $(EXESEQUIN) $(EXESESSION) \
-	$(EXEPSEQUIN) $(EXENQUERY)
+SERVERS = $(EXESUGGSRV) $(EXEQUERY) $(EXESEQUIN) $(EXEPSEQUIN) $(EXENQUERY)
 
 ## All things to make
 ##
@@ -520,7 +476,7 @@ utilities : $(EXEUTIL)
 
 vibutilities : $(EXEUTILVIB)
 
-.NO_PARALLEL:	copy nocopy Tentrez sequin Psequin Ssequin elecpcr asn2fast asn2asn Nbatch Nbatch2 Nbatch3 Nentrcmd seqget idfetch session test_ncbi_socket test_ncbi_dsock test_ncbisock debug_server rtestval rasn2ff asn2gb asn2gb_psf asn2fsa asn2fsa_psf flint gbseqget insdseqget testent2 entrez2 spidey dotmatrix ingenue condense bl2seq
+.NO_PARALLEL:	copy nocopy Tentrez sequin Psequin Ssequin elecpcr asn2fast asn2asn Nbatch Nbatch3 Nentrcmd seqget idfetch test_ncbi_socket test_ncbi_dsock debug_server rtestval rasn2ff asn2gb asn2gb_psf asn2fsa asn2fsa_psf tbl2asn asn2all gene2xml asnval asnval_psf flint gbseqget insdseqget testent2 entrez2 spidey dotmatrix ingenue condense bl2seq
 
 .WAIT:
 	echo Waiting...go
@@ -658,7 +614,6 @@ copy :
 	$(SRCCOPY) ../demo/seqget.c .
 	$(SRCCOPY) ../demo/entrcmd.c .
 	$(SRCCOPY) ../demo/batch.c .
-	$(SRCCOPY) ../demo/nbatch.c .
 	$(SRCCOPY) ../demo/qbatch.c .
 	$(SRCCOPY) ../demo/elecpcr.c .
 	$(SRCCOPY) ../demo/asn2fast.c .
@@ -669,6 +624,10 @@ copy :
 	$(SRCCOPY) ../demo/asn2ff.c .
 	$(SRCCOPY) ../demo/asn2gb.c .
 	$(SRCCOPY) ../demo/asn2fsa.c .
+	$(SRCCOPY) ../demo/asn2all.c .
+	$(SRCCOPY) ../demo/gene2xml.c .
+	$(SRCCOPY) ../demo/asnval.c .
+	$(SRCCOPY) ../demo/tbl2asn.c .
 	$(SRCCOPY) ../demo/flint.c .
 	$(SRCCOPY) ../demo/gbseqget.c .
 	$(SRCCOPY) ../demo/insdseqget.c .
@@ -684,9 +643,7 @@ copy :
 	$(SRCCOPY) $(SRCUTILCOPY) .
 	-$(SRCCOPY) ../network/entrez/server/*.* .
 	-$(SRCCOPY) ../network/suggest/server/*.* .
-	-$(SRCCOPY) ../network/nsdaemon/*.* .
-	$(SRCCOPY) ../network/nsdemocl/*.* .
-	chmod -R ug+rw,o+r .
+	-chmod -R ug+rw,o+r .
 
 
 ## Implicit actions
@@ -732,14 +689,10 @@ id1gen.o: id1gen.c
 ni_encr.o : ni_encr.c
 	$(CC) $(CFLAGS) -I$(ENCRSRCDIR) -DPROTOTYPES ni_encr.c
 
-## Special rules: for ni_www.c (with built-in load balancing, if specified)
-##                for ni_lib_.c(with allowed WWW stateless mode)
+## Special rule for ni_lib_.c (with allowed WWW stateless mode)
 ##
-ni_www.o : ni_www.c
-	$(CC) $(CFLAGS) $(IN_HOUSE_CFLAGS) ni_www.c
 ni_lib_.o : ni_lib_.c
 	$(CC) $(CFLAGS) $(IN_HOUSE_CFLAGS) ni_lib_.c
-
 
 ## Explicit rules for SunOS and Solaris make utilities,
 ## which can't seem to figure out how to make some objects
@@ -1097,60 +1050,27 @@ idload_lib.o : idload_lib.c
 
 
 netentcf : netentcf.c $(ULIB31)
-	$(CC) -o netentcf $(LDFLAGS) netentcf.c $(LIB31) $(LIB20) $(LIB22) $(LIB4) $(LIB23) $(LIB3) $(LIB8) $(LIB7) $(NETCLILIB) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o netentcf $(LDFLAGS) netentcf.c $(LIB31) $(LIB22) $(LIB4) $(LIB23) $(LIB3) $(LIB8) $(LIB7) $(NETCLILIB) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 ddv    : $(OBJDDV)
-	$(CC) -o ddv $(LDFLAGS) $(OBJDDV) $(LIB41) $(LIB31) $(LIB20) $(LIB22) $(LIB45) \
+	$(CC) -o ddv $(LDFLAGS) $(OBJDDV) $(LIB41) $(LIB31) $(LIB20) $(LIB61) $(LIB60) $(LIB22) $(LIB45) \
 	$(LIB8) $(LIB7) $(NETCLILIB) $(LIB3) $(LIB4) $(LIB23) $(LIB2) $(LIB1) \
 	$(VIBLIBS) $(OTHERLIBS)
 
 udv    : $(OBJUDV)
-	$(CC) -o udv $(LDFLAGS) $(OBJUDV) $(LIB41) $(LIB31) $(LIB20) $(LIB22) $(LIB45) \
+	$(CC) -o udv $(LDFLAGS) $(OBJUDV) $(LIB41) $(LIB31) $(LIB20) $(LIB61) $(LIB60) $(LIB22) $(LIB45) \
     $(LIB8) $(LIB7) $(NETCLILIB) $(LIB3) $(LIB4) $(LIB23) $(LIB2) \
 	$(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 Nentrez : entrez.c $(ULIB31) netentcf
-	$(CC) -o Nentrez $(LDFLAGS) entrez.c $(LIB41) $(LIB31) $(LIB30) $(LIB20) $(LIB22) $(LIB45) \
+	$(CC) -o Nentrez $(LDFLAGS) entrez.c $(LIB41) $(LIB31) $(LIB30) $(LIB20) $(LIB61) $(LIB60) $(LIB22) $(LIB45) \
     $(LIB36) $(LIB23) $(LIB8) $(LIB7) $(NETCLILIB) $(LIB5) $(LIB4) $(LIB3) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # left this in (Tentrez) for script backwards compatibility
 Tentrez : entrez.c $(ULIB31) netentcf
-	$(CC) -o Tentrez $(LDFLAGS) entrez.c $(LIB41) $(LIB31) $(LIB30) $(LIB20) $(LIB22) $(LIB45) \
+	$(CC) -o Tentrez $(LDFLAGS) entrez.c $(LIB41) $(LIB31) $(LIB30) $(LIB20) $(LIB61) $(LIB60) $(LIB22) $(LIB45) \
     $(LIB36) $(LIB23) $(LIB8) $(LIB7) $(NETCLILIB) $(LIB5) $(LIB4) $(LIB3) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
-
-# sample network services client (non-Vibrant) - see catalogc.c Makefile
-
-# sample network services client (Vibrant)
-
-vclient : vclient.c $(BNETCLILIB)
-	$(CC) -o vclient $(LDFLAGS) vclient.c $(LIB4) $(NETCLILIB) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
-
-
-# network services dispatcher
-
-dispd : $(OBJDISPD) $(BSRVNETCLILIB)
-	$(CC) -o dispd $(LDFLAGS) $(OBJDISPD) $(SRVNETCLILIB) $(LIB1) $(OTHERLIBS)
-
-# network services server manager
-
-ncbid : $(OBJNCBID) $(BSRVNETCLILIB)
-	$(CC) -o ncbid $(LDFLAGS) $(OBJNCBID) $(SRVNETCLILIB) $(LIB1) $(OTHERLIBS)
-
-# generic service broker
-
-svbroker : $(OBJSVBROKER) $(BSRVNETCLILIB)
-	$(CC) -o svbroker $(LDFLAGS) $(OBJSVBROKER) $(SRVNETCLILIB) $(LIB1) $(OTHERLIBS)
-
-# encryption utilities
-
-encrutil : $(OBJENCRUTIL) $(BNETCLILIB)
-	$(CC) -o encrutil $(LDFLAGS) $(OBJENCRUTIL) $(NETCLILIB) $(LIB1) $(OTHERLIBS)
-
-# sample network services server
-
-echoserv : echoserv.c $(BSRVNETCLILIB)
-	$(CC) -o echoserv $(LDFLAGS) echoserv.c $(SRVNETCLILIB) $(LIB1) $(OTHERLIBS)
 
 # demo program (network version of "seqget")
 
@@ -1167,9 +1087,6 @@ Nentrcmd : entrcmd.c
 Nbatch : batch.c
 	$(CC) -o Nbatch $(LDFLAGS) batch.c $(ENTREZLIBS) $(LIB2) $(LIB1) $(OTHERLIBS)
 
-Nbatch2 : nbatch.c
-	$(CC) -o Nbatch2 $(LDFLAGS) nbatch.c $(ENTREZLIBS) $(LIB2) $(LIB1) $(OTHERLIBS)
-
 Nbatch3 : qbatch.c
 	$(CC) -o Nbatch3 $(LDFLAGS) qbatch.c $(LIB41) $(LIB6) $(LIB2) $(LIB1) $(OTHERLIBS)
 
@@ -1185,7 +1102,7 @@ rasn2ff :	asn2ff.c
 asn2gb :	asn2gb.c
 	$(CC) -g -o asn2gb $(LDFLAGS) asn2gb.c $(LIB41) $(NETCLILIB) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
 
-# asn2gb_psf, uses PUBSEQBioseqFetchEnable instead of PubSeqfetchEnable
+# asn2gb_psf, uses PUBSEQBioseqFetchEnable instead of PubSeqFetchEnable
 # should be used only internally within NCBI.
 asn2gb_psf :	asn2gb.c
 	$(CC) -DINTERNAL_NCBI_ASN2GB -g -o asn2gb_psf $(LDFLAGS) asn2gb.c $(LIB_PS) $(LIB23) $(LIB2) $(LIB1) $(NCBI_SYBLIBS_CT) $(OTHERLIBS)
@@ -1194,10 +1111,32 @@ asn2gb_psf :	asn2gb.c
 asn2fsa :	asn2fsa.c
 	$(CC) -g -o asn2fsa $(LDFLAGS) asn2fsa.c $(THREAD_OBJ) $(LIB41) $(NETCLILIB) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
 
-# asn2fsa_psf, uses PUBSEQBioseqFetchEnable instead of PubSeqfetchEnable
+# asn2fsa_psf, uses PUBSEQBioseqFetchEnable instead of PubSeqFetchEnable
 # should be used only internally within NCBI.
 asn2fsa_psf :	asn2fsa.c
 	$(CC) -DINTERNAL_NCBI_ASN2FSA -g -o asn2fsa_psf $(LDFLAGS) asn2fsa.c $(THREAD_OBJ) $(LIB_PS) \
+	$(LIB23) $(LIB2) $(LIB1) $(NCBI_SYBLIBS_CT_r) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# asn2all program (asn2all)
+asn2all :	asn2all.c
+	$(CC) -g -o asn2all $(LDFLAGS) asn2all.c $(THREAD_OBJ) $(LIB41) $(NETCLILIB) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# tbl2asn
+tbl2asn : tbl2asn.c 
+	$(CC) -o tbl2asn $(LDFLAGS) tbl2asn.c $(LIB23) $(LIB2) $(NETCLILIB) $(LIB1) $(OTHERLIBS) 
+
+# gene2xml program (gene2xml)
+gene2xml :	gene2xml.c
+	$(CC) -g -o gene2xml $(LDFLAGS) gene2xml.c $(NETCLILIB) $(LIB2) $(LIB1) $(OTHERLIBS)
+
+# asnval program (asnval)
+asnval :	asnval.c
+	$(CC) -g -o asnval $(LDFLAGS) asnval.c $(THREAD_OBJ) $(LIB41) $(NETCLILIB) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+
+# asnval_psf, uses PUBSEQBioseqFetchEnable instead of PubSeqFetchEnable
+# should be used only internally within NCBI.
+asnval_psf :	asnval.c
+	$(CC) -INTERNAL_NCBI_ASN2VAL -g -o asnval_psf $(LDFLAGS) asnval.c $(THREAD_OBJ) $(LIB_PS) \
 	$(LIB23) $(LIB2) $(LIB1) $(NCBI_SYBLIBS_CT_r) $(OTHERLIBS) $(THREAD_OTHERLIBS)
 
 # flint program (flint)
@@ -1214,11 +1153,11 @@ insdseqget :	insdseqget.c
 
 # Entrez2 service test program (testent2)
 testent2 :	testent2.c
-	$(CC) -g -o testent2 $(LDFLAGS) testent2.c $(LIB23) $(LIB22) $(LIB20) $(LIB2) $(LIB1) $(OTHERLIBS)
+	$(CC) -g -o testent2 $(LDFLAGS) testent2.c $(LIB23) $(LIB22) $(LIB20) $(LIB61) $(LIB60) $(LIB2) $(LIB1) $(OTHERLIBS)
 
 # network Entrez2 application (entrez2)
 entrez2 :	entrez2.c
-	$(CC) -g -o entrez2 $(LDFLAGS) entrez2.c $(LIB41) $(LIB6) $(LIB20) $(LIB22) $(LIB23) $(LIB2) $(LIB4) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -g -o entrez2 $(LDFLAGS) entrez2.c $(LIB41) $(LIB6) $(LIB20) $(LIB61) $(LIB60) $(LIB22) $(LIB23) $(LIB2) $(LIB4) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 	$(VIB_POST_LINK) entrez2
 
 # demo program (spidey)
@@ -1227,11 +1166,11 @@ spidey :	spideymain.c
 
 # demo program dotmatrix
 dotmatrix :	dotmain.c
-	$(CC) -o dotmatrix $(LDFLAGS) dotmain.c $(LIB41) $(LIB6) $(LIB20) $(LIB23) $(LIB2) $(LIB4) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o dotmatrix $(LDFLAGS) dotmain.c $(LIB41) $(LIB6) $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(LIB2) $(LIB4) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # demo program ingenue
 ingenue :	ingenmain.c
-	$(CC) -o ingenue $(LDFLAGS) ingenmain.c $(LIB41) $(LIB6) $(LIB20) $(LIB23) $(LIB2) $(LIB4) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o ingenue $(LDFLAGS) ingenmain.c $(LIB41) $(LIB6) $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(LIB2) $(LIB4) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # demo program (electronic PCR)
 
@@ -1274,7 +1213,7 @@ blastcl3: blastall.c $(BNETCLILIB) $(BLIB36)
 # BLAST 2 sequences
 # Uses network libraries to access Entrez for retrieving sequences by gi/accession
 bl2seq : bl2seq.c
-	$(CC) -o bl2seq $(LDFLAGS) bl2seq.c $(LIB23) $(LIB41) $(NETCLILIB) $(LIB2) $(LIB1) $(OTHERLIBS)
+	$(CC) -o bl2seq $(LDFLAGS) bl2seq.c $(LIB61) $(LIB60) $(LIB23) $(LIB41) $(NETCLILIB) $(LIB2) $(LIB1) $(OTHERLIBS)
 
 # test client for the suggest network service
 suggcli: suggcli.c $(BNETCLILIB) $(BLIB24)
@@ -1312,7 +1251,7 @@ srchaa : srchaa.o
 # searchv - patterns - Vibrant version
 
 searchv : searchv.c
-	$(CC) -o searchv $(LDFLAGS) searchv.c $(LIB20) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o searchv $(LDFLAGS) searchv.c $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # mts - profile search
 
@@ -1327,7 +1266,7 @@ sigme : sigme.c
 # sigmev - signal peptides and transmembrane regions - Vibrant version
 
 sigmev : sigmev.c
-	$(CC) -o sigmev $(LDFLAGS) sigmev.c $(LIB20) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o sigmev $(LDFLAGS) sigmev.c $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # dst - low complexity nucleic acids
 
@@ -1337,7 +1276,7 @@ dst : dst.c
 # dustv - low complexity nucleic acids - Vibrant version
 
 dustv : dustv.c
-	$(CC) -o dustv $(LDFLAGS) dustv.c $(LIB20) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o dustv $(LDFLAGS) dustv.c $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # coiled coil prediction
 
@@ -1347,7 +1286,7 @@ ccp : ccp.c
 # coiled coil prediction - Vibrant version
 
 ccpv : ccpv.c
-	$(CC) -o ccpv $(LDFLAGS) ccpv.c $(LIB20) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o ccpv $(LDFLAGS) ccpv.c $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # low complexity
 
@@ -1357,7 +1296,7 @@ epi : epi.c
 # epiv - low complexity - Vibrant version
 
 epiv : epiv.c
-	$(CC) -o epiv $(LDFLAGS) epiv.c $(LIB20) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o epiv $(LDFLAGS) epiv.c $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # twop - identity in longest blast hit
 
@@ -1367,7 +1306,7 @@ twop : twop.c
 # twopv - identity in longest blast hit - Vibrant version
 
 twopv : twopv.c
-	$(CC) -o twopv $(LDFLAGS) twopv.c $(LIB20) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o twopv $(LDFLAGS) twopv.c $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # cnsrt - codon usage relationship
 
@@ -1377,7 +1316,7 @@ cnsrt : cnsrt.c
 # cnsrtv - codon usage tree - Vibrant version
 
 cnsrtv : cnsrtv.c
-	$(CC) -o cnsrtv $(LDFLAGS) cnsrtv.c $(LIB20) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o cnsrtv $(LDFLAGS) cnsrtv.c $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 # cnsgn - orf selection by codon bias
 
@@ -1393,7 +1332,7 @@ cnsgn : cnsgn.o
 # cnsgnv - orf selection by codon bias - Vibrant version
 
 cnsgnv : cnsgnv.c
-	$(CC) -o cnsgnv $(LDFLAGS) cnsgnv.c $(LIB20) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
+	$(CC) -o cnsgnv $(LDFLAGS) cnsgnv.c $(LIB20) $(LIB61) $(LIB60) $(LIB23) $(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 
 
 # 'sequin' direct submission tool
@@ -1402,7 +1341,7 @@ sequin : $(SRCSEQUIN) $(BENTREZLIBS) $(BLIB61) $(BLIB60) $(BLIB23) $(BLIB30) $(B
 	$(BLIB11) $(BLIB8) $(BLIB7) $(NETCLIBLIB) $(BLIB5) $(BLIB4) $(BLIB3) \
 	$(BLIB2) $(BLIB1) $(ULIB31)
 	$(CC) -o sequin $(SEQUIN_OPTS) -I. $(LDFLAGS) $(SRCSEQUIN) \
-	$(LIB61) $(LIB60) $(LIB31) $(LIB30) $(LIB20) $(LIB22) $(LIB45) $(LIB19) $(LIB40) $(LIB41) \
+	$(LIB31) $(LIB30) $(LIB20) $(LIB61) $(LIB60) $(LIB22) $(LIB45) $(LIB19) $(LIB40) $(LIB41) \
 	$(LIB36) $(LIB23) $(LIB11) $(ENTREZLIBS) $(LIB4) \
 	$(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 	$(VIB_POST_LINK) sequin
@@ -1413,7 +1352,7 @@ Ssequin : $(SRCSEQUIN) $(BENTREZLIBS) $(BLIB61) $(BLIB60) $(BLIB23) $(BLIB30) $(
 	$(BLIB11) $(BLIB8) $(BLIB7) $(NETCLIBLIB) $(BLIB5) $(BLIB4) $(BLIB3) \
 	$(BLIB2) $(BLIB1) $(ULIB31) $(ULIB33) $(THREAD_OBJ)
 	$(CC) -o Ssequin $(SEQUIN_OPTS) -DUSE_SMARTNET -I. $(LDFLAGS) $(SRCSEQUIN) \
-	$(THREAD_OBJ) $(LIB33) $(LIB30) $(LIB45) $(LIB61) $(LIB60) $(LIB31) $(LIB20) $(LIB22) $(LIB19) $(LIB40) \
+	$(THREAD_OBJ) $(LIB33) $(LIB30) $(LIB45) $(LIB31) $(LIB20) $(LIB61) $(LIB60) $(LIB22) $(LIB19) $(LIB40) \
 	$(LIB41) $(LIB36) $(LIB23) $(LIB11) $(ENTREZLIBS) $(LIB4) \
 	$(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS) $(THREAD_OTHERLIBS)
 
@@ -1423,12 +1362,9 @@ Psequin : $(SRCSEQUIN) $(BENTREZLIBS) $(BLIB61) $(BLIB60) $(BLIB23) $(BLIB45) $(
 	$(BLIB11) $(BLIB8) $(BLIB7) $(NETCLIBLIB) $(BLIB5) $(BLIB4) $(BLIB3) \
 	$(BLIB2) $(BLIB1) $(ULIB31)
 	$(CC) -o Psequin -I. $(LDFLAGS) -UINTERNAL_NCBI_SEQUIN $(SRCSEQUIN) \
-	$(LIB30) $(LIB45) $(LIB61) $(LIB60) $(LIB31) $(LIB20) $(LIB22) $(LIB40) $(LIB41) $(LIB36) $(LIB23) $(LIB11) \
+	$(LIB30) $(LIB45) $(LIB31) $(LIB20) $(LIB61) $(LIB60) $(LIB22) $(LIB40) $(LIB41) $(LIB36) $(LIB23) $(LIB11) \
 	$(ENTREZLIBS) $(LIB4) $(LIB2) $(LIB1) $(VIBLIBS) $(OTHERLIBS)
 	$(VIB_POST_LINK) Psequin
-
-session : $(SRCSESSION) $(BSRVNETCLILIB)
-	$(CC) -o session $(LDFLAGS) $(SRCSESSION) $(SRVNETCLILIB) $(LIB1) $(OTHERLIBS)
 
 salogif.o:	salogif.c
 	$(CC) $(CFLAGS) salogif.c
@@ -1449,11 +1385,6 @@ test_ncbi_socket : test_ncbi_socket.c
 test_ncbi_dsock : test_ncbi_dsock.c
 	$(CC) -o test_ncbi_dsock $(LDFLAGS) test_ncbi_dsock.c -DNCBI_C $(LIB1) $(OTHERLIBS)
 
-# test_ncbisock
-
-test_ncbisock : test_ncbisock.c
-	$(CC) -o test_ncbisock $(LDFLAGS) test_ncbisock.c $(LIB1) $(OTHERLIBS)
-
 # debug_server
 
 debug_server : debug_server.c
@@ -1463,20 +1394,20 @@ debug_server : debug_server.c
 
 psiblast.REAL : psiblast.c wwwbutl.c
 	$(CC) -o psiblast.REAL $(LDFLAGS) psiblast.c wwwbutl.c $(THREAD_OBJ) \
-	$(LIB20) $(LIB23) -lvibgif $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+	$(LIB20) $(LIB61) $(LIB60) $(LIB23) -lvibgif $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
 
 psiblast_cs.REAL : psiblast.c wwwbutl.c
 	$(CC) -o psiblast_cs.REAL $(LDFLAGS) -DNCBI_ENTREZ_CLIENT psiblast.c wwwbutl.c \
-	$(THREAD_OBJ) $(LIB40) $(LIB41) $(LIB36) $(LIB6) $(LIB20) $(LIB23) -lvibgif \
+	$(THREAD_OBJ) $(LIB40) $(LIB41) $(LIB36) $(LIB6) $(LIB20) $(LIB61) $(LIB60) $(LIB23) -lvibgif \
 	$(LIB2) $(LIB1) $(OTHERLIBS) 	$(THREAD_OTHERLIBS)
 
 blast.REAL : wwwblast.c wwwbutl.c
 	$(CC) -o blast.REAL $(LDFLAGS) wwwblast.c wwwbutl.c $(THREAD_OBJ) \
-	$(LIB20) $(LIB23) -lvibgif $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+	$(LIB20) $(LIB61) $(LIB60) $(LIB23) -lvibgif $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
 
 blast_cs.REAL : wwwblast.c wwwbutl.c
 	$(CC) -o blast_cs.REAL $(LDFLAGS) -DNCBI_ENTREZ_CLIENT wwwblast.c wwwbutl.c \
-	$(THREAD_OBJ) $(LIB40) $(LIB41) $(LIB36) $(LIB6) $(LIB20) $(LIB23) -lvibgif \
+	$(THREAD_OBJ) $(LIB40) $(LIB41) $(LIB36) $(LIB6) $(LIB20) $(LIB61) $(LIB60) $(LIB23) -lvibgif \
 	$(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
 
 nph-viewgif.cgi : viewgif.c
@@ -1484,11 +1415,13 @@ nph-viewgif.cgi : viewgif.c
 
 wblast2.REAL : wblast2.c
 	$(CC) -o wblast2.REAL $(LDFLAGS) -DBL2SEQ_STANDALONE wblast2.c \
-	$(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
+	$(LIB61) $(LIB23) $(LIB2) $(LIB60) $(LIB1) $(OTHERLIBS)
+
 
 wblast2_cs.REAL : wblast2.c
 	$(CC) -o wblast2_cs.REAL $(LDFLAGS) -DNCBI_ENTREZ_CLIENT -DBL2SEQ_STANDALONE \
-	wblast2.c $(LIB41) $(LIB6) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
+	wblast2.c $(LIB41) $(LIB6) $(LIB61) $(LIB23) $(LIB2) $(LIB60) $(LIB1) \
+	$(OTHERLIBS)
 
 bl2bag.cgi : bl2bag.c
 	$(CC) -o bl2bag.cgi $(LDFLAGS) bl2bag.c $(LIB1) $(OTHERLIBS)

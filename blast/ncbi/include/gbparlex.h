@@ -1,1 +1,0 @@
-../api/gbparlex.h

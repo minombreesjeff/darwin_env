@@ -841,7 +841,10 @@ NLM_EXTERN Int2 PubLabelMatch (ValNodePtr pub1, ValNodePtr pub2)
 	if (m1->choice == PUB_Gen) {
 		if (m2->choice != PUB_Gen) {
 			PubFree(m1);
-			ValNodeFree(m2);
+			if (m2->choice == PUB_Equiv)
+				PubFree(m2);
+			else
+				ValNodeFree(m2);
 			return -1;
 		}
 		if ((g1 = m1->data.ptrvalue) == NULL) {

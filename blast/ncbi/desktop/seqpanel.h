@@ -1,4 +1,4 @@
-/* $Id: seqpanel.h,v 6.3 2004/03/15 19:23:27 bollin Exp $
+/* $Id: seqpanel.h,v 6.12 2005/03/02 17:19:35 bollin Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -28,16 +28,27 @@
 * ==========================================================================
 */
 
+#ifndef seqpanel_h
+#define seqpanel_h
 extern PaneL CreateSeqViewPanel (GrouP g, Int2 w, Int2 h);
-extern void 
-AlignmentIntervalToString 
-(SeqAlignPtr salp,
- Int4        row,
- Int4        start,
- Int4        stop,
- Int4        target_row,
- Boolean     view_whole_entity,
- Uint1Ptr    seqbuf,
- Uint1Ptr    alnbuf,
- Int4 PNTR   alnbuffer_len);
 
+extern void WriteAlignmentContiguousToFile
+(SeqAlignPtr salp,
+ FILE        *fp,
+ Int4        seq_chars_per_row,
+ Boolean     show_substitutions);
+extern void 
+WriteAlignmentInterleaveToFile 
+(SeqAlignPtr salp,
+ FILE        *fp,
+ Int4        seq_chars_per_row,
+ Boolean     show_substitutions); 
+
+extern ForM CreateSeqEditorWindow (Int2 left, Int2 top, CharPtr windowname, BioseqPtr bsp);
+
+NLM_EXTERN void SeqEdTranslateOneCDS (SeqFeatPtr sfp, BioseqPtr featbsp, Uint2 entityID);
+NLM_EXTERN void SeqEdRemapLocation (SeqAlignPtr salp, SeqLocPtr slp, Int4 seq_len);
+NLM_EXTERN Boolean SeqEdFixProteinFeatures (BioseqPtr oldbsp, BioseqPtr newbsp, Boolean force_fix);
+NLM_EXTERN SeqAlignPtr Sequin_GlobalAlign2Seq (BioseqPtr bsp1, BioseqPtr bsp2, BoolPtr revcomp);
+extern ForM CreateAlnEditorWindow (Int2 left, Int2 top, CharPtr windowname, SeqAlignPtr salp, Uint2 entityID);
+#endif

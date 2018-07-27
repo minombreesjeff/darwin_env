@@ -1,6 +1,6 @@
 /*   mmdbapi1.c
 * ===========================================================================
-* 
+*
 *                            PUBLIC DOMAIN NOTICE
 *            National Center for Biotechnology Information (NCBI)
 *
@@ -29,11 +29,11 @@
 *
 * Version Creation Date:   03/14/95
 *
-* $Revision: 6.44 $
+* $Revision: 6.47 $
 *
-* File Description: 
+* File Description:
 *
-* Modifications:  
+* Modifications:
 * --------------------------------------------------------------------------
 * Date     Name        Description of modification
 * -------  ----------  -----------------------------------------------------
@@ -44,6 +44,15 @@
 * 95/08/30 C. Hogue    Minor changes.
 *
 * $Log: mmdbapi1.c,v $
+* Revision 6.47  2005/01/25 15:39:07  thiessen
+* tweak LoadDict again
+*
+* Revision 6.46  2005/01/24 20:42:58  thiessen
+* fix memory leak; check current dir for dictionary if ProgramPath returns empty string
+*
+* Revision 6.45  2004/05/06 19:31:09  chenj
+* fixed the bug in fnPBSFtoPSA() to use 2 chars for domain id
+*
 * Revision 6.44  2003/12/03 02:11:28  kans
 * added defines missing from Mac OS 10.3 headers
 *
@@ -274,23 +283,23 @@
 /*****************************************************************************
 *
 *  mmdbapi1.c
-*   
+*
 *   UNDER CONSTRUCTION NOTICE.
 *	    SUBJECT TO RADICAL CHANGES...
-*   
+*
 *  programmer C.W.V. Hogue
 *  created: 14 Mar 95
 *  last mod: 28 AUGUST 95
 *****************************************************************************/
-#include <ncbi.h> 
+#include <ncbi.h>
 #include <mmdbdata.h>
 #include <sequtil.h>
-NLM_EXTERN void VnpHeapSort PROTO ((ValNodePtr PNTR vnp, int (LIBCALLBACK *compar )PROTO ((Nlm_VoidPtr, Nlm_VoidPtr ))));	
+NLM_EXTERN void VnpHeapSort PROTO ((ValNodePtr PNTR vnp, int (LIBCALLBACK *compar )PROTO ((Nlm_VoidPtr, Nlm_VoidPtr ))));
   /* this should be #include <utilpub.h> but this conflicts with mmdbdata.h. fix this. lyg */
 #include <mmdbapi.h>
 #include <mmdbapi1.h>
 #include <matrix.h>
-#include "prunebsc.h"  
+#include "prunebsc.h"
 
 /* Missing from /usr/include/gcc/darwin/3.3/machine/limits.h */
 #ifdef __MWERKS__
@@ -306,7 +315,7 @@ PMBD LIBCALL NewMBD(void)
 {
     PMBD pmbdNew = NULL;
     pmbdNew = (PMBD)MemNew((size_t)(sizeof(MBD)));
-    if (pmbdNew) 
+    if (pmbdNew)
      {
       pmbdNew->bMe = (Byte) AM_MBD;
       pmbdNew->bUpdate = (Byte) (REG_STYLE | SHOW_ME);
@@ -319,11 +328,11 @@ PMOD LIBCALL NewMOD(void)
 {
     PMOD pmodNew = NULL;
     pmodNew = (PMOD)MemNew((size_t)(sizeof(MOD)));
-    if (pmodNew) 
+    if (pmodNew)
      {
       pmodNew->bMe = (Byte) AM_MOD;
       pmodNew->bUpdate = (Byte) (REG_STYLE | SHOW_ME );
-      pmodNew->bVisible = 1;  
+      pmodNew->bVisible = 1;
                    /* turn on object by default -- Yanli */
       }
     return pmodNew;
@@ -334,7 +343,7 @@ PMDD LIBCALL NewMDD(void)
 {
     PMDD pmddNew = NULL;
     pmddNew = (PMDD)MemNew((size_t)(sizeof(MDD)));
-    if (pmddNew) 
+    if (pmddNew)
      {
       pmddNew->bMe = (Byte) AM_MDD;
       pmddNew->bUpdate = (Byte) (REG_STYLE | SHOW_ME );
@@ -450,11 +459,11 @@ PDNSFS LIBCALL NewDNSFS(PDNSFS PNTR ppdnsfsList,  Int2 choice)
 {
     PDNSFS pdnsfsNew = NULL;
     PSFS psfsNew = NULL;
-    psfsNew = NewSFS();   
+    psfsNew = NewSFS();
     if (!psfsNew) return NULL;
     pdnsfsNew = DValNodeAddPointer(ppdnsfsList, choice, (Nlm_VoidPtr) psfsNew);
     psfsNew->pdnsfsSet = pdnsfsNew; /* link to parent */
-    return pdnsfsNew; 
+    return pdnsfsNew;
 }
 
 void LIBCALL FreeSFS(PSFS psfsThis)
@@ -466,7 +475,7 @@ void LIBCALL FreeSFS(PSFS psfsThis)
         if (psfsThis->psfdFeats) FreeSFD(psfsThis->psfdFeats);
         if (psfsThis->pvnDescr) BiostrucFeatureSetDescrFree(psfsThis->pvnDescr);
         if (psfsThis->pbsfsFeatSet)
-             MsgAlert(KEY_NONE,SEV_ERROR, "Dangling Feature Set", 
+             MsgAlert(KEY_NONE,SEV_ERROR, "Dangling Feature Set",
 		"\nMemory leaking at FeatureSet\n.");
             BiostrucFeatureSetFree(psfsThis->pbsfsFeatSet);
    	MemFree(psfsThis);
@@ -475,22 +484,22 @@ void LIBCALL FreeSFS(PSFS psfsThis)
 }
 
 
-   
+
 PVNSFF LIBCALL NewVNSFF(PVNSFF PNTR ppvnsffList,  Int2 choice)
 {
     PVNSFF pvnsffNew = NULL;
     PSFF psffNew = NULL;
- 
-    psffNew = NewSFF();   
+
+    psffNew = NewSFF();
     if (!psffNew) return NULL;
     pvnsffNew = ValNodeAddPointer(ppvnsffList, choice, (Nlm_VoidPtr) psffNew);
-    return pvnsffNew; 
+    return pvnsffNew;
 }
 
 
 void LIBCALL FreeListVNSFF(PVNSFF pvnsffList)
 {
-  FreeVNDataFn(pvnsffList,  (pFreeFunc)FreeSFF); 
+  FreeVNDataFn(pvnsffList,  (pFreeFunc)FreeSFF);
   return;
 }
 
@@ -520,41 +529,41 @@ void LIBCALL FreeSFD(PSFD psfdThis)
         if (psffThis)
          {  /* this uses the installed function to free pData */
              (*(psffThis->pFeatToCFn)) ( (Pointer PNTR) &(psfdThis->pData), NULL);
-         }    
-        else    
+         }
+        else
         switch (psfdThis->iType)
           {
            case Feature_type_transform:
 	      FreeDNTRN((PDNTRN) vnp->data.ptrvalue);
 	     break;
            case Feature_type_camera:
-	      vnp = (ValNodePtr) psfdThis->pData; 
+	      vnp = (ValNodePtr) psfdThis->pData;
 	      CameraFree((CameraPtr) vnp->data.ptrvalue);
 	      ValNodeFree(vnp);
 	     break;
            case Feature_type_script:
-/* lygmerge	      vnp = (ValNodePtr) psfdThis->pData; 
+/* lygmerge	      vnp = (ValNodePtr) psfdThis->pData;
 	      BiostrucScriptFree((BiostrucScriptPtr) vnp->data.ptrvalue);
 	      ValNodeFree(vnp); */
 	     break;
-	     
+
            case Feature_type_multalign:
            case Feature_type_alignment:
-	      
+
 	      ChemGraphAlignmentFree((ChemGraphAlignmentPtr)  psfdThis->pData);
 	      ValNodeFree(vnp);
 	     break;
            case Feature_type_similarity:
-	      vnp = (ValNodePtr) psfdThis->pData; 
+	      vnp = (ValNodePtr) psfdThis->pData;
 	      RegionSimilarityFree((RegionSimilarityPtr) vnp->data.ptrvalue);
 	      ValNodeFree(vnp);
 	     break;
            case Feature_type_region:
-	      vnp = (ValNodePtr) psfdThis->pData; 
+	      vnp = (ValNodePtr) psfdThis->pData;
 	      RegionPntrsFree((RegionPntrsPtr) vnp->data.ptrvalue);
 	      ValNodeFree(vnp);
              break;
-	  
+
               /* these don't have sub-alloced parts hanging off pData */
          /*  case Feature_type_indirect:
              case Feature_type_color:
@@ -563,22 +572,22 @@ void LIBCALL FreeSFD(PSFD psfdThis)
              case Feature_type_strand:
              case Feature_type_sheet:
              case Feature_type_turn:
-             case Feature_type_site:              
+             case Feature_type_site:
              case Feature_type_footnote:
              case Feature_type_subgraph:
              case Feature_type_core:
              case Feature_type_supercore:
 	     case Feature_type_other: */
-           
+
 	     default: ;
 
           } /* switch type */
 	 psfdThis->pData = NULL;
        } /* if pData */
-       
+
      if (psfdThis->pbsfFeat)
         {
-            MsgAlert(KEY_NONE,SEV_ERROR, "Dangling Feature", 
+            MsgAlert(KEY_NONE,SEV_ERROR, "Dangling Feature",
 		"\nMemory leaks at Feature\n.");
           BiostrucFeatureFree(psfdThis->pbsfFeat);
         }
@@ -594,7 +603,7 @@ void LIBCALL FreeMBD(PMBD pmbdThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeMBD ");
-#endif  
+#endif
     if (pmbdThis)
        MemFree(pmbdThis);
 }
@@ -603,7 +612,7 @@ void LIBCALL FreeMOD(PMOD pmodThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeMOD ");
-#endif    
+#endif
     if (pmodThis->pvnContains) ValNodeFree(pmodThis->pvnContains);
     if (pmodThis->ppflObject) FLMatrixFree(pmodThis->ppflObject, 0, 0);
     if (pmodThis->pucSwap) UCVectorFree(pmodThis->pucSwap, 0);
@@ -616,7 +625,7 @@ void LIBCALL FreeMDD(PMDD pmddThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeMDD ");
-#endif   
+#endif
     if (pmddThis->pvnContains) ValNodeFree(pmddThis->pvnContains);
     if (pmddThis)
        MemFree(pmddThis);
@@ -627,7 +636,7 @@ void LIBCALL FreeMAD(PMAD pmadThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeMAD ");
-#endif  
+#endif
     if (pmadThis)
      {
         if (pmadThis->pvnContainedBy) ValNodeFree(pmadThis->pvnContainedBy);
@@ -635,17 +644,17 @@ printf("in FreeMAD ");
        if (pmadThis->pvnalLocate) FreeListVNAL(pmadThis->pvnalLocate);
        MemFree(pmadThis);
      }
-    
+
 }
 
 void LIBCALL FreeALD(PALD paldThis)
-{ 
+{
   PALD paldNext;
 #ifdef _DEBUG_2
 printf("in FreeALD ");
-#endif    
+#endif
   while (paldThis)
-    {  
+    {
         paldNext = paldThis->next;
         if ((paldThis->iFloatNo) && (paldThis->pflvData))
 	  FLVectorFree(paldThis->pflvData, 0);
@@ -655,14 +664,14 @@ printf("in FreeALD ");
 }
 
 void LIBCALL FreeMLD(PMLD pmldThis)
-{  
+{
   PMLD pmldNext;
 #ifdef _DEBUG_2
 printf("in FreeMLD ");
-#endif   
+#endif
   while (pmldThis)
-    {  
-        pmldNext = pmldThis->next;   
+    {
+        pmldNext = pmldThis->next;
          /* models are owned by the Biostruc ptr in pmsd->pbsBS */
 	if (pmldThis->ppAsnOrder) PTRVectorFree(pmldThis->ppAsnOrder, 0);
 	if (pmldThis->pcAltConf) MemFree(pmldThis->pcAltConf);
@@ -673,27 +682,27 @@ printf("in FreeMLD ");
 }
 
 
- 
+
 void LIBCALL FreeKeptFeature(BiostrucFeatureSetPtr pbsfsThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeKeptFeature ");
-#endif   
+#endif
     if (pbsfsThis) BiostrucFeatureSetFree(pbsfsThis);
 }
- 
+
 
 void LIBCALL FreeMGD(PMGD pmgdThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeMGD ");
-#endif   
+#endif
    if (pmgdThis)
      {
       if (pmgdThis->pvnContainedBy) ValNodeFree(pmgdThis->pvnContainedBy);
       if (pmgdThis->pcGraphName) MemFree(pmgdThis->pcGraphName);
       if (pmgdThis->pcPDBComment) MemFree(pmgdThis->pcPDBComment);
-      if (pmgdThis->pvnmaAHead) FreeListVNMA(pmgdThis->pvnmaAHead); 
+      if (pmgdThis->pvnmaAHead) FreeListVNMA(pmgdThis->pvnmaAHead);
       if (pmgdThis->pvnmbBHead) FreeListVNMB(pmgdThis->pvnmbBHead);
       if (pmgdThis->ppflBoundBox) FLMatrixFree(pmgdThis->ppflBoundBox,0,0);
       if (pmgdThis->pcIUPAC) MemFree(pmgdThis->pcIUPAC);
@@ -703,12 +712,12 @@ printf("in FreeMGD ");
 }
 
 void LIBCALL FreeMMD(PMMD pmmdThis)
-{ 
+{
 #ifdef _DEBUG_2
 printf("in FreeMMD ");
-#endif 
-    if (pmmdThis) 
-      {  
+#endif
+    if (pmmdThis)
+      {
         if (pmmdThis->pvnContainedBy) ValNodeFree(pmmdThis->pvnContainedBy);
     	if (pmmdThis->pcMolName) MemFree(pmmdThis->pcMolName);
 	if (pmmdThis->pcSeqId) MemFree(pmmdThis->pcSeqId);
@@ -716,7 +725,7 @@ printf("in FreeMMD ");
     	if (pmmdThis->pdnmgHead) FreeListDNMG(pmmdThis->pdnmgHead);
         if (pmmdThis->pvnmbIRBHead) FreeListVNMB(pmmdThis->pvnmbIRBHead);
         if (pmmdThis->ppflBoundBox) FLMatrixFree(pmmdThis->ppflBoundBox,0,0);
-        if (pmmdThis->pMolDescr)  
+        if (pmmdThis->pMolDescr)
             AsnGenericChoiceSeqOfFree(pmmdThis->pMolDescr,(AsnOptFreeFunc)BiomolDescrFree);
 	if (pmmdThis->pSeqId) SeqIdFree(pmmdThis->pSeqId);
         MemFree(pmmdThis);
@@ -727,16 +736,17 @@ void LIBCALL FreeMSD(PMSD pmsdThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeMSD ");
-#endif 
+#endif
     if (pmsdThis)
       {
 /* ASN.1 parts */
-	if (pmsdThis->pbsBS) BiostrucFree(pmsdThis->pbsBS);    
-  /* BiostrucFree kills models, features % saved ASN.1 parts ... */    
-        if (pmsdThis->pGraphDescr) 
+	if (pmsdThis->pbsBS) BiostrucFree(pmsdThis->pbsBS);
+  /* BiostrucFree kills models, features % saved ASN.1 parts ... */
+        if (pmsdThis->pGraphDescr)
             AsnGenericChoiceSeqOfFree(pmsdThis->pGraphDescr,(AsnOptFreeFunc)BiomolDescrFree);
-	if (pmsdThis->pDictLocal) ResidueGraphFree(pmsdThis->pDictLocal); 
-/* Structure Strings */ 
+    if (pmsdThis->pDictLocal)
+        AsnGenericUserSeqOfFree(pmsdThis->pDictLocal,(AsnOptFreeFunc)ResidueGraphFree);
+/* Structure Strings */
   	if (pmsdThis->pcSName) MemFree(pmsdThis->pcSName);
   	if (pmsdThis->pcPDBName) MemFree(pmsdThis->pcPDBName);
         if (pmsdThis->pcChemName) MemFree(pmsdThis->pcChemName);
@@ -760,7 +770,7 @@ printf("in FreeMSD ");
        }
 }
 
-/* adds after last node in list if *head not NULL 
+/* adds after last node in list if *head not NULL
  * otherwise head is new node
  */
 
@@ -769,7 +779,7 @@ PVNMB LIBCALL NewVNMB(PVNMB PNTR ppvnmbList,  Int2 choice)
     PVNMB pvnmbNew = NULL;
     PMBD pmbdNew = NULL;
     pmbdNew = NewMBD();
-    if (!pmbdNew) return NULL; 
+    if (!pmbdNew) return NULL;
     pvnmbNew = ValNodeAddPointer(ppvnmbList, choice, (Nlm_VoidPtr) pmbdNew);
     pmbdNew->pvnmbLink = pvnmbNew;  /* back link */
     return pvnmbNew;
@@ -780,7 +790,7 @@ PVNMO LIBCALL NewVNMO(PVNMO PNTR ppvnmoList,  Int2 choice)
     PVNMO pvnmoNew = NULL;
     PMOD pmodNew = NULL;
     pmodNew = NewMOD();
-    if (!pmodNew) return NULL; 
+    if (!pmodNew) return NULL;
     pvnmoNew = ValNodeAddPointer(ppvnmoList, choice, (Nlm_VoidPtr) pmodNew);
     pmodNew->pvnmoLink = pvnmoNew;  /* back link */
     return pvnmoNew;
@@ -792,7 +802,7 @@ PVNMD LIBCALL NewVNMD(PVNMD PNTR ppvnmdList,  Int2 choice)
     PVNMD pvnmdNew = NULL;
     PMDD pmddNew = NULL;
     pmddNew = NewMDD();
-    if (!pmddNew) return NULL; 
+    if (!pmddNew) return NULL;
     pvnmdNew = ValNodeAddPointer(ppvnmdList, choice, (Nlm_VoidPtr) pmddNew);
     pmddNew->pvnmdLink = pvnmdNew;  /* back link */
     return pvnmdNew;
@@ -812,7 +822,7 @@ PVNMA LIBCALL NewVNMA(PVNMA PNTR ppvnmaList,  Int2 choice)
 
 PVNAL LIBCALL NewVNAL(PVNAL PNTR ppvnalList, Int2 choice)
 {
- /* picks either paldlNew or paldNew as data node */  
+ /* picks either paldlNew or paldNew as data node */
  /* choice is model number - which will end up as a Uint1 */
     PVNAL pvnalNew = NULL;
     PALD paldNew = NULL;
@@ -820,25 +830,25 @@ PVNAL LIBCALL NewVNAL(PVNAL PNTR ppvnalList, Int2 choice)
     if (!paldNew) return NULL;
     pvnalNew = ValNodeAddPointer(ppvnalList, choice, (Nlm_VoidPtr) paldNew);
     paldNew->pvnalLink = pvnalNew; /* link to ValNode */
-    return pvnalNew; 
+    return pvnalNew;
 }
 
 PDNMG LIBCALL NewDNMG(PDNMG PNTR ppdnmgList,  Int2 choice)
 {
     PDNMG pdnmgNew = NULL;
     PMGD pmgdNew = NULL;
-    pmgdNew = NewMGD();   
+    pmgdNew = NewMGD();
     if (!pmgdNew) return NULL;
     pdnmgNew = DValNodeAddPointer(ppdnmgList, choice, (Nlm_VoidPtr) pmgdNew);
     pmgdNew->pdnmgLink = pdnmgNew;
-    return pdnmgNew; 
+    return pdnmgNew;
 }
 
 PDNMM LIBCALL NewDNMM(PDNMM PNTR ppdnmmList,  Int2 choice)
 {
     PDNMM pdnmmNew = NULL;
     PMMD pmmdNew = NULL;
-    pmmdNew = NewMMD(); 
+    pmmdNew = NewMMD();
     if (!pmmdNew) return NULL;
     pdnmmNew = DValNodeAddPointer(ppdnmmList, choice,  (Nlm_VoidPtr) pmmdNew);
     pmmdNew->pdnmmLink = pdnmmNew;
@@ -867,7 +877,7 @@ ValNodePtr LIBCALL FreeVNDataFn (ValNodePtr vnp,  pFreeFunc freefn)
 	{
 		if (freefn)
 		  (*freefn)(vnp->data.ptrvalue);
-		else    
+		else
 		   Nlm_MemFree(vnp->data.ptrvalue);
 		next = vnp->next;
 		Nlm_MemFree(vnp);
@@ -877,44 +887,44 @@ ValNodePtr LIBCALL FreeVNDataFn (ValNodePtr vnp,  pFreeFunc freefn)
 }
 
 void LIBCALL FreeListVNAL(PVNAL pvnalList)
-{   
+{
 #ifdef _DEBUG_2
 printf("in FreeListVNAL ");
-#endif 
-    FreeVNDataFn(pvnalList,  (pFreeFunc)FreeALD); 
+#endif
+    FreeVNDataFn(pvnalList,  (pFreeFunc)FreeALD);
 }
 
 void LIBCALL FreeListDNML(PDNML pdnmlList)
 {
 #ifdef _DEBUG_2
 printf("in FreeListDNML ");
-#endif  
+#endif
    DValNodeFreeData(pdnmlList, (pFreeFunc)FreeMLD);
 }
 
 void LIBCALL FreeListDNSFS(PDNSFS pdnsfsList)
-{ 
+{
 #ifdef _DEBUG_2
 printf("in FreeListDNSF ");
-#endif 
+#endif
    DValNodeFreeData(pdnsfsList, (pFreeFunc)FreeSFS);  /* don't free Biostruc-dependent features */
-  
+
 }
 
 void LIBCALL FreeListDNSF(PDNSF pdnsfList)
-{ 
+{
 #ifdef _DEBUG_2
 printf("in FreeListDNSF ");
-#endif 
+#endif
    DValNodeFree(pdnsfList);  /* don't free Biostruc-dependent features */
-   
+
 }
 
 void LIBCALL FreeListVNMB(PVNMB pvnmbList) /* takes out the whole singly-linked list */
 {
 #ifdef _DEBUG_2
 printf("in FreeListVNMB ");
-#endif 
+#endif
     FreeVNDataFn(pvnmbList, (pFreeFunc)FreeMBD);
 }
 
@@ -949,18 +959,18 @@ PDNMG LIBCALL FreeDNMG(PDNMG pdnmgList, PDNMG pdnmgThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeDNMG ");
-#endif   
+#endif
    return DValNodeListDelNode(pdnmgList,  pdnmgThis, (pFreeFunc)FreeMGD);
 }
 
 
 void LIBCALL FreeListDNMG(PDNMG pdnmgList)
-{ 
+{
     PDNMG pdnmgTemp;
 #ifdef _DEBUG_2
 printf("in FreeListDNMG ");
-#endif 
-   
+#endif
+
     pdnmgTemp = pdnmgList;
     while (pdnmgTemp)
     {
@@ -974,7 +984,7 @@ PDNMM LIBCALL FreeDNMM(PDNMM pdnmmList,  PDNMM pdnmmThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeDNMM ");
-#endif 
+#endif
    return DValNodeListDelNode(pdnmmList, pdnmmThis, (pFreeFunc)FreeMMD);
 }
 
@@ -996,7 +1006,7 @@ PDNMS LIBCALL FreeDNMS(PDNMS pdnmsList, PDNMS pdnmsThis)
 {
 #ifdef _DEBUG_2
 printf("in FreeDNMS ");
-#endif  
+#endif
     return DValNodeListDelNode(pdnmsList,  pdnmsThis, (pFreeFunc)FreeMSD);
 }
 
@@ -1027,26 +1037,26 @@ void LIBCALL FreeAtomicModelAsnLists(AtomicCoordinatesPtr pacThis)
    CoordinatesPtr			pcoThis = NULL;
 
     /* Free data off AtomicCoordinatesPtr pacThis */
-	
+
     if (!pacThis) return;
 #ifdef _DEBUG_1
 printf("in FreeAtomicModelAsnList\n");
 #endif
-    pappThis = pacThis->atoms; /*  AtomPntrsPtr */        
+    pappThis = pacThis->atoms; /*  AtomPntrsPtr */
     pmspThis =  pacThis->sites; /* ModelSpacePointsPtr */
     pocThis = pacThis->occupancies; /*  AtomicOccupanciesPtr */
     paciThis = pacThis->alternate_conf_ids; /* AlternateConformationIdsPtr */
     if (pacThis->temperature_factors)  /* choice of temp factor types */
       {
        if (pacThis->temperature_factors->choice == AtomicTemperatureFactors_isotropic)
-        {         
+        {
           pitfThis = (IsotropicTemperatureFactorsPtr) pacThis->temperature_factors->data.ptrvalue;
         }
        if (pacThis->temperature_factors->choice == AtomicTemperatureFactors_anisotropic)
         {
           patfThis = (AnisotropicTemperatureFactorsPtr) pacThis->temperature_factors->data.ptrvalue;
         }
-      }   
+      }
     if (pappThis)
 	 {
 	  AtomPntrsFree(pappThis);
@@ -1081,12 +1091,12 @@ printf("in FreeAtomicModelAsnList\n");
          {
 	   ValNodeFree(pacThis->temperature_factors);
 	   pacThis->temperature_factors = NULL;
-	 }	 
-   return;	    
+	 }
+   return;
 }
-    
- 
- 
+
+
+
 
 
 PMAD LIBCALL AtomFromMMDBIndex(PDNMS pdnmsList, Int2 iStru, Int2 iMol, Int2 iGraph, Int4 iAtom)
@@ -1099,7 +1109,7 @@ PMAD LIBCALL AtomFromMMDBIndex(PDNMS pdnmsList, Int2 iStru, Int2 iMol, Int2 iGra
     PMGD  pmgdThis;
     PVNMA pvnmaThis;
     PMAD  pmadThis;
-    
+
     pdnmsThis = (PDNMS) DValNodeFindNext((DValNodePtr)pdnmsList, NULL, iStru);
     if (pdnmsThis) pmsdThis = (PMSD) pdnmsThis->data.ptrvalue;
     else return NULL;
@@ -1117,11 +1127,11 @@ PMAD LIBCALL AtomFromMMDBIndex(PDNMS pdnmsList, Int2 iStru, Int2 iMol, Int2 iGra
          if (pmadThis->iIndex == iAtom)
            {
 	     return pmadThis;
-	   }    
+	   }
          pvnmaThis = pvnmaThis->next;
          if (pvnmaThis) pmadThis = (PMAD) pvnmaThis->data.ptrvalue;
-     }  
-    return NULL; 
+     }
+    return NULL;
 }
 
 
@@ -1134,8 +1144,8 @@ PMGD LIBCALL GraphFromMMDBIndex(PDNMS pdnmsList, Int2 iStru, Int2 iMol, Int2 iGr
     PMMD  pmmdThis;
     PDNMG pdnmgThis;
     PMGD  pmgdThis;
-    
-    
+
+
     pdnmsThis = (PDNMS) DValNodeFindNext((DValNodePtr)pdnmsList, NULL, iStru);
     if (pdnmsThis) pmsdThis = (PMSD) pdnmsThis->data.ptrvalue;
     else return NULL;
@@ -1143,8 +1153,8 @@ PMGD LIBCALL GraphFromMMDBIndex(PDNMS pdnmsList, Int2 iStru, Int2 iMol, Int2 iGr
     if (pdnmmThis) pmmdThis = (PMMD) pdnmmThis->data.ptrvalue;
     else return NULL;
     pdnmgThis = (PDNMG) DValNodeFindNext((DValNodePtr)pmmdThis->pdnmgHead,  NULL,  iGraph);
-    if (pdnmgThis) 
-       { 
+    if (pdnmgThis)
+       {
          pmgdThis = (PMGD) pdnmgThis->data.ptrvalue;
 	 return pmgdThis;
        }
@@ -1158,13 +1168,13 @@ PMMD LIBCALL MolFromMMDBIndex(PDNMS pdnmsList, Int2 iStru, Int2 iMol)
     PMSD  pmsdThis;
     PDNMM pdnmmThis;
     PMMD  pmmdThis;
-    
-    
+
+
     pdnmsThis = (PDNMS) DValNodeFindNext((DValNodePtr)pdnmsList, NULL, iStru);
     if (pdnmsThis) pmsdThis = (PMSD) pdnmsThis->data.ptrvalue;
     else return NULL;
     pdnmmThis = (PDNMM) DValNodeFindNext((DValNodePtr)pmsdThis->pdnmmHead, NULL, iMol);
-    if (pdnmmThis) 
+    if (pdnmmThis)
        {
          pmmdThis = (PMMD) pdnmmThis->data.ptrvalue;
          return pmmdThis;
@@ -1188,6 +1198,8 @@ PRGD LIBCALL LoadDict(CharPtr pcDictName)
    ptr = StringRChr (fullpath, DIRDELIMCHR);
    if (ptr != NULL) {
       *ptr = '\0';
+   } else {
+      StrCpy(fullpath, ".");
    }
    FileBuildPath (fullpath, NULL, pcDictName);
 
@@ -1220,9 +1232,9 @@ PRGD LIBCALL LoadDict(CharPtr pcDictName)
    return rgdp;
 }
 
- 
 
-BiostrucPtr LIBCALL FetchBS(CharPtr pcFetch,  Int2 iType, Int4 mdlLvl, 
+
+BiostrucPtr LIBCALL FetchBS(CharPtr pcFetch,  Int2 iType, Int4 mdlLvl,
 		Int4 maxModels, Byte bExtent)
 {   /* mdlLvl = BSEVERYTHING used to denote fetch everything!  */
     AsnIoPtr paioAIP = NULL; /* aip */
@@ -1239,7 +1251,7 @@ BiostrucPtr LIBCALL FetchBS(CharPtr pcFetch,  Int2 iType, Int4 mdlLvl,
   Nlm_Boolean  rsult;
   long int     val;
 
- 
+
 #ifdef _DEBUG_0
 printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 #endif
@@ -1249,13 +1261,13 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 	    	ErrPostEx(SEV_FATAL,0,0, "Internal - objmmdbNAsnLoad() Failure");
 		return NULL;
 	  } /* DON'T load any more than necessary */
-	
- 	/* handle the different types of input data */	
+
+ 	/* handle the different types of input data */
 	switch (iType)
 	{
 	case INP_ASCII_FILE:
 		/* open the ASN.1 input file in the right mode */
-		if ((paioAIP = AsnIoOpen (pcFetch, "r")) == NULL) 
+		if ((paioAIP = AsnIoOpen (pcFetch, "r")) == NULL)
 		{
 			ErrClear(); /* toolkit fatal */
 	    		ErrPostEx(SEV_ERROR,0,0, "Unable to open ASCII ASN.1 input file:\n %s\n Check if it exists."
@@ -1263,10 +1275,10 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 			ErrShow();
 			return NULL;
 		}
-		/* get the pointer to the seq entry */	
-		
+		/* get the pointer to the seq entry */
+
 		if (mdlLvl == BSEVERYTHING)
-		{ 
+		{
 		  if ((pbsThe =  BiostrucAsnRead(paioAIP, NULL)) == NULL)
 		    {
 			ErrClear(); /* toolkit fatal */
@@ -1283,13 +1295,13 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 			,pcFetch);
 			ErrShow();
 			return NULL;
-		    }}    
+		    }}
 		AsnIoClose(paioAIP);
 		/* printf("Got the ascii biostruc\n"); */
 		break;
 	case INP_BINARY_FILE:
         /*	printf("in Binary input\n"); */
-		
+
                 /* open the ASN.1 input file in the right mode */
 		if ((paioAIP = AsnIoOpen (pcFetch, "rb")) == NULL)
 		{
@@ -1298,9 +1310,9 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 			ErrShow();
 			return NULL;
 		}
-		/* get the pointer to the seq entry */	
+		/* get the pointer to the seq entry */
 		if (mdlLvl == BSEVERYTHING)
-		{ 	
+		{
 		  if ((pbsThe =  BiostrucAsnRead(paioAIP, NULL)) == NULL)
 		    {
 			ErrClear(); /* toolkit fatal */
@@ -1317,8 +1329,8 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 			,pcFetch);
 			ErrShow();
 			return NULL;
-		    }}    
-	 
+		    }}
+
 		AsnIoClose(paioAIP);
 		/* printf("Got the binary biostruc\n"); */
 		break;
@@ -1331,7 +1343,7 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 			ErrShow();
 			return NULL;
 		  }
-  		
+
 /* this is code from Nlm StrToLong */
   rsult = FALSE;
   len = (Nlm_Int2) Nlm_StringLen (pcFetch);
@@ -1362,18 +1374,18 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 		        ErrClear(); /* toolkit fatal */
 		      	ErrPostEx(SEV_ERROR,0,0, "UID -  %s - not in structure database, \n Check your input.", pcFetch);
 			ErrShow();
-			if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();  
+			if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();
 		        return NULL;
-		  } 
+		  }
 		if ((pbsThe = MMDBBiostrucGet(duUID,  mdlLvl, maxModels)) == NULL)
 		  {
 		        ErrClear(); /* toolkit fatal */
 		      	ErrPostEx(SEV_ERROR,0,0, "Unable to find UID = %ld \nin database.", (long)duUID);
 			ErrShow();
-			if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();  
+			if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();
 			return NULL;
 		  }
-		 if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();  
+		 if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();
 		break;
 	case INP_PDB_ACCESSION:
 	         if (bExtent & (Byte) FETCH_ENTREZ)
@@ -1388,12 +1400,12 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
        	        if (duUID != 0)
 		  {
 		      if ((pbsThe = MMDBBiostrucGet(duUID,  mdlLvl, maxModels)) == NULL)
-			{ 
+			{
 			    ErrClear(); /* toolkit fatal */
 		      	    ErrPostEx(SEV_ERROR,0,0, "Unable to find UID = %ld \nin database.", (long)duUID);
 			    ErrShow();
 			    /* LinkSetFree(plsLink); */
-			    if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();  
+			    if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();
 			    return NULL;
 			}
 		  }
@@ -1402,10 +1414,10 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 		        ErrClear(); /* toolkit fatal */
 		      	ErrPostEx(SEV_ERROR,0,0, "Accession -  %s - not in structure database, \n Check your input.", pcFetch);
 			ErrShow();
-			if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();  
+			if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();
 		        return NULL;
 		  }
-		if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini(); 
+		if (bExtent & (Byte) FETCH_ENTREZ) MMDBFini();
 		break;
 
 	  default:
@@ -1436,14 +1448,14 @@ printf("MaxModels=%d ModelLevel=%d\n",(int) maxModels,(int) mdlLvl);
 /**************************/
 /*version 4.1 ASN.1 code **/
 /**************************/
- 
- 
- /* makes ValNode list on MAD, MGD, MDD pvnContainedBy 
+
+
+ /* makes ValNode list on MAD, MGD, MDD pvnContainedBy
   * and ValNode list on MOD MDD pvnContains.
-  * ranges are explicitly instantiated, 
+  * ranges are explicitly instantiated,
   * but not children.
   */
- 
+
 Boolean LIBCALL AssignSurfaceContents(PDNMS pdnmsList, Int2 iModel, PFB pfbThis, ChemGraphPntrsPtr pcgpContents)
 {
 
@@ -1454,7 +1466,7 @@ Boolean LIBCALL AssignSurfaceContents(PDNMS pdnmsList, Int2 iModel, PFB pfbThis,
    MoleculePntrsPtr ppmThis = NULL;
    ValNodePtr pvnAtoms = NULL;
    ValNodePtr pvnMol = NULL;
-   ValNodePtr pvnRes = NULL; 
+   ValNodePtr pvnRes = NULL;
    ValNodePtr pvnThis = NULL;
    PMAD pmadThis = NULL;
    PMGD pmgdThis = NULL;
@@ -1465,7 +1477,7 @@ Boolean LIBCALL AssignSurfaceContents(PDNMS pdnmsList, Int2 iModel, PFB pfbThis,
    Int4 iEnd = 0;
 #ifdef _DEBUG_1
 printf("in AssignSurfaceContents\n ");
-#endif    
+#endif
    switch (pcgpContents->choice)
      {
 	 case ChemGraphPntrs_atoms:
@@ -1475,13 +1487,13 @@ printf("in AssignSurfaceContents\n ");
 	   pvnAtoms = ppaThis->atom_ids;
 	   while (pvnAtoms)
 	     {
-		 pmadThis = AtomFromMMDBIndex(pdnmsList, (Int2) pdnmsList->choice, 
-		          (Int2) pvnMol->data.intvalue, (Int2) pvnRes->data.intvalue, 
+		 pmadThis = AtomFromMMDBIndex(pdnmsList, (Int2) pdnmsList->choice,
+		          (Int2) pvnMol->data.intvalue, (Int2) pvnRes->data.intvalue,
 			  (Int4) pvnAtoms->data.intvalue);
 		 if (pmadThis)
 		   {
 		       pvnThis = ValNodeAddPointer(&pmadThis->pvnContainedBy,  iModel, (Pointer) pfbThis);
-		       if (!pvnThis) return FALSE; 
+		       if (!pvnThis) return FALSE;
 		   }
 		 else return FALSE;
 		 if (pfbThis->bMe == AM_MOD)
@@ -1503,19 +1515,19 @@ printf("in AssignSurfaceContents\n ");
 	   pprThis = (ResiduePntrsPtr) pcgpContents->data.ptrvalue;
 	   if (pprThis->choice == ResiduePntrs_explicit)
 	     {
-	     
+
 		 ppreThis = (ResidueExplicitPntrsPtr) pprThis->data.ptrvalue;
 		 pvnMol = ppreThis->molecule_ids;
 		 pvnRes = ppreThis->residue_ids;
-		 
+
 		 while (pvnRes)
 		   {
-		    pmgdThis = GraphFromMMDBIndex(pdnmsList, (Int2) pdnmsList->choice, 
+		    pmgdThis = GraphFromMMDBIndex(pdnmsList, (Int2) pdnmsList->choice,
 		          (Int2) pvnMol->data.intvalue, (Int2) pvnRes->data.intvalue);
 		    if (pmgdThis)
 			{
 			    pvnThis = ValNodeAddPointer(&pmgdThis->pvnContainedBy,  iModel, (Pointer) pfbThis);
-			    if (!pvnThis) return FALSE; 
+			    if (!pvnThis) return FALSE;
 			}
 		    else return FALSE;
 		    if (pfbThis->bMe == AM_MOD)
@@ -1531,7 +1543,7 @@ printf("in AssignSurfaceContents\n ");
 		       pvnMol = pvnMol->next;
 		       pvnRes = pvnRes->next;
 		   }
-		 
+
 		 return TRUE;
 	     }
 	   if (pprThis->choice == ResiduePntrs_interval)
@@ -1547,13 +1559,13 @@ printf("in AssignSurfaceContents\n ");
 			      iEnd = ppriThis->from;
 			  }
 			for (;iStart <= iEnd; iStart++)
-			  {   
-			    pmgdThis = GraphFromMMDBIndex(pdnmsList, (Int2) pdnmsList->choice, 
+			  {
+			    pmgdThis = GraphFromMMDBIndex(pdnmsList, (Int2) pdnmsList->choice,
 				(Int2) ppriThis->molecule_id, (Int2) iStart);
 		            if (pmgdThis)
 			      {
 				pvnThis = ValNodeAddPointer(&pmgdThis->pvnContainedBy,  iModel, (Pointer) pfbThis);
-				if (!pvnThis) return FALSE; 
+				if (!pvnThis) return FALSE;
 			      }
 			    else return FALSE;
 			    if (pfbThis->bMe == AM_MOD)
@@ -1567,23 +1579,23 @@ printf("in AssignSurfaceContents\n ");
 				pvnThis = ValNodeAddPointer(&pmddThis->pvnContains, ChemGraphPntrs_residues, (Pointer) pmgdThis);
 			      }
 			  } /* for start to end of interval */
-			
+
 		       ppriThis = ppriThis->next;
-		     }	/* while intervals */	
-		return TRUE;      
-	     }  
+		     }	/* while intervals */
+		return TRUE;
+	     }
 	  return FALSE;
 	 case ChemGraphPntrs_molecules:
 	  ppmThis = (MoleculePntrsPtr) pcgpContents->data.ptrvalue;
 	  pvnMol = ppmThis->molecule_ids;
 	    while (pvnMol)
 	      {
-	         pmmdThis = MolFromMMDBIndex(pdnmsList, (Int2) pdnmsList->choice, 
+	         pmmdThis = MolFromMMDBIndex(pdnmsList, (Int2) pdnmsList->choice,
 		          (Int2) pvnMol->data.intvalue);
 		 if (pmmdThis)
 		   {
 		       pvnThis = ValNodeAddPointer(&pmmdThis->pvnContainedBy,  iModel, (Pointer) pfbThis);
-		       if (!pvnThis) return FALSE; 
+		       if (!pvnThis) return FALSE;
 		   }
 		 else return FALSE;
 		 if (pfbThis->bMe == AM_MOD)
@@ -1600,25 +1612,25 @@ printf("in AssignSurfaceContents\n ");
 	      }
 	  return TRUE;
      }
-   return FALSE;  
+   return FALSE;
 }
-	    
+
 
 
 
 
 void LIBCALL FreeSurfaceModelAsnList(SurfaceCoordinatesPtr pscThis)
-{   
+{
 
     TMeshPtr ptmshThis = NULL;
     TrianglesPtr ptriThis = NULL;
     ValNodePtr pvnX = NULL;
-    
+
  if (!pscThis) return;
  if (!pscThis->Surface_surface) return;
 #ifdef _DEBUG_1
 printf("in FreeSurfaceModelAsnList\n");
-#endif     
+#endif
  switch (pscThis->Surface_surface->choice)
       {
 	   case Surface_surface_cylinder:
@@ -1650,7 +1662,7 @@ printf("in FreeSurfaceModelAsnList\n");
 	     pvnX = ValNodeFree(ptriThis->v2);
 	     ptriThis->v2 = NULL;
 	     pvnX = ValNodeFree(ptriThis->v3);
-	     ptriThis->v3 = NULL; 		
+	     ptriThis->v3 = NULL;
 	     return;
 	   default:
 	     return;
@@ -1677,20 +1689,20 @@ Boolean LIBCALL FillSurface(SurfaceCoordinatesPtr pscThis, PMOD pmodThis)
     ValNodePtr pvnZ = NULL;
     Int4 iCount = 0;
     Boolean rsult = FALSE;
-    
+
 #ifdef _DEBUG_1
 printf("in FillSurface=");
-#endif     
+#endif
     if (!pscThis) return FALSE;
     if (!pscThis->Surface_surface) return FALSE;
- 
+
     ProgMon("Instantiating Surface");
     switch (pscThis->Surface_surface->choice)
       {
 	   case Surface_surface_cylinder:
 #ifdef _DEBUG_2
 printf("cylinder\n ");
-#endif 	   
+#endif
 	     pmodThis->bWhat = (Byte)(pmodThis->bWhat | (Byte) OBJ_CYLINDER);
 	     pcylThis = (CylinderPtr) pscThis->Surface_surface->data.ptrvalue;
 	     pmodThis->ppflObject = FLMatrix(0, 1, 0, 2); /* 2 by 3 matrix */
@@ -3204,6 +3216,7 @@ SeqAnnotPtr LIBCALL fnPBSFtoPSA (BiostrucFeaturePtr pbsfSelected)
   MemFree (pcPDB);
   
   /* get the embedded PDB code of the hit */
+ if (iDomain < 10) {
   pcPDB = StringSave (PDBNAME_DEFAULT);
   iDomain = 0;
   cChain = '-';
@@ -3214,6 +3227,20 @@ SeqAnnotPtr LIBCALL fnPBSFtoPSA (BiostrucFeaturePtr pbsfSelected)
   pcPDB[3] = pbsfSelected->name[10];
   cChain = pbsfSelected->name[11];
   iDomain = atoi ((char *) &pbsfSelected->name[12]);
+ }
+ else {		/* have at least 10 domains in 1 str., added by J. Chen */
+  pcPDB = StringSave (PDBNAME_DEFAULT);
+  iDomain = 0;
+  cChain = '-';
+ 
+  pcPDB[0] = pbsfSelected->name[8];
+  pcPDB[1] = pbsfSelected->name[9];
+  pcPDB[2] = pbsfSelected->name[10];
+  pcPDB[3] = pbsfSelected->name[11];
+  cChain = pbsfSelected->name[12];
+  iDomain = atoi ((char *) &pbsfSelected->name[13]);
+ }
+
 /*slavesip = MakePDBSeqId2 (pcPDB, cChain, iDomain, TRUE);  */
   slavesip = MakePDBSeqId2 (pcPDB, cChain, iDomain, FALSE);
   
@@ -3340,7 +3367,7 @@ SeqAnnotPtr LIBCALL fnPBSFtoPSA (BiostrucFeaturePtr pbsfSelected)
      count++;
      if(salp->segs == NULL) salp->segs = (Pointer) ddp;
      else {
-        ddp_tmp = salp->segs;
+        ddp_tmp = (DenseDiagPtr) salp->segs;
         while(ddp_tmp->next) ddp_tmp = ddp_tmp->next;
         ddp_tmp->next = ddp;
      }
@@ -3401,7 +3428,7 @@ SeqAnnotPtr LIBCALL BiostrToSeqAnnotSet (BiostrucAnnotSetPtr set,
   while(pbsfs)
   {
      feature=pbsfs->features;
-     strcpy(pcMaster, pbsfs->descr->data.ptrvalue);
+     strcpy(pcMaster, (char *)pbsfs->descr->data.ptrvalue);
      /*if master name matched*/
     if(strcmp(pcMaster, pdbname_master) == 0) /* I had this commented out */
     {
@@ -4177,7 +4204,7 @@ printf("in BiostrucAddFeature \n");
 /*psfsThis->pvnDescr = (ValNodePtr) pbsfsThis->descr; */ /* link stub for descr */
 /*pbsfsThis->descr = NULL; */ /* detach and save from free-ing descr  */
                /* yanli comment the above two line out, instead do the following */
-  psfsThis->pvnDescr = AsnIoMemCopy((ValNodePtr) pbsfsThis->descr, (AsnReadFunc)BiostrucFeatureSetDescrAsnRead, (AsnWriteFunc)BiostrucFeatureSetDescrAsnWrite); 
+  psfsThis->pvnDescr = (ValNodePtr)AsnIoMemCopy((ValNodePtr) pbsfsThis->descr, (AsnReadFunc)BiostrucFeatureSetDescrAsnRead, (AsnWriteFunc)BiostrucFeatureSetDescrAsnWrite); 
 
   pvnThis = NULL;
   pvnThis = ValNodeFindNext(psfsThis->pvnDescr, NULL,  BiostrucFeatureSetDescr_name); 

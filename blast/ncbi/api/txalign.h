@@ -1,4 +1,4 @@
-/* $Id: txalign.h,v 6.16 2003/11/20 22:09:26 dondosha Exp $
+/* $Id: txalign.h,v 6.19 2004/08/16 19:36:52 dondosha Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -29,7 +29,7 @@
 *
 * Initial Version Creation Date: 03/13/94
 *
-* $Revision: 6.16 $
+* $Revision: 6.19 $
 *
 * File Description:
 *         External include file for various alignments
@@ -38,6 +38,15 @@
 *
 *
 * $Log: txalign.h,v $
+* Revision 6.19  2004/08/16 19:36:52  dondosha
+* Made CreateMaskByteStore function public: needed by web BLAST 2 sequences
+*
+* Revision 6.18  2004/06/24 21:15:44  dondosha
+* Changed last Boolean argument in ScoreAndEvalueToBuffers to Uint1, to allow different options for formatting
+*
+* Revision 6.17  2004/05/14 15:38:09  dondosha
+* Made function ScoreAndEvalueToBuffers public
+*
 * Revision 6.16  2003/11/20 22:09:26  dondosha
 * Added a PrindDefLinesFromSeqAlignWithPath function with an argument to provide root path for image links
 *
@@ -585,6 +594,15 @@ NLM_EXTERN Boolean LIBCALL PrintDefLinesFromSeqAlignWithPath PROTO((
                     CharPtr www_root_path
 		    ));
 
+
+#define TX_KNOCK_OFF_ALLOWED 0x01
+#define TX_INTEGER_BIT_SCORE 0x02
+
+NLM_EXTERN void LIBCALL 
+ScoreAndEvalueToBuffers PROTO((FloatHi bit_score, FloatHi evalue, 
+                        CharPtr bit_score_buf, CharPtr PNTR evalue_buf,
+                        Uint1 format_options));
+
 /*
 	Fills in the slots with score, bit_score, etc. from the SeqAlign.
 */
@@ -687,6 +705,8 @@ NLM_EXTERN Boolean checkLinkoutType(BlastDefLinePtr bdfl, Uint1 linkoutType);
 /* return bdlp containing the sip from a chain of bdlp*/
 NLM_EXTERN BlastDefLinePtr getBlastDefLineForSeqId(BlastDefLinePtr bdlp, SeqIdPtr sip);
 Boolean PairwiseSeqAlignHasLinkout(SeqAlignPtr sap, Uint1 linkoutType);
+
+ValNodePtr CreateMaskByteStore (ValNodePtr mask_list);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: xmlblast.c,v 6.33 2004/04/29 19:55:35 dondosha Exp $";
+static char const rcsid[] = "$Id: xmlblast.c,v 6.36 2004/10/20 19:58:58 dondosha Exp $";
 
-/* $Id: xmlblast.c,v 6.33 2004/04/29 19:55:35 dondosha Exp $ */
+/* $Id: xmlblast.c,v 6.36 2004/10/20 19:58:58 dondosha Exp $ */
 /**************************************************************************
 *                                                                         *
 *                             COPYRIGHT NOTICE                            *
@@ -32,12 +32,21 @@ static char const rcsid[] = "$Id: xmlblast.c,v 6.33 2004/04/29 19:55:35 dondosha
 *   
 * Version Creation Date: 05/17/2000
 *
-* $Revision: 6.33 $
+* $Revision: 6.36 $
 *
 * File Description:  Functions to print simplified BLAST output (XML)
 *
 * 
 * $Log: xmlblast.c,v $
+* Revision 6.36  2004/10/20 19:58:58  dondosha
+* Replace sequence data in Bioseq, as done in txalign.c, to assure proper masking and identities/positives calculation for all programs
+*
+* Revision 6.35  2004/06/30 12:32:20  madden
+* Added include for blfmtutl.h, removed unused variable
+*
+* Revision 6.34  2004/06/23 21:08:58  dondosha
+* Fixed masking of filtered locations for translated queries
+*
 * Revision 6.33  2004/04/29 19:55:35  dondosha
 * Mask filtered locations in query sequence lines
 *
@@ -145,6 +154,7 @@ static char const rcsid[] = "$Id: xmlblast.c,v 6.33 2004/04/29 19:55:35 dondosha
 */
 
 #include <xmlblast.h>
+#include <blfmtutl.h>
 
 static Int4Ptr PNTR glb_matrix;
 
@@ -585,29 +595,21 @@ Boolean BXMLGetSeqLines(SeqAlignPtr align, HspPtr hsp, Int4 length,
     return TRUE;
 }
 
-static void 
-MaskFilteredLocInHsp(HspPtr hsp, ValNodePtr mask, Boolean is_prot)
+/** Frees the part of the byte store list that has not been used for replacement
+ * of Bioseq data.
+ */
+static ValNodePtr 
+ByteStoreListFree(ValNodePtr bs_list)
 {
-   Char mask_char;
-   SeqLocPtr mask_loc;
-   SeqLocPtr seqloc = NULL;
-   Int4 start, stop, index;
+   ByteStorePtr bsp;
+   ValNodePtr vnp;
 
-   if (!mask)
-      return;
-
-   mask_loc = (SeqLocPtr) mask->data.ptrvalue;
-   mask_char = (is_prot ? 'X' : 'N');
-
-   while((seqloc = SeqLocFindNext(mask_loc, seqloc)) != NULL) {
-      start = MAX(0, SeqLocStart(seqloc) - hsp->query_from);
-      stop = MIN(SeqLocStop(seqloc), hsp->query_to) - hsp->query_from;
-      for (index = start; index <= stop; ++index) {
-         hsp->qseq[index] = mask_char;
-         if (hsp->hseq[index] != mask_char)
-            hsp->midline[index] = ' ';
-      }
+   for(vnp = bs_list; vnp; vnp = vnp->next) {
+      bsp = (ByteStorePtr) vnp->data.ptrvalue;
+      if(bsp != NULL)
+          BSFree(bsp);
    }
+   return ValNodeFree(bs_list);
 }
 
 HspPtr BXMLGetHspFromSeqAlign(SeqAlignPtr sap, Boolean is_aa, Int4 chain,
@@ -617,31 +619,64 @@ HspPtr BXMLGetHspFromSeqAlign(SeqAlignPtr sap, Boolean is_aa, Int4 chain,
     AlignSum as;
     ScorePtr score, sp;
     Boolean matrix_allocated = FALSE;
-    BioseqPtr bsp;
+    BioseqPtr bsp = NULL;
     Char tmp[256];
-    static Boolean master_checked;
-    Boolean prot_alphabet;
+    ByteStorePtr seq_data=NULL;
+    Boolean seq_data_replaced = FALSE;
+    ValNodePtr bs_list = NULL;
+    Uint1 code=0;
+    Uint1 repr=0;
 
     if((hsp = HspNew()) == NULL)
         return NULL;
 
     MemSet(&as, NULLB, sizeof(AlignSum));
     
-    as.master_sip = SeqIdDup(TxGetQueryIdFromSeqAlign(sap));
+    as.master_sip = TxGetQueryIdFromSeqAlign(sap);
     as.target_sip = TxGetSubjectIdFromSeqAlign(sap);
 
-    /* Checkup for query Bioseq to be available in the index */
+    /* If there is a mask, retrieve the query Bioseq and replace the sequence
+       data with a masked one. */
+    if (mask_loc) {
+        Int4 frame;
+        if ((bsp = BioseqLockById(as.master_sip)) == NULL) {
+            SeqIdWrite(as.master_sip, tmp, PRINTID_FASTA_LONG, sizeof(tmp));
+            ErrPostEx(SEV_ERROR, 0, __LINE__, "Query sequence '%s' is not "
+                      "available in Bioseq index.", tmp);
+            return NULL;
+        }
 
-    if(!master_checked && (bsp = BioseqLockById(as.master_sip)) == NULL) {
-        SeqIdWrite(as.master_sip, tmp, PRINTID_FASTA_LONG, sizeof(tmp));
-        ErrPostEx(SEV_ERROR, 0, __LINE__, "Query sequence '%s' is not "
-                  "available in Bioseq index.", tmp);
-        return NULL;
-    } else if(!master_checked) {
-        master_checked = TRUE;
-        BioseqUnlock(bsp);
+        bs_list = CreateMaskByteStore (mask_loc);
+        if (ISA_na(bsp->mol) && sap->segtype == SAS_STD) {
+            StdSegPtr ssp = (StdSegPtr) sap->segs;
+            frame = SeqLocStart(ssp->loc);
+            if (SeqLocStrand(ssp->loc) == Seq_strand_minus) {
+                frame += SeqLocLen(ssp->loc);
+                frame = 4 + (bsp->length - frame)%3;
+            } else {
+                frame = (1 + frame%3);
+            }
+        } else
+            frame = 0;
+        repr = bsp->repr;
+        seq_data = bsp->seq_data;
+        code = bsp->seq_data_type;
+        seq_data_replaced = 
+                replace_bytestore_data(bsp, bs_list, (Uint1)frame);
+        if (!seq_data_replaced) {
+            bsp->repr = repr;
+            bsp->seq_data = seq_data;
+            bsp->seq_data_type = code;
+        }
+    } else {
+        /* Checkup for query Bioseq to be available in the index */
+        if ((bsp = BioseqLockById(as.master_sip)) == NULL) {
+            SeqIdWrite(as.master_sip, tmp, PRINTID_FASTA_LONG, sizeof(tmp));
+            ErrPostEx(SEV_ERROR, 0, __LINE__, "Query sequence '%s' is not "
+                      "available in Bioseq index.", tmp);
+            return NULL;
+        }
     }
-
 
     if(glb_matrix != NULL)
         as.matrix = glb_matrix;
@@ -699,11 +734,16 @@ HspPtr BXMLGetHspFromSeqAlign(SeqAlignPtr sap, Boolean is_aa, Int4 chain,
     hsp->hit_to = as.target_to;
 
     BXMLGetSeqLines(sap, hsp, as.totlen, is_aa, chain, as.matrix);
-    /* Sequences are shown in protein alphabet in all cases except blastn,
-       that is if either subject is protein, or it is a translated search, 
-       in which case alignment segments have StdSeg form. */
-    prot_alphabet = (is_aa || sap->segtype == SAS_STD);
-    MaskFilteredLocInHsp(hsp, mask_loc, prot_alphabet);
+
+    /* Restore the original query sequence data, if it was replaced. */
+    if (seq_data_replaced) {
+        bsp->seq_data = seq_data;
+        bsp->repr = repr;
+        bsp->seq_data_type = code;
+    }
+    bs_list = ByteStoreListFree(bs_list);
+    BioseqUnlock(bsp);
+
 
     /* For display it depends on strand */
     
@@ -727,8 +767,6 @@ HspPtr BXMLGetHspFromSeqAlign(SeqAlignPtr sap, Boolean is_aa, Int4 chain,
     if(matrix_allocated)
         free_default_matrix(as.matrix);
 
-    SeqIdFree(as.master_sip);
-    
     return hsp;
 }
 
@@ -793,6 +831,8 @@ HitPtr BXMLSeqAlignToHits(SeqAlignPtr seqalign, Boolean ungapped,
         hsp_count = 1;          /* Hsps starting with 1 */
         chain = 1;
 
+        BioseqUnlock(bsp);
+
         for(sap2 = sap; sap2 != NULL;) {
             
             /* Filling info about specific alignments */
@@ -854,7 +894,6 @@ IterationPtr BXMLBuildOneQueryIteration(SeqAlignPtr seqalign,
                                    BioseqPtr query, ValNodePtr mask_loc)
 {
     IterationPtr iterp;
-    TxDfDbInfoPtr dbinfo=NULL;
     BLAST_KarlinBlkPtr ka_params_gap=NULL;
     BLAST_KarlinBlkPtr ka_params_ungap=NULL;
     ValNodePtr vnp;
@@ -872,6 +911,7 @@ IterationPtr BXMLBuildOneQueryIteration(SeqAlignPtr seqalign,
        }
 
        iterp->query_len = query->length;
+
     }
 
     if(seqalign != NULL) {

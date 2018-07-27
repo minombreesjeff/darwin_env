@@ -29,13 +29,16 @@
 *
 * Version Creation Date:   3/3/95
 *
-* $Revision: 6.4 $
+* $Revision: 6.5 $
 *
 * File Description: 
 *
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: vsmutil.h,v $
+* Revision 6.5  2004/10/04 18:01:54  kans
+* added ShouldSetJustShowAccession for communication with Sequin, implement Table verbosity level to just show accessions
+*
 * Revision 6.4  2000/07/08 20:44:02  vakatov
 * Get all "#include" out of the 'extern "C" { }' scope;  other cleanup...
 *
@@ -82,6 +85,7 @@ extern void AppendValidMessage (CharPtr text1, CharPtr text2, CharPtr text3,
                                 CharPtr message, CharPtr expanded, ValNodePtr context);
 extern int LIBCALLBACK ValidErrHook PROTO((const ErrDesc *err));
 extern Boolean ShouldSetSuppressContext (void);
+extern Boolean ShouldSetJustShowAccession (void);
 
 /*****************************************************************************
 *

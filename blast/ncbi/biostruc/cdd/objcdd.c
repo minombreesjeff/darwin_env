@@ -36,7 +36,7 @@ objcddAsnLoad(void)
 
 /**************************************************
 *    Generated object loaders for Module NCBI-Cdd
-*    Generated using ASNCODE Revision: 6.14 at Apr 28, 2004  4:00 PM
+*    Generated using ASNCODE Revision: 6.15 at Oct 12, 2004 11:03 AM
 *
 **************************************************/
 
@@ -380,7 +380,7 @@ CddFree(CddPtr ptr)
    Cn3dStyleDictionaryFree(ptr -> style_dictionary);
    Cn3dUserAnnotationsFree(ptr -> user_annotations);
    AsnGenericUserSeqOfFree(ptr -> ancestors, (AsnOptFreeFunc) DomainParentFree);
-   ScoreMatrixParametersFree(ptr -> scoreparams);
+   PssmWithParametersFree(ptr -> scoreparams);
    SequenceTreeFree(ptr -> seqtree);
    return MemFree(ptr);
 }
@@ -588,7 +588,7 @@ CddAsnRead(AsnIoPtr aip, AsnTypePtr orig)
       atp = AsnReadId(aip,amp, atp);
    }
    if (atp == CDD_scoreparams) {
-      ptr -> scoreparams = ScoreMatrixParametersAsnRead(aip, atp);
+      ptr -> scoreparams = PssmWithParametersAsnRead(aip, atp);
       if (aip -> io_failure) {
          goto erret;
       }
@@ -742,7 +742,7 @@ CddAsnWrite(CddPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
    }
    AsnGenericUserSeqOfAsnWrite(ptr -> ancestors, (AsnWriteFunc) DomainParentAsnWrite, aip, CDD_ancestors, CDD_ancestors_E);
    if (ptr -> scoreparams != NULL) {
-      if ( ! ScoreMatrixParametersAsnWrite(ptr -> scoreparams, aip, CDD_scoreparams)) {
+      if ( ! PssmWithParametersAsnWrite(ptr -> scoreparams, aip, CDD_scoreparams)) {
          goto erret;
       }
    }
@@ -1641,6 +1641,7 @@ CddOrgRefFree(CddOrgRefPtr ptr)
       return NULL;
    }
    OrgRefFree((OrgRefPtr)ptr -> reference);
+   MemFree(ptr -> rank);
    return MemFree(ptr);
 }
 
@@ -1706,6 +1707,20 @@ CddOrgRefAsnRead(AsnIoPtr aip, AsnTypePtr orig)
       ptr -> active = av.boolvalue;
       atp = AsnReadId(aip,amp, atp);
    }
+   if (atp == CDD_ORG_REF_parent_tax_id) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> parent_tax_id = av.intvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
+   if (atp == CDD_ORG_REF_rank) {
+      if ( AsnReadVal(aip, atp, &av) <= 0) {
+         goto erret;
+      }
+      ptr -> rank = av.ptrvalue;
+      atp = AsnReadId(aip,amp, atp);
+   }
 
    if (AsnReadVal(aip, atp, &av) <= 0) {
       goto erret;
@@ -1764,6 +1779,12 @@ CddOrgRefAsnWrite(CddOrgRefPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
    }
    av.boolvalue = ptr -> active;
    retval = AsnWrite(aip, CDD_ORG_REF_active,  &av);
+   av.intvalue = ptr -> parent_tax_id;
+   retval = AsnWrite(aip, CDD_ORG_REF_parent_tax_id,  &av);
+   if (ptr -> rank != NULL) {
+      av.ptrvalue = ptr -> rank;
+      retval = AsnWrite(aip, CDD_ORG_REF_rank,  &av);
+   }
    if (! AsnCloseStruct(aip, atp, (Pointer)ptr)) {
       goto erret;
    }

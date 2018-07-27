@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   4/30/95
 *
-* $Revision: 6.119 $
+* $Revision: 6.128 $
 *
 * File Description: 
 *
@@ -1718,13 +1718,36 @@ static void ChangeBioseqSequenceStyle (PopuP p)
   }
 }
 
-static void ChangeFlatFileExtras (ButtoN b)
+static void ChangeBioseqSequenceRIF (PopuP p)
 
 {
   BioseqViewFormPtr  bfp;
   BioseqPagePtr      bpp;
 
-  bfp = (BioseqViewFormPtr) GetObjectExtra (b);
+  bfp = (BioseqViewFormPtr) GetObjectExtra (p);
+  if (bfp != NULL && bfp->bvd.bsp != NULL) {
+    WatchCursor ();
+    bfp->bvd.moveToOldPos = FALSE;
+    bpp = bfp->currentBioseqPage;
+    if (bpp != NULL && bpp->show != NULL) {
+      bpp->show (&(bfp->bvd), FALSE);
+    }
+    Update ();
+    PointerToForm (bfp->form, (Pointer) bfp->bvd.bsp);
+    SetBioseqImportExportItems (bfp);
+    ArrowCursor ();
+    Update ();
+    AdjustDynamicGraphicViewer (&(bfp->bvd));
+  }
+}
+
+static void ChangeFlatFileExtras (PopuP p)
+
+{
+  BioseqViewFormPtr  bfp;
+  BioseqPagePtr      bpp;
+
+  bfp = (BioseqViewFormPtr) GetObjectExtra (p);
   if (bfp != NULL && bfp->bvd.bsp != NULL) {
     WatchCursor ();
     bfp->bvd.moveToOldPos = FALSE;
@@ -1746,6 +1769,7 @@ static void ChangeBioseqDocText (PopuP p)
 {
   BioseqViewFormPtr  bfp;
   BioseqPagePtr      bpp;
+  Int4               val;
 
   bfp = (BioseqViewFormPtr) GetObjectExtra (p);
   if (bfp != NULL && bfp->bvd.bsp != NULL) {
@@ -1756,7 +1780,17 @@ static void ChangeBioseqDocText (PopuP p)
       bpp->show (&(bfp->bvd), FALSE);
     }
     Update ();
-    bfp->bvd.useScrollText = (Boolean) (! bfp->bvd.useScrollText);
+    
+    val = GetValue (p);
+    if (val == 1)
+    {
+      bfp->bvd.useScrollText = FALSE;
+    }
+    else
+    {
+      bfp->bvd.useScrollText = TRUE;
+    }
+    
     PointerToForm (bfp->form, (Pointer) bfp->bvd.bsp);
     SetBioseqImportExportItems (bfp);
     ArrowCursor ();
@@ -2811,11 +2845,13 @@ static ForM LIBCALL CreateNewSeqEntryViewFormEx (Int2 left, Int2 top, CharPtr ti
           bpp = bfp->bioseqNucPageList;
           str = svpp->initNucLabel;
           if (bsp->length > 350000) {
+            /*
             if (is_nc) {
               str = "GenBank";
             } else {
               str = "Graphic";
             }
+            */
           }
         }
       }
@@ -2896,7 +2932,8 @@ static ForM LIBCALL CreateNewSeqEntryViewFormEx (Int2 left, Int2 top, CharPtr ti
     }
 
     x = NULL;
-    bfp->bvd.docTxtControlGrp = HiddenGroup (h, -6, 0, NULL);
+    bfp->bvd.docTxtControlGrp = HiddenGroup (h, -4, 0, NULL);
+    SetGroupSpacing (bfp->bvd.docTxtControlGrp, 3, 5);
     if (svpp != NULL && svpp->allowScrollText) {
       StaticPrompt (bfp->bvd.docTxtControlGrp, "Type", 0, popupMenuHeight, programFont, 'l');
       x = PopupList (bfp->bvd.docTxtControlGrp, TRUE, ChangeBioseqDocText);
@@ -2923,8 +2960,23 @@ static ForM LIBCALL CreateNewSeqEntryViewFormEx (Int2 left, Int2 top, CharPtr ti
     PopupItem (bfp->bvd.ffStyleCtrl, "Contig");
     SetValue (bfp->bvd.ffStyleCtrl, 1);
     if (GetAppProperty ("InternalNcbiSequin") != NULL) {
-      bfp->bvd.ffCustomBtn = CheckBox (bfp->bvd.baseCtgControlGrp, "Extras", ChangeFlatFileExtras);
+      bfp->bvd.extraControlGrp = HiddenGroup (bfp->bvd.docTxtControlGrp, -6, 0, NULL);
+      StaticPrompt (bfp->bvd.extraControlGrp, "Extra Quals", 0, popupMenuHeight, programFont, 'l');
+      bfp->bvd.ffCustomBtn = PopupList (bfp->bvd.extraControlGrp, TRUE, ChangeFlatFileExtras);
       SetObjectExtra (bfp->bvd.ffCustomBtn, bfp, NULL);
+      PopupItem (bfp->bvd.ffCustomBtn, "Off");
+      PopupItem (bfp->bvd.ffCustomBtn, "On");
+      SetValue (bfp->bvd.ffCustomBtn, 1);
+      StaticPrompt (bfp->bvd.extraControlGrp, "Publications", 0, popupMenuHeight, programFont, 'l');
+      bfp->bvd.ffRifCtrl = PopupList (bfp->bvd.extraControlGrp, TRUE, ChangeBioseqSequenceRIF);
+      SetObjectExtra (bfp->bvd.ffRifCtrl, bfp, NULL);
+      PopupItem (bfp->bvd.ffRifCtrl, "All");
+      PopupItem (bfp->bvd.ffRifCtrl, "No GeneRIFs");
+      PopupItem (bfp->bvd.ffRifCtrl, "Only GeneRIFs");
+      PopupItem (bfp->bvd.ffRifCtrl, "Newest 5");
+      PopupItem (bfp->bvd.ffRifCtrl, "Oldest 5");
+      PopupItem (bfp->bvd.ffRifCtrl, "Only Reviews");
+      SetValue (bfp->bvd.ffRifCtrl, 1);
     }
     Hide (bfp->bvd.baseCtgControlGrp);
     Hide (bfp->bvd.docTxtControlGrp);
@@ -3129,9 +3181,12 @@ static ForM LIBCALL CreateNewSeqEntryViewFormEx (Int2 left, Int2 top, CharPtr ti
     SetObjectExtra (bfp->bvd.seqView, bfp, NULL);
     Hide (bfp->bvd.seqView);
     Hide (bfp->bvd.seqViewParentGrp);
+    
+    /* for main Sequin view, always show substitutions in alignments */
+    bfp->bvd.showAlnSubstitutions = TRUE;
 
     /* move PubMed button farther over */
-    GetPosition (bfp->bvd.ffCustomBtn, &r2);
+    GetPosition (bfp->bvd.ffStyleCtrl, &r2);
     GetPosition (bfp->pubseq, &r1);
     delta = r2.right - r1.left + (r2.right - r2.left)/2;
     if (delta > 0) {
@@ -3555,6 +3610,23 @@ extern Int2 LIBCALLBACK BioseqViewMsgFunc (OMMsgStructPtr ommsp)
   return OM_MSG_RET_OK;
 }
 
+static void SaveToolBarPos (WindoW w)
+{
+  RecT r;
+  Char str [256];
+  if (w == NULL)
+  {
+    return;
+  }
+  
+  GetPosition (w, &r);
+  
+  sprintf (str, "%d", r.left);
+  SetAppParam ("SEQUINCUSTOM", "PREFERENCES", "TOOLBARLEFT", str);
+  sprintf (str, "%d", r.top);
+  SetAppParam ("SEQUINCUSTOM", "PREFERENCES", "TOOLBARTOP", str);
+}
+
 static void CleanSmartViewer (BioseqViewFormPtr bfp)
 
 {
@@ -3603,6 +3675,7 @@ static void CleanSmartViewer (BioseqViewFormPtr bfp)
   }
   if (bfp->toolForm != NULL) {
     /* Hide (bfp->toolForm); */
+    SaveToolBarPos ((WindoW)bfp->toolForm);
     bfp->toolForm = Remove (bfp->toolForm);
   }
 }
@@ -3610,7 +3683,41 @@ static void CleanSmartViewer (BioseqViewFormPtr bfp)
 static void ToolFormHideWindowProc (WindoW w)
 
 {
+  SaveToolBarPos (w);
   Hide (w);
+}
+
+static void GetToolBarRect (Int2Ptr left, Int2Ptr top)
+{
+  Char        str [256];
+  Int2        val;
+  
+  if (left != NULL)
+  {
+    if (GetAppParam ("SEQUINCUSTOM", "PREFERENCES", "TOOLBARLEFT", NULL, str, sizeof (str))
+        && StrToInt (str, &val) && val > 0) 
+    {
+      *left = val;
+    }
+    else
+    {
+      *left = -5;
+    }
+  }
+    
+  if (top != NULL)
+  {
+    if (GetAppParam ("SEQUINCUSTOM", "PREFERENCES", "TOOLBARTOP", NULL, str, sizeof (str))
+        && StrToInt (str, &val) && val > 0) 
+    {
+      *top = val;
+    }
+    else
+    {
+      *top = -50;
+    }
+  }
+
 }
 
 extern ForM MakeToolFormForBioseqView (BaseFormPtr bafp, GrpActnProc createToolBar)
@@ -3621,10 +3728,12 @@ extern ForM MakeToolFormForBioseqView (BaseFormPtr bafp, GrpActnProc createToolB
   CharPtr            ptr;
   Char               str [256];
   WindoW             w;
+  Int2               left, top;
 
   bfp = (BioseqViewFormPtr) bafp;
   if (bfp == NULL || createToolBar == NULL) return NULL;
   if (bfp->toolForm != NULL) return bfp->toolForm;
+  
   GetTitle (bfp->form, str, sizeof (str));
   TrimSpacesAroundString (str);
   ptr = StringStr (str, " - ");
@@ -3634,7 +3743,9 @@ extern ForM MakeToolFormForBioseqView (BaseFormPtr bafp, GrpActnProc createToolB
   if (StringHasNoText (str)) {
     StringCpy (str, "ToolBar");
   }
-  w = FixedWindow (-5, -50, -10, -10, str, ToolFormHideWindowProc);
+  
+  GetToolBarRect (&left, &top);
+  w = FixedWindow (left, top, -10, -10, str, ToolFormHideWindowProc);
   if (w == NULL) return NULL;
   g = HiddenGroup (w, -1, 0, NULL);
   SetObjectExtra (g, bfp, NULL);
@@ -3656,12 +3767,14 @@ extern ForM RemoveSeqEntryViewer (ForM f)
     if (svpp != NULL && (! svpp->keepSmartViewerVisible)) {
       Hide (f);
       if (bfp != NULL) {
+        SaveToolBarPos ((WindoW)bfp->toolForm);
         bfp->toolForm = Remove (bfp->toolForm);
       }
     }
     CleanSmartViewer (bfp);
   } else {
     if (bfp != NULL) {
+      SaveToolBarPos ((WindoW)bfp->toolForm);
       bfp->toolForm = Remove (bfp->toolForm);
     }
     Remove (f);

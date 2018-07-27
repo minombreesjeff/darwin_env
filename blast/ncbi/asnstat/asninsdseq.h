@@ -9,37 +9,16 @@
 #include <asn.h>
 #endif
 
-static char * asnfilename = "asninsdseq.h14";
-static AsnValxNode avnx[19] = {
-    {20,"not-set" ,0,0.0,&avnx[1] } ,
-    {20,"single-stranded" ,1,0.0,&avnx[2] } ,
-    {20,"double-stranded" ,2,0.0,&avnx[3] } ,
-    {20,"mixed-stranded" ,3,0.0,NULL } ,
-    {3,NULL,0,0.0,NULL } ,
-    {20,"nucleic-acid" ,0,0.0,&avnx[6] } ,
-    {20,"dna" ,1,0.0,&avnx[7] } ,
-    {20,"rna" ,2,0.0,&avnx[8] } ,
-    {20,"trna" ,3,0.0,&avnx[9] } ,
-    {20,"rrna" ,4,0.0,&avnx[10] } ,
-    {20,"mrna" ,5,0.0,&avnx[11] } ,
-    {20,"urna" ,6,0.0,&avnx[12] } ,
-    {20,"snrna" ,7,0.0,&avnx[13] } ,
-    {20,"snorna" ,8,0.0,&avnx[14] } ,
-    {20,"peptide" ,9,0.0,NULL } ,
-    {3,NULL,0,0.0,NULL } ,
-    {20,"linear" ,1,0.0,&avnx[17] } ,
-    {20,"circular" ,2,0.0,NULL } ,
-    {3,NULL,1,0.0,NULL } };
-
+static char * asnfilename = "asninsdseq.h15";
 static AsnType atx[70] = {
   {401, "INSDSeq" ,1,0,0,0,0,0,0,0,NULL,&atx[44],&atx[1],0,&atx[19]} ,
   {0, "locus" ,128,0,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[3]} ,
   {323, "VisibleString" ,0,26,0,0,0,0,0,0,NULL,NULL,NULL,0,NULL} ,
   {0, "length" ,128,1,0,0,0,0,0,0,NULL,&atx[4],NULL,0,&atx[5]} ,
   {302, "INTEGER" ,0,2,0,0,0,0,0,0,NULL,NULL,NULL,0,NULL} ,
-  {0, "strandedness" ,128,2,0,0,1,0,0,0,&avnx[4],&atx[4],&avnx[0],0,&atx[6]} ,
-  {0, "moltype" ,128,3,0,0,1,0,0,0,&avnx[15],&atx[4],&avnx[5],0,&atx[7]} ,
-  {0, "topology" ,128,4,0,0,1,0,0,0,&avnx[18],&atx[4],&avnx[16],0,&atx[8]} ,
+  {0, "strandedness" ,128,2,0,1,0,0,0,0,NULL,&atx[2],NULL,0,&atx[6]} ,
+  {0, "moltype" ,128,3,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[7]} ,
+  {0, "topology" ,128,4,0,1,0,0,0,0,NULL,&atx[2],NULL,0,&atx[8]} ,
   {0, "division" ,128,5,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[9]} ,
   {0, "update-date" ,128,6,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[10]} ,
   {0, "create-date" ,128,7,0,0,0,0,0,0,NULL,&atx[2],NULL,0,&atx[11]} ,
@@ -104,9 +83,9 @@ static AsnType atx[70] = {
   {0, NULL,1,-1,0,0,0,0,0,0,NULL,&atx[0],NULL,0,NULL} };
 
 static AsnModule ampx[1] = {
-  { "INSD-INSDSeq" , "asninsdseq.h14",&atx[0],NULL,NULL,0,0} };
+  { "INSD-INSDSeq" , "asninsdseq.h15",&atx[0],NULL,NULL,0,0} };
 
-static AsnValxNodePtr avn = avnx;
+static AsnValxNodePtr avn = NULL;
 static AsnTypePtr at = atx;
 static AsnModulePtr amp = ampx;
 

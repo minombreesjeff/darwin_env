@@ -120,7 +120,6 @@ static Boolean is_id_unique (Uint2 entityID, SeqIdPtr sip)
 {
   SeqEntryPtr sep;
   CcId        ci;
-  Boolean     ret;
 
   sep = GetTopSeqEntryForEntityID (entityID);
   ci.sip = SeqIdDup (sip);

@@ -29,13 +29,97 @@
 *   
 * Version Creation Date: 4/1/91
 *
-* $Revision: 6.147 $
+* $Revision: 6.175 $
 *
 * File Description:  Sequence Utilities for objseq and objsset
 *
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: sequtil.c,v $
+* Revision 6.175  2005/04/28 19:24:45  kans
+* DR prefix moved from STS to EST
+*
+* Revision 6.174  2005/04/27 17:24:21  kans
+* support seqid_gpipe in combination with a more public accession type
+*
+* Revision 6.173  2005/04/26 21:33:52  kans
+* added SEQID_GPIPE
+*
+* Revision 6.172  2005/04/05 15:25:30  kans
+* added DR as NCBI STS
+*
+* Revision 6.171  2005/03/29 14:46:42  papadopo
+* use a different start point when changing StdSeg-type seqalign offsets, if the underlying SeqLoc specifes the minus strand
+*
+* Revision 6.170  2005/03/22 20:42:03  kans
+* added DP and DQ accession prefixes
+*
+* Revision 6.169  2005/02/01 13:28:55  kans
+* added DN as NCBI EST accession prefix
+*
+* Revision 6.168  2005/01/25 18:13:47  kans
+* added CS as EMBL patent
+*
+* Revision 6.167  2004/12/08 19:44:52  kans
+* added CZ as NCBI GSS
+*
+* Revision 6.166  2004/12/08 15:14:51  kans
+* added ACCN_DDBJ_GSS, accession prefix DE
+*
+* Revision 6.165  2004/12/02 19:02:47  kans
+* added CY accession prefix
+*
+* Revision 6.164  2004/11/22 20:50:15  kans
+* added CX as NCBI EST
+*
+* Revision 6.163  2004/11/12 14:45:39  kans
+* added DD as DDBJ patent prefix
+*
+* Revision 6.162  2004/11/08 18:19:44  madden
+* GetScoreAndEvalue change to return number of hsps (in linked set) for most significant set.
+*
+* Revision 6.161  2004/10/13 16:46:52  kans
+* added DA, DB, DC as DDBJ_EST
+*
+* Revision 6.160  2004/09/21 22:34:36  dondosha
+* Get the number of linked HSPs for a DenDiag from the first segment, not from the largest linked set
+*
+* Revision 6.159  2004/09/15 13:02:02  kans
+* added CW to WHICH_db_accession as NCBI GSS
+*
+* Revision 6.158  2004/08/20 18:55:27  kans
+* SeqLocStrand skips NULL or EMPTY components of MIX to avoid giving incorrect unknown result
+*
+* Revision 6.157  2004/08/17 19:35:44  kans
+* BSPack uses BSRead instead of BSGetByte for significant speed increase
+*
+* Revision 6.156  2004/08/06 17:15:50  kans
+* added CV as NCBI EST
+*
+* Revision 6.155  2004/08/04 17:15:16  kans
+* added AccnInUniProt - still need AccnIsSWISSPROT for old style
+*
+* Revision 6.154  2004/07/21 18:05:00  rsmith
+* SeqLocStart and SeqLocStop were not handling SEQLOC_PACKED_PNTs properly
+*
+* Revision 6.153  2004/07/14 22:55:04  dondosha
+* Add version in GetAccessionVersionFromSeqId only if it is > 0
+*
+* Revision 6.152  2004/07/14 22:46:08  dondosha
+* Added GetAccessionVersionFromSeqId function to extract Accession.version from a Seq-id
+*
+* Revision 6.151  2004/07/14 19:09:19  kans
+* added CP for ACCN_NCBI_GENOME in WHICH_db_accession
+*
+* Revision 6.150  2004/06/04 17:31:34  kans
+* added CN and CO accession prefixes
+*
+* Revision 6.149  2004/05/27 15:37:31  kans
+* fixed typo in WHICH_db_accession - new 12-character RefSeq test used wrong comparison for underscore test
+*
+* Revision 6.148  2004/05/25 20:46:18  kans
+* WHICH_db_accession handles 12-character RefSeq accessions
+*
 * Revision 6.147  2004/03/30 20:29:33  kans
 * in static std_order array within SeqIdBestRank, demoted gibbsq, gibbmt, and patent
 *
@@ -1315,6 +1399,9 @@ NLM_EXTERN ByteStorePtr BSPack (ByteStorePtr from, Uint1 oldcode,
   Uint1 newcode, byte;
   Char Code4na[256], CodeIna[256];
   Boolean remained;
+  Int2 actual, j;
+  Int4 cntr;
+  Uint1 tmp [401];
 
   Uint1 set4na[16] = {17, 18, 20, 24,  33,  34,  36,  40,
                       65, 66, 68, 72, 129, 130, 132, 136}; 
@@ -1325,7 +1412,9 @@ NLM_EXTERN ByteStorePtr BSPack (ByteStorePtr from, Uint1 oldcode,
   
   if (oldcode == Seq_code_ncbi2na)   /* already packed */
     return NULL;
-  
+
+  MemSet ((Pointer) tmp, 0, sizeof (tmp));
+
   BSSeek(from, 0L, SEEK_SET);
   newcode = Seq_code_ncbi2na;    /* go for broke */
 
@@ -1338,9 +1427,20 @@ NLM_EXTERN ByteStorePtr BSPack (ByteStorePtr from, Uint1 oldcode,
     MemSet(Code4na, 1, sizeof(Code4na));
     for(i=0; i< 16; i++)
       Code4na[set4na[i]] = 0;
-  
-    while(seqlen) {
-      byte = (Uint1) BSGetByte(from);    
+
+    cntr = (Int4) MIN ((Int4) seqlen, (Int4) (sizeof (tmp) - 1));
+    actual = (Int2) BSRead (from, tmp, (Int4) cntr);
+    j = 0;
+
+    while(seqlen && actual > 0) {
+      if (j == actual) {
+        cntr = (Int4) MIN ((Int4) seqlen, (Int4) (sizeof (tmp) - 1));
+        actual = (Int2) BSRead (from, tmp, (Int4) cntr);
+        j = 0;
+      }
+      /* byte = (Uint1) BSGetByte(from); */
+      byte = (Int2) (Uint1) tmp [j];
+      j++;
       if(Code4na[byte]) {
         newcode = Seq_code_ncbi4na;
         if (newcodeptr != NULL) {
@@ -1361,8 +1461,20 @@ NLM_EXTERN ByteStorePtr BSPack (ByteStorePtr from, Uint1 oldcode,
     for(i=0; i < 4; i++)
       CodeIna[setIna[i]] = 0;
     seqlen = length;
-    while(seqlen) {
-      byte = (Uint1) BSGetByte(from);    
+
+    cntr = (Int4) MIN ((Int4) seqlen, (Int4) (sizeof (tmp) - 1));
+    actual = (Int2) BSRead (from, tmp, (Int4) cntr);
+    j = 0;
+
+    while(seqlen && actual > 0) {
+      if (j == actual) {
+        cntr = (Int4) MIN ((Int4) seqlen, (Int4) (sizeof (tmp) - 1));
+        actual = (Int2) BSRead (from, tmp, (Int4) cntr);
+        j = 0;
+      }
+      /* byte = (Uint1) BSGetByte(from); */
+      byte = (Int2) (Uint1) tmp [j];
+      j++;
       if(CodeIna[byte]) {
         newcode = Seq_code_ncbi4na;
         break;
@@ -2986,25 +3098,26 @@ NLM_EXTERN Boolean SeqEntryConvert (SeqEntryPtr sep, Uint1 newcode)
 NLM_EXTERN Int2 SeqIdBestRank (Uint1Ptr buf, Int2 num)
 {
 	static Uint1 std_order[NUM_SEQID] = {
- 	83, /* 0 = not set */
-	80, /* 1 = local Object-id */
+ 	83,  /* 0 = not set */
+	80,  /* 1 = local Object-id */
 	70,  /* 2 = gibbsq */
 	70,  /* 3 = gibbmt */
-	70, /* 4 = giim Giimport-id */
-	60, /* 5 = genbank */
-	60, /* 6 = embl */
-	60, /* 7 = pir */
-	60, /* 8 = swissprot */
+	70,  /* 4 = giim Giimport-id */
+	60,  /* 5 = genbank */
+	60,  /* 6 = embl */
+	60,  /* 7 = pir */
+	60,  /* 8 = swissprot */
 	67,  /* 9 = patent */
-	65, /* 10 = other TextSeqId */
-	80, /* 11 = general Dbtag */
+	65,  /* 10 = other TextSeqId */
+	80,  /* 11 = general Dbtag */
 	51,  /* 12 = gi */
-	60, /* 13 = ddbj */
-	60, /* 14 = prf */
-	60, /* 15 = pdb */
+	60,  /* 13 = ddbj */
+	60,  /* 14 = prf */
+	60,  /* 15 = pdb */
 	60,  /* 16 = tpg */
 	60,  /* 17 = tpe */
-	60   /* 18 = tpd */
+	62,  /* 18 = tpd */
+	68   /* 19 = gpp */
 	};
 
 	if (buf == NULL) return NUM_SEQID;
@@ -3126,10 +3239,10 @@ NLM_EXTERN SeqIdPtr SeqIdSelect (SeqIdPtr sip, Uint1Ptr order, Int2 num)
 }
 
 	static char * delim = "|";
-	static char * txtid [19] = {		  /* FASTA_LONG formats */
+	static char * txtid [NUM_SEQID] = {		  /* FASTA_LONG formats */
 		"???" ,		/* not-set = ??? */
 		"lcl",		/* local = lcl|integer or string */
-		"bbs",     /* gibbsq = bbs|integer */
+		"bbs",      /* gibbsq = bbs|integer */
 		"bbm",		/* gibbmt = bbm|integer */
 		"gim",		/* giim = gim|integer */
 		"gb",		/* genbank = gb|accession|locus */
@@ -3143,9 +3256,10 @@ NLM_EXTERN SeqIdPtr SeqIdSelect (SeqIdPtr sip, Uint1Ptr order, Int2 num)
 		"dbj",		/* ddbj = dbj|accession|locus */
 		"prf",		/* prf = prf|accession|name */
 		"pdb",		/* pdb = pdb|entry name (string)|chain id (char) */
-		"tpg",          /* tpg = tpg|accession|name */
-		"tpe",          /* tpe = tpe|accession|name */
-		"tpd"};         /* tpd = tpd|accession|name */
+		"tpg",      /* tpg = tpg|accession|name */
+		"tpe",      /* tpe = tpe|accession|name */
+		"tpd",      /* tpd = tpd|accession|name */
+		"gpp"};     /* gpp = gpp|accession|name */
 
 /*****************************************************************************
 *
@@ -3225,9 +3339,10 @@ NLM_EXTERN CharPtr SeqIdWrite (SeqIdPtr isip, CharPtr buf, Uint1 format, Uint4 b
 	10, /* 13 = ddbj */
 	10, /* 14 = prf */
 	12,  /* 15 = pdb */
-        10,  /* 16 = tpg */
-        10,  /* 17 = tpe */
-        10   /* 18 = tpd */
+    10,  /* 16 = tpg */
+    10,  /* 17 = tpe */
+    10,  /* 18 = tpd */
+    15   /* 19 = gpp */
     };
 	static Uint1 tmsmart_order[NUM_SEQID] = {  /* order for other id FASTA_LONG */
  	33, /* 0 = not set */
@@ -3246,9 +3361,10 @@ NLM_EXTERN CharPtr SeqIdWrite (SeqIdPtr isip, CharPtr buf, Uint1 format, Uint4 b
 	10, /* 13 = ddbj */
 	10, /* 14 = prf */
 	12,  /* 15 = pdb */
-        10,  /* 16 = tpg */
-        10,  /* 17 = tpe */
-        10   /* 18 = tpd */
+    10,  /* 16 = tpg */
+    10,  /* 17 = tpe */
+    10,  /* 18 = tpd */
+    15   /* 19 = gpp */
     };
 	static Uint1 general_order[NUM_SEQID] = {  /* order for other id FASTA_LONG */
  	33, /* 0 = not set */
@@ -3267,9 +3383,10 @@ NLM_EXTERN CharPtr SeqIdWrite (SeqIdPtr isip, CharPtr buf, Uint1 format, Uint4 b
 	10, /* 13 = ddbj */
 	10, /* 14 = prf */
 	12,  /* 15 = pdb */
-        10,  /* 16 = tpg */
-        10,  /* 17 = tpe */
-        10   /* 18 = tpd */
+    10,  /* 16 = tpg */
+    10,  /* 17 = tpe */
+    10,  /* 18 = tpd */
+    15   /* 19 = gpp */
     };
     Boolean useGeneral = FALSE;
     TextSeqIdPtr tsip;
@@ -3409,6 +3526,7 @@ NLM_EXTERN CharPtr SeqIdWrite (SeqIdPtr isip, CharPtr buf, Uint1 format, Uint4 b
 			case SEQID_TPG:
 			case SEQID_TPE:
 			case SEQID_TPD:
+		    case SEQID_GPIPE:
     	        tsip = (TextSeqIdPtr)sip->data.ptrvalue;
 				if ((format == PRINTID_TEXTID_LOCUS) && (tsip->name != NULL)) {
 					Nlm_LabelCopyNext(&tmp, tsip->name, &buflen);
@@ -3465,18 +3583,19 @@ NLM_EXTERN CharPtr SeqIdWrite (SeqIdPtr isip, CharPtr buf, Uint1 format, Uint4 b
             break;
         case SEQID_GENBANK:
         case SEQID_EMBL:
-	case SEQID_DDBJ:
-	case SEQID_OTHER:
-	case SEQID_TPG:
-	case SEQID_TPE:
-	case SEQID_TPD:
+        case SEQID_DDBJ:
+        case SEQID_OTHER:
+        case SEQID_TPG:
+        case SEQID_TPE:
+        case SEQID_TPD:
+        case SEQID_GPIPE:
            tsip = (TextSeqIdPtr)(sip->data.ptrvalue);
 	   if (((tsip->version > 0) && (tsip->release == NULL)) && SHOWVERSION)
 		version = tsip->version;  /* show versions */
 	   sprintf(versionbuf, ".%d", (int)version);
         case SEQID_PIR:
         case SEQID_SWISSPROT:
-	case SEQID_PRF:
+        case SEQID_PRF:
             tsip = (TextSeqIdPtr)sip->data.ptrvalue;
             if (tsip->accession != NULL)
 			{
@@ -3565,8 +3684,16 @@ NLM_EXTERN CharPtr SeqIdWrite (SeqIdPtr isip, CharPtr buf, Uint1 format, Uint4 b
 /* The following function finds either an integer or a string id from
    SeqIdPtr */
 
-Boolean GetAccessionFromSeqId(SeqIdPtr sip, Int4Ptr gi, 
-				     CharPtr PNTR id)
+Boolean GetAccessionFromSeqId(SeqIdPtr sip, Int4Ptr gi, CharPtr PNTR id)
+{
+   return GetAccessionVersionFromSeqId(sip, gi, id, FALSE);
+}
+
+/* Maximal length of a version number in Accession.version identifiers */
+#define MAX_VERSION_LENGTH 10
+
+Boolean GetAccessionVersionFromSeqId(SeqIdPtr sip, Int4Ptr gi, 
+                                     CharPtr PNTR id, Boolean get_version)
 {
    Boolean numeric_id_type = FALSE;
    Int2 id_len;
@@ -3602,14 +3729,29 @@ Boolean GetAccessionFromSeqId(SeqIdPtr sip, Int4Ptr gi,
          numeric_id_type = TRUE;
       }
       break;
-   case SEQID_GENBANK: case SEQID_EMBL: case SEQID_PIR: 
-   case SEQID_SWISSPROT: case SEQID_DDBJ: case SEQID_PRF: 
-   case SEQID_OTHER: case SEQID_TPG: case SEQID_TPE: case SEQID_TPD:
+   case SEQID_GENBANK:
+   case SEQID_EMBL:
+   case SEQID_PIR: 
+   case SEQID_SWISSPROT:
+   case SEQID_DDBJ:
+   case SEQID_PRF: 
+   case SEQID_OTHER:
+   case SEQID_TPG:
+   case SEQID_TPE:
+   case SEQID_TPD:
+   case SEQID_GPIPE:
       textsip = (TextSeqIdPtr)sip->data.ptrvalue;
       if (textsip->accession) {
-         id_len = StringLen(textsip->accession);
-         *id = (CharPtr) MemNew(id_len+1);
-         sprintf(*id, "%s", textsip->accession);
+         if (get_version && textsip->version > 0) {
+            /* Assume versions are no longer than MAX_VERSION_LENGTH digits */
+            id_len = StringLen(textsip->accession) + MAX_VERSION_LENGTH + 1;
+            *id = (CharPtr) MemNew(id_len+1);
+            sprintf(*id, "%s.%ld", textsip->accession, textsip->version);
+         } else {
+            id_len = StringLen(textsip->accession);
+            *id = (CharPtr) MemNew(id_len+1);
+            sprintf(*id, "%s", textsip->accession);
+         }
       } else if (textsip->name) {
          id_len = StringLen(textsip->name);
          *id = (CharPtr) MemNew(id_len+1);
@@ -3688,9 +3830,10 @@ NLM_EXTERN SeqIdPtr SeqIdParse(CharPtr buf)
 	2, /* 13 = ddbj */
 	2, /* 14 = prf */
 	2,  /* 15 = pdb */
-        2,  /* 16 = tpg */
-        2,  /* 17 = tpe */
-        2,  /* 18 = tpd */
+    2,  /* 16 = tpg */
+    2,  /* 17 = tpe */
+    2,  /* 18 = tpd */
+    2   /* 19 = gpp */
 	};
 
 	if ((buf == NULL) || (*buf == '\0'))
@@ -3742,8 +3885,10 @@ NLM_EXTERN SeqIdPtr SeqIdParse(CharPtr buf)
 				{
 					if (type == SEQID_OTHER && (numtoken == 2 || numtoken == 1))
 						done = TRUE;
-					else if ((type == SEQID_GENBANK || type == SEQID_EMBL || type == SEQID_DDBJ ||
-							type == SEQID_TPG || type == SEQID_TPE || type == SEQID_TPD) && numtoken == 1)
+					else if ((type == SEQID_GENBANK || type == SEQID_EMBL ||
+							type == SEQID_DDBJ || type == SEQID_TPG ||
+							type == SEQID_TPE || type == SEQID_TPD ||
+							type == SEQID_GPIPE) && numtoken == 1)
 						done = TRUE;
 					else if (numtoken < (Int2)(expect_tokens[type]))
 						goto erret;
@@ -3809,9 +3954,10 @@ NLM_EXTERN SeqIdPtr SeqIdParse(CharPtr buf)
         	case SEQID_DDBJ:
 			case SEQID_PRF:
     	    case SEQID_OTHER:
-	    case SEQID_TPG:
-	    case SEQID_TPE:
+    	    case SEQID_TPG:
+    	    case SEQID_TPE:
             case SEQID_TPD:
+    	    case SEQID_GPIPE:
 				if ((*tokens[0] == '\0') && (*tokens[1] == '\0'))
 					goto erret;
 	            tsip = TextSeqIdNew();
@@ -4005,6 +4151,7 @@ NLM_EXTERN Uint1 SeqIdComp (SeqIdPtr a, SeqIdPtr b)
 			case SEQID_TPG:
 			case SEQID_TPE:
 			case SEQID_TPD:
+		    case SEQID_GPIPE:
 				switch (b->choice)
 				{
 					case SEQID_GENBANK:   /* its ok */
@@ -4013,6 +4160,7 @@ NLM_EXTERN Uint1 SeqIdComp (SeqIdPtr a, SeqIdPtr b)
 					case SEQID_TPG:
 					case SEQID_TPE:
 					case SEQID_TPD:
+				    case SEQID_GPIPE:
 						break;  
 					default:
 						return SIC_DIFF;
@@ -4086,6 +4234,7 @@ NLM_EXTERN Uint1 SeqIdComp (SeqIdPtr a, SeqIdPtr b)
 		case SEQID_TPG:
 		case SEQID_TPE:
 		case SEQID_TPD:
+        case SEQID_GPIPE:
 
             at = (TextSeqIdPtr)a->data.ptrvalue;
             bt = (TextSeqIdPtr)b->data.ptrvalue;
@@ -4657,12 +4806,12 @@ NLM_EXTERN Int4 SeqLocStart (SeqLocPtr anp)   /* seqloc */
 			numpnt = PackSeqPntNum((PackSeqPntPtr)anp->data.ptrvalue);
 			while (numpnt)
 			{
+				numpnt--;
 				tpos = PackSeqPntGet((PackSeqPntPtr)anp->data.ptrvalue, numpnt);
 				if (pos < 0)
 					pos = tpos;
 				else if (tpos < pos)
 					pos = tpos;
-				numpnt--;
 			}
             break;
         default:
@@ -4743,12 +4892,12 @@ NLM_EXTERN Int4 SeqLocStop (SeqLocPtr anp)   /* seqloc */
 			numpnt = PackSeqPntNum((PackSeqPntPtr)anp->data.ptrvalue);
 			while (numpnt)
 			{
+				numpnt--;
 				tpos = PackSeqPntGet((PackSeqPntPtr)anp->data.ptrvalue, numpnt);
 				if (pos < 0)
 					pos = tpos;
 				else if (tpos > pos)
 					pos = tpos;
-				numpnt--;
 			}
             break;
         default:
@@ -4797,6 +4946,7 @@ NLM_EXTERN Uint1 SeqLocStrand (SeqLocPtr anp)   /* seqloc */
 						strand = SeqLocStrand(slp), slp = slp -> next;
 						slp != NULL ; slp = slp->next)
 				{
+				    if (slp->choice == SEQLOC_NULL || slp->choice == SEQLOC_EMPTY) continue;
 					tstrand = SeqLocStrand(slp);
 					if (strand == Seq_strand_unknown && tstrand == Seq_strand_plus) {
 						strand = Seq_strand_plus;
@@ -7791,15 +7941,27 @@ GetScoreAndEvalue(SeqAlignPtr seqalign, Int4 *score, Nlm_FloatHi *bit_score, Nlm
 		switch (seqalign->segtype)
 		{
 			case 1: /*Dense-diag*/
+                        {
+                                Nlm_FloatHi best_evalue = *evalue;
 				ddp = seqalign->segs;
 				while (ddp)
 				{
-					local_retval = GetBestScoreAndEvalueFromScorePtr(ddp->scores, score, bit_score, evalue, number);	
-					if (local_retval == TRUE)
-						retval = TRUE;
-					ddp = ddp->next;
+                                   Int4 number_tmp = 1;
+                                   local_retval =
+                                      GetBestScoreAndEvalueFromScorePtr(ddp->scores, score, 
+                                         bit_score, evalue, &number_tmp);	
+                                   /* Use number corresponding to best evalue. */
+                                   if (*evalue < best_evalue)
+                                   {
+                                      best_evalue = *evalue;
+                                      *number = number_tmp;
+                                   }
+                                   if (local_retval == TRUE)
+                                      retval = TRUE;
+                                   ddp = ddp->next;
 				}
 				break;
+                        }
 			case 2:
 				dsp = seqalign->segs;
 				if (dsp)
@@ -7953,8 +8115,13 @@ AdjustOffSetsInSeqAlign(SeqAlignPtr salp, SeqLocPtr slp1, SeqLocPtr slp2)
 			     sip1 = ssp->ids;
 			     whole_slp = 
 				ValNodeAddPointer(NULL, SEQLOC_WHOLE, sip1);
-			     offset1 = 
-				GetOffsetInLoc(slp1, whole_slp, SEQLOC_START);
+                             if(SeqLocStrand(slp1) == Seq_strand_minus)
+			        offset1 = GetOffsetInLoc(slp1, whole_slp, 
+                                                         SEQLOC_STOP);
+                             else
+			        offset1 = GetOffsetInLoc(slp1, whole_slp, 
+                                                         SEQLOC_START);
+
 			     if (offset1 == -1)
 			     {
 				err_string1 = SeqLocPrint(slp1);
@@ -7968,8 +8135,13 @@ AdjustOffSetsInSeqAlign(SeqAlignPtr salp, SeqLocPtr slp1, SeqLocPtr slp2)
 			     sip2 = ssp->ids->next;
 			     whole_slp = 
 				ValNodeAddPointer(NULL, SEQLOC_WHOLE, sip2);
-			     offset2 = 
-				GetOffsetInLoc(slp2, whole_slp, SEQLOC_START);
+                             if(SeqLocStrand(slp2) == Seq_strand_minus)
+			        offset2 = GetOffsetInLoc(slp2, whole_slp, 
+                                                         SEQLOC_STOP);
+                             else
+			        offset2 = GetOffsetInLoc(slp2, whole_slp, 
+                                                         SEQLOC_START);
+
 			     if (offset2 == -1)
 			     {
 				err_string1 = SeqLocPrint(slp2);
@@ -8532,7 +8704,7 @@ NLM_EXTERN Boolean LIBCALL NAccnIsDDBJ (CharPtr s) {
     return retstatus;
 }
 
- NLM_EXTERN Boolean LIBCALL AccnIsSWISSPROT( CharPtr s) {
+NLM_EXTERN Boolean LIBCALL AccnIsSWISSPROT( CharPtr s) {
      Boolean retstatus = FALSE;
      if(s && *s && *(s+1) && *(s+2) && *(s+3) && *(s+4) && *(s+5) && *(s+6) ==NULLB) {
          if(*s == 'o' || *s == 'O' ||
@@ -8553,7 +8725,40 @@ NLM_EXTERN Boolean LIBCALL NAccnIsDDBJ (CharPtr s) {
      }
 
      return retstatus;
- }
+}
+ 
+NLM_EXTERN Boolean LIBCALL AccnIsUniProt (CharPtr s)
+ 
+{
+  Char  ch;
+
+  if (StringLen (s) != 6) return FALSE;
+
+  ch = *s;
+  if (! IS_ALPHA (ch)) return FALSE;
+
+  s++;
+  ch = *s;
+  if (! IS_DIGIT (ch)) return FALSE;
+
+  s++;
+  ch = *s;
+  if (! IS_ALPHA (ch)) return FALSE;
+
+  s++;
+  ch = *s;
+  if (! (IS_ALPHA (ch) || IS_DIGIT (ch))) return FALSE;
+
+  s++;
+  ch = *s;
+  if (! (IS_ALPHA (ch) || IS_DIGIT (ch))) return FALSE;
+
+  s++;
+  ch = *s;
+  if (! IS_DIGIT (ch)) return FALSE;
+
+   return TRUE;
+}
 
  /*
    function to tell if an accession is in the format
@@ -8649,6 +8854,9 @@ NLM_EXTERN Uint4 LIBCALL WHICH_db_accession (CharPtr s)
   switch (len) {
 
   case 6:                       /* Old-style 6-character accession */
+    if (AccnIsUniProt (s)) {
+      return ACCN_SWISSPROT;
+    }
     while (*s) {
       if (retval == FALSE)
         break;
@@ -8666,7 +8874,6 @@ NLM_EXTERN Uint4 LIBCALL WHICH_db_accession (CharPtr s)
             if (AccnIsSWISSPROT(s)) {
             	retcode = ACCN_SWISSPROT;
             }
-            /* retcode = AccnIsSWISSPROT(s); */
             break;
 
 /* GenBank : EST */
@@ -8794,16 +9001,25 @@ NLM_EXTERN Uint4 LIBCALL WHICH_db_accession (CharPtr s)
 	      (StringICmp(temp,"CD") == 0) || 
 	      (StringICmp(temp,"CF") == 0) || 
 	      (StringICmp(temp,"CK") == 0) || 
-	      (StringICmp(temp,"CL") == 0) ) {                /* NCBI EST */
+	      (StringICmp(temp,"CN") == 0) || 
+	      (StringICmp(temp,"CO") == 0) || 
+	      (StringICmp(temp,"CV") == 0) || 
+	      (StringICmp(temp,"CX") == 0) || 
+	      (StringICmp(temp,"DN") == 0) || 
+	      (StringICmp(temp,"DR") == 0) ) {                /* NCBI EST */
               retcode = ACCN_NCBI_EST;
           } else if ((StringICmp(temp,"BV") == 0)) {      /* NCBI STS */
               retcode = ACCN_NCBI_STS;
-          } else if ((StringICmp(temp,"AC") == 0)) {      /* NCBI HTGS */
+          } else if ((StringICmp(temp,"AC") == 0) ||
+                     (StringICmp(temp,"DP") == 0)) {      /* NCBI HTGS */
               retcode = ACCN_NCBI_HTGS;
           } else if ((StringICmp(temp,"AF") == 0) ||
-                     (StringICmp(temp,"AY") == 0)) {      /* NCBI direct submission */
+                     (StringICmp(temp,"AY") == 0) ||
+                     (StringICmp(temp,"DQ") == 0)) {      /* NCBI direct submission */
               retcode = ACCN_NCBI_DIRSUB;
-          } else if ((StringICmp(temp,"AE") == 0)) {      /* NCBI genome project data */
+          } else if ((StringICmp(temp,"AE") == 0) ||
+                     (StringICmp(temp,"CP") == 0) ||
+                     (StringICmp(temp,"CY") == 0)) {      /* NCBI genome project data */
               retcode = ACCN_NCBI_GENOME;
           } else if ((StringICmp(temp,"AH") == 0) ||
                      (StringICmp(temp,"CH") == 0) ||      /* NCBI segmented set header Bioseq */
@@ -8821,7 +9037,9 @@ NLM_EXTERN Uint4 LIBCALL WHICH_db_accession (CharPtr s)
                      (StringICmp(temp,"CC") == 0) ||
                      (StringICmp(temp,"CE") == 0) ||
                      (StringICmp(temp,"CG") == 0) ||
-                     (StringICmp(temp,"CL") == 0) )  {     /* NCBI GSS */
+                     (StringICmp(temp,"CL") == 0) ||
+                     (StringICmp(temp,"CW") == 0) ||
+                     (StringICmp(temp,"CZ") == 0) )  {     /* NCBI GSS */
               retcode = ACCN_NCBI_GSS;
           } else if ((StringICmp(temp,"AR") == 0)) {      /* NCBI patent */
               retcode = ACCN_NCBI_PATENT;
@@ -8846,7 +9064,8 @@ NLM_EXTERN Uint4 LIBCALL WHICH_db_accession (CharPtr s)
           } else if ((StringICmp(temp,"AN") == 0)) {      /* EMBL CON division */
               retcode = ACCN_EMBL_CON;
           } else if ((StringICmp(temp,"AX") == 0) ||
-                     (StringICmp(temp,"CQ") == 0)) {      /* EMBL patent division */
+                     (StringICmp(temp,"CQ") == 0) ||
+                     (StringICmp(temp,"CS") == 0)) {      /* EMBL patent division */
               retcode = ACCN_EMBL_PATENT;
           } else if ((StringICmp(temp,"AT") == 0) || 
                      (StringICmp(temp,"AU") == 0) ||
@@ -8857,7 +9076,10 @@ NLM_EXTERN Uint4 LIBCALL WHICH_db_accession (CharPtr s)
                      (StringICmp(temp,"BW") == 0) ||
                      (StringICmp(temp,"BY") == 0) ||
                      (StringICmp(temp,"CI") == 0) ||
-                     (StringICmp(temp,"CJ") == 0)) {      /* DDBJ EST's */
+                     (StringICmp(temp,"CJ") == 0) ||
+                     (StringICmp(temp,"DA") == 0) ||
+                     (StringICmp(temp,"DB") == 0) ||
+                     (StringICmp(temp,"DC") == 0)) {      /* DDBJ EST's */
               retcode = ACCN_DDBJ_EST;
           } else if ((StringICmp(temp,"AB") == 0)) {      /* DDBJ direct submission */
               retcode = ACCN_DDBJ_DIRSUB;
@@ -8869,8 +9091,11 @@ NLM_EXTERN Uint4 LIBCALL WHICH_db_accession (CharPtr s)
               retcode = ACCN_DDBJ_HTGS;
           } else if ((StringICmp(temp,"BA") == 0)) {      /* DDBJ CON division */
               retcode = ACCN_DDBJ_CON;
-          } else if ((StringICmp(temp,"BD") == 0)) {      /* DDBJ PATENT division */
+          } else if ((StringICmp(temp,"BD") == 0) ||
+                     (StringICmp(temp,"DD") == 0)) {      /* DDBJ patent division */
               retcode = ACCN_DDBJ_PATENT;
+          } else if ((StringICmp(temp,"DE") == 0)) {      /* DDBJ GSS */
+              retcode = ACCN_DDBJ_GSS;
           } else {
               retcode = ACCN_IS_NT;
               break;
@@ -8946,28 +9171,50 @@ NLM_EXTERN Uint4 LIBCALL WHICH_db_accession (CharPtr s)
           s++;
       }
       break;
-    case 12: /* whole genome shotgun 12-character accession, four letters + 8 digits */
-      if(!IS_ALPHA(*s) || !IS_ALPHA(*(s+1)) || !IS_ALPHA(*(s+2)) || !IS_ALPHA(*(s+3)))
-          break;
-      temp[0] = *s; s++;
-      temp[1] = *s; s++;
-      temp[2] = *s; s++;
-      temp[3] = *s; s++;
-      temp[4] = '\0';
-      if ((StringNICmp(temp,"A", 1) == 0)) { 
+    case 12:
+      if(IS_ALPHA(*s) && IS_ALPHA(*(s+1)) && IS_ALPHA(*(s+2)) && IS_ALPHA(*(s+3))) {
+        /* whole genome shotgun 12-character accession, four letters + 8 digits */
+        temp[0] = *s; s++;
+        temp[1] = *s; s++;
+        temp[2] = *s; s++;
+        temp[3] = *s; s++;
+        temp[4] = '\0';
+        if ((StringNICmp(temp,"A", 1) == 0)) { 
           retcode = ACCN_NCBI_WGS;
-      } else if ((StringNICmp(temp,"B", 1) == 0)) {
+        } else if ((StringNICmp(temp,"B", 1) == 0)) {
           retcode = ACCN_DDBJ_WGS;
-      } else if ((StringNICmp(temp,"C", 1) == 0)) {
+        } else if ((StringNICmp(temp,"C", 1) == 0)) {
           retcode = ACCN_EMBL_WGS;
-      } else
+        } else
           retval = FALSE;
-      while (*s) {
+        while (*s) {
           if (! IS_DIGIT(*s)) {
               retval = FALSE;
               break;
           }
           s++;
+        }
+      } else if(IS_ALPHA(*s) && IS_ALPHA(*(s+1)) && (*(s+2)=='_')) {
+        /* New 12-character accession, two letters +"_"+ 9 digits */
+        temp[0] = *s; s++;
+        temp[1] = *s; s++;
+        temp[2] = NULLB; s++;
+      
+        if ((StringICmp(temp,"NP") == 0)) { 
+          retcode = ACCN_REFSEQ_PROT;
+        } else if ((StringICmp(temp,"NM") == 0)) { 
+          retcode = ACCN_REFSEQ_mRNA;
+        } else if (IS_ALPHA(*temp) && IS_ALPHA(*(temp+1))) {
+          retcode =ACCN_REFSEQ | ACCN_AMBIGOUS_MOL;
+        } else
+          retval = FALSE;
+        while (*s) {
+          if (! IS_DIGIT(*s)) {
+              retval = FALSE;
+              break;
+          }
+          s++;
+        }
       }
       break;
   default:   

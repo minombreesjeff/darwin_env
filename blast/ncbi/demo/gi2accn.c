@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   4/15/02
 *
-* $Revision: 6.6 $
+* $Revision: 6.7 $
 *
 * File Description: 
 *
@@ -474,7 +474,7 @@ Int2 Main (void)
 
   PubSeqFetchEnable ();
 
-  LookupFarSeqIDs (sep, FALSE, FALSE, FALSE, TRUE, FALSE);
+  LookupFarSeqIDs (sep, FALSE, FALSE, FALSE, TRUE, FALSE, FALSE);
 
   /* Extract mRNA hits from BLAST against nr */
 

@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 6/30/98
 *
-* $Revision: 6.46 $
+* $Revision: 6.50 $
 *
 * File Description:  Reengineered and optimized exploration functions
 *                      to be used for future code
@@ -133,6 +133,17 @@ typedef struct seqmgrfeatcontext {
   Uint4         index;
 } SeqMgrFeatContext, PNTR SeqMgrFeatContextPtr;
 
+typedef struct seqmgrandcontext {
+  Uint2         entityID;
+  Uint4         itemID;
+  AnnotDescPtr  adp;
+  Uint1         annotdesctype;
+  Pointer       userdata;
+                          /* the following fields are for internal use only */
+  Pointer       omdp;
+  Uint4         index;
+} SeqMgrAndContext, PNTR SeqMgrAndContextPtr;
+
 /*****************************************************************************
 *
 *   SeqMgrIndexFeatures builds indices of sorted features for all bioseqs in an
@@ -227,6 +238,11 @@ NLM_EXTERN SeqFeatPtr LIBCALL SeqMgrGetOverlappingmRNA (
   SeqMgrFeatContext PNTR context
 );
 
+NLM_EXTERN SeqFeatPtr LIBCALL SeqMgrGetLocationSupersetmRNA (
+  SeqLocPtr slp,
+  SeqMgrFeatContext PNTR context
+);
+
 NLM_EXTERN SeqFeatPtr LIBCALL SeqMgrGetOverlappingCDS (
   SeqLocPtr slp,
   SeqMgrFeatContext PNTR context
@@ -271,6 +287,13 @@ NLM_EXTERN SeqFeatPtr LIBCALL SeqMgrGetNextFeature (
   Uint1 seqFeatChoice,
   Uint1 featDefChoice,
   SeqMgrFeatContext PNTR context
+);
+
+NLM_EXTERN AnnotDescPtr LIBCALL SeqMgrGetNextAnnotDesc (
+  BioseqPtr bsp,
+  AnnotDescPtr curr,
+  Uint1 annotDescChoice,
+  SeqMgrAndContext PNTR context
 );
 
 /*****************************************************************************
@@ -420,6 +443,13 @@ NLM_EXTERN SeqFeatPtr LIBCALL SeqMgrGetDesiredFeature (
   SeqMgrFeatContext PNTR context
 );
 
+NLM_EXTERN AnnotDescPtr LIBCALL SeqMgrGetDesiredAnnotDesc (
+  Uint2 entityID,
+  BioseqPtr bsp,
+  Uint4 itemID,
+  SeqMgrAndContext PNTR context
+);
+
 /*****************************************************************************
 *
 *   SeqMgrVisitDescriptors and SeqMgrVisitFeatures visit all descriptors or
@@ -501,6 +531,7 @@ NLM_EXTERN Boolean LIBCALL SeqMgrGetBioseqContext (
 #define CHECK_INTERVALS  3 /* SeqLocAinB plus internal exon-intron boundaries must match */
 #define INTERVAL_OVERLAP 4 /* at least one pair of intervals must overlap */
 #define COMMON_INTERVAL  5 /* at least one pair of intervals must match */
+#define RANGE_MATCH      6 /* the left and right ends must match exactly */
 
 NLM_EXTERN VoidPtr LIBCALL SeqMgrBuildFeatureIndex (
   BioseqPtr bsp,
@@ -579,6 +610,20 @@ NLM_EXTERN Uint2 LIBCALL SeqMgrIndexFeaturesEx (
   Pointer ptr,
   Boolean flip,
   Boolean dorevfeats
+);
+
+/*****************************************************************************
+*
+*   SeqMgrIndexFeaturesExEx allows indexing of remotely fetched features
+*
+*****************************************************************************/
+
+NLM_EXTERN Uint2 LIBCALL SeqMgrIndexFeaturesExEx (
+  Uint2 entityID,
+  Pointer ptr,
+  Boolean flip,
+  Boolean dorevfeats,
+  ValNodePtr extra
 );
 
 /*****************************************************************************

@@ -1,1 +1,0 @@
-../tools/seg.h

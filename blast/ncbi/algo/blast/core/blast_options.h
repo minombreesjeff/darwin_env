@@ -1,43 +1,38 @@
-/* $Id: blast_options.h,v 1.67 2004/04/29 15:09:49 madden Exp $
-* ===========================================================================
-*
-*                            PUBLIC DOMAIN NOTICE
-*               National Center for Biotechnology Information
-*
-*  This software/database is a "United States Government Work" under the
-*  terms of the United States Copyright Act.  It was written as part of
-*  the author's offical duties as a United States Government employee and
-*  thus cannot be copyrighted.  This software/database is freely available
-*  to the public for use. The National Library of Medicine and the U.S.
-*  Government have not placed any restriction on its use or reproduction.
-*
-*  Although all reasonable efforts have been taken to ensure the accuracy
-*  and reliability of the software and data, the NLM and the U.S.
-*  Government do not and cannot warrant the performance or results that
-*  may be obtained by using this software or data. The NLM and the U.S.
-*  Government disclaim all warranties, express or implied, including
-*  warranties of performance, merchantability or fitness for any particular
-*  purpose.
-*
-*  Please cite the author in any work or product based on this material.
-*
-* ===========================================================================*/
+/* $Id: blast_options.h,v 1.117 2005/04/27 19:48:34 dondosha Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ===========================================================================
+ *
+ * Author:  Tom Madden
+ *
+ */
 
-/*****************************************************************************
-
-File name: blast_options.h
-
-Author: Tom Madden
-
-Contents: BLAST options
-
-Detailed Contents: 
-
-	- Options to be used for different tasks of the BLAST search
-
-******************************************************************************
- * $Revision: 1.67 $
- * */
+/** @file blast_options.h
+ *  The structures and functions in blast_options.[ch] should be used to specify 
+ *  user preferences.  The options structures should not be changed by the BLAST code
+ *  but rather be read to determine user preferences.  When possible these structures
+ *  should be passed in as "const".
+ */
 
 #ifndef __BLASTOPTIONS__
 #define __BLASTOPTIONS__
@@ -57,89 +52,118 @@ extern "C" {
  */
 
 /** "window" between hits to trigger an extension. */
-#define BLAST_WINDOW_SIZE_PROT 40
-#define BLAST_WINDOW_SIZE_NUCL 0
-#define BLAST_WINDOW_SIZE_MEGABLAST 0
-#define BLAST_WINDOW_SIZE_DISC 40
+#define BLAST_WINDOW_SIZE_PROT 40  /**< default window (all protein searches) */
+#define BLAST_WINDOW_SIZE_NUCL 0   /**< default window size (blastn) */
+#define BLAST_WINDOW_SIZE_MEGABLAST 0   /**< default window size 
+                                          (contiguous megablast) */
+#define BLAST_WINDOW_SIZE_DISC 40  /**< default window size 
+                                          (discontiguous megablast) */
 
 /** length of word to trigger an extension. */
-#define BLAST_WORDSIZE_PROT 3
-#define BLAST_WORDSIZE_NUCL 11
-#define BLAST_WORDSIZE_MEGABLAST 28
-#define BLAST_VARWORD_NUCL 0
-#define BLAST_VARWORD_MEGABLAST 1
+#define BLAST_WORDSIZE_PROT 3   /**< default word size (all protein searches) */
+#define BLAST_WORDSIZE_NUCL 11   /**< default word size (blastn) */
+#define BLAST_WORDSIZE_MEGABLAST 28   /**< default word size (contiguous 
+                                          megablast; for discontig megablast
+                                          the word size is explicitly 
+                                          overridden) */
+#define BLAST_VARWORD_NUCL 0  /**< blastn with variable wordsize */
+#define BLAST_VARWORD_MEGABLAST 1 /**< megablast with variable wordsize */
+
+/** Default matrix name: BLOSUM62 */
+#define BLAST_DEFAULT_MATRIX "BLOSUM62"
 
 /** Protein gap costs are the defaults for the BLOSUM62 scoring matrix.
  * More gap costs are listed in BLASTOptionSetGapParams 
  */
 
 /** cost for the existence of a gap.*/
-#define BLAST_GAP_OPEN_PROT 11
-#define BLAST_GAP_OPEN_NUCL 5
-#define BLAST_GAP_OPEN_MEGABLAST 0
+#define BLAST_GAP_OPEN_PROT 11 /**< default gap open penalty (all 
+                                    protein searches) */
+#define BLAST_GAP_OPEN_NUCL 5 /**< default gap open penalty (blastn) */
+#define BLAST_GAP_OPEN_MEGABLAST 0 /**< default gap open penalty (megablast
+                                        with greedy gapped alignment) */
 
 /** cost to extend a gap. */
-#define BLAST_GAP_EXTN_PROT 1
-#define BLAST_GAP_EXTN_NUCL 2
-#define BLAST_GAP_EXTN_MEGABLAST 0
+#define BLAST_GAP_EXTN_PROT 1 /**< default gap open penalty (all 
+                                   protein searches) */
+#define BLAST_GAP_EXTN_NUCL 2 /**< default gap open penalty (blastn) */
+#define BLAST_GAP_EXTN_MEGABLAST 0 /**< default gap open penalty (megablast)
+                                        with greedy gapped alignment) */
 
-/** neighboring word score thresholds */
-#define BLAST_WORD_THRESHOLD_BLASTP 11
-#define BLAST_WORD_THRESHOLD_BLASTN 0
-#define BLAST_WORD_THRESHOLD_BLASTX 12
-#define BLAST_WORD_THRESHOLD_TBLASTN 13
-#define BLAST_WORD_THRESHOLD_TBLASTX 13
-#define BLAST_WORD_THRESHOLD_MEGABLAST 0
+/** neighboring word score thresholds; a threshold of zero
+ *  means that only query and subject words that match exactly
+ *  will go into the BLAST lookup table when it is generated 
+ */
+#define BLAST_WORD_THRESHOLD_BLASTP 11 /**< default neighboring threshold
+                                         (blastp/rpsblast) */
+#define BLAST_WORD_THRESHOLD_BLASTN 0 /**< default threshold (blastn) */
+#define BLAST_WORD_THRESHOLD_BLASTX 12 /**< default threshold (blastx) */
+#define BLAST_WORD_THRESHOLD_TBLASTN 13 /**< default neighboring threshold 
+                                          (tblastn/rpstblastn) */
+#define BLAST_WORD_THRESHOLD_TBLASTX 13 /**< default threshold (tblastx) */
+#define BLAST_WORD_THRESHOLD_MEGABLAST 0 /**< default threshold (megablast) */
 
-/** dropoff for ungapped extension */
-#define BLAST_UNGAPPED_X_DROPOFF_PROT 7
-#define BLAST_UNGAPPED_X_DROPOFF_NUCL 20
+/** default dropoff for ungapped extension; ungapped extensions
+ *  will stop when the score for the extension has dropped from
+ *  the current best score by at least this much 
+ */
+#define BLAST_UNGAPPED_X_DROPOFF_PROT 7 /**< ungapped dropoff score for all
+                                             searches except blastn */
+#define BLAST_UNGAPPED_X_DROPOFF_NUCL 20 /**< ungapped dropoff score for 
+                                              blastn (and megablast) */
 
-/** dropoff for gapped extension */
-#define BLAST_GAP_X_DROPOFF_PROT 15
-#define BLAST_GAP_X_DROPOFF_NUCL 30
-#define BLAST_GAP_X_DROPOFF_GREEDY 30
-#define BLAST_GAP_X_DROPOFF_TBLASTX 0
+/** default dropoff for preliminary gapped extensions */
+#define BLAST_GAP_X_DROPOFF_PROT 15 /**< default dropoff (all protein-
+                                         based gapped extensions) */
+#define BLAST_GAP_X_DROPOFF_NUCL 30 /**< default dropoff for non-greedy
+                                         nucleotide gapped extensions */
+#define BLAST_GAP_X_DROPOFF_GREEDY 30 /**< default dropoff for greedy
+                                         nucleotide gapped extensions */
+#define BLAST_GAP_X_DROPOFF_TBLASTX 0 /**< default dropoff for tblastx */
 
-/** minimal score for triggering gapped extension */
-#define BLAST_GAP_TRIGGER_PROT 22.0
-#define BLAST_GAP_TRIGGER_NUCL 25.0 
+/** default bit score that will trigger gapped extension */
+#define BLAST_GAP_TRIGGER_PROT 22.0 /**< default bit score that will trigger
+                                         a gapped extension for all protein-
+                                         based searches */
+#define BLAST_GAP_TRIGGER_NUCL 25.0  /**< default bit score that will trigger
+                                         a gapped extension for blastn */
 
-/** dropoff for the final gapped extension with traceback */
-#define BLAST_GAP_X_DROPOFF_FINAL_PROT 25
-#define BLAST_GAP_X_DROPOFF_FINAL_NUCL 50
-#define BLAST_GAP_X_DROPOFF_FINAL_TBLASTX 0
+/** default dropoff for the final gapped extension with traceback */
+#define BLAST_GAP_X_DROPOFF_FINAL_PROT 25 /**< default dropoff (all protein-
+                                               based gapped extensions) */
+#define BLAST_GAP_X_DROPOFF_FINAL_NUCL 50 /**< default dropoff for nucleotide
+                                               gapped extensions) */
+#define BLAST_GAP_X_DROPOFF_FINAL_TBLASTX 0 /**< default dropoff for tblastx */
 
-/** reward and penalty only apply to blastn/megablast */
-#define BLAST_PENALTY -3
-#define BLAST_REWARD 1
+/** default reward and penalty (only applies to blastn/megablast) */
+#define BLAST_PENALTY -3        /**< default nucleotide mismatch score */
+#define BLAST_REWARD 1          /**< default nucleotide match score */
 
-/** expect value cutoff */
-#define BLAST_EXPECT_VALUE 10.0
+/** Default parameters for saving hits */
+#define BLAST_EXPECT_VALUE 10.0 /**< by default, alignments whose expect
+                                     value exceeds this number are discarded */
+#define BLAST_HITLIST_SIZE 500 /**< Number of database sequences to save hits 
+                                  for */
+#define BLAST_PRELIM_HITLIST_SIZE 500 /**< Number of database sequences to save 
+                                         hits for in the preliminary stage. */
 
 /** Types of the lookup table */
-#define MB_LOOKUP_TABLE 1
-#define NA_LOOKUP_TABLE 2
-#define AA_LOOKUP_TABLE 3
-#define PHI_AA_LOOKUP 4
-#define PHI_NA_LOOKUP 5
-#define RPS_LOOKUP_TABLE 6
+#define MB_LOOKUP_TABLE 1  /**< megablast lookup table (includes both
+                                contiguous and discontiguous megablast) */
+#define NA_LOOKUP_TABLE 2  /**< blastn lookup table */
+#define AA_LOOKUP_TABLE 3  /**< standard protein (blastp) lookup table */
+#define PHI_AA_LOOKUP 4  /**< protein lookup table specialized for phi-blast */
+#define PHI_NA_LOOKUP 5  /**< nucleotide lookup table for phi-blast */
+#define RPS_LOOKUP_TABLE 6 /**< RPS lookup table (rpsblast and rpstblastn) */
 
 /** Defaults for PSI-BLAST options */
-#define PSI_ETHRESH 0.005
-#define PSI_MAX_NUM_PASSES 1
-#define PSI_PSEUDO_COUNT_CONST 9
-#define PSI_SCALING_FACTOR 32
+#define PSI_INCLUSION_ETHRESH 0.002 /**< Inclusion threshold for PSI BLAST */
+#define PSI_PSEUDO_COUNT_CONST 9 /**< Pseudo-count constant for PSI-BLAST */
 
 /** Default genetic code for query and/or database */
-#define BLAST_GENETIC_CODE 1
-
-/** Default parameters for linking HSPs */
-#define BLAST_GAP_PROB 0.5
-#define BLAST_GAP_PROB_GAPPED 1.0
-#define BLAST_GAP_DECAY_RATE 0.5 
-#define BLAST_GAP_DECAY_RATE_GAPPED 0.1
-#define BLAST_GAP_SIZE 50
+#define BLAST_GENETIC_CODE 1  /**< Use the standard genetic code for converting
+                                   groups of three nucleotide bases to protein
+                                   letters */
 
 /** Options needed to construct a lookup table 
  * Also needed: query sequence and query length.
@@ -148,73 +172,101 @@ typedef struct LookupTableOptions {
    Int4 threshold; /**< Score threshold for putting words in a lookup table */
    Int4 lut_type; /**< What kind of lookup table to construct? E.g. blastn 
                      allows for traditional and megablast style lookup table */
-   Int2 word_size; /**< Determines the size of the lookup table */
-   Int4 alphabet_size; /**< Size of the alphabet */
+   Int4 word_size; /**< Determines the size of the lookup table */
    Uint1 mb_template_length; /**< Length of the discontiguous words */
    Uint1 mb_template_type; /**< Type of a discontiguous word template */
    Int4 max_positions; /**< Max number of positions per word (MegaBlast only);
                          no restriction if 0 */
-   Uint1 scan_step; /**< Step at which database sequence should be parsed */
+   Boolean full_byte_scan; /**< subject sequence should be scanned a byte at a time 
+                           applies only to discontiguous megablast. */
    char* phi_pattern;  /**< PHI-BLAST pattern */
    Int4 max_num_patterns; /**< Maximal number of patterns allowed for 
                              PHI-BLAST */
    Boolean use_pssm; /**< Use a PSSM rather than a (protein) query to construct lookup table */
+   Boolean variable_wordsize; /**< Should the partial bytes be examined for 
+                             determining whether exact match is long enough? */
 } LookupTableOptions;
+
+/** Options for dust algorithm, applies only to nucl.-nucl. comparisons.
+ *  value of less than zero means default value will be applied.
+ */
+typedef struct SDustOptions {
+    int level;
+    int window;
+    int linker;  /**< min distance to link segments. */
+} SDustOptions;
+
+
+/** Options for SEG algorithm, applies only to protein-protein comparisons.
+ *  value of less than zero means default value will be applied.
+ */
+typedef struct SSegOptions {
+    int window;     /**< initial window to trigger further work. */
+    double locut;
+    double hicut;
+} SSegOptions;
+
+/** Filtering options for organsim specific repeats filtering.   
+    Currently this consist of only the db name but could be expanded
+    in the future to include other types of filtering or other options.
+ */
+typedef struct SRepeatFilterOptions {
+    char* database;   /**< Nucleotide database for mini BLAST search. */
+} SRepeatFilterOptions;
+
+/** All filtering options */
+typedef struct SBlastFilterOptions {
+    Boolean mask_at_hash;         /**< mask query only for lookup table creation */
+    SDustOptions* dustOptions;    /**< low-complexity filtering for nucleotides. */
+    SSegOptions* segOptions;      /**< low-complexity filtering for proteins sequences 
+            (includes translated nucleotides). */
+    SRepeatFilterOptions* repeatFilterOptions;  /**< for organism specific repeat filtering. */
+} SBlastFilterOptions;
+
 
 /** Options required for setting up the query sequence */
 typedef struct QuerySetUpOptions {
-   char* filter_string; /**< Parseable string that determines the filtering
-                             options */
+   SBlastFilterOptions* filtering_options;  /**< structured options for all filtering 
+                             offered from algo/blast/core for BLAST. */
+   char* filter_string; /**< DEPRECATED, filtering options above. */
+
    Uint1 strand_option; /**< In blastn: which strand to search: 1 = forward;
                            2 = reverse; 3 = both */
    Int4 genetic_code;     /**< Genetic code to use for translation, 
                              [t]blastx only */
 } QuerySetUpOptions;
 
-typedef enum SeedContainerType {
-    eDiagArray,         /**< FIXME: EXTEND_WORD_DIAG_ARRAY */
-    eMbStacks,          /**< FIXME: EXTEND_WORD_MB_STACKS */
-    eMaxContainerType
-} SeedContainerType;
-
-typedef enum SeedExtensionMethod {
-    eRight,             /**< FIXME: EXTEND_WORD_BLASTN */
-    eRightAndLeft,      /**< FIXME: EXTEND_WORD_AG */
-    eMaxSeedExtensionMethod
-} SeedExtensionMethod;
-
 /** Options needed for initial word finding and processing */
 typedef struct BlastInitialWordOptions {
+   double gap_trigger; /**< Score in bits for starting gapped extension */
    Int4 window_size; /**< Maximal allowed distance between 2 hits in case 2 
                         hits are required to trigger the extension */
-   SeedContainerType container_type; /**< How to store offset pairs for initial
-                                        seeds? */
-   SeedExtensionMethod extension_method; /**< How should exact matches be 
-                                            extended? */
-   Boolean variable_wordsize; /**< Should the partial bytes be examined for 
-                             determining whether exact match is long enough? */
    Boolean ungapped_extension; /**< Should the ungapped extension be 
                                   performed? */
    double x_dropoff; /**< X-dropoff value (in bits) for the ungapped 
                          extension */
 } BlastInitialWordOptions;
 
-#define UNGAPPED_CUTOFF_E_BLASTN 0.05
-#define UNGAPPED_CUTOFF_E_BLASTP 1e-300
-#define UNGAPPED_CUTOFF_E_BLASTX 1.0
-#define UNGAPPED_CUTOFF_E_TBLASTN 1.0
-#define UNGAPPED_CUTOFF_E_TBLASTX 1e-300
-
-/** Parameter block that contains a pointer to BlastInitialWordOptions
- * and parsed values for those options that require it 
- * (in this case x_dropoff).
+/** The algorithm to be used for preliminary
+ *  gapped extensions
  */
-typedef struct BlastInitialWordParameters {
-   BlastInitialWordOptions* options; /**< The original (unparsed) options. */
-   Int4 x_dropoff; /**< Raw X-dropoff value for the ungapped extension */
-   Int4 cutoff_score; /**< Cutoff score for saving ungapped hits. */
-} BlastInitialWordParameters;
-	
+typedef enum EBlastPrelimGapExt {
+    eDynProgExt,                /**< standard affine gapping */
+    eGreedyExt,                 /**< Greedy extension (megaBlast) */
+    eGreedyWithTracebackExt     /**< Greedy extension with Traceback
+                               calculated. */
+} EBlastPrelimGapExt;
+
+/** The algorithm to be used for final gapped
+ *  extensions with traceback
+ */
+typedef enum EBlastTbackExt {
+    eDynProgTbck,          /**< standard affine gapping */
+    eGreedyTbck,           /**< Greedy extension (megaBlast) */
+    eSmithWatermanTbck     /**< Smith-waterman finds optimal scores, then 
+                                ALIGN_EX to find alignment. */
+} EBlastTbackExt;
+
 /** Options used for gapped extension 
  *  These include:
  *  a. Penalties for various types of gapping;
@@ -226,19 +278,21 @@ typedef struct BlastExtensionOptions {
    double gap_x_dropoff; /**< X-dropoff value for gapped extension (in bits) */
    double gap_x_dropoff_final;/**< X-dropoff value for the final gapped 
                                   extension (in bits) */
-   double gap_trigger;/**< Score in bits for starting gapped extension */
-   Int4 algorithm_type; /**< E.g. for blastn: dynamic programming; 
-                           greedy without traceback; greedy with traceback */
-   Boolean skip_traceback; /**< Is traceback information needed in results? */
+   EBlastPrelimGapExt ePrelimGapExt; /**< type of preliminary gapped extension (normally) for calculating
+                              score. */
+   EBlastTbackExt eTbackExt; /**< type of traceback extension. */
+   Boolean compositionBasedStats; /**< if TRUE use composition-based stats. */
 } BlastExtensionOptions;
 
-typedef struct BlastExtensionParameters {
-   BlastExtensionOptions* options;
-   Int4 gap_x_dropoff; /**< X-dropoff value for gapped extension (raw) */
-   Int4 gap_x_dropoff_final;/**< X-dropoff value for the final gapped 
-                               extension (raw) */
-   Int4 gap_trigger; /**< Minimal raw score for starting gapped extension */
-} BlastExtensionParameters;
+/** Should sum statistics be performed? If not set, the engine decides this
+ * question based on the program and gapped calculation option.
+ */
+typedef enum ESumStatsMode {
+   eSumStatsNotSet = 0, /**< Let the engine decide, based on the program and 
+                           gapped calculation option. */
+   eSumStatsFalse, /**< Do not use sum statistics. */
+   eSumStatsTrue   /**< Use sum statistics. */
+} ESumStatsMode;
 
 /** Options used when evaluating and saving hits
  *  These include: 
@@ -261,9 +315,9 @@ typedef struct BlastHitSavingOptions {
    Int4 total_hsp_limit; /**< Maximal total number of HSPs to keep */
    Int4 hsp_range_max; /**< Maximal number of HSPs to save in a region: 
                           used for culling only */
-   Boolean perform_culling;/**< Perform culling of hit lists by keeping at 
-                              most a certain number of HSPs in a range
-                              (not implemented) */
+   Int4 culling_limit; /**< If the query range of an HSP is contained in
+                            at least this many higher-scoring HSPs, throw
+                            away the HSP as redundant (turned off if zero) */
    /* PSI-BLAST Hit saving options */
    Int4 required_start;  /**< Start of the region required to be part of the
                             alignment */
@@ -274,38 +328,17 @@ typedef struct BlastHitSavingOptions {
    /********************************************************************/
    /* Merge all these in a structure for clarity? */
    /* applicable to all, except blastn */
-   Boolean do_sum_stats; /**< Force sum statistics to be used to combine 
-                            HSPs */
-   /* tblastn w/ sum statistics */
+   ESumStatsMode do_sum_stats; /**< Force sum statistics to be used to combine 
+                                  HSPs */
    Int4 longest_intron; /**< The longest distance between HSPs allowed for
                            combining via sum statistics with uneven gaps */
    /********************************************************************/
 
-   Int4 min_hit_length;
-   Boolean is_neighboring; /**< FIXME: neighboring is specified by a percent 
-                             identity and a minimum hit length */
-
-   Boolean phi_align;   /**< Is this a PHI BLAST search? */
+   Int4 min_hit_length;    /**< optional minimum alignment length; alignments
+                                not at least this long are discarded */
+   Int4 min_diag_separation; /**< How many diagonals separate a hit from a substantial alignment
+                                  before it's not blocked out. Must be > 0 to be used. */
 } BlastHitSavingOptions;
-
-/** Parameter block that contains a pointer to BlastHitSavingOptions
- * and parsed values for those options that require it
- * (in this case expect value).
- */
-typedef struct BlastHitSavingParameters {
-   BlastHitSavingOptions* options; /**< The original (unparsed) options. */
-   Int4 cutoff_score; /**< Raw cutoff score corresponding to the e-value 
-                         provided by the user */
-   Boolean do_sum_stats; /**< Is sum statistics used to combine HSPs? */
-   double gap_prob;       /**< Probability of decay for linking HSPs */
-   double gap_decay_rate; /**< Decay rate for linking HSPs */
-   Int4 gap_size;          /**< Small gap size for linking HSPs */
-   Int4 cutoff_small_gap; /**< Cutoff sum score for linked HSPs with small 
-                             gaps */
-   Int4 cutoff_big_gap; /**< Cutoff sum score for linked HSPs with big gaps */
-   Boolean ignore_small_gaps; /**< Should small gaps be ignored? */
-} BlastHitSavingParameters;
-	
 
 /** Scoring options block 
  *  Used to produce the BlastScoreBlk structure
@@ -340,38 +373,60 @@ typedef struct BlastEffectiveLengthsOptions {
                            statistical calculations */
    Int8 searchsp_eff; /**< Search space to be used for statistical
                            calculations */
-   Boolean use_real_db_size; /**< Use real database size instead of virtual
-                                database size for statistical calculations */
 } BlastEffectiveLengthsOptions;
-
-/** Parameters for setting up effective lengths and search spaces.  
- * The real database size values to be used for statistical calculations, if
- * there are no overriding values in options.
- */
-typedef struct BlastEffectiveLengthsParameters {
-   BlastEffectiveLengthsOptions* options; /**< User provided values for these 
-                                             parameters */
-   Int8 real_db_length; /**< Total database length to use in search space
-                           calculations. */
-   Int4 real_num_seqs;  /**< Number of subject sequences to use for search
-                           space calculations */
-} BlastEffectiveLengthsParameters;
 
 /** Options used in protein BLAST only (PSI, PHI, RPS and translated BLAST)
  *  Some of these possibly should be transfered elsewhere  
  */
 typedef struct PSIBlastOptions {
-   double ethresh;       /**< PSI-BLAST */
-   Int4 maxNumPasses;     /**< PSI-BLAST */
-   Int4 pseudoCountConst; /**< PSI-BLAST */
-   Boolean composition_based_stat;/**< PSI-BLAST */
-   double scalingFactor; /**< Scaling factor used when constructing PSSM for
-                             RPS-BLAST */
-   Boolean use_best_align; /**< Use only alignments chosen by user for PSSM
-                              computation: WWW PSI-BLAST only */
-   Boolean smith_waterman;  /**< PSI-BLAST */
-   Boolean discontinuous;   /**< PSI-BLAST */
-   Boolean is_rps_blast;    /**< RPS-BLAST */
+    /** Pseudocount constant. Needed for the computing the PSSM residue 
+     * frequencies */
+    Int4 pseudo_count;
+
+    /*** The following options are used at the API layer to specify how the
+     * multiple sequence alignment is built from pairwise alignments. These
+     * could go in their own structure in the future. */
+
+    /** Minimum evalue for inclusion in PSSM calculation. Needed for the
+     * conversion of Seq-align into a multiple sequence alignment and for
+     * composition based statistics */
+    double inclusion_ethresh;
+
+    /** If set to TRUE, use the best alignment when multiple HSPs are found 
+     * in a query-subject alignment (i.e.: HSP with the lowest e-value), else
+     * use all HSPs in a query-subject alignment. This option does not apply to
+     * the PSSM engine, it applies to the processing of pairwise sequence
+     * alignments to build a multiple sequence alignment structure 
+     * @sa CPsiBlastInputData (to be implemented)
+     */
+    Boolean use_best_alignment;
+
+    /** Compatibility option for the NCBI's structure group (note 
+     * nsg_ prefix, stands for NCBI's structure group). When set to true, the
+     * PSSM engine will function in the same way the C toolkit PSSM engine did
+     * in the structure group's cddumper application. This option should be 
+     * set to FALSE by default as it enables the following behavior in the 
+     * PSSM engine:
+     * <pre>
+     * 1) Ignores the query sequence (on certain stages of PSSM creation only)
+     * 2) Skips validation of multiple sequence alignment data
+     * 3) Disables assertions and validation in _PSICheckSequenceWeights
+     * 4) If no aligned sequences are provided in the multiple sequence
+     * alignment, NULL PSSM frequency ratios are returned and the PSSM is built
+     * based on the underlying substitution matrix.
+     * </pre>
+     * Do not set this to TRUE unless you know what you are doing.
+     */
+    Boolean nsg_compatibility_mode;
+
+    /** Scaling factor as used in IMPALA to do the matrix rescaling. Default
+     * value of 1.0 means not to use it. Makemat/formatrpsdb set this value to
+     * 100 by default, Kappa_RedoAlignmentCore uses 32. Provided so that the
+     * NCBI structure group can create scaled PSSMs as the output of the PSSM
+     * engine. Do not change this unless you know what you are doing.
+     */
+    double impala_scaling_factor;
+
 } PSIBlastOptions;
 
 /** Options used to create the ReadDBFILE structure 
@@ -382,25 +437,112 @@ typedef struct BlastDatabaseOptions {
    Int4 genetic_code;  /**< Genetic code to use for translation, 
                              tblast[nx] only */
    Uint1* gen_code_string;  /**< Genetic code string in ncbistdaa encoding,
-                                 tblast[nx] only */
+                                 tblast[nx] only
+                                 @todo why hasn't this been consolidated as the
+                                 query genetic code has?
+                             */
 } BlastDatabaseOptions;
 
 /********************************************************************************
 
-	Functions to create options blocks with default values
-	and free them after use.
+    Functions to create options blocks with default values
+    and free them after use.
 
 *********************************************************************************/
+
+/** Frees SDustOptions.
+ * @param dust_options object to free
+ * @return NULL pointer
+ */
+SDustOptions* SDustOptionsFree(SDustOptions* dust_options);
+
+/** Allocates memory for SDustOptions, fills in defaults.
+ * @param dust_options options that are being returned [in|out]
+ * @return zero on sucess
+ */
+Int2 SDustOptionsNew(SDustOptions* *dust_options);
+
+/** Frees SSegOptions.
+ * @param seg_options object to free [in]
+ * @return NULL pointer
+ */
+SSegOptions* SSegOptionsFree(SSegOptions* seg_options);
+
+/** Allocates memory for SSegOptions, fills in defaults. [in|out]
+ * @param seg_options options that are being returned [in|out]
+ * @return zero on sucess
+ */
+Int2 SSegOptionsNew(SSegOptions* *seg_options);
+
+/** Resets name of db for repeat filtering.
+ * @param repeat_options already allocated options constaining field to be reset [in|out]
+ * @param dbname name of the database(s) [in]
+ * @return zero on sucess
+ */
+Int2 SRepeatFilterOptionsResetDB(SRepeatFilterOptions* *repeat_options, const char* dbname);
+
+/** Frees SRepeatFilterOptions.
+ * @param repeat_options object to free [in]
+ * @return NULL pointer
+ */
+SRepeatFilterOptions* SRepeatFilterOptionsFree(SRepeatFilterOptions* repeat_options);
+
+/** Allocates memory for SRepeatFilterOptions, fills in defaults.
+ * @param repeat_options options that are being returned [in|out]
+ * @return zero on sucess
+ */
+Int2 SRepeatFilterOptionsNew(SRepeatFilterOptions* *repeat_options);
+
+/** Frees SBlastFilterOptions and all subservient structures.
+ * @param filter_options object to free
+ * @return NULL pointer
+ */
+SBlastFilterOptions* SBlastFilterOptionsFree(SBlastFilterOptions* filter_options);
+
+/** Types of filtering options. */
+typedef enum EFilterOptions {
+    eSeg,            /**< low-complexity for proteins. */
+    eDust,           /**< low-complexity for nucleotides. */
+    eRepeats,         /**< Repeat filtering for nucleotides. */
+    eDustRepeats,    /**< Repeat and dust filtering for nucleotides. */
+    eEmpty       /**< no filtering at all. */
+} EFilterOptions;
+
+/** Allocates memory for SBlastFilterOptions and 
+ * @param filter_options options that are being returned [in|out]
+ * @param type specify either dust or seg (now) with EFilterOptions [in]
+ * @return zero on sucess
+ */
+Int2 SBlastFilterOptionsNew(SBlastFilterOptions* *filter_options, EFilterOptions type);
+
+/** Queries whether masking should be done only for the lookup table or for the entire search.
+ * @param filter_options the object to be queried [in]
+ * @return TRUE or FALSE, FALSE if filter_options is NULL.
+ */
+Boolean SBlastFilterOptionsMaskAtHash(const SBlastFilterOptions* filter_options);
+
+/** Validates filter options to ensure that program and options are consistent
+ * and that options have valid values.
+ * @param program_number Program number (blastn, blastp, etc.) [in]
+ * @param filter_options options to add to [in]
+ * @param blast_message error or warning (optional) [out] 
+ * @return zero on success
+ */
+Int2 SBlastFilterOptionsValidate(EBlastProgramType program_number, const SBlastFilterOptions* filter_options, 
+       Blast_Message* *blast_message);
+
 
 /** Deallocate memory for QuerySetUpOptions. 
  * @param options Structure to free [in]
  */
+NCBI_XBLAST_EXPORT
 QuerySetUpOptions* BlastQuerySetUpOptionsFree(QuerySetUpOptions* options);
 
 
 /** Allocate memory for QuerySetUpOptions and fill with default values.  
  * @param options The options that have are being returned [out]
  */
+NCBI_XBLAST_EXPORT
 Int2 BlastQuerySetUpOptionsNew(QuerySetUpOptions* *options);
 
 /** Fill non-default contents of the QuerySetUpOptions.
@@ -409,13 +551,15 @@ Int2 BlastQuerySetUpOptionsNew(QuerySetUpOptions* *options);
  * @param filter_string Parsable string of filtering options [in] 
  * @param strand_option which strand to search [in]
 */
+NCBI_XBLAST_EXPORT
 Int2 BLAST_FillQuerySetUpOptions(QuerySetUpOptions* options,
-        Uint1 program, const char *filter_string, Uint1 strand_option);
+        EBlastProgramType program, const char *filter_string, Uint1 strand_option);
 
 
 /** Deallocate memory for BlastInitialWordOptions.
  * @param options Structure to free [in]
  */
+NCBI_XBLAST_EXPORT
 BlastInitialWordOptions*
 BlastInitialWordOptionsFree(BlastInitialWordOptions* options);
 
@@ -423,80 +567,41 @@ BlastInitialWordOptionsFree(BlastInitialWordOptions* options);
  * @param program Program number (blastn, blastp, etc.) [in]
  * @param options The options that have are being returned [out] 
 */
+NCBI_XBLAST_EXPORT
 Int2
-BlastInitialWordOptionsNew(Uint1 program, 
+BlastInitialWordOptionsNew(EBlastProgramType program, 
    BlastInitialWordOptions* *options);
+
+/** Validate correctness of the initial word options.
+ * @param program_number Type of BLAST program [in]
+ * @param options Initial word options [in]
+ * @param blast_msg Describes any validation problems found [out]
+ * @return Validation status
+ */
+NCBI_XBLAST_EXPORT
+Int2
+BlastInitialWordOptionsValidate(EBlastProgramType program_number,
+   const BlastInitialWordOptions* options, 
+   Blast_Message* *blast_msg);
 
 /** Fill non-default values in the BlastInitialWordOptions structure.
  * @param options The options structure [in] [out] 
  * @param program Program number (blastn, blastp, etc.) [in]
- * @param greedy Settings should assume greedy alignments [in]
+ * @param greedy Settings should assume greedy alignments. [in]
  * @param window_size Size of a largest window between 2 words for the two-hit
  *                    version [in]
- * @param variable_wordsize Will only full bytes of the compressed sequence be
- *        checked in initial word extension (blastn only)? [in]
- * @param ag_blast Is AG BLAST approach used for scanning the database 
- *                 (blastn only)? [in]
- * @param mb_lookup Is Mega BLAST (12-mer based) lookup table used? [in]
  * @param xdrop_ungapped The value of the X-dropoff for ungapped extensions [in]
 */
+NCBI_XBLAST_EXPORT
 Int2
 BLAST_FillInitialWordOptions(BlastInitialWordOptions* options, 
-   Uint1 program, Boolean greedy, Int4 window_size, 
-   Boolean variable_wordsize, Boolean ag_blast, Boolean mb_lookup,
+   EBlastProgramType program, Boolean greedy, Int4 window_size, 
    double xdrop_ungapped);
-
-
-/** Deallocate memory for BlastInitialWordParameters.
- * @param parameters Structure to free [in]
- */
-BlastInitialWordParameters*
-BlastInitialWordParametersFree(BlastInitialWordParameters* parameters);
-
-/** Allocate memory for BlastInitialWordParameters and set x_dropoff.
- * Calling BlastInitialWordParametersNew calculates the
- * raw x_dropoff from the bit x_dropoff and puts it into
- * the x_dropoff field of BlastInitialWordParameters*.
- *
- * @param program_number Type of BLAST program [in]
- * @param word_options The initial word options [in]
- * @param hit_params The hit saving options (needed to calculate cutoff score 
- *                    for ungapped extensions) [in]
- * @param ext_params Extension parameters (containing gap trigger value) [in]
- * @param sbp Statistical (Karlin-Altschul) information [in]
- * @param query_info Query information [in]
- * @param subject_length Average subject sequence length [in]
- * @param parameters Resulting parameters [out]
-*/
-Int2
-BlastInitialWordParametersNew(Uint1 program_number, 
-   const BlastInitialWordOptions* word_options, 
-   const BlastHitSavingParameters* hit_params, 
-   const BlastExtensionParameters* ext_params, BlastScoreBlk* sbp, 
-   BlastQueryInfo* query_info, 
-   Uint4 subject_length,
-   BlastInitialWordParameters* *parameters);
-
-/** Update cutoff scores in BlastInitialWordParameters structure.
- * @param program_number Type of BLAST program [in]
- * @param hit_params The hit saving options (needed to calculate cutoff score 
- *                    for ungapped extensions) [in]
- * @param ext_params Extension parameters (containing gap trigger value) [in]
- * @param sbp Statistical (Karlin-Altschul) information [in]
- * @param query_info Query information [in]
- * @param subject_length Average subject sequence length [in]
- * @param parameters Preallocated parameters [in] [out]
-*/
-Int2
-BlastInitialWordParametersUpdate(Uint1 program_number, 
-   const BlastHitSavingParameters* hit_params, 
-   const BlastExtensionParameters* ext_params, BlastScoreBlk* sbp, 
-   BlastQueryInfo* query_info, Uint4 subject_length,
-   BlastInitialWordParameters* parameters);
 
 /** Deallocate memory for BlastExtensionOptions.
  * @param options Structure to free [in]
  */
+NCBI_XBLAST_EXPORT
 BlastExtensionOptions*
 BlastExtensionOptionsFree(BlastExtensionOptions* options);
 
@@ -504,21 +609,26 @@ BlastExtensionOptionsFree(BlastExtensionOptions* options);
  * @param program Program number (blastn, blastp, etc.) [in]
  * @param options The options that are being returned [out]
 */
+NCBI_XBLAST_EXPORT
 Int2
-BlastExtensionOptionsNew(Uint1 program, BlastExtensionOptions* *options);
+BlastExtensionOptionsNew(EBlastProgramType program, BlastExtensionOptions* *options);
 
 /** Fill non-default values in the BlastExtensionOptions structure.
  * @param options The options structure [in] [out]
  * @param program Program number (blastn, blastp, etc.) [in]
- * @param greedy Settings should assume greedy alignments [in]
+ * @param greedy In how many stages of the search greedy alignment is 
+ *               used (values 0, 1, 2)? FIXME [in]
  * @param x_dropoff X-dropoff parameter value for preliminary gapped 
  *                  extensions [in]
  * @param x_dropoff_final X-dropoff parameter value for final gapped 
  *                        extensions with traceback [in]
+ * @todo the greedy parameter to this function is tied to the blast_driver's
+ * command line argument for greedy... couldn't this be EBlastPrelimGapExt?
 */
+NCBI_XBLAST_EXPORT
 Int2
 BLAST_FillExtensionOptions(BlastExtensionOptions* options, 
-   Uint1 program, Boolean greedy, double x_dropoff, 
+   EBlastProgramType program, Int4 greedy, double x_dropoff, 
    double x_dropoff_final);
 
 
@@ -527,39 +637,22 @@ BLAST_FillExtensionOptions(BlastExtensionOptions* options,
  * @param options Options to be validated [in]
  * @param blast_msg Describes any validation problems found [out]
 */
-Int2 BlastExtensionOptionsValidate(Uint1 program_number, 
+NCBI_XBLAST_EXPORT
+Int2 BlastExtensionOptionsValidate(EBlastProgramType program_number, 
         const BlastExtensionOptions* options, Blast_Message* *blast_msg);
-
-/** Calculate the raw values for the X-dropoff parameters 
- * @param blast_program Program number [in]
- * @param options Already allocated extension options [in]
- * @param sbp Structure containing statistical information [in]
- * @param query_info Query information, needed only for determining the first 
- *                   context [in]
- * @param parameters Extension parameters [out]
- */
-Int2 BlastExtensionParametersNew(Uint1 blast_program, 
-        const BlastExtensionOptions* options, 
-        BlastScoreBlk* sbp, BlastQueryInfo* query_info, 
-        BlastExtensionParameters* *parameters);
-
-/** Deallocate memory for BlastExtensionParameters. 
- * @param parameters Structure to free [in]
- */
-BlastExtensionParameters*
-BlastExtensionParametersFree(BlastExtensionParameters* parameters);
-
 
 /**  Deallocate memory for BlastScoringOptions. 
  * @param options Structure to free [in]
  */
+NCBI_XBLAST_EXPORT
 BlastScoringOptions* BlastScoringOptionsFree(BlastScoringOptions* options);
 
 /** Allocate memory for BlastScoringOptions and fill with default values. 
  * @param program Program number (blastn, blastp, etc.) [in]
  * @param options The options that are being returned [out]
 */
-Int2 BlastScoringOptionsNew(Uint1 program, BlastScoringOptions* *options);
+NCBI_XBLAST_EXPORT
+Int2 BlastScoringOptionsNew(EBlastProgramType program, BlastScoringOptions* *options);
 
 /** Fill non-default values in the BlastScoringOptions structure. 
  * @param options The options structure [in] [out]
@@ -571,30 +664,42 @@ Int2 BlastScoringOptionsNew(Uint1 program, BlastScoringOptions* *options);
  * @param gap_open Extra cost for opening a gap [in]
  * @param gap_extend Cost of a gap [in]
 */
+NCBI_XBLAST_EXPORT
 Int2 
-BLAST_FillScoringOptions(BlastScoringOptions* options, Uint1 program, 
+BLAST_FillScoringOptions(BlastScoringOptions* options, EBlastProgramType program, 
    Boolean greedy_extension, Int4 penalty, Int4 reward, const char *matrix, 
    Int4 gap_open, Int4 gap_extend);
-
 
 /** Validate contents of BlastScoringOptions.
  * @param program_number Type of BLAST program [in]
  * @param options Options to be validated [in]
  * @param blast_msg Describes any validation problems found [out]
 */
+NCBI_XBLAST_EXPORT
 Int2
-BlastScoringOptionsValidate(Uint1 program_number, 
+BlastScoringOptionsValidate(EBlastProgramType program_number, 
    const BlastScoringOptions* options, Blast_Message* *blast_msg);
 
 /** Produces copy of "old" options, with new memory allocated.
- * @param contains copied BlastScoringOptions upon return [out]
- * @param BlastScoringOptions to be copied [in]
+ * @param new_opt Contains copied BlastScoringOptions upon return [out]
+ * @param old_opt BlastScoringOptions to be copied [in]
 */
+NCBI_XBLAST_EXPORT
 Int2 BlastScoringOptionsDup(BlastScoringOptions* *new_opt, const BlastScoringOptions* old_opt);
+
+/** Resets matrix name option. Automatically converts the name to upper case.
+ * @param opts Options structure to update. [in] [out]
+ * @param matrix_name New matrix name. If NULL, old matrix name is left 
+ *                    as is. [in]
+ */
+Int2 BlastScoringOptionsSetMatrix(BlastScoringOptions* opts,
+                                  const char* matrix_name);
+
 
 /** Deallocate memory for BlastEffectiveLengthsOptions*. 
  * @param options Structure to free [in]
  */
+NCBI_XBLAST_EXPORT
 BlastEffectiveLengthsOptions* 
 BlastEffectiveLengthsOptionsFree(BlastEffectiveLengthsOptions* options);
 
@@ -602,24 +707,8 @@ BlastEffectiveLengthsOptionsFree(BlastEffectiveLengthsOptions* options);
  * default values. 
  * @param options The options that are being returned [out]
  */
+NCBI_XBLAST_EXPORT
 Int2 BlastEffectiveLengthsOptionsNew(BlastEffectiveLengthsOptions* *options);
-
-/** Deallocate memory for BlastEffectiveLengthsParameters*. 
- * @param parameters Structure to free [in]
- */
-BlastEffectiveLengthsParameters* 
-BlastEffectiveLengthsParametersFree(BlastEffectiveLengthsParameters* parameters);
-
-/** Allocate memory for BlastEffectiveLengthsParameters 
- * @param options The user provided options [in]
- * @param db_length The database length [in]
- * @param num_seqs Number of sequences in database [in]
- * @param parameters The parameters structure returned [out]
- */
-Int2 
-BlastEffectiveLengthsParametersNew(const BlastEffectiveLengthsOptions* options, 
-                               Int8 db_length, Int4 num_seqs,
-                               BlastEffectiveLengthsParameters* *parameters);
 
 /** Fill the non-default values in the BlastEffectiveLengthsOptions structure.
  * @param options The options [in] [out]
@@ -627,6 +716,7 @@ BlastEffectiveLengthsParametersNew(const BlastEffectiveLengthsOptions* options,
  * @param db_length Total length of the database (if zero real value will be used) [in]
  * @param searchsp_eff Effective search space (if zero real value will be used) [in]
  */
+NCBI_XBLAST_EXPORT
 Int2 
 BLAST_FillEffectiveLengthsOptions(BlastEffectiveLengthsOptions* options, 
    Int4 dbseq_num, Int8 db_length, Int8 searchsp_eff);
@@ -636,21 +726,8 @@ BLAST_FillEffectiveLengthsOptions(BlastEffectiveLengthsOptions* options,
  * @param program Program number (blastn, blastp, etc.) [in]
  * @param options The options that are being returned [out]
  */
-Int2 LookupTableOptionsNew(Uint1 program, LookupTableOptions* *options);
-
-/** Auxiliary function that calculates best database scanning stride for the
- * given parameters.
- * @param word_size Length of the exact match required to trigger 
- *                  extensions [in]
- * @param var_words If true, and word_size is divisible by 4, partial bytes 
- *                  need not be checked to test the length of the 
- *                  exact match [in]
- * @param lut_type  What kind of lookup table is used (based on 4-mers, 8-mers 
- *                  or 12-mers) [in]
- * @return          The stride necessary to find all exact matches of a given
- *                  word size.
- */
-Int4 CalculateBestStride(Int4 word_size, Boolean var_words, Int4 lut_type);
+NCBI_XBLAST_EXPORT
+Int2 LookupTableOptionsNew(EBlastProgramType program, LookupTableOptions* *options);
 
 
 /** Allocate memory for lookup table options and fill with default values.
@@ -659,117 +736,104 @@ Int4 CalculateBestStride(Int4 word_size, Boolean var_words, Int4 lut_type);
  * @param is_megablast Megablast (instead of blastn) if TRUE [in]
  * @param threshold Threshold value for finding neighboring words [in]
  * @param word_size Number of matched residues in an initial word [in]
- * @param ag_blast Is AG BLAST approach to database scanning used? [in]
  * @param variable_wordsize Are only full bytes of a compressed sequence 
  *        checked to find initial words? [in]
  * @param use_pssm Use PSSM rather than (protein) query to build lookup table.
  */
+NCBI_XBLAST_EXPORT
 Int2 
 BLAST_FillLookupTableOptions(LookupTableOptions* options, 
-   Uint1 program, Boolean is_megablast, Int4 threshold,
-   Int2 word_size, Boolean ag_blast, Boolean variable_wordsize,
-   Boolean use_pssm);
+   EBlastProgramType program, Boolean is_megablast, Int4 threshold,
+   Int4 word_size, Boolean variable_wordsize, Boolean use_pssm);
 
 
 /** Deallocates memory for LookupTableOptions*.
  * @param options Structure to free [in]
  */
+NCBI_XBLAST_EXPORT
 LookupTableOptions*
 LookupTableOptionsFree(LookupTableOptions* options);
 
 /** Validate LookupTableOptions.
  * @param program_number BLAST program [in]
  * @param options The options that have are being returned [in]
- * @param blast_msg The options that have are being returned [out]
+ * @param blast_msg Describes any validation problems found [out]
 */
+NCBI_XBLAST_EXPORT
 Int2
-LookupTableOptionsValidate(Uint1 program_number, 
+LookupTableOptionsValidate(EBlastProgramType program_number, 
    const LookupTableOptions* options,  Blast_Message* *blast_msg);
 
 /** Deallocate memory for BlastHitSavingOptions. 
  * @param options Structure to free [in]
  */
+NCBI_XBLAST_EXPORT
 BlastHitSavingOptions*
 BlastHitSavingOptionsFree(BlastHitSavingOptions* options);
 
 /** Validate BlastHitSavingOptions
  * @param program_number BLAST program [in]
  * @param options The options that have are being returned [in]
- * @param blast_msg The options that have are being returned [out]
+ * @param blast_msg Describes any validation problems found [out]
 */
 
+NCBI_XBLAST_EXPORT
 Int2
-BlastHitSavingOptionsValidate(Uint1 program_number,
+BlastHitSavingOptionsValidate(EBlastProgramType program_number,
    const BlastHitSavingOptions* options, Blast_Message* *blast_msg);
 
 /** Allocate memory for BlastHitSavingOptions.
  * @param program Program number (blastn, blastp, etc.) [in]
  * @param options The options that are being returned [out]
 */
-Int2 BlastHitSavingOptionsNew(Uint1 program, 
+NCBI_XBLAST_EXPORT
+Int2 BlastHitSavingOptionsNew(EBlastProgramType program, 
         BlastHitSavingOptions* *options);
 
 /** Allocate memory for BlastHitSavingOptions.
  * @param options The options [in] [out]
  * @param evalue The expected value threshold [in]
  * @param hitlist_size How many database sequences to save per query? [in]
+ * @param is_gapped is this a gapped alignment? [in]
+ * @param culling_limit Number of higher-scoring HSPs that must contain
+ *                      the query range of an HSP before that HSP is declared
+ *                      to be redundant (ignored if zero) [in]
 */
+NCBI_XBLAST_EXPORT
 Int2
 BLAST_FillHitSavingOptions(BlastHitSavingOptions* options, 
-                           double evalue, Int4 hitlist_size);
+                           double evalue, Int4 hitlist_size,
+                           Boolean is_gapped,
+                           Int4 culling_limit);
 
-/** Deallocate memory for BlastHitSavingOptions*. 
- * @param parameters Structure to free [in]
+/** Initialize default options for PSI BLAST 
+ * @param psi_options pointer to pointer where structure will be allocated [in]
+ * @return 1 in case of memory allocation failure or if psi_options is NULL, 0
+ * in case of success
  */
-BlastHitSavingParameters*
-BlastHitSavingParametersFree(BlastHitSavingParameters* parameters);
-
-/** Allocate memory and initialize the BlastHitSavingParameters structure. 
- * Calculates the (raw) score cutoff given an expect value and puts
- * it in the "cutoff_score" field of the returned BlastHitSavingParameters*
- *
- * @param program_number Number of the BLAST program [in]
- * @param options The given hit saving options [in]
- * @param ext_params Extension parameters containing the gap trigger value [in]
- * @param sbp Scoring block, needed for calculating score cutoff from 
- *            e-value [in]
- * @param query_info Query information, needed for calculating score cutoff 
- *                   from e-value [in]
- * @param parameters Resulting parameters [out]
- */
-Int2 BlastHitSavingParametersNew(Uint1 program_number, 
-        const BlastHitSavingOptions* options, 
-        const BlastExtensionParameters* ext_params,
-        BlastScoreBlk* sbp, BlastQueryInfo* query_info, 
-        BlastHitSavingParameters* *parameters);
-
-/** Updates cutoff scores in hit saving parameters. 
- * @param program_number Number of the BLAST program [in]
- * @param ext_params Extension parameters containing the gap trigger 
- *                   value [in]
- * @param sbp Scoring block, needed for calculating score cutoff from 
- *            e-value [in]
- * @param query_info Query information, needed for calculating score cutoff 
- *                   from e-value [in]
- * @param parameters Preallocated parameters [in] [out]
- */
-Int2 BlastHitSavingParametersUpdate(Uint1 program_number, 
-        const BlastExtensionParameters* ext_params,
-        BlastScoreBlk* sbp, BlastQueryInfo* query_info, 
-        BlastHitSavingParameters* parameters);
-
-/** Initialize default options for PSI BLAST */
+NCBI_XBLAST_EXPORT
 Int2 PSIBlastOptionsNew(PSIBlastOptions** psi_options);
 
+/** Validates the PSI BLAST options so that they have sane values.
+ * @param psi_options structure to validate [in]
+ * @param blast_msg Describes any validation problems found [out]
+ * @return 0 on success 1 on failure
+ */
+Int2 PSIBlastOptionsValidate(const PSIBlastOptions* psi_options,
+                             Blast_Message** blast_msg);
+
 /** Deallocate PSI BLAST options */
+NCBI_XBLAST_EXPORT
 PSIBlastOptions* PSIBlastOptionsFree(PSIBlastOptions* psi_options);
 
 /** Allocates the BlastDatabase options structure and sets the default
  * database genetic code value (BLAST_GENETIC_CODE). Genetic code string in
  * ncbistdaa must be populated by client code */
+NCBI_XBLAST_EXPORT
 Int2 BlastDatabaseOptionsNew(BlastDatabaseOptions** db_options);
 
 /** Deallocate database options */
+NCBI_XBLAST_EXPORT
 BlastDatabaseOptions* 
 BlastDatabaseOptionsFree(BlastDatabaseOptions* db_options);
 
@@ -787,7 +851,8 @@ BlastDatabaseOptionsFree(BlastDatabaseOptions* db_options);
  * @param protein_options Protein BLAST options [out]
  * @param db_options BLAST database options [out]
  */
-Int2 BLAST_InitDefaultOptions(Uint1 blast_program,
+NCBI_XBLAST_EXPORT
+Int2 BLAST_InitDefaultOptions(EBlastProgramType blast_program,
    LookupTableOptions** lookup_options,
    QuerySetUpOptions** query_setup_options, 
    BlastInitialWordOptions** word_options,
@@ -799,30 +864,15 @@ Int2 BLAST_InitDefaultOptions(Uint1 blast_program,
    BlastDatabaseOptions** db_options);
 
 /** Validate all options */
-Int2 BLAST_ValidateOptions(Uint1 program_number,
+NCBI_XBLAST_EXPORT
+Int2 BLAST_ValidateOptions(EBlastProgramType program_number,
                            const BlastExtensionOptions* ext_options,
                            const BlastScoringOptions* score_options, 
                            const LookupTableOptions* lookup_options, 
+                           const BlastInitialWordOptions* word_options, 
                            const BlastHitSavingOptions* hit_options,
                            Blast_Message* *blast_msg);
 
-/** Calculates cutoff scores and returns them.
- *	Equations provided by Stephen Altschul.
- * @param program BLAST program type [in]
- * @param query_info Query(ies) information [in]
- * @param sbp Scoring statistical parameters [in]
- * @param hit_params Hit saving parameters, including all cutoff 
- *                   scores [in] [out]
- * @param db_length Total length of database (non-database search if 0) [in]
- * @param subject_length Length of the subject sequence. [in]
- * @param psi_options PSI BLAST options, containing scaling factor [in]
- * 
-*/
-void
-CalculateLinkHSPCutoffs(Uint1 program, BlastQueryInfo* query_info, 
-   BlastScoreBlk* sbp, BlastHitSavingParameters* hit_params, 
-   Int8 db_length, Int4 subject_length, 
-   const PSIBlastOptions* psi_options);
 
 #ifdef __cplusplus
 }

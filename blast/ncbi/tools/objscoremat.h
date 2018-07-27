@@ -17,7 +17,7 @@ extern "C" { /* } */
 /**************************************************
 *
 *    Generated objects for Module NCBI-ScoreMat
-*    Generated using ASNCODE Revision: 6.14 at Aug 26, 2003  5:18 PM
+*    Generated using ASNCODE Revision: 6.15 at Oct 7, 2004  2:31 PM
 *
 **************************************************/
 
@@ -27,58 +27,103 @@ objscorematAsnLoad PROTO((void));
 
 /**************************************************
 *
-*    ScoreMatrix
+*    Pssm
 *
 **************************************************/
-typedef struct struct_Score_matrix {
-   Uint1   is_protein;
-   ObjectIdPtr   identifier;
-   ValNodePtr   comments;
-   Int4   nrows;
-   Int4   ncolumns;
-   ValNodePtr   row_labels;
-   ValNodePtr   scores;
-   Int4   score_scale_factor;
-   ValNodePtr   posFreqs;
-   Int4   posFreqs_scale_factor;
-   Int4   pseudocounts;
-   Int4   freq_Ratios;
-   Int4   gapOpen;
-   Int4   gapExtend;
+typedef struct struct_Pssm {
+   Uint1   isProtein;
+   ObjectIdPtr identifier;
+   Int4   numRows;
+   Int4   numColumns;
+   ValNodePtr   rowLabels;
+   Uint1   byRow;
    ValNodePtr   query;
-   ValNodePtr   rawFreqs;
-   Int4   rawFreqs_scale_factor;
-   ValNodePtr   weights;
-   Int4   weights_scale_factor;
-   Uint1   byrow;
-} ScoreMatrix, PNTR ScoreMatrixPtr;
+   struct struct_PssmIntermediateData PNTR   intermediateData;
+   struct struct_PssmFinalData PNTR   finalData;
+} Pssm, PNTR PssmPtr;
 
 
-NLM_EXTERN ScoreMatrixPtr LIBCALL ScoreMatrixFree PROTO ((ScoreMatrixPtr ));
-NLM_EXTERN ScoreMatrixPtr LIBCALL ScoreMatrixNew PROTO (( void ));
-NLM_EXTERN ScoreMatrixPtr LIBCALL ScoreMatrixAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
-NLM_EXTERN Boolean LIBCALL ScoreMatrixAsnWrite PROTO (( ScoreMatrixPtr , AsnIoPtr, AsnTypePtr));
+NLM_EXTERN PssmPtr LIBCALL PssmFree PROTO ((PssmPtr ));
+NLM_EXTERN PssmPtr LIBCALL PssmNew PROTO (( void ));
+NLM_EXTERN PssmPtr LIBCALL PssmAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
+NLM_EXTERN Boolean LIBCALL PssmAsnWrite PROTO (( PssmPtr , AsnIoPtr, AsnTypePtr));
 
 
 
 /**************************************************
 *
-*    ScoreMatrixParameters
+*    PssmIntermediateData
 *
 **************************************************/
-typedef struct struct_Score_matrix_parameters {
-   struct struct_Score_matrix PNTR   matrix;
+typedef struct struct_PssmIntermediateData {
+   ValNodePtr   resFreqsPerPos;
+   ValNodePtr   weightedResFreqsPerPos;
+   ValNodePtr   freqRatios;
+} PssmIntermediateData, PNTR PssmIntermediateDataPtr;
+
+
+NLM_EXTERN PssmIntermediateDataPtr LIBCALL PssmIntermediateDataFree PROTO ((PssmIntermediateDataPtr ));
+NLM_EXTERN PssmIntermediateDataPtr LIBCALL PssmIntermediateDataNew PROTO (( void ));
+NLM_EXTERN PssmIntermediateDataPtr LIBCALL PssmIntermediateDataAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
+NLM_EXTERN Boolean LIBCALL PssmIntermediateDataAsnWrite PROTO (( PssmIntermediateDataPtr , AsnIoPtr, AsnTypePtr));
+
+
+
+/**************************************************
+*
+*    PssmFinalData
+*
+**************************************************/
+typedef struct struct_PssmFinalData {
+   ValNodePtr   scores;
    FloatHi   lambda;
    FloatHi   kappa;
    FloatHi   h;
+   Int4   scalingFactor;
+} PssmFinalData, PNTR PssmFinalDataPtr;
+
+
+NLM_EXTERN PssmFinalDataPtr LIBCALL PssmFinalDataFree PROTO ((PssmFinalDataPtr ));
+NLM_EXTERN PssmFinalDataPtr LIBCALL PssmFinalDataNew PROTO (( void ));
+NLM_EXTERN PssmFinalDataPtr LIBCALL PssmFinalDataAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
+NLM_EXTERN Boolean LIBCALL PssmFinalDataAsnWrite PROTO (( PssmFinalDataPtr , AsnIoPtr, AsnTypePtr));
+
+
+
+/**************************************************
+*
+*    PssmParameters
+*
+**************************************************/
+typedef struct struct_PssmParameters {
+   Int4   pseudocount;
+   struct struct_FormatRpsDbParameters PNTR   rpsdbparams;
    struct struct_CoreDef PNTR   constraints;
-} ScoreMatrixParameters, PNTR ScoreMatrixParametersPtr;
+} PssmParameters, PNTR PssmParametersPtr;
 
 
-NLM_EXTERN ScoreMatrixParametersPtr LIBCALL ScoreMatrixParametersFree PROTO ((ScoreMatrixParametersPtr ));
-NLM_EXTERN ScoreMatrixParametersPtr LIBCALL ScoreMatrixParametersNew PROTO (( void ));
-NLM_EXTERN ScoreMatrixParametersPtr LIBCALL ScoreMatrixParametersAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
-NLM_EXTERN Boolean LIBCALL ScoreMatrixParametersAsnWrite PROTO (( ScoreMatrixParametersPtr , AsnIoPtr, AsnTypePtr));
+NLM_EXTERN PssmParametersPtr LIBCALL PssmParametersFree PROTO ((PssmParametersPtr ));
+NLM_EXTERN PssmParametersPtr LIBCALL PssmParametersNew PROTO (( void ));
+NLM_EXTERN PssmParametersPtr LIBCALL PssmParametersAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
+NLM_EXTERN Boolean LIBCALL PssmParametersAsnWrite PROTO (( PssmParametersPtr , AsnIoPtr, AsnTypePtr));
+
+
+
+/**************************************************
+*
+*    PssmWithParameters
+*
+**************************************************/
+typedef struct struct_PssmWithParameters {
+   struct struct_Pssm PNTR   pssm;
+   struct struct_PssmParameters PNTR   params;
+} PssmWithParameters, PNTR PssmWithParametersPtr;
+
+
+NLM_EXTERN PssmWithParametersPtr LIBCALL PssmWithParametersFree PROTO ((PssmWithParametersPtr ));
+NLM_EXTERN PssmWithParametersPtr LIBCALL PssmWithParametersNew PROTO (( void ));
+NLM_EXTERN PssmWithParametersPtr LIBCALL PssmWithParametersAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
+NLM_EXTERN Boolean LIBCALL PssmWithParametersAsnWrite PROTO (( PssmWithParametersPtr , AsnIoPtr, AsnTypePtr));
 
 
 
@@ -159,6 +204,25 @@ NLM_EXTERN CoreDefPtr LIBCALL CoreDefFree PROTO ((CoreDefPtr ));
 NLM_EXTERN CoreDefPtr LIBCALL CoreDefNew PROTO (( void ));
 NLM_EXTERN CoreDefPtr LIBCALL CoreDefAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
 NLM_EXTERN Boolean LIBCALL CoreDefAsnWrite PROTO (( CoreDefPtr , AsnIoPtr, AsnTypePtr));
+
+
+
+/**************************************************
+*
+*    FormatRpsDbParameters
+*
+**************************************************/
+typedef struct struct_FormatRpsDbParameters {
+   CharPtr   matrixName;
+   Int4   gapOpen;
+   Int4   gapExtend;
+} FormatRpsDbParameters, PNTR FormatRpsDbParametersPtr;
+
+
+NLM_EXTERN FormatRpsDbParametersPtr LIBCALL FormatRpsDbParametersFree PROTO ((FormatRpsDbParametersPtr ));
+NLM_EXTERN FormatRpsDbParametersPtr LIBCALL FormatRpsDbParametersNew PROTO (( void ));
+NLM_EXTERN FormatRpsDbParametersPtr LIBCALL FormatRpsDbParametersAsnRead PROTO (( AsnIoPtr, AsnTypePtr));
+NLM_EXTERN Boolean LIBCALL FormatRpsDbParametersAsnWrite PROTO (( FormatRpsDbParametersPtr , AsnIoPtr, AsnTypePtr));
 
 #ifdef __cplusplus
 /* { */ }

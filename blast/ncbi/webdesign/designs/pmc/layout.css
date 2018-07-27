@@ -1,0 +1,48 @@
+body {
+	margin: 0px;
+	padding: 0px;
+}#top {
+border: 1px #0080ff none;
+height: 75px;
+right: 0px;
+top: 0px;
+width: 100%;
+z-index: 1;
+	margin: 0px;
+	padding: 0px;
+}
+
+#crumbs {
+	text-align:
+	width: 100%;
+	border-color: #000000;
+	border-width: 1px;
+	border-top-color: #FFFFFF;
+	vertical-align: middle;
+	clear: both;
+	float:
+	z-index: auto;
+	visibility: visible;
+	top: 79px;
+	left: 0px;
+	z-index: 5;
+	margin: 0px;
+	padding: 0px;
+	position: absolute;
+}
+
+#pmc {
+background-color: white;
+border: 1px #8f0000 none;
+bottom: 0px;
+left: 0px;
+top: 103px;
+width: 145px;
+z-index: 2;
+	text-align: left;
+	direction: rtl;
+	text-transform: none;
+	clear: left;
+	visibility: visible;
+	position: absolute;
+}

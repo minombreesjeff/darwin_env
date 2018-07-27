@@ -1,4 +1,4 @@
-/* $Id: blast_format.h,v 1.20 2004/04/22 22:15:40 dondosha Exp $
+/* $Id: blast_format.h,v 1.36 2005/04/27 19:59:44 dondosha Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -21,19 +21,16 @@
 *
 *  Please cite the author in any work or product based on this material.
 *
-* ===========================================================================*/
+* ===========================================================================
+*
+* Author: Ilya Dondoshansky
+*
+*/
 
-/*****************************************************************************
+/** @file blast_format.h
+ * Functions needed for formatting of BLAST results
+ */
 
-File name: blast_format.h
-
-Author: Ilya Dondoshansky
-
-Contents: Functions needed for formatting of BLAST results
-
-******************************************************************************
- * $Revision: 1.20 $
- * */
 #ifndef __BLAST_FORMAT__
 #define __BLAST_FORMAT__
 
@@ -48,23 +45,28 @@ extern "C" {
 #include <ncbi.h>
 #include <asn.h>
 #include <bxmlobj.h>
-#include <readdb.h>
 #include <algo/blast/core/blast_options.h>
 #include <algo/blast/core/blast_hits.h>
-#include <algo/blast/api/seqsrc_readdb.h>
+#include <algo/blast/core/blast_diagnostics.h>   
+#include <algo/blast/api/twoseq_api.h>
+
+/** @addtogroup CToolkitAlgoBlast
+ *
+ * @{
+ */
 
 /** Options for formatting BLAST results 
  */
 typedef struct BlastFormattingOptions {
-   Uint1 align_view;
-   Uint4 align_options;
-   Uint4 print_options;
-   Boolean believe_query;
-   Boolean html;
-   void* outfp; /**< Output file: either FILE* or AsnIoPtr */
-   Int4 number_of_descriptions;
-   Int4 number_of_alignments;
-   Boolean ungapped; /**< Should this be here????? */
+   Uint1 align_view;            /**< How to show alignments? */
+   Uint4 align_options;         /**< Options for showing alignments. */
+   Uint4 print_options;         /**< Printing options. */
+   Boolean believe_query;       /**< Should query defline be trusted? */
+   Boolean html;                /**< Create an HTML output? */
+   void* outfp;                 /**< Output file: either FILE* or AsnIoPtr */
+   Int4 number_of_descriptions; /**< Number of descriptions to show. */
+   Int4 number_of_alignments;   /**< Number of alignments to show. */
+   Boolean ungapped;            /**< Should this be here????? */
 } BlastFormattingOptions;
 
 /** Initialize the formatting options structure.
@@ -75,7 +77,7 @@ typedef struct BlastFormattingOptions {
  * @param align_view What kind of formatted output to show? [in]
  * @param format_options_ptr The initialized structure [out]
 */
-Int2 BlastFormattingOptionsNew(Uint1 program, char* file_out, 
+Int2 BlastFormattingOptionsNew(EBlastProgramType program, char* file_out, 
         Int4 num_descriptions, Int4 num_alignments, Int4 align_view,
         BlastFormattingOptions** format_options_ptr);
 
@@ -86,82 +88,88 @@ Int2 BlastFormattingOptionsNew(Uint1 program, char* file_out,
 BlastFormattingOptions* 
 BlastFormattingOptionsFree(BlastFormattingOptions* format_options);
 
-/** Used for pruning SeqALigns that are too big. */
-typedef struct BlastPruneSapStruct {
-   SeqAlignPtr sap;
-   Int4	original_number; /**< how may unique hits were there originally. */
-   Int4 number;		 /**< How many hits on SeqALignPtr above. */
-   Boolean allocated; /**< If FALSE, SeqAlignPtr above does NOT belong to this 
-                         struc.*/
-} BlastPruneSapStruct;
-
-typedef struct MBXml {
-   BlastOutputPtr boutp;
-   AsnIoPtr   aip;
-   AsnTypePtr atp;
-   AsnTypePtr BlastOutput;
-   AsnTypePtr BlastOutput_iterations;
-   AsnTypePtr BlastOutput_mbstat;
-} MBXml;
-
 /** Print formatted output.
- * @param head Results in the SeqAlign form (freed after use) [in]
+ * @param head Results in the SeqAlign form [in]
  * @param blast_database BLAST database name [in]
  * @param blast_program BLAST program name [in]
  * @param num_queries Number of query sequences [in]
  * @param query_slp Linked list of query SeqLocs [in]
- * @param mask_loc Masking locations for all queries (freed after use) [in]
+ * @param mask_loc Masking locations for all queries [in]
  * @param format_options Formatting options [in]
  * @param is_ooframe Are frame shifts allowed in alignments? [in]
  */
 Int2 BLAST_FormatResults(SeqAlignPtr head, char* blast_database,
         char* blast_program, Int4 num_queries, 
-        SeqLocPtr query_slp, BlastMaskLoc* mask_loc, 
-        BlastFormattingOptions* format_options, Boolean is_ooframe);
+        SeqLocPtr query_slp, SeqLoc* mask_loc, 
+        const BlastFormattingOptions* format_options, Boolean is_ooframe, Int4** matrix,
+        Blast_SummaryReturn* sum_returns);
 
 /** Print the summary at the end of the BLAST report.
  * @param program_number Type of BLAST program [in]
  * @param format_options Formatting options [in]
- * @param score_options Scoring options [in]
- * @param sbp Statistical information [in]
- * @param lookup_options Lookup table options [in]
- * @param word_options Word finding options and parameters [in]
- * @param ext_options Extension options and parameters [in]
- * @param hit_options Hit saving options [in]
- * @param query_info Query information [in]
- * @param dbname BLAST database name [in]
- * @param return_stats Data about this run [in]
- * @param db_is_na TRUE if a nucleotide database [in]
+ * @param dbname Name of the BLAST database. Set to NULL if not a database
+ *               search [in]
+ * @param sum_returns infor from inside blast engine [in]
  */
-Int2 PrintOutputFooter(Uint1 program_number, 
-        BlastFormattingOptions* format_options, 
-        BlastScoringOptions* score_options, BlastScoreBlk* sbp,
-        LookupTableOptions* lookup_options,
-        BlastInitialWordOptions* word_options,
-        BlastExtensionOptions* ext_options,
-        BlastHitSavingOptions* hit_options,
-        BlastQueryInfo* query_info, char* dbname, 
-        BlastReturnStat* return_stats, Boolean db_is_na); 
+Int2 Blast_PrintOutputFooter(EBlastProgramType program_number,
+        const BlastFormattingOptions* format_options,
+        char* dbname, const Blast_SummaryReturn* sum_returns);
 
 /** Prints the top part of the traditional BLAST output, including version, 
  * reference(s) and database information.
  * @param format_options Formatting options [in]
  * @param is_megablast Is this a megablast search (i.e. greedy gapped
  *                     extension used)? [in]
+ * @param program_name blastn, blastp, blastx, etc. [in]
  * @param dbname BLAST database name [in]
  * @param is_protein Is the database protein or nucleotide? [in]
  */
-Int2 BLAST_PrintOutputHeader(BlastFormattingOptions* format_options,
-        Boolean is_megablast, char* dbname, Boolean is_protein);
+Int2 BLAST_PrintOutputHeader(const BlastFormattingOptions* format_options,
+        Boolean is_megablast, const char* program_name, char* dbname, Boolean is_protein);
 
-void BLAST_PrintIntermediateResults(BlastHSPResults* results, 
-        BlastQueryInfo* query_info, SeqLocPtr query_slp, 
-        ReadDBFILEPtr rdfp, SeqIdPtr seqid, BlastScoreBlk* sbp, 
-        char* filename);
+/** Prints the "log info" at the bottom of the megablast output, looks something like:
+ * "Mega BLAST run finished, processed 2 queries"
+ *
+ * @param format_options Formatting options [in]
+ * @param count number of searches completed [in]
+ * @return 0 on success 
+ */
+Int2 BlastPrintLogReport(const BlastFormattingOptions* format_options, Int4 count);
 
+/** Given a Seq-id structure, returns a buffer in requested form.
+ * @param sip Seq-id to get information from. [in]
+ * @param buffer_ptr Buffer to fill. [out]
+ * @param ncbi_gi Should the NCBI gi be included in the id buffer? [in]
+ * @param accession_only Should only accession be returned (only gi if ncbi_gi
+ *                       is TRUE)? [in]
+ */
+void 
+Blast_SeqIdGetDefLine(SeqIdPtr sip, char** buffer_ptr, Boolean ncbi_gi, 
+                      Boolean accession_only);
+
+/** Posts an error message from the summary returns, if any, to a provided
+ * output stream. If no stream provided, nothing is written. 
+ * @param sum_return Summary returns structure. [in]
+ */
+Int2 
+Blast_SummaryReturnsPostError(Blast_SummaryReturn* sum_return);
+
+Int2 PHIBlastFormatResults(EBlastProgramType program, ValNode* phivnps,
+                           char* blast_database, SeqLocPtr query_slp,
+                           const BlastFormattingOptions* format_options, 
+                           Blast_SummaryReturn* sum_returns);
+
+/** Frees a chain of ValNode's containing PHI BLAST results.
+ * @param phivnps Head of chain to be freed. [in]
+ * @return NULL.
+ */
+ValNode* PHIBlastResultsFree(ValNode* phivnps);
+
+/* @} */
 
 #ifdef __cplusplus
 }
 #endif
+
 #endif /* !__BLAST_FORMAT__ */
 

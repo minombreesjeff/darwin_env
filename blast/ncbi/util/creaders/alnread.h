@@ -2,7 +2,7 @@
 #define UTIL_CREADERS___ALNREAD__H
 
 /*
- * $Id: alnread.h,v 1.2 2004/02/05 15:43:32 bollin Exp $
+ * $Id: alnread.h,v 1.4 2004/11/24 15:26:18 dicuccio Exp $
  *
  * ===========================================================================
  *
@@ -88,8 +88,11 @@ typedef void (ALIGNMENT_CALLBACK *FReportErrorFunction) (
   void *        userdata /* data supplied by calling program to library */
 );
 
-extern NCBI_CREADERS_EXPORT TErrorInfoPtr ErrorInfoNew (TErrorInfoPtr list);
-extern NCBI_CREADERS_EXPORT void ErrorInfoFree (TErrorInfoPtr eip);
+NCBI_CREADERS_EXPORT 
+extern TErrorInfoPtr ErrorInfoNew (TErrorInfoPtr list);
+
+NCBI_CREADERS_EXPORT 
+extern void ErrorInfoFree (TErrorInfoPtr eip);
 
 typedef struct SSequenceInfo {
     char * missing;
@@ -107,6 +110,7 @@ typedef struct SAlignmentFile {
     int     num_sequences;
     int     num_organisms;
     int     num_deflines;
+    int     num_segments;
     char ** ids;
     char ** sequences;
     char ** organisms;
@@ -140,6 +144,13 @@ extern NCBI_CREADERS_EXPORT TAlignmentFilePtr ReadAlignmentFile (
  * ==========================================================================
  *
  * $Log: alnread.h,v $
+ * Revision 1.4  2004/11/24 15:26:18  dicuccio
+ * Swap extern and export specifier; white space changes
+ *
+ * Revision 1.3  2004/05/20 19:39:40  bollin
+ * added num_segments member to SAlignmentFile structure to allow reading of
+ * alignments of segmented sets.
+ *
  * Revision 1.2  2004/02/05 15:43:32  bollin
  * fixed portability issue for windows function pointers
  *

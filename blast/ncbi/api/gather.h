@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   10/7/94
 *
-* $Revision: 6.12 $
+* $Revision: 6.13 $
 *
 * File Description: 
 *
@@ -39,6 +39,9 @@
 * -------  ----------  -----------------------------------------------------
 *
 * $Log: gather.h,v $
+* Revision 6.13  2004/10/25 20:13:27  kans
+* added AssignIDsInEntityEx and GatherObjectsInEntityEx to index remotely fetched features
+*
 * Revision 6.12  2002/05/08 18:58:09  kans
 * itemID is Uint4
 *
@@ -582,6 +585,9 @@ NLM_EXTERN Boolean LIBCALL GatherOverWrite PROTO((Pointer oldptr, Pointer newptr
 *       every object type is visited, otherwise the array length should be OBJ_MAX, and
 *       the elements are from the OBJ_ list.
 *
+*   The Ex versions take a ValNodePtr parameter whose data.ptrvalue fields point to
+*       a Bioseq that contains a SeqAnnot with remotely fetched features.
+*
 *****************************************************************************/
 
 typedef struct gatherobject {
@@ -598,10 +604,36 @@ typedef struct gatherobject {
 
 typedef Boolean (*GatherObjectProc) (GatherObjectPtr gop);
 
-NLM_EXTERN Boolean LIBCALL AssignIDsInEntity (Uint2 entityID, Uint2 datatype, Pointer dataptr);
+NLM_EXTERN Boolean LIBCALL AssignIDsInEntity (
+  Uint2 entityID,
+  Uint2 datatype,
+  Pointer dataptr
+);
 
-NLM_EXTERN Boolean LIBCALL GatherObjectsInEntity (Uint2 entityID, Uint2 datatype, Pointer dataptr,
-                                                  GatherObjectProc callback, Pointer userdata, BoolPtr objMgrFilter);
+NLM_EXTERN Boolean LIBCALL AssignIDsInEntityEx (
+  Uint2 entityID,
+  Uint2 datatype,
+  Pointer dataptr,
+  ValNodePtr extra
+);
+
+NLM_EXTERN Boolean LIBCALL GatherObjectsInEntity (
+  Uint2 entityID,
+  Uint2 datatype,
+  Pointer dataptr,
+  GatherObjectProc callback,
+  Pointer userdata,
+  BoolPtr objMgrFilter
+);
+
+NLM_EXTERN Boolean LIBCALL GatherObjectsInEntityEx (
+  Uint2 entityID,
+  Uint2 datatype, Pointer dataptr,
+  GatherObjectProc callback,
+  Pointer userdata,
+  BoolPtr objMgrFilter,
+  ValNodePtr extra
+);
 
 /*****************************************************************************
 *

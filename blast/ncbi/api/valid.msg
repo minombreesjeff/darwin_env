@@ -166,6 +166,24 @@ Seq-hist.assembly alignment for the PRIMARY block.
 $^   SeqLocLength, 45
 A SeqLoc component of a delta Bioseq is suspiciously small.
 
+$^   MissingGaps, 46
+HTGS delta records should have gaps between each sequence segment.
+
+$^   CompleteTitleProblem, 47
+The sequence title has complete genome in it, but it is not marked as complete.
+
+$^   CompleteCircleProblem, 48
+This sequence has a circular topology, but it is not marked as complete.
+
+$^   BadHTGSeq, 49
+High throughput genomic sequences without gaps should have quality score graphs.
+
+$^   GapInProtein, 50
+Gap symbols found in this protein Bioseq.
+
+$^   BadProteinStart, 51
+A gap symbols was found at the start of this protein Bioseq.
+
 $$ SEQ_DESCR, 2
 
 $^   BioSourceMissing, 1
@@ -273,6 +291,27 @@ $^   UnwantedCompleteFlag, 26
 The Mol-info.completeness flag should not be set on a genomic sequence unless
 the title also says it is a complete sequence or complete genome.
 
+$^   CollidingPublications, 27
+Multiple publication descriptors with the same PMID or MUID apply to a Bioseq.
+The lower-level ones are redundant, and should be removed.
+
+$^   TransgenicProblem, 28
+A BioSource descriptor with /transgenic set must be accompanied by a BioSource
+feature on the nucleotide record.
+
+$^   TaxonomyLookupProblem, 29
+A BioSource descriptor or feature has flags returned by taxonomy lookup that
+are either inconsistent with the data or require a taxonomy consult.
+
+$^   MultipleTitles, 30
+There are multiple title descriptors in the same Bioseq or BioseqSet chain.
+
+$^   RefGeneTrackingOnNonRefSeq, 31
+The RefGeneTracking user object should only be in RefSeq records.
+
+$^   BioSourceInconsistency, 32
+There is an internal inconsistency with specific fields in the BioSource.
+
 $$ GENERIC, 3
 
 $^   NonAsciiAsn, 1
@@ -286,8 +325,7 @@ The author list contains et al, which should be replaced with the
 remaining author names.
 
 $^   MissingPubInfo, 4
-The publication is missing essential information, such as title or
-authors.
+The publication is missing essential information, such as title or authors.
 
 $^   UnnecessaryPubEquiv, 5
 A nested Pub-equiv is not normally expected in a publication.  This may prevent
@@ -295,6 +333,11 @@ proper display of all publication information.
 
 $^   BadPageNumbering, 6
 The publication page numbering is suspect.
+
+$^   MedlineEntryPub, 7
+Publications should not be of type medline-entry.  This has abstract and MeSH
+term information that does not appear in the GenBank flatfile.  Type cit-art
+should be used instead.
 
 $$ SEQ_PKG, 4
 
@@ -458,7 +501,7 @@ This qualifier is not legal for this feature.
 $^ MissingQualOnImpFeat, 26
 An essential qualifier for this feature is missing.
 
-$^ PsuedoCdsHasProduct, 27
+$^ PseudoCdsHasProduct, 27
 A coding region flagged as pseudo has a protein product.  There should be no
 protein product bioseq on a pseudo CDS.
 
@@ -651,6 +694,87 @@ complete.
 $^   GenesInconsistent, 73
 The gene on the genomic sequence of a genomic product set should be the
 same as the gene on the cDNA product of the mRNA feature.
+
+$^   DuplicateTranslExcept, 74
+There are multiple /transl_except qualifiers at the same location on this
+CDS but with different amino acids indicated.
+
+$^   TranslExceptAndRnaEditing, 75
+A CDS has both /exception=RNA editing and /transl_except qualifiers.  RNA
+editing indicates post-transcriptional changes prior to translation.  Use
+/transl_except for individual codon exceptions such as selenocysteine or
+other nonsense suppressors.
+
+$^   NoNameForProtein, 76
+A protein feature has a description, but no product name.
+
+$^   TaxonDbxrefOnFeature, 77
+A BioSource feature has a taxonID database identifier in the db_xref area
+common to all features. This db_xref should only exist within the separate
+BioSource xref list.
+
+$^   UnindexedFeature, 78
+The location of a feature does not allow it to be mapped to a single Bioseq,
+or to the segmented parent if on one or more part Bioseqs. It will not show
+up in flatfile and other formats, and should be corrected or removed.
+
+$^   CDSmRNAmismatch, 79
+There should usually be a one-to-one correspondence between mRNA and CDS
+under a given gene.
+
+$^   UnnecessaryException, 80
+The feature is marked with an exception qualifier, but the validator does
+not detect an error that needs to be suppressed.
+
+$^   LocusTagProductMismatch, 81
+In certain records a policy is that the locus_tag of the gene is expected to
+match the prefix of the general ID of the CDS or mRNA product Bioseq.
+
+$^   MrnaTransFail, 82
+A fundamental error occurred in software while attempting to transcribe this
+messenger RNA. It is either a software problem or sever data corruption.
+
+$^ PseudoCdsViaGeneHasProduct, 83
+A coding region overlapped by a pseudo gene has a protein product.  There
+should be no protein product bioseq on a pseudo CDS.
+
+$^ MissingGeneXref, 84
+This feature has multiple overlapping genes of the same length, but no
+xref to determine which one should be used for the /gene qualifier.
+
+$^ FeatureCitationProblem, 85
+This feature has a citation to a publication that needs to be repaired.
+
+$^ NestedSeqLocMix, 86
+A location should not have nested SEQLOC_MIX structures.
+
+$^ WrongQualOnFeature, 87
+This qualifier is not legal for this feature.
+
+$^ MissingQualOnFeature, 88
+An essential qualifier for this feature is missing.
+
+$^ CodonQualifierUsed, 89
+The codon qualifier should be replaced by individual transl_except code breaks,
+after checking to make sure the proper genetic code is being used.
+
+$^ UnknownFeatureQual, 90
+A feature has an unrecognized qualifier.
+
+$^ BadCharInAuthorName, 91
+An author name has illegal characters.
+
+$^ PolyATail, 92
+The mRNA feature has polyA tail added to make the mRNA sequence.
+
+$^ ProteinNameEndsInBracket, 93
+The protein name ends with a right square bracket, and may have been
+copied from another GenPept record, where the organism name is
+appended to the definition line and placed inside brackets.
+
+$^ CDSwithMultipleMRNAs, 94
+The CDS feature has more than one overlapping mRNA with the proper intervals and
+no other identification assigning it to a different coding region.
 
 $$ SEQ_ALIGN, 6
 

@@ -1,1 +1,0 @@
-../cdromlib/cdnewlib.h

@@ -1,0 +1,164 @@
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head><title>Edit Search</title>
+<link rel="stylesheet" href="cubby.css" type="text/css" media="all" />
+
+<body>
+
+<form method="post" action="saveSearch">
+
+  <div id="formdiv" class="mainview">
+
+    <div id="formtitle"><span class="stitle">Edit Search</span></div>
+
+    <table class="searchtable" cellspacing="0">
+    
+      <tr class="oddrow">
+        <td class="col1">Name</td>
+        <td class="col2"><input name="NAME" type="text" size="40" value="mouse adenylate cyclase"/></td>
+        <td class="col3"><img src="help.gif" title="Make up a name for your saved search."/></td>
+      </tr>
+      <tr class="evenrow">
+        <td class="col1">Created</td>
+        <td class="col2">Mon Apr  5 17:53:27 EDT 2004</td>
+        <td class="col3"><img src="help.gif" title="The date and time you first saved this search"/></td>
+      </tr>
+      <tr class="oddrow">
+        <td class="col1">Database</td>
+        <td class="col2">PubMed</td>
+        <td class="col3"><img src="help.gif" title="The database for this search"/></td>
+      </tr>
+      <tr class="evenrow">
+        <td class="col1">Definition<div class="small">Your Search</div></td>
+        <td class="col2"><span class="code">mouse AND adenylate cyclase</span></td>
+        <td class="col3"><img src="help.gif" TITLE="Your original search string"/></td>
+      </tr>
+      <tr class="oddrow">
+        <td class="col1">Entrez Query<br/><span class="small">What Entrez executes</span></td>
+        <td class="col2"><span class="code">mouse [All Fields] AND adenylate cyclase</span></td>
+        <td class="col3"><img src="help.gif" TITLE="How the Entrez engine interprets your search"/></td>
+      </tr>
+      <tr class="evenrow">
+        <td class="col1">Subscribe<div class="small">Email Updates</div></td>
+        <td class="col2">
+         <input name="subscribe" type="radio" value="none">No updates</input><br/>
+         <input name="subscribe" type="radio" value="daily">Daily</input><br/>
+         <input name="subscribe" type="radio" value="weekly">Weekly on</input>
+    
+      <select name="dow">
+        <option selected="1">Monday</option>
+        <option>Tuesday</option>
+        <option>Wednesday</option>
+        <option>Thursday</option>
+        <option>Friday</option>
+        <option>Saturday</option>
+        <option>Sunday</option>
+      </select><br/>
+    
+    <input name="subscribe" type="radio" value="monthly">Monthly on day </input>
+    <select name="dom">  
+      <option selected="1">1</option>
+      <option>2</option>
+      <option>3</option>
+      <option>4</option>
+      <option>5</option>
+      <option>6</option>
+      <option>7</option>
+      <option>8</option>
+      <option>9</option>
+      <option>10</option>
+      <option>11</option>
+      <option>12</option>
+      <option>13</option>
+      <option>14</option>
+      <option>15</option>
+      <option>16</option>
+      <option>17</option>
+      <option>18</option>
+      <option>19</option>
+      <option>20</option>
+      <option>21</option>
+      <option>22</option>
+      <option>23</option>
+      <option>24</option>
+      <option>25</option>
+      <option>26</option>
+      <option>27</option>
+      <option>28</option>
+      <option>29</option>
+      <option>30</option>
+      <option>31</option>
+      <option value="0">last</option>
+    </select>
+    of the month</td>
+        <td class="col3">
+          <img src="help.gif"
+               title="Request periodic email summarizing updates to your query results"/></td>
+      </tr>
+
+      <!-- The next two table rows, "schedule_extra1" and "schedule_extra2",
+           must be hidden if "Subscribe" above is "No updates". They should
+           also take up no vertical space. If the user changes "Subscribe" to
+           anything but "No updates", these two table rows should be displayed.
+        -->
+
+      <tr class="evenrow" id="schedule_extra1">
+        <td class="col1"/>
+        <td class="col2">
+          <input type="checkbox" name="expire" checked="1"/>
+             Expire on <input type="text" size="14" value="4/2/2006"/>
+             <img src="calendar.gif"/><br/>
+    
+          <input type="checkbox" name="empty"/>
+          Send email even if results have not changed
+        </td>
+        <td class="col2"/>
+      </tr>
+   
+      <tr class="oddrow" id="schedule_extra2">
+        <td class="col1">Destinations</td>
+        <td class="col2">
+            <table class="desttable" cellspacing="0">
+  
+            <tr>
+              <td class="col2"><input type="checkbox" name="mailto" checked="1"/></td>
+              <td class="col2"><span class="emailname">Mark Johnson</span></td>
+              <td class="col2"><span class="code">mj@riverrock.org</span></td>
+            </tr>
+            
+            <tr class="addemailaddress">
+              <td><input type="image" src="plus.gif" alt="add new name and address"
+                   title="Enter new name and address and click to add"/></td>
+              <td>
+                <input type="text" name="new_email_name" size="15" title="Name"/><br/>
+                <span class="small">Name</span>
+              </td>
+              <td>
+                <input type="text" name="new_email_addr" size="30"
+                  maxsize="60" title="email address"/><br/>
+                  <span class="small">Email address</span>
+              </td>
+            </tr>
+          </table>
+        </td>
+          
+        <td class="col3">
+           <img src="help.gif"
+             title="Select, unselect, or add recipients for email updates"/>
+        </td>
+
+      </tr>
+    </table>
+
+    <div id="formbuttondiv">
+
+      <input type="button" class="button" value="Delete" alt="Delete" src="delete.gif" title="Click to delete this search">
+      <input type="button" class="button" value="Cancel" alt="Cancel" src="cancel.gif" title="Click to cancel this save">
+      <input type="button" class="button" value="Save" alt="Save" src="save.gif" title="Click to save this search"/>
+    </div> <!-- End formbuttons -->
+
+  </div> <!-- End formdiv -->
+
+</form>
+
+</body>
+</html>

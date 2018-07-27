@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: actutils.c,v 6.36 2004/02/11 20:51:48 bollin Exp $";
+static char const rcsid[] = "$Id: actutils.c,v 6.45 2005/04/20 19:17:38 lavr Exp $";
 
 /* ===========================================================================
 *
@@ -30,13 +30,47 @@ static char const rcsid[] = "$Id: actutils.c,v 6.36 2004/02/11 20:51:48 bollin E
 *
 * Version Creation Date:   2/00
 *
-* $Revision: 6.36 $
+* $Revision: 6.45 $
 *
 * File Description: utility functions for alignments
 *
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: actutils.c,v $
+* Revision 6.45  2005/04/20 19:17:38  lavr
+* +<assert.h>
+*
+* Revision 6.44  2005/01/10 14:53:54  bollin
+* the strand argument in SeqLocCopyRegion is confusing - rather than specifying
+* the strand onto which the features should be placed, Seq_strand_minus
+* indicates that the features should be reverse-complemented, while
+* Seq_strand_plus indicates that the features should remain on their original
+* strand.
+*
+* Revision 6.43  2004/11/22 16:45:24  bollin
+* created global alignment function with callback method to allow use of new
+* BLAST library
+*
+* Revision 6.42  2004/11/12 20:20:05  bollin
+* removed unused variables
+*
+* Revision 6.41  2004/11/12 17:28:53  kans
+* reverting for now - tools library cannot depend upon new blast libraries - will need to move to better place later
+*
+* Revision 6.40  2004/11/12 14:03:16  bollin
+* use new BLAST code instead of old BLAST code in Sqn_GlobalAlign2Seq
+*
+* Revision 6.39  2004/11/02 18:53:39  bollin
+* made act_get_eval available to other libraries
+*
+* Revision 6.38  2004/10/27 18:36:15  bollin
+* make function external instead of replicating it elsewhere
+*
+* Revision 6.37  2004/07/30 13:36:47  bollin
+* created separate function for reversing features on a sequence, changed code
+* to swap plus to minus and minus to plus instead of moving all features to
+* minus strand
+*
 * Revision 6.36  2004/02/11 20:51:48  bollin
 * use error log instead of popup message to indicate that  BLAST found no sequence similarity
 *
@@ -149,6 +183,7 @@ static char const rcsid[] = "$Id: actutils.c,v 6.36 2004/02/11 20:51:48 bollin E
 */
 
 #include <actutils.h>
+#include <assert.h>
 #include <viewmgr.h>
 #include <alignmgr.h>
 
@@ -1276,7 +1311,7 @@ NLM_EXTERN ACT_TopScorePtr ACT_FindPeakScores(FloatHiPtr scorearray, Int4 len)
    return ats_newhead;
 }
 
-static FloatHi act_get_eval(Int4 exp)
+NLM_EXTERN FloatHi act_get_eval(Int4 exp)
 {
   FloatHi eval;
   Int4 i;
@@ -1362,7 +1397,7 @@ static int LIBCALLBACK ACT_CompareSpins (VoidPtr ptr1, VoidPtr ptr2)
    return 0;
 }
 
-static void ACT_RemoveInconsistentAlnsFromSet (SeqAlignPtr sap, Int4 fuzz, Int4 n)
+extern void ACT_RemoveInconsistentAlnsFromSet (SeqAlignPtr sap, Int4 fuzz, Int4 n)
 {
    AMAlignIndex2Ptr  amaip;
    Boolean          conflict;
@@ -2523,35 +2558,70 @@ static void SPI_flip_sa_list (SeqAlignPtr sap)
    }
 }
 
-NLM_EXTERN SeqAlignPtr Sqn_GlobalAlign2Seq (BioseqPtr bsp1, BioseqPtr bsp2, BoolPtr revcomp)
+NLM_EXTERN void ReverseBioseqFeatureStrands (BioseqPtr bsp)
 {
-   AMAlignIndex2Ptr     amaip;
-   CodeBreakPtr         cbp;
-   CdRegionPtr          crp;
-   Int4                 i;
-   BLAST_OptionsBlkPtr  options;
-   CharPtr              program = "blastn";
-   SeqAlignPtr          sap;
-   SeqAlignPtr          sap_final;
-   SeqAlignPtr          sap_head;
-   SeqAlignPtr          sap_new;
-   SeqAlignPtr          sap_prev;
-   Int4                 start1;
-   Int4                 start2;
-   Int4                 stop1;
-   Int4                 stop2;
-   Uint1                strand;
-   Int4                 extnd = 20;
-   SeqMgrFeatContext    context;
    Uint2                entityID;
-   RnaRefPtr            rrp;
+   SeqMgrFeatContext    context;
    SeqFeatPtr           sfp;
    SeqIdPtr             sip;
    SeqLocPtr            slp;
-   tRNAPtr              trp;
+   CdRegionPtr          crp;
+   CodeBreakPtr         cbp;
+   RnaRefPtr            rrp;
+   tRNAPtr              trp;   
+   Uint1                strand = Seq_strand_minus;
+	
+   if (bsp == NULL) return;
+   
+   entityID = ObjMgrGetEntityIDForPointer (bsp);
+   if (! SeqMgrFeaturesAreIndexed (entityID)) {
+     SeqMgrIndexFeatures (entityID, NULL);
+   }
+   sfp = SeqMgrGetNextFeature (bsp, NULL, 0, 0, &context);
+   while (sfp != NULL) {
+      sip = SeqLocId (sfp->location);
+      slp = SeqLocCopyRegion (sip, sfp->location, bsp, 0, bsp->length - 1, strand, FALSE);
+      sfp->location = SeqLocFree (sfp->location);
+      sfp->location = slp;
+      switch (sfp->data.choice) {
+         case SEQFEAT_CDREGION :
+           crp = (CdRegionPtr) sfp->data.value.ptrvalue;
+           if (crp != NULL) {
+             for (cbp = crp->code_break; cbp != NULL; cbp = cbp->next) {
+               sip = SeqLocId (cbp->loc);
+               slp = SeqLocCopyRegion (sip, cbp->loc, bsp, 0, bsp->length - 1, strand, FALSE);
+               cbp->loc = SeqLocFree (cbp->loc);
+               cbp->loc = slp;
+             }
+           }
+           break;
+         case SEQFEAT_RNA :
+           rrp = (RnaRefPtr) sfp->data.value.ptrvalue;
+           if (rrp != NULL && rrp->ext.choice == 2) {
+             trp = (tRNAPtr) rrp->ext.value.ptrvalue;
+             if (trp != NULL && trp->anticodon != NULL) {
+               sip = SeqLocId (trp->anticodon);
+               slp = SeqLocCopyRegion (sip, trp->anticodon, bsp, 0, bsp->length - 1, strand, FALSE);
+               trp->anticodon = SeqLocFree (trp->anticodon);
+               trp->anticodon = slp;
+             }
+           }
+           break;
+         default :
+           break;
+      }
+      sfp = SeqMgrGetNextFeature (bsp, sfp, 0, 0, &context);
+   }
+   SeqMgrClearFeatureIndexes (entityID, NULL);
+   SeqMgrIndexFeatures (entityID, NULL);
+}
 
-   if (bsp1 == NULL || bsp2 == NULL)
-      return NULL;
+static SeqAlignPtr LIBCALLBACK GetOldBlastAlignment (BioseqPtr bsp1, BioseqPtr bsp2)
+{
+   BLAST_OptionsBlkPtr  options;
+   CharPtr              program = "blastn";
+   SeqAlignPtr          sap;
+   
    if (ISA_aa (bsp1->mol)) {
      program = "blastp";
    }
@@ -2566,6 +2636,29 @@ NLM_EXTERN SeqAlignPtr Sqn_GlobalAlign2Seq (BioseqPtr bsp1, BioseqPtr bsp2, Bool
    }
    sap = BlastTwoSequences(bsp1, bsp2, program, options);
    BLASTOptionDelete(options);
+   return sap;
+}
+
+NLM_EXTERN SeqAlignPtr Sqn_GlobalAlign2SeqEx (BioseqPtr bsp1, BioseqPtr bsp2, BoolPtr revcomp, GetAlignmentFunc aln_func)
+{
+   AMAlignIndex2Ptr     amaip;
+   Int4                 i;
+   SeqAlignPtr          sap;
+   SeqAlignPtr          sap_final;
+   SeqAlignPtr          sap_head;
+   SeqAlignPtr          sap_new;
+   SeqAlignPtr          sap_prev;
+   Int4                 start1;
+   Int4                 start2;
+   Int4                 stop1;
+   Int4                 stop2;
+   Uint1                strand;
+   Int4                 extnd = 20;
+
+   if (bsp1 == NULL || bsp2 == NULL)
+      return NULL;
+   
+   sap = aln_func (bsp1, bsp2);
    if (sap == NULL)
    {
       ErrPostEx (SEV_ERROR, 0, 0, "BLAST finds no sequence similarity");
@@ -2588,58 +2681,8 @@ NLM_EXTERN SeqAlignPtr Sqn_GlobalAlign2Seq (BioseqPtr bsp1, BioseqPtr bsp2, Bool
      AMAlignIndexFreeEitherIndex (sap);
      sap = SeqAlignFree (sap);
      BioseqRevComp (bsp2);
-     entityID = ObjMgrGetEntityIDForPointer (bsp2);
-     if (! SeqMgrFeaturesAreIndexed (entityID)) {
-       SeqMgrIndexFeatures (entityID, NULL);
-     }
-     sfp = SeqMgrGetNextFeature (bsp2, NULL, 0, 0, &context);
-     while (sfp != NULL) {
-       sip = SeqLocId (sfp->location);
-       slp = SeqLocCopyRegion (sip, sfp->location, bsp2, 0, bsp2->length - 1, Seq_strand_minus, FALSE);
-       sfp->location = SeqLocFree (sfp->location);
-       sfp->location = slp;
-       switch (sfp->data.choice) {
-         case SEQFEAT_CDREGION :
-           crp = (CdRegionPtr) sfp->data.value.ptrvalue;
-           if (crp != NULL) {
-             for (cbp = crp->code_break; cbp != NULL; cbp = cbp->next) {
-               sip = SeqLocId (cbp->loc);
-               slp = SeqLocCopyRegion (sip, cbp->loc, bsp2, 0, bsp2->length - 1, Seq_strand_minus, FALSE);
-               cbp->loc = SeqLocFree (cbp->loc);
-               cbp->loc = slp;
-             }
-           }
-           break;
-         case SEQFEAT_RNA :
-           rrp = (RnaRefPtr) sfp->data.value.ptrvalue;
-           if (rrp != NULL && rrp->ext.choice == 2) {
-             trp = (tRNAPtr) rrp->ext.value.ptrvalue;
-             if (trp != NULL && trp->anticodon != NULL) {
-               sip = SeqLocId (trp->anticodon);
-               slp = SeqLocCopyRegion (sip, trp->anticodon, bsp2, 0, bsp2->length - 1, Seq_strand_minus, FALSE);
-               trp->anticodon = SeqLocFree (trp->anticodon);
-               trp->anticodon = slp;
-             }
-           }
-           break;
-         default :
-           break;
-       }
-       sfp = SeqMgrGetNextFeature (bsp2, sfp, 0, 0, &context);
-     }
-     SeqMgrClearFeatureIndexes (entityID, NULL);
-
-     options = BLASTOptionNew(program, TRUE);
-     options->gapped_calculation = TRUE;
-     options->expect_value = 0.001;
-     if (bsp1->length > 10000 || bsp2->length > 10000)
-     {
-        options->expect_value = act_get_eval(60);
-        options->wordsize = 20;
-        options->filter_string = StringSave ("m L");
-     }
-     sap = BlastTwoSequences(bsp1, bsp2, program, options);
-     BLASTOptionDelete(options);
+     ReverseBioseqFeatureStrands (bsp2);
+     sap = aln_func (bsp1, bsp2);
      if (sap == NULL)
      {
         Message(MSG_OK,"BLAST finds no sequence similarity in reverse complement");
@@ -2742,8 +2785,15 @@ NLM_EXTERN SeqAlignPtr Sqn_GlobalAlign2Seq (BioseqPtr bsp1, BioseqPtr bsp2, Bool
    sap->saip = NULL;
    AlnMgr2IndexLite(sap);  /* reindex the alignments */
    sap_final = ACT_CleanUpAlignments(sap, bsp1->length, bsp2->length);
-   return sap_final;
+   return sap_final;  
+
 }
+
+NLM_EXTERN SeqAlignPtr Sqn_GlobalAlign2Seq (BioseqPtr bsp1, BioseqPtr bsp2, BoolPtr revcomp)
+{
+  return Sqn_GlobalAlign2SeqEx (bsp1, bsp2, revcomp, GetOldBlastAlignment);
+}
+
 
 /***************************************************************************
 *

@@ -1,1 +1,0 @@
-../desktop/vsmpriv.h

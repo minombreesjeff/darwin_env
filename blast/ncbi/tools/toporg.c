@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: toporg.c,v 6.87 2003/06/18 21:52:21 kans Exp $";
+static char const rcsid[] = "$Id: toporg.c,v 6.91 2005/04/22 17:41:00 kans Exp $";
 
 #include <stdio.h>
 #include <ncbi.h>
@@ -14,6 +14,8 @@ static char const rcsid[] = "$Id: toporg.c,v 6.87 2003/06/18 21:52:21 kans Exp $
 #include <explore.h>
 #include <subutil.h>
 #include <tofasta.h>
+
+static ValNodePtr GetDescrNoTitles (ValNodePtr PNTR descr);
 
 SeqDescrPtr remove_descr PROTO((SeqDescrPtr head, SeqDescrPtr x));
 /****************************************************************************
@@ -562,7 +564,7 @@ void ChkNucProt (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
 	      descr = tmp->descr;
 	}
 	if (bssp->descr == NULL) {
-		bssp->descr = GetDescr(&descr);
+		bssp->descr = GetDescrNoTitles(&descr);
 	} else {
 		for (vnp = bssp->descr; vnp!= NULL; vnp= vnp->next) {
 			if (vnp->choice == Seq_descr_title) {
@@ -667,7 +669,7 @@ void MoveNPPubs (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
 	      descr = tmp->descr;
 	}
 	if (bssp->descr == NULL) {
-		bssp->descr = GetDescr(&descr);
+		bssp->descr = GetDescrNoTitles(&descr);
 	} else {
 /* move pubs to nuc-prot level */	
 		vnp = ValNodeExtractList(&descr, Seq_descr_pub);
@@ -1134,6 +1136,42 @@ ValNodePtr GetDescr(ValNodePtr PNTR descr)
    return (hvnp);
 
 } /* GetDescr */
+
+static ValNodePtr GetDescrNoTitles (ValNodePtr PNTR descr)
+{
+   ValNodePtr    vnp, hvnp = NULL;
+
+
+
+   vnp = ValNodeExtractList(descr, Seq_descr_org);
+   if (vnp != NULL) {
+     hvnp = ValNodeLink(&hvnp, vnp);
+   }
+
+   if ( check_GIBB(*descr)) {
+       vnp = ValNodeExtractList(descr, Seq_descr_modif);
+       if (vnp != NULL) {
+         hvnp = ValNodeLink(&hvnp, vnp); 
+       }
+   }
+   vnp = ValNodeExtractList(descr, Seq_descr_comment);
+   if (vnp != NULL) {
+     hvnp = ValNodeLink(&hvnp, vnp);
+   }
+
+   vnp = ValNodeExtractList(descr, Seq_descr_pub);
+   if (vnp != NULL) {
+     hvnp = ValNodeLink(&hvnp, vnp);
+   }
+
+   vnp = ValNodeExtractList(descr, Seq_descr_update_date);
+   if (vnp != NULL) {
+     hvnp = ValNodeLink(&hvnp, vnp);
+   }
+
+   return (hvnp);
+
+} /* GetDescrNoTitles */
 
 /*------------------------ check_GIBB() --------------------------*/
 /*****************************************************************************
@@ -1641,14 +1679,27 @@ static Boolean GBQualPresent(CharPtr ptr, GBQualPtr gbqual)
 	return present;
 }
 
+static CharPtr ExamineGBQual (CharPtr ptr, GBQualPtr gbqual)
+
+{
+	GBQualPtr qual;
+
+	for (qual = gbqual; qual != NULL; qual = qual->next) {
+		if (StringCmp (ptr, qual->qual) == 0) return qual->val;
+	}
+
+	return NULL;
+}
+
 void MapsToGenref (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
 {
 	BioseqPtr       bsp;
 	BioseqSetPtr    bssp;
 	BioSourcePtr	biosp = NULL;
-	ValNodePtr		descr = NULL;
+	ValNodePtr		descr = NULL, head, last, vnp;
 	SeqAnnotPtr     sap = NULL, ap;
 	CharPtr			qval= NULL, name;
+	Boolean         same;
 	SeqFeatPtr		sfp, cur;
 	SeqLocPtr		loc;
 	GeneRefPtr		grp;
@@ -1673,7 +1724,9 @@ void MapsToGenref (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
     	if (sfp->data.choice == SEQFEAT_GENE) {
     		grp = sfp->data.value.ptrvalue;
     		name = NULL;
-    		loc = NULL;
+    		head = NULL;
+    		last = NULL;
+    		same = TRUE;
     		for (cur = (SeqFeatPtr)(sap->data); cur; cur = cur->next) {
     			if ((GBQualPresent("map", cur->qual)) == FALSE) {
     				continue;
@@ -1681,21 +1734,35 @@ void MapsToGenref (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
     			if (SeqLocAinB(cur->location, sfp->location) < 0 ) {
     				continue;
     			}
-    			qval = qvalue_extract(&(cur->qual), "map");
+    			vnp = ValNodeAddPointer (&last, 0, cur);
+    			if (head == NULL) {
+    			  head = vnp;
+    			}
+    			last = vnp;
+    		} 
+    		for (vnp = head; vnp != NULL; vnp = vnp->next) {
+    	        cur = (SeqFeatPtr) vnp->data.ptrvalue;
+    			qval = ExamineGBQual("map", (cur->qual));
     			if (name == NULL) {
     				name = qval;
-    				loc = cur->location;
-    			} else {
-    				if (SeqLocLen(cur->location) >= SeqLocLen(loc)) {
-    					name = qval;
-    					loc = cur->location;
-    				}
+    			} else if (StringICmp (name, qval) != 0) {
+    			    same = FALSE;
     			}
-    		} 
-    		if (grp->maploc == NULL && name != NULL) {
-    			grp->maploc = StringSave(name);
-    			MemFree(qval);
     		}
+    		if (same && name != NULL) {
+    	    	if (grp->maploc == NULL && name != NULL) {
+    	    		grp->maploc = StringSave(name);
+    	    	}
+        		name = NULL;
+    	    	loc = NULL;
+    			for (vnp = head; vnp != NULL; vnp = vnp->next) {
+                    cur = (SeqFeatPtr) vnp->data.ptrvalue;
+                    if (cur == NULL) continue;
+    				qval = qvalue_extract(&(cur->qual), "map");
+    				MemFree (qval);
+    			}
+    		}
+    		ValNodeFree (head);
     	} /* if SEQFEAT_GENE */
 	  }
   	} /* if ftable */
@@ -1703,7 +1770,7 @@ void MapsToGenref (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
     return;
 }
 
-static Boolean CheckMinPub(ValNodePtr pub)
+static Boolean CheckMinPub(ValNodePtr pub, Boolean is_ref_seq_prot)
 {
 	CitGenPtr	gen;
 
@@ -1712,9 +1779,10 @@ static Boolean CheckMinPub(ValNodePtr pub)
 	}
 	if (pub->choice == PUB_Muid || pub->choice == PUB_PMid) {
 		if (pub->next == NULL) {
+		    if (is_ref_seq_prot) return FALSE;
 			return TRUE;
 		} else {
-			return (CheckMinPub(pub->next));
+			return (CheckMinPub(pub->next, is_ref_seq_prot));
 		}
 	}
 	if (pub->choice == PUB_Gen) {
@@ -1724,14 +1792,14 @@ static Boolean CheckMinPub(ValNodePtr pub)
 			if (pub->next == NULL) {
 				return TRUE;
 			} else {
-				return (CheckMinPub(pub->next));
+				return (CheckMinPub(pub->next, FALSE));
 			}
 		}
 	}
 	return FALSE;
 }
 
-ValNodePtr AddToList(ValNodePtr list, ValNodePtr check, PubdescPtr pdp)
+static ValNodePtr AddToListEx (ValNodePtr list, ValNodePtr check, PubdescPtr pdp, Boolean is_ref_seq_prot)
 {
 	ValNodePtr	v, vnext;
 	PubdescPtr	vpdp;
@@ -1752,7 +1820,7 @@ ValNodePtr AddToList(ValNodePtr list, ValNodePtr check, PubdescPtr pdp)
 		}
 	}
 	if (pdp->name == NULL && pdp->fig == NULL && pdp->fig == NULL) {
-		if (CheckMinPub(pdp->pub) == TRUE) {   /* do not add minimum pub */
+		if (CheckMinPub(pdp->pub, is_ref_seq_prot) == TRUE) {   /* do not add minimum pub */
 			return list;
 		}
 	}
@@ -1811,6 +1879,12 @@ ValNodePtr AddToList(ValNodePtr list, ValNodePtr check, PubdescPtr pdp)
 /*  may be sort ???? */
 	return list;
 }
+
+ValNodePtr AddToList(ValNodePtr list, ValNodePtr check, PubdescPtr pdp)
+{
+   return AddToListEx (list, check, pdp, TRUE); 
+}
+
 void CheckCitSubNew(ValNodePtr vnp)
 {
 	CitSubPtr csp;
@@ -1892,6 +1966,8 @@ void NewPubs (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
 	ImpFeatPtr		ifp;
 	PubdescPtr		pubdesc;
 	ValNodePtr		publist = NULL, check = NULL, np_list = NULL;
+	SeqIdPtr        sip;
+	Boolean         is_ref_seq_prot = FALSE;
 	
 	if (IS_Bioseq(sep)) {
 		bsp = (BioseqPtr)(sep->data.ptrvalue);
@@ -1899,6 +1975,13 @@ void NewPubs (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
 			return;
 		descr = bsp->descr;
 		sap = bsp->annot;
+		if (ISA_aa (bsp->mol)) {
+		    for (sip = bsp->id; sip != NULL; sip = sip->next) {
+                if (sip->choice == SEQID_OTHER) {
+                    is_ref_seq_prot = TRUE;
+                }
+		    }
+		}
 	}
 	else {
 		bssp = (BioseqSetPtr)(sep->data.ptrvalue);
@@ -1936,20 +2019,20 @@ void NewPubs (SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
 				    ifp = cur->data.value.ptrvalue;
 				    if (StringCmp(ifp->key, "Site-ref") == 0) {
 					    pubdesc->reftype = 1; /* sites */
-					    np_list = AddToList(np_list, check, pubdesc);
+					    np_list = AddToListEx (np_list, check, pubdesc, is_ref_seq_prot);
 						min_pub = MinimizePub(pubequ);
 						pub = tie_next(pub, min_pub);
 						MemFree(pubdesc);
 				     } else {
 						pubdesc->reftype = 2;
-						np_list = AddToList(np_list, check, pubdesc);
+						np_list = AddToListEx (np_list, check, pubdesc, is_ref_seq_prot);
 						min_pub = MinimizePub(pubequ);
 						pub = tie_next(pub, min_pub);
 						MemFree(pubdesc);
 				     }
 				} else {
 					pubdesc->reftype = 2;
-					np_list = AddToList(np_list, check, pubdesc);
+					np_list = AddToListEx (np_list, check, pubdesc, is_ref_seq_prot);
 					min_pub = MinimizePub(pubequ);
 					pub = tie_next(pub, min_pub);
 					MemFree(pubdesc);
@@ -3967,6 +4050,13 @@ static Boolean IsPubBad (PubdescPtr pdp, Pointer userdata)
   ValNodePtr   ttl;
   ValNodePtr   vnp;
 
+  if (pdp == NULL) return FALSE;
+
+  /* single pmid not cleared here, left for CheckMinPub with RefSeq protein exception */
+
+  vnp = pdp->pub;
+  if (vnp != NULL && vnp->next == NULL && vnp->choice == PUB_PMid) return FALSE;
+
   /* if single real muid, repair 0 muid backbone references */
 
   muidp = (Int4Ptr) userdata;
@@ -4661,6 +4751,8 @@ static void SeriousSeqEntryCleanupEx (SeqEntryPtr sep, SeqEntryFunc taxfun, SeqE
   ConvertFullLenPubFeatToDesc (sep);
   SeqEntryExplore (sep, NULL, CleanupEmptyFeatCallback);
   SeqEntryExplore (sep, NULL, MergeAdjacentAnnotsCallback);
+  /* reindex, since PseudoGeneOverlap gets best overlapping gene */
+  SeqMgrIndexFeatures (entityID, NULL);
   EntryChangeImpFeat(sep);     /* change any CDS ImpFeat to real CdRegion */
   /* MoveRnaGBQualProductToName (sep); */ /* move rna gbqual product to rna-ref.ext.name */
   /* MoveProtGBQualProductToName (sep); */ /* move prot gbqual product to prot-ref.name */

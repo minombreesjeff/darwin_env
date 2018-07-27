@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 4/1/91
 *
-* $Revision: 6.18 $
+* $Revision: 6.24 $
 *
 * File Description:  Object manager for module NCBI-Seq
 *
@@ -510,13 +510,156 @@ static Uint2 LIBCALLBACK SeqDescSubTypeFunc (Pointer ptr)
 	return (Uint2)((ValNodePtr)ptr)->choice;
 }
 
-static Boolean loaded = FALSE;
+/*****************************************************************************
+*
+*   AnnotDesc ObjMgr Routines
+*
+*****************************************************************************/
+static CharPtr annotdesctypename = "AnnotDesc";
+
+static Pointer LIBCALLBACK AnnotDescNewFunc (void)
+{
+	return (Pointer) AnnotDescrNew(NULL);
+}
+
+static Pointer LIBCALLBACK AnnotDescFreeFunc (Pointer data)
+{
+	return (Pointer) AnnotDescFree ((AnnotDescPtr) data);
+}
+
+static Boolean LIBCALLBACK AnnotDescAsnWriteFunc (Pointer data, AsnIoPtr aip, AsnTypePtr atp)
+{
+	return AnnotDescAsnWrite((AnnotDescPtr)data, aip, atp);
+}
+
+static Pointer LIBCALLBACK AnnotDescAsnReadFunc (AsnIoPtr aip, AsnTypePtr atp)
+{
+	return (Pointer) AnnotDescAsnRead (aip, atp);
+}
+
+
+static Int2 NEAR AnnotDescLabelContent (ValNodePtr vnp, CharPtr buf, Int2 buflen)
+{
+	UserObjectPtr uop;
+	PubdescPtr pdp;
+	CharPtr label = NULL;
+	Char tbuf[40];
+	ValNode vn;
+	ObjectIdPtr oip;
+
+	if (vnp == NULL) return 0;
+
+	switch (vnp->choice)
+	{
+		case Annot_descr_name:
+		case Annot_descr_title:
+		case Annot_descr_comment:
+			label = (CharPtr)(vnp->data.ptrvalue);
+			break;
+
+		case Annot_descr_pub:
+			pdp = (PubdescPtr)(vnp->data.ptrvalue);
+			if (pdp == NULL) return 0;
+			vn.choice = PUB_Equiv;
+			vn.data.ptrvalue = pdp->pub;
+			vn.next = NULL;
+			return PubLabel(&vn, buf, buflen, OM_LABEL_CONTENT);
+
+		case Annot_descr_user:
+			uop = (UserObjectPtr)(vnp->data.ptrvalue);
+			if (uop == NULL) return 0;
+			label = (uop->_class);
+			if (label == NULL) {
+				oip = uop->type;
+				if (oip != NULL) {
+					label = oip->str;
+				}
+			}
+			break;
+
+		case Annot_descr_create_date:
+		case Annot_descr_update_date:
+			if (vnp->data.ptrvalue != NULL && DatePrint((DatePtr)(vnp->data.ptrvalue), tbuf))
+				label = tbuf;
+			break;
+
+		case Annot_descr_src:
+		case Annot_descr_align:
+		case Annot_descr_region:
+			label = "???";
+
+		default:
+			break;
+	}
+
+	return LabelCopy (buf, label, buflen);
+}
+
+static Int2 LIBCALLBACK AnnotDescLabelFunc ( Pointer data, CharPtr buffer, Int2 buflen, Boolean content)
+{
+	return AnnotDescLabel ((ValNodePtr)data, buffer, buflen, content);
+}
+
+NLM_EXTERN Int2 LIBCALL AnnotDescLabel (AnnotDescPtr anp, CharPtr buffer, Int2 buflen, Boolean content)
+{
+	CharPtr name;
+	static CharPtr descrs [25] = {
+		"AnnotDesc..",
+		"Name",
+		"Title",
+		"Comment",
+		"Pub",
+		"UserObj",
+		"CreateDate",
+		"UpdateDate",
+		"Src",
+		"Align",
+		"Region"
+		};
+	Int2 len, diff, rsult = 0;
+
+	if ((anp == NULL) || (buflen < 1))
+		return 0;
+
+	if (anp->choice <= 10)
+		name = descrs[anp->choice];
+	else
+		name = descrs[0];
+
+	len = buflen;
+	switch (content)
+	{
+		case OM_LABEL_BOTH:
+			diff = LabelCopyExtra(buffer, name, buflen, NULL, ": ");
+			buffer += diff;
+			buflen -= diff;
+		case OM_LABEL_CONTENT:
+		case OM_LABEL_SUMMARY:
+			diff = AnnotDescLabelContent(anp, buffer, buflen);
+			buflen -= diff;
+			return (len - buflen);
+		case OM_LABEL_TYPE:
+		default:
+			rsult = LabelCopy(buffer, name, buflen);
+	}
+	return rsult;
+}
+
+static Uint2 LIBCALLBACK AnnotDescSubTypeFunc (Pointer ptr)
+{
+	if (ptr == NULL)
+		return 0;
+	return (Uint2)((ValNodePtr)ptr)->choice;
+}
 
 /*****************************************************************************
 *
 *   SeqAsnLoad()
 *
 *****************************************************************************/
+
+static Boolean loaded = FALSE;
+
 NLM_EXTERN Boolean LIBCALL SeqAsnLoad (void)
 {
     if (loaded)
@@ -594,6 +737,10 @@ NLM_EXTERN Boolean LIBCALL SeqAsnLoad (void)
 	ObjMgrTypeLoad(OBJ_SEQDESC, "Seqdesc", seqdesctypename, "Sequence Descriptor",
 		SEQDESC, SeqDescNewFunc, SeqDescAsnReadFunc, SeqDescAsnWriteFunc,
 		SeqDescFreeFunc, SeqDescLabelFunc, SeqDescSubTypeFunc);
+
+	ObjMgrTypeLoad(OBJ_ANNOTDESC, "Annotdesc", annotdesctypename, "Annot Descriptor",
+		ANNOTDESC, AnnotDescNewFunc, AnnotDescAsnReadFunc, AnnotDescAsnWriteFunc,
+		AnnotDescFreeFunc, AnnotDescLabelFunc, AnnotDescSubTypeFunc);
 
     return TRUE;
 }
@@ -888,8 +1035,92 @@ ret:
     AsnUnlinkType(orig);       /* unlink local tree */
 	return bsp;
 erret:
+    aip->io_failure = TRUE;
     bsp = BioseqFree(bsp);
     goto ret;
+}
+
+/**********************************************************/
+Boolean LIBCALL SeqDataAsnWriteXML(ByteStorePtr bsp, Uint1 seqtype, AsnIoPtr aip, AsnTypePtr orig, Int4 seqlen)
+{
+    AsnTypePtr atp;
+    AsnTypePtr tmp;
+    DataVal    av;
+    Boolean    tofree;
+    Boolean    retval;
+    Uint1      newseqtype;
+
+    if((!loaded && !SeqAsnLoad()) || aip == NULL)
+        return(FALSE);
+
+    atp = AsnLinkType(orig, SEQ_DATA);  /* link local tree */
+    if(atp == NULL)
+        return(FALSE);
+
+    if(bsp == NULL)
+    {
+        AsnNullValueMsg(aip, atp);
+        AsnUnlinkType(orig);            /* unlink local tree */
+        return(FALSE);
+    }
+
+    tofree = FALSE;
+    if(aip->type & ASNIO_XML)
+    {
+        if(seqtype == Seq_code_ncbi2na || seqtype == Seq_code_ncbi4na ||
+           seqtype == Seq_code_ncbi8na || seqtype == Seq_code_ncbipna)
+            newseqtype = Seq_code_iupacna;
+        else if(seqtype == Seq_code_ncbi8aa || seqtype == Seq_code_ncbieaa ||
+                seqtype == Seq_code_ncbipaa || seqtype == Seq_code_ncbistdaa)
+            newseqtype = Seq_code_iupacaa;
+        else
+            newseqtype = seqtype;
+
+        if(newseqtype != seqtype)
+        {
+            bsp = BSConvertSeq(BSDup(bsp), newseqtype, seqtype, seqlen);
+            seqtype = newseqtype;
+            tofree = TRUE;
+        }
+    }
+
+    av.ptrvalue = bsp;
+    if(!AsnWriteChoice(aip, atp, (Int2) seqtype, &av))  /* CHOICE */
+    {
+        AsnUnlinkType(orig);            /* unlink local tree */
+        return(FALSE);
+    }
+
+    if(seqtype == Seq_code_iupacna)
+        tmp = SEQ_DATA_iupacna;
+    else if(seqtype == Seq_code_iupacaa)
+        tmp = SEQ_DATA_iupacaa;
+    else if(seqtype == Seq_code_ncbi2na)
+        tmp = SEQ_DATA_ncbi2na;
+    else if(seqtype == Seq_code_ncbi4na)
+        tmp = SEQ_DATA_ncbi4na;
+    else if(seqtype == Seq_code_ncbi8na)
+        tmp = SEQ_DATA_ncbi8na;
+    else if(seqtype == Seq_code_ncbipna)
+        tmp = SEQ_DATA_ncbipna;
+    else if(seqtype == Seq_code_ncbi8aa)
+        tmp = SEQ_DATA_ncbi8aa;
+    else if(seqtype == Seq_code_ncbieaa)
+        tmp = SEQ_DATA_ncbieaa;
+    else if(seqtype == Seq_code_ncbipaa)
+        tmp = SEQ_DATA_ncbipaa;
+    else if(seqtype == Seq_code_ncbistdaa)
+        tmp = SEQ_DATA_ncbistdaa;
+    else
+        tmp = NULL;
+
+    retval = AsnWrite(aip, tmp, &av);
+
+    AsnUnlinkType(orig);            /* unlink local tree */
+    if(tofree != FALSE)
+        BSFree(bsp);
+
+    return(retval);
 }
 
 /*****************************************************************************
@@ -902,7 +1133,7 @@ NLM_EXTERN Boolean LIBCALL BioseqInstAsnWrite (BioseqPtr bsp, AsnIoPtr aip, AsnT
 	DataVal av;
 	AsnTypePtr atp;
 	Boolean retval = FALSE;
-	Uint1 newcode;
+/*	Uint1 newcode;*/
 
 	if (! loaded)
 	{
@@ -947,18 +1178,23 @@ NLM_EXTERN Boolean LIBCALL BioseqInstAsnWrite (BioseqPtr bsp, AsnIoPtr aip, AsnT
     }
 
 	              /** for XML, make it text ****/
-    if (aip->type & ASNIO_XML)
+/*    if (aip->type & ASNIO_XML)
     {
 	if (ISA_aa(bsp->mol))
 		newcode = Seq_code_ncbieaa;
 	else
 		newcode = Seq_code_iupacna;
 	BioseqConvert(bsp, newcode);
-    }
+    }*/
 
     if (bsp->seq_data != NULL)
     {
-		if (! SeqDataAsnWrite(bsp->seq_data, bsp->seq_data_type, aip, SEQ_INST_seq_data))
+                if (aip->type & ASNIO_XML)
+		{
+			if (! SeqDataAsnWriteXML(bsp->seq_data, bsp->seq_data_type, aip, SEQ_INST_seq_data, bsp->length))
+				goto erret;
+		}
+		else if (! SeqDataAsnWrite(bsp->seq_data, bsp->seq_data_type, aip, SEQ_INST_seq_data))
 			goto erret;
     }
     if (bsp->seq_ext != NULL)
@@ -1667,6 +1903,7 @@ ret:
 	AsnUnlinkType(orig);       /* unlink local tree */
 	return first;
 erret:
+    aip->io_failure = TRUE;
     first = SeqDescrFree(first);
     goto ret;
 }
@@ -1852,6 +2089,7 @@ ret:
 	AsnUnlinkType(orig);       /* unlink local tree */
 	return anp;
 erret:
+    aip->io_failure = TRUE;
     anp = SeqDescFree(anp);
     goto ret;
 }
@@ -2980,6 +3218,7 @@ ret:
 	AsnUnlinkType(orig);       /* unlink local tree */
 	return sap;
 erret:
+    aip->io_failure = TRUE;
     sap = SeqAnnotFree(sap);
     goto ret;
 }
@@ -3021,7 +3260,7 @@ static Boolean SeqAnnotSetAsnWriteExtra (SeqAnnotPtr sap, AsnIoPtr aip, AsnTypeP
 {
 	AsnTypePtr atp;
 	SeqAnnotPtr oldsap = NULL, tsap = NULL;
-    Boolean retval = FALSE, had_sap = FALSE, had_extra = FALSE;
+    Boolean retval = FALSE, had_extra = FALSE;
 	AsnOptionPtr aopp;
 	ValNodePtr extras = NULL;
 	SeqAnnot sa;
@@ -3616,7 +3855,11 @@ NLM_EXTERN Boolean LIBCALL SeqLitAsnWrite (SeqLitPtr slp, AsnIoPtr aip, AsnTypeP
 
     if (slp->seq_data != NULL)
     {
-        if (! SeqDataAsnWrite(slp->seq_data, slp->seq_data_type, aip, SEQ_LITERAL_seq_data)) goto erret;
+        if (aip->type & ASNIO_XML)
+	{
+	        if (! SeqDataAsnWriteXML(slp->seq_data, slp->seq_data_type, aip, SEQ_LITERAL_seq_data, slp->length)) goto erret;
+	}
+        else if (! SeqDataAsnWrite(slp->seq_data, slp->seq_data_type, aip, SEQ_LITERAL_seq_data)) goto erret;
     }
 
     if (! AsnCloseStruct(aip, atp, (Pointer)slp)) goto erret;
@@ -4549,7 +4792,7 @@ NLM_EXTERN AnnotDescPtr LIBCALL AnnotDescAsnRead (AsnIoPtr aip, AsnTypePtr orig)
         func = (AsnReadFunc) SeqLocAsnRead;
     }
 
-    anp = ValNodeNew(NULL);
+    anp = AnnotDescrNew(NULL);
     if (anp == NULL) goto erret;
     anp->choice = choice;
     if (func != NULL)

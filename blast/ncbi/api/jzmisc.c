@@ -159,12 +159,11 @@ NLM_EXTERN Boolean check_syn(ValNodePtr syn, CharPtr symbol)
 
 
 
-#define NUM_ORDER 16
 NLM_EXTERN SeqIdPtr find_sip(SeqIdPtr sip)
 {
-  Uint1  order [NUM_ORDER];
+  Uint1  order [NUM_SEQID];
 
-  SeqIdBestRank (order, NUM_ORDER);
+  SeqIdBestRank (order, NUM_SEQID);
   order [SEQID_LOCAL] = 2;
   order [SEQID_GENBANK] = 5;
   order [SEQID_EMBL] = 5;
@@ -173,6 +172,10 @@ NLM_EXTERN SeqIdPtr find_sip(SeqIdPtr sip)
   order [SEQID_DDBJ] = 5;
   order [SEQID_PRF] = 5;
   order [SEQID_PDB] = 5;
+  order [SEQID_TPG] = 5;
+  order [SEQID_TPE] = 5;
+  order [SEQID_TPD] = 5;
+  order [SEQID_GPIPE] = 9;
   order [SEQID_PATENT] = 10;
   order [SEQID_OTHER] = 1;
   order [SEQID_GENERAL] = 10;
@@ -180,7 +183,7 @@ NLM_EXTERN SeqIdPtr find_sip(SeqIdPtr sip)
   order [SEQID_GIBBMT] = 15;
   order [SEQID_GIIM] = 20;
   order [SEQID_GI] = 20;
-  return SeqIdSelect (sip, order, NUM_ORDER);
+  return SeqIdSelect (sip, order, NUM_SEQID);
 }
 
 NLM_EXTERN Boolean  get_seq_name(SeqIdPtr hsip, CharPtr name, CharPtr acc, CharPtr dbase, Boolean check_chain)

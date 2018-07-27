@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   4/20/99
 *
-* $Revision: 6.254 $
+* $Revision: 6.326 $
 *
 * File Description: 
 *
@@ -44,7 +44,6 @@
 
 #include <subutil.h>
 #include <explore.h>
-#include <blast.h>
 #include <alignmgr.h>
 #include <urkptpf.h>
 #include <entrez.h>
@@ -52,13 +51,13 @@
 #include <urlquery.h>
 #include <vecscnapi.h>
 #include <qblastapi.h>
-#include <dotseq.h>
 #include <edutil.h>
 #include <actutils.h>
 #include <findrepl.h>
 #include <rpsutil.h>
-#include <spidey.h>
 #include "sequin.h"
+#include <seqpanel.h>
+#include <assert.h>
 
 /*-------------------*/
 /* Defined Constants */
@@ -72,6 +71,28 @@
 #define CONVERTPUBS_NOT_SET 0
 #define CONVERTPUBS_YES     1
 #define CONVERTPUBS_NO      2
+
+/* constants for update sequence */
+#define UPDATE_CHOICE_NOT_SET        0
+#define UPDATE_SEQUENCE_ONLY         1
+#define UPDATE_FEATURES_ONLY         2
+#define UPDATE_SEQUENCE_AND_FEATURES 3
+
+#define UPDATE_REPLACE               1
+#define UPDATE_EXTEND5               2
+#define UPDATE_EXTEND3               3
+#define UPDATE_PATCH                 4
+
+enum update_dup_feat_type
+{
+  UPDATE_FEAT_DUP_NOT_SET = 0,
+  UPDATE_FEAT_DUP_USE_NEW,
+  UPDATE_FEAT_DUP_USE_OLD,
+  UPDATE_FEAT_DUP_USE_BOTH,
+  UPDATE_FEAT_DUP_MERGE,
+  UPDATE_FEAT_DUP_REPLACE
+};
+
 
 /*-----------------*/
 /* Data Structures */
@@ -107,6 +128,7 @@ typedef struct upsdata {
   Int4                new5;
   Int4                newa;
   BioseqPtr           newbsp;
+  ButtoN              replace_all;
   GrouP               nobm;
   Int4                old3;
   Int4                old5;
@@ -133,6 +155,7 @@ typedef struct upsdata {
   ButtoN              update_proteins;
   Boolean             suppress_continue_msg;
   Boolean             suppress_instant_refresh;
+  ButtoN              update_quality_scores_btn;
   FILE                *log_fp;
   Char                log_path [PATH_MAX];
   Boolean             data_in_log;
@@ -144,15 +167,31 @@ typedef struct upsdata {
   Boolean             extend_proteins5;
   Boolean             extend_proteins3;
   Boolean             correct_cds_genes;
-  Boolean             use_new_blast;
   ValNodePtr          transl_except_list;
+  Int2                rmcval;      /* This is the choice selected from the
+                                    * rmc radio button group.
+                                    * We store it so that we can use it in
+                                    * Accept All.
+                                    */
+  
+  SeqEntryPtr         seqsubsep;   /* when we are updating from a Sequin record
+                                    * that contains a set, store the set here.
+                                    */
+  Int4                seqsubpos;   /* when we are updating from a Sequin record
+                                    * that contains a set, store the number of
+                                    * Bioseqs already processed here.
+                                    */
+                                    
+  Int2                no_aln_choice; /* what to do when updating a set and no
+                                      * alignment is found.
+                                      */
+                                      
 } UpsData, PNTR UpsDataPtr;
 
 /*---------------------*/
 /* Function prototypes */
 /*---------------------*/
 
-static void DoAcceptRMCSet (UpsDataPtr udp);
 static Int2 UpdateNextBioseqInFastaSet (UpsDataPtr udp);
 static void FreeUdpFields (UpsDataPtr udp);
 static void TruncateCDS (SeqFeatPtr sfp, Uint1 frame, BioseqPtr pbsp);
@@ -2571,6 +2610,276 @@ static Int4 MapBioseqToBioseqSpecial(SeqAlignPtr sap, Int4 begin, Int4 fin, Int4
       return 0;
 }
 
+static void ListPhrapGraphsCallback (SeqGraphPtr sgp, Pointer userdata)
+{
+  ValNodePtr PNTR vnpp;
+  
+  if (sgp == NULL || userdata == NULL) return;
+  if (StringICmp (sgp->title, "Phrap Quality") == 0)
+  {
+    vnpp = (ValNodePtr PNTR) userdata;
+    ValNodeAddPointer (vnpp, 0, sgp);
+  }
+}
+
+/* THOUGHTS:
+ * Can we/must we update quality scores before/after the old Bioseq has been replaced?
+ * If we replace quality scores after the bioseq has been replaced, the oldbsp->length
+ * is the length of the buffer we need to hold the quality scores,
+ * otherwise use the newbsp->length.
+ * Useful functions:
+  aln_len = AlnMgr2GetAlnLength(salp, FALSE);
+
+NLM_EXTERN Int4 AlnMgr2GetNumAlnBlocks(SeqAlignPtr sap)
+NLM_EXTERN Boolean AlnMgr2GetNthBlockRange(SeqAlignPtr sap, Int4 n, Int4Ptr start, Int4Ptr stop)
+  
+  
+ * Assumptions: data replacement has already taken place, oldbsp is in row 1 of salp,
+ *              newbsp is in row 2 of salp.
+ 
+ */
+static Boolean 
+ReplaceQualityScores
+(BioseqPtr   oldbsp,
+ BioseqPtr   newbsp,
+ SeqAlignPtr salp,
+ FILE        *log_fp,
+ BoolPtr     data_in_log)
+{
+  ValNodePtr    oldhead = NULL, newhead = NULL, vnp;
+  BytePtr       new_store = NULL;  
+  Int4          cur_pos;
+  SeqGraphPtr   sgp, sgp_list = NULL, last_sgp = NULL;
+  ByteStorePtr  bs;
+  Int4          len;
+  Int4          graph_left, i, graph_len;
+  SeqIntPtr     sintp;
+  SeqAnnotPtr   sap, last_sap;
+  Int2          min, max;
+  Char          acc_str [256];
+  
+  if (oldbsp == NULL || newbsp == NULL || salp == NULL
+      || !ISA_na (oldbsp->mol) || !ISA_na (newbsp->mol) || oldbsp->length >= MAXALLOC)
+  {
+    return FALSE;
+  }
+  
+  VisitGraphsOnBsp (oldbsp, &oldhead, ListPhrapGraphsCallback);
+  VisitGraphsOnBsp (newbsp, &newhead, ListPhrapGraphsCallback);
+  
+  /* prepare buffer to hold scores from both */
+  len = oldbsp->length;
+  new_store = MemNew (sizeof (Byte) * (len + 2));
+  if (new_store == NULL) 
+  {
+    oldhead = ValNodeFreeData (oldhead);
+    newhead = ValNodeFreeData (newhead);
+    return FALSE;
+  }
+  /* init byte store */
+  for (cur_pos = 0; cur_pos < len; cur_pos ++)
+  {
+    new_store [cur_pos] = 255;
+  }
+
+  /* copy in old scores */
+  for (vnp = oldhead; vnp != NULL; vnp = vnp->next) 
+  {
+    sgp = vnp->data.ptrvalue;
+    if (sgp != NULL)
+    {
+      sgp->idx.deleteme = TRUE;
+    }
+  }
+
+  if (oldhead != NULL && newhead == NULL && log_fp != NULL && data_in_log != NULL)
+  {
+    SeqIdWrite (newbsp->id, acc_str, PRINTID_REPORT, sizeof (acc_str));
+    fprintf (log_fp, "Quality scores cleared for %s\n", acc_str);
+    *data_in_log = TRUE;
+  }
+  oldhead = ValNodeFree (oldhead);
+  
+  /* now copy in new scores */
+  for (vnp = newhead; vnp != NULL; vnp = vnp->next) {
+    sgp = vnp->data.ptrvalue;
+    bs = (ByteStorePtr) sgp->values;
+    BSSeek (bs, 0, SEEK_SET);
+    cur_pos = GetOffsetInBioseq (sgp->loc, newbsp, SEQLOC_LEFT_END);
+    for (i = 0; i < sgp->numval && cur_pos < len; i++, cur_pos++)
+    {
+      new_store [cur_pos] = (Byte) BSGetByte (bs);        
+    }
+  }
+  
+  newhead = ValNodeFree (newhead);
+
+  /* Now we have a Byte array that contains the quality scores.
+   * Time to create graphs from the Byte array.
+   */
+  i = 0;
+  graph_left = -1;
+  while (i < len)
+  {
+    if (new_store [i] == (Byte)-1)
+    {
+      if (graph_left > -1)
+      {
+        /* add new SeqGraph to list */
+        graph_len = i - graph_left;
+        bs = BSNew (1000);
+        if (bs != NULL)
+        {
+          BSSeek (bs, 0, SEEK_SET);
+          BSWrite (bs, new_store + graph_left, graph_len);
+          sgp = SeqGraphNew ();
+          sgp->numval = BSLen (bs);
+          BSPutByte (bs, EOF);
+          sgp->title = StringSave ("Phrap Quality");
+          if (len != sgp->numval) {
+            sgp->flags [0] = 1;
+            sgp->compr = (len) / sgp->numval;
+          } else {
+            sgp->flags [0] = 0;
+            sgp->compr = 1;
+          }
+          sgp->flags [1] = 0;
+          sgp->flags [2] = 3;
+          sgp->axis.intvalue = 0;
+          sgp->min.intvalue = min;
+          sgp->max.intvalue = max;
+          sgp->a = 1.0;
+          sgp->b = 0;
+          sgp->values = (Pointer) bs;
+
+          sintp = SeqIntNew ();
+          sintp->from = 0;
+          sintp->to = len - 1;
+          sintp->id = SeqIdDup (oldbsp->id);
+          ValNodeAddPointer (&(sgp->loc), SEQLOC_INT, (Pointer) sintp);
+          if (last_sgp == NULL)
+          {
+            sgp_list = sgp;
+          }
+          else
+          {
+            last_sgp->next = sgp;
+          }
+          last_sgp = sgp;
+        }
+        graph_left = -1;
+      }
+    }
+    else
+    {
+      if (graph_left == -1)
+      {
+        graph_left = i;
+        min = new_store [i];
+        max = min;
+      }
+      else
+      {
+        min = MIN (min, new_store[i]);
+        max = MAX (max, new_store[i]);
+      }
+    }
+    i++;
+  }
+  if (graph_left > -1)
+  {
+    /* add new SeqGraph to list */
+    graph_len = i - graph_left;
+    bs = BSNew (1000);
+    if (bs != NULL)
+    {
+      BSSeek (bs, 0, SEEK_SET);
+      BSWrite (bs, new_store + graph_left, graph_len);
+      sgp = SeqGraphNew ();
+      sgp->numval = BSLen (bs);
+      BSPutByte (bs, EOF);
+      sgp->title = StringSave ("Phrap Quality");
+      if (len != sgp->numval) {
+        sgp->flags [0] = 1;
+        sgp->compr = (len) / sgp->numval;
+      } else {
+        sgp->flags [0] = 0;
+        sgp->compr = 1;
+      }
+      sgp->flags [1] = 0;
+      sgp->flags [2] = 3;
+      sgp->axis.intvalue = 0;
+      sgp->min.intvalue = min;
+      sgp->max.intvalue = max;
+      sgp->a = 1.0;
+      sgp->b = 0;
+      sgp->values = (Pointer) bs;
+
+      sintp = SeqIntNew ();
+      sintp->from = 0;
+      sintp->to = len - 1;
+      sintp->id = SeqIdDup (oldbsp->id);
+      ValNodeAddPointer (&(sgp->loc), SEQLOC_INT, (Pointer) sintp);
+      if (last_sgp == NULL)
+      {
+        sgp_list = sgp;
+      }
+      else
+      {
+        last_sgp->next = sgp;
+      }
+      last_sgp = sgp;
+    }
+  }
+  
+  if (sgp_list != NULL)
+  {
+    /* now add in new phrap annotations */
+    last_sap = NULL;
+    last_sgp = NULL;
+    for (sap = oldbsp->annot; sap != NULL && sap->type !=3; sap = sap->next) 
+    {
+      last_sap = sap;
+    }
+    
+    if (sap == NULL)
+    {
+      sap = SeqAnnotNew ();
+      sap->type = 3;
+      sap->data = sgp_list;
+      if (last_sap == NULL)
+      {
+        oldbsp->annot = sap;
+      }
+      else
+      {
+        last_sap->next = sap;
+      }
+    }
+    else
+    {
+      for (sgp = (SeqGraphPtr) sap->data; sgp != NULL; sgp = sgp->next) 
+      {
+        last_sgp = sgp;  
+      }
+      if (last_sgp == NULL)
+      {
+        sap->data = sgp_list;
+      }
+      else
+      {
+        last_sgp->next = sgp_list;
+      }
+    }
+    
+  }
+
+  /* now remove old phrap annotations */
+  DeleteMarkedObjects (0, OBJ_BIOSEQ, (Pointer) oldbsp);
+  return TRUE;
+}
+
+
 static Boolean AdjustAlignment (
   UpsDataPtr udp,
   Int2 choice
@@ -2682,7 +2991,7 @@ static void OffsetLoc (SeqLocPtr slp, Int4 offset, SeqIdPtr sip)
   }
 }
 
-static void OffsetLocation (SeqLocPtr loc, Int4 offset, SeqIdPtr sip)
+extern void OffsetLocation (SeqLocPtr loc, Int4 offset, SeqIdPtr sip)
 
 {
   SeqLocPtr  slp;
@@ -2951,6 +3260,7 @@ static Boolean DoFeaturePropThruAlign (
   SeqIdPtr           sip;
   Boolean            split;
   tRNAPtr            trp;
+  Boolean            partial5, partial3;
 
   if (udp == NULL) return FALSE;
 
@@ -2979,6 +3289,8 @@ static Boolean DoFeaturePropThruAlign (
       split = FALSE;
       newloc = SeqLocCopyRegion (oldbsp->id, sfp->location, udp->newbsp, from, to, Seq_strand_plus, &split);
       if (newloc != NULL) {
+        CheckSeqLocForPartial (sfp->location, &partial5, &partial3);
+        SetSeqLocPartial (newloc, partial5, partial3);
         OffsetLocation (newloc, from, NULL);
         dup = AsnIoMemCopy ((Pointer) sfp,
                             (AsnReadFunc) SeqFeatAsnRead,
@@ -2988,6 +3300,8 @@ static Boolean DoFeaturePropThruAlign (
         if (split) {
           dup->partial = TRUE;
         }
+        dup->partial |= partial5;
+        dup->partial |= partial3;
 
         if (last == NULL) {
           sap = SeqAnnotNew ();
@@ -3110,71 +3424,73 @@ static Boolean DoFeaturePropThruAlign (
   return TRUE;
 }
 
-static Boolean ReplaceSequence (UpsDataPtr udp)
-
+static void 
+ReplaceOneSequence 
+(SeqAlignPtr salp,
+ BioseqPtr oldbsp,
+ BioseqPtr newbsp)
 {
-  MsgAnswer          ans;
-  ByteStorePtr       bs;
-  CodeBreakPtr       cbp;
   SeqMgrFeatContext  context;
-  CdRegionPtr        crp;
-  Int4               len;
-  BioseqPtr          newbsp;
-  BioseqPtr          oldbsp;
-  RnaRefPtr          rrp;
-  Uint1              seq_data_type;
   SeqFeatPtr         sfp;
   SeqLocPtr          slp;
+  ByteStorePtr       bs;
+  CodeBreakPtr       cbp;
+  CdRegionPtr        crp;
+  Int4               len;
+  RnaRefPtr          rrp;
+  Uint1              seq_data_type, seq_ext_type;
+  Pointer            seq_ext;
   tRNAPtr            trp;
+  Uint1              repr;
+  
+  if (oldbsp == NULL || newbsp == NULL)
+  {
+    return;
+  }
 
-  if (udp->salp != NULL)
-    if (FALSE == udp->isSet)
-      if (StringICmp (udp->seq1, udp->seq2) == 0) {
-	ans = Message (MSG_OKC, "Replacement sequence is identical to"
-		       " original - possible error");
-	if (ans == ANS_CANCEL) return FALSE;
+  if (salp != NULL)
+  {
+    sfp = SeqMgrGetNextFeature (oldbsp, NULL, 0, 0, &context);
+    while (sfp != NULL) {
+      slp = SeqLocFindNext (sfp->location, NULL);
+      while (slp != NULL) {
+        ReplaceLocation (salp, slp, newbsp->length, 1, 2);
+        slp = SeqLocFindNext (sfp->location, slp);
       }
-
-  oldbsp = udp->oldbsp;
-  newbsp = udp->newbsp;
-
-  sfp = SeqMgrGetNextFeature (oldbsp, NULL, 0, 0, &context);
-  while (sfp != NULL) {
-    slp = SeqLocFindNext (sfp->location, NULL);
-    while (slp != NULL) {
-      ReplaceLocation (udp->salp, slp, newbsp->length, 1, 2);
-      slp = SeqLocFindNext (sfp->location, slp);
-    }
-    switch (sfp->data.choice) {
-      case SEQFEAT_CDREGION :
-        crp = (CdRegionPtr) sfp->data.value.ptrvalue;
-        if (crp != NULL) {
-          for (cbp = crp->code_break; cbp != NULL; cbp = cbp->next) {
-            slp = SeqLocFindNext (cbp->loc, NULL);
-            while (slp != NULL) {
-              ReplaceLocation (udp->salp, slp, newbsp->length, 1, 2);
-              slp = SeqLocFindNext (cbp->loc, slp);
+      switch (sfp->data.choice) {
+        case SEQFEAT_CDREGION :
+          crp = (CdRegionPtr) sfp->data.value.ptrvalue;
+          if (crp != NULL) 
+          {
+            for (cbp = crp->code_break; cbp != NULL; cbp = cbp->next) 
+            {
+              slp = SeqLocFindNext (cbp->loc, NULL);
+              while (slp != NULL) 
+              {
+                ReplaceLocation (salp, slp, newbsp->length, 1, 2);
+                slp = SeqLocFindNext (cbp->loc, slp);
+              }
             }
           }
-        }
-        break;
-      case SEQFEAT_RNA :
-        rrp = (RnaRefPtr) sfp->data.value.ptrvalue;
-        if (rrp != NULL && rrp->ext.choice == 2) {
-          trp = (tRNAPtr) rrp->ext.value.ptrvalue;
-          if (trp != NULL && trp->anticodon != NULL) {
-            slp = SeqLocFindNext (trp->anticodon, NULL);
-            while (slp != NULL) {
-              ReplaceLocation (udp->salp, slp, newbsp->length, 1, 2);
-              slp = SeqLocFindNext (trp->anticodon, slp);
+          break;
+        case SEQFEAT_RNA :
+          rrp = (RnaRefPtr) sfp->data.value.ptrvalue;
+          if (rrp != NULL && rrp->ext.choice == 2) {
+            trp = (tRNAPtr) rrp->ext.value.ptrvalue;
+            if (trp != NULL && trp->anticodon != NULL) {
+              slp = SeqLocFindNext (trp->anticodon, NULL);
+              while (slp != NULL) {
+                ReplaceLocation (salp, slp, newbsp->length, 1, 2);
+                slp = SeqLocFindNext (trp->anticodon, slp);
+              }
             }
           }
-        }
-        break;
-      default :
-        break;
+          break;
+        default :
+          break;
+      }
+      sfp = SeqMgrGetNextFeature (oldbsp, sfp, 0, 0, &context);
     }
-    sfp = SeqMgrGetNextFeature (oldbsp, sfp, 0, 0, &context);
   }
 
   /* switch bioseqs to finish update */
@@ -3187,8 +3503,45 @@ static Boolean ReplaceSequence (UpsDataPtr udp)
   newbsp->length = len;
   seq_data_type = oldbsp->seq_data_type;
   oldbsp->seq_data_type = newbsp->seq_data_type;
-  newbsp->seq_data_type = seq_data_type;
+  newbsp->seq_data_type = seq_data_type;  
+  /* also move seq_ext, for delta sequences */
+  seq_ext_type = oldbsp->seq_ext_type;
+  seq_ext = oldbsp->seq_ext;
+  oldbsp->seq_ext_type = newbsp->seq_ext_type;
+  oldbsp->seq_ext = newbsp->seq_ext;
+  newbsp->seq_ext_type = seq_ext_type;
+  newbsp->seq_ext = seq_ext;
+  
+  /* swap repr */
+  repr = oldbsp->repr;
+  oldbsp->repr = newbsp->repr;
+  newbsp->repr = repr;
+    
+}
 
+static Boolean ReplaceSequence (UpsDataPtr udp)
+
+{
+  MsgAnswer          ans;
+
+  if (udp == NULL)
+  {
+    return TRUE;
+  }
+  
+  if (FALSE == udp->isSet)
+  {
+    if ((udp->seq1 != NULL || udp->seq2 != NULL)
+        && StringICmp (udp->seq1, udp->seq2) == 0
+        && ! udp->revcomp) 
+    {
+	    ans = Message (MSG_OKC, "Replacement sequence is identical to"
+	                           " original - possible error");
+	    if (ans == ANS_CANCEL) return FALSE;
+    }    
+  }
+
+  ReplaceOneSequence (udp->salp, udp->oldbsp, udp->newbsp);
   return TRUE;
 }
 
@@ -3421,7 +3774,257 @@ static Boolean Merge3PrimeNoOverlap (UpsDataPtr udp)
   return ExtendFeatures (udp, 0);
 }
 
-static Boolean PatchSequence (UpsDataPtr udp)
+static Boolean OkToPatchDelta (UpsDataPtr udp)
+{
+  Boolean rval = TRUE;
+  
+  if (udp == NULL || udp->oldbsp == NULL || udp->newbsp == NULL
+      || udp->oldbsp->repr != Seq_repr_delta || udp->newbsp->repr != Seq_repr_delta
+      || udp->oldbsp->seq_ext_type != 4 || udp->newbsp->seq_ext_type != 4)
+  {
+    rval = FALSE;
+  }
+
+  return rval;
+}
+
+static void SplitDeltaSeq (DeltaSeqPtr dsp, Int4 offset)
+{
+  SeqLocPtr   slp1, slp2;
+  SeqLitPtr   slip1, slip2;
+  Int4        len;
+  Boolean     changed;
+  DeltaSeqPtr dsp_new;
+  ByteStorePtr bs_1, bs_2;
+  Int2         residue;
+  Int4         pos;
+  
+  if (dsp == NULL || dsp->data.ptrvalue == NULL || offset == 0)
+  {
+    return;
+  }
+  
+  if (dsp->choice == 1)
+  {
+    slp1 = (SeqLocPtr)(dsp->data.ptrvalue);
+    len = SeqLocLen (slp1);
+    if (offset > len)
+    {
+      return;
+    }
+    slp2 = (SeqLocPtr) AsnIoMemCopy (slp1, (AsnReadFunc) SeqLocAsnRead,
+                                     (AsnWriteFunc) SeqLocAsnWrite);
+    slp1 = SeqLocDelete (slp1, SeqLocId (slp1), 
+                          offset, len - 1, FALSE, &changed);
+    slp2 = SeqLocDelete (slp2, SeqLocId (slp2),
+                         0, offset, FALSE, &changed);
+    dsp_new = ValNodeNew (NULL);
+    dsp_new->choice = 1;
+    dsp_new->data.ptrvalue = slp2;
+    dsp_new->next = dsp->next;
+    dsp->next = dsp_new;
+  }
+  else if (dsp->choice == 2)
+  {
+    slip1 = (SeqLitPtr) dsp->data.ptrvalue;
+    if (offset > slip1->length)
+    {
+      return;
+    }
+    slip2 = SeqLitNew ();
+    if (slip1->seq_data == NULL)
+    {
+      slip2->length = slip1->length - offset;
+      slip1->length = offset;
+    }
+    else
+    {
+      if (slip1->seq_data_type == Seq_code_iupacna)
+      {
+        bs_1 = slip1->seq_data;
+      }
+      else
+      {
+        bs_1 = BSConvertSeq(slip1->seq_data, Seq_code_iupacna, 
+                              slip1->seq_data_type, 
+                              slip1->length);
+        slip1->seq_data_type = Seq_code_iupacna;
+        slip1->seq_data = bs_1;
+      }
+      bs_2 = BSNew (slip1->length - offset);
+      pos = offset;
+      BSSeek(bs_1, pos, SEEK_SET);
+      BSSeek (bs_2, 0L, SEEK_SET);
+      while (pos < slip1->length)
+      {
+        residue = BSGetByte (bs_1);
+        BSPutByte (bs_2, residue);
+        pos++;
+      }
+      BSSeek(bs_1, offset, SEEK_SET);
+      BSDelete(bs_1, slip1->length - offset);
+      
+      slip2->seq_data = bs_2;
+      slip2->seq_data_type = slip1->seq_data_type;
+      slip2->length = slip1->length - offset;
+      slip1->length = offset;
+    }
+    dsp_new = ValNodeNew (NULL);
+    dsp_new->choice = 2;
+    dsp_new->data.ptrvalue = slip2;
+    dsp_new->next = dsp->next;
+    dsp->next = dsp_new;
+  }
+}
+
+/* This function will patch a delta sequence with another delta sequence.
+ * The pieces in the overlap from the old sequence will be replaced by pieces
+ * in the overlap from the new sequence.
+ */
+static Boolean PatchDeltaSequence (UpsDataPtr udp)
+
+{
+  Int4        currnew_pos = 0, currold_pos;
+  SeqLitPtr   slip, slip_new;
+  DeltaSeqPtr dspold, dspnew;
+  Int4        seqstart;
+  DeltaSeqPtr new_list = NULL;
+  
+  if (! OkToPatchDelta (udp))
+  {
+    return FALSE;
+  }
+
+  /* keep old 5' end intact */
+  currold_pos = 0;
+  seqstart = 0;
+  dspold = (DeltaSeqPtr) udp->oldbsp->seq_ext;
+  while (dspold != NULL && currold_pos < udp->old5)
+  {
+    seqstart = currold_pos;
+    if (dspold->data.ptrvalue == NULL || dspold->choice != 2)
+    {
+      return FALSE;
+    }
+    slip = (SeqLitPtr) (dspold->data.ptrvalue);
+	  currold_pos += slip->length;
+		if (currold_pos > udp->old5)
+		{
+      SplitDeltaSeq (dspold, udp->old5 - seqstart);
+      slip = (SeqLitPtr) (dspold->data.ptrvalue);
+      currold_pos = udp->old5;		  
+		}
+		slip_new = (SeqLitPtr) AsnIoMemCopy (slip, (AsnReadFunc) SeqLitAsnRead,
+		                                     (AsnWriteFunc) SeqLitAsnWrite);
+		ValNodeAddPointer (&new_list, 2, slip_new);
+	  dspold = dspold->next;
+  }
+  
+  /* skip over new 5' end */
+  currnew_pos = 0;
+  seqstart = 0;
+  dspnew = (DeltaSeqPtr) udp->newbsp->seq_ext;
+  while (dspnew != NULL && currnew_pos < udp->new5)
+  {
+    seqstart = currold_pos;
+    if (dspnew->data.ptrvalue == NULL || dspnew->choice != 2)
+    {
+      return FALSE;
+    }
+	  slip = (SeqLitPtr) (dspnew->data.ptrvalue);
+	  currnew_pos += slip->length;
+	  if (currnew_pos > udp->new5)
+	  {
+      SplitDeltaSeq (dspnew, udp->new5 - seqstart);
+      currnew_pos = udp->new5;
+	  }
+	  dspnew = dspnew->next;
+  }
+  
+  /* copy in new overlap */
+  while (dspnew != NULL && currnew_pos < udp->new5 + udp->newa)
+  {
+    seqstart = currold_pos;
+    if (dspnew->data.ptrvalue == NULL || dspnew->choice != 2)
+    {
+      return FALSE;
+    }
+	  slip = (SeqLitPtr) (dspnew->data.ptrvalue);
+	  currnew_pos += slip->length;
+		if (currnew_pos > udp->new5 + udp->newa)
+		{
+      SplitDeltaSeq (dspnew, udp->new5 + udp->newa - seqstart);
+      slip = (SeqLitPtr) (dspnew->data.ptrvalue);
+      currnew_pos = udp->new5 + udp->newa;		  
+		}
+		slip_new = (SeqLitPtr) AsnIoMemCopy (slip, (AsnReadFunc) SeqLitAsnRead,
+		                                     (AsnWriteFunc) SeqLitAsnWrite);
+		ValNodeAddPointer (&new_list, 2, slip_new);
+		dspnew = dspnew->next;
+  }
+  
+  /* skip over old overlap */
+  
+  while (dspold != NULL && currold_pos < udp->old5 + udp->olda)
+  {
+    seqstart = currold_pos;
+    if (dspold->data.ptrvalue == NULL || dspold->choice != 2)
+    {
+      return FALSE;
+    }
+    slip = (SeqLitPtr) (dspold->data.ptrvalue);
+    currold_pos += slip->length;
+    if (currold_pos > udp->old5 + udp->olda)
+    {
+      SplitDeltaSeq (dspold, udp->new5 + udp->newa - seqstart);
+      currold_pos = udp->old5 + udp->olda;		        
+    }
+    dspold = dspold->next;
+  }
+  
+  /* copy in old 3' */
+  
+  while (dspold != NULL)
+  {
+    if (dspold->data.ptrvalue == NULL || dspold->choice != 2)
+    {
+      return FALSE;
+    }
+    slip = (SeqLitPtr) (dspold->data.ptrvalue);
+		slip_new = (SeqLitPtr) AsnIoMemCopy (slip, (AsnReadFunc) SeqLitAsnRead,
+		                                     (AsnWriteFunc) SeqLitAsnWrite);
+		ValNodeAddPointer (&new_list, 2, slip_new);
+		dspold = dspold->next;
+  }
+  
+  /* free newbsp's old SeqLit List */
+  for (dspnew = (DeltaSeqPtr) udp->newbsp->seq_ext;
+       dspnew != NULL; 
+       dspnew = dspnew->next)
+  {
+    slip = (SeqLitPtr) (dspnew->data.ptrvalue);
+    SeqLitFree (slip);
+  }
+  udp->newbsp->seq_ext = ValNodeFree (udp->newbsp->seq_ext);
+  udp->newbsp->seq_ext = new_list;
+  udp->newbsp->length = udp->old5 + udp->newa + udp->old3;
+  return TRUE;  
+}
+
+static Boolean OkToPatchRaw (UpsDataPtr udp)
+{
+  Boolean rval = TRUE;
+  
+  if (udp == NULL || udp->oldbsp == NULL || udp->newbsp == NULL
+      || udp->oldbsp->repr != Seq_repr_raw || udp->newbsp->repr != Seq_repr_raw)
+  {
+    rval = FALSE;
+  }
+
+  return rval;
+}
+
+static Boolean PatchRawSequence (UpsDataPtr udp)
 
 {
   ByteStorePtr  bs;
@@ -3480,6 +4083,27 @@ static Boolean PatchSequence (UpsDataPtr udp)
   newbsp->seq_data = bs;
   newbsp->seq_data_type = Seq_code_iupacna;
   newbsp->length = newlen;
+  return TRUE;  
+}
+
+static Boolean PatchSequence (UpsDataPtr udp)
+
+{
+  Boolean rval = FALSE;
+
+  if (OkToPatchRaw (udp))
+  {
+    rval = PatchRawSequence (udp);
+  }
+  else if (OkToPatchDelta (udp))
+  {
+    rval = PatchDeltaSequence (udp);
+  }
+  
+  if (!rval)
+  {
+    return rval;
+  }
 
   /* adjust alignment and reindex */
 
@@ -3691,16 +4315,33 @@ static void RemoveOldFeatsInRegion (
 
   while (sfp != NULL) {
 
-    if (context.sap != sap && context.left) {
-      if (context.right > left && context.left < right) {
-        sfp->idx.deleteme = TRUE;
-        MarkProductForDeletion (sfp->product);
-      }
+    if (context.sap != sap && context.right >= left && context.left <= right) {
+      sfp->idx.deleteme = TRUE;
+      MarkProductForDeletion (sfp->product);
     }
 
     sfp = SeqMgrGetNextFeature (bsp, sfp, 0, 0, &context);
   }
 }
+
+static void RemoveOldFeats (BioseqPtr bsp)
+
+{
+  SeqMgrFeatContext  context;
+  SeqFeatPtr         sfp;
+
+  if (bsp == NULL) return;
+
+  sfp = SeqMgrGetNextFeature (bsp, NULL, 0, 0, &context);
+
+  while (sfp != NULL) 
+  {
+    sfp->idx.deleteme = TRUE;
+    MarkProductForDeletion (sfp->product);
+    sfp = SeqMgrGetNextFeature (bsp, sfp, 0, 0, &context);
+  }
+}
+
 
 static void ResolveDuplicateFeats (
   UpsDataPtr udp,
@@ -3718,11 +4359,11 @@ static void ResolveDuplicateFeats (
   if (udp == NULL || bsp == NULL || sap == NULL) return;
 
   nobmval = GetValue (udp->nobm);
-  if (nobmval == 3) return; /* keep both */
+  if (nobmval == UPDATE_FEAT_DUP_USE_BOTH) return; /* keep both */
 
   SeqMgrIndexFeatures (0, (Pointer) bsp);
 
-  if (nobmval == 5) {
+  if (nobmval == UPDATE_FEAT_DUP_REPLACE) {
     RemoveOldFeatsInRegion (udp, bsp, sap);
     return;
   }
@@ -3768,7 +4409,7 @@ static void ResolveDuplicateFeats (
             context.sap != lastcontext.sap &&
             (context.sap == sap || lastcontext.sap == sap)) {
 
-          if (nobmval == 1) { /* keep new */
+          if (nobmval == UPDATE_FEAT_DUP_USE_NEW) { /* keep new */
             if (context.sap == sap) {
               lastsfp->idx.deleteme = TRUE;
               MarkProductForDeletion (lastsfp->product);
@@ -3777,7 +4418,7 @@ static void ResolveDuplicateFeats (
               MarkProductForDeletion (sfp->product);
             }
 
-          } else if (nobmval == 2) { /* keep old */
+          } else if (nobmval == UPDATE_FEAT_DUP_USE_OLD) { /* keep old */
             if (context.sap == sap) {
               sfp->idx.deleteme = TRUE;
               MarkProductForDeletion (sfp->product);
@@ -3786,7 +4427,7 @@ static void ResolveDuplicateFeats (
               MarkProductForDeletion (lastsfp->product);
             }
 
-          } else if (nobmval == 4) { /* merge */
+          } else if (nobmval == UPDATE_FEAT_DUP_MERGE) { /* merge */
             if (context.sap == sap) {
               FuseFeatures (sfp, lastsfp);
               lastsfp->idx.deleteme = TRUE;
@@ -3808,10 +4449,7 @@ static void ResolveDuplicateFeats (
   }
 }
 
-static void AddCitSubToUpdatedSequence (
-  BioseqPtr upd_bsp,
-  Uint2     input_entityID
-)
+extern void AddCitSubToUpdatedSequence (BioseqPtr upd_bsp, Uint2 input_entityID)
 {
   SeqEntryPtr top_sep, upd_sep;
 
@@ -4085,23 +4723,18 @@ static Boolean Extend3Prime (UpsDataPtr udp)
   return ExtendFeatures (udp, 0);
 }
 
-static void AcceptExtend (ButtoN b)
-
+static Boolean ExtendOneSequence (UpsDataPtr udp)
 {
+  Boolean      update = FALSE;
   MsgAnswer    ans;
   Uint2        entityID;
   CharPtr      errmsg = NULL;
-  Int2         rmcval;
-  UpsDataPtr   udp;
-  Boolean      update = FALSE;
-
-  udp = (UpsDataPtr) GetObjectExtra (b);
-  if (udp == NULL) return;
-  SafeHide (udp->form);
-
-  rmcval = GetValue (udp->rmc);
-  switch (rmcval) {
-    case 1 :
+  
+  
+  if (udp == NULL) return FALSE;
+  
+  switch (udp->rmcval) {
+    case UPDATE_REPLACE :
       if (udp->old5 > 0 && udp->old3 > 0) {
         errmsg = "Unaligned sequence at 5' and 3' ends.  Do you wish to proceed?";
       } else if (udp->old5 > 0) {
@@ -4110,12 +4743,12 @@ static void AcceptExtend (ButtoN b)
         errmsg = "Unaligned sequence at 3' end.  Do you wish to proceed?";
       }
       break;
-    case 2 :
+    case UPDATE_EXTEND5 :
       if (udp->old5 > 0) {
         errmsg = "Unaligned sequence at 5' end.  Do you wish to proceed?";
       }
       break;
-    case 3 :
+    case UPDATE_EXTEND3 :
       if (udp->old3 > 0) {
         errmsg = "Unaligned sequence at 3' end.  Do you wish to proceed?";
       }
@@ -4126,18 +4759,17 @@ static void AcceptExtend (ButtoN b)
   if (errmsg != NULL) {
     ans = Message (MSG_YN, "%s", errmsg);
     if (ans == ANS_NO) {
-      Remove (udp->form);
-      return;
+      return FALSE;
     }
   }
 
-  switch (rmcval) {
-    case 1 :
+  switch (udp->rmcval) {
+    case UPDATE_REPLACE :
       if (ExtendBothEnds (udp)) {
         update = TRUE;
       }
       break;
-    case 2 :
+    case UPDATE_EXTEND5:
       if (udp->salp == NULL) {
         if (Merge5PrimeNoOverlap (udp)) {
           update = TRUE;
@@ -4146,7 +4778,7 @@ static void AcceptExtend (ButtoN b)
         update = TRUE;
       }
       break;
-    case 3 :
+    case UPDATE_EXTEND3 :
       if (udp->salp == NULL) {
         if (Merge3PrimeNoOverlap (udp)) {
           update = TRUE;
@@ -4166,21 +4798,74 @@ static void AcceptExtend (ButtoN b)
     {
       AddCitSubToUpdatedSequence ( udp->oldbsp, entityID);
     }
-    ObjMgrSetDirtyFlag (entityID, TRUE);
-    ObjMgrSendMsg (OM_MSG_UPDATE, entityID, 0, 0);
   }
-  Remove (udp->form);
+  return update;
 }
 
-static void PrepareToUpdateSequences (UpsDataPtr udp);
+static void OpenSequenceUpdateLog (UpsDataPtr udp)
+{
+  if (udp == NULL || udp->log_fp != NULL)
+  {
+  	return;
+  }
+  TmpNam (udp->log_path);
+  udp->log_fp = FileOpen (udp->log_path, "wb");
+}
+
+static void CloseOutSequenceUpdateLog (UpsDataPtr udp)
+{
+  if (udp == NULL || udp->log_fp == NULL) 
+  {
+    return;
+  }
+  FileClose (udp->log_fp);
+  udp->log_fp = NULL;
+  if (udp->data_in_log) {
+    LaunchGeneralTextViewer (udp->log_path, "Protein changes");
+    udp->data_in_log = FALSE;
+  }
+  FileRemove (udp->log_path);  	
+}
+
+
+static Boolean PrepareToUpdateSequences (UpsDataPtr udp);
 static Boolean PrepareUpdatePtr (UpsDataPtr    udp);
 static ForM UpdateSequenceForm (UpsDataPtr udp);
 static void UpdateOneSequence (
   UpsDataPtr   udp,
-  Int2         rmcval,
   Int2         sfbval,
   Boolean      add_cit_subs,
   Boolean      update_proteins);
+
+
+static Int4 FindNewCDSStop (SeqLocPtr slp, BioseqPtr bsp, Int4 prot_len)
+{
+  Int4      loc_len, tot_len = 0;
+  SeqLocPtr this_slp;
+  Int4      curr_start;
+  
+  for (this_slp = SeqLocFindNext (slp, NULL);
+       this_slp != NULL;
+       this_slp = SeqLocFindNext (slp, this_slp))
+  {
+    loc_len = SeqLocLen (this_slp);
+    curr_start = GetOffsetInBioseq (this_slp, bsp, SEQLOC_START);
+    if (loc_len + tot_len > prot_len)
+    {
+      curr_start = GetOffsetInBioseq (this_slp, bsp, SEQLOC_START);
+      if (SeqLocStrand (this_slp) == Seq_strand_minus)
+      {
+        return curr_start - (prot_len - tot_len) + 1;
+      }
+      else
+      {
+        return curr_start + prot_len - tot_len;
+      }
+    }
+    tot_len += loc_len;
+  }
+  return tot_len;
+}
 
 
 static CharPtr FixProteinString
@@ -4233,12 +4918,11 @@ static CharPtr FixProteinString
           if (nucBsp == NULL) return newprot;
           start = GetOffsetInBioseq (sfp->location, nucBsp, SEQLOC_START);
           stop = GetOffsetInBioseq (sfp->location, nucBsp, SEQLOC_STOP);
+          new_stop = FindNewCDSStop (sfp->location, nucBsp, (1 + ptr - newprot) * 3);
           if (strand == Seq_strand_minus) {
-            new_stop = start - ((1 + ptr - newprot) * 3) + 1;
             sfp->location = SeqLocDelete (sfp->location, SeqLocId (sfp->location),
                           stop, new_stop - 1, FALSE, &changed);
           } else {
-            new_stop = start + ((1 + ptr - newprot) * 3) - 1;
             sfp->location = SeqLocDelete (sfp->location, SeqLocId (sfp->location),
                           new_stop + 1, stop, FALSE, &changed);
           }
@@ -4445,7 +5129,8 @@ static TransTablePtr GetTranslationTable (CdRegionPtr crp, Boolean PNTR table_is
 
 static CharPtr ExtendProtein5
 (SeqFeatPtr sfp,
- Uint2      input_entityID)
+ Uint2      input_entityID,
+ Boolean    force_partial)
 {
   CdRegionPtr   crp;
   TransTablePtr tbl = NULL;
@@ -4486,8 +5171,14 @@ static CharPtr ExtendProtein5
   strand = SeqLocStrand (sfp->location);
   sip = SeqLocId (sfp->location);
   offset = -1;
+
+  start = GetOffsetInBioseq (test_slp, nucBsp, SEQLOC_START);
+  if (start == 0)
+  {
+  	stop_looking = TRUE;
+  }
  
-  while (! found_start && ! found_stop && ! stop_looking) {
+  while (((! found_start && ! found_stop) || force_partial) && ! stop_looking) {
     start = GetOffsetInBioseq (test_slp, nucBsp, SEQLOC_START);
     stop = GetOffsetInBioseq (test_slp, nucBsp, SEQLOC_STOP);
     if (strand == Seq_strand_minus) {
@@ -4537,7 +5228,7 @@ static CharPtr ExtendProtein5
       MemFree (bases);
     }
   }
-
+  
   SeqLocFree (test_slp);
   if (! found_stop) { 
     start = GetOffsetInBioseq (sfp->location, nucBsp, SEQLOC_START);
@@ -4552,12 +5243,16 @@ static CharPtr ExtendProtein5
       CheckSeqLocForPartial (sfp->location, &partial5, &partial3);
       SetSeqLocPartial (sfp->location, TRUE, partial3);
       sfp->partial = TRUE;
+      if (crp->frame == 0)
+      {
+        crp->frame = 1;
+      }
       if (strand == Seq_strand_minus) {
         sfp->location = ExpandSeqLoc (stop, nucBsp->length - 1, strand, nucBsp, sfp->location);
-        crp->frame = (nucBsp->length - 1 - start) % 3 + 1;
+        crp->frame = (nucBsp->length - 1 - start + crp->frame - 1) % 3 + 1;
       } else {
         sfp->location = ExpandSeqLoc (0, stop, strand, nucBsp, sfp->location);
-        crp->frame = start % 3 + 1;
+        crp->frame = (start + crp->frame - 1) % 3 + 1;
       }
     }
   }
@@ -4573,7 +5268,8 @@ static CharPtr ExtendProtein5
 
 static CharPtr ExtendProtein3 
 (SeqFeatPtr sfp,
- Uint2      input_entityID)
+ Uint2      input_entityID,
+ Boolean    force_partial)
 {
   BioseqPtr nucBsp;
   Int4      max_stop, min_start, start, stop;
@@ -4609,7 +5305,14 @@ static CharPtr ExtendProtein3
   contains_stop = FALSE;
   contains_start = FALSE;
   newprot = NULL;
-  while (! contains_stop &&
+  /* need to initialize newprot in case we're already at the edge */
+  if ((strand != Seq_strand_minus && stop == max_stop)
+      || (strand == Seq_strand_minus && stop == min_start))
+  {
+  	newprot = FixProteinString (sfp, strand, FALSE, &truncated,
+                              &contains_start, &contains_stop);
+  }
+  while ((! contains_stop || force_partial) &&
          (   (strand == Seq_strand_minus && stop > min_start) 
           || (strand != Seq_strand_minus && stop < max_stop)))
   {
@@ -4634,7 +5337,7 @@ static CharPtr ExtendProtein3
                               &contains_start, &contains_stop);
   }
 
-  if (! contains_stop) {
+  if (! contains_stop || force_partial) {
     start = GetOffsetInBioseq (sfp->location, nucBsp, SEQLOC_START);
     stop = GetOffsetInBioseq (sfp->location, nucBsp, SEQLOC_STOP);
     if (strand == Seq_strand_minus) {
@@ -4648,12 +5351,16 @@ static CharPtr ExtendProtein3
   return newprot;
 }
 
-static UpsDataPtr 
-PrepareUpdatePtrForProtein
+static Boolean MergeOverlapsForThisFeature (SeqFeatPtr sfp)
+{  
+  if (sfp == NULL) return FALSE;
+  return ! sfp->excpt;
+}
+
+static Boolean 
+AdjustCDSForUpdate
 (SeqFeatPtr   sfp,
  Uint2        input_entityID,
- Uint4        input_itemID,
- Uint4        input_itemtype,
  Uint1        frame,
  Int4         transl_except_len,
  Boolean      truncate_proteins,
@@ -4662,37 +5369,47 @@ PrepareUpdatePtrForProtein
  Boolean PNTR truncated,
  Boolean PNTR stop_shifted,
  Boolean PNTR extended5,
- Boolean PNTR extended3)
+ Boolean PNTR extended3,
+ BioseqPtr    protBsp,
+ BioseqPtr PNTR newbsp)
 {
   ByteStorePtr  bs;
   CharPtr       newprot, ptr;
   SeqEntryPtr   nwsep;
-  BioseqPtr     newBsp, protBsp;
-  UpsDataPtr    udp_copy;
+  BioseqPtr     newBsp;
   Boolean       contains_start, contains_stop;
   Uint1         strand;
   SeqLocPtr     newloc;
   BioseqPtr     nucBsp;
+  Boolean       partial5, partial3;
+  CharPtr       seqnew = NULL, seqold = NULL;
+  Boolean       rval = FALSE;
  
   if (sfp == NULL
     || sfp->idx.subtype != FEATDEF_CDS
     || sfp->product == NULL
-    || (protBsp = BioseqFindFromSeqLoc (sfp->product)) == NULL
+    || protBsp == NULL
     || truncated == NULL || stop_shifted == NULL
-    || extended5 == NULL || extended3 == NULL)
+    || extended5 == NULL || extended3 == NULL
+    || newbsp == NULL)
   {
-    return NULL;
+    return FALSE;
   }
-
+  
+  CheckSeqLocForPartial (sfp->location, &partial3, &partial5);
+  
   nucBsp = GetBioseqGivenSeqLoc (sfp->location, input_entityID);
-  if (nucBsp == NULL) return NULL;
-  newloc = SeqLocMerge (nucBsp, sfp->location, NULL, FALSE, FALSE, FALSE);
-  if (newloc == NULL) return NULL;
+  if (nucBsp == NULL) return FALSE;
+  
+  newloc = SeqLocMergeExEx (nucBsp, sfp->location, NULL, FALSE, FALSE,
+                            MergeOverlapsForThisFeature (sfp), FALSE, FALSE);
+
+  if (newloc == NULL) return FALSE;
   sfp->location = newloc;
   strand = SeqLocStrand (sfp->location);
   sfp->location = ShiftStopForLengthChange (sfp->location, nucBsp, transl_except_len, stop_shifted);
   if (sfp->location == NULL) {
-    return NULL;
+    return FALSE;
   }
 
   sfp->location = ShiftLocationForFrame (sfp->location, frame, nucBsp);
@@ -4701,22 +5418,25 @@ PrepareUpdatePtrForProtein
                               &contains_start, &contains_stop);
 
   /* Must do 3' end first, otherwise may truncate at stops introduced by expanding 5' end for partiality */
-  if (! contains_stop && extend_proteins3 && transl_except_len == 0) {
+  if ((! contains_stop && extend_proteins3 && transl_except_len == 0)
+      || ((extend_proteins3 || partial3) && !truncate_proteins)) {
     MemFree (newprot);
-    newprot = ExtendProtein3 (sfp, input_entityID);
-    if (newprot == NULL) return NULL;
+    newprot = ExtendProtein3 (sfp, input_entityID, partial3 && !truncate_proteins);
+    if (newprot == NULL) return FALSE;
     *extended3 = TRUE;
   } else {
     *extended3 = FALSE;
   }
-  if (! contains_start && extend_proteins5) {
+  if (! contains_start && (extend_proteins5 || partial5)) {
     MemFree (newprot);
-    newprot = ExtendProtein5 (sfp, input_entityID);
-    if (newprot == NULL) return NULL;
+    newprot = ExtendProtein5 (sfp, input_entityID, partial5);
+    if (newprot == NULL) return FALSE;
     *extended5 = TRUE;
   } else {
     *extended5 = FALSE;
   }
+
+  sfp->partial = CheckSeqLocForPartial (sfp->location, &partial5, &partial3);
 
   bs = BSNew (1000);
   if (bs != NULL)
@@ -4728,7 +5448,7 @@ PrepareUpdatePtrForProtein
   
   newBsp = BioseqNew ();
   if (newBsp == NULL) {
-    return NULL;
+    return FALSE;
   }
 
   newBsp->id = SeqIdParse ("lcl|ProtAlign");
@@ -4744,45 +5464,25 @@ PrepareUpdatePtrForProtein
   nwsep->data.ptrvalue = newBsp;
   SeqMgrSeqEntry (SM_BIOSEQ, (Pointer) newBsp, nwsep);
 
-  udp_copy = MemNew (sizeof (UpsData));
-  if (udp_copy == NULL) {
-    return NULL;
-  }
+  seqold = GetSequenceByBsp (protBsp);
+  seqnew = GetSequenceByBsp (newBsp);
 
-  udp_copy->input_entityID = input_entityID;
-  udp_copy->input_itemID   = input_itemID;
-  udp_copy->input_itemtype = input_itemtype;
-  udp_copy->fp             = NULL;
-  udp_copy->isSet          = FALSE;
-  udp_copy->useGUI         = TRUE;
-  udp_copy->convertPubs    = CONVERTPUBS_NO; /* was CONVERTPUBS_NOT_SET */
-  udp_copy->do_update      = TRUE;
-  udp_copy->newbsp = newBsp;
-  udp_copy->oldbsp = protBsp;
-  udp_copy->seq1 = GetSequenceByBsp (protBsp);
-  udp_copy->seq2 = GetSequenceByBsp (newBsp);
-  udp_copy->suppress_continue_msg = TRUE;
-  udp_copy->suppress_instant_refresh = TRUE;
-
-  udp_copy->log_fp = NULL;
-  udp_copy->data_in_log = FALSE;
-  udp_copy->transl_except_list = NULL;
-  udp_copy->aln1           = NULL;
-  udp_copy->aln2           = NULL;
-
-  if (StringCmp (udp_copy->seq1, udp_copy->seq2) == 0
+  if (StringCmp (seqold, seqnew) == 0
     || (contains_stop && ! *truncated
-      && StringNCmp (udp_copy->seq1,
-                     udp_copy->seq2,
-                     StringLen (udp_copy->seq1)) == 0))
+      && StringNCmp (seqold,
+                     seqnew,
+                     StringLen (seqold)) == 0))
   {
     SeqEntryFree (nwsep);
-    MemFree (udp_copy->seq1);
-    MemFree (udp_copy->seq2);
-    MemFree (udp_copy);
-    return NULL;
+    rval = FALSE;
   }
-  return udp_copy;
+  else
+  {
+    *newbsp = newBsp;
+    rval = TRUE;
+  }
+
+  return rval;   
 }
 
   
@@ -4797,7 +5497,7 @@ extern SeqLocPtr SeqLocWholeNew (BioseqPtr bsp)
   if (vnp == NULL) return NULL;
 
   vnp->choice = SEQLOC_WHOLE;
-  vnp->data.ptrvalue = (Pointer) SeqIdFindBest (bsp->id, 0);
+  vnp->data.ptrvalue = (Pointer) SeqIdDup (SeqIdFindBest (bsp->id, 0));
   return (SeqLocPtr)vnp;
 }
 
@@ -4961,21 +5661,20 @@ static void FixProtRefPtrs (ValNodePtr feat_list)
 }
 
 
-static UpsDataPtr PrepareUpdateAlignmentForProtein
+static Boolean PrepareUpdateAlignmentForProtein
 (SeqFeatPtr sfp,
+ BioseqPtr  protBsp,
  Uint2      input_entityID,
- Uint4      input_itemID,
- Uint4      input_itemtype,
  FILE *     fp,
- Boolean    use_new_blast,
  Boolean    truncate_proteins,
  Boolean    extend_proteins5,
  Boolean    extend_proteins3,
  Boolean    correct_cds_genes,
  Int4       transl_except_len,
- Boolean    *data_in_log)
+ Boolean    *data_in_log,
+ SeqAlignPtr PNTR salpptr,
+ BioseqPtr PNTR newbspptr)
 {
-  UpsDataPtr    udp_copy = NULL;
   Boolean       align_succeeded;
   Boolean       changed_frame;
   Uint1         frame_attempts;
@@ -4988,13 +5687,16 @@ static UpsDataPtr PrepareUpdateAlignmentForProtein
   Boolean       truncated, stop_shifted;
   Boolean       extended5, extended3;
   Uint1         old_frame;
-  BioseqPtr     protBsp;
+  BioseqPtr     newBsp = NULL;
+  Boolean       adjust_succeeded;
+  SeqAlignPtr   salp = NULL;
+  Boolean       revcomp;
 
   if (sfp == NULL || sfp->data.choice != SEQFEAT_CDREGION
       || (crp = (CdRegionPtr)sfp->data.value.ptrvalue) == NULL
-      || (protBsp = BioseqFindFromSeqLoc (sfp->product)) == NULL
+      || protBsp == NULL
       || data_in_log == NULL) {
-    return NULL;
+    return FALSE;
   }
 
   old_frame = crp->frame;
@@ -5019,43 +5721,45 @@ static UpsDataPtr PrepareUpdateAlignmentForProtein
     }
     sfp->partial = orig_partial;    
     crp->frame = old_frame;
-    if (udp_copy != NULL) {
-      BioseqFree (udp_copy->newbsp);
-      udp_copy->newbsp = NULL;
-      MemFree (udp_copy);
+    if (newBsp != NULL) {
+      newBsp = BioseqFree (newBsp);
     }
     truncated= FALSE;
     stop_shifted = FALSE;
     extended5 = FALSE;
     extended3 = FALSE;
-    udp_copy = PrepareUpdatePtrForProtein (sfp,
+    adjust_succeeded = AdjustCDSForUpdate (sfp,
                                            input_entityID,
-                                           input_itemID,
-                                           input_itemtype,
                                            frame_attempts,
                                            transl_except_len,
                                            truncate_proteins,
                                            extend_proteins5,
                                            extend_proteins3,
                                            &truncated, &stop_shifted,
-                                           &extended5, &extended3);
-    if (sfp->location == NULL || sfp->location->choice == 0) {
+                                           &extended5, &extended3,
+                                           protBsp, &newBsp);
+    if (sfp->location == NULL || sfp->location->choice == 0) 
+    {
       sfp->location = orig_slp;
     }
-    if (udp_copy != NULL) {
-      udp_copy->use_new_blast = use_new_blast;
+    if (adjust_succeeded)
+    {
+      salp = Sequin_GlobalAlign2Seq (protBsp, newBsp, &revcomp);
     }
-    if (udp_copy == NULL || (align_succeeded = PrepareUpdatePtr (udp_copy))) {
+    if (!adjust_succeeded || salp != NULL)
+    {
       if (frame_attempts > 1) {
         changed_frame = TRUE;
         LogFrameChange (fp, protBsp, frame_attempts);
         *data_in_log = TRUE;
       }
       break;
-    }
+    }    
   }
   ErrSetMessageLevel (level);
-  if (udp_copy != NULL && ! align_succeeded) {
+  if (adjust_succeeded && salp == NULL) 
+  {
+    /* put CD Region back to original state */
     crp->frame = old_frame;
     if (sfp->location != orig_slp) {
       SeqLocFree (sfp->location);
@@ -5063,10 +5767,8 @@ static UpsDataPtr PrepareUpdateAlignmentForProtein
     }
     sfp->partial = orig_partial;
     WarnNoProteinUpdate (protBsp);
-    BioseqFree (udp_copy->newbsp);
-    udp_copy->newbsp = NULL;
-    MemFree (udp_copy);
-    return NULL;
+    newBsp = BioseqFree (newBsp);
+    return FALSE;
   }
 
   if (truncated) {
@@ -5092,7 +5794,10 @@ static UpsDataPtr PrepareUpdateAlignmentForProtein
   if (sfp->location != orig_slp) {
     SeqLocFree (orig_slp);
   }
-  return udp_copy;
+  
+  *salpptr = salp;
+  *newbspptr = newBsp;
+  return TRUE;
 }
 
 static Boolean CodingRegionHasTranslExcept (SeqFeatPtr sfp)
@@ -5157,16 +5862,25 @@ typedef struct proteinfromcdsdata {
 static void UpdateOneProteinFromCDS (SeqFeatPtr sfp, Pointer userdata)
 {
   ProteinFromCDSPtr pfcp;
-  UpsDataPtr        udp_copy;
   SeqLocPtr         new_product;
   Boolean           data_in_log;
   Int4              transl_except_len = 0;
+  BioseqPtr         protBsp;
+  SeqAlignPtr       salp = NULL;
+  BioseqPtr         newbsp = NULL;
+  Boolean           rval;
   
   pfcp = (ProteinFromCDSPtr) userdata;
   if ( pfcp == NULL
     || sfp == NULL
     || sfp->idx.subtype != FEATDEF_CDS
     || sfp->product == NULL)
+  {
+    return;
+  }
+  
+  protBsp = BioseqFindFromSeqLoc (sfp->product);
+  if (protBsp == NULL)
   {
     return;
   }
@@ -5178,27 +5892,24 @@ static void UpdateOneProteinFromCDS (SeqFeatPtr sfp, Pointer userdata)
   	transl_except_len = SeqLocLen (sfp->location) % 3;
   }
   
-  udp_copy = PrepareUpdateAlignmentForProtein (sfp,
-                                               pfcp->input_entityID,
-                                               pfcp->input_itemID,
-                                               pfcp->input_itemtype,
-                                               pfcp->fp,
-                                               FALSE,
-                                               TRUE, TRUE, TRUE, TRUE,
-                                               transl_except_len,
-                                               &data_in_log);
+  rval = PrepareUpdateAlignmentForProtein (sfp,
+                                           protBsp,
+                                           pfcp->input_entityID,
+                                           pfcp->fp,
+                                           TRUE, TRUE, TRUE, TRUE,
+                                           transl_except_len,
+                                           &data_in_log,
+                                           &salp,
+                                           &newbsp);
   if (data_in_log) {
     pfcp->data_to_report = TRUE;
   }
-  if (udp_copy == NULL) return;
-  if (udp_copy->data_in_log) {
-    pfcp->data_to_report = TRUE;
-  }
+  if (!rval) return;
 
-  UpdateOneSequence (udp_copy, 1, 1, FALSE, FALSE);
+  ReplaceOneSequence (salp, protBsp, newbsp);
   if (sfp->product->choice != SEQLOC_WHOLE)
   {
-    new_product = SeqLocWholeNew (udp_copy->oldbsp);
+    new_product = SeqLocWholeNew (protBsp);
     if (new_product == NULL) return;
     SeqLocFree (sfp->product);
     sfp->product = new_product;
@@ -5229,22 +5940,125 @@ static Boolean CheckForIDCollision (
 static CharPtr convPubDescMssg =
 "Do you wish to convert publications to apply only to the appropriate ranges?";
 
+#define UPDATE_SKIP_THIS    1
+#define UPDATE_SKIP_ALL     2
+#define UPDATE_REPLACE_THIS 3
+#define UPDATE_REPLACE_ALL  4
+#define UPDATE_CANCEL       5
+
+typedef struct noalignmentchoice
+{
+  Boolean done;
+  Boolean cancelled;
+  GrouP   action_choice;
+  Boolean skip_this;
+  Boolean skip_all;
+  Boolean replace_this;
+  Boolean replace_all;
+} NoAlignmentChoiceData, PNTR NoAlignmentChoicePtr;
+
+static void NoAlignmentChoiceOk (ButtoN b)
+{
+  NoAlignmentChoicePtr nacp;
+  
+  nacp = (NoAlignmentChoicePtr) GetObjectExtra (b);
+  if (nacp == NULL) return;
+  nacp->cancelled = FALSE;
+  nacp->done = TRUE;
+}
+
+static void NoAlignmentChoiceCancel (ButtoN b)
+{
+  NoAlignmentChoicePtr nacp;
+  
+  nacp = (NoAlignmentChoicePtr) GetObjectExtra (b);
+  if (nacp == NULL) return;
+  nacp->cancelled = TRUE;
+  nacp->done = TRUE;
+}
+
+static Int2 GetNoAlignmentChoice (SeqIdPtr id, Int2 previous_choice)
+{
+  Char                  buf [64];
+  WindoW                w;
+  GrouP                 h, g, c;
+  ButtoN                b;
+  NoAlignmentChoiceData nacd;
+  Char                  promptstr[115];
+  Int2                  no_aln_choice;
+  SeqIdPtr              sip, sip_next;
+
+  sip = SeqIdFindBest (id, 0);
+  if (sip == NULL) return UPDATE_CANCEL;
+  w = ModalWindow(-20, -13, -10, -10, NULL);
+  if (w == NULL) return 0;
+
+  h = HiddenGroup (w, -1, 0, NULL);
+  g = HiddenGroup(h, 0, 4, NULL);
+  sip_next = sip->next;
+  sip->next = NULL;
+  SeqIdWrite (sip, buf, PRINTID_REPORT, sizeof (buf) - 1);
+  sip->next = sip_next;
+  sprintf (promptstr, "There is no alignment between the sequences for %s.", buf);
+  StaticPrompt (g, promptstr, 0, popupMenuHeight, programFont, 'l');
+  StaticPrompt (g, "You may choose to :", 0, popupMenuHeight, programFont, 'l');
+  nacd.action_choice = HiddenGroup (g, 0, 4, NULL);
+  RadioButton (nacd.action_choice, "Skip This Sequence");
+  RadioButton (nacd.action_choice, "Skip All Sequences without Alignments");
+  RadioButton (nacd.action_choice, "Replace This Sequence");
+  RadioButton (nacd.action_choice, "Replace All Sequences without Alignments");
+  if (previous_choice > 0 && previous_choice < UPDATE_CANCEL)
+  {
+    SetValue (nacd.action_choice, previous_choice);
+  }
+  else
+  {
+    SetValue (nacd.action_choice, 1);
+  }
+  c = HiddenGroup (h, 2, 0, NULL);
+  b = PushButton (c, "Ok", NoAlignmentChoiceOk);
+  SetObjectExtra (b, &nacd, NULL);
+  b = PushButton (c, "Cancel", NoAlignmentChoiceCancel);
+  SetObjectExtra (b, &nacd, NULL);
+  
+  AlignObjects (ALIGN_CENTER, (HANDLE) g, (HANDLE) c, NULL);
+
+  nacd.cancelled = FALSE;
+  nacd.done = FALSE;
+  Show(w); 
+  Select (w);
+  while (!nacd.done)
+  {
+    ProcessExternalEvent ();
+    Update ();
+  }
+  ProcessAnEvent ();
+  no_aln_choice = GetValue (nacd.action_choice);
+  Remove (w);
+  if (nacd.cancelled)
+  {
+    return UPDATE_CANCEL;
+  }
+  else
+  {
+    return no_aln_choice;
+  }
+}
+
 static Boolean PrepareUpdatePtr (UpsDataPtr    udp)
 {
   Uint2        entityID;
   SeqEntryPtr  oldsep, newsep;
-  SeqIdPtr     tempid = NULL;
   SeqIdPtr     sip;
-  MsgAnswer    ans;
   Boolean      islocal = FALSE;
-  SeqIdPtr     lclid = NULL;
   Char         buf [64];
-  Boolean      descfilt [SEQDESCR_MAX];
-  Boolean      featfilt [SEQFEAT_MAX];
   SeqAlignPtr  salp = NULL;
   Boolean      revcomp = FALSE;
   Boolean      asked_about_desc_prop = FALSE;
   Boolean      propagate_descriptors = FALSE;
+  SeqIdPtr     id, id_next;
+  MsgAnswer    ans;
+  Char         collision_id [100];
 
   if (udp->oldbsp == NULL || udp->newbsp == NULL) return FALSE;
   if (ISA_na (udp->oldbsp->mol) != ISA_na (udp->newbsp->mol)) {
@@ -5270,56 +6084,56 @@ static Boolean PrepareUpdatePtr (UpsDataPtr    udp)
       udp->convertPubs = CONVERTPUBS_NO;
   }
 
-  tempid = NULL;
   if (CheckForIDCollision (udp->oldbsp, udp->newbsp, &islocal)) {
-    sip = SeqIdParse ("lcl|SequinUpdateSequence");
+    sprintf (collision_id, "lcl|SequinUpdateSequence%d", udp->seqsubpos);
+    sip = SeqIdParse (collision_id);
     if (sip != NULL) {
-      if (islocal) {
-        entityID = ObjMgrGetEntityIDForPointer (udp->newbsp);
-        for (lclid = udp->newbsp->id;
-             lclid != NULL && lclid->choice != SEQID_LOCAL;
-             lclid = lclid->next) continue;
-        if (lclid != NULL) {
-          SeqIdWrite (lclid, buf, PRINTID_REPORT, sizeof (buf) - 1);
-          FindReplaceInEntity (entityID, buf, "SequinUpdateSequence", TRUE, FALSE, TRUE,
-                               FALSE, UPDATE_NEVER, descfilt, featfilt, NULL, TRUE);
-          SeqMgrReplaceInBioseqIndex (udp->newbsp);
-        } else {
-          Message (MSG_OK, "Unable to find colliding local id");
-          return FALSE;
-        }
-      } else {
-        /* unlink colliding id, temporarily replace */
-        tempid = udp->newbsp->id;
-        udp->newbsp->id = sip;
-        SeqMgrReplaceInBioseqIndex (udp->newbsp);
-      }
+      BioseqReplaceID (udp->newbsp, sip);
+      sip = SeqIdFree (sip);
     }
   }
-
-  salp = Sqn_LocalAlign2SeqEx (udp->oldbsp, udp->newbsp, &revcomp, udp->use_new_blast);
-
-  if (tempid != NULL) {
-    /* add back colliding id now that blast is done */
-    sip->next = tempid;
-    SeqMgrReplaceInBioseqIndex (udp->newbsp);
-  }
+  
+  salp = Sequin_GlobalAlign2Seq (udp->oldbsp, udp->newbsp, &revcomp);
 
   if (salp == NULL) {
     if (udp->log_fp != NULL) {
-      SeqIdWrite (udp->oldbsp->id, buf, PRINTID_REPORT, sizeof (buf) - 1);
-      fprintf (udp->log_fp, "No sequence similarity for %s\n", buf);
-      udp->data_in_log = TRUE;  
+      id = SeqIdFindBest (udp->oldbsp->id, 0);
+      if (id != NULL)
+      {
+        id_next = id->next;
+        id->next = NULL;
+        SeqIdWrite (id, buf, PRINTID_REPORT, sizeof (buf) - 1);
+        id->next = id_next;
+        fprintf (udp->log_fp, "No sequence similarity for %s\n", buf);
+        udp->data_in_log = TRUE;  
+      }
     }
     if (udp->suppress_continue_msg) {
       return FALSE;
     } else {
-      ans = Message (MSG_YN, "There is no alignment between the sequences. "
-                     "Do you wish to continue anyway?");
-      if (ans == ANS_NO) 
-        return FALSE;
-      else
-        udp->useGUI = TRUE;
+      if (udp->isSet && udp->do_update)
+      {
+        if (udp->no_aln_choice != UPDATE_SKIP_ALL && udp->no_aln_choice != UPDATE_REPLACE_ALL)
+        {
+          udp->no_aln_choice = GetNoAlignmentChoice (udp->oldbsp->id, udp->no_aln_choice);
+        }
+        if (udp->no_aln_choice == UPDATE_CANCEL)
+        {
+          return FALSE;
+        }
+      }
+      else if (udp->do_update)
+      {
+        ans = Message (MSG_YN, "There is no alignment between the sequences.  Do you wish to continue?");
+        if (ans == ANS_YES)
+        {
+          udp->useGUI = TRUE;
+        }
+        else
+        {
+          return FALSE;
+        }
+      }
     }
   }
   udp->salp     = salp;
@@ -5424,7 +6238,6 @@ static Int4 GetOriginalTranslExceptLen (SeqFeatPtr sfp, ValNodePtr list)
 
 static void UpdateOneSequence (
   UpsDataPtr   udp,
-  Int2         rmcval,
   Int2         sfbval,
   Boolean      add_cit_subs,
   Boolean      update_proteins
@@ -5437,6 +6250,14 @@ static void UpdateOneSequence (
   Boolean      feature_update = FALSE;
   ValNodePtr   prot_feat_list = NULL;
 
+  if (udp != NULL)
+  {
+    if (GetStatus (udp->replace_all))
+    {
+  	  RemoveOldFeats (udp->oldbsp);
+    }
+  }
+
   if (update_proteins && udp != NULL) {
     prot_feat_list = FindProductProtRefs (udp->oldbsp);
     if (udp->transl_except_list != NULL)
@@ -5447,34 +6268,36 @@ static void UpdateOneSequence (
     udp->transl_except_list = FindTranslExceptCDSs (udp->oldbsp);
   }
 
-  if (sfbval == 1 || sfbval == 3) {
-    switch (rmcval) {
-      case 1 :
+  if (sfbval == UPDATE_SEQUENCE_ONLY || sfbval == UPDATE_SEQUENCE_AND_FEATURES) {
+    switch (udp->rmcval) {
+      case UPDATE_REPLACE :
         if (ReplaceSequence (udp)) {
           update = TRUE;
         }
         break;
-      case 2 :
-	if (NULL == udp->salp) {
-	  if (Merge5PrimeNoOverlap (udp))
-	    update = TRUE;
-	}
-	else {
-	  if (Merge5Prime (udp))
-	    update = TRUE;
+      case UPDATE_EXTEND5 :
+	      if (NULL == udp->salp) {
+	        if (Merge5PrimeNoOverlap (udp))
+	          update = TRUE;
+	      }
+	      else 
+	      {
+	        if (Merge5Prime (udp))
+	          update = TRUE;
         }
         break;
-      case 3 :
-	if (NULL == udp->salp) {
-	  if (Merge3PrimeNoOverlap (udp))
-	    update = TRUE;
-	}
-	else {
-	  if (Merge3Prime (udp))
-	    update = TRUE;
+      case UPDATE_EXTEND3 :
+	      if (NULL == udp->salp) {
+	        if (Merge3PrimeNoOverlap (udp))
+	          update = TRUE;
+	      }
+	      else 
+	      {
+	        if (Merge3Prime (udp))
+	          update = TRUE;
         }
         break;
-      case 4 :
+      case UPDATE_PATCH :
         if (PatchSequence (udp)) {
           update = TRUE;
         }
@@ -5482,27 +6305,27 @@ static void UpdateOneSequence (
       default :
         break;
     }
-    if ( sfbval == 3) {
-      switch (rmcval) {
-        case 1 :
+    if ( sfbval == UPDATE_SEQUENCE_AND_FEATURES) {
+      switch (udp->rmcval) {
+        case UPDATE_REPLACE :
           if (DoFeaturePropWithOffset (udp, 0, &sap, FALSE)) {
             update = TRUE;
             feature_update = TRUE;
           }
           break;
-        case 2 :
+        case UPDATE_EXTEND5 :
           if (DoFeaturePropWithOffset (udp, 0, &sap, FALSE)) {
             update = TRUE;
             feature_update = TRUE;
           }
           break;
-        case 3 :
+        case UPDATE_EXTEND3 :
           if (DoFeaturePropWithOffset (udp, udp->old5 - udp->new5, &sap, FALSE)) {
             update = TRUE;
             feature_update = TRUE;
           }
           break;
-        case 4 :
+        case UPDATE_PATCH :
           if (DoFeaturePropWithOffset (udp, udp->old5 - udp->new5, &sap, TRUE)) {
             update = TRUE;
             feature_update = TRUE;
@@ -5512,27 +6335,32 @@ static void UpdateOneSequence (
           break;
       }
     }
-  } else if (sfbval == 2) {
-    switch (rmcval) {
-      case 1 :
+    if (udp->rmcval == UPDATE_REPLACE && udp->revcomp && update)
+    {
+      ReverseComplementBioseqAndFeats (udp->oldbsp, udp->input_entityID);
+    }
+
+  } else if (sfbval == UPDATE_FEATURES_ONLY) {
+    switch (udp->rmcval) {
+      case UPDATE_REPLACE :
         if (DoFeaturePropThruAlign (udp, &sap)) {
           update = TRUE;
           feature_update = TRUE;
         }
         break;
-      case 2 :
+      case UPDATE_EXTEND5 :
         if (DoFeaturePropThruAlign (udp, &sap)) {
           update = TRUE;
           feature_update = TRUE;
         }
         break;
-      case 3 :
+      case UPDATE_EXTEND3 :
         if (DoFeaturePropThruAlign (udp, &sap)) {
           update = TRUE;
           feature_update = TRUE;
         }
         break;
-      case 4 :
+      case UPDATE_PATCH :
         if (DoFeaturePropThruAlign (udp, &sap)) {
           update = TRUE;
           feature_update = TRUE;
@@ -5566,16 +6394,27 @@ static void UpdateOneSequence (
       ObjMgrSendMsg (OM_MSG_UPDATE, entityID, 0, 0);
     }
   }
+  
+  if (GetStatus (udp->update_quality_scores_btn) && udp->rmcval == UPDATE_REPLACE 
+      && (sfbval == UPDATE_SEQUENCE_ONLY || sfbval == UPDATE_SEQUENCE_AND_FEATURES))
+  {
+    ReplaceQualityScores (udp->oldbsp, udp->newbsp, udp->salp, udp->log_fp, &(udp->data_in_log));
+  }
+  
   ValNodeFree (prot_feat_list);
   ValNodeFree (udp->transl_except_list);
   udp->transl_except_list = NULL;
-  if (sfbval == 2 || sfbval == 3) {
+  if (sfbval == UPDATE_FEATURES_ONLY || sfbval == UPDATE_SEQUENCE_AND_FEATURES) {
     if (update) {
       entityID = ObjMgrGetEntityIDForPointer (udp->oldbsp);
       sep = GetTopSeqEntryForEntityID (entityID);
       /* need to set scope to make sure we mark the right bioseq for deletion */
       SeqEntrySetScope (sep);
-      ResolveDuplicateFeats (udp, udp->oldbsp, sap);
+      /* resolve features unless the policy was to remove all the old ones */
+      if (!GetStatus (udp->replace_all))
+      {
+        ResolveDuplicateFeats (udp, udp->oldbsp, sap);      	
+      }
       SeqEntrySetScope (NULL);
       DeleteMarkedObjects (entityID, 0, NULL);
       SeqMgrClearFeatureIndexes (entityID, NULL);
@@ -5587,13 +6426,28 @@ static void UpdateOneSequence (
 
 static void UpdateProteinsOnNewBsp (SeqFeatPtr sfp, Pointer userdata)
 {
-  UpsDataPtr    udp_orig, udp_copy;
-  Int2          sfbval, rmcval;
+  UpsDataPtr    udp_orig;
   SeqLocPtr     new_product;
   Boolean       data_in_log;
   Int4          transl_except_len = 0;
+  Boolean       fix_products = TRUE;
+  BioseqPtr     protBsp = NULL;
+  SeqAlignPtr   salp = NULL;
+  BioseqPtr     newbsp = NULL;
+  Boolean       rval;
 
   if (sfp == NULL || sfp->idx.subtype != FEATDEF_CDS || userdata == NULL)
+  {
+    return;
+  }
+  
+  if (sfp->idx.deleteme)
+  {
+    return;
+  }
+  
+  protBsp = BioseqFindFromSeqLoc (sfp->product);
+  if (protBsp == NULL)
   {
     return;
   }
@@ -5601,41 +6455,40 @@ static void UpdateProteinsOnNewBsp (SeqFeatPtr sfp, Pointer userdata)
 
   data_in_log = FALSE;
   transl_except_len = GetOriginalTranslExceptLen (sfp, udp_orig->transl_except_list);
-  udp_copy = PrepareUpdateAlignmentForProtein (sfp,
-                                               udp_orig->input_entityID,
-                                               udp_orig->input_itemID,
-                                               udp_orig->input_itemtype,
-                                               udp_orig->log_fp,
-                                               udp_orig->use_new_blast,
-                                               udp_orig->truncate_proteins,
-                                               udp_orig->extend_proteins5,
-                                               udp_orig->extend_proteins3,
-                                               udp_orig->correct_cds_genes,
-                                               transl_except_len,
-                                               &data_in_log);
+  rval = PrepareUpdateAlignmentForProtein (sfp,
+                                           protBsp,
+                                           udp_orig->input_entityID,
+                                           udp_orig->log_fp,
+                                           udp_orig->truncate_proteins,
+                                           udp_orig->extend_proteins5,
+                                           udp_orig->extend_proteins3,
+                                           udp_orig->correct_cds_genes,
+                                           transl_except_len,
+                                           &data_in_log,
+                                           &salp,
+                                           &newbsp);
   if (data_in_log) {
     udp_orig->data_in_log = TRUE;
   }
-  if (udp_copy == NULL) return;
-  if (udp_copy->data_in_log) {
-    udp_orig->data_in_log = TRUE;
-  }
+  if (!rval) return;
   
-  sfbval = GetValue (udp_orig->sfb);
-  rmcval = GetValue (udp_orig->rmc);
-
-  UpdateOneSequence (udp_copy, rmcval, sfbval,
-                     GetStatus (udp_orig->add_cit_subs),
-                     FALSE);
-  if (sfp->product->choice != SEQLOC_WHOLE) {
-    new_product = SeqLocWholeNew (udp_copy->oldbsp);
-    if (new_product == NULL) return;
-    SeqLocFree (sfp->product);
-    sfp->product = new_product;
+  if (protBsp->idx.deleteme)
+  {
+    fix_products = FALSE;
   }
-  BioseqFree (udp_copy->newbsp);
-  udp_copy->newbsp = NULL;
 
+  ReplaceOneSequence (salp, protBsp, newbsp);
+  
+  if (fix_products)
+  {
+    if (sfp->product->choice != SEQLOC_WHOLE) {
+      new_product = SeqLocWholeNew (protBsp);
+      if (new_product == NULL) return;
+      SeqLocFree (sfp->product);
+      sfp->product = new_product;
+    }
+    newbsp = BioseqFree (newbsp);
+  }
 }
 
 extern void UpdateProteinsFromCDS ( IteM i)
@@ -5676,44 +6529,20 @@ extern void UpdateProteinsFromCDS ( IteM i)
   ObjMgrSendMsg (OM_MSG_UPDATE, bfp->input_entityID, 0, 0);
 }
 
-static void CloseOutSequenceUpdateLog (UpsDataPtr udp)
-{
-  if (udp == NULL || udp->log_fp == NULL) 
-  {
-    return;
-  }
-  FileClose (udp->log_fp);
-  udp->log_fp = NULL;
-  if (udp->data_in_log) {
-    LaunchGeneralTextViewer (udp->log_path, "Protein changes");
-    udp->data_in_log = FALSE;
-  }
-  FileRemove (udp->log_path);  	
-}
-
-static void OpenSequenceUpdateLog (UpsDataPtr udp)
-{
-  if (udp == NULL || udp->log_fp != NULL)
-  {
-  	return;
-  }
-  TmpNam (udp->log_path);
-  udp->log_fp = FileOpen (udp->log_path, "wb");
-}
-
-
-static void AcceptRMC (ButtoN b)
+static void AcceptRMCOrExtend (ButtoN b)
 {
   UpsDataPtr   udp;
-  Int2         rmcval, sfbval;
+  Int2         sfbval;
   Boolean      log_is_local;
+  Boolean      update_proteins = FALSE;
+  Uint2        entityID;
 
   udp = (UpsDataPtr) GetObjectExtra (b);
   if (udp == NULL) return;
   SafeHide (udp->form);
 
   sfbval = GetValue (udp->sfb);
-  rmcval = GetValue (udp->rmc);
+  udp->rmcval = GetValue (udp->rmc);
 
   if (udp->log_fp == NULL) {
     OpenSequenceUpdateLog (udp);
@@ -5724,16 +6553,137 @@ static void AcceptRMC (ButtoN b)
   }
   WatchCursor ();
   Update ();
-  UpdateOneSequence (udp, rmcval, sfbval,
-                     GetStatus (udp->add_cit_subs),
-                     GetStatus (udp->update_proteins));
-
+  
+  if (udp->do_update)
+  {
+    if (udp->update_proteins != NULL 
+      && Enabled (udp->update_proteins)
+      && GetStatus (udp->update_proteins))
+    {
+      update_proteins = TRUE;
+    }
+    UpdateOneSequence (udp, sfbval,
+                       GetStatus (udp->add_cit_subs),
+                       update_proteins);
+  }
+  else
+  {
+    if (ExtendOneSequence (udp))
+    {
+      entityID = ObjMgrGetEntityIDForPointer (udp->oldbsp);
+      ObjMgrSetDirtyFlag (entityID, TRUE);
+      ObjMgrSendMsg (OM_MSG_UPDATE, entityID, 0, 0);
+    }
+  }
+  
   Remove (udp->form);
   if (log_is_local) {
     CloseOutSequenceUpdateLog (udp);
   }
   ArrowCursor ();
   Update();
+}
+
+static void DoAcceptRMCOrExtendSet (UpsDataPtr udp)
+{
+  Int2         sfbval;
+  Boolean      log_is_local = FALSE;
+  Boolean      update_proteins = FALSE;
+  Boolean      do_update = TRUE;
+  Boolean      old_useGUI;
+  Char         acc_str [256];
+  SeqIdPtr     sip, sip_next;
+  Int2         prior_rmcval;
+
+  if (udp == NULL) return;
+  
+  SafeHide (udp->form);
+  old_useGUI = udp->useGUI;
+  
+  prior_rmcval = udp->rmcval;
+  if (udp->do_update)
+  {
+    if (udp->salp == NULL 
+        && (udp->no_aln_choice == UPDATE_REPLACE_THIS
+         || udp->no_aln_choice == UPDATE_REPLACE_ALL))
+    {
+      sfbval = UPDATE_SEQUENCE_ONLY;
+      udp->rmcval = UPDATE_REPLACE;
+      udp->useGUI = FALSE;
+    }
+    else if (udp->salp == NULL
+             && (udp->no_aln_choice == UPDATE_SKIP_THIS
+              || udp->no_aln_choice == UPDATE_SKIP_ALL))
+    {
+      do_update = FALSE;
+    }
+    else
+    {
+      sfbval = GetValue (udp->sfb);
+      udp->rmcval = GetValue (udp->rmc);
+      prior_rmcval = udp->rmcval;
+    }
+  }
+  else
+  {
+    udp->rmcval = GetValue (udp->rmc);
+    prior_rmcval = udp->rmcval;
+  }
+
+  if (udp->log_fp == NULL) 
+  {
+    OpenSequenceUpdateLog (udp);
+    if (udp->log_fp == NULL) return;
+    log_is_local = TRUE;
+  }
+    
+  if (do_update)
+  {
+    if (udp->do_update)
+    {
+      if (udp->update_proteins != NULL 
+          && Enabled (udp->update_proteins)
+          && GetStatus (udp->update_proteins))
+      {
+        update_proteins = TRUE;
+      }
+
+      UpdateOneSequence (udp, sfbval, GetStatus (udp->add_cit_subs),
+                         update_proteins);
+    }
+    else
+    {
+      ExtendOneSequence (udp);
+    }
+
+    Remove (udp->form);
+  }
+  else
+  {
+    sip = SeqIdFindBest (udp->oldbsp->id, 0);
+    if (sip != NULL)
+    {
+      sip_next = sip->next;
+      SeqIdWrite (sip, acc_str, PRINTID_REPORT, sizeof (acc_str));
+      fprintf (udp->log_fp, "Skipped update for %s\n", acc_str);
+	    udp->data_in_log = TRUE;
+      sip->next = sip_next;
+    }
+  }
+  
+  if (log_is_local) 
+  {
+    CloseOutSequenceUpdateLog (udp);
+  }
+  
+  udp->useGUI = old_useGUI;
+  udp->rmcval = prior_rmcval;
+  /* if we are updating a set from a SeqSub, we don't want to free the SeqSub yet */
+  if (udp->seqsubsep != NULL)
+  {
+    udp->newbsp = NULL;
+  }
+  FreeUdpFields (udp);
 }
 
 /*------------------------------------------------------------------*/
@@ -5744,7 +6694,7 @@ static void AcceptRMC (ButtoN b)
 /*                                                                  */
 /*------------------------------------------------------------------*/
 
-static void AcceptRMCAll (ButtoN b)
+static void AcceptRMCOrExtendAll (ButtoN b)
 
 {
   UpsDataPtr   udp;
@@ -5767,8 +6717,11 @@ static void AcceptRMCAll (ButtoN b)
     OpenSequenceUpdateLog (udp);
     if (udp->log_fp == NULL) return;
   }
-    
-  DoAcceptRMCSet (udp);
+  
+  
+  udp->rmcval = GetValue (udp->rmc);
+
+  DoAcceptRMCOrExtendSet (udp);
 
   /* Loop through the file, processing all others */
 
@@ -5795,39 +6748,14 @@ static void AcceptRMCAll (ButtoN b)
     Message (MSG_OK, msgStr);
   }
   else {
-    sprintf (msgStr, "Successfully updated %d sequences from file (not"
+    sprintf (msgStr, "Successfully processed %d sequences from file (not"
 	     " counting any updated before hitting 'Accept All').", count);
     Message (MSG_OK, msgStr);
   }
 }
 
-static void DoAcceptRMCSet (UpsDataPtr udp)
-{
-  Int2         rmcval;
-  Int2         sfbval;
-  Boolean      log_is_local = FALSE;
 
-  SafeHide (udp->form);
-
-  sfbval = GetValue (udp->sfb);
-  rmcval = GetValue (udp->rmc);
-  if (udp->log_fp == NULL) {
-    OpenSequenceUpdateLog (udp);
-    if (udp->log_fp == NULL) return;
-    log_is_local = TRUE;
-  }
-  UpdateOneSequence (udp, rmcval, sfbval, GetStatus (udp->add_cit_subs),
-                     GetStatus (udp->update_proteins));
-
-  Remove (udp->form);
-  if (log_is_local) 
-  {
-    CloseOutSequenceUpdateLog (udp);
-  }
-  FreeUdpFields (udp);
-}
-
-static void AcceptRMCSet (ButtoN b)
+static void AcceptRMCOrExtendSet (ButtoN b)
 
 {
   UpsDataPtr   udp;
@@ -5841,61 +6769,159 @@ static void AcceptRMCSet (ButtoN b)
     if (udp->log_fp == NULL) return;
   }
 
-  DoAcceptRMCSet (udp);
+  udp->rmcval = GetValue (udp->rmc);
+  
+  DoAcceptRMCOrExtendSet (udp);
+
   UpdateNextBioseqInFastaSet (udp);
+}
+
+static void SetProteinOptionsEnable (UpsDataPtr udp)
+{
+  if (udp == NULL || udp->update_proteins == NULL) return;
+  
+  if (Enabled (udp->update_proteins) && GetStatus (udp->update_proteins))
+  {
+    Enable (udp->truncate_proteins_btn);
+    Enable (udp->extend_proteins3_btn);
+    Enable (udp->extend_proteins5_btn);
+    Enable (udp->correct_cds_genes_btn);
+  }
+  else
+  {
+    Disable (udp->truncate_proteins_btn);
+    Disable (udp->extend_proteins3_btn);
+    Disable (udp->extend_proteins5_btn);
+    Disable (udp->correct_cds_genes_btn);
+  }
+}
+
+static void SetStatusUpdateAcceptBtns (UpsDataPtr udp, Boolean status)
+{
+  if (udp == NULL) return;
+  
+  if (status)
+  {
+    SafeEnable (udp->accept);
+    SafeEnable (udp->acceptAll);
+  }
+  else
+  {
+    SafeDisable (udp->accept);
+    SafeDisable (udp->acceptAll);
+  }    
 }
 
 static void UpdateAccept (GrouP g)
 
 {
-  Int2        nobmval, rmcval, sfbval;
+  Int2        rmcval, sfbval;
   UpsDataPtr  udp;
+  Int2        nobmval = UPDATE_FEAT_DUP_NOT_SET;
 
   udp = (UpsDataPtr) GetObjectExtra (g);
   if (udp == NULL) return;
 
   rmcval = GetValue (udp->rmc);
   sfbval = GetValue (udp->sfb);
-  nobmval = GetValue (udp->nobm);
+  
+  if (rmcval == UPDATE_REPLACE)
+  {
+    sfbval = GetValue (udp->sfb);
+    if (sfbval == UPDATE_SEQUENCE_ONLY || sfbval == UPDATE_SEQUENCE_AND_FEATURES)
+    {
+      Enable (udp->update_quality_scores_btn);
+    }
+    else
+    {
+      Disable (udp->update_quality_scores_btn);
+    }
+  }
+  else
+  {
+    Disable (udp->update_quality_scores_btn);
+  }
+  
+  if (sfbval == UPDATE_FEATURES_ONLY || sfbval == UPDATE_SEQUENCE_AND_FEATURES)
+  {
+    if (!GetStatus (udp->replace_all))
+    {
+      nobmval = GetValue (udp->nobm);
+    }
+  }
+  
+  /* set enables for protein updates */
+  if (sfbval == UPDATE_SEQUENCE_ONLY
+     || (sfbval == UPDATE_SEQUENCE_AND_FEATURES
+        && (nobmval == UPDATE_FEAT_DUP_USE_OLD || nobmval == UPDATE_FEAT_DUP_USE_BOTH)))
+  {
+    SafeEnable (udp->update_proteins);
+  }
+  else
+  {
+    SafeDisable (udp->update_proteins);
+  }
+  SetProteinOptionsEnable (udp);    
 
-  if (rmcval == 0) {
-    SafeDisable (udp->accept);
+  if (rmcval == UPDATE_CHOICE_NOT_SET) {
+    SetStatusUpdateAcceptBtns (udp, FALSE);
     return;
   }
   if (! udp->do_update) {
-    SafeEnable (udp->accept);
+    SetStatusUpdateAcceptBtns (udp, TRUE);
     return;
   }
     
-  if (sfbval == 0 || sfbval == 1 || udp->diffOrgs) {
+  if (sfbval == UPDATE_CHOICE_NOT_SET || sfbval == UPDATE_SEQUENCE_ONLY || udp->diffOrgs) {
     SafeDisable (udp->keepProteinIDs);
-    if (sfbval == 0 || sfbval == 1) {
+    if (sfbval == UPDATE_CHOICE_NOT_SET || sfbval == UPDATE_SEQUENCE_ONLY) {
       SafeDisable (udp->nobm);
+      SafeDisable (udp->replace_all);
     } else {
+      SafeEnable (udp->replace_all);
+      if (GetStatus (udp->replace_all))
+      {
+        SafeDisable (udp->nobm);     	
+      }
+      else
+      {
+      	SafeEnable (udp->nobm);
+      }
+    }
+  } else if (sfbval == UPDATE_FEATURES_ONLY || sfbval == UPDATE_SEQUENCE_AND_FEATURES) {
+    SafeEnable (udp->keepProteinIDs);
+    SafeEnable (udp->replace_all);
+    if (GetStatus (udp->replace_all))
+    {
+      SafeDisable (udp->nobm);      	
+    }
+    else
+    {
       SafeEnable (udp->nobm);
     }
-  } else if (sfbval == 2 || sfbval == 3) {
-    SafeEnable (udp->keepProteinIDs);
-    SafeEnable (udp->nobm);
   }
-  if (sfbval == 0) {
-    SafeDisable (udp->accept);
+  if (sfbval == UPDATE_CHOICE_NOT_SET) {
+    SetStatusUpdateAcceptBtns (udp, FALSE);
     return;
   }
-  if (sfbval == 2 || sfbval == 3) {
-    if (nobmval == 0) {
-      SafeDisable (udp->accept);
+  if (sfbval == UPDATE_FEATURES_ONLY || sfbval == UPDATE_SEQUENCE_AND_FEATURES) {
+    if (!GetStatus (udp->replace_all) && nobmval == UPDATE_FEAT_DUP_NOT_SET)
+    {
+      SetStatusUpdateAcceptBtns (udp, FALSE);
       return;
     }
   }
 
-  SafeEnable (udp->accept);
+  SetStatusUpdateAcceptBtns (udp, TRUE);
 }
 
 static void UpdateButtons (GrouP g)
 {
-  UpsDataPtr  udp;
-  Int2         rmcval;
+  UpsDataPtr        udp;
+  Int2              rmcval;
+  Uint2             entityID;
+  SeqFeatPtr        sfp;
+  SeqMgrFeatContext fcontext;
 
   udp = (UpsDataPtr) GetObjectExtra (g);
   if (udp == NULL) return;
@@ -5904,20 +6930,43 @@ static void UpdateButtons (GrouP g)
 
   if (udp->new5 <= udp->old5 && udp->new3 <= udp->old3) 
   {
-    if (rmcval == 4)
+    if (rmcval == UPDATE_PATCH)
     {
       /* If patch sequence matches, must be feature propagation only */
 
       if (StringNICmp (udp->seq1 + udp->old5 - udp->new5,
                        udp->seq2,
                        StringLen (udp->seq2)) == 0) {
-        SetValue (udp->sfb, 2);
+        SetValue (udp->sfb, UPDATE_FEATURES_ONLY);
         Disable (udp->sfb);
       }
     }
-    else if (rmcval == 1)
+    else if (rmcval == UPDATE_REPLACE)
     {
-      Enable (udp->sfb);
+      /* If no features, must be sequence update only */
+
+      entityID = ObjMgrGetEntityIDForPointer (udp->newbsp);
+      if (! SeqMgrFeaturesAreIndexed (entityID))
+        SeqMgrIndexFeatures (entityID, NULL);
+
+      sfp = SeqMgrGetNextFeature (udp->newbsp, NULL, 0, 0, &fcontext);
+      if (sfp == NULL) 
+      {
+        SetValue (udp->sfb, UPDATE_SEQUENCE_ONLY);
+        Disable (udp->sfb);
+        Disable (udp->replace_all);
+        Disable (udp->nobm);
+      }
+      else if (!indexerVersion &&
+               (udp->newbsp->repr != Seq_repr_raw || udp->oldbsp->repr != Seq_repr_raw))
+      {
+        SetValue (udp->sfb, UPDATE_FEATURES_ONLY);
+        Disable (udp->sfb);
+      }
+      else
+      {
+        Enable (udp->sfb);
+      }
     }
   }
   UpdateAccept (g);
@@ -6760,9 +7809,6 @@ static CharPtr txt2 =
 static CharPtr txt3 =
   "Click above to scroll Alignment Text position";
 
-static CharPtr txt4 =
-  "Alignment Text displays sequence letters";
-
 /*------------------------------------------------------------------*/
 /*                                                                  */
 /* DetermineButtonState () -- Enable/disable buttons based on the   */
@@ -6792,12 +7838,16 @@ static void DetermineButtonState (UpsDataPtr   udp,
     if (udp->do_update && patchButtonPtr != NULL && *patchButtonPtr != NULL) {
       Disable (*patchButtonPtr);
     }
+    if (!udp->do_update)
+    {
+      Disable (*replaceButtonPtr);
+    }
   }
 
   /* Extend 5' */
 
   else if (udp->new5 > udp->old5 && udp->new3 < udp->old3) {
-    SetValue (udp->rmc, 2);
+    SetValue (udp->rmc, UPDATE_EXTEND5);
     Disable (*extend3ButtonPtr);
     udp->recomb2 = udp->aln_length;
     if (! udp->do_update) {
@@ -6808,7 +7858,7 @@ static void DetermineButtonState (UpsDataPtr   udp,
   /* Extend 3' */
 
   else if (udp->new5 < udp->old5 && udp->new3 > udp->old3) {
-    SetValue (udp->rmc, 3);
+    SetValue (udp->rmc, UPDATE_EXTEND3);
     Disable (*extend5ButtonPtr);
     udp->recomb1 = 0;
     if (! udp->do_update) {
@@ -6818,31 +7868,40 @@ static void DetermineButtonState (UpsDataPtr   udp,
 
   /* Replace */
 
-  else if (udp->new5 >= udp->old5 && udp->new3 >= udp->old3) {
-    SetValue (udp->rmc, 1);
+  else {
+    SetValue (udp->rmc, UPDATE_REPLACE);
     Disable (*extend5ButtonPtr);
     Disable (*extend3ButtonPtr);
     udp->recomb1 = 0;
     udp->recomb2 = udp->aln_length;
   }
-
-  /* Patch */
-
-  else if (udp->new5 <= udp->old5 && udp->new3 <= udp->old3) {
-    SetValue (udp->rmc, 4);
-    Disable (*extend5ButtonPtr);
-    Disable (*extend3ButtonPtr);
-    udp->recomb1 = 0;
-    udp->recomb2 = udp->aln_length;
-
-    /* If patch sequence matches, must be feature propagation only */
-
-    if (StringNICmp (udp->seq1 + udp->old5 - udp->new5,
-		     udp->seq2,
-		     StringLen (udp->seq2)) == 0) {
-      SetValue (udp->sfb, 2);
-      Disable (udp->sfb);
-    }
+  
+  switch (udp->rmcval)
+  {
+    case UPDATE_REPLACE:
+      if (Enabled (*replaceButtonPtr))
+      {
+        SetValue (udp->rmc, UPDATE_REPLACE);
+      }
+      break;
+    case UPDATE_EXTEND5:
+      if (Enabled (*extend5ButtonPtr))
+      {
+        SetValue (udp->rmc, UPDATE_EXTEND5);
+      }
+      break;
+    case UPDATE_EXTEND3:
+      if (Enabled (*extend3ButtonPtr))
+      {
+        SetValue (udp->rmc, UPDATE_EXTEND3);
+      }
+      break;
+    case UPDATE_PATCH:
+      if (Enabled (*patchButtonPtr))
+      {
+        SetValue (udp->rmc, UPDATE_PATCH);
+      }
+      break;
   }
 
   /* If no features, must be sequence update only */
@@ -6853,8 +7912,9 @@ static void DetermineButtonState (UpsDataPtr   udp,
 
   sfp = SeqMgrGetNextFeature (udp->newbsp, NULL, 0, 0, &fcontext);
   if (sfp == NULL) {
-    SetValue (udp->sfb, 1);
+    SetValue (udp->sfb, UPDATE_SEQUENCE_ONLY);
     Disable (udp->sfb);
+    Disable (udp->replace_all);
     Disable (udp->nobm);
   }
 
@@ -6879,7 +7939,7 @@ static void DetermineButtonState (UpsDataPtr   udp,
   if (orp1 != NULL && orp2 != NULL) {
     if (StringICmp (orp1->taxname, orp2->taxname) != 0) {
       if (sfp != NULL) {
-        SetValue (udp->sfb, 2);
+        SetValue (udp->sfb, UPDATE_FEATURES_ONLY);
         Disable (udp->sfb);
         udp->diffOrgs = TRUE;
 	if (FALSE == udp->isSet)
@@ -6887,8 +7947,9 @@ static void DetermineButtonState (UpsDataPtr   udp,
 		   " be propagated, but sequence will not be changed");
       } else {
         /* no features, cannot do anything */
-        SetValue (udp->sfb, 0);
+        SetValue (udp->sfb, UPDATE_CHOICE_NOT_SET);
         Disable (udp->sfb);
+        Disable (udp->replace_all);
         Disable (udp->nobm);
 	if (FALSE == udp->isSet)
 	  Message (MSG_OK, "Organisms are different, no features"
@@ -6898,10 +7959,10 @@ static void DetermineButtonState (UpsDataPtr   udp,
     }
   }
 
-  /* If either sequence is not raw, only allow feature propagation */
-
-  if (udp->oldbsp->repr != Seq_repr_raw || udp->newbsp->repr != Seq_repr_raw) {
-    SetValue (udp->sfb, 2);
+  /* If either sequence is not raw and not indexer version, only allow feature propagation */
+  if (!indexerVersion &&
+      (udp->oldbsp->repr != Seq_repr_raw || udp->newbsp->repr != Seq_repr_raw)) {
+    SetValue (udp->sfb, UPDATE_FEATURES_ONLY);
     Disable (udp->sfb);
   }
 
@@ -6911,116 +7972,24 @@ static void DetermineButtonState (UpsDataPtr   udp,
 
 }
 
-/*------------------------------------------------------------------*/
-/*                                                                  */
-/* DetermineRMCState () -- Decide whether to Replace, Merge or      */
-/*                         Extend the two sequences.                */
-/*                                                                  */
-/*------------------------------------------------------------------*/
-
-static void DetermineRMCState (UpsDataPtr   udp)
+static void ChangeUpdateReplaceAll (ButtoN b)
 {
-  BioSourcePtr       biop1;
-  BioSourcePtr       biop2;
-  SeqMgrDescContext  dcontext;
-  Uint2              entityID;
-  SeqMgrFeatContext  fcontext;
-  OrgRefPtr          orp1;
-  OrgRefPtr          orp2;
-  SeqDescrPtr        sdp;
-  SeqFeatPtr         sfp;
-
-  /* If there is an alignment, figure out what kind */
-
-  if (udp->salp != NULL) {
-    
-    /* Extend 5' */
-    
-    if (udp->new5 > udp->old5 && udp->new3 < udp->old3) {
-      SetValue (udp->rmc, 2);
-      udp->recomb2 = udp->aln_length;
-    }
-    
-    /* Extend 3' */
-    
-    else if (udp->new5 < udp->old5 && udp->new3 > udp->old3) {
-      SetValue (udp->rmc, 3);
-      udp->recomb1 = 0;
-    }
-    
-    /* Replace */
-    
-    else if (udp->new5 >= udp->old5 && udp->new3 >= udp->old3) {
-      SetValue (udp->rmc, 1);
-      udp->recomb1 = 0;
-      udp->recomb2 = udp->aln_length;
-    }
-    
-    /* Patch */
-    
-    else if (udp->new5 <= udp->old5 && udp->new3 <= udp->old3) {
-      SetValue (udp->rmc, 4);
-      udp->recomb1 = 0;
-      udp->recomb2 = udp->aln_length;
-      
-      /* If patch sequence matches, must be feature propagation only */
-      
-      if (StringNICmp (udp->seq1 + udp->old5 - udp->new5,
-		       udp->seq2,
-		       StringLen (udp->seq2)) == 0) {
-	SetValue (udp->sfb, 2);
-      }
-    }
+  UpsDataPtr udp;
+  
+  if (b == NULL) return;
+  udp = (UpsDataPtr) GetObjectExtra (b);
+  if (udp == NULL) return;
+ 
+  if (GetStatus (b))
+  {
+  	Disable (udp->nobm);
   }
-
-  /* If no features, must be sequence update only */
-
-  entityID = ObjMgrGetEntityIDForPointer (udp->newbsp);
-  if (! SeqMgrFeaturesAreIndexed (entityID))
-    SeqMgrIndexFeatures (entityID, NULL);
-
-  sfp = SeqMgrGetNextFeature (udp->newbsp, NULL, 0, 0, &fcontext);
-  if (sfp == NULL)
-    SetValue (udp->sfb, 1);
-
-  /* If different organisms, must be feature propagation only */
-
-  orp1 = NULL;
-  orp2 = NULL;
-  sdp = SeqMgrGetNextDescriptor (udp->oldbsp, NULL, Seq_descr_source,
-				 &dcontext);
-  if (sdp != NULL) {
-    biop1 = (BioSourcePtr) sdp->data.ptrvalue;
-    if (biop1 != NULL)
-      orp1 = biop1->org;
+  else
+  {
+  	Enable (udp->nobm);
   }
-  sdp = SeqMgrGetNextDescriptor (udp->newbsp, NULL, Seq_descr_source, &dcontext);
-  if (sdp != NULL) {
-    biop2 = (BioSourcePtr) sdp->data.ptrvalue;
-    if (biop2 != NULL) {
-      orp2 = biop2->org;
-    }
-  }
-  if (orp1 != NULL && orp2 != NULL) {
-    if (StringICmp (orp1->taxname, orp2->taxname) != 0) {
-      if (sfp != NULL) {
-        SetValue (udp->sfb, 2);
-        udp->diffOrgs = TRUE;
-	if (FALSE == udp->isSet)
-	  Message (MSG_OK, "Organisms are different, so features will"
-		   " be propagated, but sequence will not be changed");
-      } else {
-        /* no features, cannot do anything */
-        SetValue (udp->sfb, 0);
-      }
-    }
-  }
-
-  /* If either sequence is not raw, only allow feature propagation */
-
-  if (udp->oldbsp->repr != Seq_repr_raw || udp->newbsp->repr != Seq_repr_raw)
-    SetValue (udp->sfb, 2);
-
+  /* update accept button */
+  UpdateAccept (udp->rmc);
 }
 
 static void CancelUpdate (ButtoN b)
@@ -7034,6 +8003,167 @@ static void CancelUpdate (ButtoN b)
   StdCancelButtonProc (b);
 }
 
+static GrouP CreateUpdateOperationsGroup (GrouP parent, UpsDataPtr udp)
+{
+  GrouP  g;
+  GrouP  gp1, gp2, gp3;
+  ButtoN b1 = NULL, b2 = NULL, b3 = NULL, b4 = NULL;
+  
+  if (udp == NULL) return NULL;
+  
+  g = HiddenGroup (parent, -1, 0, NULL);
+  SetGroupSpacing (g, 5, 5);
+  
+  gp1 = NormalGroup (g, 4, 0, "Alignment Relationship", programFont, NULL);
+  udp->rmc = HiddenGroup (gp1, 4, 0, UpdateButtons);
+  SetObjectExtra (udp->rmc, (Pointer) udp, NULL);
+  SetGroupSpacing (udp->rmc, 10, 5);
+  if (udp->do_update) {
+    b1 = RadioButton (udp->rmc, "Replace");
+  } else {
+    b1= RadioButton (udp->rmc, "Extend Both Ends");
+  }
+  b2 = RadioButton (udp->rmc, "Extend 5'");
+  b3 = RadioButton (udp->rmc, "Extend 3'");
+  if (udp->do_update) {
+    b4 = RadioButton (udp->rmc, "Patch");
+  } else {
+    b4 = NULL;
+  }
+
+  if (udp->do_update) {
+    gp2 = NormalGroup (g, 4, 0, "Update Operation", programFont, NULL);
+    udp->sfb = HiddenGroup (gp2, 3, 0, UpdateAccept);
+    SetObjectExtra (udp->sfb, (Pointer) udp, NULL);
+    SetGroupSpacing (udp->sfb, 10, 5);
+    RadioButton (udp->sfb, "Sequence");
+    RadioButton (udp->sfb, "Features");
+    RadioButton (udp->sfb, "Sequence + Features");
+  
+    udp->keepProteinIDs = CheckBox (g, "Keep Protein IDs", NULL);
+  
+    gp3 = NormalGroup (g, 1, 0, "Feature Policy", programFont, NULL);
+    udp->replace_all = CheckBox (gp3, "Replace All Features", ChangeUpdateReplaceAll);
+    SetObjectExtra (udp->replace_all, (Pointer) udp, NULL);
+    SetValue (udp->replace_all, FALSE);
+    
+    udp->nobm = NormalGroup (gp3, 5, 0, "Duplicate Features Only", programFont, UpdateAccept);
+    SetObjectExtra (udp->nobm, (Pointer) udp, NULL);
+    SetGroupSpacing (udp->nobm, 10, 5);
+    RadioButton (udp->nobm, "New");
+    RadioButton (udp->nobm, "Old");
+    RadioButton (udp->nobm, "Both");
+    RadioButton (udp->nobm, "Merge");
+    RadioButton (udp->nobm, "Replace");
+  
+    AlignObjects (ALIGN_CENTER, (HANDLE) gp1, (HANDLE) gp2, 
+                  (HANDLE) udp->keepProteinIDs,
+                  (HANDLE) gp3,  NULL);
+  }
+  /* Enable/disable buttons based on the nature of the alignment */
+    
+  DetermineButtonState (udp, &b1, &b2, &b3, &b4);
+  return g;
+  
+}
+
+
+static void ChangeProteinUpdateStatus (ButtoN b)
+{
+  UpsDataPtr udp;
+  
+  udp = (UpsDataPtr) GetObjectExtra (b);
+  if (udp == NULL) return;
+  SetProteinOptionsEnable (udp);
+}
+
+static void SkipUpdate (UpsDataPtr udp)
+{
+  Char     acc_str [256];
+  SeqIdPtr sip, sip_next;
+  
+  if (udp == NULL) return;
+
+  OpenSequenceUpdateLog (udp);
+  if (udp->log_fp != NULL && udp->oldbsp != NULL && udp->oldbsp->id != NULL)
+  {
+    sip = SeqIdFindBest (udp->oldbsp->id, 0);
+    if (sip != NULL)
+    {
+      sip_next = sip->next;
+      sip->next = NULL;
+      SeqIdWrite (sip, acc_str, PRINTID_REPORT, sizeof (acc_str));
+      fprintf (udp->log_fp, "Skipped update for %s\n", acc_str);
+	    udp->data_in_log = TRUE;
+	    sip->next = sip_next;
+    }
+  }
+  
+  /* if we are updating a set from a SeqSub, we don't want to free the SeqSub yet */
+  if (udp->seqsubsep != NULL)
+  {
+    udp->newbsp = NULL;
+  }
+  FreeUdpFields (udp);
+  UpdateNextBioseqInFastaSet (udp); 
+}
+
+static GrouP CreateExtraUpdateOptionsGroup (GrouP g, UpsDataPtr udp)
+{
+  GrouP y, protein_options;
+  
+  if (udp == NULL || g == NULL) return NULL;
+
+  y = HiddenGroup (g, -1, 0, NULL);
+  
+  udp->add_cit_subs = CheckBox (y, "Add Cit-subs for Updated Sequences", NULL);
+  udp->update_quality_scores_btn = NULL;
+  if (! ISA_aa (udp->oldbsp->mol) && udp->do_update)
+  {
+    udp->update_quality_scores_btn = CheckBox (y, "Replace Quality Scores", NULL);
+    SetStatus (udp->update_quality_scores_btn, TRUE);
+
+    udp->update_proteins = CheckBox (y, "Update Proteins for Updated Sequences", ChangeProteinUpdateStatus);
+    SetObjectExtra (udp->update_proteins, (Pointer) udp, NULL);
+    SetStatus (udp->update_proteins, FALSE);
+    protein_options = HiddenGroup (y, 1, 0, NULL);
+    udp->truncate_proteins_btn = CheckBox (protein_options,
+                                     "Truncate retranslated proteins at stops",
+                                           NULL);
+    SetStatus (udp->truncate_proteins_btn,
+               udp->truncate_proteins);
+    udp->extend_proteins3_btn = CheckBox (protein_options,
+                                  "Extend retranslated proteins without stops",
+                                         NULL);
+    udp->extend_proteins5_btn = CheckBox (protein_options,
+                                  "Extend retranslated proteins without starts",
+                                         NULL);
+    udp->correct_cds_genes_btn = CheckBox (protein_options, "Correct CDS genes", NULL);
+  
+    SetStatus (udp->extend_proteins3_btn, udp->extend_proteins3);
+    SetStatus (udp->extend_proteins5_btn, udp->extend_proteins5);
+    SetStatus (udp->correct_cds_genes_btn, udp->correct_cds_genes);
+  }
+  AlignObjects (ALIGN_CENTER, (HANDLE) udp->add_cit_subs, 
+                (HANDLE) udp->update_quality_scores_btn,
+                (HANDLE) udp->update_proteins,
+                (HANDLE) protein_options,
+                NULL);
+  return y;
+}
+
+static void SkipUpdateBtn (ButtoN b)
+{
+  UpsDataPtr udp;
+  
+  udp = (UpsDataPtr) GetObjectExtra (b);
+  if (udp == NULL) return;
+  SafeHide (udp->form);
+  Remove (udp->form);
+
+  SkipUpdate (udp);  
+}
+
 /*------------------------------------------------------------------*/
 /*                                                                  */
 /* UpdateSequenceForm () -- Compares two sequences and displays a   */
@@ -7044,18 +8174,21 @@ static void CancelUpdate (ButtoN b)
 
 static ForM UpdateSequenceForm (UpsDataPtr udp)
 {
-  ButtoN             b1, b2, b3, b4, b;
-  GrouP              c, g, y, z = NULL;
+  ButtoN             b;
+  GrouP              c, g, y, k, x, z = NULL;
   Uint2              hgt;
-  GrouP              gp1, gp2, gp3, ppt0, ppt1, ppt2, ppt3, ppt4 = NULL;
+  GrouP              ppt0, ppt1, ppt2, ppt3;
   RecT               r;
   BaR                sb;
   Int4               scaleX;
-  Boolean            sidebyside = FALSE;
   SeqIdPtr           sip;
   Char               strid1 [MAX_ID_LEN], strid2 [MAX_ID_LEN], txt0 [256];
   CharPtr            title;
   WindoW             w;
+  GrouP              misc_options;
+  Int4               prompt_width = 400;
+  GrouP              left_panel;
+  GrouP              right_panel;
 
   /* Check parameters */
 
@@ -7074,11 +8207,6 @@ static ForM UpdateSequenceForm (UpsDataPtr udp)
   if (w == NULL)
     return NULL;
   
-#ifdef WIN_MSWIN
-  if (screenRect.bottom - screenRect.top < 750) {
-    sidebyside = TRUE;
-  }
-#endif
   if (FALSE == udp->isSet)
     SetObjectExtra (w, (Pointer) udp, CleanupUpdateSequenceForm);
   udp->form = (ForM) w;
@@ -7089,7 +8217,7 @@ static ForM UpdateSequenceForm (UpsDataPtr udp)
   SeqIdWrite (sip, strid1, PRINTID_REPORT, sizeof (strid1) - 1);
   sip = SeqIdFindWorst (udp->newbsp->id);
   SeqIdWrite (sip, strid2, PRINTID_REPORT, sizeof (strid2) - 1);
-  if (StringICmp (strid2, "SequinUpdateSequence") == 0 &&
+  if (StringNICmp (strid2, "SequinUpdateSequence", 20) == 0 &&
       udp->newbsp->id->next != NULL) {
     sip = SeqIdFindWorst (udp->newbsp->id->next);
     SeqIdWrite (sip, strid2, PRINTID_REPORT, sizeof (strid2) - 1);
@@ -7115,32 +8243,28 @@ static ForM UpdateSequenceForm (UpsDataPtr udp)
 	   "New sequence: %s - Length: %ld\nOld Sequence: %s - Length: %ld",
 	   strid2, (long) udp->newbsp->length, strid1,
 	   (long) udp->oldbsp->length);
-  ppt0 = MultiLinePrompt (w, txt0, 350, programFont);
+  ppt0 = MultiLinePrompt (w, txt0, prompt_width, programFont);
   
-  if (sidebyside)
-    y = HiddenGroup (w, 0, -5, NULL);
-  else
-    y = HiddenGroup (w, -1, 0, NULL);
+  x = HiddenGroup (w, 2, 0, NULL);
+  left_panel = HiddenGroup (x, -1, 0, NULL);
+  y = left_panel;
   
-  ppt1 = MultiLinePrompt (y, txt1, 350, programFont);
-  udp->overview = CreateViewer (y, 350 + Nlm_vScrollBarWidth, 100,
+  ppt1 = MultiLinePrompt (y, txt1, prompt_width, programFont);
+  udp->overview = CreateViewer (y, prompt_width + Nlm_vScrollBarWidth, 100,
 				FALSE, FALSE);
   
-  ppt2 = MultiLinePrompt (y, txt2, 350, programFont);
-  udp->details = CreateViewer (y, 350 + Nlm_vScrollBarWidth, 80,
+  ppt2 = MultiLinePrompt (y, txt2, prompt_width, programFont);
+  udp->details = CreateViewer (y, prompt_width + Nlm_vScrollBarWidth, 80,
 			       FALSE, FALSE);
   
-  ppt3 = MultiLinePrompt (y, txt3, 350, programFont);
-  
-  if (sidebyside)
-    ppt4 = MultiLinePrompt (y, txt4, 350, programFont);
-  
+  ppt3 = MultiLinePrompt (y, txt3, prompt_width, programFont);
+    
 #ifdef WIN_MAC
   hgt = 90;
 #else
   hgt = 110;
 #endif
-  udp->letters = AutonomousPanel4 (y, 350 + Nlm_vScrollBarWidth, hgt,
+  udp->letters = AutonomousPanel4 (y, prompt_width + Nlm_vScrollBarWidth, hgt,
 				   LetDraw, NULL, LetScrl, 0, NULL, NULL);
   SetObjectExtra (udp->letters, (Pointer) udp, NULL);
   
@@ -7156,132 +8280,44 @@ static ForM UpdateSequenceForm (UpsDataPtr udp)
   
   udp->ovpict = NULL;
   udp->dtpict = NULL;
-  
-  g = HiddenGroup (y, -1, 0, NULL);
-  SetGroupSpacing (g, 5, 5);
-  
-  gp1 = NormalGroup (g, 4, 0, "Alignment Relationship", programFont, NULL);
-  udp->rmc = HiddenGroup (gp1, 4, 0, UpdateButtons);
-  SetObjectExtra (udp->rmc, (Pointer) udp, NULL);
-  SetGroupSpacing (udp->rmc, 10, 5);
-  if (udp->do_update) {
-    b1 = RadioButton (udp->rmc, "Replace");
-  } else {
-    b1= RadioButton (udp->rmc, "Extend Both Ends");
-  }
-  b2 = RadioButton (udp->rmc, "Extend 5'");
-  b3 = RadioButton (udp->rmc, "Extend 3'");
-  if (udp->do_update) {
-    b4 = RadioButton (udp->rmc, "Patch");
-  } else {
-    b4 = NULL;
-  }
 
-  if (udp->do_update) {
-    gp2 = NormalGroup (g, 4, 0, "Update Operation", programFont, NULL);
-    udp->sfb = HiddenGroup (gp2, 4, 0, UpdateAccept);
-    SetObjectExtra (udp->sfb, (Pointer) udp, NULL);
-    SetGroupSpacing (udp->sfb, 10, 5);
-    RadioButton (udp->sfb, "Sequence");
-    RadioButton (udp->sfb, "Features");
-    RadioButton (udp->sfb, "Sequence + Features");
+  AlignObjects (ALIGN_CENTER, (HANDLE) udp->overview,
+                (HANDLE) udp->details, (HANDLE) udp->letters,
+                (HANDLE) ppt1, (HANDLE) ppt2,
+                (HANDLE) ppt3, NULL);
+
+  right_panel = HiddenGroup (x, -1, 0, NULL);
+  y = right_panel;
+
+  k = HiddenGroup (y, -1, 0, NULL);
+  g = CreateUpdateOperationsGroup (k, udp);
+  misc_options = CreateExtraUpdateOptionsGroup (k, udp);  
+  AlignObjects (ALIGN_CENTER, (HANDLE) g, (HANDLE) misc_options, NULL);
   
-    udp->keepProteinIDs = CheckBox (g, "Keep Protein IDs", NULL);
-  
-    gp3 = NormalGroup (g, 4, 0, "Duplicate Feature Policy", programFont, NULL);
-    udp->nobm = HiddenGroup (gp3, 5, 0, UpdateAccept);
-    SetObjectExtra (udp->nobm, (Pointer) udp, NULL);
-    SetGroupSpacing (udp->nobm, 10, 5);
-    RadioButton (udp->nobm, "New");
-    RadioButton (udp->nobm, "Old");
-    RadioButton (udp->nobm, "Both");
-    RadioButton (udp->nobm, "Merge");
-    RadioButton (udp->nobm, "Replace");
-  
-    AlignObjects (ALIGN_CENTER, (HANDLE) gp1, (HANDLE) gp2,
-                  (HANDLE) gp3, (HANDLE) udp->keepProteinIDs, NULL);
-  }
-  udp->add_cit_subs = CheckBox (g, "Add Cit-subs for Updated Sequences", NULL);
-  if (! ISA_aa (udp->oldbsp->mol))
+  c = HiddenGroup (w, 5, 0, NULL);
+  if (udp->isSet)
   {
-    udp->update_proteins = CheckBox (g, "Update Proteins for Updated Sequences", NULL);
-    SetStatus (udp->update_proteins, TRUE);
-    udp->truncate_proteins_btn = CheckBox (g,
-                                     "Truncate retranslated proteins at stops",
-                                           NULL);
-    SetStatus (udp->truncate_proteins_btn,
-               udp->truncate_proteins);
-    udp->extend_proteins3_btn = CheckBox (g,
-                                  "Extend retranslated proteins without stops",
-                                         NULL);
-    udp->extend_proteins5_btn = CheckBox (g,
-                                  "Extend retranslated proteins without starts",
-                                         NULL);
-    udp->correct_cds_genes_btn = CheckBox (g, "Correct CDS genes", NULL);
-  
-    SetStatus (udp->extend_proteins3_btn, udp->extend_proteins3);
-    SetStatus (udp->extend_proteins5_btn, udp->extend_proteins5);
-    SetStatus (udp->correct_cds_genes_btn, udp->correct_cds_genes);
-  }
-
-  if (! udp->do_update) {
-    c = HiddenGroup (w, 4, 0, NULL);
-    udp->accept = DefaultButton (c, "Accept", AcceptExtend);
+    udp->accept = DefaultButton (c, "Accept", AcceptRMCOrExtendSet);
     SetObjectExtra (udp->accept, (Pointer) udp, NULL);
-  } else if (TRUE == udp->isSet) {
-    c = HiddenGroup (w, 5, 0, NULL);
-    udp->accept = DefaultButton (c, "Accept", AcceptRMCSet);
-    SetObjectExtra (udp->accept, (Pointer) udp, NULL);
-    udp->acceptAll = DefaultButton (c, "Accept All", AcceptRMCAll);
+    udp->acceptAll = DefaultButton (c, "Accept All", AcceptRMCOrExtendAll);
     SetObjectExtra (udp->acceptAll, (Pointer) udp, NULL);
+    b = PushButton (c, "Skip", SkipUpdateBtn);
+    SetObjectExtra (b, (Pointer) udp, NULL);  
   }
-  else {
-    c = HiddenGroup (w, 4, 0, NULL);
-    udp->accept = DefaultButton (c, "Accept", AcceptRMC);
+  else
+  {
+    udp->accept = DefaultButton (c, "Accept", AcceptRMCOrExtend);
     SetObjectExtra (udp->accept, (Pointer) udp, NULL);
   }
   
   b = PushButton (c, "Cancel", CancelUpdate);
-  SetObjectExtra (b, (Pointer) udp, NULL);
-  
-  if (sidebyside) {
-    AlignObjects (ALIGN_CENTER, (HANDLE) udp->overview,
-		  (HANDLE) udp->details, (HANDLE) ppt1, (HANDLE) ppt2,
-		  (HANDLE) ppt3, NULL);
-    if (! ISA_aa (udp->oldbsp->mol)) {
-      AlignObjects (ALIGN_CENTER, (HANDLE) udp->letters, (HANDLE) ppt4,
-                    (HANDLE) g, (HANDLE) udp->add_cit_subs,
-                    (HANDLE) udp->update_proteins,
-                    (HANDLE) udp->truncate_proteins_btn,
-                    (HANDLE) udp->extend_proteins5_btn,
-                    (HANDLE) udp->extend_proteins3_btn,
-                    (HANDLE) udp->correct_cds_genes_btn,
-                    (HANDLE) z, NULL);
-    } else {
-      AlignObjects (ALIGN_CENTER, (HANDLE) udp->letters, (HANDLE) ppt4,
-                    (HANDLE) g, (HANDLE) udp->add_cit_subs, (HANDLE) z, NULL);
-    }
-    AlignObjects (ALIGN_CENTER, (HANDLE) ppt0, (HANDLE) y, (HANDLE) c, NULL);
-  }
-  else
-    if (! ISA_aa (udp->oldbsp->mol)) {
-      AlignObjects (ALIGN_CENTER, (HANDLE) udp->overview,
-                    (HANDLE) udp->details, (HANDLE) udp->letters,
-                    (HANDLE) ppt0, (HANDLE) ppt1, (HANDLE) ppt2,
-                    (HANDLE) ppt3, (HANDLE) g, (HANDLE) udp->add_cit_subs,
-                    (HANDLE) udp->update_proteins,
-                    (HANDLE) udp->truncate_proteins_btn,
-                    (HANDLE) udp->extend_proteins5_btn,
-                    (HANDLE) udp->extend_proteins3_btn,
-                    (HANDLE) udp->correct_cds_genes_btn,
-                    (HANDLE) c, (HANDLE) z, NULL);
-    } else {
-      AlignObjects (ALIGN_CENTER, (HANDLE) udp->overview,
-                    (HANDLE) udp->details, (HANDLE) udp->letters,
-                    (HANDLE) ppt0, (HANDLE) ppt1, (HANDLE) ppt2,
-                    (HANDLE) ppt3, (HANDLE) g, (HANDLE) udp->add_cit_subs,
-                    (HANDLE) c, (HANDLE) z, NULL);
-    }
+  SetObjectExtra (b, (Pointer) udp, NULL);  
+  UpdateButtons (udp->rmc);
+
+  AlignObjects (ALIGN_CENTER,     
+                (HANDLE) ppt0,
+                (HANDLE) x,
+                (HANDLE) c, (HANDLE) z, NULL);
   RealizeWindow (w);
   
   udp->ovpict = MakeAlignPicture (udp, strid1, strid2, udp->salp);
@@ -7315,49 +8351,9 @@ static ForM UpdateSequenceForm (UpsDataPtr udp)
   udp->recomb1 = -1;
   udp->recomb2 = -1;
   
-  /* Enable/disable buttons based on the nature of the alignment */
-    
-  DetermineButtonState (udp, &b1, &b2, &b3, &b4);
   return (ForM) w;
 }
 
-static void HasPubsCallback (SeqEntryPtr sep, Pointer mydata, Int4 index, Int2 indent)
-
-{
-  BioseqPtr     bsp;
-  BioseqSetPtr  bssp;
-  BoolPtr       rsult;
-  ValNodePtr    sdp;
-
-  if (sep == NULL || sep->data.ptrvalue == NULL) return;
-  rsult = (BoolPtr) mydata;
-  if (IS_Bioseq (sep)) {
-    bsp = (BioseqPtr) sep->data.ptrvalue;
-    sdp = bsp->descr;
-  } else if (IS_Bioseq_set (sep)) {
-    bssp = (BioseqSetPtr) sep->data.ptrvalue;
-    sdp = bssp->descr;
-  } else return;
-  while (sdp != NULL) {
-    if (sdp->choice == Seq_descr_pub) {
-      *rsult = TRUE;
-      return;
-    }
-    sdp = sdp->next;
-  }
-}
-
-static Boolean LIBCALL SeqEntryHasPubs (SeqEntryPtr sep)
-
-{
-  Boolean  rsult;
-
-  rsult = FALSE;
-  if (sep != NULL) {
-    SeqEntryExplore (sep, (Pointer) &rsult, HasPubsCallback);
-  }
-  return rsult;
-}
 
 /*=====================================================================*/
 /*                                                                     */
@@ -7365,32 +8361,46 @@ static Boolean LIBCALL SeqEntryHasPubs (SeqEntryPtr sep)
 /*                                                                     */
 /*=====================================================================*/
 
-static void PrepareToUpdateSequences (UpsDataPtr udp)
+static Boolean PrepareToUpdateSequences (UpsDataPtr udp)
 {
   ForM         f;
 
   if ( ! PrepareUpdatePtr (udp)) 
   {
     CloseOutSequenceUpdateLog (udp);
-    return;	
+    return FALSE;	
   }
 
-  if (TRUE == udp->useGUI) {
-    f = UpdateSequenceForm (udp);
-    if (f == NULL) 
+  if (TRUE == udp->useGUI)
+  {
+    if (udp->salp == NULL && udp->do_update &&
+        (udp->no_aln_choice == UPDATE_REPLACE_THIS
+         || udp->no_aln_choice == UPDATE_SKIP_THIS
+         || udp->no_aln_choice == UPDATE_REPLACE_ALL
+         || udp->no_aln_choice == UPDATE_REPLACE_THIS)) 
     {
-      CloseOutSequenceUpdateLog (udp);	
-      return;
+      CalculateOverhangs (udp);
+      DoAcceptRMCOrExtendSet (udp);
+      UpdateNextBioseqInFastaSet (udp);
     }
-    Show (f);
-    Select (f);
-    SendHelpScrollMessage (helpForm, "Edit Menu", "Update Sequence");
+    else
+    {
+      f = UpdateSequenceForm (udp);
+      if (f == NULL) 
+      {
+        CloseOutSequenceUpdateLog (udp);	
+        return FALSE;
+      }
+      Show (f);
+      Select (f);
+      SendHelpScrollMessage (helpForm, "Edit Menu", "Update Sequence");
+    }
   }
   else {
     CalculateOverhangs (udp);
-    DoAcceptRMCSet (udp);
+    DoAcceptRMCOrExtendSet (udp);
   }
-
+  return TRUE;
 }
 
 /*=====================================================================*/
@@ -7407,7 +8417,7 @@ static Boolean LIBCALLBACK FindMatchingBioseq (BioseqPtr bsp,
   Char          currentId[MAX_ID_LEN];
   UpdateDataPtr pUpdateData;
   Int2          result;
-  SeqIdPtr      sip;
+  SeqIdPtr      sip, sip_next;
 
   pUpdateData = (UpdateDataPtr) bContext->userdata;
 
@@ -7415,6 +8425,8 @@ static Boolean LIBCALLBACK FindMatchingBioseq (BioseqPtr bsp,
   
   for (sip = bsp->id; sip != NULL; sip = sip->next) 
   {
+    sip_next = sip->next;
+    sip->next = NULL;
     SeqIdWrite (sip, currentId, PRINTID_TEXTID_ACC_ONLY,
 	            sizeof (currentId) - 1);
 
@@ -7422,6 +8434,18 @@ static Boolean LIBCALLBACK FindMatchingBioseq (BioseqPtr bsp,
 
     result = StringICmp (pUpdateData->newId, currentId);
 
+    /* if TEXTID_ACC_ONLY doesn't match, try PRINTID_REPORT */
+    if (result != 0)
+    {
+      SeqIdWrite (sip, currentId, PRINTID_REPORT,
+	                sizeof (currentId) - 1);
+
+      /* Compare it to the string ID of the new Bioseq */
+
+      result = StringICmp (pUpdateData->newId, currentId);
+    }
+
+	  sip->next = sip_next;
     /* If they match, save the Bioseq and quit searching */
 
     if (0 == result) {
@@ -7433,6 +8457,57 @@ static Boolean LIBCALLBACK FindMatchingBioseq (BioseqPtr bsp,
   /* Else continue */
 
   return TRUE;
+}
+
+static Boolean SkipProteinInNucUpdate (SeqEntryPtr sep, UpsDataPtr udp)
+{
+  Char       newId[MAX_ID_LEN];
+  SeqIdPtr   sip;
+  BioseqPtr  bsp;
+  Boolean    rval = FALSE;
+  MsgAnswer  ans;
+  
+  if (sep == NULL || ! IS_Bioseq (sep) || sep->data.ptrvalue == NULL || udp == NULL)
+  {
+    return FALSE;
+  }
+   
+  bsp = (BioseqPtr) sep->data.ptrvalue;
+  if (ISA_na (bsp->mol))
+  {
+    return FALSE;
+  }
+  
+  sip = SeqIdFindWorst (bsp->id);
+  SeqIdWrite (sip, newId, PRINTID_REPORT, sizeof (newId) - 1);
+  ans = Message (MSG_YN, "Found a protein (%s) in the update file, expecting "
+         "only nucleotides.  Do you want to skip this sequence and continue?", newId);
+  if (ans == ANS_YES)
+  {
+    rval = TRUE;
+    fprintf (udp->log_fp, "Skipped protein Bioseq (%s) in nucleotide update\n", newId);
+	  udp->data_in_log = TRUE;
+  }
+  return rval;
+}
+
+static void RemoveUpdateSet (UpsDataPtr udp)
+{
+#if 0
+  ObjMgrPtr omp;
+  Int2      entityID;
+  
+  if (udp == NULL || udp->seqsubsep == NULL)
+  {
+    return;
+  }
+  entityID = SeqMgrGetEntityIDForSeqEntry (udp->seqsubsep);  
+  udp->seqsubsep = SeqEntryFree (udp->seqsubsep);
+	omp = ObjMgrGet ();	
+	ObjMgrReapOne (omp);
+	ObjMgrFreeCache (0);
+  ObjMgrSendMsg(OM_MSG_DEL, entityID, 0, 0);
+#endif
 }
 
 /*=====================================================================*/
@@ -7456,92 +8531,170 @@ static Int2 UpdateNextBioseqInFastaSet (UpsDataPtr udp)
   SeqIdPtr      sip;
   SeqSubmitPtr  ssp;
   UpdateData    updateData;
+  SeqEntryPtr   nthBspSep;
+  BioseqPtr     nthBsp;
+  Boolean       skip_prot_in_nuc;
 
   sep = GetTopSeqEntryForEntityID (udp->input_entityID);
   bsp = GetBioseqGivenIDs (udp->input_entityID,
 			   udp->input_itemID,
 			   udp->input_itemtype);
 
-  /* Read in one sequence from the file */
-
-  dataptr = ReadAsnFastaOrFlatFile (udp->fp, &datatype, NULL, FALSE, FALSE,
-				    TRUE, FALSE);
-
-  if (NULL == dataptr) {
-    FileClose (udp->fp);
-    CloseOutSequenceUpdateLog (udp);
-    return FASTA_READ_DONE;
-  }
-
-  /* Convert the file data to a SeqEntry */
-  
-  if (datatype == OBJ_SEQENTRY)
-    nwsep = (SeqEntryPtr) dataptr;
-  else if (datatype == OBJ_BIOSEQ || datatype == OBJ_BIOSEQSET)
-    nwsep = SeqMgrGetSeqEntryForData (dataptr);
-  else if (datatype == OBJ_SEQSUB) {
-    ssp = (SeqSubmitPtr) dataptr;
-    if (ssp != NULL && ssp->datatype == 1)
-      nwsep = (SeqEntryPtr) ssp->data;
-  }
-  
-  if (nwsep == NULL) {
-    FileClose (udp->fp);
-    ErrPostEx (SEV_ERROR, 0, 0, "Unable to convert file data into SeqEntry.");
-    CloseOutSequenceUpdateLog (udp);
-    return FASTA_READ_ERROR;
-  }  
-
-  /* Use the new SeqEntry to get a Bioseq */
-  
-  if (ISA_na (bsp->mol))
-    nbsp = FindNucBioseq (nwsep);
-  else {
-    nwsep = FindNthBioseq (nwsep, 1);
-    if (nwsep == NULL || nwsep->choice != 1)
-    {
-      CloseOutSequenceUpdateLog (udp);
-      return FASTA_READ_ERROR;
-    }
-    nbsp = (BioseqPtr) nwsep->data.ptrvalue;
-  }
-  
-  if (nbsp == NULL) {
-    FileClose (udp->fp);
-    ErrPostEx (SEV_ERROR, 0, 0, "Unable to convert file data into Bioseq.");
-    CloseOutSequenceUpdateLog (udp);
-    return FASTA_READ_ERROR;
-  }
-
-  /* Get the string ID for the new Bioseq so that we */
-  /* can find a matching ID among current Bioseqs.   */
-  
-  sip = SeqIdFindWorst (nbsp->id);
-  SeqIdWrite (sip, updateData.newId, PRINTID_REPORT,
-	      sizeof (updateData.newId) - 1);
-
-  /* Find the matching bioseq in the current sequence set */
-
   updateData.matchingBsp = NULL;
-  if (2 == sep->choice ) {
-    bssp = (BioseqSetPtr) sep->data.ptrvalue;
-    SeqMgrExploreBioseqs (0, (Pointer) bssp, &updateData, FindMatchingBioseq,
-			  TRUE, TRUE, TRUE);
-  }
-  else {
-    bsp = (BioseqPtr) sep->data.ptrvalue;
-    SeqMgrExploreBioseqs (0, (Pointer) bsp, &updateData, FindMatchingBioseq,
-			  TRUE, TRUE, TRUE);
-  }
+  /* keep reading file until we find a sequence that matches
+   * one that we have.
+   */
+  while (updateData.matchingBsp == NULL)
+  {
+    skip_prot_in_nuc = FALSE;
+    if (udp->seqsubsep == NULL)
+    {
+      /* Read in one sequence from the file */
+      dataptr = ReadAsnFastaOrFlatFile (udp->fp, &datatype, NULL, FALSE, FALSE,
+		                   	                  TRUE, FALSE);      
+
+      if (NULL == dataptr) 
+      {
+        FileClose (udp->fp);
+        CloseOutSequenceUpdateLog (udp);
+        RemoveUpdateSet (udp); 
+        return FASTA_READ_DONE;
+      }
+
+      /* Convert the file data to a SeqEntry */
+  
+      if (datatype == OBJ_SEQENTRY)
+        nwsep = (SeqEntryPtr) dataptr;
+      else if (datatype == OBJ_BIOSEQ || datatype == OBJ_BIOSEQSET)
+        nwsep = SeqMgrGetSeqEntryForData (dataptr);
+      else if (datatype == OBJ_SEQSUB) 
+      {
+        ssp = (SeqSubmitPtr) dataptr;
+        if (ssp != NULL && ssp->datatype == 1)
+        {
+          nwsep = (SeqEntryPtr) ssp->data;
+          udp->seqsubsep = nwsep;
+          udp->seqsubpos = 1; 
+        }
+      }
+  
+      if (nwsep == NULL) 
+      {
+        FileClose (udp->fp);
+        ErrPostEx (SEV_ERROR, 0, 0, "Unable to convert file data into SeqEntry.");
+        CloseOutSequenceUpdateLog (udp);
+        return FASTA_READ_ERROR;
+      }  
+
+      /* Use the new SeqEntry to get a Bioseq */
+  
+      if (ISA_na (bsp->mol))
+      {
+        nbsp = FindNucBioseq (nwsep);
+      }
+      else 
+      {
+        nwsep = FindNthBioseq (nwsep, 1);
+        if (nwsep == NULL || nwsep->choice != 1)
+        {
+          CloseOutSequenceUpdateLog (udp);
+          return FASTA_READ_ERROR;
+        }
+        nbsp = (BioseqPtr) nwsep->data.ptrvalue;
+      }
+      if (nbsp == NULL) 
+      {
+        if (ISA_na (bsp->mol))
+        {
+          skip_prot_in_nuc = SkipProteinInNucUpdate (nwsep, udp);
+        }
+        if (! skip_prot_in_nuc)
+        {
+          FileClose (udp->fp);
+          ErrPostEx (SEV_ERROR, 0, 0, "Unable to convert file data into Bioseq.");
+          CloseOutSequenceUpdateLog (udp);
+          return FASTA_READ_ERROR;
+        }
+      }
+    }
+    else
+    {
+      /* get the next Bioseq from the record */
+      udp->seqsubpos ++;
+      nthBspSep = FindNthBioseq (udp->seqsubsep, udp->seqsubpos);
+      nbsp = NULL;
+      while (nthBspSep != NULL && nbsp == NULL)
+      {
+        if (!IS_Bioseq (nthBspSep))
+        {
+          udp->seqsubpos++;
+          nthBspSep = FindNthBioseq (udp->seqsubsep, udp->seqsubpos);
+        }
+        else
+        {
+          nthBsp = nthBspSep->data.ptrvalue;
+          if (ISA_na (bsp->mol) && ISA_na (nthBsp->mol))
+          {
+            nbsp = nthBsp;
+          }
+          else if (ISA_aa (bsp->mol) && ISA_aa (nthBsp->mol))
+          {
+            nbsp = nthBsp;
+          }
+          else
+          {
+            udp->seqsubpos++;
+            nthBspSep = FindNthBioseq (udp->seqsubsep, udp->seqsubpos);
+          }
+        }
+      }
+      if (nthBspSep == NULL)
+      {
+        RemoveUpdateSet (udp); 
+        return FASTA_READ_DONE;
+      }
+    }
+  
+    if (!skip_prot_in_nuc)
+    {
+      /* Get the string ID for the new Bioseq so that we */
+      /* can find a matching ID among current Bioseqs.   */
+  
+      sip = SeqIdFindWorst (nbsp->id);
+      SeqIdWrite (sip, updateData.newId, PRINTID_REPORT,
+	                sizeof (updateData.newId) - 1);
+
+      /* Find the matching bioseq in the current sequence set */
+
+      updateData.matchingBsp = NULL;
+      if (2 == sep->choice ) 
+      {
+        bssp = (BioseqSetPtr) sep->data.ptrvalue;
+        SeqMgrExploreBioseqs (0, (Pointer) bssp, &updateData, FindMatchingBioseq,
+			                     TRUE, TRUE, TRUE);
+      }
+      else 
+      {
+        bsp = (BioseqPtr) sep->data.ptrvalue;
+        SeqMgrExploreBioseqs (0, (Pointer) bsp, &updateData, FindMatchingBioseq,
+			                        TRUE, TRUE, TRUE);
+      }
 
 
-  if (updateData.matchingBsp == NULL) {
-    FileClose (udp->fp);
-    sprintf (errMsg, "No Bioseq found with ID matching that of the"
-	     " one in the file (%s)", updateData.newId);
-    ErrPostEx (SEV_ERROR, 0, 0, errMsg);
-    CloseOutSequenceUpdateLog (udp);
-    return FASTA_READ_ERROR;
+      if (updateData.matchingBsp == NULL) 
+      {
+        OpenSequenceUpdateLog (udp);
+        if (udp->log_fp != NULL)
+        {
+          fprintf (udp->log_fp, "No Bioseq found with ID matching that of the"
+	                     " one in the file (%s)\n", updateData.newId);
+	        udp->data_in_log = TRUE;
+        }
+        sprintf (errMsg, "No Bioseq found with ID matching that of the"
+                       " one in the file (%s)", updateData.newId);
+        ErrPostEx (SEV_ERROR, 0, 0, errMsg);
+      }
+    }
   }
 
   /* Do the updating of the sequences */
@@ -7549,7 +8702,10 @@ static Int2 UpdateNextBioseqInFastaSet (UpsDataPtr udp)
   udp->oldbsp = updateData.matchingBsp;
   udp->newbsp = nbsp;
 
-  PrepareToUpdateSequences (udp);
+  if (! PrepareToUpdateSequences (udp))
+  {
+    return FASTA_READ_DONE;
+  }
 
   return FASTA_READ_OK;
 }
@@ -7561,7 +8717,7 @@ static Int2 UpdateNextBioseqInFastaSet (UpsDataPtr udp)
 /*                                                                     */
 /*=====================================================================*/
 
-extern void UpdateFastaSetEx (IteM i, Boolean use_new_blast)
+static void UpdateOrExtendFastaSet (IteM i, Boolean do_update)
 {
   BaseFormPtr   bfp;
   FILE         *fp;
@@ -7600,12 +8756,11 @@ extern void UpdateFastaSetEx (IteM i, Boolean use_new_blast)
   udp->useGUI         = TRUE;
   udp->isSet          = TRUE;
   udp->convertPubs    = CONVERTPUBS_NO; /* was CONVERTPUBS_NOT_SET */
-  udp->do_update      = TRUE;
+  udp->do_update      = do_update;
   udp->suppress_continue_msg = FALSE;
   udp->suppress_instant_refresh = FALSE;
   udp->log_fp         = NULL;
   udp->data_in_log    = FALSE;
-  udp->use_new_blast  = use_new_blast;
   udp->transl_except_list = NULL;
   udp->aln1           = NULL;
   udp->aln2           = NULL;
@@ -7620,8 +8775,373 @@ extern void UpdateFastaSetEx (IteM i, Boolean use_new_blast)
 
 extern void UpdateFastaSet (IteM i)
 {
-  UpdateFastaSetEx (i, FALSE);
+  UpdateOrExtendFastaSet (i, TRUE);
 }
+
+extern void ExtendFastaSet (IteM i)
+{
+  UpdateOrExtendFastaSet (i, FALSE);
+}
+
+typedef struct extendsequences
+{
+  FEATURE_FORM_BLOCK
+
+  BioseqPtr  newbsp;
+  Boolean    add_cit_sub;
+  Boolean    extend5;
+  FILE *     log_fp;
+  Char       log_path [PATH_MAX];
+  ValNodePtr sequence_list;
+  Boolean    data_in_log;
+  LisT       sequence_list_ctrl;
+  ButtoN     add_cit_sub_btn;
+  GrouP      extend_end;
+  
+} ExtendSequencesData, PNTR ExtendSequencesPtr;
+
+static void ExtendAllSequencesInSetCallback (BioseqPtr bsp, Pointer userdata)
+{
+  ExtendSequencesPtr    esp;
+  SeqIdPtr              sip, id_next;
+  Char                  acc_str [256];
+  CharPtr               origSeqStr;
+  CharPtr               newSeqStr;
+  CharPtr               mergedSeqStr;
+  Int4                  mergedLen;
+  ByteStorePtr          mergedBS;
+  Int4                  offset;
+  SeqMgrFeatContext     context;
+  SeqFeatPtr            sfp;
+  CdRegionPtr           crp;
+  CodeBreakPtr          cbp;
+  RnaRefPtr             rrp;
+  tRNAPtr               trp;
+  
+  if (bsp == NULL || userdata == NULL) return;
+  esp = (ExtendSequencesPtr) userdata;
+  
+  if (bsp == esp->newbsp) return;
+  
+  /* Get original and new sequences */
+
+  origSeqStr = GetSequenceByBsp (bsp);
+  newSeqStr = GetSequenceByBsp (esp->newbsp);
+  
+  /* create string to hold extended sequence */
+  mergedLen =  StringLen (newSeqStr) + StringLen (origSeqStr);
+  mergedSeqStr = (CharPtr) MemNew (mergedLen + 1);
+    
+  if (esp->extend5)
+  {
+    /* prepend the new sequence */
+    sprintf (mergedSeqStr, "%s%s", newSeqStr, origSeqStr);
+  }
+  else
+  {
+    /* append the new sequence */
+    sprintf (mergedSeqStr, "%s%s", origSeqStr, newSeqStr);
+  }
+
+  /* Convert the new sequence into a ByteStore */
+
+  mergedBS = BSNew (mergedLen);
+  BSWrite (mergedBS, (VoidPtr) mergedSeqStr, mergedLen);
+
+  /* Replace the original sequence with the */
+  /* new concatenated sequence.             */
+
+  bsp->seq_data      = BSFree (bsp->seq_data);
+  bsp->seq_data      = mergedBS;
+  bsp->seq_data_type = Seq_code_iupacna;
+  bsp->length        = mergedLen;
+
+  /* shift the features downstream for 5' extension */
+  offset = StringLen (newSeqStr);
+  sip = SeqIdFindBest (bsp->id, 0);
+  if (sip == NULL) return;
+  if (esp->extend5 && offset > 0)
+  {
+    sfp = SeqMgrGetNextFeature (bsp, NULL, 0, 0, &context);
+    while (sfp != NULL) {
+      OffsetLocation (sfp->location, offset, sip);
+      switch (sfp->data.choice) {
+        case SEQFEAT_CDREGION :
+          crp = (CdRegionPtr) sfp->data.value.ptrvalue;
+          if (crp != NULL) {
+            for (cbp = crp->code_break; cbp != NULL; cbp = cbp->next) {
+              OffsetLocation (cbp->loc, offset, sip);
+            }
+          }
+          break;
+        case SEQFEAT_RNA :
+          rrp = (RnaRefPtr) sfp->data.value.ptrvalue;
+          if (rrp != NULL && rrp->ext.choice == 2) {
+            trp = (tRNAPtr) rrp->ext.value.ptrvalue;
+            if (trp != NULL && trp->anticodon != NULL) {
+              OffsetLocation (trp->anticodon, offset, sip);
+            }
+          }
+          break;
+        default :
+          break;
+      }
+      sfp = SeqMgrGetNextFeature (bsp, sfp, 0, 0, &context);
+    }
+  }
+  
+  if (esp->add_cit_sub)
+  {
+    AddCitSubToUpdatedSequence ( bsp, esp->input_entityID);
+  }
+  
+  if (esp->log_fp != NULL)
+  {
+    id_next = sip->next;
+    sip->next = NULL;
+    SeqIdWrite (sip, acc_str, PRINTID_REPORT, sizeof (acc_str) - 1);
+    sip->next = id_next;
+    if (esp->extend5)
+    {
+      fprintf (esp->log_fp, "Extended %s at 5' end\n", acc_str);
+    }
+    else
+    {
+      fprintf (esp->log_fp, "Extended %s at 3' end\n", acc_str);
+    }
+    esp->data_in_log = TRUE;  
+  }
+}
+
+static void DoExtendAllSequencesInSet (ButtoN b)
+{
+  ExtendSequencesPtr    esp;
+  SeqEntryPtr           topsep;
+  ValNodePtr            sip_list, vnp;
+  SeqIdPtr              sip;
+  BioseqPtr             bsp;
+
+  esp = (ExtendSequencesPtr) GetObjectExtra (b);
+  if (esp == NULL)
+  {
+    return;
+  }
+  
+  esp->add_cit_sub = GetStatus (esp->add_cit_sub_btn);
+  if (GetValue (esp->extend_end) == 1)
+  {
+    esp->extend5 = TRUE;
+  }
+  else
+  {
+    esp->extend5 = FALSE;
+  }
+  sip_list = GetSelectedSequenceList (esp->sequence_list_ctrl);
+
+  /* create file for log */
+  TmpNam (esp->log_path);
+  esp->log_fp = FileOpen (esp->log_path, "wb");
+  
+  topsep = GetTopSeqEntryForEntityID (esp->input_entityID);
+  if (topsep == NULL)
+    return;
+  
+  for (vnp = sip_list; vnp != NULL; vnp = vnp->next)
+  {
+    sip = (SeqIdPtr) vnp->data.ptrvalue;
+    bsp = BioseqFind (sip);
+    if (bsp != NULL)
+    {
+      ExtendAllSequencesInSetCallback (bsp, esp);
+    }
+  }
+
+  if (esp->log_fp != NULL) 
+  {
+    FileClose (esp->log_fp);
+    esp->log_fp = NULL;
+    if (esp->data_in_log) 
+    {
+      LaunchGeneralTextViewer (esp->log_path, "Extended Sequences");
+      esp->data_in_log = FALSE;
+    }
+    FileRemove (esp->log_path);  	
+  }
+  ObjMgrSetDirtyFlag (esp->input_entityID, TRUE);
+  ObjMgrSendMsg (OM_MSG_UPDATE, esp->input_entityID, 0, 0);  
+  Remove (esp->form);
+  Update ();
+}
+
+static void SelectAllSequencesForExtend (ButtoN b)
+{
+  ExtendSequencesPtr    esp;
+
+  esp = (ExtendSequencesPtr) GetObjectExtra (b);
+  if (esp == NULL)
+  {
+    return;
+  }
+  SelectAllSequencesInListCtrl (esp->sequence_list_ctrl);  
+}
+
+static void UnSelectAllSequencesForExtend (ButtoN b)
+{
+  ExtendSequencesPtr    esp;
+
+  esp = (ExtendSequencesPtr) GetObjectExtra (b);
+  if (esp == NULL)
+  {
+    return;
+  }
+  UnSelectAllSequencesInListCtrl (esp->sequence_list_ctrl);  
+}
+
+
+extern void ExtendAllSequencesInSet (IteM i)
+{
+  BaseFormPtr        bfp;
+  FILE              *fp;
+  Char               path [PATH_MAX];
+  Pointer            dataptr;
+  Uint2              datatype;
+  SeqEntryPtr        nwsep, topsep;
+  SeqSubmitPtr       ssp;
+  BioseqPtr          nbsp;
+  BioseqPtr          bsp;
+  ExtendSequencesPtr esp;
+  WindoW             w;
+  GrouP              h, g, c;
+  ButtoN             b;
+
+#ifdef WIN_MAC
+  bfp = currentFormDataPtr;
+#else
+  bfp = GetObjectExtra (i);
+#endif
+
+  if (bfp == NULL)
+    return;
+  
+  topsep = GetTopSeqEntryForEntityID (bfp->input_entityID);
+  if (topsep == NULL)
+    return;
+  
+  bsp = GetBioseqGivenIDs (bfp->input_entityID, bfp->input_itemID,
+			   bfp->input_itemtype);
+  if (bsp == NULL)
+  {
+    Message (MSG_ERROR, "You must select a bioseq");
+    return;
+  }
+
+  /* Read in the update data from a file */
+
+  if (! GetInputFileName (path, sizeof (path),"","TEXT"))
+    return;
+  fp = FileOpen (path, "r");
+  if (fp == NULL)
+  {
+    Message (MSG_ERROR, "Unable to open %s", path);
+    return;
+  }
+    
+  /* Create data ptr */
+  dataptr = ReadAsnFastaOrFlatFile (fp, &datatype, NULL, FALSE, FALSE,
+		                 	              TRUE, FALSE);
+
+  FileClose (fp);
+  if (NULL == dataptr) 
+  {
+    Message (MSG_ERROR, "Unable to read sequence data from %s", path);
+    return;
+  }
+
+  /* Convert the file data to a SeqEntry */
+  
+  if (datatype == OBJ_SEQENTRY)
+    nwsep = (SeqEntryPtr) dataptr;
+  else if (datatype == OBJ_BIOSEQ || datatype == OBJ_BIOSEQSET)
+    nwsep = SeqMgrGetSeqEntryForData (dataptr);
+  else if (datatype == OBJ_SEQSUB) 
+  {
+    ssp = (SeqSubmitPtr) dataptr;
+    if (ssp != NULL && ssp->datatype == 1)
+    {
+      nwsep = (SeqEntryPtr) ssp->data;
+    }
+  }
+  
+  if (nwsep == NULL) 
+  {
+    ErrPostEx (SEV_ERROR, 0, 0, "Unable to convert file data into SeqEntry.");
+    return;
+  }  
+
+  /* Use the new SeqEntry to get a Bioseq */
+  
+  if (ISA_na (bsp->mol))
+  {
+    nbsp = FindNucBioseq (nwsep);
+  }
+  else 
+  {
+    nwsep = FindNthBioseq (nwsep, 1);
+    if (nwsep == NULL || nwsep->choice != 1)
+    {
+      return;
+    }
+    nbsp = (BioseqPtr) nwsep->data.ptrvalue;
+  }
+  
+  if (nbsp == NULL) 
+  {
+    ErrPostEx (SEV_ERROR, 0, 0, "Unable to convert file data into Bioseq.");
+    return;
+  }
+  
+  esp = (ExtendSequencesPtr) MemNew (sizeof (ExtendSequencesData));
+  if (esp == NULL) return;
+  esp->newbsp = nbsp;
+  
+  w = FixedWindow (-50, -33, -10, -10, "Extend Sequences", NULL);
+
+  SetObjectExtra (w, esp, StdCleanupFormProc);
+  esp->form = (ForM) w;
+  esp->input_entityID = bfp->input_entityID;
+
+  h = HiddenGroup (w, -1, 0, NULL);
+  SetGroupSpacing (h, 10, 10);
+
+  esp->sequence_list_ctrl = MakeSequenceListControl (h, topsep, NULL, NULL, TRUE, TRUE);
+  g = HiddenGroup (h, 2, 0, NULL);
+  b = PushButton (g, "Select All", SelectAllSequencesForExtend);
+  SetObjectExtra (b, esp, NULL);
+  b = PushButton (g, "Unselect All", UnSelectAllSequencesForExtend);
+  SetObjectExtra (b, esp, NULL);
+  
+  esp->extend_end = HiddenGroup (h, 2, 0, NULL);
+  RadioButton (esp->extend_end, "5' end");
+  RadioButton (esp->extend_end, "3' end");
+  SetValue (esp->extend_end, 1);
+    
+  esp->add_cit_sub_btn = CheckBox (h, "Add Cit Subs to extended sequences", NULL);
+
+
+  c = HiddenGroup (h, 4, 0, NULL);
+  b = DefaultButton (c, "Accept", DoExtendAllSequencesInSet);
+  SetObjectExtra (b, esp, NULL);
+  PushButton (c, "Cancel", StdCancelButtonProc);
+  AlignObjects (ALIGN_CENTER, (HANDLE) esp->sequence_list_ctrl,
+                (HANDLE) esp->add_cit_sub_btn, (HANDLE) g,
+                (HANDLE) esp->extend_end,
+                (HANDLE) c, NULL);
+  RealizeWindow (w);
+  Show (w);
+  Update ();
+}
+
+
 
 /*=====================================================================*/
 /*                                                                     */
@@ -7641,7 +9161,7 @@ static Boolean DeltaLitOnly (BioseqPtr bsp)
   return TRUE;
 }
 
-static void NewUpdateOrExtendSequence (IteM i, Boolean do_update, Boolean use_new_blast)
+static void NewUpdateOrExtendSequence (IteM i, Boolean do_update)
 {
   MsgAnswer     ans;
   BaseFormPtr   bfp;
@@ -7679,9 +9199,37 @@ static void NewUpdateOrExtendSequence (IteM i, Boolean do_update, Boolean use_ne
     return;
   fp = FileOpen (path, "r");
   if (fp == NULL)
+  {
+    Message (MSG_ERROR, "Unable to open %s", path);
     return;
-  dataptr = ReadAsnFastaOrFlatFile (fp, &datatype, NULL, FALSE, FALSE,
-				    TRUE, FALSE);
+  }
+  if (bsp->repr == Seq_repr_delta)
+  {
+    nwsep = ImportOneGappedSequence (fp);
+    if (nwsep != NULL && IS_Bioseq (nwsep))
+    {
+      nbsp = (BioseqPtr) nwsep->data.ptrvalue;
+      if (nbsp->repr != Seq_repr_delta)
+      {
+        if (ANS_CANCEL == Message (MSG_OKC, "You are updating a delta sequence with a non-delta sequence. "
+                          "If you choose replace, your delta sequence will no longer be a delta sequence. "
+                          "Do you wish to continue?"))
+        {
+          SeqEntryFree (nwsep);
+          return;
+        }
+      }
+      SeqMgrSeqEntry (SM_BIOSEQ, (Pointer) nwsep->data.ptrvalue, nwsep);
+      SeqMgrAddToBioseqIndex (nwsep->data.ptrvalue);
+      dataptr = nwsep;
+      datatype = OBJ_SEQENTRY;
+    }
+  }
+  else
+  {
+    dataptr = ReadAsnFastaOrFlatFile (fp, &datatype, NULL, FALSE, FALSE,
+		  		    TRUE, FALSE);
+  }
   FileClose (fp);
   if (dataptr == NULL)
     return;
@@ -7715,29 +9263,17 @@ static void NewUpdateOrExtendSequence (IteM i, Boolean do_update, Boolean use_ne
     return;
 
   /* convert delta lit to raw so sequence can be updated */
+  if (!indexerVersion)
+  {
+    /* If original sequence is a not a raw sequence then */
+    /* ask user for advice on how to proceed.      */
 
-  if (bsp->repr == Seq_repr_delta && DeltaLitOnly (bsp)) {
-    if (indexerVersion) {
-      SegOrDeltaBioseqToRaw (bsp);
-      ObjMgrSetDirtyFlag (bfp->input_entityID, TRUE);
-    } else {
+    if (bsp->repr != Seq_repr_raw) {
       ans = Message (MSG_YN, "Only raw sequences can be updated."
-		     " Do you wish to convert this delta sequence to raw?");
-      if (ans == ANS_YES) {
-        SegOrDeltaBioseqToRaw (bsp);
-        ObjMgrSetDirtyFlag (bfp->input_entityID, TRUE);
-      }
+		     " Do you wish to proceed for copying features?");
+      if (ans == ANS_NO)
+        return;
     }
-  }
-
-  /* If original sequence is a not a raw sequence then */
-  /* ask user for advice on how to proceed.      */
-
-  if (bsp->repr != Seq_repr_raw) {
-    ans = Message (MSG_YN, "Only raw sequences can be updated."
-		   " Do you wish to proceed for copying features?");
-    if (ans == ANS_NO)
-      return;
   }
 
   /* Create data ptr */
@@ -7760,7 +9296,6 @@ static void NewUpdateOrExtendSequence (IteM i, Boolean do_update, Boolean use_ne
   udp->suppress_instant_refresh = FALSE;
   udp->log_fp         = NULL;
   udp->data_in_log    = FALSE;
-  udp->use_new_blast  = use_new_blast;
   udp->transl_except_list = NULL;
   udp->aln1           = NULL;
   udp->aln2           = NULL;
@@ -7773,32 +9308,19 @@ static void NewUpdateOrExtendSequence (IteM i, Boolean do_update, Boolean use_ne
 extern void NewUpdateSequence (IteM i)
 
 {
-  NewUpdateOrExtendSequence (i, TRUE, FALSE);
-}
-
-extern void NewUpdateSequenceNewBlast (IteM i)
-
-{
-  NewUpdateOrExtendSequence (i, TRUE, TRUE);
+  NewUpdateOrExtendSequence (i, TRUE);
 }
 
 extern void NewExtendSequence (IteM i)
 
 {
-  NewUpdateOrExtendSequence (i, FALSE, FALSE);
+  NewUpdateOrExtendSequence (i, FALSE);
 }
 
-extern void NewExtendSequenceNewBlast (IteM i)
-
-{
-  NewUpdateOrExtendSequence (i, FALSE, TRUE);
-}
-
-extern void UpdateSeqAfterDownloadEx 
+extern void UpdateSeqAfterDownload
 (BaseFormPtr bfp,
  BioseqPtr oldbsp,
- BioseqPtr newbsp,
- Boolean     use_new_blast)
+ BioseqPtr newbsp)
 {
   MsgAnswer   ans;
   UpsDataPtr  udp;
@@ -7852,7 +9374,6 @@ extern void UpdateSeqAfterDownloadEx
   udp->suppress_instant_refresh = FALSE;
   udp->log_fp         = NULL;
   udp->data_in_log    = FALSE;
-  udp->use_new_blast  = use_new_blast;
   udp->transl_except_list = NULL;
   udp->aln1           = NULL;
   udp->aln2           = NULL;
@@ -7862,19 +9383,11 @@ extern void UpdateSeqAfterDownloadEx
   PrepareToUpdateSequences (udp);
 }
 
-extern void UpdateSeqAfterDownload
+
+extern void ExtendSeqAfterDownload 
 (BaseFormPtr bfp,
  BioseqPtr oldbsp,
  BioseqPtr newbsp)
-{
-  UpdateSeqAfterDownloadEx (bfp, oldbsp, newbsp, FALSE);
-}
-
-extern void ExtendSeqAfterDownloadEx
-(BaseFormPtr bfp,
- BioseqPtr oldbsp,
- BioseqPtr newbsp,
- Boolean   use_new_blast)
 
 {
   MsgAnswer   ans;
@@ -7929,7 +9442,6 @@ extern void ExtendSeqAfterDownloadEx
   udp->suppress_instant_refresh = FALSE;
   udp->log_fp         = NULL;
   udp->data_in_log    = FALSE;
-  udp->use_new_blast  = use_new_blast;
   udp->transl_except_list = NULL;
   udp->aln1           = NULL;
   udp->aln2           = NULL;
@@ -7939,13 +9451,6 @@ extern void ExtendSeqAfterDownloadEx
   PrepareToUpdateSequences (udp);
 }
 
-extern void ExtendSeqAfterDownload 
-(BaseFormPtr bfp,
- BioseqPtr oldbsp,
- BioseqPtr newbsp)
-{
-  ExtendSeqAfterDownloadEx (bfp, oldbsp, newbsp, FALSE);
-}
 
 
 /* NEW FEATURE PROPAGATION SECTION */
@@ -7962,6 +9467,7 @@ typedef struct fprdata {
   Int4                scaleX;
   GrouP               allOrSel;
   GrouP               gapSplit;
+  DialoG              sequence_list_dlg;
   ButtoN              stopCDS;
   ButtoN              transPast;
   ButtoN              fixCDS;
@@ -8104,19 +9610,24 @@ static SeqLocPtr MergeAdjacentSeqLocIntervals (SeqLocPtr location)
       if (sinp != NULL) {
 	    if (last_slp != NULL && last_strand == sinp->strand && last_id != NULL
 			&& SeqIdComp (sinp->id, last_id) == SIC_YES
-			&& last_to >= sinp->from - 1)
+			&& ((last_from <= sinp->from + 1 && last_to >= sinp->from - 1)
+			  || (last_from <= sinp->to + 1 && last_to >= sinp->to - 1)
+			  || (last_from >= sinp->from - 1 && last_to <= sinp->to + 1)
+			  || (last_from <= sinp->from + 1 && last_to >= sinp->to - 1)))
 		{
 		  /* intervals are adjacent, so expand previous interval */
-		  if (last_slp->choice == SEQLOC_INT) {
+  	      if (last_slp->choice == SEQLOC_INT) {
 		    last_sinp = last_slp->data.ptrvalue;
-			if (last_sinp != NULL) {
+		    if (last_sinp != NULL) {
+		      last_from = MIN (sinp->from, last_sinp->from);
+			  last_sinp->from = last_from;
 			  last_to = MAX (sinp->to, last_sinp->to);
 			  last_sinp->to = last_to;
 			}
 		  } else if (last_slp->choice == SEQLOC_PNT) {
 		    /* change previous entry from point to interval that includes point */
 		    spp = (SeqPntPtr)last_slp->data.ptrvalue;
-			if (spp != NULL) {
+		    if (spp != NULL) {
               last_sinp = SeqIntNew ();
 			  last_from = MIN (spp->point, sinp->from);
 			  last_sinp->from = last_from;
@@ -8128,7 +9639,7 @@ static SeqLocPtr MergeAdjacentSeqLocIntervals (SeqLocPtr location)
 			  last_slp->data.ptrvalue = last_sinp;
 			  SeqPntFree (spp);
 			}
-		  }
+		  }		  	
 		} else {
 		  /* add new interval */
 		  last_sinp = SeqIntNew ();
@@ -8157,6 +9668,8 @@ static SeqLocPtr MergeAdjacentSeqLocIntervals (SeqLocPtr location)
 			if (last_sinp != NULL) {
 			  last_to = MAX (spp->point, last_sinp->to);
 			  last_sinp->to = last_to;
+			  last_from = MIN (spp->point, last_sinp->from);
+			  last_sinp->from = last_from;
 			}
 		  } else if (last_slp->choice == SEQLOC_PNT) {
 		    /* change previous entry from point to interval that includes point */
@@ -8204,32 +9717,48 @@ static SeqLocPtr MergeAdjacentSeqLocIntervals (SeqLocPtr location)
   return slp;
 }
 
-static SeqLocPtr MapLocForProp (
-  SeqAlignPtr salp,
-  Int4 begin,
-  Int4 fin,
-  SeqIdPtr sip,
-  Boolean gapSplit,
-  SeqLocPtr location
-)
+/* We need to be able to propagate features with locations on multiple segments
+ * whose IDs may be found in separate alignments.
+ * To do this, we will take the location of the master feature and for each sublocation,
+ * we will find the sequence ID of the sublocation.  We will find the alignment that
+ * contains the master feature sublocation sequence ID and construct a propagated 
+ * sublocation for each sequence in the same alignment as the master feature sublocation 
+ * sequence ID and add this to a list.
+ * Once we have created all of the propagated sublocations, we will reconstitute the
+ * total locations for the propagated features by associating each propagated sublocation
+ * with other propagated sublocations with the same sequence ID or having a sequence ID
+ * that belongs to the same segmented set.
+ * We can then use the list of total locations to construct the propagated features.
+ */
 
+static SeqLocPtr MapSubLoc 
+(SeqLocPtr   master_subloc,
+ SeqAlignPtr salp, 
+ Int4        master_row,
+ Int4        prop_row,
+ Boolean     gapSplit) 
 {
-  SeqLocPtr    head = NULL;
-  IvalInfoPtr  ival;
-  IvalInfoPtr  ival_head;
-  SeqIntPtr    sinp;
-  SeqLocPtr    slp;
-  SeqPntPtr    spp;
-  Uint1        strand;
-
-  slp = SeqLocFindNext (location, NULL);
-  while (slp != NULL) {
-    switch (slp->choice) {
+  SeqLocPtr   prop_loc = NULL;
+  SeqIdPtr    prop_sip;
+  SeqIntPtr   sinp;
+  IvalInfoPtr ival_head, ival;
+  SeqPntPtr   spp;
+  Uint1       strand;
+   
+  if (master_subloc == NULL || salp == NULL || master_row < 1 || prop_row < 1)
+  {
+    return NULL;
+  }
+  
+  prop_sip = AlnMgr2GetNthSeqIdPtr (salp, prop_row);
+  if (prop_sip == NULL) return NULL;
+  
+  switch (master_subloc->choice) {
     case SEQLOC_INT :
-      sinp = (SeqIntPtr) slp->data.ptrvalue;
+      sinp = (SeqIntPtr) master_subloc->data.ptrvalue;
       if (sinp != NULL) {
         strand = sinp->strand;
-        ival_head = GetAlignmentIntervals (salp, begin, fin, sinp->from, sinp->to);
+        ival_head = GetAlignmentIntervals (salp, master_row, prop_row, sinp->from, sinp->to);
         ival_head = MergeAdjacentIntervals (ival_head);
         if (ival_head != NULL) {
 
@@ -8241,8 +9770,8 @@ static SeqLocPtr MapLocForProp (
               sinp->from = ival->start2;
               sinp->to = ival->stop2;
               sinp->strand = strand;
-              sinp->id = SeqIdDup (sip);
-              ValNodeAddPointer (&head, SEQLOC_INT, (Pointer) sinp);
+              sinp->id = SeqIdDup (prop_sip);
+              ValNodeAddPointer (&prop_loc, SEQLOC_INT, (Pointer) sinp);
             }
           } else {
             sinp = SeqIntNew ();
@@ -8250,8 +9779,8 @@ static SeqLocPtr MapLocForProp (
             for (ival = ival_head; ival->next != NULL; ival = ival->next) continue;
             sinp->to = ival->stop2;
             sinp->strand = strand;
-            sinp->id = SeqIdDup (sip);
-            ValNodeAddPointer (&head, SEQLOC_INT, (Pointer) sinp);
+            sinp->id = SeqIdDup (prop_sip);
+            ValNodeAddPointer (&prop_loc, SEQLOC_INT, (Pointer) sinp);
           }
 
         }
@@ -8259,17 +9788,17 @@ static SeqLocPtr MapLocForProp (
       }
       break;
     case SEQLOC_PNT :
-      spp = (SeqPntPtr) slp->data.ptrvalue;
+      spp = (SeqPntPtr) master_subloc->data.ptrvalue;
       if (spp != NULL) {
         strand = spp->strand;
-        ival_head = GetAlignmentIntervals (salp, begin, fin, spp->point, spp->point);
+        ival_head = GetAlignmentIntervals (salp, master_row, prop_row, spp->point, spp->point);
         if (ival_head != NULL) {
 
           spp = SeqPntNew ();
           spp->point = ival_head->start2;
           spp->strand = strand;
-          spp->id = SeqIdDup (sip);
-          ValNodeAddPointer (&head, SEQLOC_PNT, (Pointer) spp);
+          spp->id = SeqIdDup (prop_sip);
+          ValNodeAddPointer (&prop_loc, SEQLOC_PNT, (Pointer) spp);
 
         }
         IvalInfoFree (ival_head);
@@ -8280,21 +9809,429 @@ static SeqLocPtr MapLocForProp (
       break;
     default :
       break;
-    }
+  }
+  if (prop_loc == NULL)
+  {
+    prop_sip = SeqIdFree (prop_sip);
+  }
+  return prop_loc;
+}
 
-    slp = SeqLocFindNext (location, slp);
+typedef struct loclist
+{
+  SeqIdPtr sip_list;
+  SeqLocPtr slp;
+} LocListData, PNTR LocListPtr;
+
+static LocListPtr FindLocListForSeqId (ValNodePtr loc_list, SeqIdPtr sip)
+{
+  SeqIdPtr   search_sip, find_sip;
+  LocListPtr llp;
+  ValNodePtr vnp;
+  
+  for (vnp = loc_list; vnp != NULL; vnp = vnp->next)
+  {
+    llp = (LocListPtr) vnp->data.ptrvalue;
+    if (llp != NULL && llp->slp != NULL)
+    {
+      for (search_sip = llp->sip_list; search_sip != NULL; search_sip = search_sip->next)
+      {
+        for (find_sip = sip; find_sip != NULL; find_sip = find_sip->next)
+        {
+          if (SeqIdComp (find_sip, search_sip) == SIC_YES)
+          {
+            return llp;
+          } 
+        }
+      }
+    }
+  }
+  return NULL;
+}
+
+/* Compare the Sequence ID of this location with the sequence IDs of other locations in the
+ * list.  If the sequence ID matches that of another loclist, add to that loclist,
+ * otherwise add a new loclist entry with the sequence ID of this sequence and the sequence IDs
+ * of other sequences in the same segset if the segset flag is set.
+ */ 
+static ValNodePtr AssociatePropagatedSubloc (ValNodePtr subloc_list, SeqLocPtr prop_loc, Boolean segset)
+{
+  ValNodePtr   vnp;
+  LocListPtr   llp = NULL;
+  SeqIdPtr     prop_sip;
+  BioseqPtr    prop_bsp;
+  BioseqSetPtr parent_set;
+  SeqEntryPtr  sep;
+  
+  if (prop_loc == NULL) return subloc_list;
+  prop_sip = SeqLocId (prop_loc);
+  if (prop_sip == NULL) 
+  {
+    SeqLocFree (prop_loc);
+    return subloc_list;
+  }
+  
+  llp = FindLocListForSeqId (subloc_list, prop_sip);
+  if (llp != NULL)
+  {
+    ValNodeAddPointer (&(llp->slp), prop_loc->choice, prop_loc->data.ptrvalue);
+    prop_loc = ValNodeFree (prop_loc);
+  }
+  else
+  {
+    llp = (LocListPtr) MemNew (sizeof (LocListData));
+    if (llp != NULL)
+    {
+      llp->sip_list = SeqIdDup (prop_sip);
+      llp->slp = prop_loc;
+      if (segset)
+      {
+        prop_bsp = BioseqFind (prop_sip);
+        if (prop_bsp != NULL && prop_bsp->idx.parenttype == OBJ_BIOSEQSET)
+        {
+          parent_set = prop_bsp->idx.parentptr;
+          if (parent_set != NULL && parent_set->_class == BioseqseqSet_class_parts)
+          {
+            /* add other IDs from set to list */
+            for (sep = parent_set->seq_set; sep != NULL; sep = sep->next)
+            {
+              if (IS_Bioseq (sep))
+              {
+                prop_bsp = (BioseqPtr) sep->data.ptrvalue;
+                prop_sip = SeqIdDup (prop_bsp->id);
+                ValNodeAddPointer (&(llp->sip_list), prop_sip->choice, prop_sip->data.ptrvalue);
+                prop_sip = ValNodeFree (prop_sip);
+              }
+            }
+          }
+        }
+      }
+      vnp = ValNodeAddPointer (&subloc_list, 0, llp);
+    }
+  }
+  return subloc_list;
+}
+
+static ValNodePtr FreeLocList (ValNodePtr loc_list)
+{
+  LocListPtr llp;
+  
+  if (loc_list == NULL) return NULL;
+  loc_list->next = FreeLocList (loc_list->next);
+  llp = loc_list->data.ptrvalue;
+  if (llp != NULL)
+  {
+    SeqIdFree (llp->sip_list);
+    SeqLocFree (llp->slp);
+    MemFree (llp);
+  }
+  ValNodeFree (loc_list);
+  return NULL;
+}
+
+static Int4 GetMasterRow (SeqAlignPtr salp, SeqIdPtr sip)
+{
+  Int4     master_row = -1;
+  SeqIdPtr sip_next;
+  
+  if (salp == NULL || sip == NULL)
+  {
+    return -1;
+  }
+  
+  while (sip != NULL && master_row == -1)
+  {
+    sip_next = sip->next;
+    sip->next = NULL;
+    master_row = AlnMgr2GetFirstNForSip (salp, sip);
+    sip->next = sip_next;
+    sip = sip_next;
+  }
+  return master_row;
+}
+
+static Boolean 
+NthAlignmentSequenceInSeqPropList
+(SeqAlignPtr salp,
+ Int4        n,
+ ValNodePtr  seq_for_prop)
+{
+  SeqIdPtr    sip;
+  ValNodePtr  seq_vnp;
+  BioseqPtr   bsp;
+  SeqEntryPtr sep;
+  BioseqSetPtr bssp;
+  
+  if (salp == NULL || seq_for_prop == NULL)
+  {
+    return FALSE;
+  }
+  
+  sip = AlnMgr2GetNthSeqIdPtr(salp, n);
+  for (seq_vnp = seq_for_prop; seq_vnp != NULL; seq_vnp = seq_vnp->next)
+  {
+    if (SeqIdIn (sip, (SeqIdPtr) seq_vnp->data.ptrvalue))
+    {
+      return TRUE;
+    }
+    /* check for segments */
+    bsp = BioseqFind (seq_vnp->data.ptrvalue);
+    if (bsp != NULL && bsp->repr == Seq_repr_seg)
+    {
+      sep = SeqMgrGetSeqEntryForData (bsp);
+      sep = sep->next; /* parts should be next */
+      if (sep != NULL && IS_Bioseq_set (sep))
+      {
+        bssp = (BioseqSetPtr) sep->data.ptrvalue;
+        if (bssp != NULL && bssp->_class == BioseqseqSet_class_parts)
+        {
+          for (sep = bssp->seq_set; sep != NULL; sep = sep->next)
+          {
+            if (IS_Bioseq (sep))
+            {
+              bsp = (BioseqPtr) sep->data.ptrvalue;
+              if (bsp != NULL && SeqIdIn (sip, bsp->id))
+              {
+                return TRUE;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  
+  return FALSE;
+}
+
+static ValNodePtr GetPropagatedSublocations 
+(SeqLocPtr master_location,
+ Boolean gap_split,
+ ValNodePtr prop_loc_list,
+ ValNodePtr seq_for_prop,
+ BoolPtr warned_about_master)
+{
+  SeqLocPtr   master_subloc;
+  SeqIdPtr    master_subloc_id;
+  BioseqPtr   master_subloc_bsp;
+  SeqLocPtr   tmp_loc;
+  SeqAlignPtr salp;
+  Int4        master_row, num_rows, prop_row; 
+  SeqLocPtr   prop_loc;
+
+  if (master_location == NULL) return prop_loc_list;
+  
+  master_subloc = SeqLocFindNext (master_location, NULL);
+  while (master_subloc != NULL) 
+  {
+    master_subloc_id = SeqLocId (master_subloc);
+    master_subloc_bsp = BioseqFind (master_subloc_id);
+    master_subloc_id = master_subloc_bsp->id;
+    if (master_subloc_bsp != NULL)
+    {
+      if (master_subloc_bsp->repr == Seq_repr_seg)
+      {
+        if (warned_about_master != NULL && ! *warned_about_master)
+        {
+          Message (MSG_OK, "Warning - you are propagating a feature that "
+                  "contains locations on the master sequence.  These locations"
+                  " will be mapped to the segments in the propagated features.");
+          *warned_about_master = TRUE;
+        }
+        /* this is a location on the master segment */
+        tmp_loc = SegLocToParts (master_subloc_bsp, master_subloc);
+        prop_loc_list = GetPropagatedSublocations (tmp_loc, gap_split, prop_loc_list, 
+                                                   seq_for_prop, warned_about_master);
+        tmp_loc = SeqLocFree (tmp_loc);
+      }
+      else
+      {
+        salp = FindAlignmentsForBioseq (master_subloc_bsp);
+        while (salp != NULL)
+        {
+          master_row = GetMasterRow (salp, master_subloc_id);
+          num_rows = AlnMgr2GetNumRows (salp);
+          for (prop_row = 1; prop_row <= num_rows; prop_row++)
+          {
+            if (prop_row == master_row) continue;
+            if (! NthAlignmentSequenceInSeqPropList (salp, prop_row, seq_for_prop))
+            {
+              continue;
+            }
+
+            prop_loc = MapSubLoc (master_subloc, salp, master_row, prop_row, gap_split);
+            prop_loc_list = AssociatePropagatedSubloc (prop_loc_list, prop_loc, TRUE);           
+          }
+          salp = salp->next;
+        }
+      }
+    }
+    master_subloc = SeqLocFindNext (master_location, master_subloc);
+  }
+  return prop_loc_list;
+}
+
+static ValNodePtr MapLocForProp
+(SeqLocPtr   master_location,
+ Boolean     gapSplit,
+ ValNodePtr  seq_for_prop,
+ BoolPtr     warned_about_master)
+{
+  ValNodePtr  prop_loc_list = NULL, vnp;
+  LocListPtr  llp;
+  SeqLocPtr   slp;
+  
+  if (master_location == NULL) 
+  {
+    return NULL;
   }
 
-  if (head == NULL) return NULL;
-  if (head->next == NULL) return head;
-
-  slp = ValNodeNew (NULL);
-  slp->choice = SEQLOC_MIX;
-  slp->data.ptrvalue = (Pointer) head;
-  slp->next = NULL;
-
-  return slp;
+  prop_loc_list = GetPropagatedSublocations (master_location, gapSplit, prop_loc_list, 
+                                             seq_for_prop, warned_about_master);
+  
+  /* now fix locations in prop_loc_list (add SEQLOC_MIX header to the locations that
+   * are mixed)
+   */
+  for (vnp = prop_loc_list; vnp != NULL; vnp = vnp->next)
+  {
+    llp = (LocListPtr) vnp->data.ptrvalue;
+    if (llp != NULL)
+    {
+      if (llp->slp != NULL)
+      {
+        if (llp->slp->next != NULL)
+        {
+          slp = ValNodeNew (NULL);
+          slp->choice = SEQLOC_MIX;
+          slp->data.ptrvalue = llp->slp;
+          llp->slp = slp;
+        }
+      }
+    }
+  }
+  return prop_loc_list;
 }
+
+
+static SeqIdPtr GetSegIdList (BioseqPtr master_seg)
+{
+  SeqIdPtr  sip_list = NULL, sip_last = NULL, sip;
+  SeqLocPtr slp;
+  if (master_seg == NULL)
+  {
+    return NULL;
+  }
+  if (master_seg->repr != Seq_repr_seg)
+  {
+    sip_list = SeqIdDup (master_seg->id);
+  }
+  else
+  {    
+    for (slp = master_seg->seq_ext; slp != NULL; slp = slp->next)
+    {
+      sip = SeqIdDup (SeqLocId (slp));
+      if (sip_last == NULL)
+      {
+        sip_list = sip;
+      }
+      else
+      {
+        sip_last->next = sip;
+      }
+      sip_last = sip;
+    }
+  }
+  return sip_list;
+}
+
+static void PropagateCodeBreaks 
+(CdRegionPtr crp,
+ SeqIdPtr sip,
+ ValNodePtr codebreak_location_list,
+ ValNodePtr codebreak_choice_list)
+{
+  CodeBreakPtr cbp, last_cbp = NULL;
+  ValNodePtr   choice_vnp, cbp_vnp;
+  LocListPtr   llp;
+  BioseqPtr    cds_bsp;
+  SeqIdPtr     sip_list;
+  
+  if (crp == NULL || codebreak_location_list == NULL || crp->code_break == NULL)
+  {
+    return;
+  }
+  
+  crp->code_break = CodeBreakFree (crp->code_break);
+  
+  cds_bsp = BioseqFind (sip);
+  if (cds_bsp == NULL)
+  {
+    return;
+  }
+
+  sip_list = GetSegIdList (cds_bsp);
+  
+  for (cbp_vnp = codebreak_location_list, choice_vnp = codebreak_choice_list;
+       cbp_vnp != NULL && choice_vnp != NULL;
+       cbp_vnp = cbp_vnp->next, choice_vnp = choice_vnp->next)
+  {
+    llp = FindLocListForSeqId (cbp_vnp->data.ptrvalue, sip_list);
+    if (llp != NULL)
+    {
+      cbp = CodeBreakNew ();
+      if (cbp != NULL)
+      {
+        cbp->loc = llp->slp;
+        llp->slp = NULL;
+        MemCpy (&(cbp->aa), choice_vnp->data.ptrvalue, sizeof (cbp->aa));
+        if (last_cbp == NULL)
+        {
+          crp->code_break = cbp;
+        }
+        else
+        {
+          last_cbp->next = cbp;
+        }
+      }
+    }
+  }
+  SeqIdFree (sip_list);
+}
+
+static void PropagateAnticodons 
+(tRNAPtr trp,
+ SeqIdPtr sip,
+ ValNodePtr anticodon_location_list)
+{
+  LocListPtr llp;
+  BioseqPtr  trna_bsp;
+  SeqIdPtr   sip_list;
+  
+  if (trp == NULL || anticodon_location_list == NULL || trp->anticodon == NULL)
+  {
+    return;
+  }
+  
+  trp->anticodon = SeqLocFree (trp->anticodon);
+  
+  trna_bsp = BioseqFind (sip);
+  if (trna_bsp == NULL)
+  {
+    return;
+  }
+  sip_list = GetSegIdList (trna_bsp);
+  
+  llp = FindLocListForSeqId (anticodon_location_list, sip_list);
+  if (llp != NULL)
+  {
+    trp->anticodon = llp->slp;
+    llp->slp = NULL;
+  }
+  
+  SeqIdFree (sip_list);
+}
+
 
 static void ExtendLocToEnd (
   SeqLocPtr location,
@@ -8382,7 +10319,7 @@ static void TruncateCDS (
 /*------------------------------------------------------------------*/
 
 static void PropagateCDS (SeqFeatPtr dup,
-			  SeqFeatPtr sfp,
+			  ProtRefPtr prp,
 			  BioseqPtr  newbsp,
 			  Boolean    stopCDS,
 			  Boolean    transPast,
@@ -8395,8 +10332,6 @@ static void PropagateCDS (SeqFeatPtr dup,
   Boolean         partial3;
   Boolean         partial5;
   BioseqPtr       pbsp;
-  SeqFeatPtr      prot;
-  ProtRefPtr      prp;
   SeqDescrPtr     sdp;
   SeqIdPtr        sip;
   SeqFeatXrefPtr  xref;
@@ -8404,7 +10339,7 @@ static void PropagateCDS (SeqFeatPtr dup,
 
   /* Check parameters */
 
-  if (dup->data.choice != SEQFEAT_CDREGION)
+  if (dup == NULL || dup->data.choice != SEQFEAT_CDREGION || prp == NULL)
     return;
 
   /* Extend the location to the end if that was checked */
@@ -8414,21 +10349,6 @@ static void PropagateCDS (SeqFeatPtr dup,
 
   /**/
 
-  sip = SeqLocId (sfp->product);
-  if (sip == NULL)
-    return;
-
-  pbsp = BioseqFindCore (sip);
-  if (pbsp == NULL)
-    return;
-
-  prot = SeqMgrGetBestProteinFeature (pbsp, NULL);
-  if (prot == NULL || prot->data.choice != SEQFEAT_PROT)
-    return;
-
-  prp = (ProtRefPtr) prot->data.value.ptrvalue;
-  if (prp == NULL)
-    return;
   prp = AsnIoMemCopy ((Pointer) prp,
                        (AsnReadFunc) ProtRefAsnRead,
                        (AsnWriteFunc) ProtRefAsnWrite);
@@ -8548,26 +10468,108 @@ static Int2 CalculateReadingFrame (SeqFeatPtr sfp, Boolean partial3)
   return frame;
 }
 
-/*------------------------------------------------------------------*/
-/*                                                                  */
-/* DoFeatProp () -                                                  */
-/*                                                                  */
-/*------------------------------------------------------------------*/
-
-static void DoFeatProp (BioseqPtr   bsp,
-			SeqAlignPtr salp,
-			Int4        begin,
-			Int4        fin,
-			SeqFeatPtr  sfp,
-			Boolean     gapSplit,
-			Boolean     stopCDS,
-			Boolean     transPast,
-			Boolean     cds3end,
-			Uint1       strand,
-			Boolean     fuse_joints)
-
+/* we don't want to propagate Prot features if the target
+ * sequence already has one.
+ */
+static Boolean OkToPropagate(SeqFeatPtr sfp, BioseqPtr bsp)
 {
-  CodeBreakPtr    cbp, prevcbp, nextcbp;
+  SeqMgrFeatContext fcontext;
+  
+  if (sfp == NULL || bsp == NULL) return FALSE;
+  /* never ok if a gap */
+  if (sfp->idx.subtype == FEATDEF_gap) return FALSE;
+  /* always ok if not a Prot feature */
+  if (sfp->idx.subtype != FEATDEF_PROT) return TRUE;
+  /* always ok if not a protein sequence */
+  if (ISA_na (bsp->mol)) return TRUE;
+  sfp = SeqMgrGetNextFeature (bsp, NULL, 0, FEATDEF_PROT, &fcontext);
+  if (sfp == NULL)
+    return TRUE;
+  else
+    return FALSE;
+}
+
+
+static SeqIdPtr GetSegSetId (SeqLocPtr slp)
+{
+  SeqLocPtr    sub_slp;
+  SeqIdPtr     master_sip, part_sip;
+  BioseqPtr    seg_bsp;
+  BioseqSetPtr parent_set;
+  BioseqSetPtr last_parent_set = NULL;
+  SeqEntryPtr  sep;
+  BioseqPtr    parent_bsp;
+  
+  if (slp == NULL) return NULL;
+  master_sip = SeqLocId (slp);
+  if (master_sip != NULL || slp->choice != SEQLOC_MIX)
+  {
+    return master_sip;
+  }
+  /* make sure all parts are from the same segmented set */
+  for (sub_slp = slp->data.ptrvalue; sub_slp != NULL; sub_slp = sub_slp->next)
+  {
+    part_sip = SeqLocId (sub_slp);
+    seg_bsp = BioseqFind (part_sip);
+    if (seg_bsp == NULL || seg_bsp->idx.parenttype != OBJ_BIOSEQSET 
+        || seg_bsp->idx.parentptr == NULL)
+    {
+      return NULL;
+    }
+    parent_set = (BioseqSetPtr) seg_bsp->idx.parentptr;
+    if (parent_set->_class != BioseqseqSet_class_parts 
+        || parent_set->idx.parenttype != OBJ_BIOSEQSET
+        || parent_set->idx.parentptr == NULL)
+    {
+      return NULL;
+    }
+    if (last_parent_set == NULL)
+    {
+      last_parent_set = parent_set;
+    }
+    else if (last_parent_set != parent_set)
+    {
+      return NULL;
+    }
+  }
+  if (last_parent_set == NULL)
+  {
+    return NULL;
+  }
+  parent_set = (BioseqSetPtr) last_parent_set->idx.parentptr;
+  if (parent_set->_class != BioseqseqSet_class_segset)
+  {
+    return NULL;
+  }
+  for (sep = parent_set->seq_set; sep != NULL && ! IS_Bioseq (sep); sep = sep->next)
+  {
+  }
+  if (sep == NULL) return NULL;
+  parent_bsp = sep->data.ptrvalue;
+  if (parent_bsp == NULL) return NULL;
+  master_sip = parent_bsp->id;
+  return master_sip;  
+}
+
+/* for each feature, find all propagated locations and create features using
+ * those locations.
+ */
+static void 
+PropagateOneFeat
+(SeqFeatPtr sfp,
+ Boolean    gapSplit,
+ Boolean    fuse_joints,
+ Boolean    stopCDS,
+ Boolean    transPast,
+ Boolean    cds3end,
+ ValNodePtr seq_for_prop,
+ BoolPtr    warned_about_master)
+{
+  ValNodePtr      feature_location_list, vnp;
+  ValNodePtr      codebreak_location_list = NULL;
+  ValNodePtr      codebreak_choice_list = NULL;
+  ValNodePtr      anticodon_location_list = NULL;
+  CodeBreakPtr    cbp;
   CdRegionPtr     crp;
   SeqFeatPtr      dup;
   Uint1           frame = 0;
@@ -8579,96 +10581,171 @@ static void DoFeatProp (BioseqPtr   bsp,
   SeqEntryPtr     sep;
   SeqIdPtr        sip;
   tRNAPtr         trp;
-
-  if (bsp == NULL || salp == NULL || sfp == NULL)
-    return;
-
-  sip = AlnMgr2GetNthSeqIdPtr (salp, fin);
-  if (sip == NULL)
-    return;
-  newloc = MapLocForProp (salp, begin, fin, sip, gapSplit, sfp->location);
-  if (newloc == NULL)
-    return;
-
-  if (fuse_joints) {
-    mergedloc = MergeAdjacentSeqLocIntervals (newloc);
-	if (mergedloc != NULL) {
-      SeqLocFree (newloc);
-      newloc = mergedloc;
-	}
-  }
+  LocListPtr      llp;
+  Uint2           strand;
+  ProtRefPtr      prp = NULL;
+  BioseqPtr       pbsp;
+  SeqFeatPtr      prot;
+  
+  if (sfp == NULL || sfp->location == NULL) return;
+  
+  feature_location_list = MapLocForProp (sfp->location, gapSplit, 
+                                         seq_for_prop, warned_about_master);
+  if (feature_location_list == NULL) return;
 
   CheckSeqLocForPartial (sfp->location, &partial5, &partial3);
+  
+  /* also need to propagate locations for CDS code breaks and tRNA anticodons */
+  if (sfp->data.choice == SEQFEAT_CDREGION)
+  {
+    crp = (CdRegionPtr) sfp->data.value.ptrvalue;
+    if (crp != NULL)
+    {
+      for (cbp = crp->code_break; cbp != NULL; cbp = cbp->next) 
+      {
+        vnp = MapLocForProp (cbp->loc, gapSplit, seq_for_prop, warned_about_master);
+        ValNodeAddPointer (&codebreak_location_list, 0, vnp);
+        ValNodeAddPointer (&codebreak_choice_list, 0, &(cbp->aa));
+      }
+    }
+    sip = SeqLocId (sfp->product);
+    if (sip != NULL)
+    {
+      pbsp = BioseqFindCore (sip);
+      if (pbsp != NULL)
+      {
+        prot = SeqMgrGetBestProteinFeature (pbsp, NULL);
+        if (prot != NULL && prot->data.choice == SEQFEAT_PROT)
+        {
+          prp = (ProtRefPtr) prot->data.value.ptrvalue;          
+        }
+      }
+    }
+  }
+  else if (sfp->data.choice == SEQFEAT_RNA)
+  {
+    rrp = (RnaRefPtr) sfp->data.value.ptrvalue;
+    if (rrp != NULL && rrp->ext.choice == 2) 
+    {
+      trp = (tRNAPtr) rrp->ext.value.ptrvalue;
+      if (trp != NULL && trp->anticodon != NULL) 
+      {
+        anticodon_location_list = MapLocForProp (trp->anticodon, gapSplit, 
+                                                 seq_for_prop, warned_about_master);
+      }
+    }
+  }
+  
+  for (vnp = feature_location_list; vnp != NULL; vnp = vnp->next)
+  {
+    llp = (LocListPtr) vnp->data.ptrvalue;
+    if (llp == NULL)
+    {
+      continue;
+    }
+    newloc = llp->slp;
+    llp->slp = NULL;
+    if (newloc == NULL)
+    {
+      continue;
+    }
 
-  dup = AsnIoMemCopy ((Pointer) sfp,
-                      (AsnReadFunc) SeqFeatAsnRead,
-                      (AsnWriteFunc) SeqFeatAsnWrite);
-  SeqLocFree (dup->location);
-  dup->location = newloc;
-  SetSeqLocPartial (dup->location, partial5, partial3);
+    mergedloc = NULL;
+    if (fuse_joints) 
+    {
+      mergedloc = MergeAdjacentSeqLocIntervals (newloc);
+	    if (mergedloc != NULL) 
+	    {
+        SeqLocFree (newloc);
+        newloc = mergedloc;
+	    }
+    }
+    
+    /* if we have a mixed location with multiple sequences, SeqLocId will
+     * return NULL.
+     * We should check to see if we are trying to create a feature for
+     * a segset, in which case we'll want the Bioseq for the master segment.
+     */
+    sip = GetSegSetId (newloc);
 
-  /* clean up product before we look for (and maybe don't find) the newbsp */
-  if (dup->product != NULL)
-    dup->product = SeqLocFree (dup->product);
+    dup = AsnIoMemCopy ((Pointer) sfp,
+                        (AsnReadFunc) SeqFeatAsnRead,
+                        (AsnWriteFunc) SeqFeatAsnWrite);
+    SeqLocFree (dup->location);
+    dup->location = newloc;
+    SetSeqLocPartial (dup->location, partial5, partial3);
 
-  switch (dup->data.choice) {
-    case SEQFEAT_CDREGION :
-      crp = (CdRegionPtr) dup->data.value.ptrvalue;
-      if (crp != NULL) {
-        crp->frame = CalculateReadingFrame (dup, partial3);
-        frame = crp->frame;
-        prevcbp = NULL;
-        for (cbp = crp->code_break; cbp != NULL; cbp = nextcbp) {
-          nextcbp = cbp->next;
-          newloc = MapLocForProp (salp, begin, fin, sip, gapSplit, cbp->loc);
-          SeqLocFree (cbp->loc);
-          cbp->loc = newloc;
-          if (cbp->loc == NULL) {
-            if (prevcbp != NULL) {
-              prevcbp->next = nextcbp;
-            } else {
-              crp->code_break = nextcbp;
-            }
-            cbp->next = NULL;
-            CodeBreakFree (cbp);
-          } else {
-            prevcbp = cbp;
+    /* clean up product before we look for (and maybe don't find) the newbsp */
+    if (dup->product != NULL)
+      dup->product = SeqLocFree (dup->product);
+
+    switch (dup->data.choice) {
+      case SEQFEAT_CDREGION :
+        crp = (CdRegionPtr) dup->data.value.ptrvalue;
+        if (crp != NULL) {
+          crp->frame = CalculateReadingFrame (dup, partial3);
+          frame = crp->frame;
+ 
+          PropagateCodeBreaks (crp, sip,
+                               codebreak_location_list,         
+                               codebreak_choice_list);         
+        }
+        break;
+      case SEQFEAT_RNA :
+        rrp = (RnaRefPtr) dup->data.value.ptrvalue;
+        if (rrp != NULL && rrp->ext.choice == 2) {
+          trp = (tRNAPtr) rrp->ext.value.ptrvalue;
+          if (trp != NULL && trp->anticodon != NULL) 
+          {
+            PropagateAnticodons (trp, sip, anticodon_location_list);
           }
         }
+        break;
+      default :
+        break;
+    }
+
+    newbsp = BioseqFindCore (sip);
+    if (newbsp == NULL)
+      return;
+  
+    /* need to call OkToPropagate with sfp instead of dup
+     * because dup has not been indexed yet, so subtype isn't set.
+     */
+    if (OkToPropagate(sfp, newbsp))
+    {
+      sep = SeqMgrGetSeqEntryForData (newbsp);
+      if (sep == NULL)
+        return;
+      CreateNewFeature (sep, NULL, dup->data.choice, dup);
+
+      /* If we're doing a CDS propagation, then */
+      /* do the extra stuff related to that.    */
+
+      if (SEQFEAT_CDREGION == dup->data.choice)
+      {
+        strand = SeqLocStrand (dup->location);
+
+        PropagateCDS (dup, prp, newbsp, stopCDS, transPast, cds3end, frame, strand);        
       }
-      break;
-    case SEQFEAT_RNA :
-      rrp = (RnaRefPtr) dup->data.value.ptrvalue;
-      if (rrp != NULL && rrp->ext.choice == 2) {
-        trp = (tRNAPtr) rrp->ext.value.ptrvalue;
-        if (trp != NULL && trp->anticodon != NULL) {
-          newloc = MapLocForProp (salp, begin, fin, sip,
-				  gapSplit, trp->anticodon);
-          SeqLocFree (trp->anticodon);
-          trp->anticodon = newloc;
-        }
-      }
-      break;
-    default :
-      break;
+    }
+    else
+    {
+      SeqFeatFree (dup);
+    }
+  }  
+  
+  feature_location_list = FreeLocList (feature_location_list);
+  anticodon_location_list = FreeLocList (anticodon_location_list);
+  for (vnp = codebreak_location_list; vnp != NULL; vnp = vnp->next)
+  {
+    vnp->data.ptrvalue = FreeLocList (vnp->data.ptrvalue);
   }
-
-
-  newbsp = BioseqFindCore (sip);
-  if (newbsp == NULL)
-    return;
-
-  sep = SeqMgrGetSeqEntryForData (newbsp);
-  if (sep == NULL)
-    return;
-  CreateNewFeature (sep, NULL, dup->data.choice, dup);
-
-  /* If we're doing a CDS propagation, then */
-  /* do the extra stuff related to that.    */
-
-  if (SEQFEAT_CDREGION == dup->data.choice)
-    PropagateCDS (dup, sfp, newbsp, stopCDS, transPast, cds3end, frame, strand);
+  codebreak_location_list = ValNodeFree (codebreak_location_list);
+  codebreak_choice_list = ValNodeFree (codebreak_choice_list);
+  
 }
+
 
 static Boolean CDSgoesToEnd (
   BioseqPtr bsp,
@@ -8790,6 +10867,81 @@ extern void FixCdsAfterPropagate (
   ObjMgrSendMsg (OM_MSG_UPDATE, bfp->input_entityID, 0, 0);
 }
 
+static SeqFeatPtr 
+GetNextFeatureOnSegOrMaster 
+(BioseqPtr bsp, SeqFeatPtr sfp, Uint4 itemID, Uint4 index, SeqMgrFeatContextPtr fcontext)
+{
+  BioseqSetPtr       bssp;
+  SeqEntryPtr        sep;
+  BioseqPtr          master_bsp = NULL;
+  SeqFeatPtr         next_sfp;
+  SeqLocPtr          slp;
+  SeqIdPtr           loc_id;
+  Boolean            on_this_segment = FALSE;
+  
+  if (bsp == NULL)
+  {
+    return NULL;
+  }
+  if (bsp->idx.parenttype != OBJ_BIOSEQSET || bsp->idx.parentptr == NULL)
+  {
+    return SeqMgrGetNextFeature (bsp, sfp, itemID, index, fcontext);
+  }
+
+  bssp = (BioseqSetPtr) bsp->idx.parentptr;
+  if (bssp == NULL || bssp->_class != BioseqseqSet_class_parts
+      || bssp->idx.parenttype != OBJ_BIOSEQSET || bsp->idx.parentptr == NULL)
+  {
+    return SeqMgrGetNextFeature (bsp, sfp, itemID, index, fcontext);
+  }
+  
+  bssp = bssp->idx.parentptr;
+  if (bssp->_class != BioseqseqSet_class_segset)
+  {
+    return SeqMgrGetNextFeature (bsp, sfp, itemID, index, fcontext);
+  }
+
+  for (sep = bssp->seq_set; sep != NULL && master_bsp == NULL; sep = sep->next)
+  {
+    if (IS_Bioseq (sep))
+    {
+      master_bsp = sep->data.ptrvalue;
+      if (master_bsp != NULL && master_bsp->repr != Seq_repr_seg)
+      {
+        master_bsp = NULL;
+      }
+    }
+  }
+  
+  if (master_bsp == NULL)
+  {
+    return SeqMgrGetNextFeature (bsp, sfp, itemID, index, fcontext);
+  }
+  
+  next_sfp = SeqMgrGetNextFeature (master_bsp, sfp, itemID, index, fcontext);
+  if (next_sfp == NULL) return NULL;
+
+  while (next_sfp != NULL && !on_this_segment)
+  {
+    for (slp = SeqLocFindNext (next_sfp->location, NULL);
+         slp != NULL && ! on_this_segment; slp = SeqLocFindNext (next_sfp->location, slp))
+    {
+      loc_id = SeqLocId (slp);
+      if (SeqIdIn (loc_id, bsp->id))
+      {
+        on_this_segment = TRUE;
+      }
+    }
+    if (!on_this_segment)
+    {
+      next_sfp = SeqMgrGetNextFeature (master_bsp, next_sfp, itemID, index, fcontext);
+    }
+  }
+  
+  return next_sfp;  
+}
+
+
 static void AcceptFeatProp (
   ButtoN b
 )
@@ -8803,9 +10955,6 @@ static void AcceptFeatProp (
   FprDataPtr         fdp;
   Boolean            fixCDS;
   Boolean            gapSplit;
-  Int4               i;
-  Int4               numRows;
-  Int4               row;
   SeqAlignPtr        salp;
   SeqEntryPtr        sep;
   SeqFeatPtr         sfp;
@@ -8817,6 +10966,8 @@ static void AcceptFeatProp (
   Boolean            stopCDS;
   Boolean            transPast;
   Boolean            fuse_joints = FALSE;
+  Boolean            warned_about_master = FALSE;
+  ValNodePtr         seq_for_prop = NULL;
 
   fdp = (FprDataPtr) GetObjectExtra (b);
   if (fdp == NULL) return;
@@ -8855,14 +11006,14 @@ static void AcceptFeatProp (
   if (GetStatus (fdp->fuseJoints)) {
     fuse_joints = TRUE;
   } else {
-	fuse_joints = FALSE;
+	  fuse_joints = FALSE;
   }
+  
+  seq_for_prop = DialogToPointer (fdp->sequence_list_dlg);
 
   SeqEntrySetScope (NULL);
 
-  SAIndex2Free2 (salp->saip);
-  salp->saip = NULL;
-  AlnMgr2IndexSingleChildSeqAlign (salp);
+  /* need to find alignment for each feature and row within that alignment for the feature */
 
   dsp = (DenseSegPtr)(salp->segs);
   sip = SeqIdFindBest (bsp->id, 0);
@@ -8883,24 +11034,6 @@ static void AcceptFeatProp (
     sip_tmp = sip_tmp->next;
   }
   dsp->ids = sip_head;
-  row = AlnMgr2GetFirstNForSip (salp, sip);
-  numRows = AlnMgr2GetNumRows (salp);
-
-  if (row == -1) {
-    Message (MSG_OK, "AlnMgr2GetNForSip failed");
-    Remove (fdp->form);
-    return;
-  }
-  if (numRows < 1) {
-    Message (MSG_OK, "AlnMgr2GetNumRows failed");
-    Remove (fdp->form);
-    return;
-  }
-  if (row < 1 || row > numRows) {
-    Message (MSG_OK, "row is %ld, numRows is %ld, unable to process", (long) row, (long) numRows);
-    Remove (fdp->form);
-    return;
-  }
 
   if (fdp->selFeatItemID != 0) {
 
@@ -8909,29 +11042,24 @@ static void AcceptFeatProp (
     sfp = SeqMgrGetDesiredFeature (0, bsp, fdp->selFeatItemID, 0, NULL, &fcontext);
     if (sfp != NULL) {
       cds3end = CDSgoesToEnd (bsp, &fcontext);
-      for (i = 1; i <= numRows; i++) {
-        if (i != row) {
-          DoFeatProp (bsp, salp, row, i, sfp, gapSplit, stopCDS, transPast, cds3end, fcontext.strand, fuse_joints);
-        }
-      }
+      PropagateOneFeat (sfp, gapSplit, fuse_joints, stopCDS, transPast, 
+                        cds3end, seq_for_prop, &warned_about_master);
     }
   } else {
 
     /* propagate all features on bioseq */
 
-    sfp = SeqMgrGetNextFeature (bsp, NULL, 0, 0, &fcontext);
+    sfp = GetNextFeatureOnSegOrMaster (bsp, NULL, 0, 0, &fcontext);
     while (sfp != NULL) {
       cds3end = CDSgoesToEnd (bsp, &fcontext);
-      for (i = 1; i <= numRows; i++) {
-        if (i != row) {
-          DoFeatProp (bsp, salp, row, i, sfp, gapSplit, stopCDS, transPast, cds3end, fcontext.strand, fuse_joints);
-        }
-      }
+      PropagateOneFeat (sfp, gapSplit, fuse_joints, stopCDS, transPast,
+                        cds3end, seq_for_prop, &warned_about_master);
 
-      sfp = SeqMgrGetNextFeature (bsp, sfp, 0, 0, &fcontext);
+      sfp = GetNextFeatureOnSegOrMaster (bsp, sfp, 0, 0, &fcontext);
     }
   }
 
+  seq_for_prop = ValNodeFree (seq_for_prop);
   if (fixCDS) {
     entityID = ObjMgrGetEntityIDForPointer (bsp);
     sep = GetTopSeqEntryForEntityID (entityID);
@@ -8948,6 +11076,28 @@ static void AcceptFeatProp (
   Remove (fdp->form);
 }
 
+static void SetFeaturePropagateAccept (Pointer userdata)
+{
+  FprDataPtr  fdp;
+  ValNodePtr  err_list;
+  
+  fdp = (FprDataPtr) userdata;
+  if (fdp == NULL)
+  {
+    return;
+  }
+  err_list = TestDialog (fdp->sequence_list_dlg);
+  if (err_list == NULL)
+  {
+    Enable (fdp->accept);
+  }
+  else
+  {
+    Disable (fdp->accept);
+  }
+  ValNodeFree (err_list);
+}
+
 static ForM FeaturePropagateForm (
   BioseqPtr bsp,
   SeqAlignPtr salp,
@@ -8957,6 +11107,7 @@ static ForM FeaturePropagateForm (
 {
   ButtoN      b;
   GrouP       c;
+  GrouP       seq_choice_grp;
   FprDataPtr  fdp;
   GrouP       g;
   PrompT      ppt;
@@ -8964,6 +11115,7 @@ static ForM FeaturePropagateForm (
   Char        strid [MAX_ID_LEN];
   Char        txt [128];
   WindoW      w;
+  Uint2       entityID;
 
   if (bsp == NULL) return NULL;
   fdp = (FprDataPtr) MemNew (sizeof (FprData));
@@ -8987,15 +11139,24 @@ static ForM FeaturePropagateForm (
   sip = SeqIdFindWorst (bsp->id);
   SeqIdWrite (sip, strid, PRINTID_REPORT, sizeof (strid) - 1);
   if (ISA_na (bsp->mol)) {
-    sprintf (txt, "Propagate from %s to all other nucleotides", strid);
+    sprintf (txt, "Propagate from %s to", strid);
   } else {
-    sprintf (txt, "Propagate from %s to all other proteins", strid);
+    sprintf (txt, "Propagate from %s to", strid);
   }
 
   g = HiddenGroup (w, -1, 0, NULL);
   SetGroupSpacing (g, 5, 5);
 
-  ppt = StaticPrompt (g, txt, 0, 0, programFont, 'c');
+  seq_choice_grp = HiddenGroup (g, 0, 2, NULL);
+  ppt = StaticPrompt (seq_choice_grp, txt, 0, 0, programFont, 'c');
+  entityID = ObjMgrGetEntityIDForPointer (bsp);
+  fdp->sequence_list_dlg = SequenceSelectionDialog (seq_choice_grp, 
+                                                    SetFeaturePropagateAccept,
+                                                    fdp, 
+                                                    TRUE, 
+                                                    ISA_na (bsp->mol), 
+                                                    ISA_aa (bsp->mol), 
+                                                    entityID);
 
   fdp->allOrSel = HiddenGroup (g, 2, 0, NULL);
   RadioButton (fdp->allOrSel, "All Features");
@@ -9013,26 +11174,29 @@ static ForM FeaturePropagateForm (
   SetValue (fdp->gapSplit, 1);
 
   fdp->stopCDS = CheckBox (g, "Stop CDS translation at internal stop codon", NULL);
-  SetStatus (fdp->stopCDS, TRUE);
+  SetStatus (fdp->stopCDS, FALSE);
 
   fdp->transPast = CheckBox (g, "Translate CDS after partial 3' boundary", NULL);
 
   fdp->fixCDS = CheckBox (g, "Cleanup CDS partials after propagation", NULL);
+  SetStatus (fdp->fixCDS, TRUE);
 
   fdp->fuseJoints = CheckBox (g, "Fuse adjacent propagated intervals", NULL);
-  SetStatus (fdp->fuseJoints, TRUE);
+  SetStatus (fdp->fuseJoints, FALSE);
 
   c = HiddenGroup (w, 4, 0, NULL);
   fdp->accept = DefaultButton (c, "Accept", AcceptFeatProp);
   SetObjectExtra (fdp->accept, (Pointer) fdp, NULL);
   PushButton (c, "Cancel", StdCancelButtonProc);
 
-  AlignObjects (ALIGN_CENTER, (HANDLE) ppt, (HANDLE) fdp->allOrSel,
+  AlignObjects (ALIGN_CENTER, (HANDLE) seq_choice_grp, (HANDLE) fdp->allOrSel,
                 (HANDLE) fdp->gapSplit, (HANDLE) fdp->stopCDS,
                 (HANDLE) fdp->transPast, (HANDLE) fdp->fixCDS,
 				(HANDLE) fdp->fuseJoints,
                 (HANDLE) c, NULL);
   RealizeWindow (w);
+  SendMessageToDialog (fdp->sequence_list_dlg, NUM_VIB_MSG + 1);
+
 
   return (ForM) w;
 }
@@ -9065,12 +11229,15 @@ extern void NewFeaturePropagate (
     Message (MSG_OK, "You must target a single sequence in order to propagate");
     return;
   }
-  sfp = SeqMgrGetNextFeature (bsp, NULL, 0, 0, &fcontext);
-  if (sfp == NULL) {
+  sfp = GetNextFeatureOnSegOrMaster (bsp, NULL, 0, 0, &fcontext);
+  if (sfp == NULL)
+  {
     Message (MSG_OK, "The sequence must have features in order to propagate");
     return;
   }
-  salp = SeqMgrFindSeqAlignByID (bfp->input_entityID, 1);
+  
+  salp = FindAlignmentsForBioseq (bsp);
+
   if (salp == NULL) {
     Message (MSG_OK, "The record must have an alignment in order to propagate");
     return;
@@ -9144,6 +11311,7 @@ static Boolean PropagateFromGenomicProductSet (SeqEntryPtr sep)
   }
   return FALSE;
 }
+
 
 static void CopyUserObject (SeqFeatPtr sfp, Pointer userdata)
 
@@ -9553,28 +11721,49 @@ extern void PrefixAuthorityWithOrganism (IteM i)
   ObjMgrSendMsg (OM_MSG_UPDATE, bfp->input_entityID, 0, 0);
 }
 
+typedef struct addtranslexceptdata {
+  FEATURE_FORM_BLOCK
+
+  TexT        cds_comment;
+  ButtoN      strict_checking_btn;
+  CharPtr     cds_comment_txt;
+  Boolean     strict_checking;
+} AddTranslExceptData, PNTR AddTranslExceptPtr; 
+
 static void AddTranslExcept (SeqFeatPtr sfp, Pointer userdata)
 
 {
-  CdRegionPtr   crp;
-  Boolean       partial5, partial3;
-  Int4          dna_len;
-  CharPtr       bases;
-  Int4          except_len;
-  Int4          total;
-  TransTablePtr tbl = NULL;
-  Int2          state;
-  CharPtr       codon_start;
-  BioseqPtr     bsp;
-  Int4          from, to;
-  Boolean       changed;
-  CodeBreakPtr  new_cbp, last_cbp;
-  Boolean       table_is_local;
+  CdRegionPtr        crp;
+  Boolean            partial5, partial3;
+  Int4               dna_len;
+  CharPtr            bases;
+  Int4               except_len;
+  Int4               total;
+  TransTablePtr      tbl = NULL;
+  Int2               state;
+  CharPtr            codon_start;
+  BioseqPtr          bsp;
+  Int4               from, to;
+  Boolean            changed;
+  CodeBreakPtr       new_cbp, last_cbp;
+  Boolean            table_is_local;
+  CharPtr            cds_comment = NULL;
+  CharPtr            new_comment;
+  Int4               comment_len;
+  AddTranslExceptPtr ap;
+  Boolean            use_strict = FALSE;
 
   if (sfp == NULL 
       || sfp->idx.subtype != FEATDEF_CDS
       || (crp = (CdRegionPtr)sfp->data.value.ptrvalue)== NULL) {
     return;
+  }
+  
+  ap = (AddTranslExceptPtr) userdata;
+  if (ap != NULL)
+  {
+    cds_comment = ap->cds_comment_txt;
+  	use_strict = ap->strict_checking;
   }
 
   CheckSeqLocForPartial (sfp->location, &partial5, &partial3);
@@ -9605,7 +11794,7 @@ static void AddTranslExcept (SeqFeatPtr sfp, Pointer userdata)
 
   /* don't add transl_except if cds has valid stop codon */
   state = 0;
-  codon_start = bases + StringLen (bases) - 3 - except_len;
+  codon_start = bases + StringLen (bases) - 6;
   if (codon_start < bases) {
     MemFree (bases);
     return;
@@ -9627,11 +11816,34 @@ static void AddTranslExcept (SeqFeatPtr sfp, Pointer userdata)
     tbl = NULL;
   }
   
-  /* don't add transl_except if exception location does not start with 'T' or 'N' */
-  if (*(codon_start + 3) != 'T' && *(codon_start + 3) != 't'
-      && *(codon_start + 3) != 'N' && *(codon_start + 3) != 'n') {
-    MemFree (bases);
-    return;
+  if (use_strict)
+  {
+  	if (except_len == 2)
+  	{
+  	  if (toupper (*(codon_start + 3)) != 'T' || toupper(*(codon_start + 4)) != 'A')
+  	  {
+  	  	MemFree (bases);
+  	  	return;
+  	  }
+  	}
+  	else
+  	{
+  	  if (toupper (*(codon_start + 3)) != 'T')
+  	  {
+  	  	MemFree (bases);
+  	  	return;
+  	  }
+  	}
+  
+  }
+  else
+  {
+    /* don't add transl_except if exception location does not start with 'T' or 'N' */
+    if (*(codon_start + 3) != 'T' && *(codon_start + 3) != 't'
+        && *(codon_start + 3) != 'N' && *(codon_start + 3) != 'n') {
+      MemFree (bases);
+      return;
+    }
   }
   MemFree (bases);
 
@@ -9659,6 +11871,29 @@ static void AddTranslExcept (SeqFeatPtr sfp, Pointer userdata)
   } else {
     last_cbp->next = new_cbp;
   }
+  
+  /* add comment if there is one */
+  if (cds_comment != NULL)
+  {
+  	if (StringHasNoText (sfp->comment))
+  	{
+  	  sfp->comment = MemFree (sfp->comment);
+  	  sfp->comment = StringSave (cds_comment);
+  	}
+  	else
+  	{
+      comment_len = StringLen (sfp->comment) + StringLen (cds_comment) + 2;
+      new_comment = (CharPtr) MemNew (sizeof (Char) * comment_len);
+      if (new_comment != NULL)
+      {
+      	StringCpy (new_comment, sfp->comment);
+      	StringCat (new_comment, ";");
+      	StringCat (new_comment, cds_comment);
+      	sfp->comment = MemFree (sfp->comment);
+      	sfp->comment = new_comment;
+      }
+  	}
+  }
 }
 
 extern void GlobalAddTranslExcept (IteM i)
@@ -9680,437 +11915,65 @@ extern void GlobalAddTranslExcept (IteM i)
   ObjMgrSendMsg (OM_MSG_UPDATE, bfp->input_entityID, 0, 0);
 }
 
-/* This section is used to implement the new BLAST library - eventually it should be moved into
- * libncbitool, and SqnLocalAlign2Seq should replace SqnGlobalAlign2Seq
- */
-typedef struct sq_spin {
-   Int4  n1;
-   Int4  n2;
-   Int4  n3;
-   Int4  n4;
-   Int4  n5;
-} SQN_n, PNTR SQN_nPtr;
-
-#define SQN_WINDOW  30 /* window in which to search for missing pieces */
-
-static int LIBCALLBACK ACT_CompareSpins (VoidPtr ptr1, VoidPtr ptr2)
+static void DoAddTranslExceptWithComment (ButtoN b)
 {
-   SQN_nPtr  spin1;
-   SQN_nPtr  spin2;
+  AddTranslExceptPtr ap;
+  SeqEntryPtr  sep;
 
-   spin1 = *((SQN_nPtr PNTR) ptr1);
-   spin2 = *((SQN_nPtr PNTR) ptr2);
-   if (spin1 == NULL || spin2 == NULL)
-      return 0;
-   if (spin1->n3 > spin2->n3)
-      return -1;
-   if (spin1->n3 < spin2->n3)
-      return 1;
-   if (spin1->n2 < spin2->n2)
-      return -1;
-   if (spin1->n2 > spin2->n2)
-      return 1;
-   return 0;
-}
-
-static FloatHi act_get_eval(Int4 exp)
-{
-  FloatHi eval;
-  Int4 i;
-
-  eval = 1;
-  for (i=1; i<=exp; i++)
+  ap = (AddTranslExceptPtr) GetObjectExtra (b);
+  if (ap == NULL) return;
+  Hide (ap->form);
+  sep = GetTopSeqEntryForEntityID (ap->input_entityID);
+  if (sep == NULL) return;
+  ap->cds_comment_txt = SaveStringFromText (ap->cds_comment);
+  ap->strict_checking = GetStatus (ap->strict_checking_btn);
+  if (StringHasNoText (ap->cds_comment_txt))
   {
-     eval = eval/10;
+  	ap->cds_comment_txt = MemFree (ap->cds_comment_txt);
   }
-  return eval;
+  VisitFeaturesInSep (sep, ap, AddTranslExcept);
+  ObjMgrSetDirtyFlag (ap->input_entityID, TRUE);
+  ObjMgrSendMsg (OM_MSG_UPDATE, ap->input_entityID, 0, 0);
+  ap->cds_comment_txt = MemFree (ap->cds_comment_txt);
+  Remove (ap->form);
 }
 
-static void ACT_RemoveInconsistentAlnsFromSet (SeqAlignPtr sap, Int4 fuzz, Int4 n)
+extern void AddTranslExceptWithComment (IteM i)
 {
-   AMAlignIndex2Ptr  amaip;
-   Boolean          conflict;
-   Int4             curr;
-   Int4             i;
-   Int4             indextype;
-   SeqAlignPtr      salp;
-   SeqAlignPtr      salp_head;
-   SeqAlignPtr      salp_prev;
-   SQN_nPtr         PNTR spin;
-   Int4             start;
-   Int4             stop;
-   Int4             strand;
+  BaseFormPtr        bfp;
+  AddTranslExceptPtr ap;
+  WindoW             w;
+  GrouP              h, g, c;
+  ButtoN             b;
 
-   if (sap == NULL || sap->saip == NULL || sap->saip->indextype != INDEX_PARENT)
-      return;
-   if (n > 2)
-      return;
-   amaip = (AMAlignIndex2Ptr)(sap->saip);
-   indextype = amaip->alnstyle;
-   /* make sure that everything is on the plus strand of the nth sequence */
-   for (i=0; i<amaip->numsaps; i++)
-   {
-      salp = amaip->saps[i];
-      strand = AlnMgr2GetNthStrand(salp, n);
-      if (strand == Seq_strand_minus)
-      {
-         SAIndex2Free2(salp->saip);
-         salp->saip = NULL;
-         salp->next = NULL;
-         SeqAlignListReverseStrand(salp);
-         AlnMgr2IndexSingleChildSeqAlign(salp);
-      }
-   }
-   /* spin structure: n1 = which alignment, n2 = start on first row, n3 =
-      alignment length on 1st row, n4 = start on 2nd row, n5 = 2nd strand */
-   spin = (SQN_nPtr PNTR)MemNew((amaip->numsaps)*sizeof(SQN_nPtr));
-   for (i=0; i<amaip->numsaps; i++)
-   {
-      spin[i] = (SQN_nPtr)MemNew(sizeof(SQN_n));
-      salp = amaip->saps[i];
-      spin[i]->n1 = i;
-      AlnMgr2GetNthSeqRangeInSA(salp, n, &start, &stop);
-      spin[i]->n3 = stop - start;
-      spin[i]->n2 = start;
-      AlnMgr2GetNthSeqRangeInSA(salp, 3-n, &start, &stop);
-      spin[i]->n4 = start;
-      strand = AlnMgr2GetNthStrand(salp, 3-n);
-      if (strand == Seq_strand_minus)
-         spin[i]->n5 = -1;
-      else
-         spin[i]->n5 = 1;
-   }
-   HeapSort((Pointer)spin, (size_t)(amaip->numsaps), sizeof(SQN_nPtr), ACT_CompareSpins);
-   strand = spin[0]->n5;
-   for (i=1; i<amaip->numsaps; i++)
-   {
-      if (spin[i]->n5 != strand)
-      {
-         salp = amaip->saps[spin[i]->n1];
-         salp->next = NULL;
-         SeqAlignFree(salp);
-         amaip->saps[spin[i]->n1] = NULL;
-         spin[i]->n1 = -1;
-      }
-   }
-   for (curr=0; curr<amaip->numsaps; curr++)
-   {
-      if (spin[curr]->n1 != -1)
-      {
-         for (i=curr+1; i<amaip->numsaps; i++)
-         {
-            if (spin[i]->n1 != -1)
-            {
-               conflict = FALSE;
-            /* check first for conflict on first row */
-               if (spin[i]->n2 + spin[i]->n3 - 1 > spin[curr]->n2 + fuzz)
-               {
-                  if (spin[i]->n2 < spin[curr]->n2)
-                     conflict = TRUE;
-               }
-               if (spin[i]->n2 < spin[curr]->n2 + spin[curr]->n3 - 1 - fuzz)
-               {
-                  if (spin[i]->n2 + spin[i]->n3 - 1 > spin[curr]->n2 + spin[curr]->n3 - 1)
-                     conflict = TRUE;
-               }
-               if (spin[i]->n2 >= spin[curr]->n2)
-               {
-                  if (spin[i]->n2 + spin[i]->n3 - 1 <= spin[curr]->n2 + spin[curr]->n3 - 1)
-                     conflict = TRUE;
-               }
-            /* then check for conflict and consistency on second row */
-               if (spin[i]->n2 + spin[i]->n3 - 1 < spin[curr]->n2 + fuzz)
-               {
-                  if (strand == 1)
-                  {
-                     if (spin[i]->n4 + spin[i]->n3 - 1 > spin[curr]->n4 + fuzz)
-                        conflict = TRUE;
-                  } else if (strand == -1)
-                  {
-                     if (spin[curr]->n4 + spin[curr]->n3 - 1 - fuzz > spin[i]->n4)
-                        conflict = TRUE;
-                  }
-               } else
-               {
-                  if (strand == 1)
-                  {
-                     if (spin[i]->n4 < spin[curr]->n4 + spin[curr]->n3 - fuzz)
-                        conflict = TRUE;
-                  } else if (strand == -1)
-                  {
-                     if (spin[i]->n4 + spin[i]->n3 - 1 - fuzz > spin[curr]->n4)
-                        conflict = TRUE;
-                  }
-               }
-               if (conflict)
-               {
-                  salp = amaip->saps[spin[i]->n1];
-                  salp->next = NULL;
-                  SeqAlignFree(salp);
-                  amaip->saps[spin[i]->n1] = NULL;
-                  spin[i]->n1 = -1;
-               }
-            }
-         }
-      }
-   }
-   salp_head = salp_prev = NULL;
-   for (i=0; i<amaip->numsaps; i++)
-   {
-      MemFree(spin[i]);
-      if (amaip->saps[i] != NULL)
-      {
-         amaip->saps[i]->next = NULL;
-         if (salp_prev != NULL)
-         {
-            salp_prev->next = amaip->saps[i];
-            salp_prev = salp_prev->next;
-         } else
-            salp_head = salp_prev = amaip->saps[i];
-      }
-   }
-   sap->segs = (Pointer)(salp_head);
-   if (indextype == AM2_LITE)
-   {
-      AMAlignIndex2Free2(sap->saip);
-      sap->saip = NULL;
-      AlnMgr2IndexLite(sap);
-   } else
-      AlnMgr2ReIndexSeqAlign(sap);
-   MemFree(spin);
+#ifdef WIN_MAC
+  bfp = currentFormDataPtr;
+#else
+  bfp = GetObjectExtra (i);
+#endif
+  if (bfp == NULL) return;
+
+  ap = (AddTranslExceptPtr) MemNew (sizeof (AddTranslExceptData));
+  w = FixedWindow (-50, -33, -10, -10, "Add Translation Exception", NULL);
+
+  SetObjectExtra (w, ap, StdCleanupFormProc);
+  ap->form = (ForM) w;
+  ap->input_entityID = bfp->input_entityID;
+
+  h = HiddenGroup (w, -1, 0, NULL);
+  SetGroupSpacing (h, 10, 10);
+
+  g = HiddenGroup (h, 2, 0, NULL);
+  StaticPrompt (g, "CDS comment", 0, 0, programFont, 'c');
+  ap->cds_comment = DialogText (g, "", 20, NULL);
+  ap->strict_checking_btn = CheckBox (h, "Overhang must be T or TA", NULL);
+
+  c = HiddenGroup (h, 4, 0, NULL);
+  b = DefaultButton (c, "Accept", DoAddTranslExceptWithComment);
+  SetObjectExtra (b, ap, NULL);
+  PushButton (c, "Cancel", StdCancelButtonProc);
+  AlignObjects (ALIGN_CENTER, (HANDLE) g, (HANDLE) ap->strict_checking_btn, (HANDLE) c, NULL);
+  RealizeWindow (w);
+  Show (w);
+  Update ();
 }
-
-NLM_EXTERN SeqAlignPtr Sqn_LocalAlign2SeqEx (BioseqPtr bsp1, BioseqPtr bsp2, BoolPtr revcomp, Boolean use_new_blast)
-{
-   AMAlignIndex2Ptr     amaip;
-   CodeBreakPtr         cbp;
-   CdRegionPtr          crp;
-   Int4                 i;
-   BLAST_OptionsBlkPtr  options;
-   CharPtr              program = "blastn";
-   SeqAlignPtr          sap;
-   SeqAlignPtr          sap_final;
-   SeqAlignPtr          sap_head;
-   SeqAlignPtr          sap_new;
-   SeqAlignPtr          sap_prev;
-   Int4                 start1;
-   Int4                 start2;
-   Int4                 stop1;
-   Int4                 stop2;
-   Uint1                strand;
-   Int4                 extnd = 20;
-   SeqMgrFeatContext    context;
-   Uint2                entityID;
-   RnaRefPtr            rrp;
-   SeqFeatPtr           sfp;
-   SeqIdPtr             sip;
-   SeqLocPtr            slp;
-   tRNAPtr              trp;
-
-   if (bsp1 == NULL || bsp2 == NULL)
-      return NULL;
-   if (use_new_blast) {
-     SqnNewAlign (bsp1, bsp2, &sap);
-   } else {
-     if (ISA_aa (bsp1->mol)) {
-       program = "blastp";
-     }
-     options = BLASTOptionNew(program, TRUE);
-     options->gapped_calculation = TRUE;
-     options->expect_value = 0.001;
-     if (bsp1->length > 10000 || bsp2->length > 10000)
-     {
-       options->expect_value = act_get_eval(60);
-       options->wordsize = 20;
-       options->filter_string = StringSave ("m L");
-     }
-     sap = BlastTwoSequences(bsp1, bsp2, program, options);
-     BLASTOptionDelete(options);
-   }
-   if (sap == NULL)
-   {
-      ErrPostEx (SEV_ERROR, 0, 0, "BLAST finds no sequence similarity");
-      return NULL;
-   }
-   AlnMgr2IndexLite(sap);
-   ACT_RemoveInconsistentAlnsFromSet(sap, 20, 1);
-   amaip = (AMAlignIndex2Ptr)(sap->saip);
-   AlnMgr2SortAlnSetByNthRowPos(sap, 1);
-   ACT_GetNthSeqRangeInSASet(sap, 1, &start1, &stop1);
-   ACT_GetNthSeqRangeInSASet(sap, 2, &start2, &stop2);
-   strand = AlnMgr2GetNthStrand(amaip->saps[0], 2);
-
-   /* if opposite strand submitted, reverse complement, realign */
-
-   if (strand == Seq_strand_minus) {
-     if (revcomp != NULL) {
-       *revcomp = TRUE;
-     }
-     AMAlignIndexFreeEitherIndex (sap);
-     sap = SeqAlignFree (sap);
-     BioseqRevComp (bsp2);
-     entityID = ObjMgrGetEntityIDForPointer (bsp2);
-     if (! SeqMgrFeaturesAreIndexed (entityID)) {
-       SeqMgrIndexFeatures (entityID, NULL);
-     }
-     sfp = SeqMgrGetNextFeature (bsp2, NULL, 0, 0, &context);
-     while (sfp != NULL) {
-       sip = SeqLocId (sfp->location);
-       slp = SeqLocCopyRegion (sip, sfp->location, bsp2, 0, bsp2->length - 1, Seq_strand_minus, FALSE);
-       sfp->location = SeqLocFree (sfp->location);
-       sfp->location = slp;
-       switch (sfp->data.choice) {
-         case SEQFEAT_CDREGION :
-           crp = (CdRegionPtr) sfp->data.value.ptrvalue;
-           if (crp != NULL) {
-             for (cbp = crp->code_break; cbp != NULL; cbp = cbp->next) {
-               sip = SeqLocId (cbp->loc);
-               slp = SeqLocCopyRegion (sip, cbp->loc, bsp2, 0, bsp2->length - 1, Seq_strand_minus, FALSE);
-               cbp->loc = SeqLocFree (cbp->loc);
-               cbp->loc = slp;
-             }
-           }
-           break;
-         case SEQFEAT_RNA :
-           rrp = (RnaRefPtr) sfp->data.value.ptrvalue;
-           if (rrp != NULL && rrp->ext.choice == 2) {
-             trp = (tRNAPtr) rrp->ext.value.ptrvalue;
-             if (trp != NULL && trp->anticodon != NULL) {
-               sip = SeqLocId (trp->anticodon);
-               slp = SeqLocCopyRegion (sip, trp->anticodon, bsp2, 0, bsp2->length - 1, Seq_strand_minus, FALSE);
-               trp->anticodon = SeqLocFree (trp->anticodon);
-               trp->anticodon = slp;
-             }
-           }
-           break;
-         default :
-           break;
-       }
-       sfp = SeqMgrGetNextFeature (bsp2, sfp, 0, 0, &context);
-     }
-     SeqMgrClearFeatureIndexes (entityID, NULL);
-
-     options = BLASTOptionNew(program, TRUE);
-     options->gapped_calculation = TRUE;
-     options->expect_value = 0.001;
-     if (bsp1->length > 10000 || bsp2->length > 10000)
-     {
-        options->expect_value = act_get_eval(60);
-        options->wordsize = 20;
-        options->filter_string = StringSave ("m L");
-     }
-     sap = BlastTwoSequences(bsp1, bsp2, program, options);
-     BLASTOptionDelete(options);
-     if (sap == NULL)
-     {
-        Message(MSG_OK,"BLAST finds no sequence similarity in reverse complement");
-        return NULL;
-     }
-     AlnMgr2IndexLite(sap);
-     ACT_RemoveInconsistentAlnsFromSet(sap, 20, 1);
-     amaip = (AMAlignIndex2Ptr)(sap->saip);
-     AlnMgr2SortAlnSetByNthRowPos(sap, 1);
-     ACT_GetNthSeqRangeInSASet(sap, 1, &start1, &stop1);
-     ACT_GetNthSeqRangeInSASet(sap, 2, &start2, &stop2);
-     strand = AlnMgr2GetNthStrand(amaip->saps[0], 2);
-   }
-
-   /* done with any reverse complementing and reblasting, now extend frayed ends */
-
-   sap_head = NULL;
-
-   if (start1 > 6 && start1 < extnd)
-      sap_head = sap_prev = ACT_FindPiece(bsp1, bsp2, MAX(start1-SQN_WINDOW, 0), start1, MAX(start1-SQN_WINDOW, 0), start2, strand, SQN_LEFT);
-   else if (start1 > 0 && start1 < extnd)
-      SQN_ExtendAlnAlg(amaip->saps[0], start1, SQN_LEFT, Seq_strand_plus);
-   ACT_GetNthSeqRangeInSASet(sap, 1, &start1, &stop1);
-   ACT_GetNthSeqRangeInSASet(sap, 2, &start2, &stop2);
-   if (start2 > 6 && start2 < extnd)
-   {
-      sap_new = ACT_FindPiece(bsp2, bsp1, MAX(start2-SQN_WINDOW, 0), start2, MAX(start1-SQN_WINDOW, 0), start1, strand, SQN_LEFT);
-      if (sap_new != NULL)
-         SPI_flip_sa_list(sap_new);
-      if (sap_head != NULL)
-      {
-         sap_prev->next = sap_new;
-         sap_prev = sap_new;
-      } else
-         sap_head = sap_prev = sap_new;
-   } else if (start2 > 0 && start2 < extnd)
-      SQN_ExtendAlnAlg(amaip->saps[0], start2, SQN_LEFT, Seq_strand_plus);
-   for (i=0; i<amaip->numsaps-1; i++)
-   {
-      AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 1, NULL, &start1);
-      AlnMgr2GetNthSeqRangeInSA(amaip->saps[i+1], 1, &stop1, NULL);
-      if (strand != Seq_strand_minus)
-      {
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, NULL, &start2);
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i+1], 2, &stop2, NULL);
-      } else
-      {
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i], 2, &stop2, NULL);
-         AlnMgr2GetNthSeqRangeInSA(amaip->saps[i+1], 2, NULL, &start2);
-      }
-      sap_new = ACT_FindPiece(bsp1, bsp2, start1, stop1, start2, stop2, strand, SQN_MIDDLE);
-      if (sap_head)
-      {
-         sap_prev->next = sap_new;
-         if (sap_new != NULL)
-            sap_prev = sap_new;
-      } else
-         sap_head = sap_prev = sap_new;
-   }
-   ACT_GetNthSeqRangeInSASet(sap, 1, &start1, &stop1);
-   ACT_GetNthSeqRangeInSASet(sap, 2, &start2, &stop2);
-   if (bsp1->length-stop1 > 6 && bsp1->length-stop1 < extnd)
-   {
-      sap_new = ACT_FindPiece(bsp1, bsp2, stop1, MIN(bsp1->length-1, stop1 + SQN_WINDOW), stop2, MIN(bsp2->length-1, stop2+SQN_WINDOW), strand, SQN_RIGHT);
-      if (sap_new != NULL)
-      {
-         if (sap_head != NULL)
-         {
-            sap_prev->next = sap_new;
-            sap_prev = sap_new;
-         } else
-           sap_head = sap_prev = sap_new;
-      }
-   } else if (bsp1->length-stop1 > 0 && bsp1->length-stop1 < extnd)
-      SQN_ExtendAlnAlg(amaip->saps[amaip->numsaps-1], bsp1->length-stop1, SQN_RIGHT, Seq_strand_plus);
-   ACT_GetNthSeqRangeInSASet(sap, 1, &start1, &stop1);
-   ACT_GetNthSeqRangeInSASet(sap, 2, &start2, &stop2);
-   if (bsp2->length-stop2 > 6 && bsp2->length-stop2 < extnd)
-   {
-      sap_new = ACT_FindPiece(bsp2, bsp1, stop2, MIN(bsp2->length-1, stop2 + SQN_WINDOW), stop1, MIN(bsp1->length-1, stop1+SQN_WINDOW), strand, SQN_RIGHT);
-      if (sap_new != NULL)
-      {
-         SPI_flip_sa_list(sap_new);
-         if (sap_head != NULL)
-         {
-            sap_prev->next = sap_new;
-            sap_prev = sap_new;
-         } else
-           sap_head = sap_prev = sap_new;
-      }
-   } else if (bsp2->length-stop2 > 0 && bsp2->length-stop2 < extnd)
-      SQN_ExtendAlnAlg(amaip->saps[amaip->numsaps-1], bsp2->length-stop2, SQN_RIGHT, Seq_strand_plus);
-   sap_new = (SeqAlignPtr)(sap->segs);
-   while (sap_new->next != NULL)
-   {
-      sap_new = sap_new->next;
-   }
-   sap_new->next = sap_head;  /* put the new alignments in the original set */
-   AMAlignIndex2Free2(amaip);
-   sap->saip = NULL;
-   AlnMgr2IndexLite(sap);  /* reindex the alignments */
-   sap_final = ACT_CleanUpAlignments(sap, bsp1->length, bsp2->length);
-   return sap_final;
-}
-
-NLM_EXTERN SeqAlignPtr Sqn_LocalAlign2Seq (BioseqPtr bsp1, BioseqPtr bsp2, BoolPtr revcomp)
-{
-  return Sqn_LocalAlign2SeqEx (bsp1, bsp2, revcomp, FALSE);
-}
-
-/* End of implementation of the new BLAST library .
- */
-

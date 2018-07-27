@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/1/91
 *
-* $Revision: 6.28 $
+* $Revision: 6.29 $
 *
 * File Description: 
 *       Vibrant procedure definitions
@@ -37,6 +37,9 @@
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: vibprocs.h,v $
+* Revision 6.29  2005/01/24 15:01:25  kans
+* prototype UsePrimaryMonitor
+*
 * Revision 6.28  2004/04/01 13:43:09  lavr
 * Spell "occurred", "occurrence", and "occurring"
 *
@@ -363,6 +366,7 @@ Nlm_Boolean Nlm_HasDualScreen (void);
 void Nlm_UseFullScreen (void);
 void Nlm_UseLeftScreen (void);
 void Nlm_UseRightScreen (void);
+void Nlm_UsePrimaryMonitor (void);
 
 
 /***  GROUPING OBJECT  ***/

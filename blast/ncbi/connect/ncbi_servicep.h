@@ -1,7 +1,7 @@
 #ifndef CONNECT___NCBI_SERVICEP__H
 #define CONNECT___NCBI_SERVICEP__H
 
-/*  $Id: ncbi_servicep.h,v 6.23 2003/06/26 15:19:56 lavr Exp $
+/*  $Id: ncbi_servicep.h,v 6.29 2005/04/25 18:47:29 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -57,26 +57,38 @@ typedef struct {
 /* Iterator structure
  */
 struct SSERV_IterTag {
-    const char*  service;        /* requested service name                 */
-    TSERV_Type   type;           /* requested server type(s)               */
-    unsigned int preferred_host; /* preferred host to select, network b.o. */
-    double       preference;     /* range [0..100] %%                      */
-    SSERV_Info** skip;           /* servers to skip                        */
-    size_t       n_skip;         /* number of servers in the array         */
-    size_t       n_max_skip;     /* number of allocated slots in the array */
-    SSERV_Info*  last;           /* last server info taken out             */
+    const char*  service;        /* requested service name, private storage */
+    const char*  current;        /* current service name, private storage   */
+    TSERV_Type   types;          /* requested server type(s)                */
+    unsigned int preferred_host; /* preferred host to select, network b.o.  */
+    double       preference;     /* range [0..100] %%                       */
+    SSERV_Info** skip;           /* servers to skip                         */
+    size_t       n_skip;         /* number of servers in the array          */
+    size_t       n_max_skip;     /* number of allocated slots in the array  */
+    SSERV_Info*  last;           /* last server info taken out              */
 
-    const SSERV_VTable* op;      /* table of virtual functions             */
+    const SSERV_VTable* op;      /* table of virtual functions              */
 
-    void*        data;           /* private data field                     */
-    int/*bool*/  external;       /* true for mapping of external requests  */
+    void*        data;           /* private data field                      */
+    int/*bool*/  external;       /* whether this is an external request     */
+    unsigned int origin;         /* IP of the origin                        */
+    const char*  arg;            /* argument to match; original pointer     */
+    size_t       arglen;         /* == 0 for NULL pointer above             */
+    const char*  val;            /* value to match; original pointer        */
+    size_t       vallen;         /* == 0 for NULL pointer above             */
 };
 
 
-/* Modified 'fast track' routine for one-shot obtaining of a service info.
+/* Modified 'fast track' routine for obtaining of a service info in one-shot.
  * Please see <connect/ncbi_service.h> for explanations [SERV_GetInfoEx()].
  * For now, this call is to exclusively support MYgethostbyname() replacement
- * of standard gethostbyname() libcall in apache Web daemon (see in daemons/).
+ * of standard gethostbyname() libcall in Apache Web daemon (see in daemons/).
+ *
+ * CAUTION: unlike "service" parameter, "arg" and "val" are not copied from,
+ *          but the orignal pointers get stored -- take this into account
+ *          while dealing with dynamically allocated strings in the slow
+ *          "iterator" version of the call below -- the pointers must remain
+ *          valid as long as the iterator stays open (i.e. until SERV_Close()).
  *
  * NOTE: Preference 0.0 does not prohibit the preferred_host to be selected;
  *       nor preference 100.0 ultimately opts for the preferred_host; rather,
@@ -90,17 +102,30 @@ SSERV_Info* SERV_GetInfoP
  TSERV_Type          types,         /* mask of type(s) of servers requested  */
  unsigned int        preferred_host,/* preferred host to use service on, nbo */
  double              preference,    /* [0=min..100=max] preference in %%     */
- int/*bool*/         external       /* whether mapping is not local to NCBI  */
+ int/*bool*/         external,      /* whether mapping is not local to NCBI  */
+ SConnNetInfo*       net_info,      /* for connection to dispatcher, m.b. 0  */
+ unsigned int        origin,        /* origin IP                             */
+ const char*         arg,           /* environment variable name to search   */
+ const char*         val            /* environment variable value to match   */
  );
 
-/* same as above but creates an iterator to get services one by one */
+/* same as the above but creates an iterator to get services one by one */
 SERV_ITER SERV_OpenP
 (const char*         service,
  TSERV_Type          type,
  unsigned int        preferred_host,
  double              preference,
- int/*bool*/         external
+ int/*bool*/         external,
+ SConnNetInfo*       net_info,
+ unsigned int        origin,
+ const char*         arg,
+ const char*         val
  );
+
+
+/* Return service name the iterator is currently working on.
+ */
+const char* SERV_GetCurrentName(SERV_ITER iter);
 
 
 /* Private interface: update mapper information from the given text
@@ -114,7 +139,9 @@ int/*bool*/ SERV_Update(SERV_ITER iter, const char* text);
  * contained in the iterator; to be used in mapping requests to DISPD.
  * Return value must be 'free'd.
  */
-char* SERV_Print(SERV_ITER iter);
+char* SERV_PrintEx(SERV_ITER iter, const SConnNetInfo* referrer);
+
+#define SERV_Print(iter) SERV_PrintEx(iter, 0)
 
 
 /* Get name of underlying service mapper.
@@ -153,6 +180,24 @@ double SERV_Preference(double pref, double gap, unsigned int n);
 /*
  * --------------------------------------------------------------------------
  * $Log: ncbi_servicep.h,v $
+ * Revision 6.29  2005/04/25 18:47:29  lavr
+ * Private API to accept SConnNetInfo* for network dispatching to work too
+ *
+ * Revision 6.28  2005/04/19 16:33:00  lavr
+ * More comments on how things work (SERV_{GetInfo|Open}P)
+ *
+ * Revision 6.27  2005/03/05 21:05:07  lavr
+ * +SERV_ITER::current;  +SERV_GetCurrentName()
+ *
+ * Revision 6.26  2005/01/31 17:09:34  lavr
+ * Argument affinity moved into service iterator
+ *
+ * Revision 6.25  2004/08/19 15:48:04  lavr
+ * SERV_ITER::type renamed into SERV_ITER::types to reflect its bitmask nature
+ *
+ * Revision 6.24  2004/07/01 16:27:55  lavr
+ * +SERV_PrintEx()
+ *
  * Revision 6.23  2003/06/26 15:19:56  lavr
  * Additional parameter "external" for SERV_{Open|GetInfo}P()
  *

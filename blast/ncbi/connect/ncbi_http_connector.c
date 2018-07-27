@@ -1,4 +1,4 @@
-/*  $Id: ncbi_http_connector.c,v 6.63 2004/02/12 16:50:02 lavr Exp $
+/*  $Id: ncbi_http_connector.c,v 6.65 2005/03/08 16:23:13 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -415,12 +415,11 @@ static EIO_Status s_ReadHeader(SHttpConnector* uuu, char** redirect)
     /* skip & printout the content, if server error was flagged */
     if (server_error && uuu->net_info->debug_printout == eDebugPrintout_Some) {
         BUF        buf = 0;
-        EIO_Status status;
         char*      body;
 
         SOCK_SetTimeout(uuu->sock, eIO_Read, 0);
-        status = SOCK_StripToPattern(uuu->sock, 0, 0, &buf, 0);
-        assert(status != eIO_Success); /* because reading until EOF */
+        /* because reading until EOF the verify below holds */
+        verify(SOCK_StripToPattern(uuu->sock, 0, 0, &buf, 0) != eIO_Success);
         if (!(size = BUF_Size(buf))) {
             CORE_LOG(eLOG_Trace, "[HTTP]  No body received with this error");
         } else if ((body = (char*) malloc(size)) != 0) {
@@ -918,7 +917,7 @@ extern CONNECTOR HTTP_CreateConnector
 
     net_info = info ? ConnNetInfo_Clone(info) : ConnNetInfo_Create(0);
     if (user_header)
-        ConnNetInfo_SetUserHeader(net_info, user_header);
+        ConnNetInfo_OverrideUserHeader(net_info, user_header);
     connector = HTTP_CreateConnectorEx(net_info, flags, 0, 0, 0, 0);
     ConnNetInfo_Destroy(net_info);
     return connector;
@@ -976,6 +975,12 @@ extern CONNECTOR HTTP_CreateConnectorEx
 /*
  * --------------------------------------------------------------------------
  * $Log: ncbi_http_connector.c,v $
+ * Revision 6.65  2005/03/08 16:23:13  lavr
+ * Replace an assert() with verify() to remove release-mode unused var
+ *
+ * Revision 6.64  2005/02/28 17:59:07  lavr
+ * HTTP_CreateConnector() to "override" addtl. user header instead of "set"
+ *
  * Revision 6.63  2004/02/12 16:50:02  lavr
  * Heed warning about uninited variable use
  *

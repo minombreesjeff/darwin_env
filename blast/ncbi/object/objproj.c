@@ -188,7 +188,6 @@ erret:
 NLM_EXTERN Boolean LIBCALL 
 ProjectAsnWrite(ProjectPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
 {
-   DataVal av;
    AsnTypePtr atp;
    Boolean retval = FALSE;
 

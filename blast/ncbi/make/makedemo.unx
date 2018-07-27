@@ -1,6 +1,6 @@
 #	makefile for demo programs
 #
-#	$Id: makedemo.unx,v 6.68 2004/01/02 22:05:16 coulouri Exp $
+#	$Id: makedemo.unx,v 6.82 2004/12/17 17:45:30 ucko Exp $
 #
 #	Sun with unbundled ANSI compiler [ make CC=acc ]
 #	Sun with Gnu C [ make CC=gcc ]
@@ -96,20 +96,21 @@ EXE1 = testcore makeset \
     getmesh indexpub getpub testobj seqtest \
 	dosimple asn2ff getseq getfeat checksub asndhuff \
 	entrcmd errhdr cdscan findspl \
-	ncbisort fa2htgs fastacmd formatdb blast blastall blastpgp \
-	testval seedtop fmerge makemat copymat impala \
-	megablast vecscreen gil2bin tbl2asn blastclust rpsblast \
-	asn2xml debruijn \
+	ncbisort fa2htgs fastacmd formatdb formatrpsdb blast \
+	blastall blastpgp testval seedtop makemat copymat impala \
+	megablast vecscreen gil2bin blastclust rpsblast \
+	asn2xml debruijn asn2idx sortbyquote \
 	test_regexp demo_regexp demo_regexp_grep
 
 SRC1 = testcore.c makeset.c \
     getmesh.c indexpub.c getpub.c testobj.c seqtest.c dosimple.c asn2ff.c \
     getseq.c getfeat.c checksub.c asndhuff.c \
     entrcmd.c errhdr.c cdscan.c findspl.c \
-    ncbisort.c fa2htgs.c fastacmd.c formatdb.c blast_driver.c blastall.c \
-    blastpgp.c testval.c seedtop.c fmerge.c makemat.c copymat.c profiles.c \
-	megablast.c vecscreen.c gil2bin.c tbl2asn.c blastclust.c rpsblast.c \
-	asn2xml.c debruijn.c \
+    ncbisort.c fa2htgs.c fastacmd.c formatdb.c formatrpsdb.c \
+    blast_driver.c blastall.c blastpgp.c testval.c seedtop.c \
+    makemat.c copymat.c profiles.c \
+	megablast.c vecscreen.c gil2bin.c blastclust.c rpsblast.c \
+	asn2xml.c debruijn.c asn2idx.c sortbyquote.c  \
 	pcretest.c pcredemo.c pcregrep.c
 
 INTERNAL = testgen
@@ -152,7 +153,7 @@ copy :
 	$(SRCCOPY) ../regexp/test/*.* .
 	$(SRCCOPY) ../regexp/demo/*.* .
 	-$(SRCCOPY) ../internal/*.* .
-	chmod -R ug+rw,o+r .
+	-chmod -R ug+rw,o+r .
 
 ## make applications
 ##
@@ -271,15 +272,15 @@ fastacmd : fastacmd.c
 formatdb : formatdb.c
 	$(CC) -o formatdb $(LDFLAGS) formatdb.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
 
-# fmerge
+# formatrpsdb
 
-fmerge : fmerge.c
-	$(CC) -o fmerge $(LDFLAGS) fmerge.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
+formatrpsdb : formatrpsdb.c
+	$(CC) -o formatrpsdb $(LDFLAGS) formatrpsdb.c $(LIB61) $(LIB23) $(LIB60) $(LIB2) $(LIB1) $(OTHERLIBS)
 
 # blast (reincarnation of blastall from algo/blast sources)
 
 blast : blast_driver.c
-	$(CC) -o blast $(LDFLAGS) blast_driver.c $(LIB61) $(LIB60) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS)
+	$(CC) -o blast $(LDFLAGS) blast_driver.c $(THREAD_OBJ) $(LIB61) $(LIB60) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
 
 debruijn : debruijn.c
 	$(CC) -o debruijn $(LDFLAGS) debruijn.c $(LIB60) $(LIB1) $(OTHERLIBS)
@@ -331,7 +332,7 @@ packfilt : packfilt.c
 # megablast
 
 megablast : megablast.c $(THREAD_OBJ)
-	$(CC) -o megablast $(LDFLAGS) megablast.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+	$(CC) -o megablast $(LDFLAGS) megablast.c $(THREAD_OBJ) $(LIB61) $(LIB60) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
 
 # vecscreen
 
@@ -343,10 +344,15 @@ vecscreen : vecscreen.c $(THREAD_OBJ)
 gil2bin : gil2bin.c 
 	$(CC) -o gil2bin $(LDFLAGS) gil2bin.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) 
 
-# tbl2asn
+# asn2idx
 
-tbl2asn : tbl2asn.c 
-	$(CC) -o tbl2asn $(LDFLAGS) tbl2asn.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) 
+asn2idx : asn2idx.c 
+	$(CC) -o asn2idx $(LDFLAGS) asn2idx.c $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) 
+
+# sortbyquote
+
+sortbyquote : sortbyquote.c 
+	$(CC) -o sortbyquote $(LDFLAGS) sortbyquote.c $(LIB2) $(LIB1) $(OTHERLIBS) 
 
 # blastclust
 
@@ -356,7 +362,7 @@ blastclust : blastclust.c $(THREAD_OBJ)
 # rpsblast
 
 rpsblast : rpsblast.c $(THREAD_OBJ)
-	$(CC) -o rpsblast $(LDFLAGS) rpsblast.c $(THREAD_OBJ) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
+	$(CC) -o rpsblast $(LDFLAGS) rpsblast.c $(THREAD_OBJ) $(LIB61) $(LIB60) $(LIB23) $(LIB2) $(LIB1) $(OTHERLIBS) $(THREAD_OTHERLIBS)
 
 
 # asn2xml

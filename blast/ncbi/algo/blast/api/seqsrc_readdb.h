@@ -1,4 +1,4 @@
-/*  $Id: seqsrc_readdb.h,v 1.9 2004/02/18 19:38:20 dondosha Exp $
+/*  $Id: seqsrc_readdb.h,v 1.16 2005/04/21 15:00:36 dondosha Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -21,14 +21,12 @@
 *
 *  Please cite the author in any work or product based on this material.
 *
-* ===========================================================================
-*
 * Author:  Christiam Camacho
-*
-* File Description:
-*   Implementation of the BlastSeqSrc interface using readdb
-*
-*/
+* ===========================================================================*/
+
+/** @file seqsrc_readdb.h
+ * Implementation of the BlastSeqSrc interface using readdb
+ */
 
 #ifndef SEQSRC_READDB_H
 #define SEQSRC_READDB_H
@@ -40,34 +38,17 @@
 #include <readdb.h>
 #include <algo/blast/core/blast_seqsrc.h>
 
-#define SEQIDLEN_MAX 255
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/** Encapsulates the arguments needed to initialize a BLAST database using
- * readdb */
-typedef struct ReaddbNewArgs {
-    char* dbname;     /**< Database name */
-    Boolean is_protein; /**< Is this database protein? */
-   Int4 first_db_seq; /**< Ordinal id of the first sequence to search */
-   Int4 final_db_seq; /**< Ordinal id of the last sequence to search */
-} ReaddbNewArgs;
-
-/** Readdb sequence source constructor 
- * @param bssp BlastSeqSrc structure (already allocated) to populate [in]
- * @param args Pointer to ReaddbNewArgs structure above [in]
- * @return Updated bssp structure (with all function pointers initialized
+/** @addtogroup CToolkitAlgoBlast
+ *
+ * @{
  */
-BlastSeqSrc* ReaddbSeqSrcNew(BlastSeqSrc* bssp, void* args);
 
-/** Readdb sequence source destructor: frees its internal data structure and the
- * BlastSeqSrc structure itself.
- * @param bssp BlastSeqSrc structure to free [in]
- * @return NULL
- */
-BlastSeqSrc* ReaddbSeqSrcFree(BlastSeqSrc* bssp);
+/** Maximal allowed length for a sequence id string. */
+#define SEQIDLEN_MAX 255
 
 /** Initialize the sequence source structure.
  * @param dbname BLAST database name [in]
@@ -75,12 +56,21 @@ BlastSeqSrc* ReaddbSeqSrcFree(BlastSeqSrc* bssp);
  * @param first_seq First ordinal id in the database to search [in]
  * @param last_seq Last ordinal id in the database to search 
  *                 (full database if 0) [in]
- * @param extra_arg Reserved for the future implementation of other database
- *                  restrictions [in]
  */
 BlastSeqSrc* 
 ReaddbBlastSeqSrcInit(const char* dbname, Boolean is_prot, int first_seq, 
-                      int last_seq, void* extra_arg);
+                      int last_seq);
+
+/** Initialize the sequence source structure given an already created
+ * ReadDBFILE structure.
+ * @param rdfp Initialized BLAST database structure [in]
+ * @return New allocated and initialized BlastSeqSrc, using rdfp as data 
+ *         structure.
+ */
+BlastSeqSrc*
+ReaddbBlastSeqSrcAttach(ReadDBFILE* rdfp);
+
+/* @} */
 
 #ifdef __cplusplus
 }

@@ -52,11 +52,11 @@ platform to obtain the platform-specific ncbi.mk file.
 
 To build the NCBI toolkit you need to look for platform-dependent instructions:
 For UNIX:
-	look at the file make/readme.unx
+    look at the file make/readme.unx
 For Mac:
-	look at the file make/readme.mac
+    look at the file make/readme.mac
 For Microsoft Windows95/98/NT:
-	look at the file make/readme.dos
+    look at the file make/readme.dos
 There is some information which may be useful for NCBI tookit building
 in the file doc/FAQ.txt
 
@@ -127,7 +127,7 @@ formatdb: formats FASTA files as BLAST databases for BLAST 2.0.
 blastall: perform all five flavors of blast comparison.
 blastn and blastp offer fully gapped alignments.
 blastx and tblastn have 'in-frame' gapped alignments and use sum
-	statistics to link alignments from different frames.
+    statistics to link alignments from different frames.
 tblastx provides only ungapped alignments.
 
 blastpgp: performs gapped blastp searches and can be used to perform
@@ -329,7 +329,7 @@ Cit-gen ::= SEQUENCE {      -- NOT from ANSI, this is a catchall
     date Date OPTIONAL ,
     serial-number INTEGER OPTIONAL ,   -- for GenBank style references
     title VisibleString OPTIONAL ,     -- eg. cit="unpublished",title="title"
-	pmid PubMedId OPTIONAL }           -- PubMed Id
+    pmid PubMedId OPTIONAL }           -- PubMed Id
 
 pub.asn
 
@@ -347,7 +347,7 @@ Pub ::= CHOICE {
     pat-id Id-pat ,      -- identify a patent
     man Cit-let ,        -- manuscript, thesis, or letter
     equiv Pub-equiv,     -- to cite a variety of ways
-	pmid PubMedId }      -- PubMedId
+    pmid PubMedId }      -- PubMedId
 
 medline.asn
 
@@ -363,9 +363,9 @@ from PubMed
     xref SET OF Medline-si OPTIONAL ,
     idnum SET OF VisibleString OPTIONAL ,  -- ID Number (grants, contracts)
     gene SET OF VisibleString OPTIONAL ,
-	pmid PubMedId OPTIONAL ,               -- MEDLINE records may include 
+    pmid PubMedId OPTIONAL ,               -- MEDLINE records may include 
 the PubMedId
-	pub-type SET OF VisibleString OPTIONAL } -- may show publication types 
+    pub-type SET OF VisibleString OPTIONAL } -- may show publication types 
 (review, etc)
 
 seqfeat.asn
@@ -384,10 +384,10 @@ name
     lineage VisibleString OPTIONAL ,       -- lineage with semicolon separators
     gcode INTEGER OPTIONAL ,               -- genetic code (see CdRegion)
     mgcode INTEGER OPTIONAL ,              -- mitochondrial genetic code
-	div VisibleString OPTIONAL }           -- GenBank division code
+    div VisibleString OPTIONAL }           -- GenBank division code
 
 BioSource ::= SEQUENCE {
-    genome INTEGER {		 -- biological context
+    genome INTEGER {         -- biological context
         unknown (0) ,
         genomic (1) ,
         chloroplast (2) ,
@@ -400,9 +400,9 @@ BioSource ::= SEQUENCE {
         plasmid (9) ,
         transposon (10) ,
         insertion-seq (11) ,
-		cyanelle (12) ,
-		proviral (13) ,
-		virion (14) } DEFAULT unknown ,
+        cyanelle (12) ,
+        proviral (13) ,
+        virion (14) } DEFAULT unknown ,
     origin INTEGER {
       unknown (0) ,
       natural (1) ,                    -- normal biological entity
@@ -424,15 +424,15 @@ Prot-ref ::= SEQUENCE {
        not-set (0) ,
        preprotein (1) ,
        mature (2) ,
-	   signal-peptide (3) ,
-	   transit-peptide (4) } DEFAULT not-set }
+       signal-peptide (3) ,
+       transit-peptide (4) } DEFAULT not-set }
 
 
 =============================================================================
                  Notes from Previous Releases
 =============================================================================
 
-		New Functions in Version 4.0
+        New Functions in Version 4.0
 
 There are a host of new functions in this release, but as usual we have not
 managed to make time to document them all. Large parts of Sequin are present
@@ -704,7 +704,6 @@ The makedemo file builds the demo programs and the Entrez application:
   cdromlib      Access routines for data on the Entrez CD-ROM
   cn3d          Source code for Vibrant-based 3D structure viewer
   config        Configuration files for NCBI software:
-    dos
     mac
     unix
     vms
@@ -719,7 +718,6 @@ The makedemo file builds the demo programs and the Entrez application:
   link          Contains several subdirectories with build accessory files:
     macmet        Macintosh Metrowerks/CodeWarrior
     macmpw        Macintosh MPW C
-    msdos         Microsoft C and Borland C for DOS
     mswin         Microsoft C and Borland C for Windows
   make          Make files for various systems
   network       Network version of data access
@@ -727,10 +725,8 @@ The makedemo file builds the demo programs and the Entrez application:
     blast2
     encrypt
     entrez
-    ncsasock
     netmanag
     nsclilib
-    nsdemocl
   object        Functions for reading and writing complex objects
   sequin        Source code for Sequin application
   tools         Source code for alignment and other contributed utilities
@@ -800,69 +796,34 @@ ALL -
 
 Unix
     tested on Sun Sparc (Solaris 2.6, Sunos 4.1.3),
-	Silicon Graphics IRIX 5.* and 6.*, DEC Alpha with OSF/1 V5.1,
-	Linux (Red Hat Linux release 6.2 with kernel 2.2.16) on Intel,
-	Sun Solaris for Intel (Solaris 2.7).
+    Silicon Graphics IRIX 5.* and 6.*, DEC Alpha with OSF/1 V5.1,
+    Linux (Red Hat Linux release 6.2 with kernel 2.2.16) on Intel,
+    Sun Solaris for Intel (Solaris 2.7).
 
-	Run the script ncbi/make/makedis.csh keeping it's output in the
-	separate file:
-	for sh or bash:
-		ncbi/make/makedis.csh 2>&1 | tee out.makedis.csh
-	for csh or tcsh:
-		ncbi/make/makedis.csh |& tee out.makedis.csh
-	If that script gives you an error like this:
-		Your platform is not supported.
-		To port ncbi toolkit to your platform consult
-		the files platform/*.ncbi.mk
-	then you should check the script ncbi/make/makedis.csh and
-	add proper platform-dependent ncbi.mk file in ncbi/platform
-	directory.
-	
-	Other UNIX: AIX, ULTRIX, NeXt, Sun acc, 
+    Run the script ncbi/make/makedis.csh keeping it's output in the
+    separate file:
+    for sh or bash:
+        ncbi/make/makedis.csh 2>&1 | tee out.makedis.csh
+    for csh or tcsh:
+        ncbi/make/makedis.csh |& tee out.makedis.csh
+    If that script gives you an error like this:
+        Your platform is not supported.
+        To port ncbi toolkit to your platform consult
+        the files platform/*.ncbi.mk
+    then you should check the script ncbi/make/makedis.csh and
+    add proper platform-dependent ncbi.mk file in ncbi/platform
+    directory.
+    
+    Other UNIX: AIX, ULTRIX, NeXt, Sun acc, 
           Follows models above.  Read header in makeall.unx and makedemo.unx
     for details.
 
     for all UNIX, edit .ncbirc as described in section "CONFIGURATION OR
-	SETTINGS FILES".
+    SETTINGS FILES".
     optional edit .login to "setenv NCBI=[path to .ncbirc file]"
 
 MS-DOS
-    (Also see NEW MAKEFILES, below)
-     Microsoft C version 7.00
-          copy ..\make\*.dos
-          ren makeall.dos makefile
-          nmake MSC=1       [note: nmake requires windows or DPMI]
-		  copy ..\config\ncbi.dos ncbi.cfg  
-          check paths in ncbi.cfg file
-             [see section on CONFIGURATION]
-          Optional:
-             edit AUTOEXEC.BAT with "set NCBI=[path to directory containing
-                    ncbi.cfg".
-             reboot to activate
-          To make demo programs:
-             nmake -f makedemo.dos MSC=1
-     Microsoft Windows version 7.00
-          copy ..\make\*.dos
-          ren makeall.dos makefile
-          nmake MSW=1      [note: nmake requires windows or DPMI]
-          check paths in "ncbi.ini" as above
-          copy ncbi.ini to your windows directory
-          To make demos:
-             nmake -f makedemo.dos MSW=1
-     Borland C++ 3.1
-        copy ..\make\*.dos
-        ren makeall.dos makefile
-        make -DBOR
-        then set paths as in Microsoft C, above.
-        To make demos:
-           make -f makedemo.dos -DBOR
-     Borland C++ 3.1 for Windows
-        copy ..\make\*.dos
-        ren makeall.dos makefile
-        make -DBWN
-        then set paths as in Microsoft Windows, above.
-        To make demos:
-            make -f makedemo.dos -DBWN
+    look at the file make/readme.dos
 
 Mac
      tested on CodeWarrior IDE 2.1, MacOS 8.0
@@ -1002,11 +963,8 @@ MS-DOS (without Windows)    xxx.CFG
 UNIX                        .xxxrc
 VMS                         xxx.cfg
 
-	Samples of such files are in subdirectories of \config.  The UNIX version
-does not have the leading '.' in filename so you can see it.  Since VMS and
-DOS both use the same file name (ncbi.cfg) the DOS version was called ncbi.dos.
-You will have to rename it.  Remember these are just models.  You will have to
-set the paths appropriately for your machine yourself.
+    Samples of such files are in subdirectories of \config.  The UNIX version
+does not have the leading '.' in filename so you can see it. 
 
     The location in which these files must reside is also platform dependent,
 and the functions that manipulate the contents may look in several places to
@@ -1103,7 +1061,7 @@ functionality using just these routines).
 
 NETWORK LIBRARIES
 
-	The toolbox now includes NCBI "Network Services".  This includes
+    The toolbox now includes NCBI "Network Services".  This includes
 everything which you need to build your own "Network Entrez" client software.
 The network libraries include a generic network services library (nsclilib),
 which is used to contact the network services dispatcher and connect to a
@@ -1141,12 +1099,12 @@ testcore.c      documented
 testobj.c       tests Medline object loader, demonstrates error checking using
                 NULL asnio stream.
 entrez          If Vibrant is installed, the full Entrez program is made.
-asndhuff		Demonstrates streaming ASN.1 data from the huffman compressed
-				Entrez CDROM (only works on release 1.0 or later).
+asndhuff        Demonstrates streaming ASN.1 data from the huffman compressed
+                Entrez CDROM (only works on release 1.0 or later).
 entrcmd         Standalone non-interactive tool for accessing Entrez data.
                 Entrcmd is the search engine used for NCBI's Entrez WWW server.
 asncode         Tool for generating object loader source code given a .l
-				file which is the output of AsnTool.
+                file which is the output of AsnTool.
 cdscan         scans entrez cdrom, makes GenBank, GenPept, or FASTA format
                output. Also has a slot for a replaceable CustomRoutine
                supplied by you. Has two examples of such routines.

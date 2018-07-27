@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   6/18/95
 *
-* $Revision: 6.39 $
+* $Revision: 6.48 $
 *
 * File Description: 
 *
@@ -48,6 +48,7 @@
 #include <gbftdef.h>
 #include <gather.h>
 #include <subutil.h>    /* TOPOLOGY_xxx definitions */
+#include <explore.h>
 
 #define IMPORT_PAGE      0
 #define ENUM_PAGE        0
@@ -874,6 +875,7 @@ ENUM_ALIST(enum_site_alist)
   {"Signal-peptide",              23},
   {"Transit-peptide",             24},
   {"Transmembrane-region",        25},
+  {"Nitrosylation",               26},
   {"Other",                      255},
 END_ENUM_ALIST
 
@@ -1741,6 +1743,81 @@ extern ForM CreateRegionOrCommentForm (Int2 left, Int2 top, CharPtr title,
   return (ForM) w;
 }
 
+static void CopyRegionNameToComment (RegionPagePtr rpp, RegionFormPtr rfp)
+{
+  CharPtr        old_comment = NULL;
+  CharPtr        region_name = NULL;
+  CharPtr        new_comment = NULL;
+  Int4           new_comment_len;
+
+  if (rpp == NULL || rfp == NULL) 
+  {
+    return;
+  }
+  
+  region_name = SaveStringFromText (rpp->region);
+  if (StringHasNoText (region_name))
+  {
+    region_name = MemFree (region_name);
+  }
+  else
+  {
+    old_comment = SaveStringFromText (rfp->comment);
+    if (StringHasNoText (old_comment))
+    {
+      SetTitle (rfp->comment, region_name);
+    }
+    else
+    {
+      new_comment_len = StringLen (region_name) + StringLen (old_comment) + 3;
+      new_comment = (CharPtr) MemNew (new_comment_len * sizeof (Char));
+      if (new_comment != NULL)
+      {
+        StringCpy (new_comment, region_name);
+        StringCat (new_comment, "; ");
+        StringCat (new_comment, old_comment);
+        SetTitle (rfp->comment, new_comment);
+      }
+      region_name = MemFree (region_name);
+    }
+    old_comment = MemFree (old_comment);
+  }
+}
+
+static void MoveToNucSequence (RegionFormPtr rfp)
+{
+  SeqLocPtr  slp;
+  BioseqPtr  bsp;
+  ValNodePtr prods, vnp;
+  SeqFeatPtr cds = NULL;
+  SeqLocPtr  new_location;
+  
+  if (rfp == NULL) return;
+  
+  slp = DialogToPointer (rfp->location);
+  bsp = BioseqFindFromSeqLoc (slp);
+  if (bsp != NULL && ISA_aa (bsp->mol))
+  {
+  	prods = SeqMgrGetSfpProductList (bsp);
+	  for (vnp = prods; vnp != NULL && cds == NULL; vnp = vnp->next) 
+	  {
+      cds = (SeqFeatPtr) vnp->data.ptrvalue;
+      if (cds == NULL) continue;
+      if (cds->data.choice != SEQFEAT_CDREGION)
+      {
+        cds = NULL;
+      }
+	  }
+	  if (cds != NULL)
+	  {
+	    new_location = aaLoc_to_dnaLoc (cds, slp); 
+      PointerToDialog (rfp->location, new_location);
+      SeqLocFree (new_location);
+	  }
+  }
+  SeqLocFree (slp);
+}
+
 static void RegionOrCommentFeatFormActnProc (ForM f)
 
 {
@@ -1752,6 +1829,9 @@ static void RegionOrCommentFeatFormActnProc (ForM f)
     rpp = (RegionPagePtr) GetObjectExtra (rfp->data);
     if (rpp != NULL && GetStatus (rpp->convertToMiscFeat)) {
       rfp->this_subtype = FEATDEF_misc_feature;
+      CopyRegionNameToComment (rpp, rfp);
+      /* move feature to nucleotide sequence if on protein sequence */
+      MoveToNucSequence (rfp);
     }
   }
   if (FeatFormReplaceWithoutUpdateProc (f)) {
@@ -1941,47 +2021,51 @@ static ENUM_ALIST(molinfo_biomol_prot_alist)
 END_ENUM_ALIST
 
 static ENUM_ALIST(molinfo_tech_alist)
-  {" ",                  0},
-  {"Standard",           1},
-  {"EST",                2},
-  {"STS",                3},
-  {"Survey",             4},
-  {"Genetic Map",        5},
-  {"Physical Map",       6},
-  {"Derived",            7},
-  {"Concept-Trans",      8},
-  {"Seq-Pept",           9},
-  {"Both",              10},
-  {"Seq-Pept-Overlap",  11},
-  {"Seq-Pept-Homol",    12},
-  {"Concept-Trans-A",   13},
-  {"HTGS 0",            18},
-  {"HTGS 1",            14},
-  {"HTGS 2",            15},
-  {"HTGS 3",            16},
-  {"FLI_cDNA",          17},
-  {"HTC",               19},
-  {"WGS",               20},
-  {"Other:",           255},
+  {" ",                   0},
+  {"Standard",            1},
+  {"EST",                 2},
+  {"STS",                 3},
+  {"Survey",              4},
+  {"Genetic Map",         5},
+  {"Physical Map",        6},
+  {"Derived",             7},
+  {"Concept-Trans",       8},
+  {"Seq-Pept",            9},
+  {"Both",               10},
+  {"Seq-Pept-Overlap",   11},
+  {"Seq-Pept-Homol",     12},
+  {"Concept-Trans-A",    13},
+  {"HTGS 0",             18},
+  {"HTGS 1",             14},
+  {"HTGS 2",             15},
+  {"HTGS 3",             16},
+  {"FLI_cDNA",           17},
+  {"HTC",                19},
+  {"WGS",                20},
+  {"Barcode",            21},
+  {"Composite-WGS-HTGS", 22},
+  {"Other:",            255},
 END_ENUM_ALIST
 
 static ENUM_ALIST(molinfo_tech_nuc_alist)
-  {" ",                  0},
-  {"Standard",           1},
-  {"EST",                2},
-  {"STS",                3},
-  {"Survey",             4},
-  {"Genetic Map",        5},
-  {"Physical Map",       6},
-  {"Derived",            7},
-  {"HTGS 0",            18},
-  {"HTGS 1",            14},
-  {"HTGS 2",            15},
-  {"HTGS 3",            16},
-  {"FLI_cDNA",          17},
-  {"HTC",               19},
-  {"WGS",               20},
-  {"Other:",           255},
+  {" ",                   0},
+  {"Standard",            1},
+  {"EST",                 2},
+  {"STS",                 3},
+  {"Survey",              4},
+  {"Genetic Map",         5},
+  {"Physical Map",        6},
+  {"Derived",             7},
+  {"HTGS 0",             18},
+  {"HTGS 1",             14},
+  {"HTGS 2",             15},
+  {"HTGS 3",             16},
+  {"FLI_cDNA",           17},
+  {"HTC",                19},
+  {"WGS",                20},
+  {"Barcode",            21},
+  {"Composite-WGS-HTGS", 22},
+  {"Other:",            255},
 END_ENUM_ALIST
 
 static ENUM_ALIST(molinfo_tech_prot_alist)
@@ -2041,7 +2125,7 @@ static Uint1 check_biomol (Uint1 biomol)
 static Uint1 check_technique (Uint1 tech)
 
 {
-  if (tech > 20 && tech != 255) return 0;
+  if (tech > MI_TECH_composite_wgs_htgs && tech != MI_TECH_other) return 0;
   return tech;
 }
 
@@ -2599,6 +2683,7 @@ typedef struct gbblockform {
   DESCRIPTOR_FORM_BLOCK
   DialoG        gbppxaccns;
   ButtoN        xaccnstohistory;
+  ButtoN        xleaveoldhistory;
 } GenBankForm, PNTR GenBankFormPtr;
 
 static void GBBlockPtrToGenBankPage (DialoG d, Pointer data)
@@ -2813,7 +2898,7 @@ static DialoG CreateGenBankDialog (GrouP h, CharPtr title, ValNodePtr sdp, GenBa
       gpp->taxonomy = ScrollText (f1, 15, 5, programFont, TRUE, NULL);
     }
 
-    f3 = HiddenGroup (m, 0, 3, NULL);
+    f3 = HiddenGroup (m, 0, 5, NULL);
     if (internal || genome || (gbp != NULL && gbp->extra_accessions != NULL)) {
       StaticPrompt (f3, "Secondary Accessions", 0, 0, programFont, 'c');
       gpp->xaccns = CreateVisibleStringDialog (f3, 3, -1, 15);
@@ -2824,6 +2909,7 @@ static DialoG CreateGenBankDialog (GrouP h, CharPtr title, ValNodePtr sdp, GenBa
           SetStatus (gfp->xaccnstohistory, TRUE);
           Hide (gfp->xaccnstohistory);
         }
+        gfp->xleaveoldhistory = CheckBox (f3, "Retain old Bioseq-history.replaces", NULL);
       }
     }
 
@@ -2932,6 +3018,7 @@ extern ForM CreateGenBankForm (Int2 left, Int2 top, CharPtr title,
 
     g = HiddenGroup (w, -1, 0, NULL);
     gfp->xaccnstohistory = NULL;
+    gfp->xleaveoldhistory = NULL;
     gfp->gbppxaccns = NULL;
     gfp->data = CreateGenBankDialog (g, NULL, sdp, gfp);
 
@@ -2966,6 +3053,117 @@ static Boolean GetLowestStackSeqEntryForGBB (GatherContextPtr gcp)
   return FALSE;
 }
 
+static Boolean ParseSecAccessionRange (
+  CharPtr accn,
+  CharPtr prefix,
+  Int4Ptr startp,
+  Int4Ptr stopp,
+  Int2Ptr digitsp
+)
+
+{
+  Char      ch;
+  Int2      digits;
+  CharPtr   ptr, tmp;
+  Int4      start, stop;
+  long int  val;
+
+  if (StringHasNoText (accn)) return FALSE;
+  if (prefix == NULL || startp == NULL || stopp == NULL || digitsp == NULL) return FALSE;
+
+  ptr = accn;
+  ch = *ptr;
+  while (IS_ALPHA (ch)) {
+    *prefix = ch;
+    prefix++;
+    ptr++;
+    ch = *ptr;
+  }
+  *prefix = '\0';
+
+  tmp = StringChr (ptr, '-');
+  if (tmp == NULL) return FALSE;
+  *tmp = '\0';
+  tmp++;
+
+  if (sscanf (ptr, "%ld", &val) != 1 || val < 1) return FALSE;
+  start = (Int4) val;
+
+  digits = 0;
+  while (IS_DIGIT (ch)) {
+    digits++;
+    ptr++;
+    ch = *ptr;
+  }
+
+  ptr = tmp;
+  ch = *ptr;
+  while (IS_ALPHA (ch)) {
+    ptr++;
+    ch = *ptr;
+  }
+
+  if (sscanf (ptr, "%ld", &val) != 1 || val < 1) return FALSE;
+  stop = (Int4) val;
+
+  *startp = start;
+  *stopp = stop;
+  *digitsp = digits;
+
+  return TRUE;
+}
+
+static void ExpandSecondaries (SeqDescrPtr sdp, Pointer userdata)
+
+{
+  CharPtr     accn;
+  ValNodePtr  curr, last, next, vnp;
+  Int2        digits, j;
+  GBBlockPtr  gbp;
+  Int4        idx;
+  Char        numbers [32];
+  Char        prefix [16];
+  Int4        start, stop;
+  Char        tmp [64];
+
+  if (sdp == NULL || sdp->choice != Seq_descr_genbank) return;
+  gbp = (GBBlockPtr) sdp->data.ptrvalue;
+  if (gbp == NULL) return;
+
+  vnp = gbp->extra_accessions;
+  while (vnp != NULL) {
+    next = vnp->next;
+    last = vnp;
+    accn = (CharPtr) vnp->data.ptrvalue;
+    if (StringChr (accn, '-') != NULL) {
+      if (ParseSecAccessionRange (accn, prefix, &start, &stop, &digits)) {
+        for (idx = start; idx <= stop; idx++) {
+          sprintf (numbers, "%*ld", digits, (long) idx);
+          for (j = 0; j < digits && numbers [j] != '\0'; j++) {
+            if (numbers [j] == ' ') {
+              numbers [j] = '0';
+            }
+          }
+          StringCpy (tmp, prefix);
+          StringCat (tmp, numbers);
+          if (idx == start) {
+            vnp->data.ptrvalue = MemFree (vnp->data.ptrvalue);
+            vnp->data.ptrvalue = StringSave (tmp);
+          } else {
+            curr = ValNodeCopyStr (NULL, 0, tmp);
+            if (curr != NULL) {
+              curr->next = last->next;
+              last->next = curr;
+              last = curr;
+            }
+          }
+        }
+      }
+    }
+    vnp = next;
+  }
+}
+
 static void GenBankFormActnProc (ForM f)
 
 {
@@ -2974,6 +3172,7 @@ static void GenBankFormActnProc (ForM f)
   GenBankFormPtr  gfp;
   SeqHistPtr      hist;
   Char            prefix [20];
+  SeqEntryPtr     sep;
   SeqIdPtr        sip;
   TextSeqIdPtr    tsip;
   ValNodePtr      tmp;
@@ -3000,7 +3199,9 @@ static void GenBankFormActnProc (ForM f)
         if (bsp != NULL) {
           hist = bsp->hist;
           if (hist != NULL) {
-            hist->replace_ids = SeqIdSetFree (hist->replace_ids);
+            if (! GetStatus (gfp->xleaveoldhistory)) {
+              hist->replace_ids = SeqIdSetFree (hist->replace_ids);
+            }
           } else {
             hist = SeqHistNew ();
             bsp->hist = hist;
@@ -3049,6 +3250,8 @@ static void GenBankFormActnProc (ForM f)
         }
         ValNodeFreeData (vnp);
       }
+      sep = GetTopSeqEntryForEntityID (gfp->input_entityID);
+      VisitDescriptorsInSep (sep, NULL, ExpandSecondaries);
       ObjMgrSendMsg (OM_MSG_UPDATE, gfp->input_entityID,
                      gfp->input_itemID, gfp->input_itemtype);
     }

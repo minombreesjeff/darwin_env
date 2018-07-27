@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/22/95
 *
-* $Revision: 6.20 $
+* $Revision: 6.33 $
 *
 * File Description: 
 *
@@ -48,6 +48,7 @@
 #include <vibrant.h>
 #include <sqnutils.h>
 #include <prtutil.h>
+#include <asn.h>
 #include <objall.h>
 #include <objfeat.h>
 #include <objfdef.h>
@@ -121,6 +122,7 @@ typedef struct featform {
   FEATURE_FORM_BLOCK
 } FeatureForm, PNTR FeatureFormPtr;
 
+extern void SetDescriptorPropagate (BioseqSetPtr bssp);
 extern Int2 LIBCALLBACK DescriptorPropagate (Pointer data);
 extern Boolean DescFormReplaceWithoutUpdateProc (ForM f);
 extern void StdDescFormActnProc (ForM f);
@@ -170,6 +172,8 @@ extern GrouP CreateCommonFeatureGroup (GrouP h, FeatureFormPtr ffp,
 extern GrouP CreateCommonFeatureGroupEx (GrouP h, FeatureFormPtr ffp,
                                          SeqFeatPtr sfp, Boolean hasGeneControl,
                                          Boolean hasCitationTab, Boolean hasGeneSuppress);
+extern void UpdateGeneLocation (SeqFeatPtr gene, SeqLocPtr old_feat_loc,
+                                SeqLocPtr new_feat_loc, Uint2 entityID);
 extern void PopulateGenePopup (FeatureFormPtr ffp);
 extern void SeqFeatPtrToCommon (FeatureFormPtr ffp, SeqFeatPtr sfp);
 extern void SetNewFeatureDefaultInterval (FeatureFormPtr ffp);
@@ -187,6 +191,7 @@ extern DialoG CreateIntervalEditorDialogEx (GrouP h, CharPtr title, Uint2 rows,
                                             Boolean useBar, Boolean showPartials,
                                             Boolean allowGaps, FeatureFormPtr ffp,
                                             IntEdPartialProc proc);
+extern void SetSequenceAndStrandForIntervalPage (DialoG d);                                            
 extern void StdFeatIntEdPartialCallback (FeatureFormPtr ffp, Boolean partial5, Boolean partial3, Boolean order);
 
 extern DialoG CreateVisibleStringDialog (GrouP h, Uint2 rows,
@@ -220,9 +225,20 @@ typedef struct textviewprocs {
   Boolean          useScrollText;
 
   FonT             displayFont;
+
+  Char             screenMode;
+
 } TextViewProcs, PNTR TextViewProcsPtr;
 
+typedef CharPtr (*Nlm_RepopulateViewer) PROTO ((Pointer userdata));
+typedef Pointer (*Nlm_RepopulateDataFree) PROTO ((Pointer userdata));
+
 extern void LaunchGeneralTextViewer (CharPtr path, CharPtr title);
+extern void LaunchAsnTextViewer (Pointer from, AsnWriteFunc writefunc, CharPtr title);
+extern void LaunchGeneralTextViewerWithRepopulate 
+         (CharPtr path, CharPtr title, 
+         Nlm_RepopulateViewer repopulate_func, Pointer repopulate_data,
+         Nlm_RepopulateDataFree free_data_func);
 
 extern Boolean FileToScrollText (TexT t, CharPtr path);
 extern void ScrollTextToFile (TexT t, CharPtr path);
@@ -241,6 +257,9 @@ typedef struct stdeditorprocs {
   FormMessageFunc  handleMessages;
 
   Boolean          duplicateExisting;
+
+  Char             screenMode;
+
 } StdEditorProcs, PNTR StdEditorProcsPtr;
 
 #ifndef WIN_MAC
@@ -294,6 +313,95 @@ extern void GetRidOfEmptyFeatsDescStrings (Uint2 entityID, SeqEntryPtr sep);
 *****************************************************************************/
 
 NLM_EXTERN void LaunchEntrezURL (CharPtr database, Int4 uid, CharPtr format);
+
+/* this function creates a dialog for selecting publications in a record */
+extern DialoG FeatCitEditDialog (GrouP parent, Uint2 entityID);
+
+/* This structure and the functions after it are used for
+ * modal dialogs with two choices.
+ */
+typedef struct modalacceptcancel
+{
+  Boolean accepted;
+  Boolean cancelled;  
+} ModalAcceptCancelData, PNTR ModalAcceptCancelPtr;
+
+extern void ModalAcceptButton (ButtoN b);
+extern void ModalCancelButton (ButtoN b);
+
+typedef void (*TableDisplayDblClick) PROTO((PoinT, CharPtr, CharPtr, Pointer));
+extern DialoG TableDisplayDialog (GrouP parent, Int4 width, Int4 height,
+                                  Int4 frozen_header, Int4 frozen_left,
+                                  TableDisplayDblClick dbl_click,
+                                  Pointer dbl_click_data);
+extern ValNodePtr FreeTableDisplayRowList (ValNodePtr row_list);
+extern void PrintTableDisplayRowListToFile (ValNodePtr row_list, FILE *fp);
+extern ValNodePtr CopyTableDisplayRowList (ValNodePtr row_list);
+
+typedef  void  (*Nlm_ChangeNotifyProc) PROTO ((Pointer));
+
+#define TALL_SELECTION_LIST 8
+#define SHORT_SELECTION_LIST 4
+/* err_msg is the message to put in the results from TestDialog if nothing is selected */
+/* choice_list should be a valnode list of strings to use for the names of the choices. */
+/* All is automatically included as a choice if allow_multi is true. */
+/* The ValNodeList returned is a list of integers indicating the position of the item
+ * in the list: 1 is the first item, 2 is the second item, etc. */
+extern DialoG SelectionDialog 
+(GrouP h,
+ Nlm_ChangeNotifyProc     change_notify,
+ Pointer                  change_userdata,
+ Boolean                  allow_multi,
+ CharPtr                  err_msg,
+ ValNodePtr               choice_list,
+ Int2                     list_height);
+
+/* This function should free just the data associated with the ValNode */
+typedef void (*FreeValNodeProc) PROTO ((ValNodePtr));
+/* This function should copy just this ValNode, not the chain */
+typedef ValNodePtr (*CopyValNodeDataProc) PROTO ((ValNodePtr));
+typedef ValNodePtr (*RemapValNodeProc) PROTO ((ValNodePtr));
+typedef Boolean (*MatchValNodeProc) PROTO ((ValNodePtr, ValNodePtr));
+typedef CharPtr (*NameFromValNodeProc) PROTO ((ValNodePtr));
+
+extern DialoG ValNodeSelectionDialogEx
+(GrouP h,
+ ValNodePtr               choice_list,
+ Int2                     list_height,
+ NameFromValNodeProc      name_proc,
+ FreeValNodeProc          free_vn_proc,
+ CopyValNodeDataProc      copy_vn_proc,
+ MatchValNodeProc         match_vn_proc,
+ CharPtr                  err_name,
+ Nlm_ChangeNotifyProc     change_notify,
+ Pointer                  change_userdata,
+ Boolean                  allow_multi,
+ RemapValNodeProc         remap_vn_proc);
+extern DialoG ValNodeSelectionDialog
+(GrouP h,
+ ValNodePtr               choice_list,
+ Int2                     list_height,
+ NameFromValNodeProc      name_proc,
+ FreeValNodeProc          free_vn_proc,
+ CopyValNodeDataProc      copy_vn_proc,
+ MatchValNodeProc         match_vn_proc,
+ CharPtr                  err_name,
+ Nlm_ChangeNotifyProc     change_notify,
+ Pointer                  change_userdata,
+ Boolean                  allow_multi);
+
+extern DialoG EnumAssocSelectionDialog 
+(GrouP                 h,
+ Nlm_EnumFieldAssocPtr eap,
+ CharPtr               err_name,
+ Boolean               allow_multi,
+ Nlm_ChangeNotifyProc  change_notify,
+ Pointer               change_userdata);
+
+extern CharPtr ValNodeStringName (ValNodePtr vnp);
+extern void ValNodeSimpleDataFree (ValNodePtr vnp);
+extern ValNodePtr ValNodeStringCopy (ValNodePtr vnp);
+extern Boolean ValNodeChoiceMatch (ValNodePtr vnp1, ValNodePtr vnp2);
 
 
 #ifdef __cplusplus

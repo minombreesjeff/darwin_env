@@ -1,4 +1,4 @@
-/*  $RCSfile: ni_lib_.c,v $  $Revision: 4.12 $  $Date: 2003/10/27 14:11:10 $
+/*  $RCSfile: ni_lib_.c,v $  $Revision: 4.13 $  $Date: 2004/11/18 15:19:25 $
  * ==========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -32,6 +32,9 @@
  *
  * --------------------------------------------------------------------------
  * $Log: ni_lib_.c,v $
+ * Revision 4.13  2004/11/18 15:19:25  lavr
+ * Retire obsoleted eNII_ interfaces and g_NII_ vtables
+ *
  * Revision 4.12  2003/10/27 14:11:10  lavr
  * Old (Shavirin's) dispatchers disabled unconditionally
  *
@@ -73,32 +76,12 @@
 #include <ncbinet.h>
 #include <ncbithr.h>
 
-/* WWW(HTTPD)-based interfaces are supported on selected platforms
+/* Some interfaces are supported on selected platforms
  */
 #if defined(OS_UNIX) || defined(OS_MSWIN) || defined(OS_MAC)
-#  define NI_WWW_SUPPORTED
-#  define NI_WWWFIREWALL_SUPPORTED
-#  ifdef ALLOW_STATELESS 
-#    define NI_WWWDIRECT_SUPPORTED
-#  endif
 #  define NI_SERVICE_SUPPORTED
 #  define NI_DEBUG_SUPPORTED
 #endif /* OS_UNIX | OS_MSWIN | OS_MAC */
-
-/* From now on the old-fashioned interfaces are NOT supported for all platforms
- */
-#ifdef NI_DISP_SUPPORTED
-#  undef NI_DISP_SUPPORTED
-#endif
-#ifdef NI_WWW_SUPPORTED
-#  undef NI_WWW_SUPPORTED
-#endif
-#ifdef NI_WWWFIREWALL_SUPPORTED
-#  undef NI_WWWFIREWALL_SUPPORTED
-#endif
-#ifdef NI_WWWDIRECT_SUPPORTED
-#  undef NI_WWWDIRECT_SUPPORTED
-#endif
 
 /* Override config-file value by the environment variable's value, if any */
 #if defined(OS_UNIX) || defined(OS_MSWIN)
@@ -112,10 +95,6 @@
 #define DEF_CONFIG_FILE      "NCBI"
 #define DEF_CONFIG_SECTION   "NET_SERV"
 #define ENV_CONN_MODE        "SRV_CONN_MODE"
-#define DISPATCHER_MODE      "DISPATCHER"
-#define WWW_CLIENT_MODE      "WWW"
-#define WWW_FIREWALL_MODE    "FIREWALL"
-#define WWW_DIRECT_MODE      "STATELESS"
 #define SERVICE_MODE         "SERVICE"
 #define DEBUG_MODE           "DEBUG"
 
@@ -124,29 +103,10 @@
  */
 
 static const NIInterface **s_NII[eNII_Default] = {
-#ifdef NI_DISP_SUPPORTED
-  &g_NII_Dispatcher,
-#else
-  0,
-#endif
-
-#ifdef NI_WWW_SUPPORTED
-  &g_NII_WWW,
-#else
-  0,
-#endif
-
-#ifdef NI_WWWFIREWALL_SUPPORTED
-  &g_NII_WWWFirewall,
-#else
-  0,
-#endif
-
-#ifdef NI_WWWDIRECT_SUPPORTED
-  &g_NII_WWWDirect,
-#else
-  0,
-#endif
+  0, /* eNII_Dispatcher,  obsolete */
+  0, /* eNII_WWW,         obsolete */
+  0, /* eNII_WWWFirewall, obsolete */
+  0, /* eNII_WWWDirect,   obsolete */
 
 #ifdef NI_SERVICE_SUPPORTED
   &g_NII_Service,
@@ -200,15 +160,7 @@ static NIOptions* s_GetNIOptions
 
   NI_GetEnvParam(conf_file, conf_section, ENV_CONN_MODE,
                  conn_mode, sizeof(conn_mode), "");
-  if (StringICmp(conn_mode, DISPATCHER_MODE) == 0)
-    nio->interface = eNII_Dispatcher;
-  else if (StringICmp(conn_mode, WWW_CLIENT_MODE) == 0)
-    nio->interface = eNII_WWW;
-  else if (StringICmp(conn_mode, WWW_FIREWALL_MODE) == 0)
-    nio->interface = eNII_WWWFirewall;
-  else if (StringICmp(conn_mode, WWW_DIRECT_MODE) == 0)
-    nio->interface = eNII_WWWDirect;
-  else if (StringICmp(conn_mode, SERVICE_MODE) == 0)
+  if (StringICmp(conn_mode, SERVICE_MODE) == 0)
     nio->interface = eNII_Service;
   else if (StringICmp(conn_mode, DEBUG_MODE) == 0)
     nio->interface = eNII_Debug;
@@ -282,10 +234,6 @@ extern Uint4 NI_GetEnvParam
 NLM_EXTERN Boolean NI_IsInterfaceSupported(ENIInterface ni_interface)
 {
   switch ( ni_interface ) {
-  case eNII_Dispatcher:
-  case eNII_WWW:
-  case eNII_WWWFirewall:
-  case eNII_WWWDirect:
   case eNII_Service:
   case eNII_Debug:
     return (Boolean)(s_NII[ni_interface] != 0);

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   10/30/01
 *
-* $Revision: 6.48 $
+* $Revision: 6.52 $
 *
 * File Description: 
 *
@@ -1295,6 +1295,10 @@ static CharPtr Query_FetchFields (DoC d, Int2 item, Pointer ptr)
 /*                                                                  */
 /*==================================================================*/
 
+static CharPtr file_is_too_long_mssg =
+"The record is too large to display in this format in the document summary window.\n\
+Please double click here to launch a separate viewer that can display this record.";
+
 static CharPtr FileToString (CharPtr path)
 
 {
@@ -1307,16 +1311,20 @@ static CharPtr FileToString (CharPtr path)
   ptr = NULL;
   len = FileLength (path);
   if (len > 0 && len < MAXALLOC) {
-    fp = FileOpen (path, "r");
-    if (fp != NULL) {
-      ptr = MemNew (sizeof (Char) * (size_t) (len + 4));
-      if (ptr != NULL) {
-        actual = FileRead (ptr, 1, (size_t) len, fp);
-        if (actual > 0 && actual <= len) {
-          ptr [actual] = '\0';
+    if (len > 65000) {
+      ptr = StringSave (file_is_too_long_mssg);
+    } else {
+      fp = FileOpen (path, "r");
+      if (fp != NULL) {
+        ptr = MemNew (sizeof (Char) * (size_t) (len + 4));
+        if (ptr != NULL) {
+          actual = FileRead (ptr, 1, (size_t) len, fp);
+          if (actual > 0 && actual <= len) {
+            ptr [actual] = '\0';
+          }
         }
-      }
       FileClose (fp);
+      }
     }
   }
   return ptr;
@@ -1515,7 +1523,6 @@ static void FormatCdsSeq (SeqFeatPtr sfp, Pointer userdata)
   GeneRefPtr         grp;
   FILE               *fp;
   SeqIdPtr           sip;
-  SeqPortPtr         spp;
   Char               tmp [32];
 
   if (sfp->data.choice != SEQFEAT_CDREGION) return;
@@ -1527,8 +1534,10 @@ static void FormatCdsSeq (SeqFeatPtr sfp, Pointer userdata)
   if (grp == NULL || (! SeqMgrGeneIsSuppressed (grp))) {
     gene = SeqMgrGetOverlappingGene (sfp->location, &genecontext);
   }
+  /*
   spp = SeqPortNewByLoc (sfp->location, Seq_code_iupacna);
   if (spp == NULL) return;
+  */
   sip = SeqIdFindWorst (bsp->id);
   SeqIdWrite (sip, buf, PRINTID_TEXTID_ACC_VER, sizeof (buf) - 1);
   sprintf (tmp, "_cds_%ld", (long) sfp->idx.itemID);
@@ -1547,11 +1556,15 @@ static void FormatCdsSeq (SeqFeatPtr sfp, Pointer userdata)
   }
   TrimSpacesAroundString (buf);
   FastaFileFunc (bsp, FASTA_DEFLINE, buf, sizeof (buf), (Pointer) fp);
+  fflush (fp);
+  SeqLocFastaStream (sfp->location, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL, 70, 0, 0);
+  /*
   while (FastaSeqLine (spp, buf, 70, TRUE)) {
     FastaFileFunc (bsp, FASTA_SEQLINE, buf, sizeof (buf), (Pointer) fp);
   }
   SeqPortFree (spp);
   FastaFileFunc (bsp, FASTA_EOS, buf, sizeof (buf), (Pointer)fp);
+  */
 }
 
 static CharPtr FetchSequence (DoC d, Int2 item, Pointer ptr, FmtType format,
@@ -1564,6 +1577,7 @@ static CharPtr FetchSequence (DoC d, Int2 item, Pointer ptr, FmtType format,
   Int4         flags = -1;
   Uint1        group_segs = 0;
   ErrSev       level;
+  Boolean      master_style = FALSE;
   Boolean      okay = FALSE;
   Char         path [PATH_MAX];
   Int2         retcode;
@@ -1594,7 +1608,7 @@ static CharPtr FetchSequence (DoC d, Int2 item, Pointer ptr, FmtType format,
   }
 
   if ((! do_fasta) && (! do_cds)) {
-    LookupFarSeqIDs (seqEntryPtr, TRUE, TRUE, TRUE, TRUE, TRUE);
+    LookupFarSeqIDs (seqEntryPtr, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE);
   }
 
   /*------------------------*/
@@ -1610,16 +1624,24 @@ static CharPtr FetchSequence (DoC d, Int2 item, Pointer ptr, FmtType format,
     if (do_fasta) {
       if (bsp->repr == Seq_repr_seg) {
         group_segs = 1;
+        master_style = TRUE;
       } else if (bsp->repr == Seq_repr_delta) {
         group_segs = 3;
       }
+      /*
       okay = SeqEntrysToFasta (seqEntryPtr, fp, is_na, group_segs);
+      */
+      if (is_na) {
+        okay = (Boolean) SeqEntryFastaStream (sep, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL, 70, 0, 0, TRUE, FALSE, master_style);
+      } else {
+        okay = (Boolean) SeqEntryFastaStream (sep, fp, STREAM_EXPAND_GAPS | STREAM_CORRECT_INVAL, 70, 0, 0, FALSE, TRUE, master_style);
+      }
     } else if (do_cds) {
       SeqMgrIndexFeatures (0, (Pointer) bsp);
       VisitFeaturesInSep (seqEntryPtr, (Pointer) fp, FormatCdsSeq);
       okay = TRUE;
     } else {
-      okay = SeqEntryToGnbk (sep, NULL, format, RELEASE_MODE, NORMAL_STYLE, 0,
+      okay = SeqEntryToGnbk (sep, NULL, format, ENTREZ_MODE, NORMAL_STYLE, 0,
                              LOOKUP_FAR_COMPONENTS | LOOKUP_FAR_LOCATIONS |
                              LOOKUP_FAR_PRODUCTS | LOOKUP_FAR_HISTORY,
                              0, NULL, fp);
@@ -1662,19 +1684,19 @@ static CharPtr FetchGenPept (DoC d, Int2 item, Pointer ptr)
 static CharPtr FetchFastaNuc (DoC d, Int2 item, Pointer ptr)
 
 {
-  return FetchSequence (d, item, ptr, 0, TRUE, FALSE, TRUE);
+  return FetchSequence (d, item, ptr, (FmtType) 0, TRUE, FALSE, TRUE);
 }
 
 static CharPtr FetchFastaProt (DoC d, Int2 item, Pointer ptr)
 
 {
-  return FetchSequence (d, item, ptr, 0, TRUE, FALSE, FALSE);
+  return FetchSequence (d, item, ptr, (FmtType) 0, TRUE, FALSE, FALSE);
 }
 
 static CharPtr FetchFastaCDS (DoC d, Int2 item, Pointer ptr)
 
 {
-  return FetchSequence (d, item, ptr, 0, FALSE, TRUE, TRUE);
+  return FetchSequence (d, item, ptr, (FmtType) 0, FALSE, TRUE, TRUE);
 }
 
 /*==================================================================*/
@@ -2698,7 +2720,7 @@ static void LaunchSequenceViewer (Int4 uid, Int2 numAlign, Int4Ptr alignuids, Ch
   }
 
   /*
-  LookupFarSeqIDs (seqEntryPtr, TRUE, TRUE, TRUE, TRUE, TRUE);
+  LookupFarSeqIDs (seqEntryPtr, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE);
   */
 
   egp = (Entrez2GlobalsPtr) GetAppProperty ("Entrez2Globals");

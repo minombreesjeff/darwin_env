@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   11-29-94
 *
-* $Revision: 6.0 $
+* $Revision: 6.3 $
 *
 * File Description: 
 *
@@ -74,6 +74,11 @@ Int2 LIBCALLBACK VSMGenericTextAsnSave PROTO((Pointer data));
 Int2 LIBCALLBACK VSMGenericBinAsnSave PROTO((Pointer data));
 Int2 LIBCALLBACK VSMFastaProtSave PROTO((Pointer data));
 Int2 LIBCALLBACK VSMFastaNucSave PROTO((Pointer data));
+Int2 LIBCALLBACK VSMExportNucFeatureTable ( Pointer data );
+Int2 LIBCALLBACK VSMExportNucFeatureTableWithoutSources ( Pointer data );
+Int2 LIBCALLBACK VSMExportProteinFeatureTable (Pointer data);
+Int2 LIBCALLBACK VSMFastaSortedProtSave (Pointer data);
+
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,4 @@
-/* $Id: blast_driver.c,v 1.40 2004/05/05 15:30:33 dondosha Exp $
+/* $Id: blast_driver.c,v 1.92 2005/04/27 20:01:00 dondosha Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -32,27 +32,22 @@ Author: Ilya Dondoshansky
 Contents: Main function for running BLAST
 
 ******************************************************************************
- * $Revision: 1.40 $
+ * $Revision: 1.92 $
  * */
 
-static char const rcsid[] = "$Id: blast_driver.c,v 1.40 2004/05/05 15:30:33 dondosha Exp $";
+static char const rcsid[] = "$Id: blast_driver.c,v 1.92 2005/04/27 20:01:00 dondosha Exp $";
 
 #include <ncbi.h>
 #include <sqnutils.h>
 #include <readdb.h>
 #include <algo/blast/core/blast_options.h>
-#include <algo/blast/core/blast_setup.h>
-#include <algo/blast/core/blast_message.h>
-#include <algo/blast/core/blast_filter.h>
-#include <algo/blast/core/blast_util.h>
-#include <algo/blast/core/blast_engine.h>
 #include <algo/blast/api/blast_seq.h>
 #include <algo/blast/api/blast_input.h>
 #include <algo/blast/api/blast_format.h>
 #include <algo/blast/api/blast_seqalign.h>
-#include <algo/blast/api/blast_format.h>
-#include <algo/blast/api/seqsrc_readdb.h>
-#include <algo/blast/api/multiseq_src.h>
+#include <algo/blast/api/blast_tabular.h>
+#include <algo/blast/api/blast_api.h>
+#include <algo/blast/api/repeats_filter.h>
 
 #define NUMARG (sizeof(myargs)/sizeof(myargs[0]))
 
@@ -60,7 +55,9 @@ typedef enum {
    ARG_PROGRAM = 0,
    ARG_DB,
    ARG_QUERY,
+   ARG_QUERY_LOC,
    ARG_SUBJECT,
+   ARG_SUBJECT_LOC,
    ARG_STRAND,
    ARG_GENCODE,
    ARG_DBGENCODE,
@@ -73,12 +70,11 @@ typedef enum {
    ARG_WORDSIZE,
    ARG_TEMPL_LEN,
    ARG_TEMPL_TYPE,
+   ARG_EVERYBASE,
    ARG_PHI,
    ARG_THRESHOLD,
    ARG_WINDOW,
-   ARG_AG,
    ARG_VARIABLE_WORD,
-   ARG_STRIDE,
    ARG_XDROP_UNGAPPED,
    ARG_UNGAPPED,
    ARG_GREEDY,
@@ -92,12 +88,16 @@ typedef enum {
    ARG_PERC_IDENT,
    ARG_INTRON,
    ARG_DESCRIPTIONS,
+   ARG_CULLING,
    ARG_ALIGNMENTS,
    ARG_OUT,
    ARG_FORMAT,
    ARG_HTML,
    ARG_ASNOUT,
-   ARG_OIDRANGE
+   ARG_TABULAR,
+   ARG_THREADS,
+   ARG_SHOWGI,
+   ARG_ACCESSION
 } BlastArguments;
 
 static Args myargs[] = {
@@ -107,8 +107,14 @@ static Args myargs[] = {
      NULL, NULL, NULL, TRUE, 'd', ARG_STRING, 0.0, 0, NULL}, /* ARG_DB */
    { "Query File",               /* ARG_QUERY */
      "stdin", NULL, NULL, FALSE, 'i', ARG_FILE_IN, 0.0, 0, NULL},
-   { "Subject File (for two sequences comparison", /* ARG_SUBJECT */
+   { "Query location offsets; format: \"start stop\";\n"
+     "Applies only if query file contains 1 sequence", /* ARG_QUERY_LOC */
+     NULL, NULL, NULL, TRUE, 'I', ARG_STRING, 0.0, 0, NULL},
+   { "Subject File (for sequence sets comparison)", /* ARG_SUBJECT */
      "stdin", NULL, NULL, FALSE, 'j', ARG_FILE_IN, 0.0, 0, NULL},
+   { "Subject location offsets; format: \"start stop\";\n"/* ARG_SUBJECT_LOC */
+     "Applies only if subject file (-j) contains 1 sequence",
+     NULL, NULL, NULL, TRUE, 'J', ARG_STRING, 0.0, 0, NULL},
    { "Query strands to search against database: 0 or 3 is both, 1 is top, "
      "2 is bottom", /* ARG_STRAND */
      "0", NULL, NULL, FALSE, 'S', ARG_INT, 0.0, 0, NULL},
@@ -135,20 +141,19 @@ static Args myargs[] = {
    { "Type of a discontiguous word template (0 - coding, 1 - optimal, "
      "2 - two simultaneous", /* ARG_TEMPL_TYPE */
      "0", NULL, NULL, FALSE, 'T', ARG_INT, 0.0, 0, NULL},
+   {"Generate words for every base of the database (default is every 4th base; may only be used with discontiguous words)",
+        "F", NULL, NULL, TRUE, 's', ARG_BOOLEAN, 0.0, 0, NULL},    /* ARG_EVERYBASE */
    { "Pattern for PHI BLAST",
      NULL, NULL, NULL, TRUE, 'k', ARG_STRING, 0.0, 0, NULL}, /* ARG_PHI */
    { "Threshold for extending hits, default if zero\n" /* ARG_THRESHOLD */
      "      blastp 11, blastn 0, blastx 12, tblastn 13\n"
      "      tblastx 13, megablast 0",
      "0", NULL, NULL, FALSE, 'f', ARG_INT, 0.0, 0, NULL},
-   { "Window size (max. allowed distance between a pair of initial hits)", 
+   { "Window size (max. allowed distance between a pair of initial hits;\n"
+     "      0 causes default behavior, -1 turns off multiple hits)", 
      "0", NULL, NULL, FALSE, 'w', ARG_INT, 0.0, 0, NULL}, /* ARG_WINDOW */
-   { "Use AG BLAST approach to database scanning", /* ARG_AG */
-     "T", NULL, NULL, FALSE, 'A', ARG_BOOLEAN, 0.0, 0, NULL},
    { "Use variable word size approach to database scanning",/* ARG_VARIABLE_WORD */ 
      "F", NULL, NULL, FALSE, 'V', ARG_BOOLEAN, 0.0, 0, NULL},
-   { "Database scanning stride", 
-     "0", NULL, NULL, FALSE, 's', ARG_INT, 0.0, 0, NULL}, /* ARG_STRIDE */
    { "X dropoff value for ungapped extensions in bits (0 invokes default "
      "behavior)\n      blastn 20, others 7",/*ARG_XDROP_UNGAPPED*/
       "0", NULL, NULL, FALSE, 'y', ARG_INT, 0.0, 0, NULL},
@@ -177,9 +182,12 @@ static Args myargs[] = {
    {"Identity percentage cut-off",  /* ARG_PERC_IDENT */
     "0", NULL, NULL, FALSE, 'P', ARG_FLOAT, 0.0, 0, NULL},
    { "Longest intron length for uneven gap HSP linking (tblastn only)",
-     "0", NULL, NULL, FALSE, 'I', ARG_INT, 0.0, 0, NULL}, /* ARG_INTRON */
+     "0", NULL, NULL, FALSE, 'z', ARG_INT, 0.0, 0, NULL}, /* ARG_INTRON */
    { "Number of database sequences to show one-line descriptions for (V)",
      "500", NULL, NULL, FALSE, 'v', ARG_INT, 0.0, 0, NULL}, /* ARG_DESCRIPTIONS */
+   { "Remove hits whose query range is contained in at least "
+      "this many higher-scoring hits (ignored if zero)", /* ARG_CULLING */
+     "0", NULL, NULL, FALSE, 'K', ARG_INT, 0.0, 0, NULL},
    { "Number of database sequence to show alignments for (B)", /* ARG_ALIGNMENTS */
      "250", NULL, NULL, FALSE, 'b', ARG_INT, 0.0, 0, NULL},
    { "Final output file name",             /* ARG_OUT */
@@ -196,95 +204,20 @@ static Args myargs[] = {
      "F", NULL, NULL, FALSE, 'H', ARG_BOOLEAN, 0.0, 0, NULL},
    { "File name for output in ASN.1 format",   /* ARG_ASNOUT */
      NULL, NULL, NULL, TRUE, 'O', ARG_FILE_OUT, 0.0, 0, NULL}, 
-   { "Range of ordinal ids in the BLAST database to search.\n"
-     "Format: \"oid1 oid2\"; ',', ':' or ';' can also be used as delimiters\n" 
-     "Full database is searched if range not provided.", /* ARG_OIDRANGE */
-     NULL, NULL, NULL, TRUE, 'R', ARG_STRING, 0.0, 0, NULL}
+   { "Produce on-the-fly tabular output; 1 - just offsets and quality values;\n"
+     "2 - add sequence data.",
+     "0", NULL, NULL, FALSE, 'B', ARG_INT, 0.0, 0, NULL}, /* ARG_TABULAR */
+   { "Number of threads to use in preliminary search stage",
+     "1", NULL, NULL, FALSE, 'a', ARG_INT, 0.0, 0, NULL}, /* ARG_THREADS */
+   { "Show gis in sequence ids",
+     "F", NULL, NULL, FALSE, 'n', ARG_BOOLEAN, 0.0, 0, NULL}, /* ARG_SHOWGI */
+   { "Show only accessions for sequence ids in tabular output",
+     "F", NULL, NULL, FALSE, 'N', ARG_BOOLEAN, 0.0, 0, NULL}/* ARG_ACCESSION */
 };
 
-static Int2 BLAST_FillRPSInfo( RPSInfo **ppinfo, Nlm_MemMap **rps_mmap,
-                               Nlm_MemMap **rps_pssm_mmap, CharPtr dbname )
-{
-   char filename[PATH_MAX];
-   char pathname[PATH_MAX];
-   RPSInfo *info;
-   FILE *auxfile;
-   Int4 i;
-   Int4 seq_size;
-   Int4 num_db_seqs;
-   Nlm_MemMapPtr lut_mmap;
-   Nlm_MemMapPtr pssm_mmap;
-   char buffer[PATH_MAX];
-
-   info = (RPSInfo *)malloc(sizeof(RPSInfo));
-   if (info == NULL)
-      ErrPostEx(SEV_FATAL, 1, 0, "Memory allocation failed");
-
-   /* construct the full path to the DB file. Look in
-      the local directory, then BLASTDB environment 
-      variable (if any), then .ncbirc */
-
-   sprintf(filename, "%s.loo", dbname);
-
-   if (FileLength(filename) > 0) {
-      strcpy(pathname, dbname);
-   } else {
-#ifdef OS_UNIX
-      if (getenv("BLASTDB"))
-         Nlm_GetAppParam("NCBI", "BLAST", "BLASTDB", 
-                         getenv("BLASTDB"), pathname, PATH_MAX);
-      else
-#endif
-         Nlm_GetAppParam ("NCBI", "BLAST", "BLASTDB", 
-                          BLASTDB_DIR, pathname, PATH_MAX);
-      sprintf(filename, "%s%s%s", pathname, DIRDELIMSTR, dbname);
-      strcpy(pathname, filename);
-   }
-
-   sprintf(filename, "%s.loo", (char *)pathname);
-   lut_mmap = Nlm_MemMapInit(filename);
-   if (lut_mmap == NULL)
-      ErrPostEx(SEV_FATAL, 1, 0, "Cannot map RPS BLAST lookup file");
-   info->lookup_header = (RPSLookupFileHeader *)lut_mmap->mmp_begin;
-
-   sprintf(filename, "%s.rps", (char *)pathname);
-   pssm_mmap = Nlm_MemMapInit(filename);
-   if (pssm_mmap == NULL)
-      ErrPostEx(SEV_FATAL, 1, 0, "Cannot map RPS BLAST profile file");
-   info->profile_header = (RPSProfileHeader *)pssm_mmap->mmp_begin;
-
-   num_db_seqs = info->profile_header->num_profiles;
-
-   sprintf(filename, "%s.aux", (char *)pathname);
-   auxfile = FileOpen(filename, "r");
-   if (auxfile == NULL)
-      ErrPostEx(SEV_FATAL, 1, 0,"Cannot open RPS BLAST parameters file");
-
-   fscanf(auxfile, "%s", buffer);
-   info->aux_info.orig_score_matrix = strdup(buffer);
-   fscanf(auxfile, "%d", &info->aux_info.gap_open_penalty);
-   fscanf(auxfile, "%d", &info->aux_info.gap_extend_penalty);
-   fscanf(auxfile, "%le", &info->aux_info.ungapped_k);
-   fscanf(auxfile, "%le", &info->aux_info.ungapped_h);
-   fscanf(auxfile, "%d", &info->aux_info.max_db_seq_length);
-   fscanf(auxfile, "%d", &info->aux_info.db_length);
-   fscanf(auxfile, "%lf", &info->aux_info.scale_factor);
-
-   info->aux_info.karlin_k = (double *)malloc(num_db_seqs * sizeof(double));
-   for (i = 0; i < num_db_seqs && !feof(auxfile); i++) {
-      fscanf(auxfile, "%d", &seq_size); /* not used */
-      fscanf(auxfile, "%le", &info->aux_info.karlin_k[i]);
-   }
-
-   if (i < num_db_seqs)
-      ErrPostEx(SEV_FATAL, 1, 0, "Missing Karlin parameters");
-
-   FileClose(auxfile);
-   *ppinfo = info;
-   *rps_mmap = lut_mmap;
-   *rps_pssm_mmap = pssm_mmap;
-   return 0;
-}
+extern void PrintTabularOutputHeader PROTO((char* blast_database, 
+               BioseqPtr query_bsp, SeqLocPtr query_slp, char* blast_program, 
+               Int4 iteration, Boolean believe_query, FILE *outfp));
 
 /** Fills all the options structures with user defined values. Uses the 
  * myargs global structure obtained from GetArgs.
@@ -297,38 +230,28 @@ static Int2 BLAST_FillRPSInfo( RPSInfo **ppinfo, Nlm_MemMap **rps_mmap,
  * @param eff_len_options Effective length options [out]
  * @param psi_options Protein BLAST options [out]
  * @param db_options BLAST database options [out]
- * @param rps_info RPS blast parameters [in]
  */
 static Int2 
-BLAST_FillOptions(LookupTableOptions* lookup_options,
-   QuerySetUpOptions* query_setup_options, 
-   BlastInitialWordOptions* word_options,
-   BlastExtensionOptions* ext_options,
-   BlastHitSavingOptions* hit_options,
-   BlastScoringOptions* score_options,
-   BlastEffectiveLengthsOptions* eff_len_options,
-   PSIBlastOptions* psi_options,
-   BlastDatabaseOptions* db_options, 
-   BlastSeqSrc* seq_src,
-   RPSInfo *rps_info)
+s_FillOptions(SBlastOptions* options)
 {
-   char* blast_program;
-   Boolean ag_blast = TRUE, variable_wordsize = FALSE, mb_lookup = FALSE;
-   Boolean greedy_extension = FALSE;
+   LookupTableOptions* lookup_options = options->lookup_options;
+   QuerySetUpOptions* query_setup_options = options->query_options; 
+   BlastInitialWordOptions* word_options = options->word_options;
+   BlastExtensionOptions* ext_options = options->ext_options;
+   BlastHitSavingOptions* hit_options = options->hit_options ;
+   BlastScoringOptions* score_options = options->score_options;
+   BlastEffectiveLengthsOptions* eff_len_options = options->eff_len_options;
+
+   Boolean variable_wordsize = FALSE, mb_lookup = FALSE;
+   Int4 greedy_extension = 0;
+   Boolean greedy_with_ungapped = FALSE;
    Boolean is_gapped = FALSE;
-   Int8 totlen = 0;
-   Int4 numseqs = 0;
-   Uint1 program_number;
-   Int2 status;
+   EBlastProgramType program_number = options->program;
    Boolean use_pssm = FALSE;
 
-   blast_program = myargs[ARG_PROGRAM].strvalue;
-   BlastProgram2Number(blast_program, &program_number);
-
    /* The following options are for blastn only */
-   if (program_number == blast_type_blastn) {
+   if (program_number == eBlastTypeBlastn) {
       if (myargs[ARG_TEMPL_LEN].intvalue == 0) {
-         ag_blast = (Boolean) myargs[ARG_AG].intvalue;
          mb_lookup = (Boolean) myargs[ARG_LOOKUP].intvalue;
          /* Variable word size can only be used for word sizes divisible 
             by 4 */
@@ -336,80 +259,64 @@ BLAST_FillOptions(LookupTableOptions* lookup_options,
             variable_wordsize = (Boolean) myargs[ARG_VARIABLE_WORD].intvalue;
       } else {
          /* Discontiguous words */
-         ag_blast = FALSE;
          mb_lookup = TRUE;
          variable_wordsize = FALSE;
       }
-      greedy_extension = (Boolean) myargs[ARG_GREEDY].intvalue;
+      greedy_extension = MIN(myargs[ARG_GREEDY].intvalue, 2);
+      greedy_with_ungapped = (myargs[ARG_GREEDY].intvalue == 3);
    }
 
    BLAST_FillLookupTableOptions(lookup_options, program_number, mb_lookup,
-      myargs[ARG_THRESHOLD].intvalue, myargs[ARG_WORDSIZE].intvalue, 
-      ag_blast, variable_wordsize, use_pssm);
+      myargs[ARG_THRESHOLD].intvalue, (Int2)myargs[ARG_WORDSIZE].intvalue, 
+      variable_wordsize, use_pssm);
    /* Fill the rest of the lookup table options */
    lookup_options->mb_template_length = 
       (Uint1) myargs[ARG_TEMPL_LEN].intvalue;
    lookup_options->mb_template_type = 
       (Uint1) myargs[ARG_TEMPL_TYPE].intvalue;
+   if (myargs[ARG_EVERYBASE].intvalue)
+      lookup_options->full_byte_scan = FALSE;
 
-   if (myargs[ARG_STRIDE].intvalue)
-      lookup_options->scan_step = myargs[ARG_STRIDE].intvalue;
-   
    if (myargs[ARG_PHI].strvalue) {
       lookup_options->phi_pattern = strdup(myargs[ARG_PHI].strvalue);
-      lookup_options->lut_type = 
-          ((program_number == blast_type_blastn) ? 
-           PHI_NA_LOOKUP : PHI_AA_LOOKUP);
-      hit_options->phi_align = TRUE;
+      /* Set the lookup table type, and also change program type to 
+         indicate a PHI BLAST search. */
+      if (program_number == eBlastTypeBlastn) {
+          lookup_options->lut_type = PHI_NA_LOOKUP;
+          options->program = eBlastTypePhiBlastn;
+      } else {
+          lookup_options->lut_type = PHI_AA_LOOKUP;
+          options->program = eBlastTypePhiBlastp;
+      }
    }
 
    BLAST_FillQuerySetUpOptions(query_setup_options, program_number, 
-      myargs[ARG_FILTER].strvalue, myargs[ARG_STRAND].intvalue);
+      myargs[ARG_FILTER].strvalue, (Uint1)myargs[ARG_STRAND].intvalue);
 
    if (myargs[ARG_GENCODE].intvalue &&
-       (program_number == blast_type_blastx || 
-        program_number == blast_type_tblastx))
+       (program_number == eBlastTypeBlastx || 
+        program_number == eBlastTypeTblastx))
       query_setup_options->genetic_code = myargs[ARG_GENCODE].intvalue;
 
    BLAST_FillInitialWordOptions(word_options, program_number, 
-      greedy_extension, myargs[ARG_WINDOW].intvalue, variable_wordsize, 
-      ag_blast, mb_lookup, myargs[ARG_XDROP_UNGAPPED].intvalue);
+      (Boolean)(greedy_extension && !greedy_with_ungapped), 
+      myargs[ARG_WINDOW].intvalue, myargs[ARG_XDROP_UNGAPPED].intvalue);
+
+   if (!greedy_extension)
+      word_options->ungapped_extension = TRUE;
+
+   if (myargs[ARG_WINDOW].intvalue < 0)
+       word_options->window_size = 0;
 
    BLAST_FillExtensionOptions(ext_options, program_number, greedy_extension, 
       myargs[ARG_XDROP].intvalue, myargs[ARG_XDROP_FINAL].intvalue);
 
-   if (greedy_extension) {
-       switch (myargs[ARG_GREEDY].intvalue) {
-       case 1:
-           ext_options->algorithm_type = EXTEND_GREEDY;
-           word_options->ungapped_extension = FALSE;
-           break;
-       case 2:
-           ext_options->algorithm_type = EXTEND_GREEDY_NO_TRACEBACK;
-           word_options->ungapped_extension = FALSE;
-           break;
-       case 3:
-           ext_options->algorithm_type = EXTEND_GREEDY_NO_TRACEBACK;
-           word_options->ungapped_extension = TRUE;
-           break;
-       default:
-           break;
-       }
-   }
+   BLAST_FillScoringOptions(score_options, program_number, 
+       (Boolean)greedy_extension, myargs[ARG_MISMATCH].intvalue, 
+        myargs[ARG_MATCH].intvalue, myargs[ARG_MATRIX].strvalue, 
+        myargs[ARG_GAPOPEN].intvalue, myargs[ARG_GAPEXT].intvalue);
 
-   if (program_number == blast_type_rpsblast ||
-       program_number == blast_type_rpstblastn)
-      BLAST_FillScoringOptions(score_options, program_number, greedy_extension, 
-                myargs[ARG_MISMATCH].intvalue, myargs[ARG_MATCH].intvalue,
-                "BLOSUM62", rps_info->aux_info.gap_open_penalty,
-                rps_info->aux_info.gap_extend_penalty);
-   else
-      BLAST_FillScoringOptions(score_options, program_number, greedy_extension, 
-                myargs[ARG_MISMATCH].intvalue, myargs[ARG_MATCH].intvalue,
-                myargs[ARG_MATRIX].strvalue, myargs[ARG_GAPOPEN].intvalue,
-                myargs[ARG_GAPEXT].intvalue);
-
-   if (program_number != blast_type_tblastx)
+   if (program_number != eBlastTypeTblastx)
       is_gapped = !myargs[ARG_UNGAPPED].intvalue;
 
    score_options->gapped_calculation = is_gapped;
@@ -421,70 +328,81 @@ BLAST_FillOptions(LookupTableOptions* lookup_options,
    BLAST_FillHitSavingOptions(hit_options, 
       myargs[ARG_EVALUE].floatvalue, 
       MAX(myargs[ARG_DESCRIPTIONS].intvalue, 
-          myargs[ARG_ALIGNMENTS].intvalue));
+          myargs[ARG_ALIGNMENTS].intvalue),
+      is_gapped,
+      myargs[ARG_CULLING].intvalue);
  
    hit_options->percent_identity = myargs[ARG_PERC_IDENT].floatvalue;
    hit_options->longest_intron = myargs[ARG_INTRON].intvalue;
 
-   BLAST_FillEffectiveLengthsOptions(eff_len_options, 
-      numseqs, totlen, (Int8) myargs[ARG_SEARCHSP].floatvalue);
+   if (myargs[ARG_SEARCHSP].floatvalue != 0) {
+      eff_len_options->searchsp_eff = (Int8) myargs[ARG_SEARCHSP].floatvalue; 
+   }
 
-   if (db_options && (program_number == blast_type_tblastn ||
-                      program_number == blast_type_rpstblastn ||
-                      program_number == blast_type_tblastx)) {
-      if (myargs[ARG_DBGENCODE].intvalue)
-         db_options->genetic_code = myargs[ARG_DBGENCODE].intvalue;
-      if ((status = BLAST_GeneticCodeFind(db_options->genetic_code, 
-                       &db_options->gen_code_string)))
-         return status;
+   if (program_number == eBlastTypeTblastn ||
+       program_number == eBlastTypeRpsTblastn ||
+       program_number == eBlastTypeTblastx) {
+       SBlastOptionsSetDbGeneticCode(options, myargs[ARG_DBGENCODE].intvalue);
    }
 
    return 0;
 }
 
+/** Parses an argument specifying an interval on a sequence to search.
+ * Argument has form "Start[ ,;]Stop"
+ * @param arg Argument string (no restriction if NULL) [in]
+ * @param from_ptr Start of the location [out]
+ * @param to_ptr End of the location [out]
+ * @return -1 if invalid location, otherwise 0.
+ */
+static Int2
+s_ParseIntervalLocationArgument(char* arg, Int4* from_ptr, Int4* to_ptr)
+{
+   const char* delimiters = " ,;";
+   Int4 from = 0, to = 0;
+
+   if (!arg)
+      return 0;
+   
+   from = atoi(StringTokMT(arg, delimiters, &arg));
+   to = atoi(arg);
+      
+   from = MAX(from, 0);
+   to = MAX(to, 0);
+
+   *from_ptr = from;
+   *to_ptr = to;
+
+   if (from > to)
+      return -1;
+   else
+      return 0;
+}
+
 Int2 Nlm_Main(void)
 {
-   BLAST_SequenceBlk *query = NULL;
    SeqLoc* subject_slp = NULL; /* SeqLoc for the subject sequence in two
                                     sequences case */
    Boolean query_is_na, db_is_na;
-   LookupTableOptions* lookup_options;
    char buf[256] = { '\0' };
    char* blast_program;
-   Uint1 program_number;
-   BlastInitialWordOptions* word_options;
-   BlastScoringOptions* score_options;
-   BlastExtensionOptions* ext_options;
-   BlastHitSavingOptions* hit_options;
+   EBlastProgramType program_number;
    char* dbname = NULL;
-   LookupTableWrap* lookup_wrap;
-   Int2 status;
-   QuerySetUpOptions* query_options=NULL;	
-   BlastEffectiveLengthsOptions* eff_len_options=NULL;
-   BlastMaskLoc* lcase_mask = NULL;
-   BlastMaskLoc* filter_loc=NULL;	/* All masking locations */
+   Int2 status = 0;
+   SeqLoc* lcase_mask = NULL;
    SeqLoc* query_slp = NULL;
-   BlastScoreBlk* sbp = NULL;
    FILE *infp, *outfp;
-   BlastQueryInfo* query_info;
-   BlastHSPResults* results = NULL;
-   Blast_Message* blast_message = NULL;
-   SeqAlign* seqalign;
-   BlastFormattingOptions* format_options;
-   Boolean done;
-   BlastReturnStat* return_stats;
-   Int4 ctr = 0;
-   PSIBlastOptions* psi_options = NULL;
-   BlastDatabaseOptions* db_options = NULL;
-   ListNode* lookup_segments = NULL;
-   Boolean translated_query;
-   Int4 num_queries;
-   BlastSeqSrc* seq_src = NULL;
-   Boolean psi_blast = FALSE;
-   Boolean rps_blast = FALSE;
-   Nlm_MemMapPtr rps_mmap = NULL;
-   Nlm_MemMapPtr rps_pssm_mmap = NULL;
-   RPSInfo *rps_info = NULL;
+   SBlastOptions* options = NULL;
+   BlastFormattingOptions* format_options = NULL;
+   Int2 ctr = 1;
+   Int4 num_queries=0;
+   int tabular_output = FALSE;
+   BlastTabularFormatData* tf_data = NULL;
+   Boolean believe_defline = FALSE;
+   Int4 q_from = 0, q_to = 0;
+   Blast_SummaryReturn* sum_returns = NULL;
+   Boolean phi_blast = FALSE;
+   ValNode* phivnps = NULL;
 
    if (! GetArgs (buf, NUMARG, myargs))
       return (1);
@@ -496,36 +414,40 @@ Int2 Nlm_Main(void)
    
    ErrSetMessageLevel(SEV_WARNING);
    
-   if ((outfp = fopen(myargs[ARG_OUT].strvalue, "w")) == NULL) {
-      ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open output file %s\n", 
-                myargs[ARG_OUT].strvalue);
-     return (1);
+   blast_program = myargs[ARG_PROGRAM].strvalue;
+
+   sum_returns = Blast_SummaryReturnNew();
+   status = SBlastOptionsNew(blast_program, &options, sum_returns);
+
+   if (status) {
+       if (sum_returns->error) {
+           Blast_SummaryReturnsPostError(sum_returns);
+           sum_returns = Blast_SummaryReturnFree(sum_returns);
+       }
+       return -1;
    }
-   
-   blast_program = strdup(myargs[ARG_PROGRAM].strvalue);
-   BlastProgram2Number(myargs[ARG_PROGRAM].strvalue, &program_number);
 
-   db_is_na = (program_number == blast_type_blastn || 
-               program_number == blast_type_tblastn || 
-               program_number == blast_type_tblastx);
-   query_is_na = (program_number == blast_type_blastn || 
-                  program_number == blast_type_blastx || 
-                  program_number == blast_type_rpstblastn || 
-                  program_number == blast_type_tblastx);
+   program_number = options->program;
 
-   rps_blast = (program_number == blast_type_rpsblast ||
-                program_number == blast_type_rpstblastn);
+   db_is_na = (program_number == eBlastTypeBlastn || 
+               program_number == eBlastTypeTblastn || 
+               program_number == eBlastTypeTblastx ||
+               program_number == eBlastTypePhiBlastn);
+   query_is_na = (program_number == eBlastTypeBlastn || 
+                  program_number == eBlastTypeBlastx || 
+                  program_number == eBlastTypeRpsTblastn || 
+                  program_number == eBlastTypeTblastx ||
+                  program_number == eBlastTypePhiBlastn);
 
-   BLAST_InitDefaultOptions(program_number, &lookup_options,
-      &query_options, &word_options, &ext_options, &hit_options,
-      &score_options, &eff_len_options, 
-      (psi_blast || rps_blast) ? &psi_options : NULL,
-      &db_options);
+   phi_blast = (program_number == eBlastTypePhiBlastn ||
+                program_number == eBlastTypePhiBlastp);
 
-   if (!myargs[ARG_DB].strvalue) {
+   if ((dbname = myargs[ARG_DB].strvalue) == NULL) {
+      Int4 letters_read;
       FILE *infp2;
+      Int4 s_from = 0, s_to = 0;
       char *subject_file = strdup(myargs[ARG_SUBJECT].strvalue);
-      if ((infp2 = fopen(subject_file, "r")) == NULL) {
+      if ((infp2 = FileOpen(subject_file, "r")) == NULL) {
          ErrPostEx(SEV_FATAL, 1, 0, 
                    "blast: Unable to open second input file %s\n", 
                    subject_file);
@@ -533,191 +455,224 @@ Int2 Nlm_Main(void)
       }
       sfree(subject_file);
 
-      BLAST_GetQuerySeqLoc(infp2, db_is_na, 0, 0, 0, NULL, &subject_slp, 
-                           0, NULL);
-      fclose(infp2);
-      
-      seq_src = MultiSeqSrcInit(subject_slp, program_number);
-
-      ctr = BLASTSeqSrcGetNumSeqs(seq_src);
-   } else {
-      int first_db_seq = 0;
-      int final_db_seq = 0;
-      if (myargs[ARG_OIDRANGE].strvalue) {
-         const char* delimiters = " ,:;";
-         char* range_str = strdup(myargs[ARG_OIDRANGE].strvalue);
-         first_db_seq = atoi(strtok(range_str, delimiters));
-         final_db_seq = atoi(strtok(NULL, delimiters));
-         sfree(range_str);
+      if (s_ParseIntervalLocationArgument(myargs[ARG_SUBJECT_LOC].strvalue,
+                                          &s_from, &s_to)) {
+         ErrPostEx(SEV_FATAL, 1, 0, "Invalid subject sequence location\n");
+         return -1;
       }
-      seq_src = ReaddbBlastSeqSrcInit(myargs[ARG_DB].strvalue, !db_is_na, 
-                                   first_db_seq, final_db_seq, NULL);
+
+      letters_read = 
+         BLAST_GetQuerySeqLoc(infp2, db_is_na, 0, 0, s_from, s_to, NULL, 
+                              &subject_slp, &ctr, NULL, FALSE);
+
+      if (letters_read <= 0)
+      {
+           ErrPostEx(SEV_FATAL, 1, 0, "Unable to read subject sequence\n");
+           return -1;
+      }
+      FileClose(infp2);
    }
 
-   if (rps_blast) {
-      if (BLAST_FillRPSInfo(&rps_info, &rps_mmap, 
-                            &rps_pssm_mmap, myargs[ARG_DB].strvalue) != 0)
-         ErrPostEx(SEV_FATAL, 1, 0,  "RPS Blast setup failed");
+   s_FillOptions(options);
+
+   tabular_output = myargs[ARG_TABULAR].intvalue;
+       
+   if (tabular_output) {
+      if ((outfp = FileOpen(myargs[ARG_OUT].strvalue, "w")) == NULL) {
+         ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open output file %s\n", 
+                   myargs[ARG_OUT].strvalue);
+        return (1);
+      }
+   } else {
+      if ((status = BlastFormattingOptionsNew(program_number, 
+                       myargs[ARG_OUT].strvalue, 
+                       myargs[ARG_DESCRIPTIONS].intvalue, 
+                       myargs[ARG_ALIGNMENTS].intvalue, 
+                       myargs[ARG_FORMAT].intvalue, &format_options)) != 0)
+         return status;
+
+      if (myargs[ARG_HTML].intvalue) {
+         format_options->html = TRUE;
+         format_options->align_options += TXALIGN_HTML;
+         format_options->print_options += TXALIGN_HTML;
+      }
+
+      if (myargs[ARG_SHOWGI].intvalue) {
+         format_options->align_options += TXALIGN_SHOW_GI;
+         format_options->print_options += TXALIGN_SHOW_GI;
+      }
+
+      if (dbname) {
+         BLAST_PrintOutputHeader(format_options, 
+            (Boolean)myargs[ARG_GREEDY].intvalue, blast_program, dbname, !db_is_na);
+      }
+
+     if (myargs[ARG_UNGAPPED].intvalue != 0) 
+         format_options->print_options += TXALIGN_SHOW_NO_OF_SEGS;
+
    }
 
-   BLAST_FillOptions(lookup_options, query_options, word_options, 
-      ext_options, hit_options, score_options, eff_len_options, 
-      psi_options, db_options, seq_src, rps_info);
-
-   if ((status = BlastFormattingOptionsNew(program_number, 
-                    myargs[ARG_OUT].strvalue, 
-                    myargs[ARG_DESCRIPTIONS].intvalue, 
-                    myargs[ARG_ALIGNMENTS].intvalue, 
-                    myargs[ARG_FORMAT].intvalue, &format_options)) != 0)
-      return status;
-   format_options->html = (Boolean) myargs[ARG_HTML].intvalue;
-
-   if (seq_src) {
-      dbname = BLASTSeqSrcGetName(seq_src);
-
-      BLAST_PrintOutputHeader(format_options, 
-         myargs[ARG_GREEDY].intvalue, dbname, !db_is_na);
-   }
-
-   if ((infp = fopen(myargs[ARG_QUERY].strvalue, "r")) == NULL) {
+   if ((infp = FileOpen(myargs[ARG_QUERY].strvalue, "r")) == NULL) {
       ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open input file %s\n", 
                 myargs[ARG_QUERY].strvalue);
       return (1);
    }
-   
-   return_stats = (BlastReturnStat*) calloc(1, sizeof(BlastReturnStat));
 
-   translated_query = (program_number == blast_type_blastx || 
-                       program_number == blast_type_tblastx);
+   if (tabular_output) {
+      believe_defline = TRUE;
+   }
 
-   done = FALSE;
+   if (s_ParseIntervalLocationArgument(myargs[ARG_QUERY_LOC].strvalue,
+                                       &q_from, &q_to)) {
+         ErrPostEx(SEV_FATAL, 1, 0, "Invalid query sequence location\n");
+         return -1;
+   }
+
    /* Get the query (queries), loop if necessary. */
-   while (!done) {
-      if ((Boolean)myargs[ARG_LCASE].intvalue) {
-         done = BLAST_GetQuerySeqLoc(infp, query_is_na, 
-                   myargs[ARG_STRAND].intvalue, 0, 0,
-                   &lcase_mask, &query_slp, ctr, 
-                   &num_queries);
-      } else {
-         done = BLAST_GetQuerySeqLoc(infp, query_is_na,
-                   myargs[ARG_STRAND].intvalue, 0, 0, NULL, &query_slp,
-                   ctr, &num_queries);
-      }
+   while (1) {
+       SeqAlign* seqalign = NULL;
+       SeqLoc* filter_loc=NULL;	/* All masking locations */
+       Boolean mask_at_hash = FALSE;
+       SeqLoc* repeat_mask = NULL; /* Repeat mask locations */
+       Int4 letters_read;
 
-      if (translated_query) {
-         BlastMaskLocDNAToProtein(&lcase_mask, query_slp);
-      }
+       if ((Boolean)myargs[ARG_LCASE].intvalue) {
+           letters_read = 
+               BLAST_GetQuerySeqLoc(infp, query_is_na, 
+                   (Uint1)myargs[ARG_STRAND].intvalue, 0, q_from, q_to, &lcase_mask,
+                   &query_slp, &ctr, &num_queries, believe_defline);
+       } else {
+           letters_read = 
+               BLAST_GetQuerySeqLoc(infp, query_is_na,
+                   (Uint1)myargs[ARG_STRAND].intvalue, 0, q_from, q_to, NULL, 
+                   &query_slp, &ctr, &num_queries, believe_defline);
+       }
 
-      status = BLAST_SetUpQuery(program_number, query_slp, 
-                  query_options, &query_info, &query);
+       /* If there is no sequence data left in the input file, break out of 
+          the loop. */
+       if (letters_read == 0)
+           break;
 
-      query->lcase_mask = lcase_mask;
+       if (letters_read < 0) {
+           ErrPostEx(SEV_FATAL, 1, 0, "Unable to read query sequence(s)\n");
+           return -1;
+       }
 
-      if ((status = BLAST_ValidateOptions(program_number, ext_options, 
-                       score_options, lookup_options, hit_options, 
-                       &blast_message)) != 0) {
-         Blast_MessagePost(blast_message);
-         return status;
-      }
+       if (tabular_output) {
+           EBlastTabularFormatOptions tab_option = eBlastTabularDefault;
+           if (tabular_output == 2) {
+               if (program_number == eBlastTypeBlastn) {
+                   tab_option = eBlastTabularAddSequences;
+               } else {
+                   fprintf(stderr, 
+                           "WARNING: Sequences printout in tabular output"
+                           " allowed only for blastn\n");
+               }
+           } 
+           
+           /* Print the header of tabular output. */
+           PrintTabularOutputHeader(dbname, NULL, query_slp, 
+                                    blast_program, 0, FALSE, outfp);
+           
+           tf_data = BlastTabularFormatDataNew(outfp, query_slp, tab_option);
+           tf_data->show_gi = (Boolean) myargs[ARG_SHOWGI].intvalue;
+           tf_data->show_accession = (Boolean) myargs[ARG_ACCESSION].intvalue;
+       }
 
-      status = 
-         BLAST_MainSetUp(program_number, query_options, score_options, 
-            hit_options, query, query_info, &lookup_segments, 
-            &filter_loc, &sbp, &blast_message);
+       options->num_cpus = myargs[ARG_THREADS].intvalue;
 
-      if (translated_query) {
-         /* Filter locations were returned in protein coordinates; convert them
-            back to nucleotide here */
-         BlastMaskLocProteinToDNA(&filter_loc, query_slp);
-      }
+       /* Find repeat mask, if necessary */
+       Blast_FindRepeatFilterSeqLoc(query_slp, myargs[ARG_FILTER].strvalue, 
+                                 &repeat_mask);
+       /* Combine repeat mask with lower case mask */
+       if (repeat_mask)
+           lcase_mask = ValNodeLink(&lcase_mask, repeat_mask);
 
-      if (status) {
-         fprintf(stderr, "BLAST_MainSetUp returned non-zero status: %d\n", 
-                 status);
-         Blast_MessagePost(blast_message);
-         return status;
-      }
+       /* Do the main search */
+       if (phi_blast) {
+           status = PHIBlastRunSearch(query_slp, dbname, lcase_mask, options, 
+                                      &phivnps, &filter_loc, sum_returns);
+       } else if (dbname) {
+           status = 
+               Blast_DatabaseSearch(query_slp, dbname, lcase_mask, options, 
+                                    tf_data, &seqalign, &filter_loc, 
+                                    &mask_at_hash, sum_returns);
+       } else {
+           status = 
+               Blast_TwoSeqLocSetsAdvanced(query_slp, subject_slp, lcase_mask, 
+                                           options, tf_data, &seqalign, 
+                                           &filter_loc, &mask_at_hash, 
+                                           sum_returns);
+       }
 
-      Blast_HSPResultsInit(query_info->num_queries, &results);
-      LookupTableWrapInit(query, lookup_options, 
-                          lookup_segments, sbp, &lookup_wrap, rps_info);
-    
-      if (rps_blast)
-         BLAST_RPSSearchEngine(program_number, query, query_info, 
-            seq_src, sbp, score_options, lookup_wrap, 
-            word_options, ext_options, hit_options, eff_len_options, 
-            psi_options, db_options, results, return_stats);
-      else
-         BLAST_SearchEngine(program_number, query, query_info, 
-            seq_src, sbp, score_options, lookup_wrap, 
-            word_options, ext_options, hit_options, eff_len_options, 
-            psi_options, db_options, results, return_stats);
+       /* Deallocate the data structure used for tabular formatting. */
+       BlastTabularFormatDataFree(tf_data);
 
-      lookup_wrap = LookupTableWrapFree(lookup_wrap);
+       /* Free the lower case mask in SeqLoc form. */
+       lcase_mask = Blast_ValNodeMaskListFree(lcase_mask);
 
-      if (rps_blast) {
-	 Nlm_MemMapFini(rps_mmap);
-	 Nlm_MemMapFini(rps_pssm_mmap);
-         sfree(rps_info->aux_info.karlin_k);
-         sfree(rps_info->aux_info.orig_score_matrix);
-	 sfree(rps_info);
-      }
+       /* If masking was done for lookup table only, free the masking locations,
+          because they will not be used for formatting. */
+       if (mask_at_hash)
+           filter_loc = Blast_ValNodeMaskListFree(filter_loc);
 
-      /* The following works because the ListNodes' data point to simple
-         double-integer structures */
-      lookup_segments = ListNodeFreeData(lookup_segments);
+       /* Post warning or error messages, no matter what the search status was. */
+       Blast_SummaryReturnsPostError(sum_returns);
 
-      /* Convert results to the SeqAlign form */
-      BLAST_ResultsToSeqAlign(program_number, results, query_slp, seq_src, 
-         subject_slp, score_options, sbp, score_options->gapped_calculation,
-         &seqalign);
+       if (!status) {
+           if (phi_blast) {
+               status =
+                   PHIBlastFormatResults(program_number, phivnps, dbname,
+                                          query_slp, format_options, 
+                                          sum_returns);
+               phivnps = PHIBlastResultsFree(phivnps);
+           } else if (!tabular_output) {
+               if (myargs[ARG_ASNOUT].strvalue) {
+                   AsnIoPtr asnout = 
+                       AsnIoOpen(myargs[ARG_ASNOUT].strvalue, (char*)"w");
+                   GenericSeqAlignSetAsnWrite(seqalign, asnout);
+                   asnout = AsnIoClose(asnout);
+               }
+               
+               /* Format the results */
+               status = 
+                   BLAST_FormatResults(seqalign, dbname, blast_program, 
+                                       num_queries, query_slp, 
+                                       filter_loc, format_options, 
+                                       (Boolean)myargs[ARG_FRAMESHIFT].intvalue, 
+                                       NULL, sum_returns);
+               
+               seqalign = SeqAlignSetFree(seqalign);
+           }
 
-      results = Blast_HSPResultsFree(results);
-      seq_src = BlastSeqSrcFree(seq_src);
-      
-      if (myargs[ARG_ASNOUT].strvalue) {
-         AsnIoPtr asnout = AsnIoOpen(myargs[ARG_ASNOUT].strvalue, (char*)"w");
-         GenericSeqAlignSetAsnWrite(seqalign, asnout);
-         asnout = AsnIoClose(asnout);
-      }
- 
-      /* Format the results; note that seqalign and filter locations 
-         are freed inside. */
-      status = BLAST_FormatResults(seqalign, dbname, 
-                  blast_program, query_info->num_queries, query_slp,
-                  filter_loc, format_options, score_options->is_ooframe);
-
-      BlastMaskLocFree(filter_loc);
-
-      PrintOutputFooter(program_number, format_options, score_options, sbp, 
-         lookup_options, word_options, ext_options, hit_options, query_info, 
-         dbname, return_stats, db_is_na);
-
-      query = BlastSequenceBlkFree(query);
-      query_info = BlastQueryInfoFree(query_info);
-      BlastScoreBlkFree(sbp);
-      query_slp = SeqLocSetFree(query_slp);
+           Blast_PrintOutputFooter(program_number, format_options, dbname, 
+                                   sum_returns);
+       }
+       /* Clean the summary returns substructures. */
+       Blast_SummaryReturnClean(sum_returns);
+       filter_loc = Blast_ValNodeMaskListFree(filter_loc);
+       query_slp = SeqLocSetFree(query_slp);
    } /* End loop on sets of queries */
    
    subject_slp = SeqLocSetFree(subject_slp);
-   sfree(return_stats);
-   LookupTableOptionsFree(lookup_options);
-   BlastQuerySetUpOptionsFree(query_options);
-   BlastExtensionOptionsFree(ext_options);
-   BlastHitSavingOptionsFree(hit_options);
-   BlastInitialWordOptionsFree(word_options);
-   BlastScoringOptionsFree(score_options);
-   BlastEffectiveLengthsOptionsFree(eff_len_options);
-   PSIBlastOptionsFree(psi_options);
-   BlastDatabaseOptionsFree(db_options);
-   
-   BlastFormattingOptionsFree(format_options);
+   options = SBlastOptionsFree(options);
+   sum_returns = Blast_SummaryReturnFree(sum_returns);
+
+   if (!tabular_output) { 
+      if(format_options->html && myargs[ARG_FORMAT].intvalue < 7) {
+         fprintf(format_options->outfp, "</PRE>\n</BODY>\n</HTML>\n");
+      }
+      BlastFormattingOptionsFree(format_options);
+   } else {
+      FileClose(outfp);
+   }
 
    if (infp)
-      fclose(infp);
+      FileClose(infp);
    
-   sfree(dbname);
-   sfree(blast_program);
-
    return status;
 }
+
+
+
+

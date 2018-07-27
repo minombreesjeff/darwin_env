@@ -28,13 +28,22 @@
 *
 * Version Creation Date:   10/15/01
 *
-* $Revision: 6.12 $
+* $Revision: 6.15 $
 *
 * File Description:
 *
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: fdlKludge.h,v $
+* Revision 6.15  2004/09/09 19:39:49  jianye
+* Added gene linkout
+*
+* Revision 6.14  2004/08/11 18:14:55  jianye
+* not turn on gene linkout yet
+*
+* Revision 6.13  2004/08/10 20:02:03  jianye
+* Added gene linkout
+*
 * Revision 6.12  2003/06/11 20:15:45  jianye
 * changed unigene linkout
 *
@@ -79,7 +88,8 @@
 #define linkout_locuslink (1<<0)
 #define linkout_unigene   (1<<1)
 #define linkout_structure (1<<2)
-#define linkout_geo        (1<<3)
+#define linkout_geo       (1<<3)
+#define linkout_gene      (1<<4)
 
 /* url for linkout*/
 #define URL_LocusLink "<a href=\"http://www.ncbi.nlm.nih.gov/LocusLink/list.cgi?Q=%d%s\"><img border=0 height=16 width=16 src=\"/blast/images/L.gif\" alt=\"LocusLink info\"></a>"
@@ -89,6 +99,8 @@
 
 #define URL_Structure_Overview "<a href=\"http://www.ncbi.nlm.nih.gov/Structure/cblast/cblast.cgi?blast_RID=%s&blast_rep_gi=%d&hit=%d&blast_CD_RID=%s&blast_view=%s&hsp=0&taxname=%s&client=blast\">Related Structures</a>"
 
-#define URL_Geo "<a href=\"http://www.ncbi.nlm.nih.gov/entrez/query.fcgi?db=geo&term=%d[gi]\"><img border=0 height=16 width=16 src=\"/blast/images/G.gif\" alt=\"Geo\"></a>"
+#define URL_Geo "<a href=\"http://www.ncbi.nlm.nih.gov/entrez/query.fcgi?db=geo&term=%d[gi]\"><img border=0 height=16 width=16 src=\"/blast/images/E.gif\" alt=\"Geo\"></a>"
  
+#define URL_Gene "<a href=\"http://www.ncbi.nlm.nih.gov/entrez/query.fcgi?db=gene&cmd=search&term=%d[%s]\"><img border=0 height=16 width=16 src=\"/blast/images/G.gif\" alt=\"Gene info\"></a>"
+
 #endif

@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 4/1/91
 *
-* $Revision: 6.7 $
+* $Revision: 6.9 $
 *
 * File Description:  Object manager for module NCBI-Seqset
 *
@@ -41,6 +41,12 @@
 *
 *
 * $Log: objsset.c,v $
+* Revision 6.9  2005/04/26 21:33:00  kans
+* added SEQID_GPIPE
+*
+* Revision 6.8  2004/05/12 20:41:57  kans
+* set aip->io_failure in several erret blocks for compatibility of old object loaders with new ones
+*
 * Revision 6.7  2004/04/01 13:43:08  lavr
 * Spell "occurred", "occurrence", and "occurring"
 *
@@ -165,6 +171,7 @@ static void FindBestBioseqLabel (SeqEntryPtr sep, Pointer data, Int4 index, Int2
 			case SEQID_TPG:
 			case SEQID_TPE:
 			case SEQID_TPD:
+		    case SEQID_GPIPE:
 				has_gb = TRUE;
 			case SEQID_PIR:
 			case SEQID_SWISSPROT:
@@ -848,6 +855,7 @@ ret:
     AsnUnlinkType(orig);     /*  unlink local tree */
 	return bsp;
 erret:
+    aip->io_failure = TRUE;
 	bsp = BioseqSetFree(bsp);
 	goto ret;
 }
@@ -1008,6 +1016,7 @@ ret:
     AsnUnlinkType(orig);      /*  unlink local tree */
 	return sep;
 erret:
+    aip->io_failure = TRUE;
 	sep = SeqEntryFree(sep);
 	goto ret;
 }

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   6/3/99
 *
-* $Revision: 6.39 $
+* $Revision: 6.45 $
 *
 * File Description:  To validate sequence alignment.
 *
@@ -49,7 +49,7 @@
 #include <sequtil.h> 
 #include <sqnutils.h>
 #include <satutil.h>
-
+#include <salsap.h>
 #include <txalign.h>
 #include <salpacc.h>
 #include <alignval.h>
@@ -167,11 +167,11 @@ static BioseqPtr AlignValBioseqLockById (SeqIdPtr sid)
   }
 }
 
-static Boolean AlignValBioseqUnlockById (SeqIdPtr sid)
+static Boolean AlignValBioseqUnlock (BioseqPtr bsp)
 
 {
   if (useLockByID) {
-    return BioseqUnlockById (sid);
+    return BioseqUnlock (bsp);
   } else {
     return TRUE;
   }
@@ -485,23 +485,6 @@ static void ValMessage (SeqAlignPtr salp, Int1 MessageCode, ErrSev errlevel, Seq
 
  
 /******************************************************************
-******************************************************************/ 
-static SeqAlignPtr LIBCALL is_salp_in_sap (SeqAnnotPtr sap, Uint1 choice)
-{
-  SeqAlignPtr      salp = NULL;
-
-  if (sap != NULL) {
-     for (; sap!= NULL; sap=sap->next) {
-        if (sap->type == choice) {
-           salp = (SeqAlignPtr) sap->data;
-           return salp;
-        }
-     }   
-  }
-  return NULL;
-}
-
-/******************************************************************
 return the number of seqid
 ******************************************************************/ 
 static Int2 CountSeqIdInSip (SeqIdPtr sip)
@@ -572,7 +555,7 @@ validate a SeqId
 ******************************************************************/ 
 static void ValidateSeqId (SeqIdPtr sip, SeqAlignPtr salp)
 {
-  SeqIdPtr  siptemp=NULL;
+  SeqIdPtr  siptemp=NULL, sipnext;
   BioseqPtr bsp=NULL;
   
   for(siptemp=sip; siptemp!=NULL; siptemp=siptemp->next)
@@ -584,10 +567,13 @@ static void ValidateSeqId (SeqIdPtr sip, SeqAlignPtr salp)
 	else
 		AlignValBioseqUnlockById(siptemp);
 	*/
+	sipnext = siptemp->next;
+	siptemp->next = NULL;
 	bsp = BioseqFindCore (siptemp);
 	if (bsp == NULL && siptemp->choice == SEQID_LOCAL) {
 		ValMessage (salp, Err_SeqId, SEV_ERROR, siptemp, NULL, 0);
 	}
+	siptemp->next = sipnext;
   }
   return;
 }
@@ -966,7 +952,7 @@ static void ValidateSeqlengthInDenseDiag (DenseDiagPtr ddp, SeqAlignPtr salp)
 		  if(bsp)
 		    {
 		      bslen=bsp->length; 
-		      AlignValBioseqUnlockById(siptemp);
+		      AlignValBioseqUnlock (bsp);
 		      /*verify start*/
 		      if(stptr[i]<0)
 			ValMessage (salp, Err_Start_Less_Than_Zero, SEV_ERROR, siptemp, sip , numseg+1);     
@@ -1099,7 +1085,7 @@ static void ValidateSeqlengthInDenseSeg (DenseSegPtr dsp, SeqAlignPtr salp)
 	  if(bsp!=NULL)
 	    {
 	      bslen=bsp->length;  
-	      AlignValBioseqUnlockById(siptemp);
+	      AlignValBioseqUnlock (bsp);
 	    }
 
 	  /*go through each segment for a given sequence*/
@@ -1218,7 +1204,7 @@ static void ValidateSeqlengthInStdSeg (StdSegPtr ssp, SeqAlignPtr salp)
 	      if(bsp)
 		{
 		  bslen=bsp->length;
-		  AlignValBioseqUnlockById(siptemp); 
+		  AlignValBioseqUnlock (bsp);
 	 
 		  /*verify start*/
 		  if(start!=-1)
@@ -1302,7 +1288,7 @@ static void ValidateSeqlengthInPackSeg (PackSegPtr psp, SeqAlignPtr salp)
 		  if(bsp)
 		    {
 		      bslen=bsp->length; 
-		      AlignValBioseqUnlockById(siptemp);
+		      AlignValBioseqUnlock (bsp);
 		      seg_start=stptr[j];
 		      /*check start*/
 		      if(seg_start<0)
@@ -1444,65 +1430,177 @@ static Boolean IsSipContainedInStdseg(SeqIdPtr sip, StdSegPtr ssp)
   
   return FALSE;
 }
+
+static Int4 PercentStringMatch (CharPtr string1, CharPtr string2)
+{
+  Int4 len1, len2, min_len, k, max_len;
+  Int4 num_match = 0;
+  
+  if (StringHasNoText (string1) || StringHasNoText (string2))
+  {
+  	return 0;
+  }
+  len1 = StringLen (string1);
+  len2 = StringLen (string2);
+  
+  if (len1 > len2)
+  {
+  	min_len = len2;
+  	max_len = len1;
+  }
+  else
+  {
+  	min_len = len1;
+  	max_len = len2;
+  }
+  
+  for (k = 0; k < min_len; k++)
+  {
+  	if (string1[k] == string2[k])
+  	{
+  	  num_match++;
+  	}
+  }
+  return (100 * num_match) / max_len;
+}
+
+static Boolean CheckForPercentMatch (SeqIdPtr sip_list)
+{
+  SeqIdPtr  sip_temp, sip_next;
+  BioseqPtr bsp;
+  CharPtr   master_seq = NULL, this_seq = NULL;  
+  
+  if (sip_list == NULL) return FALSE;
+  sip_next = sip_list->next;
+  sip_list->next = NULL;
+  bsp = BioseqFind (sip_list);
+  if (bsp != NULL)
+  {
+    master_seq = GetSequenceByBsp (bsp);  	
+  }
+  sip_list->next = sip_next;
+  sip_temp = sip_next;
+  if (bsp == NULL || master_seq == NULL) 
+  {
+  	return FALSE;
+  }
+  
+  for (sip_temp = sip_next; sip_temp != NULL; sip_temp = sip_next)
+  {
+  	sip_next = sip_temp->next;
+  	sip_temp->next = NULL;
+  	
+  	bsp = BioseqFind (sip_temp);
+  	if (bsp != NULL)
+  	{
+  	  this_seq = GetSequenceByBsp (bsp);
+  	} else {
+  	  this_seq = NULL;
+  	}
+  	
+  	sip_temp->next = sip_next;
+  	if (bsp == NULL || StringHasNoText (this_seq) || PercentStringMatch (master_seq, this_seq) < 50)
+  	{
+  	  MemFree (this_seq);
+  	  return FALSE;
+  	}
+  	MemFree (this_seq);
+  }
+  return TRUE;
+}
  
 
 /******************************************************************
 check if an alignment is FASTA-like.  
-If all gaps are at the end with dimensions>2, it's FASTA-like
+If all gaps are at the 3' ends with dimensions>2, it's FASTA-like
 ******************************************************************/ 
 static Boolean Is_Fasta_Seqalign (SeqAlignPtr salp)
 {
 
-  SeqIdPtr sip=NULL, siptemp=NULL, SipInSegs=NULL;
+  SeqIdPtr    sip=NULL, siptemp=NULL, SipInSegs=NULL;
   DenseSegPtr dsp;
   Int4Ptr     startp;
   Boolean     gap, CheckedStatus;
-  StdSegPtr ssp, ssptemp, ssptemp2;
-  SeqLocPtr slp, slptemp;
-  ValNodePtr FinishedSip=NULL, temp;
-  PackSegPtr   psp=NULL;
-  Uint1Ptr     seqpresence=NULL;
+  StdSegPtr   ssp, ssptemp, ssptemp2;
+  SeqLocPtr   slp, slptemp;
+  ValNodePtr  FinishedSip=NULL, temp;
+  PackSegPtr  psp=NULL;
+  Uint1Ptr    seqpresence=NULL;
   Int4        k;
   Int2        j;
+  SeqIdPtr    bad_sip = NULL;
   
   /*check only global or partial type*/
   if(salp->type!=1&&salp->type!=3)
     return FALSE;
   
   if (salp->segtype==2) 
+  {
+    dsp = (DenseSegPtr) salp->segs;
+    if(!dsp)
     {
-      dsp = (DenseSegPtr) salp->segs;
-      if(!dsp)
-	ValMessage (salp, Err_Null_Segs, SEV_ERROR, NULL, NULL, 0);
-      else
+	  ValMessage (salp, Err_Null_Segs, SEV_ERROR, NULL, NULL, 0);
+    }
+    else
 	{
 	  if(dsp->dim<=2)
+	  {
 	    return FALSE;
-	  
+	  }
+	  /* if any sequence has gaps at the 5' end or internal gaps, the entire
+	   * alignment is declared to be valid.
+	   * if the sequence contains no gaps at all or only 3' end gaps, check
+	   * sequences for matches against the first sequence - if more than half
+	   * of the nucleotides are matches, then call this not FASTA-like.
+	   */ 
 	  for (j=0, siptemp=dsp->ids; j<dsp->dim&&siptemp; j++, siptemp=siptemp->next)
-	    {
-	      gap=FALSE;
+	  {
+	    gap=FALSE;
 	      
-	      for (k=0; k<dsp->numseg; k++)
+	    for (k=0; k<dsp->numseg; k++)
 		{
 		  startp=dsp->starts;
 		  
 		  /*if start value is -1, set gap flag to true*/
 		  if (startp[dsp->dim*k + j] < 0)
-		    gap = TRUE;
+		  {
+		    gap = TRUE;		  	
+		  }
 		  /*if a positive start value is found after the initial -1 start value, then it's not  fasta like, no need to check this sequence further */
 		  else if(gap)
-		    break;
-		  /*if no more positive start value is found after the initial -1 start value, then it's  fasta like */
-		  if(k==dsp->numseg-1&&gap)
+		  {
+		    if (bad_sip != NULL)
 		    {
-		      ValMessage (salp, Err_Fastalike, SEV_WARNING, siptemp, dsp->ids, 0); 
-		      return TRUE;
+		      SeqIdFree (bad_sip);
 		    }
+		    return FALSE;		  	
+		  }
+		  /* if no positive start value is found after the initial -1 start value
+		   * (indicating that gaps exist only at the 5' end) or if no gaps
+		   * were found at all, flag this sequence as bad if it is the first found.
+		   */
+		  if(k==dsp->numseg-1)
+		  {
+		    if (bad_sip == NULL)
+		    {
+		      bad_sip = SeqIdDup (siptemp);
+		    }
+		  }
 		}
+	  }
+	  if (bad_sip != NULL)
+	  {
+	    if (! CheckForPercentMatch (dsp->ids))
+	    {
+		  ValMessage (salp, Err_Fastalike, SEV_WARNING, bad_sip, dsp->ids, 0);
+		  SeqIdFree (bad_sip);
+		  return TRUE;    	
 	    }
+		SeqIdFree (bad_sip);
+		return FALSE;
+	  }
 	}
-    }
+  }
   /*packseg*/
   else if(salp->segtype==4)
     {
@@ -1805,7 +1903,10 @@ static Boolean ValidateSeqAlignFunc (SeqAlignPtr salp, Boolean find_remote_bsp)
   ValidateStrandinSeqAlign (salp);
        
   /*validate Fasta like*/
-  Is_Fasta_Seqalign (salp);
+  if (Is_Fasta_Seqalign (salp))
+  {
+  	error = TRUE;
+  }
       
   /*validate segment gap*/
   Segment_Gap_In_SeqAlign (salp);
@@ -1871,8 +1972,8 @@ NLM_EXTERN Boolean ValidateSeqAlign (SeqAlignPtr salp, Uint2 entityID, Boolean m
        	         bemp=(JYErrorMsgPtr)vnp->data.ptrvalue;
        	         ErrPostEx ((ErrSev) bemp->level, 0, 0, bemp->msg);
        	      }
-       	      errorp = JYErrorChainDestroy (errorp);
        	   }
+       	   errorp = JYErrorChainDestroy (errorp);
        	   if (svp->delete_salp)
        	   {
             if (pre==NULL) {

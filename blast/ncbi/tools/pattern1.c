@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: pattern1.c,v 6.18 2004/04/01 13:43:08 lavr Exp $";
+static char const rcsid[] = "$Id: pattern1.c,v 6.19 2004/11/22 17:12:52 madden Exp $";
 
-/* $Id: pattern1.c,v 6.18 2004/04/01 13:43:08 lavr Exp $
+/* $Id: pattern1.c,v 6.19 2004/11/22 17:12:52 madden Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -33,9 +33,13 @@ Original Author: Zheng Zhang
  
 Contents: central pattern matching routines for PHI-BLAST and pseed3
 
-$Revision: 6.18 $ 
+$Revision: 6.19 $ 
 
 $Log: pattern1.c,v $
+Revision 6.19  2004/11/22 17:12:52  madden
+From Alejandro Schaffer:
+Changed use of startSeqMatch in procedure pat_output to accurately report word boundaries for matches of a multiword pattern in the output hit file.
+
 Revision 6.18  2004/04/01 13:43:08  lavr
 Spell "occurred", "occurrence", and "occurring"
 
@@ -1618,7 +1622,10 @@ void LIBCALL pat_output(Uint1 *seq, Int4 begin, Int4 end, patternSearchItems *pa
       if (patternSearch->inputPatternMasked[i] != allone) {
 	i++;
       } else {
-          sprintf(buffer, "(%ld %ld) ", (long) (begin+nextMatchStart), (long) (begin+i-1));
+	if (0 == nextMatchStart) 
+          sprintf(buffer, "(%ld %ld) ", (long) (begin+nextMatchStart), (long) (begin+i-1 - startSeqMatch));
+	else
+          sprintf(buffer, "(%ld %ld) ", (long) (begin+nextMatchStart - startSeqMatch), (long) (begin+i-1 - startSeqMatch));
           ValNodeCopyStr(info_vnp, 0, buffer);
           
           for (; patternSearch->inputPatternMasked[i] == allone && i <= endSeqMatch; i++) ;
@@ -1626,7 +1633,7 @@ void LIBCALL pat_output(Uint1 *seq, Int4 begin, Int4 end, patternSearchItems *pa
       }
     }
     if (nextMatchStart != i) {  /*last match*/
-        sprintf(buffer, "(%ld %ld)\n", (long) (begin+nextMatchStart), (long) (begin+i-1));
+        sprintf(buffer, "(%ld %ld)\n", (long) (begin+nextMatchStart-startSeqMatch), (long) (begin+i-1 - startSeqMatch));
         ValNodeCopyStr(info_vnp, 0, buffer);
     } else { 
         ValNodeCopyStr(info_vnp, 0, "\n");

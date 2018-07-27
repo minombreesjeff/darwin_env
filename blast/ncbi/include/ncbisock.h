@@ -1,1 +1,0 @@
-../connect/ncbisock.h

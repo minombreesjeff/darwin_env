@@ -474,13 +474,11 @@ typedef struct lookup_table {
         reduced_wordsize,       /* size of word */
         array_size,		/* size of table's array. */
         mask;		/* Used to mask off top set of bits. */
-	
-	
+
 #if BLAST_ALTIVEC        
 	Int4 true_wordsize_bits;
 #endif //#if BLAST_ALTIVEC        
-		
-	
+
     OrigLookupPositionPtr PNTR position;	/* positions of the hits. */
     OrigLookupPositionPtr PNTR position_aux;	/* auxillary structure for keeping track of the last saved hit, to speed up saving of hits on very long sequences. */
     LookupMemoryPtr mem_struct,	/* contains memory. */

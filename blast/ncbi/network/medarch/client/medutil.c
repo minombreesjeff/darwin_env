@@ -28,7 +28,7 @@
 *   
 * Version Creation Date: 8/31/93
 *
-* $Revision: 6.14 $
+* $Revision: 6.21 $
 *
 * File Description:  Medline Utilities for MedArch
 *   Assumes user calls MedArchInit and Fini
@@ -44,6 +44,36 @@
 *
 * RCS Modification History:
 * $Log: medutil.c,v $
+* Revision 6.21  2005/02/15 17:45:32  bazhin
+* Modified MedlineToISO() function: now in addition to Cit-art.Auth-list.ml
+* slot it also looks at Cit-art.Auth-list.Author.Person-id.ml one
+* to convert authors names from Medline format to Name-std (last, first,
+* initials).
+*
+* Revision 6.20  2005/01/28 20:43:00  bazhin
+* Fixed bug related to preserving input Cit-arts in cases of
+* lookup without replacement.
+*
+* Revision 6.19  2004/11/29 17:50:06  bazhin
+* Removed memory leak in FixPubEquiv() function.
+*
+* Revision 6.18  2004/11/12 17:35:51  bazhin
+* Fixed bug related to the converting empty authors list from
+* medline format to standard one.
+*
+* Revision 6.17  2004/11/04 17:53:17  bazhin
+* Reverted FixPubEquiv modification, when not lookup for pmid was
+* performed, if input Pub-equiv has a Cit-gen with authors, or title,
+* or journal blocks filled in. Now it does lookup for pmid even if
+* Cit-gen has them.
+*
+* Revision 6.16  2004/11/02 21:28:35  bazhin
+* Modifications related to the new MedArch server to be installed.
+* Does not use Medline ids for lookup, and does not look them up.
+*
+* Revision 6.15  2004/08/18 17:00:56  bazhin
+* Fixed bug with medline lookup if both PubMed and Medline ids are present.
+*
 * Revision 6.14  2004/03/19 18:32:03  bazhin
 * One more patch related to the previous one.
 *
@@ -150,135 +180,148 @@ static char *this_file = __FILE__;
 #include <medarch.h>           /* the medarch interface */
 #include <mdrcherr.h>           /* the errors interface */
 
-/*--------------------------- print_pub() ---------------------------*/
-
-/****************************************************************************
-*    print_pub   
-* 											
-****************************************************************************/
+/**********************************************************/
 void print_pub(ValNodePtr pub, Boolean found, Boolean auth, Int4 muid)
 {
-	ValNodePtr		v, title = NULL;
-	CitArtPtr		art;
-	CitJourPtr		jour;
-	CitBookPtr		book;
-    NameStdPtr  	namestd;
-    AuthorPtr  		aup;
-    CharPtr			s_title=NULL, page=NULL, vol=NULL, last=NULL, first=NULL;
-    Int2			year = 0;
-	ImprintPtr		imp = NULL;
-	DatePtr			dp;
+    ValNodePtr v;
+    ValNodePtr title = NULL;
+    CitArtPtr  art;
+    CitJourPtr jour;
+    CitBookPtr book;
+    NameStdPtr namestd;
+    AuthorPtr  aup;
+    CharPtr    s_title = NULL;
+    CharPtr    page = NULL;
+    CharPtr    vol = NULL;
+    CharPtr    last = NULL;
+    CharPtr    first = NULL;
+    Int2       year = 0;
+    ImprintPtr imp = NULL;
+    DatePtr    dp;
 	
-	if (pub == NULL) {
-		ErrPostEx(SEV_WARNING, ERR_PRINT_Failed, "Citation NULL");
-    	return;
-	}
-	if (pub->data.ptrvalue == NULL) {
-		ErrPostEx(SEV_WARNING, ERR_PRINT_Failed, "Citation NULL");
-    	return;
-	}
-	if (pub->choice != PUB_Article)
-		return;
-
-	art = pub->data.ptrvalue;
-	first = "";
-	last = "";
-	if (art->authors == NULL) {
-		ErrPostEx(SEV_WARNING, ERR_PRINT_Failed, "Authors NULL");
-	} else {
-	   v = art->authors->names;
-	   if (v == NULL) {
-	      ErrPostEx(SEV_WARNING, ERR_PRINT_Failed, "Authors NULL");
-	   } else {
-	      
-	      /* warning! processing only the first of the author name valnodes */
-	      /* should loop through them all in case first is uninformative */
-	      
-	      if (art->authors->choice == 1) {
-		 	aup = v->data.ptrvalue;
-		 	if (aup != NULL)
-			{
-				if(aup->name->choice == 2)
-				{
-			    		namestd = aup->name->data;
-				    	if (namestd->names[0])
-					{
-			    			last = namestd->names[0];
-				    	}
-			    		if (namestd->names[4])
-					{
-				    		first = namestd->names[4];
-				    	}
-				}
-				else if(aup->name->choice == 5)
-					last = aup->name->data;
-		 	}
-	      } else  {
-		 	first = "";
-		 	last = v->data.ptrvalue;
-	      }
-	   }
-	}
-	if (art->from == 1) {
-		jour = art->fromptr;
-		if (jour != NULL) {
-			title = jour->title;
-			imp = jour->imp;
-		}
-	} else if (art->from == 2) {
-		book = art->fromptr;
-		if (book != NULL) {
-			title = book->title;
-			imp = book->imp;
-		}
-	}
-	if (title != NULL) {
-		s_title = title->data.ptrvalue;
-	}
-	if (s_title == NULL) {
-		s_title = "journal unknown";
-	}
-	if (imp != NULL) {
-		vol = imp->volume;
-		page = imp->pages;
-		if (imp->date != NULL) {
-			year = imp->date->data[1]+1900;
-		}
-	}
-	if (page == NULL) {
-		page = "no page number";
-	}
-	if (vol == NULL) {
-		vol = "no volume number";
-	}
-	if (auth) {
-		ErrPostEx(SEV_ERROR, ERR_REFERENCE_MedlineMatchIgnored,  
-    	"Too many author name differences: %ld|%s %s|%s|(%d)|%s|%s", 
-    				(long) muid, last, first, s_title, (int) year, vol, page);
-    	return;
-	}
-	if (imp != NULL && imp->prepub == 2) { /* in-press */ 
-		dp = DateCurr();
-		if (year && (Int2) (dp->data[1]) + 1900 - year > 2) {
-			ErrPostEx(SEV_WARNING, ERR_REFERENCE_OldInPress, 
-    "encountered in-press article more than 2 years old: %s %s|%s|(%d)|%s|%s",
-            last, first, s_title, (int) year, vol, page);
-		}
-		DateFree(dp);
-	} else {
-		if (found) {
-			ErrPostEx(SEV_INFO, ERR_REFERENCE_SuccessfulMuidLookup, 
-    	"%ld|%s %s|%s|(%d)|%s|%s", (long) muid, last, first, s_title, (int) year, vol, page);
-    	} else if (muid == 0) {
-			ErrPostEx(SEV_WARNING, ERR_REFERENCE_MuidNotFound,  
-    		"%s %s|%s|(%d)|%s|%s", last, first, s_title, (int) year, vol, page);
-    	}
-    	else {
-			ErrPostEx(SEV_WARNING, ERR_REFERENCE_MuidNotFound,  
-    		">>%ld<<|%s %s|%s|(%d)|%s|%s", (long) muid, last, first, s_title, (int) year, vol, page);
-    	}
+    if(pub == NULL || pub->data.ptrvalue == NULL)
+    {
+        ErrPostEx(SEV_WARNING, ERR_PRINT_Failed, "Citation NULL");
+        return;
     }
-    return;
+    if(pub->choice != PUB_Article)
+        return;
+
+    art = pub->data.ptrvalue;
+    first = "";
+    last = "";
+    if(art->authors == NULL)
+        ErrPostEx(SEV_WARNING, ERR_PRINT_Failed, "Authors NULL");
+    else
+    {
+        v = art->authors->names;
+        if(v == NULL)
+            ErrPostEx(SEV_WARNING, ERR_PRINT_Failed, "Authors NULL");
+        else
+        {
+            /* warning! processing only the first of the author name valnodes
+               should loop through them all in case first is uninformative */
+            if(art->authors->choice == 1)
+            {
+                aup = v->data.ptrvalue;
+                if(aup != NULL)
+                {
+                    if(aup->name->choice == 2)
+                    {
+                        namestd = aup->name->data;
+                        if(namestd->names[0])
+                            last = namestd->names[0];
+                        if(namestd->names[4])
+                            first = namestd->names[4];
+                    }
+                    else if(aup->name->choice == 5)
+                        last = aup->name->data;
+                }
+            }
+            else
+            {
+                first = "";
+                last = v->data.ptrvalue;
+            }
+        }
+    }
+
+    if(art->from == 1)
+    {
+        jour = art->fromptr;
+        if(jour != NULL)
+        {
+            title = jour->title;
+            imp = jour->imp;
+        }
+    }
+    else if(art->from == 2)
+    {
+        book = art->fromptr;
+        if(book != NULL)
+        {
+            title = book->title;
+            imp = book->imp;
+        }
+    }
+
+    if(title != NULL)
+        s_title = title->data.ptrvalue;
+    if(s_title == NULL)
+        s_title = "journal unknown";
+
+    if(imp != NULL)
+    {
+        vol = imp->volume;
+        page = imp->pages;
+        if(imp->date != NULL)
+            year = imp->date->data[1] + 1900;
+    }
+
+    if(page == NULL)
+        page = "no page number";
+    if(vol == NULL)
+        vol = "no volume number";
+
+    if(auth)
+    {
+        ErrPostEx(SEV_ERROR, ERR_REFERENCE_MedArchMatchIgnored,  
+                  "Too many author name differences: %ld|%s %s|%s|(%d)|%s|%s", 
+                  (long) muid, last, first, s_title, (int) year, vol, page);
+        return;
+    }
+    if(imp != NULL && imp->prepub == 2) /* in-press */ 
+    {
+        dp = DateCurr();
+        if(year && (Int2) (dp->data[1]) + 1900 - year > 2)
+        {
+            ErrPostEx(SEV_WARNING, ERR_REFERENCE_OldInPress, 
+                      "encountered in-press article more than 2 years old: %s %s|%s|(%d)|%s|%s",
+                      last, first, s_title, (int) year, vol, page);
+        }
+        DateFree(dp);
+    }
+    else
+    {
+        if(found)
+        {
+            ErrPostEx(SEV_INFO, ERR_REFERENCE_SuccessfulPmidLookup, 
+                      "%ld|%s %s|%s|(%d)|%s|%s", (long) muid, last, first,
+                      s_title, (int) year, vol, page);
+        }
+        else if(muid == 0)
+        {
+            ErrPostEx(SEV_WARNING, ERR_REFERENCE_PmidNotFound,  
+                      "%s %s|%s|(%d)|%s|%s", last, first, s_title,
+                      (int) year, vol, page);
+        }
+        else
+        {
+            ErrPostEx(SEV_WARNING, ERR_REFERENCE_PmidNotFound,  
+                      ">>%ld<<|%s %s|%s|(%d)|%s|%s", (long) muid, last,
+                      first, s_title, (int) year, vol, page);
+        }
+    }
 }
 
 /**********************************************************/
@@ -470,78 +513,78 @@ Boolean ten_authors(CitArtPtr art, CitArtPtr art_tmp)
 *   	SeqEntryExplore to process all pubs
 *
 *****************************************************************************/
-
-
 void FindPub(SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
 {
-	BioseqPtr bsp;
-	BioseqSetPtr bssp;
-	ValNodePtr vnp, pub, newpub, prev, next, head;
-	SeqAnnotPtr sap;
-	SeqFeatPtr sfp;
-	PubdescPtr pdp;
-	FindPubOptionPtr fpop;
+    BioseqPtr        bsp;
+    BioseqSetPtr     bssp;
+    ValNodePtr       vnp;
+    ValNodePtr       pub;
+    ValNodePtr       newpub;
+    ValNodePtr       prev;
+    ValNodePtr       next;
+    ValNodePtr       head;
+    SeqAnnotPtr      sap;
+    SeqFeatPtr       sfp;
+    PubdescPtr       pdp;
+    FindPubOptionPtr fpop;
 
-	fpop = (FindPubOptionPtr)data;
+    fpop = (FindPubOptionPtr) data;
 
-	if (IS_Bioseq(sep))
-	{
-		bsp = (BioseqPtr)(sep->data.ptrvalue);
-		vnp = bsp->descr;
-		sap = bsp->annot;
-	}
-	else
-	{
-		bssp = (BioseqSetPtr)(sep->data.ptrvalue);
-		vnp = bssp->descr;
-		sap = bssp->annot;
-	}
+    if(IS_Bioseq(sep))
+    {
+        bsp = (BioseqPtr) sep->data.ptrvalue;
+        vnp = bsp->descr;
+        sap = bsp->annot;
+    }
+    else
+    {
+        bssp = (BioseqSetPtr) sep->data.ptrvalue;
+        vnp = bssp->descr;
+        sap = bssp->annot;
+    }
 
-	for (; vnp != NULL; vnp = vnp->next)
-	{
-		if (vnp->choice == Seq_descr_pub)
-		{
-			pdp = (PubdescPtr)(vnp->data.ptrvalue);
-		 	newpub = FixPubEquiv(pdp->pub, fpop);
-			pdp->pub = newpub;
-		}
-	}
+    for(; vnp != NULL; vnp = vnp->next)
+    {
+        if(vnp->choice != Seq_descr_pub)
+            continue;
+        pdp = (PubdescPtr) vnp->data.ptrvalue;
+        newpub = FixPubEquiv(pdp->pub, fpop);
+        pdp->pub = newpub;
+    }
 
-	for (; sap != NULL; sap = sap->next)
-	{
-		if (sap->type == 1)   /* feature table */
-		{
-			for (sfp = (SeqFeatPtr)(sap->data); sfp != NULL; sfp = sfp->next)
-			{
-				if (sfp->data.choice == 6)   /* pub feature */
-				{
-		 			pdp = (PubdescPtr)(sfp->data.value.ptrvalue);
-					newpub = FixPubEquiv(pdp->pub, fpop);
-					pdp->pub = newpub;
-				}
-				
-				if (sfp->cit != NULL)
-				{
-					head = sfp->cit;
-					prev = NULL;
-					for (pub = (ValNodePtr)(head->data.ptrvalue);
-						pub != NULL; pub = next)
-					{
-						next = pub->next;
-						newpub = FixPub(pub, fpop);
-						if (prev == NULL)
-							head->data.ptrvalue = newpub;
-						else
-							prev->next = newpub;
-						prev = newpub;
-					}
-					head->choice = 1;   /* set to Pub-set.pub */
-				}
-			}
-		}
-	}
+    for(; sap != NULL; sap = sap->next)
+    {
+        if(sap->type != 1)              /* !feature table */
+            continue;
 
-	return;
+        for(sfp = (SeqFeatPtr) sap->data; sfp != NULL; sfp = sfp->next)
+        {
+            if(sfp->data.choice == 6)   /* pub feature */
+            {
+                pdp = (PubdescPtr) sfp->data.value.ptrvalue;
+                newpub = FixPubEquiv(pdp->pub, fpop);
+                pdp->pub = newpub;
+            }
+
+            if(sfp->cit == NULL)
+                continue;
+
+            head = sfp->cit;
+            prev = NULL;
+            pub = (ValNodePtr) head->data.ptrvalue;
+            for(; pub != NULL; pub = next)
+            {
+                next = pub->next;
+                newpub = FixPub(pub, fpop);
+                if(prev == NULL)
+                    head->data.ptrvalue = newpub;
+                else
+                    prev->next = newpub;
+                prev = newpub;
+            }
+            head->choice = 1;           /* set to Pub-set.pub */
+        }
+    }
 }
 
 /*****************************************************************************
@@ -550,123 +593,83 @@ void FindPub(SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
 *   	Tries to make any Pub into muid/cit-art
 *
 *****************************************************************************/
-ValNodePtr FixPub (ValNodePtr pub, FindPubOptionPtr fpop)
+ValNodePtr FixPub(ValNodePtr pub, FindPubOptionPtr fpop)
 {
-	ValNodePtr newpub, tmp;
-	Int4 		muid, pmid;
-	CitArtPtr	cit;
+    ValNodePtr newpub;
+    ValNodePtr tmp;
+    Int4       pmid;
+    CitArtPtr  cit;
 	
+    if(pub == NULL)
+        return(NULL);
 
-	if (pub == NULL) return NULL;
+    pub->next = NULL;                   /* ready for return */
+    newpub = pub;
+    switch(pub->choice)
+    {
+        case PUB_Medline:               /* medline, just split to pubequiv */
+            tmp = SplitMedlineEntry((MedlineEntryPtr) pub->data.ptrvalue);
+            if(tmp != NULL)
+            {
+                newpub->choice = PUB_Equiv;
+                newpub->data.ptrvalue = tmp;
+            }
+            break;
+        case PUB_Article:
+            cit = pub->data.ptrvalue;
+            if(cit->from == 2 || in_press(cit)) /* article from book or
+                                                   in press */
+                return(pub);
 
-	pub->next = NULL;   /* ready for return */
-	newpub = pub;
-	switch (pub->choice)
-	{
-		case PUB_Medline:           /* medline, just split to pubequiv */
-			tmp = SplitMedlineEntry((MedlineEntryPtr)(pub->data.ptrvalue));
-			newpub->choice = PUB_Equiv;
-			newpub->data.ptrvalue = tmp;
-			break;
-		case PUB_Article:
-			cit = pub->data.ptrvalue;
-			if (cit->from == 2 || in_press(cit)) { 
-									/* article from book or in press*/
-				return pub;
-			}
-			fpop->lookups_attempted++;
-			muid = MedArchCitMatch(pub);
-			if (muid)              /* matched it */
-			{
-				print_pub(pub, TRUE, FALSE, muid);
-				fpop->lookups_succeeded++;
-				if (fpop->replace_cit)
-				{
-					fpop->fetches_attempted++;
-					tmp = FetchPub(muid);
-				
-					if (tmp != NULL)
-					{
-						if (ten_authors(pub->data.ptrvalue,
-									tmp->data.ptrvalue)) 
-						{
+            fpop->lookups_attempted++;
+            pmid = MedArchCitMatchPmId(pub);
+            if(pmid)                    /* matched it */
+            {
+                print_pub(pub, TRUE, FALSE, pmid);
+                fpop->lookups_succeeded++;
+                if(fpop->replace_cit)
+                {
+                    fpop->fetches_attempted++;
+                    tmp = FetchPubPmId(pmid);
 
-							fpop->fetches_succeeded++;
-							PubFree(pub);
-							pub = ValNodeNew(tmp);
-							pub->choice = PUB_Muid;
-							pub->data.intvalue = muid;
-							newpub = ValNodeNew(NULL);
-							newpub->choice = PUB_Equiv;
-							newpub->data.ptrvalue = tmp;
-						}
-						else 
-						{
-							print_pub(pub, FALSE, TRUE, muid);
-							newpub = pub;
-							MedlineToISO(pub);
-						}
-					}
-				}
-				else
-				{
-					print_pub(pub, FALSE, FALSE, muid);
-					newpub = pub;
-					MedlineToISO(pub);
-				}
-				break; /* got muid, done */
-			}
-
-			pmid = MedArchCitMatchPmId(pub);
-			if (pmid)              /* matched it */
-			{
-				print_pub(pub, TRUE, FALSE, muid);
-				fpop->lookups_succeeded++;
-				if (fpop->replace_cit)
-				{
-					fpop->fetches_attempted++;
-					tmp = FetchPubPmId(pmid);
-				
-					if (tmp != NULL)
-					{
-						if (ten_authors(pub->data.ptrvalue,
-									tmp->data.ptrvalue)) 
-						{
-
-							fpop->fetches_succeeded++;
-							PubFree(pub);
-							pub = ValNodeNew(tmp);
-							pub->choice = PUB_PMid;
-							pub->data.intvalue = pmid;
-							newpub = ValNodeNew(NULL);
-							newpub->choice = PUB_Equiv;
-							newpub->data.ptrvalue = tmp;
-						}
-						else 
-						{
-							print_pub(pub, FALSE, TRUE, muid);
-							newpub = pub;
-							MedlineToISO(pub);
-						}
-					}
-				}
-				else
-				{
-					print_pub(pub, FALSE, FALSE, pmid);
-					newpub = pub;
-					MedlineToISO(pub);
-				}
-			}
-			break;
-		case PUB_Equiv:
-			tmp = FixPubEquiv((ValNodePtr)(pub->data.ptrvalue), fpop);
-			pub->data.ptrvalue = tmp;
-			newpub = pub;
-			break;
-		default:
-			break;
-	}
-	return newpub;
+                    if(tmp != NULL)
+                    {
+                        if(ten_authors(pub->data.ptrvalue, tmp->data.ptrvalue))
+                        {
+                            fpop->fetches_succeeded++;
+                            PubFree(pub);
+                            pub = ValNodeNew(tmp);
+                            pub->choice = PUB_PMid;
+                            pub->data.intvalue = pmid;
+                            newpub = ValNodeNew(NULL);
+                            newpub->choice = PUB_Equiv;
+                            newpub->data.ptrvalue = tmp;
+                        }
+                        else 
+                        {
+                            print_pub(pub, FALSE, TRUE, pmid);
+                            newpub = pub;
+                            MedlineToISO(pub);
+                        }
+                    }
+                }
+                else
+                {
+                    print_pub(pub, FALSE, FALSE, pmid);
+                    newpub = pub;
+                    MedlineToISO(pub);
+                }
+            }
+            break;
+        case PUB_Equiv:
+            tmp = FixPubEquiv((ValNodePtr) pub->data.ptrvalue, fpop);
+            pub->data.ptrvalue = tmp;
+            newpub = pub;
+            break;
+        default:
+            break;
+    }
+    return(newpub);
 }
 
 /*****************************************************************************
@@ -680,21 +683,32 @@ ValNodePtr FixPub (ValNodePtr pub, FindPubOptionPtr fpop)
 *****************************************************************************/
 ValNodePtr SplitMedlineEntry(MedlineEntryPtr mep)
 {
-	ValNodePtr uid, cit;
+    ValNodePtr uid;
+    ValNodePtr cit;
 
-	uid = ValNodeNew(NULL);
-	uid->choice = PUB_Muid;
-	uid->data.intvalue = mep->uid;
+    if(mep == NULL || (mep->pmid < 0 && mep->cit == NULL))
+        return(NULL);
 
-	cit = ValNodeNew(uid);
-	cit->choice = PUB_Article;
-	cit->data.ptrvalue = mep->cit;
-	mep->cit = NULL;
-	MedlineToISO(cit);
+    uid = NULL;
+    if(mep->pmid > 0)
+    {
+        uid = ValNodeNew(uid);
+        uid->choice = PUB_PMid;
+        uid->data.intvalue = mep->pmid;
+    }
 
-	MedlineEntryFree(mep);
+    if(mep->cit != NULL)
+    {
+        cit = ValNodeNew(uid);
+        cit->choice = PUB_Article;
+        cit->data.ptrvalue = mep->cit;
+        mep->cit = NULL;
+        MedlineToISO(cit);
+    }
 
-	return uid;
+    MedlineEntryFree(mep);
+
+    return(uid);
 }
 
 /**********************************************************/
@@ -722,7 +736,7 @@ static Boolean if_inpress_set(CitArtPtr cap)
 }
 
 /**********************************************************/
-static void PropogateInPress(Boolean inpress, ValNodePtr vnp)
+static void PropagateInPress(Boolean inpress, ValNodePtr vnp)
 {
     CitJourPtr jour;
     CitBookPtr book;
@@ -749,491 +763,337 @@ static void PropogateInPress(Boolean inpress, ValNodePtr vnp)
     }
 }
 
-/*****************************************************************************
-*
-*   FixPubEquiv()
-*
-*****************************************************************************/
-ValNodePtr FixPubEquiv(ValNodePtr pube, FindPubOptionPtr fpop)
+/**********************************************************/
+static ValNodePtr PubEquivAdd(ValNodePtr headvnp, ValNodePtr addvnp)
 {
-	ValNodePtr tmp, muidptr=NULL, pmidptr=NULL, citartptr=NULL, mepptr = NULL,
-		otherptr = NULL, tmp2, next, new;
-	Int2 muidctr = 0, pmidctr = 0, citartctr = 0, mepctr = 0, otherctr = 0;
-	Int4 muid = 0, oldmuid=0, pmid = 0, oldpmid=0;
-	CitArtPtr	cit;
-	Boolean		got;
-	Boolean		inpress;
+    ValNodePtr vnp;
 
-	if (pube == NULL) return NULL;
-
-	for(got = FALSE, tmp = pube; tmp != NULL; tmp = tmp->next)
-	{
-		if(tmp->choice == PUB_Muid || tmp->choice == PUB_PMid)
-		{
-			got = TRUE;
-			break;
-		}
-	}
-
-	for (tmp = pube; tmp != NULL; tmp = next)
-	{
-		next = tmp->next;
-		tmp->next = NULL;
-		switch (tmp->choice)
-		{
-			case PUB_Muid:
-				muidctr++;
-				if (muidptr == NULL)
-					muidptr = tmp;
-				else
-				{
-					for (tmp2 = muidptr; tmp2->next != NULL; tmp2 = tmp2->next)
-						continue;
-					tmp2->next = tmp;
-				}
-				break;
-			case PUB_PMid:
-				pmidctr++;
-				if (pmidptr == NULL)
-					pmidptr = tmp;
-				else
-				{
-					for (tmp2 = pmidptr; tmp2->next != NULL; tmp2 = tmp2->next)
-						continue;
-					tmp2->next = tmp;
-				}
-				break;
-			case PUB_Article:
-				cit = tmp->data.ptrvalue;
-				if (cit->from == 2 || (in_press(cit) && got == FALSE)) {
-					otherctr++;
-					if (otherptr == NULL)
-						otherptr = tmp;
-					else
-					{
-						for (tmp2 = otherptr; tmp2->next != NULL; tmp2 = tmp2->next)
-							continue;
-						tmp2->next = tmp;
-					}
-				} else {
-					citartctr++;
-					if (citartptr == NULL)
-						citartptr = tmp;
-					else
-					{
-						for (tmp2 = citartptr; tmp2->next != NULL;
-													tmp2 = tmp2->next)
-							continue;
-						tmp2->next = tmp;
-					}
-				}
-				break;
-			case PUB_Medline:
-				mepctr++;
-				if (mepptr == NULL)
-					mepptr = tmp;
-				else
-				{
-					for (tmp2 = mepptr; tmp2->next != NULL; tmp2 = tmp2->next)
-						continue;
-					tmp2->next = tmp;
-				}
-				break;
-			default:
-				otherctr++;
-				if (otherptr == NULL)
-					otherptr = tmp;
-				else
-				{
-					for (tmp2 = otherptr; tmp2->next != NULL; tmp2 = tmp2->next)
-						continue;
-					tmp2->next = tmp;
-				}
-				break;
-		}
-	}
-
-	pube = otherptr;   /* put back others */
-	tmp2 = otherptr;
-	if (tmp2 != NULL)
-	{
-		for (tmp2 = otherptr; tmp2->next != NULL; tmp2 = tmp2->next)
-			continue;
-	}
-	
-	if ((muidctr != 0 || pmidctr != 0) && (! fpop->always_look))   /* got an muid */
-	{
-		if (mepptr != NULL)
-		{
-			if (tmp2 == NULL)
-			{
-				tmp2 = mepptr;
-				pube = tmp2;
-			}
-			else
-				tmp2->next = mepptr;
-			
-			while (tmp2->next != NULL)
-				tmp2 = tmp2->next;
-		}
-		if (pmidptr != NULL) {
-			if (tmp2 == NULL)
-			{
-				tmp2 = pmidptr;
-				pube = tmp2;
-			}
-			else
-				tmp2->next = pmidptr;
-			
-			while (tmp2->next != NULL)
-				tmp2 = tmp2->next;
-		}
-		if (muidptr != NULL)
-		{
-			if (tmp2 == NULL)
-			{
-				tmp2 = muidptr;
-				pube = tmp2;
-			}
-			else
-				tmp2->next = muidptr;
-			
-			while (tmp2->next != NULL)
-				tmp2 = tmp2->next;
-		}
-		if (citartptr != NULL)
-		{
-			if (tmp2 == NULL)
-			{
-				tmp2 = citartptr;
-				pube = tmp2;
-			}
-			else
-				tmp2->next = citartptr;
-		}
-		return pube;   /* no changes */
-	}
-
-	if (mepctr != 0)    /* have a medline entry, take it first */
-	{
-		if (mepctr > 1)
-		{
-			ErrPostEx(SEV_WARNING, ERR_REFERENCE_Multiple_ref, "More than one Medline entry in Pub-equiv");
-			mepptr->next = PubEquivFree(mepptr->next);
-		}
-		PubEquivFree(muidptr);   /* ditch others */
-		PubEquivFree(pmidptr);
-		PubEquivFree(citartptr);
-		tmp = SplitMedlineEntry((MedlineEntryPtr)(mepptr->data.ptrvalue));
-		ValNodeFree(mepptr);
-		if (tmp2 == NULL)
-			pube = tmp;
-		else
-			tmp2->next = tmp;
-		return pube;
-	}
-
-	if (pmidctr != 0)    /* have a pmid */
-	{
-		oldpmid = pmidptr->data.intvalue;
-		if (pmidctr > 1)     /* more than one, just take the first */
-		{
-			for (tmp = pmidptr->next; tmp != NULL; tmp = tmp->next)
-			{
-				if (tmp->data.intvalue != pmid)
-				{
-					ErrPostEx(SEV_WARNING, ERR_REFERENCE_Multiple_muid, "Two different pmids in Pub-equiv [%ld] [%ld]\n",
-						(long) oldpmid, (long) (tmp->data.intvalue));
-				}
-			}
-		 	pmidptr->next = PubEquivFree(pmidptr->next);
-		}
-	}
-
-	if (muidctr != 0)    /* have an muid */
-	{
-		oldmuid = muidptr->data.intvalue;
-		if (muidctr > 1)     /* more than one, just take the first */
-		{
-			for (tmp = muidptr->next; tmp != NULL; tmp = tmp->next)
-			{
-				if (tmp->data.intvalue != muid)
-				{
-					ErrPostEx(SEV_WARNING, ERR_REFERENCE_Multiple_muid, "Two different muids in Pub-equiv [%ld] [%ld]\n",
-						(long) oldmuid, (long) (tmp->data.intvalue));
-				}
-			}
-		 	muidptr->next = PubEquivFree(muidptr->next);
-		}
-	}
-
-	if (citartctr > 0)
-	{
-		if (citartctr > 1)  /* ditch extras */
-		{
-			ErrPostEx(SEV_WARNING, ERR_REFERENCE_Multiple_ref, "More than one Cit-art in Pub-equiv");
-			citartptr->next = PubEquivFree(citartptr->next);
-		}
-
-		inpress = if_inpress_set(citartptr->data.ptrvalue);
-		fpop->lookups_attempted++;
-		muid = MedArchCitMatch(citartptr);
-		if (muid != 0)   /* success */
-		{
-			print_pub(citartptr, TRUE, FALSE, muid);
-			fpop->lookups_succeeded++;
-			if (oldmuid)   /* already had an muid */
-			{
-				if (oldmuid != muid)
-				{
-					ErrPostEx(SEV_ERROR, ERR_REFERENCE_MuidMissmatch, "OldMUID=%ld doesn't match lookup (%ld). Keeping lookup.",
-						(long)oldmuid, (long)muid);
-				}
-			}
-			if (fpop->replace_cit)
-			{
-				fpop->fetches_attempted++;
-				new = FetchPub(muid);
-				if (new != NULL) 
-				{
-					fpop->fetches_succeeded++;
-
-					if (ten_authors(citartptr->data.ptrvalue,
-											new->data.ptrvalue))
-					{
-						if (muidptr != NULL)
-							tmp = muidptr;
-						else
-						{
-							tmp = ValNodeNew(tmp2);
-							tmp->choice = PUB_Muid;
-						}
-						if (tmp2 == NULL) {
-							pube = tmp;
-						} else {
-							tmp2->next = tmp;
-						}
-						tmp->data.intvalue = muid;
-						tmp->next = new;
-						
-						PubFree(citartptr);
-						citartptr = new;
-					} else {
-						print_pub(citartptr, FALSE, TRUE, muid);
-						PubFree(new);
-						if (tmp2 == NULL) {
-							pube = citartptr;
-						} else {
-							tmp2->next = citartptr;
-						}
-						if (muidptr != NULL)
-							citartptr->next = muidptr;
-					}
-				}
-				else
-				{
-					ErrPostEx(SEV_ERROR, 0, 0, "Failed to get pub from MedArch server for muid = %ld. Input one is preserved.", muid);
-					if (muidptr != NULL)
-						tmp = muidptr;
-					else
-					{
-						tmp = ValNodeNew(tmp2);
-						tmp->choice = PUB_Muid;
-					}
-					if (tmp2 == NULL)
-						pube = tmp;
-					tmp->data.intvalue = muid;
-					tmp2 = tmp;
-					tmp->next = citartptr;
-					MedlineToISO(citartptr);
-				}
-			}
-			else
-			{
-				if (muidptr != NULL)
-					tmp = muidptr;
-				else
-				{
-					tmp = ValNodeNew(tmp2);
-					tmp->choice = PUB_Muid;
-				}
-				if (tmp2 == NULL)
-					pube = tmp;
-				tmp->data.intvalue = muid;
-				tmp2 = tmp;
-				tmp->next = citartptr;
-				MedlineToISO(citartptr);
-			}
-			PropogateInPress(inpress, citartptr);
-			return pube;
-		}
-
-		/* muid lookup failed */
-
-		pmid = MedArchCitMatchPmId(citartptr);
-		if (pmid != 0)   /* success */
-		{
-			print_pub(citartptr, TRUE, FALSE, pmid);
-			fpop->lookups_succeeded++;
-			if (oldpmid)   /* already had an muid */
-			{
-				if (oldpmid != pmid)
-				{
-					ErrPostEx(SEV_ERROR, ERR_REFERENCE_MuidMissmatch, "OldPMID=%ld doesn't match lookup (%ld). Keeping lookup.",
-						(long)oldpmid, (long)pmid);
-				}
-			}
-			if (fpop->replace_cit)
-			{
-				fpop->fetches_attempted++;
-				new = FetchPubPmId(pmid);
-				if (new != NULL) 
-				{
-					fpop->fetches_succeeded++;
-
-					if (ten_authors(citartptr->data.ptrvalue,
-											new->data.ptrvalue))
-					{
-						if (pmidptr != NULL)
-							tmp = pmidptr;
-						else
-						{
-							tmp = ValNodeNew(tmp2);
-							tmp->choice = PUB_PMid;
-						}
-						if (tmp2 == NULL) {
-							pube = tmp;
-						} else {
-							tmp2->next = tmp;
-						}
-						tmp->data.intvalue = pmid;
-						tmp->next = new;
-						
-						PubFree(citartptr);
-						citartptr = new;
-					} else {
-						print_pub(citartptr, FALSE, TRUE, pmid);
-						PubFree(new);
-						if (tmp2 == NULL) {
-							pube = citartptr;
-						} else {
-							tmp2->next = citartptr;
-						}
-						if (pmidptr != NULL)
-							citartptr->next = pmidptr;
-					}
-				}
-				else
-				{
-					ErrPostEx(SEV_ERROR, 0, 0, "Failed to get pub from MedArch server for pmid = %ld. Input one is preserved.", pmid);
-					if (pmidptr != NULL)
-						tmp = pmidptr;
-					else
-					{
-						tmp = ValNodeNew(tmp2);
-						tmp->choice = PUB_PMid;
-					}
-					if (tmp2 == NULL)
-						pube = tmp;
-					tmp->data.intvalue = pmid;
-					tmp2 = tmp;
-					tmp->next = citartptr;
-					MedlineToISO(citartptr);
-				}
-			}
-			else
-			{
-				if (pmidptr != NULL)
-					tmp = pmidptr;
-				else
-				{
-					tmp = ValNodeNew(tmp2);
-					tmp->choice = PUB_PMid;
-				}
-				if (tmp2 == NULL)
-					pube = tmp;
-				tmp->data.intvalue = pmid;
-				tmp2 = tmp;
-				tmp->next = citartptr;
-				MedlineToISO(citartptr);
-			}
-			PropogateInPress(inpress, citartptr);
-			return pube;
-		}
-
-		print_pub(citartptr, FALSE, FALSE, oldmuid);
-		if (tmp2 == NULL)
-			pube = citartptr;
-		else
-			tmp2->next = citartptr;
-		if (muidptr != NULL)   /* ditch the mismatched muid */
-			PubFree(muidptr);
-		PropogateInPress(inpress, citartptr);
-		return pube;
-
-	}
-		
-	if (oldpmid != 0)    /* have a pmid but no cit-art */
-	{
-		fpop->fetches_attempted++;
-		tmp = MedArchGetPubPmId(oldpmid);
-		if (tmp == NULL)
-		{
-			ErrPostEx(SEV_WARNING, ERR_REFERENCE_No_reference, "Cant find article for pmid [%ld]", (long) oldpmid);
-		}
-		else
-		{
-			fpop->fetches_succeeded++;
-			if (fpop->replace_cit)
-			{
-				tmp = MedlineToISO(tmp);
-				if (tmp2 == NULL)
-				 	pube = tmp;
-				else
-					tmp2->next = tmp;
-				tmp2 = tmp;
-			} else {
-				PubFree(tmp);
-			}
-		}
-		if (tmp2 == NULL)
-		 	pube = pmidptr;
-		else
-			tmp2->next = pmidptr;
-	}
-
-	if (oldmuid != 0)    /* have an muid but no cit-art */
-	{
-		fpop->fetches_attempted++;
-		tmp = MedArchGetPub(oldmuid);
-		if (tmp == NULL)
-		{
-			ErrPostEx(SEV_WARNING, ERR_REFERENCE_No_reference, "Cant find article for muid [%ld]", (long) oldmuid);
-		}
-		else
-		{
-			fpop->fetches_succeeded++;
-			if (fpop->replace_cit)
-			{
-				tmp = MedlineToISO(tmp);
-				if (tmp2 == NULL)
-				 	pube = tmp;
-				else
-					tmp2->next = tmp;
-				tmp2 = tmp;
-			} else {
-				PubFree(tmp);
-			}
-		}
-		if (tmp2 == NULL)
-		 	pube = muidptr;
-		else
-			tmp2->next = muidptr;
-	}
-
-	return pube;
+    if(headvnp == NULL)
+        return(addvnp);
+    for(vnp = headvnp; vnp->next != NULL;)
+        vnp = vnp->next;
+    vnp->next = addvnp;
+    return(headvnp);
 }
 
+/**********************************************************/
+static ValNodePtr PubEquivPutBack(ValNodePtr headvnp, ValNodePtr addvnp)
+{
+    ValNodePtr vnp;
+
+    if(headvnp == NULL)
+        return(addvnp);
+    if(addvnp == NULL)
+        return(headvnp);
+
+    for(vnp = addvnp; vnp->next != NULL;)
+        vnp = vnp->next;
+    vnp->next = headvnp;
+    return(addvnp);
+}
+
+/**********************************************************/
+static ValNodePtr FixPubEquivAppend(ValNodePtr pube, ValNodePtr tmp2,
+                                    ValNodePtr tmp)
+{
+    if(tmp2 == NULL)
+        return(tmp);
+    tmp2->next = tmp;
+    return(pube);
+}
+
+/**********************************************************/
+static ValNodePtr FixPubEquivAppendPmid(ValNodePtr tmp, Int4 muid,
+                                        ValNodePtr pmidptr)
+{
+    Int4 oldpmid;
+    Int4 newpmid;
+
+    oldpmid = (pmidptr == NULL) ? 0 : pmidptr->data.intvalue;
+
+    newpmid = MedArchMu2Pm(muid);
+    if(oldpmid < 1 && newpmid < 1)
+        return(tmp);
+
+    if(oldpmid > 0 && newpmid > 0 && oldpmid != newpmid)
+        ErrPostEx(SEV_ERROR, ERR_REFERENCE_PmidMissmatch,
+                  "OldPMID=%ld doesn't match lookup (%ld). Keeping lookup.",
+                  (long) oldpmid, (long) newpmid);
+
+    if(pmidptr != NULL)
+        tmp->next = pmidptr;
+    else
+    {
+        tmp->next = ValNodeNew(NULL);
+        tmp->next->choice = PUB_PMid;
+    }
+
+    tmp = tmp->next;
+    tmp->data.intvalue = (newpmid > 0) ? newpmid : oldpmid;
+
+    return(tmp);
+}
+
+/**********************************************************/
+ValNodePtr FixPubEquiv(ValNodePtr pube, FindPubOptionPtr fpop)
+{
+    ValNodePtr tmp;
+    ValNodePtr muidptr = NULL;
+    ValNodePtr pmidptr = NULL;
+    ValNodePtr citartptr = NULL;
+    ValNodePtr mepptr = NULL;
+    ValNodePtr otherptr = NULL;
+    ValNodePtr tmp2;
+    ValNodePtr next;
+    ValNodePtr new;
+    Int4       muid = 0;
+    Int4       oldmuid = 0;
+    Int4       pmid = 0;
+    Int4       oldpmid = 0;
+    CitArtPtr  cit;
+    Boolean    got;
+    Boolean    inpress;
+
+    if(pube == NULL)
+        return(NULL);
+
+    for(got = FALSE, tmp = pube; tmp != NULL; tmp = tmp->next)
+    {
+        if(tmp->choice == PUB_Muid || tmp->choice == PUB_PMid)
+        {
+            got = TRUE;
+            break;
+        }
+    }
+
+    for(tmp = pube; tmp != NULL; tmp = next)
+    {
+        next = tmp->next;
+        tmp->next = NULL;
+        if(tmp->choice == PUB_Muid)
+            muidptr = PubEquivAdd(muidptr, tmp);
+        else if(tmp->choice == PUB_PMid)
+            pmidptr = PubEquivAdd(pmidptr, tmp);
+        else if(tmp->choice == PUB_Article)
+        {
+            cit = tmp->data.ptrvalue;
+            if(cit->from == 2 || (in_press(cit) != FALSE && got == FALSE))
+                otherptr = PubEquivAdd(otherptr, tmp);
+            else
+                citartptr = PubEquivAdd(citartptr, tmp);
+        }
+        else if(tmp->choice == PUB_Medline)
+            mepptr = PubEquivAdd(mepptr, tmp);
+        else
+            otherptr = PubEquivAdd(otherptr, tmp);
+    }
+
+    if((muidptr != NULL || pmidptr != NULL) &&  /* got a muid or pmid */
+       fpop->always_look == FALSE)
+    {
+        pube = PubEquivPutBack(NULL, citartptr);
+        pube = PubEquivPutBack(pube, muidptr);
+        pube = PubEquivPutBack(pube, pmidptr);
+        pube = PubEquivPutBack(pube, mepptr);
+        pube = PubEquivPutBack(pube, otherptr);
+        return(pube);                   /* no changes */
+    }
+
+    pube = otherptr;                    /* put back others */
+    tmp2 = otherptr;
+    if(tmp2 != NULL)
+        while(tmp2->next != NULL)
+            tmp2 = tmp2->next;
+
+    if(mepptr != NULL)                  /* have a medline entry,
+                                           take it first */
+    {
+        if(mepptr->next != NULL)
+        {
+            ErrPostEx(SEV_WARNING, ERR_REFERENCE_Multiple_ref,
+                      "More than one Medline entry in Pub-equiv");
+            mepptr->next = PubEquivFree(mepptr->next);
+        }
+        PubEquivFree(muidptr);          /* ditch others */
+        PubEquivFree(pmidptr);
+        PubEquivFree(citartptr);
+        tmp = SplitMedlineEntry((MedlineEntryPtr) mepptr->data.ptrvalue);
+        ValNodeFree(mepptr);
+        pube = FixPubEquivAppend(pube, tmp2, tmp);
+        return(pube);
+    }
+
+    if(pmidptr != NULL)                 /* have a pmid */
+    {
+        oldpmid = pmidptr->data.intvalue;
+        if(pmidptr->next != NULL)       /* more than one, just take
+                                           the first */
+        {
+            for(tmp = pmidptr->next; tmp != NULL; tmp = tmp->next)
+                if(tmp->data.intvalue != pmid)
+                    ErrPostEx(SEV_WARNING, ERR_REFERENCE_Multiple_pmid,
+                              "Two different pmids in Pub-equiv [%ld] [%ld]",
+                              (long) oldpmid, (long) tmp->data.intvalue);
+            pmidptr->next = PubEquivFree(pmidptr->next);
+        }
+    }
+
+    if(muidptr != NULL)                 /* have an muid */
+    {
+        oldmuid = muidptr->data.intvalue;
+        if(muidptr->next != NULL)       /* more than one, just take
+                                           the first */
+        {
+            for(tmp = muidptr->next; tmp != NULL; tmp = tmp->next)
+                if(tmp->data.intvalue != muid)
+                    ErrPostEx(SEV_WARNING, ERR_REFERENCE_Multiple_muid,
+                              "Two different muids in Pub-equiv [%ld] [%ld]",
+                              (long) oldmuid, (long) tmp->data.intvalue);
+            muidptr->next = PubEquivFree(muidptr->next);
+        }
+    }
+
+    if(citartptr != NULL)
+    {
+        if(citartptr->next != NULL)     /* ditch extras */
+        {
+            ErrPostEx(SEV_WARNING, ERR_REFERENCE_Multiple_ref,
+                      "More than one Cit-art in Pub-equiv");
+            citartptr->next = PubEquivFree(citartptr->next);
+        }
+
+        inpress = if_inpress_set(citartptr->data.ptrvalue);
+        fpop->lookups_attempted++;
+        pmid = MedArchCitMatchPmId(citartptr);
+        if(pmid != 0)                   /* success */
+        {
+            print_pub(citartptr, TRUE, FALSE, pmid);
+            fpop->lookups_succeeded++;
+            if(oldpmid > 0 && oldpmid != pmid)  /* already had a pmid */
+                ErrPostEx(SEV_ERROR, ERR_REFERENCE_PmidMissmatch,
+                          "OldPMID=%ld doesn't match lookup (%ld). Keeping lookup.",
+                          (long) oldpmid, (long) pmid);
+
+            if(fpop->replace_cit != FALSE)
+            {
+                fpop->fetches_attempted++;
+                new = FetchPubPmId(pmid);
+                if(new != NULL) 
+                {
+                    fpop->fetches_succeeded++;
+
+                    if(ten_authors(citartptr->data.ptrvalue,
+                                   new->data.ptrvalue) != FALSE)
+                    {
+                        if(pmidptr != NULL)
+                            tmp = pmidptr;
+                        else
+                        {
+                            tmp = ValNodeNew(tmp2);
+                            tmp->choice = PUB_PMid;
+                        }
+                        tmp->data.intvalue = pmid;
+                        pube = FixPubEquivAppend(pube, tmp2, tmp);
+                        tmp->next = new;
+
+                        PubFree(citartptr);
+                        citartptr = new;
+                    }
+                    else
+                    {
+                        if(pmidptr != NULL)
+                            PubFree(pmidptr);
+                        print_pub(citartptr, FALSE, TRUE, pmid);
+                        PubFree(new);
+                        pube = FixPubEquivAppend(pube, tmp2, citartptr);
+                    }
+                }
+                else
+                {
+                    ErrPostEx(SEV_ERROR, ERR_REFERENCE_FailedToGetPub,
+                              "Failed to get pub from MedArch server for pmid = %ld. Input one is preserved.",
+                              pmid);
+                    if(pmidptr != NULL)
+                        tmp = pmidptr;
+                    else
+                    {
+                        tmp = ValNodeNew(NULL);
+                        tmp->choice = PUB_PMid;
+                    }
+                    if(tmp2 == NULL)
+                        pube = tmp;
+                    else
+                        tmp2->next = tmp;
+                    tmp->data.intvalue = pmid;
+                    tmp->next = citartptr;
+                    MedlineToISO(citartptr);
+                }
+            }
+            else
+            {
+                if(pmidptr != NULL)
+                    tmp = pmidptr;
+                else
+                {
+                    tmp = ValNodeNew(NULL);
+                    tmp->choice = PUB_PMid;
+                }
+                if(tmp2 == NULL)
+                    pube = tmp;
+                else
+                    tmp2->next = tmp;
+                tmp->data.intvalue = pmid;
+                tmp->next = citartptr;
+                MedlineToISO(citartptr);
+            }
+            if(muidptr != NULL)
+                PubFree(muidptr);
+            PropagateInPress(inpress, citartptr);
+            return(pube);
+        }
+
+        print_pub(citartptr, FALSE, FALSE, oldmuid);
+        pube = FixPubEquivAppend(pube, tmp2, citartptr);
+        if(muidptr != NULL)             /* ditch the mismatched muid */
+            PubFree(muidptr);
+        if(pmidptr != NULL)             /* ditch the mismatched pmid */
+            PubFree(pmidptr);
+        PropagateInPress(inpress, citartptr);
+        return(pube);
+    }
+
+    if(oldpmid != 0)                    /* have a pmid but no cit-art */
+    {
+        fpop->fetches_attempted++;
+        tmp = MedArchGetPubPmId(oldpmid);
+        if(tmp != NULL)
+        {
+            fpop->fetches_succeeded++;
+            if(fpop->replace_cit != FALSE)
+            {
+                tmp = MedlineToISO(tmp);
+                pube = FixPubEquivAppend(pube, tmp2, tmp);
+                tmp2 = tmp;
+            }
+            else
+                PubFree(tmp);
+            pube = FixPubEquivAppend(pube, tmp2, pmidptr);
+            return(pube);
+        }
+        ErrPostEx(SEV_WARNING, ERR_REFERENCE_No_reference,
+                  "Cant find article for pmid [%ld]", (long) oldpmid);
+    }
+
+    if(oldpmid > 0)
+        pube = FixPubEquivAppend(pube, tmp2, pmidptr);
+    else if(oldmuid > 0)
+    {
+        pube = FixPubEquivAppend(pube, tmp2, muidptr);
+        FixPubEquivAppendPmid(muidptr, oldmuid, pmidptr);
+    }
+
+    return(pube);
+}
 
 /*****************************************************************************
 *
@@ -1262,82 +1122,134 @@ ValNodePtr FetchPubPmId (Int4 pmid)
 	return tmp;
 }
 
-/*****************************************************************************
-*
-*   MedlineToISO(tmp)
-*   	converts a MEDLINE citation to ISO/GenBank style
-*
-*****************************************************************************/
+/**********************************************************/
+static void GetNameStdFromMl(NameStdPtr namestd, CharPtr token)
+{
+    Char last[80];
+    Char initials[20];
+    Char suffix[20];
+
+    if(namestd == NULL || token == NULL)
+        return;
+
+    SplitMlAuthorName(token, last, initials, suffix);
+    namestd->names[0] = StringSave(last);
+    if(initials[0] != '\0')
+        namestd->names[4] = StringSave(initials);
+    if(suffix[0] != '\0')
+        namestd->names[5] = StringSave(suffix);
+}
+
+/**********************************************************
+ *
+ *   MedlineToISO(tmp)
+ *       converts a MEDLINE citation to ISO/GenBank style
+ *
+ **********************************************************/
 ValNodePtr MedlineToISO (ValNodePtr tmp)
 {
-	ValNodePtr titlenode, oldnames, curr, tmp2, v;
-	AuthListPtr alp;
-	CitArtPtr cap;
-	CitJourPtr cjp;
-	Int4 titlenum;
-	CharPtr titles[1], title;
-	Int1 types[1];
-	ImprintPtr ip;
-	Boolean is_iso;
+    AuthListPtr alp;
+    CitJourPtr  cjp;
+    ImprintPtr  ip;
+    ValNodePtr  titlenode;
+    ValNodePtr  oldnames;
+    ValNodePtr  curr;
+    ValNodePtr  tmp2;
+    ValNodePtr  v;
+    CitArtPtr   cap;
+    CharPtr     titles[1];
+    CharPtr     title;
+    Boolean     is_iso;
+    Int4        titlenum;
+    Int1        types[1];
+    AuthorPtr   ap;
+    NameStdPtr  namestd;
 
-	if (tmp == NULL) return NULL;
+    if(tmp == NULL || tmp->choice != PUB_Article)
+        return(tmp);
 
-	if (tmp->choice != PUB_Article) return tmp;
+    cap = (CitArtPtr) tmp->data.ptrvalue;
+    alp = cap->authors;
+    if(alp != NULL)
+    {
+        if(alp->choice == 2)            /* ml style names */
+        {
+            oldnames = alp->names;
+            alp->names = NULL;
+            curr = NULL;
+            alp->choice = 1;            /* make std names */
+            for(tmp2 = oldnames; tmp2 != NULL; tmp2 = tmp2->next)
+            {
+                curr = get_std_auth((CharPtr) tmp2->data.ptrvalue, ML_REF);
+                if(curr == NULL)
+                    continue;
+                if(alp->names == NULL)
+                    alp->names = curr;
+                else
+                {
+                    for(v = alp->names; v->next != NULL;)
+                        v = v->next;
+                    v->next = curr;
+                }
+            }
+            ValNodeFreeData(oldnames);
+        }
+        else if(alp->choice == 1)       /* std style names */
+        {
+            for(tmp2 = alp->names; tmp2 != NULL; tmp2 = tmp2->next)
+            {
+                ap = (AuthorPtr) tmp2->data.ptrvalue;
+                if(ap == NULL || ap->name == NULL || ap->name->choice != 3)
+                    continue;
+                namestd = NameStdNew();
+                GetNameStdFromMl(namestd, ap->name->data);
+                MemFree(ap->name->data);
+                ap->name->data = namestd;
+                ap->name->choice = 2;
+            }
+        }
+    }
 
-	cap = (CitArtPtr)(tmp->data.ptrvalue);
-	alp = cap->authors;
-	if (alp && alp->choice == 2)   /* ml style names */
-	{
-		oldnames = alp->names;
-		alp->names = NULL;
-		curr = NULL;
-		alp->choice = 1;     /* make std names */
-		for (tmp2 = oldnames; tmp2 != NULL; tmp2 = tmp2->next)
-		{
-			curr = get_std_auth((CharPtr)(tmp2->data.ptrvalue), ML_REF);
-			if (alp->names == NULL) {
-				alp->names = curr;
-			} else {
-				for (v = alp->names; v->next != NULL; v = v->next);
-				v->next = curr;
-			}
-		}
-		ValNodeFreeData(oldnames);
-	}
-	if (cap->from == 1)   /* from a journal - get iso_jta */
-	{
-		if ((cjp = (CitJourPtr)(cap->fromptr)) != NULL)
-		{
-			is_iso = FALSE;
-			for (titlenode = cjp->title; titlenode != NULL; titlenode = titlenode->next)
-			{
-				if (titlenode->choice == Cit_title_iso_jta)  /* have it */
-				{
-					is_iso = TRUE;
-					break;
-				}
-			}
-			if (! is_iso)
-			{
-				titlenode = cjp->title;
-				title = (CharPtr)(titlenode->data.ptrvalue);
-				titlenum = MedArchGetTitles(titles, types, title, (Int1)titlenode->choice,
-					Cit_title_iso_jta, 1);
-				if (titlenum)
-				{
-					MemFree(title);
-					titlenode->choice = types[0];
-					titlenode->data.ptrvalue = titles[0];
-				}
-			}
-			ip = cjp->imp;     /* remove Eng language */
-			if (! StringCmp(ip->language, "Eng"))
-			{
-				ip->language = MemFree(ip->language);
-			}
-		}
-	}
-	return tmp;
+    if(cap->from != 1)
+        return(tmp);
+
+    /* from a journal - get iso_jta
+     */
+    cjp = (CitJourPtr) cap->fromptr;
+    if(cjp == NULL)
+        return(tmp);
+
+    is_iso = FALSE;
+    for(titlenode = cjp->title; titlenode != NULL; titlenode = titlenode->next)
+    {
+        if(titlenode->choice == Cit_title_iso_jta)      /* have it */
+        {
+            is_iso = TRUE;
+            break;
+        }
+    }
+    if(is_iso == FALSE)
+    {
+        titlenode = cjp->title;
+        title = (CharPtr) titlenode->data.ptrvalue;
+        titlenum = MedArchGetTitles(titles, types, title,
+                                    (Int1) titlenode->choice,
+                                    Cit_title_iso_jta, 1);
+        if(titlenum != 0)
+        {
+            MemFree(title);
+            titlenode->choice = types[0];
+            titlenode->data.ptrvalue = titles[0];
+        }
+    }
+    ip = cjp->imp;                      /* remove Eng language */
+    if(StringCmp(ip->language, "Eng") == 0)
+    {
+        MemFree(ip->language);
+        ip->language = NULL;
+    }
+
+    return(tmp);
 }
 
 Boolean AllUpperCase(CharPtr p )
@@ -1460,13 +1372,12 @@ void SplitMlAuthorName( CharPtr name, CharPtr last, CharPtr initials, CharPtr su
 ValNodePtr get_std_auth(CharPtr token, Uint1 format)
 {
    static CharPtr      auth, eptr;
-	Char last[80], initials[20], suffix[20];
    ValNodePtr  tmp = NULL;
    NameStdPtr  namestd = NULL;
    AuthorPtr  aup;
    PersonIdPtr pid;
    
-	if (token == NULL) {
+	if (token == NULL || *token == '\0') {
 		return NULL;
 	}
 	eptr = token + StringLen(token) - 1;
@@ -1511,12 +1422,7 @@ ValNodePtr get_std_auth(CharPtr token, Uint1 format)
 			namestd->names[0] = StringSave(token);
 		}
 	} else if (format == ML_REF) {
-		SplitMlAuthorName(token, last, initials, suffix);
-		namestd->names[0] = StringSave(last);
-		if (initials[0] != '\0')
-			namestd->names[4] = StringSave(initials);
-		if (suffix[0] != '\0')
-			namestd->names[5] = StringSave(suffix);
+                GetNameStdFromMl(namestd, token);
 	}
 	if (namestd != NULL && namestd->names[0] != NULL) {
 		pid = PersonIdNew();

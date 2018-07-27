@@ -1,0 +1,98 @@
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head><title>My Saved Searches</title>
+<link rel="stylesheet" href="cubby.css" type="text/css" media="all" />
+
+<body>
+
+<div id="my_searches">
+  
+  <form method="post" action="saveSearch">
+  
+    <div id="formdiv" class="mainview">
+  
+      <div id="myformheader">
+        <div id="mycolheaders">
+    
+          <div id="mytitle">
+            <span class="selectall">
+              <input type="checkbox" name="selectall" title="Select/Deselect all"/>
+            </span>
+            <span class="titlepos">
+              My Saved Searches
+            </span>
+        </div>
+      </div>
+  
+      <div class="searchtable">
+        <table cellspacing="0">
+    
+          <tr class="database">
+            <th colspan="2" class="dbname">Search PubMed</th>
+            <th>Last Viewed</th>
+            <th>Details</th>
+          </tr>
+    
+          <tr class="oddrow">
+            <td class="buttons">
+              <input type="checkbox" name="select" value="1" title="Select this search"/>
+            </td>
+            <td class="query">
+              <span title="Run PubMed: mouse[ALL FIELDS] AND adenylate cyclase">
+              <a href="PubMed.html">mouse AND adenylate cyclase</a></span>
+            </td>
+            <td class="age">3 days ago</td>
+            <td class="schedule">
+              <a href="EditSearch.html"
+                 title="Updates sent every Monday. Click to change or disable schedule.">Weekly</a>
+            </td>
+          </tr>
+    
+          <tr class="evenrow">
+            <td class="buttons">
+              <input type="checkbox" name="select" value="1" title="Select this search"/>
+            </td>
+            <td class="query">
+              <span title="Run PubMed: SARS[All Fields] AND complete[All Fields] AND (&quot;genome&quot;[MeSH Terms] OR genome[Text Word])">
+              <a href="PubMed.html">SARS complete genome</a></span>
+            </td>
+            <td class="age">32 days ago</td>
+            <td class="schedule">
+              <a href="EditSearch.html"
+                 title="Updates sent daily. Click to change or disable schedule.">Daily</a>
+            </td>
+          </tr>
+    
+          <tr class="database">
+            <th colspan="2" class="dbname">Search OMIM</th>
+            <th colspan="2"/>
+          </tr>
+    
+          <tr class="oddrow">
+            <td class="buttons">
+              <input type="checkbox" name="select" value="1" title="Select this search"/>
+            </td>
+            <td class="query">
+              <span title="Run OMIM: (&quot;tonsillectomy&quot;[MeSH Terms] OR tonsillectomy[Text Word]) AND (&quot;obesity&quot;[MeSH Terms] OR obesity[Text Word])">
+              <a href="PubMed.html">tonsillectomy AND obesity</a></span>
+            </td>
+            <td class="age">3 days ago</td>
+            <td class="schedule">
+              <a href="EditSearch.html"
+                 title="Click to schedule email updates.">No Schedule</a>
+            </td>
+            </td>
+          </tr>
+        </table>
+        </div>
+    
+        <div id="formbuttondiv">
+    
+          <input type="button" class="button" value="Delete Selected" alt="Delete selected" src="DeleteSelected.gif" title="Click to delete all selected searches"/>
+          <input type="button" class="button" value="What's New For Selected" alt="What's New For Selected" src="WhatsNewForSelected.gif" title="Click to show updates to selected searches"/>
+        </div> <!-- End formbuttons -->
+    </div> <!-- End formdiv -->
+  
+  </form>
+</div>
+</body>
+</html>

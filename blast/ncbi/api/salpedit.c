@@ -1,10 +1,11 @@
-/* $Id: salpedit.c,v 6.31 2003/11/07 21:22:06 kans Exp $ */
+/* $Id: salpedit.c,v 6.32 2005/04/13 14:56:08 kans Exp $ */
 #include <ncbi.h>
 #include <ncbimisc.h> /* ValNodeLen */
 #include <sequtil.h> /* for GetScoreAndEvalue, SeqIdDupList */
 #include <salpedit.h>
 #include <salpacc.h>
 #include <seqport.h>
+#include <salsap.h>
 
 #define MIN_DIAG_LEN	20	/*minimal amount of overlap required for build_overlap_list<-MergeTwoAlignList */
 
@@ -22,21 +23,6 @@ static void OrderInt4(Int4Ptr x, Int4Ptr y) /* replace jzmisc: swap */
 	}
 }
 
-
-static SeqAlignPtr LIBCALL is_salp_in_sap (SeqAnnotPtr sap, Uint1 choice)
-{
-  SeqAlignPtr      salp = NULL;
-
-  if (sap != NULL) {
-     for (; sap!= NULL; sap=sap->next) {
-        if (sap->type == choice) {
-           salp = (SeqAlignPtr) sap->data;
-           return salp;
-        }
-     }
-  }
-  return NULL;
-}
 
 /*******************************************
 ***

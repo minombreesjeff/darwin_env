@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: fastacmd.c,v 6.29 2003/05/30 17:31:09 coulouri Exp $";
+static char const rcsid[] = "$Id: fastacmd.c,v 6.34 2004/12/04 03:39:48 camacho Exp $";
 
-/* $Id: fastacmd.c,v 6.29 2003/05/30 17:31:09 coulouri Exp $
+/* $Id: fastacmd.c,v 6.34 2004/12/04 03:39:48 camacho Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -31,12 +31,27 @@ static char const rcsid[] = "$Id: fastacmd.c,v 6.29 2003/05/30 17:31:09 coulouri
 *
 * Initial Version Creation Date: 05/20/1997
 *
-* $Revision: 6.29 $
+* $Revision: 6.34 $
 *
 * File Description:
 *        FASTA retrievel system using ISAM indexes
 *
 * $Log: fastacmd.c,v $
+* Revision 6.34  2004/12/04 03:39:48  camacho
+* Set range of data on -D option
+*
+* Revision 6.33  2004/12/03 04:58:06  camacho
+* Fix name conflict in enumeration for fastacmd dump types
+*
+* Revision 6.32  2004/12/02 20:37:40  camacho
+* + fastacmd feature to dump list of gis
+*
+* Revision 6.31  2004/06/30 19:52:00  camacho
+* Added #include <blfmtutl.h>
+*
+* Revision 6.30  2004/05/13 20:54:45  coulouri
+* spell 'loci' correctly
+*
 * Revision 6.29  2003/05/30 17:31:09  coulouri
 * add rcsid
 *
@@ -148,6 +163,7 @@ static char const rcsid[] = "$Id: fastacmd.c,v 6.29 2003/05/30 17:31:09 coulouri
 #include <tofasta.h>
 #include <readdb.h>
 #include <blast.h>
+#include <blfmtutl.h>
 
 static Args myargs [] = {
     { "Database",                                               /* 0 */
@@ -157,10 +173,10 @@ static Args myargs [] = {
       "         T - protein   \n"
       "         F - nucleotide", 
       "G", NULL,NULL,TRUE,'p',ARG_STRING,0.0,0,NULL},
-    { "Search string: GIs, accessions and locuses may be used delimited\n"
+    { "Search string: GIs, accessions and loci may be used delimited\n"
       "      by comma.",                                        /* 2 */
       NULL, NULL, NULL, TRUE, 's', ARG_STRING, 0.0, 0, NULL},
-    { "Input file wilth GIs/accessions/locuses for batch\n"
+    { "Input file wilth GIs/accessions/loci for batch\n"
       "      retrieval",/* 3 */
       NULL, NULL, NULL, TRUE, 'i', ARG_STRING, 0.0, 0, NULL},
     { "Retrieve duplicate accessions",                          /* 4 */
@@ -173,8 +189,10 @@ static Args myargs [] = {
       "stdout", NULL, NULL, TRUE, 'o', ARG_FILE_OUT, 0.0, 0, NULL},
     { "Use Ctrl-A's as non-redundant defline separator",        /* 8 */
       "F", NULL, NULL, TRUE, 'c', ARG_BOOLEAN, 0.0, 0, NULL},
-    { "Dump the entire database in fasta format",               /* 9 */
-      "F", NULL, NULL, TRUE, 'D', ARG_BOOLEAN, 0.0, 0, NULL},
+    { "Dump the entire database as (default is not to dump anything):\n"
+      "      1 FASTA\n"
+      "      2 Gi list\n",                                      /* 9 */
+      "0", "0", "2", TRUE, 'D', ARG_INT, 0.0, 0, NULL},
     { "Range of sequence to extract (Format: start,stop)\n"
       "      0 in 'start' refers to the beginning of the sequence\n"
       "      0 in 'stop' refers to the end of the sequence",
@@ -193,7 +211,8 @@ Int2 Main (void)
 {
     CharPtr	database, searchstr, batchfile;
     Int4	linelen, pig;
-    Boolean	dupl, target, use_ctrlAs, dump_all, taxonomy_info, dbinfo_only;
+    Boolean	dupl, target, use_ctrlAs, taxonomy_info, dbinfo_only;
+    EBlastDbDumpType dump_db = eNoDump;
     Uint1 is_prot;
     FILE *outfp = NULL;
     CharPtr seqlocstr;
@@ -225,7 +244,7 @@ Int2 Main (void)
     linelen       = myargs[5].intvalue;
     target        = myargs[6].intvalue;
     use_ctrlAs    = myargs[8].intvalue;
-    dump_all      = myargs[9].intvalue;
+    dump_db       = myargs[9].intvalue;
     seqlocstr     = myargs[10].strvalue;
     strand        = myargs[11].intvalue;
     taxonomy_info = myargs[12].intvalue;
@@ -238,7 +257,7 @@ Int2 Main (void)
     }
 
     rv = Fastacmd_Search_ex (searchstr, database, is_prot, batchfile, dupl,
-            linelen, outfp, target, use_ctrlAs, dump_all, seqlocstr, strand,
+            linelen, outfp, target, use_ctrlAs, dump_db, seqlocstr, strand,
             taxonomy_info, dbinfo_only, pig);
 
     FileClose(outfp);

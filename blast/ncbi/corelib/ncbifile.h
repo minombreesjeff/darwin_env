@@ -32,7 +32,7 @@
 *
 * Version Creation Date:   1/1/91
 *
-* $Revision: 6.5 $
+* $Revision: 6.6 $
 *
 * File Description:
 *   	prototypes for portable file routines
@@ -40,6 +40,9 @@
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: ncbifile.h,v $
+* Revision 6.6  2004/05/07 15:57:14  kans
+* added FileCache functions for buffered read, graceful handing of Unix, Mac, and DOS line endings
+*
 * Revision 6.5  2001/04/05 21:36:05  juran
 * EjectCd and MountCd #defined to FALSE.
 *
@@ -98,6 +101,25 @@ NLM_EXTERN ValNodePtr LIBCALL Nlm_DirCatalog (Nlm_CharPtr pathname);
 NLM_EXTERN Nlm_CharPtr LIBCALL Nlm_TmpNam(Nlm_CharPtr s);
 NLM_EXTERN void LIBCALL Nlm_SetFileOpenHook(Nlm_FileOpenHook hook);
 
+/* FileCache provides buffered text read for handling Unix, Mac, and DOS line endings gracefully */
+
+typedef struct nlm_filecachedata {
+  FILE      *fp;
+  Nlm_Char  buf [516];
+  Nlm_Int2  ctr;
+  Nlm_Int2  total;
+  Nlm_Int4  offset;
+} Nlm_FileCache, PNTR Nlm_FileCachePtr;
+
+NLM_EXTERN Nlm_Boolean Nlm_FileCacheSetup (Nlm_FileCache PNTR fcp, FILE *fp);
+NLM_EXTERN Nlm_CharPtr Nlm_FileCacheGetString (Nlm_FileCache PNTR fcp, Nlm_CharPtr str, size_t size);
+NLM_EXTERN Nlm_CharPtr Nlm_FileCacheReadLine (Nlm_FileCache PNTR fcp, Nlm_CharPtr str, size_t size, Nlm_BoolPtr nonewline);
+NLM_EXTERN void Nlm_FileCacheSeek (Nlm_FileCache PNTR fcp, Nlm_Int4 pos);
+NLM_EXTERN Nlm_Int4 Nlm_FileCacheTell (Nlm_FileCache PNTR fcp);
+NLM_EXTERN Nlm_Boolean Nlm_FileCacheFree (Nlm_FileCache PNTR fcp, Nlm_Boolean restoreFilePos);
+
+
+
 #define FileOpen Nlm_FileOpen
 #define FileClose Nlm_FileClose
 #define FileRead Nlm_FileRead
@@ -115,6 +137,18 @@ NLM_EXTERN void LIBCALL Nlm_SetFileOpenHook(Nlm_FileOpenHook hook);
 #define CreateDir Nlm_CreateDir
 #define DirCatalog Nlm_DirCatalog
 #define TmpNam Nlm_TmpNam
+
+#define FileCache Nlm_FileCache
+#define FileCacheSetup Nlm_FileCacheSetup
+#define FileCachePtr Nlm_FileCachePtr
+
+#define FileCacheSetup Nlm_FileCacheSetup
+#define FileCacheGetString Nlm_FileCacheGetString
+#define FileCacheReadLine Nlm_FileCacheReadLine
+#define FileCacheSeek Nlm_FileCacheSeek
+#define FileCacheTell Nlm_FileCacheTell
+#define FileCacheFree Nlm_FileCacheFree
+
 #define EjectCd(sVolume, deviceName, rawDeviceName, mountPoint, mountCmd)  FALSE
 #define MountCd(sVolume, deviceName, mountPoint, mountCmd)                 FALSE
 

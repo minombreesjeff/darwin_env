@@ -22,7 +22,7 @@
  *  Please cite the author in any work or product based on this material.
  *
  * ===========================================================================
- * $Id: salpacc.h,v 6.15 2000/11/16 22:13:45 shavirin Exp $
+ * $Id: salpacc.h,v 6.17 2004/09/07 19:25:37 bollin Exp $
  Collection of SeqAlign Accession utilities.
  Maintainer: Hugues Sicotte
  Authors of the original routines: Hugues Sicotte, Colombe Chappey, Tom Madden, Jinghui Zhang

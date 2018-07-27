@@ -31,8 +31,11 @@ Contents: type definitions and function prototypes for query
           multiplexing code.
 
 ******************************************************************************/
-/* $Revision: 1.3 $ 
+/* $Revision: 1.4 $ 
 *  $Log: blastconcatdef.h,v $
+*  Revision 1.4  2005/01/10 18:52:29  coulouri
+*  fixes from morgulis to allow concatenation of >255 queries in [t]blastn
+*
 *  Revision 1.3  2004/04/20 14:55:47  morgulis
 *  1. Fixed query offsets in results when -B option is used.
 *  2. Fixes for lower case masking handling with -B option.
@@ -81,7 +84,7 @@ typedef struct sapArrayData
   the individual queries when the -B option is used for query 
   concatenation. Needed for the search block*/
 typedef struct queries {
-    Uint1 NumQueries;
+    Uint4 NumQueries;
     Int8 TotalLength;    /* AM: Total length of the concatenated query. */
     BspArray FakeBsps;   /* contain SeqIdPtr's */
     SeqLocPtr PNTR LCaseMasks; /* contain lower case masks in queries. */
@@ -142,10 +145,9 @@ typedef struct _PrimaryNode
 
 SeqAlignPtrArray LIBCALL DivideSeqAligns PROTO(( BLAST_OptionsBlkPtr options, SeqAlignPtr sap, 
                                                  QueriesPtr mult_queries, MQ_DivideResultsInfoPtr subjects ));
-BioseqPtr LIBCALL BlastMakeFakeBspConcat PROTO((BspArray bsp_arr, Uint1 num_bsps, Boolean is_na, 
+BioseqPtr LIBCALL BlastMakeFakeBspConcat PROTO((BspArray bsp_arr, Uint4 num_bsps, Boolean is_na, 
                                                 Uint4 num_spacers)); /* AM: Added num_spacers parameter */
-QueriesPtr LIBCALL BlastMakeMultQueries PROTO((BspArray fbsp_arr, Uint1 num_queries, Boolean is_na, Uint1 num_spacers,
-                                               SeqLocPtr PNTR lcase_mask_arr ));
+QueriesPtr LIBCALL BlastMakeMultQueries PROTO((BspArray fbsp_arr, Uint4 num_queries, Boolean is_na, Uint4 num_spacers, SeqLocPtr PNTR lcase_mask_arr ));
 QueriesPtr LIBCALL BlastDuplicateMultQueries PROTO(( QueriesPtr source ));
 Uint4 GetQueryNum( QueriesPtr mult_queries, Int4 offset, Int4 end, Int2 frame );
 Uint4 LIBCALL GetNumSpacers PROTO(( BLAST_OptionsBlkPtr options,

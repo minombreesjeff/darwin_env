@@ -29,13 +29,16 @@
 *
 * Version Creation Date:   1/22/95
 *
-* $Revision: 6.9 $
+* $Revision: 6.10 $
 *
 * File Description: 
 *
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: vibforms.h,v $
+* Revision 6.10  2005/04/15 15:11:28  kans
+* switched font for SYSTEM_FOLDER_TAB and PROGRAM_FOLDER_TAB if MS Windows
+*
 * Revision 6.9  2004/01/16 22:35:38  kans
 * added WidestString and WidestAlist
 *
@@ -432,9 +435,13 @@ extern Nlm_DialoG Nlm_CreateFolderTabs (Nlm_GrouP h, Nlm_CharPtr PNTR titles, Nl
                                         Nlm_FonT font, Nlm_Int2 horizMargin, Nlm_Int2 vertMargin,
                                         Nlm_Int2 spaceBtwn, Nlm_Int2 cornerTaper, Nlm_Int2 endExt,
                                         Nlm_TabActnProc changeView, Pointer userdata);
-
+#ifdef WIN_MSWIN
+#define SYSTEM_FOLDER_TAB programFont,20,5,2,6,10
+#define PROGRAM_FOLDER_TAB systemFont,10,5,2,4,5
+#else
 #define SYSTEM_FOLDER_TAB systemFont,20,5,2,6,10
 #define PROGRAM_FOLDER_TAB programFont,10,5,2,4,5
+#endif
 
 extern Nlm_DialoG Nlm_CreateTextTabs (Nlm_GrouP h, Nlm_CharPtr PNTR titles, Nlm_Int2 initPage,
                                       Nlm_Int2 maxPerLine, Nlm_Int2 indentNextLine,

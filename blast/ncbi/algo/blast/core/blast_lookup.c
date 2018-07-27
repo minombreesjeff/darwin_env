@@ -1,30 +1,37 @@
-/* $Id: blast_lookup.c,v 1.24 2004/04/27 15:56:53 coulouri Exp $
+/* $Id: blast_lookup.c,v 1.40 2005/04/05 01:47:00 coulouri Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ===========================================================================
+ */
 
-* ===========================================================================
-*
-*                            PUBLIC DOMAIN NOTICE
-*               National Center for Biotechnology Information
-*
-*  This software/database is a "United States Government Work" under the
-*  terms of the United States Copyright Act.  It was written as part of
-*  the author's offical duties as a United States Government employee and
-*  thus cannot be copyrighted.  This software/database is freely available
-*  to the public for use. The National Library of Medicine and the U.S.
-*  Government have not placed any restriction on its use or reproduction.
-*
-*  Although all reasonable efforts have been taken to ensure the accuracy
-*  and reliability of the software and data, the NLM and the U.S.
-*  Government do not and cannot warrant the performance or results that
-*  may be obtained by using this software or data. The NLM and the U.S.
-*  Government disclaim all warranties, express or implied, including
-*  warranties of performance, merchantability or fitness for any particular
-*  purpose.
-*
-*  Please cite the author in any work or product based on this material.
-*
-* ===========================================================================
-
-*/
+/** @file blast_lookup.c
+ * Functions interacting with the standard BLAST lookup table.
+ * Lookup table consists of a backbone hash table and an overflow array. Each
+ * backbone entry is an array of 4 integers. The first is number of offsets in
+ * the query, corresponding to this index. If number of offsets is <= 3, then
+ * they are all placed in the backbone, otherwise all offsets are stored in the 
+ * overflow array. 
+ */
 
 #include <algo/blast/core/blast_def.h>
 #include <algo/blast/core/blast_options.h>
@@ -34,35 +41,88 @@
 #include <algo/blast/core/blast_encoding.h>
 #include "blast_inline.h"
 
-static char const rcsid[] = "$Id: blast_lookup.c,v 1.24 2004/04/27 15:56:53 coulouri Exp $";
+#ifndef SKIP_DOXYGEN_PROCESSING
+static char const rcsid[] = 
+    "$Id: blast_lookup.c,v 1.40 2005/04/05 01:47:00 coulouri Exp $";
+#endif /* SKIP_DOXYGEN_PROCESSING */
 
-static void AddWordHits( LookupTable *lookup,
-			 Int4** matrix,
-			 Uint1* word,
-			 Int4 offset,
-                         Int4 query_bias);
+/** Structure containing information needed for adding neighboring words. 
+ */
+typedef struct NeighborInfo {
+    BlastLookupTable *lookup; /**< Lookup table */
+    Uint1 *query_word;   /**< the word whose neighbors we are computing */
+    Uint1 *subject_word; /**< the computed neighboring word */
+    Int4 alphabet_size;  /**< number of letters in the alphabet */
+    Int4 wordsize;       /**< number of residues in a word */
+    Int4 **matrix;       /**< the substitution matrix */
+    Int4 *row_max;       /**< maximum possible score for each row of the matrix */
+    Int4 *offset_list;   /**< list of offsets where the word occurs in the query */
+    Int4 threshold;      /**< the score threshold for neighboring words */
+    Int4 query_bias;     /**< bias all stored offsets for multiple queries */
+} NeighborInfo;
 
-static void AddPSSMWordHits( LookupTable *lookup,
+/** Add neighboring words to the lookup table.
+ * @param lookup Pointer to the lookup table.
+ * @param matrix Pointer to the substitution matrix.
+ * @param query Pointer to the query sequence.
+ * @param offset_list list of offsets where the word occurs in the query
+ * @param query_bias bias all stored offsets for multiple queries
+ * @param row_max maximum possible score for each row of the matrix
+ */
+static void AddWordHits( BlastLookupTable *lookup,
 			 Int4** matrix,
-			 Int4 offset,
-                         Int4 query_bias);
+			 Uint1* query,
+			 Int4* offset_list,
+			 Int4 query_bias,
+                         Int4 *row_max);
+
+/** Add neighboring words to the lookup table using NeighborInfo structure.
+ * @param info Pointer to the NeighborInfo structure.
+ * @param score The partial sum of the score.
+ * @param current_pos The current offset.
+ */
+static void _AddWordHits(NeighborInfo *info, 
+                         Int4 score, 
+                         Int4 current_pos);
+
+/** Add neighboring words to the lookup table in case of a position-specific 
+ * matrix.
+ * @param lookup Pointer to the lookup table.
+ * @param matrix The position-specific matrix.
+ * @param query_bias bias all stored offsets for multiple queries
+ * @param row_max maximum possible score for each row of the matrix
+ */
+static void AddPSSMWordHits( BlastLookupTable *lookup,
+			 Int4** matrix,
+			 Int4 query_bias,
+                         Int4 *row_max);
+
+/** Add neighboring words to the lookup table in case of a position-specific 
+ * matrix, using NeighborInfo structure.
+ * @param info Pointer to the NeighborInfo structure.
+ * @param score The partial sum of the score.
+ * @param current_pos The current offset.
+ */
+static void _AddPSSMWordHits(NeighborInfo *info, 
+                         Int4 score, 
+                         Int4 current_pos);
+
 
 Int4 BlastAaLookupNew(const LookupTableOptions* opt,
-		      LookupTable* * lut)
+		      BlastLookupTable* * lut)
 {
   return LookupTableNew(opt, lut, TRUE);
 }
 
-Int4 RPSLookupTableNew(const RPSInfo *info,
-		      RPSLookupTable* * lut)
+Int4 RPSLookupTableNew(const BlastRPSInfo *info,
+		      BlastRPSLookupTable* * lut)
 {
    Int4 i;
-   RPSLookupFileHeader *lookup_header;
-   RPSProfileHeader *profile_header;
-   RPSLookupTable* lookup = *lut = 
-      (RPSLookupTable*) calloc(1, sizeof(RPSLookupTable));
+   BlastRPSLookupFileHeader *lookup_header;
+   BlastRPSProfileHeader *profile_header;
+   BlastRPSLookupTable* lookup = *lut = 
+      (BlastRPSLookupTable*) calloc(1, sizeof(BlastRPSLookupTable));
    Int4* pssm_start;
-   Int4 num_profiles;
    Int4 num_pssm_rows;
    Int4 longest_chain;
 
@@ -74,9 +134,9 @@ Int4 RPSLookupTableNew(const RPSInfo *info,
    if (lookup_header->magic_number != RPS_MAGIC_NUM)
       return -1;
 
-   lookup->rps_aux_info = (RPSAuxInfo *)(&info->aux_info);
+   lookup->rps_aux_info = (BlastRPSAuxInfo *)(&info->aux_info);
    lookup->wordsize = BLAST_WORDSIZE_PROT;
-   lookup->alphabet_size = PSI_ALPHABET_SIZE;
+   lookup->alphabet_size = BLASTAA_SIZE;
    lookup->charsize = ilog2(lookup->alphabet_size) + 1;
    lookup->backbone_size = 1 << (lookup->wordsize * lookup->charsize);
    lookup->mask = lookup->backbone_size - 1;
@@ -110,10 +170,10 @@ Int4 RPSLookupTableNew(const RPSInfo *info,
       return -2;
 
    lookup->rps_seq_offsets = profile_header->start_offsets;
-   num_profiles = profile_header->num_profiles;
-   num_pssm_rows = lookup->rps_seq_offsets[num_profiles];
+   lookup->num_profiles = profile_header->num_profiles;
+   num_pssm_rows = lookup->rps_seq_offsets[lookup->num_profiles];
    lookup->rps_pssm = (Int4 **)malloc((num_pssm_rows+1) * sizeof(Int4 *));
-   pssm_start = profile_header->start_offsets + num_profiles + 1;
+   pssm_start = profile_header->start_offsets + lookup->num_profiles + 1;
 
    for (i = 0; i < num_pssm_rows + 1; i++) {
       lookup->rps_pssm[i] = pssm_start;
@@ -124,39 +184,54 @@ Int4 RPSLookupTableNew(const RPSInfo *info,
 }
 
 Int4 LookupTableNew(const LookupTableOptions* opt,
-		      LookupTable* * lut,
+		      BlastLookupTable* * lut,
 		      Boolean is_protein)
 {
-   LookupTable* lookup = *lut = 
-      (LookupTable*) calloc(1, sizeof(LookupTable));
+   BlastLookupTable* lookup = *lut = 
+      (BlastLookupTable*) calloc(1, sizeof(BlastLookupTable));
+   const Int4 kAlphabetSize = ((is_protein == TRUE) ? BLASTAA_SIZE : BLASTNA_SIZE);
+   const Int4 kMinAGWordSize = 13;
 
    ASSERT(lookup != NULL);
 
-  if (is_protein) {
+ lookup->ag_scanning_mode = FALSE;  /* Set to TRUE if appropriate below. */ 
+ if (is_protein)
+ {
     Int4 i;
-
-    lookup->charsize = ilog2(opt->alphabet_size) + 1;
+    lookup->charsize = ilog2(kAlphabetSize) + 1;
     lookup->wordsize = opt->word_size;
 
     lookup->backbone_size = 0;
     for(i=0;i<lookup->wordsize;i++)
-        lookup->backbone_size |= (opt->alphabet_size - 1) << (i * lookup->charsize);
+        lookup->backbone_size |= (kAlphabetSize - 1) << (i * lookup->charsize);
     lookup->backbone_size += 1;
 
     lookup->mask = makemask(opt->word_size * lookup->charsize);
   } else {
      lookup->word_length = opt->word_size;
-     lookup->scan_step = opt->scan_step;
-     lookup->charsize = ilog2(opt->alphabet_size / COMPRESSION_RATIO); 
-     lookup->wordsize = 
-        (opt->word_size - MIN(lookup->scan_step,COMPRESSION_RATIO) + 1) 
-        / COMPRESSION_RATIO;
+     lookup->charsize = ilog2(kAlphabetSize/COMPRESSION_RATIO); 
+     if (opt->word_size >= kMinAGWordSize)  
+     {
+          lookup->scan_step = CalculateBestStride(opt->word_size, opt->variable_wordsize, 
+               opt->lut_type);
+          lookup->wordsize = (opt->word_size - MIN(lookup->scan_step,COMPRESSION_RATIO) + 1) 
+               / COMPRESSION_RATIO;
+          lookup->ag_scanning_mode = TRUE;
+     }
+     else
+     {    
+          lookup->scan_step = 0;
+          lookup->wordsize = (opt->word_size - COMPRESSION_RATIO + 1) / COMPRESSION_RATIO;
+     }
+
+
      lookup->reduced_wordsize = (lookup->wordsize >= 2) ? 2 : 1;
      lookup->backbone_size = 
        iexp(2,lookup->reduced_wordsize*lookup->charsize*COMPRESSION_RATIO);
+
      lookup->mask = lookup->backbone_size - 1;
   }
-  lookup->alphabet_size = opt->alphabet_size;
+  lookup->alphabet_size = kAlphabetSize;
   lookup->exact_matches=0;
   lookup->neighbor_matches=0;
   lookup->threshold = opt->threshold;
@@ -165,12 +240,11 @@ Int4 LookupTableNew(const LookupTableOptions* opt,
   ASSERT(lookup->thin_backbone != NULL);
 
   lookup->use_pssm = opt->use_pssm;
-  lookup->neighbors=NULL;
   lookup->overflow=NULL;
   return 0;
 }
 
-Int4 BlastAaLookupAddWordHit(LookupTable* lookup, /* in/out: the lookup table */
+Int4 BlastAaLookupAddWordHit(BlastLookupTable* lookup,
                              Uint1* w,
 			     Int4 query_offset)
 {
@@ -222,7 +296,7 @@ Int4 BlastAaLookupAddWordHit(LookupTable* lookup, /* in/out: the lookup table */
   return 0;
 }
 
-Int4 _BlastAaLookupFinalize(LookupTable* lookup)
+Int4 _BlastAaLookupFinalize(BlastLookupTable* lookup)
 {
   Int4 i;
   Int4 overflow_cells_needed=0;
@@ -328,8 +402,7 @@ for(i=0;i<lookup->backbone_size;i++)
 Int4 BlastAaScanSubject(const LookupTableWrap* lookup_wrap,
                         const BLAST_SequenceBlk *subject,
                         Int4* offset,
-                        Uint4 * NCBI_RESTRICT query_offsets,
-                        Uint4 * NCBI_RESTRICT subject_offsets,
+                        BlastOffsetPair* NCBI_RESTRICT offset_pairs,
                         Int4 array_size
 		   )
 {
@@ -339,7 +412,10 @@ Int4 BlastAaScanSubject(const LookupTableWrap* lookup_wrap,
   Uint1* s_last=NULL;
   Int4 numhits = 0; /* number of hits found for a given subject offset */
   Int4 totalhits = 0; /* cumulative number of hits found */
-  LookupTable* lookup = lookup_wrap->lut;
+  BlastLookupTable* lookup;
+
+  ASSERT(lookup_wrap->lut_type == AA_LOOKUP_TABLE);
+  lookup = (BlastLookupTable*) lookup_wrap->lut;
 
   s_first = subject->sequence + *offset;
   s_last  = subject->sequence + subject->length - lookup->wordsize; 
@@ -378,8 +454,8 @@ Int4 BlastAaScanSubject(const LookupTableWrap* lookup_wrap,
 	      /* copy the hits. */
 	      for(i=0;i<numhits;i++)
 		{
-		  query_offsets[i + totalhits] = src[i];
-		  subject_offsets[i + totalhits] = s - subject->sequence;
+		  offset_pairs[i + totalhits].qs_offsets.q_off = src[i];
+		  offset_pairs[i + totalhits].qs_offsets.s_off = s - subject->sequence;
 		}
 
 	      totalhits += numhits;
@@ -405,8 +481,7 @@ Int4 BlastAaScanSubject(const LookupTableWrap* lookup_wrap,
 Int4 BlastRPSScanSubject(const LookupTableWrap* lookup_wrap,
                         const BLAST_SequenceBlk *sequence,
                         Int4* offset,
-                        Uint4 * table_offsets,
-                        Uint4 * sequence_offsets,
+                        BlastOffsetPair* NCBI_RESTRICT offset_pairs,
                         Int4 array_size
 		   )
 {
@@ -417,8 +492,11 @@ Int4 BlastRPSScanSubject(const LookupTableWrap* lookup_wrap,
   Uint1* s_last=NULL;
   Int4 numhits = 0; /* number of hits found for a given subject offset */
   Int4 totalhits = 0; /* cumulative number of hits found */
-  RPSLookupTable* lookup = (RPSLookupTable *)lookup_wrap->lut;
+  BlastRPSLookupTable* lookup;
   RPSBackboneCell *cell;
+
+  ASSERT(lookup_wrap->lut_type == RPS_LOOKUP_TABLE);
+  lookup = (BlastRPSLookupTable*) lookup_wrap->lut;
 
   s_first = sequence->sequence + *offset;
   s_last  = sequence->sequence + sequence->length - lookup->wordsize; 
@@ -439,7 +517,8 @@ Int4 BlastRPSScanSubject(const LookupTableWrap* lookup_wrap,
   for(s=s_first; s <= s_last; s++)
     {
       /* compute the index value */
-      _ComputeIndexIncremental(lookup->wordsize,lookup->charsize,lookup->mask, s, &index);
+      _ComputeIndexIncremental(lookup->wordsize,lookup->charsize,lookup->mask,
+                               s, &index);
 
       /* if there are hits... */
       if (PV_TEST(lookup, index))
@@ -457,20 +536,24 @@ Int4 BlastRPSScanSubject(const LookupTableWrap* lookup_wrap,
 		/* hits live in thick_backbone */
 	        for(i=0;i<numhits;i++)
 		  {
-		    table_offsets[i + totalhits] = cell->entries[i] -
-                                                table_correction;
-		    sequence_offsets[i + totalhits] = s - sequence->sequence;
+		    offset_pairs[i + totalhits].qs_offsets.q_off = 
+                        cell->entries[i] - table_correction;
+		    offset_pairs[i + totalhits].qs_offsets.s_off = 
+                        s - sequence->sequence;
 		  }
               }
 	      else {
 		/* hits (past the first) live in overflow array */
 		src = lookup->overflow + (cell->entries[1] / sizeof(Int4));
-		table_offsets[totalhits] = cell->entries[0] - table_correction;
-		sequence_offsets[totalhits] = s - sequence->sequence;
+		offset_pairs[totalhits].qs_offsets.q_off = 
+                    cell->entries[0] - table_correction;
+		offset_pairs[totalhits].qs_offsets.s_off = s - sequence->sequence;
 	        for(i=0;i<(numhits-1);i++)
 		  {
-		    table_offsets[i+totalhits+1] = src[i] - table_correction;
-		    sequence_offsets[i+totalhits+1] = s - sequence->sequence;
+		    offset_pairs[i+totalhits+1].qs_offsets.q_off = 
+                        src[i] - table_correction;
+		    offset_pairs[i+totalhits+1].qs_offsets.s_off = 
+                        s - sequence->sequence;
 		  }
 	      }
 
@@ -495,310 +578,380 @@ Int4 BlastRPSScanSubject(const LookupTableWrap* lookup_wrap,
 }
 
 
-Int4 BlastAaLookupIndexQueries(LookupTable* lookup,
+Int4 BlastAaLookupIndexQuery(BlastLookupTable* lookup,
 			       Int4 ** matrix,
 			       BLAST_SequenceBlk* query,
-			       ListNode* locations,
-			       Int4 num_queries)
+			       BlastSeqLoc* locations)
 {
-  Int4 i;
 
-  /* create neighbor array */
-
-  if (lookup->threshold>0)
-    {
-      MakeAllWordSequence(lookup);
-    }
-
-  /* index queries */
-  for(i=0;i<num_queries;i++)
-    {
-      _BlastAaLookupIndexQuery(lookup, matrix, 
-                               (lookup->use_pssm == TRUE) ? NULL : &(query[i]), 
-                               &(locations[i]), 0);
-    }
-
-  /* free neighbor array*/
-  if (lookup->neighbors != NULL)
-    sfree(lookup->neighbors);
-
-  return 0;
+    /** @todo: why not pass query unconditionally here? PSSMs should be handled
+     * in a different code path for clarity */
+return _BlastAaLookupIndexQuery(lookup,
+                               matrix, 
+                               (lookup->use_pssm == TRUE) ? NULL : query, 
+                               locations, 0);
 }
 
-Int4 _BlastAaLookupIndexQuery(LookupTable* lookup,
+Int4 _BlastAaLookupIndexQuery(BlastLookupTable* lookup,
 			      Int4 ** matrix,
 			      BLAST_SequenceBlk* query,
-			      ListNode* location,
+			      BlastSeqLoc* location,
                               Int4 query_bias)
 {
-  ListNode* loc;
-  Int4 from, to;
-  Int4 w;
+    if (lookup->use_pssm)
+        AddPSSMNeighboringWords(lookup, matrix, 
+                                query_bias, location);
+    else
+        AddNeighboringWords(lookup, matrix, query,
+                            query_bias, location);
+  return 0;
+}
+
+Int4 AddNeighboringWords(BlastLookupTable* lookup, Int4 ** matrix, BLAST_SequenceBlk* query, Int4 query_bias, BlastSeqLoc* location)
+{
+  Int4 offset;
+  Int4 i, j;
+  Int4 **exact_backbone;
+  Int4 **old_backbone;
+  BlastSeqLoc* loc;
+  Int4 *row_max;
+
+  /* Determine the maximum possible score for
+     each row of the score matrix */
+
+  row_max = (Int4 *)malloc(lookup->alphabet_size * sizeof(Int4));
+  ASSERT(row_max != NULL);
+
+  for (i = 0; i < lookup->alphabet_size; i++) {
+      row_max[i] = matrix[i][0];
+      for (j = 1; j < lookup->alphabet_size; j++)
+          row_max[i] = MAX(row_max[i], matrix[i][j]);
+  }
+
+  /* Swap out the existing thin backbone for an empty
+     backbone */
+
+  old_backbone = lookup->thin_backbone;
+  lookup->thin_backbone = (Int4 **)calloc(lookup->backbone_size, 
+                                           sizeof(Int4 *));
+
+  /* find all the exact matches, grouping together all
+     offsets of identical query words. The query bias
+     is not used here, since the next stage will need real 
+     offsets into the query sequence */
 
   for(loc=location; loc; loc=loc->next)
-    {
-      from = ((SSeqRange*) loc->ptr)->left;
-      to = ((SSeqRange*) loc->ptr)->right - lookup->wordsize + 1;
-
-      for(w=from;w<=to;w++)
-	{
-	  AddNeighboringWords(lookup,
-			      matrix,
-			      query,
-			      w,
-                              query_bias);
-	}      
-    }
-  return 0;
-}
-
-Int4 MakeAllWordSequence(LookupTable* lookup)
-{
-  Int4 k,n;
-  Int4 i;
-  Int4 len;
-  k=lookup->alphabet_size;
-  n=lookup->wordsize;
-
-  /* need k^n bytes for the de Bruijn sequence and n-1 to unwrap it. */ 
-
-  len = iexp(k,n) + (n-1);
-  
-  lookup->neighbors_length = len;
-
-  lookup->neighbors = (Uint1*) malloc( len );
-  ASSERT(lookup->neighbors != NULL);
-
-  /* generate the de Bruijn sequence */
-
-  debruijn(n,k,lookup->neighbors,NULL);
-
-  /* unwrap it */
-
-  for(i=0;i<(n-1);i++)
-    lookup->neighbors[len-n+1+i] = lookup->neighbors[i];
-  
-  return 0;
-}
-
-Int4 AddNeighboringWords(LookupTable* lookup, Int4 ** matrix, BLAST_SequenceBlk* query, Int4 offset, Int4 query_bias)
-{
-  
-  if (lookup->use_pssm)
   {
-      AddPSSMWordHits(lookup, matrix, offset, query_bias);
+      Int4 from = loc->ssr->left;
+      Int4 to = loc->ssr->right - lookup->wordsize + 1;
+      for (offset = from; offset <= to; offset++) 
+      {
+          Uint1* w = query->sequence + offset;
+          BlastAaLookupAddWordHit(lookup, w, offset);
+          lookup->exact_matches++;
+      }
+  }
+
+  /* return the original thin backbone */
+
+  exact_backbone = lookup->thin_backbone;
+  lookup->thin_backbone = old_backbone;
+
+  /* walk though the list of exact matches
+     previously computed. Find neighboring words
+     for entire lists at a time */
+
+  for (i = 0; i < lookup->backbone_size; i++)
+  {
+      if (exact_backbone[i] != NULL)
+      {
+          AddWordHits(lookup, matrix, query->sequence,
+                      exact_backbone[i], query_bias, row_max);
+          sfree(exact_backbone[i]);
+      }
+  }
+
+  sfree(exact_backbone);
+  sfree(row_max);
+  return 0;
+}
+
+static void AddWordHits(BlastLookupTable* lookup, Int4** matrix, 
+			Uint1* query, Int4 *offset_list, 
+                        Int4 query_bias, Int4 *row_max)
+{
+  Uint1* w;
+  Uint1 s[32];
+  Int4 score;
+  Int4 i;
+  NeighborInfo info;
+
+  /* All of the offsets in the list refer to the
+     same query word. Thus, neighboring words only
+     have to be found for the first offset in the
+     list (since all other offsets would have the 
+     same neighbors) */
+
+  w = query + offset_list[2];
+
+  /* Compute the self-score of this word */
+
+  score = matrix[w[0]][w[0]];
+  for (i = 1; i < lookup->wordsize; i++)
+      score += matrix[w[i]][w[i]];
+
+  /* If the self-score is above the threshold, then the
+     neighboring computation will automatically add the
+     word to the lookup table. Otherwise, either the score
+     is too low or neighboring is not done at all, so that
+     all of these exact matches must be explicitly added
+     to the lookup table */
+
+  if (lookup->threshold == 0 || score < lookup->threshold)
+  {
+      for (i = 0; i < offset_list[1]; i++)
+          BlastAaLookupAddWordHit(lookup, w,
+                                  query_bias + offset_list[i+2]);
   }
   else
   {
-    Uint1* w = NULL;
-    ASSERT(query != NULL);
-    w = query->sequence + offset;
-  
-    if (lookup->threshold == 0)
-    {
-      BlastAaLookupAddWordHit(lookup, w, query_bias + offset);
-      lookup->exact_matches++;
-    }
-    else
-    {
-      AddWordHits(lookup, matrix, w, offset, query_bias);
-    }
+      lookup->neighbor_matches -= offset_list[1];
   }
+
+  /* check if neighboring words need to be found */
+
+  if (lookup->threshold == 0)
+      return;
+
+  /* Set up the structure of information to be used
+     during the recursion */
+
+  info.lookup = lookup;
+  info.query_word = w;
+  info.subject_word = s;
+  info.alphabet_size = lookup->alphabet_size;
+  info.wordsize = lookup->wordsize;
+  info.matrix = matrix;
+  info.row_max = row_max;
+  info.offset_list = offset_list;
+  info.threshold = lookup->threshold;
+  info.query_bias = query_bias;
+
+  /* compute the largest possible score that any neighboring
+     word can have; this maximum will gradually be replaced 
+     by exact scores as subject words are built up */
+
+  score = row_max[w[0]];
+  for (i = 1; i < lookup->wordsize; i++)
+      score += row_max[w[i]];
+
+  _AddWordHits(&info, score, 0);
+}
+
+static void _AddWordHits(NeighborInfo *info, Int4 score, Int4 current_pos)
+{
+    Int4 alphabet_size = info->alphabet_size;
+    Int4 threshold = info->threshold;
+    Uint1 *query_word = info->query_word;
+    Uint1 *subject_word = info->subject_word;
+    Int4 *row;
+    Int4 i;
+
+    /* remove the maximum score of letters that
+       align with the query letter at position 
+       'current_pos'. Later code will align the
+       entire alphabet with this letter, and compute
+       the exact score each time. Also point to the 
+       row of the score matrix corresponding to the
+       query letter at current_pos */
+
+    score -= info->row_max[query_word[current_pos]];
+    row = info->matrix[query_word[current_pos]];
+
+    if (current_pos == info->wordsize - 1) {
+
+        /* The recursion has bottomed out, and we can
+           produce complete subject words. Pass the
+           entire alphabet through the last position
+           in the subject word, then save the list of
+           query offsets in all positions corresponding
+           to subject words that yield a high enough score */
+
+        Int4 *offset_list = info->offset_list;
+        Int4 query_bias = info->query_bias;
+        BlastLookupTable *lookup = info->lookup;
+        Int4 j;
+
+        for (i = 0; i < alphabet_size; i++) {
+            if (score + row[i] >= threshold) {
+                subject_word[current_pos] = i;
+                for (j = 0; j < offset_list[1]; j++) {
+                    BlastAaLookupAddWordHit(lookup, subject_word,
+                                            query_bias + offset_list[j+2]);
+                }
+                lookup->neighbor_matches += offset_list[1];
+            }
+        }
+        return;
+    }
+
+    /* Otherwise, pass the entire alphabet through position
+       current_pos of the subject word, and recurse on all
+       words that could possibly exceed the threshold later */
+
+    for (i = 0; i < alphabet_size; i++) {
+        if (score + row[i] >= threshold) {
+            subject_word[current_pos] = i;
+            _AddWordHits(info, score + row[i], current_pos + 1);
+        }
+    }
+}
+
+Int4 AddPSSMNeighboringWords(BlastLookupTable* lookup, Int4 ** matrix, Int4 query_bias, BlastSeqLoc *location)
+{
+  Int4 offset;
+  Int4 i, j;
+  BlastSeqLoc* loc;
+  Int4 *row_max;
+  Int4 wordsize = lookup->wordsize;
+
+  /* for PSSMs, we only have to track the maximum
+     score of 'wordsize' matrix columns */
+
+  row_max = (Int4 *)malloc(lookup->wordsize * sizeof(Int4));
+  ASSERT(row_max != NULL);
+
+  for(loc=location; loc; loc=loc->next)
+  {
+      Int4 from = loc->ssr->left;
+      Int4 to = loc->ssr->right - wordsize + 1;
+      Int4 **row = matrix + from;
+
+      /* prepare to start another run of adjacent query
+         words. Find the maximum possible score for the
+         first wordsize-1 rows of the PSSM */
+
+      if (to >= from)
+      {
+          for (i = 0; i < wordsize - 1; i++) 
+          {
+              row_max[i] = row[i][0];
+              for (j = 1; j < lookup->alphabet_size; j++)
+                  row_max[i] = MAX(row_max[i], row[i][j]);
+          }
+      }
+
+      for (offset = from; offset <= to; offset++, row++) 
+      {
+          /* find the maximum score of the next PSSM row */
+
+          row_max[wordsize - 1] = row[wordsize - 1][0];
+          for (i = 1; i < lookup->alphabet_size; i++)
+              row_max[wordsize - 1] = MAX(row_max[wordsize - 1], 
+                                          row[wordsize - 1][i]);
+
+          /* find all neighboring words */
+
+          AddPSSMWordHits(lookup, row, offset + query_bias, row_max);
+
+          /* shift the list of maximum scores over by one,
+             to make room for the next maximum in the next
+             loop iteration */
+
+          for (i = 0; i < wordsize - 1; i++)
+              row_max[i] = row_max[i+1];
+      }
+  }
+
+  sfree(row_max);
   return 0;
 }
 
-static void AddWordHits(LookupTable* lookup, Int4** matrix, 
-			Uint1* word, Int4 offset, Int4 query_bias)
+static void AddPSSMWordHits(BlastLookupTable* lookup, Int4** matrix, 
+			    Int4 offset, Int4 *row_max)
 {
-  Uint1* s = lookup->neighbors;
-  Uint1* s_end=s + lookup->neighbors_length - lookup->wordsize + 1;
-  Uint1* w = word;
-  Uint1 different;
+  Uint1 s[32];
   Int4 score;
-  Int4 threshold = lookup->threshold;
   Int4 i;
-  Int4* p0;
-  Int4* p1;
-  Int4* p2;
-  Int4 corrected_offset = offset + query_bias;
+  NeighborInfo info;
 
-  /* For each group of 'wordsize' bytes starting at 'w', 
-   * add the group to the lookup table at each offset 's' if
-   * either
-   *    - w matches s, or 
-   *    - the score derived from aligning w and s is high enough
-   */
+  /* Set up the structure of information to be used
+     during the recursion */
 
-  switch (lookup->wordsize)
-    {
-      case 1:
-	p0 = matrix[w[0]];
+  info.lookup = lookup;
+  info.query_word = NULL;
+  info.subject_word = s;
+  info.alphabet_size = lookup->alphabet_size;
+  info.wordsize = lookup->wordsize;
+  info.matrix = matrix;
+  info.row_max = row_max;
+  info.offset_list = NULL;
+  info.threshold = lookup->threshold;
+  info.query_bias = offset;
 
-        while (s < s_end)
-          {
-            if ( (s[0] == w[0]) || (p0[s[0]] >= threshold) )
-	    {
-                BlastAaLookupAddWordHit(lookup,s,corrected_offset);
-		if (s[0] == w[0])
-		    lookup->exact_matches++;
-		else
-		    lookup->neighbor_matches++;
-	    }
-            s++;
-  	  }
+  /* compute the largest possible score that any neighboring
+     word can have; this maximum will gradually be replaced 
+     by exact scores as subject words are built up */
 
-        break;
+  score = row_max[0];
+  for (i = 1; i < lookup->wordsize; i++)
+      score += row_max[i];
 
-      case 2:
-	p0 = matrix[w[0]];
-	p1 = matrix[w[1]];
-
-        while (s < s_end)
-          {
-            score = p0[s[0]] + p1[s[1]];
-	    different = (w[0] ^ s[0]) | (w[1] ^ s[1]);
-  
-            if ( !different || (score >= threshold) )
-	    {
-                BlastAaLookupAddWordHit(lookup,s,corrected_offset);
-		if (!different)
-		    lookup->exact_matches++;
-		else
-		    lookup->neighbor_matches++;
-	    }
-            s++;
-	  }
-
-        break;
-
-      case 3:
-	p0 = matrix[w[0]];
-	p1 = matrix[w[1]];
-	p2 = matrix[w[2]];
-
-        while (s < s_end)
-          {
-            score = p0[s[0]] + p1[s[1]] + p2[s[2]];
-	    different = (w[0] ^ s[0]) | (w[1] ^ s[1]) | (w[2] ^ s[2]);
-  
-            if ( !different || (score >= threshold) )
-	    {
-                BlastAaLookupAddWordHit(lookup,s,corrected_offset);
-		if (!different)
-		    lookup->exact_matches++;
-		else
-		    lookup->neighbor_matches++;
-	    }
-            s++;
-  	  }
-
-        break;
-
-      default:
-        while (s < s_end)
-          {
-            score = 0;
-            different = 0;
-            for (i = 0; i < lookup->wordsize; i++)
-              {
-                score += matrix[w[i]][s[i]];
-                different |= w[i] ^ s[i];
-              }
-  
-            if ( !different || (score >= threshold) )
-	    {
-                BlastAaLookupAddWordHit(lookup,s,corrected_offset);
-		if (!different)
-		    lookup->exact_matches++;
-		else
-		    lookup->neighbor_matches++;
-	    }
-            s++;
-  	  }
-
-        break;
-    }
+  _AddPSSMWordHits(&info, score, 0);
 }
 
-
-static void AddPSSMWordHits(LookupTable* lookup, Int4** matrix, 
-                            Int4 offset, Int4 query_bias)
+static void _AddPSSMWordHits(NeighborInfo *info, Int4 score, Int4 current_pos)
 {
-  Uint1* s = lookup->neighbors;
-  Uint1* s_end=s + lookup->neighbors_length - lookup->wordsize;
-  Int4 score;
-  Int4 threshold = lookup->threshold;
-  Int4 i;
-  Int4* p0;
-  Int4* p1;
-  Int4* p2;
-  Int4 corrected_offset = offset + query_bias;
+    Int4 alphabet_size = info->alphabet_size;
+    Int4 threshold = info->threshold;
+    Uint1 *subject_word = info->subject_word;
+    Int4 *row;
+    Int4 i;
 
-  /* Equivalent to AddWordHits(), except that the word score
-   * is derived from a Position-Specific Scoring Matrix (PSSM) 
-   */
+    /* remove the maximum score of letters that
+       align with the query letter at position 
+       'current_pos'. Later code will align the
+       entire alphabet with this letter, and compute
+       the exact score each time. Also point to the 
+       row of the score matrix corresponding to the
+       query letter at current_pos */
 
-  switch (lookup->wordsize)
-    {
-      case 1:
-	p0 = matrix[offset];
+    score -= info->row_max[current_pos];
+    row = info->matrix[current_pos];
 
-        while (s < s_end)
-          {
-            if (p0[s[0]] >= threshold)
-                BlastAaLookupAddWordHit(lookup,s,corrected_offset);
-            s++;
-  	  }
+    if (current_pos == info->wordsize - 1) {
 
-        break;
+        /* The recursion has bottomed out, and we can
+           produce complete subject words. Pass the
+           entire alphabet through the last position
+           in the subject word, then save the query offset
+           in all lookup table positions corresponding
+           to subject words that yield a high enough score */
 
-      case 2:
-	p0 = matrix[offset];
-	p1 = matrix[offset+1];
+        Int4 offset = info->query_bias;
+        BlastLookupTable *lookup = info->lookup;
 
-        while (s < s_end)
-          {
-            score = p0[s[0]] + p1[s[1]];
-  
-            if (score >= threshold)
-                BlastAaLookupAddWordHit(lookup,s,corrected_offset);
-            s++;
-  	  }
+        for (i = 0; i < alphabet_size; i++) {
+            if (score + row[i] >= threshold) {
+                subject_word[current_pos] = i;
+                BlastAaLookupAddWordHit(lookup, subject_word, offset);
+                lookup->neighbor_matches++;
+            }
+        }
+        return;
+    }
 
-        break;
+    /* Otherwise, pass the entire alphabet through position
+       current_pos of the subject word, and recurse on all
+       words that could possibly exceed the threshold later */
 
-      case 3:
-	p0 = matrix[offset];
-	p1 = matrix[offset + 1];
-	p2 = matrix[offset + 2];
-
-        while (s < s_end)
-          {
-            score = p0[s[0]] + p1[s[1]] + p2[s[2]];
-  
-            if (score >= threshold)
-                BlastAaLookupAddWordHit(lookup,s,corrected_offset);
-            s++;
-  	  }
-
-        break;
-
-      default:
-        while (s < s_end)
-          {
-            score = 0;
-            for(i=0;i<lookup->wordsize;i++)
-                score += matrix[offset + i][s[i]];
-  
-            if (score >= threshold)
-                BlastAaLookupAddWordHit(lookup,s,offset);
-            s++;
-  	  }
-
-        break;
+    for (i = 0; i < alphabet_size; i++) {
+        if (score + row[i] >= threshold) {
+            subject_word[current_pos] = i;
+            _AddPSSMWordHits(info, score + row[i], current_pos + 1);
+        }
     }
 }
-
 
 /******************************************************
  *
@@ -808,26 +961,29 @@ static void AddPSSMWordHits(LookupTable* lookup, Int4** matrix,
 
 /* Description in na_lookup.h */
 Int4 BlastNaScanSubject_AG(const LookupTableWrap* lookup_wrap,
-			   const BLAST_SequenceBlk* subject,
-			   Int4 start_offset,
-			   Uint4* NCBI_RESTRICT q_offsets,
-			   Uint4* NCBI_RESTRICT s_offsets,
-			   Int4 max_hits,  
-       Int4* end_offset)
+                           const BLAST_SequenceBlk* subject,
+                           Int4 start_offset,
+                           BlastOffsetPair* NCBI_RESTRICT offset_pairs,
+                           Int4 max_hits, Int4* end_offset)
 {
-   LookupTable* lookup = (LookupTable*) lookup_wrap->lut;
+   BlastLookupTable* lookup;
    Uint1* s;
    Uint1* abs_start;
    Int4  index=0, s_off;
-   
    Int4* lookup_pos;
    Int4 num_hits;
    Int4 q_off;
-   PV_ARRAY_TYPE *pv_array = lookup->pv;
+   PV_ARRAY_TYPE *pv_array;
    Int4 total_hits = 0;
    Int4 compressed_wordsize, compressed_scan_step;
-   Boolean full_byte_scan = (lookup->scan_step % COMPRESSION_RATIO == 0);
    Int4 i;
+
+   ASSERT(lookup_wrap->lut_type == NA_LOOKUP_TABLE);
+   lookup = (BlastLookupTable*) lookup_wrap->lut;
+  
+   pv_array = lookup->pv;
+
+   ASSERT(lookup->scan_step > 0);
 
    abs_start = subject->sequence;
    s = abs_start + start_offset/COMPRESSION_RATIO;
@@ -838,7 +994,7 @@ Int4 BlastNaScanSubject_AG(const LookupTableWrap* lookup_wrap,
    
    /* NB: s in this function always points to the start of the word!
     */
-   if (full_byte_scan) {
+   if (lookup->scan_step % COMPRESSION_RATIO == 0) {  /* scan step is a multiple of four letters that fit into one byte. */
       Uint1* s_end = abs_start + subject->length/COMPRESSION_RATIO - 
          compressed_wordsize;
       for ( ; s <= s_end; s += compressed_scan_step) {
@@ -864,8 +1020,8 @@ Int4 BlastNaScanSubject_AG(const LookupTableWrap* lookup_wrap,
                lookup_pos++;
                num_hits--;
                
-               q_offsets[total_hits] = q_off;
-               s_offsets[total_hits++] = s_off;
+               offset_pairs[total_hits].qs_offsets.q_off = q_off;
+               offset_pairs[total_hits++].qs_offsets.s_off = s_off;
             }
          }
       }
@@ -905,8 +1061,8 @@ Int4 BlastNaScanSubject_AG(const LookupTableWrap* lookup_wrap,
                lookup_pos++;
                num_hits--;
                
-               q_offsets[total_hits] = q_off;
-               s_offsets[total_hits++] = s_off;
+               offset_pairs[total_hits].qs_offsets.q_off = q_off;
+               offset_pairs[total_hits++].qs_offsets.s_off = s_off;
             }
          }
       }
@@ -916,23 +1072,30 @@ Int4 BlastNaScanSubject_AG(const LookupTableWrap* lookup_wrap,
    return total_hits;
 }
 
-/* Description in na_lookup.h */
+/* Description in blast_lookup.h */
 Int4 BlastNaScanSubject(const LookupTableWrap* lookup_wrap,
-       const BLAST_SequenceBlk* subject, Int4 start_offset,
-       Uint4* q_offsets, Uint4* s_offsets, Int4 max_hits, 
-       Int4* end_offset)
+                        const BLAST_SequenceBlk* subject, 
+                        Int4 start_offset,
+                        BlastOffsetPair* NCBI_RESTRICT offset_pairs,
+                        Int4 max_hits, Int4* end_offset)
 {
    Uint1* s;
    Uint1* abs_start,* s_end;
    Int4  index=0, s_off;
-   LookupTable* lookup = (LookupTable*) lookup_wrap->lut;
+   BlastLookupTable* lookup;
    Int4* lookup_pos;
    Int4 num_hits;
    Int4 q_off;
-   PV_ARRAY_TYPE *pv_array = lookup->pv;
+   PV_ARRAY_TYPE *pv_array;
    Int4 total_hits = 0;
-   Int4 reduced_word_length = lookup->reduced_wordsize*COMPRESSION_RATIO;
+   Int4 reduced_word_length;
    Int4 i;
+
+   ASSERT(lookup_wrap->lut_type == NA_LOOKUP_TABLE);
+   lookup = (BlastLookupTable*) lookup_wrap->lut;
+
+   pv_array = lookup->pv;
+   reduced_word_length = lookup->reduced_wordsize*COMPRESSION_RATIO;
 
    abs_start = subject->sequence;
    s = abs_start + start_offset/COMPRESSION_RATIO;
@@ -967,8 +1130,8 @@ Int4 BlastNaScanSubject(const LookupTableWrap* lookup_wrap,
             lookup_pos++;
             num_hits--;
             
-            q_offsets[total_hits] = q_off;
-            s_offsets[total_hits++] = s_off;
+            offset_pairs[total_hits].qs_offsets.q_off = q_off;
+            offset_pairs[total_hits++].qs_offsets.s_off = s_off;
          }
       }
 
@@ -983,7 +1146,7 @@ Int4 BlastNaScanSubject(const LookupTableWrap* lookup_wrap,
    return total_hits;
 }
 
-LookupTable* LookupTableDestruct(LookupTable* lookup)
+BlastLookupTable* LookupTableDestruct(BlastLookupTable* lookup)
 {
    sfree(lookup->thick_backbone);
    sfree(lookup->overflow);
@@ -992,7 +1155,7 @@ LookupTable* LookupTableDestruct(LookupTable* lookup)
    return NULL;
 }
 
-RPSLookupTable* RPSLookupTableDestruct(RPSLookupTable* lookup)
+BlastRPSLookupTable* RPSLookupTableDestruct(BlastRPSLookupTable* lookup)
 {
    /* The following will only free memory that was 
       allocated by RPSLookupTableNew. */
@@ -1007,7 +1170,7 @@ RPSLookupTable* RPSLookupTableDestruct(RPSLookupTable* lookup)
  * @param w Pointer to the start of a word [in]
  * @param query_offset Offset into the query sequence where this word ends [in]
  */
-static Int4 BlastNaLookupAddWordHit(LookupTable* lookup, Uint1* w,
+static Int4 BlastNaLookupAddWordHit(BlastLookupTable* lookup, Uint1* w,
                                     Int4 query_offset)
 {
   Int4 index=0;
@@ -1060,17 +1223,22 @@ static Int4 BlastNaLookupAddWordHit(LookupTable* lookup, Uint1* w,
 }
 
 /* See description in blast_lookup.h */
-Int4 BlastNaLookupIndexQuery(LookupTable* lookup, BLAST_SequenceBlk* query,
-			ListNode* location)
+Int4 BlastNaLookupIndexQuery(BlastLookupTable* lookup, BLAST_SequenceBlk* query,
+			BlastSeqLoc* location)
 {
-  ListNode* loc;
-  Int4 from, to;
+  BlastSeqLoc* loc;
   Int4 offset;
   Uint1* sequence;
 
   for(loc=location; loc; loc=loc->next) {
-     from = ((SSeqRange*) loc->ptr)->left;
-     to = ((SSeqRange*) loc->ptr)->right + 1;
+     Int4 from = loc->ssr->left;
+     Int4 to = loc->ssr->right + 1;
+
+     /* If the line below is not true we can never find an exact match of lookup->word_length
+     bases to initiate an extension.  This happens when the user specified word length is longer
+     than the one used for the lookup table. */
+     if (lookup->word_length > (to - from))
+         continue;  
      
      sequence = query->sequence + from;
      /* Last offset is such that full word fits in the sequence */

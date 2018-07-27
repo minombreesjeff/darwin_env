@@ -29,13 +29,25 @@
 *
 * Version Creation Date:   4/16/98
 *
-* $Revision: 6.28 $
+* $Revision: 6.32 $
 *
 * File Description: 
 *
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: urlquery.c,v $
+* Revision 6.32  2004/09/16 19:16:45  lavr
+* QUERY_OpenUrlQuery() to set port only if provided as non-zero
+*
+* Revision 6.31  2004/09/14 19:09:41  lavr
+* Correct last change log entry
+*
+* Revision 6.30  2004/09/14 18:52:12  kans
+* QUERY_OpenUrlQuery makes content type only if type < eMIME_T_Unknown
+*
+* Revision 6.29  2004/09/14 18:47:51  kans
+* QUERY_OpenUrlQuery looks for eMIME_T_Unknown, does not compost content type
+*
 * Revision 6.28  2004/02/23 15:30:02  lavr
 * New (last) parameter "how" added in CONN_Write() API call
 *
@@ -169,8 +181,12 @@ NLM_EXTERN CONN QUERY_OpenUrlQuery (
     encoding = eENCOD_Url;
   }
   */
-  VERIFY( MIME_ComposeContentTypeEx(type, subtype, encoding,
+
+  contentType [0] = '\0';
+  if (type < eMIME_T_Unknown) {
+    VERIFY( MIME_ComposeContentTypeEx(type, subtype, encoding,
                                   contentType, sizeof(contentType)) );
+  }
 
   /* set HTML header with program name as user agent */
   sprintf (user_header, "%sUser-Agent: %s\r\n", contentType, userAgentName);
@@ -182,7 +198,9 @@ NLM_EXTERN CONN QUERY_OpenUrlQuery (
   if ( host_machine ) {
       StringNCpy_0(info->host, host_machine, sizeof(info->host));
   }
-  info->port = host_port;
+  if ( host_port ) {
+      info->port = host_port;
+  }
   if ( !StringHasNoText(arguments) ) {
       StringNCpy_0(info->args, arguments, sizeof(info->args));
   }

@@ -30,7 +30,7 @@
 *
 * Version Creation Date:   10/21/98
 *
-* $Revision: 1.4 $
+* $Revision: 1.36 $
 *
 * File Description:  New GenBank flatfile generator - work in progress
 *
@@ -413,17 +413,23 @@ NLM_EXTERN void AddLocusBlock (
   CharPtr            ebmol;
   EMBLBlockPtr       ebp;
   SeqMgrFeatContext  fcontext;
+  Boolean            first = TRUE;
   GBBlockPtr         gbp;
   Char               gene [32];
   Boolean            genome_view;
   GBSeqPtr           gbseq;
+  Int4               gi = 0;
+  Char               gi_buf [16];
+  SeqIdPtr           gpp = NULL;
   Char               id [41];
   Int2               imol = 0;
   IndxPtr            index;
   Int2               istrand;
+  Boolean            is_aa;
   Boolean            is_nm = FALSE;
   Boolean            is_np = FALSE;
   Boolean            is_nz = FALSE;
+  Boolean            is_env_sample = FALSE;
   Boolean            is_transgenic = FALSE;
   Char               len [32];
   Int4               length;
@@ -436,10 +442,13 @@ NLM_EXTERN void AddLocusBlock (
   Uint1              origin;
   OrgRefPtr          orp;
   BioseqPtr          parent;
+  CharPtr            prefix = NULL;
   SeqDescrPtr        sdp;
   SeqFeatPtr         sfp;
   SeqIdPtr           sip;
   SubSourcePtr       ssp;
+  CharPtr            str;
+  CharPtr            suffix = NULL;
   Uint1              tech;
   Uint1              topology;
   TextSeqIdPtr       tsip;
@@ -506,6 +515,12 @@ NLM_EXTERN void AddLocusBlock (
     if (sip->choice == SEQID_TPG ||
         sip->choice == SEQID_TPE ||
         sip->choice == SEQID_TPD) break;
+    if (sip->choice == SEQID_GPIPE) {
+      gpp = sip;
+    }
+  }
+  if (sip == NULL) {
+    sip = gpp;
   }
   if (sip == NULL) {
     sip = SeqIdFindBest (bsp->id, SEQID_GENBANK);
@@ -760,6 +775,8 @@ NLM_EXTERN void AddLocusBlock (
     for (ssp = biop->subtype; ssp != NULL; ssp = ssp->next) {
       if (ssp->subtype == SUBSRC_transgenic) {
         is_transgenic = TRUE;
+      } else if (ssp->subtype == SUBSRC_environmental_sample) {
+        is_env_sample = TRUE;
       }
     }
   }
@@ -788,6 +805,10 @@ NLM_EXTERN void AddLocusBlock (
 
   if (origin == ORG_MUT || origin == ORG_ARTIFICIAL || origin == ORG_SYNTHETIC || is_transgenic) {
     StringCpy (div, "SYN");
+  } else if (is_env_sample) {
+    if (tech == MI_TECH_unknown || tech == MI_TECH_standard || tech == MI_TECH_other) {
+      StringCpy (div, "ENV");
+    }
   }
 
   sip = SeqIdFindBest (bsp->id, SEQID_PATENT);
@@ -896,6 +917,7 @@ NLM_EXTERN void AddLocusBlock (
     /* Print the "LOCUS_NEW" line, if requested */
 
     if (awp->newLocusLine) {
+
       FFStartPrint (ffstring, awp->format, 0, 0, "LOCUS", 12, 0, 0, NULL, FALSE);
       parent = awp->parent;
 
@@ -926,6 +948,7 @@ NLM_EXTERN void AddLocusBlock (
     /* Else print the "LOCUS" line */
 
     else {
+
       FFStartPrint (ffstring, awp->format, 0, 0, "LOCUS", 12, 0, 0, NULL, FALSE);
 
       if (parent->repr == Seq_repr_seg)
@@ -943,7 +966,9 @@ NLM_EXTERN void AddLocusBlock (
     }
 
   } else if (awp->format == EMBL_FMT || awp->format == EMBLPEPT_FMT) {
+
     FFStartPrint (ffstring, awp->format, 0, 0, NULL, 0, 5, 0, "ID", FALSE);
+
     FFAddOneString (ffstring, locus, FALSE, FALSE, TILDE_IGNORE);
     loclen = StringLen(locus);
     if (14 - 5 - loclen > 0) {
@@ -1030,8 +1055,60 @@ NLM_EXTERN void AddLocusBlock (
     gbseq->update_date = StringSave (date);
   }
 
-  bbp->string = FFEndPrint(ajp, ffstring, awp->format, 12, 0, 5, 0, "ID");
+  suffix = FFEndPrint(ajp, ffstring, awp->format, 12, 0, 5, 0, "ID");
   FFRecycleString(ajp, ffstring);
+
+  if (awp->contig && (! awp->showconfeats) && awp->smartconfeats && GetWWW (ajp) &&
+      (awp->format == GENBANK_FMT || awp->format == GENPEPT_FMT)) {
+    is_aa = ISA_aa (bsp->mol);
+    gi = 0;
+    for (sip = bsp->id; sip != NULL; sip = sip->next) {
+      if (sip->choice == SEQID_GI) {
+        gi = (Int4) sip->data.intvalue;
+      }
+    }
+    if (gi > 0) {
+      ffstring = FFGetString(ajp);
+
+      sprintf(gi_buf, "%ld", (long) gi);
+      FFAddOneString(ffstring, "<a href=", FALSE, FALSE, TILDE_IGNORE);
+      FFAddOneString(ffstring, link_feat, FALSE, FALSE, TILDE_IGNORE);
+      FFAddOneString(ffstring, "val=", FALSE, FALSE, TILDE_IGNORE);
+      FFAddOneString(ffstring, gi_buf, FALSE, FALSE, TILDE_IGNORE);
+      if ( is_aa ) {
+        FFAddOneString(ffstring, "&view=gpwithparts>", FALSE, FALSE, TILDE_IGNORE);
+      } else {
+        FFAddOneString(ffstring, "&view=gbwithparts>", FALSE, FALSE, TILDE_IGNORE);
+      }
+      if (bsp->length > 1000000) {
+        FFAddOneString(ffstring, "Click here to see all features and the sequence of this contig record.", FALSE, FALSE, TILDE_IGNORE);
+      } else {
+        FFAddOneString(ffstring, "Click here to see the sequence of this contig record.", FALSE, FALSE, TILDE_IGNORE);
+      }
+      FFAddOneString(ffstring, "</a>", FALSE, FALSE, TILDE_IGNORE);
+
+      prefix = FFEndPrint(ajp, ffstring, awp->format, 12, 12, 5, 5, "??");
+
+      FFRecycleString(ajp, ffstring);
+    }
+  }
+
+  if (StringDoesHaveText (prefix)) {
+    loclen = StringLen (prefix) + StringLen (suffix);
+    str = (CharPtr) MemNew (loclen + 10);
+    if (str != NULL) {
+      StringCpy (str, prefix);
+      StringCat (str, "\n\n");
+      StringCat (str, suffix);
+    }
+    bbp->string = str;
+  } else {
+    bbp->string = suffix;
+  }
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 NLM_EXTERN void AddDeflineBlock (
@@ -1112,6 +1189,10 @@ NLM_EXTERN void AddDeflineBlock (
   }
 
   FFRecycleString(ajp, ffstring);
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 static void FF_www_accession (
@@ -1132,6 +1213,95 @@ static void FF_www_accession (
   }
   return;
 }
+
+/* Check if acc directly follows prev */
+static Boolean IsSuccessor(CharPtr acc, CharPtr prev)
+{
+  CharPtr accp, prevp;
+  Int4 acc_num, prev_num;
+
+  if (acc == NULL  ||  prev == NULL) return FALSE;
+
+  if (StringLen(acc) != StringLen(prev)) return FALSE;
+
+  accp = acc;
+  prevp = prev;
+  while (accp != '\0'  &&  prevp != '\0') {
+    if (*accp != *prevp) return FALSE;
+    if (IS_DIGIT(*accp)) {
+      acc_num = (Int4)atol(accp);
+      prev_num = (Int4)atol(prevp);
+      return (acc_num == prev_num + 1);
+    }
+    ++accp;
+    ++prevp;
+  }
+  return FALSE;
+}
+
+
+static ValNodePtr GetSecondaryAccessions(ValNodePtr extra_access)
+{
+#define EXTRA_ACCESSION_CUTOFF 20
+#define BIN_ACCESSION_CUTOFF   5
+
+  Int4 extra_acc_num = 0;
+  ValNodePtr  bins, bin, vnp, result = NULL, temp;
+  CharPtr first, last, curr, prev = NULL;
+  Char  range[40];
+
+  extra_acc_num = ValNodeLen(extra_access);
+  if (extra_acc_num < EXTRA_ACCESSION_CUTOFF) {
+    for (vnp = extra_access; vnp != NULL; vnp = vnp->next) {
+      ValNodeCopyStr(&result, 0, (CharPtr)vnp->data.ptrvalue);
+    }
+    return result;
+  }
+
+  /* sort the accessions into bins of successive accessions */
+  bin = bins = NULL;
+  for (vnp = extra_access; vnp != NULL; vnp = vnp->next) {
+    curr = (CharPtr) vnp->data.ptrvalue;
+    if (ValidateAccn (curr) != 0) {
+      continue;
+    }
+    if (!IsSuccessor(curr, prev)) {
+      bin = ValNodeAdd(&bins);
+    }
+    temp = (ValNodePtr)bin->data.ptrvalue;
+    ValNodeAddStr(&temp, 0, curr);
+    bin->data.ptrvalue = temp;
+
+    prev = curr;
+  }
+
+  for (bin = bins; bin != NULL; bin = bin->next) {
+    vnp = (ValNodePtr)bin->data.ptrvalue;
+    if (ValNodeLen(vnp) > BIN_ACCESSION_CUTOFF) {
+      first = last = NULL;
+      for ( ; vnp != NULL; vnp = vnp->next) {
+        last = (CharPtr)vnp->data.ptrvalue;
+        if (first == NULL) {
+          first = last;
+        }
+      }
+      range[0] = '\0';
+      StringCat(range, first);
+      StringCat(range, "-");
+      StringCat(range, last);
+      ValNodeCopyStr(&result, 0, range);
+    } else {
+      for ( ; vnp != NULL; vnp = vnp->next) {
+        ValNodeCopyStr(&result, 0, (CharPtr)vnp->data.ptrvalue);
+      }
+    }
+    bin->data.ptrvalue = ValNodeFree((ValNodePtr)bin->data.ptrvalue);
+  }
+
+  bins = ValNodeFreeData(bins);
+  return result;
+}
+
 
 /* !!! this definitely needs more work to support all classes, use proper SeqId !!! */
 
@@ -1154,11 +1324,14 @@ NLM_EXTERN void AddAccessionBlock (
   GBBlockPtr         gbp;
   SeqIdPtr           gi = NULL;
   GBSeqPtr           gbseq;
+  SeqIdPtr           gnl = NULL;
+  SeqIdPtr           gpp = NULL;
   IndxPtr            index;
   SeqIdPtr           lcl = NULL;
   size_t             len = 0;
   MolInfoPtr         mip;
   SeqDescrPtr        sdp;
+  ValNodePtr         secondary_acc;
   CharPtr            separator = " ";
   SeqIdPtr           sip;
   TextSeqIdPtr       tsip;
@@ -1220,11 +1393,13 @@ NLM_EXTERN void AddAccessionBlock (
       case SEQID_TPD :
         accn = sip;
         break;
+      case SEQID_GPIPE :
+        /* should not override better accession */
+        gpp = sip;
+        break;
       case SEQID_GENERAL :
         /* should not override better accession */
-        if (accn == NULL) {
-          accn = sip;
-        }
+        gnl = sip;
         break;
       case SEQID_LOCAL :
         lcl = sip;
@@ -1235,8 +1410,13 @@ NLM_EXTERN void AddAccessionBlock (
   }
 
   sip = NULL;
+  if (accn == NULL) {
+    accn = gpp;
+  }
   if (accn != NULL) {
     sip = accn;
+  } else if (gnl != NULL) {
+    sip = gnl;
   } else if (lcl != NULL) {
     sip = lcl;
   } else if (gi != NULL) {
@@ -1249,6 +1429,17 @@ NLM_EXTERN void AddAccessionBlock (
 
   bbp = Asn2gbAddBlock (awp, ACCESSION_BLOCK, sizeof (BaseBlock));
   if (bbp == NULL) return;
+
+  bbp->entityID = awp->entityID;
+
+  if (accn == NULL) {
+
+    /* if no accession, do not show local or general in ACCESSION */
+
+    if (ajp->mode == ENTREZ_MODE || ajp->mode == SEQUIN_MODE) {
+      buf [0] = '\0';
+    }
+  }
 
   FFStartPrint (ffstring, awp->format, 0, 12, "ACCESSION", 12, 5, 5, "AC", TRUE);
 
@@ -1355,14 +1546,14 @@ NLM_EXTERN void AddAccessionBlock (
         bbp->entityID = dcontext.entityID;
         bbp->itemID = dcontext.itemID;
         bbp->itemtype = OBJ_SEQDESC;
-      }
 
-      for (vnp = extra_access; vnp != NULL; vnp = vnp->next) {
-        xtra = (CharPtr) vnp->data.ptrvalue;
-        if (ValidateAccn (xtra) == 0) {
-          FFAddTextToString(ffstring, separator, xtra, NULL, FALSE, FALSE, TILDE_TO_SPACES);
+        
+        secondary_acc = GetSecondaryAccessions(extra_access);
+        for (vnp = secondary_acc; vnp != NULL; vnp = vnp->next) {
+          xtra = (CharPtr)vnp->data.ptrvalue;
+          FFAddTextToString(ffstring, separator, xtra, NULL, FALSE, FALSE, TILDE_IGNORE);
           if (awp->format == EMBL_FMT || awp->format == EMBLPEPT_FMT) {
-              FFAddOneChar(ffstring, ';', FALSE);
+            FFAddOneChar(ffstring, ';', FALSE);
           }
 
           /* optionally populate indexes for NCBI internal database */
@@ -1374,17 +1565,22 @@ NLM_EXTERN void AddAccessionBlock (
           /* optionally populate gbseq for XML-ized GenBank format */
 
           if (gbseq != NULL) {
-            ValNodeCopyStr (&(gbseq->secondary_accessions), 0, xtra);
+              ValNodeCopyStr (&(gbseq->secondary_accessions), 0, xtra);
           }
         }
+        ValNodeFreeData(secondary_acc);
       }
-
+      
       sdp = SeqMgrGetNextDescriptor (bsp, sdp, 0, &dcontext);
     }
   }
 
   bbp->string = FFEndPrint(ajp, ffstring, awp->format, 12, 12, 5, 5, "AC");
   FFRecycleString(ajp, ffstring);
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 NLM_EXTERN void AddVersionBlock (
@@ -1400,6 +1596,7 @@ NLM_EXTERN void AddVersionBlock (
   Char             buf [41];
   GBSeqPtr         gbseq;
   Int4             gi = -1;
+  SeqIdPtr         gpp = NULL;
   IndxPtr          index;
   CharPtr          ptr;
   SeqIdPtr         sip;
@@ -1440,9 +1637,17 @@ NLM_EXTERN void AddVersionBlock (
       case SEQID_TPD :
         accn = sip;
         break;
+      case SEQID_GPIPE :
+        /* should not override better accession */
+        gpp = sip;
+        break;
       default :
         break;
     }
+  }
+
+  if (accn == NULL) {
+    accn = gpp;
   }
 
   /* if (gi < 1 && accn == NULL) return; */
@@ -1453,6 +1658,8 @@ NLM_EXTERN void AddVersionBlock (
 
   bbp = Asn2gbAddBlock (awp, VERSION_BLOCK, sizeof (BaseBlock));
   if (bbp == NULL) return;
+
+  bbp->entityID = awp->entityID;
 
   /* no longer displaying NID */
 
@@ -1483,6 +1690,11 @@ NLM_EXTERN void AddVersionBlock (
 
     bbp->string = FFEndPrint(ajp, ffstring, awp->format, 12, 12, 5, 5, "SV");
     FFRecycleString(ajp, ffstring);
+
+    if (awp->afp != NULL) {
+      DoImmediateFormat (awp->afp, bbp);
+    }
+
     return;
   }
 
@@ -1551,6 +1763,10 @@ NLM_EXTERN void AddVersionBlock (
   }
   bbp->string = FFEndPrint(ajp, ffstring, awp->format, 12, 12, 5, 5, "SV");
   FFRecycleString(ajp, ffstring);
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 /* only displaying PID in GenPept format */
@@ -1618,7 +1834,8 @@ static Uint1 dbsource_fasta_order [NUM_SEQID] = {
   12, /* 15 = pdb */
   10, /* 16 = tpg */
   10, /* 17 = tpe */
-  10  /* 18 = tpd */
+  10, /* 18 = tpd */
+  10  /* 19 = gpp */
 };
 
 static void AddToUniqueSipList (
@@ -1691,6 +1908,7 @@ static Boolean WriteDbsourceID (
     case SEQID_TPG :
     case SEQID_TPE :
     case SEQID_TPD :
+    case SEQID_GPIPE :
       tsip = (TextSeqIdPtr) sip->data.ptrvalue;
       if (tsip == NULL) return FALSE;
       break;
@@ -1813,11 +2031,14 @@ static void AddSPBlock (
   DbtagPtr           db;
   SeqMgrDescContext  dcontext;
   Boolean            first;
+  Int4               gi;
   Boolean            has_link;
-  Char               id [41];
+  Char               id [42];
   ObjectIdPtr        oip;
   SeqDescrPtr        sdp;
   SeqIdPtr           sid;
+  SeqIdPtr           sif;
+  SeqIdPtr           sip;
   SPBlockPtr         spb;
   CharPtr            string;
   ValNodePtr         vnp;
@@ -1890,13 +2111,30 @@ static void AddSPBlock (
         FFAddOneString (ffstring, ", ", FALSE, FALSE, TILDE_IGNORE);
       }
       first = FALSE;
-      SeqIdWrite (sid, id, PRINTID_TEXTID_ACC_VER, sizeof (id) - 1);
+      sip = sid;
+      sif = NULL;
+      id [0] = '\0';
+      if (sip->choice == SEQID_GI) {
+        gi = sid->data.intvalue;
+        if (! GetAccnVerFromServer (gi, id)) {
+          sif = GetSeqIdForGI (gi);
+          if (sif != NULL) {
+            sip = sif;
+          }
+        }
+      }
+      if (id [0] == '\0') {
+        SeqIdWrite (sip, id, PRINTID_TEXTID_ACC_VER, sizeof (id) - 1);
+      }
       if (sid->choice == SEQID_GI) {
         has_link = TRUE;
       }
-      acc = id;
+      if (StringDoesHaveText (id)) {
+        acc = id;
+      }
+      /*
       if (acc != NULL) {
-        switch (sid->choice) {
+        switch (sip->choice) {
           case SEQID_GENBANK:
             FFAddOneString (ffstring, "genbank accession ", FALSE, FALSE, TILDE_IGNORE);
             break; 
@@ -1935,6 +2173,7 @@ static void AddSPBlock (
             break; 
         }
       }
+      */
       if (acc != NULL) {
         if ( GetWWW(ajp) && has_link ) {
           sprintf(numbuf, "%ld", (long) sid->data.intvalue);
@@ -1945,6 +2184,9 @@ static void AddSPBlock (
         } else {
           FFAddOneString(ffstring, acc, FALSE, FALSE, TILDE_IGNORE);
         }
+      }
+      if (sif != NULL) {
+        SeqIdFree (sif);
       }
     }
   }
@@ -2302,15 +2544,18 @@ static Boolean FF_www_dbsource(
   Int2 j;
 
   if( GetWWW(ajp) ) {
-    if (choice == SEQID_PIR /*|| choice == SEQID_SWISSPROT */) {
+    if (choice == SEQID_PIR) {
       link = link_seq;
+    } else if (choice == SEQID_SWISSPROT) {
+      link = link_sp;
     } else if (choice == SEQID_PDB || choice == SEQID_PRF) {
       link = link_seq;
     } else if (choice == SEQID_EMBL || choice == SEQID_GENBANK || 
         choice == SEQID_DDBJ || choice == SEQID_GIBBSQ || 
         choice == SEQID_GIBBMT || choice == SEQID_GI || 
         choice == SEQID_GIIM || choice == SEQID_OTHER ||
-        choice == SEQID_TPG || choice == SEQID_TPE || choice == SEQID_TPD)  {
+        choice == SEQID_TPG || choice == SEQID_TPE || choice == SEQID_TPD ||
+        choice == SEQID_GPIPE)  {
       link = link_seq;
     } else {
       AddStringWithTildes(ffstring, str);
@@ -2340,15 +2585,23 @@ static Boolean FF_www_dbsource(
         ++end;
       }
 
-      FFAddTextToString(ffstring, "<a href=", link, "val=", FALSE, FALSE, TILDE_IGNORE);
+      if (choice == SEQID_SWISSPROT) {
+        FFAddTextToString(ffstring, "<a href=", link, NULL, FALSE, FALSE, TILDE_IGNORE);
+      } else {
+        FFAddTextToString(ffstring, "<a href=", link, "val=", FALSE, FALSE, TILDE_IGNORE);
+      }
       for (text = temp; text != end; ++text ) {
         FFAddOneChar(ffstring, *text, FALSE);
       }
       FFAddOneString(ffstring, ">", FALSE, FALSE, TILDE_IGNORE);
 
-      text = temp;
-      FFAddOneString(ffstring, text, FALSE, FALSE, TILDE_IGNORE);
+      for (text = temp; text != end; ++text ) {
+        FFAddOneChar(ffstring, *text, FALSE);
+      }
       FFAddOneString(ffstring, "</a>", FALSE, FALSE, TILDE_IGNORE);
+      if ( *end == ';' ) {
+        FFAddOneChar(ffstring, ';', FALSE);
+      }
     } else {
       if (first == FALSE) {
         FFAddOneString(ffstring, ", ", FALSE, FALSE, TILDE_IGNORE);
@@ -2359,115 +2612,6 @@ static Boolean FF_www_dbsource(
     AddStringWithTildes(ffstring, str);
   }
   return TRUE;
-}
-
-static CharPtr CleanQualValue (
-  CharPtr str
-)
-
-{
-  Char     ch;
-  CharPtr  dst;
-  CharPtr  ptr;
-
-  if (str == NULL || str [0] == '\0') return NULL;
-
-  dst = str;
-  ptr = str;
-  ch = *ptr;
-  while (ch != '\0') {
-    if (ch == '\n' || ch == '\r' || ch == '\t' || ch == '"') {
-      *dst = ' ';
-      dst++;
-    } else {
-      *dst = ch;
-      dst++;
-    }
-    ptr++;
-    ch = *ptr;
-  }
-  *dst = '\0';
-
-  return str;
-}
-
-static CharPtr Asn2gnbkCompressSpaces (CharPtr str)
-
-{
-  Char     ch;
-  CharPtr  dst;
-  Char     last;
-  CharPtr  ptr;
-
-  if (str != NULL && str [0] != '\0') {
-    dst = str;
-    ptr = str;
-    ch = *ptr;
-    while (ch != '\0' && ch <= ' ') {
-      ptr++;
-      ch = *ptr;
-    }
-    while (ch != '\0') {
-      *dst = ch;
-      dst++;
-      ptr++;
-      last = ch;
-      ch = *ptr;
-      if (ch != '\0' && ch < ' ') {
-        *ptr = ' ';
-        ch = *ptr;
-      }
-      while (ch != '\0' && last <= ' ' && ch <= ' ') {
-        ptr++;
-        ch = *ptr;
-      }
-    }
-    *dst = '\0';
-    dst = NULL;
-    ptr = str;
-    ch = *ptr;
-    while (ch != '\0') {
-      if (ch != ' ') {
-        dst = NULL;
-      } else if (dst == NULL) {
-        dst = ptr;
-      }
-      ptr++;
-      ch = *ptr;
-    }
-    if (dst != NULL) {
-      *dst = '\0';
-    }
-  }
-  return str;
-}
-
-static CharPtr StripAllSpaces (
-  CharPtr str
-)
-
-{
-  Char     ch;
-  CharPtr  dst;
-  CharPtr  ptr;
-
-  if (str == NULL || str [0] == '\0') return NULL;
-
-  dst = str;
-  ptr = str;
-  ch = *ptr;
-  while (ch != '\0') {
-    if (ch == ' ' || ch == '\t') {
-    } else {
-      *dst = ch;
-      dst++;
-    }
-    ptr++;
-    ch = *ptr;
-  }
-  *dst = '\0';
-
-  return str;
 }
 
 NLM_EXTERN void AddDbsourceBlock (
@@ -2503,6 +2647,8 @@ NLM_EXTERN void AddDbsourceBlock (
 
   bbp = Asn2gbAddBlock (awp, DBSOURCE_BLOCK, sizeof (BaseBlock));
   if (bbp == NULL) return;
+
+  bbp->entityID = awp->entityID;
 
   ffstring = FFGetString(ajp);
   if ( ffstring == NULL ) return;
@@ -2544,6 +2690,7 @@ NLM_EXTERN void AddDbsourceBlock (
       case SEQID_TPG :
       case SEQID_TPE :
       case SEQID_TPD :
+      case SEQID_GPIPE :
       case SEQID_GI :
       case SEQID_GIIM :
         cds = SeqMgrGetCDSgivenProduct (bsp, NULL);
@@ -2638,6 +2785,10 @@ NLM_EXTERN void AddDbsourceBlock (
 
   bbp->string = str;
   FFRecycleString(ajp, ffstring);
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 NLM_EXTERN void AddDateBlock (
@@ -2704,6 +2855,10 @@ NLM_EXTERN void AddDateBlock (
 
   bbp->string = FFEndPrint(ajp, ffstring, awp->format, 0, 0, 5, 5, "DT");
   FFRecycleString(ajp, ffstring);
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 
@@ -2798,6 +2953,7 @@ NLM_EXTERN void AddKeywordsBlock (
   Asn2gbSectPtr      asp;
   BaseBlockPtr       bbp;
   BioseqPtr          bsp;
+  BioSourcePtr       biop;
   SeqMgrDescContext  dcontext;
   EMBLBlockPtr       ebp;
   GBBlockPtr         gbp;
@@ -2807,6 +2963,7 @@ NLM_EXTERN void AddKeywordsBlock (
   Boolean            is_est = FALSE;
   Boolean            is_gss = FALSE;
   Boolean            is_sts = FALSE;
+  Boolean            is_env_sample = FALSE;
   ValNodePtr         keywords;
   CharPtr            kwd;
   MolInfoPtr         mip;
@@ -2816,6 +2973,7 @@ NLM_EXTERN void AddKeywordsBlock (
   SeqDescrPtr        sdp;
   SeqIdPtr           sip;
   SPBlockPtr         sp;
+  SubSourcePtr       ssp;
   CharPtr            str;
   UserObjectPtr      uop;
   ValNodePtr         vnp;
@@ -2840,6 +2998,19 @@ NLM_EXTERN void AddKeywordsBlock (
       ValNodeCopyStr (&head, 0, "Third Party Annotation");
       ValNodeCopyStr (&head, 0, "; ");
       ValNodeCopyStr (&head, 0, "TPA");
+    }
+  }
+
+  biop = NULL;
+  sdp = SeqMgrGetNextDescriptor (bsp, NULL, Seq_descr_source, &dcontext);
+  if (sdp != NULL) {
+    biop = (BioSourcePtr) sdp->data.ptrvalue;
+  }
+  if (biop != NULL) {
+    for (ssp = biop->subtype; ssp != NULL; ssp = ssp->next) {
+      if (ssp->subtype == SUBSRC_environmental_sample) {
+        is_env_sample = TRUE;
+      }
     }
   }
 
@@ -2920,6 +3091,22 @@ NLM_EXTERN void AddKeywordsBlock (
             ValNodeCopyStr (&head, 0, "; ");
           }
           ValNodeCopyStr (&head, 0, "WGS");
+          break;
+        case MI_TECH_barcode :
+          if (head != NULL) {
+            ValNodeCopyStr (&head, 0, "; ");
+          }
+          ValNodeCopyStr (&head, 0, "BARCODE");
+          break;
+        case MI_TECH_unknown :
+        case MI_TECH_standard :
+        case MI_TECH_other :
+          if (is_env_sample) {
+            if (head != NULL) {
+              ValNodeCopyStr (&head, 0, "; ");
+            }
+            ValNodeCopyStr (&head, 0, "ENV");
+          }
           break;
         default :
           break;
@@ -3055,6 +3242,10 @@ NLM_EXTERN void AddKeywordsBlock (
   bbp->string = FFEndPrint(ajp, ffstring, awp->format, 12, 12, 5, 5, "KW");
 
   FFRecycleString(ajp, ffstring);
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 NLM_EXTERN void AddSegmentBlock (
@@ -3119,6 +3310,10 @@ NLM_EXTERN void AddSegmentBlock (
 
   bbp->string = FFEndPrint(ajp, ffstring, awp->format, 12, 12, 5, 5, "XX");
   FFRecycleString(ajp, ffstring);
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 NLM_EXTERN void AddSourceBlock (
@@ -3153,6 +3348,11 @@ NLM_EXTERN void AddSourceBlock (
       bbp->entityID = dcontext.entityID;
       bbp->itemID = dcontext.itemID;
       bbp->itemtype = OBJ_SEQDESC;
+
+      if (awp->afp != NULL) {
+        DoImmediateFormat (awp->afp, bbp);
+      }
+
       return;
     }
   }
@@ -3192,6 +3392,10 @@ NLM_EXTERN void AddSourceBlock (
         }
       }
     }
+  }
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
   }
 }
 
@@ -3252,6 +3456,10 @@ NLM_EXTERN void AddOrganismBlock (
       }
     }
   }
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 static RefBlockPtr AddPub (
@@ -3274,13 +3482,16 @@ static RefBlockPtr AddPub (
   IntRefBlockPtr  irp;
   RefBlockPtr     rbp;
   ValNodePtr      vnp;
+  ArticleIdPtr	  aip;
 
   if (awp == NULL || head == NULL || pdp == NULL) return NULL;
 
   if (awp->hideGeneRIFs) {
-    if (StringNICmp (pdp->comment, "GeneRIF", 7) == 0) return NULL;
-  } else if (awp->onlyGeneRIFs || awp->latestGeneRIFs) {
-    if (StringNICmp (pdp->comment, "GeneRIF", 7) != 0) return NULL;
+    if (StringISearch (pdp->comment, "GeneRIF") != NULL) return NULL;
+  } else if (awp->onlyGeneRIFs) {
+    if (StringISearch (pdp->comment, "GeneRIF") == NULL) return NULL;
+  } else if (awp->onlyReviewPubs) {
+    if (StringISearch (pdp->comment, "Review Article") == NULL) return NULL;
   }
 
   rbp = (RefBlockPtr) MemNew (sizeof (IntRefBlock));
@@ -3381,6 +3592,18 @@ static RefBlockPtr AddPub (
             default:
               break;
           }
+		  /*  look for PMID and MUID in the Cit-art article ids set */
+		  if (cap->ids != NULL) {
+			for (aip = cap->ids; aip != NULL; aip = aip->next) {
+              if (aip->choice == ARTICLEID_PUBMED && rbp->pmid == 0) {
+                rbp->pmid = aip->data.intvalue;
+                rbp->category = REF_CAT_PUB;
+              } else if (aip->choice == ARTICLEID_MEDLINE && rbp->muid == 0) {
+                rbp->muid = aip->data.intvalue;
+                rbp->category = REF_CAT_PUB;
+              }
+			}
+		  }
         }
         break;
       case PUB_Book:
@@ -3432,12 +3655,16 @@ static RefBlockPtr AddPub (
         }
         break;
       case PUB_Muid :
-        rbp->muid = vnp->data.intvalue;
-        rbp->category = REF_CAT_PUB;
+        if (rbp->muid == 0) {
+          rbp->muid = vnp->data.intvalue;
+          rbp->category = REF_CAT_PUB;
+        }
         break;
       case PUB_PMid :
-        rbp->pmid = vnp->data.intvalue;
-        rbp->category = REF_CAT_PUB;
+        if (rbp->pmid == 0) {
+          rbp->pmid = vnp->data.intvalue;
+          rbp->category = REF_CAT_PUB;
+        }
         break;
       default :
         break;
@@ -3594,6 +3821,9 @@ static int LIBCALLBACK SortReferences (
     temp = rbp1;
     rbp1 = rbp2;
     rbp2 = temp;
+
+    irp1 = (IntRefBlockPtr) rbp1;
+    irp2 = (IntRefBlockPtr) rbp2;
   }
 
   /* if same uid, one with just uids goes last to be excised but remembered */
@@ -3608,9 +3838,9 @@ static int LIBCALLBACK SortReferences (
 
   /* put sites after pubs that refer to all or a range of bases */
 
-  if (rbp1->sites > 0) {
+  if (rbp1->sites > rbp2->sites) {
     return 1;
-  } else if (rbp2->sites > 0) {
+  } else if (rbp2->sites > rbp1->sites) {
     return -1;
   }
 
@@ -3647,6 +3877,14 @@ static int LIBCALLBACK SortReferences (
   /* last resort for equivalent publication descriptors, sort in itemID order */
 
   if (rbp1->itemtype == OBJ_SEQDESC && rbp2->itemtype == OBJ_SEQDESC) {
+    if (rbp1->itemID > rbp2->itemID) {
+      return 1;
+    } else if (rbp1->itemID < rbp2->itemID) {
+      return -1;
+    }
+  }
+
+  if (rbp1->itemtype == OBJ_ANNOTDESC && rbp2->itemtype == OBJ_ANNOTDESC) {
     if (rbp1->itemID > rbp2->itemID) {
       return 1;
     } else if (rbp1->itemID < rbp2->itemID) {
@@ -3803,6 +4041,8 @@ static void GetRefsOnBioseq (
 )
 
 {
+  SeqMgrAndContext   acontext;
+  AnnotDescPtr       adp;
   IntAsn2gbJobPtr    ajp;
   AuthListPtr        alp;
   CdsPubs            cp;
@@ -3907,6 +4147,34 @@ static void GetRefsOnBioseq (
     cp.target = target;
     cp.vnp = &vn;
     SeqMgrGetAllOverlappingFeatures (cdsloc, FEATDEF_PUB, NULL, 0, LOCATION_SUBSET, (Pointer) &cp, GetRefsOnCDS);
+  }
+
+  /* also get publications from AnnotDesc on SeqAnnot */
+
+  adp = SeqMgrGetNextAnnotDesc (target, NULL, Annot_descr_pub, &acontext);
+  while (adp != NULL) {
+
+    okay = TRUE;
+
+    if (okay) {
+      pdp = (PubdescPtr) adp->data.ptrvalue;
+      rbp = AddPub (awp, &(awp->pubhead), pdp);
+      if (rbp != NULL) {
+
+        rbp->entityID = acontext.entityID;
+        rbp->itemID = acontext.itemID;
+        rbp->itemtype = OBJ_ANNOTDESC;
+
+        irp = (IntRefBlockPtr) rbp;
+        irp->loc = SeqLocMerge (target, &vn, NULL, FALSE, TRUE, FALSE);
+        alp = GetAuthListPtr (pdp, NULL);
+        if (alp != NULL) {
+          irp->authstr = GetAuthorsPlusConsortium (awp->format, alp);
+        }
+        irp->index = 0;
+      }
+    }
+    adp = SeqMgrGetNextAnnotDesc (target, adp, Annot_descr_pub, &acontext);
   }
 
   SeqIdFree (sint.id);
@@ -4053,12 +4321,14 @@ NLM_EXTERN Boolean AddReferenceBlock (
   CitSubPtr          csp;
   BioseqPtr          dna;
   Boolean            excise;
+  Int2               firstserial;
   ValNodePtr         head = NULL;
   Int2               i;
   IntRefBlockPtr     irp;
   Boolean            is_aa;
   Boolean            is_embl = FALSE;
   Boolean            is_patent = FALSE;
+  Int2               j;
   IntRefBlockPtr     lastirp;
   RefBlockPtr        lastrbp;
   ValNodePtr         next;
@@ -4158,6 +4428,9 @@ NLM_EXTERN Boolean AddReferenceBlock (
           if (alp != NULL) {
             irp->authstr = GetAuthorsPlusConsortium (awp->format, alp);
           }
+          if (csp->date != NULL) {
+            irp->date = DateDup (csp->date);
+          }
         }
       }
 
@@ -4238,6 +4511,10 @@ NLM_EXTERN Boolean AddReferenceBlock (
         /* do not allow no author reference to appear by itself - U07000.1 */
         excise = TRUE;
         combine = FALSE;
+      } else if (isRefSeq && is_aa && rbp->category == REF_CAT_SUB) {
+        /* GenPept RefSeq suppresses cit-subs */
+        excise = TRUE;
+        combine = FALSE;
       }
     }
     if (excise) {
@@ -4297,10 +4574,10 @@ NLM_EXTERN Boolean AddReferenceBlock (
 
   if (head == NULL) return FALSE;
 
-  /* if taking best GeneRIFs, free remainder */
+  /* if taking newest publications, free remainder */
 
-  if (awp->latestGeneRIFs) {
-    for (vnp = head, i = 0; vnp != NULL && i < 10; vnp = vnp->next, i++) continue;
+  if (awp->newestPubs) {
+    for (vnp = head, i = 1; vnp != NULL && i < 5; vnp = vnp->next, i++) continue;
     if (vnp != NULL) {
       next = vnp->next;
       vnp->next = NULL;
@@ -4316,20 +4593,59 @@ NLM_EXTERN Boolean AddReferenceBlock (
         MemFree (rbp);
       }
     }
+
+  /* if taking oldest publications, free remainder */
+
+  } else if (awp->oldestPubs) {
+    for (vnp = head, j = 0; vnp != NULL; vnp = vnp->next, j++) continue;
+    if (j > 5) {
+      for (vnp = head, i = 0; vnp != NULL && i < j - 6; vnp = vnp->next, i++) continue;
+      if (vnp != NULL) {
+        next = vnp->next;
+        vnp->next = NULL;
+        for (vnp = head; vnp != NULL; vnp = vnp->next) {
+          rbp = (RefBlockPtr) vnp->data.ptrvalue;
+          MemFree (rbp->uniquestr);
+          irp = (IntRefBlockPtr) rbp;
+          DateFree (irp->date);
+          SeqLocFree (irp->loc);
+          MemFree (irp->authstr);
+          MemFree (irp->fig);
+          MemFree (irp->maploc);
+          MemFree (rbp);
+        }
+        head = next;
+      }
+    }
   }
 
   /* assign serial numbers */
 
-  for (vnp = head, i = 1; vnp != NULL; vnp = vnp->next, i++) {
+  firstserial = 1;
+
+  /* first find highest one assigned by EMBL/SWISS-PROT */
+
+  for (vnp = head; vnp != NULL; vnp = vnp->next) {
     rbp = (RefBlockPtr) vnp->data.ptrvalue;
-    if (rbp != NULL) {
-      rbp->serial = i;
+    if (rbp == NULL) continue;
+    if (rbp->serial > 0 && rbp->serial < INT2_MAX) {
+      firstserial = rbp->serial + 1;
     }
+  }
+
+  /* then give increasing serial numbers to unassigned publications */
+
+  for (vnp = head; vnp != NULL; vnp = vnp->next) {
+    rbp = (RefBlockPtr) vnp->data.ptrvalue;
+    if (rbp == NULL) continue;
+    if (rbp->serial > 0 && rbp->serial < INT2_MAX) continue;
+    rbp->serial = firstserial;
+    firstserial++;
   }
 
   /* allocate reference array for this section */
 
-  numReferences = i - 1;
+  numReferences = ValNodeLen (head);
   asp->numReferences = numReferences;
 
   if (numReferences > 0) {
@@ -4358,6 +4674,14 @@ NLM_EXTERN Boolean AddReferenceBlock (
   awp->lastblock = vnp;
   if (awp->blockList == NULL) {
     awp->blockList = vnp;
+  }
+
+  if (awp->afp != NULL) {
+    for (vnp = head; vnp != NULL; vnp = vnp->next) {
+      rbp = (RefBlockPtr) vnp->data.ptrvalue;
+      if (rbp == NULL) continue;
+      DoImmediateFormat (awp->afp, (BaseBlockPtr) rbp);
+    }
   }
 
   return TRUE;
@@ -4461,6 +4785,10 @@ NLM_EXTERN void AddWGSBlock (
                 bbp->string = FFEndPrint(ajp, ffstring, awp->format, 12, 12, 0, 0, NULL);
                 FFRecycleString(ajp, ffstring);
               }
+
+              if (awp->afp != NULL) {
+                DoImmediateFormat (awp->afp, bbp);
+              }
             }
           }
         }
@@ -4544,26 +4872,21 @@ NLM_EXTERN void AddGenomeBlock (
 
   bbp->string = FFEndPrint(ajp, ffstring, awp->format, 12, 12, 0, 0, NULL);
   FFRecycleString(ajp, ffstring);
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 NLM_EXTERN void AddBasecountBlock (
-  Asn2gbWorkPtr awp,
-  CharPtr bases
+  Asn2gbWorkPtr awp
 )
 
 {
   IntAsn2gbJobPtr  ajp;
-  Int4             base_count [5];
   BaseBlockPtr     bbp;
   BioseqPtr        bsp;
-  Char             buf [80];
-  Char             ch;
-  Int2             i;
-  Int4             len;
-  StringItemPtr    ffstring;
-  CharPtr          ptr;
-  CharPtr          str;
-
+ 
   if (awp == NULL) return;
   ajp = awp->ajp;
   if (ajp == NULL) return;
@@ -4572,71 +4895,9 @@ NLM_EXTERN void AddBasecountBlock (
 
   bbp = Asn2gbAddBlock (awp, BASECOUNT_BLOCK, sizeof (BaseBlock));
 
-  if (bases == NULL || ajp->ajp.slp != NULL) return;
-  len = bsp->length;
-  for (i = 0; i < 5; i++) {
-    base_count [i] = 0;
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
   }
-
-  ptr = bases;
-  ch = *ptr;
-  while (ch != '\0') {
-    ch = TO_UPPER (ch);
-    switch (ch) {
-      case 'A' :
-        (base_count [0])++;
-        break;
-      case 'C' :
-        (base_count [1])++;
-        break;
-      case 'G' :
-        (base_count [2])++;
-        break;
-      case 'T' :
-        (base_count [3])++;
-        break;
-      default :
-        (base_count [4])++;
-        break;
-    }
-    ptr++;
-    ch = *ptr;
-  }
-
-  if (awp->format == GENBANK_FMT || awp->format == GENPEPT_FMT) {
-
-    if (base_count [4] == 0) {
-      sprintf (buf, "%7ld a%7ld c%7ld g%7ld t",
-               (long) base_count [0], (long) base_count [1],
-               (long) base_count [2], (long) base_count [3]);
-    } else {
-      sprintf (buf, "%7ld a%7ld c%7ld g%7ld t%7ld others",
-               (long) base_count [0], (long) base_count [1],
-               (long) base_count [2], (long) base_count [3],
-               (long) base_count [4]);
-    }
-
-  } else if (awp->format == EMBL_FMT || awp->format == EMBLPEPT_FMT) {
-
-    sprintf (buf, "Sequence %ld BP; %ld A; %ld C; %ld G; %ld T; %ld other;",
-             (long) len,
-             (long) base_count [0], (long) base_count [1],
-             (long) base_count [2], (long) base_count [3],
-             (long) base_count [4]);
-  }
-
-  ffstring = FFGetString (ajp);
-  if ( ffstring == NULL ) return;
-
-  if (awp->format == EMBL_FMT || awp->format == EMBLPEPT_FMT) {
-    FFAddOneString(ffstring, "XX\n", FALSE, FALSE, TILDE_IGNORE);
-  }
-  FFStartPrint (ffstring, awp->format, 0, 0, "BASE COUNT", 12, 5, 5, "SQ", FALSE);
-  FFAddOneString (ffstring, buf, FALSE, FALSE, TILDE_TO_SPACES);
-  str = FFEndPrint(ajp, ffstring, awp->format, 12, 0, 5, 5, "SQ");
-  FFRecycleString(ajp, ffstring);
-
-  bbp->string = StringSave (str);
 }
 
 NLM_EXTERN void AddOriginBlock (
@@ -4667,6 +4928,8 @@ NLM_EXTERN void AddOriginBlock (
   bbp = Asn2gbAddBlock (awp, ORIGIN_BLOCK, sizeof (BaseBlock));
   if (bbp == NULL) return;
 
+  bbp->entityID = awp->entityID;
+
   if (awp->format == GENBANK_FMT || awp->format == GENPEPT_FMT) {
 
     buf [0] = '\0';
@@ -4691,26 +4954,25 @@ NLM_EXTERN void AddOriginBlock (
 
   bbp->string = FFEndPrint(ajp, ffstring, awp->format, 0, 12, 0, 0, NULL);
   FFRecycleString(ajp, ffstring);
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 #define BASES_PER_BLOCK 1200
 
 NLM_EXTERN void AddSequenceBlock (
-  Asn2gbWorkPtr awp,
-  CharPtr bases
+  Asn2gbWorkPtr awp
 )
 
 {
   IntAsn2gbJobPtr  ajp;
   BioseqPtr        bsp;
-  Int4             i;
-  Int4             j;
   Int4             len;
-  CharPtr          ptr;
   SeqBlockPtr      sbp;
   Int4             start;
   Int4             stop;
-  CharPtr          str;
 
   if (awp == NULL) return;
   ajp = awp->ajp;
@@ -4736,12 +4998,15 @@ NLM_EXTERN void AddSequenceBlock (
 
     sbp->start = 0;
     sbp->stop = len;
+
+    if (awp->afp != NULL) {
+      DoImmediateFormat (awp->afp, (BaseBlockPtr) sbp);
+    }
+
     return;
   }
 
   /* otherwise populate individual sequence blocks for given range */
-
-  ptr = bases;
 
   for (start = 0; start < len; start += BASES_PER_BLOCK) {
     sbp = (SeqBlockPtr) Asn2gbAddBlock (awp, SEQUENCE_BLOCK, sizeof (SeqBlock));
@@ -4759,17 +5024,8 @@ NLM_EXTERN void AddSequenceBlock (
     sbp->start = start;
     sbp->stop = stop;
 
-    if (ptr != NULL) {
-      str = MemNew (sizeof (Char) * (BASES_PER_BLOCK + 2));
-      if (str != NULL) {
-        sbp->bases = str;
-        j = stop - start;
-        for (i = 0; i < j; i++) {
-          *str = *ptr;
-          ptr++;
-          str++;
-        }
-      }
+    if (awp->afp != NULL) {
+      DoImmediateFormat (awp->afp, (BaseBlockPtr) sbp);
     }
   }
 }
@@ -4784,6 +5040,10 @@ NLM_EXTERN void AddContigBlock (
   if (awp == NULL) return;
 
   bbp = Asn2gbAddBlock (awp, CONTIG_BLOCK, sizeof (BaseBlock));
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 
 NLM_EXTERN void AddSlashBlock (
@@ -4799,9 +5059,15 @@ NLM_EXTERN void AddSlashBlock (
   bbp = Asn2gbAddBlock (awp, SLASH_BLOCK, sizeof (BaseBlock));
   if (bbp == NULL) return;
 
+  bbp->entityID = awp->entityID;
+
   str = MemNew(sizeof(Char) * 4);
   StringNCpy(str, "//\n", 4);
 
   bbp->string = str;
+
+  if (awp->afp != NULL) {
+    DoImmediateFormat (awp->afp, bbp);
+  }
 }
 

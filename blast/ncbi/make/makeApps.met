@@ -53,8 +53,8 @@ on SimpleProjectData(projName, features)
 	set myFeatures to features
 	return {name:projName, features:myFeatures, rsrcs:{"ncbilogo.r", "Info.plc"}, settings:Â
 		{prefixFile:"", ppcProject:{}}, projLibs:Â
-		{"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbimmdb", "ncbitool"}, fileData:Â
-		{{projPath:"demo:", fileList:{projName & ".c"}}}}
+		{"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbimmdb", "ncbiblast", "ncbiblastapi", "ncbitool"}, Â
+		fileData:{{projPath:"demo:", fileList:{projName & ".c"}}}}
 	
 end SimpleProjectData
 
@@ -76,9 +76,9 @@ on SetProjectData()
 			{prefixFile:"", creator:"SEQN", ppcProject:{Preferred Heap Size:32000, Min Heap Size:6000}} Â
 				
 		set myRsrcs to {"sequin.r", "InfoSequin.plc"}
-		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "ncbicdr", "vibrant", "ncbidesk", Â
-			"ncbimmdb", "ncbitool", "netcli", "netentr", "ncbibls3", "ncbimla", Â
-			"ncbitxc2", "ncbiid1", "ncbispell", "vibnet", "ncbiblast", "ncbiblastapi"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "ncbicdr", "vibrant", "ncbiblast", "ncbiblastapi", Â
+			"ncbidesk", "ncbimmdb", "ncbitool", "netcli", "netentr", "ncbibls3", "ncbimla", Â
+			"ncbitxc2", "ncbiid1", "ncbispell", "vibnet"}
 		set myFiles to Â
 			{{projPath:"cdromlib:", fileList:{"accentr.c", "accutils.c"}}, Â
 				{projPath:"sequin:", fileList:{"sequin1.c", "sequin2.c", "sequin3.c", "sequin4.c", "sequin5.c", Â
@@ -92,8 +92,8 @@ on SetProjectData()
 		set myFeatures to {"sockets"}
 		set mySettings to {prefixFile:"", creator:"ENTZ", ppcProject:{}}
 		set myRsrcs to {"entrez.r", "Info.plc"}
-		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "ncbicdr", "vibrant", "ncbidesk", "ncbimmdb", Â
-			"ncbitool", "netcli", "netentr", "ncbibls3", "ncbiid1", "vibnet"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "ncbicdr", "vibrant", "ncbiblast", "ncbiblastapi", Â
+			"ncbidesk", "ncbimmdb", "ncbitool", "netcli", "netentr", "ncbibls3", "ncbiid1", "vibnet"}
 		set myFiles to Â
 			{{projPath:"cdromlib:", fileList:{"accentr.c", "accutils.c"}}, Â
 				{projPath:"demo:", fileList:{"entrez.c"}}}
@@ -106,7 +106,8 @@ on SetProjectData()
 		set myFeatures to {"sockets"}
 		set mySettings to {prefixFile:"", creator:"ENTZ", ppcProject:{}}
 		set myRsrcs to {"entrez.r", "Info.plc"}
-		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "ncbimmdb", "ncbitool", "vibrant", "ncbidesk"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "ncbimmdb", "ncbiblast", "ncbiblastapi", "ncbitool", Â
+			"vibrant", "ncbidesk"}
 		set myFiles to Â
 			{{projPath:"demo:", fileList:{"entrez2.c"}}}
 		set entrez2Data to Â
@@ -137,16 +138,65 @@ on SetProjectData()
 			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
 				myLibs, fileData:myFiles}
 		
+		-- Megablast
+		set myName to "megablast"
+		set myFeatures to {"sockets"}
+		set mySettings to {prefixFile:"", ppcProject:{}}
+		set myRsrcs to {"ncbilogo.r", "Info.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbiblast", "ncbiblastapi", "ncbitool"}
+		set myFiles to Â
+			{{projPath:"demo:", fileList:{"megablast.c"}}}
+		set megablastData to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
+		
+		-- Copymat
+		set myName to "copymat"
+		set myFeatures to {"sockets"}
+		set mySettings to {prefixFile:"", ppcProject:{}}
+		set myRsrcs to {"ncbilogo.r", "Info.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbiblast", "ncbiblastapi", "ncbitool"}
+		set myFiles to Â
+			{{projPath:"demo:", fileList:{"copymat.c"}}}
+		set copymatData to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
+		
 		-- Impala
 		set impalaData to my SimpleProjectData("impala", {})
 		set item 1 of fileList of item 1 of fileData of impalaData to "profiles.c"
+		
+		-- asn2fsa
+		set myName to "asn2fsa"
+		set myFeatures to {"sockets"}
+		set mySettings to {prefixFile:"", ppcProject:{}}
+		set myRsrcs to {"ncbilogo.r", "Info.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbitool", "netcli", "ncbiid1"}
+		set myFiles to Â
+			{{projPath:"demo:", fileList:{"asn2fsa.c"}}}
+		set asn2fsaData to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
+		
+		-- asn2all
+		set myName to "asn2all"
+		set myFeatures to {"sockets"}
+		set mySettings to {prefixFile:"", ppcProject:{}}
+		set myRsrcs to {"ncbilogo.r", "Info.plc"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbitool", "netcli", "ncbiid1"}
+		set myFiles to Â
+			{{projPath:"demo:", fileList:{"asn2all.c"}}}
+		set asn2allData to Â
+			{name:myName, features:myFeatures, settings:mySettings, rsrcs:myRsrcs, projLibs:Â
+				myLibs, fileData:myFiles}
 		
 		-- Spidey
 		set myName to "spidey"
 		set myFeatures to {"sockets"}
 		set mySettings to {prefixFile:"", ppcProject:{}}
 		set myRsrcs to {"ncbilogo.r", "Info.plc"}
-		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbitool", "netcli", "ncbiid1"}
+		set myLibs to {"ncbi", "ncbiconn", "ncbiobj", "vibrant", "ncbiblast", "ncbiblastapi", Â
+			"ncbitool", "netcli", "ncbiid1"}
 		set myFiles to Â
 			{{projPath:"demo:", fileList:{"spideymain.c"}}}
 		set spideyData to Â
@@ -158,8 +208,10 @@ on SetProjectData()
 	
 	AddProject(sequinData)
 	AddProject(entrez2Data)
-	AddSimpleProject("tbl2asn", {})
+	AddSimpleProject("tbl2asn", {"sockets"})
 	AddSimpleProject("asn2gb", {"sockets"})
+	AddProject(asn2fsaData)
+	AddProject(asn2allData)
 	AddProject(spideyData)
 	
 	-- AddProject(entrezData)
@@ -174,11 +226,11 @@ on SetProjectData()
 		AddSimpleProject("blastpgp", {})
 		
 		AddProject(blastcl3Data)
-		AddSimpleProject("megablast", {})
+		AddProject(megablastData)
 		AddSimpleProject("blastclust", {})
 		AddSimpleProject("rpsblast", {})
 		AddSimpleProject("seedtop", {})
-		AddSimpleProject("copymat", {})
+		AddProject(copymatData)
 		AddSimpleProject("makemat", {})
 		
 		AddProject(impalaData)
@@ -474,8 +526,10 @@ on SetupTarget(proj, targetIndex)
 		if not targetDebug and not targetProfile then
 			if targetAPI is "Mach-O" then
 				set targetFilename to projName & "OSX" -- Mach adds OSX on the end.
+			else if targetAPI is "Carbon" then
+				set targetFilename to projName & "OS9" -- Carbon adds OS9 on the end.
 			else
-				set targetFilename to projName -- Carbon & Windows have same name as project.
+				set targetFilename to projName -- Windows have same name as project.
 			end if
 		else
 			set targetFilename to projName & fileNameSuffix

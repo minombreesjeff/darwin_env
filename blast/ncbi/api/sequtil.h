@@ -29,13 +29,25 @@
 *   
 * Version Creation Date: 4/1/91
 *
-* $Revision: 6.43 $
+* $Revision: 6.47 $
 *
 * File Description:  Sequence Utilities for objseq and objsset
 *
 * Modifications:  
 * --------------------------------------------------------------------------
 * $Log: sequtil.h,v $
+* Revision 6.47  2005/01/26 23:38:46  kans
+* added ValidateAccnDotVer, check /compare in flatfile generator and validator
+*
+* Revision 6.46  2004/12/08 15:14:51  kans
+* added ACCN_DDBJ_GSS, accession prefix DE
+*
+* Revision 6.45  2004/08/04 17:15:16  kans
+* added AccnInUniProt - still need AccnIsSWISSPROT for old style
+*
+* Revision 6.44  2004/07/14 22:46:08  dondosha
+* Added GetAccessionVersionFromSeqId function to extract Accession.version from a Seq-id
+*
 * Revision 6.43  2004/04/01 13:43:05  lavr
 * Spell "occurred", "occurrence", and "occurring"
 *
@@ -671,11 +683,14 @@ NLM_EXTERN CharPtr SeqIdPrint(SeqIdPtr sip, CharPtr buf, Uint1 format);
 NLM_EXTERN CharPtr SeqIdWrite(SeqIdPtr sip, CharPtr buf, Uint1 format, Uint4 buflen);
 NLM_EXTERN Boolean GetAccessionFromSeqId(SeqIdPtr sip, Int4Ptr gi, 
 				     CharPtr PNTR id);
+NLM_EXTERN Boolean GetAccessionVersionFromSeqId(SeqIdPtr sip, Int4Ptr gi, 
+                                     CharPtr PNTR id, Boolean get_version);
 NLM_EXTERN SeqIdPtr SeqIdParse(CharPtr buf);
 
 /*****************************************************************************
 *
 *   Int2 ValidateAccn (accession)
+*   Int2 ValidateAccnDotVer (accession)
 *   Int2 ValidateSeqID (SeqIdPtr)
 *   	Return values are:
 *   	 0: no problem - Accession is in proper format
@@ -683,10 +698,12 @@ NLM_EXTERN SeqIdPtr SeqIdParse(CharPtr buf);
 *       -2: Accession did not contain legal number of digits after letters
 *       -3: the original Accession number to be validated was NULL
 *   	-4: the original Accession number is too long (>16)
+*   	-5: missing or bad version number (required by ValidateAccnDotVer)
 *
 *****************************************************************************/
 
 NLM_EXTERN Int2 ValidateAccn (CharPtr accession);
+NLM_EXTERN Int2 ValidateAccnDotVer (CharPtr accession);
 NLM_EXTERN Int2 ValidateSeqID (SeqIdPtr sip);
 
 /*****************************************************************************
@@ -1082,6 +1099,7 @@ NLM_EXTERN Boolean LIBCALL IS_protdb_accession (CharPtr s);
 NLM_EXTERN Boolean LIBCALL ACCN_PIR_FORMAT( CharPtr s);
 NLM_EXTERN Boolean LIBCALL ACCN_1_5_FORMAT( CharPtr s);
 NLM_EXTERN Boolean LIBCALL AccnIsSWISSPROT( CharPtr s);
+NLM_EXTERN Boolean LIBCALL AccnIsUniProt (CharPtr s);
 NLM_EXTERN Boolean LIBCALL NAccnIsGENBANK (CharPtr s);
 NLM_EXTERN Boolean LIBCALL NAccnIsEMBL (CharPtr s);
 NLM_EXTERN Boolean LIBCALL NAccnIsDDBJ (CharPtr s);
@@ -1171,6 +1189,8 @@ NLM_EXTERN Boolean LIBCALL NAccnIsDDBJ (CharPtr s);
 
 #define ACCN_PDB 60
 
+#define ACCN_DDBJ_GSS 61
+
 
 /* Some accessions prefix can be either protein or nucleotide 
    such as NCBI PATENT I, AR .. or segmented set Bioseqs 'AH'
@@ -1218,7 +1238,7 @@ NLM_EXTERN Boolean LIBCALL NAccnIsDDBJ (CharPtr s);
  */
 #define ACCN_IS_EMBL(c) ( (((c)&65535) ==  ACCN_EMBL_EST) ||  (((c)&65535) == ACCN_EMBL_DIRSUB) ||  (((c)&65535) == ACCN_EMBL_GENOME) ||  (((c)&65535) == ACCN_EMBL_PATENT) ||  (((c)&65535) == ACCN_EMBL_HTGS) ||  (((c)&65535) == ACCN_EMBL_CON) ||  (((c)&65535) == ACCN_EMBL_WGS) ||  (((c)&65535) == ACCN_EMBL_OTHER)  || (((c)&65535) == ACCN_EMBL_PROT) || (((c)&65535) == ACCN_EMBL_GB) || (((c)&65535) == ACCN_EMBL_DDBJ) || (((c)&65535) == ACCN_EMBL_GB_DDBJ))
 
-#define ACCN_IS_DDBJ(c) ((((c)&65535) ==  ACCN_DDBJ_EST) ||  (((c)&65535) == ACCN_DDBJ_DIRSUB) ||  (((c)&65535) == ACCN_DDBJ_GENOME) ||  (((c)&65535) == ACCN_DDBJ_PATENT) ||  (((c)&65535) == ACCN_DDBJ_HTGS) ||  (((c)&65535) == ACCN_DDBJ_CON)  ||  (((c)&65535) == ACCN_DDBJ_WGS) ||  (((c)&65535) == ACCN_DDBJ_OTHER) || (((c)&65535) == ACCN_DDBJ_PROT) || (((c)&65535) == ACCN_GB_DDBJ) || (((c)&65535) == ACCN_EMBL_DDBJ) || (((c)&65535) == ACCN_EMBL_GB_DDBJ))
+#define ACCN_IS_DDBJ(c) ((((c)&65535) ==  ACCN_DDBJ_EST) ||  (((c)&65535) == ACCN_DDBJ_DIRSUB) ||  (((c)&65535) == ACCN_DDBJ_GENOME) ||  (((c)&65535) == ACCN_DDBJ_PATENT) ||  (((c)&65535) == ACCN_DDBJ_HTGS) ||  (((c)&65535) == ACCN_DDBJ_CON)  ||  (((c)&65535) == ACCN_DDBJ_WGS) ||  (((c)&65535) == ACCN_DDBJ_OTHER) || (((c)&65535) == ACCN_DDBJ_PROT) || (((c)&65535) == ACCN_DDBJ_GSS) || (((c)&65535) == ACCN_GB_DDBJ) || (((c)&65535) == ACCN_EMBL_DDBJ) || (((c)&65535) == ACCN_EMBL_GB_DDBJ))
 
 #define ACCN_IS_SWISSPROT(c) ((c)== ACCN_SWISSPROT)
 /* 

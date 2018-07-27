@@ -28,13 +28,30 @@
 *
 * Version Creation Date:  10/01 
 *
-* $Revision: 6.53 $
+* $Revision: 6.58 $
 *
 * File Description: SeqAlign indexing, access, and manipulation functions 
 *
 * Modifications:
 * --------------------------------------------------------------------------
 * $Log: alignmgr2.c,v $
+* Revision 6.58  2005/03/01 13:56:03  bollin
+* if the alignment we want to index is a DenseSeg and not a list of alignments,
+* just give it a simple index - don't decompose to pairwise and reconstruct it.
+*
+* Revision 6.57  2005/02/23 14:40:55  bollin
+* when condensing columns in AlnMgr2CondenseColumns, make sure we do not
+* disturb the ascending order of starts for each row
+*
+* Revision 6.56  2004/09/15 14:59:19  bollin
+* make sure we do not read outside the alignment index arrays
+*
+* Revision 6.55  2004/05/20 19:46:25  bollin
+* removed unused variables
+*
+* Revision 6.54  2004/05/11 13:19:49  bollin
+* update the dimension of the shared alignment after adding a sequence.
+*
 * Revision 6.53  2004/04/13 14:43:07  kskatz
 * Final resolution of revisions 6.51 and 6.52: reverted 6.52; then  cleaned up readability of AlnMgr2SeqPortRead() and ensured that it will never call SeqPortRead for a length > AM_SEQPORTSIZE
 *
@@ -1184,6 +1201,13 @@ NLM_EXTERN void AlnMgr2IndexSeqAlignEx(SeqAlignPtr sap, Boolean replace_gi)
    if (replace_gi) {
      SAM_ReplaceGI(sap);
    }
+   
+   if (sap->next == NULL && sap->segtype == SAS_DENSEG)
+   {
+     AlnMgr2IndexSingleChildSeqAlign(sap);
+     return;
+   }
+
    AlnMgr2IndexLite(sap);
    AlnMgr2DecomposeToPairwise(sap);
    amaip = (AMAlignIndex2Ptr)(sap->saip);
@@ -1670,7 +1694,6 @@ static void AlnMgr2HidePairwiseConflicts(SeqAlignPtr sap)
    SeqIdPtr         sip12;
    SeqIdPtr         sip21;
    SeqIdPtr         sip22;
-   Boolean          start;
    Int4             start11;
    Int4             start12;
    Int4             start21;
@@ -2473,6 +2496,7 @@ static Boolean AlnMgr2SameSeq(AMVertexPtr vertex1, AMVertexPtr vertex2)
       return FALSE;
 }
 
+
 /* SECTION 2C */
 /***************************************************************************
 *
@@ -2808,7 +2832,7 @@ static Boolean AlnMgr2AddSeqPiece(
   s->aligned = what->aligned;
   s->set = set;
   s->next = NULL;
-  if (s->prev = set->tail) {
+  if ((s->prev = set->tail) != NULL) {
     s->prev->next = s;
   }
   set->tail = s;
@@ -2863,7 +2887,7 @@ static Boolean AlnMgr2InsertSeqPiece(
   s->aligned = what->aligned;
   s->set = where->set;
   s->next = where;
-  if (s->prev = where->prev) {
+  if ((s->prev = where->prev) != NULL) {
     if (s->prev) {
       s->prev->next = s;
     } else {
@@ -3036,7 +3060,7 @@ NLM_EXTERN void AlnMgr2AddInNewPairwiseSA(SeqAlignPtr parent, SeqAlignPtr sap)
   Int4 Pos, POS, max_POS;
   Int4 A_end, B_beg;
   Int4 anchor, Anchor;
-  Int4 max_len, row;
+  Int4 row;
   SeqIdPtr sip, extra_sip;
   AMSeqPieceSetPtr a_set, A_set, b_set, B_set_head, B_set;
   AMSeqPiecePtr a, A, b, B;
@@ -3481,6 +3505,9 @@ NLM_EXTERN void AlnMgr2AddInNewPairwiseSA(SeqAlignPtr parent, SeqAlignPtr sap)
   AMSeqPieceSetFree(b_set);
 
   amaip->sharedaln->segs = DSP;
+  /* update the dim for the shared_aln to match the new DensegPtr */
+  amaip->sharedaln->dim = DSP->dim;
+  
   DenseSegFree(Dsp);
 }
 
@@ -4231,6 +4258,35 @@ static Int4 AlnMgr2GetSegForStartPos(SeqAlignPtr sap, Int4 pos, Int4 row)
    return srdp->sect[L];
 }
 
+static Int4 GetNextStart (DenseSegPtr dsp, Int4 row, Int4 col, Int4Ptr pnext_start_col)
+{
+  Int4 next_start_col;
+  
+  if (dsp == NULL || row < 0 || row >= dsp->dim || col < 0 || col >= dsp->numseg)
+  {
+    return -1;
+  }
+  
+  for (next_start_col = col + 1;
+       next_start_col < dsp->numseg 
+         && dsp->starts[(next_start_col * dsp->dim) + row] == -1; 
+       next_start_col++)
+  {
+  }
+  if (next_start_col < dsp->numseg)
+  {
+    if (pnext_start_col != NULL)
+    {
+      *pnext_start_col = next_start_col;
+    }
+    return dsp->starts[(next_start_col * dsp->dim) + row];
+  }
+  else
+  {
+    return -1;
+  }
+}
+
 static void AlnMgr2CondenseColumns(DenseSegPtr dsp)
 /***************************************************************************
 *
@@ -4249,7 +4305,7 @@ static void AlnMgr2CondenseColumns(DenseSegPtr dsp)
 {
   int gap_start_seg = -1;
   int gap_end_seg = -1;
-  int row, seg, base_col, col;
+  int row, seg, base_col, col, next_start, next_start_col;
   Boolean can_fit;
 
   for (seg = 0;  seg < dsp->numseg;  ++seg) {
@@ -4284,6 +4340,18 @@ static void AlnMgr2CondenseColumns(DenseSegPtr dsp)
               can_fit = FALSE;
               break;
             }
+            else if (dsp->starts[dsp->dim * col + row] != -1)
+            {
+              /* make sure we aren't going to disturb the order of
+               * the starts */
+              next_start = GetNextStart (dsp, row, base_col, &next_start_col);
+              if (next_start > -1
+                  && next_start < dsp->starts[dsp->dim * col + row]
+                  && next_start_col < col)
+              {
+                can_fit = FALSE;
+              }
+            }
           }
 
           if (can_fit) {
@@ -4293,7 +4361,7 @@ static void AlnMgr2CondenseColumns(DenseSegPtr dsp)
                   dsp->starts[dsp->dim * col + row];
               }
             }
-
+            
             /* remove column col */
             {{
               Int4Ptr       starts, lens;
@@ -4328,6 +4396,7 @@ static void AlnMgr2CondenseColumns(DenseSegPtr dsp)
               dsp->lens = lens;
 
               dsp->numseg--;
+
             }}
 
             --gap_end_seg;
@@ -5619,9 +5688,7 @@ NLM_EXTERN Boolean AlnMgr2GetNextAlnBit(SeqAlignPtr sap, AlnMsg2Ptr amp) /* NEXT
    Int4             endoffset;
    Boolean          found;
    Int4             i;
-   Int4             ilen;
    Int4             index;
-   Int4             insert;
    Int4             intfrom;
    Int4             intto;
    Int4             j;
@@ -7609,6 +7676,9 @@ NLM_EXTERN Int4 AlnMgr2MapSeqAlignToBioseq(SeqAlignPtr sap, Int4 pos, Int4 row)
       saip = (SAIndex2Ptr)(amaip->sharedaln->saip);
       dsp = (DenseSegPtr)(amaip->sharedaln->segs);
    }
+   if (row > saip->numrows)
+   return -1;
+
    sect = binary_search_on_uint4_list(saip->aligncoords, pos, saip->numseg);
    offset = pos - saip->aligncoords[sect];
    if (saip->anchor > 0)

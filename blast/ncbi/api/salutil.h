@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/27/96
 *
-* $Revision: 6.2 $
+* $Revision: 6.3 $
 *
 * File Description: 
 *
@@ -116,7 +116,6 @@ NLM_EXTERN Uint1 StrandFromAlignNode (ValNodePtr anp_lst, Uint2 entityID, Uint2 
 ***
 **********************************************************/
 NLM_EXTERN CharPtr      matching_seqid (SeqIdPtr sip1);
-NLM_EXTERN CharPtr      check_seqid (Uint2 choice, CharPtr ptr);
 NLM_EXTERN SeqIdPtr     ValNodeSeqIdListDup (ValNodePtr id_list);
 NLM_EXTERN CharPtr PNTR SeqIdListToCharArray (SeqIdPtr id_list, Int2 n);
 

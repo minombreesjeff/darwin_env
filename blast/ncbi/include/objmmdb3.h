@@ -1,1 +1,0 @@
-../biostruc/objmmdb3.h

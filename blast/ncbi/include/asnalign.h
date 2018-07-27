@@ -1,1 +1,0 @@
-../asnstat/asnalign.h

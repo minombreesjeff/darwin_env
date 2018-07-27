@@ -1,3 +1,39 @@
+/* $Id: ncbi_std.c,v 1.16 2005/02/24 15:39:34 madden Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ===========================================================================
+ *
+ */
+
+/** @file ncbi_std.c
+ * A few utilities needed by code in algo/blast/core but not provided elsewhere.
+ */
+
+#ifndef SKIP_DOXYGEN_PROCESSING
+static char const rcsid[] = 
+    "$Id: ncbi_std.c,v 1.16 2005/02/24 15:39:34 madden Exp $";
+#endif /* SKIP_DOXYGEN_PROCESSING */
+
 #include <algo/blast/core/blast_def.h> /* for sfree() macro */
 #include <algo/blast/core/ncbi_std.h>
 
@@ -12,7 +48,7 @@ void * BlastMemDup (const void *orig, size_t size)
 		return NULL;
 
 	memcpy(copy, orig, size);
-		return copy;
+    return copy;
 }
 
 /*****************************************************************************
@@ -90,7 +126,7 @@ ListNode* ListNodeAddPointer (ListNode** head, Uint1 choice,
 *      if str == NULL, does not add a ListNode
 *
 *****************************************************************************/
-ListNode* ListNodeCopyStr (ListNode** head, Uint1 choice, char* str)
+ListNode* ListNodeCopyStr (ListNode** head, Uint1 choice, const char* str)
 {
 	ListNode* newnode;
 
@@ -148,56 +184,3 @@ ListNode* ListNodeFreeData (ListNode* vnp)
 	}
 	return NULL;
 }
-
-/*****************************************************************************
-*
-*   ListNodeLen(vnp)
-*      returns the number of nodes in the linked list
-*
-*****************************************************************************/
-Int4 ListNodeLen (ListNode* vnp)
-{
-	Int4 len;
-
-	len = 0;
-	while (vnp != NULL) {
-		len++;
-		vnp = vnp->next;
-	}
-	return len;
-}
-
-/*****************************************************************************
-*
-*   ListNodeSort(list, compar)
-*   	Copied from SortListNode in jzcoll, renamed, for more general access
-*   	Makes array from ListNode list, calls HeapSort, reconnects ListNode list
-*
-*****************************************************************************/
-ListNode* ListNodeSort (ListNode* list, 
-               int (*compar )(const void *, const void *))
-{
-	ListNode* tmp,** head;
-	Int4 count, i;
-
-	if (list == NULL) return NULL;
-	
-	count = ListNodeLen (list);
-	head = (ListNode* *) calloc (((size_t) count + 1), sizeof (ListNode*));
-	for (tmp = list, i = 0; tmp != NULL && i < count; i++) {
-		head [i] = tmp;
-		tmp = tmp->next;
-	}
-
-	qsort (head, (size_t) count, sizeof (ListNode*), compar);
-	for (i = 0; i < count; i++) {
-		tmp = head [i];
-		tmp->next = head [i + 1];
-	}
-	list = head [0];
-	sfree (head);
-
-	return list;
-}
-
-

@@ -1,1 +1,0 @@
-../asnstat/spell.h

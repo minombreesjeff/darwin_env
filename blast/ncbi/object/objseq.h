@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 4/1/91
 *
-* $Revision: 6.5 $
+* $Revision: 6.8 $
 *
 * File Description:  Object manager interface for module NCBI-Seq
 *
@@ -40,6 +40,15 @@
 *
 *
 * $Log: objseq.h,v $
+* Revision 6.8  2005/01/07 17:30:52  yaschenk
+* fixing definition
+*
+* Revision 6.7  2005/01/07 17:26:44  yaschenk
+* SeqDataAsnWriteXML is needed as non-static
+*
+* Revision 6.6  2004/11/23 19:40:34  kans
+* added AnnotDesc registration
+*
 * Revision 6.5  2001/10/02 21:47:54  kans
 * added hooks for writing extra descriptors or features (JO)
 *
@@ -251,6 +260,7 @@ NLM_EXTERN AlignDefPtr LIBCALL AlignDefFree PROTO((AlignDefPtr adp));
 
 typedef ValNode AnnotDescr, PNTR AnnotDescrPtr;
 
+#define AnnotDescrNew SeqDescrNew
 NLM_EXTERN Boolean    LIBCALL AnnotDescrAsnWrite PROTO((AnnotDescrPtr anp, AsnIoPtr aip, AsnTypePtr atp));
 NLM_EXTERN AnnotDescrPtr LIBCALL AnnotDescrAsnRead PROTO((AsnIoPtr aip, AsnTypePtr atp));
 NLM_EXTERN AnnotDescrPtr LIBCALL AnnotDescrFree PROTO((AnnotDescrPtr anp));
@@ -260,6 +270,7 @@ typedef ValNode AnnotDesc, PNTR AnnotDescPtr;
 NLM_EXTERN Boolean    LIBCALL AnnotDescAsnWrite PROTO((AnnotDescPtr anp, AsnIoPtr aip, AsnTypePtr atp));
 NLM_EXTERN AnnotDescPtr LIBCALL AnnotDescAsnRead PROTO((AsnIoPtr aip, AsnTypePtr atp));
 NLM_EXTERN AnnotDescPtr LIBCALL AnnotDescFree PROTO((AnnotDescPtr anp));
+NLM_EXTERN Int2 LIBCALL AnnotDescLabel PROTO((AnnotDescPtr anp, CharPtr buffer, Int2 buflen, Boolean content));
 
 
 typedef struct seqannot {
@@ -452,6 +463,7 @@ NLM_EXTERN Boolean LIBCALL BioseqInstAsnWrite PROTO((BioseqPtr bsp, AsnIoPtr aip
 NLM_EXTERN Boolean LIBCALL BioseqInstAsnRead PROTO((BioseqPtr bsp, AsnIoPtr aip, AsnTypePtr orig));
 
 NLM_EXTERN Boolean LIBCALL SeqDataAsnWrite PROTO((ByteStorePtr bsp, Uint1 seqtype, AsnIoPtr aip, AsnTypePtr orig));
+NLM_EXTERN Boolean LIBCALL SeqDataAsnWriteXML PROTO((ByteStorePtr bsp, Uint1 seqtype, AsnIoPtr aip, AsnTypePtr orig,Int4 seqlen));
 NLM_EXTERN ByteStorePtr LIBCALL SeqDataAsnRead PROTO((AsnIoPtr aip, AsnTypePtr orig, Uint1Ptr typeptr, Int4 length));
 
 /*****************************************************************************

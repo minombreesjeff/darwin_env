@@ -1,157 +1,68 @@
-/* $Id: phi_lookup.c,v 1.12 2004/04/05 16:09:27 camacho Exp $
-* ===========================================================================
-*
-*                            PUBLIC DOMAIN NOTICE
-*               National Center for Biotechnology Information
-*
-*  This software/database is a "United States Government Work" under the
-*  terms of the United States Copyright Act.  It was written as part of
-*  the author's offical duties as a United States Government employee and
-*  thus cannot be copyrighted.  This software/database is freely available
-*  to the public for use. The National Library of Medicine and the U.S.
-*  Government have not placed any restriction on its use or reproduction.
-*
-*  Although all reasonable efforts have been taken to ensure the accuracy
-*  and reliability of the software and data, the NLM and the U.S.
-*  Government do not and cannot warrant the performance or results that
-*  may be obtained by using this software or data. The NLM and the U.S.
-*  Government disclaim all warranties, express or implied, including
-*  warranties of performance, merchantability or fitness for any particular
-*  purpose.
-*
-*  Please cite the author in any work or product based on this material.
-*
-* ===========================================================================*/
+/* $Id: phi_lookup.c,v 1.26 2005/04/27 19:56:29 dondosha Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ===========================================================================
+ *
+ * Author: Ilya Dondoshansky
+ *
+ */
 
-/*****************************************************************************
+/** @file phi_lookup.c
+ * Functions for accessing the lookup table for PHI-BLAST
+ * @todo FIXME needs doxygen comments and lines shorter than 80 characters
+ */
 
-File name: phi_lookup.c
-
-Author: Ilya Dondoshansky
-
-Contents: Functions for accessing the lookup table for PHI-BLAST
-
-******************************************************************************
- * $Revision: 1.12 $
- * */
+#ifndef SKIP_DOXYGEN_PROCESSING
+static char const rcsid[] = 
+    "$Id: phi_lookup.c,v 1.26 2005/04/27 19:56:29 dondosha Exp $";
+#endif /* SKIP_DOXYGEN_PROCESSING */
 
 #include <algo/blast/core/blast_def.h>
 #include <algo/blast/core/blast_util.h>
 #include <algo/blast/core/pattern.h>
 #include <algo/blast/core/phi_lookup.h>
 #include <algo/blast/core/blast_message.h>
+#include <algo/blast/core/blast_encoding.h>
+#include "pattern_priv.h"
 
-static char const rcsid[] = "$Id: phi_lookup.c,v 1.12 2004/04/05 16:09:27 camacho Exp $";
+/* Mask for all 1 bits up to an alphabet size. Declared in pattern_priv.h */
+const int kMaskAaAlphabetBits = (1 << BLASTAA_SIZE) - 1;
 
-#define seedepsilon 0.00001
-#define allone  ((1 << ALPHABET_SIZE) - 1)
-
-/*Initialize the order of letters in the alphabet, the score matrix,
-and the row sums of the score matrix. matrixToFill is the
-score matrix, program_flag says which variant of the program is
-used; is_dna tells whether the strings are DNA or protein*/
-static void init_order(Int4 **matrix, Int4 program_flag, Boolean is_dna, seedSearchItems *seedSearch)
-{
-    Uint1 i, j; /*loop indices for matrix*/ 
-    Int4 *matrixRow; /*row of matrixToFill*/ 
-    double rowSum; /*sum of scaled substitution probabilities on matrixRow*/
-    
-    if (is_dna) {
-      seedSearch->order['A'] = 0; 
-      seedSearch->order['C'] = 1;
-      seedSearch->order['G'] = 2; 
-      seedSearch->order['T'] = 3;
-    } 
-    else {
-      for (i = 0; i < ALPHABET_SIZE; i++) 
-	seedSearch->order[(Uint1)seedSearch->pchars[i]] = i;
-    }
-    if (program_flag == SEED_FLAG) {
-      for (i = 0; i < ALPHABET_SIZE; i++) 
-        seedSearch->charMultiple[i] = 0;
-      for (i = 0; i < ALPHABET_SIZE; i++) {
-	if (seedSearch->standardProb[i] > seedepsilon) {
-	  matrixRow = matrix[i];
-	  rowSum= 0;
-	  for (j = 0; j < ALPHABET_SIZE; j++) {
-	    if (seedSearch->standardProb[j] > seedepsilon) 
-	      rowSum += seedSearch->standardProb[j]*exp(-(seedSearch->paramLambda)*matrixRow[j]);
-	  }
-	  seedSearch->charMultiple[i] = rowSum;
-	}
-      }
-    }
-}
-
-/*Initialize occurrence probabilities for each amino acid*/
-static void initProbs(seedSearchItems * seedSearch)
-{
-   double totalCount;  /*for Robinson frequencies*/
-   seedSearch->pchars[0] = '-';
-   seedSearch->pchars[1] = 'A';
-   seedSearch->pchars[2] = 'B';
-   seedSearch->pchars[3] = 'C';
-   seedSearch->pchars[4] = 'D';
-   seedSearch->pchars[5] = 'E';
-   seedSearch->pchars[6] = 'F';
-   seedSearch->pchars[7] = 'G';
-   seedSearch->pchars[8] = 'H';
-   seedSearch->pchars[9] = 'I';
-   seedSearch->pchars[10] = 'K';
-   seedSearch->pchars[11] = 'L';
-   seedSearch->pchars[12] = 'M';
-   seedSearch->pchars[13] = 'N';
-   seedSearch->pchars[14] = 'P';
-   seedSearch->pchars[15] = 'Q';
-   seedSearch->pchars[16] = 'R';
-   seedSearch->pchars[17] = 'S';
-   seedSearch->pchars[18] = 'T';
-   seedSearch->pchars[19] = 'V';
-   seedSearch->pchars[20] = 'W';
-   seedSearch->pchars[21] = 'X';
-   seedSearch->pchars[22] = 'Y';
-   seedSearch->pchars[23] = 'Z';
-   seedSearch->pchars[24] = 'U';
-   seedSearch->pchars[25] = '*';
-   totalCount = 78.0 + 19.0 + 54.0 + 63.0 + 39.0 +
-    74.0 + 22.0 + 52.0 + 57.0 + 90.0 + 22.0 + 45.0 + 52.0 +
-     43.0 + 51.0 + 71.0 + 59.0 + 64.0 + 13.0 + 32.0;
-   seedSearch->standardProb[0] = 0.0;
-   seedSearch->standardProb[1] = 78.0/totalCount; /*A*/
-   seedSearch->standardProb[2] = 0.0;
-   seedSearch->standardProb[3] = 19.0/totalCount; /*C*/
-   seedSearch->standardProb[4] = 54.0/totalCount; /*D*/
-   seedSearch->standardProb[5] = 63.0/totalCount; /*E*/
-   seedSearch->standardProb[6] = 39.0/totalCount; /*F*/
-   seedSearch->standardProb[7] = 74.0/totalCount; /*G*/
-   seedSearch->standardProb[8] = 22.0/totalCount; /*H*/
-   seedSearch->standardProb[9] = 52.0/totalCount; /*I*/
-   seedSearch->standardProb[10] = 57.0/totalCount; /*K*/
-   seedSearch->standardProb[11] = 90.0/totalCount; /*L*/
-   seedSearch->standardProb[12] = 22.0/totalCount; /*M*/
-   seedSearch->standardProb[13] = 45.0/totalCount; /*N*/
-   seedSearch->standardProb[14] = 52.0/totalCount; /*P*/
-   seedSearch->standardProb[15] = 43.0/totalCount; /*Q*/
-   seedSearch->standardProb[16] = 51.0/totalCount; /*R*/
-   seedSearch->standardProb[17] = 71.0/totalCount; /*S*/
-   seedSearch->standardProb[18] = 59.0/totalCount; /*T*/
-   seedSearch->standardProb[19] = 64.0/totalCount; /*V*/
-   seedSearch->standardProb[20] = 13.0/totalCount; /*W*/
-   seedSearch->standardProb[21] = 0.0;   /*X*/
-   seedSearch->standardProb[22] = 32.0/totalCount;   /*Y*/
-   seedSearch->standardProb[23] = 0.0;   /*Z*/
-   seedSearch->standardProb[24] = 0.0;   /*U*/
-}
-
-/*set uo matches for words that encode 4 DNA characters; figure out
-  for each of 256 possible DNA 4-mers, where a prefix matches the pattern
- and where a suffix matches the pattern; store in prefixPos and
- suffixPos; mask has 1 bits for whatever lengths of string
-the pattern can match, mask2 has 4 1 bits corresponding to
-the last 4 positions of a match; they are used to
-do the prefixPos and suffixPos claculations with bit arithmetic*/
-static void setting_tt(Int4* S, Int4 mask, Int4 mask2, Uint4* prefixPos, 
-		       Uint4* suffixPos)
+/** Set up matches for words that encode 4 DNA characters; figure out
+ * for each of 256 possible DNA 4-mers, where a prefix matches the pattern
+ * and where a suffix matches the pattern. Masks are used to do the 
+ * calculations with bit arithmetic.
+ * @param S Array of words [in]
+ * @param mask Has 1 bits for whatever lengths of string the pattern can 
+ *             match [in]
+ * @param mask2 Has 4 1 bits corresponding to the last 4 positions of a 
+ *              match [in]
+ * @param prefixPos Saved prefix position [out]
+ * @param suffixPos Saved suffix position [out]
+ */
+static void 
+s_FindPrefixAndSuffixPos(Int4* S, Int4 mask, Int4 mask2, Uint4* prefixPos, 
+                         Uint4* suffixPos)
 {
   Int4 i; /*index over possible DNA encoded words, 4 bases per word*/
   Int4 tmp; /*holds different mask combinations*/
@@ -160,7 +71,7 @@ static void setting_tt(Int4* S, Int4 mask, Int4 mask2, Uint4* prefixPos,
   Uint1 a1, a2, a3, a4;  /*four bases packed into an integer*/
 
   maskLeftPlusOne = (mask << 1)+1;
-  for (i = 0; i < ASCII_SIZE; i++) {
+  for (i = 0; i < PHI_ASCII_SIZE; i++) {
     /*find out the 4 bases packed in integer i*/
     a1 = NCBI2NA_UNPACK_BASE(i, 3);
     a2 = NCBI2NA_UNPACK_BASE(i, 2);
@@ -182,38 +93,53 @@ static void setting_tt(Int4* S, Int4 mask, Int4 mask2, Uint4* prefixPos,
   }
 }
 
-/*initialize mask and other arrays for DNA patterns*/
-static void init_pattern_DNA(patternSearchItems *patternSearch)
+/** Initialize mask and other arrays for DNA patterns.
+ * @param pattern_blk The SPHIPatternSearchBlk structure to initialize [in][out]
+*/
+static void 
+s_InitDNAPattern(SPHIPatternSearchBlk *pattern_blk)
 {
   Int4 mask1; /*mask for one word in a set position*/
   Int4 compositeMask; /*superimposed mask1 in 4 adjacent positions*/
   Int4 wordIndex; /*index over words in pattern*/
 
-  if (patternSearch->flagPatternLength != ONE_WORD_PATTERN) {
-    for (wordIndex = 0; wordIndex < patternSearch->numWords; wordIndex++) {
-      mask1 = patternSearch->match_maskL[wordIndex];
-      compositeMask = mask1 + (mask1>>1)+(mask1>>2)+(mask1>>3);
-      setting_tt(patternSearch->SLL[wordIndex], 
-      patternSearch->match_maskL[wordIndex], 
-	 compositeMask, patternSearch->DNAprefixSLL[wordIndex], patternSearch->DNAsuffixSLL[wordIndex]);
-    }
-  } 
-  else {
-    compositeMask = patternSearch->match_mask + 
-      (patternSearch->match_mask>>1) + 
-      (patternSearch->match_mask>>2) + (patternSearch->match_mask>>3); 
-    patternSearch->DNAwhichPrefixPosPtr = patternSearch->DNAwhichPrefixPositions; 
-    patternSearch->DNAwhichSuffixPosPtr = patternSearch->DNAwhichSuffixPositions;
-    setting_tt(patternSearch->whichPositionsByCharacter, 
-    patternSearch->match_mask, compositeMask, 
-    patternSearch->DNAwhichPrefixPositions, patternSearch->DNAwhichSuffixPositions);
+  if (pattern_blk->flagPatternLength != eOneWord) {
+      SLongPatternItems* multiword_items = pattern_blk->multi_word_items;
+      SDNALongPatternItems* dna_items = multiword_items->dna_items;
+     for (wordIndex = 0; wordIndex < multiword_items->numWords; wordIndex++) {
+          mask1 = multiword_items->match_maskL[wordIndex];
+          compositeMask = mask1 + (mask1>>1)+(mask1>>2)+(mask1>>3);
+          s_FindPrefixAndSuffixPos(multiword_items->SLL[wordIndex], 
+                                   multiword_items->match_maskL[wordIndex], 
+                                   compositeMask, 
+                                   dna_items->DNAprefixSLL[wordIndex], 
+                                   dna_items->DNAsuffixSLL[wordIndex]);
+     }
+  } else {
+      SShortPatternItems* word_items = pattern_blk->one_word_items;
+      SDNAShortPatternItems* dna_items = word_items->dna_items;
+      Int4 match_mask = word_items->match_mask;
+
+      compositeMask = 
+          match_mask + (match_mask>>1) + (match_mask>>2) + (match_mask>>3); 
+      dna_items->DNAwhichPrefixPosPtr = dna_items->DNAwhichPrefixPositions; 
+      dna_items->DNAwhichSuffixPosPtr = dna_items->DNAwhichSuffixPositions;
+      s_FindPrefixAndSuffixPos(word_items->whichPositionPtr, 
+                               word_items->match_mask, compositeMask, 
+                               dna_items->DNAwhichPrefixPositions, 
+                               dna_items->DNAwhichSuffixPositions);
   }
 }
 
-/*length is the length of inputPattern, maxLength is a limit on
-   how long inputPattern can get;
-   return the final length of the pattern or -1 if too long*/
-static Int4 expanding(Int4 *inputPatternMasked, Uint1 *inputPattern, 
+/** Expands pattern. @todo FIXME: what exactly does it do?
+ * @param inputPatternMasked Masked input pattern [in]
+ * @param inputPattern Input pattern [in]
+ * @param length Length of inputPattern [in]
+ * @param maxLength Limit on how long inputPattern can get [in]
+ * @return the final length of the pattern or -1 if too long.
+ */
+static Int4 
+s_ExpandPattern(Int4 *inputPatternMasked, Uint1 *inputPattern, 
 		      Int4 length, Int4 maxLength)
 {
     Int4 i, j; /*pattern indices*/
@@ -222,22 +148,22 @@ static Int4 expanding(Int4 *inputPatternMasked, Uint1 *inputPattern,
     Int4 recReturnValue1, recReturnValue2; /*values returned from
                                              recursive calls*/
     Int4 thisPlaceMasked; /*value of one place in inputPatternMasked*/
-    Int4 tempPatternMask[MaxP]; /*used as a local representation of
+    Int4 tempPatternMask[PHI_MAX_PATTERN_LENGTH]; /*used as a local representation of
                                part of inputPatternMasked*/
-    Uint1 tempPattern[MaxP]; /*used as a local representation of part of
+    Uint1 tempPattern[PHI_MAX_PATTERN_LENGTH]; /*used as a local representation of part of
                                inputPattern*/
 
     for (i = 0; i < length; i++) {
       thisPlaceMasked = -inputPatternMasked[i];
       if (thisPlaceMasked > 0) {  /*represented variable wildcard*/
-	inputPatternMasked[i] = allone;
+	inputPatternMasked[i] = kMaskAaAlphabetBits;
 	for (j = 0; j < length; j++) {
 	  /*use this to keep track of pattern*/
 	  tempPatternMask[j] = inputPatternMasked[j]; 
 	  tempPattern[j] = inputPattern[j];
 	}
 	recReturnValue2 = recReturnValue1 = 
-	  expanding(inputPatternMasked, inputPattern, length, maxLength);
+	  s_ExpandPattern(inputPatternMasked, inputPattern, length, maxLength);
 	if (recReturnValue1 == -1)
 	  return -1;
 	for (numPos = 0; numPos <= thisPlaceMasked; numPos++) {
@@ -246,7 +172,7 @@ static Int4 expanding(Int4 *inputPatternMasked, Uint1 *inputPattern,
 	  for (k = 0; k < length; k++) {
 	    if (k == i) {
 	      for (t = 0; t < numPos; t++) {
-		inputPatternMasked[recReturnValue1++] = allone;
+		inputPatternMasked[recReturnValue1++] = kMaskAaAlphabetBits;
                 if (recReturnValue1 >= maxLength)
                   return(-1);
 	      }
@@ -261,7 +187,7 @@ static Int4 expanding(Int4 *inputPatternMasked, Uint1 *inputPattern,
 	      return (-1);
 	  }
 	  recReturnValue1 = 
-	    expanding(&inputPatternMasked[recReturnValue2], 
+	    s_ExpandPattern(&inputPatternMasked[recReturnValue2], 
 		      &inputPattern[recReturnValue2], 
 		      length + numPos - 1, 
 		      maxLength - recReturnValue2);
@@ -276,10 +202,14 @@ static Int4 expanding(Int4 *inputPatternMasked, Uint1 *inputPattern,
     return length;
 }
 
-/*Pack the next length bytes of inputPattern into a bit vector
-  where the bit is 1 if and only if the byte is non-0 
-  Returns packed bit vector*/
-static Int4 packing(Uint1 *inputPattern, Int4 length)
+/** Pack the next length bytes of inputPattern into a bit vector
+ * where the bit is 1 if and only if the byte is non-0.
+ * @param inputPattern Input pattern [in]
+ * @param length How many bytes to pack? [in]
+ * @return packed bit vector.
+ */
+static Int4 
+s_PackPattern(Uint1 *inputPattern, Int4 length)
 {
     Int4 i; /*loop index*/
     Int4 returnValue = 0; /*value to return*/
@@ -290,43 +220,53 @@ static Int4 packing(Uint1 *inputPattern, Int4 length)
     return returnValue;
 }
 
-/*Pack the bit representation of the inputPattern into
-   the array patternSearch->match_maskL
-   numPlaces is the number of positions in
-   inputPattern
-   Also packs patternSearch->bitPatternByLetter  */
-static void longpacking(Int4 numPlaces, Uint1 *inputPattern, patternSearchItems *patternSearch)
+/** Pack the bit representation of the inputPattern into
+ * the array pattern_blk->match_maskL. Also packs 
+ * pattern_blk->bitPatternByLetter.
+ * @param numPlaces Number of positions in inputPattern [in]
+ * @param inputPattern Input pattern [in]
+ * @param pattern_blk The structure containing pattern search 
+ *                      information. [in] [out]
+ */
+static void 
+s_PackLongPattern(Int4 numPlaces, Uint1 *inputPattern, 
+                  SPHIPatternSearchBlk *pattern_blk)
 {
     Int4 charIndex; /*index over characters in alphabet*/
     Int4 bitPattern; /*bit pattern for one word to pack*/
     Int4 i;  /*loop index over places*/
     Int4 wordIndex; /*loop counter over words to pack into*/
-    
-    patternSearch->numWords = (numPlaces-1) / BITS_PACKED_PER_WORD +1;
+    SLongPatternItems* multiword_items = pattern_blk->multi_word_items;
 
-    for (wordIndex = 0; wordIndex < patternSearch->numWords; wordIndex++) {
-      bitPattern = 0;
-      for (i = 0; i < BITS_PACKED_PER_WORD; i++) {
-	if (inputPattern[wordIndex*BITS_PACKED_PER_WORD+i]) 
-	  bitPattern += (1 << i);
-      }
-      patternSearch->match_maskL[wordIndex] = bitPattern;
+    multiword_items->numWords = (numPlaces-1) / PHI_BITS_PACKED_PER_WORD +1;
+
+    for (wordIndex = 0; wordIndex < multiword_items->numWords; wordIndex++) {
+        bitPattern = 0;
+        for (i = 0; i < PHI_BITS_PACKED_PER_WORD; i++) {
+            if (inputPattern[wordIndex*PHI_BITS_PACKED_PER_WORD+i]) 
+                bitPattern += (1 << i);
+        }
+        multiword_items->match_maskL[wordIndex] = bitPattern;
     }
-    for (charIndex = 0; charIndex < ALPHABET_SIZE; charIndex++) {
-      for (wordIndex = 0; wordIndex < patternSearch->numWords; wordIndex++) {
-	bitPattern = 0;
-	for (i = 0; i < BITS_PACKED_PER_WORD; i++) {
-	  if ((1<< charIndex) & patternSearch->inputPatternMasked[wordIndex*BITS_PACKED_PER_WORD + i]) 
-	    bitPattern = bitPattern | (1 << i);
-	}
-	patternSearch->bitPatternByLetter[charIndex][wordIndex] = 
-	  bitPattern;
-	}
+    for (charIndex = 0; charIndex < BLASTAA_SIZE; charIndex++) {
+        for (wordIndex = 0; wordIndex < multiword_items->numWords; wordIndex++) {
+            bitPattern = 0;
+            for (i = 0; i < PHI_BITS_PACKED_PER_WORD; i++) {
+                if ((1<<charIndex) & 
+                    multiword_items->inputPatternMasked[wordIndex*PHI_BITS_PACKED_PER_WORD + i]) 
+                    bitPattern = bitPattern | (1 << i);
+            }
+            multiword_items->bitPatternByLetter[charIndex][wordIndex] = 
+                bitPattern;
+        }
     }
 }
 
-/*Return the number of 1 bits in the base 2 representation of a*/
-static Int4 num_of_one(Int4 a)
+/** Return the number of 1 bits in the base 2 representation of a number a.
+ * @param a Value to count bits in [in]
+ */
+static 
+Int4 s_NumOfOne(Int4 a)
 {
   Int4 returnValue;
   returnValue = 0;
@@ -338,8 +278,14 @@ static Int4 num_of_one(Int4 a)
   return returnValue;
 }
 
-/*Sets up field in patternSearch when pattern is very long*/
-static void longpacking2(Int4 *inputPatternMasked, Int4 numPlacesInPattern, patternSearchItems *patternSearch)
+/** Sets up fields in SPHIPatternSearchBlk structure when pattern is very long. 
+ * @param inputPatternMasked Array of pattern bit masks [in]
+ * @param numPlacesInPattern Number of bit masks for the pattern [in]
+ * @param pattern_blk Structure to do the setup for [in] [out]
+ */
+static void 
+s_PackVeryLongPattern(Int4 *inputPatternMasked, Int4 numPlacesInPattern, 
+                      SPHIPatternSearchBlk *pattern_blk)
 {
     Int4 placeIndex; /*index over places in pattern rep.*/
     Int4 wordIndex; /*index over words*/
@@ -349,422 +295,385 @@ static void longpacking2(Int4 *inputPatternMasked, Int4 numPlacesInPattern, patt
                         pattern representation*/
     double patternWordProbability;
     double  most_specific; /*lowest probability of a word in the pattern*/
-    Int4 *oneWordSLL; /*holds patternSearch->SLL for one word*/
+    Int4 *oneWordSLL; /*holds pattern_blk->SLL for one word*/
+    SLongPatternItems* multiword_items = pattern_blk->multi_word_items;
+    SExtraLongPatternItems* extra_items;
+
+    /* Allocate the extra long pattern items structure. */
+    multiword_items->extra_long_items = extra_items = 
+        (SExtraLongPatternItems*) calloc(1, sizeof(SExtraLongPatternItems));;
 
     most_specific = 1.0; 
-    patternSearch->whichMostSpecific = 0; 
+    extra_items->whichMostSpecific = 0; 
     patternWordProbability = 1.0;
     for (placeIndex = 0, wordIndex = 0, placeInWord=0; 
-	 placeIndex <= numPlacesInPattern; 	 placeIndex++, placeInWord++) {
-      if (placeIndex==numPlacesInPattern || inputPatternMasked[placeIndex] < 0 
-	  || placeInWord == BITS_PACKED_PER_WORD ) {
-	patternSearch->match_maskL[wordIndex] = 1 << (placeInWord-1);
-	oneWordSLL = patternSearch->SLL[wordIndex];
-	for (charIndex = 0; charIndex < ALPHABET_SIZE; charIndex++) {
-	  oneWordMask = 0;
-	  for (placeInWord2 = 0; placeInWord2 < placeInWord; placeInWord2++) {
-	    if ((1<< charIndex) & 
-		inputPatternMasked[placeIndex-placeInWord+placeInWord2]) 
-	      oneWordMask |= (1 << placeInWord2);
-	  }
-	  oneWordSLL[charIndex] = oneWordMask;
-	}
-	patternSearch->numPlacesInWord[wordIndex] = placeInWord;
-	if (patternWordProbability < most_specific) {
-	  most_specific = patternWordProbability;
-	  patternSearch->whichMostSpecific = wordIndex;
-	}
-	if (placeIndex == numPlacesInPattern) 
-	  patternSearch->spacing[wordIndex++] = 0; 
-	else 
-	  if (inputPatternMasked[placeIndex] < 0) { 
-	    patternSearch->spacing[wordIndex++] = -inputPatternMasked[placeIndex];
-	  }
-	  else { 
-	    placeIndex--; 
-	    patternSearch->spacing[wordIndex++] = 0;
-	  }
-	placeInWord = -1; 
-	patternWordProbability = 1.0;
-      }
-      else {
-	patternWordProbability *= (double) 
-	  num_of_one(inputPatternMasked[placeIndex])/ (double) ALPHABET_SIZE;
-	}
+         placeIndex <= numPlacesInPattern; 	 placeIndex++, placeInWord++) {
+        if (placeIndex==numPlacesInPattern || inputPatternMasked[placeIndex] < 0 
+            || placeInWord == PHI_BITS_PACKED_PER_WORD ) {
+            multiword_items->match_maskL[wordIndex] = 1 << (placeInWord-1);
+            oneWordSLL = multiword_items->SLL[wordIndex];
+            for (charIndex = 0; charIndex < BLASTAA_SIZE; charIndex++) {
+                oneWordMask = 0;
+                for (placeInWord2 = 0; placeInWord2 < placeInWord; placeInWord2++) {
+                    if ((1<< charIndex) & 
+                        inputPatternMasked[placeIndex-placeInWord+placeInWord2]) 
+                        oneWordMask |= (1 << placeInWord2);
+                }
+                oneWordSLL[charIndex] = oneWordMask;
+            }
+            extra_items->numPlacesInWord[wordIndex] = placeInWord;
+            if (patternWordProbability < most_specific) {
+                most_specific = patternWordProbability;
+                extra_items->whichMostSpecific = wordIndex;
+            }
+            if (placeIndex == numPlacesInPattern) 
+                extra_items->spacing[wordIndex++] = 0; 
+            else if (inputPatternMasked[placeIndex] < 0) { 
+                extra_items->spacing[wordIndex++] = -inputPatternMasked[placeIndex];
+            } else { 
+                placeIndex--; 
+                extra_items->spacing[wordIndex++] = 0;
+            }
+            placeInWord = -1; 
+            patternWordProbability = 1.0;
+        } else {
+            patternWordProbability *= (double) 
+                s_NumOfOne(inputPatternMasked[placeIndex])/ (double) BLASTAA_SIZE;
+        }
     }
-    patternSearch->numWords = wordIndex;
+    multiword_items->numWords = wordIndex;
 }
 
-/*pattern is a string describing the pattern to search for;
-  is_dna is a boolean describing the strings are DNA or protein*/
-static Int4 
-init_pattern(Uint1 *pattern, Boolean is_dna, BlastScoreBlk* sbp, 
-             patternSearchItems* *pattern_info,
-             Blast_Message* *error_msg)
+/** Allocates the SPHIPatternSearchBlk structure. */
+static 
+SPHIPatternSearchBlk* s_PatternSearchItemsInit()
 {
-    Uint4 i; /*index over string describing the pattern*/
-    Uint4 j; /*index for position in pattern*/
-    Int4 charIndex; /*index over characters in alphabet*/
+    SPHIPatternSearchBlk* retval =  
+        (SPHIPatternSearchBlk*) calloc(1, sizeof(SPHIPatternSearchBlk));
+    retval->one_word_items = 
+        (SShortPatternItems*) calloc(1, sizeof(SShortPatternItems));
+    retval->multi_word_items = 
+        (SLongPatternItems*) calloc(1, sizeof(SLongPatternItems));
+
+    retval->flagPatternLength = eOneWord; 
+    retval->patternProbability = 1.0;
+    retval->minPatternMatchLength = 0;
+
+    return retval;
+}
+
+Int2
+SPHIPatternSearchBlkNew(char* pattern, Boolean is_dna, BlastScoreBlk* sbp, 
+                       SPHIPatternSearchBlk* *pattern_blk_out, 
+                       Blast_Message* *error_msg)
+{
+    const int kWildcardThreshold = 30; /* Threshold for product of variable-length
+                                        wildcards*/
+    Int4 posIndex; /*index for position in pattern*/
+    Int4 charIndex; /*index over string describing the pattern, or over 
+                      characters in alphabet*/
     Int4 secondIndex; /*second index into pattern*/
-    Int4 numIdentical; /*number of consec. positions with identical specification*/
+    Int4 numIdentical; /*number of consec. positions with identical
+                         specification */
     Uint4 charSetMask;  /*index over masks for specific characters*/
-    Int4 currentSetMask, prevSetMask ; /*mask for current and previous character positions*/    
+    Int4 currentSetMask, prevSetMask; /*mask for current and previous character
+                                        positions*/    
     Int4 thisMask;    /*integer representing a bit pattern for a 
                         set of characters*/
     Int4 minWildcard, maxWildcard; /*used for variable number of wildcard
                                      positions*/
-    Uint4  tj=0; /*temporary copy of j*/
-    Int4 tempInputPatternMasked[MaxP]; /*local copy of parts
-            of inputPatternMasked*/
-    Uint1 c;  /*character occurring in pattern*/
-    Uint1 localPattern[MaxP]; /*local variable to hold
-                               for each position whether it is
-                               last in pattern (1) or not (0) */
-    double positionProbability; /*probability of a set of characters
-                                    allowed in one position*/
-    Int4 currentWildcardProduct; /*product of wildcard lengths for
-                                   consecutive character positions that
-                                   overlap*/
-    seedSearchItems *seedSearch;
-    patternSearchItems* patternSearch;
+    Int4  tempPosIndex=0; /*temporary copy of posIndex*/
+    Int4 tempInputPatternMasked[PHI_MAX_PATTERN_LENGTH]; /*local copy of parts of
+                                         inputPatternMasked */
+    char next_char;  /*character occurring in pattern*/
+    Uint1 localPattern[PHI_MAX_PATTERN_LENGTH]; /*local variable to hold for each position whether
+                                it is last in pattern (1) or not (0) */
+    double positionProbability; /*probability of a set of characters allowed in
+                                  one position*/
+    Int4 currentWildcardProduct; /*product of wildcard lengths for consecutive 
+                                   character positions that overlap*/
+    Int4 wildcardProduct;       /* Maximal product of wildcard lengths. */
+    /* Which positions can a character occur in for short patterns*/
+    Int4 whichPositionsByCharacter[PHI_ASCII_SIZE]; 
+    SPHIPatternSearchBlk* pattern_blk;
+    SShortPatternItems* one_word_items;
+    SLongPatternItems* multiword_items;
+    const Uint1* kOrder = (is_dna ? IUPACNA_TO_NCBI4NA : AMINOACID_TO_NCBISTDAA);
+    Blast_ResFreq* rfp = NULL;
 
-    seedSearch = (seedSearchItems*) calloc(1, sizeof(seedSearchItems));
-    patternSearch = *pattern_info = 
-       (patternSearchItems*) calloc(1, sizeof(patternSearchItems));
+    *pattern_blk_out = pattern_blk = s_PatternSearchItemsInit();        
+    one_word_items = pattern_blk->one_word_items;
+    multiword_items = pattern_blk->multi_word_items;
+    
+    rfp = Blast_ResFreqNew(sbp);
+    Blast_ResFreqStdComp(sbp, rfp);
 
-    initProbs(seedSearch);
-    init_order(sbp->matrix, PAT_SEED_FLAG, FALSE, seedSearch);
-
-    patternSearch->flagPatternLength = ONE_WORD_PATTERN; 
-    patternSearch->patternProbability = 1.0;
-    patternSearch->minPatternMatchLength = 0;
-    patternSearch->wildcardProduct = 1;
+    wildcardProduct = 1;
     currentWildcardProduct = 1;
     prevSetMask = 0;
     currentSetMask = 0;
 
-    for (i = 0 ; i < MaxP; i++) {
-      patternSearch->inputPatternMasked[i] = 0; 
-      localPattern[i] = 0;
-    }
-    for (i = 0, j = 0; i < strlen((Char *) pattern); i++) {
-      if ((c=pattern[i]) == '-' || c == '\n' || c == '.' || c =='>' || c ==' ' 
-|| c == '<')  /*spacers that mean nothing*/
-	continue;
-      if ( c != '[' && c != '{') { /*not the start of a set of characters*/
-	if (c == 'x' || c== 'X') {  /*wild-card character matches anything*/
-          /*next line checks to see if wild card is for multiple positions*/
-	  if (pattern[i+1] == '(') {
-	    i++;
-	    secondIndex = i;
-            /*find end of description of how many positions are wildcarded
-               will look like x(2) or x(2,5) */
-	    while (pattern[secondIndex] != ',' && pattern[secondIndex] != ')')
-	      secondIndex++;
-	    if (pattern[secondIndex] == ')') {  /*fixed number of positions wildcarded*/
-	      i -= 1; 
-              /*wildcard, so all characters are allowed*/
-	      charSetMask=allone; 
-	      positionProbability = 1;
-	    }
-	    else { /*variable number of positions wildcarded*/	  
-	      sscanf((Char*) &pattern[++i], "%d,%d", &minWildcard, &maxWildcard);
-	      maxWildcard = maxWildcard - minWildcard;
-         currentWildcardProduct *= (maxWildcard + 1);
-         if (currentWildcardProduct > patternSearch->wildcardProduct)
-            patternSearch->wildcardProduct = currentWildcardProduct;
-         patternSearch->minPatternMatchLength += minWildcard;
-	      while (minWildcard-- > 0) { 
-            /*use one position each for the minimum number of
-              wildcard spaces required */
-            patternSearch->inputPatternMasked[j++] = allone; 
-            if (j >= MaxP) {
-               Blast_MessageWrite(error_msg, BLAST_SEV_WARNING, 2, 1, 
-                                  "pattern too long");
-               return(-1);
-            }
-	      }
-	      if (maxWildcard != 0) {
-            /*negative masking used to indicate variability
-              in number of wildcard spaces; e.g., if pattern looks
-              like x(3,5) then variability is 2 and there will
-              be three wildcard positions with mask allone followed
-              by a single position with mask -2*/
-            patternSearch->inputPatternMasked[j++] = -maxWildcard;
-            patternSearch->patternProbability *= maxWildcard;
-	      }
-         /*now skip over wildcard description with the i index*/
-	      while (pattern[++i] != ')') ; 
-	      continue;
-	    }
-	  }
-	  else {  /*wild card is for one position only*/
-	    charSetMask=allone; 
-	    positionProbability =1;
-	  }
-	} 
-	else {
-	  if (c == 'U') {   /*look for special U character*/
-	    charSetMask = allone*2+1;
-	    positionProbability = 1; 
-	  }
-	  else { 
-        /*exactly one character matches*/
-        prevSetMask = currentSetMask;
-        currentSetMask =  charSetMask = (1 << seedSearch->order[c]);
-        if (!(prevSetMask & currentSetMask)) /*character sets don't overlap*/
-           currentWildcardProduct = 1;
-        positionProbability = 
-           seedSearch->standardProb[(Uint1)seedSearch->order[c]];
-	  }
-	}
-      }
-      else {
-	if (c == '[') {  /*start of a set of characters allowed*/
-	  charSetMask = 0;
-	  positionProbability = 0;
-	  /*For each character in the set add it to the mask and
-            add its probability to positionProbability*/
-	  while ((c=pattern[++i]) != ']') { /*end of set*/
-        if ((c < 'A') || (c > 'Z') || (c == '\0')) {
-           Blast_MessageWrite(error_msg, BLAST_SEV_WARNING, 2, 1, 
-                              "pattern description has a non-alphabetic"
-                              "character inside a bracket");
-           
-           return(-1);
-        }
-        charSetMask = charSetMask | (1 << seedSearch->order[c]);
-        positionProbability += seedSearch->standardProb[(Uint1)seedSearch->order[c]];
-	  }
-     prevSetMask = currentSetMask;
-     currentSetMask = charSetMask;
-	  if (!(prevSetMask & currentSetMask)) /*character sets don't overlap*/
-	      currentWildcardProduct = 1;
- 	} 
-	else {   /*start of a set of characters forbidden*/
-	  /*For each character forbidden remove it to the mask and
-            subtract its probability from positionProbability*/
-	  charSetMask = allone; 
-	  positionProbability = 1;
-	  while ((c=pattern[++i]) != '}') { /*end of set*/
-	    charSetMask = charSetMask -  (charSetMask & (1 << seedSearch->order[c]));
-	    positionProbability -= seedSearch->standardProb[(Uint1)seedSearch->order[c]];
-	  }
-          prevSetMask = currentSetMask;
-          currentSetMask = charSetMask;
-	  if (!(prevSetMask & currentSetMask)) /*character sets don't overlap*/
-	      currentWildcardProduct = 1;
-	}
-      }
-      /*handle a number of positions that are the same */
-      if (pattern[i+1] == '(') {  /*read opening paren*/
-	i++;
-	numIdentical = atoi((Char *) &pattern[++i]);  /*get number of positions*/
-        patternSearch->minPatternMatchLength += numIdentical;
-	while (pattern[++i] != ')') ;  /*skip over piece in pattern*/
-	while ((numIdentical--) > 0) {
-	  /*set up mask for these positions*/
-	  patternSearch->inputPatternMasked[j++] = charSetMask;
-	  patternSearch->patternProbability *= positionProbability; 
-	}
-      } 
-      else {   /*specification is for one posiion only*/
-         patternSearch->inputPatternMasked[j++] = charSetMask;
-         patternSearch->minPatternMatchLength++;
-         patternSearch->patternProbability *= positionProbability;
-      }
-      if (j >= MaxP) {
-         Blast_MessageWrite(error_msg, BLAST_SEV_WARNING, 2, 1, 
-                            "pattern too long");
-      }
-    }
-    localPattern[j-1] = 1;
-    if (patternSearch->patternProbability > 1.0)
-      patternSearch->patternProbability = 1.0;
+    memset(localPattern, 0, PHI_MAX_PATTERN_LENGTH*sizeof(Uint1));
 
-    for (i = 0; i < j; i++) {
-      tempInputPatternMasked[i] = patternSearch->inputPatternMasked[i]; 
-      tj = j;
+    /* Parse the pattern */
+    for (charIndex = 0, posIndex = 0; charIndex < (Int4)strlen(pattern); 
+         charIndex++) {
+        if ((next_char=pattern[charIndex]) == '-' || next_char == '\n' || 
+            next_char == '.' || next_char =='>' || next_char ==' ' || 
+            next_char == '<')  /*spacers that mean nothing*/
+            continue;
+        if ( next_char != '[' && next_char != '{') { /*not the start of a set of characters*/
+            if (next_char == 'x' || next_char== 'X') {  /*wild-card character matches anything*/
+                /* Next line checks to see if wild card is for multiple 
+                   positions */
+                if (pattern[charIndex+1] == '(') {
+                    charIndex++;
+                    secondIndex = charIndex;
+                    /* Find end of description of how many positions are 
+                       wildcarded will look like x(2) or x(2,5) */
+                    while (pattern[secondIndex] != ',' && 
+                           pattern[secondIndex] != ')')
+                        secondIndex++;
+                    if (pattern[secondIndex] == ')') {  
+                        /* Fixed number of positions wildcarded*/
+                        charIndex -= 1; 
+                        /* Wildcard, so all characters are allowed*/
+                        charSetMask = kMaskAaAlphabetBits; 
+                        positionProbability = 1;
+                    }
+                    else { /*variable number of positions wildcarded*/	  
+                        sscanf(&pattern[++charIndex], "%d,%d", 
+                               &minWildcard, &maxWildcard);
+                        maxWildcard = maxWildcard - minWildcard;
+                        currentWildcardProduct *= (maxWildcard + 1);
+                        if (currentWildcardProduct > wildcardProduct)
+                            wildcardProduct = currentWildcardProduct;
+                        pattern_blk->minPatternMatchLength += minWildcard;
+                        while (minWildcard-- > 0) { 
+                            /*use one position each for the minimum number of
+                              wildcard spaces required */
+                            multiword_items->inputPatternMasked[posIndex++] = 
+                                kMaskAaAlphabetBits; 
+                            if (posIndex >= PHI_MAX_PATTERN_LENGTH) {
+                                Blast_MessageWrite(error_msg, BLAST_SEV_WARNING,
+                                                   2, 1, "Pattern too long");
+                                return(-1);
+                            }
+                        }
+                        if (maxWildcard != 0) {
+                            /* Negative masking used to indicate variability
+                              in number of wildcard spaces; e.g., if pattern 
+                              looks like x(3,5) then variability is 2 and there
+                              will be three wildcard positions with mask 
+                              kMaskAaAlphabetBits followed by a single position 
+                              with mask -2. */
+                            multiword_items->inputPatternMasked[posIndex++] = 
+                                -maxWildcard;
+                            pattern_blk->patternProbability *= maxWildcard;
+                        }
+                        /* Now skip over wildcard description with the i index */
+                        while (pattern[++charIndex] != ')') ; 
+                        continue;
+                    }
+                }
+                else {  /*wild card is for one position only*/
+                    charSetMask = kMaskAaAlphabetBits; 
+                    positionProbability =1;
+                }
+            } 
+            else {
+                if (next_char == 'U') {   /*look for special U character*/
+                    charSetMask = kMaskAaAlphabetBits*2+1;
+                    positionProbability = 1; 
+                }
+                else { 
+                    /*exactly one character matches*/
+                    prevSetMask = currentSetMask;
+                    currentSetMask =  
+                        charSetMask = (1 << kOrder[(Uint1)next_char]);
+                    if (!(prevSetMask & currentSetMask)) 
+                        /* Character sets don't overlap */
+                        currentWildcardProduct = 1;
+                    positionProbability = 
+                    rfp->prob[(Uint1)kOrder[(Uint1)next_char]];
+                }
+            }
+        } else {
+            if (next_char == '[') {  /*start of a set of characters allowed*/
+                charSetMask = 0;
+                positionProbability = 0;
+                /*For each character in the set add it to the mask and
+                  add its probability to positionProbability*/
+                while ((next_char=pattern[++charIndex]) != ']') { /*end of set*/
+                    if ((next_char < 'A') || (next_char > 'Z') || (next_char == '\0')) {
+                        Blast_MessageWrite(error_msg, BLAST_SEV_WARNING, 2, 1, 
+                            "pattern description has a non-alphabetic"
+                            "character inside a bracket");
+                        
+                        return(-1);
+                    }
+                    charSetMask = 
+                        charSetMask | (1 << kOrder[(Uint1)next_char]);
+                    positionProbability += 
+                    rfp->prob[(Uint1)kOrder[(Uint1)next_char]];
+                }
+                prevSetMask = currentSetMask;
+                currentSetMask = charSetMask;
+                if (!(prevSetMask & currentSetMask)) 
+                    /* Character sets don't overlap */
+                    currentWildcardProduct = 1;
+            } else {   /*start of a set of characters forbidden*/
+                /*For each character forbidden remove it to the mask and
+                  subtract its probability from positionProbability*/
+                charSetMask = kMaskAaAlphabetBits; 
+                positionProbability = 1;
+                while ((next_char=pattern[++charIndex]) != '}') { /*end of set*/
+                    charSetMask = charSetMask - 
+                        (charSetMask & (1 << kOrder[(Uint1)next_char]));
+                    positionProbability -= 
+                    rfp->prob[(Uint1)kOrder[(Uint1)next_char]];
+                }
+                prevSetMask = currentSetMask;
+                currentSetMask = charSetMask;
+                if (!(prevSetMask & currentSetMask)) 
+                    /* Character sets don't overlap */
+                    currentWildcardProduct = 1;
+            }
+        }
+        /*handle a number of positions that are the same */
+        if (pattern[charIndex+1] == '(') {  /*read opening paren*/
+            charIndex++;
+            numIdentical = atoi(&pattern[++charIndex]);  /*get number of positions*/
+            pattern_blk->minPatternMatchLength += numIdentical;
+            while (pattern[++charIndex] != ')') ;  /*skip over piece in pattern*/
+            while ((numIdentical--) > 0) {
+                /*set up mask for these positions*/
+                multiword_items->inputPatternMasked[posIndex++] = charSetMask;
+                pattern_blk->patternProbability *= positionProbability; 
+            }
+        } 
+        else {   /*specification is for one posiion only*/
+            multiword_items->inputPatternMasked[posIndex++] = charSetMask;
+            pattern_blk->minPatternMatchLength++;
+            pattern_blk->patternProbability *= positionProbability;
+        }
+        if (posIndex >= PHI_MAX_PATTERN_LENGTH) {
+            Blast_MessageWrite(error_msg, BLAST_SEV_WARNING, 2, 1, 
+                               "Pattern is too long");
+        }
     }
-    j = expanding(patternSearch->inputPatternMasked, localPattern, j, MaxP);
-    if ((j== -1) || ((j > BITS_PACKED_PER_WORD) && is_dna)) {
-      patternSearch->flagPatternLength = PATTERN_TOO_LONG;
-      longpacking2(tempInputPatternMasked, tj, patternSearch);
-      for (i = 0; i < tj; i++) 
-         patternSearch->inputPatternMasked[i] = tempInputPatternMasked[i];
-      patternSearch->highestPlace = tj;
-      if (is_dna) 
-         init_pattern_DNA(patternSearch);
-      return 1;
+    
+    /* Free the residue frequencies structure - it's no longer needed */
+    rfp = Blast_ResFreqFree(rfp);
+    
+    localPattern[posIndex-1] = 1;
+    if (pattern_blk->patternProbability > 1.0)
+        pattern_blk->patternProbability = 1.0;
+    
+    for (charIndex = 0; charIndex < posIndex; charIndex++) {
+        tempInputPatternMasked[charIndex] = 
+            multiword_items->inputPatternMasked[charIndex]; 
+        tempPosIndex = posIndex;
     }
-    if (j > BITS_PACKED_PER_WORD) {
-      patternSearch->flagPatternLength = MULTI_WORD_PATTERN;
-      longpacking(j, localPattern, patternSearch);
-      return j;
+    posIndex = s_ExpandPattern(multiword_items->inputPatternMasked, localPattern, 
+                        posIndex, PHI_MAX_PATTERN_LENGTH);
+    if ((posIndex== -1) || ((posIndex > PHI_BITS_PACKED_PER_WORD) && is_dna)) {
+        pattern_blk->flagPatternLength = eVeryLong;
+        s_PackVeryLongPattern(tempInputPatternMasked, tempPosIndex, pattern_blk);
+        for (charIndex = 0; charIndex < tempPosIndex; charIndex++) 
+            multiword_items->inputPatternMasked[charIndex] =
+                tempInputPatternMasked[charIndex];
+        multiword_items->extra_long_items->highestPlace = tempPosIndex;
+        if (is_dna) 
+            s_InitDNAPattern(pattern_blk);
+        return 0;
+    }
+    if (posIndex > PHI_BITS_PACKED_PER_WORD) {
+        pattern_blk->flagPatternLength = eMultiWord;
+        s_PackLongPattern(posIndex, localPattern, pattern_blk);
+        return 0;
     } 
-    /*make a bit mask out of local pattern of length j*/
-    patternSearch->match_mask = packing(localPattern, j);
+    /*make a bit mask out of local pattern of length posIndex*/
+    one_word_items->match_mask = s_PackPattern(localPattern, posIndex);
     /*store for each character a bit mask of which positions
       that character can occur in*/
-    for (charIndex = 0; charIndex < ALPHABET_SIZE; charIndex++) {
-      thisMask = 0;
-      for (charSetMask = 0; charSetMask < j; charSetMask++) {
-	if ((1<< charIndex) & patternSearch->inputPatternMasked[charSetMask]) 
-	  thisMask |= (1 << charSetMask);
-      }
-      patternSearch->whichPositionsByCharacter[charIndex] = thisMask;
+    for (charIndex = 0; charIndex < BLASTAA_SIZE; charIndex++) {
+        thisMask = 0;
+        for (charSetMask = 0; charSetMask < (Uint4)posIndex; charSetMask++) {
+            if ((1<< charIndex) & multiword_items->inputPatternMasked[charSetMask]) 
+                thisMask |= (1 << charSetMask);
+        }
+        whichPositionsByCharacter[charIndex] = thisMask;
     }
-    patternSearch->whichPositionPtr = patternSearch->whichPositionsByCharacter;
+    one_word_items->whichPositionPtr = whichPositionsByCharacter;
     if (is_dna) 
-      init_pattern_DNA(patternSearch);
-    return j; /*return number of places for pattern representation*/
+        s_InitDNAPattern(pattern_blk);
+
+    if (wildcardProduct > kWildcardThreshold) {
+        Blast_MessageWrite(error_msg, BLAST_SEV_WARNING, 2, 1, 
+                           "Due to variable wildcards pattern is likely to "
+                           "occur too many times in a single sequence\n");
+    }
+    
+    return 0; /*return number of places for pattern representation*/
 }
 
-Int2 PHILookupTableNew(const LookupTableOptions* opt, PHILookupTable* * lut,
-                       Boolean is_dna, BlastScoreBlk* sbp)
+SPHIPatternSearchBlk* SPHIPatternSearchBlkFree(SPHIPatternSearchBlk* lut)
 {
-   PHILookupTable* lookup = *lut = 
-      (PHILookupTable*) malloc(sizeof(PHILookupTable));
-   Blast_Message* error_msg = NULL;
+    if (lut->multi_word_items) {
+        sfree(lut->multi_word_items->extra_long_items);
+        sfree(lut->multi_word_items->dna_items);
+        sfree(lut->multi_word_items);
+    }
+    if (lut->one_word_items) {
+        sfree(lut->one_word_items->dna_items);
+        sfree(lut->one_word_items);
+    }
 
-   if (!lookup)
-      return -1;
-
-   lookup->is_dna = is_dna;
-   init_pattern((Uint1*)opt->phi_pattern, is_dna, sbp, &lookup->pattern_info,
-                &error_msg); 
-   lookup->num_matches = 0;
-   lookup->allocated_size = MIN_PHI_LOOKUP_SIZE;
-   if ((lookup->start_offsets = 
-       (Int4*) malloc(MIN_PHI_LOOKUP_SIZE*sizeof(Int4))) == NULL)
-      return -1;
-   if ((lookup->lengths = (Int4*) malloc(MIN_PHI_LOOKUP_SIZE*sizeof(Int4)))
-        == NULL)
-      return -1;
-
-   return 0;
+    sfree(lut);
+    return NULL;
 }
 
-PHILookupTable* PHILookupTableDestruct(PHILookupTable* lut)
-{
-   sfree(lut->pattern_info);
-   sfree(lut->start_offsets);
-   sfree(lut->lengths);
-   sfree(lut);
-   return NULL;
-}
-
-static Int2 PHIBlastAddPatternHit(PHILookupTable* lookup, Int4 offset, 
-                                  Int4 length)
-{
-   if (lookup->num_matches >= lookup->allocated_size) {
-      lookup->start_offsets = (Int4*) realloc(lookup->start_offsets, 
-                                              2*lookup->allocated_size);
-      lookup->lengths = (Int4*) realloc(lookup->lengths, 
-                                              2*lookup->allocated_size);
-      if (!lookup->start_offsets || !lookup->lengths)
-         return -1;
-      lookup->allocated_size *= 2;
-   }      
-      
-   lookup->start_offsets[lookup->num_matches] = offset;
-   lookup->lengths[lookup->num_matches] = length;
-   ++lookup->num_matches;
-   return 0;
-}
-
-Int4 PHIBlastIndexQuery(PHILookupTable* lookup, 
-        BLAST_SequenceBlk* query, ListNode* location, Boolean is_dna)
-{
-   ListNode* loc;
-   Int4 from, to;
-   Int4 loc_length;
-   Uint1* sequence;
-   patternSearchItems* pattern_info = lookup->pattern_info;
-   Int4* hitArray;
-   Int4 i, twiceNumHits;
-   
-   hitArray = (Int4 *) calloc(2*query->length, sizeof(Int4));
-
-   for(loc=location; loc; loc=loc->next) {
-      from = ((SSeqRange*) loc->ptr)->left;
-      to = ((SSeqRange*) loc->ptr)->right;
-      loc_length = to - from + 1;
-      sequence = query->sequence + from;
-      
-      twiceNumHits = FindPatternHits(hitArray, sequence, loc_length, is_dna,
-                                     pattern_info);
-      
-      for (i = 0; i < twiceNumHits; i += 2) {
-         PHIBlastAddPatternHit(lookup, hitArray[i+1]+from, 
-                               hitArray[i]-hitArray[i+1]+1);
-      }
-   }
-
-   return lookup->num_matches;
-}
-
-static Boolean 
-PHIBlastMatchPatterns(Uint1* subject, Uint1* query, Int4 length)
-{
-   Int4 index;
-
-   for (index = 0; index < length; ++index) {
-      if (subject[index] != query[index])
-         break;
-   }
-   return (index == length);
-}
-
+/** Implementation of the ScanSubject function for PHI BLAST.
+ * @param lookup_wrap PHI BLAST lookup table [in]
+ * @param query_blk Query sequence [in]
+ * @param subject_blk Subject sequence [in]
+ * @param offset_ptr Next offset in subject - set to end of sequence [out]
+ * @param offset_pairs Starts and stops for pattern occurrences in subject [out]
+ * @param array_size Not used.
+ * @return Number of pattern occurrences found.
+ */
 Int4 PHIBlastScanSubject(const LookupTableWrap* lookup_wrap,
         const BLAST_SequenceBlk *query_blk, 
         const BLAST_SequenceBlk *subject_blk, 
-        Int4* offset_ptr, Uint4 * query_offsets, Uint4 * subject_offsets, 
+        Int4* offset_ptr, BlastOffsetPair* NCBI_RESTRICT offset_pairs,
         Int4 array_size)
 {
-   Uint1* subject, *query;
-   PHILookupTable* lookup = (PHILookupTable*) lookup_wrap->lut;
-   Int4 index, count = 0, twiceNumHits, i;
-   Int4 *start_offsets = lookup->start_offsets;
-   Int4 *pat_lengths = lookup->lengths;
-   Int4 offset, length;
-   Int4 hitArray[MAX_HIT];
+   Uint1* subject;
+   SPHIPatternSearchBlk* pattern_blk;
+   Int4 index, count = 0, twiceNumHits;
+   Int4 hitArray[PHI_MAX_HIT];
+   const Boolean kIsDna = (lookup_wrap->lut_type == PHI_NA_LOOKUP);
 
-   query = query_blk->sequence;
+   ASSERT(lookup_wrap->lut_type == PHI_NA_LOOKUP ||
+          lookup_wrap->lut_type == PHI_AA_LOOKUP);
+
+   pattern_blk = (SPHIPatternSearchBlk*) lookup_wrap->lut;
+
    subject = subject_blk->sequence;
    /* It must be guaranteed that all pattern matches for a given 
-      subject sequence are processed in one call to this function.
-   */
+    * subject sequence are processed in one call to this function.
+    */
    *offset_ptr = subject_blk->length;
 
    twiceNumHits = FindPatternHits(hitArray, subject, subject_blk->length, 
-                                  lookup->is_dna, lookup->pattern_info);
+                                  kIsDna, pattern_blk);
 
 
-   for (i = 0; i < twiceNumHits; i += 2) {
-#if 0
-      if (count > array_size - lookup->num_matches)
-            break;
-#endif
-      length = hitArray[i] - hitArray[i+1] + 1;
-      offset = hitArray[i+1];
-
-      for (index = 0; index < lookup->num_matches; ++index) {
-         /* Match pattern lengths in subject in query first; then 
-            check for identical match of pattern */
-         if (length == pat_lengths[index] &&
-             PHIBlastMatchPatterns(subject+offset, query+start_offsets[index], 
-                                   length))
-         {
-            /* Pattern has matched completely. Save index into the array
-               of pattern start offsets in query (so pattern length will
-               be accessible in the word finder later), and the subject
-               offset. */
-            query_offsets[count] = index;
-            subject_offsets[count] = offset;
-            ++count;
-         }
-      }
+   for (index = 0; index < twiceNumHits; index += 2) {
+      offset_pairs[count].phi_offsets.s_start = hitArray[index+1];
+      offset_pairs[count].phi_offsets.s_end = hitArray[index];
+      ++count;
    }
    return count;
 }

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   2/5/97
 *
-* $Revision: 6.62 $
+* $Revision: 6.66 $
 *
 * File Description:
 *
@@ -999,7 +999,7 @@ static void PopulateGraphic (BioseqViewPtr bvp)
   svpp = (SeqViewProcsPtr) GetAppProperty ("SeqDisplayForm");
   if (svpp != NULL && svpp->lockFarComponents) {
     sep = GetTopSeqEntryForEntityID (entityID);
-    LookupFarSeqIDs (sep, TRUE, FALSE, FALSE, TRUE, FALSE);
+    LookupFarSeqIDs (sep, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE);
   }
 
   sep = GetBestTopParentForData (entityID, bvp->bsp);
@@ -2786,6 +2786,7 @@ static void ShowMap (BioseqViewPtr bvp, Boolean show)
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }
@@ -2813,6 +2814,7 @@ static void ShowCompressed (BioseqViewPtr bvp, Boolean show)
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }
@@ -2840,6 +2842,7 @@ static void ShowGraphical (BioseqViewPtr bvp, Boolean show)
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }
@@ -2867,6 +2870,7 @@ static void ShowAlignment (BioseqViewPtr bvp, Boolean show)
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }
@@ -2895,6 +2899,7 @@ static void ShowSalsa (BioseqViewPtr bvp, Boolean show)
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }
@@ -2922,6 +2927,7 @@ static void ShowDesktop (BioseqViewPtr bvp, Boolean show)
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }
@@ -3875,7 +3881,9 @@ static void PopulateAsn2GphGraphic (
   CharPtr      appearanceName;
   CharPtr      filterName;
   CharPtr      layoutName;
+  /*
   CharPtr      alignScoreName;
+  */
   CharPtr      alignScoreCutoff;
   GraphicViewExtras gvExtras;
 
@@ -3914,7 +3922,7 @@ static void PopulateAsn2GphGraphic (
   if (svpp != NULL && svpp->lockFarComponents) {
     entityID = ObjMgrGetEntityIDForPointer (bsp);
     sep = GetTopSeqEntryForEntityID (entityID);
-    LookupFarSeqIDs (sep, TRUE, FALSE, FALSE, FALSE, FALSE);
+    LookupFarSeqIDs (sep, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE);
   }
 
   if (bvp->scaleNotCalculated) {
@@ -4088,6 +4096,7 @@ static void ShowAsn2GphGraphic (
     SafeHide (bvp->docTxtControlGrp);
     SafeHide (bvp->baseCtgControlGrp);
     SafeHide (bvp->modeControlGrp);
+    SafeHide (bvp->extraControlGrp);
     SafeHide (bvp->newGphControlGrp);
     SafeHide (bvp->clickMe);
   }

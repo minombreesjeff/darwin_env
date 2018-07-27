@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   5/5/00
 *
-* $Revision: 1.22 $
+* $Revision: 1.25 $
 *
 * File Description: 
 *
@@ -80,6 +80,12 @@ NLM_EXTERN CONN GiRevHistOpenConnection (
   Int4Ptr uids
 );
 
+NLM_EXTERN CONN GiAccVerOpenConnection (
+  Int4 uid,
+  Int4 num,
+  Int4Ptr uids
+);
+
 NLM_EXTERN CONN AccnRevHistOpenConnection (
   CharPtr accn
 );
@@ -101,6 +107,10 @@ NLM_EXTERN SeqEntryPtr PubSeqWaitForReply (
 );
 
 NLM_EXTERN CharPtr GiRevHistWaitForReply (
+  CONN conn
+);
+
+NLM_EXTERN CharPtr GiAccVerWaitForReply (
   CONN conn
 );
 
@@ -132,6 +142,12 @@ NLM_EXTERN SeqEntryPtr PubSeqSynchronousQuery (
 );
 
 NLM_EXTERN CharPtr GiRevHistSynchronousQuery (
+  Int4 uid,
+  Int4 num,
+  Int4Ptr uids
+);
+
+NLM_EXTERN CharPtr GiAccVerSynchronousQuery (
   Int4 uid,
   Int4 num,
   Int4Ptr uids
@@ -217,6 +233,24 @@ NLM_EXTERN CharPtr GiRevHistReadReply (
   EIO_Status status
 );
 
+NLM_EXTERN Boolean GiAccVerAsynchronousQuery (
+  Int4 uid,
+  Int4 num,
+  Int4Ptr uids,
+  QUEUE* q,
+  QueryResultProc resultproc,
+  VoidPtr userdata
+);
+
+NLM_EXTERN Int4 GiAccVerCheckQueue (
+  QUEUE* q
+);
+
+NLM_EXTERN CharPtr GiAccVerReadReply (
+  CONN conn,
+  EIO_Status status
+);
+
 NLM_EXTERN Boolean AccnRevHistAsynchronousQuery (
   CharPtr accn,
   QUEUE* q,
@@ -298,7 +332,12 @@ NLM_EXTERN Int4 LIBCALLBACK GiRevHistLookupFarSeqIDs (
   Boolean locations,
   Boolean products,
   Boolean alignments,
-  Boolean history
+  Boolean history,
+  Boolean others
+);
+
+NLM_EXTERN Int4 AccnListPreLoadSeqIdGiCache (
+  CharPtr PNTR accns
 );
 
 /* SeqId chain fetch function */
@@ -317,7 +356,8 @@ typedef void (LIBCALLBACK *CacheAccnListProc) (
 /*
  CacheAccnList takes the AccnList query result, and calls the
  user callback if it is not NULL, otherwise it preloads the
- sequence manager gi/accession lookup cache
+ sequence manager gi/accession lookup cache.  Used internally
+ by AccnListPreLoadSeqIdGiCache function.
 */
 
 NLM_EXTERN Int4 CacheAccnList (

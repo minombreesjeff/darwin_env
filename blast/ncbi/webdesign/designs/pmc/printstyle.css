@@ -1,0 +1,59 @@
+
+body { 
+  font-family: Verdana, Geneva, sans-serif;
+}
+
+img { 
+  border: none;
+}
+
+#pmclogo {
+  align: left;
+  vertical-align: top;
+}
+
+body {
+  margins: 0;
+  font-size: 10pt;
+}
+
+h1 {
+  font-size: 12pt;
+  text-align: left;
+  border-bottom: solid 4px #777;
+  background-color: #ddd;
+  width: 50%;
+  margins: 0;
+  padding: 0px 0px;
+}
+
+h2 {
+  font-size: 11pt;
+  text-align: left;
+}
+
+#pmc ul li {
+  list-style: none;
+  margin-left: -0.375in;
+  padding: 0px 0px 4px 4px;
+}
+
+.detail { display: block;
+  font-size: 85%;
+margin-left: .5em;}
+
+#pmc ul li ul li {
+  font-size: smaller;
+  font-style: italic;
+}
+
+#pmc ul li.comment {
+  list-style: box;
+  padding: 0px 0px 4px 4px;
+}
+
+.footer-link { 
+  border: solid 1px;
+  font-size: 75%;
+  width: 30%;
+}

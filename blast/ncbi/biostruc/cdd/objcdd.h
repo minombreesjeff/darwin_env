@@ -20,7 +20,7 @@ extern "C" { /* } */
 /**************************************************
 *
 *    Generated objects for Module NCBI-Cdd
-*    Generated using ASNCODE Revision: 6.14 at Apr 28, 2004  4:00 PM
+*    Generated using ASNCODE Revision: 6.15 at Oct 12, 2004 11:03 AM
 *
 **************************************************/
 
@@ -87,7 +87,7 @@ typedef struct struct_Cdd {
    struct struct_Cn3d_style_dictionary PNTR   style_dictionary;
    struct struct_Cn3d_user_annotations PNTR   user_annotations;
    struct struct_Domain_parent PNTR   ancestors;
-   struct struct_Score_matrix_parameters PNTR   scoreparams;
+   struct struct_PssmWithParameters PNTR   scoreparams;
    struct struct_Sequence_tree PNTR   seqtree;
 } Cdd, PNTR CddPtr;
 
@@ -213,6 +213,8 @@ typedef struct struct_Cdd_org_ref {
    struct struct_Cdd_org_ref PNTR next;
    OrgRefPtr   reference;
    Uint1   active;
+   Int4   parent_tax_id;
+   CharPtr   rank;
 } CddOrgRef, PNTR CddOrgRefPtr;
 
 

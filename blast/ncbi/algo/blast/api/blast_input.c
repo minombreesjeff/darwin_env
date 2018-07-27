@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: blast_input.c,v 1.10 2003/12/03 17:30:25 dondosha Exp $";
+static char const rcsid[] = "$Id: blast_input.c,v 1.21 2005/04/06 23:27:53 dondosha Exp $";
 /* ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -21,48 +21,61 @@ static char const rcsid[] = "$Id: blast_input.c,v 1.10 2003/12/03 17:30:25 dondo
 *
 *  Please cite the author in any work or product based on this material.
 *
-* ===========================================================================*/
+* Author: Ilya Dondoshansky
+*
+*/
 
-/*****************************************************************************
+/** @file blast_input.c
+ * Reading FASTA sequences for BLAST
+ */
 
-File name: blast_input.c
-
-Author: Ilya Dondoshansky
-
-Contents: Reading FASTA sequences for BLAST
-
-$Revision: 1.10 $
-
-******************************************************************************/
 #include <objloc.h>
 #include <tofasta.h>
 #include <algo/blast/api/blast_input.h>
 #include <algo/blast/api/blast_seq.h>
+#include <algo/blast/core/blast_filter.h>
+#include <algo/blast/core/blast_setup.h>
 
-#define MAX_NUM_QUERIES 16383 /* == 1/2 INT2_MAX */
-#define MAX_TOTAL_LENGTH 20000000
+/** @addtogroup CToolkitAlgoBlast
+ *
+ * @{
+ */
 
-Boolean
-BLAST_GetQuerySeqLoc(FILE *infp, Boolean query_is_na, Uint1 strand,
-   Int4 start, Int4 end, BlastMaskLoc** lcase_mask, SeqLocPtr* query_slp, 
-   Int4 ctr_start, Int4* num_queries)
+/** Maximal number of queries allowed in one SeqLoc chain (== 1/2 INT2_MAX) */
+#define MAX_NUM_QUERIES 16383 
+/** Maximal total length of queries in a single SeqLoc chain. */
+#define MAX_TOTAL_LENGTH 2000000
+
+Int4
+BLAST_GetQuerySeqLoc(FILE *infp, Boolean query_is_na, Uint1 strand, 
+                     Int4 max_total_length, Int4 start, Int4 end, 
+                     SeqLoc** lcase_mask, SeqLocPtr* query_slp, 
+                     Int2Ptr ctr, Int4* num_queries, Boolean believe_query)
 {
-   Int8 total_length;
-   BioseqPtr query_bsp;
-   SeqLocPtr mask_slp, last_slp;
-   BlastMaskLoc* last_mask;
-   char prefix[2];     /* for FastaToSeqEntryForDb */
-   Int2 ctr = ctr_start + 1; /* Counter for FastaToSeqEntryForDb */
-   Int4 query_index = 0;
-   BlastMaskLoc* new_mask;
+   Int4 total_length=0; /* total number of letters read this call, also final 
+                           return value. */
    SeqEntryPtr sep;
-   Boolean done = TRUE;
-   Int4 from, to;
+   SeqLocPtr mask_slp, last_slp;
+   char prefix[2];     /* for FastaToSeqEntryForDb */
+   Int4 query_index = 0;  /* total number of sequence read. */
+   ValNodePtr vnp=NULL; /* used to keep lower-case masking SeqLoc's */
 
    if (!query_slp)
+   {
+      ErrPostEx(SEV_FATAL, 0, 0, "NULL query_slp obtained in BLAST_GetQuerySeqLoc");
       return -1;
+   }
 
-   total_length = 0;
+   if (!ctr)  /* Not providing this can cause problems if multiple calls to this
+                 function are made. */
+   {
+      ErrPostEx(SEV_FATAL, 0, 0, "ctr must be non-NULL in BLAST_GetQuerySeqLoc");
+      return -1;
+   }
+
+   if (max_total_length <= 0)
+     max_total_length = MAX_TOTAL_LENGTH;
+
    *query_slp = NULL;
    last_slp = NULL;
 
@@ -71,26 +84,21 @@ BLAST_GetQuerySeqLoc(FILE *infp, Boolean query_is_na, Uint1 strand,
 
    SeqMgrHoldIndexing(TRUE);
    mask_slp = NULL;
-   last_mask = NULL;
+   if (lcase_mask) /* Make sure we don't get old (possibly freed) locations. */
+     *lcase_mask = NULL;
    
    StrCpy(prefix, "");
    
-   while ((sep=FastaToSeqEntryForDb(infp, query_is_na, NULL, FALSE, prefix, 
-                                    &ctr, (lcase_mask ? &mask_slp : NULL))) != NULL)
+   while ((sep=FastaToSeqEntryForDb(infp, query_is_na, NULL, believe_query, prefix, 
+                                    ctr, (lcase_mask ? &mask_slp : NULL))) != NULL)
    {
-      if (mask_slp) {
-         new_mask = BlastMaskLocFromSeqLoc(mask_slp, query_index);
-         
-         if (!last_mask)
-            *lcase_mask = last_mask = new_mask;
-         else {
-            last_mask->next = new_mask;
-            last_mask = last_mask->next;
-         }
-         /* Masking locations in a SeqLoc form are no longer needed */
-         mask_slp = SeqLocSetFree(mask_slp);
-      }
+      BioseqPtr query_bsp;
+      Int4 from, to;
+
+      if (lcase_mask)  /* Only keep if lcase masking is being read in. */
+         ValNodeAddPointer(&vnp, 0, mask_slp);
       ++query_index;
+      mask_slp = NULL;
       
       query_bsp = NULL;
       if (query_is_na) {
@@ -101,16 +109,21 @@ BLAST_GetQuerySeqLoc(FILE *infp, Boolean query_is_na, Uint1 strand,
       
       if (query_bsp == NULL) {
          ErrPostEx(SEV_FATAL, 0, 0, "Unable to obtain bioseq\n");
-         return 2;
+         return -1;
       }
+
       
       /* Original from and to are 1-offsets, except when they are 0's,
          in which case they are start and end of sequence respectively */
       from = ((start > 0) ? start - 1 : 0);
       to = ((end > 0) ? end - 1 : query_bsp->length - 1);
 
-      from = MIN(from, query_bsp->length - 1);
       to = MIN(to, query_bsp->length - 1);
+
+      /* If location starting offset is larger than sequence length, skip this
+         sequence. */
+      if (from > to) 
+         continue;
 
       if ((strand == Seq_strand_plus) || (strand == Seq_strand_minus) ||
           (from > 0) || (to < query_bsp->length - 1))
@@ -125,79 +138,26 @@ BLAST_GetQuerySeqLoc(FILE *infp, Boolean query_is_na, Uint1 strand,
          }
       } else {
          last_slp = ValNodeAddPointer(&last_slp, SEQLOC_WHOLE, 
-                       SeqIdDup(SeqIdFindBest(query_bsp->id, SEQID_GI)));
+                       SeqIdSetDup(query_bsp->id));
          if (*query_slp == NULL)
             *query_slp = last_slp;
       }
 
       total_length += query_bsp->length;
-      if (total_length > MAX_TOTAL_LENGTH || 
-          query_index >= MAX_NUM_QUERIES) {
-         done = FALSE;
-         if (total_length > MAX_TOTAL_LENGTH) {
-            ErrPostEx(SEV_INFO, 0, 0, 
-               "Total length of queries has exceeded %ld\n",
-               MAX_TOTAL_LENGTH);
-         } else {
-            ErrPostEx(SEV_INFO, 0, 0, 
-               "Number of query sequences has exceeded the limit of %ld\n",
-               MAX_NUM_QUERIES);
-         }
-         break;
+      if (total_length > max_total_length || query_index >= MAX_NUM_QUERIES) {
+         break;  /* Read maximum allowed amount of data. */
       }
    }
-   
+
+   if (lcase_mask)
+       *lcase_mask = vnp;
+
    SeqMgrHoldIndexing(FALSE);
 
    if (num_queries)
       *num_queries = query_index;
 
-   return done;
+   return total_length;
 }
-
-/** Probably can be removed */
-Int4 MakeBlastSequenceBlkFromFasta(FILE *fasta_fp, BLAST_SequenceBlk* seq)
-{
-   BioseqPtr query_bsp;
-   SeqEntryPtr query_sep;
-   Boolean is_na = FALSE;
-   Boolean believe_defline = TRUE;
-   SeqLocPtr mask_slp = NULL;
-   Int2 ctr=1;
-   
-   Uint1* sequence = NULL;
-   
-   query_sep=FastaToSeqEntryForDb(fasta_fp,
-                               is_na, /* query is nucleotide? */
-                               NULL, /* error message */
-                               believe_defline, /* believe query defline? */
-                               "", /* prefix for localid if not parseable */
-                               &ctr, /* starting point for constructing a unique id */
-                               &mask_slp);
-
-   if (query_sep == NULL)
-      return 1;
-   
-   SeqEntryExplore(query_sep, &query_bsp, FindProt);
-   
-   if (query_bsp == NULL)
-      return 1;
-   
-   /* allocate contiguous space for the sequence */
-   sequence = (Uint1 *) malloc(query_bsp->length);
-   
-   if (sequence == NULL)
-      return 1;
-   
-   /* convert to ncbistdaa encoding */
-   BioseqRawConvert(query_bsp, Seq_code_ncbistdaa);
-   
-   /* read the sequence */
-   BSSeek(query_bsp->seq_data, 0, SEEK_SET);
-   BSRead(query_bsp->seq_data, sequence, query_bsp->length);
-   
-   seq->length = query_bsp->length;
-   seq->sequence = sequence;
-   return 0;
-}
+/* @} */
 

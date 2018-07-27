@@ -29,7 +29,7 @@
 *   
 * Version Creation Date: 7/13/91
 *
-* $Revision: 6.108 $
+* $Revision: 6.139 $
 *
 * File Description:  Ports onto Bioseqs
 *
@@ -39,6 +39,103 @@
 * -------  ----------  -----------------------------------------------------
 *
 * $Log: seqport.c,v $
+* Revision 6.139  2005/03/15 14:35:44  kans
+* seqport stream gap control flags (2-bit set) are STREAM_EXPAND_GAPS, GAP_TO_SINGLE_DASH, and EXPAND_GAPS_TO_DASHES
+*
+* Revision 6.138  2004/11/30 13:19:41  kans
+* SeqSearchNew sets default letterToIdx to 14, correct position of N
+*
+* Revision 6.137  2004/11/29 19:01:22  kans
+* TestSeqSearch passes new flags to SeqSearchAddNucleotidePattern
+*
+* Revision 6.136  2004/11/29 17:12:42  kans
+* added SearchFlgType for expandPattern, allowOneMismatch, justTopStrand arguments
+*
+* Revision 6.135  2004/11/29 16:50:27  kans
+* SeqSearchNew initializes letterToIdx array to 15 (N) now that ambiguous sequences can be processed with exact matches
+*
+* Revision 6.134  2004/11/26 18:53:09  kans
+* SeqSearchAddNucleotidePattern takes expandPattern, allowOneMismatch arguments
+*
+* Revision 6.133  2004/11/26 16:14:43  kans
+* SeqSearchProcessBioseq uses SeqPortStream instead of SeqPortRead
+*
+* Revision 6.132  2004/10/27 22:15:34  kans
+* added STREAM_CORRECT_INVAL flag to SeqPortStream
+*
+* Revision 6.131  2004/09/20 18:29:48  bollin
+* use partial flag in TransTableTranslateCommon only when feature is 3' partial.
+*
+* Revision 6.130  2004/07/16 19:37:37  kans
+* SeqPortStream and FastaStream functions return Int4, negative count if any fetch failures
+*
+* Revision 6.129  2004/07/12 17:22:42  kans
+* added overflow protection to ReadCodingRegionBases - replaces StringMove
+*
+* Revision 6.128  2004/06/24 16:08:30  kans
+* FormatSequenceBlock and StreamCacheGetResidue handle SEQLOC_PACKED_INT like SEQLOC_MIX
+*
+* Revision 6.127  2004/06/21 20:55:54  bollin
+* adapted ConvertNsToGaps function to handle known and unknown length gaps
+* and be able to leave Ns in sequence.
+*
+* Revision 6.126  2004/06/18 20:08:43  bollin
+* changed handling of userdata for ConvertNsToGaps to allow negative values to
+* indicate >= absolute value of integer passed
+*
+* Revision 6.125  2004/06/18 16:32:51  bollin
+* when changing sets of N where the length is not 100 to gaps of unknown length,
+* size 100, must change locations and lengths of affected features and total
+* length of affected Bioseq.
+*
+* Revision 6.124  2004/06/09 14:03:48  bollin
+* unknown length gaps should always be length 100 after converting
+*
+* Revision 6.123  2004/06/09 13:36:31  bollin
+* changed ConvertNsToGaps to create gaps of unknown length.
+*
+* Revision 6.122  2004/06/08 18:16:43  kans
+* removed SEQPORT_STREAM_FREE_COMPONENT and SEQPORT_STREAM_HAMMER environment variable support
+*
+* Revision 6.121  2004/06/07 21:17:13  kans
+* SeqPortStreamSeqLoc checks SEQPORT_STREAM_FREE_COMPONENT environment variable, frees after fetching to recycle entityIDs, keep from rolling over
+*
+* Revision 6.120  2004/06/03 17:21:49  kans
+* make SortByIntvalue extern
+*
+* Revision 6.119  2004/06/03 15:09:50  kans
+* SeqPortStreamSeqLoc is passed parent seqid for more informative error messages
+*
+* Revision 6.118  2004/06/02 21:26:07  kans
+* SeqPortStreamSeqLoc checks SEQPORT_STREAM_HAMMER environment variable, retries sequence fetch until success
+*
+* Revision 6.117  2004/06/01 14:09:33  kans
+* SeqPortStreamSeqLoc now checks environment variable for sleep time between fetch retries
+*
+* Revision 6.116  2004/05/27 20:54:53  kans
+* fixed single interval fake segmented sequence in FormatSequenceBlock and StreamCacheGetResidue
+*
+* Revision 6.115  2004/05/27 19:47:03  kans
+* report buffer overflow problem if q > protlen, not q >= protlen
+*
+* Revision 6.114  2004/05/27 19:37:09  kans
+* TransTableTranslateCommon protects against protein buffer overflow, then warns
+*
+* Revision 6.113  2004/05/24 19:21:58  kans
+* FormatSequenceBlock and StreamCacheGetResidue use Seq_repr_seg header for location, special case SEQLOC_MIX
+*
+* Revision 6.112  2004/05/13 21:33:59  kans
+* SeqPortStreamSeqLoc reports number of BioseqLockById attempts if first failed
+*
+* Revision 6.111  2004/05/13 17:58:00  kans
+* SeqPortStreamSeqLoc uses SEQPORT_STREAM_FETCH_ATTEMPTS environment variable for multiple fetch attempts
+*
+* Revision 6.110  2004/05/12 18:55:33  kans
+* StreamCache takes SeqLocPtr as well as BioseqPtr optional arguments, slp version is equivalent of SeqPortNewByLoc
+*
+* Revision 6.109  2004/05/05 17:32:09  kans
+* SaveCdsBases callback for ReadCodingRegionBases a little more efficient if frame > 0, does not call StringLen on sequence fragment
+*
 * Revision 6.108  2004/05/03 20:58:33  kans
 * SaveCdsBases protects against rare cases where the frame is >= the number of sequence bases passed from the first or second segment
 *
@@ -484,7 +581,7 @@ static char *this_file = __FILE__;
 #include <explore.h>   /* for BioseqFindFromSeqLoc function */
 #include <subutil.h>
 #include <tofasta.h>   /* for FastaSeqLineEx function */
-
+#include <salutil.h> 
 
 
 NLM_EXTERN Boolean LIBCALL SeqPortAdjustLength (SeqPortPtr spp);
@@ -2376,6 +2473,7 @@ typedef struct streamdata {
   SeqPortStreamProc  proc;
   Uint1              letterToComp [256];
   CharPtr            tmp;
+  Boolean            failed;
 } StreamData, PNTR StreamDataPtr;
 
 /* prototype for main internal recursive processing function */
@@ -2388,18 +2486,49 @@ static Int4 SeqPortStreamWork (
   StreamDataPtr sdp
 );
 
+#define STREAM_GAP_MASK (STREAM_EXPAND_GAPS | GAP_TO_SINGLE_DASH | EXPAND_GAPS_TO_DASHES)
+
 static Int4 SeqPortStreamGap (
   Int4 length,
   Boolean is_na,
-  StreamDataPtr sdp
+  StreamDataPtr sdp 
 )
 
 {
-  Char  buf [4004];
-  Char  ch;
-  Int4  len;
+  Char     buf [4004];
+  Char     ch;
+  Boolean  expand_gaps, many_dashes, single_dash;
+  Int4     len;
 
-  if (is_na) {
+  if (sdp == NULL) return 0;
+
+  expand_gaps = (Boolean) ((sdp->flags & STREAM_GAP_MASK) == STREAM_EXPAND_GAPS);
+  single_dash = (Boolean) ((sdp->flags & STREAM_GAP_MASK) == GAP_TO_SINGLE_DASH);
+  many_dashes = (Boolean) ((sdp->flags & STREAM_GAP_MASK) == EXPAND_GAPS_TO_DASHES);
+
+  /* if both gap flags are false, ignore gap */
+
+  if ((! expand_gaps) && (! single_dash) && (! many_dashes)) return 0;
+
+  if (single_dash) {
+
+    /* if only indicating gap presence, send one gap character, return 0 count */
+
+    buf [0] = '-';
+    buf [1] = '\0';
+
+    sdp->proc (buf, sdp->userdata);
+
+    return 0;
+  }
+
+  /* if not single dash to mark any gap, need at least one base or residue */
+
+  if (length < 1) return 0;
+
+  if (many_dashes) {
+    ch = '-';
+  } else if (is_na) {
     ch = 'N';
   } else {
     ch = 'X';
@@ -2420,7 +2549,7 @@ static Int4 SeqPortStreamGap (
     sdp->proc (buf, sdp->userdata);
   }
 
-  /* return number of N or X characters sent */
+  /* return number of N or X or gap characters sent */
 
   return length;
 }
@@ -2429,21 +2558,29 @@ static Uint1Ptr LIBCALL MapNa8ByteToIUPACString (
   Uint1Ptr bytep,
   Uint1Ptr buf,
   Int4 total,
-  SeqMapTablePtr smtp
+  Uint1 badchar,
+  SeqMapTablePtr smtp,
+  StreamDataPtr sdp
 )
 
 {
+  Uint1     ch;
   Int4      k;
   Uint1Ptr  ptr;
   Uint1     residue;
 
-  if (bytep == NULL || buf == NULL) return buf;
+  if (bytep == NULL || buf == NULL || sdp == NULL) return buf;
   ptr = buf;
 
   for (k = 0; k < total; k++) {
     residue = *bytep;
     if (smtp != NULL) {
-      *ptr = SeqMapTableConvert (smtp, residue);
+      ch = SeqMapTableConvert (smtp, residue);
+      if (ch == INVALID_RESIDUE && (Boolean) ((sdp->flags & STREAM_CORRECT_INVAL) != 0)) {
+        *ptr = badchar;
+      } else {
+        *ptr = ch;
+      }
     } else {
       *ptr = residue;
     }
@@ -2459,6 +2596,7 @@ static Int4 SeqPortStreamBlock (
   Int4 blk,
   Int4 compress,
   Uint1 alphabet,
+  Uint1 badchar,
   SeqMapTablePtr smtp,
   Int4 start,
   Int4 stop,
@@ -2501,7 +2639,7 @@ static Int4 SeqPortStreamBlock (
       ptr = (CharPtr) MapNa4ByteToIUPACString (bytes, (Uint2Ptr) ptr, total);
       break;
     default :
-      ptr = (CharPtr) MapNa8ByteToIUPACString (bytes, (Uint1Ptr) ptr, total, smtp);
+      ptr = (CharPtr) MapNa8ByteToIUPACString (bytes, (Uint1Ptr) ptr, total, badchar, smtp, sdp);
       break;
   }
   *ptr = '\0';
@@ -2580,6 +2718,7 @@ static Int4 SeqPortStreamRaw (
 
 {
   Uint1           alphabet, code;
+  Char            badchar;
   ByteStorePtr    bs;
   Int4            blk, compress, count = 0, from, to;
   Boolean         is_na, revcomp = FALSE;
@@ -2602,8 +2741,10 @@ static Int4 SeqPortStreamRaw (
 
   if (is_na) {
     code = Seq_code_iupacna;
+    badchar = 'N';
   } else {
     code = Seq_code_ncbieaa;
+    badchar = 'X';
   }
 
   switch (alphabet) {
@@ -2633,13 +2774,13 @@ static Int4 SeqPortStreamRaw (
   if (revcomp) {
 
     for (blk = to; blk >= from; blk -= 1000) {
-      count += SeqPortStreamBlock (bs, blk, compress, alphabet, smtp, start, stop, TRUE, sdp);
+      count += SeqPortStreamBlock (bs, blk, compress, alphabet, badchar, smtp, start, stop, TRUE, sdp);
     }
 
   } else {
 
     for (blk = from; blk <= to; blk += 1000) {
-      count += SeqPortStreamBlock (bs, blk, compress, alphabet, smtp, start, stop, FALSE, sdp);
+      count += SeqPortStreamBlock (bs, blk, compress, alphabet, badchar, smtp, start, stop, FALSE, sdp);
     }
   }
 
@@ -2669,8 +2810,6 @@ static Int4 SeqPortStreamLit (
 
     /* literal without sequence data is a virtual gap */
 
-    if ((Boolean) ((sdp->flags & STREAM_EXPAND_GAPS) == 0)) return 0;
-
     count += SeqPortStreamGap (stop - start + 1, is_na, sdp);
 
     return count;
@@ -2692,24 +2831,37 @@ static Int4 SeqPortStreamLit (
 
   /* call SeqPortStreamRaw to handle sequence data in the byte store */
 
-  count = SeqPortStreamRaw (&bsq, start, stop, strand, sdp);
+  count += SeqPortStreamRaw (&bsq, start, stop, strand, sdp);
 
   return count;
 }
+
+static Int2     stream_retry_attempts = 0;
+static Boolean  stream_retry_count_set = FALSE;
+
+static Int2     stream_retry_sleep = 0;
+static Boolean  stream_retryp_sleep_set = FALSE;
 
 static Int4 SeqPortStreamSeqLoc (
   SeqLocPtr slp,
   Int4 start,
   Int4 stop,
   Uint1 strand,
-  StreamDataPtr sdp
+  StreamDataPtr sdp,
+  SeqIdPtr parentID
 )
 
 {
-  BioseqPtr  bsp;
-  Char       buf [64];
-  Int4       count = 0;
-  SeqIdPtr   sip;
+  BioseqPtr bsp;
+  Char      buf [64];
+  Int4      count = 0;
+  Char      pid [64];
+  SeqIdPtr  sip;
+#ifdef OS_UNIX
+  Int2      attempts;
+  CharPtr   str;
+  int       val = 0;
+#endif
 
   if (slp == NULL || sdp == NULL) return 0;
 
@@ -2717,9 +2869,70 @@ static Int4 SeqPortStreamSeqLoc (
   if (sip == NULL) return 0;
 
   bsp = BioseqLockById (sip);
+
+#ifdef OS_UNIX
+  if (bsp == NULL) {
+
+    /* number of retries and sleep between retries now configured by environment variable */
+
+    if (! stream_retry_count_set) {
+      str = (CharPtr) getenv ("SEQPORT_STREAM_FETCH_ATTEMPTS");
+      if (StringDoesHaveText (str)) {
+        if (sscanf (str, "%d", &val) == 1) {
+          stream_retry_attempts = (Uint2) val;
+        }
+      }
+      stream_retry_count_set = TRUE;
+    }
+
+    if (! stream_retryp_sleep_set) {
+      str = (CharPtr) getenv ("SEQPORT_STREAM_RETRY_SLEEP");
+      if (StringDoesHaveText (str)) {
+        if (sscanf (str, "%d", &val) == 1) {
+          stream_retry_sleep = (Uint2) val;
+        }
+      }
+      stream_retryp_sleep_set = TRUE;
+    }
+
+    /* retry failed fetch attempt up to specified limit */
+
+    if (stream_retry_attempts > 1) {
+      attempts = 1;
+      while (bsp == NULL && attempts < stream_retry_attempts) {
+        if (stream_retry_sleep > 0) {
+          sleep (stream_retry_sleep);
+        }
+
+        bsp = BioseqLockById (sip);
+        attempts++;
+      }
+      if (bsp != NULL) {
+        SeqIdWrite (sip, buf, PRINTID_FASTA_SHORT, sizeof (buf) - 1);
+        if (parentID != NULL) {
+          SeqIdWrite (parentID, pid, PRINTID_FASTA_LONG, sizeof (pid) - 1);
+          ErrPostEx (SEV_WARNING, 0, 0,
+                     "SeqPortStream loaded Bioseq %s component of %s after %d attempts",
+                     buf, pid, (int) attempts);
+        } else {
+          ErrPostEx (SEV_WARNING, 0, 0,
+                     "SeqPortStream loaded Bioseq %s after %d attempts",
+                     buf, (int) attempts);
+        }
+      }
+    }
+  }
+#endif
+
   if (bsp == NULL) {
     SeqIdWrite (sip, buf, PRINTID_FASTA_SHORT, sizeof (buf) - 1);
-    ErrPostEx (SEV_ERROR, 0, 0, "SeqPortStream failed to load Bioseq %s", buf);
+    if (parentID != NULL) {
+      SeqIdWrite (parentID, pid, PRINTID_FASTA_LONG, sizeof (pid) - 1);
+      ErrPostEx (SEV_ERROR, 0, 0, "SeqPortStream failed to load Bioseq %s component of %s", buf, pid);
+    } else {
+      ErrPostEx (SEV_ERROR, 0, 0, "SeqPortStream failed to load Bioseq %s", buf);
+    }
+    sdp->failed = TRUE;
     return 0;
   }
 
@@ -2930,7 +3143,7 @@ static Int4 SeqPortStreamDelta (
 
     if (sop->slp != NULL) {
 
-      count += SeqPortStreamSeqLoc (sop->slp, sop->from, sop->to, sop->strand, sdp);
+      count += SeqPortStreamSeqLoc (sop->slp, sop->from, sop->to, sop->strand, sdp, bsp->id);
 
     } else if (sop->slitp != NULL) {
 
@@ -3048,7 +3261,7 @@ static Int4 SeqPortStreamSeg (
 
     if (sop->slp != NULL) {
 
-      count += SeqPortStreamSeqLoc (sop->slp, sop->from, sop->to, sop->strand, sdp);
+      count += SeqPortStreamSeqLoc (sop->slp, sop->from, sop->to, sop->strand, sdp, bsp->id);
     }
   }
 
@@ -3089,9 +3302,7 @@ static Int4 SeqPortStreamWork (
   switch (bsp->repr) {
 
     case Seq_repr_virtual :
-      if ((Boolean) ((sdp->flags & STREAM_EXPAND_GAPS) != 0)) {
-        count += SeqPortStreamGap (stop - start + 1, ISA_na (bsp->mol), sdp);
-      }
+      count += SeqPortStreamGap (stop - start + 1, ISA_na (bsp->mol), sdp);
       break;
 
     case Seq_repr_raw :
@@ -3167,6 +3378,7 @@ static Int4 SeqPortStreamSetup (
   sd.userdata = userdata;
   sd.proc = proc;
   sd.tmp = NULL;
+  sd.failed = FALSE;
 
   /* if NULL callback, copy into allocated userdata string */
 
@@ -3209,7 +3421,7 @@ static Int4 SeqPortStreamSetup (
       to = SeqLocStop (slp);
       strand = SeqLocStrand (slp);
 
-      count += SeqPortStreamSeqLoc (slp, from, to, strand, &sd);
+      count += SeqPortStreamSeqLoc (slp, from, to, strand, &sd, NULL);
 
       slp = SeqLocFindNext (loc, slp);
     }
@@ -3217,12 +3429,16 @@ static Int4 SeqPortStreamSetup (
 
   /* return number of bases or residues streamed to callback */
 
+  if (sd.failed) {
+    return -count;
+  }
+
   return count;
 }
 
 /* public functions all call SeqPortStreamSetup */
 
-NLM_EXTERN void SeqPortStream (
+NLM_EXTERN Int4 SeqPortStream (
   BioseqPtr bsp,
   StreamFlgType flags,
   Pointer userdata,
@@ -3230,10 +3446,10 @@ NLM_EXTERN void SeqPortStream (
 )
 
 {
-  SeqPortStreamSetup (bsp, 0, -1, Seq_strand_unknown, NULL, flags, userdata, proc);
+  return SeqPortStreamSetup (bsp, 0, -1, Seq_strand_unknown, NULL, flags, userdata, proc);
 }
 
-NLM_EXTERN void SeqPortStreamInt (
+NLM_EXTERN Int4 SeqPortStreamInt (
   BioseqPtr bsp,
   Int4 start,
   Int4 stop,
@@ -3244,10 +3460,10 @@ NLM_EXTERN void SeqPortStreamInt (
 )
 
 {
-  SeqPortStreamSetup (bsp, start, stop, strand, NULL, flags, userdata, proc);
+  return SeqPortStreamSetup (bsp, start, stop, strand, NULL, flags, userdata, proc);
 }
 
-NLM_EXTERN void SeqPortStreamLoc (
+NLM_EXTERN Int4 SeqPortStreamLoc (
   SeqLocPtr slp,
   StreamFlgType flags,
   Pointer userdata,
@@ -3255,12 +3471,12 @@ NLM_EXTERN void SeqPortStreamLoc (
 )
 
 {
-  SeqPortStreamSetup (NULL, 0, 0, 0, slp, flags, userdata, proc);
+  return SeqPortStreamSetup (NULL, 0, 0, 0, slp, flags, userdata, proc);
 }
 
 /*******************************************************************************
 *	
-*   StreamCacheSetup (bsp, flags, scp)
+*   StreamCacheSetup (bsp, slp, flags, scp)
 *   StreamCacheGetResidue (scp)
 *   StreamCacheSetPosition (scp, pos)
 *       SeqPort functional replacement implemented on top of SeqPortStreams
@@ -3269,17 +3485,24 @@ NLM_EXTERN void SeqPortStreamLoc (
 
 NLM_EXTERN Boolean StreamCacheSetup (
   BioseqPtr bsp,
+  SeqLocPtr slp,
   StreamFlgType flags,
   StreamCache PNTR scp
 )
 
 {
-  if (bsp == NULL || scp == NULL) return FALSE;
+  if (bsp == NULL && slp == NULL) return FALSE;
+  if (scp == NULL) return FALSE;
 
   MemSet ((Pointer) scp, 0, sizeof (StreamCache));
 
-  scp->bsp = bsp;
-  scp->length = bsp->length;
+  if (bsp != NULL) {
+    scp->bsp = bsp;
+    scp->length = bsp->length;
+  } else {
+    scp->slp = slp;
+    scp->length = SeqLocLen (slp);
+  }
   scp->flags = flags;
 
   return TRUE;
@@ -3290,8 +3513,12 @@ NLM_EXTERN Uint1 StreamCacheGetResidue (
 )
 
 {
-  Uint1  residue = '\0';
-  Int4   stop;
+  Bioseq     bsq;
+  SeqLocPtr  loc;
+  Uint1      residue = '\0';
+  SeqLoc     sl;
+  SeqLocPtr  slp;
+  Int4       stop;
 
   if (scp == NULL) return residue;
 
@@ -3303,8 +3530,37 @@ NLM_EXTERN Uint1 StreamCacheGetResidue (
     if (scp->offset >= scp->length) return residue;
 
     stop = MIN (scp->offset + 4000L, scp->length);
-    SeqPortStreamInt (scp->bsp, scp->offset, stop - 1, Seq_strand_plus,
-                      scp->flags, (Pointer) &(scp->buf), NULL);
+
+    if (scp->bsp != NULL) {
+
+      SeqPortStreamInt (scp->bsp, scp->offset, stop - 1, Seq_strand_plus,
+                        scp->flags, (Pointer) &(scp->buf), NULL);
+
+    } else if (scp->slp != NULL) {
+
+      slp = scp->slp;
+      MemSet ((Pointer) &bsq, 0, sizeof (Bioseq));
+      MemSet ((Pointer) &sl, 0, sizeof (SeqLoc));
+      bsq.repr = Seq_repr_seg;
+      bsq.mol = Seq_mol_na;
+      bsq.seq_ext_type = 1;
+      bsq.length = SeqLocLen (slp);
+      bsq.seq_ext = &sl;
+      if (slp->choice == SEQLOC_MIX || slp->choice == SEQLOC_PACKED_INT) {
+        loc = (SeqLocPtr) slp->data.ptrvalue;
+        if (loc != NULL) {
+          sl.choice = loc->choice;
+          sl.data.ptrvalue = (Pointer) loc->data.ptrvalue;
+          sl.next = loc->next;
+        }
+      } else {
+        sl.choice = slp->choice;
+        sl.data.ptrvalue = (Pointer) slp->data.ptrvalue;
+        sl.next = NULL;
+      }
+      SeqPortStreamInt (&bsq, scp->offset, stop - 1, Seq_strand_plus,
+                        scp->flags, (Pointer) &(scp->buf), NULL);
+    }
 
     scp->total = StringLen (scp->buf);
   }
@@ -5796,7 +6052,9 @@ NLM_EXTERN void TransTableProcessBioseq (
 
 typedef struct readcdsdata {
   CharPtr  tmp;
-  size_t    frame;
+  size_t   frame;
+  Int4     max;
+  Boolean  overflow;
 } ReadCdsData, PNTR ReadCdsPtr;
 
 /* callback allows skipping one or two bases at beginning */
@@ -5807,13 +6065,22 @@ static void LIBCALLBACK SaveCdsBases (
 )
 
 {
-  size_t      len;
+  Char        ch;
+  CharPtr     from, to;
+  int         len;
+  Int4        max;
   ReadCdsPtr  rcp;
 
   rcp = (ReadCdsPtr) userdata;
 
   if (rcp->frame > 0) {
-    len = StringLen (sequence);
+    len = 0;
+    ch = sequence [len];
+    while (ch != '\0' && len <= rcp->frame) {
+      len++;
+      ch = sequence [len];
+    }
+    /* len = StringLen (sequence); */
     if (rcp->frame >= len) {
 
       /* unusual locations can have fewer bases in the first segments than the frame, so just decrement */
@@ -5823,7 +6090,27 @@ static void LIBCALLBACK SaveCdsBases (
     }
   }
 
-  rcp->tmp = StringMove (rcp->tmp, sequence + rcp->frame);
+  /* rcp->tmp = StringMove (rcp->tmp, sequence + rcp->frame); */
+
+  from = sequence + rcp->frame;
+  to = rcp->tmp;
+  max = rcp->max;
+
+  ch = *from;
+  while (ch != '\0' && max > 0) {
+    *to = ch;
+    to++;
+    from++;
+    ch = *from;
+    max--;
+  }
+  *to = '\0';
+  if (ch != '\0') {
+    rcp->overflow = TRUE;
+  }
+
+  rcp->tmp = to;
+  rcp->max = max;
 
   rcp->frame = 0;
 }
@@ -5847,6 +6134,8 @@ NLM_EXTERN CharPtr ReadCodingRegionBases (SeqLocPtr location, Int4 len, Uint1 fr
   if (bases == NULL) return NULL;
 
   rcd.tmp = bases;
+  rcd.max = len;
+  rcd.overflow = FALSE;
 
   /* adjust start position */
 
@@ -5861,6 +6150,10 @@ NLM_EXTERN CharPtr ReadCodingRegionBases (SeqLocPtr location, Int4 len, Uint1 fr
   SeqPortStreamLoc (location, STREAM_EXPAND_GAPS, (Pointer) &rcd, SaveCdsBases);
 
   txt = rcd.tmp;
+
+  if (rcd.overflow) {
+    ErrPostEx (SEV_ERROR, 0, 0, "ReadCodingRegionBases overflow caught");
+  }
 
 #if 0
   spp = SeqPortNewByLoc (location, Seq_code_iupacna);
@@ -5935,28 +6228,6 @@ NLM_EXTERN CharPtr ReadCodingRegionBases (SeqLocPtr location, Int4 len, Uint1 fr
   }
 
   return bases;
-}
-
-static int LIBCALLBACK SortByIntvalue (VoidPtr ptr1, VoidPtr ptr2)
-
-{
-  Int4        val1;
-  Int4        val2;
-  ValNodePtr  vnp1;
-  ValNodePtr  vnp2;
-
-  if (ptr1 == NULL || ptr2 == NULL) return 0;
-  vnp1 = *((ValNodePtr PNTR) ptr1);
-  vnp2 = *((ValNodePtr PNTR) ptr2);
-  if (vnp1 == NULL || vnp2 == NULL) return 0;
-  val1 = (Int4) vnp1->data.intvalue;
-  val2 = (Int4) vnp2->data.intvalue;
-  if (val1 > val2) {
-    return 1;
-  } else if (val1 < val2) {
-    return -1;
-  }
-  return 0;
 }
 
 static ValNodePtr MakeCodeBreakList (SeqLocPtr cdslocation, Int4 len, CodeBreakPtr cbp, Uint1 frame)
@@ -6187,7 +6458,9 @@ static ByteStorePtr TransTableTranslateCommon (
 
     } else {
 
-      protseq [q] = aa;
+      if (q < protlen) { /* protect against accidental buffer overflow */
+        protseq [q] = aa;
+      }
       q++;
       /*
       BSPutByte (bs, (Int2) aa);
@@ -6197,6 +6470,10 @@ static ByteStorePtr TransTableTranslateCommon (
     /* advance protein position for code break test */
 
     p++;
+  }
+
+  if (q > protlen) {
+    ErrPostEx (SEV_ERROR, 0, 0, "TransTableTranslate - %ld characters written, %ld characters expected", (long) q, (long) protlen);
   }
 
   if (k > total) {
@@ -6286,6 +6563,7 @@ NLM_EXTERN ByteStorePtr TransTableTranslateCdRegionEx (
   CdRegionPtr  crp;
   Int2         genCode = 0;
   ValNodePtr   vnp;
+  Boolean      partial5, partial3;
 
   if (cds == NULL || cds->data.choice != SEQFEAT_CDREGION) return NULL;
   crp = (CdRegionPtr) cds->data.value.ptrvalue;
@@ -6302,8 +6580,9 @@ NLM_EXTERN ByteStorePtr TransTableTranslateCdRegionEx (
       vnp = vnp->next;
     }
   }
+  CheckSeqLocForPartial (cds->location, &partial5, &partial3);
 
-  return TransTableTranslateCommon (tblptr, cds->location, cds->product, cds->partial,
+  return TransTableTranslateCommon (tblptr, cds->location, cds->product, partial3,
                                     genCode, crp->frame, crp->code_break,
                                     include_stop, remove_trailingX,
                                     no_stop_at_end_of_complete_cds, altStartP);
@@ -6418,7 +6697,7 @@ typedef struct seqmatch {
 
 typedef struct seqstate {
   Int2         onfailure;
-  Int2         transitions [5]; /* N = 0, A = 1, C = 2, G = 3, T = 4 */
+  Int2         transitions [15]; /* order is ACGTMRWSYKVHDBN */
   SeqMatchPtr  matches;
 } SeqStateItem, PNTR SeqStatePtr;
 
@@ -6431,7 +6710,6 @@ typedef struct SeqSearch {
   Int2                currentState;
   Int4                currentPos;
   Boolean             primed;
-  Boolean             allowOneMismatch;
   SeqSearchMatchProc  matchproc;
   Pointer             userdata;
   Uint1               letterToIdx [256];
@@ -6633,7 +6911,7 @@ static void SeqSearchComputeFail (
 )
 
 {
-  Char         charToNuc [5] = "NACGT";
+  CharPtr      charToNuc = "ACGTMRWSYKVHDBN";
   Char         ch;
   Int2         qbeg, r, s, state;
   int          index;
@@ -6645,8 +6923,7 @@ static void SeqSearchComputeFail (
   /* queue up states reached directly from state 0 (depth 1) */
 
   sp = &(tbl->stateArray [0]);
-  for (index = 0; index < 5; index++) {
-    ch = charToNuc [index];
+  for (index = 0; index < 15; index++) {
     s = sp->transitions [index];
     if (s == 0) continue;
     sp->onfailure = 0;
@@ -6660,7 +6937,7 @@ static void SeqSearchComputeFail (
     /* depth 1 states beget depth 2 states, etc. */
 
     sp = &(tbl->stateArray [r]);
-    for (index = 0; index < 5; index++) {
+    for (index = 0; index < 15; index++) {
       ch = charToNuc [index];
       s = sp->transitions [index];
       if (s == 0) continue;
@@ -6762,13 +7039,13 @@ static void PrintSeqSearchTable (
   if (tbl->stateArray == NULL) return;
   if (tbl->highState > 99) return;
 
-  fprintf (fp, "State Fail N A C G T\n");
+  fprintf (fp, "State Fail A  C  G  T  M  R  W  S  Y  K  V  H  D  B  N\n");
 
   for (state = 0; state <= tbl->highState; state++) {
     sp = &(tbl->stateArray [(int) state]);
     fprintf (fp, " %3d  %3d", (int) state, (int) sp->onfailure);
 
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 15; i++) {
       if (sp->transitions [i] != 0) {
         fprintf (fp, "%3d", (int) sp->transitions [i]);
       } else {
@@ -6789,12 +7066,11 @@ static void PrintSeqSearchTable (
 
 NLM_EXTERN SeqSearchPtr SeqSearchNew (
   SeqSearchMatchProc matchproc,
-  Pointer userdata,
-  Boolean allowOneMismatch
+  Pointer userdata
 )
 
 {
-  Char          charToNuc [5] = "NACGT";
+  CharPtr       charToNuc = "ACGTMRWSYKVHDBN";
   Char          ch, lttr;
   CharPtr       complementBase = " TVGH  CD  M KN   YSAABW R ";
   Int2          i;
@@ -6814,14 +7090,13 @@ NLM_EXTERN SeqSearchPtr SeqSearchNew (
   tbl->matchproc = matchproc;
   tbl->userdata = userdata;
   tbl->primed = FALSE;
-  tbl->allowOneMismatch = allowOneMismatch;
 
-  /* initialize table to convert character to transition index from 0 to 4 */
+  /* initialize table to convert character to transition index from 0 (A) to 14 (N) */
 
   for (i = 0; i < 256; i++) {
-    tbl->letterToIdx [i] = 0;
+    tbl->letterToIdx [i] = 14;
   }
-  for (i = 0; i < 5; i++) {
+  for (i = 0; i < 15; i++) {
     ch = charToNuc [i];
     tbl->letterToIdx [(int) ch] = i;
     ch = TO_LOWER (ch);
@@ -6922,7 +7197,8 @@ static void ExpandSeqPattern (
   Uint1 strand,
   size_t patLen,
   CharPtr str,
-  Int2 position
+  Int2 position,
+  SearchFlgType flags
 )
 
 {
@@ -6932,18 +7208,29 @@ static void ExpandSeqPattern (
 
   if (position < patLen) {
 
-    /* given ambiguity letter, get index into nucExpandList */
+    if ((Boolean) ((flags & SEQ_SEARCH_EXPAND_PATTERN) != 0)) {
 
-    ch = pattern [position];
-    idx = ch - 'A';
-    ptr = nucExpandList [idx];
+      /* given ambiguity letter, get index into nucExpandList */
 
-    /* put every ACGT letter at current position, recurse for next position */
+      ch = pattern [position];
+      idx = ch - 'A';
+      ptr = nucExpandList [idx];
 
-    for (lttr = *ptr; lttr != '\0'; ptr++, lttr = *ptr) {
-      str [position] = lttr;
+      /* put every ACGT letter at current position, recurse for next position */
+
+      for (lttr = *ptr; lttr != '\0'; ptr++, lttr = *ptr) {
+        str [position] = lttr;
+        ExpandSeqPattern (tbl, name, pattern, cutSite, strand,
+                          patLen, str, position + 1, flags);
+      }
+
+    } else {
+
+      /* if matching ambiguity characters in sequence, do not expand each base */
+
+      str [position] = pattern [position];
       ExpandSeqPattern (tbl, name, pattern, cutSite, strand,
-                       patLen, str, position + 1);
+                        patLen, str, position + 1, flags);
     }
 
     /* do not run into pattern storage section of code located below */
@@ -6955,7 +7242,7 @@ static void ExpandSeqPattern (
 
   StoreSeqPattern (tbl, name, str, cutSite, strand);
 
-  if (! tbl->allowOneMismatch) return;
+  if ((Boolean) ((flags & SEQ_SEARCH_ALLOW_MISMATCH) == 0)) return;
 
   for (idx = 0; idx < patLen; idx++) {
     ch = str [idx];
@@ -6978,7 +7265,8 @@ NLM_EXTERN void SeqSearchAddNucleotidePattern (
   SeqSearchPtr tbl,
   CharPtr name,
   CharPtr pattern,
-  Int2 cutSite
+  Int2 cutSite,
+  SearchFlgType flags
 )
 
 {
@@ -7020,14 +7308,17 @@ NLM_EXTERN void SeqSearchAddNucleotidePattern (
   /* record expansion of entered pattern */
 
   MemSet ((Pointer) str, 0, sizeof (str));
-  ExpandSeqPattern (tbl, name, pat, cutSite, strand, len, str, 0);
+  ExpandSeqPattern (tbl, name, pat, cutSite, strand,
+                    len, str, 0, flags);
 
   if (symmetric) return;
+  if ((Boolean) ((flags & SEQ_SEARCH_JUST_TOP_STRAND) != 0)) return;
 
   /* record expansion of reverse complement of asymmetric pattern */
 
   MemSet ((Pointer) str, 0, sizeof (str));
-  ExpandSeqPattern (tbl, name, comp, len - cutSite, Seq_strand_minus, len, str, 0);
+  ExpandSeqPattern (tbl, name, comp, len - cutSite, Seq_strand_minus,
+                    len, str, 0, flags);
 }
 
 /* program passes each character in turn to finite state machine */
@@ -7096,18 +7387,40 @@ NLM_EXTERN void SeqSearchProcessCharacter (
 
 /* convenience function calls SeqSearchProcessCharacter for entire nucleotide bioseq */
 
+typedef struct seqsrchdata {
+  SeqSearchPtr  tbl;
+  Int4          length;
+} SeqSrchData, PNTR SeqSrchPtr;
+
+static void LIBCALLBACK SearchSeqProc (
+  CharPtr sequence,
+  Pointer userdata
+)
+
+{
+  Char        ch;
+  CharPtr     ptr;
+  SeqSrchPtr  ssp;
+
+  ssp = (SeqSrchPtr) userdata;
+
+  ptr = sequence;
+  ch = *ptr;
+  while (ch != '\0') {
+    ch = TO_UPPER (ch);
+    SeqSearchProcessCharacterEx (ssp->tbl, ch, ssp->length);
+    ptr++;
+    ch = *ptr;
+  }
+}
+
 NLM_EXTERN void SeqSearchProcessBioseq (
   SeqSearchPtr tbl,
   BioseqPtr bsp
 )
 
 {
-  Byte        bases [400];
-  Char        extra [128];
-  Int4        length;
-  Uint1       residue;
-  Int2        ctr, i;
-  SeqPortPtr  spp;
+  SeqSrchData  ssd;
 
   SeqSearchReset (tbl);
 
@@ -7115,62 +7428,16 @@ NLM_EXTERN void SeqSearchProcessBioseq (
 
   if (! ISA_na (bsp->mol)) return;
 
-  spp = SeqPortNew (bsp, 0, -1, 0, Seq_code_iupacna);
-  if (spp == NULL) return;
+  ssd.tbl = tbl;
+  ssd.length = bsp->length;
 
-  if (bsp->repr == Seq_repr_delta) {
-    SeqPortSet_do_virtual (spp, TRUE);
-  }
-
-  length = bsp->length;
-
-  /* use SeqPortRead rather than SeqPortGetResidue for faster performance */
-
-  ctr = SeqPortRead (spp, bases, sizeof (bases));
-  i = 0;
-  residue = (Uint1) bases [i];
-
-  /* for circular molecules, copy beginning bases for use at end */
-
-  extra [0] = '\0';
-  if (bsp->topology == TOPOLOGY_CIRCULAR &&
-      ctr > 1 &&
-      residue != SEQPORT_EOF &&
-      (Int4) ctr > tbl->maxPatLen &&
-      tbl->maxPatLen < sizeof (extra)) {
-    MemCopy ((Pointer) extra, (Pointer) bases, (size_t) tbl->maxPatLen);
-  }
-
-  while (residue != SEQPORT_EOF) {
-    if (IS_residue (residue)) {
-      SeqSearchProcessCharacterEx (tbl, (Char) residue, length);
-    }
-    i++;
-    if (i >= ctr) {
-      i = 0;
-      ctr = SeqPortRead (spp, bases, sizeof (bases));
-      if (ctr < 0) {
-        bases [0] = -ctr;
-      } else if (ctr < 1) {
-        bases [0] = SEQPORT_EOF;
-      }
-    }
-    residue = (Uint1) bases [i];
-  }
+  SeqPortStream (bsp, STREAM_EXPAND_GAPS, (Pointer) &ssd, SearchSeqProc);
 
   /* for circular molecules, check for patterns spanning origin */
 
-  if (! StringHasNoText (extra)) {
-    for (i = 0, residue = (Uint1) extra [i];
-         residue != SEQPORT_EOF && i < tbl->maxPatLen;
-         i++, residue = (Uint1) extra [i]) {
-      if (IS_residue (residue)) {
-        SeqSearchProcessCharacterEx (tbl, (Char) residue, length);
-      }
-    }
+  if (bsp->topology == TOPOLOGY_CIRCULAR && bsp->length > tbl->maxPatLen) {
+    SeqPortStreamInt (bsp, 0, tbl->maxPatLen, Seq_strand_plus, STREAM_EXPAND_GAPS, (Pointer) &ssd, SearchSeqProc);
   }
-
-  SeqPortFree (spp);
 
   SeqSearchReset (tbl);
 }
@@ -7252,7 +7519,7 @@ NLM_EXTERN SeqSearchPtr SeqSearchFree (
 /*
 
 static CharPtr testseq =
-"AAGCTTGCATGCCTGCAGGTCGACTCTAGAGGATCCCCGGGTACCGAGCTCGAATTCGAGCTCGGTACCCGGGGATCCTC";
+ "AAGCTTGCATGCCTGCAGGTCGACTCTAGAGGATCCGRATYCCCGGGTACCGAGCTATYCCGAATTCGAGCTCGGTACCCGGGGATCCTCGANTTCATTCGAPTTCCAGTC";
 
 static void MatchProc (Int4 position, CharPtr name, CharPtr pattern,
                        Int2 cutSite, Uint1 strand, Pointer userdata)
@@ -7271,10 +7538,11 @@ extern void TestSeqSearch (void)
   CharPtr       ptr;
   SeqSearchPtr  tbl;
 
-  tbl = SeqSearchNew (MatchProc, NULL, FALSE);
+  tbl = SeqSearchNew (MatchProc, NULL);
   if (tbl == NULL) return;
 
-  SeqSearchAddNucleotidePattern (tbl, "AmbiG", "GRATYC", 1);
+  SeqSearchAddNucleotidePattern (tbl, "AmbiG", "GRATYC", 1, SEQ_SEARCH_EXPAND_PATTERN);
+  SeqSearchAddNucleotidePattern (tbl, "ExacT", "GRAT", 1, SEQ_SEARCH_JUST_TOP_STRAND);
 
   for (ptr = testseq, ch = *ptr; ch != '\0'; ptr++, ch = *ptr) {
     SeqSearchProcessCharacter (tbl, ch);
@@ -7285,7 +7553,13 @@ extern void TestSeqSearch (void)
 
 */
 
-/* Convenience functions for genome processing */
+/*****************************************************************************
+*
+*  Convenience functions for genome processing use BioseqLockById to get sequence
+*  record (perhaps with phrap quality score graphs) so fetching from some network
+*  or local server must be enabled, or sequences must already be in memory.
+*
+*****************************************************************************/
 
 NLM_EXTERN CharPtr GetSequenceByFeature (SeqFeatPtr sfp)
 
@@ -7441,6 +7715,30 @@ NLM_EXTERN CharPtr GetDNAbyAccessionDotVersion (CharPtr accession)
 }
 
 
+static void FixGapLength (SeqIdPtr sip, Uint2 moltype, Int4 offset, Int4 diff)
+{
+  CharPtr    extra_ns;
+  SeqLocPtr  slp;
+  
+  if (sip == NULL || diff == 0) return;
+  if (diff > 0)
+  {
+    extra_ns = (CharPtr)MemNew ((diff + 1) * sizeof (Char));
+    if (extra_ns != NULL)
+    {
+      MemSet (extra_ns, 'N', diff);
+      extra_ns [diff] = 0;
+      insertchar (extra_ns, offset, sip, moltype, FALSE);
+    }
+  }
+  else
+  {
+  	slp = SeqLocIntNew (offset, offset - diff - 1, Seq_strand_plus, sip);
+    SeqDeleteByLoc (slp, TRUE, FALSE);
+    SeqLocFree (slp);
+  }
+}
+
 /*****************************************************************************
 *
 *   ConvertNsToGaps
@@ -7459,8 +7757,38 @@ NLM_EXTERN void ConvertNsToGaps (
   Int4        len;
   ValNodePtr  seq_ext;
   SeqLitPtr   slp;
+  Boolean     use_unknown = FALSE;
+  Boolean     unknown_greater_than_or_equal = FALSE;
+  Boolean     use_known = FALSE;
+  Boolean     known_greater_than_or_equal = FALSE;
+  Int4Ptr     gap_sizes;
+  Int4        unknown_gap_size = 0;
+  Int4        known_gap_size = 0;
+  IntFuzzPtr  ifp;
+  Int4        gap_len;
+  Boolean     make_unknown_size;
 
   if (bsp == NULL || bsp->repr != Seq_repr_raw || ISA_aa (bsp->mol)) return;
+  if (userdata == NULL)
+  {
+    known_greater_than_or_equal = TRUE;
+  }
+  else
+  {
+    gap_sizes = (Int4Ptr) userdata;
+    unknown_gap_size = gap_sizes[0];
+    known_gap_size = gap_sizes[1];
+    if (unknown_gap_size < 0)
+    {
+      unknown_greater_than_or_equal = TRUE;
+      unknown_gap_size = 0 - unknown_gap_size;
+    }
+    if (known_gap_size < 0)
+    {
+      known_greater_than_or_equal = TRUE;
+      known_gap_size = 0 - known_gap_size;
+    }
+  }
 
   bases = GetSequenceByBsp (bsp);
   if (bases == NULL) return;
@@ -7482,10 +7810,31 @@ NLM_EXTERN void ConvertNsToGaps (
   while (ch != '\0') {
 
     str = txt;
+    gap_len = 0;
     while (ch != 'N' && ch != '\0') {
       txt++;
       ch = *txt;
+      if (ch == 'N')
+      {
+        gap_len = StringSpn (txt, "N");
+        if (gap_len == unknown_gap_size
+          || (gap_len > unknown_gap_size && unknown_greater_than_or_equal)
+          || gap_len == known_gap_size
+          || (gap_len > known_gap_size && known_greater_than_or_equal))
+        {
+          /* leave ch pointing to N so that we will break out and
+           * create a gap */
+        }
+        else
+        {
+          /* this is an N that should be left in the sequence */
+          txt += gap_len;
+          ch = *txt;
+          gap_len = 0;
+        }
+      }
     }
+    
     *txt = '\0';
     if (StringLen (str) > 0) {
       slp = (SeqLitPtr) MemNew (sizeof (SeqLit));
@@ -7506,17 +7855,58 @@ NLM_EXTERN void ConvertNsToGaps (
       ch = *txt;
     }
     *txt = '\0';
-    if (StringLen (str) > 0) {
+    gap_len = StringLen (str);
+    make_unknown_size = FALSE;
+    if (gap_len == 0)
+    {
+      make_unknown_size = FALSE;
+    }
+    else if (gap_len == unknown_gap_size)
+    {
+      make_unknown_size = TRUE;
+    }
+    else if (gap_len == known_gap_size)
+    {
+      make_unknown_size = FALSE;
+    }
+    else if (gap_len > unknown_gap_size && unknown_greater_than_or_equal)
+    {
+      if (!known_greater_than_or_equal)
+      {
+      	make_unknown_size = TRUE;
+      }
+      else if (unknown_gap_size > known_gap_size)
+      {
+      	make_unknown_size = TRUE;
+      }
+      else if (gap_len < known_gap_size)
+      {
+      	make_unknown_size = TRUE;
+      }
+    }
+    
+    if (gap_len > 0) {
       slp = (SeqLitPtr) MemNew (sizeof (SeqLit));
       if (slp != NULL) {
-        slp->length = StringLen (str);
+        slp->length = gap_len;
         ValNodeAddPointer ((ValNodePtr PNTR) &(seq_ext), (Int2) 2, (Pointer) slp);
+        if (make_unknown_size)
+        {
+          ifp = IntFuzzNew ();
+          ifp->choice = 4;
+          slp->fuzz = ifp;
+          if (slp->length != 100)
+          {
+            FixGapLength (bsp->id, bsp->mol, len, 100 - slp->length);
+          	slp->length = 100;
+          }
+        }
         len += slp->length;
       }
     }
     *txt = ch;
   }
-
+  
   MemFree (bases);
 
   bsp->seq_data = BSFree (bsp->seq_data);

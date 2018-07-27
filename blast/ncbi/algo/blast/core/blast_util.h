@@ -1,66 +1,57 @@
-/* $Id: blast_util.h,v 1.47 2004/04/21 18:34:55 gorelenk Exp $
-* ===========================================================================
-*
-*                            PUBLIC DOMAIN NOTICE
-*               National Center for Biotechnology Information
-*
-*  This software/database is a "United States Government Work" under the
-*  terms of the United States Copyright Act.  It was written as part of
-*  the author's offical duties as a United States Government employee and
-*  thus cannot be copyrighted.  This software/database is freely available
-*  to the public for use. The National Library of Medicine and the U.S.
-*  Government have not placed any restriction on its use or reproduction.
-*
-*  Although all reasonable efforts have been taken to ensure the accuracy
-*  and reliability of the software and data, the NLM and the U.S.
-*  Government do not and cannot warrant the performance or results that
-*  may be obtained by using this software or data. The NLM and the U.S.
-*  Government disclaim all warranties, express or implied, including
-*  warranties of performance, merchantability or fitness for any particular
-*  purpose.
-*
-*  Please cite the author in any work or product based on this material.
-*
-* ===========================================================================*/
+/* $Id: blast_util.h,v 1.63 2004/12/29 17:32:57 camacho Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ===========================================================================
+ *
+ * Author: Ilya Dondoshansky
+ *
+ */
 
-/*****************************************************************************
+/** @file blast_util.h
+ * Various auxiliary BLAST utility functions
+ */
 
-File name: blast_util.h
-
-Author: Ilya Dondoshansky
-
-Contents: Various auxiliary BLAST utility functions
-
-Detailed Contents: 
-
-******************************************************************************
- * $Revision: 1.47 $
- * */
 #ifndef __BLAST_UTIL__
 #define __BLAST_UTIL__
+
+#include <algo/blast/core/blast_def.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <algo/blast/core/blast_def.h>
-
-#ifdef NCBI_DLL_BUILD
-#include <algo/blast/core/blast_export.h>
-#endif
-#ifndef NCBI_XBLAST_EXPORT
-#define NCBI_XBLAST_EXPORT
-#endif
-
 /** Different types of sequence encodings for sequence retrieval from the 
  * BLAST database 
  */
-#define BLASTP_ENCODING 0
-#define BLASTNA_ENCODING 1
-#define NCBI4NA_ENCODING 2
-#define NCBI2NA_ENCODING 3
-#define ERROR_ENCODING 255
+#define BLASTP_ENCODING 0  /**< NCBIstdaa */
+#define BLASTNA_ENCODING 1 /**< Special encoding for preliminary stage of 
+                              BLAST: permutation of NCBI8na */
+#define NCBI4NA_ENCODING 2 /**< NCBI8na */
+#define NCBI2NA_ENCODING 3 /**< NCBI2na */
+#define ERROR_ENCODING 255 /**< Error value for encoding */
+
 #ifndef IS_residue
+/** Does character encode a residue? */
 #define IS_residue(x) (x <= 250)
 #endif
 
@@ -72,9 +63,11 @@ extern "C" {
 
 
 /** Deallocate memory only for the sequence in the sequence block */
+NCBI_XBLAST_EXPORT
 Int2 BlastSequenceBlkClean(BLAST_SequenceBlk* seq_blk);
    
 /** Deallocate memory for a sequence block */
+NCBI_XBLAST_EXPORT
 BLAST_SequenceBlk* BlastSequenceBlkFree(BLAST_SequenceBlk* seq_blk);
 
 /** Copies contents of the source sequence block without copying sequence 
@@ -83,24 +76,22 @@ BLAST_SequenceBlk* BlastSequenceBlkFree(BLAST_SequenceBlk* seq_blk);
  * @param copy New sequence block [out]
  * @param src Input sequence block [in]
  */
+NCBI_XBLAST_EXPORT
 void BlastSequenceBlkCopy(BLAST_SequenceBlk** copy, 
                           BLAST_SequenceBlk* src);
 
 /** Set number for a given program type.  Return is zero on success.
  * @param program string name of program [in]
- * @param number number of program [out]
+ * @param number Enumerated value of program [out]
 */
-
-
-
-NCBI_XBLAST_EXPORT
-Int2 BlastProgram2Number(const char *program, Uint1 *number);
+Int2 BlastProgram2Number(const char *program, EBlastProgramType *number);
 
 /** Return string name for program given a number.  Return is zero on success.
- * @param number number of program [in]
+ * @param number Enumerated value of program [in]
  * @param program string name of program (memory should be deallocated by called) [out]
 */
-Int2 BlastNumber2Program(Uint1 number, char* *program);
+NCBI_XBLAST_EXPORT
+Int2 BlastNumber2Program(EBlastProgramType number, char* *program);
 
 /** Allocates memory for *sequence_blk and then populates it.
  * @param buffer start of sequence [in]
@@ -111,14 +102,16 @@ Int2 BlastNumber2Program(Uint1 number, char* *program);
  *        the start of the sequence, otherwise it is 'sequence'. [in]
  * @deprecated Use BlastSeqBlkNew and BlastSeqBlkSet* functions instead
 */
+NCBI_XBLAST_EXPORT
 Int2
 BlastSetUp_SeqBlkNew (const Uint1* buffer, Int4 length, Int4 context,
-	BLAST_SequenceBlk* *seq_blk, Boolean buffer_allocated);
+    BLAST_SequenceBlk* *seq_blk, Boolean buffer_allocated);
 
 /** Allocates a new sequence block structure. 
  * @param retval Pointer to where the sequence block structure will be
  * allocated [out]
  */
+NCBI_XBLAST_EXPORT
 Int2 BlastSeqBlkNew(BLAST_SequenceBlk** retval);
 
 /** Stores the sequence in the sequence block structure.
@@ -127,6 +120,7 @@ Int2 BlastSeqBlkNew(BLAST_SequenceBlk** retval);
  * byte [in]
  * @param seqlen Length of the sequence buffer above [in]
  */
+NCBI_XBLAST_EXPORT
 Int2 BlastSeqBlkSetSequence(BLAST_SequenceBlk* seq_blk, 
                             const Uint1* sequence,
                             Int4 seqlen);
@@ -137,17 +131,10 @@ Int2 BlastSeqBlkSetSequence(BLAST_SequenceBlk* seq_blk,
  * @param seq_blk The sequence block structure to modify [in/out]
  * @param sequence Actual sequence buffer. [in]
  */
+NCBI_XBLAST_EXPORT
 Int2 BlastSeqBlkSetCompressedSequence(BLAST_SequenceBlk* seq_blk,
                                       const Uint1* sequence);
                             
-
-/** Allocate and initialize the query information structure.
- * @param program_number Type of BLAST program [in]
- * @param num_queries Number of query sequences [in]
- * @param query_info_ptr The initialized structure [out]
- */
-Int2 BLAST_QueryInfoInit(Uint1 program_number, 
-        Int4 num_queries, BlastQueryInfo* *query_info_ptr);
 
 /** GetTranslation to get the translation of the nucl. sequence in the
  * appropriate frame and with the appropriate GeneticCode.
@@ -162,6 +149,7 @@ Int2 BLAST_QueryInfoInit(Uint1 program_number,
  *                     in ncbistdaa encoding [in]
  * @return Length of the traslated protein sequence.
 */
+NCBI_XBLAST_EXPORT
 Int4 BLAST_GetTranslation(const Uint1* query_seq, 
    const Uint1* query_seq_rev, Int4 nt_length, Int2 frame, Uint1* buffer, 
    const Uint1* genetic_code);
@@ -195,6 +183,7 @@ Int4 BLAST_GetTranslation(const Uint1* query_seq,
  * @param prot_seq Preallocated buffer for the (translated) protein sequence, 
  *                 with NULLB sentinels on either end. [out]
 */
+NCBI_XBLAST_EXPORT
 Int4 BLAST_TranslateCompressedSequence(Uint1* translation, Int4 length, 
         const Uint1* nt_seq, Int2 frame, Uint1* prot_seq);
 
@@ -204,6 +193,7 @@ Int4 BLAST_TranslateCompressedSequence(Uint1* translation, Int4 length,
  * @param length Length of the sequence plus 1 for the sentinel byte [in]
  * @param rev_sequence_ptr Reverse strand of the sequence [out]
  */
+NCBI_XBLAST_EXPORT
 Int2 GetReverseNuclSequence(const Uint1* sequence, Int4 length, 
                             Uint1** rev_sequence_ptr);
 
@@ -211,23 +201,55 @@ Int2 GetReverseNuclSequence(const Uint1* sequence, Int4 length,
  * the sequence.
  * @param prog_number Integer corresponding to the BLAST program
  * @param context_number Context number 
- * @return Sequence frame (+-1 for nucleotides, -3..3 for translations)
+ * @return Sequence frame: -1,1 for nucleotides, -3,-2,-1,1,2,3 for 
+ * translations, 0 for proteins and 127 in case of unsupported program
 */
-Int2 BLAST_ContextToFrame(Uint1 prog_number, Int4 context_number);
+NCBI_XBLAST_EXPORT
+Int1 BLAST_ContextToFrame(EBlastProgramType prog_number, Uint4 context_number);
 
-/** Find the length of an individual query within a concatenated set of 
- * queries.
- * @param query_info Queries information structure containing offsets into
- *                   the concatenated sequence [in]
- * @param context Index of the query/strand/frame within the concatenated 
- *                set [in]
- * @return Length of the individual sequence/strand/frame.
+/** Given a context from BLAST engine core, return the query index.
+ * @param context Context saved in a BlastHSP structure [in]
+ * @param program Type of BLAST program [in]
+ * @return Query index in a set of queries or -1 on error
  */
-Int4 BLAST_GetQueryLength(BlastQueryInfo* query_info, Int4 context);
+NCBI_XBLAST_EXPORT
+Int4 Blast_GetQueryIndexFromContext(Int4 context, EBlastProgramType program);
 
 /** Deallocate memory for query information structure */
+NCBI_XBLAST_EXPORT
 BlastQueryInfo* BlastQueryInfoFree(BlastQueryInfo* query_info);
 
+/** Duplicates the query information structure */
+NCBI_XBLAST_EXPORT
+BlastQueryInfo* BlastQueryInfoDup(BlastQueryInfo* query_info);
+
+/** Create auxiliary query structures with all data corresponding
+ * to a single query sequence within a concatenated set. Allocates the 
+ * structures if the pointers are NULL on input; otherwise only changes the
+ * contents.
+ * @param one_query_info_ptr Pointer to the query information structure for a 
+ *                           single query. Allocated and filled here, so the
+ *                           caller of this function will be responsible for
+ *                           freeing it. [out]
+ * @param one_query_ptr Pointer to the query sequence block structure; allocated
+ *                      here, but the contents are not allocated; it is still 
+ *                      safe to free by the caller after use. [out]
+ * @param query_info Query information structure containing information about a 
+ *                   concatenated set. [in]
+ * @param query Query sequence block corresponding to a concatenated set of 
+ *              queries. [in]
+ * @param query_index Which query index to create the auxiliary structures 
+ *                    for? [in]
+ * @return -1 if memory allocation failed; 0 on success
+ */
+NCBI_XBLAST_EXPORT
+Int2 Blast_GetOneQueryStructs(BlastQueryInfo** one_query_info_ptr, 
+                              BLAST_SequenceBlk** one_query_ptr,
+                              const BlastQueryInfo* query_info, 
+                              BLAST_SequenceBlk* query, Int4 query_index);
+
+
+NCBI_XBLAST_EXPORT
 Int2 BLAST_PackDNA(Uint1* buffer, Int4 length, Uint1 encoding, 
                    Uint1** packed_seq);
 
@@ -237,6 +259,7 @@ Int2 BLAST_PackDNA(Uint1* buffer, Int4 length, Uint1 encoding,
  * @param query_info Query information structure containing offsets into the* 
  *                   concatenated sequence. [in]
  */
+NCBI_XBLAST_EXPORT
 Int2 BLAST_InitDNAPSequence(BLAST_SequenceBlk* query_blk, 
                        BlastQueryInfo* query_info);
 
@@ -255,6 +278,7 @@ Int2 BLAST_InitDNAPSequence(BLAST_SequenceBlk* query_blk,
  *                          frame. [out]
  * @param mixed_seq_ptr Pointer to buffer for the mixed frame sequence [out]
  */
+NCBI_XBLAST_EXPORT
 Int2 BLAST_GetAllTranslations(const Uint1* nucl_seq, Uint1 encoding,
         Int4 nucl_length, const Uint1* genetic_code, 
         Uint1** translation_buffer_ptr, Int4** frame_offsets_ptr,
@@ -273,7 +297,8 @@ Int2 BLAST_GetAllTranslations(const Uint1* nucl_seq, Uint1 encoding,
  *                      of out-of-frame gapping; buffer filled only if argument
  *                      not NULL. [out]
  */
-int GetPartialTranslation(const Uint1* nucl_seq,
+NCBI_XBLAST_EXPORT
+int Blast_GetPartialTranslation(const Uint1* nucl_seq,
         Int4 nucl_length, Int2 frame, const Uint1* genetic_code,
         Uint1** translation_buffer_ptr, Int4* protein_length, 
         Uint1** mixed_seq_ptr);
@@ -282,11 +307,86 @@ int GetPartialTranslation(const Uint1* nucl_seq,
 /** Convert translation frame into a context for the concatenated translation
  * buffer.
  */
+NCBI_XBLAST_EXPORT
 Int4 FrameToContext(Int2 frame);
 
 
 /** The following binary search routine assumes that array A is filled. */
+NCBI_XBLAST_EXPORT
 Int4 BSearchInt4(Int4 n, Int4* A, Int4 size);
+
+
+/** Search BlastContextInfo structures for the specified offset */
+NCBI_XBLAST_EXPORT
+Int4 BSearchContextInfo(Int4 n, BlastQueryInfo * A);
+
+
+/** Get the number of bytes required for the concatenated sequence
+ * buffer, given a query info structure.  The context data should
+ * already be assigned.
+ * @param qinfo  Query info structure. [in/out]
+ * @return Number of bytes for all queries and inter-query marks.
+ */
+Uint4
+QueryInfo_GetSeqBufLen(const BlastQueryInfo* qinfo);
+
+
+/** Copy the context query offsets to an allocated array of Int4.
+ * @param info Describes the concatenated query.
+ * @return Allocated array.
+ */
+NCBI_XBLAST_EXPORT
+Int4 * ContextOffsetsToOffsetArray(BlastQueryInfo* info);
+
+
+/** Copy the context query offsets from an array of Int4, allocating
+ * the context array if needed.
+ * @param info Destination for the values.
+ * @param new_offsets Array of values to copy from.
+ * @param prog        The blast program type.
+ */
+NCBI_XBLAST_EXPORT
+void OffsetArrayToContextOffsets(BlastQueryInfo    * info,
+                                 Int4              * new_offsets,
+                                 EBlastProgramType   prog);
+
+
+/** Get the standard amino acid probabilities. This is basically a wrapper for 
+ * BlastScoreBlkNew() and Blast_ResFreqStdComp() from blast_stat.c with a more
+ * intention-revealing name :)
+ * Caller is responsible for deallocating return value via sfree().
+ * @return NULL if there is not enough memory otherwise an array of length
+ * BLASTAA_SIZE, where each index corresponds to an amino acid as specified in
+ * the NCBIstdaa encoding.
+ */
+NCBI_XBLAST_EXPORT
+double* 
+BLAST_GetStandardAaProbabilities(void);
+
+/** Maximal unpacked subject sequence length for which full translation is 
+ * performed up front. 
+ */
+#define MAX_FULL_TRANSLATION 2100
+
+/** Translate the subject sequence into 6 frames, and create a mixed-frame 
+ * sequence, if out-of-frame gapping will be used.
+ * @param subject_blk Subject sequence structure [in]
+ * @param gen_code_string Genetic code to use for translation [in]
+ * @param translation_buffer Pointer to buffer to hold the translated 
+ *                           sequence(s) [out]
+ * @param frame_offsets Pointer to an array to hold offsets into the
+ *                      translation buffer for each frame. Mixed-frame 
+ *                      sequence is to be returned, if NULL. [in] [out]
+ * @param partial_translation Should partial translations be performed later
+ *                            for each HSP instead of a full translation? [out]
+ */
+NCBI_XBLAST_EXPORT
+Int2
+Blast_SetUpSubjectTranslation(BLAST_SequenceBlk* subject_blk, 
+                              const Uint1* gen_code_string,
+                              Uint1** translation_buffer, 
+                              Int4** frame_offsets,
+                              Boolean* partial_translation);
 
 #ifdef __cplusplus
 }

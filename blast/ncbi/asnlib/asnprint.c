@@ -29,7 +29,7 @@
 *
 * Version Creation Date: 3/4/91
 *
-* $Revision: 6.20 $
+* $Revision: 6.22 $
 *
 * File Description:
 *   Routines for printing ASN.1 value notation (text) messages and
@@ -42,6 +42,12 @@
 * 3/4/91   Kans        Stricter typecasting for GNU C and C++
 *
 * $Log: asnprint.c,v $
+* Revision 6.22  2004/12/08 04:39:38  beloslyu
+* c++ comment changed to c-style one. Anrdrei, please be careful
+*
+* Revision 6.21  2004/08/17 19:34:42  kans
+* AsnPrintOctets uses BSRead instead of BSGetByte for significant speed increase
+*
 * Revision 6.20  2003/12/03 19:31:09  gouriano
 * Corrected DTD generation (a different approach)
 *
@@ -1024,8 +1030,9 @@ NLM_EXTERN void AsnPrintBoolean (Boolean value, AsnIoPtr aip)
 NLM_EXTERN void AsnPrintOctets (ByteStorePtr ssp, AsnIoPtr aip)
 
 {
-	Int2 value, tval, ctr;
+	Int2 value, tval, ctr, actual, j;
 	Char buf[101];
+	Uint1 tmp [401];
 
 	if (aip->type & ASNIO_CARRIER)           /* pure iterator */
 		return;
@@ -1038,6 +1045,34 @@ NLM_EXTERN void AsnPrintOctets (ByteStorePtr ssp, AsnIoPtr aip)
 	buf[100] = '\0';
 
 					/* break it up into lines if necessary */
+
+	MemSet ((Pointer) tmp, 0, sizeof (tmp));
+	actual = (Int2) BSRead (ssp, tmp, (Int4) sizeof (tmp) - 1);
+	while (actual > 0) {
+		for (j = 0; j < actual; j++) {
+			value = (Int2) (Uint1) tmp [j];
+			tval = value / 16;
+			if (tval < 10)
+				buf[ctr] = (Char)(tval + '0');
+			else
+				buf[ctr] = (Char)(tval - 10 + 'A');
+			ctr++;
+			tval = value - (tval * 16);
+			if (tval < 10)
+				buf[ctr] = (Char)(tval + '0');
+			else
+				buf[ctr] = (Char)(tval - 10 + 'A');
+			ctr++;
+			if (ctr == 100)
+			{
+			    AsnPrintString(buf, aip);
+				ctr = 0;
+			}
+		}
+		actual = (Int2) BSRead (ssp, tmp, (Int4) sizeof (tmp) - 1);
+    }
+
+	/*
 	while ((value = BSGetByte(ssp)) != -1)
 	{
 		tval = value / 16;
@@ -1058,6 +1093,8 @@ NLM_EXTERN void AsnPrintOctets (ByteStorePtr ssp, AsnIoPtr aip)
 			ctr = 0;
 		}
 	}
+	*/
+
 	if (ctr)
 	{
 		buf[ctr] = '\0';
@@ -2358,7 +2395,7 @@ static Boolean AsnPrintTypeXML (AsnTypePtr atp, AsnIoPtr aip)
 					repeat = "*";
 				else
 					repeat = "*";
-//					repeat = "+";
+/*					repeat = "+"; */
 				AsnXMLElementAdd(NULL, atp->branch, repeat, aip, FALSE);
 				break;
 			case INTEGER_TYPE:

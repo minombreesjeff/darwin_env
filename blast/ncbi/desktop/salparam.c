@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   1/27/96
 *
-* $Revision: 6.53 $
+* $Revision: 6.57 $
 *
 * File Description: 
 *
@@ -1447,7 +1447,7 @@ static void BoolButton (GrouP g)
 *******************************************************/
 #define FIND_MAXRANGE 10000
 
-static ValNodePtr JK_NTPattern (CharPtr pattern, ValNodePtr sqloc_list, Boolean flagInvert, Uint1 mol_type)
+extern ValNodePtr JK_NTPattern (CharPtr pattern, ValNodePtr sqloc_list, Boolean flagInvert, Uint1 mol_type)
 {
   ValNodePtr      patlist = NULL;
   ValNodePtr      vnp;
@@ -1550,7 +1550,31 @@ static Int2 CC_SeqEntryToGeneticCode (Uint2 entityID, SeqIdPtr sip)
   return genCode;
 }
 
-static ValNodePtr JK_NTPattern2 (CharPtr pattern, ValNodePtr sqloc_list, Boolean flagInvert, Uint2 entityID)
+static CharPtr GetReverseString (CharPtr str)
+{
+  CharPtr new_str;
+  Int4    len, idx;
+  
+  if (StringHasNoText (str)) return NULL;
+  len = StringLen (str) + 1;
+  new_str = (CharPtr) MemNew (len * sizeof (Char));
+  if (new_str != NULL)
+  {
+    len -= 2;
+    idx = 0;
+    while (idx <= len)
+    {
+      new_str [idx] = str [len - idx];
+      idx++;
+    }
+    new_str [idx] = 0;
+  }
+  return new_str;
+}
+
+extern ValNodePtr JK_NTPattern2Ex 
+(CharPtr pattern, ValNodePtr sqloc_list, 
+ Boolean flagInvert, Uint2 entityID, Uint1 pick_frame)
 {
   ByteStorePtr    bsp;
   ValNodePtr      patlist = NULL;
@@ -1558,8 +1582,8 @@ static ValNodePtr JK_NTPattern2 (CharPtr pattern, ValNodePtr sqloc_list, Boolean
   SeqAlignPtr     salp;
   SeqLocPtr       slp, slptmp,
                   next,
-                  slp2,
                   slp3;
+  SeqLocPtr       slp_plus, slp_minus;
   SeqIdPtr        sip;
   Uint1Ptr        sequence;
   ComPatPtr       cpp;
@@ -1567,60 +1591,122 @@ static ValNodePtr JK_NTPattern2 (CharPtr pattern, ValNodePtr sqloc_list, Boolean
                   to;
   Int2            jk_moltype;
   Int2            genCode = Seq_code_ncbieaa;
-  Uint1           frame;
+  Uint1           frame, start_frame, stop_frame;
+  CharPtr         rev_str;
+  CharPtr         debug_str;
+  Int4            minus_to, minus_from, prot_len, minus_offset;
 
   if (pattern == NULL)
-     return NULL;
+    return NULL;
   CleanPattern (pattern);
   if (StringLen (pattern) == 0)
-     return NULL;
+    return NULL;
   jk_moltype = 1;
   cpp = CompilePattern (pattern, jk_moltype);
   if (cpp != NULL && flagInvert)
-     cpp = InvertPattern (cpp);
+    cpp = InvertPattern (cpp);
   if (cpp == NULL)
-     return NULL;
+    return NULL;
      
   for (vnp = sqloc_list; vnp != NULL; vnp = vnp->next)
   {
-     slp = (SeqLocPtr)vnp->data.ptrvalue; 
-     sip = SeqLocId(slp);
-     genCode = CC_SeqEntryToGeneticCode (entityID, sip);
-     if (genCode == 0)
-        genCode = Seq_code_ncbieaa;
-     from = SeqLocStart(slp);
-     to = SeqLocStop(slp);
-     slp2 = fuzz_loc (from, to, Seq_strand_plus, sip, TRUE, TRUE);
-     if (slp2!=NULL) {
-      for (frame=1; frame<4; frame++) 
+    slp = (SeqLocPtr)vnp->data.ptrvalue; 
+    sip = SeqLocId(slp);
+    genCode = CC_SeqEntryToGeneticCode (entityID, sip);
+    if (genCode == 0)
+      genCode = Seq_code_ncbieaa;
+    from = SeqLocStart(slp);
+    to = SeqLocStop(slp);
+    slp_plus = fuzz_loc (from, to, Seq_strand_plus, sip, TRUE, TRUE);
+    slp_minus = fuzz_loc (from, to, Seq_strand_minus, sip, TRUE, TRUE);
+    if (slp_plus != NULL && slp_minus != NULL) 
+    {
+      if (pick_frame < 1 || pick_frame > 6)
       {
-        bsp = cds_to_pept (slp2, frame, genCode, TRUE);
-        if (bsp!=NULL) {
-         sequence = (Uint1Ptr) BSMerge (bsp, NULL);
-         BSFree (bsp);
-         if (sequence != NULL) {
-           salp = PatternMatch (sequence, 0, Seq_strand_plus, sip, cpp, 0, 0, TRUE);
-           if (salp!=NULL) {
+        start_frame = 1;
+        stop_frame = 6;
+      }
+      else
+      {
+        start_frame = pick_frame;
+        stop_frame = pick_frame;
+      }
+      for (frame=start_frame; frame <= stop_frame; frame++) 
+      {
+        if (frame > 3)
+        {
+          bsp = cds_to_pept (slp_minus, frame - 3, genCode, TRUE);        
+        }
+        else
+        {
+          bsp = cds_to_pept (slp_plus, frame, genCode, TRUE);
+        }
+        if (bsp!=NULL) 
+        {
+          sequence = (Uint1Ptr) BSMerge (bsp, NULL);
+          if (frame > 3)
+          {
+            rev_str = GetReverseString ((CharPtr)sequence);
+            sequence = MemFree (sequence);
+            sequence = (Uint1Ptr) rev_str;
+          }
+          debug_str = (CharPtr) sequence;
+          BSFree (bsp);
+          if (sequence != NULL) 
+          {
+            salp = PatternMatch (sequence, 0, Seq_strand_plus, sip, cpp, 0, 0, TRUE);
+            if (salp!=NULL) 
+            {
               slp = MatchSa2Sl (&salp);
               slptmp=slp;
-              while (slptmp!=NULL) {
+              while (slptmp!=NULL) 
+              {
                  next = slptmp->next;
                  slptmp->next = NULL;
-                 slp3 = SeqLocIntNew ((Int4)(from + 3*SeqLocStart(slptmp)+frame-1), (Int4)(from + 3*SeqLocStop(slptmp)+frame+1), SeqLocStrand(slptmp), SeqLocId(slptmp));
+                 if (frame > 3)
+                 {
+                   prot_len = SeqLocLen (slp_minus);
+                   minus_offset = prot_len % 3;
+                   if (frame == 4)
+                   {
+                     /* no shift for frame */
+                   }
+                   else if (frame == 5)
+                   {
+                     minus_offset --;
+                   }
+                   else if (frame == 6)
+                   {
+                     minus_offset -=2;
+                   }
+                   minus_from = 3*SeqLocStart(slptmp) + from + minus_offset;
+                   minus_to = 3*SeqLocStop(slptmp) + from + minus_offset;
+                   slp3 = SeqLocIntNew (minus_from, minus_to, SeqLocStrand(slptmp), SeqLocId(slptmp));
+                 }
+                 else
+                 {
+                   slp3 = SeqLocIntNew ((Int4)(from + 3*SeqLocStart(slptmp)+frame-1), (Int4)(from + 3*SeqLocStop(slptmp)+frame+1), SeqLocStrand(slptmp), SeqLocId(slptmp));
+                 }
                  ValNodeFree (slptmp);
                  ValNodeAddPointer (&patlist, 0, (Pointer)slp3);
                  slptmp = next;
               }
-           }
-           MemFree (sequence);
-         }
+            }
+            MemFree (sequence);
+          }
         }
       }
-      ValNodeFree (slp2);
-     }
+      ValNodeFree (slp_plus);
+      ValNodeFree (slp_minus);
+    }
   }
   cpp = ComPatFree (cpp);
   return patlist;
+}
+
+extern ValNodePtr JK_NTPattern2 (CharPtr pattern, ValNodePtr sqloc_list, Boolean flagInvert, Uint2 entityID)
+{
+  return JK_NTPattern2Ex (pattern, sqloc_list, flagInvert, entityID, 0);
 }
 
 /******************************************************************/
@@ -1993,7 +2079,7 @@ static SeqAlignPtr ExtendToAllSeq(SeqAlignPtr origsap)
       }
       SeqIdFree(sip);
    }
-   if (pad == 0)
+   if (pad <= 0)
    {
       SeqAlignFree(sap);
       return origsap;
@@ -2796,6 +2882,7 @@ NLM_EXTERN void PropagateFeatDialog (IteM i)
   Uint1            strand;
   ButtoN           b;
   PrompT           p;
+  GrouP            warn_grp;
 
   ValNodePtr  allseqfeat = NULL;
 
@@ -2809,7 +2896,11 @@ NLM_EXTERN void PropagateFeatDialog (IteM i)
   SetObjectExtra (wdialog, (Pointer) dbdp, StdCleanupExtraProc);
   dbdp->w = w;
 
-  g1 = HiddenGroup (wdialog, 0, -6, NULL);
+  g1 = HiddenGroup (wdialog, 0, -7, NULL);
+
+  warn_grp = HiddenGroup (g1, 0, 1, NULL);
+  MultiLinePrompt (warn_grp, "WARNING: THIS FEATURE IS OBSOLETE.  Please use the Edit->Feature Propagate... menu item"
+                " in the main Sequin menu.", 30 * stdCharWidth, systemFont);  
 
   g2 = HiddenGroup (g1, 2, 0, NULL);
 
@@ -2895,7 +2986,7 @@ NLM_EXTERN void PropagateFeatDialog (IteM i)
   PushButton (h, "Propagate", PropagateFeatureProc);
   PushButton (h, "Cancel", StdCancelButtonProc);
 
-  AlignObjects (ALIGN_CENTER, (HANDLE) g2, (HANDLE) g3, (HANDLE) c, (HANDLE) d, (HANDLE) e, (HANDLE) h, NULL);
+  AlignObjects (ALIGN_CENTER, (HANDLE) warn_grp, (HANDLE) g2, (HANDLE) g3, (HANDLE) c, (HANDLE) d, (HANDLE) e, (HANDLE) h, NULL);
 
   RealizeWindow (wdialog);
   Show (wdialog);

@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   7/28/95
 *
-* $Revision: 6.32 $
+* $Revision: 6.39 $
 *
 * File Description:
 *
@@ -39,6 +39,27 @@
 * -------  ----------  -----------------------------------------------------
 *
 * $Log: pubdesc.c,v $
+* Revision 6.39  2005/04/20 19:46:02  kans
+* fixed ReplaceAllCallback
+*
+* Revision 6.38  2005/03/03 21:44:05  kans
+* PubEquivLookupProc takes extra BoolPtr parameter to signal success or failure
+*
+* Revision 6.37  2004/08/13 16:07:54  kans
+* warn if changing pub_reftype to sites or lost
+*
+* Revision 6.36  2004/08/13 15:32:37  kans
+* restored reftype gui controls on initial publication window
+*
+* Revision 6.35  2004/08/11 18:50:14  kans
+* PubdescPtrToPubdescPage looks at imp history, changes pubstatus from electronic to print if hard copy has been published
+*
+* Revision 6.34  2004/08/09 16:15:13  kans
+* more informative popup item values for pubstatus
+*
+* Revision 6.33  2004/07/20 16:04:05  kans
+* added pubstatus control
+*
 * Revision 6.32  2004/04/29 13:17:22  bollin
 * removed scope control (unused) from pub descriptor and pub feature dialogs.
 *
@@ -395,7 +416,8 @@ typedef struct pubinitform {
 
   GrouP         pub_status;
   GrouP         pub_choice;
-  Int2          pub_reftype;
+  GrouP         pub_reftype;
+  Int2          pub_ref_value;
   Int2          pub_choice_init;
   Uint1         reftype;
 } PubinitForm, PNTR PubinitFormPtr;
@@ -451,6 +473,8 @@ typedef struct pubdescpage {
   TexT          cprday;
 
   TexT          pages;
+
+  PopuP         pubstatus;
 
   GrouP         medium;
   TexT          comment;
@@ -536,6 +560,23 @@ static Int2 featTabsPerLine[] = {
 
 static Int2 descTabsPerLine[] = {
    3,  4,  6,  4,  4,  4,  5,  4, 3,  3};
+
+static ENUM_ALIST(pubstatus_alist)
+  {" ",                         0},
+  {"Received",                  1},
+  {"Accepted",                  2},
+  {"Electronic Publication",    3},
+  {"Print Publication",         4},
+  {"Revised",                   5},
+  {"PMC Publication",           6},
+  {"PMC Revision",              7},
+  {"Entrez Date",               8},
+  {"PubMed Revision",           9},
+  {"Ahead of Print",           10},
+  {"Pre-Medline (Obsolete)",   11},
+  {"MeSH Date",                12},
+  {"Other",                   255},
+END_ENUM_ALIST
 
 static ValNodePtr NewPMuidFromText (TexT idtext, Int2 choice)
 {
@@ -673,6 +714,7 @@ static CitBookPtr PutATBook (PubdescPagePtr ppp)
   AuthListPtr   alp;
   ImprintPtr    imp;
   DatePtr       dp;
+  UIEnum        val;
 
   cbp = NULL;
   if (ppp != NULL)
@@ -717,6 +759,10 @@ static CitBookPtr PutATBook (PubdescPagePtr ppp)
                                     ppp->cpryear);
       if (ppp->pub_choice == PUB_BOOKCHPTR)
         imp->pages = SaveStringFromText (ppp->pages);
+      imp->pubstatus = 0;
+      if (GetEnumPopup (ppp->pubstatus, pubstatus_alist, &val) && val > 0) {
+        imp->pubstatus = (Uint1) val;
+      }
       imp->prepub = ppp->pub_status;
     }
 
@@ -749,6 +795,7 @@ static CitBookPtr PutATProc (PubdescPagePtr ppp)
   ImprintPtr    imp;
   DatePtr       dp;
   AffilPtr      ap;
+  UIEnum        val;
   ValNodePtr    vnphead, vnp;
 
   cbp = NULL;
@@ -791,6 +838,10 @@ static CitBookPtr PutATProc (PubdescPagePtr ppp)
 */
       if (ppp->pub_choice == PUB_PROCCHPTR)
         imp->pages = SaveStringFromText (ppp->pages);
+      imp->pubstatus = 0;
+      if (GetEnumPopup (ppp->pubstatus, pubstatus_alist, &val) && val > 0) {
+        imp->pubstatus = (Uint1) val;
+      }
       imp->prepub = ppp->pub_status;
     }
 
@@ -900,6 +951,7 @@ static Pointer PubdescPageToPubdescPtr (DialoG d)
   Int2                  serial;
   Int2                  val;
   CitRetractPtr         crp;
+  UIEnum                uieval;
 
   pdp = NULL;
   ppp = (PubdescPagePtr) GetObjectExtra (d);
@@ -983,6 +1035,10 @@ static Pointer PubdescPageToPubdescPtr (DialoG d)
                   dp->data [0] = 0;
                   dp->str = StringSave ("?");
                 }
+              }
+              imp->pubstatus = 0;
+              if (GetEnumPopup (ppp->pubstatus, pubstatus_alist, &uieval) && uieval > 0) {
+                imp->pubstatus = (Uint1) uieval;
               }
               imp->prepub = ppp->pub_status;
               val = GetValue (ppp->retractType);
@@ -1353,22 +1409,24 @@ static void GetATArt (CitArtPtr cap, PubdescPagePtr ppp)
 
 static void PubdescPtrToPubdescPage (DialoG d, Pointer data)
 {
-  PubdescPtr            pdp;
-  PubdescPagePtr        ppp;
+  PubdescPtr        pdp;
+  PubdescPagePtr    ppp;
 
-  DatePtr       dp;
+  DatePtr           dp;
 
-  ValNodePtr    vnp, ttl;
-  AuthListPtr   alp;
-  CitArtPtr     cap;
-  CitBookPtr    cbp;
-  CitGenPtr     cgp;
-  CitJourPtr    cjp;
-  CitPatPtr     cpp;
-  CitSubPtr     csp;
-  ImprintPtr    imp;
-  Int2          title_new, title_old;
-  Int2          title_rank[9];
+  ValNodePtr        vnp, ttl;
+  AuthListPtr       alp;
+  CitArtPtr         cap;
+  CitBookPtr        cbp;
+  CitGenPtr         cgp;
+  CitJourPtr        cjp;
+  CitPatPtr         cpp;
+  CitSubPtr         csp;
+  PubStatusDatePtr  history;
+  ImprintPtr        imp;
+  Uint1             pubstatus;
+  Int2              title_new, title_old;
+  Int2              title_rank[9];
 /* codecenter fix */
 /*  Int2          title_rank[] = {0, 2, 0, 1, 6, 7, 5, 4, 3}; */
 /*   title spec                   0  1  2  3  4  5  6  7  8  */
@@ -1565,6 +1623,16 @@ static void PubdescPtrToPubdescPage (DialoG d, Pointer data)
                     {
                       DatePtrToVibrant (dp, ppp->month, ppp->day, ppp->year);
                     }
+                    pubstatus = imp->pubstatus;
+                    /* if history has print version, change electronic to print */
+                    if (imp->history != NULL && pubstatus == 3) {
+                      for (history = imp->history; history != NULL; history = history->next) {
+                        if (history->pubstatus == 4) {
+                          pubstatus = 4;
+                        }
+                      }
+                    }
+                    SetEnumPopup (ppp->pubstatus, pubstatus_alist, (UIEnum) pubstatus);
                     crp = imp->retract;
                     if (crp != NULL) {
                       SetValue (ppp->retractType, crp->type + 1);
@@ -1893,6 +1961,7 @@ static ValNodePtr LookupAnArticle (PubEquivLookupProc lookup, ValNodePtr oldpep,
   Int2        num;
   ValNodePtr  pep;
   ValNodePtr  pub;
+  Boolean     success = FALSE;
   ValNodePtr  vnp;
 
   pub = NULL;
@@ -1913,8 +1982,12 @@ static ValNodePtr LookupAnArticle (PubEquivLookupProc lookup, ValNodePtr oldpep,
           }
         }
       }
-      pub = lookup (pep);
+      pub = lookup (pep, &success);
       PubEquivFree (pep);
+      if (! success) {
+        Message (MSG_OK, "Publication lookup failed");
+        return pub;
+      }
       if (pub != NULL) {
         if (! byMuid) {
           pep = AsnIoMemCopy (oldpep, (AsnReadFunc) PubEquivAsnRead,
@@ -2176,7 +2249,7 @@ static DialoG CreatePubdescDialog (GrouP h, CharPtr title, GrouP PNTR pages,
   GrouP                 c;
   GrouP                 g1, g2, g3, g4, g5, g6, g7, g8, g9, g10;
   GrouP                 g11, g12, g13, g14, g15;
-  GrouP                 g16, g17, g18, g19, g20, g21, g22;
+  GrouP                 g16, g17, g18, g19, g20, g21, g22, g23;
   ButtoN                lkp;
   GrouP                 m, m1, m2, m3, m4, m5, m6, m7, m8, m9;
   GrouP                 n1, n2, n3, n4;
@@ -2382,11 +2455,7 @@ static DialoG CreatePubdescDialog (GrouP h, CharPtr title, GrouP PNTR pages,
                            'l');
         ppp->year = DialogText (g8, "", 6, NULL);
 
-        if (ppp->lookupJournal != NULL) {
-          g9 = HiddenGroup (g4, -3, 0, NULL);
-        } else {
-          g9 = HiddenGroup (g4, -2, 0, NULL);
-        }
+        g9 = HiddenGroup (g4, -3, 0, NULL);
 /* muid's are a journal-thing */
 /* for now PubMedid's (pmid's) are a journal thing too */
 /* this will change with a new layout design */
@@ -2396,28 +2465,22 @@ static DialoG CreatePubdescDialog (GrouP h, CharPtr title, GrouP PNTR pages,
         if (ppp->lookupJournal != NULL) {
           lkp = PushButton (g9, "Lookup ISO JTA", LookupISOJournalProc);
           SetObjectExtra (lkp, ppp, NULL);
+        } else {
+          StaticPrompt (g9, "", 0, dialogTextHeight, programFont, 'l');
         }
         StaticPrompt (g9, "pmid", wid1, dialogTextHeight, programFont, 'l');
         ppp->pmid = DialogText (g9, "", 6, NULL);
-        if (ppp->lookupJournal != NULL) {
-          StaticPrompt (g9, "", 0, dialogTextHeight, programFont, 'l');
-        }
+        StaticPrompt (g9, "", 0, dialogTextHeight, programFont, 'l');
 
         if (flagSerial && ppp->serial == NULL)
         {
           StaticPrompt (g9, "Serial Number",
                         0, dialogTextHeight, programFont, 'l');
           ppp->serial = DialogText (g9, "", 6, NULL);
-          if (ppp->lookupJournal != NULL) {
-            StaticPrompt (g9, "", 0, dialogTextHeight, programFont, 'l');
-          }
         } else if (GetAppProperty ("InternalNcbiSequin") != NULL) {
           StaticPrompt (g9, "Serial Number",
                         0, dialogTextHeight, programFont, 'l');
           ppp->serial = DialogText (g9, "", 6, NULL);
-          if (ppp->lookupJournal != NULL) {
-            StaticPrompt (g9, "", 0, dialogTextHeight, programFont, 'l');
-          }
         }
 
         g20 = HiddenGroup (pages[2], -2, 0, NULL);
@@ -2434,6 +2497,9 @@ static DialoG CreatePubdescDialog (GrouP h, CharPtr title, GrouP PNTR pages,
         StaticPrompt (ppp->retractGrp, "Explanation", 0, 0, programFont, 'c');
         ppp->retractExp = DialogText (ppp->retractGrp, "", 18, NULL);
         Disable (ppp->retractExp);
+        g23 = HiddenGroup (g20, -2, 0, NULL);
+        StaticPrompt (g23, "PubStatus", 0, popupMenuHeight, programFont, 'l');
+        ppp->pubstatus = CreateEnumPopupDialog (g23, TRUE, NULL, pubstatus_alist, (UIEnum) 0, NULL);
 
         c = HiddenGroup (pages[2], -4, 0, NULL);
         SetGroupSpacing (c, 10, 2);
@@ -3353,39 +3419,52 @@ typedef struct replacealldata {
   PubdescPtr  replaceWith;
 } ReplaceAllData, PNTR ReplaceAllDataPtr;
 
-static Boolean ReplaceAllCallback (GatherContextPtr gcp)
+static Boolean ReplaceAllCallback (GatherObjectPtr gop)
 
 {
   PubdescPtr         pdp;
+  /*
   ValNodePtr         pep;
+  */
   ValNodePtr         ppr;
   ReplaceAllDataPtr  radp;
   ValNodePtr         sdp;
   Int2               serial_number;
   SeqFeatPtr         sfp;
   ValNodePtr         tmp;
+  ValNode            vn;
   ValNodePtr         vnp;
 
-  radp = (ReplaceAllDataPtr) gcp->userdata;
+  radp = (ReplaceAllDataPtr) gop->userdata;
   if (radp != NULL) {
     pdp = NULL;
-    if (gcp->thistype == OBJ_SEQDESC) {
-      sdp = (ValNodePtr) gcp->thisitem;
+    if (gop->itemtype == OBJ_SEQDESC) {
+      sdp = (ValNodePtr) gop->dataptr;
       if (sdp != NULL && sdp->choice == Seq_descr_pub) {
         pdp = (PubdescPtr) sdp->data.ptrvalue;
       }
-    } else if (gcp->thistype == OBJ_SEQFEAT) {
-      sfp = (SeqFeatPtr) gcp->thisitem;
+    } else if (gop->itemtype == OBJ_SEQFEAT) {
+      sfp = (SeqFeatPtr) gop->dataptr;
       if (sfp != NULL && sfp->data.choice == SEQFEAT_PUB) {
         pdp = (PubdescPtr) sfp->data.value.ptrvalue;
       }
-    } else if (gcp->thistype == OBJ_SEQFEAT_CIT) {
-      vnp = (ValNodePtr) gcp->thisitem;
+    } else if (gop->itemtype == OBJ_SEQFEAT_CIT) {
+      vnp = (ValNodePtr) gop->dataptr;
       tmp = ValNodeNew (NULL);
       if (tmp != NULL) {
         tmp->choice = PUB_Equiv;
         tmp->data.ptrvalue = radp->deleteThis->pub;
         if (PubLabelMatch (tmp, vnp) == 0) {
+          MemSet ((Pointer) &vn, 0, sizeof (ValNode));
+          MemCopy (&vn, vnp, sizeof (ValNode));
+          tmp->choice = PUB_Equiv;
+          tmp->data.ptrvalue = radp->replaceWith->pub;
+          ppr = MinimizePub (tmp);
+          MemCopy (vnp, ppr, sizeof (ValNode));
+          vnp->next = vn.next;
+          MemCopy (ppr, &vn, sizeof (ValNode));
+          PubFree (ppr);
+          /*
           pep = ValNodeNew (NULL);
           if (pep != NULL) {
             tmp->choice = PUB_Equiv;
@@ -3394,10 +3473,11 @@ static Boolean ReplaceAllCallback (GatherContextPtr gcp)
             pep->choice = PUB_Equiv;
             pep->data.ptrvalue = ppr;
             pep->next = vnp->next;
-            *(gcp->prevlink) = pep;
+            *(gop->prevlink) = pep;
             vnp->next = NULL;
             PubFree (vnp);
           }
+          */
         }
       }
       ValNodeFree (tmp);
@@ -3442,7 +3522,10 @@ static void UpdateRAD (ReplaceAllDataPtr radp, PubdescFormPtr pfp)
       MemSet ((Pointer) &gs, 0, sizeof (GatherScope));
       gs.get_feats_location = TRUE;
       gs.seglevels = 1;
+      /*
       GatherEntity (pfp->input_entityID, radp, ReplaceAllCallback, &gs);
+      */
+      GatherObjectsInEntity (pfp->input_entityID, 0, NULL, ReplaceAllCallback, (Pointer) radp, NULL);
     }
   }
 }
@@ -3519,7 +3602,7 @@ static void ProcessCitProc (ButtoN b)
     pifp = (PubinitFormPtr) GetObjectExtra (b);
     if (pifp != NULL && pifp->form != NULL)
     {
-      descfeat = pifp->pub_reftype;
+      descfeat = GetValue (pifp->pub_reftype);
       switch (descfeat)
       {
         case 1:                 /* desc */
@@ -3797,6 +3880,7 @@ static void PubdescInitPtrToPubdescInitForm (ForM w, Pointer d)
     {
       SetValue (pifp->pub_status, 1);           /* unpublished for sure */
       Disable (pifp->pub_status);               /* can't switch nuthin */
+      Disable (pifp->pub_reftype);
     }
     if (publication > 0 && publication != PUB_SUB)
     {
@@ -4046,16 +4130,40 @@ static void MakeReplaceAuthorsForm (ButtoN b)
   Select (w);
 }
 
+static CharPtr refTypeWarningText =
+"This should be used for publications that are only cited by features, not those taking credit for the sequencing";
+
+static void ChangeRefType (GrouP g)
+
+{
+  MsgAnswer       ans;
+  PubinitFormPtr  pifp;
+  Int2            val;
+
+  pifp = (PubinitFormPtr) GetObjectExtra (g);
+  val = GetValue (g);
+  if (val == 3 || val == 4) {
+    ans = Message (MSG_OKC, "%s", refTypeWarningText);
+    if (ans == ANS_CANCEL) {
+      if (pifp != NULL) {
+        SetValue (g, pifp->pub_ref_value);
+        return;
+      }
+    }
+  }
+  pifp->pub_ref_value = val;
+}
+
 extern ForM CreatePubdescInitForm (Int2 left, Int2 top, CharPtr title,
                          ValNodePtr sdp, SeqFeatPtr sfp,
                          SeqEntryPtr sep, Uint2 itemtype,
                          FormActnFunc actproc,
                          PubdescEditProcsPtr pepp)
 {
-  ButtoN                b;
+  ButtoN                b, b1, b2, b3, b4;
   GrouP                 c, c1;
   GrouP                 h1;
-  GrouP                 g1, g2, g4, g5;
+  GrouP                 g1, g2, g4, g3, g5, g7;
   PubdescPtr            pdp;
   PubinitFormPtr        pifp;
   WindoW                w;
@@ -4131,34 +4239,66 @@ extern ForM CreatePubdescInitForm (Int2 left, Int2 top, CharPtr title,
     }
 
     Disable (g5);               /* publications disabled */
+    g3 = NormalGroup (h1, -1, 0, "Scope", programFont, NULL);
+    g7 = HiddenGroup (g3, -1, 0, ChangeRefType);
+    pifp->pub_reftype = g7;
+    SetObjectExtra (g7, pifp, NULL);
+    b1 = RadioButton (g7, "Refers to the entire sequence");
+    b2 = RadioButton (g7, "Refers to part of the sequence");
+    b3 = RadioButton (g7, "Cites a feature on the sequence");
+    pifp->pub_ref_value = 0;
+
+    b4 = NULL;
+    if (pdp != NULL && pdp->reftype == 1)
+    {
+      b4 = RadioButton (g7, "Citation history lost");
+    }
 
     if (pdp != NULL)
     {
+      /* Disable (g7); */     /* sometimes need to switch reftypes of existing pubdescs */
       if (sdp != NULL)  /* seqdesc */
       {
         switch (pdp->reftype) {
           case 0:
-		    pifp->pub_reftype = 1;
+            SetValue (g7, 1);
+            pifp->pub_ref_value = 1;
             break;
           case 1:
-		    pifp->pub_reftype = 4;
+            SetValue (g7, 4);
+            pifp->pub_ref_value = 4;
             break;
           case 2:
-		    pifp->pub_reftype = 3;
+            SetValue (g7, 3);
+            pifp->pub_ref_value = 3;
             break;
           default:
- 		    pifp->pub_reftype = 1;
+            SetValue (g7, 1);
+            pifp->pub_ref_value = 1;
             break;
         }
+        Disable (b2);
       } else if (sfp != NULL) { /* seqfeat */
-  		pifp->pub_reftype = 2;
+        SetValue (g7, 2);
+        Disable (b1);
+        Disable (b3);
+        Disable (b4);
+        pifp->pub_ref_value = 2;
       } else {
-   		pifp->pub_reftype = 1;
+        SetValue (g7, 1);
+        Disable (g7);
+        pifp->pub_ref_value = 1;
       }
     } else if (itemtype == OBJ_SEQFEAT) {
-      pifp->pub_reftype = 2;
+      SetValue (g7, 2);
+      Disable (b1);
+      Disable (b3);
+      Disable (b4);
+      pifp->pub_ref_value = 2;
     } else {
-      pifp->pub_reftype = 1;
+      SetValue (g7, 1);
+      Disable (b2);
+      pifp->pub_ref_value = 1;
     }
 
     c = HiddenGroup (h1, 2, 0, NULL);
@@ -4186,7 +4326,7 @@ extern ForM CreatePubdescInitForm (Int2 left, Int2 top, CharPtr title,
     AlignObjects (ALIGN_CENTER, (HANDLE) g3,
                     (HANDLE) pifp->pub_reftype, NULL);
     */
-    AlignObjects (ALIGN_CENTER, (HANDLE) g2, (HANDLE) g1,
+    AlignObjects (ALIGN_CENTER, (HANDLE) g2, (HANDLE) g1, (HANDLE) g3,
                     (HANDLE) c, (HANDLE) c1, NULL);
     RealizeWindow (w);
   }

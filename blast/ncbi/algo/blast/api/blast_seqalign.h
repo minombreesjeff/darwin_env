@@ -1,4 +1,4 @@
-/* $Id: blast_seqalign.h,v 1.13 2004/03/12 15:18:53 coulouri Exp $
+/* $Id: blast_seqalign.h,v 1.24 2005/04/06 23:27:53 dondosha Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -21,19 +21,13 @@
 *
 *  Please cite the author in any work or product based on this material.
 *
+*  Author: Ilya Dondoshansky
 * ===========================================================================*/
 
-/*****************************************************************************
+/** @file blast_seqalign.h
+ * Functions to convert BLAST results to the SeqAlign form
+ */
 
-File name: blast_seqalign.h
-
-Author: Ilya Dondoshansky
-
-Contents: Functions to convert BLAST results to the SeqAlign form
-
-******************************************************************************
- * $Revision: 1.13 $
- * */
 #ifndef __BLAST_SEQALIGN__
 #define __BLAST_SEQALIGN__
 
@@ -48,6 +42,11 @@ extern "C" {
 #include <readdb.h>
 #include <algo/blast/core/blast_hits.h>
 
+/** @addtogroup CToolkitAlgoBlast
+ *
+ * @{
+ */
+
 /** This should be defined somewhere else!!!!!!!!!!!!! */
 #define BLAST_SMALL_GAPS 0
 
@@ -55,31 +54,47 @@ extern "C" {
  * @param program_number Type of BLAST program [in]
  * @param results The BLAST results [in]
  * @param query_slp List of query SeqLoc's [in]
- * @param bssp Pointer to the BLAST database wrapper structure [in]
- * @param subject_slp Subject SeqLoc (for two sequences search) [in]
- * @param score_options Scoring options block [in]
- * @param sbp Scoring and statistical information [in]
+ * @param rdfp Pointer to a BLAST database structure [in]
+ * @param subject_slp List of subject sequences locations [in]
  * @param is_gapped Is this a gapped alignment search? [in]
+ * @param is_ooframe Is this a search with out-of-frame gapping? [in]
  * @param head_seqalign List of SeqAlign's [out]
  */
-Int2 BLAST_ResultsToSeqAlign(Uint1 program_number, BlastHSPResults* results, 
-        SeqLocPtr query_slp, BlastSeqSrc* bssp, SeqLocPtr subject_slp, 
-        BlastScoringOptions* score_options, BlastScoreBlk* sbp,
-        Boolean is_gapped, SeqAlignPtr* head_seqalign);
+Int2 BLAST_ResultsToSeqAlign(EBlastProgramType program_number, 
+        BlastHSPResults* results, SeqLocPtr query_slp, 
+        ReadDBFILE* rdfp, SeqLoc* subject_slp, 
+        Boolean is_gapped, Boolean is_ooframe, SeqAlignPtr* head_seqalign);
 
-Boolean GapCollectDataForSeqalign(GapEditBlock* edit_block,
-                                  GapEditScript* curr_in, Int4 numseg,
-                                  Int4** start_out,
-                                  Int4** length_out,
-                                  Uint1** strands_out,
-                                  Int4* start1, Int4* start2);
+/** Given an internal edit block structure, returns the segments information in
+ * form of arrays.
+ * @param hsp HSP structure containing traceback for one local alignment [in]
+ * @param curr_in Link in editing script where to start collecting the data. [in]
+ * @param numseg Number of segments in the alignment [in]
+ * @param query_length Length of query sequence [in]
+ * @param subject_length Length of subject sequence [in]
+ * @param translate1 Is query translated? [in]
+ * @param translate2 Is subject translated? [in]
+ * @param start_out Array of segment starting offsets [out]
+ * @param length_out Array of segment lengths [out]
+ * @param strands_out Array of segment strands [out]
+ * @param start1 Starting query offset; modified to point to next starting
+ *               offset if one edit block combines multiple alignments, like
+ *               in an ungapped search. [in] [out]
+ * @param start2 Starting subject offset for this alignment. [in] [out]
+ * @return Status.
+ */
+Int2 
+GapCollectDataForSeqalign(BlastHSP* hsp, GapEditScript* curr_in, Int4 numseg, 
+                          Int4 query_length, Int4 subject_length,
+                          Boolean translate1, Boolean translate2,
+                          Int4** start_out, Int4** length_out,
+                          Uint1** strands_out, Int4* start1, Int4* start2);
 
-SeqAlignPtr LIBCALL GapEditBlockToSeqAlign(GapEditBlock* edit_block,
-                                           SeqIdPtr subject_id,
-                                           SeqIdPtr query_id);
+/* @} */
 
 #ifdef __cplusplus
 }
 #endif
+
 #endif /* !__BLAST_SEQALIGN__ */
 

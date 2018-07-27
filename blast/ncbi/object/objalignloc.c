@@ -64,7 +64,6 @@ NLM_EXTERN
 AlignLocSetPtr LIBCALL
 AlignLocSetAsnRead(AsnIoPtr aip, AsnTypePtr orig)
 {
-   DataVal av;
    AsnTypePtr atp;
    Boolean isError = FALSE;
    AsnReadFunc func;
@@ -120,7 +119,6 @@ erret:
 NLM_EXTERN Boolean LIBCALL 
 AlignLocSetAsnWrite(AlignLocSetPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
 {
-   DataVal av;
    AsnTypePtr atp;
    Boolean retval = FALSE;
 
@@ -399,7 +397,6 @@ erret:
 NLM_EXTERN Boolean LIBCALL 
 AlignLocAsnWrite(AlignLocPtr ptr, AsnIoPtr aip, AsnTypePtr orig)
 {
-   DataVal av;
    AsnTypePtr atp;
    Boolean retval = FALSE;
 

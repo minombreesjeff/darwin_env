@@ -1,46 +1,47 @@
-/* $Id: blast_util.c,v 1.66 2004/04/19 18:34:19 madden Exp $
-* ===========================================================================
-*
-*                            PUBLIC DOMAIN NOTICE
-*               National Center for Biotechnology Information
-*
-*  This software/database is a "United States Government Work" under the
-*  terms of the United States Copyright Act.  It was written as part of
-*  the author's offical duties as a United States Government employee and
-*  thus cannot be copyrighted.  This software/database is freely available
-*  to the public for use. The National Library of Medicine and the U.S.
-*  Government have not placed any restriction on its use or reproduction.
-*
-*  Although all reasonable efforts have been taken to ensure the accuracy
-*  and reliability of the software and data, the NLM and the U.S.
-*  Government do not and cannot warrant the performance or results that
-*  may be obtained by using this software or data. The NLM and the U.S.
-*  Government disclaim all warranties, express or implied, including
-*  warranties of performance, merchantability or fitness for any particular
-*  purpose.
-*
-*  Please cite the author in any work or product based on this material.
-*
-* ===========================================================================*/
+/* $Id: blast_util.c,v 1.91 2005/04/27 19:54:57 dondosha Exp $
+ * ===========================================================================
+ *
+ *                            PUBLIC DOMAIN NOTICE
+ *               National Center for Biotechnology Information
+ *
+ *  This software/database is a "United States Government Work" under the
+ *  terms of the United States Copyright Act.  It was written as part of
+ *  the author's offical duties as a United States Government employee and
+ *  thus cannot be copyrighted.  This software/database is freely available
+ *  to the public for use. The National Library of Medicine and the U.S.
+ *  Government have not placed any restriction on its use or reproduction.
+ *
+ *  Although all reasonable efforts have been taken to ensure the accuracy
+ *  and reliability of the software and data, the NLM and the U.S.
+ *  Government do not and cannot warrant the performance or results that
+ *  may be obtained by using this software or data. The NLM and the U.S.
+ *  Government disclaim all warranties, express or implied, including
+ *  warranties of performance, merchantability or fitness for any particular
+ *  purpose.
+ *
+ *  Please cite the author in any work or product based on this material.
+ *
+ * ===========================================================================
+ *
+ * Author: Ilya Dondoshansky
+ *
+ */
 
-/*****************************************************************************
+/** @file blast_util.c
+ * Various BLAST utilities
+ */
 
-File name: blast_util.c
 
-Author: Ilya Dondoshansky
+#ifndef SKIP_DOXYGEN_PROCESSING
+static char const rcsid[] = 
+    "$Id: blast_util.c,v 1.91 2005/04/27 19:54:57 dondosha Exp $";
+#endif /* SKIP_DOXYGEN_PROCESSING */
 
-Contents: Various BLAST utilities
-
-******************************************************************************
- * $Revision: 1.66 $
- * */
-
-#include <algo/blast/core/blast_def.h>
 #include <algo/blast/core/blast_util.h>
 #include <algo/blast/core/blast_encoding.h>
 #include <algo/blast/core/blast_filter.h>
-
-static char const rcsid[] = "$Id: blast_util.c,v 1.66 2004/04/19 18:34:19 madden Exp $";
+#include <algo/blast/core/blast_stat.h>
+#include <algo/blast/core/pattern.h>
 
 Int2
 BlastSetUp_SeqBlkNew (const Uint1* buffer, Int4 length, Int4 context,
@@ -112,40 +113,23 @@ Int2 BlastSeqBlkSetCompressedSequence(BLAST_SequenceBlk* seq_blk,
     return 0;
 }
 
-#if 0
-/** Create the subject sequence block given an ordinal id in a database */
-void
-MakeBlastSequenceBlk(ReadDBFILEPtr db, BLAST_SequenceBlk** seq_blk,
-                     Int4 oid, Uint1 encoding)
-{
-  Int4 length, buf_len = 0;
-  Uint1* buffer = NULL;
-
-  if (encoding == BLASTNA_ENCODING) {
-     length = readdb_get_sequence_ex(db, oid, &buffer, &buf_len, TRUE);
-  } else if (encoding == NCBI4NA_ENCODING) {
-     length = readdb_get_sequence_ex(db, oid, &buffer, &buf_len, FALSE);
-  } else {
-     length=readdb_get_sequence(db, oid, &buffer);
-  }
-
-  BlastSetUp_SeqBlkNew(buffer, length, 0, seq_blk, 
-                       (encoding != BLASTP_ENCODING));
-  (*seq_blk)->oid = oid;
-}
-#endif
-
 Int2 BlastSequenceBlkClean(BLAST_SequenceBlk* seq_blk)
 {
    if (!seq_blk)
        return 1;
 
-   if (seq_blk->sequence_allocated) 
+   if (seq_blk->sequence_allocated) {
        sfree(seq_blk->sequence);
-   if (seq_blk->sequence_start_allocated)
+       seq_blk->sequence_allocated = FALSE;
+   }
+   if (seq_blk->sequence_start_allocated) {
        sfree(seq_blk->sequence_start);
-   if (seq_blk->oof_sequence_allocated)
+       seq_blk->sequence_start_allocated = FALSE;
+   }
+   if (seq_blk->oof_sequence_allocated) {
        sfree(seq_blk->oof_sequence);
+       seq_blk->oof_sequence_allocated = FALSE;
+   }
 
    return 0;
 }
@@ -179,59 +163,68 @@ void BlastSequenceBlkCopy(BLAST_SequenceBlk** copy,
    (*copy)->lcase_mask_allocated = FALSE;
 }
 
-Int2 BlastProgram2Number(const char *program, Uint1 *number)
+Int2 BlastProgram2Number(const char *program, EBlastProgramType *number)
 {
-	*number = blast_type_undefined;
+	*number = eBlastTypeUndefined;
 	if (program == NULL)
 		return 1;
 
 	if (strcasecmp("blastn", program) == 0)
-		*number = blast_type_blastn;
+		*number = eBlastTypeBlastn;
 	else if (strcasecmp("blastp", program) == 0)
-		*number = blast_type_blastp;
+		*number = eBlastTypeBlastp;
 	else if (strcasecmp("blastx", program) == 0)
-		*number = blast_type_blastx;
+		*number = eBlastTypeBlastx;
 	else if (strcasecmp("tblastn", program) == 0)
-		*number = blast_type_tblastn;
+		*number = eBlastTypeTblastn;
 	else if (strcasecmp("tblastx", program) == 0)
-		*number = blast_type_tblastx;
+		*number = eBlastTypeTblastx;
 	else if (strcasecmp("rpsblast", program) == 0)
-		*number = blast_type_rpsblast;
+		*number = eBlastTypeRpsBlast;
 	else if (strcasecmp("rpstblastn", program) == 0)
-		*number = blast_type_rpstblastn;
+		*number = eBlastTypeRpsTblastn;
+    else if (strcasecmp("psiblast", program) == 0)
+        *number = eBlastTypePsiBlast;
+    else if (strcasecmp("phiblastn", program) == 0)
+        *number = eBlastTypePhiBlastn;
+    else if (strcasecmp("phiblastp", program) == 0)
+        *number = eBlastTypePhiBlastp;
 
 	return 0;
 }
 
-Int2 BlastNumber2Program(Uint1 number, char* *program)
+Int2 BlastNumber2Program(EBlastProgramType number, char* *program)
 {
-
+    
 	if (program == NULL)
 		return 1;
-
+    
 	switch (number) {
-		case blast_type_blastn:
+		case eBlastTypeBlastn: case eBlastTypePhiBlastn:
 			*program = strdup("blastn");
 			break;
-		case blast_type_blastp:
+		case eBlastTypeBlastp: case eBlastTypePhiBlastp:
 			*program = strdup("blastp");
 			break;
-		case blast_type_blastx:
+		case eBlastTypeBlastx:
 			*program = strdup("blastx");
 			break;
-		case blast_type_tblastn:
+		case eBlastTypeTblastn:
 			*program = strdup("tblastn");
 			break;
-		case blast_type_tblastx:
+		case eBlastTypeTblastx:
 			*program = strdup("tblastx");
 			break;
-		case blast_type_rpsblast:
+		case eBlastTypeRpsBlast:
 			*program = strdup("rpsblast");
 			break;
-		case blast_type_rpstblastn:
+		case eBlastTypeRpsTblastn:
 			*program = strdup("rpstblastn");
 			break;
-		default:
+        case eBlastTypePsiBlast:
+            *program = strdup("psiblast");
+            break;
+        default:
 			*program = strdup("unknown");
 			break;
 	}
@@ -239,14 +232,17 @@ Int2 BlastNumber2Program(Uint1 number, char* *program)
 	return 0;
 }
 
+/** Value of the 'X' aminoacid residue in NCBIstdaa encoding. */
 #define X_STDAA 21
+
 /** Translate 3 nucleotides into an amino acid
  * MUST have 'X' as unknown amino acid
  * @param codon 3 values in ncbi4na code
  * @param codes Geneic code string to use (must be in ncbistdaa encoding!)
  * @return Amino acid in ncbistdaa
  */
-static Uint1 CodonToAA (Uint1* codon, const Uint1* codes)
+static Uint1 
+s_CodonToAA (Uint1* codon, const Uint1* codes)
 {
    register Uint1 aa = 0, taa;
    register int i, j, k, index0, index1, index2;
@@ -307,7 +303,7 @@ BLAST_GetTranslation(const Uint1* query_seq, const Uint1* query_seq_rev,
 		codon[0] = nucl_seq[index];
 		codon[1] = nucl_seq[index+1];
 		codon[2] = nucl_seq[index+2];
-		residue = CodonToAA(codon, genetic_code);
+		residue = s_CodonToAA(codon, genetic_code);
 		if (IS_residue(residue))
 		{
 			prot_seq[index_prot] = residue;
@@ -648,43 +644,93 @@ Int2 GetReverseNuclSequence(const Uint1* sequence, Int4 length,
    return 0;
 }
 
-Int2 BLAST_ContextToFrame(Uint1 prog_number, Int4 context_number)
+Int1 BLAST_ContextToFrame(EBlastProgramType prog_number, Uint4 context_number)
 {
-   Int2 frame=255;
+   Int1 frame = 127;	/* 127 is used to indicate error */
 
-   if (prog_number == blast_type_blastn) {
-      if (context_number % 2 == 0)
+   if (prog_number == eBlastTypeBlastn) {
+      if (context_number % NUM_STRANDS == 0)
          frame = 1;
       else
          frame = -1;
-   } else if (prog_number == blast_type_blastp ||
-              prog_number == blast_type_rpsblast ||
-              prog_number == blast_type_tblastn ||
-              prog_number == blast_type_rpstblastn) { 
+   } else if (prog_number == eBlastTypeBlastp   ||
+              prog_number == eBlastTypeRpsBlast ||
+              prog_number == eBlastTypePsiBlast ||
+              prog_number == eBlastTypeTblastn  ||
+              prog_number == eBlastTypePhiBlastn||
+              prog_number == eBlastTypePhiBlastp) {
       /* Query and subject are protein, no frame. */
       frame = 0;
-   } else if (prog_number == blast_type_blastx || 
-              prog_number == blast_type_tblastx) {
-      context_number = context_number % 6;
-      frame = (context_number < 3) ? context_number+1 : -context_number+2;
+   } else if (prog_number == eBlastTypeBlastx  ||
+              prog_number == eBlastTypeTblastx ||
+              prog_number == eBlastTypeRpsTblastn) {
+      context_number = context_number % NUM_FRAMES;
+	  switch (context_number) {
+	  case 0: frame = 1; break;
+	  case 1: frame = 2; break;
+	  case 2: frame = 3; break;
+	  case 3: frame = -1; break;
+	  case 4: frame = -2; break;
+	  case 5: frame = -3; break;
+	  default: abort(); break; /* should never happen */
+	  }
    }
    
    return frame;
 }
 
-Int4 BLAST_GetQueryLength(BlastQueryInfo* query_info, Int4 context)
+Int4 
+Blast_GetQueryIndexFromContext(Int4 context, EBlastProgramType program)
 {
-   return query_info->context_offsets[context+1] -
-      query_info->context_offsets[context] - 1;
+   Int4 index = -1;     /* -1 is used to indicate error */
+   switch (program) {
+   case eBlastTypeBlastn:
+      index = context/NUM_STRANDS; 
+      break;
+   case eBlastTypeBlastp: 
+   case eBlastTypeTblastn: 
+   case eBlastTypeRpsBlast: 
+   case eBlastTypePsiBlast:
+   case eBlastTypeRpsTblastn:
+   case eBlastTypePhiBlastn:
+   case eBlastTypePhiBlastp:
+      index = context; 
+      break;
+   case eBlastTypeBlastx: 
+   case eBlastTypeTblastx:
+      index = context/NUM_FRAMES; 
+      break;
+   default:
+      break;
+   }
+   return index;
 }
 
 BlastQueryInfo* BlastQueryInfoFree(BlastQueryInfo* query_info)
 {
-   sfree(query_info->context_offsets);
-   sfree(query_info->length_adjustments);
-   sfree(query_info->eff_searchsp_array);
-   sfree(query_info);
-   return NULL;
+    if (query_info) {
+        sfree(query_info->contexts);
+        query_info->pattern_info = 
+            SPHIQueryInfoFree(query_info->pattern_info);
+        sfree(query_info);
+    }
+    return NULL;
+}
+
+BlastQueryInfo* BlastQueryInfoDup(BlastQueryInfo* query_info)
+{
+   BlastQueryInfo* retval = BlastMemDup(query_info, sizeof(BlastQueryInfo));
+   Int4 num_contexts = query_info->last_context + 1;
+   
+   retval->contexts =
+       BlastMemDup(query_info->contexts, num_contexts * sizeof(BlastContextInfo));
+   
+   if (query_info->pattern_info) {
+       retval->pattern_info = 
+           SPHIQueryInfoCopy(query_info->pattern_info);
+   }
+
+   return retval;
 }
 
 /** Convert a sequence in ncbi4na or blastna encoding into a packed sequence
@@ -744,20 +790,19 @@ Int2 BLAST_InitDNAPSequence(BLAST_SequenceBlk* query_blk,
    Uint1* buffer,* seq,* tmp_seq;
    Int4 total_length, index, offset, i, context;
    Int4 length[CODON_LENGTH];
-   Int4* context_offsets = query_info->context_offsets;
-
-   total_length = context_offsets[query_info->last_context+1] + 1;
-
-   buffer = (Uint1*) malloc(total_length);
+   
+   total_length = QueryInfo_GetSeqBufLen(query_info);
+   /* Allocate 1 extra byte for a final sentinel. */ 
+   buffer = (Uint1*) malloc(total_length+1);
 
    for (index = 0; index <= query_info->last_context; index += CODON_LENGTH) {
-      seq = &buffer[context_offsets[index]];
+      seq = &buffer[query_info->contexts[index].query_offset];
 
       for (i = 0; i < CODON_LENGTH; ++i) {
          *seq++ = NULLB;
-         length[i] = BLAST_GetQueryLength(query_info, index + i);
+         length[i] = query_info->contexts[index + i].query_length;
       }
-
+      
       for (i = 0; ; ++i) {
          context = i % 3;
          offset = i / 3;
@@ -765,10 +810,13 @@ Int2 BLAST_InitDNAPSequence(BLAST_SequenceBlk* query_blk,
             /* Once one frame is past its end, we are done */
             break;
          }
-         tmp_seq = &query_blk->sequence[context_offsets[index+context]];
+         tmp_seq = 
+         &query_blk->sequence[query_info->contexts[index+context].query_offset];
          *seq++ = tmp_seq[offset];
       }
    }
+   /* Add a sentinel null byte at the end. */
+   *seq = NULLB;
 
    /* The mixed-frame protein sequence buffer will be saved in 
       'sequence_start' */
@@ -778,15 +826,15 @@ Int2 BLAST_InitDNAPSequence(BLAST_SequenceBlk* query_blk,
    return 0;
 }
 
-/*	Gets the translation array for a given genetic code.  
- *	This array is optimized for the NCBI2na alphabet.
+/** Gets the translation array for a given genetic code.  
+ * This array is optimized for the NCBI2na alphabet.
  * The reverse complement can also be spcified.
  * @param genetic_code Genetic code string in ncbistdaa encoding [in]
  * @param reverse_complement Get translation table for the reverse strand? [in]
  * @return The translation table.
 */
 static Uint1*
-BLAST_GetTranslationTable(const Uint1* genetic_code, Boolean reverse_complement)
+s_BlastGetTranslationTable(const Uint1* genetic_code, Boolean reverse_complement)
 
 {
 	Int2 index1, index2, index3, bp1, bp2, bp3;
@@ -866,8 +914,8 @@ Int2 BLAST_GetAllTranslations(const Uint1* nucl_seq, Uint1 encoding,
       GetReverseNuclSequence(nucl_seq, nucl_length, 
                              &nucl_seq_rev);
    } else {
-      translation_table = BLAST_GetTranslationTable(genetic_code, FALSE);
-      translation_table_rc = BLAST_GetTranslationTable(genetic_code, TRUE);
+      translation_table = s_BlastGetTranslationTable(genetic_code, FALSE);
+      translation_table_rc = s_BlastGetTranslationTable(genetic_code, TRUE);
    } 
 
    frame_offsets = (Int4*) malloc((NUM_FRAMES+1)*sizeof(Int4));
@@ -875,7 +923,7 @@ Int2 BLAST_GetAllTranslations(const Uint1* nucl_seq, Uint1 encoding,
    frame_offsets[0] = 0;
    
    for (context = 0; context < NUM_FRAMES; ++context) {
-      frame = BLAST_ContextToFrame(blast_type_blastx, context);
+      frame = BLAST_ContextToFrame(eBlastTypeBlastx, context);
       if (encoding == NCBI2NA_ENCODING) {
          if (frame > 0) {
             length = 
@@ -911,15 +959,16 @@ Int2 BLAST_GetAllTranslations(const Uint1* nucl_seq, Uint1 encoding,
       Uint1* seq;
       Int4 index, i;
 
-      *mixed_seq_ptr = mixed_seq = (Uint1*) malloc(2*(nucl_length+1));
+      *mixed_seq_ptr = mixed_seq = (Uint1*) malloc(2*nucl_length+3);
       seq = mixed_seq;
       for (index = 0; index < NUM_FRAMES; index += CODON_LENGTH) {
          for (i = 0; i <= nucl_length; ++i) {
-            context = i % 3;
-            offset = i / 3;
+            context = i % CODON_LENGTH;
+            offset = i / CODON_LENGTH;
             *seq++ = translation_buffer[frame_offsets[index+context]+offset];
          }
       }
+      *seq = NULLB;
    }
    if (translation_buffer_ptr)
       *translation_buffer_ptr = translation_buffer;
@@ -934,7 +983,7 @@ Int2 BLAST_GetAllTranslations(const Uint1* nucl_seq, Uint1 encoding,
    return 0;
 }
 
-int GetPartialTranslation(const Uint1* nucl_seq,
+int Blast_GetPartialTranslation(const Uint1* nucl_seq,
         Int4 nucl_length, Int2 frame, const Uint1* genetic_code,
         Uint1** translation_buffer_ptr, Int4* protein_length, 
         Uint1** mixed_seq_ptr)
@@ -943,51 +992,56 @@ int GetPartialTranslation(const Uint1* nucl_seq,
    Uint1* nucl_seq_rev = NULL;
    Int4 length;
    
-   if ((translation_buffer = 
-        (Uint1*) malloc(2*(nucl_length+1)+1)) == NULL)
-      return -1;
-   if (translation_buffer_ptr)
-      *translation_buffer_ptr = translation_buffer;
-
    if (frame < 0) {
-      /* First produce the reverse strand of the nucleotide sequence */
-      GetReverseNuclSequence(nucl_seq, nucl_length, &nucl_seq_rev);
+       /* First produce the reverse strand of the nucleotide sequence */
+       GetReverseNuclSequence(nucl_seq, nucl_length, &nucl_seq_rev);
    } 
-
+   
    if (!mixed_seq_ptr) {
-      length = 
-         BLAST_GetTranslation(nucl_seq, nucl_seq_rev, 
-            nucl_length, frame, translation_buffer, genetic_code);
-      if (protein_length)
-         *protein_length = length;
+       if ((translation_buffer = 
+            (Uint1*) malloc(nucl_length/CODON_LENGTH+2)) == NULL)
+           return -1;
+           
+       length = 
+           BLAST_GetTranslation(nucl_seq, nucl_seq_rev, 
+                                nucl_length, frame, translation_buffer, 
+                                genetic_code);
+       if (protein_length)
+           *protein_length = length;
    } else {
-      Int2 index;
-      Int2 frame_sign = ((frame < 0) ? -1 : 1);
-      Int4 offset = 0;
-      Int4 frame_offsets[3];
-      Uint1* seq;
+       Int2 index;
+       Int2 frame_sign = ((frame < 0) ? -1 : 1);
+       Int4 offset = 0;
+       Int4 frame_offsets[CODON_LENGTH];
+       Uint1* seq;
+       
+       if ((translation_buffer = (Uint1*) malloc(nucl_length+2)) == NULL)
+           return -1;
 
-      for (index = 1; index <= 3; ++index) {
-         length = 
-            BLAST_GetTranslation(nucl_seq, nucl_seq_rev, 
-               nucl_length, frame_sign*index, translation_buffer+offset, 
-               genetic_code);
-         frame_offsets[index-1] = offset;
-         offset += length + 1;
-      }
+       for (index = 1; index <= CODON_LENGTH; ++index) {
+           length = 
+               BLAST_GetTranslation(nucl_seq, nucl_seq_rev, 
+                                    nucl_length, (short)(frame_sign*index), 
+                                    translation_buffer+offset, genetic_code);
+           frame_offsets[index-1] = offset;
+           offset += length + 1;
+       }
 
-      *mixed_seq_ptr = (Uint1*) malloc(2*(nucl_length+1));
-      if (protein_length)
-         *protein_length = 2*nucl_length - 1;
-      for (index = 0, seq = *mixed_seq_ptr; index <= nucl_length; 
-           ++index, ++seq) {
-         *seq = translation_buffer[frame_offsets[index%3]+(index/3)];
-      }
+       *mixed_seq_ptr = (Uint1*) malloc(nucl_length+2);
+       if (protein_length)
+           *protein_length = nucl_length;
+       for (index = 0, seq = *mixed_seq_ptr; index <= nucl_length; 
+            ++index, ++seq) {
+           *seq = translation_buffer[frame_offsets[index%CODON_LENGTH] +
+                                     (index/CODON_LENGTH)];
+       }
    }
 
    sfree(nucl_seq_rev);
-   if (!translation_buffer_ptr)
-      sfree(translation_buffer);
+   if (translation_buffer_ptr)
+       *translation_buffer_ptr = translation_buffer;
+   else
+       sfree(translation_buffer);
 
    return 0;
 }
@@ -1015,4 +1069,235 @@ Int4 BSearchInt4(Int4 n, Int4* A, Int4 size)
 	    b = m;
     }
     return b;
+}
+
+Int4 BSearchContextInfo(Int4 n, BlastQueryInfo * A)
+{
+    Int4 m=0, b=0, e=0, size=0;
+    
+    size = A->last_context+1;
+    
+    b = 0;
+    e = size;
+    while (b < e - 1) {
+	m = (b + e) / 2;
+	if (A->contexts[m].query_offset > n)
+	    e = m;
+	else
+	    b = m;
+    }
+    return b;
+}
+
+Uint4
+QueryInfo_GetSeqBufLen(const BlastQueryInfo* qinfo)
+{
+    BlastContextInfo * cinfo = & qinfo->contexts[qinfo->last_context];
+    return cinfo->query_offset + cinfo->query_length + (cinfo->query_length ? 2 : 1);
+}
+
+Int4 *
+ContextOffsetsToOffsetArray(BlastQueryInfo* info)
+{
+    /* The Many Values of 'Length'
+     *
+     * 1. info->last_context: the index of the last query offset.
+     *
+     * 2. count: the number of query offsets.
+     *
+     * 3. count + 1: the size of the output array (has an 'extra'
+     *    member so as to communicate the last sequence length).
+     *
+     * 4. sz: the size of the context object array
+     */
+    
+    Uint4   count  = (info->last_context + 1);
+    Uint4   sz     = sizeof(Int4) * (count+1);
+    Uint4   frame  = 0;
+    Int4  * result = 0;
+    
+    ASSERT(info);
+    ASSERT(info->contexts);
+    
+    result = malloc(sz);
+    memset(result, 0, sz);
+    
+    for(frame = 0; frame < count; frame++) {
+        result[frame] = info->contexts[frame].query_offset;
+    }
+    
+    /* One more entry, provides length info for last element. */
+    
+    result[count] = info->contexts[count-1].query_offset;
+    
+    if (info->contexts[count-1].query_length) {
+        result[count] += info->contexts[count-1].query_length + 1;
+    }
+    
+    return result;
+}
+
+void
+OffsetArrayToContextOffsets(BlastQueryInfo    * info,
+                            Int4              * new_offsets,
+                            EBlastProgramType   prog)
+{
+    Uint4 count = (info->last_context + 1);
+    Uint4 i     = 0;
+    
+    ASSERT(info);
+    ASSERT(new_offsets);
+    
+    if (! info->contexts) {
+        info->contexts = calloc(count, sizeof(BlastContextInfo));
+    }
+    
+    for(i = 0; i < count; i++) {
+        Int4 distance = 0;
+        
+        info->contexts[i].query_offset = new_offsets[i];
+        
+        distance = new_offsets[i+1] - new_offsets[i];
+        info->contexts[i].query_length = distance ? distance-1 : 0;
+        
+        /* Set the frame and query index */
+        
+        info->contexts[i].frame =
+            BLAST_ContextToFrame(prog, i);
+        
+        info->contexts[i].query_index =
+            Blast_GetQueryIndexFromContext(i, prog);
+    }
+}
+
+Int2
+Blast_GetOneQueryStructs(BlastQueryInfo** one_query_info_ptr, 
+                         BLAST_SequenceBlk** one_query_ptr,
+                         const BlastQueryInfo* query_info, 
+                         BLAST_SequenceBlk* query, Int4 query_index)
+{
+    Int4 num_frames;
+    Int4 index;
+    Int4 first_context;
+    Int4 query_offset;
+    BlastQueryInfo* one_query_info = NULL;
+    BLAST_SequenceBlk* one_query = NULL;
+
+    if (!one_query_info_ptr || !one_query_ptr || !query_info || !query ||
+        query_index >= query_info->num_queries)
+        return -1;
+
+    num_frames = (query_info->last_context / query_info->num_queries) + 1;
+    first_context = query_index*num_frames;
+    query_offset = query_info->contexts[first_context].query_offset;
+
+    one_query_info = *one_query_info_ptr;
+    /* If this hasn't been already done, allocate new query information 
+       structure. */
+    if (!one_query_info) {
+        one_query_info = (BlastQueryInfo*) calloc(1, sizeof(BlastQueryInfo));
+        *one_query_info_ptr = one_query_info;
+        one_query_info->contexts = (BlastContextInfo*) calloc(num_frames, sizeof(BlastContextInfo));
+    }
+    one_query = *one_query_ptr;
+    /* If this hasn't been already done, allocate new sequence block. */
+    if (!one_query) {
+        one_query = (BLAST_SequenceBlk*) calloc(1, sizeof(BLAST_SequenceBlk));
+        *one_query_ptr = one_query;
+    }
+    if (!one_query_info || !one_query)
+        return -1;
+
+    one_query_info->num_queries = 1;
+    one_query_info->last_context = num_frames - 1;
+    
+    memcpy(one_query_info->contexts,
+           &query_info->contexts[first_context],
+           num_frames * sizeof(BlastContextInfo));
+    
+    /* Make context offsets relative to this query. */
+    for (index = 0; index < num_frames; ++index) {
+        one_query_info->contexts[index].query_offset -= query_offset;
+    }
+    
+    /* Fill the sequence block information for this one query. */
+    memset(one_query, 0, sizeof(BLAST_SequenceBlk));
+    one_query->sequence = &query->sequence[query_offset];
+    one_query->length =
+        one_query_info->contexts[num_frames-1].query_offset +
+        one_query_info->contexts[num_frames-1].query_length;
+    one_query->sequence_allocated = FALSE;
+    one_query->oid = query_index;
+
+    return 0;
+}
+
+Int2
+Blast_SetUpSubjectTranslation(BLAST_SequenceBlk* subject_blk, 
+                              const Uint1* gen_code_string,
+                              Uint1** translation_buffer_ptr, 
+                              Int4** frame_offsets_ptr,
+                              Boolean* partial_translation_ptr)
+{
+   Boolean partial_translation;
+   Boolean is_ooframe = (frame_offsets_ptr == NULL);
+
+   if (!gen_code_string)
+      return -1;
+
+   if (is_ooframe && subject_blk->oof_sequence) {
+      /* If mixed-frame sequence is already available (two-sequences case),
+         then no need to translate again */
+      *partial_translation_ptr = FALSE;
+      return 0;
+   } 
+
+   *partial_translation_ptr = partial_translation = 
+      (subject_blk->length > MAX_FULL_TRANSLATION);
+      
+   if (!partial_translation) {
+      if (is_ooframe) {
+         BLAST_GetAllTranslations(subject_blk->sequence_start, 
+            NCBI4NA_ENCODING, subject_blk->length, gen_code_string, 
+            NULL, NULL, &subject_blk->oof_sequence);
+         subject_blk->oof_sequence_allocated = TRUE;
+      } else {
+         BLAST_GetAllTranslations(subject_blk->sequence_start, 
+            NCBI4NA_ENCODING, subject_blk->length, gen_code_string, 
+            translation_buffer_ptr, frame_offsets_ptr, NULL);
+      }
+   }
+
+   return 0;
+}
+
+double* 
+BLAST_GetStandardAaProbabilities()
+{
+    Blast_ResFreq* standard_probabilities = NULL;
+    Uint4 i = 0;
+    double* retval = NULL;
+    BlastScoreBlk* sbp = BlastScoreBlkNew(BLASTAA_SEQ_CODE, 1);
+
+    if ( !sbp ) {
+        return NULL;
+    }
+
+    ASSERT(sbp->alphabet_size == BLASTAA_SIZE);
+    retval = (double*) malloc(sbp->alphabet_size * sizeof(double));
+    if ( !retval ) {
+        sbp = BlastScoreBlkFree(sbp);
+        return NULL;
+    }
+
+    standard_probabilities = Blast_ResFreqNew(sbp);
+    Blast_ResFreqStdComp(sbp, standard_probabilities);
+
+    for (i = 0; i < (Uint4) sbp->alphabet_size; i++) {
+        retval[i] = standard_probabilities->prob[i];
+    }
+
+    Blast_ResFreqFree(standard_probabilities);
+    sbp = BlastScoreBlkFree(sbp);
+    return retval;
 }

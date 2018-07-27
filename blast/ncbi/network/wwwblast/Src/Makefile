@@ -21,7 +21,7 @@ THREAD_LIBS = -lpthread
 #
 CC=cc 
 
-BLAST_LIBS = -lncbitool -lncbiobj -lncbi $(NCBI_OTHERLIBS)
+BLAST_LIBS = -lblastapi -lncbitool -lncbiobj -lblast -lncbi $(NCBI_OTHERLIBS)
 # For standalone model
 ALL_LIBS = -lncbidesk -lvibgif $(BLAST_LIBS) $(THREAD_LIBS)
 # For NCBI Client-server model

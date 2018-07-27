@@ -1,5 +1,5 @@
 #
-# $Id: linux-x86.ncbi.mk,v 1.31 2004/01/09 18:47:22 beloslyu Exp $
+# $Id: linux-x86.ncbi.mk,v 1.32 2005/04/06 16:36:25 coulouri Exp $
 #
 NCBI_DEFAULT_LCL = lnx
 NCBI_MAKE_SHELL = /bin/sh
@@ -11,8 +11,8 @@ NCBI_MAKE_SHELL = /bin/sh
 NCBI_AR=ar
 NCBI_CC = gcc -pipe -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE
 NCBI_CFLAGS1 = -c
-NCBI_LDFLAGS1 = -O3 -mcpu=pentiumpro
-NCBI_OPTFLAG = -O3 -mcpu=pentiumpro
+NCBI_LDFLAGS1 = -O3 -mcpu=pentium4
+NCBI_OPTFLAG = -O3 -mcpu=pentium4
 NCBI_BIN_MASTER = /home/coremake/ncbi/bin
 NCBI_BIN_COPY = /home/coremake/ncbi/bin
 NCBI_INCDIR = /home/coremake/ncbi/include

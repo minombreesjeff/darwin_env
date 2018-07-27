@@ -29,7 +29,7 @@
 *
 * Version Creation Date:   10/21/98
 *
-* $Revision: 6.55 $
+* $Revision: 6.63 $
 *
 * File Description:  New GenBank flatfile generator
 *
@@ -83,69 +83,79 @@ typedef enum {
 
 typedef unsigned long FlgType;
 
-#define CREATE_HTML_FLATFILE      1
-#define CREATE_XML_GBSEQ_FILE     2
-#define CREATE_ASN_GBSEQ_FILE     3
+#define CREATE_HTML_FLATFILE       1
+#define CREATE_XML_GBSEQ_FILE      2
+#define CREATE_ASN_GBSEQ_FILE      3
 
-#define SHOW_CONTIG_FEATURES      4
-#define SHOW_CONTIG_SOURCES       8
+#define SHOW_CONTIG_FEATURES       4
+#define SHOW_CONTIG_SOURCES        8
 
-#define SHOW_FAR_TRANSLATION     16
-#define TRANSLATE_IF_NO_PRODUCT  32
-#define ALWAYS_TRANSLATE_CDS     64
+#define SHOW_FAR_TRANSLATION      16
+#define TRANSLATE_IF_NO_PRODUCT   32
+#define ALWAYS_TRANSLATE_CDS      48
 
-#define ONLY_NEAR_FEATURES      128
-#define FAR_FEATURES_SUPPRESS   256
-#define NEAR_FEATURES_SUPPRESS  384
+#define SHOW_FAR_TRANSCRIPTION    16
+#define TRANSCRIBE_IF_NO_PRODUCT  32
+#define ALWAYS_TRANSCRIBE_MRNA    48
 
-#define COPY_GPS_CDS_UP         512
-#define COPY_GPS_GENE_DOWN     1024
+#define REFSEQ_CONVENTIONS        64
 
-#define SHOW_CONTIG_AND_SEQ    2048
+#define ONLY_NEAR_FEATURES       128
+#define FAR_FEATURES_SUPPRESS    256
+#define NEAR_FEATURES_SUPPRESS   384
 
-#define DDBJ_VARIANT_FORMAT    4096
-#define USE_OLD_SOURCE_ORG     8192
+#define COPY_GPS_CDS_UP          512
+#define COPY_GPS_GENE_DOWN      1024
 
-#define PRODUCE_OLD_GBSEQ     16384
+#define SHOW_CONTIG_AND_SEQ     2048
+
+#define SHOW_TRANCRIPTION       4096
+#define SHOW_PEPTIDE            8192
+
+#define PRODUCE_OLD_GBSEQ      16384
+
+#define DDBJ_VARIANT_FORMAT    32768
 
 /* locking behavior for system performance */
 
 typedef unsigned long LckType;
 
-#define FREE_SEQPORT_EACH_TIME    1
-#define LOCK_FAR_COMPONENTS       2
-#define LOCK_FAR_LOCATIONS        4
-#define LOCK_FAR_PRODUCTS         8
-#define LOOKUP_FAR_COMPONENTS    16
-#define LOOKUP_FAR_LOCATIONS     32
-#define LOOKUP_FAR_PRODUCTS      64
-#define LOOKUP_FAR_HISTORY      128
-#define STREAM_SEQ_PORT_FIRST   256
+#define LOCK_FAR_COMPONENTS        2
+#define LOCK_FAR_LOCATIONS         4
+#define LOCK_FAR_PRODUCTS          8
+#define LOOKUP_FAR_COMPONENTS     16
+#define LOOKUP_FAR_LOCATIONS      32
+#define LOOKUP_FAR_PRODUCTS       64
+#define LOOKUP_FAR_HISTORY       128
+#define LOOKUP_FAR_OTHERS        256
 
 /* bit flags for unusual customized reports */
 
 typedef unsigned long CstType;
 
-#define HIDE_IMP_FEATS            1
-#define HIDE_REM_IMP_FEATS        2
+#define HIDE_IMP_FEATS             1
+#define HIDE_REM_IMP_FEATS         2
 
-#define HIDE_SNP_FEATS            4
-#define HIDE_EXON_FEATS           8
-#define HIDE_INTRON_FEATS        16
-#define HIDE_MISC_FEATS          32
+#define HIDE_SNP_FEATS             4
+#define HIDE_EXON_FEATS            8
+#define HIDE_INTRON_FEATS         16
+#define HIDE_MISC_FEATS           32
 
-#define HIDE_CDD_FEATS           64
-#define HIDE_CDS_PROD_FEATS     128
+#define HIDE_CDD_FEATS            64
+#define HIDE_CDS_PROD_FEATS      128
 
-#define SHOW_TRANCRIPTION       256
-#define SHOW_PEPTIDE            512
+#define HIDE_GENE_RIFS           256
+#define ONLY_GENE_RIFS           512
+#define ONLY_REVIEW_PUBS         768
+#define NEWEST_PUBS             1024
+#define OLDEST_PUBS             1280
 
-#define HIDE_GENE_RIFS         1024
-#define ONLY_GENE_RIFS         2048
-#define LATEST_GENE_RIFS       3072
+#define SHOW_PROT_FTABLE        2048
+#define SHOW_FTABLE_REFS        4096
 
-#define SHOW_PROT_FTABLE       4096
-#define SHOW_FTABLE_REFS       8192
+#define HIDE_SOURCE_FEATS       8192
+#define HIDE_GAP_FEATS         16384
+#define HIDE_SEQUENCE          32768
 
 /* opaque pointer for special extensions */
 

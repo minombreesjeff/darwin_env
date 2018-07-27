@@ -1,4 +1,4 @@
-static char const rcsid[] = "$Id: formatdb.c,v 6.92 2004/01/29 14:56:44 camacho Exp $";
+static char const rcsid[] = "$Id: formatdb.c,v 6.94 2004/08/25 14:47:21 camacho Exp $";
 
 /*****************************************************************************
 
@@ -32,11 +32,17 @@ static char const rcsid[] = "$Id: formatdb.c,v 6.92 2004/01/29 14:56:44 camacho 
    
    Version Creation Date: 10/01/96
 
-   $Revision: 6.92 $
+   $Revision: 6.94 $
 
    File Description:  formats FASTA databases for use by BLAST
 
    $Log: formatdb.c,v $
+   Revision 6.94  2004/08/25 14:47:21  camacho
+   Refactorings to allow formatdb process multiple deflines
+
+   Revision 6.93  2004/06/30 19:52:00  camacho
+   Added #include <blfmtutl.h>
+
    Revision 6.92  2004/01/29 14:56:44  camacho
    Removed -A option, FORMATDB_VER_TEXT no longer supported
 
@@ -383,6 +389,7 @@ static char const rcsid[] = "$Id: formatdb.c,v 6.92 2004/01/29 14:56:44 camacho 
 #include <blastdef.h>
 #include <mblast.h>
 #include <fdlobj.h>
+#include <blfmtutl.h>
 
 /* program's arguments */
 
@@ -474,61 +481,6 @@ static Int4 GetGiFromSeqId(SeqIdPtr sip)
     return gi;
 }
 
-BlastDefLinePtr FDBGetDefAsnFromBioseq(BioseqPtr bsp)
-{
-    BlastDefLinePtr bdp = NULL, bdp_last, bdp_head;
-    CharPtr title, chptr, orig_title;
-
-    if(bsp == NULL)
-        return NULL;
-
-    bdp = BlastDefLineNew();
-    bdp_head = bdp;
-
-    bdp->seqid = SeqIdSetDup(bsp->id);
-    title = BioseqGetTitle(bsp);
-
-    orig_title = title = StringSave(title);
-
-    chptr = NULL;
-    if((chptr = StringChr(title, '\1')) != NULL) {
-        *chptr = NULLB;
-        chptr++;
-    }
-    bdp->title = StringSave(title);
-    bdp_last = bdp;
-
-
-    while(chptr != NULL) {
-
-        bdp = BlastDefLineNew();
-        
-        title = chptr;
-        
-        if((chptr = StringChr(title, ' ')) != NULL) {
-            *chptr = NULLB;
-            chptr++;
-        }
-        bdp->seqid = SeqIdParse(title);
-        title = chptr;
-
-        if((chptr = StringChr(title, '\1')) != NULL) {
-            *chptr = NULLB;
-            chptr++;
-        }
-        if(title != NULL)
-            bdp->title = StringSave(title);
-        else
-            bdp->title = StringSave("No definition found");
-
-        bdp_last->next = bdp;
-        bdp_last = bdp;
-    }
-
-    MemFree(orig_title);
-    return bdp_head;
-}
-
 /* Fasta file delimiters */
 #define DELIM " "
 #define MAX_VOLUMES 99
@@ -600,16 +552,17 @@ void SeqEntryGetLength(SeqEntryPtr sep, Pointer data, Int4 index, Int2 indent)
 
 Int2 Main(void) 
 {
-    SeqEntryPtr sep;
-    FormatDBPtr    fdbp;
-    FDB_optionsPtr options;
-    BioseqPtr bsp;
+    SeqEntryPtr sep = NULL;
+    FormatDBPtr    fdbp = NULL;
+    FDB_optionsPtr options = NULL;
+    BioseqPtr bsp = NULL;
+    BlastDefLinePtr bdp = NULL;
     Int2 id_ctr=1;
     Int4 count = 0, sequence_count=0;
     Int4 input_ctr = 0, num_inputfiles = 0;
     Int8 total_length, *lengths = NULL;
     CharPtr error_msg=NULL;
-    FILE *fd;
+    FILE *fd = NULL;
     CharPtr next_db = NULL, file_inputs = NULL, orig_ptr = NULL, tmp = NULL;
     Boolean multiple_inputs = FALSE;
     Char buf[256] = { '\0' };
@@ -889,10 +842,9 @@ Int2 Main(void)
                  error_msg = MemFree(error_msg);
              }
              
-             /* the BlastDefLine structure will be built in
-              * FDBAddSequence => FDLCreateAsnDF from the bsp's id
-              * and title */
-             FDBAddBioseq(fdbp, bsp, NULL);             
+             bdp = FDBGetDefAsnFromBioseq(bsp);
+             FDBAddBioseq(fdbp, bsp, bdp);             
+             bdp = BlastDefLineSetFree(bdp);
              SeqEntryFree(sep);
           }
           

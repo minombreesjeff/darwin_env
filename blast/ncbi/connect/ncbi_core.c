@@ -1,4 +1,4 @@
-/*  $Id: ncbi_core.c,v 6.14 2003/08/28 18:47:51 ucko Exp $
+/*  $Id: ncbi_core.c,v 6.15 2005/04/20 18:13:39 lavr Exp $
  * ===========================================================================
  *
  *                            PUBLIC DOMAIN NOTICE
@@ -31,6 +31,7 @@
  */
 
 #include "ncbi_ansi_ext.h"
+#include "ncbi_assert.h"
 #include <connect/ncbi_core.h>
 #include <stdlib.h>
 
@@ -461,6 +462,9 @@ extern void REG_Set
 /*
  * ---------------------------------------------------------------------------
  * $Log: ncbi_core.c,v $
+ * Revision 6.15  2005/04/20 18:13:39  lavr
+ * +"ncbi_assert.h"
+ *
  * Revision 6.14  2003/08/28 18:47:51  ucko
  * Revert previous hack (now handled another way)
  *

@@ -1,6 +1,6 @@
-static char const rcsid[] = "$Id: rpsblast.c,v 6.55 2004/04/30 15:33:05 dondosha Exp $";
+static char const rcsid[] = "$Id: rpsblast.c,v 6.67 2005/04/27 14:55:09 papadopo Exp $";
 
-/* $Id: rpsblast.c,v 6.55 2004/04/30 15:33:05 dondosha Exp $
+/* $Id: rpsblast.c,v 6.67 2005/04/27 14:55:09 papadopo Exp $
 * ===========================================================================
 *
 *                            PUBLIC DOMAIN NOTICE
@@ -31,12 +31,50 @@ static char const rcsid[] = "$Id: rpsblast.c,v 6.55 2004/04/30 15:33:05 dondosha
 *
 * Initial Version Creation Date: 12/14/1999
 *
-* $Revision: 6.55 $
+* $Revision: 6.67 $
 *
 * File Description:
 *         Main file for RPS BLAST program
 *
 * $Log: rpsblast.c,v $
+* Revision 6.67  2005/04/27 14:55:09  papadopo
+* change signature of BlastFillHitSavingOptions
+*
+* Revision 6.66  2005/02/03 18:02:07  dondosha
+* Pass summary returns to BLAST_FormatResults, needed for XML output
+*
+* Revision 6.65  2005/02/02 19:01:36  dondosha
+* Use new high level API for performing the search
+*
+* Revision 6.64  2005/01/10 18:36:47  dondosha
+* BlastMaskLocDNAToProtein and BlastMaskLocProteinToDNA moved to core with changed signatures
+*
+* Revision 6.63  2005/01/10 13:48:20  madden
+* Change to BLAST_FillInitialWordOptions prototype
+*
+* Revision 6.62  2004/12/22 15:38:34  kans
+* removed include of blast_tback.h
+*
+* Revision 6.61  2004/12/21 18:03:04  dondosha
+* BLAST_SearchEngine renamed to Blast_RunFullSearch
+*
+* Revision 6.60  2004/12/07 16:52:57  papadopo
+* fix check for range of nucleotide query
+*
+* Revision 6.59  2004/12/02 20:46:38  dondosha
+* Corrected off by 1 error in handling of query location argument
+*
+* Revision 6.58  2004/12/01 21:15:41  papadopo
+* update handling of query range restriction when using the new engine
+*
+* Revision 6.57  2004/11/23 20:43:06  papadopo
+* 1. Add support for the new engine (controlled by -V flag)
+* 2. Use enum values instead of hardcoded offsets into myargs[]
+* 3. Remove the option for ungapped RPS blast
+*
+* Revision 6.56  2004/06/30 12:33:30  madden
+* Add include for blfmtutl.h
+*
 * Revision 6.55  2004/04/30 15:33:05  dondosha
 * Added argument in call to BXMLPrintOutput
 *
@@ -206,75 +244,418 @@ static char const rcsid[] = "$Id: rpsblast.c,v 6.55 2004/04/30 15:33:05 dondosha
 * ==========================================================================
 */
 
-#include <ncbi.h>
+#include <ncbi.h>               /* Old engine includes */
 #include <lookup.h>
 #include <tofasta.h>
 #include <txalign.h>
 #include <ncbithr.h>
 #include <rpsutil.h>
 #include <xmlblast.h>
+#include <blfmtutl.h>
 #include <sqnutils.h>
+
+#include <readdb.h>             /* Updated engine includes */
+#include <algo/blast/api/blast_input.h>
+#include <algo/blast/api/blast_format.h>
+#include <algo/blast/api/blast_api.h>
+#include <algo/blast/api/blast_seq.h>
 
 #if PURIFY
 #include "/am/purew/solaris2/new/../purify/purify-4.5-solaris2/purify.h"
 #endif
 
-#define NUMARG (sizeof(myargs)/sizeof(myargs[0]))
-
+enum {
+    OPT_QUERY_FILE = 0,
+    OPT_DB,
+    OPT_PROT_QUERY,
+    OPT_EVALUE,
+    OPT_FORMAT,
+    OPT_OUTPUT_FILE,
+    OPT_XDROP_UNGAPPED,
+    OPT_UNGAPPED_HITS,
+    OPT_FILTER,
+    OPT_XDROP_GAPPED,
+    OPT_GAP_TRIGGER,
+    OPT_NUMTHREADS,
+    OPT_SHOW_GI,
+    OPT_BELIEVE_QUERY,
+    OPT_XDROP_GAPPED_FINAL,
+    OPT_ASNOUT,
+    OPT_NUM_DESC,
+    OPT_NUM_RESULTS,
+    OPT_DBLENGTH,
+    OPT_SEARCHSP,
+    OPT_HTML,
+    OPT_LOGFILE,
+    OPT_LCASE,
+    OPT_RANGE,
+    OPT_FORCE_OLD_ENGINE,
+    NUM_ARGS    /* must come last */
+};
+    
 static Args myargs[] = {
-    {"Input query sequence (this parameter must be set)",  /* 0 */
+    /* OPT_QUERY_FILE */
+    {"Input query sequence (this parameter must be set)",
      "stdin", NULL,NULL,FALSE,'i',ARG_FILE_IN, 0.0,0,NULL},
-    {"RPS BLAST Database",            /* 1 */
+    /* OPT_DB */
+    {"RPS BLAST Database",
      NULL, NULL,NULL,FALSE,'d',ARG_FILE_IN, 0.0,0,NULL},
-    {"Query sequence is protein ",     /* 2 */
+    /* OPT_PROT_QUERY */
+    {"Query sequence is protein ",
      "T", NULL,NULL,TRUE, 'p', ARG_BOOLEAN, 0.0,0,NULL},
-    { "Expectation value (E)",        /* 3 */
+    /* OPT_EVALUE */
+    { "Expectation value (E)",
       "10.0", NULL, NULL, FALSE, 'e', ARG_FLOAT, 0.0, 0, NULL},
-    { "alignment view options:\n0 = pairwise,\n1 = query-anchored showing identities,\n2 = query-anchored no identities,\n3 = flat query-anchored, show identities,\n4 = flat query-anchored, no identities,\n5 = query-anchored no identities and blunt ends,\n6 = flat query-anchored, no identities and blunt ends,\n7 = XML Blast output,\n8 = tabular output, \n9 = tabular output with comments", /* 4 */
+    /* OPT_FORMAT*/
+    { "alignment view options:\n"
+"0 = pairwise,\n"
+"1 = query-anchored showing identities,\n"
+"2 = query-anchored no identities,\n"
+"3 = flat query-anchored, show identities,\n"
+"4 = flat query-anchored, no identities,\n"
+"5 = query-anchored no identities and blunt ends,\n"
+"6 = flat query-anchored, no identities and blunt ends,\n"
+"7 = XML Blast output,\n8 = tabular output, \n"
+"9 = tabular output with comments",
       "0", NULL, NULL, FALSE, 'm', ARG_INT, 0.0, 0, NULL},
-    { "Output File for Alignment", /* 5 */
+    /* OPT_OUTPUT_FILE */
+    { "Output File for Alignment",
       "stdout", NULL, NULL, TRUE, 'o', ARG_FILE_OUT, 0.0, 0, NULL},
-    { "Dropoff (X) for blast extensions in bits (default if zero)", /* 6 */
+    /* OPT_XDROP_UNGAPPED */
+    { "Dropoff (X) for blast extensions in bits (default if zero)",
       "7.0", NULL, NULL, FALSE, 'y', ARG_FLOAT, 0.0, 0, NULL},
-    { "0 for multiple hit, 1 for single hit",/* 7 */
+    /* OPT_UNGAPPED_HITS */
+    { "0 for multiple hit, 1 for single hit",
        "0",  NULL, NULL, FALSE, 'P', ARG_INT, 0.0, 0, NULL},
-    { "Filter query sequence with SEG", /* 8 */
+    /* OPT_FILTER */
+    { "Filter query sequence with SEG",
       "F", NULL, NULL, FALSE, 'F', ARG_STRING, 0.0, 0, NULL},
-    { "X dropoff value for gapped alignment (in bits)", /* 9 */
+    /* OPT_XDROP_GAPPED */
+    { "X dropoff value for gapped alignment (in bits)",
       "15", NULL, NULL, FALSE, 'X', ARG_INT, 0.0, 0, NULL},
-    { "Number of bits to trigger gapping", /* 10 */
+    /* OPT_GAP_TRIGGER */
+    { "Number of bits to trigger gapping",
       "22.0", NULL, NULL, FALSE, 'N', ARG_FLOAT, 0.0, 0, NULL},
-    { "Gapped",                 /* 11 */
-      "T", NULL, NULL, FALSE, 'g', ARG_BOOLEAN, 0.0, 0, NULL},
-    { "Number of processors to use", /* 12 */
+    /* OPT_NUMTHREADS */
+    { "Number of processors to use",
       "1", NULL, NULL, FALSE, 'a', ARG_INT, 0.0, 0, NULL},
-    { "Show GI's in deflines",  /* 13 */
+    /* OPT_SHOW_GI */
+    { "Show GI's in deflines",
       "F", NULL, NULL, FALSE, 'I', ARG_BOOLEAN, 0.0, 0, NULL},
-    { "Believe the query defline", /* 14 */
+    /* OPT_BELIEVE_QUERY */
+    { "Believe the query defline",
       "F", NULL, NULL, FALSE, 'J', ARG_BOOLEAN, 0.0, 0, NULL},
-    { "X dropoff value for final gapped alignment (in bits)", /* 15 */
+    /* OPT_XDROP_GAPPED_FINAL */
+    { "X dropoff value for final gapped alignment (in bits)",
       "25", NULL, NULL, FALSE, 'Z', ARG_INT, 0.0, 0, NULL},
-    { "SeqAlign file ('Believe the query defline' must be TRUE)", /* 16 */
+    /* OPT_ASNOUT */
+    { "SeqAlign file ('Believe the query defline' must be TRUE)",
       NULL, NULL, NULL, TRUE, 'O', ARG_FILE_OUT, 0.0, 0, NULL},
-    { "Number of database sequences to show one-line descriptions for (V)", /* 17 */
+    /* OPT_NUM_DESC */
+    { "Number of database sequences to show one-line descriptions for (V)",
       "500", NULL, NULL, FALSE, 'v', ARG_INT, 0.0, 0, NULL},
-    { "Number of database sequence to show alignments for (B)", /* 18 */
+    /* OPT_NUM_RESULTS */
+    { "Number of database sequence to show alignments for (B)",
       "250", NULL, NULL, FALSE, 'b', ARG_INT, 0.0, 0, NULL},
-    { "Effective length of the database (use zero for the real size)", /* 19 */
+    /* OPT_DBLENGTH */
+    { "Effective length of the database (use zero for the real size)",
       "0", NULL, NULL, FALSE, 'z', ARG_FLOAT, 0.0, 0, NULL},
-    { "Effective length of the search space (use zero for the real size)", /* 20 */
+    /* OPT_SEARCHSP */
+    { "Effective length of the search space (use zero for the real size)",
       "0", NULL, NULL, FALSE, 'Y', ARG_FLOAT, 0.0, 0, NULL},
-    { "Produce HTML output",  /* 21 */
+    /* OPT_HTML */
+    { "Produce HTML output",
       "F", NULL, NULL, FALSE, 'T', ARG_BOOLEAN, 0.0, 0, NULL},
-    {"Logfile name ",  /* 22 */
+    /* OPT_LOGIFLE */
+    {"Logfile name ",
      "rpsblast.log", NULL,NULL,TRUE,'l',ARG_FILE_OUT, 0.0,0,NULL},
-    {"Use lower case filtering of FASTA sequence",    /* 23 */
+    /* OPT_LCASE */
+    {"Use lower case filtering of FASTA sequence",
      "F", NULL,NULL,TRUE,'U',ARG_BOOLEAN, 0.0,0,NULL},
+    /* OPT_RANGE */
     { "Range restriction on query sequence (Format: start,stop) blastp only\n"
       "      0 in 'start' refers to the beginning of the sequence\n"
       "      0 in 'stop' refers to the end of the sequence",
-      "0,0", NULL, NULL, TRUE, 'L', ARG_STRING, 0.0, 0, NULL}, /* 24 */
+      "0,0", NULL, NULL, TRUE, 'L', ARG_STRING, 0.0, 0, NULL},
+    /* OPT_FORCE_OLD_ENGINE */
+    { "Force use of the original BLAST engine",
+      "T", NULL, NULL, TRUE, 'V', ARG_BOOLEAN, 0.0, 0, NULL},
 };
+
+
+/*------------------- RPS BLAST USING NEW ENGINE ------------------------*/
+
+/* This is very similar to the routine of the same name
+   in blast_driver.c; unneeded setup is removed */
+
+static Int2 
+BLAST_FillOptions(SBlastOptions* options)
+{
+   Int2 status;
+   EBlastProgramType program_number = options->program;
+   LookupTableOptions* lookup_options = options->lookup_options;
+   QuerySetUpOptions* query_setup_options = options->query_options; 
+   BlastInitialWordOptions* word_options = options->word_options;
+   BlastExtensionOptions* ext_options = options->ext_options ;
+   BlastHitSavingOptions* hit_options = options->hit_options;
+   BlastScoringOptions* score_options = options->score_options;
+   BlastEffectiveLengthsOptions* eff_len_options = options->eff_len_options;
+   BlastDatabaseOptions* db_options = options->db_options;
+
+   BLAST_FillLookupTableOptions(lookup_options, program_number, 
+                                FALSE, /* megablast */
+                                0,     /* default threshold */
+                                0,     /* default wordsize */
+                                FALSE, /* no variable wordsize */
+                                FALSE);/* no PSSM (i.e. not psiblast) */
+
+   BLAST_FillQuerySetUpOptions(query_setup_options, program_number, 
+                              myargs[OPT_FILTER].strvalue, 0);
+
+   BLAST_FillInitialWordOptions(word_options, program_number, FALSE,
+                                0, myargs[OPT_XDROP_UNGAPPED].intvalue);
+
+   /* set one-hit extensions if desired */
+   if (myargs[OPT_UNGAPPED_HITS].intvalue == 1)
+       word_options->window_size = 0;
+
+   BLAST_FillExtensionOptions(ext_options, program_number, FALSE, 
+                              myargs[OPT_XDROP_GAPPED].intvalue, 
+                              myargs[OPT_XDROP_GAPPED_FINAL].intvalue);
+
+   BLAST_FillScoringOptions(score_options, program_number, FALSE,
+                0, 0,  /* nucleotide match/mismatch scores */
+                NULL, 0, 0); /* Matrix, gap opening and gap extension penalties
+                                will be set from the RPS database, so there is
+                                no need to set them here. */
+
+   score_options->gapped_calculation = TRUE;
+
+   BLAST_FillHitSavingOptions(hit_options, 
+                      myargs[OPT_EVALUE].floatvalue, 
+                      MAX(myargs[OPT_NUM_DESC].intvalue, 
+                          myargs[OPT_NUM_RESULTS].intvalue),
+                      TRUE,
+                      0);
+
+   if (myargs[OPT_SEARCHSP].floatvalue != 0) {
+      eff_len_options->searchsp_eff = (Int8) myargs[OPT_SEARCHSP].floatvalue; 
+   }
+
+   if (db_options && program_number == eBlastTypeRpsTblastn) {
+      if ((status = BLAST_GeneticCodeFind(db_options->genetic_code, 
+                       &db_options->gen_code_string))) {
+         return status;
+      }
+   }
+
+   return 0;
+}
+
+static Int2
+s_ParseIntervalLocationArgument(char* arg, Int4* from_ptr, Int4* to_ptr)
+{
+   const char* delimiters = " ,;";
+   Int4 from = 0, to = 0;
+
+   if (!arg)
+      return 0;
+   
+   from = atoi(StringTokMT(arg, delimiters, &arg));
+   to = atoi(arg);
+      
+   from = MAX(from, 0);
+   to = MAX(to, 0);
+
+   *from_ptr = from;
+   *to_ptr = to;
+
+   if (from > to)
+      return -1;
+   else
+      return 0;
+}
+
+/* Similar to the Main() of blast_driver.c; major differences are
+        - only one thread supported
+        - no two-sequences capability
+        - on-the-fly tabular output not supported
+*/
+Int2 Main_New(void)
+{
+   Int2 status;
+   Boolean query_is_na;
+   LookupTableOptions* lookup_options;
+   char* blast_program = NULL;
+   EBlastProgramType program_number;
+   BlastInitialWordOptions* word_options;
+   BlastScoringOptions* score_options;
+   BlastExtensionOptions* ext_options;
+   BlastHitSavingOptions* hit_options;
+   char* dbname = NULL;
+   FILE *infp;
+   Int2 ctr = 1;
+   Int4 letters_read;
+   Int4 query_from = 0, query_to = 0;
+   SBlastOptions* options = NULL;
+   QuerySetUpOptions* query_options=NULL;	
+   BlastEffectiveLengthsOptions* eff_len_options=NULL;
+   SeqLoc* query_slp = NULL;
+   SeqAlign* seqalign = NULL;
+   BlastFormattingOptions* format_options;
+   PSIBlastOptions* psi_options = NULL;
+   BlastDatabaseOptions* db_options = NULL;
+   Blast_SummaryReturn* sum_returns=Blast_SummaryReturnNew();
+   Boolean believe_defline = FALSE;
+   Int4 num_queries = 0;
+   SeqLoc* lcase_mask = NULL;
+   SeqLoc* filter_loc = NULL;
+   Boolean mask_at_hash;
+
+   /* select protein or nucleotide query, and choose
+      the appropriate program type */
+
+   if (myargs[OPT_PROT_QUERY].intvalue == FALSE) {
+       query_is_na = TRUE;
+       blast_program = "rpstblastn";
+   } else {
+       query_is_na = FALSE;
+       blast_program = "rpsblast";
+   }
+
+   status = SBlastOptionsNew(blast_program, &options, sum_returns);
+
+   if (status) {
+       if (sum_returns->error) {
+           Blast_SummaryReturnsPostError(sum_returns);
+           sum_returns = Blast_SummaryReturnFree(sum_returns);
+       }
+       return -1;
+   }
+
+   /* initialize the database and then the RPS_specific data files */
+
+   dbname = myargs[OPT_DB].strvalue;
+
+   BLAST_FillOptions(options);
+   program_number = options->program;
+
+   if ((status = BlastFormattingOptionsNew(program_number, 
+                       myargs[OPT_OUTPUT_FILE].strvalue, 
+                       myargs[OPT_NUM_DESC].intvalue, 
+                       myargs[OPT_NUM_RESULTS].intvalue, 
+                       myargs[OPT_FORMAT].intvalue, &format_options)) != 0) {
+       ErrPostEx(SEV_FATAL, 1, 0,  "Formatting setup failed");
+   }
+
+   if (myargs[OPT_HTML].intvalue) {
+       format_options->html = TRUE;
+       format_options->align_options += TXALIGN_HTML;
+       format_options->print_options += TXALIGN_HTML;
+   }
+   if (myargs[OPT_SHOW_GI].intvalue) {
+       format_options->align_options += TXALIGN_SHOW_GI;
+       format_options->print_options += TXALIGN_SHOW_GI;
+   }
+
+   BLAST_PrintOutputHeader(format_options, FALSE, blast_program, 
+                           dbname, TRUE);
+
+   believe_defline = myargs[OPT_BELIEVE_QUERY].intvalue;
+
+   /* Get the query */
+
+   if ((infp = FileOpen(myargs[OPT_QUERY_FILE].strvalue, "r")) == NULL) {
+      ErrPostEx(SEV_FATAL, 1, 0, "Unable to open input file '%s'\n", 
+                myargs[OPT_QUERY_FILE].strvalue);
+      return (1);
+   }
+
+   if (s_ParseIntervalLocationArgument(myargs[OPT_RANGE].strvalue,
+                                        &query_from, &query_to)) {
+      ErrPostEx(SEV_FATAL, 1, 0, "Invalid subject sequence location\n");
+      return -1;                   
+   }
+   if ((query_from != 0 || query_to != 0) && 
+       (Boolean)myargs[OPT_PROT_QUERY].intvalue == FALSE) {
+      ErrPostEx(SEV_FATAL, 1, 0, "No query range allowed for nucleotide query");
+      return -1;                   
+   }
+
+   if ((Boolean)myargs[OPT_LCASE].intvalue) {
+      letters_read = BLAST_GetQuerySeqLoc(infp, query_is_na, 0, 0, 
+                                          query_from, query_to, &lcase_mask, 
+                                          &query_slp, &ctr, &num_queries, 
+                                          believe_defline);
+   } else {
+      letters_read = BLAST_GetQuerySeqLoc(infp, query_is_na, 0, 0,
+                                          query_from, query_to, NULL, 
+                                          &query_slp, &ctr, &num_queries, 
+                                          believe_defline);
+   }
+   if (letters_read <= 0) {
+        ErrPostEx(SEV_FATAL, 1, 0, "Failure reading query\n");
+        return -1;
+   }
+
+   /* Call database search function. Pass NULL for tabular formatting structure 
+    * pointer, because on-the-fly tabular formatting is not allowed for RPS 
+    * BLAST.
+    */
+   status = 
+       Blast_DatabaseSearch(query_slp, dbname, lcase_mask, options, NULL, 
+                            &seqalign, &filter_loc, &mask_at_hash, sum_returns);
+
+   /* Free the lower case mask in SeqLoc form. */
+   lcase_mask = Blast_ValNodeMaskListFree(lcase_mask);
+   
+   /* If masking was done for lookup table only, free the masking locations,
+      because they will not be used for formatting. */
+   if (mask_at_hash)
+       filter_loc = Blast_ValNodeMaskListFree(filter_loc);
+
+   /* Post warning or error messages, no matter what the search status was. */
+   Blast_SummaryReturnsPostError(sum_returns);
+
+   if (status != 0) {
+       ErrPostEx(SEV_FATAL, 1, 0, "BLAST search failed");
+       return status;
+   }
+
+   /* do initial cleanup */
+
+   /* format results */
+
+   if (myargs[OPT_ASNOUT].strvalue) {
+      AsnIoPtr asnout = AsnIoOpen(myargs[OPT_ASNOUT].strvalue, (char*)"w");
+      GenericSeqAlignSetAsnWrite(seqalign, asnout);
+      asnout = AsnIoClose(asnout);
+   }
+ 
+   status = BLAST_FormatResults(seqalign, dbname, blast_program, 
+                                num_queries, query_slp,
+                                filter_loc, format_options, 
+                                FALSE, NULL, sum_returns);
+
+   /* finish cleanup */
+   filter_loc = Blast_ValNodeMaskListFree(filter_loc);
+   seqalign = SeqAlignSetFree(seqalign);
+   query_slp = SeqLocSetFree(query_slp);
+   options = SBlastOptionsFree(options);
+
+   /* Print the footer with summary information */
+   Blast_PrintOutputFooter(program_number, format_options, dbname, sum_returns);
+
+   sum_returns = Blast_SummaryReturnFree(sum_returns);
+
+   if(format_options->html && myargs[OPT_FORMAT].intvalue < 7) {
+      fprintf(format_options->outfp, "</PRE>\n</BODY>\n</HTML>\n");
+   }
+   BlastFormattingOptionsFree(format_options);
+   return status;
+}
+
+/*------------------- RPS BLAST USING OLD ENGINE ------------------------*/
 
 void PGPGetPrintOptions(Boolean gapped, Uint4Ptr align_options_out, 
                         Uint4Ptr print_options_out)
@@ -289,26 +670,32 @@ void PGPGetPrintOptions(Boolean gapped, Uint4Ptr align_options_out,
     align_options += TXALIGN_COMPRESS;
     align_options += TXALIGN_END_NUM;
 
-    if (myargs[13].intvalue) {
+    if (myargs[OPT_SHOW_GI].intvalue) {
         align_options += TXALIGN_SHOW_GI;
         print_options += TXALIGN_SHOW_GI;
     } 
     
-    if (myargs[21].intvalue) {
+    if (myargs[OPT_HTML].intvalue) {
         align_options += TXALIGN_HTML;
         print_options += TXALIGN_HTML;
     }
 
-    if(!myargs[2].intvalue)
+    if(!myargs[OPT_PROT_QUERY].intvalue)
         align_options += TXALIGN_BLASTX_SPECIAL;
     
-    if (myargs[4].intvalue != 0) {
+    if (myargs[OPT_FORMAT].intvalue != 0) {
         align_options += TXALIGN_MASTER;
-        if (myargs[4].intvalue == 1 || myargs[4].intvalue == 3)
+        if (myargs[OPT_FORMAT].intvalue == 1 || 
+            myargs[OPT_FORMAT].intvalue == 3)
             align_options += TXALIGN_MISMATCH;
-        if (myargs[4].intvalue == 3 || myargs[4].intvalue == 4 || myargs[4].intvalue == 6)
+
+        if (myargs[OPT_FORMAT].intvalue == 3 || 
+            myargs[OPT_FORMAT].intvalue == 4 || 
+            myargs[OPT_FORMAT].intvalue == 6)
             align_options += TXALIGN_FLAT_INS;
-        if (myargs[4].intvalue == 5 || myargs[4].intvalue == 6)
+
+        if (myargs[OPT_FORMAT].intvalue == 5 || 
+            myargs[OPT_FORMAT].intvalue == 6)
             align_options += TXALIGN_BLUNT_END;
     } else {
         align_options += TXALIGN_MATRIX_VAL;
@@ -346,58 +733,59 @@ static RPSBlastOptionsPtr RPSReadBlastOptions(void)
     rpsbop = MemNew(sizeof(RPSBlastOptions));
     
 
-    if (myargs[5].strvalue != NULL) 
-	rpsbop->out_filename = StringSave(myargs[5].strvalue);
+    if (myargs[OPT_OUTPUT_FILE].strvalue != NULL) 
+	rpsbop->out_filename = StringSave(myargs[OPT_OUTPUT_FILE].strvalue);
 
     /* Note: these 2 parameters are necessary to intialize RPS Blast */
-    rpsbop->rps_database = StringSave(myargs[1].strvalue);    
-    rpsbop->query_is_protein = myargs[2].intvalue;
-    rpsbop->num_threads = myargs[12].intvalue;
+    rpsbop->rps_database = StringSave(myargs[OPT_DB].strvalue);    
+    rpsbop->query_is_protein = myargs[OPT_PROT_QUERY].intvalue;
+    rpsbop->num_threads = myargs[OPT_NUMTHREADS].intvalue;
 
-    if((rpsbop->rdfp = readdb_new(myargs[1].strvalue, TRUE)) == NULL)
+    if((rpsbop->rdfp = readdb_new(myargs[OPT_DB].strvalue, TRUE)) == NULL)
         return NULL;
     
     /* rpsbop->rpsinfo = RPSInfoAttach(rpsinfo_main); */
 
-    if (myargs[14].intvalue != 0)
+    if (myargs[OPT_BELIEVE_QUERY].intvalue != 0)
         rpsbop->believe_query = TRUE;
     
     options = BLASTOptionNew(rpsbop->query_is_protein ? "blastp" : "tblastn", 
-                             (Boolean)myargs[11].intvalue);
+                             TRUE);
     rpsbop->options = options;
     
     /* rpsbop->options->query_lcase_mask = slp; External filtering */
     
-    if (myargs[19].floatvalue)
-        options->db_length = (Int8) myargs[19].floatvalue;
+    if (myargs[OPT_DBLENGTH].floatvalue)
+        options->db_length = (Int8) myargs[OPT_DBLENGTH].floatvalue;
     
-    if (myargs[20].floatvalue)
-        options->searchsp_eff = (Nlm_FloatHi) myargs[20].floatvalue;
+    if (myargs[OPT_SEARCHSP].floatvalue)
+        options->searchsp_eff = (Nlm_FloatHi) myargs[OPT_SEARCHSP].floatvalue;
     
     /* Necessary options for RPS Blast */
     options->do_sum_stats = FALSE;
     options->is_rps_blast = TRUE; 
     
-    rpsbop->number_of_descriptions = myargs[17].intvalue;
-    rpsbop->number_of_alignments = myargs[18].intvalue;
+    rpsbop->number_of_descriptions = myargs[OPT_NUM_DESC].intvalue;
+    rpsbop->number_of_alignments = myargs[OPT_NUM_RESULTS].intvalue;
     
     /* Set default gap params for matrix. */
     BLASTOptionSetGapParams(options, "BLOSUM62", 0, 0);
     
-    if(myargs[4].intvalue == 7) {
+    if(myargs[OPT_FORMAT].intvalue == 7) {
        rpsbop->is_xml_output = TRUE;
     }
-    else if (myargs[4].intvalue == 8)
+    else if (myargs[OPT_FORMAT].intvalue == 8)
        rpsbop->is_tabular = TRUE;
-    else if (myargs[4].intvalue == 9)
+    else if (myargs[OPT_FORMAT].intvalue == 9)
     {
        rpsbop->is_tabular = TRUE;
        rpsbop->is_tabular_comments = TRUE;
     }
-    else if (myargs[4].intvalue == 10 || myargs[4].intvalue == 11)
+    else if (myargs[OPT_FORMAT].intvalue == 10 || 
+             myargs[OPT_FORMAT].intvalue == 11)
     {
        rpsbop->is_asn1_output = TRUE;
-	if (myargs[4].intvalue == 10)
+	if (myargs[OPT_FORMAT].intvalue == 10)
 		rpsbop->asn1_mode = StringSave("w");
 	else
 		rpsbop->asn1_mode = StringSave("wb");
@@ -407,21 +795,23 @@ static RPSBlastOptionsPtr RPSReadBlastOptions(void)
                           &rpsbop->align_options, &rpsbop->print_options);
     
 
-    if (!rpsbop->is_xml_output && !rpsbop->is_asn1_output && (rpsbop->outfp = FileOpen(rpsbop->out_filename, "a")) == NULL) {
+    if (!rpsbop->is_xml_output && 
+        !rpsbop->is_asn1_output && 
+        (rpsbop->outfp = FileOpen(rpsbop->out_filename, "a")) == NULL) {
             ErrPostEx(SEV_FATAL, 1, 0, "rpsblast: Unable to open output "
                       "file %s\n", rpsbop->out_filename);
             return NULL;
     }
 
-    if (myargs[16].strvalue != NULL) {
-        if (myargs[14].intvalue == 0) {
+    if (myargs[OPT_ASNOUT].strvalue != NULL) {
+        if (myargs[OPT_BELIEVE_QUERY].intvalue == 0) {
             ErrPostEx(SEV_FATAL, 1, 0, 
                       "-J option must be TRUE to use this option");
             return NULL;
         } else  {
-            if ((rpsbop->aip = AsnIoOpen (myargs[16].strvalue,"w")) == NULL) {
+            if ((rpsbop->aip = AsnIoOpen (myargs[OPT_ASNOUT].strvalue,"w")) == NULL) {
                 ErrPostEx(SEV_FATAL, 1, 0, "blast: Unable to open output "
-                          "file %s\n", myargs[16].strvalue);
+                          "file %s\n", myargs[OPT_ASNOUT].strvalue);
                 return NULL;
             }
     	}
@@ -435,36 +825,31 @@ static RPSBlastOptionsPtr RPSReadBlastOptions(void)
             }
     }
 
-    options->dropoff_2nd_pass  = (Int4) myargs[6].floatvalue;
-    options->expect_value  = (Nlm_FloatHi) myargs[3].floatvalue;
+    options->dropoff_2nd_pass  = (Int4) myargs[OPT_XDROP_UNGAPPED].floatvalue;
+    options->expect_value  = (Nlm_FloatHi) myargs[OPT_EVALUE].floatvalue;
     options->hitlist_size = MAX(rpsbop->number_of_descriptions, 
                                 rpsbop->number_of_alignments);
     
-    if (myargs[11].intvalue != 0) {
-        if (myargs[7].intvalue == 1) {
-            options->two_pass_method  = FALSE;
-            options->multiple_hits_only  = FALSE;
-        } else {
-            /* all other inputs, including the default 0 use 2-hit method */
-            options->two_pass_method  = FALSE;
-            options->multiple_hits_only  = TRUE;
-        }
-
-        /*  options->decline_align = myargs[??].intvalue; */
-
-        options->gap_x_dropoff = myargs[9].intvalue;
-        options->gap_x_dropoff_final = myargs[15].intvalue;
-        options->gap_trigger = myargs[10].floatvalue;
+    if (myargs[OPT_UNGAPPED_HITS].intvalue == 1) {
+        options->two_pass_method  = FALSE;
+        options->multiple_hits_only  = FALSE;
+    } else {
+        /* all other inputs, including the default 0 use 2-hit method */
+        options->two_pass_method  = FALSE;
+        options->multiple_hits_only  = TRUE;
     }
+
+    options->gap_x_dropoff = myargs[OPT_XDROP_GAPPED].intvalue;
+    options->gap_x_dropoff_final = myargs[OPT_XDROP_GAPPED_FINAL].intvalue;
+    options->gap_trigger = myargs[OPT_GAP_TRIGGER].floatvalue;
     
-    if (StringICmp(myargs[8].strvalue, "T") == 0) {
+    if (StringICmp(myargs[OPT_FILTER].strvalue, "T") == 0) {
         options->filter_string = StringSave("S");
     } else {
-        options->filter_string = StringSave(myargs[8].strvalue);
+        options->filter_string = StringSave(myargs[OPT_FILTER].strvalue);
     }
 
-    /* Only one CPU may be used at this time inside the core engine*/    
-    options->number_of_cpus = (Int2) myargs[12].intvalue;
+    options->number_of_cpus = (Int2) myargs[OPT_NUMTHREADS].intvalue;
     
     options->isPatternSearch = FALSE;
 
@@ -473,10 +858,10 @@ static RPSBlastOptionsPtr RPSReadBlastOptions(void)
     
     /* Kludge: use required_{start,end} to store offsets that will restrict
      * the query sequence. These values are later converted into a SeqLoc */
-    if ((location = myargs[24].strvalue)) {
-        options->required_start = atol(StringTokMT(location, " ,;", 
-                                        &location));
-        options->required_end = atol(location);
+    if ((location = myargs[OPT_RANGE].strvalue)) {
+        options->required_start = 
+           MAX(0, atol(StringTokMT(location, " ,;", &location)) - 1);
+        options->required_end = MAX(0, atol(location) - 1);
         if (options->required_start < 0 || options->required_end < 0) {
             ErrPostEx(SEV_ERROR,0,0, "Invalid range restriction: %ld to %ld",
                     options->required_start, options->required_end);
@@ -573,7 +958,7 @@ static void RPSViewSeqAlign(BioseqPtr query_bsp,
         }
     }
 
-    if (myargs[4].intvalue != 0) {
+    if (myargs[OPT_FORMAT].intvalue != 0) {
         ShowTextAlignFromAnnot(seqannot, 60, rpsbop->outfp, 
                                NULL, NULL, rpsbop->align_options, NULL, 
                                mask, NULL);
@@ -676,19 +1061,22 @@ static SeqEntryPtr LIBCALLBACK RPSGetNextSeqEntry(SeqLocPtr PNTR slp, VoidPtr da
 
     /* Opening file with input sequences */
     if(infp == NULL) {
-        if ((infp = FileOpen(myargs[0].strvalue, "r")) == NULL) {
+        if ((infp = FileOpen(myargs[OPT_QUERY_FILE].strvalue, "r")) == NULL) {
             ErrPostEx(SEV_FATAL, 1, 0, 
                       "rpsblast: Unable to open input file %s\n", 
-                      myargs[0].strvalue);
+                      myargs[OPT_QUERY_FILE].strvalue);
             end_of_data = TRUE;
             NlmMutexUnlock(read_mutex);
         }
     }
     
-    if(myargs[23].intvalue) {
-        sep = FastaToSeqEntryForDb (infp, !myargs[2].intvalue, NULL, myargs[14].intvalue, NULL, NULL, slp);
+    if(myargs[OPT_LCASE].intvalue) {
+        sep = FastaToSeqEntryForDb (infp, !myargs[OPT_PROT_QUERY].intvalue, 
+                                    NULL, myargs[OPT_BELIEVE_QUERY].intvalue, 
+                                    NULL, NULL, slp);
     } else {
-        sep = FastaToSeqEntryEx (infp, !myargs[2].intvalue, NULL, myargs[14].intvalue);
+        sep = FastaToSeqEntryEx (infp, !myargs[OPT_PROT_QUERY].intvalue, 
+                                 NULL, myargs[OPT_BELIEVE_QUERY].intvalue);
     }
     
     if(sep == NULL) {            /* Probably last FASTA entry */
@@ -735,19 +1123,40 @@ static Boolean LIBCALLBACK RPSResultsCallback(BioseqPtr query_bsp,
     return TRUE;
 }
 
-Int2 Main(void)
+Int2 Main_Old(void)
 {
     FILE *fd;
-    Int4 i;
     RPSBlastOptionsPtr rpsbop;
+
+    /* Truncate output file */
+    if((fd = FileOpen(myargs[OPT_OUTPUT_FILE].strvalue, "w")) != NULL)
+        FileClose(fd);
+    
+    if((rpsbop = RPSReadBlastOptions()) == NULL) {
+        ErrPostEx(SEV_FATAL, 1, 0, "Unable to create RPS Blast options");
+        return 1;
+    }
+
+    if (!rpsbop->is_xml_output && !rpsbop->is_tabular && !rpsbop->is_asn1_output)
+	    BlastPrintVersionInfo("RPS-BLAST", rpsbop->html, rpsbop->outfp);
+    
+    RPSBlastSearchMT(rpsbop, RPSGetNextSeqEntry, NULL, 
+                     RPSResultsCallback, NULL);
+    RPSBlastOptionsFree(rpsbop);
+}
+
+/*-------------------------- TOP LEVEL DRIVER -------------------------*/
+
+Int2 Main(void)
+{
     Char buf[256] = { '\0' };
 
     StringCpy(buf, "rpsblast ");
     StringNCat(buf, BlastGetVersionNumber(), sizeof(buf)-StringLen(buf)-1);
-    if (!GetArgs(buf, NUMARG, myargs))
+    if (!GetArgs(buf, NUM_ARGS, myargs))
         return 1;
     
-    if ( !ErrSetLog (myargs[22].strvalue) ) { /* Logfile */
+    if ( !ErrSetLog (myargs[OPT_LOGFILE].strvalue) ) { /* Logfile */
         ErrShow();
         return 1;
     } else {
@@ -759,22 +1168,8 @@ Int2 Main(void)
     if (!SeqEntryLoad())
         return 1;
         
-    /* Truncate output file */
-    if((fd = FileOpen(myargs[5].strvalue, "w")) != NULL)
-        FileClose(fd);
-    
-    if((rpsbop = RPSReadBlastOptions()) == NULL) {
-        ErrPostEx(SEV_FATAL, 1, 0, "Unable to create RPS Blast options");
-        return 1;
-    }
-
-    if (!rpsbop->is_xml_output && !rpsbop->is_tabular && !rpsbop->is_asn1_output)
-	    BlastPrintVersionInfo("RPS-BLAST", rpsbop->html, rpsbop->outfp);
-    
-    /* VoidPtr bsp_data = NULL, print_data = NULL; */
-    RPSBlastSearchMT(rpsbop, RPSGetNextSeqEntry, NULL, 
-                     RPSResultsCallback, NULL);
-    RPSBlastOptionsFree(rpsbop);
-    
-    return 0;
+    if (myargs[OPT_FORCE_OLD_ENGINE].intvalue == TRUE)
+        return Main_Old();
+    else
+        return Main_New();
 }
