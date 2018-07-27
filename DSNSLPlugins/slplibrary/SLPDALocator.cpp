@@ -461,10 +461,10 @@ void StartDALocator(CFRunLoopTimerRef timer, void *info)
 	if ( !gThreadAttrsSet )
 	{
 		gThreadAttrsSet = true;
-		::pthread_attr_init( &_DefaultAttrs );
-		::pthread_key_create(&_NameKey, NULL);
-		::pthread_key_create(&_ObjectKey, NULL);
-		::pthread_attr_setdetachstate( &_DefaultAttrs, PTHREAD_CREATE_DETACHED);
+	::pthread_attr_init( &_DefaultAttrs );
+	::pthread_key_create(&_NameKey, NULL);
+	::pthread_key_create(&_ObjectKey, NULL);
+	::pthread_attr_setdetachstate( &_DefaultAttrs, PTHREAD_CREATE_DETACHED);
 	}
 	
 	// Currently detaching so threads don't stick around.
