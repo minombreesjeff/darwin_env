@@ -39,6 +39,8 @@
 #    define HOSTTYPE "i386"
 #  elif defined(__arm__)
 #    define HOSTTYPE "arm"
+#  elif defined(__arm64__)
+#    define HOSTTYPE "arm64"
 #  else
 #    define HOSTTYPE CONF_HOSTTYPE
 #  endif
