@@ -3,12 +3,12 @@
 *               This software is part of the ast package               *
 *          Copyright (c) 1985-2011 AT&T Intellectual Property          *
 *                      and is licensed under the                       *
-*                  Common Public License, Version 1.0                  *
+*                 Eclipse Public License, Version 1.0                  *
 *                    by AT&T Intellectual Property                     *
 *                                                                      *
 *                A copy of the License is available at                 *
-*            http://www.opensource.org/licenses/cpl1.0.txt             *
-*         (with md5 checksum 059e8cd6165cb4c31e351f2b69388fd9)         *
+*          http://www.eclipse.org/org/documents/epl-v10.html           *
+*         (with md5 checksum b35adb5213ca9657e911e9befb180842)         *
 *                                                                      *
 *              Information and Software Systems Research               *
 *                            AT&T Research                             *
@@ -19,57 +19,42 @@
 *                   Phong Vo <kpv@research.att.com>                    *
 *                                                                      *
 ***********************************************************************/
-#include	"dthdr.h"
+/*
+ * backwards binary compatibility
+ */
 
-/*	Flatten a dictionary into a linked list.
-**	This may be used when many traversals are likely.
-**
-**	Written by Kiem-Phong Vo (5/25/96).
-*/
+#include <cdt.h>
 
-#if __STD_C
-Dtlink_t* dtflatten(Dt_t* dt)
-#else
-Dtlink_t* dtflatten(dt)
-Dt_t*	dt;
+#if defined(__EXPORT__)
+#define extern	__EXPORT__
 #endif
+
+#undef dtflatten
+extern Dtlink_t* dtflatten(Dt_t* d)
 {
-	reg Dtlink_t	*t, *r, *list, *last, **s, **ends;
+	return (Dtlink_t*)(*(_DT(d)->searchf))((d),(Void_t*)(0),DT_FLATTEN);
+}
 
-	/* already flattened */
-	if(dt->data->type&DT_FLATTEN )
-		return dt->data->here;
+#undef dtextract
+extern Dtlink_t* dtextract(Dt_t* d)
+{
+	return (Dtlink_t*)(*(_DT(d)->searchf))((d),(Void_t*)(0),DT_EXTRACT);
+}
 
-	list = last = NIL(Dtlink_t*);
-	if(dt->data->type&(DT_SET|DT_BAG))
-	{	for(ends = (s = dt->data->htab) + dt->data->ntab; s < ends; ++s)
-		{	if((t = *s) )
-			{	if(last)
-					last->right = t;
-				else	list = last = t;
-				while(last->right)
-					last = last->right;
-				*s = last;
-			}
-		}
-	}
-	else if(dt->data->type&(DT_LIST|DT_STACK|DT_QUEUE) )
-		list = dt->data->head;
-	else if((r = dt->data->here) ) /*if(dt->data->type&(DT_OSET|DT_OBAG))*/
-	{	while((t = r->left) )
-			RROTATE(r,t);
-		for(list = last = r, r = r->right; r; last = r, r = r->right)
-		{	if((t = r->left) )
-			{	do	RROTATE(r,t);
-				while((t = r->left) );
+#undef dtrestore
+extern Dtlink_t* dtrestore(Dt_t* d, Void_t* l)
+{
+	return (Dtlink_t*)(*(_DT(d)->searchf))((d),(l),DT_RESTORE);
+}
 
-				last->right = r;
-			}
-		}
-	}
+#undef dtsize
+extern ssize_t dtsize(Dt_t* d)
+{
+	return (ssize_t)(*(_DT(d)->searchf))((d),(Void_t*)(0),DT_STAT);
+}
 
-	dt->data->here = list;
-	dt->data->type |= DT_FLATTEN;
-
-	return list;
+#undef dtstat
+extern ssize_t dtstat(Dt_t* d)
+{
+	return (ssize_t)(*(_DT(d)->searchf))((d),(Void_t*)(0),DT_STAT);
 }
