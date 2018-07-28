@@ -6,9 +6,10 @@
 Project               = bash
 UserType              = Administration
 ToolType              = Commands
-Extra_CC_Flags        = -no-cpp-precomp
+Extra_CC_Flags        = -no-cpp-precomp -mdynamic-no-pic
 Extra_Configure_Flags = --bindir=/bin --mandir=/usr/share
 Extra_Install_Flags   = bindir=$(DSTROOT)/bin
+Extra_LD_Flags        = -Wl,-search_paths_first
 GnuAfterInstall       = after-install
 
 # It's a GNU Source project
