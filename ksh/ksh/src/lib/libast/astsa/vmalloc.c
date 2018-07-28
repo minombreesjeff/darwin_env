@@ -1,10 +1,10 @@
 /***********************************************************************
 *                                                                      *
 *               This software is part of the ast package               *
-*           Copyright (c) 1985-2007 AT&T Knowledge Ventures            *
+*          Copyright (c) 1985-2007 AT&T Intellectual Property          *
 *                      and is licensed under the                       *
 *                  Common Public License, Version 1.0                  *
-*                      by AT&T Knowledge Ventures                      *
+*                    by AT&T Intellectual Property                     *
 *                                                                      *
 *                A copy of the License is available at                 *
 *            http://www.opensource.org/licenses/cpl1.0.txt             *
@@ -20,34 +20,83 @@
 *                                                                      *
 ***********************************************************************/
 #pragma prototyped
-
 /*
- * _PACKAGE_astsa astwinsize()
+ * standalone mini vmalloc implementation
+ * no resize, no free, no disciplines, no methods
  */
 
 #include <ast.h>
+#include <vmalloc.h>
 
-#define MINLINES	8
-#define MINCOLUMNS	20
+Vmalloc_t*	Vmregion;
 
-void
-astwinsize(int fd, int* lines, int* columns)
+Vmalloc_t*
+_vm_open(void)
 {
-	char*		s;
-	int		n;
+	Vmalloc_t*	vp;
 
-	if (lines)
+	if (vp = newof(0, Vmalloc_t, 1, 0))
 	{
-		n = (s = getenv("LINES")) ? atoi(s) : 0;
-		if (n < MINLINES)
-			n = MINLINES;
-		*lines = 8;
+		vp->current = &vp->base;
+		vp->data = vp->current->data;
+		vp->size = sizeof(vp->current->data);
 	}
-	if (columns)
+	return vp;
+}
+
+int
+_vm_close(register Vmalloc_t* vp)
+{
+	register Vmchunk_t*	cp;
+	register Vmchunk_t*	np;
+
+	if (!vp)
+		return -1;
+	np = vp->base.next;
+	while (cp = np)
 	{
-		n = (s = getenv("COLUMNS")) ? atoi(s) : 0;
-		if (n < MINCOLUMNS)
-			n = MINCOLUMNS;
-		*columns = 8;
+		np = cp->next;
+		free(cp);
 	}
+	free(vp);
+	return 0;
+}
+
+void*
+_vm_resize(register Vmalloc_t* vp, void* o, unsigned long size)
+{
+	char*		p;
+	unsigned long	n;
+	unsigned long	z;
+
+	z = vp->last;
+	vp->last = size;
+	if (o && size < z)
+		return o;
+	if ((o ? (size - z) : size) > vp->size)
+	{
+		n = (size > sizeof(vp->current->data)) ? (size - sizeof(vp->current->data)) : 0;
+		if (!(vp->current->next = newof(0, Vmchunk_t, 1, n)))
+			return 0;
+		vp->current = vp->current->next;
+		vp->data = vp->current->data;
+		vp->size = n ? 0 : sizeof(vp->current->data);
+		if (o)
+		{
+			memcpy(vp->data, o, z);
+			o = (void*)vp->data;
+		}
+	}
+	else if (o)
+		size -= z;
+	p = vp->data;
+	size = roundof(size, VM_ALIGN);
+	if (size >= vp->size)
+		vp->size = 0;
+	else
+	{
+		vp->size -= size;
+		vp->data += size;
+	}
+	return p;
 }
