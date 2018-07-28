@@ -1949,7 +1949,8 @@ if (job == NO_JOB)
 
 	      /* If the current job was stopped or killed by a signal, and
 		 the user has requested it, get a possibly new window size */
-	      if (check_window_size && job == current_job)
+	      if (check_window_size && 
+			(job == current_job || IS_FOREGROUND (job)))
 		get_new_window_size (0);
 	    }
 	  else
