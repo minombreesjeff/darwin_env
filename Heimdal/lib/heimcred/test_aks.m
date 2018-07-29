@@ -1,6 +1,9 @@
 /*-
- * Copyright (c) 2005 Doug Rabson
+ * Copyright (c) 2016 Kungliga Tekniska Högskolan
+ * (Royal Institute of Technology, Stockholm, Sweden).
  * All rights reserved.
+ *
+ * Portions Copyright (c) 2016 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -22,35 +25,33 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- *	$FreeBSD: src/lib/libgssapi/gss_unwrap.c,v 1.1 2005/12/29 14:40:20 dfr Exp $
  */
 
-#include "mech_locl.h"
+#import <TargetConditionals.h>
 
-GSSAPI_LIB_FUNCTION OM_uint32 GSSAPI_LIB_CALL
-gss_unwrap(OM_uint32 *__nonnull minor_status,
-    __nonnull const gss_ctx_id_t context_handle,
-    __nonnull const gss_buffer_t input_message_buffer,
-    __nonnull gss_buffer_t output_message_buffer,
-    int * __nullable conf_state,
-    gss_qop_t *__nullable qop_state)
+#import <Foundation/Foundation.h>
+#import <err.h>
+
+#import "heimcred.h"
+#import "common.h"
+
+
+int
+main(int argc, char **argv)
 {
-	struct _gss_context *ctx = (struct _gss_context *) context_handle;
-	gssapi_mech_interface m;
+    NSData *clear = [NSData dataWithBytes:"0123456789abcdef0123456789abcde" length:16 + 15];
+    NSData *enc = NULL, *dec = NULL;
 
-	if (conf_state)
-	    *conf_state = 0;
-	if (qop_state)
-	    *qop_state = 0;
+    enc = ksEncryptData(clear);
+    if (!enc)
+	errx(1, "ksEncryptData");
 
-	if (ctx == NULL) {
-	    *minor_status = 0;
-	    return GSS_S_NO_CONTEXT;
-	}
-	m = ctx->gc_mech;
+    dec = ksDecryptData(enc);
+    if (!dec)
+	errx(1, "ksDecryptData");
 
-	return (m->gm_unwrap(minor_status, ctx->gc_ctx,
-		    input_message_buffer, output_message_buffer,
-		    conf_state, qop_state));
+    if (![dec isEqualToData:clear])
+	errx(1, "decrypted not same");
+
+    return 0;
 }
