@@ -1,5 +1,1 @@
-vpath config.c ../man
-
-CFILES += config.c
-
 include $(CoreOSMakefiles)/ProjectBuilder/Makefile.Preamble.Common

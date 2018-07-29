@@ -7,29 +7,33 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = whatis
+NAME = manpath
 
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-CFILES = whatis.c
+HFILES = manpath.h
 
-OTHERSRCS = Makefile Makefile.preamble Makefile.postamble whatis.1
+CFILES = manpath.c
+
+OTHERSRCS = Makefile Makefile.preamble Makefile.postamble manpath.1 manpath.config
+
+NEXTSTEP_PB_CFLAGS += -I../lib -DMACHINE=\"powerpc\" -DSTDC_HEADERS -DPOSIX
+NEXTSTEP_PB_CFLAGS += -DHAS_TROFF -DHAVE_LIBZ=1 -DMAIN
 
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC
 MAKEFILE = tool.make
 NEXTSTEP_INSTALLDIR = /usr/bin
-LIBS = 
+LIBS = -L../lib -lman -lz
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 
 
-HEADER_PATHS = -I../man
 
 
-NEXTSTEP_BUILD_OUTPUT_DIR = /tmp/doc_cmds/Build
+NEXTSTEP_BUILD_OUTPUT_DIR = /tmp/$(NAME)/Build
 
 NEXTSTEP_OBJCPLUS_COMPILER = /usr/bin/cc
 WINDOWS_OBJCPLUS_COMPILER = $(DEVDIR)/gcc
