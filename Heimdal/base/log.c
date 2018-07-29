@@ -1,7 +1,9 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 2011 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).
  * All rights reserved.
+ *
+ * Portions Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,73 +33,25 @@
  * SUCH DAMAGE.
  */
 
-/* $Id$ */
+#include "baselocl.h"
+#include <syslog.h>
 
-#ifndef __KPASSWD_LOCL_H__
-#define __KPASSWD_LOCL_H__
-
-#include <config.h>
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#ifdef HAVE_SYS_TYPES_H
-#include <sys/types.h>
-#endif
-#ifdef HAVE_FCNTL_H
-#include <fcntl.h>
-#endif
-#ifdef HAVE_SYS_UIO_H
-#include <sys/uio.h>
-#endif
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
-#ifdef HAVE_PWD_H
-#include <pwd.h>
-#endif
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>
-#endif
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
-#ifdef HAVE_SYS_SOCKET_H
-#include <sys/socket.h>
-#endif
-#ifdef HAVE_NETINET_IN_H
-#include <netinet/in.h>
-#endif
-#ifdef HAVE_NETINET_IN6_H
-#include <netinet/in6.h>
-#endif
-#ifdef HAVE_NETINET6_IN6_H
-#include <netinet6/in6.h>
+#ifdef __APPLE__
+#include <pthread.h>
+#define IS_MAIN_THREAD() (pthread_is_threaded_np() && pthread_main_np())
+#else
+#define IS_MAIN_THREAD() (0)
 #endif
 
-#ifdef HAVE_ARPA_INET_H
-#include <arpa/inet.h>
-#endif
-#ifdef HAVE_NETDB_H
-#include <netdb.h>
-#endif
-#ifdef HAVE_ERRNO_H
-#include <errno.h>
-#endif
-#ifdef HAVE_DLFCN_H
-#include <dlfcn.h>
-#endif
-#ifdef HAVE_UTIL_H
-#include <util.h>
-#endif
-#ifdef HAVE_LIBUTIL_H
-#include <libutil.h>
-#endif
-#include <err.h>
-#include <roken.h>
-#include <getarg.h>
-#include <krb5.h>
-#include <heimbase.h>
-#include "crypto-headers.h" /* for des_read_pw_string */
+static void
+warn_blocking(void *ptr)
+{
+    syslog(LOG_NOTICE, "%s is called on main thread, its a blocking api", (const char *)ptr);
+}
 
-#endif /* __KPASSWD_LOCL_H__ */
+void
+heim_warn_blocking(const char *apiname, heim_base_once_t *once)
+{
+    if (IS_MAIN_THREAD())
+	heim_base_once_f(once, (void *)apiname, warn_blocking);
+}

@@ -1,7 +1,9 @@
 /*
- * Copyright (c) 1997 - 2001 Kungliga Tekniska Högskolan
+ * Copyright (c) 2011 Kungliga Tekniska Högskolan
  * (Royal Institute of Technology, Stockholm, Sweden).
  * All rights reserved.
+ *
+ * Portions Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,73 +33,42 @@
  * SUCH DAMAGE.
  */
 
-/* $Id$ */
+#ifndef __GSSAPI_PLUGIN_H
+#define __GSSAPI_PLUGIN_H 1
 
-#ifndef __KPASSWD_LOCL_H__
-#define __KPASSWD_LOCL_H__
+#define GSSAPI_PLUGIN "gssapi_plugin"
 
-#include <config.h>
+typedef gss_cred_id_t
+(*gssapi_plugin_isc_replace_cred)(gss_name_t target, gss_OID mech, gss_cred_id_t original_cred, OM_uint32 flags);
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#ifdef HAVE_SYS_TYPES_H
-#include <sys/types.h>
-#endif
-#ifdef HAVE_FCNTL_H
-#include <fcntl.h>
-#endif
-#ifdef HAVE_SYS_UIO_H
-#include <sys/uio.h>
-#endif
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
-#ifdef HAVE_PWD_H
-#include <pwd.h>
-#endif
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>
-#endif
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
-#ifdef HAVE_SYS_SOCKET_H
-#include <sys/socket.h>
-#endif
-#ifdef HAVE_NETINET_IN_H
-#include <netinet/in.h>
-#endif
-#ifdef HAVE_NETINET_IN6_H
-#include <netinet/in6.h>
-#endif
-#ifdef HAVE_NETINET6_IN6_H
-#include <netinet6/in6.h>
+/*
+ * Flags passed in the flags argument to ->isc_replace_cred()
+ */
+#define GPT_IRC_F_SYSTEM_ONLY	1 /* system resource only, home directory access is no allowed */
+
+/*
+ * Flags defined by the plugin in gssapi_plugin_ftable
+ */
+#define GPT_SYSTEM_ONLY		1	/* plugin support GPT_IRC_F_SYSTEM_ONLY and friends */
+
+/*
+ * Plugin for GSSAPI 
+ */
+
+typedef struct gssapi_plugin_ftable {
+    int			minor_version; /* support protocol: GSSAPI_PLUGIN_VERSION_N */
+    krb5_error_code	(*init)(krb5_context, void **);
+    void		(*fini)(void *);
+    const char		*name;
+    unsigned long	flags;
+    gssapi_plugin_isc_replace_cred isc_replace_cred;
+} gssapi_plugin_ftable;
+
+#define GSSAPI_PLUGIN_VERSION_1 1
+
+/* history of version changes:
+ * version 0 (no supported) was missing flags argument to ->isc_replace_cred()
+ */
+
 #endif
 
-#ifdef HAVE_ARPA_INET_H
-#include <arpa/inet.h>
-#endif
-#ifdef HAVE_NETDB_H
-#include <netdb.h>
-#endif
-#ifdef HAVE_ERRNO_H
-#include <errno.h>
-#endif
-#ifdef HAVE_DLFCN_H
-#include <dlfcn.h>
-#endif
-#ifdef HAVE_UTIL_H
-#include <util.h>
-#endif
-#ifdef HAVE_LIBUTIL_H
-#include <libutil.h>
-#endif
-#include <err.h>
-#include <roken.h>
-#include <getarg.h>
-#include <krb5.h>
-#include <heimbase.h>
-#include "crypto-headers.h" /* for des_read_pw_string */
-
-#endif /* __KPASSWD_LOCL_H__ */
