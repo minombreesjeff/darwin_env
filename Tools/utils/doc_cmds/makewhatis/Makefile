@@ -12,20 +12,18 @@ NAME = makewhatis
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-CFILES = makewhatis.c
-
-OTHERLINKED = makewhatis.local
+OTHERLINKED = makewhatis.local makewhatis.pl
 
 OTHERSRCS = Makefile Makefile.preamble Makefile.postamble makewhatis.8 \
             makewhatis.local.8
 
-NEXTSTEP_PB_CFLAGS += -D__FBSDID=__RCSID -DMACHINE=\"powerpc\"
+OTHERLINKEDOFILES = makewhatis.o makewhatis.o
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC
 MAKEFILE = tool.make
 NEXTSTEP_INSTALLDIR = /usr/libexec
-LIBS = -lz
+LIBS = 
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 

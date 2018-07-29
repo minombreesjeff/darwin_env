@@ -5,7 +5,7 @@
 #
 libdir=			/etc
 bindir=			/usr/bin
-pager=			less -Rse
+pager=			less -se
 manpath_config_file=	/etc/manpath.config
 troff=			/usr/bin/groff -S -mandoc
 # -Tascii or localized encoding added automatically

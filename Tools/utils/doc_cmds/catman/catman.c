@@ -216,8 +216,11 @@ catman(path, section)
 					 * manpage is out of date,
 					 * reformat
 					 */
-					sprintf(sysbuf, "nroff -mandoc %s > %s",
-					    manpage, catpage);
+					if( strstr(manpage, ".gz") != NULL ) {
+						sprintf(sysbuf, "zcat %s | nroff -mandoc > %s", manpage, catpage);
+					} else {
+						sprintf(sysbuf, "nroff -mandoc %s > %s", manpage, catpage);
+					}
 					if (f_noprint == 0)
 						printf("%s\n", sysbuf);
 					if (f_noaction == 0)

@@ -67,7 +67,7 @@ Specify which pager to use.
 By default,
 .Nm
 uses
-.Nm less -Rse .
+.Nm less -se .
 This option overrides the
 .Ev PAGER
 environment variable.
@@ -162,19 +162,8 @@ If
 .Ev PAGER
 is set, its value is used as the name of the program to use to display
 the man page.  By default,
-.Nm less -Rse
+.Nm less -se
 is used.
-The
-.Nm -R
-flag to
-.Nm less
-is critical to the correct display of the output, so the
-.Nm -R
-flag is appended to the value specified by
-.Ev PAGER
-if it looks like
-.Nm less
-is being used.
 .El
 .Sh EXAMPLES
 .Pp
