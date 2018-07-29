@@ -6,14 +6,14 @@
 //  Copyright (c) 2013 Apple, Inc. All rights reserved.
 //
 
-#include <SenTestingKit/SenTestingKit.h>
+#import "FakeXCTest.h"
 #include <GSS/GSS.h>
 
-@interface SenTestCase (GSS)
+@interface XCTestCase (GSS)
 
-- (void)STCDestroyCredential:(gss_OID)mech;
-- (gss_cred_id_t)STCAcquireCredential:(NSString *)name withPassword:(NSString *)password mech:(gss_OID)mech;
+- (void)XTCDestroyCredential:(gss_OID)mech;
+- (gss_cred_id_t)XTCAcquireCredential:(NSString *)name withOptions:(NSDictionary *)options mech:(gss_OID)mech;
 - (BOOL)STCAuthenticate:(gss_cred_id_t)cred nameType:(gss_OID)nameType toServer:(NSString *)serverName;
-- (void)STCOutput:(NSString *)output, ... NS_FORMAT_FUNCTION(1,2);
+- (void)XCTOutput:(NSString *)output, ... NS_FORMAT_FUNCTION(1,2);
 
 @end

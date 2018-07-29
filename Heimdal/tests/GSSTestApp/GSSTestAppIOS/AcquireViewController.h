@@ -1,14 +1,11 @@
 //
-//  ManualTests.h
-//  GSSTestApp
-//
-//  Created by Love Hörnquist Åstrand on 2013-07-01.
 //  Copyright (c) 2013 Apple, Inc. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>
+#import "CredentialTableController.h"
 
-@interface ManualTests : UIViewController
+@interface AcquireViewController : UIViewController <GSSCredentialsChangeNotification>
 
 @property (weak) IBOutlet UITextField *username;
 @property (weak) IBOutlet UISwitch *doPassword;
@@ -18,5 +15,8 @@
 @property (weak) IBOutlet UILabel *statusLabel;
 @property (weak) IBOutlet UITextField *kdchostname;
 
+
+@property (weak) IBOutlet UITableView *credentialsTableView;
+@property (assign) CredentialTableController *credentialsTableController;
 
 @end

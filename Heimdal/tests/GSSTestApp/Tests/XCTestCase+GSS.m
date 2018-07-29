@@ -6,37 +6,35 @@
 //  Copyright (c) 2013 Apple, Inc. All rights reserved.
 //
 
-#import "SenTestCase+GSS.h"
-#import "TestHarness.h"
+#import "XCTestCase+GSS.h"
 
-@implementation SenTestCase (GSS)
+@implementation XCTestCase (GSS)
 
-- (void)STCDestroyCredential:(gss_OID)mech {
-    
-    gss_iter_creds(NULL, 0, mech, ^(gss_OID mechanism, gss_cred_id_t cred) {
+- (void)XTCDestroyCredential:(gss_OID)mech {
+    OM_uint32 junk;
+
+    gss_iter_creds(&junk, 0, mech, ^(gss_OID mechanism, gss_cred_id_t cred) {
         OM_uint32 min_stat;
         gss_destroy_cred(&min_stat, &cred);
     });
 }
 
-- (gss_cred_id_t)STCAcquireCredential:(NSString *)name withPassword:(NSString *)password mech:(gss_OID)mech {
+- (gss_cred_id_t)XTCAcquireCredential:(NSString *)name withOptions:(NSDictionary *)options mech:(gss_OID)mech {
     CFErrorRef error = NULL;
     gss_cred_id_t cred = NULL;
     OM_uint32 maj_stat;
 
     gss_name_t gname = GSSCreateName((__bridge CFTypeRef)name, GSS_C_NT_USER_NAME, &error);
     if (gname == NULL) {
-        [self STCOutput:@"CreateName failed with: %@", error];
+        [self XCTOutput:@"CreateName failed with: %@", error];
         if (error) CFRelease(error);
         return NULL;
     }
     
-    NSDictionary *options = @{ (id)kGSSICPassword : password } ;
-    
     maj_stat = gss_aapl_initial_cred(gname, mech, (__bridge CFDictionaryRef)options, &cred, &error);
     CFRelease(gname);
     if (maj_stat) {
-        [self STCOutput:@"gss_aapl_initial_cred failed with: %@", error];
+        [self XCTOutput:@"gss_aapl_initial_cred failed with: %@", error];
         if (error) CFRelease(error);
         return NULL;
     }
@@ -56,21 +54,21 @@
 	BOOL res;
     
     server_name = GSSCreateName((__bridge CFStringRef)serverName, nameType, &error);
-    STAssertTrue(server_name, @"failed to import %@", serverName);
+    XCTAssertTrue(server_name, @"failed to import %@", serverName);
 
     maj_stat = gss_init_sec_context(&min_stat, cred,
                                     &ctx, server_name, GSS_KRB5_MECHANISM,
                                     GSS_C_REPLAY_FLAG|GSS_C_INTEG_FLAG, 0, GSS_C_NO_CHANNEL_BINDINGS,
                                     NULL, NULL, &buffer, NULL, NULL);
-    STAssertTrue(maj_stat == GSS_S_COMPLETE, @"failed init_sec_context to %@: %d", serverName, (int)min_stat);
+    XCTAssertTrue(maj_stat == GSS_S_COMPLETE, @"failed init_sec_context to %@: %d", serverName, (int)min_stat);
     if (maj_stat) {
         CFErrorRef error = GSSCreateError(GSS_C_NO_OID, maj_stat, min_stat);
-        [self STCOutput:@"FAIL init_sec_context maj_stat: %@", error];
+        [self XCTOutput:@"FAIL init_sec_context maj_stat: %@", error];
         if (error)
             CFRelease(error);
 		res = FALSE;
     } else {
-        [self STCOutput:@"have a buffer of length: %d, success", (int)buffer.length];
+        [self XCTOutput:@"have a buffer of length: %d, success", (int)buffer.length];
 		res = TRUE;
 	}
     
@@ -81,13 +79,23 @@
 	return res;
 }
 
-- (void)STCOutput:(NSString *)format, ...
+static void
+printme(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    XFakeXCTestCallback(format, ap);
+    va_end(ap);
+}
+
+- (void)XCTOutput:(NSString *)format, ...
 {
     va_list va;
     va_start(va, format);
     
     NSString *string = [[NSString alloc] initWithFormat:format arguments:va];
-    [TestHarness TestHarnessOutput:string];
+
+    printme("%s\n", [string UTF8String]);
 }
 
 

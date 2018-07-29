@@ -1,22 +1,18 @@
 //
-//  ManualTests.m
-//  GSSTestApp
-//
-//  Created by Love Hörnquist Åstrand on 2013-07-01.
 //  Copyright (c) 2013 Apple, Inc. All rights reserved.
 //
 
-#import "ManualTests.h"
+#import "AcquireViewController.h"
 #import <GSS/GSS.h>
 #import <Security/SecCertificatePriv.h>
 
-@interface ManualTests () <UIPickerViewDataSource, UIPickerViewDelegate, UITextFieldDelegate>
+@interface AcquireViewController () <UIPickerViewDataSource, UIPickerViewDelegate, UITextFieldDelegate>
 @property (retain) NSArray *identities;
 @property (assign) NSInteger selectedRow;
 @property (retain) UIActionSheet *actionSheet;
 @end
 
-@implementation ManualTests
+@implementation AcquireViewController
 
 - (NSInteger)numberOfComponentsInPickerView:(UIPickerView *)pickerView {
     return 1;
@@ -49,10 +45,22 @@
 
 - (void)viewDidLoad {
     self.selectedRow = -1;
+
+    self.credentialsTableController = [CredentialTableController getGlobalController];
+    self.credentialsTableView.delegate = self.credentialsTableController;
+    self.credentialsTableView.dataSource = self.credentialsTableController;
+    self.credentialsTableView.allowsMultipleSelectionDuringEditing = NO;
+    [super viewDidLoad];
+}
+
+- (void)GSSCredentialChangeNotifification {
+    [self.credentialsTableView reloadData];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
-    
+
+    [self.credentialsTableController addNotification:self];
+
     static CFDataRef smartcardLogon;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -133,6 +141,12 @@
     tap.numberOfTapsRequired = 1;
     [self.certificateLabel addGestureRecognizer:tap];
 
+    [super viewDidAppear:animated];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [self.credentialsTableController removeNotification:self];
+    [super viewDidDisappear:animated];
 }
 
 - (IBAction)doAcquire:(id)sender {
