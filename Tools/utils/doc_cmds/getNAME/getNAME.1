@@ -1,4 +1,4 @@
-.\" Copyright (c) April 1996 Wolfram Schneider <wosch@FreeBSD.org>. Berlin.
+.\" Copyright (c) July 1996 Wolfram Schneider <wosch@FreeBSD.org>. Berlin.
 .\" All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
@@ -22,48 +22,44 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.\" $FreeBSD: src/usr.bin/makewhatis/makewhatis.local.8,v 1.15 2004/07/02 22:22:28 ru Exp $
-.Dd April 26, 1996
-.Dt MAKEWHATIS.LOCAL 8
+.\" $FreeBSD: src/libexec/getNAME/getNAME.1,v 1.12 2001/07/15 07:53:38 dd Exp $
+.Dd July 8, 1996
+.Dt GETNAME 1
 .Os
 .Sh NAME
-.Nm makewhatis.local
-.Nd start makewhatis for local file systems
+.Nm getNAME
+.Nd get name sections from manual pages
 .Sh SYNOPSIS
-.Nm /usr/libexec/makewhatis.local
-.Op options
-.Ar directories ...
+.Nm /usr/libexec/getNAME
+.Op Fl itw
+.Ar
 .Sh DESCRIPTION
 The
 .Nm
-utility starts
-.Xr makewhatis 8
-only for file systems physically mounted on the system
-where the
+utility
+get name sections from manual pages.
+Without options
 .Nm
-is being executed.
-Running makewhatis
-by
-.Pa periodic weekly
-for rw nfs-mounted /usr may kill
-your NFS server -- all NFS clients start makewhatis at the same time!
-So use this wrapper for
-.Xr cron 8
-instead of calling makewhatis directly.
-.Sh FILES
-.Bl -tag -width /etc/periodic/weekly/320.whatis.XXX -compact
-.It Pa /etc/periodic/weekly/320.whatis
-run
-.Nm
-every week
+building
+.Xr apropos 1
+database entries.
+.Pp
+The options are as follows:
+.Bl -tag -width indent
+.It Fl i
+For building intro entries.
+.It Fl t
+For building toc.
+.It Fl w
+Print type of manual page (OLD, NEW, UNKNOWN).
 .El
+.\" .Sh BUGS
 .Sh SEE ALSO
-.Xr find 1 ,
-.Xr makewhatis 8 ,
-.Xr cron 8 ,
-.Xr periodic 8
+.Xr apropos 1 ,
+.Xr makewhatis 1 ,
+.Xr man 1
 .Sh HISTORY
-The
+The manual page for
 .Nm
-utility appeared in
+command appeared in
 .Fx 2.2 .
