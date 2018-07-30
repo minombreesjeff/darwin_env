@@ -2,12 +2,15 @@
 #
 # 58_postgres_server_setup.rb
 #
+# Author:: Apple Inc.
+# Documentation:: Apple Inc.
 # Copyright (c) 2012-2013 Apple Inc. All Rights Reserved.
 #
 # IMPORTANT NOTE: This file is licensed only for use on Apple-branded
 # computers and is subject to the terms and conditions of the Apple Software
 # License Agreement accompanying the package this file is a part of.
 # You may not port this file to another platform without Apple's written consent.
+# License:: All rights reserved.
 #
 # PromotionExtra for PostgreSQL.
 # This handles all promotion cases for the both the customer and server-services instances of postgres.
@@ -39,6 +42,7 @@ $dropuser = "#{$newPostgresBinariesDir}/dropuser"
 $dropdb = "#{$newPostgresBinariesDir}/dropdb"
 $pg_dump = "#{$newPostgresBinariesDir}/pg_dump"
 $serveradmin = "/Applications/Server.app/Contents/ServerRoot/usr/sbin/serveradmin"
+$serverctl = "/Applications/Server.app/Contents/ServerRoot/usr/sbin/serverctl"
 
 #globals
 $pgExtrasDir = "/Applications/Server.app/Contents/ServerRoot/System/Library/ServerSetup/CommonExtras/PostgreSQLExtras"
@@ -88,7 +92,25 @@ def runCommandOrExit(command)
 	ret = `#{command}`
 	if $? != 0
 		$logger.warn("command failed: #$?\nCommand: #{command}\nOutput: #{ret}")
-		exitWithError("Wiki, Profile Manager, and other services will not be available.")
+		exitWithError("Wiki and Profile Manager will not be available.")
+	end
+end
+
+def startNewPostgres
+	runCommandOrExit("#{$serverctl} enable service=com.apple.postgres");
+	isRunning = 0
+	30.times do
+		statusDict = dictionaryFromServerAdmin("fullstatus postgres_server")
+		if statusDict["postgresIsResponding"]
+			$logger.info("Confirmed that postgres is responding after upgrade/migration")
+			isRunning = 1
+            break
+		end
+        sleep 1
+	end
+	if (! isRunning)
+		$logger.warn("Postgres is not responding after upgrade/migration: #{statusDict.inspect}")
+		exitWithError("Wiki and Profile Manager will not be available.")
 	end
 end
 
@@ -117,22 +139,14 @@ def forkDatabases(serverTargetDir)
 	statusDict = dictionaryFromServerAdmin("fullstatus postgres")
 	if (! statusDict["postgresIsResponding"])
 		$logger.warn("Customer postgres database cluster is not responding after upgrade/migration: #{statusDict.inspect}")
-		exitWithError("Wiki, Profile Manager, and other services will not be available.")
+		exitWithError("Wiki and Profile Manager will not be available.")
 	end
 
 	$logger.info("Initializing the server-specific database cluster")
 	command = "sudo -u _postgres #{$initdb} --encoding UTF8 --locale=C -D \"#{serverTargetDir}\""
 	runCommandOrExit(command)
 
-	$logger.info("Restarting server-specific postgres with new settings, to check for successful initialization")
-	dictionaryFromServerAdmin("start postgres_server")
-	statusDict = dictionaryFromServerAdmin("fullstatus postgres_server")
-	if statusDict["postgresIsResponding"]
-		$logger.info("Confirmed that postgres is responding after upgrade")
-	else
-		$logger.warn("Postgres is not responding after upgrade: #{statusDict.inspect}")
-		exitWithError("Wiki, Profile Manager, and other services will not be available.")
-	end
+	startNewPostgres
 
 	$logger.info("Creating Server roles")
 	command = "sudo -u _postgres #{$psql} postgres -h \"#{$pgSocketDir}\" -c \"#{$serverRolesSQL}\""
@@ -147,7 +161,7 @@ def forkDatabases(serverTargetDir)
 	runCommandOrExit(command)
 	for database in $serverDatabases
 		command = "sudo -u _postgres #{$pg_dump} #{database} -h \"#{$pgSocketDirCustomer}\" | sudo -u _postgres #{$psql} -d #{database} -h \"#{$pgSocketDir}\""
-		runCommandOrExit(command)
+		runCommand(command)
 	end
 
 	# 'webauth' db is not migrated to the new database, but we need to drop it if it exists
@@ -157,7 +171,7 @@ def forkDatabases(serverTargetDir)
 	$logger.info("Dropping Server databases from customer database cluster")
 	for database in $serverDatabases
 		command = "sudo -u _postgres #{$dropdb} -h \"#{$pgSocketDirCustomer}\" #{database}"
-		runCommandOrExit(command)
+		runCommand(command)
 	end
 
 	$logger.info("Dropping Server roles from customer database cluster")
@@ -165,114 +179,6 @@ def forkDatabases(serverTargetDir)
 		command = "sudo -u _postgres #{$dropuser} -h \"#{$pgSocketDirCustomer}\" #{role}"
 		runCommand(command)
 	end
-end
-
-# Special case for upgrades from seed 1
-def upgrade_from_seed_1
-	timestamp = Time.now.strftime("%Y-%m-%d %H:%M")
-
-	# upgrade the server postgres cluster
-	newSourceDataDir = "#{$pgDataDir}.#{timestamp}.before_upgrade_to_postgres_#{$myPostgresVersion}"
-	$logger.info("Moving previous database directory aside to : #{newSourceDataDir}")
-	FileUtils.mv("#{$pgDataDir}", "#{newSourceDataDir}")
-	
-	# If the old data directory contains a .pid file due to Postgres not shutting down properly, get rid of the file so that we can attempt upgrade.
-	# There should be no chance that a postmaster is actually using the old data directory at this point.
-	if File.exists?(newSourceDataDir +  "/postmaster.pid")
-		$logger.info("There is a .pid file in the source data dir.  Removing it to attempt upgrade.")
-		FileUtils.rm_f(newSourceDataDir + "/postmaster.pid")
-	end
-	
-	FileUtils.mkdir_p($pgDataDir)
-	FileUtils.chmod(0700, $pgDataDir)
-	FileUtils.chown("_postgres", "_postgres", $pgDataDir)
-	
-	$logger.info("Initializing the target server-specific database cluster")
-	command = "sudo -u _postgres #{$initdb} --encoding UTF8 --locale=C -D \"#{$pgDataDir}\""
-	runCommandOrExit(command)
-	
-	unless File.exists?($migrationDir)
-		FileUtils.mkdir_p($migrationDir)
-		FileUtils.chmod(0700, $migrationDir)
-		FileUtils.chown("_postgres", "_postgres", $migrationDir)
-	end
-	
-	$logger.info("Running pg_upgrade...")
-	firstServer = TCPServer.new('127.0.0.1', 0)
-	firstPort = firstServer.addr[1]
-	secondServer = TCPServer.new('127.0.0.1', 0)
-	secondPort = secondServer.addr[1]
-	firstServer.close
-	secondServer.close
-	origWorkingDirectory = Dir.getwd
-	Dir.chdir($migrationDir)
-	command = "sudo -u _postgres #{$pg_upgrade} -b #{$postgresBinariesDir9_1} -B #{$newPostgresBinariesDir} -d \"#{newSourceDataDir}\" -D \"#{$pgDataDir}\" -p #{firstPort} -P #{secondPort}"
-	ret = runCommand(command)
-	if (ret != 0)
-		Dir.chdir(origWorkingDirectory)
-		exitWithError("Wiki, Profile Manager, and other services will not be available.")
-	end
-	Dir.chdir(origWorkingDirectory)
-
-
-	# upgrade the customer postgres cluster
-	newSourceDataDir = "#{$pgDataDirCustomer}.#{timestamp}.before_upgrade_to_postgres_#{$myPostgresVersion}"
-	$logger.info("Moving previous database directory aside to : #{newSourceDataDir}")
-	FileUtils.mv("#{$pgDataDirCustomer}", "#{newSourceDataDir}")
-	
-	# If the old data directory contains a .pid file due to Postgres not shutting down properly, get rid of the file so that we can attempt upgrade.
-	# There should be no chance that a postmaster is actually using the old data directory at this point.
-	if File.exists?(newSourceDataDir +  "/postmaster.pid")
-		$logger.info("There is a .pid file in the source data dir.  Removing it to attempt upgrade.")
-		FileUtils.rm_f(newSourceDataDir + "/postmaster.pid")
-	end
-	
-	FileUtils.mkdir_p($pgDataDirCustomer)
-	FileUtils.chmod(0700, $pgDataDirCustomer)
-	FileUtils.chown("_postgres", "_postgres", $pgDataDirCustomer)
-	
-	$logger.info("Initializing the target customer-specific database cluster")
-	command = "sudo -u _postgres #{$initdb} --encoding UTF8 --locale=C -D \"#{$pgDataDirCustomer}\""
-	runCommandOrExit(command)
-	
-	unless File.exists?($migrationDirCustomer)
-		FileUtils.mkdir_p($migrationDirCustomer)
-		FileUtils.chmod(0700, $migrationDirCustomer)
-		FileUtils.chown("_postgres", "_postgres", $migrationDirCustomer)
-	end
-	
-	$logger.info("Running pg_upgrade...")
-	firstServer = TCPServer.new('127.0.0.1', 0)
-	firstPort = firstServer.addr[1]
-	secondServer = TCPServer.new('127.0.0.1', 0)
-	secondPort = secondServer.addr[1]
-	firstServer.close
-	secondServer.close
-	origWorkingDirectory = Dir.getwd
-	Dir.chdir($migrationDirCustomer)
-	command = "sudo -u _postgres #{$pg_upgrade} -b #{$postgresBinariesDir9_1} -B #{$newPostgresBinariesDir} -d \"#{newSourceDataDir}\" -D \"#{$pgDataDirCustomer}\" -p #{firstPort} -P #{secondPort}"
-	ret = runCommand(command)
-	if (ret != 0)
-		Dir.chdir(origWorkingDirectory)
-		exitWithError("pg_upgrade error for customer database cluster")
-	end
-	Dir.chdir(origWorkingDirectory)
-
-	command = "#{$serveradmin} settings postgres_server:dataDir=\"#{$pgDataDir}\""
-	runCommandOrExit(command)
-	command = "#{$serveradmin} settings postgres:dataDir=\"#{$pgDataDirCustomer}\""
-	runCommandOrExit(command)
-	
-	if File.exists?("#{newSourceDataDir}/global/pg_control.old")
-		FileUtils.mv("#{newSourceDataDir}/global/pg_control.old", "#{newSourceDataDir}/global/pg_control")
-	end
-	
-	$logger.info("Stopping the customer instance of PostgreSQL")
-	dictionaryFromServerAdmin("stop postgres")
-	
-	# Always stop the service.  Services should reenable the service if they need it.
-	$logger.info("Stopping the server instance of PostgreSQL")
-	dictionaryFromServerAdmin("stop postgres_server")
 end
 
 ########################### MAIN #########################
@@ -404,21 +310,21 @@ if !File.exists?($pgDataDir) && !File.exists?($pgDataDirCustomer)
 	command = "sudo -u _postgres #{$initdb} --encoding UTF8 -D \"#{$pgDataDir}\""
 	runCommandOrExit(command)
 
-	$logger.info("Executing PostgreSQLExtras")
-	d = Dir.new($pgExtrasDir)
-	if d.entries.count > 2	# allow for ".." and "."
-		command = "#{$serveradmin} start postgres_server"
-		runCommandOrExit(command)
-		d.sort{|a,b| a.downcase <=> b.downcase}.each do |executable|
-			next if executable == "." || executable == ".."
-			command = "#{$pgExtrasDir}/#{executable}"
-			ret = runCommand(command)
-			if (ret != 0)
-				$logger.warn("Executable returned an error status: #{executable}")
+	startNewPostgres
+
+	if File.exists?($pgExtrasDir)
+		$logger.info("Executing PostgreSQLExtras")
+		d = Dir.new($pgExtrasDir)
+		if d.entries.count > 2	# allow for ".." and "."
+			d.sort{|a,b| a.downcase <=> b.downcase}.each do |executable|
+				next if executable == "." || executable == ".."
+				command = "#{$pgExtrasDir}/#{executable}"
+				ret = runCommand(command)
+				if (ret != 0)
+					$logger.warn("Executable returned an error status: #{executable}")
+				end
 			end
 		end
-		command = "#{$serveradmin} stop postgres_server"
-		runCommandOrExit(command)
 	end
 
 	$logger.info("Creating Data Directory for customer database cluster")
@@ -437,26 +343,63 @@ else
 		pgVersion = File.open("#{$pgDataDirCustomer}/PG_VERSION", "rb"){ |f| f.read }.chomp
 	else
 		$logger.error("Could not find a valid postgres data directory at #{$pgDataDir} or #{$pgDataDirCustomer}")
-		exitWithError("Wiki, Profile Manager, and other services will not be available.")
+		exitWithError("Wiki and Profile Manager will not be available.")
 	end
 	if serviceDirAlreadyExists && File.exists?($pgDataDir)
-		if (pgVersion == "9.1")
-			# The only time we should ever have this situation is if the customer
-			# had previously installed Seed 1, which included postgres 9.1 but already
-			# has service data in the new location.  Handle the case explicitly.
-			upgrade_from_seed_1
-			exitWithMessage("Finished.")
-		else
-			# If the new server-specific database cluster already exists, then this should be a re-promotion where no further action is required.
-			# However: If a previous upgrade to 2.2 failed due to a known port conflict issue with 3rd party installations, we can salvage
-			#   the data from the failed migration attempt.
+		if (pgVersion == "9.1" || pgVersion == "9.0")
+			exitWithError("Source has a pre-2.2 version but a 2.2 data directory path.  Exiting.")
+		end
 
-			# As a precaution, skip this attempt if the target data directory already contains anything.  The scenario described above should always result in an
-			# empty data directory for server-services.
-			d = Dir.new($pgDataDir)
-			if d.entries.count > 2
-				exitWithMessage("A database already exists at #{$pgDataDir}, with contents, so there should be nothing left to do.")
+		d = Dir.new($pgDataDir)
+		if d.entries.count > 2
+			# We already have a 9.2 data directory, so this is likely either a repromotion, or an install over some old data.
+			# For repromotion cases, keep the existing directory.  For other cases, move aside the database and treat as a fresh install.
+			# Make this decision based on whether the "customer" database cluster exists, as it currently does not relocate.
+			if File.exists?($pgDataDirCustomer)
+				startNewPostgres
+				exitWithMessage("Both data directories aleady exist, probably a repromotion.  Leaving them alone.")
+			else
+				timestamp = Time.now.strftime("%Y-%m-%d %H:%M")
+				FileUtils.mv($pgDataDir, "#{$pgDataDir}.found_during_server_install.#{timestamp}")
+				$logger.info("Creating Data Directory for server database cluster")
+				FileUtils.mkdir($pgDataDir)
+				FileUtils.chmod(0700, $pgDataDir)
+				FileUtils.chown("_postgres", "_postgres", $pgDataDir)
+
+				$logger.info("Calling initdb for server database cluster")
+				command = "sudo -u _postgres #{$initdb} --encoding UTF8 -D \"#{$pgDataDir}\""
+				runCommandOrExit(command)
+
+				startNewPostgres
+
+				if File.exists?($pgExtrasDir)
+					$logger.info("Executing PostgreSQLExtras")
+					d = Dir.new($pgExtrasDir)
+					if d.entries.count > 2	# allow for ".." and "."
+						d.sort{|a,b| a.downcase <=> b.downcase}.each do |executable|
+							next if executable == "." || executable == ".."
+							command = "#{$pgExtrasDir}/#{executable}"
+							ret = runCommand(command)
+							if (ret != 0)
+								$logger.warn("Executable returned an error status: #{executable}")
+							end
+						end
+					end
+				end
+				
+				$logger.info("Creating Data Directory for customer database cluster")
+				FileUtils.mkdir($pgDataDirCustomer)
+				FileUtils.chmod(0700, $pgDataDirCustomer)
+				FileUtils.chown("_postgres", "_postgres", $pgDataDirCustomer)
+				
+				$logger.info("Calling initdb for customer database cluster")
+				command = "sudo -u _postgres #{$initdb} --encoding UTF8 -D \"#{$pgDataDirCustomer}\""
+				runCommandOrExit(command)
+				exitWithMessage("Found existing data directory and moved it aside to initialize new cluster.")
 			end
+		else
+			# If a previous upgrade to 2.2 failed due to a known port conflict issue with 3rd party installations, we can salvage
+			# the data from the failed migration attempt.
 
 			# Start customer postgres instance without using a TCP port to prevent any conflict, then see if it contains databases that need to be forked out
 			tempFilePath = "/tmp/#{File.basename($0)}-#{$$}"
@@ -469,13 +412,13 @@ else
 			statusDict = dictionaryFromServerAdmin("fullstatus postgres")
 			if (! statusDict["postgresIsResponding"])
 				$logger.warn("Customer postgres database cluster is not responding after attempting to inspect it for a failed migration: #{statusDict.inspect}")
-				exitWithError("Wiki, Profile Manager, and other services will not be available.")
+				exitWithError("Wiki and Profile Manager will not be available.")
 			end
 			command = "sudo -u _postgres #{$psql} postgres -h \"#{$pgSocketDirCustomer}\" -c \'\\l\'"
 			ret = `#{command}`
 			if $? != 0
 				$logger.warn("command failed: #$?\nCommand: #{command}\nOutput: #{ret}")
-				exitWithError("Wiki, Profile Manager, and other services will not be available.")
+				exitWithError("Wiki and Profile Manager will not be available.")
 			end
 			found_databases = 0
 			ret.each_line {|line|
@@ -498,19 +441,18 @@ else
 				runCommandOrExit(command)
 				command = "#{$serveradmin} settings postgres:dataDir=\"#{$pgDataDirCustomer}\""
 				runCommandOrExit(command)
-				
+
 				$logger.info("Stopping the customer instance of PostgreSQL")
 				dictionaryFromServerAdmin("stop postgres")
-				
+
 				$logger.info("Restoring default listen_addresses setting for customer instance of PostgreSQL")
 				command = "#{$serveradmin} settings postgres:listen_addresses=\"127.0.0.1,::1\""
 				runCommandOrExit(command)
-				
-				# Always stop the service.  Services should reenable the service if they need it.
-				$logger.info("Stopping the server instance of PostgreSQL")
-				dictionaryFromServerAdmin("stop postgres_server")
+
+				# Leave the new postgres instance running.  Services should not have to start it.
 				exitWithMessage("Finished.  Repaired what appeared to be a broken Server 2.2 database cluster.")
 			else
+				startNewPostgres
 				exitWithMessage("A database already exists at #{$pgDataDir}, there should be nothing left to do.")
 			end
 		end
@@ -536,11 +478,16 @@ else
 		$logger.info("Moving previous database directory aside to : #{newSourceDataDir}")
 		FileUtils.mv("#{$pgDataDir}", "#{newSourceDataDir}")
 
-		FileUtils.mkdir_p($pgDataDir)
-		FileUtils.chmod(0700, $pgDataDir)
-		FileUtils.chown("_postgres", "_postgres", $pgDataDir)
+		# Use the alternate volume as the initial target for both database clusters so that we aren't
+		# moving server services data to the boot volume and then back to the alternate volume.
+		# As of Server 2.2, the customer database cluster will always reside on the boot volume unless
+		# it is manually relocated by the customer.
+		tempCustomerDataDir = "#{$pgDataDir}.customerTemp"
+		FileUtils.mkdir_p(tempCustomerDataDir)
+		FileUtils.chmod(0700, tempCustomerDataDir)
+		FileUtils.chown("_postgres", "_postgres", tempCustomerDataDir)
 		$logger.info("Initializing new database cluster for migration target")
-		command = "sudo -u _postgres #{$initdb} --encoding UTF8 --locale=C -D \"#{$pgDataDir}\""
+		command = "sudo -u _postgres #{$initdb} --encoding UTF8 --locale=C -D \"#{tempCustomerDataDir}\""
 		runCommandOrExit(command)
 
 		# If the old data directory contains a .pid file due to Postgres not shutting down properly, get rid of the file so that we can attempt upgrade.
@@ -559,25 +506,37 @@ else
 		secondServer.close
 		origWorkingDirectory = Dir.getwd
 		Dir.chdir($migrationDir)
-		command = "sudo -u _postgres #{$pg_upgrade} -b #{$postgresBinariesDir9_1} -B #{$newPostgresBinariesDir} -d \"#{newSourceDataDir}\" -D \"#{$pgDataDir}\" -p #{firstPort} -P #{secondPort}"
+		command = "sudo -u _postgres #{$pg_upgrade} -b #{$postgresBinariesDir9_1} -B #{$newPostgresBinariesDir} -d \"#{newSourceDataDir}\" -D \"#{tempCustomerDataDir}\" -p #{firstPort} -P #{secondPort}"
 		ret = runCommand(command)
 		if (ret != 0)
 			Dir.chdir(origWorkingDirectory)
-			exitWithError("Wiki, Profile Manager, and other services will not be available.")
+			exitWithError("Wiki and Profile Manager will not be available..")
 		end
 		Dir.chdir(origWorkingDirectory)
 
-		# In this case, Server.app leaves the original/default database in place (only if it was not moved to another volume in 10.7.x), so move it aside and init a new 'customer' db cluster
+		# Temporarily update the settings to point to the temporary cluster location so that forkDatabases uses the correct source
+		command = "#{$serveradmin} settings postgres:dataDir=\"#{tempCustomerDataDir}\""
+		runCommandOrExit(command)
+
+		pathComponents = $pgDataDir.split(File::SEPARATOR)
+		$pgDataDir = "/#{pathComponents[1]}/#{pathComponents[2]}#{$pgServiceDir}/Data"
+
+		FileUtils.mkdir_p($pgDataDir)
+		FileUtils.chmod(0700, $pgDataDir)
+		FileUtils.chown("_postgres", "_postgres", $pgDataDir)
+
+		command = "#{$serveradmin} settings postgres_server:dataDir=\"#{$pgDataDir}\""
+		runCommandOrExit(command)
+
+		forkDatabases($pgDataDir)
+
 		if File.exists?($pgDataDirCustomer)
-			backupCustomerDataDir = "#{$pgDataDirCustomer}.#{timestamp}.backup"
+			backupCustomerDataDir = "#{$pgDataDirCustomer}.#{timestamp}.previous"
 			FileUtils.mv($pgDataDirCustomer, backupCustomerDataDir)
 		end
-		FileUtils.mkdir_p($pgDataDirCustomer)
-		FileUtils.chmod(0700, $pgDataDirCustomer)
-		FileUtils.chown("_postgres", "_postgres", $pgDataDirCustomer)
-		$logger.info("Initializing the target customer-specific database cluster")
-		command = "sudo -u _postgres #{$initdb} --encoding UTF8 --locale=C -D \"#{$pgDataDirCustomer}\""
-		runCommandOrExit(command)
+
+		FileUtils.mv(tempCustomerDataDir, $pgDataDirCustomer)
+	
 	else
 		# Default case: Data resides in what is now the 'customer' database cluster and it needs to be migrated to the new 'server' cluster
 		exitWithError("dataDir missing configuration file; concluding it is not a PostgreSQL data directory at #{$pgDataDirCustomer}") if !File.exists?($pgDataDirCustomer + "/postgresql.conf")
@@ -619,7 +578,7 @@ else
 		ret = runCommand(command)
 		if (ret != 0)
 			Dir.chdir(origWorkingDirectory)
-			exitWithError("Wiki, Profile Manager, and other services will not be available.")
+			exitWithError("Wiki and Profile Manager will not be available.")
 		end
 		Dir.chdir(origWorkingDirectory)
 
@@ -646,9 +605,7 @@ else
 	command = "#{$serveradmin} settings postgres:listen_addresses=\"127.0.0.1,::1\""
 	runCommandOrExit(command)
 
-	# Always stop the service.  Services should reenable the service if they need it.
-	$logger.info("Stopping the server instance of PostgreSQL")
-	dictionaryFromServerAdmin("stop postgres_server")
+	# Leave the new postgres instance running.  Services should not have to start it.
 end
 
 exitWithMessage("Finished.")

@@ -7,7 +7,7 @@
 Project         = postgresql
 UserType        = Administrator
 ToolType        = Commands
-Submission      = 81.2
+Submission      = 97
 
 # Include common server build variables
 -include /AppleInternal/ServerTools/ServerBuildVariables.xcconfig
@@ -27,7 +27,9 @@ Extra_CC_Flags	= -Os -g -Wall -Wno-deprecated-declarations
 Extra_Configure_Environment	= CFLAGS="$$RC_CFLAGS $(Extra_CC_Flags)" \
 					LDFLAGS="$$RC_CFLAGS $(Extra_CC_Flags)" \
 					LDFLAGS_EX="-mdynamic-no-pic" \
-					EXTRA_LDFLAGS_PROGRAM="-mdynamic-no-pic"
+					EXTRA_LDFLAGS_PROGRAM="-mdynamic-no-pic" \
+					LIBS="-L$(SDKROOT)/usr/lib" \
+					INCLUDES="-I$(SDKROOT)/usr/include/libxml2"
 
 # The configure flags are ordered to match current output of ./configure --help.
 # Extra indentation represents suboptions.
@@ -130,12 +132,11 @@ install-macosx:
 
 install-backup: install-macosx
 	@echo "Installing backup / Time Machine support..."
-	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)$(LIBEXECDIR)/server_backup
-	$(INSTALL_SCRIPT) Support/backup_restore/sysexits.rb $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)$(LIBEXECDIR)/server_backup
-	$(INSTALL_SCRIPT) Support/backup_restore/backuptool.rb $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)$(LIBEXECDIR)/server_backup
-	$(INSTALL_SCRIPT) Support/backup_restore/postgresql_backup.rb $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)$(LIBEXECDIR)/server_backup
 	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)$(ETCDIR)/server_backup
 	$(INSTALL_FILE) Support/backup_restore/46-postgresql.plist $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)$(ETCDIR)/server_backup
+	$(INSTALL_SCRIPT) Support/backup_restore/xpg_archive_command $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/libexec
+	$(INSTALL_SCRIPT) Support/backup_restore/xpostgres $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/bin
+	$(INSTALL_SCRIPT) Support/backup_restore/xpg_ctl $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/bin
 	@echo "Done."
 
 install-wrapper:
@@ -186,5 +187,6 @@ cleanup-dst-root:
 		$(SILENT) $(RM) -Rf $(DSTROOT)/usr/share; \
 		$(SILENT) $(RM) -Rf $(DSTROOT)/usr/lib/postgresql9.0; \
 		$(SILENT) $(RM) -Rf $(DSTROOT)/usr/lib/postgresql9.1; \
+		$(SILENT) $(RM) -Rf $(DSTROOT)/usr/lib/postgresql/pgxs; \
 	fi
 	@echo "Done."

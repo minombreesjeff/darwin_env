@@ -12,11 +12,17 @@
 	<string>_postgres</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Applications/Server.app/Contents/ServerRoot/usr/bin/postgres</string>
-		<string>--apple-configuration</string>
+		<string>/Applications/Server.app/Contents/ServerRoot/usr/bin/xpostgres</string>
+		<string>-a</string>
 		<string>/Library/Server/PostgreSQL For Server Services/Config/com.apple.postgres.plist</string>
 	</array>
 	<key>OnDemand</key>
 	<false/>
+ 	<key>StandardErrorPath</key>
+  	<string>/Library/Logs/PostgreSQL/PostgreSQL_Server_Services.log</string>
+  	<key>StandardOutPath</key>
+	<string>/Library/Logs/PostgreSQL/PostgreSQL_Server_Services.log</string>
+	<key>ExitTimeOut</key>
+	<integer>60</integer>
 </dict>
 </plist>

@@ -6,12 +6,15 @@
 # Supports migration from 10.7.x to the latest Server release
 # When source system is 10.6.x, initializes an empty set of databases.
 #
+# Author:: Apple Inc.
+# Documentation:: Apple Inc.
 # Copyright (c) 2011-2013 Apple Inc. All Rights Reserved.
 #
 # IMPORTANT NOTE: This file is licensed only for use on Apple-branded
 # computers and is subject to the terms and conditions of the Apple Software
 # License Agreement accompanying the package this file is a part of.
 # You may not port this file to another platform without Apple's written consent.
+# License:: All rights reserved.
 #
 # This script upgrades 10.7.x (PostgreSQL 9.0) data to the latest server version (PostgreSQL 9.2).
 # It also splits the original database into two new database clusters: One dedicated for customer use (in what was previously
@@ -30,11 +33,15 @@ $logger.level = Logger::INFO
 $logger.info("*** PostgreSQL migration start ***")
 
 $serveradmin = "/Applications/Server.app/Contents/ServerRoot/usr/sbin/serveradmin"
+$serverctl = "/Applications/Server.app/Contents/ServerRoot/usr/sbin/serverctl"
 $postgresBinariesDir9_0 = "/Applications/Server.app/Contents/ServerRoot/usr/libexec/postgresql9.0"
 $newPostgresBinariesDir = "/Applications/Server.app/Contents/ServerRoot/usr/bin"
+$pgServiceDir = "/Library/Server/PostgreSQL For Server Services"
+$pgServiceDirCustomer =  "/Library/Server/PostgreSQL"
 $newPostgresDataDirServer = "/Library/Server/PostgreSQL For Server Services/Data"
 $newPostgresDataDirCustomer = "/Library/Server/PostgreSQL/Data"
 $customerSocketDir = "/private/var/pgsql_socket"
+$pgLogDir = "/Library/Logs/PostgreSQL"
 $serverSocketDir = "/Library/Server/PostgreSQL For Server Services/Socket"
 $migrationDir = "/Library/Server/PostgreSQL For Server Services/Migration"
 $serverDatabases =  ["caldav", "collab", "device_management"]	# databases to be forked away from customer data
@@ -79,7 +86,7 @@ def runCommandOrExit(command)
 	ret = `#{command}`
 	if $? != 0
 		$logger.warn("command failed: #$?\nCommand: #{command}\nOutput: #{ret}")
-		exitWithError("Wiki, Profile Manager, and other services will not be available.")
+		exitWithError("Wiki and Profile Manager will not be available.")
 	end
 end
 
@@ -90,6 +97,24 @@ def runCommand(command)
 		return 1
 	end
 	return 0
+end
+
+def startNewPostgres
+	runCommandOrExit("#{$serverctl} enable service=com.apple.postgres");
+	isRunning = 0
+	30.times do
+		statusDict = dictionaryFromServerAdmin("fullstatus postgres_server")
+		if statusDict["postgresIsResponding"]
+			$logger.info("Confirmed that postgres is responding after upgrade/migration")
+			isRunning = 1
+			break
+		end
+		sleep 1
+	end
+	if (! isRunning)
+		$logger.warn("Postgres is not responding after upgrade/migration: #{statusDict.inspect}")
+		exitWithError("Wiki and Profile Manager will not be available.")
+	end
 end
 
 def dictionaryFromServerAdmin(cmd)
@@ -169,7 +194,7 @@ def forkDatabases(serverTargetDir)
 	statusDict = dictionaryFromServerAdmin("fullstatus postgres")
 	if (! statusDict["postgresIsResponding"])
 		$logger.warn("Customer postgres database cluster is not responding after upgrade/migration: #{statusDict.inspect}")
-		exitWithError("Wiki, Profile Manager, and other services will not be available.")
+		exitWithError("Wiki and Profile Manager will not be available.")
 	end
 
 	$logger.info("Initializing the server-specific database cluster")
@@ -177,14 +202,7 @@ def forkDatabases(serverTargetDir)
 	runCommandOrExit(command)
 
 	$logger.info("Restarting server-specific postgres with new settings, to check for successful initialization")
-	dictionaryFromServerAdmin("start postgres_server")
-	statusDict = dictionaryFromServerAdmin("fullstatus postgres_server")
-	if statusDict["postgresIsResponding"]
-		$logger.info("Confirmed that postgres is responding after upgrade/migration")
-	else
-		$logger.warn("Postgres is not responding after upgrade/migration: #{statusDict.inspect}")
-		exitWithError("Wiki, Profile Manager, and other services will not be available.")
-	end
+	startNewPostgres
 
 	$logger.info("Creating Server roles")
 	command = "sudo -u _postgres #{$newPostgresBinariesDir}/psql postgres -h \"#{$serverSocketDir}\" -c \"#{$serverRolesSQL}\""
@@ -199,71 +217,28 @@ def forkDatabases(serverTargetDir)
 	runCommandOrExit(command)
 	for database in $serverDatabases
 		command = "sudo -u _postgres #{$newPostgresBinariesDir}/pg_dump #{database} -h \"#{$customerSocketDir}\" | sudo -u _postgres #{$newPostgresBinariesDir}/psql -d #{database} -h \"#{$serverSocketDir}\""
-		runCommandOrExit(command)
+		runCommand(command)
 	end
 
 	$logger.info("Dropping Server databases from customer database cluster")
 	for database in $serverDatabases
 		command = "sudo -u _postgres #{$newPostgresBinariesDir}/dropdb -h \"#{$customerSocketDir}\" #{database}"
-		runCommandOrExit(command)
+		runCommand(command)
 	end
 
 	$logger.info("Dropping Server roles from customer database cluster")
 	for role in $serverRoles
 		command = "sudo -u _postgres #{$newPostgresBinariesDir}/dropuser -h \"#{$customerSocketDir}\" #{role}"
-		runCommandOrExit(command)
+		runCommand(command)
 	end
 end
 
 def initialize_for_clean_install
 	pgExtrasDir = "/Applications/Server.app/Contents/ServerRoot/System/Library/ServerSetup/CommonExtras/PostgreSQLExtras"
-	pgLogDir = "/Library/Logs/PostgreSQL"
-	pgServiceDirServer = "/Library/Server/PostgreSQL For Server Services"
-	pgServiceDirCustomer =  "/Library/Server/PostgreSQL"
-
-	if !File.exists?(pgServiceDirServer)
-		puts "Creating Service Directory for server database cluster"
-		FileUtils.mkdir(pgServiceDirServer)
-		FileUtils.chmod(0755, pgServiceDirServer)
-		FileUtils.chown("_postgres", "_postgres", pgServiceDirServer)
-	end
-
-	if !File.exists?(pgServiceDirCustomer)
-		puts "Creating Service Directory for customer database cluster"
-		FileUtils.mkdir(pgServiceDirCustomer)
-		FileUtils.chmod(0755, pgServiceDirCustomer)
-		FileUtils.chown("_postgres", "_postgres", pgServiceDirCustomer)
-	end
-
-	if !File.exists?($serverSocketDir)
-		puts "Creating Socket Directory"
-		FileUtils.mkdir($serverSocketDir)
-		FileUtils.chmod(0755, $serverSocketDir)
-		FileUtils.chown("_postgres", "_postgres", $serverSocketDir)
-	end
-
-	if !File.exists?($customerSocketDir)
-		puts "Creating Socket Directory for customer database cluster"
-		FileUtils.mkdir($customerSocketDir)
-		FileUtils.chmod(0755, $customerSocketDir)
-		FileUtils.chown("_postgres", "_postgres", $customerSocketDir)
-	end
-
-	if !File.exists?(pgLogDir)
-		puts "Creating Log Directory"
-		FileUtils.mkdir(pgLogDir)
-		FileUtils.chmod(0755, pgLogDir)
-		FileUtils.chown("_postgres", "_postgres", pgLogDir)
-	end
 
 	if File.exists?($newPostgresDataDirServer) || File.exists?($newPostgresDataDirCustomer)
 		exitWithError("Data directory already exists where there should be no directory.  Exiting.")
 	end
-
-	command = "/Applications/Server.app/Contents/ServerRoot/usr/libexec/copy_postgresql_config_files.sh server"
-	runCommandOrExit(command)
-	command = "/Applications/Server.app/Contents/ServerRoot/usr/libexec/copy_postgresql_config_files.sh customer"
-	runCommandOrExit(command)
 	
 	$logger.info("Creating Data Directory for server database cluster")
 	FileUtils.mkdir($newPostgresDataDirServer)
@@ -273,24 +248,24 @@ def initialize_for_clean_install
 	$logger.info("Calling initdb for server database cluster")
 	command = "sudo -u _postgres #{$newPostgresBinariesDir}/initdb --encoding UTF8 -D \"#{$newPostgresDataDirServer}\""
 	runCommandOrExit(command)
-	
-	$logger.info("Executing PostgreSQLExtras")
-	d = Dir.new(pgExtrasDir)
-	if d.entries.count > 2	# allow for ".." and "."
-		command = "#{$serveradmin} start postgres_server"
-		runCommandOrExit(command)
-		d.sort{|a,b| a.downcase <=> b.downcase}.each do |executable|
-			next if executable == "." || executable == ".."
-			command = "#{pgExtrasDir}/#{executable}"
-			ret = runCommand(command)
-			if (ret != 0)
-				$logger.warn("Executable returned an error status: #{executable}")
+
+	if File.exists?(pgExtrasDir)
+		$logger.info("Executing PostgreSQLExtras")
+		d = Dir.new(pgExtrasDir)
+		if d.entries.count > 2	# allow for ".." and "."
+			startNewPostgres
+			d.sort{|a,b| a.downcase <=> b.downcase}.each do |executable|
+				next if executable == "." || executable == ".."
+				command = "#{pgExtrasDir}/#{executable}"
+				ret = runCommand(command)
+				if (ret != 0)
+					$logger.warn("Executable returned an error status: #{executable}")
+				end
 			end
+			# Leave it running
 		end
-		command = "#{$serveradmin} stop postgres_server"
-		runCommandOrExit(command)
 	end
-	
+
 	$logger.info("Creating Data Directory for customer database cluster")
 	FileUtils.mkdir($newPostgresDataDirCustomer)
 	FileUtils.chmod(0700, $newPostgresDataDirCustomer)
@@ -329,35 +304,65 @@ exitWithError("sourceRoot #{$sourceRoot} is not an existing directory") if !File
 oldServerPlistFile = $sourceRoot + "/System/Library/CoreServices/ServerVersion.plist"
 exitWithError("sourceRoot #{oldServerPlistFile} does not exist; this is an invalid attempt to upgrade/migrate from a non-server system") if !File.exists?(oldServerPlistFile)
 
+if File.identical?($sourceRoot, $targetRoot)
+	exitWithError("sourceRoot #{$sourceRoot} and targetRoot #{$targetRoot} are identical")
+end
+
+if !File.exists?($pgServiceDir)
+	$logger.info("Creating Service Directory for server database")
+	FileUtils.mkdir($pgServiceDir)
+	FileUtils.chmod(0755, $pgServiceDir)
+	FileUtils.chown("_postgres", "_postgres", $pgServiceDir)
+end
+
+if !File.exists?($pgServiceDirCustomer)
+	$logger.info("Creating Service Directory for customer database")
+	FileUtils.mkdir($pgServiceDirCustomer)
+	FileUtils.chmod(0755, $pgServiceDirCustomer)
+	FileUtils.chown("_postgres", "_postgres", $pgServiceDirCustomer)
+end
+
+if !File.exists?($serverSocketDir)
+	puts "Creating Socket Directory"
+	FileUtils.mkdir($serverSocketDir)
+	FileUtils.chmod(0755, $serverSocketDir)
+	FileUtils.chown("_postgres", "_postgres", $serverSocketDir)
+end
+
+if !File.exists?($customerSocketDir)
+	puts "Creating Socket Directory for customer database cluster"
+	FileUtils.mkdir($customerSocketDir)
+	FileUtils.chmod(0755, $customerSocketDir)
+	FileUtils.chown("_postgres", "_postgres", $customerSocketDir)
+end
+
+if !File.exists?($migrationDir)
+	puts "Creating Migration Directory"
+	FileUtils.mkdir($migrationDir)
+	FileUtils.chmod(0700, $migrationDir)
+	FileUtils.chown("_postgres", "_postgres", $migrationDir)
+end
+
+if !File.exists?($pgLogDir)
+	puts "Creating Log Directory"
+	FileUtils.mkdir($pgLogDir)
+	FileUtils.chmod(0755, $pgLogDir)
+	FileUtils.chown("_postgres", "_postgres", $pgLogDir)
+end
+
+command = "/Applications/Server.app/Contents/ServerRoot/usr/libexec/copy_postgresql_config_files.sh server"
+runCommandOrExit(command)
+command = "/Applications/Server.app/Contents/ServerRoot/usr/libexec/copy_postgresql_config_files.sh customer"
+runCommandOrExit(command)
+
 if ($sourceVersion =~ /10.6/)
 	# Just initialize; nothing to migrate
 	initialize_for_clean_install
 	exitWithMessage("Finished initializing postgres")
 end
 
-exitWithError("sourceRoot #{$sourceRoot} and targetRoot #{$targetRoot} are identical") if File.identical?($sourceRoot, $targetRoot)
 settingsDict = settingsFromSourceLaunchd
 oldDataDir = settingsDict["dataDir"]
-oldLogDir = settingsDict["log_directory"]
-oldLogFile = settingsDict["log_filename"]
-newLogPath = NSString.alloc.initWithString($targetRoot + oldLogDir + "/" + oldLogFile).stringByStandardizingPath
-if File.exists?(newLogPath)
-	$logger.info("Confirmed #{newLogPath} exists")
-else
-	$logger.info("Creating #{newLogPath}")
-	FileUtils.mkdir_p($targetRoot + oldLogDir)
-	FileUtils.touch(newLogPath)
-	FileUtils.chmod(0660, newLogPath)
-	FileUtils.chown("_postgres", "admin", newLogPath)
-end
-`/Applications/Server.app/Contents/ServerRoot/usr/libexec/copy_postgresql_config_files.sh server`	# put default postgres config into place
-`/Applications/Server.app/Contents/ServerRoot/usr/libexec/copy_postgresql_config_files.sh customer`	# put default postgres config into place
-
-unless File.exists?($migrationDir)
-	FileUtils.mkdir_p($migrationDir)
-	FileUtils.chmod(0700, $migrationDir)
-	FileUtils.chown("_postgres", "_postgres", $migrationDir)
-end
 
 Dir.chdir($migrationDir)
 
@@ -384,18 +389,6 @@ if statusDict["state"] == "RUNNING"
 	$logger.info("Postgres is running; stopping to apply new settings")
 else
 	shutDownOrphans
-end
-
-unless File.exists?($customerSocketDir)
-	FileUtils.mkdir_p($customerSocketDir)
-	FileUtils.chmod(0700, $customerSocketDir)
-	FileUtils.chown("_postgres", "_postgres", $customerSocketDir)
-end
-
-unless File.exists?($serverSocketDir)
-	FileUtils.mkdir_p($serverSocketDir)
-	FileUtils.chmod(0700, $serverSocketDir)
-	FileUtils.chown("_postgres", "_postgres", $serverSocketDir)
 end
 
 if oldDataDir =~ /^\/Volumes\/.*/ && $targetRoot.eql?("/")
@@ -579,9 +572,7 @@ $logger.info("Restoring default listen_addresses setting for customer instance o
 command = "#{$serveradmin} settings postgres:listen_addresses=\"127.0.0.1,::1\""
 runCommandOrExit(command)
 
-# Always stop the service.  Services should reenable the service if they need it.
-$logger.info("Stopping the server instance of PostgreSQL")
-dictionaryFromServerAdmin("stop postgres_server")
+# Leave the new postgres instance running.  Services should not have to start it.
 
 statusDict = dictionaryFromServerAdmin("fullstatus postgres_server")
 $logger.info("Current postgres_server fullstatus: #{statusDict.inspect}")

@@ -17,7 +17,7 @@
 		<string>-c</string>
 		<string>log_statement=ddl</string>
 		<string>-c</string>
-		<string>log_line_prefix=%t </string>
+		<string>log_line_prefix=%t</string>
 		<string>-c</string>
 		<string>listen_addresses=</string>
 		<string>-c</string>
@@ -28,6 +28,8 @@
 		<string>unix_socket_group=_postgres</string>
 		<string>-c</string>
 		<string>unix_socket_permissions=0770</string>
+		<string>-c</string>
+		<string>max_connections=500</string>
 	</array>
 </dict>
 </plist>
