@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# Copyright (c) 2012 Apple Inc. All Rights Reserved.
+# Copyright (c) 2012-2013 Apple Inc. All Rights Reserved.
 #
 # IMPORTANT NOTE: This file is licensed only for use on Apple-branded
 # computers and is subject to the terms and conditions of the Apple Software
@@ -35,7 +35,7 @@ my $INITDB = "/Applications/Server.app/Contents/ServerRoot/usr/libexec/postgresq
 my $MKDIR = "/bin/mkdir";
 my $MKTEMP_PATH = "/usr/bin/mktemp";
 my $MV = "/bin/mv";
-my $POSTGRES_REAL = "/Applications/Server.app/Contents/ServerRoot/usr/libexec/postgresql9.0/postgres_real";
+my $POSTGRES = "/Applications/Server.app/Contents/ServerRoot/usr/libexec/postgresql9.0/postgres";
 my $PSQL = "/Applications/Server.app/Contents/ServerRoot/usr/libexec/postgresql9.0/psql";
 my $SUDO = "/usr/bin/sudo";
 my $g_log_dir = "/Library/Logs/Migration";
@@ -43,6 +43,7 @@ my $g_log_path = $g_log_dir."/PostgreSQLRestoreExtra.log";
 my $g_src_path = "/Library/Server/Previous";
 my $g_target_path = "/Library/Server/Previous";
 my $g_postgres_log_dir = "/Library/Logs/PostgreSQL";
+my $g_postgres_launchd_plist = $g_src_path."/System/Library/LaunchDaemons/org.postgresql.postgres.plist";
 my $g_postgres_uid = 216;
 my $g_postgres_gid = 216;
 my $g_source_version = "";
@@ -72,7 +73,13 @@ sub restore_for_migration_extra() {
 	# Move aside any existing database in the target location.
 	my $db_dir = "";
 	if ($g_source_version =~ /^10.7/) {
-		$db_dir = $g_target_path."/private/var/pgsql";
+		# There is an issue where if the data location was changed to an alternate volume, then changed back to the initial volume,
+		# Server.app sets the data directory to a different location than the default.  So use the newer directory if it exists.
+		if (-e "${g_target_path}/Library/Server/PostgreSQL/Data") {
+			$db_dir = $g_target_path."/Library/Server/PostgreSQL/Data";
+		} else {
+			$db_dir = $g_target_path."/private/var/pgsql";
+		}
 	} elsif ($g_source_version =~ /^10.8/) {
 		$db_dir = $g_target_path."/Library/Server/PostgreSQL/Data";
 	} elsif ($g_source_version =~ /^10.6/) {
@@ -88,7 +95,41 @@ sub restore_for_migration_extra() {
 		}
 	}
 
-	my $src_data_gz = $g_src_path."/Library/Server/PostgreSQL/Backup/dumpall.psql.gz";
+	# Determine if the most recent SQL dump is located on an alternate partition.
+	open(LAUNCHD_PLIST, "</Library/Server/Previous/System/Library/LaunchDaemons/org.postgresql.postgres.plist") || &bail("Could not locate migrated launchd plist for postgres");
+	my @plist_lines = <LAUNCHD_PLIST>;
+	close(LAUNCHD_PLIST);
+	my $previous_data_location = "";
+	my $use_next_value = 0;
+	foreach my $plist_line (@plist_lines) {
+		if ($use_next_value) {
+			if ($plist_line =~ /<string>(.*)<\/string>/) {
+				$previous_data_location = $1;
+			} else {
+				&bail("Error finding the data location when parsing the migrated launchd plist");
+			}
+			last;
+		}
+		if ($plist_line =~ /<string>-D<\/string>/) {
+			$use_next_value = 1;
+		}
+	}
+	if ($previous_data_location eq "") {
+		&bail("Error determining previous data location");
+	}
+	my $src_data_gz = "";
+	if ($previous_data_location =~ /^\/Volumes\//) {
+		# data was on an alternate volume, so our backup file will be on that volume also
+		if ($previous_data_location =~ /(.*)\/Data$/) {
+			$src_data_gz = "$1/Backup/dumpall.psql.gz";
+			&log_message("Using the following file for database migration: $src_data_gz");
+		} else {
+			&bail("Unexpected path found for previous data location");
+		}
+	} else {
+		$src_data_gz = $g_src_path."/Library/Server/PostgreSQL/Backup/dumpall.psql.gz";
+	}
+
 	if (! -e $src_data_gz) {
 		&bail("Error: did not find a source database file for database restoration. File expected at ${src_data_gz}");
 	}
@@ -125,7 +166,7 @@ sub restore_for_migration_extra() {
 	unless ($ret) {	&bail("Error, chmod failed with status $ret: $!"); }
 
 	# launch postgres in the background using the target database
-	$cmd = "$SUDO -u _postgres $POSTGRES_REAL -D ${db_dir} -c listen_addresses= -c log_connections=on -c log_directory=/Library/Logs/PostgreSQL -c log_filename=PostgreSQL_RestoreExtra.log -c log_line_prefix=%t  -c log_lock_waits=on -c log_statement=ddl -c logging_collector=on -c unix_socket_directory=${tmp_socket_dir} -c unix_socket_group=_postgres -c unix_socket_permissions=0770";
+	$cmd = "$SUDO -u _postgres $POSTGRES -D ${db_dir} -c listen_addresses= -c log_connections=on -c log_directory=/Library/Logs/PostgreSQL -c log_filename=PostgreSQL_RestoreExtra.log -c log_line_prefix=%t  -c log_lock_waits=on -c log_statement=ddl -c logging_collector=on -c unix_socket_directory=${tmp_socket_dir} -c unix_socket_group=_postgres -c unix_socket_permissions=0770";
 	my $pg_pid;
 	FORK: {
 		if ($pg_pid  = fork) {
