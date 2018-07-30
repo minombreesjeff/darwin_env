@@ -1,10 +1,10 @@
-#!/usr/bin/python
+#!/Applications/Server.app/Contents/ServerRoot/Library/CalendarServer/bin/python
 # -*- test-case-name: test_xpostgres.py -*-
 # xpostgres
 #
 # Author:: Apple Inc.
 # Documentation:: Apple Inc.
-# Copyright (c) 2013 Apple Inc. All Rights Reserved.
+# Copyright (c) 2013-2015 Apple Inc. All Rights Reserved.
 #
 # IMPORTANT NOTE: This file is licensed only for use on Apple-branded
 # computers and is subject to the terms and conditions of the Apple Software
@@ -24,12 +24,18 @@ import sys
 import getopt
 import datetime
 import json
+import socket
+import shutil
+import errno
+import psutil
 
 from shlex import split as shell_split
 
 from plistlib import readPlist
 
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, STDOUT, call
+
+from pwd import getpwnam, getpwuid
 
 from twisted.internet.protocol import ProcessProtocol, Factory
 from twisted.internet.utils import getProcessOutputAndValue
@@ -44,18 +50,24 @@ from twisted.python.filepath import FilePath
 from twisted.python.failure import Failure
 from twisted.python.procutils import which
 from twisted.internet.endpoints import UNIXClientEndpoint, UNIXServerEndpoint
+from setproctitle import setproctitle
+
+CURRENT_POSTGRES_MAJOR_VERSION = '9'
+CURRENT_POSTGRES_MINOR_VERSION = '3'
+CURRENT_POSTGRES_BINARIES_DIR = '/Applications/Server.app/Contents/ServerRoot/usr/bin'
+POSTGRES_BINARIES_DIR_9_0 = '/Applications/Server.app/Contents/ServerRoot/usr/libexec/postgresql9.0'
+POSTGRES_BINARIES_DIR_9_1 = '/Applications/Server.app/Contents/ServerRoot/usr/libexec/postgresql9.1'
+POSTGRES_BINARIES_DIR_9_2 = '/Applications/Server.app/Contents/ServerRoot/usr/libexec/postgresql9.2'
 
 TMUTIL = which('tmutil')[0]
 NOTIFYUTIL = which('notifyutil')[0]
 TAR = which('tar')[0]
-LSOF = which('lsof')[0]
-
 WAIT4PATH = which('wait4path')[0]
+
 PG_BASEBACKUP = (
     which('pg_basebackup') or
     ['/Applications/Server.app/Contents/ServerRoot/usr/bin/pg_basebackup']
 )[0]
-
 POSTGRES = (
     os.environ.get('XPG_POSTGRES') or # for testing only
     (which('postgres_real') or
@@ -77,6 +89,19 @@ PG_CTL = (
     (which('pg_ctl') or
      ['/Applications/Server.app/Contents/ServerRoot/usr/bin/pg_ctl'])[0]
 )
+PG_DUMPALL = (
+    which('pg_dumpall') or
+    ['/Applications/Server.app/Contents/ServerRoot/usr/bin/pg_dumpall']
+)[0]
+INITDB = (
+    which('initdb') or
+    ['/Applications/Server.app/Contents/ServerRoot/usr/bin/initdb']
+)[0]
+PG_CONTROLDATA = (
+    which('pg_controldata') or
+    ['/Applications/Server.app/Contents/ServerRoot/usr/bin/pg_controldata']
+)[0]
+
 XPOSTGRES = os.path.realpath(sys.argv[0])
 
 DEFAULT_SOCKET_DIR      = "/var/pgsql_socket"
@@ -87,8 +112,7 @@ ARCHIVE_TIMEOUT         = "0"  # for postgresql.conf, seconds, value for
                                # 'archive_timeout'.  0 because we are using
                                # pg_receivexlog.
 GIGS                    = 1024 ** 3 # bytes per gigabyte
-MIN_FREE_SPACE_GIGS = 30        # Leave at least this many GB available when
-                                # accumulating log files
+MAX_WAL_FILES_GIGS      = 1
 DO_NOT_BACKUP_FILE      = ".DoNotBackup"
 ARCHIVE_LOG_DIRECTORY_NAME = "backup"
 BACKUP_DIRECTORY_NAME   = "base_backup"
@@ -99,6 +123,9 @@ MAINTAINED_LOG_COUNT    = 4
 HEARTBEAT_SECS          = 10
 XPG_SOCKET_NAME = ".xpg.skt"
 TEMP_EXT = '.in-progress'
+WAL_FILE_SIZE_BYTES     = 16777216 # NOTE: This default may be changed by rebuilding
+                                   # postgres, and that would require changing this value.
+
 
 # From postgres itself:
 LOCK_FILE_LINE_SOCKET_DIR = 5
@@ -121,15 +148,30 @@ class NoFiles(Exception):
 class Waiter(ProcessProtocol, object):
     def __init__(self):
         self.waiting = []
+        self.exit_status = -1
 
 
     def wait(self):
+        if self.exit_status != -1:
+            # process already exited
+            returnValue(self.exit_status)
+
         d = Deferred()
         self.waiting.append(d)
         return d
 
 
     def processExited(self, reason):
+        if reason.check(ProcessDone):
+            value = 0
+        elif reason.check(ProcessTerminated):
+            value = reason.value.exitCode
+        else:
+            value = 255
+        if self.waiting:
+            self.waiting.pop().callback(value)
+        else:
+            self.exit_status = value
         while self.waiting:
             if reason.check(ProcessDone):
                 value = 0
@@ -160,10 +202,12 @@ def log_nothing(msg):
     Default debug logger: do nothing.
     """
 
-if os.environ.get("XPG_LOG_DEBUG"):
-    log_debug = log_message
-else:
-    log_debug = log_nothing
+# FIXME: revert before ship:
+log_debug = log_message
+#if os.environ.get("XPG_LOG_DEBUG"):
+#    log_debug = log_message
+#else:
+#    log_debug = log_nothing
 
 
 
@@ -200,6 +244,7 @@ class InheritableFilesystemLock(DeferredFilesystemLock, object):
         try:
             linkdata = os.readlink(self.name)
         except OSError:
+            linkdata = None
             pass
         got = json.loads(self.environ.get('INHERITABLE_LOCK', '{}'))
         key = os.path.abspath(self.name)
@@ -221,35 +266,49 @@ class InheritableFilesystemLock(DeferredFilesystemLock, object):
 
         try:
             result = super(InheritableFilesystemLock, self).lock()
+            if not result:
+                # Locking will fail if the lock file is stale and points to a recycled
+                #     PID owned by _the same_ UID.  Clean up the stale PID file and retry if
+                #     that is the case.
+                locked_pid = int(os.readlink(self.name)) # convert to int
+                log_message("Error locking for pid {}".format(locked_pid))
+                my_uid = os.getuid()
+                for process in psutil.process_iter():
+                    owner = process.uids().real
+                    pid = process.pid
+                    if pid == locked_pid:
+                        if owner is not my_uid or \
+                                (process.name() != "xpostgres"):
+                            log_message("Trying to remove {}".format(self.name))
+                            os.remove(self.name)
+                            return False
             return result
         except ValueError:
             log_message("Potentially invalid lockfile; lock not acquired.")
             return False
         except OSError:
             try:
-                locked_pid = os.readlink(self.name)
-                log_message("Error locking for pid " + repr(locked_pid))
+                locked_pid = int(os.readlink(self.name)) # convert to int
+                log_message("Error locking for pid {}".format(locked_pid))
                 # Locking will fail if the lock file is stale and points to a recycled
-                #     PID.  Clean up the stale PID file and retry if that is the case.
-                process = Popen("ps -ef | grep -v grep", stdout=PIPE, shell=True)
-                lines = process.stdout.read().split('\n')
+                #     PID in use by _another_ UID.  Clean up the stale PID file and retry if
+                #     that is the case.
                 my_uid = os.getuid()
-                for line in lines:
-                    cols = line.split()
-                    if len(cols) > 1:
-                        owner = cols[0]
-                        pid = cols[1]
-                        if pid == locked_pid and owner is not my_uid:
-                            log_debug("Trying to remove " + self.name)
-                            os.remove(self.name)
-                            return False
+                for process in psutil.process_iter():
+                    owner = process.uids().real
+                    pid = process.pid
+                    if pid == locked_pid and owner is not my_uid:
+                        log_message("Trying to remove {}".format(self.name))
+                        os.remove(self.name)
+                        return False
             except:
                 log_message("Could not read PID from path")
                 return False
             return False
         else:
             return False
-            
+
+
     def bequeath(self, times=30):
         """
         Allow sub-processes to obtain this lock by updating the
@@ -330,6 +389,8 @@ class XPostgres(object):
     def __init__(self, reactor):
         self.reactor = reactor
         self.socket_directory = DEFAULT_SOCKET_DIR
+        self.socket_permissions_octal = '0600'
+        self.postgres_port = 5432
         self.plist_path = None
         self.data_directory = None
         self.log_directory = None
@@ -340,6 +401,7 @@ class XPostgres(object):
         self.control_socket_lock = None
         self.doing_restore = False
         self.receivexlog_process = None
+        self.backup_in_progress = False
         self.reactor.addSystemEventTrigger("before", "shutdown",
                                            self._reactor_shutdown)
         self.shutdown_hooks = set()
@@ -392,10 +454,12 @@ class XPostgres(object):
         self.refcount -= 1
         log_message("Decremented reference count. Count is now: {0}"
                     .format(self.refcount))
+
         d = Deferred()
         if self.refcount == 0:
             log_message("Reference count reached zero.  Shutting down."
                         .format(self.refcount))
+
             def fireD():
                 d.callback(None)
                 return succeed(None)
@@ -421,7 +485,6 @@ class XPostgres(object):
         if self.running_postgres is not None:
             self.running_postgres.transport.signalProcess("HUP")
 
-
     def _a_d_vfs_attr(self, attr):
         """
         Implementation of C{archive_disk_capacity_*}.
@@ -437,37 +500,6 @@ class XPostgres(object):
         What size is the entire disk storing the archive logs, in gigabytes?
         """
         return self._a_d_vfs_attr("blocks")
-
-
-    def archive_disk_available_gigabytes(self):
-        """
-        How much space is available on the disk storing the archive logs, in
-        gigabytes?
-        """
-        return self._a_d_vfs_attr("bavail")
-
-
-    def max_archive_gigabytes(self):
-        """
-        How big should we allow the archive logs to get before triggering
-        another base backup?
-
-        Scale parameters based on total disk size, but always leave at least 30
-        GB free.::
-
-            50 GB or less: Max 5  GB
-                50-100 GB: Max 10 GB
-               100-200 GB: Max 20 GB
-                  200+ GB: Max 30 GB
-        """
-        capacity = self.archive_disk_capacity_gigabytes()
-        if capacity < 50:
-            return 5
-        if capacity < 100:
-            return 10
-        if capacity < 200:
-            return 20
-        return 30
 
 
     def archive_log_bytes(self):
@@ -490,18 +522,80 @@ class XPostgres(object):
         )
 
 
-    def system_is_shutting_down(self):
-        def to_boolean((out, err, status)):
-            return (
-                out.split() !=
-                ["com.apple.system.loginwindow.shutdownInitiated", "0"]
-            )
-        return getProcessOutputAndValue(
-            NOTIFYUTIL,
-            ['-g', 'com.apple.system.loginwindow.shutdownInitiated'],
-            self.postgres_env,
-            reactor=self.reactor
-        ).addCallback(to_boolean)
+    def sanitize_pid_file(self):
+        # Perform any necessary actions with the postmaster PID lock file to mitigate any
+        #   unwanted postgres behavior.
+        pm_pid_path = os.path.join(self.data_directory, 'postmaster.pid')
+        try:
+            fp = FilePath(pm_pid_path)
+            lockfile_lines = fp.getContent().split("\n")
+        except:
+            return
+
+        matchobj = re.match(r"^\s*(\d+)\s*", lockfile_lines[0])
+        if matchobj:
+            old_pid = matchobj.group(1)
+        else:
+            log_message("Could not get PID from lock file")
+            return
+
+        process = Popen("ps -f -p " + old_pid, stdout=PIPE, shell=True)
+        ps_lines = process.stdout.read().split('\n')
+        postgres_found = False
+        for line in ps_lines:
+            matchobj = re.match(r"\s*\d+\s+%s\s+\d+\s+.*%s" % (old_pid, POSTGRES), line)
+            if matchobj:
+                postgres_found = True
+                break
+        if not postgres_found:
+            log_message("Replacing PID in postmaster lock file because we know it is not a postmaster.")
+            # Replacing the PID with launchd's PID of 1 will cause postgres to accept an EPERM during its
+            #   "kill -0" and likely replace the postmaster lock file instead of assuming that there is a conflict
+            #   with an unrelated process in case that process is owned by the same UID. (rdar://problem/21027328)
+            lockfile_lines[0] = '1'
+            log_message("Stripping shared memory address from postmaster lock file")
+            # Snip the shared memory block out of the lockfile if no process is running
+            # that matches the PID in the file.  Otherwise postgres will fail to start
+            # if it wasn't shut down properly and another process is now using that memory
+            # block.
+            del lockfile_lines[5:]
+            for i in range(0,5):
+                lockfile_lines[i] += '\n'
+            fp.setContent("".join(lockfile_lines))
+
+
+    def sanitize_lock_file(self):
+        # Perform any necessary actions with the socket lock file to mitigate any
+        #   unwanted postgres behavior.
+        pm_lock_path = os.path.join(self.socket_directory, ".s.PGSQL." + str(self.postgres_port) + ".lock")
+        try:
+            fp = FilePath(pm_lock_path)
+            lockfile_lines = fp.getContent().split("\n")
+        except:
+            return
+
+        matchobj = re.match(r"^\s*(\d+)\s*", lockfile_lines[0])
+        if matchobj:
+            old_pid = matchobj.group(1)
+        else:
+            log_message("Could not get PID from lock file")
+            return
+
+        process = Popen("ps -f -p " + old_pid, stdout=PIPE, shell=True)
+        ps_lines = process.stdout.read().split('\n')
+        postgres_found = False
+        for line in ps_lines:
+            matchobj = re.match(r"\s*\d+\s+%s\s+\d+\s+.*%s" % (old_pid, POSTGRES), line)
+            if matchobj:
+                postgres_found = True
+                break
+        if not postgres_found:
+            log_message("Replacing PID in socket lock file because we know it is not a postmaster.")
+            # Replacing the PID with launchd's PID of 1 will cause postgres to accept an EPERM during its
+            #   "kill -0" and likely replace the postmaster lock file instead of assuming that there is a conflict
+            #   with an unrelated process in case that process is owned by the same UID. (rdar://problem/21027328)
+            lockfile_lines[0] = '1'
+            fp.setContent("\n".join(lockfile_lines))
 
 
     def touch_dotfile(self):
@@ -556,10 +650,21 @@ class XPostgres(object):
                 argv.extend(readPlist(self.plist_path)["ProgramArguments"])
             elif value == "-D":
                 self.data_directory = following()
+            elif value == "-p":
+                self.postgres_port = int(following())
             elif value == "-c":
                 override_val = following()
                 key, value = override_val.split("=", 1)
-                if key == "unix_socket_directory":
+                if key == "unix_socket_directories":
+                    self.socket_directory = value
+                if key == "unix_socket_permissions":
+                    self.socket_permissions_octal = value
+                elif key == "unix_socket_directory":
+                    # PostgreSQL 9.3 changed the parameter name.
+                    log_message("WARNING: parameter \"unix_socket_directory\" was " +
+                            "specified but is no longer valid. Using the specified " +
+                            "value for now, but please use \"unix_socket_directories\" " +
+                            "in the future.")
                     self.socket_directory = value
                 elif key == "log_directory":
                     self.log_directory = value
@@ -568,6 +673,9 @@ class XPostgres(object):
         pg_data = env.get("PGDATA")
         if pg_data is not None:
             self.data_directory = pg_data
+        pg_port = env.get("PGPORT")
+        if pg_port is not None:
+            self.postgres_port = int(pg_port)
 
         if self.data_directory is None:
             raise NoDataDirectory()
@@ -590,7 +698,12 @@ class XPostgres(object):
 
     def preflight(self):
         if not os.path.isdir(self.socket_directory):
-            os.mkdir(self.socket_directory, 0o700)
+            socket_directory_perms = self.socket_permissions_octal.lstrip('0')
+            if socket_directory_perms[0] is not "7":
+                # at least ensure that we have owner R/W/X bits set
+                log_debug("Given unix_socket_permissions are not ok for parent directory")
+                socket_directory_perms = "700"
+            os.mkdir(self.socket_directory, int(socket_directory_perms))
         if not os.path.exists(self.archive_log_directory):
             os.mkdir(self.archive_log_directory, 0o700)
         elif not os.path.exists(self._dotfile()):
@@ -744,6 +857,7 @@ class XPostgres(object):
         if not self.doing_restore:
             # Connection restrictions will prevent this from working; don't
             # bother.
+            log_message("Killing idle connections...")
             yield self.spawn(PSQL, '-q', '-h', self.socket_directory, '-d',
                              'postgres', '-c', sql)
         self.running_postgres.transport.signalProcess(signal)
@@ -829,24 +943,20 @@ class XPostgres(object):
         """
         Is it time to do the backup?
         """
-        # TODO: TEST
+        if self.backup_in_progress is True:
+            log_debug("Backup already in progress...")
+            return False
         backup_zip_file = self.backup_zip_file
         if self.backup_zip_file.exists():
             time_since_change = (self.reactor.seconds() -
                                  backup_zip_file.getModificationTime())
             if time_since_change < MIN_BACKUP_THRESHOLD_SECS:
-                # It's too soon, regardless of disk parameters. (TODO: TEST)
+                # It's too soon, regardless of disk parameters.
                 return False
-        disk_free_gigs = self.archive_disk_available_gigabytes()
-        if MIN_FREE_SPACE_GIGS > disk_free_gigs:
-            # Not enough free space on disk.  Please backup immediately. (TODO:
-            # TEST)
-            return True
-        max_wal_files_gigs = self.max_archive_gigabytes()
         archive_log_gigs = self.archive_log_bytes() / GIGS
-        if archive_log_gigs > max_wal_files_gigs:
+        if archive_log_gigs >= MAX_WAL_FILES_GIGS:
             # Logs are too big for this size disk.  Please backup immediately.
-            # (TODO: TEST)
+            log_debug("Backing up due to size of WAL archive")
             return True
         temp_do_not_backup_file = self.do_not_backup_file()
         if temp_do_not_backup_file.exists():
@@ -855,36 +965,31 @@ class XPostgres(object):
             return False
         if not self.backup_zip_file.exists():
             # Likely first opportunity to backup, so do it now
+            log_debug("Backing up because there is no existing backup file")
             return True
         # No reason to back up yet: no size thresholds reached.  Don't bother
-        # backing up. (TODO: TEST)
+        # backing up.
         return False
+
+
+    def wait_for_backup_completion(self):
+        while self.backup_in_progress:
+            # Prevent pg_basebackup from trying to connect once postgres is shut down
+            if self.running_postgres is None:
+                log_debug("postgres is shutting down, don't keep trying to backup")
+                return
+            log_message("Waiting for for backup to finish...")
+            self.reactor.iterate(1)
+            log_debug("Finished self.reactor.iterate()")
 
 
     @inlineCallbacks
     def do_backup(self):
-        # 15179615 Make sure pg_receivexlog logs are being backed up by Time Machine.
-        # This is piggybacking with the backup timer; set up a new timer if desired
-        #     fire frequency is different from the backup heartbeat.
-        if (self.receivexlog_process is not None and
-                self.receivexlog_process.transport.pid > 0):
-            process = Popen(LSOF + ' -l -p ' + str(self.receivexlog_process.transport.pid) +
-                    ' -F n', stdout=PIPE, shell=True)
-            lines = process.stdout.read().split('\n')
-            for line in lines:
-                matchobj = re.match(r"^n(%s.+)"%self.archive_log_directory, line)
-                if (matchobj):
-                    path = matchobj.group(1)
-                    log_debug("matched path for pg_receivexlog file: " + path)
-                    if os.path.exists(path):
-                        fhandle = file(path, 'a')
-                        try:
-                            os.utime(path, None)
-                        except:
-                            log_message("Failed to open path: " + path)
-                        finally:
-                            fhandle.close()
-
+        # Make sure any active log files get backed up by Time Machine.
+        for f in FilePath(self.archive_log_directory).children():
+            matchobj = re.match(r"^(.*)\.partial$", f.basename())
+            if matchobj:
+                f.touch()
 
         # If a backup is needed, create it.
         if not self.should_backup():
@@ -914,6 +1019,7 @@ class XPostgres(object):
                      getattr(os, "O_BINARY", 0))
         try:
             log_message("Beginning base backup.")
+            self.backup_in_progress = True
             while True:
                 waiter = Waiter()
                 self.reactor.spawnProcess(
@@ -927,6 +1033,12 @@ class XPostgres(object):
                 log_message(
                     "Base backup did not complete. Trying again in 2 seconds."
                 )
+                if self.refcount <= 0:
+                    log_message("Aborting backup attempt, postgres should be shutting down")
+                    self.backup_in_progress = False
+                    os.close(fd)
+                    os.remove(temp_backup_file.path)
+                    return
                 os.lseek(fd, 0, 0)
                 os.ftruncate(fd, 0)
                 yield deferLater(self.reactor, 2.0, lambda: None)
@@ -945,6 +1057,7 @@ class XPostgres(object):
         # file creation time in ascending order
         for bt, fp in file_create_times[:-MAINTAINED_LOG_COUNT]:
             fp.remove()
+        self.backup_in_progress = False
 
 
     def spawn(self, *a):
@@ -979,6 +1092,27 @@ class XPostgres(object):
             )
         self.toggle_wal_archive_logging(False)
 
+        # Scan over the archive files to see if anything looks problematic.
+        #  Specifically, check for WAL archive files that don't match our expected size.
+        #  WAL files should always be a fixed size, 16M by default.
+        for f in FilePath(self.archive_log_directory).children():
+            matchobj = re.match(r"^[0-9A-Z]+$", f.basename())
+            if matchobj and not f.isdir():
+                if f.getsize() != WAL_FILE_SIZE_BYTES:
+                    log_message("Warning: During restore, found supposed WAL file"
+                            " which does not meet the expected size.  Renaming"
+                            " the file to prevent probable error in recovery.")
+                    log_message("Renaming " + str(f))
+                    potentially_bad_file = f.siblingExtension(
+                            '.xpg_renamed_due_to_abnormal_filesize'
+                    )
+                    f.moveTo(potentially_bad_file)
+        # If an upgrade is needed, let upgrade finish the recovery.
+        did_upgrade = self.upgrade_cluster_if_needed()
+        if did_upgrade:
+            log_message("Recovery done; It should have been accomplished via upgrade.")
+            return
+
         yield self.start_postgres(for_restore=True)
         log_message("Waiting for recovery done notification.")
         yield self.wait_for_path(recovery_done)
@@ -1012,36 +1146,72 @@ class XPostgres(object):
 
     @inlineCallbacks
     def do_everything(self, argv, environ):
-        # XXX Test, please.
         self.parse_command_line(argv, environ)
         self.preflight()
 
-        if not self.lock_control_socket():
-            log_message("Could not lock control socket, aborting startup")
-            return
+        args = list(argv)
+        args.pop(0)
+        setproctitle("xpostgres {}".format(' '.join(args)))
+
+        parent_pid = os.getppid()
+        # FIXME: This should be moved to or duplicated in the xpg_ctl client case
+        log_message("Process parent is PID " + str(parent_pid))
+
+        for x in range(10):
+            if self.lock_control_socket():
+                break
+            elif x < 9:
+                log_message("Could not lock control socket, retrying")
+            else:
+                log_message("Could not lock control socket, aborting startup")
+                return
 
         if os.path.exists(self.control_socket_path):
             log_message("Locked control socket, but stale socket present. "
                         "Cleaning up.")
             os.remove(self.control_socket_path)
 
+        # Note: "mode" parameter is deprecated.  The socket should instead
+        # be placed inside a secure directory.
         control_channel = UNIXServerEndpoint(
-            self.reactor, self.control_socket_path
+            self.reactor, self.control_socket_path, mode=0660
         )
         listener = yield control_channel.listen(ControlChannelFactory(self))
 
+        self.add_shutdown_hook(self.wait_for_backup_completion)
         self.add_shutdown_hook(self.unlock_control_socket)
         self.add_shutdown_hook(listener.stopListening)
 
         if self.restore_before_run:
             log_message("Doing restore.")
             yield self.do_restore()
+        else:
+            DEVNULL = open(os.devnull, 'w')
+            if call([PG_CONTROLDATA, self.data_directory], stdout=DEVNULL) != 0:
+                log_message("Error: pg_controldata returned error while checking checking cluster at: "
+                        + self.data_directory)
+                returnValue(1)
+            DEVNULL.close()
+
+            data_directory_fp = FilePath(self.data_directory)
+            pg_version_fp = data_directory_fp.child('PG_VERSION')
+            if not os.path.exists(pg_version_fp.path):
+                log_message("Error: PG_VERSION file is missing from cluster: {}".format(data_directory_fp.path))
+                log_message("Move or delete this directory to provision a new cluster.")
+                returnValue(1)
+
+        self.upgrade_cluster_if_needed()
+
         # Make sure we successfully exclude the data directory _before_
         # starting postgres, so we don't store any data that can't be backed up
         log_message("Excluding data directory.")
         yield self.exclude_from_tm_backup(self.data_directory)
         log_message("Turning on archive logging.")
         self.toggle_wal_archive_logging(True)
+        log_message("Cleaning up any existing postmaster.pid file")
+        self.sanitize_pid_file()
+        log_message("Cleaning up any existing socket lock file")
+        self.sanitize_lock_file()
         log_message("Starting postgres.")
         yield self.start_postgres(for_restore=False)
         yield self.start_receivexlog()
@@ -1050,6 +1220,7 @@ class XPostgres(object):
         log_message("Starting backup heartbeat.")
         yield lc.start(HEARTBEAT_SECS)
         log_message("Heartbeat successfully terminated.")
+        log_message("Finished.")
         returnValue(0)
 
 
@@ -1093,7 +1264,7 @@ class XPostgres(object):
             [
                 PG_RECEIVEXLOG, "-h", self.socket_directory, '--no-password',
                 "--directory", self.archive_log_directory,
-                '--verbose'
+                '--verbose', '--status-interval=1'
             ],
             env
         )
@@ -1137,8 +1308,8 @@ class XPostgres(object):
                 r"\s*#*archive_command\s*=\s*['\"].*['\"](.*)", line
             )
             if (matchobj):
-                command = ("'python {this} archive %p ../backup/%f'"
-                           .format(this=os.path.abspath(__file__)))
+                command = ("'/Applications/Server.app/Contents/ServerRoot/Library/CalendarServer/bin/python" +
+                            " {this} archive %p ../backup/%f'".format(this=os.path.abspath(__file__)))
                 new_postgres_config.append(
                     "archive_command = " + command + matchobj.group(1) + "\n"
                 )
@@ -1156,12 +1327,14 @@ class XPostgres(object):
                 if matchobj.group(5):
                     (address, method) = matchobj.group(4, 5)
                 else:
+                    address = ""
                     method = matchobj.group(4)
 
                 if ((type == "local" and database == "replication" and
                      address == "" and user == "all" and method == "trust")):
                     replication_enabled = True
         if not replication_enabled:
+            #FIXME: This has been showing up multiple redundant times in pg_hba.conf:
             new_hba_config.append(
                 "local   replication     all"
                 "                                      trust\n"
@@ -1312,6 +1485,227 @@ class XPostgres(object):
             hba_config_fp.setContent("".join(new_hba_config))
 
 
+    def upgrade_cluster_if_needed(self):
+        """
+        If the target cluster is outdated, try to upgrade it.
+        Return value: True if an upgrade was completed, False if not.
+        """
+        if not os.path.exists(self.data_directory):
+            log_debug(
+                "upgrade_cluster_if_needed: data directory does not exist currently; nothing to upgrade"
+            )
+            return False
+
+        data_directory_fp = FilePath(self.data_directory)
+        pg_version_fp = data_directory_fp.child('PG_VERSION')
+        if not os.path.exists(pg_version_fp.path):
+            log_message("Error: PG_VERSION file is missing from cluster: {}".format(data_directory_fp.path))
+            log_message("Move or delete this directory to provision a new cluster.")
+            return False
+
+        with pg_version_fp.open("rb") as content_file:
+            content = content_file.read()
+
+        matchobj = re.match(r"^9\.(\d+)$", content)
+        if not matchobj:
+            log_message("Error: Could not read version from specified data directory PG_VERSION file")
+            return False
+        else:
+            postgres_minor_version = matchobj.group(1)
+
+        old_bin_dir = None
+        old_socket_directory_argument = "unix_socket_directories"  # postgres 9.3+
+        # Warning: support for upgrade from server versions containing postgres 9.0 and 9.1
+        #   has not been tested as it should be handled by other tools currently.
+        if postgres_minor_version   == '0':
+            old_bin_dir = POSTGRES_BINARIES_DIR_9_0
+            old_socket_directory_argument = "unix_socket_directory"
+        elif postgres_minor_version == '1':
+            old_bin_dir = POSTGRES_BINARIES_DIR_9_1
+            old_socket_directory_argument = "unix_socket_directory"
+        elif postgres_minor_version == '2':
+            old_bin_dir = POSTGRES_BINARIES_DIR_9_2
+            old_socket_directory_argument = "unix_socket_directory"
+        elif postgres_minor_version == '3':
+            log_debug("Target cluster does not appear to require an upgrade.")
+            return False
+        else:
+            log_message("Error: Could not find a supported version string")
+            return False
+
+        log_message("Preparing to upgrade outdated database cluster.")
+
+        # Find available ports to use
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('', 0))
+        first_port = s.getsockname()[1]
+        s.close()
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('', 0))
+        second_port = s.getsockname()[1]
+        s.close()
+
+        # Disable archive logging since the backups will be re-created later
+        # XXX: assumes old configuration is compatible
+        self.toggle_wal_archive_logging(False)
+
+        # Move aside the original cluster and initialize a new one
+        orig_data_dir = data_directory_fp.siblingExtension('.original_for_upgrade').path
+        if os.path.isfile(orig_data_dir):
+            log_message("Error: temporary data dir already exists at " + str(orig_data_dir) +
+                        ". Consider deleting it and reattempting the upgrade.")
+            return False
+
+        my_uid = os.getuid()
+        superuser_role = getpwuid(my_uid)[0]
+        log_debug("my username is " + superuser_role)
+        cal_pid = getpwnam('_calendar').pw_uid
+        if my_uid == cal_pid:
+            # special case for Calendar as its user account differs from the superuser role
+            superuser_role = 'caldav'
+            os.rename(self.data_directory, orig_data_dir)
+            os.mkdir(self.data_directory, 0o700)
+            log_message("Creating database with caldav superuser role...")
+            if call([INITDB, '--encoding=UTF8', '--locale=C', '-U', superuser_role, '-D', self.data_directory]) != 0:
+                log_message("Error running initdb.")
+                return False
+        else:
+            os.rename(self.data_directory, orig_data_dir)
+            os.mkdir(self.data_directory, 0o700)
+            log_message("Creating database...")
+            if call([INITDB, '--encoding=UTF8', '--locale=C', '-D', self.data_directory]) != 0:
+                log_message("Error running initdb.")
+                return False
+
+        # So that pg_ctl won't think postgres is ready, do our upgrade in a different location,
+        #   and create a placeholder lock file in the original data dir which causes pg_ctl to return
+        #   a "not running" status.
+        #   The xpg lock should keep other xpg instances from interfering.
+        temp_target_db_dir = data_directory_fp.siblingExtension('.new_for_upgrade').path
+        if os.path.isfile(temp_target_db_dir):
+            log_message("Error: temporary data dir already exists at " + str(temp_target_db_dir) +
+                        ". Consider deleting it and reattempting the upgrade.")
+            return False
+
+        try:
+            shutil.copytree(self.data_directory, temp_target_db_dir)
+        except OSError as exc:
+            if exc.errno == errno.ENOTDIR:
+                shutil.copy(self.data_directory, temp_target_db_dir)
+            else: raise
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('', 0))
+        unused_port = s.getsockname()[1]
+        s.close()
+
+        data_dir = FilePath(self.data_directory)
+        with data_dir.child("postmaster.pid").open("wb") as f:
+            # launchd is always running but the unused port results in the desired pg_ctl status result
+            f.write("1\n" +
+                self.data_directory + "\n" +
+                "1402713703\n" +
+                str(unused_port) + "\n" +
+                self.socket_directory + "\n" +
+            "localhost\n")
+
+        log_message("Upgrading cluster from 9." + postgres_minor_version + " ...")
+        pg_ctl_old = os.path.join(old_bin_dir, "pg_ctl")
+
+        log_message("Starting original postgres cluster using " + pg_ctl_old)
+        # Note: Specifying "-k" or "unix_socket_directory" when using the 9.0 binaries
+        # results in pg_ctl not using the correct directory.
+        # PGHOST must be redefined as it will override our settings if set by the owner.
+        orig_pghost = os.environ.pop("PGHOST", "")
+        substituted_pghost_env_value = False
+        if orig_pghost != "":
+            log_debug("Temporarily overriding PGHOST in environment...")
+            os.environ['PGHOST'] = DEFAULT_SOCKET_DIR
+            substituted_pghost_env_value = True
+
+        if call([pg_ctl_old, 'start',
+                        '-w',
+                        '-t', '86400',    # If recovery from backup occurs, this may take a while.
+                                          # Recovery should complete before proceeding.
+                        '-l', os.path.join(DEFAULT_SOCKET_DIR, superuser_role + "_server1-upgrade.log"),
+                        '-D', orig_data_dir,
+                        '-o', "-p %s -c %s='%s'" % (str(first_port),
+                        old_socket_directory_argument, DEFAULT_SOCKET_DIR)]) != 0:
+            log_message("pg_ctl start failed for original cluster")
+            if substituted_pghost_env_value:
+                s.environ['PGHOST'] = orig_pghost
+            return False
+
+        log_message("Starting new postgres cluster...")
+        if call([PG_CTL, 'start',
+                        '-w',
+                        '-t', '60',
+                        '-l', os.path.join(DEFAULT_SOCKET_DIR, superuser_role + "_server2-upgrade.log"),
+                        '-D', temp_target_db_dir,
+                        '-o', "-p %s -c unix_socket_directories='%s'" % (str(second_port),
+                        DEFAULT_SOCKET_DIR)]) != 0:
+            log_message("pg_ctl start failed for new cluster")
+            if substituted_pghost_env_value:
+                os.environ['PGHOST'] = orig_pghost
+            return False
+
+#        #if superuser_role == '_devicemgr':   # DEBUG
+#        log_debug("Sleeping a while...")
+#        import time
+#        time.sleep(60)
+#        log_debug("Done sleeping....")
+
+        log_message("Doing dump and import...")
+        process = Popen(PG_DUMPALL + ' -h ' + DEFAULT_SOCKET_DIR +
+                    ' -p ' + str(first_port) + ' -c -U ' + superuser_role + ' -o ' +
+                    ' | ' +
+                    PSQL + ' postgres ' + ' -h ' + DEFAULT_SOCKET_DIR + ' -p ' +
+                    str(second_port) + ' -U ' + superuser_role,
+                stdout=PIPE, stderr=STDOUT, shell=True)
+        output = process.communicate()[0]
+        if process.wait() != 0:
+            log_message("psql import failed: " + str(process.returncode))
+            log_message("output :" + output)
+            if substituted_pghost_env_value:
+                os.environ['PGHOST'] = orig_pghost
+            return False
+        log_debug("output :" + output)
+        log_message("Import was successful.")
+        log_message("Shutting down original cluster.")
+        if call([pg_ctl_old, 'stop', '-D', orig_data_dir]) != 0:
+            log_message("pg_ctl stop failed for post-upgrade cluster (old)")
+            if substituted_pghost_env_value:
+                os.environ['PGHOST'] = orig_pghost
+            return False
+
+        log_message("Shutting down new cluster.")
+        if call([PG_CTL, 'stop',
+                        '-D', temp_target_db_dir]) != 0:
+            log_message("pg_ctl stop failed for post-upgrade cluster (new)")
+            if substituted_pghost_env_value:
+                os.environ['PGHOST'] = orig_pghost
+            return False
+
+        shutil.rmtree(orig_data_dir)
+        shutil.rmtree(self.data_directory)
+        os.rename(temp_target_db_dir, self.data_directory)
+
+        # Clean up old backup files and start backing up the new cluster
+        backup_zip_file = self.backup_zip_file
+        if self.backup_zip_file.exists():
+            log_debug(
+              "Removing obsolete backup archive after cluster upgrade at path: "
+                    + backup_zip_file.path
+            )
+            backup_zip_file.remove()
+        fp = FilePath(self.archive_log_directory)
+        for child in fp.children():
+            child.remove()
+        if substituted_pghost_env_value:
+            os.environ['PGHOST'] = orig_pghost
+        return True
+
+
 from twisted.protocols.amp import AMP, Command
 
 class Incref(Command):
@@ -1452,9 +1846,27 @@ class CtlStart(XPGCtlCommand):
                     if xpg.backup_zip_file.exists():
                         log_debug("Doing restore")
                         yield xpg.do_restore()
+                else:
+                    # Run some sanity checks so that we don't proceed if there is an obvious issue.
+                    DEVNULL = open(os.devnull, 'w')
+                    log_debug("running pg_controldata on directory: " + str(xpg.data_directory))
+                    if call([PG_CONTROLDATA, xpg.data_directory], stdout=DEVNULL) != 0:
+                        log_message("Error: pg_controldata returned error while checking checking cluster at: "
+                                + xpg.data_directory)
+                        returnValue(8)
+                    DEVNULL.close()
+
+                    data_directory_fp = FilePath(xpg.data_directory)
+                    pg_version_fp = data_directory_fp.child('PG_VERSION')
+                    if not os.path.exists(pg_version_fp.path):
+                        log_message("Error: PG_VERSION file is missing from cluster: {}".format(data_directory_fp.path))
+                        log_message("Move or delete this directory to provision a new cluster.")
+                        returnValue(8)
+
                 start_postgres = self.actually_start_xpostgres()
                 yield send_lock
                 yield start_postgres
+                log_debug("Returned from start_postgres, exiting")
                 returnValue(None)
             else:
                 log_debug("Control socket _not_ locked; connecting client.")
@@ -1477,7 +1889,10 @@ class CtlStart(XPGCtlCommand):
                         f.printTraceback()
                     else:
                         returnValue(None)
+                continue
 
+        log_message("Control socket _not_ locked; this should be okay if xpostgres is already running")
+        returnValue(None)
 
 
 class CtlStop(XPGCtlCommand):
@@ -1501,12 +1916,11 @@ class CtlStop(XPGCtlCommand):
         else:
             if client is None:
                 # Delegate to pg_ctl for error message.
-                log_debug("pg_ctl stop")
+                log_debug("Calling pg_ctl stop")
                 yield CtlPassthrough(self.xpg_ctl).execute()
             else:
                 log_debug("sending Decref message")
                 yield client.decref()
-
 
 
 class CtlRestart(XPGCtlCommand):
@@ -1552,12 +1966,12 @@ class CtlPassthrough(XPGCtlCommand):
         args = [PG_CTL] + self.extra_args + self.xpg_ctl.original_args
         log_message('Executing pg_ctl ' + repr(args))
         # Note that for lock inheritance, we must use the same environ as
-        # updatedy by InheritableFilesystemLock.
+        # updated by InheritableFilesystemLock.
         done = simple_spawn(self.xpg_ctl.reactor, args, os.environ.copy())
         done.addCallback(lambda whatever: self.terminated(whatever))
         return done
-        
-        
+
+
     def terminated(self, status):
         exitCode[0] = status
         log_debug("pg_ctl terminated: " + repr(exitCode[0]))
@@ -1694,8 +2108,15 @@ class XPGCtl(object):
         }
 
         for (opt, val) in optlist:
+            matchobj = re.match(r"^--(.*)$", opt)
+            if matchobj:
+                opt = matchobj.group(1)
             opt = option_synonyms.get(opt, opt)
-            attr_name, has_value = option_name_mapping[opt]
+            try:
+                attr_name, has_value = option_name_mapping[opt]
+            except KeyError:
+                log_message("Invalid option specified for " + str(opt))
+                continue
             if not has_value:
                 val = True
             setattr(self, attr_name, val)
@@ -1706,6 +2127,20 @@ class XPGCtl(object):
         pg_data = env.get("PGDATA")
         if pg_data is not None:
             self.data_directory = pg_data
+
+        if hasattr(self, 'logfile'):
+            if os.path.isfile(self.logfile):
+                if not os.access(self.logfile, os.W_OK):
+                    log_message("Specified log file cannot be written to.")
+                    returnValue(1)
+            elif os.path.isdir(os.path.dirname(self.logfile)):
+                if not os.access(os.path.dirname(self.logfile), os.W_OK):
+                    log_message("Specified log file directory cannot be written to.")
+                    returnValue(1)
+            else:
+                log_message("Specified log file cannot be written to: no existing parent directory.")
+                returnValue(1)
+
         command_class = {
             'start': CtlStart,
             'stop': CtlStop,

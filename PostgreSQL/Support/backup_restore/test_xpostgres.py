@@ -1,8 +1,8 @@
-#!/usr/bin/python
+#!/Applications/Server.app/Contents/ServerRoot/Library/CalendarServer/bin/python
 #
 # Author:: Apple Inc.
 # Documentation:: Apple Inc.
-# Copyright (c) 2013 Apple Inc. All Rights Reserved.
+# Copyright (c) 2013-2015 Apple Inc. All Rights Reserved.
 #
 # IMPORTANT NOTE: This file is licensed only for use on Apple-branded
 # computers and is subject to the terms and conditions of the Apple Software
@@ -241,7 +241,7 @@ class XPostgresTest(TestCase):
     def test_command_line_postgres_overrides(self):
         xpg = XPostgres(DummyProcessReactor())
         xpg.parse_command_line(["xpostgres",
-                                "-c", "unix_socket_directory=socket_dir", "-D",
+                                "-c", "unix_socket_directories=socket_dir", "-D",
                                 "data_directory"], {})
         self.assertEqual(xpg.socket_directory, "socket_dir")
         xpg.parse_command_line(["xpostgres",
@@ -272,7 +272,7 @@ class XPostgresTest(TestCase):
         os.makedirs(temp)
         xpg = XPostgres(DummyProcessReactor())
         xpg.parse_command_line(
-            ["xpostgres", "-c", "unix_socket_directory=socket_dir",
+            ["xpostgres", "-c", "unix_socket_directories=socket_dir",
              "-D", temp], {}
         )
         xpg.preflight()
@@ -291,7 +291,7 @@ class XPostgresTest(TestCase):
 
         xpg = XPostgres(DummyProcessReactor())
         xpg.parse_command_line([
-            "xpostgres", "-c", "unix_socket_directory=socket_dir",
+            "xpostgres", "-c", "unix_socket_directories=socket_dir",
             "-D", data_dir],
             {}
         )
@@ -353,7 +353,7 @@ class XPostgresTest(TestCase):
 
         xpg = XPostgres(DummyProcessReactor())
         xpg.parse_command_line(
-            ["xpostgres", "-c", "unix_socket_directory=socket_dir", "-D",
+            ["xpostgres", "-c", "unix_socket_directories=socket_dir", "-D",
              data_dir], {}
         )
         xpg.preflight()
@@ -878,6 +878,41 @@ local   replication     _postgres                                trust
         pg_hba_file.close()
         self.assertEqual(False, found_our_cruft)
 
+
+    def test_sanitize_pid_file(self):
+        """
+        L{XPostgres.sanitize_pid_file} will strip unwanted shared memory addrs
+        from the postgres lock file.
+        """
+        pid_file_content = """\
+55487
+/Library/Server/Calendar and Contacts/Data/Database.xpg/cluster.pg
+1383604692
+5432
+/var/run/caldavd/ccs_postgres_3d403b3009fe0c830944d87bd751fbe9
+
+        0    131074
+"""
+        data_dir = self.mktemp()
+        os.mkdir(data_dir, 0o700)
+        pid_file_path = os.path.join(data_dir, "postmaster.pid")
+        pid_file = open(pid_file_path, "wb")
+        pid_file.write(pid_file_content)
+        pid_file.close()
+
+        xpg = XPostgres(DummyProcessReactor())
+        xpg.parse_command_line(["xpostgres", "-D", os.path.abspath(data_dir)],
+                               {})
+        xpg.sanitize_pid_file()
+
+        pid_file = open(pid_file_path, "rb")
+        found_shm_addr = False
+        for line in pid_file.readlines():
+            matchobj = re.match(r".*131074.*", line)
+            if (matchobj):
+                found_shm_addr = True
+        pid_file.close()
+        self.assertEqual(False, found_shm_addr)
 
 
 class XPGCtlTest(TestCase):
