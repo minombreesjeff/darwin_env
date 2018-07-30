@@ -22,49 +22,47 @@
 # GNU General Public License for more details.
 
 EXTRA_DIST = \
-    ChangeLog \
-    Makefile.in \
-    build_vms.com \
-    config.h \
-    config.h.in \
-    dir.h \
-    filesubr.c \
-    filutils.c \
-    filutils.h \
-    getpass.c \
-    getwd.c \
-    misc.c \
-    misc.h \
-    ndir.c \
-    ndir.h \
-    pathnames.h \
-    pc.c \
-    pipe.c \
-    pipe.h \
-    piped_child.c \
-    pwd.c \
-    pwd.h \
-    rcmd.c \
-    readlink.c \
-    rmdir.c \
-    startserver.c \
-    stat.c \
-    unlink.c \
-    utime.c \
-    vms-types.h \
-    vms.h \
-    vmsmunch.c \
-    vmsmunch.h \
-    vmsmunch_private.h \
-    waitpid.c
+	.cvsignore \
+	ChangeLog \
+	Makefile.in \
+	build_vms.com \
+	config.h \
+	config.h.in \
+	dir.h \
+	filesubr.c \
+	filutils.c \
+	filutils.h \
+	getpass.c \
+	getwd.c \
+	misc.c \
+	misc.h \
+	ndir.c \
+	ndir.h \
+	pathnames.h \
+	pc.c \
+	pipe.c \
+	pipe.h \
+	piped_child.c \
+	pwd.c \
+	pwd.h \
+	rcmd.c \
+	readlink.c \
+	rmdir.c \
+	startserver.c \
+	stat.c \
+	unlink.c \
+	utime.c \
+	vms-types.h \
+	vms.h \
+	vmsmunch.c \
+	vmsmunch.h \
+	vmsmunch_private.h \
+	waitpid.c
 
 
 
-# Empty vars to appease Automake so that it will allow values to be appended
-# later.
+## Zero a few variables for Automake so they may be appended to.
 DISTCLEANFILES =
-
-
 
 ###
 ### Maintainer targets
@@ -87,7 +85,9 @@ stamp-ch: config.h.in $(top_srcdir)/configure
 	      cp config.tmp $(srcdir)/config.h)
 	-@rm -f config.tmp
 	@cp $(srcdir)/config.h $@
+
 DISTCLEANFILES += stamp-ch
+
 
 # for backwards compatibility with the old makefiles
 realclean: maintainer-clean

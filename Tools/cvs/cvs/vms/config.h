@@ -9,7 +9,7 @@
               June 1995 - <benjamin@cyclic.com> */
 
 /* The following macro are defined by running ./configure under UNIX OSs.  */
-#define PACKAGE_STRING "Concurrent Versions System (CVS) 1.11.20"
+#define PACKAGE_STRING "Concurrent Versions System (CVS) 1.12.13"
 
 /* We only want to build the client */
 #define CLIENT_SUPPORT 1
@@ -33,6 +33,9 @@
 /* Temporary files named "#booger.3.6~" aren't legal under VMS,
    Define this if you want to use names which are legal for VMS */
 #define USE_VMS_FILENAMES 1
+
+/* What VMS calls /dev/null.  */
+#define DEVNULL         "NLA0:"
 
 /* Define to empty if the keyword does not work.  */
 /* #undef const */
@@ -83,6 +86,10 @@
 
 /* Define as the return type of signal handlers (int or void).  */
 #define RETSIGTYPE void
+
+/* The default remote shell to use, if one does not specify the CVS_RSH
+   environment variable. */
+#define RSH_DFLT "rsh"
 
 /* Define to `unsigned' if <sys/types.h> doesn't define.  */
 /* #undef size_t */
@@ -135,9 +142,6 @@
 /* Define if you have the rename function */
 #define HAVE_RENAME 1
 
-/* Define if you have the putenv function.  */
-/* #undef HAVE_PUTENV */
-
 /* Define if you have the timezone function.  */
 /* #undef HAVE_TIMEZONE */
 
@@ -175,10 +179,6 @@
 
 /* Define this if your <sys/socket.h> defines select() */
 #define SYS_SOCKET_H_DEFINES_SELECT 1
-
-/* Define if you have the <sys/timeb.h> header file.  */
-#define HAVE_SYS_TIMEB_H 1
-#define HAVE_TIMEB_H 1
 
 /* Define if you have the <unistd.h> header file.  */
 #define HAVE_UNISTD_H 1

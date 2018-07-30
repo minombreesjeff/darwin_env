@@ -1,6 +1,18 @@
 #! @PERL@ -T
 # -*-Perl-*-
 
+# Copyright (C) 1994-2005 The Free Software Foundation, Inc.
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
 ###############################################################################
 ###############################################################################
 ###############################################################################
@@ -10,7 +22,7 @@
 # -T SWITCH WILL CAUSE PERL TO REPORT BEFORE RUNNING THIS SCRIPT FROM A CVS
 # SERVER TRIGGER.  PLEASE SEND PATCHES CONTAINING THE CHANGES YOU FIND
 # NECESSARY TO RUN THIS SCRIPT WITH THE TAINT-CHECKING ENABLED BACK TO THE
-# <bug-cvs@gnu.org> MAILING LIST.
+# <@PACKAGE_BUGREPORT@> MAILING LIST.
 #
 # For more on general Perl security and taint-checking, please try running the
 # `perldoc perlsec' command.
@@ -223,7 +235,7 @@ It was developed and tested under Red Hat Linux 9.0 using PERL 5.8.0.
 Additionally, it was built and tested under Red Hat Linux 7.3 using 
 PERL 5.6.1.
 
-$Id: cvs_acls.in,v 1.4.4.2 2005/04/14 14:26:37 dprice Exp $
+$Id: cvs_acls.in,v 1.11 2005/09/01 13:48:57 dprice Exp $
 
 This version is based on the 1.11.13 version of cvs_acls
 peter.connolly@cnet.com (Peter Connolly) 
@@ -270,7 +282,7 @@ To use this program, do the following four things:
       CVSROOT=:ext:<userId>..., users can switch over to SSH access without
       any other administrative changes.  When all users have switched over to
       SSH, the inherently insecure xinetd cvspserver process can be disabled.
-      [https://www.cvshome.org/docs/manual/cvs-1.11.17/cvs_2.html#SEC32]
+      [http://ximbiot.com/cvs/manual/cvs-1.11.17/cvs_2.html#SEC32]
 
       :TODO: The only potential glitch with the SSH approach is the possibility 
       that each user can have differing umasks that might interfere with one 

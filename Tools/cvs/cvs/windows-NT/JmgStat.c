@@ -22,6 +22,7 @@
 #include <windows.h>
 #include <tchar.h>
 #include <time.h>
+#include <stdbool.h>
 
 #include "JmgStat.h"
 
@@ -44,7 +45,7 @@
  *      Return true if the file system on the volume in question 
  *      stores file times as UTC
  */
-BOOL IsUTCVolume ( LPCTSTR name )
+bool IsUTCVolume ( LPCTSTR name )
 {
     _TCHAR szDrive[_MAX_DRIVE + 1] = _T("");
     _TCHAR szFs[32]=_T("");
@@ -67,15 +68,15 @@ BOOL IsUTCVolume ( LPCTSTR name )
  *
  *      time_t * ut:         The destination for the converted time.
  *
- *      BOOL local_time:     TRUE if the time in *ft is in local time 
+ *      bool local_time:     TRUE if the time in *ft is in local time 
  *                           and I need to convert to a real UTC time.
  *
  * OUTPUTS:
  *      time_t * ut:         Store the result in *ut.
  */
-static BOOL FileTimeToUnixTime ( const FILETIME* ft, time_t* ut, BOOL local_time )
+static bool FileTimeToUnixTime ( const FILETIME* ft, time_t* ut, bool local_time )
 {
-    BOOL success = FALSE;
+    bool success = FALSE;
     if ( local_time ) 
     {
         struct tm atm;
@@ -164,12 +165,12 @@ static BOOL FileTimeToUnixTime ( const FILETIME* ft, time_t* ut, BOOL local_time
  * INPUTS:
  *      LPCTSTR name:   the file name
  */
-BOOL GetUTCFileModTime ( LPCTSTR name, time_t * utc_mod_time )
+bool GetUTCFileModTime ( LPCTSTR name, time_t * utc_mod_time )
 {
     WIN32_FIND_DATA find_buf;
     FILETIME mod_time;
     HANDLE find_handle;
-    BOOL success = FALSE;
+    bool success = FALSE;
 
     * utc_mod_time = 0L;
 

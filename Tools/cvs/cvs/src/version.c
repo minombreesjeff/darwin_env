@@ -48,19 +48,15 @@ static const char *const version_usage[] =
  * command).
  */
 int
-version (argc, argv)
-    int argc;
-    char **argv;
+version (int argc, char **argv)
 {
     int err = 0;
 
     if (argc == -1)
 	usage (version_usage);
 
-#ifdef CLIENT_SUPPORT
     if (current_parsed_root && current_parsed_root->isremote)
         (void) fputs ("Client: ", stdout);
-#endif
 
     /* Having the year here is a good idea, so people have
        some idea of how long ago their version of CVS was
