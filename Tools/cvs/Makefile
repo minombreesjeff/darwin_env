@@ -18,6 +18,12 @@ Extra_Configure_Flags = --with-gssapi \
 
 Extra_CC_Flags = -D_DARWIN_NO_64_BIT_INODE
 
+ifndef DEVELOPER_DIR
+DEVELOPER_DIR = /Developer
+endif
+Install_Prefix = $(DEVELOPER_DIR)/usr
+Install_Man = $(DEVELOPER_DIR)/usr/share/man
+
 # It's a GNU Source project
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/GNUSource.make
 
@@ -34,12 +40,11 @@ $(ConfigStamp2): $(ConfigStamp)
 Install_Target = install
 
 post-install:
-	$(INSTALL_FILE) $(Sources)/contrib/rcs2log.1 $(DSTROOT)/usr/share/man/man1/
-	$(RM) $(DSTROOT)/usr/share/info/dir
+	$(INSTALL_FILE) $(Sources)/contrib/rcs2log.1 $(DSTROOT)$(Install_Man)/man1/
 
 copy-strip:
-	$(CP) $(DSTROOT)/usr/bin/cvs $(SYMROOT)
-	$(STRIP) -x $(DSTROOT)/usr/bin/cvs
+	$(CP) $(DSTROOT)$(Install_Prefix)/bin/cvs $(SYMROOT)
+	$(STRIP) -x $(DSTROOT)$(Install_Prefix)/bin/cvs
 
 OSV = $(DSTROOT)/usr/local/OpenSourceVersions
 OSL = $(DSTROOT)/usr/local/OpenSourceLicenses
@@ -66,7 +71,9 @@ AEP_Patches    = error_msg.diff \
                  PR5178707.diff \
                  fixtest-recase.diff \
                  fixtest-client-20.diff \
-                 initgroups.diff
+                 initgroups.diff \
+                 remove-libcrypto.diff \
+                 remove-info.diff
 
 # Extract the source.
 install_source::
