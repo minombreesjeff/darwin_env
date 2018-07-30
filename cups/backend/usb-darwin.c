@@ -600,6 +600,15 @@ readthread( void *reference )
 			parsePSError(readbuffer, rbytes);
 #endif
 		}
+
+		/*
+		* ReadPipe is (in at least some cases) a non-blocking read. To make sure we're
+		* not in a tight polling loop add 100ms of sleep when there's no data available.
+		*/
+		if ( kIOReturnSuccess == readstatus && rbytes == 0 )
+		    usleep(100000);
+
+
 	} while ( gWaitEOF || !done );	// Abort from main thread tests error here
 
 	/* Let the other thread (main thread) know that we have

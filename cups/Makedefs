@@ -1,5 +1,5 @@
 #
-# "$Id: Makedefs,v 1.50 2005/02/16 17:57:59 jlovell Exp $"
+# "$Id: Makedefs,v 1.1 2005/04/22 00:22:41 akosut Exp $"
 #
 #   Common makefile definitions for the Common UNIX Printing System (CUPS).
 #
@@ -190,5 +190,5 @@ PAMFILE		=	pam.darwin
 
 
 #
-# End of "$Id: Makedefs,v 1.50 2005/02/16 17:57:59 jlovell Exp $"
+# End of "$Id: Makedefs,v 1.1 2005/04/22 00:22:41 akosut Exp $"
 #
