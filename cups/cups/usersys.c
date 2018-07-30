@@ -1,10 +1,10 @@
 /*
- * "$Id: usersys.c,v 1.3 2004/04/08 17:41:36 jlovell Exp $"
+ * "$Id: usersys.c,v 1.9 2005/02/13 19:02:44 jlovell Exp $"
  *
  *   User, system, and password routines for the Common UNIX Printing
  *   System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products.
+ *   Copyright 1997-2005 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -16,9 +16,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -45,6 +45,7 @@
 #include "cups.h"
 #include "string.h"
 #include "http-private.h"
+#include "globals.h"
 #include <stdlib.h>
 #include <ctype.h>
 
@@ -57,22 +58,8 @@
  * Local functions...
  */
 
-static const char	*cups_get_password(const char *prompt);
 static char		*cups_get_line(char *buf, int buflen, FILE *fp);
 
-
-/*
- * Local globals...
- */
-
-static http_encryption_t cups_encryption = (http_encryption_t)-1;
-static char		cups_user[65] = "",
-			cups_server[256] = "";
-static const char	*(*cups_pwdcb)(const char *) = cups_get_password;
-
-#ifdef HAVE_DOMAINSOCKETS
-char			cups_server_domainsocket[104] = "";
-#endif /* HAVE_DOMAINSOCKETS */
 
 /*
  * 'cupsEncryption()' - Get the default encryption settings...
@@ -85,13 +72,14 @@ cupsEncryption(void)
   char		*encryption;		/* CUPS_ENCRYPTION variable */
   const char	*home;			/* Home directory of user */
   char		line[1024];		/* Line from file */
+  cups_globals_t *cg = _cups_globals();	/* Pointer to library globals */
 
 
  /*
   * First see if we have already set the encryption stuff...
   */
 
-  if (cups_encryption == (http_encryption_t)-1)
+  if (cg->cups_encryption == (http_encryption_t)-1)
   {
    /*
     * Then see if the CUPS_ENCRYPTION environment variable is set...
@@ -127,7 +115,7 @@ cupsEncryption(void)
       if (fp != NULL)
       {
        /*
-	* Read the config file and look for a ServerName line...
+	* Read the config file and look for an Encryption line...
 	*/
 
 	while (cups_get_line(line, sizeof(line), fp) != NULL)
@@ -155,16 +143,16 @@ cupsEncryption(void)
     */
 
     if (strcasecmp(encryption, "never") == 0)
-      cups_encryption = HTTP_ENCRYPT_NEVER;
+      cg->cups_encryption = HTTP_ENCRYPT_NEVER;
     else if (strcasecmp(encryption, "always") == 0)
-      cups_encryption = HTTP_ENCRYPT_ALWAYS;
+      cg->cups_encryption = HTTP_ENCRYPT_ALWAYS;
     else if (strcasecmp(encryption, "required") == 0)
-      cups_encryption = HTTP_ENCRYPT_REQUIRED;
+      cg->cups_encryption = HTTP_ENCRYPT_REQUIRED;
     else
-      cups_encryption = HTTP_ENCRYPT_IF_REQUESTED;
+      cg->cups_encryption = HTTP_ENCRYPT_IF_REQUESTED;
   }
 
-  return (cups_encryption);
+  return (cg->cups_encryption);
 }
 
 
@@ -175,7 +163,7 @@ cupsEncryption(void)
 const char *				/* O - Password */
 cupsGetPassword(const char *prompt)	/* I - Prompt string */
 {
-  return ((*cups_pwdcb)(prompt));
+  return ((*_cups_globals()->cups_pwdcb)(prompt));
 }
 
 
@@ -186,7 +174,7 @@ cupsGetPassword(const char *prompt)	/* I - Prompt string */
 void
 cupsSetEncryption(http_encryption_t e)	/* I - New encryption preference */
 {
-  cups_encryption = e;
+  _cups_globals()->cups_encryption = e;
 }
 
 
@@ -201,13 +189,14 @@ cupsServer(void)
   char		*server;		/* Pointer to server name */
   const char	*home;			/* Home directory of user */
   char		line[1024];		/* Line from file */
+  cups_globals_t *cg = _cups_globals();	/* Pointer to library globals */
 
 
  /*
   * First see if we have already set the server name...
   */
 
-  if (!cups_server[0])
+  if (!cg->cups_server[0])
   {
    /*
     * Then see if the CUPS_SERVER environment variable is set...
@@ -270,20 +259,18 @@ cupsServer(void)
     * Copy the server name over...
     */
 
-    strlcpy(cups_server, server, sizeof(cups_server));
+    strlcpy(cg->cups_server, server, sizeof(cg->cups_server));
 
 #ifdef HAVE_DOMAINSOCKETS
-    if (cups_server[0] != '/')
-      strlcpy(cups_server_domainsocket, CUPS_DEFAULT_DOMAINSOCKET, sizeof(cups_server_domainsocket));
-    else
+    if (cg->cups_server[0] == '/')
     {
-      strlcpy(cups_server_domainsocket, cups_server, sizeof(cups_server));
-      strlcpy(cups_server, "localhost", sizeof(cups_server));
+      strlcpy(cg->cups_server_domainsocket, cg->cups_server, sizeof(cg->cups_server));
+      strlcpy(cg->cups_server, "localhost", sizeof(cg->cups_server));
     }
 #endif /* HAVE_DOMAINSOCKETS */
   }
 
-  return (cups_server);
+  return (cg->cups_server);
 }
 
 
@@ -294,10 +281,12 @@ cupsServer(void)
 void
 cupsSetPasswordCB(const char *(*cb)(const char *))	/* I - Callback function */
 {
+  cups_globals_t *cg = _cups_globals();	/* Pointer to library globals */
+
   if (cb == (const char *(*)(const char *))0)
-    cups_pwdcb = cups_get_password;
+    cg->cups_pwdcb = cups_get_password;
   else
-    cups_pwdcb = cb;
+    cg->cups_pwdcb = cb;
 }
 
 
@@ -308,10 +297,12 @@ cupsSetPasswordCB(const char *(*cb)(const char *))	/* I - Callback function */
 void
 cupsSetServer(const char *server)	/* I - Server name */
 {
+  cups_globals_t *cg = _cups_globals();	/* Pointer to library globals */
+
   if (server)
-    strlcpy(cups_server, server, sizeof(cups_server));
+    strlcpy(cg->cups_server, server, sizeof(cg->cups_server));
   else
-    cups_server[0] = '\0';
+    cg->cups_server[0] = '\0';
 }
 
 
@@ -322,10 +313,12 @@ cupsSetServer(const char *server)	/* I - Server name */
 void
 cupsSetUser(const char *user)		/* I - User name */
 {
+  cups_globals_t *cg = _cups_globals();	/* Pointer to library globals */
+
   if (user)
-    strlcpy(cups_user, user, sizeof(cups_user));
+    strlcpy(cg->cups_user, user, sizeof(cg->cups_user));
   else
-    cups_user[0] = '\0';
+    cg->cups_user[0] = '\0';
 }
 
 
@@ -341,23 +334,25 @@ cupsSetUser(const char *user)		/* I - User name */
 const char *				/* O - User name */
 cupsUser(void)
 {
-  if (!cups_user[0])
+  cups_globals_t *cg = _cups_globals();	/* Pointer to library globals */
+
+  if (!cg->cups_user[0])
   {
     DWORD	size;		/* Size of string */
 
 
-    size = sizeof(cups_user);
-    if (!GetUserName(cups_user, &size))
+    size = sizeof(cg->cups_user);
+    if (!GetUserName(cg->cups_user, &size))
     {
      /*
       * Use the default username...
       */
 
-      strcpy(cups_user, "unknown");
+      strcpy(cg->cups_user, "unknown");
     }
   }
 
-  return (cups_user);
+  return (cg->cups_user);
 }
 
 
@@ -365,7 +360,7 @@ cupsUser(void)
  * 'cups_get_password()' - Get a password from the user...
  */
 
-static const char *			/* O - Password */
+const char *			/* O - Password */
 cups_get_password(const char *prompt)	/* I - Prompt string */
 {
   return (NULL);
@@ -385,9 +380,10 @@ const char *				/* O - User name */
 cupsUser(void)
 {
   struct passwd	*pwd;			/* User/password entry */
+  cups_globals_t *cg = _cups_globals();	/* Pointer to library globals */
 
 
-  if (!cups_user[0])
+  if (!cg->cups_user[0])
   {
    /*
     * Rewind the password file...
@@ -400,7 +396,7 @@ cupsUser(void)
     */
 
     if ((pwd = getpwuid(getuid())) == NULL)
-      strcpy(cups_user, "unknown");	/* Unknown user! */
+      strcpy(cg->cups_user, "unknown");	/* Unknown user! */
     else
     {
      /*
@@ -409,7 +405,7 @@ cupsUser(void)
 
       setpwent();
 
-      strlcpy(cups_user, pwd->pw_name, sizeof(cups_user));
+      strlcpy(cg->cups_user, pwd->pw_name, sizeof(cg->cups_user));
     }
 
    /*
@@ -419,7 +415,7 @@ cupsUser(void)
     setpwent();
   }
 
-  return (cups_user);
+  return (cg->cups_user);
 }
 
 
@@ -427,7 +423,7 @@ cupsUser(void)
  * 'cups_get_password()' - Get a password from the user...
  */
 
-static const char *			/* O - Password */
+const char *			/* O - Password */
 cups_get_password(const char *prompt)	/* I - Prompt string */
 {
   return (getpass(prompt));
@@ -462,7 +458,7 @@ cups_get_line(char *buf,	/* I - Line buffer */
   if (bufptr < buf)
     return (NULL);
 
-  while (isspace(*bufptr & 255) && bufptr >= buf)
+  while (bufptr >= buf && isspace(*bufptr & 255))
     *bufptr-- = '\0';
 
   return (buf);
@@ -470,5 +466,5 @@ cups_get_line(char *buf,	/* I - Line buffer */
 
 
 /*
- * End of "$Id: usersys.c,v 1.3 2004/04/08 17:41:36 jlovell Exp $".
+ * End of "$Id: usersys.c,v 1.9 2005/02/13 19:02:44 jlovell Exp $".
  */

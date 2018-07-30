@@ -1,9 +1,9 @@
 /*
- * "$Id: template.c,v 1.1.1.10 2004/06/05 02:42:28 jlovell Exp $"
+ * "$Id: template.c,v 1.1.1.12 2005/01/04 19:15:04 jlovell Exp $"
  *
  *   CGI template function.
  *
- *   Copyright 1997-2004 by Easy Software Products.
+ *   Copyright 1997-2005 by Easy Software Products.
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the Free
@@ -383,7 +383,7 @@ cgi_copy(FILE *out,		/* I - Output file */
 	        strlcpy(s, innerval, sizeof(compare) - (s - compare));
             }
 	    else if ((innerval = cgiGetArray(innername, element)) == NULL)
-	      snprintf(s, sizeof(s), "{%s}", innername);
+	      snprintf(s, sizeof(compare) - (s - compare), "{%s}", innername);
 	    else
 	      strlcpy(s, innerval, sizeof(compare) - (s - compare));
 
@@ -488,5 +488,5 @@ cgi_puts(const char *s,
 
 
 /*
- * End of "$Id: template.c,v 1.1.1.10 2004/06/05 02:42:28 jlovell Exp $".
+ * End of "$Id: template.c,v 1.1.1.12 2005/01/04 19:15:04 jlovell Exp $".
  */

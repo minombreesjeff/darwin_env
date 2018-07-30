@@ -1,9 +1,9 @@
 /*
- * "$Id: printers.c,v 1.29 2004/05/31 21:02:21 jlovell Exp $"
+ * "$Id: printers.c,v 1.39 2005/02/16 17:58:01 jlovell Exp $"
  *
  *   Printer routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -43,6 +43,7 @@
  *   ValidateDest()         - Validate a printer/class destination.
  *   WritePrintcap()        - Write a pseudo-printcap file for older
  *                            applications that need it...
+ *   cupsdSanitizeURI()     - Sanitize a device URI...
  *   SetMimeTypesAttr()     - Create a printer specific list of supported MIME types.
  *   write_irix_config()    - Update the config files used by the IRIX
  *                            desktop tools.
@@ -80,7 +81,8 @@ static void	write_irix_state(printer_t *p);
  */
 
 printer_t *			/* O - New printer */
-AddPrinter(const char *name)	/* I - Name of printer */
+AddPrinter(const char *name,	/* I - Name of printer */
+	   int       update)	/* I - Update printcap? */
 {
   int		i,		/* Looping var */
   		port;		/* Port number to use */
@@ -160,13 +162,20 @@ AddPrinter(const char *name)	/* I - Name of printer */
   * Write a new /etc/printcap or /var/spool/lp/pstatus file.
   */
 
-  WritePrintcap();
+  if (update)
+    WritePrintcap();
 
  /*
   * Note that a notification event needs to be sent.
   */
 
   NotifyPost |= CUPS_NOTIFY_PRINTER_LIST;
+
+ /*
+  * Bump the printer count and return...
+  */
+
+  NumPrinters ++;
 
   return (p);
 }
@@ -554,18 +563,18 @@ DeleteAllPrinters(void)
  */
 
 void
-DeletePrinter(printer_t *p,	/* I - Printer to delete */
-	      int  update)	/* I - Update printers.conf? */
+DeletePrinter(printer_t *p,		/* I - Printer to delete */
+	      int       update)		/* I - Update printers.conf? */
 {
-  int		i;		/* Looping var */
-  printer_t	*current,	/* Current printer in list */
-		*prev;		/* Previous printer in list */
+  int		i;			/* Looping var */
+  printer_t	*current,		/* Current printer in list */
+		*prev;			/* Previous printer in list */
 #ifdef __sgi
-  char		filename[1024];	/* Interface script filename */
+  char		filename[1024];		/* Interface script filename */
 #endif /* __sgi */
 
 
-  DEBUG_printf(("DeletePrinter(%p): p->name = \"%s\"...\n", p, p->name));
+  DEBUG_printf(("DeletePrinter(%08x): p->name = \"%s\"...\n", p, p->name));
 
  /*
   * Range check input...
@@ -575,7 +584,7 @@ DeletePrinter(printer_t *p,	/* I - Printer to delete */
     return;
 
  /*
-  * Remove the printer from the list...
+  * Find the printer in the list...
   */
 
   for (prev = NULL, current = Printers;
@@ -591,16 +600,29 @@ DeletePrinter(printer_t *p,	/* I - Printer to delete */
     return;
   }
 
+ /*
+  * Remove the printer from the list...
+  */
+
   if (prev == NULL)
     Printers = p->next;
   else
     prev->next = p->next;
+
+  NumPrinters --;
 
  /*
   * Stop printing on this printer...
   */
 
   StopPrinter(p, update);
+
+ /*
+  * If this printer is the next for browsing, point to the next one...
+  */
+
+  if (p == BrowseNext)
+    BrowseNext = p->next;
 
  /*
   * Remove the dummy interface/icon/option files under IRIX...
@@ -656,14 +678,14 @@ DeletePrinter(printer_t *p,	/* I - Printer to delete */
   * Remove this printer from any classes...
   */
 
-  if (!(p->type & (CUPS_PRINTER_CLASS | CUPS_PRINTER_IMPLICIT)))
+  if (!(p->type & CUPS_PRINTER_IMPLICIT))
     DeletePrinterFromClasses(p);
 
  /*
   * Deregister from any browse protocols...
   */
 
-  BrowseDeregisterPrinter(p);
+  BrowseDeregisterPrinter(p, 1);
 
  /*
   * Free all memory used by the printer...
@@ -700,10 +722,10 @@ DeletePrinter(printer_t *p,	/* I - Printer to delete */
   ClearString(&p->job_sheets[1]);
   ClearString(&p->device_uri);
 
-#ifdef HAVE_MDNS
+#ifdef HAVE_DNSSD
   ClearString(&p->product);
   ClearString(&p->pdl);
-#endif /* HAVE_MDNS */
+#endif /* HAVE_DNSSD */
 
   free(p);
 
@@ -711,7 +733,8 @@ DeletePrinter(printer_t *p,	/* I - Printer to delete */
   * Write a new /etc/printcap file...
   */
 
-  WritePrintcap();
+  if (update)
+    WritePrintcap();
 
  /*
   * Note that a notification event needs to be sent.
@@ -927,7 +950,7 @@ LoadAllPrinters(void)
 
         LogMessage(L_DEBUG, "LoadAllPrinters: Loading printer %s...", value);
 
-        p = AddPrinter(value);
+        p = AddPrinter(value, 0);
 	p->accepting = 1;
 	p->shared    = DefaultShared;
 	p->state     = IPP_PRINTER_IDLE;
@@ -1219,11 +1242,7 @@ void
 SetPrinterAttrs(printer_t *p)		/* I - Printer to setup */
 {
   char		uri[HTTP_MAX_URI];	/* URI for printer */
-  char		method[HTTP_MAX_URI],	/* Method portion of URI */
-		username[HTTP_MAX_URI],	/* Username portion of URI */
-		host[HTTP_MAX_URI],	/* Host portion of URI */
-		resource[HTTP_MAX_URI];	/* Resource portion of URI */
-  int		port;			/* Port portion of URI */
+  char		resource[HTTP_MAX_URI];	/* Resource portion of URI */
   int		i;			/* Looping var */
   char		filename[1024];		/* Name of PPD file */
   int		num_media;		/* Number of media options */
@@ -1429,12 +1448,7 @@ SetPrinterAttrs(printer_t *p)		/* I - Printer to setup */
         * http://..., ipp://..., etc.
 	*/
 
-        httpSeparate(p->device_uri, method, username, host, &port, resource);
-	if (port)
-	  snprintf(uri, sizeof(uri), "%s://%s:%d%s", method, host, port,
-	           resource);
-	else
-	  snprintf(uri, sizeof(uri), "%s://%s%s", method, host, resource);
+        cupsdSanitizeURI(p->device_uri, uri, sizeof(uri));
       }
       else
       {
@@ -1636,9 +1650,9 @@ SetPrinterAttrs(printer_t *p)		/* I - Printer to setup */
 	if (ppd->num_filters == 0)
           AddPrinterFilter(p, "application/vnd.cups-postscript 0 -");
 
-#ifdef HAVE_MDNS
+#ifdef HAVE_DNSSD
 	SetString(&p->product, ppd->product);
-#endif /* HAVE_MDNS */
+#endif /* HAVE_DNSSD */
 
 	ppdClose(ppd);
 
@@ -1862,8 +1876,7 @@ SetPrinterReasons(printer_t  *p,	/* I - Printer */
 	  i --;
 	}
     }
-    else if (s[0] == '+' &&
-             p->num_reasons < (int)(sizeof(p->reasons) / sizeof(p->reasons[0])))
+    else if (p->num_reasons < (int)(sizeof(p->reasons) / sizeof(p->reasons[0])))
     {
      /*
       * Add reason...
@@ -1911,6 +1924,11 @@ SetPrinterState(printer_t    *p,	/* I - Printer to change */
 
   if (old_state != s)
   {
+   /*
+    * Let the browse code know this needs to be updated...
+    */
+
+    BrowseNext     = p;
     p->state_time  = time(NULL);
     p->browse_time = 0;
 
@@ -2278,6 +2296,74 @@ WritePrintcap(void)
 }
 
 
+/*
+ * 'cupsdSanitizeURI()' - Sanitize a device URI...
+ */
+
+char *					/* O - New device URI */
+cupsdSanitizeURI(const char *uri,	/* I - Original device URI */
+                 char       *buffer,	/* O - New device URI */
+                 int        buflen)	/* I - Size of new device URI buffer */
+{
+  char	*start,				/* Start of data after scheme */
+	*slash,				/* First slash after scheme:// */
+	*ptr;				/* Pointer into user@host:port part */
+
+
+ /*
+  * Range check input...
+  */
+
+  if (!uri || !buffer || buflen < 2)
+    return (NULL);
+
+ /*
+  * Copy the device URI to the new buffer...
+  */
+
+  strlcpy(buffer, uri, buflen);
+
+ /*
+  * Find the end of the scheme:// part...
+  */
+
+  if ((ptr = strchr(buffer, ':')) == NULL)
+    return (buffer);			/* No scheme: part... */
+
+  for (start = ptr + 1; *start; start ++)
+    if (*start != '/')
+      break;
+
+ /*
+  * Find the next slash (/) in the URI...
+  */
+
+  if ((slash = strchr(start, '/')) == NULL)
+    slash = start + strlen(start);	/* No slash, point to the end */
+
+ /*
+  * Check for an @ sign before the slash...
+  */
+
+  if ((ptr = strchr(start, '@')) != NULL && ptr < slash)
+  {
+   /*
+    * Found an @ sign and it is before the resource part, so we have
+    * an authentication string.  Copy the remaining URI over the
+    * authentication string...
+    */
+
+    cups_strcpy(start, ptr + 1);
+  }
+
+ /*
+  * Return the new device URI...
+  */
+
+  return (buffer);
+}
+
+
 #ifdef __APPLE__
 /*
  * 'SetMimeTypesAttr()' - Create a printer specific list of supported MIME types.
@@ -2305,7 +2391,7 @@ SetMimeTypesAttr(printer_t *p)
   {
     for (i = numPrinterMimeTypes = 0; i < MimeDatabase->num_types; i ++)
     {
-      filters = mimeFilter(MimeDatabase, MimeDatabase->types[i], p->filetype, &num_filters, MAX_FILTERS - 1);
+      filters = mimeFilter(MimeDatabase, MimeDatabase->types[i], p->filetype, &num_filters, NULL);
       if (num_filters != 0)
       {
 	snprintf(type, sizeof(type), "%s/%s", MimeDatabase->types[i]->super, MimeDatabase->types[i]->type);
@@ -2322,7 +2408,7 @@ SetMimeTypesAttr(printer_t *p)
 	  (ipp_tag_t)IPP_TAG_MIMETYPE,
 	  "document-format-supported", numPrinterMimeTypes, NULL, printerMimeTypes);
 
-#ifdef HAVE_MDNS
+#ifdef HAVE_DNSSD
     {
       char	pdl[1024];		/* buffer to build pdl list */
 
@@ -2348,7 +2434,7 @@ SetMimeTypesAttr(printer_t *p)
 
       SetString(&p->pdl, pdl);
     }
-#endif /* HAVE_MDNS */
+#endif /* HAVE_DNSSD */
 
     for (i = 0; i < numPrinterMimeTypes; i ++)
       free((void *)printerMimeTypes[i]);
@@ -2694,5 +2780,5 @@ apple_conv_utf8(char **str,		/* I/O - string to be converted */
 #endif	/* __APPLE__ */
 
 /*
- * End of "$Id: printers.c,v 1.29 2004/05/31 21:02:21 jlovell Exp $".
+ * End of "$Id: printers.c,v 1.39 2005/02/16 17:58:01 jlovell Exp $".
  */

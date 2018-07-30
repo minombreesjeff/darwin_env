@@ -1,4 +1,4 @@
-dnl $Id: config.m4,v 1.1.1.2 2004/06/05 02:42:34 jlovell Exp $
+dnl $Id: config.m4,v 1.1.1.3 2004/10/31 16:15:49 jlovell Exp $
 dnl config.m4 for extension phpcups
 
 dnl Comments in this file start with the string 'dnl'.

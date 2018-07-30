@@ -1,11 +1,11 @@
 #!/bin/sh
 #
-# "$Id: run-stp-tests.sh,v 1.1.1.14 2004/06/05 02:42:36 jlovell Exp $"
+# "$Id: run-stp-tests.sh,v 1.1.1.17 2005/01/04 19:16:48 jlovell Exp $"
 #
 #   Perform the complete set of IPP compliance tests specified in the
 #   CUPS Software Test Plan.
 #
-#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2005 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -17,9 +17,9 @@
 #       Attn: CUPS Licensing Information
 #       Easy Software Products
 #       44141 Airport View Drive, Suite 204
-#       Hollywood, Maryland 20636-3111 USA
+#       Hollywood, Maryland 20636 USA
 #
-#       Voice: (301) 373-9603
+#       Voice: (301) 373-9600
 #       EMail: cups-info@cups.org
 #         WWW: http://www.cups.org
 #
@@ -116,7 +116,7 @@ read usevalgrind
 
 case "$usevalgrind" in
 	Y* | y*)
-		valgrind="valgrind --logfile=/tmp/$user/log/valgrind --error-limit=no --leak-check=yes --trace-children=yes"
+		valgrind="valgrind --tool=memcheck --logfile=/tmp/$user/log/valgrind --error-limit=no --leak-check=yes --trace-children=yes"
 		echo "Using Valgrind; log files can be found in /tmp/$user/log..."
 		;;
 
@@ -302,7 +302,8 @@ export HOME
 # Start the server; run as foreground daemon in the background...
 #
 
-echo "Starting scheduler..."
+echo "Starting scheduler:"
+echo "    $valgrind ../scheduler/cupsd -c /tmp/$user/cupsd.conf -f >/tmp/$user/log/debug_log &"
 
 $valgrind ../scheduler/cupsd -c /tmp/$user/cupsd.conf -f >/tmp/$user/log/debug_log &
 cupsd=$!
@@ -466,5 +467,5 @@ echo "    $pdffile"
 echo ""
 
 #
-# End of "$Id: run-stp-tests.sh,v 1.1.1.14 2004/06/05 02:42:36 jlovell Exp $"
+# End of "$Id: run-stp-tests.sh,v 1.1.1.17 2005/01/04 19:16:48 jlovell Exp $"
 #

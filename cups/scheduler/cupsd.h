@@ -1,9 +1,9 @@
 /*
- * "$Id: cupsd.h,v 1.7 2004/04/23 00:54:43 jlovell Exp $"
+ * "$Id: cupsd.h,v 1.12 2005/01/04 22:10:45 jlovell Exp $"
  *
  *   Main header file for the Common UNIX Printing System (CUPS) scheduler.
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  */
@@ -58,6 +58,7 @@
 #include <cups/debug.h>
 
 #if defined(HAVE_CDSASSL)
+#  include <Security/Security.h>
 #  include <CoreFoundation/CoreFoundation.h>
 #endif /* HAVE_CDSASSL */
 
@@ -193,6 +194,8 @@ VAR ipp_t		*Devices	VALUE(NULL),
 			*PPDs		VALUE(NULL);
 					/* Available PPDs */
 #ifdef __APPLE__
+VAR int			BackendsExeced  VALUE(0);
+					/* True if backends were executed to discover devices */
 VAR int			Sleeping	VALUE(0);
 					/* True if machine is entering or in a sleep state */
 VAR int			SysEventPipes[2] VALUE2(-1,-1);
@@ -208,13 +211,16 @@ extern void	CatchChildSignals(void);
 extern void	ClearString(char **s);
 extern void	HoldSignals(void);
 extern void	IgnoreChildSignals(void);
-extern void	LoadDevices(const char *d);
+extern void	LoadDevices(const char *d, int exec_backends);
 extern void	LoadPPDs(const char *d);
 extern void	ReleaseSignals(void);
 extern void	SetString(char **s, const char *v);
 extern void	SetStringf(char **s, const char *f, ...);
 extern void	StartServer(void);
 extern void	StopServer(void);
+extern void	cupsdClosePipe(int *fds);
+extern int	cupsdOpenPipe(int *fds);
+
 
 #ifdef __APPLE__
 extern void	StartSysEventMonitor(void);
@@ -223,5 +229,5 @@ extern void	UpdateSysEventMonitor(void);
 #endif	/* __APPLE__ */
 
 /*
- * End of "$Id: cupsd.h,v 1.7 2004/04/23 00:54:43 jlovell Exp $".
+ * End of "$Id: cupsd.h,v 1.12 2005/01/04 22:10:45 jlovell Exp $".
  */

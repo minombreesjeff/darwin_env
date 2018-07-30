@@ -1,10 +1,10 @@
 /*
- * "$Id: listen.c,v 1.10 2004/04/22 22:53:41 jlovell Exp $"
+ * "$Id: listen.c,v 1.13 2005/01/04 22:10:46 jlovell Exp $"
  *
  *   Server listening routines for the Common UNIX Printing System (CUPS)
  *   scheduler.
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -16,9 +16,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -165,7 +165,10 @@ StartListening(void)
         lis->address.sin_family == AF_INET &&
         (ntohl(lis->address.sin_addr.s_addr) == 0x7f000001 ||
          ntohl(lis->address.sin_addr.s_addr) == 0x00000000))
-      LocalPort = ntohs(lis->address.sin_port);
+    {
+      LocalPort       = ntohs(lis->address.sin_port);
+      LocalEncryption = lis->encryption;
+    }
 
    /*
     * Create a socket for listening...
@@ -297,5 +300,5 @@ StopListening(void)
 
 
 /*
- * End of "$Id: listen.c,v 1.10 2004/04/22 22:53:41 jlovell Exp $".
+ * End of "$Id: listen.c,v 1.13 2005/01/04 22:10:46 jlovell Exp $".
  */

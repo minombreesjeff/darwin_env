@@ -1,9 +1,9 @@
 /*
- * "$Id: main.c,v 1.22 2004/06/15 21:23:39 jlovell Exp $"
+ * "$Id: main.c,v 1.40 2005/03/10 00:24:06 jlovell Exp $"
  *
  *   Scheduler main loop for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,15 +15,17 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
  * Contents:
  *
  *   main()               - Main entry for the CUPS scheduler.
+ *   cupsdClosePipe()     - Close a pipe as necessary.
+ *   cupsdOpenPipe()      - Create a pipe which is closed on exec.
  *   CatchChildSignals()  - Catch SIGCHLD signals...
  *   HoldSignals()        - Hold child and termination signals.
  *   IgnoreChildSignals() - Ignore SIGCHLD signals...
@@ -66,8 +68,11 @@ static time_t NotifyPostDelay = 0;
 
 static kern_return_t registerBootstrapService();
 static kern_return_t destroyBootstrapService();
+static void emptyReceivePort();
 
-static mach_port_t  server_priv_port;
+static mach_port_t  server_priv_port = MACH_PORT_NULL;
+static mach_port_t  service_rcv_port = MACH_PORT_NULL;
+
 static char service_name[] = "/usr/sbin/cupsd";
 
 #endif	/* __APPLE__ */
@@ -112,18 +117,20 @@ main(int  argc,				/* I - Number of command-line arguments */
   int			fds;		/* Number of ready descriptors select returns */
   fd_set		*input,		/* Input set for select() */
 			*output;	/* Output set for select() */
-  client_t		*con;		/* Current client */
+  client_t		*con,		/* Current client */
+			*next_con;	/* Next client */
   job_t			*job,		/* Current job */
 			*next;		/* Next job */
   listener_t		*lis;		/* Current listener */
   time_t		activity;	/* Activity timer */
   time_t		browse_time;	/* Next browse send time */
   time_t		senddoc_time;	/* Send-Document time */
-#ifdef HAVE_MDNS
+#ifdef HAVE_DNSSD
+  DNSServiceErrorType	sdErr;		/* Service discovery error */
   printer_t		*p;		/* Printer information */
-  mdns_resolve_t	*mdnsResolve,	/* Current outstanding mDNS request */
-			*nextMdnsResolve;/* Next outstanding mDNS request */
-#endif /* HAVE_MDNS */
+  dnssd_resolve_t	*dnssdResolve,	/* Current outstanding dnssd request */
+			*nextDNSSDResolve;/* Next outstanding dnssd request */
+#endif /* HAVE_DNSSD */
 #ifdef HAVE_MALLINFO
   time_t		mallinfo_time;	/* Malloc information time */
 #endif /* HAVE_MALLINFO */
@@ -138,6 +145,7 @@ main(int  argc,				/* I - Number of command-line arguments */
 #endif /* __sgi */
 #ifdef __APPLE__
   int			debug = 0;	/* Debugging mode, don't register as Mach service */
+  int			lazy = 0;
 #endif
 
 
@@ -171,11 +179,11 @@ main(int  argc,				/* I - Number of command-line arguments */
 	        * Relative directory...
 		*/
 
-                char current[1024];	/* Current directory */
-
-
-                getcwd(current, sizeof(current));
+                char *current;			/* Current directory */
+                if ((current = getcwd(NULL, 0)) == NULL)
+                  exit(1);
 		SetStringf(&ConfigurationFile, "%s/%s", current, argv[i]);
+		free(current);
               }
 	      break;
 
@@ -190,6 +198,10 @@ main(int  argc,				/* I - Number of command-line arguments */
 #ifdef __APPLE__
           case 'd' : /* Debugging mode */
 	      debug = 1;
+	      break;
+		  
+	  case 'L' : /* Lazy mode */
+	      lazy = 1;
 	      break;
 #endif
 
@@ -269,8 +281,6 @@ main(int  argc,				/* I - Number of command-line arguments */
         fprintf(stderr, "cupsd: Child exited on signal %d!\n", WTERMSIG(i));
 	return (3);
       }
-
-      return (0);
     }
   }
 
@@ -471,6 +481,18 @@ main(int  argc,				/* I - Number of command-line arguments */
 
   CheckJobs();
 
+#ifdef __APPLE__
+  /* If printer sharing is not enabled and there are no
+   * jobs waiting to be printerd then cupsd will be started
+   * on demand.
+   */
+  if (lazy && NumBrowsers == 0 && NumJobs == 0)
+  {
+    LogMessage(L_INFO, "Printer sharing is off and there are no jobs pending, will restart on demand. Exiting.");
+    return (0);
+  }
+#endif
+  
 #ifdef HAVE_NOTIFY_POST
    /*
     * Send initial notifications
@@ -497,6 +519,14 @@ main(int  argc,				/* I - Number of command-line arguments */
                dead_children, NeedReload);
 #endif /* DEBUG */
 
+#ifdef __APPLE__
+   /*
+    * Don't let mach messages back up in our receive queue.
+    */
+	 
+    emptyReceivePort();
+#endif __APPLE__
+
    /*
     * Check if there are dead children to handle...
     */
@@ -510,24 +540,20 @@ main(int  argc,				/* I - Number of command-line arguments */
 
     if (NeedReload)
     {
-      job_t	*job;			/* Current job */
-
-
      /*
       * Close any idle clients...
       */
 
       if (NumClients > 0)
       {
-        for (i = NumClients, con = Clients; i > 0; i --, con ++)
+        for (con = Clients; con != NULL; con = next_con)
+        {
+          next_con = con->next;
 	  if (con->http.state == HTTP_WAITING)
-	  {
 	    CloseClient(con);
-	    con --;
-	  }
 	  else
 	    con->http.keep_alive = HTTP_KEEPALIVE_OFF;
-
+	}
         PauseListening();
       }
 
@@ -541,10 +567,11 @@ main(int  argc,				/* I - Number of command-line arguments */
 
      /*
       * Restart if all clients are closed and all jobs finished, or
-      * if 60 seconds has elapsed...
+      * if the reload timeout has elapsed...
       */
 
-      if ((NumClients == 0 && !job) || (time(NULL) - ReloadTime) >= 60)
+      if ((NumClients == 0 && (!job || NeedReload != RELOAD_ALL)) ||
+          (time(NULL) - ReloadTime) >= ReloadTimeout)
       {
         if (!ReadConfiguration())
         {
@@ -617,30 +644,31 @@ main(int  argc,				/* I - Number of command-line arguments */
 
       LogMessage(L_EMERG, s);
 
-      for (i = 0, con = Clients; i < NumClients; i ++, con ++)
-        LogMessage(L_EMERG, "Clients[%d] = %d, file = %d, state = %d",
-	           i, con->http.fd, con->file, con->http.state);
+      for (con = Clients; con != NULL; con = con->next)
+        LogMessage(L_EMERG, "Clients[%p] = %d, file = %d, state = %d",
+	           con, con->http.fd, con->file, con->http.state);
 
       for (i = 0, lis = Listeners; i < NumListeners; i ++, lis ++)
         LogMessage(L_EMERG, "Listeners[%d] = %d", i, lis->fd);
 
       LogMessage(L_EMERG, "BrowseSocket = %d", BrowseSocket);
 
+      LogMessage(L_EMERG, "CGIPipes[0] = %d", CGIPipes[0]);
+
       for (job = Jobs; job != NULL; job = job->next)
         LogMessage(L_EMERG, "Jobs[%d] = %d", job->id, job->pipe);
 
       LogMessage(L_EMERG, "SysEventPipes[0] = %d", SysEventPipes[0]);
 
-#ifdef HAVE_MDNS
-      LogMessage(L_EMERG, "BrowseMDNSfd = %d", BrowseMDNSfd);
+#ifdef HAVE_DNSSD
+      LogMessage(L_EMERG, "BrowseDNSSDfd = %d", BrowseDNSSDfd);
 
-      for (mdnsResolve = MDNSPendingResolves; mdnsResolve; mdnsResolve = mdnsResolve->next)
-        LogMessage(L_EMERG, "mdnsResolve fd = %d", mdnsResolve->fd);
+      for (dnssdResolve = DNSSDPendingResolves; dnssdResolve; dnssdResolve = dnssdResolve->next)
+        LogMessage(L_EMERG, "dnssdResolve fd = %d", dnssdResolve->fd);
 
       for (p = Printers; p != NULL; p = p->next)
-        LogMessage(L_EMERG, "printer[%s] %d, %d, %d", p->name, p->mdns_lpd_fd, 
-        	   p->mdns_ipp_fd, p->mdns_query_fd);
-#endif /* HAVE_MDNS */
+        LogMessage(L_EMERG, "printer[%s] %d, %d", p->name, p->dnssd_ipp_fd, p->dnssd_query_fd);
+#endif /* HAVE_DNSSD */
       break;
     }
 
@@ -648,18 +676,17 @@ main(int  argc,				/* I - Number of command-line arguments */
       if (FD_ISSET(lis->fd, input))
         AcceptClient(lis);
 
-    for (i = NumClients, con = Clients; i > 0; i --, con ++)
+    for (con = Clients; con != NULL; con = next_con)
     {
+      next_con = con->next;
+
      /*
       * Process the input buffer...
       */
 
       if (FD_ISSET(con->http.fd, input) || con->http.used)
         if (!ReadClient(con))
-	{
-	  con --;
 	  continue;
-	}
 
      /*
       * Write data as needed...
@@ -689,10 +716,7 @@ main(int  argc,				/* I - Number of command-line arguments */
       if (FD_ISSET(con->http.fd, output) &&
           (!con->pipe_pid || con->file_ready))
         if (!WriteClient(con))
-	{
-	  con --;
 	  continue;
-	}
 
      /*
       * Check the activity and close old clients...
@@ -705,7 +729,6 @@ main(int  argc,				/* I - Number of command-line arguments */
 	           con->http.fd, Timeout);
 
         CloseClient(con);
-        con --;
         continue;
       }
     }
@@ -718,7 +741,7 @@ main(int  argc,				/* I - Number of command-line arguments */
     {
       next = job->next;
 
-      if (job->pipe && FD_ISSET(job->pipe, input))
+      if (job->pipe >= 0 && FD_ISSET(job->pipe, input))
       {
        /*
         * Clear the input bit to avoid updating the next job
@@ -757,7 +780,7 @@ main(int  argc,				/* I - Number of command-line arguments */
     * Update the browse list as needed...
     */
 
-    if (Browsing && BrowseProtocols)
+    if (Browsing && BrowseRemoteProtocols)
     {
       if (BrowseSocket >= 0 && FD_ISSET(BrowseSocket, input))
         UpdateCUPSBrowse();
@@ -766,36 +789,73 @@ main(int  argc,				/* I - Number of command-line arguments */
         UpdatePolling();
 
 #ifdef HAVE_LIBSLP
-      if ((BrowseProtocols & BROWSE_SLP) && BrowseSLPRefresh <= time(NULL))
+      if ((BrowseRemoteProtocols & BROWSE_SLP) && BrowseSLPRefresh <= time(NULL))
         UpdateSLPBrowse();
 #endif /* HAVE_LIBSLP */
 
-#ifdef HAVE_MDNS
-      if (BrowseMDNSRef && FD_ISSET(BrowseMDNSfd, input))
-	DNSServiceProcessResult(BrowseMDNSRef);
-
-      for (mdnsResolve = MDNSPendingResolves; mdnsResolve;)
+#ifdef HAVE_DNSSD
+      if (BrowseDNSSDRef && FD_ISSET(BrowseDNSSDfd, input))
       {
-        nextMdnsResolve = mdnsResolve->next;
+	if ((sdErr = DNSServiceProcessResult(BrowseDNSSDRef)) != kDNSServiceErr_NoError)
+	{
+	  LogMessage(L_ERROR, "DNS Service Discovery browsing error %d; removing fd %d from InputSet...",
+			sdErr, BrowseDNSSDfd);
+	  FD_CLR(BrowseDNSSDfd, InputSet);
+	  DNSServiceRefDeallocate(BrowseDNSSDRef);
+	  BrowseDNSSDRef = NULL;
+	  BrowseDNSSDfd = -1;
+	}
+      }
 
-	if (mdnsResolve->sdRef && FD_ISSET(mdnsResolve->fd, input))
-	  DNSServiceProcessResult(mdnsResolve->sdRef);
+      for (dnssdResolve = DNSSDPendingResolves; dnssdResolve;)
+      {
+        nextDNSSDResolve = dnssdResolve->next;
 
-	mdnsResolve = nextMdnsResolve;
+	if (dnssdResolve->sdRef && FD_ISSET(dnssdResolve->fd, input))
+	{
+	  if ((sdErr = DNSServiceProcessResult(dnssdResolve->sdRef)) != kDNSServiceErr_NoError)
+	  {
+	    LogMessage(L_ERROR, "DNS Service Discovery resolving error %d; removing fd %d from InputSet...",
+			sdErr, dnssdResolve->fd);
+	    FD_CLR(dnssdResolve->fd, InputSet);
+	    DNSServiceRefDeallocate(dnssdResolve->sdRef);
+	    dnssdResolve->sdRef = NULL;
+	    dnssdResolve->fd = -1;
+	  }
+	}
+
+	dnssdResolve = nextDNSSDResolve;
       }
 
       for (p = Printers; p != NULL; p = p->next)
       {
-	if (p->mdns_lpd_ref && FD_ISSET(p->mdns_lpd_fd, input))
-	  DNSServiceProcessResult(p->mdns_lpd_ref);
+	if (p->dnssd_ipp_ref && FD_ISSET(p->dnssd_ipp_fd, input))
+	{
+	  if ((sdErr = DNSServiceProcessResult(p->dnssd_ipp_ref)) != kDNSServiceErr_NoError)
+	  {
+	    LogMessage(L_ERROR, "DNS Service Discovery IPP registration error %d; removing fd %d from InputSet...",
+			sdErr, p->dnssd_ipp_fd);
+	    FD_CLR(p->dnssd_ipp_fd, InputSet);
+	    DNSServiceRefDeallocate(p->dnssd_ipp_ref);
+	    p->dnssd_ipp_ref = NULL;
+	    p->dnssd_ipp_fd = -1;
+	  }
+	}
 
-	if (p->mdns_ipp_ref && FD_ISSET(p->mdns_ipp_fd, input))
-	  DNSServiceProcessResult(p->mdns_ipp_ref);
-
-	if (p->mdns_query_ref && FD_ISSET(p->mdns_query_fd, input))
-	  DNSServiceProcessResult(p->mdns_query_ref);
+	if (p->dnssd_query_ref && FD_ISSET(p->dnssd_query_fd, input))
+	{
+	  if ((sdErr = DNSServiceProcessResult(p->dnssd_query_ref)) != kDNSServiceErr_NoError)
+	  {
+	    LogMessage(L_ERROR, "DNS Service Discovery query error %d; removing fd %d from InputSet...",
+			sdErr, p->dnssd_query_fd);
+	    FD_CLR(p->dnssd_query_fd, InputSet);
+	    DNSServiceRefDeallocate(p->dnssd_query_ref);
+	    p->dnssd_query_ref = NULL;
+	    p->dnssd_query_fd = -1;
+	  }
+	}
       }
-#endif /* HAVE_MDNS */
+#endif /* HAVE_DNSSD */
 
       if (time(NULL) > browse_time)
       {
@@ -930,6 +990,71 @@ main(int  argc,				/* I - Number of command-line arguments */
   free(output);
 
   return (!stop_scheduler);
+}
+
+
+/*
+ * 'cupsdClosePipe()' - Close a pipe as necessary.
+ */
+
+void
+cupsdClosePipe(int *fds)		/* I - Pipe file descriptors (2) */
+{
+ /*
+  * Close file descriptors as needed...
+  */
+
+  if (fds[0] >= 0)
+  {
+    close(fds[0]);
+    fds[0] = -1;
+  }
+
+  if (fds[1] >= 0)
+  {
+    close(fds[1]);
+    fds[1] = -1;
+  }
+}
+
+
+/*
+ * 'cupsdOpenPipe()' - Create a pipe which is closed on exec.
+ */
+
+int					/* O - 0 on success, -1 on error */
+cupsdOpenPipe(int *fds)			/* O - Pipe file descriptors (2) */
+{
+ /*
+  * Create the pipe...
+  */
+
+  if (pipe(fds))
+    return (-1);
+
+ /*
+  * Set the "close on exec" flag on each end of the pipe...
+  */
+
+  if (fcntl(fds[0], F_SETFD, fcntl(fds[0], F_GETFD) | FD_CLOEXEC))
+  {
+    close(fds[0]);
+    close(fds[1]);
+    return (-1);
+  }
+
+  if (fcntl(fds[1], F_SETFD, fcntl(fds[1], F_GETFD) | FD_CLOEXEC))
+  {
+    close(fds[0]);
+    close(fds[1]);
+    return (-1);
+  }
+
+ /*
+  * Return 0 indicating success...
+  */
+
+  return (0);
 }
 
 
@@ -1136,6 +1261,7 @@ process_children(void)
   int		pid;		/* Process ID of child */
   job_t		*job;		/* Current job */
   int		i;		/* Looping var */
+  char		*filter;	/* Filter name */
 
 
  /*
@@ -1167,9 +1293,9 @@ process_children(void)
 
     if (status)
     {
-      if (WIFSTOPPED(status))
+      if (WIFSIGNALED(status))
 	LogMessage(L_ERROR, "PID %d crashed on signal %d!", pid,
-	           WSTOPSIG(status));
+	           WTERMSIG(status));
       else
 	LogMessage(L_ERROR, "PID %d stopped with status %d!", pid,
 	           WEXITSTATUS(status));
@@ -1178,7 +1304,7 @@ process_children(void)
         LogMessage(L_INFO, "Hint: Try setting the LogLevel to \"debug\" to find out more.");
     }
     else
-      LogMessage(L_DEBUG2, "PID %d exited with no errors.", pid);
+      LogMessage(L_DEBUG, "PID %d exited with no errors.", pid);
 
    /*
     * Delete certificates for CGI processes...
@@ -1221,6 +1347,24 @@ process_children(void)
  	      job->status = -status;	/* Backend failed */
 	    else
  	      job->status = status;	/* Filter failed */
+
+	   /*
+	    * Set the printer's state_message so user's have a clue what happened...
+	    */
+
+	    if ((filter = basename(job->filters[i])) == NULL)
+	      filter = "";
+
+	    if (WIFSIGNALED(status))
+	      snprintf(job->printer->state_message, sizeof(job->printer->state_message), 
+			"The process \"%s\" terminated unexpectedly on signal %d", 
+			filter, WTERMSIG(status));
+	    else
+	      snprintf(job->printer->state_message, sizeof(job->printer->state_message),
+			"The process \"%s\" stopped unexpectedly with status %d", 
+			filter, WEXITSTATUS(status));
+
+	    AddPrinterHistory(job->printer);
 	  }
 	  break;
 	}
@@ -1297,7 +1441,6 @@ sigterm_handler(int sig)		/* I - Signal */
 static long				/* O - Number of seconds */
 select_timeout(int fds)			/* I - Number of ready descriptors select returned */
 {
-  int			i;		/* Looping var */
   long			timeout;	/* Timeout for select */
   time_t		now;		/* Current time */
   client_t		*con;		/* Client information */
@@ -1311,7 +1454,7 @@ select_timeout(int fds)			/* I - Number of ready descriptors select returned */
   * processed; if so, the timeout should be 0...
   */
 
-  for (i = NumClients, con = Clients; i > 0; i --, con ++)
+  for (con = Clients; con != NULL; con = con->next)
     if (con->http.used > 0)
       return (0);
 
@@ -1338,14 +1481,14 @@ select_timeout(int fds)			/* I - Number of ready descriptors select returned */
   */
 
   now     = time(NULL);
-  timeout = 2147483647;
+  timeout = now + 86400;		/* 86400 == 1 day */
   why     = "do nothing";
 
  /*
   * Check the activity and close old clients...
   */
 
-  for (i = NumClients, con = Clients; i > 0; i --, con ++)
+  for (con = Clients; con != NULL; con = con->next)
     if ((con->http.activity + Timeout) < timeout)
     {
       timeout = con->http.activity + Timeout;
@@ -1356,23 +1499,23 @@ select_timeout(int fds)			/* I - Number of ready descriptors select returned */
   * Update the browse list as needed...
   */
 
-  if (Browsing && BrowseProtocols)
+  if (Browsing && (BrowseLocalProtocols || BrowseRemoteProtocols))
   {
 #ifdef HAVE_LIBSLP
-    if ((BrowseProtocols & BROWSE_SLP) && (BrowseSLPRefresh < timeout))
+    if ((BrowseRemoteProtocols & BROWSE_SLP) && (BrowseSLPRefresh < timeout))
     {
       timeout = BrowseSLPRefresh;
       why     = "update SLP browsing";
     }
 #endif /* HAVE_LIBSLP */
 
-    if (BrowseProtocols & BROWSE_CUPS)
+    if ((BrowseLocalProtocols | BrowseRemoteProtocols) & BROWSE_CUPS)
     {
       for (p = Printers; p != NULL; p = p->next)
       {
 	if (p->type & CUPS_PRINTER_REMOTE)
 	{
-	  if (p->browse_time + BrowseTimeout < timeout)
+	  if (p->browse_protocol == BROWSE_CUPS && (p->browse_time + BrowseTimeout) < timeout)
 	  {
 	    timeout = p->browse_time + BrowseTimeout;
 	    why     = "browse timeout a printer";
@@ -1380,7 +1523,7 @@ select_timeout(int fds)			/* I - Number of ready descriptors select returned */
 	}
 	else if (!(p->type & CUPS_PRINTER_IMPLICIT))
 	{
-	  if (BrowseInterval && p->browse_time + BrowseInterval < timeout)
+	  if (BrowseInterval && (p->browse_time + BrowseInterval) < timeout)
 	  {
 	    timeout = p->browse_time + BrowseInterval;
 	    why     = "send browse update";
@@ -1428,23 +1571,20 @@ select_timeout(int fds)			/* I - Number of ready descriptors select returned */
   }
 
  /*
-  * Adjust the timeout as needed...
+  * Adjust from absolute to relative time.  If p->browse_time above
+  * was 0 then we can end up with a negative value here, so check.
+  * We add 1 second to the timeout since events occur after the
+  * timeout expires, and limit the timeout to 86400 seconds (1 day)
+  * to avoid select() timeout limits present on some operating
+  * systems...
   */
 
-  if (timeout != 2147483647)
-  {
-   /*
-    * Adjust from absolute to relative time.  If p->browse_time above
-    * was 0 then we can end up with a negative value here, so check.
-    * We add 1 second to the timeout since events occur after the
-    * timeout expires...
-    */
+  timeout = timeout - now + 1;
 
-    timeout = timeout - now + 1;
-
-    if (timeout < 1)
-      timeout = 1;
-  }
+  if (timeout < 1)
+    timeout = 1;
+  else if (timeout > 86400)
+    timeout = 86400;
 
  /*
   * Log and return the timeout value...
@@ -1464,7 +1604,15 @@ static void
 usage(void)
 {
 #ifdef __APPLE__
-  fputs("Usage: cupsd [-c config-file] [-f] [-F] [-d]\n", stderr);
+  static const char usage_msg[] = \
+		"Usage: cupsd [-c config-file] [-f] [-F] [-d] [-L]\n" \
+		"       -c   Use specified configuration file.\n" \
+		"       -d   Debugging mode, don't auto-relaunch on process termination.\n" \
+		"       -f   Run in foreground.\n" \
+		"       -F   Run in foreground but still disconnect from terminal.\n" \
+		"       -L   Lazy mode.\n";
+
+  fputs(usage_msg, stderr);
 #else
   fputs("Usage: cupsd [-c config-file] [-f] [-F]\n", stderr);
 #endif
@@ -1484,7 +1632,7 @@ usage(void)
 static kern_return_t registerBootstrapService()
 {
   kern_return_t status;
-  mach_port_t service_send_port, service_rcv_port;
+  mach_port_t service_send_port;
 
   /* syslog(LOG_ERR, "Registering Bootstrap Service"); */
 
@@ -1503,9 +1651,9 @@ static kern_return_t registerBootstrapService()
   }
   else if (status == BOOTSTRAP_UNKNOWN_SERVICE)
   {
-    /* relaunch immediately, not on demand */
+    /* relaunch on demand */
     status = bootstrap_create_server(bootstrap_port, "/usr/sbin/cupsd -f", getuid(),
-          FALSE , &server_priv_port);
+          true , &server_priv_port);
     if (status != KERN_SUCCESS)
       return status;
 
@@ -1525,15 +1673,64 @@ static kern_return_t registerBootstrapService()
     }
   }
 
-  /*
-   * We have no intention of responding to requests on the service port.  We are not otherwise
-   * a Mach port-based service.  We are just using this mechanism for relaunch facilities.
-   * So, we can dispose of all the rights we have for the service port.  We don't destroy the
-   * send right for the server's privileged bootstrap port - in case we have to unregister later.
-   */
-  mach_port_destroy(mach_task_self(), service_rcv_port);
-
   return status;
+}
+
+/*
+ * 'emptyReceivePort()' - Loop through any waiting mach messages and try to send
+ *                        a reply.
+ *
+ */
+ 
+static void emptyReceivePort()
+{
+  mach_msg_empty_rcv_t	aMsg;			/* Mach message */
+  kern_return_t		msg_rcv_result,		/* Message receive result */
+			msg_snd_result;		/* Message send result */
+
+  if (service_rcv_port != MACH_PORT_NULL)
+  {
+
+   /* Empty the message queue on our receive port. We do not
+    * want to wait for a message so go with a 0 timeout.
+    * We no not care about the contents of the message so
+    * we ignore the message too large error.
+    */
+
+    do
+    {
+      aMsg.header.msgh_size = sizeof(aMsg);
+      msg_rcv_result = mach_msg(&aMsg.header, MACH_RCV_MSG | MACH_RCV_TIMEOUT, 0, 
+				aMsg.header.msgh_size, service_rcv_port, 0, MACH_PORT_NULL);
+		
+     /*
+      * If we received a message then send a reply letting the caller
+      * know we are alive.
+      */
+
+      if (msg_rcv_result == MACH_MSG_SUCCESS)
+      {
+	aMsg.header.msgh_bits = MACH_MSGH_BITS( MACH_MSG_TYPE_MOVE_SEND, MACH_MSG_TYPE_MAKE_SEND );
+	aMsg.header.msgh_size = sizeof(aMsg.header);
+
+	msg_snd_result = mach_msg(&aMsg.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT, aMsg.header.msgh_size,
+				  0, MACH_PORT_NULL, 500, MACH_PORT_NULL);
+
+	if (msg_snd_result != KERN_SUCCESS)
+	  LogMessage(L_WARN, "emptyReceivePort: mach_msg send returns: %s", mach_error_string(msg_snd_result));
+
+       /*
+	* if the reply can't be delivered destroy the message...
+	*/
+
+	if (msg_snd_result == MACH_SEND_INVALID_DEST || msg_snd_result == MACH_SEND_TIMED_OUT)
+	  mach_msg_destroy(&aMsg.header);
+      }
+      else if (msg_rcv_result != MACH_RCV_TIMED_OUT)
+	LogMessage(L_WARN, "emptyReceivePort: mach_msg receive returns: %s", mach_error_string(msg_rcv_result));
+    }
+    while(msg_rcv_result == MACH_MSG_SUCCESS);
+  }
 }
 
 
@@ -1544,11 +1741,18 @@ static kern_return_t registerBootstrapService()
 static kern_return_t destroyBootstrapService()
 {
   /* syslog(LOG_ERR, "Destroying Bootstrap Service"); */
+  
+  if (service_rcv_port != MACH_PORT_NULL)
+  {
+    mach_port_destroy(mach_task_self(), service_rcv_port);
+    service_rcv_port = MACH_PORT_NULL;
+  }
+  
   return bootstrap_register(server_priv_port, (char*)service_name, MACH_PORT_NULL);
 }
 
 #endif	/* __APPLE__ */
 
 /*
- * End of "$Id: main.c,v 1.22 2004/06/15 21:23:39 jlovell Exp $".
+ * End of "$Id: main.c,v 1.40 2005/03/10 00:24:06 jlovell Exp $".
  */

@@ -1,9 +1,9 @@
 /*
- * "$Id: classes.h,v 1.1.1.8 2004/06/05 02:42:33 jlovell Exp $"
+ * "$Id: classes.h,v 1.3 2005/01/04 22:10:45 jlovell Exp $"
  *
  *   Printer class definitions for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  */
@@ -27,7 +27,7 @@
  * Prototypes...
  */
 
-extern printer_t	*AddClass(const char *name);
+extern printer_t	*AddClass(const char *name, int update);
 extern void		AddPrinterToClass(printer_t *c, printer_t *p);
 extern void		DeletePrinterFromClass(printer_t *c, printer_t *p);
 extern void		DeletePrinterFromClasses(printer_t *p);
@@ -40,5 +40,5 @@ extern void		UpdateImplicitClasses(void);
 
 
 /*
- * End of "$Id: classes.h,v 1.1.1.8 2004/06/05 02:42:33 jlovell Exp $".
+ * End of "$Id: classes.h,v 1.3 2005/01/04 22:10:45 jlovell Exp $".
  */

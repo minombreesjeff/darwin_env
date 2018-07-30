@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.1.1.7 2004/06/05 02:42:33 jlovell Exp $"
+# "$Id: Makefile,v 1.1.1.10 2005/01/04 19:16:13 jlovell Exp $"
 #
 #   PPD file makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1993-2003 by Easy Software Products.
+#   Copyright 1993-2005 by Easy Software Products.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
 #       Attn: CUPS Licensing Information
 #       Easy Software Products
 #       44141 Airport View Drive, Suite 204
-#       Hollywood, Maryland 20636-3111 USA
+#       Hollywood, Maryland 20636 USA
 #
-#       Voice: (301) 373-9603
+#       Voice: (301) 373-9600
 #       EMail: cups-info@cups.org
 #         WWW: http://www.cups.org
 #
@@ -59,5 +59,5 @@ install:
 
 
 #
-# End of "$Id: Makefile,v 1.1.1.7 2004/06/05 02:42:33 jlovell Exp $".
+# End of "$Id: Makefile,v 1.1.1.10 2005/01/04 19:16:13 jlovell Exp $".
 #

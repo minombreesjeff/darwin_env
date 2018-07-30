@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.27 2004/04/08 17:41:33 jlovell Exp $"
+# "$Id: Makefile,v 1.30 2005/01/04 22:10:34 jlovell Exp $"
 #
 #   Top-level Makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2005 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
 #       Attn: CUPS Licensing Information
 #       Easy Software Products
 #       44141 Airport View Drive, Suite 204
-#       Hollywood, Maryland 20636-3111 USA
+#       Hollywood, Maryland 20636 USA
 #
-#       Voice: (301) 373-9603
+#       Voice: (301) 373-9600
 #       EMail: cups-info@cups.org
 #         WWW: http://www.cups.org
 #
@@ -35,7 +35,8 @@ CHANGE_OWNERS =	$(SERVERROOT) $(SERVERROOT)/certs $(SERVERROOT)/ppd \
 				$(SERVERROOT)/cupsd.conf $(SERVERROOT)/classes.conf \
 				$(SERVERROOT)/client.conf $(SERVERROOT)/interfaces \
 				$(SERVERROOT)/mime.convs $(SERVERROOT)/mime.types \
-				$(SERVERROOT)/printers.conf $(REQUESTS) $(REQUESTS)/tmp
+				$(SERVERROOT)/printers.conf $(REQUESTS) $(REQUESTS)/tmp \
+				$(SERVERROOT)/cupsd.conf.default
 
 #
 # Make all targets...
@@ -111,7 +112,7 @@ install:	installhdrs
 	if test "x$(INITDIR)" = "x" -a "x$(INITDDIR)" != "x"; then \
 		$(INSTALL_DIR) $(BUILDROOT)$(INITDDIR); \
 		if test "$(INITDDIR)" = "/System/Library/StartupItems/PrintingServices"; then \
-			$(INSTALL_SCRIPT) PrintingServices $(BUILDROOT)$(INITDDIR)/PrintingServices; \
+			$(INSTALL_SCRIPT) cups.osx $(BUILDROOT)$(INITDDIR)/PrintingServices; \
 			$(INSTALL_DATA) cups.plist $(BUILDROOT)$(INITDDIR)/StartupParameters.plist; \
 			$(INSTALL_DIR) $(BUILDROOT)$(INITDDIR)/Resources/English.lproj; \
 			$(INSTALL_DATA) cups.strings $(BUILDROOT)$(INITDDIR)/Resources/English.lproj/Localizable.strings; \
@@ -197,5 +198,5 @@ tardist:
 	epm $(EPMFLAGS) -f tardist cups
 
 #
-# End of "$Id: Makefile,v 1.27 2004/04/08 17:41:33 jlovell Exp $".
+# End of "$Id: Makefile,v 1.30 2005/01/04 22:10:34 jlovell Exp $".
 #

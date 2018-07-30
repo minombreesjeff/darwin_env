@@ -1,9 +1,9 @@
 /*
- * "$Id: classes.c,v 1.8 2004/06/05 03:49:46 jlovell Exp $"
+ * "$Id: classes.c,v 1.13 2005/02/09 23:12:13 jlovell Exp $"
  *
  *   Printer class routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -48,7 +48,8 @@
  */
 
 printer_t *			/* O - New class */
-AddClass(const char *name)	/* I - Name of class */
+AddClass(const char *name,	/* I - Name of class */
+	 int       update)	/* I - Update printcap? */
 {
   int		i,		/* Looping var */
   		port;		/* Port number to use */
@@ -59,7 +60,7 @@ AddClass(const char *name)	/* I - Name of class */
   * Add the printer and set the type to "class"...
   */
 
-  if ((c = AddPrinter(name)) != NULL)
+  if ((c = AddPrinter(name, update)) != NULL)
   {
    /*
     * Change from a printer to a class...
@@ -167,7 +168,7 @@ DeletePrinterFromClass(printer_t *c,	/* I - Class to delete from */
 
     c->num_printers --;
     if (i < c->num_printers)
-      memcpy(c->printers + i, c->printers + i + 1,
+      memmove(c->printers + i, c->printers + i + 1,
              (c->num_printers - i) * sizeof(printer_t *));
   }
 
@@ -203,6 +204,7 @@ DeletePrinterFromClasses(printer_t *p)	/* I - Printer to delete */
 {
   printer_t	*c,			/* Pointer to current class */
 		*next;			/* Pointer to next class */
+  int		num_printers;		/* Number of printers */
 
 
  /*
@@ -228,7 +230,20 @@ DeletePrinterFromClasses(printer_t *p)	/* I - Printer to delete */
 
     if ((c->type & (CUPS_PRINTER_CLASS | CUPS_PRINTER_IMPLICIT)) &&
         c->num_printers == 0)
+    {
+     /*
+      * Deleting a printer that is part of an implicit class can also cause 
+      * a following class to be deleted (which our 'next' may be pointing at). 
+      * In this case reset 'next' to the head of the list...
+      */
+
+      num_printers = NumPrinters;
+
       DeletePrinter(c, 1);
+
+      if (NumPrinters != num_printers - 1)
+	next = Printers;
+    }
   }
 }
 
@@ -422,7 +437,7 @@ LoadAllClasses(void)
 
         LogMessage(L_DEBUG, "LoadAllClasses: Loading class %s...", value);
 
-        p = AddClass(value);
+        p = AddClass(value, 0);
 	p->accepting = 1;
 	p->state     = IPP_PRINTER_IDLE;
 
@@ -472,7 +487,7 @@ LoadAllClasses(void)
 	* Add the missing remote printer...
 	*/
 
-	if ((temp = AddPrinter(value)) != NULL)
+	if ((temp = AddPrinter(value, 0)) != NULL)
 	{
 	  SetString(&temp->make_model, "Remote Printer on unknown");
 
@@ -734,5 +749,5 @@ UpdateImplicitClasses(void)
 
 
 /*
- * End of "$Id: classes.c,v 1.8 2004/06/05 03:49:46 jlovell Exp $".
+ * End of "$Id: classes.c,v 1.13 2005/02/09 23:12:13 jlovell Exp $".
  */

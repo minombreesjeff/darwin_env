@@ -1,9 +1,9 @@
 /*
- * "$Id: ppd.c,v 1.27 2004/05/26 21:10:01 jlovell Exp $"
+ * "$Id: ppd.c,v 1.31 2005/01/04 22:10:39 jlovell Exp $"
  *
  *   PPD file routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -67,6 +67,7 @@
 #include <ctype.h>
 #include "string.h"
 #include "language.h"
+#include "globals.h"
 #include "debug.h"
 
 
@@ -93,11 +94,11 @@
 /*
  * Local globals...
  */
-
-static ppd_status_t	ppd_status = PPD_OK;
+#define	ppd_status	(_cups_globals()->ppd_status)
 					/* Status of last ppdOpen*() */
-static int		ppd_line = 0;	/* Current line number */
-static ppd_conform_t	ppd_conform = PPD_CONFORM_RELAXED;
+#define	ppd_line	(_cups_globals()->ppd_line)
+					/* Current line number */
+#define	ppd_conform	(_cups_globals()->ppd_conform)
 					/* Level of conformance required */
 
 
@@ -2685,5 +2686,5 @@ ppd_read(FILE *fp,			/* I - File to read from */
 
 
 /*
- * End of "$Id: ppd.c,v 1.27 2004/05/26 21:10:01 jlovell Exp $".
+ * End of "$Id: ppd.c,v 1.31 2005/01/04 22:10:39 jlovell Exp $".
  */

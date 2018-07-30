@@ -1,11 +1,11 @@
 dnl
-dnl "$Id: cups-mdns.m4,v 1.2 2004/05/31 21:02:20 jlovell Exp $"
+dnl "$Id: cups-dnssd.m4,v 1.1 2005/02/16 17:58:01 jlovell Exp $"
 dnl
-dnl   Multicast DNS (aka Rendezvous) stuff for the Common UNIX Printing System (CUPS).
+dnl   DNS Service Discovery (aka Bonjour) stuff for the Common UNIX Printing System (CUPS).
 dnl
-dnl   http://www.multicastdns.org/
 dnl   http://www.dns-sd.org
-dnl   http://developer.apple.com/macosx/rendezvous
+dnl   http://www.multicastdns.org/
+dnl   http://developer.apple.com/macosx/bonjour
 dnl
 dnl   Copyright 1997-2002 by Easy Software Products, all rights reserved.
 dnl
@@ -26,25 +26,32 @@ dnl       EMail: cups-info@cups.org
 dnl         WWW: http://www.cups.org
 dnl
 
-AC_ARG_ENABLE(mdns, [  --enable-mdns            turn on Multicast DNS support, default=yes])
-AC_ARG_WITH(mdns-libs, [  --with-mdns-libs        set directory for Multicast DNS library],
+AC_ARG_ENABLE(dnssd, [  --enable-dnssd            turn on Multicast DNS support, default=yes])
+AC_ARG_WITH(dnssd-libs, [  --with-dnssd-libs        set directory for Multicast DNS library],
     LDFLAGS="-L$withval $LDFLAGS"
     DSOFLAGS="-L$withval $DSOFLAGS",)
-AC_ARG_WITH(mdns-includes, [  --with-mdns-includes    set directory for Multicast DNS includes],
+AC_ARG_WITH(dnssd-includes, [  --with-dnssd-includes    set directory for Multicast DNS includes],
     CFLAGS="-I$withval $CFLAGS"
     CXXFLAGS="-I$withval $CXXFLAGS"
     CPPFLAGS="-I$withval $CPPFLAGS",)
 
-MDNSLIBS=""
+DNSSDLIBS=""
 
-if test x$enable_mdns != xno; then
+if test x$enable_dnssd != xno; then
     AC_CHECK_HEADER(dns_sd.h, 
-            AC_DEFINE(HAVE_MDNS)
-	    MDNSLIBS="-framework CoreFoundation")
+            AC_DEFINE(HAVE_DNSSD)
+	    DNSSDLIBS="-framework CoreFoundation -framework SystemConfiguration")
 fi
 
-AC_SUBST(MDNSLIBS)
+if test "x$DNSSDLIBS" = x; then
+	CUPS_DEFAULT_BROWSELOCALPROTOCOLS="cups"
+else
+	CUPS_DEFAULT_BROWSELOCALPROTOCOLS="cups dnssd"
+fi
+
+AC_SUBST(DNSSDLIBS)
+AC_SUBST(CUPS_DEFAULT_BROWSELOCALPROTOCOLS)
 
 dnl
-dnl End of "$Id: cups-mdns.m4,v 1.2 2004/05/31 21:02:20 jlovell Exp $".
+dnl End of "$Id: cups-dnssd.m4,v 1.1 2005/02/16 17:58:01 jlovell Exp $".
 dnl

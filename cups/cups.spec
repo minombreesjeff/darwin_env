@@ -1,11 +1,11 @@
 #
-# "$Id: cups.spec,v 1.1.1.22 2004/06/05 02:42:28 jlovell Exp $"
+# "$Id: cups.spec,v 1.1.1.25 2005/01/04 19:15:00 jlovell Exp $"
 #
 #   RPM "spec" file for the Common UNIX Printing System (CUPS).
 #
 #   Original version by Jason McMullan <jmcc@ontv.com>.
 #
-#   Copyright 1999-2003 by Easy Software Products, all rights reserved.
+#   Copyright 1999-2005 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -17,16 +17,16 @@
 #       Attn: CUPS Licensing Information
 #       Easy Software Products
 #       44141 Airport View Drive, Suite 204
-#       Hollywood, Maryland 20636-3111 USA
+#       Hollywood, Maryland 20636 USA
 #
-#       Voice: (301) 373-9603
+#       Voice: (301) 373-9600
 #       EMail: cups-info@cups.org
 #         WWW: http://www.cups.org
 #
 
 Summary: Common Unix Printing System
 Name: cups
-Version: 1.1.21rc1
+Version: 1.1.23
 Release: 1
 Copyright: GPL
 Group: System Environment/Daemons
@@ -201,6 +201,37 @@ rm -rf $RPM_BUILD_ROOT
 %dir /usr/share/man/man8
 /usr/share/man/man8/*
 
+%dir /usr/share/man/es/cat1
+/usr/share/man/es/cat1/backend.1
+/usr/share/man/es/cat1/cupstestppd.1
+/usr/share/man/es/cat1/filter.1
+/usr/share/man/es/cat1/lp.1
+/usr/share/man/es/cat1/lpoptions.1
+/usr/share/man/es/cat1/lppasswd.1
+/usr/share/man/es/cat1/lpq.1
+/usr/share/man/es/cat1/lpr.1
+/usr/share/man/es/cat1/lprm.1
+/usr/share/man/es/cat1/lpstat.1
+%dir /usr/share/man/es/cat5
+/usr/share/man/es/cat5/*
+%dir /usr/share/man/es/cat8
+/usr/share/man/es/cat8/*
+%dir /usr/share/man/es/man1
+/usr/share/man/es/man1/backend.1.gz
+/usr/share/man/es/man1/cupstestppd.1.gz
+/usr/share/man/es/man1/filter.1.gz
+/usr/share/man/es/man1/lp.1.gz
+/usr/share/man/es/man1/lpoptions.1.gz
+/usr/share/man/es/man1/lppasswd.1.gz
+/usr/share/man/es/man1/lpq.1.gz
+/usr/share/man/es/man1/lpr.1.gz
+/usr/share/man/es/man1/lprm.1.gz
+/usr/share/man/es/man1/lpstat.1.gz
+%dir /usr/share/man/es/man5
+/usr/share/man/es/man5/*
+%dir /usr/share/man/es/man8
+/usr/share/man/es/man8/*
+
 %dir /usr/share/man/fr/cat1
 /usr/share/man/fr/cat1/backend.1
 /usr/share/man/fr/cat1/cupstestppd.1
@@ -238,12 +269,19 @@ rm -rf $RPM_BUILD_ROOT
 %files devel
 %dir /usr/share/man/cat1
 /usr/share/man/cat1/cups-config.1
-%dir /usr/share/man/fr/cat1
-/usr/share/man/fr/cat1/cups-config.1
 %dir /usr/share/man/man1
 /usr/share/man/man1/cups-config.1.gz
+
+%dir /usr/share/man/es/cat1
+/usr/share/man/es/cat1/cups-config.1
+%dir /usr/share/man/es/man1
+/usr/share/man/es/man1/cups-config.1.gz
+
+%dir /usr/share/man/fr/cat1
+/usr/share/man/fr/cat1/cups-config.1
 %dir /usr/share/man/fr/man1
 /usr/share/man/fr/man1/cups-config.1.gz
+
 /usr/bin/cups-config
 %dir /usr/include/cups
 /usr/include/cups/*
@@ -253,5 +291,5 @@ rm -rf $RPM_BUILD_ROOT
 /usr/lib/*.so*
 
 #
-# End of "$Id: cups.spec,v 1.1.1.22 2004/06/05 02:42:28 jlovell Exp $".
+# End of "$Id: cups.spec,v 1.1.1.25 2005/01/04 19:15:00 jlovell Exp $".
 #

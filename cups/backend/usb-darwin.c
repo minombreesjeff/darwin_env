@@ -1,5 +1,7 @@
 /*
-© Copyright 2004 Apple Computer, Inc. All rights reserved.
+ "$Id: usb-darwin.c,v 1.13 2005/02/24 20:48:54 jlovell Exp $"
+
+© Copyright 2005 Apple Computer, Inc. All rights reserved.
 
 IMPORTANT:  This Apple software is supplied to you by Apple Computer,
 Inc. ("Apple") in consideration of your agreement to the following
@@ -269,11 +271,12 @@ int			UsbSamePrinter( const USBPrinterAddress *lastTime, const USBPrinterAddress
 
 OSStatus	UsbGetPrinterAddress( USBPrinterInfo *thePrinter, USBPrinterAddress *address, UInt16 timeout );
 
+static void setupCFLanguage(void);
 
 /*******************************************************************************
 	Contains:	Support IEEE-1284 DeviceID as a CFString.
 
-	Copyright 2000-2002 by Apple Computer, Inc., all rights reserved.
+	Copyright 2000-2005 by Apple Computer, Inc., all rights reserved.
 
 	Description:
 		IEEE-1284 Device ID is referenced in USB and PPDT (1394.3). It allows
@@ -367,7 +370,7 @@ OSStatus	UsbGetPrinterAddress( USBPrinterInfo *thePrinter, USBPrinterAddress *ad
 
 static CFStringRef CreateEncodedCFString(CFStringRef string);
 static CFRange	DelimitSubstring( CFStringRef stringToSearch, CFStringRef delim, CFRange bounds, CFStringCompareFlags options );
-static void parseOptions(const char *options, char *serial);
+static void parseOptions(const char *options, char *serial, UInt32 *location);
 
 CFStringRef
 DeviceIDCreateValueList(	const CFStringRef deviceID,
@@ -428,7 +431,7 @@ dump( char *text, void *s, int len )
     char *p = (char *) s;
     char m[1+2*16+1+16+1];
 
-    fprintf( stderr, "%s pointer %x len %d\n", text, (unsigned int) p, len );
+    fprintf(stderr, "%s pointer %x len %d\n", text, (unsigned int) p, len );
 
     for ( ; len > 0; len -= 16 )
     {
@@ -450,7 +453,7 @@ dump( char *text, void *s, int len )
             *out++ = asciidigit( *q );
         *out = 0;
         m[ strlen( m ) ] = '\0';
-        fprintf( stderr,  "%s\n", m );
+        fprintf(stderr,  "%s\n", m );
     }
 }
 
@@ -489,9 +492,9 @@ cmpcfs( char *text, CFStringRef a, CFStringRef b )
     }
     
     if ( found.length > 0 )
-        fprintf( stderr,  "matched @%d:%d\n", (int) found.location, (int) found.length);
+        fprintf(stderr,  "matched @%d:%d\n", (int) found.location, (int) found.length);
     else
-        fprintf( stderr,  "not matched\n" );
+        fprintf(stderr,  "not matched\n" );
 }
 #endif //DEBUG==2
 
@@ -616,7 +619,7 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 {
 	UInt32		wbytes,			/* Number of bytes written */
 				buffersize = 2048;
-	size_t		nbytes;			/* Number of bytes read */
+	ssize_t		nbytes;			/* Number of bytes read */
 	off_t		tbytes;			/* Total number of bytes written */
 	char		*buffer,		/* Output buffer */
 				*bufptr;		/* Pointer into buffer */
@@ -627,6 +630,7 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
    int				thread_created = 0;
 
     USBPrinterInfo		*targetPrinter = NULL;
+    USBPrinterInfo		*potentialPrinter = NULL;
     CFMutableArrayRef	usbPrinters;
 	char				manufacturer_buf[USB_MAX_STR_SIZE],
 						product_buf[USB_MAX_STR_SIZE],
@@ -634,7 +638,7 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 	CFStringRef			manufacturer;
 	CFStringRef			product;
 	CFStringRef			serial;
-
+	UInt32				location = 0;
 	OSStatus			status = noErr;
 
 
@@ -642,9 +646,10 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 		struct sigaction action;	/* Actions for POSIX signals */
 	#endif /* HAVE_SIGACTION && !HAVE_SIGSET */
 
-	fprintf(stderr, "INFO: Opening the print file and connection...\n");
+	setupCFLanguage();
+	fprintf(stderr, "INFO: Opening connection\n");
 
-	parseOptions(options, serial_buf);
+	parseOptions(options, serial_buf, &location);
 
 	if (resource[0] == '/')
 	  resource++;
@@ -683,19 +688,29 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 					{
 						match = printer->address.product && product? CFEqual(printer->address.product, product ): FALSE;
 					}
-					if ( match && serial )  
+					if ( match )
 					{
-						// Note with old queues (pre Panther) the CUPS uri may have no serial number (serial==NULL).
-						//	In this case, we will ignore serial number (as before), and we'll match to the first
-						//	printer that agrees with manufacturer and product.
-						// If the CUPS uri does include a serial number, we'll enter this clause
-						//	which requires the printer's serial number to match the CUPS serial number.
-						// The net effect is that for printers with a serial number,
-						//	new queues must match the serial number, while old queues match any printer 
-						//	that satisfies the manufacturer/product match.
-						//
-						match = printer->address.serial? CFEqual(printer->address.serial, serial ): FALSE;
+						if (serial != NULL && CFStringGetLength(serial))  
+						{
+							// Note with old queues (pre Panther) the CUPS uri may have no serial number (serial==NULL).
+							//	In this case, we will ignore serial number (as before), and we'll match to the first
+							//	printer that agrees with manufacturer and product.
+							// If the CUPS uri does include a serial number, we'll enter this clause
+							//	which requires the printer's serial number to match the CUPS serial number.
+							// The net effect is that for printers with a serial number,
+							//	new queues must match the serial number, while old queues match any printer 
+							//	that satisfies the manufacturer/product match.
+							//
+							match = printer->address.serial? CFEqual(printer->address.serial, serial ): FALSE;
+						}
+						else if (location != 0 && printer->location != 0)
+						{
+							match = (printer->location == location);
+							if (!match && potentialPrinter == NULL)
+								potentialPrinter = UsbCopyPrinter( printer );
+						}
 					}
+
 					if ( match )
 					{
 						targetPrinter = UsbCopyPrinter( printer );
@@ -703,6 +718,17 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 					}
 				}
 			}
+			
+			if (potentialPrinter != nil)
+			{
+				if (targetPrinter == nil)
+					targetPrinter = potentialPrinter;
+				else
+					UsbReleasePrinter(potentialPrinter);
+				
+				potentialPrinter = nil;
+			}
+				
 		}
 		UsbReleaseAllPrinters( usbPrinters );
 		if ( NULL != targetPrinter )
@@ -716,9 +742,9 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 			{
 				// periodically, write to the log so someone knows we're waiting
 				if (NULL == targetPrinter)
-					fprintf( stderr, "WARNING: Printer not responding\n" );
+					fprintf(stderr, "WARNING: Printer not responding\n" );
 				else
-					fprintf( stderr, "INFO: Printer busy\n" );
+					fprintf(stderr, "INFO: Printer busy\n" );
 				countdown = SUBSEQUENT_LOG_INTERVAL;	// subsequent log entries, every 30 minutes
 			}
 		}
@@ -738,7 +764,7 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 	* stdin (otherwise you can't cancel raw jobs...)
 	*/
 	
-	if (fd != 0)
+	if (!fd)
 	{
 #ifdef HAVE_SIGSET /* Use System V signals over POSIX to avoid bugs */
 		sigset(SIGTERM, SIG_IGN);
@@ -755,12 +781,11 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 
 	buffer = malloc( buffersize );
 	if ( !buffer ) {
-		fprintf( stderr, "ERROR: Couldn't allocate internal buffer\n" );
+		fprintf(stderr, "ERROR: Couldn't allocate internal buffer\n" );
 		status = -1;
 	}
 	else
 	{
-		fprintf(stderr, "INFO: Sending the print file...\n");
 		if (pthread_cond_init(&readCompleteCondition, NULL) == 0)
 		{
 			gReadCompleteConditionPtr = &readCompleteCondition;
@@ -779,6 +804,9 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 	/*
 	* the main thread sends the print file...
 	*/
+
+	fprintf(stderr, "INFO: Sending data\n");
+
 	while (noErr == status && copies > 0)
 	{
 		copies --;
@@ -815,7 +843,7 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 			}
 
 			if (fd != 0 && noErr == status)
-				fprintf(stderr, "INFO: Sending print file, %qd bytes...\n", (off_t)tbytes);
+				fprintf(stderr, "DEBUG: Sending print file, %qd bytes...\n", (off_t)tbytes);
 		}
 	}
 	done = 1;	// stop scheduling reads
@@ -856,7 +884,7 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 static Boolean
 encodecfstr( CFStringRef cfsrc, char *dst, long len )
 {
-	return CFStringGetCString(cfsrc, dst, len, kCFStringEncodingUTF8 );
+	return CFStringGetCString(cfsrc? cfsrc:CFSTR("Unknown"), dst, len, kCFStringEncodingUTF8 );
 }
 
 /*
@@ -894,7 +922,7 @@ void list_devices(void)
 }
 
 
-static void parseOptions(const char *options, char *serial)
+static void parseOptions(const char *options, char *serial, UInt32 *location)
 {
 	char	*serialnumber;	/* ?serial=<serial> or ?location=<location> */
 	char	optionName[255],	/* Name of option */
@@ -903,6 +931,8 @@ static void parseOptions(const char *options, char *serial)
 
 	if (serial)
 		*serial = '\0';
+	if (location)
+		*location = 0;
 
 	if (!options)
 		return;
@@ -963,11 +993,14 @@ static void parseOptions(const char *options, char *serial)
 				fprintf(stderr, "WARNING: Boolean expected for waiteof option \"%s\"\n", value);
 			}
 		}
-		else if (strcasecmp(optionName, "serial") == 0 ||
-				 strcasecmp(optionName, "location") == 0 )
+		else if (strcasecmp(optionName, "serial") == 0)
 		{
 			strcpy(serial, value);
 			serialnumber = serial;
+		}
+		else if (strcasecmp(optionName, "location") == 0 && location)
+		{
+			*location = strtol(value, NULL, 16);
 		}
 	}
 
@@ -1016,6 +1049,38 @@ static int addPercentEscapes(const unsigned char* src, char* dst, int dstMax)
   return 0;
 }
 
+/*!
+ * @function	setupCFLanguage
+ * @abstract	Convert the contents of the CUPS 'LANG' environment
+ *		variable into a one element CF array of languages.
+ *
+ * @discussion	Each submitted job comes with a natural language. CUPS passes
+ * 		that language in an environment variable. We take that language
+ * 		and jam it into the AppleLanguages array so that CF will use
+ * 		it when reading localized resources. We need to do this before
+ * 		any CF code reads and caches the languages array, so this function
+ *		should be called early in main()
+ */
+static void setupCFLanguage(void)
+{
+    CFStringRef lang[1] = {NULL};
+    CFArrayRef langArray = NULL;
+    const char *requestedLang = NULL;
+
+    requestedLang = getenv("LANG");
+    if (requestedLang != NULL) {
+        lang[0] = CFStringCreateWithCString(kCFAllocatorDefault, requestedLang, kCFStringEncodingUTF8);
+        langArray = CFArrayCreate(kCFAllocatorDefault, (const void **)lang, sizeof(lang) / sizeof(lang[0]), &kCFTypeArrayCallBacks);
+
+        CFPreferencesSetAppValue(CFSTR("AppleLanguages"), langArray, kCFPreferencesCurrentApplication);
+        fprintf(stderr, "DEBUG: usb: AppleLanguages = \"%s\"\n", requestedLang);
+
+        CFRelease(lang[0]);
+        CFRelease(langArray);
+    } else {
+        fprintf(stderr, "DEBUG: usb: LANG environment variable missing.\n");
+    }
+}
 
 /*!
  * @function	removePercentEscapes
@@ -1192,11 +1257,8 @@ UsbLoadClassDriver( USBPrinterInfo *printer, CFUUIDRef interfaceID, CFStringRef 
 	if ( NULL != classDriverBundle )
 		printer->bundle = classDriverBundle;	// vendor-specific class override
 	else
-#ifdef TIMEOUT
 		classDriverBundle = kUSBGenericTOPrinterClassDriver;	//	supply the generic TIMEOUT class driver
-#else
-		classDriverBundle = kUSBGenericPrinterClassDriver;	//	supply the generic  class driver
-#endif
+
 	DEBUG_CFString( "UsbLoadClassDriver classDriverBundle", classDriverBundle );
     if ( NULL != classDriverBundle )
     {
@@ -1584,10 +1646,10 @@ UsbGetAllPrinters( void )
             usbMatch = NULL;
             
             DEBUG_ERR( kr, "UsbGetAllPrinters IOServiceGetMatchingServices %x\n" );
-            if(kIOReturnSuccess != kr || iter == NULL)  break;
+            if(kIOReturnSuccess != kr || iter == 0)  break;
         }
         
-        while (  NULL != (usbInterface = IOIteratorNext(iter))  )
+        while (  0 != (usbInterface = IOIteratorNext(iter))  )
         {
             IOCFPlugInInterface 	**iodev;
             USBPrinterInterface		intf;
@@ -1672,7 +1734,7 @@ UsbGetAllPrinters( void )
             } // if IOCreatePlugInInterfaceForService
             
             IOObjectRelease(usbInterface);
-            usbInterface = NULL;
+            usbInterface = 0;
             
         } // while there's an interface
     } while ( 0 );

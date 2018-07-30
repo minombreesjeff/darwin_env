@@ -1,9 +1,9 @@
 /*
- * "$Id: conf.c,v 1.31 2004/06/15 21:18:53 jlovell Exp $"
+ * "$Id: conf.c,v 1.45 2005/02/16 17:58:01 jlovell Exp $"
  *
  *   Configuration routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -27,8 +27,7 @@
  *   read_configuration() - Read a configuration file.
  *   read_location()      - Read a <Location path> definition.
  *   get_address()        - Get an address + port number from a line.
- *   CDSAGetServerCerts() - Convert a keychain name into the CFArrayRef
- *                          required by SSLSetCertificate.
+ *   conf_file_check()    - Fix the mode and ownership of a file or directory. 
  */
 
 /*
@@ -39,6 +38,9 @@
 #include <stdarg.h>
 #include <pwd.h>
 #include <grp.h>
+#include <sys/utsname.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #ifdef HAVE_DOMAINSOCKETS
 #  include <sys/un.h>
@@ -46,7 +48,9 @@
 
 #ifdef HAVE_CDSASSL
 #  include <Security/SecureTransport.h>
+#  include <Security/SecIdentity.h>
 #  include <Security/SecIdentitySearch.h>
+#  include <Security/SecKeychain.h>
 #endif /* HAVE_CDSASSL */
 
 #ifdef HAVE_VSYSLOG
@@ -120,6 +124,10 @@ static var_t	variables[] =
   { "MaxCopies",		&MaxCopies,		VAR_INTEGER },
 #ifdef __APPLE__
   { "MinCopies",		&MinCopies,		VAR_INTEGER },
+  { "AppleQuotas",		&AppleQuotas,		VAR_BOOLEAN },
+  { "ApplePreserveJobHistoryAttributes",
+				&ApplePreserveJobHistoryAttributes,
+				VAR_BOOLEAN },
 #endif  /* __APPLE__ */
   { "MaxJobs",			&MaxJobs,		VAR_INTEGER },
   { "MaxJobsPerPrinter",	&MaxJobsPerPrinter,	VAR_INTEGER },
@@ -132,6 +140,7 @@ static var_t	variables[] =
   { "PreserveJobHistory",	&JobHistory,		VAR_BOOLEAN },
   { "Printcap",			&Printcap,		VAR_STRING },
   { "PrintcapGUI",		&PrintcapGUI,		VAR_STRING },
+  { "ReloadTimeout",		&ReloadTimeout,		VAR_INTEGER },
   { "RemoteRoot",		&RemoteRoot,		VAR_STRING },
   { "RequestRoot",		&RequestRoot,		VAR_STRING },
   { "RIPCache",			&RIPCache,		VAR_STRING },
@@ -144,6 +153,9 @@ static var_t	variables[] =
 #  if defined(HAVE_LIBSSL) || defined(HAVE_GNUTLS)
   { "ServerKey",		&ServerKey,		VAR_STRING },
 #  endif /* HAVE_LIBSSL || HAVE_GNUTLS */
+#  ifdef HAVE_CDSASSL
+  { "SSLVerifyCertificates",	&SSLVerifyCertificates,	VAR_BOOLEAN },
+#  endif /* HAVE_CDSASSL */
 #endif /* HAVE_SSL */
   { "ServerName",		&ServerName,		VAR_STRING },
   { "ServerRoot",		&ServerRoot,		VAR_STRING },
@@ -161,10 +173,8 @@ static int	read_configuration(cups_file_t *fp);
 static int	read_location(cups_file_t *fp, char *name, int linenum);
 static int	get_address(char *value, unsigned defaddress, int defport,
 		            struct sockaddr_in *address);
-
-#ifdef HAVE_CDSASSL
-static CFArrayRef CDSAGetServerCerts();
-#endif /* HAVE_CDSASSL */
+static int	conf_file_check(const char*filename, const char *root, int mode, 
+			    int user, int group, int is_dir, int create_dir);
 
 
 /*
@@ -268,6 +278,7 @@ ReadConfiguration(void)
   SetString(&PrintcapGUI, "/usr/bin/glpoptions");
   SetString(&FontPath, CUPS_FONTPATH);
   SetString(&RemoteRoot, "remroot");
+  SetString(&ServerHeader, "CUPS/1.1");
 
   strlcpy(temp, ConfigurationFile, sizeof(temp));
   if ((slash = strrchr(temp, '/')) != NULL)
@@ -285,7 +296,7 @@ ReadConfiguration(void)
     CFRelease(ServerCertificatesArray);
     ServerCertificatesArray = NULL;
   }
-  SetString(&ServerCertificate, "/var/root/Library/Keychains/CUPS");
+  SetString(&ServerCertificate, "/Library/Keychains/System.keychain");
 #  else
   SetString(&ServerCertificate, "ssl/server.crt");
   SetString(&ServerKey, "ssl/server.key");
@@ -375,6 +386,7 @@ ReadConfiguration(void)
   MaxLogSize          = 1024 * 1024;
   MaxPrinterHistory   = 10;
   MaxRequestSize      = 0;
+  ReloadTimeout	      = 60;
   RootCertDuration    = 300;
   RunAsUser           = FALSE;
   Timeout             = DEFAULT_TIMEOUT;
@@ -382,11 +394,13 @@ ReadConfiguration(void)
   BrowseInterval      = DEFAULT_INTERVAL;
   BrowsePort          = ippPort();
 
-#ifdef HAVE_MDNS
-  BrowseProtocols     = BROWSE_CUPS;
+#ifdef HAVE_DNSSD
+  BrowseLocalProtocols = BROWSE_CUPS | BROWSE_DNSSD;
 #else
-  BrowseProtocols     = BROWSE_CUPS;
-#endif /* HAVE_MDNS */
+  BrowseLocalProtocols = BROWSE_CUPS;
+#endif
+
+  BrowseRemoteProtocols= BROWSE_CUPS;
 
   BrowseShortNames    = TRUE;
   BrowseTimeout       = DEFAULT_TIMEOUT;
@@ -401,7 +415,13 @@ ReadConfiguration(void)
   MaxCopies           = 100;
 #ifdef __APPLE__
   MinCopies           = 1;
+  AppleQuotas         = TRUE;
+  ApplePreserveJobHistoryAttributes 
+		      = FALSE;
 #endif  /* __APPLE__ */
+#ifdef HAVE_CDSASSL
+  SSLVerifyCertificates = FALSE;
+#endif /* HAVE_CDSASSL */
 
  /*
   * Read the configuration file...
@@ -496,14 +516,8 @@ ReadConfiguration(void)
     SetStringf(&ServerCertificate, "%s/%s", ServerRoot, ServerCertificate);
 
 #  if defined(HAVE_LIBSSL) || defined(HAVE_GNUTLS)
-  chown(ServerCertificate, RunUser, Group);
-  chmod(ServerCertificate, ConfigFilePerm);
-
   if (ServerKey[0] != '/')
     SetStringf(&ServerKey, "%s/%s", ServerRoot, ServerKey);
-
-  chown(ServerKey, RunUser, Group);
-  chmod(ServerKey, ConfigFilePerm);
 #  endif /* HAVE_LIBSSL || HAVE_GNUTLS */
 #endif /* HAVE_SSL */
 
@@ -512,52 +526,27 @@ ReadConfiguration(void)
   * writable by the user and group in the cupsd.conf file...
   */
 
-  chown(ServerRoot, RunUser, Group);
-  chmod(ServerRoot, 0775);
+  conf_file_check(ServerRoot, NULL   , 0755, RunUser, Group, 1, 0);
+  conf_file_check("certs", ServerRoot, 0711, RunUser, Group, 1, 0);
+  conf_file_check("ppd"  , ServerRoot, 0755, RunUser, Group, 1, 0);
 
-  snprintf(temp, sizeof(temp), "%s/certs", ServerRoot);
-  chown(temp, RunUser, Group);
-  chmod(temp, 0711);
+  conf_file_check("cupsd.conf"   , ServerRoot, ConfigFilePerm, RunUser, Group, 0, 0);
+  conf_file_check("classes.conf" , ServerRoot, 0600, RunUser, Group, 0, 0);
+  conf_file_check("printers.conf", ServerRoot, 0600, RunUser, Group, 0, 0);
+  conf_file_check("passwd.md5"   , ServerRoot, 0600, RunUser, Group, 0, 0);
 
-  snprintf(temp, sizeof(temp), "%s/ppd", ServerRoot);
-  chown(temp, RunUser, Group);
-  chmod(temp, 0755);
-
-  snprintf(temp, sizeof(temp), "%s/ssl", ServerRoot);
-  chown(temp, RunUser, Group);
-  chmod(temp, 0700);
-
-  snprintf(temp, sizeof(temp), "%s/cupsd.conf", ServerRoot);
-  chown(temp, RunUser, Group);
-  chmod(temp, ConfigFilePerm);
-
-  snprintf(temp, sizeof(temp), "%s/classes.conf", ServerRoot);
-  chown(temp, RunUser, Group);
-#ifdef __APPLE__
-  chmod(temp, 0600);
-#else
-  chmod(temp, ConfigFilePerm);
-#endif /* __APPLE__ */
-
-  snprintf(temp, sizeof(temp), "%s/printers.conf", ServerRoot);
-  chown(temp, RunUser, Group);
-#ifdef __APPLE__
-  chmod(temp, 0600);
-#else
-  chmod(temp, ConfigFilePerm);
-#endif /* __APPLE__ */
-
-  snprintf(temp, sizeof(temp), "%s/passwd.md5", ServerRoot);
-  chown(temp, User, Group);
-  chmod(temp, 0600);
+#  if defined(HAVE_LIBSSL) || defined(HAVE_GNUTLS)
+  conf_file_check("ssl"  , ServerRoot, 0700, RunUser, Group, 1, 0);
+  conf_file_check(ServerCertificate, NULL, ConfigFilePerm, RunUser, Group, 0, 0);
+  conf_file_check(ServerKey, NULL, ConfigFilePerm, RunUser, Group, 0, 0);
+#  endif /* HAVE_LIBSSL || HAVE_GNUTLS */
 
  /*
   * Make sure the request and temporary directories have the right
   * permissions...
   */
 
-  chown(RequestRoot, RunUser, Group);
-  chmod(RequestRoot, 0710);
+  conf_file_check(RequestRoot, NULL, 0710, RunUser, Group, 1, 0);
 
   if (strncmp(TempDir, RequestRoot, strlen(RequestRoot)) == 0)
   {
@@ -566,8 +555,7 @@ ReadConfiguration(void)
     * is under the spool directory...
     */
 
-    chown(TempDir, RunUser, Group);
-    chmod(TempDir, 01770);
+    conf_file_check(TempDir, NULL, 01770, RunUser, Group, 1, 1);
   }
 
  /*
@@ -583,14 +571,7 @@ ReadConfiguration(void)
     MaxClients = MaxFDs / 3;
   }
 
-  if ((Clients = calloc(sizeof(client_t), MaxClients)) == NULL)
-  {
-    LogMessage(L_ERROR, "ReadConfiguration: Unable to allocate memory for %d clients: %s",
-               MaxClients, strerror(errno));
-    exit(1);
-  }
-  else
-    LogMessage(L_INFO, "Configured for up to %d clients.", MaxClients);
+  LogMessage(L_INFO, "Configured for up to %d clients.", MaxClients);
 
   if (Classification && strcasecmp(Classification, "none") == 0)
     ClearString(&Classification);
@@ -636,6 +617,7 @@ ReadConfiguration(void)
     {
       ippDelete(Devices);
       Devices = NULL;
+      BackendsExeced = 0;
     }
 
     if (PPDs)
@@ -706,21 +688,33 @@ ReadConfiguration(void)
     * Load devices and PPDs...
     */
 
+#ifdef __APPLE__
+   /*
+    * For a faster and leaner startup we load the complete device list 
+    * and PPDs on demand rather than doing it here.
+    */
+
     snprintf(temp, sizeof(temp), "%s/backend", ServerBin);
-    LoadDevices(temp);
+    LoadDevices(temp, FALSE);
+#else
+    snprintf(temp, sizeof(temp), "%s/backend", ServerBin);
+    LoadDevices(temp, TRUE);
 
     snprintf(temp, sizeof(temp), "%s/model", DataDir);
     LoadPPDs(temp);
+#endif /* __APPLE__ */
 
    /*
     * Load queued jobs...
     */
 
-    LoadAllJobs();
+    LoadAllJobs(ACTIVE_JOBS);
 
-#ifdef HAVE_CDSASSL
-    ServerCertificatesArray = CDSAGetServerCerts();
-#endif /* HAVE_CDSASSL */
+   /*
+    * Now that the printer list is stable write the printcap file...
+    */
+
+    WritePrintcap();
 
     LogMessage(L_INFO, "Full reload complete.");
   }
@@ -765,6 +759,7 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
 		*nameptr,		/* Pointer into name */
 		*value;			/* Pointer to value */
   int		valuelen;		/* Length of value */
+  int		browseProtocol;		/* Browse protocol */
   var_t		*var;			/* Current variable */
   unsigned	address,		/* Address value */
 		netmask;		/* Netmask value */
@@ -872,7 +867,7 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
       }
       else
       {
-        LogMessage(L_ERROR, "ReadConfiguration() Syntax error on line %d.",
+        LogMessage(L_ERROR, "Syntax error on line %d.",
 	           linenum);
         return (0);
       }
@@ -1034,13 +1029,17 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
         LogMessage(L_ERROR, "Unknown BrowseOrder value %s on line %d.",
 	           value, linenum);
     }
-    else if (strcasecmp(name, "BrowseProtocols") == 0)
+    else if (strcasecmp(name, "BrowseProtocols") == 0 ||
+	     strcasecmp(name, "BrowseLocalProtocols") == 0 ||
+	     strcasecmp(name, "BrowseRemoteProtocols") == 0)
     {
      /*
       * "BrowseProtocol name [... name]"
+      * "BrowseLocalProtocols name [... name]"
+      * "BrowseRemoteProtocols   name [... name]"
       */
 
-      BrowseProtocols = 0;
+      browseProtocol = 0;
 
       for (; *value;)
       {
@@ -1055,19 +1054,18 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
 	}
 
         if (strcasecmp(value, "cups") == 0)
-	  BrowseProtocols |= BROWSE_CUPS;
+	  browseProtocol |= BROWSE_CUPS;
         else if (strcasecmp(value, "slp") == 0)
-	  BrowseProtocols |= BROWSE_SLP;
+	  browseProtocol |= BROWSE_SLP;
         else if (strcasecmp(value, "ldap") == 0)
-	  BrowseProtocols |= BROWSE_LDAP;
-#ifdef HAVE_MDNS
-        else if (strcasecmp(value, "mdns") == 0 || 
-        	 strcasecmp(value, "rendezvous") == 0 || 
-        	 strcasecmp(value, "dnssd") == 0)
-	  BrowseProtocols |= BROWSE_MDNS;
-#endif /* HAVE_MDNS */
+	  browseProtocol |= BROWSE_LDAP;
+#ifdef HAVE_DNSSD
+        else if (strcasecmp(value, "dnssd") == 0 || 
+        	 strcasecmp(value, "bonjour") == 0)
+	  browseProtocol |= BROWSE_DNSSD;
+#endif /* HAVE_DNSSD */
         else if (strcasecmp(value, "all") == 0)
-	  BrowseProtocols |= BROWSE_ALL;
+	  browseProtocol |= BROWSE_ALL;
 	else
 	{
 	  LogMessage(L_ERROR, "Unknown browse protocol \"%s\" on line %d.",
@@ -1079,6 +1077,13 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
 	  if (!isspace(*value) || *value != ',')
 	    break;
       }
+
+      if (strcasecmp(name, "BrowseProtocols") == 0)
+	BrowseLocalProtocols = BrowseRemoteProtocols = browseProtocol;
+      else if (strcasecmp(name, "BrowseLocalProtocols") == 0)
+	BrowseLocalProtocols = browseProtocol;
+      else
+	BrowseRemoteProtocols = browseProtocol;
     }
     else if (strcasecmp(name, "BrowseAllow") == 0 ||
              strcasecmp(name, "BrowseDeny") == 0)
@@ -1427,7 +1432,7 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
 	if (p != NULL)
 	  User = p->pw_uid;
 	else
-	  LogMessage(L_WARN, "ReadConfiguration() Unknown username \"%s\"",
+	  LogMessage(L_WARN, "Unknown username \"%s\"",
 	             value);
       }
     }
@@ -1449,7 +1454,7 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
 	if (g != NULL)
 	  Group = g->gr_gid;
 	else
-	  LogMessage(L_WARN, "ReadConfiguration() Unknown groupname \"%s\"",
+	  LogMessage(L_WARN, "Unknown groupname \"%s\"",
 	             value);
       }
     }
@@ -1459,14 +1464,34 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
       * System (admin) group(s)...
       */
 
-      char *valueptr; /* Pointer into value */
+      char	*valueptr,	/* Pointer into value */
+		quote;		/* Quote character */
 
 
       for (i = NumSystemGroups; *value && i < MAX_SYSTEM_GROUPS; i ++)
       {
-        for (valueptr = value; *valueptr; valueptr ++)
-	  if (isspace(*valueptr) || *valueptr == ',')
-	    break;
+        if (*value == '\'' || *value == '\"')
+	{
+	 /*
+	  * Scan quoted name...
+	  */
+
+	  quote = *value++;
+
+	  for (valueptr = value; *valueptr; valueptr ++)
+	    if (*valueptr == quote)
+	      break;
+	}
+	else
+	{
+	 /*
+	  * Scan space or comma-delimited name...
+	  */
+
+          for (valueptr = value; *valueptr; valueptr ++)
+	    if (isspace(*valueptr) || *valueptr == ',')
+	      break;
+        }
 
         if (*valueptr)
           *valueptr++ = '\0';
@@ -1495,7 +1520,7 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
       else if (strcasecmp(value, "double") == 0)
         HostNameLookups = 2;
       else
-	LogMessage(L_WARN, "ReadConfiguration() Unknown HostNameLookups %s on line %d.",
+	LogMessage(L_WARN, "Unknown HostNameLookups %s on line %d.",
 	           value, linenum);
     }
     else if (strcasecmp(name, "LogLevel") == 0)
@@ -1538,8 +1563,36 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
       else if (strcasecmp(value, "solaris") == 0)
         PrintcapFormat = PRINTCAP_SOLARIS;
       else
-	LogMessage(L_WARN, "ReadConfiguration() Unknown PrintcapFormat %s on line %d.",
+	LogMessage(L_WARN, "Unknown PrintcapFormat %s on line %d.",
 	           value, linenum);
+    }
+    else if (!strcasecmp(name, "ServerTokens"))
+    {
+     /*
+      * Set the string used for the Server header...
+      */
+
+      struct utsname plat;		/* Platform info */
+
+
+      uname(&plat);
+
+      if (!strcasecmp(value, "ProductOnly"))
+        SetString(&ServerHeader, "CUPS");
+      else if (!strcasecmp(value, "Major"))
+        SetString(&ServerHeader, "CUPS/1");
+      else if (!strcasecmp(value, "Minor"))
+        SetString(&ServerHeader, "CUPS/1.1");
+      else if (!strcasecmp(value, "Minimal"))
+        SetString(&ServerHeader, CUPS_MINIMAL);
+      else if (!strcasecmp(value, "OS"))
+        SetStringf(&ServerHeader, CUPS_MINIMAL " (%s)", plat.sysname);
+      else if (!strcasecmp(value, "Full"))
+        SetStringf(&ServerHeader, CUPS_MINIMAL " (%s) IPP/1.1", plat.sysname);
+      else if (!strcasecmp(value, "None"))
+        ClearString(&ServerHeader);
+      else
+        LogMessage(L_WARN, "Unknown ServerTokens %s on line %d.", value, linenum);
     }
     else
     {
@@ -2154,95 +2207,87 @@ get_address(char               *value,		/* I - Value string */
 }
 
 
-#ifdef HAVE_CDSASSL
 /*
- * 'CDSAGetServerCerts()' - Convert a keychain name into the CFArrayRef
- *                          required by SSLSetCertificate.
- *
- * For now we assumes that there is exactly one SecIdentity in the
- * keychain - i.e. there is exactly one matching cert/private key pair.
- * In the future we will search a keychain for a SecIdentity matching a
- * specific criteria.  We also skip the operation of adding additional
- * non-signing certs from the keychain to the CFArrayRef.
- *
- * To create a self-signed certificate for testing use the certtool.
- * Executing the following as root will do it:
- *
- *     certtool c c v k=CUPS
+ * 'conf_file_check()' - Fix the mode and ownership of a file or directory. 
  */
 
-static CFArrayRef
-CDSAGetServerCerts(void)
+static int
+conf_file_check(const char*filename, 	/* I - File or directory name to test */
+		const char *root, 	/* I - File or directory name prefix */
+		int mode, 		/* I - File mode */
+		int user, 		/* I - uid of owner */
+		int group, 		/* I - gid og group */
+		int is_dir,		/* I - Are we testing a file or directory? */
+		int create_dir)		/* I - Should we create the directory if it's missing? */
 {
-  OSStatus		err;		/* Error info */
-  SecKeychainRef 	kcRef;		/* Keychain reference */
-  SecIdentitySearchRef	srchRef;	/* Search reference */
-  SecIdentityRef	identity;	/* Identity */
-  CFArrayRef		ca;		/* Certificate array */
+  int		dir_created = 0;	/* Did we create a directory? */
+  char		temp[1024];		/* File name with prefix */
+  struct stat	sb;			/* Stat buffer */
 
 
-  kcRef    = NULL;
-  srchRef  = NULL;
-  identity = NULL;
-  ca       = NULL;
-  err      = SecKeychainOpen(ServerCertificate, &kcRef);
+ /*
+  * Prepend the given root to the filename before testing it...
+  */
 
-  if (err)
-    LogMessage(L_ERROR, "Cannot open keychain \"%s\", error %d.",
-               ServerCertificate, err);
-  else
+  if (root)
   {
-   /*
-    * Search for "any" identity matching specified key use; 
-    * in this app, we expect there to be exactly one. 
-    */
-
-    err = SecIdentitySearchCreate(kcRef, CSSM_KEYUSE_SIGN, &srchRef);
-
-    if (err)
-      LogMessage(L_ERROR,
-                 "Cannot find signing key in keychain \"%s\", error %d",
-                 ServerCertificate, err);
-    else
-    {
-      err = SecIdentitySearchCopyNext(srchRef, &identity);
-
-      if (err)
-	LogMessage(L_ERROR,
-	           "Cannot find signing key in keychain \"%s\", error %d",
-	           ServerCertificate, err);
-      else
-      {
-	if (CFGetTypeID(identity) != SecIdentityGetTypeID())
-	  LogMessage(L_ERROR, "SecIdentitySearchCopyNext CFTypeID failure!");
-	else
-	{
-	 /* 
-	  * Found one. Place it in a CFArray. 
-	  * TBD: snag other (non-identity) certs from keychain and add them
-	  * to array as well.
-	  */
-
-	  ca = CFArrayCreate(NULL, (const void **)&identity, 1, NULL);
-
-	  if (ca == nil)
-	    LogMessage(L_ERROR, "CFArrayCreate error");
-	}
-
-	/*CFRelease(identity);*/
-      }
-
-      /*CFRelease(srchRef);*/
-    }
-
-    /*CFRelease(kcRef);*/
+    snprintf(temp, sizeof(temp), "%s/%s", root, filename);
+    filename = temp;
   }
 
-  return ca;
+  if (stat(filename, &sb) != 0)
+  {
+    if (errno == ENOENT && create_dir)
+    {
+      LogMessage(L_ERROR, "Creating missing directory \"%s\"", filename);
+      if (mkdir(filename, mode) != 0)
+      {
+        LogMessage(L_ERROR, "Unable to create directory \"%s\" - %s!", filename,
+			strerror(errno));
+        return -1;
+      }
+      dir_created = 1;
+    }
+    else
+      return -1;
+  }
+
+ /*
+  * Make sure it's a regular file...
+  */
+
+  if (!dir_created && !is_dir && !S_ISREG(sb.st_mode))
+  {
+    LogMessage(L_ERROR, "\"%s\" is not a regular file!", filename);
+    return -1;
+  }
+
+  if (!dir_created && is_dir && !S_ISDIR(sb.st_mode))
+  {
+    LogMessage(L_ERROR, "\"%s\" is not a directory!", filename);
+    return -1;
+  }
+
+ /*
+  * Fix owner & mode flags...
+  */
+
+  if (dir_created || sb.st_uid != user || sb.st_gid != group)
+  {
+    LogMessage(L_WARN, "Repairing ownership of \"%s\"", filename);
+    chown(filename, user, group);
+  }
+
+  if (dir_created || (sb.st_mode & ALLPERMS) != mode)
+  {
+    LogMessage(L_WARN, "Repairing access permissions of \"%s\"", filename);
+    chmod(filename, mode);
+  }
+
+  return 0;
 }
-#endif /* HAVE_CDSASSL */
 
 
 /*
- * End of "$Id: conf.c,v 1.31 2004/06/15 21:18:53 jlovell Exp $".
+ * End of "$Id: conf.c,v 1.45 2005/02/16 17:58:01 jlovell Exp $".
  */

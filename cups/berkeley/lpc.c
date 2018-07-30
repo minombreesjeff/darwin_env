@@ -1,9 +1,9 @@
 /*
- * "$Id: lpc.c,v 1.1.1.10 2004/06/05 02:42:28 jlovell Exp $"
+ * "$Id: lpc.c,v 1.1.1.12 2005/01/04 19:15:03 jlovell Exp $"
  *
  *   "lpc" command for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products.
+ *   Copyright 1997-2005 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -274,7 +274,7 @@ show_status(http_t *http,	/* I - HTTP connection to server */
   * Do the request and get back a response...
   */
 
-  if ((response = cupsDoRequest(http, request, "/printers/")) != NULL)
+  if ((response = cupsDoRequest(http, request, "/")) != NULL)
   {
     DEBUG_puts("show_status: request succeeded...");
 
@@ -432,7 +432,7 @@ show_status(http_t *http,	/* I - HTTP connection to server */
 	  ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
 	               "requested-attributes", NULL, "job-id");
 
-          if ((jobs = cupsDoRequest(http, request, "/jobs/")) != NULL)
+          if ((jobs = cupsDoRequest(http, request, "/")) != NULL)
 	  {
 	    for (jattr = jobs->attrs; jattr != NULL; jattr = jattr->next)
 	      if (jattr->name && strcmp(jattr->name, "job-id") == 0)
@@ -482,5 +482,5 @@ show_status(http_t *http,	/* I - HTTP connection to server */
 
 
 /*
- * End of "$Id: lpc.c,v 1.1.1.10 2004/06/05 02:42:28 jlovell Exp $".
+ * End of "$Id: lpc.c,v 1.1.1.12 2005/01/04 19:15:03 jlovell Exp $".
  */

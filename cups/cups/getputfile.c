@@ -1,9 +1,9 @@
 /*
- * "$Id: getputfile.c,v 1.3 2004/05/28 07:00:41 jlovell Exp $"
+ * "$Id: getputfile.c,v 1.7 2005/01/04 22:10:39 jlovell Exp $"
  *
  *   Get/put file functions for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products.
+ *   Copyright 1997-2005 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -121,18 +121,26 @@ cupsGetFd(http_t     *http,		/* I - HTTP connection to server */
       if (cupsDoAuthentication(http, "GET", resource))
         break;
 
-      httpReconnect(http);
+      if (httpReconnect(http))
+      {
+        status = HTTP_ERROR;
+        break;
+      }
 
       continue;
     }
-#ifdef HAVE_LIBSSL
+#ifdef HAVE_SSL
     else if (status == HTTP_UPGRADE_REQUIRED)
     {
       /* Flush any error message... */
       httpFlush(http);
 
       /* Reconnect... */
-      httpReconnect(http);
+      if (httpReconnect(http))
+      {
+        status = HTTP_ERROR;
+        break;
+      }
 
       /* Upgrade with encryption... */
       httpEncryption(http, HTTP_ENCRYPT_REQUIRED);
@@ -140,7 +148,7 @@ cupsGetFd(http_t     *http,		/* I - HTTP connection to server */
       /* Try again, this time with encryption enabled... */
       continue;
     }
-#endif /* HAVE_LIBSSL */
+#endif /* HAVE_SSL */
   }
   while (status == HTTP_UNAUTHORIZED || status == HTTP_UPGRADE_REQUIRED);
 
@@ -328,18 +336,26 @@ cupsPutFd(http_t     *http,		/* I - HTTP connection to server */
       if (cupsDoAuthentication(http, "PUT", resource))
         break;
 
-      httpReconnect(http);
+      if (httpReconnect(http))
+      {
+        status = HTTP_ERROR;
+        break;
+      }
 
       continue;
     }
-#ifdef HAVE_LIBSSL
+#ifdef HAVE_SSL
     else if (status == HTTP_UPGRADE_REQUIRED)
     {
       /* Flush any error message... */
       httpFlush(http);
 
       /* Reconnect... */
-      httpReconnect(http);
+      if (httpReconnect(http))
+      {
+        status = HTTP_ERROR;
+        break;
+      }
 
       /* Upgrade with encryption... */
       httpEncryption(http, HTTP_ENCRYPT_REQUIRED);
@@ -347,7 +363,7 @@ cupsPutFd(http_t     *http,		/* I - HTTP connection to server */
       /* Try again, this time with encryption enabled... */
       continue;
     }
-#endif /* HAVE_LIBSSL */
+#endif /* HAVE_SSL */
   }
   while (status == HTTP_UNAUTHORIZED || status == HTTP_UPGRADE_REQUIRED);
 
@@ -415,5 +431,5 @@ cupsPutFile(http_t     *http,		/* I - HTTP connection to server */
 
 
 /*
- * End of "$Id: getputfile.c,v 1.3 2004/05/28 07:00:41 jlovell Exp $".
+ * End of "$Id: getputfile.c,v 1.7 2005/01/04 22:10:39 jlovell Exp $".
  */

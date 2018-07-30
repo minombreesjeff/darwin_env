@@ -1,9 +1,9 @@
 /*
- * "$Id: http.c,v 1.17 2004/06/05 03:49:45 jlovell Exp $"
+ * "$Id: http.c,v 1.28 2005/02/09 23:51:33 jlovell Exp $"
  *
  *   HTTP routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -55,7 +55,9 @@
  *   httpGetDateTime()    - Get a time value from a formatted date/time string.
  *   httpUpdate()         - Update the current HTTP state for incoming data.
  *   httpDecode64()       - Base64-decode a string.
+ *   httpDecode64_2()     - Base64-decode a string.
  *   httpEncode64()       - Base64-encode a string.
+ *   httpEncode64_2()     - Base64-encode a string.
  *   httpGetLength()      - Get the amount of data remaining from the
  *                          content-length or transfer-encoding fields.
  *   http_field()         - Return the field index for a field name.
@@ -88,12 +90,20 @@
 #  include <inttypes.h>
 #endif /* HAVE_INTTYPES_H */
 
+#include "globals.h"
 #include "http.h"
 #include "debug.h"
 
 #ifdef HAVE_DOMAINSOCKETS
 #  include <sys/un.h>
 #endif /* HAVE_DOMAINSOCKETS */
+
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/mach_error.h>
+#include <servers/bootstrap.h>
+#include <sys/syslog.h>
+#endif /* __APPLE__ */
 
 #ifndef WIN32
 #  include <signal.h>
@@ -135,6 +145,13 @@ static OSStatus		CDSAWriteFunc(SSLConnectionRef connection, const void *data, si
 #  endif /* HAVE_CDSASSL */
 #endif /* HAVE_SSL */
 
+#if HAVE_DOMAINSOCKETS
+static int openDomainSocket(http_t *http);
+#endif /* HAVE_DOMAINSOCKETS */
+
+#if __APPLE__
+static void wakeupCupsd();
+#endif /* __APPLE__ */
 
 /*
  * Local globals...
@@ -300,6 +317,8 @@ httpClearCookie(http_t *http)			/* I - Connection */
 void
 httpClose(http_t *http)		/* I - Connection to close */
 {
+  DEBUG_printf(("httpClose(%d)\n", http ? http->fd : -1));
+
   if (!http)
     return;
 
@@ -363,7 +382,10 @@ httpConnectEncrypt(const char *host,	/* I - Host to connect to */
   struct hostent	*hostaddr;	/* Host address data */
 
 
-  if (host == NULL)
+  DEBUG_printf(("httpConnectEncrypt(host=\"%s\", port=%d, encrypt=%d)\n",
+                host ? host : "(null)", port, encrypt));
+
+  if (!host)
     return (NULL);
 
   httpInitialize();
@@ -523,89 +545,27 @@ httpReconnect(http_t *http)	/* I - HTTP data */
 
   http->fd = -1;
 
- /*
-  * Create the socket and set options to allow reuse.
-  */
-
 #ifdef HAVE_DOMAINSOCKETS
-  if (http->hostaddr.sin_family == AF_LOCAL ||
-      (http->hostaddr.sin_family == AF_INET &&
-       strcasecmp(http->hostname, "localhost") == 0 &&
-       cups_server_domainsocket[0] != '\0'))
+  /*
+   * Try to open a domain socket to the server. If the
+   * attempt is refused then try to launch cupsd and
+   * then attempt to connect again.
+   */
+  if (openDomainSocket(http) && (http->error == ENOENT || http->error == ECONNREFUSED))
   {
-    struct sockaddr_un saddr;
-
-    if ((http->fd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0)
-    {
-#ifdef WIN32
-      http->error  = WSAGetLastError();
-#else
-      http->error  = errno;
-#endif /* WIN32 */
-      http->status = HTTP_ERROR;
-      return (-1);
-    }
-
-#ifdef FD_CLOEXEC
-    fcntl(http->fd, F_SETFD, FD_CLOEXEC);	/* Close this socket when starting *
-					 * other processes...              */
-#endif /* FD_CLOEXEC */
-
-    val = 1;
-    setsockopt(http->fd, SOL_SOCKET, SO_REUSEADDR, (char *)&val, sizeof(val));
-
-#ifdef SO_REUSEPORT
-    val = 1;
-    setsockopt(http->fd, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val));
-#endif /* SO_REUSEPORT */
-
-   /*
-    * Using TCP_NODELAY improves responsiveness, especially on systems
-    * with a slow loopback interface...  Since we write large buffers
-    * when sending print files and requests, there shouldn't be any
-    * performance penalty for this...
-    */
-
-    val = 1;
-#ifdef WIN32
-    setsockopt(http->fd, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val)); 
-#else
-    setsockopt(http->fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)); 
-#endif // WIN32
-
-   /*
-    * Connect to the server...
-    */
-
-    saddr.sun_family = AF_LOCAL;
-    strlcpy(saddr.sun_path, cups_server_domainsocket, sizeof(saddr.sun_path));
-
-    if (connect(http->fd, (struct sockaddr *)&saddr, SUN_LEN(&saddr)) < 0)
-    {
-#ifdef WIN32
-      http->error  = WSAGetLastError();
-#else
-      http->error  = errno;
-#endif /* WIN32 */
-      http->status = HTTP_ERROR;
-
-#ifdef WIN32
-      closesocket(http->fd);
-#else
-      close(http->fd);
-#endif
-
-      http->fd = -1;
-
-     /*
-      * If the domain socket connection failed for reasons other than ENOENT
-      * or ECONNREFUSED give up; otherwise fall back to using an AF_INET connection.
-      */
-      if (errno != ENOENT && errno != ECONNREFUSED)
-	return (-1);
-    }
+#ifdef __APPLE__
+    wakeupCupsd();
+    openDomainSocket(http);
+#endif /* __APPLE */
   }
   
+  /*
+   * If the domain socket connection failed for reasons other than ENOENT
+   * or ECONNREFUSED give up; otherwise fall back to using an AF_INET connection.
+   */
+  if (http->error != 0 && http->error != ENOENT && http->error != ECONNREFUSED)
+    return (-1);
+	
 #endif /* HAVE_DOMAINSOCKETS */
       
   if (http->fd == -1)
@@ -941,11 +901,20 @@ void
 httpFlush(http_t *http)			/* I - HTTP data */
 {
   char	buffer[8192];			/* Junk buffer */
-
+  int	blocking;			/* To block or not to block */
 
   DEBUG_printf(("httpFlush(http=%p), state=%d\n", http, http->state));
 
+ /*
+  * Temporarily set non-blocking mode so we don't get stuck in httpRead...
+  */
+
+  blocking = http->blocking;
+  http->blocking = 0;
+
   while (httpRead(http, buffer, sizeof(buffer)) > 0);
+
+  http->blocking = blocking;
 }
 
 
@@ -1590,15 +1559,15 @@ const char *				/* O - Date/time string */
 httpGetDateString(time_t t)		/* I - UNIX time */
 {
   struct tm	*tdate;
-  static char	datetime[256];
-
+  cups_globals_t *cg = _cups_globals();	/* Pointer to library globals */
 
   tdate = gmtime(&t);
-  snprintf(datetime, sizeof(datetime), "%s, %02d %s %d %02d:%02d:%02d GMT",
+  snprintf(cg->datetime, sizeof(cg->datetime), 
+           "%s, %02d %s %d %02d:%02d:%02d GMT",
            days[tdate->tm_wday], tdate->tm_mday, months[tdate->tm_mon],
 	   tdate->tm_year + 1900, tdate->tm_hour, tdate->tm_min, tdate->tm_sec);
 
-  return (datetime);
+  return (cg->datetime);
 }
 
 
@@ -1682,6 +1651,9 @@ httpUpdate(http_t *http)		/* I - HTTP data */
 
       if (http->status == HTTP_CONTINUE)
         return (http->status);
+
+      if (http->status < HTTP_BAD_REQUEST)
+        http->digest_tries = 0;
 
 #ifdef HAVE_SSL
       if (http->status == HTTP_SWITCHING_PROTOCOLS && !http->tls)
@@ -1804,16 +1776,50 @@ httpUpdate(http_t *http)		/* I - HTTP data */
  * 'httpDecode64()' - Base64-decode a string.
  */
 
-char *				/* O - Decoded string */
-httpDecode64(char       *out,	/* I - String to write to */
-             const char *in)	/* I - String to read from */
+char *					/* O - Decoded string */
+httpDecode64(char       *out,		/* I - String to write to */
+             const char *in)		/* I - String to read from */
 {
-  int	pos,			/* Bit position */
-	base64;			/* Value of this character */
-  char	*outptr;		/* Output pointer */
+  int	outlen;				/* Output buffer length */
 
 
-  for (outptr = out, pos = 0; *in != '\0'; in ++)
+ /*
+  * Use the old maximum buffer size for binary compatibility...
+  */
+
+  outlen = 512;
+
+  return (httpDecode64_2(out, &outlen, in));
+}
+
+
+/*
+ * 'httpDecode64_2()' - Base64-decode a string.
+ */
+
+char *					/* O  - Decoded string */
+httpDecode64_2(char       *out,		/* I  - String to write to */
+	       int        *outlen,	/* IO - Size of output string */
+               const char *in)		/* I  - String to read from */
+{
+  int	pos,				/* Bit position */
+	base64;				/* Value of this character */
+  char	*outptr,			/* Output pointer */
+	*outend;			/* End of output buffer */
+
+
+ /*
+  * Range check input...
+  */
+
+  if (!out || !outlen || *outlen < 1 || !in || !*in)
+    return (NULL);
+
+ /*
+  * Convert from base-64 to bytes...
+  */
+
+  for (outptr = out, outend = out + *outlen - 1, pos = 0; *in != '\0'; in ++)
   {
    /*
     * Decode this character into a number from 0 to 63...
@@ -1841,21 +1847,27 @@ httpDecode64(char       *out,	/* I - String to write to */
     switch (pos)
     {
       case 0 :
-          *outptr = base64 << 2;
+          if (outptr < outend)
+            *outptr = base64 << 2;
 	  pos ++;
 	  break;
       case 1 :
-          *outptr++ |= (base64 >> 4) & 3;
-	  *outptr = (base64 << 4) & 255;
+          if (outptr < outend)
+            *outptr++ |= (base64 >> 4) & 3;
+          if (outptr < outend)
+	    *outptr = (base64 << 4) & 255;
 	  pos ++;
 	  break;
       case 2 :
-          *outptr++ |= (base64 >> 2) & 15;
-	  *outptr = (base64 << 6) & 255;
+          if (outptr < outend)
+            *outptr++ |= (base64 >> 2) & 15;
+          if (outptr < outend)
+	    *outptr = (base64 << 6) & 255;
 	  pos ++;
 	  break;
       case 3 :
-          *outptr++ |= base64;
+          if (outptr < outend)
+            *outptr++ |= base64;
 	  pos = 0;
 	  break;
     }
@@ -1864,8 +1876,10 @@ httpDecode64(char       *out,	/* I - String to write to */
   *outptr = '\0';
 
  /*
-  * Return the decoded string...
+  * Return the decoded string and size...
   */
+
+  *outlen = (int)(outptr - out);
 
   return (out);
 }
@@ -1875,12 +1889,27 @@ httpDecode64(char       *out,	/* I - String to write to */
  * 'httpEncode64()' - Base64-encode a string.
  */
 
-char *				/* O - Encoded string */
-httpEncode64(char       *out,	/* I - String to write to */
-             const char *in)	/* I - String to read from */
+char *					/* O - Encoded string */
+httpEncode64(char       *out,		/* I - String to write to */
+             const char *in)		/* I - String to read from */
 {
-  char		*outptr;	/* Output pointer */
-  static const char base64[] =	/* Base64 characters... */
+  return (httpEncode64_2(out, 512, in, strlen(in)));
+}
+
+
+/*
+ * 'httpEncode64_2()' - Base64-encode a string.
+ */
+
+char *					/* O - Encoded string */
+httpEncode64_2(char       *out,		/* I - String to write to */
+	       int        outlen,	/* I - Size of output string */
+               const char *in,		/* I - String to read from */
+	       int        inlen)	/* I - Size of input string */
+{
+  char		*outptr,		/* Output pointer */
+		*outend;		/* End of output buffer */
+  static const char base64[] =		/* Base64 characters... */
   		{
 		  "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 		  "abcdefghijklmnopqrstuvwxyz"
@@ -1889,33 +1918,53 @@ httpEncode64(char       *out,	/* I - String to write to */
   		};
 
 
-  for (outptr = out; *in != '\0'; in ++)
+ /*
+  * Range check input...
+  */
+
+  if (!out || outlen < 1 || !in || inlen < 1)
+    return (NULL);
+
+ /*
+  * Convert bytes to base-64...
+  */
+
+  for (outptr = out, outend = out + outlen - 1; inlen > 0; in ++, inlen --)
   {
    /*
     * Encode the up to 3 characters as 4 Base64 numbers...
     */
 
-    *outptr ++ = base64[in[0] >> 2];
-    *outptr ++ = base64[((in[0] << 4) | (in[1] >> 4)) & 63];
+    if (outptr < outend)
+      *outptr ++ = base64[(in[0] & 255) >> 2];
+    if (outptr < outend)
+      *outptr ++ = base64[(((in[0] & 255) << 4) | ((in[1] & 255) >> 4)) & 63];
 
     in ++;
-    if (*in == '\0')
+    inlen --;
+    if (inlen <= 0)
     {
-      *outptr ++ = '=';
-      *outptr ++ = '=';
+      if (outptr < outend)
+        *outptr ++ = '=';
+      if (outptr < outend)
+        *outptr ++ = '=';
       break;
     }
 
-    *outptr ++ = base64[((in[0] << 2) | (in[1] >> 6)) & 63];
+    if (outptr < outend)
+      *outptr ++ = base64[(((in[0] & 255) << 2) | ((in[1] & 255) >> 6)) & 63];
 
     in ++;
-    if (*in == '\0')
+    inlen --;
+    if (inlen <= 0)
     {
-      *outptr ++ = '=';
+      if (outptr < outend)
+        *outptr ++ = '=';
       break;
     }
 
-    *outptr ++ = base64[in[0] & 63];
+    if (outptr < outend)
+      *outptr ++ = base64[in[0] & 63];
   }
 
   *outptr = '\0';
@@ -2052,7 +2101,8 @@ http_send(http_t       *http,	/* I - HTTP data */
   */
 
   if (http->status == HTTP_ERROR || http->status >= HTTP_BAD_REQUEST)
-    httpReconnect(http);
+    if ((i = httpReconnect(http)) != 0)
+      return i;
 
  /*
   * Send the request header...
@@ -2121,6 +2171,13 @@ http_wait(http_t *http,			/* I - HTTP data */
   DEBUG_printf(("http_wait(http=%p, msec=%d)\n", http, msec));
 
  /*
+  * Guard against an already closed socket...
+  */
+
+  if (http->fd < 0)
+    return (0);
+
+ /*
   * Check the SSL/TLS buffers for data first...
   */
 
@@ -2136,8 +2193,10 @@ http_wait(http_t *http,			/* I - HTTP data */
 #  elif defined(HAVE_CDSASSL)
     size_t bytes;			/* Bytes that are available */
 
-    if (!SSLGetBufferedReadSize((SSLContextRef)http->tls, &bytes) && bytes > 0)
-      return;
+    _cups_cdsa_init();
+
+    if (!(*_cupsSSLGetBufferedReadSizeProc)((SSLContextRef)http->tls, &bytes) && bytes > 0)
+      return (1);
 #  endif /* HAVE_LIBSSL */
   }
 #endif /* HAVE_SSL */
@@ -2175,17 +2234,25 @@ http_wait(http_t *http,			/* I - HTTP data */
       return (0);
   }
 
-  FD_SET(http->fd, http->input_set);
-
-  if (msec >= 0)
+  do
   {
-    timeout.tv_sec  = msec / 1000;
-    timeout.tv_usec = (msec % 1000) * 1000;
+    FD_SET(http->fd, http->input_set);
 
-    nfds = select(http->fd + 1, http->input_set, NULL, NULL, &timeout);
+    if (msec >= 0)
+    {
+      timeout.tv_sec  = msec / 1000;
+      timeout.tv_usec = (msec % 1000) * 1000;
+
+      nfds = select(http->fd + 1, http->input_set, NULL, NULL, &timeout);
+    }
+    else
+      nfds = select(http->fd + 1, http->input_set, NULL, NULL, NULL);
   }
-  else
-    nfds = select(http->fd + 1, http->input_set, NULL, NULL, NULL);
+#ifdef WIN32
+  while (nfds < 0 && WSAGetLastError() == WSAEINTR);
+#else
+  while (nfds < 0 && errno == EINTR);
+#endif /* WIN32 */
 
   FD_CLR(http->fd, http->input_set);
 
@@ -2374,29 +2441,33 @@ http_setup_ssl(http_t *http)		/* I - HTTP data */
   conn->credentials = credentials;
 
 #  elif defined(HAVE_CDSASSL)
-  error = SSLNewContext(false, &conn);
+
+  _cups_cdsa_init();
+
+  error = (*_cupsSSLNewContextProc)(false, &conn);
 
   if (!error)
-    error = SSLSetIOFuncs(conn, CDSAReadFunc, CDSAWriteFunc);
+    error = (*_cupsSSLSetIOFuncsProc)(conn, CDSAReadFunc, CDSAWriteFunc);
 
   if (!error)
-    error = SSLSetConnection(conn, (SSLConnectionRef)http->fd);
+    error = (*_cupsSSLSetConnectionProc)(conn, (SSLConnectionRef)http->fd);
 
   if (!error)
-    error = SSLSetAllowsExpiredCerts(conn, true);
+    error = (*_cupsSSLSetEnableCertVerifyProc)(conn, FALSE);
 
   if (!error)
-    error = SSLSetAllowsAnyRoot(conn, true);
-
-  if (!error)
-    error = SSLHandshake(conn);
+    error = (*_cupsSSLHandshakeProc)(conn);
 
   if (error != 0)
   {
+    DEBUG_printf(("http_setup_ssl(http=%p) SSLHandshake error %d!\n", http, (int)error));
+
     http->error  = error;
     http->status = HTTP_ERROR;
 
-    SSLDisposeContext(conn);
+    _cups_cdsa_init();
+
+    (*_cupsSSLDisposeContextProc)(conn);
 
     close(http->fd);
 
@@ -2416,6 +2487,8 @@ http_setup_ssl(http_t *http)		/* I - HTTP data */
 static void
 http_shutdown_ssl(http_t *http)	/* I - HTTP data */
 {
+  DEBUG_printf(("http_shutdown_ssl(%d)\n", http->fd));
+
 #  ifdef HAVE_LIBSSL
   SSL_CTX	*context;	/* Context for encryption */
   SSL		*conn;		/* Connection for encryption */
@@ -2444,8 +2517,10 @@ http_shutdown_ssl(http_t *http)	/* I - HTTP data */
   free(conn);
 
 #  elif defined(HAVE_CDSASSL)
-  SSLClose((SSLContextRef)http->tls);
-  SSLDisposeContext((SSLContextRef)http->tls);
+  _cups_cdsa_init();
+
+  (*_cupsSSLCloseProc)((SSLContextRef)http->tls);
+  (*_cupsSSLDisposeContextProc)((SSLContextRef)http->tls);
 #  endif /* HAVE_LIBSSL */
 
   http->tls = NULL;
@@ -2468,20 +2543,34 @@ http_read_ssl(http_t *http,		/* I - HTTP data */
   return (gnutls_record_recv(((http_tls_t *)(http->tls))->session, buf, len));
 
 #  elif defined(HAVE_CDSASSL)
+  int		result;			/* Return value */
   OSStatus	error;			/* Error info */
   size_t	processed;		/* Number of bytes processed */
 
+  _cups_cdsa_init();
 
-  error = SSLRead((SSLContextRef)http->tls, buf, len, &processed);
+  error = (*_cupsSSLReadProc)((SSLContextRef)http->tls, buf, len, &processed);
 
-  if (error == 0)
-    return (processed);
-  else
+  switch (error)
   {
-    http->error = error;
-
-    return (-1);
+  case 0:
+    result = (int)processed;
+    break;
+  case errSSLClosedGraceful:
+    result = 0;
+    break;
+  case errSSLWouldBlock:
+    errno = EAGAIN;
+    result = -1;
+    break;
+  default:
+    errno = EPIPE;
+    result = -1;
+    break;
   }
+
+  return result;
+
 #  endif /* HAVE_LIBSSL */
 }
 
@@ -2501,19 +2590,34 @@ http_write_ssl(http_t     *http,	/* I - HTTP data */
 #  elif defined(HAVE_GNUTLS)
   return (gnutls_record_send(((http_tls_t *)(http->tls))->session, buf, len));
 #  elif defined(HAVE_CDSASSL)
+  int		result;			/* Return value */
   OSStatus	error;			/* Error info */
   size_t	processed;		/* Number of bytes processed */
 
+  _cups_cdsa_init();
 
-  error = SSLWrite((SSLContextRef)http->tls, buf, len, &processed);
+  error = (*_cupsSSLWriteProc)((SSLContextRef)http->tls, buf, len, &processed);
 
-  if (error == 0)
-    return (processed);
-  else
+  switch (error)
   {
-    http->error = error;
-    return (-1);
+  case 0:
+    result = (int)processed;
+    break;
+  case errSSLClosedGraceful:
+    result = 0;
+    break;
+  case errSSLWouldBlock:
+    errno = EAGAIN;
+    result = -1;
+    break;
+  default:
+    errno = EPIPE;
+    result = -1;
+    break;
   }
+
+  return result;
+
 #  endif /* HAVE_LIBSSL */
 }
 
@@ -2528,17 +2632,34 @@ CDSAReadFunc(SSLConnectionRef connection,	/* I  - SSL/TLS connection */
              void             *data,		/* I  - Data buffer */
 	     size_t           *dataLength)	/* IO - Number of bytes */
 {
+  OSStatus	result;
   ssize_t	bytes;				/* Number of bytes read */
 
-
-  bytes = recv((int)connection, data, *dataLength, 0);
-  if (bytes >= 0)
+  for (;;)
   {
-    *dataLength = bytes;
-    return (0);
+    bytes = recv((int)connection, data, *dataLength, 0);
+
+    DEBUG_printf(("CDSAReadFunc(%d): recv %d bytes, errno %d\n", (int)connection, (int)bytes, errno));
+
+    if (bytes > 0)
+    {
+      result = (bytes == *dataLength) ? 0 : errSSLWouldBlock;
+      *dataLength = bytes;
+      return result;
+    }
+
+    if (bytes == 0)
+      return errSSLClosedAbort;
+
+    if (errno == EAGAIN)
+      return errSSLWouldBlock;
+
+    if (errno == EPIPE)
+      return errSSLClosedAbort;
+
+    if (errno != EINTR)
+      return errSSLInternal;
   }
-  else
-    return (-1);
 }
 
 
@@ -2551,22 +2672,180 @@ CDSAWriteFunc(SSLConnectionRef connection,	/* I  - SSL/TLS connection */
               const void       *data,		/* I  - Data buffer */
 	      size_t           *dataLength)	/* IO - Number of bytes */
 {
-  ssize_t bytes;
+  OSStatus	result;
+  ssize_t	bytes;
 
-
-  bytes = write((int)connection, data, *dataLength);
-  if (bytes >= 0)
+  for (;;)
   {
-    *dataLength = bytes;
-    return (0);
+    bytes = write((int)connection, data, *dataLength);
+
+    DEBUG_printf(("CDSAWriteFunc(%d): write(%d) %d bytes, errno %d\n", (int)connection, (int)*dataLength, (int)bytes, errno));
+
+    if (bytes >= 0)
+    {
+      result = (bytes == *dataLength) ? 0 : errSSLWouldBlock;
+      *dataLength = bytes;
+      return result;
+    }
+
+    if (errno == EAGAIN)
+      return errSSLWouldBlock;
+
+    if (errno == EPIPE)
+      return errSSLClosedAbort;
+
+    if (errno != EINTR)
+      return errSSLInternal;
   }
-  else
-    return (-1);
 }
 #  endif /* HAVE_CDSASSL */
 #endif /* HAVE_SSL */
 
 
+#ifdef HAVE_DOMAINSOCKETS
+
 /*
- * End of "$Id: http.c,v 1.17 2004/06/05 03:49:45 jlovell Exp $".
+ * 'openDomainSocket()' - Open a domain socket to cupsd.
+ */
+static int openDomainSocket(http_t *http)
+{
+  struct sockaddr_un	saddr;		/* Socket addrsss */
+  int			val;		/* Socket option value */
+
+  if (http->hostaddr.sin_family == AF_LOCAL ||
+      (http->hostaddr.sin_family == AF_INET &&
+       (strcasecmp(http->hostname, "localhost") == 0 || 
+        strcasecmp(http->hostname, "127.0.0.1") == 0) &&
+       _cups_globals()->cups_server_domainsocket[0] != '\0'))
+  {
+    if ((http->fd = socket(AF_LOCAL, SOCK_STREAM, 0)) < 0)
+    {
+#ifdef WIN32
+      http->error  = WSAGetLastError();
+#else
+      http->error  = errno;
+#endif /* WIN32 */
+      http->status = HTTP_ERROR;
+      return (-1);
+    }
+
+#ifdef FD_CLOEXEC
+    fcntl(http->fd, F_SETFD, FD_CLOEXEC);	/* Close this socket when starting *
+					 * other processes...              */
+#endif /* FD_CLOEXEC */
+
+    val = 1;
+    setsockopt(http->fd, SOL_SOCKET, SO_REUSEADDR, (char *)&val, sizeof(val));
+
+#ifdef SO_REUSEPORT
+    val = 1;
+    setsockopt(http->fd, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val));
+#endif /* SO_REUSEPORT */
+
+   /*
+    * Using TCP_NODELAY improves responsiveness, especially on systems
+    * with a slow loopback interface...  Since we write large buffers
+    * when sending print files and requests, there shouldn't be any
+    * performance penalty for this...
+    */
+
+    val = 1;
+#ifdef WIN32
+    setsockopt(http->fd, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val)); 
+#else
+    setsockopt(http->fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)); 
+#endif // WIN32
+
+   /*
+    * Connect to the server...
+    */
+
+    saddr.sun_family = AF_LOCAL;
+    strlcpy(saddr.sun_path, _cups_globals()->cups_server_domainsocket, sizeof(saddr.sun_path));
+
+    if (connect(http->fd, (struct sockaddr *)&saddr, SUN_LEN(&saddr)) < 0)
+    {
+#ifdef WIN32
+      http->error  = WSAGetLastError();
+#else
+      http->error  = errno;
+#endif /* WIN32 */
+      http->status = HTTP_ERROR;
+
+#ifdef WIN32
+      closesocket(http->fd);
+#else
+      close(http->fd);
+#endif
+
+      http->fd = -1;
+    }
+    else
+      http->error  = 0;
+  }
+  else
+  {
+    http->error = ENOENT;
+  }
+
+  return http->error;
+}
+#endif /* HAVE_DOMAINSOCKETS */
+
+
+#ifdef __APPLE__
+/*
+ * 'wakeupCupsd()' - Use a mach message to try and start cupsd.
+ */
+static void wakeupCupsd()
+{
+  kern_return_t result = 0;
+  mach_port_t serverPort = MACH_PORT_NULL;
+  mach_port_t replyPort = MACH_PORT_NULL;
+
+  result = bootstrap_look_up(bootstrap_port, "/usr/sbin/cupsd", &serverPort);
+  if (result == KERN_SUCCESS)
+  {
+    mach_msg_header_t aMsg;
+    mach_msg_empty_rcv_t replyMsg;
+
+    result = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &replyPort);
+	
+    if (result == KERN_SUCCESS)
+    {
+      aMsg.msgh_bits = MACH_MSGH_BITS( MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_MAKE_SEND );
+      aMsg.msgh_size = sizeof(aMsg);
+      aMsg.msgh_id = 0;
+      aMsg.msgh_remote_port	= serverPort;
+      aMsg.msgh_local_port	= replyPort;
+
+      replyMsg.header.msgh_size = sizeof(replyMsg);
+	  
+      result = mach_msg(&aMsg, MACH_SEND_MSG|MACH_RCV_MSG|MACH_SEND_TIMEOUT|MACH_RCV_TIMEOUT,
+					aMsg.msgh_size,
+					replyMsg.header.msgh_size,
+					replyPort,
+					5 * 1000,
+					MACH_PORT_NULL);
+      
+      mach_port_destroy(mach_task_self(), replyPort);
+
+      if (result != KERN_SUCCESS)
+	syslog(LOG_ERR, "cupsd mach_msg error %s", mach_error_string(result));
+    }
+    mach_port_destroy(mach_task_self(), serverPort);
+  }
+  else
+  {
+    if (result == BOOTSTRAP_UNKNOWN_SERVICE)
+      syslog(LOG_ERR, "cupsd's bootstrap server port not found");
+    else
+      syslog(LOG_ERR, "cupsd bootstrap server error %d", result);
+  }
+}
+
+#endif /* __APPLE__ */
+
+/*
+ * End of "$Id: http.c,v 1.28 2005/02/09 23:51:33 jlovell Exp $".
  */

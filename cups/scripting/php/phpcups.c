@@ -18,7 +18,7 @@
  */
 
 /*
- * "$Id: phpcups.c,v 1.1.1.3 2004/06/05 02:42:34 jlovell Exp $"
+ * "$Id: phpcups.c,v 1.1.1.4 2004/10/31 16:15:49 jlovell Exp $"
  *
  *   Printing utilities for the Common UNIX Printing System (CUPS).
  *
@@ -1349,7 +1349,7 @@ void _zz_internal_log( char *func, char *line )
 
 
 /*
- * End of "$Id: phpcups.c,v 1.1.1.3 2004/06/05 02:42:34 jlovell Exp $".
+ * End of "$Id: phpcups.c,v 1.1.1.4 2004/10/31 16:15:49 jlovell Exp $".
  */
 
 

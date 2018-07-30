@@ -1,9 +1,9 @@
 /*
- * "$Id: lpq.c,v 1.4 2004/05/21 19:42:30 jlovell Exp $"
+ * "$Id: lpq.c,v 1.6 2005/01/04 22:10:37 jlovell Exp $"
  *
  *   "lpq" command for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products.
+ *   Copyright 1997-2005 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -69,7 +69,8 @@ main(int  argc,		/* I - Number of command-line arguments */
   int		i;		/* Looping var */
   http_t	*http;		/* Connection to server */
   const char	*dest,		/* Desired printer */
-		*user;		/* Desired user */
+		*user,		/* Desired user */
+		*val;		/* Environment variable name */
   char		*instance;	/* Printer instance */
   int		id,		/* Desired job ID */
 		all,		/* All printers */
@@ -187,7 +188,26 @@ main(int  argc,		/* I - Number of command-line arguments */
 
     if (dest == NULL)
     {
-      fputs("lpq: error - no default destination available.\n", stderr);
+      val = NULL;
+
+      if ((dest = getenv("LPDEST")) == NULL)
+      {
+	if ((dest = getenv("PRINTER")) != NULL)
+	{
+          if (!strcmp(dest, "lp"))
+            dest = NULL;
+	  else
+	    val = "PRINTER";
+	}
+      }
+      else
+	val = "LPDEST";
+
+      if (dest && !cupsGetDest(dest, NULL, num_dests, dests))
+	fprintf(stderr, "lp: error - %s environment variable names non-existent destination \"%s\"!\n",
+        	val, dest);
+      else
+	fputs("lpq: error - no default destination available.\n", stderr);
       httpClose(http);
       cupsFreeDests(num_dests, dests);
       return (1);
@@ -441,7 +461,16 @@ show_jobs(http_t     *http,	/* I - HTTP connection to server */
 	strcpy(rankstr, "active");
       else
       {
-	snprintf(rankstr, sizeof(rankstr), "%d%s", rank, ranks[rank % 10]);
+       /*
+        * Make the rank show the "correct" suffix for each number
+	* (11-13 are the only special cases, for English anyways...)
+	*/
+
+	if ((rank % 100) >= 11 && (rank % 100) <= 13)
+	  snprintf(rankstr, sizeof(rankstr), "%dth", rank);
+	else
+	  snprintf(rankstr, sizeof(rankstr), "%d%s", rank, ranks[rank % 10]);
+
 	rank ++;
       }
 
@@ -585,5 +614,5 @@ usage(void)
 
 
 /*
- * End of "$Id: lpq.c,v 1.4 2004/05/21 19:42:30 jlovell Exp $".
+ * End of "$Id: lpq.c,v 1.6 2005/01/04 22:10:37 jlovell Exp $".
  */

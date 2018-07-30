@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.16 2004/05/31 21:02:20 jlovell Exp $"
+# "$Id: Makefile,v 1.20 2005/01/21 00:23:18 jlovell Exp $"
 #
 #   Scheduler Makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2005 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
 #       Attn: CUPS Licensing Information
 #       Easy Software Products
 #       44141 Airport View Drive, Suite 204
-#       Hollywood, Maryland 20636-3111 USA
+#       Hollywood, Maryland 20636 USA
 #
-#       Voice: (301) 373-9603
+#       Voice: (301) 373-9600
 #       EMail: cups-info@cups.org
 #         WWW: http://www.cups.org
 #
@@ -88,7 +88,8 @@ cupsd:	$(CUPSDOBJS) libmime.a ../cups/$(LIBCUPS)
 	echo Linking $@...
 	$(CC) $(LDFLAGS) -o cupsd $(CUPSDOBJS) libmime.a \
 		-sectorder __TEXT __text cupsd.order -e start \
-		$(LIBZ) $(SSLLIBS) $(LIBSLP) $(PAMLIBS) $(LIBS) $(MDNSLIBS) \
+		$(CUPSDLIBS) \
+		$(LIBZ) $(SSLLIBS) $(LIBSLP) $(PAMLIBS) $(LIBS) \
 		$(LIBPAPER) $(LIBMALLOC)
 
 
@@ -98,7 +99,7 @@ cupsd:	$(CUPSDOBJS) libmime.a ../cups/$(LIBCUPS)
 
 cups-lpd:	cups-lpd.o ../cups/$(LIBCUPS)
 	echo Linking $@...
-	$(CC) $(LDFLAGS) -o cups-lpd cups-lpd.o $(LIBS)
+	$(CC) $(LDFLAGS) $(LIBCUPSLIBS) -o cups-lpd cups-lpd.o $(LIBS)
 
 
 #
@@ -147,5 +148,5 @@ include Dependencies
 
 
 #
-# End of "$Id: Makefile,v 1.16 2004/05/31 21:02:20 jlovell Exp $".
+# End of "$Id: Makefile,v 1.20 2005/01/21 00:23:18 jlovell Exp $".
 #

@@ -1,9 +1,9 @@
 /*
- * "$Id: auth.c,v 1.10 2004/06/05 03:49:46 jlovell Exp $"
+ * "$Id: auth.c,v 1.16 2005/01/04 22:10:44 jlovell Exp $"
  *
  *   Authorization routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -132,7 +132,7 @@ AddLocation(const char *location)	/* I - Location path */
   */
 
   memset(temp, 0, sizeof(location_t));
-  strlcpy(temp->location, location, sizeof(temp->location));
+  temp->location = strdup(location);
   temp->length = strlen(temp->location);
 
   LogMessage(L_DEBUG, "AddLocation: added location \'%s\'", location);
@@ -299,7 +299,7 @@ CheckAuth(unsigned   ip,	/* I - Client address */
 	    * Check against all local interfaces...
 	    */
 
-            NetIFUpdate();
+            NetIFUpdate(FALSE);
 
 	    for (iface = NetIFList; iface != NULL; iface = iface->next)
 	    {
@@ -531,6 +531,9 @@ DeleteAllLocations(void)
 
   for (i = NumLocations, loc = Locations; i > 0; i --, loc ++)
   {
+    if (loc->location)
+      free(loc->location);
+
     for (j = loc->num_names - 1; j >= 0; j --)
       free(loc->names[j]);
 
@@ -1018,6 +1021,9 @@ IsAuthorized(client_t *con)	/* I - Connection */
   pw = NULL;
 
   if ((address != 0x7f000001 &&
+#ifdef HAVE_DOMAINSOCKETS
+       con->http.hostaddr.sin_family != AF_LOCAL &&
+#endif /* HAVE_DOMAINSOCKETS */
        strcasecmp(con->http.hostname, "localhost") != 0) ||
       strncmp(con->http.fields[HTTP_FIELD_AUTHORIZATION], "Local", 5) != 0)
   {
@@ -1214,7 +1220,7 @@ IsAuthorized(client_t *con)	/* I - Connection */
 
 	  if (!md5[0])
 	  {
-            LogMessage(L_ERROR, "IsAuthorized: No matching user:group for \"%s\" in passwd.md5!",
+            LogMessage(L_DEBUG2, "IsAuthorized: No matching user:group for \"%s\" in passwd.md5!",
 	               con->username);
             return (HTTP_UNAUTHORIZED);
 	  }
@@ -1223,7 +1229,7 @@ IsAuthorized(client_t *con)	/* I - Connection */
 
 	  if (strcmp(md5, con->password) != 0)
 	  {
-            LogMessage(L_ERROR, "IsAuthorized: MD5s \"%s\" and \"%s\" don't match!",
+            LogMessage(L_DEBUG2, "IsAuthorized: MD5s \"%s\" and \"%s\" don't match!",
 	               md5, con->password);
             return (HTTP_UNAUTHORIZED);
 	  }
@@ -1250,7 +1256,7 @@ IsAuthorized(client_t *con)	/* I - Connection */
 
 	  if (!md5[0])
 	  {
-            LogMessage(L_ERROR, "IsAuthorized: No matching user:group for \"%s\" in passwd.md5!",
+            LogMessage(L_DEBUG2, "IsAuthorized: No matching user:group for \"%s\" in passwd.md5!",
 	               con->username);
             return (HTTP_UNAUTHORIZED);
 	  }
@@ -1259,7 +1265,7 @@ IsAuthorized(client_t *con)	/* I - Connection */
 
 	  if (strcmp(md5, basicmd5) != 0)
 	  {
-            LogMessage(L_ERROR, "IsAuthorized: MD5s \"%s\" and \"%s\" don't match!",
+            LogMessage(L_DEBUG2, "IsAuthorized: MD5s \"%s\" and \"%s\" don't match!",
 	               md5, basicmd5);
             return (HTTP_UNAUTHORIZED);
 	  }
@@ -1677,5 +1683,5 @@ to64(char          *s,	/* O - Output string */
 
 
 /*
- * End of "$Id: auth.c,v 1.10 2004/06/05 03:49:46 jlovell Exp $".
+ * End of "$Id: auth.c,v 1.16 2005/01/04 22:10:44 jlovell Exp $".
  */

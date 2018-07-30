@@ -1,10 +1,10 @@
 /*
- * "$Id: dirsvc.h,v 1.2 2004/05/31 21:02:21 jlovell Exp $"
+ * "$Id: dirsvc.h,v 1.7 2005/02/16 17:58:01 jlovell Exp $"
  *
  *   Directory services definitions for the Common UNIX Printing System
  *   (CUPS) scheduler.
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -16,9 +16,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  */
@@ -31,9 +31,9 @@
 #  include <slp.h>
 #endif /* HAVE_LIBSLP */
 
-#ifdef HAVE_MDNS
+#ifdef HAVE_DNSSD
 #  include <dns_sd.h>
-#endif /* HAVE_MDNS */
+#endif /* HAVE_DNSSD */
 
 /*
  * Browse protocols...
@@ -42,7 +42,7 @@
 #define BROWSE_CUPS	1		/* CUPS */
 #define	BROWSE_SLP	2		/* SLPv2 */
 #define BROWSE_LDAP	4		/* LDAP (not supported yet) */
-#define BROWSE_MDNS	8		/* DNS Service Discovery (aka Rendezvous) */
+#define BROWSE_DNSSD	8		/* DNS Service Discovery (aka Bonjour) */
 #define BROWSE_ALL	15		/* All protocols */
 
 
@@ -86,8 +86,10 @@ typedef struct
 
 VAR int			Browsing	VALUE(TRUE),
 					/* Whether or not browsing is enabled */
-			BrowseProtocols	VALUE(BROWSE_ALL),
-					/* Protocols to support */
+			BrowseLocalProtocols	VALUE(BROWSE_ALL),
+					/* Register protocols to support */
+			BrowseRemoteProtocols	VALUE(BROWSE_ALL),
+					/* Listen protocols to support */
 			BrowseShortNames VALUE(TRUE),
 					/* Short names for remote printers? */
 			BrowseSocket	VALUE(-1),
@@ -104,6 +106,8 @@ VAR dirsvc_addr_t	*Browsers	VALUE(NULL);
 					/* Broadcast addresses */
 VAR location_t		*BrowseACL	VALUE(NULL);
 					/* Browser access control list */
+VAR printer_t		*BrowseNext	VALUE(NULL);
+					/* Next class/printer to broadcast */
 VAR int			NumRelays	VALUE(0);
 					/* Number of broadcast relays */
 VAR dirsvc_relay_t	*Relays		VALUE(NULL);
@@ -122,23 +126,23 @@ VAR time_t		BrowseSLPRefresh VALUE(0);
 					/* Next SLP refresh time */
 #endif /* HAVE_LIBSLP */
 
-#ifdef HAVE_MDNS
-VAR DNSServiceRef	BrowseMDNSRef	VALUE(NULL);
+#ifdef HAVE_DNSSD
+VAR DNSServiceRef	BrowseDNSSDRef	VALUE(NULL);
 					/* Browse reference */
-VAR int			BrowseMDNSfd	VALUE(-1);
+VAR int			BrowseDNSSDfd	VALUE(-1);
 					/* Browse descriptor */
 
-typedef struct mdns_resolve {
+typedef struct dnssd_resolve {
   DNSServiceRef		sdRef;		/* Reference to pending resolve */
   int			fd;		/* sdRef descriptor */
   char			*service_name;	/* Service name */
-  struct mdns_resolve*	next;		/* Next pending resolve in list */
-} mdns_resolve_t;
+  struct dnssd_resolve*	next;		/* Next pending resolve in list */
+} dnssd_resolve_t;
 
-VAR mdns_resolve_t	*MDNSPendingResolves	VALUE(NULL);
-					/* Pending mdns resolves */
+VAR dnssd_resolve_t	*DNSSDPendingResolves	VALUE(NULL);
+					/* Pending dnssd resolves */
 
-#endif /* HAVE_MDNS HAVE_MDNS */
+#endif /* HAVE_DNSSD HAVE_DNSSD */
 
 /*
  * Prototypes...
@@ -153,9 +157,9 @@ extern void	UpdateCUPSBrowse(void);
 extern void	UpdatePolling(void);
 extern void	UpdateSLPBrowse(void);
 extern void	BrowseRegisterPrinter(printer_t *p);
-extern void	BrowseDeregisterPrinter(printer_t *p);
+extern void	BrowseDeregisterPrinter(printer_t *p, int delete);
 
 
 /*
- * End of "$Id: dirsvc.h,v 1.2 2004/05/31 21:02:21 jlovell Exp $".
+ * End of "$Id: dirsvc.h,v 1.7 2005/02/16 17:58:01 jlovell Exp $".
  */

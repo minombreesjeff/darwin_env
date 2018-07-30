@@ -1,9 +1,9 @@
 /*
- * "$Id: imagetoraster.c,v 1.1.1.13 2004/06/05 02:42:32 jlovell Exp $"
+ * "$Id: imagetoraster.c,v 1.1.1.16 2005/01/04 19:16:01 jlovell Exp $"
  *
  *   Image file to raster filter for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1993-2004 by Easy Software Products.
+ *   Copyright 1993-2005 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -866,16 +866,6 @@ main(int  argc,		/* I - Number of command-line arguments */
       yinches     = ysize2;
       xprint      = (PageTop - PageBottom) / 72.0;
       yprint      = (PageRight - PageLeft) / 72.0;
-
-      xsize       = PageLeft;
-      PageLeft    = PageBottom;
-      PageBottom  = PageWidth - PageRight;
-      PageRight   = PageTop;
-      PageTop     = PageLength - xsize;
-
-      xsize       = PageWidth;
-      PageWidth   = PageLength;
-      PageLength  = xsize;
     }
     else
     {
@@ -888,17 +878,23 @@ main(int  argc,		/* I - Number of command-line arguments */
     }
   }
 
+ /*
+  * Compute the number of pages to print and the size of the image on each
+  * page...
+  */
+
   xpages = ceil(xinches / xprint);
   ypages = ceil(yinches / yprint);
 
-  fprintf(stderr, "DEBUG: xpages = %d, ypages = %d\n", xpages, ypages);
+  xprint = xinches / xpages;
+  yprint = yinches / ypages;
+
+  fprintf(stderr, "DEBUG: xpages = %dx%.2fin, ypages = %dx%.2fin\n",
+          xpages, xprint, ypages, yprint);
 
  /*
   * Compute the bitmap size...
   */
-
-  xprint = xinches / xpages;
-  yprint = yinches / ypages;
 
   if ((choice = ppdFindMarkedChoice(ppd, "PageSize")) != NULL &&
       strcasecmp(choice->choice, "Custom") == 0)
@@ -906,6 +902,10 @@ main(int  argc,		/* I - Number of command-line arguments */
     float	width,		/* New width in points */
 		length;		/* New length in points */
 
+
+   /*
+    * Use the correct width and length for the current orientation...
+    */
 
     if (Orientation & 1)
     {
@@ -4594,5 +4594,5 @@ make_lut(ib_t  *lut,		/* I - Lookup table */
 
 
 /*
- * End of "$Id: imagetoraster.c,v 1.1.1.13 2004/06/05 02:42:32 jlovell Exp $".
+ * End of "$Id: imagetoraster.c,v 1.1.1.16 2005/01/04 19:16:01 jlovell Exp $".
  */

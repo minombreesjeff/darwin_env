@@ -1,6 +1,6 @@
 <HTML>
 <HEAD>
-	<META NAME="COPYRIGHT" CONTENT="Copyright 1997-2004, All Rights Reserved">
+	<META NAME="COPYRIGHT" CONTENT="Copyright 1997-2005, All Rights Reserved">
 	<META NAME="DOCNUMBER" CONTENT="CUPS-IDD-1.1">
 	<META NAME="Author" CONTENT="Easy Software Products">
 	<TITLE>CUPS Interface Design Description</TITLE>
@@ -831,7 +831,7 @@ capability/type bits:
 </TR>
 <TR>
 	<TD>2</TD>
-	<TD>1 = can print B&W</TD>
+	<TD>1 = can print B&amp;W</TD>
 </TR>
 <TR>
 	<TD>3</TD>

@@ -1,9 +1,9 @@
 /*
- * "$Id: admin.c,v 1.1.1.13 2004/06/05 02:42:28 jlovell Exp $"
+ * "$Id: admin.c,v 1.1.1.16 2005/01/04 19:15:03 jlovell Exp $"
  *
  *   Administration CGI for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products.
+ *   Copyright 1997-2005 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -265,7 +265,7 @@ do_am_class(http_t      *http,		/* I - HTTP connection */
   if (*ptr || ptr == name || strlen(name) > 127)
   {
     cgiSetVariable("ERROR", "The class name may only contain up to 127 printable "
-                            "characters.");
+                            "characters and may not contain spaces.");
     cgiCopyTemplateLang(stdout, TEMPLATES, "error.tmpl", getenv("LANG"));
     return;
   }
@@ -576,7 +576,7 @@ do_am_printer(http_t      *http,	/* I - HTTP connection */
   if (*ptr || ptr == name || strlen(name) > 127)
   {
     cgiSetVariable("ERROR", "The printer name may only contain up to 127 printable "
-                            "characters.");
+                            "characters and may not contain spaces.");
     cgiCopyTemplateLang(stdout, TEMPLATES, "error.tmpl", getenv("LANG"));
     return;
   }
@@ -1601,5 +1601,5 @@ get_line(char *buf,	/* I - Line buffer */
 
 
 /*
- * End of "$Id: admin.c,v 1.1.1.13 2004/06/05 02:42:28 jlovell Exp $".
+ * End of "$Id: admin.c,v 1.1.1.16 2005/01/04 19:15:03 jlovell Exp $".
  */

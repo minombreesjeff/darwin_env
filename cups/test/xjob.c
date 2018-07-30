@@ -316,7 +316,7 @@ static int ConvertJob(const char *filename, mime_type_t *inMimeType, const char 
     * Local jobs get filtered...
     */
 
-    filters = mimeFilter(mimeDatabase, inMimeType, outMimeType, &num_filters, MAX_FILTERS);
+    filters = mimeFilter(mimeDatabase, inMimeType, outMimeType, &num_filters, NULL);
 
     if (num_filters == 0)
     {

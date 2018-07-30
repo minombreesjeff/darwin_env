@@ -1,9 +1,9 @@
 /*
- * "$Id: dirsvc.c,v 1.17 2004/06/05 03:49:46 jlovell Exp $"
+ * "$Id: dirsvc.c,v 1.39 2005/02/16 17:58:01 jlovell Exp $"
  *
  *   Directory services routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -49,15 +49,20 @@
 #include <grp.h>
 
 
-#ifdef HAVE_MDNS
+#ifdef HAVE_DNSSD
 #  include <dns_sd.h>
 #  include <nameser.h>
+#  include <nameser.h>
+
+#  include <CoreFoundation/CoreFoundation.h>
+#  include <SystemConfiguration/SystemConfiguration.h>
 
 #  ifdef HAVE_NOTIFY_H
 #    include <notify.h>
 #  endif /* HAVE_NOTIFY_H */
-#endif /* HAVE_MDNS */
+#endif /* HAVE_DNSSD */
 
+#  include <CoreFoundation/CoreFoundation.h>
 
 /*
  * Local functions...
@@ -73,40 +78,41 @@ static void	SendCUPSBrowse(printer_t *p);
 static void	SendSLPBrowse(printer_t *p);
 #endif /* HAVE_LIBSLP */
 
-#ifdef HAVE_MDNS
+#ifdef HAVE_DNSSD
 
 /*
- * Due to a bug (rdar://3588761 I believe) we can't yet use the 
- * "_cups._ipp._tcp" subtype we prefer.
+ * For IPP register using a subtype of 'cups' so that shared printer browsing
+ * only finds other cups servers (not all IPP based printers).
  */
-static char mDNSIPPRegType[] = "_cups-ipp._tcp";
-static char mDNSLPDRegType[] = "_printer._tcp";
-static int  mDNSBrowsing = 0;
+static char		  dnssdIPPRegType[] = "_ipp._tcp,_cups";
 
-static void mDNSRegisterPrinter(printer_t *p);
-static void mDNSDeregisterPrinter(printer_t *p);
+static int 		  dnssdBrowsing = 0;
+static SCDynamicStoreRef  mSysConfigStore = NULL;
 
-static void mDNSRegisterCallback(DNSServiceRef sdRef, DNSServiceFlags flags, 
+static void dnssdRegisterPrinter(printer_t *p);
+static void dnssdDeregisterPrinter(printer_t *p);
+
+static void dnssdRegisterCallback(DNSServiceRef sdRef, DNSServiceFlags flags, 
 				 DNSServiceErrorType errorCode, const char *name,
 				 const char *regtype, const char *domain, void *context);
-static void mDNSBrowseCallback(DNSServiceRef sdRef, DNSServiceFlags flags, 
+static void dnssdBrowseCallback(DNSServiceRef sdRef, DNSServiceFlags flags, 
 				uint32_t interfaceIndex, DNSServiceErrorType errorCode, 
 				const char *service_name, const char *regtype, 
 				const char *replyDomain, void *context);
-static void mDNSResolveCallback(DNSServiceRef sdRef, DNSServiceFlags flags,
+static void dnssdResolveCallback(DNSServiceRef sdRef, DNSServiceFlags flags,
 				uint32_t interfaceIndex, DNSServiceErrorType errorCode,
 				const char *fullname, const char *host_target, uint16_t port,
 				uint16_t txt_len, const char *txtRecord, void *context);
-static void mDNSQueryRecordCallback(DNSServiceRef sdRef, DNSServiceFlags flags, 
+static void dnssdQueryRecordCallback(DNSServiceRef sdRef, DNSServiceFlags flags, 
 				uint32_t interfaceIndex, DNSServiceErrorType errorCode,
 				const char *fullname, uint16_t rrtype, uint16_t rrclass, 
 				uint16_t rdlen, const void *rdata, uint32_t ttl, void *context);
 
-static char *mDNSBuildTxtRecord(int *txt_len, printer_t *p);
-static char *mDNSPackTxtRecord(int *txt_len, char *keyvalue[][2], int count);
-static int  mDNSFindAttr(const unsigned char *txtRecord, int txt_len, const char *key, char **value);
+static char *dnssdBuildTxtRecord(int *txt_len, printer_t *p);
+static char *dnssdPackTxtRecord(int *txt_len, char *keyvalue[][2], int count);
+static int  dnssdFindAttr(const unsigned char *txtRecord, int txt_len, const char *key, char **value);
 
-#endif /* HAVE_MDNS */
+#endif /* HAVE_DNSSD */
 
 
 /*
@@ -140,12 +146,7 @@ ProcessBrowseData(const char   *uri,		/* I - URI of printer/class */
 		*next;			/* Next printer in list */
   int		offset,			/* Offset of name */
 		len;			/* Length of name */
-  struct hostent *hostent;		/* Host entry for server address */
-  int		same_host;
 
-
-  p = NULL;
-  hostent = NULL;
 
  /*
   * Pull the URI apart to see if this is a local or remote printer...
@@ -257,13 +258,13 @@ ProcessBrowseData(const char   *uri,		/* I - URI of printer/class */
       update = 1;
     }
 
-    if (p == NULL)
+    if (p == NULL && !(type & CUPS_PRINTER_DELETE))
     {
      /*
       * Class doesn't exist; add it...
       */
 
-      p = AddClass(name);
+      p = AddClass(name, 1);
 
       LogMessage(L_INFO, "Added remote class \"%s\"...", name);
 
@@ -291,41 +292,39 @@ ProcessBrowseData(const char   *uri,		/* I - URI of printer/class */
     else
       return NULL;
 
-    if ((p = FindPrinter(name)) != NULL || 
-	(p = FindPrinter(resource + 10)) != NULL)
+    if ((p = FindPrinter(name)) == NULL && BrowseShortNames)
     {
-      same_host = (p->hostname && strcasecmp(p->hostname, host) == 0);
-
-#ifdef HAVE_MDNS
-      if (!same_host && (hostent = httpGetHostByName(host)) != NULL)
+      if ((p = FindPrinter(resource + 10)) != NULL)
       {
-	for (i = 0; hostent->h_addr_list[i] && !same_host; i ++)
-	  same_host = (memcmp(&(p->hostaddr.sin_addr), hostent->h_addr_list[i], 4) == 0);
-      }
-#endif /* HAVE_MDNS */
-
-      if (!same_host)
-      {
-       /*
-	* Nope, this isn't the same host; if the hostname isn't the local host,
-	* add it to the other printer and then find a printer using the full host
-	* name...
-	*/
-
-	if (p->type & CUPS_PRINTER_REMOTE)
+        if (p->hostname && strcasecmp(p->hostname, host) != 0)
 	{
-	  SetStringf(&p->name, "%s@%s", p->name, p->hostname);
-	  SetPrinterAttrs(p);
-	  SortPrinters();
+	 /*
+	  * Nope, this isn't the same host; if the hostname isn't the local host,
+	  * add it to the other printer and then find a printer using the full host
+	  * name...
+	  */
+
+	  if (p->type & CUPS_PRINTER_REMOTE)
+	  {
+	    SetStringf(&p->name, "%s@%s", p->name, p->hostname);
+	    SetPrinterAttrs(p);
+	    SortPrinters();
+	  }
+
+          p = NULL;
 	}
-
-        p = NULL;
+	else if (!p->hostname)
+	{
+          SetString(&p->hostname, host);
+	  SetString(&p->uri, uri);
+	  SetString(&p->device_uri, uri);
+          update = 1;
+        }
       }
+      else
+        strlcpy(name, resource + 10, sizeof(name));
     }
-    else
-      strlcpy(name, resource + 10, sizeof(name));
-
-    if (p && !p->hostname)
+    else if (p != NULL && !p->hostname)
     {
       SetString(&p->hostname, host);
       SetString(&p->uri, uri);
@@ -333,13 +332,13 @@ ProcessBrowseData(const char   *uri,		/* I - URI of printer/class */
       update = 1;
     }
 
-    if (p == NULL)
+    if (p == NULL && !(type & CUPS_PRINTER_DELETE))
     {
      /*
       * Printer doesn't exist; add it...
       */
 
-      p = AddPrinter(name);
+      p = AddPrinter(name, 1);
 
       LogMessage(L_INFO, "Added remote printer \"%s\"...", name);
 
@@ -353,30 +352,25 @@ ProcessBrowseData(const char   *uri,		/* I - URI of printer/class */
       SetString(&p->uri, uri);
       SetString(&p->device_uri, uri);
 
-#ifdef HAVE_MDNS
-       /*
-	* Remember the address for later compares.
-	*/
-
-      if (hostent || (hostent = httpGetHostByName(host)))
-	memcpy(&(p->hostaddr.sin_addr), hostent->h_addr_list[0], 4);
-
-#endif /* HAVE_MDNS */
-
       update = 1;
     }
   }
+
+ /*
+  * If we didn't find or create a printer we're done...
+  */
+
+  if (p == NULL)
+    return NULL;
 
  /*
   * Update the state...
   */
 
   if (p->state != state)
-  {
     update       = 1;
-    p->state     = state;
-  }
 
+  p->state       = state;
   p->browse_time = time(NULL);
   p->browse_protocol |= protocol;
 
@@ -438,7 +432,12 @@ ProcessBrowseData(const char   *uri,		/* I - URI of printer/class */
     update = 1;
   }
 
-  if (update)
+  if (type & CUPS_PRINTER_DELETE)
+  {
+    DeletePrinter(p, 1);
+    UpdateImplicitClasses();
+  }
+  else if (update)
   {
     SetPrinterAttrs(p);
     UpdateImplicitClasses();
@@ -520,7 +519,7 @@ ProcessBrowseData(const char   *uri,		/* I - URI of printer/class */
 	  * Need to add the class...
 	  */
 
-	  pclass = AddPrinter(name);
+	  pclass = AddPrinter(name, 1);
 	  pclass->type      |= CUPS_PRINTER_IMPLICIT;
 	  pclass->accepting = 1;
 	  pclass->state     = IPP_PRINTER_IDLE;
@@ -615,14 +614,14 @@ ProcessBrowseData(const char   *uri,		/* I - URI of printer/class */
 void
 SendBrowseList(void)
 {
-  int			count;	/* Number of dests to update */
-  printer_t		*p,	/* Current printer */
-			*np;	/* Next printer */
-  time_t		ut,	/* Minimum update time */
-			to;	/* Timeout time */
+  int			count;		/* Number of dests to update */
+  printer_t		*p,		/* Current printer */
+			*np;		/* Next printer */
+  time_t		ut,		/* Minimum update time */
+			to;		/* Timeout time */
 
 
-  if (!Browsing || !BrowseProtocols)
+  if (!Browsing || !BrowseLocalProtocols)
     return;
 
  /*
@@ -638,20 +637,65 @@ SendBrowseList(void)
 
   if (BrowseInterval > 0)
   {
-    for (count = 0, p = Printers; p != NULL; p = p->next)
+    int	max_count;			/* Maximum number to update */
+
+
+   /*
+    * Throttle the number of printers we'll be updating this time
+    * around based on the number of queues that need updating and
+    * the maximum number of queues to update each second...
+    */
+
+    max_count = 2 * NumPrinters / BrowseInterval + 1;
+
+    for (count = 0, p = Printers; count < max_count && p != NULL; p = p->next)
       if (!(p->type & (CUPS_PRINTER_REMOTE | CUPS_PRINTER_IMPLICIT)) &&
           p->browse_time < ut && p->shared)
         count ++;
 
    /*
-    * Throttle the number of printers we'll be updating this time
-    * around...
+    * Loop through all of the printers and send local updates as needed...
     */
 
-    count = 2 * count / BrowseInterval + 1;
+    for (p = BrowseNext; count > 0; p = p->next)
+    {
+     /*
+      * Check for wraparound...
+      */
+
+      if (!p)
+        p = Printers;
+
+      if (!p)
+        break;
+      else if (p->type & (CUPS_PRINTER_REMOTE | CUPS_PRINTER_IMPLICIT))
+        continue;
+      else if (p->browse_time < ut && p->shared)
+      {
+       /*
+	* Need to send an update...
+	*/
+
+	count --;
+
+	p->browse_time = time(NULL);
+
+	if (BrowseLocalProtocols & BROWSE_CUPS)
+          SendCUPSBrowse(p);
+
+#ifdef HAVE_LIBSLP
+	if (BrowseLocalProtocols & BROWSE_SLP)
+          SendSLPBrowse(p);
+#endif /* HAVE_LIBSLP */
+      }
+    }
+
+   /*
+    * Save where we left off so that all printers get updated...
+    */
+
+    BrowseNext = p;
   }
-  else
-    count = 0;
 
  /*
   * Loop through all of the printers and send local updates as needed...
@@ -659,40 +703,24 @@ SendBrowseList(void)
 
   for (p = Printers; p != NULL; p = np)
   {
+   /*
+    * Save the next printer pointer...
+    */
+
     np = p->next;
+
+   /*
+    * If this is a remote queue, see if it needs to be timed out...
+    */
 
     if (p->type & CUPS_PRINTER_REMOTE)
     {
-     /*
-      * See if this printer needs to be timed out...
-      */
-
       if (p->browse_time < to && p->browse_protocol == BROWSE_CUPS)
       {
         LogMessage(L_INFO, "Remote destination \"%s\" has timed out; deleting it...",
 	           p->name);
         DeletePrinter(p, 1);
       }
-    }
-    else if (p->browse_time < ut && count > 0 &&
-             !(p->type & CUPS_PRINTER_IMPLICIT) &&
-             p->shared)
-    {
-     /*
-      * Need to send an update...
-      */
-
-      count --;
-
-      p->browse_time = time(NULL);
-
-      if (BrowseProtocols & BROWSE_CUPS)
-        SendCUPSBrowse(p);
-
-#ifdef HAVE_LIBSLP
-      if (BrowseProtocols & BROWSE_SLP)
-        SendSLPBrowse(p);
-#endif /* HAVE_LIBSLP */
     }
   }
 }
@@ -711,6 +739,10 @@ SendCUPSBrowse(printer_t *p)		/* I - Printer to send */
   int			bytes;		/* Length of packet */
   char			packet[1453];	/* Browse data packet */
   cups_netif_t		*iface;		/* Network interface */
+  char			*make_model,	/* Make and model */
+  			*location,	/* Location */
+  			*info,		/* Printer information */
+  			*ptr;		/* Temp pointer */
 
 
  /*
@@ -721,6 +753,28 @@ SendCUPSBrowse(printer_t *p)		/* I - Printer to send */
 
   if (!p->accepting)
     type |= CUPS_PRINTER_REJECTING;
+
+ /*
+  * Remove any double quotes from the strings we quote in the packet...
+  */
+
+  make_model = p->make_model;
+  if (make_model && strchr(make_model, '\"'))
+    if ((make_model = strdup(make_model)))
+      while ((ptr = strchr(make_model, '\"')))
+        *ptr = '\'';
+
+  location = p->location;
+  if (location && strchr(location, '\"'))
+    if ((location = strdup(location)))
+      while ((ptr = strchr(location, '\"')))
+        *ptr = '\'';
+
+  info = p->info;
+  if (info && strchr(info, '\"'))
+    if ((info = strdup(info)))
+      while ((ptr = strchr(info, '\"')))
+        *ptr = '\'';
 
  /*
   * Send a packet to each browse address...
@@ -739,7 +793,7 @@ SendCUPSBrowse(printer_t *p)		/* I - Printer to send */
         * Send to all local interfaces...
 	*/
 
-        NetIFUpdate();
+        NetIFUpdate(FALSE);
 
         for (iface = NetIFList; iface != NULL; iface = iface->next)
 	{
@@ -747,15 +801,15 @@ SendCUPSBrowse(printer_t *p)		/* I - Printer to send */
 	  * Only send to local interfaces...
 	  */
 
-	  if (!iface->is_local)
+	  if (!iface->is_local || !iface->port)
 	    continue;
 
-	  snprintf(packet, sizeof(packet), "%x %x ipp://%s/%s/%s \"%s\" \"%s\" \"%s\"\n",
-        	   type, p->state, iface->hostname,
+	  snprintf(packet, sizeof(packet), "%x %x ipp://%s:%d/%s/%s \"%s\" \"%s\" \"%s\"\n",
+        	   type, p->state, iface->hostname, iface->port,
 		   (p->type & CUPS_PRINTER_CLASS) ? "classes" : "printers",
-		   p->name, p->location ? p->location : "",
-		   p->info ? p->info : "",
-		   p->make_model ? p->make_model : "Unknown");
+		   p->name, location ? location : "",
+		   info ? info : "",
+		   make_model ? make_model : "Unknown");
 
 	  bytes = strlen(packet);
 
@@ -775,12 +829,15 @@ SendCUPSBrowse(printer_t *p)		/* I - Printer to send */
         * Send to the named interface...
 	*/
 
-	snprintf(packet, sizeof(packet), "%x %x ipp://%s/%s/%s \"%s\" \"%s\" \"%s\"\n",
-        	 type, p->state, iface->hostname,
+	if (!iface->port)
+	  continue;
+
+	snprintf(packet, sizeof(packet), "%x %x ipp://%s:%d/%s/%s \"%s\" \"%s\" \"%s\"\n",
+        	 type, p->state, iface->hostname, iface->port,
 		 (p->type & CUPS_PRINTER_CLASS) ? "classes" : "printers",
-		 p->name, p->location ? p->location : "",
-		 p->info ? p->info : "",
-		 p->make_model ? p->make_model : "Unknown");
+		 p->name, location ? location : "",
+		 info ? info : "",
+		 make_model ? make_model : "Unknown");
 
 	bytes = strlen(packet);
 
@@ -803,9 +860,9 @@ SendCUPSBrowse(printer_t *p)		/* I - Printer to send */
 
       snprintf(packet, sizeof(packet), "%x %x %s \"%s\" \"%s\" \"%s\"\n",
        	       type, p->state, p->uri,
-	       p->location ? p->location : "",
-	       p->info ? p->info : "",
-	       p->make_model ? p->make_model : "Unknown");
+	       location ? location : "",
+	       info ? info : "",
+	       make_model ? make_model : "Unknown");
 
       bytes = strlen(packet);
       LogMessage(L_DEBUG2, "SendBrowseList: (%d bytes to %x) %s", bytes,
@@ -823,12 +880,25 @@ SendCUPSBrowse(printer_t *p)		/* I - Printer to send */
 	           b - Browsers + 1, strerror(errno));
 
         if (i > 1)
-	  memcpy(b, b + 1, (i - 1) * sizeof(dirsvc_addr_t));
+	  memmove(b, b + 1, (i - 1) * sizeof(dirsvc_addr_t));
 
 	b --;
 	NumBrowsers --;
       }
     }
+
+ /*
+  * If we made copies of strings be sure to free them...
+  */
+
+  if (make_model != p->make_model)
+    free(make_model);
+
+  if (location != p->location)
+    free(location);
+
+  if (info != p->info)
+    free(info);
 }
 
 
@@ -844,10 +914,10 @@ StartBrowsing(void)
   printer_t		*p;	/* Pointer to current printer/class */
 
 
-  if (!Browsing || !BrowseProtocols)
+  if (!Browsing || !(BrowseLocalProtocols | BrowseRemoteProtocols))
     return;
 
-  if (BrowseProtocols & BROWSE_CUPS)
+  if ((BrowseLocalProtocols | BrowseRemoteProtocols) & BROWSE_CUPS)
   {
    /*
     * Create the broadcast socket...
@@ -857,7 +927,8 @@ StartBrowsing(void)
     {
       LogMessage(L_ERROR, "StartBrowsing: Unable to create broadcast socket - %s.",
         	 strerror(errno));
-      BrowseProtocols &= ~BROWSE_CUPS;
+      BrowseLocalProtocols &= ~BROWSE_CUPS;
+      BrowseRemoteProtocols   &= ~BROWSE_CUPS;
       return;
     }
 
@@ -878,7 +949,8 @@ StartBrowsing(void)
 #endif /* WIN32 */
 
       BrowseSocket    = -1;
-      BrowseProtocols &= ~BROWSE_CUPS;
+      BrowseLocalProtocols &= ~BROWSE_CUPS;
+      BrowseRemoteProtocols   &= ~BROWSE_CUPS;
       return;
     }
 
@@ -903,9 +975,16 @@ StartBrowsing(void)
 #endif /* WIN32 */
 
       BrowseSocket    = -1;
-      BrowseProtocols &= ~BROWSE_CUPS;
+      BrowseLocalProtocols &= ~BROWSE_CUPS;
+      BrowseRemoteProtocols   &= ~BROWSE_CUPS;
       return;
     }
+
+   /*
+    * Close the socket on exec...
+    */
+
+    fcntl(BrowseSocket, F_SETFD, fcntl(BrowseSocket, F_GETFD) | FD_CLOEXEC);
 
    /*
     * Finally, add the socket to the input selection set...
@@ -920,7 +999,7 @@ StartBrowsing(void)
     BrowseSocket = -1;
 
 #ifdef HAVE_LIBSLP
-  if (BrowseProtocols & BROWSE_SLP)
+  if ((BrowseLocalProtocols | BrowseRemoteProtocols) & BROWSE_SLP)
   {
    /* 
     * Open SLP handle...
@@ -929,36 +1008,37 @@ StartBrowsing(void)
     if (SLPOpen("en", SLP_FALSE, &BrowseSLPHandle) != SLP_OK)
     {
       LogMessage(L_ERROR, "Unable to open an SLP handle; disabling SLP browsing!");
-      BrowseProtocols &= ~BROWSE_SLP;
+      BrowseLocalProtocols &= ~BROWSE_SLP;
+      BrowseRemoteProtocols   &= ~BROWSE_SLP;
     }
 
     BrowseSLPRefresh = 0;
   }
 #endif /* HAVE_LIBSLP */
 
-#ifdef HAVE_MDNS
-  if (BrowseProtocols & BROWSE_MDNS)
+#ifdef HAVE_DNSSD
+  if (BrowseRemoteProtocols & BROWSE_DNSSD)
   {
-    DNSServiceErrorType	se;	/* mDNS errors */
+    DNSServiceErrorType	se;	/* dnssd errors */
 
-    mDNSBrowsing = 1;
+    dnssdBrowsing = 1;
 
    /*
     * Start browsing for services
     */
 
-    if ((se = DNSServiceBrowse(&BrowseMDNSRef, 0, 0, mDNSIPPRegType,
-				NULL, mDNSBrowseCallback, NULL)) == 0)
+    if ((se = DNSServiceBrowse(&BrowseDNSSDRef, 0, 0, dnssdIPPRegType,
+				NULL, dnssdBrowseCallback, NULL)) == 0)
     {
-      BrowseMDNSfd = DNSServiceRefSockFD(BrowseMDNSRef);
+      BrowseDNSSDfd = DNSServiceRefSockFD(BrowseDNSSDRef);
 
       LogMessage(L_DEBUG2, "StartBrowsing: Adding fd %d to InputSet...",
-               BrowseMDNSfd);
+               BrowseDNSSDfd);
 
-      FD_SET(BrowseMDNSfd, InputSet);
+      FD_SET(BrowseDNSSDfd, InputSet);
     }
   }
-#endif /* HAVE_MDNS */
+#endif /* HAVE_DNSSD */
 
  /*
   * Register the individual printers
@@ -983,7 +1063,6 @@ StartPolling(void)
   char		bport[10];	/* Browser port */
   char		interval[10];	/* Poll interval */
   int		statusfds[2];	/* Status pipe */
-  int		fd;		/* Current file descriptor */
 #if defined(HAVE_SIGACTION) && !defined(HAVE_SIGSET)
   struct sigaction action;	/* POSIX signal handler */
 #endif /* HAVE_SIGACTION && !HAVE_SIGSET */
@@ -1015,7 +1094,7 @@ StartPolling(void)
   * polling daemon...
   */
 
-  if (pipe(statusfds))
+  if (cupsdOpenPipe(statusfds))
   {
     LogMessage(L_ERROR, "Unable to create polling status pipes - %s.",
 	       strerror(errno));
@@ -1082,9 +1161,6 @@ StartPolling(void)
 
       close(2);
       dup(statusfds[1]);
-
-      for (fd = 3; fd < MaxFDs; fd ++)
-	close(fd);
 
      /*
       * Unblock signals before doing the exec...
@@ -1155,10 +1231,10 @@ StopBrowsing(void)
 {
   printer_t		*p;	/* Pointer to current printer/class */
 
-  if (!Browsing || !BrowseProtocols)
+  if (!Browsing || !(BrowseLocalProtocols | BrowseRemoteProtocols))
     return;
 
-  if (BrowseProtocols & BROWSE_CUPS)
+  if ((BrowseLocalProtocols | BrowseRemoteProtocols) & BROWSE_CUPS)
   {
    /*
     * Close the socket and remove it from the input selection set.
@@ -1181,7 +1257,7 @@ StopBrowsing(void)
   }
 
 #ifdef HAVE_LIBSLP
-  if (BrowseProtocols & BROWSE_SLP)
+  if ((BrowseLocalProtocols | BrowseRemoteProtocols) & BROWSE_SLP)
   {
    /* 
     * Close SLP handle...
@@ -1191,24 +1267,24 @@ StopBrowsing(void)
   }
 #endif /* HAVE_LIBSLP */
 
-#ifdef HAVE_MDNS
-  if (BrowseProtocols & BROWSE_MDNS)
+#ifdef HAVE_DNSSD
+  if ((BrowseLocalProtocols | BrowseRemoteProtocols) & BROWSE_DNSSD)
   {
-    mDNSBrowsing = 0;
+    dnssdBrowsing = 0;
 
    /*
     * Close the socket to stop browsing
     */
 
-    if (BrowseMDNSRef)
+    if (BrowseDNSSDRef)
     {
       LogMessage(L_DEBUG2, "StopBrowsing: Removing fd %d from InputSet...",
-        	 BrowseMDNSfd);
+        	 BrowseDNSSDfd);
 
-      FD_CLR(BrowseMDNSfd, InputSet);
-      DNSServiceRefDeallocate(BrowseMDNSRef);
-      BrowseMDNSRef = NULL;
-      BrowseMDNSfd = -1;
+      FD_CLR(BrowseDNSSDfd, InputSet);
+      DNSServiceRefDeallocate(BrowseDNSSDRef);
+      BrowseDNSSDRef = NULL;
+      BrowseDNSSDfd = -1;
     }
   }
 
@@ -1217,8 +1293,8 @@ StopBrowsing(void)
   */
 
   for (p = Printers; p != NULL; p = p->next)
-    BrowseDeregisterPrinter(p);
-#endif /* HAVE_MDNS */
+    BrowseDeregisterPrinter(p, 1);
+#endif /* HAVE_DNSSD */
 }
 
 
@@ -1261,7 +1337,7 @@ UpdateCUPSBrowse(void)
   int		auth;			/* Authorization status */
   int		len;			/* Length of name string */
   int		bytes;			/* Number of bytes left */
-  char		packet[1540],		/* Broadcast packet */
+  char		packet[1541],		/* Broadcast packet */
 		*pptr;			/* Pointer into packet */
   struct sockaddr_in srcaddr;		/* Source address */
   char		srcname[1024];		/* Source hostname */
@@ -1286,8 +1362,8 @@ UpdateCUPSBrowse(void)
   */
 
   len = sizeof(srcaddr);
-  if ((bytes = recvfrom(BrowseSocket, packet, sizeof(packet), 0, 
-                        (struct sockaddr *)&srcaddr, &len)) <= 0)
+  if ((bytes = recvfrom(BrowseSocket, packet, sizeof(packet) - 1, 0, 
+                        (struct sockaddr *)&srcaddr, &len)) < 0)
   {
    /*
     * "Connection refused" is returned under Linux if the destination port
@@ -1295,7 +1371,7 @@ UpdateCUPSBrowse(void)
     * error here and ignore it for now...
     */
 
-    if (errno != ECONNREFUSED)
+    if (errno != ECONNREFUSED && errno != EAGAIN)
     {
       LogMessage(L_ERROR, "Browse recv failed - %s.", strerror(errno));
       LogMessage(L_ERROR, "Browsing turned off.");
@@ -1495,7 +1571,7 @@ UpdateCUPSBrowse(void)
   if (strcasecmp(host, ServerName) == 0)
     return;
 
-  NetIFUpdate();
+  NetIFUpdate(FALSE);
 
   for (iface = NetIFList; iface != NULL; iface = iface->next)
     if (strcasecmp(host, iface->hostname) == 0)
@@ -2119,14 +2195,14 @@ UpdateSLPBrowse(void)
 
 void BrowseRegisterPrinter(printer_t *p)
 {
-  if (!Browsing || !BrowseProtocols || !BrowseInterval || !Browsers ||
+  if (!Browsing || !BrowseLocalProtocols || !BrowseInterval || !Browsers ||
       (p->type & (CUPS_PRINTER_REMOTE | CUPS_PRINTER_IMPLICIT)))
     return;
 
-#ifdef HAVE_MDNS
-    if ((BrowseProtocols & BROWSE_MDNS))
-      mDNSRegisterPrinter(p);    
-#endif /* HAVE_MDNS */
+#ifdef HAVE_DNSSD
+    if ((BrowseLocalProtocols & BROWSE_DNSSD))
+      dnssdRegisterPrinter(p);    
+#endif /* HAVE_DNSSD */
 }
 
 
@@ -2136,36 +2212,74 @@ void BrowseRegisterPrinter(printer_t *p)
  *				 to remote printers.
  */
 
-void BrowseDeregisterPrinter(printer_t *p)
+void BrowseDeregisterPrinter(printer_t *p, 	/* I - Printer to register */
+			     int delete)	/* I - Printer being permanently removed */
 {
-#ifdef HAVE_MDNS
-    if ((BrowseProtocols & BROWSE_MDNS))
-      mDNSDeregisterPrinter(p);
-#endif /* HAVE_MDNS */
+  cups_ptype_t savedtype = p->type;
+
+ /*
+  * Only deregister local printers...
+  */
+
+  if (!(p->type & CUPS_PRINTER_REMOTE))
+  {
+    /*
+     * Mark the printer for deletion...
+     */
+
+    p->type |= CUPS_PRINTER_DELETE;
+
+    /*
+     * Announce the deletion...
+     */
+
+    if ((BrowseLocalProtocols & BROWSE_CUPS))
+      SendCUPSBrowse(p);
+
+    /*
+     * Restore it's type...
+     */
+
+      p->type = savedtype;
+
+#ifdef HAVE_LIBSLP
+#endif /* HAVE_LIBSLP */
+
+#ifdef HAVE_DNSSD
+    if (delete && (BrowseLocalProtocols & BROWSE_DNSSD))
+      dnssdDeregisterPrinter(p);
+#endif /* HAVE_DNSSD */
+  }
 }
 
 
-#ifdef HAVE_MDNS
+#ifdef HAVE_DNSSD
 
-/* =============================== HAVE_MDNS ============================== */
+/* =============================== HAVE_DNSSD ============================== */
 
 /*
- * 'mDNSRegisterPrinter()' - Start sending broadcast information for a printer
+ * 'dnssdRegisterPrinter()' - Start sending broadcast information for a printer
  *				or update the broadcast contents.
  */
 
 static void 
-mDNSRegisterPrinter(printer_t *p)
+dnssdRegisterPrinter(printer_t *p)
 {
-  DNSServiceErrorType	se;		/* mDNS errors */
-  char			*txt_record,	/* TXT record buffer */
-			*name;		/* Service name */
-  int			txt_len;	/* TXT record length */
+  DNSServiceErrorType	se;			/* dnssd errors */
+  char			*txt_record,		/* TXT record buffer */
+			*name;			/* Service name */
+  int			txt_len,		/* TXT record length */
+			i,			/* Looping var */
+			port;			/* IPP port number */
+  CFStringRef		computerNameRef;	/* Computer name CFString */
+  CFStringEncoding	nameEncoding;		/* Computer name encoding */
+  CFMutableStringRef	shortNameRef;		/* Mutable name string */
+  CFIndex		nameLength;		/* Name string length */
+  char			str_buffer[1024];	/* C-string buffer */
+  const char		*computerName;  	/* Computer name c-string ptr */
 
-  if (!mDNSBrowsing)
-    return;
 
-  LogMessage(L_DEBUG, "mDNSRegisterPrinter(%s) %s\n", p->name, !p->mdns_lpd_ref ? "new" : "update");
+  LogMessage(L_DEBUG, "dnssdRegisterPrinter(%s) %s\n", p->name, !p->dnssd_ipp_ref ? "new" : "update");
 
  /*
   * If per-printer sharing is disabled make sure we're not registered before returning
@@ -2173,127 +2287,176 @@ mDNSRegisterPrinter(printer_t *p)
 
   if (!p->shared)
   {
-    if (p->mdns_lpd_ref)
-      mDNSDeregisterPrinter(p);
+    dnssdDeregisterPrinter(p);
     return;
   }
 
  /*
-  * If an existing printer was renamed just start over
+  * Get the computer name as a c-string...
   */
 
-  name = (p->info && strlen(p->info)) ? p->info : p->name;
+  computerName = NULL;
+  if ((computerNameRef = SCDynamicStoreCopyComputerName(mSysConfigStore, &nameEncoding)))
+    if ((computerName = CFStringGetCStringPtr(computerNameRef, kCFStringEncodingUTF8)) == NULL)
+      if (CFStringGetCString(computerNameRef, str_buffer, sizeof(str_buffer), kCFStringEncodingUTF8))
+	computerName = str_buffer;
+
+ /*
+  * The registered name takes the form of "<printer-info> @ <computer name>"...
+  */
+
+  name = NULL;
+  if (computerName)
+    SetStringf(&name, "%s @ %s", (p->info && strlen(p->info)) ? p->info : p->name, computerName);
+  else
+    SetString(&name, (p->info && strlen(p->info)) ? p->info : p->name);
+
+  if (computerNameRef)
+    CFRelease(computerNameRef);
+
+ /*
+  * If an existing printer was renamed unregister it and start over...
+  */
 
   if (p->reg_name && strcmp(p->reg_name, name))
-    mDNSDeregisterPrinter(p);
+    dnssdDeregisterPrinter(p);
 
-  if (p->mdns_lpd_ref == NULL)
+  txt_record = dnssdBuildTxtRecord(&txt_len, p);
+
+  if (p->dnssd_ipp_ref == NULL)
   {
    /*
-    * Initial _printer (lpd) registration. The port is zero to register this
-    * as a "placeholder service."
+    * Initial registration...
     */
 
     SetString(&p->reg_name, name);
 
-    if ((se = DNSServiceRegister(&p->mdns_lpd_ref, 0, 0, name, mDNSLPDRegType,
-				NULL, NULL, 0, 0, NULL,
-				mDNSRegisterCallback, p)) == 0)
-    {
-      p->mdns_lpd_fd = DNSServiceRefSockFD(p->mdns_lpd_ref);
+    port = ippPort();
+    for (i = 0; i < NumListeners; i++)
+      if (Listeners[i].address.sin_family == AF_INET)
+      {
+	port = ntohs(Listeners[i].address.sin_port);
+	break;
+      }
 
-      LogMessage(L_DEBUG2, "mDNSRegisterPrinter: Adding fd %d to InputSet...",
-               p->mdns_lpd_fd);
+    se = DNSServiceRegister(&p->dnssd_ipp_ref, 0, 0, name, dnssdIPPRegType, 
+			    NULL, NULL, htons(port), txt_len, txt_record,
+			    dnssdRegisterCallback, p);
 
-      FD_SET(p->mdns_lpd_fd, InputSet);
-    }
-  }
-
-  if (p->mdns_ipp_ref != NULL)
-  {
    /*
-    * Update existing _ipp registration
+    * In case the name is too long try again shortening the string one character at a time...
     */
 
-    txt_record = mDNSBuildTxtRecord(&txt_len, p);
-
-    if (txt_len != p->ipp_txt_len || memcmp(txt_record, p->ipp_txt_record, txt_len) != 0)
+    if (se == kDNSServiceErr_BadParam)
     {
-      free(p->ipp_txt_record);
-      p->ipp_txt_record = txt_record;
-      p->ipp_txt_len = txt_len;
+      if ((shortNameRef = CFStringCreateMutable(NULL, 0)) != NULL)
+      {
+	CFStringAppendCString(shortNameRef, name, kCFStringEncodingUTF8);
+        nameLength = CFStringGetLength(shortNameRef);
 
-      /* A TTL of 0 means use record's original value (Radar 3176248) */
-      se = DNSServiceUpdateRecord(p->mdns_ipp_ref, NULL, 0,
-				    txt_len, txt_record, 0);
+	while (se == kDNSServiceErr_BadParam && nameLength > 1)
+	{
+	  CFStringDelete(shortNameRef, CFRangeMake(--nameLength, 1));
+	  if (CFStringGetCString(shortNameRef, str_buffer, sizeof(str_buffer), kCFStringEncodingUTF8))
+	  {
+	    se = DNSServiceRegister(&p->dnssd_ipp_ref, 0, 0, str_buffer, dnssdIPPRegType, 
+				    NULL, NULL, htons(port), txt_len, txt_record,
+				    dnssdRegisterCallback, p);
+	  }
+	}
+	CFRelease(shortNameRef);
+      }
+    }
+
+    if (se == kDNSServiceErr_NoError)
+    {
+      p->dnssd_ipp_fd = DNSServiceRefSockFD(p->dnssd_ipp_ref);
+      p->txt_record = txt_record;
+      p->txt_len = txt_len;
+      txt_record = NULL;
+
+      LogMessage(L_DEBUG2, "dnssdRegisterCallback: Adding fd %d to InputSet...",
+               p->dnssd_ipp_fd);
+
+      FD_SET(p->dnssd_ipp_fd, InputSet);
     }
     else
-    {
-      free(txt_record);
-    }
+      LogMessage(L_WARN, "dnssd registration of \"%s\" failed with %d", p->name, se);
+
   }
+  else if (txt_len != p->txt_len || memcmp(txt_record, p->txt_record, txt_len) != 0)
+  {
+   /*
+    * if the txt record changed update the existing registration...
+    */
+
+    /* A TTL of 0 means use record's original value (Radar 3176248) */
+    se = DNSServiceUpdateRecord(p->dnssd_ipp_ref, NULL, 0,
+				    txt_len, txt_record, 0);
+
+    if (p->txt_record)
+      free(p->txt_record);
+    p->txt_record = txt_record;
+    p->txt_len = txt_len;
+    txt_record = NULL;
+  }
+
+  if (txt_record)
+    free(txt_record);
+
+  if (name)
+    free(name);
 }
 
 
 /*
- * 'mDNSDeregisterPrinter()' - Stop sending broadcast information for a printer
+ * 'dnssdDeregisterPrinter()' - Stop sending broadcast information for a printer
  */
 
-static void mDNSDeregisterPrinter(printer_t *p)
+static void dnssdDeregisterPrinter(printer_t *p)
 {
-  LogMessage(L_DEBUG, "mDNSDeregisterPrinter(%s)", p->name);
+  LogMessage(L_DEBUG, "dnssdDeregisterPrinter(%s)", p->name);
 
  /*
   * Closing the socket deregisters the service
   */
 
-  if (p->mdns_ipp_ref)
+  if (p->dnssd_ipp_ref)
   {
-    LogMessage(L_DEBUG2, "mDNSDeregisterPrinter: Removing fd %d from InputSet...",
-	       p->mdns_ipp_fd);
+    LogMessage(L_DEBUG2, "dnssdDeregisterPrinter: Removing fd %d from InputSet...",
+	       p->dnssd_ipp_fd);
 
-    FD_CLR(p->mdns_ipp_fd, InputSet);
-    DNSServiceRefDeallocate(p->mdns_ipp_ref);
-    p->mdns_ipp_ref = NULL;
-    p->mdns_ipp_fd = -1;
+    FD_CLR(p->dnssd_ipp_fd, InputSet);
+    DNSServiceRefDeallocate(p->dnssd_ipp_ref);
+    p->dnssd_ipp_ref = NULL;
+    p->dnssd_ipp_fd = -1;
   }
 
-  if (p->mdns_lpd_ref)
+  if (p->dnssd_query_ref)
   {
-    LogMessage(L_DEBUG2, "mDNSDeregisterPrinter: Removing fd %d from InputSet...",
-	       p->mdns_lpd_fd);
+    LogMessage(L_DEBUG2, "dnssdDeregisterPrinter: Removing fd %d from InputSet...",
+	       p->dnssd_query_fd);
 
-    FD_CLR(p->mdns_lpd_fd, InputSet);
-    DNSServiceRefDeallocate(p->mdns_lpd_ref);
-    p->mdns_lpd_ref = NULL;
-    p->mdns_lpd_fd = -1;
-  }
-
-  if (p->mdns_query_ref)
-  {
-    LogMessage(L_DEBUG2, "mDNSDeregisterPrinter: Removing fd %d from InputSet...",
-	       p->mdns_query_fd);
-
-    FD_CLR(p->mdns_query_fd, InputSet);
-    DNSServiceRefDeallocate(p->mdns_query_ref);
-    p->mdns_query_ref = NULL;
-    p->mdns_query_fd = -1;
+    FD_CLR(p->dnssd_query_fd, InputSet);
+    DNSServiceRefDeallocate(p->dnssd_query_ref);
+    p->dnssd_query_ref = NULL;
+    p->dnssd_query_fd = -1;
   }
 
   ClearString(&p->reg_name);
   ClearString(&p->service_name);
   ClearString(&p->host_target);
-  ClearString(&p->ipp_txt_record);
+  ClearString(&p->txt_record);
 
-  p->browse_protocol &= ~BROWSE_MDNS;
+  p->browse_protocol &= ~BROWSE_DNSSD;
 }
 
 
 /*
- * 'mDNSRegisterCallback()' - DNSServiceRegister callback
+ * 'dnssdRegisterCallback()' - DNSServiceRegister callback
  */
 
-static void mDNSRegisterCallback(
+static void dnssdRegisterCallback(
     DNSServiceRef	sdRef,		/* I - DNS Service reference	*/
     DNSServiceFlags	flags,		/* I - Reserved for future use	*/
     DNSServiceErrorType	errorCode,	/* I - Error code		*/
@@ -2302,12 +2465,9 @@ static void mDNSRegisterCallback(
     const char		*domain,   	/* I - Domain. ".local" for now */
     void		*context)	/* I - User-defined context	*/
 {
-  DNSServiceErrorType	se;		/* mDNS errors */
-  char			*txt_record;	/* TXT record buffer */
-  int			txt_len;	/* TXT record length */
   printer_t		*p;		/* Printer information */
 
-  LogMessage(L_DEBUG, "mDNSRegisterCallback(%s, %s)\n", name, regtype);
+  LogMessage(L_DEBUG, "dnssdRegisterCallback(%s, %s)\n", name, regtype);
 
   if (errorCode != 0)
   {
@@ -2315,43 +2475,20 @@ static void mDNSRegisterCallback(
     return;
   }
 
-  p = (printer_t*)context;
-
   /*
-  *  If this is the registration callback for printer (lpd) then proceed to
-  *  register ipp
+  *  Remember the registered service name...
   */
 
-  if (sdRef == p->mdns_lpd_ref)
-  {
-    SetString(&p->service_name, name);
-
-    txt_record = mDNSBuildTxtRecord(&txt_len, p);
-
-    if ((se = DNSServiceRegister(&p->mdns_ipp_ref, flags, 0, name, mDNSIPPRegType,
-			    NULL, NULL, 631, txt_len, txt_record,
-			    mDNSRegisterCallback, context)) == 0)
-    {
-      p->ipp_txt_record = txt_record;
-      p->ipp_txt_len = txt_len;
-      p->mdns_ipp_fd = DNSServiceRefSockFD(p->mdns_ipp_ref);
-
-      LogMessage(L_DEBUG2, "mDNSRegisterCallback: Adding fd %d to InputSet...",
-               p->mdns_ipp_fd);
-
-      FD_SET(p->mdns_ipp_fd, InputSet);
-    }
-    else
-      free(txt_record);
-  }
+  p = (printer_t*)context;
+  SetString(&p->service_name, name);
 }
 
 
 /*
- * 'mDNSBrowseCallback()' - DNSServiceBrowse callback
+ * 'dnssdBrowseCallback()' - DNSServiceBrowse callback
  */
 
-static void mDNSBrowseCallback(
+static void dnssdBrowseCallback(
     DNSServiceRef		sdRef,		/* I - DNS Service reference	*/
     DNSServiceFlags		flags,		/* I - Reserved for future use	*/
     uint32_t			interfaceIndex,	/* I - 0 for all interfaces	*/
@@ -2361,12 +2498,12 @@ static void mDNSBrowseCallback(
     const char			*replyDomain,   /* I - Domain. ".local" for now */
     void			*context)	/* I - User-defined context	*/
 {
-  DNSServiceErrorType	se;			/* mDNS errors		*/
+  DNSServiceErrorType	se;			/* dnssd errors		*/
   printer_t		*p;			/* Printer information	*/
-  mdns_resolve_t	*mdns_resolve,		/* Resolve request */
+  dnssd_resolve_t	*dnssd_resolve,		/* Resolve request */
     			*prev;			/* Previous resolve request */
 
-  LogMessage(L_DEBUG, "mDNSBrowseCallback(%s) 0x%X %s\n", service_name, (unsigned int)flags,
+  LogMessage(L_DEBUG, "dnssdBrowseCallback(%s) 0x%X %s\n", service_name, (unsigned int)flags,
 		(flags & kDNSServiceFlagsAdd) ? "Add" : "Remove" );
 
   if (errorCode != 0)
@@ -2387,7 +2524,7 @@ static void mDNSBrowseCallback(
   {
     if (p)
     {
-      LogMessage(L_DEBUG, "mDNSBrowseCallback() ignoring existing printer");
+      LogMessage(L_DEBUG, "dnssdBrowseCallback() ignoring existing printer");
       return;
     }
 
@@ -2395,34 +2532,34 @@ static void mDNSBrowseCallback(
     * Resolve this service to get the host name
     */
 
-    mdns_resolve = calloc(1, sizeof(mdns_resolve_t));
-    if (mdns_resolve != NULL)
+    dnssd_resolve = calloc(1, sizeof(dnssd_resolve_t));
+    if (dnssd_resolve != NULL)
     {
-      if ((se = DNSServiceResolve(&mdns_resolve->sdRef, flags, interfaceIndex, service_name,
-			   regtype, replyDomain, mDNSResolveCallback, NULL)) == 0)
+      if ((se = DNSServiceResolve(&dnssd_resolve->sdRef, flags, interfaceIndex, service_name,
+			   regtype, replyDomain, dnssdResolveCallback, NULL)) == 0)
       {
-	mdns_resolve->fd = DNSServiceRefSockFD(mdns_resolve->sdRef);
+	dnssd_resolve->fd = DNSServiceRefSockFD(dnssd_resolve->sdRef);
 
-        LogMessage(L_DEBUG2, "mDNSBrowseCallback: Adding fd %d to InputSet...",
-		   mdns_resolve->fd);
+        LogMessage(L_DEBUG2, "dnssdBrowseCallback: Adding fd %d to InputSet...",
+		   dnssd_resolve->fd);
 
-        FD_SET(mdns_resolve->fd, InputSet);
+        FD_SET(dnssd_resolve->fd, InputSet);
 
        /*
         * We'll need the service name in the resolve callback
         */
 
-	SetString(&mdns_resolve->service_name, service_name);
+	SetString(&dnssd_resolve->service_name, service_name);
 
        /*
         * Insert it into the pending resolve list
         */
 
-	mdns_resolve->next = MDNSPendingResolves;
-	MDNSPendingResolves = mdns_resolve;
+	dnssd_resolve->next = DNSSDPendingResolves;
+	DNSSDPendingResolves = dnssd_resolve;
       }
       else
-        free(mdns_resolve);
+        free(dnssd_resolve);
     }
   }
   else
@@ -2439,21 +2576,21 @@ static void mDNSBrowseCallback(
       * Remove any pending resolve requests for this service
       */
 
-      for (prev = NULL, mdns_resolve = MDNSPendingResolves; mdns_resolve; prev = mdns_resolve, mdns_resolve = mdns_resolve->next)
-	if (!strcmp(service_name, mdns_resolve->service_name))
+      for (prev = NULL, dnssd_resolve = DNSSDPendingResolves; dnssd_resolve; prev = dnssd_resolve, dnssd_resolve = dnssd_resolve->next)
+	if (!strcmp(service_name, dnssd_resolve->service_name))
 	{
 	  if (prev == NULL)
-	    MDNSPendingResolves = mdns_resolve->next;
+	    DNSSDPendingResolves = dnssd_resolve->next;
 	  else
-	    prev->next = mdns_resolve->next;
+	    prev->next = dnssd_resolve->next;
 
-	  LogMessage(L_DEBUG2, "mDNSBrowseCallback: Removing fd %d from InputSet...",
-		     mdns_resolve->fd);
+	  LogMessage(L_DEBUG2, "dnssdBrowseCallback: Removing fd %d from InputSet...",
+		     dnssd_resolve->fd);
 
-	  FD_CLR(mdns_resolve->fd, InputSet);
-	  DNSServiceRefDeallocate(mdns_resolve->sdRef);
+	  FD_CLR(dnssd_resolve->fd, InputSet);
+	  DNSServiceRefDeallocate(dnssd_resolve->sdRef);
 
-	  free(mdns_resolve);
+	  free(dnssd_resolve);
 	  break;
 	}
     }
@@ -2462,10 +2599,10 @@ static void mDNSBrowseCallback(
 
 
 /*
- * 'mDNSResolveCallback()' - DNSServiceResolve callback
+ * 'dnssdResolveCallback()' - DNSServiceResolve callback
  */
 
-static void mDNSResolveCallback(
+static void dnssdResolveCallback(
     DNSServiceRef		sdRef,		/* I - DNS Service reference	*/
     DNSServiceFlags		flags,		/* I - Reserved for future use	*/
     uint32_t			interfaceIndex,	/* I - 0 for all interfaces	*/
@@ -2477,7 +2614,7 @@ static void mDNSResolveCallback(
     const char			*txtRecord,	/* I - TXT reocrd		*/
     void			*context)	/* I - User-defined context	*/
 {
-  DNSServiceErrorType	se;			/* mDNS errors */
+  DNSServiceErrorType	se;			/* dnssd errors */
   char			uri[1024];		/* IPP URI */
   char			*txtvers,		/* TXT record version */
   			*rp,			/* Name */
@@ -2489,22 +2626,22 @@ static void mDNSResolveCallback(
   ipp_pstate_t		state;			/* State */
   unsigned int		type;			/* Type */
   printer_t		*p;			/* Printer information */
-  mdns_resolve_t	*mdns_resolve,		/* Current resolve request */
+  dnssd_resolve_t	*dnssd_resolve,		/* Current resolve request */
     			*prev;			/* Previous resolve request */
 
-  LogMessage(L_DEBUG, "mDNSResolveCallback(%s)\n", fullname);
+  LogMessage(L_DEBUG, "dnssdResolveCallback(%s)\n", fullname);
 
   /*
    * Find the matching request
    */
 
-  for (prev = NULL, mdns_resolve = MDNSPendingResolves; mdns_resolve; prev = mdns_resolve, mdns_resolve = mdns_resolve->next)
-    if (sdRef == mdns_resolve->sdRef)
+  for (prev = NULL, dnssd_resolve = DNSSDPendingResolves; dnssd_resolve; prev = dnssd_resolve, dnssd_resolve = dnssd_resolve->next)
+    if (sdRef == dnssd_resolve->sdRef)
       break;
 
-  if (!mdns_resolve)
+  if (!dnssd_resolve)
   {
-    LogMessage(L_ERROR, "mDNSResolveCallback missing request!");
+    LogMessage(L_ERROR, "dnssdResolveCallback missing request!");
     return;
   }
 
@@ -2513,21 +2650,21 @@ static void mDNSResolveCallback(
   */
 
   if (prev == NULL)
-    MDNSPendingResolves = mdns_resolve->next;
+    DNSSDPendingResolves = dnssd_resolve->next;
   else
-    prev->next = mdns_resolve->next;
+    prev->next = dnssd_resolve->next;
 
-  LogMessage(L_DEBUG2, "mDNSResolveCallback: Removing fd %d from InputSet...",
-	     mdns_resolve->fd);
+  LogMessage(L_DEBUG2, "dnssdResolveCallback: Removing fd %d from InputSet...",
+	     dnssd_resolve->fd);
 
-  FD_CLR(mdns_resolve->fd, InputSet);
-  DNSServiceRefDeallocate(mdns_resolve->sdRef);
+  FD_CLR(dnssd_resolve->fd, InputSet);
+  DNSServiceRefDeallocate(dnssd_resolve->sdRef);
 
   if (errorCode != 0)
   {
     LogMessage(L_ERROR, "DNSServiceResolve failed with error %d", (int)errorCode);
-    ClearString(&mdns_resolve->service_name);
-    free(mdns_resolve);
+    ClearString(&dnssd_resolve->service_name);
+    free(dnssd_resolve);
     return;
   }
 
@@ -2535,12 +2672,12 @@ static void mDNSResolveCallback(
   * Search the TXT record for the keys we're interested in
   */
 
-  mDNSFindAttr(txtRecord, txt_len, "txtvers", &txtvers);
-  mDNSFindAttr(txtRecord, txt_len, "rp", &rp);
-  mDNSFindAttr(txtRecord, txt_len, "ty", &make_model);
-  mDNSFindAttr(txtRecord, txt_len, "note", &location);
-  mDNSFindAttr(txtRecord, txt_len, "printer-state", &state_str);
-  mDNSFindAttr(txtRecord, txt_len, "printer-type", &type_str);
+  dnssdFindAttr(txtRecord, txt_len, "txtvers", &txtvers);
+  dnssdFindAttr(txtRecord, txt_len, "rp", &rp);
+  dnssdFindAttr(txtRecord, txt_len, "ty", &make_model);
+  dnssdFindAttr(txtRecord, txt_len, "note", &location);
+  dnssdFindAttr(txtRecord, txt_len, "printer-state", &state_str);
+  dnssdFindAttr(txtRecord, txt_len, "printer-type", &type_str);
 
   if (type_str && state_str && rp)
   {
@@ -2555,9 +2692,9 @@ static void mDNSResolveCallback(
     * otherwise set it to the service name.
     */
 
-    info = !strcmp(mdns_resolve->service_name, rp) ? NULL : mdns_resolve->service_name;
+    info = !strcmp(dnssd_resolve->service_name, rp) ? NULL : dnssd_resolve->service_name;
 
-    p = ProcessBrowseData(uri, type, state, location, info, make_model, BROWSE_MDNS);
+    p = ProcessBrowseData(uri, type, state, location, info, make_model, BROWSE_DNSSD);
 
     /*
      * If we matched an existing printer or created a new one set it's service name.
@@ -2565,23 +2702,23 @@ static void mDNSResolveCallback(
 
     if (p)
     {
-      SetString(&p->service_name, mdns_resolve->service_name);
+      SetString(&p->service_name, dnssd_resolve->service_name);
       SetString(&p->host_target, host_target);
 
-      if ((se = DNSServiceQueryRecord(&p->mdns_query_ref, 0, 0, fullname, ns_t_txt, ns_c_in, 
-    				mDNSQueryRecordCallback, p)) == 0)
+      if ((se = DNSServiceQueryRecord(&p->dnssd_query_ref, 0, 0, fullname, ns_t_txt, ns_c_in, 
+    				dnssdQueryRecordCallback, p)) == 0)
       {
-        p->mdns_query_fd = DNSServiceRefSockFD(p->mdns_query_ref);
+        p->dnssd_query_fd = DNSServiceRefSockFD(p->dnssd_query_ref);
 
-        LogMessage(L_DEBUG2, "mDNSResolveCallback: Adding fd %d to InputSet...",
-		   p->mdns_query_fd);
+        LogMessage(L_DEBUG2, "dnssdResolveCallback: Adding fd %d to InputSet...",
+		   p->dnssd_query_fd);
 
-        FD_SET(p->mdns_query_fd, InputSet);
+        FD_SET(p->dnssd_query_fd, InputSet);
       }
     }
   }
   else
-    LogMessage(L_DEBUG, "mDNSResolveCallback missing TXT record keys");
+    LogMessage(L_DEBUG, "dnssdResolveCallback missing TXT record keys");
 
   ClearString(&txtvers);
   ClearString(&rp);
@@ -2590,16 +2727,16 @@ static void mDNSResolveCallback(
   ClearString(&state_str);
   ClearString(&type_str);
 
-  ClearString(&mdns_resolve->service_name);
-  free(mdns_resolve);
+  ClearString(&dnssd_resolve->service_name);
+  free(dnssd_resolve);
 }
 
 
 /*
- * 'mDNSQueryRecordCallback()' - DNSServiceQueryRecord callback
+ * 'dnssdQueryRecordCallback()' - DNSServiceQueryRecord callback
  */
 
-static void mDNSQueryRecordCallback(
+static void dnssdQueryRecordCallback(
     DNSServiceRef		sdRef,		/* I - DNS Service reference */
     DNSServiceFlags		flags,		/* I - Reserved for future use	*/
     uint32_t			interfaceIndex,	/* I - 0 for all interfaces	*/
@@ -2623,7 +2760,7 @@ static void mDNSQueryRecordCallback(
   unsigned int	type;			/* Type */
   printer_t	*p;			/* Printer information */
 
-  LogMessage(L_DEBUG, "mDNSQueryRecordCallback(%s) %s\n", fullname, (flags & kDNSServiceFlagsAdd) ? "Add" : "Remove");
+  LogMessage(L_DEBUG, "dnssdQueryRecordCallback(%s) %s\n", fullname, (flags & kDNSServiceFlagsAdd) ? "Add" : "Remove");
 
   if (errorCode != 0)
   {
@@ -2640,12 +2777,12 @@ static void mDNSQueryRecordCallback(
      * Search the TXT record for the keys we're interested in
      */
 
-    mDNSFindAttr(rdata, rdlen, "txtvers", &txtvers);
-    mDNSFindAttr(rdata, rdlen, "rp", &rp);
-    mDNSFindAttr(rdata, rdlen, "ty", &make_model);
-    mDNSFindAttr(rdata, rdlen, "note", &location);
-    mDNSFindAttr(rdata, rdlen, "printer-state", &state_str);
-    mDNSFindAttr(rdata, rdlen, "printer-type", &type_str);
+    dnssdFindAttr(rdata, rdlen, "txtvers", &txtvers);
+    dnssdFindAttr(rdata, rdlen, "rp", &rp);
+    dnssdFindAttr(rdata, rdlen, "ty", &make_model);
+    dnssdFindAttr(rdata, rdlen, "note", &location);
+    dnssdFindAttr(rdata, rdlen, "printer-state", &state_str);
+    dnssdFindAttr(rdata, rdlen, "printer-type", &type_str);
 
     if (type_str && state_str && rp)
     {
@@ -2655,10 +2792,10 @@ static void mDNSQueryRecordCallback(
       snprintf(uri, sizeof(uri), "ipp://%s/%s/%s", p->host_target,
 		   (type & CUPS_PRINTER_CLASS) ? "classes" : "printers", rp);
 
-      ProcessBrowseData(uri, type, state, location, p->info, make_model, BROWSE_MDNS);
+      ProcessBrowseData(uri, type, state, location, p->info, make_model, BROWSE_DNSSD);
     }
     else
-      LogMessage(L_DEBUG, "mDNSQueryRecordCallback missing TXT record keys");
+      LogMessage(L_DEBUG, "dnssdQueryRecordCallback missing TXT record keys");
 
     ClearString(&txtvers);
     ClearString(&rp);
@@ -2671,15 +2808,16 @@ static void mDNSQueryRecordCallback(
 
 
 /*
- * 'mDNSBuildTxtRecord()' - Build a TXT record from printer info
+ * 'dnssdBuildTxtRecord()' - Build a TXT record from printer info
  */
 
-static char *mDNSBuildTxtRecord(int *txt_len,		/* O - TXT record length */
+static char *dnssdBuildTxtRecord(int *txt_len,		/* O - TXT record length */
 				printer_t *p)		/* I - Printer information */
 {
   int		i;			/* Looping var */
   char		type_str[32],		/* Type to string buffer */
 		state_str[32],		/* State to string buffer */
+		rp_str[1024],		/* Queue name string buffer */
 		*keyvalue[32][2];	/* Table of key/value pairs */
 
   i = 0;
@@ -2691,8 +2829,13 @@ static char *mDNSBuildTxtRecord(int *txt_len,		/* O - TXT record length */
   keyvalue[i  ][0] = "txtvers";
   keyvalue[i++][1] = "1";
 
+  keyvalue[i  ][0] = "qtotal";
+  keyvalue[i++][1] = "1";
+
   keyvalue[i  ][0] = "rp";
-  keyvalue[i++][1] = p->name;
+  keyvalue[i++][1] = rp_str;
+  snprintf(rp_str, sizeof(rp_str), "%s/%s", 
+	   (p->type & CUPS_PRINTER_CLASS) ? "classes" : "printers", p->name);
 
   keyvalue[i  ][0] = "ty";
   keyvalue[i++][1] = p->make_model;
@@ -2782,15 +2925,15 @@ static char *mDNSBuildTxtRecord(int *txt_len,		/* O - TXT record length */
   * Then pack them into a proper txt record...
   */
 
-  return mDNSPackTxtRecord(txt_len, keyvalue, i);
+  return dnssdPackTxtRecord(txt_len, keyvalue, i);
 }
 
 
 /*
- * 'mDNSPackTxtRecord()' - Pack an array of key/value pairs into the TXT record format
+ * 'dnssdPackTxtRecord()' - Pack an array of key/value pairs into the TXT record format
  */
 
-static char *mDNSPackTxtRecord(int *txt_len,		/* O - TXT record length	*/
+static char *dnssdPackTxtRecord(int *txt_len,		/* O - TXT record length	*/
 			      char *keyvalue[][2],	/* I - Table of key value pairs	*/
 			      int count)		/* I - Items in table		*/
 {
@@ -2843,10 +2986,10 @@ static char *mDNSPackTxtRecord(int *txt_len,		/* O - TXT record length	*/
 
 
 /*
- * mDNSFindAttr()' - Find a TXT record attribute value
+ * dnssdFindAttr()' - Find a TXT record attribute value
  */
 
-static int mDNSFindAttr(const unsigned char *txtRecord,	/* I - TXT record to search */
+static int dnssdFindAttr(const unsigned char *txtRecord,	/* I - TXT record to search */
 			int txt_len, 			/* I - Length of TXT record */
 			const char *key,		/* I - Key to match */
 			char **value)			/* O - Value string */
@@ -2891,8 +3034,8 @@ static int mDNSFindAttr(const unsigned char *txtRecord,	/* I - TXT record to sea
   return result;
 }
 
-#endif /* HAVE_MDNS */
+#endif /* HAVE_DNSSD */
 
 /*
- * End of "$Id: dirsvc.c,v 1.17 2004/06/05 03:49:46 jlovell Exp $".
+ * End of "$Id: dirsvc.c,v 1.39 2005/02/16 17:58:01 jlovell Exp $".
  */

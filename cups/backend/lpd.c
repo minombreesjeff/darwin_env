@@ -1,9 +1,9 @@
 /*
- * "$Id: lpd.c,v 1.25 2004/06/05 03:49:45 jlovell Exp $"
+ * "$Id: lpd.c,v 1.28 2005/01/24 20:31:01 jlovell Exp $"
  *
  *   Line Printer Daemon backend for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,7 +15,7 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3142 USA
+ *       Hollywood, Maryland 20636 USA
  *
  *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
@@ -32,6 +32,7 @@
  *   lpd_write()       - Write a buffer of data to an LPD server.
  *   rresvport()       - A simple implementation of rresvport().
  *   sigterm_handler() - Handle 'terminate' signals that stop the backend.
+ *   connectTimeout()  - Returns the connect timeout preference value.
  */
 
 /*
@@ -62,6 +63,8 @@
 #  include <netdb.h>
 #endif /* WIN32 */
 
+#include <CoreFoundation/CFNumber.h>
+#include <CoreFoundation/CFPreferences.h>
 
 /*
  * Globals...
@@ -107,6 +110,7 @@ static int	lpd_queue(const char *hostname, int port, const char *printer,
 static void	lpd_timeout(int sig);
 static int	lpd_write(int lpd_fd, char *buffer, int length);
 static void	sigterm_handler(int sig);
+static int	connectTimeout(void);
 
 
 /*
@@ -549,6 +553,10 @@ lpd_queue(const char *hostname,		/* I - Host to connect to */
   size_t		nbytes;		/* Number of bytes written */
   off_t			tbytes;		/* Total bytes written */
   char			buffer[8192];	/* Output buffer */
+  time_t		connect_time,	/* Time at first connect attempt */
+			connect_timeout;/* Connect timeout */
+  int			recoverableErrShown;
+					/* Recoverable error shown? */
 #if defined(HAVE_SIGACTION) && !defined(HAVE_SIGSET)
   struct sigaction	action;		/* Actions for POSIX signals */
 #endif /* HAVE_SIGACTION && !HAVE_SIGSET */
@@ -569,6 +577,14 @@ lpd_queue(const char *hostname,		/* I - Host to connect to */
 #else
   signal(SIGALRM, lpd_timeout);
 #endif /* HAVE_SIGSET */
+
+ /*
+  * Remember when we started trying to connect to the printer.
+  */
+
+  recoverableErrShown = 0;
+  connect_timeout = -1;
+  connect_time = time(NULL);
 
  /*
   * Loop forever trying to print the file...
@@ -608,7 +624,11 @@ lpd_queue(const char *hostname,		/* I - Host to connect to */
       else if (lport < 1)
 	lport = 1023;
 
+#ifdef HAVE_GETEUID
+      if (geteuid() || !reserve)
+#else
       if (getuid() || !reserve)
+#endif /* HAVE_GETEUID */
       {
        /*
 	* Just create a regular socket...
@@ -647,7 +667,17 @@ lpd_queue(const char *hostname,		/* I - Host to connect to */
 	if (error == ECONNREFUSED || error == EHOSTDOWN ||
             error == EHOSTUNREACH)
 	{
-	  fprintf(stderr, "WARNING: Network host \'%s\' is busy, down, or unreachable; will retry in 30 seconds...\n",
+	  if (connect_timeout == -1)
+	    connect_timeout = connectTimeout();
+
+	  if (connect_timeout && (time(NULL) - connect_time) > connect_timeout)
+	  {
+	    fprintf(stderr, "ERROR: Printer not responding\n");
+	    return (ETIMEDOUT);		 				/* Waiting too long... */
+	  }
+
+	  recoverableErrShown = true;
+	  fprintf(stderr, "WARNING: recoverable: Network host \'%s\' is busy, down, or unreachable; will retry in 30 seconds...\n",
                   hostname);
 	  sleep(30);
 	}
@@ -661,12 +691,24 @@ lpd_queue(const char *hostname,		/* I - Host to connect to */
 	}
 	else
 	{
-	  perror("ERROR: Unable to connect to printer; will retry in 30 seconds...");
+	  recoverableErrShown = true;
+	  perror("ERROR: recoverable: Unable to connect to printer; will retry in 30 seconds...");
           sleep(30);
 	}
       }
       else
 	break;
+    }
+
+    if (recoverableErrShown)
+    {
+     /*
+      * If we've shown a recoverable error make sure the printer proxies have a chance 
+      * to see the recovered message. Not pretty but necessary for now...
+      */
+
+      fprintf(stderr, "INFO: recovered: \n");
+      sleep(5);
     }
 
     fprintf(stderr, "INFO: Connected to %s...\n", hostname);
@@ -1042,5 +1084,28 @@ sigterm_handler(int sig)		/* I - Signal */
 
 
 /*
- * End of "$Id: lpd.c,v 1.25 2004/06/05 03:49:45 jlovell Exp $".
+ * 'connectTimeout()' - Returns the connect timeout preference value.
+ */
+
+static int connectTimeout()
+{
+  CFPropertyListRef value;
+  SInt32 connect_timeout = (7 * 24 * 60 * 60);	/* Default timeout is one week... */
+
+  value = CFPreferencesCopyValue(CFSTR("timeout"), CFSTR("com.apple.print.backends"),
+				 kCFPreferencesAnyUser, kCFPreferencesCurrentHost);
+  if (value != NULL)
+  {
+    if (CFGetTypeID(value) == CFNumberGetTypeID())
+      CFNumberGetValue(value, kCFNumberSInt32Type, &connect_timeout);
+
+    CFRelease(value);
+  }
+
+  return connect_timeout;
+}
+
+
+/*
+ * End of "$Id: lpd.c,v 1.28 2005/01/24 20:31:01 jlovell Exp $".
  */

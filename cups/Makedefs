@@ -1,9 +1,9 @@
 #
-# "$Id: Makedefs,v 1.42 2004/06/05 04:02:09 jlovell Exp $"
+# "$Id: Makedefs,v 1.50 2005/02/16 17:57:59 jlovell Exp $"
 #
 #   Common makefile definitions for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2005 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
 #       Attn: CUPS Licensing Information
 #       Easy Software Products
 #       44141 Airport View Drive, Suite 204
-#       Hollywood, Maryland 20636-3111 USA
+#       Hollywood, Maryland 20636 USA
 #
-#       Voice: (301) 373-9603
+#       Voice: (301) 373-9600
 #       EMail: cups-info@cups.org
 #         WWW: http://www.cups.org
 #
@@ -84,12 +84,12 @@ LIBZ		=	-lz
 #
 
 ARFLAGS		=	-rcv
-BACKLIBS	=	-framework IOKit -framework AppleTalk
+BACKLIBS	=	-framework CoreFoundation -framework IOKit
 CFLAGS		=	$(RC_CFLAGS) $(SSLFLAGS)   -I.. $(OPTIONS)
-COMMONLIBS	=	-framework CoreFoundation -framework IOKit
+COMMONLIBS	=	
 CXXFLAGS	=	$(RC_CFLAGS)   -I.. $(OPTIONS)
 CXXLIBS		=	-lsupc++
-DSOFLAGS	=	 $(RC_CFLAGS) -dynamiclib -lc
+DSOFLAGS	=	 $(RC_CFLAGS) -dynamiclib -single_module -lc
 DSOLIBS		=	$(LIBPNG) $(LIBTIFF) $(LIBJPEG) $(LIBZ) $(COMMONLIBS)
 IMGLIBS		=	 -lm
 LDFLAGS		=	-L../cups -L../filter $(RC_CFLAGS)  $(OPTIM)
@@ -100,9 +100,11 @@ NETLIBS		=
 OPTIM		=	-fPIC -Os -g -Wall 
 OPTIONS		=
 PAMLIBS		=	-lpam -ldl
-SSLFLAGS	=	-DOPENSSL_DISABLE_OLD_DES_SUPPORT
-SSLLIBS		=	-lssl -lcrypto
-MDNSLIBS	=	-framework CoreFoundation
+SSLFLAGS	=	
+SSLLIBS		=	 
+DNSSDLIBS	=	-framework CoreFoundation -framework SystemConfiguration
+LIBCUPSLIBS	=	-framework CoreFoundation
+CUPSDLIBS	=	-framework CoreFoundation -framework IOKit $(DNSSDLIBS)
 
 #
 # Directories...
@@ -188,5 +190,5 @@ PAMFILE		=	pam.darwin
 
 
 #
-# End of "$Id: Makedefs,v 1.42 2004/06/05 04:02:09 jlovell Exp $"
+# End of "$Id: Makedefs,v 1.50 2005/02/16 17:57:59 jlovell Exp $"
 #

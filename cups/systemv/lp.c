@@ -1,9 +1,9 @@
 /*
- * "$Id: lp.c,v 1.4 2004/05/21 19:42:31 jlovell Exp $"
+ * "$Id: lp.c,v 1.7 2005/01/04 22:10:52 jlovell Exp $"
  *
  *   "lp" command for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products.
+ *   Copyright 1997-2005 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -86,7 +86,8 @@ main(int  argc,		/* I - Number of command-line arguments */
 		*dest;		/* Selected destination */
   int		num_options;	/* Number of options */
   cups_option_t	*options;	/* Options */
-  int		silent;		/* Silent or verbose output? */
+  int		silent,		/* Silent or verbose output? */
+		opt_end;	/* End of options */
   char		buffer[8192];	/* Copy buffer */
   int		temp;		/* Temporary file descriptor */
   off_t		size;		/* Temporary file size */
@@ -114,6 +115,7 @@ main(int  argc,		/* I - Number of command-line arguments */
     return (0);
 #endif /* __sun */
 
+  opt_end     = 0;
   silent      = 0;
   printer     = NULL;
   num_dests   = 0;
@@ -125,7 +127,7 @@ main(int  argc,		/* I - Number of command-line arguments */
   job_id      = 0;
 
   for (i = 1; i < argc; i ++)
-    if (argv[i][0] == '-' && argv[i][1])
+    if (argv[i][0] == '-' && argv[i][1] && !opt_end)
       switch (argv[i][1])
       {
         case 'E' : /* Encrypt */
@@ -242,7 +244,10 @@ main(int  argc,		/* I - Number of command-line arguments */
 #ifdef __sun
 	case 'p' : /* Notify on completion */
 #endif /* __sun */
+	    break;
+
 	case 'w' : /* Write to console or email */
+	    silent = 0;
 	    break;
 
 	case 'n' : /* Number of copies */
@@ -449,6 +454,16 @@ main(int  argc,		/* I - Number of command-line arguments */
 	    fputs("lp: Warning - content type option ignored!\n", stderr);
 	    break;
 
+        case '-' : /* End of options */
+	    if (argv[i][2])
+	    {
+	      fputs("lp: Unexpected character after -- option!\n", stderr);
+	      return (1);
+	    }
+
+            opt_end = 1;
+	    break;
+
 	default :
 	    fprintf(stderr, "lp: Unknown option \'%c\'!\n", argv[i][1]);
 	    return (1);
@@ -521,7 +536,25 @@ main(int  argc,		/* I - Number of command-line arguments */
 
   if (printer == NULL)
   {
-    if (cupsLastError() == IPP_NOT_FOUND)
+    val = NULL;
+
+    if ((printer = getenv("LPDEST")) == NULL)
+    {
+      if ((printer = getenv("PRINTER")) != NULL)
+      {
+        if (!strcmp(printer, "lp"))
+          printer = NULL;
+	else
+	  val = "PRINTER";
+      }
+    }
+    else
+      val = "LPDEST";
+
+    if (printer && !cupsGetDest(printer, NULL, num_dests, dests))
+      fprintf(stderr, "lp: error - %s environment variable names non-existent destination \"%s\"!\n",
+              val, printer);
+    else if (cupsLastError() == IPP_NOT_FOUND)
       fputs("lp: error - no default destination available.\n", stderr);
     else
       fputs("lp: error - scheduler not responding!\n", stderr);
@@ -562,7 +595,8 @@ main(int  argc,		/* I - Number of command-line arguments */
 
     if (temp < 0)
     {
-      fputs("lp: unable to create temporary file.\n", stderr);
+      fprintf(stderr, "lp: unable to create temporary file \"%s\" - %s\n",
+              tempfile, strerror(errno));
       return (1);
     }
 
@@ -748,5 +782,5 @@ sighandler(int s)	/* I - Signal number */
 
 
 /*
- * End of "$Id: lp.c,v 1.4 2004/05/21 19:42:31 jlovell Exp $".
+ * End of "$Id: lp.c,v 1.7 2005/01/04 22:10:52 jlovell Exp $".
  */

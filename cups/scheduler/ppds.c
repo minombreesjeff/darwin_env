@@ -1,9 +1,9 @@
 /*
- * "$Id: ppds.c,v 1.1.1.13 2004/06/05 02:42:34 jlovell Exp $"
+ * "$Id: ppds.c,v 1.1.1.16 2005/01/04 19:16:28 jlovell Exp $"
  *
  *   PPD scanning routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products.
+ *   Copyright 1997-2005 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -172,7 +172,7 @@ LoadPPDs(const char *d)			/* I - Directory to scan... */
       */
 
       if (i > 1)
-        memcpy(ppd, ppd + 1, (i - 1) * sizeof(ppd_info_t));
+        memmove(ppd, ppd + 1, (i - 1) * sizeof(ppd_info_t));
 
       num_ppds --;
       ppd --;
@@ -777,5 +777,5 @@ load_ppds(const char *d,		/* I - Actual directory */
 
 
 /*
- * End of "$Id: ppds.c,v 1.1.1.13 2004/06/05 02:42:34 jlovell Exp $".
+ * End of "$Id: ppds.c,v 1.1.1.16 2005/01/04 19:16:28 jlovell Exp $".
  */

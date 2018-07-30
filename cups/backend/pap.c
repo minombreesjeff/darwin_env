@@ -1,5 +1,5 @@
 /*
-* "$Id: pap.c,v 1.3 2004/05/06 02:04:29 jlovell Exp $"
+* "$Id: pap.c,v 1.11 2005/03/07 02:50:15 jlovell Exp $"
 *
 * © Copyright 2004 Apple Computer, Inc. All rights reserved.
 * 
@@ -63,6 +63,7 @@
 *  removePercentEscapes	- Returns a string with any percent escape sequences replaced with their equivalent.
 *  nbptuple_compare()	- Compare routine for qsort.
 *  okayToUseAppleTalk() - Returns true if AppleTalk is available and enabled.
+*  connectTimeout()	- Returns the connect timeout preference value.
 *  signalHandler()	- handle SIGINT to close the session before quiting.
 */
 
@@ -72,6 +73,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <assert.h>
+#include <signal.h>
 
 #include <sys/fcntl.h>
 #include <sys/param.h>
@@ -88,6 +90,8 @@
 
 #include <AppleTalk/at_proto.h>
 #include <CoreFoundation/CFURL.h>
+#include <CoreFoundation/CFNumber.h>
+#include <CoreFoundation/CFPreferences.h>
 
 /* Defines */
 #define MAX_PRINTERS	500        /* Max number of printers we can lookup in listDevices */
@@ -144,6 +148,7 @@ static int addPercentEscapes(const unsigned char* src, char* dst, int dstMax);
 static int removePercentEscapes(const char* src, unsigned char* dst, int dstMax);
 static int nbptuple_compare(const void *p1, const void *p2);
 static int okayToUseAppleTalk(void);
+static int connectTimeout(void);
 static void signalHandler(int sigraised);
 
 
@@ -347,9 +352,15 @@ static int printFile(char* name, char* type, char* zone, int fdin, int fdout, in
   struct timeval timeout, *timeoutPtr;
   u_char	flowQuantum;
   u_short	recvSequence = 0;
-  time_t	now, nextStatusTime = 0;
+  time_t	now,
+		connect_time,
+		elasped_time, 
+		sleep_time,
+		connect_timeout = -1,
+		nextStatusTime = 0;
   at_entity_t	entity;
-  Boolean	appleTalkErrShown = false;
+  at_retry_t	retry;
+  Boolean	recoverableErrShown = false;
 
 
 #if defined(HAVE_SIGACTION) && !defined(HAVE_SIGSET)
@@ -363,36 +374,74 @@ static int printFile(char* name, char* type, char* zone, int fdin, int fdout, in
     goto Exit;
   }
 
+ /*
+  * Remember when we started looking for the printer.
+  */
+
+  connect_time = time(NULL);
+
+  retry.interval = 1;
+  retry.retries  = 5;
+  retry.backoff  = 0;
+
   /* Loop forever trying to get an open session with the printer.  */
   for (;;)
   {
     /* Make sure it's okay to use appletalk */
     if (okayToUseAppleTalk())
     {
-      if (appleTalkErrShown) {
-        fprintf(stderr, "INFO: recovered: \n");  
-        appleTalkErrShown = false;
-      }
       /* Resolve the name into an address. Returns the number found or an error */
-      if ((err = nbp_lookup(&entity, &tuple, 1, NULL)) > 0)
+      if ((err = nbp_lookup(&entity, &tuple, 1, &retry)) > 0)
       {
         if (err > 1)
           fprintf(stderr, "DEBUG: Found more than one printer with the name \"%s\"\n", name);
 
+	if (recoverableErrShown)
+	{
+	  fprintf(stderr, "INFO: recovered: \n");
+	  sleep(5);
+	  recoverableErrShown = false;
+	}
+
         /* Open a connection to the device */
         if ((err = papOpen(&tuple, &gConnID, &gSockfd, &gSessionAddr, &flowQuantum)) == 0)
           break;
-        else
-          fprintf(stderr, "WARNING: Unable to open \"%s:%s\": %s\n", name, zone, strerror(errno));
+
+        fprintf(stderr, "WARNING: Unable to open \"%s:%s\": %s\n", name, zone, strerror(errno));
       }
       else
-        fprintf(stderr, "WARNING: Printer not responding\n");
-    } else {
+      {
+	fprintf(stderr, "WARNING: recoverable: Printer not responding\n");
+	recoverableErrShown = true;
+      }
+    }
+    else
+    {
       fprintf(stderr, "WARNING: recoverable: AppleTalk disabled in System Preferences.\n");
-      appleTalkErrShown = true;
+      recoverableErrShown = true;
     }
 
-    sleep(5);
+    retry.retries = 3;
+    elasped_time = time(NULL) - connect_time;
+
+    if (connect_timeout == -1)
+      connect_timeout = connectTimeout();
+
+    if (connect_timeout && elasped_time > connect_timeout)
+    {
+      fprintf(stderr, "ERROR: Printer not responding\n");
+      err = ETIMEDOUT;
+      goto Exit;					 	/* Waiting too long... */
+    }
+    else if (elasped_time < 30 /*(30 * 60)*/)
+      sleep_time = 10;					/* Waiting < 30 minutes */
+    else if (elasped_time < 60 /*(24 * 60 * 60)*/)
+      sleep_time = 30;					/* Waiting < 24 hours */
+    else
+      sleep_time = 60;					/* Waiting > 24 hours */
+
+    fprintf(stderr, "DEBUG: sleeping %d seconds...\n", (int)sleep_time);
+    sleep(sleep_time);
   }
 
   /*
@@ -510,7 +559,7 @@ static int printFile(char* name, char* type, char* zone, int fdin, int fdout, in
 
         fileTbytes += fileBufferNbytes;
         if (argc > 6 && !gErrorlogged)
-          fprintf(stderr, "INFO: Sending print file, %qd bytes\n", (off_t)fileTbytes);
+          fprintf(stderr, "DEBUG: Sending print file, %qd bytes\n", (off_t)fileTbytes);
 
         fileBufferNbytes = 0;
         gSendDataID = 0;
@@ -567,7 +616,8 @@ static int printFile(char* name, char* type, char* zone, int fdin, int fdout, in
       case AT_PAP_TYPE_SEND_STS_REPLY:        /* Send-Status-Reply packet */
         if (resp.bitmap & 1)
         {
-          statusUpdate(&resp.resp[0].iov_base[5], resp.resp[0].iov_base[4]);
+          u_char *iov_base = (u_char *)resp.resp[0].iov_base;
+          statusUpdate(&iov_base[5], iov_base[4]);
         }
         break;
       
@@ -583,7 +633,7 @@ static int printFile(char* name, char* type, char* zone, int fdin, int fdout, in
 
           fileTbytes += fileBufferNbytes;
           if (argc > 6 && !gErrorlogged)
-            fprintf(stderr, "INFO: Sending print file, %qd bytes\n", (off_t)fileTbytes);
+            fprintf(stderr, "DEBUG: Sending print file, %qd bytes\n", (off_t)fileTbytes);
 
           fileBufferNbytes = 0;
           gSendDataID = 0;
@@ -807,7 +857,13 @@ static int papOpen(at_nbptuple_t* tuple, u_char* connID, int* fd, at_inet_t* ses
     status = atp_sendreq(*fd, &tuple->enu_addr, data, 4, userdata, 1, 0, 0, &resp, &retry, 0);
 
     if (status < 0)
+    {
       statusUpdate("Destination unreachable", 23);
+      result = EHOSTUNREACH;
+      errno = EHOSTUNREACH;
+      sleep(1);
+      goto Exit;
+    }
     else
     {
       puserdata = (u_char *)&resp.userdata[0];
@@ -901,7 +957,7 @@ static int papClose(int abort)
     *  doesn't close the pap session.
     */
     if (gWaitEOF == false)
-      sleep(1);
+      sleep(2);
 
     fprintf(stderr, "DEBUG: -> %s\n", PAPPacketStr(AT_PAP_TYPE_CLOSE_CONN));
   
@@ -1138,8 +1194,14 @@ void statusUpdate(u_char* status, u_char statusLen)
     memcpy(status_str, status, statusLen);
     status_str[(int)statusLen] = '\0';
     
-  
-    fprintf(stderr, "INFO: %s\n", status_str);
+    /* 
+     * Make sure the status string is in the form of a PostScript comment.
+     */
+
+    if (statusLen > 3 && memcmp(status, "%%[", 3) == 0)
+      fprintf(stderr, "INFO: %s\n", status_str);
+    else
+      fprintf(stderr, "INFO: %%%%[ %s ]%%%%\n", status_str);
   }
   return;
 }
@@ -1177,7 +1239,10 @@ static int parseUri(const char* argv0, char* name, char* type, char* zone)
   method[0] = username[0] = hostname[0] = resource[0] = '\0';
   port = 0;
 
-  httpSeparate(argv0, method, username, hostname, &port, resource);
+  httpSeparateApple(argv0, method, sizeof(method), 
+			   username, sizeof(username),
+			   hostname, sizeof(hostname), &port,
+			   resource, sizeof(resource), 0);
 
   /*
   * See if there are any options...
@@ -1407,6 +1472,29 @@ static int okayToUseAppleTalk()
    * the following:
    */
   return atStatus == RUNNING;
+}
+
+
+/*!
+ * @function  connectTimeout
+ * @abstract  Returns the connect timeout preference value.
+ */
+static int connectTimeout()
+{
+  CFPropertyListRef value;
+  SInt32 connect_timeout = (7 * 24 * 60 * 60);	/* Default timeout is one week... */
+
+  value = CFPreferencesCopyValue(CFSTR("timeout"), CFSTR("com.apple.print.backends"),
+				 kCFPreferencesAnyUser, kCFPreferencesCurrentHost);
+  if (value != NULL)
+  {
+    if (CFGetTypeID(value) == CFNumberGetTypeID())
+      CFNumberGetValue(value, kCFNumberSInt32Type, &connect_timeout);
+
+    CFRelease(value);
+  }
+
+  return connect_timeout;
 }
 
 

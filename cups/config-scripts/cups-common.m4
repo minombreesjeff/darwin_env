@@ -1,9 +1,9 @@
 dnl
-dnl "$Id: cups-common.m4,v 1.18 2004/04/23 00:54:43 jlovell Exp $"
+dnl "$Id: cups-common.m4,v 1.24 2005/02/16 17:58:01 jlovell Exp $"
 dnl
 dnl   Common configuration stuff for the Common UNIX Printing System (CUPS).
 dnl
-dnl   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+dnl   Copyright 1997-2005 by Easy Software Products, all rights reserved.
 dnl
 dnl   These coded instructions, statements, and computer programs are the
 dnl   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@ dnl
 dnl       Attn: CUPS Licensing Information
 dnl       Easy Software Products
 dnl       44141 Airport View Drive, Suite 204
-dnl       Hollywood, Maryland 20636-3111 USA
+dnl       Hollywood, Maryland 20636 USA
 dnl
-dnl       Voice: (301) 373-9603
+dnl       Voice: (301) 373-9600
 dnl       EMail: cups-info@cups.org
 dnl         WWW: http://www.cups.org
 dnl
@@ -29,9 +29,10 @@ dnl Set the name of the config header file...
 AC_CONFIG_HEADER(config.h)
 
 dnl Version number information...
-CUPS_VERSION="1.1.21rc1"
+CUPS_VERSION="1.1.23"
 AC_SUBST(CUPS_VERSION)
 AC_DEFINE_UNQUOTED(CUPS_SVERSION, "CUPS v$CUPS_VERSION")
+AC_DEFINE_UNQUOTED(CUPS_MINIMAL, "CUPS/$CUPS_VERSION")
 
 dnl Default compiler flags...
 CFLAGS="${CFLAGS:=}"
@@ -117,6 +118,7 @@ dnl Checks for header files.
 AC_HEADER_STDC
 AC_HEADER_DIRENT
 AC_CHECK_HEADER(crypt.h,AC_DEFINE(HAVE_CRYPT_H))
+AC_CHECK_HEADER(langinfo.h,AC_DEFINE(HAVE_LANGINFO_H))
 AC_CHECK_HEADER(malloc.h,AC_DEFINE(HAVE_MALLOC_H))
 AC_CHECK_HEADER(shadow.h,AC_DEFINE(HAVE_SHADOW_H))
 AC_CHECK_HEADER(string.h,AC_DEFINE(HAVE_STRING_H))
@@ -139,7 +141,7 @@ dnl Check OS version and use appropriate format string for strftime...
 AC_MSG_CHECKING(for correct format string to use with strftime)
 
 case "$uname" in
-	IRIX* | SunOS*)
+	IRIX | SunOS*)
 		# IRIX and SunOS
 		AC_MSG_RESULT(NULL)
 		AC_DEFINE(CUPS_STRFTIME_FORMAT, NULL)
@@ -154,13 +156,22 @@ esac
 dnl Checks for mkstemp and mkstemps functions.
 AC_CHECK_FUNCS(mkstemp mkstemps)
 
-dnl Checks for vsyslog function.
+dnl Check for geteuid function.
+AC_CHECK_FUNCS(geteuid)
+
+dnl Check for vsyslog function.
 AC_CHECK_FUNCS(vsyslog)
 
 dnl Checks for signal functions.
-if test "$uname" != "Linux"; then
-	AC_CHECK_FUNCS(sigset)
-fi
+case "$uname" in
+	Linux | GNU)
+		# Do not use sigset on Linux or GNU HURD
+		;;
+	*)
+		# Use sigset on other platforms, if available
+		AC_CHECK_FUNCS(sigset)
+		;;
+esac
 
 AC_CHECK_FUNCS(sigaction)
 
@@ -189,6 +200,11 @@ else
 	AC_MSG_RESULT(no)
 fi
 
+dnl Check for the new membership functions in MacOSX 10.4 (Tiger)...
+AC_CHECK_HEADER(membership.h,AC_DEFINE(HAVE_MEMBERSHIP_H))
+AC_CHECK_FUNCS(mbr_uid_to_uuid)
+
+
 dnl Flags for "ar" command...
 case $uname in
         Darwin* | *BSD*)
@@ -204,18 +220,24 @@ AC_SUBST(ARFLAGS)
 dnl Extra platform-specific libraries...
 case $uname in
         Darwin*)
-                BACKLIBS="-framework IOKit -framework AppleTalk"
-                COMMONLIBS="-framework CoreFoundation -framework IOKit"
+                BACKLIBS="-framework CoreFoundation -framework IOKit"
+                COMMONLIBS=""
+                LIBCUPSLIBS="-framework CoreFoundation"
+                CUPSDLIBS="-framework CoreFoundation -framework IOKit \$(DNSSDLIBS)"
                 ;;
         *)
                 BACKLIBS=""
 		COMMONLIBS=""
+		LIBCUPSLIBS=""
+		CUPSDLIBS=""
                 ;;
 esac
 
 AC_SUBST(BACKLIBS)
 AC_SUBST(COMMONLIBS)
+AC_SUBST(LIBCUPSLIBS)
+AC_SUBST(CUPSDLIBS)
 
 dnl
-dnl End of "$Id: cups-common.m4,v 1.18 2004/04/23 00:54:43 jlovell Exp $".
+dnl End of "$Id: cups-common.m4,v 1.24 2005/02/16 17:58:01 jlovell Exp $".
 dnl

@@ -1,10 +1,10 @@
 /*
- * "$Id: http.h,v 1.8 2004/04/08 17:41:36 jlovell Exp $"
+ * "$Id: http.h,v 1.15 2005/01/20 03:24:54 jlovell Exp $"
  *
  *   Hyper-Text Transport Protocol definitions for the Common UNIX Printing
  *   System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -16,9 +16,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -358,6 +358,22 @@ extern void		httpClearCookie(http_t *http);
 extern void		httpSetCookie(http_t *http, const char *cookie);
 extern int		httpWait(http_t *http, int msec);
 
+/**** New in CUPS 1.1.21 ****/
+extern char		*httpDecode64_2(char *out, int *outlen, const char *in);
+extern char		*httpEncode64_2(char *out, int outlen, const char *in,
+			                int inlen);
+extern void		httpSeparate2(const char *uri,
+			              char *method, int methodlen,
+			              char *username, int usernamelen,
+				      char *host, int hostlen, int *port,
+				      char *resource, int resourcelen);
+
+extern void		httpSeparateApple(const char *uri,
+			              char *method, int methodlen,
+			              char *username, int usernamelen,
+				      char *host, int hostlen, int *port,
+				      char *resource, int resourcelen, int decode);
+
 
 /*
  * C++ magic...
@@ -369,5 +385,5 @@ extern int		httpWait(http_t *http, int msec);
 #endif /* !_CUPS_HTTP_H_ */
 
 /*
- * End of "$Id: http.h,v 1.8 2004/04/08 17:41:36 jlovell Exp $".
+ * End of "$Id: http.h,v 1.15 2005/01/20 03:24:54 jlovell Exp $".
  */

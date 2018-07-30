@@ -1,9 +1,9 @@
 /*
- * "$Id: ipp.c,v 1.22 2004/06/05 03:49:46 jlovell Exp $"
+ * "$Id: ipp.c,v 1.31 2005/01/04 22:10:45 jlovell Exp $"
  *
  *   IPP routines for the Common UNIX Printing System (CUPS) scheduler.
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -81,6 +81,11 @@
 #include "cupsd.h"
 #include <pwd.h>
 #include <grp.h>
+
+#ifdef HAVE_MEMBERSHIP_H
+#include <membership.h>
+#include <membershipPriv.h>
+#endif
 
 #ifdef HAVE_LIBPAPER
 #  include <paper.h>
@@ -342,6 +347,10 @@ ProcessIPPRequest(client_t *con)	/* I - Client connection */
        /*
         * Then try processing the operation...
 	*/
+
+        if (uri)
+          LogMessage(L_DEBUG2, "ProcessIPPRequest: URI=\"%s\"",
+	             uri->values[0].string.text);
 
 	switch (con->request->request.op.operation_id)
 	{
@@ -676,7 +685,7 @@ add_class(client_t        *con,		/* I - Client connection */
     * No, add the pclass...
     */
 
-    pclass = AddClass(resource + 9);
+    pclass = AddClass(resource + 9, 1);
     modify = 0;
   }
   else if (pclass->type & CUPS_PRINTER_IMPLICIT)
@@ -697,7 +706,7 @@ add_class(client_t        *con,		/* I - Client connection */
     * Add the class as a new local class...
     */
 
-    pclass = AddClass(resource + 9);
+    pclass = AddClass(resource + 9, 1);
     modify = 0;
   }
   else if (pclass->type & CUPS_PRINTER_REMOTE)
@@ -715,7 +724,7 @@ add_class(client_t        *con,		/* I - Client connection */
     * Add the class as a new local class...
     */
 
-    pclass = AddClass(resource + 9);
+    pclass = AddClass(resource + 9, 1);
     modify = 0;
   }
   else
@@ -760,7 +769,7 @@ add_class(client_t        *con,		/* I - Client connection */
     LogMessage(L_INFO, "Setting %s printer-state to %d (was %d.)", pclass->name,
                attr->values[0].integer, pclass->state);
 
-    SetPrinterState(pclass, attr->values[0].integer, 0);
+    SetPrinterState(pclass, (ipp_pstate_t)(attr->values[0].integer), 0);
   }
   if ((attr = ippFindAttribute(con->request, "printer-state-message", IPP_TAG_TEXT)) != NULL)
   {
@@ -1119,7 +1128,7 @@ add_printer(client_t        *con,	/* I - Client connection */
     * No, add the printer...
     */
 
-    printer = AddPrinter(resource + 10);
+    printer = AddPrinter(resource + 10, 1);
     modify  = 0;
   }
   else if (printer->type & CUPS_PRINTER_IMPLICIT)
@@ -1140,7 +1149,7 @@ add_printer(client_t        *con,	/* I - Client connection */
     * Add the printer as a new local printer...
     */
 
-    printer = AddPrinter(resource + 10);
+    printer = AddPrinter(resource + 10, 1);
     modify  = 0;
   }
   else if (printer->type & CUPS_PRINTER_REMOTE)
@@ -1158,7 +1167,7 @@ add_printer(client_t        *con,	/* I - Client connection */
     * Add the printer as a new local printer...
     */
 
-    printer = AddPrinter(resource + 10);
+    printer = AddPrinter(resource + 10, 1);
     modify  = 0;
   }
   else
@@ -1234,7 +1243,9 @@ add_printer(client_t        *con,	/* I - Client connection */
     }
 
     LogMessage(L_INFO, "Setting %s device-uri to \"%s\" (was \"%s\".)",
-               printer->name, attr->values[0].string.text, printer->device_uri);
+               printer->name,
+	       cupsdSanitizeURI(attr->values[0].string.text, line, sizeof(line)),
+	       cupsdSanitizeURI(printer->device_uri, resource, sizeof(resource)));
 
     SetString(&printer->device_uri, attr->values[0].string.text);
   }
@@ -1268,7 +1279,7 @@ add_printer(client_t        *con,	/* I - Client connection */
     LogMessage(L_INFO, "Setting %s printer-state to %d (was %d.)", printer->name,
                attr->values[0].integer, printer->state);
 
-    SetPrinterState(printer, attr->values[0].integer, 0);
+    SetPrinterState(printer, (ipp_pstate_t)(attr->values[0].integer), 0);
   }
   if ((attr = ippFindAttribute(con->request, "printer-state-message", IPP_TAG_TEXT)) != NULL)
   {
@@ -1889,16 +1900,28 @@ cancel_job(client_t        *con,	/* I - Client connection */
  */
 
 static int			/* O - 1 if OK, 0 if not */
-check_quotas(client_t  *con,	/* I - Client connection */
-             printer_t *p)	/* I - Printer or class */
+check_quotas(client_t  *con, /* I - Client connection */
+             printer_t *p) /* I - Printer or class */
 {
   int		i, j;		/* Looping vars */
-  ipp_attribute_t *attr;	/* Current attribute */
-  char		username[33];	/* Username */
-  quota_t	*q;		/* Quota data */
-  struct passwd	*pw;		/* User password data */
-  struct group	*grp;		/* Group data */
+  ipp_attribute_t *attr; /* Current attribute */
+  char		username[33]; /* Username */
+  quota_t *q;		/* Quota data */
+  struct passwd *pw;		/* User password data */
+  struct group *grp;		/* Group data */
 
+#ifdef HAVE_MBR_UID_TO_UUID
+ /* Note that Apple ACL enforcement requires that all names represent
+  * valid user account or group records accessible by the server.
+  */
+  uuid_t usr_uuid;  /* globally unique identifier for job requesting user  */
+  uuid_t usr2_uuid; /* globally unique identifier for ACL user name entry  */
+  uuid_t grp_uuid;  /* globally unique identifier for ACL group name entry */
+  int mbr_err;
+  int is_member;
+
+  (void) j; (void) pw; (void) grp;	/* anti-compiler-warning-code */
+#endif	/* HAVE_MBR_UID_TO_UUID */
 
   LogMessage(L_DEBUG2, "check_quotas(%p[%d], %p[%s])\n",
              con, con->http.fd, p, p->name);
@@ -1967,54 +1990,124 @@ check_quotas(client_t  *con,	/* I - Client connection */
 
   if (p->num_users)
   {
+#ifdef HAVE_MBR_UID_TO_UUID
+    /* Get UUID for job requesting user */
+    LogMessage(L_DEBUG, "ACL: Requesting user \"%s\"", username);
+    mbr_err = mbr_user_name_to_uuid((char *) username, usr_uuid);
+    if (0 != mbr_err)	/* unknown user */
+    {
+      LogMessage(L_DEBUG, "ACL: UUID lookup failed for user \"%s\"", username);
+      LogMessage(L_INFO, "Denying user \"%s\" access to printer \"%s\" (unknown user)...",
+				username, p->name);
+      return (0);
+    }
+#else
     pw = getpwnam(username);
     endpwent();
+#endif	/* HAVE_MBR_UID_TO_UUID */
 
     for (i = 0; i < p->num_users; i ++)
+    {
       if (p->users[i][0] == '@')
       {
-       /*
-        * Check group membership...
-	*/
+        /*
+         * Check group membership...
+         */
 
-        grp = getgrnam(p->users[i] + 1);
-	endgrent();
+#ifdef HAVE_MBR_UID_TO_UUID
+        /* ACL group membership check */
+	LogMessage(L_DEBUG, "ACL: Checking group entry: \"%s\"", (p->users[i] + 1));
+	mbr_err = mbr_group_name_to_uuid((char *) (p->users[i] + 1), grp_uuid);
+	if (0 != mbr_err)	/* unknown group name in ACL */
+	{
+	  /* invalid ACL entries are ignored for matching; just records a warning in the log */
+	  LogMessage(L_DEBUG, "ACL: UUID lookup failed for ACL entry \"%s\" (err=%d)", p->users[i], mbr_err);
+	  LogMessage(L_WARN, "Access control entry \"%s\" not a valid group name; entry ignored", p->users[i]);
+	}
+	else
+	{
+	  mbr_err = mbr_check_membership(usr_uuid, grp_uuid, &is_member);
+	  if (0 != mbr_err)
+	  {
+	    LogMessage(L_DEBUG, "ACL: group \"%s\" membership check failed (err=%d)", (p->users[i] + 1), mbr_err);
+	    break;		/* this should never happen! */
+	  }
+
+	  if (is_member)	/* successful match */
+	    break;		/* done */
+	}
+#else
+	grp = getgrnam(p->users[i] + 1);
+        endgrent();
 
         if (grp)
-	{
-	 /*
-	  * Check primary group...
-	  */
+        {
+          /*
+           * Check primary group...
+           */
 
-	  if (pw && grp->gr_gid == pw->pw_gid)
-	    break;
+          if (pw && grp->gr_gid == pw->pw_gid)
+            break;
 
-         /*
-	  * Check usernames in group...
-	  */
+          /*
+           * Check usernames in group...
+           */
 
           for (j = 0; grp->gr_mem[j]; j ++)
-	    if (!strcasecmp(username, grp->gr_mem[j]))
-	      break;
+            if (!strcasecmp(username, grp->gr_mem[j]))
+              break;
 
-          if (grp->gr_mem[j])
-	    break;
+		  if (grp->gr_mem[j])
+		    break;
+        }
+#endif	/* HAVE_MBR_UID_TO_UUID */
+      }
+#ifdef HAVE_MBR_UID_TO_UUID
+      else	/* ACL individual user name check */
+      {
+        LogMessage(L_DEBUG, "ACL: Checking user entry: \"%s\"", p->users[i]);
+        mbr_err = mbr_user_name_to_uuid((char *) p->users[i], usr2_uuid);
+    	if (0 != mbr_err)	/* unknown user name in ACL */
+    	{
+	  /* invalid ACL entries are ignored for matching; just records a warning in the log */
+          LogMessage(L_DEBUG, "ACL: UUID lookup failed for ACL entry \"%s\" (err=%d)", p->users[i], mbr_err);
+          LogMessage(L_WARN, "Access control entry \"%s\" not a valid user name; entry ignored", p->users[i]);
+	}
+	else
+	{
+	  mbr_err = mbr_check_membership(usr_uuid, usr2_uuid, &is_member);
+          if (0 != mbr_err)
+          {
+	    LogMessage(L_DEBUG, "ACL: user \"%s\" identity check failed (err=%d)", p->users[i], mbr_err);
+	    break;		/* this should never happen! */
+	  }
+
+	  if (is_member)	/* successful match */
+	    break;		/* done */
 	}
       }
+#else
       else if (!strcasecmp(username, p->users[i]))
-	break;
+        break;
+#endif	/* HAVE_MBR_UID_TO_UUID */
+    }
+
+#ifdef HAVE_MBR_UID_TO_UUID
+    LogMessage(L_DEBUG, "ACL: user \"%s\" is member =  %s",
+			username, ((i < p->num_users) ? "YES" : "NO"));
+#endif	/* HAVE_MBR_UID_TO_UUID */
 
     if ((i < p->num_users) == p->deny_users)
     {
       LogMessage(L_INFO, "Denying user \"%s\" access to printer \"%s\"...",
-        	 username, p->name);
+                         username, p->name);
       return (0);
     }
   }
 
- /*
-  * Check quotas...
-  */
+  /*
+   * Check quotas...
+   */
 
   if (p->k_limit || p->page_limit)
   {
@@ -2024,6 +2117,41 @@ check_quotas(client_t  *con,	/* I - Client connection */
                  username);
       return (0);
     }
+
+#ifdef __APPLE__
+    if (AppleQuotas)
+    {
+      if (-4 == q->page_count) /* unlimited user */
+      {
+        LogMessage(L_INFO, "User \"%s\" request approved for printer %s (%s): unlimited quota.",
+				           username, p->name, p->info);
+        q->page_count = 0;
+        return (1);
+      }
+
+      if (-3 == q->page_count) /* quota exceeded */
+      {
+		LogMessage(L_INFO, "User \"%s\" request denied for printer %s (%s): quota limit exceeded.",
+						   username, p->name, p->info);
+        q->page_count = 2; // force quota exceeded failure
+        return (0);
+      }
+      else if (0 > q->page_count) /* user not found or other error */
+      {
+        LogMessage(L_INFO, "User \"%s\" request denied for printer %s (%s): user disabled / missing quota.",
+				           username, p->name, p->info);
+        q->page_count = 0;
+        return (0);
+      }
+
+      if (q->page_count >= p->page_limit && p->page_limit)
+      {
+        LogMessage(L_INFO, "User \"%s\" is over the quota limit for printer %s (%s)",
+						   username, p->name, p->info);
+        return (0);
+      }
+    }
+#endif
 
     if ((q->k_count >= p->k_limit && p->k_limit) ||
         (q->page_count >= p->page_limit && p->page_limit))
@@ -3441,7 +3569,22 @@ get_default(client_t *con)		/* I - Client connection */
 static void
 get_devices(client_t *con)		/* I - Client connection */
 {
+#ifdef __APPLE__
+  char		temp[1024];		/* Temporary buffer */
+#endif /* __APPLE__ */
+
   LogMessage(L_DEBUG2, "get_devices(%p[%d])\n", con, con->http.fd);
+
+#ifdef __APPLE__
+ /*
+  * For a faster and leaner startup we load the complete
+  * device list on demand rather than in ReadConfiguration().
+  */
+
+  snprintf(temp, sizeof(temp), "%s/backend", ServerBin);
+  LoadDevices(temp, 1);
+#endif /* __APPLE__ */
+
 
  /*
   * Copy the device attributes to the response using the requested-attributes
@@ -3569,6 +3712,9 @@ get_jobs(client_t        *con,		/* I - Client connection */
  /*
   * OK, build a list of jobs for this printer...
   */
+
+  if (completed)
+    LoadAllJobs(HISTORY_JOBS);
 
   for (count = 0, job = Jobs; count < limit && job != NULL; job = job->next)
   {
@@ -3762,7 +3908,24 @@ get_job_attrs(client_t        *con,		/* I - Client connection */
 static void
 get_ppds(client_t *con)			/* I - Client connection */
 {
+#ifdef __APPLE__
+  char		temp[1024];		/* Temporary buffer */
+#endif /* __APPLE__ */
+
   LogMessage(L_DEBUG2, "get_ppds(%p[%d])\n", con, con->http.fd);
+
+#ifdef __APPLE__
+ /*
+  * For a faster and leaner startup we load the PPDs
+  * on demand rather than in ReadConfiguration().
+  */
+
+  if (!PPDs)
+  {
+    snprintf(temp, sizeof(temp), "%s/model", DataDir);
+    LoadPPDs(temp);
+  }
+#endif /* __APPLE__ */
 
  /*
   * Copy the PPD attributes to the response using the requested-attributes
@@ -6943,5 +7106,5 @@ validate_user(client_t   *con,		/* I - Client connection */
 
 
 /*
- * End of "$Id: ipp.c,v 1.22 2004/06/05 03:49:46 jlovell Exp $".
+ * End of "$Id: ipp.c,v 1.31 2005/01/04 22:10:45 jlovell Exp $".
  */

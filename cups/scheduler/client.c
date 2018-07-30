@@ -1,9 +1,9 @@
 /*
- * "$Id: client.c,v 1.15 2004/06/05 03:49:46 jlovell Exp $"
+ * "$Id: client.c,v 1.24 2005/01/10 23:40:51 jlovell Exp $"
  *
  *   Client routines for the Common UNIX Printing System (CUPS) scheduler.
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -39,7 +39,10 @@
  *   decode_auth()         - Decode an authorization string.
  *   get_file()            - Get a filename and state info.
  *   install_conf_file()   - Install a configuration file.
+ *   is_path_absolute()    - Is a path absolute and free of relative elements.
  *   pipe_command()        - Pipe the output of a command to the remote client.
+ *   CDSAGetServerCerts()  - Convert a keychain name into the CFArrayRef
+ *                           required by SSLSetCertificate.
  *   CDSAReadFunc()        - Read function for CDSA decryption code.
  *   CDSAWriteFunc()       - Write function for CDSA encryption code.
  */
@@ -51,10 +54,43 @@
 #include <cups/http-private.h>
 #include "cupsd.h"
 #include <grp.h>
+#include <sys/param.h>
 #ifdef HAVE_INTTYPES_H
 #  include <inttypes.h>
 #endif /* HAVE_INTTYPES_H */
 
+#  include <pthread.h>
+#ifdef HAVE_DLFCN_H
+#  include <dlfcn.h>
+#endif /* HAVE_DLFCN_H */
+
+/*
+ * Globals...
+ */
+
+#ifdef HAVE_CDSASSL
+static OSStatus (*SSLCloseProc)(SSLContextRef context) = NULL;
+static OSStatus (*SSLDisposeContextProc)(SSLContextRef context) = NULL;
+static OSStatus (*SSLGetBufferedReadSizeProc)(SSLContextRef context, size_t *bufSize) = NULL;
+static OSStatus (*SSLHandshakeProc)(SSLContextRef context) = NULL;
+static OSStatus (*SSLNewContextProc)(Boolean isServer, SSLContextRef *contextPtr) = NULL;
+static OSStatus (*SSLReadProc)(SSLContextRef context, void *data, size_t dataLength, size_t *processed) = NULL;
+static OSStatus (*SSLSetCertificateProc)(SSLContextRef context, CFArrayRef certRefs);
+static OSStatus (*SSLSetConnectionProc)(SSLContextRef context, SSLConnectionRef connection) = NULL;
+static OSStatus (*SSLSetEnableCertVerifyProc)(SSLContextRef context, Boolean enableVerify) = NULL;
+static OSStatus (*SSLSetIOFuncsProc)(SSLContextRef context, SSLReadFunc read, SSLWriteFunc write) = NULL;
+static OSStatus (*SSLSetPeerDomainNameProc)(SSLContextRef context, const char *peerName, size_t peerNameLen);
+static OSStatus (*SSLSetProtocolVersionProc)(SSLContextRef context, SSLProtocol version);
+static OSStatus (*SSLWriteProc)(SSLContextRef context, const void *data, size_t dataLength, size_t *processed) = NULL;
+
+CFTypeID (*SecIdentityGetTypeIDProc)(void) = NULL;
+OSStatus (*SecIdentitySearchCopyNextProc)(SecIdentitySearchRef searchRef, SecIdentityRef *identity) = NULL;
+OSStatus (*SecIdentitySearchCreateProc)(CFTypeRef keychainOrArray, CSSM_KEYUSE keyUsage, SecIdentitySearchRef *searchRef) = NULL;
+OSStatus (*SecKeychainOpenProc)(const char *pathName, SecKeychainRef *keychain) = NULL;
+
+static pthread_once_t	cdsa_key_once = PTHREAD_ONCE_INIT;
+					/* One-time initialization object */
+#endif	/* HAVE_CDSASSL */
 
 /*
  * Local functions...
@@ -66,10 +102,12 @@ static void		decode_auth(client_t *con);
 static char		*get_file(client_t *con, struct stat *filestats, 
 			          char *filename, int len);
 static http_status_t	install_conf_file(client_t *con);
+static int		is_path_absolute(const char *path);
 static int		pipe_command(client_t *con, int infile, int *outfile,
 			             char *command, char *options);
 
 #ifdef HAVE_CDSASSL
+static CFArrayRef CDSAGetServerCerts();
 static OSStatus		CDSAReadFunc(SSLConnectionRef connection, void *data,
 			             size_t *dataLength);
 static OSStatus		CDSAWriteFunc(SSLConnectionRef connection,
@@ -87,7 +125,8 @@ AcceptClient(listener_t *lis)	/* I - Listener socket */
   int			i;	/* Looping var */
   int			count;	/* Count of connections on a host */
   int			val;	/* Parameter value */
-  client_t		*con;	/* New client pointer */
+  client_t		*con,	/* New client pointer */
+			*current;/* Temporary client pointer */
   unsigned		address;/* Address of client */
   struct hostent	*host;	/* Host entry for address */
   static time_t		last_dos = 0;
@@ -105,12 +144,25 @@ AcceptClient(listener_t *lis)	/* I - Listener socket */
     return;
 
  /*
-  * Get a pointer to the next available client...
+  * Create a new client entity...
   */
 
-  con = Clients + NumClients;
+  if ((con = calloc(1, sizeof(client_t))) == NULL)
+  {
+    LogMessage(L_ERROR, "Unable to allocate memory for client - %s",
+               strerror(errno));
+    return;
+  }
 
-  memset(con, 0, sizeof(client_t));
+ /*
+  * Insert it in the client list...
+  */
+
+  con->next = Clients;
+  Clients = con;
+
+  NumClients ++;
+
   con->http.activity = time(NULL);
   con->file          = -1;
 
@@ -125,6 +177,7 @@ AcceptClient(listener_t *lis)	/* I - Listener socket */
   {
     LogMessage(L_ERROR, "Unable to accept client connection - %s.",
                strerror(errno));
+    CloseClient(con);
     return;
   }
 
@@ -134,8 +187,8 @@ AcceptClient(listener_t *lis)	/* I - Listener socket */
   * Check the number of clients on the same address...
   */
 
-  for (i = 0, count = 0; i < NumClients; i ++)
-    if (memcmp(&(Clients[i].http.hostaddr), &(con->http.hostaddr),
+  for (count = 0, current = Clients; current != NULL; current = current->next)
+    if (current != con && memcmp(&(current->http.hostaddr), &(con->http.hostaddr),
                sizeof(con->http.hostaddr)) == 0)
     {
       count ++;
@@ -149,15 +202,10 @@ AcceptClient(listener_t *lis)	/* I - Listener socket */
     {
       last_dos = time(NULL);
       LogMessage(L_WARN, "Possible DoS attack - more than %d clients connecting from %s!",
-        	 MaxClientsPerHost, Clients[i].http.hostname);
+        	 MaxClientsPerHost, con->http.hostname);
     }
 
-#ifdef WIN32
-    closesocket(con->http.fd);
-#else
-    close(con->http.fd);
-#endif /* WIN32 */
-
+    CloseClient(con);
     return;
   }
 
@@ -215,14 +263,9 @@ AcceptClient(listener_t *lis)	/* I - Listener socket */
       * Can't have an unresolved IP address with double-lookups enabled...
       */
 
-#ifdef WIN32
-      closesocket(con->http.fd);
-#else
-      close(con->http.fd);
-#endif /* WIN32 */
-
       LogMessage(L_WARN, "Name lookup failed - connection from %s closed!",
                  con->http.hostname);
+      CloseClient(con);
       return;
     }
   }
@@ -271,14 +314,9 @@ AcceptClient(listener_t *lis)	/* I - Listener socket */
       * with double-lookups enabled...
       */
 
-#ifdef WIN32
-      closesocket(con->http.fd);
-#else
-      close(con->http.fd);
-#endif /* WIN32 */
-
       LogMessage(L_WARN, "IP lookup failed - connection from %s closed!",
                  con->http.hostname);
+      CloseClient(con);
       return;
     }
   }
@@ -309,8 +347,6 @@ AcceptClient(listener_t *lis)	/* I - Listener socket */
   LogMessage(L_DEBUG2, "AcceptClient: Adding fd %d to InputSet...",
              con->http.fd);
   FD_SET(con->http.fd, InputSet);
-
-  NumClients ++;
 
  /*
   * Temporarily suspend accept()'s until we lose a client...
@@ -358,6 +394,8 @@ int				/* O - 1 if partial close, 0 if fully closed */
 CloseClient(client_t *con)	/* I - Client to close */
 {
   int		partial;	/* Do partial close for SSL? */
+  client_t	*current,	/* Current client pointer */
+		*prev;		/* Previous client pointer */
 #if defined(HAVE_LIBSSL)
   SSL_CTX	*context;	/* Context for encryption */
   SSL		*conn;		/* Connection for encryption */
@@ -367,7 +405,9 @@ CloseClient(client_t *con)	/* I - Client to close */
   int            error;		/* Error code */
   gnutls_certificate_server_credentials *credentials;
 				/* TLS credentials */
-#endif /* HAVE_GNUTLS */
+#elif defined(HAVE_CDSASSL)
+  OSStatus	 status;	/* Error code */
+#endif /* HAVE_CDSASSL */
 
 
   LogMessage(L_DEBUG, "CloseClient: %d", con->http.fd);
@@ -424,8 +464,8 @@ CloseClient(client_t *con)	/* I - Client to close */
     free(conn);
 
 #  elif defined(HAVE_CDSASSL)
-    status = SSLClose((SSLContextRef)con->http.tls);
-    SSLDisposeContext((SSLContextRef)con->http.tls);
+    status = (*SSLCloseProc)((SSLContextRef)con->http.tls);
+    (*SSLDisposeContextProc)((SSLContextRef)con->http.tls);
 #  endif /* HAVE_LIBSSL */
 
     con->http.tls = NULL;
@@ -533,13 +573,24 @@ CloseClient(client_t *con)	/* I - Client to close */
       ResumeListening();
 
    /*
-    * Compact the list of clients as necessary...
+    * Remove the client from the linked list...
     */
 
-    NumClients --;
+    for (current = Clients, prev = NULL; current != NULL; current = current->next)
+    {
+      if (current == con)
+      {
+        if (prev)
+	  prev->next = current->next;
+	else
+	  Clients = current->next;
+	break;
+      }
+      prev = current;
+    }
 
-    if (con < (Clients + NumClients))
-      memmove(con, con + 1, (Clients + NumClients - con) * sizeof(client_t));
+    NumClients --;
+    free(con);
   }
 
   return (partial);
@@ -651,67 +702,71 @@ EncryptClient(client_t *con)	/* I - Client to encrypt */
 #elif defined(HAVE_CDSASSL)
   OSStatus		error;		/* Error info */
   SSLContextRef		conn;		/* New connection */
-  SSLProtocol		tryVersion;	/* Protocol version */
-  const char		*hostName;	/* Local hostname */
-  int			allowExpired;	/* Allow expired certificates? */
-  int			allowAnyRoot;	/* Allow any root certificate? */
-  SSLProtocol		*negVersion;	/* Negotiated protocol version */
-  SSLCipherSuite	*negCipher;	/* Negotiated cypher */
-  CFArrayRef		*peerCerts;	/* Certificates */
+  char			hostName[MAXHOSTNAMELEN];
+					/* Local hostname */
 
+  conn		= NULL;
+  error		= 0;
 
-  conn         = NULL;
-  error        = SSLNewContext(true, &conn);
-  allowExpired = 1;
-  allowAnyRoot = 1;
+  if (ServerCertificatesArray == NULL)
+    ServerCertificatesArray = CDSAGetServerCerts();
 
-  if (!error)
-    error = SSLSetIOFuncs(conn, CDSAReadFunc, CDSAWriteFunc);
-
-  if (!error)
-    error = SSLSetProtocolVersion(conn, kSSLProtocol3);
+  if (ServerCertificatesArray == NULL)
+  {
+    LogMessage(L_ERROR,
+               "EncryptClient: Could not find signing key in keychain \"%s\"",
+               ServerCertificate);
+    error = errSSLBadConfiguration;
+  }
 
   if (!error)
-    error = SSLSetConnection(conn, (SSLConnectionRef)con->http.fd);
+    error = (*SSLNewContextProc)(true, &conn);
+
+  if (!error)
+    error = (*SSLSetIOFuncsProc)(conn, CDSAReadFunc, CDSAWriteFunc);
+
+  if (!error)
+    error = (*SSLSetProtocolVersionProc)(conn, kSSLProtocol3);
+
+  if (!error)
+    error = (*SSLSetConnectionProc)(conn, (SSLConnectionRef)con->http.fd);
 
   if (!error)
   {
-    hostName = ServerName;	/* MRS: ??? */
-    error    = SSLSetPeerDomainName(conn, hostName, strlen(hostName) + 1);
+    gethostname(hostName, sizeof(hostName));
+    error = (*SSLSetPeerDomainNameProc)(conn, hostName, strlen(hostName) + 1);
   }
 
-  /* have to do these options befor setting server certs */
-  if (!error && allowExpired)
-    error = SSLSetAllowsExpiredCerts(conn, true);
+  if (!error)
+    error = (*SSLSetEnableCertVerifyProc)(conn, SSLVerifyCertificates);
 
-  if (!error && allowAnyRoot)
-    error = SSLSetAllowsAnyRoot(conn, true);
+  if (!error)
+    error = (*SSLSetCertificateProc)(conn, ServerCertificatesArray);
 
-  if (!error && ServerCertificatesArray != NULL)
-    error = SSLSetCertificate(conn, ServerCertificatesArray);
-
- /*
-  * Perform SSL/TLS handshake
-  */
-
-  do
+  if (!error)
   {
-    error = SSLHandshake(conn);
+   /*
+    * Perform SSL/TLS handshake
+    */
+
+    do
+    {
+      error = (*SSLHandshakeProc)(conn);
+    }
+    while (error == errSSLWouldBlock);
   }
-  while (error == errSSLWouldBlock);
 
   if (error)
   {
     LogMessage(L_ERROR, "EncryptClient: Unable to encrypt connection from %s!",
                con->http.hostname);
-
-    LogMessage(L_ERROR, "EncryptClient: CDSA error code is %d", error);
+      LogMessage(L_ERROR, "EncryptClient: SSL Error %d", (int)error);
 
     con->http.error  = error;
     con->http.status = HTTP_ERROR;
 
     if (conn != NULL)
-      SSLDisposeContext(conn);
+      (*SSLDisposeContextProc)(conn);
 
     return (0);
   }
@@ -1198,7 +1253,7 @@ ReadClient(client_t *con)		/* I - Client to read from */
       httpPrintf(HTTP(con), "Content-Length: 0\r\n");
       httpPrintf(HTTP(con), "\r\n");
     }
-    else if (strstr(con->uri, "..") != NULL)
+    else if (!is_path_absolute(con->uri))
     {
      /*
       * Protect against malicious users!
@@ -1277,7 +1332,11 @@ ReadClient(client_t *con)		/* I - Client to read from */
               if (strncmp(con->uri, "/admin", 6) == 0)
 	      {
 		SetStringf(&con->command, "%s/cgi-bin/admin.cgi", ServerBin);
-		SetString(&con->options, con->uri + 6);
+
+		if ((ptr = strchr(con->uri + 6, '?')) != NULL)
+		  SetStringf(&con->options, "admin%s", ptr);
+		else
+		  SetString(&con->options, "admin");
 	      }
               else if (strncmp(con->uri, "/printers", 9) == 0)
 	      {
@@ -1292,11 +1351,11 @@ ReadClient(client_t *con)		/* I - Client to read from */
 	      else
 	      {
 		SetStringf(&con->command, "%s/cgi-bin/jobs.cgi", ServerBin);
-		SetString(&con->options, con->uri + 5);
+                SetString(&con->options, con->uri + 5);
 	      }
 
-	      if (con->options[0] == '/')
-		cups_strcpy(con->options, con->options + 1);
+              if (con->options[0] == '/')
+	        cups_strcpy(con->options, con->options + 1);
 
               if (!SendCommand(con, con->command, con->options))
 	      {
@@ -1342,6 +1401,11 @@ ReadClient(client_t *con)		/* I - Client to read from */
 
               if (IsCGI(con, filename, &filestats, type))
 	      {
+	       /*
+	        * Note: con->command and con->options were set by
+		* IsCGI()...
+		*/
+
         	if (!SendCommand(con, con->command, con->options))
 		{
 		  if (!SendError(con, HTTP_NOT_FOUND))
@@ -1427,7 +1491,11 @@ ReadClient(client_t *con)		/* I - Client to read from */
               if (strncmp(con->uri, "/admin", 6) == 0)
 	      {
 		SetStringf(&con->command, "%s/cgi-bin/admin.cgi", ServerBin);
-		SetString(&con->options, con->uri + 6);
+
+		if ((ptr = strchr(con->uri + 6, '?')) != NULL)
+		  SetStringf(&con->options, "admin%s", ptr);
+		else
+		  SetString(&con->options, "admin");
 	      }
               else if (strncmp(con->uri, "/printers", 9) == 0)
 	      {
@@ -1542,8 +1610,6 @@ ReadClient(client_t *con)		/* I - Client to read from */
 
             SetStringf(&con->filename, "%s/%08x", RequestRoot, request_id ++);
 	    con->file = open(con->filename, O_WRONLY | O_CREAT | O_TRUNC, 0640);
-	    fchmod(con->file, 0640);
-	    fchown(con->file, RunUser, Group);
 
             LogMessage(L_DEBUG2, "ReadClient: %d REQUEST %s=%d", con->http.fd,
 	               con->filename, con->file);
@@ -1553,6 +1619,10 @@ ReadClient(client_t *con)		/* I - Client to read from */
 	      if (!SendError(con, HTTP_REQUEST_TOO_LARGE))
 		return (CloseClient(con));
 	    }
+
+	    fchmod(con->file, 0640);
+	    fchown(con->file, RunUser, Group);
+	    fcntl(con->file, F_SETFD, fcntl(con->file, F_GETFD) | FD_CLOEXEC);
 	    break;
 
 	case HTTP_DELETE :
@@ -1782,8 +1852,6 @@ ReadClient(client_t *con)		/* I - Client to read from */
 
           SetStringf(&con->filename, "%s/%08x", RequestRoot, request_id ++);
 	  con->file = open(con->filename, O_WRONLY | O_CREAT | O_TRUNC, 0640);
-	  fchmod(con->file, 0640);
-	  fchown(con->file, RunUser, Group);
 
           LogMessage(L_DEBUG2, "ReadClient: %d REQUEST %s=%d", con->http.fd,
 	             con->filename, con->file);
@@ -1793,6 +1861,10 @@ ReadClient(client_t *con)		/* I - Client to read from */
 	    if (!SendError(con, HTTP_REQUEST_TOO_LARGE))
 	      return (CloseClient(con));
 	  }
+
+	  fchmod(con->file, 0640);
+	  fchown(con->file, RunUser, Group);
+          fcntl(con->file, F_SETFD, fcntl(con->file, F_GETFD) | FD_CLOEXEC);
 	}
 
 	if (con->http.state != HTTP_POST_SEND)
@@ -1908,6 +1980,16 @@ SendCommand(client_t      *con,
     fd = open(con->filename, O_RDONLY);
   else
     fd = open("/dev/null", O_RDONLY);
+
+  if (fd < 0)
+  {
+    LogMessage(L_ERROR, "SendCommand: %d Unable to open \"%s\" for reading: %s",
+               con->http.fd, con->filename ? con->filename : "/dev/null",
+	       strerror(errno));
+    return (0);
+  }
+
+  fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
 
   con->pipe_pid = pipe_command(con, fd, &(con->file), command, options);
 
@@ -2090,8 +2172,9 @@ SendHeader(client_t    *con,	/* I - Client to send to */
     return (0);
   if (httpPrintf(HTTP(con), "Date: %s\r\n", httpGetDateString(time(NULL))) < 0)
     return (0);
-  if (httpPrintf(HTTP(con), "Server: CUPS/1.1\r\n") < 0)
-    return (0);
+  if (ServerHeader)
+    if (httpPrintf(HTTP(con), "Server: %s\r\n", ServerHeader) < 0)
+      return (0);
   if (con->http.keep_alive && con->http.version >= HTTP_1_0)
   {
     if (httpPrintf(HTTP(con), "Connection: Keep-Alive\r\n") < 0)
@@ -2118,7 +2201,7 @@ SendHeader(client_t    *con,	/* I - Client to send to */
     }
     else
     {
-      if (httpPrintf(HTTP(con), "WWW-Authenticate: Digest realm=\"CUPS\" "
+      if (httpPrintf(HTTP(con), "WWW-Authenticate: Digest realm=\"CUPS\", "
                                 "nonce=\"%s\"\r\n", con->http.hostname) < 0)
 	return (0);
     }
@@ -2875,6 +2958,41 @@ install_conf_file(client_t *con)	/* I - Connection */
 
 
 /*
+ * 'is_path_absolute()' - Is a path absolute and free of relative elements (i.e. "..").
+ */
+
+static int				/* O - 0 if relative, 1 if absolute */
+is_path_absolute(const char *path)	/* I - Input path */
+{
+ /*
+  * Check for a leading slash...
+  */
+
+  if (path[0] != '/')
+    return (0);
+
+ /*
+  * Check for "/.." in the path...
+  */
+
+  while ((path = strstr(path, "/..")) != NULL)
+  {
+    if (!path[3] || path[3] == '/')
+      return (0);
+
+    path ++;
+  }
+
+ /*
+  * If we haven't found any relative paths, return 1 indicating an
+  * absolute path...
+  */
+
+  return (1);
+}
+
+
+/*
  * 'pipe_command()' - Pipe the output of a command to the remote client.
  */
 
@@ -2889,7 +3007,6 @@ pipe_command(client_t *con,		/* I - Client connection */
   int		pid;			/* Process ID */
   char		*commptr;		/* Command string pointer */
   char		*uriptr;		/* URI string pointer */
-  int		fd;			/* Looping var */
   int		fds[2];			/* Pipe FDs */
   int		argc;			/* Number of arguments */
   int		envc;			/* Number of environment variables */
@@ -2909,7 +3026,7 @@ pipe_command(client_t *con,		/* I - Client connection */
 		dyld_library_path[1024],/* DYLD_LIBRARY_PATH environment variable */
 		shlib_path[1024],	/* SHLIB_PATH environment variable */
 		nlspath[1024],		/* NLSPATH environment variable */
-		query_string[10240],	/* QUERY_STRING env variable */
+		*query_string,		/* QUERY_STRING env variable */
 		remote_addr[1024],	/* REMOTE_ADDR environment variable */
 		remote_host[1024],	/* REMOTE_HOST environment variable */
 		remote_user[1024],	/* REMOTE_USER environment variable */
@@ -2953,40 +3070,89 @@ pipe_command(client_t *con,		/* I - Client connection */
 		  "KOI8R",
 		  "KOI8U"
 		};
+  static const char * const encryptions[] =
+		{
+		  "CUPS_ENCRYPTION=IfRequested",
+		  "CUPS_ENCRYPTION=Never",
+		  "CUPS_ENCRYPTION=Required",
+		  "CUPS_ENCRYPTION=Always"
+		};
 
 
  /*
-  * Copy the command string...
+  * Parse a copy of the options string, which is of the form:
+  *
+  *     name argument+argument+argument
+  *     name?argument+argument+argument
+  *     name param=value&param=value
+  *     name?param=value&param=value
+  *
+  * If the string contains an "=" character after the initial name,
+  * then we treat it as a HTTP GET form request and make a copy of
+  * the remaining string for the environment variable.
+  *
+  * The string is always parsed out as command-line arguments, to
+  * be consistent with Apache...
   */
+
+  LogMessage(L_DEBUG2, "pipe_command: command=\"%s\", options=\"%s\"",
+             command, options);
 
   strlcpy(argbuf, options, sizeof(argbuf));
 
- /*
-  * Parse the string; arguments can be separated by + and are terminated
-  * by ?...
-  */
-
-  argv[0] = argbuf;
+  argv[0]      = argbuf;
+  query_string = NULL;
 
   for (commptr = argbuf, argc = 1; *commptr != '\0' && argc < 99; commptr ++)
-    if (*commptr == ' ' || *commptr == '+')
+  {
+   /*
+    * Break arguments whenever we see a + or space...
+    */
+
+    if (*commptr == ' ' || *commptr == '+' || (*commptr == '?' && argc == 1))
     {
+     /*
+      * Terminate the current string and skip trailing whitespace...
+      */
+
       *commptr++ = '\0';
 
       while (*commptr == ' ')
         commptr ++;
 
-      if (*commptr != '\0')
+     /*
+      * If we don't have a blank string, save it as another argument...
+      */
+
+      if (*commptr)
       {
         argv[argc] = commptr;
 	argc ++;
       }
+      else
+        break;
+
+     /*
+      * If we see an "=" in the remaining string, make a copy of it since
+      * it will be query data...
+      */
+
+      if (argc == 2 && strchr(commptr, '=') && con->operation == HTTP_GET)
+	SetStringf(&query_string, "QUERY_STRING=%s", commptr);
+
+     /*
+      * Don't skip the first non-blank character...
+      */
 
       commptr --;
     }
     else if (*commptr == '%' && isxdigit(commptr[1] & 255) &&
              isxdigit(commptr[2] & 255))
     {
+     /*
+      * Convert the %xx notation to the individual character.
+      */
+
       if (commptr[1] >= '0' && commptr[1] <= '9')
         *commptr = (commptr[1] - '0') << 4;
       else
@@ -2998,9 +3164,15 @@ pipe_command(client_t *con,		/* I - Client connection */
         *commptr |= tolower(commptr[2]) - 'a' + 10;
 
       cups_strcpy(commptr + 1, commptr + 3);
+
+     /*
+      * Check for a %00 and break if that is the case...
+      */
+
+      if (!*commptr)
+        break;
     }
-    else if (*commptr == '?')
-      break;
+  }
 
   argv[argc] = NULL;
 
@@ -3129,15 +3301,12 @@ pipe_command(client_t *con,		/* I - Client connection */
   {
     envp[envc ++] = "REQUEST_METHOD=GET";
 
-    if (*commptr)
+    if (query_string)
     {
      /*
       * Add GET form variables after ?...
       */
 
-      *commptr++ = '\0';
-
-      snprintf(query_string, sizeof(query_string), "QUERY_STRING=%s", commptr);
       envp[envc ++] = query_string;
     }
   }
@@ -3157,27 +3326,32 @@ pipe_command(client_t *con,		/* I - Client connection */
   */
 
   if (con->http.encryption == HTTP_ENCRYPT_ALWAYS)
-  {
     envp[envc ++] = "HTTPS=ON";
-    envp[envc ++] = "CUPS_ENCRYPTION=Always";
-  }
+
+  envp[envc ++] = (char *)encryptions[LocalEncryption];
+
+ /*
+  * Terminate the environment array...
+  */
 
   envp[envc] = NULL;
 
   if (LogLevel == L_DEBUG2)
   {
     for (i = 0; i < argc; i ++)
-      LogMessage(L_DEBUG2, "argv[%d] = \"%s\"", i, argv[i]);
+      LogMessage(L_DEBUG2, "pipe_command: argv[%d] = \"%s\"", i, argv[i]);
     for (i = 0; i < envc; i ++)
-      LogMessage(L_DEBUG2, "envp[%d] = \"%s\"", i, envp[i]);
+      LogMessage(L_DEBUG2, "pipe_command: envp[%d] = \"%s\"", i, envp[i]);
   }
 
  /*
   * Create a pipe for the output...
   */
 
-  if (pipe(fds))
+  if (cupsdOpenPipe(fds))
   {
+    ClearString(&query_string);
+
     LogMessage(L_ERROR, "Unable to create pipes for CGI %s - %s",
                argv[0], strerror(errno));
     return (0);
@@ -3242,13 +3416,6 @@ pipe_command(client_t *con,		/* I - Client connection */
     dup(CGIPipes[1]);
 
    /*
-    * Close extra file descriptors...
-    */
-
-    for (fd = 3; fd < MaxFDs; fd ++)
-      close(fd);
-
-   /*
     * Change umask to restrict permissions on created files...
     */
 
@@ -3293,8 +3460,7 @@ pipe_command(client_t *con,		/* I - Client connection */
     LogMessage(L_ERROR, "Unable to fork for CGI %s - %s", argv[0],
                strerror(errno));
 
-    close(fds[0]);
-    close(fds[1]);
+    cupsdClosePipe(fds);
     pid = 0;
   }
   else
@@ -3313,11 +3479,171 @@ pipe_command(client_t *con,		/* I - Client connection */
 
   ReleaseSignals();
 
+  ClearString(&query_string);
+
   return (pid);
 }
 
 
 #if defined(HAVE_CDSASSL)
+/*
+ * 'cups_cdsa_once_init()' - One-time initialization routine used with 
+ *			the pthread_once control block.
+ */
+
+static const char SecurityLibPath[]	    = "/System/Library/Frameworks/Security.framework/Security";
+
+static
+void cups_cdsa_once_init()
+{
+#ifdef HAVE_DLFCN_H
+ /*
+  * If we have dlopen then weak-link the library and load it when needed.
+  */
+
+  void *cdsa_lib = NULL;
+
+  cdsa_lib = dlopen(SecurityLibPath, RTLD_LAZY);
+
+  SSLCloseProc			= dlsym(cdsa_lib, "SSLClose");
+  SSLDisposeContextProc		= dlsym(cdsa_lib, "SSLDisposeContext");
+  SSLGetBufferedReadSizeProc	= dlsym(cdsa_lib, "SSLGetBufferedReadSizeName");
+  SSLHandshakeProc		= dlsym(cdsa_lib, "SSLHandshake");
+  SSLNewContextProc		= dlsym(cdsa_lib, "SSLNewContext");
+  SSLReadProc			= dlsym(cdsa_lib, "SSLRead");
+  SSLSetCertificateProc		= dlsym(cdsa_lib, "SSLSetCertificate");
+  SSLSetConnectionProc		= dlsym(cdsa_lib, "SSLSetConnection");
+  SSLSetEnableCertVerifyProc	= dlsym(cdsa_lib, "SSLSetEnableCertVerify");
+  SSLSetIOFuncsProc		= dlsym(cdsa_lib, "SSLSetIOFuncs");
+  SSLSetPeerDomainNameProc	= dlsym(cdsa_lib, "SSLSetPeerDomainName");
+  SSLSetProtocolVersionProc	= dlsym(cdsa_lib, "SSLSetProtocolVersionEnabled");
+  SSLWriteProc			= dlsym(cdsa_lib, "SSLWrite");
+
+  SecIdentityGetTypeIDProc	= dlsym(cdsa_lib, "SecIdentityGetTypeID");
+  SecIdentitySearchCopyNextProc	= dlsym(cdsa_lib, "SecIdentitySearchCopyNext");
+  SecIdentitySearchCreateProc	= dlsym(cdsa_lib, "SecIdentitySearchCreate");
+  SecKeychainOpenProc		= dlsym(cdsa_lib, "SecKeychainOpen");
+#else
+  SSLGetBufferedReadSizeProc	= SSLGetBufferedReadSize;
+  SSLNewContextProc		= SSLNewContext;
+  SSLSetIOFuncsProc		= SSLSetIOFuncs;
+  SSLSetConnectionProc		= SSLSetConnection;
+  SSLSetEnableCertVerifyProc	= SSLSetEnableCertVerify;
+  SSLHandshakeProc		= SSLHandshake;
+  SSLDisposeContextProc		= SSLDisposeContext;
+  SSLCloseProc			= SSLClose;
+  SSLReadProc			= SSLRead;
+  SSLWriteProc			= SSLWrite;
+
+  SecKeychainOpenProc		= SecKeychainOpen;
+  SecIdentitySearchCreateProc	= SecIdentitySearchCreate;
+  SecIdentitySearchCopyNextProc	= SecIdentitySearchCopyNext;
+#endif /* HAVE_DLFCN_H */
+}
+
+
+/*
+ * 'cupsd_cdsa_init()' - Initialize cdsa ssl.
+ */
+
+void cupsd_cdsa_init(void)
+{
+  pthread_once(&cdsa_key_once, cups_cdsa_once_init);
+
+  return;
+}
+
+
+/*
+ * 'CDSAGetServerCerts()' - Convert a keychain name into the CFArrayRef
+ *                          required by SSLSetCertificate.
+ *
+ * For now we assumes that there is exactly one SecIdentity in the
+ * keychain - i.e. there is exactly one matching cert/private key pair.
+ * In the future we will search a keychain for a SecIdentity matching a
+ * specific criteria.  We also skip the operation of adding additional
+ * non-signing certs from the keychain to the CFArrayRef.
+ *
+ * To create a self-signed certificate for testing use the certtool.
+ * Executing the following as root will do it:
+ *
+ *     certtool c c v k=CUPS
+ */
+
+static CFArrayRef
+CDSAGetServerCerts(void)
+{
+  OSStatus		err;		/* Error info */
+  SecKeychainRef 	kcRef;		/* Keychain reference */
+  SecIdentitySearchRef	srchRef;	/* Search reference */
+  SecIdentityRef	identity;	/* Identity */
+  CFArrayRef		ca;		/* Certificate array */
+
+
+  kcRef    = NULL;
+  srchRef  = NULL;
+  identity = NULL;
+  ca       = NULL;
+
+  cupsd_cdsa_init();
+
+  err = (*SecKeychainOpenProc)(ServerCertificate, &kcRef);
+
+  if (err)
+    LogMessage(L_ERROR, "Cannot open keychain \"%s\", error %d.",
+               ServerCertificate, (int)err);
+  else
+  {
+   /*
+    * Search for "any" identity matching specified key use; 
+    * in this app, we expect there to be exactly one. 
+    */
+
+    err = (*SecIdentitySearchCreateProc)(kcRef, CSSM_KEYUSE_SIGN, &srchRef);
+
+    if (err)
+      LogMessage(L_DEBUG2,
+                 "Cannot find signing key in keychain \"%s\", error %d",
+                 ServerCertificate, (int)err);
+    else
+    {
+      err = (*SecIdentitySearchCopyNextProc)(srchRef, &identity);
+
+      if (err)
+	LogMessage(L_DEBUG2,
+	           "Cannot find signing key in keychain \"%s\", error %d",
+	           ServerCertificate, (int)err);
+      else
+      {
+	if (CFGetTypeID(identity) != (*SecIdentityGetTypeIDProc)())
+	  LogMessage(L_ERROR, "SecIdentitySearchCopyNext CFTypeID failure!");
+	else
+	{
+	 /* 
+	  * Found one. Place it in a CFArray. 
+	  * TBD: snag other (non-identity) certs from keychain and add them
+	  * to array as well.
+	  */
+
+	  ca = CFArrayCreate(NULL, (const void **)&identity, 1, NULL);
+
+	  if (ca == nil)
+	    LogMessage(L_ERROR, "CFArrayCreate error");
+	}
+
+	/*CFRelease(identity);*/
+      }
+
+      /*CFRelease(srchRef);*/
+    }
+
+    /*CFRelease(kcRef);*/
+  }
+
+  return ca;
+}
+
+
 /*
  * 'CDSAReadFunc()' - Read function for CDSA decryption code.
  */
@@ -3366,5 +3692,5 @@ CDSAWriteFunc(SSLConnectionRef connection,	/* I  - SSL/TLS connection */
 
 
 /*
- * End of "$Id: client.c,v 1.15 2004/06/05 03:49:46 jlovell Exp $".
+ * End of "$Id: client.c,v 1.24 2005/01/10 23:40:51 jlovell Exp $".
  */

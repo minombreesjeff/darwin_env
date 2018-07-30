@@ -1,5 +1,5 @@
 #
-# "$Id: Makefile.common,v 1.5 2004/05/27 18:51:30 mike Exp $"
+# "$Id$"
 #
 #   Man pages definitions for the Common UNIX Printing System (CUPS).
 #
@@ -82,5 +82,5 @@ CAT8	=	accept.$(CAT8EXT) \
 
 
 #
-# End of "$Id: Makefile.common,v 1.5 2004/05/27 18:51:30 mike Exp $".
+# End of "$Id$".
 #

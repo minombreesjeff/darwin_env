@@ -1,9 +1,9 @@
 /*
- * "$Id: cups-lpd.c,v 1.7 2004/04/08 17:41:38 jlovell Exp $"
+ * "$Id: cups-lpd.c,v 1.13 2005/01/21 00:23:18 jlovell Exp $"
  *
  *   Line Printer Daemon interface for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -54,6 +54,10 @@
 #  include <inttypes.h>
 #endif /* HAVE_INTTYPES_H */
 
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreFoundation/CFPriv.h>
+#endif /* __APPLE__ */
 
 /*
  * LPD "mini-daemon" for CUPS.  This program must be used in conjunction
@@ -215,10 +219,27 @@ main(int  argc,				/* I - Number of command-line arguments */
   command = line[0];
   dest    = line + 1;
 
+#ifdef __APPLE__
+ /*
+  * When some clients send a job they use the name they see in the UI as the 
+  * queue name (the printer-info value). Because this can include spaces we
+  * don't want to truncate names at the first whitespace character.
+  */
+
+  if (command == 0x02)	/* Receive a printer job */
+    list = "";
+  else
+  {
+#endif	/* __APPLE__ */
+
   for (list = dest + 1; *list && !isspace(*list & 255); list ++);
 
   while (isspace(*list & 255))
     *list++ = '\0';
+
+#ifdef __APPLE__
+  }
+#endif	/* __APPLE__ */
 
  /*
   * Do the command...
@@ -348,6 +369,11 @@ check_printer(const char *name)		/* I - Printer or class name */
   ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_NAME, "requested-attributes",
                NULL, "printer-is-accepting-jobs");
 
+#ifdef __APPLE__
+  ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_NAME, "requested-attributes",
+               NULL, "printer-is-shared");
+#endif	/* __APPLE__ */
+
  /*
   * Do the request...
   */
@@ -374,6 +400,86 @@ check_printer(const char *name)		/* I - Printer or class name */
   }
   else
     accepting = attr->values[0].boolean;
+
+#ifdef __APPLE__
+  if (accepting && response)
+  {
+    /*
+     * Override cups Shared setting if installed on X Server
+     */ 
+    static const char printerprefsfile[] = "/Library/Preferences/com.apple.printservice.plist";
+
+    CFDictionaryRef versdict = _CFCopyServerVersionDictionary();
+
+    if (versdict != NULL)		/* use server sharing control */
+    {
+      CFRelease(versdict); 		/* not used */
+
+      accepting = 0;			/* default on server */
+
+      CFURLRef prefsurl = NULL;
+      CFDataRef xmldata = NULL;
+      CFPropertyListRef plist = NULL;
+      CFStringRef queueid = NULL;
+
+      CFArrayRef lprqarray = NULL;
+      CFBooleanRef serverflag = NULL;
+      Boolean prefsok = false;
+
+      do	/* not a loop */
+      {
+	prefsurl = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, 
+							   (const UInt8*) printerprefsfile, 
+							   (CFIndex) strlen(printerprefsfile), 
+							   false);
+	if (prefsurl == NULL) break;
+
+	prefsok = CFURLCreateDataAndPropertiesFromResource(kCFAllocatorDefault, 
+							   prefsurl, &xmldata, 
+							   NULL, NULL, NULL);
+	if (!prefsok) break;
+
+	plist = CFPropertyListCreateFromXMLData(kCFAllocatorDefault, xmldata, 
+						kCFPropertyListImmutable, NULL);
+	if (plist == NULL) break;
+
+	serverflag = (CFBooleanRef) CFDictionaryGetValue((CFDictionaryRef) plist, 
+							 CFSTR("serviceState"));
+	if (serverflag== NULL) break;			/* missing serviceState flag == not running */
+	if (!CFBooleanGetValue(serverflag)) break;	/* server not running */
+
+	lprqarray = (CFArrayRef) CFDictionaryGetValue((CFDictionaryRef) plist, 
+						      CFSTR("lprSharedQueues"));
+	if (lprqarray == NULL) break;		/* no shared LPR queues */
+
+	CFStringRef queueid = CFStringCreateWithCString(CFAllocatorGetDefault(), 
+							name, kCFStringEncodingUTF8);
+	if (queueid == NULL) break;		/* error creating CFString */
+
+	accepting = CFArrayContainsValue(lprqarray, CFRangeMake(0, 
+								CFArrayGetCount(lprqarray)), queueid);
+
+      } while (0); /* not a loop */
+		
+      if (!accepting)
+	syslog(LOG_ERR, "Warning - Print Service sharing disable for LPR on queue: %s", name);
+
+      if (queueid != NULL) CFRelease(queueid);
+      if (plist != NULL) CFRelease(plist);
+      if (xmldata != NULL) CFRelease(xmldata);
+      if (prefsurl != NULL) CFRelease(prefsurl);
+    }
+    /* use desktop sharing control */
+    else if (response && (attr = ippFindAttribute(response, "printer-is-shared",
+                                    IPP_TAG_BOOLEAN)) == NULL)
+    {
+      syslog(LOG_ERR, "No printer-is-shared attribute found in response from server!");
+      accepting = 0;
+    }
+    else
+      accepting = attr->values[0].boolean;
+  }
+#endif	/* __APPLE__ */
 
   if (response != NULL)
     ippDelete(response);
@@ -524,6 +630,8 @@ recv_print_job(const char    *dest,	/* I - Destination */
 		command,		/* Command from line */
 		*count,			/* Number of bytes */
 		*name;			/* Name of file */
+  const char	*printer_info,		/* Printer info */
+		*job_sheets;		/* Job sheets */
   int		num_data;		/* Number of data files */
   char		control[1024],		/* Control filename */
 		data[32][256],		/* Data files */
@@ -562,6 +670,28 @@ recv_print_job(const char    *dest,	/* I - Destination */
     if (!queue[0] || !strcmp(queue, "lp"))
       if ((destptr = cupsGetDest(NULL, NULL, num_dests, dests)) != NULL)
 	strlcpy(queue, destptr->name, sizeof(queue));
+    }
+
+#ifdef __APPLE__
+    if (destptr == NULL)
+    {
+     /*
+      * Lookup name in printer-info...
+      */
+
+      for (i = 0; i < num_dests; i ++)
+      {
+        if ((printer_info = cupsGetOption("printer-info", dests[i].num_options, dests[i].options)) != NULL)
+        {
+	  if (!strcasecmp(queue, printer_info))
+	  {
+	    destptr = &dests[i];
+	    strlcpy(queue, destptr->name, sizeof(queue));
+	    break;
+	  }
+        }
+      }
+#endif	/* __APPLE__ */
 
     if (destptr == NULL)
     {
@@ -770,7 +900,7 @@ recv_print_job(const char    *dest,	/* I - Destination */
       title[0]   = '\0';
       user[0]    = '\0';
       docname[0] = '\0';
-      banner     = cupsGetOption("job-sheets", num_options, options) != NULL;
+      banner     = 0;
 
       while (smart_gets(line, sizeof(line), fp) != NULL)
       {
@@ -844,22 +974,31 @@ recv_print_job(const char    *dest,	/* I - Destination */
               num_options = 0;
 	      options     = NULL;
 
-	      for (i = 0; i < num_defaults; i ++)
-	        num_options = cupsAddOption(defaults[i].name,
-		                            defaults[i].value,
-		                            num_options, &options);
 	      for (i = 0; i < destptr->num_options; i ++)
 	        num_options = cupsAddOption(destptr->options[i].name,
 		                            destptr->options[i].value,
 		                            num_options, &options);
+	      for (i = 0; i < num_defaults; i ++)
+	        num_options = cupsAddOption(defaults[i].name,
+		                            defaults[i].value,
+		                            num_options, &options);
+
+             /*
+	      * If a banner was requested and it's not overridden by a command line option and
+	      * the destination's default is none then add the standard banner...
+	      */
+
+              if (banner && cupsGetOption("job-sheets", num_defaults, defaults) == NULL &&
+                  ((job_sheets = cupsGetOption("job-sheets", destptr->num_options, destptr->options)) == NULL ||
+                   !strcmp(job_sheets, "none,none")))
+	      {
+	        num_options = cupsAddOption("job-sheets", "standard",
+		                            num_options, &options);
+	      }
 
              /*
 	      * Add additional options as needed...
 	      */
-
-              if (!banner)
-	        num_options = cupsAddOption("job-sheets", "none",
-		                            num_options, &options);
 
 	      if (line[0] == 'l')
 	        num_options = cupsAddOption("raw", "", num_options, &options);
@@ -1426,5 +1565,5 @@ smart_gets(char *s,			/* I - Pointer to line buffer */
 
 
 /*
- * End of "$Id: cups-lpd.c,v 1.7 2004/04/08 17:41:38 jlovell Exp $".
+ * End of "$Id: cups-lpd.c,v 1.13 2005/01/21 00:23:18 jlovell Exp $".
  */

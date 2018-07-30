@@ -1,9 +1,9 @@
 /*
- * "$Id: server.c,v 1.4 2004/04/23 06:12:06 jlovell Exp $"
+ * "$Id: server.c,v 1.13 2005/01/06 01:26:12 jlovell Exp $"
  *
  *   Server start/stop routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -40,7 +40,12 @@
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOMessage.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
+#include <SystemConfiguration/SystemConfiguration.h>
 #include <pthread.h>
+
+#ifdef HAVE_DLFCN_H
+#  include <dlfcn.h>			/* for PSQUpdateQuota */
+#endif /* HAVE_DLFCN_H */
 
 /*
  * Constants...
@@ -49,6 +54,8 @@
 #define SYSEVENT_CANSLEEP	0x1	/* Decide whether to allow sleep or not */
 #define SYSEVENT_WILLSLEEP	0x2	/* Computer will go to sleep */
 #define SYSEVENT_WOKE		0x4	/* Computer woke from sleep */
+#define SYSEVENT_NETCHANGED	0x8	/* Network changed */
+#define SYSEVENT_NAMECHANGED	0x10	/* Computer name changed */
 
 
 /* 
@@ -67,7 +74,7 @@ typedef struct cups_sysevent_str	/*** System event data ****/
 typedef struct cups_thread_data_str	/*** Thread context data  ****/
 {
   cups_sysevent_t	sysevent;	/* Sys event */
-  CFRunLoopTimerRef	timerRef;	/* Timer to de-bounce network change notifications */
+  CFRunLoopTimerRef	timerRef;	/* Timer to delay some change notifications */
 } cups_thread_data_t;
 
 
@@ -75,10 +82,22 @@ typedef struct cups_thread_data_str	/*** Thread context data  ****/
  * Globals... 
  */
 
-static pthread_t	  SysEventThread = NULL;	/* Thread to host a runloop */
-static pthread_mutex_t	  SysEventThreadMutex = { 0 };	/* Coordinates access to shared gloabals */ 
-static pthread_cond_t	  SysEventThreadCond = { 0 };	/* Thread initialization complete condition */
-static CFRunLoopRef	  SysEventRunloop = NULL;	/* The runloop. Access must be protected! */
+static pthread_t	SysEventThread = NULL;		/* Thread to host a runloop */
+static pthread_mutex_t	SysEventThreadMutex = { 0 };	/* Coordinates access to shared gloabals */ 
+static pthread_cond_t	SysEventThreadCond = { 0 };	/* Thread initialization complete condition */
+static CFRunLoopRef	SysEventRunloop = NULL;		/* The runloop. Access must be protected! */
+static CFStringRef	ComputerNameKey = NULL,		/* Computer name key */
+			NetworkGlobalKey = NULL,	/* Network global key */
+			HostNamesKey = NULL,		/* Host name key */
+			NetworkInterfaceKey = NULL;	/* Netowrk interface key */
+
+#ifdef HAVE_DLFCN_H
+static const char PSQLibPath[]	    = "/usr/lib/libPrintServiceQuota.dylib";
+static const char PSQLibFuncName[] = "PSQUpdateQuota";
+static void *PSQLibRef = NULL;		/* cached reference to libPrintServiceQuota.dylib */
+
+void *PSQUpdateQuotaProc = NULL;	/* PSQUpdateQuota function pointer (exported) */
+#endif /* HAVE_DLFCN_H */
 
 
 /* 
@@ -87,6 +106,7 @@ static CFRunLoopRef	  SysEventRunloop = NULL;	/* The runloop. Access must be pro
 
 static void *sysEventThreadEntry();
 static void sysEventPowerNotifier(void *context, io_service_t service, natural_t messageType, void *messageArgument);
+static void sysEventConfigurationNotifier(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context);
 static void sysEventTimerNotifier(CFRunLoopTimerRef timer, void *context);
 #endif	/* __APPLE__ */
 
@@ -131,9 +151,24 @@ StartServer(void)
   */
 
   gnutls_global_init();
-#elif defined(HAVE_CDSASSL)
-  ServerCertificatesArray = CDSAGetServerCerts();
 #endif /* HAVE_LIBSSL */
+
+#ifdef __APPLE__
+#ifdef HAVE_DLFCN_H
+ /*
+  * Load Print Service quota enforcement library (X Server only)
+  */
+
+  if (AppleQuotas)
+  {
+    if (!PSQLibRef)
+      PSQLibRef = dlopen(PSQLibPath, RTLD_LAZY);
+
+    if (PSQLibRef)
+      PSQUpdateQuotaProc = dlsym(PSQLibRef, PSQLibFuncName);
+  }
+#endif /* HAVE_DLFCN_H */
+#endif /* __APPLE__ */
 
  /*
   * Startup all the networking stuff...
@@ -147,11 +182,13 @@ StartServer(void)
   * Create a pipe for CGI processes...
   */
 
-  pipe(CGIPipes);
-
-  LogMessage(L_DEBUG2, "StartServer: Adding fd %d to InputSet...", CGIPipes[0]);
-  FD_SET(CGIPipes[0], InputSet);
-
+  if (cupsdOpenPipe(CGIPipes))
+    LogMessage(L_ERROR, "StartServer: Unable to create pipes for CGI status!");
+  else
+  {
+    LogMessage(L_DEBUG2, "StartServer: Adding fd %d to InputSet...", CGIPipes[0]);
+    FD_SET(CGIPipes[0], InputSet);
+  }
 
 #ifdef __APPLE__
   StartSysEventMonitor();
@@ -177,13 +214,20 @@ StopServer(void)
 
 #ifdef __APPLE__
   StopSysEventMonitor();
-#endif	/* __APPLE__ */
 
-  if (Clients != NULL)
+ /* 
+  * Unload Print Service quota enforcement library (X Server only) 
+  */
+
+#ifdef HAVE_DLFCN_H
+  PSQUpdateQuotaProc = NULL;
+  if (PSQLibRef)
   {
-    free(Clients);
-    Clients = NULL;
+    dlclose(PSQLibRef);
+    PSQLibRef = NULL;
   }
+#endif /* HAVE_DLFCN_H */
+#endif	/* __APPLE__ */
 
 #if defined(HAVE_SSL) && defined(HAVE_CDSASSL)
  /*
@@ -203,16 +247,12 @@ StopServer(void)
 
   if (CGIPipes[0] >= 0)
   {
-    close(CGIPipes[0]);
-    close(CGIPipes[1]);
-
     LogMessage(L_DEBUG2, "StopServer: Removing fd %d from InputSet...",
                CGIPipes[0]);
 
     FD_CLR(CGIPipes[0], InputSet);
 
-    CGIPipes[0] = -1;
-    CGIPipes[1] = -1;
+    cupsdClosePipe(CGIPipes);
   }
 
  /*
@@ -252,7 +292,11 @@ void StartSysEventMonitor(void)
 {
   int flags;
 
-  pipe(SysEventPipes);
+  if (pipe(SysEventPipes))
+  {
+    LogMessage(L_EMERG, "System event monitor pipe() failed - %s!", strerror(errno));
+    return;
+  }
 
   LogMessage(L_DEBUG2, "StartServer: Adding fd %d to InputSet...", SysEventPipes[0]);
   FD_SET(SysEventPipes[0], InputSet);
@@ -334,8 +378,6 @@ void UpdateSysEventMonitor(void)
   cups_sysevent_t	sysevent;	/* The system event */
   printer_t		*p,		/* Printer information */
 			*next;		/* Pointer to next printer in list */
-  job_t			*job;		/* Job information */
-  int			jobcount;	/* Count of active jobs */
 
  /*
   * Drain the event pipe...
@@ -346,16 +388,16 @@ void UpdateSysEventMonitor(void)
     if ((sysevent.event & SYSEVENT_CANSLEEP))
     {
      /*
-      * If there are any active jobs cancel the sleep request...
+      * If there are any active printers cancel the sleep request...
       */
 
-      for (job = Jobs, jobcount = 0; job != NULL; job = job->next)
-        if (job->state->values[0].integer <= IPP_JOB_PROCESSING)
-          jobcount++;
+      for (p = Printers; p != NULL; p = p->next)
+        if (p->job)
+          break;
 
-      if (jobcount)
+      if (p)
       {
-        LogMessage(L_INFO, "System sleep canceled because of %d active job(s)", jobcount);
+        LogMessage(L_INFO, "System sleep canceled because printer %s is active", p->name);
         IOCancelPowerChange(sysevent.powerKernelPort, sysevent.powerNotificationID);
       }
       else
@@ -381,6 +423,11 @@ void UpdateSysEventMonitor(void)
 	  LogMessage(L_INFO, "Deleting remote destination \"%s\"", p->name);
 	  DeletePrinter(p, 0);
 	}
+	else
+	{
+	  LogMessage(L_DEBUG, "Deregistering local printer \"%s\"", p->name);
+	  BrowseDeregisterPrinter(p, 0);
+	}
       }
       IOAllowPowerChange(sysevent.powerKernelPort, sysevent.powerNotificationID);
     }
@@ -393,20 +440,77 @@ void UpdateSysEventMonitor(void)
       Sleeping = 0;
       CheckJobs();
     }
+
+    if ((sysevent.event & SYSEVENT_NETCHANGED))
+    {
+      if (!Sleeping)
+      {
+        LogMessage(L_DEBUG, "System network configuration changed");
+
+       /*
+        *  Force update the list of network interfaces.
+        */
+
+        NetIFUpdate(TRUE);
+
+       /*
+        * Resetting browse_time before calling SendBrowseList causes remote 
+        * printers to be deleted and browse packets sent for local shared printers.
+        */
+
+        for (p = Printers; p != NULL; p = p->next)
+	  p->browse_time = 0;
+
+        SendBrowseList();
+      }
+      else
+        LogMessage(L_DEBUG, "System network configuration changed; ignored while sleeping");
+    }
+
+    if ((sysevent.event & SYSEVENT_NAMECHANGED))
+    {
+      if (!Sleeping)
+      {
+        LogMessage(L_DEBUG, "Computer name changed");
+
+       /*
+	* De-register the individual printers
+	*/
+
+	for (p = Printers; p != NULL; p = p->next)
+	  BrowseDeregisterPrinter(p, 0);
+
+       /*
+	* Now re-register them
+	*/
+
+	for (p = Printers; p != NULL; p = p->next)
+	  BrowseRegisterPrinter(p);
+      }
+      else
+        LogMessage(L_DEBUG, "Computer name changed; ignored while sleeping");
+    }
   }
 }
 
 
 /*
  * 'sysEventThreadEntry()' - A thread to run a runloop on. 
- *		       Receives power & network change notifications.
+ *		       Receives power & computer name change notifications.
  */
 
 static void *sysEventThreadEntry()
 {
   io_object_t		powerNotifierObj;	/* Power notifier object */
   IONotificationPortRef powerNotifierPort;	/* Power notifier port */
-  CFRunLoopSourceRef	powerRLS = NULL;	/* Power runloop source */
+  SCDynamicStoreRef	store    = NULL;	/* System Config dynamic store */
+  CFRunLoopSourceRef	powerRLS = NULL,	/* Power runloop source */
+			storeRLS = NULL;	/* System Config runloop source */
+  CFStringRef		key[3],			/* System Config keys */
+			pattern[1];		/* System Config patterns */
+  CFArrayRef		keys = NULL,		/* System Config key array*/
+			patterns = NULL;	/* System Config pattern array */
+  SCDynamicStoreContext	storeContext;		/* Dynamic store context */
   CFRunLoopTimerContext timerContext;		/* Timer context */
   cups_thread_data_t	threadData;		/* Thread context data for the runloop notifiers */
 
@@ -425,6 +529,47 @@ static void *sysEventThreadEntry()
   }
   else
     DEBUG_puts("runloopThread: error registering for system power notifications");
+
+
+ /*
+  * Register for system configuration change notifications
+  */
+
+  bzero(&storeContext,  sizeof(storeContext));
+  storeContext.info = &threadData;
+
+  store      = SCDynamicStoreCreate(NULL, CFSTR("cupsd"), sysEventConfigurationNotifier, &storeContext);
+
+  if (!ComputerNameKey)	     ComputerNameKey	= SCDynamicStoreKeyCreateComputerName(NULL);
+  if (!NetworkGlobalKey)     NetworkGlobalKey	= SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL, kSCDynamicStoreDomainState, kSCEntNetIPv4);
+  if (!HostNamesKey)	     HostNamesKey	= SCDynamicStoreKeyCreateHostNames(NULL);
+  if (!NetworkInterfaceKey)  NetworkInterfaceKey= SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
+
+  if (store && ComputerNameKey && NetworkGlobalKey && HostNamesKey && NetworkInterfaceKey)
+  {
+    key[0]     = ComputerNameKey;
+    key[1]     = NetworkGlobalKey;
+    key[2]     = HostNamesKey;
+    pattern[0] = NetworkInterfaceKey;
+
+    keys     = CFArrayCreate(NULL, (const void **)key,     sizeof(key)/sizeof(key[0]),         &kCFTypeArrayCallBacks);
+    patterns = CFArrayCreate(NULL, (const void **)pattern, sizeof(pattern)/sizeof(pattern[0]), &kCFTypeArrayCallBacks);
+
+    if (keys && patterns && SCDynamicStoreSetNotificationKeys(store, keys, patterns))
+    {
+      if ((storeRLS = SCDynamicStoreCreateRunLoopSource(NULL, store, 0)) != NULL)
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), storeRLS, kCFRunLoopDefaultMode);
+      else
+	DEBUG_printf(("runloopThread: SCDynamicStoreCreateRunLoopSource failed: %s\n", SCErrorString(SCError())));
+    }
+    else
+      DEBUG_printf(("runloopThread: SCDynamicStoreSetNotificationKeys failed: %s\n", SCErrorString(SCError())));
+  }
+  else
+    DEBUG_printf(("runloopThread: SCDynamicStoreCreate failed: %s\n", SCErrorString(SCError())));
+
+  if (keys)       CFRelease(keys);
+  if (patterns)   CFRelease(patterns);
 
 
  /*
@@ -480,6 +625,16 @@ static void *sysEventThreadEntry()
 
   if (threadData.sysevent.powerKernelPort)
     IODeregisterForSystemPower(&powerNotifierObj);
+
+  if (storeRLS)
+  {
+    CFRunLoopRemoveSource(CFRunLoopGetCurrent(), storeRLS, kCFRunLoopDefaultMode);
+    CFRunLoopSourceInvalidate(storeRLS);
+    CFRelease(storeRLS);
+  }
+
+  if (store)
+    CFRelease(store);
 
   pthread_exit(NULL);
 }
@@ -554,6 +709,35 @@ static void sysEventPowerNotifier(void *context, io_service_t service, natural_t
 
 
 /*
+ * 'sysEventConfigurationNotifier()' - Computer name changed notification callback.
+ */
+
+static void sysEventConfigurationNotifier(SCDynamicStoreRef store, CFArrayRef changedKeys, void *context)
+{
+  (void)store;		/* anti-compiler-warning-code */
+
+  CFRange range = CFRangeMake(0, CFArrayGetCount(changedKeys));
+
+  if (CFArrayContainsValue(changedKeys, range, ComputerNameKey))
+    ((cups_thread_data_t *)context)->sysevent.event |= SYSEVENT_NAMECHANGED;
+
+  if (CFArrayContainsValue(changedKeys, range, NetworkGlobalKey) ||
+      CFArrayContainsValue(changedKeys, range, HostNamesKey) ||
+      CFArrayContainsValue(changedKeys, range, NetworkInterfaceKey))
+    ((cups_thread_data_t *)context)->sysevent.event |= SYSEVENT_NETCHANGED;
+
+ /*
+  * Because we registered for several different kinds of change notifications 
+  * this callback usually gets called several times in a row. We use a timer to 
+  * de-bounce these so we only end up generating one event for the main thread.
+  */
+
+  CFRunLoopTimerSetNextFireDate(((cups_thread_data_t *)context)->timerRef, 
+  				CFAbsoluteTimeGetCurrent() + 2);
+}
+
+
+/*
  * 'sysEventTimerNotifier()' - .
  */
 
@@ -577,5 +761,5 @@ static void sysEventTimerNotifier(CFRunLoopTimerRef timer, void *context)
 #endif	/* __APPLE__ */
 
 /*
- * End of "$Id: server.c,v 1.4 2004/04/23 06:12:06 jlovell Exp $".
+ * End of "$Id: server.c,v 1.13 2005/01/06 01:26:12 jlovell Exp $".
  */

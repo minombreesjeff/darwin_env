@@ -1,9 +1,9 @@
 /*
- * "$Id: cupstestppd.c,v 1.1.1.10 2004/06/05 02:42:35 jlovell Exp $"
+ * "$Id: cupstestppd.c,v 1.3 2005/03/09 21:45:07 jlovell Exp $"
  *
  *   PPD test program for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2005 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -40,6 +40,7 @@
 #include <cups/string.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 
 /*
@@ -75,12 +76,17 @@ main(int  argc,			/* I - Number of command-line arguments */
   const char	*ptr;		/* Pointer into string */
   int		files;		/* Number of files */
   int		verbose;	/* Want verbose output? */
-  int		relaxed;	/* Want relaxed testing? */
   int		status;		/* Exit status */
   int		errors;		/* Number of conformance errors */
   int		ppdversion;	/* PPD spec version in PPD file */
   ppd_status_t	error;		/* Status of ppdOpen*() */
   int		line;		/* Line number for error */
+  struct stat	statbuf;	/* File information */
+  char		super[1024],	/* Super-type for filter */
+		type[1024],	/* Type for filter */
+		program[1024],	/* Program/filter name */
+		pathprog[1024];	/* Complete path to program/filter */
+  int		cost;		/* Cost of filter */
   ppd_file_t	*ppd;		/* PPD file record */
   ppd_attr_t	*attr;		/* PPD attribute */
   ppd_size_t	*size;		/* Size record */
@@ -101,7 +107,6 @@ main(int  argc,			/* I - Number of command-line arguments */
   ppdSetConformance(PPD_CONFORM_STRICT);
 
   verbose = 0;
-  relaxed = 0;
   ppd     = NULL;
   files   = 0;
   status  = ERROR_NONE;
@@ -125,7 +130,6 @@ main(int  argc,			/* I - Number of command-line arguments */
 
 	  case 'r' :			/* Relaxed mode */
               ppdSetConformance(PPD_CONFORM_RELAXED);
-	      relaxed = 1;
 	      break;
 
 	  case 'v' :			/* Verbose mode */
@@ -291,9 +295,9 @@ main(int  argc,			/* I - Number of command-line arguments */
         * Look for default keywords with no matching option...
 	*/
 
-        for (i = 0; i < ppd->num_attrs; i ++)
+        for (j = 0; j < ppd->num_attrs; j ++)
 	{
-	  attr = ppd->attrs[i];
+	  attr = ppd->attrs[j];
 
           if (!strcmp(attr->name, "DefaultColorSpace") ||
 	      !strcmp(attr->name, "DefaultFont") ||
@@ -825,6 +829,52 @@ main(int  argc,			/* I - Number of command-line arguments */
 	}
       }
 
+     /*
+      * Check for a duplex option, and for standard values...
+      */
+
+      if ((option = ppdFindOption(ppd, "Duplex")) == NULL)
+	if ((option = ppdFindOption(ppd, "JCLDuplex")) == NULL)
+	  if ((option = ppdFindOption(ppd, "EFDuplex")) == NULL)
+            option = ppdFindOption(ppd, "KD03Duplex");
+
+      if (option != NULL)
+      {
+        if (ppdFindChoice(option, "None") == NULL)
+	{
+	  if (verbose >= 0)
+	  {
+	    if (!errors && !verbose)
+	      puts(" FAIL");
+
+	    printf("      **FAIL**  REQUIRED %s does not define choice None!\n",
+	           option->keyword);
+	    puts("                REF: Page 122, section 5.17");
+          }
+
+	  errors ++;
+	}
+
+        for (j = option->num_choices, choice = option->choices; j > 0; j --, choice ++)
+          if (strcmp(choice->choice, "None") &&
+	      strcmp(choice->choice, "DuplexNoTumble") &&
+	      strcmp(choice->choice, "DuplexTumble") &&
+	      strcmp(choice->choice, "SimplexTumble"))
+	  {
+	    if (verbose >= 0)
+	    {
+	      if (!errors && !verbose)
+		puts(" FAIL");
+
+	      printf("      **FAIL**  Bad %s choice %s!\n",
+	             option->keyword, choice->choice);
+	      puts("                REF: Page 122, section 5.17");
+            }
+
+	    errors ++;
+	  }
+      }
+
       if (errors)
 	status = ERROR_CONFORMANCE;
       else if (!verbose)
@@ -832,6 +882,14 @@ main(int  argc,			/* I - Number of command-line arguments */
 	 
       if (verbose >= 0)
       {
+        if (option &&
+	    strcmp(option->keyword, "Duplex") &&
+	    strcmp(option->keyword, "JCLDuplex"))
+	{
+	  printf("        WARN    Duplex option keyword %s should be named Duplex!\n",
+	         option->keyword);
+	}
+
         ppdMarkDefaults(ppd);
 	if (ppdConflicts(ppd))
 	{
@@ -926,6 +984,102 @@ main(int  argc,			/* I - Number of command-line arguments */
         	}
 	  }
       }
+
+      /*
+       * cupsFilter
+       */
+
+      for (j = 0; j < ppd->num_filters; j ++)
+      {
+       /*
+	* Parse the filter string; it should be in the following format:
+	*
+	*     super/type cost program
+	*/
+
+	if (sscanf(ppd->filters[j], "%15[^/]/%31s%d%1023s", super, type, &cost, program) != 4)
+	{
+	  if (verbose >= 0)
+	  {
+	    if (!errors && !verbose)
+	      puts(" FAIL");
+
+	    printf("      **FAIL**  Invalid filter string \"%s\"!\n", ppd->filters[j]);
+	  }
+	  errors ++;
+	}
+	else
+	{
+	  if (program[0] == '/')
+	    strlcpy(pathprog, program, sizeof(pathprog));
+	  else
+	    snprintf(pathprog, sizeof(pathprog), "%s/filter/%s", CUPS_SERVERBIN, program);
+
+	  if (stat(pathprog, &statbuf))
+	  {
+	    if (verbose >= 0)
+	      printf("        WARN    Missing cupsFilter file \"%s\"\n", pathprog);
+	  }
+	}
+      }
+
+      /*
+       * cupsICCProfile
+       */
+
+      for (attr = ppdFindAttr(ppd, "cupsICCProfile", NULL); 
+	   attr != NULL; 
+	   attr = ppdFindNextAttr(ppd, "cupsICCProfile", NULL))
+      {
+	if (attr->value)
+	{
+	  if (attr->value[0] == '/')
+	    strlcpy(pathprog, attr->value, sizeof(pathprog));
+	  else
+	    snprintf(pathprog, sizeof(pathprog), "%s/profiles/%s", CUPS_DATADIR, attr->value);
+	}
+
+	if (!attr->value || !attr->value[0] || stat(pathprog, &statbuf))
+	{
+	  if (verbose >= 0)
+	    printf("        WARN    Missing cupsICCProfile file \"%s\"\n",
+		!attr->value || !attr->value[0] ? "<NULL>" : pathprog);
+	}
+      }
+
+#ifdef __APPLE__
+      /*
+       * APDialogExtension
+       */
+
+      for (attr = ppdFindAttr(ppd, "APDialogExtension", NULL); 
+	   attr != NULL; 
+	   attr = ppdFindNextAttr(ppd, "APDialogExtension", NULL))
+      {
+	if (!attr->value || stat(attr->value, &statbuf))
+	{
+	  if (verbose >= 0)
+	    printf("        WARN    Missing APDialogExtension file \"%s\"\n",
+		    attr->value ? attr->value : "<NULL>");
+	}
+      }
+
+      /*
+       * APPrinterIconPath
+       */
+
+      for (attr = ppdFindAttr(ppd, "APPrinterIconPath", NULL); 
+	   attr != NULL; 
+	   attr = ppdFindNextAttr(ppd, "APPrinterIconPath", NULL))
+      {
+	if (!attr->value || stat(attr->value, &statbuf))
+	{
+	  if (verbose >= 0)
+	    printf("        WARN    Missing APPrinterIconPath file \"%s\"\n",
+		    attr->value ? attr->value : "<NULL>");
+	}
+      }
+#endif	/* __APPLE__ */
 
       if (verbose > 0)
       {
@@ -1182,5 +1336,5 @@ usage(void)
 
 
 /*
- * End of "$Id: cupstestppd.c,v 1.1.1.10 2004/06/05 02:42:35 jlovell Exp $".
+ * End of "$Id: cupstestppd.c,v 1.3 2005/03/09 21:45:07 jlovell Exp $".
  */
