@@ -22,9 +22,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD: src/sbin/gpt/show.c,v 1.6 2003/02/13 01:00:26 peter Exp $
  */
+
+#include <sys/cdefs.h>
+
+#ifdef __FBSDID
+__FBSDID("$FreeBSD: src/sbin/gpt/show.c,v 1.11 2004/10/25 02:23:39 marcel Exp $");
+#endif
 
 #include <sys/types.h>
 
@@ -51,13 +55,16 @@ static const char *
 friendly(uuid_t *t)
 {
 #ifdef __APPLE__
-	static char buf[37];
+	static char buf[80];
 #else
-	uuid_t efi_slice = GPT_ENT_TYPE_EFI;
-	uuid_t freebsd = GPT_ENT_TYPE_FREEBSD;
-	uuid_t swap = GPT_ENT_TYPE_FREEBSD_SWAP;
-	uuid_t ufs = GPT_ENT_TYPE_FREEBSD_UFS;
-	uuid_t vinum = GPT_ENT_TYPE_FREEBSD_VINUM;
+	static uuid_t efi_slice = GPT_ENT_TYPE_EFI;
+	static uuid_t mslinux = GPT_ENT_TYPE_MS_BASIC_DATA;
+	static uuid_t freebsd = GPT_ENT_TYPE_FREEBSD;
+	static uuid_t linuxswap = GPT_ENT_TYPE_LINUX_SWAP;
+	static uuid_t msr = GPT_ENT_TYPE_MS_RESERVED;
+	static uuid_t swap = GPT_ENT_TYPE_FREEBSD_SWAP;
+	static uuid_t ufs = GPT_ENT_TYPE_FREEBSD_UFS;
+	static uuid_t vinum = GPT_ENT_TYPE_FREEBSD_VINUM;
 	static char buf[80];
 	char *s;
 #endif
@@ -65,46 +72,57 @@ friendly(uuid_t *t)
 #ifdef __APPLE__
 	uuid_unparse(*t, buf);
 #else
-	if (memcmp(t, &efi_slice, sizeof(uuid_t)) == 0)
-		return "EFI System partition";
-	else if (memcmp(t, &freebsd, sizeof(uuid_t)) == 0)
-		return "FreeBSD disklabel container";
-	else if (memcmp(t, &swap, sizeof(uuid_t)) == 0)
-		return "FreeBSD swap partition";
-	else if (memcmp(t, &ufs, sizeof(uuid_t)) == 0)
-		return "FreeBSD ufs partition";
-	else if (memcmp(t, &vinum, sizeof(uuid_t)) == 0)
-		return "FreeBSD vinum partition";
+	if (uuid_equal(t, &efi_slice, NULL))
+		return ("EFI System");
+	if (uuid_equal(t, &swap, NULL))
+		return ("FreeBSD swap");
+	if (uuid_equal(t, &ufs, NULL))
+		return ("FreeBSD UFS/UFS2");
+	if (uuid_equal(t, &vinum, NULL))
+		return ("FreeBSD vinum");
+
+	if (uuid_equal(t, &freebsd, NULL))
+		return ("FreeBSD legacy");
+	if (uuid_equal(t, &mslinux, NULL))
+		return ("Linux/Windows");
+	if (uuid_equal(t, &linuxswap, NULL))
+		return ("Linux swap");
+	if (uuid_equal(t, &msr, NULL))
+		return ("Windows reserved");
+
 	uuid_to_string(t, &s, NULL);
 	strlcpy(buf, s, sizeof buf);
 	free(s);
 #endif
-	return buf;
+	return (buf);
 }
 
 static void
 show(int fd __unused)
 {
-	off_t start, end;
+	uuid_t type;
+	off_t start;
 	map_t *m, *p;
 	struct mbr *mbr;
 	struct gpt_ent *ent;
 	unsigned int i;
-	uuid_t type;
 
 	printf("  %*s", lbawidth, "start");
-	printf("  %*s", lbawidth, "end");
 	printf("  %*s", lbawidth, "size");
-	printf("  %s\n", "contents");
+	printf("  index  contents\n");
 
 	m = map_first();
 	while (m != NULL) {
-		end = m->map_start + m->map_size - 1;
 		printf("  %*llu", lbawidth, (long long)m->map_start);
-		printf("  %*llu", lbawidth, (long long)end);
 		printf("  %*llu", lbawidth, (long long)m->map_size);
-
-		putchar(' '); putchar(' ');
+		putchar(' ');
+		putchar(' ');
+		if (m->map_index > 0)
+			printf("%5d", m->map_index);
+		else
+			printf("     ");
+		putchar(' ');
+		putchar(' ');
 		switch (m->map_type) {
 		case MAP_TYPE_MBR:
 			if (m->map_start != 0)
@@ -130,8 +148,9 @@ show(int fd __unused)
 			printf("MBR part ");
 			mbr = p->map_data;
 			for (i = 0; i < 4; i++) {
-				start = le16toh(mbr->mbr_part[i].part_start_hi) << 16;
-				start += le16toh(mbr->mbr_part[i].part_start_lo);
+				start = le16toh(mbr->mbr_part[i].part_start_hi);
+				start = (start << 16) +
+				    le16toh(mbr->mbr_part[i].part_start_lo);
 				if (m->map_start == p->map_start + start)
 					break;
 			}
@@ -141,7 +160,7 @@ show(int fd __unused)
 			printf("GPT part ");
 			ent = m->map_data;
 #ifdef __APPLE__
-			bswap_uuid(ent->ent_type, type);
+			le_uuid_dec(ent->ent_type, type);
 #else
 			le_uuid_dec(&ent->ent_type, &type);
 #endif

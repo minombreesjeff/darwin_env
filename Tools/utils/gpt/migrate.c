@@ -22,9 +22,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD: src/sbin/gpt/migrate.c,v 1.6 2003/11/16 06:43:25 kensmith Exp $
  */
+
+#include <sys/cdefs.h>
+
+#ifdef __FBSDID
+__FBSDID("$FreeBSD: src/sbin/gpt/migrate.c,v 1.12 2004/11/12 04:34:46 marcel Exp $");
+#endif
 
 #include <sys/types.h>
 #include <sys/disklabel.h>
@@ -50,14 +54,14 @@
 #define	LABELSECTOR	1
 #endif
 
-static int keep, slice;
+static int slice;
 
 static void
 usage_migrate(void)
 {
 
 	fprintf(stderr,
-	    "usage: %s [-ks] device\n", getprogname());
+	    "usage: %s [-s] device\n", getprogname());
 	exit(1);
 }
 
@@ -66,25 +70,41 @@ migrate_disklabel(int fd, off_t start, struct gpt_ent *ent)
 {
 	char *buf;
 	struct disklabel *dl;
+	off_t ofs, rawofs;
 	int i;
 
 	buf = gpt_read(fd, start + LABELSECTOR, 1);
 	dl = (void*)(buf + LABELOFFSET);
 
-	if (dl->d_magic != DISKMAGIC || dl->d_magic2 != DISKMAGIC) {
+	if (le32toh(dl->d_magic) != DISKMAGIC ||
+	    le32toh(dl->d_magic2) != DISKMAGIC) {
 		warnx("%s: warning: FreeBSD slice without disklabel",
 		    device_name);
 		return (ent);
 	}
 
-	for (i = 0; i < dl->d_npartitions; i++) {
+	rawofs = le32toh(dl->d_partitions[RAW_PART].p_offset) *
+	    le32toh(dl->d_secsize);
+	for (i = 0; i < le16toh(dl->d_npartitions); i++) {
+		if (dl->d_partitions[i].p_fstype == FS_UNUSED)
+			continue;
+		ofs = le32toh(dl->d_partitions[i].p_offset) *
+		    le32toh(dl->d_secsize);
+		if (ofs < rawofs)
+			rawofs = 0;
+	}
+	rawofs /= secsz;
+
+	for (i = 0; i < le16toh(dl->d_npartitions); i++) {
 		switch (dl->d_partitions[i].p_fstype) {
+		case FS_UNUSED:
+			continue;
 		case FS_SWAP: {
 #ifdef __APPLE__
-			uuid_copy(ent->ent_type, GPT_ENT_TYPE_FREEBSD_SWAP);
+			le_uuid_enc(ent->ent_type, GPT_ENT_TYPE_FREEBSD_SWAP);
 #else
 			uuid_t swap = GPT_ENT_TYPE_FREEBSD_SWAP;
-			ent->ent_type = swap;
+			le_uuid_enc(&ent->ent_type, &swap);
 #endif
 			unicode16(ent->ent_name,
 			    L"FreeBSD swap partition", 36);
@@ -92,10 +112,10 @@ migrate_disklabel(int fd, off_t start, struct gpt_ent *ent)
 		}
 		case FS_BSDFFS: {
 #ifdef __APPLE__
-			uuid_copy(ent->ent_type, GPT_ENT_TYPE_FREEBSD_UFS);
+			le_uuid_enc(ent->ent_type, GPT_ENT_TYPE_FREEBSD_UFS);
 #else
 			uuid_t ufs = GPT_ENT_TYPE_FREEBSD_UFS;
-			ent->ent_type = ufs;
+			le_uuid_enc(&ent->ent_type, &ufs);
 #endif
 			unicode16(ent->ent_name,
 			    L"FreeBSD UFS partition", 36);
@@ -103,10 +123,10 @@ migrate_disklabel(int fd, off_t start, struct gpt_ent *ent)
 		}
 		case FS_VINUM: {
 #ifdef __APPLE__
-			uuid_copy(ent->ent_type, GPT_ENT_TYPE_FREEBSD_VINUM);
+			le_uuid_enc(ent->ent_type, GPT_ENT_TYPE_FREEBSD_VINUM);
 #else
 			uuid_t vinum = GPT_ENT_TYPE_FREEBSD_VINUM;
-			ent->ent_type = vinum;
+			le_uuid_enc(&ent->ent_type, &vinum);
 #endif
 			unicode16(ent->ent_name,
 			    L"FreeBSD vinum partition", 36);
@@ -118,9 +138,12 @@ migrate_disklabel(int fd, off_t start, struct gpt_ent *ent)
 			continue;
 		}
 
-		ent->ent_lba_start = dl->d_partitions[i].p_offset;
-		ent->ent_lba_end = ent->ent_lba_start +
-		    dl->d_partitions[i].p_size - 1LL;
+		ofs = (le32toh(dl->d_partitions[i].p_offset) *
+		    le32toh(dl->d_secsize)) / secsz;
+		ofs = (ofs > 0) ? ofs - rawofs : 0;
+		ent->ent_lba_start = htole64(start + ofs);
+		ent->ent_lba_end = htole64(start + ofs +
+		    le32toh(dl->d_partitions[i].p_size) - 1LL);
 		ent++;
 	}
 
@@ -130,6 +153,7 @@ migrate_disklabel(int fd, off_t start, struct gpt_ent *ent)
 static void
 migrate(int fd)
 {
+	uuid_t uuid;
 	off_t blocks, last;
 	map_t *gpt, *tpg;
 	map_t *tbl, *lbt;
@@ -205,41 +229,46 @@ migrate(int fd)
 
 	hdr = gpt->map_data;
 	memcpy(hdr->hdr_sig, GPT_HDR_SIG, sizeof(hdr->hdr_sig));
-	hdr->hdr_revision = GPT_HDR_REVISION;
+	hdr->hdr_revision = htole32(GPT_HDR_REVISION);
 	/*
 	 * XXX struct gpt_hdr is not a multiple of 8 bytes in size and thus
 	 * contains padding we must not include in the size.
 	 */
-	hdr->hdr_size = offsetof(struct gpt_hdr, padding);
-	hdr->hdr_lba_self = gpt->map_start;
-	hdr->hdr_lba_alt = tpg->map_start;
-	hdr->hdr_lba_start = tbl->map_start + blocks;
-	hdr->hdr_lba_end = lbt->map_start - 1LL;
+	hdr->hdr_size = htole32(offsetof(struct gpt_hdr, padding));
+	hdr->hdr_lba_self = htole64(gpt->map_start);
+	hdr->hdr_lba_alt = htole64(tpg->map_start);
+	hdr->hdr_lba_start = htole64(tbl->map_start + blocks);
+	hdr->hdr_lba_end = htole64(lbt->map_start - 1LL);
 #ifdef __APPLE__
-	uuid_generate(hdr->hdr_uuid);
+	uuid_generate(uuid);
+	le_uuid_enc(hdr->hdr_uuid, uuid);
 #else
-	uuid_create(&hdr->hdr_uuid, NULL);
+	uuid_create(&uuid, NULL);
+	le_uuid_enc(&hdr->hdr_uuid, &uuid);
 #endif
-	hdr->hdr_lba_table = tbl->map_start;
-	hdr->hdr_entries = (blocks * secsz) / sizeof(struct gpt_ent);
-	if (hdr->hdr_entries > parts)
-		hdr->hdr_entries = parts;
-	hdr->hdr_entsz = sizeof(struct gpt_ent);
+	hdr->hdr_lba_table = htole64(tbl->map_start);
+	hdr->hdr_entries = htole32((blocks * secsz) / sizeof(struct gpt_ent));
+	if (le32toh(hdr->hdr_entries) > parts)
+		hdr->hdr_entries = htole32(parts);
+	hdr->hdr_entsz = htole32(sizeof(struct gpt_ent));
 
 	ent = tbl->map_data;
-	for (i = 0; i < hdr->hdr_entries; i++)
+	for (i = 0; i < le32toh(hdr->hdr_entries); i++) {
 #ifdef __APPLE__
-		uuid_generate(ent[i].ent_uuid);
+		uuid_generate(uuid);
+		le_uuid_enc(ent[i].ent_uuid, uuid);
 #else
-		uuid_create(&ent[i].ent_uuid, NULL);
+		uuid_create(&uuid, NULL);
+		le_uuid_enc(&ent[i].ent_uuid, &uuid);
 #endif
+	}
 
 	/* Mirror partitions. */
 	for (i = 0; i < 4; i++) {
-		start = mbr->mbr_part[i].part_start_hi;
-		start = (start << 16) + mbr->mbr_part[i].part_start_lo;
-		size = mbr->mbr_part[i].part_size_hi;
-		size = (size << 16) + mbr->mbr_part[i].part_size_lo;
+		start = le16toh(mbr->mbr_part[i].part_start_hi);
+		start = (start << 16) + le16toh(mbr->mbr_part[i].part_start_lo);
+		size = le16toh(mbr->mbr_part[i].part_size_hi);
+		size = (size << 16) + le16toh(mbr->mbr_part[i].part_size_lo);
 
 		switch (mbr->mbr_part[i].part_typ) {
 		case 0:
@@ -247,13 +276,13 @@ migrate(int fd)
 		case 165: {	/* FreeBSD */
 			if (slice) {
 #ifdef __APPLE__
-				uuid_copy(ent->ent_type, GPT_ENT_TYPE_FREEBSD);
+				le_uuid_enc(ent->ent_type, GPT_ENT_TYPE_FREEBSD);
 #else
 				uuid_t freebsd = GPT_ENT_TYPE_FREEBSD;
-				ent->ent_type = freebsd;
+				le_uuid_enc(&ent->ent_type, &freebsd);
 #endif
-				ent->ent_lba_start = start;
-				ent->ent_lba_end = start + size - 1LL;
+				ent->ent_lba_start = htole64((uint64_t)start);
+				ent->ent_lba_end = htole64(start + size - 1LL);
 				unicode16(ent->ent_name,
 				    L"FreeBSD disklabel partition", 36);
 				ent++;
@@ -263,13 +292,13 @@ migrate(int fd)
 		}
 		case 239: {	/* EFI */
 #ifdef __APPLE__
-			uuid_copy(ent->ent_type, GPT_ENT_TYPE_INTEL_ESP);
+			le_uuid_enc(ent->ent_type, GPT_ENT_TYPE_EFI);
 #else
 			uuid_t efi_slice = GPT_ENT_TYPE_EFI;
-			ent->ent_type = efi_slice;
+			le_uuid_enc(&ent->ent_type, &efi_slice);
 #endif
-			ent->ent_lba_start = start;
-			ent->ent_lba_end = start + size - 1LL;
+			ent->ent_lba_start = htole64((uint64_t)start);
+			ent->ent_lba_end = htole64(start + size - 1LL);
 			unicode16(ent->ent_name, L"EFI system partition", 36);
 			ent++;
 			break;
@@ -282,8 +311,9 @@ migrate(int fd)
 	}
 	ent = tbl->map_data;
 
-	hdr->hdr_crc_table = crc32(ent, hdr->hdr_entries * hdr->hdr_entsz);
-	hdr->hdr_crc_self = crc32(hdr, hdr->hdr_size);
+	hdr->hdr_crc_table = htole32(crc32(ent, le32toh(hdr->hdr_entries) *
+	    le32toh(hdr->hdr_entsz)));
+	hdr->hdr_crc_self = htole32(crc32(hdr, le32toh(hdr->hdr_size)));
 
 	gpt_write(fd, gpt);
 	gpt_write(fd, tbl);
@@ -293,39 +323,37 @@ migrate(int fd)
 	 */
 	memcpy(tpg->map_data, gpt->map_data, secsz);
 	hdr = tpg->map_data;
-	hdr->hdr_lba_self = tpg->map_start;
-	hdr->hdr_lba_alt = gpt->map_start;
-	hdr->hdr_lba_table = lbt->map_start;
+	hdr->hdr_lba_self = htole64(tpg->map_start);
+	hdr->hdr_lba_alt = htole64(gpt->map_start);
+	hdr->hdr_lba_table = htole64(lbt->map_start);
 	hdr->hdr_crc_self = 0;			/* Don't ever forget this! */
-	hdr->hdr_crc_self = crc32(hdr, hdr->hdr_size);
+	hdr->hdr_crc_self = htole32(crc32(hdr, le32toh(hdr->hdr_size)));
 
 	gpt_write(fd, lbt);
 	gpt_write(fd, tpg);
 
-	if (!keep) {
-		map = map_find(MAP_TYPE_MBR);
-		mbr = map->map_data;
-		/*
-		 * Turn the MBR into a Protective MBR.
-		 */
-		bzero(mbr->mbr_part, sizeof(mbr->mbr_part));
-		mbr->mbr_part[0].part_shd = 0xff;
-		mbr->mbr_part[0].part_ssect = 0xff;
-		mbr->mbr_part[0].part_scyl = 0xff;
-		mbr->mbr_part[0].part_typ = 0xee;
-		mbr->mbr_part[0].part_ehd = 0xff;
-		mbr->mbr_part[0].part_esect = 0xff;
-		mbr->mbr_part[0].part_ecyl = 0xff;
-		mbr->mbr_part[0].part_start_lo = 1;
-		if (mediasz > 0xffffffff) {
-			mbr->mbr_part[0].part_size_lo = 0xffff;
-			mbr->mbr_part[0].part_size_hi = 0xffff;
-		} else {
-			mbr->mbr_part[0].part_size_lo = mediasz & 0xffff;
-			mbr->mbr_part[0].part_size_hi = mediasz >> 16;
-		}
-		gpt_write(fd, map);
+	map = map_find(MAP_TYPE_MBR);
+	mbr = map->map_data;
+	/*
+	 * Turn the MBR into a Protective MBR.
+	 */
+	bzero(mbr->mbr_part, sizeof(mbr->mbr_part));
+	mbr->mbr_part[0].part_shd = 0xff;
+	mbr->mbr_part[0].part_ssect = 0xff;
+	mbr->mbr_part[0].part_scyl = 0xff;
+	mbr->mbr_part[0].part_typ = 0xee;
+	mbr->mbr_part[0].part_ehd = 0xff;
+	mbr->mbr_part[0].part_esect = 0xff;
+	mbr->mbr_part[0].part_ecyl = 0xff;
+	mbr->mbr_part[0].part_start_lo = htole16(1);
+	if (last > 0xffffffff) {
+		mbr->mbr_part[0].part_size_lo = htole16(0xffff);
+		mbr->mbr_part[0].part_size_hi = htole16(0xffff);
+	} else {
+		mbr->mbr_part[0].part_size_lo = htole16(last);
+		mbr->mbr_part[0].part_size_hi = htole16(last >> 16);
 	}
+	gpt_write(fd, map);
 }
 
 int
@@ -334,11 +362,8 @@ cmd_migrate(int argc, char *argv[])
 	int ch, fd;
 
 	/* Get the migrate options */
-	while ((ch = getopt(argc, argv, "ks")) != -1) {
+	while ((ch = getopt(argc, argv, "s")) != -1) {
 		switch(ch) {
-		case 'k':
-			keep = 1;
-			break;
 		case 's':
 			slice = 1;
 			break;

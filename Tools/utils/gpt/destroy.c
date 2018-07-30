@@ -22,9 +22,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD: src/sbin/gpt/destroy.c,v 1.2 2002/11/10 20:22:25 marcel Exp $
  */
+
+#include <sys/cdefs.h>
+
+#ifdef __FBSDID
+__FBSDID("$FreeBSD: src/sbin/gpt/destroy.c,v 1.5 2004/10/25 03:39:31 marcel Exp $");
+#endif
 
 #include <sys/types.h>
 

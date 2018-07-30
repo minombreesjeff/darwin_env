@@ -29,7 +29,7 @@
 #include <sys/cdefs.h>
 
 #ifdef __FBSDID
-__FBSDID("$FreeBSD: src/sbin/gpt/gpt.c,v 1.6 2002/12/02 01:42:03 marcel Exp $");
+__FBSDID("$FreeBSD: src/sbin/gpt/gpt.c,v 1.9 2004/10/25 02:23:39 marcel Exp $");
 #endif
 
 #include <sys/param.h>
@@ -130,12 +130,21 @@ unicode16(short *dst, const wchar_t *src, size_t len)
 
 #ifdef __APPLE__
 void
-bswap_uuid(const uuid_t in, uuid_t out)
+le_uuid_dec(void const *buf, uuid_t uuid)
 {
-	*((uint32_t *)(out + 0)) = bswap32(*((uint32_t *)(in + 0)));
-	*((uint16_t *)(out + 4)) = bswap16(*((uint16_t *)(in + 4)));
-	*((uint16_t *)(out + 6)) = bswap16(*((uint16_t *)(in + 6)));
-	*((uint64_t *)(out + 8)) = *((uint64_t *)(in + 8));
+	*((uint32_t *)(uuid + 0)) = bswap32(*((uint32_t *)((uint8_t *)buf + 0)));
+	*((uint16_t *)(uuid + 4)) = bswap16(*((uint16_t *)((uint8_t *)buf + 4)));
+	*((uint16_t *)(uuid + 6)) = bswap16(*((uint16_t *)((uint8_t *)buf + 6)));
+	*((uint64_t *)(uuid + 8)) =        (*((uint64_t *)((uint8_t *)buf + 8)));
+}
+
+void
+le_uuid_enc(void *buf, uuid_t const uuid)
+{
+	*((uint32_t *)((uint8_t *)buf + 0)) = bswap32(*((uint32_t *)(uuid + 0)));
+	*((uint16_t *)((uint8_t *)buf + 4)) = bswap16(*((uint16_t *)(uuid + 4)));
+	*((uint16_t *)((uint8_t *)buf + 6)) = bswap16(*((uint16_t *)(uuid + 6)));
+	*((uint64_t *)((uint8_t *)buf + 8)) =        (*((uint64_t *)(uuid + 8)));
 }
 #else
 void
@@ -281,6 +290,7 @@ gpt_mbr(int fd, off_t lba)
 			m = map_add(start, size, MAP_TYPE_MBR_PART, p);
 			if (m == NULL)
 				return (-1);
+			m->map_index = i + 1;
 		} else {
 			if (gpt_mbr(fd, start) == -1)
 				return (-1);
@@ -292,11 +302,12 @@ gpt_mbr(int fd, off_t lba)
 static int
 gpt_gpt(int fd, off_t lba)
 {
+	uuid_t type;
 	off_t size;
 	struct gpt_ent *ent;
 	struct gpt_hdr *hdr;
 #ifdef __APPLE__
-	char *p, s[37];
+	char *p, s[80];
 #else
 	char *p, *s;
 #endif
@@ -332,7 +343,8 @@ gpt_gpt(int fd, off_t lba)
 	if (crc32(p, tblsz) != le32toh(hdr->hdr_crc_table)) {
 		if (verbose)
 			warnx("%s: Bad CRC in GPT table at sector %llu",
-			    device_name, (long long)le64toh(hdr->hdr_lba_table));
+			    device_name,
+			    (long long)le64toh(hdr->hdr_lba_table));
 		goto fail_ent;
 	}
 
@@ -362,11 +374,11 @@ gpt_gpt(int fd, off_t lba)
 #endif
 			continue;
 
-		size = le64toh(ent->ent_lba_end) - le64toh(ent->ent_lba_start) + 1LL;
+		size = le64toh(ent->ent_lba_end) - le64toh(ent->ent_lba_start) +
+		    1LL;
 		if (verbose > 2) {
-			uuid_t type;
 #ifdef __APPLE__
-			bswap_uuid(ent->ent_type, type);
+			le_uuid_dec(ent->ent_type, type);
 			uuid_unparse(type, s);
 #else
 			le_uuid_dec(&ent->ent_type, &type);
@@ -374,16 +386,19 @@ gpt_gpt(int fd, off_t lba)
 #endif
 			warnx(
 	"%s: GPT partition: type=%s, start=%llu, size=%llu", device_name, s,
-			    (long long)le64toh(ent->ent_lba_start), (long long)size);
+			    (long long)le64toh(ent->ent_lba_start),
+			    (long long)size);
 #ifdef __APPLE__
 
 #else
 			free(s);
 #endif
 		}
-		m = map_add(le64toh(ent->ent_lba_start), size, MAP_TYPE_GPT_PART, ent);
+		m = map_add(le64toh(ent->ent_lba_start), size,
+		    MAP_TYPE_GPT_PART, ent);
 		if (m == NULL)
 			return (-1);
+		m->map_index = i + 1;
 	}
 	return (0);
 
@@ -484,7 +499,6 @@ static struct {
 } cmdsw[] = {
 	{ cmd_add, "add" },
 	{ cmd_create, "create" },
-	{ NULL, "delete" },
 	{ cmd_destroy, "destroy" },
 	{ NULL, "help" },
 #ifdef __APPLE__
@@ -493,6 +507,7 @@ static struct {
 	{ cmd_migrate, "migrate" },
 #endif
 	{ cmd_recover, "recover" },
+	{ cmd_remove, "remove" },
 	{ NULL, "rename" },
 	{ cmd_show, "show" },
 	{ NULL, "verify" },

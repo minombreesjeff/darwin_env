@@ -22,9 +22,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD: src/sbin/gpt/recover.c,v 1.4 2003/11/16 06:45:26 kensmith Exp $
  */
+
+#include <sys/cdefs.h>
+
+#ifdef __FBSDID
+__FBSDID("$FreeBSD: src/sbin/gpt/recover.c,v 1.7 2004/10/25 03:39:31 marcel Exp $");
+#endif
 
 #include <sys/types.h>
 

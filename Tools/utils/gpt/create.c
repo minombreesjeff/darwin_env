@@ -22,9 +22,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD: src/sbin/gpt/create.c,v 1.5 2002/12/02 01:42:03 marcel Exp $
  */
+
+#include <sys/cdefs.h>
+
+#ifdef __FBSDID
+__FBSDID("$FreeBSD: src/sbin/gpt/create.c,v 1.9 2004/11/12 04:34:46 marcel Exp $");
+#endif
 
 #include <sys/types.h>
 
@@ -52,6 +56,7 @@ usage_create(void)
 static void
 create(int fd)
 {
+	uuid_t uuid;
 	off_t blocks, last;
 	map_t *gpt, *tpg;
 	map_t *tbl, *lbt;
@@ -60,6 +65,8 @@ create(int fd)
 	struct gpt_hdr *hdr;
 	struct gpt_ent *ent;
 	unsigned int i;
+
+	last = mediasz / secsz - 1LL;
 
 	if (map_find(MAP_TYPE_PRI_GPT_HDR) != NULL ||
 	    map_find(MAP_TYPE_SEC_GPT_HDR) != NULL) {
@@ -90,12 +97,12 @@ create(int fd)
 		mbr->mbr_part[0].part_esect = 0xff;
 		mbr->mbr_part[0].part_ecyl = 0xff;
 		mbr->mbr_part[0].part_start_lo = htole16(1);
-		if (mediasz > 0xffffffff) {
+		if (last > 0xffffffff) {
 			mbr->mbr_part[0].part_size_lo = htole16(0xffff);
 			mbr->mbr_part[0].part_size_hi = htole16(0xffff);
 		} else {
-			mbr->mbr_part[0].part_size_lo = htole16(mediasz & 0xffff);
-			mbr->mbr_part[0].part_size_hi = htole16(mediasz >> 16);
+			mbr->mbr_part[0].part_size_lo = htole16(last);
+			mbr->mbr_part[0].part_size_hi = htole16(last >> 16);
 		}
 		map = map_add(0LL, 1LL, MAP_TYPE_PMBR, mbr);
 		gpt_write(fd, map);
@@ -115,8 +122,6 @@ create(int fd)
 			blocks++;
 		blocks++;		/* Don't forget the header itself */
 	}
-
-	last = mediasz / secsz - 1LL;
 
 	/* Never cross the median of the device. */
 	if ((blocks + 1LL) > ((last + 1LL) >> 1))
@@ -159,11 +164,11 @@ create(int fd)
 	hdr->hdr_lba_start = htole64(tbl->map_start + blocks);
 	hdr->hdr_lba_end = htole64(last - blocks - 1LL);
 #ifdef __APPLE__
-	uuid_generate(hdr->hdr_uuid);
-	bswap_uuid(hdr->hdr_uuid, hdr->hdr_uuid);
+	uuid_generate(uuid);
+	le_uuid_enc(hdr->hdr_uuid, uuid);
 #else
-	uuid_create(&hdr->hdr_uuid, NULL);
-	le_uuid_enc(&hdr->hdr_uuid, &hdr->hdr_uuid);
+	uuid_create(&uuid, NULL);
+	le_uuid_enc(&hdr->hdr_uuid, &uuid);
 #endif
 	hdr->hdr_lba_table = htole64(tbl->map_start);
 	hdr->hdr_entries = htole32((blocks * secsz) / sizeof(struct gpt_ent));
@@ -174,15 +179,16 @@ create(int fd)
 	ent = tbl->map_data;
 	for (i = 0; i < le32toh(hdr->hdr_entries); i++) {
 #ifdef __APPLE__
-		uuid_generate(ent[i].ent_uuid);
-		bswap_uuid(ent[i].ent_uuid, ent[i].ent_uuid);
+		uuid_generate(uuid);
+		le_uuid_enc(ent[i].ent_uuid, uuid);
 #else
-		uuid_create(&ent[i].ent_uuid, NULL);
-		le_uuid_enc(&ent[i].ent_uuid, &ent[i].ent_uuid);
+		uuid_create(&uuid, NULL);
+		le_uuid_enc(&ent[i].ent_uuid, &uuid);
 #endif
 	}
 
-	hdr->hdr_crc_table = htole32(crc32(ent, le32toh(hdr->hdr_entries) * le32toh(hdr->hdr_entsz)));
+	hdr->hdr_crc_table = htole32(crc32(ent, le32toh(hdr->hdr_entries) *
+	    le32toh(hdr->hdr_entsz)));
 	hdr->hdr_crc_self = htole32(crc32(hdr, le32toh(hdr->hdr_size)));
 
 	gpt_write(fd, gpt);

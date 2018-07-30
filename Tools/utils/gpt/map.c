@@ -22,9 +22,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * $FreeBSD: src/sbin/gpt/map.c,v 1.3 2002/10/27 03:23:05 marcel Exp $
  */
+
+#include <sys/cdefs.h>
+
+#ifdef __FBSDID
+__FBSDID("$FreeBSD: src/sbin/gpt/map.c,v 1.5 2004/08/07 06:24:25 marcel Exp $");
+#endif
 
 #include <sys/types.h>
 #include <err.h>
@@ -49,6 +53,7 @@ mkmap(off_t start, off_t size, int type)
 	m->map_size = size;
 	m->map_next = m->map_prev = NULL;
 	m->map_type = type;
+	m->map_index = 0;
 	m->map_data = NULL;
 	return (m);
 }

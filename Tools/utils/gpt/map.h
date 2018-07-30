@@ -23,7 +23,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * $FreeBSD: src/sbin/gpt/map.h,v 1.3 2002/12/02 01:42:03 marcel Exp $
+ * $FreeBSD: src/sbin/gpt/map.h,v 1.5 2004/08/07 07:41:37 marcel Exp $
  */
 
 #ifndef _MAP_H_
@@ -44,6 +44,7 @@ typedef struct map {
 #define	MAP_TYPE_SEC_GPT_TBL	6
 #define	MAP_TYPE_GPT_PART	7
 #define	MAP_TYPE_PMBR		8
+	unsigned int map_index;
 	void 	*map_data;
 } map_t;
 

@@ -22,9 +22,9 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.\" $FreeBSD: src/sbin/gpt/gpt.8,v 1.2 2003/06/02 11:19:23 ru Exp $
+.\" $FreeBSD: src/sbin/gpt/gpt.8,v 1.7 2004/10/31 02:20:17 marcel Exp $
 .\"
-.Dd November 30, 2002
+.Dd October 30, 2004
 .Os
 .Dt GPT 8
 .Sh NAME
@@ -43,7 +43,7 @@ utility provides the necessary functionality to manipulate GUID partition
 tables (GPTs), but see
 .Sx BUGS
 below for how and where functionality is missing.
-The general usage model of the
+The basic usage model of the
 .Nm
 tool follows that of the
 .Xr cvs 1
@@ -94,6 +94,7 @@ There is no formalized definition of the different levels yet.
 .Nm
 .Ic add
 .Op Fl b Ar number
+.Op Fl i Ar index
 .Op Fl s Ar count
 .Op Fl t Ar type
 .Ar device ...
@@ -113,6 +114,12 @@ The minimum sector number is 1, but has to fall inside an unused region of
 disk space that is covered by the GPT.
 .Pp
 The
+.Fl i Ar index
+option allows the user to specify which (free) entry in the GPT table is to
+be used for the new partition.
+By default the first free entry is selected.
+.Pp
+The
 .Fl s Ar count
 option allows the user to specify the size of the partition in sectors.
 The minimum size is 1.
@@ -122,11 +129,11 @@ The
 option allows the user to specify the partition type.
 The type is given as an UUID, but
 .Nm
-has created
-.Cm efi , hfs
+accepts
+.Cm efi , hfs , ufs , linux
 and
-.Cm ufs
-as aliases for the three most commonly used partition types.
+.Cm windows
+as aliases for the most commonly used partition types.
 .\" ==== create ====
 .It Xo
 .Nm
@@ -160,6 +167,42 @@ The
 option instructs
 .Nm
 to destroy the table in a way that it can be recovered.
+.\" ==== remove ====
+.It Xo
+.Nm
+.Ic remove
+.Op Fl b Ar number
+.Op Fl i Ar index
+.Op Fl s Ar count
+.Op Fl t Ar type
+.Ar device ...
+.Xc
+The
+.Ic remove
+command allows the user to remove any partitions that match the selection.
+BEWARE: when no options are given, all GPT partitions will match and thus
+will be deleted.
+.Pp
+The
+.Fl b Ar number
+option selects the partitions that starts at the given number.
+.Pp
+The
+.Fl i Ar index
+option selects the partition with the given partition number.
+.Pp
+The
+.Fl s Ar count
+option selects all partitions that have the given size.
+This can cause multiple partitions to be removed.
+.Pp
+The
+.Fl t Ar type
+option selects all partitions that have the given type.
+The type is given as an UUID or by the aliases that the
+.Ic add
+command accepts.
+This can cause multiple partitions to be removed.
 .\" ==== show ====
 .It Xo
 .Nm
@@ -173,7 +216,9 @@ an overall view of the disk contents.
 .El
 .Sh SEE ALSO
 .Xr fdisk 8 ,
-.Xr newfs 8
+.Xr mount 8 ,
+.Xr newfs 8 ,
+.Xr pdisk 8
 .Sh HISTORY
 The
 .Nm
@@ -192,7 +237,7 @@ However, it is believed that the currently present functionality is reliable
 and stable enough that this tool can be used without bullet-proof footware if
 one thinks one does not make mistakes.
 .Pp
-It is expected that the generic usage model does not change, but it is
+It is expected that the basic usage model does not change, but it is
 possible that future versions will not be compatible in the strictest sense
 of the word.
 For example, the

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Marcel Moolenaar
+ * Copyright (c) 2004 Marcel Moolenaar
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
 #include <sys/cdefs.h>
 
 #ifdef __FBSDID
-__FBSDID("$FreeBSD: src/sbin/gpt/add.c,v 1.10 2004/10/25 03:44:10 marcel Exp $");
+__FBSDID("$FreeBSD: src/sbin/gpt/remove.c,v 1.3 2004/10/25 03:44:10 marcel Exp $");
 #endif
 
 #include <sys/types.h>
@@ -47,7 +47,7 @@ static off_t block, size;
 static unsigned int entry;
 
 static void
-usage_add(void)
+usage_remove(void)
 {
 
 	fprintf(stderr,
@@ -57,14 +57,15 @@ usage_add(void)
 }
 
 static void
-add(int fd)
+rem(int fd)
 {
+	uuid_t uuid;
 	map_t *gpt, *tpg;
 	map_t *tbl, *lbt;
-	map_t *map;
+	map_t *m;
 	struct gpt_hdr *hdr;
 	struct gpt_ent *ent;
-	unsigned int i;
+	unsigned int i, removed;
 
 	gpt = map_find(MAP_TYPE_PRI_GPT_HDR);
 	if (gpt == NULL) {
@@ -87,123 +88,104 @@ add(int fd)
 		return;
 	}
 
-	hdr = gpt->map_data;
-	if (entry > le32toh(hdr->hdr_entries)) {
-		warnx("%s: error: index %u out of range (%u max)", device_name,
-		    entry, le32toh(hdr->hdr_entries));
-		return;
-	}
+	removed = 0;
 
-	if (entry > 0) {
-		i = entry - 1;
+	/* Remove all matching entries in the map. */
+	for (m = map_first(); m != NULL; m = m->map_next) {
+		if (m->map_type != MAP_TYPE_GPT_PART || m->map_index < 1)
+			continue;
+		if (entry > 0 && entry != m->map_index)
+			continue;
+		if (block > 0 && block != m->map_start)
+			continue;
+		if (size > 0 && size != m->map_size)
+			continue;
+
+		i = m->map_index - 1;
+
+		hdr = gpt->map_data;
 		ent = (void*)((char*)tbl->map_data + i *
 		    le32toh(hdr->hdr_entsz));
 #ifdef __APPLE__
-		if (!uuid_is_null(ent->ent_type)) {
+		le_uuid_dec(ent->ent_type, uuid);
+		if (!uuid_is_null(type) &&
+		    uuid_compare(type, uuid))
+			continue;
+		uuid_copy(ent->ent_type, GPT_ENT_TYPE_UNUSED);
 #else
-		if (!uuid_is_nil(&ent->ent_type, NULL)) {
+		le_uuid_dec(&ent->ent_type, &uuid);
+		if (!uuid_is_nil(&type, NULL) &&
+		    !uuid_equal(&type, &uuid, NULL))
+			continue;
+		uuid_create_nil(&ent->ent_type, NULL);
 #endif
-			warnx("%s: error: entry at index %u is not free",
-			    device_name, entry);
-			return;
-		}
-	} else {
-		/* Find empty slot in GPT table. */
-		ent = NULL;
-		for (i = 0; i < le32toh(hdr->hdr_entries); i++) {
-			ent = (void*)((char*)tbl->map_data + i *
-			    le32toh(hdr->hdr_entsz));
+
+		hdr->hdr_crc_table = htole32(crc32(tbl->map_data,
+		    le32toh(hdr->hdr_entries) * le32toh(hdr->hdr_entsz)));
+		hdr->hdr_crc_self = 0;
+		hdr->hdr_crc_self = htole32(crc32(hdr, le32toh(hdr->hdr_size)));
+
+		gpt_write(fd, gpt);
+		gpt_write(fd, tbl);
+
+		hdr = tpg->map_data;
+		ent = (void*)((char*)lbt->map_data + i *
+		    le32toh(hdr->hdr_entsz));
 #ifdef __APPLE__
-			if (uuid_is_null(ent->ent_type))
+		uuid_copy(ent->ent_type, GPT_ENT_TYPE_UNUSED);
 #else
-			if (uuid_is_nil(&ent->ent_type, NULL))
+		uuid_create_nil(&ent->ent_type, NULL);
 #endif
-				break;
-		}
-		if (i == le32toh(hdr->hdr_entries)) {
-			warnx("%s: error: no available table entries",
-			    device_name);
-			return;
-		}
+
+		hdr->hdr_crc_table = htole32(crc32(lbt->map_data,
+		    le32toh(hdr->hdr_entries) * le32toh(hdr->hdr_entsz)));
+		hdr->hdr_crc_self = 0;
+		hdr->hdr_crc_self = htole32(crc32(hdr, le32toh(hdr->hdr_size)));
+
+		gpt_write(fd, lbt);
+		gpt_write(fd, tpg);
+
+		removed++;
 	}
 
-	map = map_alloc(block, size);
-	if (map == NULL) {
-		warnx("%s: error: no space available on device", device_name);
-		return;
-	}
-
-#ifdef __APPLE__
-	le_uuid_enc(ent->ent_type, type);
-#else
-	le_uuid_enc(&ent->ent_type, &type);
-#endif
-	ent->ent_lba_start = htole64(map->map_start);
-	ent->ent_lba_end = htole64(map->map_start + map->map_size - 1LL);
-
-	hdr->hdr_crc_table = htole32(crc32(tbl->map_data,
-	    le32toh(hdr->hdr_entries) * le32toh(hdr->hdr_entsz)));
-	hdr->hdr_crc_self = 0;
-	hdr->hdr_crc_self = htole32(crc32(hdr, le32toh(hdr->hdr_size)));
-
-	gpt_write(fd, gpt);
-	gpt_write(fd, tbl);
-
-	hdr = tpg->map_data;
-	ent = (void*)((char*)lbt->map_data + i * le32toh(hdr->hdr_entsz));
-
-#ifdef __APPLE__
-	le_uuid_enc(ent->ent_type, type);
-#else
-	le_uuid_enc(&ent->ent_type, &type);
-#endif
-	ent->ent_lba_start = htole64(map->map_start);
-	ent->ent_lba_end = htole64(map->map_start + map->map_size - 1LL);
-
-	hdr->hdr_crc_table = htole32(crc32(lbt->map_data,
-	    le32toh(hdr->hdr_entries) * le32toh(hdr->hdr_entsz)));
-	hdr->hdr_crc_self = 0;
-	hdr->hdr_crc_self = htole32(crc32(hdr, le32toh(hdr->hdr_size)));
-
-	gpt_write(fd, lbt);
-	gpt_write(fd, tpg);
+	warnx("%s: %d partition(s) removed", device_name, removed);
 }
 
 int
-cmd_add(int argc, char *argv[])
+cmd_remove(int argc, char *argv[])
 {
 	char *p;
 	int ch, fd;
 	uint32_t status;
 
-	/* Get the migrate options */
+	/* Get the remove options */
 	while ((ch = getopt(argc, argv, "b:i:s:t:")) != -1) {
 		switch(ch) {
 		case 'b':
 			if (block > 0)
-				usage_add();
+				usage_remove();
 			block = strtol(optarg, &p, 10);
 			if (*p != 0 || block < 1)
-				usage_add();
+				usage_remove();
 			break;
 		case 'i':
 			if (entry > 0)
-				usage_add();
+				usage_remove();
 			entry = strtol(optarg, &p, 10);
 			if (*p != 0 || entry < 1)
-				usage_add();
+				usage_remove();
 			break;
 		case 's':
 			if (size > 0)
-				usage_add();
+				usage_remove();
 			size = strtol(optarg, &p, 10);
 			if (*p != 0 || size < 1)
-				usage_add();
+				usage_remove();
 			break;
 		case 't':
 #ifdef __APPLE__
 			if (!uuid_is_null(type))
-				usage_add();
+				usage_remove();
 			status = uuid_parse(optarg, type);
 			if (status) {
 				if (strcmp(optarg, "efi") == 0)
@@ -217,11 +199,11 @@ cmd_add(int argc, char *argv[])
 				else if (strcmp(optarg, "windows") == 0)
 					uuid_copy(type, GPT_ENT_TYPE_MS_BASIC_DATA);
 				else
-					usage_add();
+					usage_remove();
 			}
 #else
 			if (!uuid_is_nil(&type, NULL))
-				usage_add();
+				usage_remove();
 			uuid_from_string(optarg, &type, &status);
 			if (status != uuid_s_ok) {
 				if (strcmp(optarg, "efi") == 0) {
@@ -238,29 +220,17 @@ cmd_add(int argc, char *argv[])
 					uuid_t m = GPT_ENT_TYPE_MS_BASIC_DATA;
 					type = m;
 				} else
-					usage_add();
+					usage_remove();
 			}
 #endif
 			break;
 		default:
-			usage_add();
+			usage_remove();
 		}
 	}
 
 	if (argc == optind)
-		usage_add();
-
-#ifdef __APPLE__
-	/* Create HFS partitions by default. */
-	if (uuid_is_null(type))
-		uuid_copy(type, GPT_ENT_TYPE_APPLE_HFS);
-#else
-	/* Create UFS partitions by default. */
-	if (uuid_is_nil(&type, NULL)) {
-		uuid_t ufs = GPT_ENT_TYPE_FREEBSD_UFS;
-		type = ufs;
-	}
-#endif
+		usage_remove();
 
 	while (optind < argc) {
 		fd = gpt_open(argv[optind++]);
@@ -269,7 +239,7 @@ cmd_add(int argc, char *argv[])
 			continue;
 		}
 
-		add(fd);
+		rem(fd);
 
 		gpt_close(fd);
 	}
