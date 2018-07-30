@@ -1,10 +1,10 @@
 /*
- * "$Id: auth.h,v 1.1.1.7 2002/12/24 00:07:25 jlovell Exp $"
+ * "$Id: auth.h,v 1.1.1.9 2004/06/05 02:42:33 jlovell Exp $"
  *
  *   Authorization definitions for the Common UNIX Printing System (CUPS)
  *   scheduler.
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -135,5 +135,5 @@ extern http_status_t	IsAuthorized(client_t *con);
 
 
 /*
- * End of "$Id: auth.h,v 1.1.1.7 2002/12/24 00:07:25 jlovell Exp $".
+ * End of "$Id: auth.h,v 1.1.1.9 2004/06/05 02:42:33 jlovell Exp $".
  */

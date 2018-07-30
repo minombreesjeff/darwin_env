@@ -1,9 +1,9 @@
 /*
- * "$Id: http-addr.c,v 1.1.1.4 2003/02/10 21:57:16 jlovell Exp $"
+ * "$Id: http-addr.c,v 1.1.1.6 2004/06/05 02:42:28 jlovell Exp $"
  *
  *   HTTP host/address routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -73,7 +73,7 @@ httpGetHostByName(const char *name)	/* I - Hostname or IP address */
   * htonl() macro to get the right byte order for the address.
   */
 
-  for (nameptr = name; isdigit(*nameptr) || *nameptr == '.'; nameptr ++);
+  for (nameptr = name; isdigit(*nameptr & 255) || *nameptr == '.'; nameptr ++);
 
   if (!*nameptr)
   {
@@ -84,7 +84,10 @@ httpGetHostByName(const char *name)	/* I - Hostname or IP address */
     */
 
     if (sscanf(name, "%u.%u.%u.%u", ip, ip + 1, ip + 2, ip + 3) != 4)
-      return (NULL); /* Must have 4 numbers */
+      return (NULL);			/* Must have 4 numbers */
+
+    if (ip[0] > 255 || ip[1] > 255 || ip[2] > 255 || ip[3] > 255)
+      return (NULL);			/* Invalid byte ranges! */
 
     packed_ip = htonl(((((((ip[0] << 8) | ip[1]) << 8) | ip[2]) << 8) | ip[3]));
 
@@ -115,5 +118,5 @@ httpGetHostByName(const char *name)	/* I - Hostname or IP address */
 
 
 /*
- * End of "$Id: http-addr.c,v 1.1.1.4 2003/02/10 21:57:16 jlovell Exp $".
+ * End of "$Id: http-addr.c,v 1.1.1.6 2004/06/05 02:42:28 jlovell Exp $".
  */

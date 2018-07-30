@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.24 2003/08/03 16:31:14 jlovell Exp $"
+# "$Id: Makefile,v 1.26 2004/04/08 17:41:37 jlovell Exp $"
 #
 #   Filter makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2003 by Easy Software Products.
+#   Copyright 1997-2004 by Easy Software Products.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -40,7 +40,7 @@ FORMOBJS =	form-attr.o form-main.o form-ps.o form-text.o form-tree.o
 OBJS	=	$(HPGLOBJS) $(IMAGEOBJS) $(FORMOBJS) \
 		gziptoany.o imagetops.o imagetoraster.o common.o pstops.o \
 		rastertodymo.o rastertoepson.o rastertohp.o \
-		texttops.o textcommon.o 
+		texttops.o textcommon.o
 
 #
 # Make all targets...
@@ -112,9 +112,9 @@ formtops:	$(FORMOBJS) common.o ../Makedefs ../cups/$(LIBCUPS)
 # gziptoany
 #
 
-gziptoany:	gziptoany.o ../Makedefs
+gziptoany:	gziptoany.o ../Makedefs ../cups/$(LIBCUPS)
 	echo Linking $@...
-	$(CC) $(LDFLAGS) -o $@ gziptoany.o $(LIBZ)
+	$(CC) $(LDFLAGS) -o $@ gziptoany.o $(LIBZ) $(LIBS)
 
 
 #
@@ -271,5 +271,5 @@ include Dependencies
 
 
 #
-# End of "$Id: Makefile,v 1.24 2003/08/03 16:31:14 jlovell Exp $".
+# End of "$Id: Makefile,v 1.26 2004/04/08 17:41:37 jlovell Exp $".
 #

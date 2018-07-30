@@ -1,9 +1,9 @@
 dnl
-dnl "$Id: cups-opsys.m4,v 1.7 2003/04/02 22:40:08 jlovell Exp $"
+dnl "$Id: cups-opsys.m4,v 1.1.1.10 2004/06/05 02:42:28 jlovell Exp $"
 dnl
 dnl   Operating system stuff for the Common UNIX Printing System (CUPS).
 dnl
-dnl   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+dnl   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 dnl
 dnl   These coded instructions, statements, and computer programs are the
 dnl   property of Easy Software Products and are protected by Federal
@@ -61,6 +61,7 @@ AC_ARG_WITH(cups-group, [  --with-cups-group       set default group for CUPS],
 		else
 			GROUP_LIST="sys system root"
 		fi
+
 		CUPS_GROUP=""
 		for group in $GROUP_LIST; do
 			if test "`grep \^${group}: /etc/group`" != ""; then
@@ -86,5 +87,5 @@ AC_DEFINE_UNQUOTED(CUPS_DEFAULT_USER, "$CUPS_USER")
 AC_DEFINE_UNQUOTED(CUPS_DEFAULT_GROUP, "$CUPS_GROUP")
 
 dnl
-dnl "$Id: cups-opsys.m4,v 1.7 2003/04/02 22:40:08 jlovell Exp $"
+dnl "$Id: cups-opsys.m4,v 1.1.1.10 2004/06/05 02:42:28 jlovell Exp $"
 dnl

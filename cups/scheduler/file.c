@@ -1,5 +1,5 @@
 /*
- * "$Id: file.c,v 1.1.1.2 2003/07/16 17:22:02 jlovell Exp $"
+ * "$Id: file.c,v 1.3 2004/04/08 17:41:38 jlovell Exp $"
  *
  *   File functions for the Common UNIX Printing System (CUPS).
  *
@@ -8,7 +8,7 @@
  *   our own file functions allows us to provide transparent support of
  *   gzip'd print files, PPD files, etc.
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -499,9 +499,9 @@ cupsFileRead(cups_file_t *fp,		/* I - CUPS file */
  * 'cupsFileSeek()' - Seek in a file.
  */
 
-int					/* O - New file position or -1 */
+off_t					/* O - New file position or -1 */
 cupsFileSeek(cups_file_t *fp,		/* I - CUPS file */
-             int         pos)		/* I - Position in file */
+             off_t       pos)		/* I - Position in file */
 {
   int	bytes;				/* Number bytes in buffer */
 
@@ -535,6 +535,7 @@ cupsFileSeek(cups_file_t *fp,		/* I - CUPS file */
       fp->pos = 0;
       fp->ptr = NULL;
       fp->end = NULL;
+      fp->eof = 0;
 
       while ((bytes = cups_fill(fp)) > 0)
         if (pos >= fp->pos && pos < (fp->pos + bytes))
@@ -550,6 +551,9 @@ cupsFileSeek(cups_file_t *fp,		/* I - CUPS file */
       fp->pos = pos;
       fp->ptr = NULL;
       fp->end = NULL;
+#ifdef HAVE_LIBZ
+      fp->eof = 0;
+#endif /* HAVE_LIBZ */
     }
   }
   else if (pos >= (fp->pos + bytes))
@@ -575,6 +579,9 @@ cupsFileSeek(cups_file_t *fp,		/* I - CUPS file */
       fp->pos = pos;
       fp->ptr = NULL;
       fp->end = NULL;
+#ifdef HAVE_LIBZ
+      fp->eof = 0;
+#endif /* HAVE_LIBZ */
     }
   }
   else
@@ -585,6 +592,9 @@ cupsFileSeek(cups_file_t *fp,		/* I - CUPS file */
     */
 
     fp->ptr = fp->buf + pos - fp->pos;
+#ifdef HAVE_LIBZ
+    fp->eof = 0;
+#endif /* HAVE_LIBZ */
   }
 
   return (pos);
@@ -636,8 +646,10 @@ static int				/* O - Number of bytes or -1 */
 cups_fill(cups_file_t *fp)		/* I - CUPS file */
 {
   int			bytes;		/* Number of bytes read */
+#ifdef HAVE_LIBZ
   const unsigned char	*ptr,		/* Pointer into buffer */
 			*end;		/* End of buffer */
+#endif /* HAVE_LIBZ */
 
 
  /*
@@ -969,5 +981,5 @@ cups_write(int        fd,		/* I - File descriptor */
 
 
 /*
- * End of "$Id: file.c,v 1.1.1.2 2003/07/16 17:22:02 jlovell Exp $".
+ * End of "$Id: file.c,v 1.3 2004/04/08 17:41:38 jlovell Exp $".
  */

@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.25 2003/04/12 03:04:28 jlovell Exp $"
+# "$Id: Makefile,v 1.27 2004/04/08 17:41:35 jlovell Exp $"
 #
 #   Support library Makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -30,10 +30,10 @@ include ../Makedefs
 # Object files...
 #
 
-LIBOBJS	=	attr.o dest.o emit.o encode.o http.o http-addr.o \
-		http-support.o ipp.o ipp-support.o language.o mark.o \
-		md5.o md5passwd.o options.o page.o ppd.o snprintf.o \
-		string.o tempfile.o usersys.o util.o
+LIBOBJS	=	attr.o auth.o dest.o emit.o encode.o getputfile.o \
+		http.o http-addr.o http-support.o ipp.o ipp-support.o \
+		language.o mark.o md5.o md5passwd.o options.o page.o \
+		ppd.o snprintf.o string.o tempfile.o usersys.o util.o
 OBJS	=	$(LIBOBJS) testhttp.o testipp.o testlang.o
 
 
@@ -210,5 +210,5 @@ include Dependencies
 
 
 #
-# End of "$Id: Makefile,v 1.25 2003/04/12 03:04:28 jlovell Exp $".
+# End of "$Id: Makefile,v 1.27 2004/04/08 17:41:35 jlovell Exp $".
 #

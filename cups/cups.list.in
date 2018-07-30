@@ -1,10 +1,10 @@
 #
-# "$Id: cups.list.in,v 1.11 2003/07/16 18:34:04 jlovell Exp $"
+# "$Id: cups.list.in,v 1.15 2004/06/05 03:49:44 jlovell Exp $"
 #
 #   ESP Package Manager (EPM) file list for the Common UNIX Printing
 #   System (CUPS).
 #
-#   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -25,7 +25,7 @@
 
 # Product information
 %product Common UNIX Printing System
-%copyright 1993-2003 by Easy Software Products, All Rights Reserved.
+%copyright 1993-2004 by Easy Software Products, All Rights Reserved.
 %vendor Easy Software Products
 %license LICENSE.txt
 %readme README.txt
@@ -129,7 +129,7 @@ f 0555 root sys $SERVERBIN/backend/lpd backend/lpd
 #f 0555 root sys $SERVERBIN/backend/scsi backend/scsi
 f 0555 root sys $SERVERBIN/backend/serial backend/serial
 f 0555 root sys $SERVERBIN/backend/socket backend/socket
-#f 0555 root sys $SERVERBIN/backend/usb backend/usb
+f 0555 root sys $SERVERBIN/backend/usb backend/usb
 d 0555 root sys $SERVERBIN/cgi-bin -
 f 0555 root sys $SERVERBIN/cgi-bin/admin.cgi cgi-bin/admin.cgi
 f 0555 root sys $SERVERBIN/cgi-bin/classes.cgi cgi-bin/classes.cgi
@@ -151,11 +151,14 @@ f 0555 root sys $SERVERBIN/filter/rastertohp filter/rastertohp
 #f 0555 root sys $SERVERBIN/filter/texttops filter/texttops
 
 # Admin commands
+d 0555 root sys $BINDIR -
 l 0555 root sys $BINDIR/disable $SBINDIR/accept
 l 0555 root sys $BINDIR/enable $SBINDIR/accept
 l 0555 root sys $LIBDIR/accept $SBINDIR/accept
+d 0555 root sys $LIBDIR -
 l 0555 root sys $LIBDIR/lpadmin $SBINDIR/lpadmin
 l 0555 root sys $LIBDIR/reject accept
+d 0555 root sys $SBINDIR -
 f 0555 root sys $SBINDIR/accept systemv/accept
 f 0555 root sys $SBINDIR/cupsaddsmb systemv/cupsaddsmb
 f 0555 root sys $SBINDIR/lpadmin systemv/lpadmin
@@ -291,23 +294,17 @@ d 0555 root sys $SERVERROOT -
 d 0711 $CUPS_USER $CUPS_GROUP $SERVERROOT/certs -
 d 0755 root sys $SERVERROOT/interfaces -
 d 0755 root sys $SERVERROOT/ppd -
-c 0644 root sys $SERVERROOT conf/*.conf
+c 0644 root sys $SERVERROOT/classes.conf conf/classes.conf
+c 0644 root sys $SERVERROOT/cupsd.conf conf/cupsd.conf
+c 0644 root sys $SERVERROOT/printers.conf conf/printers.conf
+c 0644 root sys $SERVERROOT/client.conf conf/client.conf
+
 c 0644 root sys $SERVERROOT/mime.convs conf/mime.convs
 c 0644 root sys $SERVERROOT/mime.types conf/mime.types
 
 %if PAMDIR
 d 0555 root sys $PAMDIR -
-
-%system linux
-# Linux almost always supports PAM...
-c 0644 root sys $PAMDIR/cups conf/pam.conf
-
-%system irix
-# IRIX doesn't normally support PAM, but the freeware project
-# includes a version of PAM that can be used...
-c 0644 root sys $PAMDIR/cups conf/pam.irix
-
-%system all
+c 0644 root sys $PAMDIR/cups conf/@PAMFILE@
 %endif
 
 # Developer files
@@ -356,6 +353,7 @@ d 0555 root sys $PMANDIR/cat3 -
 d 0555 root sys $PMANDIR/man3 -
 
 f 0444 root sys $MANDIR/cat1/backend.$CAT1EXT man/backend.$CAT1EXT
+f 0444 root sys $MANDIR/cat1/cups-config.$CAT1EXT man/cups-config.$CAT1EXT
 f 0444 root sys $MANDIR/cat1/cupstestppd.$CAT1EXT man/cupstestppd.$CAT1EXT
 f 0444 root sys $MANDIR/cat1/filter.$CAT1EXT man/filter.$CAT1EXT
 f 0444 root sys $MANDIR/cat1/lpoptions.$CAT1EXT man/lpoptions.$CAT1EXT
@@ -366,8 +364,6 @@ f 0444 root sys $MANDIR/cat1/lpr.$CAT1EXT man/lpr.$CAT1EXT
 f 0444 root sys $MANDIR/cat1/lpstat.$CAT1EXT man/lpstat.$CAT1EXT
 f 0444 root sys $MANDIR/cat1/lp.$CAT1EXT man/lp.$CAT1EXT
 l 0444 root sys $MANDIR/cat1/cancel.$CAT1EXT lp.$CAT1EXT
-
-f 0444 root sys $PMANDIR/cat3/cups-config.$CAT3EXT man/cups-config.$CAT3EXT
 
 f 0444 root sys $MANDIR/cat5/classes.conf.$CAT5EXT man/classes.conf.$CAT5EXT
 f 0444 root sys $MANDIR/cat5/cupsd.conf.$CAT5EXT man/cupsd.conf.$CAT5EXT
@@ -389,6 +385,7 @@ f 0444 root sys $AMANDIR/cat$MAN8DIR/lpinfo.$CAT8EXT man/lpinfo.$CAT8EXT
 f 0444 root sys $AMANDIR/cat$MAN8DIR/lpmove.$CAT8EXT man/lpmove.$CAT8EXT
 
 f 0444 root sys $MANDIR/man1/backend.1 man/backend.man
+f 0444 root sys $MANDIR/man1/cups-config.1 man/cups-config.man
 f 0444 root sys $MANDIR/man1/cupstestppd.1 man/cupstestppd.man
 f 0444 root sys $MANDIR/man1/filter.1 man/filter.man
 f 0444 root sys $MANDIR/man1/lpoptions.1 man/lpoptions.man
@@ -399,8 +396,6 @@ f 0444 root sys $MANDIR/man1/lpr.1 man/lpr.man
 f 0444 root sys $MANDIR/man1/lpstat.1 man/lpstat.man
 f 0444 root sys $MANDIR/man1/lp.1 man/lp.man
 l 0444 root sys $MANDIR/man1/cancel.1 lp.1
-
-f 0444 root sys $PMANDIR/man3/cups-config.3 man/cups-config.man
 
 f 0444 root sys $MANDIR/man5/classes.conf.5 man/classes.conf.man
 f 0444 root sys $MANDIR/man5/cupsd.conf.5 man/cupsd.conf.man
@@ -502,8 +497,9 @@ f 0444 root sys $AMANDIR/fr/man$MAN8DIR/lpmove.$MAN8EXT man/lpmove.man
 
 # Apple files
 %system darwin
-f 0755 root sys /System/Library/Printers/Libraries/convert test/convert
+f 0555 root sys $SERVERBIN/backend/pap backend/pap
+f 0755 root wheel /System/Library/Printers/Libraries/convert test/convert
 
 #
-# End of "$Id: cups.list.in,v 1.11 2003/07/16 18:34:04 jlovell Exp $".
+# End of "$Id: cups.list.in,v 1.15 2004/06/05 03:49:44 jlovell Exp $".
 #

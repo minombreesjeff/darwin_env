@@ -1,9 +1,9 @@
 /*
- * "$Id: hpgl-main.c,v 1.1.1.8 2003/04/11 21:07:45 jlovell Exp $"
+ * "$Id: hpgl-main.c,v 1.1.1.11 2004/06/05 02:42:32 jlovell Exp $"
  *
  *   HP-GL/2 filter main entry for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1993-2003 by Easy Software Products.
+ *   Copyright 1993-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -192,10 +192,14 @@ main(int  argc,		/* I - Number of command-line arguments */
   shading  = 1;
   PenWidth = 1.0;
 
-  if ((val = cupsGetOption("blackplot", num_options, options)) != NULL)
+  if ((val = cupsGetOption("blackplot", num_options, options)) != NULL &&
+      strcasecmp(val, "no") && strcasecmp(val, "off") &&
+      strcasecmp(val, "false"))
     shading = 0;
 
-  if ((val = cupsGetOption("fitplot", num_options, options)) != NULL)
+  if ((val = cupsGetOption("fitplot", num_options, options)) != NULL &&
+      strcasecmp(val, "no") && strcasecmp(val, "off") &&
+      strcasecmp(val, "false"))
     FitPlot = 1;
 
   if ((val = cupsGetOption("penwidth", num_options, options)) != NULL)
@@ -222,6 +226,8 @@ main(int  argc,		/* I - Number of command-line arguments */
 
   while ((num_params = ParseCommand(fp, name.name, &params)) >= 0)
   {
+    Outputf("%% %s(%d)\n", name.name, num_params);
+
 #ifdef DEBUG
     {
       int i;
@@ -264,5 +270,5 @@ compare_names(const void *p1,	/* I - First name */
 
 
 /*
- * End of "$Id: hpgl-main.c,v 1.1.1.8 2003/04/11 21:07:45 jlovell Exp $".
+ * End of "$Id: hpgl-main.c,v 1.1.1.11 2004/06/05 02:42:32 jlovell Exp $".
  */

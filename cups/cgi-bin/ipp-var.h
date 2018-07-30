@@ -1,9 +1,9 @@
 /*
- * "$Id: ipp-var.h,v 1.1.1.8 2003/07/23 02:33:32 jlovell Exp $"
+ * "$Id: ipp-var.h,v 1.1.1.11 2004/06/05 02:42:28 jlovell Exp $"
  *
  *   IPP variable definitions for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -47,11 +47,12 @@
 extern void	ippGetAttributes(ipp_t *request, const char *directory,
 		                 const char *tmpl, const char *lang);
 extern char	*ippGetTemplateDir(void);
+extern char	*ippRewriteURL(const char *, char *, int, const char *);
 extern void	ippSetServerVersion(void);
 extern void	ippSetCGIVars(ipp_t *, const char *, const char *,
 		              const char *, int);
 
 
 /*
- * End of "$Id: ipp-var.h,v 1.1.1.8 2003/07/23 02:33:32 jlovell Exp $".
+ * End of "$Id: ipp-var.h,v 1.1.1.11 2004/06/05 02:42:28 jlovell Exp $".
  */

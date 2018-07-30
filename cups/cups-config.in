@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# "$Id: cups-config.in,v 1.1.1.12 2003/04/18 19:52:23 jlovell Exp $"
+# "$Id: cups-config.in,v 1.1.1.15 2004/06/05 02:42:28 jlovell Exp $"
 # 
 #   CUPS configuration utility.
 #
-#   Copyright 2001-2003 by Easy Software Products, all rights reserved.
+#   Copyright 2001-2004 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -40,7 +40,7 @@ cups_serverroot=@CUPS_SERVERROOT@
 # flags for C++ compiler:
 CFLAGS=""
 LDFLAGS="@EXPORT_LDFLAGS@"
-LIBS="@EXPORT_SSLLIBS@ @NETLIBS@"
+LIBS="@EXPORT_SSLLIBS@ @NETLIBS@ @COMMONLIBS@"
 IMGLIBS="@EXPORT_LIBTIFF@ @EXPORT_LIBJPEG@ @EXPORT_LIBPNG@ @EXPORT_LIBZ@"
 
 if test $includedir != /usr/include; then
@@ -130,5 +130,5 @@ while test $# -gt 0; do
 done
 
 #
-# End of "$Id: cups-config.in,v 1.1.1.12 2003/04/18 19:52:23 jlovell Exp $".
+# End of "$Id: cups-config.in,v 1.1.1.15 2004/06/05 02:42:28 jlovell Exp $".
 #

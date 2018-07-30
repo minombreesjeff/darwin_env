@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.6 2002/12/24 02:13:19 jlovell Exp $"
+# "$Id: Makefile,v 1.7 2004/04/08 17:41:34 jlovell Exp $"
 #
 #   Berkeley commands makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -114,5 +114,5 @@ include Dependencies
 
 
 #
-# End of "$Id: Makefile,v 1.6 2002/12/24 02:13:19 jlovell Exp $".
+# End of "$Id: Makefile,v 1.7 2004/04/08 17:41:34 jlovell Exp $".
 #

@@ -1,9 +1,9 @@
 /*
- * "$Id: raster.c,v 1.1.1.7.4.1 2003/12/12 20:50:55 jlovell Exp $"
+ * "$Id: raster.c,v 1.5 2004/06/05 03:49:45 jlovell Exp $"
  *
  *   Raster file routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -179,14 +179,13 @@ cupsRasterReadPixels(cups_raster_t *r,	/* I - Raster stream */
     bytes = read(r->fd, p, remaining);
 
     if (bytes == 0)
-        return (0);
-
-    if (bytes < 0)
+      return (0);
+    else if (bytes < 0)
     {
-      if (errno == EAGAIN || errno == EINTR)
-        continue;
-      else
+      if (errno != EINTR)
         return (0);
+      else
+        continue;
     }
 
     remaining -= bytes;
@@ -236,9 +235,11 @@ cupsRasterWritePixels(cups_raster_t *r,	/* I - Raster stream */
   {
     bytes = write(r->fd, p, remaining);
 
-    if (bytes <= 0)
+    if (bytes == 0)
+      return (0);
+    else if (bytes < 0)
     {
-      if (errno != EAGAIN && errno != EINTR)
+      if (errno != EINTR)
         return (0);
       else
         continue;
@@ -253,5 +254,5 @@ cupsRasterWritePixels(cups_raster_t *r,	/* I - Raster stream */
 
 
 /*
- * End of "$Id: raster.c,v 1.1.1.7.4.1 2003/12/12 20:50:55 jlovell Exp $".
+ * End of "$Id: raster.c,v 1.5 2004/06/05 03:49:45 jlovell Exp $".
  */

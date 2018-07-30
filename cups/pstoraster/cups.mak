@@ -1,9 +1,9 @@
 #
-# "$Id$"
+# "$Id: cups.mak,v 1.7 2004/02/25 20:14:53 mike Exp $"
 #
 # CUPS driver makefile for Ghostscript.
 #
-# Copyright 2001-2003 by Easy Software Products.
+# Copyright 2001-2004 by Easy Software Products.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ install:	install-cups
 install-cups:
 	-mkdir -p $(CUPSSERVER)/filter
 	$(INSTALL_PROGRAM) pstoraster/pstoraster $(CUPSSERVER)/filter
-	$(INSTALL_PROGRAM) pstoraster/pstopcl6 $(CUPSSERVER)/filter
+	$(INSTALL_PROGRAM) pstoraster/pstopxl $(CUPSSERVER)/filter
 	-mkdir -p $(CUPSCONFIG)
 	$(INSTALL_DATA) pstoraster/pstoraster.convs $(CUPSCONFIG)
 	-mkdir -p $(CUPSDATA)/model
@@ -49,5 +49,5 @@ install-cups:
 
 
 #
-# End of "$Id$".
+# End of "$Id: cups.mak,v 1.7 2004/02/25 20:14:53 mike Exp $".
 #

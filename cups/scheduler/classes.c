@@ -1,9 +1,9 @@
 /*
- * "$Id: classes.c,v 1.4.4.1 2003/11/14 23:48:30 jlovell Exp $"
+ * "$Id: classes.c,v 1.8 2004/06/05 03:49:46 jlovell Exp $"
  *
  *   Printer class routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -32,6 +32,8 @@
  *   FindClass()                - Find the named class.
  *   LoadAllClasses()           - Load classes from the classes.conf file.
  *   SaveAllClasses()           - Save classes to the classes.conf file.
+ *   UpdateImplicitClasses()    - Update the accepting state of implicit
+ *                                classes.
  */
 
 /*
@@ -48,6 +50,8 @@
 printer_t *			/* O - New class */
 AddClass(const char *name)	/* I - Name of class */
 {
+  int		i,		/* Looping var */
+  		port;		/* Port number to use */
   printer_t	*c;		/* New class */
 
 
@@ -61,9 +65,16 @@ AddClass(const char *name)	/* I - Name of class */
     * Change from a printer to a class...
     */
 
+  port = ippPort();
+  for (i = 0; i < NumListeners && Listeners[i].address.sin_family != AF_INET; i++)
+    ;
+
+  if (i < NumListeners)
+    port = ntohs(Listeners[i].address.sin_port);
+
     c->type = CUPS_PRINTER_CLASS;
     SetStringf(&c->uri, "ipp://%s:%d/classes/%s", ServerName,
-               ntohs(Listeners[0].address.sin_port), name);
+               port, name);
   }
 
   return (c);
@@ -278,8 +289,9 @@ FindAvailablePrinter(const char *name)	/* I - Class to check */
     if (i >= c->num_printers)
       i = 0;
 
-    if (c->printers[i]->state == IPP_PRINTER_IDLE ||
-        ((c->printers[i]->type & CUPS_PRINTER_REMOTE) && !c->printers[i]->job))
+    if (c->printers[i]->accepting &&
+        (c->printers[i]->state == IPP_PRINTER_IDLE ||
+         ((c->printers[i]->type & CUPS_PRINTER_REMOTE) && !c->printers[i]->job)))
     {
       c->last_printer = i;
       return (c->printers[i]);
@@ -370,7 +382,7 @@ LoadAllClasses(void)
 
     len = strlen(line);
 
-    while (len > 0 && isspace(line[len - 1]))
+    while (len > 0 && isspace(line[len - 1] & 255))
     {
       len --;
       line[len] = '\0';
@@ -380,14 +392,14 @@ LoadAllClasses(void)
     * Extract the name from the beginning of the line...
     */
 
-    for (value = line; isspace(*value); value ++);
+    for (value = line; isspace(*value & 255); value ++);
 
-    for (nameptr = name; *value != '\0' && !isspace(*value) &&
+    for (nameptr = name; *value != '\0' && !isspace(*value & 255) &&
 	                     nameptr < (name + sizeof(name) - 1);)
       *nameptr++ = *value++;
     *nameptr = '\0';
 
-    while (isspace(*value))
+    while (isspace(*value & 255))
       value ++;
 
     if (name[0] == '\0')
@@ -496,7 +508,7 @@ LoadAllClasses(void)
       * Set the initial queue state message...
       */
 
-      while (isspace(*value))
+      while (isspace(*value & 255))
         value ++;
 
       strlcpy(p->state_message, value, sizeof(p->state_message));
@@ -518,19 +530,19 @@ LoadAllClasses(void)
       * Set the initial job sheets...
       */
 
-      for (valueptr = value; *valueptr && !isspace(*valueptr); valueptr ++);
+      for (valueptr = value; *valueptr && !isspace(*valueptr & 255); valueptr ++);
 
       if (*valueptr)
         *valueptr++ = '\0';
 
       SetString(&p->job_sheets[0], value);
 
-      while (isspace(*valueptr))
+      while (isspace(*valueptr & 255))
         valueptr ++;
 
       if (*valueptr)
       {
-        for (value = valueptr; *valueptr && !isspace(*valueptr); valueptr ++);
+        for (value = valueptr; *valueptr && !isspace(*valueptr & 255); valueptr ++);
 
 	if (*valueptr)
           *valueptr++ = '\0';
@@ -610,7 +622,7 @@ SaveAllClasses(void)
   * Restrict access to the file...
   */
 
-  fchown(cupsFileNumber(fp), getuid(), Group);
+  fchown(cupsFileNumber(fp), RunUser, Group);
 #ifdef __APPLE__
   fchmod(cupsFileNumber(fp), 0600);
 #else
@@ -693,5 +705,34 @@ SaveAllClasses(void)
 
 
 /*
- * End of "$Id: classes.c,v 1.4.4.1 2003/11/14 23:48:30 jlovell Exp $".
+ * 'UpdateImplicitClasses()' - Update the accepting state of implicit classes.
+ */
+
+void
+UpdateImplicitClasses(void)
+{
+  int		i;			/* Looping var */
+  printer_t	*pclass;		/* Current class */
+  int		accepting;		/* printer-is-accepting-jobs value */
+
+
+  for (pclass = Printers; pclass; pclass = pclass->next)
+    if (pclass->type & CUPS_PRINTER_IMPLICIT)
+    {
+     /*
+      * Implicit class, loop through the printers to come up with a
+      * composite state...
+      */
+
+      for (i = 0, accepting = 0; i < pclass->num_printers; i ++)
+        if ((accepting |= pclass->printers[i]->accepting) != 0)
+	  break;
+
+      pclass->accepting = accepting;
+    }
+}
+
+
+/*
+ * End of "$Id: classes.c,v 1.8 2004/06/05 03:49:46 jlovell Exp $".
  */

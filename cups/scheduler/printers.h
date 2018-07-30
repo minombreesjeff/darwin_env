@@ -1,9 +1,9 @@
 /*
- * "$Id: printers.h,v 1.1.1.10 2003/04/29 00:15:17 jlovell Exp $"
+ * "$Id: printers.h,v 1.5 2004/05/31 21:02:21 jlovell Exp $"
  *
  *   Printer definitions for the Common UNIX Printing System (CUPS) scheduler.
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -21,6 +21,10 @@
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  */
+
+#ifdef HAVE_MDNS
+#  include <dns_sd.h>
+#endif /* HAVE_MDNS */
 
 /*
  * Quota data...
@@ -49,6 +53,7 @@ typedef struct printer_str
 		*make_model,		/* Make and model */
 		*info;			/* Description */
   int		accepting;		/* Accepting jobs? */
+  int		shared;			/* Printer is shared? */
   ipp_pstate_t	state;			/* Printer state */
   char		state_message[1024];	/* Printer state message */
   int		num_reasons;		/* Number of printer-state-reasons */
@@ -76,6 +81,32 @@ typedef struct printer_str
   int		num_history;		/* Number of history collections */
   ipp_t		**history;		/* History data */
   int		sequence_number;	/* Increasing sequence number */
+#ifdef HAVE_MDNS
+  int		browse_protocol;	/* Which protocol was this registered under */
+  struct sockaddr_in hostaddr;		/* Address of client (to supress duplicates) */
+  char		*reg_name;		/* Name used for service registration */
+  char		*service_name;		/* Final name the service is registered as */
+					/* (usually the same as reg_name but may have  */
+					/* digits appended to be unique) */
+  char		*host_target,		/* hostname of the machine that provides the service */
+		*product,		/* PPD Product string */
+		*pdl;			/* pdl value for TXT record */
+
+  char		*lpd_txt_record;	/* LPD TXT record contents */
+  int		lpd_txt_len;		/* LPD TXT record length */
+
+  char		*ipp_txt_record;	/* IPP TXT record contents */
+  int		ipp_txt_len;		/* IPP TXT record length */
+
+  DNSServiceRef	mdns_lpd_ref,		/* DNSServiceRegister ref for _printer */
+		mdns_ipp_ref,		/* DNSServiceRegister ref for _ipp */
+		mdns_query_ref;		/* DNSServiceQueryRecord reference for txt records */
+
+  int		mdns_lpd_fd,		/* File descriptors for the above references */
+		mdns_ipp_fd,
+		mdns_query_fd;
+
+#endif /* HAVE_MDNS */
 } printer_t;
 
 
@@ -97,6 +128,7 @@ extern void		AddPrinterFilter(printer_t *p, const char *filter);
 extern void		AddPrinterHistory(printer_t *p);
 extern void		AddPrinterUser(printer_t *p, const char *username);
 extern quota_t		*AddQuota(printer_t *p, const char *username);
+extern void		CreateCommonData(void);
 extern void		DeleteAllPrinters(void);
 extern void		DeletePrinter(printer_t *p, int update);
 extern void		DeletePrinterFilters(printer_t *p);
@@ -122,5 +154,5 @@ extern void		WritePrintcap(void);
 
 
 /*
- * End of "$Id: printers.h,v 1.1.1.10 2003/04/29 00:15:17 jlovell Exp $".
+ * End of "$Id: printers.h,v 1.5 2004/05/31 21:02:21 jlovell Exp $".
  */

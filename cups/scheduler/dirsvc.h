@@ -1,10 +1,10 @@
 /*
- * "$Id: dirsvc.h,v 1.1.1.8 2003/04/11 21:07:48 jlovell Exp $"
+ * "$Id: dirsvc.h,v 1.2 2004/05/31 21:02:21 jlovell Exp $"
  *
  *   Directory services definitions for the Common UNIX Printing System
  *   (CUPS) scheduler.
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -31,6 +31,9 @@
 #  include <slp.h>
 #endif /* HAVE_LIBSLP */
 
+#ifdef HAVE_MDNS
+#  include <dns_sd.h>
+#endif /* HAVE_MDNS */
 
 /*
  * Browse protocols...
@@ -39,7 +42,8 @@
 #define BROWSE_CUPS	1		/* CUPS */
 #define	BROWSE_SLP	2		/* SLPv2 */
 #define BROWSE_LDAP	4		/* LDAP (not supported yet) */
-#define BROWSE_ALL	7		/* All protocols */
+#define BROWSE_MDNS	8		/* DNS Service Discovery (aka Rendezvous) */
+#define BROWSE_ALL	15		/* All protocols */
 
 
 /*
@@ -118,17 +122,29 @@ VAR time_t		BrowseSLPRefresh VALUE(0);
 					/* Next SLP refresh time */
 #endif /* HAVE_LIBSLP */
 
+#ifdef HAVE_MDNS
+VAR DNSServiceRef	BrowseMDNSRef	VALUE(NULL);
+					/* Browse reference */
+VAR int			BrowseMDNSfd	VALUE(-1);
+					/* Browse descriptor */
+
+typedef struct mdns_resolve {
+  DNSServiceRef		sdRef;		/* Reference to pending resolve */
+  int			fd;		/* sdRef descriptor */
+  char			*service_name;	/* Service name */
+  struct mdns_resolve*	next;		/* Next pending resolve in list */
+} mdns_resolve_t;
+
+VAR mdns_resolve_t	*MDNSPendingResolves	VALUE(NULL);
+					/* Pending mdns resolves */
+
+#endif /* HAVE_MDNS HAVE_MDNS */
 
 /*
  * Prototypes...
  */
 
-extern void	ProcessBrowseData(const char *uri, cups_ptype_t type,
-		                  ipp_pstate_t state, const char *location,
-				  const char *info, const char *make_model);
 extern void	SendBrowseList(void);
-extern void	SendCUPSBrowse(printer_t *p);
-extern void	SendSLPBrowse(printer_t *p);
 extern void	StartBrowsing(void);
 extern void	StartPolling(void);
 extern void	StopBrowsing(void);
@@ -136,8 +152,10 @@ extern void	StopPolling(void);
 extern void	UpdateCUPSBrowse(void);
 extern void	UpdatePolling(void);
 extern void	UpdateSLPBrowse(void);
+extern void	BrowseRegisterPrinter(printer_t *p);
+extern void	BrowseDeregisterPrinter(printer_t *p);
 
 
 /*
- * End of "$Id: dirsvc.h,v 1.1.1.8 2003/04/11 21:07:48 jlovell Exp $".
+ * End of "$Id: dirsvc.h,v 1.2 2004/05/31 21:02:21 jlovell Exp $".
  */

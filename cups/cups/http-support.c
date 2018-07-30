@@ -1,9 +1,9 @@
 /*
- * "$Id: http-support.c,v 1.1.1.4 2003/02/10 21:57:17 jlovell Exp $"
+ * "$Id: http-support.c,v 1.1.1.7 2004/06/05 02:42:28 jlovell Exp $"
  *
  *   HTTP support routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -25,9 +25,10 @@
  *
  * Contents:
  *
- *   httpSeparate() - Separate a Universal Resource Identifier into its
- *                    components.
- *   httpStatus()   - Return a short string describing a HTTP status code.
+ *   httpSeparate()   - Separate a Universal Resource Identifier into its
+ *                      components.
+ *   httpStatus()     - Return a short string describing a HTTP status code.
+ *   cups_hstrerror() - hstrerror() emulation function for Solaris and others...
  */
 
 /*
@@ -122,7 +123,7 @@ httpSeparate(const char *uri,		/* I - Universal Resource Identifier */
       else
 	resource[0] = '\0';
 
-      if (isdigit(*uri))
+      if (isdigit(*uri & 255))
       {
        /*
 	* OK, we have "hostname:port[/resource]"...
@@ -176,7 +177,7 @@ httpSeparate(const char *uri,		/* I - Universal Resource Identifier */
     for (ptr = username; uri < atsign; uri ++)
       if (ptr < (username + HTTP_MAX_URI - 1))
       {
-        if (*uri == '%' && isxdigit(uri[1]) && isxdigit(uri[2]))
+        if (*uri == '%' && isxdigit(uri[1] & 255) && isxdigit(uri[2] & 255))
 	{
 	 /*
 	  * Grab a hex-encoded username and password...
@@ -225,6 +226,8 @@ httpSeparate(const char *uri,		/* I - Universal Resource Identifier */
       *port = 443;
     else if (strcasecmp(method, "ipp") == 0)
       *port = ippPort();
+    else if (strcasecmp(method, "lpd") == 0)
+      *port = 515;
     else if (strcasecmp(method, "socket") == 0)	/* Not registered yet... */
       *port = 9100;
     else
@@ -238,7 +241,7 @@ httpSeparate(const char *uri,		/* I - Universal Resource Identifier */
 
     *port = 0;
     uri ++;
-    while (isdigit(*uri))
+    while (isdigit(*uri & 255))
     {
       *port = (*port * 10) + *uri - '0';
       uri ++;
@@ -311,6 +314,32 @@ httpStatus(http_status_t status)	/* I - HTTP status code */
 }
 
 
+#ifndef HAVE_HSTRERROR
 /*
- * End of "$Id: http-support.c,v 1.1.1.4 2003/02/10 21:57:17 jlovell Exp $".
+ * 'cups_hstrerror()' - hstrerror() emulation function for Solaris and others...
+ */
+
+const char *				/* O - Error string */
+cups_hstrerror(int error)		/* I - Error number */
+{
+  static const char * const errors[] =	/* Error strings */
+		{
+		  "OK",
+		  "Host not found.",
+		  "Try again.",
+		  "Unrecoverable lookup error.",
+		  "No data associated with name."
+		};
+
+
+  if (error < 0 || error > 4)
+    return ("Unknown hostname lookup error.");
+  else
+    return (errors[error]);
+}
+#endif /* !HAVE_HSTRERROR */
+
+
+/*
+ * End of "$Id: http-support.c,v 1.1.1.7 2004/06/05 02:42:28 jlovell Exp $".
  */

@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.11 2002/12/24 02:13:19 jlovell Exp $"
+# "$Id: Makefile,v 1.13 2004/04/08 17:41:34 jlovell Exp $"
 #
 #   Backend makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -26,9 +26,9 @@
 
 include ../Makedefs
 
-BACKENDS =	ipp lpd parallel serial socket
+BACKENDS =	ipp lpd parallel serial socket usb pap
 TARGETS	=	betest $(BACKENDS)
-OBJS	=	betest.o ipp.o lpd.o parallel.o scsi.o serial.o socket.o usb.o
+OBJS	=	betest.o ipp.o lpd.o parallel.o scsi.o serial.o socket.o usb.o pap.o
 
 
 #
@@ -71,6 +71,14 @@ install:	all
 			cp $$file $(SYMROOT); \
 		done \
 	fi
+
+
+#
+# pap (the AppleTalk backend) is only supported on ppc...
+#
+installppc: pap
+	$(INSTALL_DIR) $(SERVERBIN)/backend
+	$(INSTALL_BIN) pap $(SERVERBIN)/backend
 
 
 #
@@ -148,6 +156,17 @@ usb:	usb.o ../cups/$(LIBCUPS)
 	echo Linking $@...
 	$(CC) $(LDFLAGS) -o usb usb.o $(BACKLIBS) $(LIBS)
 
+usb.o:	usb.c usb-unix.c usb-darwin.c 
+
+
+#
+# pap
+#
+
+pap:	pap.o ../cups/$(LIBCUPS)
+	echo Linking $@...
+	$(CC) $(LDFLAGS) -o pap pap.o $(BACKLIBS) $(LIBS)
+
 
 #
 # Dependencies...
@@ -157,5 +176,5 @@ include Dependencies
 
 
 #
-# End of "$Id: Makefile,v 1.11 2002/12/24 02:13:19 jlovell Exp $".
+# End of "$Id: Makefile,v 1.13 2004/04/08 17:41:34 jlovell Exp $".
 #

@@ -1,10 +1,10 @@
 /*
- * "$Id: usersys.c,v 1.1.1.9 2003/02/10 21:57:25 jlovell Exp $"
+ * "$Id: usersys.c,v 1.3 2004/04/08 17:41:36 jlovell Exp $"
  *
  *   User, system, and password routines for the Common UNIX Printing
  *   System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -44,6 +44,7 @@
 
 #include "cups.h"
 #include "string.h"
+#include "http-private.h"
 #include <stdlib.h>
 #include <ctype.h>
 
@@ -69,6 +70,9 @@ static char		cups_user[65] = "",
 			cups_server[256] = "";
 static const char	*(*cups_pwdcb)(const char *) = cups_get_password;
 
+#ifdef HAVE_DOMAINSOCKETS
+char			cups_server_domainsocket[104] = "";
+#endif /* HAVE_DOMAINSOCKETS */
 
 /*
  * 'cupsEncryption()' - Get the default encryption settings...
@@ -138,7 +142,7 @@ cupsEncryption(void)
 	    if (*encryption == '\n')
               *encryption = '\0';
 
-	    for (encryption = line + 11; isspace(*encryption); encryption ++);
+	    for (encryption = line + 11; isspace(*encryption & 255); encryption ++);
 	    break;
 	  }
 
@@ -254,7 +258,7 @@ cupsServer(void)
 	    if (*server == '\n')
               *server = '\0';
 
-	    for (server = line + 11; isspace(*server); server ++);
+	    for (server = line + 11; isspace(*server & 255); server ++);
 	    break;
 	  }
 
@@ -267,6 +271,16 @@ cupsServer(void)
     */
 
     strlcpy(cups_server, server, sizeof(cups_server));
+
+#ifdef HAVE_DOMAINSOCKETS
+    if (cups_server[0] != '/')
+      strlcpy(cups_server_domainsocket, CUPS_DEFAULT_DOMAINSOCKET, sizeof(cups_server_domainsocket));
+    else
+    {
+      strlcpy(cups_server_domainsocket, cups_server, sizeof(cups_server));
+      strlcpy(cups_server, "localhost", sizeof(cups_server));
+    }
+#endif /* HAVE_DOMAINSOCKETS */
   }
 
   return (cups_server);
@@ -448,7 +462,7 @@ cups_get_line(char *buf,	/* I - Line buffer */
   if (bufptr < buf)
     return (NULL);
 
-  while (isspace(*bufptr) && bufptr >= buf)
+  while (isspace(*bufptr & 255) && bufptr >= buf)
     *bufptr-- = '\0';
 
   return (buf);
@@ -456,5 +470,5 @@ cups_get_line(char *buf,	/* I - Line buffer */
 
 
 /*
- * End of "$Id: usersys.c,v 1.1.1.9 2003/02/10 21:57:25 jlovell Exp $".
+ * End of "$Id: usersys.c,v 1.3 2004/04/08 17:41:36 jlovell Exp $".
  */

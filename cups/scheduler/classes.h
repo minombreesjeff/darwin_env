@@ -1,9 +1,9 @@
 /*
- * "$Id: classes.h,v 1.1.1.6 2002/12/24 00:07:26 jlovell Exp $"
+ * "$Id: classes.h,v 1.1.1.8 2004/06/05 02:42:33 jlovell Exp $"
  *
  *   Printer class definitions for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -36,8 +36,9 @@ extern printer_t	*FindAvailablePrinter(const char *name);
 extern printer_t	*FindClass(const char *name);
 extern void		LoadAllClasses(void);
 extern void		SaveAllClasses(void);
+extern void		UpdateImplicitClasses(void);
 
 
 /*
- * End of "$Id: classes.h,v 1.1.1.6 2002/12/24 00:07:26 jlovell Exp $".
+ * End of "$Id: classes.h,v 1.1.1.8 2004/06/05 02:42:33 jlovell Exp $".
  */

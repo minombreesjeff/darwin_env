@@ -1,5 +1,5 @@
 #
-# "$Id: cups.spec,v 1.1.1.19 2003/07/16 17:21:40 jlovell Exp $"
+# "$Id: cups.spec,v 1.1.1.22 2004/06/05 02:42:28 jlovell Exp $"
 #
 #   RPM "spec" file for the Common UNIX Printing System (CUPS).
 #
@@ -26,7 +26,7 @@
 
 Summary: Common Unix Printing System
 Name: cups
-Version: 1.1.20rc1
+Version: 1.1.21rc1
 Release: 1
 Copyright: GPL
 Group: System Environment/Daemons
@@ -171,26 +171,62 @@ rm -rf $RPM_BUILD_ROOT
 /usr/share/locale/*
 
 %dir /usr/share/man/cat1
-/usr/share/man/cat1/*
+/usr/share/man/cat1/backend.1
+/usr/share/man/cat1/cupstestppd.1
+/usr/share/man/cat1/filter.1
+/usr/share/man/cat1/lp.1
+/usr/share/man/cat1/lpoptions.1
+/usr/share/man/cat1/lppasswd.1
+/usr/share/man/cat1/lpq.1
+/usr/share/man/cat1/lpr.1
+/usr/share/man/cat1/lprm.1
+/usr/share/man/cat1/lpstat.1
 %dir /usr/share/man/cat5
 /usr/share/man/cat5/*
 %dir /usr/share/man/cat8
 /usr/share/man/cat8/*
 %dir /usr/share/man/man1
-/usr/share/man/man1/*
+/usr/share/man/man1/backend.1.gz
+/usr/share/man/man1/cupstestppd.1.gz
+/usr/share/man/man1/filter.1.gz
+/usr/share/man/man1/lp.1.gz
+/usr/share/man/man1/lpoptions.1.gz
+/usr/share/man/man1/lppasswd.1.gz
+/usr/share/man/man1/lpq.1.gz
+/usr/share/man/man1/lpr.1.gz
+/usr/share/man/man1/lprm.1.gz
+/usr/share/man/man1/lpstat.1.gz
 %dir /usr/share/man/man5
 /usr/share/man/man5/*
 %dir /usr/share/man/man8
 /usr/share/man/man8/*
 
 %dir /usr/share/man/fr/cat1
-/usr/share/man/fr/cat1/*
+/usr/share/man/fr/cat1/backend.1
+/usr/share/man/fr/cat1/cupstestppd.1
+/usr/share/man/fr/cat1/filter.1
+/usr/share/man/fr/cat1/lp.1
+/usr/share/man/fr/cat1/lpoptions.1
+/usr/share/man/fr/cat1/lppasswd.1
+/usr/share/man/fr/cat1/lpq.1
+/usr/share/man/fr/cat1/lpr.1
+/usr/share/man/fr/cat1/lprm.1
+/usr/share/man/fr/cat1/lpstat.1
 %dir /usr/share/man/fr/cat5
 /usr/share/man/fr/cat5/*
 %dir /usr/share/man/fr/cat8
 /usr/share/man/fr/cat8/*
 %dir /usr/share/man/fr/man1
-/usr/share/man/fr/man1/*
+/usr/share/man/fr/man1/backend.1.gz
+/usr/share/man/fr/man1/cupstestppd.1.gz
+/usr/share/man/fr/man1/filter.1.gz
+/usr/share/man/fr/man1/lp.1.gz
+/usr/share/man/fr/man1/lpoptions.1.gz
+/usr/share/man/fr/man1/lppasswd.1.gz
+/usr/share/man/fr/man1/lpq.1.gz
+/usr/share/man/fr/man1/lpr.1.gz
+/usr/share/man/fr/man1/lprm.1.gz
+/usr/share/man/fr/man1/lpstat.1.gz
 %dir /usr/share/man/fr/man5
 /usr/share/man/fr/man5/*
 %dir /usr/share/man/fr/man8
@@ -200,24 +236,22 @@ rm -rf $RPM_BUILD_ROOT
 %attr(1700,lp,root) %dir /var/spool/cups/tmp
 
 %files devel
+%dir /usr/share/man/cat1
+/usr/share/man/cat1/cups-config.1
+%dir /usr/share/man/fr/cat1
+/usr/share/man/fr/cat1/cups-config.1
+%dir /usr/share/man/man1
+/usr/share/man/man1/cups-config.1.gz
+%dir /usr/share/man/fr/man1
+/usr/share/man/fr/man1/cups-config.1.gz
 /usr/bin/cups-config
 %dir /usr/include/cups
 /usr/include/cups/*
 /usr/lib/*.a
 
-%dir /usr/share/man/cat3
-/usr/share/man/cat3/*
-%dir /usr/share/man/man3
-/usr/share/man/man3/*
-
-%dir /usr/share/man/fr/cat3
-/usr/share/man/fr/cat3/*
-%dir /usr/share/man/fr/man3
-/usr/share/man/fr/man3/*
-
 %files libs
 /usr/lib/*.so*
 
 #
-# End of "$Id: cups.spec,v 1.1.1.19 2003/07/16 17:21:40 jlovell Exp $".
+# End of "$Id: cups.spec,v 1.1.1.22 2004/06/05 02:42:28 jlovell Exp $".
 #

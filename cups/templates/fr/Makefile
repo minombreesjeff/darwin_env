@@ -1,5 +1,5 @@
 #
-# "$Id: Makefile,v 1.1.1.5 2003/07/16 17:22:08 jlovell Exp $"
+# "$Id: Makefile,v 1.1.1.6 2004/06/05 02:42:35 jlovell Exp $"
 #
 #   Template makefile for the Common UNIX Printing System (CUPS).
 #
@@ -102,5 +102,5 @@ install:
 
 
 #
-# End of "$Id: Makefile,v 1.1.1.5 2003/07/16 17:22:08 jlovell Exp $".
+# End of "$Id: Makefile,v 1.1.1.6 2004/06/05 02:42:35 jlovell Exp $".
 #

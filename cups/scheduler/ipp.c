@@ -1,9 +1,9 @@
 /*
- * "$Id: ipp.c,v 1.15.4.2 2004/09/23 22:42:27 jlovell Exp $"
+ * "$Id: ipp.c,v 1.22 2004/06/05 03:49:46 jlovell Exp $"
  *
  *   IPP routines for the Common UNIX Printing System (CUPS) scheduler.
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -85,7 +85,14 @@
 #ifdef HAVE_LIBPAPER
 #  include <paper.h>
 #endif /* HAVE_LIBPAPER */
+#ifdef HAVE_INTTYPES_H
+#  include <inttypes.h>
+#endif /* HAVE_INTTYPES_H */
 
+
+#ifndef min
+#  define 	min(a,b)	((a) < (b) ? (a) : (b))
+#endif /* !min */
 
 /*
  * PPD default choice structure...
@@ -319,6 +326,7 @@ ProcessIPPRequest(client_t *con)	/* I - Client connection */
 	  */
 
 	  if (strcmp(username->values[0].string.text, "root") == 0 &&
+	      con->http.hostaddr.sin_family == AF_INET &&
 	      ntohl(con->http.hostaddr.sin_addr.s_addr) != 0x7f000001 &&
 	      strcmp(con->username, "root") != 0)
 	  {
@@ -475,9 +483,10 @@ ProcessIPPRequest(client_t *con)	/* I - Client connection */
     {
       con->http.data_encoding  = HTTP_ENCODE_LENGTH;
       con->http.data_remaining = ippLength(con->response);
+      con->http.deprecated_data_remaining = min(INT_MAX, con->http.data_remaining);
 
-      httpPrintf(HTTP(con), "Content-Length: %d\r\n\r\n",
-        	 con->http.data_remaining);
+      httpPrintf(HTTP(con), "Content-Length: %" PRIdMAX "\r\n\r\n",
+        	 (intmax_t)con->http.data_remaining);
     }
 
     LogMessage(L_DEBUG2, "ProcessIPPRequest: Adding fd %d to OutputSet...",
@@ -678,7 +687,7 @@ add_class(client_t        *con,		/* I - Client connection */
 
     if (ImplicitAnyClasses)
     {
-      snprintf(pclass->name, sizeof(pclass->name), "Any%s", resource + 9);
+      SetStringf(&pclass->name, "Any%s", resource + 9);
       SortPrinters();
     }
     else
@@ -698,8 +707,7 @@ add_class(client_t        *con,		/* I - Client connection */
     */
 
     DeletePrinterFilters(pclass);
-    snprintf(pclass->name, sizeof(pclass->name), "%s@%s", resource + 9,
-             pclass->hostname);
+    SetStringf(&pclass->name, "%s@%s", resource + 9, pclass->hostname);
     SetPrinterAttrs(pclass);
     SortPrinters();
 
@@ -730,6 +738,13 @@ add_class(client_t        *con,		/* I - Client connection */
 
     pclass->accepting = attr->values[0].boolean;
     AddPrinterHistory(pclass);
+  }
+  if ((attr = ippFindAttribute(con->request, "printer-is-shared", IPP_TAG_BOOLEAN)) != NULL)
+  {
+    LogMessage(L_INFO, "Setting %s printer-is-shared to %d (was %d.)",
+               pclass->name, attr->values[0].boolean, pclass->shared);
+
+    pclass->shared = attr->values[0].boolean;
   }
   if ((attr = ippFindAttribute(con->request, "printer-state", IPP_TAG_ENUM)) != NULL)
   {
@@ -961,9 +976,9 @@ add_job_state_reasons(client_t *con,	/* I - Client connection */
 
 
   LogMessage(L_DEBUG2, "add_job_state_reasons(%p[%d], %d)\n", con, con->http.fd,
-             job->id);
+             job ? job->id : 0);
 
-  switch (job->state->values[0].integer)
+  switch (job ? job->state->values[0].integer : IPP_JOB_CANCELLED)
   {
     case IPP_JOB_PENDING :
         if (job->dtype & CUPS_PRINTER_CLASS)
@@ -1032,11 +1047,8 @@ add_printer(client_t        *con,	/* I - Client connection */
 					/* Username portion of URI */
 			host[HTTP_MAX_URI],
 					/* Host portion of URI */
-			resource[HTTP_MAX_URI],
+			resource[HTTP_MAX_URI];
 					/* Resource portion of URI */
-			old_device_uri[HTTP_MAX_URI],
-					/* Sanitized old URI */
-			new_device_uri[HTTP_MAX_URI];
   int			port;		/* Port portion of URI */
   printer_t		*printer;	/* Printer/class */
   ipp_attribute_t	*attr;		/* Printer attribute */
@@ -1118,7 +1130,7 @@ add_printer(client_t        *con,	/* I - Client connection */
 
     if (ImplicitAnyClasses)
     {
-      snprintf(printer->name, sizeof(printer->name), "Any%s", resource + 10);
+      SetStringf(&printer->name, "Any%s", resource + 10);
       SortPrinters();
     }
     else
@@ -1138,8 +1150,7 @@ add_printer(client_t        *con,	/* I - Client connection */
     */
 
     DeletePrinterFilters(printer);
-    snprintf(printer->name, sizeof(printer->name), "%s@%s", resource + 10,
-             printer->hostname);
+    SetStringf(&printer->name, "%s@%s", resource + 10, printer->hostname);
     SetPrinterAttrs(printer);
     SortPrinters();
 
@@ -1223,9 +1234,7 @@ add_printer(client_t        *con,	/* I - Client connection */
     }
 
     LogMessage(L_INFO, "Setting %s device-uri to \"%s\" (was \"%s\".)",
-		printer->name, 
-		SanitizeURI(new_device_uri, sizeof(new_device_uri), attr->values[0].string.text),
-		SanitizeURI(old_device_uri, sizeof(old_device_uri), printer->device_uri));
+               printer->name, attr->values[0].string.text, printer->device_uri);
 
     SetString(&printer->device_uri, attr->values[0].string.text);
   }
@@ -1237,6 +1246,13 @@ add_printer(client_t        *con,	/* I - Client connection */
 
     printer->accepting = attr->values[0].boolean;
     AddPrinterHistory(printer);
+  }
+  if ((attr = ippFindAttribute(con->request, "printer-is-shared", IPP_TAG_BOOLEAN)) != NULL)
+  {
+    LogMessage(L_INFO, "Setting %s printer-is-shared to %d (was %d.)",
+               printer->name, attr->values[0].boolean, printer->shared);
+
+    printer->shared = attr->values[0].boolean;
   }
   if ((attr = ippFindAttribute(con->request, "printer-state", IPP_TAG_ENUM)) != NULL)
   {
@@ -1978,7 +1994,7 @@ check_quotas(client_t  *con,	/* I - Client connection */
 	  */
 
           for (j = 0; grp->gr_mem[j]; j ++)
-	    if (!strcmp(username, grp->gr_mem[j]))
+	    if (!strcasecmp(username, grp->gr_mem[j]))
 	      break;
 
           if (grp->gr_mem[j])
@@ -2287,26 +2303,36 @@ copy_banner(client_t   *con,	/* I - Client connection */
   }
 
   fchmod(cupsFileNumber(out), 0640);
-  fchown(cupsFileNumber(out), getuid(), Group);
+  fchown(cupsFileNumber(out), RunUser, Group);
 
-  if (con->language)
+  attrname[0] = '\0';
+  attr = ippFindAttribute(job->attrs, "attributes-natural-language", IPP_TAG_LANGUAGE);
+  if (attr != NULL && attr->values[0].string.text != NULL)
+    strlcpy(attrname, attr->values[0].string.text, sizeof(attrname));
+    
+  if (attrname[0])
   {
    /*
     * Try the localized banner file under the subdirectory...
     */
 
-    snprintf(filename, sizeof(filename), "%s/banners/%s/%s", DataDir,
-             con->language->language, name);
+   /*
+    * Strip any charset encoding
+    */
 
-    if (access(filename, 0) && con->language->language[2])
+    if (attrname[5] == '.')
+      attrname[5] = '\0';
+
+    snprintf(filename, sizeof(filename), "%s/banners/%s/%s", DataDir,
+             attrname, name);
+
+    if (access(filename, 0) && strlen(attrname) > 2)
     {
      /*
       * Wasn't able to find "ll_CC" locale file; try the non-national
       * localization banner directory.
       */
 
-      attrname[0] = con->language->language[0];
-      attrname[1] = con->language->language[1];
       attrname[2] = '\0';
 
       snprintf(filename, sizeof(filename), "%s/banners/%s/%s", DataDir,
@@ -2353,7 +2379,7 @@ copy_banner(client_t   *con,	/* I - Client connection */
       */
 
       for (s = attrname; (ch = cupsFileGetChar(in)) != EOF;)
-        if (!isalpha(ch) && ch != '-' && ch != '?')
+        if (!isalpha(ch & 255) && ch != '-' && ch != '?')
           break;
 	else if (s < (attrname + sizeof(attrname) - 1))
           *s++ = ch;
@@ -2466,7 +2492,7 @@ copy_banner(client_t   *con,	/* I - Client connection */
 		    cupsFilePutChar(out, *p);
 		  }
 		  else if (*p < 32 || *p > 126)
-		    cupsFilePrintf(out, "\\%03o", *p);
+		    cupsFilePrintf(out, "\\%03o", *p & 255);
 		  else
 		    cupsFilePutChar(out, *p);
 		}
@@ -2622,7 +2648,7 @@ copy_model(const char *from,		/* I - Source file */
     */
 
     strlcpy(system_paper, paper_result, sizeof(system_paper));
-    system_paper[0] = toupper(system_paper[0]);
+    system_paper[0] = toupper(system_paper[0] & 255);
 
     num_defaults = ppd_add_default("PageSize", system_paper, 
 				   num_defaults, &defaults);
@@ -2845,6 +2871,20 @@ create_job(client_t        *con,	/* I - Client connection */
   }
 
  /*
+  * If the printer isn't shared reject jobs from remote hosts...
+  */
+
+  if (!printer->shared && 
+      con->http.hostaddr.sin_family == AF_INET &&
+      ntohl(con->http.hostaddr.sin_addr.s_addr) != 0x7f000001)
+  {
+    LogMessage(L_INFO, "create_job: destination \'%s\' is not shared.",
+               dest);
+    send_ipp_error(con, IPP_FORBIDDEN);
+    return;
+  }
+
+ /*
   * Validate job template attributes; for now just copies and page-ranges...
   */
 
@@ -2899,6 +2939,13 @@ create_job(client_t        *con,	/* I - Client connection */
     send_ipp_error(con, IPP_NOT_POSSIBLE);
     return;
   }
+
+ /*
+  * Set all but the first two attributes to the job attributes group...
+  */
+
+  for (attr = con->request->attrs->next->next; attr; attr = attr->next)
+    attr->group_tag = IPP_TAG_JOB;
 
  /*
   * Create the job and set things up...
@@ -3108,6 +3155,12 @@ create_job(client_t        *con,	/* I - Client connection */
 	  */
 
           SetString(&attr->values[0].string.text, Classification);
+
+	  LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION FORCED "
+	                       "job-sheets=\"%s,none\", "
+			       "job-originating-user-name=\"%s\"",
+	             job->id, Classification,
+		     job->username);
 	}
 	else if (attr->num_values == 2 &&
 	         strcmp(attr->values[0].string.text, attr->values[1].string.text) != 0 &&
@@ -3119,17 +3172,62 @@ create_job(client_t        *con,	/* I - Client connection */
 	  */
 
           SetString(&attr->values[1].string.text, attr->values[0].string.text);
+
+	  LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION FORCED "
+	                       "job-sheets=\"%s,%s\", "
+			       "job-originating-user-name=\"%s\"",
+	             job->id, attr->values[0].string.text,
+		     attr->values[1].string.text,
+		     job->username);
 	}
+	else if (strcmp(attr->values[0].string.text, Classification) &&
+	         strcmp(attr->values[0].string.text, "none") &&
+		 (attr->num_values == 1 ||
+	          (strcmp(attr->values[1].string.text, Classification) &&
+	           strcmp(attr->values[1].string.text, "none"))))
+        {
+	  if (attr->num_values == 1)
+            LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION OVERRIDDEN "
+	                         "job-sheets=\"%s\", "
+			         "job-originating-user-name=\"%s\"",
+	               job->id, attr->values[0].string.text,
+		       job->username);
+          else
+            LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION OVERRIDDEN "
+	                         "job-sheets=\"%s,%s\", "
+			         "job-originating-user-name=\"%s\"",
+	               job->id, attr->values[0].string.text,
+		       attr->values[1].string.text,
+		       job->username);
+        }
       }
       else if (strcmp(attr->values[0].string.text, Classification) != 0 &&
                (attr->num_values == 1 ||
 	       strcmp(attr->values[1].string.text, Classification) != 0))
       {
        /*
-        * Force the leading banner to have the classification on it...
+        * Force the banner to have the classification on it...
 	*/
 
-        SetString(&attr->values[0].string.text, Classification);
+        if (attr->num_values == 1 || strcmp(attr->values[0].string.text, "none"))
+          SetString(&attr->values[0].string.text, Classification);
+
+        if (attr->num_values > 1 && strcmp(attr->values[1].string.text, "none"))
+          SetString(&attr->values[1].string.text, Classification);
+
+        if (attr->num_values > 1)
+	  LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION FORCED "
+	                       "job-sheets=\"%s,%s\", "
+			       "job-originating-user-name=\"%s\"",
+	             job->id, attr->values[0].string.text,
+		     attr->values[1].string.text,
+		     job->username);
+        else
+	  LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION FORCED "
+	                       "job-sheets=\"%s\", "
+			       "job-originating-user-name=\"%s\"",
+	             job->id, Classification,
+		     job->username);
       }
     }
 
@@ -3288,15 +3386,48 @@ delete_printer(client_t        *con,	/* I - Client connection */
 static void
 get_default(client_t *con)		/* I - Client connection */
 {
+  int			i;		/* Looping var */
+  ipp_attribute_t	*requested,	/* requested-attributes */
+			*history;	/* History collection */
+  int			need_history;	/* Need to send history collection? */
+
+
   LogMessage(L_DEBUG2, "get_default(%p[%d])\n", con, con->http.fd);
 
   if (DefaultPrinter != NULL)
   {
-    copy_attrs(con->response, DefaultPrinter->attrs,
-               ippFindAttribute(con->request, "requested-attributes",
-	                	IPP_TAG_KEYWORD), IPP_TAG_ZERO, 0);
+    requested = ippFindAttribute(con->request, "requested-attributes",
+	                	 IPP_TAG_KEYWORD);
 
-    con->response->request.status.status_code = IPP_OK;
+    copy_attrs(con->response, DefaultPrinter->attrs, requested, IPP_TAG_ZERO, 0);
+    copy_attrs(con->response, CommonData, requested, IPP_TAG_ZERO, IPP_TAG_COPY);
+
+    need_history = 0;
+
+    if (MaxPrinterHistory > 0 && DefaultPrinter->num_history > 0 && requested)
+    {
+      for (i = 0; i < requested->num_values; i ++)
+	if (!strcmp(requested->values[i].string.text, "all") ||
+            !strcmp(requested->values[i].string.text, "printer-state-history"))
+	{
+          need_history = 1;
+          break;
+	}
+    }
+
+    if (need_history)
+    {
+      history = ippAddCollections(con->response, IPP_TAG_PRINTER,
+                                  "printer-state-history",
+                                  DefaultPrinter->num_history, NULL);
+
+      for (i = 0; i < DefaultPrinter->num_history; i ++)
+	copy_attrs(history->values[i].collection = ippNew(),
+	           DefaultPrinter->history[i],
+                   NULL, IPP_TAG_ZERO, 0);
+    }
+
+    con->response->request.status.status_code = requested ? IPP_OK_SUBST : IPP_OK;
   }
   else
     con->response->request.status.status_code = IPP_NOT_FOUND;
@@ -3716,6 +3847,9 @@ get_printer_attrs(client_t        *con,	/* I - Client connection */
   ippAddBoolean(con->response, IPP_TAG_PRINTER, "printer-is-accepting-jobs",
                 printer->accepting);
 
+  ippAddBoolean(con->response, IPP_TAG_PRINTER, "printer-is-shared",
+                printer->shared);
+
   ippAddInteger(con->response, IPP_TAG_PRINTER, IPP_TAG_INTEGER,
                 "printer-up-time", curtime);
   ippAddInteger(con->response, IPP_TAG_PRINTER, IPP_TAG_INTEGER,
@@ -3892,6 +4026,7 @@ get_printers(client_t *con,		/* I - Client connection */
       *    printer-state
       *    printer-state-message
       *    printer-is-accepting-jobs
+      *    printer-is-shared
       *    + all printer attributes
       */
 
@@ -3905,6 +4040,9 @@ get_printers(client_t *con,		/* I - Client connection */
 
       ippAddBoolean(con->response, IPP_TAG_PRINTER, "printer-is-accepting-jobs",
                     printer->accepting);
+
+      ippAddBoolean(con->response, IPP_TAG_PRINTER, "printer-is-shared",
+                    printer->shared);
 
       ippAddInteger(con->response, IPP_TAG_PRINTER, IPP_TAG_INTEGER,
                     "printer-up-time", curtime);
@@ -4317,7 +4455,7 @@ ppd_parse_line(const char *line,	/* I - Line */
   * Read the option name...
   */
 
-  for (line += 8, olen --; isalnum(*line); line ++)
+  for (line += 8, olen --; isalnum(*line & 255); line ++)
     if (olen > 0)
     {
       *option++ = *line;
@@ -4342,10 +4480,10 @@ ppd_parse_line(const char *line,	/* I - Line */
   * Now grab the option choice, skipping leading whitespace...
   */
 
-  while (isspace(*line))
+  while (isspace(*line & 255))
     line ++;
 
-  for (clen --; isalnum(*line); line ++)
+  for (clen --; isalnum(*line & 255); line ++)
     if (clen > 0)
     {
       *choice++ = *line;
@@ -4377,6 +4515,7 @@ print_job(client_t        *con,		/* I - Client connection */
   int			priority;	/* Job priority */
   char			*title;		/* Job name/title */
   job_t			*job;		/* Current job */
+  int			jobid;		/* Job ID number */
   char			job_uri[HTTP_MAX_URI],
 					/* Job URI */
 			printer_uri[HTTP_MAX_URI],
@@ -4630,6 +4769,20 @@ print_job(client_t        *con,		/* I - Client connection */
   }
 
  /*
+  * If the printer isn't shared reject jobs from remote hosts...
+  */
+
+  if (!printer->shared && 
+      con->http.hostaddr.sin_family == AF_INET &&
+      ntohl(con->http.hostaddr.sin_addr.s_addr) != 0x7f000001)
+  {
+    LogMessage(L_INFO, "print_job: destination \'%s\' is not shared.",
+               dest);
+    send_ipp_error(con, IPP_FORBIDDEN);
+    return;
+  }
+
+ /*
   * Make sure we aren't over our limit...
   */
 
@@ -4649,6 +4802,13 @@ print_job(client_t        *con,		/* I - Client connection */
     send_ipp_error(con, IPP_NOT_POSSIBLE);
     return;
   }
+
+ /*
+  * Set all but the first two attributes to the job attributes group...
+  */
+
+  for (attr = con->request->attrs->next->next; attr; attr = attr->next)
+    attr->group_tag = IPP_TAG_JOB;
 
  /*
   * Create the job and set things up...
@@ -4866,6 +5026,12 @@ print_job(client_t        *con,		/* I - Client connection */
 	  */
 
           SetString(&attr->values[0].string.text, Classification);
+
+	  LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION FORCED "
+	                       "job-sheets=\"%s,none\", "
+			       "job-originating-user-name=\"%s\"",
+	             job->id, Classification,
+		     job->username);
 	}
 	else if (attr->num_values == 2 &&
 	         strcmp(attr->values[0].string.text, attr->values[1].string.text) != 0 &&
@@ -4877,17 +5043,59 @@ print_job(client_t        *con,		/* I - Client connection */
 	  */
 
           SetString(&attr->values[1].string.text, attr->values[0].string.text);
+
+	  LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION FORCED "
+	                       "job-sheets=\"%s,%s\", "
+			       "job-originating-user-name=\"%s\"",
+	             job->id, attr->values[0].string.text,
+		     attr->values[1].string.text,
+		     job->username);
 	}
+	else if (strcmp(attr->values[0].string.text, Classification) &&
+	         strcmp(attr->values[0].string.text, "none") &&
+		 (attr->num_values == 1 ||
+	          (strcmp(attr->values[1].string.text, Classification) &&
+	           strcmp(attr->values[1].string.text, "none"))))
+        {
+	  if (attr->num_values == 1)
+            LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION OVERRIDDEN "
+	                         "job-sheets=\"%s\", "
+			         "job-originating-user-name=\"%s\"",
+	               job->id, attr->values[0].string.text,
+		       job->username);
+          else
+            LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION OVERRIDDEN "
+	                         "job-sheets=\"%s,%s\", "
+			         "job-originating-user-name=\"%s\"",
+	               job->id, attr->values[0].string.text,
+		       attr->values[1].string.text,
+		       job->username);
+        }
       }
       else if (strcmp(attr->values[0].string.text, Classification) != 0 &&
                (attr->num_values == 1 ||
 	       strcmp(attr->values[1].string.text, Classification) != 0))
       {
        /*
-        * Force the leading banner to have the classification on it...
+        * Force the banner to have the classification on it...
 	*/
 
-        SetString(&attr->values[0].string.text, Classification);
+        if (attr->num_values == 1 || strcmp(attr->values[0].string.text, "none"))
+          SetString(&attr->values[0].string.text, Classification);
+
+        if (attr->num_values > 1)
+	  LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION FORCED "
+	                       "job-sheets=\"%s,%s\", "
+			       "job-originating-user-name=\"%s\"",
+	             job->id, attr->values[0].string.text,
+		     attr->values[1].string.text,
+		     job->username);
+        else
+	  LogMessage(L_NOTICE, "[Job %d] CLASSIFICATION FORCED "
+	                       "job-sheets=\"%s\", "
+			       "job-originating-user-name=\"%s\"",
+	             job->id, Classification,
+		     job->username);
       }
     }
 
@@ -4950,23 +5158,28 @@ print_job(client_t        *con,		/* I - Client connection */
   SaveJob(job->id);
 
  /*
-  * Start the job if possible...
+  * Start the job if possible...  Since CheckJobs() can cancel a job if it
+  * doesn't print, we need to re-find the job afterwards...
   */
 
+  jobid = job->id;
+
   CheckJobs();
+
+  job = FindJob(jobid);
 
  /*
   * Fill in the response info...
   */
 
   snprintf(job_uri, sizeof(job_uri), "http://%s:%d/jobs/%d", ServerName,
-	   ntohs(con->http.hostaddr.sin_port), job->id);
+	   ntohs(con->http.hostaddr.sin_port), jobid);
   ippAddString(con->response, IPP_TAG_JOB, IPP_TAG_URI, "job-uri", NULL, job_uri);
 
-  ippAddInteger(con->response, IPP_TAG_JOB, IPP_TAG_INTEGER, "job-id", job->id);
+  ippAddInteger(con->response, IPP_TAG_JOB, IPP_TAG_INTEGER, "job-id", jobid);
 
   ippAddInteger(con->response, IPP_TAG_JOB, IPP_TAG_ENUM, "job-state",
-                job->state->values[0].integer);
+                job ? job->state->values[0].integer : IPP_JOB_CANCELLED);
   add_job_state_reasons(con, job);
 
   con->response->request.status.status_code = IPP_OK;
@@ -5864,7 +6077,17 @@ send_document(client_t        *con,	/* I - Client connection */
     }
 
     SaveJob(job->id);
+
+   /*
+    * Start the job if possible...  Since CheckJobs() can cancel a job if it
+    * doesn't print, we need to re-find the job afterwards...
+    */
+
+    jobid = job->id;
+
     CheckJobs();
+
+    job = FindJob(jobid);
   }
   else
   {
@@ -5884,14 +6107,14 @@ send_document(client_t        *con,	/* I - Client connection */
   */
 
   snprintf(job_uri, sizeof(job_uri), "http://%s:%d/jobs/%d", ServerName,
-	   ntohs(con->http.hostaddr.sin_port), job->id);
+	   ntohs(con->http.hostaddr.sin_port), jobid);
   ippAddString(con->response, IPP_TAG_JOB, IPP_TAG_URI, "job-uri", NULL,
                job_uri);
 
-  ippAddInteger(con->response, IPP_TAG_JOB, IPP_TAG_INTEGER, "job-id", job->id);
+  ippAddInteger(con->response, IPP_TAG_JOB, IPP_TAG_INTEGER, "job-id", jobid);
 
   ippAddInteger(con->response, IPP_TAG_JOB, IPP_TAG_ENUM, "job-state",
-                job->state->values[0].integer);
+                job ? job->state->values[0].integer : IPP_JOB_CANCELLED);
   add_job_state_reasons(con, job);
 
   con->response->request.status.status_code = IPP_OK;
@@ -6720,5 +6943,5 @@ validate_user(client_t   *con,		/* I - Client connection */
 
 
 /*
- * End of "$Id: ipp.c,v 1.15.4.2 2004/09/23 22:42:27 jlovell Exp $".
+ * End of "$Id: ipp.c,v 1.22 2004/06/05 03:49:46 jlovell Exp $".
  */

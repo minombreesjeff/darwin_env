@@ -1,5 +1,5 @@
 .\"
-.\" "$Id: lpoptions.man,v 1.1.1.7 2002/12/24 00:07:13 jlovell Exp $"
+.\" "$Id: lpoptions.man,v 1.1.1.9 2004/06/05 02:42:32 jlovell Exp $"
 .\"
 .\"   lpoptions man page for the Common UNIX Printing System (CUPS).
 .\"
@@ -67,7 +67,7 @@ arguments. Other options include:
 .TP 5
 \-E
 .br
-Enabled encryption when communicating with the CUPS server.
+Enables encryption when communicating with the CUPS server.
 .TP 5
 \-d \fIdest[/instance]\fR
 .br
@@ -124,5 +124,5 @@ http://localhost:631/documentation.html
 .SH COPYRIGHT
 Copyright 1993-2003 by Easy Software Products, All Rights Reserved.
 .\"
-.\" End of "$Id: lpoptions.man,v 1.1.1.7 2002/12/24 00:07:13 jlovell Exp $".
+.\" End of "$Id: lpoptions.man,v 1.1.1.9 2004/06/05 02:42:32 jlovell Exp $".
 .\"

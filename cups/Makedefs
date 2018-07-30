@@ -1,9 +1,9 @@
 #
-# "$Id: Makedefs,v 1.32 2003/07/23 23:14:44 jlovell Exp $"
+# "$Id: Makedefs,v 1.42 2004/06/05 04:02:09 jlovell Exp $"
 #
 #   Common makefile definitions for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -84,9 +84,9 @@ LIBZ		=	-lz
 #
 
 ARFLAGS		=	-rcv
-BACKLIBS	=	-framework IOKit
-CFLAGS		=	$(RC_CFLAGS)   -I.. $(OPTIONS)
-COMMONLIBS	=	-framework CoreFoundation
+BACKLIBS	=	-framework IOKit -framework AppleTalk
+CFLAGS		=	$(RC_CFLAGS) $(SSLFLAGS)   -I.. $(OPTIONS)
+COMMONLIBS	=	-framework CoreFoundation -framework IOKit
 CXXFLAGS	=	$(RC_CFLAGS)   -I.. $(OPTIONS)
 CXXLIBS		=	-lsupc++
 DSOFLAGS	=	 $(RC_CFLAGS) -dynamiclib -lc
@@ -97,10 +97,12 @@ LINKCUPS	=	-lcups
 LINKCUPSIMAGE	=	-lcupsimage
 LIBS		=	$(LINKCUPS) $(NETLIBS)  $(COMMONLIBS)
 NETLIBS		=	
-OPTIM		=	-fPIC -Os -g 
+OPTIM		=	-fPIC -Os -g -Wall 
 OPTIONS		=
-PAMLIBS		=	
+PAMLIBS		=	-lpam -ldl
+SSLFLAGS	=	-DOPENSSL_DISABLE_OLD_DES_SUPPORT
 SSLLIBS		=	-lssl -lcrypto
+MDNSLIBS	=	-framework CoreFoundation
 
 #
 # Directories...
@@ -144,7 +146,6 @@ LIBDIR		=	$(BUILDROOT)$(libdir)
 LOCALEDIR	= 	$(BUILDROOT)/usr/share/locale
 LOGDIR		= 	$(BUILDROOT)/private/var/log/cups
 MANDIR		=	$(BUILDROOT)/usr/share/man
-PAMDIR		=	$(BUILDROOT)
 PMANDIR		=	$(BUILDROOT)/usr/share/man
 REQUESTS	= 	$(BUILDROOT)/private/var/spool/cups
 SBINDIR		=	$(BUILDROOT)${exec_prefix}/sbin
@@ -157,6 +158,10 @@ CAT5EXT		=	0
 CAT8EXT		=	0
 MAN8EXT		=	8
 MAN8DIR		=	8
+
+PAMDIR		=	$(BUILDROOT)/private/etc/pam.d
+PAMFILE		=	pam.darwin
+
 
 #
 # Rules...
@@ -183,5 +188,5 @@ MAN8DIR		=	8
 
 
 #
-# End of "$Id: Makedefs,v 1.32 2003/07/23 23:14:44 jlovell Exp $"
+# End of "$Id: Makedefs,v 1.42 2004/06/05 04:02:09 jlovell Exp $"
 #

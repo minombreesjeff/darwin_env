@@ -1,9 +1,9 @@
 /*
- * "$Id: client.h,v 1.1.1.10.4.1 2004/09/23 22:42:27 jlovell Exp $"
+ * "$Id: client.h,v 1.1.1.12 2004/06/05 02:42:33 jlovell Exp $"
  *
  *   Client definitions for the Common UNIX Printing System (CUPS) scheduler.
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -41,6 +41,7 @@ typedef struct
 		*command,		/* Command to run */
 		*options;		/* Options for command */
   int		file;			/* Input/output file */
+  int		file_ready;		/* Input ready on file/pipe? */
   int		pipe_pid;		/* Pipe process ID (or 0 if not a pipe) */
   int		got_fields,		/* Non-zero if all fields seen */
 		field_col;		/* Column within line */
@@ -89,7 +90,7 @@ VAR int			CGIPipes[2]	VALUE2(-1,-1);
 
 extern void	AcceptClient(listener_t *lis);
 extern void	CloseAllClients(void);
-extern void	CloseClient(client_t *con);
+extern int	CloseClient(client_t *con);
 extern int	EncryptClient(client_t *con);
 extern int	IsCGI(client_t *con, const char *filename,
 		      struct stat *filestats, mime_type_t *type);
@@ -107,8 +108,7 @@ extern void	StartListening(void);
 extern void	StopListening(void);
 extern void	UpdateCGI(void);
 extern int	WriteClient(client_t *con);
-extern char	*SanitizeURI(char *buf, int bufsize, const char *uri);
 
 /*
- * End of "$Id: client.h,v 1.1.1.10.4.1 2004/09/23 22:42:27 jlovell Exp $".
+ * End of "$Id: client.h,v 1.1.1.12 2004/06/05 02:42:33 jlovell Exp $".
  */

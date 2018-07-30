@@ -1,5 +1,5 @@
 .\"
-.\" "$Id$"
+.\" "$Id: filter.man,v 1.6 2003/04/28 01:42:07 mike Exp $"
 .\"
 .\"   filter man page for the Common UNIX Printing System (CUPS).
 .\"   Based on cvs revision 1.10
@@ -123,5 +123,5 @@ Copyright 1993-2003 Easy Software Products, Tous droits réservés.
 .SH TRADUCTION
 Gilles QUERRET <gilles.querret@nerim.net>
 .\"
-.\" End of "$Id$".
+.\" End of "$Id: filter.man,v 1.6 2003/04/28 01:42:07 mike Exp $".
 .\"

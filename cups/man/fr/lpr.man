@@ -1,5 +1,5 @@
 .\"
-.\" "$Id$"
+.\" "$Id: lpr.man,v 1.3 2003/03/12 20:41:42 mike Exp $"
 .\"
 .\"   lpr man page for the Common UNIX Printing System (CUPS).
 .\"   Based on cvs revision 1.6
@@ -103,5 +103,5 @@ Copyright 1993-2003 Easy Software Products, Tous droits réservés.
 .SH TRADUCTION
 Gilles QUERRET <gilles.querret@nerim.net>
 .\"
-.\" End of "$Id$".
+.\" End of "$Id: lpr.man,v 1.3 2003/03/12 20:41:42 mike Exp $".
 .\"

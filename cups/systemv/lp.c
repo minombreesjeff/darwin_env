@@ -1,9 +1,9 @@
 /*
- * "$Id: lp.c,v 1.1.1.12 2003/05/14 05:23:51 jlovell Exp $"
+ * "$Id: lp.c,v 1.4 2004/05/21 19:42:31 jlovell Exp $"
  *
  *   "lp" command for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -89,6 +89,7 @@ main(int  argc,		/* I - Number of command-line arguments */
   int		silent;		/* Silent or verbose output? */
   char		buffer[8192];	/* Copy buffer */
   int		temp;		/* Temporary file descriptor */
+  off_t		size;		/* Temporary file size */
 #if defined(HAVE_SIGACTION) && !defined(HAVE_SIGSET)
   struct sigaction action;	/* Signal action */
   struct sigaction oldaction;	/* Old signal action */
@@ -520,10 +521,10 @@ main(int  argc,		/* I - Number of command-line arguments */
 
   if (printer == NULL)
   {
-    if (cupsLastError() >= IPP_BAD_REQUEST)
-      fputs("lp: error - scheduler not responding!\n", stderr);
-    else
+    if (cupsLastError() == IPP_NOT_FOUND)
       fputs("lp: error - no default destination available.\n", stderr);
+    else
+      fputs("lp: error - scheduler not responding!\n", stderr);
 
     return (1);
   }
@@ -568,10 +569,10 @@ main(int  argc,		/* I - Number of command-line arguments */
     while ((i = read(0, buffer, sizeof(buffer))) > 0)
       write(temp, buffer, i);
 
-    i = lseek(temp, 0, SEEK_CUR);
+    size = lseek(temp, 0, SEEK_CUR);
     close(temp);
 
-    if (i == 0)
+    if (size == 0)
     {
       fputs("lp: stdin is empty, so no job has been sent.\n", stderr);
       return (1);
@@ -673,6 +674,9 @@ set_job_attrs(int           job_id,	/* I - Job ID */
   char		uri[HTTP_MAX_URI];	/* URI for job */
 
 
+  if (num_options == 0)
+    return (0);
+
   http = httpConnectEncrypt(cupsServer(), ippPort(), cupsEncryption());
 
   language = cupsLangDefault();
@@ -744,5 +748,5 @@ sighandler(int s)	/* I - Signal number */
 
 
 /*
- * End of "$Id: lp.c,v 1.1.1.12 2003/05/14 05:23:51 jlovell Exp $".
+ * End of "$Id: lp.c,v 1.4 2004/05/21 19:42:31 jlovell Exp $".
  */

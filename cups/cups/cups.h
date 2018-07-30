@@ -1,9 +1,9 @@
 /*
- * "$Id: cups.h,v 1.1.1.14 2003/07/23 02:33:32 jlovell Exp $"
+ * "$Id: cups.h,v 1.1.1.17 2004/06/05 02:42:28 jlovell Exp $"
  *
  *   API definitions for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -82,6 +82,7 @@ enum					/* Not a typedef'd enum so we can OR */
   CUPS_PRINTER_IMPLICIT = 0x10000,	/* Implicit class */
   CUPS_PRINTER_DEFAULT = 0x20000,	/* Default printer on network */
   CUPS_PRINTER_FAX = 0x40000,		/* Fax queue */
+  CUPS_PRINTER_REJECTING = 0x80000,	/* Printer is rejecting jobs */
   CUPS_PRINTER_OPTIONS = 0x6fffc	/* ~(CLASS | REMOTE | IMPLICIT) */
 };
 
@@ -170,6 +171,16 @@ extern void		cupsSetServer(const char *server);
 extern void		cupsSetUser(const char *user);
 extern const char	*cupsUser(void);
 
+/**** New in CUPS 1.1.20 ****/
+extern int		cupsDoAuthentication(http_t *http, const char *method,
+			                     const char *resource);
+extern http_status_t	cupsGetFile(http_t *http, const char *resource,
+			            const char *filename);
+extern http_status_t	cupsGetFd(http_t *http, const char *resource, int fd);
+extern http_status_t	cupsPutFile(http_t *http, const char *resource,
+			            const char *filename);
+extern http_status_t	cupsPutFd(http_t *http, const char *resource, int fd);
+
 
 #  ifdef __cplusplus
 }
@@ -178,5 +189,5 @@ extern const char	*cupsUser(void);
 #endif /* !_CUPS_CUPS_H_ */
 
 /*
- * End of "$Id: cups.h,v 1.1.1.14 2003/07/23 02:33:32 jlovell Exp $".
+ * End of "$Id: cups.h,v 1.1.1.17 2004/06/05 02:42:28 jlovell Exp $".
  */

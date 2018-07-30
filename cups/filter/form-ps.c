@@ -1,9 +1,9 @@
 /*
- * "$Id: form-ps.c,v 1.1.1.7 2002/12/24 00:06:52 jlovell Exp $"
+ * "$Id: form-ps.c,v 1.1.1.9 2004/06/05 02:42:32 jlovell Exp $"
  *
  *   CUPS form PostScript routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -45,5 +45,5 @@ formWrite(tree_t *t)			/* I - Document tree to write */
 
 
 /*
- * End of "$Id: form-ps.c,v 1.1.1.7 2002/12/24 00:06:52 jlovell Exp $".
+ * End of "$Id: form-ps.c,v 1.1.1.9 2004/06/05 02:42:32 jlovell Exp $".
  */

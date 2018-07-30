@@ -1,5 +1,5 @@
 /*
- * "$Id: php_phpcups.h,v 1.1.1.1 2003/04/11 21:07:50 jlovell Exp $"
+ * "$Id: php_phpcups.h,v 1.1.1.2 2004/06/05 02:42:34 jlovell Exp $"
  *
  *   PHP module include file for the Common UNIX Printing System (CUPS).
  *
@@ -83,5 +83,5 @@ ZEND_END_MODULE_GLOBALS(phpcups)
 
 
 /*
- * End of "$Id: php_phpcups.h,v 1.1.1.1 2003/04/11 21:07:50 jlovell Exp $".
+ * End of "$Id: php_phpcups.h,v 1.1.1.2 2004/06/05 02:42:34 jlovell Exp $".
  */

@@ -1,9 +1,9 @@
 /*
- * "$Id: lpd.c,v 1.18.4.1 2004/01/23 18:50:40 jlovell Exp $"
+ * "$Id: lpd.c,v 1.25 2004/06/05 03:49:45 jlovell Exp $"
  *
  *   Line Printer Daemon backend for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -15,9 +15,9 @@
  *       Attn: CUPS Licensing Information
  *       Easy Software Products
  *       44141 Airport View Drive, Suite 204
- *       Hollywood, Maryland 20636-3111 USA
+ *       Hollywood, Maryland 20636-3142 USA
  *
- *       Voice: (301) 373-9603
+ *       Voice: (301) 373-9600
  *       EMail: cups-info@cups.org
  *         WWW: http://www.cups.org
  *
@@ -43,11 +43,15 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <cups/http-private.h>
 #include <cups/string.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <signal.h>
+#ifdef HAVE_INTTYPES_H
+#  include <inttypes.h>
+#endif /* HAVE_INTTYPES_H */
 
 #ifdef WIN32
 #  include <winsock.h>
@@ -67,44 +71,20 @@ static char	tmpfilename[1024] = "";	/* Temporary spool file name */
 
 
 /*
- * Some OS's don't have hstrerror(), most notably Solaris...
- */
-
-#ifndef HAVE_HSTRERROR
-#  define hstrerror cups_hstrerror
-
-const char *					/* O - Error string */
-cups_hstrerror(int error)			/* I - Error number */
-{
-  static const char * const errors[] =
-		{
-		  "OK",
-		  "Host not found.",
-		  "Try again.",
-		  "Unrecoverable lookup error.",
-		  "No data associated with name."
-		};
-
-
-  if (error < 0 || error > 4)
-    return ("Unknown hostname lookup error.");
-  else
-    return (errors[error]);
-}
-#elif defined(_AIX)
-/*
- * AIX doesn't provide a prototype but does provide the function...
- */
-extern const char *hstrerror(int);
-#endif /* !HAVE_HSTRERROR */
-
-
-/*
  * The order for control and data files in LPD requests...
  */
 
-#define ORDER_CONTROL_DATA	0
-#define ORDER_DATA_CONTROL	1
+#define ORDER_CONTROL_DATA	0	/* Control file first, then data */
+#define ORDER_DATA_CONTROL	1	/* Data file first, then control */
+
+
+/*
+ * What to reserve...
+ */
+
+#define RESERVE_NONE		0	/* Don't reserve a priviledged port */
+#define RESERVE_RFC1179		1	/* Reserve port 721-731 */
+#define RESERVE_ANY		2	/* Reserve port 1-1023 */
 
 
 /*
@@ -119,8 +99,9 @@ extern int	rresvport(int *port);
  */
 
 static int	lpd_command(int lpd_fd, int timeout, char *format, ...);
-static int	lpd_queue(char *hostname, char *printer, char *filename,
-		          char *user, char *title, int copies,
+static int	lpd_queue(const char *hostname, int port, const char *printer,
+		          const char *filename,
+		          const char *user, const char *title, int copies,
 			  int banner, int format, int order, int reserve,
 			  int manual_copies, int timeout);
 static void	lpd_timeout(int sig);
@@ -142,7 +123,7 @@ main(int  argc,				/* I - Number of command-line arguments (6 or 7) */
 {
   char			method[255],	/* Method in URI */
 			hostname[1024],	/* Hostname */
-			username[255],	/* Username info (not used) */
+			username[255],	/* Username info */
 			resource[1024],	/* Resource info (printer name) */
 			*options,	/* Pointer to options */
 			name[255],	/* Name of option */
@@ -150,7 +131,7 @@ main(int  argc,				/* I - Number of command-line arguments (6 or 7) */
 			*ptr,		/* Pointer into name or value */
 			*filename,	/* File to print */
 			title[256];	/* Title string */
-  int			port;		/* Port number (not used) */
+  int			port;		/* Port number */
   int			status;		/* Status of LPD job */
   int			banner;		/* Print banner page? */
   int			format;		/* Print format */
@@ -252,6 +233,15 @@ main(int  argc,				/* I - Number of command-line arguments (6 or 7) */
 
   httpSeparate(argv[0], method, username, hostname, &port, resource);
 
+  if (!username[0])
+  {
+   /*
+    * If no username is in the device URI, then use the print job user...
+    */
+
+    strlcpy(username, argv[2], sizeof(username));
+  }
+
  /*
   * See if there are any options...
   */
@@ -259,15 +249,12 @@ main(int  argc,				/* I - Number of command-line arguments (6 or 7) */
   banner         = 0;
   format         = 'l';
   order          = ORDER_CONTROL_DATA;
-  reserve        = 0;
+  reserve        = RESERVE_ANY;
   manual_copies  = 1;
   timeout        = 300;
   sanitize_title = 1;
 
 #if defined(__APPLE__)
-  /* We want to use a reserved port if possible (3471949) */
-  reserve        = 1;
-
   /* We want to pass utf-8 characters, not re-map them (3071945) */
   sanitize_title= 0;
 #endif
@@ -292,7 +279,8 @@ main(int  argc,				/* I - Number of command-line arguments (6 or 7) */
       */
 
       for (ptr = name; *options && *options != '=';)
-        *ptr++ = *options++;
+        if (ptr < (name + sizeof(name) - 1))
+          *ptr++ = *options++;
       *ptr = '\0';
 
       if (*options == '=')
@@ -304,7 +292,8 @@ main(int  argc,				/* I - Number of command-line arguments (6 or 7) */
         options ++;
 
 	for (ptr = value; *options && *options != '+';)
-          *ptr++ = *options++;
+          if (ptr < (value + sizeof(value) - 1))
+            *ptr++ = *options++;
 	*ptr = '\0';
 
 	if (*options == '+')
@@ -358,10 +347,16 @@ main(int  argc,				/* I - Number of command-line arguments (6 or 7) */
         * Set port reservation mode...
 	*/
 
-        reserve = !value[0] ||
-	          strcasecmp(value, "on") == 0 ||
-	 	  strcasecmp(value, "yes") == 0 ||
-	 	  strcasecmp(value, "true") == 0;
+        if (!value[0] ||
+	    !strcasecmp(value, "on") ||
+	    !strcasecmp(value, "yes") ||
+	    !strcasecmp(value, "true") ||
+	    !strcasecmp(value, "rfc1179"))
+	  reserve = RESERVE_RFC1179;
+	else if (!strcasecmp(value, "any"))
+	  reserve = RESERVE_ANY;
+	else
+	  reserve = RESERVE_NONE;
       }
       else if (strcasecmp(name, "manual_copies") == 0)
       {
@@ -411,7 +406,7 @@ main(int  argc,				/* I - Number of command-line arguments (6 or 7) */
     */
 
     for (ptr = title; *ptr; ptr ++)
-      if (!isalnum(*ptr) && !isspace(*ptr))
+      if (!isalnum(*ptr & 255) && !isspace(*ptr & 255))
 	*ptr = '_';
   }
 
@@ -432,16 +427,16 @@ main(int  argc,				/* I - Number of command-line arguments (6 or 7) */
       copies        = atoi(argv[4]);
     }
 
-    status = lpd_queue(hostname, resource + 1, filename,
-                       argv[2] /* user */, title, copies,
+    status = lpd_queue(hostname, port, resource + 1, filename,
+                       username, title, copies,
 		       banner, format, order, reserve, manual_copies, timeout);
 
     if (!status)
       fprintf(stderr, "PAGE: 1 %d\n", atoi(argv[4]));
   }
   else
-    status = lpd_queue(hostname, resource + 1, filename,
-                       argv[2] /* user */, title, 1,
+    status = lpd_queue(hostname, port, resource + 1, filename,
+                       username, title, 1,
 		       banner, format, order, reserve, 1, timeout);
 
  /*
@@ -525,24 +520,25 @@ lpd_command(int  fd,		/* I - Socket connection to LPD host */
  */
 
 static int				/* O - Zero on success, non-zero on failure */
-lpd_queue(char *hostname,		/* I - Host to connect to */
-          char *printer,		/* I - Printer/queue name */
-	  char *filename,		/* I - File to print */
-          char *user,			/* I - Requesting user */
-	  char *title,			/* I - Job title */
-	  int  copies,			/* I - Number of copies */
-	  int  banner,			/* I - Print LPD banner? */
-          int  format,			/* I - Format specifier */
-          int  order,			/* I - Order of data/control files */
-	  int  reserve,			/* I - Reserve ports? */
-	  int  manual_copies,		/* I - Do copies by hand... */
-	  int  timeout)			/* I - Timeout... */
+lpd_queue(const char *hostname,		/* I - Host to connect to */
+          int        port,		/* I - Port to connect on */
+          const char *printer,		/* I - Printer/queue name */
+	  const char *filename,		/* I - File to print */
+          const char *user,		/* I - Requesting user */
+	  const char *title,		/* I - Job title */
+	  int        copies,		/* I - Number of copies */
+	  int        banner,		/* I - Print LPD banner? */
+          int        format,		/* I - Format specifier */
+          int        order,		/* I - Order of data/control files */
+	  int        reserve,		/* I - Reserve ports? */
+	  int        manual_copies,	/* I - Do copies by hand... */
+	  int        timeout)		/* I - Timeout... */
 {
   FILE			*fp;		/* Job file */
   char			localhost[255];	/* Local host name */
   int			error;		/* Error number */
   struct stat		filestats;	/* File statistics */
-  int			port;		/* LPD connection port */
+  int			lport;		/* LPD connection local port */
   int			fd;		/* LPD socket */
   char			control[10240],	/* LPD control 'file' */
 			*cptr;		/* Pointer into control file string */
@@ -550,12 +546,9 @@ lpd_queue(char *hostname,		/* I - Host to connect to */
   struct sockaddr_in	addr;		/* Socket address */
   struct hostent	*hostaddr;	/* Host address */
   int			copy;		/* Copies written */
-  size_t		nbytes,		/* Number of bytes written */
-			tbytes;		/* Total bytes written */
+  size_t		nbytes;		/* Number of bytes written */
+  off_t			tbytes;		/* Total bytes written */
   char			buffer[8192];	/* Output buffer */
-#if defined(__APPLE__)
-  socklen_t		addrlen;	/* Address length */
-#endif
 #if defined(HAVE_SIGACTION) && !defined(HAVE_SIGSET)
   struct sigaction	action;		/* Actions for POSIX signals */
 #endif /* HAVE_SIGACTION && !HAVE_SIGSET */
@@ -600,10 +593,21 @@ lpd_queue(char *hostname,		/* I - Host to connect to */
     memset(&addr, 0, sizeof(addr));
     memcpy(&(addr.sin_addr), hostaddr->h_addr, hostaddr->h_length);
     addr.sin_family = hostaddr->h_addrtype;
-    addr.sin_port   = htons(515);	/* LPD/printer service */
+    addr.sin_port   = htons(port);
 
-    for (port = 732;;)
+    for (lport = reserve == RESERVE_RFC1179 ? 732 : 1024;;)
     {
+     /*
+      * Choose the next priviledged port...
+      */
+
+      lport --;
+
+      if (lport < 721 && reserve == RESERVE_RFC1179)
+	lport = 731;
+      else if (lport < 1)
+	lport = 1023;
+
       if (getuid() || !reserve)
       {
        /*
@@ -616,19 +620,20 @@ lpd_queue(char *hostname,		/* I - Host to connect to */
           return (1);
 	}
 
-	port = 515;
+        lport = 0;
       }
       else
       {
        /*
 	* We're running as root and want to comply with RFC 1179.  Reserve a
-	* priviledged port between 721 and 732...
+	* priviledged lport between 721 and 731...
 	*/
 
-	if ((fd = rresvport(&port)) < 0)
+	if ((fd = rresvport(&lport)) < 0)
 	{
 	  perror("ERROR: Unable to reserve port");
-	  sleep(30);
+	  sleep(1);
+
 	  continue;
 	}
       }
@@ -648,13 +653,15 @@ lpd_queue(char *hostname,		/* I - Host to connect to */
 	}
 	else if (error == EADDRINUSE)
 	{
-	  port --;
-	  if (port < 721)
-	    port = 732;
+	 /*
+	  * Try on another port...
+	  */
+
+	  sleep(1);
 	}
 	else
 	{
-	  perror("ERROR: Unable to connect to printer");
+	  perror("ERROR: Unable to connect to printer; will retry in 30 seconds...");
           sleep(30);
 	}
       }
@@ -662,14 +669,9 @@ lpd_queue(char *hostname,		/* I - Host to connect to */
 	break;
     }
 
-#if defined(__APPLE__)
-    addrlen = sizeof(addr);
-    if (!getsockname(fd, (struct sockaddr *)&addr, &addrlen))
-      port = addr.sin_port;
-    fprintf(stderr, "DEBUG: Connected from port %d...\n", port);
-#else
-    fprintf(stderr, "INFO: Connected from port %d...\n", port);
-#endif
+    fprintf(stderr, "INFO: Connected to %s...\n", hostname);
+    fprintf(stderr, "DEBUG: Connected on ports %d (local %d)...\n", port,
+            lport);
 
    /*
     * Next, open the print file and figure out its size...
@@ -707,28 +709,28 @@ lpd_queue(char *hostname,		/* I - Host to connect to */
 
     if (banner)
     {
-      snprintf(cptr, sizeof(control) - (cptr - control), "L%s\nC%s\n", user,
-               localhost);
+      snprintf(cptr, sizeof(control) - (cptr - control), "C%s\nL%s\n",
+               localhost, user);
       cptr   += strlen(cptr);
     }
 
     while (copies > 0)
     {
-      snprintf(cptr, sizeof(control) - (cptr - control), "%cdfA%03d%s\n", format,
+      snprintf(cptr, sizeof(control) - (cptr - control), "%cdfA%03d%.15s\n", format,
                getpid() % 1000, localhost);
       cptr   += strlen(cptr);
       copies --;
     }
 
     snprintf(cptr, sizeof(control) - (cptr - control),
-             "UdfA%03d%s\nN%s\n",
+             "UdfA%03d%.15s\nN%s\n",
              getpid() % 1000, localhost, title);
 
     fprintf(stderr, "DEBUG: Control file is:\n%s", control);
 
     if (order == ORDER_CONTROL_DATA)
     {
-      if (lpd_command(fd, timeout, "\002%d cfA%03.3d%s\n", strlen(control),
+      if (lpd_command(fd, timeout, "\002%d cfA%03.3d%.15s\n", strlen(control),
                       getpid() % 1000, localhost))
         return (1);
 
@@ -769,13 +771,13 @@ lpd_queue(char *hostname,		/* I - Host to connect to */
       * Send the print file...
       */
 
-      if (lpd_command(fd, timeout, "\003%u dfA%03.3d%s\n",
-                      (unsigned)filestats.st_size, getpid() % 1000,
+      if (lpd_command(fd, timeout, "\003%" PRIdMAX " dfA%03.3d%.15s\n",
+                      (intmax_t)filestats.st_size, getpid() % 1000,
 		      localhost))
         return (1);
 
-      fprintf(stderr, "INFO: Sending data file (%u bytes)\n",
-              (unsigned)filestats.st_size);
+      fprintf(stderr, "INFO: Sending data file (%" PRIdMAX " bytes)\n",
+              (intmax_t)filestats.st_size);
 
       tbytes = 0;
       for (copy = 0; copy < manual_copies; copy ++)
@@ -834,7 +836,7 @@ lpd_queue(char *hostname,		/* I - Host to connect to */
 
     if (status == 0 && order == ORDER_DATA_CONTROL)
     {
-      if (lpd_command(fd, timeout, "\002%d cfA%03.3d%s\n", strlen(control),
+      if (lpd_command(fd, timeout, "\002%d cfA%03.3d%.15s\n", strlen(control),
                       getpid() % 1000, localhost))
         return (1);
 
@@ -1040,5 +1042,5 @@ sigterm_handler(int sig)		/* I - Signal */
 
 
 /*
- * End of "$Id: lpd.c,v 1.18.4.1 2004/01/23 18:50:40 jlovell Exp $".
+ * End of "$Id: lpd.c,v 1.25 2004/06/05 03:49:45 jlovell Exp $".
  */

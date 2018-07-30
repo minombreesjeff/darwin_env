@@ -1,5 +1,5 @@
 #
-# "$Id$"
+# "$Id: Makefile,v 1.3 2002/12/17 18:59:59 swdev Exp $"
 #
 #   French man page makefile for the Common UNIX Printing System (CUPS).
 #
@@ -107,5 +107,5 @@ install:	all
 
 
 #
-# End of "$Id$".
+# End of "$Id: Makefile,v 1.3 2002/12/17 18:59:59 swdev Exp $".
 #

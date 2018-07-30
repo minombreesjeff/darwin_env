@@ -1,9 +1,9 @@
 /*
- * "$Id: lpstat.c,v 1.1.1.10 2003/07/16 17:22:07 jlovell Exp $"
+ * "$Id: lpstat.c,v 1.4 2004/06/05 03:49:46 jlovell Exp $"
  *
  *   "lpstat" command for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -45,6 +45,9 @@
 #include <cups/language.h>
 #include <cups/debug.h>
 #include <cups/string.h>
+#ifdef HAVE_INTTYPES_H
+#  include <inttypes.h>
+#endif /* HAVE_INTTYPES_H */
 
 
 /*
@@ -585,7 +588,7 @@ check_dest(const char  *name,		/* I  - Name of printer/class(es) */
     * Skip leading whitespace and commas...
     */
 
-    while (isspace(*dptr) || *dptr == ',')
+    while (isspace(*dptr & 255) || *dptr == ',')
       dptr ++;
 
     if (*dptr == '\0')
@@ -595,7 +598,7 @@ check_dest(const char  *name,		/* I  - Name of printer/class(es) */
     * Extract a single destination name from the name string...
     */
 
-    for (pptr = printer; !isspace(*dptr) && *dptr != ',' && *dptr != '\0';)
+    for (pptr = printer; !isspace(*dptr & 255) && *dptr != ',' && *dptr != '\0';)
     {
       if ((pptr - printer) < (sizeof(printer) - 1))
         *pptr++ = *dptr++;
@@ -768,7 +771,7 @@ show_accepting(http_t      *http,	/* I - HTTP connection to server */
 	  * Skip leading whitespace and commas...
 	  */
 
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -779,10 +782,10 @@ show_accepting(http_t      *http,	/* I - HTTP connection to server */
 	  */
 
 	  for (ptr = printer;
-	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr) == tolower(*dptr);
+	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr & 255) == tolower(*dptr & 255);
 	       ptr ++, dptr ++);
 
-          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr)))
+          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr & 255)))
 	  {
 	    match = 1;
 	    break;
@@ -792,9 +795,9 @@ show_accepting(http_t      *http,	/* I - HTTP connection to server */
 	  * Skip trailing junk...
 	  */
 
-          while (!isspace(*dptr) && *dptr != ',' && *dptr != '\0')
+          while (!isspace(*dptr & 255) && *dptr != ',' && *dptr != '\0')
 	    dptr ++;
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1047,7 +1050,7 @@ show_classes(http_t     *http,		/* I - HTTP connection to server */
 	  * Skip leading whitespace and commas...
 	  */
 
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1058,10 +1061,10 @@ show_classes(http_t     *http,		/* I - HTTP connection to server */
 	  */
 
 	  for (ptr = printer;
-	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr) == tolower(*dptr);
+	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr & 255) == tolower(*dptr & 255);
 	       ptr ++, dptr ++);
 
-          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr)))
+          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr & 255)))
 	  {
 	    match = 1;
 	    break;
@@ -1071,9 +1074,9 @@ show_classes(http_t     *http,		/* I - HTTP connection to server */
 	  * Skip trailing junk...
 	  */
 
-          while (!isspace(*dptr) && *dptr != ',' && *dptr != '\0')
+          while (!isspace(*dptr & 255) && *dptr != ',' && *dptr != '\0')
 	    dptr ++;
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1127,6 +1130,7 @@ show_default(int         num_dests,	/* I - Number of user-defined dests */
 	     cups_dest_t *dests)	/* I - User-defined destinations */
 {
   cups_dest_t	*dest;			/* Destination */
+
 
   if ((dest = cupsGetDest(NULL, NULL, num_dests, dests)) != NULL)
   {
@@ -1287,7 +1291,7 @@ show_devices(http_t      *http,		/* I - HTTP connection to server */
 	  * Skip leading whitespace and commas...
 	  */
 
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1298,10 +1302,10 @@ show_devices(http_t      *http,		/* I - HTTP connection to server */
 	  */
 
 	  for (ptr = printer;
-	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr) == tolower(*dptr);
+	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr & 255) == tolower(*dptr & 255);
 	       ptr ++, dptr ++);
 
-          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr)))
+          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr & 255)))
 	  {
 	    match = 1;
 	    break;
@@ -1311,9 +1315,9 @@ show_devices(http_t      *http,		/* I - HTTP connection to server */
 	  * Skip trailing junk...
 	  */
 
-          while (!isspace(*dptr) && *dptr != ',' && *dptr != '\0')
+          while (!isspace(*dptr & 255) && *dptr != ',' && *dptr != '\0')
 	    dptr ++;
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1416,8 +1420,8 @@ show_jobs(http_t     *http,		/* I - HTTP connection to server */
 		*username,		/* Pointer to job-originating-user-name */
 		*title;			/* Pointer to job-name */
   int		rank,			/* Rank in queue */
-		jobid,			/* job-id */
-		size;			/* job-k-octets */
+		jobid;			/* job-id */
+  off_t		size;			/* job-k-octets */
   time_t	jobtime;		/* time-at-creation */
   struct tm	*jobdate;		/* Date & time */
   const char	*dptr,			/* Pointer into destination list */
@@ -1528,7 +1532,7 @@ show_jobs(http_t     *http,		/* I - HTTP connection to server */
 
         if (strcmp(attr->name, "job-k-octets") == 0 &&
 	    attr->value_tag == IPP_TAG_INTEGER)
-	  size = attr->values[0].integer * 1024;
+	  size = (off_t)attr->values[0].integer * 1024;
 
         if (strcmp(attr->name, "time-at-creation") == 0 &&
 	    attr->value_tag == IPP_TAG_INTEGER)
@@ -1577,7 +1581,7 @@ show_jobs(http_t     *http,		/* I - HTTP connection to server */
 	  * Skip leading whitespace and commas...
 	  */
 
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1588,10 +1592,10 @@ show_jobs(http_t     *http,		/* I - HTTP connection to server */
 	  */
 
 	  for (ptr = dest;
-	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr) == tolower(*dptr);
+	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr & 255) == tolower(*dptr & 255);
 	       ptr ++, dptr ++);
 
-          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr)))
+          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr & 255)))
 	  {
 	    match = 1;
 	    break;
@@ -1601,9 +1605,9 @@ show_jobs(http_t     *http,		/* I - HTTP connection to server */
 	  * Skip trailing junk...
 	  */
 
-          while (!isspace(*dptr) && *dptr != ',' && *dptr != '\0')
+          while (!isspace(*dptr & 255) && *dptr != ',' && *dptr != '\0')
 	    dptr ++;
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1619,7 +1623,7 @@ show_jobs(http_t     *http,		/* I - HTTP connection to server */
 	  * Skip leading whitespace and commas...
 	  */
 
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1633,7 +1637,7 @@ show_jobs(http_t     *http,		/* I - HTTP connection to server */
 	       *ptr != '\0' && *dptr != '\0' && *ptr == *dptr;
 	       ptr ++, dptr ++);
 
-          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr)))
+          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr & 255)))
 	  {
 	    match = 1;
 	    break;
@@ -1643,9 +1647,9 @@ show_jobs(http_t     *http,		/* I - HTTP connection to server */
 	  * Skip trailing junk...
 	  */
 
-          while (!isspace(*dptr) && *dptr != ',' && *dptr != '\0')
+          while (!isspace(*dptr & 255) && *dptr != ',' && *dptr != '\0')
 	    dptr ++;
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1670,19 +1674,19 @@ show_jobs(http_t     *http,		/* I - HTTP connection to server */
 
 	  strftime(date, sizeof(date), "%b %d %H:%M", jobdate);
 
-	  printf("%s;%s;%d;%s;%s\n", temp, username ? username : "unknown",
-	         size, title ? title : "unknown", date);
+	  printf("%s;%s;%" PRIdMAX ";%s;%s\n", temp, username ? username : "unknown",
+	         (intmax_t)size, title ? title : "unknown", date);
 	}
 	else
 	{
 	  strftime(date, sizeof(date), CUPS_STRFTIME_FORMAT, jobdate);
 
           if (ranking)
-	    printf("%3d %-21s %-13s %8d %s\n", rank, temp,
-	           username ? username : "unknown", size, date);
+	    printf("%3d %-21s %-13s %8" PRIdMAX " %s\n", rank, temp,
+	           username ? username : "unknown", (intmax_t)size, date);
           else
-	    printf("%-23s %-13s %8d   %s\n", temp,
-	           username ? username : "unknown", size, date);
+	    printf("%-23s %-13s %8" PRIdMAX "   %s\n", temp,
+	           username ? username : "unknown", (intmax_t)size, date);
           if (long_status)
 	    printf("\tqueued for %s\n", dest);
 	}
@@ -1901,7 +1905,7 @@ show_printers(http_t      *http,	/* I - HTTP connection to server */
 	  * Skip leading whitespace and commas...
 	  */
 
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -1912,10 +1916,10 @@ show_printers(http_t      *http,	/* I - HTTP connection to server */
 	  */
 
 	  for (ptr = printer;
-	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr) == tolower(*dptr);
+	       *ptr != '\0' && *dptr != '\0' && tolower(*ptr & 255) == tolower(*dptr & 255);
 	       ptr ++, dptr ++);
 
-          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr)))
+          if (*ptr == '\0' && (*dptr == '\0' || *dptr == ',' || isspace(*dptr & 255)))
 	  {
 	    match = 1;
 	    break;
@@ -1925,9 +1929,9 @@ show_printers(http_t      *http,	/* I - HTTP connection to server */
 	  * Skip trailing junk...
 	  */
 
-          while (!isspace(*dptr) && *dptr != ',' && *dptr != '\0')
+          while (!isspace(*dptr & 255) && *dptr != ',' && *dptr != '\0')
 	    dptr ++;
-	  while (isspace(*dptr) || *dptr == ',')
+	  while (isspace(*dptr & 255) || *dptr == ',')
 	    dptr ++;
 
 	  if (*dptr == '\0')
@@ -2162,5 +2166,5 @@ show_scheduler(http_t *http)	/* I - HTTP connection to server */
 
 
 /*
- * End of "$Id: lpstat.c,v 1.1.1.10 2003/07/16 17:22:07 jlovell Exp $".
+ * End of "$Id: lpstat.c,v 1.4 2004/06/05 03:49:46 jlovell Exp $".
  */

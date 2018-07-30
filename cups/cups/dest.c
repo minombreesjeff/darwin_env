@@ -1,10 +1,10 @@
 /*
- * "$Id: dest.c,v 1.6 2003/09/05 01:14:50 jlovell Exp $"
+ * "$Id: dest.c,v 1.9 2004/06/05 03:49:45 jlovell Exp $"
  *
  *   User-defined destination (and option) support for the Common UNIX
  *   Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -557,9 +557,9 @@ cups_get_dests(const char  *filename,	/* I - File to read from */
     * See what type of line it is...
     */
 
-    if (strncasecmp(line, "dest", 4) == 0 && isspace(line[4]))
+    if (strncasecmp(line, "dest", 4) == 0 && isspace(line[4] & 255))
       lineptr = line + 4;
-    else if (strncasecmp(line, "default", 7) == 0 && isspace(line[7]))
+    else if (strncasecmp(line, "default", 7) == 0 && isspace(line[7] & 255))
       lineptr = line + 7;
     else
       continue;
@@ -568,7 +568,7 @@ cups_get_dests(const char  *filename,	/* I - File to read from */
     * Skip leading whitespace...
     */
 
-    while (isspace(*lineptr))
+    while (isspace(*lineptr & 255))
       lineptr ++;
 
     if (!*lineptr)
@@ -580,7 +580,7 @@ cups_get_dests(const char  *filename,	/* I - File to read from */
     * Search for an instance...
     */
 
-    while (!isspace(*lineptr) && *lineptr && *lineptr != '/')
+    while (!isspace(*lineptr & 255) && *lineptr && *lineptr != '/')
       lineptr ++;
 
     if (!*lineptr)
@@ -599,7 +599,7 @@ cups_get_dests(const char  *filename,	/* I - File to read from */
       * Search for an instance...
       */
 
-      while (!isspace(*lineptr) && *lineptr)
+      while (!isspace(*lineptr & 255) && *lineptr)
 	lineptr ++;
     }
     else
@@ -689,7 +689,8 @@ cups_get_sdests(ipp_op_t    op,		/* I - get-printers or get-classes */
   * Connect to the CUPS server...
   */
 
-  if ((http = httpConnect(cupsServer(), ippPort())) == NULL)
+  if ((http = httpConnectEncrypt(cupsServer(), ippPort(),
+                                 cupsEncryption())) == NULL)
     return (num_dests);
 
  /*
@@ -712,6 +713,8 @@ cups_get_sdests(ipp_op_t    op,		/* I - get-printers or get-classes */
 
   ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_LANGUAGE,
                "attributes-natural-language", NULL, language->language);
+
+  cupsLangFree(language);
 
   ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
                 "requested-attributes", sizeof(pattrs) / sizeof(pattrs[0]),
@@ -804,5 +807,5 @@ cups_get_sdests(ipp_op_t    op,		/* I - get-printers or get-classes */
 
 
 /*
- * End of "$Id: dest.c,v 1.6 2003/09/05 01:14:50 jlovell Exp $".
+ * End of "$Id: dest.c,v 1.9 2004/06/05 03:49:45 jlovell Exp $".
  */

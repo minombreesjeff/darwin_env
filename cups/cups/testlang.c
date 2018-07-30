@@ -1,9 +1,9 @@
 /*
- * "$Id$"
+ * "$Id: testlang.c,v 1.5 2004/02/25 20:14:51 mike Exp $"
  *
  *   HTTP test program for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -45,6 +45,7 @@ main(int  argc,				/* I - Number of command-line arguments */
      char *argv[])			/* I - Command-line arguments */
 {
   cups_lang_t		*language;	/* Message catalog */
+  cups_lang_t		*language2;	/* Message catalog */
   static const char * const charsets[] =/* Character sets */
 			{
 			  "us-ascii",
@@ -78,9 +79,18 @@ main(int  argc,				/* I - Number of command-line arguments */
 
 
   if (argc == 1)
-    language = cupsLangDefault();
+  {
+    language  = cupsLangDefault();
+    language2 = cupsLangDefault();
+  }
   else
-    language = cupsLangGet(argv[1]);
+  {
+    language  = cupsLangGet(argv[1]);
+    language2 = cupsLangGet(argv[1]);
+  }
+
+  if (language != language2)
+    puts("**** ERROR: Language cache did not work! ****");
 
   printf("Language = \"%s\"\n", language->language);
   printf("Encoding = \"%s\"\n", charsets[language->encoding]);
@@ -92,5 +102,5 @@ main(int  argc,				/* I - Number of command-line arguments */
 
 
 /*
- * End of "$Id$".
+ * End of "$Id: testlang.c,v 1.5 2004/02/25 20:14:51 mike Exp $".
  */

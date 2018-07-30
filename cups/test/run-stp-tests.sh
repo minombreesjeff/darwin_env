@@ -1,11 +1,11 @@
 #!/bin/sh
 #
-# "$Id: run-stp-tests.sh,v 1.1.1.11 2003/07/23 02:33:39 jlovell Exp $"
+# "$Id: run-stp-tests.sh,v 1.1.1.14 2004/06/05 02:42:36 jlovell Exp $"
 #
 #   Perform the complete set of IPP compliance tests specified in the
 #   CUPS Software Test Plan.
 #
-#   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -93,6 +93,15 @@ cwd=`pwd`
 root=`dirname $cwd`
 
 #
+# Make sure that the LPDEST and PRINTER environment variables are
+# not included in the environment that is passed to the tests.  These
+# will usually cause tests to fail erroneously...
+#
+
+typeset +x LPDEST
+typeset +x PRINTER
+
+#
 # See if we want to use valgrind...
 #
 
@@ -172,6 +181,7 @@ ln -s $root/templates /tmp/$user/share
 cat >/tmp/$user/cupsd.conf <<EOF
 Browsing Off
 FileDevice yes
+Printcap
 Listen 127.0.0.1:$port
 User $user
 ServerRoot /tmp/$user
@@ -445,7 +455,7 @@ else
 fi
 
 if test "x$valgrind" != x; then
-	echo "Valgrind lof files can be found in /tmp/$user/log."
+	echo "Valgrind log files can be found in /tmp/$user/log."
 fi
 
 echo ""
@@ -456,5 +466,5 @@ echo "    $pdffile"
 echo ""
 
 #
-# End of "$Id: run-stp-tests.sh,v 1.1.1.11 2003/07/23 02:33:39 jlovell Exp $"
+# End of "$Id: run-stp-tests.sh,v 1.1.1.14 2004/06/05 02:42:36 jlovell Exp $"
 #

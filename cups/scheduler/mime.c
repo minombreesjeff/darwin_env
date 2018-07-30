@@ -1,9 +1,9 @@
 /*
- * "$Id: mime.c,v 1.1.1.8 2003/04/11 21:07:49 jlovell Exp $"
+ * "$Id: mime.c,v 1.1.1.10 2004/06/05 02:42:34 jlovell Exp $"
  *
  *   MIME database file routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -348,7 +348,7 @@ load_types(mime_t     *mime,		/* I - MIME database */
 
     while (*lineptr != '/' && *lineptr != '\n' && *lineptr != '\0' &&
            (temp - super + 1) < MIME_MAX_SUPER)
-      *temp++ = tolower(*lineptr++);
+      *temp++ = tolower(*lineptr++ & 255);
 
     *temp = '\0';
 
@@ -360,7 +360,7 @@ load_types(mime_t     *mime,		/* I - MIME database */
 
     while (*lineptr != ' ' && *lineptr != '\t' && *lineptr != '\n' &&
            *lineptr != '\0' && (temp - type + 1) < MIME_MAX_TYPE)
-      *temp++ = tolower(*lineptr++);
+      *temp++ = tolower(*lineptr++ & 255);
 
     *temp = '\0';
 
@@ -424,7 +424,7 @@ load_convs(mime_t     *mime,		/* I - MIME database */
     */
 
     for (lineptr = line + strlen(line) - 1;
-         lineptr >= line && isspace(*lineptr);
+         lineptr >= line && isspace(*lineptr & 255);
 	 lineptr --)
       *lineptr = '\0';
 
@@ -444,7 +444,7 @@ load_convs(mime_t     *mime,		/* I - MIME database */
 
     while (*lineptr != '/' && *lineptr != '\n' && *lineptr != '\0' &&
            (temp - super + 1) < MIME_MAX_SUPER)
-      *temp++ = tolower(*lineptr++);
+      *temp++ = tolower(*lineptr++ & 255);
 
     *temp = '\0';
 
@@ -456,7 +456,7 @@ load_convs(mime_t     *mime,		/* I - MIME database */
 
     while (*lineptr != ' ' && *lineptr != '\t' && *lineptr != '\n' &&
            *lineptr != '\0' && (temp - type + 1) < MIME_MAX_TYPE)
-      *temp++ = tolower(*lineptr++);
+      *temp++ = tolower(*lineptr++ & 255);
 
     *temp = '\0';
 
@@ -515,7 +515,7 @@ load_convs(mime_t     *mime,		/* I - MIME database */
 
     while (*lineptr != '/' && *lineptr != '\n' && *lineptr != '\0' &&
            (temp - super + 1) < MIME_MAX_SUPER)
-      *temp++ = tolower(*lineptr++);
+      *temp++ = tolower(*lineptr++ & 255);
 
     *temp = '\0';
 
@@ -527,7 +527,7 @@ load_convs(mime_t     *mime,		/* I - MIME database */
 
     while (*lineptr != ' ' && *lineptr != '\t' && *lineptr != '\n' &&
            *lineptr != '\0' && (temp - type + 1) < MIME_MAX_TYPE)
-      *temp++ = tolower(*lineptr++);
+      *temp++ = tolower(*lineptr++ & 255);
 
     *temp = '\0';
 
@@ -583,5 +583,5 @@ delete_rules(mime_magic_t *rules)	/* I - Rules to free */
 
 
 /*
- * End of "$Id: mime.c,v 1.1.1.8 2003/04/11 21:07:49 jlovell Exp $".
+ * End of "$Id: mime.c,v 1.1.1.10 2004/06/05 02:42:34 jlovell Exp $".
  */

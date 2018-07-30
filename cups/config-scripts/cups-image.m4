@@ -1,9 +1,9 @@
 dnl
-dnl "$Id: cups-image.m4,v 1.1.1.6 2002/12/24 00:04:58 jlovell Exp $"
+dnl "$Id: cups-image.m4,v 1.1.1.8 2004/06/05 02:42:28 jlovell Exp $"
 dnl
 dnl   Image library stuff for the Common UNIX Printing System (CUPS).
 dnl
-dnl   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+dnl   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 dnl
 dnl   These coded instructions, statements, and computer programs are the
 dnl   property of Easy Software Products and are protected by Federal
@@ -78,5 +78,5 @@ AC_SUBST(EXPORT_LIBZ)
 AC_CHECK_HEADER(stdlib.h,AC_DEFINE(HAVE_STDLIB_H))
 
 dnl
-dnl End of "$Id: cups-image.m4,v 1.1.1.6 2002/12/24 00:04:58 jlovell Exp $".
+dnl End of "$Id: cups-image.m4,v 1.1.1.8 2004/06/05 02:42:28 jlovell Exp $".
 dnl

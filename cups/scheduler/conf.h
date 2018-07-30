@@ -1,10 +1,10 @@
 /*
- * "$Id: conf.h,v 1.7 2003/09/05 01:14:50 jlovell Exp $"
+ * "$Id: conf.h,v 1.13 2004/06/05 03:49:46 jlovell Exp $"
  *
  *   Configuration file definitions for the Common UNIX Printing System (CUPS)
  *   scheduler.
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -51,6 +51,19 @@
 
 
 /*
+ * Notification types...
+ */
+
+typedef unsigned cups_notify_t;			/**** Notification type bits ****/
+enum						/* Not a typedef'd enum so we can OR */
+{
+  CUPS_NOTIFY_PRINTER_LIST	= 0x0001,	/* Printer list changed */
+  CUPS_NOTIFY_PRINTER_HISTORY	= 0x0002,	/* Printer history changed */
+  CUPS_NOTIFY_JOB		= 0x0004,	/* Job info changed */
+};
+
+
+/*
  * Globals...
  */
 
@@ -84,6 +97,8 @@ VAR char		*SystemGroups[MAX_SYSTEM_GROUPS],
 					/* Default language encoding */
 			*DefaultCharset		VALUE(NULL),
 					/* Default charset */
+			*DefaultLocale		VALUE(NULL),
+					/* Default locale */
 			*RIPCache		VALUE(NULL),
 					/* Amount of memory for RIPs */
 			*TempDir		VALUE(NULL),
@@ -148,6 +163,9 @@ VAR int			ClassifyOverride	VALUE(0),
 					/* Root certificate update interval */
 			RunAsUser		VALUE(FALSE),
 					/* Run as unpriviledged user? */
+			DefaultShared		VALUE(TRUE),
+					/* Default printer-is-shared value */
+			RunUser,	/* User to run as, used for files */
 			PrintcapFormat		VALUE(PRINTCAP_BSD);
 					/* Format of printcap file? */
 VAR cups_file_t		*AccessFile		VALUE(NULL),
@@ -167,12 +185,9 @@ VAR const char		**MimeTypes		VALUE(NULL);
 VAR int			MinCopies		VALUE(1);
 					/* Minimum number of copies per job */
 #endif  /* __APPLE__ */
-#ifdef HAVE_NOTIFY_POST
-VAR int			NotifyPaused		VALUE(1),
-					/* Are notifications paused */
-			NotifyPending		VALUE(0);
-					/* Printer list changed while notifications paused */
-#endif  /* HAVE_NOTIFY_POST */
+
+VAR cups_notify_t	NotifyPost	VALUE(0);
+					/* Pending notifications bit field */
 
 #ifdef HAVE_SSL
 VAR char		*ServerCertificate	VALUE(NULL);
@@ -203,5 +218,5 @@ extern int	LogPage(job_t *job, const char *page);
 
 
 /*
- * End of "$Id: conf.h,v 1.7 2003/09/05 01:14:50 jlovell Exp $".
+ * End of "$Id: conf.h,v 1.13 2004/06/05 03:49:46 jlovell Exp $".
  */

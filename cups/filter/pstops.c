@@ -1,9 +1,9 @@
 /*
- * "$Id: pstops.c,v 1.33.4.1 2004/01/17 00:42:10 gelphman Exp $"
+ * "$Id: pstops.c,v 1.39 2004/06/05 03:49:45 jlovell Exp $"
  *
  *   PostScript filter for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1993-2003 by Easy Software Products.
+ *   Copyright 1993-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -70,7 +70,7 @@
 #define LAYOUT_NEGATEX	2		/* definitions above... */
 #define LAYOUT_VERTICAL	4
 
-#if defined(__APPLE__)
+/* Apple addition */
 #define setFirstPageOptionsAndEmit(ppd, specialSlotSel, minOutputOrder) \
     setPageOptionsAndEmit((ppd), (minOutputOrder), (specialSlotSel).firstPgInputSlot, \
     (specialSlotSel).firstPgManualFeed, (specialSlotSel).otherPgManualFeed)
@@ -86,13 +86,12 @@ typedef struct SpecialSlotSel{
                 *otherPgInputSlot, 
                 *otherPgManualFeed;
 }SpecialSlotSel;
-#endif	/* __APPLE__ */
+/* Apple addition end */
 
 #define PROT_STANDARD	0		/* Adobe standard protocol */
 #define PROT_BCP	1		/* Adobe BCP protocol */
 #define PROT_TBCP	2		/* Adobe TBCP protocol */
 
-const char *TBCP_END_PROTOCOL_STRING="\033%-12345X";
 
 /*
  * Globals...
@@ -258,7 +257,8 @@ main(int  argc,			/* I - Number of command-line arguments */
   }
 
   if ((val = cupsGetOption("Collate", num_options, options)) != NULL &&
-      !strcasecmp(val, "True"))
+      (!strcasecmp(val, "true") ||!strcasecmp(val, "on") ||
+       !strcasecmp(val, "yes")))
     Collate = 1;
 
   if ((val = cupsGetOption("OutputOrder", num_options, options)) != NULL){
@@ -333,7 +333,8 @@ main(int  argc,			/* I - Number of command-line arguments */
     b = atoi(val) * 0.01f;
 
   if ((val = cupsGetOption("mirror", num_options, options)) != NULL &&
-      !strcasecmp(val, "True"))
+      (!strcasecmp(val, "true") ||!strcasecmp(val, "on") ||
+       !strcasecmp(val, "yes")))
     Flip = 1;
 
   if ((val = cupsGetOption("emit-jcl", num_options, options)) != NULL)
@@ -509,8 +510,6 @@ main(int  argc,			/* I - Number of command-line arguments */
     return (1);
   }
 
-  fwrite(line, 1, len, stdout);
-
  /*
   * Handle leading PJL fun...
   */
@@ -518,7 +517,7 @@ main(int  argc,			/* I - Number of command-line arguments */
   while (!strncmp(line, "\033%-12345X", 9))
   {
    /*
-    * Yup, we have leading PJL fun, so copy it until we hit the line
+    * Yup, we have leading PJL fun, so skip it until we hit the line
     * with "ENTER LANGUAGE"...
     */
 
@@ -529,8 +528,6 @@ main(int  argc,			/* I - Number of command-line arguments */
       len = sizeof(line);
       if (psgets(line, &len, fp) == NULL)
         break;
-
-      fwrite(line, 1, len, stdout);
     }
 
     len = sizeof(line);
@@ -548,6 +545,8 @@ main(int  argc,			/* I - Number of command-line arguments */
  /*
   * Start sending the document with any commands needed...
   */
+
+  fwrite(line, 1, len, stdout);
 
   saweof      = 0;
   sent_espsp  = 0;
@@ -1122,7 +1121,7 @@ main(int  argc,			/* I - Number of command-line arguments */
       if (psgets(line, &len, fp) == NULL)
         break;
 
-      if ( !((strcmp(line, "\004") == 0) && len == 1) &&
+      if (!(!strcmp(line, "\004") && len == 1) &&
           strncmp(line, "%%Pages:", 8) != 0)
         pswrite(line, len, stdout);
 
@@ -1215,12 +1214,13 @@ main(int  argc,			/* I - Number of command-line arguments */
   {
     if (emit_jcl && ppd->jcl_end)
       fputs(ppd->jcl_end, stdout);
-    else {
-	if (ppd->num_filters == 0)
-	    putchar(0x04);
-	    
-	if(Protocol == PROT_TBCP)
-	    fputs(TBCP_END_PROTOCOL_STRING, stdout);
+    else
+    {
+      if (ppd->num_filters == 0)
+        putchar(0x04);
+
+      if (Protocol == PROT_TBCP)
+        fputs("\033%-12345X", stdout);
     }
   }
 
@@ -1285,7 +1285,7 @@ check_range(int page)	/* I - Page number */
       if (*range == '-')
       {
         range ++;
-	if (!isdigit(*range))
+	if (!isdigit(*range & 255))
 	  upper = 65535;
 	else
 	  upper = strtol(range, (char **)&range, 10);
@@ -1374,8 +1374,8 @@ do_setup(ppd_file_t *ppd,		/* I - PPD file */
 	 float      b)			/* I - Brightness value */
 {
 
-  /* define control D to a no-op */
-  puts("userdict(\\004)cvn{}put");
+  /* define control D to a no-op, define two control-Ds to be a no-op */
+  puts("userdict dup(\\004)cvn{}put (\\004\\004)cvn{}put");
 
  /*
   * Send all the printer-specific setup commands...
@@ -1533,7 +1533,7 @@ psbcp(ppd_file_t *ppd)		/* I - PPD file */
   if (ppd->jcl_end)
     fputs(ppd->jcl_end, stdout);
   else if (ppd->num_filters == 0)
-	putchar(0x04);
+    putchar(0x04);
 }
 
 
@@ -2071,6 +2071,13 @@ start_nup(int number,			/* I - Page number */
   }
 }
 
+
+/* Apple addition */
+
+/*
+ * 'setPageOptionsAndEmit()'
+ */
+
 static void setPageOptionsAndEmit(ppd_file_t *ppd, float minOrder, const char *inputSlotToSet, const char *manualFeedToSet, const char *manualFeedToUnset)
 {
     if(ppd && (inputSlotToSet || manualFeedToSet)){
@@ -2089,7 +2096,8 @@ static void setPageOptionsAndEmit(ppd_file_t *ppd, float minOrder, const char *i
         ppdEmitAfterOrder(ppd, stdout, PPD_ORDER_ANY, limitOrder, minOrder);
     }
 }
+/* Apple addition end */
 
 /*
- * End of "$Id: pstops.c,v 1.33.4.1 2004/01/17 00:42:10 gelphman Exp $".
+ * End of "$Id: pstops.c,v 1.39 2004/06/05 03:49:45 jlovell Exp $".
  */

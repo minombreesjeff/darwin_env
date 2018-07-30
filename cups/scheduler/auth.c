@@ -1,9 +1,9 @@
 /*
- * "$Id: auth.c,v 1.1.1.12 2003/04/11 21:07:48 jlovell Exp $"
+ * "$Id: auth.c,v 1.10 2004/06/05 03:49:46 jlovell Exp $"
  *
  *   Authorization routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -379,6 +379,7 @@ CopyLocation(location_t **loc)	/* IO - Original location */
   int		i;		/* Looping var */
   int		locindex;	/* Index into Locations array */
   location_t	*temp;		/* New location */
+  char		location[HTTP_MAX_URI];	/* Location of resource */
 
 
  /*
@@ -388,7 +389,14 @@ CopyLocation(location_t **loc)	/* IO - Original location */
 
   locindex = *loc - Locations;
 
-  if ((temp = AddLocation((*loc)->location)) == NULL)
+ /*
+  * Use a local copy of location because AddLocation may cause
+  * this memory to be moved...
+  */
+
+  strlcpy(location, (*loc)->location, sizeof(location));
+
+  if ((temp = AddLocation(location)) == NULL)
     return (NULL);
 
   *loc = Locations + locindex;
@@ -530,14 +538,14 @@ DeleteAllLocations(void)
       free(loc->names);
 
     for (j = loc->num_allow, mask = loc->allow; j > 0; j --, mask ++)
-      if (mask->type == AUTH_NAME)
+      if (mask->type == AUTH_NAME || mask->type == AUTH_INTERFACE)
         free(mask->mask.name.name);
 
     if (loc->num_allow > 0)
       free(loc->allow);
 
     for (j = loc->num_deny, mask = loc->deny; j > 0; j --, mask ++)
-      if (mask->type == AUTH_NAME)
+      if (mask->type == AUTH_NAME || mask->type == AUTH_INTERFACE)
         free(mask->mask.name.name);
 
     if (loc->num_deny > 0)
@@ -713,13 +721,35 @@ FindBest(const char   *path,	/* I - Resource path */
     LogMessage(L_DEBUG2, "FindBest: Location %s Limit %x",
                loc->location, loc->limit);
 
-    if (loc->length > bestlen &&
-        strncmp(uri, loc->location, loc->length) == 0 &&
-	loc->location[0] == '/' &&
-	(limit & loc->limit) != 0)
+    if (!strncmp(uri, "/printers/", 10) ||!strncmp(uri, "/classes/", 9))
     {
-      best    = loc;
-      bestlen = loc->length;
+     /*
+      * Use case-insensitive comparison for queue names...
+      */
+
+      if (loc->length > bestlen &&
+          strncasecmp(uri, loc->location, loc->length) == 0 &&
+	  loc->location[0] == '/' &&
+	  (limit & loc->limit) != 0)
+      {
+	best    = loc;
+	bestlen = loc->length;
+      }
+    }
+    else
+    {
+     /*
+      * Use case-sensitive comparison for other URIs...
+      */
+
+      if (loc->length > bestlen &&
+          strncmp(uri, loc->location, loc->length) == 0 &&
+	  loc->location[0] == '/' &&
+	  (limit & loc->limit) != 0)
+      {
+	best    = loc;
+	bestlen = loc->length;
+      }
     }
   }
 
@@ -882,7 +912,11 @@ IsAuthorized(client_t *con)	/* I - Connection */
   address = ntohl(con->http.hostaddr.sin_addr.s_addr);
   hostlen = strlen(con->http.hostname);
 
-  if (address == 0x7f000001 || strcasecmp(con->http.hostname, "localhost") == 0)
+  if (address == 0x7f000001 || strcasecmp(con->http.hostname, "localhost") == 0
+#ifdef HAVE_DOMAINSOCKETS
+      || con->http.hostaddr.sin_family == AF_LOCAL
+#endif /* HAVE_DOMAINSOCKETS */
+      )
   {
    /*
     * Access from localhost (127.0.0.1) is always allowed...
@@ -1643,5 +1677,5 @@ to64(char          *s,	/* O - Output string */
 
 
 /*
- * End of "$Id: auth.c,v 1.1.1.12 2003/04/11 21:07:48 jlovell Exp $".
+ * End of "$Id: auth.c,v 1.10 2004/06/05 03:49:46 jlovell Exp $".
  */

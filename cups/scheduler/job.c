@@ -1,9 +1,9 @@
 /*
- * "$Id: job.c,v 1.23.4.2 2004/09/26 18:05:07 jlovell Exp $"
+ * "$Id: job.c,v 1.29 2004/06/05 03:49:46 jlovell Exp $"
  *
  *   Job management routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -122,6 +122,12 @@ AddJob(int        priority,	/* I - Job priority */
   else
     Jobs = job;
 
+ /*
+  * Note that a notification event needs to be sent.
+  */
+
+  NotifyPost |= CUPS_NOTIFY_JOB;
+
   return (job);
 }
 
@@ -220,6 +226,12 @@ CancelJob(int id,		/* I - Job to cancel */
         free(current);
 
 	NumJobs --;
+
+       /*
+	* Note that a notification event needs to be sent.
+	*/
+
+	NotifyPost |= CUPS_NOTIFY_JOB;
       }
 
       return;
@@ -298,7 +310,11 @@ CheckJobs(void)
     * Start pending jobs if the destination is available...
     */
 
-    if (current->state->values[0].integer == IPP_JOB_PENDING)
+    if (current->state->values[0].integer == IPP_JOB_PENDING && !NeedReload
+#ifdef __APPLE__
+        && !Sleeping
+#endif	/* __APPLE__ */
+    )
     {
       if ((pclass = FindClass(current->dest)) != NULL)
       {
@@ -558,7 +574,7 @@ LoadAllJobs(void)
   */
 
   while ((dent = readdir(dir)) != NULL)
-    if (NAMLEN(dent) == 6 && dent->d_name[0] == 'c')
+    if (NAMLEN(dent) >= 6 && dent->d_name[0] == 'c')
     {
      /*
       * Allocate memory for the job...
@@ -758,14 +774,14 @@ LoadAllJobs(void)
   rewinddir(dir);
 
   while ((dent = readdir(dir)) != NULL)
-    if (NAMLEN(dent) > 7 && dent->d_name[0] == 'd')
+    if (NAMLEN(dent) > 7 && dent->d_name[0] == 'd' && strchr(dent->d_name, '-'))
     {
      /*
       * Find the job...
       */
 
       jobid  = atoi(dent->d_name + 1);
-      fileid = atoi(dent->d_name + 7);
+      fileid = atoi(strchr(dent->d_name, '-') + 1);
 
       LogMessage(L_DEBUG, "LoadAllJobs: Auto-typing document file %s...",
                  dent->d_name);
@@ -940,13 +956,19 @@ SaveJob(int id)			/* I - Job ID */
   }
 
   fchmod(fd, 0600);
-  fchown(fd, getuid(), Group);
+  fchown(fd, RunUser, Group);
 
   ippWriteFile(fd, job->attrs);
 
   LogMessage(L_DEBUG2, "SaveJob: Closing file %d...", fd);
 
   close(fd);
+
+ /*
+  * Note that a notification event needs to be sent.
+  */
+
+  NotifyPost |= CUPS_NOTIFY_JOB;
 }
 
 
@@ -1200,7 +1222,6 @@ StartJob(int       id,			/* I - Job ID */
 		classification[1024],	/* CLASSIFICATION environment variable */
 		content_type[1024],	/* CONTENT_TYPE environment variable */
 		device_uri[1024],	/* DEVICE_URI environment variable */
-		device_uri2[1024],	/* Sanitized device uri */
 		ppd[1024],		/* PPD environment variable */
 		class_name[255],	/* CLASS environment variable */
 		printer_name[255],	/* PRINTER environment variable */
@@ -1681,8 +1702,8 @@ StartJob(int       id,			/* I - Job ID */
         snprintf(language, sizeof(language), "LANG=%c%c_%c%c",
 	         attr->values[0].string.text[0],
 		 attr->values[0].string.text[1],
-		 toupper(attr->values[0].string.text[3]),
-		 toupper(attr->values[0].string.text[4]));
+		 toupper(attr->values[0].string.text[3] & 255),
+		 toupper(attr->values[0].string.text[4] & 255));
         break;
   }
 
@@ -1698,12 +1719,6 @@ StartJob(int       id,			/* I - Job ID */
     snprintf(charset, sizeof(charset), "CHARSET=%s",
              attr->values[0].string.text);
   }
-
- /*
-  * Create a sanitized version of the device uri for logging purposes
-  */
-
-  SanitizeURI(device_uri2, sizeof(device_uri2), printer->device_uri);
 
   snprintf(path, sizeof(path), "PATH=%s/filter:/bin:/usr/bin", ServerBin);
   snprintf(content_type, sizeof(content_type), "CONTENT_TYPE=%s/%s",
@@ -1818,10 +1833,7 @@ StartJob(int       id,			/* I - Job ID */
   envp[envc] = NULL;
 
   for (i = 0; i < envc; i ++)
-    if (!strncmp(envp[i], "DEVICE_URI=", 11))
-      LogMessage(L_DEBUG, "StartJob: envp[%d]=\"DEVICE_URI=%s\"", i, device_uri2);
-    else
-      LogMessage(L_DEBUG, "StartJob: envp[%d]=\"%s\"", i, envp[i]);
+    LogMessage(L_DEBUG, "StartJob: envp[%d]=\"%s\"", i, envp[i]);
 
   current->current_file ++;
 
@@ -1884,10 +1896,23 @@ StartJob(int       id,			/* I - Job ID */
    /*
     * Setting CFProcessPath lets OS X's Core Foundation code find
     * the bundle that may be associated with a filter or backend.
+    * If the file is a symbolic link we need to resolve it first
+    * (Bug 3549523).
     */
+    {
+      char linkbuf[1024];
+      int linkbufbytes;
 
-    snprintf(processPath, sizeof(processPath), "CFProcessPath=%s", command);
-    LogMessage(L_DEBUG, "StartJob: %s\n", processPath);
+      if ((linkbufbytes = readlink(command, linkbuf, sizeof(linkbuf) - 1)) > 0)
+      {
+        linkbuf[linkbufbytes] = '\0';
+        snprintf(processPath, sizeof(processPath), "CFProcessPath=%s/%s", dirname(command), linkbuf);
+      }
+      else
+        snprintf(processPath, sizeof(processPath), "CFProcessPath=%s", command);
+
+      LogMessage(L_DEBUG, "StartJob: %s\n", processPath);
+    }
 #endif	/* __APPLE__ */
 
     if (i < (num_filters - 1) ||
@@ -1955,10 +1980,23 @@ StartJob(int       id,			/* I - Job ID */
    /*
     * Setting CFProcessPath lets OS X's Core Foundation code find
     * the bundle that may be associated with a filter or backend.
+    * If the file is a symbolic link we need to resolve it first
+    * (Bug 3549523).
     */
+    {
+      char linkbuf[1024];
+      int linkbufbytes;
 
-    snprintf(processPath, sizeof(processPath), "CFProcessPath=%s", command);
-    LogMessage(L_DEBUG, "StartJob: %s\n", processPath);
+      if ((linkbufbytes = readlink(command, linkbuf, sizeof(linkbuf) - 1)) > 0)
+      {
+        linkbuf[linkbufbytes] = '\0';
+        snprintf(processPath, sizeof(processPath), "CFProcessPath=%s/%s", dirname(command), linkbuf);
+      }
+      else
+        snprintf(processPath, sizeof(processPath), "CFProcessPath=%s", command);
+
+      LogMessage(L_DEBUG, "StartJob: %s\n", processPath);
+    }
 #endif	/* __APPLE__ */
 
     argv[0] = printer->device_uri;
@@ -2122,6 +2160,7 @@ StopJob(int id,			/* I - Job ID */
 void
 UpdateJob(job_t *job)		/* I - Job to check */
 {
+  int		i;		/* Looping var */
   int		bytes;		/* Number of bytes read */
   int		copies;		/* Number of copies printed */
   char		*lineptr,	/* Pointer to end of line in buffer */
@@ -2229,7 +2268,7 @@ UpdateJob(job_t *job)		/* I - Job to check */
     * Skip leading whitespace in the message...
     */
 
-    while (isspace(*message))
+    while (isspace(*message & 255))
       message ++;
 
    /*
@@ -2301,6 +2340,19 @@ UpdateJob(job_t *job)		/* I - Job to check */
 
   if (bytes <= 0)
   {
+   /*
+    * See if all of the filters and the backend have returned their
+    * exit statuses.
+    */
+
+    for (i = 0; job->procs[i]; i ++)
+      if (job->procs[i] > 0)
+	return;
+
+   /*
+    * Handle the end of job stuff...
+    */
+
     LogMessage(L_DEBUG, "UpdateJob: job %d, file %d is complete.",
                job->id, job->current_file - 1);
 
@@ -2628,7 +2680,7 @@ start_process(const char *command,	/* I - Full path to command */
     * Change user to something "safe"...
     */
 
-    if (!root && getuid() == 0)
+    if (!root && !RunUser)
     {
      /*
       * Running as root, so change to non-priviledged user...
@@ -2721,19 +2773,23 @@ set_hold_until(job_t *job, 		/* I - Job to update */
   char			holdstr[64];	/* Hold time */
 
 
+ /*
+  * Set the hold_until value and hold the job...
+  */
+
   LogMessage(L_DEBUG, "set_hold_until: hold_until = %d", (int)holdtime);
 
   job->state->values[0].integer = IPP_JOB_HELD;
   job->hold_until               = holdtime;
 
  /*
-  * Update attribute with a string representing GMT time (HH:MM:SS)...
+  * Update the job-hold-until attribute with a string representing GMT
+  * time (HH:MM:SS)...
   */
 
   holddate = gmtime(&holdtime);
   snprintf(holdstr, sizeof(holdstr), "%d:%d:%d", holddate->tm_hour, 
-  						 holddate->tm_min,
-  						 holddate->tm_sec);
+	   holddate->tm_min, holddate->tm_sec);
 
   if ((attr = ippFindAttribute(job->attrs, "job-hold-until", IPP_TAG_KEYWORD)) == NULL)
     attr = ippFindAttribute(job->attrs, "job-hold-until", IPP_TAG_NAME);
@@ -2753,5 +2809,5 @@ set_hold_until(job_t *job, 		/* I - Job to update */
 
 
 /*
- * End of "$Id: job.c,v 1.23.4.2 2004/09/26 18:05:07 jlovell Exp $".
+ * End of "$Id: job.c,v 1.29 2004/06/05 03:49:46 jlovell Exp $".
  */

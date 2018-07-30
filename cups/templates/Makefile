@@ -1,5 +1,5 @@
 #
-# "$Id: Makefile,v 1.3 2003/02/10 23:53:30 jlovell Exp $"
+# "$Id: Makefile,v 1.4 2004/04/08 17:41:39 jlovell Exp $"
 #
 #   Template makefile for the Common UNIX Printing System (CUPS).
 #
@@ -66,6 +66,7 @@ FILES	=	add-class.tmpl \
 		printer-added.tmpl \
 		printer-configured.tmpl \
 		printer-confirm.tmpl \
+		printer-default.tmpl \
 		printer-deleted.tmpl \
 		printer-modified.tmpl \
 		printer-purge.tmpl \
@@ -99,10 +100,11 @@ install:
 	for file in $(FILES); do \
 		$(INSTALL_DATA) $$file $(DATADIR)/templates; \
 	done
+	#cd be; $(MAKE) $(MFLAGS) install
 	cd de; $(MAKE) $(MFLAGS) install
 	cd fr; $(MAKE) $(MFLAGS) install
 
 
 #
-# End of "$Id: Makefile,v 1.3 2003/02/10 23:53:30 jlovell Exp $".
+# End of "$Id: Makefile,v 1.4 2004/04/08 17:41:39 jlovell Exp $".
 #

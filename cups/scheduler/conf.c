@@ -1,9 +1,9 @@
 /*
- * "$Id: conf.c,v 1.23 2003/09/05 01:14:50 jlovell Exp $"
+ * "$Id: conf.c,v 1.31 2004/06/15 21:18:53 jlovell Exp $"
  *
  *   Configuration routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -40,6 +40,10 @@
 #include <pwd.h>
 #include <grp.h>
 
+#ifdef HAVE_DOMAINSOCKETS
+#  include <sys/un.h>
+#endif /* HAVE_DOMAINSOCKETS */
+
 #ifdef HAVE_CDSASSL
 #  include <Security/SecureTransport.h>
 #  include <Security/SecIdentitySearch.h>
@@ -57,37 +61,6 @@
 #ifndef INADDR_NONE
 #  define INADDR_NONE	0xffffffff
 #endif /* !INADDR_NONE */
-
-
-/*
- * Some OS's don't have hstrerror(), most notably Solaris...
- */
-
-#ifndef HAVE_HSTRERROR
-const char *					/* O - Error string */
-cups_hstrerror(int error)			/* I - Error number */
-{
-  static const char * const errors[] =
-		{
-		  "OK",
-		  "Host not found.",
-		  "Try again.",
-		  "Unrecoverable lookup error.",
-		  "No data associated with name."
-		};
-
-
-  if (error < 0 || error > 4)
-    return ("Unknown hostname lookup error.");
-  else
-    return (errors[error]);
-}
-#elif defined(_AIX)
-/*
- * AIX doesn't provide a prototype but does provide the function...
- */
-extern const char *hstrerror(int);
-#endif /* !HAVE_HSTRERROR */
 
 
 /*
@@ -125,6 +98,7 @@ static var_t	variables[] =
   { "DataDir",			&DataDir,		VAR_STRING },
   { "DefaultCharset",		&DefaultCharset,	VAR_STRING },
   { "DefaultLanguage",		&DefaultLanguage,	VAR_STRING },
+  { "DefaultShared", 		&DefaultShared,		VAR_BOOLEAN },
   { "DocumentRoot",		&DocumentRoot,		VAR_STRING },
   { "ErrorLog",			&ErrorLog,		VAR_STRING },
   { "FaxRetryLimit",		&FaxRetryLimit,		VAR_INTEGER },
@@ -210,7 +184,6 @@ ReadConfiguration(void)
   char		*language;		/* Language string */
   struct passwd	*user;			/* Default user */
   struct group	*group;			/* Default group */
-  int		run_user;		/* User that will be running cupsd */
   char		*old_serverroot,	/* Old ServerRoot */
 		*old_requestroot;	/* Old RequestRoot */
 
@@ -263,6 +236,15 @@ ReadConfiguration(void)
 
   if (NumListeners > 0)
   {
+#ifdef HAVE_DOMAINSOCKETS
+  int i;			/* Looping var */
+  listener_t	*lis;		/* Current listening socket */
+
+  for (i = NumListeners, lis = Listeners; i > 0; i --, lis ++)
+    if (lis->address.sin_family == AF_LOCAL)
+      ClearString((char **)&lis->address.sin_addr);
+#endif /* HAVE_DOMAINSOCKETS */
+
     free(Listeners);
 
     NumListeners = 0;
@@ -399,7 +381,13 @@ ReadConfiguration(void)
 
   BrowseInterval      = DEFAULT_INTERVAL;
   BrowsePort          = ippPort();
+
+#ifdef HAVE_MDNS
   BrowseProtocols     = BROWSE_CUPS;
+#else
+  BrowseProtocols     = BROWSE_CUPS;
+#endif /* HAVE_MDNS */
+
   BrowseShortNames    = TRUE;
   BrowseTimeout       = DEFAULT_TIMEOUT;
   Browsing            = TRUE;
@@ -414,10 +402,6 @@ ReadConfiguration(void)
 #ifdef __APPLE__
   MinCopies           = 1;
 #endif  /* __APPLE__ */
-#ifdef HAVE_NOTIFY_POST
-  NotifyPaused        = 1;
-  NotifyPending       = 0;
-#endif  /* HAVE_NOTIFY_POST */
 
  /*
   * Read the configuration file...
@@ -434,9 +418,9 @@ ReadConfiguration(void)
     return (0);
 
   if (RunAsUser)
-    run_user = User;
+    RunUser = User;
   else
-    run_user = getuid();
+    RunUser = getuid();
 
  /*
   * Use the default system group if none was supplied in cupsd.conf...
@@ -469,6 +453,32 @@ ReadConfiguration(void)
   LogMessage(L_INFO, "Loaded configuration file \"%s\"", ConfigurationFile);
 
  /*
+  * Check that we have at least one listen/port line; if not, report this
+  * as an error and exit!
+  */
+
+  if (NumListeners == 0)
+  {
+   /*
+    * No listeners!
+    */
+
+    LogMessage(L_EMERG, "No valid Listen or Port lines were found in the configuration file!");
+
+   /*
+    * Commit suicide...
+    */
+
+    kill(getpid(), SIGTERM);
+  }
+
+ /*
+  * Set the default locale using the language and charset...
+  */
+
+  SetStringf(&DefaultLocale, "%s.%s", DefaultLanguage, DefaultCharset);
+
+ /*
   * Update all relative filenames to include the full path from ServerRoot...
   */
 
@@ -486,13 +496,13 @@ ReadConfiguration(void)
     SetStringf(&ServerCertificate, "%s/%s", ServerRoot, ServerCertificate);
 
 #  if defined(HAVE_LIBSSL) || defined(HAVE_GNUTLS)
-  chown(ServerCertificate, run_user, Group);
+  chown(ServerCertificate, RunUser, Group);
   chmod(ServerCertificate, ConfigFilePerm);
 
   if (ServerKey[0] != '/')
     SetStringf(&ServerKey, "%s/%s", ServerRoot, ServerKey);
 
-  chown(ServerKey, run_user, Group);
+  chown(ServerKey, RunUser, Group);
   chmod(ServerKey, ConfigFilePerm);
 #  endif /* HAVE_LIBSSL || HAVE_GNUTLS */
 #endif /* HAVE_SSL */
@@ -502,27 +512,27 @@ ReadConfiguration(void)
   * writable by the user and group in the cupsd.conf file...
   */
 
-  chown(ServerRoot, run_user, Group);
-  chmod(ServerRoot, 0755);
+  chown(ServerRoot, RunUser, Group);
+  chmod(ServerRoot, 0775);
 
   snprintf(temp, sizeof(temp), "%s/certs", ServerRoot);
-  chown(temp, run_user, Group);
+  chown(temp, RunUser, Group);
   chmod(temp, 0711);
 
   snprintf(temp, sizeof(temp), "%s/ppd", ServerRoot);
-  chown(temp, run_user, Group);
+  chown(temp, RunUser, Group);
   chmod(temp, 0755);
 
   snprintf(temp, sizeof(temp), "%s/ssl", ServerRoot);
-  chown(temp, run_user, Group);
+  chown(temp, RunUser, Group);
   chmod(temp, 0700);
 
   snprintf(temp, sizeof(temp), "%s/cupsd.conf", ServerRoot);
-  chown(temp, run_user, Group);
+  chown(temp, RunUser, Group);
   chmod(temp, ConfigFilePerm);
 
   snprintf(temp, sizeof(temp), "%s/classes.conf", ServerRoot);
-  chown(temp, run_user, Group);
+  chown(temp, RunUser, Group);
 #ifdef __APPLE__
   chmod(temp, 0600);
 #else
@@ -530,7 +540,7 @@ ReadConfiguration(void)
 #endif /* __APPLE__ */
 
   snprintf(temp, sizeof(temp), "%s/printers.conf", ServerRoot);
-  chown(temp, run_user, Group);
+  chown(temp, RunUser, Group);
 #ifdef __APPLE__
   chmod(temp, 0600);
 #else
@@ -546,7 +556,7 @@ ReadConfiguration(void)
   * permissions...
   */
 
-  chown(RequestRoot, run_user, Group);
+  chown(RequestRoot, RunUser, Group);
   chmod(RequestRoot, 0710);
 
   if (strncmp(TempDir, RequestRoot, strlen(RequestRoot)) == 0)
@@ -556,7 +566,7 @@ ReadConfiguration(void)
     * is under the spool directory...
     */
 
-    chown(TempDir, run_user, Group);
+    chown(TempDir, RunUser, Group);
     chmod(TempDir, 01770);
   }
 
@@ -690,6 +700,8 @@ ReadConfiguration(void)
     LoadAllPrinters();
     LoadAllClasses();
 
+    CreateCommonData();
+
    /*
     * Load devices and PPDs...
     */
@@ -713,7 +725,11 @@ ReadConfiguration(void)
     LogMessage(L_INFO, "Full reload complete.");
   }
   else
+  {
+    CreateCommonData();
+
     LogMessage(L_INFO, "Partial reload complete.");
+  }
 
  /*
   * Reset the reload state...
@@ -1044,6 +1060,12 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
 	  BrowseProtocols |= BROWSE_SLP;
         else if (strcasecmp(value, "ldap") == 0)
 	  BrowseProtocols |= BROWSE_LDAP;
+#ifdef HAVE_MDNS
+        else if (strcasecmp(value, "mdns") == 0 || 
+        	 strcasecmp(value, "rendezvous") == 0 || 
+        	 strcasecmp(value, "dnssd") == 0)
+	  BrowseProtocols |= BROWSE_MDNS;
+#endif /* HAVE_MDNS */
         else if (strcasecmp(value, "all") == 0)
 	  BrowseProtocols |= BROWSE_ALL;
 	else
@@ -1171,6 +1193,13 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
 	  else
 	    netmask = netmasks[ipcount - 1];
 
+          if ((address & ~netmask) != 0)
+	  {
+	    LogMessage(L_WARN, "Discarding extra bits in %s address %08x for netmask %08x...",
+	               name, address, netmask);
+            address &= netmask;
+	  }
+
           if (strcasecmp(name, "BrowseAllow") == 0)
 	    AllowIP(location, address, netmask);
 	  else
@@ -1236,9 +1265,13 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
 	if (value[0] == '*')
 	  value ++;
 
+        strlcpy(name, value, sizeof(name));
+	if ((nameptr = strchr(name, ' ')) != NULL)
+	  *nameptr = '\0';
+
         relay->from.type             = AUTH_NAME;
-	relay->from.mask.name.name   = strdup(value);
-	relay->from.mask.name.length = strlen(value);
+	relay->from.mask.name.name   = strdup(name);
+	relay->from.mask.name.length = strlen(name);
       }
       else
       {
@@ -1386,7 +1419,7 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
         User = atoi(value);
       else
       {
-      struct passwd *p;	/* Password information */
+        struct passwd *p;	/* Password information */
 
         endpwent();
 	p = getpwnam(value);
@@ -1541,13 +1574,13 @@ read_configuration(cups_file_t *fp)	/* I - File to read from */
 
 	      if (units && *units)
 	      {
-        	if (tolower(units[0]) == 'g')
+        	if (tolower(units[0] & 255) == 'g')
 		  n *= 1024 * 1024 * 1024;
-        	else if (tolower(units[0]) == 'm')
+        	else if (tolower(units[0] & 255) == 'm')
 		  n *= 1024 * 1024;
-		else if (tolower(units[0]) == 'k')
+		else if (tolower(units[0] & 255) == 'k')
 		  n *= 1024;
-		else if (tolower(units[0]) == 't')
+		else if (tolower(units[0] & 255) == 't')
 		  n *= 262144;
 	      }
 
@@ -1639,7 +1672,7 @@ read_location(cups_file_t *fp,		/* I - Configuration file */
 
     len = strlen(line);
 
-    while (len > 0 && isspace(line[len - 1]))
+    while (len > 0 && isspace(line[len - 1] & 255))
     {
       len --;
       line[len] = '\0';
@@ -1649,14 +1682,14 @@ read_location(cups_file_t *fp,		/* I - Configuration file */
     * Extract the name from the beginning of the line...
     */
 
-    for (value = line; isspace(*value); value ++);
+    for (value = line; isspace(*value & 255); value ++);
 
-    for (nameptr = name; *value != '\0' && !isspace(*value) &&
+    for (nameptr = name; *value != '\0' && !isspace(*value & 255) &&
                              nameptr < (name + sizeof(name) - 1);)
       *nameptr++ = *value++;
     *nameptr = '\0';
 
-    while (isspace(*value))
+    while (isspace(*value & 255))
       value ++;
 
     if (name[0] == '\0')
@@ -1678,7 +1711,7 @@ read_location(cups_file_t *fp,		/* I - Configuration file */
       while (*value)
       {
         for (valptr = value;
-	     !isspace(*valptr) && *valptr != '>' && *valptr;
+	     !isspace(*valptr & 255) && *valptr != '>' && *valptr;
 	     valptr ++);
 
 	if (*valptr)
@@ -1702,7 +1735,7 @@ read_location(cups_file_t *fp,		/* I - Configuration file */
 	  LogMessage(L_WARN, "Unknown request type %s on line %d!", value,
 	             linenum);
 
-        for (value = valptr; isspace(*value) || *value == '>'; value ++);
+        for (value = valptr; isspace(*value & 255) || *value == '>'; value ++);
       }
 
       if (strcasecmp(name, "<LimitExcept") == 0)
@@ -1765,7 +1798,7 @@ read_location(cups_file_t *fp,		/* I - Configuration file */
 
 	value += 4;
 
-	while (isspace(*value))
+	while (isspace(*value & 255))
 	  value ++;
       }
 
@@ -1807,7 +1840,7 @@ read_location(cups_file_t *fp,		/* I - Configuration file */
 	else
 	  DenyIP(loc, ~0, 0);
       }
-      else if (value[0] == '*' || value[0] == '.' || !isdigit(value[0]))
+      else if (value[0] == '*' || value[0] == '.' || !isdigit(value[0] & 255))
       {
        /*
         * Host or domain name...
@@ -1854,6 +1887,13 @@ read_location(cups_file_t *fp,		/* I - Configuration file */
 	}
 	else
 	  netmask = netmasks[ipcount - 1];
+
+        if ((address & ~netmask) != 0)
+	{
+	  LogMessage(L_WARN, "Discarding extra bits in %s address %08x for netmask %08x...",
+	             name, address, netmask);
+          address &= netmask;
+	}
 
         if (strcasecmp(name, "Allow") == 0)
 	  AllowIP(loc, address, netmask);
@@ -1945,7 +1985,7 @@ read_location(cups_file_t *fp,		/* I - Configuration file */
       */
 
       for (valptr = value;
-	   !isspace(*valptr) && *valptr != '>' && *valptr;
+	   !isspace(*valptr & 255) && *valptr != '>' && *valptr;
 	   valptr ++);
 
       if (*valptr)
@@ -1969,14 +2009,14 @@ read_location(cups_file_t *fp,		/* I - Configuration file */
 
       for (value = valptr; *value;)
       {
-        for (valptr = value; !isspace(*valptr) && *valptr; valptr ++);
+        for (valptr = value; !isspace(*valptr & 255) && *valptr; valptr ++);
 
 	if (*valptr)
 	  *valptr++ = '\0';
 
         AddName(loc, value);
 
-        for (value = valptr; isspace(*value); value ++);
+        for (value = valptr; isspace(*value & 255); value ++);
       }
     }
     else if (strcasecmp(name, "Satisfy") == 0)
@@ -2019,67 +2059,94 @@ get_address(char               *value,		/* I - Value string */
   */
 
   memset(address, 0, sizeof(struct sockaddr_in));
-  address->sin_family      = AF_INET;
-  address->sin_addr.s_addr = htonl(defaddress);
-  address->sin_port        = htons(defport);
 
+#ifdef HAVE_DOMAINSOCKETS
  /*
-  * Try to grab a hostname and port number...
+  * If the value begins with a / it's a Unix domain socket name
   */
 
-  switch (sscanf(value, "%255[^:]:%255s", hostname, portname))
+  if (*value == '/')
   {
-    case 1 :
-        if (strchr(hostname, '.') == NULL && defaddress == INADDR_ANY)
-	{
-	 /*
-	  * Hostname is a port number...
-	  */
-
-	  strlcpy(portname, hostname, sizeof(portname));
-	  hostname[0] = '\0';
-	}
-        else
-          portname[0] = '\0';
-        break;
-    case 2 :
-        break;
-    default :
-	LogMessage(L_ERROR, "Unable to decode address \"%s\"!", value);
-        return (0);
-  }
-
- /*
-  * Decode the hostname and port number as needed...
-  */
-
-  if (hostname[0] && strcmp(hostname, "*"))
-  {
-    if ((host = httpGetHostByName(hostname)) == NULL)
+    if (strlen(value) >= sizeof(((struct sockaddr_un*)NULL)->sun_path))
     {
-      LogMessage(L_ERROR, "httpGetHostByName(\"%s\") failed - %s!", hostname,
-                 hstrerror(h_errno));
+      LogMessage(L_ERROR, "Domain socket name too long \"%s\"!", value);
       return (0);
     }
 
-    memcpy(&(address->sin_addr), host->h_addr, host->h_length);
-    address->sin_port = htons(defport);
-  }
+    address->sin_family = AF_LOCAL;
 
-  if (portname[0] != '\0')
+   /*
+    * Instead of copying the string into sockaddr_un.sun_path
+    * we just store a pointer to the string in an sockaddr_in.
+    */
+
+    (char *)address->sin_addr.s_addr = strdup(value);
+  }
+  else
+#endif /* HAVE_DOMAINSOCKETS */
   {
-    if (isdigit(portname[0]))
-      address->sin_port = htons(atoi(portname));
-    else
+    address->sin_family      = AF_INET;
+    address->sin_addr.s_addr = htonl(defaddress);
+    address->sin_port        = htons(defport);
+
+   /*
+    * Try to grab a hostname and port number...
+    */
+
+    switch (sscanf(value, "%255[^:]:%255s", hostname, portname))
     {
-      if ((port = getservbyname(portname, NULL)) == NULL)
+      case 1 :
+          if (strchr(hostname, '.') == NULL && defaddress == INADDR_ANY)
+	  {
+	   /*
+	    * Hostname is a port number...
+	    */
+
+	    strlcpy(portname, hostname, sizeof(portname));
+	    hostname[0] = '\0';
+	  }
+          else
+            portname[0] = '\0';
+          break;
+      case 2 :
+          break;
+      default :
+	  LogMessage(L_ERROR, "Unable to decode address \"%s\"!", value);
+          return (0);
+    }
+
+   /*
+    * Decode the hostname and port number as needed...
+    */
+
+    if (hostname[0] && strcmp(hostname, "*"))
+    {
+      if ((host = httpGetHostByName(hostname)) == NULL)
       {
-        LogMessage(L_ERROR, "getservbyname(\"%s\") failed - %s!", portname,
-                   strerror(errno));
+        LogMessage(L_ERROR, "httpGetHostByName(\"%s\") failed - %s!", hostname,
+                   hstrerror(h_errno));
         return (0);
       }
+
+      memcpy(&(address->sin_addr), host->h_addr, host->h_length);
+      address->sin_port = htons(defport);
+    }
+
+    if (portname[0] != '\0')
+    {
+      if (isdigit(portname[0]))
+        address->sin_port = htons(atoi(portname));
       else
-        address->sin_port = htons(port->s_port);
+      {
+        if ((port = getservbyname(portname, NULL)) == NULL)
+        {
+          LogMessage(L_ERROR, "getservbyname(\"%s\") failed - %s!", portname,
+                     strerror(errno));
+          return (0);
+        }
+        else
+          address->sin_port = htons(port->s_port);
+      }
     }
   }
 
@@ -2177,5 +2244,5 @@ CDSAGetServerCerts(void)
 
 
 /*
- * End of "$Id: conf.c,v 1.23 2003/09/05 01:14:50 jlovell Exp $".
+ * End of "$Id: conf.c,v 1.31 2004/06/15 21:18:53 jlovell Exp $".
  */

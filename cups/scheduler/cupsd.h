@@ -1,9 +1,9 @@
 /*
- * "$Id: cupsd.h,v 1.1.1.12 2003/08/03 06:18:45 jlovell Exp $"
+ * "$Id: cupsd.h,v 1.7 2004/04/23 00:54:43 jlovell Exp $"
  *
  *   Main header file for the Common UNIX Printing System (CUPS) scheduler.
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -22,21 +22,13 @@
  *         WWW: http://www.cups.org
  */
 
-#include <cups/string.h>
-#ifdef __sun
-/*
- * Define FD_SETSIZE to CUPS_MAX_FDS on Solaris to get the correct version of
- * select() for large numbers of file descriptors.
- */
-
-#  define FD_SETSIZE	CUPS_MAX_FDS
-#endif /* __sun */
-
 
 /*
  * Include necessary headers.
  */
 
+#include <cups/http-private.h>
+#include <cups/string.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <errno.h>
@@ -48,6 +40,9 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#ifdef HAVE_LIBGEN_H
+#  include <libgen.h>
+#endif /* HAVE_LIBGEN_H */
 
 #ifdef WIN32
 #  include <direct.h>
@@ -183,6 +178,8 @@ VAR int			MaxFDs,		/* Maximum number of files */
 VAR fd_set		*InputSet,	/* Input files for select() */
 			*OutputSet;	/* Output files for select() */
 
+VAR time_t		ReloadTime	VALUE(0);
+					/* Time of reload request... */
 VAR int			NeedReload	VALUE(RELOAD_ALL),
 					/* Need to load configuration? */
 			SignalCount	VALUE(0);
@@ -195,6 +192,12 @@ VAR ipp_t		*Devices	VALUE(NULL),
 					/* Available devices */
 			*PPDs		VALUE(NULL);
 					/* Available PPDs */
+#ifdef __APPLE__
+VAR int			Sleeping	VALUE(0);
+					/* True if machine is entering or in a sleep state */
+VAR int			SysEventPipes[2] VALUE2(-1,-1);
+					/* Pipes for system event notifications */
+#endif	/* __APPLE__ */
 
 
 /*
@@ -213,7 +216,12 @@ extern void	SetStringf(char **s, const char *f, ...);
 extern void	StartServer(void);
 extern void	StopServer(void);
 
+#ifdef __APPLE__
+extern void	StartSysEventMonitor(void);
+extern void	StopSysEventMonitor(void);
+extern void	UpdateSysEventMonitor(void);
+#endif	/* __APPLE__ */
 
 /*
- * End of "$Id: cupsd.h,v 1.1.1.12 2003/08/03 06:18:45 jlovell Exp $".
+ * End of "$Id: cupsd.h,v 1.7 2004/04/23 00:54:43 jlovell Exp $".
  */

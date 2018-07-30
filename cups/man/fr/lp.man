@@ -1,5 +1,5 @@
 .\"
-.\" "$Id$"
+.\" "$Id: lp.man,v 1.4 2003/04/16 19:03:38 mike Exp $"
 .\"
 .\"   lp/cancel man page for the Common UNIX Printing System (CUPS).
 .\"   Based on cvs revision 1.12
@@ -180,5 +180,5 @@ Copyright 1993-2003 Easy Software Products, Tous droits réservés.
 .SH TRADUCTION
 Gilles QUERRET <gilles.querret@nerim.net>
 .\"
-.\" End of "$Id$".
+.\" End of "$Id: lp.man,v 1.4 2003/04/16 19:03:38 mike Exp $".
 .\"

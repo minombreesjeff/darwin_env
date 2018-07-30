@@ -1,10 +1,10 @@
 /*
- * "$Id: http.h,v 1.1.1.13 2003/05/14 05:23:46 jlovell Exp $"
+ * "$Id: http.h,v 1.8 2004/04/08 17:41:36 jlovell Exp $"
  *
  *   Hyper-Text Transport Protocol definitions for the Common UNIX Printing
  *   System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -270,7 +270,9 @@ typedef struct
 					/* Field values */
   char			*data;		/* Pointer to data buffer */
   http_encoding_t	data_encoding;	/* Chunked or not */
-  int			data_remaining;	/* Number of bytes left */
+  int			deprecated_data_remaining;
+  					/* DEPRECATED: mirrors data_remaining below as */
+  					/*   min(INT_MAX, data_remaining) */
   int			used;		/* Number of bytes used in buffer */
   char			buffer[HTTP_MAX_BUFFER];
 					/* Buffer for messages */
@@ -285,6 +287,14 @@ typedef struct
   fd_set		*input_set;	/* select() set for httpWait() */
   http_status_t		expect;		/* Expect: header */
   char			*cookie;	/* Cookie value(s) */
+  /**** New in CUPS 1.1.20 ****/
+  char			authstring[HTTP_MAX_VALUE],
+					/* Current Authentication value */
+			userpass[HTTP_MAX_VALUE];
+					/* Username:password string */
+  int			digest_tries;	/* Number of tries for digest auth */
+  /**** New in CUPS 1.1.20+ ****/
+  off_t			data_remaining;	/* Number of bytes left */
 } http_t;
 
 
@@ -359,5 +369,5 @@ extern int		httpWait(http_t *http, int msec);
 #endif /* !_CUPS_HTTP_H_ */
 
 /*
- * End of "$Id: http.h,v 1.1.1.13 2003/05/14 05:23:46 jlovell Exp $".
+ * End of "$Id: http.h,v 1.8 2004/04/08 17:41:36 jlovell Exp $".
  */

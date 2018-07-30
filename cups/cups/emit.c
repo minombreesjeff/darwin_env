@@ -1,9 +1,9 @@
 /*
- * "$Id: emit.c,v 1.8.4.2 2004/01/13 23:41:30 gelphman Exp $"
+ * "$Id: emit.c,v 1.13 2004/04/08 17:41:35 jlovell Exp $"
  *
  *   PPD code emission routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -272,12 +272,14 @@ ppdEmitAfterOrder(ppd_file_t    *ppd,	/* I - PPD file record */
 	{
 	  int min_orient, max_orient;	/* Minimum and maximum orientations */
 
+
           if (sscanf(attr->value, "%d%*s%d%d", &pos, &min_orient,
 	             &max_orient) != 3)
 	    pos = 4;
 	  else
 	  {
-            pos = pos - 1;
+	    pos --;
+
             if (pos < 0 || pos > 4)
 	      pos = 4;
 
@@ -415,9 +417,9 @@ ppdEmitFd(ppd_file_t    *ppd,		/* I - PPD file record */
       {
         custom_size = 0;
 
-      snprintf(buf, sizeof(buf), "%%%%BeginFeature: *%s %s\n",
-               ((ppd_option_t *)choices[i]->option)->keyword,
-	       choices[i]->choice);
+	snprintf(buf, sizeof(buf), "%%%%BeginFeature: *%s %s\n",
+        	 ((ppd_option_t *)choices[i]->option)->keyword,
+		 choices[i]->choice);
       }
 
       if (write(fd, buf, strlen(buf)) < 1)
@@ -483,7 +485,8 @@ ppdEmitFd(ppd_file_t    *ppd,		/* I - PPD file record */
 	    pos = 4;
 	  else
 	  {
-            pos = pos - 1;
+	    pos --;
+
             if (pos < 0 || pos > 4)
 	      pos = 4;
 
@@ -718,14 +721,14 @@ ppd_handle_media(ppd_file_t *ppd)
 
     ppdMarkOption(ppd, "PageRegion", size->name);
 
-    /* 
-        RequiresPageRegion does not apply to manual feed so we need to check that we are not doing manual feed
-        before unmarking Page Region.
+   /*
+    * RequiresPageRegion does not apply to manual feed so we need to
+    * check that we are not doing manual feed before unmarking PageRegion.
     */
-    if ( !(manual_feed != NULL && strcasecmp(manual_feed->choice, "True") == 0) &&
-        ( (rpr && rpr->value && !strcmp(rpr->value, "False")) ||
-        (!rpr && !ppd->num_filters) )
-        )
+
+    if (!(manual_feed && !strcasecmp(manual_feed->choice, "True")) &&
+        ((rpr && rpr->value && !strcmp(rpr->value, "False")) ||
+         (!rpr && !ppd->num_filters)))
     {
      /*
       * Either the PPD file specifies no PageRegion code or the PPD file
@@ -761,5 +764,5 @@ ppd_sort(ppd_choice_t **c1,	/* I - First choice */
 
 
 /*
- * End of "$Id: emit.c,v 1.8.4.2 2004/01/13 23:41:30 gelphman Exp $".
+ * End of "$Id: emit.c,v 1.13 2004/04/08 17:41:35 jlovell Exp $".
  */

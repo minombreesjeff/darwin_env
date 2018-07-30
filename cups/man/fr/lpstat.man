@@ -1,5 +1,5 @@
 .\"
-.\" "$Id$"
+.\" "$Id: lpstat.man,v 1.3 2003/03/12 20:41:42 mike Exp $"
 .\"
 .\"   lpstat man page for the Common UNIX Printing System (CUPS).
 .\"   Based on cvs revision 1.10
@@ -140,5 +140,5 @@ Copyright 1993-2003 Easy Software Products, Tous droits réservés.
 .SH TRADUCTION
 Gilles QUERRET <gilles.querret@nerim.net>
 .\"
-.\" "$Id$"
+.\" "$Id: lpstat.man,v 1.3 2003/03/12 20:41:42 mike Exp $"
 .\"

@@ -1,9 +1,9 @@
 dnl
-dnl "$Id: cups-common.m4,v 1.11 2003/09/05 01:14:50 jlovell Exp $"
+dnl "$Id: cups-common.m4,v 1.18 2004/04/23 00:54:43 jlovell Exp $"
 dnl
 dnl   Common configuration stuff for the Common UNIX Printing System (CUPS).
 dnl
-dnl   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+dnl   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 dnl
 dnl   These coded instructions, statements, and computer programs are the
 dnl   property of Easy Software Products and are protected by Federal
@@ -29,7 +29,7 @@ dnl Set the name of the config header file...
 AC_CONFIG_HEADER(config.h)
 
 dnl Version number information...
-CUPS_VERSION="1.1.20rc1"
+CUPS_VERSION="1.1.21rc1"
 AC_SUBST(CUPS_VERSION)
 AC_DEFINE_UNQUOTED(CUPS_SVERSION, "CUPS v$CUPS_VERSION")
 
@@ -55,9 +55,9 @@ AC_PATH_PROG(HTMLDOC,htmldoc)
 AC_PATH_PROG(LN,ln)
 AC_PATH_PROG(MV,mv)
 AC_PATH_PROG(NROFF,nroff)
-if test "$NROFF" = ""; then
+if test "x$NROFF" = x; then
 	AC_PATH_PROG(GROFF,groff)
-	if test "$GROFF" = ""; then
+	if test "x$GROFF" = x; then
         	NROFF="echo"
 	else
         	NROFF="$GROFF -T ascii"
@@ -124,6 +124,8 @@ AC_CHECK_HEADER(strings.h,AC_DEFINE(HAVE_STRINGS_H))
 AC_CHECK_HEADER(bstring.h,AC_DEFINE(HAVE_BSTRING_H))
 AC_CHECK_HEADER(usersec.h,AC_DEFINE(HAVE_USERSEC_H))
 AC_CHECK_HEADER(sys/ioctl.h,AC_DEFINE(HAVE_SYS_IOCTL_H))
+AC_CHECK_HEADER(inttypes.h,AC_DEFINE(HAVE_INTTYPES_H))
+AC_CHECK_HEADER(libgen.h,AC_DEFINE(HAVE_LIBGEN_H))
 
 dnl Checks for string functions.
 AC_CHECK_FUNCS(strdup strcasecmp strncasecmp strlcat strlcpy)
@@ -179,8 +181,12 @@ AC_CHECK_HEADER(notify.h, AC_DEFINE(HAVE_NOTIFY_H))
 AC_CHECK_FUNCS(notify_post)
 
 dnl Check for CFLocaleCreateCanonicalLocaleIdentifierFromString...
+AC_MSG_CHECKING(for CFLocaleCreateCanonicalLocaleIdentifierFromString)
 if test "$uname" = "Darwin" -a $uversion -ge 700; then
-	AC_DEFINE(HAVE_CF_LOCALE_ID),
+	AC_DEFINE(HAVE_CF_LOCALE_ID)
+	AC_MSG_RESULT(yes)
+else
+	AC_MSG_RESULT(no)
 fi
 
 dnl Flags for "ar" command...
@@ -198,8 +204,8 @@ AC_SUBST(ARFLAGS)
 dnl Extra platform-specific libraries...
 case $uname in
         Darwin*)
-                BACKLIBS="-framework IOKit"
-                COMMONLIBS="-framework CoreFoundation"
+                BACKLIBS="-framework IOKit -framework AppleTalk"
+                COMMONLIBS="-framework CoreFoundation -framework IOKit"
                 ;;
         *)
                 BACKLIBS=""
@@ -211,5 +217,5 @@ AC_SUBST(BACKLIBS)
 AC_SUBST(COMMONLIBS)
 
 dnl
-dnl End of "$Id: cups-common.m4,v 1.11 2003/09/05 01:14:50 jlovell Exp $".
+dnl End of "$Id: cups-common.m4,v 1.18 2004/04/23 00:54:43 jlovell Exp $".
 dnl

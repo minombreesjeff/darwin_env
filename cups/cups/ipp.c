@@ -1,10 +1,10 @@
 /*
- * "$Id: ipp.c,v 1.1.1.16 2003/07/16 17:21:42 jlovell Exp $"
+ * "$Id: ipp.c,v 1.6 2004/04/08 17:41:36 jlovell Exp $"
  *
  *   Internet Printing Protocol support functions for the Common UNIX
  *   Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -76,7 +76,17 @@
 #include "debug.h"
 #include <ctype.h>
 #include <errno.h>
+#ifdef HAVE_INTTYPES_H
+#  include <inttypes.h>
+#endif /* HAVE_INTTYPES_H */
 
+#ifdef WIN32
+#  include <io.h>
+#endif // WIN32
+
+#ifndef min
+#  define 	min(a,b)	((a) < (b) ? (a) : (b))
+#endif /* !min */
 
 /*
  * Local functions...
@@ -381,7 +391,7 @@ ippAddString(ipp_t      *ipp,			/* I - IPP request */
       if (*p == '_')
         *p = '-';
       else
-        *p = tolower(*p);
+        *p = tolower(*p & 255);
   }
 
   return (attr);
@@ -824,8 +834,8 @@ ipp_state_t					/* O - Current state */
 ippRead(http_t *http,				/* I - HTTP connection */
         ipp_t  *ipp)				/* I - IPP data */
 {
-  DEBUG_printf(("ippRead(http=%p, ipp=%p), data_remaining=%d\n", http, ipp,
-                http ? http->data_remaining : -1));
+  DEBUG_printf(("ippRead(http=%p, ipp=%p), data_remaining=%" PRIdMAX "\n", http, ipp,
+                (intmax_t)(http ? http->data_remaining : -1)));
 
   if (http == NULL)
     return (IPP_ERROR);
@@ -1718,7 +1728,7 @@ ippWriteIO(void       *dst,			/* I - Destination */
                   DEBUG_printf(("ippWrite: writing string = %d, \'%s\'\n", n,
 		                value->string.text));
 
-                  if ((sizeof(buffer) - (bufptr - buffer)) < (n + 2))
+                  if ((int)(sizeof(buffer) - (bufptr - buffer)) < (n + 2))
 		  {
                     if ((*cb)(dst, buffer, bufptr - buffer) < 0)
 	            {
@@ -1943,7 +1953,7 @@ ippWriteIO(void       *dst,			/* I - Destination */
                   if (n > (sizeof(buffer) - 2))
 		    return (IPP_ERROR);
 
-                  if ((sizeof(buffer) - (bufptr - buffer)) < (n + 2))
+                  if ((int)(sizeof(buffer) - (bufptr - buffer)) < (n + 2))
 		  {
                     if ((*cb)(dst, buffer, bufptr - buffer) < 0)
 	            {
@@ -2093,7 +2103,7 @@ ippWriteIO(void       *dst,			/* I - Destination */
                   if (n > (sizeof(buffer) - 2))
 		    return (IPP_ERROR);
 
-                  if ((sizeof(buffer) - (bufptr - buffer)) < (n + 2))
+                  if ((int)(sizeof(buffer) - (bufptr - buffer)) < (n + 2))
 		  {
                     if ((*cb)(dst, buffer, bufptr - buffer) < 0)
 	            {
@@ -2460,6 +2470,7 @@ ipp_read_http(http_t      *http,		/* I - Client connection */
 
       http->used           -= bytes;
       http->data_remaining -= bytes;
+      http->deprecated_data_remaining = min(INT_MAX, http->data_remaining);
 
       if (http->used > 0)
 	memmove(http->buffer, http->buffer + bytes, http->used);
@@ -2491,16 +2502,24 @@ ipp_read_http(http_t      *http,		/* I - Client connection */
       * Wait a maximum of 1 second for data...
       */
 
-      if (!httpWait(http, 1000))
+      if (!http->blocking)
       {
        /*
-        * Signal no data...
+        * Wait up to 1 second for more data on non-blocking sockets...
 	*/
 
-        bytes = -1;
-	break;
+	if (!httpWait(http, 1000))
+	{
+	 /*
+          * Signal no data...
+	  */
+
+          bytes = -1;
+	  break;
+	}
       }
-      else if ((bytes = httpRead(http, (char *)buffer, length - tbytes)) <= 0)
+
+      if ((bytes = httpRead(http, (char *)buffer, length - tbytes)) <= 0)
         break;
     }
   }
@@ -2545,5 +2564,5 @@ ipp_write_file(int         *fd,			/* I - File descriptor */
 
 
 /*
- * End of "$Id: ipp.c,v 1.1.1.16 2003/07/16 17:21:42 jlovell Exp $".
+ * End of "$Id: ipp.c,v 1.6 2004/04/08 17:41:36 jlovell Exp $".
  */

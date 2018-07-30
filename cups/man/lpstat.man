@@ -1,5 +1,5 @@
 .\"
-.\" "$Id: lpstat.man,v 1.1.1.9 2003/02/10 21:58:47 jlovell Exp $"
+.\" "$Id: lpstat.man,v 1.1.1.10 2004/06/05 02:42:32 jlovell Exp $"
 .\"
 .\"   lpstat man page for the Common UNIX Printing System (CUPS).
 .\"
@@ -136,5 +136,5 @@ http://localhost:631/documentation.html
 .SH COPYRIGHT
 Copyright 1993-2003 by Easy Software Products, All Rights Reserved.
 .\"
-.\" End of "$Id: lpstat.man,v 1.1.1.9 2003/02/10 21:58:47 jlovell Exp $".
+.\" End of "$Id: lpstat.man,v 1.1.1.10 2004/06/05 02:42:32 jlovell Exp $".
 .\"

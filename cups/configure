@@ -309,7 +309,7 @@ ac_includes_default="\
 #endif"
 
 ac_default_prefix=/
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS CUPS_USER CUPS_GROUP CUPS_VERSION AWK CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT CXX CXXFLAGS ac_ct_CXX CPP INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA RANLIB ac_ct_RANLIB AR HTMLDOC LN MV NROFF GROFF RM SED STRIP LIBMALLOC LIBPAPER EGREP ARFLAGS BACKLIBS COMMONLIBS INITDIR INITDDIR INSTALL_SYSV CUPS_SERVERROOT CUPS_SERVERBIN CUPS_LOGDIR CUPS_REQUESTS CUPS_LOCALEDIR CUPS_DATADIR CUPS_DOCROOT CUPS_FONTPATH AMANDIR PMANDIR CAT1EXT CAT3EXT CAT5EXT CAT8EXT MAN8EXT MAN8DIR DSO DSOFLAGS LIBCUPS LIBCUPSIMAGE LINKCUPS LINKCUPSIMAGE DSOLIBS IMGLIBS EXPORT_LDFLAGS LIBTOOL OPTIM CXXLIBS LIBJPEG LIBPNG LIBTIFF LIBZ EXPORT_LIBJPEG EXPORT_LIBPNG EXPORT_LIBTIFF EXPORT_LIBZ NETLIBS LIBSLP SSLLIBS EXPORT_SSLLIBS PAMDIR PAMLIBS PAMMOD JAVA PERL PHP PYTHON LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS CUPS_USER CUPS_GROUP CUPS_VERSION AWK CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT CXX CXXFLAGS ac_ct_CXX CPP INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA RANLIB ac_ct_RANLIB AR HTMLDOC LN MV NROFF GROFF RM SED STRIP LIBMALLOC LIBPAPER EGREP ARFLAGS BACKLIBS COMMONLIBS INITDIR INITDDIR INSTALL_SYSV CUPS_SERVERROOT CUPS_SERVERBIN CUPS_LOGDIR CUPS_REQUESTS CUPS_LOCALEDIR CUPS_DATADIR CUPS_DOCROOT CUPS_FONTPATH AMANDIR PMANDIR CAT1EXT CAT3EXT CAT5EXT CAT8EXT MAN8EXT MAN8DIR DSO DSOFLAGS LIBCUPS LIBCUPSIMAGE LINKCUPS LINKCUPSIMAGE DSOLIBS IMGLIBS EXPORT_LDFLAGS LIBTOOL OPTIM CXXLIBS LIBJPEG LIBPNG LIBTIFF LIBZ EXPORT_LIBJPEG EXPORT_LIBPNG EXPORT_LIBTIFF EXPORT_LIBZ NETLIBS CUPS_DEFAULT_DOMAINSOCKET LIBSLP SSLFLAGS SSLLIBS EXPORT_SSLLIBS PAMDIR PAMFILE PAMLIBS PAMMOD MDNSLIBS JAVA PERL PHP PYTHON LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -854,12 +854,14 @@ Optional Features:
   --enable-libtool-unsupported=LIBTOOL_PATH
                           turn on building with libtool (UNSUPPORTED!), default=no
   --enable-debug          turn on debugging, default=no
+  --enable-domainsockets       enable unix domain socket support, default=no
   --enable-slp            turn on SLP support, default=yes
   --enable-ssl            turn on SSL/TLS support, default=yes
   --enable-openssl        use OpenSSL for SSL/TLS support, default=yes
   --enable-gnutls         use GNU TLS for SSL/TLS support, default=yes
   --enable-cdsassl        use CDSA for SSL/TLS support, default=yes
   --enable-pam            turn on PAM support, default=yes
+  --enable-mdns            turn on Multicast DNS support, default=yes
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -871,11 +873,14 @@ Optional Packages:
   --with-logdir           set path for log files
   --with-rcdir            set path for rc scripts
   --with-optim="flags"    set optimization flags
-  --with-maxfiles=N       set maximum number of file descriptors for CUPS.
+  --with-maxfiles=N       set maximum number of file descriptors for scheduler
+  --with-domainsocket        set unix domain socket name
   --with-openslp-libs     set directory for OpenSLP library
   --with-openslp-includes set directory for OpenSLP includes
   --with-openssl-libs     set directory for OpenSSL library
   --with-openssl-includes set directory for OpenSSL includes
+  --with-mdns-libs        set directory for Multicast DNS library
+  --with-mdns-includes    set directory for Multicast DNS includes
   --with-java             set Java interpreter for web interfaces
   --with-perl             set Perl interpreter for web interfaces
   --with-php              set PHP interpreter for web interfaces
@@ -1351,6 +1356,7 @@ echo $ECHO_N "checking for default print group... $ECHO_C" >&6
 		else
 			GROUP_LIST="sys system root"
 		fi
+
 		CUPS_GROUP=""
 		for group in $GROUP_LIST; do
 			if test "`grep \^${group}: /etc/group`" != ""; then
@@ -1392,7 +1398,7 @@ _ACEOF
           ac_config_headers="$ac_config_headers config.h"
 
 
-CUPS_VERSION="1.1.20rc1"
+CUPS_VERSION="1.1.21rc1"
 
 cat >>confdefs.h <<_ACEOF
 #define CUPS_SVERSION "CUPS v$CUPS_VERSION"
@@ -3247,7 +3253,7 @@ else
 echo "${ECHO_T}no" >&6
 fi
 
-if test "$NROFF" = ""; then
+if test "x$NROFF" = x; then
 	# Extract the first word of "groff", so it can be a program name with args.
 set dummy groff; ac_word=$2
 echo "$as_me:$LINENO: checking for $ac_word" >&5
@@ -3287,7 +3293,7 @@ else
 echo "${ECHO_T}no" >&6
 fi
 
-	if test "$GROFF" = ""; then
+	if test "x$GROFF" = x; then
         	NROFF="echo"
 	else
         	NROFF="$GROFF -T ascii"
@@ -5680,6 +5686,280 @@ _ACEOF
 fi
 
 
+if test "${ac_cv_header_inttypes_h+set}" = set; then
+  echo "$as_me:$LINENO: checking for inttypes.h" >&5
+echo $ECHO_N "checking for inttypes.h... $ECHO_C" >&6
+if test "${ac_cv_header_inttypes_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_inttypes_h" >&5
+echo "${ECHO_T}$ac_cv_header_inttypes_h" >&6
+else
+  # Is the header compilable?
+echo "$as_me:$LINENO: checking inttypes.h usability" >&5
+echo $ECHO_N "checking inttypes.h usability... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+#include <inttypes.h>
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+         { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_header_compiler=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_header_compiler=no
+fi
+rm -f conftest.$ac_objext conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_compiler" >&5
+echo "${ECHO_T}$ac_header_compiler" >&6
+
+# Is the header present?
+echo "$as_me:$LINENO: checking inttypes.h presence" >&5
+echo $ECHO_N "checking inttypes.h presence... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <inttypes.h>
+_ACEOF
+if { (eval echo "$as_me:$LINENO: \"$ac_cpp conftest.$ac_ext\"") >&5
+  (eval $ac_cpp conftest.$ac_ext) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } >/dev/null; then
+  if test -s conftest.err; then
+    ac_cpp_err=$ac_c_preproc_warn_flag
+  else
+    ac_cpp_err=
+  fi
+else
+  ac_cpp_err=yes
+fi
+if test -z "$ac_cpp_err"; then
+  ac_header_preproc=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+  ac_header_preproc=no
+fi
+rm -f conftest.err conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_preproc" >&5
+echo "${ECHO_T}$ac_header_preproc" >&6
+
+# So?  What about this header?
+case $ac_header_compiler:$ac_header_preproc in
+  yes:no )
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: accepted by the compiler, rejected by the preprocessor!" >&5
+echo "$as_me: WARNING: inttypes.h: accepted by the compiler, rejected by the preprocessor!" >&2;}
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: inttypes.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+  no:yes )
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: present but cannot be compiled" >&5
+echo "$as_me: WARNING: inttypes.h: present but cannot be compiled" >&2;}
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: check for missing prerequisite headers?" >&5
+echo "$as_me: WARNING: inttypes.h: check for missing prerequisite headers?" >&2;}
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: inttypes.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+esac
+echo "$as_me:$LINENO: checking for inttypes.h" >&5
+echo $ECHO_N "checking for inttypes.h... $ECHO_C" >&6
+if test "${ac_cv_header_inttypes_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_cv_header_inttypes_h=$ac_header_preproc
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_inttypes_h" >&5
+echo "${ECHO_T}$ac_cv_header_inttypes_h" >&6
+
+fi
+if test $ac_cv_header_inttypes_h = yes; then
+  cat >>confdefs.h <<\_ACEOF
+#define HAVE_INTTYPES_H 1
+_ACEOF
+
+fi
+
+
+if test "${ac_cv_header_libgen_h+set}" = set; then
+  echo "$as_me:$LINENO: checking for libgen.h" >&5
+echo $ECHO_N "checking for libgen.h... $ECHO_C" >&6
+if test "${ac_cv_header_libgen_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_libgen_h" >&5
+echo "${ECHO_T}$ac_cv_header_libgen_h" >&6
+else
+  # Is the header compilable?
+echo "$as_me:$LINENO: checking libgen.h usability" >&5
+echo $ECHO_N "checking libgen.h usability... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+#include <libgen.h>
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+         { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_header_compiler=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_header_compiler=no
+fi
+rm -f conftest.$ac_objext conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_compiler" >&5
+echo "${ECHO_T}$ac_header_compiler" >&6
+
+# Is the header present?
+echo "$as_me:$LINENO: checking libgen.h presence" >&5
+echo $ECHO_N "checking libgen.h presence... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <libgen.h>
+_ACEOF
+if { (eval echo "$as_me:$LINENO: \"$ac_cpp conftest.$ac_ext\"") >&5
+  (eval $ac_cpp conftest.$ac_ext) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } >/dev/null; then
+  if test -s conftest.err; then
+    ac_cpp_err=$ac_c_preproc_warn_flag
+  else
+    ac_cpp_err=
+  fi
+else
+  ac_cpp_err=yes
+fi
+if test -z "$ac_cpp_err"; then
+  ac_header_preproc=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+  ac_header_preproc=no
+fi
+rm -f conftest.err conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_preproc" >&5
+echo "${ECHO_T}$ac_header_preproc" >&6
+
+# So?  What about this header?
+case $ac_header_compiler:$ac_header_preproc in
+  yes:no )
+    { echo "$as_me:$LINENO: WARNING: libgen.h: accepted by the compiler, rejected by the preprocessor!" >&5
+echo "$as_me: WARNING: libgen.h: accepted by the compiler, rejected by the preprocessor!" >&2;}
+    { echo "$as_me:$LINENO: WARNING: libgen.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: libgen.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+  no:yes )
+    { echo "$as_me:$LINENO: WARNING: libgen.h: present but cannot be compiled" >&5
+echo "$as_me: WARNING: libgen.h: present but cannot be compiled" >&2;}
+    { echo "$as_me:$LINENO: WARNING: libgen.h: check for missing prerequisite headers?" >&5
+echo "$as_me: WARNING: libgen.h: check for missing prerequisite headers?" >&2;}
+    { echo "$as_me:$LINENO: WARNING: libgen.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: libgen.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+esac
+echo "$as_me:$LINENO: checking for libgen.h" >&5
+echo $ECHO_N "checking for libgen.h... $ECHO_C" >&6
+if test "${ac_cv_header_libgen_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_cv_header_libgen_h=$ac_header_preproc
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_libgen_h" >&5
+echo "${ECHO_T}$ac_cv_header_libgen_h" >&6
+
+fi
+if test $ac_cv_header_libgen_h = yes; then
+  cat >>confdefs.h <<\_ACEOF
+#define HAVE_LIBGEN_H 1
+_ACEOF
+
+fi
+
+
 
 
 
@@ -6663,11 +6943,18 @@ fi
 done
 
 
+echo "$as_me:$LINENO: checking for CFLocaleCreateCanonicalLocaleIdentifierFromString" >&5
+echo $ECHO_N "checking for CFLocaleCreateCanonicalLocaleIdentifierFromString... $ECHO_C" >&6
 if test "$uname" = "Darwin" -a $uversion -ge 700; then
 	cat >>confdefs.h <<\_ACEOF
 #define HAVE_CF_LOCALE_ID 1
 _ACEOF
-,
+
+	echo "$as_me:$LINENO: result: yes" >&5
+echo "${ECHO_T}yes" >&6
+else
+	echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
 fi
 
 case $uname in
@@ -6683,8 +6970,8 @@ esac
 
 case $uname in
         Darwin*)
-                BACKLIBS="-framework IOKit"
-                COMMONLIBS="-framework CoreFoundation"
+                BACKLIBS="-framework IOKit -framework AppleTalk"
+                COMMONLIBS="-framework CoreFoundation -framework IOKit"
                 ;;
         *)
                 BACKLIBS=""
@@ -7319,7 +7606,16 @@ else
 			fi
 
 			if test "x$with_optim" = x; then
-				OPTIM="-fullwarn $OPTIM"
+				# Show most warnings, but suppress the
+				# ones about arguments not being used,
+				# string constants assigned to const
+				# char *'s, etc.  We only set the warning
+				# options on IRIX 6.2 and higher because
+				# of limitations in the older SGI compiler
+				# tools.
+				if test $uversion -ge 62; then
+					OPTIM="-fullwarn -woff 1183,1209,1349,3201 $OPTIM"
+				fi
 			fi
 			;;
 		SunOS*)
@@ -7333,7 +7629,9 @@ else
 			fi
 
 			if test "x$with_optim" = x; then
-				OPTIM="$OPTIM -xarch=generic"
+				# Specify "generic" SPARC output and suppress
+				# all of Sun's questionable warning messages...
+				OPTIM="-w $OPTIM -xarch=generic"
 			fi
 
 			if test $PICFLAG = 1; then
@@ -8828,7 +9126,18 @@ fi
 
 
 
-maxfiles=4096
+if test "$uname" = "SunOS"; then
+	case "$uversion" in
+		55* | 56*)
+			maxfiles=1024
+			;;
+		*)
+			maxfiles=4096
+			;;
+	esac
+else
+	maxfiles=4096
+fi
 
 
 # Check whether --with-maxfiles or --without-maxfiles was given.
@@ -8840,6 +9149,102 @@ fi;
 cat >>confdefs.h <<_ACEOF
 #define CUPS_MAX_FDS $maxfiles
 _ACEOF
+
+
+
+# Check whether --enable-domainsockets or --disable-domainsockets was given.
+if test "${enable_domainsockets+set}" = set; then
+  enableval="$enable_domainsockets"
+
+fi;
+
+if test x$enable_domainsockets = xyes; then
+	echo "$as_me:$LINENO: checking for unix domain socket support" >&5
+echo $ECHO_N "checking for unix domain socket support... $ECHO_C" >&6
+	cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <sys/types.h>
+		#include <sys/socket.h>
+		#include <sys/un.h>
+int
+main ()
+{
+struct sockaddr_un sa; sa.sun_family = AF_LOCAL;
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+         { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  cups_cv_domainsockets=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+cups_cv_domainsockets=no
+fi
+rm -f conftest.$ac_objext conftest.$ac_ext
+
+	if test x"$cups_cv_domainsockets" = x"yes"; then
+		cat >>confdefs.h <<\_ACEOF
+#define HAVE_DOMAINSOCKETS 1
+_ACEOF
+
+		echo "$as_me:$LINENO: result: yes" >&5
+echo "${ECHO_T}yes" >&6
+	else
+		echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+	fi
+fi
+
+
+CUPS_DEFAULT_DOMAINSOCKET=""
+
+# Check whether --with-default_domainsocket or --without-default_domainsocket was given.
+if test "${with_default_domainsocket+set}" = set; then
+  withval="$with_default_domainsocket"
+  default_domainsocket="$withval"
+else
+  default_domainsocket=""
+fi;
+if test x$default_domainsocket = x; then
+
+	case "$uname" in
+		Darwin*)
+			# Darwin and MacOS X...
+			CUPS_DEFAULT_DOMAINSOCKET="$localstatedir/run/cupsd"
+			cat >>confdefs.h <<_ACEOF
+#define CUPS_DEFAULT_DOMAINSOCKET "$localstatedir/run/cupsd"
+_ACEOF
+
+			;;
+		*)
+			# All others...
+			CUPS_DEFAULT_DOMAINSOCKET="$localstatedir/run/cupsd"
+			cat >>confdefs.h <<_ACEOF
+#define CUPS_DEFAULT_DOMAINSOCKET "$localstatedir/run/cupsd"
+_ACEOF
+
+			;;
+	esac
+fi
+
 
 
 
@@ -9106,6 +9511,7 @@ if test "${with_openssl_includes+set}" = set; then
     CPPFLAGS="-I$withval $CPPFLAGS"
 fi;
 
+SSLFLAGS=""
 SSLLIBS=""
 
 if test x$enable_ssl != xno; then
@@ -9303,7 +9709,8 @@ fi
 echo "$as_me:$LINENO: result: $ac_cv_lib_ssl_SSL_new" >&5
 echo "${ECHO_T}$ac_cv_lib_ssl_SSL_new" >&6
 if test $ac_cv_lib_ssl_SSL_new = yes; then
-  SSLLIBS="-lssl $libcrypto"
+  SSLFLAGS="-DOPENSSL_DISABLE_OLD_DES_SUPPORT"
+		     SSLLIBS="-lssl $libcrypto"
 		     cat >>confdefs.h <<\_ACEOF
 #define HAVE_SSL 1
 _ACEOF
@@ -9683,6 +10090,7 @@ fi
 
 
 
+
 EXPORT_SSLLIBS="$SSLLIBS"
 
 
@@ -9700,6 +10108,7 @@ if test $uname = AIX; then
 fi
 
 PAMDIR=""
+PAMFILE=""
 PAMLIBS=""
 PAMMOD="pam_unknown.so"
 
@@ -9973,28 +10382,218 @@ fi
 
 
 	if test x$ac_cv_lib_pam_pam_start != xno; then
+		# Set the necessary libraries for PAM...
 		if test x$ac_cv_lib_dl_dlopen != xno; then
 			PAMLIBS="-lpam -ldl"
 		else
 			PAMLIBS="-lpam"
 		fi
-		if test -d /etc/pam.d; then
-			PAMDIR="/etc/pam.d"
-		fi
+
+		# Find the PAM configuration directory, if any...
+		for dir in /private/etc/pam.d /etc/pam.d; do
+			if test -d $dir; then
+				PAMDIR=$dir
+				break;
+			fi
+		done
 	fi
 
 	LIBS="$SAVELIBS"
 
-	# This test might need to be updated as Linux distributors move
-	# things around...
-	for mod in pam_unix2.so pam_unix.so pam_pwdb.so; do
-		if test -f /lib/security/$mod; then
-			PAMMOD="$mod"
-		fi
-	done
+	case "$uname" in
+		Darwin*)
+			# Darwin, MacOS X
+			PAMFILE="pam.darwin"
+			;;
+		IRIX*)
+			# SGI IRIX
+			PAMFILE="pam.irix"
+			;;
+		*)
+			# All others; this test might need to be updated
+			# as Linux distributors move things around...
+			for mod in pam_unix2.so pam_unix.so pam_pwdb.so; do
+				if test -f /lib/security/$mod; then
+					PAMMOD="$mod"
+					break;
+				fi
+			done
+
+			PAMFILE="pam.std"
+			;;
+	esac
 fi
 
 
+
+
+
+
+
+
+# Check whether --enable-mdns or --disable-mdns was given.
+if test "${enable_mdns+set}" = set; then
+  enableval="$enable_mdns"
+
+fi;
+
+# Check whether --with-mdns-libs or --without-mdns-libs was given.
+if test "${with_mdns_libs+set}" = set; then
+  withval="$with_mdns_libs"
+  LDFLAGS="-L$withval $LDFLAGS"
+    DSOFLAGS="-L$withval $DSOFLAGS"
+fi;
+
+# Check whether --with-mdns-includes or --without-mdns-includes was given.
+if test "${with_mdns_includes+set}" = set; then
+  withval="$with_mdns_includes"
+  CFLAGS="-I$withval $CFLAGS"
+    CXXFLAGS="-I$withval $CXXFLAGS"
+    CPPFLAGS="-I$withval $CPPFLAGS"
+fi;
+
+MDNSLIBS=""
+
+if test x$enable_mdns != xno; then
+    if test "${ac_cv_header_dns_sd_h+set}" = set; then
+  echo "$as_me:$LINENO: checking for dns_sd.h" >&5
+echo $ECHO_N "checking for dns_sd.h... $ECHO_C" >&6
+if test "${ac_cv_header_dns_sd_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_dns_sd_h" >&5
+echo "${ECHO_T}$ac_cv_header_dns_sd_h" >&6
+else
+  # Is the header compilable?
+echo "$as_me:$LINENO: checking dns_sd.h usability" >&5
+echo $ECHO_N "checking dns_sd.h usability... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+#include <dns_sd.h>
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+         { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_header_compiler=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_header_compiler=no
+fi
+rm -f conftest.$ac_objext conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_compiler" >&5
+echo "${ECHO_T}$ac_header_compiler" >&6
+
+# Is the header present?
+echo "$as_me:$LINENO: checking dns_sd.h presence" >&5
+echo $ECHO_N "checking dns_sd.h presence... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <dns_sd.h>
+_ACEOF
+if { (eval echo "$as_me:$LINENO: \"$ac_cpp conftest.$ac_ext\"") >&5
+  (eval $ac_cpp conftest.$ac_ext) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } >/dev/null; then
+  if test -s conftest.err; then
+    ac_cpp_err=$ac_c_preproc_warn_flag
+  else
+    ac_cpp_err=
+  fi
+else
+  ac_cpp_err=yes
+fi
+if test -z "$ac_cpp_err"; then
+  ac_header_preproc=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+  ac_header_preproc=no
+fi
+rm -f conftest.err conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_preproc" >&5
+echo "${ECHO_T}$ac_header_preproc" >&6
+
+# So?  What about this header?
+case $ac_header_compiler:$ac_header_preproc in
+  yes:no )
+    { echo "$as_me:$LINENO: WARNING: dns_sd.h: accepted by the compiler, rejected by the preprocessor!" >&5
+echo "$as_me: WARNING: dns_sd.h: accepted by the compiler, rejected by the preprocessor!" >&2;}
+    { echo "$as_me:$LINENO: WARNING: dns_sd.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: dns_sd.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+  no:yes )
+    { echo "$as_me:$LINENO: WARNING: dns_sd.h: present but cannot be compiled" >&5
+echo "$as_me: WARNING: dns_sd.h: present but cannot be compiled" >&2;}
+    { echo "$as_me:$LINENO: WARNING: dns_sd.h: check for missing prerequisite headers?" >&5
+echo "$as_me: WARNING: dns_sd.h: check for missing prerequisite headers?" >&2;}
+    { echo "$as_me:$LINENO: WARNING: dns_sd.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: dns_sd.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+esac
+echo "$as_me:$LINENO: checking for dns_sd.h" >&5
+echo $ECHO_N "checking for dns_sd.h... $ECHO_C" >&6
+if test "${ac_cv_header_dns_sd_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_cv_header_dns_sd_h=$ac_header_preproc
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_dns_sd_h" >&5
+echo "${ECHO_T}$ac_cv_header_dns_sd_h" >&6
+
+fi
+if test $ac_cv_header_dns_sd_h = yes; then
+  cat >>confdefs.h <<\_ACEOF
+#define HAVE_MDNS 1
+_ACEOF
+
+	    MDNSLIBS="-framework CoreFoundation"
+fi
+
+
+fi
 
 
 
@@ -10259,7 +10858,7 @@ fi
 
 
 
-                                                            ac_config_files="$ac_config_files Makedefs cups.list cups.sh cups-config conf/cupsd.conf conf/pam.conf"
+                                                            ac_config_files="$ac_config_files Makedefs cups.list cups.sh cups-config conf/cupsd.conf conf/pam.std"
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -10789,7 +11388,7 @@ do
   "cups.sh" ) CONFIG_FILES="$CONFIG_FILES cups.sh" ;;
   "cups-config" ) CONFIG_FILES="$CONFIG_FILES cups-config" ;;
   "conf/cupsd.conf" ) CONFIG_FILES="$CONFIG_FILES conf/cupsd.conf" ;;
-  "conf/pam.conf" ) CONFIG_FILES="$CONFIG_FILES conf/pam.conf" ;;
+  "conf/pam.std" ) CONFIG_FILES="$CONFIG_FILES conf/pam.std" ;;
   "config.h" ) CONFIG_HEADERS="$CONFIG_HEADERS config.h" ;;
   *) { { echo "$as_me:$LINENO: error: invalid argument: $ac_config_target" >&5
 echo "$as_me: error: invalid argument: $ac_config_target" >&2;}
@@ -10950,12 +11549,16 @@ s,@EXPORT_LIBPNG@,$EXPORT_LIBPNG,;t t
 s,@EXPORT_LIBTIFF@,$EXPORT_LIBTIFF,;t t
 s,@EXPORT_LIBZ@,$EXPORT_LIBZ,;t t
 s,@NETLIBS@,$NETLIBS,;t t
+s,@CUPS_DEFAULT_DOMAINSOCKET@,$CUPS_DEFAULT_DOMAINSOCKET,;t t
 s,@LIBSLP@,$LIBSLP,;t t
+s,@SSLFLAGS@,$SSLFLAGS,;t t
 s,@SSLLIBS@,$SSLLIBS,;t t
 s,@EXPORT_SSLLIBS@,$EXPORT_SSLLIBS,;t t
 s,@PAMDIR@,$PAMDIR,;t t
+s,@PAMFILE@,$PAMFILE,;t t
 s,@PAMLIBS@,$PAMLIBS,;t t
 s,@PAMMOD@,$PAMMOD,;t t
+s,@MDNSLIBS@,$MDNSLIBS,;t t
 s,@JAVA@,$JAVA,;t t
 s,@PERL@,$PERL,;t t
 s,@PHP@,$PHP,;t t

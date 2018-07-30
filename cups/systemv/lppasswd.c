@@ -1,9 +1,9 @@
 /*
- * "$Id: lppasswd.c,v 1.1.1.6 2002/12/24 00:07:39 jlovell Exp $"
+ * "$Id: lppasswd.c,v 1.1.1.8 2004/06/05 02:42:35 jlovell Exp $"
  *
  *   MD5 password program for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -232,9 +232,9 @@ main(int  argc,			/* I - Number of command-line arguments */
     flag = 0;
 
     for (passwd = newpass; *passwd; passwd ++)
-      if (isdigit(*passwd))
+      if (isdigit(*passwd & 255))
 	flag |= 1;
-      else if (isalpha(*passwd))
+      else if (isalpha(*passwd & 255))
 	flag |= 2;
 
    /*
@@ -401,5 +401,5 @@ usage(FILE *fp)		/* I - File to send usage to */
 
 
 /*
- * End of "$Id: lppasswd.c,v 1.1.1.6 2002/12/24 00:07:39 jlovell Exp $".
+ * End of "$Id: lppasswd.c,v 1.1.1.8 2004/06/05 02:42:35 jlovell Exp $".
  */

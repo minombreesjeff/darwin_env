@@ -1,5 +1,5 @@
 .\"
-.\" "$Id: cups-polld.man,v 1.1.1.6 2002/12/24 00:07:11 jlovell Exp $"
+.\" "$Id: cups-polld.man,v 1.1.1.7 2004/06/05 02:42:32 jlovell Exp $"
 .\"
 .\"   cups-polld man page for the Common UNIX Printing System (CUPS).
 .\"
@@ -42,5 +42,5 @@ http://localhost:631/documentation.html
 .SH COPYRIGHT
 Copyright 1993-2003 by Easy Software Products, All Rights Reserved.
 .\"
-.\" End of "$Id: cups-polld.man,v 1.1.1.6 2002/12/24 00:07:11 jlovell Exp $".
+.\" End of "$Id: cups-polld.man,v 1.1.1.7 2004/06/05 02:42:32 jlovell Exp $".
 .\"

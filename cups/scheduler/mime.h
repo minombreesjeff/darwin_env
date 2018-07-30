@@ -1,9 +1,9 @@
 /*
- * "$Id: mime.h,v 1.1.1.8 2003/04/11 21:07:49 jlovell Exp $"
+ * "$Id: mime.h,v 1.1.1.10 2004/06/05 02:42:34 jlovell Exp $"
  *
  *   MIME type/conversion database definitions for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+ *   Copyright 1997-2004 by Easy Software Products, all rights reserved.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -143,5 +143,5 @@ extern mime_filter_t	*mimeFilter(mime_t *mime, mime_type_t *src, mime_type_t *ds
 #endif /* !_CUPS_MIME_H_ */
 
 /*
- * End of "$Id: mime.h,v 1.1.1.8 2003/04/11 21:07:49 jlovell Exp $".
+ * End of "$Id: mime.h,v 1.1.1.10 2004/06/05 02:42:34 jlovell Exp $".
  */

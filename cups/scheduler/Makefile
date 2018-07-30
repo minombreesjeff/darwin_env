@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.13 2003/04/12 03:04:29 jlovell Exp $"
+# "$Id: Makefile,v 1.16 2004/05/31 21:02:20 jlovell Exp $"
 #
 #   Scheduler Makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -87,9 +87,8 @@ install:	all
 cupsd:	$(CUPSDOBJS) libmime.a ../cups/$(LIBCUPS)
 	echo Linking $@...
 	$(CC) $(LDFLAGS) -o cupsd $(CUPSDOBJS) libmime.a \
-		-framework CoreFoundation \
 		-sectorder __TEXT __text cupsd.order -e start \
-		$(LIBZ) $(SSLLIBS) $(LIBSLP) $(PAMLIBS) $(LIBS) \
+		$(LIBZ) $(SSLLIBS) $(LIBSLP) $(PAMLIBS) $(LIBS) $(MDNSLIBS) \
 		$(LIBPAPER) $(LIBMALLOC)
 
 
@@ -148,5 +147,5 @@ include Dependencies
 
 
 #
-# End of "$Id: Makefile,v 1.13 2003/04/12 03:04:29 jlovell Exp $".
+# End of "$Id: Makefile,v 1.16 2004/05/31 21:02:20 jlovell Exp $".
 #

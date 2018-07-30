@@ -1,9 +1,9 @@
 /*
- * "$Id: image-pnm.c,v 1.1.1.8 2002/12/24 00:07:01 jlovell Exp $"
+ * "$Id: image-pnm.c,v 1.1.1.10 2004/06/05 02:42:32 jlovell Exp $"
  *
  *   Portable Any Map file routines for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1993-2003 by Easy Software Products.
+ *   Copyright 1993-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -80,17 +80,17 @@ ImageReadPNM(image_t    *img,		/* IO - Image */
   lineptr ++;
 
   format = atoi(lineptr);
-  while (isdigit(*lineptr))
+  while (isdigit(*lineptr & 255))
     lineptr ++;
 
   while (lineptr != NULL && img->xsize == 0)
   {
     if (*lineptr == '\0' || *lineptr == '#')
       lineptr = fgets(line, sizeof(line), fp);
-    else if (isdigit(*lineptr))
+    else if (isdigit(*lineptr & 255))
     {
       img->xsize = atoi(lineptr);
-      while (isdigit(*lineptr))
+      while (isdigit(*lineptr & 255))
 	lineptr ++;
     }
     else
@@ -101,10 +101,10 @@ ImageReadPNM(image_t    *img,		/* IO - Image */
   {
     if (*lineptr == '\0' || *lineptr == '#')
       lineptr = fgets(line, sizeof(line), fp);
-    else if (isdigit(*lineptr))
+    else if (isdigit(*lineptr & 255))
     {
       img->ysize = atoi(lineptr);
-      while (isdigit(*lineptr))
+      while (isdigit(*lineptr & 255))
 	lineptr ++;
     }
     else
@@ -119,10 +119,10 @@ ImageReadPNM(image_t    *img,		/* IO - Image */
     {
       if (*lineptr == '\0' || *lineptr == '#')
 	lineptr = fgets(line, sizeof(line), fp);
-      else if (isdigit(*lineptr))
+      else if (isdigit(*lineptr & 255))
       {
 	maxval = atoi(lineptr);
-	while (isdigit(*lineptr))
+	while (isdigit(*lineptr & 255))
 	  lineptr ++;
       }
       else
@@ -302,5 +302,5 @@ ImageReadPNM(image_t    *img,		/* IO - Image */
 
 
 /*
- * End of "$Id: image-pnm.c,v 1.1.1.8 2002/12/24 00:07:01 jlovell Exp $".
+ * End of "$Id: image-pnm.c,v 1.1.1.10 2004/06/05 02:42:32 jlovell Exp $".
  */

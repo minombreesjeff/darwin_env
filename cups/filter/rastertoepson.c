@@ -1,10 +1,10 @@
 /*
- * "$Id: rastertoepson.c,v 1.1.1.7 2002/12/24 00:07:05 jlovell Exp $"
+ * "$Id: rastertoepson.c,v 1.1.1.9 2004/06/05 02:42:32 jlovell Exp $"
  *
  *   EPSON ESC/P and ESC/P2 filter for the Common UNIX Printing System
  *   (CUPS).
  *
- *   Copyright 1993-2003 by Easy Software Products.
+ *   Copyright 1993-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -730,7 +730,7 @@ OutputLine(const cups_page_header_t *header)	/* I - Page header */
 
         for (width = header->cupsWidth, tempptr = CompBuffer,
                  evenptr = LineBuffers[0] + EvenOffset;
-             width >= 0;
+             width > 0;
              width --, tempptr ++, evenptr += DotBytes)
           *evenptr = tempptr[0];
       }
@@ -1133,5 +1133,5 @@ main(int  argc,			/* I - Number of command-line arguments */
 
 
 /*
- * End of "$Id: rastertoepson.c,v 1.1.1.7 2002/12/24 00:07:05 jlovell Exp $".
+ * End of "$Id: rastertoepson.c,v 1.1.1.9 2004/06/05 02:42:32 jlovell Exp $".
  */

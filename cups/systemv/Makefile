@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.10 2003/08/15 06:46:01 jlovell Exp $"
+# "$Id: Makefile,v 1.11 2004/04/08 17:41:39 jlovell Exp $"
 #
 #   System V commands makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1997-2003 by Easy Software Products, all rights reserved.
+#   Copyright 1997-2004 by Easy Software Products, all rights reserved.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -198,5 +198,5 @@ include Dependencies
 
 
 #
-# End of "$Id: Makefile,v 1.10 2003/08/15 06:46:01 jlovell Exp $".
+# End of "$Id: Makefile,v 1.11 2004/04/08 17:41:39 jlovell Exp $".
 #

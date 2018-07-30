@@ -1,9 +1,9 @@
 #
-# "$Id: Makefile,v 1.6 2003/07/16 18:34:04 jlovell Exp $"
+# "$Id: Makefile,v 1.7 2004/04/08 17:41:37 jlovell Exp $"
 #
 #   Documentation makefile for the Common UNIX Printing System (CUPS).
 #
-#   Copyright 1993-2003 by Easy Software Products.
+#   Copyright 1993-2004 by Easy Software Products.
 #
 #   These coded instructions, statements, and computer programs are the
 #   property of Easy Software Products and are protected by Federal
@@ -81,6 +81,7 @@ WEBIMAGES	=	images/accept-jobs.gif \
 			images/release-job.gif \
 			images/restart-job.gif \
 			images/right.gif \
+			images/set-as-default.gif \
 			images/show-active.gif \
 			images/show-completed.gif \
 			images/start-class.gif \
@@ -94,6 +95,7 @@ WEBIMAGES	=	images/accept-jobs.gif \
 #
 
 all:	$(DOCUMENTS:.shtml=.pdf) $(DOCUMENTS:.shtml=.html) overview.pdf
+	cd be; $(MAKE) $(MFLAGS) all
 	cd de; $(MAKE) $(MFLAGS) all
 	cd fr; $(MAKE) $(MFLAGS) all
 

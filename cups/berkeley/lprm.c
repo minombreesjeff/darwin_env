@@ -1,9 +1,9 @@
 /*
- * "$Id: lprm.c,v 1.1.1.9 2003/02/10 21:57:09 jlovell Exp $"
+ * "$Id: lprm.c,v 1.1.1.11 2004/06/05 02:42:28 jlovell Exp $"
  *
  *   "lprm" command for the Common UNIX Printing System (CUPS).
  *
- *   Copyright 1997-2003 by Easy Software Products.
+ *   Copyright 1997-2004 by Easy Software Products.
  *
  *   These coded instructions, statements, and computer programs are the
  *   property of Easy Software Products and are protected by Federal
@@ -141,7 +141,8 @@ main(int  argc,			/* I - Number of command-line arguments */
       * Cancel a job or printer...
       */
 
-      if (isdigit(argv[i][0]) && cupsGetDest(argv[i], NULL, num_dests, dests) == NULL)
+      if (isdigit(argv[i][0] & 255) &&
+          cupsGetDest(argv[i], NULL, num_dests, dests) == NULL)
       {
         dest   = NULL;
 	op     = IPP_CANCEL_JOB;
@@ -271,5 +272,5 @@ main(int  argc,			/* I - Number of command-line arguments */
 
 
 /*
- * End of "$Id: lprm.c,v 1.1.1.9 2003/02/10 21:57:09 jlovell Exp $".
+ * End of "$Id: lprm.c,v 1.1.1.11 2004/06/05 02:42:28 jlovell Exp $".
  */
