@@ -44,7 +44,7 @@ for ( my $i = 0; $i < $#postgres_argv; $i++ ) {
     }
 }
 
-if ( -e $config_path ) {
+if ( defined $config_path && -e $config_path ) {
     my @config_lines = `$PLIST_BUDDY -c 'Print :ProgramArguments' "$config_path"`;
 
     # Skipping the first and last lines, which specify the class type.

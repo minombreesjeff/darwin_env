@@ -7,7 +7,7 @@
 Project         = postgresql
 UserType        = Administrator
 ToolType        = Commands
-Submission      = 97.1
+Submission      = 140
 
 # Include common server build variables
 -include /AppleInternal/ServerTools/ServerBuildVariables.xcconfig
@@ -56,12 +56,12 @@ Extra_Make_Flags	=
 
 # Additional project info used with AEP
 AEP		= YES
-AEP_Version	= 9.2.13
+AEP_Version	= 9.2.4
 AEP_LicenseFile	= $(Sources)/COPYRIGHT
 AEP_Patches	= arches.patch pg_config_manual_h.patch \
 			radar7687126.patch radar7756388.patch radar8304089.patch \
-			initdb.patch _int_bool.c.patch prep_buildtree.patch
-AEP_LaunchdConfigs	= org.postgresql.postgres.plist com.apple.postgres.plist
+			initdb.patch _int_bool.c.patch prep_buildtree.patch radar13777485.patch
+AEP_LaunchdConfigs	= org.postgresql.postgres.plist
 AEP_Binaries	= $(SERVER_INSTALL_PATH_PREFIX)$(USRBINDIR)/* $(SERVER_INSTALL_PATH_PREFIX)$/$(USRLIBDIR)/lib*.dylib $(SERVER_INSTALL_PATH_PREFIX)$/$(USRLIBDIR)/$(Project)/* $(SERVER_INSTALL_PATH_PREFIX)/$(USRLIBDIR)/postgresql/pgxs/src/test/regress/pg_regress
 
 Configure_Products = config.log src/include/pg_config.h
@@ -112,7 +112,6 @@ install-macosx:
 	@echo "Installing template config files..."
 	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/Library/Preferences
 	$(INSTALL) -m 644 Support/org.postgresql.postgres.plist.dist $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/Library/Preferences/org.postgresql.postgres.plist
-	$(INSTALL) -m 644 Support/com.apple.postgres.plist.dist $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/Library/Preferences/com.apple.postgres.plist
 	@echo "Installing webapp plist files..."
 	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/private/etc/apache2/webapps
 	$(INSTALL) -m 644 Support/webapp_org.postgresql.postgres.plist.dist $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/private/etc/apache2/webapps/org.postgresql.postgres.plist
@@ -120,23 +119,25 @@ install-macosx:
 	@echo "Installing initialization script..."
 	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/libexec
 	$(INSTALL) -m 755 Support/copy_postgresql_config_files.sh $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/libexec
+	@echo "Installing service database cluster relocation script..."
+	$(INSTALL) -m 755 Support/relocate_postgres_service_cluster $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/libexec
 	@echo "Installing Extras scripts..."
-	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/System/Library/ServerSetup/CommonExtras/PostgreSQLExtras
+	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/System/Library/ServerSetup/CommonExtras
 	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/System/Library/ServerSetup/RestoreExtras
 	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/System/Library/ServerSetup/MigrationExtras
 	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/System/Library/ServerSetup/PromotionExtras
 	$(INSTALL_SCRIPT) Support/05_PostgresRestoreExtra.pl $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/System/Library/ServerSetup/RestoreExtras
 	$(INSTALL_SCRIPT) Support/05_postgresmigrator.rb $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/System/Library/ServerSetup/MigrationExtras
 	$(INSTALL_SCRIPT) Support/58_postgres_setup.rb $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/System/Library/ServerSetup/PromotionExtras
+	$(INSTALL_SCRIPT) Support/99-postgres-cleanup.rb $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/System/Library/ServerSetup/CommonExtras
 	@echo "Done."
 
 install-backup: install-macosx
 	@echo "Installing backup / Time Machine support..."
 	$(INSTALL_DIRECTORY) $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)$(ETCDIR)/server_backup
 	$(INSTALL_FILE) Support/backup_restore/46-postgresql.plist $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)$(ETCDIR)/server_backup
-	$(INSTALL_SCRIPT) Support/backup_restore/xpg_archive_command $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/libexec
-	$(INSTALL_SCRIPT) Support/backup_restore/xpostgres $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/bin
-	$(INSTALL_SCRIPT) Support/backup_restore/xpg_ctl $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/bin
+	$(INSTALL_SCRIPT) Support/backup_restore/xpostgres.py $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/bin/xpostgres
+	$(LN) -s xpostgres $(DSTROOT)$(SERVER_INSTALL_PATH_PREFIX)/usr/bin/xpg_ctl
 	@echo "Done."
 
 install-wrapper:
