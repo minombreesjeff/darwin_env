@@ -21,8 +21,8 @@ Extra_CC_Flags = -D_DARWIN_NO_64_BIT_INODE
 ifndef DEVELOPER_DIR
 DEVELOPER_DIR = /Developer
 endif
-Install_Prefix = $(DEVELOPER_DIR)/usr
-Install_Man = $(DEVELOPER_DIR)/usr/share/man
+Install_Prefix = $(DEVELOPER_DIR)/usr/local
+Install_Man = $(DEVELOPER_DIR)/usr/local/share/man
 
 # It's a GNU Source project
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/GNUSource.make
@@ -46,8 +46,8 @@ copy-strip:
 	$(CP) $(DSTROOT)$(Install_Prefix)/bin/cvs $(SYMROOT)
 	$(STRIP) -x $(DSTROOT)$(Install_Prefix)/bin/cvs
 
-OSV = $(DSTROOT)/usr/local/OpenSourceVersions
-OSL = $(DSTROOT)/usr/local/OpenSourceLicenses
+OSV = $(DSTROOT)$(DEVELOPER_DIR)/usr/local/OpenSourceVersions
+OSL = $(DSTROOT)$(DEVELOPER_DIR)/usr/local/OpenSourceLicenses
 
 install-plist:
 	$(MKDIR) $(OSV)
