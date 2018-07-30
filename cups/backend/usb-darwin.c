@@ -1,5 +1,5 @@
 /*
- "$Id: usb-darwin.c,v 1.13.2.2 2005/09/27 23:23:42 jlovell Exp $"
+ "$Id: usb-darwin.c,v 1.13.2.3 2005/12/20 21:05:06 jlovell Exp $"
 
 © Copyright 2005 Apple Computer, Inc. All rights reserved.
 
@@ -415,6 +415,7 @@ static int removePercentEscapes(const char* src, unsigned char* dst, int dstMax)
 
 static volatile int done = 0;
 static int gWaitEOF = false;
+static int gBidi = true;
 static pthread_cond_t *gReadCompleteConditionPtr = NULL;
 static pthread_mutex_t *gReadMutexPtr = NULL;
 
@@ -835,19 +836,22 @@ int print_device(const char *uri, const char *hostname, const char *resource, co
 	}
 	else
 	{
-		if (pthread_cond_init(&readCompleteCondition, NULL) == 0)
+		if (gBidi)
 		{
-			gReadCompleteConditionPtr = &readCompleteCondition;
-			
-			if (pthread_mutex_init(&readMutex, NULL) == 0)
-			{
-				gReadMutexPtr = &readMutex;
-
-				if (pthread_create(&thr, NULL, readthread, classdriver ) > 0)
-					fprintf(stderr, "WARNING: Couldn't create read channel\n");
-				else
-					thread_created = 1;
-			}
+		    if (pthread_cond_init(&readCompleteCondition, NULL) == 0)
+		    {
+			    gReadCompleteConditionPtr = &readCompleteCondition;
+			    
+			    if (pthread_mutex_init(&readMutex, NULL) == 0)
+			    {
+				    gReadMutexPtr = &readMutex;
+    
+				    if (pthread_create(&thr, NULL, readthread, classdriver ) > 0)
+					    fprintf(stderr, "WARNING: Couldn't create read channel\n");
+				    else
+					    thread_created = 1;
+			    }
+		    }
 		}
 	}
 	/*
@@ -1050,6 +1054,25 @@ static void parseOptions(const char *options, char *serial, UInt32 *location)
 		else if (strcasecmp(optionName, "location") == 0 && location)
 		{
 			*location = strtol(value, NULL, 16);
+		}
+		else if (strcasecmp(optionName, "bidi") == 0)
+		{
+			if (strcasecmp(value, "on") == 0 ||
+				strcasecmp(value, "yes") == 0 ||
+				strcasecmp(value, "true") == 0)
+			{
+				gBidi = true;
+			}
+			else if (strcasecmp(value, "off") == 0 ||
+					strcasecmp(value, "no") == 0 ||
+					strcasecmp(value, "false") == 0)
+			{
+				gBidi = false;
+			}
+			else
+			{
+				fprintf(stderr, "WARNING: Boolean expected for bidi option \"%s\"\n", value);
+			}
 		}
 	}
 

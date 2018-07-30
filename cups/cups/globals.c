@@ -1,5 +1,5 @@
 /*
- * "$Id: globals.c,v 1.7.2.1 2005/11/16 22:31:14 jlovell Exp $"
+ * "$Id: globals.c,v 1.7.2.2 2006/02/08 22:04:46 jlovell Exp $"
  *
  *   Global variable access routines for the Common UNIX Printing System (CUPS).
  *
@@ -126,7 +126,7 @@ void globals_destructor(void *value)
   if (((cups_globals_t *)value)->http)
     httpClose(((cups_globals_t *)value)->http);
 
-  cupsLangFlush();
+  _cupsLangFlush((cups_globals_t *)value);
 
   free(value);
 }
@@ -154,7 +154,9 @@ cups_globals_t *_cups_globals(void)
     globals->cups_encryption = (http_encryption_t)-1;
     globals->cups_pwdcb = cups_get_password;
 
+#ifdef HAVE_DOMAINSOCKETS
     strlcpy(globals->cups_server_domainsocket, CUPS_DEFAULT_DOMAINSOCKET, sizeof(globals->cups_server_domainsocket));
+#endif /* HAVE_DOMAINSOCKETS */
   }
 
   return globals;
@@ -227,5 +229,5 @@ void _cups_cdsa_init(void)
 #endif	/* HAVE_CDSASSL */
 
 /*
- * End of "$Id: globals.c,v 1.7.2.1 2005/11/16 22:31:14 jlovell Exp $".
+ * End of "$Id: globals.c,v 1.7.2.2 2006/02/08 22:04:46 jlovell Exp $".
  */
