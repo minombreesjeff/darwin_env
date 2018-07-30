@@ -9,7 +9,10 @@ Install_Man           = /usr/share/man
 Extra_Configure_Flags = --with-gssapi
 UserType              = Developer
 ToolType              = Commands
-GnuAfterInstall	      = install-man-pages cleanup
+GnuAfterInstall	      = install-man-pages cleanup install-misc
+
+# 4568501
+Extra_CC_Flags        = -D_NONSTD_SOURCE
 
 # These will get deleted.
 Install_HTML          = /Developer
@@ -32,3 +35,11 @@ cleanup:
 		mv $(DSTROOT)/usr/bin/cvs-$${script} $(DSTROOT)/usr/local/bin/cvs-$${script}; \
 		ln -s cvs-$${script} $(DSTROOT)/usr/local/bin/ocvs-$${script}; \
 	done
+
+install-misc:
+	$(MKDIR) $(DSTROOT)/Developer/Extras $(DSTROOT)/Developer/Tools
+	$(INSTALL) $(SRCROOT)/misc/cvswrappers $(DSTROOT)/Developer/Extras
+	$(INSTALL) $(SRCROOT)/misc/cvs-wrap $(DSTROOT)/usr/bin
+	$(LN) -s ../../usr/bin/cvs-wrap $(DSTROOT)/Developer/Tools/cvs-wrap
+	$(INSTALL) $(SRCROOT)/misc/cvs-unwrap $(DSTROOT)/usr/bin
+	$(LN) -s ../../usr/bin/cvs-unwrap $(DSTROOT)/Developer/Tools/cvs-unwrap
