@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2004 Marcel Moolenaar
+ * Copyright (c) 2005 Marcel Moolenaar
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: src/sbin/gpt/remove.c,v 1.4.2.3 2006/10/07 18:35:48 marcel Exp $");
+__FBSDID("$FreeBSD: src/sbin/gpt/label.c,v 1.1.2.3 2006/10/07 18:35:48 marcel Exp $");
 
 #include <sys/types.h>
 
@@ -43,20 +43,22 @@ static int all;
 static uuid_t type;
 static off_t block, size;
 static unsigned int entry;
+static uint8_t *name;
 
 static void
-usage_remove(void)
+usage_label(void)
 {
+	const char *common = "<-l label | -f file> device ...";
 
 	fprintf(stderr,
-	    "usage: %s -a device ...\n"
-	    "       %s [-b lba] [-i index] [-s lba] [-t uuid] device ...\n",
-	    getprogname(), getprogname());
+	    "usage: %s -a %s\n"
+	    "       %s [-b lba] [-i index] [-s lba] [-t uuid] %s\n",
+	    getprogname(), common, getprogname(), common);
 	exit(1);
 }
 
 static void
-rem(int fd)
+label(int fd)
 {
 	uuid_t uuid;
 	map_t *gpt, *tpg;
@@ -87,7 +89,7 @@ rem(int fd)
 		return;
 	}
 
-	/* Remove all matching entries in the map. */
+	/* Relabel all matching entries in the map. */
 	for (m = map_first(); m != NULL; m = m->map_next) {
 		if (m->map_type != MAP_TYPE_GPT_PART || m->map_index < 1)
 			continue;
@@ -108,8 +110,8 @@ rem(int fd)
 		    !uuid_equal(&type, &uuid, NULL))
 			continue;
 
-		/* Remove the primary entry by clearing the partition type. */
-		uuid_create_nil(&ent->ent_type, NULL);
+		/* Label the primary entry. */
+		utf8_to_utf16(name, ent->ent_name, 36);
 
 		hdr->hdr_crc_table = htole32(crc32(tbl->map_data,
 		    le32toh(hdr->hdr_entries) * le32toh(hdr->hdr_entsz)));
@@ -123,8 +125,8 @@ rem(int fd)
 		ent = (void*)((char*)lbt->map_data + i *
 		    le32toh(hdr->hdr_entsz));
 
-		/* Remove the secundary entry. */
-		uuid_create_nil(&ent->ent_type, NULL);
+		/* Label the secundary entry. */
+		utf8_to_utf16(name, ent->ent_name, 36);
 
 		hdr->hdr_crc_table = htole32(crc32(lbt->map_data,
 		    le32toh(hdr->hdr_entries) * le32toh(hdr->hdr_entsz)));
@@ -135,65 +137,102 @@ rem(int fd)
 		gpt_write(fd, tpg);
 
 #ifdef __APPLE__
-		printf("%ss%u removed\n", device_name, m->map_index);
+		printf("%ss%u labeled\n", device_name, m->map_index);
 #else
-		printf("%sp%u removed\n", device_name, m->map_index);
+		printf("%sp%u labeled\n", device_name, m->map_index);
 #endif
 	}
 }
 
+static void
+name_from_file(const char *fn)
+{
+	FILE *f;
+	char *p;
+	size_t maxlen = 1024;
+	size_t len;
+
+	if (strcmp(fn, "-") != 0) {
+		f = fopen(fn, "r");
+		if (f == NULL)
+			err(1, "unable to open file %s", fn);
+	} else
+		f = stdin;
+	name = malloc(maxlen);
+	len = fread(name, 1, maxlen - 1, f);
+	if (ferror(f))
+		err(1, "unable to read label from file %s", fn);
+	if (f != stdin)
+		fclose(f);
+	name[len] = '\0';
+	/* Only keep the first line, excluding the newline character. */
+	p = strchr((const char *)name, '\n');
+	if (p != NULL)
+		*p = '\0';
+}
+
 int
-cmd_remove(int argc, char *argv[])
+cmd_label(int argc, char *argv[])
 {
 	char *p;
 	int ch, fd;
 
-	/* Get the remove options */
-	while ((ch = getopt(argc, argv, "ab:i:s:t:")) != -1) {
+	/* Get the label options */
+	while ((ch = getopt(argc, argv, "ab:f:i:l:s:t:")) != -1) {
 		switch(ch) {
 		case 'a':
 			if (all > 0)
-				usage_remove();
+				usage_label();
 			all = 1;
 			break;
 		case 'b':
 			if (block > 0)
-				usage_remove();
+				usage_label();
 			block = strtoll(optarg, &p, 10);
 			if (*p != 0 || block < 1)
-				usage_remove();
+				usage_label();
+			break;
+		case 'f':
+			if (name != NULL)
+				usage_label();
+			name_from_file(optarg);
 			break;
 		case 'i':
 			if (entry > 0)
-				usage_remove();
+				usage_label();
 			entry = strtol(optarg, &p, 10);
 			if (*p != 0 || entry < 1)
-				usage_remove();
+				usage_label();
+			break;
+		case 'l':
+			if (name != NULL)
+				usage_label();
+			name = (uint8_t *)strdup(optarg);
 			break;
 		case 's':
 			if (size > 0)
-				usage_remove();
+				usage_label();
 			size = strtoll(optarg, &p, 10);
 			if (*p != 0 || size < 1)
-				usage_remove();
+				usage_label();
 			break;
 		case 't':
 			if (!uuid_is_nil(&type, NULL))
-				usage_remove();
+				usage_label();
 			if (parse_uuid(optarg, &type) != 0)
-				usage_remove();
+				usage_label();
 			break;
 		default:
-			usage_remove();
+			usage_label();
 		}
 	}
 
 	if (!all ^
 	    (block > 0 || entry > 0 || size > 0 || !uuid_is_nil(&type, NULL)))
-		usage_remove();
+		usage_label();
 
-	if (argc == optind)
-		usage_remove();
+	if (name == NULL || argc == optind)
+		usage_label();
 
 	while (optind < argc) {
 		fd = gpt_open(argv[optind++]);
@@ -202,7 +241,7 @@ cmd_remove(int argc, char *argv[])
 			continue;
 		}
 
-		rem(fd);
+		label(fd);
 
 		gpt_close(fd);
 	}
