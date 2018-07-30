@@ -301,7 +301,7 @@ lint:
 # distdir added for compatibility with CVS automake.
 top_distdir = ..
 PACKAGE = cvs
-VERSION = 1.11.18
+VERSION = 1.11.20
 distdir = $(top_distdir)/$(PACKAGE)-$(VERSION)
 distdir: $(DISTFILES)
 	@list='$(DISTFILES)'; for file in $$list; do \

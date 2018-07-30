@@ -1,6 +1,11 @@
 /*
- * Copyright (c) 1992, Brian Berliner and Jeff Polk
- * Copyright (c) 1989-1992, Brian Berliner
+ * Copyright (C) 1986-2005 The Free Software Foundation, Inc.
+ *
+ * Portions Copyright (C) 1998-2005 Derek Price, Ximbiot <http://ximbiot.com>,
+ *                                  and others.
+ *
+ * Portions Copyright (c) 1992, Brian Berliner and Jeff Polk
+ * Portions Copyright (c) 1989-1992, Brian Berliner
  * 
  * You may distribute under the terms of the GNU General Public License as
  * specified in the README file that comes with the CVS source distribution.
@@ -75,12 +80,12 @@ add (argc, argv)
 	switch (c)
 	{
 	    case 'k':
-		if (options)
-		    free (options);
+		if (options) free (options);
 		options = RCS_check_kflag (optarg);
 		break;
 
 	    case 'm':
+		if (message) free (message);
 		message = xstrdup (optarg);
 		break;
 	    case '?':
@@ -885,6 +890,7 @@ out:
     if (restore_cwd (&cwd, NULL))
 	error_exit ();
     free_cwd (&cwd);
+    if (message) free (message);
     if (rcsdir != NULL)
 	free (rcsdir);
     return 0;

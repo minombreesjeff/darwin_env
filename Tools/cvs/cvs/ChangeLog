@@ -1,3 +1,40 @@
+2005-04-15  Derek Price  <derek@ximbiot.com>
+
+	* NEWS: Note Klocwork fixes.
+
+2005-04-14  Derek Price  <derek@ximbiot.com>
+
+	* NEWS: Note contrib Perl taint vulnerability fix.
+
+2005-03-23  Derek Price  <derek@ximbiot.com>
+
+	* ylwrap: New file.
+
+2005-03-15  Derek Price  <derek@ximbiot.com>
+
+	* HACKING, NEWS: Note new Automake version.
+
+2005-03-04  Jim Hyslop  <jhyslop@ieee.org>
+
+	* NEWS: Note fix for compile errors on IRIX 5.3.
+
+2005-02-22  Derek Price  <derek@ximbiot.com>
+
+	* NEWS: Note recent watch on/off fileattr fix.
+
+2005-01-31  Derek Price  <derek@ximbiot.com>
+
+	* AUTHORS: Add Conrad Pino.
+	* README: Update copyright notice.
+
+2005-01-29  Derek Price  <derek@ximbiot.com>
+
+	* NEWS: Note some recent changes.
+
+2004-11-17  Derek Price  <derek@ximbiot.com>
+
+	* NEWS: Note "red file" fix source inclusion.
+
 2004-11-05  Conrad T. Pino  <Conrad@Pino.com>
 
 	* cvsnt.dep: Regenerated after complete rebuild.

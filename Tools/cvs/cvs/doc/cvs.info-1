@@ -15,15 +15,16 @@ File: cvs.info,  Node: Top,  Next: Overview,  Up: (dir)
 
 
    This info manual describes how to use and administer CVS version
-1.11.18.
+1.11.20.
 
 Copyright (C) 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
-2002, 2003, 2004 Free Software Foundation, Inc.
+2002, 2003, 2004, 2005 Free Software Foundation, Inc.
 
 Portions  
-          Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004 Derek R.
-          Price,
-          Copyright (C) 2002, 2003, 2004 Ximbiot <http://ximbiot.com>,
+          Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005 Derek
+          R. Price,
+          Copyright (C) 2002, 2003, 2004, 2005 Ximbiot
+          <http://ximbiot.com>,
           Copyright (C) 1992, 1993, 1999 Signum Support AB,
           and Copyright (C) others.
 

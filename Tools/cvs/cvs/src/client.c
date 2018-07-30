@@ -1120,6 +1120,8 @@ call_in_directory (pathname, func, data)
     int reposdirname_absolute;
     int newdir = 0;
 
+    assert (pathname);
+
     reposname = NULL;
     read_line (&reposname);
     assert (reposname != NULL);
@@ -1225,6 +1227,11 @@ call_in_directory (pathname, func, data)
 	char *r;
 
 	newdir = 1;
+
+	/* If toplevel_repos doesn't have at least one character, then the
+	 * reference to r[-1] below could be out of bounds.
+	 */
+	assert (*toplevel_repos);
 
 	repo = xmalloc (strlen (toplevel_repos)
 			+ 10);
@@ -1935,7 +1942,7 @@ update_entries (data_arg, ent_list, short_pathname, filename)
 #ifdef USE_VMS_FILENAMES
         /* A VMS rename of "blah.dat" to "foo" to implies a
            destination of "foo.dat" which is unfortinate for CVS */
-       sprintf (temp_filename, "%s_new_", filename);
+	sprintf (temp_filename, "%s_new_", filename);
 #else
 #ifdef _POSIX_NO_TRUNC
 	sprintf (temp_filename, ".new.%.9s", filename);
@@ -1988,6 +1995,8 @@ update_entries (data_arg, ent_list, short_pathname, filename)
 		   entirely possible that future files will not have
 		   the same problem.  */
 		error (0, errno, "cannot write %s", short_pathname);
+		free (temp_filename);
+		free (buf);
 		goto discard_file_and_return;
 	    }
 
@@ -3087,8 +3096,9 @@ handle_m (args, len)
     fflush (stderr);
     FD_ZERO (&wfds);
     FD_SET (STDOUT_FILENO, &wfds);
+    errno = 0;
     s = select (STDOUT_FILENO+1, NULL, &wfds, NULL, NULL);
-    if (s < 1)
+    if (s < 1 && errno != 0)
         perror ("cannot write to stdout");
     fwrite (args, len, sizeof (*args), stdout);
     putc ('\n', stdout);
@@ -3145,6 +3155,7 @@ handle_e (args, len)
     fflush (stdout);
     FD_ZERO (&wfds);
     FD_SET (STDERR_FILENO, &wfds);
+    errno = 0;
     s = select (STDERR_FILENO+1, NULL, &wfds, NULL, NULL);
     /*
      * If stderr has problems, then adding a call to
@@ -3152,7 +3163,7 @@ handle_e (args, len)
      * will not work. So, try to write a message on stdout and
      * terminate cvs.
      */
-    if (s < 1)
+    if (s < 1 && errno != 0)
         fperrmsg (stdout, 1, errno, "cannot write to stderr");
     fwrite (args, len, sizeof (*args), stderr);
     putc ('\n', stderr);

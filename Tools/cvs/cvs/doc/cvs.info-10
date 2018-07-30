@@ -10,6 +10,83 @@ START-INFO-DIR-ENTRY
 END-INFO-DIR-ENTRY
 
 
+File: cvs.info,  Node: BUGS,  Next: Index,  Prev: Credits,  Up: Top
+
+Dealing with bugs in CVS or this manual
+***************************************
+
+   Neither CVS nor this manual is perfect, and they probably never will
+be.  If you are having trouble using CVS, or think you have found a
+bug, there are a number of things you can do about it.  Note that if
+the manual is unclear, that can be considered a bug in the manual, so
+these problems are often worth doing something about as well as
+problems with CVS itself.
+
+   * If you want someone to help you and fix bugs that you report,
+     there are companies which will do that for a fee.  One such
+     company is:
+
+          Ximbiot
+          319 S. River St.
+          Harrisburg, PA  17104-1657
+          USA
+          Email: info@ximbiot.com
+          Phone: (717) 579-6168
+          Fax:   (717) 234-3125
+          <http://ximbiot.com/>
+
+   * If you got CVS through a distributor, such as an operating system
+     vendor or a vendor of freeware CD-ROMs, you may wish to see
+     whether the distributor provides support.  Often, they will provide
+     no support or minimal support, but this may vary from distributor
+     to distributor.
+
+   * If you have the skills and time to do so, you may wish to fix the
+     bug yourself.  If you wish to submit your fix for inclusion in
+     future releases of CVS, see the file HACKING in the CVS source
+     distribution.  It contains much more information on the process of
+     submitting fixes.
+
+   * There may be resources on the net which can help.  Two good places
+     to start are:
+
+          <http://www.cvshome.org>
+          <http://www.loria.fr/~molli/cvs-index.html>
+
+     If you are so inspired, increasing the information available on
+     the net is likely to be appreciated.  For example, before the
+     standard CVS distribution worked on Windows 95, there was a web
+     page with some explanation and patches for running CVS on Windows
+     95, and various people helped out by mentioning this page on
+     mailing lists or newsgroups when the subject came up.
+
+   * It is also possible to report bugs to <bug-cvs@gnu.org>.  Note
+     that someone may or may not want to do anything with your bug
+     report--if you need a solution consider one of the options
+     mentioned above.  People probably do want to hear about bugs which
+     are particularly severe in consequences and/or easy to fix,
+     however.  You can also increase your odds by being as clear as
+     possible about the exact nature of the bug and any other relevant
+     information.  The way to report bugs is to send email to
+     <bug-cvs@gnu.org>.  Note that submissions to <bug-cvs@gnu.org> may
+     be distributed under the terms of the GNU Public License, so if
+     you don't like this, don't submit them.  There is usually no
+     justification for sending mail directly to one of the CVS
+     maintainers rather than to <bug-cvs@gnu.org>; those maintainers
+     who want to hear about such bug reports read <bug-cvs@gnu.org>.
+     Also note that sending a bug report to other mailing lists or
+     newsgroups is _not_ a substitute for sending it to
+     <bug-cvs@gnu.org>.  It is fine to discuss CVS bugs on whatever
+     forum you prefer, but there are not necessarily any maintainers
+     reading bug reports sent anywhere except <bug-cvs@gnu.org>.
+
+   People often ask if there is a list of known bugs or whether a
+particular bug is a known one.  The file BUGS in the CVS source
+distribution is one list of known bugs, but it doesn't necessarily try
+to be comprehensive.  Perhaps there will never be a comprehensive,
+detailed list of known bugs.
+
+
 File: cvs.info,  Node: Index,  Prev: BUGS,  Up: Top
 
 Index
@@ -315,7 +392,9 @@ Index
 * Importing modules:                     First import.
 * Index:                                 Index.
 * inetd, configuring for pserver:        Password authentication server.
+* Info files:                            Trigger Scripts.
 * Info files (syntax):                   syntax.
+* Info files, security:                  Trigger Script Security.
 * Informing others:                      Informing others.
 * init (subcommand):                     Creating a repository.
 * Installed images (VMS):                File permissions.
@@ -588,6 +667,8 @@ Index
 * Traceability:                          History browsing.
 * Tracking sources:                      Tracking sources.
 * Transactions, atomic, lack of:         Concurrency.
+* Trigger scripts:                       Trigger Scripts.
+* Trigger scripts, security:             Trigger Script Security.
 * Trivial Compiler (example):            A sample session.
 * Typical repository:                    Repository.
 * Umask, for repository files:           File permissions.

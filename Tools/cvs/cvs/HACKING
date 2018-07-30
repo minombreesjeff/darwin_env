@@ -126,7 +126,7 @@ have the same versions the developers do, so the rules to run them
 automatically aren't included in the generated Makefiles unless you run
 configure with the --enable-maintainer-mode option.
 
-The CVS Makefiles and configure script were built using Automake 1.9.3 and
+The CVS Makefiles and configure script were built using Automake 1.9.5 and
 Autoconf 2.59, respectively.
 
 There is a known bug in Autoconf 2.57 that will prevent the configure

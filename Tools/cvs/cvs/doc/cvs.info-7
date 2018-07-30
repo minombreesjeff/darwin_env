@@ -323,7 +323,12 @@ log options
 -----------
 
    By default, `log' prints all information that is available.  All
-other options restrict the output.
+other options restrict the output.  Note that the revision selection
+options (`-d', `-r', `-s', and `-w') have no effect, other than
+possibly causing a search for files in Attic directories, when used in
+conjunction with the options that restrict the output to only `log'
+header fields (`-b', `-h', `-R', and `-t') unless the `-S' option is
+also specified.
 
 `-b'
      Print information about the revisions on the default branch,

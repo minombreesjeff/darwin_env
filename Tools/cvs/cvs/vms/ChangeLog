@@ -1,3 +1,38 @@
+2005-04-08  Derek Price  <derek@ximbiot.com>
+
+	* .cvsignore: Add stamp-ch.
+
+2005-04-07  Derek Price  <derek@ximbiot.com>
+
+	* stamp-ch: Remove this file.
+
+2005-04-06  Derek Price  <derek@ximbiot.com>
+
+	* Makefile.am (DISTCLEANFILES): Add stamp-ch for removal on distclean.
+
+2005-02-08  Derek Price  <derek@ximbiot.com>
+
+	* Makefile.am (config.h, stamp-ch): New targets.
+	* config.h.in: New file.
+	(PACKAGE_STRING): Generate automatically.
+	(FOLD_FN_CHAR): Delete this macro...
+	(fncmp, fnfold): ...and these prototypes to pick up default definitions
+	from lib/system.h.
+	* filesubr.c (VMS_filename_classes): Ditto for this global var.
+	(Inspired by report Piet Schuermans <pschuermans@mac.com>.)
+
+	* config.h.in: (inline, SIZE_MAX): Define.
+	(Original patch from Piet Schuermans <pschuermans@mac.com>.)
+
+2005-01-31  Derek Price  <derek@ximbiot.com>
+
+	* Makefile.am: Back copyright date off since Makefile.am hasn't changed
+	since 2002.
+
+2005-01-31  Derek Price  <derek@ximbiot.com>
+
+	* Makefile.am: Update copyright notices.
+
 2004-04-04  Derek Price  <derek@ximbiot.com>
 
 	* filesubr.c (isabsolute): Remove this function.

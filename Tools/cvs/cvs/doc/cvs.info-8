@@ -839,6 +839,8 @@ defines the modules inside the repository.
 
 * modules::                     Defining modules
 * Wrappers::                    Specify binary-ness based on file name
+* Trigger Scripts::		Some notes on the commit support files and
+				taginfo, referenced below.
 * commit files::                The commit support files (commitinfo,
                                 verifymsg, editinfo, loginfo)
 * taginfo::                     Verifying/Logging tags
@@ -1081,7 +1083,7 @@ in the path if not.
 completed.
 
 
-File: cvs.info,  Node: Wrappers,  Next: commit files,  Prev: modules,  Up: Administrative files
+File: cvs.info,  Node: Wrappers,  Next: Trigger Scripts,  Prev: modules,  Up: Administrative files
 
 The cvswrappers file
 ====================
@@ -1122,18 +1124,91 @@ files whose name ends in `.exe' as binary:
      cvs import -I ! -W "*.exe -k 'b'" first-dir vendortag reltag
 
 
-File: cvs.info,  Node: commit files,  Next: taginfo,  Prev: Wrappers,  Up: Administrative files
+File: cvs.info,  Node: Trigger Scripts,  Next: commit files,  Prev: Wrappers,  Up: Administrative files
+
+The Trigger Scripts
+===================
+
+   Several of the administrative files support triggers, or the
+launching external scripts or programs at specific times before or
+after particular events.  The individual files are discussed in the
+later sections, *Note commit files:: and *Note taginfo::, but some of
+the common elements are discussed here.
+
+   All the trigger scripts are launched in a copy of the user sandbox
+being committed, on the server, in client-server mode.  In local mode,
+the scripts are actually launched directly from the user sandbox
+directory being committed.  For most intents and purposes, the same
+scripts can be run in both locations without alteration.
+
+* Menu:
+
+* syntax::			The common syntax
+* Trigger Script Security::	Trigger script security
+
+
+File: cvs.info,  Node: syntax,  Next: Trigger Script Security,  Up: Trigger Scripts
+
+The common syntax
+-----------------
+
+   The administrative files such as `commitinfo', `loginfo', `rcsinfo',
+`verifymsg', etc., all have a common format.  The purpose of the files
+are described later on.  The common syntax is described here.
+
+   Each line contains the following:
+   * A regular expression.  This is a basic regular expression in the
+     syntax used by GNU emacs.
+
+   * A whitespace separator--one or more spaces and/or tabs.
+
+   * A file name or command-line template.
+
+Blank lines are ignored.  Lines that start with the character `#' are
+treated as comments.  Long lines unfortunately can _not_ be broken in
+two parts in any way.
+
+   The first regular expression that matches the current directory name
+in the repository is used.  The rest of the line is used as a file name
+or command-line as appropriate.
+
+
+File: cvs.info,  Node: Trigger Script Security,  Prev: syntax,  Up: Trigger Scripts
+
+Security and the Trigger Scripts
+--------------------------------
+
+   Security is a huge subject, and implementing a secure system is a
+non-trivial task.  This section will barely touch on all the issues
+involved, but it is well to note that, as with any script you will be
+allowing an untrusted user to run on your server, there are measures
+you can take to help prevent your trigger scripts from being abused.
+
+   For instance, since the CVS trigger scripts all run in a copy of the
+user's sandbox on the server, a naively coded Perl trigger script which
+attempts to use a Perl module that is not installed on the system can
+be hijacked by any user with commit access who is checking in a file
+with the correct name.  Other scripting languages may be vulnerable to
+similar hacks.
+
+   One way to make a script more secure, at least with Perl, is to use
+scripts which invoke the `-T', or "taint-check" switch on their `#!'
+line.  In the most basic terms, this causes Perl to avoid running code
+that may have come from an external source.  Please run the `perldoc
+perlsec' command for more on Perl security.  Again, other languages may
+implement other security verification hooks which look more or less
+like Perl's "taint-check" mechanism.
+
+
+File: cvs.info,  Node: commit files,  Next: taginfo,  Prev: Trigger Scripts,  Up: Administrative files
 
 The commit support files
 ========================
 
-   The files described in this section provide flexible ways to run
-programs whenever something is committed.
-
-   There are three kinds of programs that can be run on commit.  They
-are specified in files in the repository, as described below.  The
-following table summarizes the file names and the purpose of the
-corresponding programs.
+   There are three kinds of trigger scripts (*note Trigger Scripts::)
+that can be run at various times during a commit.  They are specified
+in files in the repository, as described below.  The following table
+summarizes the file names and the purpose of the corresponding programs.
 
 `commitinfo'
      The program is responsible for checking that the commit is
@@ -1161,7 +1236,6 @@ corresponding programs.
 
 * Menu:
 
-* syntax::                      The common syntax
 * commitinfo::                  Pre-commit checking
 * verifymsg::                   How are log messages evaluated?
 * editinfo::                    Specifying how log messages are created
@@ -1169,33 +1243,7 @@ corresponding programs.
 * loginfo::                     Where should log messages be sent?
 
 
-File: cvs.info,  Node: syntax,  Next: commitinfo,  Up: commit files
-
-The common syntax
------------------
-
-   The administrative files such as `commitinfo', `loginfo', `rcsinfo',
-`verifymsg', etc., all have a common format.  The purpose of the files
-are described later on.  The common syntax is described here.
-
-   Each line contains the following:
-   * A regular expression.  This is a basic regular expression in the
-     syntax used by GNU emacs.
-
-   * A whitespace separator--one or more spaces and/or tabs.
-
-   * A file name or command-line template.
-
-Blank lines are ignored.  Lines that start with the character `#' are
-treated as comments.  Long lines unfortunately can _not_ be broken in
-two parts in any way.
-
-   The first regular expression that matches the current directory name
-in the repository is used.  The rest of the line is used as a file name
-or command-line as appropriate.
-
-
-File: cvs.info,  Node: commitinfo,  Next: verifymsg,  Prev: syntax,  Up: commit files
+File: cvs.info,  Node: commitinfo,  Next: verifymsg,  Up: commit files
 
 Commitinfo
 ----------
@@ -1450,102 +1498,4 @@ message.
    The `rcsinfo' file contains this line:
 
      ^tc     /usr/cvssupport/tc.template
-
-
-File: cvs.info,  Node: loginfo,  Prev: editinfo,  Up: commit files
-
-Loginfo
--------
-
-   The `loginfo' file is used to control where `cvs commit' log
-information is sent.  The first entry on a line is a regular expression
-which is tested against the directory that the change is being made to,
-relative to the `$CVSROOT'.  If a match is found, then the remainder of
-the line is a filter program that should expect log information on its
-standard input.  Note that the filter program *must* read *all* of the
-log information or CVS may fail with a broken pipe signal.
-
-   If the repository name does not match any of the regular expressions
-in this file, the `DEFAULT' line is used, if it is specified.
-
-   All occurrences of the name `ALL' appearing as a regular expression
-are used in addition to the first matching regular expression or
-`DEFAULT'.
-
-   The first matching regular expression is used.
-
-   *Note commit files::, for a description of the syntax of the
-`loginfo' file.
-
-   The user may specify a format string as part of the filter.  The
-string is composed of a `%' followed by a space, or followed by a single
-format character, or followed by a set of format characters surrounded
-by `{' and `}' as separators.  The format characters are:
-
-s
-     file name
-
-V
-     old version number (pre-checkin)
-
-v
-     new version number (post-checkin)
-
-   All other characters that appear in a format string expand to an
-empty field (commas separating fields are still provided).
-
-   For example, some valid format strings are `%', `%s', `%{s}', and
-`%{sVv}'.
-
-   The output will be a space separated string of tokens enclosed in
-quotation marks (").  Any embedded dollar signs ($), backticks (`),
-backslashes (\), or quotation marks will be preceded by a backslash
-(this allows the shell to correctly parse it as a single string,
-reguardless of the characters it contains).  For backwards
-compatibility, the first token will be the repository subdirectory.
-The rest of the tokens will be comma-delimited lists of the information
-requested in the format string.  For example, if
-`/u/src/master/yoyodyne/tc' is the repository, `%{sVv}' is the format
-string, and three files (ChangeLog, Makefile, foo.c) were modified, the
-output might be:
-
-     "yoyodyne/tc ChangeLog,1.1,1.2 Makefile,1.3,1.4 foo.c,1.12,1.13"
-
-   As another example, `%{}' means that only the name of the repository
-will be generated.
-
-   Note: when CVS is accessing a remote repository, `loginfo' will be
-run on the _remote_ (i.e., server) side, not the client side (*note
-Remote repositories::).
-
-* Menu:
-
-* loginfo example::             Loginfo example
-* Keeping a checked out copy::  Updating a tree on every checkin
-
-
-File: cvs.info,  Node: loginfo example,  Next: Keeping a checked out copy,  Up: loginfo
-
-Loginfo example
-...............
-
-   The following `loginfo' file, together with the tiny shell-script
-below, appends all log messages to the file
-`$CVSROOT/CVSROOT/commitlog', and any commits to the administrative
-files (inside the `CVSROOT' directory) are also logged in
-`/usr/adm/cvsroot-log'.  Commits to the `prog1' directory are mailed to
-ceder.
-
-     ALL             /usr/local/bin/cvs-log $CVSROOT/CVSROOT/commitlog $USER
-     ^CVSROOT        /usr/local/bin/cvs-log /usr/adm/cvsroot-log
-     ^prog1          Mail -s %s ceder
-
-   The shell-script `/usr/local/bin/cvs-log' looks like this:
-
-     #!/bin/sh
-     (echo "------------------------------------------------------";
-      echo -n $2"  ";
-      date;
-      echo;
-      cat) >> $1
 

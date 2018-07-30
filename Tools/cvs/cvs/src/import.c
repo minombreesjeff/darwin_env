@@ -1,6 +1,11 @@
 /*
- * Copyright (c) 1992, Brian Berliner and Jeff Polk
- * Copyright (c) 1989-1992, Brian Berliner
+ * Copyright (C) 1986-2005 The Free Software Foundation, Inc.
+ *
+ * Portions Copyright (C) 1998-2005 Derek Price, Ximbiot <http://ximbiot.com>,
+ *                                  and others.
+ *
+ * Portions Copyright (C) 1992, Brian Berliner and Jeff Polk
+ * Portions Copyright (C) 1989-1992, Brian Berliner
  * 
  * You may distribute under the terms of the GNU General Public License as
  * specified in the README file that comes with the CVS source distribution.
@@ -117,6 +122,7 @@ import (argc, argv)
 #else
 		use_editor = 0;
 #endif
+		if (message) free (message);
 		message = xstrdup(optarg);
 		break;
 	    case 'I':
@@ -214,8 +220,9 @@ import (argc, argv)
      */
     {
 	regex_t pat;
-	assert (!regcomp (&pat, "^[1-9][0-9]*\\.[1-9][0-9]*\\.[1-9][0-9]*$",
-			  REG_EXTENDED));
+	int ret = regcomp (&pat, "^[1-9][0-9]*\\.[1-9][0-9]*\\.[1-9][0-9]*$",
+			   REG_EXTENDED);
+	assert (!ret);
 	if (regexec (&pat, vbranch, 0, NULL, 0))
 	{
 	    error (1, 0,

@@ -1,6 +1,10 @@
 /*
- * Copyright (c) 1992, Mark D. Baushke
- * Copyright (c) 2002, Derek R. Price
+ * Copyright (C) 1986-2005 The Free Software Foundation, Inc.
+ *
+ * Portions Copyright (C) 1998-2005 Derek Price, Ximbiot <http://ximbiot.com>,
+ *                                  and others.
+ *
+ * Poritons Copyright (c) 1992, Mark D. Baushke
  *
  * You may distribute under the terms of the GNU General Public License as
  * specified in the README file that comes with the CVS source distribution.
@@ -11,6 +15,7 @@
  */
 
 #include "cvs.h"
+#include <assert.h>
 #include "getline.h"
 
 /* Printable names for things in the current_parsed_root->method enum variable.
@@ -371,6 +376,8 @@ parse_cvsroot (root_in)
 #ifdef CLIENT_SUPPORT
     int check_hostname, no_port, no_password;
 #endif /* CLIENT_SUPPORT */
+
+    assert (root_in);
 
     /* allocate some space */
     newroot = new_cvsroot_t();
@@ -738,6 +745,8 @@ normalize_cvsroot (root)
     char *cvsroot_canonical;
     char *p, *hostname, *username;
     char port_s[64];
+
+    assert (root && root->hostname && root->directory);
 
     /* get the appropriate port string */
     sprintf (port_s, "%d", get_cvs_port_number (root));

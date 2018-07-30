@@ -356,13 +356,20 @@ create_adm_p (base_dir, dir)
 
     dir_where_cvsadm_lives = xmalloc (strlen (base_dir) + strlen (dir) + 100);
     if (dir_where_cvsadm_lives == NULL)
+    {
+	free (p);
 	return ENOMEM;
+    }
 
     /* Allocate some space for the temporary string in which we will
        construct filenames. */
     tmp = xmalloc (strlen (base_dir) + strlen (dir) + 100);
     if (tmp == NULL)
+    {
+	free (p);
+	free (dir_where_cvsadm_lives);
 	return ENOMEM;
+    }
 
 
     /* We make several passes through this loop.  On the first pass,
@@ -1833,6 +1840,7 @@ serve_entry (arg)
     cp = xmalloc (strlen (arg) + 2);
     if (cp == NULL)
     {
+	free (p);
 	pending_error = ENOMEM;
 	return;
     }
@@ -5473,6 +5481,7 @@ check_repository_password (username, password, repository, host_user_ptr)
     {
 	if (!existence_error (errno))
 	    error (0, errno, "cannot open %s", filename);
+	free (filename);
 	return 0;
     }
 

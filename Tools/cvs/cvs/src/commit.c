@@ -1,6 +1,11 @@
 /*
- * Copyright (c) 1992, Brian Berliner and Jeff Polk
- * Copyright (c) 1989-1992, Brian Berliner
+ * Copyright (C) 1986-2005 The Free Software Foundation, Inc.
+ *
+ * Portions Copyright (C) 1998-2005 Derek Price, Ximbiot <http://ximbiot.com>,
+ *                                  and others.
+ *
+ * Portions Copyright (C) 1992, Brian Berliner and Jeff Polk
+ * Portions Copyright (C) 1989-1992, Brian Berliner
  *
  * You may distribute under the terms of the GNU General Public License as
  * specified in the README file that comes with the CVS source distribution.
@@ -1474,6 +1479,8 @@ commit_filesdoneproc (callerdat, err, repository, update_dir, entries)
     Node *p;
     List *ulist;
 
+    assert (repository);
+
     p = findnode (mulist, update_dir);
     if (p == NULL)
 	return err;
@@ -2130,6 +2137,7 @@ checkaddfile (file, repository, tag, options, rcsnode)
 	    {
 		error (retcode == -1 ? 1 : 0, retcode == -1 ? errno : 0,
 		       "could not create initial dead revision %s", rcs->path);
+		free (fname);
 		goto out;
 	    }
 
@@ -2172,6 +2180,9 @@ checkaddfile (file, repository, tag, options, rcsnode)
 	    fixbranch (rcs, sbranch);
 
 	    head = RCS_getversion (rcs, NULL, NULL, 0, (int *) NULL);
+	    if (!head)
+		error (1, 0, "No head revision in archive file `%s'.",
+		       rcs->path);
 	    magicrev = RCS_magicrev (rcs, head);
 
 	    /* If this is not a new branch, then we will want a dead

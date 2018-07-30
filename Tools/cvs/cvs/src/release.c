@@ -67,7 +67,6 @@ release (argc, argv)
 {
     FILE *fp;
     int i, c;
-    char *repository;
     char *line = NULL;
     size_t line_allocated = 0;
     char *update_cmd;
@@ -177,8 +176,6 @@ release (argc, argv)
 	    continue;
 	}
 
-	repository = Name_Repository ((char *) NULL, (char *) NULL);
-
 	if (!really_quiet)
 	{
 	    int line_length;
@@ -211,7 +208,6 @@ release (argc, argv)
 	    if ((pclose (fp)) != 0)
 	    {
 		error (0, 0, "unable to release `%s'", thisarg);
-		free (repository);
 		if (restore_cwd (&cwd, NULL))
 		    error_exit ();
 		continue;
@@ -226,7 +222,6 @@ release (argc, argv)
 	    {
 		(void) fprintf (stderr, "** `%s' aborted by user choice.\n",
 				cvs_cmd_name);
-		free (repository);
 		if (restore_cwd (&cwd, NULL))
 		    error_exit ();
 		continue;
@@ -240,7 +235,6 @@ release (argc, argv)
            CVS/Entries file in the wrong directory.  See release-17
            through release-23. */
 
-        free (repository);
 	if (restore_cwd (&cwd, NULL))
 	    exit (EXIT_FAILURE);
 
