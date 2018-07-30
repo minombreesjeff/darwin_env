@@ -61,8 +61,7 @@ AEP_Version    = 1.12.13
 AEP_ProjVers   = $(AEP_Project)-$(AEP_Version)
 AEP_Filename   = $(AEP_ProjVers).tar.bz2
 AEP_ExtractDir = $(AEP_ProjVers)
-AEP_Patches    = error_msg.diff \
-                 ea.diff \
+AEP_Patches    = ea.diff \
                  tag.diff \
                  nopic.diff \
                  i18n.diff \

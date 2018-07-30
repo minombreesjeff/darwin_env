@@ -395,7 +395,7 @@ wrap_add (char *line, int isTemp)
 	       commit.c (see
 	       <http://ximbiot.com/cvs/cvshome/docs/infowrapper.html>).  */
 	    error (1, 0,
-		   "-t/-f wrappers not supported by this version of CVS\nA legacy version of cvs with -t/-f wrapper support is available as: /usr/bin/ocvs.");
+		   "-t/-f wrappers not supported by this version of CVS");
 
 	    if(e.fromcvsFilter)
 		free(e.fromcvsFilter);
@@ -412,7 +412,7 @@ wrap_add (char *line, int isTemp)
 	       commit.c (see
 	       <http://ximbiot.com/cvs/cvshome/docs/infowrapper.html>).  */
 	    error (1, 0,
-		   "-t/-f wrappers not supported by this version of CVS\nA legacy version of cvs with -t/-f wrapper support is available as: /usr/bin/ocvs.");
+		   "-t/-f wrappers not supported by this version of CVS");
 
 	    if(e.tocvsFilter)
 		free(e.tocvsFilter);
