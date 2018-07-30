@@ -27,9 +27,8 @@ cleanup:
 	mv $(DSTROOT)/usr/bin/cvs $(DSTROOT)/usr/bin/ocvs
 	-rmdir $(DSTROOT)/usr/share/man/man{5,8}
 	chmod -x $(DSTROOT)/usr/share/man/man1/ocvs.1
-	ln -s /usr/bin/cvs-diff-branch $(DSTROOT)/usr/bin/ocvs-diff-branch
-	ln -s /usr/bin/cvs-make-branch $(DSTROOT)/usr/bin/ocvs-make-branch
-	ln -s /usr/bin/cvs-merge-branch $(DSTROOT)/usr/bin/ocvs-merge-branch
-	ln -s /usr/bin/cvs-revert      $(DSTROOT)/usr/bin/ocvs-revert
-	ln -s /usr/bin/cvs-view-diffs  $(DSTROOT)/usr/bin/ocvs-view-diffs
-
+	mkdir -p $(DSTROOT)/usr/local/bin
+	for script in diff-branch make-branch merge-branch revert view-diffs; do \
+		mv $(DSTROOT)/usr/bin/cvs-$${script} $(DSTROOT)/usr/local/bin/cvs-$${script}; \
+		ln -s cvs-$${script} $(DSTROOT)/usr/local/bin/ocvs-$${script}; \
+	done
