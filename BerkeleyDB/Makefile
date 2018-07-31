@@ -7,6 +7,15 @@ include $(MAKEFILEPATH)/CoreOS/ReleaseControl/Common.make
 CC_Optimize = -Os -mdynamic-no-pic
 
 build::
-	cd $(OBJROOT) && $(Environment) $(SRCROOT)/$(Project)/dist/configure --disable-java --disable-shared --with-mutex=DARWIN/_spin_lock_try --prefix=/usr/local docdir=/usr/local/BerkeleyDB/docs
+	cd $(OBJROOT) && $(Environment) $(SRCROOT)/$(Project)/dist/configure --disable-java --disable-shared --prefix=/usr/local docdir=/usr/local/BerkeleyDB/docs
 	cd $(OBJROOT) && make
-	cd $(OBJROOT) && make prefix=$(DSTROOT)/usr/local/BerkeleyDB install
+	cd $(OBJROOT) && make prefix=$(DSTROOT)/usr/local/BerkeleyDB bindir=$(DSTROOT)/usr/bin install
+	mkdir -p $(DSTROOT)/usr/share/man/man1/
+	cp $(SRCROOT)/AppleExtras/*.1 $(DSTROOT)/usr/share/man/man1/
+
+install_headers::
+	mkdir -p $(OBJROOT)
+	cd $(OBJROOT) && $(Environment) $(SRCROOT)/$(Project)/dist/configure --disable-java --disable-shared --prefix=/usr/local docdir=/usr/local/BerkeleyDB/docs
+	mkdir -p $(DSTROOT)/usr/local/BerkeleyDB/include
+	$(INSTALL) -c -m 444 $(OBJROOT)/db.h $(DSTROOT)/usr/local/BerkeleyDB/include
+	$(INSTALL) -c -m 444 $(OBJROOT)/db_cxx.h $(DSTROOT)/usr/local/BerkeleyDB/include
