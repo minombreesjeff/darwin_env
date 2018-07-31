@@ -228,8 +228,8 @@ sys_var_thd_bool	sys_sql_low_priority_updates("sql_low_priority_updates",
 						     &SV::low_priority_updates,
 						     fix_low_priority_updates);
 #endif
-sys_var_thd_ulong	sys_max_allowed_packet("max_allowed_packet",
-					       &SV::max_allowed_packet);
+sys_var_thd_ulong_session_readonly sys_max_allowed_packet("max_allowed_packet",
+                                               &SV::max_allowed_packet);
 sys_var_long_ptr	sys_max_binlog_cache_size("max_binlog_cache_size",
 						  &max_binlog_cache_size);
 sys_var_long_ptr	sys_max_binlog_size("max_binlog_size",
@@ -296,8 +296,8 @@ sys_var_thd_enum        sys_myisam_stats_method("myisam_stats_method",
                                                 &myisam_stats_method_typelib,
                                                 NULL);
 
-sys_var_thd_ulong	sys_net_buffer_length("net_buffer_length",
-					      &SV::net_buffer_length);
+sys_var_thd_ulong_session_readonly sys_net_buffer_length("net_buffer_length",
+                                              &SV::net_buffer_length);
 sys_var_thd_ulong	sys_net_read_timeout("net_read_timeout",
 					     &SV::net_read_timeout,
 					     0, fix_net_read_timeout);
@@ -736,7 +736,7 @@ sys_var *sys_variables[]=
   &sys_optimizer_prune_level,
   &sys_optimizer_search_depth,
   &sys_preload_buff_size,
-#ifdef ENABLED_PROFILING
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   &sys_profiling,
   &sys_profiling_history_size,
 #endif
@@ -1060,7 +1060,7 @@ struct show_var_st init_vars[]= {
   {sys_plugin_dir.name,       (char*) &sys_plugin_dir,              SHOW_SYS},
   {"port",                    (char*) &mysqld_port,                  SHOW_INT},
   {sys_preload_buff_size.name, (char*) &sys_preload_buff_size,      SHOW_SYS},
-#ifdef ENABLED_PROFILING
+#if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
   {sys_profiling.name,        (char*) &sys_profiling,               SHOW_SYS},
   {sys_profiling_history_size.name, (char*) &sys_profiling_history_size, SHOW_SYS},
 #endif
@@ -2948,6 +2948,21 @@ byte *sys_var_max_user_conn::value_ptr(THD *thd, enum_var_type type,
 }
 
 
+bool sys_var_thd_ulong_session_readonly::check(THD *thd, set_var *var)
+{
+  if (var->type != OPT_GLOBAL)
+  {
+    /* Due to backporting, this is actually ER_VARIABLE_IS_READONLY in 5.1+ */
+    my_printf_error(ER_UNKNOWN_ERROR, 
+             "SESSION variable %s is read-only. Use SET GLOBAL %s "
+             "to assign the value", MYF(0), name, name);
+    return TRUE;
+  }
+
+  return sys_var_thd_ulong::check(thd, var);
+}
+
+
 bool sys_var_thd_lc_time_names::check(THD *thd, set_var *var)
 {
   MY_LOCALE *locale_match;
@@ -3513,7 +3528,7 @@ int set_var_password::check(THD *thd)
   {
     DBUG_ASSERT(thd->security_ctx->priv_user);
     user->user.str= (char *) thd->security_ctx->priv_user;
-    user->user.length= strlen(thd->security_ctx->priv_user);
+    user->user.length= (uint) strlen(thd->security_ctx->priv_user);
   }
   /* Returns 1 as the function sends error to client */
   return check_change_password(thd, user->host.str, user->user.str,

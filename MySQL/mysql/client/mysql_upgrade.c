@@ -387,7 +387,7 @@ static void find_tool(char *tool_executable_name, const char *tool_name,
       last_fn_libchar -= 6;
     }
 
-    len= last_fn_libchar - self_name;
+    len= (int) (last_fn_libchar - self_name);
 
     my_snprintf(tool_executable_name, FN_REFLEN, "%.*s%c%s",
                 len, self_name, FN_LIBCHAR, tool_name);
@@ -526,6 +526,7 @@ static int upgrade_already_done(void)
   FILE *in;
   char upgrade_info_file[FN_REFLEN]= {0};
   char buf[sizeof(MYSQL_SERVER_VERSION)+1];
+  char *res;
 
   if (get_upgrade_info_file_name(upgrade_info_file))
     return 0; /* Could not get filename => not sure */
@@ -538,7 +539,7 @@ static int upgrade_already_done(void)
     will be detected by the strncmp
   */
   bzero(buf, sizeof(buf));
-  fgets(buf, sizeof(buf), in);
+  res= fgets(buf, sizeof(buf), in);
 
   my_fclose(in, MYF(0));
 

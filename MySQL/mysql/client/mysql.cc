@@ -112,7 +112,7 @@ extern "C" {
 #define PROMPT_CHAR '\\'
 #define DEFAULT_DELIMITER ";"
 
-#define MAX_BATCH_BUFFER_SIZE (1024L * 1024L)
+#define MAX_BATCH_BUFFER_SIZE (1024L * 1024L * 1024L)
 
 typedef struct st_status
 {
@@ -140,7 +140,7 @@ static my_bool info_flag=0,ignore_errors=0,wait_flag=0,quick=0,
 	       tty_password= 0, opt_nobeep=0, opt_reconnect=1,
 	       default_charset_used= 0, opt_secure_auth= 0,
                default_pager_set= 0, opt_sigint_ignore= 0,
-               show_warnings= 0;
+               show_warnings= 0, ignore_spaces= 0;
 static volatile int executing_query= 0, interrupted_query= 0;
 static my_bool preserve_comments= 0;
 static ulong opt_max_allowed_packet, opt_net_buffer_length;
@@ -1219,18 +1219,34 @@ sig_handler mysql_sigint(int sig)
   MYSQL *kill_mysql= NULL;
 
   /* terminate if no query being executed, or we already tried interrupting */
-  if (!executing_query || interrupted_query++)
+  if (!executing_query || (interrupted_query == 2))
+  {
+    tee_fprintf(stdout, "Ctrl-C -- exit!\n");
     goto err;
+  }
 
   kill_mysql= mysql_init(kill_mysql);
   if (!mysql_real_connect(kill_mysql,current_host, current_user, opt_password,
                           "", opt_mysql_port, opt_mysql_unix_port,0))
+  {
+    tee_fprintf(stdout, "Ctrl-C -- sorry, cannot connect to server to kill query, giving up ...\n");
     goto err;
+  }
+
+  interrupted_query++;
+
+  /* mysqld < 5 does not understand KILL QUERY, skip to KILL CONNECTION */
+  if ((interrupted_query == 1) && (mysql_get_server_version(&mysql) < 50000))
+    interrupted_query= 2;
+
   /* kill_buffer is always big enough because max length of %lu is 15 */
-  sprintf(kill_buffer, "KILL /*!50000 QUERY */ %lu", mysql_thread_id(&mysql));
+  sprintf(kill_buffer, "KILL %s%lu",
+          (interrupted_query == 1) ? "QUERY " : "",
+          mysql_thread_id(&mysql));
+  tee_fprintf(stdout, "Ctrl-C -- sending \"%s\" to server ...\n", kill_buffer);
   mysql_real_query(kill_mysql, kill_buffer, (uint) strlen(kill_buffer));
   mysql_close(kill_mysql);
-  tee_fprintf(stdout, "Query aborted by Ctrl+C\n");
+  tee_fprintf(stdout, "Ctrl-C -- query aborted.\n");
 
   return;
 
@@ -1350,8 +1366,9 @@ static struct my_option my_long_options[] =
   {"no-named-commands", 'g',
    "Named commands are disabled. Use \\* form only, or use named commands only in the beginning of a line ending with a semicolon (;) Since version 10.9 the client now starts with this option ENABLED by default! Disable with '-G'. Long format commands still work from the first line. WARNING: option deprecated; use --disable-named-commands instead.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"ignore-spaces", 'i', "Ignore space after function names.", 0, 0, 0,
-   GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"ignore-spaces", 'i', "Ignore space after function names.",
+   (gptr*) &ignore_spaces, (gptr*) &ignore_spaces, 0, GET_BOOL, NO_ARG, 0, 0,
+   0, 0, 0, 0},
   {"local-infile", OPT_LOCAL_INFILE, "Enable/disable LOAD DATA LOCAL INFILE.",
    (gptr*) &opt_local_infile,
    (gptr*) &opt_local_infile, 0, GET_BOOL, OPT_ARG, 0, 0, 0, 0, 0, 0},
@@ -1749,6 +1766,10 @@ static int get_options(int argc, char **argv)
   }
   if (tty_password)
     opt_password= get_tty_password(NullS);
+
+  if (ignore_spaces)
+    connect_flag|= CLIENT_IGNORE_SPACE;
+
   return(0);
 }
 
@@ -1944,7 +1965,7 @@ static COMMANDS *find_command(char *name,char cmd_char)
     */
     if (strstr(name, "\\g") || (strstr(name, delimiter) &&
                                 !(strlen(name) >= 9 &&
-                                  !my_strnncoll(charset_info,
+                                  !my_strnncoll(&my_charset_latin1,
                                                 (uchar*) name, 9,
                                                 (const uchar*) "delimiter",
                                                 9))))
@@ -1965,11 +1986,11 @@ static COMMANDS *find_command(char *name,char cmd_char)
   {
     if (commands[i].func &&
 	((name &&
-	  !my_strnncoll(charset_info,(uchar*)name,len,
+	  !my_strnncoll(&my_charset_latin1, (uchar*)name, len,
 				     (uchar*)commands[i].name,len) &&
 	  !commands[i].name[len] &&
 	  (!end || (end && commands[i].takes_params))) ||
-	 !name && commands[i].cmd_char == cmd_char))
+	 (!name && commands[i].cmd_char == cmd_char)))
     {
       DBUG_PRINT("exit",("found command: %s", commands[i].name));
       DBUG_RETURN(&commands[i]);
@@ -2127,7 +2148,7 @@ static bool add_line(String &buffer,char *line,char *in_string,
       buffer.length(0);
     }
     else if (!*ml_comment && (!*in_string && (inchar == '#' ||
-			      inchar == '-' && pos[1] == '-' &&
+                                              (inchar == '-' && pos[1] == '-' &&
                               /*
                                 The third byte is either whitespace or is the
                                 end of the line -- which would occur only
@@ -2135,7 +2156,7 @@ static bool add_line(String &buffer,char *line,char *in_string,
                                 itself whitespace and should also match.
                               */
 			      (my_isspace(charset_info,pos[2]) ||
-                               !pos[2]))))
+                               !pos[2])))))
     {
       // Flush previously accepted characters
       if (out != line)
@@ -2808,7 +2829,7 @@ com_help(String *buffer __attribute__((unused)),
            "For developer information, including the MySQL Reference Manual, "
            "visit:\n"
            "   http://dev.mysql.com/\n"
-           "To buy MySQL Network Support, training, or other products, visit:\n"
+           "To buy MySQL Enterprise support, training, or other products, visit:\n"
            "   https://shop.mysql.com/\n", INFO_INFO);
   put_info("List of all MySQL commands:", INFO_INFO);
   if (!named_cmds)
@@ -3723,7 +3744,8 @@ com_edit(String *buffer,char *line __attribute__((unused)))
       !(editor = (char *)getenv("VISUAL")))
     editor = "vi";
   strxmov(buff,editor," ",filename,NullS);
-  (void) system(buff);
+  if(system(buff) == -1)
+    goto err;
 
   MY_STAT stat_arg;
   if (!my_stat(filename,&stat_arg,MYF(MY_WME)))

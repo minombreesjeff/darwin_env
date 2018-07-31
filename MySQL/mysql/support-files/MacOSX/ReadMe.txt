@@ -11,6 +11,11 @@
    first need to mount by double-clicking its icon in the Finder. It
    should then mount the image and display its contents.
 
+   When installing from the package version, you should also install
+   the MySQL Preference Pane, which will allow you to control the
+   startup and execution of your MySQL server from System
+   Preferences.
+
    To obtain MySQL, see Section 2.5, "How to Get MySQL."
 
 Note

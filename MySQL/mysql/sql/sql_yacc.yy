@@ -41,11 +41,17 @@
 #include <myisam.h>
 #include <myisammrg.h>
 
+/* this is to get the bison compilation windows warnings out */
+#ifdef _MSC_VER
+/* warning C4065: switch statement contains 'default' but no 'case' labels */
+#pragma warning (disable : 4065)
+#endif
+
 int yylex(void *yylval, void *yythd);
 
 const LEX_STRING null_lex_str={0,0};
 
-#define yyoverflow(A,B,C,D,E,F) {ulong val= *(F); if (my_yyoverflow((B), (D), &val)) { yyerror((char*) (A)); return 2; } else { *(F)= (YYSIZE_T)val; }}
+#define yyoverflow(A,B,C,D,E,F) {ulong val= (ulong) *(F); if (my_yyoverflow((B), (D), &val)) { yyerror((char*) (A)); return 2; } else { *(F)= (YYSIZE_T)val; }}
 
 #undef 	WARN_DEPRECATED			/* this macro is also defined in mysql_priv.h */
 #define WARN_DEPRECATED(A,B)                                        \
@@ -2233,9 +2239,9 @@ sp_proc_stmt:
                 lex->tok_end otherwise.
               */
               if (yychar == YYEMPTY)
-                i->m_query.length= lip->ptr - sp->m_tmp_query;
+                i->m_query.length= (uint) (lip->ptr - sp->m_tmp_query);
               else
-                i->m_query.length= lip->tok_end - sp->m_tmp_query;
+                i->m_query.length= (uint) (lip->tok_end - sp->m_tmp_query);
               if (!(i->m_query.str= strmake_root(thd->mem_root,
                                                  sp->m_tmp_query,
                                                  i->m_query.length)) ||
@@ -3943,7 +3949,7 @@ alter_list_item:
               MYSQL_YYABORT;
             }
             if (check_table_name($3->table.str,$3->table.length) ||
-                $3->db.str && check_db_name($3->db.str))
+                ($3->db.str && check_db_name($3->db.str)))
             {
               my_error(ER_WRONG_TABLE_NAME, MYF(0), $3->table.str);
               MYSQL_YYABORT;
@@ -4094,8 +4100,8 @@ slave_until:
 	| UNTIL_SYM slave_until_opts
           {
             LEX *lex=Lex;
-            if ((lex->mi.log_file_name || lex->mi.pos) &&
-                (lex->mi.relay_log_name || lex->mi.relay_log_pos) ||
+            if (((lex->mi.log_file_name || lex->mi.pos) &&
+                (lex->mi.relay_log_name || lex->mi.relay_log_pos)) ||
                 !((lex->mi.log_file_name && lex->mi.pos) ||
                   (lex->mi.relay_log_name && lex->mi.relay_log_pos)))
             {
@@ -7328,7 +7334,7 @@ procedure_clause:
               MYSQL_YYABORT;
             }
 
-	    if (&lex->select_lex != lex->current_select)
+            if (&lex->select_lex != lex->current_select)
 	    {
 	      my_error(ER_WRONG_USAGE, MYF(0), "PROCEDURE", "subquery");
 	      MYSQL_YYABORT;
@@ -7803,7 +7809,7 @@ update:
 	  LEX *lex= Lex;
 	  mysql_init_select(lex);
           lex->sql_command= SQLCOM_UPDATE;
-	  lex->lock_option= TL_UNLOCK; 	/* Will be set later */
+            lex->lock_option= using_update_log ? TL_READ_NO_INSERT : TL_READ;
 	  lex->duplicates= DUP_ERROR; 
         }
         opt_low_priority opt_ignore join_table_list
@@ -8269,8 +8275,6 @@ show_param:
             LEX *lex= Lex;
             lex->sql_command= SQLCOM_SELECT;
             lex->orig_sql_command= SQLCOM_SHOW_STATUS_PROC;
-	    if (!sp_add_to_query_tables(YYTHD, lex, "mysql", "proc", TL_READ))
-	      MYSQL_YYABORT;
             if (prepare_schema_table(YYTHD, lex, 0, SCH_PROCEDURES))
               MYSQL_YYABORT;
 	  }
@@ -8279,8 +8283,6 @@ show_param:
             LEX *lex= Lex;
             lex->sql_command= SQLCOM_SELECT;
             lex->orig_sql_command= SQLCOM_SHOW_STATUS_FUNC;
-	    if (!sp_add_to_query_tables(YYTHD, lex, "mysql", "proc", TL_READ))
-	      MYSQL_YYABORT;
             if (prepare_schema_table(YYTHD, lex, 0, SCH_PROCEDURES))
               MYSQL_YYABORT;
 	  }
@@ -9021,9 +9023,10 @@ simple_ident:
 
             Item_splocal *splocal;
             splocal= new Item_splocal($1, spv->offset, spv->type,
-                                      lip->tok_start_prev - 
-                                      lex->sphead->m_tmp_query,
-                                      lip->tok_end - lip->tok_start_prev);
+                                      (uint) (lip->tok_start_prev - 
+                                      lex->sphead->m_tmp_query),
+                                      (uint) (lip->tok_end - 
+                                      lip->tok_start_prev));
             if (splocal == NULL)
               MYSQL_YYABORT;
 #ifndef DBUG_OFF
@@ -9737,9 +9740,9 @@ option_type_value:
                 lip->tok_end otherwise.
               */
               if (yychar == YYEMPTY)
-                qbuff.length= lip->ptr - sp->m_tmp_query;
+                qbuff.length= (uint) (lip->ptr - sp->m_tmp_query);
               else
-                qbuff.length= lip->tok_end - sp->m_tmp_query;
+                qbuff.length= (uint) (lip->tok_end - sp->m_tmp_query);
 
               if (!(qbuff.str= alloc_root(thd->mem_root, qbuff.length + 5)))
                 MYSQL_YYABORT;
@@ -10092,15 +10095,16 @@ text_or_password:
 	| PASSWORD '(' TEXT_STRING ')'
 	  {
 	    $$= $3.length ? YYTHD->variables.old_passwords ?
-	        Item_func_old_password::alloc(YYTHD, $3.str) :
-	        Item_func_password::alloc(YYTHD, $3.str) :
+	        Item_func_old_password::alloc(YYTHD, $3.str, $3.length) :
+	        Item_func_password::alloc(YYTHD, $3.str, $3.length) :
 	      $3.str;
             if ($$ == NULL)
               MYSQL_YYABORT;
 	  }
 	| OLD_PASSWORD '(' TEXT_STRING ')'
 	  {
-	    $$= $3.length ? Item_func_old_password::alloc(YYTHD, $3.str) :
+	    $$= $3.length ? Item_func_old_password::alloc(YYTHD, $3.str, 
+							  $3.length) :
 	      $3.str;
             if ($$ == NULL)
               MYSQL_YYABORT;
@@ -10545,7 +10549,7 @@ grant_user:
                  (char *) YYTHD->alloc(SCRAMBLED_PASSWORD_CHAR_LENGTH_323+1);
                if (buff == NULL)
                  MYSQL_YYABORT;
-               make_scrambled_password_323(buff, $4.str);
+               my_make_scrambled_password_323(buff, $4.str, $4.length);
                $1->password.str= buff;
                $1->password.length= SCRAMBLED_PASSWORD_CHAR_LENGTH_323;
              }
@@ -10555,7 +10559,7 @@ grant_user:
                  (char *) YYTHD->alloc(SCRAMBLED_PASSWORD_CHAR_LENGTH+1);
                if (buff == NULL)
                  MYSQL_YYABORT;
-               make_scrambled_password(buff, $4.str);
+               my_make_scrambled_password(buff, $4.str, $4.length);
                $1->password.str= buff;
                $1->password.length= SCRAMBLED_PASSWORD_CHAR_LENGTH;
              }
@@ -11058,7 +11062,7 @@ view_select_aux:
           char *stmt_beg= (lex->sphead ?
                            (char *)lex->sphead->m_tmp_query :
                            thd->query);
-	  lex->create_view_select_start= $2 - stmt_beg;
+	  lex->create_view_select_start= (uint) ($2 - stmt_beg);
 	}
 	| '(' remember_name select_paren ')' union_opt
 	{
@@ -11067,7 +11071,7 @@ view_select_aux:
           char *stmt_beg= (lex->sphead ?
                            (char *)lex->sphead->m_tmp_query :
                            thd->query);
-	  lex->create_view_select_start= $2 - stmt_beg;
+	  lex->create_view_select_start= (uint) ($2 - stmt_beg);
 	}
 	;
 
@@ -11112,7 +11116,7 @@ trigger_tail:
 	
 	  lex->stmt_definition_begin= $2;
           lex->ident.str= $7;
-          lex->ident.length= $10 - $7;
+          lex->ident.length= (uint) ($10 - $7);
 
 	  lex->sphead= sp;
 	  lex->spname= $3;

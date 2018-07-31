@@ -5,13 +5,14 @@ Systems
    This section covers the installation of MySQL binary distributions
    that are provided for various platforms in the form of compressed
    tar files (files with a .tar.gz extension). See Section 2.4.3.4,
-   "MySQL Binaries Compiled by MySQL AB," for a detailed list.
+   "MySQL Binaries Compiled by Sun Microsystems, Inc.," for a
+   detailed list.
 
    To obtain MySQL, see Section 2.5, "How to Get MySQL."
 
    MySQL tar file binary distributions have names of the form
    mysql-VERSION-OS.tar.gz, where VERSION is a number (for example,
-   5.0.82), and OS indicates the type of operating system for which
+   5.0.87), and OS indicates the type of operating system for which
    the distribution is intended (for example, pc-linux-i686).
 
    In addition to these generic packages, we also offer binaries in
@@ -27,10 +28,13 @@ Systems
      * A reasonable tar to unpack the distribution. GNU tar is known
        to work. Some operating systems come with a preinstalled
        version of tar that is known to have problems. For example,
-       Mac OS X tar and Sun tar are known to have problems with long
-       file names. On Mac OS X, you can use the preinstalled gnutar
-       program. On other systems with a deficient tar, you should
-       install GNU tar first.
+       the tar provided with early versions of Mac OS X, SunOS 4.x,
+       Solaris 8, Solaris 9, Solaris 10 and OpenSolaris, and HP-UX
+       are known to have problems with long file names. On Mac OS X,
+       you can use the preinstalled gnutar program. On Solaris 10 and
+       OpenSolaris you can use the preinstalled gtar. On other
+       systems with a deficient tar, you should install GNU tar
+       first.
 
    If you run into problems and need to file a bug report, please use
    the instructions in Section 1.6, "How to Report Bugs or Problems."
@@ -155,10 +159,10 @@ shell> chown -R mysql data
        Permissions in Grant Tables." For Perl module installation
        instructions, see Section 2.21, "Perl Installation Notes."
    11. If you would like to use mysqlaccess and have the MySQL
-       distribution in some non-standard location, you must change
-       the location where mysqlaccess expects to find the mysql
-       client. Edit the bin/mysqlaccess script at approximately line
-       18. Search for a line that looks like this:
+       distribution in some nonstandard location, you must change the
+       location where mysqlaccess expects to find the mysql client.
+       Edit the bin/mysqlaccess script at approximately line 18.
+       Search for a line that looks like this:
 $MYSQL     = '/usr/local/bin/mysql';    # path to mysql executable
        Change the path to reflect the location where mysql actually
        is stored on your system. If you do not do this, a Broken pipe

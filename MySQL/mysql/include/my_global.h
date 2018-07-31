@@ -458,10 +458,17 @@ int	__void__;
 #define LINT_INIT(var)
 #endif
 
-#if defined(_lint) || defined(FORCE_INIT_OF_VARS) || defined(HAVE_purify)
-#define PURIFY_OR_LINT_INIT(var) var=0
+/* 
+   Suppress uninitialized variable warning without generating code.
+
+   The _cplusplus is a temporary workaround for C++ code pending a fix
+   for a g++ bug (http://gcc.gnu.org/bugzilla/show_bug.cgi?id=34772). 
+*/
+#if defined(_lint) || defined(FORCE_INIT_OF_VARS) || defined(__cplusplus) || \
+  !defined(__GNUC__)
+#define UNINIT_VAR(x) x= 0
 #else
-#define PURIFY_OR_LINT_INIT(var)
+#define UNINIT_VAR(x) x= x
 #endif
 
 /* Define some useful general macros */
@@ -527,7 +534,6 @@ C_MODE_END
 */
 #define _VARARGS(X) X
 #define _STATIC_VARARGS(X) X
-#define _PC(X)	X
 
 #if defined(DBUG_ON) && defined(DBUG_OFF)
 #undef DBUG_OFF

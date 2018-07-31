@@ -1733,7 +1733,8 @@ void Query_log_event::print_query_header(FILE* file,
 
   if (!(flags & LOG_EVENT_SUPPRESS_USE_F) && db)
   {
-    if (different_db= memcmp(print_event_info->db, db, db_len + 1))
+    different_db= memcmp(print_event_info->db, db, db_len + 1);
+    if (different_db)
       memcpy(print_event_info->db, db, db_len + 1);
     if (db[0] && different_db) 
       fprintf(file, "use %s%s\n", db, print_event_info->delimiter);
@@ -1917,6 +1918,8 @@ int Query_log_event::exec_event(struct st_relay_log_info* rli,
 {
   const char *new_db= rewrite_db(db);
   int expected_error,actual_error= 0;
+  HA_CREATE_INFO db_options;
+
   /*
     Colleagues: please never free(thd->catalog) in MySQL. This would lead to
     bugs as here thd->catalog is a part of an alloced block, not an entire
@@ -1925,6 +1928,14 @@ int Query_log_event::exec_event(struct st_relay_log_info* rli,
   */
   thd->catalog= catalog_len ? (char *) catalog : (char *)"";
   thd->set_db(new_db, (uint) strlen(new_db));          /* allocates a copy of 'db' */
+
+  /*
+    Setting the character set and collation of the current database thd->db.
+   */
+  load_db_opt_by_name(thd, thd->db, &db_options);
+  if (db_options.default_table_charset)
+    thd->db_charset= db_options.default_table_charset;
+
   thd->variables.auto_increment_increment= auto_increment_increment;
   thd->variables.auto_increment_offset=    auto_increment_offset;
 
@@ -1953,11 +1964,13 @@ int Query_log_event::exec_event(struct st_relay_log_info* rli,
             ::exec_event(), then the companion SET also have so we
             don't need to reset_one_shot_variables().
   */
-  if (db_ok(thd->db, replicate_do_db, replicate_ignore_db))
+  if (!strncmp(query_arg, "BEGIN", q_len_arg) ||
+      !strncmp(query_arg, "COMMIT", q_len_arg) ||
+      !strncmp(query_arg, "ROLLBACK", q_len_arg) ||
+      db_ok(thd->db, replicate_do_db, replicate_ignore_db))
   {
     thd->set_time((time_t)when);
-    thd->query_length= q_len_arg;
-    thd->query= (char*)query_arg;
+    thd->set_query((char*)query_arg, q_len_arg);
     VOID(pthread_mutex_lock(&LOCK_thread_count));
     thd->query_id = next_query_id();
     VOID(pthread_mutex_unlock(&LOCK_thread_count));
@@ -2160,7 +2173,6 @@ Default database: '%s'. Query: '%s'",
   } /* End of if (db_ok(... */
 
 end:
-  VOID(pthread_mutex_lock(&LOCK_thread_count));
   /*
     Probably we have set thd->query, thd->db, thd->catalog to point to places
     in the data_buf of this event. Now the event is going to be deleted
@@ -2173,10 +2185,8 @@ end:
   */
   thd->catalog= 0;
   thd->set_db(NULL, 0);                 /* will free the current database */
+  thd->set_query(NULL, 0);
   DBUG_PRINT("info", ("end: query= 0"));
-  thd->query= 0;			// just to be sure
-  thd->query_length= 0;
-  VOID(pthread_mutex_unlock(&LOCK_thread_count));
   close_thread_tables(thd);      
   free_root(thd->mem_root,MYF(MY_KEEP_PREALLOC));
   /*
@@ -2253,8 +2263,8 @@ void Start_log_event_v3::print(FILE* file, PRINT_EVENT_INFO* print_event_info)
       fprintf(file," at startup");
     fputc('\n', file);
     if (flags & LOG_EVENT_BINLOG_IN_USE_F)
-      fprintf(file, "# Warning: this binlog was not closed properly. "
-              "Most probably mysqld crashed writing it.\n");
+      fprintf(file, "# Warning: this binlog is either in use or was not " 
+                    "closed properly.\n");
   }
   if (!artificial_event && created)
   {
@@ -3092,7 +3102,7 @@ void Load_log_event::print(FILE* file, PRINT_EVENT_INFO* print_event_info,
     {
       if (i)
 	fputc(',', file);
-      fprintf(file, field);
+      fprintf(file, "%s", field);
 	  
       field += field_lens[i]  + 1;
     }
@@ -3255,8 +3265,7 @@ int Load_log_event::exec_event(NET* net, struct st_relay_log_info* rli,
       print_query(FALSE, load_data_query, &end, (char **)&thd->lex->fname_start,
                   (char **)&thd->lex->fname_end);
       *end= 0;
-      thd->query_length= (uint) (end - load_data_query);
-      thd->query= load_data_query;
+      thd->set_query(load_data_query, (uint) (end - load_data_query));
 
       if (sql_ex.opt_flags & REPLACE_FLAG)
       {
@@ -3362,12 +3371,9 @@ int Load_log_event::exec_event(NET* net, struct st_relay_log_info* rli,
 error:
   thd->net.vio = 0; 
   const char *remember_db= thd->db;
-  VOID(pthread_mutex_lock(&LOCK_thread_count));
   thd->catalog= 0;
   thd->set_db(NULL, 0);                   /* will free the current database */
-  thd->query= 0;
-  thd->query_length= 0;
-  VOID(pthread_mutex_unlock(&LOCK_thread_count));
+  thd->set_query(NULL, 0);
   close_thread_tables(thd);
   if (thd->query_error)
   {
@@ -5199,7 +5205,7 @@ void Execute_load_query_log_event::print(FILE* file,
   {
     my_fwrite(file, (byte*) query, fn_pos_start, MYF(MY_NABP | MY_WME));
     fprintf(file, " LOCAL INFILE \'");
-    fprintf(file, local_fname);
+    fprintf(file, "%s", local_fname);
     fprintf(file, "\'");
     if (dup_handling == LOAD_DUP_REPLACE)
       fprintf(file, " REPLACE");

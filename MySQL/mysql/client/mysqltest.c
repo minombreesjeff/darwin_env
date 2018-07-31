@@ -426,10 +426,12 @@ DYNAMIC_STRING ds_res, ds_progress, ds_warning_messages;
 
 char builtin_echo[FN_REFLEN];
 
+static void cleanup_and_exit(int exit_code) __attribute__((noreturn));
+
 void die(const char *fmt, ...)
-  ATTRIBUTE_FORMAT(printf, 1, 2);
+  ATTRIBUTE_FORMAT(printf, 1, 2) __attribute__((noreturn));
 void abort_not_supported_test(const char *fmt, ...)
-  ATTRIBUTE_FORMAT(printf, 1, 2);
+  ATTRIBUTE_FORMAT(printf, 1, 2) __attribute__((noreturn));
 void verbose_msg(const char *fmt, ...)
   ATTRIBUTE_FORMAT(printf, 1, 2);
 void warning_msg(const char *fmt, ...)
@@ -1329,35 +1331,42 @@ static int run_tool(const char *tool_path, DYNAMIC_STRING *ds_res, ...)
   DBUG_RETURN(ret);
 }
 
+
 /*
   Test if diff is present.  This is needed on Windows systems
   as the OS returns 1 whether diff is successful or if it is
   not present.
-  
+
   We run diff -v and look for output in stdout.
   We don't redirect stderr to stdout to make for a simplified check
   Windows will output '"diff"' is not recognized... to stderr if it is
   not present.
 */
 
-int diff_check()
+#ifdef __WIN__
+
+static int diff_check(const char *diff_name)
 {
- char buf[512]= {0};
- FILE *res_file;
- const char *cmd = "diff -v";
- int have_diff = 0;
+  FILE *res_file;
+  char buf[128];
+  int have_diff= 0;
 
-  if (!(res_file= popen(cmd, "r")))
-    die("popen(\"%s\", \"r\") failed", cmd);
+  my_snprintf(buf, sizeof(buf), "%s -v", diff_name);
 
-/* if diff is not present, nothing will be in stdout to increment have_diff */
+  if (!(res_file= popen(buf, "r")))
+    die("popen(\"%s\", \"r\") failed", buf);
+
+  /* if diff is not present, nothing will be in stdout to increment have_diff */
   if (fgets(buf, sizeof(buf), res_file))
-  {
-    have_diff += 1;
-  } 
- pclose(res_file);
- return have_diff;
+    have_diff= 1;
+
+  pclose(res_file);
+
+  return have_diff;
 }
+
+#endif
+
 
 /*
   Show the diff of two files using the systems builtin diff
@@ -1377,28 +1386,33 @@ void show_diff(DYNAMIC_STRING* ds,
 {
 
   DYNAMIC_STRING ds_tmp;
-  int have_diff = 0;
+  const char *diff_name = 0;
 
   if (init_dynamic_string(&ds_tmp, "", 256, 256))
     die("Out of memory");
-  
+
   /* determine if we have diff on Windows
-     needs special processing due to return values
-     on that OS
-     This test is only done on Windows since it's only needed there
-     in order to correctly detect non-availibility of 'diff', and
-     the way it's implemented does not work with default 'diff' on Solaris.
-  */
+    needs special processing due to return values
+    on that OS
+    This test is only done on Windows since it's only needed there
+    in order to correctly detect non-availibility of 'diff', and
+    the way it's implemented does not work with default 'diff' on Solaris.
+    */
 #ifdef __WIN__
-  have_diff = diff_check();
+  if (diff_check("diff"))
+    diff_name = "diff";
+  else if (diff_check("mtrdiff"))
+    diff_name = "mtrdiff";
+  else
+    diff_name = 0;
 #else
-  have_diff = 1;
+  diff_name = "diff";           /* Otherwise always assume it's called diff */
 #endif
 
-  if (have_diff)
+  if (diff_name)
   {
     /* First try with unified diff */
-    if (run_tool("diff",
+    if (run_tool(diff_name,
                  &ds_tmp, /* Get output from diff in ds_tmp */
                  "-u",
                  filename1,
@@ -1409,7 +1423,7 @@ void show_diff(DYNAMIC_STRING* ds,
       dynstr_set(&ds_tmp, "");
 
       /* Fallback to context diff with "diff -c" */
-      if (run_tool("diff",
+      if (run_tool(diff_name,
                    &ds_tmp, /* Get output from diff in ds_tmp */
                    "-c",
                    filename1,
@@ -1417,42 +1431,42 @@ void show_diff(DYNAMIC_STRING* ds,
                    "2>&1",
                    NULL) > 1) /* Most "diff" tools return >1 if error */
       {
-        have_diff= 0;
-      }  
+        diff_name= 0;
+      }
     }
   }
 
-if (!(have_diff))
+  if (!(diff_name))
   {
     /*
       Fallback to dump both files to result file and inform
       about installing "diff"
-    */
-      
-      dynstr_set(&ds_tmp, "");
+      */
 
-      dynstr_append(&ds_tmp,
-"\n"
-"The two files differ but it was not possible to execute 'diff' in\n"
-"order to show only the difference, tried both 'diff -u' or 'diff -c'.\n"
-"Instead the whole content of the two files was shown for you to diff manually. ;)\n\n"
-"To get a better report you should install 'diff' on your system, which you\n"
-"for example can get from http://www.gnu.org/software/diffutils/diffutils.html\n"
+    dynstr_set(&ds_tmp, "");
+
+    dynstr_append(&ds_tmp,
+      "\n"
+      "The two files differ but it was not possible to execute 'diff' in\n"
+      "order to show only the difference, tried both 'diff -u' or 'diff -c'.\n"
+      "Instead the whole content of the two files was shown for you to diff manually. ;)\n\n"
+      "To get a better report you should install 'diff' on your system, which you\n"
+      "for example can get from http://www.gnu.org/software/diffutils/diffutils.html\n"
 #ifdef __WIN__
-"or http://gnuwin32.sourceforge.net/packages/diffutils.htm\n"
+      "or http://gnuwin32.sourceforge.net/packages/diffutils.htm\n"
 #endif
-"\n");
+      "\n");
 
-      dynstr_append(&ds_tmp, " --- ");
-      dynstr_append(&ds_tmp, filename1);
-      dynstr_append(&ds_tmp, " >>>\n");
-      cat_file(&ds_tmp, filename1);
-      dynstr_append(&ds_tmp, "<<<\n --- ");
-      dynstr_append(&ds_tmp, filename1);
-      dynstr_append(&ds_tmp, " >>>\n");
-      cat_file(&ds_tmp, filename2);
-      dynstr_append(&ds_tmp, "<<<<\n");
-  } 
+    dynstr_append(&ds_tmp, " --- ");
+    dynstr_append(&ds_tmp, filename1);
+    dynstr_append(&ds_tmp, " >>>\n");
+    cat_file(&ds_tmp, filename1);
+    dynstr_append(&ds_tmp, "<<<\n --- ");
+    dynstr_append(&ds_tmp, filename1);
+    dynstr_append(&ds_tmp, " >>>\n");
+    cat_file(&ds_tmp, filename2);
+    dynstr_append(&ds_tmp, "<<<<\n");
+  }
 
   if (ds)
   {
@@ -1464,7 +1478,7 @@ if (!(have_diff))
     /* Print diff directly to stdout */
     fprintf(stderr, "%s\n", ds_tmp.str);
   }
- 
+
   dynstr_free(&ds_tmp);
 
 }
@@ -1670,7 +1684,7 @@ void check_result(DYNAMIC_STRING* ds)
     dynstr_set(ds, NULL); /* Don't create a .log file */
 
     show_diff(NULL, result_file_name, reject_file);
-    die(mess);
+    die("%s", mess);
     break;
   }
   default: /* impossible */
@@ -3373,10 +3387,9 @@ void do_wait_for_slave_to_stop(struct st_command *c __attribute__((unused)))
   MYSQL* mysql = &cur_con->mysql;
   for (;;)
   {
-    MYSQL_RES *res;
+    MYSQL_RES *UNINIT_VAR(res);
     MYSQL_ROW row;
     int done;
-    LINT_INIT(res);
 
     if (mysql_query(mysql,"show status like 'Slave_running'") ||
 	!(res=mysql_store_result(mysql)))
@@ -4698,13 +4711,12 @@ my_bool end_of_query(int c)
 
 int read_line(char *buf, int size)
 {
-  char c, last_quote;
+  char c, UNINIT_VAR(last_quote);
   char *p= buf, *buf_end= buf + size - 1;
   int skip_char= 0;
   enum {R_NORMAL, R_Q, R_SLASH_IN_Q,
         R_COMMENT, R_LINE_START} state= R_LINE_START;
   DBUG_ENTER("read_line");
-  LINT_INIT(last_quote);
 
   start_lineno= cur_file->lineno;
   DBUG_PRINT("info", ("Starting to read at lineno: %d", start_lineno));
@@ -5966,8 +5978,7 @@ void run_query_normal(struct st_connection *cn, struct st_command *command,
 
     if (!disable_result_log)
     {
-      ulonglong affected_rows;    /* Ok to be undef if 'disable_info' is set */
-      LINT_INIT(affected_rows);
+      ulonglong UNINIT_VAR(affected_rows);    /* Ok to be undef if 'disable_info' is set */
 
       if (res)
       {
@@ -6203,8 +6214,10 @@ void run_query_stmt(MYSQL *mysql, struct st_command *command,
   MYSQL_STMT *stmt;
   DYNAMIC_STRING ds_prepare_warnings;
   DYNAMIC_STRING ds_execute_warnings;
+  ulonglong affected_rows;
   DBUG_ENTER("run_query_stmt");
   DBUG_PRINT("query", ("'%-.60s'", query));
+  LINT_INIT(affected_rows);
 
   /*
     Init a new stmt if it's not already one created for this connection
@@ -6335,32 +6348,43 @@ void run_query_stmt(MYSQL *mysql, struct st_command *command,
       */
     }
 
-    if (!disable_warnings)
+    /*
+      Need to grab affected rows information before getting
+      warnings here
+    */
     {
-      /* Get the warnings from execute */
+      ulonglong affected_rows;
+      LINT_INIT(affected_rows);
 
-      /* Append warnings to ds - if there are any */
-      if (append_warnings(&ds_execute_warnings, mysql) ||
-          ds_execute_warnings.length ||
-          ds_prepare_warnings.length ||
-          ds_warnings->length)
+      if (!disable_info)
+	affected_rows= mysql_affected_rows(mysql);
+
+      if (!disable_warnings)
       {
-        dynstr_append_mem(ds, "Warnings:\n", 10);
-	if (ds_warnings->length)
-	  dynstr_append_mem(ds, ds_warnings->str,
-			    ds_warnings->length);
-	if (ds_prepare_warnings.length)
-	  dynstr_append_mem(ds, ds_prepare_warnings.str,
-			    ds_prepare_warnings.length);
-	if (ds_execute_warnings.length)
-	  dynstr_append_mem(ds, ds_execute_warnings.str,
-			    ds_execute_warnings.length);
+	/* Get the warnings from execute */
+
+	/* Append warnings to ds - if there are any */
+	if (append_warnings(&ds_execute_warnings, mysql) ||
+	    ds_execute_warnings.length ||
+	    ds_prepare_warnings.length ||
+	    ds_warnings->length)
+	{
+	  dynstr_append_mem(ds, "Warnings:\n", 10);
+	  if (ds_warnings->length)
+	    dynstr_append_mem(ds, ds_warnings->str,
+			      ds_warnings->length);
+	  if (ds_prepare_warnings.length)
+	    dynstr_append_mem(ds, ds_prepare_warnings.str,
+			      ds_prepare_warnings.length);
+	  if (ds_execute_warnings.length)
+	    dynstr_append_mem(ds, ds_execute_warnings.str,
+			      ds_execute_warnings.length);
+	}
       }
+
+      if (!disable_info)
+	append_info(ds, affected_rows, mysql_info(mysql));
     }
-
-    if (!disable_info)
-      append_info(ds, mysql_affected_rows(mysql), mysql_info(mysql));
-
   }
 
 end:

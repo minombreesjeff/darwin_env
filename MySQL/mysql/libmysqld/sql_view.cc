@@ -268,11 +268,11 @@ bool create_view_precheck(THD *thd, TABLE_LIST *tables, TABLE_LIST *view,
   */
   if ((check_access(thd, CREATE_VIEW_ACL, view->db, &view->grant.privilege,
                     0, 0, is_schema_db(view->db)) ||
-       grant_option && check_grant(thd, CREATE_VIEW_ACL, view, 0, 1, 0)) ||
+       (grant_option && check_grant(thd, CREATE_VIEW_ACL, view, 0, 1, 0))) ||
       (mode != VIEW_CREATE_NEW &&
        (check_access(thd, DROP_ACL, view->db, &view->grant.privilege,
                      0, 0, is_schema_db(view->db)) ||
-        grant_option && check_grant(thd, DROP_ACL, view, 0, 1, 0))))
+        (grant_option && check_grant(thd, DROP_ACL, view, 0, 1, 0)))))
     goto err;
 
   for (sl= select_lex; sl; sl= sl->next_select())
@@ -322,7 +322,7 @@ bool create_view_precheck(THD *thd, TABLE_LIST *tables, TABLE_LIST *view,
       {
         if (check_access(thd, SELECT_ACL, tbl->db,
                          &tbl->grant.privilege, 0, 0, test(tbl->schema_table)) ||
-            grant_option && check_grant(thd, SELECT_ACL, tbl, 0, 1, 0))
+            (grant_option && check_grant(thd, SELECT_ACL, tbl, 0, 1, 0)))
           goto err;
       }
     }
@@ -955,7 +955,7 @@ bool mysql_make_view(THD *thd, File_parser *parser, TABLE_LIST *table,
   TABLE_LIST *top_view= table->top_table();
   int res;
   bool result, view_is_mergeable;
-  TABLE_LIST *view_main_select_tables;
+  TABLE_LIST *UNINIT_VAR(view_main_select_tables);
   DBUG_ENTER("mysql_make_view");
   DBUG_PRINT("info", ("table: 0x%lx (%s)", (ulong) table, table->table_name));
 
@@ -1218,7 +1218,6 @@ bool mysql_make_view(THD *thd, File_parser *parser, TABLE_LIST *table,
 
     view_is_mergeable= (table->algorithm != VIEW_ALGORITHM_TMPTABLE &&
                         lex->can_be_merged());
-    LINT_INIT(view_main_select_tables);
 
     if (view_is_mergeable)
     {

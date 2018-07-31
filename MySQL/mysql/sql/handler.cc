@@ -426,6 +426,7 @@ static int ha_init_errors(void)
   SETMSG(HA_ERR_TABLE_READONLY,         ER(ER_OPEN_AS_READONLY));
   SETMSG(HA_ERR_AUTOINC_READ_FAILED,    ER(ER_AUTOINC_READ_FAILED));
   SETMSG(HA_ERR_AUTOINC_ERANGE,         ER(ER_WARN_DATA_OUT_OF_RANGE));
+  SETMSG(HA_ERR_TOO_MANY_CONCURRENT_TRXS, ER(ER_TOO_MANY_CONCURRENT_TRXS));
 
   /* Register the error messages for use with my_error(). */
   return my_error_register(errmsgs, HA_ERR_FIRST, HA_ERR_LAST);
@@ -1642,8 +1643,8 @@ int handler::update_auto_increment()
   thd->prev_insert_id= thd->next_insert_id;
 
   if ((nr= table->next_number_field->val_int()) != 0 ||
-      table->auto_increment_field_not_null &&
-      thd->variables.sql_mode & MODE_NO_AUTO_VALUE_ON_ZERO)
+      (table->auto_increment_field_not_null &&
+      thd->variables.sql_mode & MODE_NO_AUTO_VALUE_ON_ZERO))
   {
     /* Mark that we didn't generate a new value **/
     auto_increment_column_changed=0;
@@ -1926,6 +1927,9 @@ void handler::print_error(int error, myf errflag)
     break;
   case HA_ERR_AUTOINC_ERANGE:
     textno= ER_WARN_DATA_OUT_OF_RANGE;
+    break;
+  case HA_ERR_TOO_MANY_CONCURRENT_TRXS:
+    textno= ER_TOO_MANY_CONCURRENT_TRXS;
     break;
   default:
     {

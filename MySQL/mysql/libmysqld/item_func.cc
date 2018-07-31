@@ -428,8 +428,7 @@ bool Item_func::eq(const Item *item, bool binary_cmp) const
 
 Field *Item_func::tmp_table_field(TABLE *t_arg)
 {
-  Field *res;
-  LINT_INIT(res);
+  Field *res= NULL;
 
   switch (result_type()) {
   case INT_RESULT:
@@ -1958,8 +1957,8 @@ void Item_func_round::fix_length_and_dec()
   unsigned_flag= args[0]->unsigned_flag;
   if (!args[1]->const_item())
   {
-    max_length= args[0]->max_length;
     decimals= args[0]->decimals;
+    max_length= float_length(decimals);
     if (args[0]->result_type() == DECIMAL_RESULT)
     {
       max_length++;
@@ -1979,8 +1978,8 @@ void Item_func_round::fix_length_and_dec()
 
   if (args[0]->decimals == NOT_FIXED_DEC)
   {
-    max_length= args[0]->max_length;
     decimals= min(decimals_to_set, NOT_FIXED_DEC);
+    max_length= float_length(decimals);
     hybrid_type= REAL_RESULT;
     return;
   }
@@ -2275,9 +2274,8 @@ void Item_func_min_max::fix_length_and_dec()
 
 uint Item_func_min_max::cmp_datetimes(ulonglong *value)
 {
-  longlong min_max;
+  longlong UNINIT_VAR(min_max);
   uint min_max_idx= 0;
-  LINT_INIT(min_max);
 
   for (uint i=0; i < arg_count ; i++)
   {
@@ -2345,8 +2343,7 @@ String *Item_func_min_max::val_str(String *str)
   }
   case STRING_RESULT:
   {
-    String *res;
-    LINT_INIT(res);
+    String *UNINIT_VAR(res);
     for (uint i=0; i < arg_count ; i++)
     {
       if (i == 0)
@@ -2435,8 +2432,7 @@ longlong Item_func_min_max::val_int()
 my_decimal *Item_func_min_max::val_decimal(my_decimal *dec)
 {
   DBUG_ASSERT(fixed == 1);
-  my_decimal tmp_buf, *tmp, *res;
-  LINT_INIT(res);
+  my_decimal tmp_buf, *tmp, *UNINIT_VAR(res);
 
   if (compare_as_dates)
   {
@@ -4151,6 +4147,41 @@ Item_func_set_user_var::check(bool use_result_field)
 }
 
 
+/**
+  @brief Evaluate and store item's result.
+  This function is invoked on "SELECT ... INTO @var ...".
+  
+  @param    item    An item to get value from.
+*/
+
+void Item_func_set_user_var::save_item_result(Item *item)
+{
+  DBUG_ENTER("Item_func_set_user_var::save_item_result");
+
+  switch (cached_result_type) {
+  case REAL_RESULT:
+    save_result.vreal= item->val_result();
+    break;
+  case INT_RESULT:
+    save_result.vint= item->val_int_result();
+    unsigned_flag= item->unsigned_flag;
+    break;
+  case STRING_RESULT:
+    save_result.vstr= item->str_result(&value);
+    break;
+  case DECIMAL_RESULT:
+    save_result.vdec= item->val_decimal_result(&decimal_buff);
+    break;
+  case ROW_RESULT:
+  default:
+    // Should never happen
+    DBUG_ASSERT(0);
+    break;
+  }
+  DBUG_VOID_RETURN;
+}
+
+
 /*
   This functions is invoked on SET @variable or @variable:= expression.
 
@@ -4170,9 +4201,8 @@ Item_func_set_user_var::check(bool use_result_field)
 bool
 Item_func_set_user_var::update()
 {
-  bool res;
+  bool res= 0;
   DBUG_ENTER("Item_func_set_user_var::update");
-  LINT_INIT(res);
 
   switch (cached_result_type) {
   case REAL_RESULT:
@@ -4392,8 +4422,8 @@ int Item_func_set_user_var::save_in_field(Field *field, bool no_conversions,
   update();
 
   if (result_type() == STRING_RESULT ||
-      result_type() == REAL_RESULT &&
-      field->result_type() == STRING_RESULT)
+      (result_type() == REAL_RESULT &&
+      field->result_type() == STRING_RESULT))
   {
     String *result;
     CHARSET_INFO *cs= collation.collation;
@@ -4939,8 +4969,7 @@ void Item_func_match::init_search(bool no_order)
 bool Item_func_match::fix_fields(THD *thd, Item **ref)
 {
   DBUG_ASSERT(fixed == 0);
-  Item *item;
-  LINT_INIT(item);				// Safe as arg_count is > 1
+  Item *UNINIT_VAR(item);                        // Safe as arg_count is > 1
 
   maybe_null=1;
   join_key=0;

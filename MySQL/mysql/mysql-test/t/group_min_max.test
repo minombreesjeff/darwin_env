@@ -866,7 +866,7 @@ DELETE FROM t3 WHERE (SELECT MAX(b) FROM t1 GROUP BY a HAVING a < 2) > 10000;
 SHOW STATUS LIKE 'handler_read__e%';
 FLUSH STATUS;
 DELETE FROM t3 WHERE (SELECT (SELECT MAX(b) FROM t1 GROUP BY a HAVING a < 2) x 
-                      FROM t1) > 10000;
+                      FROM t1 WHERE a = 1 AND b = 1) > 10000;
 SHOW STATUS LIKE 'handler_read__e%';
 
 DROP TABLE t1,t2,t3;
@@ -956,5 +956,40 @@ EXPLAIN SELECT DISTINCT c FROM t1 WHERE d=4;
 SELECT DISTINCT c FROM t1 WHERE d=4;
 
 DROP TABLE t1;
+
+--echo #
+--echo # Bug #45386: Wrong query result with MIN function in field list, 
+--echo #  WHERE and GROUP BY clause
+--echo #
+
+CREATE TABLE t (a INT, b INT, INDEX (a,b));
+INSERT INTO t VALUES (2,0), (2,0), (2,1), (2,1);
+INSERT INTO t SELECT * FROM t;
+
+--echo # test MIN
+--echo #should use range with index for group by
+EXPLAIN
+SELECT a, MIN(b) FROM t WHERE b <> 0 GROUP BY a;
+--echo #should return 1 row
+SELECT a, MIN(b) FROM t WHERE b <> 0 GROUP BY a;
+
+--echo # test MAX
+--echo #should use range with index for group by
+EXPLAIN
+SELECT a, MAX(b) FROM t WHERE b <> 1 GROUP BY a;
+--echo #should return 1 row
+SELECT a, MAX(b) FROM t WHERE b <> 1 GROUP BY a;
+
+--echo # test 3 ranges and use the middle one
+INSERT INTO t SELECT a, 2 FROM t;
+
+--echo #should use range with index for group by
+EXPLAIN
+SELECT a, MAX(b) FROM t WHERE b > 0 AND b < 2 GROUP BY a;
+--echo #should return 1 row
+SELECT a, MAX(b) FROM t WHERE b > 0 AND b < 2 GROUP BY a;
+
+DROP TABLE t;
+
 
 --echo End of 5.0 tests

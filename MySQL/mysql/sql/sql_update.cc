@@ -125,7 +125,7 @@ int mysql_update(THD *thd,
   uint		want_privilege;
 #endif
   uint          table_count= 0;
-  query_id_t	query_id=thd->query_id, timestamp_query_id;
+  query_id_t	query_id=thd->query_id, UNINIT_VAR(timestamp_query_id);
   ha_rows	updated, found;
   key_map	old_used_keys;
   TABLE		*table;
@@ -136,8 +136,6 @@ int mysql_update(THD *thd,
   List<Item> all_fields;
   THD::killed_state killed_status= THD::NOT_KILLED;
   DBUG_ENTER("mysql_update");
-
-  LINT_INIT(timestamp_query_id);
 
   for ( ; ; )
   {
@@ -230,7 +228,7 @@ int mysql_update(THD *thd,
 
   if (select_lex->inner_refs_list.elements &&
     fix_inner_refs(thd, all_fields, select_lex, select_lex->ref_pointer_array))
-    DBUG_RETURN(-1);
+    DBUG_RETURN(1);
 
   if (conds)
   {
@@ -247,7 +245,14 @@ int mysql_update(THD *thd,
   {
     delete select;
     free_underlaid_joins(thd, select_lex);
-    if (error)
+    /*
+      There was an error or the error was already sent by
+      the quick select evaluation.
+      TODO: Add error code output parameter to Item::val_xxx() methods.
+      Currently they rely on the user checking DA for
+      errors when unwinding the stack after calling Item::val_xxx().
+    */
+    if (error || thd->net.report_error)
     {
       DBUG_RETURN(1);				// Error in where
     }
@@ -520,6 +525,7 @@ int mysql_update(THD *thd,
       table->file->unlock_row();
     thd->row_count++;
   }
+  table->auto_increment_field_not_null= FALSE;
   /*
     Caching the killed status to pass as the arg to query event constuctor;
     The cached value can not change whereas the killed status can
@@ -1532,7 +1538,7 @@ void multi_update::send_error(uint errcode,const char *err)
 
   /* the error was handled or nothing deleted and no side effects return */
   if (error_handled ||
-      !thd->transaction.stmt.modified_non_trans_table && !updated)
+      (!thd->transaction.stmt.modified_non_trans_table && !updated))
     return;
 
   /* Something already updated so we have to invalidate cache */

@@ -363,7 +363,7 @@ int check_user(THD *thd, enum enum_server_command command,
   if (opt_secure_auth_local && passwd_len == SCRAMBLE_LENGTH_323)
   {
     net_printf_error(thd, ER_NOT_SUPPORTED_AUTH_MODE);
-    mysql_log.write(thd, COM_CONNECT, ER(ER_NOT_SUPPORTED_AUTH_MODE));
+    mysql_log.write(thd, COM_CONNECT, "%s", ER(ER_NOT_SUPPORTED_AUTH_MODE));
     DBUG_RETURN(-1);
   }
   if (passwd_len != 0 &&
@@ -500,7 +500,7 @@ int check_user(THD *thd, enum enum_server_command command,
   else if (res == 2) // client gave short hash, server has long hash
   {
     net_printf_error(thd, ER_NOT_SUPPORTED_AUTH_MODE);
-    mysql_log.write(thd,COM_CONNECT,ER(ER_NOT_SUPPORTED_AUTH_MODE));
+    mysql_log.write(thd,COM_CONNECT,"%s",ER(ER_NOT_SUPPORTED_AUTH_MODE));
     DBUG_RETURN(-1);
   }
   net_printf_error(thd, ER_ACCESS_DENIED_ERROR,
@@ -1106,8 +1106,7 @@ void execute_init_command(THD *thd, sys_var_str *init_command_var,
     values of init_command_var can't be changed
   */
   rw_rdlock(var_mutex);
-  thd->query= init_command_var->value;
-  thd->query_length= init_command_var->value_length;
+  thd->set_query(init_command_var->value, init_command_var->value_length);
   save_client_capabilities= thd->client_capabilities;
   thd->client_capabilities|= CLIENT_MULTI_QUERIES;
   /*
@@ -1238,7 +1237,7 @@ pthread_handler_t handle_one_connection(void *arg)
       decrease_user_connections(thd->user_connect);
 
     if (thd->killed ||
-        net->vio && net->error && net->report_error)
+        (net->vio && net->error && net->report_error))
     {
       statistic_increment(aborted_threads, &LOCK_status);
     }
@@ -1326,6 +1325,7 @@ pthread_handler_t handle_bootstrap(void *arg)
   thd->init_for_queries();
   while (fgets(buff, thd->net.max_packet, file))
   {
+    char *query, *res;
    ulong length= (ulong) strlen(buff);
    while (buff[length-1] != '\n' && !feof(file))
    {
@@ -1340,7 +1340,7 @@ pthread_handler_t handle_bootstrap(void *arg)
        break;
      }
      buff= (char*) thd->net.buff;
-     fgets(buff + length, thd->net.max_packet - length, file);
+     res= fgets(buff + length, thd->net.max_packet - length, file);
      length+= (ulong) strlen(buff + length);
    }
    if (thd->is_fatal_error)
@@ -1350,10 +1350,9 @@ pthread_handler_t handle_bootstrap(void *arg)
            buff[length-1] == ';'))
       length--;
     buff[length]=0;
-    thd->query_length=length;
-    thd->query= thd->memdup_w_gap(buff, length+1, 
-				  thd->db_length+1+QUERY_CACHE_FLAGS_SIZE);
-    thd->query[length] = '\0';
+    query= thd->memdup_w_gap(buff, length + 1,
+                             thd->db_length + 1 + QUERY_CACHE_FLAGS_SIZE);
+    thd->set_query(query, length);
     DBUG_PRINT("query",("%-.4096s",thd->query));
 #if defined(ENABLED_PROFILING) && defined(COMMUNITY_SERVER)
     thd->profiling.set_query_source(thd->query, length);
@@ -1463,8 +1462,7 @@ int mysql_table_dump(THD* thd, char* db, char* tbl_name)
   if (check_one_table_access(thd, SELECT_ACL, table_list))
     goto err;
   thd->free_list = 0;
-  thd->query_length=(uint) strlen(tbl_name);
-  thd->query = tbl_name;
+  thd->set_query(tbl_name, (uint) strlen(tbl_name));
   if ((error = mysqld_dump_create_info(thd, table_list, -1)))
   {
     my_error(ER_GET_ERRNO, MYF(0), my_errno);
@@ -1987,9 +1985,8 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       thd->profiling.set_query_source(next_packet, length);
 #endif
 
+      thd->set_query(next_packet, length);
       VOID(pthread_mutex_lock(&LOCK_thread_count));
-      thd->query_length= length;
-      thd->query= next_packet;
       /*
         Count each statement from the client.
       */
@@ -2041,9 +2038,10 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
         table_list.schema_table= schema_table;
     }
 
-    thd->query_length= (uint) strlen(packet);       // for simplicity: don't optimize
-    if (!(thd->query=fields=thd->memdup(packet,thd->query_length+1)))
+    uint query_length= (uint) strlen(packet);
+    if (!(fields= thd->memdup(packet, query_length + 1)))
       break;
+    thd->set_query(fields, query_length);
     mysql_log.write(thd,command,"%s %s",table_list.table_name, fields);
     if (lower_case_table_names)
       my_casedn_str(files_charset_info, table_list.table_name);
@@ -2096,7 +2094,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       }
       if (check_access(thd,CREATE_ACL,db,0,1,0,is_schema_db(db)))
 	break;
-      mysql_log.write(thd,command,packet);
+      mysql_log.write(thd, command, "%s", db);
       bzero(&create_info, sizeof(create_info));
       mysql_create_db(thd, (lower_case_table_names == 2 ? alias : db),
                       &create_info, 0);
@@ -2121,7 +2119,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
                    ER(ER_LOCK_OR_ACTIVE_TRANSACTION), MYF(0));
 	break;
       }
-      mysql_log.write(thd,command,db);
+      mysql_log.write(thd, command, "%s", db);
       mysql_rm_db(thd, db, 0, 0);
       break;
     }
@@ -2163,7 +2161,28 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     if (check_global_access(thd,RELOAD_ACL))
       break;
     mysql_log.write(thd,command,NullS);
-    if (!reload_acl_and_cache(thd, options, (TABLE_LIST*) 0, &not_used))
+#ifndef DBUG_OFF
+    bool debug_simulate= FALSE;
+    DBUG_EXECUTE_IF("simulate_detached_thread_refresh", debug_simulate= TRUE;);
+    if (debug_simulate)
+    {
+      /*
+        Simulate a reload without a attached thread session.
+        Provides a environment similar to that of when the
+        server receives a SIGHUP signal and reloads caches
+        and flushes tables.
+      */
+      bool res;
+      my_pthread_setspecific_ptr(THR_THD, NULL);
+      res= reload_acl_and_cache(NULL, options | REFRESH_FAST,
+                                NULL, &not_used);
+      my_pthread_setspecific_ptr(THR_THD, thd);
+      if (!res)
+        send_ok(thd);
+      break;
+    }
+#endif
+    if (!reload_acl_and_cache(thd, options, NULL, &not_used))
       send_ok(thd);
     break;
   }
@@ -2300,6 +2319,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     my_message(ER_UNKNOWN_COM_ERROR, ER(ER_UNKNOWN_COM_ERROR), MYF(0));
     break;
   }
+
   if (thd->lock || thd->open_tables || thd->derived_tables ||
       thd->prelocked_mode)
   {
@@ -2327,13 +2347,12 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
   log_slow_statement(thd);
 
   thd_proc_info(thd, "cleaning up");
-  VOID(pthread_mutex_lock(&LOCK_thread_count)); // For process list
-  thd_proc_info(thd, 0);
+  thd->set_query(NULL, 0);
   thd->command=COM_SLEEP;
-  thd->query=0;
-  thd->query_length=0;
+  VOID(pthread_mutex_lock(&LOCK_thread_count)); // For process list
   thread_running--;
   VOID(pthread_mutex_unlock(&LOCK_thread_count));
+  thd_proc_info(thd, 0);
   thd->packet.shrink(thd->variables.net_buffer_length);	// Reclaim some memory
   free_root(thd->mem_root,MYF(MY_KEEP_PREALLOC));
   DBUG_RETURN(error);
@@ -2366,11 +2385,11 @@ void log_slow_statement(THD *thd)
     if ((thd->start_time > thd->time_after_lock && 
          (ulong) (thd->start_time - thd->time_after_lock) >
 	thd->variables.long_query_time) ||
-        (thd->server_status &
+        ((thd->server_status &
 	  (SERVER_QUERY_NO_INDEX_USED | SERVER_QUERY_NO_GOOD_INDEX_USED)) &&
         opt_log_queries_not_using_indexes &&
         /* == SQLCOM_END unless this is a SHOW command */
-        thd->lex->orig_sql_command == SQLCOM_END)
+        thd->lex->orig_sql_command == SQLCOM_END))
     {
       thd_proc_info(thd, "logging slow query");
       thd->status_var.long_query_count++;
@@ -2536,6 +2555,7 @@ int prepare_schema_table(THD *thd, LEX *lex, Table_ident *table_ident,
 
 bool alloc_query(THD *thd, const char *packet, uint packet_length)
 {
+  char *query;
   packet_length--;				// Remove end null
   /* Remove garbage at start and end of query */
   while (my_isspace(thd->charset(),packet[0]) && packet_length > 0)
@@ -2551,14 +2571,13 @@ bool alloc_query(THD *thd, const char *packet, uint packet_length)
     packet_length--;
   }
   /* We must allocate some extra memory for query cache */
-  thd->query_length= 0;                        // Extra safety: Avoid races
-  if (!(thd->query= (char*) thd->memdup_w_gap((gptr) (packet),
-					      packet_length,
-					      thd->db_length+ 1 +
-					      QUERY_CACHE_FLAGS_SIZE)))
-    return TRUE;
-  thd->query[packet_length]=0;
-  thd->query_length= packet_length;
+  if (! (query= (char*) thd->memdup_w_gap(packet,
+                                          packet_length,
+                                          1 + thd->db_length +
+                                          QUERY_CACHE_FLAGS_SIZE)))
+      return TRUE;
+  query[packet_length]= '\0';
+  thd->set_query(query, packet_length);
 
   /* Reclaim some memory */
   thd->packet.shrink(thd->variables.net_buffer_length);
@@ -2676,8 +2695,8 @@ mysql_execute_command(THD *thd)
     variables, but for now this is probably good enough.
     Don't reset warnings when executing a stored routine.
   */
-  if ((all_tables || &lex->select_lex != lex->all_selects_list ||
-       lex->sroutines.records) && !thd->spcont ||
+  if (((all_tables || &lex->select_lex != lex->all_selects_list ||
+       lex->sroutines.records) && !thd->spcont) ||
       lex->time_zone_tables_used)
     mysql_reset_errors(thd, 0);
 
@@ -5641,7 +5660,7 @@ check_access(THD *thd, ulong want_access, const char *db, ulong *save_priv,
 
   if (schema_db)
   {
-    if (!(sctx->master_access & FILE_ACL) && (want_access & FILE_ACL) ||
+    if ((!(sctx->master_access & FILE_ACL) && (want_access & FILE_ACL)) ||
         (want_access & ~(SELECT_ACL | EXTRA_ACL | FILE_ACL)))
     {
       if (!no_errors)
@@ -5678,7 +5697,7 @@ check_access(THD *thd, ulong want_access, const char *db, ulong *save_priv,
     DBUG_RETURN(FALSE);
   }
   if (((want_access & ~sctx->master_access) & ~(DB_ACLS | EXTRA_ACL)) ||
-      ! db && dont_check_global_grants)
+      (! db && dont_check_global_grants))
   {						// We can never grant this
     DBUG_PRINT("error",("No possible access"));
     if (!no_errors)
@@ -6029,10 +6048,10 @@ bool check_some_access(THD *thd, ulong want_access, TABLE_LIST *table)
   {
     if (access & want_access)
     {
-      if (!check_access(thd, access, table->db,
+      if ((!check_access(thd, access, table->db,
                         &table->grant.privilege, 0, 1,
                         test(table->schema_table)) &&
-          !grant_option || !check_grant(thd, access, table, 0, 1, 1))
+          !grant_option) || !check_grant(thd, access, table, 0, 1, 1))
         DBUG_RETURN(0);
     }
   }
@@ -7506,7 +7525,7 @@ void kill_one_thread(THD *thd, ulong id, bool only_kill_query)
   {
     if (tmp->thread_id == id)
     {
-      pthread_mutex_lock(&tmp->LOCK_delete);	// Lock from delete
+      pthread_mutex_lock(&tmp->LOCK_thd_data);	// Lock from delete
       break;
     }
   }
@@ -7539,7 +7558,7 @@ void kill_one_thread(THD *thd, ulong id, bool only_kill_query)
     }
     else
       error=ER_KILL_DENIED_ERROR;
-    pthread_mutex_unlock(&tmp->LOCK_delete);
+    pthread_mutex_unlock(&tmp->LOCK_thd_data);
   }
 
   if (!error)
@@ -7710,12 +7729,12 @@ bool multi_update_precheck(THD *thd, TABLE_LIST *tables)
     else if ((check_access(thd, UPDATE_ACL, table->db,
                            &table->grant.privilege, 0, 1,
                            test(table->schema_table)) ||
-              grant_option &&
-              check_grant(thd, UPDATE_ACL, table, 0, 1, 1)) &&
+              (grant_option &&
+              check_grant(thd, UPDATE_ACL, table, 0, 1, 1))) &&
              (check_access(thd, SELECT_ACL, table->db,
                            &table->grant.privilege, 0, 0,
                            test(table->schema_table)) ||
-              grant_option && check_grant(thd, SELECT_ACL, table, 0, 1, 0)))
+              (grant_option && check_grant(thd, SELECT_ACL, table, 0, 1, 0))))
       DBUG_RETURN(TRUE);
 
     table->table_in_first_from_clause= 1;
@@ -7735,7 +7754,7 @@ bool multi_update_precheck(THD *thd, TABLE_LIST *tables)
 	if (check_access(thd, SELECT_ACL, table->db,
 			 &table->grant.privilege, 0, 0,
                          test(table->schema_table)) ||
-	    grant_option && check_grant(thd, SELECT_ACL, table, 0, 1, 0))
+	    (grant_option && check_grant(thd, SELECT_ACL, table, 0, 1, 0)))
 	  DBUG_RETURN(TRUE);
       }
     }
@@ -7961,7 +7980,7 @@ static bool check_show_create_table_access(THD *thd, TABLE_LIST *table)
   return check_access(thd, SELECT_ACL | EXTRA_ACL, table->db,
                       &table->grant.privilege, 0, 0,
                       test(table->schema_table)) ||
-         grant_option && check_grant(thd, SELECT_ACL, table, 2, UINT_MAX, 0);
+         (grant_option && check_grant(thd, SELECT_ACL, table, 2, UINT_MAX, 0));
 }
 
 
@@ -8231,7 +8250,7 @@ int test_if_data_home_dir(const char *dir)
 
   (void) fn_format(path, dir, "", "",
                    (MY_RETURN_REAL_PATH|MY_RESOLVE_SYMLINKS));
-  dir_len= strlen(path);
+  dir_len= (int) strlen(path);
   if (mysql_unpacked_real_data_home_len<= dir_len)
   {
     if (dir_len > mysql_unpacked_real_data_home_len &&

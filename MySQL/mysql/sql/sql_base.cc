@@ -706,7 +706,7 @@ void close_temporary_tables(THD *thd)
     return;
   }
 
-  TABLE *next,
+  TABLE *UNINIT_VAR(next),
     *prev_table /* prev link is not maintained in TABLE's double-linked list */;
   bool was_quote_show= true; /* to assume thd->options has OPTION_QUOTE_SHOW_CREATE */
   // Better add "if exists", in case a RESET MASTER has been done
@@ -716,7 +716,6 @@ void close_temporary_tables(THD *thd)
   memcpy(buf, stub, stub_len);
   String s_query= String(buf, sizeof(buf), system_charset_info);
   bool found_user_tables= false;
-  LINT_INIT(next);
 
   /*
      insertion sort of temp tables by pseudo_thread_id to build ordered list
@@ -769,19 +768,23 @@ void close_temporary_tables(THD *thd)
     {
       /* Set pseudo_thread_id to be that of the processed table */
       thd->variables.pseudo_thread_id= tmpkeyval(thd, table);
-      /* Loop forward through all tables within the sublist of
-         common pseudo_thread_id to create single DROP query */
+      String db;
+      db.append(table->s->db);
+      /* Loop forward through all tables that belong to a common database
+         within the sublist of common pseudo_thread_id to create single
+         DROP query 
+      */
       for (s_query.length(stub_len);
            table && is_user_table(table) &&
-             tmpkeyval(thd, table) == thd->variables.pseudo_thread_id;
+             tmpkeyval(thd, table) == thd->variables.pseudo_thread_id &&
+             strlen(table->s->db) == db.length() &&
+             strcmp(table->s->db, db.ptr()) == 0;
            table= next)
       {
         /*
-          We are going to add 4 ` around the db/table names and possible more
-          due to special characters in the names
+          We are going to add ` around the table names and possible more
+          due to special characters
         */
-        append_identifier(thd, &s_query, table->s->db, (uint) strlen(table->s->db));
-        s_query.q_append('.');
         append_identifier(thd, &s_query, table->s->table_name,
                           (uint) strlen(table->s->table_name));
         s_query.q_append(',');
@@ -794,6 +797,8 @@ void close_temporary_tables(THD *thd)
       Query_log_event qinfo(thd, s_query.ptr(),
                             s_query.length() - 1 /* to remove trailing ',' */,
                             0, FALSE, THD::NOT_KILLED);
+      qinfo.db= db.ptr();
+      qinfo.db_len= db.length();
       thd->variables.character_set_client= cs_save;
       DBUG_ASSERT(qinfo.error_code == 0);
       mysql_bin_log.write(&qinfo);
@@ -1556,7 +1561,7 @@ TABLE *open_table(THD *thd, TABLE_LIST *table_list, MEM_ROOT *mem_root,
           it can not be cloned. Emit an error for an unsupported behaviour.
         */
 	if (table->query_id == thd->query_id ||
-            thd->prelocked_mode && table->query_id)
+            (thd->prelocked_mode && table->query_id))
 	{
 	  my_error(ER_CANT_REOPEN_TABLE, MYF(0), table->alias);
 	  DBUG_RETURN(0);
@@ -1610,8 +1615,8 @@ TABLE *open_table(THD *thd, TABLE_LIST *table_list, MEM_ROOT *mem_root,
             distance >  0 - we have lock mode higher then we require
             distance == 0 - we have lock mode exactly which we need
           */
-          if (best_distance < 0 && distance > best_distance ||
-              distance >= 0 && distance < best_distance)
+          if ((best_distance < 0 && distance > best_distance) ||
+              (distance >= 0 && distance < best_distance))
           {
             best_distance= distance;
             best_table= table;
@@ -2298,8 +2303,8 @@ bool table_is_used(TABLE *table, bool wait_for_name_lock)
          search= (TABLE*) hash_next(&open_cache, (byte*) key,
                                     key_length, &state))
     {
-      if (search->locked_by_name && wait_for_name_lock ||
-	  search->is_name_opened() && search->needs_reopen_or_name_lock())
+      if ((search->locked_by_name && wait_for_name_lock) ||
+	  (search->is_name_opened() && search->needs_reopen_or_name_lock()))
 	return 1;				// Table is used
     }
   } while ((table=table->next));
@@ -4137,8 +4142,7 @@ find_item_in_list(Item *find, List<Item> &items, uint *counter,
     (and not an item that happens to have a name).
   */
   bool is_ref_by_name= 0;
-  uint unaliased_counter;
-  LINT_INIT(unaliased_counter);                 // Dependent on found_unaliased
+  uint UNINIT_VAR(unaliased_counter);           // Dependent on found_unaliased
 
   *resolution= NOT_RESOLVED;
 
@@ -5095,7 +5099,13 @@ int setup_wild(THD *thd, TABLE_LIST *tables, List<Item> &fields,
     /* make * substituting permanent */
     SELECT_LEX *select_lex= thd->lex->current_select;
     select_lex->with_wild= 0;
-    select_lex->item_list= fields;
+    /*   
+      The assignment below is translated to memcpy() call (at least on some
+      platforms). memcpy() expects that source and destination areas do not
+      overlap. That problem was detected by valgrind. 
+    */
+    if (&select_lex->item_list != &fields)
+      select_lex->item_list= fields;
 
     thd->restore_active_arena(arena, &backup);
   }
@@ -5142,7 +5152,7 @@ bool setup_fields(THD *thd, Item **ref_pointer_array,
   thd->lex->current_select->cur_pos_in_select_list= 0;
   while ((item= it++))
   {
-    if (!item->fixed && item->fix_fields(thd, it.ref()) ||
+    if ((!item->fixed && item->fix_fields(thd, it.ref())) ||
 	(item= *(it.ref()))->check_cols(1))
     {
       thd->lex->current_select->is_item_list_lookup= save_is_item_list_lookup;
@@ -5476,16 +5486,16 @@ insert_fields(THD *thd, Name_resolution_context *context, const char *db_name,
 
     DBUG_ASSERT(tables->is_leaf_for_name_resolution());
 
-    if (table_name && my_strcasecmp(table_alias_charset, table_name,
-                                    tables->alias) ||
+    if ((table_name && my_strcasecmp(table_alias_charset, table_name,
+                                    tables->alias)) ||
         (db_name && strcmp(tables->db,db_name)))
       continue;
 
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
     /* Ensure that we have access rights to all fields to be inserted. */
-    if (!((table && !tables->view && (table->grant.privilege & SELECT_ACL) ||
-           tables->view && (tables->grant.privilege & SELECT_ACL))) &&
-        !any_privileges)
+    if (!((table && !tables->view && (table->grant.privilege & SELECT_ACL)) ||
+         (tables->view && (tables->grant.privilege & SELECT_ACL))) &&
+         !any_privileges)
     {
       field_iterator.set(tables);
       if (check_grant_all_columns(thd, SELECT_ACL, &field_iterator))
@@ -5539,7 +5549,7 @@ insert_fields(THD *thd, Name_resolution_context *context, const char *db_name,
       */
       if (any_privileges)
       {
-        DBUG_ASSERT(tables->field_translation == NULL && table ||
+        DBUG_ASSERT((tables->field_translation == NULL && table) ||
                     tables->is_natural_join);
         DBUG_ASSERT(item->type() == Item::FIELD_ITEM);
         Item_field *fld= (Item_field*) item;
@@ -5684,7 +5694,7 @@ int setup_conds(THD *thd, TABLE_LIST *tables, TABLE_LIST *leaves,
   if (*conds)
   {
     thd->where="where clause";
-    if (!(*conds)->fixed && (*conds)->fix_fields(thd, conds) ||
+    if ((!(*conds)->fixed && (*conds)->fix_fields(thd, conds)) ||
 	(*conds)->check_cols(1))
       goto err_no_arena;
   }
@@ -5704,8 +5714,8 @@ int setup_conds(THD *thd, TABLE_LIST *tables, TABLE_LIST *leaves,
       {
         /* Make a join an a expression */
         thd->where="on clause";
-        if (!embedded->on_expr->fixed &&
-            embedded->on_expr->fix_fields(thd, &embedded->on_expr) ||
+        if ((!embedded->on_expr->fixed &&
+            embedded->on_expr->fix_fields(thd, &embedded->on_expr)) ||
 	    embedded->on_expr->check_cols(1))
 	  goto err_no_arena;
         select_lex->cond_count++;
@@ -5860,8 +5870,8 @@ fill_record_n_invoke_before_triggers(THD *thd, List<Item> &fields,
                                      enum trg_event_type event)
 {
   return (fill_record(thd, fields, values, ignore_errors) ||
-          triggers && triggers->process_triggers(thd, event,
-                                                 TRG_ACTION_BEFORE, TRUE));
+          (triggers && triggers->process_triggers(thd, event,
+                                                 TRG_ACTION_BEFORE, TRUE)));
 }
 
 
@@ -5955,8 +5965,8 @@ fill_record_n_invoke_before_triggers(THD *thd, Field **ptr,
                                      enum trg_event_type event)
 {
   return (fill_record(thd, ptr, values, ignore_errors) ||
-          triggers && triggers->process_triggers(thd, event,
-                                                 TRG_ACTION_BEFORE, TRUE));
+          (triggers && triggers->process_triggers(thd, event,
+                                                 TRG_ACTION_BEFORE, TRUE)));
 }
 
 

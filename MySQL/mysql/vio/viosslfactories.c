@@ -73,9 +73,28 @@ report_errors()
   DBUG_VOID_RETURN;
 }
 
+static const char*
+ssl_error_string[] = 
+{
+  "No error",
+  "Unable to get certificate",
+  "Unable to get private key",
+  "Private key does not match the certificate public key"
+  "SSL_CTX_set_default_verify_paths failed",
+  "Failed to set ciphers to use",
+  "SSL_CTX_new failed"
+};
+
+const char*
+sslGetErrString(enum enum_ssl_init_error e)
+{
+  DBUG_ASSERT(SSL_INITERR_NOERROR < e && e < SSL_INITERR_LASTERR);
+  return ssl_error_string[e];
+}
 
 static int
-vio_set_cert_stuff(SSL_CTX *ctx, const char *cert_file, const char *key_file)
+vio_set_cert_stuff(SSL_CTX *ctx, const char *cert_file, const char *key_file,
+                   enum enum_ssl_init_error* error)
 {
   DBUG_ENTER("vio_set_cert_stuff");
   DBUG_PRINT("enter", ("ctx: 0x%lx  cert_file: %s  key_file: %s",
@@ -84,9 +103,10 @@ vio_set_cert_stuff(SSL_CTX *ctx, const char *cert_file, const char *key_file)
   {
     if (SSL_CTX_use_certificate_file(ctx, cert_file, SSL_FILETYPE_PEM) <= 0)
     {
-      DBUG_PRINT("error",("unable to get certificate from '%s'", cert_file));
+      *error= SSL_INITERR_CERT;
+      DBUG_PRINT("error",("%s from file '%s'", sslGetErrString(*error), cert_file));
       DBUG_EXECUTE("error", ERR_print_errors_fp(DBUG_FILE););
-      fprintf(stderr, "SSL error: Unable to get certificate from '%s'\n",
+      fprintf(stderr, "SSL error: %s from '%s'\n", sslGetErrString(*error),
               cert_file);
       fflush(stderr);
       DBUG_RETURN(1);
@@ -97,9 +117,10 @@ vio_set_cert_stuff(SSL_CTX *ctx, const char *cert_file, const char *key_file)
 
     if (SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) <= 0)
     {
-      DBUG_PRINT("error", ("unable to get private key from '%s'", key_file));
+      *error= SSL_INITERR_KEY;
+      DBUG_PRINT("error", ("%s from file '%s'", sslGetErrString(*error), key_file));
       DBUG_EXECUTE("error", ERR_print_errors_fp(DBUG_FILE););
-      fprintf(stderr, "SSL error: Unable to get private key from '%s'\n",
+      fprintf(stderr, "SSL error: %s from '%s'\n", sslGetErrString(*error),
               key_file);
       fflush(stderr);
       DBUG_RETURN(1);
@@ -111,66 +132,15 @@ vio_set_cert_stuff(SSL_CTX *ctx, const char *cert_file, const char *key_file)
     */
     if (!SSL_CTX_check_private_key(ctx))
     {
-      DBUG_PRINT("error",
-		 ("Private key does not match the certificate public key"));
+      *error= SSL_INITERR_NOMATCH;
+      DBUG_PRINT("error", ("%s",sslGetErrString(*error)));
       DBUG_EXECUTE("error", ERR_print_errors_fp(DBUG_FILE););
-      fprintf(stderr,
-              "SSL error: "
-              "Private key does not match the certificate public key\n");
+      fprintf(stderr, "SSL error: %s\n", sslGetErrString(*error));
       fflush(stderr);
       DBUG_RETURN(1);
     }
   }
   DBUG_RETURN(0);
-}
-
-
-static int
-vio_verify_callback(int ok, X509_STORE_CTX *ctx)
-{
-  char buf[256];
-  X509 *err_cert;
-
-  DBUG_ENTER("vio_verify_callback");
-  DBUG_PRINT("enter", ("ok: %d  ctx: 0x%lx", ok, (long) ctx));
-
-  err_cert= X509_STORE_CTX_get_current_cert(ctx);
-  X509_NAME_oneline(X509_get_subject_name(err_cert), buf, sizeof(buf));
-  DBUG_PRINT("info", ("cert: %s", buf));
-  if (!ok)
-  {
-    int err, depth;
-    err= X509_STORE_CTX_get_error(ctx);
-    depth= X509_STORE_CTX_get_error_depth(ctx);
-
-    DBUG_PRINT("error",("verify error: %d  '%s'",err,
-			X509_verify_cert_error_string(err)));
-    /*
-      Approve cert if depth is greater then "verify_depth", currently
-      verify_depth is always 0 and there is no way to increase it.
-     */
-    if (verify_depth >= depth)
-      ok= 1;
-  }
-  switch (ctx->error)
-  {
-  case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT:
-    X509_NAME_oneline(X509_get_issuer_name(ctx->current_cert), buf, 256);
-    DBUG_PRINT("info",("issuer= %s\n", buf));
-    break;
-  case X509_V_ERR_CERT_NOT_YET_VALID:
-  case X509_V_ERR_ERROR_IN_CERT_NOT_BEFORE_FIELD:
-    DBUG_PRINT("error", ("notBefore"));
-    /*ASN1_TIME_print_fp(stderr,X509_get_notBefore(ctx->current_cert));*/
-    break;
-  case X509_V_ERR_CERT_HAS_EXPIRED:
-  case X509_V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD:
-    DBUG_PRINT("error", ("notAfter error"));
-    /*ASN1_TIME_print_fp(stderr,X509_get_notAfter(ctx->current_cert));*/
-    break;
-  }
-  DBUG_PRINT("exit", ("%d", ok));
-  DBUG_RETURN(ok);
 }
 
 
@@ -229,7 +199,8 @@ static void check_ssl_init()
 static struct st_VioSSLFd *
 new_VioSSLFd(const char *key_file, const char *cert_file,
              const char *ca_file, const char *ca_path,
-             const char *cipher, SSL_METHOD *method)
+             const char *cipher, SSL_METHOD *method, 
+             enum enum_ssl_init_error* error)
 {
   DH *dh;
   struct st_VioSSLFd *ssl_fd;
@@ -243,7 +214,8 @@ new_VioSSLFd(const char *key_file, const char *cert_file,
 
   if (!(ssl_fd->ssl_context= SSL_CTX_new(method)))
   {
-    DBUG_PRINT("error", ("SSL_CTX_new failed"));
+    *error= SSL_INITERR_MEMFAIL;
+    DBUG_PRINT("error", ("%s", sslGetErrString(*error)));
     report_errors();
     my_free((void*)ssl_fd,MYF(0));
     DBUG_RETURN(0);
@@ -257,7 +229,8 @@ new_VioSSLFd(const char *key_file, const char *cert_file,
   if (cipher &&
       SSL_CTX_set_cipher_list(ssl_fd->ssl_context, cipher) == 0)
   {
-    DBUG_PRINT("error", ("failed to set ciphers to use"));
+    *error= SSL_INITERR_CIPHERS;
+    DBUG_PRINT("error", ("%s", sslGetErrString(*error)));
     report_errors();
     SSL_CTX_free(ssl_fd->ssl_context);
     my_free((void*)ssl_fd,MYF(0));
@@ -270,7 +243,8 @@ new_VioSSLFd(const char *key_file, const char *cert_file,
     DBUG_PRINT("warning", ("SSL_CTX_load_verify_locations failed"));
     if (SSL_CTX_set_default_verify_paths(ssl_fd->ssl_context) == 0)
     {
-      DBUG_PRINT("error", ("SSL_CTX_set_default_verify_paths failed"));
+      *error= SSL_INITERR_BAD_PATHS;
+      DBUG_PRINT("error", ("%s", sslGetErrString(*error)));
       report_errors();
       SSL_CTX_free(ssl_fd->ssl_context);
       my_free((void*)ssl_fd,MYF(0));
@@ -278,7 +252,7 @@ new_VioSSLFd(const char *key_file, const char *cert_file,
     }
   }
 
-  if (vio_set_cert_stuff(ssl_fd->ssl_context, cert_file, key_file))
+  if (vio_set_cert_stuff(ssl_fd->ssl_context, cert_file, key_file, error))
   {
     DBUG_PRINT("error", ("vio_set_cert_stuff failed"));
     report_errors();
@@ -306,6 +280,7 @@ new_VioSSLConnectorFd(const char *key_file, const char *cert_file,
 {
   struct st_VioSSLFd *ssl_fd;
   int verify= SSL_VERIFY_PEER;
+  enum enum_ssl_init_error dummy;
 
   /*
     Turn off verification of servers certificate if both
@@ -315,18 +290,14 @@ new_VioSSLConnectorFd(const char *key_file, const char *cert_file,
     verify= SSL_VERIFY_NONE;
 
   if (!(ssl_fd= new_VioSSLFd(key_file, cert_file, ca_file,
-                             ca_path, cipher, TLSv1_client_method())))
+                             ca_path, cipher, TLSv1_client_method(), &dummy)))
   {
     return 0;
   }
 
   /* Init the VioSSLFd as a "connector" ie. the client side */
 
-  /*
-    The verify_callback function is used to control the behaviour
-    when the SSL_VERIFY_PEER flag is set.
-  */
-  SSL_CTX_set_verify(ssl_fd->ssl_context, verify, vio_verify_callback);
+  SSL_CTX_set_verify(ssl_fd->ssl_context, verify, NULL);
 
   return ssl_fd;
 }
@@ -336,12 +307,12 @@ new_VioSSLConnectorFd(const char *key_file, const char *cert_file,
 struct st_VioSSLFd*
 new_VioSSLAcceptorFd(const char *key_file, const char *cert_file,
 		     const char *ca_file, const char *ca_path,
-		     const char *cipher)
+		     const char *cipher, enum enum_ssl_init_error* error)
 {
   struct st_VioSSLFd *ssl_fd;
   int verify= SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE;
   if (!(ssl_fd= new_VioSSLFd(key_file, cert_file, ca_file,
-                             ca_path, cipher, TLSv1_server_method())))
+                             ca_path, cipher, TLSv1_server_method(), error)))
   {
     return 0;
   }
@@ -350,11 +321,7 @@ new_VioSSLAcceptorFd(const char *key_file, const char *cert_file,
   /* Set max number of cached sessions, returns the previous size */
   SSL_CTX_sess_set_cache_size(ssl_fd->ssl_context, 128);
 
-  /*
-    The verify_callback function is used to control the behaviour
-    when the SSL_VERIFY_PEER flag is set.
-  */
-  SSL_CTX_set_verify(ssl_fd->ssl_context, verify, vio_verify_callback);
+  SSL_CTX_set_verify(ssl_fd->ssl_context, verify, NULL);
 
   /*
     Set session_id - an identifier for this server session

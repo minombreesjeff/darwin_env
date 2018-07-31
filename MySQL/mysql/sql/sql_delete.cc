@@ -144,6 +144,14 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
     delete select;
     free_underlaid_joins(thd, select_lex);
     thd->row_count_func= 0;
+    /* 
+      Error was already created by quick select evaluation (check_quick()).
+      TODO: Add error code output parameter to Item::val_xxx() methods.
+      Currently they rely on the user checking DA for
+      errors when unwinding the stack after calling Item::val_xxx().
+    */
+    if (thd->net.report_error)
+      DBUG_RETURN(TRUE);
     send_ok(thd,0L);
 
     /*
@@ -407,7 +415,7 @@ int mysql_prepare_delete(THD *thd, TABLE_LIST *table_list, Item **conds)
 
   if (select_lex->inner_refs_list.elements &&
     fix_inner_refs(thd, all_fields, select_lex, select_lex->ref_pointer_array))
-    DBUG_RETURN(-1);
+    DBUG_RETURN(TRUE);
 
   select_lex->fix_prepare_information(thd, conds, &fake_conds);
   DBUG_RETURN(FALSE);
@@ -503,6 +511,11 @@ int mysql_multi_delete_prepare(THD *thd)
       }
     }
   }
+  /*
+    Reset the exclude flag to false so it doesn't interfare
+    with further calls to unique_table
+  */
+  lex->select_lex.exclude_from_table_unique_test= FALSE;
   DBUG_RETURN(FALSE);
 }
 
@@ -538,11 +551,24 @@ multi_delete::initialize_tables(JOIN *join)
     DBUG_RETURN(1);
 
   table_map tables_to_delete_from=0;
+  delete_while_scanning= 1;
   for (walk= delete_tables; walk; walk= walk->next_local)
+  {
     tables_to_delete_from|= walk->table->map;
+    if (delete_while_scanning &&
+        unique_table(thd, walk, join->tables_list, false))
+    {
+      /*
+        If the table we are going to delete from appears
+        in join, we need to defer delete. So the delete
+        doesn't interfers with the scaning of results.
+      */
+      delete_while_scanning= 0;
+    }
+  }
+
 
   walk= delete_tables;
-  delete_while_scanning= 1;
   for (JOIN_TAB *tab=join->join_tab, *end=join->join_tab+join->tables;
        tab < end;
        tab++)
@@ -693,7 +719,7 @@ void multi_delete::send_error(uint errcode,const char *err)
 
   /* the error was handled or nothing deleted and no side effects return */
   if (error_handled ||
-      !thd->transaction.stmt.modified_non_trans_table && !deleted)
+      (!thd->transaction.stmt.modified_non_trans_table && !deleted))
     DBUG_VOID_RETURN;
 
   /* Something already deleted so we have to invalidate cache */

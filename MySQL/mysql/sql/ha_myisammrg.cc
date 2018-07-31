@@ -78,7 +78,7 @@ static void split_file_name(const char *file_name,
 
 extern "C" void myrg_print_wrong_table(const char *table_name)
 {
-  LEX_STRING db, name;
+  LEX_STRING db= {NULL, 0}, name;
   char buf[FN_REFLEN];
   split_file_name(table_name, &db, &name);
   memcpy(buf, db.str, db.length);
@@ -402,11 +402,11 @@ int ha_myisammrg::info(uint flag)
         with such a number, it'll be an error later anyway.
       */
       bzero((char*) table->key_info[0].rec_per_key,
-            sizeof(table->key_info[0].rec_per_key) * table->s->key_parts);
+            sizeof(table->key_info[0].rec_per_key[0]) * table->s->key_parts);
 #endif
       memcpy((char*) table->key_info[0].rec_per_key,
 	     (char*) mrg_info.rec_per_key,
-             sizeof(table->key_info[0].rec_per_key) *
+             sizeof(table->key_info[0].rec_per_key[0]) *
              min(file->keys, table->s->key_parts));
     }
   }

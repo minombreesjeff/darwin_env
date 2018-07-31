@@ -545,6 +545,14 @@ void st_relay_log_info::close_temporary_tables()
   slave_open_temp_tables= 0;
 }
 
+static void set_thd_in_use_temporary_tables(RELAY_LOG_INFO *rli)
+{
+  TABLE *table;
+
+  for (table= rli->save_temporary_tables ; table ; table= table->next)
+    table->in_use= rli->sql_thd;
+}
+
 /*
   purge_relay_logs()
 
@@ -747,7 +755,7 @@ int terminate_slave_thread(THD* thd,
     int error;
     DBUG_PRINT("loop", ("killing slave thread"));
 
-    pthread_mutex_lock(&thd->LOCK_delete);
+    pthread_mutex_lock(&thd->LOCK_thd_data);
 #ifndef DONT_USE_THR_ALARM
     /*
       Error codes from pthread_kill are:
@@ -758,7 +766,7 @@ int terminate_slave_thread(THD* thd,
     DBUG_ASSERT(err != EINVAL);
 #endif
     thd->awake(THD::NOT_KILLED);
-    pthread_mutex_unlock(&thd->LOCK_delete);
+    pthread_mutex_unlock(&thd->LOCK_thd_data);
 
     /*
       There is a small chance that slave thread might miss the first
@@ -1326,7 +1334,7 @@ static int init_strvar_from_file(char *var, int max_size, IO_CACHE *f,
 	up to and including newline.
       */
       int c;
-      while (((c=my_b_get(f)) != '\n' && c != my_b_EOF));
+      while (((c=my_b_get(f)) != '\n' && c != my_b_EOF)) ;
     }
     return 0;
   }
@@ -1427,7 +1435,7 @@ static int get_master_version_and_clock(MYSQL* mysql, MASTER_INFO* mi)
   
   if (errmsg)
   {
-    sql_print_error(errmsg);
+    sql_print_error("%s", errmsg);
     return 1;
   }
 
@@ -1550,7 +1558,7 @@ be equal for replication to work";
 err:
   if (errmsg)
   {
-    sql_print_error(errmsg);
+    sql_print_error("%s", errmsg);
     return 1;
   }
 
@@ -1600,15 +1608,13 @@ static int create_table_from_dump(THD* thd, MYSQL *mysql, const char* db,
     DBUG_RETURN(1);
   }
   thd->command = COM_TABLE_DUMP;
-  thd->query_length= packet_len;
-  /* Note that we should not set thd->query until the area is initalized */
   if (!(query = thd->strmake((char*) net->read_pos, packet_len)))
   {
     sql_print_error("create_table_from_dump: out of memory");
     my_message(ER_GET_ERRNO, "Out of memory", MYF(0));
     DBUG_RETURN(1);
   }
-  thd->query= query;
+  thd->set_query(query, packet_len);
   thd->query_error = 0;
   thd->net.no_send_ok = 1;
 
@@ -1960,7 +1966,7 @@ Failed to open the existing relay log info file '%s' (errno %d)",
   DBUG_RETURN(error);
 
 err:
-  sql_print_error(msg);
+  sql_print_error("%s", msg);
   end_io_cache(&rli->info_file);
   if (info_fd >= 0)
     my_close(info_fd, MYF(0));
@@ -3859,11 +3865,8 @@ err:
   // print the current replication position
   sql_print_information("Slave I/O thread exiting, read up to log '%s', position %s",
 		  IO_RPL_LOG_NAME, llstr(mi->master_log_pos,llbuff));
-  VOID(pthread_mutex_lock(&LOCK_thread_count));
-  thd->query= 0; // extra safety
-  thd->query_length= 0;
+  thd->set_query(NULL, 0);
   thd->reset_db(NULL, 0);
-  VOID(pthread_mutex_unlock(&LOCK_thread_count));
   if (mysql)
   {
     /*
@@ -3964,6 +3967,7 @@ slave_begin:
   }
   thd->init_for_queries();
   thd->temporary_tables = rli->save_temporary_tables; // restore temp tables
+  set_thd_in_use_temporary_tables(rli);   // (re)set sql_thd in use for saved temp tables
   pthread_mutex_lock(&LOCK_thread_count);
   threads.append(thd);
   pthread_mutex_unlock(&LOCK_thread_count);
@@ -4096,17 +4100,14 @@ the slave SQL thread with \"SLAVE START\". We stopped at log \
 		        RPL_LOG_NAME, llstr(rli->group_master_log_pos,llbuff));
 
  err:
-  VOID(pthread_mutex_lock(&LOCK_thread_count));
   /*
     Some extra safety, which should not been needed (normally, event deletion
     should already have done these assignments (each event which sets these
     variables is supposed to set them to 0 before terminating)).
   */
-  thd->catalog= 0; 
+  thd->catalog= 0;
+  thd->set_query(NULL, 0);
   thd->reset_db(NULL, 0);
-  thd->query= 0; 
-  thd->query_length= 0;
-  VOID(pthread_mutex_unlock(&LOCK_thread_count));
   thd_proc_info(thd, "Waiting for slave mutex on exit");
   pthread_mutex_lock(&rli->run_lock);
   /* We need data_lock, at least to wake up any waiting master_pos_wait() */
@@ -4136,6 +4137,7 @@ the slave SQL thread with \"SLAVE START\". We stopped at log \
   DBUG_ASSERT(rli->sql_thd == thd);
   THD_CHECK_SENTRY(thd);
   rli->sql_thd= 0;
+  set_thd_in_use_temporary_tables(rli);  // (re)set sql_thd in use for saved temp tables
   pthread_mutex_lock(&LOCK_thread_count);
   THD_CHECK_SENTRY(thd);
   delete thd;
@@ -4734,6 +4736,31 @@ void end_relay_log_info(RELAY_LOG_INFO* rli)
   rli->close_temporary_tables();
   DBUG_VOID_RETURN;
 }
+
+
+/**
+  Hook to detach the active VIO before closing a connection handle.
+
+  The client API might close the connection (and associated data)
+  in case it encounters a unrecoverable (network) error. This hook
+  is called from the client code before the VIO handle is deleted
+  allows the thread to detach the active vio so it does not point
+  to freed memory.
+
+  Other calls to THD::clear_active_vio throughout this module are
+  redundant due to the hook but are left in place for illustrative
+  purposes.
+*/
+
+extern "C" void slave_io_thread_detach_vio()
+{
+#ifdef SIGNAL_WITH_VIO_CLOSE
+  THD *thd= current_thd;
+  if (thd && thd->slave_thread)
+    thd->clear_active_vio();
+#endif
+}
+
 
 /*
   Try to connect until successful or slave killed

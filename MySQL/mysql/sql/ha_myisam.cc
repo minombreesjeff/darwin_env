@@ -97,7 +97,7 @@ static void mi_check_print_msg(MI_CHECK *param,	const char* msg_type,
 
   if (!thd->vio_ok())
   {
-    sql_print_error(msgbuf);
+    sql_print_error("%s", msgbuf);
     return;
   }
 
@@ -1009,6 +1009,9 @@ int ha_myisam::repair(THD *thd, MI_CHECK &param, bool do_optimize)
   param.out_flag= 0;
   strmov(fixed_name,file->filename);
 
+  // Release latches since this can take a long time
+  ha_release_temporary_latches(thd);
+
   // Don't lock tables if we have used LOCK TABLE
   if (!thd->locked_tables && 
       mi_lock_database(file, table->s->tmp_table ? F_EXTRA_LCK : F_WRLCK))
@@ -1186,6 +1189,7 @@ int ha_myisam::preload_keys(THD* thd, HA_CHECK_OPT *check_opt)
   ulonglong map= ~(ulonglong) 0;
   TABLE_LIST *table_list= table->pos_in_table_list;
   my_bool ignore_leaves= table_list->ignore_leaves;
+  char buf[ERRMSGSIZE+20];
 
   DBUG_ENTER("ha_myisam::preload_keys");
 
@@ -1213,7 +1217,6 @@ int ha_myisam::preload_keys(THD* thd, HA_CHECK_OPT *check_opt)
       errmsg= "Failed to allocate buffer";
       break;
     default:
-      char buf[ERRMSGSIZE+20];
       my_snprintf(buf, ERRMSGSIZE,
                   "Failed to read from index file (errno: %d)", my_errno);
       errmsg= buf;
@@ -1484,10 +1487,8 @@ bool ha_myisam::check_and_repair(THD *thd)
 
   old_query= thd->query;
   old_query_length= thd->query_length;
-  pthread_mutex_lock(&LOCK_thread_count);
-  thd->query= (char*) table->s->table_name;
-  thd->query_length= (uint32) strlen(table->s->table_name);
-  pthread_mutex_unlock(&LOCK_thread_count);
+  thd->set_query((char*) table->s->table_name,
+                 (uint32) strlen(table->s->table_name));
 
   if ((marked_crashed= mi_is_crashed(file)) || check(thd, &check_opt))
   {
@@ -1500,10 +1501,7 @@ bool ha_myisam::check_and_repair(THD *thd)
     if (repair(thd, &check_opt))
       error=1;
   }
-  pthread_mutex_lock(&LOCK_thread_count);
-  thd->query= old_query;
-  thd->query_length= old_query_length;
-  pthread_mutex_unlock(&LOCK_thread_count);
+  thd->set_query(old_query, old_query_length);
   DBUG_RETURN(error);
 }
 
@@ -1684,7 +1682,7 @@ int ha_myisam::info(uint flag)
     if (share->key_parts)
       memcpy((char*) table->key_info[0].rec_per_key,
 	     (char*) misam_info.rec_per_key,
-	     sizeof(table->key_info[0].rec_per_key)*share->key_parts);
+             sizeof(table->key_info[0].rec_per_key[0])*share->key_parts);
     raid_type= misam_info.raid_type;
     raid_chunks= misam_info.raid_chunks;
     raid_chunksize= misam_info.raid_chunksize;

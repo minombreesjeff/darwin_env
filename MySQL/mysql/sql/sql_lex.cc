@@ -32,10 +32,10 @@ sys_var_long_ptr trg_new_row_fake_var(0, 0);
 
 /* Macros to look like lex */
 
-#define yyGet()		*(lip->ptr++)
-#define yyGetLast()	lip->ptr[-1]
-#define yyPeek()	lip->ptr[0]
-#define yyPeek2()	lip->ptr[1]
+#define yyGet()		((uchar)*(lip->ptr++))
+#define yyGetLast()	((uchar)lip->ptr[-1])
+#define yyPeek()	((uchar)lip->ptr[0])
+#define yyPeek2()	((uchar)lip->ptr[1])
 #define yyUnget()	lip->ptr--
 #define yySkip()	lip->ptr++
 #define yyLength()	((uint) (lip->ptr - lip->tok_start)-1)
@@ -530,7 +530,7 @@ static inline uint int_token(const char *str,uint length)
 
 int MYSQLlex(void *arg, void *yythd)
 {
-  reg1	uchar c;
+  reg1	uchar UNINIT_VAR(c);
   bool comment_closed;
   int	tokval, result_state;
   uint length;
@@ -550,7 +550,6 @@ int MYSQLlex(void *arg, void *yythd)
   lip->tok_start=lip->tok_end=lip->ptr;
   state=lip->next_state;
   lip->next_state=MY_LEX_OPERATOR_OR_IDENT;
-  LINT_INIT(c);
   for (;;)
   {
     switch (state) {
@@ -661,7 +660,7 @@ int MYSQLlex(void *arg, void *yythd)
       else
 #endif
       {
-        for (result_state= c; ident_map[c= yyGet()]; result_state|= c);
+        for (result_state= c; ident_map[c= yyGet()]; result_state|= c) ;
         /* If there were non-ASCII characters, mark that we must convert */
         result_state= result_state & 0x80 ? IDENT_QUOTED : IDENT;
       }
@@ -673,7 +672,7 @@ int MYSQLlex(void *arg, void *yythd)
           If we find a space then this can't be an identifier. We notice this
           below by checking start != lex->ptr.
         */
-        for (; state_map[c] == MY_LEX_SKIP ; c= yyGet());
+        for (; state_map[c] == MY_LEX_SKIP ; c= yyGet()) ;
       }
       if (start == lip->ptr && c == '.' && ident_map[yyPeek()])
 	lip->next_state=MY_LEX_IDENT_SEP;
@@ -782,7 +781,7 @@ int MYSQLlex(void *arg, void *yythd)
       else
 #endif
       {
-        for (result_state=0; ident_map[c= yyGet()]; result_state|= c);
+        for (result_state=0; ident_map[c= yyGet()]; result_state|= c) ;
         /* If there were non-ASCII characters, mark that we must convert */
         result_state= result_state & 0x80 ? IDENT_QUOTED : IDENT;
       }
@@ -813,9 +812,11 @@ int MYSQLlex(void *arg, void *yythd)
 	  }
 	}
 #ifdef USE_MB
-	else if (var_length < 1)
-	  break;				// Error
-	lip->ptr+= var_length-1;
+	else if (use_mb(cs))
+        {
+          if ((var_length= my_ismbchar(cs, lip->ptr-1, lip->end_of_query)))
+            lip->ptr+= var_length-1;
+        }
 #endif
       }
       if (double_quotes)
@@ -872,7 +873,7 @@ int MYSQLlex(void *arg, void *yythd)
 
     case MY_LEX_BIN_NUMBER:           // Found b'bin-string'
       yyGet();                                // Skip '
-      while ((c= yyGet()) == '0' || c == '1');
+      while ((c= yyGet()) == '0' || c == '1') ;
       length= (uint) (lip->ptr - lip->tok_start);    // Length of bin-num + 3
       if (c != '\'')
       return(ABORT_SYM);              // Illegal hex constant
@@ -1080,7 +1081,7 @@ int MYSQLlex(void *arg, void *yythd)
 	[(global | local | session) .]variable_name
       */
       
-      for (result_state= 0; ident_map[c= yyGet()]; result_state|= c);
+      for (result_state= 0; ident_map[c= yyGet()]; result_state|= c) ;
       /* If there were non-ASCII characters, mark that we must convert */
       result_state= result_state & 0x80 ? IDENT_QUOTED : IDENT;
       
@@ -1670,7 +1671,7 @@ void st_select_lex::print_limit(THD *thd, String *str)
        item->substype() == Item_subselect::ALL_SUBS))
   {
     DBUG_ASSERT(!item->fixed ||
-                select_limit->val_int() == LL(1) && offset_limit == 0);
+                (select_limit->val_int() == LL(1) && offset_limit == 0));
     return;
   }
 

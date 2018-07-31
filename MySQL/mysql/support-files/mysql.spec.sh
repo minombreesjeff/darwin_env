@@ -264,7 +264,7 @@ sh -c  "PATH=\"${MYSQL_BUILD_PATH:-$PATH}\" \
             --includedir=%{_includedir} \
             --mandir=%{_mandir} \
 	    --enable-thread-safe-client \
-            --enable-community-features \
+	    --enable-community-features \
             --enable-profiling \
 	    --with-readline ; \
 	    # Add this for more debugging support

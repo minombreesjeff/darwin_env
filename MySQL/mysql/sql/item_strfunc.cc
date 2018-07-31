@@ -600,6 +600,7 @@ String *Item_func_concat_ws::val_str(String *str)
   String tmp_sep_str(tmp_str_buff, sizeof(tmp_str_buff),default_charset_info),
          *sep_str, *res, *res2,*use_as_buff;
   uint i;
+  bool is_const= 0;
 
   null_value=0;
   if (!(sep_str= args[0]->val_str(&tmp_sep_str)))
@@ -613,7 +614,11 @@ String *Item_func_concat_ws::val_str(String *str)
   // If not, return the empty string
   for (i=1; i < arg_count; i++)
     if ((res= args[i]->val_str(str)))
+    {
+      is_const= args[i]->const_item() || !args[i]->used_tables();
       break;
+    }
+
   if (i ==  arg_count)
     return &my_empty_string;
 
@@ -631,7 +636,7 @@ String *Item_func_concat_ws::val_str(String *str)
 			  current_thd->variables.max_allowed_packet);
       goto null;
     }
-    if (res->alloced_length() >=
+    if (!is_const && res->alloced_length() >=
 	res->length() + sep_str->length() + res2->length())
     {						// Use old buffer
       res->append(*sep_str);			// res->length() > 0 always
@@ -1554,16 +1559,17 @@ String *Item_func_password::val_str(String *str)
     return 0;
   if (res->length() == 0)
     return &my_empty_string;
-  make_scrambled_password(tmp_value, res->c_ptr());
+  my_make_scrambled_password(tmp_value, res->ptr(), res->length());
   str->set(tmp_value, SCRAMBLED_PASSWORD_CHAR_LENGTH, res->charset());
   return str;
 }
 
-char *Item_func_password::alloc(THD *thd, const char *password)
+char *Item_func_password::alloc(THD *thd, const char *password,
+                                size_t pass_len)
 {
   char *buff= (char *) thd->alloc(SCRAMBLED_PASSWORD_CHAR_LENGTH+1);
   if (buff)
-    make_scrambled_password(buff, password);
+    my_make_scrambled_password(buff, password, pass_len);
   return buff;
 }
 
@@ -1577,16 +1583,17 @@ String *Item_func_old_password::val_str(String *str)
     return 0;
   if (res->length() == 0)
     return &my_empty_string;
-  make_scrambled_password_323(tmp_value, res->c_ptr());
+  my_make_scrambled_password_323(tmp_value, res->ptr(), res->length());
   str->set(tmp_value, SCRAMBLED_PASSWORD_CHAR_LENGTH_323, res->charset());
   return str;
 }
 
-char *Item_func_old_password::alloc(THD *thd, const char *password)
+char *Item_func_old_password::alloc(THD *thd, const char *password,
+                                    size_t pass_len)
 {
   char *buff= (char *) thd->alloc(SCRAMBLED_PASSWORD_CHAR_LENGTH_323+1);
   if (buff)
-    make_scrambled_password_323(buff, password);
+    my_make_scrambled_password_323(buff, password, pass_len);
   return buff;
 }
 
@@ -2832,7 +2839,7 @@ String *Item_load_file::val_str(String *str)
       )
     goto err;
 
-  (void) fn_format(path, file_name->c_ptr(), mysql_real_data_home, "",
+  (void) fn_format(path, file_name->c_ptr_safe(), mysql_real_data_home, "",
 		   MY_RELATIVE_PATH | MY_UNPACK_FILENAME);
 
   /* Read only allowed from within dir specified by secure_file_priv */
@@ -2858,7 +2865,7 @@ String *Item_load_file::val_str(String *str)
   }
   if (tmp_value.alloc(stat_info.st_size))
     goto err;
-  if ((file = my_open(file_name->c_ptr(), O_RDONLY, MYF(0))) < 0)
+  if ((file = my_open(file_name->ptr(), O_RDONLY, MYF(0))) < 0)
     goto err;
   if (my_read(file, (byte*) tmp_value.ptr(), stat_info.st_size, MYF(MY_NABP)))
   {
@@ -3108,7 +3115,21 @@ longlong Item_func_uncompressed_length::val_int()
   if (res->is_empty()) return 0;
 
   /*
-    res->ptr() using is safe because we have tested that string is not empty,
+    If length is <= 4 bytes, data is corrupt. This is the best we can do
+    to detect garbage input without decompressing it.
+  */
+  if (res->length() <= 4)
+  {
+    push_warning_printf(current_thd, MYSQL_ERROR::WARN_LEVEL_ERROR,
+                        ER_ZLIB_Z_DATA_ERROR,
+                        ER(ER_ZLIB_Z_DATA_ERROR));
+    null_value= 1;
+    return 0;
+  }
+
+ /*
+    res->ptr() using is safe because we have tested that string is at least
+    5 bytes long.
     res->c_ptr() is not used because:
       - we do not need \0 terminated string to get first 4 bytes
       - c_ptr() tests simbol after string end (uninitialiozed memory) which

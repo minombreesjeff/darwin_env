@@ -148,8 +148,7 @@ my_bool acl_init(bool dont_read_acl_tables)
   acl_cache= new hash_filo(ACL_CACHE_SIZE, 0, 0,
                            (hash_get_key) acl_entry_get_key,
                            (hash_free_key) free,
-                           lower_case_file_system ?
-                           system_charset_info : &my_charset_bin);
+                           &my_charset_utf8_bin);
   if (dont_read_acl_tables)
   {
     DBUG_RETURN(0); /* purecov: tested */
@@ -1046,12 +1045,12 @@ static void acl_update_user(const char *user, const char *host,
   for (uint i=0 ; i < acl_users.elements ; i++)
   {
     ACL_USER *acl_user=dynamic_element(&acl_users,i,ACL_USER*);
-    if (!acl_user->user && !user[0] ||
-	acl_user->user && !strcmp(user,acl_user->user))
+    if ((!acl_user->user && !user[0]) ||
+	(acl_user->user && !strcmp(user,acl_user->user)))
     {
-      if (!acl_user->host.hostname && !host[0] ||
-	  acl_user->host.hostname &&
-	  !my_strcasecmp(system_charset_info, host, acl_user->host.hostname))
+      if ((!acl_user->host.hostname && !host[0]) ||
+	  (acl_user->host.hostname &&
+	  !my_strcasecmp(system_charset_info, host, acl_user->host.hostname)))
       {
 	acl_user->access=privileges;
 	if (mqh->specified_limits & USER_RESOURCES::QUERIES_PER_HOUR)
@@ -1129,16 +1128,16 @@ static void acl_update_db(const char *user, const char *host, const char *db,
   for (uint i=0 ; i < acl_dbs.elements ; i++)
   {
     ACL_DB *acl_db=dynamic_element(&acl_dbs,i,ACL_DB*);
-    if (!acl_db->user && !user[0] ||
-	acl_db->user &&
-	!strcmp(user,acl_db->user))
+    if ((!acl_db->user && !user[0]) ||
+	(acl_db->user &&
+	!strcmp(user,acl_db->user)))
     {
-      if (!acl_db->host.hostname && !host[0] ||
-	  acl_db->host.hostname &&
-          !strcmp(host, acl_db->host.hostname))
+      if ((!acl_db->host.hostname && !host[0]) ||
+	  (acl_db->host.hostname &&
+          !strcmp(host, acl_db->host.hostname)))
       {
-	if (!acl_db->db && !db[0] ||
-	    acl_db->db && !strcmp(db,acl_db->db))
+	if ((!acl_db->db && !db[0]) ||
+	    (acl_db->db && !strcmp(db,acl_db->db)))
 	{
 	  if (privileges)
 	    acl_db->access=privileges;
@@ -1345,8 +1344,8 @@ bool acl_check_host(const char *host, const char *ip)
     return 0;
   VOID(pthread_mutex_lock(&acl_cache->lock));
 
-  if (host && hash_search(&acl_check_hosts,(byte*) host,(uint) strlen(host)) ||
-      ip && hash_search(&acl_check_hosts,(byte*) ip,(uint) strlen(ip)))
+  if ((host && hash_search(&acl_check_hosts,(byte*) host,(uint) strlen(host))) ||
+      (ip && hash_search(&acl_check_hosts,(byte*) ip,(uint) strlen(ip))))
   {
     VOID(pthread_mutex_unlock(&acl_cache->lock));
     return 0;					// Found host
@@ -1564,8 +1563,8 @@ find_acl_user(const char *host, const char *user, my_bool exact)
                        host,
                        acl_user->host.hostname ? acl_user->host.hostname :
                        ""));
-    if (!acl_user->user && !user[0] ||
-	acl_user->user && !strcmp(user,acl_user->user))
+    if ((!acl_user->user && !user[0]) ||
+	(acl_user->user && !strcmp(user,acl_user->user)))
     {
       if (exact ? !my_strcasecmp(system_charset_info, host,
                                  acl_user->host.hostname ?
@@ -2092,10 +2091,13 @@ public:
   ulong sort;
   uint key_length;
   GRANT_NAME(const char *h, const char *d,const char *u,
-             const char *t, ulong p);
-  GRANT_NAME (TABLE *form);
+             const char *t, ulong p, bool is_routine);
+  GRANT_NAME (TABLE *form, bool is_routine);
   virtual ~GRANT_NAME() {};
   virtual bool ok() { return privs != 0; }
+  void set_user_details(const char *h, const char *d,
+                        const char *u, const char *t,
+                        bool is_routine);
 };
 
 
@@ -2113,38 +2115,48 @@ public:
 };
 
 
-
-GRANT_NAME::GRANT_NAME(const char *h, const char *d,const char *u,
-                       const char *t, ulong p)
-  :privs(p)
+void GRANT_NAME::set_user_details(const char *h, const char *d,
+                                  const char *u, const char *t,
+                                  bool is_routine)
 {
   /* Host given by user */
   update_hostname(&host, strdup_root(&memex, h));
-  db =   strdup_root(&memex,d);
+  if (db != d)
+  {
+    db= strdup_root(&memex, d);
+    if (lower_case_table_names)
+      my_casedn_str(files_charset_info, db);
+  }
   user = strdup_root(&memex,u);
   sort=  get_sort(3,host.hostname,db,user);
-  tname= strdup_root(&memex,t);
-  if (lower_case_table_names)
+  if (tname != t)
   {
-    my_casedn_str(files_charset_info, db);
-    my_casedn_str(files_charset_info, tname);
+    tname= strdup_root(&memex, t);
+    if (lower_case_table_names || is_routine)
+      my_casedn_str(files_charset_info, tname);
   }
   key_length =(uint) strlen(d)+(uint) strlen(u)+(uint) strlen(t)+3;
   hash_key = (char*) alloc_root(&memex,key_length);
   strmov(strmov(strmov(hash_key,user)+1,db)+1,tname);
 }
 
+GRANT_NAME::GRANT_NAME(const char *h, const char *d,const char *u,
+                       const char *t, ulong p, bool is_routine)
+  :db(0), tname(0), privs(p)
+{
+  set_user_details(h, d, u, t, is_routine);
+}
 
 GRANT_TABLE::GRANT_TABLE(const char *h, const char *d,const char *u,
                 	 const char *t, ulong p, ulong c)
-  :GRANT_NAME(h,d,u,t,p), cols(c)
+  :GRANT_NAME(h,d,u,t,p, FALSE), cols(c)
 {
   (void) hash_init(&hash_columns,system_charset_info,
                    0,0,0, (hash_get_key) get_key_column,0,0);
 }
 
 
-GRANT_NAME::GRANT_NAME(TABLE *form)
+GRANT_NAME::GRANT_NAME(TABLE *form, bool is_routine)
 {
   update_hostname(&host, get_field(&memex, form->field[0]));
   db=    get_field(&memex,form->field[1]);
@@ -2162,6 +2174,9 @@ GRANT_NAME::GRANT_NAME(TABLE *form)
   if (lower_case_table_names)
   {
     my_casedn_str(files_charset_info, db);
+  }
+  if (lower_case_table_names || is_routine)
+  {
     my_casedn_str(files_charset_info, tname);
   }
   key_length = ((uint) strlen(db) + (uint) strlen(user) +
@@ -2174,7 +2189,7 @@ GRANT_NAME::GRANT_NAME(TABLE *form)
 
 
 GRANT_TABLE::GRANT_TABLE(TABLE *form, TABLE *col_privs)
-  :GRANT_NAME(form)
+  :GRANT_NAME(form, FALSE)
 {
   byte key[MAX_KEY_LENGTH];
 
@@ -3159,7 +3174,7 @@ bool mysql_routine_grant(THD *thd, TABLE_LIST *table_list, bool is_proc,
       }
       grant_name= new GRANT_NAME(Str->host.str, db_name,
 				 Str->user.str, table_name,
-				 rights);
+				 rights, TRUE);
       if (!grant_name)
       {
         result= TRUE;
@@ -3384,13 +3399,13 @@ static my_bool grant_load(TABLE_LIST *tables)
                                                            THR_MALLOC);
   DBUG_ENTER("grant_load");
 
-  (void) hash_init(&column_priv_hash,system_charset_info,
+  (void) hash_init(&column_priv_hash, &my_charset_utf8_bin,
 		   0,0,0, (hash_get_key) get_grant_table,
 		   (hash_free_key) free_grant_table,0);
-  (void) hash_init(&proc_priv_hash,system_charset_info,
+  (void) hash_init(&proc_priv_hash, &my_charset_utf8_bin,
 		   0,0,0, (hash_get_key) get_grant_table,
 		   0,0);
-  (void) hash_init(&func_priv_hash,system_charset_info,
+  (void) hash_init(&func_priv_hash, &my_charset_utf8_bin,
 		   0,0,0, (hash_get_key) get_grant_table,
 		   0,0);
   init_sql_alloc(&memex, ACL_ALLOC_BLOCK_SIZE, 0);
@@ -3446,7 +3461,7 @@ static my_bool grant_load(TABLE_LIST *tables)
     {
       GRANT_NAME *mem_check;
       HASH *hash;
-      if (!(mem_check=new GRANT_NAME(p_table)))
+      if (!(mem_check=new GRANT_NAME(p_table, TRUE)))
       {
 	/* This could only happen if we are out memory */
 	grant_option= FALSE;
@@ -5067,16 +5082,12 @@ static int handle_grant_struct(uint struct_no, bool drop,
   uint elements;
   const char *user;
   const char *host;
-  ACL_USER *acl_user;
-  ACL_DB *acl_db;
-  GRANT_NAME *grant_name;
+  ACL_USER *UNINIT_VAR(acl_user);
+  ACL_DB *UNINIT_VAR(acl_db);
+  GRANT_NAME *UNINIT_VAR(grant_name);
   DBUG_ENTER("handle_grant_struct");
   DBUG_PRINT("info",("scan struct: %u  search: '%s'@'%s'",
                      struct_no, user_from->user.str, user_from->host.str));
-
-  LINT_INIT(acl_user);
-  LINT_INIT(acl_db);
-  LINT_INIT(grant_name);
 
   safe_mutex_assert_owner(&acl_cache->lock);
 
@@ -5187,9 +5198,21 @@ static int handle_grant_struct(uint struct_no, bool drop,
 
       case 2:
       case 3:
-        grant_name->user= strdup_root(&mem, user_to->user.str);
-        update_hostname(&grant_name->host,
-                        strdup_root(&mem, user_to->host.str));
+        /* 
+          Update the grant structure with the new user name and
+          host name
+        */
+        grant_name->set_user_details(user_to->host.str, grant_name->db,
+                                     user_to->user.str, grant_name->tname,
+                                     TRUE);
+
+        /*
+          Since username is part of the hash key, when the user name
+          is renamed, the hash key is changed. Update the hash to
+          ensure that the position matches the new hash key value
+        */
+        hash_update(&column_priv_hash, (byte*) grant_name,
+                    (byte *) grant_name->hash_key, grant_name->key_length);
 	break;
       }
     }
@@ -5788,7 +5811,7 @@ bool sp_revoke_privileges(THD *thd, const char *sp_db, const char *sp_name,
     for (counter= 0, revoked= 0 ; counter < hash->records ; )
     {
       GRANT_NAME *grant_proc= (GRANT_NAME*) hash_element(hash, counter);
-      if (!my_strcasecmp(system_charset_info, grant_proc->db, sp_db) &&
+      if (!my_strcasecmp(&my_charset_utf8_bin, grant_proc->db, sp_db) &&
 	  !my_strcasecmp(system_charset_info, grant_proc->tname, sp_name))
       {
         LEX_USER lex_user;
@@ -5911,6 +5934,7 @@ int sp_grant_privileges(THD *thd, const char *sp_db, const char *sp_name,
     DBUG_RETURN(TRUE);
 
   thd->lex->ssl_type= SSL_TYPE_NOT_SPECIFIED;
+  thd->lex->ssl_cipher= thd->lex->x509_subject= thd->lex->x509_issuer= 0;
   bzero((char*) &thd->lex->mqh, sizeof(thd->lex->mqh));
 
   result= mysql_routine_grant(thd, tables, is_proc, user_list,
@@ -5987,15 +6011,15 @@ static bool update_schema_privilege(THD *thd, TABLE *table, char *buff,
   int i= 2;
   CHARSET_INFO *cs= system_charset_info;
   restore_record(table, s->default_values);
-  table->field[0]->store(buff, strlen(buff), cs);
+  table->field[0]->store(buff, (uint) strlen(buff), cs);
   if (db)
-    table->field[i++]->store(db, strlen(db), cs);
+    table->field[i++]->store(db, (uint) strlen(db), cs);
   if (t_name)
-    table->field[i++]->store(t_name, strlen(t_name), cs);
+    table->field[i++]->store(t_name, (uint) strlen(t_name), cs);
   if (column)
     table->field[i++]->store(column, col_length, cs);
   table->field[i++]->store(priv, priv_length, cs);
-  table->field[i]->store(is_grantable, strlen(is_grantable), cs);
+  table->field[i]->store(is_grantable, (uint) strlen(is_grantable), cs);
   return schema_table_store_record(thd, table);
 }
 #endif

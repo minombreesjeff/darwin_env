@@ -20,7 +20,7 @@
 #include <version.h>
 
 /* NDB build version */
-#define NDB_VERSION_BUILD 82
+#define NDB_VERSION_BUILD 88
 
 /* NDB major version */
 #define NDB_VERSION_MAJOR 5

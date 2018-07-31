@@ -1308,6 +1308,7 @@ public:
   bool send(Protocol *protocol, String *str_arg);
   void make_field(Send_field *tmp_field);
   bool check(bool use_result_field);
+  void save_item_result(Item *item);
   bool update();
   enum Item_result result_type () const { return cached_result_type; }
   bool fix_fields(THD *thd, Item **ref);
@@ -1455,6 +1456,7 @@ public:
       ft_handler->please->close_search(ft_handler);
     ft_handler= 0;
     concat_ws= 0;
+    table= 0;           // required by Item_func_match::eq()
     DBUG_VOID_RETURN;
   }
   enum Functype functype() const { return FT_FUNC; }

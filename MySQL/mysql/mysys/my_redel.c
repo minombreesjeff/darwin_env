@@ -77,6 +77,9 @@ end:
 int my_copystat(const char *from, const char *to, int MyFlags)
 {
   struct stat statbuf;
+#if !defined(MSDOS) && !defined(__WIN__) && !defined(__EMX__) && !defined(OS2) && !defined(__NETWARE__)
+  int res;
+#endif /* MSDOS */
 
   if (stat((char*) from, &statbuf))
   {
@@ -95,7 +98,7 @@ int my_copystat(const char *from, const char *to, int MyFlags)
     if (MyFlags & MY_LINK_WARNING)
       my_error(EE_LINK_WARNING,MYF(ME_BELL+ME_WAITTANG),from,statbuf.st_nlink);
   }
-  VOID(chown(to, statbuf.st_uid, statbuf.st_gid));	/* Copy ownership */
+  res= chown(to, statbuf.st_uid, statbuf.st_gid);	/* Copy ownership */
 #endif /* MSDOS */
 
 #ifndef VMS

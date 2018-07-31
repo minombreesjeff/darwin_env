@@ -412,6 +412,18 @@ HANDLE create_shared_memory(MYSQL *mysql,NET *net, uint connect_timeout)
   DWORD error_code = 0;
   DWORD event_access_rights= SYNCHRONIZE | EVENT_MODIFY_STATE;
   char *shared_memory_base_name = mysql->options.shared_memory_base_name;
+  static const char *name_prefixes[] = {"","Global\\"};
+  const char *prefix;
+  int i;
+
+  /*
+    If this is NULL, somebody freed the MYSQL* options.  mysql_close()
+    is a good candidate.  We don't just silently (re)set it to
+    def_shared_memory_base_name as that would create really confusing/buggy
+    behavior if the user passed in a different name on the command-line or
+    in a my.cnf.
+  */
+  DBUG_ASSERT(shared_memory_base_name != NULL);
 
   /*
      get enough space base-name + '_' + longest suffix we might ever send
@@ -426,9 +438,18 @@ HANDLE create_shared_memory(MYSQL *mysql,NET *net, uint connect_timeout)
     shared_memory_base_name is unique value for each server
     unique_part is uniquel value for each object (events and file-mapping)
   */
-  suffix_pos = strxmov(tmp, "Global\\", shared_memory_base_name, "_", NullS);
-  strmov(suffix_pos, "CONNECT_REQUEST");
-  if (!(event_connect_request= OpenEvent(event_access_rights, FALSE, tmp)))
+  for (i = 0; i< array_elements(name_prefixes); i++)
+  {
+    prefix= name_prefixes[i];
+    suffix_pos = strxmov(tmp, prefix , shared_memory_base_name, "_", NullS);
+    strmov(suffix_pos, "CONNECT_REQUEST");
+    event_connect_request= OpenEvent(event_access_rights, FALSE, tmp);
+    if (event_connect_request)
+    {
+      break;
+    }
+  }
+  if (!event_connect_request)
   {
     error_allow = CR_SHARED_MEMORY_CONNECT_REQUEST_ERROR;
     goto err;
@@ -480,7 +501,7 @@ HANDLE create_shared_memory(MYSQL *mysql,NET *net, uint connect_timeout)
     unique_part is uniquel value for each object (events and file-mapping)
     number_of_connection is number of connection between server and client
   */
-  suffix_pos = strxmov(tmp, "Global\\", shared_memory_base_name, "_", connect_number_char,
+  suffix_pos = strxmov(tmp, prefix , shared_memory_base_name, "_", connect_number_char,
 		       "_", NullS);
   strmov(suffix_pos, "DATA");
   if ((handle_file_map = OpenFileMapping(FILE_MAP_WRITE,FALSE,tmp)) == NULL)
@@ -899,6 +920,9 @@ void end_server(MYSQL *mysql)
   {
     init_sigpipe_variables
     DBUG_PRINT("info",("Net: %s", vio_description(mysql->net.vio)));
+#ifdef MYSQL_SERVER
+    slave_io_thread_detach_vio();
+#endif
     set_sigpipe(mysql);
     vio_delete(mysql->net.vio);
     reset_sigpipe(mysql);
@@ -1618,7 +1642,7 @@ mysql_ssl_free(MYSQL *mysql __attribute__((unused)))
 */
 
 const char * STDCALL
-mysql_get_ssl_cipher(MYSQL *mysql)
+mysql_get_ssl_cipher(MYSQL *mysql __attribute__((unused)))
 {
   DBUG_ENTER("mysql_get_ssl_cipher");
 #ifdef HAVE_OPENSSL
@@ -1814,7 +1838,7 @@ CLI_MYSQL_REAL_CONNECT(MYSQL *mysql,const char *host, const char *user,
 		       uint port, const char *unix_socket,ulong client_flag)
 {
   char		buff[NAME_LEN+USERNAME_LENGTH+100];
-  char		*end,*host_info;
+  char		*end,*host_info= NULL;
   my_socket	sock;
   in_addr_t	ip_addr;
   struct	sockaddr_in sock_addr;
@@ -1832,7 +1856,6 @@ CLI_MYSQL_REAL_CONNECT(MYSQL *mysql,const char *host, const char *user,
 #endif
   init_sigpipe_variables
   DBUG_ENTER("mysql_real_connect");
-  LINT_INIT(host_info);
 
   DBUG_PRINT("enter",("host: %s  db: %s  user: %s",
 		      host ? host : "(Null)",

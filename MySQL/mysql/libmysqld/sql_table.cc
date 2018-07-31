@@ -982,8 +982,8 @@ static int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
     }
     /* Don't pack rows in old tables if the user has requested this */
     if ((sql_field->flags & BLOB_FLAG) ||
-	sql_field->sql_type == MYSQL_TYPE_VARCHAR &&
-	create_info->row_type != ROW_TYPE_FIXED)
+	(sql_field->sql_type == MYSQL_TYPE_VARCHAR &&
+	create_info->row_type != ROW_TYPE_FIXED))
       (*db_options)|= HA_OPTION_PACK_RECORD;
     it2.rewind();
   }
@@ -1422,7 +1422,7 @@ static int mysql_prepare_table(THD *thd, HA_CREATE_INFO *create_info,
 	    sql_field->sql_type == MYSQL_TYPE_VARCHAR ||
 	    sql_field->pack_flag & FIELDFLAG_BLOB)))
       {
-	if (column_nr == 0 && (sql_field->pack_flag & FIELDFLAG_BLOB) ||
+	if ((column_nr == 0 && (sql_field->pack_flag & FIELDFLAG_BLOB)) ||
             sql_field->sql_type == MYSQL_TYPE_VARCHAR)
 	  key_info->flags|= HA_BINARY_PACK_KEY | HA_VAR_LENGTH_KEY;
 	else
@@ -2521,7 +2521,7 @@ send_result_message:
         {
           if (!thd->vio_ok())
           {
-            sql_print_error(err_msg);
+            sql_print_error("%s", err_msg);
           }
           else
           {
@@ -2741,8 +2741,13 @@ int reassign_keycache_tables(THD *thd, KEY_CACHE *src_cache,
 bool mysql_preload_keys(THD* thd, TABLE_LIST* tables)
 {
   DBUG_ENTER("mysql_preload_keys");
+  /*
+    We cannot allow concurrent inserts. The storage engine reads
+    directly from the index file, bypassing the cache. It could read
+    outdated information if parallel inserts into cache blocks happen.
+  */
   DBUG_RETURN(mysql_admin_table(thd, tables, 0,
-				"preload_keys", TL_READ, 0, 0, 0, 0,
+				"preload_keys", TL_READ_NO_INSERT, 0, 0, 0, 0,
 				&handler::preload_keys, 0));
 }
 
@@ -2773,6 +2778,7 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST *src_table,
   int  err;
   bool res= TRUE;
   db_type not_used;
+  myf flags= MY_DONT_OVERWRITE_FILE;
   DBUG_ENTER("mysql_create_like_table");
 
   /*
@@ -2859,10 +2865,14 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST *src_table,
 
   DBUG_EXECUTE_IF("sleep_create_like_before_copy", my_sleep(6000000););
 
+  if (opt_sync_frm && !(create_info->options & HA_LEX_CREATE_TMP_TABLE))
+    flags|= MY_SYNC;
+
   /*
     Create a new table by copying from source table
+    and sync the new table if the flag MY_SYNC is set
   */
-  if (my_copy(src_path, dst_path, MYF(MY_DONT_OVERWRITE_FILE)))
+  if (my_copy(src_path, dst_path, flags))
   {
     if (my_errno == ENOENT)
       my_error(ER_BAD_DB_ERROR,MYF(0),db);
@@ -3954,9 +3964,9 @@ view_err:
   }
   else if (mysql_rename_table(new_db_type,new_db,tmp_name,new_db,
 			      new_alias) ||
-           (new_name != table_name || new_db != db) && // we also do rename
+           ((new_name != table_name || new_db != db) && // we also do rename
            Table_triggers_list::change_table_name(thd, db, table_name,
-                                                  new_db, new_alias))
+                                                  new_db, new_alias)))
        
   {						// Try to get everything back
     error=1;

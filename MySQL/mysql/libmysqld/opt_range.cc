@@ -792,7 +792,7 @@ SEL_TREE::SEL_TREE(SEL_TREE *arg, PARAM *param): Sql_alloc()
 
 SEL_IMERGE::SEL_IMERGE (SEL_IMERGE *arg, PARAM *param) : Sql_alloc()
 {
-  uint elements= (arg->trees_end - arg->trees);
+  uint elements= (uint) (arg->trees_end - arg->trees);
   if (elements > PREALLOCED_TREES)
   {
     uint size= elements * sizeof (SEL_TREE **);
@@ -2032,7 +2032,7 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
   quick=0;
   needed_reg.clear_all();
   quick_keys.clear_all();
-  if ((specialflag & SPECIAL_SAFE_MODE) && ! force_quick_range ||
+  if (((specialflag & SPECIAL_SAFE_MODE) && ! force_quick_range) ||
       !limit)
     DBUG_RETURN(0); /* purecov: inspected */
   if (keys_to_use.is_clear_all())
@@ -2063,7 +2063,7 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
     KEY *key_info;
     PARAM param;
 
-    if (check_stack_overrun(thd, 2*STACK_MIN_SIZE, buff))
+    if (check_stack_overrun(thd, 2*STACK_MIN_SIZE + sizeof(PARAM), buff))
       DBUG_RETURN(0);                           // Fatal error flag is set
 
     /* set up parameter that is passed to all functions */
@@ -2462,8 +2462,8 @@ TABLE_READ_PLAN *get_best_disjunct_quick(PARAM *param, SEL_IMERGE *imerge,
 
   DBUG_PRINT("info", ("index_merge scans cost %g", imerge_cost));
   if (imerge_too_expensive || (imerge_cost > read_time) ||
-      (non_cpk_scan_records+cpk_scan_records >= param->table->file->records) &&
-      read_time != DBL_MAX)
+      ((non_cpk_scan_records+cpk_scan_records >= param->table->file->records) &&
+      read_time != DBL_MAX))
   {
     /*
       Bail out if it is obvious that both index_merge and ROR-union will be
@@ -3514,11 +3514,10 @@ static TRP_RANGE *get_key_scans_params(PARAM *param, SEL_TREE *tree,
 {
   int idx;
   SEL_ARG **key,**end, **key_to_read= NULL;
-  ha_rows best_records;
+  ha_rows UNINIT_VAR(best_records);              /* protected by key_to_read */
   TRP_RANGE* read_plan= NULL;
   bool pk_is_clustered= param->table->file->primary_key_is_clustered();
   DBUG_ENTER("get_key_scans_params");
-  LINT_INIT(best_records); /* protected by key_to_read */
   /*
     Note that there may be trees that have type SEL_TREE::KEY but contain no
     key reads at all, e.g. tree for expression "key1 is not null" where key1
@@ -4378,6 +4377,27 @@ get_mm_leaf(PARAM *param, COND *conf_func, Field *field, KEY_PART *key_part,
       !(conf_func->compare_collation()->state & MY_CS_BINSORT))
     goto end;
 
+  if (key_part->image_type == Field::itMBR)
+  {
+    switch (type) {
+    case Item_func::SP_EQUALS_FUNC:
+    case Item_func::SP_DISJOINT_FUNC:
+    case Item_func::SP_INTERSECTS_FUNC:
+    case Item_func::SP_TOUCHES_FUNC:
+    case Item_func::SP_CROSSES_FUNC:
+    case Item_func::SP_WITHIN_FUNC:
+    case Item_func::SP_CONTAINS_FUNC:
+    case Item_func::SP_OVERLAPS_FUNC:
+      break;
+    default:
+      /* 
+        We cannot involve spatial indexes for queries that
+        don't use MBREQUALS(), MBRDISJOINT(), etc. functions.
+      */
+      goto end;
+    }
+  }
+
   optimize_range= field->optimize_range(param->real_keynr[key_part->key],
                                         key_part->part);
 
@@ -4537,6 +4557,7 @@ get_mm_leaf(PARAM *param, COND *conf_func, Field *field, KEY_PART *key_part,
       if (type == Item_func::LT_FUNC && (value->val_int() > 0))
         type = Item_func::LE_FUNC;
       else if (type == Item_func::GT_FUNC &&
+               (field->type() != FIELD_TYPE_BIT) &&
                !((Field_num*)field)->unsigned_flag &&
                !((Item_int*)value)->unsigned_flag &&
                (value->val_int() < 0))
@@ -4573,7 +4594,9 @@ get_mm_leaf(PARAM *param, COND *conf_func, Field *field, KEY_PART *key_part,
    */
   if (field->result_type() == INT_RESULT &&
       value->result_type() == INT_RESULT &&
-      ((Field_num*)field)->unsigned_flag && !((Item_int*)value)->unsigned_flag)
+      ((field->type() == FIELD_TYPE_BIT || 
+       ((Field_num *) field)->unsigned_flag) && 
+       !((Item_int*) value)->unsigned_flag))
   {
     longlong item_val= value->val_int();
     if (item_val < 0)
@@ -5370,8 +5393,7 @@ static bool eq_tree(SEL_ARG* a,SEL_ARG *b)
 SEL_ARG *
 SEL_ARG::insert(SEL_ARG *key)
 {
-  SEL_ARG *element,**par,*last_element;
-  LINT_INIT(par); LINT_INIT(last_element);
+  SEL_ARG *element,**UNINIT_VAR(par),*UNINIT_VAR(last_element);
 
   for (element= this; element != &null_element ; )
   {
@@ -6490,7 +6512,7 @@ QUICK_RANGE_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table,
     goto err;
   quick->records= records;
 
-  if (cp_buffer_from_ref(thd,ref) && thd->is_fatal_error ||
+  if ((cp_buffer_from_ref(thd,ref) && thd->is_fatal_error) ||
       !(range= new(alloc) QUICK_RANGE()))
     goto err;                                   // out of memory
 
@@ -7342,7 +7364,7 @@ int QUICK_RANGE_SELECT::cmp_prev(QUICK_RANGE *range_arg)
 
   cmp= key_cmp(key_part_info, (byte*) range_arg->min_key,
                range_arg->min_length);
-  if (cmp > 0 || cmp == 0 && !(range_arg->flag & NEAR_MIN))
+  if (cmp > 0 || (cmp == 0 && !(range_arg->flag & NEAR_MIN)))
     return 0;
   return 1;                                     // outside of range
 }
@@ -7918,7 +7940,9 @@ get_best_group_min_max(PARAM *param, SEL_TREE *tree)
         goto next_index;
     }
     else
+    {
       DBUG_ASSERT(FALSE);
+    }
 
     /* Check (SA2). */
     if (min_max_arg_item)
@@ -8308,11 +8332,21 @@ get_constant_key_infix(KEY *index_info, SEL_ARG *index_range_tree,
       return FALSE;
 
     uint field_length= cur_part->store_length;
-    if ((cur_range->maybe_null &&
+    if (cur_range->maybe_null &&
          cur_range->min_value[0] && cur_range->max_value[0])
-        ||
-        (memcmp(cur_range->min_value, cur_range->max_value, field_length) == 0))
-    { /* cur_range specifies 'IS NULL' or an equality condition. */
+    { 
+      /*
+        cur_range specifies 'IS NULL'. In this case the argument points to a "null value" (is_null_string)
+        that may not always be long enough for a direct memcpy to a field.
+      */
+      DBUG_ASSERT (field_length > 0);
+      *key_ptr= 1;
+      bzero(key_ptr+1,field_length-1);
+      key_ptr+= field_length;
+      *key_infix_len+= field_length;
+    }
+    else if (memcmp(cur_range->min_value, cur_range->max_value, field_length) == 0)
+    { /* cur_range specifies an equality condition. */
       memcpy(key_ptr, cur_range->min_value, field_length);
       key_ptr+= field_length;
       *key_infix_len+= field_length;
@@ -9395,8 +9429,14 @@ int QUICK_GROUP_MIN_MAX_SELECT::next_min_in_range()
       /* Compare the found key with max_key. */
       int cmp_res= key_cmp(index_info->key_part, max_key,
                            real_prefix_len + min_max_arg_len);
-      if (!((cur_range->flag & NEAR_MAX) && (cmp_res == -1) ||
-            (cmp_res <= 0)))
+      /*
+        The key is outside of the range if: 
+        the interval is open and the key is equal to the maximum boundry
+        or
+        the key is greater than the maximum
+      */
+      if (((cur_range->flag & NEAR_MAX) && cmp_res == 0) ||
+          cmp_res > 0)
       {
         result = HA_ERR_KEY_NOT_FOUND;
         continue;
@@ -9511,8 +9551,14 @@ int QUICK_GROUP_MIN_MAX_SELECT::next_max_in_range()
       /* Compare the found key with min_key. */
       int cmp_res= key_cmp(index_info->key_part, min_key,
                            real_prefix_len + min_max_arg_len);
-      if (!((cur_range->flag & NEAR_MIN) && (cmp_res == 1) ||
-            (cmp_res >= 0)))
+      /*
+        The key is outside of the range if: 
+        the interval is open and the key is equal to the minimum boundry
+        or
+        the key is less than the minimum
+      */
+      if (((cur_range->flag & NEAR_MIN) && cmp_res == 0) ||
+          cmp_res < 0)
         continue;
     }
     /* If we got to this point, the current key qualifies as MAX. */

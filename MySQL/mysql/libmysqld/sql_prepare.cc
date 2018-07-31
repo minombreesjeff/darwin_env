@@ -1367,7 +1367,7 @@ static bool mysql_test_set_fields(Prepared_statement *stmt,
   THD *thd= stmt->thd;
   set_var_base *var;
 
-  if (tables && check_table_access(thd, SELECT_ACL, tables, 0) ||
+  if ((tables && check_table_access(thd, SELECT_ACL, tables, 0)) ||
       open_and_lock_tables(thd, tables))
     goto error;
 
@@ -2072,10 +2072,9 @@ void mysql_sql_stmt_prepare(THD *thd)
   LEX_STRING *name= &lex->prepared_stmt_name;
   Prepared_statement *stmt;
   const char *query;
-  uint query_len;
+  uint UNINIT_VAR(query_len);
   DBUG_ENTER("mysql_sql_stmt_prepare");
   DBUG_ASSERT(thd->protocol == &thd->protocol_simple);
-  LINT_INIT(query_len);
 
   if ((stmt= (Prepared_statement*) thd->stmt_map.find_by_name(name)))
   {
@@ -2714,7 +2713,7 @@ Prepared_statement::Prepared_statement(THD *thd_arg, Protocol *protocol_arg)
 void Prepared_statement::setup_set_params()
 {
   /* Setup binary logging */
-  if (mysql_bin_log.is_open() && is_update_query(lex->sql_command) ||
+  if ((mysql_bin_log.is_open() && is_update_query(lex->sql_command)) ||
       mysql_log.is_open() || mysql_slow_log.is_open())
   {
     set_params_from_vars= insert_params_from_vars_with_log;

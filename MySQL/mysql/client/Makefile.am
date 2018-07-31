@@ -35,6 +35,7 @@ mysql_LDADD =			@readline_link@ @TERMCAP_LIB@ $(LDADD) $(CXXLDFLAGS)
 mysqltest_SOURCES=              mysqltest.c \
 				$(top_srcdir)/mysys/my_getsystime.c \
 				$(top_srcdir)/mysys/my_copy.c \
+				$(top_srcdir)/mysys/my_sync.c \
 				$(top_srcdir)/mysys/my_mkdir.c
 
 mysqltest_LDADD =		$(top_builddir)/regex/libregex.a $(LDADD)
@@ -57,7 +58,7 @@ strings_src=decimal.c
 # Fix for mit-threads
 DEFS =			-DUNDEF_THREADS_HACK \
 			-DDEFAULT_MYSQL_HOME="\"$(prefix)\"" \
-			-DDATADIR="\"$(localstatedir)\""
+			-DMYSQL_DATADIR="\"$(localstatedir)\""
 
 EXTRA_DIST =		get_password.c CMakeLists.txt echo.c
 

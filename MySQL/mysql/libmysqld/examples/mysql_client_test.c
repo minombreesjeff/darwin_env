@@ -3971,6 +3971,10 @@ static void test_fetch_date()
 
   myheader("test_fetch_date");
 
+  /* Will not work if sql_mode is NO_ZERO_DATE (implicit if TRADITIONAL) /*/
+  rc= mysql_query(mysql, "SET SQL_MODE=''");
+  myquery(rc);
+
   rc= mysql_query(mysql, "DROP TABLE IF EXISTS test_bind_result");
   myquery(rc);
 
@@ -4684,6 +4688,9 @@ static void test_stmt_close()
 
   /* set AUTOCOMMIT to ON*/
   mysql_autocommit(lmysql, TRUE);
+
+  rc= mysql_query(lmysql, "SET SQL_MODE = ''");
+  myquery(rc);
 
   rc= mysql_query(lmysql, "DROP TABLE IF EXISTS test_stmt_close");
   myquery(rc);
@@ -11855,6 +11862,9 @@ static void test_bug6058()
 
   myheader("test_bug6058");
 
+  rc= mysql_query(mysql, "SET SQL_MODE=''");
+  myquery(rc);
+
   stmt_text= "SELECT CAST('0000-00-00' AS DATE)";
 
   rc= mysql_real_query(mysql, stmt_text, (uint) strlen(stmt_text));
@@ -12049,6 +12059,27 @@ static void test_bug6081()
                      (ulong)strlen(current_db), 0);
   myquery_r(rc);
   rc= mysql_select_db(mysql, current_db);
+  myquery(rc);
+}
+
+
+/*
+  Verify that bogus database names are handled properly with
+  COM_CREATE_DB and COM_DROP_DB, i.e., cannot cause SIGSEGV through
+  the use of printf specifiers in the database name.
+*/
+static void test_bug45790()
+{
+  const char* bogus_db = "%s%s%s%s%s%s%s";
+  int rc;
+
+  myheader("test_bug45790");
+  rc= simple_command(mysql, COM_CREATE_DB, bogus_db,
+                     (ulong)strlen(bogus_db), 0);
+  myquery(rc);
+
+  rc= simple_command(mysql, COM_DROP_DB, bogus_db,
+                     (ulong)strlen(bogus_db), 0);
   myquery(rc);
 }
 
@@ -13025,6 +13056,9 @@ static void test_bug8378()
   }
   if (!opt_silent)
     fprintf(stdout, " OK");
+
+  rc= mysql_query(lmysql, "SET SQL_MODE=''");
+  myquery(rc);
 
   len= mysql_real_escape_string(lmysql, out, TEST_BUG8378_IN, 4);
 
@@ -16056,6 +16090,11 @@ static void test_bug31669()
   rc= mysql_query(mysql, query);
   myquery(rc);
 
+  strxmov(query, "GRANT ALL PRIVILEGES ON *.* TO '", user, "'@'localhost' IDENTIFIED BY "
+                 "'", buff, "' WITH GRANT OPTION", NullS);
+  rc= mysql_query(mysql, query);
+  myquery(rc);
+
   rc= mysql_query(mysql, "FLUSH PRIVILEGES");
   myquery(rc);
 
@@ -16093,7 +16132,7 @@ static void test_bug31669()
   strxmov(query, "DELETE FROM mysql.user WHERE User='", user, "'", NullS);
   rc= mysql_query(mysql, query);
   myquery(rc);
-  DIE_UNLESS(mysql_affected_rows(mysql) == 1);
+  DIE_UNLESS(mysql_affected_rows(mysql) == 2);
 #endif
 
   DBUG_VOID_RETURN;
@@ -16209,14 +16248,14 @@ static void test_bug38486(void)
   stmt= mysql_stmt_init(mysql);
   mysql_stmt_attr_set(stmt, STMT_ATTR_CURSOR_TYPE, (void*)&type);
   stmt_text= "CREATE TABLE t1 (a INT)";
-  mysql_stmt_prepare(stmt, stmt_text, strlen(stmt_text));
+  mysql_stmt_prepare(stmt, stmt_text, (ulong) strlen(stmt_text));
   mysql_stmt_execute(stmt);
   mysql_stmt_close(stmt);
 
   stmt= mysql_stmt_init(mysql);
   mysql_stmt_attr_set(stmt, STMT_ATTR_CURSOR_TYPE, (void*)&type);
   stmt_text= "INSERT INTO t1 VALUES (1)";
-  mysql_stmt_prepare(stmt, stmt_text, strlen(stmt_text));
+  mysql_stmt_prepare(stmt, stmt_text, (ulong) strlen(stmt_text));
   mysql_stmt_execute(stmt);
   mysql_stmt_close(stmt);
 
@@ -16231,25 +16270,33 @@ static void bug20023_change_user(MYSQL *con)
                            opt_db ? opt_db : "test"));
 }
 
-static void bug20023_query_int_variable(MYSQL *con,
+static void bug20023_query_str_variable(MYSQL *con,
                                         const char *var_name,
-                                        int *var_value)
+                                        char *str,
+                                        size_t len)
 {
   MYSQL_RES *rs;
   MYSQL_ROW row;
 
   char query_buffer[MAX_TEST_QUERY_LENGTH];
 
-  my_snprintf(query_buffer,
-          sizeof (query_buffer),
-          "SELECT @@%s",
-          (const char *) var_name);
+  my_snprintf(query_buffer, sizeof (query_buffer),
+              "SELECT @@%s", var_name);
 
   DIE_IF(mysql_query(con, query_buffer));
   DIE_UNLESS(rs= mysql_store_result(con));
   DIE_UNLESS(row= mysql_fetch_row(rs));
-  *var_value= atoi(row[0]);
+  my_snprintf(str, len, "%s", row[0]);
   mysql_free_result(rs);
+}
+
+static void bug20023_query_int_variable(MYSQL *con,
+                                        const char *var_name,
+                                        int *var_value)
+{
+  char str[32];
+  bug20023_query_str_variable(con, var_name, str, sizeof(str));
+  *var_value= atoi(str);
 }
 
 static void test_bug20023()
@@ -16257,7 +16304,12 @@ static void test_bug20023()
   MYSQL con;
 
   int sql_big_selects_orig;
-  int max_join_size_orig;
+  /*
+    Type of max_join_size is ha_rows, which might be ulong or off_t
+    depending on the platform or configure options. Preserve the string
+    to avoid type overflow pitfalls.
+  */
+  char max_join_size_orig[32];
 
   int sql_big_selects_2;
   int sql_big_selects_3;
@@ -16287,9 +16339,10 @@ static void test_bug20023()
                               "session.sql_big_selects",
                               &sql_big_selects_orig);
 
-  bug20023_query_int_variable(&con,
+  bug20023_query_str_variable(&con,
                               "global.max_join_size",
-                              &max_join_size_orig);
+                              max_join_size_orig,
+                              sizeof(max_join_size_orig));
 
   /***********************************************************************
    Test that COM_CHANGE_USER resets the SQL_BIG_SELECTS to the initial value.
@@ -16366,8 +16419,8 @@ static void test_bug20023()
 
   my_snprintf(query_buffer,
            sizeof (query_buffer),
-           "SET @@global.max_join_size = %d",
-           (int) max_join_size_orig);
+           "SET @@global.max_join_size = %s",
+           max_join_size_orig);
 
   DIE_IF(mysql_query(&con, query_buffer));
   DIE_IF(mysql_query(&con, "SET @@session.max_join_size = default"));
@@ -16594,6 +16647,38 @@ static void test_bug41078(void)
   DBUG_VOID_RETURN;
 }
 
+
+/**
+  Bug#45010: invalid memory reads during parsing some strange statements
+*/
+
+static void test_bug45010()
+{
+  int rc;
+  const char query1[]= "select a.\x80",
+             query2[]= "describe `table\xef";
+
+  DBUG_ENTER("test_bug45010");
+  myheader("test_bug45010");
+
+  rc= mysql_query(mysql, "set names utf8");
+  myquery(rc);
+
+  /* \x80 (-128) could be used as a index of ident_map. */
+  rc= mysql_real_query(mysql, query1, sizeof(query1) - 1);
+  DIE_UNLESS(rc);
+
+  /* \xef (-17) could be used to skip 3 bytes past the buffer end. */
+  rc= mysql_real_query(mysql, query2, sizeof(query2) - 1);
+  DIE_UNLESS(rc);
+
+  rc= mysql_query(mysql, "set names default");
+  myquery(rc);
+
+  DBUG_VOID_RETURN;
+}
+
+
 /*
   Read and parse arguments and MySQL options from my.cnf
 */
@@ -16811,6 +16896,7 @@ static struct my_tests_st my_tests[]= {
   { "test_bug6059", test_bug6059 },
   { "test_bug6046", test_bug6046 },
   { "test_bug6081", test_bug6081 },
+  { "test_bug45790",test_bug45790 },
   { "test_bug6096", test_bug6096 },
   { "test_datetime_ranges", test_datetime_ranges },
   { "test_bug4172", test_bug4172 },
@@ -16895,6 +16981,7 @@ static struct my_tests_st my_tests[]= {
 #endif
   { "test_bug41078", test_bug41078 },
   { "test_bug20023", test_bug20023 },
+  { "test_bug45010", test_bug45010 },
   { 0, 0 }
 };
 

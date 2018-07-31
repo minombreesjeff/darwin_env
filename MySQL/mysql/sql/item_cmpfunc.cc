@@ -352,8 +352,7 @@ static bool convert_constant_item(THD *thd, Item_field *field_item,
     /* For comparison purposes allow invalid dates like 2000-01-32 */
     ulong orig_sql_mode= thd->variables.sql_mode;
     enum_check_fields orig_count_cuted_fields= thd->count_cuted_fields;
-    ulonglong orig_field_val; /* original field value if valid */
-    LINT_INIT(orig_field_val);
+    ulonglong UNINIT_VAR(orig_field_val); /* original field value if valid */
     thd->variables.sql_mode= (orig_sql_mode & ~MODE_NO_ZERO_DATE) | 
                              MODE_INVALID_DATES;
     thd->count_cuted_fields= CHECK_FIELD_IGNORE;
@@ -1419,8 +1418,8 @@ longlong Item_func_truth::val_int()
 
 bool Item_in_optimizer::fix_left(THD *thd, Item **ref)
 {
-  if (!args[0]->fixed && args[0]->fix_fields(thd, args) ||
-      !cache && !(cache= Item_cache::get_cache(args[0])))
+  if ((!args[0]->fixed && args[0]->fix_fields(thd, args)) ||
+      (!cache && !(cache= Item_cache::get_cache(args[0]))))
     return 1;
 
   cache->setup(args[0]);
@@ -2453,18 +2452,12 @@ Item_func_nullif::is_null()
 
 Item *Item_func_case::find_item(String *str)
 {
-  String *first_expr_str, *tmp;
-  my_decimal *first_expr_dec, first_expr_dec_val;
-  longlong first_expr_int;
-  double   first_expr_real;
+  String *UNINIT_VAR(first_expr_str), *tmp;
+  my_decimal *UNINIT_VAR(first_expr_dec), first_expr_dec_val;
+  longlong UNINIT_VAR(first_expr_int);
+  double   UNINIT_VAR(first_expr_real);
   char buff[MAX_FIELD_WIDTH];
   String buff_str(buff,sizeof(buff),default_charset());
-
-  /* These will be initialized later */
-  LINT_INIT(first_expr_str);
-  LINT_INIT(first_expr_int);
-  LINT_INIT(first_expr_real);
-  LINT_INIT(first_expr_dec);
 
   if (first_expr_num != -1)
   {
@@ -2934,8 +2927,8 @@ int cmp_longlong(void *cmp_arg,
       One of the args is unsigned and is too big to fit into the 
       positive signed range. Report no match.
     */  
-    if (a->unsigned_flag && ((ulonglong) a->val) > (ulonglong) LONGLONG_MAX ||
-        b->unsigned_flag && ((ulonglong) b->val) > (ulonglong) LONGLONG_MAX)
+    if ((a->unsigned_flag && ((ulonglong) a->val) > (ulonglong) LONGLONG_MAX) ||
+        (b->unsigned_flag && ((ulonglong) b->val) > (ulonglong) LONGLONG_MAX))
       return a->unsigned_flag ? 1 : -1;
     /*
       Although the signedness differs both args can fit into the signed 
