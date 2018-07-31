@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004, 2006  Internet Systems Consortium, Inc. ("ISC")
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,11 +14,11 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: dlv_65323.h,v 1.2.2.3 2004/03/15 01:02:55 marka Exp $ */
+/* $Id: dlv_32769.h,v 1.2.4.2 2006/02/19 06:50:46 marka Exp $ */
 
 /* draft-ietf-dnsext-delegation-signer-05.txt */
-#ifndef GENERIC_DLV_65323_H
-#define GENERIC_DLV_65323_H 1
+#ifndef GENERIC_DLV_32769_H
+#define GENERIC_DLV_32769_H 1
 
 typedef struct dns_rdata_dlv {
 	dns_rdatacommon_t	common;
@@ -30,4 +30,4 @@ typedef struct dns_rdata_dlv {
 	unsigned char		*digest;
 } dns_rdata_dlv_t;
 
-#endif /* GENERIC_DLV_65323_H */
+#endif /* GENERIC_DLV_32769_H */
