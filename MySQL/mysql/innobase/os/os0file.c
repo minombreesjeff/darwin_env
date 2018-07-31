@@ -11,6 +11,7 @@ Created 10/21/1995 Heikki Tuuri
 #include "os0thread.h"
 #include "ut0mem.h"
 #include "srv0srv.h"
+#include "srv0start.h"
 #include "fil0fil.h"
 #include "buf0buf.h"
 
@@ -33,7 +34,7 @@ ulint	os_innodb_umask		= 0;
 #endif
 
 /* If the following is set to TRUE, we do not call os_file_flush in every
-os_file_write. We can set this TRUE if the doublewrite buffer is used. */
+os_file_write. We can set this TRUE when the doublewrite buffer is used. */
 ibool	os_do_not_call_flush_at_each_write	= FALSE;
 
 /* We use these mutexes to protect lseek + file i/o operation, if the
@@ -69,7 +70,7 @@ struct os_aio_slot_struct{
 					bytes */
 	ulint		offset_high;	/* 32 high bits of file offset */
 	os_file_t	file;		/* file where to read or write */
-	char*		name;		/* file name or path */
+	const char*	name;		/* file name or path */
 	ibool		io_already_done;/* used only in simulated aio:
 					TRUE if the physical i/o already
 					made and only the slot message
@@ -154,7 +155,6 @@ os_mutex_t os_file_count_mutex;
 ulint	os_file_n_pending_preads  = 0;
 ulint	os_file_n_pending_pwrites = 0;
 
-
 /***************************************************************************
 Gets the operating system version. Currently works only on Windows. */
 
@@ -198,9 +198,12 @@ overwrite the error number). If the number is not known to this program,
 the OS error number + 100 is returned. */
 
 ulint
-os_file_get_last_error(void)
-/*========================*/
-		/* out: error number, or OS error number + 100 */
+os_file_get_last_error(
+/*===================*/
+					/* out: error number, or OS error
+					number + 100 */
+	ibool	report_all_errors)	/* in: TRUE if we want an error message
+					printed of all errors */
 {
 	ulint	err;
 
@@ -208,27 +211,32 @@ os_file_get_last_error(void)
 
 	err = (ulint) GetLastError();
 
-	if (err != ERROR_DISK_FULL && err != ERROR_FILE_EXISTS) {
+	if (report_all_errors
+	    || (err != ERROR_DISK_FULL && err != ERROR_FILE_EXISTS)) {
+
 		ut_print_timestamp(stderr);
 	     	fprintf(stderr,
-  "  InnoDB: Operating system error number %lu in a file operation.\n"
-  "InnoDB: See http://www.innodb.com/ibman.php for installation help.\n",
-		err);
+  "  InnoDB: Operating system error number %lu in a file operation.\n", (ulong) err);
 
 		if (err == ERROR_PATH_NOT_FOUND) {
-		         fprintf(stderr,
-  "InnoDB: The error means the system cannot find the path specified.\n"
-  "InnoDB: In installation you must create directories yourself, InnoDB\n"
-  "InnoDB: does not create them.\n");
+			fprintf(stderr,
+  "InnoDB: The error means the system cannot find the path specified.\n");
+
+			if (srv_is_being_started) {
+				fprintf(stderr,
+  "InnoDB: If you are installing InnoDB, remember that you must create\n"
+  "InnoDB: directories yourself, InnoDB does not create them.\n");
+			}
 		} else if (err == ERROR_ACCESS_DENIED) {
-		         fprintf(stderr,
+			fprintf(stderr,
   "InnoDB: The error means mysqld does not have the access rights to\n"
   "InnoDB: the directory. It may also be you have created a subdirectory\n"
   "InnoDB: of the same name as a data file.\n"); 
 		} else {
-			 fprintf(stderr,
-  "InnoDB: See section 13.2 at http://www.innodb.com/ibman.php\n"
-  "InnoDB: about operating system error numbers.\n");
+			fprintf(stderr,
+  "InnoDB: Some operating system error numbers are described at\n"
+  "InnoDB: "
+  "http://dev.mysql.com/doc/mysql/en/Operating_System_error_codes.html\n");
 		}
 	}
 
@@ -246,32 +254,36 @@ os_file_get_last_error(void)
 #else
 	err = (ulint) errno;
 
-	if (err != ENOSPC && err != EEXIST) {
-		ut_print_timestamp(stderr);
+	if (report_all_errors
+	    || (err != ENOSPC && err != EEXIST)) {
 
+		ut_print_timestamp(stderr);
 	     	fprintf(stderr,
-  "  InnoDB: Operating system error number %lu in a file operation.\n"
-  "InnoDB: See http://www.innodb.com/ibman.php for installation help.\n",
-		err);
+  "  InnoDB: Operating system error number %lu in a file operation.\n", (ulong) err);
 
 		if (err == ENOENT) {
-		         fprintf(stderr,
-  "InnoDB: The error means the system cannot find the path specified.\n"
-  "InnoDB: In installation you must create directories yourself, InnoDB\n"
-  "InnoDB: does not create them.\n");
+			fprintf(stderr,
+  "InnoDB: The error means the system cannot find the path specified.\n");
+			
+			if (srv_is_being_started) {
+				fprintf(stderr,
+  "InnoDB: If you are installing InnoDB, remember that you must create\n"
+  "InnoDB: directories yourself, InnoDB does not create them.\n");
+			}
 		} else if (err == EACCES) {
-		         fprintf(stderr,
+			fprintf(stderr,
   "InnoDB: The error means mysqld does not have the access rights to\n"
   "InnoDB: the directory.\n");
 		} else {
-			 if (strerror((int)err) != NULL) {
+			if (strerror((int)err) != NULL) {
 				fprintf(stderr,
   "InnoDB: Error number %lu means '%s'.\n", err, strerror((int)err));
-			 }
+			}
 
-			 fprintf(stderr,
-  "InnoDB: See also section 13.2 at http://www.innodb.com/ibman.php\n"
-  "InnoDB: about operating system error numbers.\n");
+			fprintf(stderr,
+  "InnoDB: Some operating system error numbers are described at\n"
+  "InnoDB: "
+  "http://dev.mysql.com/doc/mysql/en/Operating_System_error_codes.html\n");
 		}
 	}
 
@@ -301,15 +313,12 @@ os_file_handle_error(
 /*=================*/
 				/* out: TRUE if we should retry the
 				operation */
-	os_file_t	file,	/* in: file pointer */
 	const char*	name,	/* in: name of a file or NULL */
 	const char*	operation)/* in: operation */
 {
 	ulint	err;
 
-	UT_NOT_USED(file);
-
-	err = os_file_get_last_error();
+	err = os_file_get_last_error(FALSE);
 	
 	if (err == OS_FILE_DISK_FULL) {
 		/* We only print a warning about disk full once */
@@ -336,6 +345,7 @@ os_file_handle_error(
 		return(FALSE);
 
 	} else if (err == OS_FILE_AIO_RESOURCES_RESERVED) {
+
 		return(TRUE);
 
 	} else if (err == OS_FILE_ALREADY_EXISTS) {
@@ -358,6 +368,108 @@ os_file_handle_error(
 	return(FALSE);	
 }
 
+#undef USE_FILE_LOCK
+#define USE_FILE_LOCK
+#if defined(UNIV_HOTBACKUP) || defined(__WIN__) || defined(__FreeBSD__) || defined(__NETWARE__)
+/* InnoDB Hot Backup does not lock the data files.
+ * On Windows, mandatory locking is used.
+ * On FreeBSD with LinuxThreads, advisory locking does not work properly.
+ */
+# undef USE_FILE_LOCK
+#endif
+#ifdef USE_FILE_LOCK
+/********************************************************************
+Obtain an exclusive lock on a file. */
+static
+int
+os_file_lock(
+/*=========*/
+				/* out: 0 on success */
+	int		fd,	/* in: file descriptor */
+	const char*	name)	/* in: file name */
+{
+	struct flock lk;
+	lk.l_type = F_WRLCK;
+	lk.l_whence = SEEK_SET;
+	lk.l_start = lk.l_len = 0;
+	if (fcntl(fd, F_SETLK, &lk) == -1) {
+		fprintf(stderr,
+			"InnoDB: Unable to lock %s, error: %d\n", name, errno);
+
+		if (errno == EAGAIN || errno == EACCES) {
+			fprintf(stderr,
+"InnoDB: Check that you do not already have another mysqld process\n"
+"InnoDB: using the same InnoDB data or log files.\n");
+		}
+
+		close(fd);
+
+		return(-1);
+	}
+
+	return(0);
+}
+#endif /* USE_FILE_LOCK */
+
+/********************************************************************
+Does error handling when a file operation fails. */
+static
+ibool
+os_file_handle_error_no_exit(
+/*=========================*/
+				/* out: TRUE if we should retry the
+				operation */
+	const char*	name,	/* in: name of a file or NULL */
+	const char*	operation)/* in: operation */
+{
+	ulint	err;
+
+	err = os_file_get_last_error(FALSE);
+	
+	if (err == OS_FILE_DISK_FULL) {
+		/* We only print a warning about disk full once */
+
+		if (os_has_said_disk_full) {
+
+			return(FALSE);
+		}
+	
+		if (name) {
+			ut_print_timestamp(stderr);
+			fprintf(stderr,
+	"  InnoDB: Encountered a problem with file %s\n", name);
+		}
+
+		ut_print_timestamp(stderr);
+	        fprintf(stderr,
+	"  InnoDB: Disk is full. Try to clean the disk to free space.\n");
+
+		os_has_said_disk_full = TRUE;
+
+		fflush(stderr);
+
+		return(FALSE);
+
+	} else if (err == OS_FILE_AIO_RESOURCES_RESERVED) {
+
+		return(TRUE);
+
+	} else if (err == OS_FILE_ALREADY_EXISTS) {
+
+		return(FALSE);
+	} else {
+	        if (name) {
+	                fprintf(stderr, "InnoDB: File name %s\n", name);
+	        }
+	  
+		fprintf(stderr, "InnoDB: File operation call: '%s'.\n",
+							       operation);
+		return (FALSE);
+	}
+
+	return(FALSE);		/* not reached */
+}
+
 /********************************************************************
 Creates the seek mutexes used in positioned reads and writes. */
 
@@ -374,21 +486,388 @@ os_io_init_simple(void)
 	}
 }
 
+#if !defined(UNIV_HOTBACKUP) && !defined(__NETWARE__)
+/*************************************************************************
+Creates a temporary file. This function is defined in ha_innodb.cc. */
+
+int
+innobase_mysql_tmpfile(void);
+/*========================*/
+			/* out: temporary file descriptor, or < 0 on error */
+#endif /* !UNIV_HOTBACKUP && !__NETWARE__ */
+
+/***************************************************************************
+Creates a temporary file. */
+
+FILE*
+os_file_create_tmpfile(void)
+/*========================*/
+			/* out: temporary file handle, or NULL on error */
+{
+#ifdef __NETWARE__
+	FILE*	file	= tmpfile();
+#else /* __NETWARE__ */
+	FILE*	file	= NULL;
+	int	fd	= -1;
+# ifdef UNIV_HOTBACKUP
+	int	tries;
+	for (tries = 10; tries--; ) {
+		char*	name = tempnam(fil_path_to_mysql_datadir, "ib");
+		if (!name) {
+			break;
+		}
+
+		fd = open(name,
+#  ifdef __WIN__
+			O_SEQUENTIAL | O_SHORT_LIVED | O_TEMPORARY |
+#  endif /* __WIN__ */
+			O_CREAT | O_EXCL | O_RDWR,
+			S_IREAD | S_IWRITE);
+		if (fd >= 0) {
+#  ifndef __WIN__
+			unlink(name);
+#  endif /* !__WIN__ */
+			free(name);
+			break;
+		}
+
+		ut_print_timestamp(stderr);
+		fprintf(stderr, "  InnoDB: Warning: "
+			"unable to create temporary file %s, retrying\n",
+			name);
+		free(name);
+	}
+# else /* UNIV_HOTBACKUP */
+	fd = innobase_mysql_tmpfile();
+# endif /* UNIV_HOTBACKUP */
+
+	if (fd >= 0) {
+		file = fdopen(fd, "w+b");
+	}
+#endif /* __NETWARE__ */
+
+	if (!file) {
+		ut_print_timestamp(stderr);
+		fprintf(stderr,
+			"  InnoDB: Error: unable to create temporary file;"
+			" errno: %d\n", errno);
+#ifndef __NETWARE__
+		if (fd >= 0) {
+			close(fd);
+		}
+#endif /* !__NETWARE__ */
+	}
+
+	return(file);
+}
+
+/***************************************************************************
+The os_file_opendir() function opens a directory stream corresponding to the
+directory named by the dirname argument. The directory stream is positioned
+at the first entry. In both Unix and Windows we automatically skip the '.'
+and '..' items at the start of the directory listing. */
+
+os_file_dir_t
+os_file_opendir(
+/*============*/
+					/* out: directory stream, NULL if
+					error */
+	const char*	dirname,	/* in: directory name; it must not
+					contain a trailing '\' or '/' */
+	ibool		error_is_fatal)	/* in: TRUE if we should treat an
+					error as a fatal error; if we try to
+					open symlinks then we do not wish a
+					fatal error if it happens not to be
+					a directory */
+{
+	os_file_dir_t		dir;
+#ifdef __WIN__
+        LPWIN32_FIND_DATA	lpFindFileData;
+	char			path[OS_FILE_MAX_PATH + 3];
+
+	ut_a(strlen(dirname) < OS_FILE_MAX_PATH);
+
+	strcpy(path, dirname);
+	strcpy(path + strlen(path), "\\*");
+
+	/* Note that in Windows opening the 'directory stream' also retrieves
+	the first entry in the directory. Since it is '.', that is no problem,
+	as we will skip over the '.' and '..' entries anyway. */
+
+	lpFindFileData = ut_malloc(sizeof(WIN32_FIND_DATA));
+
+	dir = FindFirstFile(path, lpFindFileData);
+
+	ut_free(lpFindFileData);
+
+	if (dir == INVALID_HANDLE_VALUE) {
+
+		if (error_is_fatal) {
+		        os_file_handle_error(dirname, "opendir");
+		}
+
+		return(NULL);
+	}
+
+	return(dir);	
+#else
+	dir = opendir(dirname);
+
+	if (dir == NULL && error_is_fatal) {
+	        os_file_handle_error(dirname, "opendir");
+	}
+
+	return(dir);
+#endif
+}
+
+/***************************************************************************
+Closes a directory stream. */
+
+int
+os_file_closedir(
+/*=============*/
+				/* out: 0 if success, -1 if failure */
+	os_file_dir_t	dir)	/* in: directory stream */
+{
+#ifdef __WIN__
+	BOOL		ret;
+
+	ret = FindClose(dir);
+
+	if (!ret) {
+	        os_file_handle_error_no_exit(NULL, "closedir");
+		
+		return(-1);
+	}
+	
+	return(0);
+#else
+	int	ret;
+	
+	ret = closedir(dir);
+
+	if (ret) {
+	        os_file_handle_error_no_exit(NULL, "closedir");
+	}
+
+	return(ret);
+#endif
+}
+
+/***************************************************************************
+This function returns information of the next file in the directory. We jump
+over the '.' and '..' entries in the directory. */
+
+int
+os_file_readdir_next_file(
+/*======================*/
+				/* out: 0 if ok, -1 if error, 1 if at the end
+				of the directory */
+	const char*	dirname,/* in: directory name or path */
+	os_file_dir_t	dir,	/* in: directory stream */
+	os_file_stat_t*	info)	/* in/out: buffer where the info is returned */
+{
+#ifdef __WIN__
+	LPWIN32_FIND_DATA	lpFindFileData;
+	BOOL			ret;
+
+	lpFindFileData = ut_malloc(sizeof(WIN32_FIND_DATA));
+next_file:
+	ret = FindNextFile(dir, lpFindFileData);
+
+	if (ret) {
+	        ut_a(strlen(lpFindFileData->cFileName) < OS_FILE_MAX_PATH);
+
+		if (strcmp(lpFindFileData->cFileName, ".") == 0
+		    || strcmp(lpFindFileData->cFileName, "..") == 0) {
+
+		        goto next_file;
+		}
+
+		strcpy(info->name, lpFindFileData->cFileName);
+
+		info->size = (ib_longlong)(lpFindFileData->nFileSizeLow)
+		     + (((ib_longlong)(lpFindFileData->nFileSizeHigh)) << 32);
+
+		if (lpFindFileData->dwFileAttributes
+					& FILE_ATTRIBUTE_REPARSE_POINT) {
+/* TODO: test Windows symlinks */
+/* TODO: MySQL has apparently its own symlink implementation in Windows,
+dbname.sym can redirect a database directory:
+http://www.mysql.com/doc/en/Windows_symbolic_links.html */
+			info->type = OS_FILE_TYPE_LINK;
+		} else if (lpFindFileData->dwFileAttributes
+						& FILE_ATTRIBUTE_DIRECTORY) {
+		        info->type = OS_FILE_TYPE_DIR;
+		} else {
+			/* It is probably safest to assume that all other
+			file types are normal. Better to check them rather
+			than blindly skip them. */
+
+			info->type = OS_FILE_TYPE_FILE;
+		}
+	}
+
+	ut_free(lpFindFileData);
+
+	if (ret) {
+		return(0);
+	} else if (GetLastError() == ERROR_NO_MORE_FILES) {
+
+		return(1);
+	} else {
+		os_file_handle_error_no_exit(dirname,
+						"readdir_next_file");
+		return(-1);
+	}
+#else
+	struct dirent*	ent;
+	char*		full_path;
+	int		ret;
+	struct stat	statinfo;
+#ifdef HAVE_READDIR_R
+	char		dirent_buf[sizeof(struct dirent) + _POSIX_PATH_MAX +
+								100];
+			/* In /mysys/my_lib.c, _POSIX_PATH_MAX + 1 is used as
+			the max file name len; but in most standards, the
+			length is NAME_MAX; we add 100 to be even safer */
+#endif
+
+next_file:
+
+#ifdef HAVE_READDIR_R
+	ret = readdir_r(dir, (struct dirent*)dirent_buf, &ent);
+
+	if (ret != 0) {
+		fprintf(stderr,
+"InnoDB: cannot read directory %s, error %lu\n", dirname, (ulong)ret);
+
+		return(-1);
+	}
+
+	if (ent == NULL) {
+		/* End of directory */
+		
+		return(1);
+	}
+
+	ut_a(strlen(ent->d_name) < _POSIX_PATH_MAX + 100 - 1);
+#else
+	ent = readdir(dir);
+
+	if (ent == NULL) {
+
+		return(1);
+	}
+#endif
+	ut_a(strlen(ent->d_name) < OS_FILE_MAX_PATH);
+
+	if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
+
+		goto next_file;
+	}
+
+	strcpy(info->name, ent->d_name);
+
+	full_path = ut_malloc(strlen(dirname) + strlen(ent->d_name) + 10);
+	
+	sprintf(full_path, "%s/%s", dirname, ent->d_name);
+
+	ret = stat(full_path, &statinfo);
+
+	if (ret) {
+		os_file_handle_error_no_exit(full_path, "stat");
+
+		ut_free(full_path);
+
+		return(-1);
+	}
+
+	info->size = (ib_longlong)statinfo.st_size;
+
+	if (S_ISDIR(statinfo.st_mode)) {
+		info->type = OS_FILE_TYPE_DIR;
+	} else if (S_ISLNK(statinfo.st_mode)) {
+	        info->type = OS_FILE_TYPE_LINK;
+	} else if (S_ISREG(statinfo.st_mode)) {
+	        info->type = OS_FILE_TYPE_FILE;
+	} else {
+	        info->type = OS_FILE_TYPE_UNKNOWN;
+	}
+			
+	ut_free(full_path);
+
+	return(0);
+#endif
+}
+
+/*********************************************************************
+This function attempts to create a directory named pathname. The new directory
+gets default permissions. On Unix the permissions are (0770 & ~umask). If the
+directory exists already, nothing is done and the call succeeds, unless the
+fail_if_exists arguments is true. */
+
+ibool
+os_file_create_directory(
+/*=====================*/
+					/* out: TRUE if call succeeds,
+					FALSE on error */
+	const char*	pathname,	/* in: directory name as
+					null-terminated string */
+	ibool		fail_if_exists)	/* in: if TRUE, pre-existing directory
+					is treated as an error. */
+{
+#ifdef __WIN__
+	BOOL	rcode;
+    
+	rcode = CreateDirectory(pathname, NULL);
+	if (!(rcode != 0 ||
+	   (GetLastError() == ERROR_ALREADY_EXISTS && !fail_if_exists))) {
+		/* failure */
+		os_file_handle_error(pathname, "CreateDirectory");
+
+		return(FALSE);
+	}
+        
+	return (TRUE);
+#else
+	int	rcode;
+
+	rcode = mkdir(pathname, 0770);
+
+	if (!(rcode == 0 || (errno == EEXIST && !fail_if_exists))) {
+		/* failure */
+		os_file_handle_error(pathname, "mkdir");
+
+		return(FALSE);
+	}
+        
+	return (TRUE);
+#endif    
+}
+
 /********************************************************************
 A simple function to open or create a file. */
 
 os_file_t
 os_file_create_simple(
 /*==================*/
-			/* out, own: handle to the file, not defined if error,
-			error number can be retrieved with os_get_last_error */
-	char*	name,	/* in: name of the file or path as a null-terminated
-			string */
-	ulint	create_mode,/* in: OS_FILE_OPEN if an existing file is opened
-			(if does not exist, error), or OS_FILE_CREATE if a new
-			file is created (if exists, error) */
-	ulint	access_type,/* in: OS_FILE_READ_ONLY or OS_FILE_READ_WRITE */
-	ibool*	success)/* out: TRUE if succeed, FALSE if error */
+				/* out, own: handle to the file, not defined
+				if error, error number can be retrieved with
+				os_file_get_last_error */
+	const char*	name,	/* in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/* in: OS_FILE_OPEN if an existing file is
+				opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error), or
+	                        OS_FILE_CREATE_PATH if new file
+				(if exists, error) and subdirectories along
+				its path are created (if needed)*/
+	ulint		access_type,/* in: OS_FILE_READ_ONLY or
+				OS_FILE_READ_WRITE */
+	ibool*		success)/* out: TRUE if succeed, FALSE if error */
 {
 #ifdef __WIN__
 	os_file_t	file;
@@ -404,6 +883,14 @@ try_again:
 		create_flag = OPEN_EXISTING;
 	} else if (create_mode == OS_FILE_CREATE) {
 		create_flag = CREATE_NEW;
+        } else if (create_mode == OS_FILE_CREATE_PATH) {
+                /* create subdirs along the path if needed  */
+                *success = os_file_create_subdirs_if_needed(name);
+                if (!*success) {
+                        ut_error;
+                }
+                create_flag = CREATE_NEW;
+                create_mode = OS_FILE_CREATE;
 	} else {
 		create_flag = 0;
 		ut_error;
@@ -420,8 +907,9 @@ try_again:
 
 	file = CreateFile(name,
 			access,
-			FILE_SHARE_READ,/* file can be read also by other
-					processes */
+			FILE_SHARE_READ | FILE_SHARE_WRITE,
+					/* file can be read ansd written also
+					by other processes */
 			NULL,	/* default security attributes */
 			create_flag,
 			attributes,
@@ -430,7 +918,7 @@ try_again:
 	if (file == INVALID_HANDLE_VALUE) {
 		*success = FALSE;
 
-		retry = os_file_handle_error(file, name,
+		retry = os_file_handle_error(name,
 				create_mode == OS_FILE_OPEN ?
 				"open" : "create");
 		if (retry) {
@@ -457,6 +945,14 @@ try_again:
 		}
 	} else if (create_mode == OS_FILE_CREATE) {
 		create_flag = O_RDWR | O_CREAT | O_EXCL;
+        } else if (create_mode == OS_FILE_CREATE_PATH) {
+                /* create subdirs along the path if needed  */
+                *success = os_file_create_subdirs_if_needed(name);
+                if (!*success) {
+                        return (-1);
+                }
+                create_flag = O_RDWR | O_CREAT | O_EXCL;
+                create_mode = OS_FILE_CREATE;
 	} else {
 		create_flag = 0;
 		ut_error;
@@ -472,12 +968,18 @@ try_again:
 	if (file == -1) {
 		*success = FALSE;
 
-		retry = os_file_handle_error(file, name,
+		retry = os_file_handle_error(name,
 				create_mode == OS_FILE_OPEN ?
 				"open" : "create");
 		if (retry) {
 			goto try_again;
 		}
+#ifdef USE_FILE_LOCK
+	} else if (access_type == OS_FILE_READ_WRITE
+			&& os_file_lock(file, name)) {
+		*success = FALSE;
+		file = -1;
+#endif
 	} else {
 		*success = TRUE;
 	}
@@ -492,21 +994,27 @@ A simple function to open or create a file. */
 os_file_t
 os_file_create_simple_no_error_handling(
 /*====================================*/
-			/* out, own: handle to the file, not defined if error,
-			error number can be retrieved with os_get_last_error */
-	char*	name,	/* in: name of the file or path as a null-terminated
-			string */
-	ulint	create_mode,/* in: OS_FILE_OPEN if an existing file is opened
-			(if does not exist, error), or OS_FILE_CREATE if a new
-			file is created (if exists, error) */
-	ulint	access_type,/* in: OS_FILE_READ_ONLY or OS_FILE_READ_WRITE */
-	ibool*	success)/* out: TRUE if succeed, FALSE if error */
+				/* out, own: handle to the file, not defined
+				if error, error number can be retrieved with
+				os_file_get_last_error */
+	const char*	name,	/* in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/* in: OS_FILE_OPEN if an existing file
+				is opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error) */
+	ulint		access_type,/* in: OS_FILE_READ_ONLY,
+				OS_FILE_READ_WRITE, or
+				OS_FILE_READ_ALLOW_DELETE; the last option is
+				used by a backup program reading the file */
+	ibool*		success)/* out: TRUE if succeed, FALSE if error */
 {
 #ifdef __WIN__
 	os_file_t	file;
 	DWORD		create_flag;
 	DWORD		access;
 	DWORD		attributes	= 0;
+	DWORD		share_mode	= FILE_SHARE_READ | FILE_SHARE_WRITE;
 	
 	ut_a(name);
 
@@ -523,6 +1031,13 @@ os_file_create_simple_no_error_handling(
 		access = GENERIC_READ;
 	} else if (access_type == OS_FILE_READ_WRITE) {
 		access = GENERIC_READ | GENERIC_WRITE;
+	} else if (access_type == OS_FILE_READ_ALLOW_DELETE) {
+		access = GENERIC_READ;
+		share_mode = FILE_SHARE_DELETE | FILE_SHARE_READ
+			   | FILE_SHARE_WRITE;  /* A backup program has to give
+						mysqld the maximum freedom to
+						do what it likes with the
+						file */
 	} else {
 		access = 0;
 		ut_error;
@@ -530,8 +1045,7 @@ os_file_create_simple_no_error_handling(
 
 	file = CreateFile(name,
 			access,
-			FILE_SHARE_READ,/* file can be read also by other
-					processes */
+			share_mode,
 			NULL,	/* default security attributes */
 			create_flag,
 			attributes,
@@ -572,6 +1086,12 @@ os_file_create_simple_no_error_handling(
 	
 	if (file == -1) {
 		*success = FALSE;
+#ifdef USE_FILE_LOCK
+	} else if (access_type == OS_FILE_READ_WRITE
+			&& os_file_lock(file, name)) {
+		*success = FALSE;
+		file = -1;
+#endif
 	} else {
 		*success = TRUE;
 	}
@@ -586,33 +1106,42 @@ Opens an existing file or creates a new. */
 os_file_t
 os_file_create(
 /*===========*/
-			/* out, own: handle to the file, not defined if error,
-			error number can be retrieved with os_get_last_error */
-	char*	name,	/* in: name of the file or path as a null-terminated
-			string */
-	ulint	create_mode, /* in: OS_FILE_OPEN if an existing file is opened
-			(if does not exist, error), or OS_FILE_CREATE if a new
-			file is created (if exists, error), OS_FILE_OVERWRITE
-			if a new is created or an old overwritten */
-	ulint	purpose,/* in: OS_FILE_AIO, if asynchronous, non-buffered i/o
-			is desired, OS_FILE_NORMAL, if any normal file;
-			NOTE that it also depends on type, os_aio_.. and srv_..
-			variables whether we really use async i/o or
-			unbuffered i/o: look in the function source code for
-			the exact rules */
-	ulint	type,	/* in: OS_DATA_FILE or OS_LOG_FILE */
-	ibool*	success)/* out: TRUE if succeed, FALSE if error */
+				/* out, own: handle to the file, not defined
+				if error, error number can be retrieved with
+				os_file_get_last_error */
+	const char*	name,	/* in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/* in: OS_FILE_OPEN if an existing file
+				is opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error),
+				OS_FILE_OVERWRITE if a new file is created
+				or an old overwritten;
+				OS_FILE_OPEN_RAW, if a raw device or disk
+				partition should be opened */
+	ulint		purpose,/* in: OS_FILE_AIO, if asynchronous,
+				non-buffered i/o is desired,
+				OS_FILE_NORMAL, if any normal file;
+				NOTE that it also depends on type, os_aio_..
+				and srv_.. variables whether we really use
+				async i/o or unbuffered i/o: look in the
+				function source code for the exact rules */
+	ulint		type,	/* in: OS_DATA_FILE or OS_LOG_FILE */
+	ibool*		success)/* out: TRUE if succeed, FALSE if error */
 {
 #ifdef __WIN__
 	os_file_t	file;
+	DWORD		share_mode	= FILE_SHARE_READ;
 	DWORD		create_flag;
 	DWORD		attributes;
 	ibool		retry;
-	
 try_again:	
 	ut_a(name);
 
-	if (create_mode == OS_FILE_OPEN) {
+	if (create_mode == OS_FILE_OPEN_RAW) {
+		create_flag = OPEN_EXISTING;
+		share_mode = FILE_SHARE_WRITE;
+	} else if (create_mode == OS_FILE_OPEN) {
 		create_flag = OPEN_EXISTING;
 	} else if (create_mode == OS_FILE_CREATE) {
 		create_flag = CREATE_NEW;
@@ -662,14 +1191,17 @@ try_again:
 	file = CreateFile(name,
 			GENERIC_READ | GENERIC_WRITE, /* read and write
 							access */
-			FILE_SHARE_READ,/* File can be read also by other
+			share_mode,     /* File can be read also by other
 					processes; we must give the read
 					permission because of ibbackup. We do
 					not give the write permission to
 					others because if one would succeed to
 					start 2 instances of mysqld on the
 					SAME files, that could cause severe
-					database corruption! */
+					database corruption! When opening
+					raw disk partitions, Microsoft manuals
+					say that we must give also the write
+					permission. */
 			NULL,	/* default security attributes */
 			create_flag,
 			attributes,
@@ -678,9 +1210,9 @@ try_again:
 	if (file == INVALID_HANDLE_VALUE) {
 		*success = FALSE;
 
-		retry = os_file_handle_error(file, name,
-				create_mode == OS_FILE_OPEN ?
-				"open" : "create");
+		retry = os_file_handle_error(name,
+				create_mode == OS_FILE_CREATE ?
+				"create" : "open");
 		if (retry) {
 			goto try_again;
 		}
@@ -700,17 +1232,14 @@ try_again:
 try_again:	
 	ut_a(name);
 
-	if (create_mode == OS_FILE_OPEN) {
+	if (create_mode == OS_FILE_OPEN || create_mode == OS_FILE_OPEN_RAW) {
 		mode_str = "OPEN";
-
 		create_flag = O_RDWR;
 	} else if (create_mode == OS_FILE_CREATE) {
 		mode_str = "CREATE";
-
 		create_flag = O_RDWR | O_CREAT | O_EXCL;
 	} else if (create_mode == OS_FILE_OVERWRITE) {
 		mode_str = "OVERWRITE";
-
 		create_flag = O_RDWR | O_CREAT | O_TRUNC;
 	} else {
 		create_flag = 0;
@@ -766,18 +1295,186 @@ try_again:
 	if (file == -1) {
 		*success = FALSE;
 
-		retry = os_file_handle_error(file, name,
-				create_mode == OS_FILE_OPEN ?
-				"open" : "create");
+		retry = os_file_handle_error(name,
+				create_mode == OS_FILE_CREATE ?
+				"create" : "open");
 		if (retry) {
 			goto try_again;
 		}
+#ifdef USE_FILE_LOCK
+	} else if (create_mode != OS_FILE_OPEN_RAW
+			&& os_file_lock(file, name)) {
+		*success = FALSE;
+		file = -1;
+#endif
 	} else {
 		*success = TRUE;
 	}
 
 	return(file);	
 #endif /* __WIN__ */
+}
+
+/***************************************************************************
+Deletes a file if it exists. The file has to be closed before calling this. */
+
+ibool
+os_file_delete_if_exists(
+/*=====================*/
+				/* out: TRUE if success */
+	const char*	name)	/* in: file path as a null-terminated string */
+{
+#ifdef __WIN__
+	BOOL	ret;
+	ulint	count	= 0;
+loop:
+	/* In Windows, deleting an .ibd file may fail if ibbackup is copying
+	it */
+
+	ret = DeleteFile((LPCTSTR)name);
+
+	if (ret) {
+		return(TRUE);
+	}
+
+	if (GetLastError() == ERROR_FILE_NOT_FOUND) {
+		/* the file does not exist, this not an error */
+
+		return(TRUE);
+	}
+
+	count++;
+
+	if (count > 100 && 0 == (count % 10)) {
+		fprintf(stderr,
+"InnoDB: Warning: cannot delete file %s\n"
+"InnoDB: Are you running ibbackup to back up the file?\n", name);
+		
+		os_file_get_last_error(TRUE); /* print error information */
+	}
+
+	os_thread_sleep(1000000);	/* sleep for a second */
+
+	if (count > 2000) {
+
+		return(FALSE);
+	}
+
+	goto loop;
+#else
+	int	ret;
+
+	ret = unlink((const char*)name);
+
+	if (ret != 0 && errno != ENOENT) {
+		os_file_handle_error_no_exit(name, "delete");
+
+		return(FALSE);
+	}
+
+	return(TRUE);
+#endif
+}
+
+/***************************************************************************
+Deletes a file. The file has to be closed before calling this. */
+
+ibool
+os_file_delete(
+/*===========*/
+				/* out: TRUE if success */
+	const char*	name)	/* in: file path as a null-terminated string */
+{
+#ifdef __WIN__
+	BOOL	ret;
+	ulint	count	= 0;
+loop:
+	/* In Windows, deleting an .ibd file may fail if ibbackup is copying
+	it */
+
+	ret = DeleteFile((LPCTSTR)name);
+
+	if (ret) {
+		return(TRUE);
+	}
+
+	if (GetLastError() == ERROR_FILE_NOT_FOUND) {
+		/* If the file does not exist, we classify this as a 'mild'
+		error and return */
+
+		return(FALSE);
+	}
+
+	count++;
+
+	if (count > 100 && 0 == (count % 10)) {
+		fprintf(stderr,
+"InnoDB: Warning: cannot delete file %s\n"
+"InnoDB: Are you running ibbackup to back up the file?\n", name);
+		
+		os_file_get_last_error(TRUE); /* print error information */
+	}
+
+	os_thread_sleep(1000000);	/* sleep for a second */
+
+	if (count > 2000) {
+
+		return(FALSE);
+	}
+
+	goto loop;
+#else
+	int	ret;
+
+	ret = unlink((const char*)name);
+
+	if (ret != 0) {
+		os_file_handle_error_no_exit(name, "delete");
+
+		return(FALSE);
+	}
+
+	return(TRUE);
+#endif
+}
+
+/***************************************************************************
+Renames a file (can also move it to another directory). It is safest that the
+file is closed before calling this function. */
+
+ibool
+os_file_rename(
+/*===========*/
+				/* out: TRUE if success */
+	const char*	oldpath,/* in: old file path as a null-terminated
+				string */
+	const char*	newpath)/* in: new file path */
+{
+#ifdef __WIN__
+	BOOL	ret;
+
+	ret = MoveFile((LPCTSTR)oldpath, (LPCTSTR)newpath);
+
+	if (ret) {
+		return(TRUE);
+	}
+
+	os_file_handle_error(oldpath, "rename");
+
+	return(FALSE);
+#else
+	int	ret;
+
+	ret = rename((const char*)oldpath, (const char*)newpath);
+
+	if (ret != 0) {
+		os_file_handle_error(oldpath, "rename");
+
+		return(FALSE);
+	}
+
+	return(TRUE);
+#endif
 }
 
 /***************************************************************************
@@ -801,7 +1498,8 @@ os_file_close(
 		return(TRUE);
 	}
 
-	os_file_handle_error(file, NULL, "close");
+	os_file_handle_error(NULL, "close");
+
 	return(FALSE);
 #else
 	int	ret;
@@ -809,7 +1507,8 @@ os_file_close(
 	ret = close(file);
 
 	if (ret == -1) {
-		os_file_handle_error(file, NULL, "close");
+		os_file_handle_error(NULL, "close");
+
 		return(FALSE);
 	}
 
@@ -889,7 +1588,7 @@ os_file_get_size(
 	}
 	
 	if (sizeof(off_t) > 4) {
-	        *size = (ulint)(offs & 0xFFFFFFFF);
+	        *size = (ulint)(offs & 0xFFFFFFFFUL);
 		*size_high = (ulint)(offs >> 32);
 	} else {
 		*size = (ulint) offs;
@@ -901,13 +1600,36 @@ os_file_get_size(
 }
 
 /***************************************************************************
+Gets file size as a 64-bit integer ib_longlong. */
+
+ib_longlong
+os_file_get_size_as_iblonglong(
+/*===========================*/
+				/* out: size in bytes, -1 if error */
+	os_file_t	file)	/* in: handle to a file */
+{
+	ulint	size;
+	ulint	size_high;
+	ibool	success;
+
+	success = os_file_get_size(file, &size, &size_high);
+
+	if (!success) {
+
+		return(-1);
+	}
+
+	return((((ib_longlong)size_high) << 32) + (ib_longlong)size);
+}
+
+/***************************************************************************
 Sets a file size. This function can be used to extend or truncate a file. */
 
 ibool
 os_file_set_size(
 /*=============*/
 				/* out: TRUE if success */
-	char*		name,	/* in: name of the file or path as a
+	const char*	name,	/* in: name of the file or path as a
 				null-terminated string */
 	os_file_t	file,	/* in: handle to a file */
 	ulint		size,	/* in: least significant 32 bits of file
@@ -966,7 +1688,7 @@ os_file_set_size(
 		    != offset / (ib_longlong)(100 * 1024 * 1024)) {
 
 		        fprintf(stderr, " %lu00",
-				(ulint)((offset + n_bytes)
+				(ulong) ((offset + n_bytes)
 					/ (ib_longlong)(100 * 1024 * 1024)));
 		}
 		
@@ -1029,7 +1751,16 @@ os_file_flush(
 		return(TRUE);
 	}
 
-	os_file_handle_error(file, NULL, "flush");
+	/* Since Windows returns ERROR_INVALID_FUNCTION if the 'file' is
+	actually a raw device, we choose to ignore that error if we are using
+	raw disks */
+
+	if (srv_start_raw_disk_in_use && GetLastError()
+						== ERROR_INVALID_FUNCTION) {
+	        return(TRUE);
+	}
+
+	os_file_handle_error(NULL, "flush");
 
 	/* It is a fatal error if a file flush does not succeed, because then
 	the database can get corrupt on disk */
@@ -1039,7 +1770,33 @@ os_file_flush(
 #else
 	int	ret;
 
-#ifdef HAVE_FDATASYNC
+#if defined(HAVE_DARWIN_THREADS)
+# ifndef F_FULLFSYNC
+	/* The following definition is from the Mac OS X 10.3 <sys/fcntl.h> */
+#  define F_FULLFSYNC 51 /* fsync + ask the drive to flush to the media */
+# elif F_FULLFSYNC != 51
+#  error "F_FULLFSYNC != 51: ABI incompatibility with Mac OS X 10.3"
+# endif
+	/* Apple has disabled fsync() for internal disk drives in OS X. That
+	caused corruption for a user when he tested a power outage. Let us in
+	OS X use a nonstandard flush method recommended by an Apple
+	engineer. */
+
+	if (!srv_have_fullfsync) {
+		/* If we are not on an operating system that supports this,
+		then fall back to a plain fsync. */ 
+
+		ret = fsync(file);
+	} else {
+		ret = fcntl(file, F_FULLFSYNC, NULL);
+
+		if (ret) {
+			/* If we are not on a file system that supports this,
+			then fall back to a plain fsync. */ 
+			ret = fsync(file);
+		}
+	}
+#elif HAVE_FDATASYNC
 	ret = fdatasync(file);
 #else
 /*	fprintf(stderr, "Flushing to file %p\n", file); */
@@ -1052,9 +1809,10 @@ os_file_flush(
 	}
 	
 	/* Since Linux returns EINVAL if the 'file' is actually a raw device,
-	we choose to ignore that error */
+	we choose to ignore that error if we are using raw disks */
 
-	if (errno == EINVAL) {
+	if (srv_start_raw_disk_in_use && errno == EINVAL) {
+
 	        return(TRUE);
 	}
 
@@ -1063,7 +1821,7 @@ os_file_flush(
 	fprintf(stderr,
 		"  InnoDB: Error: the OS said file flush did not succeed\n");
 
-	os_file_handle_error(file, NULL, "flush");
+	os_file_handle_error(NULL, "flush");
 
 	/* It is a fatal error if a file flush does not succeed, because then
 	the database can get corrupt on disk */
@@ -1092,7 +1850,7 @@ os_file_pread(
         off_t	offs;
 	ssize_t	n_bytes;
 
-	ut_a((offset & 0xFFFFFFFF) == offset);
+	ut_a((offset & 0xFFFFFFFFUL) == offset);
         
         /* If off_t is > 4 bytes in size, then we assume we can pass a
 	64-bit address */
@@ -1111,12 +1869,12 @@ os_file_pread(
 
 	os_n_file_reads++;
 
-#ifdef HAVE_PREAD
+#if defined(HAVE_PREAD) && !defined(HAVE_BROKEN_PREAD)
         os_mutex_enter(os_file_count_mutex);
 	os_file_n_pending_preads++;
         os_mutex_exit(os_file_count_mutex);
 
-        n_bytes = pread(file, buf, n, offs);
+        n_bytes = pread(file, buf, (ssize_t)n, offs);
 
         os_mutex_enter(os_file_count_mutex);
 	os_file_n_pending_preads--;
@@ -1125,6 +1883,7 @@ os_file_pread(
 	return(n_bytes);
 #else
 	{
+	off_t	ret_offset;
 	ssize_t	ret;
 	ulint	i;
 
@@ -1133,15 +1892,15 @@ os_file_pread(
 	
 	os_mutex_enter(os_file_seek_mutexes[i]);
 
-	ret = lseek(file, offs, 0);
+	ret_offset = lseek(file, offs, SEEK_SET);
 
-	if (ret < 0) {
+	if (ret_offset < 0) {
 		os_mutex_exit(os_file_seek_mutexes[i]);
 
-		return(ret);
+		return(-1);
 	}
 	
-	ret = read(file, buf, n);
+	ret = read(file, buf, (ssize_t)n);
 
 	os_mutex_exit(os_file_seek_mutexes[i]);
 
@@ -1158,7 +1917,7 @@ os_file_pwrite(
 /*===========*/
 				/* out: number of bytes written, -1 if error */
 	os_file_t	file,	/* in: handle to a file */
-	void*		buf,	/* in: buffer from where to write */
+	const void*	buf,	/* in: buffer from where to write */
 	ulint		n,	/* in: number of bytes to write */	
 	ulint		offset,	/* in: least significant 32 bits of file
 				offset where to write */
@@ -1168,7 +1927,7 @@ os_file_pwrite(
 	ssize_t	ret;
         off_t	offs;
 
-	ut_a((offset & 0xFFFFFFFF) == offset);
+	ut_a((offset & 0xFFFFFFFFUL) == offset);
 
         /* If off_t is > 4 bytes in size, then we assume we can pass a
 	64-bit address */
@@ -1186,12 +1945,12 @@ os_file_pwrite(
 
 	os_n_file_writes++;
 
-#ifdef HAVE_PWRITE
+#if defined(HAVE_PWRITE) && !defined(HAVE_BROKEN_PREAD)
         os_mutex_enter(os_file_count_mutex);
 	os_file_n_pending_pwrites++;
         os_mutex_exit(os_file_count_mutex);
 
-	ret = pwrite(file, buf, n, offs);
+	ret = pwrite(file, buf, (ssize_t)n, offs);
 
         os_mutex_enter(os_file_count_mutex);
 	os_file_n_pending_pwrites--;
@@ -1211,6 +1970,7 @@ os_file_pwrite(
         return(ret);
 #else
 	{
+	off_t	ret_offset;
 	ulint	i;
 
 	/* Protect the seek / write operation with a mutex */
@@ -1218,15 +1978,15 @@ os_file_pwrite(
 	
 	os_mutex_enter(os_file_seek_mutexes[i]);
 
-	ret = lseek(file, offs, 0);
+	ret_offset = lseek(file, offs, SEEK_SET);
 
-	if (ret < 0) {
+	if (ret_offset < 0) {
 		os_mutex_exit(os_file_seek_mutexes[i]);
 
-		return(ret);
+		return(-1);
 	}
 	
-	ret = write(file, buf, n);
+	ret = write(file, buf, (ssize_t)n);
 
 	if (srv_unix_file_flush_method != SRV_UNIX_LITTLESYNC
 	    && srv_unix_file_flush_method != SRV_UNIX_NOSYNC
@@ -1272,7 +2032,110 @@ os_file_read(
 	ibool		retry;
 	ulint		i;
 	
-	ut_a((offset & 0xFFFFFFFF) == offset);
+	ut_a((offset & 0xFFFFFFFFUL) == offset);
+
+	os_n_file_reads++;
+	os_bytes_read_since_printout += n;
+
+try_again:	
+	ut_ad(file);
+	ut_ad(buf);
+	ut_ad(n > 0);
+
+	low = offset;
+	high = offset_high;
+
+	/* Protect the seek / read operation with a mutex */
+	i = ((ulint) file) % OS_FILE_N_SEEK_MUTEXES;
+	
+	os_mutex_enter(os_file_seek_mutexes[i]);
+
+	ret2 = SetFilePointer(file, low, &high, FILE_BEGIN);
+
+	if (ret2 == 0xFFFFFFFF && GetLastError() != NO_ERROR) {
+
+		os_mutex_exit(os_file_seek_mutexes[i]);
+
+		goto error_handling;
+	} 
+	
+	ret = ReadFile(file, buf, n, &len, NULL);
+
+	os_mutex_exit(os_file_seek_mutexes[i]);
+	
+	if (ret && len == n) {
+		return(TRUE);
+	}		
+#else
+	ibool	retry;
+	ssize_t	ret;
+
+	os_bytes_read_since_printout += n;
+
+try_again:
+	ret = os_file_pread(file, buf, n, offset, offset_high);
+
+	if ((ulint)ret == n) {
+
+		return(TRUE);
+	}
+
+	fprintf(stderr,
+"InnoDB: Error: tried to read %lu bytes at offset %lu %lu.\n"
+"InnoDB: Was only able to read %ld.\n", (ulong)n, (ulong)offset_high,
+					(ulong)offset, (long)ret);
+#endif	
+#ifdef __WIN__
+error_handling:
+#endif
+	retry = os_file_handle_error(NULL, "read"); 
+
+	if (retry) {
+		goto try_again;
+	}
+       
+	fprintf(stderr,
+"InnoDB: Fatal error: cannot read from file. OS error number %lu.\n",
+#ifdef __WIN__
+		(ulong) GetLastError()
+#else
+		(ulong) errno
+#endif
+		);
+	fflush(stderr);
+
+	ut_error;
+
+	return(FALSE);
+}
+
+/***********************************************************************
+Requests a synchronous positioned read operation. This function does not do
+any error handling. In case of error it returns FALSE. */
+
+ibool
+os_file_read_no_error_handling(
+/*===========================*/
+				/* out: TRUE if request was
+				successful, FALSE if fail */
+	os_file_t	file,	/* in: handle to a file */
+	void*		buf,	/* in: buffer where to read */
+	ulint		offset,	/* in: least significant 32 bits of file
+				offset where to read */
+	ulint		offset_high, /* in: most significant 32 bits of
+				offset */
+	ulint		n)	/* in: number of bytes to read */	
+{
+#ifdef __WIN__
+	BOOL		ret;
+	DWORD		len;
+	DWORD		ret2;
+	DWORD		low;
+	DWORD		high;
+	ibool		retry;
+	ulint		i;
+	
+	ut_a((offset & 0xFFFFFFFFUL) == offset);
 
 	os_n_file_reads++;
 	os_bytes_read_since_printout += n;
@@ -1323,24 +2186,12 @@ try_again:
 #ifdef __WIN__
 error_handling:
 #endif
-	retry = os_file_handle_error(file, NULL, "read"); 
+	retry = os_file_handle_error_no_exit(NULL, "read"); 
 
 	if (retry) {
 		goto try_again;
 	}
        
-	fprintf(stderr,
-"InnoDB: Fatal error: cannot read from file. OS error number %lu.\n",
-#ifdef __WIN__
-		(ulint)GetLastError()
-#else
-		(ulint)errno
-#endif
-		);
-	fflush(stderr);
-
-	ut_error;
-
 	return(FALSE);
 }
 
@@ -1352,10 +2203,10 @@ os_file_write(
 /*==========*/
 				/* out: TRUE if request was
 				successful, FALSE if fail */
-	char*		name,	/* in: name of the file or path as a
+	const char*	name,	/* in: name of the file or path as a
 				null-terminated string */
 	os_file_t	file,	/* in: handle to a file */
-	void*		buf,	/* in: buffer from which to write */
+	const void*	buf,	/* in: buffer from which to write */
 	ulint		offset,	/* in: least significant 32 bits of file
 				offset where to write */
 	ulint		offset_high, /* in: most significant 32 bits of
@@ -1399,10 +2250,11 @@ retry:
 		fprintf(stderr,
 "  InnoDB: Error: File pointer positioning to file %s failed at\n"
 "InnoDB: offset %lu %lu. Operating system error number %lu.\n"
-"InnoDB: Look from section 13.2 at http://www.innodb.com/ibman.php\n"
-"InnoDB: what the error number means.\n",
-			name, offset_high, offset,
-			(ulint)GetLastError());
+"InnoDB: Some operating system error numbers are described at\n"
+"InnoDB: "
+"http://dev.mysql.com/doc/mysql/en/Operating_System_error_codes.html\n",
+			name, (ulong) offset_high, (ulong) offset,
+			(ulong) GetLastError());
 
 		return(FALSE);
 	} 
@@ -1448,17 +2300,18 @@ retry:
 "InnoDB: Operating system error number %lu.\n"
 "InnoDB: Check that your OS and file system support files of this size.\n"
 "InnoDB: Check also that the disk is not full or a disk quota exceeded.\n",
-			name, offset_high, offset, n, (ulint)len,
-			err);
+			name, (ulong) offset_high, (ulong) offset,
+			(ulong) n, (ulong) len, (ulong) err);
 
 		if (strerror((int)err) != NULL) {
 			fprintf(stderr,
-"InnoDB: Error number %lu means '%s'.\n", err, strerror((int)err));
+"InnoDB: Error number %lu means '%s'.\n", (ulong) err, strerror((int)err));
 		}
 
 		fprintf(stderr,
-"InnoDB: See also section 13.2 at http://www.innodb.com/ibman.php\n"
-"InnoDB: about operating system error numbers.\n");
+"InnoDB: Some operating system error numbers are described at\n"
+"InnoDB: "
+"http://dev.mysql.com/doc/mysql/en/Operating_System_error_codes.html\n");
 
 		os_has_said_disk_full = TRUE;
 	}
@@ -1492,14 +2345,268 @@ retry:
 		}
 
 		fprintf(stderr,
-"InnoDB: See also section 13.2 at http://www.innodb.com/ibman.php\n"
-"InnoDB: about operating system error numbers.\n");
+"InnoDB: Some operating system error numbers are described at\n"
+"InnoDB: "
+"http://dev.mysql.com/doc/mysql/en/Operating_System_error_codes.html\n");
 
 		os_has_said_disk_full = TRUE;
 	}
 
 	return(FALSE);	
 #endif
+}
+
+/***********************************************************************
+Check the existence and type of the given file. */
+
+ibool
+os_file_status(
+/*===========*/
+				/* out: TRUE if call succeeded */
+	const char*	path,	/* in:  pathname of the file */
+	ibool*		exists,	/* out: TRUE if file exists */
+	os_file_type_t* type)	/* out: type of the file (if it exists) */
+{
+#ifdef __WIN__
+	int		ret;
+	struct _stat	statinfo;
+	
+	ret = _stat(path, &statinfo);
+	if (ret && (errno == ENOENT || errno == ENOTDIR)) {
+		/* file does not exist */
+		*exists = FALSE;
+		return(TRUE);
+	} else if (ret) {
+		/* file exists, but stat call failed */
+		
+		os_file_handle_error_no_exit(path, "stat");
+		
+		return(FALSE);
+	}
+	    
+	if (_S_IFDIR & statinfo.st_mode) {
+		*type = OS_FILE_TYPE_DIR;
+	} else if (_S_IFREG & statinfo.st_mode) {
+	        *type = OS_FILE_TYPE_FILE;
+	} else {
+	        *type = OS_FILE_TYPE_UNKNOWN;
+	}
+
+	*exists = TRUE;
+	
+	return(TRUE);
+#else
+	int		ret;
+	struct stat	statinfo;
+	
+	ret = stat(path, &statinfo);
+	if (ret && (errno == ENOENT || errno == ENOTDIR)) {
+		/* file does not exist */
+		*exists = FALSE;
+		return(TRUE);
+	} else if (ret) {
+		/* file exists, but stat call failed */
+		
+		os_file_handle_error_no_exit(path, "stat");
+		
+		return(FALSE);
+	}
+	    
+	if (S_ISDIR(statinfo.st_mode)) {
+		*type = OS_FILE_TYPE_DIR;
+	} else if (S_ISLNK(statinfo.st_mode)) {
+	        *type = OS_FILE_TYPE_LINK;
+	} else if (S_ISREG(statinfo.st_mode)) {
+	        *type = OS_FILE_TYPE_FILE;
+	} else {
+	        *type = OS_FILE_TYPE_UNKNOWN;
+	}
+
+	*exists = TRUE;
+	
+	return(TRUE);
+#endif
+}
+
+/***********************************************************************
+This function returns information about the specified file */
+
+ibool
+os_file_get_status(
+/*===========*/
+				/* out: TRUE if stat information found */
+	const char*	path,	/* in:  pathname of the file */
+	os_file_stat_t* stat_info) /* information of a file in a directory */
+{
+#ifdef __WIN__
+	int		ret;
+	struct _stat	statinfo;
+	
+	ret = _stat(path, &statinfo);
+	if (ret && (errno == ENOENT || errno == ENOTDIR)) {
+		/* file does not exist */
+
+		return(FALSE);
+	} else if (ret) {
+		/* file exists, but stat call failed */
+		
+		os_file_handle_error_no_exit(path, "stat");
+		
+		return(FALSE);
+	}
+	if (_S_IFDIR & statinfo.st_mode) {
+		stat_info->type = OS_FILE_TYPE_DIR;
+	} else if (_S_IFREG & statinfo.st_mode) {
+	        stat_info->type = OS_FILE_TYPE_FILE;
+	} else {
+	        stat_info->type = OS_FILE_TYPE_UNKNOWN;
+	}
+
+	stat_info->ctime = statinfo.st_ctime;
+	stat_info->atime = statinfo.st_atime;
+	stat_info->mtime = statinfo.st_mtime;
+	stat_info->size  = statinfo.st_size;
+	
+	return(TRUE);
+#else
+	int		ret;
+	struct stat	statinfo;
+	
+	ret = stat(path, &statinfo);
+
+	if (ret && (errno == ENOENT || errno == ENOTDIR)) {
+		/* file does not exist */
+
+		return(FALSE);
+	} else if (ret) {
+		/* file exists, but stat call failed */
+		
+		os_file_handle_error_no_exit(path, "stat");
+		
+		return(FALSE);
+	}
+	    
+	if (S_ISDIR(statinfo.st_mode)) {
+		stat_info->type = OS_FILE_TYPE_DIR;
+	} else if (S_ISLNK(statinfo.st_mode)) {
+	        stat_info->type = OS_FILE_TYPE_LINK;
+	} else if (S_ISREG(statinfo.st_mode)) {
+	        stat_info->type = OS_FILE_TYPE_FILE;
+	} else {
+	        stat_info->type = OS_FILE_TYPE_UNKNOWN;
+	}
+
+	stat_info->ctime = statinfo.st_ctime;
+	stat_info->atime = statinfo.st_atime;
+	stat_info->mtime = statinfo.st_mtime;
+	stat_info->size  = statinfo.st_size;
+	
+	return(TRUE);
+#endif
+}
+
+/* path name separator character */
+#ifdef __WIN__
+#  define OS_FILE_PATH_SEPARATOR	'\\'
+#else
+#  define OS_FILE_PATH_SEPARATOR	'/'
+#endif
+
+/********************************************************************
+The function os_file_dirname returns a directory component of a
+null-terminated pathname string.  In the usual case, dirname returns
+the string up to, but not including, the final '/', and basename
+is the component following the final '/'.  Trailing '/' charac­
+ters are not counted as part of the pathname.
+
+If path does not contain a slash, dirname returns the string ".".
+
+Concatenating the string returned by dirname, a "/", and the basename
+yields a complete pathname.
+
+The return value is  a copy of the directory component of the pathname.
+The copy is allocated from heap. It is the caller responsibility
+to free it after it is no longer needed.	
+
+The following list of examples (taken from SUSv2) shows the strings
+returned by dirname and basename for different paths:
+
+       path           dirname        basename
+       "/usr/lib"     "/usr"         "lib"
+       "/usr/"        "/"            "usr"
+       "usr"          "."            "usr"
+       "/"            "/"            "/"
+       "."            "."            "."
+       ".."           "."            ".."
+*/
+
+char*
+os_file_dirname(
+/*============*/
+				/* out, own: directory component of the
+				pathname */
+	const char*	path)	/* in: pathname */
+{
+	/* Find the offset of the last slash */
+	const char* last_slash = strrchr(path, OS_FILE_PATH_SEPARATOR);
+	if (!last_slash) {
+		/* No slash in the path, return "." */
+
+		return(mem_strdup("."));
+	}
+
+	/* Ok, there is a slash */
+
+	if (last_slash == path) {
+		/* last slash is the first char of the path */
+
+		return(mem_strdup("/"));
+	}
+
+	/* Non-trivial directory component */
+
+	return(mem_strdupl(path, last_slash - path));
+}
+	
+/********************************************************************
+Creates all missing subdirectories along the given path. */
+	
+ibool
+os_file_create_subdirs_if_needed(
+/*=============================*/
+				/* out: TRUE if call succeeded
+				   FALSE otherwise */
+	const char*	path)	/* in: path name */
+{
+	char*		subdir;
+	ibool 		success, subdir_exists;
+	os_file_type_t	type;
+
+	subdir = os_file_dirname(path);
+	if (strlen(subdir) == 1
+	    && (*subdir == OS_FILE_PATH_SEPARATOR || *subdir == '.')) {
+		/* subdir is root or cwd, nothing to do */
+		mem_free(subdir);
+
+		return(TRUE);
+	}
+
+	/* Test if subdir exists */
+	success = os_file_status(subdir, &subdir_exists, &type);
+	if (success && !subdir_exists) {
+		/* subdir does not exist, create it */
+		success = os_file_create_subdirs_if_needed(subdir);
+		if (!success) {
+			mem_free(subdir);
+
+			return(FALSE);
+		}
+		success = os_file_create_directory(subdir, FALSE);
+	}
+
+	mem_free(subdir);
+
+	return(success);
 }
 
 /********************************************************************
@@ -1869,7 +2976,7 @@ os_aio_array_reserve_slot(
 	void*		message2,/* in: message to be passed along with
 				the aio operation */
 	os_file_t	file,	/* in: file handle */
-	char*		name,	/* in: name of the file or path as a
+	const char*	name,	/* in: name of the file or path as a
 				null-terminated string */
 	void*		buf,	/* in: buffer where to read or from which
 				to write */
@@ -2116,7 +3223,7 @@ os_aio(
 				because i/os are not actually handled until
 				all have been posted: use with great
 				caution! */
-	char*		name,	/* in: name of the file or path as a
+	const char*	name,	/* in: name of the file or path as a
 				null-terminated string */
 	os_file_t	file,	/* in: handle to a file */
 	void*		buf,	/* in: buffer where to read or from which
@@ -2278,7 +3385,7 @@ try_again:
 
 	os_aio_array_free_slot(array, slot);
 
-	retry = os_file_handle_error(file, name,
+	retry = os_file_handle_error(name,
 			type == OS_FILE_READ ? "aio read" : "aio write");
 	if (retry) {
 
@@ -2378,7 +3485,7 @@ os_aio_windows_handle(
 		         ut_a(TRUE == os_file_flush(slot->file));
 		}
 	} else {
-		os_file_handle_error(slot->file, slot->name, "Windows aio");
+		os_file_handle_error(slot->name, "Windows aio");
 		
 		ret_val = FALSE;
 	}		  
@@ -2503,7 +3610,7 @@ os_aio_simulated_handle(
 	ulint		biggest_age;
 	ulint		age;
 	byte*		combined_buf;
-	byte*		combined_buf2= 0;	/* Remove warning */
+	byte*		combined_buf2;
 	ibool		ret;
 	ulint		n;
 	ulint		i;
@@ -2515,6 +3622,8 @@ restart:
 	/* NOTE! We only access constant fields in os_aio_array. Therefore
 	we do not have to acquire the protecting mutex yet */
 
+	srv_set_io_thread_op_info(global_segment,
+					"looking for i/o requests (a)");
 	ut_ad(os_aio_validate());
 	ut_ad(segment < array->n_segments);
 
@@ -2533,6 +3642,9 @@ restart:
 	
 	os_mutex_enter(array->mutex);
 
+	srv_set_io_thread_op_info(global_segment,
+					"looking for i/o requests (b)");
+
 	/* Check if there is a slot for which the i/o has already been
 	done */
 	
@@ -2543,7 +3655,7 @@ restart:
 
 			if (os_aio_print_debug) {
 				fprintf(stderr,
-"InnoDB: i/o for slot %lu already done, returning\n", i);
+"InnoDB: i/o for slot %lu already done, returning\n", (ulong) i);
 			}
 
 			ret = TRUE;
@@ -2645,6 +3757,8 @@ consecutive_loop:
 		}
 	}
 
+	srv_set_io_thread_op_info(global_segment, "consecutive i/o requests");
+
 	/* We have now collected n_consecutive i/o requests in the array;
 	allocate a single buffer which can hold all data, and perform the
 	i/o */
@@ -2659,6 +3773,7 @@ consecutive_loop:
 	if (n_consecutive == 1) {
 		/* We can use the buffer of the i/o request */
 		combined_buf = slot->buf;
+		combined_buf2 = NULL;
 	} else {
 		combined_buf2 = ut_malloc(total_len + UNIV_PAGE_SIZE);
 
@@ -2690,8 +3805,8 @@ consecutive_loop:
 	if (os_aio_print_debug) {
 		fprintf(stderr,
 "InnoDB: doing i/o of type %lu at offset %lu %lu, length %lu\n",
-			slot->type, slot->offset_high, slot->offset,
-			total_len);
+			(ulong) slot->type, (ulong) slot->offset_high,
+			(ulong) slot->offset, (ulong) total_len);
 	}
 
 	/* Do the i/o with ordinary, synchronous i/o functions: */
@@ -2701,8 +3816,9 @@ consecutive_loop:
 			    || (slot->offset % UNIV_PAGE_SIZE != 0)) {
 				fprintf(stderr,
 "InnoDB: Error: trying a displaced write to %s %lu %lu, len %lu\n",
-					slot->name, slot->offset_high,
-					slot->offset, total_len);
+					slot->name, (ulong) slot->offset_high,
+					(ulong) slot->offset,
+					(ulong) total_len);
 				ut_error;
 			}
 			  
@@ -2720,6 +3836,9 @@ consecutive_loop:
 				    	ut_print_timestamp(stderr);
 				    	fprintf(stderr,
 "  InnoDB: ERROR: The page to be written seems corrupt!\n");
+				    	fprintf(stderr,
+"InnoDB: Writing a block of %lu bytes, currently writing at offset %lu\n",
+					(ulong)total_len, (ulong)len2);
 					buf_page_print(combined_buf + len2);
 				    	fprintf(stderr,
 "InnoDB: ERROR: The page to be written seems corrupt!\n");
@@ -2753,7 +3872,7 @@ consecutive_loop:
 		}
 	}
 
-	if (n_consecutive > 1) {
+	if (combined_buf2) {
 		ut_free(combined_buf2);
 	}
 
@@ -2785,6 +3904,8 @@ slot_io_done:
 	return(ret);
 
 wait_for_io:
+	srv_set_io_thread_op_info(global_segment, "resetting wait event");
+
 	/* We wait here until there again can be i/os in the segment
 	of this thread */
 	
@@ -2800,7 +3921,7 @@ recommended_sleep:
 	if (os_aio_print_debug) {
 		fprintf(stderr,
 "InnoDB: i/o handler thread for i/o segment %lu wakes up\n",
-			global_segment);
+			(ulong) global_segment);
 	}
 	
 	goto restart;
@@ -2876,9 +3997,17 @@ os_aio_print(
 	ulint		i;
 
 	for (i = 0; i < srv_n_file_io_threads; i++) {
-		fprintf(file, "I/O thread %lu state: %s (%s)\n", i,
+		fprintf(file, "I/O thread %lu state: %s (%s)", (ulong) i,
 					srv_io_thread_op_info[i],
 					srv_io_thread_function[i]);
+
+#ifndef __WIN__
+        	if (os_aio_segment_wait_events[i]->is_set) {
+			fprintf(file, " ev set");
+		}
+#endif
+			
+		fprintf(file, "\n");
 	}
 
 	fputs("Pending normal aio reads:", file);
@@ -2907,7 +4036,7 @@ loop:
 
 	ut_a(array->n_reserved == n_reserved);
 
-	fprintf(file, " %lu", n_reserved);
+	fprintf(file, " %lu", (ulong) n_reserved);
 	
 	os_mutex_exit(array->mutex);
 
@@ -2947,13 +4076,16 @@ loop:
 	fprintf(file,
 		"Pending flushes (fsync) log: %lu; buffer pool: %lu\n"
 		"%lu OS file reads, %lu OS file writes, %lu OS fsyncs\n",
-		fil_n_pending_log_flushes, fil_n_pending_tablespace_flushes,
-		os_n_file_reads, os_n_file_writes, os_n_fsyncs);
+		(ulong) fil_n_pending_log_flushes,
+		(ulong) fil_n_pending_tablespace_flushes,
+		(ulong) os_n_file_reads, (ulong) os_n_file_writes,
+		(ulong) os_n_fsyncs);
 
 	if (os_file_n_pending_preads != 0 || os_file_n_pending_pwrites != 0) {
 		fprintf(file,
 		    "%lu pending preads, %lu pending pwrites\n",
-		    os_file_n_pending_preads, os_file_n_pending_pwrites);
+		    (ulong) os_file_n_pending_preads,
+		    (ulong) os_file_n_pending_pwrites);
 	}
 
 	if (os_n_file_reads == os_n_file_reads_old) {
@@ -2967,7 +4099,7 @@ loop:
 "%.2f reads/s, %lu avg bytes/read, %.2f writes/s, %.2f fsyncs/s\n",
 		(os_n_file_reads - os_n_file_reads_old)
 		/ time_elapsed,
-		(ulint)avg_bytes_read,
+		(ulong)avg_bytes_read,
 		(os_n_file_writes - os_n_file_writes_old)
 		/ time_elapsed,
 		(os_n_fsyncs - os_n_fsyncs_old)

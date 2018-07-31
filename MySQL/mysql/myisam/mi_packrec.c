@@ -32,7 +32,7 @@
 		     (BU)->current_byte & ((mi_bit_type) 1 << --(BU)->bits) :\
 		     (fill_buffer(BU), (BU)->bits= BITS_SAVED-1,\
 		      (BU)->current_byte & ((mi_bit_type) 1 << (BITS_SAVED-1))))
-#define skipp_to_next_byte(BU) ((BU)->bits&=~7)
+#define skip_to_next_byte(BU) ((BU)->bits&=~7)
 #define get_bits(BU,count) (((BU)->bits >= count) ? (((BU)->current_byte >> ((BU)->bits-=count)) & mask[count]) : fill_and_get_bits(BU,count))
 
 #define decode_bytes_test_bit(bit) \
@@ -42,8 +42,9 @@
   { bits-=(bit+1); break; } \
   pos+= *pos
 
+#define OFFSET_TABLE_SIZE 512
 
-static void read_huff_table(MI_BIT_BUFF *bit_buff,MI_DECODE_TREE *decode_tree,
+static uint read_huff_table(MI_BIT_BUFF *bit_buff,MI_DECODE_TREE *decode_tree,
 			    uint16 **decode_table,byte **intervall_buff,
 			    uint16 *tmp_buff);
 static void make_quick_table(uint16 *to_table,uint16 *decode_table,
@@ -53,14 +54,14 @@ static void fill_quick_table(uint16 *table,uint bits, uint max_bits,
 			     uint value);
 static uint copy_decode_table(uint16 *to_pos,uint offset,
 			      uint16 *decode_table);
-static uint find_longest_bitstream(uint16 *table);
+static uint find_longest_bitstream(uint16 *table, uint16 *end);
 static void (*get_unpack_function(MI_COLUMNDEF *rec))(MI_COLUMNDEF *field,
 						    MI_BIT_BUFF *buff,
 						    uchar *to,
 						    uchar *end);
-static void uf_zerofill_skipp_zero(MI_COLUMNDEF *rec,MI_BIT_BUFF *bit_buff,
+static void uf_zerofill_skip_zero(MI_COLUMNDEF *rec,MI_BIT_BUFF *bit_buff,
 				   uchar *to,uchar *end);
-static void uf_skipp_zero(MI_COLUMNDEF *rec,MI_BIT_BUFF *bit_buff,
+static void uf_skip_zero(MI_COLUMNDEF *rec,MI_BIT_BUFF *bit_buff,
 			  uchar *to,uchar *end);
 static void uf_space_normal(MI_COLUMNDEF *rec,MI_BIT_BUFF *bit_buff,
 			    uchar *to,uchar *end);
@@ -146,12 +147,12 @@ my_bool _mi_read_pack_info(MI_INFO *info, pbool fix_keys)
   {
     if (!my_errno)
       my_errno=HA_ERR_END_OF_FILE;
-    DBUG_RETURN(1);
+    goto err0;
   }
   if (memcmp((byte*) header,(byte*) myisam_pack_file_magic,4))
   {
     my_errno=HA_ERR_WRONG_IN_RECORD;
-    DBUG_RETURN(1);
+    goto err0;
   }
   share->pack.header_length=	uint4korr(header+4);
   share->min_pack_length=(uint) uint4korr(header+8);
@@ -173,29 +174,22 @@ my_bool _mi_read_pack_info(MI_INFO *info, pbool fix_keys)
 	my_malloc((uint) (trees*sizeof(MI_DECODE_TREE)+
 			  intervall_length*sizeof(byte)),
 		  MYF(MY_WME))))
-    DBUG_RETURN(1);
+    goto err0;
   intervall_buff=(byte*) (share->decode_trees+trees);
 
   length=(uint) (elements*2+trees*(1 << myisam_quick_table_bits));
   if (!(share->decode_tables=(uint16*)
-	my_malloc((length+512)*sizeof(uint16)+
+	my_malloc((length+OFFSET_TABLE_SIZE)*sizeof(uint16)+
 		  (uint) (share->pack.header_length+7),
 		  MYF(MY_WME | MY_ZEROFILL))))
-  {
-    my_free((gptr) share->decode_trees,MYF(0));
-    DBUG_RETURN(1);
-  }
+    goto err1;
   tmp_buff=share->decode_tables+length;
-  disk_cache=(byte*) (tmp_buff+512);
+  disk_cache=(byte*) (tmp_buff+OFFSET_TABLE_SIZE);
 
   if (my_read(file,disk_cache,
 	      (uint) (share->pack.header_length-sizeof(header)),
 	      MYF(MY_NABP)))
-  {
-    my_free((gptr) share->decode_trees,MYF(0));
-    my_free((gptr) share->decode_tables,MYF(0));
-    DBUG_RETURN(1);
-  }
+    goto err2;
 
   huff_tree_bits=max_bit(trees ? trees-1 : 0);
   init_bit_buffer(&bit_buff, (uchar*) disk_cache,
@@ -210,11 +204,12 @@ my_bool _mi_read_pack_info(MI_INFO *info, pbool fix_keys)
 								huff_tree_bits);
     share->rec[i].unpack=get_unpack_function(share->rec+i);
   }
-  skipp_to_next_byte(&bit_buff);
+  skip_to_next_byte(&bit_buff);
   decode_table=share->decode_tables;
   for (i=0 ; i < trees ; i++)
-    read_huff_table(&bit_buff,share->decode_trees+i,&decode_table,
-		    &intervall_buff,tmp_buff);
+    if (read_huff_table(&bit_buff,share->decode_trees+i,&decode_table,
+                        &intervall_buff,tmp_buff))
+      goto err3;
   decode_table=(uint16*)
     my_realloc((gptr) share->decode_tables,
 	       (uint) ((byte*) decode_table - (byte*) share->decode_tables),
@@ -224,8 +219,7 @@ my_bool _mi_read_pack_info(MI_INFO *info, pbool fix_keys)
     share->decode_tables=decode_table;
     for (i=0 ; i < trees ; i++)
       share->decode_trees[i].table=ADD_TO_PTR(share->decode_trees[i].table,
-					      diff,
-					      uint16*);
+                                              diff, uint16*);
   }
 
 	/* Fix record-ref-length for keys */
@@ -242,19 +236,24 @@ my_bool _mi_read_pack_info(MI_INFO *info, pbool fix_keys)
   }
 
   if (bit_buff.error || bit_buff.pos < bit_buff.end)
-  {					/* info_length was wrong */
-    my_errno=HA_ERR_WRONG_IN_RECORD;
-    my_free((gptr) share->decode_trees,MYF(0));
-    my_free((gptr) share->decode_tables,MYF(0));
-    DBUG_RETURN(1);
-  }
+    goto err3;
+
   DBUG_RETURN(0);
+
+err3:
+  my_errno=HA_ERR_WRONG_IN_RECORD;
+err2:
+  my_free((gptr) share->decode_tables,MYF(0));
+err1:
+  my_free((gptr) share->decode_trees,MYF(0));
+err0:
+  DBUG_RETURN(1);
 }
 
 
 	/* Read on huff-code-table from datafile */
 
-static void read_huff_table(MI_BIT_BUFF *bit_buff, MI_DECODE_TREE *decode_tree,
+static uint read_huff_table(MI_BIT_BUFF *bit_buff, MI_DECODE_TREE *decode_tree,
 			    uint16 **decode_table, byte **intervall_buff,
 			    uint16 *tmp_buff)
 {
@@ -291,13 +290,15 @@ static void read_huff_table(MI_BIT_BUFF *bit_buff, MI_DECODE_TREE *decode_tree,
     else
       *ptr= (uint16) (IS_CHAR + (get_bits(bit_buff,char_bits) + min_chr));
   }
-  skipp_to_next_byte(bit_buff);
+  skip_to_next_byte(bit_buff);
 
   decode_tree->table= *decode_table;
   decode_tree->intervalls= *intervall_buff;
   if (! intervall_length)
   {
-    table_bits=find_longest_bitstream(tmp_buff);
+    table_bits=find_longest_bitstream(tmp_buff, tmp_buff+OFFSET_TABLE_SIZE);
+    if (table_bits == (uint) ~0)
+      return 1;
     if (table_bits > myisam_quick_table_bits)
       table_bits=myisam_quick_table_bits;
     next_free_offset= (1 << table_bits);
@@ -315,7 +316,7 @@ static void read_huff_table(MI_BIT_BUFF *bit_buff, MI_DECODE_TREE *decode_tree,
     bit_buff->pos+=intervall_length;
     bit_buff->bits=0;
   }
-  return;
+  return 0;
 }
 
 
@@ -390,15 +391,23 @@ static uint copy_decode_table(uint16 *to_pos, uint offset,
 }
 
 
-static uint find_longest_bitstream(uint16 *table)
+static uint find_longest_bitstream(uint16 *table, uint16 *end)
 {
   uint length=1,length2;
   if (!(*table & IS_CHAR))
-    length=find_longest_bitstream(table+ *table)+1;
+  {
+    uint16 *next= table + *table;
+    if (next > end || next == table)
+      return ~0;
+    length=find_longest_bitstream(next, end)+1;
+  }
   table++;
   if (!(*table & IS_CHAR))
   {
-    length2=find_longest_bitstream(table+ *table)+1;
+    uint16 *next= table + *table;
+    if (next > end || next == table)
+      return ~0;
+    length2=find_longest_bitstream(table+ *table, end)+1;
     length=max(length,length2);
   }
   return length;
@@ -468,8 +477,8 @@ static void (*get_unpack_function(MI_COLUMNDEF *rec))
   switch (rec->base_type) {
   case FIELD_SKIP_ZERO:
     if (rec->pack_type & PACK_TYPE_ZERO_FILL)
-      return &uf_zerofill_skipp_zero;
-    return &uf_skipp_zero;
+      return &uf_zerofill_skip_zero;
+    return &uf_skip_zero;
   case FIELD_NORMAL:
     if (rec->pack_type & PACK_TYPE_SPACE_FIELDS)
       return &uf_space_normal;
@@ -515,7 +524,7 @@ static void (*get_unpack_function(MI_COLUMNDEF *rec))
 
 	/* De different functions to unpack a field */
 
-static void uf_zerofill_skipp_zero(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff,
+static void uf_zerofill_skip_zero(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff,
 				   uchar *to, uchar *end)
 {
   if (get_bit(bit_buff))
@@ -528,7 +537,7 @@ static void uf_zerofill_skipp_zero(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff,
   }
 }
 
-static void uf_skipp_zero(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff, uchar *to,
+static void uf_skip_zero(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff, uchar *to,
 			  uchar *end)
 {
   if (get_bit(bit_buff))

@@ -31,6 +31,7 @@ Created 12/19/1997 Heikki Tuuri
 #include "pars0pars.h"
 #include "row0mysql.h"
 #include "read0read.h"
+#include "buf0lru.h"
 
 /* Maximum number of rows to prefetch; MySQL interface has another parameter */
 #define SEL_MAX_N_PREFETCH	16
@@ -76,6 +77,7 @@ row_sel_sec_rec_is_for_clust_rec(
         ulint           clust_len;
         ulint           n;
         ulint           i;
+	dtype_t*	cur_type;
 
 	UT_NOT_USED(clust_index);
 
@@ -91,10 +93,15 @@ row_sel_sec_rec_is_for_clust_rec(
                 sec_field = rec_get_nth_field(sec_rec, i, &sec_len);
 
 		if (ifield->prefix_len > 0
-		    && clust_len != UNIV_SQL_NULL
-		    && clust_len > ifield->prefix_len) {
+		    && clust_len != UNIV_SQL_NULL) {
 
-		       clust_len = ifield->prefix_len;
+			cur_type = dict_col_get_type(
+				dict_field_get_col(ifield));
+
+			clust_len = dtype_get_at_most_n_mbchars(
+				cur_type,
+				ifield->prefix_len,
+				clust_len, clust_field);
 		}
 
                 if (0 != cmp_data_data(dict_col_get_type(col),
@@ -631,9 +638,24 @@ row_sel_get_clust_rec(
 
 	if (!node->read_view) {
 		/* Try to place a lock on the index record */
-		
-		err = lock_clust_rec_read_check_and_lock(0, clust_rec, index,
-				node->row_lock_mode, LOCK_ORDINARY, thr);
+        
+		/* If innodb_locks_unsafe_for_binlog option is used, 
+		we lock only the record, i.e. next-key locking is
+		not used.
+		*/
+
+		if (srv_locks_unsafe_for_binlog) {
+			err = lock_clust_rec_read_check_and_lock(0, 
+					clust_rec, 
+					index, node->row_lock_mode, 
+					LOCK_REC_NOT_GAP, thr);
+		} else {
+			err = lock_clust_rec_read_check_and_lock(0, 
+					clust_rec, 
+					index, node->row_lock_mode, 
+					LOCK_ORDINARY, thr);
+		}
+
 		if (err != DB_SUCCESS) {
 
 			return(err);
@@ -709,7 +731,17 @@ sel_set_rec_lock(
 	ulint		type, 	/* in: LOCK_ORDINARY, LOCK_GAP, or LOC_REC_NOT_GAP */
 	que_thr_t*	thr)	/* in: query thread */	
 {
+	trx_t*	trx;
 	ulint	err;
+
+	trx = thr_get_trx(thr);	
+
+	if (UT_LIST_GET_LEN(trx->trx_locks) > 10000) {
+		if (buf_LRU_buf_pool_running_out()) {
+			
+			return(DB_LOCK_TABLE_FULL);
+		}
+	}
 
 	if (index->type & DICT_CLUSTERED) {
 		err = lock_clust_rec_read_check_and_lock(0, rec, index, mode,
@@ -1184,8 +1216,24 @@ rec_loop:
 		search result set, resulting in the phantom problem. */
 		
 		if (!consistent_read) {
-			err = sel_set_rec_lock(page_rec_get_next(rec), index,
-				node->row_lock_mode, LOCK_ORDINARY, thr);
+
+			/* If innodb_locks_unsafe_for_binlog option is used,
+			we lock only the record, i.e. next-key locking is
+			not used.
+			*/
+
+			if (srv_locks_unsafe_for_binlog) {
+				err = sel_set_rec_lock(page_rec_get_next(rec), 
+							index,
+							node->row_lock_mode,
+							LOCK_REC_NOT_GAP, thr);
+			} else {
+				err = sel_set_rec_lock(page_rec_get_next(rec), 
+							index,
+							node->row_lock_mode, 
+							LOCK_ORDINARY, thr);
+			}
+
 			if (err != DB_SUCCESS) {
 				/* Note that in this case we will store in pcur
 				the PREDECESSOR of the record we are waiting
@@ -1211,8 +1259,19 @@ rec_loop:
 	if (!consistent_read) {
 		/* Try to place a lock on the index record */	
 
-		err = sel_set_rec_lock(rec, index, node->row_lock_mode,
+		/* If innodb_locks_unsafe_for_binlog option is used,
+		we lock only the record, i.e. next-key locking is
+		not used.
+		*/
+
+		if (srv_locks_unsafe_for_binlog) {
+			err = sel_set_rec_lock(rec, index, node->row_lock_mode,
+						LOCK_REC_NOT_GAP, thr);
+		} else {
+			err = sel_set_rec_lock(rec, index, node->row_lock_mode,
 						LOCK_ORDINARY, thr);
+		}
+
 		if (err != DB_SUCCESS) {
 
 			goto lock_wait_or_error;
@@ -1756,7 +1815,7 @@ row_sel_step(
 		return(NULL);
 	} else {
 		/* SQL error detected */
-		fprintf(stderr, "SQL error %lu\n", err);
+		fprintf(stderr, "SQL error %lu\n", (ulong) err);
 
 		que_thr_handle_error(thr, DB_ERROR, NULL, 0);
 
@@ -1806,7 +1865,7 @@ fetch_step(
 	
 	if (sel_node->state == SEL_NODE_CLOSED) {
 		/* SQL error detected */
-		fprintf(stderr, "SQL error %lu\n", (ulint)DB_ERROR);
+		fprintf(stderr, "SQL error %lu\n", (ulong)DB_ERROR);
 
 		que_thr_handle_error(thr, DB_ERROR, NULL, 0);
 
@@ -1900,9 +1959,11 @@ row_sel_convert_mysql_key_to_innobase(
 	ulint		buf_len,	/* in: buffer length */
 	dict_index_t*	index,		/* in: index of the key value */
 	byte*		key_ptr,	/* in: MySQL key value */
-	ulint		key_len)	/* in: MySQL key value length */
+	ulint		key_len,	/* in: MySQL key value length */
+	trx_t*		trx)		/* in: transaction */
 {
 	byte*		original_buf	= buf;
+	byte*		original_key_ptr = key_ptr;
 	dict_field_t*	field;
 	dfield_t*	dfield;
 	ulint		data_offset;
@@ -1974,19 +2035,15 @@ row_sel_convert_mysql_key_to_innobase(
 
 			/* MySQL stores the actual data length to the first 2
 			bytes after the optional SQL NULL marker byte. The
-			storage format is little-endian. */
+			storage format is little-endian, that is, the most
+			significant byte at a higher address. In UTF-8, MySQL
+			seems to reserve field->prefix_len bytes for
+			storing this field in the key value buffer, even
+			though the actual value only takes data_len bytes
+			from the start. */
 
-			/* There are no key fields > 255 bytes currently in
-			MySQL */
-			if (key_ptr[data_offset + 1] != 0) {
-				ut_print_timestamp(stderr);
-				fputs(
-"  InnoDB: Error: BLOB or TEXT prefix > 255 bytes in query to table ", stderr);
-				ut_print_name(stderr, index->table_name);
-				putc('\n', stderr);
-			}
-
-			data_len = key_ptr[data_offset];
+			data_len = key_ptr[data_offset]
+				   + 256 * key_ptr[data_offset + 1];
 			data_field_len = data_offset + 2 + field->prefix_len;
 			data_offset += 2;
 			
@@ -1994,6 +2051,17 @@ row_sel_convert_mysql_key_to_innobase(
 					  store the column value like it would
 					  be a fixed char field */
 		} else if (field->prefix_len > 0) {
+			/* Looks like MySQL pads unused end bytes in the
+			prefix with space. Therefore, also in UTF-8, it is ok
+			to compare with a prefix containing full prefix_len
+			bytes, and no need to take at most prefix_len / 3
+			UTF-8 characters from the start.
+			If the prefix is used as the upper end of a LIKE
+			'abc%' query, then MySQL pads the end with chars
+			0xff. TODO: in that case does it any harm to compare
+			with the full prefix_len bytes. How do characters
+			0xff in UTF-8 behave? */
+
 		        data_len = field->prefix_len;
 			data_field_len = data_offset + data_len;
 		} else {
@@ -2026,8 +2094,18 @@ row_sel_convert_mysql_key_to_innobase(
 
 		        ut_print_timestamp(stderr);
 			
-			fprintf(stderr,
-  "  InnoDB: Warning: using a partial-field key prefix in search\n");
+			fputs(
+  "  InnoDB: Warning: using a partial-field key prefix in search.\n"
+  "InnoDB: ", stderr);
+			dict_index_name_print(stderr, trx, index);
+			fprintf(stderr, ". Last data field length %lu bytes,\n"
+  "InnoDB: key ptr now exceeds key end by %lu bytes.\n"
+  "InnoDB: Key value in the MySQL format:\n",
+					  (ulong) data_field_len,
+					  (ulong) (key_ptr - key_end));
+			fflush(stderr);
+			ut_print_buf(stderr, original_key_ptr, key_len);
+			fprintf(stderr, "\n");
 
 			if (!is_null) {
 			        dfield->len -= (ulint)(key_ptr - key_end);
@@ -2064,11 +2142,11 @@ row_sel_store_row_id_to_prebuilt(
 
 	if (len != DATA_ROW_ID_LEN) {
 	        fprintf(stderr,
-"InnoDB: Error: Row id field is wrong length %lu in ", len);
-		dict_index_name_print(stderr, index);
+"InnoDB: Error: Row id field is wrong length %lu in ", (ulong) len);
+		dict_index_name_print(stderr, prebuilt->trx, index);
 		fprintf(stderr, "\n"
 "InnoDB: Field number %lu, record:\n",
-			dict_index_get_sys_col_pos(index, DATA_ROW_ID));
+			(ulong) dict_index_get_sys_col_pos(index, DATA_ROW_ID));
 		rec_print(stderr, index_rec);
 		putc('\n', stderr);
 		ut_error;
@@ -2126,9 +2204,6 @@ row_sel_field_store_in_mysql_format(
 		dest = row_mysql_store_var_len(dest, len);
 		ut_memcpy(dest, data, len);
 
-		/* Pad with trailing spaces */
-		memset(dest + len, ' ', col_len - len); 
-
 		/* ut_ad(col_len >= len + 2); No real var implemented in
 		MySQL yet! */
 		
@@ -2149,9 +2224,13 @@ Note that the template in prebuilt may advise us to copy only a few
 columns to mysql_rec, other columns are left blank. All columns may not
 be needed in the query. */
 static
-void
+ibool
 row_sel_store_mysql_rec(
 /*====================*/
+					/* out: TRUE if success, FALSE if
+					could not allocate memory for a BLOB
+					(though we may also assert in that
+					case) */
 	byte*		mysql_rec,	/* out: row in the MySQL format */
 	row_prebuilt_t*	prebuilt,	/* in: prebuilt struct */
 	rec_t*		rec)		/* in: Innobase record in the index
@@ -2163,6 +2242,7 @@ row_sel_store_mysql_rec(
 	byte*			data;
 	ulint			len;
 	byte*			blob_buf;
+	int			pad_char;
 	ulint			i;
 	
 	ut_ad(prebuilt->mysql_template);
@@ -2172,9 +2252,10 @@ row_sel_store_mysql_rec(
 		prebuilt->blob_heap = NULL;
 	}
 
-	/* Mark all columns as not SQL NULL */
+	/* MySQL assumes that all columns have the SQL NULL bit set unless it
+	is a nullable column with a non-NULL value */
 
-	memset(mysql_rec, '\0', prebuilt->null_bitmap_len);
+	memset(mysql_rec, 0xFF, prebuilt->null_bitmap_len);
 
 	for (i = 0; i < prebuilt->n_template; i++) {
 
@@ -2191,6 +2272,10 @@ row_sel_store_mysql_rec(
 
 			extern_field_heap = mem_heap_create(UNIV_PAGE_SIZE);
 
+			/* NOTE: if we are retrieving a big BLOB, we may
+			already run out of memory in the next call, which
+			causes an assert */
+
 			data = btr_rec_copy_externally_stored_field(rec,
 					templ->rec_field_no, &len,
 					extern_field_heap);
@@ -2202,9 +2287,33 @@ row_sel_store_mysql_rec(
 			if (templ->type == DATA_BLOB) {
 
 				ut_a(prebuilt->templ_contains_blob);
-				
-				/* Copy the BLOB data to the BLOB
-				heap of prebuilt */
+
+				/* A heuristic test that we can allocate the
+				memory for a big BLOB. We have a safety margin
+				of 1000000 bytes. Since the test takes some
+				CPU time, we do not use it for small BLOBs. */
+
+				if (len > 2000000
+				    && !ut_test_malloc(len + 1000000)) {
+
+					ut_print_timestamp(stderr);
+					fprintf(stderr,
+"  InnoDB: Warning: could not allocate %lu + 1000000 bytes to retrieve\n"
+"InnoDB: a big column. Table name ", (ulong) len);
+					ut_print_name(stderr,
+						prebuilt->trx,
+						prebuilt->table->name);
+					putc('\n', stderr);
+
+					if (extern_field_heap) {
+						mem_heap_free(
+							extern_field_heap);
+					}
+					return(FALSE);
+				}
+
+				/* Copy the BLOB data to the BLOB heap of
+				prebuilt */
 
 				if (prebuilt->blob_heap == NULL) {
 					prebuilt->blob_heap =
@@ -2223,32 +2332,104 @@ row_sel_store_mysql_rec(
 				templ->mysql_col_len, data, len,
 				templ->type, templ->is_unsigned);
 
+			if (templ->type == DATA_VARCHAR
+					|| templ->type == DATA_VARMYSQL
+					|| templ->type == DATA_BINARY) {
+				/* Pad with trailing spaces */
+				data = mysql_rec + templ->mysql_col_offset;
+
+				/* Handle UCS2 strings differently.  As no new
+				collations will be introduced in 4.1, we
+				hardcode the charset-collation codes here.
+				5.0 will use a different approach. */
+				if (templ->charset == 35
+						|| templ->charset == 90
+						|| (templ->charset >= 128
+						&& templ->charset <= 144)) {
+					/* space=0x0020 */
+					ulint	col_len = templ->mysql_col_len;
+
+					ut_a(!(col_len & 1));
+					if (len & 1) {
+						/* A 0x20 has been stripped
+						from the column.
+						Pad it back. */
+						goto pad_0x20;
+					}
+					/* Pad the rest of the string
+					with 0x0020 */
+					while (len < col_len) {
+						data[len++] = 0x00;
+					pad_0x20:
+						data[len++] = 0x20;
+					}
+				} else {
+					/* space=0x20 */
+					memset(data + len, 0x20,
+						templ->mysql_col_len - len);
+				}
+			}
+
+			/* Cleanup */
 			if (extern_field_heap) {
  				mem_heap_free(extern_field_heap);
 				extern_field_heap = NULL;
  			}
+			
+			if (templ->mysql_null_bit_mask) {
+				/* It is a nullable column with a non-NULL
+				value */
+				mysql_rec[templ->mysql_null_byte_offset] &=
+					~(byte) (templ->mysql_null_bit_mask);
+			}
 		} else {
 		        /* MySQL seems to assume the field for an SQL NULL
-		        value is set to zero. Not taking this into account
-		        caused seg faults with NULL BLOB fields, and
+		        value is set to zero or space. Not taking this into
+			account caused seg faults with NULL BLOB fields, and
 		        bug number 154 in the MySQL bug database: GROUP BY
 		        and DISTINCT could treat NULL values inequal. */
 
-		        memset(mysql_rec + templ->mysql_col_offset, '\0',
-			       templ->mysql_col_len);
-
-			if (!templ->mysql_null_bit_mask) {
-				fputs(
-"InnoDB: Error: trying to return an SQL NULL field in a non-null\n"
-"innoDB: column! Table name ", stderr);
-				ut_print_name(stderr, prebuilt->table->name);
-				putc('\n', stderr);
+			if (templ->type == DATA_VARCHAR
+			    || templ->type == DATA_CHAR
+			    || templ->type == DATA_BINARY
+			    || templ->type == DATA_FIXBINARY
+			    || templ->type == DATA_MYSQL
+			    || templ->type == DATA_VARMYSQL) {
+			        /* MySQL pads all non-BLOB and non-TEXT
+				string types with space ' ' */
+			    
+				pad_char = ' ';
 			} else {
-				mysql_rec[templ->mysql_null_byte_offset] |=
-					(byte) (templ->mysql_null_bit_mask);
+				pad_char = '\0';
+			}
+
+			/* Handle UCS2 strings differently.  As no new
+			collations will be introduced in 4.1,
+			we hardcode the charset-collation codes here.
+			5.0 will use a different approach. */
+			if (templ->charset == 35
+					|| templ->charset == 90
+					|| (templ->charset >= 128
+					&& templ->charset <= 144)) {
+				/* There are two bytes per char, so the length
+				has to be an even number. */
+				ut_a(!(templ->mysql_col_len & 1));
+				data = mysql_rec + templ->mysql_col_offset;
+				len = templ->mysql_col_len;
+				/* Pad with 0x0020. */
+				while (len >= 2) {
+					*data++ = 0x00;
+					*data++ = 0x20;
+					len -= 2;
+				}
+			} else {
+				memset(mysql_rec + templ->mysql_col_offset,
+					pad_char, templ->mysql_col_len);
 			}
 		}
 	} 
+
+	return(TRUE);
 }
 
 /*************************************************************************
@@ -2313,8 +2494,9 @@ row_sel_get_clust_rec_for_mysql(
 	trx_t*		trx;
 
 	*out_rec = NULL;
+	trx = thr_get_trx(thr);
 	
-	row_build_row_ref_in_tuple(prebuilt->clust_ref, sec_index, rec);
+	row_build_row_ref_in_tuple(prebuilt->clust_ref, sec_index, rec, trx);
 
 	clust_index = dict_table_get_first_index(sec_index->table);
 	
@@ -2347,7 +2529,7 @@ row_sel_get_clust_rec_for_mysql(
 			fputs("  InnoDB: error clustered record"
 				" for sec rec not found\n"
 				"InnoDB: ", stderr);
-			dict_index_name_print(stderr, sec_index);
+			dict_index_name_print(stderr, trx, sec_index);
 			fputs("\n"
 				"InnoDB: sec index record ", stderr);
 			rec_print(stderr, rec);
@@ -2355,7 +2537,7 @@ row_sel_get_clust_rec_for_mysql(
 				"InnoDB: clust index record ", stderr);
 			rec_print(stderr, clust_rec);
 			putc('\n', stderr);
-			trx_print(stderr, thr_get_trx(thr));
+			trx_print(stderr, trx);
 
 			fputs("\n"
 "InnoDB: Submit a detailed bug report to http://bugs.mysql.com\n", stderr);
@@ -2382,8 +2564,6 @@ row_sel_get_clust_rec_for_mysql(
 	} else {
 		/* This is a non-locking consistent read: if necessary, fetch
 		a previous version of the record */
-
-		trx = thr_get_trx(thr);
 
 		old_vers = NULL;
 
@@ -2567,9 +2747,9 @@ row_sel_push_cache_row_for_mysql(
 
 	ut_ad(prebuilt->fetch_cache_first == 0);
 
-	row_sel_store_mysql_rec(
+	ut_a(row_sel_store_mysql_rec(
 			prebuilt->fetch_cache[prebuilt->n_fetch_cached],
-			prebuilt, rec);
+			prebuilt, rec));
 
 	prebuilt->n_fetch_cached++;
 }
@@ -2651,7 +2831,9 @@ row_search_for_mysql(
 /*=================*/
 					/* out: DB_SUCCESS,
 					DB_RECORD_NOT_FOUND, 
-					DB_END_OF_INDEX, or DB_DEADLOCK */
+					DB_END_OF_INDEX, DB_DEADLOCK,
+					DB_LOCK_TABLE_FULL, DB_CORRUPTION,
+					or DB_TOO_BIG_RECORD */
 	byte*		buf,		/* in/out: buffer for the fetched
 					row in the MySQL format */
 	ulint		mode,		/* in: search mode PAGE_CUR_L, ... */
@@ -2680,7 +2862,7 @@ row_search_for_mysql(
 	rec_t*		index_rec;
 	rec_t*		clust_rec;
 	rec_t*		old_vers;
-	ulint		err;
+	ulint		err             = DB_SUCCESS;
 	ibool		moved;
 	ibool		cons_read_requires_clust_rec;
 	ibool		was_lock_wait;
@@ -2702,13 +2884,27 @@ row_search_for_mysql(
 	
 	ut_ad(index && pcur && search_tuple);
 	ut_ad(trx->mysql_thread_id == os_thread_get_curr_id());
-		
+
+	if (prebuilt->table->ibd_file_missing) {
+	        ut_print_timestamp(stderr);
+	        fprintf(stderr, "  InnoDB: Error:\n"
+"InnoDB: MySQL is trying to use a table handle but the .ibd file for\n"
+"InnoDB: table %s does not exist.\n"
+"InnoDB: Have you deleted the .ibd file from the database directory under\n"
+"InnoDB: the MySQL datadir, or have you used DISCARD TABLESPACE?\n"
+"InnoDB: Look from\n"
+"http://dev.mysql.com/doc/mysql/en/InnoDB_troubleshooting_datadict.html\n"
+"InnoDB: how you can resolve the problem.\n",
+				prebuilt->table->name);
+		return(DB_ERROR);
+	}
+
 	if (prebuilt->magic_n != ROW_PREBUILT_ALLOCATED) {
 		fprintf(stderr,
 		"InnoDB: Error: trying to free a corrupt\n"
 		"InnoDB: table handle. Magic n %lu, table name ",
-		prebuilt->magic_n);
-		ut_print_name(stderr, prebuilt->table->name);
+		(ulong) prebuilt->magic_n);
+		ut_print_name(stderr, trx, prebuilt->table->name);
 		putc('\n', stderr);
 
 		mem_analyze_corruption((byte*)prebuilt);
@@ -2716,7 +2912,17 @@ row_search_for_mysql(
 		ut_error;
 	}
 
-/*	fprintf(stderr, "Match mode %lu\n search tuple ", match_mode);
+	if (trx->n_mysql_tables_in_use == 0) {
+		fputs(
+"InnoDB: Error: MySQL is trying to perform a SELECT\n"
+"InnoDB: but it has not locked any tables in ::external_lock()!\n",
+                      stderr);
+		trx_print(stderr, trx);
+                fputc('\n', stderr);
+		ut_a(0);
+	}
+
+/*	fprintf(stderr, "Match mode %lu\n search tuple ", (ulong) match_mode);
 	dtuple_print(search_tuple);
 	
 	fprintf(stderr, "N tables locked %lu\n", trx->mysql_n_tables_locked);
@@ -2743,7 +2949,7 @@ row_search_for_mysql(
 	/* PHASE 1: Try to pop the row from the prefetch cache */
 
 	if (direction == 0) {
-		trx->op_info = (char *) "starting index read";
+		trx->op_info = "starting index read";
 	
 		prebuilt->n_rows_fetched = 0;
 		prebuilt->n_fetch_cached = 0;
@@ -2754,7 +2960,7 @@ row_search_for_mysql(
 			row_prebuild_sel_graph(prebuilt);
 		}
 	} else {
-		trx->op_info = (char *) "fetching rows";
+		trx->op_info = "fetching rows";
 
 		if (prebuilt->n_rows_fetched == 0) {
 			prebuilt->fetch_direction = direction;
@@ -2779,7 +2985,7 @@ row_search_for_mysql(
 			prebuilt->n_rows_fetched++;
 
 			srv_n_rows_read++;
-			trx->op_info = (char *) "";
+			trx->op_info = "";
 
 			return(DB_SUCCESS);
 		}
@@ -2791,7 +2997,7 @@ row_search_for_mysql(
 		    	cache, but the cache was not full at the time of the
 		    	popping: no more rows can exist in the result set */
 		    
-			trx->op_info = (char *) "";
+			trx->op_info = "";
 		    	return(DB_RECORD_NOT_FOUND);
 		}
 		
@@ -2833,10 +3039,10 @@ row_search_for_mysql(
 		retrieve also a second row if a primary key contains more than
 		1 column. Return immediately if this is not a HANDLER
 		command. */
-		
+
 		if (direction != 0 && !prebuilt->used_in_HANDLER) {
-		        
-			trx->op_info = (char*)"";
+        
+			trx->op_info = "";
 			return(DB_RECORD_NOT_FOUND);
 		}
 	}
@@ -2892,7 +3098,14 @@ row_search_for_mysql(
 #ifdef UNIV_SEARCH_DEBUG
 				ut_a(0 == cmp_dtuple_rec(search_tuple, rec));
 #endif 
-				row_sel_store_mysql_rec(buf, prebuilt, rec);
+				if (!row_sel_store_mysql_rec(buf, prebuilt,
+								rec)) {
+ 					err = DB_TOO_BIG_RECORD;
+
+					/* We let the main loop to do the
+					error handling */
+ 					goto shortcut_fails_too_big_rec;
+				}
 	
  				mtr_commit(&mtr);
 
@@ -2910,7 +3123,7 @@ row_search_for_mysql(
 					trx->has_search_latch = FALSE;
 				}    	
 				
-				trx->op_info = (char *) "";
+				trx->op_info = "";
 				
 				/* NOTE that we do NOT store the cursor
 				position */
@@ -2933,14 +3146,14 @@ row_search_for_mysql(
 					trx->has_search_latch = FALSE;
 				}
 
-				trx->op_info = (char *) "";
+				trx->op_info = "";
 
 				/* NOTE that we do NOT store the cursor
 				position */
 
 				return(DB_RECORD_NOT_FOUND);
 			}
-
+shortcut_fails_too_big_rec:
 			mtr_commit(&mtr);
 			mtr_start(&mtr);
 		}
@@ -3016,6 +3229,16 @@ row_search_for_mysql(
 	if (!prebuilt->sql_stat_start) {
 		/* No need to set an intention lock or assign a read view */
 
+		if (trx->read_view == NULL
+		    && prebuilt->select_lock_type == LOCK_NONE) {
+
+			fputs(
+"InnoDB: Error: MySQL is trying to perform a consistent read\n"
+"InnoDB: but the read view is not assigned!\n", stderr);
+			trx_print(stderr, trx);
+                        fputc('\n', stderr);
+			ut_a(0);
+		}
 	} else if (prebuilt->select_lock_type == LOCK_NONE) {
 		/* This is a consistent read */	
 		/* Assign a read view for the query */
@@ -3062,11 +3285,18 @@ rec_loop:
 		if (prebuilt->select_lock_type != LOCK_NONE
 		    && set_also_gap_locks) {
 
-			/* Try to place a lock on the index record */	
+			/* Try to place a lock on the index record */
 
-			err = sel_set_rec_lock(rec, index,
+			/* If innodb_locks_unsafe_for_binlog option is used,
+			we do not lock gaps. Supremum record is really
+			a gap and therefore we do not set locks there. */
+			
+			if (srv_locks_unsafe_for_binlog == FALSE) {
+				err = sel_set_rec_lock(rec, index,
 						prebuilt->select_lock_type,
 						LOCK_ORDINARY, thr);
+			}
+
 			if (err != DB_SUCCESS) {
 
 				goto lock_wait_or_error;
@@ -3088,15 +3318,23 @@ rec_loop:
 
 		if (srv_force_recovery == 0 || moves_up == FALSE) {
 			ut_print_timestamp(stderr);
+			buf_page_print(buf_frame_align(rec));
 			fprintf(stderr,
-"  InnoDB: Index corruption: rec offs %lu next offs %lu, page no %lu,\n"
+"\nInnoDB: rec address %lx, first buffer frame %lx\n"
+"InnoDB: buffer pool high end %lx, buf block fix count %lu\n",
+				(ulong)rec, (ulong)buf_pool->frame_zero,
+				(ulong)buf_pool->high_end,
+				(ulong)buf_block_align(rec)->buf_fix_count);
+			fprintf(stderr,
+"InnoDB: Index corruption: rec offs %lu next offs %lu, page no %lu,\n"
 "InnoDB: ",
-				(ulint)(rec - buf_frame_align(rec)), next_offs,
-				buf_frame_get_page_no(rec));
-			dict_index_name_print(stderr, index);
+				(ulong) (rec - buf_frame_align(rec)),
+				(ulong) next_offs,
+				(ulong) buf_frame_get_page_no(rec));
+			dict_index_name_print(stderr, trx, index);
 			fputs(". Run CHECK TABLE. You may need to\n"
 "InnoDB: restore from a backup, or dump + drop + reimport the table.\n",
-				stderr);
+			      stderr);
 		
 			err = DB_CORRUPTION;
 
@@ -3108,9 +3346,10 @@ rec_loop:
 			fprintf(stderr,
 "InnoDB: Index corruption: rec offs %lu next offs %lu, page no %lu,\n"
 "InnoDB: ",
-			   (ulint)(rec - buf_frame_align(rec)), next_offs,
-				buf_frame_get_page_no(rec));
-			dict_index_name_print(stderr, index);
+			   (ulong) (rec - buf_frame_align(rec)),
+			   (ulong) next_offs,
+			   (ulong) buf_frame_get_page_no(rec));
+			dict_index_name_print(stderr, trx, index);
 			fputs(". We try to skip the rest of the page.\n",
 				stderr);
 
@@ -3126,9 +3365,10 @@ rec_loop:
 			fprintf(stderr,
 "InnoDB: Index corruption: rec offs %lu next offs %lu, page no %lu,\n"
 "InnoDB: ",
-			   (ulint)(rec - buf_frame_align(rec)), next_offs,
-				buf_frame_get_page_no(rec));
-			dict_index_name_print(stderr, index);
+			   (ulong) (rec - buf_frame_align(rec)),
+			   (ulong) next_offs,
+			   (ulong) buf_frame_get_page_no(rec));
+			dict_index_name_print(stderr, trx, index);
 			fputs(". We try to skip the record.\n",
 				stderr);
 
@@ -3153,11 +3393,18 @@ rec_loop:
 
 			if (prebuilt->select_lock_type != LOCK_NONE
 		    	    && set_also_gap_locks) {
-				/* Try to place a lock on the index record */
 
-				err = sel_set_rec_lock(rec, index,
+				/* Try to place a gap lock on the index 
+				record only if innodb_locks_unsafe_for_binlog
+				option is not set */
+
+				if (srv_locks_unsafe_for_binlog == FALSE) { 
+
+					err = sel_set_rec_lock(rec, index,
 						prebuilt->select_lock_type,
 						LOCK_GAP, thr);
+				}
+
 				if (err != DB_SUCCESS) {
 
 					goto lock_wait_or_error;
@@ -3179,11 +3426,18 @@ rec_loop:
 			
 			if (prebuilt->select_lock_type != LOCK_NONE
 			    && set_also_gap_locks) {
-				/* Try to place a lock on the index record */	
 
-				err = sel_set_rec_lock(rec, index,
+				/* Try to place a gap lock on the index 
+				record only if innodb_locks_unsafe_for_binlog
+				option is not set */
+
+				if (srv_locks_unsafe_for_binlog == FALSE) {
+
+					err = sel_set_rec_lock(rec, index,
 						prebuilt->select_lock_type,
 						LOCK_GAP, thr);
+				}
+
 				if (err != DB_SUCCESS) {
 
 					goto lock_wait_or_error;
@@ -3217,9 +3471,19 @@ rec_loop:
 						prebuilt->select_lock_type,
 						LOCK_REC_NOT_GAP, thr);
 		} else {
-			err = sel_set_rec_lock(rec, index,
+			/* If innodb_locks_unsafe_for_binlog option is used, 
+			we lock only the record, i.e. next-key locking is
+			not used. */
+
+			if (srv_locks_unsafe_for_binlog) {
+				err = sel_set_rec_lock(rec, index,
+						prebuilt->select_lock_type,
+						LOCK_REC_NOT_GAP, thr);
+			} else {
+				err = sel_set_rec_lock(rec, index,
 						prebuilt->select_lock_type,
 						LOCK_ORDINARY, thr);
+			}
 		}
 		
 		if (err != DB_SUCCESS) {
@@ -3358,7 +3622,11 @@ rec_loop:
 						rec_get_size(rec));
 			mach_write_to_4(buf, rec_get_extra_size(rec) + 4);
 		} else {
-			row_sel_store_mysql_rec(buf, prebuilt, rec);
+			if (!row_sel_store_mysql_rec(buf, prebuilt, rec)) {
+				err = DB_TOO_BIG_RECORD;
+
+				goto lock_wait_or_error;
+			}
 		}
 
 		if (prebuilt->clust_index_was_generated) {
@@ -3463,7 +3731,7 @@ lock_wait_or_error:
 /*	fputs("Using ", stderr);
 	dict_index_name_print(stderr, index);
 	fprintf(stderr, " cnt %lu ret value %lu err\n", cnt, err); */
-	trx->op_info = (char *) "";
+	trx->op_info = "";
 
 	return(err);
 
@@ -3486,7 +3754,7 @@ normal_return:
 		srv_n_rows_read++;
 	}
 
-	trx->op_info = (char *) "";
+	trx->op_info = "";
 
 	return(ret);
 }
@@ -3498,11 +3766,11 @@ consistent read result, or store it to the query cache. */
 ibool
 row_search_check_if_query_cache_permitted(
 /*======================================*/
-				/* out: TRUE if storing or retrieving from
-				the query cache is permitted */
-	trx_t*	trx,		/* in: transaction object */
-	char*	norm_name)	/* in: concatenation of database name, '/'
-				char, table name */
+					/* out: TRUE if storing or retrieving
+					from the query cache is permitted */
+	trx_t*		trx,		/* in: transaction object */
+	const char*	norm_name)	/* in: concatenation of database name,
+					'/' char, table name */
 {
 	dict_table_t*	table;
 	ibool		ret 	= FALSE;

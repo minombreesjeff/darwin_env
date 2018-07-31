@@ -18,9 +18,9 @@
 #ifdef HAVE_MMAP
 #include <sys/mman.h>
 #endif
-#ifdef	__WIN__
-#include <errno.h>
-#endif
+
+static void mi_extra_keyflag(MI_INFO *info, enum ha_extra_function function);
+
 
 /*
   Set options and buffers to optimize table handling
@@ -33,14 +33,10 @@
     		Used when function is one of:
 		HA_EXTRA_WRITE_CACHE
 		HA_EXTRA_CACHE
-		HA_EXTRA_BULK_INSERT_BEGIN
-		  If extra_arg is 0, then the default cache size is used.
-		HA_EXTRA_BULK_INSERT_FLUSH
-		  extra_arg is a a pointer to which index to flush (uint*)
-    RETURN VALUES
-    0	ok
+  RETURN VALUES
+    0  ok
+    #  error
 */
-
 
 int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
 {
@@ -283,7 +279,7 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
 #ifdef __WIN__
     /* Close the isam and data files as Win32 can't drop an open table */
     pthread_mutex_lock(&share->intern_lock);
-    if (flush_key_blocks(share->kfile,
+    if (flush_key_blocks(share->key_cache, share->kfile,
 			 (function == HA_EXTRA_FORCE_REOPEN ?
 			  FLUSH_RELEASE : FLUSH_IGNORE_CHANGED)))
     {
@@ -329,7 +325,7 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
     break;
   case HA_EXTRA_FLUSH:
     if (!share->temporary)
-      flush_key_blocks(share->kfile,FLUSH_KEEP);
+      flush_key_blocks(share->key_cache, share->kfile, FLUSH_KEEP);
 #ifdef HAVE_PWRITE
     _mi_decrement_open_count(info);
 #endif
@@ -359,6 +355,13 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
     if (!share->state.header.uniques)
       info->opt_flag|= OPT_NO_ROWS;
     break;
+  case HA_EXTRA_PRELOAD_BUFFER_SIZE:
+    info->preload_buff_size= *((ulong *) extra_arg); 
+    break;
+  case HA_EXTRA_CHANGE_KEY_TO_UNIQUE:
+  case HA_EXTRA_CHANGE_KEY_TO_DUP:
+    mi_extra_keyflag(info, function);
+    break;
   case HA_EXTRA_KEY_CACHE:
   case HA_EXTRA_NO_KEY_CACHE:
   default:
@@ -371,3 +374,27 @@ int mi_extra(MI_INFO *info, enum ha_extra_function function, void *extra_arg)
   }
   DBUG_RETURN(error);
 } /* mi_extra */
+
+
+/*
+    Start/Stop Inserting Duplicates Into a Table, WL#1648.
+ */
+static void mi_extra_keyflag(MI_INFO *info, enum ha_extra_function function)
+{
+  uint  idx;
+
+  for (idx= 0; idx< info->s->base.keys; idx++)
+  {
+    switch (function) {
+    case HA_EXTRA_CHANGE_KEY_TO_UNIQUE:
+      info->s->keyinfo[idx].flag|= HA_NOSAME;
+      break;
+    case HA_EXTRA_CHANGE_KEY_TO_DUP:
+      info->s->keyinfo[idx].flag&= ~(HA_NOSAME);
+      break;
+    default:
+      break;
+    }
+  }
+}
+

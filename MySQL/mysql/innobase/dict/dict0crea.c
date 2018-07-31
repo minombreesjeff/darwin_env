@@ -32,6 +32,7 @@ static
 dtuple_t*
 dict_create_sys_tables_tuple(
 /*=========================*/
+				/* out: the tuple which should be inserted */
 	dict_table_t*	table, 	/* in: table */
 	mem_heap_t*	heap)	/* in: memory heap from which the memory for
 				the built tuple is allocated */
@@ -80,6 +81,17 @@ dict_create_sys_tables_tuple(
 
 	dfield_set_data(dfield, ptr, 8);
 	/* 7: MIX_LEN --------------------------*/
+
+	/* Track corruption reported on mailing list Jan 14, 2005 */
+	if (table->mix_len != 0 && table->mix_len != 0x80000000) {
+		fprintf(stderr,
+"InnoDB: Error: mix_len is %lu in table %s\n", (ulong)table->mix_len,
+							table->name);
+		mem_analyze_corruption((byte*)&(table->mix_len));
+	
+		ut_error;
+	}
+
 	dfield = dtuple_get_nth_field(entry, 5);
 
 	ptr = mem_heap_alloc(heap, 4);
@@ -203,6 +215,10 @@ dict_build_table_def_step(
 	dict_table_t*	table;
 	dict_table_t*	cluster_table;
 	dtuple_t*	row;
+	ulint		error;
+	const char*	path_or_name;
+	ibool		is_path;
+	mtr_t		mtr;
 
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(dict_sys->mutex)));
@@ -229,6 +245,43 @@ dict_build_table_def_step(
 		table->mix_len = cluster_table->mix_len;
 		
 		table->mix_id = dict_hdr_get_new_id(DICT_HDR_MIX_ID);
+	}
+
+	if (srv_file_per_table) {
+		/* We create a new single-table tablespace for the table.
+		We initially let it be 4 pages:
+		- page 0 is the fsp header and an extent descriptor page,
+		- page 1 is an ibuf bitmap page,
+		- page 2 is the first inode page,
+		- page 3 will contain the root of the clustered index of the
+		  table we create here. */
+	
+		table->space = 0;	/* reset to zero for the call below */
+
+		if (table->dir_path_of_temp_table) {
+			/* We place tables created with CREATE TEMPORARY
+			TABLE in the tmp dir of mysqld server */
+
+			path_or_name = table->dir_path_of_temp_table;
+			is_path = TRUE;
+		} else {
+			path_or_name = table->name;
+			is_path = FALSE;
+		}
+
+		error = fil_create_new_single_table_tablespace(
+					&(table->space), path_or_name, is_path,
+					FIL_IBD_FILE_INITIAL_SIZE);
+		if (error != DB_SUCCESS) {
+
+			return(error);
+		}
+
+		mtr_start(&mtr);
+
+		fsp_header_init(table->space, FIL_IBD_FILE_INITIAL_SIZE, &mtr);
+		
+		mtr_commit(&mtr);
 	}
 
 	row = dict_create_sys_tables_tuple(table, node->heap);
@@ -424,8 +477,8 @@ dict_create_sys_fields_tuple(
 }	
 
 /*********************************************************************
-Creates the tuple with which the index entry is searched for
-writing the index tree root page number, if such a tree is created. */
+Creates the tuple with which the index entry is searched for writing the index
+tree root page number, if such a tree is created. */
 static
 dtuple_t*
 dict_create_search_tuple(
@@ -472,10 +525,13 @@ dict_build_index_def_step(
 	dict_table_t*	table;
 	dict_index_t*	index;
 	dtuple_t*	row;
+	trx_t*		trx;
 
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(dict_sys->mutex)));
 #endif /* UNIV_SYNC_DEBUG */
+
+	trx = thr_get_trx(thr);
 
 	index = node->index;
 
@@ -485,7 +541,7 @@ dict_build_index_def_step(
 		return(DB_TABLE_NOT_FOUND);
 	}
 
-	thr_get_trx(thr)->table_id = table->id;
+	trx->table_id = table->id;
 
 	node->table = table;
 
@@ -494,10 +550,10 @@ dict_build_index_def_step(
 	
 	index->id = dict_hdr_get_new_id(DICT_HDR_INDEX_ID);
 
-	if (index->type & DICT_CLUSTERED) {
-		/* Inherit the space from the table */
-		index->space = table->space;
-	}
+	/* Inherit the space id from the table; we store all indexes of a
+	table in the same tablespace */
+
+	index->space = table->space;
 
 	index->page_no = FIL_NULL;
 	
@@ -580,6 +636,9 @@ dict_create_index_tree_step(
 
 	index->page_no = btr_create(index->type, index->space, index->id,
 									&mtr);
+	/* printf("Created a new index tree in space %lu root page %lu\n",
+					index->space, index->page_no); */
+
 	page_rec_write_index_page_no(btr_pcur_get_rec(&pcur),
 					DICT_SYS_INDEXES_PAGE_NO_FIELD,
 					index->page_no, &mtr);
@@ -630,7 +689,14 @@ dict_drop_index_tree(
 	ut_ad(len == 4);
 
 	space = mtr_read_ulint(ptr, MLOG_4BYTES, mtr);
-	
+
+	if (!fil_tablespace_exists_in_mem(space)) {
+		/* It is a single table tablespace and the .ibd file is
+		missing: do nothing */
+
+		return;
+	}
+
 	/* We free all the pages but the root page first; this operation
 	may span several mini-transactions */
 
@@ -640,6 +706,8 @@ dict_drop_index_tree(
 	we write FIL_NULL to the appropriate field in the SYS_INDEXES
 	record: this mini-transaction marks the B-tree totally freed */
 	
+	/* printf("Dropping index tree in space %lu root page %lu\n", space,
+							 root_page_no); */
 	btr_free_root(space, root_page_no, mtr);
 
 	page_rec_write_index_page_no(rec, DICT_SYS_INDEXES_PAGE_NO_FIELD,
@@ -964,12 +1032,12 @@ dict_create_or_check_foreign_constraint_tables(void)
 	que_t*		graph;
 	ulint		error;
 	trx_t*		trx;
-	char*		str;	
+	const char*	str;	
 
 	mutex_enter(&(dict_sys->mutex));
 
-	table1 = dict_table_get_low((char *) "SYS_FOREIGN");
-	table2 = dict_table_get_low((char *) "SYS_FOREIGN_COLS");
+	table1 = dict_table_get_low("SYS_FOREIGN");
+	table2 = dict_table_get_low("SYS_FOREIGN_COLS");
 	
 	if (table1 && table2
             && UT_LIST_GET_LEN(table1->indexes) == 3
@@ -987,20 +1055,20 @@ dict_create_or_check_foreign_constraint_tables(void)
 
 	trx = trx_allocate_for_mysql();
 	
-	trx->op_info = (char *) "creating foreign key sys tables";
+	trx->op_info = "creating foreign key sys tables";
 
 	row_mysql_lock_data_dictionary(trx);
 
 	if (table1) {
 		fprintf(stderr,
 		"InnoDB: dropping incompletely created SYS_FOREIGN table\n");
-		row_drop_table_for_mysql((char*)"SYS_FOREIGN", trx, TRUE);
+		row_drop_table_for_mysql("SYS_FOREIGN", trx, TRUE);
 	}
 
 	if (table2) {
 		fprintf(stderr,
 	"InnoDB: dropping incompletely created SYS_FOREIGN_COLS table\n");
-		row_drop_table_for_mysql((char*)"SYS_FOREIGN_COLS", trx, TRUE);
+		row_drop_table_for_mysql("SYS_FOREIGN_COLS", trx, TRUE);
 	}
 
 	fprintf(stderr,
@@ -1010,7 +1078,13 @@ dict_create_or_check_foreign_constraint_tables(void)
 	there are 2 secondary indexes on SYS_FOREIGN, and they
 	are defined just like below */
 	
-	str = (char *)
+	/* NOTE: when designing InnoDB's foreign key support in 2001, we made
+	an error and made the table names and the foreign key id of type
+	'CHAR' (internally, really a VARCHAR). We should have made the type
+	VARBINARY, like in other InnoDB system tables, to get a clean
+	design. */
+
+	str =
 	"PROCEDURE CREATE_FOREIGN_SYS_TABLES_PROC () IS\n"
 	"BEGIN\n"
 	"CREATE TABLE\n"
@@ -1040,7 +1114,8 @@ dict_create_or_check_foreign_constraint_tables(void)
 	error = trx->error_state;
 
 	if (error != DB_SUCCESS) {
-		fprintf(stderr, "InnoDB: error %lu in creation\n", error);
+		fprintf(stderr, "InnoDB: error %lu in creation\n",
+			(ulong) error);
 		
 		ut_a(error == DB_OUT_OF_FILE_SPACE);
 
@@ -1049,15 +1124,15 @@ dict_create_or_check_foreign_constraint_tables(void)
 		fprintf(stderr,
 		"InnoDB: dropping incompletely created SYS_FOREIGN tables\n");
 
-		row_drop_table_for_mysql((char*)"SYS_FOREIGN", trx, TRUE);
-		row_drop_table_for_mysql((char*)"SYS_FOREIGN_COLS", trx, TRUE);
+		row_drop_table_for_mysql("SYS_FOREIGN", trx, TRUE);
+		row_drop_table_for_mysql("SYS_FOREIGN_COLS", trx, TRUE);
 
 		error = DB_MUST_GET_MORE_FILE_SPACE;
 	}
 
 	que_graph_free(graph);
 	
-	trx->op_info = (char *) "";
+	trx->op_info = "";
 
 	row_mysql_unlock_data_dictionary(trx);
 
@@ -1120,7 +1195,7 @@ dict_create_add_foreigns_to_dictionary(
 	ut_ad(mutex_own(&(dict_sys->mutex)));
 #endif /* UNIV_SYNC_DEBUG */
 
-	if (NULL == dict_table_get_low((char *) "SYS_FOREIGN")) {
+	if (NULL == dict_table_get_low("SYS_FOREIGN")) {
 		fprintf(stderr,
      "InnoDB: table SYS_FOREIGN not found from internal data dictionary\n");
 
@@ -1139,7 +1214,7 @@ loop:
 		ulint	namelen	= strlen(table->name);
 		char*	id	= mem_heap_alloc(foreign->heap, namelen + 20);
 		/* no overflow if number < 1e13 */
-		sprintf(id, "%s_ibfk_%lu", table->name, number++);
+		sprintf(id, "%s_ibfk_%lu", table->name, (ulong) number++);
 		foreign->id = id;
 	}
 
@@ -1180,7 +1255,7 @@ loop:
 		*sqlend++ = '\'';
 		sqlend = ut_strcpyq(sqlend, '\'', foreign->id);
 		*sqlend++ = '\''; *sqlend++ = ',';
-		sqlend += sprintf(sqlend, "%010lu", i);
+		sqlend += sprintf(sqlend, "%010lu", (ulong) i);
 		*sqlend++ = ','; *sqlend++ = '\'';
 		sqlend = ut_strcpyq(sqlend, '\'',
 			foreign->foreign_col_names[i]);
@@ -1222,12 +1297,20 @@ loop:
 		ut_print_timestamp(ef);
 		fputs(" Error in foreign key constraint creation for table ",
 			ef);
-		ut_print_name(ef, table->name);
+		ut_print_name(ef, trx, table->name);
 		fputs(".\nA foreign key constraint of name ", ef);
-		ut_print_name(ef, foreign->id);
+		ut_print_name(ef, trx, foreign->id);
 		fputs("\nalready exists."
-			"  (Note that internally InnoDB adds 'databasename/'\n"
+			" (Note that internally InnoDB adds 'databasename/'\n"
 			"in front of the user-defined constraint name).\n",
+			ef);
+		fputs("Note that InnoDB's FOREIGN KEY system tables store\n"
+		      "constraint names as case-insensitive, with the\n"
+		      "MySQL standard latin1_swedish_ci collation. If you\n"
+		      "create tables or databases whose names differ only in\n"
+		      "the character case, then collisions in constraint\n"
+		      "names can occur. Workaround: name your constraints\n"
+		      "explicitly with unique names.\n",
 			ef);
 
 		mutex_exit(&dict_foreign_err_mutex);
@@ -1238,13 +1321,13 @@ loop:
 	if (error != DB_SUCCESS) {
 	        fprintf(stderr,
 			"InnoDB: Foreign key constraint creation failed:\n"
-			"InnoDB: internal error number %lu\n", error);
+			"InnoDB: internal error number %lu\n", (ulong) error);
 
 		mutex_enter(&dict_foreign_err_mutex);
 		ut_print_timestamp(ef);
 		fputs(" Internal error in foreign key constraint creation"
 			" for table ", ef);
-		ut_print_name(ef, table->name);
+		ut_print_name(ef, trx, table->name);
 		fputs(".\n"
 	"See the MySQL .err log in the datadir for more information.\n", ef);
 		mutex_exit(&dict_foreign_err_mutex);

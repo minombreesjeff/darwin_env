@@ -25,7 +25,7 @@
 **			   *			   *
 **			   *************************
 */
-#define IMPORT_VERSION "3.4"
+#define IMPORT_VERSION "3.5"
 
 #include "client_priv.h"
 #include "mysql_version.h"
@@ -43,16 +43,22 @@ static MYSQL	mysql_connection;
 static char	*opt_password=0, *current_user=0,
 		*current_host=0, *current_db=0, *fields_terminated=0,
 		*lines_terminated=0, *enclosed=0, *opt_enclosed=0,
-		*escaped=0, *opt_columns=0, *default_charset;
-static uint     opt_mysql_port=0;
+		*escaped=0, *opt_columns=0, 
+		*default_charset= (char*) MYSQL_DEFAULT_CHARSET_NAME;
+static uint     opt_mysql_port= 0, opt_protocol= 0;
 static my_string opt_mysql_unix_port=0;
 static longlong opt_ignore_lines= -1;
+static CHARSET_INFO *charset_info= &my_charset_latin1;
 #include <sslopt-vars.h>
+
+#ifdef HAVE_SMEM
+static char *shared_memory_base_name=0;
+#endif
 
 static struct my_option my_long_options[] =
 {
   {"character-sets-dir", OPT_CHARSETS_DIR,
-   "Directory where character sets are", (gptr*) &charsets_dir,
+   "Directory where character sets are.", (gptr*) &charsets_dir,
    (gptr*) &charsets_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"default-character-set", OPT_DEFAULT_CHARSET,
    "Set the default character set.", (gptr*) &default_charset,
@@ -64,8 +70,8 @@ static struct my_option my_long_options[] =
   {"compress", 'C', "Use compression in server/client protocol.",
    (gptr*) &opt_compress, (gptr*) &opt_compress, 0, GET_BOOL, NO_ARG, 0, 0, 0,
    0, 0, 0},
-  {"debug",'#', "Output debug log. Often this is 'd:t:o,filename'", 0, 0, 0,
-   GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0}, 
+  {"debug",'#', "Output debug log. Often this is 'd:t:o,filename'.", 0, 0, 0,
+   GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
   {"delete", 'd', "First delete all rows from table.", (gptr*) &opt_delete,
    (gptr*) &opt_delete, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"fields-terminated-by", OPT_FTB,
@@ -95,12 +101,12 @@ static struct my_option my_long_options[] =
   {"lines-terminated-by", OPT_LTB, "Lines in the i.file are terminated by ...",
    (gptr*) &lines_terminated, (gptr*) &lines_terminated, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"local", 'L', "Read all files through the client", (gptr*) &opt_local_file,
+  {"local", 'L', "Read all files through the client.", (gptr*) &opt_local_file,
    (gptr*) &opt_local_file, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"lock-tables", 'l', "Lock all tables for write.", (gptr*) &lock_tables,
    (gptr*) &lock_tables, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"low-priority", OPT_LOW_PRIORITY,
-   "Use LOW_PRIORITY when updating the table", (gptr*) &opt_low_priority,
+   "Use LOW_PRIORITY when updating the table.", (gptr*) &opt_low_priority,
    (gptr*) &opt_low_priority, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"password", 'p',
    "Password to use when connecting to server. If password is not given it's asked from the tty.",
@@ -112,8 +118,15 @@ static struct my_option my_long_options[] =
   {"port", 'P', "Port number to use for connection.", (gptr*) &opt_mysql_port,
    (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, MYSQL_PORT, 0, 0, 0, 0,
    0},
+  {"protocol", OPT_MYSQL_PROTOCOL, "The protocol of connection (tcp,socket,pipe,memory).",
+   0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"replace", 'r', "If duplicate unique key was found, replace old row.",
    (gptr*) &replace, (gptr*) &replace, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+#ifdef HAVE_SMEM
+  {"shared-memory-base-name", OPT_SHARED_MEMORY_BASE_NAME,
+   "Base name of shared memory.", (gptr*) &shared_memory_base_name, (gptr*) &shared_memory_base_name,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+#endif
   {"silent", 's', "Be more silent.", (gptr*) &silent, (gptr*) &silent, 0,
    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"socket", 'S', "Socket file to use for connection.",
@@ -134,12 +147,14 @@ static struct my_option my_long_options[] =
 
 static const char *load_default_groups[]= { "mysqlimport","client",0 };
 
+#include <help_start.h>
+
 static void print_version(void)
 {
   printf("%s  Ver %s Distrib %s, for %s (%s)\n" ,my_progname,
 	  IMPORT_VERSION, MYSQL_SERVER_VERSION,SYSTEM_TYPE,MACHINE_TYPE);
+  NETWARE_SET_SCREEN_MODE(1);
 }
-
 
 
 static void usage(void)
@@ -160,6 +175,7 @@ file. The SQL command 'LOAD DATA INFILE' is used to import the rows.\n");
   my_print_variables(my_long_options);
 }
 
+#include <help_end.h>
 
 static my_bool
 get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
@@ -175,16 +191,26 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
       while (*argument) *argument++= 'x';		/* Destroy argument */
       if (*start)
 	start[1]=0;				/* Cut length of argument */
+      tty_password= 0;
     }
     else
       tty_password= 1;
     break;
 #ifdef __WIN__
   case 'W':
-    opt_mysql_unix_port=MYSQL_NAMEDPIPE;
+    opt_protocol = MYSQL_PROTOCOL_PIPE;
     opt_local_file=1;
     break;
 #endif
+  case OPT_MYSQL_PROTOCOL:
+  {
+    if ((opt_protocol= find_type(argument, &sql_protocol_typelib,0)) <= 0)
+    {
+      fprintf(stderr, "Unknown option to protocol: %s\n", argument);
+      exit(1);
+    }
+    break;
+  }
   case '#':
     DBUG_PUSH(argument ? argument : "d:t:o");
     break;
@@ -216,11 +242,10 @@ static int get_options(int *argc, char ***argv)
     fprintf(stderr, "You can't use --ignore (-i) and --replace (-r) at the same time.\n");
     return(1);
   }
-  if (default_charset)
-  {
-    if (set_default_charset_by_name(default_charset, MYF(MY_WME)))
-      exit(1);
-  }
+  if (strcmp(default_charset, charset_info->csname) &&
+      !(charset_info= get_charset_by_csname(default_charset,
+  					    MY_CS_PRIMARY, MYF(MY_WME))))
+    exit(1);
   if (*argc < 2)
   {
     usage();
@@ -239,14 +264,11 @@ static int write_to_table(char *filename, MYSQL *sock)
 {
   char tablename[FN_REFLEN], hard_path[FN_REFLEN],
        sql_statement[FN_REFLEN*16+256], *end;
-  my_bool local_file;
   DBUG_ENTER("write_to_table");
   DBUG_PRINT("enter",("filename: %s",filename));
 
-  local_file= sock->unix_socket == 0 || opt_local_file;
-
   fn_format(tablename, filename, "", "", 1 | 2); /* removes path & ext. */
-  if (local_file)
+  if (! opt_local_file)
     strmov(hard_path,filename);
   else
     my_load_path(hard_path, filename, NULL); /* filename includes the path */
@@ -265,7 +287,7 @@ static int write_to_table(char *filename, MYSQL *sock)
   to_unix_path(hard_path);
   if (verbose)
   {
-    if (local_file)
+    if (opt_local_file)
       fprintf(stdout, "Loading data from LOCAL file: %s into %s\n",
 	      hard_path, tablename);
     else
@@ -274,7 +296,7 @@ static int write_to_table(char *filename, MYSQL *sock)
   }
   sprintf(sql_statement, "LOAD DATA %s %s INFILE '%s'",
 	  opt_low_priority ? "LOW_PRIORITY" : "",
-	  local_file ? "LOCAL" : "", hard_path);
+	  opt_local_file ? "LOCAL" : "", hard_path);
   end= strend(sql_statement);
   if (replace)
     end= strmov(end, " REPLACE");
@@ -352,6 +374,12 @@ static MYSQL *db_connect(char *host, char *database, char *user, char *passwd)
   if (opt_use_ssl)
     mysql_ssl_set(&mysql_connection, opt_ssl_key, opt_ssl_cert, opt_ssl_ca,
 		  opt_ssl_capath, opt_ssl_cipher);
+#endif
+  if (opt_protocol)
+    mysql_options(&mysql_connection,MYSQL_OPT_PROTOCOL,(char*)&opt_protocol);
+#ifdef HAVE_SMEM
+  if (shared_memory_base_name)
+    mysql_options(&mysql_connection,MYSQL_SHARED_MEMORY_BASE_NAME,shared_memory_base_name);
 #endif
   if (!(sock= mysql_real_connect(&mysql_connection,host,user,passwd,
 				 database,opt_mysql_port,opt_mysql_unix_port,
@@ -487,6 +515,9 @@ int main(int argc, char **argv)
 	exitcode = error;
   db_disconnect(current_host, sock);
   my_free(opt_password,MYF(MY_ALLOW_ZERO_PTR));
+#ifdef HAVE_SMEM
+  my_free(shared_memory_base_name,MYF(MY_ALLOW_ZERO_PTR));
+#endif
   free_defaults(argv_to_free);
   my_end(0);
   return(exitcode);

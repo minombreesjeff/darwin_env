@@ -19,13 +19,20 @@
 AUTOMAKE_OPTIONS =	foreign
 
 # These are built from source in the Docs directory
-EXTRA_DIST =		INSTALL-SOURCE README COPYING 
-SUBDIRS =		. include @docs_dirs@ @readline_dir@ \
-			@thread_dirs@ pstack @sql_client_dirs@ \
-			@sql_server_dirs@ scripts man tests \
-			BUILD @netware_dir@ os2 @libmysqld_dirs@ \
+EXTRA_DIST =		INSTALL-SOURCE README COPYING EXCEPTIONS-CLIENT
+SUBDIRS =		. include @docs_dirs@ @zlib_dir@ \
+			@readline_topdir@ sql-common \
+			@thread_dirs@ pstack \
+			@sql_union_dirs@ scripts man tests \
+			netware @libmysqld_dirs@ \
 			@bench_dirs@ support-files @fs_dirs@ @tools_dirs@
-			
+
+DIST_SUBDIRS =		. include @docs_dirs@ zlib \
+			@readline_topdir@ sql-common \
+			@thread_dirs@ pstack \
+			@sql_union_dirs@ scripts @man_dirs@ tests SSL\
+			BUILD netware os2 @libmysqld_dirs@ \
+			@bench_dirs@ support-files @fs_dirs@ @tools_dirs@
 
 # Relink after clean
 linked_sources = linked_client_sources linked_server_sources \
@@ -36,7 +43,7 @@ linked_sources = linked_client_sources linked_server_sources \
 CLEANFILES = $(linked_sources)
 
 # This is just so that the linking is done early.
-config.h: $(linked_sources)
+all-local: $(linked_sources)
 
 linked_include_sources:
 	cd include; $(MAKE) link_sources
@@ -68,7 +75,11 @@ linked_netware_sources:
 
 #avoid recursive make calls in sql directory
 linked_server_sources:
-	cd sql; rm -f mini_client_errors.c;@LN_CP_F@ ../libmysql/errmsg.c mini_client_errors.c
+	cd sql; rm -f mini_client_errors.c;\
+		@LN_CP_F@ ../libmysql/errmsg.c mini_client_errors.c;\
+		rm -f pack.c;@LN_CP_F@ ../sql-common/pack.c pack.c;\
+		rm -f client.c;@LN_CP_F@ ../sql-common/client.c client.c;\
+		rm -f my_time.c;@LN_CP_F@ ../sql-common/my_time.c my_time.c
 	echo timestamp > linked_server_sources
 
 # Create permission databases
@@ -89,5 +100,4 @@ tags:
 # Test installation
 
 test:
-	cd mysql-test ; ./mysql-test-run
-
+	cd mysql-test; ./mysql-test-run && ./mysql-test-run --ps-protocol

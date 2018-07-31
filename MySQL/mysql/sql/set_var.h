@@ -28,17 +28,18 @@
 class sys_var;
 class set_var;
 typedef struct system_variables SV;
-extern TYPELIB bool_typelib, delay_key_write_typelib;
+extern TYPELIB bool_typelib, delay_key_write_typelib, sql_mode_typelib;
 
 enum enum_var_type
 {
   OPT_DEFAULT, OPT_SESSION, OPT_GLOBAL
 };
 
-typedef bool (*sys_check_func)(THD *,  set_var *);
+typedef int (*sys_check_func)(THD *,  set_var *);
 typedef bool (*sys_update_func)(THD *, set_var *);
 typedef void (*sys_after_update_func)(THD *,enum_var_type);
 typedef void (*sys_set_default_func)(THD *, enum_var_type);
+typedef byte *(*sys_value_ptr_func)(THD *thd);
 
 class sys_var
 {
@@ -46,26 +47,40 @@ public:
   struct my_option *option_limits;	/* Updated by by set_var_init() */
   uint name_length;			/* Updated by by set_var_init() */
   const char *name;
+  
   sys_after_update_func after_update;
-  sys_var(const char *name_arg) :name(name_arg),after_update(0)
-  {}
+#if MYSQL_VERSION_ID < 50000
+  bool no_support_one_shot;
+#endif
+  sys_var(const char *name_arg)
+    :name(name_arg), after_update(0)
+#if MYSQL_VERSION_ID < 50000
+    , no_support_one_shot(1)
+#endif
+    {}
   sys_var(const char *name_arg,sys_after_update_func func)
-    :name(name_arg),after_update(func)
+    :name(name_arg), after_update(func)
+#if MYSQL_VERSION_ID < 50000
+    , no_support_one_shot(1)
+#endif
   {}
   virtual ~sys_var() {}
-  virtual bool check(THD *thd, set_var *var) { return 0; }
+  virtual bool check(THD *thd, set_var *var);
   bool check_enum(THD *thd, set_var *var, TYPELIB *enum_names);
+  bool check_set(THD *thd, set_var *var, TYPELIB *enum_names);
   virtual bool update(THD *thd, set_var *var)=0;
   virtual void set_default(THD *thd, enum_var_type type) {}
   virtual SHOW_TYPE type() { return SHOW_UNDEF; }
-  virtual byte *value_ptr(THD *thd, enum_var_type type) { return 0; }
+  virtual byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base)
+  { return 0; }
   virtual bool check_type(enum_var_type type)
   { return type != OPT_GLOBAL; }		/* Error if not GLOBAL */
   virtual bool check_update_type(Item_result type)
   { return type != INT_RESULT; }		/* Assume INT */
   virtual bool check_default(enum_var_type type)
   { return option_limits == 0; }
-  Item *item(THD *thd, enum_var_type type);
+  Item *item(THD *thd, enum_var_type type, LEX_STRING *base);
+  virtual bool is_struct() { return 0; }
 };
 
 
@@ -81,7 +96,8 @@ public:
   bool update(THD *thd, set_var *var);
   void set_default(THD *thd, enum_var_type type);
   SHOW_TYPE type() { return SHOW_LONG; }
-  byte *value_ptr(THD *thd, enum_var_type type) { return (byte*) value; }
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base)
+  { return (byte*) value; }
 };
 
 
@@ -97,7 +113,8 @@ public:
   bool update(THD *thd, set_var *var);
   void set_default(THD *thd, enum_var_type type);
   SHOW_TYPE type() { return SHOW_LONGLONG; }
-  byte *value_ptr(THD *thd, enum_var_type type) { return (byte*) value; }
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base)
+  { return (byte*) value; }
 };
 
 
@@ -115,7 +132,8 @@ public:
   bool update(THD *thd, set_var *var);
   void set_default(THD *thd, enum_var_type type);
   SHOW_TYPE type() { return SHOW_MY_BOOL; }
-  byte *value_ptr(THD *thd, enum_var_type type) { return (byte*) value; }
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base)
+  { return (byte*) value; }
   bool check_update_type(Item_result type) { return 0; }
 };
 
@@ -124,20 +142,19 @@ class sys_var_str :public sys_var
 {
 public:
   char *value;					// Pointer to allocated string
+  uint value_length;
   sys_check_func check_func;
   sys_update_func update_func;
   sys_set_default_func set_default_func;
   sys_var_str(const char *name_arg,
 	      sys_check_func check_func_arg,
 	      sys_update_func update_func_arg,
-	      sys_set_default_func set_default_func_arg)
-    :sys_var(name_arg), check_func(check_func_arg),
+	      sys_set_default_func set_default_func_arg,
+              char *value_arg)
+    :sys_var(name_arg), value(value_arg), check_func(check_func_arg),
     update_func(update_func_arg),set_default_func(set_default_func_arg)
   {}
-  bool check(THD *thd, set_var *var)
-  {
-    return check_func ? (*check_func)(thd, var) : 0;
-  }
+  bool check(THD *thd, set_var *var);
   bool update(THD *thd, set_var *var)
   {
     return (*update_func)(thd, var);
@@ -147,7 +164,8 @@ public:
     (*set_default_func)(thd, type);
   }
   SHOW_TYPE type() { return SHOW_CHAR; }
-  byte *value_ptr(THD *thd, enum_var_type type) { return (byte*) value; }
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base)
+  { return (byte*) value; }
   bool check_update_type(Item_result type)
   {
     return type != STRING_RESULT;		/* Only accept strings */
@@ -172,7 +190,10 @@ public:
     return 1;
   }
   SHOW_TYPE type() { return SHOW_CHAR; }
-  byte *value_ptr(THD *thd, enum_var_type type) { return (byte*) value; }
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base)
+  {
+    return (byte*) value;
+  }
   bool check_update_type(Item_result type)
   {
     return 1;
@@ -196,7 +217,7 @@ public:
   }
   bool update(THD *thd, set_var *var);
   SHOW_TYPE type() { return SHOW_CHAR; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
   bool check_update_type(Item_result type) { return 0; }
 };
 
@@ -220,19 +241,21 @@ public:
 
 class sys_var_thd_ulong :public sys_var_thd
 {
+  sys_check_func check_func;
 public:
   ulong SV::*offset;
   sys_var_thd_ulong(const char *name_arg, ulong SV::*offset_arg)
-    :sys_var_thd(name_arg), offset(offset_arg)
+    :sys_var_thd(name_arg), check_func(0), offset(offset_arg)
   {}
   sys_var_thd_ulong(const char *name_arg, ulong SV::*offset_arg,
-		   sys_after_update_func func)
-    :sys_var_thd(name_arg,func), offset(offset_arg)
+		   sys_check_func c_func, sys_after_update_func au_func)
+    :sys_var_thd(name_arg,au_func), check_func(c_func), offset(offset_arg)
   {}
+  bool check(THD *thd, set_var *var);
   bool update(THD *thd, set_var *var);
   void set_default(THD *thd, enum_var_type type);
   SHOW_TYPE type() { return SHOW_LONG; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
 };
 
 
@@ -250,7 +273,7 @@ public:
   bool update(THD *thd, set_var *var);
   void set_default(THD *thd, enum_var_type type);
   SHOW_TYPE type() { return SHOW_HA_ROWS; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
 };
 
 
@@ -270,7 +293,7 @@ public:
   bool update(THD *thd, set_var *var);
   void set_default(THD *thd, enum_var_type type);
   SHOW_TYPE type() { return SHOW_LONGLONG; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
   bool check_default(enum_var_type type)
   {
     return type == OPT_GLOBAL && !option_limits;
@@ -296,7 +319,7 @@ public:
   bool update(THD *thd, set_var *var);
   void set_default(THD *thd, enum_var_type type);
   SHOW_TYPE type() { return SHOW_MY_BOOL; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
   bool check(THD *thd, set_var *var)
   {
     return check_enum(thd, var, &bool_typelib);
@@ -307,6 +330,7 @@ public:
 
 class sys_var_thd_enum :public sys_var_thd
 {
+protected:
   ulong SV::*offset;
   TYPELIB *enum_names;
 public:
@@ -326,31 +350,78 @@ public:
   bool update(THD *thd, set_var *var);
   void set_default(THD *thd, enum_var_type type);
   SHOW_TYPE type() { return SHOW_CHAR; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
   bool check_update_type(Item_result type) { return 0; }
 };
 
 
+extern void fix_sql_mode_var(THD *thd, enum_var_type type);
+
+class sys_var_thd_sql_mode :public sys_var_thd_enum
+{
+public:
+  sys_var_thd_sql_mode(const char *name_arg, ulong SV::*offset_arg)
+    :sys_var_thd_enum(name_arg, offset_arg, &sql_mode_typelib,
+		      fix_sql_mode_var)
+  {}
+  bool check(THD *thd, set_var *var)
+  {
+    return check_set(thd, var, enum_names);
+  }
+  void set_default(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+};
+
+
+class sys_var_thd_storage_engine :public sys_var_thd
+{
+protected:
+  ulong SV::*offset;
+public:
+  sys_var_thd_storage_engine(const char *name_arg, ulong SV::*offset_arg)
+    :sys_var_thd(name_arg), offset(offset_arg)
+  {}
+  bool check(THD *thd, set_var *var);
+SHOW_TYPE type() { return SHOW_CHAR; }
+  bool check_update_type(Item_result type)
+  {
+    return type != STRING_RESULT;		/* Only accept strings */
+  }
+  void set_default(THD *thd, enum_var_type type);
+  bool update(THD *thd, set_var *var);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+};
+
+class sys_var_thd_table_type :public sys_var_thd_storage_engine
+{
+public:
+  sys_var_thd_table_type(const char *name_arg, ulong SV::*offset_arg)
+    :sys_var_thd_storage_engine(name_arg, offset_arg)
+  {}
+  void warn_deprecated(THD *thd);
+  void set_default(THD *thd, enum_var_type type);
+  bool update(THD *thd, set_var *var);
+};
+
 class sys_var_thd_bit :public sys_var_thd
 {
+  sys_check_func check_func;
   sys_update_func update_func;
 public:
   ulong bit_flag;
   bool reverse;
-  sys_var_thd_bit(const char *name_arg, sys_update_func func, ulong bit,
-		  bool reverse_arg=0)
-    :sys_var_thd(name_arg), update_func(func), bit_flag(bit),
-    reverse(reverse_arg)
+  sys_var_thd_bit(const char *name_arg, 
+                  sys_check_func c_func, sys_update_func u_func,
+                  ulong bit, bool reverse_arg=0)
+    :sys_var_thd(name_arg), check_func(c_func), update_func(u_func),
+    bit_flag(bit), reverse(reverse_arg)
   {}
-  bool check(THD *thd, set_var *var)
-  {
-    return check_enum(thd, var, &bool_typelib);
-  }
+  bool check(THD *thd, set_var *var);
   bool update(THD *thd, set_var *var);
   bool check_update_type(Item_result type) { return 0; }
   bool check_type(enum_var_type type) { return type == OPT_GLOBAL; }
   SHOW_TYPE type() { return SHOW_MY_BOOL; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
 };
 
 
@@ -365,7 +436,7 @@ public:
   bool check_type(enum_var_type type)    { return type == OPT_GLOBAL; }
   bool check_default(enum_var_type type) { return 0; }
   SHOW_TYPE type() { return SHOW_LONG; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
 };
 
 
@@ -376,7 +447,7 @@ public:
   bool update(THD *thd, set_var *var);
   bool check_type(enum_var_type type) { return type == OPT_GLOBAL; }
   SHOW_TYPE type() { return SHOW_LONGLONG; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
 };
 
 
@@ -387,10 +458,11 @@ public:
   bool update(THD *thd, set_var *var);
   bool check_type(enum_var_type type) { return type == OPT_GLOBAL; }
   SHOW_TYPE type() { return SHOW_LONGLONG; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
 };
 
 
+#ifdef HAVE_REPLICATION
 class sys_var_slave_skip_counter :public sys_var
 {
 public:
@@ -404,6 +476,14 @@ public:
   */
 };
 
+class sys_var_sync_binlog_period :public sys_var_long_ptr
+{
+public:
+  sys_var_sync_binlog_period(const char *name_arg, ulong *value_ptr)
+    :sys_var_long_ptr(name_arg,value_ptr) {}
+  bool update(THD *thd, set_var *var);
+};
+#endif
 
 class sys_var_rand_seed1 :public sys_var
 {
@@ -422,24 +502,241 @@ public:
 };
 
 
-class sys_var_thd_conv_charset :public sys_var_thd
+class sys_var_collation :public sys_var_thd
 {
 public:
-  sys_var_thd_conv_charset(const char *name_arg)
-    :sys_var_thd(name_arg)
-  {}
+  sys_var_collation(const char *name_arg) :sys_var_thd(name_arg)
+    {
+#if MYSQL_VERSION_ID < 50000
+    no_support_one_shot= 0;
+#endif
+    }
   bool check(THD *thd, set_var *var);
-  bool update(THD *thd, set_var *var);
+SHOW_TYPE type() { return SHOW_CHAR; }
+  bool check_update_type(Item_result type)
+  {
+    return ((type != STRING_RESULT) && (type != INT_RESULT));
+  }
+  bool check_default(enum_var_type type) { return 0; }
+  virtual void set_default(THD *thd, enum_var_type type)= 0;
+};
+
+class sys_var_character_set :public sys_var_thd
+{
+public:
+  bool nullable;
+  sys_var_character_set(const char *name_arg) :
+    sys_var_thd(name_arg)
+  {
+    nullable= 0;
+#if MYSQL_VERSION_ID < 50000
+    /*
+      In fact only almost all variables derived from sys_var_character_set
+      support ONE_SHOT; character_set_results doesn't. But that's good enough.
+    */
+    no_support_one_shot= 0;
+#endif
+  }
+  bool check(THD *thd, set_var *var);
   SHOW_TYPE type() { return SHOW_CHAR; }
-  byte *value_ptr(THD *thd, enum_var_type type);
+  bool check_update_type(Item_result type)
+  {
+    return ((type != STRING_RESULT) && (type != INT_RESULT));
+  }
+  bool check_default(enum_var_type type) { return 0; }
+  bool update(THD *thd, set_var *var);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+  virtual void set_default(THD *thd, enum_var_type type)= 0;
+  virtual CHARSET_INFO **ci_ptr(THD *thd, enum_var_type type)= 0;
+};
+
+class sys_var_character_set_client :public sys_var_character_set
+{
+public:
+  sys_var_character_set_client(const char *name_arg) :
+    sys_var_character_set(name_arg) {}
+  void set_default(THD *thd, enum_var_type type);
+  CHARSET_INFO **ci_ptr(THD *thd, enum_var_type type);
+};
+
+class sys_var_character_set_results :public sys_var_character_set
+{
+public:
+  sys_var_character_set_results(const char *name_arg) :
+    sys_var_character_set(name_arg) 
+    { nullable= 1; }
+  void set_default(THD *thd, enum_var_type type);
+  CHARSET_INFO **ci_ptr(THD *thd, enum_var_type type);
+};
+
+class sys_var_character_set_server :public sys_var_character_set
+{
+public:
+  sys_var_character_set_server(const char *name_arg) :
+    sys_var_character_set(name_arg) {}
+#if defined(HAVE_REPLICATION) && (MYSQL_VERSION_ID < 50000)
+  bool check(THD *thd, set_var *var);
+#endif
+  void set_default(THD *thd, enum_var_type type);
+  CHARSET_INFO **ci_ptr(THD *thd, enum_var_type type);
+};
+
+class sys_var_character_set_database :public sys_var_character_set
+{
+public:
+  sys_var_character_set_database(const char *name_arg) :
+    sys_var_character_set(name_arg) {}
+  void set_default(THD *thd, enum_var_type type);
+  CHARSET_INFO **ci_ptr(THD *thd, enum_var_type type);
+};
+
+class sys_var_character_set_connection :public sys_var_character_set
+{
+public:
+  sys_var_character_set_connection(const char *name_arg) :
+    sys_var_character_set(name_arg) {}
+  void set_default(THD *thd, enum_var_type type);
+  CHARSET_INFO **ci_ptr(THD *thd, enum_var_type type);
+};
+
+class sys_var_collation_connection :public sys_var_collation
+{
+public:
+  sys_var_collation_connection(const char *name_arg) :sys_var_collation(name_arg) {}
+  bool update(THD *thd, set_var *var);
+  void set_default(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+};
+
+class sys_var_collation_server :public sys_var_collation
+{
+public:
+  sys_var_collation_server(const char *name_arg) :sys_var_collation(name_arg) {}
+#if defined(HAVE_REPLICATION) && (MYSQL_VERSION_ID < 50000)
+  bool check(THD *thd, set_var *var);
+#endif
+  bool update(THD *thd, set_var *var);
+  void set_default(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+};
+
+class sys_var_collation_database :public sys_var_collation
+{
+public:
+  sys_var_collation_database(const char *name_arg) :sys_var_collation(name_arg) {}
+  bool update(THD *thd, set_var *var);
+  void set_default(THD *thd, enum_var_type type);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+};
+
+
+class sys_var_key_cache_param :public sys_var
+{
+protected:
+  size_t offset;
+public:
+  sys_var_key_cache_param(const char *name_arg, size_t offset_arg)
+    :sys_var(name_arg), offset(offset_arg)
+  {}
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+  bool check_default(enum_var_type type) { return 1; }
+  bool is_struct() { return 1; }
+};
+
+
+class sys_var_key_buffer_size :public sys_var_key_cache_param
+{
+public:
+  sys_var_key_buffer_size(const char *name_arg)
+    :sys_var_key_cache_param(name_arg, offsetof(KEY_CACHE, param_buff_size))
+  {}
+  bool update(THD *thd, set_var *var);
+  SHOW_TYPE type() { return SHOW_LONGLONG; }
+};
+
+
+class sys_var_key_cache_long :public sys_var_key_cache_param
+{
+public:
+  sys_var_key_cache_long(const char *name_arg, size_t offset_arg)
+    :sys_var_key_cache_param(name_arg, offset_arg)
+  {}
+  bool update(THD *thd, set_var *var);
+  SHOW_TYPE type() { return SHOW_LONG; }
+};
+
+
+class sys_var_thd_date_time_format :public sys_var_thd
+{
+  DATE_TIME_FORMAT *SV::*offset;
+  timestamp_type date_time_type;
+public:
+  sys_var_thd_date_time_format(const char *name_arg,
+			       DATE_TIME_FORMAT *SV::*offset_arg,
+			       timestamp_type date_time_type_arg)
+    :sys_var_thd(name_arg), offset(offset_arg),
+    date_time_type(date_time_type_arg)
+  {}
+  SHOW_TYPE type() { return SHOW_CHAR; }
   bool check_update_type(Item_result type)
   {
     return type != STRING_RESULT;		/* Only accept strings */
   }
   bool check_default(enum_var_type type) { return 0; }
+  bool check(THD *thd, set_var *var);
+  bool update(THD *thd, set_var *var);
+  void update2(THD *thd, enum_var_type type, DATE_TIME_FORMAT *new_value);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
   void set_default(THD *thd, enum_var_type type);
 };
 
+
+/* Variable that you can only read from */
+
+class sys_var_readonly: public sys_var
+{
+public:
+  enum_var_type var_type;
+  SHOW_TYPE show_type;
+  sys_value_ptr_func value_ptr_func;
+  sys_var_readonly(const char *name_arg, enum_var_type type,
+		   SHOW_TYPE show_type_arg,
+		   sys_value_ptr_func value_ptr_func_arg)
+    :sys_var(name_arg), var_type(type), 
+       show_type(show_type_arg), value_ptr_func(value_ptr_func_arg)
+  {}
+  bool update(THD *thd, set_var *var) { return 1; }
+  bool check_default(enum_var_type type) { return 1; }
+  bool check_type(enum_var_type type) { return type != var_type; }
+  bool check_update_type(Item_result type) { return 1; }
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base)
+  {
+    return (*value_ptr_func)(thd);
+  }
+  SHOW_TYPE type() { return show_type; }
+};
+
+class sys_var_thd_time_zone :public sys_var_thd
+{
+public:
+  sys_var_thd_time_zone(const char *name_arg):
+    sys_var_thd(name_arg) 
+  {
+#if MYSQL_VERSION_ID < 50000
+    no_support_one_shot= 0;
+#endif
+  }
+  bool check(THD *thd, set_var *var);
+  SHOW_TYPE type() { return SHOW_CHAR; }
+  bool check_update_type(Item_result type)
+  {
+    return type != STRING_RESULT;		/* Only accept strings */
+  }
+  bool check_default(enum_var_type type) { return 0; }
+  bool update(THD *thd, set_var *var);
+  byte *value_ptr(THD *thd, enum_var_type type, LEX_STRING *base);
+  virtual void set_default(THD *thd, enum_var_type type);
+};
 
 /****************************************************************************
   Classes for parsing of the SET command
@@ -452,6 +749,11 @@ public:
   virtual ~set_var_base() {}
   virtual int check(THD *thd)=0;	/* To check privileges etc. */
   virtual int update(THD *thd)=0;	/* To set the value */
+  /* light check for PS */
+  virtual int light_check(THD *thd) { return check(thd); }
+#if MYSQL_VERSION_ID < 50000
+  virtual bool no_support_one_shot() { return 1; }
+#endif
 };
 
 
@@ -465,12 +767,17 @@ public:
   enum_var_type type;
   union
   {
-    CONVERT *convert;
+    CHARSET_INFO *charset;
     ulong ulong_value;
+    ulonglong ulonglong_value;
+    DATE_TIME_FORMAT *date_time_format;
+    Time_zone *time_zone;
   } save_result;
+  LEX_STRING base;			/* for structs */
 
-  set_var(enum_var_type type_arg, sys_var *var_arg, Item *value_arg)
-    :var(var_arg), type(type_arg)
+  set_var(enum_var_type type_arg, sys_var *var_arg, LEX_STRING *base_name_arg,
+	  Item *value_arg)
+    :var(var_arg), type(type_arg), base(*base_name_arg)
   {
     /*
       If the set value is a field, change it to a string to allow things like
@@ -479,7 +786,8 @@ public:
     if (value_arg && value_arg->type() == Item::FIELD_ITEM)
     {
       Item_field *item= (Item_field*) value_arg;
-      if (!(value=new Item_string(item->field_name, strlen(item->field_name))))
+      if (!(value=new Item_string(item->field_name, strlen(item->field_name),
+				  item->collation.collation)))
 	value=value_arg;			/* Give error message later */
     }
     else
@@ -487,6 +795,10 @@ public:
   }
   int check(THD *thd);
   int update(THD *thd);
+  int light_check(THD *thd);
+#if MYSQL_VERSION_ID < 50000
+  bool no_support_one_shot() { return var->no_support_one_shot; }
+#endif
 };
 
 
@@ -501,6 +813,7 @@ public:
   {}
   int check(THD *thd);
   int update(THD *thd);
+  int light_check(THD *thd);
 };
 
 /* For SET PASSWORD */
@@ -518,6 +831,68 @@ public:
 };
 
 
+/* For SET NAMES and SET CHARACTER SET */
+
+class set_var_collation_client: public set_var_base
+{
+  CHARSET_INFO *character_set_client;
+  CHARSET_INFO *character_set_results;
+  CHARSET_INFO *collation_connection;
+public:
+  set_var_collation_client(CHARSET_INFO *client_coll_arg,
+  			   CHARSET_INFO *connection_coll_arg,
+  			   CHARSET_INFO *result_coll_arg)
+    :character_set_client(client_coll_arg),
+     character_set_results(result_coll_arg),
+     collation_connection(connection_coll_arg)
+  {}
+  int check(THD *thd);
+  int update(THD *thd);
+};
+
+
+/* Named lists (used for keycaches) */
+
+class NAMED_LIST :public ilink
+{
+  const char *name;
+  uint name_length;
+public:
+  gptr data;
+
+  NAMED_LIST(I_List<NAMED_LIST> *links, const char *name_arg,
+	     uint name_length_arg, gptr data_arg)
+    :name_length(name_length_arg), data(data_arg)
+  {
+    name= my_strdup_with_length((byte*) name_arg, name_length, MYF(MY_WME));
+    links->push_back(this);
+  }
+  inline bool cmp(const char *name_cmp, uint length)
+  {
+    return length == name_length && !memcmp(name, name_cmp, length);
+  }
+  ~NAMED_LIST()
+  {
+    my_free((char*) name, MYF(0));
+  }
+  friend bool process_key_caches(int (* func) (const char *name,
+					       KEY_CACHE *));
+  friend void delete_elements(I_List<NAMED_LIST> *list,
+			      void (*free_element)(const char*, gptr));
+};
+
+/* updated in sql_acl.cc */
+
+extern sys_var_thd_bool sys_old_passwords;
+extern LEX_STRING default_key_cache_base;
+
+/* For sql_yacc */
+struct sys_var_with_base
+{
+  sys_var *var;
+  LEX_STRING base_name;
+};
+
 /*
   Prototypes for helper functions
 */
@@ -526,6 +901,21 @@ void set_var_init();
 void set_var_free();
 sys_var *find_sys_var(const char *str, uint length=0);
 int sql_set_variables(THD *thd, List<set_var_base> *var_list);
+bool not_all_support_one_shot(List<set_var_base> *var_list);
 void fix_delay_key_write(THD *thd, enum_var_type type);
+ulong fix_sql_mode(ulong sql_mode);
+extern sys_var_str sys_charset_system;
+extern sys_var_str sys_init_connect;
+extern sys_var_str sys_init_slave;
+extern sys_var_thd_time_zone sys_time_zone;
+CHARSET_INFO *get_old_charset_by_name(const char *old_name);
+gptr find_named(I_List<NAMED_LIST> *list, const char *name, uint length,
+		NAMED_LIST **found);
 
-extern sys_var_str sys_charset;
+/* key_cache functions */
+KEY_CACHE *get_key_cache(LEX_STRING *cache_name);
+KEY_CACHE *get_or_create_key_cache(const char *name, uint length);
+void free_key_cache(const char *name, KEY_CACHE *key_cache);
+bool process_key_caches(int (* func) (const char *name, KEY_CACHE *));
+void delete_elements(I_List<NAMED_LIST> *list,
+		     void (*free_element)(const char*, gptr));

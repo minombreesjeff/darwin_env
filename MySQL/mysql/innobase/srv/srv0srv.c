@@ -32,7 +32,6 @@ Created 10/8/1995 Heikki Tuuri
 #include "mem0mem.h"
 #include "mem0pool.h"
 #include "sync0sync.h"
-#include "sync0ipm.h"
 #include "thr0loc.h"
 #include "que0que.h"
 #include "srv0que.h"
@@ -56,10 +55,17 @@ ibool	srv_lower_case_table_names	= FALSE;
 in the server */
 ulint	srv_activity_count	= 0;
 
+/* The following is the maximum allowed duration of a lock wait. */
+ulint	srv_fatal_semaphore_wait_threshold = 600;
+
+/* How much data manipulation language (DML) statements need to be delayed,
+in microseconds, in order to reduce the lagging of the purge thread. */
+ulint	srv_dml_needed_delay = 0;
+
 ibool	srv_lock_timeout_and_monitor_active = FALSE;
 ibool	srv_error_monitor_active = FALSE;
 
-char*	srv_main_thread_op_info = (char*) "";
+const char*	srv_main_thread_op_info = "";
 
 /* Server parameters which are read from the initfile */
 
@@ -67,8 +73,18 @@ char*	srv_main_thread_op_info = (char*) "";
 names, where the file name itself may also contain a path */
 
 char*	srv_data_home 	= NULL;
+#ifdef UNIV_LOG_ARCHIVE
 char*	srv_arch_dir 	= NULL;
+#endif /* UNIV_LOG_ARCHIVE */
 
+ibool	srv_file_per_table = FALSE;	/* store to its own file each table
+					created by an user; data dictionary
+					tables are in the system tablespace
+					0 */
+ibool   srv_locks_unsafe_for_binlog = FALSE; /* Place locks to records only 
+                                                i.e. do not use next-key locking
+                                                except on duplicate key checking and
+                                                foreign key checking */
 ulint	srv_n_data_files = 0;
 char**	srv_data_file_names = NULL;
 ulint*	srv_data_file_sizes = NULL;	/* size in database pages */ 
@@ -80,6 +96,9 @@ ulint	srv_last_file_size_max	= 0;		 /* if != 0, this tells
 						 the max size auto-extending
 						 may increase the last data
 						 file size */
+ulint	srv_auto_extend_increment = 8;		 /* If the last data file is
+						 auto-extended, we add this
+						 many pages to it at a time */
 ulint*  srv_data_file_is_raw_partition = NULL;
 
 /* If the following is TRUE we do not allow inserts etc. This protects
@@ -92,7 +111,6 @@ char**	srv_log_group_home_dirs = NULL;
 ulint	srv_n_log_groups	= ULINT_MAX;
 ulint	srv_n_log_files		= ULINT_MAX;
 ulint	srv_log_file_size	= ULINT_MAX;	/* size in database pages */ 
-ibool	srv_log_archive_on	= TRUE;
 ulint	srv_log_buffer_size	= ULINT_MAX;	/* size in database pages */ 
 ulint	srv_flush_log_at_trx_commit = 1;
 
@@ -134,22 +152,32 @@ byte	srv_latin1_ordering[256]	/* The sort order table of the latin1
 , 0xD8, 0x55, 0x55, 0x55, 0x59, 0x59, 0xDE, 0xFF
 };
 		
-ulint	srv_pool_size		= ULINT_MAX;	/* size in database pages;
-						MySQL originally sets this
-						value in bytes */ 
+ulint	srv_pool_size		= ULINT_MAX;	/* size in pages; MySQL inits
+						this to size in kilobytes but
+						we normalize this to pages in
+						srv_boot() */
+ulint	srv_awe_window_size 	= 0;		/* size in pages; MySQL inits
+						this to bytes, but we
+						normalize it to pages in
+						srv_boot() */
 ulint	srv_mem_pool_size	= ULINT_MAX;	/* size in bytes */ 
 ulint	srv_lock_table_size	= ULINT_MAX;
 
 ulint	srv_n_file_io_threads	= ULINT_MAX;
 
+#ifdef UNIV_LOG_ARCHIVE
+ibool	srv_log_archive_on	= FALSE;
 ibool	srv_archive_recovery	= 0;
 dulint	srv_archive_recovery_limit_lsn;
+#endif /* UNIV_LOG_ARCHIVE */
 
 ulint	srv_lock_wait_timeout	= 1024 * 1024 * 1024;
 
 char*   srv_file_flush_method_str = NULL;
 ulint   srv_unix_file_flush_method = SRV_UNIX_FDATASYNC;
 ulint   srv_win_file_flush_method = SRV_WIN_IO_UNBUFFERED;
+
+ulint	srv_max_n_open_files	  = 300;
 
 /* The InnoDB main thread tries to keep the ratio of modified pages
 in the buffer pool to all database pages in the buffer pool smaller than
@@ -208,7 +236,7 @@ struct srv_conc_slot_struct{
 
 UT_LIST_BASE_NODE_T(srv_conc_slot_t)	srv_conc_queue;	/* queue of threads
 							waiting to get in */
-srv_conc_slot_t*			srv_conc_slots;	/* array of wait
+srv_conc_slot_t* srv_conc_slots;			/* array of wait
 							slots */
 
 /* Number of times a thread is allowed to enter InnoDB within the same
@@ -221,10 +249,26 @@ merge to completion before shutdown */
 
 ibool	srv_fast_shutdown	= FALSE;
 
+ibool	srv_very_fast_shutdown	= FALSE; /* if this TRUE, do not flush the
+					 buffer pool to data files at the
+					 shutdown; we effectively 'crash'
+					 InnoDB */
+/* Generate a innodb_status.<pid> file */
+ibool	srv_innodb_status	= FALSE;
+
 ibool	srv_use_doublewrite_buf	= TRUE;
 
 ibool   srv_set_thread_priorities = TRUE;
 int     srv_query_thread_priority = 0;
+
+/* TRUE if the Address Windowing Extensions of Windows are used; then we must
+disable adaptive hash indexes */
+ibool	srv_use_awe			= FALSE;
+ibool	srv_use_adaptive_hash_indexes 	= TRUE;
+
+/* Maximum allowable purge history length.  <=0 means 'infinite'. */
+ulint	srv_max_purge_lag		= 0;
+
 /*-------------------------------------------*/
 ulint	srv_n_spin_wait_rounds	= 20;
 ulint	srv_spin_wait_delay	= 5;
@@ -631,8 +675,8 @@ srv_suspend_thread(void)
 	if (srv_print_thread_releases) {
 		fprintf(stderr,
 			"Suspending thread %lu to slot %lu meter %lu\n",
-			os_thread_get_curr_id(), slot_no,
-			srv_meter[SRV_RECOVERY]);
+			(ulong) os_thread_get_curr_id(), (ulong) slot_no,
+			(ulong) srv_meter[SRV_RECOVERY]);
 	}
 
 	slot = srv_table_get_nth_slot(slot_no);
@@ -694,7 +738,8 @@ srv_release_threads(
 			if (srv_print_thread_releases) {
 				fprintf(stderr,
 		"Releasing thread %lu type %lu from slot %lu meter %lu\n",
-				slot->id, type, i, srv_meter[SRV_RECOVERY]);
+				(ulong) slot->id, (ulong) type, (ulong) i,
+		                (ulong) srv_meter[SRV_RECOVERY]);
 			}
 
 			count++;
@@ -801,7 +846,7 @@ srv_init(void)
 	UT_LIST_INIT(srv_conc_queue);
 
 	srv_conc_slots = mem_alloc(OS_THREAD_MAX_N * sizeof(srv_conc_slot_t));
-	
+
 	for (i = 0; i < OS_THREAD_MAX_N; i++) {
 		conc_slot = srv_conc_slots + i;
 		conc_slot->reserved = FALSE;
@@ -904,11 +949,17 @@ retry:
 
 		os_fast_mutex_unlock(&srv_conc_mutex);
 
-		trx->op_info = (char*)"sleeping before joining InnoDB queue";
+		trx->op_info = "sleeping before joining InnoDB queue";
 
-		os_thread_sleep(50000);
+		/* Peter Zaitsev suggested that we take the sleep away
+		altogether. But the sleep may be good in pathological
+		situations of lots of thread switches. Simply put some
+		threads aside for a while to reduce the number of thread
+		switches. */
 
-		trx->op_info = (char*)"";
+		os_thread_sleep(10000);
+
+		trx->op_info = "";
 
 		os_fast_mutex_lock(&srv_conc_mutex);
 
@@ -923,6 +974,7 @@ retry:
 		slot = srv_conc_slots + i;
 
 		if (!slot->reserved) {
+
 			break;
 		}
 	}
@@ -960,11 +1012,11 @@ retry:
 	/* Go to wait for the event; when a thread leaves InnoDB it will
 	release this thread */
 
-	trx->op_info = (char*)"waiting in InnoDB queue";
+	trx->op_info = "waiting in InnoDB queue";
 
 	os_event_wait(slot->event);
 
-	trx->op_info = (char*)"";
+	trx->op_info = "";
 
 	os_fast_mutex_lock(&srv_conc_mutex);
 
@@ -1117,9 +1169,19 @@ srv_normalize_init_values(void)
 
 	srv_log_buffer_size = srv_log_buffer_size / UNIV_PAGE_SIZE;
 
-	srv_pool_size = srv_pool_size / UNIV_PAGE_SIZE;
+	srv_pool_size = srv_pool_size / (UNIV_PAGE_SIZE / 1024);
+
+	srv_awe_window_size = srv_awe_window_size / UNIV_PAGE_SIZE;
 	
-	srv_lock_table_size = 20 * srv_pool_size;
+	if (srv_use_awe) {
+	        /* If we are using AWE we must save memory in the 32-bit
+		address space of the process, and cannot bind the lock
+		table size to the real buffer pool size. */
+
+	        srv_lock_table_size = 20 * srv_awe_window_size;
+	} else {
+	        srv_lock_table_size = 5 * srv_pool_size;
+	}
 
 	return(DB_SUCCESS);
 }
@@ -1185,7 +1247,7 @@ srv_table_reserve_slot_for_mysql(void)
 "  InnoDB: There appear to be %lu MySQL threads currently waiting\n"
 "InnoDB: inside InnoDB, which is the upper limit. Cannot continue operation.\n"
 "InnoDB: We intentionally generate a seg fault to print a stack trace\n"
-"InnoDB: on Linux. But first we print a list of waiting threads.\n", i);
+"InnoDB: on Linux. But first we print a list of waiting threads.\n", (ulong) i);
 
 			for (i = 0; i < OS_THREAD_MAX_N; i++) {
 
@@ -1193,10 +1255,10 @@ srv_table_reserve_slot_for_mysql(void)
 
 			        fprintf(stderr,
 "Slot %lu: thread id %lu, type %lu, in use %lu, susp %lu, time %lu\n",
-				  i, os_thread_pf(slot->id),
-				  slot->type, slot->in_use,
-				  slot->suspended,
-			  (ulint)difftime(ut_time(), slot->suspend_time));
+				  (ulong) i, (ulong) os_thread_pf(slot->id),
+				  (ulong) slot->type, (ulong) slot->in_use,
+				  (ulong) slot->suspended,
+			  (ulong) difftime(ut_time(), slot->suspend_time));
 			}
 
 		        ut_error;
@@ -1413,7 +1475,7 @@ srv_printf_innodb_monitor(
 {
 	double	time_elapsed;
 	time_t	current_time;
-	ulint	n_reserved;
+	ulint   n_reserved;
 
 	mutex_enter(&srv_innodb_monitor_mutex);
 
@@ -1428,7 +1490,6 @@ srv_printf_innodb_monitor(
 
 	srv_last_monitor_time = time(NULL);
 
-	rewind(file);
 	fputs("\n=====================================\n", file);
 
 	ut_print_timestamp(file);
@@ -1490,36 +1551,45 @@ srv_printf_innodb_monitor(
 		       "BUFFER POOL AND MEMORY\n"
 		"----------------------\n", file);
 	fprintf(file,
-	"Total memory allocated %lu; in additional pool allocated %lu\n",
+	"Total memory allocated " ULINTPF
+	"; in additional pool allocated " ULINTPF "\n",
 				ut_total_allocated_memory,
 				mem_pool_get_reserved(mem_comm_pool));
+
+	if (srv_use_awe) {
+		fprintf(file,
+	"In addition to that %lu MB of AWE memory allocated\n",
+		(ulong) (srv_pool_size / ((1024 * 1024) / UNIV_PAGE_SIZE)));
+	}
+	
 	buf_print_io(file);
 
 	fputs("--------------\n"
 		"ROW OPERATIONS\n"
 		"--------------\n", file);
 	fprintf(file, "%ld queries inside InnoDB, %lu queries in queue\n",
-			srv_conc_n_threads, srv_conc_n_waiting_threads);
-
-	n_reserved = fil_space_get_n_reserved_extents(0);
-	if (n_reserved > 0) {
-		fprintf(file,
-	"%lu tablespace extents now reserved for B-tree split operations\n",
-						    n_reserved);
-	}
+       		       (long) srv_conc_n_threads,
+		       (ulong) srv_conc_n_waiting_threads);
+        n_reserved = fil_space_get_n_reserved_extents(0);
+        if (n_reserved > 0) {
+                fprintf(file,
+        "%lu tablespace extents now reserved for B-tree split operations\n",
+                                                    (ulong) n_reserved);
+        }
 
 #ifdef UNIV_LINUX
 	fprintf(file, "Main thread process no. %lu, id %lu, state: %s\n",
-			srv_main_thread_process_no,
-			srv_main_thread_id,
-			srv_main_thread_op_info);
+		       (ulong) srv_main_thread_process_no,
+		       (ulong) srv_main_thread_id,
+		       srv_main_thread_op_info);
 #else
 	fprintf(file, "Main thread id %lu, state: %s\n",
-			srv_main_thread_id,
+			(ulong) srv_main_thread_id,
 			srv_main_thread_op_info);
 #endif
 	fprintf(file,
-	"Number of rows inserted %lu, updated %lu, deleted %lu, read %lu\n",
+	"Number of rows inserted " ULINTPF
+	", updated " ULINTPF ", deleted " ULINTPF ", read " ULINTPF "\n",
 			srv_n_rows_inserted, 
 			srv_n_rows_updated, 
 			srv_n_rows_deleted, 
@@ -1606,11 +1676,13 @@ loop:
 		srv_printf_innodb_monitor(stderr);
 	    }
 
-	    mutex_enter(&srv_monitor_file_mutex);
-	    rewind(srv_monitor_file);
-	    srv_printf_innodb_monitor(srv_monitor_file);
-	    os_file_set_eof(srv_monitor_file);
-	    mutex_exit(&srv_monitor_file_mutex);
+	    if (srv_innodb_status) {
+		mutex_enter(&srv_monitor_file_mutex);
+		rewind(srv_monitor_file);
+		srv_printf_innodb_monitor(srv_monitor_file);
+		os_file_set_eof(srv_monitor_file);
+		mutex_exit(&srv_monitor_file_mutex);
+	    }
 
 	    if (srv_print_innodb_tablespace_monitor
 		&& difftime(current_time, last_table_monitor_time) > 60) {
@@ -1749,7 +1821,12 @@ srv_error_monitor_thread(
 			/* in: a dummy parameter required by
 			os_thread_create */
 {
-	ulint	cnt	= 0;
+	/* number of successive fatal timeouts observed */
+	ulint	fatal_cnt	= 0;
+	dulint	old_lsn;
+	dulint	new_lsn;
+
+	old_lsn = srv_start_lsn;
 
 #ifdef UNIV_DEBUG_THREAD_CREATION
 	fprintf(stderr, "Error monitor thread starts, id %lu\n",
@@ -1758,9 +1835,24 @@ srv_error_monitor_thread(
 loop:
 	srv_error_monitor_active = TRUE;
 
-	cnt++;
+	/* Try to track a strange bug reported by Harald Fuchs and others,
+	where the lsn seems to decrease at times */
 
-	os_thread_sleep(2000000);
+	new_lsn = log_get_lsn();
+
+	if (ut_dulint_cmp(new_lsn, old_lsn) < 0) {
+		ut_print_timestamp(stderr);
+		fprintf(stderr,
+"  InnoDB: Error: old log sequence number %lu %lu was greater\n"
+"InnoDB: than the new log sequence number %lu %lu!\n"
+"InnoDB: Please send a bug report to mysql@lists.mysql.com\n",
+		(ulong) ut_dulint_get_high(old_lsn),
+		(ulong) ut_dulint_get_low(old_lsn),
+		(ulong) ut_dulint_get_high(new_lsn),
+		(ulong) ut_dulint_get_low(new_lsn));
+	}
+
+	old_lsn = new_lsn;
 
 	if (difftime(time(NULL), srv_last_monitor_time) > 60) {
 		/* We referesh InnoDB Monitor values so that averages are
@@ -1769,12 +1861,27 @@ loop:
 		srv_refresh_innodb_monitor_stats();
 	}
 
-	sync_array_print_long_waits();
+	if (sync_array_print_long_waits()) {
+		fatal_cnt++;
+		if (fatal_cnt > 5) {
+
+			fprintf(stderr,
+"InnoDB: Error: semaphore wait has lasted > %lu seconds\n"
+"InnoDB: We intentionally crash the server, because it appears to be hung.\n",
+				srv_fatal_semaphore_wait_threshold);
+
+			ut_error;
+		}
+	} else {
+		fatal_cnt = 0;
+	}
 
 	/* Flush stderr so that a database user gets the output
 	to possible MySQL error file */
 
 	fflush(stderr);
+
+	os_thread_sleep(2000000);
 
 	if (srv_shutdown_state < SRV_SHUTDOWN_LAST_PHASE) {
 
@@ -1886,7 +1993,7 @@ loop:
 	/* ---- When there is database activity by users, we cycle in this
 	loop */
 
-	srv_main_thread_op_info = (char*) "reserving kernel mutex";
+	srv_main_thread_op_info = "reserving kernel mutex";
 
 	n_ios_very_old = log_sys->n_log_ios + buf_pool->n_pages_read
 						+ buf_pool->n_pages_written;
@@ -1910,7 +2017,7 @@ loop:
 	for (i = 0; i < 10; i++) {
 		n_ios_old = log_sys->n_log_ios + buf_pool->n_pages_read
 						+ buf_pool->n_pages_written;
-		srv_main_thread_op_info = (char*)"sleeping";
+		srv_main_thread_op_info = "sleeping";
 		
 		if (!skip_sleep) {
 
@@ -1923,12 +2030,11 @@ loop:
 		can drop tables lazily after there no longer are SELECT
 		queries to them. */
 
-		srv_main_thread_op_info =
-					(char*)"doing background drop tables";
+		srv_main_thread_op_info = "doing background drop tables";
 
 		row_drop_tables_for_mysql_in_background();
 
-		srv_main_thread_op_info = (char*)"";
+		srv_main_thread_op_info = "";
 
 		if (srv_fast_shutdown && srv_shutdown_state > 0) {
 
@@ -1939,8 +2045,11 @@ loop:
 		is issued or the we have specified in my.cnf no flush
 		at transaction commit */
 
-		srv_main_thread_op_info = (char*)"flushing log";
+		srv_main_thread_op_info = "flushing log";
 		log_buffer_flush_to_disk();
+
+		srv_main_thread_op_info = "making checkpoint";
+		log_free_check();
 
 		/* If there were less than 5 i/os during the
 		one second sleep, we assume that there is free
@@ -1952,11 +2061,10 @@ loop:
 		n_ios = log_sys->n_log_ios + buf_pool->n_pages_read
 						+ buf_pool->n_pages_written;
 		if (n_pend_ios < 3 && (n_ios - n_ios_old < 5)) {
-			srv_main_thread_op_info =
-					(char*)"doing insert buffer merge";
+			srv_main_thread_op_info = "doing insert buffer merge";
 			ibuf_contract_for_n_pages(TRUE, 5);
 
-			srv_main_thread_op_info = (char*)"flushing log";
+			srv_main_thread_op_info = "flushing log";
 
 			log_buffer_flush_to_disk();
 		}
@@ -2004,20 +2112,20 @@ loop:
 						+ buf_pool->n_pages_written;
 	if (n_pend_ios < 3 && (n_ios - n_ios_very_old < 200)) {
 
-		srv_main_thread_op_info = (char*) "flushing buffer pool pages";
+		srv_main_thread_op_info = "flushing buffer pool pages";
 		buf_flush_batch(BUF_FLUSH_LIST, 100, ut_dulint_max);
 
-		srv_main_thread_op_info = (char*) "flushing log";
+		srv_main_thread_op_info = "flushing log";
 		log_buffer_flush_to_disk();
 	}
 
 	/* We run a batch of insert buffer merge every 10 seconds,
 	even if the server were active */
 
-	srv_main_thread_op_info = (char*)"doing insert buffer merge";
+	srv_main_thread_op_info = "doing insert buffer merge";
 	ibuf_contract_for_n_pages(TRUE, 5);
 
-	srv_main_thread_op_info = (char*)"flushing log";
+	srv_main_thread_op_info = "flushing log";
 	log_buffer_flush_to_disk();
 
 	/* We run a full purge every 10 seconds, even if the server
@@ -2034,20 +2142,20 @@ loop:
 			goto background_loop;
 		}
 
-		srv_main_thread_op_info = (char*)"purging";
+		srv_main_thread_op_info = "purging";
 		n_pages_purged = trx_purge();
 
 		current_time = time(NULL);
 
 		if (difftime(current_time, last_flush_time) > 1) {
-			srv_main_thread_op_info = (char*) "flushing log";
+			srv_main_thread_op_info = "flushing log";
 
 		        log_buffer_flush_to_disk();
 			last_flush_time = current_time;
 		}
 	}
 	
-	srv_main_thread_op_info = (char*)"flushing buffer pool pages";
+	srv_main_thread_op_info = "flushing buffer pool pages";
 
 	/* Flush a few oldest pages to make a new checkpoint younger */
 
@@ -2068,13 +2176,13 @@ loop:
 							ut_dulint_max);
 	}
 
-	srv_main_thread_op_info = (char*)"making checkpoint";
+	srv_main_thread_op_info = "making checkpoint";
 
 	/* Make a new checkpoint about once in 10 seconds */
 
 	log_checkpoint(TRUE, FALSE);
 
-	srv_main_thread_op_info = (char*)"reserving kernel mutex";
+	srv_main_thread_op_info = "reserving kernel mutex";
 
 	mutex_enter(&kernel_mutex);
 	
@@ -2093,12 +2201,13 @@ loop:
 	/*****************************************************************/
 background_loop:
 	/* ---- In this loop we run background operations when the server
-	is quiet from user activity */
+	is quiet from user activity. Also in the case of a shutdown, we
+	loop here, flushing the buffer pool to the data files. */
 
 	/* The server has been quiet for a while: start running background
 	operations */
 		
-	srv_main_thread_op_info = (char*)"doing background drop tables";
+	srv_main_thread_op_info = "doing background drop tables";
 
 	n_tables_to_drop = row_drop_tables_for_mysql_in_background();
 
@@ -2111,7 +2220,7 @@ background_loop:
 		os_thread_sleep(100000);
 	}
  
-	srv_main_thread_op_info = (char*)"purging";
+	srv_main_thread_op_info = "purging";
 
 	/* Run a full purge */
 	
@@ -2125,20 +2234,20 @@ background_loop:
 			break;
 		}
 
-		srv_main_thread_op_info = (char*)"purging";
+		srv_main_thread_op_info = "purging";
 		n_pages_purged = trx_purge();
 
 		current_time = time(NULL);
 
 		if (difftime(current_time, last_flush_time) > 1) {
-			srv_main_thread_op_info = (char*) "flushing log";
+			srv_main_thread_op_info = "flushing log";
 
 		        log_buffer_flush_to_disk();
 			last_flush_time = current_time;
 		}
 	}
 
-	srv_main_thread_op_info = (char*)"reserving kernel mutex";
+	srv_main_thread_op_info = "reserving kernel mutex";
 
 	mutex_enter(&kernel_mutex);
 	if (srv_activity_count != old_activity_count) {
@@ -2147,7 +2256,7 @@ background_loop:
 	}
 	mutex_exit(&kernel_mutex);
 
-	srv_main_thread_op_info = (char*)"doing insert buffer merge";
+	srv_main_thread_op_info = "doing insert buffer merge";
 
 	if (srv_fast_shutdown && srv_shutdown_state > 0) {
 	        n_bytes_merged = 0;
@@ -2155,7 +2264,7 @@ background_loop:
 	        n_bytes_merged = ibuf_contract_for_n_pages(TRUE, 20);
 	}
 
-	srv_main_thread_op_info = (char*)"reserving kernel mutex";
+	srv_main_thread_op_info = "reserving kernel mutex";
 
 	mutex_enter(&kernel_mutex);
 	if (srv_activity_count != old_activity_count) {
@@ -2165,10 +2274,19 @@ background_loop:
 	mutex_exit(&kernel_mutex);
 	
 flush_loop:
-	srv_main_thread_op_info = (char*)"flushing buffer pool pages";
-	n_pages_flushed = buf_flush_batch(BUF_FLUSH_LIST, 100, ut_dulint_max);
+	srv_main_thread_op_info = "flushing buffer pool pages";
 
-	srv_main_thread_op_info = (char*)"reserving kernel mutex";
+	if (!srv_very_fast_shutdown) {
+		n_pages_flushed =
+			buf_flush_batch(BUF_FLUSH_LIST, 100, ut_dulint_max);
+	} else {
+		/* In a 'very fast' shutdown we do not flush the buffer pool
+		to data files: we set n_pages_flushed to 0 artificially. */
+
+		n_pages_flushed = 0;
+	}
+
+	srv_main_thread_op_info = "reserving kernel mutex";
 
 	mutex_enter(&kernel_mutex);
 	if (srv_activity_count != old_activity_count) {
@@ -2177,15 +2295,14 @@ flush_loop:
 	}
 	mutex_exit(&kernel_mutex);
 	
-	srv_main_thread_op_info =
-			(char*) "waiting for buffer pool flush to end";
+	srv_main_thread_op_info = "waiting for buffer pool flush to end";
 	buf_flush_wait_batch_end(BUF_FLUSH_LIST);
 
-	srv_main_thread_op_info = (char*) "flushing log";
+	srv_main_thread_op_info = "flushing log";
 
 	log_buffer_flush_to_disk();
 
-	srv_main_thread_op_info = (char*)"making checkpoint";
+	srv_main_thread_op_info = "making checkpoint";
 
 	log_checkpoint(TRUE, FALSE);
 
@@ -2197,7 +2314,7 @@ flush_loop:
 		goto flush_loop;
 	}
 
-	srv_main_thread_op_info = (char*)"reserving kernel mutex";
+	srv_main_thread_op_info = "reserving kernel mutex";
 
 	mutex_enter(&kernel_mutex);
 	if (srv_activity_count != old_activity_count) {
@@ -2205,11 +2322,12 @@ flush_loop:
 		goto loop;
 	}
 	mutex_exit(&kernel_mutex);
-
-	srv_main_thread_op_info =
-				(char*)"archiving log (if log archive is on)";
+/*
+	srv_main_thread_op_info = "archiving log (if log archive is on)";
 	
 	log_archive_do(FALSE, &n_bytes_archived);
+*/
+	n_bytes_archived = 0;
 
 	/* Keep looping in the background loop if still work to do */
 
@@ -2219,7 +2337,10 @@ flush_loop:
 
 			/* If we are doing a fast shutdown (= the default)
 			we do not do purge or insert buffer merge. But we
-			flush the buffer pool completely to disk. */
+			flush the buffer pool completely to disk.
+			In a 'very fast' shutdown we do not flush the buffer
+			pool to data files: we have set n_pages_flushed to
+			0 artificially. */
 
 			goto background_loop;
 		}
@@ -2236,7 +2357,7 @@ flush_loop:
 	master thread to wait for more server activity */
 	
 suspend_thread:
-	srv_main_thread_op_info = (char*)"suspending";
+	srv_main_thread_op_info = "suspending";
 
 	mutex_enter(&kernel_mutex);
 
@@ -2250,7 +2371,7 @@ suspend_thread:
 
 	mutex_exit(&kernel_mutex);
 
-	srv_main_thread_op_info = (char*)"waiting for server activity";
+	srv_main_thread_op_info = "waiting for server activity";
 
 	os_event_wait(event);
 
@@ -2274,7 +2395,7 @@ suspend_thread:
 	os_thread_exit(NULL);
 
 #ifndef __WIN__
-        return(NULL);
+        return(NULL);				/* Not reached */
 #else
 	return(0);
 #endif

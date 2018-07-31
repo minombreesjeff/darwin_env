@@ -24,6 +24,7 @@
 #else
 #include <my_no_pthread.h>
 #endif
+#include <keycache.h>
 
 #ifdef my_write
 #undef my_write				/* We want test if disk full */
@@ -358,6 +359,7 @@ extern int _nisam_read_pack_record(N_INFO *info,ulong filepos,byte *buf);
 extern int _nisam_read_rnd_pack_record(N_INFO*, byte *,ulong, int);
 extern int _nisam_pack_rec_unpack(N_INFO *info,byte *to,byte *from,
 			       uint reclength);
+extern ulong _nisam_checksum(const byte *mem, uint count);
 
 typedef struct st_sortinfo {
   uint key_length;

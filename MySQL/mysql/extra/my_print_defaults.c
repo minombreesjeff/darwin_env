@@ -30,31 +30,33 @@ uint verbose= 0, opt_defaults_file_used= 0;
 
 static struct my_option my_long_options[] =
 {
-  {"config-file", 'c', "The config file to be used",
+  {"config-file", 'c', "The config file to be used.",
    (gptr*) &config_file, (gptr*) &config_file, 0, GET_STR, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
-  {"defaults-file", 'c', "Synonym for --config-file",
+  {"defaults-file", 'c', "Synonym for --config-file.",
    (gptr*) &config_file, (gptr*) &config_file, 0, GET_STR, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
-  {"defaults-extra-file", 'e', 
+  {"defaults-extra-file", 'e',
    "Read this file after the global /etc config file and before the config file in the users home directory.",
    (gptr*) &defaults_extra_file, (gptr*) &defaults_extra_file, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"extra-file", 'e', 
-   "Synonym for --defaults-extra-file",
+  {"extra-file", 'e',
+   "Synonym for --defaults-extra-file.",
    (gptr*) &defaults_extra_file, (gptr*) &defaults_extra_file, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"no-defaults", 'n', "Return an empty string (useful for scripts)",
+  {"no-defaults", 'n', "Return an empty string (useful for scripts).",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"help", '?', "Display this help message and exit.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"verbose", 'v', "Increase the output level",
-   0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"version", 'V', "Output version information and exit.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
+
+#include <help_start.h>
 
 static void usage(my_bool version)
 {
@@ -69,6 +71,8 @@ static void usage(my_bool version)
   my_print_variables(my_long_options);
   printf("\nExample usage:\n%s --config-file=my client mysql\n", my_progname);
 }
+
+#include <help_end.h>
 
 
 static my_bool

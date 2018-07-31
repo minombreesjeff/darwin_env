@@ -63,8 +63,8 @@ int _mi_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   uchar *keypos,*maxpos;
   uchar lastkey[MI_MAX_KEY_BUFF],*buff;
   DBUG_ENTER("_mi_search");
-  DBUG_PRINT("enter",("pos: %ld  nextflag: %d  lastpos: %ld",
-                      pos,nextflag,info->lastpos));
+  DBUG_PRINT("enter",("pos: %lu  nextflag: %u  lastpos: %lu",
+                      (ulong) pos, nextflag, (ulong) info->lastpos));
   DBUG_EXECUTE("key",_mi_print_key(DBUG_FILE,keyinfo->seg,key,key_len););
 
   if (pos == HA_OFFSET_ERROR)
@@ -76,7 +76,7 @@ int _mi_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
     DBUG_RETURN(1);                             /* Search at upper levels */
   }
 
-  if (!(buff=_mi_fetch_keypage(info,keyinfo,pos,info->buff,
+  if (!(buff=_mi_fetch_keypage(info,keyinfo,pos,DFLT_INIT_HITS,info->buff,
                                test(!(nextflag & SEARCH_SAVE_BUFF)))))
     goto err;
   DBUG_DUMP("page",(byte*) buff,mi_getint(buff));
@@ -119,7 +119,7 @@ int _mi_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   if (pos != info->last_keypage)
   {
     uchar *old_buff=buff;
-    if (!(buff=_mi_fetch_keypage(info,keyinfo,pos,info->buff,
+    if (!(buff=_mi_fetch_keypage(info,keyinfo,pos,DFLT_INIT_HITS,info->buff,
                                  test(!(nextflag & SEARCH_SAVE_BUFF)))))
       goto err;
     keypos=buff+(keypos-old_buff);
@@ -132,8 +132,8 @@ int _mi_search(register MI_INFO *info, register MI_KEYDEF *keyinfo,
     if (_mi_get_prev_key(info,keyinfo, buff, info->lastkey, keypos,
                          &info->lastkey_length))
       goto err;
-    if ((nextflag & SEARCH_LAST) &&
-        _mi_key_cmp(keyinfo->seg, info->lastkey, key, key_len, SEARCH_FIND,
+    if (!(nextflag & SEARCH_SMALLER) &&
+        ha_key_cmp(keyinfo->seg, info->lastkey, key, key_len, SEARCH_FIND,
                     &not_used))
     {
       my_errno=HA_ERR_KEY_NOT_FOUND;                    /* Didn't find key */
@@ -191,7 +191,7 @@ int _mi_bin_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
   while (start != end)
   {
     mid= (start+end)/2;
-    if ((flag=_mi_key_cmp(keyinfo->seg,page+(uint) mid*totlength,key,key_len,
+    if ((flag=ha_key_cmp(keyinfo->seg,page+(uint) mid*totlength,key,key_len,
                           comp_flag,&not_used))
         >= 0)
       end=mid;
@@ -199,7 +199,7 @@ int _mi_bin_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
       start=mid+1;
   }
   if (mid != start)
-    flag=_mi_key_cmp(keyinfo->seg,page+(uint) start*totlength,key,key_len,
+    flag=ha_key_cmp(keyinfo->seg,page+(uint) start*totlength,key,key_len,
                      comp_flag,&not_used);
   if (flag < 0)
     start++;                    /* point at next, bigger key */
@@ -235,15 +235,15 @@ int _mi_seq_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
     if (length == 0 || page > end)
     {
       my_errno=HA_ERR_CRASHED;
-      DBUG_PRINT("error",("Found wrong key:  length: %d  page: %lx  end: %lx",
-                          length,page,end));
+      DBUG_PRINT("error",("Found wrong key:  length: %u  page: %p  end: %p",
+                          length, page, end));
       DBUG_RETURN(MI_FOUND_WRONG_KEY);
     }
-    if ((flag=_mi_key_cmp(keyinfo->seg,t_buff,key,key_len,comp_flag,
+    if ((flag=ha_key_cmp(keyinfo->seg,t_buff,key,key_len,comp_flag,
                           &not_used)) >= 0)
       break;
 #ifdef EXTRA_DEBUG
-    DBUG_PRINT("loop",("page: %lx  key: '%s'  flag: %d",page,t_buff,flag));
+    DBUG_PRINT("loop",("page: %p  key: '%s'  flag: %d", page, t_buff, flag));
 #endif
     memcpy(buff,t_buff,length);
     *ret_pos=page;
@@ -251,7 +251,7 @@ int _mi_seq_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
   if (flag == 0)
     memcpy(buff,t_buff,length);                 /* Result is first key */
   *last_key= page == end;
-  DBUG_PRINT("exit",("flag: %d  ret_pos: %lx",flag,*ret_pos));
+  DBUG_PRINT("exit",("flag: %d  ret_pos: %p", flag, *ret_pos));
   DBUG_RETURN(flag);
 } /* _mi_seq_search */
 
@@ -263,7 +263,7 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
   /*
     my_flag is raw comparison result to be changed according to
     SEARCH_NO_FIND,SEARCH_LAST and HA_REVERSE_SORT flags.
-    flag is the value returned by _mi_key_cmp and as treated as final
+    flag is the value returned by ha_key_cmp and as treated as final
   */
   int flag=0, my_flag=-1;
   uint nod_flag, length, len, matched, cmplen, kseg_len;
@@ -273,7 +273,8 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
   uchar *sort_order=keyinfo->seg->charset->sort_order;
   uchar tt_buff[MI_MAX_KEY_BUFF+2], *t_buff=tt_buff+2;
   uchar *saved_from, *saved_to, *saved_vseg;
-  uint   saved_length=0, saved_prefix_len=0;
+  uint  saved_length=0, saved_prefix_len=0;
+  uint  length_pack;
   DBUG_ENTER("_mi_prefix_search");
 
   LINT_INIT(length);
@@ -289,26 +290,24 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
   page+=2+nod_flag;
   *ret_pos=page;
   kseg=key;
-  {
-    uint lenght_pack;
-    get_key_pack_length(kseg_len,lenght_pack,kseg);
-    key_len_skip=lenght_pack+kseg_len;
-    key_len_left=(int) key_len- (int) key_len_skip;
-    cmplen=(key_len_left>=0) ? kseg_len : key_len-lenght_pack;
-    DBUG_PRINT("info",("key: '%.*s'",kseg_len,kseg));
-  }
 
-/*
-  Keys are compressed the following way:
+  get_key_pack_length(kseg_len,length_pack,kseg);
+  key_len_skip=length_pack+kseg_len;
+  key_len_left=(int) key_len- (int) key_len_skip;
+  cmplen=(key_len_left>=0) ? kseg_len : key_len-length_pack;
+  DBUG_PRINT("info",("key: '%.*s'",kseg_len,kseg));
 
-  If the max length of first key segment <= 127 characters the prefix is
-  1 byte else it's 2 byte
+  /*
+    Keys are compressed the following way:
 
-  prefix         The high bit is set if this is a prefix for the prev key
-  length         Packed length if the previous was a prefix byte
-  [length]       Length character of data
-  next-key-seg   Next key segments
-*/
+    If the max length of first key segment <= 127 characters the prefix is
+    1 byte else it's 2 byte
+
+    prefix         The high bit is set if this is a prefix for the prev key
+    length         Packed length if the previous was a prefix byte
+    [length]       Length character of data
+    next-key-seg   Next key segments
+  */
 
   matched=0;  /* how many char's from prefix were alredy matched */
   len=0;      /* length of previous key unpacked */
@@ -350,10 +349,11 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
     saved_vseg=vseg;
     saved_prefix_len=prefix_len;
 
-    DBUG_PRINT("loop",("page: '%.*s%.*s'",prefix_len,t_buff+seg_len_pack,suffix_len,vseg));
+    DBUG_PRINT("loop",("page: '%.*s%.*s'",prefix_len,t_buff+seg_len_pack,
+		       suffix_len,vseg));
     {
       uchar *from=vseg+suffix_len;
-      MI_KEYSEG *keyseg;
+      HA_KEYSEG *keyseg;
       uint l;
 
       for (keyseg=keyinfo->seg+1 ; keyseg->type ; keyseg++ )
@@ -381,8 +381,8 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
     if (page > end)
     {
       my_errno=HA_ERR_CRASHED;
-      DBUG_PRINT("error",("Found wrong key:  length: %d  page: %lx  end: %lx",
-                          length,page,end));
+      DBUG_PRINT("error",("Found wrong key:  length: %u  page: %p  end: %p",
+                          length, page, end));
       DBUG_RETURN(MI_FOUND_WRONG_KEY);
     }
 
@@ -396,14 +396,24 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
 
       matched=prefix_len+left;
 
-      for(my_flag=0;left;left--)
-        if ((my_flag= (int) sort_order[*vseg++] - (int) sort_order[*k++]))
-          break;
+      if (sort_order)
+      {
+        for (my_flag=0;left;left--)
+          if ((my_flag= (int) sort_order[*vseg++] - (int) sort_order[*k++]))
+            break;
+      }
+      else
+      {
+        for (my_flag=0;left;left--)
+          if ((my_flag= (int) *vseg++ - (int) *k++))
+            break;
+      }
 
       if (my_flag>0)      /* mismatch */
         break;
-      else if (my_flag==0) /* match */
-      { /*
+      if (my_flag==0) /* match */
+      {
+	/*
         **  len cmplen seg_left_len more_segs
         **     <                               matched=len; continue search
         **     >      =                        prefix ? found : (matched=len; continue search)
@@ -414,30 +424,67 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
         */
         if (len < cmplen)
         {
-          my_flag= -1;
+	  if ((keyinfo->seg->type != HA_KEYTYPE_TEXT &&
+	       keyinfo->seg->type != HA_KEYTYPE_VARTEXT))
+	    my_flag= -1;
+	  else
+	  {
+	    /* We have to compare k and vseg as if they where space extended */
+	    uchar *end= k+ (cmplen - len);
+	    for ( ; k < end && *k == ' '; k++) ;
+	    if (k == end)
+	      goto cmp_rest;		/* should never happen */
+	    if (*k < (uchar) ' ')
+	    {
+	      my_flag= 1;		/* Compared string is smaller */
+	      break;
+	    }
+	    my_flag= -1;		/* Continue searching */
+	  }
         }
         else if (len > cmplen)
         {
-          if ((my_flag= (!(nextflag & SEARCH_PREFIX) || key_len_left>0)))
-            break;
-          goto fix_flag;
-        }
-        else if (key_len_left>0)
-        {
-          uint not_used;
-          if ((flag = _mi_key_cmp(keyinfo->seg+1,vseg,
-                                  k,key_len_left,nextflag,&not_used)) >= 0)
-            break;
+	  uchar *end;
+	  if ((nextflag & SEARCH_PREFIX) && key_len_left == 0)
+	    goto fix_flag;
+
+	  /* We have to compare k and vseg as if they where space extended */
+	  for (end=vseg + (len-cmplen) ;
+	       vseg < end && *vseg == (uchar) ' ';
+	       vseg++, matched++) ;
+	  DBUG_ASSERT(vseg < end);
+
+	  if (*vseg > (uchar) ' ')
+	  {
+	    my_flag= 1;			/* Compared string is smaller */
+	    break;
+	  }
+	  my_flag= -1;			/* Continue searching */
         }
         else
-        {
-          /* at this line flag==-1 if the following lines were already
-             visited and 0 otherwise,  i.e. flag <=0 here always !!! */
-  fix_flag:
-          if (nextflag & (SEARCH_NO_FIND | SEARCH_LAST))
-            flag=(nextflag & (SEARCH_BIGGER | SEARCH_LAST)) ? -1 : 1;
-          if (flag>=0) break;
-        }
+	{
+      cmp_rest:
+	  if (key_len_left>0)
+	  {
+	    uint not_used;
+	    if ((flag = ha_key_cmp(keyinfo->seg+1,vseg,
+				   k,key_len_left,nextflag,&not_used)) >= 0)
+	      break;
+	  }
+	  else
+	  {
+	    /*
+	      at this line flag==-1 if the following lines were already
+	      visited and 0 otherwise,  i.e. flag <=0 here always !!!
+	    */
+	fix_flag:
+	    DBUG_ASSERT(flag <= 0);
+	    if (nextflag & (SEARCH_NO_FIND | SEARCH_LAST))
+	      flag=(nextflag & (SEARCH_BIGGER | SEARCH_LAST)) ? -1 : 1;
+	    if (flag>=0)
+	      break;
+	  }
+	}
       }
       matched-=left;
     }
@@ -463,7 +510,7 @@ int _mi_prefix_search(MI_INFO *info, register MI_KEYDEF *keyinfo, uchar *page,
 
   *last_key= page == end;
 
-  DBUG_PRINT("exit",("flag: %d  ret_pos: %lx",flag,*ret_pos));
+  DBUG_PRINT("exit",("flag: %d  ret_pos: %p", flag, *ret_pos));
   DBUG_RETURN(flag);
 } /* _mi_prefix_search */
 
@@ -540,7 +587,7 @@ my_off_t _mi_dpos(MI_INFO *info, uint nod_flag, uchar *after_key)
   after_key-=(nod_flag + info->s->rec_reflength);
   switch (info->s->rec_reflength) {
 #if SIZEOF_OFF_T > 4
-  case 8:  pos= (my_off_t) mi_uint5korr(after_key);  break;
+  case 8:  pos= (my_off_t) mi_uint8korr(after_key);  break;
   case 7:  pos= (my_off_t) mi_uint7korr(after_key);  break;
   case 6:  pos= (my_off_t) mi_uint6korr(after_key);  break;
   case 5:  pos= (my_off_t) mi_uint5korr(after_key);  break;
@@ -653,429 +700,6 @@ void _mi_dpointer(MI_INFO *info, uchar *buff, my_off_t pos)
 } /* _mi_dpointer */
 
 
-int _mi_compare_text(CHARSET_INFO *charset_info, uchar *a, uint a_length,
-                     uchar *b, uint b_length, my_bool part_key)
-{
-  int flag;
-
-#ifdef USE_STRCOLL
-  if (use_strcoll(charset_info))
-  {
-    if (part_key && b_length < a_length)
-      a_length=b_length;
-    return my_strnncoll(charset_info, a, a_length, b, b_length);
-  }
-  else
-#endif
-  {
-    uint length= min(a_length,b_length);
-    uchar *end= a+ length;
-    uchar *sort_order=charset_info->sort_order;
-    while (a < end)
-      if ((flag= (int) sort_order[*a++] - (int) sort_order[*b++]))
-        return flag;
-  }
-  if (part_key && b_length < a_length)
-    return 0;
-  return (int) (a_length-b_length);
-}
-
-
-static int compare_bin(uchar *a, uint a_length, uchar *b, uint b_length,
-                       my_bool part_key)
-{
-  uint length= min(a_length,b_length);
-  uchar *end= a+ length;
-  int flag;
-
-  while (a < end)
-    if ((flag= (int) *a++ - (int) *b++))
-      return flag;
-  if (part_key && b_length < a_length)
-    return 0;
-  return (int) (a_length-b_length);
-}
-
-
-/*
-  Compare two keys
-
-  SYNOPSIS
-    _mi_key_cmp()
-    keyseg	Key segments of key to compare
-    a		First key to compare, in format from _mi_pack_key()
-		This is normally key specified by user
-    b		Second key to compare.  This is always from a row
-    key_length	Length of key to compare.  This can be shorter than
-		a to just compare sub keys
-    next_flag	How keys should be compared
-		If bit SEARCH_FIND is not set the keys includes the row
-		position and this should also be compared
-
-  NOTES
-    Number-keys can't be splited
-  
-  RETURN VALUES
-    <0	If a < b
-    0	If a == b
-    >0	If a > b
-*/
-
-#define FCMP(A,B) ((int) (A) - (int) (B))
-
-int _mi_key_cmp(register MI_KEYSEG *keyseg, register uchar *a,
-                register uchar *b, uint key_length, uint nextflag,
-                uint *diff_pos)
-{
-  int flag;
-  int16 s_1,s_2;
-  int32 l_1,l_2;
-  uint32 u_1,u_2;
-  float f_1,f_2;
-  double d_1,d_2;
-  uint next_key_length;
-
-  *diff_pos=0;
-  for ( ; (int) key_length >0 ; key_length=next_key_length, keyseg++)
-  {
-    uchar *end;
-    uint piks=! (keyseg->flag & HA_NO_SORT);
-    (*diff_pos)++;
-
-    /* Handle NULL part */
-    if (keyseg->null_bit)
-    {
-      key_length--;
-      if (*a != *b && piks)
-      {
-        flag = (int) *a - (int) *b;
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      }
-      b++;
-      if (!*a++)                                /* If key was NULL */
-      {
-        if (nextflag == (SEARCH_FIND | SEARCH_UPDATE))
-          nextflag=SEARCH_SAME;                 /* Allow duplicate keys */
-	else if (nextflag & SEARCH_NULL_ARE_NOT_EQUAL)
-	{
-	  /*
-	    This is only used from mi_check() to calculate cardinality.
-	    It can't be used when searching for a key as this would cause
-	    compare of (a,b) and (b,a) to return the same value.
-	  */
-	  return -1;
-	}
-        next_key_length=key_length;
-        continue;                               /* To next key part */
-      }
-    }
-    end= a+ min(keyseg->length,key_length);
-    next_key_length=key_length-keyseg->length;
-
-    switch ((enum ha_base_keytype) keyseg->type) {
-    case HA_KEYTYPE_TEXT:                       /* Ascii; Key is converted */
-      if (keyseg->flag & HA_SPACE_PACK)
-      {
-        int a_length,b_length,pack_length;
-        get_key_length(a_length,a);
-        get_key_pack_length(b_length,pack_length,b);
-        next_key_length=key_length-b_length-pack_length;
-
-        if (piks &&
-            (flag=_mi_compare_text(keyseg->charset,a,a_length,b,b_length,
-				   (my_bool) ((nextflag & SEARCH_PREFIX) &&
-					      next_key_length <= 0))))
-          return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-        a+=a_length;
-        b+=b_length;
-        break;
-      }
-      else
-      {
-	uint length=(uint) (end-a), a_length=length, b_length=length;
-	if (!(nextflag & SEARCH_PREFIX))
-	{
-	  while (a_length && a[a_length-1] == ' ')
-	    a_length--;
-	  while (b_length && b[b_length-1] == ' ')
-	    b_length--;
-	}
-        if (piks &&
-            (flag=_mi_compare_text(keyseg->charset,a,a_length,b,b_length,
-				   (my_bool) ((nextflag & SEARCH_PREFIX)
-					      && next_key_length <= 0))))
-          return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-        a=end;
-        b+=length;
-      }
-      break;
-    case HA_KEYTYPE_BINARY:
-      if (keyseg->flag & HA_SPACE_PACK)
-      {
-        int a_length,b_length,pack_length;
-        get_key_length(a_length,a);
-        get_key_pack_length(b_length,pack_length,b);
-        next_key_length=key_length-b_length-pack_length;
-
-        if (piks &&
-            (flag=compare_bin(a,a_length,b,b_length,
-			      (my_bool) ((nextflag & SEARCH_PREFIX) &&
-					 next_key_length <= 0))))
-          return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-        a+=a_length;
-        b+=b_length;
-        break;
-      }
-      else
-      {
-        uint length=keyseg->length;
-        if (piks &&
-            (flag=compare_bin(a,length,b,length,
-			      (my_bool) ((nextflag & SEARCH_PREFIX) &&
-					 next_key_length <= 0))))
-          return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-        a+=length;
-        b+=length;
-      }
-      break;
-    case HA_KEYTYPE_VARTEXT:
-      {
-        int a_length,full_a_length,b_length,full_b_length,pack_length;
-        get_key_length(a_length,a);
-        get_key_pack_length(b_length,pack_length,b);
-        full_a_length=a_length;
-        full_b_length=b_length;
-        next_key_length=key_length-b_length-pack_length;
-
-	if ((nextflag & (SEARCH_FIND | SEARCH_UPDATE)) == SEARCH_FIND)
-	{
-	  while (a_length && a[a_length-1] == ' ')
-	    a_length--;
-	  while (b_length && b[b_length-1] == ' ')
-	    b_length--;
-	}
-        if (piks &&
-            (flag=_mi_compare_text(keyseg->charset,a,a_length,b,b_length,
-				   (my_bool) ((nextflag & SEARCH_PREFIX) &&
-					      next_key_length <= 0))))
-          return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-        a+=full_a_length;
-        b+=full_b_length;
-        break;
-      }
-      break;
-    case HA_KEYTYPE_VARBINARY:
-      {
-        int a_length,b_length,pack_length;
-        get_key_length(a_length,a);
-        get_key_pack_length(b_length,pack_length,b);
-        next_key_length=key_length-b_length-pack_length;
-
-        if (piks &&
-            (flag=compare_bin(a,a_length,b,b_length,
-			      (my_bool) ((nextflag & SEARCH_PREFIX) &&
-					 next_key_length <= 0))))
-          return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-        a+=a_length;
-        b+=b_length;
-        break;
-      }
-      break;
-    case HA_KEYTYPE_INT8:
-    {
-      int i_1= (int) *((signed char*) a);
-      int i_2= (int) *((signed char*) b);
-      if (piks && (flag = CMP_NUM(i_1,i_2)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a= end;
-      b++;
-      break;
-    }
-    case HA_KEYTYPE_SHORT_INT:
-      s_1= mi_sint2korr(a);
-      s_2= mi_sint2korr(b);
-      if (piks && (flag = CMP_NUM(s_1,s_2)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a=  end;
-      b+= 2; /* sizeof(short int); */
-      break;
-    case HA_KEYTYPE_USHORT_INT:
-      {
-        uint16 us_1,us_2;
-        us_1= mi_sint2korr(a);
-        us_2= mi_sint2korr(b);
-        if (piks && (flag = CMP_NUM(us_1,us_2)))
-          return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-        a=  end;
-        b+=2; /* sizeof(short int); */
-        break;
-      }
-    case HA_KEYTYPE_LONG_INT:
-      l_1= mi_sint4korr(a);
-      l_2= mi_sint4korr(b);
-      if (piks && (flag = CMP_NUM(l_1,l_2)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a=  end;
-      b+= 4; /* sizeof(long int); */
-      break;
-    case HA_KEYTYPE_ULONG_INT:
-      u_1= mi_sint4korr(a);
-      u_2= mi_sint4korr(b);
-      if (piks && (flag = CMP_NUM(u_1,u_2)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a=  end;
-      b+= 4; /* sizeof(long int); */
-      break;
-    case HA_KEYTYPE_INT24:
-      l_1=mi_sint3korr(a);
-      l_2=mi_sint3korr(b);
-      if (piks && (flag = CMP_NUM(l_1,l_2)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a=  end;
-      b+= 3;
-      break;
-    case HA_KEYTYPE_UINT24:
-      l_1=mi_uint3korr(a);
-      l_2=mi_uint3korr(b);
-      if (piks && (flag = CMP_NUM(l_1,l_2)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a=  end;
-      b+= 3;
-      break;
-    case HA_KEYTYPE_FLOAT:
-      mi_float4get(f_1,a);
-      mi_float4get(f_2,b);
-      if (piks && (flag = CMP_NUM(f_1,f_2)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a=  end;
-      b+= 4; /* sizeof(float); */
-      break;
-    case HA_KEYTYPE_DOUBLE:
-      mi_float8get(d_1,a);
-      mi_float8get(d_2,b);
-      if (piks && (flag = CMP_NUM(d_1,d_2)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a=  end;
-      b+= 8;  /* sizeof(double); */
-      break;
-    case HA_KEYTYPE_NUM:                                /* Numeric key */
-    {
-      int swap_flag= 0;
-      int alength,blength;
-
-      if (keyseg->flag & HA_REVERSE_SORT)
-      {
-        swap(uchar*,a,b);
-        swap_flag=1;                            /* Remember swap of a & b */
-        end= a+ (int) (end-b);
-      }
-      if (keyseg->flag & HA_SPACE_PACK)
-      {
-        alength= *a++; blength= *b++;
-        end=a+alength;
-        next_key_length=key_length-blength-1;
-      }
-      else
-      {
-        alength= (int) (end-a);
-        blength=keyseg->length;
-        /* remove pre space from keys */
-        for ( ; alength && *a == ' ' ; a++, alength--) ;
-        for ( ; blength && *b == ' ' ; b++, blength--) ;
-      }
-      if (piks)
-      {
-        if (*a == '-')
-        {
-          if (*b != '-')
-            return -1;
-          a++; b++;
-          swap(uchar*,a,b);
-          swap(int,alength,blength);
-          swap_flag=1-swap_flag;
-          alength--; blength--;
-          end=a+alength;
-        }
-        else if (*b == '-')
-          return 1;
-        while (alength && (*a == '+' || *a == '0'))
-        {
-          a++; alength--;
-        }
-        while (blength && (*b == '+' || *b == '0'))
-        {
-          b++; blength--;
-        }
-        if (alength != blength)
-          return (alength < blength) ? -1 : 1;
-        while (a < end)
-          if (*a++ !=  *b++)
-            return ((int) a[-1] - (int) b[-1]);
-      }
-      else
-      {
-        b+=(end-a);
-        a=end;
-      }
-
-      if (swap_flag)                            /* Restore pointers */
-        swap(uchar*,a,b);
-      break;
-    }
-#ifdef HAVE_LONG_LONG
-    case HA_KEYTYPE_LONGLONG:
-    {
-      longlong ll_a,ll_b;
-      ll_a= mi_sint8korr(a);
-      ll_b= mi_sint8korr(b);
-      if (piks && (flag = CMP_NUM(ll_a,ll_b)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a=  end;
-      b+= 8;
-      break;
-    }
-    case HA_KEYTYPE_ULONGLONG:
-    {
-      ulonglong ll_a,ll_b;
-      ll_a= mi_uint8korr(a);
-      ll_b= mi_uint8korr(b);
-      if (piks && (flag = CMP_NUM(ll_a,ll_b)))
-        return ((keyseg->flag & HA_REVERSE_SORT) ? -flag : flag);
-      a=  end;
-      b+= 8;
-      break;
-    }
-#endif
-    case HA_KEYTYPE_END:                        /* Ready */
-      goto end;                                 /* diff_pos is incremented */
-    }
-  }
-  (*diff_pos)++;
-end:
-  if (!(nextflag & SEARCH_FIND))
-  {
-    uint i;
-    if (nextflag & (SEARCH_NO_FIND | SEARCH_LAST)) /* Find record after key */
-      return (nextflag & (SEARCH_BIGGER | SEARCH_LAST)) ? -1 : 1;
-    flag=0;
-    for (i=keyseg->length ; i-- > 0 ; )
-    {
-      if (*a++ != *b++)
-      {
-        flag= FCMP(a[-1],b[-1]);
-        break;
-      }
-    }
-    if (nextflag & SEARCH_SAME)
-      return (flag);                            /* read same */
-    if (nextflag & SEARCH_BIGGER)
-      return (flag <= 0 ? -1 : 1);              /* read next */
-    return (flag < 0 ? -1 : 1);                 /* read previous */
-  }
-  return 0;
-} /* _mi_key_cmp */
-
-
         /* Get key from key-block */
         /* page points at previous key; its advanced to point at next key */
         /* key should contain previous key */
@@ -1099,7 +723,7 @@ uint _mi_get_static_key(register MI_KEYDEF *keyinfo, uint nod_flag,
 uint _mi_get_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
                       register uchar **page_pos, register uchar *key)
 {
-  reg1 MI_KEYSEG *keyseg;
+  reg1 HA_KEYSEG *keyseg;
   uchar *start_key,*page=*page_pos;
   uint length;
 
@@ -1134,8 +758,9 @@ uint _mi_get_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
 	  key+= length;				/* Same diff_key as prev */
 	  if (length > keyseg->length)
 	  {
-	    DBUG_PRINT("error",("Found too long null packed key: %d of %d at %lx",
-				length, keyseg->length, *page_pos));
+	    DBUG_PRINT("error",
+                       ("Found too long null packed key: %u of %u at %p",
+                        length, keyseg->length, *page_pos));
 	    DBUG_DUMP("key",(char*) *page_pos,16);
 	    my_errno=HA_ERR_CRASHED;
 	    return 0;
@@ -1144,7 +769,7 @@ uint _mi_get_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
 	}
 	if (keyseg->flag & HA_NULL_PART)
 	{
-	  key++;				/* Skipp null marker*/
+	  key++;				/* Skip null marker*/
 	  start++;
 	}
 
@@ -1190,7 +815,7 @@ uint _mi_get_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
       }
       if (length > (uint) keyseg->length)
       {
-        DBUG_PRINT("error",("Found too long packed key: %d of %d at %lx",
+        DBUG_PRINT("error",("Found too long packed key: %u of %u at %p",
                             length, keyseg->length, *page_pos));
         DBUG_DUMP("key",(char*) *page_pos,16);
         my_errno=HA_ERR_CRASHED;
@@ -1232,7 +857,7 @@ uint _mi_get_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
 uint _mi_get_binary_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
                              register uchar **page_pos, register uchar *key)
 {
-  reg1 MI_KEYSEG *keyseg;
+  reg1 HA_KEYSEG *keyseg;
   uchar *start_key,*page,*page_end,*from,*from_end;
   uint length,tmp;
 
@@ -1245,7 +870,7 @@ uint _mi_get_binary_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
   {
     if (length > keyinfo->maxlength)
     {
-      DBUG_PRINT("error",("Found too long binary packed key: %d of %d at %lx",
+      DBUG_PRINT("error",("Found too long binary packed key: %u of %u at %p",
                           length, keyinfo->maxlength, *page_pos));
       DBUG_DUMP("key",(char*) *page_pos,16);
       my_errno=HA_ERR_CRASHED;
@@ -1292,7 +917,7 @@ uint _mi_get_binary_pack_key(register MI_KEYDEF *keyinfo, uint nod_flag,
       length-=tmp;
       from=page; from_end=page_end;
     }
-    DBUG_PRINT("info",("key: %lx  from: %lx  length: %u",
+    DBUG_PRINT("info",("key: %p  from: %p  length: %u",
 		       key, from, length));
     memcpy_overlap((byte*) key, (byte*) from, (size_t) length);
     key+=length;
@@ -1348,7 +973,7 @@ uchar *_mi_get_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
       }
     }
   }
-  DBUG_PRINT("exit",("page: %lx  length: %d",page,*return_key_length));
+  DBUG_PRINT("exit",("page: %p  length: %u", page, *return_key_length));
   DBUG_RETURN(page);
 } /* _mi_get_key */
 
@@ -1399,7 +1024,7 @@ uchar *_mi_get_last_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
   uint nod_flag;
   uchar *lastpos;
   DBUG_ENTER("_mi_get_last_key");
-  DBUG_PRINT("enter",("page: %lx  endpos:  %lx",page,endpos));
+  DBUG_PRINT("enter",("page: %p  endpos:  %p", page, endpos));
 
   nod_flag=mi_test_if_nod(page);
   if (! (keyinfo->flag & (HA_VAR_LENGTH_KEY | HA_BINARY_PACK_KEY)))
@@ -1419,13 +1044,13 @@ uchar *_mi_get_last_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
       *return_key_length=(*keyinfo->get_key)(keyinfo,nod_flag,&page,lastkey);
       if (*return_key_length == 0)
       {
-        DBUG_PRINT("error",("Couldn't find last key:  page: %lx",page));
+        DBUG_PRINT("error",("Couldn't find last key:  page: %p", page));
         my_errno=HA_ERR_CRASHED;
         DBUG_RETURN(0);
       }
     }
   }
-  DBUG_PRINT("exit",("lastpos: %lx  length: %d",lastpos,*return_key_length));
+  DBUG_PRINT("exit",("lastpos: %p  length: %u", lastpos, *return_key_length));
   DBUG_RETURN(lastpos);
 } /* _mi_get_last_key */
 
@@ -1434,7 +1059,7 @@ uchar *_mi_get_last_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *page,
 
 uint _mi_keylength(MI_KEYDEF *keyinfo, register uchar *key)
 {
-  reg1 MI_KEYSEG *keyseg;
+  reg1 HA_KEYSEG *keyseg;
   uchar *start;
 
   if (! (keyinfo->flag & (HA_VAR_LENGTH_KEY | HA_BINARY_PACK_KEY)))
@@ -1468,9 +1093,9 @@ uint _mi_keylength(MI_KEYDEF *keyinfo, register uchar *key)
 */
 
 uint _mi_keylength_part(MI_KEYDEF *keyinfo, register uchar *key,
-			MI_KEYSEG *end)
+			HA_KEYSEG *end)
 {
-  reg1 MI_KEYSEG *keyseg;
+  reg1 HA_KEYSEG *keyseg;
   uchar *start= key;
 
   for (keyseg=keyinfo->seg ; keyseg != end ; keyseg++)
@@ -1510,8 +1135,9 @@ int _mi_search_next(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   uint nod_flag;
   uchar lastkey[MI_MAX_KEY_BUFF];
   DBUG_ENTER("_mi_search_next");
-  DBUG_PRINT("enter",("nextflag: %d  lastpos: %ld  int_keypos: %lx",
-                       nextflag,(long) info->lastpos,info->int_keypos));
+  DBUG_PRINT("enter",("nextflag: %u  lastpos: %lu  int_keypos: %lu",
+                      nextflag, (ulong) info->lastpos,
+                      (ulong) info->int_keypos));
   DBUG_EXECUTE("key",_mi_print_key(DBUG_FILE,keyinfo->seg,key,key_length););
 
   /* Force full read if we are at last key or if we are not on a leaf
@@ -1531,7 +1157,7 @@ int _mi_search_next(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   if (info->buff_used)
   {
     if (!_mi_fetch_keypage(info,keyinfo,info->last_search_keypage,
-                           info->buff,0))
+                           DFLT_INIT_HITS,info->buff,0))
       DBUG_RETURN(-1);
     info->buff_used=0;
   }
@@ -1600,7 +1226,7 @@ int _mi_search_first(register MI_INFO *info, register MI_KEYDEF *keyinfo,
 
   do
   {
-    if (!_mi_fetch_keypage(info,keyinfo,pos,info->buff,0))
+    if (!_mi_fetch_keypage(info,keyinfo,pos,DFLT_INIT_HITS,info->buff,0))
     {
       info->lastpos= HA_OFFSET_ERROR;
       DBUG_RETURN(-1);
@@ -1618,7 +1244,7 @@ int _mi_search_first(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   info->page_changed=info->buff_used=0;
   info->lastpos=_mi_dpos(info,0,info->lastkey+info->lastkey_length);
 
-  DBUG_PRINT("exit",("found key at %ld",(ulong) info->lastpos));
+  DBUG_PRINT("exit",("found key at %lu", (ulong) info->lastpos));
   DBUG_RETURN(0);
 } /* _mi_search_first */
 
@@ -1643,7 +1269,7 @@ int _mi_search_last(register MI_INFO *info, register MI_KEYDEF *keyinfo,
   buff=info->buff;
   do
   {
-    if (!_mi_fetch_keypage(info,keyinfo,pos,buff,0))
+    if (!_mi_fetch_keypage(info,keyinfo,pos,DFLT_INIT_HITS,buff,0))
     {
       info->lastpos= HA_OFFSET_ERROR;
       DBUG_RETURN(-1);
@@ -1731,7 +1357,7 @@ _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo,uint nod_flag,uchar *next_key,
                              uchar *org_key, uchar *prev_key, uchar *key,
                              MI_KEY_PARAM *s_temp)
 {
-  reg1 MI_KEYSEG *keyseg;
+  reg1 HA_KEYSEG *keyseg;
   int length;
   uint key_length,ref_length,org_key_length=0,
        length_pack,new_key_length,diff_flag,pack_marker;
@@ -1746,7 +1372,7 @@ _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo,uint nod_flag,uchar *next_key,
   if ((keyinfo->flag & HA_FULLTEXT) &&
       ((keyseg->type == HA_KEYTYPE_TEXT) ||
        (keyseg->type == HA_KEYTYPE_VARTEXT)) &&
-      !use_strcoll(keyseg->charset))
+      !use_strnxfrm(keyseg->charset))
     sort_order=keyseg->charset->sort_order;
 
   /* diff flag contains how many bytes is needed to pack key */
@@ -1778,7 +1404,7 @@ _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo,uint nod_flag,uchar *next_key,
     if (prev_key && !*prev_key++)
       org_key=prev_key=0;                       /* Can't pack against prev */
     else if (org_key)
-      org_key++;                                /* Skipp NULL */
+      org_key++;                                /* Skip NULL */
   }
   else
     s_temp->store_not_null=0;
@@ -1852,8 +1478,8 @@ _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo,uint nod_flag,uchar *next_key,
   }
   s_temp->totlength=(uint) length;
   s_temp->prev_length=0;
-  DBUG_PRINT("test",("tot_length: %d  length: %d  uniq_key_length: %d",
-                     key_length,length,s_temp->key_length));
+  DBUG_PRINT("test",("tot_length: %u  length: %d  uniq_key_length: %u",
+                     key_length, length, s_temp->key_length));
 
         /* If something after that hasn't length=0, test if we can combine */
   if ((s_temp->next_key_pos=next_key))
@@ -1959,7 +1585,7 @@ _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo,uint nod_flag,uchar *next_key,
         ref_length=0;
         next_length_pack=0;
      }
-      DBUG_PRINT("test",("length: %d  next_key: %lx",length,next_key));
+      DBUG_PRINT("test",("length: %d  next_key: %p", length, next_key));
 
       {
         uint tmp_length;
@@ -1990,7 +1616,7 @@ _mi_calc_var_pack_key_length(MI_KEYDEF *keyinfo,uint nod_flag,uchar *next_key,
         n_length-=tmp_length;
         length-=tmp_length+next_length_pack;    /* We gained these chars */
       }
-      if (n_length == 0)
+      if (n_length == 0 && ref_length == new_key_length)
       {
         s_temp->n_ref_length=pack_marker;       /* Same as prev key */
       }

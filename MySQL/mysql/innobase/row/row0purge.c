@@ -519,6 +519,16 @@ row_purge_parse_undo_rec(
 		return(FALSE);
 	}
 
+	if (node->table->ibd_file_missing) {
+		/* We skip purge of missing .ibd files */
+
+		node->table = NULL;
+
+		row_mysql_unfreeze_data_dictionary(trx);
+
+		return(FALSE);
+	}
+
 	clust_index = dict_table_get_first_index(node->table);
 
 	if (clust_index == NULL) {
@@ -533,8 +543,8 @@ row_purge_parse_undo_rec(
 								node->heap);
 
 	ptr = trx_undo_update_rec_get_update(ptr, clust_index, type, trx_id,
-					roll_ptr, info_bits, node->heap,
-					&(node->update));
+					roll_ptr, info_bits, trx,
+					node->heap, &(node->update));
 
 	/* Read to the partial row the fields that occur in indexes */
 

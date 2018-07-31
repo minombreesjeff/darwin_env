@@ -60,7 +60,6 @@ static int file_info_compare(void *cmp_arg, void *a,void *b);
 static int test_if_open(struct file_info *key,element_count count,
 			struct test_if_open_param *param);
 static void fix_blob_pointers(MI_INFO *isam,byte *record);
-static uint set_maximum_open_files(uint);
 static int test_when_accessed(struct file_info *key,element_count count,
 			      struct st_access_param *access_param);
 static void file_info_free(struct file_info *info);
@@ -71,7 +70,7 @@ static void printf_log(const char *str,...);
 static bool cmp_filename(struct file_info *file_info,my_string name);
 
 static uint verbose=0,update=0,test_info=0,max_files=0,re_open_count=0,
-  recover=0,prefix_remove=0,opt_processes=0,opt_myisam_with_debug=0;
+  recover=0,prefix_remove=0,opt_processes=0;
 static my_string log_filename=0,filepath=0,write_filename=0,record_pos_file=0;
 static ulong com_count[10][3],number_of_commands=(ulong) ~0L,
 	     isamlog_process;
@@ -89,9 +88,8 @@ int main(int argc, char **argv)
 
   log_filename=myisam_log_filename;
   get_options(&argc,&argv);
- /* Nr of isam-files */
-  max_files=(set_maximum_open_files(min(max_files,8))-6)/2;
-
+  /* Number of MyISAM files we can have open at one time */
+  max_files= (my_set_max_open_files(min(max_files,8))-6)/2;
   if (update)
     printf("Trying to %s MyISAM files according to log '%s'\n",
 	   (recover ? "recover" : "update"),log_filename);
@@ -123,6 +121,7 @@ int main(int argc, char **argv)
     printf("Had to do %d re-open because of too few possibly open files\n",
 	   re_open_count);
   VOID(mi_panic(HA_PANIC_CLOSE));
+  my_free_open_file_info();
   my_end(test_info ? MY_CHECK_ERROR | MY_GIVE_INFO : MY_CHECK_ERROR);
   exit(error);
   return 0;				/* No compiler warning */
@@ -146,7 +145,7 @@ static void get_options(register int *argc, register char ***argv)
       switch((option=*pos)) {
       case '#':
 	DBUG_PUSH (++pos);
-	pos=" ";				/* Skipp rest of arg */
+	pos=" ";				/* Skip rest of arg */
 	break;
       case 'c':
 	if (! *++pos)
@@ -201,9 +200,6 @@ static void get_options(register int *argc, register char ***argv)
 	update=1;
 	recover++;
 	break;
-      case 'D':
-	opt_myisam_with_debug=1;
-	break;
       case 'P':
 	opt_processes=1;
 	break;
@@ -251,6 +247,7 @@ static void get_options(register int *argc, register char ***argv)
 	/* Fall through */
       case 'I':
       case '?':
+#include <help_start.h>
 	printf("%s  Ver 1.4 for %s at %s\n",my_progname,SYSTEM_TYPE,
 	       MACHINE_TYPE);
 	puts("By Monty, for your professional use\n");
@@ -272,6 +269,7 @@ static void get_options(register int *argc, register char ***argv)
 	puts("If a recover is done all writes and all possibly updates and deletes is done\nand errors are only counted.");
 	puts("If one gives table names as arguments only these tables will be updated\n");
 	help=1;
+#include <help_end.h>
 	break;
       default:
 	printf("illegal option: \"-%c\"\n",*pos);
@@ -333,7 +331,8 @@ static int examine_log(my_string file_name, char **table_names)
   bzero((gptr) com_count,sizeof(com_count));
   init_tree(&tree,0,0,sizeof(file_info),(qsort_cmp2) file_info_compare,1,
 	    (tree_element_free) file_info_free, NULL);
-  VOID(init_key_cache(KEY_CACHE_SIZE));
+  VOID(init_key_cache(dflt_key_cache,KEY_CACHE_BLOCK_SIZE,KEY_CACHE_SIZE,
+                      0, 0));
 
   files_open=0; access_time=0;
   while (access_time++ != number_of_commands &&
@@ -345,7 +344,8 @@ static int examine_log(my_string file_name, char **table_names)
     if (!opt_processes)
       file_info.process=0;
     result= mi_uint2korr(head+7);
-    if ((curr_file_info=(struct file_info*) tree_search(&tree,&file_info)))
+    if ((curr_file_info=(struct file_info*) tree_search(&tree, &file_info,
+							tree.custom_arg)))
     {
       curr_file_info->accessed=access_time;
       if (update && curr_file_info->used && curr_file_info->closed)
@@ -455,12 +455,8 @@ static int examine_log(my_string file_name, char **table_names)
 	  goto end;
 	files_open++;
 	file_info.closed=0;
-	if (opt_myisam_with_debug)
-	  file_info.isam->s->rnd= 0;
-	else
-	  file_info.isam->s->rnd= isamlog_process;
       }
-      VOID(tree_insert(&tree,(gptr) &file_info,0));
+      VOID(tree_insert(&tree, (gptr) &file_info, 0, tree.custom_arg));
       if (file_info.used)
       {
 	if (verbose && !record_pos_file)
@@ -479,7 +475,7 @@ static int examine_log(my_string file_name, char **table_names)
       {
 	if (!curr_file_info->closed)
 	  files_open--;
-	VOID(tree_delete(&tree,(gptr) curr_file_info));
+	VOID(tree_delete(&tree, (gptr) curr_file_info, tree.custom_arg));
       }
       break;
     case MI_LOG_EXTRA:
@@ -650,7 +646,7 @@ static int examine_log(my_string file_name, char **table_names)
       goto end;
     }
   }
-  end_key_cache();
+  end_key_cache(dflt_key_cache,1);
   delete_tree(&tree);
   VOID(end_io_cache(&cache));
   VOID(my_close(file,MYF(0)));
@@ -670,7 +666,7 @@ static int examine_log(my_string file_name, char **table_names)
 	       llstr(isamlog_filepos,llbuff)));
   fflush(stderr);
  end:
-  end_key_cache();
+  end_key_cache(dflt_key_cache, 1);
   delete_tree(&tree);
   VOID(end_io_cache(&cache));
   VOID(my_close(file,MYF(0)));
@@ -737,38 +733,6 @@ static void fix_blob_pointers(MI_INFO *info, byte *record)
   }
 }
 
-static uint set_maximum_open_files(uint maximum_files)
-{
-#if defined(HAVE_GETRUSAGE) && defined(RLIMIT_NOFILE)
-  struct rlimit rlimit;
-  int old_max;
-
-  if (maximum_files > MY_NFILE)
-    maximum_files=MY_NFILE;			/* Don't crash my_open */
-
-  if (!getrlimit(RLIMIT_NOFILE,&rlimit))
-  {
-    old_max=rlimit.rlim_max;
-    if (maximum_files && (int) maximum_files > old_max)
-      rlimit.rlim_max=maximum_files;
-    rlimit.rlim_cur=rlimit.rlim_max;
-    if (setrlimit(RLIMIT_NOFILE,&rlimit))
-    {
-      if (old_max != (int) maximum_files)
-      {						/* Set as much as we can */
-	rlimit.rlim_max=rlimit.rlim_cur=old_max;
-	setrlimit(RLIMIT_NOFILE,&rlimit);
-      }
-    }
-    getrlimit(RLIMIT_NOFILE,&rlimit);		/* Read if broken setrlimit */
-    if (maximum_files && maximum_files < rlimit.rlim_cur)
-      VOID(fprintf(stderr,"Warning: Error from setrlimit: Max open files is %d\n",old_max));
-    return rlimit.rlim_cur;
-  }
-#endif
-  return min(maximum_files,MY_NFILE);
-}
-
 	/* close the file with hasn't been accessed for the longest time */
 	/* ARGSUSED */
 
@@ -813,7 +777,6 @@ static int close_some_file(TREE *tree)
 		 (void*) &access_param,left_root_right));
   if (!access_param.found)
     return 1;			/* No open file that is possibly to close */
-  access_param.found->rnd=access_param.found->isam->s->rnd;
   if (mi_close(access_param.found->isam))
     return 1;
   access_param.found->closed=1;
@@ -833,7 +796,6 @@ static int reopen_closed_file(TREE *tree, struct file_info *fileinfo)
   if (!(fileinfo->isam= mi_open(name,O_RDWR,HA_OPEN_WAIT_IF_LOCKED)))
     return 1;
   fileinfo->closed=0;
-  fileinfo->isam->s->rnd=fileinfo->rnd;
   re_open_count++;
   return 0;
 }

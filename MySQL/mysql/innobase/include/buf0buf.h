@@ -30,6 +30,7 @@ Created 11/5/1995 Heikki Tuuri
 #include "sync0rw.h"
 #include "hash0hash.h"
 #include "ut0byte.h"
+#include "os0proc.h"
 
 /* Flags for flush types */
 #define BUF_FLUSH_LRU		1
@@ -53,30 +54,39 @@ Created 11/5/1995 Heikki Tuuri
 #define BUF_KEEP_OLD	52
 
 extern buf_pool_t* 	buf_pool; 	/* The buffer pool of the database */
-#ifdef UNIV_DEBUG
 extern ibool		buf_debug_prints;/* If this is set TRUE, the program
 					prints info whenever read or flush
 					occurs */
-#endif /* UNIV_DEBUG */
 
 /************************************************************************
-Initializes the buffer pool of the database. */
+Creates the buffer pool. */
 
-void
+buf_pool_t*
 buf_pool_init(
 /*==========*/
-	ulint	max_size,	/* in: maximum size of the pool in blocks */
-	ulint	curr_size);	/* in: current size to use, must be <=
+				/* out, own: buf_pool object, NULL if not
+				enough memory or error */
+	ulint	max_size,	/* in: maximum size of the buf_pool in
+				blocks */
+	ulint	curr_size,	/* in: current size to use, must be <=
+				max_size, currently must be equal to
 				max_size */
+	ulint	n_frames);	/* in: number of frames; if AWE is used,
+				this is the size of the address space window
+				where physical memory pages are mapped; if
+				AWE is not used then this must be the same
+				as max_size */
 /*************************************************************************
-Gets the current size of buffer pool in bytes. */
+Gets the current size of buffer buf_pool in bytes. In the case of AWE, the
+size of AWE window (= the frames). */
 UNIV_INLINE
 ulint
 buf_pool_get_curr_size(void);
 /*========================*/
 			/* out: size in bytes */
 /*************************************************************************
-Gets the maximum size of buffer pool in bytes. */
+Gets the maximum size of buffer pool in bytes. In the case of AWE, the
+size of AWE window (= the frames). */
 UNIV_INLINE
 ulint
 buf_pool_get_max_size(void);
@@ -120,7 +130,7 @@ to improve debugging. Only values RW_S_LATCH and RW_X_LATCH are allowed
 in LA! */
 #define buf_page_get(SP, OF, LA, MTR)    buf_page_get_gen(\
 				SP, OF, LA, NULL,\
-				BUF_GET, IB__FILE__, __LINE__, MTR)
+				BUF_GET, __FILE__, __LINE__, MTR)
 /******************************************************************
 Use these macros to bufferfix a page with no latching. Remember not to
 read the contents of the page unless you know it is safe. Do not modify
@@ -129,19 +139,19 @@ error-prone programming not to set a latch, and it should be used
 with care. */
 #define buf_page_get_with_no_latch(SP, OF, MTR)    buf_page_get_gen(\
 				SP, OF, RW_NO_LATCH, NULL,\
-				BUF_GET_NO_LATCH, IB__FILE__, __LINE__, MTR)
+				BUF_GET_NO_LATCH, __FILE__, __LINE__, MTR)
 /******************************************************************
 NOTE! The following macros should be used instead of buf_page_get_gen, to
 improve debugging. Only values RW_S_LATCH and RW_X_LATCH are allowed as LA! */
 #define buf_page_get_nowait(SP, OF, LA, MTR)    buf_page_get_gen(\
 				SP, OF, LA, NULL,\
-				BUF_GET_NOWAIT, IB__FILE__, __LINE__, MTR)
+				BUF_GET_NOWAIT, __FILE__, __LINE__, MTR)
 /******************************************************************
 NOTE! The following macros should be used instead of
 buf_page_optimistic_get_func, to improve debugging. Only values RW_S_LATCH and
 RW_X_LATCH are allowed as LA! */
-#define buf_page_optimistic_get(LA, G, MC, MTR) buf_page_optimistic_get_func(\
-				LA, G, MC, IB__FILE__, __LINE__, MTR)
+#define buf_page_optimistic_get(LA, BL, G, MC, MTR) buf_page_optimistic_get_func(\
+				LA, BL, G, MC, __FILE__, __LINE__, MTR)
 /************************************************************************
 This is the general function used to get optimistic access to a database
 page. */
@@ -151,10 +161,12 @@ buf_page_optimistic_get_func(
 /*=========================*/
 				/* out: TRUE if success */
 	ulint		rw_latch,/* in: RW_S_LATCH, RW_X_LATCH */
-	buf_frame_t*	guess,	/* in: guessed frame */
+	buf_block_t*	block,	/* in: guessed block */
+	buf_frame_t*	guess,	/* in: guessed frame; note that AWE may move
+				frames */
 	dulint		modify_clock,/* in: modify clock value if mode is
 				..._GUESS_ON_CLOCK */
-	char*		file,	/* in: file name */
+	const char*	file,	/* in: file name */
 	ulint		line,	/* in: line where called */
 	mtr_t*		mtr);	/* in: mini-transaction */
 /************************************************************************
@@ -187,7 +199,7 @@ buf_page_get_known_nowait(
 	ulint		rw_latch,/* in: RW_S_LATCH, RW_X_LATCH */
 	buf_frame_t*	guess,	/* in: the known page frame */
 	ulint		mode,	/* in: BUF_MAKE_YOUNG or BUF_KEEP_OLD */
-	char*		file,	/* in: file name */
+	const char*	file,	/* in: file name */
 	ulint		line,	/* in: line where called */
 	mtr_t*		mtr);	/* in: mini-transaction */
 /************************************************************************
@@ -203,7 +215,7 @@ buf_page_get_gen(
 	buf_frame_t*	guess,	/* in: guessed frame or NULL */
 	ulint		mode,	/* in: BUF_GET, BUF_GET_IF_IN_POOL,
 				BUF_GET_NO_LATCH */
-	char*		file,	/* in: file name */
+	const char*	file,	/* in: file name */
 	ulint		line,	/* in: line where called */
 	mtr_t*		mtr);	/* in: mini-transaction */
 /************************************************************************
@@ -352,6 +364,16 @@ buf_frame_modify_clock_inc(
 				/* out: new value */
 	buf_frame_t*	frame);	/* in: pointer to a frame */
 /************************************************************************
+Increments the modify clock of a frame by 1. The caller must (1) own the
+buf_pool mutex and block bufferfix count has to be zero, (2) or own an x-lock
+on the block. */
+UNIV_INLINE
+dulint
+buf_block_modify_clock_inc(
+/*=======================*/
+				/* out: new value */
+	buf_block_t*	block);	/* in: block */
+/************************************************************************
 Returns the value of the modify clock. The caller must have an s-lock 
 or x-lock on the block. */
 UNIV_INLINE
@@ -443,7 +465,7 @@ UNIV_INLINE
 buf_frame_t*
 buf_frame_align(
 /*============*/
-			/* out: pointer to block */
+			/* out: pointer to frame */
 	byte*	ptr);	/* in: pointer to a frame */
 /***********************************************************************
 Checks if a pointer points to the block array of the buffer pool (blocks, not
@@ -454,14 +476,12 @@ buf_pool_is_block(
 /*==============*/
 			/* out: TRUE if pointer to block */
 	void*	ptr);	/* in: pointer to memory */
-#ifdef UNIV_DEBUG
 /*************************************************************************
 Validates the buffer pool data structure. */
 
 ibool
 buf_validate(void);
 /*==============*/
-#endif /* UNIV_DEBUG */
 /************************************************************************
 Prints a page to stderr. */
 
@@ -528,6 +548,19 @@ buf_pool_invalidate(void);
 --------------------------- LOWER LEVEL ROUTINES -------------------------
 =========================================================================*/
 
+/************************************************************************
+Maps the page of block to a frame, if not mapped yet. Unmaps some page
+from the end of the awe_LRU_free_mapped. */
+
+void
+buf_awe_map_page_to_frame(
+/*======================*/
+	buf_block_t*	block,		/* in: block whose page should be
+					mapped to a frame */
+	ibool		add_to_mapped_list);/* in: TRUE if we in the case
+					we need to map the page should also
+					add the block to the
+					awe_LRU_free_mapped list */
 #ifdef UNIV_SYNC_DEBUG
 /*************************************************************************
 Adds latch level info for the rw-lock protecting the buffer frame. This
@@ -593,19 +626,27 @@ buf_pool_get_nth_block(
 	ulint		i);	/* in: index of the block */
 /************************************************************************
 Function which inits a page for read to the buffer buf_pool. If the page is
-already in buf_pool, does nothing. Sets the io_fix flag to BUF_IO_READ and
-sets a non-recursive exclusive lock on the buffer frame. The io-handler must
-take care that the flag is cleared and the lock released later. This is one
-of the functions which perform the state transition NOT_USED => FILE_PAGE to
-a block (the other is buf_page_create). */ 
+(1) already in buf_pool, or
+(2) if we specify to read only ibuf pages and the page is not an ibuf page, or
+(3) if the space is deleted or being deleted,
+then this function does nothing.
+Sets the io_fix flag to BUF_IO_READ and sets a non-recursive exclusive lock
+on the buffer frame. The io-handler must take care that the flag is cleared
+and the lock released later. This is one of the functions which perform the
+state transition NOT_USED => FILE_PAGE to a block (the other is
+buf_page_create). */ 
 
 buf_block_t*
 buf_page_init_for_read(
 /*===================*/
-			/* out: pointer to the block */
-	ulint	mode,	/* in: BUF_READ_IBUF_PAGES_ONLY, ... */
-	ulint	space,	/* in: space id */
-	ulint	offset);/* in: page number */
+				/* out: pointer to the block or NULL */
+	ulint*		err,	/* out: DB_SUCCESS or DB_TABLESPACE_DELETED */
+	ulint		mode,	/* in: BUF_READ_IBUF_PAGES_ONLY, ... */
+	ulint		space,	/* in: space id */
+	ib_longlong	tablespace_version,/* in: prevents reading from a wrong
+				version of the tablespace in case we have done
+				DISCARD + IMPORT */
+	ulint		offset);/* in: page number */
 /************************************************************************
 Completes an asynchronous read or write request of a file page to or from
 the buffer pool. */
@@ -662,7 +703,16 @@ struct buf_block_struct{
 	byte*		frame;		/* pointer to buffer frame which
 					is of size UNIV_PAGE_SIZE, and
 					aligned to an address divisible by
-					UNIV_PAGE_SIZE */
+					UNIV_PAGE_SIZE; if AWE is used, this
+					will be NULL for the pages which are
+					currently not mapped into the virtual
+					address space window of the buffer
+					pool */
+	os_awe_t*	awe_info;	/* if AWE is used, then an array of
+					awe page infos for
+					UNIV_PAGE_SIZE / OS_AWE_X86_PAGE_SIZE
+					(normally = 4) physical memory
+					pages; otherwise NULL */
 	ulint		space;		/* space id of the page */
 	ulint		offset;		/* page number within the space */
 	ulint		lock_hash_val;	/* hashed value of the page address
@@ -671,14 +721,6 @@ struct buf_block_struct{
 					record lock hash table */
 	rw_lock_t	lock;		/* read-write lock of the buffer
 					frame */
-	rw_lock_t	read_lock;	/* rw-lock reserved when a page read
-					to the frame is requested; a thread
-					can wait for this rw-lock if it wants
-					to wait for the read to complete;
-					the usual way is to wait for lock,
-					but if the thread just wants a
-					bufferfix and no latch on the page,
-					then it can wait for this rw-lock */
 	buf_block_t*	hash;		/* node used in chaining to the page
 					hash table */
 	ibool		check_index_page_at_flush;
@@ -713,8 +755,16 @@ struct buf_block_struct{
 
 	UT_LIST_NODE_T(buf_block_t) free;
 					/* node of the free block list */
+	ibool		in_free_list;	/* TRUE if in the free list; used in
+					debugging */
 	UT_LIST_NODE_T(buf_block_t) LRU;
 					/* node of the LRU list */
+	UT_LIST_NODE_T(buf_block_t) awe_LRU_free_mapped;
+					/* in the AWE version node in the
+					list of free and LRU blocks which are
+					mapped to a frame */
+	ibool		in_LRU_list;	/* TRUE of the page is in the LRU list;
+					used in debugging */
 	ulint		LRU_position;	/* value which monotonically
 					decreases (or may stay constant if
 					the block is in the old blocks) toward
@@ -775,6 +825,9 @@ struct buf_block_struct{
 					complete, though: there may have been
 					hash collisions, record deletions,
 					etc. */
+	ulint		n_pointers;	/* used in debugging: the number of
+					pointers in the adaptive hash index
+					pointing to this frame */
 	ulint		curr_n_fields;	/* prefix length for hash indexing:
 					number of full fields */
 	ulint		curr_n_bytes;	/* number of bytes in hash indexing */
@@ -806,21 +859,41 @@ struct buf_pool_struct{
 					struct and control blocks, except the
 					read-write lock in them */
 	byte*		frame_mem;	/* pointer to the memory area which
-					was allocated for the frames */
+					was allocated for the frames; in AWE
+					this is the virtual address space
+					window where we map pages stored
+					in physical memory */
 	byte*		frame_zero;	/* pointer to the first buffer frame:
 					this may differ from frame_mem, because
 					this is aligned by the frame size */
-	byte*		high_end;	/* pointer to the end of the
-					buffer pool */
+	byte*		high_end;	/* pointer to the end of the buffer
+					frames */
+	ulint		n_frames;	/* number of frames */
 	buf_block_t*	blocks;		/* array of buffer control blocks */
+	buf_block_t**	blocks_of_frames;/* inverse mapping which can be used
+					to retrieve the buffer control block
+					of a frame; this is an array which
+					lists the blocks of frames in the
+					order frame_zero,
+					frame_zero + UNIV_PAGE_SIZE, ...
+					a control block is always assigned
+					for each frame, even if the frame does
+					not contain any data; note that in AWE
+					there are more control blocks than
+					buffer frames */
+	os_awe_t*	awe_info;	/* if AWE is used, AWE info for the
+					physical 4 kB memory pages associated
+					with buffer frames */
 	ulint		max_size;	/* number of control blocks ==
 					maximum pool size in pages */
-	ulint		curr_size;	/* current pool size in pages */
+	ulint		curr_size;	/* current pool size in pages;
+					currently always the same as
+					max_size */
 	hash_table_t*	page_hash;	/* hash table of the file pages */
 
 	ulint		n_pend_reads;	/* number of pending read operations */
 
-	time_t		last_printout_time; /* when buf_print_io was last time
+	time_t		last_printout_time; /* when buf_print was last time
 					called */
 	ulint		n_pages_read;	/* number read operations */
 	ulint		n_pages_written;/* number write operations */
@@ -832,14 +905,18 @@ struct buf_pool_struct{
 					counted as page gets; this field
 					is NOT protected by the buffer
 					pool mutex */
-	ulint		n_page_gets_old;/* n_page_gets when buf_print_io was
+	ulint		n_pages_awe_remapped; /* if AWE is enabled, the
+					number of remaps of blocks to
+					buffer frames */
+	ulint		n_page_gets_old;/* n_page_gets when buf_print was
 					last time called: used to calculate
 					hit rate */
-	ulint		n_pages_read_old;/* n_pages_read when buf_print_io was
+	ulint		n_pages_read_old;/* n_pages_read when buf_print was
 					last time called */
 	ulint		n_pages_written_old;/* number write operations */
 	ulint		n_pages_created_old;/* number of pages created in
 					the pool with no read */
+	ulint		n_pages_awe_remapped_old;
 	/* 2. Page flushing algorithm fields */
 
 	UT_LIST_BASE_NODE_T(buf_block_t) flush_list;
@@ -872,7 +949,10 @@ struct buf_pool_struct{
 	/* 3. LRU replacement algorithm fields */
 
 	UT_LIST_BASE_NODE_T(buf_block_t) free;
-					/* base node of the free block list */
+					/* base node of the free block list;
+					in the case of AWE, at the start are
+					always free blocks for which the
+					physical memory is mapped to a frame */
 	UT_LIST_BASE_NODE_T(buf_block_t) LRU;
 					/* base node of the LRU list */
 	buf_block_t*	LRU_old; 	/* pointer to the about 3/8 oldest
@@ -884,6 +964,12 @@ struct buf_pool_struct{
 					see buf0lru.c for the restrictions
 					on this value; not defined if
 					LRU_old == NULL */
+	UT_LIST_BASE_NODE_T(buf_block_t) awe_LRU_free_mapped;
+					/* list of those blocks which are
+					in the LRU list or the free list, and
+					where the page is mapped to a frame;
+					thus, frames allocated, e.g., to the
+					locki table, are not in this list */
 };
 
 /* States of a control block */

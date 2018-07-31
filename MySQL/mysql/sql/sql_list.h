@@ -19,13 +19,31 @@
 #pragma interface			/* gcc class implementation */
 #endif
 
-/* mysql standard class memoryallocator */
+/* mysql standard class memory allocator */
+
+#ifdef SAFEMALLOC
+#define TRASH(XX,YY) bfill((XX), (YY), 0x8F)
+#else
+#define TRASH(XX,YY) /* no-op */
+#endif
 
 class Sql_alloc
 {
 public:
-  static void *operator new(size_t size) {return (void*) sql_alloc((uint) size); }
-  static void operator delete(void *ptr, size_t size) {} /*lint -e715 */
+  static void *operator new(size_t size)
+  {
+    return (void*) sql_alloc((uint) size);
+  }
+  static void *operator new[](size_t size)
+  {
+    return (void*) sql_alloc((uint) size);
+  }
+  static void *operator new(size_t size, MEM_ROOT *mem_root)
+  { return (void*) alloc_root(mem_root, (uint) size); }
+  static void operator delete(void *ptr, size_t size) { TRASH(ptr, size); }
+  static void operator delete(void *ptr, size_t size, MEM_ROOT *mem_root)
+  { TRASH(ptr, size); }
+  static void operator delete[](void *ptr, size_t size) { TRASH(ptr, size); }
 #ifdef HAVE_purify
   bool dummy;
   inline Sql_alloc() :dummy(0) {}
@@ -84,6 +102,7 @@ public:
     first=tmp.first;
     last=tmp.last;
   }
+  inline base_list(bool error) { }
   inline bool push_back(void *info)
   {
     if (((*last)=new list_node(info, &end_of_list)))
@@ -115,6 +134,15 @@ public:
     if (!--elements)
       last= &first;
   }
+  inline void concat(base_list *list)
+  {
+    if (!list->is_empty())
+    {
+      *last= list->first;
+      last= list->last;
+      elements+= list->elements;
+    }
+  }
   inline void *pop(void)
   {
     if (first == &end_of_list) return 0;
@@ -124,11 +152,15 @@ public:
       last= &first;
     return tmp->info;
   }
+  inline list_node* last_node() { return *last; }
+  inline list_node* first_node() { return first;}
   inline void *head() { return first->info; }
   inline void **head_ref() { return first != &end_of_list ? &first->info : 0; }
   inline bool is_empty() { return first == &end_of_list ; }
   inline list_node *last_ref() { return &end_of_list; }
   friend class base_list_iterator;
+  friend class error_list;
+  friend class error_list_iterator;
 
 protected:
   void after(void *info,list_node *node)
@@ -144,12 +176,20 @@ protected:
 
 class base_list_iterator
 {
+protected:
   base_list *list;
   list_node **el,**prev,*current;
+  void sublist(base_list &ls, uint elm)
+  {
+    ls.first= *el;
+    ls.last= list->last;
+    ls.elements= elm;
+  }
 public:
-  base_list_iterator(base_list &list_par) :list(&list_par),el(&list_par.first),
-    prev(0),current(0)
+  base_list_iterator(base_list &list_par) 
+    :list(&list_par), el(&list_par.first), prev(0), current(0)
   {}
+
   inline void *next(void)
   {
     prev=el;
@@ -171,6 +211,7 @@ public:
   inline void *replace(void *element)
   {						// Return old element
     void *tmp=current->info;
+    DBUG_ASSERT(current->info != 0);
     current->info=element;
     return tmp;
   }
@@ -208,8 +249,8 @@ public:
   {
     return el == &list->last_ref()->next;
   }
+  friend class error_list_iterator;
 };
-
 
 template <class T> class List :public base_list
 {
@@ -256,9 +297,13 @@ protected:
   inline T** ref(void)	    { return (T**) 0; }
 
 public:
-  List_iterator_fast(List<T> &a) : base_list_iterator(a) {}
+  inline List_iterator_fast(List<T> &a) : base_list_iterator(a) {}
   inline T* operator++(int) { return (T*) base_list_iterator::next_fast(); }
   inline void rewind(void)  { base_list_iterator::rewind(); }
+  void sublist(List<T> &list_arg, uint el_arg)
+  {
+    base_list_iterator::sublist(list_arg, el_arg);
+  }
 };
 
 
@@ -300,7 +345,8 @@ class base_ilist
 {
   public:
   struct ilink *first,last;
-  base_ilist() { first= &last; last.prev= &first; }
+  inline void empty() { first= &last; last.prev= &first; }
+  base_ilist() { empty(); }
   inline bool is_empty() {  return first == &last; }
   inline void append(ilink *a)
   {
@@ -353,6 +399,7 @@ class I_List :private base_ilist
 {
 public:
   I_List() :base_ilist()	{}
+  inline void empty()		{ base_ilist::empty(); }
   inline bool is_empty()        { return base_ilist::is_empty(); } 
   inline void append(T* a)	{ base_ilist::append(a); }
   inline void push_back(T* a)	{ base_ilist::push_back(a); }

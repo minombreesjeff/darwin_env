@@ -1,10 +1,13 @@
 #
 # time functions
 #
+--disable_warnings
 drop table if exists t1,t2,t3;
+--enable_warnings
 
 select from_days(to_days("960101")),to_days(960201)-to_days("19960101"),to_days(date_add(curdate(), interval 1 day))-to_days(curdate()),weekday("1997-11-29");
 select period_add("9602",-12),period_diff(199505,"9404") ;
+
 select now()-now(),weekday(curdate())-weekday(now()),unix_timestamp()-unix_timestamp(now());
 select from_unixtime(unix_timestamp("1994-03-02 10:11:12")),from_unixtime(unix_timestamp("1994-03-02 10:11:12"),"%Y-%m-%d %h:%i:%s"),from_unixtime(unix_timestamp("1994-03-02 10:11:12"))+0;
 select sec_to_time(9001),sec_to_time(9001)+0,time_to_sec("15:12:22"),
@@ -177,7 +180,7 @@ drop table t1,t2;
 #
 # Test bug with month() and year() on text fields with wrong information
 
-CREATE TABLE t1 (updated text) TYPE=MyISAM;
+CREATE TABLE t1 (updated text) ENGINE=MyISAM;
 INSERT INTO t1 VALUES ('');
 SELECT month(updated) from t1;
 SELECT year(updated) from t1;
@@ -225,3 +228,82 @@ drop table t1,t2,t3;
 select @a:=FROM_UNIXTIME(1);
 select unix_timestamp(@a);
 select unix_timestamp('1969-12-01 19:00:01');
+
+#
+# Test for bug #6439 "unix_timestamp() function returns wrong datetime 
+# values for too big argument" and bug #7515 "from_unixtime(0) now
+# returns NULL instead of the epoch". unix_timestamp() should return error
+# for too big or negative argument. It should return Epoch value for zero
+# argument since it seems that many user's rely on this fact.
+#
+select from_unixtime(-1);
+select from_unixtime(2145916800);
+select from_unixtime(0);
+
+#
+# Test types from + INTERVAL
+#
+
+CREATE TABLE t1 (datetime datetime, timestamp timestamp, date date, time time);
+INSERT INTO t1 values ("2001-01-02 03:04:05", "2002-01-02 03:04:05", "2003-01-02", "06:07:08");
+SELECT * from t1;
+select date_add("1997-12-31",INTERVAL 1 SECOND);
+select date_add("1997-12-31",INTERVAL "1 1" YEAR_MONTH);
+
+select date_add(datetime, INTERVAL 1 SECOND) from t1;
+select date_add(datetime, INTERVAL 1 YEAR) from t1;
+
+select date_add(date,INTERVAL 1 SECOND) from t1;
+select date_add(date,INTERVAL 1 MINUTE) from t1;
+select date_add(date,INTERVAL 1 HOUR) from t1;
+select date_add(date,INTERVAL 1 DAY) from t1;
+select date_add(date,INTERVAL 1 MONTH) from t1;
+select date_add(date,INTERVAL 1 YEAR) from t1;
+select date_add(date,INTERVAL "1:1" MINUTE_SECOND) from t1;
+select date_add(date,INTERVAL "1:1" HOUR_MINUTE) from t1;
+select date_add(date,INTERVAL "1:1" DAY_HOUR) from t1;
+select date_add(date,INTERVAL "1 1" YEAR_MONTH) from t1;
+select date_add(date,INTERVAL "1:1:1" HOUR_SECOND) from t1;
+select date_add(date,INTERVAL "1 1:1" DAY_MINUTE) from t1;
+select date_add(date,INTERVAL "1 1:1:1" DAY_SECOND) from t1;
+select date_add(time,INTERVAL 1 SECOND) from t1;
+drop table t1;
+
+# test for last_day
+select last_day('2000-02-05') as f1, last_day('2002-12-31') as f2,
+       last_day('2003-03-32') as f3, last_day('2003-04-01') as f4,
+       last_day('2001-01-01 01:01:01') as f5, last_day(NULL),
+       last_day('2001-02-12');
+
+create table t1 select last_day('2000-02-05') as a,
+                from_days(to_days("960101")) as b;
+describe t1;
+select * from t1;
+drop table t1;
+select last_day('2000-02-05') as a,
+       from_days(to_days("960101")) as b;
+
+select date_add(last_day("1997-12-1"), INTERVAL 1 DAY);
+select length(last_day("1997-12-1"));
+select last_day("1997-12-1")+0;
+select last_day("1997-12-1")+0.0;
+
+# Test SAPDB UTC_% functions. This part is TZ dependant (It is supposed that
+# TZ variable set to GMT-3
+select strcmp(date_sub(localtimestamp(), interval 3 hour), utc_timestamp())=0;
+select strcmp(date_format(date_sub(localtimestamp(), interval 3 hour),"%T"), utc_time())=0;
+select strcmp(date_format(date_sub(localtimestamp(), interval 3 hour),"%Y-%m-%d"), utc_date())=0;
+select strcmp(date_format(utc_timestamp(),"%T"), utc_time())=0;
+select strcmp(date_format(utc_timestamp(),"%Y-%m-%d"), utc_date())=0;
+select strcmp(concat(utc_date(),' ',utc_time()),utc_timestamp())=0;
+
+explain extended select period_add("9602",-12),period_diff(199505,"9404"),from_days(to_days("960101")),dayofmonth("1997-01-02"), month("1997-01-02"), monthname("1972-03-04"),dayofyear("0000-00-00"),HOUR("1997-03-03 23:03:22"),MINUTE("23:03:22"),SECOND(230322),QUARTER(980303),WEEK("1998-03-03"),yearweek("2000-01-01",1),week(19950101,1),year("98-02-03"),weekday(curdate())-weekday(now()),dayname("1962-03-03"),unix_timestamp(),sec_to_time(time_to_sec("0:30:47")/6.21),curtime(),utc_time(),curdate(),utc_date(),utc_timestamp(),date_format("1997-01-02 03:04:05", "%M %W %D %Y %y %m %d %h %i %s %w"),from_unixtime(unix_timestamp("1994-03-02 10:11:12")),"1997-12-31 23:59:59" + INTERVAL 1 SECOND,"1998-01-01 00:00:00" - INTERVAL 1 SECOND,INTERVAL 1 DAY + "1997-12-31", extract(YEAR FROM "1999-01-02 10:11:12"),date_add("1997-12-31 23:59:59",INTERVAL 1 SECOND);
+
+SET @TMP=NOW();
+CREATE TABLE t1 (d DATETIME);
+INSERT INTO t1 VALUES (NOW());
+INSERT INTO t1 VALUES (NOW());
+INSERT INTO t1 VALUES (NOW());
+SELECT count(*) FROM t1 WHERE d>FROM_DAYS(TO_DAYS(@TMP)) AND d<=FROM_DAYS(TO_DAYS(@TMP)+1);
+DROP TABLE t1;
+

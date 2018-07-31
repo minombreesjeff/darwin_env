@@ -36,8 +36,8 @@ static my_bool key_cacheing, null_fields, silent, skip_update, opt_unique,
                verbose;
 static MI_COLUMNDEF recinfo[4];
 static MI_KEYDEF keyinfo[10];
-static MI_KEYSEG keyseg[10];
-static MI_KEYSEG uniqueseg[10];
+static HA_KEYSEG keyseg[10];
+static HA_KEYSEG uniqueseg[10];
 
 static int run_test(const char *filename);
 static void get_options(int argc, char *argv[]);
@@ -50,7 +50,7 @@ int main(int argc,char *argv[])
   MY_INIT(argv[0]);
   my_init();
   if (key_cacheing)
-    init_key_cache(IO_SIZE*16);
+    init_key_cache(dflt_key_cache,KEY_CACHE_BLOCK_SIZE,IO_SIZE*16,0,0);
   get_options(argc,argv);
 
   exit(run_test("test1"));
@@ -92,13 +92,14 @@ static int run_test(const char *filename)
   /* Define a key over the first column */
   keyinfo[0].seg=keyseg;
   keyinfo[0].keysegs=1;
+  keyinfo[0].key_alg=HA_KEY_ALG_BTREE;
   keyinfo[0].seg[0].type= key_type;
   keyinfo[0].seg[0].flag= pack_seg;
   keyinfo[0].seg[0].start=1;
   keyinfo[0].seg[0].length=key_length;
   keyinfo[0].seg[0].null_bit= null_fields ? 2 : 0;
   keyinfo[0].seg[0].null_pos=0;
-  keyinfo[0].seg[0].language=MY_CHARSET_CURRENT;
+  keyinfo[0].seg[0].language= default_charset_info->number;
   if (pack_seg & HA_BLOB_PART)
   {
     keyinfo[0].seg[0].bit_start=4;		/* Length of blob length */
@@ -121,7 +122,7 @@ static int run_test(const char *filename)
       uniqueseg[i].start=start;
       start+=recinfo[i+1].length;
       uniqueseg[i].length=recinfo[i+1].length;
-      uniqueseg[i].language=MY_CHARSET_CURRENT;
+      uniqueseg[i].language= default_charset_info->number;
     }
     uniqueseg[0].type= key_type;
     uniqueseg[0].null_bit= null_fields ? 2 : 0;
@@ -317,7 +318,7 @@ static int run_test(const char *filename)
   return (0);
 err:
   printf("got error: %3d when using myisam-database\n",my_errno);
-  return 1;			/* skipp warning */
+  return 1;			/* skip warning */
 }
 
 
@@ -460,19 +461,19 @@ static void update_record(char *record)
     ptr=blob_key;
     memcpy_fixed(pos+4,&ptr,sizeof(char*));	/* Store pointer to new key */
     if (keyinfo[0].seg[0].type != HA_KEYTYPE_NUM)
-      casedn(blob_key,length);
+      my_casedn(default_charset_info,blob_key,length);
     pos+=recinfo[1].length;
   }
   else if (recinfo[1].type == FIELD_VARCHAR)
   {
     uint length=uint2korr(pos);
-    casedn(pos+2,length);
+    my_casedn(default_charset_info,pos+2,length);
     pos+=recinfo[1].length;
   }
   else
   {
     if (keyinfo[0].seg[0].type != HA_KEYTYPE_NUM)
-      casedn(pos,keyinfo[0].seg[0].length);
+      my_casedn(default_charset_info,pos,keyinfo[0].seg[0].length);
     pos+=recinfo[1].length;
   }
 

@@ -34,14 +34,11 @@ void unireg_init(ulong options)
 
   current_pid=(ulong) getpid();		/* Save for later ref */
   init_time();				/* Init time-functions (read zone) */
-#ifdef USE_MY_ATOF
-  init_my_atof();			/* use our atof */
-#endif
+#ifndef EMBEDDED_LIBRARY
   my_abort_hook=unireg_abort;		/* Abort with close of databases */
+#endif
 
   VOID(strmov(reg_ext,".frm"));
-  for (i=0 ; i < 6 ; i++)		// YYMMDDHHMMSS
-    dayord.pos[i]=i;
   specialflag=SPECIAL_SAME_DB_NAME;
   /* Make a tab of powers of 10 */
   for (i=0,nr=1.0; i < array_elements(log_10) ; i++)
@@ -49,18 +46,5 @@ void unireg_init(ulong options)
     log_10[i]= nr ; nr*= 10.0;
   }
   specialflag|=options;			/* Set options from argv */
-
-  // The following is needed because of like optimization in select.cc
-
-  uchar max_char=my_sort_order[(uchar) max_sort_char];
-  for (i = 0; i < 256; i++)
-  {
-    if ((uchar) my_sort_order[i] > max_char)
-    {
-      max_char=(uchar) my_sort_order[i];
-	max_sort_char= (char) i;
-    }
-  }
-  thread_stack_min=thread_stack - STACK_MIN_SIZE;
   DBUG_VOID_RETURN;
 }

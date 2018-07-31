@@ -97,8 +97,6 @@ struct mem_pool_struct{
 /* The common memory pool */
 mem_pool_t*	mem_comm_pool	= NULL;
 
-ulint		mem_out_of_mem_err_msg_count	= 0;
-
 /* We use this counter to check that the mem pool mutex does not leak;
 this is to track a strange assertion failure reported at
 mysql@lists.mysql.com */
@@ -201,7 +199,7 @@ mem_pool_create(
 	but only when allocated at a higher level in mem0mem.c.
 	This is to avoid masking useful Purify warnings. */
 
-	pool->buf = ut_malloc_low(size, FALSE);
+	pool->buf = ut_malloc_low(size, FALSE, TRUE);
 	pool->size = size;
 
 	mutex_create(&(pool->mutex));
@@ -266,8 +264,6 @@ mem_pool_fill_free_list(
 	if (i >= 63) {
 		/* We come here when we have run out of space in the
 		memory pool: */
-
-		mem_out_of_mem_err_msg_count++;
      
 		return(FALSE);
 	}
@@ -281,7 +277,8 @@ mem_pool_fill_free_list(
 	                fprintf(stderr,
 "  InnoDB: Error: mem pool free list %lu length is %lu\n"
 "InnoDB: though the list is empty!\n",
-			i + 1, UT_LIST_GET_LEN(pool->free_list[i + 1]));
+			(ulong) i + 1,
+			(ulong) UT_LIST_GET_LEN(pool->free_list[i + 1]));
 		}
 
 		ret = mem_pool_fill_free_list(i + 1, pool);
@@ -362,7 +359,7 @@ mem_area_alloc(
 	        fprintf(stderr,
 "InnoDB: Error: Removing element from mem pool free list %lu though the\n"
 "InnoDB: element is not marked free!\n",
-			n);
+			(ulong) n);
 
 		mem_analyze_corruption((byte*)area);
 
@@ -382,7 +379,7 @@ mem_area_alloc(
 	        fprintf(stderr,
 "InnoDB: Error: Removing element from mem pool free list %lu\n"
 "InnoDB: though the list length is 0!\n",
-			n);
+			(ulong) n);
 		mem_analyze_corruption((byte*)area);
 
 		ut_error;
@@ -460,17 +457,13 @@ mem_area_free(
 	ulint		size;
 	ulint		n;
 	
-	if (mem_out_of_mem_err_msg_count > 0) {
-		/* It may be that the area was really allocated from the
-		OS with regular malloc: check if ptr points within
-		our memory pool */
+	/* It may be that the area was really allocated from the OS with
+	regular malloc: check if ptr points within our memory pool */
 
-		if ((byte*)ptr < pool->buf
-				|| (byte*)ptr >= pool->buf + pool->size) {
-			ut_free(ptr);
+	if ((byte*)ptr < pool->buf || (byte*)ptr >= pool->buf + pool->size) {
+		ut_free(ptr);
 
-			return;
-		}
+		return;
 	}
 
 	area = (mem_area_t*) (((byte*)ptr) - MEM_AREA_EXTRA_SIZE);
@@ -506,7 +499,7 @@ mem_area_free(
 		        fprintf(stderr,
 "InnoDB: Error: Memory area size %lu, next area size %lu not a power of 2!\n"
 "InnoDB: Possibly a memory overrun of the buffer being freed here.\n",
-			  size, next_size);
+			  (ulong) size, (ulong) next_size);
 			mem_analyze_corruption((byte*)area);
 
 			ut_error;
@@ -566,7 +559,6 @@ mem_area_free(
 	ut_ad(mem_pool_validate(pool));
 }
 
-#ifdef UNIV_DEBUG
 /************************************************************************
 Validates a memory pool. */
 
@@ -606,8 +598,8 @@ mem_pool_validate(
 		}
 	}
 
-	ut_a(free + pool->reserved == pool->size
-					- (pool->size % MEM_AREA_MIN_SIZE));
+	ut_a(free + pool->reserved == pool->size);
+
 	mutex_exit(&(pool->mutex));
 
 	return(TRUE);
@@ -635,16 +627,15 @@ mem_pool_print_info(
 
 			fprintf(outfile,
 			  "Free list length %lu for blocks of size %lu\n",
-			  UT_LIST_GET_LEN(pool->free_list[i]),
-			  ut_2_exp(i));
+			  (ulong) UT_LIST_GET_LEN(pool->free_list[i]),
+			  (ulong) ut_2_exp(i));
 		}	
 	}
 
-	fprintf(outfile, "Pool size %lu, reserved %lu.\n", pool->size,
-							pool->reserved);
+	fprintf(outfile, "Pool size %lu, reserved %lu.\n", (ulong) pool->size,
+						       (ulong) pool->reserved);
 	mutex_exit(&(pool->mutex));
 }
-#endif /* UNIV_DEBUG */
 
 /************************************************************************
 Returns the amount of reserved memory. */

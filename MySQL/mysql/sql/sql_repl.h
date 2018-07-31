@@ -1,3 +1,20 @@
+/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB & Sasha
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+
+#ifdef HAVE_REPLICATION
 #include "slave.h"
 
 typedef struct st_slave_info
@@ -33,6 +50,7 @@ int cmp_master_pos(const char* log_file_name1, ulonglong log_pos1,
 int reset_slave(THD *thd, MASTER_INFO* mi);
 int reset_master(THD* thd);
 int purge_master_logs(THD* thd, const char* to_log);
+int purge_master_logs_before_date(THD* thd, time_t purge_time);
 bool log_in_use(const char* log_name);
 void adjust_linfo_offsets(my_off_t purge_offset);
 int show_binlogs(THD* thd);
@@ -49,7 +67,10 @@ typedef struct st_load_file_info
   enum enum_duplicates handle_dup;
   char* db;
   char* table_name;
-  bool wrote_create_file, log_delayed;
+  bool wrote_create_file, log_delayed, ignore;
 } LOAD_FILE_INFO;
 
 int log_loaded_block(IO_CACHE* file);
+
+#endif /* HAVE_REPLICATION */
+

@@ -45,7 +45,7 @@ int my_getwd(my_string buf, uint size, myf MyFlags)
 {
   my_string pos;
   DBUG_ENTER("my_getwd");
-  DBUG_PRINT("my",("buf: %lx  size: %d  MyFlags %d", buf,size,MyFlags));
+  DBUG_PRINT("my",("buf: 0x%lx  size: %d  MyFlags %d", buf,size,MyFlags));
 
 #if ! defined(MSDOS)
   if (curr_dir[0])				/* Current pos is saved here */
@@ -108,8 +108,9 @@ int my_setwd(const char *dir, myf MyFlags)
   {
     uint drive,drives;
 
-    pos++;				/* Skipp FN_DEVCHAR */
-    drive=(uint) (toupper(dir[0])-'A'+1); drives= (uint) -1;
+    pos++;				/* Skip FN_DEVCHAR */
+    drive=(uint) (my_toupper(&my_charset_latin1,dir[0])-'A'+1);
+    drives= (uint) -1;
     if ((pos-(byte*) dir) == 2 && drive > 0 && drive < 32)
     {
 #ifdef OS2

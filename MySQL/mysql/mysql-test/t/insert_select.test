@@ -2,7 +2,10 @@
 # Problem with INSERT ... SELECT
 #
 
+--disable_warnings
 drop table if exists t1,t2;
+--enable_warnings
+
 create table t1 (bandID MEDIUMINT UNSIGNED NOT NULL PRIMARY KEY, payoutID SMALLINT UNSIGNED NOT NULL);
 insert into t1 (bandID,payoutID) VALUES (1,6),(2,6),(3,4),(4,9),(5,10),(6,1),(7,12),(8,12);
 create table t2 (payoutID SMALLINT UNSIGNED NOT NULL PRIMARY KEY);
@@ -32,7 +35,7 @@ CREATE TABLE `t1` (
   KEY `date` (`date`),
   KEY `pseudo` (`pseudo`),
   KEY `numreponse` (`numreponse`)
-) TYPE=MyISAM;
+) ENGINE=MyISAM;
 
 CREATE TABLE `t2` (
   `numeropost` bigint(20) unsigned NOT NULL default '0',
@@ -48,7 +51,7 @@ CREATE TABLE `t2` (
   KEY `date` (`date`),
   KEY `pseudo` (`pseudo`),
   KEY `numreponse` (`numreponse`)
-) TYPE=MyISAM;
+) ENGINE=MyISAM;
 
 INSERT INTO t2
 (numeropost,icone,numreponse,contenu,pseudo,date,ip,signature) VALUES
@@ -83,8 +86,21 @@ insert into t1 select * from t2;
 let $VERSION=`select version()`;
 --replace_result $VERSION VERSION
 show binlog events;
+select * from t1;
 drop table t1, t2;
-drop table if exists t1, t2;
+
+# Verify that a partly-completed CREATE TABLE .. SELECT does not
+# get into the binlog (Bug #6682)
+create table t1(a int);
+insert into t1 values(1),(1);
+reset master;
+--error 1062
+create table t2(unique(a)) select a from t1;
+# The above should produce an error, *and* not appear in the binlog
+let $VERSION=`select version()`;
+--replace_result $VERSION VERSION
+show binlog events;
+drop table t1;
 
 #
 # Test of insert ... select from same table
@@ -119,7 +135,10 @@ insert into t2 values (2,"t2:2"), (3,"t2:3");
 --error 1062
 insert into t1 select * from t2;
 select * from t1;
+# REPLACE .. SELECT is not yet supported by PS
+--disable_ps_protocol
 replace into t1 select * from t2;
+--enable_ps_protocol
 select * from t1;
 drop table t1,t2;
 
@@ -163,3 +182,18 @@ insert into t2 Select null, Field, Count From t1 Where Month=20030901 and Type=2
 select * from t2;
 
 drop table t1, t2;
+
+#
+# BUG#6034 - Error code 124:  Wrong medium type
+#
+CREATE TABLE t1 (
+  ID           int(11) NOT NULL auto_increment,
+  NO           int(11) NOT NULL default '0',
+  SEQ          int(11) NOT NULL default '0',
+  PRIMARY KEY  (ID),
+  KEY t1$NO    (SEQ,NO)
+) ENGINE=MyISAM;
+INSERT INTO t1 (SEQ, NO) SELECT "1" AS SEQ, IF(MAX(NO) IS NULL, 0, MAX(NO)) + 1 AS NO FROM t1 WHERE (SEQ = 1);
+select SQL_BUFFER_RESULT * from t1 WHERE (SEQ = 1);
+drop table t1;
+

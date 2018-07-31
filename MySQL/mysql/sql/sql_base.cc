@@ -18,25 +18,23 @@
 /* Basic functions needed by many modules */
 
 #include "mysql_priv.h"
-#include "sql_acl.h"
+#include "sql_select.h"
 #include <m_ctype.h>
 #include <my_dir.h>
 #include <hash.h>
 #include <nisam.h>
-#include <assert.h>
 #ifdef	__WIN__
 #include <io.h>
 #endif
 
 TABLE *unused_tables;				/* Used by mysql_test */
 HASH open_cache;				/* Used by mysql_test */
+HASH assign_cache;
 
 static int open_unireg_entry(THD *thd,TABLE *entry,const char *db,
 			     const char *name, const char *alias);
 static void free_cache_entry(TABLE *entry);
 static void mysql_rm_tmp_tables(void);
-static key_map get_key_map_from_key_list(TABLE *table,
-					 List<String> *index_list);
 
 
 extern "C" byte *table_cache_key(const byte *record,uint *length,
@@ -50,10 +48,10 @@ extern "C" byte *table_cache_key(const byte *record,uint *length,
 bool table_cache_init(void)
 {
   mysql_rm_tmp_tables();
-  return hash_init(&open_cache,table_cache_size+16,0,0,table_cache_key,
-		   (hash_free_key) free_cache_entry,0) != 0;
+  return hash_init(&open_cache, &my_charset_bin, table_cache_size+16,
+		   0, 0,table_cache_key,
+		   (hash_free_key) free_cache_entry, 0) != 0;
 }
-
 
 void table_cache_free(void)
 {
@@ -63,7 +61,6 @@ void table_cache_free(void)
     hash_free(&open_cache);
   DBUG_VOID_RETURN;
 }
-
 
 uint cached_tables(void)
 {
@@ -144,12 +141,13 @@ OPEN_TABLE_LIST *list_open_tables(THD *thd, const char *wild)
     OPEN_TABLE_LIST *table;
     TABLE *entry=(TABLE*) hash_element(&open_cache,idx);
 
-    if ((!entry->real_name))
+    DBUG_ASSERT(entry->real_name);
+    if ((!entry->real_name))			// To be removed
       continue;					// Shouldn't happen
     if (wild)
     {
       strxmov(name,entry->table_cache_key,".",entry->real_name,NullS);
-      if (wild_compare(name,wild))
+      if (wild_compare(name,wild,0))
 	continue;
     }
 
@@ -157,9 +155,9 @@ OPEN_TABLE_LIST *list_open_tables(THD *thd, const char *wild)
     table_list.db= (char*) entry->table_cache_key;
     table_list.real_name= entry->real_name;
     table_list.grant.privilege=0;
+
     if (check_table_access(thd,SELECT_ACL | EXTRA_ACL,&table_list,1))
       continue;
-
     /* need to check if we haven't already listed it */
     for (table= open_list  ; table ; table=table->next)
     {
@@ -193,92 +191,6 @@ OPEN_TABLE_LIST *list_open_tables(THD *thd, const char *wild)
   VOID(pthread_mutex_unlock(&LOCK_open));
   DBUG_RETURN(open_list);
 }
-
-
-/******************************************************************************
-** Send name and type of result to client.
-** Sum fields has table name empty and field_name.
-** flag is a bit mask with the following functions:
-**   1 send number of rows
-**   2 send default values
-**   4 Don't convert field names
-******************************************************************************/
-
-bool
-send_fields(THD *thd,List<Item> &list,uint flag)
-{
-  List_iterator_fast<Item> it(list);
-  Item *item;
-  char buff[80];
-  CONVERT *convert= (flag & 4) ? (CONVERT*) 0 : thd->variables.convert_set;
-  DBUG_ENTER("send_fields");
-
-  String tmp((char*) buff,sizeof(buff)),*res,*packet= &thd->packet;
-
-  if (thd->fatal_error)		// We have got an error
-    goto err;
-
-  if (flag & 1)
-  {				// Packet with number of elements
-    char *pos=net_store_length(buff,(uint) list.elements);
-    (void) my_net_write(&thd->net, buff,(uint) (pos-buff));
-  }
-  while ((item=it++))
-  {
-    char *pos;
-    Send_field field;
-    item->make_field(&field);
-    packet->length(0);
-
-    if (convert)
-    {
-      if (convert->store(packet,field.table_name,
-			 (uint) strlen(field.table_name)) ||
-	  convert->store(packet,field.col_name,
-			 (uint) strlen(field.col_name)) ||
-	  packet->realloc(packet->length()+10))
-	goto err;
-    }
-    else if (net_store_data(packet,field.table_name) ||
-	     net_store_data(packet,field.col_name) ||
-	     packet->realloc(packet->length()+10))
-      goto err; /* purecov: inspected */
-    pos= (char*) packet->ptr()+packet->length();
-
-    if (!(thd->client_capabilities & CLIENT_LONG_FLAG))
-    {
-      packet->length(packet->length()+9);
-      pos[0]=3; int3store(pos+1,field.length);
-      pos[4]=1; pos[5]=field.type;
-      pos[6]=2; pos[7]=(char) field.flags; pos[8]= (char) field.decimals;
-    }
-    else
-    {
-      packet->length(packet->length()+10);
-      pos[0]=3; int3store(pos+1,field.length);
-      pos[4]=1; pos[5]=field.type;
-      pos[6]=3; int2store(pos+7,field.flags); pos[9]= (char) field.decimals;
-    }
-    if (flag & 2)
-    {						// Send default value
-      if (!(res=item->val_str(&tmp)))
-      {
-	if (net_store_null(packet))
-	  goto err;
-      }
-      else if (net_store_data(packet,res->ptr(),res->length()))
-	goto err;
-    }
-    if (my_net_write(&thd->net, (char*) packet->ptr(),packet->length()))
-      break;					/* purecov: inspected */
-  }
-  send_eof(&thd->net,1);
-  DBUG_RETURN(0);
- err:
-  send_error(&thd->net,ER_OUT_OF_RESOURCES);	/* purecov: inspected */
-  DBUG_RETURN(1);				/* purecov: inspected */
-}
-
 
 /*****************************************************************************
  *	 Functions to free open table cache
@@ -325,31 +237,33 @@ static void free_cache_entry(TABLE *table)
   DBUG_VOID_RETURN;
 }
 
+/* Free resources allocated by filesort() and read_record() */
 
 void free_io_cache(TABLE *table)
 {
   DBUG_ENTER("free_io_cache");
-  if (table->io_cache)
+  if (table->sort.io_cache)
   {
-    close_cached_file(table->io_cache);
-    my_free((gptr) table->io_cache,MYF(0));
-    table->io_cache=0;
-  }
-  if (table->record_pointers)
-  {
-    my_free((gptr) table->record_pointers,MYF(0));
-    table->record_pointers=0;
+    close_cached_file(table->sort.io_cache);
+    my_free((gptr) table->sort.io_cache,MYF(0));
+    table->sort.io_cache=0;
   }
   DBUG_VOID_RETURN;
 }
 
-	/* Close all tables which aren't in use by any thread */
+/*
+  Close all tables which aren't in use by any thread
+
+  THD can be NULL, but then if_wait_for_refresh must be FALSE
+  and tables must be NULL.
+*/
 
 bool close_cached_tables(THD *thd, bool if_wait_for_refresh,
 			 TABLE_LIST *tables)
 {
   bool result=0;
   DBUG_ENTER("close_cached_tables");
+  DBUG_ASSERT(thd || (!if_wait_for_refresh && !tables));
 
   VOID(pthread_mutex_lock(&LOCK_open));
   if (!tables)
@@ -376,8 +290,10 @@ bool close_cached_tables(THD *thd, bool if_wait_for_refresh,
     if (!found)
       if_wait_for_refresh=0;			// Nothing to wait for
   }
+#ifndef EMBEDDED_LIBRARY
   if (!tables)
     kill_delayed_threads();
+#endif
   if (if_wait_for_refresh)
   {
     /*
@@ -389,9 +305,11 @@ bool close_cached_tables(THD *thd, bool if_wait_for_refresh,
     thd->proc_info="Flushing tables";
 
     close_old_data_files(thd,thd->open_tables,1,1);
+    mysql_ha_flush(thd, tables, MYSQL_HA_REOPEN_ON_USAGE | MYSQL_HA_FLUSH_ALL);
     bool found=1;
     /* Wait until all threads has closed all the tables we had locked */
-    DBUG_PRINT("info", ("Waiting for others threads to close their open tables"));
+    DBUG_PRINT("info",
+	       ("Waiting for others threads to close their open tables"));
     while (found && ! thd->killed)
     {
       found=0;
@@ -421,7 +339,6 @@ bool close_cached_tables(THD *thd, bool if_wait_for_refresh,
   VOID(pthread_mutex_unlock(&LOCK_open));
   if (if_wait_for_refresh)
   {
-    THD *thd=current_thd;
     pthread_mutex_lock(&thd->mysys_var->mutex);
     thd->mysys_var->current_mutex= 0;
     thd->mysys_var->current_cond= 0;
@@ -432,31 +349,60 @@ bool close_cached_tables(THD *thd, bool if_wait_for_refresh,
 }
 
 
-/* Put all tables used by thread in free list */
+/*
+  Close all tables used by thread
 
-void close_thread_tables(THD *thd, bool locked)
+  SYNOPSIS
+    close_thread_tables()
+    thd			Thread handler
+    lock_in_use		Set to 1 (0 = default) if caller has a lock on
+			LOCK_open
+    skip_derived	Set to 1 (0 = default) if we should not free derived
+			tables.
+
+  IMPLEMENTATION
+    Unlocks tables and frees derived tables.
+    Put all normal tables used by thread in free list.
+*/
+
+void close_thread_tables(THD *thd, bool lock_in_use, bool skip_derived)
 {
+  bool found_old_table;
   DBUG_ENTER("close_thread_tables");
 
+  if (thd->derived_tables && !skip_derived)
+  {
+    TABLE *table, *next;
+    /*
+      Close all derived tables generated from questions like
+      SELECT * from (select * from t1))
+    */
+    for (table= thd->derived_tables ; table ; table= next)
+    {
+      next= table->next;
+      free_tmp_table(thd, table);
+    }
+    thd->derived_tables= 0;
+  }
   if (thd->locked_tables)
   {
     ha_commit_stmt(thd);			// If select statement
     DBUG_VOID_RETURN;				// LOCK TABLES in use
   }
 
-  bool found_old_table=0;
-
   if (thd->lock)
   {
-    mysql_unlock_tables(thd, thd->lock); thd->lock=0;
+    mysql_unlock_tables(thd, thd->lock);
+    thd->lock=0;
   }
   /* VOID(pthread_sigmask(SIG_SETMASK,&thd->block_signals,NULL)); */
-  if (!locked)
+  if (!lock_in_use)
     VOID(pthread_mutex_lock(&LOCK_open));
   safe_mutex_assert_owner(&LOCK_open);
 
   DBUG_PRINT("info", ("thd->open_tables=%p", thd->open_tables));
 
+ found_old_table= 0;
   while (thd->open_tables)
     found_old_table|=close_thread_table(thd, &thd->open_tables);
   thd->some_tables_deleted=0;
@@ -470,7 +416,7 @@ void close_thread_tables(THD *thd, bool locked)
     /* Tell threads waiting for refresh that something has happened */
     VOID(pthread_cond_broadcast(&COND_refresh));
   }
-  if (!locked)
+  if (!lock_in_use)
     VOID(pthread_mutex_unlock(&LOCK_open));
   /*  VOID(pthread_sigmask(SIG_SETMASK,&thd->signals,NULL)); */
   DBUG_VOID_RETURN;
@@ -503,7 +449,7 @@ bool close_thread_table(THD *thd, TABLE **table_ptr)
     else
     {
       // Free memory and reset for next loop
-      table->file->extra(HA_EXTRA_RESET);
+      table->file->reset();
     }
     table->in_use=0;
     if (unused_tables)
@@ -539,65 +485,110 @@ void close_temporary(TABLE *table,bool delete_table)
 void close_temporary_tables(THD *thd)
 {
   TABLE *table,*next;
-  char *query, *end;
-  uint query_buf_size; 
-  bool found_user_tables = 0;
+  char *query, *name_in_query, *end;
+  uint greatest_key_length= 0;
 
   if (!thd->temporary_tables)
     return;
   
+  /*
+    We write a DROP TEMPORARY TABLE for each temp table left, so that our
+    replication slave can clean them up. Not one multi-table DROP TABLE binlog
+    event: this would cause problems if slave uses --replicate-*-table.
+  */
   LINT_INIT(end);
-  query_buf_size= 50;   // Enough for DROP ... TABLE IF EXISTS
 
+  /* We'll re-use always same buffer so make it big enough for longest name */
   for (table=thd->temporary_tables ; table ; table=table->next)
-    /*
-      We are going to add 4 ` around the db/table names, so 1 does not look
-      enough; indeed it is enough, because table->key_length is greater (by 8,
-      because of server_id and thread_id) than db||table.
-    */
-    query_buf_size+= table->key_length+1;
+    greatest_key_length= max(greatest_key_length, table->key_length);
 
-  if ((query = alloc_root(&thd->mem_root, query_buf_size)))
+  if ((query = alloc_root(thd->mem_root, greatest_key_length+50)))
     // Better add "if exists", in case a RESET MASTER has been done
-    end=strmov(query, "DROP /*!40005 TEMPORARY */ TABLE IF EXISTS ");
+    name_in_query= strmov(query, "DROP /*!40005 TEMPORARY */ TABLE IF EXISTS `");
 
   for (table=thd->temporary_tables ; table ; table=next)
   {
-    if (query) // we might be out of memory, but this is not fatal
+    /*
+      In we are OOM for 'query' this is not fatal. We skip temporary tables
+      not created directly by the user.
+    */
+    if (query && mysql_bin_log.is_open() && (table->real_name[0] != '#'))
     {
-      // skip temporary tables not created directly by the user
-      if (table->real_name[0] != '#')
-	found_user_tables = 1;
       /*
         Here we assume table_cache_key always starts
         with \0 terminated db name
       */
-      end = strxmov(end,"`",table->table_cache_key,"`.`",
-                    table->real_name,"`,", NullS);
+      end = strxmov(name_in_query, table->table_cache_key, "`.`",
+                    table->real_name, "`", NullS);
+      Query_log_event qinfo(thd, query, (ulong)(end-query), 0, FALSE);
+      /*
+        Imagine the thread had created a temp table, then was doing a SELECT, and
+        the SELECT was killed. Then it's not clever to mark the statement above as
+        "killed", because it's not really a statement updating data, and there
+        are 99.99% chances it will succeed on slave. And, if thread is
+        killed now, it's not clever either.
+        If a real update (one updating a persistent table) was killed on the
+        master, then this real update will be logged with error_code=killed,
+        rightfully causing the slave to stop.
+      */
+      qinfo.error_code= 0;
+      mysql_bin_log.write(&qinfo);
     }
     next=table->next;
     close_temporary(table);
   }
-  if (query && found_user_tables && mysql_bin_log.is_open())
-  {
-    /* The -1 is to remove last ',' */
-    thd->clear_error();
-    Query_log_event qinfo(thd, query, (ulong)(end-query)-1, 0);
-    /*
-      Imagine the thread had created a temp table, then was doing a SELECT, and
-      the SELECT was killed. Then it's not clever to mark the statement above as
-      "killed", because it's not really a statement updating data, and there
-      are 99.99% chances it will succeed on slave.
-      If a real update (one updating a persistent table) was killed on the
-      master, then this real update will be logged with error_code=killed,
-      rightfully causing the slave to stop.
-    */
-    qinfo.error_code= 0;
-    mysql_bin_log.write(&qinfo);
-  }
   thd->temporary_tables=0;
 }
 
+/*
+  Find first suitable table by alias in given list.
+
+  SYNOPSIS
+    find_table_in_list()
+    table - pointer to table list
+    db_name - data base name or 0 for any
+    table_name - table name or 0 for any
+
+  RETURN VALUES
+    NULL	Table not found
+    #		Pointer to found table.
+*/
+
+TABLE_LIST * find_table_in_list(TABLE_LIST *table,
+				const char *db_name, const char *table_name)
+{
+  for (; table; table= table->next)
+    if ((!db_name || !strcmp(table->db, db_name)) &&
+	(!table_name || !my_strcasecmp(table_alias_charset,
+				       table->alias, table_name)))
+      break;
+  return table;
+}
+
+/*
+  Find real table in given list.
+
+  SYNOPSIS
+    find_real_table_in_list()
+    table - pointer to table list
+    db_name - data base name
+    table_name - table name
+
+  RETURN VALUES
+    NULL	Table not found
+    #		Pointer to found table.
+*/
+
+TABLE_LIST * find_real_table_in_list(TABLE_LIST *table,
+				     const char *db_name,
+				     const char *table_name)
+{
+  for (; table; table= table->next)
+    if (!strcmp(table->db, db_name) &&
+	!strcmp(table->real_name, table_name))
+      break;
+  return table;
+}
 
 TABLE **find_temporary_table(THD *thd, const char *db, const char *table_name)
 {
@@ -607,7 +598,7 @@ TABLE **find_temporary_table(THD *thd, const char *db, const char *table_name)
 
   int4store(key+key_length,thd->server_id);
   key_length += 4;
-  int4store(key+key_length,thd->slave_proxy_id);
+  int4store(key+key_length,thd->variables.pseudo_thread_id);
   key_length += 4;
 
   prev= &thd->temporary_tables;
@@ -656,7 +647,7 @@ bool rename_temporary_table(THD* thd, TABLE *table, const char *db,
 	    table_name) - table->table_cache_key)+1;
   int4store(key+table->key_length,thd->server_id);
   table->key_length += 4;
-  int4store(key+table->key_length,thd->slave_proxy_id);
+  int4store(key+table->key_length,thd->variables.pseudo_thread_id);
   table->key_length += 4;
   return 0;
 }
@@ -811,12 +802,13 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
     DBUG_RETURN(0);
   key_length= (uint) (strmov(strmov(key,db)+1,table_name)-key)+1;
   int4store(key + key_length, thd->server_id);
-  int4store(key + key_length + 4, thd->slave_proxy_id);
+  int4store(key + key_length + 4, thd->variables.pseudo_thread_id);
 
   for (table=thd->temporary_tables; table ; table=table->next)
   {
-    if (table->key_length == key_length+8 &&
-	!memcmp(table->table_cache_key,key,key_length+8))
+    if (table->key_length == key_length + TMP_TABLE_KEY_EXTRA &&
+	!memcmp(table->table_cache_key, key,
+                key_length + TMP_TABLE_KEY_EXTRA))
     {
       if (table->query_id == thd->query_id)
       {
@@ -825,6 +817,9 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
 	DBUG_RETURN(0);
       }
       table->query_id=thd->query_id;
+      table->clear_query_id=1;
+      thd->tmp_table_used= 1;
+      DBUG_PRINT("info",("Using temporary table"));
       goto reset;
     }
   }
@@ -835,16 +830,18 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
     {
       if (table->key_length == key_length &&
 	  !memcmp(table->table_cache_key,key,key_length) &&
-	  !my_strcasecmp(table->table_name,alias) &&
+	  !my_strcasecmp(system_charset_info, table->table_name, alias) &&
 	  table->query_id != thd->query_id)
       {
 	table->query_id=thd->query_id;
+        DBUG_PRINT("info",("Using locked table"));
 	goto reset;
       }
     }
     my_printf_error(ER_TABLE_NOT_LOCKED,ER(ER_TABLE_NOT_LOCKED),MYF(0),alias);
     DBUG_RETURN(0);
   }
+
   VOID(pthread_mutex_lock(&LOCK_open));
 
   if (!thd->open_tables)
@@ -856,6 +853,9 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
     VOID(pthread_mutex_unlock(&LOCK_open));
     DBUG_RETURN(0);
   }
+
+  /* close handler tables which are marked for flush */
+  mysql_ha_flush(thd, (TABLE_LIST*) NULL, MYSQL_HA_REOPEN_ON_USAGE);
 
   for (table=(TABLE*) hash_search(&open_cache,(byte*) key,key_length) ;
        table && table->in_use ;
@@ -887,6 +887,7 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
     }
     table->prev->next=table->next;		/* Remove from unused list */
     table->next->prev=table->prev;
+
   }
   else
   {
@@ -913,11 +914,12 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
     table->version=refresh_version;
     table->flush_version=flush_version;
     DBUG_PRINT("info", ("inserting table %p into the cache", table));
-    VOID(hash_insert(&open_cache,(byte*) table));
+    VOID(my_hash_insert(&open_cache,(byte*) table));
   }
 
   table->in_use=thd;
-  check_unused();
+  check_unused();				// Debugging call
+       
   VOID(pthread_mutex_unlock(&LOCK_open));
   if (refresh)
   {
@@ -937,6 +939,31 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
     for (uint i=0 ; i < table->fields ; i++)
       table->field[i]->table_name=table->table_name;
   }
+#if MYSQL_VERSION_ID < 40100
+  /*
+    If per-connection "new" variable (represented by variables.new_mode)
+    is set then we should pretend that the length of TIMESTAMP field is 19.
+    The cheapest (from perfomance viewpoint) way to achieve that is to set
+    field_length of all Field_timestamp objects in a table after opening
+    it (to 19 if new_mode is true or to original field length otherwise).
+    We save value of new_mode variable in TABLE::timestamp_mode to
+    not perform this setup if new_mode value is the same between sequential
+    table opens.
+  */
+  my_bool new_mode= thd->variables.new_mode;
+  if (table->timestamp_mode != new_mode)
+  {
+    for (uint i=0 ; i < table->fields ; i++)
+    {
+      Field *field= table->field[i];
+
+      if (field->type() == FIELD_TYPE_TIMESTAMP)
+        field->field_length= new_mode ? 19 :
+                             ((Field_timestamp *)(field))->orig_field_length;
+    }
+    table->timestamp_mode= new_mode;
+  }
+#endif
   /* These variables are also set in reopen_table() */
   table->tablenr=thd->current_tablenr++;
   table->used_fields=0;
@@ -945,6 +972,8 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
   table->status=STATUS_NO_RECORD;
   table->keys_in_use_for_query= table->keys_in_use;
   table->used_keys= table->keys_for_keyread;
+  if (table->timestamp_field)
+    table->timestamp_field_type= table->timestamp_field->get_auto_set_type();
   DBUG_ASSERT(table->key_read == 0);
   DBUG_RETURN(table);
 }
@@ -1023,8 +1052,8 @@ bool reopen_table(TABLE *table,bool locked)
   tmp.grant=		table->grant;
 
   /* Replace table in open list */
-  tmp.next=table->next;
-  tmp.prev=table->prev;
+  tmp.next=		table->next;
+  tmp.prev=		table->prev;
 
   if (table->file)
     VOID(closefrm(table));		// close file, free everything
@@ -1032,14 +1061,15 @@ bool reopen_table(TABLE *table,bool locked)
   *table=tmp;
   table->file->change_table_ptr(table);
 
+  DBUG_ASSERT(table->table_name);
   for (field=table->field ; *field ; field++)
   {
-    (*field)->table=table;
+    (*field)->table= (*field)->orig_table= table;
     (*field)->table_name=table->table_name;
   }
   for (key=0 ; key < table->keys ; key++)
     for (part=0 ; part < table->key_info[key].usable_key_parts ; part++)
-      table->key_info[key].key_part[part].field->table=table;
+      table->key_info[key].key_part[part].field->table= table;
   VOID(pthread_cond_broadcast(&COND_refresh));
   error=0;
 
@@ -1222,6 +1252,7 @@ bool wait_for_tables(THD *thd)
   {
     thd->some_tables_deleted=0;
     close_old_data_files(thd,thd->open_tables,0,dropping_tables != 0);
+    mysql_ha_flush(thd, (TABLE_LIST*) NULL, MYSQL_HA_REOPEN_ON_USAGE);
     if (!table_is_used(thd->open_tables,1))
       break;
     (void) pthread_cond_wait(&COND_refresh,&LOCK_open);
@@ -1320,22 +1351,39 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
 {
   char path[FN_REFLEN];
   int error;
+  uint discover_retry_count= 0;
   DBUG_ENTER("open_unireg_entry");
 
   strxmov(path, mysql_data_home, "/", db, "/", name, NullS);
-  if (openfrm(path,alias,
+  while (openfrm(path,alias,
 	       (uint) (HA_OPEN_KEYFILE | HA_OPEN_RNDFILE | HA_GET_INDEX |
 		       HA_TRY_READ_ONLY),
 	       READ_KEYINFO | COMPUTE_TYPES | EXTRA_RECORD,
 	      thd->open_options, entry))
   {
     if (!entry->crashed)
-      goto err;					// Can't repair the table
+    {
+      /*
+       Frm file could not be found on disk
+       Since it does not exist, no one can be using it
+       LOCK_open has been locked to protect from someone else
+       trying to discover the table at the same time.
+      */
+      if (discover_retry_count++ != 0)
+       goto err;
+      if (ha_create_table_from_engine(thd, db, name, TRUE) != 0)
+       goto err;
 
+      thd->clear_error(); // Clear error message
+      continue;
+    }
+
+    // Code below is for repairing a crashed file
     TABLE_LIST table_list;
+    bzero((char*) &table_list, sizeof(table_list)); // just for safe
     table_list.db=(char*) db;
     table_list.real_name=(char*) name;
-    table_list.next=0;
+
     safe_mutex_assert_owner(&LOCK_open);
 
     if ((error=lock_table_name(thd,&table_list)))
@@ -1351,8 +1399,8 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
       }
     }
     pthread_mutex_unlock(&LOCK_open);
-    thd->clear_error();
-    error=0;
+    thd->clear_error();				// Clear error message
+    error= 0;
     if (openfrm(path,alias,
 		(uint) (HA_OPEN_KEYFILE | HA_OPEN_RNDFILE | HA_GET_INDEX |
 			 HA_TRY_READ_ONLY),
@@ -1364,18 +1412,19 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
       /* Give right error message */
       thd->clear_error();
       my_error(ER_NOT_KEYFILE, MYF(0), name, my_errno);
-      sql_print_error("Error: Couldn't repair table: %s.%s",db,name);
+      sql_print_error("Couldn't repair table: %s.%s",db,name);
       if (entry->file)
 	closefrm(entry);
       error=1;
     }
     else
-      thd->clear_error();
+      thd->clear_error();			// Clear error message
     pthread_mutex_lock(&LOCK_open);
     unlock_table_name(thd,&table_list);
 
     if (error)
       goto err;
+    break;
   }
   /*
     If we are here, there was no fatal error (but error may be still
@@ -1392,7 +1441,7 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
       {
         end = strxmov(strmov(query, "DELETE FROM `"),
                       db,"`.`",name,"`", NullS);
-        Query_log_event qinfo(thd, query, (ulong)(end-query), 0);
+        Query_log_event qinfo(thd, query, (ulong)(end-query), 0, FALSE);
         mysql_bin_log.write(&qinfo);
         my_free(query, MYF(0));
       }
@@ -1403,7 +1452,7 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
           DBA on top of warning the client (which will automatically be done
           because of MYF(MY_WME) in my_malloc() above).
         */
-        sql_print_error("Error: when opening HEAP table, could not allocate \
+        sql_print_error("When opening HEAP table, could not allocate \
 memory to write 'DELETE FROM `%s`.`%s`' to the binary log",db,name);
         if (entry->file)
           closefrm(entry);
@@ -1416,26 +1465,45 @@ err:
   DBUG_RETURN(1);
 }
 
-/*****************************************************************************
-** open all tables in list
-*****************************************************************************/
+/*
+  Open all tables in list
 
-int open_tables(THD *thd,TABLE_LIST *start)
+  SYNOPSIS
+    open_tables()
+    thd - thread handler
+    start - list of tables
+    counter - number of opened tables will be return using this parameter
+
+  RETURN
+    0  - OK
+    -1 - error
+*/
+
+int open_tables(THD *thd, TABLE_LIST *start, uint *counter)
 {
   TABLE_LIST *tables;
   bool refresh;
   int result=0;
   DBUG_ENTER("open_tables");
 
+  thd->current_tablenr= 0;
  restart:
+  *counter= 0;
   thd->proc_info="Opening tables";
   for (tables=start ; tables ; tables=tables->next)
   {
+    /*
+      Ignore placeholders for derived tables. After derived tables
+      processing, link to created temporary table will be put here.
+     */
+    if (tables->derived)
+      continue;
+    (*counter)++;
     if (!tables->table &&
-	!(tables->table=open_table(thd,
-				   tables->db,
-				   tables->real_name,
-				   tables->alias, &refresh)))
+	!(tables->table= open_table(thd,
+				    tables->db,
+				    tables->real_name,
+				    tables->alias, &refresh)))
     {
       if (refresh)				// Refresh in progress
       {
@@ -1545,9 +1613,11 @@ TABLE *open_ltable(THD *thd, TABLE_LIST *table_list, thr_lock_type lock_type)
   DBUG_ENTER("open_ltable");
 
   thd->proc_info="Opening table";
+  thd->current_tablenr= 0;
   while (!(table=open_table(thd,table_list->db,
 			    table_list->real_name,table_list->alias,
 			    &refresh)) && refresh) ;
+
   if (table)
   {
 #if defined( __WIN__) || defined(OS2)
@@ -1567,6 +1637,7 @@ TABLE *open_ltable(THD *thd, TABLE_LIST *table_list, thr_lock_type lock_type)
     }
     else
     {
+      DBUG_ASSERT(thd->lock == 0);	// You must lock everything at once
       if ((table->reginfo.lock_type= lock_type) != TL_UNLOCK)
 	if (!(thd->lock=mysql_lock_tables(thd,&table_list->table,1)))
 	  table= 0;
@@ -1578,15 +1649,107 @@ TABLE *open_ltable(THD *thd, TABLE_LIST *table_list, thr_lock_type lock_type)
 
 
 /*
-  Open all tables in list and locks them for read.
-  The lock will automaticly be freed by close_thread_tables()
+  Open all tables in list and locks them for read without derived
+  tables processing.
+
+  SYNOPSIS
+    simple_open_n_lock_tables()
+    thd		- thread handler
+    tables	- list of tables for open&locking
+
+  RETURN
+    0  - ok
+    -1 - error
+
+  NOTE
+    The lock will automaticly be freed by close_thread_tables()
 */
 
-int open_and_lock_tables(THD *thd,TABLE_LIST *tables)
+int simple_open_n_lock_tables(THD *thd, TABLE_LIST *tables)
 {
-  if (open_tables(thd,tables) || lock_tables(thd,tables))
-    return -1;					/* purecov: inspected */
-  return 0;
+  DBUG_ENTER("simple_open_n_lock_tables");
+  uint counter;
+  if (open_tables(thd, tables, &counter) || lock_tables(thd, tables, counter))
+    DBUG_RETURN(-1);				/* purecov: inspected */
+  DBUG_RETURN(0);
+}
+
+
+/*
+  Open all tables in list, locks them and process derived tables
+  tables processing.
+
+  SYNOPSIS
+    open_and_lock_tables()
+    thd		- thread handler
+    tables	- list of tables for open&locking
+
+  RETURN
+    0  - ok
+    -1 - error
+
+  NOTE
+    The lock will automaticly be freed by close_thread_tables()
+*/
+
+int open_and_lock_tables(THD *thd, TABLE_LIST *tables)
+{
+  DBUG_ENTER("open_and_lock_tables");
+  uint counter;
+  if (open_tables(thd, tables, &counter) || lock_tables(thd, tables, counter))
+    DBUG_RETURN(-1);				/* purecov: inspected */
+  relink_tables_for_derived(thd);
+  DBUG_RETURN(mysql_handle_derived(thd->lex));
+}
+
+
+/*
+  Open all tables in list and process derived tables
+
+  SYNOPSIS
+    open_normal_and_derived_tables
+    thd		- thread handler
+    tables	- list of tables for open&locking
+
+  RETURN
+    FALSE - ok
+    TRUE  - error
+
+  NOTE 
+    This is to be used on prepare stage when you don't read any
+    data from the tables.
+*/
+
+int open_normal_and_derived_tables(THD *thd, TABLE_LIST *tables)
+{
+  uint counter;
+  DBUG_ENTER("open_normal_and_derived_tables");
+  if (open_tables(thd, tables, &counter))
+    DBUG_RETURN(-1);				/* purecov: inspected */
+  relink_tables_for_derived(thd);
+  DBUG_RETURN(mysql_handle_derived(thd->lex));
+}
+
+
+/*
+  Let us propagate pointers to open tables from global table list
+  to table lists in particular selects if needed.
+*/
+
+void relink_tables_for_derived(THD *thd)
+{
+  if (thd->lex->all_selects_list->next_select_in_list() ||
+      thd->lex->time_zone_tables_used)
+  {
+    for (SELECT_LEX *sl= thd->lex->all_selects_list;
+	 sl;
+	 sl= sl->next_select_in_list())
+      for (TABLE_LIST *cursor= (TABLE_LIST *) sl->table_list.first;
+           cursor;
+           cursor=cursor->next)
+        if (cursor->table_list)
+          cursor->table= cursor->table_list->table;
+  }
 }
 
 
@@ -1597,13 +1760,19 @@ int open_and_lock_tables(THD *thd,TABLE_LIST *tables)
     lock_tables()
     thd			Thread handler
     tables		Tables to lock
+    count		umber of opened tables
+
+  NOTES
+    You can't call lock_tables twice, as this would break the dead-lock-free
+    handling thr_lock gives us.  You most always get all needed locks at
+    once.
 
   RETURN VALUES
    0	ok
    -1	Error
 */
 
-int lock_tables(THD *thd,TABLE_LIST *tables)
+int lock_tables(THD *thd, TABLE_LIST *tables, uint count)
 {
   TABLE_LIST *table;
   if (!tables)
@@ -1611,22 +1780,24 @@ int lock_tables(THD *thd,TABLE_LIST *tables)
 
   if (!thd->locked_tables)
   {
-    uint count=0;
-    for (table = tables ; table ; table=table->next)
-      count++;
+    DBUG_ASSERT(thd->lock == 0);	// You must lock everything at once
     TABLE **start,**ptr;
     if (!(ptr=start=(TABLE**) sql_alloc(sizeof(TABLE*)*count)))
       return -1;
     for (table = tables ; table ; table=table->next)
-      *(ptr++)= table->table;
-    if (!(thd->lock=mysql_lock_tables(thd,start,count)))
+    {
+      if (!table->derived)
+	*(ptr++)= table->table;
+    }
+    if (!(thd->lock=mysql_lock_tables(thd,start, (uint) (ptr - start))))
       return -1;				/* purecov: inspected */
   }
   else
   {
     for (table = tables ; table ; table=table->next)
     {
-      if (check_lock_and_start_stmt(thd, table->table, table->lock_type))
+      if (!table->derived && 
+	  check_lock_and_start_stmt(thd, table->table, table->lock_type))
       {
 	ha_rollback_stmt(thd);
 	return -1;
@@ -1672,6 +1843,7 @@ TABLE *open_temporary_table(THD *thd, const char *path, const char *db,
   }
 
   tmp_table->reginfo.lock_type=TL_WRITE;	 // Simulate locked
+  tmp_table->in_use= thd;
   tmp_table->tmp_table = (tmp_table->file->has_transactions() ? 
 			  TRANSACTIONAL_TMP_TABLE : TMP_TABLE);
   tmp_table->table_cache_key=(char*) (tmp_table+1);
@@ -1683,7 +1855,7 @@ TABLE *open_temporary_table(THD *thd, const char *path, const char *db,
 	    thd->server_id);
   tmp_table->key_length += 4;
   int4store(tmp_table->table_cache_key + tmp_table->key_length,
-	    thd->slave_proxy_id);
+	    thd->variables.pseudo_thread_id);
   tmp_table->key_length += 4;
 
   if (link_in_list)
@@ -1700,6 +1872,8 @@ TABLE *open_temporary_table(THD *thd, const char *path, const char *db,
 bool rm_temporary_table(enum db_type base, char *path)
 {
   bool error=0;
+  DBUG_ENTER("rm_temporary_table");
+
   fn_format(path, path,"",reg_ext,4);
   unpack_filename(path,path);
   if (my_delete(path,MYF(0)))
@@ -1709,11 +1883,11 @@ bool rm_temporary_table(enum db_type base, char *path)
   if (file && file->delete_table(path))
   {
     error=1;
-    sql_print_error("Warning: Could not remove tmp table: '%s', error: %d",
-		    path, my_errno);
+    sql_print_warning("Could not remove tmp table: '%s', error: %d",
+                      path, my_errno);
   }
   delete file;
-  return error;
+  DBUG_RETURN(error);
 }
 
 
@@ -1725,49 +1899,88 @@ bool rm_temporary_table(enum db_type base, char *path)
 #define WRONG_GRANT (Field*) -1
 
 Field *find_field_in_table(THD *thd,TABLE *table,const char *name,uint length,
-			   bool check_grants, bool allow_rowid)
+                           bool check_grants, bool allow_rowid, 
+                           uint *cached_field_index_ptr)
 {
-  Field *field;
-  if (table->name_hash.records)
+  Field **field_ptr, *field;
+  uint cached_field_index= *cached_field_index_ptr;
+
+  /* We assume here that table->field < NO_CACHED_FIELD_INDEX = UINT_MAX */
+  if (cached_field_index < table->fields &&
+      !my_strcasecmp(system_charset_info, 
+                     table->field[cached_field_index]->field_name, name))
+    field_ptr= table->field + cached_field_index;
+  else if (table->name_hash.records)
+    field_ptr= (Field**)hash_search(&table->name_hash,(byte*) name,
+                                    length);
+  else
   {
-    if ((field=(Field*) hash_search(&table->name_hash,(byte*) name,
-				    length)))
-      goto found;
+    if (!(field_ptr= table->field))
+      return (Field *)0;
+    for (; *field_ptr; ++field_ptr)
+      if (!my_strcasecmp(system_charset_info, (*field_ptr)->field_name, name))
+        break;
+  }
+
+  if (field_ptr && *field_ptr)
+  {
+    *cached_field_index_ptr= field_ptr - table->field;
+    field= *field_ptr;
   }
   else
   {
-    Field **ptr=table->field;
-    while ((field = *ptr++))
-    {
-      if (!my_strcasecmp(field->field_name, name))
-	goto found;
-    }
+    if (!allow_rowid ||
+        my_strcasecmp(system_charset_info, name, "_rowid") ||
+        !(field=table->rowid_field))
+      return (Field*) 0;
   }
-  if (allow_rowid && !my_strcasecmp(name,"_rowid") &&
-      (field=table->rowid_field))
-    goto found;
-  return (Field*) 0;
 
- found:
   if (thd->set_query_id)
   {
     if (field->query_id != thd->query_id)
     {
       field->query_id=thd->query_id;
       table->used_fields++;
-      table->used_keys&= field->part_of_key;
+      table->used_keys.intersect(field->part_of_key);
     }
     else
       thd->dupp_field=field;
   }
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
   if (check_grants && check_grant_column(thd,table,name,length))
     return WRONG_GRANT;
+#endif
   return field;
 }
 
 
+/*
+  Find field in table list.
+
+  SYNOPSIS
+    find_field_in_tables()
+    thd			Pointer to current thread structure
+    item		Field item that should be found
+    tables		Tables for scanning
+    where		Table where field found will be returned via
+			this parameter
+    report_error	If FALSE then do not report error if item not found
+			and return not_found_field
+
+  RETURN VALUES
+    0			Field is not found or field is not unique- error
+			message is reported
+    not_found_field	Function was called with report_error == FALSE and
+			field was not found. no error message reported.
+    found field
+*/
+
+// Special Field pointer for find_field_in_tables returning
+const Field *not_found_field= (Field*) 0x1;
+
 Field *
-find_field_in_tables(THD *thd,Item_field *item,TABLE_LIST *tables)
+find_field_in_tables(THD *thd, Item_ident *item, TABLE_LIST *tables,
+		     TABLE_LIST **where, bool report_error)
 {
   Field *found=0;
   const char *db=item->db_name;
@@ -1775,6 +1988,32 @@ find_field_in_tables(THD *thd,Item_field *item,TABLE_LIST *tables)
   const char *name=item->field_name;
   uint length=(uint) strlen(name);
   char name_buff[NAME_LEN+1];
+
+
+  if (item->cached_table)
+  {
+    /*
+      This shortcut is used by prepared statements. We assuming that 
+      TABLE_LIST *tables is not changed during query execution (which 
+      is true for all queries except RENAME but luckily RENAME doesn't 
+      use fields...) so we can rely on reusing pointer to its member.
+      With this optimisation we also miss case when addition of one more
+      field makes some prepared query ambiguous and so erronous, but we 
+      accept this trade off.
+    */
+    found= find_field_in_table(thd, item->cached_table->table, name, length,
+                               test(item->cached_table->
+				    table->grant.want_privilege),
+                               1, &(item->cached_field_index));
+
+    if (found)
+    {
+      (*where)= tables;
+      if (found == WRONG_GRANT)
+        return (Field*) 0;
+      return found;
+    }
+  }
 
   if (db && lower_case_table_names)
   {
@@ -1784,25 +2023,28 @@ find_field_in_tables(THD *thd,Item_field *item,TABLE_LIST *tables)
       'name' of the item which may be used in the select list
     */
     strmake(name_buff, db, sizeof(name_buff)-1);
-    casedn_str(name_buff);
+    my_casedn_str(files_charset_info, name_buff);
     db= name_buff;
   }
 
-  if (table_name)
+  if (table_name && table_name[0])
   {						/* Qualified field */
     bool found_table=0;
     for (; tables ; tables=tables->next)
     {
-      if (!strcmp(tables->alias,table_name) &&
-	  (!db || !strcmp(db,tables->db)))
+      if (!my_strcasecmp(table_alias_charset, tables->alias, table_name) &&
+	  (!db || !tables->db ||  !tables->db[0] || !strcmp(db,tables->db)))
       {
 	found_table=1;
 	Field *find=find_field_in_table(thd,tables->table,name,length,
 					test(tables->table->grant.
 					     want_privilege),
-					1);
+					1, &(item->cached_field_index));
 	if (find)
 	{
+	  (*where)= item->cached_table= tables;
+	  if (!tables->cacheable_table)
+	    item->cached_table= 0;
 	  if (find == WRONG_GRANT)
 	    return (Field*) 0;
 	  if (db || !thd->where)
@@ -1819,32 +2061,46 @@ find_field_in_tables(THD *thd,Item_field *item,TABLE_LIST *tables)
     }
     if (found)
       return found;
-    if (!found_table)
+    if (!found_table && report_error)
     {
       char buff[NAME_LEN*2+1];
-      if (db)
+      if (db && db[0])
       {
 	strxnmov(buff,sizeof(buff)-1,db,".",table_name,NullS);
 	table_name=buff;
       }
-      my_printf_error(ER_UNKNOWN_TABLE,ER(ER_UNKNOWN_TABLE),MYF(0),table_name,
-		      thd->where);
+      my_printf_error(ER_UNKNOWN_TABLE, ER(ER_UNKNOWN_TABLE), MYF(0),
+                      table_name, thd->where);
     }
     else
-      my_printf_error(ER_BAD_FIELD_ERROR,ER(ER_BAD_FIELD_ERROR),MYF(0),
-		      item->full_name(),thd->where);
+      if (report_error)
+	my_printf_error(ER_BAD_FIELD_ERROR,ER(ER_BAD_FIELD_ERROR),MYF(0),
+			item->full_name(),thd->where);
+      else
+	return (Field*) not_found_field;
     return (Field*) 0;
   }
   bool allow_rowid= tables && !tables->next;	// Only one table
   for (; tables ; tables=tables->next)
   {
+    if (!tables->table)
+    {
+      if (report_error)
+	my_printf_error(ER_BAD_FIELD_ERROR,ER(ER_BAD_FIELD_ERROR),MYF(0),
+			item->full_name(),thd->where);
+      return (Field*) not_found_field;
+    }
+
     Field *field=find_field_in_table(thd,tables->table,name,length,
 				     test(tables->table->grant.want_privilege),
-				     allow_rowid);
+				     allow_rowid, &(item->cached_field_index));
     if (field)
     {
       if (field == WRONG_GRANT)
 	return (Field*) 0;
+      (*where)= item->cached_table= tables;
+      if (!tables->cacheable_table)
+	item->cached_table= 0;
       if (found)
       {
 	if (!thd->where)			// Returns first found
@@ -1858,94 +2114,260 @@ find_field_in_tables(THD *thd,Item_field *item,TABLE_LIST *tables)
   }
   if (found)
     return found;
-  my_printf_error(ER_BAD_FIELD_ERROR,ER(ER_BAD_FIELD_ERROR),
-		  MYF(0),item->full_name(),thd->where);
+  if (report_error)
+    my_printf_error(ER_BAD_FIELD_ERROR, ER(ER_BAD_FIELD_ERROR),
+		    MYF(0), item->full_name(), thd->where);
+  else
+    return (Field*) not_found_field;
   return (Field*) 0;
 }
 
+
+/*
+  Find Item in list of items (find_field_in_tables analog)
+
+  TODO
+    is it better return only counter?
+
+  SYNOPSIS
+    find_item_in_list()
+    find			Item to find
+    items			List of items
+    counter			To return number of found item
+    report_error
+      REPORT_ALL_ERRORS		report errors, return 0 if error
+      REPORT_EXCEPT_NOT_FOUND	Do not report 'not found' error and
+				return not_found_item, report other errors,
+				return 0
+      IGNORE_ERRORS		Do not report errors, return 0 if error
+    unaliased                   Set to true if item is field which was found
+                                by original field name and not by its alias
+                                in item list. Set to false otherwise.
+
+  RETURN VALUES
+    0			Item is not found or item is not unique,
+			error message is reported
+    not_found_item	Function was called with
+			report_error == REPORT_EXCEPT_NOT_FOUND and
+			item was not found. No error message was reported
+                        found field
+*/
+
+// Special Item pointer for find_item_in_list returning
+const Item **not_found_item= (const Item**) 0x1;
+
+
 Item **
-find_item_in_list(Item *find,List<Item> &items)
+find_item_in_list(Item *find, List<Item> &items, uint *counter,
+                  find_item_error_report_type report_error, bool *unaliased)
 {
   List_iterator<Item> li(items);
-  Item **found=0,*item;
+  Item **found=0, **found_unaliased= 0, *item;
+  const char *db_name=0;
   const char *field_name=0;
   const char *table_name=0;
+  bool found_unaliased_non_uniq= 0;
+  uint unaliased_counter;
+
+  *unaliased= FALSE;
+
   if (find->type() == Item::FIELD_ITEM	|| find->type() == Item::REF_ITEM)
   {
     field_name= ((Item_ident*) find)->field_name;
     table_name= ((Item_ident*) find)->table_name;
+    db_name=    ((Item_ident*) find)->db_name;
   }
 
-  while ((item=li++))
+  for (uint i= 0; (item=li++); i++)
   {
     if (field_name && item->type() == Item::FIELD_ITEM)
     {
-      if (!my_strcasecmp(((Item_field*) item)->name,field_name))
+      Item_field *item_field= (Item_field*) item;
+
+      /*
+	In case of group_concat() with ORDER BY condition in the QUERY
+	item_field can be field of temporary table without item name 
+	(if this field created from expression argument of group_concat()),
+	=> we have to check presence of name before compare
+      */ 
+      if (!item_field->name)
+        continue;
+
+      if (table_name)
       {
-	if (!table_name)
-	{
-	  if (found)
-	  {
-	    if ((*found)->eq(item,0))
-	      continue;				// Same field twice (Access?)
-	    if (current_thd->where)
-	      my_printf_error(ER_NON_UNIQ_ERROR,ER(ER_NON_UNIQ_ERROR),MYF(0),
-			      find->full_name(), current_thd->where);
-	    return (Item**) 0;
-	  }
-	  found=li.ref();
-	}
-	else if (!strcmp(((Item_field*) item)->table_name,table_name))
-	{
-	  found=li.ref();
-	  break;
-	}
+        /*
+          If table name is specified we should find field 'field_name' in
+          table 'table_name'. According to SQL-standard we should ignore
+          aliases in this case.
+
+          Since we should NOT prefer fields from the select list over
+          other fields from the tables participating in this select in
+          case of ambiguity we have to do extra check outside this function.
+
+          We use strcmp for table names and database names as these may be
+          case sensitive. In cases where they are not case sensitive, they
+          are always in lower case.
+
+	  item_field->field_name and item_field->table_name can be 0x0 if
+	  item is not fix_field()'ed yet.
+        */
+        if (item_field->field_name && item_field->table_name &&
+	    !my_strcasecmp(system_charset_info, item_field->field_name,
+                           field_name) &&
+            !strcmp(item_field->table_name, table_name) &&
+            (!db_name || (item_field->db_name &&
+                          !strcmp(item_field->db_name, db_name))))
+        {
+          if (found_unaliased)
+          {
+            if ((*found_unaliased)->eq(item, 0))
+              continue;
+            /*
+              Two matching fields in select list.
+              We already can bail out because we are searching through
+              unaliased names only and will have duplicate error anyway.
+            */
+            if (report_error != IGNORE_ERRORS)
+              my_printf_error(ER_NON_UNIQ_ERROR, ER(ER_NON_UNIQ_ERROR),
+                              MYF(0), find->full_name(), current_thd->where);
+            return (Item**) 0;
+          }
+          found_unaliased= li.ref();
+          unaliased_counter= i;
+          if (db_name)
+            break;                              // Perfect match
+        }
+      }
+      else if (!my_strcasecmp(system_charset_info, item_field->name,
+                              field_name))
+      {
+        /*
+          If table name was not given we should scan through aliases
+          (or non-aliased fields) first. We are also checking unaliased
+          name of the field in then next else-if, to be able to find
+          instantly field (hidden by alias) if no suitable alias (or
+          non-aliased field) was found.
+        */
+        if (found)
+        {
+          if ((*found)->eq(item, 0))
+            continue;                           // Same field twice
+          if (report_error != IGNORE_ERRORS)
+            my_printf_error(ER_NON_UNIQ_ERROR, ER(ER_NON_UNIQ_ERROR),
+                            MYF(0), find->full_name(), current_thd->where);
+          return (Item**) 0;
+        }
+        found= li.ref();
+        *counter= i;
+      }
+      else if (!my_strcasecmp(system_charset_info, item_field->field_name,
+                              field_name))
+      {
+        /*
+          We will use un-aliased field or react on such ambiguities only if
+          we won't be able to find aliased field.
+          Again if we have ambiguity with field outside of select list
+          we should prefer fields from select list.
+        */
+        if (found_unaliased)
+        {
+          if ((*found_unaliased)->eq(item, 0))
+            continue;                           // Same field twice
+          found_unaliased_non_uniq= 1;
+        }
+        else
+        {
+          found_unaliased= li.ref();
+          unaliased_counter= i;
+        }
       }
     }
     else if (!table_name && (item->eq(find,0) ||
 			     find->name && item->name &&
-			     !my_strcasecmp(item->name,find->name)))
+			     !my_strcasecmp(system_charset_info, 
+					    item->name,find->name)))
     {
-      found=li.ref();
+      found= li.ref();
+      *counter= i;
       break;
     }
   }
-  if (!found && current_thd->where)
-    my_printf_error(ER_BAD_FIELD_ERROR,ER(ER_BAD_FIELD_ERROR),MYF(0),
-		    find->full_name(),current_thd->where);
-  return found;
+  if (!found)
+  {
+    if (found_unaliased_non_uniq)
+    {
+      if (report_error != IGNORE_ERRORS)
+        my_printf_error(ER_NON_UNIQ_ERROR, ER(ER_NON_UNIQ_ERROR), MYF(0),
+                        find->full_name(), current_thd->where);
+      return (Item **) 0;
+    }
+    if (found_unaliased)
+    {
+      found= found_unaliased;
+      *counter= unaliased_counter;
+      *unaliased= TRUE;
+    }
+  }
+  if (found)
+    return found;
+  if (report_error != REPORT_EXCEPT_NOT_FOUND)
+  {
+    if (report_error == REPORT_ALL_ERRORS)
+      my_printf_error(ER_BAD_FIELD_ERROR, ER(ER_BAD_FIELD_ERROR), MYF(0),
+		      find->full_name(), current_thd->where);
+    return (Item **) 0;
+  }
+  else
+    return (Item **) not_found_item;
 }
 
 /****************************************************************************
-** Check that all given fields exists and fill struct with current data
+** Expand all '*' in given fields
 ****************************************************************************/
 
-int setup_fields(THD *thd, TABLE_LIST *tables, List<Item> &fields,
-		 bool set_query_id, List<Item> *sum_func_list,
-		 bool allow_sum_func)
+int setup_wild(THD *thd, TABLE_LIST *tables, List<Item> &fields,
+	       List<Item> *sum_func_list,
+	       uint wild_num)
 {
+  DBUG_ENTER("setup_wild");
+  if (!wild_num)
+    DBUG_RETURN(0);
+
   reg2 Item *item;
   List_iterator<Item> it(fields);
-  DBUG_ENTER("setup_fields");
+  Item_arena *arena, backup;
+  /*
+    If we are in preparing prepared statement phase then we have change
+    temporary mem_root to statement mem root to save changes of SELECT list
+  */
+  arena= thd->change_arena_if_needed(&backup);
 
-  thd->set_query_id=set_query_id;
-  thd->allow_sum_func= allow_sum_func;
-  thd->where="field list";
-
-  while ((item=it++))
-  {
-    /*
-      Expand * to all fields if this is not the temporary table for an
-      a UNION result
-    */
+  while (wild_num && (item= it++))
+  {    
     if (item->type() == Item::FIELD_ITEM &&
+        ((Item_field*) item)->field_name &&
 	((Item_field*) item)->field_name[0] == '*' &&
 	!((Item_field*) item)->field)
     {
-      uint elem=fields.elements;
-      if (insert_fields(thd,tables,((Item_field*) item)->db_name,
-			((Item_field*) item)->table_name,&it))
-	DBUG_RETURN(-1); /* purecov: inspected */
+      uint elem= fields.elements;
+      Item_subselect *subsel= thd->lex->current_select->master_unit()->item;
+      if (subsel &&
+          subsel->substype() == Item_subselect::EXISTS_SUBS)
+      {
+        /*
+          It is EXISTS(SELECT * ...) and we can replace * by any constant.
+
+          Item_int do not need fix_fields() because it is basic constant.
+        */
+        it.replace(new Item_int("Not_used", (longlong) 1, 21));
+      }
+      else if (insert_fields(thd,tables,((Item_field*) item)->db_name,
+                             ((Item_field*) item)->table_name, &it))
+      {
+        if (arena)
+	  thd->restore_backup_item_arena(arena, &backup);
+	DBUG_RETURN(-1);
+      }
       if (sum_func_list)
       {
 	/*
@@ -1955,25 +2377,80 @@ int setup_fields(THD *thd, TABLE_LIST *tables, List<Item> &fields,
 	*/
 	sum_func_list->elements+= fields.elements - elem;
       }
-    }
-    else
-    {
-      if (item->fix_fields(thd,tables))
-	DBUG_RETURN(-1); /* purecov: inspected */
-      if (item->with_sum_func && item->type() != Item::SUM_FUNC_ITEM &&
-	  sum_func_list)
-	item->split_sum_func(*sum_func_list);
-      thd->used_tables|=item->used_tables();
+      wild_num--;
     }
   }
-  DBUG_RETURN(test(thd->fatal_error));
+  if (arena)
+    thd->restore_backup_item_arena(arena, &backup);
+  DBUG_RETURN(0);
+}
+
+/****************************************************************************
+** Check that all given fields exists and fill struct with current data
+****************************************************************************/
+
+int setup_fields(THD *thd, Item **ref_pointer_array, TABLE_LIST *tables, 
+		 List<Item> &fields, bool set_query_id,
+		 List<Item> *sum_func_list, bool allow_sum_func)
+{
+  reg2 Item *item;
+  List_iterator<Item> it(fields);
+  DBUG_ENTER("setup_fields");
+
+  thd->set_query_id=set_query_id;
+  thd->allow_sum_func= allow_sum_func;
+  thd->where="field list";
+
+  /*
+    To prevent fail on forward lookup we fill it with zerows,
+    then if we got pointer on zero after find_item_in_list we will know
+    that it is forward lookup.
+
+    There is other way to solve problem: fill array with pointers to list,
+    but it will be slower.
+
+    TODO: remove it when (if) we made one list for allfields and
+    ref_pointer_array
+  */
+  if (ref_pointer_array)
+    bzero(ref_pointer_array, sizeof(Item *) * fields.elements);
+
+  Item **ref= ref_pointer_array;
+  while ((item= it++))
+  {
+    if (!item->fixed && item->fix_fields(thd, tables, it.ref()) ||
+	(item= *(it.ref()))->check_cols(1))
+      DBUG_RETURN(-1); /* purecov: inspected */
+    if (ref)
+      *(ref++)= item;
+    if (item->with_sum_func && item->type() != Item::SUM_FUNC_ITEM &&
+	sum_func_list)
+      item->split_sum_func(thd, ref_pointer_array, *sum_func_list);
+    thd->used_tables|=item->used_tables();
+  }
+  DBUG_RETURN(test(thd->net.report_error));
 }
 
 
 /*
-  Remap table numbers if INSERT ... SELECT
-  Check also that the 'used keys' and 'ignored keys' exists and set up the
-  table structure accordingly
+  prepare tables
+
+  SYNOPSIS
+    setup_tables()
+    tables	table list
+
+
+ NOTE
+   Remap table numbers if INSERT ... SELECT
+   Check also that the 'used keys' and 'ignored keys' exists and set up the
+   table structure accordingly
+
+   This has to be called for all tables that are used by items, as otherwise
+   table->map is not set and all Item_field will be regarded as const items.
+
+ RETURN
+   0	ok;  In this case *map will includes the choosed index
+   1	error
 */
 
 bool setup_tables(TABLE_LIST *tables)
@@ -1983,41 +2460,26 @@ bool setup_tables(TABLE_LIST *tables)
   for (TABLE_LIST *table_list=tables ; table_list ;
        table_list=table_list->next,tablenr++)
   {
-    TABLE *table=table_list->table;
-
-    table->used_fields=0;
-    table->const_table=0;
-    table->null_row=0;
-    table->status=STATUS_NO_RECORD;
-    table->keys_in_use_for_query= table->keys_in_use;
+    TABLE *table= table_list->table;
+    setup_table_map(table, table_list, tablenr);
     table->used_keys= table->keys_for_keyread;
-    table->maybe_null=test(table->outer_join= table_list->outer_join);
-    table->tablenr=tablenr;
-    table->map= (table_map) 1 << tablenr;
-    table->force_index= table_list->force_index;
     if (table_list->use_index)
     {
-      key_map map= get_key_map_from_key_list(table,
-					     table_list->use_index);
-      if (map == ~(key_map) 0)
+      key_map map;
+      get_key_map_from_key_list(&map, table, table_list->use_index);
+      if (map.is_set_all())
 	DBUG_RETURN(1);
       table->keys_in_use_for_query=map;
     }
     if (table_list->ignore_index)
     {
-      key_map map= get_key_map_from_key_list(table,
-					     table_list->ignore_index);
-      if (map == ~(key_map) 0)
+      key_map map;
+      get_key_map_from_key_list(&map, table, table_list->ignore_index);
+      if (map.is_set_all())
 	DBUG_RETURN(1);
-      table->keys_in_use_for_query &= ~map;
+      table->keys_in_use_for_query.subtract(map);
     }
-    table->used_keys &= table->keys_in_use_for_query;
-    if (table_list->shared)
-    {
-      /* Clear query_id that may have been set by previous select */
-      for (Field **ptr=table->field ; *ptr ; ptr++)
-	(*ptr)->query_id=0;
-    }
+    table->used_keys.intersect(table->keys_in_use_for_query);
   }
   if (tablenr > MAX_TABLES)
   {
@@ -2028,25 +2490,43 @@ bool setup_tables(TABLE_LIST *tables)
 }
 
 
-static key_map get_key_map_from_key_list(TABLE *table, 
-					 List<String> *index_list)
+/*
+   Create a key_map from a list of index names
+
+   SYNOPSIS
+     get_key_map_from_key_list()
+     map		key_map to fill in
+     table		Table
+     index_list		List of index names
+
+   RETURN
+     0	ok;  In this case *map will includes the choosed index
+     1	error
+*/
+
+bool get_key_map_from_key_list(key_map *map, TABLE *table,
+                               List<String> *index_list)
 {
-  key_map map=0;
   List_iterator_fast<String> it(*index_list);
   String *name;
   uint pos;
+
+  map->clear_all();
   while ((name=it++))
   {
-    if ((pos=find_type(name->c_ptr(), &table->keynames, 1+2)) <= 0)
+    if ((pos= find_type(&table->keynames, name->ptr(), name->length(), 1)) <=
+	0)
     {
       my_error(ER_KEY_COLUMN_DOES_NOT_EXITS, MYF(0), name->c_ptr(),
 	       table->real_name);
-      return (~ (key_map) 0);
+      map->set_all();
+      return 1;
     }
-    map|= ((key_map) 1) << (pos-1);
+    map->set_bit(pos-1);
   }
-  return map;
+  return 0;
 }
+
 
 /****************************************************************************
   This just drops in all fields instead of current '*' field
@@ -2057,30 +2537,61 @@ bool
 insert_fields(THD *thd,TABLE_LIST *tables, const char *db_name,
 	      const char *table_name, List_iterator<Item> *it)
 {
+  char name_buff[NAME_LEN+1];
   uint found;
   DBUG_ENTER("insert_fields");
+
+  if (db_name && lower_case_table_names)
+  {
+    /*
+      convert database to lower case for comparison
+      We can't do this in Item_field as this would change the
+      'name' of the item which may be used in the select list
+    */
+    strmake(name_buff, db_name, sizeof(name_buff)-1);
+    my_casedn_str(files_charset_info, name_buff);
+    db_name= name_buff;
+  }
+
 
   found=0;
   for (; tables ; tables=tables->next)
   {
     TABLE *table=tables->table;
-    if (!table_name || (!strcmp(table_name,tables->alias) &&
+    if (!table_name || (!my_strcasecmp(table_alias_charset, table_name,
+				       tables->alias) &&
 			(!db_name || !strcmp(tables->db,db_name))))
     {
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
       /* Ensure that we have access right to all columns */
       if (!(table->grant.privilege & SELECT_ACL) &&
 	  check_grant_all_columns(thd,SELECT_ACL,table))
 	DBUG_RETURN(-1);
-
+#endif
       Field **ptr=table->field,*field;
+      TABLE *natural_join_table= 0;
+
       thd->used_tables|=table->map;
+      if (!table->outer_join &&
+          tables->natural_join &&
+          !tables->natural_join->table->outer_join)
+        natural_join_table= tables->natural_join->table;
+
       while ((field = *ptr++))
       {
-	Item_field *item= new Item_field(field);
-	if (!found++)
-	  (void) it->replace(item);		// Replace '*'
-	else
-	  it->after(item);
+        uint not_used_field_index= NO_CACHED_FIELD_INDEX;
+        /* Skip duplicate field names if NATURAL JOIN is used */
+        if (!natural_join_table ||
+            !find_field_in_table(thd, natural_join_table, field->field_name, 
+                                 strlen(field->field_name), 0, 0,
+                                 &not_used_field_index))
+        {
+          Item_field *item= new Item_field(thd, field);
+          if (!found++)
+            (void) it->replace(item);		// Replace '*'
+          else
+            it->after(item);
+        }
 	/*
 	  Mark if field used before in this select.
 	  Used by 'insert' to verify if a field name is used twice
@@ -2088,7 +2599,7 @@ insert_fields(THD *thd,TABLE_LIST *tables, const char *db_name,
 	if (field->query_id == thd->query_id)
 	  thd->dupp_field=field;
 	field->query_id=thd->query_id;
-	table->used_keys&= field->part_of_key;
+	table->used_keys.intersect(field->part_of_key);
       }
       /* All fields are used */
       table->used_fields=table->fields;
@@ -2112,17 +2623,20 @@ insert_fields(THD *thd,TABLE_LIST *tables, const char *db_name,
 int setup_conds(THD *thd,TABLE_LIST *tables,COND **conds)
 {
   table_map not_null_tables= 0;
+  Item_arena *arena= 0, backup;
   DBUG_ENTER("setup_conds");
+
   thd->set_query_id=1;
-  thd->cond_count=0;
-  thd->allow_sum_func=0;
+  thd->lex->current_select->cond_count= 0;
   if (*conds)
   {
     thd->where="where clause";
-    if ((*conds)->fix_fields(thd,tables))
+    if (!(*conds)->fixed && (*conds)->fix_fields(thd, tables, conds) ||
+	(*conds)->check_cols(1))
       DBUG_RETURN(1);
     not_null_tables= (*conds)->not_null_tables();
   }
+
 
   /* Check if we are using outer joins */
   for (TABLE_LIST *table=tables ; table ; table=table->next)
@@ -2131,9 +2645,12 @@ int setup_conds(THD *thd,TABLE_LIST *tables,COND **conds)
     {
       /* Make a join an a expression */
       thd->where="on clause";
-      if (table->on_expr->fix_fields(thd,tables))
+      
+      if (!table->on_expr->fixed &&
+	  table->on_expr->fix_fields(thd, tables, &table->on_expr) ||
+	  table->on_expr->check_cols(1))
 	DBUG_RETURN(1);
-      thd->cond_count++;
+      thd->lex->current_select->cond_count++;
 
       /*
 	If it's a normal join or a LEFT JOIN which can be optimized away
@@ -2144,57 +2661,109 @@ int setup_conds(THD *thd,TABLE_LIST *tables,COND **conds)
 	   !(specialflag & SPECIAL_NO_NEW_FUNC)))
       {
 	table->outer_join= 0;
-	if (!(*conds=and_conds(*conds, table->on_expr)))
-	  DBUG_RETURN(1);
+        arena= thd->change_arena_if_needed(&backup);
+	*conds= and_conds(*conds, table->on_expr);
 	table->on_expr=0;
+	if (arena)
+        {
+	  thd->restore_backup_item_arena(arena, &backup);
+          arena= 0;                             // Safety if goto err
+        }
+	if ((*conds) && !(*conds)->fixed &&
+	    (*conds)->fix_fields(thd, tables, conds))
+	  DBUG_RETURN(1);
       }
     }
     if (table->natural_join)
     {
+      arena= thd->change_arena_if_needed(&backup);
       /* Make a join of all fields with have the same name */
-      TABLE *t1=table->table;
-      TABLE *t2=table->natural_join->table;
-      Item_cond_and *cond_and=new Item_cond_and();
+      TABLE *t1= table->table;
+      TABLE *t2= table->natural_join->table;
+      Item_cond_and *cond_and= new Item_cond_and();
       if (!cond_and)				// If not out of memory
-	DBUG_RETURN(1);
+	goto err;
       cond_and->top_level_item();
 
-      uint i,j;
-      for (i=0 ; i < t1->fields ; i++)
+      Field **t1_field, *t2_field;
+      for (t1_field= t1->field; (*t1_field); t1_field++)
       {
-	// TODO: This could be optimized to use hashed names if t2 had a hash
-	for (j=0 ; j < t2->fields ; j++)
-	{
-	  if (!my_strcasecmp(t1->field[i]->field_name,
-			     t2->field[j]->field_name))
-	  {
-	    Item_func_eq *tmp=new Item_func_eq(new Item_field(t1->field[i]),
-					       new Item_field(t2->field[j]));
-	    if (!tmp)
-	      DBUG_RETURN(1);
-	    tmp->fix_length_and_dec();	// Update cmp_type
-	    tmp->const_item_cache=0;
-	    /* Mark field used for table cache */
-	    t1->field[i]->query_id=t2->field[j]->query_id=thd->query_id;
-	    cond_and->list.push_back(tmp);
-	    t1->used_keys&= t1->field[i]->part_of_key;
-	    t2->used_keys&= t2->field[j]->part_of_key;
-	    break;
-	  }
-	}
+        const char *t1_field_name= (*t1_field)->field_name;
+        uint not_used_field_index= NO_CACHED_FIELD_INDEX;
+
+        if ((t2_field= find_field_in_table(thd, t2, t1_field_name,
+                                           strlen(t1_field_name), 0, 0,
+                                           &not_used_field_index)))
+        {
+          Item_func_eq *tmp=new Item_func_eq(new Item_field(thd, *t1_field),
+                                             new Item_field(thd, t2_field));
+          if (!tmp)
+            goto err;
+          /* Mark field used for table cache */
+          (*t1_field)->query_id= t2_field->query_id= thd->query_id;
+          cond_and->list.push_back(tmp);
+          t1->used_keys.intersect((*t1_field)->part_of_key);
+          t2->used_keys.intersect(t2_field->part_of_key);
+        }
       }
-      cond_and->used_tables_cache= t1->map | t2->map;
-      thd->cond_count+=cond_and->list.elements;
-      if (!table->outer_join)			// Not left join
+      thd->lex->current_select->cond_count+= cond_and->list.elements;
+
+      // to prevent natural join processing during PS re-execution
+      table->natural_join= 0;
+
+      if (cond_and->list.elements)
       {
-	if (!(*conds=and_conds(*conds, cond_and)))
-	  DBUG_RETURN(1);
+        if (!table->outer_join)			// Not left join
+        {
+          *conds= and_conds(*conds, cond_and);
+          // fix_fields() should be made with temporary memory pool
+          if (arena)
+            thd->restore_backup_item_arena(arena, &backup);
+          if (*conds && !(*conds)->fixed)
+          {
+            if (!(*conds)->fixed && 
+                (*conds)->fix_fields(thd, tables, conds))
+              DBUG_RETURN(1);
+          }
+        }
+        else
+        {
+          table->on_expr= and_conds(table->on_expr, cond_and);
+          // fix_fields() should be made with temporary memory pool
+          if (arena)
+            thd->restore_backup_item_arena(arena, &backup);
+          if (table->on_expr && !table->on_expr->fixed)
+          {
+            if (!table->on_expr->fixed && 
+                table->on_expr->fix_fields(thd, tables, &table->on_expr))
+             DBUG_RETURN(1);
+          }
+        }
       }
-      else
-	table->on_expr=and_conds(table->on_expr,cond_and);
+      else if (arena)
+      {
+        thd->restore_backup_item_arena(arena, &backup);
+        arena= 0;                               // Safety if goto err
+      }
     }
   }
-  DBUG_RETURN(test(thd->fatal_error));
+
+  if (thd->current_arena->is_stmt_prepare())
+  {
+    /*
+      We are in prepared statement preparation code => we should store
+      WHERE clause changing for next executions.
+
+      We do this ON -> WHERE transformation only once per PS statement.
+    */
+    thd->lex->current_select->where= *conds;
+  }
+  DBUG_RETURN(test(thd->net.report_error));
+
+err:
+  if (arena)
+    thd->restore_backup_item_arena(arena, &backup);
+  DBUG_RETURN(1);
 }
 
 
@@ -2214,7 +2783,11 @@ fill_record(List<Item> &fields,List<Item> &values, bool ignore_errors)
   while ((field=(Item_field*) f++))
   {
     value=v++;
-    if (value->save_in_field(field->field, 0) && !ignore_errors)
+    Field *rfield= field->field;
+    TABLE *table= rfield->table;
+    if (rfield == table->next_number_field)
+      table->auto_increment_field_not_null= TRUE;
+    if ((value->save_in_field(rfield, 0) < 0) && !ignore_errors)
       DBUG_RETURN(1);
   }
   DBUG_RETURN(0);
@@ -2232,7 +2805,10 @@ fill_record(Field **ptr,List<Item> &values, bool ignore_errors)
   while ((field = *ptr++))
   {
     value=v++;
-    if (value->save_in_field(field, 0) && !ignore_errors)
+    TABLE *table= field->table;
+    if (field == table->next_number_field)
+      table->auto_increment_field_not_null= TRUE;
+    if ((value->save_in_field(field, 0) < 0) && !ignore_errors)
       DBUG_RETURN(1);
   }
   DBUG_RETURN(0);
@@ -2241,19 +2817,20 @@ fill_record(Field **ptr,List<Item> &values, bool ignore_errors)
 
 static void mysql_rm_tmp_tables(void)
 {
-  uint idx;
-  char	filePath[FN_REFLEN];
+  uint i, idx;
+  char	filePath[FN_REFLEN], *tmpdir;
   MY_DIR *dirp;
   FILEINFO *file;
   DBUG_ENTER("mysql_rm_tmp_tables");
 
+  for (i=0; i<=mysql_tmpdir_list.max; i++)
+  {
+    tmpdir=mysql_tmpdir_list.list[i];
   /* See if the directory exists */
-  if (!(dirp = my_dir(mysql_tmpdir,MYF(MY_WME | MY_DONT_SORT))))
-    DBUG_VOID_RETURN;				/* purecov: inspected */
+    if (!(dirp = my_dir(tmpdir,MYF(MY_WME | MY_DONT_SORT))))
+      continue;
 
-  /*
-  ** Remove all SQLxxx tables from directory
-  */
+    /* Remove all SQLxxx tables from directory */
 
   for (idx=0 ; idx < (uint) dirp->number_off_files ; idx++)
   {
@@ -2266,52 +2843,16 @@ static void mysql_rm_tmp_tables(void)
 
     if (!bcmp(file->name,tmp_file_prefix,tmp_file_prefix_length))
     {
-      sprintf(filePath,"%s%s",mysql_tmpdir,file->name); /* purecov: inspected */
-      VOID(my_delete(filePath,MYF(MY_WME)));	/* purecov: inspected */
+        sprintf(filePath,"%s%s",tmpdir,file->name);
+        VOID(my_delete(filePath,MYF(MY_WME)));
     }
   }
   my_dirend(dirp);
+  }
   DBUG_VOID_RETURN;
 }
 
 
-/*
-** CREATE INDEX and DROP INDEX are implemented by calling ALTER TABLE with
-** the proper arguments.  This isn't very fast but it should work for most
-** cases.
-** One should normally create all indexes with CREATE TABLE or ALTER TABLE.
-*/
-
-int mysql_create_index(THD *thd, TABLE_LIST *table_list, List<Key> &keys)
-{
-  List<create_field> fields;
-  List<Alter_drop> drop;
-  List<Alter_column> alter;
-  HA_CREATE_INFO create_info;
-  DBUG_ENTER("mysql_create_index");
-  bzero((char*) &create_info,sizeof(create_info));
-  create_info.db_type=DB_TYPE_DEFAULT;
-  DBUG_RETURN(mysql_alter_table(thd,table_list->db,table_list->real_name,
-				&create_info, table_list,
-				fields, keys, drop, alter, (ORDER*)0, FALSE,
-				DUP_ERROR));
-}
-
-
-int mysql_drop_index(THD *thd, TABLE_LIST *table_list, List<Alter_drop> &drop)
-{
-  List<create_field> fields;
-  List<Key> keys;
-  List<Alter_column> alter;
-  HA_CREATE_INFO create_info;
-  DBUG_ENTER("mysql_drop_index");
-  bzero((char*) &create_info,sizeof(create_info));
-  create_info.db_type=DB_TYPE_DEFAULT;
-  DBUG_RETURN(mysql_alter_table(thd,table_list->db,table_list->real_name,
-				&create_info, table_list,
-				fields, keys, drop, alter, (ORDER*)0, FALSE,
-				DUP_ERROR));
-}
 
 /*****************************************************************************
 	unireg support functions
@@ -2354,8 +2895,15 @@ void flush_tables()
 
 
 /*
-** Mark all entries with the table as deleted to force an reopen of the table
-** Returns true if the table is in use by another thread
+  Mark all entries with the table as deleted to force an reopen of the table
+
+  The table will be closed (not stored in cache) by the current thread when
+  close_thread_tables() is called.
+
+  RETURN
+    0  This thread now have exclusive access to this table and no other thread
+       can access the table until close_thread_tables() is called.
+    1  Table is in use by another thread
 */
 
 bool remove_table_from_cache(THD *thd, const char *db, const char *table_name,
@@ -2418,10 +2966,10 @@ bool remove_table_from_cache(THD *thd, const char *db, const char *table_name,
   DBUG_RETURN(result);
 }
 
-int setup_ftfuncs(THD *thd)
+int setup_ftfuncs(SELECT_LEX *select_lex)
 {
-  List_iterator<Item_func_match> li(thd->lex.select->ftfunc_list),
-                                 lj(thd->lex.select->ftfunc_list);
+  List_iterator<Item_func_match> li(*(select_lex->ftfunc_list)),
+                                 lj(*(select_lex->ftfunc_list));
   Item_func_match *ftf, *ftf2;
 
   while ((ftf=li++))
@@ -2440,11 +2988,11 @@ int setup_ftfuncs(THD *thd)
 }
 
 
-int init_ftfuncs(THD *thd, bool no_order)
+int init_ftfuncs(THD *thd, SELECT_LEX *select_lex, bool no_order)
 {
-  if (thd->lex.select->ftfunc_list.elements)
+  if (select_lex->ftfunc_list->elements)
   {
-    List_iterator<Item_func_match> li(thd->lex.select->ftfunc_list);
+    List_iterator<Item_func_match> li(*(select_lex->ftfunc_list));
     Item_func_match *ifm;
     DBUG_PRINT("info",("Performing FULLTEXT search"));
     thd->proc_info="FULLTEXT initialization";

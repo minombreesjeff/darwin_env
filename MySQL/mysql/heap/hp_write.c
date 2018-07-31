@@ -27,16 +27,15 @@
 #define HIGHUSED 8
 
 static byte *next_free_record_pos(HP_SHARE *info);
-static HASH_INFO *_hp_find_free_hash(HP_SHARE *info, HP_BLOCK *block,
+static HASH_INFO *hp_find_free_hash(HP_SHARE *info, HP_BLOCK *block,
 				     ulong records);
 
 int heap_write(HP_INFO *info, const byte *record)
 {
-  uint key;
+  HP_KEYDEF *keydef, *end;
   byte *pos;
   HP_SHARE *share=info->s;
   DBUG_ENTER("heap_write");
-
 #ifndef DBUG_OFF
   if (info->mode & O_RDONLY)
   {
@@ -47,9 +46,10 @@ int heap_write(HP_INFO *info, const byte *record)
     DBUG_RETURN(my_errno);
   share->changed=1;
 
-  for (key=0 ; key < share->keys ; key++)
+  for (keydef = share->keydef, end = keydef + share->keys; keydef < end;
+       keydef++)
   {
-    if (_hp_write_key(share,share->keydef+key,record,pos))
+    if ((*keydef->write_key)(info, keydef, record, pos))
       goto err;
   }
 
@@ -63,16 +63,24 @@ int heap_write(HP_INFO *info, const byte *record)
 #if !defined(DBUG_OFF) && defined(EXTRA_HEAP_DEBUG)
   DBUG_EXECUTE("check_heap",heap_check_heap(info, 0););
 #endif
+  if (share->auto_key)
+    heap_update_auto_increment(info, record);
   DBUG_RETURN(0);
 
 err:
-  DBUG_PRINT("info",("Duplicate key: %d",key));
-  info->errkey= key;
-  do
+  DBUG_PRINT("info",("Duplicate key: %d", keydef - share->keydef));
+  info->errkey= keydef - share->keydef;
+  if (keydef->algorithm == HA_KEY_ALG_BTREE)
   {
-    if (_hp_delete_key(info,share->keydef+key,record,pos,0))
+    /* we don't need to delete non-inserted key from rb-tree */
+    keydef--;
+  }
+  while (keydef >= share->keydef)
+  {
+    if ((*keydef->delete_key)(info, keydef, record, pos, 0))
       break;
-  } while (key-- > 0);
+    keydef--;
+  } 
 
   share->deleted++;
   *((byte**) pos)=share->del_link;
@@ -82,6 +90,39 @@ err:
   DBUG_RETURN(my_errno);
 } /* heap_write */
 
+/* 
+  Write a key to rb_tree-index 
+*/
+
+int hp_rb_write_key(HP_INFO *info, HP_KEYDEF *keyinfo, const byte *record, 
+		    byte *recpos)
+{
+  heap_rb_param custom_arg;
+  uint old_allocated;
+
+  info->last_pos= NULL; /* For heap_rnext/heap_rprev */
+  custom_arg.keyseg= keyinfo->seg;
+  custom_arg.key_length= hp_rb_make_key(keyinfo, info->recbuf, record, recpos);
+  if (keyinfo->flag & HA_NOSAME)
+  {
+    custom_arg.search_flag= SEARCH_FIND | SEARCH_SAME;
+    keyinfo->rb_tree.flag= TREE_NO_DUPS;
+  }
+  else
+  {
+    custom_arg.search_flag= SEARCH_SAME;
+    keyinfo->rb_tree.flag= 0;
+  }
+  old_allocated= keyinfo->rb_tree.allocated;
+  if (!tree_insert(&keyinfo->rb_tree, (void*)info->recbuf,
+		   custom_arg.key_length, &custom_arg))
+  {
+    my_errno= HA_ERR_FOUND_DUPP_KEY;
+    return 1;
+  }
+  info->s->index_length+= (keyinfo->rb_tree.allocated-old_allocated);
+  return 0;
+}
 
 	/* Find where to place new record */
 
@@ -102,12 +143,13 @@ static byte *next_free_record_pos(HP_SHARE *info)
   }
   if (!(block_pos=(info->records % info->block.records_in_block)))
   {
-    if (info->records > info->max_records && info->max_records)
+    if ((info->records > info->max_records && info->max_records) ||
+        (info->data_length + info->index_length >= info->max_table_size))
     {
       my_errno=HA_ERR_RECORD_FILE_FULL;
       DBUG_RETURN(NULL);
     }
-    if (_hp_get_new_block(&info->block,&length))
+    if (hp_get_new_block(&info->block,&length))
       DBUG_RETURN(NULL);
     info->data_length+=length;
   }
@@ -119,11 +161,35 @@ static byte *next_free_record_pos(HP_SHARE *info)
 }
 
 
-	/* Write a hash-key to the hash-index */
+/*
+  Write a hash-key to the hash-index
+  SYNOPSIS
+    info     Heap table info
+    keyinfo  Key info
+    record   Table record to added
+    recpos   Memory buffer where the table record will be stored if added 
+             successfully
+  NOTE
+    Hash index uses HP_BLOCK structure as a 'growable array' of HASH_INFO 
+    structs. Array size == number of entries in hash index.
+    hp_mask(hp_rec_hashnr()) maps hash entries values to hash array positions.
+    If there are several hash entries with the same hash array position P,
+    they are connected in a linked list via HASH_INFO::next_key. The first 
+    list element is located at position P, next elements are located at 
+    positions for which there is no record that should be located at that
+    position. The order of elements in the list is arbitrary.
 
-int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
-		  const byte *record, byte *recpos)
+  RETURN
+    0  - OK
+    -1 - Out of memory
+    HA_ERR_FOUND_DUPP_KEY - Duplicate record on unique key. The record was 
+    still added and the caller must call hp_delete_key for it.
+*/
+
+int hp_write_key(HP_INFO *info, HP_KEYDEF *keyinfo,
+		 const byte *record, byte *recpos)
 {
+  HP_SHARE *share = info->s;
   int flag;
   ulong halfbuff,hashnr,first_index;
   byte *ptr_to_rec,*ptr_to_rec2;
@@ -134,23 +200,58 @@ int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
   LINT_INIT(ptr_to_rec); LINT_INIT(ptr_to_rec2);
 
   flag=0;
-  if (!(empty= _hp_find_free_hash(info,&keyinfo->block,info->records)))
+  if (!(empty= hp_find_free_hash(share,&keyinfo->block,share->records)))
     DBUG_RETURN(-1);				/* No more memory */
-  halfbuff= (long) info->blength >> 1;
-  pos=	 hp_find_hash(&keyinfo->block,(first_index=info->records-halfbuff));
-
+  halfbuff= (long) share->blength >> 1;
+  pos= hp_find_hash(&keyinfo->block,(first_index=share->records-halfbuff));
+  
+  /*
+    We're about to add one more hash array position, with hash_mask=#records.
+    The number of hash positions will change and some entries might need to 
+    be relocated to the newly added position. Those entries are currently 
+    members of the list that starts at #first_index position (this is 
+    guaranteed by properties of hp_mask(hp_rec_hashnr(X)) mapping function)
+    At #first_index position currently there may be either:
+    a) An entry with hashnr != first_index. We don't need to move it.
+    or
+    b) A list of items with hash_mask=first_index. The list contains entries
+       of 2 types:
+       1) entries that should be relocated to the list that starts at new 
+          position we're adding ('uppper' list)
+       2) entries that should be left in the list starting at #first_index 
+          position ('lower' list)
+  */
   if (pos != empty)				/* If some records */
   {
     do
     {
-      hashnr=_hp_rec_hashnr(keyinfo,pos->ptr_to_rec);
-      if (flag == 0)				/* First loop; Check if ok */
-	if (_hp_mask(hashnr,info->blength,info->records) != first_index)
+      hashnr = hp_rec_hashnr(keyinfo, pos->ptr_to_rec);
+      if (flag == 0)
+      {
+        /* 
+          First loop, bail out if we're dealing with case a) from above 
+          comment
+        */
+	if (hp_mask(hashnr, share->blength, share->records) != first_index)
 	  break;
+      }
+      /*
+        flag & LOWFIND - found a record that should be put into lower position
+        flag & LOWUSED - lower position occupied by the record
+        Same for HIGHFIND and HIGHUSED and 'upper' position
+
+        gpos  - ptr to last element in lower position's list
+        gpos2 - ptr to last element in upper position's list
+
+        ptr_to_rec - ptr to last entry that should go into lower list.
+        ptr_to_rec2 - same for upper list.
+      */
       if (!(hashnr & halfbuff))
-      {						/* Key will not move */
+      {						
+        /* Key should be put into 'lower' list */
 	if (!(flag & LOWFIND))
 	{
+          /* key is the first element to go into lower position */
 	  if (flag & HIGHFIND)
 	  {
 	    flag=LOWFIND | HIGHFIND;
@@ -161,16 +262,21 @@ int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
 	  }
 	  else
 	  {
-	    flag=LOWFIND | LOWUSED;		/* key isn't changed */
+            /*
+              We can only get here at first iteration: key is at 'lower' 
+              position pos and should be left here.
+            */
+	    flag=LOWFIND | LOWUSED;
 	    gpos=pos;
 	    ptr_to_rec=pos->ptr_to_rec;
 	  }
 	}
 	else
-	{
+        {
+          /* Already have another key for lower position */
 	  if (!(flag & LOWUSED))
 	  {
-	    /* Change link of previous LOW-key */
+	    /* Change link of previous lower-list key */
 	    gpos->ptr_to_rec=ptr_to_rec;
 	    gpos->next_key=pos;
 	    flag= (flag & HIGHFIND) | (LOWFIND | LOWUSED);
@@ -180,19 +286,21 @@ int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
 	}
       }
       else
-      {						/* key will be moved */
+      {
+        /* key will be put into 'higher' list */
 	if (!(flag & HIGHFIND))
 	{
 	  flag= (flag & LOWFIND) | HIGHFIND;
 	  /* key shall be moved to the last (empty) position */
-	  gpos2 = empty; empty=pos;
+	  gpos2= empty;
+          empty= pos;
 	  ptr_to_rec2=pos->ptr_to_rec;
 	}
 	else
 	{
 	  if (!(flag & HIGHUSED))
 	  {
-	    /* Change link of previous hash-key and save */
+	    /* Change link of previous upper-list key and save */
 	    gpos2->ptr_to_rec=ptr_to_rec2;
 	    gpos2->next_key=pos;
 	    flag= (flag & LOWFIND) | (HIGHFIND | HIGHUSED);
@@ -203,6 +311,15 @@ int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
       }
     }
     while ((pos=pos->next_key));
+    
+    if ((flag & (LOWFIND | HIGHFIND)) == (LOWFIND | HIGHFIND))
+    {
+      /*
+        If both 'higher' and 'lower' list have at least one element, now
+        there are two hash buckets instead of one.
+      */
+      keyinfo->hash_buckets++;
+    }
 
     if ((flag & (LOWFIND | LOWUSED)) == LOWFIND)
     {
@@ -217,20 +334,21 @@ int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
   }
   /* Check if we are at the empty position */
 
-  pos=hp_find_hash(&keyinfo->block,_hp_mask(_hp_rec_hashnr(keyinfo,record),
-					    info->blength,info->records+1));
+  pos=hp_find_hash(&keyinfo->block, hp_mask(hp_rec_hashnr(keyinfo, record),
+					 share->blength, share->records + 1));
   if (pos == empty)
   {
     pos->ptr_to_rec=recpos;
     pos->next_key=0;
+    keyinfo->hash_buckets++;
   }
   else
   {
     /* Check if more records in same hash-nr family */
     empty[0]=pos[0];
     gpos=hp_find_hash(&keyinfo->block,
-		      _hp_mask(_hp_rec_hashnr(keyinfo,pos->ptr_to_rec),
-			       info->blength,info->records+1));
+		      hp_mask(hp_rec_hashnr(keyinfo, pos->ptr_to_rec),
+			      share->blength, share->records + 1));
     if (pos == gpos)
     {
       pos->ptr_to_rec=recpos;
@@ -238,9 +356,10 @@ int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
     }
     else
     {
+      keyinfo->hash_buckets++;
       pos->ptr_to_rec=recpos;
       pos->next_key=0;
-      _hp_movelink(pos,gpos,empty);
+      hp_movelink(pos, gpos, empty);
     }
 
     /* Check if duplicated keys */
@@ -251,7 +370,7 @@ int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
       pos=empty;
       do
       {
-	if (! _hp_rec_key_cmp(keyinfo,record,pos->ptr_to_rec))
+	if (! hp_rec_key_cmp(keyinfo, record, pos->ptr_to_rec))
 	{
 	  DBUG_RETURN(my_errno=HA_ERR_FOUND_DUPP_KEY);
 	}
@@ -263,7 +382,7 @@ int _hp_write_key(register HP_SHARE *info, HP_KEYDEF *keyinfo,
 
 	/* Returns ptr to block, and allocates block if neaded */
 
-static HASH_INFO *_hp_find_free_hash(HP_SHARE *info,
+static HASH_INFO *hp_find_free_hash(HP_SHARE *info,
 				     HP_BLOCK *block, ulong records)
 {
   uint block_pos;
@@ -273,7 +392,7 @@ static HASH_INFO *_hp_find_free_hash(HP_SHARE *info,
     return hp_find_hash(block,records);
   if (!(block_pos=(records % block->records_in_block)))
   {
-    if (_hp_get_new_block(block,&length))
+    if (hp_get_new_block(block,&length))
       return(NULL);
     info->index_length+=length;
   }

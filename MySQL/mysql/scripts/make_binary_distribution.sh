@@ -17,6 +17,7 @@ DEBUG=0
 SILENT=0
 TMP=/tmp
 SUFFIX=""
+NDBCLUSTER=
 
 parse_arguments() {
   for arg do
@@ -26,6 +27,7 @@ parse_arguments() {
       --suffix=*) SUFFIX=`echo "$arg" | sed -e "s;--suffix=;;"` ;;
       --no-strip) STRIP=0 ;;
       --silent)   SILENT=1 ;;
+      --with-ndbcluster) NDBCLUSTER=1 ;;
       *)
 	echo "Unknown argument '$arg'"
 	exit 1
@@ -85,8 +87,8 @@ do
   fi
 done
 
-for i in COPYING README Docs/INSTALL-BINARY \
-         MySQLEULA.txt LICENSE.doc README.NW 
+for i in COPYING COPYING.LIB README Docs/INSTALL-BINARY \
+         EXCEPTIONS-CLIENT MySQLEULA.txt LICENSE.doc README.NW
 do
   if [ -f $i ]
   then
@@ -101,12 +103,15 @@ BIN_FILES="extra/comp_err$BS extra/replace$BS extra/perror$BS \
   isam/isamchk$BS isam/pack_isam$BS \
   myisam/myisamchk$BS myisam/myisampack$BS myisam/myisamlog$BS \
   myisam/myisam_ftdump$BS \
-  sql/mysqld$BS \
+  sql/mysqld$BS sql/mysql_tzinfo_to_sql$BS \
   client/mysql$BS client/mysqlshow$BS client/mysqladmin$BS \
   client/mysqldump$BS client/mysqlimport$BS \
   client/mysqltest$BS client/mysqlcheck$BS \
-  client/mysqlbinlog$BS 
-";
+  client/mysqlbinlog$BS \
+  tests/mysql_client_test$BS \
+  libmysqld/examples/mysql_client_test_embedded$BS \
+  libmysqld/examples/mysqltest_embedded$BS \
+  ";
 
 # Platform-specific bin dir files:
 if [ $BASE_SYSTEM = "netware" ] ; then
@@ -125,6 +130,9 @@ else
     client/.libs/mysqltest client/.libs/mysqlcheck \
     client/.libs/mysqlbinlog client/.libs/mysqlmanagerc \
     client/.libs/mysqlmanager-pwgen tools/.libs/mysqlmanager \
+    tests/.libs/mysql_client_test \
+    libmysqld/examples/.libs/mysql_client_test_embedded \
+    libmysqld/examples/.libs/mysqltest_embedded \
   ";
 fi
 
@@ -151,6 +159,7 @@ done
 
 if [ $BASE_SYSTEM = "netware" ] ; then
     $CP -r netware/*.pl $BASE/scripts
+    $CP scripts/mysqlhotcopy $BASE/scripts/mysqlhotcopy.pl
 fi
 
 for i in \
@@ -167,7 +176,7 @@ do
    fi
 done
 
-# convert the libs to .lib for NetWare
+# convert the .a to .lib for NetWare
 if [ $BASE_SYSTEM = "netware" ] ; then
     for i in $BASE/lib/*.a
     do
@@ -192,14 +201,7 @@ if [ $BASE_SYSTEM != "netware" ] ; then
 fi
 
 $CP support-files/* $BASE/support-files
-
-if [ $BASE_SYSTEM = "netware" ] ; then
-  rm -f $BASE/support-files/magic \
-        $BASE/support-files/mysql.server \
-        $BASE/support-files/mysql*.spec \
-        $BASE/support-files/mysql-log-rotate \
-        $BASE/support-files/binary-configure
-fi
+$CP scripts/*.sql $BASE/share
 
 $CP -r sql/share/* $MYSQL_SHARE
 rm -f $MYSQL_SHARE/Makefile* $MYSQL_SHARE/*/*.OLD
@@ -215,24 +217,53 @@ do
 done
 
 $CP mysql-test/include/*.inc $BASE/mysql-test/include
-$CP mysql-test/std_data/*.dat mysql-test/std_data/*.001 $BASE/mysql-test/std_data
+$CP mysql-test/std_data/*.dat mysql-test/std_data/*.*001 $BASE/mysql-test/std_data
 $CP mysql-test/std_data/des_key_file $BASE/mysql-test/std_data
 $CP mysql-test/t/*test mysql-test/t/*.opt mysql-test/t/*.slave-mi mysql-test/t/*.sh $BASE/mysql-test/t
-$CP mysql-test/r/*result mysql-test/r/*.require $BASE/mysql-test/r
+$CP mysql-test/r/*result mysql-test/r/*result.es mysql-test/r/*.require $BASE/mysql-test/r
 
 if [ $BASE_SYSTEM != "netware" ] ; then
   chmod a+x $BASE/bin/*
   $CP scripts/* $BASE/bin
-  $BASE/bin/replace \@localstatedir\@ ./data \@bindir\@ ./bin \@scriptdir\@ ./bin \@libexecdir\@ ./bin \@sbindir\@ ./bin \@prefix\@ . \@HOSTNAME\@ @HOSTNAME@ < $SOURCE/scripts/mysql_install_db.sh > $BASE/scripts/mysql_install_db
+  $BASE/bin/replace \@localstatedir\@ ./data \@bindir\@ ./bin \@scriptdir\@ ./bin \@libexecdir\@ ./bin \@sbindir\@ ./bin \@prefix\@ . \@HOSTNAME\@ @HOSTNAME@ \@pkgdatadir\@ ./support-files < $SOURCE/scripts/mysql_install_db.sh > $BASE/scripts/mysql_install_db
   $BASE/bin/replace \@prefix\@ /usr/local/mysql \@bindir\@ ./bin \@MYSQLD_USER\@ root \@localstatedir\@ /usr/local/mysql/data \@HOSTNAME\@ @HOSTNAME@ < $SOURCE/support-files/mysql.server.sh > $BASE/support-files/mysql.server
   $BASE/bin/replace /my/gnu/bin/hostname /bin/hostname -- $BASE/bin/mysqld_safe
   mv $BASE/support-files/binary-configure $BASE/configure
   chmod a+x $BASE/bin/* $BASE/scripts/* $BASE/support-files/mysql-* $BASE/support-files/mysql.server $BASE/configure
   $CP -r sql-bench/* $BASE/sql-bench
   rm -f $BASE/sql-bench/*.sh $BASE/sql-bench/Makefile* $BASE/lib/*.la
+  rm -f $BASE/bin/*.sql
 fi
 
 rm -f $BASE/bin/Makefile* $BASE/bin/*.in $BASE/bin/*.sh $BASE/bin/mysql_install_db $BASE/bin/make_binary_distribution $BASE/bin/setsomevars $BASE/support-files/Makefile* $BASE/support-files/*.sh
+
+
+#
+# Copy system dependent files
+#
+if [ $BASE_SYSTEM = "netware" ] ; then
+echo "CREATE DATABASE mysql;" > $BASE/bin/init_db.sql
+  echo "CREATE DATABASE test;" >> $BASE/bin/init_db.sql
+  sh ./scripts/mysql_create_system_tables.sh real "" "%" 0 >> $BASE/bin/init_db.sql
+  sh ./scripts/mysql_create_system_tables.sh test "" "%" 0 > $BASE/bin/test_db.sql
+#  cp ./netware/static_init_db.sql ./netware/init_db.sql
+#  ./scripts/fill_help_tables < ./Docs/manual.texi >> ./netware/init_db.sql
+fi
+
+#
+# Remove system dependent files
+#
+if [ $BASE_SYSTEM = "netware" ] ; then
+  rm -f $BASE/support-files/magic \
+        $BASE/support-files/mysql.server \
+        $BASE/support-files/mysql*.spec \
+        $BASE/support-files/mysql-log-rotate \
+        $BASE/support-files/binary-configure \
+        $BASE/INSTALL-BINARY \
+        $BASE/MySQLEULA.txt
+else
+    rm -f $BASE/README.NW
+fi
 
 # Make safe_mysqld a symlink to mysqld_safe for backwards portability
 # To be removed in MySQL 4.1
@@ -242,6 +273,18 @@ rm -f $BASE/bin/Makefile* $BASE/bin/*.in $BASE/bin/*.sh $BASE/bin/mysql_install_
 if [ -d $BASE/sql-bench/SCCS ] ; then 
   find $BASE/share -name SCCS -print | xargs rm -r -f
   find $BASE/sql-bench -name SCCS -print | xargs rm -r -f
+fi
+
+# NDB Cluster
+if [ x$NDBCLUSTER = x1 ]; then
+  ( cd ndb            ; @MAKE@ DESTDIR=$BASE/ndb-stage install )
+  ( cd mysql-test/ndb ; @MAKE@ DESTDIR=$BASE/ndb-stage install )
+  $CP $BASE/ndb-stage@bindir@/* $BASE/bin/.
+  $CP $BASE/ndb-stage@libexecdir@/* $BASE/bin/.
+  $CP $BASE/ndb-stage@pkglibdir@/* $BASE/lib/.
+  $CP -r $BASE/ndb-stage@pkgincludedir@/ndb $BASE/lib/.
+  $CP -r $BASE/ndb-stage@prefix@/mysql-test/ndb $BASE/mysql-test/. || exit 1
+  rm -rf $BASE/ndb-stage
 fi
 
 # Change the distribution to a long descriptive name
@@ -295,29 +338,43 @@ which_1 ()
   exit 1
 }
 
-#
-# Create the result tar file
-#
+if [ $BASE_SYSTEM != "netware" ] ; then
 
-tar=`which_1 gnutar gtar`
-if test "$?" = "1" -o "$tar" = ""
-then
-  tar=tar
+  #
+  # Create the result tar file
+  #
+  
+  tar=`which_1 gnutar gtar`
+  if test "$?" = "1" -o "$tar" = ""
+  then
+    tar=tar
+  fi
+  
+  echo "Using $tar to create archive"
+  cd $TMP
+  
+  OPT=cvf
+  if [ x$SILENT = x1 ] ; then
+    OPT=cf
+  fi
+  
+  $tar $OPT $SOURCE/$NEW_NAME.tar $NEW_NAME
+  cd $SOURCE
+  echo "Compressing archive"
+  rm -f $NEW_NAME.tar.gz
+  gzip -9 $NEW_NAME.tar
+  echo "$NEW_NAME.tar.gz created"
+else
+
+  #
+  # Create a zip file for NetWare users
+  #
+
+  cd $TMP
+  if test -e "$SOURCE/$NEW_NAME.zip"; then rm $SOURCE/$NEW_NAME.zip; fi
+  zip -r $SOURCE/$NEW_NAME.zip $NEW_NAME
+  echo "$NEW_NAME.zip created"
+
 fi
-
-echo "Using $tar to create archive"
-cd $TMP
-
-OPT=cvf
-if [ x$SILENT = x1 ] ; then
-  OPT=cf
-fi
-
-$tar $OPT $SOURCE/$NEW_NAME.tar $NEW_NAME
-cd $SOURCE
-echo "Compressing archive"
-gzip -9 $NEW_NAME.tar
 echo "Removing temporary directory"
 rm -r -f $BASE
-
-echo "$NEW_NAME.tar.gz created"

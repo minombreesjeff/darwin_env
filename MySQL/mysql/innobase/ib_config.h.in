@@ -12,6 +12,9 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* Define to 1 if you have the `localtime_r' function. */
+#undef HAVE_LOCALTIME_R
+
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
 
@@ -65,6 +68,9 @@
 
 /* The size of a `long', as computed by sizeof. */
 #undef SIZEOF_LONG
+
+/* The size of a `void*', as computed by sizeof. */
+#undef SIZEOF_VOIDP
 
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS

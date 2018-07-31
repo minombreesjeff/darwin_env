@@ -105,7 +105,8 @@ row_sel_convert_mysql_key_to_innobase(
 	ulint		buf_len,	/* in: buffer length */
 	dict_index_t*	index,		/* in: index of the key value */
 	byte*		key_ptr,	/* in: MySQL key value */
-	ulint		key_len);	/* in: MySQL key value length */
+	ulint		key_len,	/* in: MySQL key value length */
+	trx_t*		trx);		/* in: transaction */
 /************************************************************************
 Searches for rows in the database. This is used in the interface to
 MySQL. This function opens a cursor, and also implements fetch next
@@ -118,7 +119,9 @@ row_search_for_mysql(
 /*=================*/
 					/* out: DB_SUCCESS,
 					DB_RECORD_NOT_FOUND, 
-					DB_END_OF_INDEX, or DB_DEADLOCK */
+					DB_END_OF_INDEX, DB_DEADLOCK,
+					DB_LOCK_TABLE_FULL,
+					or DB_TOO_BIG_RECORD */
 	byte*		buf,		/* in/out: buffer for the fetched
 					row in the MySQL format */
 	ulint		mode,		/* in: search mode PAGE_CUR_L, ... */
@@ -143,11 +146,11 @@ consistent read result, or store it to the query cache. */
 ibool
 row_search_check_if_query_cache_permitted(
 /*======================================*/
-				/* out: TRUE if storing or retrieving from
-				the query cache is permitted */
-	trx_t*	trx,		/* in: transaction object */
-	char*	norm_name);	/* in: concatenation of database name, '/'
-				char, table name */
+					/* out: TRUE if storing or retrieving
+					from the query cache is permitted */
+	trx_t*		trx,		/* in: transaction object */
+	const char*	norm_name);	/* in: concatenation of database name,
+					'/' char, table name */
 
 
 /* A structure for caching column values for prefetched rows */

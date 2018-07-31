@@ -1,22 +1,22 @@
-Installing MySQL on Other Unix-Like Systems
--------------------------------------------
+2.7 Installing MySQL on Other Unix-Like Systems
+===============================================
 
 This section covers the installation of MySQL binary distributions that
 are provided for various platforms in the form of compressed `tar' files
 (files with a `.tar.gz' extension).  See *Note MySQL binaries:: for a
 detailed list.
 
+To obtain MySQL, see *Note Getting MySQL::.
+
 MySQL `tar' file binary distributions have names of the form
 `mysql-VERSION-OS.tar.gz', where `VERSION' is a number (for example,
-`4.0.17'), and `OS' indicates the type of operating system for which
-the distribution is intended (for example, `pc-linux-gnu-i586').
+`4.0.17'), and OS indicates the type of operating system for which the
+distribution is intended (for example, `pc-linux-i686').
 
 In addition to these generic packages, we also offer binaries in
 platform-specific package formats for selected platforms.  See *Note
 Quick Standard Installation:: for more information on how to install
 these.
-
-To obtain MySQL, see *Note Getting MySQL::.
 
 You need the following tools to install a MySQL `tar' file binary
 distribution:
@@ -44,8 +44,8 @@ distribution are:
      shell> groupadd mysql
      shell> useradd -g mysql mysql
      shell> cd /usr/local
-     shell> gunzip < /path/to/mysql-VERSION-OS.tar.gz | tar xvf -
-     shell> ln -s full-path-to-mysql-VERSION-OS mysql
+     shell> gunzip < /PATH/TO/MYSQL-VERSION-OS.tar.gz | tar xvf -
+     shell> ln -s FULL-PATH-TO-MYSQL-VERSION-OS mysql
      shell> cd mysql
      shell> scripts/mysql_install_db --user=mysql
      shell> chown -R root  .
@@ -56,9 +56,9 @@ distribution are:
 For versions of MySQL older than 4.0, substitute `bin/safe_mysqld' for
 `bin/mysqld_safe' in the final command.
 
-*Note:* This procedure does not set up any passwords for MySQL
+*Note*: This procedure does not set up any passwords for MySQL
 accounts.  After following the procedure, proceed to *Note
-Post-installation::, for post-installation setup and testing.
+Post-installation::.
 
 A more detailed version of the preceding description for installing a
 binary distribution follows:
@@ -79,7 +79,7 @@ binary distribution follows:
 
   2. Pick the directory under which you want to unpack the
      distribution, and change location into it. In the following
-     example, we unpack the distribution under `/usr/local' (The
+     example, we unpack the distribution under `/usr/local'. (The
      instructions, therefore, assume that you have permission to create
      files and directories in `/usr/local'.  If that directory is
      protected, you will need to perform the installation as `root'.)
@@ -94,8 +94,8 @@ binary distribution follows:
   4. Unpack the distribution, which will create the installation
      directory.  Then create a symbolic link to that directory:
 
-          shell> gunzip < /path/to/mysql-VERSION-OS.tar.gz | tar xvf -
-          shell> ln -s full-path-to-mysql-VERSION-OS mysql
+          shell> gunzip < /PATH/TO/MYSQL-VERSION-OS.tar.gz | tar xvf -
+          shell> ln -s FULL-PATH-TO-MYSQL-VERSION-OS mysql
 
      The `tar' command creates a directory named `mysql-VERSION-OS'.
      The `ln' command makes a symbolic link to that directory.  This
@@ -106,7 +106,7 @@ binary distribution follows:
      You can replace the first line with the following alternative
      command to uncompress and extract the distribution:
 
-          shell> tar zxvf /path/to/mysql-VERSION-OS.tar.gz
+          shell> tar zxvf /PATH/TO/MYSQL-VERSION-OS.tar.gz
 
   5. Change location into the installation directory:
 
@@ -143,8 +143,8 @@ binary distribution follows:
      tables.  This is no longer true; you will need to restart the
      server after performing the remaining steps in this procedure.
 
-  7. Change ownership of program binaries to `root' and ownership of
-     the data directory to the user that you will run `mysqld' as.
+  7. Change the ownership of program binaries to `root' and ownership
+     of the data directory to the user that you will run `mysqld' as.
      Assuming that you are located in the installation directory
      (`/usr/local/mysql'), the commands look like this:
 
@@ -193,7 +193,7 @@ For versions of MySQL older than 4.0, substitute `bin/safe_mysqld' for
 More information about `mysqld_safe' is given in *Note `mysqld_safe':
 mysqld_safe.
 
-*Note:* The accounts that are listed in the MySQL grant tables
+*Note*: The accounts that are listed in the MySQL grant tables
 initially have no passwords.  After starting the server, you should set
 up passwords for them using the instructions in *Note
 Post-installation::.

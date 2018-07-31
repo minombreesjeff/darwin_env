@@ -39,7 +39,7 @@ uint my_fread(FILE *stream, byte *Buffer, uint Count, myf MyFlags)
 {
   uint readbytes;
   DBUG_ENTER("my_fread");
-  DBUG_PRINT("my",("stream: %lx  Buffer: %lx  Count: %u  MyFlags: %d",
+  DBUG_PRINT("my",("stream: 0x%lx  Buffer: 0x%lx  Count: %u  MyFlags: %d",
 		   stream, Buffer, Count, MyFlags));
 
   if ((readbytes = (uint) fread(Buffer,sizeof(char),(size_t) Count,stream))
@@ -80,7 +80,7 @@ uint my_fwrite(FILE *stream, const byte *Buffer, uint Count, myf MyFlags)
   uint errors;
 #endif
   DBUG_ENTER("my_fwrite");
-  DBUG_PRINT("my",("stream: %lx  Buffer: %lx  Count: %u  MyFlags: %d",
+  DBUG_PRINT("my",("stream: 0x%lx  Buffer: 0x%lx  Count: %u  MyFlags: %d",
 		   stream, Buffer, Count, MyFlags));
 
 #if !defined(NO_BACKGROUND) && defined(USE_MY_STREAM)
@@ -114,13 +114,15 @@ uint my_fwrite(FILE *stream, const byte *Buffer, uint Count, myf MyFlags)
       if (my_thread_var->abort)
 	MyFlags&= ~ MY_WAIT_IF_FULL;		/* End if aborted by user */
 #endif
-      if (errno == ENOSPC && (MyFlags & MY_WAIT_IF_FULL))
+      if ((errno == ENOSPC || errno == EDQUOT) &&
+          (MyFlags & MY_WAIT_IF_FULL))
       {
-	if (!(errors++ % MY_WAIT_GIVE_USER_A_MESSAGE))
-	  my_error(EE_DISK_FULL,MYF(ME_BELL | ME_NOREFRESH));
-	sleep(MY_WAIT_FOR_USER_TO_FIX_PANIC);
-	VOID(my_fseek(stream,seekptr,MY_SEEK_SET,MYF(0)));
-	continue;
+        if (!(errors++ % MY_WAIT_GIVE_USER_A_MESSAGE))
+          my_error(EE_DISK_FULL,MYF(ME_BELL | ME_NOREFRESH),
+                   "[stream]",my_errno,MY_WAIT_FOR_USER_TO_FIX_PANIC);
+        VOID(sleep(MY_WAIT_FOR_USER_TO_FIX_PANIC));
+        VOID(my_fseek(stream,seekptr,MY_SEEK_SET,MYF(0)));
+        continue;
       }
 #endif
       if (ferror(stream) || (MyFlags & (MY_NABP | MY_FNABP)))
@@ -150,7 +152,7 @@ my_off_t my_fseek(FILE *stream, my_off_t pos, int whence,
 		  myf MyFlags __attribute__((unused)))
 {
   DBUG_ENTER("my_fseek");
-  DBUG_PRINT("my",("stream: %lx  pos: %lu  whence: %d  MyFlags: %d",
+  DBUG_PRINT("my",("stream: 0x%lx  pos: %lu  whence: %d  MyFlags: %d",
 		   stream, pos, whence, MyFlags));
   DBUG_RETURN(fseek(stream, (off_t) pos, whence) ?
 	      MY_FILEPOS_ERROR : (my_off_t) ftell(stream));
@@ -164,7 +166,7 @@ my_off_t my_ftell(FILE *stream, myf MyFlags __attribute__((unused)))
 {
   off_t pos;
   DBUG_ENTER("my_ftell");
-  DBUG_PRINT("my",("stream: %lx  MyFlags: %d",stream, MyFlags));
+  DBUG_PRINT("my",("stream: 0x%lx  MyFlags: %d",stream, MyFlags));
   pos=ftell(stream);
   DBUG_PRINT("exit",("ftell: %lu",(ulong) pos));
   DBUG_RETURN((my_off_t) pos);

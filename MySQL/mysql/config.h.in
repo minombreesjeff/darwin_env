@@ -1,23 +1,15 @@
 /* config.h.in.  Generated from configure.in by autoheader.  */
-/* acconfig.h
-   This file is in the public domain.
 
-   Descriptive text for the C preprocessor macros that
-   the distributed Autoconf macros can define.
-   No software package will use all of them; autoheader copies the ones
-   your configure.in uses into your configuration header file templates.
+/* Define to one of `_getb67', `GETB67', `getb67' for Cray-2 and Cray-YMP
+   systems. This function is required for `alloca.c' support on those systems.
+   */
+#undef CRAY_STACKSEG_END
 
-   The entries are in sort -df order: alphabetical, case insensitive,
-   ignoring punctuation (such as underscores).  Although this order
-   can split up related entries, it makes it easier to check whether
-   a given entry is in the file.
-
-   Leave the following blank line there!!  Autoheader needs it.  */
-
-
+/* Define to 1 if using `alloca.c'. */
 #undef C_ALLOCA
 
-#undef CRAY_STACKSEG_END
+/* all charsets are available */
+#undef DEFINE_ALL_CHARACTER_SETS
 
 /* Version of .frm files */
 #undef DOT_FRM_VERSION
@@ -25,274 +17,24 @@
 /* If LOAD DATA LOCAL INFILE should be enabled by default */
 #undef ENABLED_LOCAL_INFILE
 
-/* READLINE: */
-#undef FIONREAD_IN_SYS_IOCTL
-
-/* READLINE: Define if your system defines TIOCGWINSZ in sys/ioctl.h.  */
-#undef GWINSZ_IN_SYS_IOCTL
-
-/* Handing of large files on Solaris 2.6 */
-#undef _FILE_OFFSET_BITS
-
 /* Do we have FIONREAD */
 #undef FIONREAD_IN_SYS_IOCTL
 
-/* Do we need to define _GNU_SOURCE */
-#undef _GNU_SOURCE
-
-/* atomic_add() from <asm/atomic.h> (Linux only) */
-#undef HAVE_ATOMIC_ADD
-
-/* atomic_sub() from <asm/atomic.h> (Linux only) */
-#undef HAVE_ATOMIC_SUB
-
-/* If we have a working alloca() implementation */
-#undef HAVE_ALLOCA
-
-/* bool is not defined by all C++ compilators */
-#undef HAVE_BOOL
-
-/* Have berkeley db installed */
-#undef HAVE_BERKELEY_DB
-
-/* DSB style signals ? */
-#undef HAVE_BSD_SIGNALS
-
-/* Can netinet be included */
-#undef HAVE_BROKEN_NETINET_INCLUDES
-
-/* READLINE: */
-#undef HAVE_BSD_SIGNALS
-
-/* ZLIB and compress: */
-#undef HAVE_COMPRESS
-
-/* Define if we are using OSF1 DEC threads */
-#undef HAVE_DEC_THREADS
-
-/* Define if we are using OSF1 DEC threads on 3.2 */
-#undef HAVE_DEC_3_2_THREADS
-
-/* fp_except from ieeefp.h */
-#undef HAVE_FP_EXCEPT
-
-/* READLINE: */
-#undef HAVE_GETPW_DECLS
-
-/* Solaris define gethostbyname_r with 5 arguments. glibc2 defines
-   this with 6 arguments */
-#undef HAVE_GETHOSTBYNAME_R_GLIBC2_STYLE
-
-/* In OSF 4.0f the 3'd argument to gethostname_r is hostent_data * */
-#undef HAVE_GETHOSTBYNAME_R_RETURN_INT
-
-/* Define if int8, int16 and int32 types exist */
-#undef HAVE_INT_8_16_32
-
-/* Using Innobase DB */
-#undef HAVE_INNOBASE_DB
-
-/* Using old ISAM tables */
-#undef HAVE_ISAM
-
-/* Define if we have GNU readline */
-#undef HAVE_LIBREADLINE
-
-/* Define if have -lwrap */
-#undef HAVE_LIBWRAP
-
-/* Define if we are using Xavier Leroy's LinuxThreads */
-#undef HAVE_LINUXTHREADS
-
-/* Do we have lstat */
-#undef HAVE_LSTAT
-
-/* Do we use user level threads */
-#undef HAVE_mit_thread
-
-/* For some non posix threads */
-#undef HAVE_NONPOSIX_PTHREAD_GETSPECIFIC
-
-/* For some non posix threads */
-#undef HAVE_NONPOSIX_PTHREAD_MUTEX_INIT
-
-/* READLINE: */
-#undef HAVE_POSIX_SIGNALS
-
-/* Well.. */
-#undef HAVE_POSIX_SIGSETJMP
-
-/* sigwait with one argument */
-#undef HAVE_NONPOSIX_SIGWAIT
-
-/* ORBIT */
-#undef HAVE_ORBIT
-
-/* pthread_attr_setscope */
-#undef HAVE_PTHREAD_ATTR_SETSCOPE
-
-/* pthread_yield that doesn't take any arguments */
-#undef HAVE_PTHREAD_YIELD_ZERO_ARG
-
-/* pthread_yield function with one argument */
-#undef HAVE_PTHREAD_YIELD_ONE_ARG
-
-/* POSIX readdir_r */
-#undef HAVE_READDIR_R
-
-/* Have Gemini db installed */
-#undef HAVE_GEMINI_DB
-
-/* POSIX sigwait */
-#undef HAVE_SIGWAIT
-
-/* crypt */
-#undef HAVE_CRYPT
-
-/* If we want to have query cache */
-#undef HAVE_QUERY_CACHE
-
-/* Solaris define gethostbyaddr_r with 7 arguments. glibc2 defines
-   this with 8 arguments */
-#undef HAVE_SOLARIS_STYLE_GETHOST
-
-/* MIT pthreads does not support connecting with unix sockets */
-#undef HAVE_THREADS_WITHOUT_SOCKETS
-
-/* Timespec has a ts_sec instead of tv_sev  */
-#undef HAVE_TIMESPEC_TS_SEC
-
-/* Have the tzname variable */
-#undef HAVE_TZNAME
-
-/* Define if the system files define uchar */
-#undef HAVE_UCHAR
-
-/* Define if the system files define uint */
-#undef HAVE_UINT
-
-/* Define if the system files define ulong */
-#undef HAVE_ULONG
-
-/* Define if the system files define in_addr_t */
-#undef HAVE_IN_ADDR_T
-
-/* UNIXWARE7 threads are not posix */
-#undef HAVE_UNIXWARE7_THREADS
-
-/* new UNIXWARE7 threads that are not yet posix */
-#undef HAVE_UNIXWARE7_POSIX
-
-/* OpenSSL */
-#undef HAVE_OPENSSL
-
-/* READLINE: */
-#undef HAVE_USG_SIGHOLD
-
-/* Virtual IO */
-#undef HAVE_VIO
-
-/* Handling of large files on Solaris 2.6 */
-#undef _LARGEFILE_SOURCE
-
-/* Handling of large files on Solaris 2.6 */
-#undef _LARGEFILE64_SOURCE
-
-/* Define if want -lwrap */
-#undef LIBWRAP
-
-/* Define to machine type name eg sun10 */
-#undef MACHINE_TYPE
-
-#undef MUST_REINSTALL_SIGHANDLERS
-
-/* Defined to used character set */
-#undef MY_CHARSET_CURRENT
-
-/* READLINE: no sys file*/
-#undef NO_SYS_FILE
-
-/* Program name */
-#undef PACKAGE
-
-/* mysql client protocoll version */
-#undef PROTOCOL_VERSION
-
-/* Define if qsort returns void */
-#undef QSORT_TYPE_IS_VOID
-
-/* Define as the return type of qsort (int or void). */
-#undef RETQSORTTYPE
-
-/* Size of off_t */
-#undef SIZEOF_OFF_T
-
-/* Define as the base type of the last arg to accept */
-#undef SOCKET_SIZE_TYPE
-
-/* Last argument to get/setsockopt */
-#undef SOCKOPT_OPTLEN_TYPE
-
-#undef SPEED_T_IN_SYS_TYPES
-#undef SPRINTF_RETURNS_PTR
-#undef SPRINTF_RETURNS_INT
-#undef SPRINTF_RETURNS_GARBAGE
-
-/* Needed to get large file support on HPUX 10.20 */
-#undef __STDC_EXT__
-
-#undef STACK_DIRECTION
-
-#undef STRCOLL_BROKEN
-
-#undef STRUCT_DIRENT_HAS_D_FILENO
-#undef STRUCT_DIRENT_HAS_D_INO
-
-#undef STRUCT_WINSIZE_IN_SYS_IOCTL
-#undef STRUCT_WINSIZE_IN_TERMIOS
-
-/* Define to name of system eg solaris*/
-#undef SYSTEM_TYPE
-
-/* Define if you want to have threaded code. This may be undef on client code */
-#undef THREAD
-
-/* Should be client be thread safe */
-#undef THREAD_SAFE_CLIENT
-
-/* READLINE: */
-#undef TIOCSTAT_IN_SYS_IOCTL
-
-/* Use multi-byte character routines */
-#undef USE_MB
-#undef USE_MB_IDENT
-
-/* the pstack backtrace library */
-#undef USE_PSTACK
-
-/* Use MySQL RAID */
-#undef USE_RAID
-
-/* Use strcoll() functions when comparing and sorting. */
-#undef USE_STRCOLL
-
-/* Program version */
-#undef VERSION
-
-/* READLINE: */
-#undef VOID_SIGHANDLER
-
-
-/* Leave that blank line there!!  Autoheader needs it.
-   If you're adding to this file, keep in mind:
-   The entries are in sort -df order: alphabetical, case insensitive,
-   ignoring punctuation (such as underscores).  */
+/* READLINE: your system defines TIOCGWINSZ in sys/ioctl.h. */
+#undef GWINSZ_IN_SYS_IOCTL
 
 /* Define to 1 if you have the `alarm' function. */
 #undef HAVE_ALARM
 
-/* Define to 1 if you have the <alloca.h> header file. */
+/* Define to 1 if you have `alloca', as a function or macro. */
+#undef HAVE_ALLOCA
+
+/* Define to 1 if you have <alloca.h> and it should be used (not on Ultrix).
+   */
 #undef HAVE_ALLOCA_H
+
+/* Builds Archive Storage Engine */
+#undef HAVE_ARCHIVE_DB
 
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #undef HAVE_ARPA_INET_H
@@ -300,11 +42,17 @@
 /* Define to 1 if you have the <asm/termbits.h> header file. */
 #undef HAVE_ASM_TERMBITS_H
 
-/* Define to 1 if you have the `atod' function. */
-#undef HAVE_ATOD
+/* atomic_add() from <asm/atomic.h> (Linux only) */
+#undef HAVE_ATOMIC_ADD
+
+/* atomic_sub() from <asm/atomic.h> (Linux only) */
+#undef HAVE_ATOMIC_SUB
 
 /* Define to 1 if you have the `bcmp' function. */
 #undef HAVE_BCMP
+
+/* Have berkeley db installed */
+#undef HAVE_BERKELEY_DB
 
 /* Define to 1 if you have the `bfill' function. */
 #undef HAVE_BFILL
@@ -312,20 +60,146 @@
 /* Define to 1 if you have the `bmove' function. */
 #undef HAVE_BMOVE
 
+/* bool is not defined by all C++ compilators */
+#undef HAVE_BOOL
+
+/* Can netinet be included */
+#undef HAVE_BROKEN_NETINET_INCLUDES
+
+/* BSD style signals */
+#undef HAVE_BSD_SIGNALS
+
 /* Define to 1 if you have the `bzero' function. */
 #undef HAVE_BZERO
+
+/* Define to enable charset armscii8 */
+#undef HAVE_CHARSET_armscii8
+
+/* Define to enable ascii character set */
+#undef HAVE_CHARSET_ascii
+
+/* Define to enable charset big5 */
+#undef HAVE_CHARSET_big5
+
+/* Define to enable cp1250 */
+#undef HAVE_CHARSET_cp1250
+
+/* Define to enable charset cp1251 */
+#undef HAVE_CHARSET_cp1251
+
+/* Define to enable charset cp1256 */
+#undef HAVE_CHARSET_cp1256
+
+/* Define to enable charset cp1257 */
+#undef HAVE_CHARSET_cp1257
+
+/* Define to enable charset cp850 */
+#undef HAVE_CHARSET_cp850
+
+/* Define to enable charset cp852 */
+#undef HAVE_CHARSET_cp852
+
+/* Define to enable charset cp866 */
+#undef HAVE_CHARSET_cp866
+
+/* Define to enable charset dec8 */
+#undef HAVE_CHARSET_dec8
+
+/* Define to enable charset euckr */
+#undef HAVE_CHARSET_euckr
+
+/* Define to enable charset gb2312 */
+#undef HAVE_CHARSET_gb2312
+
+/* Define to enable charset gbk */
+#undef HAVE_CHARSET_gbk
+
+/* Define to enable charset geostd8 */
+#undef HAVE_CHARSET_geostd8
+
+/* Define to enable charset greek */
+#undef HAVE_CHARSET_greek
+
+/* Define to enable charset hebrew */
+#undef HAVE_CHARSET_hebrew
+
+/* Define to enable charset hp8 */
+#undef HAVE_CHARSET_hp8
+
+/* Define to enable charset keybcs2 */
+#undef HAVE_CHARSET_keybcs2
+
+/* Define to enable charset koi8r */
+#undef HAVE_CHARSET_koi8r
+
+/* Define to enable charset koi8u */
+#undef HAVE_CHARSET_koi8u
+
+/* Define to enable charset latin1 */
+#undef HAVE_CHARSET_latin1
+
+/* Define to enable charset latin2 */
+#undef HAVE_CHARSET_latin2
+
+/* Define to enable charset latin5 */
+#undef HAVE_CHARSET_latin5
+
+/* Define to enable charset latin7 */
+#undef HAVE_CHARSET_latin7
+
+/* Define to enable charset macce */
+#undef HAVE_CHARSET_macce
+
+/* Define to enable charset macroman */
+#undef HAVE_CHARSET_macroman
+
+/* Define to enable charset sjis */
+#undef HAVE_CHARSET_sjis
+
+/* Define to enable charset swe7 */
+#undef HAVE_CHARSET_swe7
+
+/* Define to enable charset tis620 */
+#undef HAVE_CHARSET_tis620
+
+/* Define to enable charset ucs2 */
+#undef HAVE_CHARSET_ucs2
+
+/* Define to enable charset ujis */
+#undef HAVE_CHARSET_ujis
+
+/* Define to enable ut8 */
+#undef HAVE_CHARSET_utf8
 
 /* Define to 1 if you have the `chsize' function. */
 #undef HAVE_CHSIZE
 
+/* Define to 1 if you have the `clock_gettime' function. */
+#undef HAVE_CLOCK_GETTIME
+
+/* Define to enable compression support */
+#undef HAVE_COMPRESS
+
+/* crypt */
+#undef HAVE_CRYPT
+
 /* Define to 1 if you have the <crypt.h> header file. */
 #undef HAVE_CRYPT_H
+
+/* Builds the CSV Storage Engine */
+#undef HAVE_CSV_DB
 
 /* Define to 1 if you have the <curses.h> header file. */
 #undef HAVE_CURSES_H
 
 /* Define to 1 if you have the `cuserid' function. */
 #undef HAVE_CUSERID
+
+/* Whether we are using OSF1 DEC threads on 3.2 */
+#undef HAVE_DEC_3_2_THREADS
+
+/* Whether we are using DEC threads */
+#undef HAVE_DEC_THREADS
 
 /* Define to 1 if you have the <dirent.h> header file. */
 #undef HAVE_DIRENT_H
@@ -342,6 +216,12 @@
 /* Define to 1 if you don't have `vprintf' but do have `_doprnt.' */
 #undef HAVE_DOPRNT
 
+/* Access checks in embedded library */
+#undef HAVE_EMBEDDED_PRIVILEGE_CONTROL
+
+/* Builds Example DB */
+#undef HAVE_EXAMPLE_DB
+
 /* Define to 1 if you have the `fchmod' function. */
 #undef HAVE_FCHMOD
 
@@ -357,6 +237,9 @@
 /* Define to 1 if you have the `fdatasync' function. */
 #undef HAVE_FDATASYNC
 
+/* Define to 1 if you have the `fgetln' function. */
+#undef HAVE_FGETLN
+
 /* Define to 1 if you have the `finite' function. */
 #undef HAVE_FINITE
 
@@ -366,14 +249,17 @@
 /* Define to 1 if you have the <float.h> header file. */
 #undef HAVE_FLOAT_H
 
+/* Define to 1 if you have the `flockfile' function. */
+#undef HAVE_FLOCKFILE
+
 /* Define to 1 if you have the `fpresetsticky' function. */
 #undef HAVE_FPRESETSTICKY
 
 /* Define to 1 if you have the `fpsetmask' function. */
 #undef HAVE_FPSETMASK
 
-/* Define to 1 if you have the `fseeko' function. */
-#undef HAVE_FSEEKO
+/* fp_except from ieeefp.h */
+#undef HAVE_FP_EXCEPT
 
 /* Define to 1 if you have the `fsync' function. */
 #undef HAVE_FSYNC
@@ -390,6 +276,16 @@
 /* Define to 1 if you have the `gethostbyname_r' function. */
 #undef HAVE_GETHOSTBYNAME_R
 
+/* Solaris define gethostbyname_r with 5 arguments. glibc2 defines this with 6
+   arguments */
+#undef HAVE_GETHOSTBYNAME_R_GLIBC2_STYLE
+
+/* In OSF 4.0f the 3'd argument to gethostname_r is hostent_data * */
+#undef HAVE_GETHOSTBYNAME_R_RETURN_INT
+
+/* Define to 1 if you have the `getline' function. */
+#undef HAVE_GETLINE
+
 /* Define to 1 if you have the `getpagesize' function. */
 #undef HAVE_GETPAGESIZE
 
@@ -405,6 +301,9 @@
 /* Define to 1 if you have the `getpwuid' function. */
 #undef HAVE_GETPWUID
 
+/* getpwent() declaration present */
+#undef HAVE_GETPW_DECLS
+
 /* Define to 1 if you have the `getrlimit' function. */
 #undef HAVE_GETRLIMIT
 
@@ -414,8 +313,14 @@
 /* Define to 1 if you have the `getwd' function. */
 #undef HAVE_GETWD
 
+/* Define to 1 if you have the `gmtime_r' function. */
+#undef HAVE_GMTIME_R
+
 /* Define to 1 if you have the <grp.h> header file. */
 #undef HAVE_GRP_H
+
+/* HIST_ENTRY is defined in the outer libeditreadline */
+#undef HAVE_HIST_ENTRY
 
 /* Define to 1 if you have the <ieeefp.h> header file. */
 #undef HAVE_IEEEFP_H
@@ -426,11 +331,29 @@
 /* Define to 1 if you have the `initgroups' function. */
 #undef HAVE_INITGROUPS
 
+/* Using Innobase DB */
+#undef HAVE_INNOBASE_DB
+
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* whether int8, int16 and int32 types exist */
+#undef HAVE_INT_8_16_32
+
+/* system headers define in_addr_t */
+#undef HAVE_IN_ADDR_T
+
+/* Using old ISAM tables */
+#undef HAVE_ISAM
+
+/* isinf() macro or function */
+#undef HAVE_ISINF
+
 /* Define to 1 if you have the `isnan' function. */
 #undef HAVE_ISNAN
+
+/* Define to 1 if you have the `issetugid' function. */
+#undef HAVE_ISSETUGID
 
 /* Define to 1 if you have the `bind' library (-lbind). */
 #undef HAVE_LIBBIND
@@ -468,8 +391,14 @@
 /* Define to 1 if you have the `socket' library (-lsocket). */
 #undef HAVE_LIBSOCKET
 
+/* Define if have -lwrap */
+#undef HAVE_LIBWRAP
+
 /* Define to 1 if you have the <limits.h> header file. */
 #undef HAVE_LIMITS_H
+
+/* Whether we are using Xavier Leroy's LinuxThreads */
+#undef HAVE_LINUXTHREADS
 
 /* Define to 1 if you have the <linux/config.h> header file. */
 #undef HAVE_LINUX_CONFIG_H
@@ -519,11 +448,29 @@
 /* Define to 1 if you have a working `mmap' system call. */
 #undef HAVE_MMAP
 
+/* Using Ndb Cluster DB */
+#undef HAVE_NDBCLUSTER_DB
+
 /* Define to 1 if you have the <ndir.h> header file. */
 #undef HAVE_NDIR_H
 
 /* Define to 1 if you have the <netinet/in.h> header file. */
 #undef HAVE_NETINET_IN_H
+
+/* For some non posix threads */
+#undef HAVE_NONPOSIX_PTHREAD_GETSPECIFIC
+
+/* For some non posix threads */
+#undef HAVE_NONPOSIX_PTHREAD_MUTEX_INIT
+
+/* sigwait with one argument */
+#undef HAVE_NONPOSIX_SIGWAIT
+
+/* OpenSSL */
+#undef HAVE_OPENSSL
+
+/* ORBIT */
+#undef HAVE_ORBIT
 
 /* Define to 1 if you have the <paths.h> header file. */
 #undef HAVE_PATHS_H
@@ -533,6 +480,9 @@
 
 /* Define to 1 if you have the `poll' function. */
 #undef HAVE_POLL
+
+/* Signal handling is POSIX (sigset/sighold, etc) */
+#undef HAVE_POSIX_SIGNALS
 
 /* Define to 1 if you have the `pread' function. */
 #undef HAVE_PREAD
@@ -548,6 +498,9 @@
 
 /* Define to 1 if you have the `pthread_attr_setschedparam' function. */
 #undef HAVE_PTHREAD_ATTR_SETSCHEDPARAM
+
+/* pthread_attr_setscope */
+#undef HAVE_PTHREAD_ATTR_SETSCOPE
 
 /* Define to 1 if you have the `pthread_attr_setstacksize' function. */
 #undef HAVE_PTHREAD_ATTR_SETSTACKSIZE
@@ -579,17 +532,32 @@
 /* Define to 1 if you have the `pthread_sigmask' function. */
 #undef HAVE_PTHREAD_SIGMASK
 
+/* pthread_yield function with one argument */
+#undef HAVE_PTHREAD_YIELD_ONE_ARG
+
+/* pthread_yield that doesn't take any arguments */
+#undef HAVE_PTHREAD_YIELD_ZERO_ARG
+
 /* Define to 1 if you have the `putenv' function. */
 #undef HAVE_PUTENV
 
 /* Define to 1 if you have the <pwd.h> header file. */
 #undef HAVE_PWD_H
 
+/* If we want to have query cache */
+#undef HAVE_QUERY_CACHE
+
+/* POSIX readdir_r */
+#undef HAVE_READDIR_R
+
 /* Define to 1 if you have the `readlink' function. */
 #undef HAVE_READLINK
 
 /* Define to 1 if you have the `realpath' function. */
 #undef HAVE_REALPATH
+
+/* Define to 1 if you have the `regcomp' function. */
+#undef HAVE_REGCOMP
 
 /* Define to 1 if you have the `rename' function. */
 #undef HAVE_RENAME
@@ -598,8 +566,14 @@
    signal. */
 #undef HAVE_RESTARTABLE_SYSCALLS
 
+/* Define to 1 if you have the `re_comp' function. */
+#undef HAVE_RE_COMP
+
 /* Define to 1 if you have the `rint' function. */
 #undef HAVE_RINT
+
+/* RTree keys */
+#undef HAVE_RTREE_KEYS
 
 /* Define to 1 if you have the `rwlock_init' function. */
 #undef HAVE_RWLOCK_INIT
@@ -625,6 +599,27 @@
 /* Define to 1 if you have the `setupterm' function. */
 #undef HAVE_SETUPTERM
 
+/* Define to 1 if you have the `shmat' function. */
+#undef HAVE_SHMAT
+
+/* Define to 1 if you have the `shmctl' function. */
+#undef HAVE_SHMCTL
+
+/* Define to 1 if you have the `shmdt' function. */
+#undef HAVE_SHMDT
+
+/* Define to 1 if you have the `shmget' function. */
+#undef HAVE_SHMGET
+
+/* Define to 1 if you have the `sigaction' function. */
+#undef HAVE_SIGACTION
+
+/* Define to 1 if you have the `sigaddset' function. */
+#undef HAVE_SIGADDSET
+
+/* Define to 1 if you have the `sigemptyset' function. */
+#undef HAVE_SIGEMPTYSET
+
 /* Define to 1 if you have the `sighold' function. */
 #undef HAVE_SIGHOLD
 
@@ -634,11 +629,21 @@
 /* Define to 1 if you have the `sigthreadmask' function. */
 #undef HAVE_SIGTHREADMASK
 
+/* POSIX sigwait */
+#undef HAVE_SIGWAIT
+
 /* Define to 1 if you have the `snprintf' function. */
 #undef HAVE_SNPRINTF
 
 /* Define to 1 if you have the `socket' function. */
 #undef HAVE_SOCKET
+
+/* Solaris define gethostbyaddr_r with 7 arguments. glibc2 defines this with 8
+   arguments */
+#undef HAVE_SOLARIS_STYLE_GETHOST
+
+/* Spatial extentions */
+#undef HAVE_SPATIAL
 
 /* Define to 1 if you have the <stdarg.h> header file. */
 #undef HAVE_STDARG_H
@@ -661,6 +666,9 @@
 /* Define to 1 if you have the `strcoll' function. */
 #undef HAVE_STRCOLL
 
+/* Define to 1 if you have the `strdup' function. */
+#undef HAVE_STRDUP
+
 /* Define to 1 if you have the `strerror' function. */
 #undef HAVE_STRERROR
 
@@ -669,6 +677,12 @@
 
 /* Define to 1 if you have the <string.h> header file. */
 #undef HAVE_STRING_H
+
+/* Define to 1 if you have the `strlcat' function. */
+#undef HAVE_STRLCAT
+
+/* Define to 1 if you have the `strlcpy' function. */
+#undef HAVE_STRLCPY
 
 /* Define to 1 if you have the `strnlen' function. */
 #undef HAVE_STRNLEN
@@ -704,6 +718,9 @@
 /* Define to 1 if you have the <synch.h> header file. */
 #undef HAVE_SYNCH_H
 
+/* Define to 1 if you have the <sys/cdefs.h> header file. */
+#undef HAVE_SYS_CDEFS_H
+
 /* Define to 1 if you have the <sys/dir.h> header file. */
 #undef HAVE_SYS_DIR_H
 
@@ -722,11 +739,17 @@
 /* Define to 1 if you have the <sys/ndir.h> header file. */
 #undef HAVE_SYS_NDIR_H
 
+/* Define to 1 if you have the <sys/param.h> header file. */
+#undef HAVE_SYS_PARAM_H
+
 /* Define to 1 if you have the <sys/ptem.h> header file. */
 #undef HAVE_SYS_PTEM_H
 
 /* Define to 1 if you have the <sys/pte.h> header file. */
 #undef HAVE_SYS_PTE_H
+
+/* Define to 1 if you have the <sys/resource.h> header file. */
+#undef HAVE_SYS_RESOURCE_H
 
 /* Define to 1 if you have the <sys/select.h> header file. */
 #undef HAVE_SYS_SELECT_H
@@ -785,8 +808,32 @@
 /* Define to 1 if you have the `thr_setconcurrency' function. */
 #undef HAVE_THR_SETCONCURRENCY
 
+/* Timespec has a ts_sec instead of tv_sev */
+#undef HAVE_TIMESPEC_TS_SEC
+
+/* Have the tzname variable */
+#undef HAVE_TZNAME
+
+/* system headers define uchar */
+#undef HAVE_UCHAR
+
+/* system headers define uint */
+#undef HAVE_UINT
+
+/* system headers define ulong */
+#undef HAVE_ULONG
+
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
+
+/* new UNIXWARE7 threads that are not yet posix */
+#undef HAVE_UNIXWARE7_POSIX
+
+/* UNIXWARE7 threads are not posix */
+#undef HAVE_UNIXWARE7_THREADS
+
+/* sighold() is present and usable */
+#undef HAVE_USG_SIGHOLD
 
 /* Define to 1 if you have the <utime.h> header file. */
 #undef HAVE_UTIME_H
@@ -800,8 +847,47 @@
 /* Define to 1 if you have the `vidattr' function. */
 #undef HAVE_VIDATTR
 
+/* Virtual IO */
+#undef HAVE_VIO
+
+/* Define to 1 if you have the <vis.h> header file. */
+#undef HAVE_VIS_H
+
 /* Define to 1 if you have the `vprintf' function. */
 #undef HAVE_VPRINTF
+
+/* Do we use user level threads */
+#undef HAVE_mit_thread
+
+/* Define if you have -lwrap */
+#undef LIBWRAP
+
+/* Machine type name, eg sun10 */
+#undef MACHINE_TYPE
+
+/* Define the default charset name */
+#undef MYSQL_DEFAULT_CHARSET_NAME
+
+/* Define the default charset name */
+#undef MYSQL_DEFAULT_COLLATION_NAME
+
+/* Including Ndb Cluster DB sci transporter */
+#undef NDB_SCI_TRANSPORTER
+
+/* Including Ndb Cluster DB shared memory transporter */
+#undef NDB_SHM_TRANSPORTER
+
+/* NDB build version */
+#undef NDB_VERSION_BUILD
+
+/* NDB major version */
+#undef NDB_VERSION_MAJOR
+
+/* NDB minor version */
+#undef NDB_VERSION_MINOR
+
+/* NDB status version */
+#undef NDB_VERSION_STATUS
 
 /* Name of package */
 #undef PACKAGE
@@ -821,6 +907,15 @@
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION
 
+/* mysql client protocol version */
+#undef PROTOCOL_VERSION
+
+/* qsort returns void */
+#undef QSORT_TYPE_IS_VOID
+
+/* The return type of qsort (int or void). */
+#undef RETQSORTTYPE
+
 /* Define as the return type of signal handlers (`int' or `void'). */
 #undef RETSIGTYPE
 
@@ -839,20 +934,88 @@
 /* The size of a `long long', as computed by sizeof. */
 #undef SIZEOF_LONG_LONG
 
+/* */
+#undef SIZEOF_OFF_T
+
+/* The base type of the last arg to accept */
+#undef SOCKET_SIZE_TYPE
+
+/* Last argument to get/setsockopt */
+#undef SOCKOPT_OPTLEN_TYPE
+
+/* Broken sprintf */
+#undef SPRINTF_RETURNS_GARBAGE
+
+/* POSIX sprintf */
+#undef SPRINTF_RETURNS_INT
+
+/* Broken sprintf */
+#undef SPRINTF_RETURNS_PTR
+
+/* If using the C implementation of alloca, define if you know the
+   direction of stack growth for your system; otherwise it will be
+   automatically deduced at run-time.
+	STACK_DIRECTION > 0 => grows toward higher addresses
+	STACK_DIRECTION < 0 => grows toward lower addresses
+	STACK_DIRECTION = 0 => direction of growth unknown */
+#undef STACK_DIRECTION
+
 /* Define to 1 if the `S_IS*' macros in <sys/stat.h> do not work properly. */
 #undef STAT_MACROS_BROKEN
 
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
 
+/* d_ino member present in struct dirent */
+#undef STRUCT_DIRENT_HAS_D_INO
+
+/* d_namlen member present in struct dirent */
+#undef STRUCT_DIRENT_HAS_D_NAMLEN
+
+/* Name of system, eg solaris */
+#undef SYSTEM_TYPE
+
+/* Define if you want to have threaded code. This may be undef on client code
+   */
+#undef THREAD
+
+/* Should be client be thread safe */
+#undef THREAD_SAFE_CLIENT
+
 /* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
 #undef TIME_WITH_SYS_TIME
+
+/* declaration of TIOCSTAT in sys/ioctl.h */
+#undef TIOCSTAT_IN_SYS_IOCTL
 
 /* Define to 1 if your <sys/time.h> declares `struct tm'. */
 #undef TM_IN_SYS_TIME
 
+/* used libedit interface (can we dereference result of
+   rl_completion_entry_function) */
+#undef USE_LIBEDIT_INTERFACE
+
+/* Use multi-byte character routines */
+#undef USE_MB
+
+/* */
+#undef USE_MB_IDENT
+
+/* used new readline interface (are rl_completion_func_t and
+   rl_compentry_func_t defined) */
+#undef USE_NEW_READLINE_INTERFACE
+
+/* the pstack backtrace library */
+#undef USE_PSTACK
+
+/* Use MySQL RAID */
+#undef USE_RAID
+
 /* Version number of package */
 #undef VERSION
+
+/* sighandler type is void (*signal ()) (); */
+#undef VOID_SIGHANDLER
 
 /* Define to 1 if your processor stores words with the most significant byte
    first (like Motorola and SPARC, unlike Intel and VAX). */
@@ -861,18 +1024,20 @@
 /* Number of bits in a file offset, on hosts where this is settable. */
 #undef _FILE_OFFSET_BITS
 
-/* Define to make fseeko etc. visible, on some hosts. */
+/* makes fseeko etc. visible, on some hosts. */
 #undef _LARGEFILE_SOURCE
 
-/* Define for large files, on AIX-style hosts. */
+/* Large files support on AIX-style hosts. */
 #undef _LARGE_FILES
 
 /* Define to empty if `const' does not conform to ANSI C. */
 #undef const
 
-/* Define as `__inline' if that's what the C compiler calls it, or to nothing
-   if it is not supported. */
+/* Define to `__inline__' or `__inline' if that's what the C compiler
+   calls it, or to nothing if 'inline' is not supported under any name.  */
+#ifndef __cplusplus
 #undef inline
+#endif
 
 /* Define to `long' if <sys/types.h> does not define. */
 #undef off_t

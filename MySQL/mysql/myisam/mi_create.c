@@ -16,7 +16,9 @@
 
 /* Create a MyISAM table */
 
-#include "fulltext.h"
+#include "ftdefs.h"
+#include "sp_defs.h"
+
 #if defined(MSDOS) || defined(__WIN__)
 #ifdef __WIN__
 #include <fcntl.h>
@@ -37,21 +39,21 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 {
   register uint i,j;
   File dfile,file;
-  int errpos,save_errno;
+  int errpos,save_errno, create_mode= O_RDWR | O_TRUNC;
   myf create_flag;
-  uint fields,length,max_key_length,packed,pointer,
-       key_length,info_length,key_segs,options,min_key_length_skipp,
+  uint fields,length,max_key_length,packed,pointer,real_length_diff,
+       key_length,info_length,key_segs,options,min_key_length_skip,
        base_pos,varchar_count,long_varchar_count,varchar_length,
-       max_key_block_length,unique_key_parts,offset;
+       max_key_block_length,unique_key_parts,fulltext_keys,offset;
   ulong reclength, real_reclength,min_pack_length;
   char filename[FN_REFLEN],linkname[FN_REFLEN], *linkname_ptr;
   ulong pack_reclength;
-  ulonglong tot_length,max_rows;
+  ulonglong tot_length,max_rows, tmp;
   enum en_fieldtype type;
   MYISAM_SHARE share;
   MI_KEYDEF *keydef,tmp_keydef;
   MI_UNIQUEDEF *uniquedef;
-  MI_KEYSEG *keyseg,tmp_keyseg;
+  HA_KEYSEG *keyseg,tmp_keyseg;
   MI_COLUMNDEF *rec;
   ulong *rec_per_key_part;
   my_off_t key_root[MI_MAX_POSSIBLE_KEY],key_del[MI_MAX_KEY_BLOCK_SIZE];
@@ -174,7 +176,10 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
     min_pack_length+=varchar_length+2*varchar_count;
   }
   if (flags & HA_CREATE_TMP_TABLE)
+  {
     options|= HA_OPTION_TMP_TABLE;
+    create_mode|= O_EXCL | O_NOFOLLOW;
+  }
   if (flags & HA_CREATE_CHECKSUM || (options & HA_OPTION_CHECKSUM))
   {
     options|= HA_OPTION_CHECKSUM;
@@ -204,9 +209,9 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 					  3 : 0)));
 
   if (options & (HA_OPTION_COMPRESS_RECORD | HA_OPTION_PACK_RECORD))
-    pointer=mi_get_pointer_length(ci->data_file_length,4);
+    pointer=mi_get_pointer_length(ci->data_file_length,myisam_data_pointer_size);
   else
-    pointer=mi_get_pointer_length(ci->max_rows,4);
+    pointer=mi_get_pointer_length(ci->max_rows,myisam_data_pointer_size);
   if (!(max_rows=(ulonglong) ci->max_rows))
     max_rows= ((((ulonglong) 1 << (pointer*8)) -1) / min_pack_length);
 
@@ -221,6 +226,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
     reclength+=long_varchar_count;	/* We need space for this! */
 
   max_key_length=0; tot_length=0 ; key_segs=0;
+  fulltext_keys=0;
   max_key_block_length=0;
   share.state.rec_per_key_part=rec_per_key_part;
   share.state.key_root=key_root;
@@ -233,24 +239,51 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 
   for (i=0, keydef=keydefs ; i < keys ; i++ , keydef++)
   {
+
     share.state.key_root[i]= HA_OFFSET_ERROR;
-
-    min_key_length_skipp=length=0;
+    min_key_length_skip=length=real_length_diff=0;
     key_length=pointer;
-
-    if (keydef->flag & HA_FULLTEXT)                                 /* SerG */
+    if (keydef->flag & HA_SPATIAL)
     {
-      keydef->flag=HA_FULLTEXT | HA_PACK_KEY | HA_VAR_LENGTH_KEY;
-      options|=HA_OPTION_PACK_KEYS;             /* Using packed keys */
+#ifdef HAVE_SPATIAL
+      /* BAR TODO to support 3D and more dimensions in the future */
+      uint sp_segs=SPDIMS*2;
+      keydef->flag=HA_SPATIAL;
 
       if (flags & HA_DONT_TOUCH_DATA)
       {
-        /* called by myisamchk - i.e. table structure was taken from
-           MYI file and FULLTEXT key *do has* additional FT_SEGS keysegs.
+        /*
+           called by myisamchk - i.e. table structure was taken from
+           MYI file and SPATIAL key *does have* additional sp_segs keysegs.
            We'd better delete them now
         */
-        keydef->keysegs-=FT_SEGS;
+        keydef->keysegs-=sp_segs;
       }
+
+      for (j=0, keyseg=keydef->seg ; (int) j < keydef->keysegs ;
+	   j++, keyseg++)
+      {
+        if (keyseg->type != HA_KEYTYPE_BINARY &&
+	    keyseg->type != HA_KEYTYPE_VARBINARY)
+        {
+          my_errno=HA_WRONG_CREATE_OPTION;
+          goto err;
+        }
+      }
+      keydef->keysegs+=sp_segs;
+      key_length+=SPLEN*sp_segs;
+      length++;                              /* At least one length byte */
+      min_key_length_skip+=SPLEN*2*SPDIMS;
+#else
+      my_errno= HA_ERR_UNSUPPORTED;
+      goto err;
+#endif /*HAVE_SPATIAL*/
+    }
+    else
+    if (keydef->flag & HA_FULLTEXT)
+    {
+      keydef->flag=HA_FULLTEXT | HA_PACK_KEY | HA_VAR_LENGTH_KEY;
+      options|=HA_OPTION_PACK_KEYS;             /* Using packed keys */
 
       for (j=0, keyseg=keydef->seg ; (int) j < keydef->keysegs ;
 	   j++, keyseg++)
@@ -262,19 +295,12 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
           goto err;
         }
       }
-      keydef->keysegs+=FT_SEGS;
 
-      key_length+= HA_FT_MAXLEN+HA_FT_WLEN;
-#ifdef EVAL_RUN
-      key_length++;
-#endif
-
+      fulltext_keys++;
+      key_length+= HA_FT_MAXBYTELEN+HA_FT_WLEN;
       length++;                              /* At least one length byte */
-      min_key_length_skipp+=HA_FT_MAXLEN;
-#if HA_FT_MAXLEN >= 255
-      min_key_length_skipp+=2;                  /* prefix may be 3 bytes */
-      length+=2;
-#endif
+      min_key_length_skip+=HA_FT_MAXBYTELEN;
+      real_length_diff=HA_FT_MAXBYTELEN-FT_MAX_WORD_LEN_FOR_SORT;
     }
     else
     {
@@ -331,10 +357,10 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	  keydef->flag |= HA_SPACE_PACK_USED | HA_VAR_LENGTH_KEY;
 	  options|=HA_OPTION_PACK_KEYS;		/* Using packed keys */
 	  length++;				/* At least one length byte */
-	  min_key_length_skipp+=keyseg->length;
+	  min_key_length_skip+=keyseg->length;
 	  if (keyseg->length >= 255)
 	  {					/* prefix may be 3 bytes */
-	    min_key_length_skipp+=2;
+	    min_key_length_skip+=2;
 	    length+=2;
 	  }
 	}
@@ -343,10 +369,10 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	  keydef->flag|=HA_VAR_LENGTH_KEY;
 	  length++;				/* At least one length byte */
 	  options|=HA_OPTION_PACK_KEYS;		/* Using packed keys */
-	  min_key_length_skipp+=keyseg->length;
+	  min_key_length_skip+=keyseg->length;
 	  if (keyseg->length >= 255)
 	  {					/* prefix may be 3 bytes */
-	    min_key_length_skipp+=2;
+	    min_key_length_skip+=2;
 	    length+=2;
 	  }
 	}
@@ -375,7 +401,8 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	key_segs)
       share.state.rec_per_key_part[key_segs-1]=1L;
     length+=key_length;
-    keydef->block_length= MI_BLOCK_SIZE(length,pointer,MI_MAX_KEYPTR_SIZE);
+    keydef->block_length= MI_BLOCK_SIZE(length-real_length_diff,
+                                        pointer,MI_MAX_KEYPTR_SIZE);
     if (keydef->block_length > MI_MAX_KEY_BLOCK_LENGTH ||
         length >= MI_MAX_KEY_BUFF)
     {
@@ -384,7 +411,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
     }
     set_if_bigger(max_key_block_length,keydef->block_length);
     keydef->keylength= (uint16) key_length;
-    keydef->minlength= (uint16) (length-min_key_length_skipp);
+    keydef->minlength= (uint16) (length-min_key_length_skip);
     keydef->maxlength= (uint16) length;
 
     if (length > max_key_length)
@@ -417,7 +444,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   info_length=base_pos+(uint) (MI_BASE_INFO_SIZE+
 			       keys * MI_KEYDEF_SIZE+
 			       uniques * MI_UNIQUEDEF_SIZE +
-			       (key_segs + unique_key_parts)*MI_KEYSEG_SIZE+
+			       (key_segs + unique_key_parts)*HA_KEYSEG_SIZE+
 			       columns*MI_COLUMNDEF_SIZE);
 
   bmove(share.state.header.file_version,(byte*) myisam_file_magic,4);
@@ -430,7 +457,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   mi_int2store(share.state.header.base_info_length,MI_BASE_INFO_SIZE);
   mi_int2store(share.state.header.base_pos,base_pos);
   share.state.header.language= (ci->language ?
-				ci->language : MY_CHARSET_CURRENT);
+				ci->language : default_charset_info->number);
   share.state.header.max_block_size=max_key_block_length/MI_MIN_KEY_BLOCK_LENGTH;
 
   share.state.dellink = HA_OFFSET_ERROR;
@@ -442,12 +469,18 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   share.state.auto_increment=ci->auto_increment;
   share.options=options;
   share.base.rec_reflength=pointer;
+  /* Get estimate for index file length (this may be wrong for FT keys) */
+  tmp= (tot_length + max_key_block_length * keys *
+	MI_INDEX_BLOCK_MARGIN) / MI_MIN_KEY_BLOCK_LENGTH;
+  /*
+    use maximum of key_file_length we calculated and key_file_length value we
+    got from MYI file header (see also myisampack.c:save_state)
+  */
   share.base.key_reflength=
-    mi_get_pointer_length((tot_length + max_key_block_length * keys *
-			   MI_INDEX_BLOCK_MARGIN) / MI_MIN_KEY_BLOCK_LENGTH,
-			  3);
-  share.base.keys= share.state.header.keys = keys;
+    mi_get_pointer_length(max(ci->key_file_length,tmp),3);
+  share.base.keys= share.state.header.keys= keys;
   share.state.header.uniques= uniques;
+  share.state.header.fulltext_keys= fulltext_keys;
   mi_int2store(share.state.header.key_parts,key_segs);
   mi_int2store(share.state.header.unique_key_parts,unique_key_parts);
 
@@ -503,9 +536,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
     create_flag=MY_DELETE_OLD;
   }
 
-  if ((file= my_create_with_symlink(linkname_ptr,
-				    filename,
-				    0, O_RDWR | O_TRUNC,
+  if ((file= my_create_with_symlink(linkname_ptr, filename, 0, create_mode,
 				    MYF(MY_WME | create_flag))) < 0)
     goto err;
   errpos=1;
@@ -516,7 +547,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
     if (share.base.raid_type)
     {
       (void) fn_format(filename,name,"",MI_NAME_DEXT,2+4);
-      if ((dfile=my_raid_create(filename,0,O_RDWR | O_TRUNC,
+      if ((dfile=my_raid_create(filename, 0, create_mode,
 				share.base.raid_type,
 				share.base.raid_chunks,
 				share.base.raid_chunksize,
@@ -539,9 +570,8 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
 	linkname_ptr=0;
 	create_flag=MY_DELETE_OLD;
       }
-      if ((dfile= 
-	   my_create_with_symlink(linkname_ptr, filename,
-				  0,O_RDWR | O_TRUNC,
+      if ((dfile=
+	   my_create_with_symlink(linkname_ptr, filename, 0, create_mode,
 				  MYF(MY_WME | create_flag))) < 0)
 	goto err;
     }
@@ -563,20 +593,30 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   /* Write key and keyseg definitions */
   for (i=0 ; i < share.base.keys - uniques; i++)
   {
-    uint ft_segs=(keydefs[i].flag & HA_FULLTEXT) ? FT_SEGS : 0;
+    uint sp_segs=(keydefs[i].flag & HA_SPATIAL) ? 2*SPDIMS : 0;
 
     if (mi_keydef_write(file, &keydefs[i]))
       goto err;
-    for (j=0 ; j < keydefs[i].keysegs-ft_segs ; j++)
+    for (j=0 ; j < keydefs[i].keysegs-sp_segs ; j++)
       if (mi_keyseg_write(file, &keydefs[i].seg[j]))
-	goto err;
-    for (j=0 ; j < ft_segs ; j++)
+       goto err;
+#ifdef HAVE_SPATIAL
+    for (j=0 ; j < sp_segs ; j++)
     {
-      MI_KEYSEG seg=ft_keysegs[j];
-      seg.language= keydefs[i].seg[0].language;
-      if (mi_keyseg_write(file, &seg))
+      HA_KEYSEG sseg;
+      sseg.type=SPTYPE;
+      sseg.language= 7;
+      sseg.null_bit=0;
+      sseg.bit_start=0;
+      sseg.bit_end=0;
+      sseg.length=SPLEN;
+      sseg.null_pos=0;
+      sseg.start=j*SPLEN;
+      sseg.flag= HA_SWAP_KEY;
+      if (mi_keyseg_write(file, &sseg))
         goto err;
     }
+#endif
   }
   /* Create extra keys for unique definitions */
   offset=reclength-uniques*MI_UNIQUE_HASH_LENGTH;

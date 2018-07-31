@@ -41,7 +41,7 @@ const char * NEAR globerrs[GLOBERRS]=
   "Can't change dir to '%s' (Errcode: %d)",
   "Warning: '%s' had %d links",
   "%d files and %d streams is left open\n",
-  "Disk is full writing '%s'. Waiting for someone to free space...",
+  "Disk is full writing '%s' (Errcode: %d). Waiting for someone to free space... Retry in %d secs",
   "Can't create directory '%s' (Errcode: %d)",
   "Character set '%s' is not a compiled character set and is not specified in the '%s' file",
   "Out of resources when opening file '%s' (Errcode: %d)",
@@ -83,7 +83,7 @@ void init_glob_errs()
   EE(EE_OPEN_WARNING)	= "%d files and %d streams is left open\n";
   EE(EE_DISK_FULL)	= "Disk is full writing '%s'. Waiting for someone to free space...";
   EE(EE_CANT_MKDIR)	="Can't create directory '%s' (Errcode: %d)";
-  EE(EE_UNKNOWN_CHARSET)= "Character set is not a compiled character set and is not specified in the %s file";
+  EE(EE_UNKNOWN_CHARSET)= "Character set '%s' is not a compiled character set and is not specified in the %s file";
   EE(EE_OUT_OF_FILERESOURCES)="Out of resources when opening file '%s' (Errcode: %d)";
   EE(EE_CANT_READLINK)=	"Can't read value for symlink '%s' (Error %d)";
   EE(EE_CANT_SYMLINK)=	"Can't create symlink '%s' pointing at '%s' (Error %d)";

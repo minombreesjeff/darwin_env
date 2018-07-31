@@ -1,4 +1,4 @@
-/* Copyright (C) 2000 MySQL AB
+/* Copyright (C) 2000-2003 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,7 +15,8 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
 /*
-   Copyright (C) 2003  by Sathit Jittanupat <jsat66@hotmail.com,jsat66@yahoo.com>
+   Copyright (C) 2003  by Sathit Jittanupat
+          <jsat66@hotmail.com,jsat66@yahoo.com>
 	* solving bug crash with long text field string
 	* sorting with different number of space or sign char. within string
 
@@ -53,6 +54,9 @@
 #include "m_ctype.h"
 #include "t_ctype.h"
 
+#ifdef HAVE_CHARSET_tis620
+
+#define BUFFER_MULTIPLY 4
 #define M  L_MIDDLE
 #define U  L_UPPER
 #define L  L_LOWER
@@ -60,7 +64,7 @@
 #define X  L_MIDDLE
 
 
-int t_ctype[][TOT_LEVELS] = {
+static int t_ctype[][TOT_LEVELS] = {
     /*0x00*/ { IGNORE, IGNORE, IGNORE, IGNORE, X },
     /*0x01*/ { IGNORE, IGNORE, IGNORE, IGNORE, X },
     /*0x02*/ { IGNORE, IGNORE, IGNORE, IGNORE, X },
@@ -320,7 +324,7 @@ int t_ctype[][TOT_LEVELS] = {
     /*0xFF*/ { 255 /*IGNORE*/, IGNORE, IGNORE, IGNORE, X },
 };
 
-uchar NEAR ctype_tis620[257] =
+static uchar NEAR ctype_tis620[257] =
 {
   0,				/* For standard library */
   32,32,32,32,32,32,32,32,32,40,40,40,40,40,32,32,
@@ -341,7 +345,7 @@ uchar NEAR ctype_tis620[257] =
   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 };
 
-uchar NEAR to_lower_tis620[]=
+static uchar NEAR to_lower_tis620[]=
 {
   '\000','\001','\002','\003','\004','\005','\006','\007',
   '\010','\011','\012','\013','\014','\015','\016','\017',
@@ -377,7 +381,7 @@ uchar NEAR to_lower_tis620[]=
   (uchar) '\370',(uchar) '\371',(uchar) '\372',(uchar) '\373',(uchar) '\374',(uchar) '\375',(uchar) '\376',(uchar) '\377',
 };
 
-uchar NEAR to_upper_tis620[]=
+static uchar NEAR to_upper_tis620[]=
 {
   '\000','\001','\002','\003','\004','\005','\006','\007',
   '\010','\011','\012','\013','\014','\015','\016','\017',
@@ -413,7 +417,7 @@ uchar NEAR to_upper_tis620[]=
   (uchar) '\370',(uchar) '\371',(uchar) '\372',(uchar) '\373',(uchar) '\374',(uchar) '\375',(uchar) '\376',(uchar) '\377',
 };
 
-uchar NEAR sort_order_tis620[]=
+static uchar NEAR sort_order_tis620[]=
 {
   '\000','\001','\002','\003','\004','\005','\006','\007',
   '\010','\011','\012','\013','\014','\015','\016','\017',
@@ -452,17 +456,20 @@ uchar NEAR sort_order_tis620[]=
 
 /*
   Convert thai string to "Standard C String Function" sortable string
-  Arg: const source string and length of converted string
-  Ret: Sortable string
+
+  SYNOPSIS
+    thai2sortable()
+    tstr		String to convert. Does not have to end with \0
+    len			Length of tstr
 */
 
-static void _thai2sortable(uchar *tstr)
+static uint thai2sortable(uchar *tstr, uint len)
 {
   uchar	*p;
-  int	len, tlen;
+  int	tlen;
   uchar	l2bias;
 
-  tlen= len=	strlen (tstr);
+  tlen= len;
   l2bias= 	256 - 8;
   for (p= tstr; tlen > 0; p++, tlen--)
   {
@@ -474,7 +481,7 @@ static void _thai2sortable(uchar *tstr)
 		    
       if (isconsnt(c))
 	l2bias	-= 8;
-      if (isldvowel(c) && isconsnt(p[1]))
+      if (isldvowel(c) && tlen != 1 && isconsnt(p[1]))
       {
 	/* simply swap between leading-vowel and consonant */
 	*p= p[1];
@@ -491,7 +498,7 @@ static void _thai2sortable(uchar *tstr)
 	  l2bias use to control position weight of l2char
 	  example (*=l2char) XX*X must come before X*XX
 	*/
-	strmov(p,p+1);
+	memcpy_overlap((char*) p, (char*) (p+1), tlen-1);
 	tstr[len-1]= l2bias + t_ctype0[1]- L2_GARAN +1;
 	p--;
 	continue;
@@ -503,6 +510,7 @@ static void _thai2sortable(uchar *tstr)
       *p= to_lower_tis620[c]; 
     }
   }
+  return len;
 }
 
 
@@ -510,32 +518,104 @@ static void _thai2sortable(uchar *tstr)
   strncoll() replacement, compare 2 string, both are converted to sortable
   string
 
- Arg: 2 Strings and it compare length
- Ret: strcmp result
+  NOTE:
+    We can't cut strings at end \0 as this would break comparision with
+    LIKE characters, where the min range is stored as end \0
+
+  Arg: 2 Strings and it compare length
+  Ret: strcmp result
 */
 
-int my_strnncoll_tis620(const uchar * s1, int len1, const uchar * s2, int len2)
+static
+int my_strnncoll_tis620(CHARSET_INFO *cs __attribute__((unused)),
+                        const uchar * s1, uint len1, 
+                        const uchar * s2, uint len2,
+                        my_bool s2_is_prefix)
 {
   uchar	buf[80] ;
   uchar *tc1, *tc2;
   int i;
 
-  len1= (int) strnlen((char*) s1,len1);
-  len2= (int) strnlen((char*) s2,len2);
+  if (s2_is_prefix && len1 > len2)
+    len1= len2;
+
   tc1= buf;
   if ((len1 + len2 +2) > (int) sizeof(buf))
-    tc1= (uchar*) malloc(len1+len2);
+    tc1= (uchar*) malloc(len1+len2+2);
   tc2= tc1 + len1+1;
   memcpy((char*) tc1, (char*) s1, len1);
   tc1[len1]= 0;		/* if length(s1)> len1, need to put 'end of string' */
   memcpy((char *)tc2, (char *)s2, len2);
   tc2[len2]= 0;		/* put end of string */
-  _thai2sortable(tc1);
-  _thai2sortable(tc2);
+  thai2sortable(tc1, len1);
+  thai2sortable(tc2, len2);
   i= strcmp((char*)tc1, (char*)tc2);
   if (tc1 != buf)
     free(tc1);
   return i;
+}
+
+
+static
+int my_strnncollsp_tis620(CHARSET_INFO * cs __attribute__((unused)),
+			  const uchar *a0, uint a_length, 
+			  const uchar *b0, uint b_length)
+{
+  uchar	buf[80] ;
+  uchar *end, *a, *b, *alloced= NULL;
+  uint length;
+  int res= 0;
+  
+  a= buf;
+  if ((a_length + b_length +2) > (int) sizeof(buf))
+    alloced= a= (uchar*) malloc(a_length+b_length+2);
+  
+  b= a + a_length+1;
+  memcpy((char*) a, (char*) a0, a_length);
+  a[a_length]= 0;	/* if length(a0)> len1, need to put 'end of string' */
+  memcpy((char *)b, (char *)b0, b_length);
+  b[b_length]= 0;	/* put end of string */
+  a_length= thai2sortable(a, a_length);
+  b_length= thai2sortable(b, b_length);
+  
+  end= a + (length= min(a_length, b_length));
+  while (a < end)
+  {
+    if (*a++ != *b++)
+    {
+      res= ((int) a[-1] - (int) b[-1]);
+      goto ret;
+    }
+  }
+  if (a_length != b_length)
+  {
+    int swap= 1;
+    /*
+      Check the next not space character of the longer key. If it's < ' ',
+      then it's smaller than the other key.
+    */
+    if (a_length < b_length)
+    {
+      /* put shorter key in s */
+      a_length= b_length;
+      a= b;
+      swap= -1;					/* swap sign of result */
+    }
+    for (end= a + a_length-length; a < end ; a++)
+    {
+      if (*a != ' ')
+      {
+	res= (*a < ' ') ? -swap : swap;
+	goto ret;
+      }
+    }
+  }
+  
+ret:
+  
+  if (alloced)
+    free(alloced);
+  return res;
 }
 
 
@@ -546,40 +626,20 @@ int my_strnncoll_tis620(const uchar * s1, int len1, const uchar * s2, int len2)
   Ret: Conveted string size
 */
 
-int my_strnxfrm_tis620(uchar * dest, const uchar * src, int len, int srclen)
+static
+int my_strnxfrm_tis620(CHARSET_INFO *cs __attribute__((unused)),
+                       uchar * dest, uint len,
+                       const uchar * src, uint srclen)
 {
-  if (len > srclen)
-    len= srclen ;
-  strnmov(dest, src, len) ;
-  dest[len]= 0;		/* if length(src) > len, need to put 'end of string' */
-  _thai2sortable(dest);
-  return strlen(dest); 
+  uint dstlen= len;
+  len= (uint) (strmake((char*) dest, (char*) src, min(len, srclen)) -
+	       (char*) dest);
+  len= thai2sortable(dest, len);
+  if (dstlen > len)
+    bfill(dest + len, dstlen - len, ' ');
+  return dstlen;
 }
 
-
-/*
-  strcoll replacment, compare 2 strings
-  Arg: 2 strings
-  Ret: strcmp result
-*/
-
-int my_strcoll_tis620(const uchar * s1, const uchar * s2)
-{
-  return my_strnncoll_tis620(s1, strlen((char *)s1),s2,strlen((char *)s2));
-}
-
-
-/*
-  strxfrm replacment, convert Thai string to sortable string
-
-  Arg: Destination buffer, String and	dest buffer size
-  Ret: Converting string size
-*/
-
-int my_strxfrm_tis620(uchar * dest, const uchar * src, int len)
-{
-  return my_strnxfrm_tis620(dest,src,len,strlen((char *)src));
-}
 
 
 /*
@@ -588,19 +648,22 @@ int my_strxfrm_tis620(uchar * dest, const uchar * src, int len)
   Arg: String, its length, escape character, resource length,
        minimal string and maximum string
   Ret: Always 0
-*/
 
-/*
-  We just copy this function from opt_range.cc. No need to convert to
-  thai2sortable string. min_str and max_str will be use for comparison and
-  converted there.
+  IMPLEMENTATION
+    We just copy this function from opt_range.cc. No need to convert to
+    thai2sortable string. min_str and max_str will be use for comparison and
+    converted there.
+
+  RETURN VALUES
+    0
 */
 
 #define max_sort_chr ((char) 255)
-#define wild_one '_'
-#define wild_many '%'
 
-my_bool my_like_range_tis620(const char *ptr, uint ptr_length, pchar escape,
+static
+my_bool my_like_range_tis620(CHARSET_INFO *cs __attribute__((unused)),
+			     const char *ptr, uint ptr_length,
+			     pbool escape, pbool w_one, pbool w_many,
 			     uint res_length, char *min_str, char *max_str,
 			     uint *min_length, uint *max_length)
 {
@@ -612,22 +675,23 @@ my_bool my_like_range_tis620(const char *ptr, uint ptr_length, pchar escape,
   {
     if (*ptr == escape && ptr+1 != end)
     {
-      ptr++;					/* Skipp escape */
+      ptr++;					/* Skip escape */
       *min_str++ = *max_str++ = *ptr;
       continue;
     }
-    if (*ptr == wild_one)			/* '_' in SQL */
+    if (*ptr == w_one)				/* '_' in SQL */
     {
       *min_str++='\0';				/* This should be min char */
       *max_str++=max_sort_chr;
       continue;
     }
-    if (*ptr == wild_many)			/* '%' in SQL */
+    if (*ptr == w_many)				/* '%' in SQL */
     {
       *min_length= (uint) (min_str - min_org);
       *max_length=res_length;
-      do {
-	*min_str++ = ' ';		/* Because of key compression */
+      do
+      {
+	*min_str++ = 0;
 	*max_str++ = max_sort_chr;
       } while (min_str != min_end);
       return 0;
@@ -637,43 +701,310 @@ my_bool my_like_range_tis620(const char *ptr, uint ptr_length, pchar escape,
   *min_length= *max_length = (uint) (min_str - min_org);
 
   while (min_str != min_end)
-    *min_str++= *max_str++ = ' ';	/* Because of key compression */
+    *min_str++ = *max_str++ = ' ';	/* Because of key compression */
   return 0;
 }
 
 
-/*
-  Thai normalization for input sub system
+static unsigned short cs_to_uni[256]={
+0x0000,0x0001,0x0002,0x0003,0x0004,0x0005,0x0006,0x0007,
+0x0008,0x0009,0x000A,0x000B,0x000C,0x000D,0x000E,0x000F,
+0x0010,0x0011,0x0012,0x0013,0x0014,0x0015,0x0016,0x0017,
+0x0018,0x0019,0x001A,0x001B,0x001C,0x001D,0x001E,0x001F,
+0x0020,0x0021,0x0022,0x0023,0x0024,0x0025,0x0026,0x0027,
+0x0028,0x0029,0x002A,0x002B,0x002C,0x002D,0x002E,0x002F,
+0x0030,0x0031,0x0032,0x0033,0x0034,0x0035,0x0036,0x0037,
+0x0038,0x0039,0x003A,0x003B,0x003C,0x003D,0x003E,0x003F,
+0x0040,0x0041,0x0042,0x0043,0x0044,0x0045,0x0046,0x0047,
+0x0048,0x0049,0x004A,0x004B,0x004C,0x004D,0x004E,0x004F,
+0x0050,0x0051,0x0052,0x0053,0x0054,0x0055,0x0056,0x0057,
+0x0058,0x0059,0x005A,0x005B,0x005C,0x005D,0x005E,0x005F,
+0x0060,0x0061,0x0062,0x0063,0x0064,0x0065,0x0066,0x0067,
+0x0068,0x0069,0x006A,0x006B,0x006C,0x006D,0x006E,0x006F,
+0x0070,0x0071,0x0072,0x0073,0x0074,0x0075,0x0076,0x0077,
+0x0078,0x0079,0x007A,0x007B,0x007C,0x007D,0x007E,0x007F,
+0x0080,0x0081,0x0082,0x0083,0x0084,0x0085,0x0086,0x0087,
+0x0088,0x0089,0x008A,0x008B,0x008C,0x008D,0x008E,0x008F,
+0x0090,0x0091,0x0092,0x0093,0x0094,0x0095,0x0096,0x0097,
+0x0098,0x0099,0x009A,0x009B,0x009C,0x009D,0x009E,0x009F,
+0xFFFD,0x0E01,0x0E02,0x0E03,0x0E04,0x0E05,0x0E06,0x0E07,
+0x0E08,0x0E09,0x0E0A,0x0E0B,0x0E0C,0x0E0D,0x0E0E,0x0E0F,
+0x0E10,0x0E11,0x0E12,0x0E13,0x0E14,0x0E15,0x0E16,0x0E17,
+0x0E18,0x0E19,0x0E1A,0x0E1B,0x0E1C,0x0E1D,0x0E1E,0x0E1F,
+0x0E20,0x0E21,0x0E22,0x0E23,0x0E24,0x0E25,0x0E26,0x0E27,
+0x0E28,0x0E29,0x0E2A,0x0E2B,0x0E2C,0x0E2D,0x0E2E,0x0E2F,
+0x0E30,0x0E31,0x0E32,0x0E33,0x0E34,0x0E35,0x0E36,0x0E37,
+0x0E38,0x0E39,0x0E3A,0xFFFD,0xFFFD,0xFFFD,0xFFFD,0x0E3F,
+0x0E40,0x0E41,0x0E42,0x0E43,0x0E44,0x0E45,0x0E46,0x0E47,
+0x0E48,0x0E49,0x0E4A,0x0E4B,0x0E4C,0x0E4D,0x0E4E,0x0E4F,
+0x0E50,0x0E51,0x0E52,0x0E53,0x0E54,0x0E55,0x0E56,0x0E57,
+0x0E58,0x0E59,0x0E5A,0x0E5B,0xFFFD,0xFFFD,0xFFFD,0xFFFD
+};
+static unsigned char pl00[256]={
+0x0000,0x0001,0x0002,0x0003,0x0004,0x0005,0x0006,0x0007,
+0x0008,0x0009,0x000A,0x000B,0x000C,0x000D,0x000E,0x000F,
+0x0010,0x0011,0x0012,0x0013,0x0014,0x0015,0x0016,0x0017,
+0x0018,0x0019,0x001A,0x001B,0x001C,0x001D,0x001E,0x001F,
+0x0020,0x0021,0x0022,0x0023,0x0024,0x0025,0x0026,0x0027,
+0x0028,0x0029,0x002A,0x002B,0x002C,0x002D,0x002E,0x002F,
+0x0030,0x0031,0x0032,0x0033,0x0034,0x0035,0x0036,0x0037,
+0x0038,0x0039,0x003A,0x003B,0x003C,0x003D,0x003E,0x003F,
+0x0040,0x0041,0x0042,0x0043,0x0044,0x0045,0x0046,0x0047,
+0x0048,0x0049,0x004A,0x004B,0x004C,0x004D,0x004E,0x004F,
+0x0050,0x0051,0x0052,0x0053,0x0054,0x0055,0x0056,0x0057,
+0x0058,0x0059,0x005A,0x005B,0x005C,0x005D,0x005E,0x005F,
+0x0060,0x0061,0x0062,0x0063,0x0064,0x0065,0x0066,0x0067,
+0x0068,0x0069,0x006A,0x006B,0x006C,0x006D,0x006E,0x006F,
+0x0070,0x0071,0x0072,0x0073,0x0074,0x0075,0x0076,0x0077,
+0x0078,0x0079,0x007A,0x007B,0x007C,0x007D,0x007E,0x007F,
+0x0080,0x0081,0x0082,0x0083,0x0084,0x0085,0x0086,0x0087,
+0x0088,0x0089,0x008A,0x008B,0x008C,0x008D,0x008E,0x008F,
+0x0090,0x0091,0x0092,0x0093,0x0094,0x0095,0x0096,0x0097,
+0x0098,0x0099,0x009A,0x009B,0x009C,0x009D,0x009E,0x009F,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000
+};
+static unsigned char pl0E[256]={
+0x0000,0x00A1,0x00A2,0x00A3,0x00A4,0x00A5,0x00A6,0x00A7,
+0x00A8,0x00A9,0x00AA,0x00AB,0x00AC,0x00AD,0x00AE,0x00AF,
+0x00B0,0x00B1,0x00B2,0x00B3,0x00B4,0x00B5,0x00B6,0x00B7,
+0x00B8,0x00B9,0x00BA,0x00BB,0x00BC,0x00BD,0x00BE,0x00BF,
+0x00C0,0x00C1,0x00C2,0x00C3,0x00C4,0x00C5,0x00C6,0x00C7,
+0x00C8,0x00C9,0x00CA,0x00CB,0x00CC,0x00CD,0x00CE,0x00CF,
+0x00D0,0x00D1,0x00D2,0x00D3,0x00D4,0x00D5,0x00D6,0x00D7,
+0x00D8,0x00D9,0x00DA,0x0000,0x0000,0x0000,0x0000,0x00DF,
+0x00E0,0x00E1,0x00E2,0x00E3,0x00E4,0x00E5,0x00E6,0x00E7,
+0x00E8,0x00E9,0x00EA,0x00EB,0x00EC,0x00ED,0x00EE,0x00EF,
+0x00F0,0x00F1,0x00F2,0x00F3,0x00F4,0x00F5,0x00F6,0x00F7,
+0x00F8,0x00F9,0x00FA,0x00FB,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000
+};
+static unsigned char plFF[256]={
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,
+0x0000,0x0000,0x0000,0x0000,0x0000,0x00FF,0x0000,0x0000
+};
+static unsigned char *uni_to_cs[256]={
+pl00,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,pl0E,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,plFF
+};
 
-  Arg: Buffer, 's length, String, 'length
-*/
 
-void ThNormalize(uchar* ptr, uint field_length, const uchar* from, uint length)
+static
+int my_mb_wc_tis620(CHARSET_INFO *cs  __attribute__((unused)),
+		  my_wc_t *wc,
+		  const unsigned char *str,
+		  const unsigned char *end __attribute__((unused)))
 {
-  const uchar *fr= from;
-  uchar *p= ptr;
-  uint	i; 
-
-  if (length > field_length)
-    length= field_length;
-
-  for (i=0;i<length;i++,p++,fr++)
-  {
-    *p= *fr ;
-	
-    /* Sathit's NOTE: it's better idea not to do any normalize */
-    if (istone(*fr) || isdiacrt1(*fr))
-    {
-      if (i > 0 && (islwrvowel(fr[-1]) || isuprvowel(fr[-1])))
-	continue;
-      if(islwrvowel(fr[1]) || isuprvowel(fr[1]))
-      {
-	*p= fr[1];
-	p[1]= *fr;
-	fr++;
-	p++;
-	i++;
-      }
-    }
-  }
+  if (str >= end)
+    return MY_CS_TOOFEW(0);
+  
+  *wc=cs_to_uni[*str];
+  return (!wc[0] && str[0]) ? MY_CS_ILSEQ : 1;
 }
+
+static
+int my_wc_mb_tis620(CHARSET_INFO *cs  __attribute__((unused)),
+		  my_wc_t wc,
+		  unsigned char *str,
+		  unsigned char *end __attribute__((unused)))
+{
+  unsigned char *pl;
+  
+  if (str >= end)
+    return MY_CS_TOOSMALL;
+  
+  pl= uni_to_cs[(wc>>8) & 0xFF];
+  str[0]= pl ? pl[wc & 0xFF] : '\0';
+  return (!str[0] && wc) ? MY_CS_ILUNI : 1;
+}
+
+
+static MY_COLLATION_HANDLER my_collation_ci_handler =
+{
+    NULL,		/* init */
+    my_strnncoll_tis620,
+    my_strnncollsp_tis620,
+    my_strnxfrm_tis620,
+    my_like_range_tis620,
+    my_wildcmp_8bit,	/* wildcmp   */
+    my_strcasecmp_8bit,
+    my_instr_simple,				/* QQ: To be fixed */
+    my_hash_sort_simple,
+};
+
+static MY_CHARSET_HANDLER my_charset_handler=
+{
+    NULL,		/* init */
+    NULL,		/* ismbchar  */
+    my_mbcharlen_8bit,	/* mbcharlen */
+    my_numchars_8bit,
+    my_charpos_8bit,
+    my_well_formed_len_8bit,
+    my_lengthsp_8bit,
+    my_numcells_8bit,
+    my_mb_wc_tis620,	/* mb_wc     */
+    my_wc_mb_tis620,	/* wc_mb     */
+    my_caseup_str_8bit,
+    my_casedn_str_8bit,
+    my_caseup_8bit,
+    my_casedn_8bit,
+    my_snprintf_8bit,
+    my_long10_to_str_8bit,
+    my_longlong10_to_str_8bit,
+    my_fill_8bit,
+    my_strntol_8bit,
+    my_strntoul_8bit,
+    my_strntoll_8bit,
+    my_strntoull_8bit,
+    my_strntod_8bit,
+    my_strtoll10_8bit,
+    my_scan_8bit
+};
+
+
+
+CHARSET_INFO my_charset_tis620_thai_ci=
+{
+    18,0,0,		/* number    */
+    MY_CS_COMPILED|MY_CS_PRIMARY|MY_CS_STRNXFRM,	/* state     */
+    "tis620",		/* cs name    */
+    "tis620_thai_ci",	/* name      */
+    "",			/* comment   */
+    NULL,		/* tailoring */
+    ctype_tis620,
+    to_lower_tis620,
+    to_upper_tis620,
+    sort_order_tis620,
+    NULL,		/* contractions */
+    NULL,		/* sort_order_big*/
+    NULL,		/* tab_to_uni   */
+    NULL,		/* tab_from_uni */
+    NULL,		/* state_map    */
+    NULL,		/* ident_map    */
+    4,			/* strxfrm_multiply */
+    1,			/* mbminlen   */
+    1,			/* mbmaxlen  */
+    0,			/* min_sort_char */
+    0,			/* max_sort_char */
+    &my_charset_handler,
+    &my_collation_ci_handler
+};
+
+CHARSET_INFO my_charset_tis620_bin=
+{
+    89,0,0,		/* number    */
+    MY_CS_COMPILED|MY_CS_BINSORT,	/* state     */
+    "tis620",		/* cs name    */
+    "tis620_bin",	/* name      */
+    "",			/* comment   */
+    NULL,		/* tailoring */
+    ctype_tis620,
+    to_lower_tis620,
+    to_upper_tis620,
+    NULL,		/* sort_order   */
+    NULL,		/* contractions */
+    NULL,		/* sort_order_big*/
+    NULL,		/* tab_to_uni   */
+    NULL,		/* tab_from_uni */
+    NULL,		/* state_map    */
+    NULL,		/* ident_map    */
+    1,			/* strxfrm_multiply */
+    1,			/* mbminlen   */
+    1,			/* mbmaxlen  */
+    0,			/* min_sort_char */
+    0,			/* max_sort_char */
+    &my_charset_handler,
+    &my_collation_8bit_bin_handler
+};
+
+
+#endif

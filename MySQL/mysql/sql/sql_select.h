@@ -27,8 +27,10 @@
 typedef struct keyuse_t {
   TABLE *table;
   Item	*val;				/* or value if no field */
-  uint	key,keypart;
   table_map used_tables;
+  uint	key, keypart, optimize;
+  key_part_map keypart_map;
+  ha_rows      ref_table_rows;
 } KEYUSE;
 
 class store_key;
@@ -44,6 +46,8 @@ typedef struct st_table_ref
   store_key     **key_copy;               //
   Item          **items;                  // val()'s for each keypart
   table_map	depend_map;		  // Table depends on these tables.
+  byte          *null_ref_key;		  // null byte position in the key_buf.
+  					  // used for REF_OR_NULL optimization.
 } TABLE_REF;
 
 /*
@@ -73,7 +77,8 @@ typedef struct st_join_cache {
 */
 
 enum join_type { JT_UNKNOWN,JT_SYSTEM,JT_CONST,JT_EQ_REF,JT_REF,JT_MAYBE_REF,
-		 JT_ALL, JT_RANGE, JT_NEXT, JT_FT};
+		 JT_ALL, JT_RANGE, JT_NEXT, JT_FT, JT_REF_OR_NULL,
+		 JT_UNIQUE_SUBQUERY, JT_INDEX_SUBQUERY};
 
 class JOIN;
 
@@ -92,9 +97,9 @@ typedef struct st_join_table {
   key_map	const_keys;			/* Keys with constant part */
   key_map	checked_keys;			/* Keys checked in find_best */
   key_map	needed_reg;
+  key_map       keys;                           /* all keys with can be used */
   ha_rows	records,found_records,read_time;
   table_map	dependent,key_dependent;
-  uint		keys;				/* all keys with can be used */
   uint		use_quick,index;
   uint		status;				// Save status for cache
   uint		used_fields,used_fieldlength,used_blobs;
@@ -103,77 +108,203 @@ typedef struct st_join_table {
   TABLE_REF	ref;
   JOIN_CACHE	cache;
   JOIN		*join;
+
+  void cleanup();
 } JOIN_TAB;
 
 
-typedef struct st_position {			/* Used in find_best */
+typedef struct st_position			/* Used in find_best */
+{
   double records_read;
   JOIN_TAB *table;
   KEYUSE *key;
 } POSITION;
 
+typedef struct st_rollup
+{
+  enum State { STATE_NONE, STATE_INITED, STATE_READY };
+  State state;
+  Item *item_null;
+  Item ***ref_pointer_arrays;
+  List<Item> *fields;
+} ROLLUP;
 
-/* Param to create temporary tables when doing SELECT:s */
 
-class TMP_TABLE_PARAM :public Sql_alloc
+class JOIN :public Sql_alloc
 {
  public:
-  List<Item> copy_funcs;
-  List_iterator_fast<Item> copy_funcs_it;
-  Copy_field *copy_field, *copy_field_end;
-  byte	    *group_buff;
-  Item	    **items_to_copy;			/* Fields in tmp table */
-  MI_COLUMNDEF *recinfo,*start_recinfo;
-  KEY *keyinfo;
-  ha_rows end_write_records;
-  uint	field_count,sum_func_count,func_count;
-  uint  hidden_field_count;
-  uint	group_parts,group_length,group_null_parts;
-  uint	quick_group;
-  bool  using_indirect_summary_function;
-
-  TMP_TABLE_PARAM()
-    :copy_funcs_it(copy_funcs), copy_field(0), group_parts(0),
-    group_length(0), group_null_parts(0)
-  {}
-  ~TMP_TABLE_PARAM()
-  {
-    cleanup();
-  }
-  inline void cleanup(void)
-  {
-    if (copy_field)				/* Fix for Intel compiler */
-    {
-      delete [] copy_field;
-      copy_field=0;
-    }
-  }
-};
-
-
-class JOIN {
- public:
   JOIN_TAB *join_tab,**best_ref,**map2table;
+  JOIN_TAB *join_tab_save; //saved join_tab for subquery reexecution
   TABLE    **table,**all_tables,*sort_by_table;
   uint	   tables,const_tables;
   uint	   send_group_parts;
   bool	   sort_and_group,first_record,full_join,group, no_field_update;
   bool	   do_send_rows;
   table_map const_table_map,found_const_table_map,outer_join;
-  ha_rows  send_records,found_records,examined_rows,row_limit;
+  ha_rows  send_records,found_records,examined_rows,row_limit, select_limit;
   POSITION positions[MAX_TABLES+1],best_positions[MAX_TABLES+1];
   double   best_read;
   List<Item> *fields;
-  List<Item_buff> group_fields;
+  List<Item_buff> group_fields, group_fields_cache;
   TABLE    *tmp_table;
+  // used to store 2 possible tmp table of SELECT
+  TABLE    *exec_tmp_table1, *exec_tmp_table2;
   THD	   *thd;
-  Item_sum  **sum_funcs;
+  Item_sum  **sum_funcs, ***sum_funcs_end;
+  /* second copy of sumfuncs (for queries with 2 temporary tables */
+  Item_sum  **sum_funcs2, ***sum_funcs_end2;
   Procedure *procedure;
   Item	    *having;
+  Item      *tmp_having; // To store having when processed temporary table
+  Item      *having_history; // Store having for explain
   uint	    select_options;
   select_result *result;
   TMP_TABLE_PARAM tmp_table_param;
   MYSQL_LOCK *lock;
+  // unit structure (with global parameters) for this select
+  SELECT_LEX_UNIT *unit;
+  // select that processed
+  SELECT_LEX *select_lex;
+  
+  JOIN *tmp_join; // copy of this JOIN to be used with temporary tables
+  ROLLUP rollup;				// Used with rollup
+
+  bool select_distinct;				// Set if SELECT DISTINCT
+
+  /*
+    simple_xxxxx is set if ORDER/GROUP BY doesn't include any references
+    to other tables than the first non-constant table in the JOIN.
+    It's also set if ORDER/GROUP BY is empty.
+  */
+  bool simple_order, simple_group;
+  /*
+    Is set only in case if we have a GROUP BY clause
+    and no ORDER BY after constant elimination of 'order'.
+  */
+  bool no_order;
+  /* Is set if we have a GROUP BY and we have ORDER BY on a constant. */
+  bool          skip_sort_order;
+
+  bool need_tmp, hidden_group_fields, buffer_result;
+  DYNAMIC_ARRAY keyuse;
+  Item::cond_result cond_value;
+  List<Item> all_fields; // to store all fields that used in query
+  //Above list changed to use temporary table
+  List<Item> tmp_all_fields1, tmp_all_fields2, tmp_all_fields3;
+  //Part, shared with list above, emulate following list
+  List<Item> tmp_fields_list1, tmp_fields_list2, tmp_fields_list3;
+  List<Item> &fields_list; // hold field list passed to mysql_select
+  int error;
+
+  ORDER *order, *group_list, *proc_param; //hold parameters of mysql_select
+  COND *conds;                            // ---"---
+  Item *conds_history;                    // store WHERE for explain
+  TABLE_LIST *tables_list;           //hold 'tables' parameter of mysql_selec
+  SQL_SELECT *select;                //created in optimisation phase
+  Item **ref_pointer_array; //used pointer reference for this select
+  // Copy of above to be used with different lists
+  Item **items0, **items1, **items2, **items3, **current_ref_pointer_array;
+  uint ref_pointer_array_size; // size of above in bytes
+  const char *zero_result_cause; // not 0 if exec must return zero result
+  
+  bool union_part; // this subselect is part of union 
+  bool optimized; // flag to avoid double optimization in EXPLAIN
+
+  JOIN(THD *thd_arg, List<Item> &fields_arg, ulong select_options_arg,
+       select_result *result_arg)
+    :fields_list(fields_arg)
+  {
+    init(thd_arg, fields_arg, select_options_arg, result_arg);
+  }
+  
+  void init(THD *thd_arg, List<Item> &fields_arg, ulong select_options_arg,
+       select_result *result_arg)
+  {
+    join_tab= join_tab_save= 0;
+    table= 0;
+    tables= 0;
+    const_tables= 0;
+    sort_and_group= 0;
+    first_record= 0;
+    do_send_rows= 1;
+    send_records= 0;
+    found_records= 0;
+    examined_rows= 0;
+    exec_tmp_table1= 0;
+    exec_tmp_table2= 0;
+    thd= thd_arg;
+    sum_funcs= sum_funcs2= 0;
+    procedure= 0;
+    having= tmp_having= having_history= 0;
+    select_options= select_options_arg;
+    result= result_arg;
+    lock= thd_arg->lock;
+    select_lex= 0; //for safety
+    tmp_join= 0;
+    select_distinct= test(select_options & SELECT_DISTINCT);
+    no_order= 0;
+    simple_order= 0;
+    simple_group= 0;
+    skip_sort_order= 0;
+    need_tmp= 0;
+    hidden_group_fields= 0; /*safety*/
+    buffer_result= test(select_options & OPTION_BUFFER_RESULT) &&
+      !test(select_options & OPTION_FOUND_ROWS);
+    all_fields= fields_arg;
+    fields_list= fields_arg;
+    error= 0;
+    select= 0;
+    ref_pointer_array= items0= items1= items2= items3= 0;
+    ref_pointer_array_size= 0;
+    zero_result_cause= 0;
+    optimized= 0;
+
+    fields_list= fields_arg;
+    bzero((char*) &keyuse,sizeof(keyuse));
+    tmp_table_param.copy_field=0;
+    tmp_table_param.end_write_records= HA_POS_ERROR;
+    rollup.state= ROLLUP::STATE_NONE;
+  }
+
+  int prepare(Item ***rref_pointer_array, TABLE_LIST *tables, uint wind_num,
+	      COND *conds, uint og_num, ORDER *order, ORDER *group,
+	      Item *having, ORDER *proc_param, SELECT_LEX *select,
+	      SELECT_LEX_UNIT *unit);
+  int optimize();
+  int reinit();
+  void exec();
+  int cleanup();
+  void restore_tmp();
+  bool alloc_func_list();
+  bool make_sum_func_list(List<Item> &all_fields, List<Item> &send_fields,
+			  bool before_group_by);
+
+  inline void set_items_ref_array(Item **ptr)
+  {
+    memcpy((char*) ref_pointer_array, (char*) ptr, ref_pointer_array_size);
+    current_ref_pointer_array= ptr;
+  }
+  inline void init_items_ref_array()
+  {
+    items0= ref_pointer_array + all_fields.elements;
+    memcpy(items0, ref_pointer_array, ref_pointer_array_size);
+    current_ref_pointer_array= items0;
+  }
+
+  bool rollup_init();
+  bool rollup_make_fields(List<Item> &all_fields, List<Item> &fields,
+			  Item_sum ***func);
+  int rollup_send_data(uint idx);
+  bool test_in_subselect(Item **where);
+  void join_free(bool full);
+  void clear();
+  bool save_join_tab();
+  bool send_row_on_empty_set()
+  {
+    return (do_send_rows && tmp_table_param.sum_func_count != 0 &&
+	    !group_list);
+  }
+  int change_result(select_result *result);
 };
 
 
@@ -188,19 +319,22 @@ void TEST_join(JOIN *join);
 bool store_val_in_field(Field *field,Item *val);
 TABLE *create_tmp_table(THD *thd,TMP_TABLE_PARAM *param,List<Item> &fields,
 			ORDER *group, bool distinct, bool save_sum_fields,
-			bool allow_distinct_limit, ulong select_options);
+			ulong select_options, ha_rows rows_limit,
+			char* alias);
 void free_tmp_table(THD *thd, TABLE *entry);
 void count_field_types(TMP_TABLE_PARAM *param, List<Item> &fields,
 		       bool reset_with_sum_func);
-bool setup_copy_fields(THD *thd, TMP_TABLE_PARAM *param,List<Item> &fields);
+bool setup_copy_fields(THD *thd, TMP_TABLE_PARAM *param,
+		       Item **ref_pointer_array,
+		       List<Item> &new_list1, List<Item> &new_list2,
+		       uint elements, List<Item> &fields);
 void copy_fields(TMP_TABLE_PARAM *param);
 void copy_funcs(Item **func_ptr);
-bool create_myisam_from_heap(THD *Thd, TABLE *table, TMP_TABLE_PARAM *param,
+bool create_myisam_from_heap(THD *thd, TABLE *table, TMP_TABLE_PARAM *param,
 			     int error, bool ignore_last_dupp_error);
 
 /* functions from opt_sum.cc */
 int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds);
-
 
 /* class to copying an field/item to a key struct */
 
@@ -208,7 +342,6 @@ class store_key :public Sql_alloc
 {
  protected:
   Field *to_field;				// Store data here
-  Field *key_field;				// Copy of key field
   char *null_ptr;
   char err;
  public:
@@ -218,10 +351,10 @@ class store_key :public Sql_alloc
     if (field_arg->type() == FIELD_TYPE_BLOB)
       to_field=new Field_varstring(ptr, length, (uchar*) null, 1, 
 				   Field::NONE, field_arg->field_name,
-				   field_arg->table, field_arg->binary());
+				   field_arg->table, field_arg->charset());
     else
     {
-      to_field=field_arg->new_field(&thd->mem_root,field_arg->table);
+      to_field=field_arg->new_field(thd->mem_root,field_arg->table);
       if (to_field)
 	to_field->move_field(ptr, (uchar*) null, 1);
     }
@@ -303,3 +436,5 @@ public:
 
 bool cp_buffer_from_ref(TABLE_REF *ref);
 bool error_if_full_join(JOIN *join);
+int report_error(TABLE *table, int error);
+int safe_index_read(JOIN_TAB *tab);

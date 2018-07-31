@@ -49,18 +49,29 @@ ulint
 buf_read_page_low(
 /*==============*/
 			/* out: 1 if a read request was queued, 0 if the page
-			already resided in buf_pool or if the page is in
+			already resided in buf_pool, or if the page is in
 			the doublewrite buffer blocks in which case it is never
-			read into the pool */
+			read into the pool, or if the tablespace does not
+			exist or is being dropped */
+	ulint*	err,	/* out: DB_SUCCESS or DB_TABLESPACE_DELETED if we are
+			trying to read from a non-existent tablespace, or a
+			tablespace which is just now being dropped */
 	ibool	sync,	/* in: TRUE if synchronous aio is desired */
 	ulint	mode,	/* in: BUF_READ_IBUF_PAGES_ONLY, ...,
 			ORed to OS_AIO_SIMULATED_WAKE_LATER (see below
 			at read-ahead functions) */
 	ulint	space,	/* in: space id */
+	ib_longlong tablespace_version, /* in: if the space memory object has
+			this timestamp different from what we are giving here,
+			treat the tablespace as dropped; this is a timestamp we
+			use to stop dangling page reads from a tablespace
+			which we have DISCARDed + IMPORTed back */
 	ulint	offset)	/* in: page number */
 {
 	buf_block_t*	block;
 	ulint		wake_later;
+
+	*err = DB_SUCCESS;
 
 	wake_later = mode & OS_AIO_SIMULATED_WAKE_LATER;
 	mode = mode & ~OS_AIO_SIMULATED_WAKE_LATER;
@@ -72,6 +83,11 @@ buf_read_page_low(
 		    || (offset >= trx_doublewrite->block2
 		        && offset < trx_doublewrite->block2
 		     		+ TRX_SYS_DOUBLEWRITE_BLOCK_SIZE))) {
+		ut_print_timestamp(stderr);
+		fprintf(stderr,
+"  InnoDB: Warning: trying to read doublewrite buffer page %lu\n",
+			(ulong) offset);
+
 		return(0);
 	}
 
@@ -98,30 +114,41 @@ buf_read_page_low(
 		sync = TRUE;
 	}
 
-	block = buf_page_init_for_read(mode, space, offset);
-
-	if (block != NULL) {
-#ifdef UNIV_DEBUG
-		if (buf_debug_prints) {
-			fprintf(stderr,
-			"Posting read request for page %lu, sync %lu\n",
-				offset, sync);
-		}
-#endif /* UNIV_DEBUG */
-
-		fil_io(OS_FILE_READ | wake_later,
-			sync, space, offset, 0, UNIV_PAGE_SIZE,
-					(void*)block->frame, (void*)block);
-		if (sync) {
-			/* The i/o is already completed when we arrive from
-			fil_read */
-			buf_page_io_complete(block);
-		}
+	/* The following call will also check if the tablespace does not exist
+	or is being dropped; if we succeed in initing the page in the buffer
+	pool for read, then DISCARD cannot proceed until the read has
+	completed */
+	block = buf_page_init_for_read(err, mode, space, tablespace_version,
+								offset);
+	if (block == NULL) {
 		
-		return(1);
+		return(0);
 	}
 
-	return(0);
+#ifdef UNIV_DEBUG
+	if (buf_debug_prints) {
+		fprintf(stderr,
+                        "Posting read request for page %lu, sync %lu\n",
+							   (ulong) offset,
+		       					   (ulong) sync);
+	}
+#endif
+
+	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
+
+	*err = fil_io(OS_FILE_READ | wake_later,
+			sync, space,
+			offset, 0, UNIV_PAGE_SIZE,
+			(void*)block->frame, (void*)block);
+	ut_a(*err == DB_SUCCESS);
+
+	if (sync) {
+		/* The i/o is already completed when we arrive from
+		fil_read */
+		buf_page_io_complete(block);
+	}
+		
+	return(1);
 }	
 
 /************************************************************************
@@ -146,12 +173,14 @@ buf_read_ahead_random(
 	ulint	offset)	/* in: page number of a page which the current thread
 			wants to access */
 {
+	ib_longlong	tablespace_version;
 	buf_block_t*	block;
 	ulint		recent_blocks	= 0;
 	ulint		count;
 	ulint		LRU_recent_limit;
 	ulint		ibuf_mode;
 	ulint		low, high;
+	ulint		err;
 	ulint		i;
 
 	if (srv_startup_is_before_trx_rollback_phase) {
@@ -168,11 +197,16 @@ buf_read_ahead_random(
 		return(0);
 	}
 
+	/* Remember the tablespace version before we ask te tablespace size
+	below: if DISCARD + IMPORT changes the actual .ibd file meanwhile, we
+	do not try to read outside the bounds of the tablespace! */
+
+	tablespace_version = fil_space_get_version(space);
+
 	low  = (offset / BUF_READ_AHEAD_RANDOM_AREA)
 					* BUF_READ_AHEAD_RANDOM_AREA;
 	high = (offset / BUF_READ_AHEAD_RANDOM_AREA + 1)
 					* BUF_READ_AHEAD_RANDOM_AREA;
-
 	if (high > fil_space_get_size(space)) {
 
 		high = fil_space_get_size(space);
@@ -197,7 +231,6 @@ buf_read_ahead_random(
 	that is, reside near the start of the LRU list. */
 
 	for (i = low; i < high; i++) {
-
 		block = buf_page_hash_get(space, i);
 
 		if ((block)
@@ -231,10 +264,17 @@ buf_read_ahead_random(
 		mode: hence FALSE as the first parameter */
 
 		if (!ibuf_bitmap_page(i)) {
-			
-			count += buf_read_page_low(FALSE, ibuf_mode
+			count += buf_read_page_low(&err, FALSE, ibuf_mode
 					| OS_AIO_SIMULATED_WAKE_LATER,
-								space, i);
+				        space, tablespace_version, i);
+			if (err == DB_TABLESPACE_DELETED) {
+				ut_print_timestamp(stderr);
+				fprintf(stderr,
+"  InnoDB: Warning: in random readahead trying to access tablespace\n"
+"InnoDB: %lu page no. %lu,\n"
+"InnoDB: but the tablespace does not exist or is just being dropped.\n",
+					(ulong) space, (ulong) i);
+			}
 		}
 	}
 
@@ -244,13 +284,12 @@ buf_read_ahead_random(
 	
 	os_aio_simulated_wake_handler_threads();
 
-#ifdef UNIV_DEBUG
 	if (buf_debug_prints && (count > 0)) {
 		fprintf(stderr,
 			"Random read-ahead space %lu offset %lu pages %lu\n",
-						space, offset, count);
+						(ulong) space, (ulong) offset,
+		       				(ulong) count);
 	}
-#endif /* UNIV_DEBUG */
 
 	return(count);
 }
@@ -270,15 +309,27 @@ buf_read_page(
 	ulint	space,	/* in: space id */
 	ulint	offset)	/* in: page number */
 {
-	ulint	count;
-	ulint	count2;
+	ib_longlong	tablespace_version;
+	ulint		count;
+	ulint		count2;
+	ulint		err;
+
+	tablespace_version = fil_space_get_version(space);
 
 	count = buf_read_ahead_random(space, offset);
 
 	/* We do the i/o in the synchronous aio mode to save thread
 	switches: hence TRUE */
 
-	count2 = buf_read_page_low(TRUE, BUF_READ_ANY_PAGE, space, offset);
+	count2 = buf_read_page_low(&err, TRUE, BUF_READ_ANY_PAGE, space,
+					tablespace_version, offset);
+	if (err == DB_TABLESPACE_DELETED) {
+	        ut_print_timestamp(stderr);
+		fprintf(stderr,
+"  InnoDB: Error: trying to access tablespace %lu page no. %lu,\n"
+"InnoDB: but the tablespace does not exist or is just being dropped.\n",
+				 (ulong) space, (ulong) offset);
+	}
 
 	/* Flush pages from the end of the LRU list if necessary */
 	buf_flush_free_margin();
@@ -318,6 +369,7 @@ buf_read_ahead_linear(
 	ulint	offset)	/* in: page number of a page; NOTE: the current thread
 			must want access to this page (see NOTE 3 above) */
 {
+	ib_longlong	tablespace_version;
 	buf_block_t*	block;
 	buf_frame_t*	frame;
 	buf_block_t*	pred_block	= NULL;
@@ -329,6 +381,7 @@ buf_read_ahead_linear(
 	ulint		fail_count;
 	ulint		ibuf_mode;
 	ulint		low, high;
+	ulint		err;
 	ulint		i;
 	
 	if (srv_startup_is_before_trx_rollback_phase) {
@@ -356,13 +409,20 @@ buf_read_ahead_linear(
 		return(0);
 	}
 
+	/* Remember the tablespace version before we ask te tablespace size
+	below: if DISCARD + IMPORT changes the actual .ibd file meanwhile, we
+	do not try to read outside the bounds of the tablespace! */
+
+	tablespace_version = fil_space_get_version(space);
+
+	mutex_enter(&(buf_pool->mutex));
+
 	if (high > fil_space_get_size(space)) {
+		mutex_exit(&(buf_pool->mutex));
 		/* The area is not whole, return */
 
 		return(0);
 	}
-
-	mutex_enter(&(buf_pool->mutex));
 
 	if (buf_pool->n_pend_reads >
 			buf_pool->curr_size / BUF_READ_AHEAD_PEND_LIMIT) {
@@ -384,18 +444,15 @@ buf_read_ahead_linear(
 	fail_count = 0;
 
 	for (i = low; i < high; i++) {
-
 		block = buf_page_hash_get(space, i);
 		
 		if ((block == NULL) || !block->accessed) {
-
 			/* Not accessed */
 			fail_count++;
 
 		} else if (pred_block && (ut_ulint_cmp(block->LRU_position,
 				      		    pred_block->LRU_position)
 			       		  != asc_or_desc)) {
-
 			/* Accesses not in the right order */
 
 			fail_count++;
@@ -468,7 +525,7 @@ buf_read_ahead_linear(
 		return(0);
 	}
 
-	/* If we got this far, read-ahead can be sensible: do it */	    	
+	/* If we got this far, read-ahead can be sensible: do it */
 
 	if (ibuf_inside()) {
 		ibuf_mode = BUF_READ_IBUF_PAGES_ONLY;
@@ -489,9 +546,17 @@ buf_read_ahead_linear(
 		aio mode: hence FALSE as the first parameter */
 
 		if (!ibuf_bitmap_page(i)) {
-			count += buf_read_page_low(FALSE, ibuf_mode
+			count += buf_read_page_low(&err, FALSE, ibuf_mode
 					| OS_AIO_SIMULATED_WAKE_LATER,
-					space, i);
+					space, 	tablespace_version, i);
+			if (err == DB_TABLESPACE_DELETED) {
+				ut_print_timestamp(stderr);
+				fprintf(stderr,
+"  InnoDB: Warning: in linear readahead trying to access tablespace\n"
+"InnoDB: %lu page no. %lu,\n"
+"InnoDB: but the tablespace does not exist or is just being dropped.\n",
+				 (ulong) space, (ulong) i);
+			}
 		}
 	}
 
@@ -504,20 +569,18 @@ buf_read_ahead_linear(
 	/* Flush pages from the end of the LRU list if necessary */
 	buf_flush_free_margin();
 
-#ifdef UNIV_DEBUG
 	if (buf_debug_prints && (count > 0)) {
 		fprintf(stderr,
 		"LINEAR read-ahead space %lu offset %lu pages %lu\n",
-		space, offset, count);
+		(ulong) space, (ulong) offset, (ulong) count);
 	}
-#endif /* UNIV_DEBUG */
 
 	return(count);
 }
 
 /************************************************************************
 Issues read requests for pages which the ibuf module wants to read in, in
-order to contract insert buffer trees. Technically, this function is like
+order to contract the insert buffer tree. Technically, this function is like
 a read-ahead function. */
 
 void
@@ -526,11 +589,17 @@ buf_read_ibuf_merge_pages(
 	ibool	sync,		/* in: TRUE if the caller wants this function
 				to wait for the highest address page to get
 				read in, before this function returns */
-	ulint	space,		/* in: space id */
+	ulint*	space_ids,	/* in: array of space ids */
+	ib_longlong* space_versions,/* in: the spaces must have this version
+				number (timestamp), otherwise we discard the
+				read; we use this to cancel reads if
+				DISCARD + IMPORT may have changed the
+				tablespace size */
 	ulint*	page_nos,	/* in: array of page numbers to read, with the
 				highest page number the last in the array */
 	ulint	n_stored)	/* in: number of page numbers in the array */
 {
+	ulint	err;
 	ulint	i;
 
 	ut_ad(!ibuf_inside());
@@ -544,24 +613,32 @@ buf_read_ibuf_merge_pages(
 
 	for (i = 0; i < n_stored; i++) {
 		if ((i + 1 == n_stored) && sync) {
-			buf_read_page_low(TRUE, BUF_READ_ANY_PAGE, space,
-								page_nos[i]);
+			buf_read_page_low(&err, TRUE, BUF_READ_ANY_PAGE,
+				space_ids[i], space_versions[i], page_nos[i]);
 		} else {
-			buf_read_page_low(FALSE, BUF_READ_ANY_PAGE, space,
-								page_nos[i]);
+			buf_read_page_low(&err, FALSE, BUF_READ_ANY_PAGE,
+				space_ids[i], space_versions[i], page_nos[i]);
+		}
+
+		if (err == DB_TABLESPACE_DELETED) {
+			/* We have deleted or are deleting the single-table
+			tablespace: remove the entries for that page */
+
+			ibuf_merge_or_delete_for_page(NULL, space_ids[i],
+							page_nos[i], FALSE);
 		}
 	}
 	
+	os_aio_simulated_wake_handler_threads();
+
 	/* Flush pages from the end of the LRU list if necessary */
 	buf_flush_free_margin();
 
-#ifdef UNIV_DEBUG
 	if (buf_debug_prints) {
 		fprintf(stderr,
 			"Ibuf merge read-ahead space %lu pages %lu\n",
-							space, n_stored);
+				(ulong) space_ids[0], (ulong) n_stored);
 	}
-#endif /* UNIV_DEBUG */
 }
 
 /************************************************************************
@@ -578,8 +655,12 @@ buf_read_recv_pages(
 				highest page number the last in the array */
 	ulint	n_stored)	/* in: number of page numbers in the array */
 {
-	ulint	count;
-	ulint	i;
+	ib_longlong	tablespace_version;
+	ulint		count;
+	ulint		err;
+	ulint		i;
+
+	tablespace_version = fil_space_get_version(space);
 
 	for (i = 0; i < n_stored; i++) {
 
@@ -587,7 +668,7 @@ buf_read_recv_pages(
 
 		os_aio_print_debug = FALSE;
 
-		while (buf_pool->n_pend_reads >= RECV_POOL_N_FREE_BLOCKS / 2) {
+		while (buf_pool->n_pend_reads >= recv_n_pool_free_frames / 2) {
 
 			os_aio_simulated_wake_handler_threads();
 			os_thread_sleep(500000);
@@ -598,7 +679,9 @@ buf_read_recv_pages(
 				fprintf(stderr,
 "InnoDB: Error: InnoDB has waited for 50 seconds for pending\n"
 "InnoDB: reads to the buffer pool to be finished.\n"
-"InnoDB: Number of pending reads %lu\n", buf_pool->n_pend_reads);
+"InnoDB: Number of pending reads %lu, pending pread calls %lu\n",
+				(ulong) buf_pool->n_pend_reads,
+				(ulong)os_file_n_pending_preads);
 
 				os_aio_print_debug = TRUE;
 			}
@@ -607,12 +690,12 @@ buf_read_recv_pages(
 		os_aio_print_debug = FALSE;
 
 		if ((i + 1 == n_stored) && sync) {
-			buf_read_page_low(TRUE, BUF_READ_ANY_PAGE, space,
-								page_nos[i]);
+			buf_read_page_low(&err, TRUE, BUF_READ_ANY_PAGE, space,
+					tablespace_version, page_nos[i]);
 		} else {
-			buf_read_page_low(FALSE, BUF_READ_ANY_PAGE
+			buf_read_page_low(&err, FALSE, BUF_READ_ANY_PAGE
 					| OS_AIO_SIMULATED_WAKE_LATER,
-					space, page_nos[i]);
+				       space, tablespace_version, page_nos[i]);
 		}
 	}
 	
@@ -621,10 +704,8 @@ buf_read_recv_pages(
 	/* Flush pages from the end of the LRU list if necessary */
 	buf_flush_free_margin();
 
-#ifdef UNIV_DEBUG
 	if (buf_debug_prints) {
 		fprintf(stderr,
-			"Recovery applies read-ahead pages %lu\n", n_stored);
+			"Recovery applies read-ahead pages %lu\n", (ulong) n_stored);
 	}
-#endif /* UNIV_DEBUG */
 }

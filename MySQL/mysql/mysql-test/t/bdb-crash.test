@@ -2,7 +2,9 @@
 
 # test for bug reported by Mark Steele
 
+--disable_warnings
 drop table if exists t1;
+--enable_warnings
 CREATE TABLE t1 (
   ChargeID int(10) unsigned NOT NULL auto_increment,
   ServiceID int(10) unsigned DEFAULT '0' NOT NULL,
@@ -18,7 +20,7 @@ DEFAULT 'New' NOT NULL,
   PRIMARY KEY (ChargeID),
   KEY ServiceID (ServiceID),
   KEY ChargeDate (ChargeDate)
-) type=BDB;
+) engine=BDB;
 
 BEGIN;
 INSERT INTO t1
@@ -37,8 +39,7 @@ drop table t1;
 
 #
 # Test for bug #2342 "Running ANALYZE TABLE on bdb table 
-#                      inside a transaction hangs server thread"
-#
+# inside a transaction hangs server thread"
 
 create table t1 (a int) engine=bdb;
 

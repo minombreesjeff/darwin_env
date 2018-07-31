@@ -1,0 +1,285 @@
+# This script tests our own time zone support functions
+
+# Preparing playground
+--disable_warnings
+drop table if exists t1, t2;
+--enable_warnings
+
+
+# 
+# Let us first check +HH:MM style timezones
+#
+create table t1 (ts timestamp);
+
+set time_zone='+00:00';
+select unix_timestamp(utc_timestamp())-unix_timestamp(current_timestamp());
+insert into t1 (ts) values ('2003-03-30 02:30:00');
+
+set time_zone='+10:30';
+select unix_timestamp(utc_timestamp())-unix_timestamp(current_timestamp());
+insert into t1 (ts) values ('2003-03-30 02:30:00');
+
+set time_zone='-10:00';
+select unix_timestamp(utc_timestamp())-unix_timestamp(current_timestamp());
+insert into t1 (ts) values ('2003-03-30 02:30:00');
+
+# Here we will get different results
+select * from t1;
+
+drop table t1;
+
+
+# 
+# Let us try DB specified time zones
+#
+select Name from mysql.time_zone_name where Name in 
+  ('UTC','Universal','MET','Europe/Moscow','leap/Europe/Moscow');
+
+create table t1 (i int, ts timestamp);
+
+set time_zone='MET';
+
+# We check common date time value and non existent or ambiguios values
+# Normal value without DST
+insert into t1 (i, ts) values
+  (unix_timestamp('2003-03-01 00:00:00'),'2003-03-01 00:00:00');
+# Values around and in spring time-gap
+insert into t1 (i, ts) values
+  (unix_timestamp('2003-03-30 01:59:59'),'2003-03-30 01:59:59'),
+  (unix_timestamp('2003-03-30 02:30:00'),'2003-03-30 02:30:00'),
+  (unix_timestamp('2003-03-30 03:00:00'),'2003-03-30 03:00:00');
+# Normal value with DST
+insert into t1 (i, ts) values
+  (unix_timestamp('2003-05-01 00:00:00'),'2003-05-01 00:00:00');
+# Ambiguos values (also check for determenism)
+insert into t1 (i, ts) values
+  (unix_timestamp('2003-10-26 01:00:00'),'2003-10-26 01:00:00'),
+  (unix_timestamp('2003-10-26 02:00:00'),'2003-10-26 02:00:00'),
+  (unix_timestamp('2003-10-26 02:59:59'),'2003-10-26 02:59:59'),
+  (unix_timestamp('2003-10-26 04:00:00'),'2003-10-26 04:00:00'),
+  (unix_timestamp('2003-10-26 02:59:59'),'2003-10-26 02:59:59');
+
+set time_zone='UTC';
+
+select * from t1;
+
+delete from t1;
+
+# Simple check for 'Europe/Moscow' time zone just for showing that it works
+set time_zone='Europe/Moscow';
+insert into t1 (i, ts) values
+  (unix_timestamp('2004-01-01 00:00:00'),'2004-01-01 00:00:00'),
+  (unix_timestamp('2004-03-28 02:30:00'),'2004-03-28 02:30:00'),
+  (unix_timestamp('2004-08-01 00:00:00'),'2003-08-01 00:00:00'),
+  (unix_timestamp('2004-10-31 02:30:00'),'2004-10-31 02:30:00');
+select * from t1;
+delete from t1;
+
+
+#
+# Check for time zone with leap seconds
+# Values in ts column must be the same but values in i column should
+# differ from corresponding values for Europe/Moscow a bit.
+#
+set time_zone='leap/Europe/Moscow';
+insert into t1 (i, ts) values
+  (unix_timestamp('2004-01-01 00:00:00'),'2004-01-01 00:00:00'),
+  (unix_timestamp('2004-03-28 02:30:00'),'2004-03-28 02:30:00'),
+  (unix_timestamp('2004-08-01 00:00:00'),'2003-08-01 00:00:00'),
+  (unix_timestamp('2004-10-31 02:30:00'),'2004-10-31 02:30:00');
+select * from t1;
+delete from t1;
+# Let us test leap jump
+insert into t1 (i, ts) values
+  (unix_timestamp('1981-07-01 03:59:59'),'1981-07-01 03:59:59'),
+  (unix_timestamp('1981-07-01 04:00:00'),'1981-07-01 04:00:00');
+select * from t1;
+# Additional 60ieth second!
+select from_unixtime(362793609);
+
+drop table t1;
+
+
+# 
+# Let us test range for TIMESTAMP
+#
+create table t1 (ts timestamp);
+set time_zone='UTC';
+insert into t1 values ('0000-00-00 00:00:00'),('1969-12-31 23:59:59'),
+                      ('1970-01-01 00:00:00'),('1970-01-01 00:00:01'),
+                      ('2037-12-31 23:59:59'),('2038-01-01 00:00:00');
+select * from t1;
+delete from t1;
+# MET time zone has range shifted by one hour
+set time_zone='MET';
+insert into t1 values ('0000-00-00 00:00:00'),('1970-01-01 00:30:00'),
+                      ('1970-01-01 01:00:00'),('1970-01-01 01:00:01'),
+                      ('2038-01-01 00:59:59'),('2038-01-01 01:00:00');
+select * from t1;
+delete from t1;
+# same for +01:30 time zone
+set time_zone='+01:30';
+insert into t1 values ('0000-00-00 00:00:00'),('1970-01-01 01:00:00'),
+                      ('1970-01-01 01:30:00'),('1970-01-01 01:30:01'),
+                      ('2038-01-01 01:29:59'),('2038-01-01 01:30:00');
+select * from t1;
+
+drop table t1;
+
+
+# 
+# Test of show variables
+#
+show variables like 'time_zone';
+set time_zone = default;
+show variables like 'time_zone';
+
+
+# 
+# Let us try some invalid time zone specifications
+#
+--error 1298
+set time_zone= '0';
+--error 1298
+set time_zone= '0:0';
+--error 1298
+set time_zone= '-20:00';
+--error 1298
+set time_zone= '+20:00';
+--error 1298
+set time_zone= 'Some/Unknown/Time/Zone';
+
+
+# Let us check that aliases for time zones work and they are 
+# case-insensitive
+select convert_tz(now(),'UTC', 'Universal') = now();
+select convert_tz(now(),'utc', 'UTC') = now();
+
+
+# 
+# Let us test CONVERT_TZ function (may be func_time.test is better place).
+#
+select convert_tz('1917-11-07 12:00:00', 'MET', 'UTC'); 
+select convert_tz('1970-01-01 01:00:00', 'MET', 'UTC'); 
+select convert_tz('1970-01-01 01:00:01', 'MET', 'UTC'); 
+select convert_tz('2003-03-01 00:00:00', 'MET', 'UTC');
+select convert_tz('2003-03-30 01:59:59', 'MET', 'UTC');
+select convert_tz('2003-03-30 02:30:00', 'MET', 'UTC');
+select convert_tz('2003-03-30 03:00:00', 'MET', 'UTC');
+select convert_tz('2003-05-01 00:00:00', 'MET', 'UTC');
+select convert_tz('2003-10-26 01:00:00', 'MET', 'UTC');
+select convert_tz('2003-10-26 02:00:00', 'MET', 'UTC');
+select convert_tz('2003-10-26 02:59:59', 'MET', 'UTC');
+select convert_tz('2003-10-26 04:00:00', 'MET', 'UTC');
+select convert_tz('2038-01-01 00:59:59', 'MET', 'UTC');
+select convert_tz('2038-01-01 01:00:00', 'MET', 'UTC');
+select convert_tz('2103-01-01 04:00:00', 'MET', 'UTC');
+
+# Let us test variable time zone argument
+create table t1 (tz varchar(3));
+insert into t1 (tz) values ('MET'), ('UTC');
+select tz, convert_tz('2003-12-31 00:00:00',tz,'UTC'), convert_tz('2003-12-31 00:00:00','UTC',tz) from t1 order by tz;
+drop table t1;
+
+# Parameters to CONVERT_TZ() what should give NULL
+select convert_tz('2003-12-31 04:00:00', NULL, 'UTC');
+select convert_tz('2003-12-31 04:00:00', 'SomeNotExistingTimeZone', 'UTC');
+select convert_tz('2003-12-31 04:00:00', 'MET', 'SomeNotExistingTimeZone');
+select convert_tz('2003-12-31 04:00:00', 'MET', NULL);
+select convert_tz( NULL, 'MET', 'UTC');
+
+#
+# Test for bug #4508 "CONVERT_TZ() function with new time zone as param
+# crashes server." (Was caused by improperly worked mechanism of time zone
+# dynamical loading).
+#
+create table t1 (ts timestamp);
+set timestamp=1000000000;
+insert into t1 (ts) values (now());
+select convert_tz(ts, @@time_zone, 'Japan') from t1;
+drop table t1;
+
+#
+# Test for bug #6116 "SET time_zone := ... requires access to mysql.time_zone
+# tables". We should allow implicit access to time zone description tables
+# even for unprivileged users.
+#
+
+# Let us prepare playground
+delete from mysql.user where user like 'mysqltest\_%';
+delete from mysql.db where user like 'mysqltest\_%';
+delete from mysql.tables_priv where user like 'mysqltest\_%';
+delete from mysql.columns_priv where user like 'mysqltest\_%';
+flush privileges;
+create table t1 (a int, b datetime);
+create table t2 (c int, d datetime);
+
+grant all privileges on test.* to mysqltest_1@localhost;
+connect (tzuser, localhost, mysqltest_1,,);
+connection tzuser;
+show grants for current_user();
+set time_zone= '+00:00';
+set time_zone= 'Europe/Moscow';
+select convert_tz('2004-10-21 19:00:00', 'Europe/Moscow', 'UTC');
+select convert_tz(b, 'Europe/Moscow', 'UTC') from t1;
+# Let us also check whenever multi-update works ok
+update t1, t2 set t1.b = convert_tz('2004-10-21 19:00:00', 'Europe/Moscow', 'UTC')
+              where t1.a = t2.c and t2.d = (select max(d) from t2);
+# But still these two statements should not work:
+--error 1044
+select * from mysql.time_zone_name;
+--error 1044
+select Name, convert_tz('2004-10-21 19:00:00', Name, 'UTC') from mysql.time_zone_name;
+
+#
+# Test for bug #6765 "Implicit access to time zone description tables
+# requires privileges for them if some table or column level grants
+# present"
+#
+connection default;
+# Let use some table-level grants instead of db-level 
+# to make life more interesting
+delete from mysql.db where user like 'mysqltest\_%';
+flush privileges;
+grant all privileges on test.t1 to mysqltest_1@localhost;
+grant all privileges on test.t2 to mysqltest_1@localhost;
+# The test itself is almost the same as previous one
+connect (tzuser2, localhost, mysqltest_1,,);
+connection tzuser2;
+show grants for current_user();
+set time_zone= '+00:00';
+set time_zone= 'Europe/Moscow';
+select convert_tz('2004-11-31 12:00:00', 'Europe/Moscow', 'UTC');
+select convert_tz(b, 'Europe/Moscow', 'UTC') from t1;
+update t1, t2 set t1.b = convert_tz('2004-11-30 12:00:00', 'Europe/Moscow', 'UTC')
+              where t1.a = t2.c and t2.d = (select max(d) from t2);
+# Again these two statements should not work (but with different errors):
+--error 1142
+select * from mysql.time_zone_name;
+--error 1142
+select Name, convert_tz('2004-11-30 12:00:00', Name, 'UTC') from mysql.time_zone_name;
+
+# Clean-up
+connection default;
+delete from mysql.user where user like 'mysqltest\_%';
+delete from mysql.db where user like 'mysqltest\_%';
+delete from mysql.tables_priv where user like 'mysqltest\_%';
+flush privileges;
+drop table t1, t2;
+
+#
+# Test for bug #7705 "CONVERT_TZ() crashes with subquery/WHERE on index 
+# column". Queries in which one of time zone arguments of CONVERT_TZ() is
+# determined as constant only at val() stage (not at fix_fields() stage),
+# should not crash server.
+#
+select convert_tz('2005-01-14 17:00:00', 'UTC', custTimeZone) from (select 'UTC' as custTimeZone) as tmp;
+
+#
+# Test for bug #7899 "CREATE TABLE .. SELECT .. and CONVERT_TZ() function
+# does not work well together". The following statement should return only
+# one NULL row and not result of full join.
+#
+create table t1 select convert_tz(NULL, NULL, NULL);
+select * from t1;
+drop table t1;

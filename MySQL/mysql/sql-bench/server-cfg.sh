@@ -184,6 +184,13 @@ sub new
     $self->{'transactions'}	= 1;	# Transactions enabled
   }
   if (defined($main::opt_create_options) &&
+      $main::opt_create_options =~ /type=ndb/i)
+  {
+    $self->{'transactions'}	= 1;	# Transactions enabled
+    $limits{'max_columns'}	= 90;	# Max number of columns in table
+    $limits{'max_tables'}	= 32;   # No comments
+  }
+  if (defined($main::opt_create_options) &&
       $main::opt_create_options =~ /type=bdb/i)
   {
     $self->{'transactions'}	= 1;	# Transactions enabled

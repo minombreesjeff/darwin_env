@@ -15,6 +15,10 @@ Created 9/20/1997 Heikki Tuuri
 #include "hash0hash.h"
 #include "log0log.h"
 
+#ifdef UNIV_HOTBACKUP
+extern ibool	recv_replay_file_ops;
+#endif /* UNIV_HOTBACKUP */
+
 /***********************************************************************
 Reads the checkpoint info needed in hot backup. */
 
@@ -25,8 +29,8 @@ recv_read_cp_info_for_backup(
 	byte*	hdr,	/* in: buffer containing the log group header */
 	dulint*	lsn,	/* out: checkpoint lsn */
 	ulint*	offset,	/* out: checkpoint offset in the log group */
-	ulint*	fsp_limit,/* out: fsp limit, 1000000000 if the database
-			is running with < version 3.23.50 of InnoDB */
+	ulint*	fsp_limit,/* out: fsp limit of space 0, 1000000000 if the
+			database is running with < version 3.23.50 of InnoDB */
 	dulint*	cp_no,	/* out: checkpoint number */
 	dulint*	first_header_lsn);
 			/* out: lsn of of the start of the first log file */
@@ -132,20 +136,25 @@ recv_reset_logs(
 	dulint	lsn,		/* in: reset to this lsn rounded up to
 				be divisible by OS_FILE_LOG_BLOCK_SIZE,
 				after which we add LOG_BLOCK_HDR_SIZE */
+#ifdef UNIV_LOG_ARCHIVE
 	ulint	arch_log_no,	/* in: next archived log file number */
+#endif /* UNIV_LOG_ARCHIVE */
 	ibool	new_logs_created);/* in: TRUE if resetting logs is done
 				at the log creation; FALSE if it is done
 				after archive recovery */
+#ifdef UNIV_HOTBACKUP
 /**********************************************************
 Creates new log files after a backup has been restored. */
 
 void
 recv_reset_log_files_for_backup(
 /*============================*/
-	char*	log_dir,	/* in: log file directory path */
-	ulint	n_log_files,	/* in: number of log files */
-	ulint	log_file_size,	/* in: log file size */
-	dulint	lsn);		/* in: new start lsn */
+	const char*	log_dir,	/* in: log file directory path */
+	ulint		n_log_files,	/* in: number of log files */
+	ulint		log_file_size,	/* in: log file size */
+	dulint		lsn);		/* in: new start lsn, must be
+					divisible by OS_FILE_LOG_BLOCK_SIZE */
+#endif /* UNIV_HOTBACKUP */
 /************************************************************
 Creates the recovery system. */
 
@@ -175,17 +184,15 @@ recv_apply_hashed_log_recs(
 				disk and invalidated in buffer pool: this
 				alternative means that no new log records
 				can be generated during the application */
+#ifdef UNIV_HOTBACKUP
 /***********************************************************************
 Applies log records in the hash table to a backup. */
 
 void
-recv_apply_log_recs_for_backup(
-/*===========================*/
-	ulint	n_data_files,	/* in: number of data files */
-	char**	data_files,	/* in: array containing the paths to the
-				data files */
-	ulint*	file_sizes);	/* in: sizes of the data files in database
-				pages */
+recv_apply_log_recs_for_backup(void);
+/*================================*/
+#endif
+#ifdef UNIV_LOG_ARCHIVE
 /************************************************************
 Recovers from archived log files, and also from log files, if they exist. */
 
@@ -206,6 +213,7 @@ Completes recovery from archive. */
 void
 recv_recovery_from_archive_finish(void);
 /*===================================*/
+#endif /* UNIV_LOG_ARCHIVE */
 /***********************************************************************
 Checks that a replica of a space is identical to the original space. */
 
@@ -334,8 +342,9 @@ extern ibool		recv_no_ibuf_operations;
 extern ibool		recv_needed_recovery;
 
 extern ibool            recv_lsn_checks_on;
-
+#ifdef UNIV_HOTBACKUP
 extern ibool		recv_is_making_a_backup;
+#endif /* UNIV_HOTBACKUP */
 extern ulint		recv_max_parsed_page_no;
 
 /* Size of the parsing buffer; it must accommodate RECV_SCAN_SIZE many
@@ -357,12 +366,7 @@ in the debug version: spaces with an odd number as the id are replicate
 spaces */
 #define RECV_REPLICA_SPACE_ADD	1
 
-/* This many blocks must be left free in the buffer pool when we scan
-the log and store the scanned log records in the buffer pool: we will
-use these free blocks to read in pages when we start applying the
-log records to the database. */
-
-#define RECV_POOL_N_FREE_BLOCKS	 (ut_min(256, buf_pool_get_curr_size() / 8))
+extern ulint	recv_n_pool_free_frames;
 
 #ifndef UNIV_NONINL
 #include "log0recv.ic"

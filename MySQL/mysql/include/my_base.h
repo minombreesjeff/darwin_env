@@ -28,6 +28,11 @@
 #include <my_sys.h>
 #include <m_string.h>
 #include <errno.h>
+
+#ifndef EOVERFLOW
+#define EOVERFLOW 84
+#endif
+
 #ifdef MSDOS
 #include <share.h>			/* Neaded for sopen() */
 #endif
@@ -49,29 +54,34 @@
 
 	/* The following is parameter to ha_rkey() how to use key */
 
-/* We define a complete-field prefix of a key value as a prefix where the
-last included field in the prefix contains the full field, not just some bytes
-from the start of the field. A partial-field prefix is allowed to
-contain only a few first bytes from the last included field.
+/*
+  We define a complete-field prefix of a key value as a prefix where
+  the last included field in the prefix contains the full field, not
+  just some bytes from the start of the field. A partial-field prefix
+  is allowed to contain only a few first bytes from the last included
+  field.
 
-Below HA_READ_KEY_EXACT, ..., HA_READ_BEFORE_KEY can take a
-complete-field prefix of a key value as the search key. HA_READ_PREFIX
-and HA_READ_PREFIX_LAST could also take a partial-field prefix, but
-currently (4.0.10) they are only used with complete-field prefixes. MySQL uses
-a padding trick to implement LIKE 'abc%' queries.
+  Below HA_READ_KEY_EXACT, ..., HA_READ_BEFORE_KEY can take a
+  complete-field prefix of a key value as the search
+  key. HA_READ_PREFIX and HA_READ_PREFIX_LAST could also take a
+  partial-field prefix, but currently (4.0.10) they are only used with
+  complete-field prefixes. MySQL uses a padding trick to implement
+  LIKE 'abc%' queries.
 
-NOTE that in InnoDB HA_READ_PREFIX_LAST will NOT work with a partial-field
-prefix because InnoDB currently strips spaces from the end of varchar
-fields! */
+  NOTE that in InnoDB HA_READ_PREFIX_LAST will NOT work with a
+  partial-field prefix because InnoDB currently strips spaces from the
+  end of varchar fields!
+*/
 
 enum ha_rkey_function {
-  HA_READ_KEY_EXACT,			/* Find first record else error */
-  HA_READ_KEY_OR_NEXT,			/* Record or next record */
-  HA_READ_KEY_OR_PREV,			/* Record or previous */
-  HA_READ_AFTER_KEY,			/* Find next rec. after key-record */
-  HA_READ_BEFORE_KEY,			/* Find next rec. before key-record */
-  HA_READ_PREFIX,			/* Key which as same prefix */
-  HA_READ_PREFIX_LAST,			/* Last key with the same prefix */
+  HA_READ_KEY_EXACT,              /* Find first record else error */
+  HA_READ_KEY_OR_NEXT,            /* Record or next record */
+  HA_READ_KEY_OR_PREV,            /* Record or previous */
+  HA_READ_AFTER_KEY,              /* Find next rec. after key-record */
+  HA_READ_BEFORE_KEY,             /* Find next rec. before key-record */
+  HA_READ_PREFIX,                 /* Key which as same prefix */
+  HA_READ_PREFIX_LAST,            /* Last key with the same prefix */
+  HA_READ_PREFIX_LAST_OR_PREV,    /* Last or prev key with the same prefix */
   HA_READ_MBR_CONTAIN,
   HA_READ_MBR_INTERSECT,
   HA_READ_MBR_WITHIN,
@@ -81,7 +91,7 @@ enum ha_rkey_function {
 
 	/* Key algorithm types */
 
-enum ha_key_alg {			
+enum ha_key_alg {
   HA_KEY_ALG_UNDEF=	0,		/* Not specified (old file) */
   HA_KEY_ALG_BTREE=	1,		/* B-tree, default one          */
   HA_KEY_ALG_RTREE=	2,		/* R-tree, for spatial searches */
@@ -95,8 +105,8 @@ enum ha_extra_function {
   HA_EXTRA_NORMAL=0,			/* Optimize for space (def) */
   HA_EXTRA_QUICK=1,			/* Optimize for speed */
   HA_EXTRA_RESET=2,			/* Reset database to after open */
-  HA_EXTRA_CACHE=3,			/* Cash record in HA_rrnd() */
-  HA_EXTRA_NO_CACHE=4,			/* End cacheing of records (def) */
+  HA_EXTRA_CACHE=3,			/* Cache record in HA_rrnd() */
+  HA_EXTRA_NO_CACHE=4,			/* End caching of records (def) */
   HA_EXTRA_NO_READCHECK=5,		/* No readcheck on update */
   HA_EXTRA_READCHECK=6,			/* Use readcheck (def) */
   HA_EXTRA_KEYREAD=7,			/* Read only key to database */
@@ -120,9 +130,23 @@ enum ha_extra_function {
   HA_EXTRA_RESET_STATE,			/* Reset positions */
   HA_EXTRA_IGNORE_DUP_KEY,		/* Dup keys don't rollback everything*/
   HA_EXTRA_NO_IGNORE_DUP_KEY,
-  HA_EXTRA_DONT_USE_CURSOR_TO_UPDATE,	/* Cursor will not be used for update */
+  /*
+    Instructs InnoDB to retrieve all columns (except in key read), not just
+    those where field->query_id is the same as the current query id
+  */
+  HA_EXTRA_RETRIEVE_ALL_COLS,
+  /*
+    Instructs InnoDB to retrieve at least all the primary key columns
+  */
+  HA_EXTRA_RETRIEVE_PRIMARY_KEY,
   HA_EXTRA_PREPARE_FOR_DELETE,
-  HA_EXTRA_PREPARE_FOR_UPDATE		/* Remove read cache if problems */
+  HA_EXTRA_PREPARE_FOR_UPDATE,		/* Remove read cache if problems */
+  HA_EXTRA_PRELOAD_BUFFER_SIZE,         /* Set buffer size for preloading */
+  /*
+    On-the-fly switching between unique and non-unique key inserting.
+  */
+  HA_EXTRA_CHANGE_KEY_TO_UNIQUE,
+  HA_EXTRA_CHANGE_KEY_TO_DUP
 };
 
 	/* The following is parameter to ha_panic() */
@@ -163,11 +187,11 @@ enum ha_base_keytype {
 #define HA_PACK_KEY		 2	/* Pack string key to previous key */
 #define HA_AUTO_KEY		 16
 #define HA_BINARY_PACK_KEY	 32	/* Packing of all keys to prev key */
-#define HA_FULLTEXT		128     /* SerG: for full-text search */
+#define HA_FULLTEXT		128     /* For full-text search */
 #define HA_UNIQUE_CHECK		256	/* Check the key for uniqueness */
-#define HA_SPATIAL		1024    /* Alex Barkov: for spatial search */
+#define HA_SPATIAL		1024    /* For spatial search */
 #define HA_NULL_ARE_EQUAL	2048	/* NULL in key are cmp as equal */
-
+#define HA_GENERATED_KEY	8192	/* Automaticly generated key */
 
 	/* Automatic bits in key-flag */
 
@@ -217,11 +241,12 @@ enum ha_base_keytype {
 #define HA_CREATE_TMP_TABLE	4
 #define HA_CREATE_CHECKSUM	8
 #define HA_CREATE_DELAY_KEY_WRITE 64
+#define HA_CREATE_FROM_ENGINE   128 
 
 	/* Bits in flag to _status */
 
 #define HA_STATUS_POS		1		/* Return position */
-#define HA_STATUS_NO_LOCK 	2		/* Don't use external lock */
+#define HA_STATUS_NO_LOCK	2		/* Don't use external lock */
 #define HA_STATUS_TIME		4		/* Return update time */
 #define HA_STATUS_CONST		8		/* Return constants values */
 #define HA_STATUS_VARIABLE	16
@@ -262,6 +287,11 @@ enum ha_base_keytype {
 #define HA_ERR_NO_REFERENCED_ROW 151     /* Cannot add a child row */
 #define HA_ERR_ROW_IS_REFERENCED 152     /* Cannot delete a parent row */
 #define HA_ERR_NO_SAVEPOINT	 153     /* No savepoint with that name */
+#define HA_ERR_NON_UNIQUE_BLOCK_SIZE 154 /* Non unique key block size */
+#define HA_ERR_NO_SUCH_TABLE     155  /* The table does not exist in engine */
+#define HA_ERR_TABLE_EXIST       156  /* The table existed in storage engine */
+#define HA_ERR_NO_CONNECTION     157  /* Could not connect to storage engine */
+#define HA_ERR_NULL_IN_SPATIAL   158  /* NULLs are not supported in spatial index */
 
 	/* Other constants */
 
@@ -295,7 +325,7 @@ enum ha_base_keytype {
 #define READ_CHECK_USED 4
 #define KEY_READ_USED	8
 #define WRITE_CACHE_USED 16
-#define OPT_NO_ROWS 	32
+#define OPT_NO_ROWS	32
 
 	/* bits in update */
 #define HA_STATE_CHANGED	1	/* Database has changed */
@@ -321,13 +351,23 @@ enum data_file_type {
   STATIC_RECORD,DYNAMIC_RECORD,COMPRESSED_RECORD
 };
 
+/* For key ranges */
+
+typedef struct st_key_range
+{
+  const byte *key;
+  uint length;
+  enum ha_rkey_function flag;
+} key_range;
+
+
 /* For number of records */
 #ifdef BIG_TABLES
 #define rows2double(A)	ulonglong2double(A)
 typedef my_off_t	ha_rows;
 #else
 #define rows2double(A)	(double) (A)
-typedef ulong		ha_rows;	
+typedef ulong		ha_rows;
 #endif
 
 #define HA_POS_ERROR	(~ (ha_rows) 0)

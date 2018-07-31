@@ -44,8 +44,7 @@ ulong heap_position_old(HP_INFO *info)
 /* Note that heap_info does NOT return information about the
    current position anymore;  Use heap_position instead */
 
-int heap_info(reg1 HP_INFO *info,reg2 HEAPINFO *x,
-	      int flag __attribute__((unused)))
+int heap_info(reg1 HP_INFO *info,reg2 HEAPINFO *x, int flag )
 {
   DBUG_ENTER("heap_info");
   x->records         = info->s->records;
@@ -55,6 +54,7 @@ int heap_info(reg1 HP_INFO *info,reg2 HEAPINFO *x,
   x->index_length    = info->s->index_length;
   x->max_records     = info->s->max_records;
   x->errkey          = info->errkey;
-  x->implicit_emptied= info->implicit_emptied;
+  if (flag & HA_STATUS_AUTO)
+    x->auto_increment= info->s->auto_increment + 1;
   DBUG_RETURN(0);
 } /* heap_info */

@@ -12,18 +12,16 @@ server_stop master;
 server_start master;
 connection slave;
 reset slave;
-slave start;
+start slave;
 connection master;
-show master logs;
+show binary logs;
+--disable_warnings
 drop table if exists t1;
+--enable_warnings
 create table t1(n int);
 insert into t1 values (3351);
-save_master_pos;
-connection slave;
-sync_with_master;
+sync_slave_with_master;
 select * from t1;
 connection master;
 drop table t1;
-save_master_pos;
-connection slave;
-sync_with_master;
+sync_slave_with_master;

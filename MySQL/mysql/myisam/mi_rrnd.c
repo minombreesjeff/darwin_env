@@ -32,26 +32,29 @@
 
 int mi_rrnd(MI_INFO *info, byte *buf, register my_off_t filepos)
 {
-  my_bool skipp_deleted_blocks;
+  my_bool skip_deleted_blocks;
   DBUG_ENTER("mi_rrnd");
 
-  skipp_deleted_blocks=0;
+  skip_deleted_blocks=0;
 
   if (filepos == HA_OFFSET_ERROR)
   {
-    skipp_deleted_blocks=1;
+    skip_deleted_blocks=1;
     if (info->lastpos == HA_OFFSET_ERROR)	/* First read ? */
       filepos= info->s->pack.header_length;	/* Read first record */
     else
       filepos= info->nextpos;
   }
 
-  info->lastinx= -1;				/* Can't forward or backward */
+  if (info->once_flags & RRND_PRESERVE_LASTINX)
+    info->once_flags&= ~RRND_PRESERVE_LASTINX;
+  else
+    info->lastinx= -1;                          /* Can't forward or backward */
   /* Init all but update-flag */
   info->update&= (HA_STATE_CHANGED | HA_STATE_ROW_CHANGED);
 
   if (info->opt_flag & WRITE_CACHE_USED && flush_io_cache(&info->rec_cache))
     DBUG_RETURN(my_errno);
 
-  DBUG_RETURN ((*info->s->read_rnd)(info,buf,filepos,skipp_deleted_blocks));
+  DBUG_RETURN ((*info->s->read_rnd)(info,buf,filepos,skip_deleted_blocks));
 }

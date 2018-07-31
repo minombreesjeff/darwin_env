@@ -26,7 +26,7 @@ uint my_write(int Filedes, const byte *Buffer, uint Count, myf MyFlags)
   uint writenbytes,errors;
   ulong written;
   DBUG_ENTER("my_write");
-  DBUG_PRINT("my",("Fd: %d  Buffer: %lx  Count: %d  MyFlags: %d",
+  DBUG_PRINT("my",("Fd: %d  Buffer: 0x%lx  Count: %d  MyFlags: %d",
 		   Filedes, Buffer, Count, MyFlags));
   errors=0; written=0L;
 
@@ -48,12 +48,12 @@ uint my_write(int Filedes, const byte *Buffer, uint Count, myf MyFlags)
     if (my_thread_var->abort)
       MyFlags&= ~ MY_WAIT_IF_FULL;		/* End if aborted by user */
 #endif
-    if (my_errno == ENOSPC && (MyFlags & MY_WAIT_IF_FULL) &&
-	(uint) writenbytes != (uint) -1)
+    if ((my_errno == ENOSPC || my_errno == EDQUOT) &&
+        (MyFlags & MY_WAIT_IF_FULL))
     {
       if (!(errors++ % MY_WAIT_GIVE_USER_A_MESSAGE))
 	my_error(EE_DISK_FULL,MYF(ME_BELL | ME_NOREFRESH),
-		 my_filename(Filedes));
+		 my_filename(Filedes),my_errno,MY_WAIT_FOR_USER_TO_FIX_PANIC);
       VOID(sleep(MY_WAIT_FOR_USER_TO_FIX_PANIC));
       continue;
     }

@@ -24,7 +24,26 @@
 #include <queues.h>
 
 
-/* Init queue */
+/*
+  Init queue
+
+  SYNOPSIS
+    init_queue()
+    queue		Queue to initialise
+    max_elements	Max elements that will be put in queue
+    offset_to_key	Offset to key in element stored in queue
+			Used when sending pointers to compare function
+    max_at_top		Set to 1 if you want biggest element on top.
+    compare		Compare function for elements, takes 3 arguments.
+    first_cmp_arg	First argument to compare function
+
+  NOTES
+    Will allocate max_element pointers for queue array
+
+  RETURN
+    0	ok
+    1	Could not allocate memory
+*/
 
 int init_queue(QUEUE *queue, uint max_elements, uint offset_to_key,
 	       pbool max_at_top, int (*compare) (void *, byte *, byte *),
@@ -43,13 +62,32 @@ int init_queue(QUEUE *queue, uint max_elements, uint offset_to_key,
   DBUG_RETURN(0);
 }
 
+
 /*
-  Reinitialize queue for new usage;
+  Reinitialize queue for other usage
+
+  SYNOPSIS
+    reinit_queue()
+    queue		Queue to initialise
+    max_elements	Max elements that will be put in queue
+    offset_to_key	Offset to key in element stored in queue
+			Used when sending pointers to compare function
+    max_at_top		Set to 1 if you want biggest element on top.
+    compare		Compare function for elements, takes 3 arguments.
+    first_cmp_arg	First argument to compare function
+
+  NOTES
+    This will delete all elements from the queue.  If you don't want this,
+    use resize_queue() instead.
+
+  RETURN
+    0			ok
+    EE_OUTOFMEMORY	Wrong max_elements
 */
 
 int reinit_queue(QUEUE *queue, uint max_elements, uint offset_to_key,
-               pbool max_at_top, int (*compare) (void *, byte *, byte *),
-               void *first_cmp_arg)
+		 pbool max_at_top, int (*compare) (void *, byte *, byte *),
+		 void *first_cmp_arg)
 {
   DBUG_ENTER("reinit_queue");
   queue->elements=0;
@@ -95,6 +133,20 @@ int resize_queue(QUEUE *queue, uint max_elements)
   DBUG_RETURN(0);
 }
 
+
+/*
+  Delete queue
+
+  SYNOPSIS
+   delete_queue()
+   queue		Queue to delete
+
+  IMPLEMENTATION
+    Just free allocated memory.
+
+  NOTES
+    Can be called safely multiple times
+*/
 
 void delete_queue(QUEUE *queue)
 {
@@ -146,7 +198,7 @@ byte *queue_remove(register QUEUE *queue, uint idx)
     return 0;
 #endif
   {
-    byte *element=queue->root[++idx];		/* Intern index starts from 1 */
+    byte *element=queue->root[++idx];	/* Intern index starts from 1 */
     queue->root[idx]=queue->root[queue->elements--];
     _downheap(queue,idx);
     return element;
@@ -156,8 +208,7 @@ byte *queue_remove(register QUEUE *queue, uint idx)
 	/* Fix when element on top has been replaced */
 
 #ifndef queue_replaced
-void queue_replaced(queue)
-QUEUE *queue;
+void queue_replaced(QUEUE *queue)
 {
   _downheap(queue,1);
 }
@@ -199,8 +250,8 @@ void _downheap(register QUEUE *queue, uint idx)
 static int queue_fix_cmp(QUEUE *queue, void **a, void **b)
 {
   return queue->compare(queue->first_cmp_arg,
-			(char*) (*a)+queue->offset_to_key,
-			(char*) (*b)+queue->offset_to_key);
+			(byte*) (*a)+queue->offset_to_key,
+			(byte*) (*b)+queue->offset_to_key);
 }
 
 /*

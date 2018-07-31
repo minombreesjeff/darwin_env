@@ -1,9 +1,12 @@
-/* Copyright (C) 2000 MySQL AB
+/* Copyright (C) 2000-2004 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+   the Free Software Foundation.
+
+   There are special exceptions to the terms and conditions of the GPL as it
+   is applied to this software. View the full text of the exception in file
+   EXCEPTIONS-CLIENT in the directory of this software distribution.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -142,7 +145,7 @@ MYSQL_MANAGER*  STDCALL mysql_manager_connect(MYSQL_MANAGER* con,
   }
   sock_addr.sin_port = (ushort) htons((ushort) port);
   if (my_connect(sock,(struct sockaddr *) &sock_addr, sizeof(sock_addr),
-		 0) <0)
+		 0))
   {
     con->last_errno=errno;
     sprintf(con->last_error ,"Could not connect to %-.64s", host);
@@ -234,7 +237,7 @@ int STDCALL mysql_manager_fetch_line(MYSQL_MANAGER* con, char* res_buf,
   char* res_buf_end=res_buf+res_buf_size;
   char* net_buf=(char*) con->net.read_pos, *net_buf_end;
   int res_buf_shift=RES_BUF_SHIFT;
-  uint num_bytes;
+  ulong num_bytes;
 
   if (res_buf_size<RES_BUF_SHIFT)
   {

@@ -31,11 +31,14 @@
 #define UNIQUE_RANGE	16
 #define EQ_RANGE	32
 #define NULL_RANGE	64
+#define GEOM_FLAG      128
+
 
 typedef struct st_key_part {
-  uint16 key,part,part_length;
-  uint8  null_bit;
-  Field *field;
+  uint16           key,part, store_length, length;
+  uint8            null_bit;
+  Field            *field;
+  Field::imagetype image_type;
 } KEY_PART;
 
 
@@ -65,9 +68,9 @@ class QUICK_RANGE :public Sql_alloc {
 
 class QUICK_SELECT {
 public:
-  bool next,dont_free;
+  bool next,dont_free,sorted;
   int error;
-  uint index,max_used_key_length;
+  uint index, max_used_key_length, used_key_parts;
   TABLE *head;
   handler *file;
   byte    *record;
@@ -77,17 +80,31 @@ public:
   MEM_ROOT alloc;
 
   KEY_PART *key_parts;
+  KEY_PART_INFO *key_part_info;
   ha_rows records;
   double read_time;
 
   QUICK_SELECT(THD *thd, TABLE *table,uint index_arg,bool no_alloc=0);
   virtual ~QUICK_SELECT();
   void reset(void) { next=0; it.rewind(); }
-  int init() { return error=file->index_init(index); }
+  int init()
+  {
+    key_part_info= head->key_info[index].key_part;
+    return error=file->ha_index_init(index);
+  }
   virtual int get_next();
   virtual bool reverse_sorted() { return 0; }
-  int cmp_next(QUICK_RANGE *range);
   bool unique_key_range();
+};
+
+
+class QUICK_SELECT_GEOM: public QUICK_SELECT
+{
+public:
+  QUICK_SELECT_GEOM(THD *thd, TABLE *table, uint index_arg, bool no_alloc)
+    :QUICK_SELECT(thd, table, index_arg, no_alloc)
+    {};
+  virtual int get_next();
 };
 
 
@@ -124,13 +141,24 @@ class SQL_SELECT :public Sql_alloc {
 
   SQL_SELECT();
   ~SQL_SELECT();
-  bool check_quick(THD *thd, bool force_quick_range= 0,
-		   ha_rows limit= HA_POS_ERROR)
-  { return test_quick_select(thd, ~0L,0,limit, force_quick_range) < 0; }
-  inline bool skipp_record() { return cond ? cond->val_int() == 0 : 0; }
+  void cleanup();
+  bool check_quick(THD *thd, bool force_quick_range, ha_rows limit)
+  { return test_quick_select(thd, key_map(~0), 0, limit, force_quick_range) < 0; }
+  inline bool skip_record() { return cond ? cond->val_int() == 0 : 0; }
   int test_quick_select(THD *thd, key_map keys, table_map prev_tables,
 			ha_rows limit, bool force_quick_range=0);
 };
+
+
+class FT_SELECT: public QUICK_SELECT {
+public:
+  FT_SELECT(THD *thd, TABLE *table, uint key):
+    QUICK_SELECT (thd, table, key, 1) { init(); }
+  ~FT_SELECT() { file->ft_end(); }
+  int init() { return error= file->ft_init(); }
+  int get_next() { return error= file->ft_read(record); }
+};
+
 
 QUICK_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table,
 				       struct st_table_ref *ref);

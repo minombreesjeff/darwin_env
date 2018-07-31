@@ -21,6 +21,8 @@
 #pragma interface				/* gcc class implementation */
 #endif
 
+#define my_thd_charset	default_charset_info
+
 #define DEC_IN_AVG 4
 
 typedef struct st_number_info
@@ -97,8 +99,6 @@ int collect_string(String *element, element_count count,
 
 int sortcmp2(void* cmp_arg __attribute__((unused)),
 	     const String *a,const String *b);
-int stringcmp2(void* cmp_arg __attribute__((unused)),
-	     const String *a,const String *b);
 
 class field_str :public field_info
 {
@@ -110,12 +110,12 @@ class field_str :public field_info
   EV_NUM_INFO ev_num_info;
 
 public:
-  field_str(Item* a, analyse* b) :field_info(a,b), min_arg(""),
-    max_arg(""), sum(0),
+  field_str(Item* a, analyse* b) :field_info(a,b), 
+    min_arg("",default_charset_info),
+    max_arg("",default_charset_info), sum(0),
     must_be_blob(0), was_zero_fill(0),
     was_maybe_zerofill(0), can_be_still_num(1)
-    { init_tree(&tree, 0, 0, sizeof(String), a->binary ?
-		(qsort_cmp2) stringcmp2 : (qsort_cmp2) sortcmp2,
+    { init_tree(&tree, 0, 0, sizeof(String), (qsort_cmp2) sortcmp2,
 		0, (tree_element_free) free_string, NULL); };
 
   void	 add();
@@ -127,10 +127,10 @@ public:
   String *avg(String *s, ha_rows rows)
   {
     if (!(rows - nulls))
-      s->set((double) 0.0, 1);
+      s->set((double) 0.0, 1,my_thd_charset);
     else
       s->set((ulonglong2double(sum) / ulonglong2double(rows - nulls)),
-	     DEC_IN_AVG);
+	     DEC_IN_AVG,my_thd_charset);
     return s;
   }
   friend int collect_string(String *element, element_count count,
@@ -159,26 +159,34 @@ public:
 
   void	 add();
   void	 get_opt_type(String*, ha_rows);
-  String *get_min_arg(String *s) { s->set(min_arg, item->decimals); return s; }
-  String *get_max_arg(String *s) { s->set(max_arg, item->decimals); return s; }
+  String *get_min_arg(String *s) 
+  { 
+    s->set(min_arg, item->decimals,my_thd_charset); 
+    return s; 
+  }
+  String *get_max_arg(String *s) 
+  { 
+    s->set(max_arg, item->decimals,my_thd_charset);
+    return s; 
+  }
   String *avg(String *s, ha_rows rows)
   {
     if (!(rows - nulls))
-      s->set((double) 0.0, 1);
+      s->set((double) 0.0, 1,my_thd_charset);
     else
-      s->set(((double)sum / (double) (rows - nulls)), item->decimals);
+      s->set(((double)sum / (double) (rows - nulls)), item->decimals,my_thd_charset);
     return s;
   }
   String *std(String *s, ha_rows rows)
   {
     double tmp = ulonglong2double(rows);
     if (!(tmp - nulls))
-      s->set((double) 0.0, 1);
+      s->set((double) 0.0, 1,my_thd_charset);
     else
     {
       double tmp2 = ((sum_sqr - sum * sum / (tmp - nulls)) /
 		     (tmp - nulls));
-      s->set(((double) tmp2 <= 0.0 ? 0.0 : sqrt(tmp2)), item->decimals);
+      s->set(((double) tmp2 <= 0.0 ? 0.0 : sqrt(tmp2)), item->decimals,my_thd_charset);
     }
     return s;
   }
@@ -205,26 +213,26 @@ public:
 
   void	 add();
   void	 get_opt_type(String*, ha_rows);
-  String *get_min_arg(String *s) { s->set(min_arg); return s; }
-  String *get_max_arg(String *s) { s->set(max_arg); return s; }
+  String *get_min_arg(String *s) { s->set(min_arg,my_thd_charset); return s; }
+  String *get_max_arg(String *s) { s->set(max_arg,my_thd_charset); return s; }
   String *avg(String *s, ha_rows rows)
   {
     if (!(rows - nulls))
-      s->set((double) 0.0, 1);
+      s->set((double) 0.0, 1,my_thd_charset);
     else
-      s->set(((double) sum / (double) (rows - nulls)), DEC_IN_AVG);
+      s->set(((double) sum / (double) (rows - nulls)), DEC_IN_AVG,my_thd_charset);
     return s;
   }
   String *std(String *s, ha_rows rows)
   {
     double tmp = ulonglong2double(rows);
     if (!(tmp - nulls))
-      s->set((double) 0.0, 1);
+      s->set((double) 0.0, 1,my_thd_charset);
     else
     {
       double tmp2 = ((sum_sqr - sum * sum / (tmp - nulls)) /
 		    (tmp - nulls));
-      s->set(((double) tmp2 <= 0.0 ? 0.0 : sqrt(tmp2)), DEC_IN_AVG);
+      s->set(((double) tmp2 <= 0.0 ? 0.0 : sqrt(tmp2)), DEC_IN_AVG,my_thd_charset);
     }
     return s;
   }
@@ -249,28 +257,28 @@ public:
 		(qsort_cmp2) compare_ulonglong2, 0, NULL, NULL); }
   void	 add();
   void	 get_opt_type(String*, ha_rows);
-  String *get_min_arg(String *s) { s->set(min_arg); return s; }
-  String *get_max_arg(String *s) { s->set(max_arg); return s; }
+  String *get_min_arg(String *s) { s->set(min_arg,my_thd_charset); return s; }
+  String *get_max_arg(String *s) { s->set(max_arg,my_thd_charset); return s; }
   String *avg(String *s, ha_rows rows)
   {
     if (!(rows - nulls))
-      s->set((double) 0.0, 1);
+      s->set((double) 0.0, 1,my_thd_charset);
     else
       s->set((ulonglong2double(sum) / ulonglong2double(rows - nulls)),
-	     DEC_IN_AVG);
+	     DEC_IN_AVG,my_thd_charset);
     return s;
   }
   String *std(String *s, ha_rows rows)
   {
     double tmp = ulonglong2double(rows);
     if (!(tmp - nulls))
-      s->set((double) 0.0, 1);
+      s->set((double) 0.0, 1,my_thd_charset);
     else
     {
       double tmp2 = ((ulonglong2double(sum_sqr) - 
 		     ulonglong2double(sum * sum) / (tmp - nulls)) /
 		     (tmp - nulls));
-      s->set(((double) tmp2 <= 0.0 ? 0.0 : sqrt(tmp2)), DEC_IN_AVG);
+      s->set(((double) tmp2 <= 0.0 ? 0.0 : sqrt(tmp2)), DEC_IN_AVG,my_thd_charset);
     }
     return s;
   }

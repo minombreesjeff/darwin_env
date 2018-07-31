@@ -20,7 +20,7 @@ bin_SCRIPTS =		@server_scripts@ \
 			msql2mysql \
 			mysql_config \
 			mysql_fix_privilege_tables \
-                        mysql_fix_extensions \
+			mysql_fix_extensions \
 			mysql_setpermission \
 			mysql_secure_installation \
 			mysql_zap \
@@ -34,7 +34,8 @@ bin_SCRIPTS =		@server_scripts@ \
 			mysql_tableinfo \
 			mysqld_multi \
 			make_win_src_distribution \
-			make_win_binary_distribution
+			make_win_binary_distribution \
+			mysql_create_system_tables
 
 EXTRA_SCRIPTS =		make_binary_distribution.sh \
 			make_sharedlib_distribution.sh \
@@ -43,7 +44,7 @@ EXTRA_SCRIPTS =		make_binary_distribution.sh \
 			msql2mysql.sh \
 			mysql_config.sh \
 			mysql_fix_privilege_tables.sh \
-                        mysql_fix_extensions.sh \
+			mysql_fix_extensions.sh \
 			mysql_install_db.sh \
 			mysql_setpermission.sh \
 			mysql_secure_installation.sh \
@@ -53,17 +54,19 @@ EXTRA_SCRIPTS =		make_binary_distribution.sh \
 			mysql_convert_table_format.sh \
 			mysql_find_rows.sh \
 			mysqlhotcopy.sh \
-		        mysqldumpslow.sh \
+			mysqldumpslow.sh \
 			mysql_explain_log.sh \
 			mysqld_multi.sh \
 			mysql_tableinfo.sh \
-			mysqld_safe.sh
+			mysqld_safe.sh \
+			fill_help_tables.sh \
+			mysql_create_system_tables.sh
 
 EXTRA_DIST =		$(EXTRA_SCRIPTS) \
 			mysqlaccess.conf \
 			mysqlbug
 
-pkgdata_DATA =		make_binary_distribution make_sharedlib_distribution
+dist_pkgdata_DATA =		fill_help_tables.sql mysql_fix_privilege_tables.sql
 
 # mysqlbug should be distributed built so that people can report build
 # failures with it.
@@ -73,7 +76,7 @@ CLEANFILES =		@server_scripts@ \
 			msql2mysql \
 			mysql_config \
 			mysql_fix_privilege_tables \
-                        mysql_fix_extensions \
+			mysql_fix_extensions \
 			mysql_setpermission \
 			mysql_secure_installation \
 			mysql_zap \
@@ -83,7 +86,9 @@ CLEANFILES =		@server_scripts@ \
 			mysqlhotcopy \
 			mysqldumpslow \
 			mysqld_multi \
-			make_win_src_distribution
+			make_win_src_distribution \
+			fill_help_tables \
+			mysql_create_system_tables
 
 SUPERCLEANFILES =	mysqlbug
 
@@ -104,6 +109,7 @@ SUFFIXES = .sh
 	  -e 's!@''libexecdir''@!$(libexecdir)!g' \
 	  -e 's!@''pkglibdir''@!$(pkglibdir)!g' \
 	  -e 's!@''pkgincludedir''@!$(pkgincludedir)!g' \
+	  -e 's!@''pkgdatadir''@!$(pkgdatadir)!g' \
 	  -e 's!@''CC''@!@CC@!'\
 	  -e 's!@''CXX''@!@CXX@!'\
 	  -e 's!@''GXX''@!@GXX@!'\
@@ -115,6 +121,7 @@ SUFFIXES = .sh
 	  -e 's!@''CXXFLAGS''@!@SAVE_CXXFLAGS@!'\
 	  -e 's!@''LDFLAGS''@!@SAVE_LDFLAGS@!'\
 	  -e 's!@''CLIENT_LIBS''@!@CLIENT_LIBS@!' \
+	  -e 's!@''ZLIB_LIBS''@!@ZLIB_LIBS@!' \
 	  -e 's!@''LIBS''@!@LIBS@!' \
 	  -e 's!@''WRAPLIBS''@!@WRAPLIBS@!' \
 	  -e 's!@''innodb_system_libs''@!@innodb_system_libs@!' \
@@ -133,9 +140,18 @@ SUFFIXES = .sh
 	  -e 's!@''IS_LINUX''@!@IS_LINUX@!' \
 	  -e "s!@""CONF_COMMAND""@!@CONF_COMMAND@!" \
 	  -e 's!@''MYSQLD_USER''@!@MYSQLD_USER@!' \
+	  -e 's!@''STATIC_NSS_FLAGS''@!@STATIC_NSS_FLAGS@!' \
+	  -e 's!@''NON_THREADED_LIBS''@!@NON_THREADED_LIBS@!' \
+	  -e 's!@''ZLIB_DEPS''@!@ZLIB_DEPS@!' \
+	  -e "s!@MAKE@!$(MAKE)!" \
 	$< > $@-t
 	@CHMOD@ +x $@-t
 	@MV@ $@-t $@
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%
+
+all: fill_help_tables.sql make_win_src_distribution make_binary_distribution make_sharedlib_distribution
+
+fill_help_tables.sql: fill_help_tables ../Docs/manual.texi
+		./fill_help_tables < ../Docs/manual.texi > fill_help_tables.sql

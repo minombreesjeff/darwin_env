@@ -1663,7 +1663,7 @@ pr_tag_type (p, name, id, kind)
 {
   struct pr_handle *info = (struct pr_handle *) p;
   const char *t, *tag;
-  char idbuf[20];
+  char idbuf[30];
 
   switch (kind)
     {
@@ -2668,7 +2668,7 @@ pstack_install_segv_action(	const char*	path_format_)
 		fprintf(stderr, "BFD load failed..\n");
 	else {
 		long    storage_needed= (bfd_get_file_flags(abfd) & HAS_SYMS) ?
-		                         bfd_get_symtab_upper_bound (abfd) : 0;
+		  bfd_get_symtab_upper_bound (abfd) : 0;
 		long	i;
 		(void)i;
 

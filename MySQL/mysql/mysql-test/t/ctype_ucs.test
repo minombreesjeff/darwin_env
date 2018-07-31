@@ -1,0 +1,413 @@
+-- source include/have_ucs2.inc
+
+--disable_warnings
+DROP TABLE IF EXISTS t1;
+--enable_warnings
+
+SET NAMES latin1;
+SET character_set_connection=ucs2;
+-- source include/endspace.inc
+
+SET CHARACTER SET koi8r;
+
+#
+# Check that 0x20 is only trimmed when it is 
+# a part of real SPACE character, not just a part
+# of a multibyte sequence.
+# Note, CYRILLIC LETTER ER is used as an example, which
+# is stored as 0x0420 in UCS2, thus contains 0x20 in the
+# low byte. The second character is THREE-PER-M, U+2004,
+# which contains 0x20 in the high byte.
+#
+
+CREATE TABLE t1 (word VARCHAR(64) CHARACTER SET ucs2);
+INSERT INTO t1 VALUES (_koi8r'ò'), (X'2004');
+SELECT hex(word) FROM t1 ORDER BY word;
+DELETE FROM t1;
+
+#
+# Check that real spaces are correctly trimmed.
+#
+
+INSERT INTO t1 VALUES (X'042000200020'), (X'200400200020');
+SELECT hex(word) FROM t1 ORDER BY word;
+DROP TABLE t1;
+
+#
+# Check LPAD/RPAD
+#
+SELECT LPAD(_ucs2 X'0420',10,_ucs2 X'0421');
+SELECT LPAD(_ucs2 X'0420',10,_ucs2 X'04210422');
+SELECT LPAD(_ucs2 X'0420',10,_ucs2 X'042104220423');
+SELECT LPAD(_ucs2 X'0420042104220423042404250426042704280429042A042B',10,_ucs2 X'042104220423');
+
+SELECT RPAD(_ucs2 X'0420',10,_ucs2 X'0421');
+SELECT RPAD(_ucs2 X'0420',10,_ucs2 X'04210422');
+SELECT RPAD(_ucs2 X'0420',10,_ucs2 X'042104220423');
+SELECT RPAD(_ucs2 X'0420042104220423042404250426042704280429042A042B',10,_ucs2 X'042104220423');
+
+CREATE TABLE t1 SELECT 
+LPAD(_ucs2 X'0420',10,_ucs2 X'0421') l,
+RPAD(_ucs2 X'0420',10,_ucs2 X'0421') r;
+SHOW CREATE TABLE t1;
+DROP TABLE t1;
+
+
+#
+# BUG3946
+#
+
+create table t2(f1 Char(30));
+insert into t2 values ("103000"), ("22720000"), ("3401200"), ("78000");
+select lpad(f1, 12, "-o-/") from t2;
+drop table t2;
+######################################################
+#
+# Test of like
+#
+
+SET NAMES koi8r;
+SET character_set_connection=ucs2;
+
+create table t1 (a varchar(10) character set ucs2, key(a));
+insert into t1 values ("a"),("abc"),("abcd"),("hello"),("test");
+explain select * from t1 where a like 'abc%';
+explain select * from t1 where a like concat('abc','%');
+select * from t1 where a like "abc%";
+select * from t1 where a like concat("abc","%");
+select * from t1 where a like "ABC%";
+select * from t1 where a like "test%";
+select * from t1 where a like "te_t";
+select * from t1 where a like "%a%";
+select * from t1 where a like "%abcd%";
+select * from t1 where a like "%abc\d%";
+drop table t1;
+
+#
+# More LIKE test: bug#2619
+#
+select 'AA' like 'AA'; 
+select 'AA' like 'A%A';
+select 'AA' like 'A%%A';
+select 'AA' like 'AA%';
+select 'AA' like '%AA%';
+select 'AA' like '%A';
+select 'AA' like '%AA';
+select 'AA' like 'A%A%';
+select 'AA' like '_%_%';
+select 'AA' like '%A%A';
+select 'AAA'like 'A%A%A';
+
+select 'AZ' like 'AZ'; 
+select 'AZ' like 'A%Z';
+select 'AZ' like 'A%%Z';
+select 'AZ' like 'AZ%';
+select 'AZ' like '%AZ%';
+select 'AZ' like '%Z';
+select 'AZ' like '%AZ';
+select 'AZ' like 'A%Z%';
+select 'AZ' like '_%_%';
+select 'AZ' like '%A%Z';
+select 'AZ' like 'A_';
+select 'AZ' like '_Z';
+select 'AMZ'like 'A%M%Z';
+
+CREATE TABLE t1 (a VARCHAR(10) CHARACTER SET ucs2);
+INSERT INTO t1 VALUES ('ÆÙ×Á'),('æÙ×Á'),('Æù×Á'),('ÆÙ÷Á'),('ÆÙ×á'),('æù÷á');
+INSERT INTO t1 VALUES ('ÆÙ×ÁÐÒÏÌÄÖ'),('æÙ×ÁÐÒÏÌÄÖ'),('Æù×ÁÐÒÏÌÄÖ'),('ÆÙ÷ÁÐÒÏÌÄÖ');
+INSERT INTO t1 VALUES ('ÆÙ×áÐÒÏÌÄÖ'),('ÆÙ×ÁðÒÏÌÄÖ'),('ÆÙ×ÁÐòÏÌÄÖ'),('ÆÙ×ÁÐÒïÌÄÖ');
+INSERT INTO t1 VALUES ('ÆÙ×ÁÐÒÏìÄÖ'),('ÆÙ×ÁÐÒÏÌäÖ'),('ÆÙ×ÁÐÒÏÌÄö'),('æù÷áðòïìäö');
+SELECT * FROM t1 WHERE a LIKE '%Æù×Á%';
+SELECT * FROM t1 WHERE a LIKE '%Æù×%';
+SELECT * FROM t1 WHERE a LIKE 'Æù×Á%';
+SELECT * FROM t1 WHERE a LIKE 'Æù×Á%' COLLATE ucs2_bin;
+DROP TABLE t1;
+
+#
+# Bug 1181
+#
+CREATE TABLE t1 (word varchar(64) NOT NULL, PRIMARY KEY (word))
+ENGINE=MyISAM CHARACTER SET ucs2 COLLATE ucs2_general_ci;
+INSERT INTO t1 (word) VALUES ("cat");
+SELECT * FROM t1 WHERE word LIKE "c%";
+SELECT * FROM t1 WHERE word LIKE "ca_";
+SELECT * FROM t1 WHERE word LIKE "cat";
+SELECT * FROM t1 WHERE word LIKE _ucs2 x'00630025';
+SELECT * FROM t1 WHERE word LIKE _ucs2 x'00630061005F';
+DROP TABLE t1;
+
+#
+# Check that INSERT works fine. 
+# This invokes charpos() function.
+select insert(_ucs2 0x006100620063,10,2,_ucs2 0x006400650066);
+select insert(_ucs2 0x006100620063,1,2,_ucs2 0x006400650066);
+
+######################################################
+
+#
+# Bug 1264
+#
+# Description: 
+#
+# When using a ucs2 table in MySQL, 
+# either with ucs2_general_ci or ucs2_bin collation,
+# words are returned in an incorrect order when using ORDER BY
+# on an _indexed_ CHAR or VARCHAR column. They are sorted with
+# the longest word *first* instead of last. I.E. The word "aardvark"
+# is in the results before the word "a".
+#
+# If there is no index for the column, the problem does not occur.
+#
+# Interestingly, if there is no second column, the words are returned
+# in the correct order. 
+#
+# According to EXPLAIN, it looks like when the output includes columns that
+# are not part of the index sorted on, it does a filesort, which fails. 
+# Using a straight index yields correct results.
+
+SET NAMES latin1;
+
+#
+# Two fields, index
+#
+
+CREATE TABLE t1 (
+   word VARCHAR(64),
+   bar INT(11) default 0,
+   PRIMARY KEY (word))
+   ENGINE=MyISAM
+   CHARSET ucs2
+   COLLATE ucs2_general_ci ;
+
+INSERT INTO t1 (word) VALUES ("aar");
+INSERT INTO t1 (word) VALUES ("a");
+INSERT INTO t1 (word) VALUES ("aardvar");
+INSERT INTO t1 (word) VALUES ("aardvark");
+INSERT INTO t1 (word) VALUES ("aardvara");
+INSERT INTO t1 (word) VALUES ("aardvarz");
+EXPLAIN SELECT * FROM t1 ORDER BY word;
+SELECT * FROM t1 ORDER BY word;
+EXPLAIN SELECT word FROM t1 ORDER BY word;
+SELECT word FROM t1 ORDER by word;
+DROP TABLE t1;
+
+#
+# One field, index
+# 
+
+CREATE TABLE t1 (
+   word VARCHAR(64) ,
+   PRIMARY KEY (word))
+   ENGINE=MyISAM
+   CHARSET ucs2
+   COLLATE ucs2_general_ci;
+
+INSERT INTO t1 (word) VALUES ("aar");
+INSERT INTO t1 (word) VALUES ("a");
+INSERT INTO t1 (word) VALUES ("aardvar");
+INSERT INTO t1 (word) VALUES ("aardvark");
+INSERT INTO t1 (word) VALUES ("aardvara");
+INSERT INTO t1 (word) VALUES ("aardvarz");
+EXPLAIN SELECT * FROM t1 ORDER BY WORD;
+SELECT * FROM t1 ORDER BY word;
+DROP TABLE t1;
+
+
+#
+# Two fields, no index
+#
+
+CREATE TABLE t1 (
+   word TEXT,
+   bar INT(11) AUTO_INCREMENT,
+   PRIMARY KEY (bar))
+   ENGINE=MyISAM
+   CHARSET ucs2
+   COLLATE ucs2_general_ci ;
+INSERT INTO t1 (word) VALUES ("aar");
+INSERT INTO t1 (word) VALUES ("a" );
+INSERT INTO t1 (word) VALUES ("aardvar");
+INSERT INTO t1 (word) VALUES ("aardvark");
+INSERT INTO t1 (word) VALUES ("aardvara");
+INSERT INTO t1 (word) VALUES ("aardvarz");
+EXPLAIN SELECT * FROM t1 ORDER BY word;
+SELECT * FROM t1 ORDER BY word;
+EXPLAIN SELECT word FROM t1 ORDER BY word;
+SELECT word FROM t1 ORDER BY word;
+DROP TABLE t1;
+
+#
+# END OF Bug 1264 test
+#
+########################################################
+
+
+# Bug #2390
+# Check alignment for constants
+#
+SELECT HEX(_ucs2 0x0);
+SELECT HEX(_ucs2 0x01);
+SELECT HEX(_ucs2 0x012);
+SELECT HEX(_ucs2 0x0123);
+SELECT HEX(_ucs2 0x01234);
+SELECT HEX(_ucs2 0x012345);
+SELECT HEX(_ucs2 0x0123456);
+SELECT HEX(_ucs2 0x01234567);
+SELECT HEX(_ucs2 0x012345678);
+SELECT HEX(_ucs2 0x0123456789);
+SELECT HEX(_ucs2 0x0123456789A);
+SELECT HEX(_ucs2 0x0123456789AB);
+SELECT HEX(_ucs2 0x0123456789ABC);
+SELECT HEX(_ucs2 0x0123456789ABCD);
+SELECT HEX(_ucs2 0x0123456789ABCDE);
+SELECT HEX(_ucs2 0x0123456789ABCDEF);
+
+#
+# Check alignment for from-binary-conversion with CAST and CONVERT
+#
+SELECT hex(cast(0xAA as char character set ucs2));
+SELECT hex(convert(0xAA using ucs2));
+
+#
+# Check alignment for string types
+#
+CREATE TABLE t1 (a char(10) character set ucs2);
+INSERT INTO t1 VALUES (0xA),(0xAA),(0xAAA),(0xAAAA),(0xAAAAA);
+SELECT HEX(a) FROM t1;
+DROP TABLE t1;
+
+CREATE TABLE t1 (a varchar(10) character set ucs2);
+INSERT INTO t1 VALUES (0xA),(0xAA),(0xAAA),(0xAAAA),(0xAAAAA);
+SELECT HEX(a) FROM t1;
+DROP TABLE t1;
+
+CREATE TABLE t1 (a text character set ucs2);
+INSERT INTO t1 VALUES (0xA),(0xAA),(0xAAA),(0xAAAA),(0xAAAAA);
+SELECT HEX(a) FROM t1;
+DROP TABLE t1;
+
+CREATE TABLE t1 (a mediumtext character set ucs2);
+INSERT INTO t1 VALUES (0xA),(0xAA),(0xAAA),(0xAAAA),(0xAAAAA);
+SELECT HEX(a) FROM t1;
+DROP TABLE t1;
+
+CREATE TABLE t1 (a longtext character set ucs2);
+INSERT INTO t1 VALUES (0xA),(0xAA),(0xAAA),(0xAAAA),(0xAAAAA);
+SELECT HEX(a) FROM t1;
+DROP TABLE t1;
+
+-- the same should be also done with enum and set
+
+
+#
+# Bug #5024 Server crashes with queries on fields
+#  with certain charset/collation settings
+#
+
+create table t1 (s1 char character set `ucs2` collate `ucs2_czech_ci`);
+insert into t1 values ('0'),('1'),('2'),('a'),('b'),('c');
+select s1 from t1 where s1 > 'a' order by s1;
+drop table t1;
+
+#
+# Bug #5081 : UCS2 fields are filled with '0x2020'
+# after extending field length
+#
+create table t1(a char(1)) default charset = ucs2;
+insert into t1 values ('a'),('b'),('c');
+alter table t1 modify a char(5);
+select a, hex(a) from t1;
+drop table t1;
+
+#
+# Check prepare statement from an UCS2 string
+#
+set @ivar= 1234;
+set @str1 = 'select ?';
+set @str2 = convert(@str1 using ucs2);
+prepare stmt1 from @str2;
+execute stmt1 using @ivar;
+
+#
+# Check correct binlogging of UCS2 user variables (BUG#3875)
+#
+SET TIMESTAMP=10000;
+create table t2 (c char(30)) charset=ucs2;
+set @v=convert('abc' using ucs2);
+reset master;
+insert into t2 values (@v);
+show binlog events from 79;
+# more important than SHOW BINLOG EVENTS, mysqlbinlog (where we
+# absolutely need variables names to be quoted and strings to be
+# escaped).
+--replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
+--exec $MYSQL_BINLOG --short-form $MYSQL_TEST_DIR/var/log/master-bin.000001 
+drop table t2;
+
+
+#
+# Check that ucs2 works with ENUM and SET type
+#
+set names latin1;
+create table t1 (a enum('x','y','z') character set ucs2);
+show create table t1;
+insert into t1 values ('x');
+insert into t1 values ('y');
+insert into t1 values ('z');
+select a, hex(a) from t1 order by a;
+alter table t1 change a a enum('x','y','z','d','e','ä','ö','ü') character set ucs2;
+show create table t1;
+insert into t1 values ('D');
+insert into t1 values ('E ');
+insert into t1 values ('Ä');
+insert into t1 values ('Ö');
+insert into t1 values ('Ü');
+select a, hex(a) from t1 order by a;
+drop table t1;
+
+create table t1 (a set ('x','y','z','ä','ö','ü') character set ucs2);
+show create table t1;
+insert into t1 values ('x');
+insert into t1 values ('y');
+insert into t1 values ('z');
+insert into t1 values ('x,y');
+insert into t1 values ('x,y,z,Ä,Ö,Ü');
+select a, hex(a) from t1 order by a;
+drop table t1;
+
+#
+# Bug#7302 UCS2 data in ENUM fields get truncated when new column is added
+#
+create table t1(a enum('a','b','c')) default character set ucs2;
+insert into t1 values('a'),('b'),('c');
+alter table t1 add b char(1);
+show warnings;
+select * from t1 order by a;
+drop table t1;
+
+SET collation_connection='ucs2_general_ci';
+-- source include/ctype_filesort.inc
+SET NAMES latin1;
+SET collation_connection='ucs2_bin';
+-- source include/ctype_filesort.inc
+
+SET NAMES latin1;
+#
+# Bug#8235
+#
+# This bug also helped to find another problem that
+# INSERT of a UCS2 string containing a negative number
+# into a unsigned int column didn't produce warnings.
+# This test covers both problems.
+#
+SET collation_connection='ucs2_swedish_ci';
+CREATE TABLE t1 (Field1 int(10) default '0');
+# no warnings, negative numbers are allowed
+INSERT INTO t1 VALUES ('-1');
+SELECT * FROM t1;
+DROP TABLE t1;
+CREATE TABLE t1 (Field1 int(10) unsigned default '0');
+# this should generate a "Data truncated" warning
+INSERT INTO t1 VALUES ('-1');
+DROP TABLE t1;
+SET NAMES latin1;

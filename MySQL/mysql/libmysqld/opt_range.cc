@@ -31,8 +31,6 @@
 #include <m_ctype.h>
 #include <nisam.h>
 #include "sql_select.h"
-#include <assert.h>
-
 
 #ifndef EXTRA_DEBUG
 #define test_rb_tree(A,B) {}
@@ -172,17 +170,18 @@ public:
   void store(uint length,char **min_key,uint min_key_flag,
 	     char **max_key, uint max_key_flag)
   {
-    if (!(min_flag & NO_MIN_RANGE) &&
-	!(min_key_flag & (NO_MIN_RANGE | NEAR_MIN)))
+    if ((min_flag & GEOM_FLAG) ||
+        (!(min_flag & NO_MIN_RANGE) &&
+	!(min_key_flag & (NO_MIN_RANGE | NEAR_MIN))))
     {
       if (maybe_null && *min_value)
       {
 	**min_key=1;
-	bzero(*min_key+1,length);
+	bzero(*min_key+1,length-1);
       }
       else
-	memcpy(*min_key,min_value,length+(int) maybe_null);
-      (*min_key)+= length+(int) maybe_null;
+	memcpy(*min_key,min_value,length);
+      (*min_key)+= length;
     }
     if (!(max_flag & NO_MAX_RANGE) &&
 	!(max_key_flag & (NO_MAX_RANGE | NEAR_MAX)))
@@ -190,18 +189,18 @@ public:
       if (maybe_null && *max_value)
       {
 	**max_key=1;
-	bzero(*max_key+1,length);
+	bzero(*max_key+1,length-1);
       }
       else
-	memcpy(*max_key,max_value,length+(int) maybe_null);
-      (*max_key)+= length+(int) maybe_null;
+	memcpy(*max_key,max_value,length);
+      (*max_key)+= length;
     }
   }
 
   void store_min_key(KEY_PART *key,char **range_key, uint *range_key_flag)
   {
     SEL_ARG *key_tree= first();
-    key_tree->store(key[key_tree->part].part_length,
+    key_tree->store(key[key_tree->part].store_length,
 		    range_key,*range_key_flag,range_key,NO_MAX_RANGE);
     *range_key_flag|= key_tree->min_flag;
     if (key_tree->next_key_part &&
@@ -214,7 +213,7 @@ public:
   void store_max_key(KEY_PART *key,char **range_key, uint *range_key_flag)
   {
     SEL_ARG *key_tree= last();
-    key_tree->store(key[key_tree->part].part_length,
+    key_tree->store(key[key_tree->part].store_length,
 		    range_key, NO_MIN_RANGE, range_key,*range_key_flag);
     (*range_key_flag)|= key_tree->max_flag;
     if (key_tree->next_key_part &&
@@ -293,14 +292,12 @@ typedef struct st_qsel_param {
   COND *cond;
 } PARAM;
 
-static SEL_TREE * get_mm_parts(PARAM *param,Field *field,
+static SEL_TREE * get_mm_parts(PARAM *param,COND *cond_func,Field *field,
 			       Item_func::Functype type,Item *value,
 			       Item_result cmp_type);
-static SEL_ARG *get_mm_leaf(PARAM *param,Field *field,KEY_PART *key_part,
+static SEL_ARG *get_mm_leaf(PARAM *param,COND *cond_func,Field *field,
+			    KEY_PART *key_part,
 			    Item_func::Functype type,Item *value);
-static bool like_range(const char *ptr,uint length,char wild_prefix,
-		       uint field_length, char *min_str,char *max_str,
-		       char max_sort_char,uint *min_length,uint *max_length);
 static SEL_TREE *get_mm_tree(PARAM *param,COND *cond);
 static ha_rows check_quick_select(PARAM *param,uint index,SEL_ARG *key_tree);
 static ha_rows check_quick_keys(PARAM *param,uint index,SEL_ARG *key_tree,
@@ -310,7 +307,7 @@ static ha_rows check_quick_keys(PARAM *param,uint index,SEL_ARG *key_tree,
 static QUICK_SELECT *get_quick_select(PARAM *param,uint index,
 				      SEL_ARG *key_tree);
 #ifndef DBUG_OFF
-static void print_quick(QUICK_SELECT *quick,key_map needed_reg);
+static void print_quick(QUICK_SELECT *quick,const key_map* needed_reg);
 #endif
 static SEL_TREE *tree_and(PARAM *param,SEL_TREE *tree1,SEL_TREE *tree2);
 static SEL_TREE *tree_or(PARAM *param,SEL_TREE *tree1,SEL_TREE *tree2);
@@ -355,13 +352,13 @@ SQL_SELECT *make_select(TABLE *head, table_map const_tables,
   select->head=head;
   select->cond=conds;
 
-  if (head->io_cache)
+  if (head->sort.io_cache)
   {
-    select->file= *head->io_cache;
+    select->file= *head->sort.io_cache;
     select->records=(ha_rows) (select->file.end_of_file/
 			       head->file->ref_length);
-    my_free((gptr) (head->io_cache),MYF(0));
-    head->io_cache=0;
+    my_free((gptr) (head->sort.io_cache),MYF(0));
+    head->sort.io_cache=0;
   }
   DBUG_RETURN(select);
 }
@@ -369,30 +366,41 @@ SQL_SELECT *make_select(TABLE *head, table_map const_tables,
 
 SQL_SELECT::SQL_SELECT() :quick(0),cond(0),free_cond(0)
 {
-  quick_keys=0; needed_reg=0;
+  quick_keys.clear_all(); needed_reg.clear_all();
   my_b_clear(&file);
+}
+
+
+void SQL_SELECT::cleanup()
+{
+  delete quick;
+  quick= 0;
+  if (free_cond)
+  {
+    free_cond=0;
+    delete cond;
+    cond= 0;
+  }    
+  close_cached_file(&file);
 }
 
 
 SQL_SELECT::~SQL_SELECT()
 {
-  delete quick;
-  if (free_cond)
-    delete cond;
-  close_cached_file(&file);
+  cleanup();
 }
 
 #undef index					// Fix for Unixware 7
 
 QUICK_SELECT::QUICK_SELECT(THD *thd, TABLE *table, uint key_nr, bool no_alloc)
-  :dont_free(0),error(0),index(key_nr),max_used_key_length(0),head(table),
-   it(ranges),range(0)
+  :dont_free(0),sorted(0),error(0),index(key_nr),max_used_key_length(0),
+   used_key_parts(0), head(table), it(ranges),range(0)
 {
   if (!no_alloc)
   {
     // Allocates everything through the internal memroot
     init_sql_alloc(&alloc, thd->variables.range_alloc_block_size, 0);
-    my_pthread_setspecific_ptr(THR_MALLOC,&alloc);
+    thd->mem_root= &alloc;
   }
   else
     bzero((char*) &alloc,sizeof(alloc));
@@ -405,7 +413,8 @@ QUICK_SELECT::~QUICK_SELECT()
 {
   if (!dont_free)
   {
-    file->index_end();
+    if (file->inited)
+      file->ha_index_end();
     free_root(&alloc,MYF(0));
   }
 }
@@ -573,46 +582,54 @@ SEL_ARG *SEL_ARG::clone_tree()
   return root;
 }
 
-/*****************************************************************************
-**	Test if a key can be used in different ranges
-**	Returns:
-**	-1 if impossible select
-**	0 if can't use quick_select
-**	1 if found usable range
-**	Updates the following in the select parameter:
-**	needed_reg ; Bits for keys with may be used if all prev regs are read
-**	quick	   ; Parameter to use when reading records.
-**	In the table struct the following information is updated:
-**	quick_keys ; Which keys can be used
-**	quick_rows ; How many rows the key matches
-*****************************************************************************/
+/*
+  Test if a key can be used in different ranges
+
+  SYNOPSIS
+   SQL_SELECT::test_quick_select(thd,keys_to_use, prev_tables,
+                                 limit, force_quick_range)
+
+   Updates the following in the select parameter:
+    needed_reg - Bits for keys with may be used if all prev regs are read
+    quick      - Parameter to use when reading records.
+   In the table struct the following information is updated:
+    quick_keys - Which keys can be used
+    quick_rows - How many rows the key matches
+
+ RETURN VALUES
+  -1 if impossible select
+   0 if can't use quick_select
+   1 if found usable range
+
+ TODO
+   check if the function really needs to modify keys_to_use, and change the
+   code to pass it by reference if not
+*/
 
 int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
 				  table_map prev_tables,
 				  ha_rows limit, bool force_quick_range)
 {
-  uint basflag;
   uint idx;
   double scan_time;
   DBUG_ENTER("test_quick_select");
   DBUG_PRINT("enter",("keys_to_use: %lu  prev_tables: %lu  const_tables: %lu",
-		      (ulong) keys_to_use, (ulong) prev_tables,
+		      keys_to_use.to_ulonglong(), (ulong) prev_tables,
 		      (ulong) const_tables));
 
   delete quick;
   quick=0;
-  needed_reg=0; quick_keys=0;
+  needed_reg.clear_all(); quick_keys.clear_all();
   if (!cond || (specialflag & SPECIAL_SAFE_MODE) && ! force_quick_range ||
       !limit)
     DBUG_RETURN(0); /* purecov: inspected */
-  if (!((basflag= head->file->table_flags()) & HA_KEYPOS_TO_RNDPOS) &&
-      keys_to_use == (uint) ~0 || !keys_to_use)
-    DBUG_RETURN(0);				/* Not smart database */
+  if (keys_to_use.is_clear_all())
+    DBUG_RETURN(0);
   records=head->file->records;
   if (!records)
     records++;					/* purecov: inspected */
   scan_time=(double) records / TIME_FOR_COMPARE+1;
-  read_time=(double) head->file->scan_time()+ scan_time + 1.0;
+  read_time=(double) head->file->scan_time()+ scan_time + 1.1;
   if (head->force_index)
     scan_time= read_time= DBL_MAX;
   if (limit < records)
@@ -622,55 +639,60 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
 
   DBUG_PRINT("info",("Time to scan table: %g", read_time));
 
-  keys_to_use&=head->keys_in_use_for_query;
-  if (keys_to_use)
+  keys_to_use.intersect(head->keys_in_use_for_query);
+  if (!keys_to_use.is_clear_all())
   {
     MEM_ROOT *old_root,alloc;
     SEL_TREE *tree;
     KEY_PART *key_parts;
+    KEY *key_info;
     PARAM param;
 
     /* set up parameter that is passed to all functions */
     param.thd= thd;
-    param.baseflag=basflag;
+    param.baseflag=head->file->table_flags();
     param.prev_tables=prev_tables | const_tables;
     param.read_tables=read_tables;
     param.current_table= head->map;
     param.table=head;
     param.keys=0;
     param.mem_root= &alloc;
-    param.thd->no_errors=1;			// Don't warn about NULL
-    init_sql_alloc(&alloc, param.thd->variables.range_alloc_block_size, 0);
+    thd->no_errors=1;				// Don't warn about NULL
+    init_sql_alloc(&alloc, thd->variables.range_alloc_block_size, 0);
     if (!(param.key_parts = (KEY_PART*) alloc_root(&alloc,
 						   sizeof(KEY_PART)*
 						   head->key_parts)))
     {
-      param.thd->no_errors=0;
+      thd->no_errors=0;
       free_root(&alloc,MYF(0));			// Return memory & allocator
       DBUG_RETURN(0);				// Can't use range
     }
     key_parts= param.key_parts;
-    old_root=my_pthread_getspecific_ptr(MEM_ROOT*,THR_MALLOC);
-    my_pthread_setspecific_ptr(THR_MALLOC,&alloc);
+    old_root= thd->mem_root;
+    thd->mem_root= &alloc;
 
-    for (idx=0 ; idx < head->keys ; idx++)
+    key_info= head->key_info;
+    for (idx=0 ; idx < head->keys ; idx++, key_info++)
     {
-      if (!(keys_to_use & ((key_map) 1L << idx)))
+      KEY_PART_INFO *key_part_info;
+      if (!keys_to_use.is_set(idx))
 	continue;
-      KEY *key_info= &head->key_info[idx];
       if (key_info->flags & HA_FULLTEXT)
 	continue;    // ToDo: ft-keys in non-ft ranges, if possible   SerG
 
       param.key[param.keys]=key_parts;
-      for (uint part=0 ; part < key_info->key_parts ; part++,key_parts++)
+      key_part_info= key_info->key_part;
+      for (uint part=0 ; part < key_info->key_parts ;
+	   part++, key_parts++, key_part_info++)
       {
-	key_parts->key=param.keys;
-	key_parts->part=part;
-	key_parts->part_length= key_info->key_part[part].length;
-	key_parts->field=    key_info->key_part[part].field;
-	key_parts->null_bit= key_info->key_part[part].null_bit;
-	if (key_parts->field->type() == FIELD_TYPE_BLOB)
-	  key_parts->part_length+=HA_KEY_BLOB_LENGTH;
+	key_parts->key=		 param.keys;
+	key_parts->part=	 part;
+	key_parts->length=       key_part_info->length;
+	key_parts->store_length= key_part_info->store_length;
+	key_parts->field=	 key_part_info->field;
+	key_parts->null_bit=	 key_part_info->null_bit;
+        key_parts->image_type =
+          (key_info->flags & HA_SPATIAL) ? Field::itMBR : Field::itRAW;
       }
       param.real_keynr[param.keys++]=idx;
     }
@@ -688,6 +710,7 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
       {
 	SEL_ARG **key,**end,**best_key=0;
 
+
 	for (idx=0,key=tree->keys, end=key+param.keys ;
 	     key != end ;
 	     key++,idx++)
@@ -699,12 +722,13 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
 	    uint keynr= param.real_keynr[idx];
 	    if ((*key)->type == SEL_ARG::MAYBE_KEY ||
 		(*key)->maybe_flag)
-	        needed_reg|= (key_map) 1 << keynr;
+	        needed_reg.set_bit(keynr);
 
 	    found_records=check_quick_select(&param, idx, *key);
 	    if (found_records != HA_POS_ERROR && found_records > 2 &&
-		head->used_keys & ((table_map) 1 << keynr) &&
-		(head->file->index_flags(keynr) & HA_KEY_READ_ONLY))
+		head->used_keys.is_set(keynr) &&
+		(head->file->index_flags(keynr, param.max_key_part, 1) &
+                 HA_KEYREAD_ONLY))
 	    {
 	      /*
 		We can resolve this by only reading through this key.
@@ -723,6 +747,8 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
 						      param.range_count,
 						      found_records)+
 				(double) found_records / TIME_FOR_COMPARE);
+            DBUG_PRINT("info",("read_time: %g  found_read_time: %g",
+                               read_time, found_read_time));
 	    if (read_time > found_read_time && found_records != HA_POS_ERROR)
 	    {
 	      read_time=found_read_time;
@@ -743,10 +769,10 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
       }
     }
     free_root(&alloc,MYF(0));			// Return memory & allocator
-    my_pthread_setspecific_ptr(THR_MALLOC,old_root);
-    param.thd->no_errors=0;
+    thd->mem_root= old_root;
+    thd->no_errors=0;
   }
-  DBUG_EXECUTE("info",print_quick(quick,needed_reg););
+  DBUG_EXECUTE("info",print_quick(quick,&needed_reg););
   /*
     Assume that if the user is using 'limit' we will only need to scan
     limit rows if we are using a key
@@ -772,7 +798,7 @@ static SEL_TREE *get_mm_tree(PARAM *param,COND *cond)
       while ((item=li++))
       {
 	SEL_TREE *new_tree=get_mm_tree(param,item);
-	if (param->thd->fatal_error)
+	if (param->thd->is_fatal_error)
 	  DBUG_RETURN(0);	// out of memory
 	tree=tree_and(param,tree,new_tree);
 	if (tree && tree->type == SEL_TREE::IMPOSSIBLE)
@@ -828,10 +854,10 @@ static SEL_TREE *get_mm_tree(PARAM *param,COND *cond)
       Field *field=((Item_field*) (cond_func->arguments()[0]))->field;
       Item_result cmp_type=field->cmp_type();
       DBUG_RETURN(tree_and(param,
-			   get_mm_parts(param, field,
+			   get_mm_parts(param, cond_func, field,
 					Item_func::GE_FUNC,
 					cond_func->arguments()[1], cmp_type),
-			   get_mm_parts(param, field,
+			   get_mm_parts(param, cond_func, field,
 					Item_func::LE_FUNC,
 					cond_func->arguments()[2], cmp_type)));
     }
@@ -844,13 +870,14 @@ static SEL_TREE *get_mm_tree(PARAM *param,COND *cond)
     {
       Field *field=((Item_field*) (func->key_item()))->field;
       Item_result cmp_type=field->cmp_type();
-      tree= get_mm_parts(param,field,Item_func::EQ_FUNC,
-			 func->arguments()[0],cmp_type);
+      tree= get_mm_parts(param,cond_func,field,Item_func::EQ_FUNC,
+			 func->arguments()[1],cmp_type);
       if (!tree)
 	DBUG_RETURN(tree);			// Not key field
-      for (uint i=1 ; i < func->argument_count(); i++)
+      for (uint i=2 ; i < func->argument_count(); i++)
       {
-	SEL_TREE *new_tree=get_mm_parts(param,field,Item_func::EQ_FUNC,
+	SEL_TREE *new_tree=get_mm_parts(param,cond_func,field,
+					Item_func::EQ_FUNC,
 					func->arguments()[i],cmp_type);
 	tree=tree_or(param,tree,new_tree);
       }
@@ -869,7 +896,7 @@ static SEL_TREE *get_mm_tree(PARAM *param,COND *cond)
   /* btw, ft_func's arguments()[0] isn't FIELD_ITEM.  SerG*/
   if (cond_func->arguments()[0]->type() == Item::FIELD_ITEM)
   {
-    tree= get_mm_parts(param,
+    tree= get_mm_parts(param, cond_func,
 		       ((Item_field*) (cond_func->arguments()[0]))->field,
 		       cond_func->functype(),
 		       cond_func->arg_count > 1 ? cond_func->arguments()[1] :
@@ -882,7 +909,7 @@ static SEL_TREE *get_mm_tree(PARAM *param,COND *cond)
       cond_func->have_rev_func() &&
       cond_func->arguments()[1]->type() == Item::FIELD_ITEM)
   {
-    DBUG_RETURN(get_mm_parts(param,
+    DBUG_RETURN(get_mm_parts(param, cond_func,
 			     ((Item_field*)
 			      (cond_func->arguments()[1]))->field,
 			     ((Item_bool_func2*) cond_func)->rev_functype(),
@@ -896,12 +923,20 @@ static SEL_TREE *get_mm_tree(PARAM *param,COND *cond)
 
 
 static SEL_TREE *
-get_mm_parts(PARAM *param, Field *field, Item_func::Functype type, 
+get_mm_parts(PARAM *param, COND *cond_func, Field *field,
+	     Item_func::Functype type, 
 	     Item *value, Item_result cmp_type)
 {
+  bool ne_func= FALSE;
   DBUG_ENTER("get_mm_parts");
   if (field->table != param->table)
     DBUG_RETURN(0);
+
+  if (type == Item_func::NE_FUNC)
+  {
+    ne_func= TRUE;
+    type= Item_func::LT_FUNC;
+  }
 
   KEY_PART *key_part = param->key_parts;
   KEY_PART *end = param->key_parts_end;
@@ -918,7 +953,8 @@ get_mm_parts(PARAM *param, Field *field, Item_func::Functype type,
 	DBUG_RETURN(0);				// OOM
       if (!value || !(value->used_tables() & ~param->read_tables))
       {
-	sel_arg=get_mm_leaf(param,key_part->field,key_part,type,value);
+	sel_arg=get_mm_leaf(param,cond_func,
+			    key_part->field,key_part,type,value);
 	if (!sel_arg)
 	  continue;
 	if (sel_arg->type == SEL_ARG::IMPOSSIBLE)
@@ -937,12 +973,21 @@ get_mm_parts(PARAM *param, Field *field, Item_func::Functype type,
       tree->keys[key_part->key]=sel_add(tree->keys[key_part->key],sel_arg);
     }
   }
+
+  if (ne_func)
+  {
+    SEL_TREE *tree2= get_mm_parts(param, cond_func,
+				  field, Item_func::GT_FUNC,
+                                  value, cmp_type);
+    if (tree2)
+      tree= tree_or(param,tree,tree2);
+  }
   DBUG_RETURN(tree);
 }
 
 
 static SEL_ARG *
-get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
+get_mm_leaf(PARAM *param, COND *conf_func, Field *field, KEY_PART *key_part,
 	    Item_func::Functype type,Item *value)
 {
   uint maybe_null=(uint) field->real_maybe_null(), copies;
@@ -951,14 +996,50 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
   char *str, *str2;
   DBUG_ENTER("get_mm_leaf");
 
+  if (!value)					// IS NULL or IS NOT NULL
+  {
+    if (field->table->outer_join)		// Can't use a key on this
+      DBUG_RETURN(0);
+    if (!maybe_null)				// Not null field
+      DBUG_RETURN(type == Item_func::ISNULL_FUNC ? &null_element : 0);
+    if (!(tree=new SEL_ARG(field,is_null_string,is_null_string)))
+      DBUG_RETURN(0);		// out of memory
+    if (type == Item_func::ISNOTNULL_FUNC)
+    {
+      tree->min_flag=NEAR_MIN;		    /* IS NOT NULL ->  X > NULL */
+      tree->max_flag=NO_MAX_RANGE;
+    }
+    DBUG_RETURN(tree);
+  }
+
+  /*
+    1. Usually we can't use an index if the column collation
+       differ from the operation collation.
+
+    2. However, we can reuse a case insensitive index for
+       the binary searches:
+
+       WHERE latin1_swedish_ci_column = 'a' COLLATE lati1_bin;
+
+       WHERE latin1_swedish_ci_colimn = BINARY 'a '
+
+  */
+  if (field->result_type() == STRING_RESULT &&
+      value->result_type() == STRING_RESULT &&
+      key_part->image_type == Field::itRAW &&
+      ((Field_str*)field)->charset() != conf_func->compare_collation() &&
+      !(conf_func->compare_collation()->state & MY_CS_BINSORT))
+    DBUG_RETURN(0);
+
   if (type == Item_func::LIKE_FUNC)
   {
     bool like_error;
     char buff1[MAX_FIELD_WIDTH],*min_str,*max_str;
-    String tmp(buff1,sizeof(buff1)),*res;
+    String tmp(buff1,sizeof(buff1),value->collation.collation),*res;
     uint length,offset,min_length,max_length;
 
-    if (!field->optimize_range((uint) key_part->key))
+    if (!field->optimize_range(param->real_keynr[key_part->key],
+                               key_part->part))
       DBUG_RETURN(0);				// Can't optimize this
     if (!(res= value->val_str(&tmp)))
       DBUG_RETURN(&null_element);
@@ -977,18 +1058,26 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
       DBUG_RETURN(0);				// Can only optimize strings
 
     offset=maybe_null;
-    length=key_part->part_length;
-    if (field->type() == FIELD_TYPE_BLOB)
+    length=key_part->store_length;
+
+    if (length != key_part->length  + maybe_null)
     {
-      offset+=HA_KEY_BLOB_LENGTH;
-      field_length=key_part->part_length-HA_KEY_BLOB_LENGTH;
+      /* key packed with length prefix */
+      offset+= HA_KEY_BLOB_LENGTH;
+      field_length= length - HA_KEY_BLOB_LENGTH;
     }
     else
     {
-      if (length < field_length)
-	length=field_length;			// Only if overlapping key
+      if (unlikely(length < field_length))
+      {
+	/*
+	  This can only happen in a table created with UNIREG where one key
+	  overlaps many fields
+	*/
+	length= field_length;
+      }
       else
-	field_length=length;
+	field_length= length;
     }
     length+=offset;
     if (!(min_str= (char*) alloc_root(param->mem_root, length*2)))
@@ -996,30 +1085,17 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
     max_str=min_str+length;
     if (maybe_null)
       max_str[0]= min_str[0]=0;
-    if (field->binary())
-      like_error=like_range(res->ptr(), res->length(),
-			    ((Item_func_like*)(param->cond))->escape,
-			    field_length, min_str + offset, max_str + offset,
-			    (char) 255, &min_length, &max_length);
-    else
-    {
-#ifdef USE_STRCOLL
-      if (use_strcoll(default_charset_info))
-        like_error= my_like_range(default_charset_info, res->ptr(),
-				  res->length(),
-				  ((Item_func_like*)(param->cond))->escape,
-                                  field_length, min_str + maybe_null,
-                                  max_str + maybe_null, &min_length,
-				  &max_length);
-      else
-#endif
-        like_error=like_range(res->ptr(), res->length(),
+
+    like_error= my_like_range(field->charset(),
+			      res->ptr(), res->length(),
 			      ((Item_func_like*)(param->cond))->escape,
-			      field_length, min_str + offset, max_str + offset,
-                              max_sort_char, &min_length, &max_length);
-    }
+			      wild_one, wild_many,
+			      field_length-maybe_null,
+			      min_str+offset, max_str+offset,
+			      &min_length, &max_length);
     if (like_error)				// Can't optimize with LIKE
       DBUG_RETURN(0);
+
     if (offset != maybe_null)			// Blob
     {
       int2store(min_str+maybe_null,min_length);
@@ -1028,23 +1104,8 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
     DBUG_RETURN(new SEL_ARG(field,min_str,max_str));
   }
 
-  if (!value)					// IS NULL or IS NOT NULL
-  {
-    if (field->table->outer_join)		// Can't use a key on this
-      DBUG_RETURN(0);
-    if (!maybe_null)				// Not null field
-      DBUG_RETURN(type == Item_func::ISNULL_FUNC ? &null_element : 0);
-    if (!(tree=new SEL_ARG(field,is_null_string,is_null_string)))
-      DBUG_RETURN(0);		// out of memory
-    if (type == Item_func::ISNOTNULL_FUNC)
-    {
-      tree->min_flag=NEAR_MIN;		    /* IS NOT NULL ->  X > NULL */
-      tree->max_flag=NO_MAX_RANGE;
-    }
-    DBUG_RETURN(tree);
-  }
-
-  if (!field->optimize_range((uint) key_part->key) &&
+  if (!field->optimize_range(param->real_keynr[key_part->key],
+                             key_part->part) &&
       type != Item_func::EQ_FUNC &&
       type != Item_func::EQUAL_FUNC)
     DBUG_RETURN(0);				// Can't optimize this
@@ -1057,8 +1118,8 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
       value->result_type() != STRING_RESULT &&
       field->cmp_type() != value->result_type())
     DBUG_RETURN(0);
-
-  if (value->save_in_field(field, 1))
+ 
+  if (value->save_in_field(field, 1) < 0)
   {
     /* This happens when we try to insert a NULL field in a not null column */
     DBUG_RETURN(&null_element);			// cmp with NULL is never true
@@ -1068,12 +1129,13 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
   if (field->key_type() == HA_KEYTYPE_VARTEXT)
     copies= 2;
   str= str2= (char*) alloc_root(param->mem_root,
-				(key_part->part_length+maybe_null)*copies+1);
+				(key_part->store_length)*copies+1);
   if (!str)
     DBUG_RETURN(0);
   if (maybe_null)
     *str= (char) field->is_real_null();		// Set to 1 if null
-  field->get_key_image(str+maybe_null,key_part->part_length);
+  field->get_key_image(str+maybe_null, key_part->length,
+		       field->charset(), key_part->image_type);
   if (copies == 2)
   {
     /*
@@ -1082,16 +1144,17 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
       all rows between 'X' and 'X           ...'
     */
     uint length= uint2korr(str+maybe_null);
-    str2= str+ key_part->part_length + maybe_null;
+    str2= str+ key_part->store_length;
     /* remove end space */
     while (length > 0 && str[length+HA_KEY_BLOB_LENGTH+maybe_null-1] == ' ')
       length--;
     int2store(str+maybe_null, length);
     /* Create key that is space filled */
     memcpy(str2, str, length + HA_KEY_BLOB_LENGTH + maybe_null);
-    bfill(str2+ length+ HA_KEY_BLOB_LENGTH +maybe_null,
-	  key_part->part_length-length - HA_KEY_BLOB_LENGTH, ' ');
-    int2store(str2+maybe_null, key_part->part_length - HA_KEY_BLOB_LENGTH);
+    my_fill_8bit(field->charset(),
+		 str2+ length+ HA_KEY_BLOB_LENGTH +maybe_null,
+		 key_part->length-length, ' ');
+    int2store(str2+maybe_null, key_part->length);
   }
   if (!(tree=new SEL_ARG(field,str,str2)))
     DBUG_RETURN(0);		// out of memory
@@ -1117,73 +1180,45 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
   case Item_func::GE_FUNC:
     tree->max_flag=NO_MAX_RANGE;
     break;
+  case Item_func::SP_EQUALS_FUNC:
+    tree->min_flag=GEOM_FLAG | HA_READ_MBR_EQUAL;// NEAR_MIN;//512;
+    tree->max_flag=NO_MAX_RANGE;
+    break;
+  case Item_func::SP_DISJOINT_FUNC:
+    tree->min_flag=GEOM_FLAG | HA_READ_MBR_DISJOINT;// NEAR_MIN;//512;
+    tree->max_flag=NO_MAX_RANGE;
+    break;
+  case Item_func::SP_INTERSECTS_FUNC:
+    tree->min_flag=GEOM_FLAG | HA_READ_MBR_INTERSECT;// NEAR_MIN;//512;
+    tree->max_flag=NO_MAX_RANGE;
+    break;
+  case Item_func::SP_TOUCHES_FUNC:
+    tree->min_flag=GEOM_FLAG | HA_READ_MBR_INTERSECT;// NEAR_MIN;//512;
+    tree->max_flag=NO_MAX_RANGE;
+    break;
+
+  case Item_func::SP_CROSSES_FUNC:
+    tree->min_flag=GEOM_FLAG | HA_READ_MBR_INTERSECT;// NEAR_MIN;//512;
+    tree->max_flag=NO_MAX_RANGE;
+    break;
+  case Item_func::SP_WITHIN_FUNC:
+    tree->min_flag=GEOM_FLAG | HA_READ_MBR_WITHIN;// NEAR_MIN;//512;
+    tree->max_flag=NO_MAX_RANGE;
+    break;
+
+  case Item_func::SP_CONTAINS_FUNC:
+    tree->min_flag=GEOM_FLAG | HA_READ_MBR_CONTAIN;// NEAR_MIN;//512;
+    tree->max_flag=NO_MAX_RANGE;
+    break;
+  case Item_func::SP_OVERLAPS_FUNC:
+    tree->min_flag=GEOM_FLAG | HA_READ_MBR_INTERSECT;// NEAR_MIN;//512;
+    tree->max_flag=NO_MAX_RANGE;
+    break;
+
   default:
     break;
   }
   DBUG_RETURN(tree);
-}
-
-
-/*
-** Calculate min_str and max_str that ranges a LIKE string.
-** Arguments:
-** ptr		Pointer to LIKE string.
-** ptr_length	Length of LIKE string.
-** escape	Escape character in LIKE.  (Normally '\').
-**		All escape characters should be removed from min_str and max_str
-** res_length	Length of min_str and max_str.
-** min_str	Smallest case sensitive string that ranges LIKE.
-**		Should be space padded to res_length.
-** max_str	Largest case sensitive string that ranges LIKE.
-**		Normally padded with the biggest character sort value.
-**
-** The function should return 0 if ok and 1 if the LIKE string can't be
-** optimized !
-*/
-
-static bool like_range(const char *ptr,uint ptr_length,char escape,
-		       uint res_length, char *min_str,char *max_str,
-		       char max_sort_chr, uint *min_length, uint *max_length)
-{
-  const char *end=ptr+ptr_length;
-  char *min_org=min_str;
-  char *min_end=min_str+res_length;
-
-  for (; ptr != end && min_str != min_end ; ptr++)
-  {
-    if (*ptr == escape && ptr+1 != end)
-    {
-      ptr++;					// Skip escape
-      *min_str++= *max_str++ = *ptr;
-      continue;
-    }
-    if (*ptr == wild_one)			// '_' in SQL
-    {
-      *min_str++='\0';				// This should be min char
-      *max_str++=max_sort_chr;
-      continue;
-    }
-    if (*ptr == wild_many)			// '%' in SQL
-    {
-      *min_length= (uint) (min_str - min_org);
-      *max_length=res_length;
-      do {
-	*min_str++ = ' ';			// Because if key compression
-	*max_str++ = max_sort_chr;
-      } while (min_str != min_end);
-      return 0;
-    }
-    *min_str++= *max_str++ = *ptr;
-  }
-  *min_length= *max_length = (uint) (min_str - min_org);
-
-  /* Temporary fix for handling wild_one at end of string (key compression) */
-  for (char *tmp= min_str ; tmp > min_org && tmp[-1] == '\0';)
-    *--tmp=' ';
-
-  while (min_str != min_end)
-    *min_str++ = *max_str++ = ' ';		// Because if key compression
-  return 0;
 }
 
 
@@ -1276,14 +1311,14 @@ tree_and(PARAM *param,SEL_TREE *tree1,SEL_TREE *tree2)
       if (*key2 && !(*key2)->simple_key())
 	flag|=CLONE_KEY2_MAYBE;
       *key1=key_and(*key1,*key2,flag);
-      if ((*key1)->type == SEL_ARG::IMPOSSIBLE)
+      if (*key1 && (*key1)->type == SEL_ARG::IMPOSSIBLE)
       {
 	tree1->type= SEL_TREE::IMPOSSIBLE;
+#ifdef EXTRA_DEBUG
+        (*key1)->test_use_count(*key1);
+#endif
 	break;
       }
-#ifdef EXTRA_DEBUG
-      (*key1)->test_use_count(*key1);
-#endif
     }
   }
   DBUG_RETURN(tree1);
@@ -1379,7 +1414,7 @@ key_and(SEL_ARG *key1,SEL_ARG *key2,uint clone_flag)
   {
     if (key1->part > key2->part)
     {
-      swap(SEL_ARG *,key1,key2);
+      swap_variables(SEL_ARG *, key1, key2);
       clone_flag=swap_clone_flag(clone_flag);
     }
     // key1->part < key2->part
@@ -1395,7 +1430,7 @@ key_and(SEL_ARG *key1,SEL_ARG *key2,uint clone_flag)
        key2->type != SEL_ARG::MAYBE_KEY) ||
       key1->type == SEL_ARG::MAYBE_KEY)
   {						// Put simple key in key2
-    swap(SEL_ARG *,key1,key2);
+    swap_variables(SEL_ARG *, key1, key2);
     clone_flag=swap_clone_flag(clone_flag);
   }
 
@@ -1428,6 +1463,13 @@ key_and(SEL_ARG *key1,SEL_ARG *key2,uint clone_flag)
       key2->use_count--;			// Key2 doesn't have a tree
     }
     return key1;
+  }
+
+  if ((key1->min_flag | key2->min_flag) & GEOM_FLAG)
+  {
+    key1->free_tree();
+    key2->free_tree();
+    return 0;					// Can't optimize this
   }
 
   key1->use_count--;
@@ -1512,7 +1554,8 @@ key_or(SEL_ARG *key1,SEL_ARG *key2)
   key1->use_count--;
   key2->use_count--;
 
-  if (key1->part != key2->part)
+  if (key1->part != key2->part || 
+      (key1->min_flag | key2->min_flag) & GEOM_FLAG)
   {
     key1->free_tree();
     key2->free_tree();
@@ -1537,9 +1580,9 @@ key_or(SEL_ARG *key1,SEL_ARG *key2)
   {
     if (key2->use_count == 0 || key1->elements > key2->elements)
     {
-      swap(SEL_ARG *,key1,key2);
+      swap_variables(SEL_ARG *,key1,key2);
     }
-    else if (!(key1=key1->clone_tree()))
+    if (key1->use_count > 0 || !(key1=key1->clone_tree()))
       return 0;					// OOM
   }
 
@@ -1608,10 +1651,10 @@ key_or(SEL_ARG *key1,SEL_ARG *key2)
 	  SEL_ARG *next=key2->next;		// Keys are not overlapping
 	  if (key2_shared)
 	  {
-	    SEL_ARG *tmp= new SEL_ARG(*key2);	// Must make copy
-	    if (!tmp)
+	    SEL_ARG *cpy= new SEL_ARG(*key2);	// Must make copy
+	    if (!cpy)
 	      return 0;				// OOM
-	    key1=key1->insert(tmp);
+	    key1=key1->insert(cpy);
 	    key2->increment_use_count(key1->use_count+1);
 	  }
 	  else
@@ -1778,8 +1821,8 @@ SEL_ARG *
 SEL_ARG::insert(SEL_ARG *key)
 {
   SEL_ARG *element,**par,*last_element;
-
   LINT_INIT(par); LINT_INIT(last_element);
+
   for (element= this; element != &null_element ; )
   {
     last_element=element;
@@ -1847,8 +1890,17 @@ SEL_ARG::find_range(SEL_ARG *key)
 
 
 /*
-** Remove a element from the tree
-** This also frees all sub trees that is used by the element
+  Remove a element from the tree
+
+  SYNOPSIS
+    tree_delete()
+    key		Key that is to be deleted from tree (this)
+    
+  NOTE
+    This also frees all sub trees that is used by the element
+
+  RETURN
+    root of new tree (with key deleted)
 */
 
 SEL_ARG *
@@ -1856,7 +1908,10 @@ SEL_ARG::tree_delete(SEL_ARG *key)
 {
   enum leaf_color remove_color;
   SEL_ARG *root,*nod,**par,*fix_par;
-  root=this; this->parent= 0;
+  DBUG_ENTER("tree_delete");
+
+  root=this;
+  this->parent= 0;
 
   /* Unlink from list */
   if (key->prev)
@@ -1903,7 +1958,7 @@ SEL_ARG::tree_delete(SEL_ARG *key)
   }
 
   if (root == &null_element)
-    return 0;					// Maybe root later
+    DBUG_RETURN(0);				// Maybe root later
   if (remove_color == BLACK)
     root=rb_delete_fixup(root,nod,fix_par);
   test_rb_tree(root,root->parent);
@@ -1911,7 +1966,7 @@ SEL_ARG::tree_delete(SEL_ARG *key)
   root->use_count=this->use_count;		// Fix root counters
   root->elements=this->elements-1;
   root->maybe_flag=this->maybe_flag;
-  return root;
+  DBUG_RETURN(root);
 }
 
 
@@ -2147,7 +2202,7 @@ void SEL_ARG::test_use_count(SEL_ARG *root)
   uint e_count=0;
   if (this == root && use_count != 1)
   {
-    sql_print_error("Note: Use_count: Wrong count %lu for root",use_count);
+    sql_print_information("Use_count: Wrong count %lu for root",use_count);
     return;
   }
   if (this->type != SEL_ARG::KEY_RANGE)
@@ -2160,7 +2215,7 @@ void SEL_ARG::test_use_count(SEL_ARG *root)
       ulong count=count_key_part_usage(root,pos->next_key_part);
       if (count > pos->next_key_part->use_count)
       {
-	sql_print_error("Note: Use_count: Wrong count for key at %lx, %lu should be %lu",
+	sql_print_information("Use_count: Wrong count for key at %lx, %lu should be %lu",
 			pos,pos->next_key_part->use_count,count);
 	return;
       }
@@ -2168,7 +2223,7 @@ void SEL_ARG::test_use_count(SEL_ARG *root)
     }
   }
   if (e_count != elements)
-    sql_print_error("Warning: Wrong use count: %u (should be %u) for tree at %lx",
+    sql_print_warning("Wrong use count: %u (should be %u) for tree at %lx",
 		    e_count, elements, (gptr) this);
 }
 
@@ -2198,10 +2253,11 @@ check_quick_select(PARAM *param,uint idx,SEL_ARG *tree)
   if (records != HA_POS_ERROR)
   {
     uint key=param->real_keynr[idx];
-    param->table->quick_keys|= (key_map) 1 << key;
+    param->table->quick_keys.set_bit(key);
     param->table->quick_rows[key]=records;
     param->table->quick_key_parts[key]=param->max_key_part+1;
   }
+  DBUG_PRINT("exit", ("Records: %lu", (ulong) records));
   DBUG_RETURN(records);
 }
 
@@ -2225,7 +2281,7 @@ check_quick_keys(PARAM *param,uint idx,SEL_ARG *key_tree,
   uint tmp_min_flag,tmp_max_flag,keynr;
   char *tmp_min_key=min_key,*tmp_max_key=max_key;
 
-  key_tree->store(param->key[idx][key_tree->part].part_length,
+  key_tree->store(param->key[idx][key_tree->part].store_length,
 		  &tmp_min_key,min_key_flag,&tmp_max_key,max_key_flag);
   uint min_key_length= (uint) (tmp_min_key- param->min_key);
   uint max_key_length= (uint) (tmp_max_key- param->max_key);
@@ -2270,18 +2326,37 @@ check_quick_keys(PARAM *param,uint idx,SEL_ARG *key_tree,
       !memcmp(param->min_key,param->max_key,min_key_length))
     tmp=1;					// Max one record
   else
-      tmp=param->table->file->
-	records_in_range((int) keynr,
-			 (byte*) (!min_key_length ? NullS :
-				  param->min_key),
-			 min_key_length,
-			 (tmp_min_flag & NEAR_MIN ?
-			  HA_READ_AFTER_KEY : HA_READ_KEY_EXACT),
-			 (byte*) (!max_key_length ? NullS :
-				  param->max_key),
-			 max_key_length,
-			 (tmp_max_flag & NEAR_MAX ?
-			  HA_READ_BEFORE_KEY : HA_READ_AFTER_KEY));
+  {
+    if (tmp_min_flag & GEOM_FLAG)
+    {
+      key_range min_range;
+      min_range.key=    (byte*) param->min_key;
+      min_range.length= min_key_length;
+      /* In this case tmp_min_flag contains the handler-read-function */
+      min_range.flag=   (ha_rkey_function) (tmp_min_flag ^ GEOM_FLAG);
+
+      tmp= param->table->file->records_in_range(keynr, &min_range,
+                                                (key_range*) 0);
+    }
+    else
+    {
+      key_range min_range, max_range;
+
+      min_range.key=    (byte*) param->min_key;
+      min_range.length= min_key_length;
+      min_range.flag=   (tmp_min_flag & NEAR_MIN ? HA_READ_AFTER_KEY :
+                         HA_READ_KEY_EXACT);
+      max_range.key=    (byte*) param->max_key;
+      max_range.length= max_key_length;
+      max_range.flag=   (tmp_max_flag & NEAR_MAX ?
+                         HA_READ_BEFORE_KEY : HA_READ_AFTER_KEY);
+      tmp=param->table->file->records_in_range(keynr,
+                                               (min_key_length ? &min_range :
+                                                (key_range*) 0),
+                                               (max_key_length ? &max_range :
+                                                (key_range*) 0));
+    }
+  }
  end:
   if (tmp == HA_POS_ERROR)			// Impossible range
     return tmp;
@@ -2308,8 +2383,14 @@ get_quick_select(PARAM *param,uint idx,SEL_ARG *key_tree)
 {
   QUICK_SELECT *quick;
   DBUG_ENTER("get_quick_select");
-  if ((quick=new QUICK_SELECT(param->thd, param->table,
-			      param->real_keynr[idx])))
+
+  if (param->table->key_info[param->real_keynr[idx]].flags & HA_SPATIAL)
+    quick=new QUICK_SELECT_GEOM(param->thd, param->table, param->real_keynr[idx],
+				0);
+  else
+    quick=new QUICK_SELECT(param->thd, param->table, param->real_keynr[idx]);
+
+  if (quick)
   {
     if (quick->error ||
 	get_quick_keys(param,quick,param->key[idx],key_tree,param->min_key,0,
@@ -2349,7 +2430,7 @@ get_quick_keys(PARAM *param,QUICK_SELECT *quick,KEY_PART *key,
       return 1;
   }
   char *tmp_min_key=min_key,*tmp_max_key=max_key;
-  key_tree->store(key[key_tree->part].part_length,
+  key_tree->store(key[key_tree->part].store_length,
 		  &tmp_min_key,min_key_flag,&tmp_max_key,max_key_flag);
 
   if (key_tree->next_key_part &&
@@ -2378,19 +2459,26 @@ get_quick_keys(PARAM *param,QUICK_SELECT *quick,KEY_PART *key,
     }
   }
   else
-    flag=key_tree->min_flag | key_tree->max_flag;
+  {
+    flag = (key_tree->min_flag & GEOM_FLAG) ?
+      key_tree->min_flag : key_tree->min_flag | key_tree->max_flag;
+  }
 
-  /* Ensure that some part of min_key and max_key are used.  If not,
-     regard this as no lower/upper range */
-  if (tmp_min_key != param->min_key)
-    flag&= ~NO_MIN_RANGE;
-  else
-    flag|= NO_MIN_RANGE;
-  if (tmp_max_key != param->max_key)
-    flag&= ~NO_MAX_RANGE;
-  else
-    flag|= NO_MAX_RANGE;
-
+  /*
+    Ensure that some part of min_key and max_key are used.  If not,
+    regard this as no lower/upper range
+  */
+  if ((flag & GEOM_FLAG) == 0)
+  {
+    if (tmp_min_key != param->min_key)
+      flag&= ~NO_MIN_RANGE;
+    else
+      flag|= NO_MIN_RANGE;
+    if (tmp_max_key != param->max_key)
+      flag&= ~NO_MAX_RANGE;
+    else
+      flag|= NO_MAX_RANGE;
+  }
   if (flag == 0)
   {
     uint length= (uint) (tmp_min_key - param->min_key);
@@ -2423,6 +2511,7 @@ get_quick_keys(PARAM *param,QUICK_SELECT *quick,KEY_PART *key,
 
   set_if_bigger(quick->max_used_key_length,range->min_length);
   set_if_bigger(quick->max_used_key_length,range->max_length);
+  set_if_bigger(quick->used_key_parts, (uint) key_tree->part+1);
   quick->ranges.push_back(range);
 
  end:
@@ -2459,25 +2548,24 @@ static bool null_part_in_key(KEY_PART *key_part, const char *key, uint length)
 {
   for (const char *end=key+length ; 
        key < end;
-       key+= key_part++->part_length)
+       key+= key_part++->store_length)
   {
-    if (key_part->null_bit)
-    {
-      if (*key++)
-	return 1;
-    }
+    if (key_part->null_bit && *key)
+      return 1;
   }
   return 0;
 }
 
+
 /****************************************************************************
-** Create a QUICK RANGE based on a key
+  Create a QUICK RANGE based on a key
 ****************************************************************************/
 
 QUICK_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table, TABLE_REF *ref)
 {
-  table->file->index_end();			// Remove old cursor
-  QUICK_SELECT *quick=new QUICK_SELECT(thd, table, ref->key, 1);
+  MEM_ROOT *old_root= thd->mem_root;
+  /* The following call may change thd->mem_root */
+  QUICK_SELECT *quick= new QUICK_SELECT(thd, table, ref->key);
   KEY *key_info = &table->key_info[ref->key];
   KEY_PART *key_part;
   QUICK_RANGE *range;
@@ -2487,9 +2575,9 @@ QUICK_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table, TABLE_REF *ref)
     return 0;			/* no ranges found */
   if (cp_buffer_from_ref(ref))
   {
-    if (thd->fatal_error)
+    if (thd->is_fatal_error)
       goto err;					// out of memory
-    return quick;				// empty range
+    goto ok;                                    // empty range
   }
 
   if (!(range= new QUICK_RANGE()))
@@ -2509,15 +2597,39 @@ QUICK_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table, TABLE_REF *ref)
   {
     key_part->part=part;
     key_part->field=        key_info->key_part[part].field;
-    key_part->part_length=  key_info->key_part[part].length;
-    if (key_part->field->type() == FIELD_TYPE_BLOB)
-      key_part->part_length+=HA_KEY_BLOB_LENGTH;
+    key_part->length=  	    key_info->key_part[part].length;
+    key_part->store_length= key_info->key_part[part].store_length;
     key_part->null_bit=     key_info->key_part[part].null_bit;
   }
-  if (!quick->ranges.push_back(range))
-    return quick;
+  if (quick->ranges.push_back(range))
+    goto err;
+
+  /* 
+     Add a NULL range if REF_OR_NULL optimization is used.
+     For example:
+       if we have "WHERE A=2 OR A IS NULL" we created the (A=2) range above
+       and have ref->null_ref_key set. Will create a new NULL range here.
+  */
+  if (ref->null_ref_key)
+  {
+    QUICK_RANGE *null_range;
+
+    *ref->null_ref_key= 1;		// Set null byte then create a range
+    if (!(null_range= new QUICK_RANGE((char*)ref->key_buff, ref->key_length,
+				      (char*)ref->key_buff, ref->key_length,
+				      EQ_RANGE)))
+      goto err;
+    *ref->null_ref_key= 0;		// Clear null byte
+    if (quick->ranges.push_back(null_range))
+      goto err;
+  }
+
+ok:
+  thd->mem_root= old_root;
+  return quick;
 
 err:
+  thd->mem_root= old_root;
   delete quick;
   return 0;
 }
@@ -2531,88 +2643,75 @@ int QUICK_SELECT::get_next()
   for (;;)
   {
     int result;
+    key_range start_key, end_key;
     if (range)
-    {						// Already read through key
-       result=((range->flag & EQ_RANGE) ?
-	       file->index_next_same(record, (byte*) range->min_key,
-				     range->min_length) :
-	       file->index_next(record));
-      if (!result)
-      {
-	if (!cmp_next(*it.ref()))
-	  DBUG_RETURN(0);
-      }
-      else if (result != HA_ERR_END_OF_FILE)
+    {
+      // Already read through key
+      result= file->read_range_next();
+      if (result != HA_ERR_END_OF_FILE)
 	DBUG_RETURN(result);
     }
 
-    if (!(range=it++))
+    if (!(range= it++))
       DBUG_RETURN(HA_ERR_END_OF_FILE);		// All ranges used
-    if (range->flag & NO_MIN_RANGE)		// Read first record
-    {
-      int local_error;
-      if ((local_error=file->index_first(record)))
-	DBUG_RETURN(local_error);		// Empty table
-      if (cmp_next(range) == 0)
-	DBUG_RETURN(0);
-      range=0;			// No matching records; go to next range
-      continue;
-    }
-    if ((result = file->index_read(record,(byte*) range->min_key,
-			 range->min_length,
-			 ((range->flag & NEAR_MIN) ?
-			  HA_READ_AFTER_KEY:
-			  (range->flag & EQ_RANGE) ?
-			  HA_READ_KEY_EXACT :
-			  HA_READ_KEY_OR_NEXT))))
 
-    {
-      if (result != HA_ERR_KEY_NOT_FOUND)
-	DBUG_RETURN(result);
-      range=0;					// Not found, to next range
-      continue;
-    }
-    if (cmp_next(range) == 0)
-    {
-      if (range->flag == (UNIQUE_RANGE | EQ_RANGE))
-	range=0;				// Stop searching
-      DBUG_RETURN(0);				// Found key is in range
-    }
-    range=0;					// To next range
+    start_key.key=    (const byte*) range->min_key;
+    start_key.length= range->min_length;
+    start_key.flag=   ((range->flag & NEAR_MIN) ? HA_READ_AFTER_KEY :
+		       (range->flag & EQ_RANGE) ?
+		       HA_READ_KEY_EXACT : HA_READ_KEY_OR_NEXT);
+    end_key.key=      (const byte*) range->max_key;
+    end_key.length=   range->max_length;
+    /*
+      We use READ_AFTER_KEY here because if we are reading on a key
+      prefix we want to find all keys with this prefix
+    */
+    end_key.flag=     (range->flag & NEAR_MAX ? HA_READ_BEFORE_KEY :
+		       HA_READ_AFTER_KEY);
+
+    result= file->read_range_first(range->min_length ? &start_key : 0,
+				   range->max_length ? &end_key : 0,
+                                   test(range->flag & EQ_RANGE),
+				   sorted);
+    if (range->flag == (UNIQUE_RANGE | EQ_RANGE))
+      range=0;				// Stop searching
+
+    if (result != HA_ERR_END_OF_FILE)
+      DBUG_RETURN(result);
+    range=0;				// No matching rows; go to next range
   }
 }
 
-	/* compare if found key is over max-value */
-	/* Returns 0 if key <= range->max_key */
 
-int QUICK_SELECT::cmp_next(QUICK_RANGE *range_arg)
+/* Get next for geometrical indexes */
+
+int QUICK_SELECT_GEOM::get_next()
 {
-  if (range_arg->flag & NO_MAX_RANGE)
-    return 0;					/* key can't be to large */
+  DBUG_ENTER(" QUICK_SELECT_GEOM::get_next");
 
-  KEY_PART *key_part=key_parts;
-  for (char *key=range_arg->max_key, *end=key+range_arg->max_length;
-       key < end;
-       key+= key_part++->part_length)
+  for (;;)
   {
-    int cmp;
-    if (key_part->null_bit)
+    int result;
+    if (range)
     {
-      if (*key++)
-      {
-	if (!key_part->field->is_null())
-	  return 1;
-	continue;
-      }
-      else if (key_part->field->is_null())
-	return 0;
+      // Already read through key
+      result= file->index_next_same(record, (byte*) range->min_key,
+				    range->min_length);
+      if (result != HA_ERR_END_OF_FILE)
+	DBUG_RETURN(result);
     }
-    if ((cmp=key_part->field->key_cmp((byte*) key, key_part->part_length)) < 0)
-      return 0;
-    if (cmp > 0)
-      return 1;
+
+    if (!(range= it++))
+      DBUG_RETURN(HA_ERR_END_OF_FILE);		// All ranges used
+
+    result= file->index_read(record,
+			     (byte*) range->min_key,
+			     range->min_length,
+			     (ha_rkey_function)(range->flag ^ GEOM_FLAG));
+    if (result != HA_ERR_KEY_NOT_FOUND)
+      DBUG_RETURN(result);
+    range=0;				// Not found, to next range
   }
-  return (range_arg->flag & NEAR_MAX) ? 1 : 0;		// Exact match
 }
 
 
@@ -2629,20 +2728,12 @@ int QUICK_SELECT::cmp_next(QUICK_RANGE *range_arg)
 QUICK_SELECT_DESC::QUICK_SELECT_DESC(QUICK_SELECT *q, uint used_key_parts)
   : QUICK_SELECT(*q), rev_it(rev_ranges)
 {
-  bool not_read_after_key = file->table_flags() & HA_NOT_READ_AFTER_KEY;
   QUICK_RANGE *r;
 
   it.rewind();
   for (r = it++; r; r = it++)
   {
     rev_ranges.push_front(r);
-    if (not_read_after_key && range_reads_after_key(r))
-    {
-      it.rewind();				// Reset range
-      error = HA_ERR_UNSUPPORTED;
-      dont_free=1;				// Don't free memory from 'q'
-      return;
-    }
   }
   /* Remove EQ_RANGE flag for keys that are not using the full key */
   for (r = rev_it++; r; r = rev_it++)
@@ -2711,23 +2802,11 @@ int QUICK_SELECT_DESC::get_next()
     }
     else
     {
-      /*
-	Heikki changed Sept 11, 2002: since InnoDB does not store the cursor
-	position if READ_KEY_EXACT is used to a primary key with all
-	key columns specified, we must use below HA_READ_KEY_OR_NEXT,
-	so that InnoDB stores the cursor position and is able to move
-	the cursor one step backward after the search. */
-
       DBUG_ASSERT(range->flag & NEAR_MAX || range_reads_after_key(range));
-      /*
-	Note: even if max_key is only a prefix, HA_READ_AFTER_KEY will
-	do the right thing - go past all keys which match the prefix
-      */
       result=file->index_read(record, (byte*) range->max_key,
 			      range->max_length,
 			      ((range->flag & NEAR_MAX) ?
-			       HA_READ_KEY_OR_NEXT : HA_READ_AFTER_KEY));
-      result = file->index_prev(record);
+			       HA_READ_BEFORE_KEY : HA_READ_PREFIX_LAST_OR_PREV));
     }
     if (result)
     {
@@ -2753,35 +2832,15 @@ int QUICK_SELECT_DESC::get_next()
 
 int QUICK_SELECT_DESC::cmp_prev(QUICK_RANGE *range_arg)
 {
+  int cmp;
   if (range_arg->flag & NO_MIN_RANGE)
     return 0;					/* key can't be to small */
 
-  KEY_PART *key_part = key_parts;
-  for (char *key = range_arg->min_key, *end = key + range_arg->min_length;
-       key < end;
-       key += key_part++->part_length)
-  {
-    int cmp;
-    if (key_part->null_bit)
-    {
-      // this key part allows null values; NULL is lower than everything else
-      if (*key++)
-      {
-	// the range is expecting a null value
-	if (!key_part->field->is_null())
-	  return 0;	// not null -- still inside the range
-	continue;	// null -- exact match, go to next key part
-      }
-      else if (key_part->field->is_null())
-	return 1;	// null -- outside the range
-    }
-    if ((cmp = key_part->field->key_cmp((byte*) key,
-					key_part->part_length)) > 0)
-      return 0;
-    if (cmp < 0)
-      return 1;
-  }
-  return (range_arg->flag & NEAR_MIN) ? 1 : 0;		// Exact match
+  cmp= key_cmp(key_part_info, (byte*) range_arg->min_key,
+               range_arg->min_length);
+  if (cmp > 0 || cmp == 0 && !(range_arg->flag & NEAR_MIN))
+    return 0;
+  return 1;                                     // outside of range
 }
 
 
@@ -2804,23 +2863,20 @@ bool QUICK_SELECT_DESC::range_reads_after_key(QUICK_RANGE *range_arg)
 bool QUICK_SELECT_DESC::test_if_null_range(QUICK_RANGE *range_arg,
 					   uint used_key_parts)
 {
-  uint offset,end;
+  uint offset, end;
   KEY_PART *key_part = key_parts,
            *key_part_end= key_part+used_key_parts;
 
   for (offset= 0,  end = min(range_arg->min_length, range_arg->max_length) ;
        offset < end && key_part != key_part_end ;
-       offset += key_part++->part_length)
+       offset+= key_part++->store_length)
   {
-    uint null_length=test(key_part->null_bit);
     if (!memcmp((char*) range_arg->min_key+offset,
 		(char*) range_arg->max_key+offset,
-		key_part->part_length + null_length))
-    {
-      offset+=null_length;
+		key_part->store_length))
       continue;
-    }
-    if (null_length && range_arg->min_key[offset])
+
+    if (key_part->null_bit && range_arg->min_key[offset])
       return 1;				// min_key is null and max_key isn't
     // Range doesn't cover NULL. This is ok if there is no more null parts
     break;
@@ -2862,43 +2918,46 @@ static void
 print_key(KEY_PART *key_part,const char *key,uint used_length)
 {
   char buff[1024];
-  String tmp(buff,sizeof(buff));
+  const char *key_end= key+used_length;
+  String tmp(buff,sizeof(buff),&my_charset_bin);
+  uint store_length;
 
-  for (uint length=0;
-       length < used_length ;
-       length+=key_part->part_length, key+=key_part->part_length, key_part++)
+  for (; key < key_end; key+=store_length, key_part++)
   {
-    Field *field=key_part->field;
-    if (length != 0)
-      fputc('/',DBUG_FILE);
+    Field *field=      key_part->field;
+    store_length= key_part->store_length;
+
     if (field->real_maybe_null())
     {
-      length++;				// null byte is not in part_length 
-      if (*key++)
+      if (*key)
       {
 	fwrite("NULL",sizeof(char),4,DBUG_FILE);
 	continue;
       }
+      key++;					// Skip null byte
+      store_length--;
     }
-    field->set_key_image((char*) key,key_part->part_length -
-			 ((field->type() == FIELD_TYPE_BLOB) ?
-			  HA_KEY_BLOB_LENGTH : 0));
-    field->val_str(&tmp,&tmp);
+    field->set_key_image((char*) key, key_part->length, field->charset());
+    field->val_str(&tmp);
     fwrite(tmp.ptr(),sizeof(char),tmp.length(),DBUG_FILE);
+    if (key+store_length < key_end)
+      fputc('/',DBUG_FILE);
   }
 }
 
-static void print_quick(QUICK_SELECT *quick,key_map needed_reg)
+
+static void print_quick(QUICK_SELECT *quick,const key_map* needed_reg)
 {
   QUICK_RANGE *range;
+  char buf[MAX_KEY/8+1];
   DBUG_ENTER("print_param");
   if (! _db_on_ || !quick)
     DBUG_VOID_RETURN;
 
   List_iterator<QUICK_RANGE> li(quick->ranges);
   DBUG_LOCK_FILE;
-  fprintf(DBUG_FILE,"Used quick_range on key: %d (other_keys: %lu):\n",
-	  quick->index, (ulong) needed_reg);
+  fprintf(DBUG_FILE,"Used quick_range on key: %d (other_keys: 0x%s):\n",
+	  quick->index, needed_reg->print(buf));
   while ((range=li++))
   {
     if (!(range->flag & NO_MIN_RANGE))

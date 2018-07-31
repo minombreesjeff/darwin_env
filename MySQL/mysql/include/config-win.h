@@ -16,12 +16,20 @@
 
 /* Defines for Win32 to make it compatible for MySQL */
 
+#ifdef __WIN2000__
+/* We have to do this define before including windows.h to get the AWE API
+functions */
+#define _WIN32_WINNT     0x0500
+#endif
+
 #include <sys/locking.h>
 #include <windows.h>
 #include <math.h>			/* Because of rint() */
 #include <fcntl.h>
 #include <io.h>
 #include <malloc.h>
+
+#define HAVE_SMEM 1
 
 #if defined(__NT__)
 #define SYSTEM_TYPE	"NT"
@@ -87,6 +95,7 @@
 #define LONGLONG_MAX	((__int64) 0x7FFFFFFFFFFFFFFF)
 #define ULONGLONG_MAX	((unsigned __int64) 0xFFFFFFFFFFFFFFFF)
 #define LL(A)		((__int64) A)
+#define ULL(A)		((unsigned __int64) A)
 
 /* Type information */
 
@@ -141,6 +150,9 @@ typedef uint rf_SetTimer;
 #define HAVE_NAMED_PIPE			/* We can only create pipes on NT */
 #endif
 
+/* ERROR is defined in wingdi.h */
+#undef ERROR
+
 /* We need to close files to break connections on shutdown */
 #ifndef SIGNAL_WITH_VIO_CLOSE
 #define SIGNAL_WITH_VIO_CLOSE
@@ -163,12 +175,16 @@ typedef uint rf_SetTimer;
 #define sigset(A,B) signal((A),(B))
 #define finite(A) _finite(A)
 #define sleep(A)  Sleep((A)*1000)
+#define popen(A) popen(A,B) _popen((A),(B))
+#define pclose(A) _pclose(A)
 
 #ifndef __BORLANDC__
 #define access(A,B) _access(A,B)
 #endif
 
-#if defined(__cplusplus)
+#if !defined(__cplusplus)
+#define inline __inline
+#endif /* __cplusplus */
 
 inline double rint(double nr)
 {
@@ -191,9 +207,6 @@ inline double ulonglong2double(ulonglong value)
 }
 #define my_off_t2double(A) ulonglong2double(A)
 #endif /* _WIN64 */
-#else
-#define inline __inline
-#endif /* __cplusplus */
 
 #if SIZEOF_OFF_T > 4
 #define lseek(A,B,C) _lseeki64((A),(longlong) (B),(C))
@@ -218,7 +231,13 @@ inline double ulonglong2double(ulonglong value)
 				  ((uint32) (uchar) (A)[0])))
 #define sint4korr(A)	(*((long *) (A)))
 #define uint2korr(A)	(*((uint16 *) (A)))
-#define uint3korr(A)	(long) (*((unsigned long *) (A)) & 0xFFFFFF)
+/*
+   ATTENTION !
+   
+    Please, note, uint3korr reads 4 bytes (not 3) !
+    It means, that you have to provide enough allocated space !
+*/
+#define uint3korr(A)	(long) (*((unsigned int *) (A)) & 0xFFFFFF)
 #define uint4korr(A)	(*((unsigned long *) (A)))
 #define uint5korr(A)	((ulonglong)(((uint32) ((uchar) (A)[0])) +\
 				    (((uint32) ((uchar) (A)[1])) << 8) +\
@@ -244,6 +263,7 @@ inline double ulonglong2double(ulonglong value)
 #define doublestore(T,V) { *((long *) T) = *((long*) &V); \
 			   *(((long *) T)+1) = *(((long*) &V)+1); }
 #define float4get(V,M) { *((long *) &(V)) = *((long*) (M)); }
+#define floatstore(T,V) memcpy((byte*)(T), (byte*)(&V), sizeof(float))
 #define float8get(V,M) doubleget((V),(M))
 #define float4store(V,M) memcpy((byte*) V,(byte*) (&M),sizeof(float))
 #define float8store(V,M) doublestore((V),(M))
@@ -278,10 +298,10 @@ inline double ulonglong2double(ulonglong value)
 #define HAVE_CREATESEMAPHORE
 #define HAVE_ISNAN
 #define HAVE_FINITE
-#define HAVE_ISAM		/* We want to have support for ISAM in 4.0 */
 #define HAVE_QUERY_CACHE
 #define SPRINTF_RETURNS_INT
 #define HAVE_SETFILEPOINTER
+#define HAVE_VIO
 
 #ifdef NOT_USED
 #define HAVE_SNPRINTF		/* Gave link error */
@@ -316,7 +336,7 @@ inline double ulonglong2double(ulonglong value)
 #define FN_ROOTDIR	"\\"
 #define FN_NETWORK_DRIVES	/* Uses \\ to indicate network drives */
 #define FN_NO_CASE_SENCE	/* Files are not case-sensitive */
-#define MY_NFILE	2048
+#define OS_FILE_LIMIT	2048
 
 #define DO_NOT_REMOVE_THREAD_WRAPPERS
 #define thread_safe_increment(V,L) InterlockedIncrement((long*) &(V))
@@ -333,3 +353,46 @@ inline double ulonglong2double(ulonglong value)
 #define statistic_add(V,C,L)	 (V)+=(C)
 #endif
 #define statistic_increment(V,L) thread_safe_increment((V),(L))
+
+#define shared_memory_buffer_length 16000
+#define default_shared_memory_base_name "MYSQL"
+#define MYSQL_DEFAULT_CHARSET_NAME "latin1"
+#define MYSQL_DEFAULT_COLLATION_NAME "latin1_swedish_ci"
+
+#define HAVE_SPATIAL 1
+#define HAVE_RTREE_KEYS 1
+
+/* Define charsets you want */
+/* #undef HAVE_CHARSET_armscii8 */
+/* #undef HAVE_CHARSET_ascii */
+#define HAVE_CHARSET_big5 1
+#define HAVE_CHARSET_cp1250 1
+/* #undef HAVE_CHARSET_cp1251 */
+/* #undef HAVE_CHARSET_cp1256 */
+/* #undef HAVE_CHARSET_cp1257 */
+/* #undef HAVE_CHARSET_cp850 */
+/* #undef HAVE_CHARSET_cp852 */
+/* #undef HAVE_CHARSET_cp866 */
+/* #undef HAVE_CHARSET_dec8 */
+#define HAVE_CHARSET_euckr 1
+#define HAVE_CHARSET_gb2312 1
+#define HAVE_CHARSET_gbk 1
+/* #undef HAVE_CHARSET_greek */
+/* #undef HAVE_CHARSET_hebrew */
+/* #undef HAVE_CHARSET_hp8 */
+/* #undef HAVE_CHARSET_keybcs2 */
+/* #undef HAVE_CHARSET_koi8r */
+/* #undef HAVE_CHARSET_koi8u */
+#define HAVE_CHARSET_latin1 1
+#define HAVE_CHARSET_latin2 1
+/* #undef HAVE_CHARSET_latin5 */
+/* #undef HAVE_CHARSET_latin7 */
+/* #undef HAVE_CHARSET_macce */
+/* #undef HAVE_CHARSET_macroman */
+#define HAVE_CHARSET_sjis 1
+/* #undef HAVE_CHARSET_swe7 */
+#define HAVE_CHARSET_tis620 1
+#define HAVE_CHARSET_ucs2 1
+#define HAVE_CHARSET_ujis 1
+#define HAVE_CHARSET_utf8 1
+

@@ -2,7 +2,9 @@
 # Testing of constraints
 # Currently MySQL only ignores the syntax.
 #
+--disable_warnings
 drop table if exists t1;
+--enable_warnings
 
 create table t1 (a int check (a>0));
 insert into t1 values (1);
@@ -18,4 +20,10 @@ insert into t1 values (0,1);
 drop table t1;
 create table t1 (a int null);
 insert into t1 values (1),(NULL);
+drop table t1;
+create table t1 (a int null);
+alter table t1 add constraint constraint_1 unique (a);
+alter table t1 add constraint unique key_1(a);
+alter table t1 add constraint constraint_2 unique key_2(a);
+show create table t1;
 drop table t1;

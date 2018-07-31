@@ -70,7 +70,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
     {
       strmake(to,res,FN_REFLEN-1);
       (*free)(res);
-      file=my_create(to,0, mode, MyFlags);
+      file=my_create(to,0, mode | O_EXCL | O_NOFOLLOW, MyFlags);
     }
     environ=old_env;
   }
@@ -81,9 +81,9 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
   {
     strmake(to,res,FN_REFLEN-1);
     (*free)(res);
-    file=my_create(to, 0, mode, MyFlags);
+    file=my_create(to, 0, mode | O_EXCL | O_NOFOLLOW, MyFlags);
   }
-#elif defined(HAVE_MKSTEMP)
+#elif defined(HAVE_MKSTEMP) && !defined(__NETWARE__)
   {
     char prefix_buff[30];
     uint pfx_len;
@@ -98,7 +98,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
     if (strlen(dir)+ pfx_len > FN_REFLEN-2)
     {
       errno=my_errno= ENAMETOOLONG;
-      return 1;
+      DBUG_RETURN(file);
     }
     strmov(convert_dirname(to,dir,NullS),prefix_buff);
     org_file=mkstemp(to);
@@ -124,7 +124,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
 #ifdef OS2
     /* changing environ variable doesn't work with VACPP */
     char  buffer[256], *end;
-    buffer[sizeof[buffer)-1]= 0;
+    buffer[sizeof(buffer)-1]= 0;
     end= strxnmov(buffer, sizeof(buffer)-1, (char*) "TMP=", dir, NullS);
     /* remove ending backslash */
     if (end[-1] == '\\')
@@ -143,7 +143,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
       strmake(to,res,FN_REFLEN-1);
       (*free)(res);
       file=my_create(to,0,
-		     (int) (O_RDWR | O_BINARY | O_TRUNC |
+		     (int) (O_RDWR | O_BINARY | O_TRUNC | O_EXCL | O_NOFOLLOW |
 			    O_TEMPORARY | O_SHORT_LIVED),
 		     MYF(MY_WME));
 
@@ -181,12 +181,12 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
 
       for (length=0 ; length < 8 && uniq ; length++)
       {
-	*end_pos++= _dig_vec[(int) (uniq & 31)];
+	*end_pos++= _dig_vec_upper[(int) (uniq & 31)];
 	uniq >>= 5;
       }
       (void) strmov(end_pos,TMP_EXT);
       file=my_create(to,0,
-		     (int) (O_RDWR | O_BINARY | O_TRUNC |
+		     (int) (O_RDWR | O_BINARY | O_TRUNC | O_EXCL | O_NOFOLLOW |
 			    O_TEMPORARY | O_SHORT_LIVED),
 		     MYF(MY_WME));
     }

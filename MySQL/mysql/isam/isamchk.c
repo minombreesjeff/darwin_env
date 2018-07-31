@@ -286,8 +286,8 @@ static struct my_option my_long_options[] =
    "Change the value of a variable. Please note that this option is deprecated; you can set variables directly with --variable-name=value.",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"block-search", 'b', "For debugging.", (gptr*) &search_after_block,
-   (gptr*) &search_after_block, 0, GET_ULONG, REQUIRED_ARG, NI_POS_ERROR, 0,
-   0, 0, 0, 0},
+   (gptr*) &search_after_block, 0, GET_ULONG, REQUIRED_ARG,
+   (longlong) NI_POS_ERROR, 0, 0, 0, 0, 0},
   {"silent", 's',
    "Only print errors. One can use two -s to make isamchk very silent.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -333,11 +333,15 @@ static struct my_option my_long_options[] =
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
+#include <help_start.h>
+
 static void print_version(void)
 {
   printf("%s  Ver 6.01 for %s at %s\n", my_progname, SYSTEM_TYPE,
 	 MACHINE_TYPE);
+  NETWARE_SET_SCREEN_MODE(1);
 }
+
 
 static void usage(void)
 {
@@ -351,6 +355,8 @@ static void usage(void)
   print_defaults("my", load_default_groups);
   my_print_variables(my_long_options);
 }
+
+#include <help_end.h>
 
 	/* Check table */
 
@@ -516,7 +522,8 @@ static int nisamchk(my_string filename)
       if (!rep_quick)
       {
 	if (testflag & T_EXTEND)
-	  VOID(init_key_cache(use_buffers));
+	  VOID(init_key_cache(dflt_key_cache,KEY_CACHE_BLOCK_SIZE,
+                              use_buffers,0,0));
 	VOID(init_io_cache(&read_cache,datafile,(uint) read_buffer_length,
 			  READ_CACHE,share->pack.header_length,1,
 			  MYF(MY_WME)));
@@ -681,7 +688,7 @@ static void get_options(register int *argc, register char ***argv)
   }
   if (default_charset)
   {
-    if (set_default_charset_by_name(default_charset, MYF(MY_WME)))
+    if (!(default_charset_info= get_charset_by_name(default_charset, MYF(MY_WME))))
       exit(1);
   }
   return;
@@ -851,7 +858,7 @@ static int chk_size(register N_INFO *info)
 #endif
   if (skr != size)
   {
-    info->s->state.data_file_length=(ulong) size; /* Skipp other errors */
+    info->s->state.data_file_length=(ulong) size; /* Skip other errors */
     if (skr > size && skr != size + MEMMAP_EXTRA_MARGIN)
     {
       error=1;
@@ -1328,7 +1335,7 @@ int extend;
 	print_error("Found wrong record at %lu",(ulong) start_recpos);
 	got_error=1;
       }
-      crc^=checksum(record,info->s->base.reclength);
+      crc^=_nisam_checksum(record,info->s->base.reclength);
       link_used+=info->s->pack.ref_length;
       used+=block_info.rec_len+info->s->pack.ref_length;
     }
@@ -1459,7 +1466,7 @@ my_string name;
     printf("Data records: %lu\n",(ulong) share->state.records);
   }
 
-  VOID(init_key_cache(use_buffers));
+  VOID(init_key_cache(dflt_key_cache,KEY_CACHE_BLOCK_SIZE,use_buffers,0,0));
   if (init_io_cache(&read_cache,info->dfile,(uint) read_buffer_length,
 		   READ_CACHE,share->pack.header_length,1,MYF(MY_WME)))
     goto err;
@@ -1793,12 +1800,12 @@ my_string name;
       if (buff[0] == ',')
 	strmov(buff,buff+2);
 #endif
-      len=(uint) (int2str((long) share->rec[field].base.length,length,10) -
+      len=(uint) (int10_to_str((long) share->rec[field].base.length,length,10) -
 		  length);
       if (type == FIELD_BLOB)
       {
 	length[len]='+';
-	VOID(int2str((long) sizeof(char*),length+len+1,10));
+	VOID(int10_to_str((long) sizeof(char*),length+len+1,10));
       }
       printf("%-6d%-6d%-7s%-35s",field+1,start,length,buff);
 #ifndef NOT_PACKED_DATABASES
@@ -1887,12 +1894,12 @@ static void lock_memory(void)
 static int flush_blocks(file)
 File file;
 {
-  if (flush_key_blocks(file,FLUSH_RELEASE))
+  if (flush_key_blocks(dflt_key_cache,file,FLUSH_RELEASE))
   {
     print_error("%d when trying to write bufferts",my_errno);
     return(1);
   }
-  end_key_cache();
+  end_key_cache(dflt_key_cache,1);
   return 0;
 } /* flush_blocks */
 
@@ -1936,7 +1943,7 @@ int write_info;
   if (share->state.key_root[sort_key] == NI_POS_ERROR)
     DBUG_RETURN(0);				/* Nothing to do */
 
-  init_key_cache(use_buffers);
+  init_key_cache(dflt_key_cache,KEY_CACHE_BLOCK_SIZE,use_buffers, 0, 0);
   if (init_io_cache(&info->rec_cache,-1,(uint) write_buffer_length,
 		   WRITE_CACHE,share->pack.header_length,1,
 		   MYF(MY_WME | MY_WAIT_IF_FULL)))
@@ -2665,7 +2672,7 @@ static int sort_get_next_record()
 	    goto try_next;
 	  block_info.second_read=0;
 	  searching=1;
-	  for (i=1 ; i < 11 ; i++) /* Skipp from read string */
+	  for (i=1 ; i < 11 ; i++) /* Skip from read string */
 	    if (block_info.header[i] >= 1 && block_info.header[i] <= 16)
 	      break;
 	  pos+=(ulong) i;
@@ -3412,6 +3419,6 @@ static int update_state_info( N_INFO *info, uint update)
       return 0;
   }
 err:
-  print_error("%d when updateing keyfile",my_errno);
+  print_error("%d when updating keyfile",my_errno);
   return 1;
 }

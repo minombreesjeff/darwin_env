@@ -34,14 +34,20 @@
 #define LOG_READ_TOO_LARGE -7
 
 #define LOG_EVENT_OFFSET 4
+
 #define BINLOG_VERSION    3
 
 /*
  We could have used SERVER_VERSION_LENGTH, but this introduces an
  obscure dependency - if somebody decided to change SERVER_VERSION_LENGTH
- this would have broke the replication protocol
+ this would have broken the replication protocol
 */
 #define ST_SERVER_VER_LEN 50
+
+/*
+  These are flags and structs to handle all the LOAD DATA INFILE options (LINES
+  TERMINATED etc).
+*/
 
 #define DUMPFILE_FLAG		0x1
 #define OPT_ENCLOSED_FLAG	0x2
@@ -54,6 +60,11 @@
 #define LINE_START_EMPTY	0x8
 #define ESCAPED_EMPTY		0x10
 
+/*****************************************************************************
+
+  old_sql_ex struct
+
+ ****************************************************************************/
 struct old_sql_ex
 {
   char field_term;
@@ -67,6 +78,11 @@ struct old_sql_ex
 
 #define NUM_LOAD_DELIM_STRS 5
 
+/*****************************************************************************
+
+  sql_ex_info struct
+
+ ****************************************************************************/
 struct sql_ex_info
 {
   char* field_term;
@@ -99,17 +115,29 @@ struct sql_ex_info
   }
 };
 
-/*
-  Binary log consists of events. Each event has a fixed length header,
-  followed by possibly variable ( depending on the type of event) length
-  data body. The data body consists of an optional fixed length segment
-  (post-header), and an optional variable length segment. See #defines and
-  comments below for the format specifics
-*/
+/*****************************************************************************
+
+  MySQL Binary Log
+
+  This log consists of events.  Each event has a fixed-length header,
+  possibly followed by a variable length data body.
+
+  The data body consists of an optional fixed length segment (post-header)
+  and  an optional variable length segment.
+
+  See the #defines below for the format specifics.
+
+  The events which really update data are Query_log_event and
+  Load_log_event/Create_file_log_event/Execute_load_log_event (these 3 act
+  together to replicate LOAD DATA INFILE, with the help of
+  Append_block_log_event which prepares temporary files to load into the table).
+
+ ****************************************************************************/
+
+#define LOG_EVENT_HEADER_LEN 19     /* the fixed header length */
+#define OLD_HEADER_LEN       13     /* the fixed header length in 3.23 */
 
 /* event-specific post-header sizes */
-#define LOG_EVENT_HEADER_LEN 19
-#define OLD_HEADER_LEN       13
 #define QUERY_HEADER_LEN     (4 + 4 + 1 + 2)
 #define LOAD_HEADER_LEN      (4 + 4 + 4 + 1 +1 + 4)
 #define START_HEADER_LEN     (2 + ST_SERVER_VER_LEN + 4)
@@ -119,7 +147,10 @@ struct sql_ex_info
 #define EXEC_LOAD_HEADER_LEN   4
 #define DELETE_FILE_HEADER_LEN 4
 
-/* event header offsets */
+/* 
+   Event header offsets; 
+   these point to places inside the fixed header.
+*/
 
 #define EVENT_TYPE_OFFSET    4
 #define SERVER_ID_OFFSET     5
@@ -133,7 +164,7 @@ struct sql_ex_info
 #define ST_SERVER_VER_OFFSET  2
 #define ST_CREATED_OFFSET     (ST_SERVER_VER_OFFSET + ST_SERVER_VER_LEN)
 
-/* slave event post-header */
+/* slave event post-header (this event is never written) */
 
 #define SL_MASTER_PORT_OFFSET   8
 #define SL_MASTER_POS_OFFSET    0
@@ -157,6 +188,14 @@ struct sql_ex_info
 #define RAND_SEED1_OFFSET 0
 #define RAND_SEED2_OFFSET 8
 
+/* User_var event post-header */
+
+#define UV_VAL_LEN_SIZE        4
+#define UV_VAL_IS_NULL         1
+#define UV_VAL_TYPE_SIZE       1
+#define UV_NAME_LEN_SIZE       4
+#define UV_CHARSET_NUMBER_SIZE 4
+
 /* Load event post-header */
 
 #define L_THREAD_ID_OFFSET   0
@@ -173,14 +212,20 @@ struct sql_ex_info
 #define R_POS_OFFSET       0
 #define R_IDENT_OFFSET     8
 
+/* CF to DF handle LOAD DATA INFILE */
+
+/* CF = "Create File" */
 #define CF_FILE_ID_OFFSET  0
 #define CF_DATA_OFFSET     CREATE_FILE_HEADER_LEN
 
+/* AB = "Append Block" */
 #define AB_FILE_ID_OFFSET  0
 #define AB_DATA_OFFSET     APPEND_BLOCK_HEADER_LEN
 
+/* EL = "Execute Load" */
 #define EL_FILE_ID_OFFSET  0
 
+/* DF = "Delete File" */
 #define DF_FILE_ID_OFFSET  0
 
 #define QUERY_EVENT_OVERHEAD	(LOG_EVENT_HEADER_LEN+QUERY_HEADER_LEN)
@@ -193,18 +238,52 @@ struct sql_ex_info
 #define EXEC_LOAD_EVENT_OVERHEAD (LOG_EVENT_HEADER_LEN+EXEC_LOAD_HEADER_LEN)
 #define APPEND_BLOCK_EVENT_OVERHEAD (LOG_EVENT_HEADER_LEN+APPEND_BLOCK_HEADER_LEN)
 
-
+/* 4 bytes which all binlogs should begin with */
 #define BINLOG_MAGIC        "\xfe\x62\x69\x6e"
 
-#define LOG_EVENT_TIME_F           0x1
-#define LOG_EVENT_FORCED_ROTATE_F  0x2
+/*
+  The 2 flags below were useless :
+  - the first one was never set
+  - the second one was set in all Rotate events on the master, but not used for
+  anything useful.
+  So they are now removed and their place may later be reused for other
+  flags. Then one must remember that Rotate events in 4.x have
+  LOG_EVENT_FORCED_ROTATE_F set, so one should not rely on the value of the
+  replacing flag when reading a Rotate event. 
+  I keep the defines here just to remember what they were.
+*/
+#ifdef TO_BE_REMOVED
+#define LOG_EVENT_TIME_F            0x1
+#define LOG_EVENT_FORCED_ROTATE_F   0x2 
+#endif
+/* 
+   If the query depends on the thread (for example: TEMPORARY TABLE).
+   Currently this is used by mysqlbinlog to know it must print
+   SET @@PSEUDO_THREAD_ID=xx; before the query (it would not hurt to print it
+   for every query but this would be slow).
+*/
+#define LOG_EVENT_THREAD_SPECIFIC_F 0x4 
+
+/*
+  Suppress the generation of 'USE' statements before the actual
+  statement. This flag should be set for any events that does not need
+  the current database set to function correctly. Most notable cases
+  are 'CREATE DATABASE' and 'DROP DATABASE'.
+
+  This flags should only be used in exceptional circumstances, since
+  it introduce a significant change in behaviour regarding the
+  replication logic together with the flags --binlog-do-db and
+  --replicated-do-db.
+ */
+#define LOG_EVENT_SUPPRESS_USE_F    0x8
 
 enum Log_event_type
 {
-  UNKNOWN_EVENT = 0, START_EVENT = 1, QUERY_EVENT =2, STOP_EVENT=3,
-  ROTATE_EVENT = 4, INTVAR_EVENT=5, LOAD_EVENT=6, SLAVE_EVENT=7, 
-  CREATE_FILE_EVENT=8, APPEND_BLOCK_EVENT=9, EXEC_LOAD_EVENT=10,
-  DELETE_FILE_EVENT=11, NEW_LOAD_EVENT=12, RAND_EVENT=13
+  UNKNOWN_EVENT= 0, START_EVENT= 1, QUERY_EVENT= 2, STOP_EVENT= 3,
+  ROTATE_EVENT= 4, INTVAR_EVENT= 5, LOAD_EVENT=6, SLAVE_EVENT= 7, 
+  CREATE_FILE_EVENT= 8, APPEND_BLOCK_EVENT= 9, EXEC_LOAD_EVENT= 10,
+  DELETE_FILE_EVENT= 11, NEW_LOAD_EVENT= 12, RAND_EVENT= 13,
+  USER_VAR_EVENT= 14
 };
 
 enum Int_event_type
@@ -221,33 +300,94 @@ class THD;
 
 struct st_relay_log_info;
 
+/*****************************************************************************
+
+  Log_event class
+
+  This is the abstract base class for binary log events.
+
+ ****************************************************************************/
 class Log_event
 {
 public:
+  /* 
+     The offset in the log where this event originally appeared (it is preserved
+     in relay logs, making SHOW SLAVE STATUS able to print coordinates of the
+     event in the master's binlog). Note: when a transaction is written by the
+     master to its binlog (wrapped in BEGIN/COMMIT) the log_pos of all the
+     queries it contains is the one of the BEGIN (this way, when one does SHOW
+     SLAVE STATUS it sees the offset of the BEGIN, which is logical as rollback
+     may occur), except the COMMIT query which has its real offset.
+  */
   my_off_t log_pos;
-  char *temp_buf;
+  /* 
+     A temp buffer for read_log_event; it is later analysed according to the
+     event's type, and its content is distributed in the event-specific fields.
+  */
+  char *temp_buf; 
+  /*
+    Timestamp on the master(for debugging and replication of NOW()/TIMESTAMP). 
+    It is important for queries and LOAD DATA INFILE. This is set at the event's
+    creation time, except for Query and Load (et al.) events where this is set
+    at the query's execution time, which guarantees good replication (otherwise,
+    we could have a query and its event with different timestamps).
+  */
   time_t when;
+  /* The number of seconds the query took to run on the master. */
   ulong exec_time;
+  /* 
+     The master's server id (is preserved in the relay log; used to prevent from
+     infinite loops in circular replication). 
+  */
   uint32 server_id;
   uint cached_event_len;
+
+  /*
+    Some 16 flags. Only one is really used now; look above for
+    LOG_EVENT_TIME_F, LOG_EVENT_FORCED_ROTATE_F,
+    LOG_EVENT_THREAD_SPECIFIC_F, and LOG_EVENT_SUPPRESS_USE_F for
+    notes.
+  */
   uint16 flags;
+
   bool cache_stmt;
 #ifndef MYSQL_CLIENT
   THD* thd;
 
   Log_event(THD* thd_arg, uint16 flags_arg, bool cache_stmt);
   Log_event();
+  /*
+    read_log_event() functions read an event from a binlog or relay log; used by
+    SHOW BINLOG EVENTS, the binlog_dump thread on the master (reads master's
+    binlog), the slave IO thread (reads the event sent by binlog_dump), the
+    slave SQL thread (reads the event from the relay log).
+  */
   // if mutex is 0, the read will proceed without mutex
   static Log_event* read_log_event(IO_CACHE* file,
 				   pthread_mutex_t* log_lock,
 				   bool old_format);
   static int read_log_event(IO_CACHE* file, String* packet,
 			    pthread_mutex_t* log_lock);
+  /* set_log_pos() is used to fill log_pos with tell(log). */
   void set_log_pos(MYSQL_LOG* log);
-  virtual void pack_info(String* packet);
-  int net_send(THD* thd, const char* log_name, my_off_t pos);
+  /*
+    init_show_field_list() prepares the column names and types for the output of
+    SHOW BINLOG EVENTS; it is used only by SHOW BINLOG EVENTS.
+  */
   static void init_show_field_list(List<Item>* field_list);
+#ifdef HAVE_REPLICATION
+  int net_send(Protocol *protocol, const char* log_name, my_off_t pos);
+  /*
+    pack_info() is used by SHOW BINLOG EVENTS; as print() it prepares and sends
+    a string to display to the user, so it resembles print().
+  */
+  virtual void pack_info(Protocol *protocol);
+  /*
+    The SQL slave thread calls exec_event() to execute the event; this is where
+    the slave's data is modified.
+  */
   virtual int exec_event(struct st_relay_log_info* rli);
+#endif /* HAVE_REPLICATION */
   virtual const char* get_db()
   {
     return thd ? thd->db : 0;
@@ -255,6 +395,7 @@ public:
 #else
  // avoid having to link mysqlbinlog against libpthread
   static Log_event* read_log_event(IO_CACHE* file, bool old_format);
+  /* print*() functions are used by mysqlbinlog */
   virtual void print(FILE* file, bool short_form = 0, char* last_db = 0) = 0;
   void print_timestamp(FILE* file, time_t *ts = 0);
   void print_header(FILE* file);
@@ -300,10 +441,18 @@ public:
   }
   static Log_event* read_log_event(const char* buf, int event_len,
 				   const char **error, bool old_format);
+  /* returns the human readable name of the event's type */
   const char* get_type_str();
 };
 
 
+/*****************************************************************************
+
+  Query Log Event class
+
+  Logs SQL queries
+
+ ****************************************************************************/
 class Query_log_event: public Log_event
 {
 protected:
@@ -330,10 +479,12 @@ public:
 #ifndef MYSQL_CLIENT
 
   Query_log_event(THD* thd_arg, const char* query_arg, ulong query_length,
-		  bool using_trans);
+		  bool using_trans, bool suppress_use);
   const char* get_db() { return db; }
-  void pack_info(String* packet);
+#ifdef HAVE_REPLICATION
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
 #endif
@@ -360,7 +511,15 @@ public:
   }
 };
 
+#ifdef HAVE_REPLICATION
 
+/*****************************************************************************
+
+  Slave Log Event class
+  Note that this class is currently not used at all; no code writes a
+  Slave_log_event (though some code in repl_failsafe.cc reads Slave_log_event).
+
+ ****************************************************************************/
 class Slave_log_event: public Log_event
 {
 protected:
@@ -376,7 +535,7 @@ public:
 
 #ifndef MYSQL_CLIENT  
   Slave_log_event(THD* thd_arg, struct st_relay_log_info* rli);
-  void pack_info(String* packet);
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
@@ -390,6 +549,14 @@ public:
   int write_data(IO_CACHE* file );
 };
 
+#endif /* HAVE_REPLICATION */
+
+
+/*****************************************************************************
+
+  Load Log Event class
+
+ ****************************************************************************/
 class Load_log_event: public Log_event
 {
 protected:
@@ -418,7 +585,7 @@ public:
   {
     fname= afname;
     fname_len= alen;
-    local_fname= true;
+    local_fname= TRUE;
   }
   /* fname doesn't point to memory inside Log_event::temp_buf  */
   int  check_fname_outside_temp_buf()
@@ -432,17 +599,19 @@ public:
   
   Load_log_event(THD* thd, sql_exchange* ex, const char* db_arg,
 		 const char* table_name_arg,
-		 List<Item>& fields_arg, enum enum_duplicates handle_dup,
+		 List<Item>& fields_arg, enum enum_duplicates handle_dup, bool ignore,
 		 bool using_trans);
-  void set_fields(List<Item> &fields_arg);
-  void pack_info(String* packet);
+  void set_fields(const char* db, List<Item> &fields_arg);
   const char* get_db() { return db; }
+#ifdef HAVE_REPLICATION
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli)
   {
     return exec_event(thd->slave_net,rli,0);
   }
   int exec_event(NET* net, struct st_relay_log_info* rli, 
 		 bool use_rli_only_for_errors);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
   void print(FILE* file, bool short_form, char* last_db, bool commented);
@@ -472,6 +641,11 @@ public:
 
 extern char server_version[SERVER_VERSION_LENGTH];
 
+/*****************************************************************************
+
+  Start Log Event class
+
+ ****************************************************************************/
 class Start_log_event: public Log_event
 {
 public:
@@ -505,8 +679,10 @@ public:
     created = (time_t) when;
     memcpy(server_version, ::server_version, ST_SERVER_VER_LEN);
   }
-  void pack_info(String* packet);
+#ifdef HAVE_REPLICATION
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
 #endif  
@@ -523,6 +699,13 @@ public:
 };
 
 
+/*****************************************************************************
+
+  Intvar Log Event class
+
+  Logs special variables such as auto_increment values
+
+ ****************************************************************************/
 class Intvar_log_event: public Log_event
 {
 public:
@@ -533,8 +716,10 @@ public:
   Intvar_log_event(THD* thd_arg,uchar type_arg, ulonglong val_arg)
     :Log_event(thd_arg,0,0),val(val_arg),type(type_arg)
   {}
-  void pack_info(String* packet);
+#ifdef HAVE_REPLICATION
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
 #endif  
@@ -543,15 +728,17 @@ public:
   ~Intvar_log_event() {}
   Log_event_type get_type_code() { return INTVAR_EVENT;}
   const char* get_var_type_name();
-  int get_data_size() { return  sizeof(type) + sizeof(val);}
+  int get_data_size() { return  9; /* sizeof(type) + sizeof(val) */;}
   int write_data(IO_CACHE* file);
   bool is_valid() { return 1; }
 };
 
 /*****************************************************************************
- *
- *  Rand log event class
- *
+
+  Rand Log Event class
+
+  Logs random seed used by the next RAND(), and by PASSWORD() in 4.1.
+
  ****************************************************************************/
 class Rand_log_event: public Log_event
 {
@@ -563,8 +750,10 @@ class Rand_log_event: public Log_event
   Rand_log_event(THD* thd_arg, ulonglong seed1_arg, ulonglong seed2_arg)
     :Log_event(thd_arg,0,0),seed1(seed1_arg),seed2(seed2_arg)
   {}
-  void pack_info(String* packet);
+#ifdef HAVE_REPLICATION
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
 #endif
@@ -572,16 +761,66 @@ class Rand_log_event: public Log_event
   Rand_log_event(const char* buf, bool old_format);
   ~Rand_log_event() {}
   Log_event_type get_type_code() { return RAND_EVENT;}
-  int get_data_size() { return sizeof(ulonglong) * 2; }
+  int get_data_size() { return 16; /* sizeof(ulonglong) * 2*/ }
   int write_data(IO_CACHE* file);
   bool is_valid() { return 1; }
 };
 
+/*****************************************************************************
+
+  User var Log Event class
+
+  Every time a query uses the value of a user variable, a User_var_log_event is
+  written before the Query_log_event, to set the user variable.
+
+ ****************************************************************************/
+class User_var_log_event: public Log_event
+{
+public:
+  char *name;
+  uint name_len;
+  char *val;
+  ulong val_len;
+  Item_result type;
+  uint charset_number;
+  bool is_null;
+#ifndef MYSQL_CLIENT
+  User_var_log_event(THD* thd_arg, char *name_arg, uint name_len_arg,
+                     char *val_arg, ulong val_len_arg, Item_result type_arg,
+		     uint charset_number_arg)
+    :Log_event(), name(name_arg), name_len(name_len_arg), val(val_arg),
+    val_len(val_len_arg), type(type_arg), charset_number(charset_number_arg)
+    { is_null= !val; }
+  void pack_info(Protocol* protocol);
+  int exec_event(struct st_relay_log_info* rli);
+#else
+  void print(FILE* file, bool short_form = 0, char* last_db = 0);
+#endif
+
+  User_var_log_event(const char* buf, bool old_format);
+  ~User_var_log_event() {}
+  Log_event_type get_type_code() { return USER_VAR_EVENT;}
+  int get_data_size()
+    {
+      return (is_null ? UV_NAME_LEN_SIZE + name_len + UV_VAL_IS_NULL :
+	UV_NAME_LEN_SIZE + name_len + UV_VAL_IS_NULL + UV_VAL_TYPE_SIZE +
+	UV_CHARSET_NUMBER_SIZE + UV_VAL_LEN_SIZE + val_len);
+    }
+  int write_data(IO_CACHE* file);
+  bool is_valid() { return 1; }
+};
+
+/*****************************************************************************
+
+  Stop Log Event class
+
+ ****************************************************************************/
+#ifdef HAVE_REPLICATION
 
 class Stop_log_event: public Log_event
 {
 public:
-#ifndef MYSQL_CLIENT  
+#ifndef MYSQL_CLIENT
   Stop_log_event() :Log_event()
   {}
   int exec_event(struct st_relay_log_info* rli);
@@ -597,7 +836,16 @@ public:
   bool is_valid() { return 1; }
 };
 
+#endif /* HAVE_REPLICATION */
 
+
+/*****************************************************************************
+
+  Rotate Log Event class
+
+  This will be depricated when we move to using sequence ids.
+
+ ****************************************************************************/
 class Rotate_log_event: public Log_event
 {
 public:
@@ -613,8 +861,10 @@ public:
     pos(pos_arg),ident_len(ident_len_arg ? ident_len_arg :
 			   (uint) strlen(new_log_ident_arg)), alloced(0)
   {}
-  void pack_info(String* packet);
+#ifdef HAVE_REPLICATION
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
 #endif
@@ -633,6 +883,11 @@ public:
 
 /* the classes below are for the new LOAD DATA INFILE logging */
 
+/*****************************************************************************
+
+  Create File Log Event class
+
+ ****************************************************************************/
 class Create_file_log_event: public Load_log_event
 {
 protected:
@@ -653,11 +908,13 @@ public:
   Create_file_log_event(THD* thd, sql_exchange* ex, const char* db_arg,
 			const char* table_name_arg,
 			List<Item>& fields_arg,
-			enum enum_duplicates handle_dup,
+			enum enum_duplicates handle_dup, bool ignore,
 			char* block_arg, uint block_len_arg,
 			bool using_trans);
-  void pack_info(String* packet);
+#ifdef HAVE_REPLICATION
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
   void print(FILE* file, bool short_form, char* last_db, bool enable_local);
@@ -695,6 +952,11 @@ public:
 };
 
 
+/*****************************************************************************
+
+  Append Block Log Event class
+
+ ****************************************************************************/
 class Append_block_log_event: public Log_event
 {
 public:
@@ -716,8 +978,10 @@ public:
 #ifndef MYSQL_CLIENT
   Append_block_log_event(THD* thd, const char* db_arg, char* block_arg,
 			 uint block_len_arg, bool using_trans);
+#ifdef HAVE_REPLICATION
   int exec_event(struct st_relay_log_info* rli);
-  void pack_info(String* packet);
+  void pack_info(Protocol* protocol);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
 #endif
@@ -731,7 +995,11 @@ public:
   const char* get_db() { return db; }
 };
 
+/*****************************************************************************
 
+  Delete File Log Event class
+
+ ****************************************************************************/
 class Delete_file_log_event: public Log_event
 {
 public:
@@ -740,10 +1008,13 @@ public:
   
 #ifndef MYSQL_CLIENT
   Delete_file_log_event(THD* thd, const char* db_arg, bool using_trans);
-  void pack_info(String* packet);
+#ifdef HAVE_REPLICATION
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
+  void print(FILE* file, bool short_form, char* last_db, bool enable_local);
 #endif  
   
   Delete_file_log_event(const char* buf, int event_len);
@@ -755,6 +1026,11 @@ public:
   const char* get_db() { return db; }
 };
 
+/*****************************************************************************
+
+  Execute Load Log Event class
+
+ ****************************************************************************/
 class Execute_load_log_event: public Log_event
 {
 public:
@@ -763,8 +1039,10 @@ public:
 
 #ifndef MYSQL_CLIENT
   Execute_load_log_event(THD* thd, const char* db_arg, bool using_trans);
-  void pack_info(String* packet);
+#ifdef HAVE_REPLICATION
+  void pack_info(Protocol* protocol);
   int exec_event(struct st_relay_log_info* rli);
+#endif /* HAVE_REPLICATION */
 #else
   void print(FILE* file, bool short_form = 0, char* last_db = 0);
 #endif  

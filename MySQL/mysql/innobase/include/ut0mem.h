@@ -18,15 +18,15 @@ extern ulint	ut_total_allocated_memory;
 
 UNIV_INLINE
 void*
-ut_memcpy(void* dest, void* sour, ulint n);
+ut_memcpy(void* dest, const void* sour, ulint n);
 
 UNIV_INLINE
 void*
-ut_memmove(void* dest, void* sour, ulint n);
+ut_memmove(void* dest, const void* sour, ulint n);
 
 UNIV_INLINE
 int
-ut_memcmp(void* str1, void* str2, ulint n);
+ut_memcmp(const void* str1, const void* str2, ulint n);
 
 
 /**************************************************************************
@@ -38,8 +38,10 @@ ut_malloc_low(
 /*==========*/
 	                     /* out, own: allocated memory */
         ulint   n,           /* in: number of bytes to allocate */
-	ibool   set_to_zero); /* in: TRUE if allocated memory should be set
+	ibool   set_to_zero, /* in: TRUE if allocated memory should be set
 			     to zero if UNIV_SET_MEM_TO_ZERO is defined */
+	ibool	assert_on_error); /* in: if TRUE, we crash mysqld if the memory
+				cannot be allocated */
 /**************************************************************************
 Allocates memory. Sets it also to zero if UNIV_SET_MEM_TO_ZERO is
 defined. */
@@ -50,12 +52,53 @@ ut_malloc(
 	                /* out, own: allocated memory */
         ulint   n);     /* in: number of bytes to allocate */
 /**************************************************************************
+Tests if malloc of n bytes would succeed. ut_malloc() asserts if memory runs
+out. It cannot be used if we want to return an error message. Prints to
+stderr a message if fails. */
+
+ibool
+ut_test_malloc(
+/*===========*/
+			/* out: TRUE if succeeded */
+	ulint	n);	/* in: try to allocate this many bytes */
+/**************************************************************************
 Frees a memory bloock allocated with ut_malloc. */
 
 void
 ut_free(
 /*====*/
 	void* ptr);  /* in, own: memory block */
+/**************************************************************************
+Implements realloc. This is needed by /pars/lexyy.c. Otherwise, you should not
+use this function because the allocation functions in mem0mem.h are the
+recommended ones in InnoDB.
+
+man realloc in Linux, 2004:
+
+       realloc()  changes the size of the memory block pointed to
+       by ptr to size bytes.  The contents will be  unchanged  to
+       the minimum of the old and new sizes; newly allocated mem­
+       ory will be uninitialized.  If ptr is NULL,  the  call  is
+       equivalent  to malloc(size); if size is equal to zero, the
+       call is equivalent to free(ptr).  Unless ptr is  NULL,  it
+       must  have  been  returned by an earlier call to malloc(),
+       calloc() or realloc().
+
+RETURN VALUE
+       realloc() returns a pointer to the newly allocated memory,
+       which is suitably aligned for any kind of variable and may
+       be different from ptr, or NULL if the  request  fails.  If
+       size  was equal to 0, either NULL or a pointer suitable to
+       be passed to free() is returned.  If realloc()  fails  the
+       original  block  is  left  untouched  - it is not freed or
+       moved. */
+
+void*
+ut_realloc(
+/*=======*/
+			/* out, own: pointer to new mem block or NULL */
+	void*	ptr,	/* in: pointer to old block or NULL */
+	ulint	size);	/* in: desired size */
 /**************************************************************************
 Frees in shutdown all allocated memory not freed yet. */
 
@@ -65,7 +108,7 @@ ut_free_all_mem(void);
 
 UNIV_INLINE
 char*
-ut_strcpy(char* dest, char* sour);
+ut_strcpy(char* dest, const char* sour);
 
 UNIV_INLINE
 ulint
@@ -73,10 +116,10 @@ ut_strlen(const char* str);
 
 UNIV_INLINE
 int
-ut_strcmp(void* str1, void* str2);
+ut_strcmp(const void* str1, const void* str2);
 
 /**************************************************************************
-Determine the length of a string when it is quoted with ut_strcpyq(). */
+Compute strlen(ut_strcpyq(str, q)). */
 UNIV_INLINE
 ulint
 ut_strlenq(
@@ -86,7 +129,9 @@ ut_strlenq(
 	char		q);	/* in: the quote character */
 
 /**************************************************************************
-Make a quoted copy of a string. */
+Make a quoted copy of a NUL-terminated string.  Leading and trailing
+quotes will not be included; only embedded quotes will be escaped.
+See also ut_strlenq() and ut_memcpyq(). */
 
 char*
 ut_strcpyq(
@@ -97,7 +142,9 @@ ut_strcpyq(
 	const char*	src);	/* in: null-terminated string */
 
 /**************************************************************************
-Make a quoted copy of a fixed-length string. */
+Make a quoted copy of a fixed-length string.  Leading and trailing
+quotes will not be included; only embedded quotes will be escaped.
+See also ut_strlenq() and ut_strcpyq(). */
 
 char*
 ut_memcpyq(
@@ -107,17 +154,6 @@ ut_memcpyq(
 	char		q,	/* in: the quote character */
 	const char*	src,	/* in: string to be quoted */
 	ulint		len);	/* in: length of src */
-
-/**************************************************************************
-Catenates two strings into newly allocated memory. The memory must be freed
-using mem_free. */
-
-char*
-ut_str_catenate(
-/*============*/
-			/* out, own: catenated null-terminated string */
-	char*	str1,	/* in: null-terminated string */
-	char*	str2);	/* in: null-terminated string */
 
 #ifndef UNIV_NONINL
 #include "ut0mem.ic"

@@ -17,13 +17,8 @@
 #include "mysys_priv.h"
 #include "my_static.h"
 #include "mysys_err.h"
-#include "m_ctype.h"
 #include <m_string.h>
 #include <m_ctype.h>
-#ifdef HAVE_GETRUSAGE
-#include <sys/resource.h>
-/* extern int     getrusage(int, struct rusage *); */
-#endif
 #include <signal.h>
 #ifdef VMS
 #include <my_static.c>
@@ -47,16 +42,16 @@ static void netware_init();
 #define netware_init()
 #endif
 
-
-my_bool my_init_done=0;
+my_bool my_init_done= 0;
+uint	mysys_usage_id= 0;              /* Incremented for each my_init() */
 
 static ulong atoi_octal(const char *str)
 {
   long int tmp;
-  while (*str && isspace(*str))
+  while (*str && my_isspace(&my_charset_latin1, *str))
     str++;
   str2int(str,
-	  (*str == '0' ? 8 : 10),		/* Octalt or decimalt */
+	  (*str == '0' ? 8 : 10),       /* Octalt or decimalt */
 	  0, INT_MAX, &tmp);
   return (ulong) tmp;
 }
@@ -79,6 +74,9 @@ my_bool my_init(void)
   if (my_init_done)
     return 0;
   my_init_done=1;
+  mysys_usage_id++;
+  my_umask= 0660;                       /* Default umask for new files */
+  my_umask_dir= 0700;                   /* Default umask for new directories */
 #if defined(THREAD) && defined(SAFE_MUTEX)
   safe_mutex_global_init();		/* Must be called early */
 #endif
@@ -132,6 +130,7 @@ void my_end(int infoflag)
   FILE *info_file;
   if (!(info_file=DBUG_FILE))
     info_file=stderr;
+  DBUG_PRINT("info",("Shutting down"));
   if (infoflag & MY_CHECK_ERROR || info_file != stderr)
   {					/* Test if some file is left open */
     if (my_file_opened | my_stream_opened)
@@ -141,7 +140,7 @@ void my_end(int infoflag)
       DBUG_PRINT("error",("%s",errbuff[0]));
     }
   }
-  free_charsets();
+  my_once_free();
   if (infoflag & MY_GIVE_INFO || info_file != stderr)
   {
 #ifdef HAVE_GETRUSAGE
@@ -181,7 +180,6 @@ Voluntary context switches %ld, Involuntary context switches %ld\n",
   }
 #ifdef THREAD
   DBUG_POP();				/* Must be done before my_thread_end */
-  my_once_free();
   my_thread_end();
   my_thread_global_end();
 #if defined(SAFE_MUTEX)
@@ -244,8 +242,13 @@ static void my_win_init(void)
 
   setlocale(LC_CTYPE, "");             /* To get right sortorder */
 
-  /* Clear the OS system variable TZ and avoid the 100% CPU usage */
+#if defined(_MSC_VER) && (_MSC_VER < 1300)
+  /* 
+    Clear the OS system variable TZ and avoid the 100% CPU usage
+    Only for old versions of Visual C++
+  */
   _putenv( "TZ=" ); 
+#endif  
   _tzset();
 
   /* apre la chiave HKEY_LOCAL_MACHINES\software\MySQL */
@@ -354,13 +357,15 @@ static my_bool win32_init_tcp_ip()
 
 
 #ifdef __NETWARE__
-/****************************************************************************
-  Do basic initialisation for netware needed by most programs
-****************************************************************************/
+/*
+  Basic initialisation for netware
+*/
 
 static void netware_init()
 {
   char cwd[PATH_MAX], *name;
+
+  DBUG_ENTER("netware_init");
 
   /* init only if we are not a client library */
   if (my_progname)
@@ -399,5 +404,7 @@ static void netware_init()
       }
     }
   }
+
+  DBUG_VOID_RETURN;
 }
 #endif /* __NETWARE__ */

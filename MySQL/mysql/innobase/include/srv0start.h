@@ -11,6 +11,7 @@ Created 10/10/1995 Heikki Tuuri
 #define srv0start_h
 
 #include "univ.i"
+#include "ut0byte.h"
 
 /*************************************************************************
 Normalizes a directory path for Windows: converts slashes to backslashes. */
@@ -63,17 +64,28 @@ innobase_start_or_create_for_mysql(void);
 				/* out: DB_SUCCESS or error code */
 /********************************************************************
 Shuts down the Innobase database. */
-
 int
 innobase_shutdown_for_mysql(void);
 /*=============================*/
 				/* out: DB_SUCCESS or error code */
+extern	dulint	srv_shutdown_lsn;
+extern	dulint	srv_start_lsn;
+
+#ifdef __NETWARE__
+void set_panic_flag_for_netware(void);
+#endif
+
+#ifdef HAVE_DARWIN_THREADS
+extern	ibool	srv_have_fullfsync;
+#endif
 
 extern  ulint   srv_sizeof_trx_t_in_ha_innodb_cc;
 
 extern  ibool   srv_is_being_started;
 extern	ibool	srv_startup_is_before_trx_rollback_phase;
 extern	ibool	srv_is_being_shut_down;
+
+extern  ibool	srv_start_raw_disk_in_use;
 
 /* At a shutdown the value first climbs from 0 to SRV_SHUTDOWN_CLEANUP
 and then to SRV_SHUTDOWN_LAST_PHASE, and so on */
@@ -83,5 +95,8 @@ extern  ulint   srv_shutdown_state;
 #define SRV_SHUTDOWN_CLEANUP	   1
 #define SRV_SHUTDOWN_LAST_PHASE	   2
 #define SRV_SHUTDOWN_EXIT_THREADS  3
+
+/* Log 'spaces' have id's >= this */
+#define SRV_LOG_SPACE_FIRST_ID		0xFFFFFFF0UL
 
 #endif

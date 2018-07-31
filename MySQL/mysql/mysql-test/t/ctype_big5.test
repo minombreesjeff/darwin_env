@@ -1,0 +1,18 @@
+-- source include/have_big5.inc
+
+#
+# Tests with the big5 character set
+#
+--disable_warnings
+drop table if exists t1;
+--enable_warnings
+
+SET @test_character_set= 'big5';
+SET @test_collation= 'big5_chinese_ci';
+-- source include/ctype_common.inc
+
+SET NAMES big5;
+SET collation_connection='big5_chinese_ci';
+-- source include/ctype_filesort.inc
+SET collation_connection='big5_bin';
+-- source include/ctype_filesort.inc

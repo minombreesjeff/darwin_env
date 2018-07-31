@@ -2,7 +2,14 @@
 # Test of ansi mode
 #
 
+--disable_warnings
 drop table if exists t1;
+--enable_warnings
+
+set sql_mode="MySQL40";
+select @@sql_mode;
+set @@sql_mode="ANSI";
+select @@sql_mode;
 
 # Test some functions that works different in ansi mode
 
@@ -15,3 +22,5 @@ SELECT id,NULL,1,1.1,'a' FROM t1 GROUP BY id;
 --error 1055
 SELECT id FROM t1 GROUP BY id2;
 drop table t1;
+
+SET @@SQL_MODE="";

@@ -300,6 +300,7 @@ btr_cur_search_to_nth_level(
 		&& latch_mode <= BTR_MODIFY_LEAF && info->last_hash_succ
 		&& !estimate
 		&& mode != PAGE_CUR_LE_OR_EXTENDS
+		&& srv_use_adaptive_hash_indexes
 	        && btr_search_guess_on_hash(index, info, tuple, mode,
 						latch_mode, cursor,
 						has_search_latch, mtr)) {
@@ -398,7 +399,7 @@ btr_cur_search_to_nth_level(
 retry_page_get:		
 		page = buf_page_get_gen(space, page_no, rw_latch, guess,
 					buf_mode,
-					IB__FILE__, __LINE__,
+					__FILE__, __LINE__,
 					mtr);
 		if (page == NULL) {
 			/* This must be a search to perform an insert;
@@ -509,9 +510,11 @@ retry_page_get:
 		cursor->up_bytes = up_bytes;
 
 #ifdef BTR_CUR_ADAPT		
-		btr_search_info_update(index, cursor);
-#endif
+		if (srv_use_adaptive_hash_indexes) {
 
+			btr_search_info_update(index, cursor);
+		}
+#endif
 		ut_ad(cursor->up_match != ULINT_UNDEFINED
 						|| mode != PAGE_CUR_GE);
 		ut_ad(cursor->up_match != ULINT_UNDEFINED
@@ -577,7 +580,7 @@ btr_cur_open_at_index_side(
 	for (;;) {
 		page = buf_page_get_gen(space, page_no, RW_NO_LATCH, NULL,
 					BUF_GET,
-					IB__FILE__, __LINE__,
+					__FILE__, __LINE__,
 					mtr);
 		ut_ad(0 == ut_dulint_cmp(tree->id,
 						btr_page_get_index_id(page)));
@@ -686,7 +689,7 @@ btr_cur_open_at_rnd_pos(
 	for (;;) {
 		page = buf_page_get_gen(space, page_no, RW_NO_LATCH, NULL,
 					BUF_GET,
-					IB__FILE__, __LINE__,
+					__FILE__, __LINE__,
 					mtr);
 		ut_ad(0 == ut_dulint_cmp(tree->id,
 						btr_page_get_index_id(page)));
@@ -836,7 +839,7 @@ static
 void
 btr_cur_trx_report(
 /*===============*/
-	const trx_t*		trx,	/* in: transaction */
+	trx_t*			trx,	/* in: transaction */
 	const dict_index_t*	index,	/* in: index */
 	const char*		op)	/* in: operation */
 {
@@ -844,7 +847,7 @@ btr_cur_trx_report(
 		ut_dulint_get_high(trx->id),
 		ut_dulint_get_low(trx->id));
 	fputs(op, stderr);
-	dict_index_name_print(stderr, index);
+	dict_index_name_print(stderr, trx, index);
 	putc('\n', stderr);
 }
 
@@ -896,7 +899,7 @@ btr_cur_optimistic_insert(
 
 	if (!dtuple_check_typed_no_assert(entry)) {
 		fputs("InnoDB: Error in a tuple to insert into ", stderr);
-		dict_index_name_print(stderr, index);
+		dict_index_name_print(stderr, thr_get_trx(thr), index);
 	}
 	
 	if (btr_cur_print_record_ops && thr) {
@@ -981,7 +984,7 @@ calculate_sizes_again:
 	/* Now, try the insert */
 
 	*rec = page_cur_insert_rec_low(page_cursor, entry, data_size,
-								NULL, mtr);	
+								NULL, mtr);
 	if (!(*rec)) {
 		/* If the record did not fit, reorganize */
 		btr_page_reorganize(page, mtr);
@@ -998,9 +1001,9 @@ calculate_sizes_again:
 			fputs("InnoDB: Error: cannot insert tuple ", stderr);
 			dtuple_print(stderr, entry);
 			fputs(" into ", stderr);
-			dict_index_name_print(stderr, index);
+			dict_index_name_print(stderr, thr_get_trx(thr), index);
 			fprintf(stderr, "\nInnoDB: max insert size %lu\n",
-				max_size);
+				(ulong) max_size);
 			ut_error;
 		}
 	}
@@ -1068,6 +1071,7 @@ btr_cur_pessimistic_insert(
 	ibool		dummy_inh;
 	ibool		success;
 	ulint		n_extents	= 0;
+	ulint		n_reserved;
 	
 	ut_ad(dtuple_check_typed(entry));
 
@@ -1087,7 +1091,7 @@ btr_cur_pessimistic_insert(
 	cursor->flag = BTR_CUR_BINARY;
 
 	err = btr_cur_optimistic_insert(flags, cursor, entry, rec, big_rec,
-								thr, mtr);	
+								thr, mtr);
 	if (err != DB_FAIL) {
 
 		return(err);
@@ -1110,7 +1114,7 @@ btr_cur_pessimistic_insert(
 
 		n_extents = cursor->tree_height / 16 + 3;
 
-		success = fsp_reserve_free_extents(index->space,
+		success = fsp_reserve_free_extents(&n_reserved, index->space,
 						n_extents, FSP_NORMAL, mtr);
 		if (!success) {
 			err = DB_OUT_OF_FILE_SPACE;
@@ -1132,7 +1136,7 @@ btr_cur_pessimistic_insert(
 		
 			if (n_extents > 0) {
 			        fil_space_release_free_extents(index->space,
-								n_extents);
+								n_reserved);
 			}
 			return(DB_TOO_BIG_RECORD);
 		}
@@ -1160,7 +1164,7 @@ btr_cur_pessimistic_insert(
 	err = DB_SUCCESS;
 
 	if (n_extents > 0) {
-		fil_space_release_free_extents(index->space, n_extents);
+		fil_space_release_free_extents(index->space, n_reserved);
 	}
 
 	*big_rec = big_rec_vec;
@@ -1341,7 +1345,8 @@ btr_cur_parse_update_in_place(
 }
 
 /*****************************************************************
-Updates a record when the update causes no size changes in its fields. */
+Updates a record when the update causes no size changes in its fields.
+We assume here that the ordering fields of the record do not change. */
 
 ulint
 btr_cur_update_in_place(
@@ -1681,6 +1686,7 @@ btr_cur_pessimistic_update(
 	ibool		was_first;
 	ibool		success;
 	ulint		n_extents	= 0;
+	ulint		n_reserved;
 	ulint*		ext_vect;
 	ulint		n_ext_vect;
 	ulint		reserve_flag;
@@ -1726,7 +1732,8 @@ btr_cur_pessimistic_update(
 			reserve_flag = FSP_NORMAL;
 		}
 		
-		success = fsp_reserve_free_extents(cursor->index->space,
+		success = fsp_reserve_free_extents(&n_reserved,
+						cursor->index->space,
 						n_extents, reserve_flag, mtr);
 		if (!success) {
 			err = DB_OUT_OF_FILE_SPACE;
@@ -1875,7 +1882,7 @@ return_after_reservations:
 
 	if (n_extents > 0) {
 		fil_space_release_free_extents(cursor->index->space,
-							n_extents);
+							n_reserved);
 	}
 
 	*big_rec = big_rec_vec;
@@ -2339,6 +2346,7 @@ btr_cur_pessimistic_delete(
 	rec_t*		rec;
 	dtuple_t*	node_ptr;
 	ulint		n_extents	= 0;
+	ulint		n_reserved;
 	ibool		success;
 	ibool		ret		= FALSE;
 	mem_heap_t*	heap;
@@ -2357,7 +2365,8 @@ btr_cur_pessimistic_delete(
 
 		n_extents = cursor->tree_height / 32 + 1;
 
-		success = fsp_reserve_free_extents(cursor->index->space,
+		success = fsp_reserve_free_extents(&n_reserved,
+						cursor->index->space,
 						n_extents, FSP_CLEANING, mtr);
 		if (!success) {
 			*err = DB_OUT_OF_FILE_SPACE;
@@ -2436,7 +2445,8 @@ return_after_reservations:
 	}
 
 	if (n_extents > 0) {
-		fil_space_release_free_extents(cursor->index->space, n_extents);
+		fil_space_release_free_extents(cursor->index->space,
+								n_reserved);
 	}
 
 	return(ret);
@@ -2707,8 +2717,11 @@ btr_estimate_number_of_different_key_vals(
 			rec = page_rec_get_next(rec);
 		}
 		
+
 		if (n_cols == dict_index_get_n_unique_in_tree(index)) {
-			/* We add one because we know that the first record
+
+			/* If there is more than one leaf page in the tree,
+			we add one because we know that the first record
 			on the page certainly had a different prefix than the
 			last record on the previous index page in the
 			alphabetical order. Before this fix, if there was
@@ -2716,7 +2729,11 @@ btr_estimate_number_of_different_key_vals(
 			algorithm grossly underestimated the number of rows
 			in the table. */
 
-			n_diff[n_cols]++;
+			if (btr_page_get_prev(page, &mtr) != FIL_NULL
+			    || btr_page_get_next(page, &mtr) != FIL_NULL) {
+
+				n_diff[n_cols]++;
+			}
 		}
 
 		total_external_size +=
@@ -2927,7 +2944,7 @@ btr_cur_mark_dtuple_inherited_extern(
 		if (!is_updated) {
 			dfield = dtuple_get_nth_field(entry, ext_vec[i]);
 
-			data = dfield_get_data(dfield);
+			data = (byte*) dfield_get_data(dfield);
 			len = dfield_get_len(dfield);
 		
 			len -= BTR_EXTERN_FIELD_REF_SIZE;
@@ -2987,7 +3004,7 @@ btr_cur_unmark_dtuple_extern_fields(
 	for (i = 0; i < n_ext_vec; i++) {
 		dfield = dtuple_get_nth_field(entry, ext_vec[i]);
 
-		data = dfield_get_data(dfield);
+		data = (byte*) dfield_get_data(dfield);
 		len = dfield_get_len(dfield);
 		
 		len -= BTR_EXTERN_FIELD_REF_SIZE;
@@ -3125,7 +3142,7 @@ btr_store_big_rec_extern_fields(
 	ut_ad(mtr_memo_contains(local_mtr, dict_tree_get_lock(index->tree),
 							MTR_MEMO_X_LOCK));
 	ut_ad(mtr_memo_contains(local_mtr, buf_block_align(rec),
-							MTR_MEMO_PAGE_X_FIX));	
+							MTR_MEMO_PAGE_X_FIX));
 	ut_a(index->type & DICT_CLUSTERED);
 							
 	space_id = buf_frame_get_space_id(rec);
@@ -3293,7 +3310,7 @@ btr_free_externally_stored_field(
 	ut_ad(mtr_memo_contains(local_mtr, dict_tree_get_lock(index->tree),
 							MTR_MEMO_X_LOCK));
 	ut_ad(mtr_memo_contains(local_mtr, buf_block_align(data),
-							MTR_MEMO_PAGE_X_FIX));	
+							MTR_MEMO_PAGE_X_FIX));
 	ut_a(local_len >= BTR_EXTERN_FIELD_REF_SIZE);
 	local_len -= BTR_EXTERN_FIELD_REF_SIZE;
 	

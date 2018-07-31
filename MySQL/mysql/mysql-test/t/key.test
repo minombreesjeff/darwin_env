@@ -1,8 +1,12 @@
+--disable_warnings
+drop table if exists t1,t2,t3;
+--enable_warnings
+SET SQL_WARNINGS=1;
+
 #
 # This failed for Elizabeth Mattijsen
 #
 
-drop table if exists t1,t2,t3;
 CREATE TABLE t1 (
   ID CHAR(32) NOT NULL,
   name CHAR(32) NOT NULL,
@@ -93,7 +97,7 @@ CREATE TABLE t1 (
   PRIMARY KEY (name,author,category)
 );
 INSERT INTO t1 VALUES
-('patnom','patauteur',0,'p.favre@cryo-networks.fr',NULL,NULL,'#p2sndnq6ae5g1u6t','essai\nsalut','scol://195.242.78.119:patauteur.patnom',NULL,NULL,NULL,950036174,-882087474,NULL,3,0,3,'1','Pub/patnom/futur_divers.scs',NULL,'pat','CC1');
+('patnom','patauteur',0,'p.favre@cryo-networks.fr',NULL,NULL,'#p2sndnq6ae5g1u6t','essai salut','scol://195.242.78.119:patauteur.patnom',NULL,NULL,NULL,950036174,-882087474,NULL,3,0,3,'1','Pub/patnom/futur_divers.scs',NULL,'pat','CC1');
 INSERT INTO t1 VALUES
 ('LeNomDeMonSite','Marc',0,'m.barilley@cryo-networks.fr',NULL,NULL,NULL,NULL,'scol://195.242.78.119:Marc.LeNomDeMonSite',NULL,NULL,NULL,950560434,-881563214,NULL,3,0,3,'1','Pub/LeNomDeMonSite/domus_hibere.scs',NULL,'Marq','CC1');
 select * from t1 where name='patnom' and author='patauteur' and category=0;
@@ -142,7 +146,8 @@ create table t1
 );
 INSERT INTO t1 VALUES (1, 1, 1, 1, 'a'); 
 INSERT INTO t1 VALUES (1, 1, 1, 1, 'b'); 
-!$1062 INSERT INTO t1 VALUES (1, 1, 1, 1, 'a');
+--error 1062
+INSERT INTO t1 VALUES (1, 1, 1, 1, 'a');
 drop table t1;
 
 #
@@ -154,7 +159,7 @@ CREATE TABLE t1 (
   a tinytext NOT NULL,
   b tinyint(3) unsigned NOT NULL default '0',
   PRIMARY KEY (a(32),b)
-) TYPE=MyISAM;
+) ENGINE=MyISAM;
 INSERT INTO t1 VALUES ('a',1),('a',2);
 SELECT * FROM t1 WHERE a='a' AND b=2;
 SELECT * FROM t1 WHERE a='a' AND b in (2);
@@ -173,7 +178,6 @@ drop table t1;
 # Problem with UNIQUE() with NULL parts and auto increment
 #
 
-DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (c CHAR(10) NOT NULL,i INT NOT NULL AUTO_INCREMENT,
 UNIQUE (c,i));
 INSERT INTO t1 (c) VALUES (NULL),(NULL);
@@ -187,4 +191,132 @@ INSERT INTO t1 (c) VALUES (NULL),(NULL);
 SELECT * FROM t1;
 INSERT INTO t1 (c) VALUES ('a'),('a');
 SELECT * FROM t1;
+drop table t1;
+
+#
+# longer keys
+#
+create table t1 (i int, a char(200), b text, unique (a), unique (b(300))) charset utf8;
+insert t1 values (1, repeat('a',210), repeat('b', 310));
+insert t1 values (2, repeat(0xD0B1,215), repeat(0xD0B1, 310));
+select i, length(a), length(b), char_length(a), char_length(b) from t1;
+select i from t1 where a=repeat(_utf8 'a',200);
+select i from t1 where a=repeat(_utf8 0xD0B1,200);
+select i from t1 where b=repeat(_utf8 'b',310);
+drop table t1;
+
+#
+# Test of key read with primary key (Bug #3497)
+#
+
+CREATE TABLE t1 (id int unsigned auto_increment, name char(50), primary key (id)) engine=myisam;
+insert into t1 (name) values ('a'), ('b'),('c'),('d'),('e'),('f'),('g');
+explain select 1 from t1 where id =2;
+explain select 1 from t1 where id =2 or id=3;
+explain select name from t1 where id =2;
+ALTER TABLE t1 DROP PRIMARY KEY, ADD INDEX (id);
+explain select 1 from t1 where id =2;
+drop table t1;
+
+#
+# Test of problem with key read (Bug #3666)
+#
+
+CREATE TABLE t1 (numeropost mediumint(8) unsigned NOT NULL default '0', numreponse int(10) unsigned NOT NULL auto_increment, PRIMARY KEY (numeropost,numreponse), UNIQUE KEY numreponse (numreponse));
+INSERT INTO t1 (numeropost,numreponse) VALUES ('1','1'),('1','2'),('2','3'),('2','4');
+SELECT numeropost FROM t1 WHERE numreponse='1';
+EXPLAIN SELECT numeropost FROM t1 WHERE numreponse='1';
+FLUSH TABLES;
+SELECT numeropost FROM t1 WHERE numreponse='1';
+drop table t1;
+
+#
+# UNIQUE prefix keys and multi-byte charsets
+#
+
+create table t1 (c varchar(30) character set utf8, t text character set utf8, unique (c(2)), unique (t(3))) engine=myisam;
+show create table t1;
+insert t1 values ('cccc', 'tttt'),
+  (0xD0B1212223D0B1D0B1D0B1D0B1D0B1, 0xD0B1D0B1212223D0B1D0B1D0B1D0B1),
+  (0xD0B1222123D0B1D0B1D0B1D0B1D0B1, 0xD0B1D0B1222123D0B1D0B1D0B1D0B1);
+--error 1062
+insert t1 (c) values ('cc22');
+--error 1062
+insert t1 (t) values ('ttt22');
+--error 1062
+insert t1 (c) values (0xD0B1212322D0B1D0B1D0B1D0B1D0B1);
+--error 1062
+insert t1 (t) values (0xD0B1D0B1212322D0B1D0B1D0B1D0B1);
+select c from t1 where c='cccc';
+select t from t1 where t='tttt';
+select c from t1 where c=0xD0B1212223D0B1D0B1D0B1D0B1D0B1;
+select t from t1 where t=0xD0B1D0B1212223D0B1D0B1D0B1D0B1;
+drop table t1;
+
+#
+# BUG#6151 - myisam index corruption
+#
+DROP TABLE IF EXISTS t1;
+CREATE TABLE t1 (
+  c1 int,
+  c2 varbinary(240),
+  UNIQUE KEY (c1),
+  KEY (c2)
+) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (1,'\Z\Z\Z\Z');
+INSERT INTO t1 VALUES (2,'\Z\Z\Z\Z\Z\Z');
+INSERT INTO t1 VALUES (3,'\Z\Z\Z\Z');
+select c1 from t1 where c2='\Z\Z\Z\Z';
+DELETE FROM t1 WHERE (c1 = 1);
+check table t1;
+select c1 from t1 where c2='\Z\Z\Z\Z';
+DELETE FROM t1 WHERE (c1 = 3);
+check table t1;
+select c1 from t1 where c2='\Z\Z\Z\Z';
+
+#
+# test delete of keys in a different order
+#
+truncate table t1;
+insert into t1 values(1,"aaaa"),(2,"aaab"),(3,"aaac"),(4,"aaccc");
+delete from t1 where c1=3;
+delete from t1 where c1=1;
+delete from t1 where c1=4;
+check table t1;
+
+drop table t1;
+
+#
+# Bug 6166: index prefix length of 0 not rejected
+#
+# this test should fail in 5.0
+# to fix it, remove #ifdef in 
+# file sql_yacc.yy(key_part)
+# create dedicated error code for this and
+# and change my_printf_error() to my_error
+
+--error 1105
+create table t1 (c char(10), index (c(0)));
+
+#
+# Bug #6126: Duplicate columns in keys should fail
+# Bug #6252: (dup)
+#
+--error 1060
+create table t1 (c char(10), index (c,c));
+--error 1060
+create table t1 (c1 char(10), c2 char(10), index (c1,c2,c1));
+--error 1060
+create table t1 (c1 char(10), c2 char(10), index (c1,c1,c2));
+--error 1060
+create table t1 (c1 char(10), c2 char(10), index (c2,c1,c1));
+create table t1 (c1 char(10), c2 char(10));
+--error 1060
+alter table t1 add key (c1,c1);
+--error 1060
+alter table t1 add key (c2,c1,c1);
+--error 1060
+alter table t1 add key (c1,c2,c1);
+--error 1060
+alter table t1 add key (c1,c1,c2);
 drop table t1;

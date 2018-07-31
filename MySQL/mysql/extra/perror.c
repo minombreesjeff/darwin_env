@@ -16,28 +16,40 @@
 
 /* Return error-text for system error messages and nisam messages */
 
-#define PERROR_VERSION "2.9"
+#define PERROR_VERSION "2.10"
 
 #include <my_global.h>
 #include <my_sys.h>
 #include <m_string.h>
 #include <errno.h>
 #include <my_getopt.h>
+#ifdef HAVE_NDBCLUSTER_DB
+#include "../ndb/src/ndbapi/ndberror.c"
+#endif
 
 static my_bool verbose, print_all_codes;
+
+#ifdef HAVE_NDBCLUSTER_DB
+static my_bool ndb_code;
+static char ndb_string[1024];
+#endif
 
 static struct my_option my_long_options[] =
 {
   {"help", '?', "Displays this help and exits.", 0, 0, 0, GET_NO_ARG,
    NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"info", 'I', "Synonym for --help",  0, 0, 0, GET_NO_ARG,
+  {"info", 'I', "Synonym for --help.",  0, 0, 0, GET_NO_ARG,
    NO_ARG, 0, 0, 0, 0, 0, 0},
+#ifdef HAVE_NDBCLUSTER_DB
+  {"ndb", 0, "Ndbcluster storage engine specific error codes.",  (gptr*) &ndb_code,
+   (gptr*) &ndb_code, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+#endif
 #ifdef HAVE_SYS_ERRLIST
   {"all", 'a', "Print all the error messages and the number.",
    (gptr*) &print_all_codes, (gptr*) &print_all_codes, 0, GET_BOOL, NO_ARG,
    0, 0, 0, 0, 0, 0},
 #endif
-  {"silent", 's', "Only print the error message", 0, 0, 0, GET_NO_ARG, NO_ARG,
+  {"silent", 's', "Only print the error message.", 0, 0, 0, GET_NO_ARG, NO_ARG,
    0, 0, 0, 0, 0, 0},
   {"verbose", 'v', "Print error code and message (default).", (gptr*) &verbose,
    (gptr*) &verbose, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
@@ -57,7 +69,7 @@ static HA_ERRORS ha_errlist[]=
 {
   { 120,"Didn't find key on read or update" },
   { 121,"Duplicate key on write or update" },
-  { 123,"Someone has changed the row since it was read; Update with is recoverable" },
+  { 123,"Someone has changed the row since it was read (while the table was locked to prevent it)" },
   { 124,"Wrong index given to function" },
   { 126,"Index file is crashed" },
   { 127,"Record-file is crashed" },
@@ -101,11 +113,14 @@ static HA_ERRORS ha_errlist[]=
 };
 
 
+#include <help_start.h>
+
 static void print_version(void)
 {
   printf("%s Ver %s, for %s (%s)\n",my_progname,PERROR_VERSION,
 	 SYSTEM_TYPE,MACHINE_TYPE);
 }
+
 
 static void usage(void)
 {
@@ -117,6 +132,8 @@ static void usage(void)
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
 }
+
+#include <help_end.h>
 
 
 static my_bool
@@ -172,6 +189,7 @@ int main(int argc,char *argv[])
 {
   int error,code,found;
   const char *msg;
+  char *unknown_error = 0;
   MY_INIT(argv[0]);
 
   if (get_options(&argc,&argv))
@@ -185,7 +203,7 @@ int main(int argc,char *argv[])
     for (code=1 ; code < sys_nerr ; code++)
     {
       if (sys_errlist[code][0])
-      {						/* Skipp if no error-text */
+      {						/* Skip if no error-text */
 	printf("%3d = %s\n",code,sys_errlist[code]);
       }
     }
@@ -195,12 +213,44 @@ int main(int argc,char *argv[])
   else
 #endif
   {
+    /*
+      On some system, like NETWARE, strerror(unknown_error) returns a
+      string 'Unknown Error'.  To avoid printing it we try to find the
+      error string by asking for an impossible big error message.
+    */
+    msg= strerror(10000);
+
+    /*
+      Allocate a buffer for unknown_error since strerror always returns
+      the same pointer on some platforms such as Windows
+    */
+    unknown_error= malloc(strlen(msg)+1);
+    strmov(unknown_error, msg);
+
     for ( ; argc-- > 0 ; argv++)
     {
+
       found=0;
       code=atoi(*argv);
-      msg = strerror(code);
-      if (msg)
+#ifdef HAVE_NDBCLUSTER_DB
+      if (ndb_code)
+      {
+	if (ndb_error_string(code, ndb_string,  sizeof(ndb_string)) < 0)
+	  msg= 0;
+	else
+	  msg= ndb_string;
+      }
+      else 
+#endif
+	msg = strerror(code);
+
+      /*
+        Don't print message for not existing error messages or for
+        unknown errors.  We test for 'Uknown Errors' just as an
+        extra safety for Netware
+      */
+      if (msg && strcmp(msg, "Unknown Error") &&
+          (!unknown_error || strcmp(msg, unknown_error)))
       {
 	found=1;
 	if (verbose)
@@ -219,12 +269,17 @@ int main(int argc,char *argv[])
       else
       {
 	if (verbose)
-	  printf("%3d = %s\n",code,msg);
+	  printf("MySQL error:  %3d = %s\n",code,msg);
 	else
 	  puts(msg);
       }
     }
   }
+
+  /* if we allocated a buffer for unknown_error, free it now */
+  if (unknown_error)
+    free(unknown_error);
+
   exit(error);
   return error;
 }

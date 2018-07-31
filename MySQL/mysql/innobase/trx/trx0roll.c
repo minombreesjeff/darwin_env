@@ -117,11 +117,11 @@ trx_rollback_for_mysql(
 		return(DB_SUCCESS);
 	}
 
-	trx->op_info = (char *) "rollback";
+	trx->op_info = "rollback";
 	
 	err = trx_general_rollback_for_mysql(trx, FALSE, NULL);
 
-	trx->op_info = (char *) "";
+	trx->op_info = "";
 
 	return(err);
 }	
@@ -142,14 +142,14 @@ trx_rollback_last_sql_stat_for_mysql(
 		return(DB_SUCCESS);
 	}
 
-	trx->op_info = (char *) "rollback of SQL statement";
+	trx->op_info = "rollback of SQL statement";
 	
 	err = trx_general_rollback_for_mysql(trx, TRUE,
 						&(trx->last_sql_stat_start));
 	/* The following call should not be needed, but we play safe: */
 	trx_mark_sql_stat_end(trx);
 
-	trx->op_info = (char *) "";
+	trx->op_info = "";
 	
 	return(err);
 }
@@ -200,7 +200,7 @@ trx_rollback_to_savepoint_for_mysql(
 						DB_NO_SAVEPOINT,
 						otherwise DB_SUCCESS */
 	trx_t*		trx,			/* in: transaction handle */
-	char*		savepoint_name,		/* in: savepoint name */
+	const char*	savepoint_name,		/* in: savepoint name */
 	ib_longlong*	mysql_binlog_cache_pos)	/* out: the MySQL binlog cache
 						position corresponding to this
 						savepoint; MySQL needs this
@@ -229,7 +229,7 @@ trx_rollback_to_savepoint_for_mysql(
 	if (trx->conc_state == TRX_NOT_STARTED) {
 		ut_print_timestamp(stderr);
 		fputs("  InnoDB: Error: transaction has a savepoint ", stderr);
-		ut_print_name(stderr, savep->name);
+		ut_print_name(stderr, trx, savep->name);
 		fputs(" though it is not started\n", stderr);
 	        return(DB_ERROR);
 	}
@@ -240,7 +240,7 @@ trx_rollback_to_savepoint_for_mysql(
 
 	*mysql_binlog_cache_pos = savep->mysql_binlog_cache_pos;
 
-	trx->op_info = (char *) "rollback to a savepoint";
+	trx->op_info = "rollback to a savepoint";
 	
 	err = trx_general_rollback_for_mysql(trx, TRUE, &(savep->savept));
 
@@ -249,7 +249,7 @@ trx_rollback_to_savepoint_for_mysql(
 
 	trx_mark_sql_stat_end(trx);
 
-	trx->op_info = (char *) "";
+	trx->op_info = "";
 
 	return(err);
 }
@@ -265,7 +265,7 @@ trx_savepoint_for_mysql(
 /*====================*/
 						/* out: always DB_SUCCESS */
 	trx_t*		trx,			/* in: transaction handle */
-	char*		savepoint_name,		/* in: savepoint name */
+	const char*	savepoint_name,		/* in: savepoint name */
 	ib_longlong	binlog_cache_pos)	/* in: MySQL binlog cache
 						position corresponding to this
 						connection at the time of the
@@ -344,7 +344,7 @@ trx_rollback_or_clean_all_without_sess(void)
 	trx_t*		trx;
 	dict_table_t*	table;
 	ib_longlong	rows_to_undo;
-	char*		unit		= (char*)"";
+	const char*	unit		= "";
 	int		err;
 
 	mutex_enter(&kernel_mutex);
@@ -391,8 +391,8 @@ loop:
 	
 	if (trx->conc_state == TRX_COMMITTED_IN_MEMORY) {	
 		fprintf(stderr, "InnoDB: Cleaning up trx with id %lu %lu\n",
-					ut_dulint_get_high(trx->id),
-					ut_dulint_get_low(trx->id));
+					(ulong) ut_dulint_get_high(trx->id),
+					(ulong) ut_dulint_get_low(trx->id));
 
 		trx_cleanup_at_db_startup(trx);
 					
@@ -422,14 +422,14 @@ loop:
 	rows_to_undo = trx_roll_max_undo_no;
 	if (rows_to_undo > 1000000000) {
 		rows_to_undo = rows_to_undo / 1000000;
-		unit = (char*)"M";
+		unit = "M";
 	}
 
 	fprintf(stderr,
 "InnoDB: Rolling back trx with id %lu %lu, %lu%s rows to undo",
-					ut_dulint_get_high(trx->id),
-					ut_dulint_get_low(trx->id),
-					(ulint)rows_to_undo, unit);
+					(ulong) ut_dulint_get_high(trx->id),
+					(ulong) ut_dulint_get_low(trx->id),
+					(ulong) rows_to_undo, unit);
 	mutex_exit(&kernel_mutex);
 
 	if (trx->dict_operation) {
@@ -446,7 +446,7 @@ loop:
 
 		fprintf(stderr,
 		"InnoDB: Waiting for rollback of trx id %lu to end\n",
-						ut_dulint_get_low(trx->id));
+						(ulong) ut_dulint_get_low(trx->id));
 		os_thread_sleep(100000);
 
 		mutex_enter(&kernel_mutex);
@@ -460,14 +460,14 @@ loop:
 
 		fprintf(stderr,
 "InnoDB: Dropping table with id %lu %lu in recovery if it exists\n",
-			ut_dulint_get_high(trx->table_id),
-			ut_dulint_get_low(trx->table_id));
+			(ulong) ut_dulint_get_high(trx->table_id),
+			(ulong) ut_dulint_get_low(trx->table_id));
 
 		table = dict_table_get_on_id_low(trx->table_id, trx);
 
 		if (table) {		
 			fputs("InnoDB: Table found: dropping table ", stderr);
-			ut_print_name(stderr, table->name);
+			ut_print_name(stderr, trx, table->name);
 			fputs(" in recovery\n", stderr);
 
 			err = row_drop_table_for_mysql(table->name, trx, TRUE);
@@ -481,8 +481,8 @@ loop:
 	}
 
 	fprintf(stderr, "\nInnoDB: Rolling back of trx id %lu %lu completed\n",
-					ut_dulint_get_high(trx->id),
-					ut_dulint_get_low(trx->id));
+					(ulong) ut_dulint_get_high(trx->id),
+					(ulong) ut_dulint_get_low(trx->id));
 	mem_heap_free(heap);
 
 	goto loop;
@@ -855,10 +855,10 @@ try_again:
 		if (progress_pct != trx_roll_progress_printed_pct) {
 			if (trx_roll_progress_printed_pct == 0) {
 				fprintf(stderr,
-			"\nInnoDB: Progress in percents: %lu", progress_pct);
+			"\nInnoDB: Progress in percents: %lu", (ulong) progress_pct);
 			} else {
 				fprintf(stderr,
-				" %lu", progress_pct);
+				" %lu", (ulong) progress_pct);
 			}
 			fflush(stderr);
 			trx_roll_progress_printed_pct = progress_pct;
@@ -1140,12 +1140,10 @@ trx_finish_rollback_off_kernel(
 		return;
 	}
 
-#ifdef UNIV_DEBUG
 	if (lock_print_waits) {			
 		fprintf(stderr, "Trx %lu rollback finished\n",
-						ut_dulint_get_low(trx->id));
+						(ulong) ut_dulint_get_low(trx->id));
 	}
-#endif /* UNIV_DEBUG */
 
 	trx_commit_off_kernel(trx);
 

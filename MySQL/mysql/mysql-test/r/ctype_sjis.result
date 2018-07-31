@@ -1,0 +1,93 @@
+drop table if exists t1;
+set names sjis;
+select 'a' like 'a';
+'a' like 'a'
+1
+select 'A' like 'a';
+'A' like 'a'
+1
+select 'A' like 'a' collate sjis_bin;
+'A' like 'a' collate sjis_bin
+0
+set @sjis1= _sjis   0xa1a2a3a4a5a6a7a8a9aaabacadaeaf;
+set @sjis2= _sjis 0xb0b1b2b3b4b5b6b7b8b9babbbcbdbebf;
+set @sjis3= _sjis 0xc0c1c2c3c4c5c6c7c8c9cacbcccdcecf;
+set @sjis4= _sjis 0xd0d1d2d3d4d5d6d7d8d9dadbdcdddedf;
+set @utf81= CONVERT(@sjis1 USING utf8);
+set @utf82= CONVERT(@sjis2 USING utf8);
+set @utf83= CONVERT(@sjis3 USING utf8);
+set @utf84= CONVERT(@sjis4 USING utf8);
+select hex(@utf81);
+hex(@utf81)
+EFBDA1EFBDA2EFBDA3EFBDA4EFBDA5EFBDA6EFBDA7EFBDA8EFBDA9EFBDAAEFBDABEFBDACEFBDADEFBDAEEFBDAF
+select hex(@utf82);
+hex(@utf82)
+EFBDB0EFBDB1EFBDB2EFBDB3EFBDB4EFBDB5EFBDB6EFBDB7EFBDB8EFBDB9EFBDBAEFBDBBEFBDBCEFBDBDEFBDBEEFBDBF
+select hex(@utf83);
+hex(@utf83)
+EFBE80EFBE81EFBE82EFBE83EFBE84EFBE85EFBE86EFBE87EFBE88EFBE89EFBE8AEFBE8BEFBE8CEFBE8DEFBE8EEFBE8F
+select hex(@utf84);
+hex(@utf84)
+EFBE90EFBE91EFBE92EFBE93EFBE94EFBE95EFBE96EFBE97EFBE98EFBE99EFBE9AEFBE9BEFBE9CEFBE9DEFBE9EEFBE9F
+select hex(CONVERT(@utf81 USING sjis));
+hex(CONVERT(@utf81 USING sjis))
+A1A2A3A4A5A6A7A8A9AAABACADAEAF
+select hex(CONVERT(@utf82 USING sjis));
+hex(CONVERT(@utf82 USING sjis))
+B0B1B2B3B4B5B6B7B8B9BABBBCBDBEBF
+select hex(CONVERT(@utf83 USING sjis));
+hex(CONVERT(@utf83 USING sjis))
+C0C1C2C3C4C5C6C7C8C9CACBCCCDCECF
+select hex(CONVERT(@utf84 USING sjis));
+hex(CONVERT(@utf84 USING sjis))
+D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF
+create table t1 (a char(10) character set sjis);
+insert into t1 values (0x878A);
+select hex(a) from t1;
+hex(a)
+878A
+drop table t1;
+create table t1(c enum(0x9353,0x9373) character set sjis);
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `c` enum('“S','“s') character set sjis default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+insert into t1 values (0x9353);
+insert into t1 values (0x9373);
+select hex(c) from t1;
+hex(c)
+9353
+9373
+drop table t1;
+SET NAMES sjis;
+CREATE TABLE t1 (
+c char(16) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=sjis;
+insert into t1 values(0xb1),(0xb2),(0xb3);
+select hex(c) from t1;
+hex(c)
+B1
+B2
+B3
+drop table t1;
+SET collation_connection='sjis_japanese_ci';
+create table t1 select repeat('a',4000) a;
+delete from t1;
+insert into t1 values ('a'), ('a '), ('a\t');
+select collation(a),hex(a) from t1 order by a;
+collation(a)	hex(a)
+sjis_japanese_ci	6109
+sjis_japanese_ci	61
+sjis_japanese_ci	6120
+drop table t1;
+SET collation_connection='sjis_bin';
+create table t1 select repeat('a',4000) a;
+delete from t1;
+insert into t1 values ('a'), ('a '), ('a\t');
+select collation(a),hex(a) from t1 order by a;
+collation(a)	hex(a)
+sjis_bin	6109
+sjis_bin	61
+sjis_bin	6120
+drop table t1;

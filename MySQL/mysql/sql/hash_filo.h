@@ -42,6 +42,7 @@ class hash_filo
   const hash_get_key get_key;
   hash_free_key free_element;
   bool init;
+  CHARSET_INFO *hash_charset;
 
   hash_filo_element *first_link,*last_link;
 public:
@@ -49,9 +50,11 @@ public:
   HASH cache;
 
   hash_filo(uint size_arg, uint key_offset_arg , uint key_length_arg,
-	    hash_get_key get_key_arg, hash_free_key free_element_arg)
+	    hash_get_key get_key_arg, hash_free_key free_element_arg,
+	    CHARSET_INFO *hash_charset_arg)
     :size(size_arg), key_offset(key_offset_arg), key_length(key_length_arg),
-    get_key(get_key_arg), free_element(free_element_arg),init(0)
+    get_key(get_key_arg), free_element(free_element_arg),init(0),
+    hash_charset(hash_charset_arg)
   {
     bzero((char*) &cache,sizeof(cache));
   }
@@ -75,8 +78,8 @@ public:
     if (!locked)
       (void) pthread_mutex_lock(&lock);
     (void) hash_free(&cache);
-    (void) hash_init(&cache,size,key_offset, key_length, get_key, free_element,
-		     0);
+    (void) hash_init(&cache,hash_charset,size,key_offset, 
+    		     key_length, get_key, free_element,0);
     if (!locked)
       (void) pthread_mutex_unlock(&lock);
     first_link=last_link=0;
@@ -113,7 +116,7 @@ public:
       last_link=last_link->prev_used;
       hash_delete(&cache,(byte*) tmp);
     }
-    if (hash_insert(&cache,(byte*) entry))
+    if (my_hash_insert(&cache,(byte*) entry))
     {
       if (free_element)
 	(*free_element)(entry);		// This should never happen

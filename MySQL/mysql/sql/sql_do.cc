@@ -18,17 +18,18 @@
 /* Execute DO statement */
 
 #include "mysql_priv.h"
-#include "sql_acl.h"
 
 int mysql_do(THD *thd, List<Item> &values)
 {
   List_iterator<Item> li(values);
   Item *value;
   DBUG_ENTER("mysql_do");
-  if (setup_fields(thd,0, values, 0, 0, 0))
+  if (setup_fields(thd, 0, 0, values, 0, 0, 0))
     DBUG_RETURN(-1);
   while ((value = li++))
     value->val_int();
-  send_ok(&thd->net);
+  free_underlaid_joins(thd, &thd->lex->select_lex);
+  thd->clear_error(); // DO always is OK
+  send_ok(thd);
   DBUG_RETURN(0);
 }

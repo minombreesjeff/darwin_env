@@ -39,7 +39,7 @@ WF_PACK *wf_comp(my_string str)
   WF_PACK *ret;
   DBUG_ENTER("wf_comp");
 
-  not_pos= -1;			/* Skipp space and '!' in front */
+  not_pos= -1;			/* Skip space and '!' in front */
   while (*str == ' ')
     str++;
   if (*str == '!')
@@ -53,13 +53,6 @@ WF_PACK *wf_comp(my_string str)
   ant=1;					/* Count filespecs */
   for (pos=str ; *pos ; pos++)
     ant+= test(*pos == ' ' || *pos == ',');
-
-#ifdef FN_UPPER_CASE
-    caseup(str,(int) (pos-str));
-#endif
-#ifdef FN_LOWER_CASE
-    casedn(str,(int) (pos-str));
-#endif
 
   if ((ret= (WF_PACK*) my_malloc((uint) ant*(sizeof(my_string*)+2)+
 				 sizeof(WF_PACK)+ (uint) strlen(str)+1,
@@ -106,7 +99,7 @@ int wf_test(register WF_PACK *wf_pack, register const char *name)
 
   not_pos=wf_pack->not_pos;
   for (i=0 ; i < not_pos; i++)
-    if (wild_compare(name,wf_pack->wild[i]) == 0)
+    if (wild_compare(name,wf_pack->wild[i],0) == 0)
       goto found;
   if (i)
     DBUG_RETURN(1);			/* No-match */
@@ -115,7 +108,7 @@ found:
 /* Test that it isn't in not-list */
 
   for (i=not_pos ; i < wf_pack->wilds; i++)
-    if (wild_compare(name,wf_pack->wild[i]) == 0)
+    if (wild_compare(name,wf_pack->wild[i],0) == 0)
       DBUG_RETURN(1);
   DBUG_RETURN(0);
 } /* wf_test */

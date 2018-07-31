@@ -22,12 +22,35 @@
 #undef EXTRA_DEBUG
 #define EXTRA_DEBUG
 
+
+/*
+  Initialize memory root
+
+  SYNOPSIS
+    init_alloc_root()
+      mem_root       - memory root to initialize
+      block_size     - size of chunks (blocks) used for memory allocation
+                       (It is external size of chunk i.e. it should include
+                        memory required for internal structures, thus it
+                        should be no less than ALLOC_ROOT_MIN_BLOCK_SIZE)
+      pre_alloc_size - if non-0, then size of block that should be
+                       pre-allocated during memory root initialization.
+
+  DESCRIPTION
+    This function prepares memory root for further use, sets initial size of
+    chunk for memory allocation and pre-allocates first block if specified.
+    Altough error can happen during execution of this function if pre_alloc_size
+    is non-0 it won't be reported. Instead it will be reported as error in first
+    alloc_root() on this memory root.
+*/
 void init_alloc_root(MEM_ROOT *mem_root, uint block_size,
 		     uint pre_alloc_size __attribute__((unused)))
 {
+  DBUG_ENTER("init_alloc_root");
+  DBUG_PRINT("enter",("root: 0x%lx", mem_root));
   mem_root->free= mem_root->used= mem_root->pre_alloc= 0;
   mem_root->min_malloc= 32;
-  mem_root->block_size= block_size-MALLOC_OVERHEAD-sizeof(USED_MEM)-8;
+  mem_root->block_size= block_size - ALLOC_ROOT_MIN_BLOCK_SIZE;
   mem_root->error_handler= 0;
   mem_root->block_num= 4;			/* We shift this with >>2 */
   mem_root->first_block_usage= 0;
@@ -45,15 +68,16 @@ void init_alloc_root(MEM_ROOT *mem_root, uint block_size,
     }
   }
 #endif
+  DBUG_VOID_RETURN;
 }
 
 /*
   SYNOPSIS
     reset_root_defaults()
     mem_root        memory root to change defaults of
-    block_size      new value of block size. Must be 
-                    greater than ~68 bytes (the exact value depends on
-                    platform and compilation flags)
+    block_size      new value of block size. Must be greater or equal
+                    than ALLOC_ROOT_MIN_BLOCK_SIZE (this value is about
+                    68 bytes and depends on platform and compilation flags)
     pre_alloc_size  new size of preallocated block. If not zero,
                     must be equal to or greater than block size,
                     otherwise means 'no prealloc'.
@@ -65,9 +89,11 @@ void init_alloc_root(MEM_ROOT *mem_root, uint block_size,
  */
 
 void reset_root_defaults(MEM_ROOT *mem_root, uint block_size,
-                         uint pre_alloc_size)
+                         uint pre_alloc_size __attribute__((unused)))
 {
-  mem_root->block_size= block_size-MALLOC_OVERHEAD-sizeof(USED_MEM)-8;
+  DBUG_ASSERT(alloc_root_inited(mem_root));
+
+  mem_root->block_size= block_size - ALLOC_ROOT_MIN_BLOCK_SIZE;
 #if !(defined(HAVE_purify) && defined(EXTRA_DEBUG))
   if (pre_alloc_size)
   {
@@ -117,23 +143,31 @@ gptr alloc_root(MEM_ROOT *mem_root,unsigned int Size)
 {
 #if defined(HAVE_purify) && defined(EXTRA_DEBUG)
   reg1 USED_MEM *next;
-  Size+=ALIGN_SIZE(sizeof(USED_MEM));
+  DBUG_ENTER("alloc_root");
+  DBUG_PRINT("enter",("root: 0x%lx", mem_root));
 
+  DBUG_ASSERT(alloc_root_inited(mem_root));
+
+  Size+=ALIGN_SIZE(sizeof(USED_MEM));
   if (!(next = (USED_MEM*) my_malloc(Size,MYF(MY_WME))))
   {
     if (mem_root->error_handler)
       (*mem_root->error_handler)();
-    return((gptr) 0);				/* purecov: inspected */
+    DBUG_RETURN((gptr) 0);			/* purecov: inspected */
   }
   next->next= mem_root->used;
   next->size= Size;
   mem_root->used= next;
-  return (gptr) (((char*) next)+ALIGN_SIZE(sizeof(USED_MEM)));
+  DBUG_PRINT("exit",("ptr: 0x%lx", (((char*) next)+
+                                    ALIGN_SIZE(sizeof(USED_MEM)))));
+  DBUG_RETURN((gptr) (((char*) next)+ALIGN_SIZE(sizeof(USED_MEM))));
 #else
   uint get_size, block_size;
   gptr point;
   reg1 USED_MEM *next= 0;
   reg2 USED_MEM **prev;
+
+  DBUG_ASSERT(alloc_root_inited(mem_root));
 
   Size= ALIGN_SIZE(Size);
   if ((*(prev= &mem_root->free)) != NULL)
@@ -217,8 +251,9 @@ void free_root(MEM_ROOT *root, myf MyFlags)
 {
   reg1 USED_MEM *next,*old;
   DBUG_ENTER("free_root");
+  DBUG_PRINT("enter",("root: 0x%lx  flags: %u", root, (uint) MyFlags));
 
-  if (!root)
+  if (!root)					/* QQ: Should be deleted */
     DBUG_VOID_RETURN; /* purecov: inspected */
   if (MyFlags & MY_MARK_BLOCKS_FREE)
   {

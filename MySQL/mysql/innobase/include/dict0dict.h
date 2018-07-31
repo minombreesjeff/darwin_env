@@ -60,6 +60,16 @@ Inits the data dictionary module. */
 void
 dict_init(void);
 /*===========*/
+/************************************************************************
+Gets the space id of every table of the data dictionary and makes a linear
+list and a hash table of them to the data dictionary cache. This function
+can be called at database startup if we did not need to do a crash recovery.
+In crash recovery we must scan the space id's from the .ibd files in MySQL
+database directories. */
+
+void
+dict_load_space_id_list(void);
+/*=========================*/
 /*************************************************************************
 Gets the column data type. */
 UNIV_INLINE
@@ -156,10 +166,19 @@ dict_table_rename_in_cache(
 /*=======================*/
 					/* out: TRUE if success */
 	dict_table_t*	table,		/* in: table */
-	char*		new_name,	/* in: new name */
+	const char*	new_name,	/* in: new name */
 	ibool		rename_also_foreigns);/* in: in ALTER TABLE we want
 					to preserve the original table name
 					in constraints which reference it */
+/**************************************************************************
+Change the id of a table object in the dictionary cache. This is used in
+DISCARD TABLESPACE. */
+
+void
+dict_table_change_id_in_cache(
+/*==========================*/
+	dict_table_t*	table,	/* in: table object already in cache */
+	dulint		new_id);/* in: new id to set */
 /**************************************************************************
 Adds a foreign key constraint object to the dictionary cache. May free
 the object if there already is an object with the same identifier in.
@@ -191,16 +210,19 @@ fields than mentioned in the constraint. */
 ulint
 dict_create_foreign_constraints(
 /*============================*/
-				/* out: error code or DB_SUCCESS */
-	trx_t*	trx,		/* in: transaction */
-	char*	sql_string,	/* in: table create statement where
-				foreign keys are declared like:
-				FOREIGN KEY (a, b) REFERENCES table2(c, d),
-				table2 can be written also with the database
-				name before it: test.table2; the default
-				database id the database of parameter name */
-	char*	name);		/* in: table full name in the normalized form
-				database_name/table_name */
+					/* out: error code or DB_SUCCESS */
+	trx_t*		trx,		/* in: transaction */
+	const char*	sql_string,	/* in: table create statement where
+					foreign keys are declared like:
+					FOREIGN KEY (a, b) REFERENCES
+					table2(c, d), table2 can be written
+					also with the database
+					name before it: test.table2; the
+					default database id the database of
+					parameter name */
+	const char*	name);		/* in: table full name in the
+					normalized form
+					database_name/table_name */
 /**************************************************************************
 Parses the CONSTRAINT id's to be dropped in an ALTER TABLE statement. */
 
@@ -227,9 +249,10 @@ directory dict_table_get_low is usually the appropriate function. */
 dict_table_t*
 dict_table_get(
 /*===========*/
-				/* out: table, NULL if does not exist */
-	char*	table_name,	/* in: table name */
-	trx_t*	trx);		/* in: transaction handle */
+					/* out: table, NULL if
+					does not exist */
+	const char*	table_name,	/* in: table name */
+	trx_t*		trx);		/* in: transaction handle */
 /**************************************************************************
 Returns a table object and increments MySQL open handle count on the table.
 */
@@ -237,9 +260,10 @@ Returns a table object and increments MySQL open handle count on the table.
 dict_table_t*
 dict_table_get_and_increment_handle_count(
 /*======================================*/
-				/* out: table, NULL if does not exist */
-	char*	table_name,	/* in: table name */
-	trx_t*	trx);		/* in: transaction handle or NULL */
+					/* out: table, NULL if
+					does not exist */
+	const char*	table_name,	/* in: table name */
+	trx_t*		trx);		/* in: transaction handle or NULL */
 /**************************************************************************
 Returns a table object, based on table id, and memoryfixes it. */
 
@@ -271,8 +295,8 @@ UNIV_INLINE
 dict_table_t*
 dict_table_check_if_in_cache_low(
 /*==============================*/
-				/* out: table, NULL if not found */
-	char*	table_name);	/* in: table name */
+					/* out: table, NULL if not found */
+	const char*	table_name);	/* in: table name */
 /**************************************************************************
 Gets a table; loads it to the dictionary cache if necessary. A low-level
 function. */
@@ -280,8 +304,8 @@ UNIV_INLINE
 dict_table_t*
 dict_table_get_low(
 /*===============*/
-				/* out: table, NULL if not found */
-	char*	table_name);	/* in: table name */
+					/* out: table, NULL if not found */
+	const char*	table_name);	/* in: table name */
 /**************************************************************************
 Returns an index object. */
 UNIV_INLINE
@@ -290,7 +314,7 @@ dict_table_get_index(
 /*=================*/
 				/* out: index, NULL if does not exist */
 	dict_table_t*	table,	/* in: table */
-	char*		name);	/* in: index name */
+	const char*	name);	/* in: index name */
 /**************************************************************************
 Returns an index object. */
 
@@ -299,15 +323,7 @@ dict_table_get_index_noninline(
 /*===========================*/
 				/* out: index, NULL if does not exist */
 	dict_table_t*	table,	/* in: table */
-	char*		name);	/* in: index name */
-/**************************************************************************
-Prints a table data. */
-
-void
-dict_table_print_low(
-/*=================*/
-	dict_table_t*	table);	/* in: table */
-#ifdef UNIV_DEBUG
+	const char*	name);	/* in: index name */
 /**************************************************************************
 Prints a table definition. */
 
@@ -316,13 +332,19 @@ dict_table_print(
 /*=============*/
 	dict_table_t*	table);	/* in: table */
 /**************************************************************************
+Prints a table data. */
+
+void
+dict_table_print_low(
+/*=================*/
+	dict_table_t*	table);	/* in: table */
+/**************************************************************************
 Prints a table data when we know the table name. */
 
 void
 dict_table_print_by_name(
 /*=====================*/
-	char*	name);
-#endif /* UNIV_DEBUG */
+	const char*	name);
 /**************************************************************************
 Outputs info on foreign keys of a table. */
 
@@ -334,6 +356,7 @@ dict_print_info_on_foreign_keys(
 				a CREATE TABLE, otherwise in the format
 				of SHOW TABLE STATUS */
 	FILE*		file,	/* in: file where to print */
+	trx_t*		trx,	/* in: transaction */
 	dict_table_t*	table);	/* in: table */
 /**************************************************************************
 Outputs info on a foreign key of a table in a format suitable for
@@ -342,6 +365,7 @@ void
 dict_print_info_on_foreign_key_in_create_format(
 /*============================================*/
 	FILE*		file,	/* in: file where to print */
+	trx_t*		trx,	/* in: transaction */
 	dict_foreign_t*	foreign);/* in: foreign key constraint */
 /************************************************************************
 Displays the names of the index and the table. */
@@ -349,6 +373,7 @@ void
 dict_index_name_print(
 /*==================*/
 	FILE*			file,	/* in: output stream */
+	trx_t*			trx,	/* in: transaction */
 	const dict_index_t*	index);	/* in: index to print */
 /************************************************************************
 Gets the first index on the table (the clustered index). */
@@ -446,6 +471,17 @@ dict_table_get_sys_col_no(
 				/* out: column number */
 	dict_table_t*	table,	/* in: table */
 	ulint		sys);	/* in: DATA_ROW_ID, ... */
+/************************************************************************
+Checks if a column is in the ordering columns of the clustered index of a
+table. Column prefixes are treated like whole columns. */
+
+ibool
+dict_table_col_in_clustered_key(
+/*============================*/
+				/* out: TRUE if the column, or its prefix, is
+				in the clustered key */
+	dict_table_t*	table,	/* in: table */
+	ulint		n);	/* in: column number */
 /***********************************************************************
 Copies types of columns contained in table to tuple. */
 
@@ -568,8 +604,10 @@ dict_index_contains_col_or_prefix(
 	dict_index_t*	index,	/* in: index */
 	ulint		n);	/* in: column number */
 /************************************************************************
-Looks for a matching field in an index. The column and the prefix len has
-to be the same. */
+Looks for a matching field in an index. The column has to be the same. The
+column in index must be complete, or must contain a prefix longer than the
+column in index2. That is, we must be able to construct the prefix in index2
+from the prefix in index. */
 
 ulint
 dict_index_get_nth_field_pos(
@@ -716,7 +754,8 @@ dict_tree_build_node_ptr(
 /*=====================*/
 				/* out, own: node pointer */
 	dict_tree_t*	tree,	/* in: index tree */
-	rec_t*		rec,	/* in: record for which to build node pointer */
+	rec_t*		rec,	/* in: record for which to build node
+				pointer */
 	ulint		page_no,/* in: page number to put in node pointer */
 	mem_heap_t*	heap,	/* in: memory heap where pointer created */
 	ulint           level);  /* in: level of rec in tree: 0 means leaf
@@ -852,6 +891,18 @@ dict_tables_have_same_db(
 	const char*	name2);	/* in: table name in the form
 				dbname '/' tablename */
 
+/*************************************************************************
+Scans from pointer onwards. Stops if is at the start of a copy of
+'string' where characters are compared without case sensitivity. Stops
+also at '\0'. */
+
+const char*
+dict_scan_to(
+/*=========*/
+				/* out: scanned up to this */
+	const char*	ptr,	/* in: scan from */
+	const char*	string);/* in: look for this */
+
 /* Buffers for storing detailed information about the latest foreign key
 and unique key errors */
 extern FILE*	dict_foreign_err_file;
@@ -889,7 +940,7 @@ struct dict_sys_struct{
 	dict_table_t*	sys_columns;	/* SYS_COLUMNS table */
 	dict_table_t*	sys_indexes;	/* SYS_INDEXES table */
 	dict_table_t*	sys_fields;	/* SYS_FIELDS table */
-};					
+};
 
 #ifndef UNIV_NONINL
 #include "dict0dict.ic"

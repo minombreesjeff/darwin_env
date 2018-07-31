@@ -16,33 +16,24 @@
 
 # This file is public domain and comes with NO WARRANTY of any kind
 
-INCLUDES =			-I$(srcdir)/../include \
-				-I../include -I$(srcdir)/.. -I$(top_srcdir) \
-				-I.. $(openssl_includes)
+#AUTOMAKE_OPTIONS =              nostdinc
+INCLUDES =			-I$(top_srcdir)/include -I$(top_srcdir)/regex \
+				$(openssl_includes)
 LIBS =				@CLIENT_LIBS@
-LDADD =				@CLIENT_EXTRA_LDFLAGS@ ../libmysql/libmysqlclient.la
+LDADD=				@CLIENT_EXTRA_LDFLAGS@ \
+                                $(top_builddir)/libmysql/libmysqlclient.la
 bin_PROGRAMS =			mysql mysqladmin mysqlcheck mysqlshow \
  mysqldump mysqlimport mysqltest mysqlbinlog mysqlmanagerc mysqlmanager-pwgen
-noinst_PROGRAMS =		insert_test select_test thread_test
 noinst_HEADERS =		sql_string.h completion_hash.h my_readline.h \
 				client_priv.h
 mysql_SOURCES =			mysql.cc readline.cc sql_string.cc completion_hash.cc
+mysqladmin_SOURCES =		mysqladmin.cc
 mysql_LDADD =			@readline_link@ @TERMCAP_LIB@ $(LDADD) $(CXXLDFLAGS)
 mysqlbinlog_LDADD =		$(LDADD) $(CXXLDFLAGS)
-mysql_DEPENDENCIES=		$(LIBRARIES) $(pkglib_LTLIBRARIES)
-mysqladmin_DEPENDENCIES=	$(LIBRARIES) $(pkglib_LTLIBRARIES)
-mysqlcheck_DEPENDENCIES=	$(LIBRARIES) $(pkglib_LTLIBRARIES)
-mysqlshow_DEPENDENCIES=		$(LIBRARIES) $(pkglib_LTLIBRARIES)
-mysqldump_DEPENDENCIES=		$(LIBRARIES) $(pkglib_LTLIBRARIES)
-mysqlimport_DEPENDENCIES=	$(LIBRARIES) $(pkglib_LTLIBRARIES)
-insert_test_DEPENDENCIES=	$(LIBRARIES) $(pkglib_LTLIBRARIES)
-select_test_DEPENDENCIES=	$(LIBRARIES) $(pkglib_LTLIBRARIES)
-mysqltest_SOURCES=			mysqltest.c
-mysqltest_DEPENDENCIES=   	$(LIBRARIES) $(pkglib_LTLIBRARIES)
-mysqlbinlog_SOURCES =   mysqlbinlog.cc 
-mysqlbinlog_DEPENDENCIES=   	$(LIBRARIES) $(pkglib_LTLIBRARIES)
+mysqltest_SOURCES=		mysqltest.c $(top_srcdir)/mysys/my_getsystime.c
+mysqltest_LDADD =		$(top_builddir)/regex/libregex.a $(LDADD)
+mysqlbinlog_SOURCES =   mysqlbinlog.cc ../mysys/mf_tempdir.c
 mysqlmanagerc_SOURCES =   mysqlmanagerc.c 
-mysqlmanagerc_DEPENDENCIES=   	$(LIBRARIES) $(pkglib_LTLIBRARIES)
 sql_src=log_event.h log_event.cc
 
 # Fix for mit-threads
@@ -53,9 +44,6 @@ link_sources:
 	  rm -f $(srcdir)/$$f; \
 	  @LN_CP_F@ $(top_srcdir)/sql/$$f $(srcdir)/$$f; \
         done;
-
-thread_test.o:		thread_test.c
-			$(COMPILE) -c @MT_INCLUDES@ $(INCLUDES) $<
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

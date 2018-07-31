@@ -24,18 +24,6 @@ Created 3/26/1996 Heikki Tuuri
 #include "fsp0fsp.h"
 #include "read0types.h"
 
-/* Do NOT merge this to the 4.1 code base! */
-extern ibool		trx_sys_downgrading_from_4_1_1;
-
-/********************************************************************
-Do NOT merge this to the 4.1 code base!
-Marks the trx sys header when we have successfully downgraded from the >= 4.1.1
-multiple tablespace format back to the 4.0 format. */
-
-void
-trx_sys_mark_downgraded_from_4_1_1(void);
-/*====================================*/
-
 /* In a MySQL replication slave, in crash recovery we store the master log
 file name and position here. We have successfully got the updates to InnoDB
 up to this position. If .._pos is -1, it means no crash recovery was needed,
@@ -44,26 +32,48 @@ or there was no master log position info inside InnoDB. */
 extern char 		trx_sys_mysql_master_log_name[];
 extern ib_longlong	trx_sys_mysql_master_log_pos;
 
+/* If this MySQL server uses binary logging, after InnoDB has been inited
+and if it has done a crash recovery, we store the binlog file name and position
+here. If .._pos is -1, it means there was no binlog position info inside
+InnoDB. */
+
+extern char 		trx_sys_mysql_bin_log_name[];
+extern ib_longlong	trx_sys_mysql_bin_log_pos;
+
 /* The transaction system */
 extern trx_sys_t*	trx_sys;
 
 /* Doublewrite system */
 extern trx_doublewrite_t*	trx_doublewrite;
+extern ibool			trx_doublewrite_must_reset_space_ids;
+extern ibool			trx_sys_multiple_tablespace_format;
 
 /********************************************************************
-Creates the doublewrite buffer at a database start. The header of the
+Creates the doublewrite buffer to a new InnoDB installation. The header of the
 doublewrite buffer is placed on the trx system header page. */
 
 void
 trx_sys_create_doublewrite_buf(void);
 /*================================*/
 /********************************************************************
-At a database startup uses a possible doublewrite buffer to restore
+At a database startup initializes the doublewrite buffer memory structure if
+we already have a doublewrite buffer created in the data files. If we are
+upgrading to an InnoDB version which supports multiple tablespaces, then this
+function performs the necessary update operations. If we are in a crash
+recovery, this function uses a possible doublewrite buffer to restore
 half-written pages in the data files. */
 
 void
-trx_sys_doublewrite_restore_corrupt_pages(void);
-/*===========================================*/
+trx_sys_doublewrite_init_or_restore_pages(
+/*======================================*/
+	ibool	restore_corrupt_pages);
+/********************************************************************
+Marks the trx sys header when we have successfully upgraded to the >= 4.1.x
+multiple tablespace format. */
+
+void
+trx_sys_mark_upgraded_to_multiple_tablespaces(void);
+/*===============================================*/
 /********************************************************************
 Determines if a page number is located inside the doublewrite buffer. */
 
@@ -256,7 +266,7 @@ replication has proceeded. */
 void
 trx_sys_update_mysql_binlog_offset(
 /*===============================*/
-	char*		file_name,/* in: MySQL log file name */
+	const char*	file_name,/* in: MySQL log file name */
 	ib_longlong	offset,	/* in: position in that log file */
 	ulint		field,	/* in: offset of the MySQL log info field in
 				the trx sys header */
@@ -369,13 +379,16 @@ this contains the same fields as TRX_SYS_MYSQL_LOG_INFO below */
 						to disk, we still may be able
 						to recover the information */
 #define TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED (24 + FSEG_HEADER_SIZE)
-						/* If this is set to
-						.._N, then we are
-						DOWNGRADING from >= 4.1.1 to
-						4.0 */
+						/* If this is not yet set to
+						.._N, we must reset the
+						doublewrite buffer, because
+						starting from 4.1.x the space
+						id of a data page is stored to
+					FIL_PAGE_ARCH_LOG_NO_OR_SPACE_NO */
 /*-------------------------------------------------------------*/
 #define TRX_SYS_DOUBLEWRITE_MAGIC_N	536853855
 #define TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED_N 1783657386
+
 
 #define TRX_SYS_DOUBLEWRITE_BLOCK_SIZE	FSP_EXTENT_SIZE	
 
@@ -419,6 +432,10 @@ struct trx_sys_struct{
 	trx_rseg_t*	rseg_array[TRX_SYS_N_RSEGS];
 					/* Pointer array to rollback segments;
 					NULL if slot not in use */
+	ulint		rseg_history_len;/* Length of the TRX_RSEG_HISTORY
+					list (update undo logs for committed
+					transactions), protected by
+					rseg->mutex */
 	UT_LIST_BASE_NODE_T(read_view_t) view_list;
 					/* List of read views sorted on trx no,
 					biggest first */

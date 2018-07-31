@@ -1,10 +1,14 @@
+drop table if exists t1,t2;
 set @a := foo;
-Unknown column 'foo' in 'field list'
+ERROR 42S22: Unknown column 'foo' in 'field list'
 set @a := connection_id() + 3;
 select @a - connection_id();
 @a - connection_id()
 3
-drop table if exists t1,t2;
+set @b := 1;
+select @b;
+@b
+1
 CREATE TABLE t1 ( i int not null, v int not null,index (i));
 insert into t1 values (1,1),(1,3),(2,1);
 create table t2 (i int not null, unique (i));
@@ -18,17 +22,17 @@ i	@vv1:=if(sv1.i,1,0)	@vv2:=if(sv2.i,1,0)	@vv3:=if(sv3.i,1,0)	@vv1+@vv2+@vv3
 1	1	0	1	2
 2	1	0	0	1
 explain select * from t1 where i=@vv1;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ref	i	i	4	const	1	Using where
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ref	i	i	4	const	1	Using where
 explain select * from t1 where @vv1:=@vv1+1 and i=@vv1;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	3	Using where
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	Using where
 explain select @vv1:=i from t1 where i=@vv1;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	index	NULL	i	4	NULL	3	Using where; Using index
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	index	NULL	i	4	NULL	3	Using where; Using index
 explain select * from t1 where i=@vv1;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ref	i	i	4	const	1	Using where
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ref	i	i	4	const	1	Using where
 drop table t1,t2;
 set @a=0,@b=0;
 select @a:=10,   @b:=1,   @a > @b, @a < @b;
@@ -116,3 +120,74 @@ select @a+0, @a:=@a+0+count(*), count(*), @a+0 from t1 group by i;
 1	3	2	0
 3	6	3	0
 drop table t1;
+set @a=_latin2'test';
+select charset(@a),collation(@a),coercibility(@a);
+charset(@a)	collation(@a)	coercibility(@a)
+latin2	latin2_general_ci	3
+select @a=_latin2'TEST';
+@a=_latin2'TEST'
+1
+select @a=_latin2'TEST' collate latin2_bin;
+@a=_latin2'TEST' collate latin2_bin
+0
+set @a=_latin2'test' collate latin2_general_ci;
+select charset(@a),collation(@a),coercibility(@a);
+charset(@a)	collation(@a)	coercibility(@a)
+latin2	latin2_general_ci	0
+select @a=_latin2'TEST';
+@a=_latin2'TEST'
+1
+select @a=_latin2'TEST' collate latin2_bin;
+ERROR HY000: Illegal mix of collations (latin2_general_ci,EXPLICIT) and (latin2_bin,EXPLICIT) for operation '='
+select charset(@a:=_latin2'test');
+charset(@a:=_latin2'test')
+latin2
+select collation(@a:=_latin2'test');
+collation(@a:=_latin2'test')
+latin2_general_ci
+select coercibility(@a:=_latin2'test');
+coercibility(@a:=_latin2'test')
+3
+select collation(@a:=_latin2'test' collate latin2_bin);
+collation(@a:=_latin2'test' collate latin2_bin)
+latin2_bin
+select coercibility(@a:=_latin2'test' collate latin2_bin);
+coercibility(@a:=_latin2'test' collate latin2_bin)
+0
+select (@a:=_latin2'test' collate latin2_bin) = _latin2'TEST';
+(@a:=_latin2'test' collate latin2_bin) = _latin2'TEST'
+0
+select charset(@a),collation(@a),coercibility(@a);
+charset(@a)	collation(@a)	coercibility(@a)
+latin2	latin2_bin	0
+select (@a:=_latin2'test' collate latin2_bin) = _latin2'TEST' collate latin2_general_ci;
+ERROR HY000: Illegal mix of collations (latin2_bin,EXPLICIT) and (latin2_general_ci,EXPLICIT) for operation '='
+create table t1 (a varchar(50));
+reset master;
+SET TIMESTAMP=10000;
+SET @`a b`='hello';
+INSERT INTO t1 VALUES(@`a b`);
+set @var1= "';aaa";
+SET @var2=char(ascii('a'));
+insert into t1 values (@var1),(@var2);
+show binlog events from 79;
+Log_name	Pos	Event_type	Server_id	Orig_log_pos	Info
+master-bin.000001	79	User var	1	79	@`a b`=_latin1 0x68656C6C6F COLLATE latin1_swedish_ci
+master-bin.000001	120	Query	1	120	use `test`; INSERT INTO t1 VALUES(@`a b`)
+master-bin.000001	184	User var	1	184	@`var1`=_latin1 0x273B616161 COLLATE latin1_swedish_ci
+master-bin.000001	226	User var	1	226	@`var2`=_latin1 0x61 COLLATE latin1_swedish_ci
+master-bin.000001	264	Query	1	264	use `test`; insert into t1 values (@var1),(@var2)
+/*!40019 SET @@session.max_insert_delayed_threads=0*/;
+SET @`a b`:=_latin1 0x68656C6C6F COLLATE `latin1_swedish_ci`;
+use test;
+SET TIMESTAMP=10000;
+INSERT INTO t1 VALUES(@`a b`);
+SET @`var1`:=_latin1 0x273B616161 COLLATE `latin1_swedish_ci`;
+SET @`var2`:=_latin1 0x61 COLLATE `latin1_swedish_ci`;
+SET TIMESTAMP=10000;
+insert into t1 values (@var1),(@var2);
+drop table t1;
+set @var= NULL ;
+select FIELD( @var,'1it','Hit') as my_column;
+my_column
+0

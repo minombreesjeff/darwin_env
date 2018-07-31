@@ -427,7 +427,8 @@ btr_page_free_for_ibuf(
 	flst_add_first(root + PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST,
 		       page + PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST_NODE, mtr);
 
-	ut_ad(flst_validate(root + PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST, mtr));
+	ut_ad(flst_validate(root + PAGE_HEADER + PAGE_BTR_IBUF_FREE_LIST,
+									mtr));
 }
 
 /******************************************************************
@@ -594,23 +595,23 @@ btr_page_get_father_for_rec(
 		buf_page_print(buf_frame_align(node_ptr));
 
 		fputs("InnoDB: Corruption of an index tree: table ", stderr);
-		ut_print_name(stderr,
+		ut_print_name(stderr, NULL,
 			UT_LIST_GET_FIRST(tree->tree_indexes)->table_name);
 		fputs(", index ", stderr);
-		ut_print_name(stderr,
+		ut_print_name(stderr, NULL,
 			UT_LIST_GET_FIRST(tree->tree_indexes)->name);
 		fprintf(stderr, ",\n"
 "InnoDB: father ptr page no %lu, child page no %lu\n",
-			btr_node_ptr_get_child_page_no(node_ptr),
-			buf_frame_get_page_no(page));
+			(ulong) btr_node_ptr_get_child_page_no(node_ptr),
+			(ulong) buf_frame_get_page_no(page));
      		page_rec_print(page_rec_get_next(page_get_infimum_rec(page)));
      		page_rec_print(node_ptr);
 
 		fputs(
 "InnoDB: You should dump + drop + reimport the table to fix the\n"
 "InnoDB: corruption. If the crash happens at the database startup, see\n"
-"InnoDB: section 6.1 of http://www.innodb.com/ibman.php about forcing\n"
-"InnoDB: recovery. Then dump + drop + reimport.\n", stderr);
+"InnoDB: http://dev.mysql.com/doc/mysql/en/Forcing_recovery.html about\n"
+"InnoDB: forcing recovery. Then dump + drop + reimport.\n", stderr);
 	}
 
 	ut_a(btr_node_ptr_get_child_page_no(node_ptr) ==
@@ -883,7 +884,9 @@ btr_page_reorganize_low(
 "InnoDB: Error: page old data size %lu new data size %lu\n"
 "InnoDB: Error: page old max ins size %lu new max ins size %lu\n"
 "InnoDB: Submit a detailed bug report to http://bugs.mysql.com\n",
-			data_size1, data_size2, max_ins_size1, max_ins_size2);
+			(unsigned long) data_size1, (unsigned long) data_size2,
+			(unsigned long) max_ins_size1,
+			(unsigned long) max_ins_size2);
 	}
 
 	buf_frame_free(new_page);
@@ -2162,7 +2165,6 @@ btr_discard_page(
 	ut_ad(btr_check_node_ptr(tree, merge_page, mtr));
 }	
 
-#ifdef UNIV_DEBUG
 /*****************************************************************
 Prints size info of a B-tree. */
 
@@ -2225,7 +2227,8 @@ btr_print_recursive(
 	ut_ad(mtr_memo_contains(mtr, buf_block_align(page),
 							MTR_MEMO_PAGE_X_FIX));
 	fprintf(stderr, "NODE ON LEVEL %lu page number %lu\n",
-		btr_page_get_level(page, mtr), buf_frame_get_page_no(page));
+	       (ulong) btr_page_get_level(page, mtr),
+	       (ulong) buf_frame_get_page_no(page));
 	
 	page_print(page, width, width);
 	
@@ -2283,7 +2286,6 @@ btr_print_tree(
 
 	btr_validate_tree(tree);
 }
-#endif /* UNIV_DEBUG */
 
 /****************************************************************
 Checks that the node pointer to a page is appropriate. */
@@ -2339,7 +2341,7 @@ btr_index_rec_validate_report(
 	dict_index_t*	index)	/* in: index */
 {
 	fputs("InnoDB: Record in ", stderr);
-	dict_index_name_print(stderr, index);
+	dict_index_name_print(stderr, NULL, index);
 	fprintf(stderr, ", page %lu, at offset %lu\n",
 		buf_frame_get_page_no(page), (ulint)(rec - page));
 }
@@ -2378,7 +2380,7 @@ btr_index_rec_validate(
 	if (rec_get_n_fields(rec) != n) {
 		btr_index_rec_validate_report(page, rec, index);
 		fprintf(stderr, "InnoDB: has %lu fields, should have %lu\n",
-			rec_get_n_fields(rec), n);
+			(ulong) rec_get_n_fields(rec), (ulong) n);
 
 		if (!dump_on_error) {
 
@@ -2398,20 +2400,23 @@ btr_index_rec_validate(
 		dtype_t*	type = dict_index_get_nth_type(index, i);
 
 		rec_get_nth_field(rec, i, &len);
-		
+
+		/* Note that prefix indexes are not fixed size even when
+		their type is CHAR. */
+
 		if ((dict_index_get_nth_field(index, i)->prefix_len == 0
 		    && len != UNIV_SQL_NULL && dtype_is_fixed_size(type)
 		    && len != dtype_get_fixed_size(type))
 		   ||
 		   (dict_index_get_nth_field(index, i)->prefix_len > 0
-		    && len != UNIV_SQL_NULL && dtype_is_fixed_size(type)
-		    && len !=
+		    && len != UNIV_SQL_NULL
+		    && len >
 			   dict_index_get_nth_field(index, i)->prefix_len)) {
 
 			btr_index_rec_validate_report(page, rec, index);
 			fprintf(stderr,
 "InnoDB: field %lu len is %lu, should be %lu\n",
-				i, len, dtype_get_fixed_size(type));
+				(ulong) i, (ulong) len, (ulong) dtype_get_fixed_size(type));
 
 			if (!dump_on_error) {
 	
@@ -2477,7 +2482,7 @@ btr_validate_report1(
 {
 	fprintf(stderr, "InnoDB: Error in page %lu of ",
 		buf_frame_get_page_no(page));
-	dict_index_name_print(stderr, index);
+	dict_index_name_print(stderr, NULL, index);
 	if (level) {
 		fprintf(stderr, ", index tree level %lu", level);
 	}
@@ -2498,7 +2503,7 @@ btr_validate_report2(
 	fprintf(stderr, "InnoDB: Error in pages %lu and %lu of ",
 		buf_frame_get_page_no(page1),
 		buf_frame_get_page_no(page2));
-	dict_index_name_print(stderr, index);
+	dict_index_name_print(stderr, NULL, index);
 	if (level) {
 		fprintf(stderr, ", index tree level %lu", level);
 	}
@@ -2641,7 +2646,7 @@ loop:
 
 			fprintf(stderr, "\n"
 				"InnoDB: node ptr child page n:o %lu\n",
-				btr_node_ptr_get_child_page_no(node_ptr));
+				(unsigned long) btr_node_ptr_get_child_page_no(node_ptr));
 
 			fputs("InnoDB: record on page ", stderr);
 			rec_print(stderr,

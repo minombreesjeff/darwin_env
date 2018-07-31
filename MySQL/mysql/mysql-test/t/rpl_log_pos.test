@@ -3,29 +3,31 @@
 #
 source include/master-slave.inc;
 show master status;
-save_master_pos;
-connection slave;
-sync_with_master;
+sync_slave_with_master;
 --replace_result $MASTER_MYPORT MASTER_PORT
+--replace_column 1 # 33 #
 show slave status;
-slave stop;
+stop slave;
 change master to master_log_pos=73;
-slave start;
+start slave;
 sleep 5;
-slave stop;
+stop slave;
 
 change master to master_log_pos=73;
 --replace_result $MASTER_MYPORT MASTER_PORT
+--replace_column 1 # 33 #
 show slave status;
-slave start;
+start slave;
 sleep 5;
 --replace_result $MASTER_MYPORT MASTER_PORT
+--replace_column 1 # 33 #
 show slave status;
-slave stop;
+stop slave;
 change master to master_log_pos=173;
-slave start;
+start slave;
 sleep 2;
 --replace_result $MASTER_MYPORT MASTER_PORT
+--replace_column 1 # 33 #
 show slave status;
 connection master;
 show master status;
@@ -35,13 +37,11 @@ create table t1 (n int);
 insert into t1 values (1),(2),(3);
 save_master_pos;
 connection slave;
-slave stop;
+stop slave;
 change master to master_log_pos=79;
-slave start;
+start slave;
 sync_with_master;
 select * from t1;
 connection master;
 drop table t1;
-save_master_pos;
-connection slave;
-sync_with_master;
+sync_slave_with_master;

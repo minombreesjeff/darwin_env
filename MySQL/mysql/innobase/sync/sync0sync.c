@@ -201,7 +201,7 @@ void
 mutex_create_func(
 /*==============*/
 	mutex_t*	mutex,		/* in: pointer to memory */
-	char*		cfile_name,	/* in: file name where created */
+	const char*	cfile_name,	/* in: file name where created */
 	ulint		cline)		/* in: file line where created */
 {
 #if defined(_WIN32) && defined(UNIV_CAN_USE_X86_ASSEMBLER)
@@ -214,7 +214,7 @@ mutex_create_func(
 	mutex->magic_n = MUTEX_MAGIC_N;
 #ifdef UNIV_SYNC_DEBUG
 	mutex->line = 0;
-	mutex->file_name = (char *) "not yet reserved";
+	mutex->file_name = "not yet reserved";
 #endif /* UNIV_SYNC_DEBUG */
 	mutex->level = SYNC_LEVEL_NONE;
 	mutex->cfile_name = cfile_name;
@@ -232,6 +232,10 @@ mutex_create_func(
 	
 	mutex_enter(&mutex_list_mutex);
 
+        if (UT_LIST_GET_LEN(mutex_list) > 0) {
+                ut_a(UT_LIST_GET_FIRST(mutex_list)->magic_n == MUTEX_MAGIC_N);
+        }
+
 	UT_LIST_ADD_FIRST(list, mutex_list, mutex);
 
 	mutex_exit(&mutex_list_mutex);
@@ -247,7 +251,9 @@ mutex_free(
 /*=======*/
 	mutex_t*	mutex)	/* in: mutex */
 {
-	ut_ad(mutex_validate(mutex));
+#ifdef UNIV_DEBUG
+	ut_a(mutex_validate(mutex));
+#endif /* UNIV_DEBUG */
 	ut_a(mutex_get_lock_word(mutex) == 0);
 	ut_a(mutex_get_waiters(mutex) == 0);
 	
@@ -255,6 +261,15 @@ mutex_free(
 
 	        mutex_enter(&mutex_list_mutex);
 
+		if (UT_LIST_GET_PREV(list, mutex)) {
+			ut_a(UT_LIST_GET_PREV(list, mutex)->magic_n
+							== MUTEX_MAGIC_N);
+		}
+		if (UT_LIST_GET_NEXT(list, mutex)) {
+			ut_a(UT_LIST_GET_NEXT(list, mutex)->magic_n
+							== MUTEX_MAGIC_N);
+		}
+        
 	        UT_LIST_REMOVE(list, mutex_list, mutex);
 
 		mutex_exit(&mutex_list_mutex);
@@ -279,10 +294,10 @@ mutex_enter_nowait(
 /*===============*/
 					/* out: 0 if succeed, 1 if not */
 	mutex_t*	mutex,		/* in: pointer to mutex */
-	char*	   	file_name __attribute__((unused)),
+	const char*	file_name __attribute__((unused)),
 					/* in: file name where mutex
 					requested */
-	ulint	   	line __attribute__((unused)))
+	ulint		line __attribute__((unused)))
 					/* in: line where requested */
 {
 	ut_ad(mutex_validate(mutex));
@@ -299,7 +314,6 @@ mutex_enter_nowait(
 	return(1);
 }
 
-#ifdef UNIV_DEBUG
 /**********************************************************************
 Checks that the mutex has been initialized. */
 
@@ -313,7 +327,6 @@ mutex_validate(
 
 	return(TRUE);
 }
-#endif /* UNIV_DEBUG */
 
 /**********************************************************************
 Sets the waiters field in a mutex. */
@@ -342,9 +355,10 @@ for the mutex before suspending the thread. */
 void
 mutex_spin_wait(
 /*============*/
-        mutex_t*   mutex,     	/* in: pointer to mutex */
-	char*	   file_name, 	/* in: file name where mutex requested */
-	ulint	   line)	/* in: line where requested */
+        mutex_t*	   mutex,     	/* in: pointer to mutex */
+	const char*	   file_name, 	/* in: file name where
+					mutex requested */
+	ulint		   line)	/* in: line where requested */
 {
         ulint    index; /* index of the reserved wait cell */
         ulint    i;   	/* spin round count */
@@ -380,8 +394,8 @@ spin_loop:
 	if (srv_print_latch_waits) {
 		fprintf(stderr,
 	"Thread %lu spin wait mutex at %p cfile %s cline %lu rnds %lu\n",
-		os_thread_pf(os_thread_get_curr_id()), mutex,
-				mutex->cfile_name, mutex->cline, i);
+		(ulong) os_thread_pf(os_thread_get_curr_id()), mutex,
+		mutex->cfile_name, (ulong) mutex->cline, (ulong) i);
 	}
 
 	mutex_spin_round_count += i;
@@ -441,7 +455,8 @@ spin_loop:
 			fprintf(stderr,
 				"Thread %lu spin wait succeeds at 2:"
 				" mutex at %p\n",
-				os_thread_pf(os_thread_get_curr_id()), mutex);
+			(ulong) os_thread_pf(os_thread_get_curr_id()),
+			mutex);
 		}
 		
                 return;
@@ -459,8 +474,8 @@ spin_loop:
 	if (srv_print_latch_waits) {
 		fprintf(stderr,
 	"Thread %lu OS wait mutex at %p cfile %s cline %lu rnds %lu\n",
-		os_thread_pf(os_thread_get_curr_id()), mutex,
-			mutex->cfile_name, mutex->cline, i);
+		(ulong) os_thread_pf(os_thread_get_curr_id()), mutex,
+		mutex->cfile_name, (ulong) mutex->cline, (ulong) i);
 	}
 	
 	mutex_system_call_count++;
@@ -495,7 +510,7 @@ void
 mutex_set_debug_info(
 /*=================*/
 	mutex_t*	mutex,		/* in: mutex */
-	char*		file_name,	/* in: file where requested */
+	const char*	file_name,	/* in: file where requested */
 	ulint		line)		/* in: line where requested */
 {
 	ut_ad(mutex);
@@ -762,13 +777,13 @@ sync_thread_levels_g(
 
 				fprintf(stderr,
 	"InnoDB error: sync levels should be > %lu but a level is %lu\n",
-				limit, slot->level);
+				(ulong) limit, (ulong) slot->level);
 
 				if (mutex->magic_n == MUTEX_MAGIC_N) {
 					fprintf(stderr,
 						"Mutex created at %s %lu\n",
 						mutex->cfile_name,
-						mutex->cline);
+						(ulong) mutex->cline);
 
 					if (mutex_get_lock_word(mutex) != 0) {
 #ifdef UNIV_SYNC_DEBUG
@@ -781,7 +796,7 @@ sync_thread_levels_g(
 
 						fprintf(stderr,
 		"InnoDB: Locked mutex: addr %p thread %ld file %s line %ld\n",
-		mutex, os_thread_pf(thread_id), file_name, line);
+		mutex, os_thread_pf(thread_id), file_name, (ulong) line);
 #else /* UNIV_SYNC_DEBUG */
 						fprintf(stderr,
 		"InnoDB: Locked mutex: addr %p\n", mutex);
@@ -958,7 +973,7 @@ sync_thread_add_level(
 	}
 
 	array = thread_slot->levels;
-			 
+	
 	/* NOTE that there is a problem with _NODE and _LEAF levels: if the
 	B-tree height changes, then a leaf can change to an internal node
 	or the other way around. We do not know at present if this can cause
@@ -1060,12 +1075,8 @@ sync_thread_add_level(
 	} else if (level == SYNC_DICT_HEADER) {
 		ut_a(sync_thread_levels_g(array, SYNC_DICT_HEADER));
 	} else if (level == SYNC_DICT) {
-#ifdef UNIV_DEBUG
-		ut_a(buf_debug_prints ||
-			sync_thread_levels_g(array, SYNC_DICT));
-#else /* UNIV_DEBUG */
-		ut_a(sync_thread_levels_g(array, SYNC_DICT));
-#endif /* UNIV_DEBUG */
+		ut_a(buf_debug_prints
+		     || sync_thread_levels_g(array, SYNC_DICT));
 	} else {
 		ut_error;
 	}
@@ -1245,10 +1256,13 @@ sync_print_wait_info(
 	fprintf(file,
 "Mutex spin waits %lu, rounds %lu, OS waits %lu\n"
 "RW-shared spins %lu, OS waits %lu; RW-excl spins %lu, OS waits %lu\n",
-			mutex_spin_wait_count, mutex_spin_round_count,
-			mutex_os_wait_count,
-			rw_s_spin_wait_count, rw_s_os_wait_count,
-			rw_x_spin_wait_count, rw_x_os_wait_count);
+			(ulong) mutex_spin_wait_count,
+		        (ulong) mutex_spin_round_count,
+			(ulong) mutex_os_wait_count,
+			(ulong) rw_s_spin_wait_count,
+		        (ulong) rw_s_os_wait_count,
+			(ulong) rw_x_spin_wait_count,
+		        (ulong) rw_x_os_wait_count);
 }
 
 /***********************************************************************

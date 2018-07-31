@@ -4,8 +4,10 @@
 # Small basic test with ignore
 #
 
+--disable_warnings
 drop table if exists t1,t2,t3,t4,t5,t6,t7,t8;
-create table t1 (id int unsigned not null auto_increment, code tinyint unsigned not null, name char(20) not null, primary key (id), key (code), unique (name)) type=bdb;
+--enable_warnings
+create table t1 (id int unsigned not null auto_increment, code tinyint unsigned not null, name char(20) not null, primary key (id), key (code), unique (name)) engine=bdb;
 
 insert into t1 (code, name) values (1, 'Tim'), (1, 'Monty'), (2, 'David'), (2, 'Erik'), (3, 'Sasha'), (3, 'Jeremy'), (4, 'Matt');
 select id, code, name from t1 order by id;
@@ -28,7 +30,7 @@ CREATE TABLE t1 (
   PRIMARY KEY (id),
   KEY parent_id (parent_id),
   KEY level (level)
-) type=bdb;
+) engine=bdb;
 INSERT INTO t1 VALUES (1,0,0),(3,1,1),(4,1,1),(8,2,2),(9,2,2),(17,3,2),(22,4,2),(24,4,2),(28,5,2),(29,5,2),(30,5,2),(31,6,2),(32,6,2),(33,6,2),(203,7,2),(202,7,2),(20,3,2),(157,0,0),(193,5,2),(40,7,2),(2,1,1),(15,2,2),(6,1,1),(34,6,2),(35,6,2),(16,3,2),(7,1,1),(36,7,2),(18,3,2),(26,5,2),(27,5,2),(183,4,2),(38,7,2),(25,5,2),(37,7,2),(21,4,2),(19,3,2),(5,1,1),(179,5,2);
 update t1 set parent_id=parent_id+100;
 select * from t1 where parent_id=102;
@@ -57,7 +59,7 @@ CREATE TABLE t1 (
   gesuchnr int(11) DEFAULT '0' NOT NULL,
   benutzer_id int(11) DEFAULT '0' NOT NULL,
   PRIMARY KEY (gesuchnr,benutzer_id)
-) type=BDB;
+) engine=BDB;
 
 replace into t1 (gesuchnr,benutzer_id) values (2,1);
 replace into t1 (gesuchnr,benutzer_id) values (1,1);
@@ -66,7 +68,7 @@ select * from t1;
 drop table t1;
 
 # test for bug in replace with secondary key
-create table t1 (id int not null primary key, x int not null, key (x)) type=bdb;
+create table t1 (id int not null primary key, x int not null, key (x)) engine=bdb;
 insert into t1 (id, x) values (1, 1);
 replace into t1 (id, x) values (1, 2);
 select * from t1;
@@ -76,7 +78,7 @@ drop table t1;
 # test delete using hidden_primary_key
 #
 
-create table t1 (a int) type=bdb;
+create table t1 (a int) engine=bdb;
 insert into t1 values (1), (2);
 optimize table t1;
 delete from t1 where a = 1;
@@ -84,7 +86,7 @@ select * from t1;
 check table t1;
 drop table t1;
 
-create table t1 (a int,b varchar(20)) type=bdb;
+create table t1 (a int,b varchar(20)) engine=bdb;
 insert into t1 values (1,""), (2,"testing");
 delete from t1 where a = 1;
 select * from t1;
@@ -96,7 +98,7 @@ drop table t1;
 
 # Test of reading on secondary key with may be null
 
-create table t1 (a int,b varchar(20),key(a)) type=bdb;
+create table t1 (a int,b varchar(20),key(a)) engine=bdb;
 insert into t1 values (1,""), (2,"testing");
 select * from t1 where a = 1;
 drop table t1;
@@ -105,7 +107,7 @@ drop table t1;
 # Test auto_increment on sub key
 #
 
-create table t1 (a char(10) not null, b int not null auto_increment, primary key(a,b)) type=BDB;
+create table t1 (a char(10) not null, b int not null auto_increment, primary key(a,b)) engine=BDB;
 insert into t1 values ("a",1),("b",2),("a",2),("c",1);
 insert into t1 values ("a",NULL),("b",NULL),("c",NULL),("e",NULL);
 insert into t1 (a) values ("a"),("b"),("c"),("d");
@@ -121,7 +123,7 @@ drop table t1;
 # Test rollback
 #
 
-create table t1 (n int not null primary key) type=bdb;
+create table t1 (n int not null primary key) engine=bdb;
 set autocommit=0;
 insert into t1 values (4);
 rollback;
@@ -148,7 +150,7 @@ drop table t1;
 # Testing transactions
 #
 
-create table t1 ( id int NOT NULL PRIMARY KEY, nom varchar(64)) type=BDB;
+create table t1 ( id int NOT NULL PRIMARY KEY, nom varchar(64)) engine=BDB;
 begin;
 insert into t1 values(1,'hamdouni');
 select id as afterbegin_id,nom as afterbegin_nom from t1;
@@ -166,7 +168,7 @@ drop table t1;
 # Simple not autocommit test
 # 
 
-CREATE TABLE t1 (id char(8) not null primary key, val int not null) type=bdb;
+CREATE TABLE t1 (id char(8) not null primary key, val int not null) engine=bdb;
 insert into t1 values ('pippo', 12);
 -- error 1062
 insert into t1 values ('pippo', 12); # Gives error
@@ -189,12 +191,12 @@ set autocommit=1;
 # The following simple tests failed at some point
 #
 
-CREATE TABLE t1 (ID INTEGER NOT NULL PRIMARY KEY, NAME VARCHAR(64)) TYPE=BDB;
+CREATE TABLE t1 (ID INTEGER NOT NULL PRIMARY KEY, NAME VARCHAR(64)) ENGINE=BDB;
 INSERT INTO t1 VALUES (1, 'Jochen');
 select * from t1;
 drop table t1;
 
-CREATE TABLE t1 ( _userid VARCHAR(60) NOT NULL PRIMARY KEY) TYPE=BDB;
+CREATE TABLE t1 ( _userid VARCHAR(60) NOT NULL PRIMARY KEY) ENGINE=BDB;
 set autocommit=0;
 INSERT INTO t1  SET _userid='marc@anyware.co.uk';
 COMMIT;
@@ -213,7 +215,7 @@ CREATE TABLE t1 (
   ref_email varchar(100) DEFAULT '' NOT NULL,
   detail varchar(200),
   PRIMARY KEY (user_id,ref_email)
-)type=bdb;
+)engine=bdb;
 
 INSERT INTO t1 VALUES (10292,'sanjeev','29153373','sansh777@hotmail.com','xxx'),(10292,'shirish','2333604','shirish@yahoo.com','ddsds'),(10292,'sonali','323232','sonali@bolly.com','filmstar');
 select * from t1 where user_id=10292;
@@ -238,7 +240,7 @@ drop table t1;
 #
 
 create table t1 (col1 int not null, col2 char(4) not null, primary key(col1));
-alter table t1 type=BDB;
+alter table t1 engine=BDB;
 insert into t1 values ('1','1'),('5','2'),('2','3'),('3','4'),('4','4');
 select * from t1;
 update t1 set col2='7' where col1='4';
@@ -253,8 +255,8 @@ drop table t1;
 # INSERT INTO BDB tables
 #
 
-create table t1 (a int not null , b int, primary key (a)) type = BDB;
-create table t2 (a int not null , b int, primary key (a)) type = myisam;
+create table t1 (a int not null , b int, primary key (a)) engine = BDB;
+create table t2 (a int not null , b int, primary key (a)) engine = myisam;
 insert into t1 VALUES (1,3) , (2,3), (3,3);
 select * from t1;
 insert into t2 select * from t1;
@@ -277,7 +279,7 @@ CREATE TABLE t1 (
   passwd varchar(32) binary DEFAULT '' NOT NULL,
   PRIMARY KEY (id),
   UNIQUE ggid (ggid)
-) TYPE=BDB;
+) ENGINE=BDB;
 
 insert into t1 (ggid,passwd) values ('test1','xxx');
 insert into t1 (ggid,passwd) values ('test2','yyy');
@@ -315,7 +317,7 @@ CREATE TABLE t1 (
   approved datetime,
   dummy_primary_key int(11) NOT NULL auto_increment,
   PRIMARY KEY (dummy_primary_key)
-) TYPE=BDB;
+) ENGINE=BDB;
 INSERT INTO t1 VALUES ('user_0','somepassword','N',0,0,0,'2000-09-07','23:06:59','2000-09-07 23:06:59',1);
 INSERT INTO t1 VALUES ('user_1','somepassword','Y',1,1,1,'2000-09-07','23:06:59','2000-09-07 23:06:59',2);
 INSERT INTO t1 VALUES ('user_2','somepassword','N',2,2,1.4142135623731,'2000-09-07','23:06:59','2000-09-07 23:06:59',3);
@@ -335,7 +337,7 @@ CREATE TABLE t1 (
   KEY (id),
   KEY parent_id (parent_id),
   KEY level (level)
-) type=bdb;
+) engine=bdb;
 INSERT INTO t1 VALUES (1,0,0),(3,1,1),(4,1,1),(8,2,2),(9,2,2),(17,3,2),(22,4,2),(24,4,2),(28,5,2),(29,5,2),(30,5,2),(31,6,2),(32,6,2),(33,6,2),(203,7,2),(202,7,2),(20,3,2),(157,0,0),(193,5,2),(40,7,2),(2,1,1),(15,2,2),(6,1,1),(34,6,2),(35,6,2),(16,3,2),(7,1,1),(36,7,2),(18,3,2),(26,5,2),(27,5,2),(183,4,2),(38,7,2),(25,5,2),(37,7,2),(21,4,2),(19,3,2),(5,1,1);
 INSERT INTO t1 values (179,5,2);
 update t1 set parent_id=parent_id+100;
@@ -368,7 +370,7 @@ CREATE TABLE t1 (
    sca_sch_desc varchar(16),
    PRIMARY KEY (sca_code, cat_code, lan_code),
    INDEX sca_pic (sca_pic)
-) type = bdb ;
+) engine = bdb ;
 
 INSERT INTO t1 ( sca_code, cat_code, sca_desc, lan_code, sca_pic, sca_sdesc, sca_sch_desc) VALUES ( 'PD', 'J', 'PENDANT', 'EN', NULL, NULL, 'PENDANT'),( 'RI', 'J', 'RING', 'EN', NULL, NULL, 'RING'),( 'QQ', 'N', 'RING', 'EN', 'not null', NULL, 'RING');
 select count(*) from t1 where sca_code = 'PD';
@@ -390,7 +392,7 @@ drop table t1;
 # Test of opening table twice and timestamps
 #
 set @a:=now();
-CREATE TABLE t1 (a int not null, b timestamp not null, primary key (a)) type=bdb;
+CREATE TABLE t1 (a int not null, b timestamp not null, primary key (a)) engine=bdb;
 insert into t1 (a) values(1),(2),(3);
 select t1.a from t1 natural join t1 as t2 where t1.b >= @a order by t1.a;
 update t1 set a=5 where a=1;
@@ -405,7 +407,7 @@ flush logs;
 #
 # Test key on blob with null values
 #
-create table t1 (b blob, i int, key (b(100)), key (i), key (i, b(20))) type=bdb;
+create table t1 (b blob, i int, key (b(100)), key (i), key (i, b(20))) engine=bdb;
 insert into t1 values ('this is a blob', 1), (null, -1), (null, null),("",1),("",2),("",3);
 select b from t1 where b = 'this is a blob';
 select * from t1 where b like 't%';
@@ -419,7 +421,7 @@ drop table t1;
 #
 # Test with variable length primary key
 #
-create table t1 (a varchar(100) not null, primary key(a), b int not null) type=bdb;
+create table t1 (a varchar(100) not null, primary key(a), b int not null) engine=bdb;
 insert into t1 values("hello",1),("world",2);
 select * from t1 order by b desc;
 optimize table t1;
@@ -429,7 +431,7 @@ drop table t1;
 #
 # Test of bug in create index with NULL columns
 #
-create table t1 (i int, j int )TYPE=BDB;
+create table t1 (i int, j int )ENGINE=BDB;
 insert into t1 values (1,2);
 select * from t1 where i=1 and j=2;
 create index ax1 on t1 (i,j);
@@ -441,7 +443,6 @@ drop table t1;
 # This gave a wrong result because the row information was freed too early
 #
 
-drop table if exists t1, t2, t3, t4, t5, t6, t7;
 create table t1
 (
 	branch_id	int		auto_increment	primary key,
@@ -450,8 +451,7 @@ create table t1
 
 	unique  branch_name(branch_name),
 	index	branch_active(branch_active)
-) type=bdb;
-drop table if exists t2 ;
+) engine=bdb;
 create table t2
 (
 	target_id	int		auto_increment	primary key,
@@ -460,8 +460,7 @@ create table t2
 
 	unique	target_name(target_name),
 	index	target_active(target_active)
-) type=bdb;
-drop table if exists t3 ;
+) engine=bdb;
 create table t3
 (
 	platform_id	int		auto_increment	primary key,
@@ -470,8 +469,7 @@ create table t3
 
 	unique	platform_name(platform_name),
 	index	platform_active(platform_active)
-) type=bdb;
-drop table if exists t4 ;
+) engine=bdb;
 create table t4
 (
 	product_id	int		auto_increment	primary key,
@@ -481,8 +479,7 @@ create table t4
 
 	unique	product_name(product_name),
 	index	product_active(product_active)
-) type=bdb;
-drop table if exists t5 ;
+) engine=bdb;
 create table t5
 (
 	product_file_id		int		auto_increment	primary key,
@@ -495,8 +492,7 @@ create table t5
 
 	unique	product_file(product_id,file_name),
 	index	file_included(file_included)
-) type=bdb;
-drop table if exists t6 ;
+) engine=bdb;
 create table t6
 (
 	file_platform_id	int		auto_increment	primary key,
@@ -509,8 +505,7 @@ create table t6
 	archive_filename	varchar(255)	not null,
 
 	unique  file_platform(product_file_id,platform_id,branch_id)
-) type=bdb;
-drop table if exists t8 ;
+) engine=bdb;
 create table t8
 (
 	archive_id	int		auto_increment	primary key,
@@ -522,8 +517,7 @@ create table t8
 
 	unique  archive(branch_id,target_id,platform_id,product_id),
 	index	status_id(status_id)
-) type=bdb;
-drop table if exists t7 ;
+) engine=bdb;
 create table t7
 (
 	build_id	int		auto_increment	primary key,
@@ -537,7 +531,7 @@ create table t7
 	build_path	text		not null,	
 
 	unique  build(branch_id,target_id,build_number)
-) type=bdb;
+) engine=bdb;
 
 insert into t1 (branch_name)
 values ('RealMedia');
@@ -665,7 +659,7 @@ CREATE TABLE t1 (
   a tinytext NOT NULL,
   b tinyint(3) unsigned NOT NULL default '0',
   PRIMARY KEY (a(32),b)
-) TYPE=BDB;
+) ENGINE=BDB;
 INSERT INTO t1 VALUES ('a',1),('a',2);
 SELECT * FROM t1 WHERE a='a' AND b=2;
 SELECT * FROM t1 WHERE a='a' AND b in (2);
@@ -680,7 +674,7 @@ CREATE TABLE t1 (
   a int3 unsigned NOT NULL,
   b int1 unsigned NOT NULL,
   UNIQUE (a, b)
-) TYPE = BDB;
+) ENGINE = BDB;
  
 INSERT INTO t1 VALUES (1, 1);
 SELECT MIN(B),MAX(b) FROM t1 WHERE t1.a = 1;
@@ -690,7 +684,7 @@ drop table t1;
 # Test problem with BDB and lock tables with duplicate write.
 #
 
-create table t1 (id int NOT NULL,id2 int NOT NULL,id3 int NOT NULL,dummy1 char(30),primary key (id,id2),index index_id3 (id3)) type=bdb;
+create table t1 (id int NOT NULL,id2 int NOT NULL,id3 int NOT NULL,dummy1 char(30),primary key (id,id2),index index_id3 (id3)) engine=bdb;
 insert into t1 values (0,0,0,'ABCDEFGHIJ'),(2,2,2,'BCDEFGHIJK'),(1,1,1,'CDEFGHIJKL');
 LOCK TABLES t1 WRITE;
 --error 1062
@@ -700,7 +694,7 @@ select id from t1;
 UNLOCK TABLES;
 DROP TABLE t1;
 
-create table t1 (id int NOT NULL,id2 int NOT NULL,id3 int NOT NULL,dummy1 char(30),primary key (id,id2),index index_id3 (id3)) type=bdb;
+create table t1 (id int NOT NULL,id2 int NOT NULL,id3 int NOT NULL,dummy1 char(30),primary key (id,id2),index index_id3 (id3)) engine=bdb;
 insert into t1 values (0,0,0,'ABCDEFGHIJ'),(2,2,2,'BCDEFGHIJK'),(1,1,1,'CDEFGHIJKL');
 LOCK TABLES t1 WRITE;
 begin;
@@ -717,8 +711,8 @@ DROP TABLE t1;
 # Test with empty tables (crashed with lock error)
 #
 
-CREATE TABLE t1 (SYAIN_NO char(5) NOT NULL default '', KINMU_DATE char(6) NOT NULL default '', PRIMARY KEY  (SYAIN_NO,KINMU_DATE)) TYPE=BerkeleyDB;
-CREATE TABLE t2 ( SYAIN_NO char(5) NOT NULL default '',STR_DATE char(8) NOT NULL default '',PRIMARY KEY  (SYAIN_NO,STR_DATE) ) TYPE=BerkeleyDB;
+CREATE TABLE t1 (SYAIN_NO char(5) NOT NULL default '', KINMU_DATE char(6) NOT NULL default '', PRIMARY KEY  (SYAIN_NO,KINMU_DATE)) ENGINE=BerkeleyDB;
+CREATE TABLE t2 ( SYAIN_NO char(5) NOT NULL default '',STR_DATE char(8) NOT NULL default '',PRIMARY KEY  (SYAIN_NO,STR_DATE) ) ENGINE=BerkeleyDB;
 select T1.KINMU_DATE from t1 T1 ,t2 T2 where  T1.SYAIN_NO = '12345' and T1.KINMU_DATE = '200106' and T2.SYAIN_NO = T1.SYAIN_NO;
 select T1.KINMU_DATE from t1 T1 ,t2 T2 where  T1.SYAIN_NO = '12345' and T1.KINMU_DATE = '200106' and T2.SYAIN_NO = T1.SYAIN_NO;
 DROP TABLE t1,t2;
@@ -727,8 +721,7 @@ DROP TABLE t1,t2;
 # Test problem with joining table to itself on a multi-part unique key
 #
 
-drop table if exists t1;
-create table t1 (a int(11) not null, b int(11) not null, unique (a,b)) type=bdb;
+create table t1 (a int(11) not null, b int(11) not null, unique (a,b)) engine=bdb;
 insert into t1 values (1,1), (1,2);
 select * from t1 where a = 1;
 select t1.*, t2.* from t1, t1 t2 where t1.a = t2.a and t2.a = 1;
@@ -739,9 +732,9 @@ drop table t1;
 # This caused a deadlock in BDB internal locks
 #
 
-create table t1 (id int NOT NULL,id2 int NOT NULL,id3 int NOT NULL,dummy1 char(30),primary key (id,id2),index index_id3 (id3)) type=bdb;
+create table t1 (id int NOT NULL,id2 int NOT NULL,id3 int NOT NULL,dummy1 char(30),primary key (id,id2),index index_id3 (id3)) engine=bdb;
 insert into t1 values (0,0,0,'ABCDEFGHIJ');
-create table t2 (id int NOT NULL,primary key (id)) type=bdb;
+create table t2 (id int NOT NULL,primary key (id)) engine=bdb;
 LOCK TABLES t1 WRITE, t2 WRITE;
 insert into t2 values(1);
 SELECT t1.* FROM t1 WHERE id IN (1);
@@ -753,7 +746,7 @@ drop table t1,t2;
 # Test problems with NULL
 #
 
-CREATE TABLE t1 (i varchar(48) NOT NULL default '', p varchar(255) default NULL,s varchar(48) NOT NULL default '', PRIMARY KEY  (i), UNIQUE(p,s)) TYPE=BDB;
+CREATE TABLE t1 (i varchar(48) NOT NULL default '', p varchar(255) default NULL,s varchar(48) NOT NULL default '', PRIMARY KEY  (i), UNIQUE(p,s)) ENGINE=BDB;
 INSERT INTO t1 VALUES ('00000000-e6c4ddeaa6-003b8-83458387','programs/xxxxxxxx.wmv','00000000-e6c4ddeb32-003bc-83458387');
 SELECT * FROM t1 WHERE p='programs/xxxxxxxx.wmv';
 drop table t1;
@@ -762,7 +755,7 @@ drop table t1;
 # Test problem which gave error 'Can't find record in 't1''
 #
 
-CREATE TABLE t1 ( STR_DATE varchar(8) NOT NULL default '',INFO_NOTE varchar(200) default NULL,PRIMARY KEY  (STR_DATE) ) TYPE=BerkeleyDB;
+CREATE TABLE t1 ( STR_DATE varchar(8) NOT NULL default '',INFO_NOTE varchar(200) default NULL,PRIMARY KEY  (STR_DATE) ) ENGINE=BerkeleyDB;
 select INFO_NOTE from t1 where STR_DATE = '20010610';
 select INFO_NOTE from t1 where STR_DATE < '20010610';
 select INFO_NOTE from t1 where STR_DATE > '20010610';
@@ -772,8 +765,8 @@ drop table t1;
 # Test problem with multi table delete which quickly shows up with bdb tables.
 #
 
-create table t1 (a int not null, b int, primary key (a)) type =bdb;
-create table t2 (a int not null, b int, primary key (a)) type =bdb;
+create table t1 (a int not null, b int, primary key (a)) engine =bdb;
+create table t2 (a int not null, b int, primary key (a)) engine =bdb;
 insert into t1 values (2, 3),(1, 7),(10, 7);
 insert into t2 values (2, 3),(1, 7),(10, 7);
 select * from t1;
@@ -788,7 +781,7 @@ drop table t1,t2;
 # The bug #971
 #
 
-create table t1  (x int not null, index(x)) type=bdb;
+create table t1  (x int not null, index(x)) engine=bdb;
 insert into t1 values (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
 select * from t1 where x <= 10 and x >= 7;
 select * from t1 where x <= 10 and x >= 7 order by x;
@@ -801,7 +794,7 @@ drop table t1;
 # Test of multi-table-updates (bug #1980).
 #
 
-create table t1 ( c char(8) not null ) type=bdb;
+create table t1 ( c char(8) not null ) engine=bdb;
 insert into t1 values ('0'),('1'),('2'),('3'),('4'),('5'),('6'),('7'),('8'),('9');
 insert into t1 values ('A'),('B'),('C'),('D'),('E'),('F');
 
@@ -810,7 +803,7 @@ alter table t1 add a char(8) not null;
 alter table t1 add primary key (a,b,c);
 update t1 set a=c, b=c;
 
-create table t2 (c char(8) not null, b char(8) not null, a char(8) not null, primary key(a,b,c)) type=bdb;
+create table t2 (c char(8) not null, b char(8) not null, a char(8) not null, primary key(a,b,c)) engine=bdb;
 insert into t2 select * from t1;
 
 delete t1,t2 from t2,t1 where t1.a<'B' and t2.b=t1.b;
@@ -829,3 +822,110 @@ alter table t1 modify a char(10) binary;
 explain select a from t1;
 select a from t1;
 drop table t1;
+
+#
+# bug#2686 - index_merge select on BerkeleyDB table with varchar PK causes mysqld to crash
+#
+
+create table t1(
+  pk1 text not null, pk2 text not null, pk3 char(4),
+  key1 int, key2 int,
+  primary key(pk1(4), pk2(4), pk3), key(key1), key(key2)
+) engine=bdb;
+insert into t1 values (concat('aaa-', repeat('A', 4000)),
+  concat('eee-', repeat('e', 4000)), 'a++a', 1, 1);
+insert into t1 values (concat('bbb-', repeat('B', 4000)),
+  concat('ggg-', repeat('G', 4000)), 'b++b', 1, 1);
+select substring(pk1, 1, 4), substring(pk1, 4001),
+       substring(pk2, 1, 4), substring(pk2, 4001), pk3, key1, key2
+       from t1 force index(key1, key2) where key1 < 3 or key2 < 3;
+drop table t1;
+
+#
+# bug#2688 - Wrong index_merge query results for BDB table with variable length primary key
+#
+
+create table t1 (
+  pk1 varchar(8) not null default '',
+  pk2 varchar(4) not null default '',
+  key1 int(11) default null,
+  key2 int(11) default null,
+  primary key  (pk1,pk2),
+  key key1 (key1),
+  key key2 (key2)) engine=bdb;
+insert into t1 values ('','empt',2,2),  ('a','a--a',2,2),
+  ('bb','b--b',2,2),  ('ccc','c--c',2,2),  ('dddd','d--d',2,2);
+select * from t1 force index(key1, key2) where key1 < 3 or key2 < 3;
+drop table t1;
+
+
+#
+# Bug #4000: problem with active cursor.
+#
+
+set autocommit=0;
+create table t1(b varchar(30)) engine=bdb;
+insert into t1 values ('one');
+commit;
+select b FROM t1 outer_table where
+exists (select 'two' from t1 where 'two' = outer_table.b);
+drop table t1;
+set autocommit=1;
+
+#
+# Bug #4089: subselect and open cursor.
+#
+
+create table t1(a int primary key, b varchar(30)) engine=bdb;
+insert into t1 values (1,'one'), (2,'two'), (3,'three'), (4,'four');
+create table t2 like t1;
+insert t2 select * from t1;
+select a from t1 where a in (select a from t2);
+delete from t2;
+insert into t2 (a, b)
+  select a, b from t1 where (a, b) in (select a, b from t1);
+select * from t2;
+drop table t1, t2;
+
+#
+# Bug #4304: TRUNCATE <table of type BDB> , wrong result
+#
+
+create table t1 (a int, b varchar(30), primary key(a)) engine = bdb;
+insert into t1 values (1,'one');
+commit;
+truncate t1;
+select * from t1;
+drop table t1;
+
+#
+# Check that BDB works fine with a string which is
+# longer than 255 bytes for multibyte characters.
+#
+SET NAMES utf8;
+create table t1 (a varchar(255) character set utf8) engine=bdb;
+set @a:= convert(repeat(_latin1 0xFF, 255) using utf8);
+insert into t1 values (@a);
+select a, length(a), char_length(a) from t1;
+drop table t1;
+SET NAMES latin1;
+
+#
+# Bug #5832 SELECT doesn't return records in some cases
+#
+CREATE TABLE t1 (
+    id       int unsigned NOT NULL auto_increment,
+    list_id  smallint unsigned NOT NULL,
+    term     TEXT NOT NULL,
+    PRIMARY KEY(id),
+    INDEX(list_id, term(4))
+) ENGINE=BDB CHARSET=utf8;
+INSERT INTO t1 SET list_id = 1, term = "letterc";
+INSERT INTO t1 SET list_id = 1, term = "letterb";
+INSERT INTO t1 SET list_id = 1, term = "lettera";
+INSERT INTO t1 SET list_id = 1, term = "letterd";
+SELECT id FROM t1 WHERE (list_id = 1) AND (term = "letterc");
+SELECT id FROM t1 WHERE (list_id = 1) AND (term = "letterb");
+SELECT id FROM t1 WHERE (list_id = 1) AND (term = "lettera");
+SELECT id FROM t1 WHERE (list_id = 1) AND (term = "letterd");
+DROP TABLE t1;

@@ -1,4 +1,4 @@
-/* Copyright (C) 2001 MySQL AB
+/* Copyright (C) 2001-2004 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,8 +17,7 @@
 #define MYSQL_CLIENT
 #undef MYSQL_SERVER
 #include "client_priv.h"
-#include <time.h>
-#include <assert.h>
+#include <my_time.h>
 #include "log_event.h"
 
 #define BIN_LOG_HEADER_SIZE	4
@@ -33,8 +32,9 @@ ulong server_id = 0;
 // needed by net_serv.c
 ulong bytes_sent = 0L, bytes_received = 0L;
 ulong mysqld_net_retry_count = 10L;
+ulong open_files_limit;
 uint test_flags = 0; 
-
+static uint opt_protocol= 0;
 static FILE *result_file;
 
 #ifndef DBUG_OFF
@@ -44,7 +44,7 @@ static const char *load_default_groups[]= { "mysqlbinlog","client",0 };
 
 void sql_print_error(const char *format, ...);
 
-static bool one_database = 0;
+static bool one_database=0, to_last_remote_log= 0, disable_log_bin= 0;
 static const char* database= 0;
 static my_bool force_opt= 0, short_form= 0, remote_opt= 0;
 static ulonglong offset = 0;
@@ -53,11 +53,18 @@ static int port = MYSQL_PORT;
 static const char* sock= 0;
 static const char* user = 0;
 static char* pass = 0;
-static ulonglong position = 0;
+
+static ulonglong start_position, stop_position;
+#define start_position_mot ((my_off_t)start_position)
+#define stop_position_mot  ((my_off_t)stop_position)
+
+static char *start_datetime_str, *stop_datetime_str;
+static my_time_t start_datetime= 0, stop_datetime= MY_TIME_T_MAX;
+static ulonglong rec_count= 0;
 static short binlog_flags = 0; 
 static MYSQL* mysql = NULL;
-
 static const char* dirname_for_local_load= 0;
+static bool stop_passed= 0;
 
 static int dump_local_log_entries(const char* logname);
 static int dump_remote_log_entries(const char* logname);
@@ -69,7 +76,7 @@ static MYSQL* safe_connect();
 
 class Load_log_processor
 {
-  char target_dir_name[MY_NFILE];
+  char target_dir_name[FN_REFLEN];
   int target_dir_name_len;
   DYNAMIC_ARRAY file_names;
 
@@ -197,7 +204,7 @@ int Load_log_processor::load_old_format_file(NET* net, const char*server_fname,
   
   for (;;)
   {
-    uint packet_len = my_net_read(net);
+    ulong packet_len = my_net_read(net);
     if (packet_len == 0)
     {
       if (my_net_write(net, "", 0) || net_flush(net))
@@ -219,7 +226,13 @@ int Load_log_processor::load_old_format_file(NET* net, const char*server_fname,
       return -1;
     }
     
-    if (my_write(file, (byte*) net->read_pos, packet_len,MYF(MY_WME|MY_NABP)))
+    if (packet_len > UINT_MAX)
+    {
+      sql_print_error("Illegal length of packet read from net");
+      return -1;
+    }
+    if (my_write(file, (byte*) net->read_pos, 
+		 (uint) packet_len, MYF(MY_WME|MY_NABP)))
       return -1;
   }
   
@@ -235,15 +248,16 @@ int Load_log_processor::process(Create_file_log_event *ce)
   int error= 0;
   char *fname, *ptr;
   File file;
+  DBUG_ENTER("Load_log_processor::process");
 
   if (set_dynamic(&file_names,(gptr)&ce,ce->file_id))
   {
     sql_print_error("Could not construct local filename %s%s",
 		    target_dir_name,bname);
-    return -1;
+    DBUG_RETURN(-1);
   }
   if (!(fname= my_malloc(full_len,MYF(MY_WME))))
-    return -1;
+    DBUG_RETURN(-1);
 
   memcpy(fname, target_dir_name, target_dir_name_len);
   ptr= fname + target_dir_name_len;
@@ -255,20 +269,21 @@ int Load_log_processor::process(Create_file_log_event *ce)
   {
     sql_print_error("Could not construct local filename %s%s",
 		    target_dir_name,bname);
-    return -1;
+    DBUG_RETURN(-1);
   }
   ce->set_fname_outside_temp_buf(fname,strlen(fname));
 
   if (my_write(file,(byte*) ce->block,ce->block_len,MYF(MY_WME|MY_NABP)))
     error= -1;
-  if (my_close(file,MYF(MY_WME)))
+  if (my_close(file, MYF(MY_WME)))
     error= -1;
-  return error;
+  DBUG_RETURN(error);
 }
 
 
 int Load_log_processor::process(Append_block_log_event *ae)
 {
+  DBUG_ENTER("Load_log_processor::process");
   Create_file_log_event* ce= ((ae->file_id < file_names.elements) ?
 			      *((Create_file_log_event**)file_names.buffer +
 				ae->file_id) :
@@ -280,12 +295,12 @@ int Load_log_processor::process(Append_block_log_event *ae)
     int error= 0;
     if (((file= my_open(ce->fname,
 			O_APPEND|O_BINARY|O_WRONLY,MYF(MY_WME))) < 0))
-      return -1;
+      DBUG_RETURN(-1);
     if (my_write(file,(byte*)ae->block,ae->block_len,MYF(MY_WME|MY_NABP)))
       error= -1;
     if (my_close(file,MYF(MY_WME)))
       error= -1;
-    return error;
+    DBUG_RETURN(error);
   }
 
   /*
@@ -295,20 +310,42 @@ int Load_log_processor::process(Append_block_log_event *ae)
   */
   fprintf(stderr,"Warning: ignoring Append_block as there is no \
 Create_file event for file_id: %u\n",ae->file_id);
-  return -1;
+  DBUG_RETURN(-1);
 }
 
 
 Load_log_processor load_processor;
 
+/*
+  RETURN
+    0           ok and continue
+    1           error and terminate
+    -1          ok and terminate
 
-int process_event(ulonglong *rec_count, char *last_db, Log_event *ev, 
-		  my_off_t pos, int old_format)
+  TODO
+    This function returns 0 even in some error cases. This should be changed.
+*/
+int process_event(char *last_db, Log_event *ev, my_off_t pos, int old_format)
 {
   char ll_buff[21];
+  DBUG_ENTER("process_event");
 
-  if ((*rec_count) >= offset)
+  if ((rec_count >= offset) &&
+      ((my_time_t)(ev->when) >= start_datetime))
   {
+    /*
+      We have found an event after start_datetime, from now on print
+      everything (in case the binlog has timestamps increasing and decreasing,
+      we do this to avoid cutting the middle).
+    */
+    start_datetime= 0;
+    offset= 0; // print everything and protect against cycling rec_count
+    if (((my_time_t)(ev->when) >= stop_datetime)
+        || (pos >= stop_position_mot))
+    {
+      stop_passed= 1; // skip all next binlogs
+      DBUG_RETURN(-1);
+    }
     if (!short_form)
       fprintf(result_file, "# at %s\n",llstr(pos,ll_buff));
     
@@ -318,11 +355,7 @@ int process_event(ulonglong *rec_count, char *last_db, Log_event *ev,
       {
 	const char * log_dbname = ((Query_log_event*)ev)->db;
 	if ((log_dbname != NULL) && (strcmp(log_dbname, database)))
-	{
-	  (*rec_count)++;
-	  delete ev;
-	  return 0; // Time for next event
-	}
+	  goto end;
       }
       ev->print(result_file, short_form, last_db);
       break;
@@ -339,11 +372,7 @@ int process_event(ulonglong *rec_count, char *last_db, Log_event *ev,
 	*/
 	const char * log_dbname = ce->db;            
 	if ((log_dbname != NULL) && (strcmp(log_dbname, database)))
-	{
-	  (*rec_count)++;
-	  delete ev;
-	  return 0; // next
-	}
+	  goto end;				// Next event
       }
       /*
 	We print the event, but with a leading '#': this is just to inform 
@@ -391,10 +420,12 @@ Create_file event for file_id: %u\n",exv->file_id);
       ev->print(result_file, short_form, last_db);
     }
   }
-  (*rec_count)++;
+
+end:
+  rec_count++;
   if (ev)
     delete ev;
-  return 0;
+  DBUG_RETURN(0);
 }
 
 
@@ -407,6 +438,13 @@ static struct my_option my_long_options[] =
   {"database", 'd', "List entries for just this database (local log only).",
    (gptr*) &database, (gptr*) &database, 0, GET_STR_ALLOC, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},
+  {"disable-log-bin", 'D', "Disable binary log. This is useful, if you "
+    "enabled --to-last-log and are sending the output to the same MySQL server. "
+    "This way you could avoid an endless loop. You would also like to use it "
+    "when restoring after a crash to avoid duplication of the statements you "
+    "already have. NOTE: you will need a SUPER privilege to use this option.",
+   (gptr*) &disable_log_bin, (gptr*) &disable_log_bin, 0, GET_BOOL,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
   {"force-read", 'f', "Force reading unknown binlog events.",
    (gptr*) &force_opt, (gptr*) &force_opt, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
    0, 0},
@@ -421,20 +459,64 @@ static struct my_option my_long_options[] =
   {"port", 'P', "Use port to connect to the remote server.",
    (gptr*) &port, (gptr*) &port, 0, GET_INT, REQUIRED_ARG, MYSQL_PORT, 0, 0,
    0, 0, 0},
-  {"position", 'j', "Start reading the binlog at position N.",
-   (gptr*) &position, (gptr*) &position, 0, GET_ULL, REQUIRED_ARG, 0, 0, 0, 0,
-   0, 0},
+  {"position", 'j', "Deprecated. Use --start-position instead.",
+   (gptr*) &start_position, (gptr*) &start_position, 0, GET_ULL,
+   REQUIRED_ARG, BIN_LOG_HEADER_SIZE, BIN_LOG_HEADER_SIZE,
+   /* COM_BINLOG_DUMP accepts only 4 bytes for the position */
+   (ulonglong)(~(uint32)0), 0, 0, 0},
+  {"protocol", OPT_MYSQL_PROTOCOL,
+   "The protocol of connection (tcp,socket,pipe,memory).",
+   0, 0, 0, GET_STR,  REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"result-file", 'r', "Direct output to a given file.", 0, 0, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"read-from-remote-server", 'R', "Read binary logs from a MySQL server",
    (gptr*) &remote_opt, (gptr*) &remote_opt, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
    0, 0},
+  {"open_files_limit", OPT_OPEN_FILES_LIMIT,
+   "Used to reserve file descriptors for usage by this program",
+   (gptr*) &open_files_limit, (gptr*) &open_files_limit, 0, GET_ULONG,
+   REQUIRED_ARG, MY_NFILE, 8, OS_FILE_LIMIT, 0, 1, 0},
   {"short-form", 's', "Just show the queries, no extra info.",
    (gptr*) &short_form, (gptr*) &short_form, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
    0, 0},
   {"socket", 'S', "Socket file to use for connection.",
    (gptr*) &sock, (gptr*) &sock, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 
    0, 0},
+  {"start-datetime", OPT_START_DATETIME,
+   "Start reading the binlog at first event having a datetime equal or "
+   "posterior to the argument; the argument must be a date and time "
+   "in the local time zone, in any format accepted by the MySQL server "
+   "for DATETIME and TIMESTAMP types, for example: 2004-12-25 11:25:56 "
+   "(you should probably use quotes for your shell to set it properly).",
+   (gptr*) &start_datetime_str, (gptr*) &start_datetime_str,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"stop-datetime", OPT_STOP_DATETIME,
+   "Stop reading the binlog at first event having a datetime equal or "
+   "posterior to the argument; the argument must be a date and time "
+   "in the local time zone, in any format accepted by the MySQL server "
+   "for DATETIME and TIMESTAMP types, for example: 2004-12-25 11:25:56 "
+   "(you should probably use quotes for your shell to set it properly).",
+   (gptr*) &stop_datetime_str, (gptr*) &stop_datetime_str,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"start-position", OPT_START_POSITION,
+   "Start reading the binlog at position N. Applies to the first binlog "
+   "passed on the command line.",
+   (gptr*) &start_position, (gptr*) &start_position, 0, GET_ULL,
+   REQUIRED_ARG, BIN_LOG_HEADER_SIZE, BIN_LOG_HEADER_SIZE,
+   /* COM_BINLOG_DUMP accepts only 4 bytes for the position */
+   (ulonglong)(~(uint32)0), 0, 0, 0},
+  {"stop-position", OPT_STOP_POSITION,
+   "Stop reading the binlog at position N. Applies to the last binlog "
+   "passed on the command line.",
+   (gptr*) &stop_position, (gptr*) &stop_position, 0, GET_ULL,
+   REQUIRED_ARG, (ulonglong)(~(my_off_t)0), BIN_LOG_HEADER_SIZE,
+   (ulonglong)(~(my_off_t)0), 0, 0, 0},
+  {"to-last-log", 't', "Requires -R. Will not stop at the end of the \
+requested binlog but rather continue printing until the end of the last \
+binlog of the MySQL server. If you send the output to the same MySQL server, \
+that may lead to an endless loop.",
+   (gptr*) &to_last_remote_log, (gptr*) &to_last_remote_log, 0, GET_BOOL,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
   {"user", 'u', "Connect to the remote server as username.",
    (gptr*) &user, (gptr*) &user, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0,
    0, 0},
@@ -479,9 +561,12 @@ static void die(const char* fmt, ...)
   exit(1);
 }
 
+#include <help_start.h>
+
 static void print_version()
 {
-  printf("%s Ver 2.6 for %s at %s\n", my_progname, SYSTEM_TYPE, MACHINE_TYPE);
+  printf("%s Ver 3.0 for %s at %s\n", my_progname, SYSTEM_TYPE, MACHINE_TYPE);
+  NETWARE_SET_SCREEN_MODE(1);
 }
 
 
@@ -499,6 +584,31 @@ the mysql command line client\n\n");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
 }
+
+
+static my_time_t convert_str_to_timestamp(const char* str)
+{
+  int was_cut;
+  MYSQL_TIME l_time;
+  long dummy_my_timezone;
+  bool dummy_in_dst_time_gap;
+  /* We require a total specification (date AND time) */
+  if (str_to_datetime(str, strlen(str), &l_time, 0, &was_cut) !=
+      MYSQL_TIMESTAMP_DATETIME || was_cut)
+  {
+    fprintf(stderr, "Incorrect date and time argument: %s\n", str);
+    exit(1);
+  }
+  /*
+    Note that Feb 30th, Apr 31st cause no error messages and are mapped to
+    the next existing day, like in mysqld. Maybe this could be changed when
+    mysqld is changed too (with its "strict" mode?).
+  */
+  return
+    my_system_gmt_sec(&l_time, &dummy_my_timezone, &dummy_in_dst_time_gap);
+}
+
+#include <help_end.h>
 
 extern "C" my_bool
 get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
@@ -534,6 +644,21 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
   case 'R':
     remote_opt= 1;
     break;
+  case OPT_MYSQL_PROTOCOL:
+  {
+    if ((opt_protocol= find_type(argument, &sql_protocol_typelib,0)) <= 0)
+    {
+      fprintf(stderr, "Unknown option to protocol: %s\n", argument);
+      exit(1);
+    }
+    break;
+  }
+  case OPT_START_DATETIME:
+    start_datetime= convert_str_to_timestamp(start_datetime_str);
+    break;
+  case OPT_STOP_DATETIME:
+    stop_datetime= convert_str_to_timestamp(stop_datetime_str);
+    break;
   case 'V':
     print_version();
     exit(0);
@@ -562,23 +687,28 @@ static int parse_args(int *argc, char*** argv)
 
 static MYSQL* safe_connect()
 {
-  MYSQL *local_mysql = mysql_init(NULL);
+  MYSQL *local_mysql= mysql_init(NULL);
 
-  if(!local_mysql)
+  if (!local_mysql)
     die("Failed on mysql_init");
-  
-  if (!mysql_real_connect(local_mysql, host, user, pass, 0, port, sock, 0))
-    die("failed on connect: %s", mysql_error(local_mysql));
 
+  if (opt_protocol)
+    mysql_options(local_mysql, MYSQL_OPT_PROTOCOL, (char*) &opt_protocol);
+  if (!mysql_real_connect(local_mysql, host, user, pass, 0, port, sock, 0))
+  {
+    char errmsg[256];
+    strmake(errmsg, mysql_error(local_mysql), sizeof(errmsg)-1);
+    mysql_close(local_mysql);
+    die("failed on connect: %s", errmsg);
+  }
   return local_mysql;
 }
 
 
 static int dump_log_entries(const char* logname)
 {
-  if (remote_opt)
-    return dump_remote_log_entries(logname);
-  return dump_local_log_entries(logname);  
+  return (remote_opt ? dump_remote_log_entries(logname) :
+          dump_local_log_entries(logname));
 }
 
 
@@ -592,9 +722,10 @@ static int check_master_version(MYSQL* mysql)
   if (mysql_query(mysql, "SELECT VERSION()") ||
       !(res = mysql_store_result(mysql)))
   {
+    char errmsg[256];
+    strmake(errmsg, mysql_error(mysql), sizeof(errmsg)-1);
     mysql_close(mysql);
-    die("Error checking master version: %s",
-		    mysql_error(mysql));
+    die("Error checking master version: %s", errmsg);
   }
   if (!(row = mysql_fetch_row(res)))
   {
@@ -634,61 +765,119 @@ static int dump_remote_log_entries(const char* logname)
 {
   char buf[128];
   char last_db[FN_REFLEN+1] = "";
-  uint len;
-  NET* net = &mysql->net;
+  ulong len;
+  uint logname_len;
+  NET* net;
   int old_format;
+  int error= 0;
+  my_off_t old_off= start_position_mot;
+  char fname[FN_REFLEN+1];
+  DBUG_ENTER("dump_remote_log_entries");
+
+  /*
+    Even if we already read one binlog (case of >=2 binlogs on command line),
+    we cannot re-use the same connection as before, because it is now dead
+    (COM_BINLOG_DUMP kills the thread when it finishes).
+  */
+  mysql= safe_connect();
+  net= &mysql->net;
   old_format = check_master_version(mysql);
 
-  if (!position)
-    position = BIN_LOG_HEADER_SIZE; // protect the innocent from spam
-  if (position < BIN_LOG_HEADER_SIZE)
-  {
-    position = BIN_LOG_HEADER_SIZE;
-    // warn the user
-    sql_print_error("Warning: The position in the binary log can't be less than %d.\nStarting from position %d\n", BIN_LOG_HEADER_SIZE, BIN_LOG_HEADER_SIZE);
-  }
-  int4store(buf, position);
+  /*
+    COM_BINLOG_DUMP accepts only 4 bytes for the position, so we are forced to
+    cast to uint32.
+  */
+  int4store(buf, (uint32)start_position);
   int2store(buf + BIN_LOG_HEADER_SIZE, binlog_flags);
-  len = (uint) strlen(logname);
+
+  size_s tlen = strlen(logname);
+  if (tlen > UINT_MAX) 
+  {
+    fprintf(stderr,"Log name too long\n");
+    error= 1;
+    goto err;
+  }
+  logname_len = (uint) tlen;
   int4store(buf + 6, 0);
-  memcpy(buf + 10, logname,len);
-  if (simple_command(mysql, COM_BINLOG_DUMP, buf, len + 10, 1))
+  memcpy(buf + 10, logname, logname_len);
+  if (simple_command(mysql, COM_BINLOG_DUMP, buf, logname_len + 10, 1))
   {
     fprintf(stderr,"Got fatal error sending the log dump command\n");
-    return 1;
+    error= 1;
+    goto err;
   }
-
-  my_off_t old_off= 0;  
-  ulonglong rec_count= 0;
-  char fname[FN_REFLEN+1];
 
   for (;;)
   {
-    const char *error;
+    const char *error_msg;
     len = net_safe_read(mysql);
     if (len == packet_error)
     {
       fprintf(stderr, "Got error reading packet from server: %s\n",
 	      mysql_error(mysql));
-      return 1;
+      error= 1;
+      goto err;
     }
     if (len < 8 && net->read_pos[0] == 254)
       break; // end of data
     DBUG_PRINT("info",( "len= %u, net->read_pos[5] = %d\n",
 			len, net->read_pos[5]));
     Log_event *ev = Log_event::read_log_event((const char*) net->read_pos + 1 ,
-					      len - 1, &error, old_format);
+					      len - 1, &error_msg, old_format);
     if (!ev)
     {
       fprintf(stderr, "Could not construct log event object\n");
-      return 1;
+      error= 1;
+      goto err;
     }   
 
     Log_event_type type= ev->get_type_code();
     if (!old_format || ( type != LOAD_EVENT && type != CREATE_FILE_EVENT))
     {
-      if (process_event(&rec_count,last_db,ev,old_off,old_format))
-	return 1;
+      if (ev->get_type_code() == ROTATE_EVENT)
+      {
+        Rotate_log_event *rev= (Rotate_log_event *)ev;
+        /*
+          mysqld is sending us all its binlogs after the requested one, but we
+          don't want them.
+          If this is a fake Rotate event, and not about our log, we can stop
+          transfer. If this a real Rotate event (so it's not about our log,
+          it's in our log describing the next log), we print it (because it's
+          part of our log) and then we will stop when we receive the fake one
+          soon.
+          This is suitable for binlogs, not relay logs (but for now we don't
+          read relay logs remotely because the server is not able to do
+          that). If one day we read relay logs remotely, then we will have a
+          problem with the detection below: relay logs contain Rotate events
+          which are about the binlogs, so which would trigger the end-detection
+          below.
+        */
+        if (rev->when == 0)
+        {
+          if (!to_last_remote_log)
+          {
+            if ((rev->ident_len != logname_len) ||
+                memcmp(rev->new_log_ident, logname, logname_len))
+            {
+              error= 0;
+              goto err;
+            }
+            /*
+              Otherwise, this is a fake Rotate for our log, at the very
+              beginning for sure. Skip it, because it was not in the original
+              log. If we are running with to_last_remote_log, we print it,
+              because it serves as a useful marker between binlogs then.
+            */
+            continue;
+          }
+          len= 1; // fake Rotate, so don't increment old_off
+        }
+      }
+      if ((error= process_event(last_db,ev,old_off,old_format)))
+      {
+	error= ((error < 0) ? 0 : 1);
+        goto err;
+      }
     }
     else
     {
@@ -698,30 +887,35 @@ static int dump_remote_log_entries(const char* logname)
       File file;
 
       if ((file= load_processor.prepare_new_file_for_old_format(le,fname)) < 0)
-	return 1;
-      if (process_event(&rec_count,last_db,ev,old_off,old_format))
+      {
+        error= 1;
+        goto err;
+      }
+
+      if ((error= process_event(last_db,ev,old_off,old_format)))
       {
 	my_close(file,MYF(MY_WME));
-	return 1;
+	error= ((error < 0) ? 0 : 1);
+        goto err;
       }
       if (load_processor.load_old_format_file(net,old_fname,old_len,file))
       {
 	my_close(file,MYF(MY_WME));
-	return 1;
+        error= 1;
+        goto err;
       }
       my_close(file,MYF(MY_WME));
     }
     
     /*
       Let's adjust offset for remote log as for local log to produce 
-      similar text..
+      similar text.
     */
-    if (old_off)
-      old_off+= len-1;
-    else
-      old_off= BIN_LOG_HEADER_SIZE;
+    old_off+= len-1;
   }
-  return 0;
+err:
+  mysql_close(mysql);
+  DBUG_RETURN(error);
 }
 
 
@@ -730,6 +924,7 @@ static int check_header(IO_CACHE* file)
   byte header[BIN_LOG_HEADER_SIZE];
   byte buf[PROBE_HEADER_LEN];
   int old_format=0;
+  DBUG_ENTER("check_header");
 
   my_off_t pos = my_b_tell(file);
   my_b_seek(file, (my_off_t)0);
@@ -747,7 +942,7 @@ static int check_header(IO_CACHE* file)
     }
   }
   my_b_seek(file, pos);
-  return old_format;
+  DBUG_RETURN(old_format);
 }
 
 
@@ -755,7 +950,6 @@ static int dump_local_log_entries(const char* logname)
 {
   File fd = -1;
   IO_CACHE cache,*file= &cache;
-  ulonglong rec_count = 0;
   char last_db[FN_REFLEN+1];
   byte tmp_buff[BIN_LOG_HEADER_SIZE];
   bool old_format = 0;
@@ -767,7 +961,7 @@ static int dump_local_log_entries(const char* logname)
   {
     if ((fd = my_open(logname, O_RDONLY | O_BINARY, MYF(MY_WME))) < 0)
       return 1;
-    if (init_io_cache(file, fd, 0, READ_CACHE, (my_off_t) position, 0,
+    if (init_io_cache(file, fd, 0, READ_CACHE, start_position_mot, 0,
 		      MYF(MY_WME | MY_NABP)))
     {
       my_close(fd, MYF(MY_WME));
@@ -781,12 +975,12 @@ static int dump_local_log_entries(const char* logname)
 		      0, MYF(MY_WME | MY_NABP | MY_DONT_CHECK_FILESIZE)))
       return 1;
     old_format = check_header(file);
-    if (position)
+    if (start_position)
     {
-      /* skip 'position' characters from stdout */
+      /* skip 'start_position' characters from stdout */
       byte buff[IO_SIZE];
       my_off_t length,tmp;
-      for (length= (my_off_t) position ; length > 0 ; length-=tmp)
+      for (length= start_position_mot ; length > 0 ; length-=tmp)
       {
 	tmp=min(length,sizeof(buff));
 	if (my_b_read(file, buff, (uint) tmp))
@@ -796,11 +990,11 @@ static int dump_local_log_entries(const char* logname)
 	}
       }
     }
-    file->pos_in_file=position;
+    file->pos_in_file= start_position_mot;
     file->seek_not_done=0;
   }
 
-  if (!position)
+  if (!start_position)
   {
     // Skip header
     if (my_b_read(file, tmp_buff, BIN_LOG_HEADER_SIZE))
@@ -829,9 +1023,10 @@ static int dump_local_log_entries(const char* logname)
       // file->error == 0 means EOF, that's OK, we break in this case
       break;
     }
-    if (process_event(&rec_count,last_db,ev,old_off,false))
+    if ((error= process_event(last_db,ev,old_off,false)))
     {
-      error= 1;
+      if (error < 0)
+        error= 0;
       break;
     }
   }
@@ -844,82 +1039,16 @@ end:
 }
 
 
-#if MYSQL_VERSION_ID < 40101
-
-typedef struct st_my_tmpdir
-{
-  char **list;
-  uint cur, max;
-} MY_TMPDIR;
-
-#if defined( __WIN__) || defined(OS2)
-#define DELIM ';'
-#else
-#define DELIM ':'
-#endif
-
-my_bool init_tmpdir(MY_TMPDIR *tmpdir, const char *pathlist)
-{
-  char *end, *copy;
-  char buff[FN_REFLEN];
-  DYNAMIC_ARRAY t_arr;
-  if (my_init_dynamic_array(&t_arr, sizeof(char*), 1, 5))
-    return TRUE;
-  if (!pathlist || !pathlist[0])
-  {
-    /* Get default temporary directory */
-    pathlist=getenv("TMPDIR");	/* Use this if possible */
-#if defined( __WIN__) || defined(OS2)
-    if (!pathlist)
-      pathlist=getenv("TEMP");
-    if (!pathlist)
-      pathlist=getenv("TMP");
-#endif
-    if (!pathlist || !pathlist[0])
-      pathlist=(char*) P_tmpdir;
-  }
-  do
-  {
-    end=strcend(pathlist, DELIM);
-    convert_dirname(buff, pathlist, end);
-    if (!(copy=my_strdup(buff, MYF(MY_WME))))
-      return TRUE;
-    if (insert_dynamic(&t_arr, (gptr)&copy))
-      return TRUE;
-    pathlist=end+1;
-  }
-  while (*end);
-  freeze_size(&t_arr);
-  tmpdir->list=(char **)t_arr.buffer;
-  tmpdir->max=t_arr.elements-1;
-  tmpdir->cur=0;
-  return FALSE;
-}
-
-char *my_tmpdir(MY_TMPDIR *tmpdir)
-{
-  char *dir;
-  dir=tmpdir->list[tmpdir->cur];
-  tmpdir->cur= (tmpdir->cur == tmpdir->max) ? 0 : tmpdir->cur+1;
-  return dir;
-}
-
-void free_tmpdir(MY_TMPDIR *tmpdir)
-{
-  uint i;
-  for (i=0; i<=tmpdir->max; i++)
-    my_free(tmpdir->list[i], MYF(0));
-  my_free((gptr)tmpdir->list, MYF(0));
-}
-
-#endif
-
-
 int main(int argc, char** argv)
 {
   static char **defaults_argv;
-  int exit_value;
+  int exit_value= 0;
+  ulonglong save_stop_position;
   MY_INIT(argv[0]);
+  DBUG_ENTER("main");
+  DBUG_PROCESS(argv[0]);
+
+  init_time(); // for time functions
 
   parse_args(&argc, (char***)&argv);
   defaults_argv=argv;
@@ -931,8 +1060,7 @@ int main(int argc, char** argv)
     exit(1);
   }
 
-  if (remote_opt)
-    mysql = safe_connect();
+  my_set_max_open_files(open_files_limit);
 
   MY_TMPDIR tmpdir;
   tmpdir.list= 0;
@@ -940,39 +1068,50 @@ int main(int argc, char** argv)
   {
     if (init_tmpdir(&tmpdir, 0))
       exit(1);
-    dirname_for_local_load= my_strdup(my_tmpdir(&tmpdir),MY_WME);
+    dirname_for_local_load= my_strdup(my_tmpdir(&tmpdir), MY_WME);
   }
 
   if (load_processor.init())
     exit(1);
   if (dirname_for_local_load)
     load_processor.init_by_dir_name(dirname_for_local_load);
-  else /* my_malloc() failed in my_strdup() */
+  else
     load_processor.init_by_cur_dir();
 
-  exit_value= 0;
   fprintf(result_file,
 	  "/*!40019 SET @@session.max_insert_delayed_threads=0*/;\n");
-  while (--argc >= 0)
+
+  if (disable_log_bin)
+    fprintf(result_file,
+            "/*!32316 SET @OLD_SQL_LOG_BIN=@@SQL_LOG_BIN, SQL_LOG_BIN=0*/;\n");
+
+  for (save_stop_position= stop_position, stop_position= ~(my_off_t)0 ;
+       (--argc >= 0) && !stop_passed ; )
   {
+    if (argc == 0) // last log, --stop-position applies
+      stop_position= save_stop_position;
     if (dump_log_entries(*(argv++)))
     {
       exit_value=1;
       break;
     }
+    // For next log, --start-position does not apply
+    start_position= BIN_LOG_HEADER_SIZE;
   }
+
+  if (disable_log_bin)
+    fprintf(result_file, "/*!32316 SET SQL_LOG_BIN=@OLD_SQL_LOG_BIN*/;\n");
 
   if (tmpdir.list)
     free_tmpdir(&tmpdir);
   if (result_file != stdout)
     my_fclose(result_file, MYF(0));
-  if (remote_opt)
-    mysql_close(mysql);
   cleanup();
   free_defaults(defaults_argv);
+  my_free_open_file_info();
   my_end(0);
   exit(exit_value);
-  return exit_value;				// Keep compilers happy
+  DBUG_RETURN(exit_value);			// Keep compilers happy
 }
 
 /*

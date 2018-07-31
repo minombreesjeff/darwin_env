@@ -1,6 +1,20 @@
-/* Copyright Abandoned 1997 TCX DataKonsult AB & Monty Program KB & Detron HB
-   This file is public domain and comes with NO WARRANTY of any kind
+/* Copyright (C) 2003 MySQL AB
 
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 2 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+
+/*
    Dutch error messages (share/dutch/errmsg.txt)
    2001-08-02 - Arjen Lentz (agl@bitbike.com)
    Completed earlier partial translation; worked on consistency and spelling.
@@ -12,6 +26,8 @@
    Translated new error messages.
 */
 
+character-set=latin1
+
 "hashchk",
 "isamchk",
 "NEE",
@@ -19,8 +35,8 @@
 "Kan file '%-.64s' niet aanmaken (Errcode: %d)",
 "Kan tabel '%-.64s' niet aanmaken (Errcode: %d)",
 "Kan database '%-.64s' niet aanmaken (Errcode: %d)",
-"Kan database '%-.64s' niet aanmaken. Database bestaat reeds",
-"Kan database '%-.64s' niet verwijderen. Database bestaat niet",
+"Kan database '%-.64s' niet aanmaken; database bestaat reeds",
+"Kan database '%-.64s' niet verwijderen; database bestaat niet",
 "Fout bij verwijderen database (kan '%-.64s' niet verwijderen, Errcode: %d)",
 "Fout bij verwijderen database (kan rmdir '%-.64s' niet uitvoeren, Errcode: %d)",
 "Fout bij het verwijderen van '%-.64s' (Errcode: %d)",
@@ -28,8 +44,8 @@
 "Kan de status niet krijgen van '%-.64s' (Errcode: %d)",
 "Kan de werkdirectory niet krijgen (Errcode: %d)",
 "Kan de file niet blokeren (Errcode: %d)",
-"Kan de file '%-.64s' niet openen. (Errcode: %d)",
-"Kan de file: '%-.64s' niet vinden. (Errcode: %d)",
+"Kan de file '%-.64s' niet openen (Errcode: %d)",
+"Kan de file: '%-.64s' niet vinden (Errcode: %d)",
 "Kan de directory niet lezen van '%-.64s' (Errcode: %d)",
 "Kan de directory niet veranderen naar '%-.64s' (Errcode: %d)",
 "Record is veranderd sinds de laatste lees activiteit in de tabel '%-.64s'",
@@ -46,8 +62,8 @@
 "Tabel handler voor '%-.64s' heeft deze optie niet",
 "Kan record niet vinden in '%-.64s'",
 "Verkeerde info in file: '%-.64s'",
-"Verkeerde zoeksleutel file voor tabel: '%-.64s'. Probeer het te repareren",
-"Oude zoeksleutel file voor tabel '%-.64s'; Repareer het!",
+"Verkeerde zoeksleutel file voor tabel: '%-.64s'; probeer het te repareren",
+"Oude zoeksleutel file voor tabel '%-.64s'; repareer het!",
 "'%-.64s' is alleen leesbaar",
 "Geen geheugen meer. Herstart server en probeer opnieuw (%d bytes nodig)",
 "Geen geheugen om te sorteren. Verhoog de server sort buffer size",
@@ -56,8 +72,8 @@
 "Geen thread geheugen meer; controleer of mysqld of andere processen al het beschikbare geheugen gebruikt. Zo niet, dan moet u wellicht 'ulimit' gebruiken om mysqld toe te laten meer geheugen te benutten, of u kunt extra swap ruimte toevoegen",
 "Kan de hostname niet krijgen van uw adres",
 "Verkeerde handshake",
-"Toegang geweigerd voor gebruiker: '%-.32s@%-.64s' naar database '%-.64s'",
-"Toegang geweigerd voor gebruiker: '%-.32s@%-.64s' (Wachtwoord gebruikt: %s)",
+"Toegang geweigerd voor gebruiker: '%-.32s'@'%-.64s' naar database '%-.64s'",
+"Toegang geweigerd voor gebruiker: '%-.32s'@'%-.64s' (Wachtwoord gebruikt: %s)",
 "Geen database geselecteerd",
 "Onbekend commando",
 "Kolom '%-.64s' kan niet null zijn",
@@ -88,7 +104,7 @@
 "BLOB kolom '%-.64s' kan niet gebruikt worden bij zoeksleutel specificatie",
 "Te grote kolomlengte voor '%-.64s' (max = %d). Maak hiervoor gebruik van het type BLOB",
 "Er kan slechts 1 autofield zijn en deze moet als zoeksleutel worden gedefinieerd.",
-"%s: klaar voor verbindingen\n",
+"%s: klaar voor verbindingen",
 "%s: Normaal afgesloten \n",
 "%s: Signaal %d. Systeem breekt af!\n",
 "%s: Afsluiten afgerond\n",
@@ -105,7 +121,7 @@
 "Het is niet mogelijk alle velden te verwijderen met ALTER TABLE. Gebruik a.u.b. DROP TABLE hiervoor!",
 "Kan '%-.64s' niet weggooien. Controleer of het veld of de zoeksleutel daadwerkelijk bestaat.",
 "Records: %ld  Dubbel: %ld  Waarschuwing: %ld",
-"INSERT TABLE '%-.64s' is niet toegestaan in de FROM tabel-lijst",
+"You can't specify target table '%-.64s' for update in FROM clause",
 "Onbekend thread id: %lu",
 "U bent geen bezitter van thread %lu",
 "Geen tabellen gebruikt.",
@@ -154,8 +170,8 @@
 "Fout '%-.64s' ontvangen van regexp",
 "Het mixen van GROUP kolommen (MIN(),MAX(),COUNT()...) met no-GROUP kolommen is foutief indien er geen GROUP BY clausule is",
 "Deze toegang (GRANT) is niet toegekend voor gebruiker '%-.32s' op host '%-.64s'",
-"%-.16s commando geweigerd voor gebruiker: '%-.32s@%-.64s' voor tabel '%-.64s'",
-"%-.16s commando geweigerd voor gebruiker: '%-.32s@%-.64s' voor kolom '%-.64s' in tabel '%-.64s'",
+"%-.16s commando geweigerd voor gebruiker: '%-.32s'@'%-.64s' voor tabel '%-.64s'",
+"%-.16s commando geweigerd voor gebruiker: '%-.32s'@'%-.64s' voor kolom '%-.64s' in tabel '%-.64s'",
 "Foutief GRANT/REVOKE commando. Raadpleeg de handleiding welke priveleges gebruikt kunnen worden.",
 "De host of gebruiker parameter voor GRANT is te lang",
 "Tabel '%-.64s.%s' bestaat niet",
@@ -174,7 +190,7 @@
 "Timeout bij het lezen van communicatiepakketten",
 "Fout bij het schrijven van communicatiepakketten",
 "Timeout bij het schrijven van communicatiepakketten",
-"Resultaat string is langer dan max_allowed_packet",
+"Resultaat string is langer dan 'max_allowed_packet'",
 "Het gebruikte tabel type ondersteunt geen BLOB/TEXT kolommen",
 "Het gebruikte tabel type ondersteunt geen AUTO_INCREMENT kolommen",
 "INSERT DELAYED kan niet worden gebruikt bij table '%-.64s', vanwege een 'lock met LOCK TABLES",
@@ -210,8 +226,8 @@
 "Tabel '%-.64s' staat als gecrashed gemarkeerd en de laatste (automatische?) reparatie poging mislukte",
 "Waarschuwing: Roll back mislukt voor sommige buiten transacties gewijzigde tabellen",
 "Multi-statement transactie vereist meer dan 'max_binlog_cache_size' bytes opslag. Verhoog deze mysqld variabele en probeer opnieuw",
-"Deze operatie kan niet worden uitgevoerd met een actieve slave, doe eerst SLAVE STOP",
-"Deze operatie vereist een actieve slave, configureer slave en doe dan SLAVE START",
+"Deze operatie kan niet worden uitgevoerd met een actieve slave, doe eerst STOP SLAVE",
+"Deze operatie vereist een actieve slave, configureer slave en doe dan START SLAVE",
 "De server is niet geconfigureerd als slave, fix in configuratie bestand of met CHANGE MASTER TO",
 "Could not initialize master info structure, more error messages can be found in the MySQL error log",
 "Kon slave thread niet aanmaken, controleer systeem resources",
@@ -223,8 +239,8 @@
 "DROP DATABASE niet toegestaan terwijl thread een globale 'read lock' bezit",
 "CREATE DATABASE niet toegestaan terwijl thread een globale 'read lock' bezit",
 "Foutieve parameters voor %s",
-"%-.32s@%-.64s mag geen nieuwe gebruikers creeren",
-"Incorrecte tabel definitie; Alle MERGE tabellen moeten tot dezelfde database behoren",
+"'%-.32s'@'%-.64s' mag geen nieuwe gebruikers creeren",
+"Incorrecte tabel definitie; alle MERGE tabellen moeten tot dezelfde database behoren",
 "Deadlock gevonden tijdens lock-aanvraag poging; Probeer herstart van de transactie",
 "Het gebruikte tabel type ondersteund geen FULLTEXT indexen",
 "Kan foreign key beperking niet toevoegen",
@@ -240,7 +256,7 @@
 "Optie '%s' tweemaal gebruikt in opdracht",
 "Gebruiker '%-.64s' heeft het maximale gebruik van de '%s' faciliteit overschreden (huidige waarde: %ld)",
 "Toegang geweigerd. U moet het %-.128s privilege hebben voor deze operatie",
-"Variabele '%-.64s' is LOCAL en kan niet worden gebruikt met SET GLOBAL",
+"Variabele '%-.64s' is SESSION en kan niet worden gebruikt met SET GLOBAL",
 "Variabele '%-.64s' is GLOBAL en dient te worden gewijzigd met SET GLOBAL",
 "Variabele '%-.64s' heeft geen standaard waarde",
 "Variabele '%-.64s' kan niet worden gewijzigd naar de waarde '%-.64s'",
@@ -249,5 +265,69 @@
 "Foutieve toepassing/plaatsing van '%s'",
 "Deze versie van MySQL ondersteunt nog geen '%s'",
 "Kreeg fatale fout %d: '%-.128s' van master tijdens lezen van data uit binaire log",
-"Slave SQL thread ignored the query because of replicate-*-table rules"
-"Variable '%-.64s' is a %s variable"
+"Slave SQL thread ignored the query because of replicate-*-table rules",
+"Variable '%-.64s' is a %s variable",
+"Incorrect foreign key definition for '%-.64s': %s",
+"Key reference and table reference don't match",
+"Operand should contain %d column(s)",
+"Subquery returns more than 1 row",
+"Unknown prepared statement handler (%.*s) given to %s",
+"Help database is corrupt or does not exist",
+"Cyclic reference on subqueries",
+"Converting column '%s' from %s to %s",
+"Reference '%-.64s' not supported (%s)",
+"Every derived table must have its own alias",
+"Select %u was reduced during optimization",
+"Table '%-.64s' from one of the SELECTs cannot be used in %-.32s",
+"Client does not support authentication protocol requested by server; consider upgrading MySQL client",
+"All parts of a SPATIAL index must be NOT NULL",
+"COLLATION '%s' is not valid for CHARACTER SET '%s'",
+"Slave is already running",
+"Slave has already been stopped",
+"Uncompressed data size too large; the maximum size is %d (probably, length of uncompressed data was corrupted)",
+"ZLIB: Not enough memory",
+"ZLIB: Not enough room in the output buffer (probably, length of uncompressed data was corrupted)",
+"ZLIB: Input data corrupted",
+"%d line(s) were cut by GROUP_CONCAT()",
+"Row %ld doesn't contain data for all columns",
+"Row %ld was truncated; it contained more data than there were input columns",
+"Data truncated; NULL supplied to NOT NULL column '%s' at row %ld",
+"Data truncated; out of range for column '%s' at row %ld",
+"Data truncated for column '%s' at row %ld",
+"Using storage engine %s for table '%s'",
+"Illegal mix of collations (%s,%s) and (%s,%s) for operation '%s'",
+"Can't drop one or more of the requested users",
+"Can't revoke all privileges, grant for one or more of the requested users",
+"Illegal mix of collations (%s,%s), (%s,%s), (%s,%s) for operation '%s'",
+"Illegal mix of collations for operation '%s'",
+"Variable '%-.64s' is not a variable component (can't be used as XXXX.variable_name)",
+"Unknown collation: '%-.64s'",
+"SSL parameters in CHANGE MASTER are ignored because this MySQL slave was compiled without SSL support; they can be used later if MySQL slave with SSL is started",
+"Server is running in --secure-auth mode, but '%s'@'%s' has a password in the old format; please change the password to the new format",
+"Field or reference '%-.64s%s%-.64s%s%-.64s' of SELECT #%d was resolved in SELECT #%d",
+"Incorrect parameter or combination of parameters for START SLAVE UNTIL",
+"It is recommended to run with --skip-slave-start when doing step-by-step replication with START SLAVE UNTIL; otherwise, you are not safe in case of unexpected slave's mysqld restart",
+"SQL thread is not to be started so UNTIL options are ignored",
+"Incorrect index name '%-.100s'",
+"Incorrect catalog name '%-.100s'",
+"Query cache failed to set size %lu, new query cache size is %lu",
+"Column '%-.64s' cannot be part of FULLTEXT index",
+"Unknown key cache '%-.100s'",
+"MySQL is started in --skip-name-resolve mode. You need to restart it without this switch for this grant to work",
+"Unknown table engine '%s'",
+"'%s' is deprecated, use '%s' instead",
+"The target table %-.100s of the %s is not updateable",
+"The '%s' feature was disabled; you need MySQL built with '%s' to have it working",
+"The MySQL server is running with the %s option so it cannot execute this statement",
+"Column '%-.100s' has duplicated value '%-.64s' in %s"
+"Truncated wrong %-.32s value: '%-.128s'"
+"Incorrect table definition; there can be only one TIMESTAMP column with CURRENT_TIMESTAMP in DEFAULT or ON UPDATE clause"
+"Invalid ON UPDATE clause for '%-.64s' column",
+"This command is not supported in the prepared statement protocol yet",
+"Got error %d '%-.100s' from %s",
+"Got temporary error %d '%-.100s' from %s",
+"Unknown or incorrect time zone: '%-.64s'",
+"Invalid TIMESTAMP value in column '%s' at row %ld",
+"Invalid %s character string: '%.64s'",
+"Result of %s() was larger than max_allowed_packet (%ld) - truncated"
+"Conflicting declarations: '%s%s' and '%s%s'"

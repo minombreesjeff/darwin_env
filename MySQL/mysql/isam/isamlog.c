@@ -144,7 +144,7 @@ static void get_options(register int *argc, register char ***argv)
       switch((option=*pos)) {
       case '#':
 	DBUG_PUSH (++pos);
-	pos=" ";				/* Skipp rest of arg */
+	pos=" ";				/* Skip rest of arg */
 	break;
       case 'c':
 	if (! *++pos)
@@ -329,8 +329,8 @@ static int examine_log(my_string file_name, char **table_names)
   bzero((gptr) com_count,sizeof(com_count));
   init_tree(&tree,0,0,sizeof(file_info),(qsort_cmp2) file_info_compare,1,
 	    (tree_element_free) file_info_free, NULL);
-  VOID(init_key_cache(KEY_CACHE_SIZE));
-
+  VOID(init_key_cache(dflt_key_cache,KEY_CACHE_BLOCK_SIZE,KEY_CACHE_SIZE,
+                      0,0));
   files_open=0; access_time=0;
   while (access_time++ != number_of_commands &&
 	 !my_b_read(&cache,(byte*) head,9))
@@ -342,7 +342,7 @@ static int examine_log(my_string file_name, char **table_names)
       file_info.process=0;
     result=uint2korr(head+7);
     if ((curr_file_info=(struct isamlog_file_info*)
-	 tree_search(&tree,&file_info)))
+	 tree_search(&tree, &file_info, tree.custom_arg)))
     {
       curr_file_info->accessed=access_time;
       if (update && curr_file_info->used && curr_file_info->closed)
@@ -444,7 +444,7 @@ static int examine_log(my_string file_name, char **table_names)
 	files_open++;
 	file_info.closed=0;
       }
-      VOID(tree_insert(&tree,(gptr) &file_info,0));
+      VOID(tree_insert(&tree, (gptr) &file_info, 0, tree.custom_arg));
       if (file_info.used)
       {
 	if (verbose && !record_pos_file)
@@ -463,7 +463,7 @@ static int examine_log(my_string file_name, char **table_names)
       {
 	if (!curr_file_info->closed)
 	  files_open--;
-	VOID(tree_delete(&tree,(gptr) curr_file_info));
+	VOID(tree_delete(&tree, (gptr) curr_file_info, tree.custom_arg));
       }
       break;
     case LOG_EXTRA:
@@ -622,7 +622,7 @@ static int examine_log(my_string file_name, char **table_names)
       goto end;
     }
   }
-  end_key_cache();
+  end_key_cache(dflt_key_cache,1);
   delete_tree(&tree);
   VOID(end_io_cache(&cache));
   VOID(my_close(file,MYF(0)));
@@ -642,7 +642,7 @@ static int examine_log(my_string file_name, char **table_names)
 	       llstr(isamlog_filepos,llbuff)));
   fflush(stderr);
  end:
-  end_key_cache();
+  end_key_cache(dflt_key_cache,1);
   delete_tree(&tree);
   VOID(end_io_cache(&cache));
   VOID(my_close(file,MYF(0)));

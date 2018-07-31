@@ -1,4 +1,4 @@
-/* Copyright (C) 2000 MySQL AB
+/* Copyright (C) 2000-2003 MySQL AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,8 +26,8 @@
 extern "C" {
 #endif
 
-#define FT_QUERY_MAXLEN 1024
-#define HA_FT_MAXLEN 254
+#define HA_FT_MAXBYTELEN 254
+#define HA_FT_MAXCHARLEN (HA_FT_MAXBYTELEN/3)
 
 typedef struct st_ft_info FT_INFO;
 struct _ft_vft
@@ -51,15 +51,19 @@ extern const char *ft_precompiled_stopwords[];
 
 extern ulong ft_min_word_len;
 extern ulong ft_max_word_len;
-extern ulong ft_max_word_len_for_sort;
-extern const char *ft_boolean_syntax;
+extern ulong ft_query_expansion_limit;
+extern char  ft_boolean_syntax[15];
 
 int ft_init_stopwords(void);
 void ft_free_stopwords(void);
 
-#define FT_NL  0
-#define FT_BOOL 1
-FT_INFO *ft_init_search(uint,void *, uint, byte *, uint, my_bool);
+#define FT_NL     0
+#define FT_BOOL   1
+#define FT_SORTED 2
+#define FT_EXPAND 4   /* query expansion */
+
+FT_INFO *ft_init_search(uint,void *, uint, byte *, uint,CHARSET_INFO *, byte *);
+my_bool ft_boolean_check_syntax_string(const byte *);
 
 #ifdef  __cplusplus
 }

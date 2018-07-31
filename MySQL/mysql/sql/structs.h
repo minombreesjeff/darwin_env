@@ -20,9 +20,28 @@
 struct st_table;
 class Field;
 
-typedef struct st_date_format {		/* How to print date */
-  uint pos[6];				/* Positions to YY.MM.DD HH:MM:SS */
-} DATE_FORMAT;
+typedef struct st_lex_string
+{
+  char *str;
+  uint length;
+} LEX_STRING;
+
+typedef struct st_lex_string_with_init :public st_lex_string
+{
+  st_lex_string_with_init(const char *str_arg, uint length_arg)
+  {
+    str= (char*) str_arg;
+    length= length_arg;
+  }
+} LEX_STRING_WITH_INIT;
+
+
+typedef struct st_date_time_format {
+  uchar positions[8];
+  char  time_separator;			/* Separator between hour and minute */
+  uint flag;				/* For future */
+  LEX_STRING format;
+} DATE_TIME_FORMAT;
 
 
 typedef struct st_keyfile_info {	/* used with ha_info() */
@@ -70,7 +89,12 @@ typedef struct st_key {
   enum  ha_key_alg algorithm;
   KEY_PART_INFO *key_part;
   char	*name;				/* Name of key */
-  ulong *rec_per_key;			/* Key part distribution */
+  /*
+    Array of AVG(#records with the same field value) for 1st ... Nth key part.
+    0 means 'not known'.
+    For temporary heap tables this member is NULL.
+  */
+  ulong *rec_per_key;
   union {
     int  bdb_return_if_eq;
   } handler;
@@ -104,25 +128,36 @@ typedef struct st_read_record {			/* Parameter to read_record */
   uint index;
   byte *ref_pos;				/* pointer to form->refpos */
   byte *record;
+  byte *rec_buf;                /* to read field values  after filesort */
   byte	*cache,*cache_pos,*cache_end,*read_positions;
   IO_CACHE *io_cache;
   bool print_error, ignore_not_found_rows;
 } READ_RECORD;
 
-enum timestamp_type { TIMESTAMP_NONE, TIMESTAMP_DATE, TIMESTAMP_FULL,
-		      TIMESTAMP_TIME };
 
-typedef struct st_time {
-  uint year,month,day,hour,minute,second,second_part;
-  bool neg;
-  timestamp_type time_type;
-} TIME;
+/*
+  Originally MySQL used TIME structure inside server only, but since
+  4.1 it's exported to user in the new client API. Define aliases for
+  new names to keep existing code simple.
+*/
+
+typedef struct st_mysql_time TIME;
+typedef enum enum_mysql_timestamp_type timestamp_type;
+
 
 typedef struct {
   ulong year,month,day,hour;
   ulonglong minute,second,second_part;
   bool neg;
 } INTERVAL;
+
+
+typedef struct st_known_date_time_format {
+  const char *format_name;
+  const char *date_format;
+  const char *datetime_format;
+  const char *time_format;
+} KNOWN_DATE_TIME_FORMAT;
 
 
 enum SHOW_TYPE
@@ -145,11 +180,16 @@ enum SHOW_TYPE
   SHOW_SSL_CTX_SESS_TIMEOUTS, SHOW_SSL_CTX_SESS_CACHE_FULL,
   SHOW_SSL_GET_CIPHER_LIST,
 #endif /* HAVE_OPENSSL */
-  SHOW_RPL_STATUS, SHOW_SLAVE_RUNNING
+  SHOW_RPL_STATUS, SHOW_SLAVE_RUNNING,
+  SHOW_KEY_CACHE_LONG, SHOW_KEY_CACHE_CONST_LONG
 };
 
 enum SHOW_COMP_OPTION { SHOW_OPTION_YES, SHOW_OPTION_NO, SHOW_OPTION_DISABLED};
+
+extern const char *show_comp_option_name[];
+
 typedef int *(*update_var)(THD *, struct show_var_st *);
+
 
 typedef struct show_var_st {
   const char *name;
@@ -157,10 +197,6 @@ typedef struct show_var_st {
   SHOW_TYPE type;
 } SHOW_VAR;
 
-typedef struct lex_string {
-  char *str;
-  uint length;
-} LEX_STRING;
 
 typedef struct	st_lex_user {
   LEX_STRING user, host, password;
@@ -182,7 +218,7 @@ typedef struct  user_conn {
 #define REG_NEW_RECORD		2	/* Write a new record if not found */
 #define REG_UPDATE		4	/* Uppdate record */
 #define REG_DELETE		8	/* Delete found record */
-#define REG_PROG		16	/* User is updateing database */
+#define REG_PROG		16	/* User is updating database */
 #define REG_CLEAR_AFTER_WRITE	32
 #define REG_MAY_BE_UPDATED	64
 #define REG_AUTO_UPDATE		64	/* Used in D-forms for scroll-tables */

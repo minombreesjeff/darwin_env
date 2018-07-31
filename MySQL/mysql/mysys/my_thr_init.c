@@ -28,10 +28,10 @@ pthread_key(struct st_my_thread_var*, THR_KEY_mysys);
 #else
 pthread_key(struct st_my_thread_var, THR_KEY_mysys);
 #endif /* USE_TLS */
-pthread_mutex_t THR_LOCK_malloc,THR_LOCK_open,THR_LOCK_keycache,
+pthread_mutex_t THR_LOCK_malloc,THR_LOCK_open,
 	        THR_LOCK_lock,THR_LOCK_isam,THR_LOCK_myisam,THR_LOCK_heap,
 	        THR_LOCK_net, THR_LOCK_charset; 
-#ifndef HAVE_LOCALTIME_R
+#if !defined(HAVE_LOCALTIME_R) || !defined(HAVE_GMTIME_R)
 pthread_mutex_t LOCK_localtime_r;
 #endif
 #ifndef HAVE_GETHOSTBYNAME_R
@@ -64,6 +64,11 @@ my_bool my_thread_global_init(void)
   }
 #ifdef PTHREAD_ADAPTIVE_MUTEX_INITIALIZER_NP
   pthread_mutexattr_init(&my_fast_mutexattr);
+  /*
+    Note that the following statement may give a compiler warning under
+    some configurations, but there isn't anything we can do about this as
+    this is a bug in the header files for the thread implementation
+  */
   pthread_mutexattr_setkind_np(&my_fast_mutexattr,PTHREAD_MUTEX_ADAPTIVE_NP);
 #endif
 #ifdef PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP
@@ -74,7 +79,6 @@ my_bool my_thread_global_init(void)
 
   pthread_mutex_init(&THR_LOCK_malloc,MY_MUTEX_INIT_FAST);
   pthread_mutex_init(&THR_LOCK_open,MY_MUTEX_INIT_FAST);
-  pthread_mutex_init(&THR_LOCK_keycache,MY_MUTEX_INIT_FAST);
   pthread_mutex_init(&THR_LOCK_lock,MY_MUTEX_INIT_FAST);
   pthread_mutex_init(&THR_LOCK_isam,MY_MUTEX_INIT_SLOW);
   pthread_mutex_init(&THR_LOCK_myisam,MY_MUTEX_INIT_SLOW);
@@ -84,7 +88,7 @@ my_bool my_thread_global_init(void)
 #if defined( __WIN__) || defined(OS2)
   win_pthread_init();
 #endif
-#ifndef HAVE_LOCALTIME_R
+#if !defined(HAVE_LOCALTIME_R) || !defined(HAVE_GMTIME_R)
   pthread_mutex_init(&LOCK_localtime_r,MY_MUTEX_INIT_SLOW);
 #endif
 #ifndef HAVE_GETHOSTBYNAME_R
@@ -110,14 +114,13 @@ void my_thread_global_end(void)
 #endif
   pthread_mutex_destroy(&THR_LOCK_malloc);
   pthread_mutex_destroy(&THR_LOCK_open);
-  pthread_mutex_destroy(&THR_LOCK_keycache);
   pthread_mutex_destroy(&THR_LOCK_lock);
   pthread_mutex_destroy(&THR_LOCK_isam);
   pthread_mutex_destroy(&THR_LOCK_myisam);
   pthread_mutex_destroy(&THR_LOCK_heap);
   pthread_mutex_destroy(&THR_LOCK_net);
   pthread_mutex_destroy(&THR_LOCK_charset);
-#ifndef HAVE_LOCALTIME_R
+#if !defined(HAVE_LOCALTIME_R) || !defined(HAVE_GMTIME_R)
   pthread_mutex_destroy(&LOCK_localtime_r);
 #endif
 #ifndef HAVE_GETHOSTBYNAME_R
@@ -205,7 +208,8 @@ void my_thread_end(void)
       tmp->dbug=0;
     }
 #endif
-#if !defined(__bsdi__) || defined(HAVE_mit_thread) /* bsdi dumps core here */
+#if !defined(__bsdi__) && !defined(__OpenBSD__) || defined(HAVE_mit_thread)
+ /* bsdi and openbsd 3.5 dumps core here */
     pthread_cond_destroy(&tmp->suspend);
 #endif
     pthread_mutex_destroy(&tmp->mutex);

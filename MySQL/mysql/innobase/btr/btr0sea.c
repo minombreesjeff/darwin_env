@@ -764,7 +764,7 @@ btr_search_guess_on_hash(
 
 		success = buf_page_get_known_nowait(latch_mode, page,
 						BUF_MAKE_YOUNG,
-						IB__FILE__, __LINE__,
+						__FILE__, __LINE__,
 						mtr);
 
 		rw_lock_s_unlock(&btr_search_latch);
@@ -792,8 +792,8 @@ btr_search_guess_on_hash(
 		goto failure;
 	}
 
-	ut_ad(block->state == BUF_BLOCK_FILE_PAGE);
-	ut_ad(page_rec_is_user_rec(rec));	
+	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
+	ut_a(page_rec_is_user_rec(rec));	
 
 	btr_cur_position(index, rec, cursor);
 
@@ -1042,12 +1042,14 @@ btr_search_drop_page_hash_when_freed(
 	
 	mtr_start(&mtr);
 
-	/* We assume that if the caller has a latch on the page,
-	then the caller has already dropped the hash index for the page,
-	and we never get here. Therefore we can acquire the s-latch to
-	the page without having to fear a deadlock. */
+	/* We assume that if the caller has a latch on the page, then the
+	caller has already dropped the hash index for the page, and we never
+	get here. Therefore we can acquire the s-latch to the page without
+	having to fear a deadlock. */
 	
-	page = buf_page_get(space, page_no, RW_S_LATCH, &mtr);
+	page = buf_page_get_gen(space, page_no, RW_S_LATCH, NULL,
+				BUF_GET_IF_IN_POOL, __FILE__, __LINE__,
+				&mtr);
 
 #ifdef UNIV_SYNC_DEBUG
 	buf_page_dbg_add_level(page, SYNC_TREE_NODE_FROM_HASH);
@@ -1565,22 +1567,24 @@ btr_search_validate(void)
 				fprintf(stderr,
 "  InnoDB: Error in an adaptive hash index pointer to page %lu\n"
 "ptr mem address %p index id %lu %lu, node fold %lu, rec fold %lu\n",
-					buf_frame_get_page_no(page),
+					(ulong) buf_frame_get_page_no(page),
 					node->data,
-			ut_dulint_get_high(btr_page_get_index_id(page)),
-			ut_dulint_get_low(btr_page_get_index_id(page)),
-			node->fold, rec_fold((rec_t*)(node->data),
-					block->curr_n_fields,
-					block->curr_n_bytes,
-					btr_page_get_index_id(page)));
+					(ulong) ut_dulint_get_high(btr_page_get_index_id(page)),
+					(ulong) ut_dulint_get_low(btr_page_get_index_id(page)),
+					(ulong) node->fold,
+					(ulong) rec_fold((rec_t*)(node->data),
+					  		  block->curr_n_fields,
+					  		  block->curr_n_bytes,
+					  		  btr_page_get_index_id(page)));
 
 				fputs("InnoDB: Record ", stderr);
 				rec_print(stderr, (rec_t*)(node->data));
 				fprintf(stderr, "\nInnoDB: on that page."
 "Page mem address %p, is hashed %lu, n fields %lu, n bytes %lu\n"
 "side %lu\n",
-			page, block->is_hashed, block->curr_n_fields,
-			block->curr_n_bytes, block->curr_side);
+			        page, (ulong) block->is_hashed,
+			        (ulong) block->curr_n_fields,
+			        (ulong) block->curr_n_bytes, (ulong) block->curr_side);
 
 				if (n_page_dumps < 20) {	
 					buf_page_print(page);

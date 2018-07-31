@@ -30,15 +30,14 @@ dict_table_t*
 dict_mem_table_create(
 /*==================*/
 				/* out, own: table object */
-	char*	name,		/* in: table name */
-	ulint	space,		/* in: space where the clustered index of
+	const char*	name,	/* in: table name */
+	ulint		space,	/* in: space where the clustered index of
 				the table is placed; this parameter is
 				ignored if the table is made a member of
 				a cluster */
-	ulint	n_cols)		/* in: number of columns */
+	ulint		n_cols)	/* in: number of columns */
 {
 	dict_table_t*	table;
-	char*		str;
 	mem_heap_t*	heap;
 	
 	ut_ad(name);
@@ -48,12 +47,13 @@ dict_mem_table_create(
 	table = mem_heap_alloc(heap, sizeof(dict_table_t));
 
 	table->heap = heap;
-	
-	str = mem_heap_strdup(heap, name);
 
 	table->type = DICT_TABLE_ORDINARY;
-	table->name = str;
+	table->name = mem_heap_strdup(heap, name);
+	table->dir_path_of_temp_table = NULL;
 	table->space = space;
+	table->ibd_file_missing = FALSE;
+	table->tablespace_discarded = FALSE;
 	table->n_def = 0;
 	table->n_cols = n_cols + DATA_N_SYS_COLS;
 	table->mem_fix = 0;
@@ -88,9 +88,9 @@ dict_mem_table_create(
 	mutex_set_level(&(table->autoinc_mutex), SYNC_DICT_AUTOINC_MUTEX);
 
 	table->autoinc_inited = FALSE;
-#ifdef UNIV_DEBUG
+
 	table->magic_n = DICT_TABLE_MAGIC_N;
-#endif /* UNIV_DEBUG */
+	
 	return(table);
 }
 
@@ -101,11 +101,11 @@ dict_table_t*
 dict_mem_cluster_create(
 /*====================*/
 				/* out, own: cluster object */
-	char*	name,		/* in: cluster name */
-	ulint	space,		/* in: space where the clustered indexes
+	const char*	name,	/* in: cluster name */
+	ulint		space,	/* in: space where the clustered indexes
 				of the member tables are placed */
-	ulint	n_cols,		/* in: number of columns */
-	ulint	mix_len)	/* in: length of the common key prefix in the
+	ulint		n_cols,	/* in: number of columns */
+	ulint		mix_len)/* in: length of the common key prefix in the
 				cluster */
 {
 	dict_table_t*		cluster;
@@ -125,7 +125,7 @@ void
 dict_mem_table_make_cluster_member(
 /*===============================*/
 	dict_table_t*	table,		/* in: non-published table */
-	char*		cluster_name)	/* in: cluster name */
+	const char*	cluster_name)	/* in: cluster name */
 {
 	table->type = DICT_TABLE_CLUSTER_MEMBER;
 	table->cluster_name = cluster_name;
@@ -138,7 +138,7 @@ void
 dict_mem_table_add_col(
 /*===================*/
 	dict_table_t*	table,	/* in: table */
-	char*		name,	/* in: column name */
+	const char*	name,	/* in: column name */
 	ulint		mtype,	/* in: main datatype */
 	ulint		prtype,	/* in: precise type */
 	ulint		len,	/* in: length */
@@ -172,14 +172,15 @@ Creates an index memory object. */
 dict_index_t*
 dict_mem_index_create(
 /*==================*/
-				/* out, own: index object */
-	char*	table_name,	/* in: table name */
-	char*	index_name,	/* in: index name */
-	ulint	space,		/* in: space where the index tree is placed,
-				ignored if the index is of the clustered
-				type */
-	ulint	type,		/* in: DICT_UNIQUE, DICT_CLUSTERED, ... ORed */
-	ulint	n_fields)	/* in: number of fields */
+					/* out, own: index object */
+	const char*	table_name,	/* in: table name */
+	const char*	index_name,	/* in: index name */
+	ulint		space,		/* in: space where the index tree is
+					placed, ignored if the index is of
+					the clustered type */
+	ulint		type,		/* in: DICT_UNIQUE,
+					DICT_CLUSTERED, ... ORed */
+	ulint		n_fields)	/* in: number of fields */
 {
 	dict_index_t*	index;
 	mem_heap_t*	heap;
@@ -205,9 +206,7 @@ dict_mem_index_create(
 	index->stat_n_diff_key_vals = NULL;
 
 	index->cached = FALSE;
-#ifdef UNIV_DEBUG
 	index->magic_n = DICT_INDEX_MAGIC_N;
-#endif /* UNIV_DEBUG */
 
 	return(index);
 }
@@ -257,7 +256,7 @@ void
 dict_mem_index_add_field(
 /*=====================*/
 	dict_index_t*	index,		/* in: index */
-	char*		name,		/* in: column name */
+	const char*	name,		/* in: column name */
 	ulint		order,		/* in: order criterion; 0 means an
 					ascending order */
 	ulint		prefix_len)	/* in: 0 or the column prefix length

@@ -34,20 +34,11 @@
 
 #define MAX_TREEMEM	  8192
 #define MAX_TREE_ELEMENTS 256
-#define UINT_MAX16	  0xffff
-#define UINT_MAX24	  0xffffff
-#define UINT_MAX32	  0xffffffff
 
 int sortcmp2(void* cmp_arg __attribute__((unused)),
 	     const String *a,const String *b)
 {
-  return sortcmp(a,b);
-}
-
-int stringcmp2(void* cmp_arg __attribute__((unused)),
-	     const String *a,const String *b)
-{
-  return stringcmp(a,b);
+  return sortcmp(a,b,a->charset());
 }
 
 int compare_double2(void* cmp_arg __attribute__((unused)),
@@ -68,6 +59,7 @@ int compare_ulonglong2(void* cmp_arg __attribute__((unused)),
   return compare_ulonglong(s,t);
 }
 
+static bool append_escaped(String *to_str, String *from_str);
 
 Procedure *
 proc_analyse_init(THD *thd, ORDER *param, select_result *result,
@@ -77,6 +69,9 @@ proc_analyse_init(THD *thd, ORDER *param, select_result *result,
   analyse *pc = new analyse(result);
   field_info **f_info;
   DBUG_ENTER("proc_analyse_init");
+
+  if (!pc)
+    DBUG_RETURN(0);
 
   if (!(param = param->next))
   {
@@ -89,34 +84,30 @@ proc_analyse_init(THD *thd, ORDER *param, select_result *result,
     if ((*param->item)->type() != Item::INT_ITEM ||
 	(*param->item)->val() < 0)
     {
-      delete pc;
-      net_printf(&thd->net, ER_WRONG_PARAMETERS_TO_PROCEDURE, proc_name);
-      DBUG_RETURN(0);
+      my_error(ER_WRONG_PARAMETERS_TO_PROCEDURE, MYF(0), proc_name);
+      goto err;
     }
     pc->max_tree_elements = (uint) (*param->item)->val_int();
     param = param->next;
     if (param->next)  // no third parameter possible
     {
-      delete pc;
-      net_printf(&thd->net, ER_WRONG_PARAMCOUNT_TO_PROCEDURE, proc_name);
-      DBUG_RETURN(0);
+      my_error(ER_WRONG_PARAMCOUNT_TO_PROCEDURE, MYF(0), proc_name);
+      goto err;
     }
     // second parameter
     if ((*param->item)->type() != Item::INT_ITEM ||
 	(*param->item)->val() < 0)
     {
-      delete pc;
-      net_printf(&thd->net, ER_WRONG_PARAMETERS_TO_PROCEDURE, proc_name);
-      DBUG_RETURN(0);
+      my_error(ER_WRONG_PARAMETERS_TO_PROCEDURE, MYF(0), proc_name);
+      goto err;
     }
     pc->max_treemem = (uint) (*param->item)->val_int();
   }
   else if ((*param->item)->type() != Item::INT_ITEM ||
 	   (*param->item)->val() < 0)
   {
-    delete pc;
-    net_printf(&thd->net, ER_WRONG_PARAMETERS_TO_PROCEDURE, proc_name);
-    DBUG_RETURN(0);
+    my_error(ER_WRONG_PARAMETERS_TO_PROCEDURE, MYF(0), proc_name);
+    goto err;
   }
   // if only one parameter was given, it will be the value of max_tree_elements
   else
@@ -125,34 +116,39 @@ proc_analyse_init(THD *thd, ORDER *param, select_result *result,
     pc->max_treemem = MAX_TREEMEM;
   }
 
-  if (!pc || !(pc->f_info = (field_info**)
-	       sql_alloc(sizeof(field_info*)*field_list.elements)))
-    DBUG_RETURN(0);
+  if (!(pc->f_info=
+        (field_info**)sql_alloc(sizeof(field_info*)*field_list.elements)))
+    goto err;
   pc->f_end = pc->f_info + field_list.elements;
   pc->fields = field_list;
 
-  List_iterator_fast<Item> it(pc->fields);
-  f_info = pc->f_info;
-
-  Item *item;
-  while ((item = it++))
   {
-    if (item->result_type() == INT_RESULT)
+    List_iterator_fast<Item> it(pc->fields);
+    f_info = pc->f_info;
+
+    Item *item;
+    while ((item = it++))
     {
-      // Check if fieldtype is ulonglong
-      if (item->type() == Item::FIELD_ITEM &&
-	  ((Item_field*) item)->field->type() == FIELD_TYPE_LONGLONG &&
-	  ((Field_longlong*) ((Item_field*) item)->field)->unsigned_flag)
-	*f_info++ = new field_ulonglong(item, pc);
-      else
-	*f_info++ = new field_longlong(item, pc);
+      if (item->result_type() == INT_RESULT)
+      {
+        // Check if fieldtype is ulonglong
+        if (item->type() == Item::FIELD_ITEM &&
+            ((Item_field*) item)->field->type() == FIELD_TYPE_LONGLONG &&
+            ((Field_longlong*) ((Item_field*) item)->field)->unsigned_flag)
+          *f_info++ = new field_ulonglong(item, pc);
+        else
+          *f_info++ = new field_longlong(item, pc);
+      }
+      if (item->result_type() == REAL_RESULT)
+        *f_info++ = new field_real(item, pc);
+      if (item->result_type() == STRING_RESULT)
+        *f_info++ = new field_str(item, pc);
     }
-    if (item->result_type() == REAL_RESULT)
-      *f_info++ = new field_real(item, pc);
-    if (item->result_type() == STRING_RESULT)
-      *f_info++ = new field_str(item, pc);
   }
   DBUG_RETURN(pc);
+err:
+  delete pc;
+  DBUG_RETURN(0);
 }
 
 
@@ -172,7 +168,7 @@ bool test_if_number(NUM_INFO *info, const char *str, uint str_len)
     MySQL removes any endspaces of a string, so we must take care only of
     spaces in front of a string
   */
-  for (; str != end && isspace(*str); str++) ;
+  for (; str != end && my_isspace(system_charset_info, *str); str++) ;
   if (str == end)
     return 0;
 
@@ -185,16 +181,18 @@ bool test_if_number(NUM_INFO *info, const char *str, uint str_len)
   else
     info->negative = 0;
   begin = str;
-  for (; str != end && isdigit(*str); str++)
+  for (; str != end && my_isdigit(system_charset_info,*str); str++)
   {
     if (!info->integers && *str == '0' && (str + 1) != end &&
-	isdigit(*(str + 1)))
+	my_isdigit(system_charset_info,*(str + 1)))
       info->zerofill = 1;	     // could be a postnumber for example
     info->integers++;
   }
   if (str == end && info->integers)
   {
-    info->ullval = (ulonglong) strtoull(begin ,NULL, 10);
+    char *endpos= (char*) end;
+    int error;
+    info->ullval= (ulonglong) my_strtoll10(begin, &endpos, &error);
     if (info->integers == 1)
       return 0;			     // a single number can't be zerofill
     info->maybe_zerofill = 1;
@@ -206,7 +204,9 @@ bool test_if_number(NUM_INFO *info, const char *str, uint str_len)
       return 0;
     if ((str + 1) == end)	     // number was something like '123[.eE]'
     {
-      info->ullval = (ulonglong) strtoull(begin, NULL, 10);
+      char *endpos= (char*) str;
+      int error;
+      info->ullval= (ulonglong) my_strtoll10(begin, &endpos, &error);
       return 1;
     }
     if (*str == 'e' || *str == 'E')  // number may be something like '1e+50'
@@ -214,7 +214,7 @@ bool test_if_number(NUM_INFO *info, const char *str, uint str_len)
       str++;
       if (*str != '-' && *str != '+')
 	return	0;
-      for (str++; str != end && isdigit(*str); str++) ;
+      for (str++; str != end && my_isdigit(system_charset_info,*str); str++) ;
       if (str == end)
       {
 	info->is_float = 1;	     // we can't use variable decimals here
@@ -225,14 +225,16 @@ bool test_if_number(NUM_INFO *info, const char *str, uint str_len)
     for (str++; *(end - 1) == '0'; end--);  // jump over zeros at the end
     if (str == end)		     // number was something like '123.000'
     {
-      info->ullval = (ulonglong) strtoull(begin, NULL, 10);
+      char *endpos= (char*) str;
+      int error;
+      info->ullval= (ulonglong) my_strtoll10(begin, &endpos, &error);
       return 1;
     }
-    for (; str != end && isdigit(*str); str++)
+    for (; str != end && my_isdigit(system_charset_info,*str); str++)
       info->decimals++;
     if (str == end)
     {
-      info->dval = atod(begin);
+      info->dval = my_atof(begin);
       return 1;
     }
   }
@@ -278,7 +280,7 @@ void free_string(String *s)
 void field_str::add()
 {
   char buff[MAX_FIELD_WIDTH], *ptr;
-  String s(buff, sizeof(buff)), *res;
+  String s(buff, sizeof(buff),&my_charset_bin), *res;
   ulong length;
 
   if (!(res = item->val_str(&s)))
@@ -313,6 +315,7 @@ void field_str::add()
     was_maybe_zerofill = num_info.maybe_zerofill;
   }
 
+  /* Update min and max arguments */
   if (!found)
   {
     found = 1;
@@ -328,30 +331,20 @@ void field_str::add()
     if (length > max_length)
       max_length = length;
 
-    if (item->binary)
-    {
-      if (stringcmp(res, &min_arg) < 0)
-	min_arg.copy(*res);
-      if (stringcmp(res, &max_arg) > 0)
-	max_arg.copy(*res);
-    }
-    else
-    {
-      if (sortcmp(res, &min_arg) < 0)
-	min_arg.copy(*res);
-      if (sortcmp(res, &max_arg) > 0)
-	max_arg.copy(*res);
-    }
+    if (sortcmp(res, &min_arg,item->collation.collation) < 0)
+      min_arg.copy(*res);
+    if (sortcmp(res, &max_arg,item->collation.collation) > 0)
+      max_arg.copy(*res);
   }
 
   if (room_in_tree)
   {
     if (res != &s)
       s.copy(*res);
-    if (!tree_search(&tree, (void*) &s)) // If not in tree
+    if (!tree_search(&tree, (void*) &s, tree.custom_arg)) // If not in tree
     {
       s.copy();        // slow, when SAFE_MALLOC is in use
-      if (!tree_insert(&tree, (void*) &s, 0))
+      if (!tree_insert(&tree, (void*) &s, 0, tree.custom_arg))
       {
 	room_in_tree = 0;      // Remove tree, out of RAM ?
 	delete_tree(&tree);
@@ -391,8 +384,7 @@ void field_real::add()
 
   if ((decs = decimals()) == NOT_FIXED_DEC)
   {
-    sprintf(buff, "%g", num);
-    length = (uint) strlen(buff);
+    length= my_sprintf(buff, (buff, "%g", num));
     if (rint(num) != num)
       max_notzero_dec_len = 1;
   }
@@ -401,11 +393,10 @@ void field_real::add()
 #ifdef HAVE_SNPRINTF
     buff[sizeof(buff)-1]=0;			// Safety
     snprintf(buff, sizeof(buff)-1, "%-.*f", (int) decs, num);
-#else
-    sprintf(buff, "%-.*f", (int) decs, num);
-#endif
-
     length = (uint) strlen(buff);
+#else
+    length= my_sprintf(buff, (buff, "%-.*f", (int) decs, num));
+#endif
 
     // We never need to check further than this
     end = buff + length - 1 - decs + max_notzero_dec_len;
@@ -420,7 +411,7 @@ void field_real::add()
 
   if (room_in_tree)
   {
-    if (!(element = tree_insert(&tree, (void*) &num, 0)))
+    if (!(element = tree_insert(&tree, (void*) &num, 0, tree.custom_arg)))
     {
       room_in_tree = 0;    // Remove tree, out of RAM ?
       delete_tree(&tree);
@@ -476,7 +467,7 @@ void field_longlong::add()
 
   if (room_in_tree)
   {
-    if (!(element = tree_insert(&tree, (void*) &num, 0)))
+    if (!(element = tree_insert(&tree, (void*) &num, 0, tree.custom_arg)))
     {
       room_in_tree = 0;    // Remove tree, out of RAM ?
       delete_tree(&tree);
@@ -532,7 +523,7 @@ void field_ulonglong::add()
 
   if (room_in_tree)
   {
-    if (!(element = tree_insert(&tree, (void*) &num, 0)))
+    if (!(element = tree_insert(&tree, (void*) &num, 0, tree.custom_arg)))
     {
       room_in_tree = 0;    // Remove tree, out of RAM ?
       delete_tree(&tree);
@@ -589,8 +580,9 @@ bool analyse::end_of_records()
 {
   field_info **f = f_info;
   char buff[MAX_FIELD_WIDTH];
-  String *res, s_min(buff, sizeof(buff)), s_max(buff, sizeof(buff)),
-	 ans(buff, sizeof(buff));
+  String *res, s_min(buff, sizeof(buff),&my_charset_bin), 
+	 s_max(buff, sizeof(buff),&my_charset_bin),
+	 ans(buff, sizeof(buff),&my_charset_bin);
 
   for (; f != f_end; f++)
   {
@@ -604,23 +596,23 @@ bool analyse::end_of_records()
     {
       func_items[1]->null_value = 0;
       res = (*f)->get_min_arg(&s_min);
-      func_items[1]->set(res->ptr(), res->length());
+      func_items[1]->set(res->ptr(), res->length(), res->charset());
       func_items[2]->null_value = 0;
       res = (*f)->get_max_arg(&s_max);
-      func_items[2]->set(res->ptr(), res->length());
+      func_items[2]->set(res->ptr(), res->length(), res->charset());
     }
     func_items[3]->set((longlong) (*f)->min_length);
     func_items[4]->set((longlong) (*f)->max_length);
     func_items[5]->set((longlong) (*f)->empty);
     func_items[6]->set((longlong) (*f)->nulls);
     res = (*f)->avg(&s_max, rows);
-    func_items[7]->set(res->ptr(), res->length());
+    func_items[7]->set(res->ptr(), res->length(), res->charset());
     func_items[8]->null_value = 0;
     res = (*f)->std(&s_max, rows);
     if (!res)
       func_items[8]->null_value = 1;
     else
-      func_items[8]->set(res->ptr(), res->length());
+      func_items[8]->set(res->ptr(), res->length(), res->charset());
     /*
       count the dots, quotas, etc. in (ENUM("a","b","c"...))
       If tree has been removed, don't suggest ENUM.
@@ -638,14 +630,14 @@ bool analyse::end_of_records()
 	   ((*f)->tree.elements_in_tree * 3 - 1 + 6))))
     {
       char tmp[331]; //331, because one double prec. num. can be this long
-      String tmp_str(tmp, sizeof(tmp));
+      String tmp_str(tmp, sizeof(tmp),&my_charset_bin);
       TREE_INFO tree_info;
 
       tree_info.str = &tmp_str;
       tree_info.found = 0;
       tree_info.item = (*f)->item;
 
-      tmp_str.set("ENUM(", 5);
+      tmp_str.set("ENUM(", 5,&my_charset_bin);
       tree_walk(&(*f)->tree, (*f)->collect_enum(), (char*) &tree_info,
 		left_root_right);
       tmp_str.append(')');
@@ -653,7 +645,7 @@ bool analyse::end_of_records()
       if (!(*f)->nulls)
 	tmp_str.append(" NOT NULL");
       output_str_length = tmp_str.length();
-      func_items[9]->set(tmp_str.ptr(), tmp_str.length());
+      func_items[9]->set(tmp_str.ptr(), tmp_str.length(), tmp_str.charset());
       if (result->send_data(result_fields))
 	return -1;
       continue;
@@ -698,7 +690,7 @@ bool analyse::end_of_records()
     }
     if (!(*f)->nulls)
       ans.append(" NOT NULL");
-    func_items[9]->set(ans.ptr(), ans.length());
+    func_items[9]->set(ans.ptr(), ans.length(), ans.charset());
     if (result->send_data(result_fields))
       return -1;
   }
@@ -749,7 +741,7 @@ void field_str::get_opt_type(String *answer, ha_rows total_rows)
   {
     if (must_be_blob)
     {
-      if (item->binary)
+      if (item->collation.collation == &my_charset_bin)
 	answer->append("TINYBLOB", 8);
       else
 	answer->append("TINYTEXT", 8);
@@ -767,21 +759,21 @@ void field_str::get_opt_type(String *answer, ha_rows total_rows)
   }
   else if (max_length < (1L << 16))
   {
-    if (item->binary)
+    if (item->collation.collation == &my_charset_bin)
       answer->append("BLOB", 4);
     else
       answer->append("TEXT", 4);
   }
   else if (max_length < (1L << 24))
   {
-    if (item->binary)
+    if (item->collation.collation == &my_charset_bin)
       answer->append("MEDIUMBLOB", 10);
     else
       answer->append("MEDIUMTEXT", 10);
   }
   else
   {
-    if (item->binary)
+    if (item->collation.collation == &my_charset_bin)
       answer->append("LONGBLOB", 8);
     else
       answer->append("LONGTEXT", 8);
@@ -812,6 +804,13 @@ void field_real::get_opt_type(String *answer,
     answer->append(buff, (uint) strlen(buff));
     if (min_arg >= 0)
       answer->append(" UNSIGNED");
+  }
+  else if (item->decimals == NOT_FIXED_DEC)
+  {
+    if (min_arg >= -FLT_MAX && max_arg <= FLT_MAX)
+      answer->append("FLOAT", 5);      
+    else
+      answer->append("DOUBLE", 6);
   }
   else
   {
@@ -897,7 +896,8 @@ int collect_string(String *element,
   else
     info->found = 1;
   info->str->append('\'');
-  info->str->append(*element);
+  if (append_escaped(info->str, element))
+    return 1;
   info->str->append('\'');
   return 0;
 } // collect_string
@@ -907,14 +907,14 @@ int collect_real(double *element, element_count count __attribute__((unused)),
 		 TREE_INFO *info)
 {
   char buff[MAX_FIELD_WIDTH];
-  String s(buff, sizeof(buff));
+  String s(buff, sizeof(buff),current_thd->charset());
 
   if (info->found)
     info->str->append(',');
   else
     info->found = 1;
   info->str->append('\'');
-  s.set(*element, info->item->decimals);
+  s.set(*element, info->item->decimals, current_thd->charset());
   info->str->append(s);
   info->str->append('\'');
   return 0;
@@ -926,14 +926,14 @@ int collect_longlong(longlong *element,
 		     TREE_INFO *info)
 {
   char buff[MAX_FIELD_WIDTH];
-  String s(buff, sizeof(buff));
+  String s(buff, sizeof(buff),&my_charset_bin);
 
   if (info->found)
     info->str->append(',');
   else
     info->found = 1;
   info->str->append('\'');
-  s.set(*element);
+  s.set(*element, current_thd->charset());
   info->str->append(s);
   info->str->append('\'');
   return 0;
@@ -945,14 +945,14 @@ int collect_ulonglong(ulonglong *element,
 		      TREE_INFO *info)
 {
   char buff[MAX_FIELD_WIDTH];
-  String s(buff, sizeof(buff));
+  String s(buff, sizeof(buff),&my_charset_bin);
 
   if (info->found)
     info->str->append(',');
   else
     info->found = 1;
   info->str->append('\'');
-  s.set(*element);
+  s.set(*element, current_thd->charset());
   info->str->append(s);
   info->str->append('\'');
   return 0;
@@ -1032,3 +1032,57 @@ uint check_ulonglong(const char *str, uint length)
   while (*cmp && *cmp++ == *str++) ;
   return ((uchar) str[-1] <= (uchar) cmp[-1]) ? smaller : bigger;
 } /* check_ulonlong */
+
+
+/*
+  Quote special characters in a string.
+
+  SYNOPSIS
+   append_escaped(to_str, from_str)
+   to_str (in) A pointer to a String.
+   from_str (to) A pointer to an allocated string
+
+  DESCRIPTION
+    append_escaped() takes a String type variable, where it appends
+    escaped the second argument. Only characters that require escaping
+    will be escaped.
+
+  RETURN VALUES
+    0 Success
+    1 Out of memory
+*/
+
+static bool append_escaped(String *to_str, String *from_str)
+{
+  char *from, *end, c;
+
+  if (to_str->realloc(to_str->length() + from_str->length()))
+    return 1;
+
+  from= (char*) from_str->ptr();
+  end= from + from_str->length();
+  for (; from < end; from++)
+  {
+    c= *from;
+    switch (c) {
+    case '\0':
+      c= '0';
+      break;
+    case '\032':
+      c= 'Z';
+      break;
+    case '\\':
+    case '\'':
+      break;
+    default:
+      goto normal_character;
+    }
+    if (to_str->append('\\'))
+      return 1;
+
+  normal_character:
+    if (to_str->append(c))
+      return 1;
+  }
+  return 0;
+}

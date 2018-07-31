@@ -387,6 +387,7 @@ trx_undo_seg_create(
 	page_t* 	undo_page;
 	trx_upagef_t*	page_hdr;
 	trx_usegf_t*	seg_hdr;
+	ulint		n_reserved;
 	ibool		success;
 	
 	ut_ad(mtr && id && rseg_hdr);
@@ -403,15 +404,15 @@ trx_undo_seg_create(
 	        ut_print_timestamp(stderr);
 	        fprintf(stderr,
 "InnoDB: Warning: cannot find a free slot for an undo log. Do you have too\n"
-"InnoDB: many active transactions running concurrently?");
+"InnoDB: many active transactions running concurrently?\n");
 
 		return(NULL);
 	}
 
 	space = buf_frame_get_space_id(rseg_hdr);
 
-	success = fsp_reserve_free_extents(space, 2, FSP_UNDO, mtr);
-	
+	success = fsp_reserve_free_extents(&n_reserved, space, 2, FSP_UNDO,
+									mtr);
 	if (!success) {
 
 		return(NULL);
@@ -421,7 +422,7 @@ trx_undo_seg_create(
 	undo_page = fseg_create_general(space, 0,
 			TRX_UNDO_SEG_HDR + TRX_UNDO_FSEG_HEADER, TRUE, mtr);
 
-	fil_space_release_free_extents(space, 2);
+	fil_space_release_free_extents(space, n_reserved);
 			
 	if (undo_page == NULL) {
 		/* No space left */
@@ -734,6 +735,7 @@ trx_undo_add_page(
 	page_t*		new_page;
 	trx_rseg_t*	rseg;
 	ulint		page_no;
+	ulint		n_reserved;
 	ibool		success;
 	
 #ifdef UNIV_SYNC_DEBUG
@@ -751,8 +753,8 @@ trx_undo_add_page(
 
 	header_page = trx_undo_page_get(undo->space, undo->hdr_page_no, mtr);
 
-	success = fsp_reserve_free_extents(undo->space, 1, FSP_UNDO, mtr);
-
+	success = fsp_reserve_free_extents(&n_reserved, undo->space, 1,
+							FSP_UNDO, mtr);
 	if (!success) {
 
 		return(FIL_NULL);
@@ -763,7 +765,7 @@ trx_undo_add_page(
 					undo->top_page_no + 1, FSP_UP,
 					TRUE, mtr);
 
-	fil_space_release_free_extents(undo->space, 1);
+	fil_space_release_free_extents(undo->space, n_reserved);
 					
 	if (page_no == FIL_NULL) {
 
@@ -1124,7 +1126,7 @@ trx_undo_mem_create_at_db_start(
 	
 	if (id >= TRX_RSEG_N_SLOTS) {
 		fprintf(stderr,
-		"InnoDB: Error: undo->id is %lu\n", id);
+		"InnoDB: Error: undo->id is %lu\n", (ulong) id);
 		ut_error;
 	}
 
@@ -1239,7 +1241,7 @@ trx_undo_lists_init(
 
 		if (page_no != FIL_NULL
 		    && srv_force_recovery < SRV_FORCE_NO_UNDO_LOG_SCAN) {
-		    
+
 			undo = trx_undo_mem_create_at_db_start(rseg, i,
 								page_no, &mtr);
 			size += undo->size;
@@ -1282,7 +1284,7 @@ trx_undo_mem_create(
 
 	if (id >= TRX_RSEG_N_SLOTS) {
 		fprintf(stderr,
-		"InnoDB: Error: undo->id is %lu\n", id);
+		"InnoDB: Error: undo->id is %lu\n", (ulong) id);
 		ut_error;
 	}
 
@@ -1327,7 +1329,8 @@ trx_undo_mem_init_for_reuse(
 #endif /* UNIV_SYNC_DEBUG */
 	
  	if (undo->id >= TRX_RSEG_N_SLOTS) {
-		fprintf(stderr, "InnoDB: Error: undo->id is %lu\n", undo->id);
+		fprintf(stderr, "InnoDB: Error: undo->id is %lu\n",
+			(ulong) undo->id);
 
 		mem_analyze_corruption((byte*)undo);
 		ut_error;
@@ -1353,7 +1356,7 @@ trx_undo_mem_free(
 {
 	if (undo->id >= TRX_RSEG_N_SLOTS) {
 		fprintf(stderr,
-		"InnoDB: Error: undo->id is %lu\n", undo->id);
+		"InnoDB: Error: undo->id is %lu\n", (ulong) undo->id);
 		ut_error;
 	}
 
@@ -1463,7 +1466,8 @@ trx_undo_reuse_cached(
 	ut_ad(undo->size == 1);
 
 	if (undo->id >= TRX_RSEG_N_SLOTS) {
-		fprintf(stderr, "InnoDB: Error: undo->id is %lu\n", undo->id);
+		fprintf(stderr, "InnoDB: Error: undo->id is %lu\n",
+			(ulong) undo->id);
 		mem_analyze_corruption((byte*)undo);
 		ut_error;
 	}
@@ -1599,7 +1603,8 @@ trx_undo_set_state_at_finish(
 	ut_ad(trx && undo && mtr);
 
 	if (undo->id >= TRX_RSEG_N_SLOTS) {
-		fprintf(stderr, "InnoDB: Error: undo->id is %lu\n", undo->id);
+		fprintf(stderr, "InnoDB: Error: undo->id is %lu\n",
+			(ulong) undo->id);
 		mem_analyze_corruption((byte*)undo);
 		ut_error;
 	}
@@ -1663,56 +1668,6 @@ trx_undo_update_cleanup(
 
 		trx_undo_mem_free(undo);
 	}
-}
-
-/**************************************************************************
-Discards an undo log and puts the segment to the list of cached update undo
-log segments. This optimized function is called if there is no need to keep
-the update undo log because there exist no read views and the transaction
-made no delete markings, which would make purge necessary. We restrict this
-to undo logs of size 1 to make things simpler. */
-
-dulint
-trx_undo_update_cleanup_by_discard(
-/*===============================*/
-			/* out: log sequence number at which mtr is
-			committed */	
-	trx_t*	trx,	/* in: trx owning the update undo log */
-	mtr_t*	mtr)	/* in: mtr */
-{
-	trx_rseg_t*	rseg;
-	trx_undo_t*	undo;
-	page_t*		undo_page;
-	
-	undo = trx->update_undo;
-	rseg = trx->rseg;
-
-#ifdef UNIV_SYNC_DEBUG
-	ut_ad(mutex_own(&(rseg->mutex)));
-	ut_ad(mutex_own(&kernel_mutex));
-#endif /* UNIV_SYNC_DEBUG */
-	ut_ad(undo->size == 1);
-	ut_ad(undo->del_marks == FALSE);	
-	ut_ad(UT_LIST_GET_LEN(trx_sys->view_list) == 1);
-	
-	/* NOTE: we must hold the kernel mutex, because we must prevent
-	creation of new read views before mtr gets committed! */
-
-	undo_page = trx_undo_page_get(undo->space, undo->hdr_page_no, mtr);
-
-	trx_undo_discard_latest_update_undo(undo_page, mtr);
-
-	undo->state = TRX_UNDO_CACHED;
-
-	UT_LIST_REMOVE(undo_list, rseg->update_undo_list, undo);
-
-	trx->update_undo = NULL;
-
-	UT_LIST_ADD_FIRST(undo_list, rseg->update_undo_cached, undo);
-
-	mtr_commit(mtr);
-	
-	return(mtr->end_lsn);
 }
 
 /**********************************************************************

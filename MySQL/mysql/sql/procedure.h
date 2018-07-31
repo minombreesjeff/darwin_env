@@ -35,10 +35,10 @@ public:
   }
   enum Type type() const { return Item::PROC_ITEM; }
   virtual void set(double nr)=0;
-  virtual void set(const char *str,uint length)=0;
+  virtual void set(const char *str,uint length,CHARSET_INFO *cs)=0;
   virtual void set(longlong nr)=0;
   virtual enum_field_types field_type() const=0;
-  void set(const char *str) { set(str,(uint) strlen(str)); }
+  void set(const char *str) { set(str,(uint) strlen(str), default_charset()); }
   void make_field(Send_field *tmp_field)
   {
     init_make_field(tmp_field,field_type());
@@ -55,14 +55,14 @@ public:
      decimals=dec; max_length=float_length(dec);
   }
   enum Item_result result_type () const { return REAL_RESULT; }
-  enum_field_types field_type() const { return FIELD_TYPE_DOUBLE; }
+  enum_field_types field_type() const { return MYSQL_TYPE_DOUBLE; }
   void set(double nr) { value=nr; }
   void set(longlong nr) { value=(double) nr; }
-  void set(const char *str,uint length __attribute__((unused)))
-  { value=atof(str); }
+  void set(const char *str,uint length,CHARSET_INFO *cs)
+  { int err; value=my_strntod(cs,(char*) str,length,(char**)0,&err); }
   double val() { return value; }
   longlong val_int() { return (longlong) value; }
-  String *val_str(String *s) { s->set(value,decimals); return s; }
+  String *val_str(String *s) { s->set(value,decimals,default_charset()); return s; }
   unsigned int size_of() { return sizeof(*this);}  
 };
 
@@ -73,14 +73,14 @@ public:
   Item_proc_int(const char *name_par) :Item_proc(name_par)
   { max_length=11; }
   enum Item_result result_type () const { return INT_RESULT; }
-  enum_field_types field_type() const { return FIELD_TYPE_LONG; }
+  enum_field_types field_type() const { return MYSQL_TYPE_LONGLONG; }
   void set(double nr) { value=(longlong) nr; }
   void set(longlong nr) { value=nr; }
-  void set(const char *str,uint length __attribute__((unused)))
-  { value=strtoll(str,NULL,10); }
+  void set(const char *str,uint length, CHARSET_INFO *cs)
+  { int err; value=my_strntoll(cs,str,length,10,NULL,&err); }
   double val() { return (double) value; }
   longlong val_int() { return value; }
-  String *val_str(String *s) { s->set(value); return s; }
+  String *val_str(String *s) { s->set(value, default_charset()); return s; }
   unsigned int size_of() { return sizeof(*this);}  
 };
 
@@ -91,12 +91,24 @@ public:
   Item_proc_string(const char *name_par,uint length) :Item_proc(name_par)
     { this->max_length=length; }
   enum Item_result result_type () const { return STRING_RESULT; }
-  enum_field_types field_type() const { return FIELD_TYPE_STRING; }
-  void set(double nr) { str_value.set(nr); }
-  void set(longlong nr) { str_value.set(nr); }
-  void set(const char *str, uint length) { str_value.copy(str,length); }
-  double val() { return atof(str_value.ptr()); }
-  longlong val_int() { return strtoll(str_value.ptr(),NULL,10); }
+  enum_field_types field_type() const { return MYSQL_TYPE_STRING; }
+  void set(double nr) { str_value.set(nr, 2, default_charset()); }
+  void set(longlong nr) { str_value.set(nr, default_charset()); }
+  void set(const char *str, uint length, CHARSET_INFO *cs)
+  { str_value.copy(str,length,cs); }
+  double val() 
+  { 
+    int err;
+    CHARSET_INFO *cs=str_value.charset();
+    return my_strntod(cs, (char*) str_value.ptr(), str_value.length(),
+		      (char**) 0, &err);
+  }
+  longlong val_int()
+  { 
+    int err;
+    CHARSET_INFO *cs=str_value.charset();
+    return my_strntoll(cs,str_value.ptr(),str_value.length(),10,NULL,&err);
+  }
   String *val_str(String*)
   {
     return null_value ? (String*) 0 : (String*) &str_value;

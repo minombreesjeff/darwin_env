@@ -259,9 +259,13 @@ pars_resolve_func_data_type(
 		dtype_set(que_node_get_data_type(node), DATA_VARCHAR,
 							DATA_ENGLISH, 0, 0);
 	} else if (func == PARS_TO_BINARY_TOKEN) {
-		ut_a(dtype_get_mtype(que_node_get_data_type(arg)) == DATA_INT);
-		dtype_set(que_node_get_data_type(node), DATA_VARCHAR,
+		if (dtype_get_mtype(que_node_get_data_type(arg)) == DATA_INT) {
+			dtype_set(que_node_get_data_type(node), DATA_VARCHAR,
 							DATA_ENGLISH, 0, 0);
+		} else {
+			dtype_set(que_node_get_data_type(node), DATA_BINARY,
+								0, 0, 0);
+		}
 	} else if (func == PARS_TO_NUMBER_TOKEN) {
 		ut_a(dtype_get_mtype(que_node_get_data_type(arg))
 							== DATA_VARCHAR);
@@ -530,7 +534,7 @@ pars_retrieve_table_def(
 /*====================*/
 	sym_node_t*	sym_node)	/* in: table node */
 {
-	char*	table_name;
+	const char*	table_name;
 
 	ut_a(sym_node);
 	ut_a(que_node_get_type(sym_node) == QUE_NODE_SYMBOL);
@@ -538,7 +542,7 @@ pars_retrieve_table_def(
 	sym_node->resolved = TRUE;
 	sym_node->token_type = SYM_TABLE;
 
-	table_name = (char*) sym_node->name;
+	table_name = (const char*) sym_node->name;
 	
 	sym_node->table = dict_table_get_low(table_name);
 
@@ -886,7 +890,7 @@ pars_process_assign_list(
 		upd_field_set_field_no(upd_field,
 				dict_index_get_nth_col_pos(clust_index,
 							col_sym->col_no),
-								clust_index);
+							clust_index, NULL);
 		upd_field->exp = assign_node->val;
 
 		if (!dtype_is_fixed_size(
@@ -1713,7 +1717,8 @@ Called by yyparse on error. */
 void
 yyerror(
 /*====*/
-        char*	s __attribute__((unused))) /* in: error message string */
+	const char*	s __attribute__((unused)))
+				/* in: error message string */
 {
 	ut_ad(s);
 
@@ -1728,8 +1733,8 @@ Parses an SQL string returning the query graph. */
 que_t*
 pars_sql(
 /*=====*/
-			/* out, own: the query graph */
-	char*	str)	/* in: SQL string */
+				/* out, own: the query graph */
+	const char*	str)	/* in: SQL string */
 {
 	sym_node_t*	sym_node;
 	mem_heap_t*	heap;

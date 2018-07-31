@@ -38,7 +38,7 @@ void safe_print_str(const char* name, const char* val, int max_len)
   }
 
   fprintf(stderr, "= ");
-  for(; max_len && PTR_SANE(val) && *val; --max_len)
+  for (; max_len && PTR_SANE(val) && *val; --max_len)
     fputc(*val++, stderr);
   fputc('\n', stderr);
 }
@@ -59,7 +59,7 @@ void safe_print_str(const char* name, const char* val, int max_len)
 inline uchar** find_prev_fp(uint32* pc, uchar** fp)
 {
   int i;
-  for(i = 0; i < MAX_INSTR_IN_FUNC; ++i,--pc)
+  for (i = 0; i < MAX_INSTR_IN_FUNC; ++i,--pc)
   {
     uchar* p = (uchar*)pc;
     if (p[2] == 222 &&  p[3] == 35)
@@ -73,7 +73,7 @@ inline uchar** find_prev_fp(uint32* pc, uchar** fp)
 inline uint32* find_prev_pc(uint32* pc, uchar** fp)
 {
   int i;
-  for(i = 0; i < MAX_INSTR_IN_FUNC; ++i,--pc)
+  for (i = 0; i < MAX_INSTR_IN_FUNC; ++i,--pc)
   {
     char* p = (char*)pc;
     if (p[1] == 0 && p[2] == 94 &&  p[3] == -73)
@@ -197,7 +197,7 @@ terribly wrong...\n");
   fprintf(stderr, "Stack trace seems successful - bottom reached\n");
 
 end:
-  fprintf(stderr, "Please read http://www.mysql.com/doc/en/Using_stack_trace.html and follow instructions on how to resolve the stack trace. Resolved\n\
+  fprintf(stderr, "Please read http://dev.mysql.com/doc/mysql/en/Using_stack_trace.html and follow instructions on how to resolve the stack trace. Resolved\n\
 stack trace is much more helpful in diagnosing the problem, so please do \n\
 resolve it\n");
 }

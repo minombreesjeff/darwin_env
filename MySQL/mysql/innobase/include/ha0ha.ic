@@ -164,31 +164,6 @@ ha_search_with_data(
 }
 
 /*************************************************************
-Looks for an element when we know the pointer to the data, and updates
-the pointer to data, if found. */
-UNIV_INLINE
-void
-ha_search_and_update_if_found(
-/*==========================*/
-	hash_table_t*	table,	/* in: hash table */
-	ulint		fold,	/* in: folded value of the searched data */
-	void*		data,	/* in: pointer to the data */
-	void*		new_data)/* in: new pointer to the data */
-{
-	ha_node_t*	node;
-
-#ifdef UNIV_SYNC_DEBUG
-	ut_ad(!table->mutexes || mutex_own(hash_get_mutex(table, fold)));
-#endif /* UNIV_SYNC_DEBUG */
-
-	node = ha_search_with_data(table, fold, data);
-
-	if (node) {
-		node->data = new_data;
-	}
-}
-
-/*************************************************************
 Looks for an element when we know the pointer to the data, and deletes
 it from the hash table, if found. */
 UNIV_INLINE

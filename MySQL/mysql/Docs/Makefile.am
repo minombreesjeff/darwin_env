@@ -9,7 +9,7 @@
 # If you know how to fix any of this more elegantly please mail
 # docs@mysql.com
 
-TEXI2HTML_FLAGS =	-iso -number
+TEXI2HTML_FLAGS =	-iso -number -acc
 DVIPS =			dvips
 MAKEINFO =		@MAKEINFO@
 TEXINFO_TEX =		Support/texinfo.tex
@@ -22,11 +22,13 @@ targets =		manual.txt mysql.info manual.html
 
 BUILT_SOURCES =		$(targets) manual_toc.html include.texi
 EXTRA_DIST =		$(noinst_SCRIPTS) $(BUILT_SOURCES) mysqld_error.txt \
-			INSTALL-BINARY reservedwords.texi 
+			INSTALL-BINARY reservedwords.texi internals.texi
+
+SUBDIRS =		Images
 
 all:			$(targets) txt_files
 
-txt_files:		../INSTALL-SOURCE ../COPYING \
+txt_files:		../INSTALL-SOURCE ../COPYING ../INSTALL-WIN-SOURCE ../EXCEPTIONS-CLIENT \
 			INSTALL-BINARY ../support-files/MacOSX/ReadMe.txt
 
 CLEAN_FILES:		$(BUILD_SOURCES)
@@ -156,7 +158,6 @@ manual_letter.de.ps:	manual.de.texi include.texi
 	$(DVIPS) -t letter manual.de.dvi -o $@
 	touch $@
 
-
 #
 # Miscellaneous
 #
@@ -180,12 +181,9 @@ nusphere.pdf: manual.texi
 # Include images for the manual in the distribution
 dist-hook:
 	BD=`cd $(top_srcdir); pwd`; \
-	if test ! -d $(distdir)/Flags; then mkdir -p $(distdir)/Flags; fi; \
-	$(INSTALL_DATA) $(srcdir)/Flags/*.gif $(srcdir)/Flags/*.eps \
-		$(srcdir)/Flags/*.txt $(distdir)/Flags;
 	echo "PostScript and PDF versions suitable for printing" \
 		> $(distdir)/manual.ps
-	echo "are available from http://www.mysql.com/Manual/" \
+	echo "are available from http://dev.mysql.com/doc/" \
 		>> $(distdir)/manual.ps
 	echo "or any mirror site" \
 		>> $(distdir)/manual.ps
@@ -195,6 +193,9 @@ GT = $(srcdir)/Support/generate-text-files.pl
 ../INSTALL-SOURCE:	mysql.info $(GT)
 	perl -w $(GT) mysql.info "Installing" "Tutorial" > $@
 
+../INSTALL-WIN-SOURCE:	mysql.info $(GT)
+	perl -w $(GT) mysql.info "Windows source build" "Post-installation" > $@
+
 # We put the description for the binary installation here so that
 # people who download source wont have to see it. It is moved up to
 # the toplevel by the script that makes the binary tar files.
@@ -202,7 +203,10 @@ INSTALL-BINARY:	mysql.info $(GT)
 	perl -w $(GT) mysql.info "Installing binary" "Installing source" > $@
 
 ../COPYING:		mysql.info $(GT)
-	perl -w $(GT) mysql.info "GPL license" "Function Index" > $@
+	perl -w $(GT) mysql.info "GPL license" "MySQL FLOSS License Exception" > $@
+
+../EXCEPTIONS-CLIENT: mysql.info $(GT)
+	perl -w $(GT) mysql.info "MySQL FLOSS License Exception" "Function Index" > $@
 
 ../support-files/MacOSX/ReadMe.txt:	mysql.info $(GT)
 	perl -w $(GT) mysql.info "Mac OS X installation" "NetWare installation" > $@

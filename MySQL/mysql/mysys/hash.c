@@ -29,25 +29,36 @@
 #define HIGHFIND 4
 #define HIGHUSED 8
 
+typedef struct st_hash_info {
+  uint next;					/* index to next key */
+  byte *data;					/* data for current entry */
+} HASH_LINK;
+
 static uint hash_mask(uint hashnr,uint buffmax,uint maxlength);
 static void movelink(HASH_LINK *array,uint pos,uint next_link,uint newlink);
-static uint calc_hashnr(const byte *key,uint length);
-static uint calc_hashnr_caseup(const byte *key,uint length);
 static int hashcmp(HASH *hash,HASH_LINK *pos,const byte *key,uint length);
 
+static uint calc_hash(HASH *hash,const byte *key,uint length)
+{
+  ulong nr1=1, nr2=4;
+  hash->charset->coll->hash_sort(hash->charset,(uchar*) key,length,&nr1,&nr2);
+  return nr1;
+}
 
-my_bool _hash_init(HASH *hash,uint size,uint key_offset,uint key_length,
-		  hash_get_key get_key,
-		  void (*free_element)(void*),uint flags CALLER_INFO_PROTO)
+my_bool
+_hash_init(HASH *hash,CHARSET_INFO *charset,
+	   uint size,uint key_offset,uint key_length,
+	   hash_get_key get_key,
+	   void (*free_element)(void*),uint flags CALLER_INFO_PROTO)
 {
   DBUG_ENTER("hash_init");
-  DBUG_PRINT("enter",("hash: %lx  size: %d",hash,size));
+  DBUG_PRINT("enter",("hash: 0x%lx  size: %d",hash,size));
 
   hash->records=0;
   if (my_init_dynamic_array_ci(&hash->array,sizeof(HASH_LINK),size,0))
   {
     hash->free=0;				/* Allow call to hash_free */
-    DBUG_RETURN(TRUE);
+    DBUG_RETURN(1);
   }
   hash->key_offset=key_offset;
   hash->key_length=key_length;
@@ -56,27 +67,75 @@ my_bool _hash_init(HASH *hash,uint size,uint key_offset,uint key_length,
   hash->get_key=get_key;
   hash->free=free_element;
   hash->flags=flags;
-  if (flags & HASH_CASE_INSENSITIVE)
-    hash->calc_hashnr=calc_hashnr_caseup;
-  else
-    hash->calc_hashnr=calc_hashnr;
+  hash->charset=charset;
   DBUG_RETURN(0);
 }
 
 
+/*
+  Call hash->free on all elements in hash.
+
+  SYNOPSIS
+    hash_free_elements()
+    hash   hash table
+
+  NOTES:
+    Sets records to 0
+*/
+
+static inline void hash_free_elements(HASH *hash)
+{
+  if (hash->free)
+  {
+    HASH_LINK *data=dynamic_element(&hash->array,0,HASH_LINK*);
+    HASH_LINK *end= data + hash->records;
+    while (data < end)
+      (*hash->free)((data++)->data);
+  }
+  hash->records=0;
+}
+
+
+/*
+  Free memory used by hash.
+
+  SYNOPSIS
+    hash_free()
+    hash   the hash to delete elements of
+
+  NOTES: Hash can't be reused wuthing calling hash_init again.
+*/
+
 void hash_free(HASH *hash)
 {
   DBUG_ENTER("hash_free");
-  if (hash->free)
-  {
-    uint i,records;
-    HASH_LINK *data=dynamic_element(&hash->array,0,HASH_LINK*);
-    for (i=0,records=hash->records ; i < records ; i++)
-      (*hash->free)(data[i].data);
-    hash->free=0;
-  }
+  DBUG_PRINT("enter",("hash: 0x%lxd",hash));
+
+  hash_free_elements(hash);
+  hash->free= 0;
   delete_dynamic(&hash->array);
-  hash->records=0;
+  DBUG_VOID_RETURN;
+}
+
+
+/*
+  Delete all elements from the hash (the hash itself is to be reused).
+
+  SYNOPSIS
+    my_hash_reset()
+    hash   the hash to delete elements of
+*/
+
+void my_hash_reset(HASH *hash)
+{
+  DBUG_ENTER("my_hash_reset");
+  DBUG_PRINT("enter",("hash: 0x%lxd",hash));
+
+  hash_free_elements(hash);
+  reset_dynamic(&hash->array);
+  /* Set row pointers so that the hash can be reused at once */
+  hash->blength= 1;
+  hash->current_record= NO_RECORD;
   DBUG_VOID_RETURN;
 }
 
@@ -87,7 +146,7 @@ void hash_free(HASH *hash)
   handle inline functions that are not defined as native types
 */
 
-inline char*
+static inline char*
 hash_key(HASH *hash,const byte *record,uint *length,my_bool first)
 {
   if (hash->get_key)
@@ -109,87 +168,21 @@ static uint hash_rec_mask(HASH *hash,HASH_LINK *pos,uint buffmax,
 {
   uint length;
   byte *key= (byte*) hash_key(hash,pos->data,&length,0);
-  return hash_mask((*hash->calc_hashnr)(key,length),buffmax,maxlength);
+  return hash_mask(calc_hash(hash,key,length),buffmax,maxlength);
 }
 
-#ifndef NEW_HASH_FUNCTION
-
-	/* Calc hashvalue for a key */
-
-static uint calc_hashnr(const byte *key,uint length)
-{
-  register uint nr=1, nr2=4;
-  while (length--)
-  {
-    nr^= (((nr & 63)+nr2)*((uint) (uchar) *key++))+ (nr << 8);
-    nr2+=3;
-  }
-  return((uint) nr);
-}
-
-	/* Calc hashvalue for a key, case indepenently */
-
-static uint calc_hashnr_caseup(const byte *key,uint length)
-{
-  register uint nr=1, nr2=4;
-  while (length--)
-  {
-    nr^= (((nr & 63)+nr2)*((uint) (uchar) toupper(*key++)))+ (nr << 8);
-    nr2+=3;
-  }
-  return((uint) nr);
-}
-
-#else
-
-/*
- * Fowler/Noll/Vo hash
- *
- * The basis of the hash algorithm was taken from an idea sent by email to the
- * IEEE Posix P1003.2 mailing list from Phong Vo (kpv@research.att.com) and
- * Glenn Fowler (gsf@research.att.com).  Landon Curt Noll (chongo@toad.com)
- * later improved on their algorithm.
- *
- * The magic is in the interesting relationship between the special prime
- * 16777619 (2^24 + 403) and 2^32 and 2^8.
- * This works well on both numbers and strings.
- */
-
-uint calc_hashnr(const byte *key, uint len)
-{
-  const byte *end=key+len;
-  uint hash;
-  for (hash = 0; key < end; key++)
-  {
-    hash *= 16777619;
-    hash ^= (uint) *(uchar*) key;
-  }
-  return (hash);
-}
-
-uint calc_hashnr_caseup(const byte *key, uint len)
-{
-  const byte *end=key+len;
-  uint hash;
-  for (hash = 0; key < end; key++)
-  {
-    hash *= 16777619;
-    hash ^= (uint) (uchar) toupper(*key);
-  }
-  return (hash);
-}
-
-#endif
 
 
-#ifndef __SUNPRO_C				/* SUNPRO can't handle this */
+/* for compilers which can not handle inline */
+static
+#if !defined(__SUNPRO_C) && !defined(__USLC__) && !defined(__sgi)
 inline
 #endif
 unsigned int rec_hashnr(HASH *hash,const byte *record)
 {
   uint length;
   byte *key= (byte*) hash_key(hash,record,&length,0);
-  return (*hash->calc_hashnr)(key,length);
+  return calc_hash(hash,key,length);
 }
 
 
@@ -205,8 +198,7 @@ gptr hash_search(HASH *hash,const byte *key,uint length)
   flag=1;
   if (hash->records)
   {
-    idx=hash_mask((*hash->calc_hashnr)(key,length ? length :
-					 hash->key_length),
+    idx=hash_mask(calc_hash(hash,key,length ? length : hash->key_length),
 		    hash->blength,hash->records);
     do
     {
@@ -276,16 +268,15 @@ static int hashcmp(HASH *hash,HASH_LINK *pos,const byte *key,uint length)
 {
   uint rec_keylength;
   byte *rec_key= (byte*) hash_key(hash,pos->data,&rec_keylength,1);
-  return (length && length != rec_keylength) ||
-    (hash->flags & HASH_CASE_INSENSITIVE ?
-     my_casecmp(rec_key,key,rec_keylength) :
-     memcmp(rec_key,key,rec_keylength));
+  return ((length && length != rec_keylength) ||
+	  my_strnncoll(hash->charset, (uchar*) rec_key, rec_keylength,
+		       (uchar*) key, length));
 }
 
 
 	/* Write a hash-key to the hash-index */
 
-my_bool hash_insert(HASH *info,const byte *record)
+my_bool my_hash_insert(HASH *info,const byte *record)
 {
   int flag;
   uint halfbuff,hash_nr,first_index,idx;
@@ -518,7 +509,7 @@ my_bool hash_update(HASH *hash,byte *record,byte *old_key,uint old_key_length)
 
   /* Search after record with key */
 
-  idx=hash_mask((*hash->calc_hashnr)(old_key,(old_key_length ?
+  idx=hash_mask(calc_hash(hash, old_key,(old_key_length ?
 					      old_key_length :
 					      hash->key_length)),
 		  blength,records);
@@ -626,7 +617,7 @@ my_bool hash_check(HASH *hash)
 	if ((rec_link=hash_rec_mask(hash,hash_info,blength,records)) != i)
 	{
 	  DBUG_PRINT("error",
-		     ("Record in wrong link at %d: Start %d  Record: %lx  Record-link %d", idx,i,hash_info->data,rec_link));
+		     ("Record in wrong link at %d: Start %d  Record: 0x%lx  Record-link %d", idx,i,hash_info->data,rec_link));
 	  error=1;
 	}
 	else

@@ -14,14 +14,12 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
-// Sasha Pachev <sasha@mysql.com> is currently in charge of this file
-
 #include "mysql_priv.h"
+#ifdef HAVE_REPLICATION
+
 #include "repl_failsafe.h"
 #include "sql_repl.h"
 #include "slave.h"
-#include "sql_acl.h"
-#include "mini_client.h"
 #include "log_event.h"
 #include <mysql.h>
 
@@ -33,11 +31,10 @@ RPL_STATUS rpl_status=RPL_NULL;
 pthread_mutex_t LOCK_rpl_status;
 pthread_cond_t COND_rpl_status;
 HASH slave_list;
-extern const char* any_db;
 
 const char *rpl_role_type[] = {"MASTER","SLAVE",NullS};
 TYPELIB rpl_role_typelib = {array_elements(rpl_role_type)-1,"",
-			    rpl_role_type};
+			    rpl_role_type, NULL};
 
 const char* rpl_status_type[]=
 {
@@ -45,7 +42,7 @@ const char* rpl_status_type[]=
   "RECOVERY_CAPTAIN","NULL",NullS
 };
 TYPELIB rpl_status_typelib= {array_elements(rpl_status_type)-1,"",
-			     rpl_status_type};
+			     rpl_status_type, NULL};
 
 
 static Slave_log_event* find_slave_event(IO_CACHE* log,
@@ -63,6 +60,11 @@ static Slave_log_event* find_slave_event(IO_CACHE* log,
 static int init_failsafe_rpl_thread(THD* thd)
 {
   DBUG_ENTER("init_failsafe_rpl_thread");
+  /*
+    thd->bootstrap is to report errors barely to stderr; if this code is
+    enable again one day, one should check if bootstrap is still needed (maybe
+    this thread has no other error reporting method).
+  */
   thd->system_thread = thd->bootstrap = 1;
   thd->host_or_ip= "";
   thd->client_capabilities = 0;
@@ -77,7 +79,7 @@ static int init_failsafe_rpl_thread(THD* thd)
 
   if (init_thr_lock() || thd->store_globals())
   {
-    close_connection(&thd->net,ER_OUT_OF_RESOURCES); // is this needed?
+    close_connection(thd, ER_OUT_OF_RESOURCES, 1); // is this needed?
     statistic_increment(aborted_connects,&LOCK_status);
     end_thread(thd,0);
     DBUG_RETURN(-1);
@@ -89,7 +91,7 @@ static int init_failsafe_rpl_thread(THD* thd)
   VOID(pthread_sigmask(SIG_UNBLOCK,&set,&thd->block_signals));
 #endif
 
-  thd->mem_root.free=thd->mem_root.used=0;	
+  thd->mem_root->free= thd->mem_root->used= 0;
   if (thd->variables.max_join_size == HA_POS_ERROR)
     thd->options|= OPTION_BIG_SELECTS;
 
@@ -160,9 +162,8 @@ int register_slave(THD* thd, uchar* packet, uint packet_length)
   SLAVE_INFO *si;
   uchar *p= packet, *p_end= packet + packet_length;
 
-  if (check_access(thd, REPL_SLAVE_ACL, any_db))
+  if (check_access(thd, REPL_SLAVE_ACL, any_db,0,0,0))
     return 1;
-
   if (!(si = (SLAVE_INFO*)my_malloc(sizeof(SLAVE_INFO), MYF(MY_WME))))
     goto err2;
 
@@ -183,7 +184,7 @@ int register_slave(THD* thd, uchar* packet, uint packet_length)
 
   pthread_mutex_lock(&LOCK_slave_list);
   unregister_slave(thd,0,0);
-  res= hash_insert(&slave_list, (byte*) si);
+  res= my_hash_insert(&slave_list, (byte*) si);
   pthread_mutex_unlock(&LOCK_slave_list);
   return res;
 
@@ -192,7 +193,7 @@ err:
   my_message(ER_UNKNOWN_ERROR, "Wrong parameters to function register_slave",
 	     MYF(0));
 err2:
-  send_error(&thd->net);
+  send_error(thd);
   return 1;
 }
 
@@ -211,7 +212,7 @@ extern "C" void slave_info_free(void *s)
 
 void init_slave_list()
 {
-  hash_init(&slave_list, SLAVE_LIST_CHUNK, 0, 0,
+  hash_init(&slave_list, system_charset_info, SLAVE_LIST_CHUNK, 0, 0,
 	    (hash_get_key) slave_list_key, (hash_free_key) slave_info_free, 0);
   pthread_mutex_init(&LOCK_slave_list, MY_MUTEX_INIT_FAST);
 }
@@ -262,7 +263,7 @@ static int find_target_pos(LEX_MASTER_INFO *mi, IO_CACHE *log, char *errmsg)
   it is reworked. Event's log_pos used to be preserved through 
   log-slave-updates to make code in repl_failsafe.cc work (this 
   function, SHOW NEW MASTER); but on the other side it caused unexpected
-  values in Exec_master_log_pos in A->B->C replication setup, 
+  values in Exec_Master_Log_Pos in A->B->C replication setup, 
   synchronization problems in master_pos_wait(), ... So we 
   (Dmitri & Guilhem) removed it.
   
@@ -438,10 +439,11 @@ static Slave_log_event* find_slave_event(IO_CACHE* log,
 
 int show_new_master(THD* thd)
 {
+  Protocol *protocol= thd->protocol;
   DBUG_ENTER("show_new_master");
   List<Item> field_list;
   char errmsg[SLAVE_ERRMSG_SIZE];
-  LEX_MASTER_INFO* lex_mi = &thd->lex.mi;
+  LEX_MASTER_INFO* lex_mi= &thd->lex->mi;
 
   errmsg[0]=0;					// Safety
   if (translate_master(thd, lex_mi, errmsg))
@@ -453,28 +455,28 @@ int show_new_master(THD* thd)
   }
   else
   {
-    String* packet = &thd->packet;
     field_list.push_back(new Item_empty_string("Log_name", 20));
-    field_list.push_back(new Item_empty_string("Log_pos", 20));
-    if (send_fields(thd, field_list, 1))
+    field_list.push_back(new Item_return_int("Log_pos", 10,
+					     MYSQL_TYPE_LONGLONG));
+    if (protocol->send_fields(&field_list, 1))
       DBUG_RETURN(-1);
-    packet->length(0);
-    net_store_data(packet, lex_mi->log_file_name);
-    net_store_data(packet, (longlong)lex_mi->pos);
-    if (my_net_write(&thd->net, packet->ptr(), packet->length()))
+    protocol->prepare_for_resend();
+    protocol->store(lex_mi->log_file_name, &my_charset_bin);
+    protocol->store((ulonglong) lex_mi->pos);
+    if (protocol->write())
       DBUG_RETURN(-1);
-    send_eof(&thd->net);
+    send_eof(thd);
     DBUG_RETURN(0);
   }
 }
 
 /*
   Asks the master for the list of its other connected slaves.
-  This is for failsafe replication : 
-  in order for failsafe replication to work, the servers involved in replication
-  must know of each other. We accomplish this by having each slave report to the
-  master how to reach it, and on connection, each slave receives information
-  about where the other slaves are.
+  This is for failsafe replication: 
+  in order for failsafe replication to work, the servers involved in
+  replication must know of each other. We accomplish this by having each
+  slave report to the master how to reach it, and on connection, each
+  slave receives information about where the other slaves are.
 
   SYNOPSIS
     update_slave_list()
@@ -486,8 +488,8 @@ int show_new_master(THD* thd)
     hostname/port of the master, the username used by the slave to connect to
     the master.
     If the user used by the slave to connect to the master does not have the
-    REPLICATION SLAVE privilege, it will pop in this function because SHOW SLAVE
-    HOSTS will fail on the master.
+    REPLICATION SLAVE privilege, it will pop in this function because
+    SHOW SLAVE HOSTS will fail on the master.
 
   RETURN VALUES
     1           error
@@ -503,14 +505,14 @@ int update_slave_list(MYSQL* mysql, MASTER_INFO* mi)
   int port_ind;
   DBUG_ENTER("update_slave_list");
 
-  if (mc_mysql_query(mysql,"SHOW SLAVE HOSTS",0) ||
-      !(res = mc_mysql_store_result(mysql)))
+  if (mysql_real_query(mysql,"SHOW SLAVE HOSTS",16) ||
+      !(res = mysql_store_result(mysql)))
   {
-    error= mc_mysql_error(mysql);
+    error= mysql_error(mysql);
     goto err;
   }
 
-  switch (mc_mysql_num_fields(res)) {
+  switch (mysql_num_fields(res)) {
   case 5:
     have_auth_info = 0;
     port_ind=2;
@@ -527,7 +529,7 @@ HOSTS";
 
   pthread_mutex_lock(&LOCK_slave_list);
 
-  while ((row= mc_mysql_fetch_row(res)))
+  while ((row= mysql_fetch_row(res)))
   {
     uint32 server_id;
     SLAVE_INFO* si, *old_si;
@@ -544,7 +546,7 @@ HOSTS";
 	goto err;
       }
       si->server_id = server_id;
-      hash_insert(&slave_list, (byte*)si);
+      my_hash_insert(&slave_list, (byte*)si);
     }
     strmake(si->host, row[1], sizeof(si->host)-1);
     si->port = atoi(row[port_ind]);
@@ -560,7 +562,7 @@ HOSTS";
 
 err:
   if (res)
-    mc_mysql_free_result(res);
+    mysql_free_result(res);
   if (error)
   {
     sql_print_error("While trying to obtain the list of slaves from the master \
@@ -584,18 +586,20 @@ pthread_handler_decl(handle_failsafe_rpl,arg)
   THD *thd = new THD;
   thd->thread_stack = (char*)&thd;
   MYSQL* recovery_captain = 0;
+  const char* msg;
+
   pthread_detach_this_thread();
-  if (init_failsafe_rpl_thread(thd) || !(recovery_captain=mc_mysql_init(0)))
+  if (init_failsafe_rpl_thread(thd) || !(recovery_captain=mysql_init(0)))
   {
     sql_print_error("Could not initialize failsafe replication thread");
     goto err;
   }
   pthread_mutex_lock(&LOCK_rpl_status);
+  msg= thd->enter_cond(&COND_rpl_status,
+                       &LOCK_rpl_status, "Waiting for request");
   while (!thd->killed && !abort_loop)
   {
     bool break_req_chain = 0;
-    const char* msg = thd->enter_cond(&COND_rpl_status,
-				      &LOCK_rpl_status, "Waiting for request");
     pthread_cond_wait(&COND_rpl_status, &LOCK_rpl_status);
     thd->proc_info="Processing request";
     while (!break_req_chain)
@@ -613,12 +617,11 @@ pthread_handler_decl(handle_failsafe_rpl,arg)
 	break;
       }
     }
-    thd->exit_cond(msg);
   }
-  pthread_mutex_unlock(&LOCK_rpl_status);
+  thd->exit_cond(msg);
 err:
   if (recovery_captain)
-    mc_mysql_close(recovery_captain);
+    mysql_close(recovery_captain);
   delete thd;
   my_thread_end();
   pthread_exit(0);
@@ -629,22 +632,24 @@ err:
 int show_slave_hosts(THD* thd)
 {
   List<Item> field_list;
-  NET* net = &thd->net;
-  String* packet = &thd->packet;
+  Protocol *protocol= thd->protocol;
   DBUG_ENTER("show_slave_hosts");
 
-  field_list.push_back(new Item_empty_string("Server_id", 20));
+  field_list.push_back(new Item_return_int("Server_id", 10,
+					   MYSQL_TYPE_LONG));
   field_list.push_back(new Item_empty_string("Host", 20));
   if (opt_show_slave_auth_info)
   {
     field_list.push_back(new Item_empty_string("User",20));
     field_list.push_back(new Item_empty_string("Password",20));
   }
-  field_list.push_back(new Item_empty_string("Port",20));
-  field_list.push_back(new Item_empty_string("Rpl_recovery_rank", 20));
-  field_list.push_back(new Item_empty_string("Master_id", 20));
+  field_list.push_back(new Item_return_int("Port", 7, MYSQL_TYPE_LONG));
+  field_list.push_back(new Item_return_int("Rpl_recovery_rank", 7,
+					   MYSQL_TYPE_LONG));
+  field_list.push_back(new Item_return_int("Master_id", 10,
+					   MYSQL_TYPE_LONG));
 
-  if (send_fields(thd, field_list, 1))
+  if (protocol->send_fields(&field_list, 1))
     DBUG_RETURN(-1);
 
   pthread_mutex_lock(&LOCK_slave_list);
@@ -652,25 +657,25 @@ int show_slave_hosts(THD* thd)
   for (uint i = 0; i < slave_list.records; ++i)
   {
     SLAVE_INFO* si = (SLAVE_INFO*) hash_element(&slave_list, i);
-    packet->length(0);
-    net_store_data(packet, si->server_id);
-    net_store_data(packet, si->host);
+    protocol->prepare_for_resend();
+    protocol->store((uint32) si->server_id);
+    protocol->store(si->host, &my_charset_bin);
     if (opt_show_slave_auth_info)
     {
-      net_store_data(packet, si->user);
-      net_store_data(packet, si->password);
+      protocol->store(si->user, &my_charset_bin);
+      protocol->store(si->password, &my_charset_bin);
     }
-    net_store_data(packet, (uint32) si->port);
-    net_store_data(packet, si->rpl_recovery_rank);
-    net_store_data(packet, si->master_id);
-    if (my_net_write(net, (char*)packet->ptr(), packet->length()))
+    protocol->store((uint32) si->port);
+    protocol->store((uint32) si->rpl_recovery_rank);
+    protocol->store((uint32) si->master_id);
+    if (protocol->write())
     {
       pthread_mutex_unlock(&LOCK_slave_list);
       DBUG_RETURN(-1);
     }
   }
   pthread_mutex_unlock(&LOCK_slave_list);
-  send_eof(net);
+  send_eof(thd);
   DBUG_RETURN(0);
 }
 
@@ -684,9 +689,23 @@ int connect_to_master(THD *thd, MYSQL* mysql, MASTER_INFO* mi)
     strmov(mysql->net.last_error, "Master is not configured");
     DBUG_RETURN(1);
   }
-  if (!mc_mysql_connect(mysql, mi->host, mi->user, mi->password, 0,
-			mi->port, 0, 0,
-			slave_net_timeout))
+  mysql_options(mysql, MYSQL_OPT_CONNECT_TIMEOUT, (char *) &slave_net_timeout);
+  mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, (char *) &slave_net_timeout);
+
+#ifdef HAVE_OPENSSL
+  if (mi->ssl)
+    mysql_ssl_set(mysql, 
+        mi->ssl_key[0]?mi->ssl_key:0,
+        mi->ssl_cert[0]?mi->ssl_cert:0,
+        mi->ssl_ca[0]?mi->ssl_ca:0, 
+        mi->ssl_capath[0]?mi->ssl_capath:0,
+        mi->ssl_cipher[0]?mi->ssl_cipher:0);
+#endif
+    
+  mysql_options(mysql, MYSQL_SET_CHARSET_NAME, default_charset_info->csname);
+  mysql_options(mysql, MYSQL_SET_CHARSET_DIR, (char *) charsets_dir);
+  if (!mysql_real_connect(mysql, mi->host, mi->user, mi->password, 0,
+			mi->port, 0, 0))
     DBUG_RETURN(1);
   DBUG_RETURN(0);
 }
@@ -698,9 +717,9 @@ static inline void cleanup_mysql_results(MYSQL_RES* db_res,
   for (; cur >= start; --cur)
   {
     if (*cur)
-      mc_mysql_free_result(*cur);
+      mysql_free_result(*cur);
   }
-  mc_mysql_free_result(db_res);
+  mysql_free_result(db_res);
 }
 
 
@@ -708,18 +727,19 @@ static int fetch_db_tables(THD *thd, MYSQL *mysql, const char *db,
 			   MYSQL_RES *table_res, MASTER_INFO *mi)
 {
   MYSQL_ROW row;
-  for (row = mc_mysql_fetch_row(table_res); row;
-       row = mc_mysql_fetch_row(table_res))
+  for (row = mysql_fetch_row(table_res); row;
+       row = mysql_fetch_row(table_res))
   {
     TABLE_LIST table;
     const char* table_name= row[0];
     int error;
     if (table_rules_on)
     {
-      table.next= 0;
+      bzero((char*) &table, sizeof(table)); //just for safe
       table.db= (char*) db;
       table.real_name= (char*) table_name;
       table.updating= 1;
+
       if (!tables_ok(thd, &table))
 	continue;
     }
@@ -744,7 +764,9 @@ int load_master_data(THD* thd)
   int error = 0;
   const char* errmsg=0;
   int restart_thread_mask;
-  mc_mysql_init(&mysql);
+  HA_CREATE_INFO create_info;
+
+  mysql_init(&mysql);
 
   /*
     We do not want anyone messing with the slave at all for the entire
@@ -757,7 +779,7 @@ int load_master_data(THD* thd)
       (error=terminate_slave_threads(active_mi,restart_thread_mask,
 				     1 /*skip lock*/)))
   {
-    send_error(&thd->net,error);
+    send_error(thd,error);
     unlock_slave_threads(active_mi);
     pthread_mutex_unlock(&LOCK_active_mi);
     return 1;
@@ -765,8 +787,8 @@ int load_master_data(THD* thd)
   
   if (connect_to_master(thd, &mysql, active_mi))
   {
-    net_printf(&thd->net, error= ER_CONNECT_TO_MASTER,
-	       mc_mysql_error(&mysql));
+    net_printf(thd, error= ER_CONNECT_TO_MASTER,
+	       mysql_error(&mysql));
     goto err;
   }
 
@@ -775,15 +797,15 @@ int load_master_data(THD* thd)
     MYSQL_RES *db_res, **table_res, **table_res_end, **cur_table_res;
     uint num_dbs;
 
-    if (mc_mysql_query(&mysql, "show databases", 0) ||
-	!(db_res = mc_mysql_store_result(&mysql)))
+    if (mysql_real_query(&mysql, "SHOW DATABASES", 14) ||
+	!(db_res = mysql_store_result(&mysql)))
     {
-      net_printf(&thd->net, error = ER_QUERY_ON_MASTER,
-		 mc_mysql_error(&mysql));
+      net_printf(thd, error = ER_QUERY_ON_MASTER,
+		 mysql_error(&mysql));
       goto err;
     }
 
-    if (!(num_dbs = (uint) mc_mysql_num_rows(db_res)))
+    if (!(num_dbs = (uint) mysql_num_rows(db_res)))
       goto err;
     /*
       In theory, the master could have no databases at all
@@ -792,7 +814,7 @@ int load_master_data(THD* thd)
 
     if (!(table_res = (MYSQL_RES**)thd->alloc(num_dbs * sizeof(MYSQL_RES*))))
     {
-      net_printf(&thd->net, error = ER_OUTOFMEMORY);
+      net_printf(thd, error = ER_OUTOFMEMORY);
       goto err;
     }
 
@@ -802,12 +824,12 @@ int load_master_data(THD* thd)
       we wait to issue FLUSH TABLES WITH READ LOCK for as long as we
       can to minimize the lock time.
     */
-    if (mc_mysql_query(&mysql, "FLUSH TABLES WITH READ LOCK", 0) ||
-	mc_mysql_query(&mysql, "SHOW MASTER STATUS",0) ||
-	!(master_status_res = mc_mysql_store_result(&mysql)))
+    if (mysql_real_query(&mysql, "FLUSH TABLES WITH READ LOCK", 27) ||
+	mysql_real_query(&mysql, "SHOW MASTER STATUS",18) ||
+	!(master_status_res = mysql_store_result(&mysql)))
     {
-      net_printf(&thd->net, error = ER_QUERY_ON_MASTER,
-		 mc_mysql_error(&mysql));
+      net_printf(thd, error = ER_QUERY_ON_MASTER,
+		 mysql_error(&mysql));
       goto err;
     }
 
@@ -822,7 +844,7 @@ int load_master_data(THD* thd)
 	 cur_table_res++)
     {
       // since we know how many rows we have, this can never be NULL
-      MYSQL_ROW row = mc_mysql_fetch_row(db_res);
+      MYSQL_ROW row = mysql_fetch_row(db_res);
       char* db = row[0];
 
       /*
@@ -847,19 +869,22 @@ int load_master_data(THD* thd)
 	continue;
       }
 
-      if (mysql_create_db(thd, db, HA_LEX_CREATE_IF_NOT_EXISTS, 1))
+      bzero((char*) &create_info, sizeof(create_info));
+      create_info.options= HA_LEX_CREATE_IF_NOT_EXISTS;
+
+      if (mysql_create_db(thd, db, &create_info, 1))
       {
-	send_error(&thd->net, 0, 0);
+	send_error(thd, 0, 0);
 	cleanup_mysql_results(db_res, cur_table_res - 1, table_res);
 	goto err;
       }
 
-      if (mc_mysql_select_db(&mysql, db) ||
-	  mc_mysql_query(&mysql, "show tables", 0) ||
-	  !(*cur_table_res = mc_mysql_store_result(&mysql)))
+      if (mysql_select_db(&mysql, db) ||
+	  mysql_real_query(&mysql, "SHOW TABLES", 11) ||
+	  !(*cur_table_res = mysql_store_result(&mysql)))
       {
-	net_printf(&thd->net, error = ER_QUERY_ON_MASTER,
-		   mc_mysql_error(&mysql));
+	net_printf(thd, error = ER_QUERY_ON_MASTER,
+		   mysql_error(&mysql));
 	cleanup_mysql_results(db_res, cur_table_res - 1, table_res);
 	goto err;
       }
@@ -877,7 +902,7 @@ int load_master_data(THD* thd)
     // adjust replication coordinates from the master
     if (master_status_res)
     {
-      MYSQL_ROW row = mc_mysql_fetch_row(master_status_res);
+      MYSQL_ROW row = mysql_fetch_row(master_status_res);
 
       /*
 	We need this check because the master may not be running with
@@ -893,24 +918,31 @@ int load_master_data(THD* thd)
           setting active_mi, because init_master_info() sets active_mi with
           defaults.
         */
-        if (init_master_info(active_mi, master_info_file, relay_log_info_file, 0))
-          send_error(&thd->net, ER_MASTER_INFO);
+        int error;
+
+        if (init_master_info(active_mi, master_info_file, relay_log_info_file, 
+			     0, (SLAVE_IO | SLAVE_SQL)))
+          send_error(thd, ER_MASTER_INFO);
 	strmake(active_mi->master_log_name, row[0],
 		sizeof(active_mi->master_log_name));
-	active_mi->master_log_pos = strtoull(row[1], (char**) 0, 10);
-        // at least in recent versions, the condition below should be false
+	active_mi->master_log_pos= my_strtoll10(row[1], (char**) 0, &error);
+        /* at least in recent versions, the condition below should be false */
 	if (active_mi->master_log_pos < BIN_LOG_HEADER_SIZE)
 	  active_mi->master_log_pos = BIN_LOG_HEADER_SIZE;
-	active_mi->rli.pending = 0;
+        /*
+          Relay log's IO_CACHE may not be inited (even if we are sure that some
+          host was specified; there could have been a problem when replication
+          started, which led to relay log's IO_CACHE to not be inited.
+        */
 	flush_master_info(active_mi, 0);
       }
-      mc_mysql_free_result(master_status_res);
+      mysql_free_result(master_status_res);
     }
 
-    if (mc_mysql_query(&mysql, "UNLOCK TABLES", 0))
+    if (mysql_real_query(&mysql, "UNLOCK TABLES", 13))
     {
-      net_printf(&thd->net, error = ER_QUERY_ON_MASTER,
-		 mc_mysql_error(&mysql));
+      net_printf(thd, error = ER_QUERY_ON_MASTER,
+		 mysql_error(&mysql));
       goto err;
     }
   }
@@ -919,15 +951,25 @@ int load_master_data(THD* thd)
 		       0 /* not only reset, but also reinit */,
 		       &errmsg))
   {
-    send_error(&thd->net, 0, "Failed purging old relay logs");
+    send_error(thd, 0, "Failed purging old relay logs");
     unlock_slave_threads(active_mi);
     pthread_mutex_unlock(&LOCK_active_mi);
     return 1;
   }
   pthread_mutex_lock(&active_mi->rli.data_lock);
-  active_mi->rli.master_log_pos = active_mi->master_log_pos;
-  strmake(active_mi->rli.master_log_name,active_mi->master_log_name,
-	  sizeof(active_mi->rli.master_log_name)-1);
+  active_mi->rli.group_master_log_pos = active_mi->master_log_pos;
+  strmake(active_mi->rli.group_master_log_name,active_mi->master_log_name,
+	  sizeof(active_mi->rli.group_master_log_name)-1);
+  /*
+     Cancel the previous START SLAVE UNTIL, as the fact to download
+     a new copy logically makes UNTIL irrelevant.
+  */
+  clear_until_condition(&active_mi->rli);
+
+  /*
+    No need to update rli.event* coordinates, they will be when the slave
+    threads start ; only rli.group* coordinates are necessary here.
+  */
   flush_relay_log_info(&active_mi->rli);
   pthread_cond_broadcast(&active_mi->rli.data_cond);
   pthread_mutex_unlock(&active_mi->rli.data_lock);
@@ -945,9 +987,12 @@ err:
   pthread_mutex_unlock(&LOCK_active_mi);
   thd->proc_info = 0;
 
-  mc_mysql_close(&mysql); // safe to call since we always do mc_mysql_init()
+  mysql_close(&mysql); // safe to call since we always do mysql_init()
   if (!error)
-    send_ok(&thd->net);
+    send_ok(thd);
 
   return error;
 }
+
+#endif /* HAVE_REPLICATION */
+

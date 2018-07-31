@@ -40,7 +40,7 @@
 #endif
 
 
-const char *filename= "test3.MSI";
+const char *filename= "test3";
 uint tests=10,forks=10,key_cacheing=0,use_log=0;
 
 static void get_options(int argc, char *argv[]);
@@ -61,7 +61,7 @@ int main(int argc,char **argv)
   uint i=0;
   MI_KEYDEF keyinfo[10];
   MI_COLUMNDEF recinfo[10];
-  MI_KEYSEG keyseg[10][2];
+  HA_KEYSEG keyseg[10][2];
   MY_INIT(argv[0]);
   get_options(argc,argv);
 
@@ -72,6 +72,7 @@ int main(int argc,char **argv)
   keyinfo[0].seg[0].length=8;
   keyinfo[0].seg[0].type=HA_KEYTYPE_TEXT;
   keyinfo[0].seg[0].flag=HA_SPACE_PACK;
+  keyinfo[0].key_alg=HA_KEY_ALG_BTREE;
   keyinfo[0].keysegs=1;
   keyinfo[0].flag = (uint8) HA_PACK_KEY;
   keyinfo[1].seg= &keyseg[1][0];
@@ -79,6 +80,7 @@ int main(int argc,char **argv)
   keyinfo[1].seg[0].length=4;		/* Long is always 4 in myisam */
   keyinfo[1].seg[0].type=HA_KEYTYPE_LONG_INT;
   keyinfo[1].seg[0].flag=0;
+  keyinfo[1].key_alg=HA_KEY_ALG_BTREE;
   keyinfo[1].keysegs=1;
   keyinfo[1].flag =HA_NOSAME;
 
@@ -175,7 +177,7 @@ void start_test(int id)
     exit(1);
   }
   if (key_cacheing && rnd(2) == 0)
-    init_key_cache(65536L);
+    init_key_cache(dflt_key_cache, KEY_CACHE_BLOCK_SIZE, 65536L, 0, 0);
   printf("Process %d, pid: %d\n",id,getpid()); fflush(stdout);
 
   for (error=i=0 ; i < tests && !error; i++)
@@ -205,7 +207,7 @@ void start_test(int id)
   {
     mi_status(file1,&isam_info,HA_STATUS_VARIABLE);
     printf("%2d: End of test.  Records:  %ld  Deleted:  %ld\n",
-	   id,isam_info.records,isam_info.deleted);
+	   id,(long) isam_info.records, (long) isam_info.deleted);
     fflush(stdout);
   }
 
@@ -361,7 +363,7 @@ int test_write(MI_INFO *file,int id,int lock_type)
   }
 
   sprintf(record.id,"%7d",getpid());
-  strmov(record.text,"Testing...");
+  strnmov(record.text,"Testing...", sizeof(record.text));
 
   tries=(uint) rnd(100)+10;
   for (i=count=0 ; i < tries ; i++)

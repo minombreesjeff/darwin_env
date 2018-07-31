@@ -23,6 +23,7 @@
 #include "mysys_priv.h"
 #include "my_static.h"
 #include "mysys_err.h"
+#include <m_string.h>
 
 /*
   Alloc for things we don't nead to free
@@ -76,6 +77,25 @@ gptr my_once_alloc(unsigned int Size, myf MyFlags)
 
   return(point);
 } /* my_once_alloc */
+
+
+char *my_once_strdup(const char *src,myf myflags)
+{
+  uint len=strlen(src)+1;
+  char *dst=my_once_alloc(len, myflags);
+  if (dst)
+    memcpy(dst, src, len);
+  return dst;
+}
+
+
+char *my_once_memdup(const char *src, uint len, myf myflags)
+{
+  char *dst=my_once_alloc(len, myflags);
+  if (dst)
+    memcpy(dst, src, len);
+  return dst;
+}
 
 
 /*

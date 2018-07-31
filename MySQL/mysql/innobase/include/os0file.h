@@ -11,9 +11,12 @@ Created 10/21/1995 Heikki Tuuri
 
 #include "univ.i"
 
+#ifndef __WIN__
+#include <dirent.h>
+#include <sys/stat.h>
+#include <time.h>
+#endif
 
-/* If the following is set to TRUE, we do not call os_file_flush in every
-os_file_write */
 extern ibool	os_do_not_call_flush_at_each_write;
 extern ibool	os_has_said_disk_full;
 extern ibool	os_aio_print_debug;
@@ -60,9 +63,12 @@ log. */
 #define	OS_FILE_OPEN			51
 #define	OS_FILE_CREATE			52
 #define OS_FILE_OVERWRITE		53
+#define OS_FILE_OPEN_RAW		54
+#define	OS_FILE_CREATE_PATH		55
 
 #define OS_FILE_READ_ONLY 		333
 #define	OS_FILE_READ_WRITE		444
+#define	OS_FILE_READ_ALLOW_DELETE	555	/* for ibbackup */
 
 /* Options for file_create */
 #define	OS_FILE_AIO			61
@@ -120,6 +126,39 @@ extern ulint	os_n_file_reads;
 extern ulint	os_n_file_writes;
 extern ulint	os_n_fsyncs;
 
+/* File types for directory entry data type */
+
+enum os_file_type_enum{
+    OS_FILE_TYPE_UNKNOWN = 0,
+    OS_FILE_TYPE_FILE,	 		/* regular file */
+    OS_FILE_TYPE_DIR,			/* directory */
+    OS_FILE_TYPE_LINK 			/* symbolic link */
+};
+typedef enum os_file_type_enum	  os_file_type_t;
+
+/* Maximum path string length in bytes when referring to tables with in the
+'./databasename/tablename.ibd' path format; we can allocate at least 2 buffers
+of this size from the thread stack; that is why this should not be made much
+bigger than 4000 bytes */
+#define OS_FILE_MAX_PATH	4000
+
+/* Struct used in fetching information of a file in a directory */
+struct os_file_stat_struct{
+	char		name[OS_FILE_MAX_PATH];	/* path to a file */
+	os_file_type_t	type;			/* file type */
+	ib_longlong	size;			/* file size */
+	time_t          ctime;			/* creation time */
+	time_t		mtime;			/* modification time */
+	time_t		atime;			/* access time */
+};
+typedef struct os_file_stat_struct	os_file_stat_t;
+
+#ifdef __WIN__
+typedef HANDLE  os_file_dir_t;	/* directory stream */
+#else
+typedef DIR*	os_file_dir_t;	/* directory stream */
+#endif
+
 /***************************************************************************
 Gets the operating system version. Currently works only on Windows. */
 
@@ -133,58 +172,163 @@ Creates the seek mutexes used in positioned reads and writes. */
 void
 os_io_init_simple(void);
 /*===================*/
+/***************************************************************************
+Creates a temporary file. */
+
+FILE*
+os_file_create_tmpfile(void);
+/*========================*/
+			/* out: temporary file handle (never NULL) */
+/***************************************************************************
+The os_file_opendir() function opens a directory stream corresponding to the
+directory named by the dirname argument. The directory stream is positioned
+at the first entry. In both Unix and Windows we automatically skip the '.'
+and '..' items at the start of the directory listing. */
+
+os_file_dir_t
+os_file_opendir(
+/*============*/
+					/* out: directory stream, NULL if
+					error */
+	const char*	dirname,	/* in: directory name; it must not
+					contain a trailing '\' or '/' */
+	ibool		error_is_fatal);/* in: TRUE if we should treat an
+					error as a fatal error; if we try to
+					open symlinks then we do not wish a
+					fatal error if it happens not to be
+					a directory */
+/***************************************************************************
+Closes a directory stream. */
+
+int
+os_file_closedir(
+/*=============*/
+				/* out: 0 if success, -1 if failure */
+	os_file_dir_t	dir);	/* in: directory stream */
+/***************************************************************************
+This function returns information of the next file in the directory. We jump
+over the '.' and '..' entries in the directory. */
+
+int
+os_file_readdir_next_file(
+/*======================*/
+				/* out: 0 if ok, -1 if error, 1 if at the end
+				of the directory */
+	const char*	dirname,/* in: directory name or path */
+	os_file_dir_t	dir,	/* in: directory stream */
+	os_file_stat_t*	info);	/* in/out: buffer where the info is returned */
+/*********************************************************************
+This function attempts to create a directory named pathname. The new directory
+gets default permissions. On Unix, the permissions are (0770 & ~umask). If the
+directory exists already, nothing is done and the call succeeds, unless the
+fail_if_exists arguments is true. */
+
+ibool
+os_file_create_directory(
+/*=====================*/
+					/* out: TRUE if call succeeds,
+					FALSE on error */
+	const char*	pathname,	/* in: directory name as
+					null-terminated string */
+	ibool		fail_if_exists);/* in: if TRUE, pre-existing directory
+					is treated as an error. */
 /********************************************************************
 A simple function to open or create a file. */
 
 os_file_t
 os_file_create_simple(
 /*==================*/
-			/* out, own: handle to the file, not defined if error,
-			error number can be retrieved with os_get_last_error */
-	char*	name,	/* in: name of the file or path as a null-terminated
-			string */
-	ulint	create_mode,/* in: OS_FILE_OPEN if an existing file is opened
-			(if does not exist, error), or OS_FILE_CREATE if a new
-			file is created (if exists, error) */
-	ulint	access_type,/* in: OS_FILE_READ_ONLY or OS_FILE_READ_WRITE */
-	ibool*	success);/* out: TRUE if succeed, FALSE if error */
+				/* out, own: handle to the file, not defined
+				if error, error number can be retrieved with
+				os_file_get_last_error */
+	const char*	name,	/* in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/* in: OS_FILE_OPEN if an existing file is
+				opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error), or
+	                        OS_FILE_CREATE_PATH if new file
+				(if exists, error) and subdirectories along
+				its path are created (if needed)*/
+	ulint		access_type,/* in: OS_FILE_READ_ONLY or
+				OS_FILE_READ_WRITE */
+	ibool*		success);/* out: TRUE if succeed, FALSE if error */
 /********************************************************************
 A simple function to open or create a file. */
 
 os_file_t
 os_file_create_simple_no_error_handling(
 /*====================================*/
-			/* out, own: handle to the file, not defined if error,
-			error number can be retrieved with os_get_last_error */
-	char*	name,	/* in: name of the file or path as a null-terminated
-			string */
-	ulint	create_mode,/* in: OS_FILE_OPEN if an existing file is opened
-			(if does not exist, error), or OS_FILE_CREATE if a new
-			file is created (if exists, error) */
-	ulint	access_type,/* in: OS_FILE_READ_ONLY or OS_FILE_READ_WRITE */
-	ibool*	success);/* out: TRUE if succeed, FALSE if error */
+				/* out, own: handle to the file, not defined
+				if error, error number can be retrieved with
+				os_file_get_last_error */
+	const char*	name,	/* in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/* in: OS_FILE_OPEN if an existing file
+				is opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error) */
+	ulint		access_type,/* in: OS_FILE_READ_ONLY,
+				OS_FILE_READ_WRITE, or
+				OS_FILE_READ_ALLOW_DELETE; the last option is
+				used by a backup program reading the file */
+	ibool*		success);/* out: TRUE if succeed, FALSE if error */
 /********************************************************************
 Opens an existing file or creates a new. */
 
 os_file_t
 os_file_create(
 /*===========*/
-			/* out, own: handle to the file, not defined if error,
-			error number can be retrieved with os_get_last_error */
-	char*	name,	/* in: name of the file or path as a null-terminated
-			string */
-	ulint	create_mode,/* in: OS_FILE_OPEN if an existing file is opened
-			(if does not exist, error), or OS_FILE_CREATE if a new
-			file is created (if exists, error), OS_FILE_OVERWRITE
-			if a new file is created or an old overwritten */
-	ulint	purpose,/* in: OS_FILE_AIO, if asynchronous, non-buffered i/o
-			is desired, OS_FILE_NORMAL, if any normal file;
-			NOTE that it also depends on type, os_aio_.. and srv_..
-			variables whether we really use async i/o or
-			unbuffered i/o: look in the function source code for
-			the exact rules */
-	ulint	type,	/* in: OS_DATA_FILE or OS_LOG_FILE */
-	ibool*	success);/* out: TRUE if succeed, FALSE if error */
+				/* out, own: handle to the file, not defined
+				if error, error number can be retrieved with
+				os_file_get_last_error */
+	const char*	name,	/* in: name of the file or path as a
+				null-terminated string */
+	ulint		create_mode,/* in: OS_FILE_OPEN if an existing file
+				is opened (if does not exist, error), or
+				OS_FILE_CREATE if a new file is created
+				(if exists, error),
+				OS_FILE_OVERWRITE if a new file is created
+				or an old overwritten;
+				OS_FILE_OPEN_RAW, if a raw device or disk
+				partition should be opened */
+	ulint		purpose,/* in: OS_FILE_AIO, if asynchronous,
+				non-buffered i/o is desired,
+				OS_FILE_NORMAL, if any normal file;
+				NOTE that it also depends on type, os_aio_..
+				and srv_.. variables whether we really use
+				async i/o or unbuffered i/o: look in the
+				function source code for the exact rules */
+	ulint		type,	/* in: OS_DATA_FILE or OS_LOG_FILE */
+	ibool*		success);/* out: TRUE if succeed, FALSE if error */
+/***************************************************************************
+Deletes a file. The file has to be closed before calling this. */
+
+ibool
+os_file_delete(
+/*===========*/
+				/* out: TRUE if success */
+	const char*	name);	/* in: file path as a null-terminated string */
+
+/***************************************************************************
+Deletes a file if it exists. The file has to be closed before calling this. */
+
+ibool
+os_file_delete_if_exists(
+/*=====================*/
+				/* out: TRUE if success */
+	const char*	name);	/* in: file path as a null-terminated string */
+/***************************************************************************
+Renames a file (can also move it to another directory). It is safest that the
+file is closed before calling this function. */
+
+ibool
+os_file_rename(
+/*===========*/
+					/* out: TRUE if success */
+	const char*	oldpath,	/* in: old file path as a
+					null-terminated string */
+	const char*	newpath);	/* in: new file path */
 /***************************************************************************
 Closes a file handle. In case of error, error number can be retrieved with
 os_file_get_last_error. */
@@ -214,13 +358,21 @@ os_file_get_size(
 				size */
 	ulint*		size_high);/* out: most significant 32 bits of size */
 /***************************************************************************
+Gets file size as a 64-bit integer ib_longlong. */
+
+ib_longlong
+os_file_get_size_as_iblonglong(
+/*===========================*/
+				/* out: size in bytes, -1 if error */
+	os_file_t	file);	/* in: handle to a file */
+/***************************************************************************
 Sets a file size. This function can be used to extend or truncate a file. */
 
 ibool
 os_file_set_size(
 /*=============*/
 				/* out: TRUE if success */
-	char*		name,	/* in: name of the file or path as a
+	const char*	name,	/* in: name of the file or path as a
 				null-terminated string */
 	os_file_t	file,	/* in: handle to a file */
 	ulint		size,	/* in: least significant 32 bits of file
@@ -249,9 +401,12 @@ overwrite the error number). If the number is not known to this program,
 the OS error number + 100 is returned. */
 
 ulint
-os_file_get_last_error(void);
-/*========================*/
-		/* out: error number, or OS error number + 100 */
+os_file_get_last_error(
+/*===================*/
+					/* out: error number, or OS error
+					number + 100 */
+	ibool	report_all_errors);	/* in: TRUE if we want an error message
+					printed of all errors */
 /***********************************************************************
 Requests a synchronous read operation. */
 
@@ -268,6 +423,23 @@ os_file_read(
 				offset */
 	ulint		n);	/* in: number of bytes to read */	
 /***********************************************************************
+Requests a synchronous positioned read operation. This function does not do
+any error handling. In case of error it returns FALSE. */
+
+ibool
+os_file_read_no_error_handling(
+/*===========================*/
+				/* out: TRUE if request was
+				successful, FALSE if fail */
+	os_file_t	file,	/* in: handle to a file */
+	void*		buf,	/* in: buffer where to read */
+	ulint		offset,	/* in: least significant 32 bits of file
+				offset where to read */
+	ulint		offset_high,/* in: most significant 32 bits of
+				offset */
+	ulint		n);	/* in: number of bytes to read */	
+
+/***********************************************************************
 Requests a synchronous write operation. */
 
 ibool
@@ -275,15 +447,68 @@ os_file_write(
 /*==========*/
 				/* out: TRUE if request was
 				successful, FALSE if fail */
-	char*		name,	/* in: name of the file or path as a
+	const char*	name,	/* in: name of the file or path as a
 				null-terminated string */
 	os_file_t	file,	/* in: handle to a file */
-	void*		buf,	/* in: buffer from which to write */
+	const void*	buf,	/* in: buffer from which to write */
 	ulint		offset,	/* in: least significant 32 bits of file
 				offset where to write */
 	ulint		offset_high,/* in: most significant 32 bits of
 				offset */
 	ulint		n);	/* in: number of bytes to write */	
+/***********************************************************************
+Check the existence and type of the given file. */
+
+ibool
+os_file_status(
+/*===========*/
+				/* out: TRUE if call succeeded */
+	const char*	path,	/* in:  pathname of the file */
+	ibool*		exists,	/* out: TRUE if file exists */
+	os_file_type_t* type);	/* out: type of the file (if it exists) */
+/********************************************************************
+The function os_file_dirname returns a directory component of a
+null-terminated pathname string.  In the usual case, dirname returns
+the string up to, but not including, the final '/', and basename
+is the component following the final '/'.  Trailing '/' charac­
+ters are not counted as part of the pathname.
+
+If path does not contain a slash, dirname returns the string ".".
+
+Concatenating the string returned by dirname, a "/", and the basename
+yields a complete pathname.
+
+The return value is  a copy of the directory component of the pathname.
+The copy is allocated from heap. It is the caller responsibility
+to free it after it is no longer needed.	
+
+The following list of examples (taken from SUSv2) shows the strings
+returned by dirname and basename for different paths:
+
+       path           dirname        basename
+       "/usr/lib"     "/usr"         "lib"
+       "/usr/"        "/"            "usr"
+       "usr"          "."            "usr"
+       "/"            "/"            "/"
+       "."            "."            "."
+       ".."           "."            ".."
+*/
+
+char*
+os_file_dirname(
+/*============*/
+				/* out, own: directory component of the
+				pathname */
+	const char*	path);	/* in: pathname */
+/********************************************************************
+Creates all missing subdirectories along the given path. */
+	
+ibool
+os_file_create_subdirs_if_needed(
+/*=============================*/
+				/* out: TRUE if call succeeded
+				   FALSE otherwise */
+	const char*	path);	/* in: path name */
 /****************************************************************************
 Initializes the asynchronous io system. Creates separate aio array for
 non-ibuf read and write, a third aio array for the ibuf i/o, with just one
@@ -323,7 +548,7 @@ os_aio(
 				because i/os are not actually handled until
 				all have been posted: use with great
 				caution! */
-	char*		name,	/* in: name of the file or path as a
+	const char*	name,	/* in: name of the file or path as a
 				null-terminated string */
 	os_file_t	file,	/* in: handle to a file */
 	void*		buf,	/* in: buffer where to read or from which
@@ -465,5 +690,14 @@ no pending io operations. */
 ibool
 os_aio_all_slots_free(void);
 /*=======================*/
-				/* out: TRUE if all free */
+
+/***********************************************************************
+This function returns information about the specified file */
+ibool
+os_file_get_status(
+/*===============*/
+					/* out: TRUE if stat information found */
+	const char*     path,		/* in:  pathname of the file */
+	os_file_stat_t* stat_info);	/* information of a file in a directory */
+
 #endif 

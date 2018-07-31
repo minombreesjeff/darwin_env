@@ -109,9 +109,9 @@ must be reset explicitly by calling sync_os_reset_event. */
 os_event_t
 os_event_create(
 /*============*/
-			/* out: the event handle */
-	char*	name)	/* in: the name of the event, if NULL
-			the event is created without a name */
+				/* out: the event handle */
+	const char*	name)	/* in: the name of the event, if NULL
+				the event is created without a name */
 {
 #ifdef __WIN__
         os_event_t event;
@@ -125,7 +125,7 @@ os_event_create(
 	if (!event->handle) {
 	        fprintf(stderr,
 "InnoDB: Could not create a Windows event semaphore; Windows error %lu\n",
-		  (ulint)GetLastError());
+		  (ulong) GetLastError());
 	}
 #else /* Unix */
 	os_event_t	event;
@@ -166,9 +166,9 @@ reset when a single thread is released. Works only in Windows. */
 os_event_t
 os_event_create_auto(
 /*=================*/
-			/* out: the event handle */
-	char*	name)	/* in: the name of the event, if NULL
-			the event is created without a name */
+				/* out: the event handle */
+	const char*	name)	/* in: the name of the event, if NULL
+				the event is created without a name */
 {
         os_event_t event;
 
@@ -182,7 +182,7 @@ os_event_create_auto(
 	if (!event->handle) {
 	        fprintf(stderr,
 "InnoDB: Could not create a Windows auto event semaphore; Windows error %lu\n",
-		  (ulint)GetLastError());
+		  (ulong) GetLastError());
 	}
 
         /* Put to the list of events */
@@ -412,7 +412,7 @@ os_event_wait_multiple(
 					FALSE,	   /* Wait for any 1 event */
 					INFINITE); /* Infinite wait time
 						   limit */
-	ut_a(index >= WAIT_OBJECT_0);
+	ut_a(index >= WAIT_OBJECT_0);	/* NOTE: Pointless comparision */
 	ut_a(index < WAIT_OBJECT_0 + n);
 
 	if (srv_shutdown_state == SRV_SHUTDOWN_EXIT_THREADS) {
@@ -430,9 +430,9 @@ mutex semaphore of InnoDB itself (mutex_t) should be used where possible. */
 os_mutex_t
 os_mutex_create(
 /*============*/
-			/* out: the mutex handle */
-	char*	name)	/* in: the name of the mutex, if NULL
-			the mutex is created without a name */
+				/* out: the mutex handle */
+	const char*	name)	/* in: the name of the mutex, if NULL
+				the mutex is created without a name */
 {
 #ifdef __WIN__
 	HANDLE		mutex;

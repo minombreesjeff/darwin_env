@@ -81,7 +81,7 @@ trx_create(
 
 	trx->magic_n = TRX_MAGIC_N;
 
-	trx->op_info = (char *) "";
+	trx->op_info = "";
 	
 	trx->type = TRX_USER;
 	trx->conc_state = TRX_NOT_STARTED;
@@ -107,8 +107,11 @@ trx_create(
 
 	trx->mysql_log_file_name = NULL;
 	trx->mysql_log_offset = 0;
-	trx->mysql_master_log_file_name = (char*) "";
+	trx->mysql_master_log_file_name = "";
 	trx->mysql_master_log_pos = 0;
+
+	trx->repl_wait_binlog_name = NULL;
+	trx->repl_wait_binlog_pos = 0;
 	
 	mutex_create(&(trx->undo_mutex));
 	mutex_set_level(&(trx->undo_mutex), SYNC_TRX_UNDO);
@@ -151,7 +154,7 @@ trx_create(
 	trx->n_tickets_to_enter_innodb = 0;
 
 	trx->auto_inc_lock = NULL;
-	trx->n_tables_locked = 0;
+	trx->n_lock_table_exp = 0;
 	
 	trx->read_view_heap = mem_heap_create(256);
 	trx->read_view = NULL;
@@ -271,6 +274,11 @@ trx_free(
 		trx_undo_arr_free(trx->undo_no_arr);
 	}
 
+	if (trx->repl_wait_binlog_name != NULL) {
+
+		mem_free(trx->repl_wait_binlog_name);
+	}
+
 	ut_a(UT_LIST_GET_LEN(trx->signals) == 0);
 	ut_a(UT_LIST_GET_LEN(trx->reply_signals) == 0);
 
@@ -279,7 +287,7 @@ trx_free(
 
 	ut_a(!trx->has_search_latch);
 	ut_a(!trx->auto_inc_lock);
-	ut_a(!trx->n_tables_locked);
+	ut_a(!trx->n_lock_table_exp);
 
 	ut_a(trx->dict_operation_lock_mode == 0);
 
@@ -701,11 +709,13 @@ trx_commit_off_kernel(
 				TRX_SYS_MYSQL_MASTER_LOG_INFO, &mtr);
 		}
 				
-		/* If we did not take the shortcut, the following call
-		commits the mini-transaction, making the whole transaction
-		committed in the file-based world at this log sequence number;
-		otherwise, we get the commit lsn from the call of
-		trx_undo_update_cleanup_by_discard above.
+		/* The following call commits the mini-transaction, making the
+		whole transaction committed in the file-based world, at this
+		log sequence number. The transaction becomes 'durable' when
+		we write the log to disk, but in the logical sense the commit
+		in the file-based data structures (undo logs etc.) happens
+		here.
+
 		NOTE that transaction numbers, which are assigned only to
 		transactions with an update undo log, do not necessarily come
 		in exactly the same order as commit lsn's, if the transactions
@@ -1485,7 +1495,7 @@ trx_commit_for_mysql(
 
 	ut_a(trx);
 
-	trx->op_info = (char *) "committing";
+	trx->op_info = "committing";
 	
 	trx_start_if_not_started(trx);
 
@@ -1495,7 +1505,7 @@ trx_commit_for_mysql(
 
 	mutex_exit(&kernel_mutex);
 
-	trx->op_info = (char *) "";
+	trx->op_info = "";
 	
 	return(0);
 }
@@ -1514,7 +1524,7 @@ trx_commit_complete_for_mysql(
 
         ut_a(trx);
 	
-	trx->op_info = (char*)"flushing log";
+	trx->op_info = "flushing log";
 
         if (srv_flush_log_at_trx_commit == 0) {
                 /* Do nothing */
@@ -1538,7 +1548,7 @@ trx_commit_complete_for_mysql(
                 ut_error;
         }
 
-	trx->op_info = (char*)"";
+	trx->op_info = "";
 
         return(0);
 }
@@ -1575,8 +1585,8 @@ trx_print(
 	ibool	newline;
 
 	fprintf(f, "TRANSACTION %lu %lu",
-		ut_dulint_get_high(trx->id),
-		 ut_dulint_get_low(trx->id));
+		(ulong) ut_dulint_get_high(trx->id),
+		 (ulong) ut_dulint_get_low(trx->id));
 
   	switch (trx->conc_state) {
 		case TRX_NOT_STARTED:
@@ -1584,20 +1594,20 @@ trx_print(
 			break;
 		case TRX_ACTIVE:
 			fprintf(f, ", ACTIVE %lu sec",
-				(ulint)difftime(time(NULL), trx->start_time));
+				(ulong)difftime(time(NULL), trx->start_time));
 									break;
 		case TRX_COMMITTED_IN_MEMORY:
 			fputs(", COMMITTED IN MEMORY", f);
 			break;
 		default:
-			fprintf(f, " state %lu", trx->conc_state);
+			fprintf(f, " state %lu", (ulong) trx->conc_state);
   	}
 
 #ifdef UNIV_LINUX
 	fprintf(f, ", process no %lu", trx->mysql_process_no);
 #endif
 	fprintf(f, ", OS thread id %lu",
-		       os_thread_pf(trx->mysql_thread_id));
+		       (ulong) os_thread_pf(trx->mysql_thread_id));
 
 	if (*trx->op_info) {
 		putc(' ', f);
@@ -1610,18 +1620,18 @@ trx_print(
 
 	if (trx->declared_to_be_inside_innodb) {
 		fprintf(f, ", thread declared inside InnoDB %lu",
-			       trx->n_tickets_to_enter_innodb);
+			       (ulong) trx->n_tickets_to_enter_innodb);
 	}
 
 	putc('\n', f);
-
-	if (trx->n_mysql_tables_in_use > 0 || trx->mysql_n_tables_locked > 0) {
-
-		fprintf(f, "mysql tables in use %lu, locked %lu\n",
-				    trx->n_mysql_tables_in_use,
-				    trx->mysql_n_tables_locked);
-	}
   	
+        if (trx->n_mysql_tables_in_use > 0 || trx->mysql_n_tables_locked > 0) {
+
+                fprintf(f, "mysql tables in use %lu, locked %lu\n",
+                           (ulong) trx->n_mysql_tables_in_use,
+                           (ulong) trx->mysql_n_tables_locked);
+        }
+
 	newline = TRUE;
 
   	switch (trx->que_state) {
@@ -1634,7 +1644,7 @@ trx_print(
 		case TRX_QUE_COMMITTING:
 			fputs("COMMITTING ", f); break;
 		default:
-			fprintf(f, "que state %lu ", trx->que_state);
+			fprintf(f, "que state %lu ", (ulong) trx->que_state);
   	}
 
   	if (0 < UT_LIST_GET_LEN(trx->trx_locks) ||
@@ -1642,8 +1652,8 @@ trx_print(
 		newline = TRUE;
 
 		fprintf(f, "%lu lock struct(s), heap size %lu",
-			       UT_LIST_GET_LEN(trx->trx_locks),
-			       mem_heap_get_size(trx->lock_heap));
+			       (ulong) UT_LIST_GET_LEN(trx->trx_locks),
+			       (ulong) mem_heap_get_size(trx->lock_heap));
 	}
 
   	if (trx->has_search_latch) {
@@ -1654,7 +1664,7 @@ trx_print(
 	if (ut_dulint_cmp(trx->undo_no, ut_dulint_zero) != 0) {
 		newline = TRUE;
 		fprintf(f, ", undo log entries %lu",
-			ut_dulint_get_low(trx->undo_no));
+			(ulong) ut_dulint_get_low(trx->undo_no));
 	}
 	
 	if (newline) {

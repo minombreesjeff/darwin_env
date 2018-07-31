@@ -61,8 +61,10 @@ ut_malloc_low(
 /*==========*/
 	                     /* out, own: allocated memory */
         ulint   n,           /* in: number of bytes to allocate */
-	ibool   set_to_zero) /* in: TRUE if allocated memory should be set
+	ibool   set_to_zero, /* in: TRUE if allocated memory should be set
 			     to zero if UNIV_SET_MEM_TO_ZERO is defined */
+	ibool	assert_on_error) /* in: if TRUE, we crash mysqld if the memory
+				cannot be allocated */
 {
 	void*	ret;
 
@@ -77,22 +79,21 @@ ut_malloc_low(
 	ret = malloc(n + sizeof(ut_mem_block_t));
 
 	if (ret == NULL) {
+		ut_print_timestamp(stderr);
 		fprintf(stderr,
-		"InnoDB: Fatal error: cannot allocate %lu bytes of\n"
+		"  InnoDB: Fatal error: cannot allocate %lu bytes of\n"
 		"InnoDB: memory with malloc! Total allocated memory\n"
 		"InnoDB: by InnoDB %lu bytes. Operating system errno: %lu\n"
 		"InnoDB: Cannot continue operation!\n"
 		"InnoDB: Check if you should increase the swap file or\n"
 		"InnoDB: ulimits of your operating system.\n"
 		"InnoDB: On FreeBSD check you have compiled the OS with\n"
-		"InnoDB: a big enough maximum process size.\n"
-		"InnoDB: We now intentionally generate a seg fault so that\n"
-		"InnoDB: on Linux we get a stack trace.\n",
-		                  n, ut_total_allocated_memory,
+		"InnoDB: a big enough maximum process size.\n",
+		                  (ulong) n, (ulong) ut_total_allocated_memory,
 #ifdef __WIN__
-			(ulint)GetLastError()
+			(ulong) GetLastError()
 #else
-			(ulint)errno
+			(ulong) errno
 #endif
 			);
 
@@ -106,7 +107,21 @@ ut_malloc_low(
 
 		/* Make an intentional seg fault so that we get a stack
 		trace */
-		if (*ut_mem_null_ptr) ut_mem_null_ptr = 0;
+		/* Intentional segfault on NetWare causes an abend. Avoid this 
+		by graceful exit handling in ut_a(). */
+#if (!defined __NETWARE__) 
+		if (assert_on_error) {
+			fprintf(stderr,
+		"InnoDB: We now intentionally generate a seg fault so that\n"
+		"InnoDB: on Linux we get a stack trace.\n");
+
+			if (*ut_mem_null_ptr) ut_mem_null_ptr = 0;
+		} else {
+			return(NULL);
+		}
+#else
+		ut_a(0);
+#endif
 	}		
 
 	if (set_to_zero) {
@@ -137,8 +152,44 @@ ut_malloc(
 	                /* out, own: allocated memory */
         ulint   n)      /* in: number of bytes to allocate */
 {
-        return(ut_malloc_low(n, TRUE));
+        return(ut_malloc_low(n, TRUE, TRUE));
 }
+
+/**************************************************************************
+Tests if malloc of n bytes would succeed. ut_malloc() asserts if memory runs
+out. It cannot be used if we want to return an error message. Prints to
+stderr a message if fails. */
+
+ibool
+ut_test_malloc(
+/*===========*/
+			/* out: TRUE if succeeded */
+	ulint	n)	/* in: try to allocate this many bytes */
+{
+	void*	ret;
+
+	ret = malloc(n);
+
+	if (ret == NULL) {
+		ut_print_timestamp(stderr);
+		fprintf(stderr,
+		"  InnoDB: Error: cannot allocate %lu bytes of memory for\n"
+		"InnoDB: a BLOB with malloc! Total allocated memory\n"
+		"InnoDB: by InnoDB %lu bytes. Operating system errno: %d\n"
+		"InnoDB: Check if you should increase the swap file or\n"
+		"InnoDB: ulimits of your operating system.\n"
+		"InnoDB: On FreeBSD check you have compiled the OS with\n"
+		"InnoDB: a big enough maximum process size.\n",
+		                  (ulong) n,
+			          (ulong) ut_total_allocated_memory,
+				  (int) errno);
+		return(FALSE);
+	}
+
+	free(ret);
+
+	return(TRUE);
+}	
 
 /**************************************************************************
 Frees a memory block allocated with ut_malloc. */
@@ -166,6 +217,81 @@ ut_free(
 }
 
 /**************************************************************************
+Implements realloc. This is needed by /pars/lexyy.c. Otherwise, you should not
+use this function because the allocation functions in mem0mem.h are the
+recommended ones in InnoDB.
+
+man realloc in Linux, 2004:
+
+       realloc()  changes the size of the memory block pointed to
+       by ptr to size bytes.  The contents will be  unchanged  to
+       the minimum of the old and new sizes; newly allocated mem­
+       ory will be uninitialized.  If ptr is NULL,  the  call  is
+       equivalent  to malloc(size); if size is equal to zero, the
+       call is equivalent to free(ptr).  Unless ptr is  NULL,  it
+       must  have  been  returned by an earlier call to malloc(),
+       calloc() or realloc().
+
+RETURN VALUE
+       realloc() returns a pointer to the newly allocated memory,
+       which is suitably aligned for any kind of variable and may
+       be different from ptr, or NULL if the  request  fails.  If
+       size  was equal to 0, either NULL or a pointer suitable to
+       be passed to free() is returned.  If realloc()  fails  the
+       original  block  is  left  untouched  - it is not freed or
+       moved. */
+
+void*
+ut_realloc(
+/*=======*/
+			/* out, own: pointer to new mem block or NULL */
+	void*	ptr,	/* in: pointer to old block or NULL */
+	ulint	size)	/* in: desired size */
+{
+        ut_mem_block_t* block;
+	ulint		old_size;
+	ulint		min_size;
+	void*		new_ptr;
+
+	if (ptr == NULL) {
+
+		return(ut_malloc(size));
+	}
+
+	if (size == 0) {
+		ut_free(ptr);
+
+		return(NULL);
+	}
+
+	block = (ut_mem_block_t*)((byte*)ptr - sizeof(ut_mem_block_t));
+
+	ut_a(block->magic_n == UT_MEM_MAGIC_N);
+
+	old_size = block->size - sizeof(ut_mem_block_t);
+
+	if (size < old_size) {
+		min_size = size;
+	} else {
+		min_size = old_size;
+	}
+		
+	new_ptr = ut_malloc(size);
+
+	if (new_ptr == NULL) {
+
+		return(NULL);
+	}				
+
+	/* Copy the old data from ptr */
+	ut_memcpy(new_ptr, ptr, min_size);
+
+	ut_free(ptr);
+
+	return(new_ptr);		
+}
+
+/**************************************************************************
 Frees in shutdown all allocated memory not freed yet. */
 
 void
@@ -190,12 +316,14 @@ ut_free_all_mem(void)
 	if (ut_total_allocated_memory != 0) {
 		fprintf(stderr,
 "InnoDB: Warning: after shutdown total allocated memory is %lu\n",
-		  ut_total_allocated_memory);
+		  (ulong) ut_total_allocated_memory);
 	}
 }
 
 /**************************************************************************
-Make a quoted copy of a string. */
+Make a quoted copy of a NUL-terminated string.  Leading and trailing
+quotes will not be included; only embedded quotes will be escaped.
+See also ut_strlenq() and ut_memcpyq(). */
 
 char*
 ut_strcpyq(
@@ -215,7 +343,9 @@ ut_strcpyq(
 }
 
 /**************************************************************************
-Make a quoted copy of a fixed-length string. */
+Make a quoted copy of a fixed-length string.  Leading and trailing
+quotes will not be included; only embedded quotes will be escaped.
+See also ut_strlenq() and ut_strcpyq(). */
 
 char*
 ut_memcpyq(
@@ -235,30 +365,4 @@ ut_memcpyq(
 	}
 
 	return(dest);
-}
-
-/**************************************************************************
-Catenates two strings into newly allocated memory. The memory must be freed
-using mem_free. */
-
-char*
-ut_str_catenate(
-/*============*/
-			/* out, own: catenated null-terminated string */
-	char*	str1,	/* in: null-terminated string */
-	char*	str2)	/* in: null-terminated string */
-{
-	ulint	len1;
-	ulint	len2;
-	char*	str;
-
-	len1 = ut_strlen(str1);
-	len2 = ut_strlen(str2);
-
-	str = mem_alloc(len1 + len2 + 1);
-
-	ut_memcpy(str, str1, len1);
-	ut_memcpy(str + len1, str2, len2 + 1);
-
-	return(str);
 }

@@ -1,5 +1,5 @@
 source include/master-slave.inc;
-drop table if exists t1,t2,t3;
+
 create table t1 (word char(20) not null);
 load data infile '../../std_data/words.dat' into table t1;
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
@@ -12,11 +12,11 @@ select * from t1 limit 10;
 save_master_pos;
 connection slave;
 sync_with_master;
-slave stop;
+stop slave;
 connection master;
 set password for root@"localhost" = password('foo');
 connection slave;
-slave start;
+start slave;
 connection master;
 #
 # Give slave time to do at last one failed connect retry
@@ -43,7 +43,7 @@ sync_with_master;
 connection master;
 reset master;
 connection slave;
-slave stop;
+stop slave;
 reset slave;
 
 connection master;
@@ -62,10 +62,12 @@ enable_query_log;
 # Try to cause a large relay log lag on the slave 
 connection slave;
 select get_lock("hold_slave",10);
-slave start;
+explain extended select get_lock("hold_slave",10);
+start slave;
 #hope this is long enough for I/O thread to fetch over 16K relay log data
 sleep 3;
 select release_lock("hold_slave");
+explain extended select release_lock("hold_slave");
 unlock tables;
 
 connection master;
@@ -96,11 +98,11 @@ wait_for_slave_to_stop;
 
 # The following test can't be done because the result of Pos will differ
 # on different computers
-# --replace_result 9306 9999 3334 9999 3335 9999
+# --replace_result $MASTER_MYPORT MASTER_PORT
 # show slave status;
 
 set global sql_slave_skip_counter=1;
-slave start;
+start slave;
 select count(*) from t1;
 connection master1;
 drop table t1;
@@ -108,14 +110,14 @@ create table t1 (n int);
 insert into t1 values(3456);
 insert into mysql.user (Host, User, Password)
  VALUES ("10.10.10.%", "blafasel2", password("blafasel2"));
-select select_priv,user from mysql.user where user = 'blafasel2';
-update mysql.user set Select_priv = "Y" where User="blafasel2";
-select select_priv,user from mysql.user where user = 'blafasel2';
+select select_priv,user from mysql.user where user = _binary'blafasel2';
+update mysql.user set Select_priv = "Y" where User= _binary"blafasel2";
+select select_priv,user from mysql.user where user = _binary'blafasel2';
 save_master_pos;
 connection slave;
 sync_with_master;
 select n from t1;
-select select_priv,user from mysql.user where user = 'blafasel2';
+select select_priv,user from mysql.user where user = _binary'blafasel2';
 connection master1;
 drop table t1;
 save_master_pos;

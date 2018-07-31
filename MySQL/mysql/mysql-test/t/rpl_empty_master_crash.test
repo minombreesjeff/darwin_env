@@ -1,6 +1,8 @@
 source include/master-slave.inc;
-drop table if exists t1;
+
+--replace_column 1 # 33 #
 show slave status;
+
 #
 # Load table should not succeed on the master as this is not a slave
 #

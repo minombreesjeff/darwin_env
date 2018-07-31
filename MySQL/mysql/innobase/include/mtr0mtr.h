@@ -82,7 +82,7 @@ flag value must give the length also! */
 						predefined minimum record */
 #define MLOG_IBUF_BITMAP_INIT	((byte)27)	/* initialize an ibuf bitmap
 						page */
-#define	MLOG_FULL_PAGE		((byte)28)	/* full contents of a page */
+/*#define	MLOG_FULL_PAGE	((byte)28)	full contents of a page */
 #define MLOG_INIT_FILE_PAGE	((byte)29)	/* this means that a file page
 						is taken into use and the prior
 						contents of the page should be
@@ -96,7 +96,13 @@ flag value must give the length also! */
 						sequence of these records */
 #define MLOG_DUMMY_RECORD	((byte)32)	/* dummy log record used to
 						pad a log block full */
-#define MLOG_BIGGEST_TYPE	((byte)32) 	/* biggest value (used in
+#define MLOG_FILE_CREATE	((byte)33)	/* log record about an .ibd
+						file creation */
+#define MLOG_FILE_RENAME	((byte)34)	/* log record about an .ibd
+						file rename */
+#define MLOG_FILE_DELETE	((byte)35)	/* log record about an .ibd
+						file deletion */
+#define MLOG_BIGGEST_TYPE	((byte)35) 	/* biggest value (used in
 						asserts) */
 					
 /*******************************************************************
@@ -192,11 +198,11 @@ mtr_read_dulint(
 	mtr_t*	mtr);	/* in: mini-transaction handle */
 /*************************************************************************
 This macro locks an rw-lock in s-mode. */
-#define mtr_s_lock(B, MTR)	mtr_s_lock_func((B), IB__FILE__, __LINE__,\
+#define mtr_s_lock(B, MTR)	mtr_s_lock_func((B), __FILE__, __LINE__,\
 						(MTR))
 /*************************************************************************
 This macro locks an rw-lock in x-mode. */
-#define mtr_x_lock(B, MTR)	mtr_x_lock_func((B), IB__FILE__, __LINE__,\
+#define mtr_x_lock(B, MTR)	mtr_x_lock_func((B), __FILE__, __LINE__,\
 						(MTR))
 /*************************************************************************
 NOTE! Use the macro above!
@@ -206,7 +212,7 @@ void
 mtr_s_lock_func(
 /*============*/
 	rw_lock_t*	lock,	/* in: rw-lock */
-	char*		file,	/* in: file name */
+	const char*	file,	/* in: file name */
 	ulint		line,	/* in: line number */
 	mtr_t*		mtr);	/* in: mtr */
 /*************************************************************************
@@ -217,7 +223,7 @@ void
 mtr_x_lock_func(
 /*============*/
 	rw_lock_t*	lock,	/* in: rw-lock */
-	char*		file,	/* in: file name */
+	const char*	file,	/* in: file name */
 	ulint		line,	/* in: line number */
 	mtr_t*		mtr);	/* in: mtr */
 
@@ -230,16 +236,6 @@ mtr_memo_release(
 	mtr_t*	mtr,	/* in: mtr */
 	void*	object,	/* in: object */
 	ulint	type);	/* in: object type: MTR_MEMO_S_LOCK, ... */
-/****************************************************************
-Parses a log record which contains the full contents of a page. */
-
-byte*
-mtr_log_parse_full_page(
-/*====================*/
-			/* out: end of log record or NULL */
-	byte*	ptr,	/* in: buffer */
-	byte*	end_ptr,/* in: buffer end */
-	page_t*	page);	/* in: page or NULL */
 /**************************************************************
 Checks if memo contains the given item. */
 UNIV_INLINE
@@ -250,7 +246,6 @@ mtr_memo_contains(
 	mtr_t*	mtr,	/* in: mtr */
 	void*	object,	/* in: object to search */
 	ulint	type);	/* in: type of object */
-#ifdef UNIV_DEBUG
 /*************************************************************
 Prints info of an mtr handle. */
 
@@ -258,7 +253,6 @@ void
 mtr_print(
 /*======*/
 	mtr_t*	mtr);	/* in: mtr */
-#endif /* UNIV_DEBUG */
 /*######################################################################*/
 
 #define	MTR_BUF_MEMO_SIZE	200	/* number of slots in memo */
@@ -291,12 +285,7 @@ struct mtr_memo_slot_struct{
 
 /* Mini-transaction handle and buffer */
 struct mtr_struct{
-#ifdef UNIV_DEBUG
 	ulint		state;	/* MTR_ACTIVE, MTR_COMMITTING, MTR_COMMITTED */
-#define MTR_ACTIVE		12231
-#define MTR_COMMITTING		56456
-#define MTR_COMMITTED		34676
-#endif /* UNIV_DEBUG */
 	dyn_array_t	memo;	/* memo stack for locks etc. */
 	dyn_array_t	log;	/* mini-transaction log */
 	ibool		modifications;
@@ -311,12 +300,15 @@ struct mtr_struct{
 				this mtr */
 	dulint		end_lsn;/* end lsn of the possible log entry for
 				this mtr */
-#ifdef UNIV_DEBUG
 	ulint		magic_n;
-#define	MTR_MAGIC_N		54551
-#endif /* UNIV_DEBUG */
 };
 
+#define	MTR_MAGIC_N		54551
+
+#define MTR_ACTIVE		12231
+#define MTR_COMMITTING		56456
+#define MTR_COMMITTED		34676
+	
 #ifndef UNIV_NONINL
 #include "mtr0mtr.ic"
 #endif

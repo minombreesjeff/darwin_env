@@ -69,8 +69,9 @@ my_bool mi_check_unique(MI_INFO *info, MI_UNIQUEDEF *def, byte *record,
 ha_checksum mi_unique_hash(MI_UNIQUEDEF *def, const byte *record)
 {
   const byte *pos, *end;
-  ha_checksum crc=0;
-  MI_KEYSEG *keyseg;
+  ha_checksum crc= 0;
+  ulong seed1=0, seed2= 4;
+  HA_KEYSEG *keyseg;
 
   for (keyseg=def->seg ; keyseg < def->end ; keyseg++)
   {
@@ -108,11 +109,10 @@ ha_checksum mi_unique_hash(MI_UNIQUEDEF *def, const byte *record)
     end= pos+length;
     if (type == HA_KEYTYPE_TEXT || type == HA_KEYTYPE_VARTEXT)
     {
-      uchar *sort_order=keyseg->charset->sort_order;
-      while (pos != end)
-	crc=((crc << 8) +
-	     (((uchar)  sort_order[*(uchar*) pos++]))) +
-	  (crc >> (8*sizeof(ha_checksum)-8));
+      keyseg->charset->coll->hash_sort(keyseg->charset,
+                                       (const uchar*) pos, length, &seed1,
+                                       &seed2);
+      crc^= seed1;
     }
     else
       while (pos != end)
@@ -131,7 +131,7 @@ int mi_unique_comp(MI_UNIQUEDEF *def, const byte *a, const byte *b,
 		   my_bool null_are_equal)
 {
   const byte *pos_a, *pos_b, *end;
-  MI_KEYSEG *keyseg;
+  HA_KEYSEG *keyseg;
 
   for (keyseg=def->seg ; keyseg < def->end ; keyseg++)
   {
@@ -181,8 +181,8 @@ int mi_unique_comp(MI_UNIQUEDEF *def, const byte *a, const byte *b,
     }
     if (type == HA_KEYTYPE_TEXT || type == HA_KEYTYPE_VARTEXT)
     {
-      if (_mi_compare_text(keyseg->charset, (uchar *)pos_a, length,
-                                            (uchar *)pos_b, length, 0))
+      if (mi_compare_text(keyseg->charset, (uchar *) pos_a, length,
+                                           (uchar *) pos_b, length, 0, 0))
 	  return 1;
     }
     else

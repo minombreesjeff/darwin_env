@@ -20,15 +20,28 @@
 #include <m_string.h>
 #include <m_ctype.h>
 
-/***************************************************************************
-** Search after a fieldtype. Endspace in x is not compared.
-** If part, uniq field is found and full_name == 0 then x is expanded
-** to full field.
-** full_name has the following bit values:
-**   If & 1 accept only whole names
-**   If & 2 don't expand if half field
-**   If & 4 allow #number# as type
-****************************************************************************/
+
+/*
+  Search after a string in a list of strings. Endspace in x is not compared.
+
+  SYNOPSIS
+   find_type()
+   x			String to find
+   lib			TYPELIB (struct of pointer to values + count)
+   full_name		bitmap of what to do
+			If & 1 accept only whole names
+			If & 2 don't expand if half field
+			If & 4 allow #number# as type
+
+  NOTES
+    If part, uniq field is found and full_name == 0 then x is expanded
+    to full field.
+
+  RETURN
+    -1	Too many matching values
+    0	No matching value
+    >0  Offset+1 in typelib for matched string
+*/
 
 int find_type(my_string x, TYPELIB *typelib, uint full_name)
 {
@@ -36,7 +49,7 @@ int find_type(my_string x, TYPELIB *typelib, uint full_name)
   reg1 my_string i;
   reg2 const char *j;
   DBUG_ENTER("find_type");
-  DBUG_PRINT("enter",("x: '%s'  lib: %lx",x,typelib));
+  DBUG_PRINT("enter",("x: '%s'  lib: 0x%lx",x,typelib));
 
   if (!typelib->count)
   {
@@ -47,11 +60,13 @@ int find_type(my_string x, TYPELIB *typelib, uint full_name)
   find=0;
   for (pos=0 ; (j=typelib->type_names[pos]) ; pos++)
   {
-    for (i=x ; *i && toupper(*i) == toupper(*j) ; i++, j++) ;
+    for (i=x ; 
+    	*i && my_toupper(&my_charset_latin1,*i) == 
+    		my_toupper(&my_charset_latin1,*j) ; i++, j++) ;
     if (! *j)
     {
       while (*i == ' ')
-	i++;					/* skipp_end_space */
+	i++;					/* skip_end_space */
       if (! *i)
 	DBUG_RETURN(pos+1);
     }

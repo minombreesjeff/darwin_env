@@ -1,0 +1,140 @@
+drop table if exists t1;
+CREATE TABLE `t1` (
+a int not null auto_increment,
+`pseudo` varchar(35) character set latin2 NOT NULL default '',
+`email` varchar(60) character set latin2 NOT NULL default '',
+PRIMARY KEY  (a),
+UNIQUE KEY `email` USING BTREE (`email`) 
+) ENGINE=HEAP CHARSET=latin1 ROW_FORMAT DYNAMIC;
+set @@sql_mode="";
+show variables like 'sql_mode';
+Variable_name	Value
+sql_mode	
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL auto_increment,
+  `pseudo` varchar(35) character set latin2 NOT NULL default '',
+  `email` varchar(60) character set latin2 NOT NULL default '',
+  PRIMARY KEY  (`a`),
+  UNIQUE KEY `email` TYPE BTREE (`email`)
+) ENGINE=HEAP DEFAULT CHARSET=latin1 ROW_FORMAT=DYNAMIC
+set @@sql_mode="ansi_quotes";
+show variables like 'sql_mode';
+Variable_name	Value
+sql_mode	ANSI_QUOTES
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE "t1" (
+  "a" int(11) NOT NULL auto_increment,
+  "pseudo" varchar(35) character set latin2 NOT NULL default '',
+  "email" varchar(60) character set latin2 NOT NULL default '',
+  PRIMARY KEY  ("a"),
+  UNIQUE KEY "email" TYPE BTREE ("email")
+) ENGINE=HEAP DEFAULT CHARSET=latin1 ROW_FORMAT=DYNAMIC
+set @@sql_mode="no_table_options";
+show variables like 'sql_mode';
+Variable_name	Value
+sql_mode	NO_TABLE_OPTIONS
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL auto_increment,
+  `pseudo` varchar(35) character set latin2 NOT NULL default '',
+  `email` varchar(60) character set latin2 NOT NULL default '',
+  PRIMARY KEY  (`a`),
+  UNIQUE KEY `email` TYPE BTREE (`email`)
+)
+set @@sql_mode="no_key_options";
+show variables like 'sql_mode';
+Variable_name	Value
+sql_mode	NO_KEY_OPTIONS
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL auto_increment,
+  `pseudo` varchar(35) character set latin2 NOT NULL default '',
+  `email` varchar(60) character set latin2 NOT NULL default '',
+  PRIMARY KEY  (`a`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=HEAP DEFAULT CHARSET=latin1 ROW_FORMAT=DYNAMIC
+set @@sql_mode="no_field_options,mysql323,mysql40";
+show variables like 'sql_mode';
+Variable_name	Value
+sql_mode	NO_FIELD_OPTIONS,MYSQL323,MYSQL40
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` int(11) NOT NULL auto_increment,
+  `pseudo` varchar(35) NOT NULL default '',
+  `email` varchar(60) NOT NULL default '',
+  PRIMARY KEY  (`a`),
+  UNIQUE KEY `email` (`email`)
+) TYPE=HEAP ROW_FORMAT=DYNAMIC
+set sql_mode="postgresql,oracle,mssql,db2,maxdb";
+select @@sql_mode;
+@@sql_mode
+PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,POSTGRESQL,ORACLE,MSSQL,DB2,MAXDB,NO_KEY_OPTIONS,NO_TABLE_OPTIONS,NO_FIELD_OPTIONS
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE "t1" (
+  "a" int(11) NOT NULL,
+  "pseudo" varchar(35) NOT NULL default '',
+  "email" varchar(60) NOT NULL default '',
+  PRIMARY KEY  ("a"),
+  UNIQUE KEY "email" ("email")
+)
+drop table t1;
+CREATE TABLE t1 (
+a char(10),
+b char(10) collate latin1_bin,
+c binary(10)
+) character set latin1;
+set @@sql_mode="";
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(10) default NULL,
+  `b` char(10) character set latin1 collate latin1_bin default NULL,
+  `c` binary(10) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+set @@sql_mode="mysql323";
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(10) default NULL,
+  `b` char(10) binary default NULL,
+  `c` binary(10) default NULL
+) TYPE=MyISAM
+set @@sql_mode="mysql40";
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(10) default NULL,
+  `b` char(10) binary default NULL,
+  `c` binary(10) default NULL
+) TYPE=MyISAM
+drop table t1;
+set session sql_mode = '';
+create table t1 ( min_num   dec(6,6)     default .000001);
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `min_num` decimal(7,6) default '0.000001'
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+drop table t1 ;
+set session sql_mode = 'IGNORE_SPACE';
+create table t1 ( min_num   dec(6,6)     default 0.000001);
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `min_num` decimal(7,6) default '0.000001'
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+drop table t1 ;
+create table t1 ( min_num   dec(6,6)     default .000001);
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `min_num` decimal(7,6) default '0.000001'
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+drop table t1 ;

@@ -1,8 +1,18 @@
+# Initialise
+--disable_warnings
+drop table if exists t1,t2,t3;
+--enable_warnings
+
+#
+# Simple test without tables
+
+-- error 1111
+SELECT 1 FROM (SELECT 1) as a  GROUP BY SUM(1);
+
 #
 # Test of group (Failed for Lars Hoss <lh@pbm.de>)
 #
 
-drop table if exists t1,t2,t3;
 CREATE TABLE t1 (
   spID int(10) unsigned,
   userID int(10) unsigned,
@@ -43,7 +53,7 @@ SELECT t2.userid, MIN(t1.score) FROM t1, t2 WHERE t1.userID=t2.userID AND t1.spI
 SELECT t2.userid, MIN(t1.score+0.0) FROM t1, t2 WHERE t1.userID=t2.userID AND t1.spID=2  GROUP BY t2.userid;
 SELECT t2.userid, MIN(t1.score+0.0) FROM t1, t2 WHERE t1.userID=t2.userID AND t1.spID=2  GROUP BY t2.userid ORDER BY NULL;
 EXPLAIN SELECT t2.userid, MIN(t1.score+0.0) FROM t1, t2 WHERE t1.userID=t2.userID AND t1.spID=2  GROUP BY t2.userid ORDER BY NULL;
-drop table test.t1,test.t2;
+drop table t1,t2;
 
 #
 # Bug in GROUP BY, by Nikki Chumakov <nikki@saddam.cityline.ru>
@@ -122,7 +132,7 @@ CREATE TABLE t1 (
   assigned_to mediumint(9) DEFAULT '0' NOT NULL,
   bug_file_loc text,
   bug_severity enum('blocker','critical','major','normal','minor','trivial','enhancement') DEFAULT 'blocker' NOT NULL,
-  bug_status enum('NEW','ASSIGNED','REOPENED','RESOLVED','VERIFIED','CLOSED') DEFAULT 'NEW' NOT NULL,
+  bug_status enum('','NEW','ASSIGNED','REOPENED','RESOLVED','VERIFIED','CLOSED') DEFAULT 'NEW' NOT NULL,
   creation_ts datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
   delta_ts timestamp(14),
   short_desc mediumtext,
@@ -250,7 +260,7 @@ explain select spid,count(*) from t1 where spid between 1 and 2 group by spid;
 explain select spid,count(*) from t1 where spid between 1 and 2 group by spid order by null;
 select spid,count(*) from t1 where spid between 1 and 2 group by spid;
 select spid,count(*) from t1 where spid between 1 and 2 group by spid desc;
-explain select sql_big_result spid,sum(userid) from t1 group by spid desc;
+explain extended select sql_big_result spid,sum(userid) from t1 group by spid desc;
 explain select sql_big_result spid,sum(userid) from t1 group by spid desc order by null;
 select sql_big_result spid,sum(userid) from t1 group by spid desc;
 explain select sql_big_result score,count(*) from t1 group by score desc;
@@ -302,7 +312,6 @@ SELECT 1 FROM t1 GROUP BY CONCAT(a, b);
 INSERT INTO t1 values ('hij','klm');
 SELECT CONCAT(a, b),count(*) FROM t1 GROUP BY 1;
 DROP TABLE t1;
-drop table if exists t1;
 
 #
 # Test problem with ORDER BY on a SUM() column
@@ -343,7 +352,7 @@ CREATE TABLE t1 (
   value int(11) unsigned NOT NULL default '0',
   UNIQUE KEY pid2 (pid,c1id,c2id),
   UNIQUE KEY pid (pid,value)
-) TYPE=MyISAM;
+) ENGINE=MyISAM;
 
 INSERT INTO t1 VALUES (1, 1, NULL, 1),(1, 2, NULL, 2),(1, NULL, 3, 3),(1, 4, NULL, 4),(1, 5, NULL, 5);
 
@@ -351,7 +360,7 @@ CREATE TABLE t2 (
   id int(11) unsigned NOT NULL default '0',
   active enum('Yes','No') NOT NULL default 'Yes',
   PRIMARY KEY  (id)
-) TYPE=MyISAM;
+) ENGINE=MyISAM;
 
 INSERT INTO t2 VALUES (1, 'Yes'),(2, 'No'),(4, 'Yes'),(5, 'No');
 
@@ -447,3 +456,36 @@ INSERT INTO t1 VALUES (1,2),(2,3),(4,5),(3,5),(1,5),(23,5);
 SELECT i, COUNT(DISTINCT(i)) FROM t1 GROUP BY j ORDER BY NULL;
 explain SELECT i, COUNT(DISTINCT(i)) FROM t1 GROUP BY j ORDER BY NULL;
 DROP TABLE t1;
+
+#Test for BUG#6976: Aggregate functions have incorrect NULL-ness
+create table t1 (a int);
+insert into t1 values(null);
+select min(a) is null from t1;
+select min(a) is null or null from t1;
+select 1 and min(a) is null from t1;
+drop table t1;
+
+# Test for BUG#5400: GROUP_CONCAT returns everything twice.
+create table t1 ( col1 int, col2 int );
+insert into t1 values (1,1),(1,2),(1,3),(2,1),(2,2);
+select group_concat( distinct col1 ) as alias from t1
+  group by col2 having alias like '%';
+
+drop table t1;
+
+#
+# Test BUG#8216 when referring in HAVING to n alias which is rand() function
+#
+
+create table t1 (a integer, b integer, c integer);
+insert into t1 (a,b) values (1,2),(1,3),(2,5);
+select a, 0.1*0+1 r2, sum(1) r1 from t1 where a = 1 group  by a having r1>1 and r2=1;
+# rand(100)*10 will be < 2 only for the first row (of 6)
+select a, round(rand(100)*10) r2, sum(1) r1 from t1 where a = 1 group  by a having r1>1 and r2<=2;
+select a,sum(b) from t1 where a=1 group by c;
+select a*sum(b) from t1 where a=1 group by c;
+select sum(a)*sum(b) from t1 where a=1 group by c;
+select a,sum(b) from t1 where a=1 group by c having a=1;
+select a as d,sum(b) from t1 where a=1 group by c having d=1;
+select sum(a)*sum(b) as d from t1 where a=1 group by c having d > 0;
+drop table t1;

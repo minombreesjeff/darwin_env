@@ -16,7 +16,7 @@
 
 /* By Jani Tolonen, 2001-04-20, MySQL Development Team */
 
-#define CHECK_VERSION "2.4.3"
+#define CHECK_VERSION "2.4.4"
 
 #include "client_priv.h"
 #include <m_ctype.h>
@@ -37,10 +37,16 @@ static my_bool opt_alldbs = 0, opt_check_only_changed = 0, opt_extended = 0,
                tty_password = 0, opt_frm = 0;
 static uint verbose = 0, opt_mysql_port=0;
 static my_string opt_mysql_unix_port = 0;
-static char *opt_password = 0, *current_user = 0, *default_charset = 0,
-            *current_host = 0;
+static char *opt_password = 0, *current_user = 0, 
+	    *default_charset = (char *)MYSQL_DEFAULT_CHARSET_NAME,
+	    *current_host = 0;
 static int first_error = 0;
 DYNAMIC_ARRAY tables4repair;
+#ifdef HAVE_SMEM
+static char *shared_memory_base_name=0;
+#endif
+static uint opt_protocol=0;
+static CHARSET_INFO *charset_info= &my_charset_latin1;
 
 enum operations {DO_CHECK, DO_REPAIR, DO_ANALYZE, DO_OPTIMIZE};
 
@@ -61,9 +67,9 @@ static struct my_option my_long_options[] =
    (gptr*) &opt_auto_repair, (gptr*) &opt_auto_repair, 0, GET_BOOL, NO_ARG, 0,
    0, 0, 0, 0, 0},
   {"character-sets-dir", OPT_CHARSETS_DIR,
-   "Directory where character sets are", (gptr*) &charsets_dir,
+   "Directory where character sets are.", (gptr*) &charsets_dir,
    (gptr*) &charsets_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"check", 'c', "Check table for errors", 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0,
+  {"check", 'c', "Check table for errors.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0,
    0, 0, 0, 0},
   {"check-only-changed", 'C',
    "Check only tables that have changed since last check or haven't been closed properly.",
@@ -75,12 +81,17 @@ static struct my_option my_long_options[] =
    "To check several databases. Note the difference in usage; In this case no tables are given. All name arguments are regarded as databasenames.",
    (gptr*) &opt_databases, (gptr*) &opt_databases, 0, GET_BOOL, NO_ARG,
    0, 0, 0, 0, 0, 0},
-  {"debug", '#', "Output debug log. Often this is 'd:t:o,filename'",
+#ifdef DBUG_OFF
+  {"debug", '#', "This is a non-debug version. Catch this and exit.",
+   0, 0, 0, GET_DISABLED, OPT_ARG, 0, 0, 0, 0, 0, 0},
+#else
+  {"debug", '#', "Output debug log. Often this is 'd:t:o,filename'.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+#endif
   {"default-character-set", OPT_DEFAULT_CHARSET,
-   "Set the default character set", (gptr*) &default_charset,
+   "Set the default character set.", (gptr*) &default_charset,
    (gptr*) &default_charset, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"fast",'F', "Check only tables that haven't been closed properly",
+  {"fast",'F', "Check only tables that haven't been closed properly.",
    (gptr*) &opt_fast, (gptr*) &opt_fast, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
    0},
   {"force", 'f', "Continue even if we get an sql-error.",
@@ -109,6 +120,8 @@ static struct my_option my_long_options[] =
   {"port", 'P', "Port number to use for connection.", (gptr*) &opt_mysql_port,
    (gptr*) &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, MYSQL_PORT, 0, 0, 0, 0,
    0},
+  {"protocol", OPT_MYSQL_PROTOCOL, "The protocol of connection (tcp,socket,pipe,memory).",
+   0, 0, 0, GET_STR,  REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"quick", 'q',
    "If you are using this option with CHECK TABLE, it prevents the check from scanning the rows to check for wrong links. This is the fastest check. If you are using this option with REPAIR TABLE, it will try to repair only the index tree. This is the fastest repair method for a table.",
    (gptr*) &opt_quick, (gptr*) &opt_quick, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
@@ -116,6 +129,11 @@ static struct my_option my_long_options[] =
   {"repair", 'r',
    "Can fix almost anything except unique keys that aren't unique.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+#ifdef HAVE_SMEM
+  {"shared-memory-base-name", OPT_SHARED_MEMORY_BASE_NAME,
+   "Base name of shared memory.", (gptr*) &shared_memory_base_name, (gptr*) &shared_memory_base_name,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+#endif
   {"silent", 's', "Print only error messages.", (gptr*) &opt_silent,
    (gptr*) &opt_silent, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"socket", 'S', "Socket file to use for connection.",
@@ -159,10 +177,13 @@ static void print_result();
 static char *fix_table_name(char *dest, char *src);
 int what_to_do = 0;
 
+#include <help_start.h>
+
 static void print_version(void)
 {
   printf("%s  Ver %s Distrib %s, for %s (%s)\n", my_progname, CHECK_VERSION,
    MYSQL_SERVER_VERSION, SYSTEM_TYPE, MACHINE_TYPE);
+  NETWARE_SET_SCREEN_MODE(1);
 } /* print_version */
 
 
@@ -174,7 +195,7 @@ static void usage(void)
   puts("and you are welcome to modify and redistribute it under the GPL license.\n");
   puts("This program can be used to CHECK (-c,-m,-C), REPAIR (-r), ANALYZE (-a)");
   puts("or OPTIMIZE (-o) tables. Some of the options (like -e or -q) can be");
-  puts("used at the same time. It works on MyISAM and in some cases on BDB tables.");
+  puts("used at the same time. Not all options are supported by all storage engines.");
   puts("Please consult the MySQL manual for latest information about the");
   puts("above. The options -c,-r,-a and -o are exclusive to each other, which");
   puts("means that the last option will be used, if several was specified.\n");
@@ -193,6 +214,7 @@ static void usage(void)
   my_print_variables(my_long_options);
 } /* usage */
 
+#include <help_end.h>
 
 static my_bool
 get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
@@ -229,6 +251,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
       while (*argument) *argument++= 'x';		/* Destroy argument */
       if (*start)
 	start[1] = 0;                             /* Cut length of argument */
+      tty_password= 0;
     }
     else
       tty_password = 1;
@@ -238,7 +261,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     break;
   case 'W':
 #ifdef __WIN__
-    opt_mysql_unix_port = MYSQL_NAMEDPIPE;
+    opt_protocol = MYSQL_PROTOCOL_PIPE;
 #endif
     break;
   case '#':
@@ -252,6 +275,15 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     verbose++;
     break;
   case 'V': print_version(); exit(0);
+  case OPT_MYSQL_PROTOCOL:
+  {
+    if ((opt_protocol= find_type(argument, &sql_protocol_typelib,0)) <= 0)
+    {
+      fprintf(stderr, "Unknown option to protocol: %s\n", argument);
+      exit(1);
+    }
+    break;
+  }
   }
   return 0;
 }
@@ -287,11 +319,12 @@ static int get_options(int *argc, char ***argv)
     else
       what_to_do = DO_CHECK;
   }
-  if (default_charset)
-  {
-    if (set_default_charset_by_name(default_charset, MYF(MY_WME)))
+
+  /* TODO: This variable is not yet used */
+  if (strcmp(default_charset, charset_info->csname) &&
+      !(charset_info= get_charset_by_csname(default_charset, 
+  					    MY_CS_PRIMARY, MYF(MY_WME))))
       exit(1);
-  }
   if (*argc > 0 && opt_alldbs)
   {
     printf("You should give only options, no arguments at all, with option\n");
@@ -409,18 +442,18 @@ static int process_all_tables_in_db(char *database)
   LINT_INIT(res);
   if (use_db(database))
     return 1;
-  if (!(mysql_query(sock, "SHOW TABLES") ||
-	(res = mysql_store_result(sock))))
+  if (mysql_query(sock, "SHOW TABLES") ||
+	!((res= mysql_store_result(sock))))
     return 1;
 
   if (opt_all_in_1)
   {
-    /* 
+    /*
       We need table list in form `a`, `b`, `c`
       that's why we need 4 more chars added to to each table name
       space is for more readable output in logs and in case of error
      */
-	  
+
     char *tables, *end;
     uint tot_length = 0;
 
@@ -553,7 +586,8 @@ static void print_result()
     else if (!status && changed)
     {
       printf("%s\n%-9s: %s", row[0], row[2], row[3]);
-      found_error=1;
+      if (strcmp(row[2],"note"))
+	found_error=1;
     }
     else
       printf("%-9s: %s", row[2], row[3]);
@@ -581,6 +615,12 @@ static int dbConnect(char *host, char *user, char *passwd)
   if (opt_use_ssl)
     mysql_ssl_set(&mysql_connection, opt_ssl_key, opt_ssl_cert, opt_ssl_ca,
 		  opt_ssl_capath, opt_ssl_cipher);
+#endif
+  if (opt_protocol)
+    mysql_options(&mysql_connection,MYSQL_OPT_PROTOCOL,(char*)&opt_protocol);
+#ifdef HAVE_SMEM
+  if (shared_memory_base_name)
+    mysql_options(&mysql_connection,MYSQL_SHARED_MEMORY_BASE_NAME,shared_memory_base_name);
 #endif
   if (!(sock = mysql_real_connect(&mysql_connection, host, user, passwd,
          NULL, opt_mysql_port, opt_mysql_unix_port, 0)))
@@ -669,6 +709,9 @@ int main(int argc, char **argv)
   if (opt_auto_repair)
     delete_dynamic(&tables4repair);
   my_free(opt_password, MYF(MY_ALLOW_ZERO_PTR));
+#ifdef HAVE_SMEM
+  my_free(shared_memory_base_name,MYF(MY_ALLOW_ZERO_PTR));
+#endif
   my_end(0);
   return(first_error!=0);
 } /* main */

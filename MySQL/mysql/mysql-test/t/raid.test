@@ -7,20 +7,32 @@ enable_query_log;
 # Test of raided tables
 #
 
-create database test_raid;
-create table test_raid.r1 (i int) raid_type=1;
-create table test_raid.r2 (i int) raid_type=1 raid_chunks=32;
-drop database test_raid;
+--disable_warnings
+DROP TABLE IF EXISTS t1,t2;
+DROP DATABASE IF EXISTS test_$1;
+--enable_warnings
+
+#
+# Test dropping database with raid tables
+#
+
+create database test_$1;
+create table test_$1.r1 (i int) raid_type=1;
+create table test_$1.r2 (i int) raid_type=1 raid_chunks=32;
+drop database test_$1;
 
 #
 # Bug #3182: Test using more than 257 raid chunks
 #
-create database test_raid;
-create table test_raid.r2 (i int) raid_type=1 raid_chunks=257;
-show create table test_raid.r2;
-drop database test_raid;
+create database test_$1;
+create table test_$1.r2 (i int) raid_type=1 raid_chunks=257;
+show create table test_$1.r2;
+drop database test_$1;
 
-DROP TABLE IF EXISTS t1,t2;
+#
+# Test that data is spread over different raid directories
+#
+
 CREATE TABLE t1 (
 id int unsigned not null auto_increment primary key,
 c char(255) not null
@@ -113,8 +125,8 @@ ALTER TABLE t1 DROP COLUMN x;
 ALTER TABLE t1 RENAME t2;
 select count(*) from t2;
 DROP TABLE t2;
+
 /* variable rows */
-DROP TABLE IF EXISTS t2;
 CREATE TABLE t1 (
 id int unsigned not null auto_increment primary key,
 c varchar(255) not null

@@ -19,76 +19,317 @@
 #include <m_ctype.h>
 #include <m_string.h>
 #include <my_dir.h>
+#include <my_xml.h>
 
-typedef struct cs_id_st {
-  char *name;
-  uint number;
-} CS_ID;
 
-const char *charsets_dir = NULL;
-static DYNAMIC_ARRAY cs_info_table;
-static CS_ID **available_charsets;
-static int charset_initialized=0;
+/*
+  The code below implements this functionality:
+  
+    - Initializing charset related structures
+    - Loading dynamic charsets
+    - Searching for a proper CHARSET_INFO 
+      using charset name, collation name or collation ID
+    - Setting server default character set
+*/
 
-#define MAX_LINE  1024
-
-#define CTYPE_TABLE_SIZE      257
-#define TO_LOWER_TABLE_SIZE   256
-#define TO_UPPER_TABLE_SIZE   256
-#define SORT_ORDER_TABLE_SIZE 256
-
-struct simpleconfig_buf_st {
-  FILE *f;
-  char  buf[MAX_LINE];
-  char *p;
-};
-
-static uint num_from_csname(CS_ID **cs, const char *name)
+my_bool my_charset_same(CHARSET_INFO *cs1, CHARSET_INFO *cs2)
 {
-  CS_ID **c;
-  for (c = cs; *c; ++c)
-    if (!strcmp((*c)->name, name))
-      return (*c)->number;
-  return 0;   /* this mimics find_type() */
+  return ((cs1 == cs2) || !strcmp(cs1->csname,cs2->csname));
 }
 
-static char *name_from_csnum(CS_ID **cs, uint number)
-{
-  CS_ID **c;
-  if(cs)
-    for (c = cs; *c; ++c)
-      if ((*c)->number == number)
-	return (*c)->name;
-  return (char*) "?";   /* this mimics find_type() */
-}
 
-static my_bool get_word(struct simpleconfig_buf_st *fb, char *buf)
+static my_bool init_state_maps(CHARSET_INFO *cs)
 {
-  char *endptr=fb->p;
+  uint i;
+  uchar *state_map;
+  uchar *ident_map;
 
-  for (;;)
+  if (!(cs->state_map= (uchar*) my_once_alloc(256, MYF(MY_WME))))
+    return 1;
+    
+  if (!(cs->ident_map= (uchar*) my_once_alloc(256, MYF(MY_WME))))
+    return 1;
+
+  state_map= cs->state_map;
+  ident_map= cs->ident_map;
+  
+  /* Fill state_map with states to get a faster parser */
+  for (i=0; i < 256 ; i++)
   {
-    while (isspace(*endptr))
-      ++endptr;
-    if (*endptr && *endptr != '#')		/* Not comment */
-      break;					/* Found something */
-    if ((fgets(fb->buf, sizeof(fb->buf), fb->f)) == NULL)
-      return TRUE; /* end of file */
-    endptr = fb->buf;
+    if (my_isalpha(cs,i))
+      state_map[i]=(uchar) MY_LEX_IDENT;
+    else if (my_isdigit(cs,i))
+      state_map[i]=(uchar) MY_LEX_NUMBER_IDENT;
+#if defined(USE_MB) && defined(USE_MB_IDENT)
+    else if (my_mbcharlen(cs, i)>1)
+      state_map[i]=(uchar) MY_LEX_IDENT;
+#endif
+    else if (!my_isgraph(cs,i))
+      state_map[i]=(uchar) MY_LEX_SKIP;
+    else
+      state_map[i]=(uchar) MY_LEX_CHAR;
+  }
+  state_map[(uchar)'_']=state_map[(uchar)'$']=(uchar) MY_LEX_IDENT;
+  state_map[(uchar)'\'']=(uchar) MY_LEX_STRING;
+  state_map[(uchar)'.']=(uchar) MY_LEX_REAL_OR_POINT;
+  state_map[(uchar)'>']=state_map[(uchar)'=']=state_map[(uchar)'!']= (uchar) MY_LEX_CMP_OP;
+  state_map[(uchar)'<']= (uchar) MY_LEX_LONG_CMP_OP;
+  state_map[(uchar)'&']=state_map[(uchar)'|']=(uchar) MY_LEX_BOOL;
+  state_map[(uchar)'#']=(uchar) MY_LEX_COMMENT;
+  state_map[(uchar)';']=(uchar) MY_LEX_SEMICOLON;
+  state_map[(uchar)':']=(uchar) MY_LEX_SET_VAR;
+  state_map[0]=(uchar) MY_LEX_EOL;
+  state_map[(uchar)'\\']= (uchar) MY_LEX_ESCAPE;
+  state_map[(uchar)'/']= (uchar) MY_LEX_LONG_COMMENT;
+  state_map[(uchar)'*']= (uchar) MY_LEX_END_LONG_COMMENT;
+  state_map[(uchar)'@']= (uchar) MY_LEX_USER_END;
+  state_map[(uchar) '`']= (uchar) MY_LEX_USER_VARIABLE_DELIMITER;
+  state_map[(uchar)'"']= (uchar) MY_LEX_STRING_OR_DELIMITER;
+
+  /*
+    Create a second map to make it faster to find identifiers
+  */
+  for (i=0; i < 256 ; i++)
+  {
+    ident_map[i]= (uchar) (state_map[i] == MY_LEX_IDENT ||
+			   state_map[i] == MY_LEX_NUMBER_IDENT);
   }
 
-  while (*endptr && !isspace(*endptr))
-    *buf++= *endptr++;
-  *buf=0;
-  fb->p = endptr;
+  /* Special handling of hex and binary strings */
+  state_map[(uchar)'x']= state_map[(uchar)'X']= (uchar) MY_LEX_IDENT_OR_HEX;
+  state_map[(uchar)'b']= state_map[(uchar)'b']= (uchar) MY_LEX_IDENT_OR_BIN;
+  state_map[(uchar)'n']= state_map[(uchar)'N']= (uchar) MY_LEX_IDENT_OR_NCHAR;
+  return 0;
+}
 
+
+static void simple_cs_init_functions(CHARSET_INFO *cs)
+{
+  if (cs->state & MY_CS_BINSORT)
+    cs->coll= &my_collation_8bit_bin_handler;
+  else
+    cs->coll= &my_collation_8bit_simple_ci_handler;
+  
+  cs->cset= &my_charset_8bit_handler;
+}
+
+
+
+static int cs_copy_data(CHARSET_INFO *to, CHARSET_INFO *from)
+{
+  to->number= from->number ? from->number : to->number;
+
+  if (from->csname)
+    if (!(to->csname= my_once_strdup(from->csname,MYF(MY_WME))))
+      goto err;
+  
+  if (from->name)
+    if (!(to->name= my_once_strdup(from->name,MYF(MY_WME))))
+      goto err;
+  
+  if (from->comment)
+    if (!(to->comment= my_once_strdup(from->comment,MYF(MY_WME))))
+      goto err;
+  
+  if (from->ctype)
+  {
+    if (!(to->ctype= (uchar*) my_once_memdup((char*) from->ctype,
+					     MY_CS_CTYPE_TABLE_SIZE,
+					     MYF(MY_WME))))
+      goto err;
+    if (init_state_maps(to))
+      goto err;
+  }
+  if (from->to_lower)
+    if (!(to->to_lower= (uchar*) my_once_memdup((char*) from->to_lower,
+						MY_CS_TO_LOWER_TABLE_SIZE,
+						MYF(MY_WME))))
+      goto err;
+
+  if (from->to_upper)
+    if (!(to->to_upper= (uchar*) my_once_memdup((char*) from->to_upper,
+						MY_CS_TO_UPPER_TABLE_SIZE,
+						MYF(MY_WME))))
+      goto err;
+  if (from->sort_order)
+  {
+    if (!(to->sort_order= (uchar*) my_once_memdup((char*) from->sort_order,
+						  MY_CS_SORT_ORDER_TABLE_SIZE,
+						  MYF(MY_WME))))
+      goto err;
+
+  }
+  if (from->tab_to_uni)
+  {
+    uint sz= MY_CS_TO_UNI_TABLE_SIZE*sizeof(uint16);
+    if (!(to->tab_to_uni= (uint16*)  my_once_memdup((char*)from->tab_to_uni,
+						    sz, MYF(MY_WME))))
+      goto err;
+  }
+  if (from->tailoring)
+    if (!(to->tailoring= my_once_strdup(from->tailoring,MYF(MY_WME))))
+      goto err;
+
+  return 0;
+
+err:
+  return 1;
+}
+
+
+
+static my_bool simple_cs_is_full(CHARSET_INFO *cs)
+{
+  return ((cs->csname && cs->tab_to_uni && cs->ctype && cs->to_upper &&
+	   cs->to_lower) &&
+	  (cs->number && cs->name &&
+	  (cs->sort_order || (cs->state & MY_CS_BINSORT) )));
+}
+
+
+static int add_collation(CHARSET_INFO *cs)
+{
+  if (cs->name && (cs->number || (cs->number=get_collation_number(cs->name))))
+  {
+    if (!all_charsets[cs->number])
+    {
+      if (!(all_charsets[cs->number]=
+         (CHARSET_INFO*) my_once_alloc(sizeof(CHARSET_INFO),MYF(0))))
+        return MY_XML_ERROR;
+      bzero((void*)all_charsets[cs->number],sizeof(CHARSET_INFO));
+    }
+    
+    if (cs->primary_number == cs->number)
+      cs->state |= MY_CS_PRIMARY;
+      
+    if (cs->binary_number == cs->number)
+      cs->state |= MY_CS_BINSORT;
+    
+    all_charsets[cs->number]->state|= cs->state;
+    
+    if (!(all_charsets[cs->number]->state & MY_CS_COMPILED))
+    {
+      CHARSET_INFO *new= all_charsets[cs->number];
+      if (cs_copy_data(all_charsets[cs->number],cs))
+        return MY_XML_ERROR;
+
+      if (!strcmp(cs->csname,"ucs2") )
+      {
+#ifdef HAVE_CHARSET_ucs2
+        new->cset= my_charset_ucs2_general_uca.cset;
+        new->coll= my_charset_ucs2_general_uca.coll;
+        new->strxfrm_multiply= my_charset_ucs2_general_uca.strxfrm_multiply;
+        new->min_sort_char= my_charset_ucs2_general_uca.min_sort_char;
+        new->max_sort_char= my_charset_ucs2_general_uca.max_sort_char;
+        new->mbminlen= 2;
+        new->mbmaxlen= 2;
+        new->state |= MY_CS_AVAILABLE | MY_CS_LOADED;
+#endif        
+      }
+      else
+      {
+        uchar *sort_order= all_charsets[cs->number]->sort_order;
+        simple_cs_init_functions(all_charsets[cs->number]);
+        new->mbminlen= 1;
+        new->mbmaxlen= 1;
+        if (simple_cs_is_full(all_charsets[cs->number]))
+        {
+          all_charsets[cs->number]->state |= MY_CS_LOADED;
+        }
+        all_charsets[cs->number]->state|= MY_CS_AVAILABLE;
+        
+        /*
+          Check if case sensitive sort order: A < a < B.
+          We need MY_CS_FLAG for regex library, and for
+          case sensitivity flag for 5.0 client protocol,
+          to support isCaseSensitive() method in JDBC driver 
+        */
+        if (sort_order && sort_order['A'] < sort_order['a'] &&
+                          sort_order['a'] < sort_order['B'])
+          all_charsets[cs->number]->state|= MY_CS_CSSORT; 
+      }
+    }
+    else
+    {
+      /*
+        We need the below to make get_charset_name()
+        and get_charset_number() working even if a
+        character set has not been really incompiled.
+        The above functions are used for example
+        in error message compiler extra/comp_err.c.
+        If a character set was compiled, this information
+        will get lost and overwritten in add_compiled_collation().
+      */
+      CHARSET_INFO *dst= all_charsets[cs->number];
+      dst->number= cs->number;
+      if (cs->comment)
+	if (!(dst->comment= my_once_strdup(cs->comment,MYF(MY_WME))))
+	  return MY_XML_ERROR;
+      if (cs->csname)
+        if (!(dst->csname= my_once_strdup(cs->csname,MYF(MY_WME))))
+	  return MY_XML_ERROR;
+      if (cs->name)
+	if (!(dst->name= my_once_strdup(cs->name,MYF(MY_WME))))
+	  return MY_XML_ERROR;
+    }
+    cs->number= 0;
+    cs->primary_number= 0;
+    cs->binary_number= 0;
+    cs->name= NULL;
+    cs->state= 0;
+    cs->sort_order= NULL;
+    cs->state= 0;
+  }
+  return MY_XML_OK;
+}
+
+
+#define MY_MAX_ALLOWED_BUF 1024*1024
+#define MY_CHARSET_INDEX "Index.xml"
+
+const char *charsets_dir= NULL;
+static int charset_initialized=0;
+
+
+static my_bool my_read_charset_file(const char *filename, myf myflags)
+{
+  char *buf;
+  int  fd;
+  uint len;
+  MY_STAT stat_info;
+  
+  if (!my_stat(filename, &stat_info, MYF(myflags)) ||
+       ((len= (uint)stat_info.st_size) > MY_MAX_ALLOWED_BUF) ||
+       !(buf= (char *)my_malloc(len,myflags)))
+    return TRUE;
+  
+  if ((fd=my_open(filename,O_RDONLY,myflags)) < 0)
+  {
+    my_free(buf,myflags);
+    return TRUE;
+  }
+  len=read(fd,buf,len);
+  my_close(fd,myflags);
+  
+  if (my_parse_charset_xml(buf,len,add_collation))
+  {
+#ifdef NOT_YET
+    printf("ERROR at line %d pos %d '%s'\n",
+	   my_xml_error_lineno(&p)+1,
+	   my_xml_error_pos(&p),
+	   my_xml_error_string(&p));
+#endif
+  }
+  
+  my_free(buf, myflags);  
   return FALSE;
 }
 
 
 char *get_charsets_dir(char *buf)
 {
-  const char *sharedir = SHAREDIR;
+  const char *sharedir= SHAREDIR;
+  char *res;
   DBUG_ENTER("get_charsets_dir");
 
   if (charsets_dir != NULL)
@@ -102,65 +343,23 @@ char *get_charsets_dir(char *buf)
       strxmov(buf, DEFAULT_CHARSET_HOME, "/", sharedir, "/", CHARSET_DIR,
 	      NullS);
   }
-  convert_dirname(buf,buf,NullS);
-  DBUG_PRINT("info",("charsets dir='%s'", buf));
-  DBUG_RETURN(strend(buf));
+  res= convert_dirname(buf,buf,NullS);
+  DBUG_PRINT("info",("charsets dir: '%s'", buf));
+  DBUG_RETURN(res);
 }
 
+CHARSET_INFO *all_charsets[256];
+CHARSET_INFO *default_charset_info = &my_charset_latin1;
 
-static my_bool read_charset_index(CS_ID ***charsets, myf myflags)
+void add_compiled_collation(CHARSET_INFO *cs)
 {
-  struct simpleconfig_buf_st fb;
-  char buf[MAX_LINE], num_buf[MAX_LINE];
-  DYNAMIC_ARRAY cs;
-  CS_ID *csid;
+  all_charsets[cs->number]= cs;
+  cs->state|= MY_CS_AVAILABLE;
+}
 
-  strmov(get_charsets_dir(buf), "Index");
-
-  if ((fb.f = my_fopen(buf, O_RDONLY, myflags)) == NULL)
-    return TRUE;
-  fb.buf[0] = '\0';
-  fb.p = fb.buf;
-
-  if (my_init_dynamic_array(&cs, sizeof(CS_ID *), 32, 32))
-    return TRUE;
-
-  while (!get_word(&fb, buf) && !get_word(&fb, num_buf))
-  {
-    uint csnum;
-    uint length;
-
-    if (!(csnum = atoi(num_buf)))
-    {
-      /* corrupt Index file */
-      my_fclose(fb.f,myflags);
-      return TRUE;
-    }
-
-    if (!(csid = (CS_ID*) my_once_alloc(sizeof(CS_ID), myflags)) ||
-        !(csid->name=
-           (char*) my_once_alloc(length= (uint) strlen(buf)+1, myflags)))
-    {
-      my_fclose(fb.f,myflags);
-      return TRUE;
-    }
-    memcpy(csid->name,buf,length);
-    csid->number = csnum;
-
-    insert_dynamic(&cs, (gptr) &csid);
-  }
-  my_fclose(fb.f,myflags);
-
-
-  if (!(*charsets =
-      (CS_ID **) my_once_alloc((cs.elements + 1) * sizeof(CS_ID *), myflags)))
-    return TRUE;
-  /* unwarranted chumminess with dynamic_array implementation? */
-  memcpy((byte *) *charsets, cs.buffer, cs.elements * sizeof(CS_ID *));
-  (*charsets)[cs.elements] = NULL;
-  delete_dynamic(&cs);  
-
-  return FALSE;
+static void *cs_alloc(uint size)
+{
+  return my_once_alloc(size, MYF(MY_WME));
 }
 
 
@@ -170,227 +369,125 @@ my_bool STDCALL init_available_charsets(myf myflags)
 static my_bool init_available_charsets(myf myflags)
 #endif
 {
-  my_bool error=0;
+  char fname[FN_REFLEN];
+  my_bool error=FALSE;
   /*
     We have to use charset_initialized to not lock on THR_LOCK_charset
     inside get_internal_charset...
-   */
+  */
   if (!charset_initialized)
   {
-  /*
-    To make things thread safe we are not allowing other threads to interfere
-    while we may changing the cs_info_table
-  */
+    CHARSET_INFO **cs;
+    /*
+      To make things thread safe we are not allowing other threads to interfere
+      while we may changing the cs_info_table
+    */
     pthread_mutex_lock(&THR_LOCK_charset);
-    if (!cs_info_table.buffer)			/* If not initialized */
+
+    bzero(&all_charsets,sizeof(all_charsets));
+    init_compiled_charsets(myflags);
+    
+    /* Copy compiled charsets */
+    for (cs=all_charsets;
+	 cs < all_charsets+array_elements(all_charsets)-1 ;
+	 cs++)
     {
-      my_init_dynamic_array(&cs_info_table, sizeof(CHARSET_INFO*), 16, 8);
-      error = read_charset_index(&available_charsets, myflags);
+      if (*cs)
+      {
+        if (cs[0]->ctype)
+          if (init_state_maps(*cs))
+            *cs= NULL;
+      }
     }
+    
+    strmov(get_charsets_dir(fname), MY_CHARSET_INDEX);
+    error= my_read_charset_file(fname,myflags);
     charset_initialized=1;
     pthread_mutex_unlock(&THR_LOCK_charset);
   }
-  if(!available_charsets || !available_charsets[0])
-    error = TRUE;
   return error;
 }
 
 
 void free_charsets(void)
 {
-  delete_dynamic(&cs_info_table);
   charset_initialized=0;
 }
 
 
-static my_bool fill_array(uchar *array, int sz, struct simpleconfig_buf_st *fb)
+uint get_collation_number(const char *name)
 {
-  char buf[MAX_LINE];
-  while (sz--)
+  CHARSET_INFO **cs;
+  init_available_charsets(MYF(0));
+  
+  for (cs= all_charsets;
+       cs < all_charsets+array_elements(all_charsets)-1 ;
+       cs++)
   {
-    if (get_word(fb, buf))
-    {
-      DBUG_PRINT("error",("get_word failed, expecting %d more words", sz + 1));
-      return 1;
-    }
-    *array++ = (uchar) strtol(buf, NULL, 16);
-  }
+    if ( cs[0] && cs[0]->name && 
+         !my_strcasecmp(&my_charset_latin1, cs[0]->name, name))
+      return cs[0]->number;
+  }  
+  return 0;   /* this mimics find_type() */
+}
+
+
+uint get_charset_number(const char *charset_name, uint cs_flags)
+{
+  CHARSET_INFO **cs;
+  init_available_charsets(MYF(0));
+  
+  for (cs= all_charsets;
+       cs < all_charsets+array_elements(all_charsets)-1 ;
+       cs++)
+  {
+    if ( cs[0] && cs[0]->csname && (cs[0]->state & cs_flags) &&
+         !my_strcasecmp(&my_charset_latin1, cs[0]->csname, charset_name))
+      return cs[0]->number;
+  }  
   return 0;
 }
 
 
-static void get_charset_conf_name(uint cs_number, char *buf)
-{
-  strxmov(get_charsets_dir(buf),
-          name_from_csnum(available_charsets, cs_number), ".conf", NullS);
-}
-
-
-static my_bool read_charset_file(uint cs_number, CHARSET_INFO *set,
-				 myf myflags)
-{
-  struct simpleconfig_buf_st fb;
-  char buf[FN_REFLEN];
-  my_bool result;
-  DBUG_ENTER("read_charset_file");
-  DBUG_PRINT("enter",("cs_number: %d", cs_number));
-
-  if (cs_number <= 0)
-    DBUG_RETURN(TRUE);
-
-  get_charset_conf_name(cs_number, buf);
-  DBUG_PRINT("info",("file name: %s", buf));
-
-  if ((fb.f = my_fopen(buf, O_RDONLY, myflags)) == NULL)
-    DBUG_RETURN(TRUE);
-
-  fb.buf[0] = '\0';				/* Init for get_word */
-  fb.p = fb.buf;
-
-  result=FALSE;
-  if (fill_array(set->ctype,      CTYPE_TABLE_SIZE,      &fb) ||
-      fill_array(set->to_lower,   TO_LOWER_TABLE_SIZE,   &fb) ||
-      fill_array(set->to_upper,   TO_UPPER_TABLE_SIZE,   &fb) ||
-      fill_array(set->sort_order, SORT_ORDER_TABLE_SIZE, &fb))
-    result=TRUE;
-
-  my_fclose(fb.f, MYF(0));
-  DBUG_RETURN(result);
-}
-
-
-uint get_charset_number(const char *charset_name)
-{
-  uint number=compiled_charset_number(charset_name);
-  if (number)
-    return number;
-  if (init_available_charsets(MYF(0)))	/* If it isn't initialized */
-    return 0;
-  return num_from_csname(available_charsets, charset_name);
-}
-
 const char *get_charset_name(uint charset_number)
 {
-  const char *name=compiled_charset_name(charset_number);
-  if (*name != '?')
-    return name;
-  if (init_available_charsets(MYF(0)))	/* If it isn't initialized */
-    return "?";
-  return name_from_csnum(available_charsets, charset_number);
-}
+  CHARSET_INFO *cs;
+  init_available_charsets(MYF(0));
 
-
-static CHARSET_INFO *find_charset(CHARSET_INFO **table, uint cs_number,
-                                  size_t tablesz)
-{
-  uint i;
-  for (i = 0; i < tablesz; ++i)
-    if (table[i]->number == cs_number)
-      return table[i];
-  return NULL;
-}
-
-static CHARSET_INFO *find_charset_by_name(CHARSET_INFO **table,
-					  const char *name, size_t tablesz)
-{
-  uint i;
-  for (i = 0; i < tablesz; ++i)
-    if (!strcmp(table[i]->name,name))
-      return table[i];
-  return NULL;
-}
-
-/*
-  Read charset from file.
-
-  NOTES
-    One never has to deallocate character sets. They will all be deallocated
-    by my_once_free() when program ends.
+  cs=all_charsets[charset_number];
+  if (cs && (cs->number == charset_number) && cs->name )
+    return (char*) cs->name;
   
-    If my_once_alloc() fails then this function may 'leak' some memory
-    which my_once_free() will deallocate, but this is so unlikely to happen
-    that this can be ignored.
-
-  RETURN
-   0	Error
-   #	Pointer to allocated charset structure
-*/
- 
-
-static CHARSET_INFO *add_charset(uint cs_number, const char *cs_name,
-				 myf flags)
-{
-  CHARSET_INFO tmp_cs,*cs;
-  uchar tmp_ctype[CTYPE_TABLE_SIZE];
-  uchar tmp_to_lower[TO_LOWER_TABLE_SIZE];
-  uchar tmp_to_upper[TO_UPPER_TABLE_SIZE];
-  uchar tmp_sort_order[SORT_ORDER_TABLE_SIZE];
-
-  /* Don't allocate memory if we are not sure we can find the char set */
-  cs= &tmp_cs;
-  bzero((char*) cs, sizeof(*cs));
-  cs->ctype=tmp_ctype;
-  cs->to_lower=tmp_to_lower;
-  cs->to_upper=tmp_to_upper;
-  cs->sort_order=tmp_sort_order;
-  cs->strxfrm_multiply=cs->mbmaxlen=1;
-  if (read_charset_file(cs_number, cs, flags))
-    return 0;
-
-  if (!(cs= (CHARSET_INFO*) my_once_alloc(sizeof(CHARSET_INFO),
-					  MYF(MY_WME))))
-    return 0;
-
-  *cs= tmp_cs;
-  cs->name=	(char *) my_once_alloc((uint) strlen(cs_name)+1, MYF(MY_WME));
-  cs->ctype= 	(uchar*) my_once_alloc(CTYPE_TABLE_SIZE,      MYF(MY_WME));
-  cs->to_lower= (uchar*) my_once_alloc(TO_LOWER_TABLE_SIZE,   MYF(MY_WME));
-  cs->to_upper= (uchar*) my_once_alloc(TO_UPPER_TABLE_SIZE,   MYF(MY_WME));
-  cs->sort_order=(uchar*) my_once_alloc(SORT_ORDER_TABLE_SIZE, MYF(MY_WME));
-  if (!cs->name || !cs->ctype || !cs->to_lower || !cs->to_upper ||
-      !cs->sort_order)
-    return 0;
-
-  cs->number=    cs_number;
-  memcpy((char*) cs->name,	 (char*) cs_name,    strlen(cs_name) + 1);
-  memcpy((char*) cs->ctype,	 (char*) tmp_ctype,  sizeof(tmp_ctype));
-  memcpy((char*) cs->to_lower, (char*) tmp_to_lower, sizeof(tmp_to_lower));
-  memcpy((char*) cs->to_upper, (char*) tmp_to_upper, sizeof(tmp_to_upper));
-  memcpy((char*) cs->sort_order, (char*) tmp_sort_order,
-	 sizeof(tmp_sort_order));
-  insert_dynamic(&cs_info_table, (gptr) &cs);
-  return cs;
+  return (char*) "?";   /* this mimics find_type() */
 }
+
 
 static CHARSET_INFO *get_internal_charset(uint cs_number, myf flags)
 {
+  char  buf[FN_REFLEN];
   CHARSET_INFO *cs;
   /*
     To make things thread safe we are not allowing other threads to interfere
     while we may changing the cs_info_table
   */
   pthread_mutex_lock(&THR_LOCK_charset);
-  if (!(cs = find_charset((CHARSET_INFO**) cs_info_table.buffer, cs_number,
-			  cs_info_table.elements)))
-    if (!(cs = find_compiled_charset(cs_number)))
-      cs=add_charset(cs_number, get_charset_name(cs_number), flags);
-  pthread_mutex_unlock(&THR_LOCK_charset);
-  return cs;
-}
-
-
-static CHARSET_INFO *get_internal_charset_by_name(const char *name, myf flags)
-{
-  CHARSET_INFO *cs;
-  /*
-    To make things thread safe we are not allowing other threads to interfere
-    while we may changing the cs_info_table
-  */
-  pthread_mutex_lock(&THR_LOCK_charset);
-  if (!(cs = find_charset_by_name((CHARSET_INFO**) cs_info_table.buffer, name,
-				 cs_info_table.elements)))
-    if (!(cs = find_compiled_charset_by_name(name)))
-      cs=add_charset(get_charset_number(name), name, flags);
+  if ((cs= all_charsets[cs_number]))
+  {
+    if (!(cs->state & MY_CS_COMPILED) && !(cs->state & MY_CS_LOADED))
+    {
+      strxmov(get_charsets_dir(buf), cs->csname, ".xml", NullS);
+      my_read_charset_file(buf,flags);
+    }
+    cs= (cs->state & MY_CS_AVAILABLE) ? cs : NULL;
+  }
+  if (cs && !(cs->state & MY_CS_READY))
+  {
+    if ((cs->cset->init && cs->cset->init(cs, cs_alloc)) ||
+        (cs->coll->init && cs->coll->init(cs, cs_alloc)))
+      cs= NULL;
+    else
+      cs->state|= MY_CS_READY;
+  }
   pthread_mutex_unlock(&THR_LOCK_charset);
   return cs;
 }
@@ -399,13 +496,20 @@ static CHARSET_INFO *get_internal_charset_by_name(const char *name, myf flags)
 CHARSET_INFO *get_charset(uint cs_number, myf flags)
 {
   CHARSET_INFO *cs;
+  if (cs_number == default_charset_info->number)
+    return default_charset_info;
+
   (void) init_available_charsets(MYF(0));	/* If it isn't initialized */
+  
+  if (!cs_number || cs_number >= array_elements(all_charsets)-1)
+    return NULL;
+  
   cs=get_internal_charset(cs_number, flags);
 
   if (!cs && (flags & MY_WME))
   {
     char index_file[FN_REFLEN], cs_string[23];
-    strmov(get_charsets_dir(index_file), "Index");
+    strmov(get_charsets_dir(index_file),MY_CHARSET_INDEX);
     cs_string[0]='#';
     int10_to_str(cs_number, cs_string+1, 10);
     my_error(EE_UNKNOWN_CHARSET, MYF(ME_BELL), cs_string, index_file);
@@ -413,194 +517,104 @@ CHARSET_INFO *get_charset(uint cs_number, myf flags)
   return cs;
 }
 
-my_bool set_default_charset(uint cs, myf flags)
-{
-  CHARSET_INFO *new_charset;
-  DBUG_ENTER("set_default_charset");
-  DBUG_PRINT("enter",("character set: %d",(int) cs));
-  new_charset = get_charset(cs, flags);
-  if (!new_charset)
-  {
-    DBUG_PRINT("error",("Couldn't set default character set"));
-    DBUG_RETURN(TRUE);   /* error */
-  }
-  default_charset_info = new_charset;
-  DBUG_RETURN(FALSE);
-}
-
 CHARSET_INFO *get_charset_by_name(const char *cs_name, myf flags)
 {
+  uint cs_number;
   CHARSET_INFO *cs;
   (void) init_available_charsets(MYF(0));	/* If it isn't initialized */
-  cs=get_internal_charset_by_name(cs_name, flags);
+
+  cs_number=get_collation_number(cs_name);
+  cs= cs_number ? get_internal_charset(cs_number,flags) : NULL;
 
   if (!cs && (flags & MY_WME))
   {
     char index_file[FN_REFLEN];
-    strmov(get_charsets_dir(index_file), "Index");
+    strmov(get_charsets_dir(index_file),MY_CHARSET_INDEX);
     my_error(EE_UNKNOWN_CHARSET, MYF(ME_BELL), cs_name, index_file);
   }
 
   return cs;
 }
 
-my_bool set_default_charset_by_name(const char *cs_name, myf flags)
+
+CHARSET_INFO *get_charset_by_csname(const char *cs_name,
+				    uint cs_flags,
+				    myf flags)
 {
-  CHARSET_INFO *new_charset;
-  DBUG_ENTER("set_default_charset_by_name");
-  DBUG_PRINT("enter",("character set: %s", cs_name));
-  new_charset = get_charset_by_name(cs_name, flags);
-  if (!new_charset)
+  uint cs_number;
+  CHARSET_INFO *cs;
+  DBUG_ENTER("get_charset_by_csname");
+  DBUG_PRINT("enter",("name: '%s'", cs_name));
+
+  (void) init_available_charsets(MYF(0));	/* If it isn't initialized */
+  
+  cs_number= get_charset_number(cs_name, cs_flags);
+  cs= cs_number ? get_internal_charset(cs_number, flags) : NULL;
+  
+  if (!cs && (flags & MY_WME))
   {
-    DBUG_PRINT("error",("Couldn't set default character set"));
-    DBUG_RETURN(TRUE);   /* error */
+    char index_file[FN_REFLEN];
+    strmov(get_charsets_dir(index_file),MY_CHARSET_INDEX);
+    my_error(EE_UNKNOWN_CHARSET, MYF(ME_BELL), cs_name, index_file);
   }
 
-  default_charset_info = new_charset;
-  DBUG_RETURN(FALSE);
-}
-
-/* Only append name if it doesn't exist from before */
-
-static my_bool charset_in_string(const char *name, DYNAMIC_STRING *s)
-{
-  uint length= (uint) strlen(name);
-  const char *pos;
-  for (pos=s->str ; (pos=strstr(pos,name)) ; pos++)
-  {
-    if (! pos[length] || pos[length] == ' ')
-      return TRUE;				/* Already existed */
-  }
-
-  return FALSE;
-}
-
-static void charset_append(DYNAMIC_STRING *s, const char *name)
-{
-  if (!charset_in_string(name, s))
-  {
-    dynstr_append(s, name);
-    dynstr_append(s, " ");
-  }
+  DBUG_RETURN(cs);
 }
 
 
-/*
-  Returns a dynamically-allocated string listing the character sets
-  requested.
-
-  SYNOPSIS
-    list_charsets()
-    want_flags		Flags for which character sets to return:
-			MY_COMPILED_SETS:	Return incompiled charsets    
-			MY_INDEX_SETS:
-			MY_LOADED_SETS:
-
-  NOTES
-    The caller is responsible for freeing the memory.
-
-
-  RETURN
-    A string with available character sets separated by space
-*/
-
-char * list_charsets(myf want_flags)
+ulong escape_string_for_mysql(CHARSET_INFO *charset_info, char *to,
+                              const char *from, ulong length)
 {
-  DYNAMIC_STRING s;
-  char *result;
-
-  (void)init_available_charsets(MYF(0));
-  init_dynamic_string(&s, NullS, 256, 1024);
-
-  if (want_flags & MY_COMPILED_SETS)
+  const char *to_start= to;
+  const char *end;
+#ifdef USE_MB
+  my_bool use_mb_flag= use_mb(charset_info);
+#endif
+  for (end= from + length; from != end; from++)
   {
-    CHARSET_INFO *cs;
-    for (cs = compiled_charsets; cs->number > 0; cs++)
+#ifdef USE_MB
+    int l;
+    if (use_mb_flag && (l= my_ismbchar(charset_info, from, end)))
     {
-      dynstr_append(&s, cs->name);
-      dynstr_append(&s, " ");
+      while (l--)
+	*to++= *from++;
+      from--;
+      continue;
+    }
+#endif
+    switch (*from) {
+    case 0:				/* Must be escaped for 'mysql' */
+      *to++= '\\';
+      *to++= '0';
+      break;
+    case '\n':				/* Must be escaped for logs */
+      *to++= '\\';
+      *to++= 'n';
+      break;
+    case '\r':
+      *to++= '\\';
+      *to++= 'r';
+      break;
+    case '\\':
+      *to++= '\\';
+      *to++= '\\';
+      break;
+    case '\'':
+      *to++= '\\';
+      *to++= '\'';
+      break;
+    case '"':				/* Better safe than sorry */
+      *to++= '\\';
+      *to++= '"';
+      break;
+    case '\032':			/* This gives problems on Win32 */
+      *to++= '\\';
+      *to++= 'Z';
+      break;
+    default:
+      *to++= *from;
     }
   }
-
-  if (want_flags & MY_CONFIG_SETS)
-  {
-    CS_ID **charset;
-    char buf[FN_REFLEN];
-    MY_STAT status;
-
-    if ((charset=available_charsets))
-    {
-      for (; *charset; charset++)
-      {
-	if (charset_in_string((*charset)->name, &s))
-	  continue;
-	get_charset_conf_name((*charset)->number, buf);
-	if (!my_stat(buf, &status, MYF(0)))
-	  continue;       /* conf file doesn't exist */
-	dynstr_append(&s, (*charset)->name);
-	dynstr_append(&s, " ");
-      }
-    }
-  }
-
-  if (want_flags & MY_INDEX_SETS)
-  {
-    CS_ID **charset;
-    for (charset = available_charsets; *charset; charset++)
-      charset_append(&s, (*charset)->name);
-  }
-
-  if (want_flags & MY_LOADED_SETS)
-  {
-    uint i;
-    for (i = 0; i < cs_info_table.elements; i++)
-      charset_append(&s,
-		     dynamic_element(&cs_info_table, i, CHARSET_INFO *)->name);
-  }
-  if (s.length)
-    s.length--;					/* Remove end space */
-  result= my_strdup_with_length(s.str, s.length, MYF(MY_WME));
-  dynstr_free(&s);
-
-  return result;
-}
-
-/****************************************************************************
-* Code for debugging.
-****************************************************************************/
-
-
-static void _print_array(uint8 *data, uint size)
-{
-  uint i;
-  for (i = 0; i < size; ++i)
-  {
-    if (i == 0 || i % 16 == size % 16) printf("  ");
-    printf(" %02x", data[i]);
-    if ((i+1) % 16 == size % 16) printf("\n");
-  }
-}
-
-/* _print_csinfo is called from test_charset.c */
-void _print_csinfo(CHARSET_INFO *cs)
-{
-  printf("%s #%d\n", cs->name, cs->number);
-  printf("ctype:\n"); _print_array(cs->ctype, 257);
-  printf("to_lower:\n"); _print_array(cs->to_lower, 256);
-  printf("to_upper:\n"); _print_array(cs->to_upper, 256);
-  printf("sort_order:\n"); _print_array(cs->sort_order, 256);
-  printf("collate:    %3s (%d, %p, %p, %p, %p, %p)\n",
-         cs->strxfrm_multiply ? "yes" : "no",
-         cs->strxfrm_multiply,
-         cs->strcoll,
-         cs->strxfrm,
-         cs->strnncoll,
-         cs->strnxfrm,
-         cs->like_range);
-  printf("multi-byte: %3s (%d, %p, %p, %p)\n",
-         cs->mbmaxlen ? "yes" : "no",
-         cs->mbmaxlen,
-         cs->ismbchar,
-         cs->ismbhead,
-         cs->mbcharlen);
+  *to= 0;
+  return (ulong) (to - to_start);
 }

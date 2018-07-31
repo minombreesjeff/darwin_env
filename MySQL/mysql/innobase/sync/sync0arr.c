@@ -53,7 +53,7 @@ struct sync_cell_struct {
 	rw_lock_t*	old_wait_rw_lock;/* the latest wait rw-lock in cell */
         ulint		request_type;	/* lock type requested on the
         				object */
-	char*		file;		/* in debug version file where
+	const char*	file;		/* in debug version file where
 					requested */
 	ulint		line;		/* in debug version line where
 					requested */
@@ -61,10 +61,7 @@ struct sync_cell_struct {
 					thread */
 	ibool		waiting;	/* TRUE if the thread has already
 					called sync_array_event_wait
-					on this cell but not yet
-					sync_array_free_cell (which
-					actually resets wait_object and thus
-					whole cell) */
+					on this cell */
 	ibool		event_set;	/* TRUE if the event is set */
         os_event_t 	event;   	/* operating system event
                                         semaphore handle */
@@ -329,7 +326,7 @@ sync_array_reserve_cell(
         sync_array_t*	arr,	/* in: wait array */
         void*   	object, /* in: pointer to the object to wait for */
         ulint		type,	/* in: lock request type */
-        char*		file,	/* in: file where requested */
+	const char*	file,	/* in: file where requested */
         ulint		line,	/* in: line where requested */
         ulint*   	index)  /* out: index of the reserved cell */
 {
@@ -449,15 +446,15 @@ sync_array_cell_print(
 {
 	mutex_t*	mutex;
 	rw_lock_t*	rwlock;
-	char*		str __attribute__((unused)) = NULL;
 	ulint		type;
 
 	type = cell->request_type;
 
 	fprintf(file,
 "--Thread %lu has waited at %s line %lu for %.2f seconds the semaphore:\n",
-			os_thread_pf(cell->thread), cell->file, cell->line,
-			difftime(time(NULL), cell->reservation_time));
+			(ulong) os_thread_pf(cell->thread), cell->file,
+		       (ulong) cell->line,
+		       difftime(time(NULL), cell->reservation_time));
 
 	if (type == SYNC_MUTEX) {
 		/* We use old_wait_mutex in case the cell has already
@@ -470,12 +467,12 @@ sync_array_cell_print(
 			"Last time reserved in file %s line %lu, "
 #endif /* UNIV_SYNC_DEBUG */
 			"waiters flag %lu\n",
-			mutex, mutex->cfile_name, mutex->cline,
-			mutex->lock_word,
+			mutex, mutex->cfile_name, (ulong) mutex->cline,
+			(ulong) mutex->lock_word,
 #ifdef UNIV_SYNC_DEBUG
-			mutex->file_name, mutex->line,
+			mutex->file_name, (ulong) mutex->line,
 #endif /* UNIV_SYNC_DEBUG */
-			mutex->waiters);
+			(ulong) mutex->waiters);
 
 	} else if (type == RW_LOCK_EX || type == RW_LOCK_SHARED) {
 
@@ -485,11 +482,12 @@ sync_array_cell_print(
 
 		fprintf(file,
 			" RW-latch at %p created in file %s line %lu\n",
-			rwlock, rwlock->cfile_name, rwlock->cline);
+			rwlock, rwlock->cfile_name,
+			(ulong) rwlock->cline);
 		if (rwlock->writer != RW_LOCK_NOT_LOCKED) {
 			fprintf(file,
 			"a writer (thread id %lu) has reserved it in mode %s",
-				os_thread_pf(rwlock->writer_thread),
+				(ulong) os_thread_pf(rwlock->writer_thread),
 				rwlock->writer == RW_LOCK_EX
 				? " exclusive\n"
 				: " wait exclusive\n");
@@ -499,9 +497,12 @@ sync_array_cell_print(
 			"number of readers %lu, waiters flag %lu\n"
 			"Last time read locked in file %s line %lu\n"
 			"Last time write locked in file %s line %lu\n",
-			rwlock->reader_count, rwlock->waiters,
-			rwlock->last_s_file_name, rwlock->last_s_line,
-			rwlock->last_x_file_name, rwlock->last_x_line);
+			(ulong) rwlock->reader_count,
+			(ulong) rwlock->waiters,
+			rwlock->last_s_file_name,
+			(ulong) rwlock->last_s_line,
+			rwlock->last_x_file_name,
+			(ulong) rwlock->last_x_line);
 	} else {
 		ut_error;
 	}
@@ -648,8 +649,8 @@ sync_array_detect_deadlock(
 			if (ret) {
 				fprintf(stderr,
 			"Mutex %p owned by thread %lu file %s line %lu\n",
-					mutex, os_thread_pf(mutex->thread_id),
-					mutex->file_name, mutex->line);
+					mutex, (ulong) os_thread_pf(mutex->thread_id),
+					mutex->file_name, (ulong) mutex->line);
 				sync_array_cell_print(stderr, cell);
 
 				return(TRUE);
@@ -891,16 +892,20 @@ sync_arr_wake_threads_if_sema_free(void)
 }
 
 /**************************************************************************
-Prints warnings of long semaphore waits to stderr. Currently > 120 sec. */
+Prints warnings of long semaphore waits to stderr. */
 
-void
+ibool
 sync_array_print_long_waits(void)
 /*=============================*/
+			/* out: TRUE if fatal semaphore wait threshold
+			was exceeded */
 {
         sync_cell_t*   	cell;
         ibool		old_val;
 	ibool		noticed = FALSE;
 	ulint           i;
+	ulint		fatal_timeout = srv_fatal_semaphore_wait_threshold;
+	ibool		fatal = FALSE;
 
         for (i = 0; i < sync_primary_wait_array->n_cells; i++) {
 
@@ -915,14 +920,9 @@ sync_array_print_long_waits(void)
                 }
 
                 if (cell->wait_object != NULL
-		    && difftime(time(NULL), cell->reservation_time) > 600) {
-
-			fputs(
-"InnoDB: Error: semaphore wait has lasted > 600 seconds\n"
-"InnoDB: We intentionally crash the server, because it appears to be hung.\n",
-				stderr);
-
-		    	ut_error;
+		    && difftime(time(NULL), cell->reservation_time)
+		    > fatal_timeout) {
+			fatal = TRUE;
                 }
        	}
 
@@ -950,6 +950,8 @@ sync_array_print_long_waits(void)
 		fprintf(stderr,
 "InnoDB: ###### Diagnostic info printed to the standard error stream\n");
 	}
+
+	return(fatal);
 }
 
 /**************************************************************************
@@ -968,7 +970,7 @@ sync_array_output_info(
 
 	fprintf(file,
 		"OS WAIT ARRAY INFO: reservation count %ld, signal count %ld\n",
-						arr->res_count, arr->sg_count);
+						(long) arr->res_count, (long) arr->sg_count);
 	i = 0;
 	count = 0;
 

@@ -2,6 +2,12 @@ drop table if exists test.t1,mysqltest.t1,mysqltest.t2;
 drop database if exists mysqltest;
 reset query cache;
 flush status;
+show grants for current_user;
+Grants for root@localhost
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION
+show grants;
+Grants for root@localhost
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION
 create database if not exists mysqltest;
 create table mysqltest.t1 (a int,b int,c int);
 create table mysqltest.t2 (a int,b int,c int);
@@ -41,6 +47,10 @@ grant SELECT on mysqltest.* to mysqltest_1@localhost;
 grant SELECT on mysqltest.t1 to mysqltest_2@localhost;
 grant SELECT on test.t1 to mysqltest_2@localhost;
 grant SELECT(a) on mysqltest.t1 to mysqltest_3@localhost;
+show grants for current_user();
+Grants for mysqltest_1@localhost
+GRANT USAGE ON *.* TO 'mysqltest_1'@'localhost'
+GRANT SELECT ON `mysqltest`.* TO 'mysqltest_1'@'localhost'
 show status like "Qcache_queries_in_cache";
 Variable_name	Value
 Qcache_queries_in_cache	6
@@ -101,6 +111,9 @@ Qcache_hits	3
 show status like "Qcache_not_cached";
 Variable_name	Value
 Qcache_not_cached	1
+show grants for current_user();
+Grants for @localhost
+GRANT USAGE ON *.* TO ''@'localhost'
 select "user2";
 user2
 user2
@@ -121,7 +134,7 @@ a	b	c	a
 1	1	1	test.t1
 2	2	2	test.t1
 select * from t2;
-select command denied to user: 'mysqltest_2@localhost' for table 't2'
+ERROR 42000: SELECT command denied to user 'mysqltest_2'@'localhost' for table 't2'
 show status like "Qcache_queries_in_cache";
 Variable_name	Value
 Qcache_queries_in_cache	6
@@ -135,17 +148,17 @@ select "user3";
 user3
 user3
 select * from t1;
-select command denied to user: 'mysqltest_3@localhost' for column 'b' in table 't1'
+ERROR 42000: SELECT command denied to user 'mysqltest_3'@'localhost' for column 'b' in table 't1'
 select a from t1;
 a
 1
 2
 select c from t1;
-SELECT command denied to user: 'mysqltest_3@localhost' for column 'c' in table 't1'
+ERROR 42000: SELECT command denied to user 'mysqltest_3'@'localhost' for column 'c' in table 't1'
 select * from t2;
-select command denied to user: 'mysqltest_3@localhost' for table 't2'
+ERROR 42000: SELECT command denied to user 'mysqltest_3'@'localhost' for table 't2'
 select mysqltest.t1.c from test.t1,mysqltest.t1;
-SELECT command denied to user: 'mysqltest_3@localhost' for column 'c' in table 't1'
+ERROR 42000: SELECT command denied to user 'mysqltest_3'@'localhost' for column 'c' in table 't1'
 show status like "Qcache_queries_in_cache";
 Variable_name	Value
 Qcache_queries_in_cache	6
@@ -158,8 +171,12 @@ Qcache_not_cached	7
 select "user4";
 user4
 user4
+show grants;
+Grants for mysqltest_1@localhost
+GRANT USAGE ON *.* TO 'mysqltest_1'@'localhost'
+GRANT SELECT ON `mysqltest`.* TO 'mysqltest_1'@'localhost'
 select a from t1;
-No Database Selected
+ERROR 3D000: No database selected
 select * from mysqltest.t1,test.t1;
 a	b	c	a
 1	1	1	test.t1
@@ -181,6 +198,7 @@ Qcache_hits	8
 show status like "Qcache_not_cached";
 Variable_name	Value
 Qcache_not_cached	8
+set names binary;
 delete from mysql.user where user in ("mysqltest_1","mysqltest_2","mysqltest_3");
 delete from mysql.db where user in ("mysqltest_1","mysqltest_2","mysqltest_3");
 delete from mysql.tables_priv where user in ("mysqltest_1","mysqltest_2","mysqltest_3");

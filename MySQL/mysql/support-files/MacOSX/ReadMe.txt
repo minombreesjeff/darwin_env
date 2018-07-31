@@ -1,5 +1,5 @@
-Installing MySQL on Mac OS X
-----------------------------
+2.5 Installing MySQL on Mac OS X
+================================
 
 Beginning with MySQL 4.0.11, you can install MySQL on Mac OS X 10.2.x
 ("Jaguar") and up using a Mac OS X binary package in PKG format instead
@@ -12,7 +12,7 @@ mount the image and display its contents.
 
 To obtain MySQL, see *Note Getting MySQL::.
 
-*Note:* Before proceeding with the installation, be sure to shut down
+*Note*: Before proceeding with the installation, be sure to shut down
 all running MySQL server instances by either using the MySQL Manager
 Application (on Mac OS X Server) or via `mysqladmin shutdown' on the
 command line.
@@ -21,8 +21,8 @@ To actually install the MySQL PKG file, double-click on the package
 icon. This launches the Mac OS X Package Installer, which will guide
 you through the installation of MySQL.
 
-Due to a bug in the Mac OS X package installer, you may sometimes see
-this error message in the destination disk selection dialog:
+Due to a bug in the Mac OS X package installer, you may see this error
+message in the destination disk selection dialog:
 
      You cannot install this software on this disk. (null)
 
@@ -35,10 +35,9 @@ investigating this problem.
 The Mac OS X PKG of MySQL will install itself into
 `/usr/local/mysql-VERSION' and will also install a symbolic link,
 `/usr/local/mysql', pointing to the new location. If a directory named
-`/usr/local/mysql' already exists, it will be renamed to
-`/usr/local/mysql.bak' first. Additionally, it will install the grant
-tables in the `mysql' database by executing `mysql_install_db' after
-the installation.
+`/usr/local/mysql' exists, it will be renamed to `/usr/local/mysql.bak'
+first. Additionally, the installer will create the grant tables in the
+`mysql' database by executing `mysql_install_db' after the installation.
 
 The installation layout is similar to that of a `tar' file binary
 distribution; all MySQL binaries are located in the directory
@@ -49,7 +48,7 @@ MySQL installation requires a Mac OS X user account named `mysql'.  A
 user account with this name should exist by default on Mac OS X 10.2
 and up.
 
-If you are running Mac OS X Server, you already have a version of MySQL
+If you are running Mac OS X Server, you have a version of MySQL
 installed.  The versions of MySQL that ship with Mac OS X Server
 versions are shown in the following table:
 
@@ -92,7 +91,7 @@ need to install it each time you upgrade the MySQL package later.
 The Startup Item will be installed into
 `/Library/StartupItems/MySQLCOM'.  (Before MySQL 4.1.2, the location
 was `/Library/StartupItems/MySQL', but that collided with the MySQL
-Startup Item installed by Mac OS X Server).  Startup Item installation
+Startup Item installed by Mac OS X Server.)  Startup Item installation
 adds a variable `MYSQLCOM=-YES-' to the system configuration file
 `/etc/hostconfig'. If you would like to disable the automatic startup
 of MySQL, simply change this variable to `MYSQLCOM=-NO-'.
@@ -101,8 +100,8 @@ On Mac OS X Server, the default MySQL installation uses the variable
 `MYSQL' in the `/etc/hostconfig' file.  The MySQL AB Startup Item
 installer disables this variable by setting it to `MYSQL=-NO-'. This
 avoids boot time conflicts with the `MYSQLCOM' variable used by the
-MySQL AB Startup Item.  However, it does not shut down an already
-running MySQL server. You should do that yourself.
+MySQL AB Startup Item.  However, it does not shut down a running MySQL
+server. You should do that yourself.
 
 After the installation, you can start up MySQL by running the following
 commands in a terminal window. You must have administrator privileges to
@@ -110,12 +109,12 @@ perform this task.
 
 If you have installed the Startup Item:
 
-     shell> sudo /Library/StartupItems/MySQLCOM/MySQL start
+     shell> sudo /Library/StartupItems/MySQLCOM/MySQLCOM start
      (Enter your password, if necessary)
      (Press Control-D or enter "exit" to exit the shell)
 
-For versions of MySQL older than 4.1.2, substitute
-`/Library/StartupItems/MySQLCOM/MySQL' with
+For versions of MySQL older than 4.1.3, substitute
+`/Library/StartupItems/MySQLCOM/MySQLCOM' with
 `/Library/StartupItems/MySQL/MySQL' above.
 
 If you don't use the Startup Item, enter the following command sequence:
@@ -127,10 +126,10 @@ If you don't use the Startup Item, enter the following command sequence:
      shell> bg
      (Press Control-D or enter "exit" to exit the shell)
 
-You should now be able to connect to the MySQL server, for example, by
+You should be able to connect to the MySQL server, for example, by
 running `/usr/local/mysql/bin/mysql'.
 
-*Note:* The accounts that are listed in the MySQL grant tables
+*Note*: The accounts that are listed in the MySQL grant tables
 initially have no passwords.  After starting the server, you should set
 up passwords for them using the instructions in *Note
 Post-installation::.

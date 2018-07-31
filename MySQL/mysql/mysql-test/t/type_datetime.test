@@ -2,15 +2,18 @@
 # testing different DATETIME ranges
 #
 
+--disable_warnings
 drop table if exists t1;
+--enable_warnings
+
 create table t1 (t datetime);
-insert into t1 values(101),(691231),(700101),(991231),(10000101),(99991231),(101000000),(691231000000),(700101000000),(991231235959),(10000101000000),(99991231235959),(20030102030460),(20030102036301),(20030102240401),(20030132030401),(20031302030460);
+insert into t1 values (101),(691231),(700101),(991231),(10000101),(99991231),(101000000),(691231000000),(700101000000),(991231235959),(10000101000000),(99991231235959),(20030100000000),(20030000000000);
 select * from t1;
 delete from t1 where t > 0;
 optimize table t1;
 check table t1;
 delete from t1;
-insert into t1 values("000101"),("691231"),("700101"),("991231"),("00000101"),("00010101"),("99991231"),("00101000000"),("691231000000"),("700101000000"),("991231235959"),("10000101000000"),("99991231235959"),("20030102030460"),("20030102036301"),("20030102240401"),("20030132030401"),("20031302030460");
+insert into t1 values("000101"),("691231"),("700101"),("991231"),("00000101"),("00010101"),("99991231"),("00101000000"),("691231000000"),("700101000000"),("991231235959"),("10000101000000"),("99991231235959"),("20030100000000"),("20030000000000");
 select * from t1;
 drop table t1;
 
@@ -20,7 +23,7 @@ drop table t1;
 
 CREATE TABLE t1 (a timestamp, b date, c time, d datetime);
 insert into t1 (b,c,d) values(now(),curtime(),now());
-select date_format(a,"%Y-%m-%d")=b,right(a,6)=c+0,a=d+0 from t1;
+select date_format(a,"%Y-%m-%d")=b,right(a+0,6)=c+0,a=d+0 from t1;
 drop table t1;
 
 #
@@ -55,7 +58,7 @@ CREATE TABLE `t1` (
   PRIMARY KEY  (`numfacture`),
   KEY `date` (`date`),
   KEY `expedition` (`expedition`)
-) TYPE=MyISAM;
+) ENGINE=MyISAM;
 
 INSERT INTO t1 (expedition) VALUES ('0001-00-00 00:00:00');
 SELECT * FROM t1 WHERE expedition='0001-00-00 00:00:00';
@@ -67,4 +70,34 @@ create table t1 (a datetime not null, b datetime not null);
 insert into t1 values (now(), now());
 insert into t1 values (now(), now());
 select * from t1 where a is null or b is null;
+drop table t1;
+
+#
+# Let us check if we properly treat wrong datetimes and produce proper
+# warnings (for both strings and numbers)
+#
+create table t1 (t datetime);
+insert into t1 values (20030102030460),(20030102036301),(20030102240401),
+                      (20030132030401),(20031302030401),(100001202030401);
+select * from t1;
+delete from t1;
+insert into t1 values
+  ("2003-01-02 03:04:60"),("2003-01-02 03:63:01"),("2003-01-02 24:04:01"),
+  ("2003-01-32 03:04:01"),("2003-13-02 03:04:01"), ("10000-12-02 03:04:00");
+select * from t1;
+delete from t1;
+insert into t1 values ("0000-00-00 00:00:00 some trailer"),("2003-01-01 00:00:00 some trailer");
+select * from t1;
+drop table t1;
+
+#
+# Test for bug #7297 "Two digit year should be interpreted correctly even
+# with zero month and day"
+#
+create table t1 (dt datetime);
+# These dates should be treated as dates in 21st century
+insert into t1 values ("12-00-00"), ("00-00-00 01:00:00");
+# Zero dates are still special :/
+insert into t1 values ("00-00-00"), ("00-00-00 00:00:00");
+select * from t1;
 drop table t1;

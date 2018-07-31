@@ -3,7 +3,7 @@
 # It would be nice to make this a replication test, but in 4.0 the
 # slave is always with --skip-innodb in the testsuite. I (Guilhem) however
 # did some tests manually on a slave; tables are replicated fine and
-# Exec_master_log_pos advances as expected.
+# Exec_Master_Log_Pos advances as expected.
 
 -- source include/have_innodb.inc
 
@@ -15,8 +15,8 @@ connect (con1,localhost,root,,);
 connect (con2,localhost,root,,);
 
 connection con1;
-create table t1 (a int) type=innodb;
-create table t2 (a int) type=myisam;
+create table t1 (a int) engine=innodb;
+create table t2 (a int) engine=myisam;
 
 reset master;
 
@@ -35,7 +35,6 @@ begin;
 insert into t1 values(2);
 insert into t2 select * from t1;
 # should say some changes to non-transact1onal tables couldn't be rolled back
---error 1196
 rollback;
 
 show binlog events from 79;
@@ -49,7 +48,6 @@ insert into t1 values(3);
 savepoint my_savepoint;
 insert into t1 values(4);
 insert into t2 select * from t1;
---error 1196
 rollback to savepoint my_savepoint;
 commit;
 
@@ -64,7 +62,6 @@ insert into t1 values(5);
 savepoint my_savepoint;
 insert into t1 values(6);
 insert into t2 select * from t1;
---error 1196
 rollback to savepoint my_savepoint;
 insert into t1 values(7);
 commit;
@@ -121,7 +118,7 @@ show binlog events from 79;
 # Check that things work like before this BEGIN/ROLLBACK code was added,
 # when t2 is INNODB 
 
-alter table t2 type=INNODB;
+alter table t2 engine=INNODB;
 
 delete from t1;
 delete from t2;
@@ -175,4 +172,36 @@ select a from t1 order by a; # check that savepoints work :)
 
 show binlog events from 79;
 
+# Test for BUG#5714, where a MyISAM update in the transaction used to
+# release row-level locks in InnoDB
+
+connect (con3,localhost,root,,);
+
+connection con3;
+delete from t1;
+delete from t2;
+--disable_warnings
+alter table t2 type=MyISAM;
+--enable_warnings
+insert into t1 values (1);
+begin;
+select * from t1 for update;
+
+connection con2;
+select (@before:=unix_timestamp())*0; # always give repeatable output
+begin;
+send select * from t1 for update;
+
+connection con3;
+insert into t2 values (20);
+
+connection con2;
+--error 1205
+reap;
+select (@after:=unix_timestamp())*0; # always give repeatable output
+# verify that innodb_lock_wait_timeout was exceeded. When there was
+# the bug, the reap would return immediately after the insert into t2.
+select (@after-@before) >= 2;
+
+# cleanup
 drop table t1,t2;

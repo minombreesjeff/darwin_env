@@ -6,7 +6,6 @@
 
 version=@VERSION@
 export version
-SOURCE=`pwd`
 CP="cp -p"
 
 DEBUG=0
@@ -24,6 +23,7 @@ if [ ! -f scripts/make_win_src_distribution ]; then
   echo "ERROR : You must run this script from the MySQL top-level directory"
   exit 1
 fi
+SOURCE=`pwd`
 
 #
 # Check for source compilation/configuration
@@ -119,7 +119,7 @@ unix_to_dos()
   for arg do
     print_debug "Replacing LF -> CRLF from '$arg'"
 
-    cat $arg | awk '{sub(/$/,"\r");print}' > $arg.tmp
+    awk '{sub(/$/,"\r");print}' < $arg   > $arg.tmp
     rm -f $arg
     mv $arg.tmp $arg
   done
@@ -138,14 +138,6 @@ if [ -d $BASE ] ; then
 fi
 
 $CP -r $SOURCE/VC++Files $BASE
-(
-find $BASE \( -name "*.dsp" -o -name "*.dsw" \) -and -not -path \*SCCS\* -print
-)|(
-  while read v
-  do
-    unix_to_dos $v
-  done
-)
 
 #
 # Process version tags in InstallShield files
@@ -161,13 +153,16 @@ vreplace()
   done
 }
 
-for d in 4.0.XX-gpl 4.0.XX-pro 4.0.XX-classic
-do
-  cd $BASE/InstallShield/$d/String\ Tables/0009-English
-  vreplace value.shl
-  cd ../../Setup\ Files/Compressed\ Files/Language\ Independent/OS\ Independent
-  vreplace infolist.txt
-done
+if test -d $BASE/InstallShield
+then
+  for d in 4.1.XX-gpl 4.1.XX-pro 4.1.XX-classic
+  do
+    cd $BASE/InstallShield/$d/String\ Tables/0009-English
+    vreplace value.shl
+    cd ../../Setup\ Files/Compressed\ Files/Language\ Independent/OS\ Independent
+    vreplace infolist.txt
+  done
+fi
 
 #
 # Move all error message files to root directory
@@ -178,17 +173,7 @@ rm -r -f "$BASE/share/Makefile"
 rm -r -f "$BASE/share/Makefile.in"
 rm -r -f "$BASE/share/Makefile.am"
 
-#
-# Clean up if we did this from a bk tree
-#
-
-if [ -d $BASE/SCCS ]
-then
-  find $BASE/ -type d -name SCCS -printf " \"%p\"" | xargs rm -r -f
-fi
-
 mkdir $BASE/Docs $BASE/extra $BASE/include
-
 
 #
 # Copy directory files
@@ -203,8 +188,11 @@ copy_dir_files()
        print_debug "Creating directory '$arg'"
        mkdir $BASE/$arg
      fi
-    for i in *.c *.cpp *.h *.ih *.i *.ic *.asm *.def \
-             README INSTALL* LICENSE
+    for i in *.c *.cpp *.h *.ih *.i *.ic *.asm *.def *.hpp *.dsp \
+             README INSTALL* LICENSE *.inc *.test *.result \
+	     *.pem Moscow_leap des_key_file *.dat *.000001 \
+	     *.require *.opt
+
     do
       if [ -f $i ]
       then
@@ -252,17 +240,22 @@ copy_dir_dirs() {
 
 for i in client dbug extra heap include isam \
          libmysql libmysqld merge myisam \
-         myisammrg mysys regex sql strings \
+         myisammrg mysys regex sql strings sql-common \
          tools vio zlib
 do
   copy_dir_files $i
 done
 
 #
+# Create project files for ndb
+#
+make -C $SOURCE/ndb windoze
+
+#
 # Input directories to be copied recursively
 #
 
-for i in bdb innobase
+for i in bdb innobase mysql-test ndb
 do
   copy_dir_dirs $i
 done
@@ -282,13 +275,12 @@ touch $BASE/innobase/ib_config.h
 #
 
 cd $SOURCE
-for i in COPYING ChangeLog README \
+for i in COPYING ChangeLog README EXCEPTIONS-CLIENT\
          INSTALL-SOURCE INSTALL-WIN \
          INSTALL-WIN-SOURCE \
          Docs/manual_toc.html  Docs/manual.html \
          Docs/manual.txt Docs/mysqld_error.txt \
-         Docs/INSTALL-BINARY
-
+         Docs/INSTALL-BINARY Docs/internals.texi
 do
   print_debug "Copying file '$i'"
   if [ -f $i ]
@@ -298,11 +290,22 @@ do
 done
 
 #
+# support files
+#
+mkdir $BASE/support-files
+
+# Rename the cnf files to <file>.ini
+for i in support-files/*.cnf
+do
+  i=`echo $i | sed 's/.cnf$//g'`
+  cp $i.cnf $BASE/$i.ini
+done
+
+#
 # Raw dirs from source tree
 #
 
-for i in Docs/Flags scripts sql-bench SSL \
-         tests
+for i in scripts sql-bench SSL tests
 do
   print_debug "Copying directory '$i'"
   if [ -d $i ]
@@ -312,13 +315,34 @@ do
 done
 
 #
-# Fix some windows files
+# Fix some windows files to avoid compiler warnings
 #
 
-./extra/replace std:: "" -- $BASE/sql/sql_yacc.cpp
+./extra/replace std:: "" < $BASE/sql/sql_yacc.cpp | sed '/^ *switch (yytype)$/ { N; /\n *{$/ { N; /\n *default:$/ { N; /\n *break;$/ { N; /\n *}$/ d; };};};} ' > $BASE/sql/sql_yacc.cpp-new
+mv $BASE/sql/sql_yacc.cpp-new $BASE/sql/sql_yacc.cpp
 
-unix_to_dos $BASE/README
+#
+# Search the tree for plain text files and adapt the line end marker
+#
+find $BASE \( -name "*.dsp" -o -name "*.dsw" -o -name "*.cnf" -o -name "*.ini" \
+           -o -name COPYING -o -name ChangeLog -o -name EXCEPTIONS-CLIENT -o -name "INSTALL*" -o -name LICENSE -o -name "README*" \) -type f -print \
+| while read v
+  do
+    unix_to_dos $v
+  done
+# File extension '.txt' matches too many other files, error messages etc.
+unix_to_dos $BASE/Docs/*.txt 
+
 mv $BASE/README $BASE/README.txt
+
+#
+# Clean up if we did this from a bk tree
+#
+
+if [ -d $BASE/SSL/SCCS ]
+then
+  find $BASE/ -type d -name SCCS -printf " \"%p\"" | xargs rm -r -f
+fi
 
 #
 # Initialize the initial data directory
@@ -327,6 +351,10 @@ mv $BASE/README $BASE/README.txt
 if [ -f scripts/mysql_install_db ]; then
   print_debug "Initializing the 'data' directory"
   scripts/mysql_install_db --no-defaults --windows --datadir=$BASE/data
+  if test "$?" = 1
+  then
+    exit 1;
+  fi
 fi
 
 #

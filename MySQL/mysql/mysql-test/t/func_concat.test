@@ -2,7 +2,10 @@
 # Test of problem with CONCAT_WS() and long separators.
 #
 
+--disable_warnings
 DROP TABLE IF EXISTS t1;
+--enable_warnings
+
 CREATE TABLE t1 ( number INT NOT NULL, alpha CHAR(6) NOT NULL );
 INSERT INTO t1 VALUES (1413006,'idlfmv'),
 (1413065,'smpsfz'),(1413127,'sljrhx'),(1413304,'qerfnd');
@@ -22,3 +25,28 @@ FROM t1 GROUP BY new LIMIT 1;
 SELECT number, alpha, CONCAT_WS('<------------------>',number,alpha) AS new
 FROM t1 GROUP BY new LIMIT 1;
 drop table t1;
+
+#
+# Bug #5540: a problem with double type
+#
+
+create table t1 (a char(4), b double, c date, d tinyint(4));
+insert into t1 values ('AAAA', 105, '2003-03-01', 1);
+select * from t1 where concat(A,C,B,D) = 'AAAA2003-03-011051';
+drop table t1;
+
+# BUG#6825 
+select 'a' union select concat('a', -4);
+select 'a' union select concat('a', -4.5);
+
+select 'a' union select concat('a', -(4 + 1));
+select 'a' union select concat('a', 4 - 5);
+
+select 'a' union select concat('a', -'3');
+select 'a' union select concat('a', -concat('3',4));
+
+select 'a' union select concat('a', -0);
+
+--replace_result 'a-0.0' good 'a0.0' good
+select 'a' union select concat('a', -0.0);
+

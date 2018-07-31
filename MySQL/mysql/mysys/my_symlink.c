@@ -26,9 +26,11 @@
 /*
   Reads the content of a symbolic link
   If the file is not a symbolic link, return the original file name in to.
-  Returns: 0 if table was a symlink,
-           1 if table was a normal file
-	   -1 on error.
+
+  RETURN
+    0  If filename was a symlink,    (to will be set to value of symlink)
+    1  If filename was a normal file (to will be set to filename)
+   -1  on error.
 */
 
 int my_readlink(char *to, const char *filename, myf MyFlags)
@@ -58,6 +60,7 @@ int my_readlink(char *to, const char *filename, myf MyFlags)
   }
   else
     to[length]=0;
+  DBUG_PRINT("exit" ,("result: %d", result));
   DBUG_RETURN(result);
 #endif /* HAVE_READLINK */
 }
@@ -124,20 +127,22 @@ int my_realpath(char *to, const char *filename,
     }
     else
     {
-      /* Realpath didn't work;  Use original name */
+      /*
+	Realpath didn't work;  Use my_load_path() which is a poor substitute
+	original name but will at least be able to resolve paths that starts
+	with '.'.
+      */
       DBUG_PRINT("error",("realpath failed with errno: %d", errno));
       my_errno=errno;
       if (MyFlags & MY_WME)
 	my_error(EE_REALPATH, MYF(0), filename, my_errno);
-      if (to != filename)
-	strmov(to,filename);
+      my_load_path(to, filename, NullS);
       result= -1;
     }
   }
   DBUG_RETURN(result);
 #else
-  if (to != filename)
-    strmov(to,filename);
+  my_load_path(to, filename, NullS);
   return 0;
 #endif
 }

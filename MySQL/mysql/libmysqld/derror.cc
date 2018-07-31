@@ -20,27 +20,28 @@
 #include "mysql_priv.h"
 #include "mysys_err.h"
 
-static void read_texts(const char *file_name,const char ***point,
+static bool read_texts(const char *file_name,const char ***point,
 		       uint error_messages);
 static void init_myfunc_errs(void);
 
 	/* Read messages from errorfile */
 
-void init_errmessage(void)
+bool init_errmessage(void)
 {
   DBUG_ENTER("init_errmessage");
 
-  read_texts(ERRMSG_FILE,&my_errmsg[ERRMAPP],ER_ERROR_MESSAGES);
+  if (read_texts(ERRMSG_FILE,&my_errmsg[ERRMAPP],ER_ERROR_MESSAGES))
+    DBUG_RETURN(TRUE);
   errmesg=my_errmsg[ERRMAPP];		/* Init global variabel */
   init_myfunc_errs();			/* Init myfunc messages */
-  DBUG_VOID_RETURN;
+  DBUG_RETURN(FALSE);
 }
 
 
 	/* Read text from packed textfile in language-directory */
 	/* If we can't read messagefile then it's panic- we can't continue */
 
-static void read_texts(const char *file_name,const char ***point,
+static bool read_texts(const char *file_name,const char ***point,
 		       uint error_messages)
 {
   register uint i;
@@ -49,6 +50,7 @@ static void read_texts(const char *file_name,const char ***point,
   char name[FN_REFLEN];
   const char *buff;
   uchar head[32],*pos;
+  CHARSET_INFO *cset;				// For future
   DBUG_ENTER("read_texts");
 
   *point=0;					// If something goes wrong
@@ -65,6 +67,22 @@ static void read_texts(const char *file_name,const char ***point,
       head[2] != 2 || head[3] != 1)
     goto err; /* purecov: inspected */
   textcount=head[4];
+
+  if (!head[30])
+  {
+    sql_print_error("Character set information not found in '%s'. \
+Please install the latest version of this file.",name);
+    goto err1;
+  }
+  
+  /* TODO: Convert the character set to server system character set */
+  if (!(cset= get_charset(head[30],MYF(MY_WME))))
+  {
+    sql_print_error("Character set #%d is not supported for messagefile '%s'",
+                    (int)head[30],name);
+    goto err1;
+  }
+  
   length=uint2korr(head+6); count=uint2korr(head+8);
 
   if (count < error_messages)
@@ -100,7 +118,7 @@ Check that the above file is the right version for this program!",
     point[i]= *point +uint2korr(head+10+i+i);
   }
   VOID(my_close(file,MYF(0)));
-  DBUG_VOID_RETURN;
+  DBUG_RETURN(0);
 
 err:
   switch (funktpos) {
@@ -114,10 +132,12 @@ err:
     buff="Can't find messagefile '%s'";
     break;
   }
+  sql_print_error(buff,name);
+err1:
   if (file != FERR)
     VOID(my_close(file,MYF(MY_WME)));
-  sql_print_error(buff,name);
   unireg_abort(1);
+  DBUG_RETURN(1);					// keep compiler happy
 } /* read_texts */
 
 

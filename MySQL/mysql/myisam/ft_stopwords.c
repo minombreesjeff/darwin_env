@@ -17,8 +17,10 @@
 /* Written by Sergei A. Golubchik, who has a shared copyright to this code */
 
 #include "ftdefs.h"
+#include "my_handler.h"
 
-typedef struct st_ft_stopwords {
+typedef struct st_ft_stopwords
+{
   const char * pos;
   uint   len;
 } FT_STOPWORD;
@@ -28,9 +30,9 @@ static TREE *stopwords3=NULL;
 static int FT_STOPWORD_cmp(void* cmp_arg __attribute__((unused)),
 			   FT_STOPWORD *w1, FT_STOPWORD *w2)
 {
-  return _mi_compare_text(default_charset_info,
-			  (uchar *)w1->pos,w1->len,
-			  (uchar *)w2->pos,w2->len,0);
+  return mi_compare_text(default_charset_info,
+			 (uchar *)w1->pos,w1->len,
+			 (uchar *)w2->pos,w2->len,0,0);
 }
 
 static void FT_STOPWORD_free(FT_STOPWORD *w, TREE_FREE action,
@@ -45,7 +47,7 @@ static int ft_add_stopword(const char *w)
   FT_STOPWORD sw;
   return !w ||
          (((sw.len= (uint) strlen(sw.pos=w)) >= ft_min_word_len) &&
-          (tree_insert(stopwords3, &sw, 0)==NULL));
+          (tree_insert(stopwords3, &sw, 0, stopwords3->custom_arg)==NULL));
 }
 
 int ft_init_stopwords()
@@ -79,7 +81,7 @@ int ft_init_stopwords()
       goto err0;
     len=my_read(fd, buffer, len, MYF(MY_WME));
     end=start+len;
-    while (ft_simple_get_word(&start, end, &w))
+    while (ft_simple_get_word(default_charset_info, &start, end, &w))
     {
       if (ft_add_stopword(my_strdup_with_length(w.pos, w.len, MYF(0))))
         goto err1;
@@ -111,7 +113,7 @@ int is_stopword(char *word, uint len)
   FT_STOPWORD sw;
   sw.pos=word;
   sw.len=len;
-  return tree_search(stopwords3,&sw) != NULL;
+  return tree_search(stopwords3,&sw, stopwords3->custom_arg) != NULL;
 }
 
 

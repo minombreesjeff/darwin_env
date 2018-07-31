@@ -118,7 +118,7 @@ int _nisam_search(register N_INFO *info, register N_KEYDEF *keyinfo, uchar *key,
   if ((nextflag & (SEARCH_SMALLER | SEARCH_LAST)) && flag != 0)
   {
     keypos=_nisam_get_last_key(info,keyinfo,buff,lastkey,keypos);
-    if ((nextflag & SEARCH_LAST) &&
+    if (!(nextflag & SEARCH_SMALLER) &&
 	_nisam_key_cmp(keyinfo->seg, lastkey, key, key_len, SEARCH_FIND))
     {
       my_errno=HA_ERR_KEY_NOT_FOUND;			/* Didn't find key */
@@ -331,8 +331,7 @@ int _nisam_key_cmp(register N_KEYSEG *keyseg, register uchar *a, register uchar 
 	  (int) *as : b_length;
 	end= a+ min(key_length,(uint) length);
 
-#ifdef USE_STRCOLL
-        if (use_strcoll(default_charset_info)) {
+        if (use_strnxfrm(default_charset_info)) {
           if (((enum ha_base_keytype) keyseg->base.type) == HA_KEYTYPE_BINARY)
           {
             while (a < end)
@@ -349,7 +348,6 @@ int _nisam_key_cmp(register N_KEYSEG *keyseg, register uchar *a, register uchar 
           }
         }
         else
-#endif
 	{
           while (a < end)
             if ((flag= (int) *a++ - (int) *b++))
@@ -382,8 +380,7 @@ int _nisam_key_cmp(register N_KEYSEG *keyseg, register uchar *a, register uchar 
       }
       else
       {
-#ifdef USE_STRCOLL
-        if (use_strcoll(default_charset_info)) {
+        if (use_strnxfrm(default_charset_info)) {
           if (((enum ha_base_keytype) keyseg->base.type) == HA_KEYTYPE_BINARY)
           {
             while (a < end)
@@ -400,7 +397,6 @@ int _nisam_key_cmp(register N_KEYSEG *keyseg, register uchar *a, register uchar 
           }
         }
         else
-#endif
 	{
           while (a < end)
             if ((flag= (int) *a++ - (int) *b++))
@@ -493,7 +489,7 @@ int _nisam_key_cmp(register N_KEYSEG *keyseg, register uchar *a, register uchar 
 	int alength,blength;
 
 	if (swap_flag)
-	  swap(uchar*,a,b);
+	  swap_variables(uchar*, a, b);
 	alength= *a++; blength= *b++;
 	if ((flag=(int) (keyseg->base.length-key_length)) < 0)
 	  flag=0;
@@ -508,18 +504,20 @@ int _nisam_key_cmp(register N_KEYSEG *keyseg, register uchar *a, register uchar 
 	if (*a == '-' && *b == '-')
 	{
 	  swap_flag=1;
-	  swap(uchar*,a,b);
+	  swap_variables(uchar*, a, b);
 	}
 	end=a+alength;
 	while (a < end)
 	  if (*a++ !=  *b++)
 	  {
 	    a--; b--;
-	    if (isdigit((char) *a) && isdigit((char) *b))
+	    if (my_isdigit(default_charset_info, (char) *a) && 
+	        my_isdigit(default_charset_info, (char) *b))
 	      return ((int) *a - (int) *b);
-	    if (*a == '-' || isdigit((char) *b))
+	    if (*a == '-' || my_isdigit(default_charset_info,(char) *b))
 	      return (-1);
-	    if (*b == '-' || *b++ == ' ' || isdigit((char) *a))
+	    if (*b == '-' || *b++ == ' ' || 
+	        my_isdigit(default_charset_info,(char) *a))
 	      return (1);
 	    if (*a++ == ' ')
 	      return (-1);
@@ -533,24 +531,26 @@ int _nisam_key_cmp(register N_KEYSEG *keyseg, register uchar *a, register uchar 
 	if (swap_flag)
 	{
 	  end=b+(int) (end-a);
-	  swap(uchar*,a,b);
+	  swap_variables(uchar*, a, b);
 	}
 	while (a < end)
 	  if (*a++ != *b++)
 	  {
 	    a--; b--;
-	    if (isdigit((char) *a) && isdigit((char) *b))
+	    if (my_isdigit(default_charset_info,(char) *a) && 
+	        my_isdigit(default_charset_info,(char) *b))
 	      return ((int) *a - (int) *b);
-	    if (*a == '-' || isdigit((char) *b))
+	    if (*a == '-' || my_isdigit(default_charset_info,(char) *b))
 	      return (-1);
-	    if (*b == '-' || *b++ == ' ' || isdigit((char) *a))
+	    if (*b == '-' || *b++ == ' ' || 
+	        my_isdigit(default_charset_info,(char) *a))
 	      return (1);
 	    if (*a++ == ' ')
 	      return -1;
 	  }
       }
       if (swap_flag)
-	swap(uchar*,a,b);
+	swap_variables(uchar*, a, b);
       break;
     }
 #ifdef HAVE_LONG_LONG

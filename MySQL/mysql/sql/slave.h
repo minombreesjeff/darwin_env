@@ -1,3 +1,21 @@
+/* Copyright (C) 2000-2003 MySQL AB
+   
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+   
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+   
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+
+#ifdef HAVE_REPLICATION
+
 #ifndef SLAVE_H
 #define SLAVE_H
 
@@ -7,22 +25,28 @@
 #define MAX_SLAVE_ERRMSG   1024
 #define MAX_SLAVE_ERROR    2000
 
-/*
-  The replication is accomplished by starting two threads - I/O
-  thread, and SQL thread. I/O thread is associated with its
-  MASTER_INFO struct, so MASTER_INFO can be viewed as I/O thread
-  descriptor. SQL thread is associated with RELAY_LOG_INFO struct.
+/*****************************************************************************
 
-  I/O thread reads maintains a connection to the master, and reads log
-  events from the master as they arrive, queueing them by writing them
-  out into the temporary slave binary log (relay log). The SQL thread,
-  in turn, reads the slave binary log executing each event.
+  MySQL Replication
 
-  Relay log is needed to be able to handle situations when there is a large
-  backlog of unprocessed events from the master (eg. one particular update
-  takes a day to finish), and to be able to restart the slave server without
-  having to re-read the master updates.
- */
+  Replication is implemented via two types of threads:
+
+    I/O Thread - One of these threads is started for each master server.
+                 They maintain a connection to their master server, read log
+                 events from the master as they arrive, and queues them into
+                 a single, shared relay log file.  A MASTER_INFO struct
+                 represents each of these threads.
+
+    SQL Thread - One of these threads is started and reads from the relay log
+                 file, executing each event.  A RELAY_LOG_INFO struct
+                 represents this thread.
+
+  Buffering in the relay log file makes it unnecessary to reread events from
+  a master server across a slave restart.  It also decouples the slave from
+  the master where long-running updates and event logging are concerned--ie
+  it can continue to log new events while a slow query executes on the slave.
+
+*****************************************************************************/
 
 /*
   MUTEXES in replication:
@@ -58,7 +82,7 @@
   (so that you have to update the .index file).
 */
 
-extern ulong slave_net_timeout, master_retry_count;
+extern ulong master_retry_count;
 extern MY_BITMAP slave_error_mask;
 extern bool use_slave_mask;
 extern char* slave_load_tmpdir;
@@ -75,10 +99,30 @@ enum enum_binlog_formats {
   BINLOG_FORMAT_323_GEQ_57 };
 
 /*
-  st_relay_log_info contains information on the current relay log and
-  relay log offset, and master log name and log sequence corresponding to the
-  last update. Additionally, misc information specific to the SQL thread is
-  included.
+  3 possible values for MASTER_INFO::slave_running and
+  RELAY_LOG_INFO::slave_running.
+  The values 0,1,2 are very important: to keep the diff small, I didn't
+  substitute places where we use 0/1 with the newly defined symbols. So don't change
+  these values.
+  The same way, code is assuming that in RELAY_LOG_INFO we use only values
+  0/1.
+  I started with using an enum, but
+  enum_variable=1; is not legal so would have required many line changes.
+*/
+#define MYSQL_SLAVE_NOT_RUN         0
+#define MYSQL_SLAVE_RUN_NOT_CONNECT 1
+#define MYSQL_SLAVE_RUN_CONNECT     2
+
+/****************************************************************************
+
+  Replication SQL Thread
+
+  st_relay_log_info contains:
+    - the current relay log
+    - the current relay log offset
+    - master log name
+    - master log sequence corresponding to the last update
+    - misc information specific to the SQL thread
 
   st_relay_log_info is initialized from the slave.info file if such exists.
   Otherwise, data members are intialized with defaults. The initialization is
@@ -92,7 +136,8 @@ enum enum_binlog_formats {
   master_log_pos
 
   To clean up, call end_relay_log_info()
- */
+
+*****************************************************************************/
 
 typedef struct st_relay_log_info
 {
@@ -104,12 +149,6 @@ typedef struct st_relay_log_info
     cur_log_fd - file descriptor of the current read  relay log
   */
   File info_fd,cur_log_fd;
-  /* name of current read relay log */
-  char relay_log_name[FN_REFLEN];
-  /* master log name corresponding to current read position */
-  char master_log_name[FN_REFLEN];
-  /* original log position of last processed event */
-  volatile my_off_t master_log_pos;
 
   /*
     Protected with internal locks.
@@ -154,15 +193,36 @@ typedef struct st_relay_log_info
   uint32 cur_log_old_open_count;
   
   /*
-    Current offset in the relay log.
-    pending - in some cases we do not increment offset immediately after
-    processing an event, because the following event needs to be processed
-    atomically together with this one ( so far, there is only one type of
-    such event - Intvar_event that sets auto_increment value). However, once
-    both events have been processed, we need to increment by the cumulative
-    offset. pending stored the extra offset to be added to the position.
+    Let's call a group (of events) :
+      - a transaction
+      or
+      - an autocommiting query + its associated events (INSERT_ID,
+    TIMESTAMP...)
+    We need these rli coordinates :
+    - relay log name and position of the beginning of the group we currently are
+    executing. Needed to know where we have to restart when replication has
+    stopped in the middle of a group (which has been rolled back by the slave).
+    - relay log name and position just after the event we have just
+    executed. This event is part of the current group.
+    Formerly we only had the immediately above coordinates, plus a 'pending'
+    variable, but this dealt wrong with the case of a transaction starting on a
+    relay log and finishing (commiting) on another relay log. Case which can
+    happen when, for example, the relay log gets rotated because of
+    max_binlog_size.
   */
-  ulonglong relay_log_pos, pending;
+  char group_relay_log_name[FN_REFLEN];
+  ulonglong group_relay_log_pos;
+  char event_relay_log_name[FN_REFLEN];
+  ulonglong event_relay_log_pos;
+  /* 
+     Original log name and position of the group we're currently executing
+     (whose coordinates are group_relay_log_name/pos in the relay log)
+     in the master's binlog. These concern the *group*, because in the master's
+     binlog the log_pos that comes with each event is the position of the
+     beginning of the group.
+  */
+  char group_master_log_name[FN_REFLEN];
+  volatile my_off_t group_master_log_pos;
 
   /*
     Handling of the relay_log_space_limit optional constraint.
@@ -185,6 +245,8 @@ typedef struct st_relay_log_info
   ulonglong future_group_master_log_pos;
 #endif
 
+  time_t last_master_timestamp; 
+
   /*
     Needed for problems when slave stops and we want to restart it
     skipping one or more events in the master log that have caused
@@ -204,27 +266,89 @@ typedef struct st_relay_log_info
 
   /* if not set, the value of other members of the structure are undefined */
   bool inited;
-  volatile bool abort_slave, slave_running;
-  bool skip_log_purge;
-  bool inside_transaction;
+  volatile bool abort_slave;
+  volatile uint slave_running;
 
+  /* 
+     Condition and its parameters from START SLAVE UNTIL clause.
+     
+     UNTIL condition is tested with is_until_satisfied() method that is 
+     called by exec_relay_log_event(). is_until_satisfied() caches the result
+     of the comparison of log names because log names don't change very often;
+     this cache is invalidated by parts of code which change log names with
+     notify_*_log_name_updated() methods. (They need to be called only if SQL
+     thread is running).
+   */
+  
+  enum {UNTIL_NONE= 0, UNTIL_MASTER_POS, UNTIL_RELAY_POS} until_condition;
+  char until_log_name[FN_REFLEN];
+  ulonglong until_log_pos;
+  /* extension extracted from log_name and converted to int */
+  ulong until_log_name_extension;   
+  /* 
+     Cached result of comparison of until_log_name and current log name
+     -2 means unitialised, -1,0,1 are comarison results 
+  */
+  enum 
+  { 
+    UNTIL_LOG_NAMES_CMP_UNKNOWN= -2, UNTIL_LOG_NAMES_CMP_LESS= -1,
+    UNTIL_LOG_NAMES_CMP_EQUAL= 0, UNTIL_LOG_NAMES_CMP_GREATER= 1
+  } until_log_names_cmp_result;
+  
   st_relay_log_info();
   ~st_relay_log_info();
-  void inc_pending(ulonglong val);
-  void inc_pos(ulonglong val, ulonglong log_pos, bool skip_lock=0);
-  void read_pos(ulonglong& var);
+
+  /*
+    Invalidate cached until_log_name and group_relay_log_name comparison 
+    result. Should be called after any update of group_realy_log_name if
+    there chances that sql_thread is running.
+  */
+  inline void notify_group_relay_log_name_update()
+  {
+    if (until_condition==UNTIL_RELAY_POS)
+      until_log_names_cmp_result= UNTIL_LOG_NAMES_CMP_UNKNOWN;
+  }
+
+  /*
+    The same as previous but for group_master_log_name. 
+  */
+  inline void notify_group_master_log_name_update()
+  {
+    if (until_condition==UNTIL_MASTER_POS)
+      until_log_names_cmp_result= UNTIL_LOG_NAMES_CMP_UNKNOWN;
+  }
+  
+  inline void inc_event_relay_log_pos(ulonglong val)
+  {
+    event_relay_log_pos+= val;
+  }
+
+  void inc_group_relay_log_pos(ulonglong val, ulonglong log_pos, bool skip_lock=0);
   int wait_for_pos(THD* thd, String* log_name, longlong log_pos, 
 		   longlong timeout);
   void close_temporary_tables();
+
+  /* Check if UNTIL condition is satisfied. See slave.cc for more. */
+  bool is_until_satisfied();
+  inline ulonglong until_pos()
+  {
+    return ((until_condition == UNTIL_MASTER_POS) ? group_master_log_pos :
+	    group_relay_log_pos);
+  }
 } RELAY_LOG_INFO;
 
 
 Log_event* next_event(RELAY_LOG_INFO* rli);
 
-/*
-  st_master_info contains information about how to connect to a master,
-  current master log name, and current log offset, as well as misc
-  control variables
+/*****************************************************************************
+
+  Replication IO Thread
+
+  st_master_info contains:
+    - information about how to connect to a master
+    - current master log name
+    - current master log offset
+    - misc control variables
 
   st_master_info is initialized once from the master.info file if such
   exists. Otherwise, data members corresponding to master.info fields
@@ -246,21 +370,24 @@ Log_event* next_event(RELAY_LOG_INFO* rli);
   flush_master_info() is required.
 
   To clean up, call end_master_info()
-*/
 
-   
+*****************************************************************************/
+
 typedef struct st_master_info
 {
+  /* the variables below are needed because we can change masters on the fly */
   char master_log_name[FN_REFLEN];
   char host[HOSTNAME_LENGTH+1];
   char user[USERNAME_LENGTH+1];
   char password[MAX_PASSWORD_LENGTH+1];
+  my_bool ssl; // enables use of SSL connection if true
+  char ssl_ca[FN_REFLEN], ssl_capath[FN_REFLEN], ssl_cert[FN_REFLEN];
+  char ssl_cipher[FN_REFLEN], ssl_key[FN_REFLEN];
   
   my_off_t master_log_pos;
   File fd; // we keep the file open, so we need to remember the file pointer
   IO_CACHE file;
   
-  /* the variables below are needed because we can change masters on the fly */
   pthread_mutex_t data_lock,run_lock;
   pthread_cond_t data_cond,start_cond,stop_cond;
   THD *io_thd;
@@ -273,17 +400,30 @@ typedef struct st_master_info
   int events_till_abort;
 #endif
   bool inited;
-  enum enum_binlog_formats old_format;		/* binlog is in 3.23 format */
-  volatile bool abort_slave, slave_running;
+  enum enum_binlog_formats old_format;
+  volatile bool abort_slave;
+  volatile uint slave_running;
   volatile ulong slave_run_id;
-  bool ignore_stop_event;
+  /* 
+     The difference in seconds between the clock of the master and the clock of
+     the slave (second - first). It must be signed as it may be <0 or >0.
+     clock_diff_with_master is computed when the I/O thread starts; for this the
+     I/O thread does a SELECT UNIX_TIMESTAMP() on the master.
+     "how late the slave is compared to the master" is computed like this:
+     clock_of_slave - last_timestamp_executed_by_SQL_thread - clock_diff_with_master
+
+  */
+  long clock_diff_with_master; 
   
   st_master_info()
-    :fd(-1), io_thd(0), inited(0), old_format(BINLOG_FORMAT_CURRENT),
+    :ssl(0), fd(-1),  io_thd(0), inited(0), old_format(BINLOG_FORMAT_CURRENT),
      abort_slave(0),slave_running(0), slave_run_id(0)
   {
     host[0] = 0; user[0] = 0; password[0] = 0;
-    bzero((char *)&file, sizeof(file));
+    ssl_ca[0]= 0; ssl_capath[0]= 0; ssl_cert[0]= 0;
+    ssl_cipher[0]= 0; ssl_key[0]= 0;
+    
+    bzero((char*) &file, sizeof(file));
     pthread_mutex_init(&run_lock, MY_MUTEX_INIT_FAST);
     pthread_mutex_init(&data_lock, MY_MUTEX_INIT_FAST);
     pthread_cond_init(&data_cond, NULL);
@@ -316,7 +456,7 @@ typedef struct st_table_rule_ent
 #define TABLE_RULE_ARR_SIZE   16
 #define MAX_SLAVE_ERRMSG      1024
 
-#define RPL_LOG_NAME (rli->master_log_name[0] ? rli->master_log_name :\
+#define RPL_LOG_NAME (rli->group_master_log_name[0] ? rli->group_master_log_name :\
  "FIRST")
 #define IO_RPL_LOG_NAME (mi->master_log_name[0] ? mi->master_log_name :\
  "FIRST")
@@ -341,7 +481,7 @@ int terminate_slave_threads(MASTER_INFO* mi, int thread_mask,
 int terminate_slave_thread(THD* thd, pthread_mutex_t* term_mutex,
 			   pthread_mutex_t* cond_lock,
 			   pthread_cond_t* term_cond,
-			   volatile bool* slave_running);
+			   volatile uint* slave_running);
 int start_slave_threads(bool need_slave_mutex, bool wait_for_start,
 			MASTER_INFO* mi, const char* master_info_fname,
 			const char* slave_info_fname, int thread_mask);
@@ -354,9 +494,10 @@ int start_slave_threads(bool need_slave_mutex, bool wait_for_start,
 int start_slave_thread(pthread_handler h_func, pthread_mutex_t* start_lock,
 		       pthread_mutex_t *cond_lock,
 		       pthread_cond_t* start_cond,
-		       volatile bool *slave_running,
+		       volatile uint *slave_running,
 		       volatile ulong *slave_run_id,
-		       MASTER_INFO* mi);
+		       MASTER_INFO* mi,
+                       bool high_priority);
 
 /* If fd is -1, dump to NET */
 int mysql_table_dump(THD* thd, const char* db,
@@ -366,11 +507,13 @@ int mysql_table_dump(THD* thd, const char* db,
 int fetch_master_table(THD* thd, const char* db_name, const char* table_name,
 		       MASTER_INFO* mi, MYSQL* mysql, bool overwrite);
 
+void table_rule_ent_hash_to_str(String* s, HASH* h);
+void table_rule_ent_dynamic_array_to_str(String* s, DYNAMIC_ARRAY* a);
 int show_master_info(THD* thd, MASTER_INFO* mi);
 int show_binlog_info(THD* thd);
 
 /* See if the query uses any tables that should not be replicated */
-int tables_ok(THD* thd, TABLE_LIST* tables);
+bool tables_ok(THD* thd, TABLE_LIST* tables);
 
 /*
   Check to see if the database is ok to operate on with respect to the
@@ -384,18 +527,20 @@ int add_table_rule(HASH* h, const char* table_spec);
 int add_wild_table_rule(DYNAMIC_ARRAY* a, const char* table_spec);
 void init_table_rule_hash(HASH* h, bool* h_inited);
 void init_table_rule_array(DYNAMIC_ARRAY* a, bool* a_inited);
-const char *rewrite_db(const char* db);
-const char *print_slave_db_safe(const char* db);
+const char *rewrite_db(const char* db, uint32 *new_db_len);
+const char *print_slave_db_safe(const char *db);
 int check_expected_error(THD* thd, RELAY_LOG_INFO* rli, int error_code);
 void skip_load_data_infile(NET* net);
 void slave_print_error(RELAY_LOG_INFO* rli, int err_code, const char* msg, ...);
 
 void end_slave(); /* clean up */
 void init_master_info_with_options(MASTER_INFO* mi);
-void clear_last_slave_error(RELAY_LOG_INFO* rli);
+void clear_until_condition(RELAY_LOG_INFO* rli);
+void clear_slave_error(RELAY_LOG_INFO* rli);
 int init_master_info(MASTER_INFO* mi, const char* master_info_fname,
 		     const char* slave_info_fname,
-		     bool abort_if_no_master_info_file);
+		     bool abort_if_no_master_info_file,
+		     int thread_mask);
 void end_master_info(MASTER_INFO* mi);
 int init_relay_log_info(RELAY_LOG_INFO* rli, const char* info_fname);
 void end_relay_log_info(RELAY_LOG_INFO* rli);
@@ -428,8 +573,16 @@ extern my_string master_user, master_password, master_host,
        master_info_file, relay_log_info_file, report_user, report_host,
        report_password;
 
+extern my_bool master_ssl;
+extern my_string master_ssl_ca, master_ssl_capath, master_ssl_cert,
+       master_ssl_cipher, master_ssl_key;
+       
 extern I_List<i_string> replicate_do_db, replicate_ignore_db;
 extern I_List<i_string_pair> replicate_rewrite_db;
 extern I_List<THD> threads;
 
 #endif
+#else
+#define SLAVE_IO  1
+#define SLAVE_SQL 2
+#endif /* HAVE_REPLICATION */

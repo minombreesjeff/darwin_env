@@ -1,4 +1,6 @@
 drop table if exists t1,t2,t3;
+SELECT 1 FROM (SELECT 1) as a  GROUP BY SUM(1);
+ERROR HY000: Invalid use of group function
 CREATE TABLE t1 (
 spID int(10) unsigned,
 userID int(10) unsigned,
@@ -52,10 +54,10 @@ userid	MIN(t1.score+0.0)
 2	2.0
 1	1.0
 EXPLAIN SELECT t2.userid, MIN(t1.score+0.0) FROM t1, t2 WHERE t1.userID=t2.userID AND t1.spID=2  GROUP BY t2.userid ORDER BY NULL;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	4	Using where; Using temporary
-t2	eq_ref	PRIMARY	PRIMARY	4	t1.userID	1	Using index
-drop table test.t1,test.t2;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	4	Using where; Using temporary
+1	SIMPLE	t2	eq_ref	PRIMARY	PRIMARY	4	test.t1.userID	1	Using index
+drop table t1,t2;
 CREATE TABLE t1 (
 PID int(10) unsigned NOT NULL auto_increment,
 payDate date DEFAULT '0000-00-00' NOT NULL,
@@ -77,7 +79,7 @@ KEY payDate (payDate)
 );
 INSERT INTO t1 VALUES (1,'1970-01-01','1997-10-17 00:00:00',2529,1,21000,11886,'check',0,'F',16200,6);
 SELECT COUNT(P.URID),SUM(P.amount),P.method, MIN(PP.recdate+0) > 19980501000000   AS IsNew FROM t1 AS P JOIN t1 as PP WHERE P.URID = PP.URID GROUP BY method,IsNew;
-Can't group on 'IsNew'
+ERROR 42000: Can't group on 'IsNew'
 drop table t1;
 CREATE TABLE t1 (
 cid mediumint(9) NOT NULL auto_increment,
@@ -113,7 +115,7 @@ groupset bigint(20) DEFAULT '0' NOT NULL,
 assigned_to mediumint(9) DEFAULT '0' NOT NULL,
 bug_file_loc text,
 bug_severity enum('blocker','critical','major','normal','minor','trivial','enhancement') DEFAULT 'blocker' NOT NULL,
-bug_status enum('NEW','ASSIGNED','REOPENED','RESOLVED','VERIFIED','CLOSED') DEFAULT 'NEW' NOT NULL,
+bug_status enum('','NEW','ASSIGNED','REOPENED','RESOLVED','VERIFIED','CLOSED') DEFAULT 'NEW' NOT NULL,
 creation_ts datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
 delta_ts timestamp(14),
 short_desc mediumtext,
@@ -250,11 +252,11 @@ key (score)
 );
 INSERT INTO t1 VALUES (1,1,1),(2,2,2),(2,1,1),(3,3,3),(4,3,3),(5,3,3),(6,3,3),(7,3,3);
 explain select userid,count(*) from t1 group by userid desc;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	8	Using temporary; Using filesort
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	8	Using temporary; Using filesort
 explain select userid,count(*) from t1 group by userid desc order by null;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	8	Using temporary
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	8	Using temporary
 select userid,count(*) from t1 group by userid desc;
 userid	count(*)
 3	5
@@ -266,14 +268,14 @@ userid	count(*)
 select userid,count(*) from t1 group by userid desc having 3  IN (1,COUNT(*));
 userid	count(*)
 explain select spid,count(*) from t1 where spid between 1 and 2 group by spid desc;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	range	spID	spID	5	NULL	3	Using where; Using index
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	range	spID	spID	5	NULL	3	Using where; Using index
 explain select spid,count(*) from t1 where spid between 1 and 2 group by spid;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	range	spID	spID	5	NULL	3	Using where; Using index
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	range	spID	spID	5	NULL	3	Using where; Using index
 explain select spid,count(*) from t1 where spid between 1 and 2 group by spid order by null;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	range	spID	spID	5	NULL	3	Using where; Using index
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	range	spID	spID	5	NULL	3	Using where; Using index
 select spid,count(*) from t1 where spid between 1 and 2 group by spid;
 spid	count(*)
 1	1
@@ -282,12 +284,14 @@ select spid,count(*) from t1 where spid between 1 and 2 group by spid desc;
 spid	count(*)
 2	2
 1	1
-explain select sql_big_result spid,sum(userid) from t1 group by spid desc;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	8	Using filesort
+explain extended select sql_big_result spid,sum(userid) from t1 group by spid desc;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	8	Using filesort
+Warnings:
+Note	1003	select sql_big_result test.t1.spID AS `spid`,sum(test.t1.userID) AS `sum(userid)` from test.t1 group by test.t1.spID desc
 explain select sql_big_result spid,sum(userid) from t1 group by spid desc order by null;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	8	Using filesort
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	8	Using filesort
 select sql_big_result spid,sum(userid) from t1 group by spid desc;
 spid	sum(userid)
 7	3
@@ -298,11 +302,11 @@ spid	sum(userid)
 2	3
 1	1
 explain select sql_big_result score,count(*) from t1 group by score desc;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	index	NULL	score	3	NULL	8	Using index
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	index	NULL	score	3	NULL	8	Using index
 explain select sql_big_result score,count(*) from t1 group by score desc order by null;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	index	NULL	score	3	NULL	8	Using index
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	index	NULL	score	3	NULL	8	Using index
 select sql_big_result score,count(*) from t1 group by score desc;
 score	count(*)
 3	5
@@ -422,7 +426,6 @@ CONCAT(a, b)	count(*)
 abcdef	1
 hijklm	2
 DROP TABLE t1;
-drop table if exists t1;
 create table t1 (One int unsigned, Two int unsigned, Three int unsigned, Four int unsigned);
 insert into t1 values (1,2,1,4),(1,2,2,4),(1,2,3,4),(1,2,4,4),(1,1,1,4),(1,1,2,4),(1,1,3,4),(1,1,4,4),(1,3,1,4),(1,3,2,4),(1,3,3,4),(1,3,4,4);
 select One, Two, sum(Four) from t1 group by One,Two;
@@ -473,13 +476,13 @@ c2id int(11) unsigned default NULL,
 value int(11) unsigned NOT NULL default '0',
 UNIQUE KEY pid2 (pid,c1id,c2id),
 UNIQUE KEY pid (pid,value)
-) TYPE=MyISAM;
+) ENGINE=MyISAM;
 INSERT INTO t1 VALUES (1, 1, NULL, 1),(1, 2, NULL, 2),(1, NULL, 3, 3),(1, 4, NULL, 4),(1, 5, NULL, 5);
 CREATE TABLE t2 (
 id int(11) unsigned NOT NULL default '0',
 active enum('Yes','No') NOT NULL default 'Yes',
 PRIMARY KEY  (id)
-) TYPE=MyISAM;
+) ENGINE=MyISAM;
 INSERT INTO t2 VALUES (1, 'Yes'),(2, 'No'),(4, 'Yes'),(5, 'No');
 CREATE TABLE t3 (
 id int(11) unsigned NOT NULL default '0',
@@ -532,13 +535,13 @@ a	b
 2	2
 1	1
 explain select t1.a,t2.b from t1,t2 where t1.a=t2.a group by t1.a,t2.b;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	6	Using temporary; Using filesort
-t2	ALL	a	NULL	NULL	NULL	3	Using where
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	6	Using temporary; Using filesort
+1	SIMPLE	t2	ALL	a	NULL	NULL	NULL	3	Using where
 explain select t1.a,t2.b from t1,t2 where t1.a=t2.a group by t1.a,t2.b ORDER BY NULL;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	6	Using temporary
-t2	ALL	a	NULL	NULL	NULL	3	Using where
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	6	Using temporary
+1	SIMPLE	t2	ALL	a	NULL	NULL	NULL	3	Using where
 drop table t1,t2;
 create table t1 (a int, b int);
 insert into t1 values (1, 4),(10, 40),(1, 4),(10, 43),(1, 4),(10, 41),(1, 4),(10, 43),(1, 4);
@@ -609,8 +612,8 @@ userid	count(*)
 2	1
 1	2
 EXPLAIN SELECT userid,count(*) FROM t1 GROUP BY userid DESC;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	8	Using temporary; Using filesort
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	8	Using temporary; Using filesort
 DROP TABLE t1;
 CREATE TABLE t1 (
 i int(11) default NULL,
@@ -623,6 +626,54 @@ i	COUNT(DISTINCT(i))
 2	1
 4	4
 explain SELECT i, COUNT(DISTINCT(i)) FROM t1 GROUP BY j ORDER BY NULL;
-table	type	possible_keys	key	key_len	ref	rows	Extra
-t1	ALL	NULL	NULL	NULL	NULL	6	Using filesort
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	6	Using filesort
 DROP TABLE t1;
+create table t1 (a int);
+insert into t1 values(null);
+select min(a) is null from t1;
+min(a) is null
+1
+select min(a) is null or null from t1;
+min(a) is null or null
+1
+select 1 and min(a) is null from t1;
+1 and min(a) is null
+1
+drop table t1;
+create table t1 ( col1 int, col2 int );
+insert into t1 values (1,1),(1,2),(1,3),(2,1),(2,2);
+select group_concat( distinct col1 ) as alias from t1
+group by col2 having alias like '%';
+alias
+1,2
+1,2
+1
+drop table t1;
+create table t1 (a integer, b integer, c integer);
+insert into t1 (a,b) values (1,2),(1,3),(2,5);
+select a, 0.1*0+1 r2, sum(1) r1 from t1 where a = 1 group  by a having r1>1 and r2=1;
+a	r2	r1
+1	1.0	2
+select a, round(rand(100)*10) r2, sum(1) r1 from t1 where a = 1 group  by a having r1>1 and r2<=2;
+a	r2	r1
+1	2	2
+select a,sum(b) from t1 where a=1 group by c;
+a	sum(b)
+1	5
+select a*sum(b) from t1 where a=1 group by c;
+a*sum(b)
+5
+select sum(a)*sum(b) from t1 where a=1 group by c;
+sum(a)*sum(b)
+10
+select a,sum(b) from t1 where a=1 group by c having a=1;
+a	sum(b)
+1	5
+select a as d,sum(b) from t1 where a=1 group by c having d=1;
+d	sum(b)
+1	5
+select sum(a)*sum(b) as d from t1 where a=1 group by c having d > 0;
+d
+10
+drop table t1;

@@ -11,8 +11,10 @@ flush query cache; # This crashed in some versions
 flush query cache; # This crashed in some versions
 reset query cache;
 flush status;
+--disable_warnings
 drop table if exists t1,t2,t3,t4,t11,t21;
 drop database if exists mysqltest;
+--enable_warnings
 
 #
 # First simple test
@@ -43,7 +45,7 @@ create table t1 (a int not null);
 insert into t1 values (1),(2),(3);
 create table t2 (a int not null);
 insert into t2 values (4),(5),(6);
-create table t3 (a int not null) type=MERGE UNION=(t1,t2) INSERT_METHOD=FIRST;
+create table t3 (a int not null) engine=MERGE UNION=(t1,t2) INSERT_METHOD=FIRST;
 # insert
 select * from t3;
 select * from t3;
@@ -183,6 +185,7 @@ select RAND() from t1;
 select UNIX_TIMESTAMP() from t1;
 select USER() from t1;
 select benchmark(1,1) from t1;
+explain extended select benchmark(1,1) from t1;
 show status like "Qcache_queries_in_cache";
 #
 # Tests when the cache is filled
@@ -263,8 +266,9 @@ drop table t1;
 #
 # Charset convertion (cp1251_koi8 always present)
 #
-create table t1 (a char(1) not null);
-insert into t1 values("á");
+create table t1 (a char(1) not null collate koi8r_general_ci);
+insert into t1 values(_koi8r"á");
+set CHARACTER SET koi8r;
 select * from t1;
 set CHARACTER SET cp1251_koi8;
 select * from t1;
@@ -347,6 +351,40 @@ drop table t1;
 show status like "Qcache_queries_in_cache";
 
 #
+# Test of min result data unit size changing
+#
+show global variables like "query_cache_min_res_unit";
+set GLOBAL query_cache_min_res_unit=1001;
+show global variables like "query_cache_min_res_unit";
+create table t1 (a int not null);
+insert into t1 values (1),(2),(3);
+create table t2 (a int not null);
+insert into t2 values (1),(2),(3);
+select * from t1;
+select * from t1;
+select * from t2;
+select * from t2;
+show status like "Qcache_hits";
+show status like "Qcache_queries_in_cache";
+drop table t1;
+select a from t2;
+select a from t2;
+show status like "Qcache_hits";
+show status like "Qcache_queries_in_cache";
+drop table t2;
+set GLOBAL query_cache_min_res_unit=default;
+show global variables like "query_cache_min_res_unit";
+
+#
+# Case sensitive test
+#
+create table t1 (a int not null);
+insert into t1 values (1);
+select "aaa" from t1;
+select "AAA" from t1;
+drop table t1;
+
+#
 # Test of query cache resizing
 #
 create table t1 (a int);
@@ -392,6 +430,7 @@ select * from t2;
 show status like "Qcache_queries_in_cache";
 select * from t3;
 show status like "Qcache_queries_in_cache";
+update t1 set i=(select distinct 1 from (select * from t2) a);
 drop table t1, t2, t3;
 
 #
@@ -427,18 +466,21 @@ select * from t1 where id=2;
 create table t1 (word char(20) not null);
 select * from t1;
 show status like "Qcache_queries_in_cache";
-load data infile '../../std_data/words.dat' into table t1;
+--replace_result $MYSQL_TEST_DIR TEST_DIR
+eval load data infile '$MYSQL_TEST_DIR/std_data/words.dat' into table t1;
 show status like "Qcache_queries_in_cache";
+select count(*) from t1;
 drop table t1;
 
 #
 # INTO OUTFILE/DUMPFILE test
 #
-drop table if exists t1;
 create table t1 (a int);
 insert into t1 values (1),(2),(3);
 show status like "Qcache_queries_in_cache";
-select * from t1 into outfile "query_caceh.out.file";
+select * from t1 into outfile "query_cache.out.file";
+--error 1086
+select * from t1 into outfile "query_cache.out.file";
 select * from t1 limit 1 into dumpfile "query_cache.dump.file";
 show status like "Qcache_queries_in_cache";
 drop table t1;
@@ -456,7 +498,6 @@ show status like "Qcache_queries_in_cache";
 SET OPTION SQL_SELECT_LIMIT=DEFAULT;
 drop table t1;
 
-
 #
 # query cache crash on using same table twice in one query test
 #
@@ -464,7 +505,6 @@ flush query cache;
 reset query cache;
 flush status;
 set GLOBAL query_cache_size=1048576;
-
 
 create table t1 (a int not null);
 insert into t1 values (1),(2),(3);
@@ -521,4 +561,115 @@ unlock table;
 drop table t1,t2;
 set query_cache_wlock_invalidate=default;
 
-set GLOBAL query_cache_size=0;
+#
+# hiding real table stored in query cache by temporary table
+#
+CREATE TABLE t1 (id INT PRIMARY KEY);
+insert into t1 values (1),(2),(3);
+select * from t1;
+create temporary table t1 (a int not null auto_increment
+primary key);
+select * from t1;
+drop table t1;
+drop table t1;
+
+#
+# Test character set related variables:
+#   character_set_result
+#   character_set_client
+#   charactet_set_connection/collation_connection
+# If at least one of the above variables has changed,
+# the cached query can't be reused. In the below test
+# absolutely the same query is used several times,
+# SELECT should fetch different results for every instance. 
+# No hits should be produced.
+# New cache entry should appear for every SELECT.
+#
+SET NAMES koi8r;
+CREATE TABLE t1 (a char(1) character set koi8r);
+INSERT INTO t1 VALUES (_koi8r'á'),(_koi8r'Á');
+#
+# Run select
+#
+SELECT a,'Â','â'='Â' FROM t1;
+show status like "Qcache_hits";
+show status like "Qcache_queries_in_cache";
+#
+# Change collation_connection and run the same query again
+#
+set collation_connection=koi8r_bin;
+SELECT a,'Â','â'='Â' FROM t1; 
+show status like "Qcache_hits";
+show status like "Qcache_queries_in_cache";
+#
+# Now change character_set_client and run the same query again
+#
+set character_set_client=cp1251;
+SELECT a,'Â','â'='Â' FROM t1; 
+show status like "Qcache_hits";
+show status like "Qcache_queries_in_cache";
+#
+# And finally change character_set_results and run the same query again
+#
+set character_set_results=cp1251;
+SELECT a,'Â','â'='Â' FROM t1; 
+show status like "Qcache_hits";
+show status like "Qcache_queries_in_cache";
+#
+# Keep things tidy
+#
+DROP TABLE t1;
+
+#
+# DROP current database test
+#
+CREATE TABLE t1 (a int(1));
+CREATE DATABASE mysqltest;
+USE mysqltest;
+DROP DATABASE mysqltest;
+SELECT * FROM test.t1;
+USE test;
+DROP TABLE t1;
+
+#
+# charset with NULL
+#
+set character_set_results=null;
+select @@character_set_results;
+set character_set_results=default;
+
+#
+# query cache and environment variables
+#
+# max_sort_length
+set GLOBAL query_cache_size=1355776;
+create table t1 (id int auto_increment primary key, c char(25));
+insert into t1 set c = repeat('x',24);
+insert into t1 set c = concat(repeat('x',24),'x');
+insert into t1 set c = concat(repeat('x',24),'w');
+insert into t1 set c = concat(repeat('x',24),'y');
+set max_sort_length=200;   
+select c from t1 order by c, id;
+reset query cache;
+set max_sort_length=20;
+select c from t1 order by c, id;
+set max_sort_length=200;   
+select c from t1 order by c, id;
+set max_sort_length=default;
+# sql_mode
+select '1' || '3' from t1;
+set SQL_MODE=oracle;
+select '1' || '3' from t1;
+set SQL_MODE=default;
+drop table t1;
+# group_concat_max_len
+create table t1 (a varchar(20), b int);
+insert into t1 values ('12345678901234567890', 1);
+set group_concat_max_len=10;
+select group_concat(a) FROM t1 group by b;
+set group_concat_max_len=1024;
+select group_concat(a) FROM t1 group by b;
+set group_concat_max_len=default;
+drop table t1;
+
+SET GLOBAL query_cache_size=0;

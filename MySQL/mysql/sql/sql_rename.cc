@@ -24,6 +24,8 @@
 static TABLE_LIST *rename_tables(THD *thd, TABLE_LIST *table_list,
 				 bool skip_error);
 
+static TABLE_LIST *reverse_table_list(TABLE_LIST *table_list);
+
 /*
   Every second entry in the table_list is the original name and every
   second entry is the new name.
@@ -46,6 +48,8 @@ bool mysql_rename_tables(THD *thd, TABLE_LIST *table_list)
     DBUG_RETURN(1);
   }
 
+  if (wait_if_global_read_lock(thd,0,1))
+    DBUG_RETURN(1);
   VOID(pthread_mutex_lock(&LOCK_open));
   if (lock_table_names(thd, table_list))
     goto err;
@@ -54,17 +58,10 @@ bool mysql_rename_tables(THD *thd, TABLE_LIST *table_list)
   if ((ren_table=rename_tables(thd,table_list,0)))
   {
     /* Rename didn't succeed;  rename back the tables in reverse order */
-    TABLE_LIST *prev=0,*table;
-    /* Reverse the table list */
+    TABLE_LIST *table;
 
-    while (table_list)
-    {
-      TABLE_LIST *next=table_list->next;
-      table_list->next=prev;
-      prev=table_list;
-      table_list=next;
-    }
-    table_list=prev;
+    /* Reverse the table list */
+    table_list= reverse_table_list(table_list);
 
     /* Find the last renamed table */
     for (table=table_list ;
@@ -73,6 +70,10 @@ bool mysql_rename_tables(THD *thd, TABLE_LIST *table_list)
     table=table->next->next;			// Skip error table
     /* Revert to old names */
     rename_tables(thd, table, 1);
+
+    /* Revert the table list (for prepared statements) */
+    table_list= reverse_table_list(table_list);
+
     error= 1;
   }
 
@@ -83,17 +84,43 @@ bool mysql_rename_tables(THD *thd, TABLE_LIST *table_list)
     if (mysql_bin_log.is_open())
     {
       thd->clear_error();
-      Query_log_event qinfo(thd, thd->query, thd->query_length, 0);
+      Query_log_event qinfo(thd, thd->query, thd->query_length, 0, FALSE);
       mysql_bin_log.write(&qinfo);
     }
-    send_ok(&thd->net);
+    send_ok(thd);
   }
 
   unlock_table_names(thd,table_list);
 
 err:
   pthread_mutex_unlock(&LOCK_open);
+  start_waiting_global_read_lock(thd);
   DBUG_RETURN(error);
+}
+
+
+/*
+  reverse table list
+
+  SYNOPSIS
+    reverse_table_list()
+    table_list pointer to table _list
+
+  RETURN
+    pointer to new (reversed) list
+*/
+static TABLE_LIST *reverse_table_list(TABLE_LIST *table_list)
+{
+  TABLE_LIST *prev= 0;
+
+  while (table_list)
+  {
+    TABLE_LIST *next= table_list->next;
+    table_list->next= prev;
+    prev= table_list;
+    table_list= next;
+  }
+  return (prev);
 }
 
 

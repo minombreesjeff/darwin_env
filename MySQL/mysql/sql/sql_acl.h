@@ -14,7 +14,6 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
 
-
 #define SELECT_ACL	(1L << 0)
 #define INSERT_ACL	(1L << 1)
 #define UPDATE_ACL	(1L << 2)
@@ -36,6 +35,12 @@
 #define EXECUTE_ACL	(1L << 18)
 #define REPL_SLAVE_ACL	(1L << 19)
 #define REPL_CLIENT_ACL	(1L << 20)
+
+/*
+  don't forget to update
+    static struct show_privileges_st sys_privileges[]
+  in sql_show.cc when adding new privileges!
+*/
 
 
 #define DB_ACLS \
@@ -79,19 +84,66 @@
 #define fix_rights_for_column(A) (((A) & 7) | (((A) & ~7) << 8))
 #define get_rights_for_column(A) (((A) & 7) | ((A) >> 8))
 
+/* Classes */
+
+struct acl_host_and_ip
+{
+  char *hostname;
+  long ip,ip_mask;                      // Used with masked ip:s
+};
+
+
+class ACL_ACCESS {
+public:
+  ulong sort;
+  ulong access;
+};
+
+
+/* ACL_HOST is used if no host is specified */
+
+class ACL_HOST :public ACL_ACCESS
+{
+public:
+  acl_host_and_ip host;
+  char *db;
+};
+
+
+class ACL_USER :public ACL_ACCESS
+{
+public:
+  acl_host_and_ip host;
+  uint hostname_length;
+  USER_RESOURCES user_resource;
+  char *user;
+  uint8 salt[SCRAMBLE_LENGTH+1];       // scrambled password in binary form
+  uint8 salt_len;        // 0 - no password, 4 - 3.20, 8 - 3.23, 20 - 4.1.1 
+  enum SSL_type ssl_type;
+  const char *ssl_cipher, *x509_issuer, *x509_subject;
+};
+
+
+class ACL_DB :public ACL_ACCESS
+{
+public:
+  acl_host_and_ip host;
+  char *user,*db;
+};
+
 /* prototypes */
 
+bool hostname_requires_resolving(const char *hostname);
 my_bool  acl_init(THD *thd, bool dont_read_acl_tables);
 void acl_reload(THD *thd);
 void acl_free(bool end=0);
-ulong acl_get(const char *host, const char *ip, const char *bin_ip,
-	      const char *user, const char *db);
-ulong acl_getroot(THD *thd, const char *host, const char *ip, const char *user,
-		  const char *password,const char *scramble,
-                  char **priv_user, char *priv_host,
-		  bool old_ver, USER_RESOURCES *max);
+ulong acl_get(const char *host, const char *ip,
+	      const char *user, const char *db, my_bool db_is_pattern);
+int acl_getroot(THD *thd, USER_RESOURCES *mqh, const char *passwd,
+                uint passwd_len);
 bool acl_check_host(const char *host, const char *ip);
-bool check_change_password(THD *thd, const char *host, const char *user);
+bool check_change_password(THD *thd, const char *host, const char *user,
+                           char *password, uint password_len);
 bool change_password(THD *thd, const char *host, const char *user,
 		     char *password);
 int mysql_grant(THD *thd, const char *db, List <LEX_USER> &user_list,
@@ -103,7 +155,7 @@ my_bool grant_init(THD *thd);
 void grant_free(void);
 void grant_reload(THD *thd);
 bool check_grant(THD *thd, ulong want_access, TABLE_LIST *tables,
-		 uint show_command=0, bool dont_print_error=0);
+		 uint show_command, uint number, bool dont_print_error);
 bool check_grant_column (THD *thd,TABLE *table, const char *name, uint length,
 			 uint show_command=0);
 bool check_grant_all_columns(THD *thd, ulong want_access, TABLE *table);
@@ -113,3 +165,10 @@ ulong get_column_grant(THD *thd, TABLE_LIST *table, Field *field);
 int mysql_show_grants(THD *thd, LEX_USER *user);
 void get_privilege_desc(char *to, uint max_length, ulong access);
 void get_mqh(const char *user, const char *host, USER_CONN *uc);
+int mysql_drop_user(THD *thd, List <LEX_USER> &list);
+int mysql_revoke_all(THD *thd, List <LEX_USER> &list);
+
+#ifdef NO_EMBEDDED_ACCESS_CHECKS
+#define check_grant(A,B,C,D,E,F) 0
+#define check_grant_db(A,B) 0
+#endif

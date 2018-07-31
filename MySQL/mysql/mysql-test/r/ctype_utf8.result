@@ -1,0 +1,863 @@
+drop table if exists t1,t2;
+set names utf8;
+select left(_utf8 0xD0B0D0B1D0B2,1);
+left(_utf8 0xD0B0D0B1D0B2,1)
+а
+select right(_utf8 0xD0B0D0B2D0B2,1);
+right(_utf8 0xD0B0D0B2D0B2,1)
+в
+select locate('he','hello');
+locate('he','hello')
+1
+select locate('he','hello',2);
+locate('he','hello',2)
+0
+select locate('lo','hello',2);
+locate('lo','hello',2)
+4
+select locate('HE','hello');
+locate('HE','hello')
+1
+select locate('HE','hello',2);
+locate('HE','hello',2)
+0
+select locate('LO','hello',2);
+locate('LO','hello',2)
+4
+select locate('HE','hello' collate utf8_bin);
+locate('HE','hello' collate utf8_bin)
+0
+select locate('HE','hello' collate utf8_bin,2);
+locate('HE','hello' collate utf8_bin,2)
+0
+select locate('LO','hello' collate utf8_bin,2);
+locate('LO','hello' collate utf8_bin,2)
+0
+select locate(_utf8 0xD0B1, _utf8 0xD0B0D0B1D0B2);
+locate(_utf8 0xD0B1, _utf8 0xD0B0D0B1D0B2)
+2
+select locate(_utf8 0xD091, _utf8 0xD0B0D0B1D0B2);
+locate(_utf8 0xD091, _utf8 0xD0B0D0B1D0B2)
+2
+select locate(_utf8 0xD0B1, _utf8 0xD0B0D091D0B2);
+locate(_utf8 0xD0B1, _utf8 0xD0B0D091D0B2)
+2
+select locate(_utf8 0xD091, _utf8 0xD0B0D0B1D0B2 collate utf8_bin);
+locate(_utf8 0xD091, _utf8 0xD0B0D0B1D0B2 collate utf8_bin)
+0
+select locate(_utf8 0xD0B1, _utf8 0xD0B0D091D0B2 collate utf8_bin);
+locate(_utf8 0xD0B1, _utf8 0xD0B0D091D0B2 collate utf8_bin)
+0
+select length(_utf8 0xD0B1), bit_length(_utf8 0xD0B1), char_length(_utf8 0xD0B1);
+length(_utf8 0xD0B1)	bit_length(_utf8 0xD0B1)	char_length(_utf8 0xD0B1)
+2	16	1
+select 'a' like 'a';
+'a' like 'a'
+1
+select 'A' like 'a';
+'A' like 'a'
+1
+select 'A' like 'a' collate utf8_bin;
+'A' like 'a' collate utf8_bin
+0
+select _utf8 0xD0B0D0B1D0B2 like concat(_utf8'%',_utf8 0xD0B1,_utf8 '%');
+_utf8 0xD0B0D0B1D0B2 like concat(_utf8'%',_utf8 0xD0B1,_utf8 '%')
+1
+select convert(_latin1'G�nter Andr�' using utf8) like CONVERT(_latin1'G�NTER%' USING utf8);
+convert(_latin1'G�nter Andr�' using utf8) like CONVERT(_latin1'G�NTER%' USING utf8)
+1
+select CONVERT(_koi8r'����' USING utf8) LIKE CONVERT(_koi8r'����' USING utf8);
+CONVERT(_koi8r'����' USING utf8) LIKE CONVERT(_koi8r'����' USING utf8)
+1
+select CONVERT(_koi8r'����' USING utf8) LIKE CONVERT(_koi8r'����' USING utf8);
+CONVERT(_koi8r'����' USING utf8) LIKE CONVERT(_koi8r'����' USING utf8)
+1
+SELECT 'a' = 'a ';
+'a' = 'a '
+1
+SELECT 'a\0' < 'a';
+'a\0' < 'a'
+1
+SELECT 'a\0' < 'a ';
+'a\0' < 'a '
+1
+SELECT 'a\t' < 'a';
+'a\t' < 'a'
+1
+SELECT 'a\t' < 'a ';
+'a\t' < 'a '
+1
+SELECT 'a' = 'a ' collate utf8_bin;
+'a' = 'a ' collate utf8_bin
+1
+SELECT 'a\0' < 'a' collate utf8_bin;
+'a\0' < 'a' collate utf8_bin
+1
+SELECT 'a\0' < 'a ' collate utf8_bin;
+'a\0' < 'a ' collate utf8_bin
+1
+SELECT 'a\t' < 'a' collate utf8_bin;
+'a\t' < 'a' collate utf8_bin
+1
+SELECT 'a\t' < 'a ' collate utf8_bin;
+'a\t' < 'a ' collate utf8_bin
+1
+CREATE TABLE t1 (a char(10) character set utf8 not null);
+INSERT INTO t1 VALUES ('a'),('a\0'),('a\t'),('a ');
+SELECT hex(a),STRCMP(a,'a'), STRCMP(a,'a ') FROM t1;
+hex(a)	STRCMP(a,'a')	STRCMP(a,'a ')
+61	0	0
+6100	-1	-1
+6109	-1	-1
+61	0	0
+DROP TABLE t1;
+select insert('txs',2,1,'hi'),insert('is ',4,0,'a'),insert('txxxxt',2,4,'es');
+insert('txs',2,1,'hi')	insert('is ',4,0,'a')	insert('txxxxt',2,4,'es')
+this	is a	test
+select insert("aa",100,1,"b"),insert("aa",1,3,"b");
+insert("aa",100,1,"b")	insert("aa",1,3,"b")
+aa	b
+select char_length(left(@a:='тест',5)), length(@a), @a;
+char_length(left(@a:='тест',5))	length(@a)	@a
+4	8	тест
+create table t1 select date_format("2004-01-19 10:10:10", "%Y-%m-%d");
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `date_format("2004-01-19 10:10:10", "%Y-%m-%d")` binary(10) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+select * from t1;
+date_format("2004-01-19 10:10:10", "%Y-%m-%d")
+2004-01-19
+drop table t1;
+set names koi8r;
+create table t1 (s1 char(1) character set utf8);
+insert into t1 values (_koi8r'��');
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+select s1,hex(s1),char_length(s1),octet_length(s1) from t1;
+s1	hex(s1)	char_length(s1)	octet_length(s1)
+�	D0B0	1	2
+drop table t1;
+create table t1 (s1 tinytext character set utf8);
+insert into t1 select repeat('a',300);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+insert into t1 select repeat('�',300);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+insert into t1 select repeat('a�',300);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+insert into t1 select repeat('�a',300);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+insert into t1 select repeat('��',300);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+select hex(s1) from t1;
+hex(s1)
+616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161
+D18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18F
+61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F
+D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61D18F61
+D18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18FD18F
+select length(s1),char_length(s1) from t1;
+length(s1)	char_length(s1)
+255	255
+254	127
+255	170
+255	170
+254	127
+drop table t1;
+create table t1 (s1 text character set utf8);
+insert into t1 select repeat('a',66000);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+insert into t1 select repeat('�',66000);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+insert into t1 select repeat('a�',66000);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+insert into t1 select repeat('�a',66000);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+insert into t1 select repeat('��',66000);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+select length(s1),char_length(s1) from t1;
+length(s1)	char_length(s1)
+65535	65535
+65534	32767
+65535	43690
+65535	43690
+65534	32767
+drop table t1;
+create table t1 (s1 char(10) character set utf8);
+insert into t1 values (0x41FF);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+select hex(s1) from t1;
+hex(s1)
+41
+drop table t1;
+create table t1 (s1 varchar(10) character set utf8);
+insert into t1 values (0x41FF);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+select hex(s1) from t1;
+hex(s1)
+41
+drop table t1;
+create table t1 (s1 text character set utf8);
+insert into t1 values (0x41FF);
+Warnings:
+Warning	1265	Data truncated for column 's1' at row 1
+select hex(s1) from t1;
+hex(s1)
+41
+drop table t1;
+create table t1 (a text character set utf8, primary key(a(360)));
+ERROR 42000: Specified key was too long; max key length is 1000 bytes
+CREATE TABLE t1 ( a varchar(10) ) CHARACTER SET utf8;
+INSERT INTO t1 VALUES ( 'test' );
+SELECT a.a, b.a FROM t1 a, t1 b WHERE a.a = b.a;
+a	a
+test	test
+SELECT a.a, b.a FROM t1 a, t1 b WHERE a.a = 'test' and b.a = 'test';
+a	a
+test	test
+SELECT a.a, b.a FROM t1 a, t1 b WHERE a.a = b.a and a.a = 'test';
+a	a
+test	test
+DROP TABLE t1;
+create table t1 (a char(255) character set utf8);
+insert into t1 values('b'),('b');
+select * from t1 where a = 'b';
+a
+b
+b
+select * from t1 where a = 'b' and a = 'b';
+a
+b
+b
+select * from t1 where a = 'b' and a != 'b';
+a
+drop table t1;
+set names utf8;
+select  'вася'  rlike '[[:<:]]вася[[:>:]]';
+'вася'  rlike '[[:<:]]вася[[:>:]]'
+1
+select  'вася ' rlike '[[:<:]]вася[[:>:]]';
+'вася ' rlike '[[:<:]]вася[[:>:]]'
+1
+select ' вася'  rlike '[[:<:]]вася[[:>:]]';
+' вася'  rlike '[[:<:]]вася[[:>:]]'
+1
+select ' вася ' rlike '[[:<:]]вася[[:>:]]';
+' вася ' rlike '[[:<:]]вася[[:>:]]'
+1
+select  'васяz' rlike '[[:<:]]вася[[:>:]]';
+'васяz' rlike '[[:<:]]вася[[:>:]]'
+0
+select 'zвася'  rlike '[[:<:]]вася[[:>:]]';
+'zвася'  rlike '[[:<:]]вася[[:>:]]'
+0
+select 'zвасяz' rlike '[[:<:]]вася[[:>:]]';
+'zвасяz' rlike '[[:<:]]вася[[:>:]]'
+0
+CREATE TABLE t1 (a enum ('Y', 'N') DEFAULT 'N' COLLATE utf8_unicode_ci);
+ALTER TABLE t1 ADD COLUMN b CHAR(20);
+DROP TABLE t1;
+set names utf8;
+create table t1 (a enum('aaaa','проба') character set utf8);
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` enum('aaaa','проба') character set utf8 default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+insert into t1 values ('проба');
+select * from t1;
+a
+проба
+create table t2 select ifnull(a,a) from t1;
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `ifnull(a,a)` char(5) character set utf8 default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+select * from t2;
+ifnull(a,a)
+проба
+drop table t1;
+drop table t2;
+create table t1 (c varchar(30) character set utf8, unique(c(10)));
+insert into t1 values ('1'),('2'),('3'),('x'),('y'),('z');
+insert into t1 values ('aaaaaaaaaa');
+insert into t1 values ('aaaaaaaaaaa');
+ERROR 23000: Duplicate entry 'aaaaaaaaaaa' for key 1
+insert into t1 values ('aaaaaaaaaaaa');
+ERROR 23000: Duplicate entry 'aaaaaaaaaaaa' for key 1
+insert into t1 values (repeat('b',20));
+select c c1 from t1 where c='1';
+c1
+1
+select c c2 from t1 where c='2';
+c2
+2
+select c c3 from t1 where c='3';
+c3
+3
+select c cx from t1 where c='x';
+cx
+x
+select c cy from t1 where c='y';
+cy
+y
+select c cz from t1 where c='z';
+cz
+z
+select c ca10 from t1 where c='aaaaaaaaaa';
+ca10
+aaaaaaaaaa
+select c cb20 from t1 where c=repeat('b',20);
+cb20
+bbbbbbbbbbbbbbbbbbbb
+drop table t1;
+create table t1 (c varchar(30) character set utf8, unique(c(10))) engine=innodb;
+insert into t1 values ('1'),('2'),('3'),('x'),('y'),('z');
+insert into t1 values ('aaaaaaaaaa');
+insert into t1 values ('aaaaaaaaaaa');
+ERROR 23000: Duplicate entry 'aaaaaaaaaaa' for key 1
+insert into t1 values ('aaaaaaaaaaaa');
+ERROR 23000: Duplicate entry 'aaaaaaaaaaaa' for key 1
+insert into t1 values (repeat('b',20));
+select c c1 from t1 where c='1';
+c1
+1
+select c c2 from t1 where c='2';
+c2
+2
+select c c3 from t1 where c='3';
+c3
+3
+select c cx from t1 where c='x';
+cx
+x
+select c cy from t1 where c='y';
+cy
+y
+select c cz from t1 where c='z';
+cz
+z
+select c ca10 from t1 where c='aaaaaaaaaa';
+ca10
+aaaaaaaaaa
+select c cb20 from t1 where c=repeat('b',20);
+cb20
+bbbbbbbbbbbbbbbbbbbb
+drop table t1;
+create table t1 (c char(3) character set utf8, unique (c(2)));
+insert into t1 values ('1'),('2'),('3'),('4'),('x'),('y'),('z');
+insert into t1 values ('a');
+insert into t1 values ('aa');
+insert into t1 values ('aaa');
+ERROR 23000: Duplicate entry 'aaa' for key 1
+insert into t1 values ('b');
+insert into t1 values ('bb');
+insert into t1 values ('bbb');
+ERROR 23000: Duplicate entry 'bbb' for key 1
+insert into t1 values ('а');
+insert into t1 values ('аа');
+insert into t1 values ('ааа');
+ERROR 23000: Duplicate entry 'ааа' for key 1
+insert into t1 values ('б');
+insert into t1 values ('бб');
+insert into t1 values ('ббб');
+ERROR 23000: Duplicate entry 'ббб' for key 1
+insert into t1 values ('ꪪ');
+insert into t1 values ('ꪪꪪ');
+insert into t1 values ('ꪪꪪꪪ');
+ERROR 23000: Duplicate entry 'ꪪꪪ' for key 1
+drop table t1;
+create table t1 (c char(3) character set utf8, unique (c(2))) engine=innodb;
+insert into t1 values ('1'),('2'),('3'),('4'),('x'),('y'),('z');
+insert into t1 values ('a');
+insert into t1 values ('aa');
+insert into t1 values ('aaa');
+ERROR 23000: Duplicate entry 'aaa' for key 1
+insert into t1 values ('b');
+insert into t1 values ('bb');
+insert into t1 values ('bbb');
+ERROR 23000: Duplicate entry 'bbb' for key 1
+insert into t1 values ('а');
+insert into t1 values ('аа');
+insert into t1 values ('ааа');
+ERROR 23000: Duplicate entry 'ааа' for key 1
+insert into t1 values ('б');
+insert into t1 values ('бб');
+insert into t1 values ('ббб');
+ERROR 23000: Duplicate entry 'ббб' for key 1
+insert into t1 values ('ꪪ');
+insert into t1 values ('ꪪꪪ');
+insert into t1 values ('ꪪꪪꪪ');
+ERROR 23000: Duplicate entry 'ꪪꪪ' for key 1
+drop table t1;
+create table t1 (
+c char(10) character set utf8,
+unique key a using hash (c(1))
+) engine=heap;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `c` char(10) character set utf8 default NULL,
+  UNIQUE KEY `a` TYPE HASH (`c`(1))
+) ENGINE=HEAP DEFAULT CHARSET=latin1
+insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
+insert into t1 values ('aa');
+ERROR 23000: Duplicate entry 'aa' for key 1
+insert into t1 values ('aaa');
+ERROR 23000: Duplicate entry 'aaa' for key 1
+insert into t1 values ('б');
+insert into t1 values ('бб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+insert into t1 values ('ббб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+select c as c_all from t1 order by c;
+c_all
+a
+b
+c
+d
+e
+f
+б
+select c as c_a from t1 where c='a';
+c_a
+a
+select c as c_a from t1 where c='б';
+c_a
+б
+drop table t1;
+create table t1 (
+c char(10) character set utf8,
+unique key a using btree (c(1))
+) engine=heap;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `c` char(10) character set utf8 default NULL,
+  UNIQUE KEY `a` TYPE BTREE (`c`(1))
+) ENGINE=HEAP DEFAULT CHARSET=latin1
+insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
+insert into t1 values ('aa');
+ERROR 23000: Duplicate entry 'aa' for key 1
+insert into t1 values ('aaa');
+ERROR 23000: Duplicate entry 'aaa' for key 1
+insert into t1 values ('б');
+insert into t1 values ('бб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+insert into t1 values ('ббб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+select c as c_all from t1 order by c;
+c_all
+a
+b
+c
+d
+e
+f
+б
+select c as c_a from t1 where c='a';
+c_a
+a
+select c as c_a from t1 where c='б';
+c_a
+б
+drop table t1;
+create table t1 (
+c char(10) character set utf8,
+unique key a (c(1))
+) engine=bdb;
+insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
+insert into t1 values ('aa');
+ERROR 23000: Duplicate entry 'aa' for key 1
+insert into t1 values ('aaa');
+ERROR 23000: Duplicate entry 'aaa' for key 1
+insert into t1 values ('б');
+insert into t1 values ('бб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+insert into t1 values ('ббб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+select c as c_all from t1 order by c;
+c_all
+a
+b
+c
+d
+e
+f
+б
+select c as c_a from t1 where c='a';
+c_a
+a
+select c as c_a from t1 where c='б';
+c_a
+б
+drop table t1;
+create table t1 (c varchar(30) character set utf8 collate utf8_bin, unique(c(10)));
+insert into t1 values ('1'),('2'),('3'),('x'),('y'),('z');
+insert into t1 values ('aaaaaaaaaa');
+insert into t1 values ('aaaaaaaaaaa');
+ERROR 23000: Duplicate entry 'aaaaaaaaaaa' for key 1
+insert into t1 values ('aaaaaaaaaaaa');
+ERROR 23000: Duplicate entry 'aaaaaaaaaaaa' for key 1
+insert into t1 values (repeat('b',20));
+select c c1 from t1 where c='1';
+c1
+1
+select c c2 from t1 where c='2';
+c2
+2
+select c c3 from t1 where c='3';
+c3
+3
+select c cx from t1 where c='x';
+cx
+x
+select c cy from t1 where c='y';
+cy
+y
+select c cz from t1 where c='z';
+cz
+z
+select c ca10 from t1 where c='aaaaaaaaaa';
+ca10
+aaaaaaaaaa
+select c cb20 from t1 where c=repeat('b',20);
+cb20
+bbbbbbbbbbbbbbbbbbbb
+drop table t1;
+create table t1 (c char(3) character set utf8 collate utf8_bin, unique (c(2)));
+insert into t1 values ('1'),('2'),('3'),('4'),('x'),('y'),('z');
+insert into t1 values ('a');
+insert into t1 values ('aa');
+insert into t1 values ('aaa');
+ERROR 23000: Duplicate entry 'aaa' for key 1
+insert into t1 values ('b');
+insert into t1 values ('bb');
+insert into t1 values ('bbb');
+ERROR 23000: Duplicate entry 'bbb' for key 1
+insert into t1 values ('а');
+insert into t1 values ('аа');
+insert into t1 values ('ааа');
+ERROR 23000: Duplicate entry 'ааа' for key 1
+insert into t1 values ('б');
+insert into t1 values ('бб');
+insert into t1 values ('ббб');
+ERROR 23000: Duplicate entry 'ббб' for key 1
+insert into t1 values ('ꪪ');
+insert into t1 values ('ꪪꪪ');
+insert into t1 values ('ꪪꪪꪪ');
+ERROR 23000: Duplicate entry 'ꪪꪪ' for key 1
+drop table t1;
+create table t1 (
+c char(10) character set utf8 collate utf8_bin,
+unique key a using hash (c(1))
+) engine=heap;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `c` char(10) character set utf8 collate utf8_bin default NULL,
+  UNIQUE KEY `a` TYPE HASH (`c`(1))
+) ENGINE=HEAP DEFAULT CHARSET=latin1
+insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
+insert into t1 values ('aa');
+ERROR 23000: Duplicate entry 'aa' for key 1
+insert into t1 values ('aaa');
+ERROR 23000: Duplicate entry 'aaa' for key 1
+insert into t1 values ('б');
+insert into t1 values ('бб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+insert into t1 values ('ббб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+select c as c_all from t1 order by c;
+c_all
+a
+b
+c
+d
+e
+f
+б
+select c as c_a from t1 where c='a';
+c_a
+a
+select c as c_a from t1 where c='б';
+c_a
+б
+drop table t1;
+create table t1 (
+c char(10) character set utf8 collate utf8_bin,
+unique key a using btree (c(1))
+) engine=heap;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `c` char(10) character set utf8 collate utf8_bin default NULL,
+  UNIQUE KEY `a` TYPE BTREE (`c`(1))
+) ENGINE=HEAP DEFAULT CHARSET=latin1
+insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
+insert into t1 values ('aa');
+ERROR 23000: Duplicate entry 'aa' for key 1
+insert into t1 values ('aaa');
+ERROR 23000: Duplicate entry 'aaa' for key 1
+insert into t1 values ('б');
+insert into t1 values ('бб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+insert into t1 values ('ббб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+select c as c_all from t1 order by c;
+c_all
+a
+b
+c
+d
+e
+f
+б
+select c as c_a from t1 where c='a';
+c_a
+a
+select c as c_a from t1 where c='б';
+c_a
+б
+drop table t1;
+create table t1 (
+c char(10) character set utf8 collate utf8_bin,
+unique key a (c(1))
+) engine=bdb;
+insert into t1 values ('a'),('b'),('c'),('d'),('e'),('f');
+insert into t1 values ('aa');
+ERROR 23000: Duplicate entry 'aa' for key 1
+insert into t1 values ('aaa');
+ERROR 23000: Duplicate entry 'aaa' for key 1
+insert into t1 values ('б');
+insert into t1 values ('бб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+insert into t1 values ('ббб');
+ERROR 23000: Duplicate entry 'б�' for key 1
+select c as c_all from t1 order by c;
+c_all
+a
+b
+c
+d
+e
+f
+б
+select c as c_a from t1 where c='a';
+c_a
+a
+select c as c_a from t1 where c='б';
+c_a
+б
+drop table t1;
+create table t1 (
+str varchar(255) character set utf8 not null,
+key str  (str(2))
+) engine=myisam;
+INSERT INTO t1 VALUES ('str');
+INSERT INTO t1 VALUES ('str2');
+select * from t1 where str='str';
+str
+str
+drop table t1;
+create table t1 (
+str varchar(255) character set utf8 not null,
+key str  (str(2))
+) engine=innodb;
+INSERT INTO t1 VALUES ('str');
+INSERT INTO t1 VALUES ('str2');
+select * from t1 where str='str';
+str
+str
+drop table t1;
+create table t1 (
+str varchar(255) character set utf8 not null,
+key str using btree (str(2))
+) engine=heap;
+INSERT INTO t1 VALUES ('str');
+INSERT INTO t1 VALUES ('str2');
+select * from t1 where str='str';
+str
+str
+drop table t1;
+create table t1 (
+str varchar(255) character set utf8 not null,
+key str using hash (str(2))
+) engine=heap;
+INSERT INTO t1 VALUES ('str');
+INSERT INTO t1 VALUES ('str2');
+select * from t1 where str='str';
+str
+str
+drop table t1;
+create table t1 (
+str varchar(255) character set utf8 not null,
+key str (str(2))
+) engine=bdb;
+INSERT INTO t1 VALUES ('str');
+INSERT INTO t1 VALUES ('str2');
+select * from t1 where str='str';
+str
+str
+drop table t1;
+CREATE TABLE t1 (a varchar(32) BINARY) CHARACTER SET utf8;
+INSERT INTO t1 VALUES ('test');
+SELECT a FROM t1 WHERE a LIKE '%te';
+a
+DROP TABLE t1;
+SET NAMES utf8;
+CREATE TABLE t1 (
+subject varchar(255) character set utf8 collate utf8_unicode_ci,
+p varchar(15) character set utf8
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+INSERT INTO t1 VALUES ('谷川俊二と申しますが、インターネット予約の会員登録をしましたところ、メールアドレスを間違えてしまい会員ＩＤが受け取ることが出来ませんでした。間違えアドレスはtani-shun@n.vodafone.ne.jpを書き込みました。どうすればよいですか？ その他、住所等は間違えありません。連絡ください。よろしくお願いします。m(__)m','040312-000057');
+INSERT INTO t1 VALUES ('aaa','bbb');
+SELECT length(subject) FROM t1;
+length(subject)
+432
+3
+SELECT length(subject) FROM t1 ORDER BY 1;
+length(subject)
+3
+432
+DROP TABLE t1;
+CREATE TABLE t1 (
+id       int unsigned NOT NULL auto_increment,
+list_id  smallint unsigned NOT NULL,
+term     TEXT NOT NULL,
+PRIMARY KEY(id),
+INDEX(list_id, term(4))
+) ENGINE=MYISAM CHARSET=utf8;
+INSERT INTO t1 SET list_id = 1, term = "letterc";
+INSERT INTO t1 SET list_id = 1, term = "letterb";
+INSERT INTO t1 SET list_id = 1, term = "lettera";
+INSERT INTO t1 SET list_id = 1, term = "letterd";
+SELECT id FROM t1 WHERE (list_id = 1) AND (term = "letterc");
+id
+1
+SELECT id FROM t1 WHERE (list_id = 1) AND (term = "letterb");
+id
+2
+SELECT id FROM t1 WHERE (list_id = 1) AND (term = "lettera");
+id
+3
+SELECT id FROM t1 WHERE (list_id = 1) AND (term = "letterd");
+id
+4
+DROP TABLE t1;
+SET NAMES latin1;
+CREATE TABLE t1 (
+id int unsigned NOT NULL auto_increment,
+list_id smallint unsigned NOT NULL,
+term text NOT NULL,
+PRIMARY KEY(id),
+INDEX(list_id, term(19))
+) ENGINE=MyISAM CHARSET=utf8;
+INSERT INTO t1 set list_id = 1, term = "test�test";
+INSERT INTO t1 set list_id = 1, term = "testetest";
+INSERT INTO t1 set list_id = 1, term = "test�test";
+SELECT id, term FROM t1 where (list_id = 1) AND (term = "test�test");
+id	term
+1	test�test
+2	testetest
+3	test�test
+SELECT id, term FROM t1 where (list_id = 1) AND (term = "testetest");
+id	term
+1	test�test
+2	testetest
+3	test�test
+SELECT id, term FROM t1 where (list_id = 1) AND (term = "test�test");
+id	term
+1	test�test
+2	testetest
+3	test�test
+DROP TABLE t1;
+set names utf8;
+create table t1 (
+a int primary key,
+b varchar(6),
+index b3(b(3))
+) engine=innodb character set=utf8;
+insert into t1 values(1,'foo'),(2,'foobar');
+select * from t1 where b like 'foob%';
+a	b
+2	foobar
+alter table t1 engine=bdb;
+select * from t1 where b like 'foob%';
+a	b
+2	foobar
+drop table t1;
+create table t1 (
+a enum('петя','вася','анюта') character set utf8 not null default 'анюта',
+b set('петя','вася','анюта') character set utf8 not null default 'анюта'
+);
+create table t2 select concat(a,_utf8'') as a, concat(b,_utf8'')as b from t1;
+show create table t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` char(5) character set utf8 NOT NULL default '',
+  `b` char(15) character set utf8 NOT NULL default ''
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+drop table t2;
+drop table t1;
+select 'c' like '\_' as want0;
+want0
+0
+create table t1 (id integer, a varchar(100) character set utf8 collate utf8_unicode_ci);
+insert into t1 values (1, 'Test');
+select * from t1 where soundex(a) = soundex('Test');
+id	a
+1	Test
+select * from t1 where soundex(a) = soundex('TEST');
+id	a
+1	Test
+select * from t1 where soundex(a) = soundex('test');
+id	a
+1	Test
+drop table t1;
+SET collation_connection='utf8_general_ci';
+create table t1 select repeat('a',4000) a;
+delete from t1;
+insert into t1 values ('a'), ('a '), ('a\t');
+select collation(a),hex(a) from t1 order by a;
+collation(a)	hex(a)
+utf8_general_ci	6109
+utf8_general_ci	61
+utf8_general_ci	6120
+drop table t1;
+SET collation_connection='utf8_bin';
+create table t1 select repeat('a',4000) a;
+delete from t1;
+insert into t1 values ('a'), ('a '), ('a\t');
+select collation(a),hex(a) from t1 order by a;
+collation(a)	hex(a)
+utf8_bin	6109
+utf8_bin	61
+utf8_bin	6120
+drop table t1;
+CREATE TABLE t1 (
+user varchar(255) NOT NULL default ''
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+INSERT INTO t1 VALUES ('one'),('two');
+SELECT CHARSET('a');
+CHARSET('a')
+utf8
+SELECT user, CONCAT('<', user, '>') AS c FROM t1;
+user	c
+one	<one>
+two	<two>
+DROP TABLE t1;

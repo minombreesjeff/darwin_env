@@ -77,7 +77,7 @@ open_step(
 			
 	if (err != DB_SUCCESS) {
 		/* SQL error detected */
-		fprintf(stderr, "SQL error %lu\n", err);
+		fprintf(stderr, "SQL error %lu\n", (ulong) err);
 
 		ut_error;
 	}

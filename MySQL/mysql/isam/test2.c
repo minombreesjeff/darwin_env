@@ -156,7 +156,7 @@ int main(int argc, char *argv[])
     goto err;
   printf("- Writing key:s\n");
   if (key_cacheing)
-    init_key_cache(IO_SIZE*16);		/* Use a small cache */
+    init_key_cache(dflt_key_cache,512,IO_SIZE*16,0,0);	/* Use a small cache */
   if (locking)
     nisam_lock_database(file,F_WRLCK);
   if (write_cacheing)
@@ -526,7 +526,7 @@ int main(int argc, char *argv[])
     if (j != 0 && k != 0)
     {
       if (j > k)
-	swap(int,j,k);
+	swap_variables(int, j, k);
       sprintf(key,"%6d",j);
       sprintf(key2,"%6d",k);
       range_records=nisam_records_in_range(file,0,key,0,HA_READ_AFTER_KEY,
@@ -674,7 +674,7 @@ end:
     puts("Locking used");
   if (use_blob)
     puts("blobs used");
-  end_key_cache();
+  end_key_cache(dflt_key_cache,1);
   if (blob_buffer)
     my_free(blob_buffer,MYF(0));
   my_end(MY_CHECK_ERROR | MY_GIVE_INFO);

@@ -51,7 +51,7 @@ struct st_file_buffer {
   char *buffer,*pos,*end;
   my_off_t pos_in_file;
   int bits;
-  uint byte;
+  uint current_byte;
 };
 
 struct st_huff_tree;
@@ -111,6 +111,8 @@ typedef struct st_isam_mrg {
   uint	ref_length;
   uint	max_blob_length;
   my_off_t records;
+  /* true if at least one source file has at least one disabled index */
+  my_bool src_file_has_indexes_disabled;
 } PACK_MRG_INFO;
 
 
@@ -235,12 +237,12 @@ enum options_mp {OPT_CHARSETS_DIR_MP=256};
 
 static struct my_option my_long_options[] =
 {
-  {"backup", 'b', "Make a backup of the table as table_name.OLD",
+  {"backup", 'b', "Make a backup of the table as table_name.OLD.",
    (gptr*) &backup, (gptr*) &backup, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"character-sets-dir", OPT_CHARSETS_DIR_MP,
    "Directory where character sets are.", (gptr*) &charsets_dir,
    (gptr*) &charsets_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"debug", '#', "Output debug log. Often this is 'd:t:o,filename'",
+  {"debug", '#', "Output debug log. Often this is 'd:t:o,filename'.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
   {"force", 'f',
    "Force packing of table even if it gets bigger or if tempfile exists.",
@@ -266,11 +268,14 @@ static struct my_option my_long_options[] =
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
+#include <help_start.h>
 
 static void print_version(void)
 {
   printf("%s Ver 1.22 for %s on %s\n", my_progname, SYSTEM_TYPE, MACHINE_TYPE);
+  NETWARE_SET_SCREEN_MODE(1);
 }
+
 
 static void usage(void)
 {
@@ -290,6 +295,7 @@ static void usage(void)
   my_print_variables(my_long_options);
 }
 
+#include <help_end.h>
 
 static my_bool
 get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
@@ -409,10 +415,15 @@ static bool open_isam_files(PACK_MRG_INFO *mrg,char **names,uint count)
   mrg->current=0;
   mrg->file=(MI_INFO**) my_malloc(sizeof(MI_INFO*)*count,MYF(MY_FAE));
   mrg->free_file=1;
+  mrg->src_file_has_indexes_disabled= 0;
   for (i=0; i < count ; i++)
   {
     if (!(mrg->file[i]=open_isam_file(names[i],O_RDONLY)))
       goto error;
+
+    mrg->src_file_has_indexes_disabled|= ((mrg->file[i]->s->state.key_map != 
+                                           (((ulonglong) 1) <<
+                                            mrg->file[i]->s->base. keys) - 1));
   }
   /* Check that files are identical */
   for (j=0 ; j < count-1 ; j++)
@@ -665,7 +676,8 @@ static HUFF_COUNTS *init_huff_count(MI_INFO *info,my_off_t records)
 	  (type == FIELD_NORMAL ||
 	   type == FIELD_SKIP_ZERO))
 	count[i].max_zero_fill= count[i].field_length;
-      init_tree(&count[i].int_tree,0,0,-1,(qsort_cmp2) compare_tree,0,NULL,NULL);
+      init_tree(&count[i].int_tree,0,0,-1,(qsort_cmp2) compare_tree,0, NULL,
+		NULL);
       if (records && type != FIELD_BLOB && type != FIELD_VARCHAR)
 	count[i].tree_pos=count[i].tree_buff =
 	  my_malloc(count[i].field_length > 1 ? tree_buff_length : 2,
@@ -763,7 +775,8 @@ static int get_statistic(PACK_MRG_INFO *mrg,HUFF_COUNTS *huff_counts)
 	if (count->tree_buff)
 	{
 	  global_count=count;
-	  if (!(element=tree_insert(&count->int_tree,pos,0)) ||
+	  if (!(element=tree_insert(&count->int_tree,pos, 0, 
+				    count->int_tree.custom_arg)) ||
 	      (element->count == 1 &&
 	       count->tree_buff + tree_buff_length <
 	       count->tree_pos + count->field_length) ||
@@ -1069,7 +1082,7 @@ test_space_compress(HUFF_COUNTS *huff_counts, my_off_t records,
 {
   int min_pos;
   uint length_bits,i;
-  my_off_t space_count,min_space_count,min_pack,new_length,skipp;
+  my_off_t space_count,min_space_count,min_pack,new_length,skip;
 
   length_bits=max_bit(max_space_length);
 
@@ -1089,15 +1102,15 @@ test_space_compress(HUFF_COUNTS *huff_counts, my_off_t records,
     min_space_count=space_count;
   }
 	/* Test with length-flag */
-  for (skipp=0L, i=0 ; i < 8 ; i++)
+  for (skip=0L, i=0 ; i < 8 ; i++)
   {
     if (space_counts[i])
     {
       if (i)
 	huff_counts->counts[(uint) ' ']+=space_counts[i];
-      skipp+=huff_counts->pre_space[i];
+      skip+=huff_counts->pre_space[i];
       new_length=calc_packed_length(huff_counts,0)+
-	(records+(records-skipp)*(1+length_bits))/8;
+	(records+(records-skip)*(1+length_bits))/8;
       if (new_length < min_pack)
       {
 	min_pos=(int) i;
@@ -1786,7 +1799,8 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts)
 	  break;
 	case FIELD_INTERVALL:
 	  global_count=count;
-	  pos=(byte*) tree_search(&count->int_tree,start_pos);
+	  pos=(byte*) tree_search(&count->int_tree, start_pos,
+				  count->int_tree.custom_arg);
 	  intervall=(uint) (pos - count->tree_buff)/field_length;
 	  write_bits(tree->code[intervall],(uint) tree->code_len[intervall]);
 	  start_pos=end_pos;
@@ -1909,7 +1923,7 @@ static void init_file_buffer(File file, pbool read_buffer)
     file_buffer.pos=file_buffer.buffer;
     file_buffer.bits=BITS_SAVED;
   }
-  file_buffer.byte=0;
+  file_buffer.current_byte=0;
 }
 
 
@@ -1958,13 +1972,13 @@ static void write_bits (register ulong value, register uint bits)
 {
   if ((file_buffer.bits-=(int) bits) >= 0)
   {
-    file_buffer.byte|=value << file_buffer.bits;
+    file_buffer.current_byte|=value << file_buffer.bits;
   }
   else
   {
     reg3 uint byte_buff;
     bits= (uint) -file_buffer.bits;
-    byte_buff=file_buffer.byte | (uint) (value >> bits);
+    byte_buff=file_buffer.current_byte | (uint) (value >> bits);
 #if BITS_SAVED == 32
     *file_buffer.pos++= (byte) (byte_buff >> 24) ;
     *file_buffer.pos++= (byte) (byte_buff >> 16) ;
@@ -1990,7 +2004,7 @@ static void write_bits (register ulong value, register uint bits)
     if (file_buffer.pos >= file_buffer.end)
       VOID(flush_buffer((uint) ~0));
     file_buffer.bits=(int) (BITS_SAVED - bits);
-    file_buffer.byte=(uint) (value << (BITS_SAVED - bits));
+    file_buffer.current_byte=(uint) (value << (BITS_SAVED - bits));
   }
   return;
 }
@@ -2002,7 +2016,7 @@ static void flush_bits (void)
   uint bits,byte_buff;
 
   bits=(file_buffer.bits) & ~7;
-  byte_buff = file_buffer.byte >> bits;
+  byte_buff = file_buffer.current_byte >> bits;
   bits=BITS_SAVED - bits;
   while (bits > 0)
   {
@@ -2010,7 +2024,7 @@ static void flush_bits (void)
     *file_buffer.pos++= (byte) (uchar) (byte_buff >> bits) ;
   }
   file_buffer.bits=BITS_SAVED;
-  file_buffer.byte=0;
+  file_buffer.current_byte=0;
   return;
 }
 
@@ -2036,8 +2050,21 @@ static int save_state(MI_INFO *isam_file,PACK_MRG_INFO *mrg,my_off_t new_length,
   share->state.dellink= HA_OFFSET_ERROR;
   share->state.split=(ha_rows) mrg->records;
   share->state.version=(ulong) time((time_t*) 0);
+  if (share->state.key_map != (ULL(1) << share->base.keys) - 1)
+  {
+    /*
+      Some indexes are disabled, cannot use current key_file_length value
+      as an estimate of upper bound of index file size. Use packed data file 
+      size instead.
+    */
+    share->state.state.key_file_length= new_length;
+  }
+  /*
+    If there are no disabled indexes, keep key_file_length value from 
+    original file so "myisamchk -rq" can use this value (this is necessary 
+    because index size cannot be easily calculated for fulltext keys)
+  */
   share->state.key_map=0;
-  share->state.state.key_file_length=share->base.keystart;
   for (key=0 ; key < share->base.keys ; key++)
     share->state.key_root[key]= HA_OFFSET_ERROR;
   for (key=0 ; key < share->state.header.max_block_size ; key++)
@@ -2046,8 +2073,7 @@ static int save_state(MI_INFO *isam_file,PACK_MRG_INFO *mrg,my_off_t new_length,
   share->changed=1;			/* Force write of header */
   share->state.open_count=0;
   share->global_changed=0;
-  VOID(my_chsize(share->kfile, share->state.state.key_file_length, 0,
-		 MYF(0)));
+  VOID(my_chsize(share->kfile, share->base.keystart, 0, MYF(0)));
   if (share->base.keys)
     isamchk_neaded=1;
   DBUG_RETURN(mi_state_info_write(share->kfile,&share->state,1+2));
@@ -2070,7 +2096,12 @@ static int save_state_mrg(File file,PACK_MRG_INFO *mrg,my_off_t new_length,
   state.state.del=0;
   state.state.empty=0;
   state.state.records=state.split=(ha_rows) mrg->records;
-  state.state.key_file_length=isam_file->s->base.keystart;
+  /* See comment above in save_state about key_file_length handling. */
+  if (mrg->src_file_has_indexes_disabled)
+  {
+    isam_file->s->state.state.key_file_length=
+      max(isam_file->s->state.state.key_file_length, new_length);
+  }
   state.dellink= HA_OFFSET_ERROR;
   state.version=(ulong) time((time_t*) 0);
   state.key_map=0;

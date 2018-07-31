@@ -23,264 +23,321 @@
 #define mysql_unix_port mysql_inix_port1
 #define mysql_port mysql_port1
 
+extern "C"
+{
+  extern unsigned long max_allowed_packet, net_buffer_length;
+}
+
+static int fake_argc= 1;
+static char *fake_argv[]= {(char *)"", 0};
+static const char *fake_groups[] = { "server", "embedded", 0 };
+
 #if defined (__WIN__)
 #include "../sql/mysqld.cpp"
 #else
 #include "../sql/mysqld.cc"
 #endif
 
-#define SCRAMBLE_LENGTH 8
+int check_user(THD *thd, enum enum_server_command command, 
+	       const char *passwd, uint passwd_len, const char *db,
+	       bool check_count);
 C_MODE_START
-#include "lib_vio.c"
+#include <mysql.h>
+#undef ER
+#include "errmsg.h"
+#include <sql_common.h>
 
-static int check_connections1(THD * thd);
-static int check_connections2(THD * thd);
-static bool check_user(THD *thd, enum_server_command command,
-		       const char *user, const char *passwd, const char *db,
-		       bool check_count);
-char * get_mysql_home(){ return mysql_home;};
-char * get_mysql_real_data_home(){ return mysql_real_data_home;};
-
-bool lib_dispatch_command(enum enum_server_command command, NET *net,
-			  const char *arg, ulong length)
+void embedded_get_error(MYSQL *mysql)
 {
-  THD *thd=(THD *) net->vio->dest_thd;
+  THD *thd=(THD *) mysql->thd;
+  NET *net= &mysql->net;
+  if ((net->last_errno= thd->net.last_errno))
+  {
+    memcpy(net->last_error, thd->net.last_error, sizeof(net->last_error));
+    memcpy(net->sqlstate, thd->net.sqlstate, sizeof(net->sqlstate));
+  }
+  else
+  {
+    net->last_error[0]= 0;
+    strmov(net->sqlstate, not_error_sqlstate);
+  }
+}
+
+static my_bool
+emb_advanced_command(MYSQL *mysql, enum enum_server_command command,
+		     const char *header, ulong header_length,
+		     const char *arg, ulong arg_length, my_bool skip_check)
+{
+  my_bool result= 1;
+  THD *thd=(THD *) mysql->thd;
+  NET *net= &mysql->net;
+
+  if (thd->data)
+  {
+    free_rows(thd->data);
+    thd->data= 0;
+  }
+  /* Check that we are calling the client functions in right order */
+  if (mysql->status != MYSQL_STATUS_READY)
+  {
+    strmov(net->last_error,
+	   ER(net->last_errno=CR_COMMANDS_OUT_OF_SYNC));
+    return 1;
+  }
+
+  /* Clear result variables */
+  thd->clear_error();
+  mysql->affected_rows= ~(my_ulonglong) 0;
+  mysql->field_count= 0;
+  net->last_errno= 0;
+
   thd->store_globals();				// Fix if more than one connect
-  thd->net.last_error[0]=0;			// Clear error message
-  thd->net.last_errno=0;
-
-  net_new_transaction(&thd->net);
-  return dispatch_command(command, thd, (char *) arg, length + 1);
-}
-
-
-void lib_connection_phase(NET * net, int phase)
-{
-  THD * thd;
-  thd = (THD *)(net->vio->dest_thd);
-  if (thd)
-  {
-    switch (phase)
-    {
-    case 2: 
-      check_connections2(thd);
-      break;
-    }
-  }
-}
-C_MODE_END
-
-
-void start_embedded_conn1(NET * net)
-{
-  THD * thd = new THD;
-  my_net_init(&thd->net,NULL);
-  /* if (protocol_version>9) */
-  thd->net.return_errno=1;
-  thd->thread_id = thread_id++;
-
-  Vio * v  = net->vio;
-  if (!v)
-  {
-    v = vio_new(0,VIO_CLOSED,0);
-    net->vio = v;
-  }
-  if (v)
-  {
-    v -> dest_thd = thd;
-  } 
-  thd->net.vio = v;
-  if (thd->store_globals())
-  {
-    fprintf(stderr,"store_globals failed.\n");
-    return;
-  }
-
-  thd->mysys_var=my_thread_var;
-  thd->dbug_thread_id=my_thread_id();
-  thd->thread_stack= (char*) &thd;
-
-  if (thd->variables.max_join_size == (ulong) HA_POS_ERROR)
-    thd->options |= OPTION_BIG_SELECTS;
-
-  thd->proc_info=0;				// Remove 'login'
-  thd->command=COM_SLEEP;
-  thd->version=refresh_version;
-  thd->set_time();
-  bzero(thd->scramble, sizeof(thd->scramble));
-  init_sql_alloc(&thd->mem_root,8192,8192);
-
-  check_connections1(thd);
-}
-
-
-
-
-static int
-check_connections1(THD *thd)
-{
-  uint connect_errors=0;
-  NET *net= &thd->net;
-  /*
-  ** store the connection details
+  /* 
+     We have to call free_old_query before we start to fill mysql->fields 
+     for new query. In the case of embedded server we collect field data
+     during query execution (not during data retrieval as it is in remote
+     client). So we have to call free_old_query here
   */
-  DBUG_PRINT("info", (("check_connections called by thread %d"),
-	     thd->thread_id));
-  DBUG_PRINT("general",("New connection received on %s",
-			vio_description(net->vio)));
-  if (!thd->host)                           // If TCP/IP connection
+  free_old_query(mysql);
+
+  thd->extra_length= arg_length;
+  thd->extra_data= (char *)arg;
+  if (header)
   {
-      thd->host=(char*) localhost;
+    arg= header;
+    arg_length= header_length;
   }
-  else /* Hostname given means that the connection was on a socket */
-  {
-    DBUG_PRINT("general",("Host: %s",thd->host));
-    thd->ip=0;
-    bzero((char*) &thd->remote,sizeof(struct sockaddr));
-  }
-  //vio_keepalive(net->vio, TRUE);
 
-  /* nasty, but any other way? */
-  uint pkt_len = 0;
+  result= dispatch_command(command, thd, (char *) arg, arg_length + 1);
 
-    char buff[80],*end;
-    int client_flags = CLIENT_LONG_FLAG | CLIENT_CONNECT_WITH_DB |
-	               CLIENT_TRANSACTIONS;
-    LINT_INIT(pkt_len);
+  if (!skip_check)
+    result= thd->net.last_errno ? -1 : 0;
 
-    end=strmov(buff,server_version)+1;
-    int4store((uchar*) end,thd->thread_id);
-    end+=4;
-    memcpy(end,thd->scramble,SCRAMBLE_LENGTH+1);
-    end+=SCRAMBLE_LENGTH +1;
-    int2store(end,client_flags);
-    end[2]=MY_CHARSET_CURRENT;
-
-#define MIN_HANDSHAKE_SIZE	6
-
-    int2store(end+3,thd->server_status);
-    bzero(end+5,13);
-    end+=18;
-    if (net_write_command(net,protocol_version, buff,
-			  (uint) (end-buff))) 
-    {
-      inc_host_errors(&thd->remote.sin_addr);
-      return(ER_HANDSHAKE_ERROR);
-    }
-   return 0; 
+  /*
+    If mysql->field_count is set it means the parsing of the query was OK
+    and metadata was returned (see Protocol::send_fields).
+    In this case we postpone the error to be returned in mysql_stmt_store_result
+    (see emb_read_rows) to behave just as standalone server.
+  */
+  if (!mysql->field_count)
+    embedded_get_error(mysql);
+  mysql->server_status= thd->server_status;
+  mysql->warning_count= ((THD*)mysql->thd)->total_warn_count;
+  return result;
 }
 
-static int
-check_connections2(THD * thd)
+static void emb_flush_use_result(MYSQL *mysql)
 {
-  uint connect_errors=0;
-  uint pkt_len = 0;
-  NET * net = &thd -> net;
-  if (protocol_version>9) net -> return_errno=1;
+  MYSQL_DATA *data= ((THD*)(mysql->thd))->data;
 
-  if ( (pkt_len=my_net_read(net)) == packet_error ||
-       pkt_len < MIN_HANDSHAKE_SIZE)
+  if (data)
   {
-    inc_host_errors(&thd->remote.sin_addr);
-    return(ER_HANDSHAKE_ERROR);
+    free_rows(data);
+    ((THD*)(mysql->thd))->data= NULL;
+  }
+}
+
+static MYSQL_DATA *
+emb_read_rows(MYSQL *mysql, MYSQL_FIELD *mysql_fields __attribute__((unused)),
+	      unsigned int fields __attribute__((unused)))
+{
+  MYSQL_DATA *result= ((THD*)mysql->thd)->data;
+  embedded_get_error(mysql);
+  if (mysql->net.last_errno)
+    return NULL;
+  if (!result)
+  {
+    if (!(result=(MYSQL_DATA*) my_malloc(sizeof(MYSQL_DATA),
+					 MYF(MY_WME | MY_ZEROFILL))))
+    {
+      NET *net = &mysql->net;
+      net->last_errno=CR_OUT_OF_MEMORY;
+      strmov(net->sqlstate, unknown_sqlstate);
+      strmov(net->last_error,ER(net->last_errno));
+      return NULL;
+    }    
+    return result;
+  }
+  *result->prev_ptr= NULL;
+  ((THD*)mysql->thd)->data= NULL;
+  return result;
+}
+
+static MYSQL_FIELD *emb_list_fields(MYSQL *mysql)
+{
+  return mysql->fields;
+}
+
+static my_bool emb_read_prepare_result(MYSQL *mysql, MYSQL_STMT *stmt)
+{
+  THD *thd= (THD*)mysql->thd;
+  if (mysql->net.last_errno)
+    return 1;
+  stmt->stmt_id= thd->client_stmt_id;
+  stmt->param_count= thd->client_param_count;
+  stmt->field_count= mysql->field_count;
+
+  if (stmt->field_count != 0)
+  {
+    if (!(mysql->server_status & SERVER_STATUS_AUTOCOMMIT))
+      mysql->server_status|= SERVER_STATUS_IN_TRANS;
+
+    stmt->fields= mysql->fields;
+    stmt->mem_root= mysql->field_alloc;
+    mysql->fields= NULL;
   }
 
-#ifdef _CUSTOMCONFIG_
-#include "_cust_sql_parse.h"
-#endif
-  if (connect_errors)
-    reset_host_errors(&thd->remote.sin_addr);
-  if (thd->packet.alloc(thd->variables.net_buffer_length))
-    return(ER_OUT_OF_RESOURCES);
-
-  thd->client_capabilities=uint2korr(net->read_pos);
-
-  thd->max_client_packet_length=uint3korr(net->read_pos+2);
-  char *user=   (char*) net->read_pos+5;
-  char *passwd= strend(user)+1;
-  char *db=0;
-  if (passwd[0] && strlen(passwd) != SCRAMBLE_LENGTH)
-    return ER_HANDSHAKE_ERROR;
-  if (thd->client_capabilities & CLIENT_CONNECT_WITH_DB)
-    db=strend(passwd)+1;
-  if (thd->client_capabilities & CLIENT_TRANSACTIONS)
-    thd->net.return_status= &thd->server_status;
-  net->read_timeout=thd->variables.net_read_timeout;
-  if (check_user(thd,COM_CONNECT, user, passwd, db, 1))
-    return (-1);
-  thd->password=test(passwd[0]);
   return 0;
 }
 
-static bool check_user(THD *thd,enum_server_command command, const char *user,
-		       const char *passwd, const char *db, bool check_count)
-{
-  NET *net= &thd->net;
-  USER_RESOURCES ur;
-  thd->db=0;
+/**************************************************************************
+  Get column lengths of the current row
+  If one uses mysql_use_result, res->lengths contains the length information,
+  else the lengths are calculated from the offset between pointers.
+**************************************************************************/
 
-  if (!(thd->user = my_strdup(user, MYF(0))))
-  {
-    send_error(net,ER_OUT_OF_RESOURCES);
-    return 1;
-  }
-  strmake(thd->priv_host, LOCAL_HOST, sizeof(thd->priv_host)-1);
-  thd->master_access=acl_getroot(thd, thd->host, thd->ip, thd->user,
-				 passwd, thd->scramble,
-                                 &thd->priv_user, thd->priv_host,
-				 protocol_version == 9 ||
-				 !(thd->client_capabilities &
-				   CLIENT_LONG_PASSWORD),&ur);
-  DBUG_PRINT("info",
-	     ("Capabilities: %d  packet_length: %d  Host: '%s'  User: '%s'  Using password: %s  Access: %u  db: '%s'",
-	      thd->client_capabilities, thd->max_client_packet_length,
-	      thd->host_or_ip, thd->priv_user,
-	      passwd[0] ? "yes": "no",
-	      thd->master_access, thd->db ? thd->db : "*none*"));
-  if (thd->master_access & NO_ACCESS)
-  {
-    net_printf(net, ER_ACCESS_DENIED_ERROR,
-	       thd->user,
-	       thd->host_or_ip,
-	       passwd[0] ? ER(ER_YES) : ER(ER_NO));
-    mysql_log.write(thd,COM_CONNECT,ER(ER_ACCESS_DENIED_ERROR),
-		    thd->user,
-		    thd->host_or_ip,
-		    passwd[0] ? ER(ER_YES) : ER(ER_NO));
-    return(1);					// Error already given
-  }
-  if (check_count)
-  {
-    VOID(pthread_mutex_lock(&LOCK_thread_count));
-    bool tmp=(thread_count - delayed_insert_threads >= max_connections &&
-	      !(thd->master_access & PROCESS_ACL));
-    VOID(pthread_mutex_unlock(&LOCK_thread_count));
-    if (tmp)
-    {						// Too many connections
-      send_error(net, ER_CON_COUNT_ERROR);
-      return(1);
-    }
-  }
-  mysql_log.write(thd,command,
-		  (thd->priv_user == thd->user ?
-		   (char*) "%s@%s on %s" :
-		   (char*) "%s@%s as anonymous on %s"),
-		  user,
-		  thd->host_or_ip,
-		  db ? db : (char*) "");
-  thd->db_access=0;
-  if (db && db[0])
-    return test(mysql_change_db(thd,db));
-  else
-    send_ok(net);				// Ready to handle questions
-  return 0;					// ok
+static void emb_fetch_lengths(ulong *to, MYSQL_ROW column,
+			      unsigned int field_count)
+{ 
+  MYSQL_ROW end;
+
+  for (end=column + field_count; column != end ; column++,to++)
+    *to= *column ? *(uint *)((*column) - sizeof(uint)) : 0;
 }
 
+static my_bool emb_mysql_read_query_result(MYSQL *mysql)
+{
+  if (mysql->net.last_errno)
+    return -1;
+
+  if (mysql->field_count)
+    mysql->status=MYSQL_STATUS_GET_RESULT;
+
+  return 0;
+}
+
+static int emb_stmt_execute(MYSQL_STMT *stmt)
+{
+  DBUG_ENTER("emb_stmt_execute");
+  char header[4];
+  int4store(header, stmt->stmt_id);
+  THD *thd= (THD*)stmt->mysql->thd;
+  thd->client_param_count= stmt->param_count;
+  thd->client_params= stmt->params;
+  if (emb_advanced_command(stmt->mysql, COM_EXECUTE,0,0,
+                           header, sizeof(header), 1) ||
+      emb_mysql_read_query_result(stmt->mysql))
+  {
+    NET *net= &stmt->mysql->net;
+    set_stmt_errmsg(stmt, net->last_error, net->last_errno, net->sqlstate);
+    DBUG_RETURN(1);
+  }
+  stmt->affected_rows= stmt->mysql->affected_rows;
+  stmt->insert_id= stmt->mysql->insert_id;
+  DBUG_RETURN(0);
+}
+
+int emb_read_binary_rows(MYSQL_STMT *stmt)
+{
+  MYSQL_DATA *data;
+  if (!(data= emb_read_rows(stmt->mysql, 0, 0)))
+    return 1;
+  stmt->result= *data;
+  my_free((char *) data, MYF(0));
+  return 0;
+}
+
+int emb_unbuffered_fetch(MYSQL *mysql, char **row)
+{
+  MYSQL_DATA *data= ((THD*)mysql->thd)->data;
+  embedded_get_error(mysql);
+  if (mysql->net.last_errno)
+    return mysql->net.last_errno;
+  if (!data || !data->data)
+  {
+    *row= NULL;
+    if (data)
+    {
+      free_rows(data);
+      ((THD*)mysql->thd)->data= NULL;
+    }
+  }
+  else
+  {
+    *row= (char *)data->data->data;
+    data->data= data->data->next;
+  }
+  return 0;
+}
+
+static void emb_free_embedded_thd(MYSQL *mysql)
+{
+  THD *thd= (THD*)mysql->thd;
+  if (thd->data)
+    free_rows(thd->data);
+  thread_count--;
+  delete thd;
+  mysql->thd=0;
+}
+
+static const char * emb_read_statistics(MYSQL *mysql)
+{
+  THD *thd= (THD*)mysql->thd;
+  return thd->net.last_error;
+}
+
+
+static MYSQL_RES * emb_mysql_store_result(MYSQL *mysql)
+{
+  return mysql_store_result(mysql);
+}
+
+my_bool emb_next_result(MYSQL *mysql)
+{
+  THD *thd= (THD*)mysql->thd;
+  DBUG_ENTER("emb_next_result");
+
+  if (emb_advanced_command(mysql, COM_QUERY,0,0,
+			   thd->query_rest.ptr(),thd->query_rest.length(),1) ||
+      emb_mysql_read_query_result(mysql))
+    DBUG_RETURN(1);
+
+  DBUG_RETURN(0);				/* No more results */
+}
+
+int emb_read_change_user_result(MYSQL *mysql, 
+				char *buff __attribute__((unused)),
+				const char *passwd __attribute__((unused)))
+{
+  return mysql_errno(mysql);
+}
+
+MYSQL_METHODS embedded_methods= 
+{
+  emb_mysql_read_query_result,
+  emb_advanced_command,
+  emb_read_rows,
+  emb_mysql_store_result,
+  emb_fetch_lengths, 
+  emb_flush_use_result,
+  emb_list_fields,
+  emb_read_prepare_result,
+  emb_stmt_execute,
+  emb_read_binary_rows,
+  emb_unbuffered_fetch,
+  emb_free_embedded_thd,
+  emb_read_statistics,
+  emb_next_result,
+  emb_read_change_user_result
+};
+
+C_MODE_END
 
 void THD::clear_error()
 {
   net.last_error[0]= 0;
   net.last_errno= 0;
+  net.report_error= 0;
 }
 
 /*
@@ -313,86 +370,41 @@ char **copy_arguments(int argc, char **argv)
 extern "C"
 {
 
-static my_bool  org_my_init_done;
-my_bool         server_inited;
-ulong		max_allowed_packet, net_buffer_length;
 char **		copy_arguments_ptr= 0; 
 
-int STDCALL mysql_server_init(int argc, char **argv, char **groups)
+int init_embedded_server(int argc, char **argv, char **groups)
 {
-  char glob_hostname[FN_REFLEN];
-
-  /* This mess is to allow people to call the init function without
-   * having to mess with a fake argv */
+  /*
+    This mess is to allow people to call the init function without
+    having to mess with a fake argv
+   */
   int *argcp;
   char ***argvp;
   int fake_argc = 1;
   char *fake_argv[] = { (char *)"", 0 };
   const char *fake_groups[] = { "server", "embedded", 0 };
+  my_bool acl_error;
   if (argc)
   {
-    argcp = &argc;
-    argvp = (char***) &argv;
+    argcp= &argc;
+    argvp= (char***) &argv;
   }
   else
   {
-    argcp = &fake_argc;
-    argvp = (char ***) &fake_argv;
+    argcp= &fake_argc;
+    argvp= (char ***) &fake_argv;
   }
   if (!groups)
-    groups = (char**) fake_groups;
+    groups= (char**) fake_groups;
 
-  my_umask=0660;		// Default umask for new files
-  my_umask_dir=0700;		// Default umask for new directories
+  my_progname= (char *)"mysql_embedded";
 
-  /* Only call MY_INIT() if it hasn't been called before */
-  if (!server_inited)
+  if (init_common_variables("my", *argcp, *argvp, (const char **)groups))
   {
-    server_inited=1;
-    org_my_init_done=my_init_done;
+    mysql_server_end();
+    return 1;
   }
-  if (!org_my_init_done)
-  {
-    MY_INIT((char *)"mysql_embedded");	// init my_sys library & pthreads
-  }
-
-  /*
-    Make a copy of the arguments to guard against applications that
-    may change or move the initial arguments.
-  */
-  if (argvp == &argv)
-    if (!(copy_arguments_ptr= argv= copy_arguments(argc, argv)))
-      return 1;
-
-  tzset();			// Set tzname
-
-  start_time=time((time_t*) 0);
-#ifdef HAVE_TZNAME
-#if defined(HAVE_LOCALTIME_R) && defined(_REENTRANT)
-  {
-    struct tm tm_tmp;
-    localtime_r(&start_time,&tm_tmp);
-    strmov(time_zone,tzname[tm_tmp.tm_isdst != 0 ? 1 : 0]);
-  }
-#else
-  {
-    struct tm *start_tm;
-    start_tm=localtime(&start_time);
-    strmov(time_zone,tzname[start_tm->tm_isdst != 0 ? 1 : 0]);
-  }
-#endif
-#endif
-
-  if (gethostname(glob_hostname,sizeof(glob_hostname)-4) < 0)
-    strmov(glob_hostname,"mysql");
-#ifndef DBUG_OFF
-  strxmov(strend(server_version),MYSQL_SERVER_SUFFIX,"-debug",NullS);
-#else
-  strmov(strend(server_version),MYSQL_SERVER_SUFFIX);
-#endif
-  load_defaults("my", (const char **) groups, argcp, argvp);
-  defaults_argv=*argvp;
-
+    
   /* Get default temporary directory */
   opt_mysql_tmpdir=getenv("TMPDIR");	/* Use this if possible */
 #if defined( __WIN__) || defined(OS2)
@@ -404,205 +416,42 @@ int STDCALL mysql_server_init(int argc, char **argv, char **groups)
   if (!opt_mysql_tmpdir || !opt_mysql_tmpdir[0])
     opt_mysql_tmpdir=(char*) P_tmpdir;		/* purecov: inspected */
 
-  set_options();
-  get_options(*argcp, *argvp);
-
-  if (opt_log || opt_update_log || opt_slow_log || opt_bin_log)
-    strcat(server_version,"-log");
-  DBUG_PRINT("info",("%s  Ver %s for %s on %s\n",my_progname,
-		     server_version, SYSTEM_TYPE,MACHINE_TYPE));
-
-  if (opt_error_log)
-  {
-    if (!log_error_file_ptr[0])
-      fn_format(log_error_file, glob_hostname, mysql_data_home, ".err", 0);
-    else
-      fn_format(log_error_file, log_error_file_ptr, mysql_data_home, ".err",
-		MY_UNPACK_FILENAME | MY_SAFE_PATH);
-    if (!log_error_file[0])
-      opt_error_log= 1;				// Too long file name
-    else
-    {
-      freopen(log_error_file, "a+", stderr);
-    }
-  }
-
-  /* These must be set early */
-
-  (void) pthread_mutex_init(&LOCK_mysql_create_db,MY_MUTEX_INIT_SLOW);
-  (void) pthread_mutex_init(&LOCK_Acl,MY_MUTEX_INIT_SLOW);
-  (void) pthread_mutex_init(&LOCK_grant,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_open,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_thread_count,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_mapped_file,MY_MUTEX_INIT_SLOW);
-  (void) pthread_mutex_init(&LOCK_status,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_error_log,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_delayed_insert,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_delayed_status,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_delayed_create,MY_MUTEX_INIT_SLOW);
-  (void) pthread_mutex_init(&LOCK_manager,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_crypt,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_bytes_sent,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_bytes_received,MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_user_conn, MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_rpl_status, MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_active_mi, MY_MUTEX_INIT_FAST);
-  (void) pthread_mutex_init(&LOCK_global_system_variables, MY_MUTEX_INIT_FAST);
-  (void) pthread_cond_init(&COND_thread_count,NULL);
-  (void) pthread_cond_init(&COND_refresh,NULL);
-  (void) pthread_cond_init(&COND_thread_cache,NULL);
-  (void) pthread_cond_init(&COND_flush_thread_cache,NULL);
-  (void) pthread_cond_init(&COND_manager,NULL);
-  (void) pthread_cond_init(&COND_rpl_status, NULL);
-
-  if (set_default_charset_by_name(sys_charset.value, MYF(MY_WME)))
-  {
-    mysql_server_end();
-    return 1;
-  }
-  charsets_list = list_charsets(MYF(MY_COMPILED_SETS|MY_CONFIG_SETS));
-
-  /* Parameter for threads created for connections */
-  (void) pthread_attr_init(&connection_attrib);
-  (void) pthread_attr_setdetachstate(&connection_attrib,
-				     PTHREAD_CREATE_DETACHED);
-  pthread_attr_setstacksize(&connection_attrib,thread_stack);
-  pthread_attr_setscope(&connection_attrib, PTHREAD_SCOPE_SYSTEM);
-
-#if defined( SET_RLIMIT_NOFILE) || defined( OS2) 
-  /* connections and databases needs lots of files */
-  {
-    uint wanted_files=10+(uint) max(max_connections*5,
-				    max_connections+table_cache_size*2);
-    set_if_bigger(wanted_files, open_files_limit);
-    // Note that some system returns 0 if we succeed here:
-    uint files=set_maximum_open_files(wanted_files);
-    if (files && files < wanted_files && ! open_files_limit)
-    {
-      max_connections=	(ulong) min((files-10),max_connections);
-      table_cache_size= (ulong) max((files-10-max_connections)/2,64);
-      DBUG_PRINT("warning",
-		 ("Changed limits: max_connections: %ld  table_cache: %ld",
-		  max_connections,table_cache_size));
-      sql_print_error("Warning: Changed limits: max_connections: %ld  table_cache: %ld",max_connections,table_cache_size);
-    }
-  }
-#endif
-  unireg_init(opt_specialflag); /* Set up extern variabels */
-  init_errmessage();		/* Read error messages from file */
-  lex_init();
-  item_init();
-  set_var_init();
-  mysys_uses_curses=0;
-#ifdef USE_REGEX
-  regex_init();
-#endif
-  if (use_temp_pool && bitmap_init(&temp_pool,1024,1))
-  {
-    mysql_server_end();
-    return 1;
-  }
-
-  /*
-    We have enough space for fiddling with the argv, continue
-  */
   umask(((~my_umask) & 0666));
-  table_cache_init();
-  hostname_cache_init();
-  query_cache_result_size_limit(query_cache_limit);
-  query_cache_resize(query_cache_size);
-  randominit(&sql_rand,(ulong) start_time,(ulong) start_time/2);
-  reset_floating_point_exceptions();
-  init_thr_lock();
-  init_slave_list();
-
-  /* Setup log files */
-  if (opt_log)
-    open_log(&mysql_log, glob_hostname, opt_logname, ".log", NullS,
-	     LOG_NORMAL, 0, 0, 0);
-  if (opt_update_log)
-  {
-    open_log(&mysql_update_log, glob_hostname, opt_update_logname, "",
-	     NullS, LOG_NEW, 0, 0, 0);
-    using_update_log=1;
-  }
-
-  if (opt_slow_log)
-    open_log(&mysql_slow_log, glob_hostname, opt_slow_logname, "-slow.log",
-	     NullS, LOG_NORMAL, 0, 0, 0);
-  if (ha_init())
-  {
-    sql_print_error("Can't init databases");
-    exit(1);
-  }
-  ha_key_cache();
-#if defined(HAVE_MLOCKALL) && defined(MCL_CURRENT)
-  if (locked_in_memory && !geteuid())
-  {
-    if (mlockall(MCL_CURRENT))
-    {
-      sql_print_error("Warning: Failed to lock memory. Errno: %d\n",errno);
-    }
-    else
-      locked_in_memory=1;
-  }
-#else
-  locked_in_memory=0;
-#endif
-
-  if (opt_myisam_log)
-    (void) mi_log( 1 );
-  ft_init_stopwords();
-
-  /*
-    init signals & alarm
-    After this we can't quit by a simple unireg_abort
-  */
-  error_handler_hook = my_message_sql;
-  if (pthread_key_create(&THR_THD,NULL) || pthread_key_create(&THR_NET,NULL) ||
-      pthread_key_create(&THR_MALLOC,NULL))
-  {
-    sql_print_error("Can't create thread-keys");
-    exit(1);
-  }
-  opt_noacl = 1;				// No permissions
-  if (acl_init((THD*) 0,opt_noacl))
+  if (init_server_components())
   {
     mysql_server_end();
     return 1;
   }
-  if (!opt_noacl)
-    (void) grant_init((THD*) 0);
+
+  error_handler_hook = my_message_sql;
+
+  acl_error= 0;
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+  if (!(acl_error= acl_init((THD *)0, opt_noacl)) &&
+      !opt_noacl)
+    (void) grant_init((THD *)0);
+#endif
+  if (acl_error || my_tz_init((THD *)0, default_tz_name, opt_bootstrap))
+  {
+    mysql_server_end();
+    return 1;
+  }
+
   init_max_user_conn();
   init_update_queries();
 
 #ifdef HAVE_DLOPEN
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
   if (!opt_noacl)
+#endif
     udf_init();
 #endif
-
-  if (opt_bin_log)
-  {
-    if (!opt_bin_logname)
-    {
-      char tmp[FN_REFLEN];
-      /* TODO: The following should be using fn_format();  We just need to
-	 first change fn_format() to cut the file name if it's too long.
-      */
-      strmake(tmp,glob_hostname,FN_REFLEN-5);
-      strmov(strcend(tmp,'.'),"-bin");
-      opt_bin_logname=my_strdup(tmp,MYF(MY_WME));
-    }
-    open_log(&mysql_bin_log, glob_hostname, opt_bin_logname, "-bin",
-	     opt_binlog_index_name, LOG_BIN, 0, 0, max_binlog_size);
-    using_update_log=1;
-  }
 
   (void) thr_setconcurrency(concurrency);	// 10 by default
 
   if (
 #ifdef HAVE_BERKELEY_DB
-      !berkeley_skip ||
+      (have_berkeley_db == SHOW_OPTION_YES) ||
 #endif
       (flush_time && flush_time != ~(ulong) 0L))
   {
@@ -611,53 +460,393 @@ int STDCALL mysql_server_init(int argc, char **argv, char **groups)
       sql_print_error("Warning: Can't create thread to manage maintenance");
   }
 
-  /*
-    Update mysqld variables from client variables if set
-    The client variables are set also by get_one_option() in mysqld.cc
-  */
-  if (max_allowed_packet)
-    global_system_variables.max_allowed_packet= max_allowed_packet;
-  if (net_buffer_length)
-    global_system_variables.net_buffer_length= net_buffer_length;
+  if (opt_init_file)
+  {
+    if (read_init_file(opt_init_file))
+    {
+      mysql_server_end();
+      return 1;
+    }
+  }
+
   return 0;
 }
 
-
-void STDCALL mysql_server_end()
+void end_embedded_server()
 {
   my_free((char*) copy_arguments_ptr, MYF(MY_ALLOW_ZERO_PTR));
   copy_arguments_ptr=0;
   clean_up(0);
-  /* If library called my_init(), free memory allocated by it */
-  if (!org_my_init_done)
-    my_end(0);
-}
-
-my_bool STDCALL mysql_thread_init()
-{
-#ifdef THREAD
-  return my_thread_init();
-#else
-  return 0;
-#endif
-}
-
-void STDCALL mysql_thread_end()
-{
-#ifdef THREAD
-  my_thread_end();
-#endif
-}
-
-void start_embedded_connection(NET * net)
-{
-  start_embedded_conn1(net);
-}
-
-void end_embedded_connection(NET * net)
-{
-  THD *thd = (THD *) net->vio->dest_thd;
-  delete thd;
 }
 
 } /* extern "C" */
+
+C_MODE_START
+void init_embedded_mysql(MYSQL *mysql, int client_flag, char *db)
+{
+  THD *thd = (THD *)mysql->thd;
+  thd->mysql= mysql;
+  mysql->server_version= server_version;
+}
+
+void *create_embedded_thd(int client_flag, char *db)
+{
+  THD * thd= new THD;
+  thd->thread_id= thread_id++;
+
+  if (thd->store_globals())
+  {
+    fprintf(stderr,"store_globals failed.\n");
+    goto err;
+  }
+
+  thd->mysys_var= my_thread_var;
+  thd->dbug_thread_id= my_thread_id();
+  thd->thread_stack= (char*) &thd;
+
+/* TODO - add init_connect command execution */
+
+  thd->proc_info=0;				// Remove 'login'
+  thd->command=COM_SLEEP;
+  thd->version=refresh_version;
+  thd->set_time();
+  thd->init_for_queries();
+  thd->client_capabilities= client_flag;
+
+  thd->db= db;
+  thd->db_length= db ? strip_sp(db) : 0;
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+  thd->db_access= DB_ACLS;
+  thd->master_access= ~NO_ACCESS;
+#endif
+  thd->net.query_cache_query= 0;
+
+  thd->data= 0;
+
+  thread_count++;
+  return thd;
+err:
+  delete(thd);
+  return NULL;
+}
+
+#ifdef NO_EMBEDDED_ACCESS_CHECKS
+int check_embedded_connection(MYSQL *mysql)
+{
+  THD *thd= (THD*)mysql->thd;
+  thd->host= (char*)my_localhost;
+  thd->host_or_ip= thd->host;
+  thd->user= my_strdup(mysql->user, MYF(0));
+  thd->priv_user= thd->user;
+  return check_user(thd, COM_CONNECT, NULL, 0, thd->db, true);
+}
+
+#else
+int check_embedded_connection(MYSQL *mysql)
+{
+  THD *thd= (THD*)mysql->thd;
+  int result;
+  char scramble_buff[SCRAMBLE_LENGTH];
+  int passwd_len;
+
+  if (mysql->options.client_ip)
+  {
+    thd->host= my_strdup(mysql->options.client_ip, MYF(0));
+    thd->ip= my_strdup(thd->host, MYF(0));
+  }
+  else
+    thd->host= (char*)my_localhost;
+  thd->host_or_ip= thd->host;
+
+  if (acl_check_host(thd->host,thd->ip))
+  {
+    result= ER_HOST_NOT_PRIVILEGED;
+    goto err;
+  }
+
+  thd->user= my_strdup(mysql->user, MYF(0));
+  if (mysql->passwd && mysql->passwd[0])
+  {
+    memset(thd->scramble, 55, SCRAMBLE_LENGTH); // dummy scramble
+    thd->scramble[SCRAMBLE_LENGTH]= 0;
+    scramble(scramble_buff, thd->scramble, mysql->passwd);
+    passwd_len= SCRAMBLE_LENGTH;
+  }
+  else
+    passwd_len= 0;
+
+  if((result= check_user(thd, COM_CONNECT, 
+			 scramble_buff, passwd_len, thd->db, true)))
+     goto err;
+
+  return 0;
+err:
+  {
+    NET *net= &mysql->net;
+    memcpy(net->last_error, thd->net.last_error, sizeof(net->last_error));
+    memcpy(net->sqlstate, thd->net.sqlstate, sizeof(net->sqlstate));
+  }
+  return result;
+}
+#endif
+
+C_MODE_END
+
+static char *dup_str_aux(MEM_ROOT *root, const char *from, uint length,
+			 CHARSET_INFO *fromcs, CHARSET_INFO *tocs)
+{
+  uint32 dummy32;
+  uint dummy_err;
+  char *result;
+
+  /* 'tocs' is set 0 when client issues SET character_set_results=NULL */
+  if (tocs && String::needs_conversion(0, fromcs, tocs, &dummy32))
+  {
+    uint new_len= (tocs->mbmaxlen * length) / fromcs->mbminlen + 1;
+    result= (char *)alloc_root(root, new_len);
+    length= copy_and_convert(result, new_len,
+                             tocs, from, length, fromcs, &dummy_err);
+  }
+  else
+  {
+    result= (char *)alloc_root(root, length + 1);
+    memcpy(result, from, length);
+  }
+
+  result[length]= 0;
+  return result;
+}
+
+
+bool Protocol::send_fields(List<Item> *list, uint flag)
+{
+  List_iterator_fast<Item> it(*list);
+  Item                     *item;
+  MYSQL_FIELD              *client_field;
+  MYSQL                    *mysql= thd->mysql;
+  MEM_ROOT                 *field_alloc;
+  CHARSET_INFO             *thd_cs= thd->variables.character_set_results;
+  CHARSET_INFO             *cs= system_charset_info;
+  
+  DBUG_ENTER("send_fields");
+
+  if (!mysql)            // bootstrap file handling
+    DBUG_RETURN(0);
+
+  field_count= list->elements;
+  field_alloc= &mysql->field_alloc;
+  if (!(client_field= thd->mysql->fields= 
+	(MYSQL_FIELD *)alloc_root(field_alloc, 
+				  sizeof(MYSQL_FIELD) * field_count)))
+    goto err;
+
+  while ((item= it++))
+  {
+    Send_field server_field;
+    item->make_field(&server_field);
+
+    client_field->db= dup_str_aux(field_alloc, server_field.db_name,
+                                  strlen(server_field.db_name), cs, thd_cs);
+    client_field->table= dup_str_aux(field_alloc, server_field.table_name,
+                                     strlen(server_field.table_name), cs, thd_cs);
+    client_field->name= dup_str_aux(field_alloc, server_field.col_name,
+                                    strlen(server_field.col_name), cs, thd_cs);
+    client_field->org_table= dup_str_aux(field_alloc, server_field.org_table_name,
+                                         strlen(server_field.org_table_name), cs, thd_cs);
+    client_field->org_name= dup_str_aux(field_alloc, server_field.org_col_name,
+                                        strlen(server_field.org_col_name), cs, thd_cs);
+    if (item->collation.collation == &my_charset_bin || thd_cs == NULL)
+    {
+      /* No conversion */
+      client_field->charsetnr= server_field.charsetnr;
+      client_field->length= server_field.length;
+    }
+    else
+    {
+      /* With conversion */
+      client_field->charsetnr= thd_cs->number;
+      uint char_len= server_field.length / item->collation.collation->mbmaxlen;
+      client_field->length= char_len * thd_cs->mbmaxlen;
+    }
+    client_field->type=   server_field.type;
+    client_field->flags= server_field.flags;
+    client_field->decimals= server_field.decimals;
+    client_field->db_length=		strlen(client_field->db);
+    client_field->table_length=		strlen(client_field->table);
+    client_field->name_length=		strlen(client_field->name);
+    client_field->org_name_length=	strlen(client_field->org_name);
+    client_field->org_table_length=	strlen(client_field->org_table);
+
+    client_field->catalog= dup_str_aux(field_alloc, "def", 3, cs, thd_cs);
+    client_field->catalog_length= 3;
+
+    if (INTERNAL_NUM_FIELD(client_field))
+      client_field->flags|= NUM_FLAG;
+
+    if (flag & 2)
+    {
+      char buff[80];
+      String tmp(buff, sizeof(buff), default_charset_info), *res;
+
+      if (!(res=item->val_str(&tmp)))
+      {
+	client_field->def_length= 0;
+	client_field->def= strmake_root(field_alloc, "",0);
+      }
+      else
+      {
+	client_field->def_length= res->length();
+	client_field->def= strmake_root(field_alloc, res->ptr(),
+					client_field->def_length);
+      }
+    }
+    else
+      client_field->def=0;
+    client_field->max_length= 0;
+    ++client_field;
+  }
+  thd->mysql->field_count= field_count;
+
+  DBUG_RETURN(prepare_for_send(list));
+ err:
+  send_error(thd, ER_OUT_OF_RESOURCES);	/* purecov: inspected */
+  DBUG_RETURN(1);				/* purecov: inspected */
+}
+
+bool Protocol::send_records_num(List<Item> *list, ulonglong records)
+{
+  return false;
+}
+
+bool Protocol::write()
+{
+  if (!thd->mysql)            // bootstrap file handling
+    return false;
+
+  *next_field= 0;
+  return false;
+}
+
+bool Protocol_prep::write()
+{
+  MYSQL_ROWS *cur;
+  MYSQL_DATA *data= thd->data;
+
+  if (!data)
+  {
+    if (!(data= (MYSQL_DATA*) my_malloc(sizeof(MYSQL_DATA),
+					MYF(MY_WME | MY_ZEROFILL))))
+      return true;
+    
+    alloc= &data->alloc;
+    init_alloc_root(alloc,8192,0);	/* Assume rowlength < 8192 */
+    alloc->min_malloc=sizeof(MYSQL_ROWS);
+    data->rows=0;
+    data->fields=field_count;
+    data->prev_ptr= &data->data;
+    thd->data= data;
+  }
+
+  data->rows++;
+  if (!(cur= (MYSQL_ROWS *)alloc_root(alloc, sizeof(MYSQL_ROWS)+packet->length())))
+  {
+    my_error(ER_OUT_OF_RESOURCES,MYF(0));
+    return true;
+  }
+  cur->data= (MYSQL_ROW)(((char *)cur) + sizeof(MYSQL_ROWS));
+  memcpy(cur->data, packet->ptr()+1, packet->length()-1);
+  cur->length= packet->length();       /* To allow us to do sanity checks */
+
+  *data->prev_ptr= cur;
+  data->prev_ptr= &cur->next;
+  cur->next= 0;
+  
+  return false;
+}
+
+void
+send_ok(THD *thd,ha_rows affected_rows,ulonglong id,const char *message)
+{
+  DBUG_ENTER("send_ok");
+  MYSQL *mysql= current_thd->mysql;
+  if (!mysql)            // bootstrap file handling
+    DBUG_VOID_RETURN;
+  mysql->affected_rows= affected_rows;
+  mysql->insert_id= id;
+  if (message)
+  {
+    strmake(thd->net.last_error, message, sizeof(thd->net.last_error)-1);
+    mysql->info= thd->net.last_error;
+  }
+  DBUG_VOID_RETURN;
+}
+
+void
+send_eof(THD *thd, bool no_flush)
+{
+}
+
+void Protocol_simple::prepare_for_resend()
+{
+  MYSQL_ROWS *cur;
+  MYSQL_DATA *data= thd->data;
+
+  DBUG_ENTER("send_data");
+
+  if (!data)
+  {
+    if (!(data= (MYSQL_DATA*) my_malloc(sizeof(MYSQL_DATA),
+					MYF(MY_WME | MY_ZEROFILL))))
+      goto err;
+    
+    alloc= &data->alloc;
+    init_alloc_root(alloc,8192,0);	/* Assume rowlength < 8192 */
+    alloc->min_malloc=sizeof(MYSQL_ROWS);
+    data->rows=0;
+    data->fields=field_count;
+    data->prev_ptr= &data->data;
+    thd->data= data;
+  }
+
+  data->rows++;
+  if (!(cur= (MYSQL_ROWS *)alloc_root(alloc, sizeof(MYSQL_ROWS)+(field_count + 1) * sizeof(char *))))
+  {
+    my_error(ER_OUT_OF_RESOURCES,MYF(0));
+    DBUG_VOID_RETURN;
+  }
+  cur->data= (MYSQL_ROW)(((char *)cur) + sizeof(MYSQL_ROWS));
+
+  *data->prev_ptr= cur;
+  data->prev_ptr= &cur->next;
+  next_field=cur->data;
+  next_mysql_field= thd->mysql->fields;
+err:
+  DBUG_VOID_RETURN;
+}
+
+bool Protocol_simple::store_null()
+{
+  *(next_field++)= NULL;
+  ++next_mysql_field;
+  return false;
+}
+
+bool Protocol::net_store_data(const char *from, uint length)
+{
+  char *field_buf;
+  if (!thd->mysql)            // bootstrap file handling
+    return false;
+
+  if (!(field_buf=alloc_root(alloc, length + sizeof(uint) + 1)))
+    return true;
+  *(uint *)field_buf= length;
+  *next_field= field_buf + sizeof(uint);
+  memcpy(*next_field, from, length);
+  (*next_field)[length]= 0;
+  if (next_mysql_field->max_length < length)
+    next_mysql_field->max_length=length;
+  ++next_field;
+  ++next_mysql_field;
+  return false;
+}
+

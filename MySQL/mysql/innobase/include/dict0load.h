@@ -15,14 +15,28 @@ Created 4/24/1996 Heikki Tuuri
 #include "ut0byte.h"
 
 /************************************************************************
+In a crash recovery we already have all the tablespace objects created.
+This function compares the space id information in the InnoDB data dictionary
+to what we already read with fil_load_single_table_tablespaces().
+
+In a normal startup, we create the tablespace objects for every table in
+InnoDB's data dictionary, if the corresponding .ibd file exists.
+We also scan the biggest space id, and store it to fil_system. */
+
+void
+dict_check_tablespaces_and_store_max_id(
+/*====================================*/
+	ibool	in_crash_recovery);	/* in: are we doing a crash recovery */
+/************************************************************************
 Finds the first table name in the given database. */
 
 char*
 dict_get_first_table_name_in_db(
 /*============================*/
-			/* out, own: table name, NULL if does not exist;
-			the caller must free the memory in the string! */
-	char*	name);	/* in: database name which ends to '/' */
+				/* out, own: table name, NULL if
+				does not exist; the caller must free
+				the memory in the string! */
+	const char*	name);	/* in: database name which ends to '/' */
 /************************************************************************
 Loads a table definition and also all its index definitions, and also
 the cluster definition if the table is a member in a cluster. Also loads
@@ -32,8 +46,13 @@ a foreign key references columns in this table. */
 dict_table_t*
 dict_load_table(
 /*============*/
-			/* out: table, NULL if does not exist */
-	char*	name);	/* in: table name */
+				/* out: table, NULL if does not exist;
+				if the table is stored in an .ibd file,
+				but the file does not exist,
+				then we set the ibd_file_missing flag TRUE
+				in the table object we return */
+	const char*	name);	/* in: table name in the
+				databasename/tablename format */
 /***************************************************************************
 Loads a table object based on the table id. */
 
@@ -61,8 +80,8 @@ already in the dictionary cache. */
 ulint
 dict_load_foreigns(
 /*===============*/
-				/* out: DB_SUCCESS or error code */
-	char*	table_name);	/* in: table name */
+					/* out: DB_SUCCESS or error code */
+	const char*	table_name);	/* in: table name */
 /************************************************************************
 Prints to the standard output information on all tables found in the data
 dictionary system table. */

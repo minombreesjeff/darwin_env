@@ -55,7 +55,6 @@ TODO:
 #include "mysys_err.h"
 static void my_aiowait(my_aio_result *result);
 #endif
-#include <assert.h>
 #include <errno.h>
 
 #ifdef THREAD
@@ -71,9 +70,40 @@ static void my_aiowait(my_aio_result *result);
 #define IO_ROUND_UP(X) (((X)+IO_SIZE-1) & ~(IO_SIZE-1))
 #define IO_ROUND_DN(X) ( (X)            & ~(IO_SIZE-1))
 
-static void
-init_functions(IO_CACHE* info, enum cache_type type)
+
+/*
+  Setup internal pointers inside IO_CACHE
+
+  SYNOPSIS
+    setup_io_cache()
+    info		IO_CACHE handler
+
+  NOTES
+    This is called on automaticly on init or reinit of IO_CACHE
+    It must be called externally if one moves or copies an IO_CACHE
+    object.
+*/
+
+void setup_io_cache(IO_CACHE* info)
 {
+  /* Ensure that my_b_tell() and my_b_bytes_in_cache works */
+  if (info->type == WRITE_CACHE)
+  {
+    info->current_pos= &info->write_pos;
+    info->current_end= &info->write_end;
+  }
+  else
+  {
+    info->current_pos= &info->read_pos;
+    info->current_end= &info->read_end;
+  }
+}
+
+
+static void
+init_functions(IO_CACHE* info)
+{
+  enum cache_type type= info->type;
   switch (type) {
   case READ_NET:
     /*
@@ -97,24 +127,32 @@ init_functions(IO_CACHE* info, enum cache_type type)
     info->write_function = _my_b_write;
   }
 
-  /* Ensure that my_b_tell() and my_b_bytes_in_cache works */
-  if (type == WRITE_CACHE)
-  {
-    info->current_pos= &info->write_pos;
-    info->current_end= &info->write_end;
-  }
-  else
-  {
-    info->current_pos= &info->read_pos;
-    info->current_end= &info->read_end;
-  }
+  setup_io_cache(info);
 }
 
-	/*
-	** if cachesize == 0 then use default cachesize (from s-file)
-	** if file == -1 then real_open_cached_file() will be called.
-	** returns 0 if ok
-	*/
+
+/*
+  Initialize an IO_CACHE object
+
+  SYNOPSOS
+    init_io_cache()
+    info		cache handler to initialize
+    file		File that should be associated to to the handler
+			If == -1 then real_open_cached_file()
+			will be called when it's time to open file.
+    cachesize		Size of buffer to allocate for read/write
+			If == 0 then use my_default_record_cache_size
+    type		Type of cache
+    seek_offset		Where cache should start reading/writing
+    use_async_io	Set to 1 of we should use async_io (if avaiable)
+    cache_myflags	Bitmap of differnt flags
+			MY_WME | MY_FAE | MY_NABP | MY_FNABP |
+			MY_DONT_CHECK_FILESIZE
+
+  RETURN
+    0  ok
+    #  error
+*/
 
 int init_io_cache(IO_CACHE *info, File file, uint cachesize,
 		  enum cache_type type, my_off_t seek_offset,
@@ -123,24 +161,24 @@ int init_io_cache(IO_CACHE *info, File file, uint cachesize,
   uint min_cache;
   my_off_t end_of_file= ~(my_off_t) 0;
   DBUG_ENTER("init_io_cache");
-  DBUG_PRINT("enter",("cache: %lx  type: %d  pos: %ld",
+  DBUG_PRINT("enter",("cache: 0x%lx  type: %d  pos: %ld",
 		      (ulong) info, (int) type, (ulong) seek_offset));
 
   info->file= file;
-  info->type=type;
+  info->type= 0;		/* Don't set it until mutex are created */
   info->pos_in_file= seek_offset;
   info->pre_close = info->pre_read = info->post_read = 0;
   info->arg = 0;
   info->alloced_buffer = 0;
   info->buffer=0;
   info->seek_not_done= test(file >= 0);
+  info->disk_writes= 0;
 #ifdef THREAD
   info->share=0;
 #endif
 
-  if (!cachesize)
-    if (! (cachesize= my_default_record_cache_size))
-      DBUG_RETURN(1);				/* No cache requested */
+  if (!cachesize && !(cachesize= my_default_record_cache_size))
+    DBUG_RETURN(1);				/* No cache requested */
   min_cache=use_async_io ? IO_SIZE*4 : IO_SIZE*2;
   if (type == READ_CACHE || type == SEQ_READ_APPEND)
   {						/* Assume file isn't growing */
@@ -201,6 +239,13 @@ int init_io_cache(IO_CACHE *info, File file, uint cachesize,
     pthread_mutex_init(&info->append_buffer_lock,MY_MUTEX_INIT_FAST);
 #endif
   }
+#if defined(SAFE_MUTEX) && defined(THREAD)
+  else
+  {
+    /* Clear mutex so that safe_mutex will notice that it's not initialized */
+    bzero((char*) &info->append_buffer_lock, sizeof(info));
+  }
+#endif
 
   if (type == WRITE_CACHE)
     info->write_end=
@@ -211,7 +256,8 @@ int init_io_cache(IO_CACHE *info, File file, uint cachesize,
   /* End_of_file may be changed by user later */
   info->end_of_file= end_of_file;
   info->error=0;
-  init_functions(info,type);
+  info->type= type;
+  init_functions(info);
 #ifdef HAVE_AIOWAIT
   if (use_async_io && ! my_disable_async_io)
   {
@@ -265,7 +311,7 @@ my_bool reinit_io_cache(IO_CACHE *info, enum cache_type type,
 			pbool clear_cache)
 {
   DBUG_ENTER("reinit_io_cache");
-  DBUG_PRINT("enter",("cache: %lx type: %d  seek_offset: %lu  clear_cache: %d",
+  DBUG_PRINT("enter",("cache: 0x%lx type: %d  seek_offset: %lu  clear_cache: %d",
 		      (ulong) info, type, (ulong) seek_offset,
 		      (int) clear_cache));
 
@@ -333,7 +379,7 @@ my_bool reinit_io_cache(IO_CACHE *info, enum cache_type type,
   }
   info->type=type;
   info->error=0;
-  init_functions(info,type);
+  init_functions(info);
 
 #ifdef HAVE_AIOWAIT
   if (use_async_io && ! my_disable_async_io &&
@@ -774,7 +820,7 @@ int _my_b_async_read(register IO_CACHE *info, byte *Buffer, uint Count)
     {						/* Fix if skipped bytes */
       if (info->aio_read_pos + read_length < info->pos_in_file)
       {
-	read_length=0;				/* Skipp block */
+	read_length=0;				/* Skip block */
 	next_pos_in_file=info->pos_in_file;
       }
       else
@@ -805,7 +851,7 @@ int _my_b_async_read(register IO_CACHE *info, byte *Buffer, uint Count)
     next_pos_in_file=(info->pos_in_file+ (uint)
 		      (info->read_end - info->request_pos));
 
-	/* If reading large blocks, or first read or read with skipp */
+	/* If reading large blocks, or first read or read with skip */
   if (Count)
   {
     if (next_pos_in_file == info->end_of_file)
@@ -868,7 +914,7 @@ int _my_b_async_read(register IO_CACHE *info, byte *Buffer, uint Count)
     if (aioread(info->file,read_buffer,(int) max_length,
 		(my_off_t) next_pos_in_file,MY_SEEK_SET,
 		&info->aio_result.result))
-    {						/* Skipp async io */
+    {						/* Skip async io */
       my_errno=errno;
       DBUG_PRINT("error",("got error: %d, aio_result: %d from aioread, async skipped",
 			  errno, info->aio_result.result.aio_errno));
@@ -1128,6 +1174,7 @@ int my_b_flush_io_cache(IO_CACHE *info, int need_append_buffer_lock)
       }
 
       info->append_read_pos=info->write_pos=info->write_buffer;
+      ++info->disk_writes;
       UNLOCK_APPEND_BUFFER;
       DBUG_RETURN(info->error);
     }
@@ -1143,6 +1190,22 @@ int my_b_flush_io_cache(IO_CACHE *info, int need_append_buffer_lock)
   DBUG_RETURN(0);
 }
 
+/*
+  Free an IO_CACHE object
+
+  SYNOPSOS
+    end_io_cache()
+    info		IO_CACHE Handle to free
+
+  NOTES
+    It's currently safe to call this if one has called init_io_cache()
+    on the 'info' object, even if init_io_cache() failed.
+    This function is also safe to call twice with the same handle.
+
+  RETURN
+   0  ok
+   #  Error
+*/
 
 int end_io_cache(IO_CACHE *info)
 {
@@ -1165,7 +1228,10 @@ int end_io_cache(IO_CACHE *info)
 #endif
 
   if ((pre_close=info->pre_close))
+  {
     (*pre_close)(info);
+    info->pre_close= 0;
+  }
   if (info->alloced_buffer)
   {
     info->alloced_buffer=0;

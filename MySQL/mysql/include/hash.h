@@ -22,16 +22,14 @@
 extern "C" {
 #endif
 
+/*
+  Overhead to store an element in hash
+  Can be used to approximate memory consumption for a hash
+ */
+#define HASH_OVERHEAD (sizeof(char*)*2)
+
 typedef byte *(*hash_get_key)(const byte *,uint*,my_bool);
 typedef void (*hash_free_key)(void *);
-
-  /* flags for hash_init */
-#define HASH_CASE_INSENSITIVE	1
-
-typedef struct st_hash_info {
-  uint next;					/* index to next key */
-  byte *data;					/* data for current entry */
-} HASH_LINK;
 
 typedef struct st_hash {
   uint key_offset,key_length;		/* Length of key if const length */
@@ -40,18 +38,20 @@ typedef struct st_hash {
   DYNAMIC_ARRAY array;				/* Place for hash_keys */
   hash_get_key get_key;
   void (*free)(void *);
-  uint (*calc_hashnr)(const byte *key,uint length);
+  CHARSET_INFO *charset;
 } HASH;
 
-#define hash_init(A,B,C,D,E,F,G) _hash_init(A,B,C,D,E,F,G CALLER_INFO)
-my_bool _hash_init(HASH *hash,uint default_array_elements, uint key_offset,
-		  uint key_length, hash_get_key get_key,
-		  void (*free_element)(void*), uint flags CALLER_INFO_PROTO);
+#define hash_init(A,B,C,D,E,F,G,H) _hash_init(A,B,C,D,E,F,G, H CALLER_INFO)
+my_bool _hash_init(HASH *hash, CHARSET_INFO *charset,
+		   uint default_array_elements, uint key_offset,
+		   uint key_length, hash_get_key get_key,
+		   void (*free_element)(void*), uint flags CALLER_INFO_PROTO);
 void hash_free(HASH *tree);
+void my_hash_reset(HASH *hash);
 byte *hash_element(HASH *hash,uint idx);
 gptr hash_search(HASH *info,const byte *key,uint length);
 gptr hash_next(HASH *info,const byte *key,uint length);
-my_bool hash_insert(HASH *info,const byte *data);
+my_bool my_hash_insert(HASH *info,const byte *data);
 my_bool hash_delete(HASH *hash,byte *record);
 my_bool hash_update(HASH *hash,byte *record,byte *old_key,uint old_key_length);
 void hash_replace(HASH *hash, uint idx, byte *new_row);

@@ -214,6 +214,7 @@ que_thr_end_wait(
 	if (next_thr && *next_thr == NULL) {
 		*next_thr = thr;
 	} else {
+		ut_a(0);
 		srv_que_task_enqueue_low(thr);
 	}
 }	
@@ -394,6 +395,7 @@ que_fork_error_handle(
 	
 	que_thr_move_to_run_state(thr);
 
+	ut_a(0);
 	srv_que_task_enqueue_low(thr);
 }
 
@@ -483,7 +485,7 @@ que_graph_free_recursive(
 		if (thr->magic_n != QUE_THR_MAGIC_N) {
 			fprintf(stderr,
 		"que_thr struct appears corrupt; magic n %lu\n",
-								thr->magic_n);
+				(unsigned long) thr->magic_n);
 			mem_analyze_corruption((byte*)thr);
 			ut_error;
 		}
@@ -595,7 +597,7 @@ que_graph_free_recursive(
 	default:
 		fprintf(stderr,
 		"que_node struct appears corrupt; type %lu\n",
-						que_node_get_type(node));
+			(unsigned long) que_node_get_type(node));
 		mem_analyze_corruption((byte*)node);
 		ut_error;
 	}
@@ -804,6 +806,7 @@ que_thr_dec_refer_count(
 			if (next_thr && *next_thr == NULL) {
 				*next_thr = thr;
 			} else {
+				ut_a(0);
 				srv_que_task_enqueue_low(thr);
 			}
 
@@ -983,7 +986,8 @@ que_thr_move_to_run_state_for_mysql(
 {
 	if (thr->magic_n != QUE_THR_MAGIC_N) {
 		fprintf(stderr,
-	"que_thr struct appears corrupt; magic n %lu\n", thr->magic_n);
+	"que_thr struct appears corrupt; magic n %lu\n",
+			(unsigned long) thr->magic_n);
 
 		mem_analyze_corruption((byte*)thr);
 
@@ -1019,7 +1023,8 @@ que_thr_stop_for_mysql_no_error(
 		
 	if (thr->magic_n != QUE_THR_MAGIC_N) {
 		fprintf(stderr,
-	"que_thr struct appears corrupt; magic n %lu\n", thr->magic_n);
+	"que_thr struct appears corrupt; magic n %lu\n",
+			(unsigned long) thr->magic_n);
 
 		mem_analyze_corruption((byte*)thr);
 
@@ -1034,10 +1039,9 @@ que_thr_stop_for_mysql_no_error(
 	trx->n_active_thrs--;
 }
 
-#ifdef UNIV_DEBUG
 /**************************************************************************
 Prints info of an SQL query graph node. */
-static
+
 void
 que_node_print_info(
 /*================*/
@@ -1092,9 +1096,8 @@ que_node_print_info(
 		str = "UNKNOWN NODE TYPE";
 	}
 
-	fprintf(stderr, "Node type %lu: %s, address %p\n", type, str, node);
+	fprintf(stderr, "Node type %lu: %s, address %p\n", (ulong) type, str, node);
 }
-#endif /* UNIV_DEBUG */
 
 /**************************************************************************
 Performs an execution step on a query thread. */
@@ -1252,13 +1255,10 @@ loop:
 		mutex_exit(&kernel_mutex);
 	}	
 */
-	/* TRUE below denotes that the thread is allowed to own the dictionary
-	mutex, though */
-	ut_ad(sync_thread_levels_empty_gen(TRUE));
-
 	loop_count++;
 
 	if (next_thr != thr) {
+		ut_a(next_thr == NULL);
 		que_thr_dec_refer_count(thr, &next_thr);
 
 		if (next_thr == NULL) {

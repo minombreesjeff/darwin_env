@@ -1,9 +1,12 @@
-# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# Copyright (C) 2000-2004 MySQL AB
 # 
-# This library is free software; you can redistribute it and/or
-# modify it under the terms of the GNU Library General Public
-# License as published by the Free Software Foundation; either
-# version 2 of the License, or (at your option) any later version.
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of version 2 GNU General Public License as
+# published by the Free Software Foundation.
+#
+# There are special exceptions to the terms and conditions of the GPL as it
+# is applied to this software. View the full text of the exception in file
+# EXCEPTIONS-CLIENT in the directory of this software distribution.
 # 
 # This library is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,21 +17,21 @@
 # License along with this library; if not, write to the Free
 # Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
 # MA 02111-1307, USA
-
+#
 # This file is public domain and comes with NO WARRANTY of any kind
 
 target =	libmysqlclient.la
-target_defs =	-DUNDEF_THREADS_HACK -DDONT_USE_RAID @LIB_EXTRA_CCFLAGS@ -DMYSQL_CLIENT
+target_defs =	-DUNDEF_THREADS_HACK -DDONT_USE_RAID @LIB_EXTRA_CCFLAGS@
 LIBS =		@CLIENT_LIBS@
-INCLUDES =	-I$(srcdir)/../include -I../include \
-		-I$(srcdir)/.. -I$(top_srcdir) -I.. $(openssl_includes)
+INCLUDES =	-I$(top_srcdir)/include $(openssl_includes) @ZLIB_INCLUDES@
 
 include $(srcdir)/Makefile.shared
 
 libmysqlclient_la_SOURCES = $(target_sources)
 libmysqlclient_la_LIBADD = $(target_libadd)
 libmysqlclient_la_LDFLAGS = $(target_ldflags)
-EXTRA_DIST = Makefile.shared
+EXTRA_DIST = Makefile.shared libmysql.def
+noinst_HEADERS = client_settings.h
 
 # This is called from the toplevel makefile
 link_sources:
@@ -37,6 +40,7 @@ link_sources:
 	  ds=`echo $(dbugobjects) | sed "s;\.lo;.c;g"`; \
 	  ms=`echo $(mysysobjects) | sed "s;\.lo;.c;g"`; \
 	  vs=`echo $(vio_objects) | sed "s;\.lo;.c;g"`; \
+	  scs=`echo $(sql_cmn_objects) | sed "s;\.lo;.c;g"`; \
 	  for f in $$ss; do \
 	    rm -f $(srcdir)/$$f; \
 	    @LN_CP_F@ $(srcdir)/../strings/$$f $(srcdir)/$$f; \
@@ -45,13 +49,13 @@ link_sources:
 	    rm -f $(srcdir)/$$f; \
 	    @LN_CP_F@ $(srcdir)/../vio/$$f $(srcdir)/$$f; \
 	  done; \
+	  for f in $$scs; do \
+	    rm -f $(srcdir)/$$f; \
+	    @LN_CP_F@ $(srcdir)/../sql-common/$$f $(srcdir)/$$f; \
+	  done; \
 	  for f in $(mystringsextra); do \
 	    rm -f $(srcdir)/$$f; \
 	    @LN_CP_F@ $(srcdir)/../strings/$$f $(srcdir)/$$f; \
-	  done; \
-	  for f in $(mystringsgen); do \
-	    rm -f $(srcdir)/$$f; \
-	    @LN_CP_F@ ../strings/$$f $(srcdir)/$$f; \
 	  done; \
 	  for f in $$ds; do \
 	    rm -f $(srcdir)/$$f; \
@@ -79,7 +83,8 @@ nh =		my_global.h config-win32.h dbug.h errmsg.h \
 		m_ctype.h m_string.h \
 		my_alarm.h my_config.h my_dir.h my_list.h my_net.h my_sys.h \
 		mysql.h mysql_com.h mysql_version.h mysqld_error.h \
-		mysys_err.h my_pthread.h thr_alarm.h violite.h hash.h
+		mysys_err.h my_pthread.h thr_alarm.h violite.h hash.h \
+                sql_common.h ../libmysql/client_settings.h 
 # Get a list of the needed objects  
 lobjs = $(mysysobjects1) $(dbugobjects) $(mystringsobjects) $(sqlobjects)
 

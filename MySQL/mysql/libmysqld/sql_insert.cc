@@ -18,15 +18,16 @@
 /* Insert of records */
 
 #include "mysql_priv.h"
-#include "sql_acl.h"
 
 static int check_null_fields(THD *thd,TABLE *entry);
+#ifndef EMBEDDED_LIBRARY
 static TABLE *delayed_get_table(THD *thd,TABLE_LIST *table_list);
-static int write_delayed(THD *thd,TABLE *table, enum_duplicates dup,
+static int write_delayed(THD *thd,TABLE *table, enum_duplicates dup, bool ignore,
 			 char *query, uint query_length, int log_on);
 static void end_delayed_insert(THD *thd);
 extern "C" pthread_handler_decl(handle_delayed_insert,arg);
 static void unlink_blobs(register TABLE *table);
+#endif
 
 /* Define to force use of my_malloc() if the allocated memory block is big */
 
@@ -42,12 +43,12 @@ static void unlink_blobs(register TABLE *table);
 #define DELAYED_LOG_BIN    2
 
 /*
-  Check if insert fields are correct
-  Updates table->time_stamp to point to timestamp field or 0, depending on
-  if timestamp should be updated or not.
+  Check if insert fields are correct.
+  Sets table->timestamp_field_type to TIMESTAMP_NO_AUTO_SET or leaves it
+  as is, depending on if timestamp should be updated or not.
 */
 
-static int
+int
 check_insert_fields(THD *thd,TABLE *table,List<Item> &fields,
 		    List<Item> &values, ulong counter)
 {
@@ -60,10 +61,12 @@ check_insert_fields(THD *thd,TABLE *table,List<Item> &fields,
 		      MYF(0),counter);
       return -1;
     }
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
     if (grant_option &&
 	check_grant_all_columns(thd,INSERT_ACL,table))
       return -1;
-    table->time_stamp=0;			// This is saved by caller
+#endif
+    table->timestamp_field_type= TIMESTAMP_NO_AUTO_SET;
   }
   else
   {						// Part field list
@@ -83,36 +86,42 @@ check_insert_fields(THD *thd,TABLE *table,List<Item> &fields,
 
     thd->dupp_field=0;
     if (setup_tables(&table_list) ||
-	setup_fields(thd,&table_list,fields,1,0,0))
+	setup_fields(thd, 0, &table_list,fields,1,0,0))
       return -1;
+
     if (thd->dupp_field)
     {
       my_error(ER_FIELD_SPECIFIED_TWICE,MYF(0), thd->dupp_field->field_name);
       return -1;
     }
-    table->time_stamp=0;
     if (table->timestamp_field &&	// Don't set timestamp if used
-	table->timestamp_field->query_id != thd->query_id)
-      table->time_stamp= table->timestamp_field->offset()+1;
+	table->timestamp_field->query_id == thd->query_id)
+      table->timestamp_field_type= TIMESTAMP_NO_AUTO_SET;
   }
   // For the values we need select_priv
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
   table->grant.want_privilege=(SELECT_ACL & ~table->grant.privilege);
+#endif
   return 0;
 }
 
 
-int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
-		 List<List_item> &values_list,enum_duplicates duplic)
+int mysql_insert(THD *thd,TABLE_LIST *table_list,
+                 List<Item> &fields,
+                 List<List_item> &values_list,
+                 List<Item> &update_fields,
+                 List<Item> &update_values,
+                 enum_duplicates duplic,
+                 bool ignore)
 {
-  int error;
+  int error, res;
   /*
     log_on is about delayed inserts only.
     By default, both logs are enabled (this won't cause problems if the server
     runs without --log-update or --log-bin).
   */
   int log_on= DELAYED_LOG_UPDATE | DELAYED_LOG_BIN ;
-
-  bool transactional_table, log_delayed, bulk_insert;
+  bool transactional_table, log_delayed;
   uint value_count;
   ulong counter = 1;
   ulonglong id;
@@ -120,29 +129,37 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
   TABLE *table;
   List_iterator_fast<List_item> its(values_list);
   List_item *values;
-  char *query=thd->query;
+#ifndef EMBEDDED_LIBRARY
+  char *query= thd->query;
+#endif
   thr_lock_type lock_type = table_list->lock_type;
+  TABLE_LIST *insert_table_list= (TABLE_LIST*)
+    thd->lex->select_lex.table_list.first;
   DBUG_ENTER("mysql_insert");
 
-  if (thd->master_access & SUPER_ACL)
-  {
-    if (!(thd->options & OPTION_UPDATE_LOG))
-      log_on&= ~(int) DELAYED_LOG_UPDATE;
-    if (!(thd->options & OPTION_BIN_LOG))
-      log_on&= ~(int) DELAYED_LOG_BIN;
-  }
-
+  if (!(thd->options & OPTION_UPDATE_LOG))
+    log_on&= ~(int) DELAYED_LOG_UPDATE;
+  if (!(thd->options & OPTION_BIN_LOG))
+    log_on&= ~(int) DELAYED_LOG_BIN;
   /*
     in safe mode or with skip-new change delayed insert to be regular
     if we are told to replace duplicates, the insert cannot be concurrent
     delayed insert changed to regular in slave thread
    */
+#ifdef EMBEDDED_LIBRARY
+  if (lock_type == TL_WRITE_DELAYED)
+    lock_type=TL_WRITE;
+#else
   if ((lock_type == TL_WRITE_DELAYED &&
        ((specialflag & (SPECIAL_NO_NEW_FUNC | SPECIAL_SAFE_MODE)) ||
 	thd->slave_thread || !thd->variables.max_insert_delayed_threads)) ||
-      (lock_type == TL_WRITE_CONCURRENT_INSERT && duplic == DUP_REPLACE))
+      (lock_type == TL_WRITE_CONCURRENT_INSERT && duplic == DUP_REPLACE) ||
+      (duplic == DUP_UPDATE))
     lock_type=TL_WRITE;
+#endif
+  table_list->lock_type= lock_type;
 
+#ifndef EMBEDDED_LIBRARY
   if (lock_type == TL_WRITE_DELAYED)
   {
     if (thd->locked_tables)
@@ -157,21 +174,37 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
 	DBUG_RETURN(-1);
       }
     }
-    if (!(table = delayed_get_table(thd,table_list)) && !thd->fatal_error)
-      table = open_ltable(thd,table_list,lock_type=thd->update_lock_default);
+    if ((table= delayed_get_table(thd,table_list)) && !thd->is_fatal_error)
+    {
+      res= 0;
+      if (table_list->next)			/* if sub select */
+	res= open_and_lock_tables(thd, table_list->next);
+    }
+    else
+    {
+      /* Too many delayed insert threads;  Use a normal insert */
+      table_list->lock_type= lock_type= TL_WRITE;
+      res= open_and_lock_tables(thd, table_list);
+    }
   }
   else
-    table = open_ltable(thd,table_list,lock_type);
-  if (!table)
+#endif /* EMBEDDED_LIBRARY */
+    res= open_and_lock_tables(thd, table_list);
+  if (res || thd->is_fatal_error)
     DBUG_RETURN(-1);
+
+  table= table_list->table;
   thd->proc_info="init";
   thd->used_tables=0;
   values= its++;
-  if (check_insert_fields(thd,table,fields,*values,1) ||
-      setup_tables(table_list) || setup_fields(thd,table_list,*values,0,0,0))
+
+  if (mysql_prepare_insert(thd, table_list, insert_table_list, table,
+			   fields, values, update_fields,
+			   update_values, duplic))
     goto abort;
+
   value_count= values->elements;
-  while ((values = its++))
+  while ((values= its++))
   {
     counter++;
     if (values->elements != value_count)
@@ -181,7 +214,7 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
 		      MYF(0),counter);
       goto abort;
     }
-    if (setup_fields(thd,table_list,*values,0,0,0))
+    if (setup_fields(thd, 0, insert_table_list, *values, 0, 0, 0))
       goto abort;
   }
   its.rewind ();
@@ -189,39 +222,47 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
     Fill in the given fields and dump it to the table file
   */
 
-  info.records=info.deleted=info.copied=0;
+  info.records= info.deleted= info.copied= info.updated= 0;
+  info.ignore= ignore;
   info.handle_duplicates=duplic;
-  // Don't count warnings for simple inserts
-  if (values_list.elements > 1 || (thd->options & OPTION_WARNINGS))
-    thd->count_cuted_fields = 1;
+  info.update_fields= &update_fields;
+  info.update_values= &update_values;
+  /*
+    Count warnings for all inserts.
+    For single line insert, generate an error if try to set a NOT NULL field
+    to NULL
+  */
+  thd->count_cuted_fields= ((values_list.elements == 1) ?
+			    CHECK_FIELD_ERROR_FOR_NULL :
+			    CHECK_FIELD_WARN);
   thd->cuted_fields = 0L;
   table->next_number_field=table->found_next_number_field;
 
   error=0;
   id=0;
   thd->proc_info="update";
-  if (duplic == DUP_IGNORE || duplic == DUP_REPLACE)
+  if (duplic != DUP_ERROR || ignore)
     table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
-  if ((lock_type != TL_WRITE_DELAYED && !(specialflag & SPECIAL_SAFE_MODE)) &&
-      values_list.elements >= MIN_ROWS_TO_USE_BULK_INSERT)
-  {
-    table->file->extra_opt(HA_EXTRA_WRITE_CACHE,
-			   min(thd->variables.read_buff_size,
-			       table->avg_row_length*values_list.elements));
-    table->file->deactivate_non_unique_index(values_list.elements);
-    bulk_insert=1;
-  }
-  else
-    bulk_insert=0;
+  /*
+    let's *try* to start bulk inserts. It won't necessary
+    start them as values_list.elements should be greater than
+    some - handler dependent - threshold.
+    So we call start_bulk_insert to perform nesessary checks on
+    values_list.elements, and - if nothing else - to initialize
+    the code to make the call of end_bulk_insert() below safe.
+  */
+  if (lock_type != TL_WRITE_DELAYED)
+    table->file->start_bulk_insert(values_list.elements);
 
   while ((values= its++))
   {
     if (fields.elements || !value_count)
     {
-      restore_record(table,2);			// Get empty record
-      if (fill_record(fields, *values, 0) || check_null_fields(thd,table))
+      restore_record(table,default_values);	// Get empty record
+      if (fill_record(fields, *values, 0)|| thd->net.report_error ||
+	  check_null_fields(thd,table))
       {
-	if (values_list.elements != 1)
+	if (values_list.elements != 1 && !thd->net.report_error)
 	{
 	  info.records++;
 	  continue;
@@ -233,12 +274,12 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
     else
     {
       if (thd->used_tables)			// Column used in values()
-	restore_record(table,2);		// Get empty record
+	restore_record(table,default_values);	// Get empty record
       else
-	table->record[0][0]=table->record[2][0]; // Fix delete marker
-      if (fill_record(table->field, *values, 0))
+	table->record[0][0]=table->default_values[0]; // Fix delete marker
+      if (fill_record(table->field,*values, 0) || thd->net.report_error)
       {
-	if (values_list.elements != 1)
+	if (values_list.elements != 1 && ! thd->net.report_error)
 	{
 	  info.records++;
 	  continue;
@@ -247,12 +288,14 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
 	break;
       }
     }
+#ifndef EMBEDDED_LIBRARY
     if (lock_type == TL_WRITE_DELAYED)
     {
-      error=write_delayed(thd,table,duplic,query, thd->query_length, log_on);
+      error=write_delayed(thd, table, duplic, ignore, query, thd->query_length, log_on);
       query=0;
     }
     else
+#endif
       error=write_record(table,&info);
     if (error)
       break;
@@ -266,7 +309,14 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
     {						// Get auto increment value
       id= thd->last_insert_id;
     }
+    thd->row_count++;
   }
+
+  /*
+    Now all rows are inserted.  Time to update logs and sends response to
+    user
+  */
+#ifndef EMBEDDED_LIBRARY
   if (lock_type == TL_WRITE_DELAYED)
   {
     if (!error)
@@ -278,34 +328,31 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
     query_cache_invalidate3(thd, table_list, 1);
   }
   else
+#endif
   {
-    if (bulk_insert)
+    if (table->file->end_bulk_insert() && !error)
     {
-      if (table->file->extra(HA_EXTRA_NO_CACHE))
-      {
-	if (!error)
-	{
-	  table->file->print_error(my_errno,MYF(0));
-	  error=1;
-	}
-      }
-      if (table->file->activate_all_index(thd))
-      {
-	if (!error)
-	{
-	  table->file->print_error(my_errno,MYF(0));
-	  error=1;
-	}
-      }
+      table->file->print_error(my_errno,MYF(0));
+      error=1;
     }
     if (id && values_list.elements != 1)
       thd->insert_id(id);			// For update log
-    else if (table->next_number_field)
+    else if (table->next_number_field && info.copied)
       id=table->next_number_field->val_int();	// Return auto_increment value
-    
+
+    /*
+      Invalidate the table in the query cache if something changed.
+      For the transactional algorithm to work the invalidation must be
+      before binlog writing and ha_autocommit_...
+    */
+    if (info.copied || info.deleted || info.updated)
+      query_cache_invalidate3(thd, table_list, 1);
+
     transactional_table= table->file->has_transactions();
+
     log_delayed= (transactional_table || table->tmp_table);
-    if ((info.copied || info.deleted) && (error <= 0 || !transactional_table))
+    if ((info.copied || info.deleted || info.updated) &&
+	(error <= 0 || !transactional_table))
     {
       mysql_update_log.write(thd, thd->query, thd->query_length);
       if (mysql_bin_log.is_open())
@@ -313,7 +360,7 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
         if (error <= 0)
           thd->clear_error();
 	Query_log_event qinfo(thd, thd->query, thd->query_length,
-			      log_delayed);
+			      log_delayed, FALSE);
 	if (mysql_bin_log.write(&qinfo) && transactional_table)
 	  error=1;
       }
@@ -323,14 +370,6 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
     if (transactional_table)
       error=ha_autocommit_or_rollback(thd,error);
 
-    /*
-      Store table for future invalidation  or invalidate it in
-      the query cache if something changed
-    */
-    if (info.copied || info.deleted)
-    {
-      query_cache_invalidate3(thd, table_list, 1);
-    }
     if (thd->lock)
     {
       mysql_unlock_tables(thd, thd->lock);
@@ -339,35 +378,95 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
   }
   thd->proc_info="end";
   table->next_number_field=0;
-  thd->count_cuted_fields=0;
+  thd->count_cuted_fields= CHECK_FIELD_IGNORE;
   thd->next_insert_id=0;			// Reset this if wrongly used
-  if (duplic == DUP_IGNORE || duplic == DUP_REPLACE)
+  if (duplic != DUP_ERROR || ignore)
     table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
+
+  /* Reset value of LAST_INSERT_ID if no rows where inserted */
+  if (!info.copied && thd->insert_id_used)
+  {
+    thd->insert_id(0);
+    id=0;
+  }
   if (error)
     goto abort;
-
   if (values_list.elements == 1 && (!(thd->options & OPTION_WARNINGS) ||
 				    !thd->cuted_fields))
-    send_ok(&thd->net,info.copied+info.deleted,id);
+    send_ok(thd,info.copied+info.deleted+info.updated,id);
   else
   {
     char buff[160];
-    if (duplic == DUP_IGNORE)
-      sprintf(buff,ER(ER_INSERT_INFO),info.records,
-	      (lock_type == TL_WRITE_DELAYED) ? 0 : 
-	      info.records-info.copied,
-	      thd->cuted_fields);
+    if (ignore)
+      sprintf(buff, ER(ER_INSERT_INFO), (ulong) info.records,
+	      (lock_type == TL_WRITE_DELAYED) ? (ulong) 0 :
+	      (ulong) (info.records - info.copied), (ulong) thd->cuted_fields);
     else
-      sprintf(buff,ER(ER_INSERT_INFO),info.records,info.deleted,
-	      thd->cuted_fields);
-    ::send_ok(&thd->net,info.copied+info.deleted,(ulonglong)id,buff);
+      sprintf(buff, ER(ER_INSERT_INFO), (ulong) info.records,
+	      (ulong) (info.deleted+info.updated), (ulong) thd->cuted_fields);
+    ::send_ok(thd,info.copied+info.deleted+info.updated,(ulonglong)id,buff);
   }
+  free_underlaid_joins(thd, &thd->lex->select_lex);
+  table->insert_values=0;
   DBUG_RETURN(0);
 
 abort:
+#ifndef EMBEDDED_LIBRARY
   if (lock_type == TL_WRITE_DELAYED)
     end_delayed_insert(thd);
+#endif
+  free_underlaid_joins(thd, &thd->lex->select_lex);
+  table->insert_values=0;
   DBUG_RETURN(-1);
+}
+
+
+/*
+  Prepare items in INSERT statement
+
+  SYNOPSIS
+    mysql_prepare_insert()
+    thd			- thread handler
+    table_list		- global table list
+    insert_table_list	- local table list of INSERT SELECT_LEX
+    values              - values to insert. NULL for INSERT ... SELECT
+
+  RETURN VALUE
+    0  - OK
+    -1 - error (message is not sent to user)
+*/
+int mysql_prepare_insert(THD *thd, TABLE_LIST *table_list,
+			 TABLE_LIST *insert_table_list, TABLE *table,
+			 List<Item> &fields, List_item *values,
+			 List<Item> &update_fields, List<Item> &update_values,
+			 enum_duplicates duplic)
+{
+  DBUG_ENTER("mysql_prepare_insert");
+  if (duplic == DUP_UPDATE && !table->insert_values)
+  {
+    /* it should be allocated before Item::fix_fields() */
+    table->insert_values=
+      (byte *)alloc_root(thd->mem_root, table->rec_buff_length);
+    if (!table->insert_values)
+      DBUG_RETURN(-1);
+  }
+  if ((values && check_insert_fields(thd, table, fields, *values, 1)) ||
+      setup_tables(insert_table_list) ||
+      (values && setup_fields(thd, 0, insert_table_list, *values, 0, 0, 0)) ||
+      (duplic == DUP_UPDATE &&
+       (setup_fields(thd, 0, insert_table_list, update_fields, 1, 0, 0) ||
+        setup_fields(thd, 0, insert_table_list, update_values, 1, 0, 0))))
+    DBUG_RETURN(-1);
+  if (values && find_real_table_in_list(table_list->next, table_list->db,
+                                        table_list->real_name))
+  {
+    my_error(ER_UPDATE_TABLE_USED, MYF(0), table_list->real_name);
+    DBUG_RETURN(-1);
+  }
+  if (duplic == DUP_UPDATE || duplic == DUP_REPLACE)
+    table->file->extra(HA_EXTRA_RETRIEVE_PRIMARY_KEY);
+
+  DBUG_RETURN(0);
 }
 
 
@@ -394,7 +493,8 @@ int write_record(TABLE *table,COPY_INFO *info)
   DBUG_ENTER("write_record");
 
   info->records++;
-  if (info->handle_duplicates == DUP_REPLACE)
+  if (info->handle_duplicates == DUP_REPLACE ||
+      info->handle_duplicates == DUP_UPDATE)
   {
     while ((error=table->file->write_row(table->record[0])))
     {
@@ -411,7 +511,9 @@ int write_record(TABLE *table,COPY_INFO *info)
 	was used.  This ensures that we don't get a problem when the
 	whole range of the key has been used.
       */
-      if (table->next_number_field && key_nr == table->next_number_index &&
+      if (info->handle_duplicates == DUP_REPLACE &&
+          table->next_number_field &&
+          key_nr == table->next_number_index &&
 	  table->file->auto_increment_column_changed)
 	goto err;
       if (table->file->table_flags() & HA_DUPP_POS)
@@ -444,30 +546,54 @@ int write_record(TABLE *table,COPY_INFO *info)
 						HA_READ_KEY_EXACT))))
 	  goto err;
       }
-      /*
-	The manual defines the REPLACE semantics that it is either an INSERT or
-	DELETE(s) + INSERT; FOREIGN KEY checks do not function in the defined
-	way if we allow MySQL to convert the latter operation internally to an
-	UPDATE.
-      */
-
-      if (last_uniq_key(table,key_nr) &&
-	  !table->file->referenced_by_foreign_key())
+      if (info->handle_duplicates == DUP_UPDATE)
       {
-	if ((error=table->file->update_row(table->record[1],table->record[0])))
-	  goto err;
-	info->deleted++;
-	break;					/* Update logfile and count */
+        /* we don't check for other UNIQUE keys - the first row
+           that matches, is updated. If update causes a conflict again,
+           an error is returned
+        */
+	DBUG_ASSERT(table->insert_values != NULL);
+        store_record(table,insert_values);
+        restore_record(table,record[1]);
+	DBUG_ASSERT(info->update_fields->elements==info->update_values->elements);
+        if (fill_record(*info->update_fields, *info->update_values, 0))
+          goto err;
+        if ((error=table->file->update_row(table->record[1],table->record[0])))
+          goto err;
+        info->updated++;
+        break;
       }
-      else if ((error=table->file->delete_row(table->record[1])))
-	goto err;
-      info->deleted++;
+      else /* DUP_REPLACE */
+      {
+	/*
+	  The manual defines the REPLACE semantics that it is either
+	  an INSERT or DELETE(s) + INSERT; FOREIGN KEY checks in
+	  InnoDB do not function in the defined way if we allow MySQL
+	  to convert the latter operation internally to an UPDATE.
+          We also should not perform this conversion if we have 
+          timestamp field with ON UPDATE which is different from DEFAULT.
+	*/
+	if (last_uniq_key(table,key_nr) &&
+	    !table->file->referenced_by_foreign_key() &&
+            (table->timestamp_field_type == TIMESTAMP_NO_AUTO_SET ||
+             table->timestamp_field_type == TIMESTAMP_AUTO_SET_ON_BOTH))
+        {
+          if ((error=table->file->update_row(table->record[1],
+					     table->record[0])))
+            goto err;
+          info->deleted++;
+          break;				/* Update logfile and count */
+        }
+        else if ((error=table->file->delete_row(table->record[1])))
+          goto err;
+        info->deleted++;
+      }
     }
     info->copied++;
   }
   else if ((error=table->file->write_row(table->record[0])))
   {
-    if (info->handle_duplicates != DUP_IGNORE ||
+    if (!info->ignore ||
 	(error != HA_ERR_FOUND_DUPP_KEY && error != HA_ERR_FOUND_DUPP_UNIQUE))
       goto err;
   }
@@ -516,19 +642,21 @@ static int check_null_fields(THD *thd __attribute__((unused)),
   A thread is created for each table that one uses with the DELAYED attribute.
 *****************************************************************************/
 
+#ifndef EMBEDDED_LIBRARY
+
 class delayed_row :public ilink {
 public:
   char *record,*query;
   enum_duplicates dup;
   time_t start_time;
-  bool query_start_used,last_insert_id_used,insert_id_used;
+  bool query_start_used,last_insert_id_used,insert_id_used, ignore;
   int log_query;
   ulonglong last_insert_id;
-  ulong time_stamp;
+  timestamp_auto_set_type timestamp_field_type;
   uint query_length;
 
-  delayed_row(enum_duplicates dup_arg, int log_query_arg)
-    :record(0),query(0),dup(dup_arg),log_query(log_query_arg) {}
+  delayed_row(enum_duplicates dup_arg, bool ignore_arg, int log_query_arg)
+    :record(0),query(0),dup(dup_arg),ignore(ignore_arg),log_query(log_query_arg) {}
   ~delayed_row()
   {
     x_free(record);
@@ -556,12 +684,14 @@ public:
      group_count(0)
   {
     thd.user=thd.priv_user=(char*) delayed_user;
-    thd.host=(char*) localhost;
+    thd.host=(char*) my_localhost;
     thd.current_tablenr=0;
     thd.version=refresh_version;
     thd.command=COM_DELAYED_INSERT;
+    thd.lex->current_select= 0; /* for my_message_sql */
 
-    bzero((char*) &thd.net,sizeof(thd.net));	// Safety
+    bzero((char*) &thd.net, sizeof(thd.net));		// Safety
+    bzero((char*) &table_list, sizeof(table_list));	// Safety
     thd.system_thread= SYSTEM_THREAD_DELAYED_INSERT;
     thd.host_or_ip= "";
     bzero((char*) &info,sizeof(info));
@@ -664,7 +794,7 @@ static TABLE *delayed_get_table(THD *thd,TABLE_LIST *table_list)
     {
       if (!(tmp=new delayed_insert()))
       {
-	thd->fatal_error=1;
+	thd->fatal_error();
 	my_error(ER_OUTOFMEMORY,MYF(0),sizeof(delayed_insert));
 	pthread_mutex_unlock(&LOCK_delayed_create);
 	DBUG_RETURN(0);
@@ -676,7 +806,7 @@ static TABLE *delayed_get_table(THD *thd,TABLE_LIST *table_list)
 	  !(tmp->thd.query=my_strdup(table_list->real_name,MYF(MY_WME))))
       {
 	delete tmp;
-	thd->fatal_error=1;
+	thd->fatal_error();
 	my_error(ER_OUT_OF_RESOURCES,MYF(0));
 	pthread_mutex_unlock(&LOCK_delayed_create);
 	DBUG_RETURN(0);
@@ -695,9 +825,9 @@ static TABLE *delayed_get_table(THD *thd,TABLE_LIST *table_list)
 	pthread_mutex_unlock(&tmp->mutex);
 	tmp->unlock();
 	delete tmp;
-	thd->fatal_error=1;
+	thd->fatal_error();
 	pthread_mutex_unlock(&LOCK_delayed_create);
-	net_printf(&thd->net,ER_CANT_CREATE_THREAD,error);
+	net_printf(thd,ER_CANT_CREATE_THREAD,error);
 	DBUG_RETURN(0);
       }
 
@@ -711,10 +841,10 @@ static TABLE *delayed_get_table(THD *thd,TABLE_LIST *table_list)
       thd->proc_info="got old table";
       if (tmp->thd.killed)
       {
-	if (tmp->thd.fatal_error)
+	if (tmp->thd.is_fatal_error)
 	{
 	  /* Copy error message and abort */
-	  thd->fatal_error=1;
+	  thd->fatal_error();
 	  strmov(thd->net.last_error,tmp->thd.net.last_error);
 	  thd->net.last_errno=tmp->thd.net.last_errno;
 	}
@@ -738,8 +868,8 @@ static TABLE *delayed_get_table(THD *thd,TABLE_LIST *table_list)
   tmp->unlock();
   if (table)
     thd->di=tmp;
-  else if (tmp->thd.fatal_error)
-    thd->fatal_error=1;
+  else if (tmp->thd.is_fatal_error)
+    thd->fatal_error();
   DBUG_RETURN((table_list->table=table));
 }
 
@@ -800,8 +930,9 @@ TABLE *delayed_insert::get_local_table(THD* client_thd)
   found_next_number_field=table->found_next_number_field;
   for (org_field=table->field ; *org_field ; org_field++,field++)
   {
-    if (!(*field= (*org_field)->new_field(&client_thd->mem_root,copy)))
+    if (!(*field= (*org_field)->new_field(client_thd->mem_root,copy)))
       return 0;
+    (*field)->orig_table= copy;			// Remove connection
     (*field)->move_field(adjust_ptrs);		// Point at copy->record[0]
     if (*org_field == found_next_number_field)
       (*field)->table->found_next_number_field= *field;
@@ -812,13 +943,18 @@ TABLE *delayed_insert::get_local_table(THD* client_thd)
   if (table->timestamp_field)
   {
     /* Restore offset as this may have been reset in handle_inserts */
-    copy->time_stamp=table->timestamp_field->offset()+1;
     copy->timestamp_field=
       (Field_timestamp*) copy->field[table->timestamp_field_offset];
+    copy->timestamp_field->unireg_check= table->timestamp_field->unireg_check;
+    copy->timestamp_field_type= copy->timestamp_field->get_auto_set_type();
   }
 
   /* _rowid is not used with delayed insert */
   copy->rowid_field=0;
+
+  /* Adjust in_use for pointing to client thread */
+  copy->in_use= client_thd;
+  
   return copy;
 
   /* Got fatal error */
@@ -832,7 +968,7 @@ TABLE *delayed_insert::get_local_table(THD* client_thd)
 
 /* Put a question in queue */
 
-static int write_delayed(THD *thd,TABLE *table,enum_duplicates duplic,
+static int write_delayed(THD *thd,TABLE *table,enum_duplicates duplic, bool ignore,
 			 char *query, uint query_length, int log_on)
 {
   delayed_row *row=0;
@@ -845,7 +981,7 @@ static int write_delayed(THD *thd,TABLE *table,enum_duplicates duplic,
     pthread_cond_wait(&di->cond_client,&di->mutex);
   thd->proc_info="storing row into queue";
 
-  if (thd->killed || !(row= new delayed_row(duplic, log_on)))
+  if (thd->killed || !(row= new delayed_row(duplic, ignore, log_on)))
     goto err;
 
   if (!query)
@@ -865,7 +1001,7 @@ static int write_delayed(THD *thd,TABLE *table,enum_duplicates duplic,
   row->last_insert_id_used=	thd->last_insert_id_used;
   row->insert_id_used=		thd->insert_id_used;
   row->last_insert_id=		thd->last_insert_id;
-  row->time_stamp=		table->time_stamp;
+  row->timestamp_field_type=    table->timestamp_field_type;
 
   di->rows.push_back(row);
   di->stacked_inserts++;
@@ -967,7 +1103,7 @@ extern "C" pthread_handler_decl(handle_delayed_insert,arg)
   DBUG_ENTER("handle_delayed_insert");
   if (init_thr_lock() || thd->store_globals())
   {
-    thd->fatal_error=1;
+    thd->fatal_error();
     strmov(thd->net.last_error,ER(thd->net.last_errno=ER_OUT_OF_RESOURCES));
     goto end;
   }
@@ -981,12 +1117,12 @@ extern "C" pthread_handler_decl(handle_delayed_insert,arg)
 
   if (!(di->table=open_ltable(thd,&di->table_list,TL_WRITE_DELAYED)))
   {
-    thd->fatal_error=1;				// Abort waiting inserts
+    thd->fatal_error();				// Abort waiting inserts
     goto end;
   }
-  if (di->table->file->has_transactions())
+  if (!(di->table->file->table_flags() & HA_CAN_INSERT_DELAYED))
   {
-    thd->fatal_error=1;
+    thd->fatal_error();
     my_error(ER_ILLEGAL_HA, MYF(0), di->table_list.real_name);
     goto end;
   }
@@ -1072,7 +1208,8 @@ extern "C" pthread_handler_decl(handle_delayed_insert,arg)
       /* request for new delayed insert */
       if (!(thd->lock=mysql_lock_tables(thd,&di->table,1)))
       {
-	di->dead=thd->killed=1;			// Fatal error
+	di->dead= 1;			// Some fatal error
+        thd->killed= 1;
       }
       pthread_cond_broadcast(&di->cond_client);
     }
@@ -1080,14 +1217,17 @@ extern "C" pthread_handler_decl(handle_delayed_insert,arg)
     {
       if (di->handle_inserts())
       {
-	di->dead=thd->killed=1;			// Some fatal error
+	di->dead= 1;			// Some fatal error
+        thd->killed= 1;
       }
     }
     di->status=0;
     if (!di->stacked_inserts && !di->tables_in_use && thd->lock)
     {
-      /* No one is doing a insert delayed;
-	 Unlock it so that other threads can use it */
+      /*
+        No one is doing a insert delayed
+        Unlock table so that other threads can use it
+      */
       MYSQL_LOCK *lock=thd->lock;
       thd->lock=0;
       pthread_mutex_unlock(&di->mutex);
@@ -1107,7 +1247,8 @@ end:
 
   close_thread_tables(thd);			// Free the table
   di->table=0;
-  di->dead=thd->killed=1;			// If error
+  di->dead= 1;                                  // If error
+  thd->killed= 1;
   pthread_cond_broadcast(&di->cond_client);	// Safety
   pthread_mutex_unlock(&di->mutex);
 
@@ -1199,11 +1340,12 @@ bool delayed_insert::handle_inserts(void)
     thd.last_insert_id=row->last_insert_id;
     thd.last_insert_id_used=row->last_insert_id_used;
     thd.insert_id_used=row->insert_id_used;
-    table->time_stamp=row->time_stamp;
+    table->timestamp_field_type= row->timestamp_field_type;
 
+    info.ignore= row->ignore;
     info.handle_duplicates= row->dup;
-    if (info.handle_duplicates == DUP_IGNORE ||
-	info.handle_duplicates == DUP_REPLACE)
+    if (info.ignore ||
+	info.handle_duplicates != DUP_ERROR)
     {
       table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
       using_ignore=1;
@@ -1226,7 +1368,7 @@ bool delayed_insert::handle_inserts(void)
         mysql_update_log.write(&thd,row->query, row->query_length);
       if (row->log_query & DELAYED_LOG_BIN && using_bin_log)
       {
-        Query_log_event qinfo(&thd, row->query, row->query_length,0);
+        Query_log_event qinfo(&thd, row->query, row->query_length,0, FALSE);
         mysql_bin_log.write(&qinfo);
       }
     }
@@ -1302,32 +1444,36 @@ bool delayed_insert::handle_inserts(void)
   pthread_mutex_lock(&mutex);
   DBUG_RETURN(1);
 }
-
-
+#endif /* EMBEDDED_LIBRARY */
 
 /***************************************************************************
   Store records in INSERT ... SELECT *
 ***************************************************************************/
 
 int
-select_insert::prepare(List<Item> &values)
+select_insert::prepare(List<Item> &values, SELECT_LEX_UNIT *u)
 {
   DBUG_ENTER("select_insert::prepare");
 
+  unit= u;
   if (check_insert_fields(thd,table,*fields,values,1))
     DBUG_RETURN(1);
 
-  restore_record(table,2);			// Get empty record
+  restore_record(table,default_values);			// Get empty record
   table->next_number_field=table->found_next_number_field;
-  thd->count_cuted_fields=1;			// calc cuted fields
   thd->cuted_fields=0;
-  if (info.handle_duplicates != DUP_REPLACE)
-    table->file->extra(HA_EXTRA_WRITE_CACHE);
-  if (info.handle_duplicates == DUP_IGNORE ||
-      info.handle_duplicates == DUP_REPLACE)
+  if (info.ignore ||
+      info.handle_duplicates != DUP_ERROR)
     table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
-  table->file->deactivate_non_unique_index((ha_rows) 0);
+  table->file->start_bulk_insert((ha_rows) 0);
   DBUG_RETURN(0);
+}
+
+
+void select_insert::cleanup()
+{
+  /* select_insert/select_create are never re-used in prepared statement */
+  DBUG_ASSERT(0);
 }
 
 select_insert::~select_insert()
@@ -1335,48 +1481,67 @@ select_insert::~select_insert()
   if (table)
   {
     table->next_number_field=0;
-    table->file->extra(HA_EXTRA_RESET);
+    table->file->reset();
   }
-  thd->count_cuted_fields=0;
+  thd->count_cuted_fields= CHECK_FIELD_IGNORE;
 }
 
 
 bool select_insert::send_data(List<Item> &values)
 {
   DBUG_ENTER("select_insert::send_data");
-  if (thd->offset_limit)
+  bool error=0;
+  if (unit->offset_limit_cnt)
   {						// using limit offset,count
-    thd->offset_limit--;
+    unit->offset_limit_cnt--;
     DBUG_RETURN(0);
   }
-  if (fields->elements)
-    fill_record(*fields, values, 1);
-  else
-    fill_record(table->field, values, 1);
-  if (write_record(table,&info))
-    DBUG_RETURN(1);
-  if (table->next_number_field)		// Clear for next record
+  thd->count_cuted_fields= CHECK_FIELD_WARN;		// calc cuted fields
+  store_values(values);
+  error=thd->net.report_error || write_record(table,&info);
+  thd->count_cuted_fields= CHECK_FIELD_IGNORE;
+  if (!error && table->next_number_field)       // Clear for next record
   {
     table->next_number_field->reset();
     if (! last_insert_id && thd->insert_id_used)
       last_insert_id=thd->insert_id();
   }
-  DBUG_RETURN(0);
+  DBUG_RETURN(error);
 }
 
 
+void select_insert::store_values(List<Item> &values)
+{
+  if (fields->elements)
+    fill_record(*fields, values, 1);
+  else
+    fill_record(table->field, values, 1);
+}
+
 void select_insert::send_error(uint errcode,const char *err)
 {
-  ::send_error(&thd->net,errcode,err);
-  table->file->extra(HA_EXTRA_NO_CACHE);
-  table->file->activate_all_index(thd);
-  /* 
-     If at least one row has been inserted/modified and will stay in the table
-     (the table doesn't have transactions) (example: we got a duplicate key
-     error while inserting into a MyISAM table) we must write to the binlog (and
-     the error code will make the slave stop).
+  DBUG_ENTER("select_insert::send_error");
+
+  /* TODO error should be sent at the query processing end */
+  ::send_error(thd,errcode,err);
+
+  if (!table)
+  {
+    /*
+      This can only happen when using CREATE ... SELECT and the table was not
+      created becasue of an syntax error
+    */
+    DBUG_VOID_RETURN;
+  }
+  table->file->end_bulk_insert();
+  /*
+    If at least one row has been inserted/modified and will stay in the table
+    (the table doesn't have transactions) (example: we got a duplicate key
+    error while inserting into a MyISAM table) we must write to the binlog (and
+    the error code will make the slave stop).
   */
-  if ((info.copied || info.deleted) && !table->file->has_transactions())
+  if ((info.copied || info.deleted || info.updated) &&
+      !table->file->has_transactions())
   {
     if (last_insert_id)
       thd->insert_id(last_insert_id);		// For binary log
@@ -1384,26 +1549,38 @@ void select_insert::send_error(uint errcode,const char *err)
     if (mysql_bin_log.is_open())
     {
       Query_log_event qinfo(thd, thd->query, thd->query_length,
-                            table->file->has_transactions());
+                            table->file->has_transactions(), FALSE);
       mysql_bin_log.write(&qinfo);
     }
     if (!table->tmp_table)
-      thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;    
+      thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;
   }
-  ha_rollback_stmt(thd);
-  if (info.copied || info.deleted)
-  {
+  if (info.copied || info.deleted || info.updated)
     query_cache_invalidate3(thd, table, 1);
-  }
+  ha_rollback_stmt(thd);
+  DBUG_VOID_RETURN;
 }
 
 
 bool select_insert::send_eof()
 {
   int error,error2;
-  if (!(error=table->file->extra(HA_EXTRA_NO_CACHE)))
-    error=table->file->activate_all_index(thd);
+  DBUG_ENTER("select_insert::send_eof");
+
+  error=table->file->end_bulk_insert();
   table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
+
+  /*
+    We must invalidate the table in the query cache before binlog writing
+    and ha_autocommit_...
+  */
+
+  if (info.copied || info.deleted || info.updated)
+  {
+    query_cache_invalidate3(thd, table, 1);
+    if (!(table->file->has_transactions() || table->tmp_table))
+      thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;
+  }
 
   if (last_insert_id)
     thd->insert_id(last_insert_id);		// For binary log
@@ -1414,32 +1591,27 @@ bool select_insert::send_eof()
     if (!error)
       thd->clear_error();
     Query_log_event qinfo(thd, thd->query, thd->query_length,
-			  table->file->has_transactions());
+			  table->file->has_transactions(), FALSE);
     mysql_bin_log.write(&qinfo);
   }
   if ((error2=ha_autocommit_or_rollback(thd,error)) && ! error)
     error=error2;
-  if (info.copied || info.deleted)
-  {
-    query_cache_invalidate3(thd, table, 1);
-    if (!(table->file->has_transactions() || table->tmp_table))
-	thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;
-  }
   if (error)
   {
     table->file->print_error(error,MYF(0));
-    ::send_error(&thd->net);
-    return 1;
+    //TODO error should be sent at the query processing end
+    ::send_error(thd);
+    DBUG_RETURN(1);
   }
   char buff[160];
-  if (info.handle_duplicates == DUP_IGNORE)
-    sprintf(buff,ER(ER_INSERT_INFO),info.records,info.records-info.copied,
-            thd->cuted_fields);
+  if (info.ignore)
+    sprintf(buff, ER(ER_INSERT_INFO), (ulong) info.records,
+	    (ulong) (info.records - info.copied), (ulong) thd->cuted_fields);
   else
-    sprintf(buff,ER(ER_INSERT_INFO),info.records,info.deleted,
-            thd->cuted_fields);
-  ::send_ok(&thd->net,info.copied+info.deleted,last_insert_id,buff);
-  return 0;
+    sprintf(buff, ER(ER_INSERT_INFO), (ulong) info.records,
+	    (ulong) (info.deleted+info.updated), (ulong) thd->cuted_fields);
+  ::send_ok(thd,info.copied+info.deleted+info.updated,last_insert_id,buff);
+  DBUG_RETURN(0);
 }
 
 
@@ -1448,10 +1620,11 @@ bool select_insert::send_eof()
 ***************************************************************************/
 
 int
-select_create::prepare(List<Item> &values)
+select_create::prepare(List<Item> &values, SELECT_LEX_UNIT *u)
 {
   DBUG_ENTER("select_create::prepare");
 
+  unit= u;
   table= create_table_from_items(thd, create_info, db, name,
 				 extra_fields, keys, &values, &lock);
   if (!table)
@@ -1468,44 +1641,37 @@ select_create::prepare(List<Item> &values)
   /* First field to copy */
   field=table->field+table->fields - values.elements;
 
-  if (table->timestamp_field)			// Don't set timestamp if used
-  {
-    table->timestamp_field->set_time();
-    table->time_stamp=0;			// This should be saved
-  }
+  /* Don't set timestamp if used */
+  table->timestamp_field_type= TIMESTAMP_NO_AUTO_SET;
+
   table->next_number_field=table->found_next_number_field;
 
-  restore_record(table,2);			// Get empty record
-  thd->count_cuted_fields=1;			// count warnings
+  restore_record(table,default_values);			// Get empty record
   thd->cuted_fields=0;
-  if (info.handle_duplicates == DUP_IGNORE ||
-      info.handle_duplicates == DUP_REPLACE)
+  if (info.ignore ||
+      info.handle_duplicates != DUP_ERROR)
     table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
-  table->file->deactivate_non_unique_index((ha_rows) 0);
+  table->file->start_bulk_insert((ha_rows) 0);
   DBUG_RETURN(0);
 }
 
 
-bool select_create::send_data(List<Item> &values)
+void select_create::store_values(List<Item> &values)
 {
-  if (thd->offset_limit)
-  {						// using limit offset,count
-    thd->offset_limit--;
-    return 0;
-  }
   fill_record(field, values, 1);
-  if (write_record(table,&info))
-    return 1;
-  if (table->next_number_field)		// Clear for next record
-  {
-    table->next_number_field->reset();
-    if (! last_insert_id && thd->insert_id_used)
-      last_insert_id=thd->insert_id();
-  }
-  return 0;
 }
 
-extern HASH open_cache;
+
+void select_create::send_error(uint errcode,const char *err)
+{
+  /*
+   Disable binlog, because we "roll back" partial inserts in ::abort
+   by removing the table, even for non-transactional tables.
+  */
+  tmp_disable_binlog(thd);
+  select_insert::send_error(errcode, err);
+  reenable_binlog(thd);
+}
 
 
 bool select_create::send_eof()
@@ -1524,7 +1690,13 @@ bool select_create::send_eof()
       We should be able to just keep the table in the table cache.
     */
     if (!table->tmp_table)
+    {
+      ulong version= table->version;
       hash_delete(&open_cache,(byte*) table);
+      /* Tell threads waiting for refresh that something has happened */
+      if (version != refresh_version)
+        VOID(pthread_cond_broadcast(&COND_refresh));
+    }
     lock=0;
     table=0;
     VOID(pthread_mutex_unlock(&LOCK_open));
@@ -1545,9 +1717,17 @@ void select_create::abort()
     table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
     enum db_type table_type=table->db_type;
     if (!table->tmp_table)
+    {
+      ulong version= table->version;
       hash_delete(&open_cache,(byte*) table);
-    if (!create_info->table_existed)
-      quick_rm_table(table_type,db,name);
+      if (!create_info->table_existed)
+        quick_rm_table(table_type, db, name);
+      /* Tell threads waiting for refresh that something has happened */
+      if (version != refresh_version)
+        VOID(pthread_cond_broadcast(&COND_refresh));
+    }
+    else if (!create_info->table_existed)
+      close_temporary_table(thd, db, name);
     table=0;
   }
   VOID(pthread_mutex_unlock(&LOCK_open));
@@ -1560,7 +1740,9 @@ void select_create::abort()
 
 #ifdef __GNUC__
 template class List_iterator_fast<List_item>;
+#ifndef EMBEDDED_LIBRARY
 template class I_List<delayed_insert>;
 template class I_List_iterator<delayed_insert>;
 template class I_List<delayed_row>;
-#endif
+#endif /* EMBEDDED_LIBRARY */
+#endif /* __GNUC__ */

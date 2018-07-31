@@ -28,6 +28,11 @@
 #include <floatingpoint.h>
 #endif
 
+/*
+  The following extern declarations are ok as these are interface functions
+  required by the string function
+*/
+
 extern gptr sql_alloc(unsigned size);
 extern void sql_element_free(void *ptr);
 
@@ -91,36 +96,45 @@ bool String::realloc(uint32 alloc_length)
   return FALSE;
 }
 
-bool String::set(longlong num)
+bool String::set(longlong num, CHARSET_INFO *cs)
 {
-  if (alloc(21))
+  uint l=20*cs->mbmaxlen+1;
+
+  if (alloc(l))
     return TRUE;
-  str_length=(uint32) (longlong10_to_str(num,Ptr,-10)-Ptr);
+  str_length=(uint32) (cs->cset->longlong10_to_str)(cs,Ptr,l,-10,num);
+  str_charset=cs;
   return FALSE;
 }
 
-bool String::set(ulonglong num)
+bool String::set(ulonglong num, CHARSET_INFO *cs)
 {
-  if (alloc(21))
+  uint l=20*cs->mbmaxlen+1;
+
+  if (alloc(l))
     return TRUE;
-  str_length=(uint32) (longlong10_to_str(num,Ptr,10)-Ptr);
+  str_length=(uint32) (cs->cset->longlong10_to_str)(cs,Ptr,l,10,num);
+  str_charset=cs;
   return FALSE;
 }
 
-bool String::set(double num,uint decimals)
+bool String::set(double num,uint decimals, CHARSET_INFO *cs)
 {
   char buff[331];
+  uint dummy_errors;
+
+  str_charset=cs;
   if (decimals >= NOT_FIXED_DEC)
   {
-    sprintf(buff,"%.14g",num);			// Enough for a DATETIME
-    return copy(buff, (uint32) strlen(buff));
+    uint32 len= my_sprintf(buff,(buff, "%.14g",num));// Enough for a DATETIME
+    return copy(buff, len, &my_charset_latin1, cs, &dummy_errors);
   }
 #ifdef HAVE_FCONVERT
   int decpt,sign;
   char *pos,*to;
 
   VOID(fconvert(num,(int) decimals,&decpt,&sign,buff+1));
-  if (!isdigit(buff[1]))
+  if (!my_isdigit(&my_charset_latin1, buff[1]))
   {						// Nan or Inf
     pos=buff+1;
     if (sign)
@@ -128,7 +142,8 @@ bool String::set(double num,uint decimals)
       buff[0]='-';
       pos=buff;
     }
-    return copy(pos,(uint32) strlen(pos));
+    uint dummy_errors;
+    return copy(pos,(uint32) strlen(pos), &my_charset_latin1, cs, &dummy_errors);
   }
   if (alloc((uint32) ((uint32) decpt+3+decimals)))
     return TRUE;
@@ -178,7 +193,8 @@ end:
 #else
   sprintf(buff,"%.*f",(int) decimals,num);
 #endif
-  return copy(buff,(uint32) strlen(buff));
+  return copy(buff,(uint32) strlen(buff), &my_charset_latin1, cs,
+              &dummy_errors);
 #endif
 }
 
@@ -200,18 +216,177 @@ bool String::copy(const String &str)
   str_length=str.str_length;
   bmove(Ptr,str.Ptr,str_length);		// May be overlapping
   Ptr[str_length]=0;
+  str_charset=str.str_charset;
   return FALSE;
 }
 
-bool String::copy(const char *str,uint32 arg_length)
+bool String::copy(const char *str,uint32 arg_length, CHARSET_INFO *cs)
 {
   if (alloc(arg_length))
     return TRUE;
   if ((str_length=arg_length))
     memcpy(Ptr,str,arg_length);
   Ptr[arg_length]=0;
+  str_charset=cs;
   return FALSE;
 }
+
+
+/*
+  Checks that the source string can be just copied to the destination string
+  without conversion.
+
+  SYNPOSIS
+
+  needs_conversion()
+  arg_length		Length of string to copy.
+  from_cs		Character set to copy from
+  to_cs			Character set to copy to
+  uint32 *offset	Returns number of unaligned characters.
+
+  RETURN
+   0  No conversion needed
+   1  Either character set conversion or adding leading  zeros
+      (e.g. for UCS-2) must be done
+*/
+
+bool String::needs_conversion(uint32 arg_length,
+			      CHARSET_INFO *from_cs,
+			      CHARSET_INFO *to_cs,
+			      uint32 *offset)
+{
+  *offset= 0;
+  if ((to_cs == &my_charset_bin) || 
+      (to_cs == from_cs) ||
+      my_charset_same(from_cs, to_cs) ||
+      ((from_cs == &my_charset_bin) &&
+       (!(*offset=(arg_length % to_cs->mbminlen)))))
+    return FALSE;
+  return TRUE;
+}
+
+
+/*
+  Copy a multi-byte character sets with adding leading zeros.
+
+  SYNOPSIS
+
+  copy_aligned()
+  str			String to copy
+  arg_length		Length of string. This should NOT be dividable with
+			cs->mbminlen.
+  offset		arg_length % cs->mb_minlength
+  cs			Character set for 'str'
+
+  NOTES
+    For real multi-byte, ascii incompatible charactser sets,
+    like UCS-2, add leading zeros if we have an incomplete character.
+    Thus, 
+      SELECT _ucs2 0xAA 
+    will automatically be converted into
+      SELECT _ucs2 0x00AA
+
+  RETURN
+    0  ok
+    1  error
+*/
+
+bool String::copy_aligned(const char *str,uint32 arg_length, uint32 offset,
+			  CHARSET_INFO *cs)
+{
+  /* How many bytes are in incomplete character */
+  offset= cs->mbmaxlen - offset; /* How many zeros we should prepend */
+  DBUG_ASSERT(offset && offset != cs->mbmaxlen);
+
+  uint32 aligned_length= arg_length + offset;
+  if (alloc(aligned_length))
+    return TRUE;
+  
+  /*
+    Note, this is only safe for little-endian UCS-2.
+    If we add big-endian UCS-2 sometimes, this code
+    will be more complicated. But it's OK for now.
+  */
+  bzero((char*) Ptr, offset);
+  memcpy(Ptr + offset, str, arg_length);
+  Ptr[aligned_length]=0;
+  /* str_length is always >= 0 as arg_length is != 0 */
+  str_length= aligned_length;
+  str_charset= cs;
+  return FALSE;
+}
+
+
+bool String::set_or_copy_aligned(const char *str,uint32 arg_length,
+				 CHARSET_INFO *cs)
+{
+  /* How many bytes are in incomplete character */
+  uint32 offset= (arg_length % cs->mbminlen); 
+  
+  if (!offset) /* All characters are complete, just copy */
+  {
+    set(str, arg_length, cs);
+    return FALSE;
+  }
+  return copy_aligned(str, arg_length, offset, cs);
+}
+
+	/* Copy with charset convertion */
+
+bool String::copy(const char *str, uint32 arg_length,
+		  CHARSET_INFO *from_cs, CHARSET_INFO *to_cs, uint *errors)
+{
+  uint32 offset;
+  if (!needs_conversion(arg_length, from_cs, to_cs, &offset))
+  {
+    *errors= 0;
+    return copy(str, arg_length, to_cs);
+  }
+  if ((from_cs == &my_charset_bin) && offset)
+  {
+    *errors= 0;
+    return copy_aligned(str, arg_length, offset, to_cs);
+  }
+  uint32 new_length= to_cs->mbmaxlen*arg_length;
+  if (alloc(new_length))
+    return TRUE;
+  str_length=copy_and_convert((char*) Ptr, new_length, to_cs,
+                              str, arg_length, from_cs, errors);
+  str_charset=to_cs;
+  return FALSE;
+}
+
+
+/*
+  Set a string to the value of a latin1-string, keeping the original charset
+  
+  SYNOPSIS
+    copy_or_set()
+    str			String of a simple charset (latin1)
+    arg_length		Length of string
+
+  IMPLEMENTATION
+    If string object is of a simple character set, set it to point to the
+    given string.
+    If not, make a copy and convert it to the new character set.
+
+  RETURN
+    0	ok
+    1	Could not allocate result buffer
+
+*/
+
+bool String::set_ascii(const char *str, uint32 arg_length)
+{
+  if (str_charset->mbminlen == 1)
+  {
+    set(str, arg_length, str_charset);
+    return 0;
+  }
+  uint dummy_errors;
+  return copy(str, arg_length, &my_charset_latin1, str_charset, &dummy_errors);
+}
+
 
 /* This is used by mysql.cc */
 
@@ -231,7 +406,7 @@ bool String::fill(uint32 max_length,char fill_char)
 
 void String::strip_sp()
 {
-   while (str_length && isspace(Ptr[str_length-1]))
+   while (str_length && my_isspace(str_charset,Ptr[str_length-1]))
     str_length--;
 }
 
@@ -247,17 +422,80 @@ bool String::append(const String &s)
   return FALSE;
 }
 
+
+/*
+  Append an ASCII string to the a string of the current character set
+*/
+
 bool String::append(const char *s,uint32 arg_length)
 {
-  if (!arg_length)				// Default argument
-    if (!(arg_length= (uint32) strlen(s)))
-      return FALSE;
+  if (!arg_length)
+    return FALSE;
+
+  /*
+    For an ASCII incompatible string, e.g. UCS-2, we need to convert
+  */
+  if (str_charset->mbminlen > 1)
+  {
+    uint32 add_length=arg_length * str_charset->mbmaxlen;
+    uint dummy_errors;
+    if (realloc(str_length+ add_length))
+      return TRUE;
+    str_length+= copy_and_convert(Ptr+str_length, add_length, str_charset,
+				  s, arg_length, &my_charset_latin1,
+                                  &dummy_errors);
+    return FALSE;
+  }
+
+  /*
+    For an ASCII compatinble string we can just append.
+  */
   if (realloc(str_length+arg_length))
     return TRUE;
   memcpy(Ptr+str_length,s,arg_length);
   str_length+=arg_length;
   return FALSE;
 }
+
+
+/*
+  Append a 0-terminated ASCII string
+*/
+
+bool String::append(const char *s)
+{
+  return append(s, strlen(s));
+}
+
+
+/*
+  Append a string in the given charset to the string
+  with character set recoding
+*/
+
+bool String::append(const char *s,uint32 arg_length, CHARSET_INFO *cs)
+{
+  uint32 dummy_offset;
+  
+  if (needs_conversion(arg_length, cs, str_charset, &dummy_offset))
+  {
+    uint32 add_length= arg_length / cs->mbminlen * str_charset->mbmaxlen;
+    uint dummy_errors;
+    if (realloc(str_length + add_length)) 
+      return TRUE;
+    str_length+= copy_and_convert(Ptr+str_length, add_length, str_charset,
+				  s, arg_length, cs, &dummy_errors);
+  }
+  else
+  {
+    if (realloc(str_length + arg_length)) 
+      return TRUE;
+    memcpy(Ptr + str_length, s, arg_length);
+    str_length+= arg_length;
+  }
+  return FALSE;
+}
+
 
 #ifdef TO_BE_REMOVED
 bool String::append(FILE* file, uint32 arg_length, myf my_flags)
@@ -287,48 +525,33 @@ bool String::append(IO_CACHE* file, uint32 arg_length)
   return FALSE;
 }
 
+bool String::append_with_prefill(const char *s,uint32 arg_length,
+		 uint32 full_length, char fill_char)
+{
+  int t_length= arg_length > full_length ? arg_length : full_length;
+
+  if (realloc(str_length + t_length))
+    return TRUE;
+  t_length= full_length - arg_length;
+  if (t_length > 0)
+  {
+    bfill(Ptr+str_length, t_length, fill_char);
+    str_length=str_length + t_length;
+  }
+  append(s, arg_length);
+  return FALSE;
+}
+
 uint32 String::numchars()
 {
-#ifdef USE_MB
-  register uint32 n=0,mblen;
-  register const char *mbstr=Ptr;
-  register const char *end=mbstr+str_length;
-  if (use_mb(default_charset_info))
-  {
-    while (mbstr < end) {
-        if ((mblen=my_ismbchar(default_charset_info, mbstr,end))) mbstr+=mblen;
-        else ++mbstr;
-        ++n;
-    }
-    return n;
-  }
-  else
-#endif
-    return str_length;
+  return str_charset->cset->numchars(str_charset, Ptr, Ptr+str_length);
 }
 
 int String::charpos(int i,uint32 offset)
 {
-#ifdef USE_MB
-  register uint32 mblen;
-  register const char *mbstr=Ptr+offset;
-  register const char *end=Ptr+str_length;
-  if (use_mb(default_charset_info))
-  {
-    if (i<=0) return i;
-    while (i && mbstr < end) {
-       if ((mblen=my_ismbchar(default_charset_info, mbstr,end))) mbstr+=mblen;
-       else ++mbstr;
-       --i;
-    }
-    if ( INT_MAX32-i <= (int) (mbstr-Ptr-offset)) 
-      return INT_MAX32;
-    else 
-      return (int) ((mbstr-Ptr-offset)+i);
-  }
-  else
-#endif
+  if (i <= 0)
     return i;
+  return str_charset->cset->charpos(str_charset,Ptr+offset,Ptr+str_length,i);
 }
 
 int String::strstr(const String &s,uint32 offset)
@@ -342,7 +565,7 @@ int String::strstr(const String &s,uint32 offset)
     register const char *search=s.ptr();
     const char *end=Ptr+str_length-s.length()+1;
     const char *search_end=s.ptr()+s.length();
-skipp:
+skip:
     while (str != end)
     {
       if (*str++ == *search)
@@ -350,39 +573,7 @@ skipp:
 	register char *i,*j;
 	i=(char*) str; j=(char*) search+1;
 	while (j != search_end)
-	  if (*i++ != *j++) goto skipp;
-	return (int) (str-Ptr) -1;
-      }
-    }
-  }
-  return -1;
-}
-
-/*
-  Search after a string without regarding to case
-  This needs to be replaced when we have character sets per string
-*/
-
-int String::strstr_case(const String &s,uint32 offset)
-{
-  if (s.length()+offset <= str_length)
-  {
-    if (!s.length())
-      return ((int) offset);	// Empty string is always found
-
-    register const char *str = Ptr+offset;
-    register const char *search=s.ptr();
-    const char *end=Ptr+str_length-s.length()+1;
-    const char *search_end=s.ptr()+s.length();
-skipp:
-    while (str != end)
-    {
-      if (my_sort_order[*str++] == my_sort_order[*search])
-      {
-	register char *i,*j;
-	i=(char*) str; j=(char*) search+1;
-	while (j != search_end)
-	  if (my_sort_order[*i++] != my_sort_order[*j++]) goto skipp;
+	  if (*i++ != *j++) goto skip;
 	return (int) (str-Ptr) -1;
       }
     }
@@ -405,7 +596,7 @@ int String::strrstr(const String &s,uint32 offset)
 
     const char *end=Ptr+s.length()-2;
     const char *search_end=s.ptr()-1;
-skipp:
+skip:
     while (str != end)
     {
       if (*str-- == *search)
@@ -413,7 +604,7 @@ skipp:
 	register char *i,*j;
 	i=(char*) str; j=(char*) search-1;
 	while (j != search_end)
-	  if (*i-- != *j--) goto skipp;
+	  if (*i-- != *j--) goto skip;
 	return (int) (i-Ptr) +1;
       }
     }
@@ -429,14 +620,20 @@ skipp:
 
 bool String::replace(uint32 offset,uint32 arg_length,const String &to)
 {
-  long diff = (long) to.length()-(long) arg_length;
+  return replace(offset,arg_length,to.ptr(),to.length());
+}
+
+bool String::replace(uint32 offset,uint32 arg_length,
+                     const char *to,uint32 length)
+{
+  long diff = (long) length-(long) arg_length;
   if (offset+arg_length <= str_length)
   {
     if (diff < 0)
     {
-      if (to.length())
-	memcpy(Ptr+offset,to.ptr(),to.length());
-      bmove(Ptr+offset+to.length(),Ptr+offset+arg_length,
+      if (length)
+	memcpy(Ptr+offset,to,length);
+      bmove(Ptr+offset+length,Ptr+offset+arg_length,
 	    str_length-offset-arg_length);
     }
     else
@@ -448,8 +645,8 @@ bool String::replace(uint32 offset,uint32 arg_length,const String &to)
 	bmove_upp(Ptr+str_length+diff,Ptr+str_length,
 		  str_length-offset-arg_length);
       }
-      if (to.length())
-	memcpy(Ptr+offset,to.ptr(),to.length());
+      if (length)
+	memcpy(Ptr+offset,to,length);
     }
     str_length+=(uint32) diff;
   }
@@ -457,75 +654,87 @@ bool String::replace(uint32 offset,uint32 arg_length,const String &to)
 }
 
 
-int sortcmp(const String *x,const String *y)
+// added by Holyfoot for "geometry" needs
+int String::reserve(uint32 space_needed, uint32 grow_by)
 {
-  const char *s= x->ptr();
-  const char *t= y->ptr();
-  uint32 x_len=x->length(),y_len=y->length(),len=min(x_len,y_len);
+  if (Alloced_length < str_length + space_needed)
+  {
+    if (realloc(Alloced_length + max(space_needed, grow_by) - 1))
+      return TRUE;
+  }
+  return FALSE;
+}
 
-#ifdef USE_STRCOLL
-  if (use_strcoll(default_charset_info))
-  {
-#ifndef CMP_ENDSPACE
-    while (x_len && s[x_len-1] == ' ')
-      x_len--;
-    while (y_len && t[y_len-1] == ' ')
-      y_len--;
-#endif
-    return my_strnncoll(default_charset_info,
-                        (unsigned char *)s,x_len,(unsigned char *)t,y_len);
-  }
-  else
-  {
-#endif /* USE_STRCOLL */
-    x_len-=len;					// For easy end space test
-    y_len-=len;
-    while (len--)
-    {
-      if (my_sort_order[(uchar) *s++] != my_sort_order[(uchar) *t++])
-        return ((int) my_sort_order[(uchar) s[-1]] -
-                (int) my_sort_order[(uchar) t[-1]]);
-    }
-#ifndef CMP_ENDSPACE
-    /* Don't compare end space in strings */
-    {
-      if (y_len)
-      {
-        const char *end=t+y_len;
-        for (; t != end ; t++)
-          if (*t != ' ')
-            return -1;
-      }
-      else
-      {
-        const char *end=s+x_len;
-        for (; s != end ; s++)
-          if (*s != ' ')
-            return 1;
-      }
-      return 0;
-    }
-#else
-    return (int) (x_len-y_len);
-#endif /* CMP_ENDSPACE */
-#ifdef USE_STRCOLL
-  }
-#endif
+void String::qs_append(const char *str, uint32 len)
+{
+  memcpy(Ptr + str_length, str, len + 1);
+  str_length += len;
+}
+
+void String::qs_append(double d)
+{
+  char *buff = Ptr + str_length;
+  str_length+= my_sprintf(buff, (buff, "%.14g", d));
+}
+
+void String::qs_append(double *d)
+{
+  double ld;
+  float8get(ld, (char*) d);
+  qs_append(ld);
 }
 
 
-int stringcmp(const String *x,const String *y)
-{
-  const char *s= x->ptr();
-  const char *t= y->ptr();
-  uint32 x_len=x->length(),y_len=y->length(),len=min(x_len,y_len);
+/*
+  Compare strings according to collation, without end space.
 
-  while (len--)
-  {
-    if (*s++ != *t++)
-      return ((int) (uchar) s[-1] - (int) (uchar) t[-1]);
-  }
-  return (int) (x_len-y_len);
+  SYNOPSIS
+    sortcmp()
+    s		First string
+    t		Second string
+    cs		Collation
+
+  NOTE:
+    Normally this is case sensitive comparison
+
+  RETURN
+  < 0	s < t
+  0	s == t
+  > 0	s > t
+*/
+
+
+int sortcmp(const String *s,const String *t, CHARSET_INFO *cs)
+{
+ return cs->coll->strnncollsp(cs,
+                             (unsigned char *) s->ptr(),s->length(),
+			     (unsigned char *) t->ptr(),t->length());
+}
+
+
+/*
+  Compare strings byte by byte. End spaces are also compared.
+
+  SYNOPSIS
+    stringcmp()
+    s		First string
+    t		Second string
+
+  NOTE:
+    Strings are compared as a stream of unsigned chars
+
+  RETURN
+  < 0	s < t
+  0	s == t
+  > 0	s > t
+*/
+
+
+int stringcmp(const String *s,const String *t)
+{
+  uint32 s_len=s->length(),t_len=t->length(),len=min(s_len,t_len);
+  int cmp= memcmp(s->ptr(), t->ptr(), len);
+  return (cmp) ? cmp : (int) (s_len - t_len);
 }
 
 
@@ -542,263 +751,129 @@ String *copy_if_not_alloced(String *to,String *from,uint32 from_length)
     return from;				// Actually an error
   if ((to->str_length=min(from->str_length,from_length)))
     memcpy(to->Ptr,from->Ptr,to->str_length);
+  to->str_charset=from->str_charset;
   return to;
 }
 
-/* Make it easier to handle different charactersets */
 
-#ifdef USE_MB
-#define INC_PTR(A,B) A+=((use_mb_flag && \
-                          my_ismbchar(default_charset_info,A,B)) ? \
-                          my_ismbchar(default_charset_info,A,B) : 1)
-#else
-#define INC_PTR(A,B) A++
-#endif
+/****************************************************************************
+  Help functions
+****************************************************************************/
 
 /*
-** Compare string against string with wildcard
-**	0 if matched
-**	-1 if not matched with wildcard
-**	 1 if matched with wildcard
+  copy a string from one character set to another
+  
+  SYNOPSIS
+    copy_and_convert()
+    to			Store result here
+    to_cs		Character set of result string
+    from		Copy from here
+    from_length		Length of from string
+    from_cs		From character set
+
+  NOTES
+    'to' must be big enough as form_length * to_cs->mbmaxlen
+
+  RETURN
+    length of bytes copied to 'to'
 */
 
-#ifdef LIKE_CMP_TOUPPER
-#define likeconv(A) (uchar) toupper(A)
-#else
-#define likeconv(A) (uchar) my_sort_order[(uchar) (A)]
-#endif
 
-int wild_case_compare(const char *str,const char *str_end,
-		      const char *wildstr,const char *wildend,
-		      char escape)
+uint32
+copy_and_convert(char *to, uint32 to_length, CHARSET_INFO *to_cs, 
+                 const char *from, uint32 from_length, CHARSET_INFO *from_cs,
+                 uint *errors)
 {
-  int result= -1;				// Not found, using wildcards
-#ifdef USE_MB
-  bool use_mb_flag=use_mb(default_charset_info);
-#endif
-  while (wildstr != wildend)
-  {
-    while (*wildstr != wild_many && *wildstr != wild_one)
-    {
-      if (*wildstr == escape && wildstr+1 != wildend)
-	wildstr++;
-#ifdef USE_MB
-      int l;
-      if (use_mb_flag &&
-          (l = my_ismbchar(default_charset_info, wildstr, wildend)))
-      {
-	  if (str+l > str_end || memcmp(str, wildstr, l) != 0)
-	      return 1;
-	  str += l;
-	  wildstr += l;
-      }
-      else
-#endif
-      if (str == str_end || likeconv(*wildstr++) != likeconv(*str++))
-	return(1);				// No match
-      if (wildstr == wildend)
-	return (str != str_end);		// Match if both are at end
-      result=1;					// Found an anchor char
-    }
-    if (*wildstr == wild_one)
-    {
-      do
-      {
-	if (str == str_end)			// Skip one char if possible
-	  return (result);
-	INC_PTR(str,str_end);
-      } while (++wildstr < wildend && *wildstr == wild_one);
-      if (wildstr == wildend)
-	break;
-    }
-    if (*wildstr == wild_many)
-    {						// Found wild_many
-      wildstr++;
-      /* Remove any '%' and '_' from the wild search string */
-      for (; wildstr != wildend ; wildstr++)
-      {
-	if (*wildstr == wild_many)
-	  continue;
-	if (*wildstr == wild_one)
-	{
-	  if (str == str_end)
-	    return (-1);
-	  INC_PTR(str,str_end);
-	  continue;
-	}
-	break;					// Not a wild character
-      }
-      if (wildstr == wildend)
-	return(0);				// Ok if wild_many is last
-      if (str == str_end)
-	return -1;
+  int         cnvres;
+  my_wc_t     wc;
+  const uchar *from_end= (const uchar*) from+from_length;
+  char *to_start= to;
+  uchar *to_end= (uchar*) to+to_length;
+  int (*mb_wc)(struct charset_info_st *, my_wc_t *, const uchar *,
+	       const uchar *) = from_cs->cset->mb_wc;
+  int (*wc_mb)(struct charset_info_st *, my_wc_t, uchar *s, uchar *e)=
+    to_cs->cset->wc_mb;
+  uint error_count= 0;
 
-      uchar cmp;
-      if ((cmp= *wildstr) == escape && wildstr+1 != wildend)
-	cmp= *++wildstr;
-#ifdef USE_MB
-      const char* mb = wildstr;
-      int mblen;
-      LINT_INIT(mblen);
-      if (use_mb_flag)
-        mblen = my_ismbchar(default_charset_info, wildstr, wildend);
-#endif
-      INC_PTR(wildstr,wildend);			// This is compared trough cmp
-      cmp=likeconv(cmp);   
-      do
-      {
-#ifdef USE_MB
-        if (use_mb_flag)
-	{
-          for (;;)
-          {
-            if (str >= str_end)
-              return -1;
-            if (mblen)
-            {
-              if (str+mblen <= str_end && memcmp(str, mb, mblen) == 0)
-              {
-                str += mblen;
-                break;
-              }
-            }
-            else if (!my_ismbchar(default_charset_info, str, str_end) &&
-                     likeconv(*str) == cmp)
-            {
-              str++;
-              break;
-            }
-            INC_PTR(str, str_end);
-          }
-	}
-        else
-        {
-#endif /* USE_MB */
-          while (str != str_end && likeconv(*str) != cmp)
-            str++;
-          if (str++ == str_end) return (-1);
-#ifdef USE_MB
-        }
-#endif
-	{
-	  int tmp=wild_case_compare(str,str_end,wildstr,wildend,escape);
-	  if (tmp <= 0)
-	    return (tmp);
-	}
-      } while (str != str_end && wildstr[0] != wild_many);
-      return(-1);
+  while (1)
+  {
+    if ((cnvres= (*mb_wc)(from_cs, &wc, (uchar*) from,
+				      from_end)) > 0)
+      from+= cnvres;
+    else if (cnvres == MY_CS_ILSEQ)
+    {
+      error_count++;
+      from++;
+      wc= '?';
+    }
+    else
+      break;					// Impossible char.
+
+outp:
+    if ((cnvres= (*wc_mb)(to_cs, wc, (uchar*) to, to_end)) > 0)
+      to+= cnvres;
+    else if (cnvres == MY_CS_ILUNI && wc != '?')
+    {
+      error_count++;
+      wc= '?';
+      goto outp;
+    }
+    else
+      break;
+  }
+  *errors= error_count;
+  return (uint32) (to - to_start);
+}
+
+
+void String::print(String *str)
+{
+  char *st= (char*)Ptr, *end= st+str_length;
+  for (; st < end; st++)
+  {
+    uchar c= *st;
+    switch (c)
+    {
+    case '\\':
+      str->append("\\\\", 2);
+      break;
+    case '\0':
+      str->append("\\0", 2);
+      break;
+    case '\'':
+      str->append("\\'", 2);
+      break;
+    case '\n':
+      str->append("\\n", 2);
+      break;
+    case '\r':
+      str->append("\\r", 2);
+      break;
+    case 26: //Ctrl-Z
+      str->append("\\z", 2);
+      break;
+    default:
+      str->append(c);
     }
   }
-  return (str != str_end ? 1 : 0);
 }
 
-
-int wild_case_compare(String &match,String &wild, char escape)
-{
-  DBUG_ENTER("wild_case_compare");
-  DBUG_PRINT("enter",("match='%s', wild='%s', escape='%c'"
-			  ,match.ptr(),wild.ptr(),escape));
-  DBUG_RETURN(wild_case_compare(match.ptr(),match.ptr()+match.length(),
-			   wild.ptr(), wild.ptr()+wild.length(),escape));
-}
 
 /*
-** The following is used when using LIKE on binary strings
+  Exchange state of this object and argument.
+
+  SYNOPSIS
+    String::swap()
+
+  RETURN
+    Target string will contain state of this object and vice versa.
 */
 
-int wild_compare(const char *str,const char *str_end,
-		 const char *wildstr,const char *wildend,char escape)
+void String::swap(String &s)
 {
-  DBUG_ENTER("wild_compare");
-  DBUG_PRINT("enter",("str='%s', str_end='%s', wildstr='%s', wildend='%s', escape='%c'"
-			  ,str,str_end,wildstr,wildend,escape));
-  int result= -1;				// Not found, using wildcards
-  while (wildstr != wildend)
-  {
-    while (*wildstr != wild_many && *wildstr != wild_one)
-    {
-      if (*wildstr == escape && wildstr+1 != wildend)
-	wildstr++;
-      if (str == str_end || *wildstr++ != *str++)
-      {
-	DBUG_RETURN(1);
-      }
-      if (wildstr == wildend)
-      {
-	DBUG_RETURN(str != str_end);		// Match if both are at end
-      }
-      result=1;					// Found an anchor char
-    }
-    if (*wildstr == wild_one)
-    {
-      do
-      {
-	if (str == str_end)			// Skip one char if possible
-	  DBUG_RETURN(result);
-	str++;
-      } while (*++wildstr == wild_one && wildstr != wildend);
-      if (wildstr == wildend)
-	break;
-    }
-    if (*wildstr == wild_many)
-    {						// Found wild_many
-      wildstr++;
-      /* Remove any '%' and '_' from the wild search string */
-      for (; wildstr != wildend ; wildstr++)
-      {
-	if (*wildstr == wild_many)
-	  continue;
-	if (*wildstr == wild_one)
-	{
-	  if (str == str_end)
-	  {
-	    DBUG_RETURN(-1);
-	  }
-	  str++;
-	  continue;
-	}
-	break;					// Not a wild character
-      }
-      if (wildstr == wildend)
-      {
-	DBUG_RETURN(0);				// Ok if wild_many is last
-      }
-      if (str == str_end)
-      {
-	DBUG_RETURN(-1);
-      }
-      char cmp;
-      if ((cmp= *wildstr) == escape && wildstr+1 != wildend)
-	cmp= *++wildstr;
-      wildstr++;				// This is compared trough cmp
-      do
-      {
-	while (str != str_end && *str != cmp)
-	  str++;
-	if (str++ == str_end)
-	{ 
-	  DBUG_RETURN(-1);
-	}
-	{
-	  int tmp=wild_compare(str,str_end,wildstr,wildend,escape);
-	  if (tmp <= 0)
-	  {
-	    DBUG_RETURN(tmp);
-	  }
-	}
-      } while (str != str_end && wildstr[0] != wild_many);
-      DBUG_RETURN(-1);
-    }
-  }
-  DBUG_RETURN(str != str_end ? 1 : 0);
-}
-
-
-int wild_compare(String &match,String &wild, char escape)
-{
-  DBUG_ENTER("wild_compare");
-  DBUG_PRINT("enter",("match='%s', wild='%s', escape='%c'"
-			  ,match.ptr(),wild.ptr(),escape));
-  DBUG_RETURN(wild_compare(match.ptr(),match.ptr()+match.length(),
-		      wild.ptr(), wild.ptr()+wild.length(),escape));
+  swap_variables(char *, Ptr, s.Ptr);
+  swap_variables(uint32, str_length, s.str_length);
+  swap_variables(uint32, Alloced_length, s.Alloced_length);
+  swap_variables(bool, alloced, s.alloced);
+  swap_variables(CHARSET_INFO*, str_charset, s.str_charset);
 }

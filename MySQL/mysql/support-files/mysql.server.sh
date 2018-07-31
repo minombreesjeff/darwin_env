@@ -125,7 +125,7 @@ then
   extra_args="-e $datadir/my.cnf"
 fi
 
-parse_arguments `$print_defaults $extra_args mysqld mysql_server mysql.server`
+parse_arguments `$print_defaults $extra_args mysqld server mysql_server mysql.server`
 
 #
 # Set pid file if not given

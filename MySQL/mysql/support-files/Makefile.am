@@ -22,11 +22,13 @@ EXTRA_DIST =		mysql.spec.sh \
 			my-medium.cnf.sh \
 			my-large.cnf.sh \
 			my-huge.cnf.sh \
+			my-innodb-heavy-4G.cnf.sh \
 			mysql-log-rotate.sh \
 			mysql.server.sh \
 			binary-configure.sh \
 			magic \
-			MySQL-shared-compat.spec.sh
+			MySQL-shared-compat.spec.sh \
+			ndb-config-2-node.ini.sh
 
 SUBDIRS = MacOSX
 
@@ -34,10 +36,11 @@ pkgdata_DATA =		my-small.cnf \
 			my-medium.cnf \
 			my-large.cnf \
 			my-huge.cnf \
+      my-innodb-heavy-4G.cnf \
 			mysql-log-rotate \
 			mysql-@VERSION@.spec \
-			binary-configure \
-			MySQL-shared-compat.spec
+			MySQL-shared-compat.spec \
+			ndb-config-2-node.ini
 
 pkgdata_SCRIPTS =	mysql.server
 
@@ -45,13 +48,14 @@ CLEANFILES =		my-small.cnf \
 			my-medium.cnf \
 			my-large.cnf \
 			my-huge.cnf \
+			my-innodb-heavy-4G.cnf \
 			mysql.spec \
 			mysql-@VERSION@.spec \
 			mysql-log-rotate \
 			mysql.server \
 			binary-configure \
-			MySQL-shared-compat.spec
-			 
+			MySQL-shared-compat.spec \
+			ndb-config-2-node.ini
 
 mysql-@VERSION@.spec:	mysql.spec
 			rm -f $@
@@ -100,6 +104,8 @@ SUFFIXES = .sh
 	  -e 's!@''PERL_DATA_DUMPER''@!@PERL_DATA_DUMPER@!' \
 	$< > $@-t
 	@MV@ $@-t $@
+
+all:	binary-configure
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

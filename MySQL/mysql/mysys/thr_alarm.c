@@ -27,7 +27,6 @@
 #include <m_string.h>
 #include <queues.h>
 #include "thr_alarm.h"
-#include <assert.h>
 
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>				/* AIX needs this for fd_set */
@@ -249,7 +248,7 @@ void thr_end_alarm(thr_alarm_t *alarmed)
       if (alarm_data->malloced)
 	my_free((gptr) alarm_data,MYF(0));
       found++;
-#ifndef DBUG_OFF
+#ifdef DBUG_OFF
       break;
 #endif
     }
@@ -258,9 +257,9 @@ void thr_end_alarm(thr_alarm_t *alarmed)
   if (!found)
   {
     if (*alarmed)
-      fprintf(stderr,"Warning: Didn't find alarm %lx in queue of %d alarms\n",
+      fprintf(stderr,"Warning: Didn't find alarm 0x%lx in queue of %d alarms\n",
 	      (long) *alarmed, alarm_queue.elements);
-    DBUG_PRINT("warning",("Didn't find alarm %lx in queue\n",
+    DBUG_PRINT("warning",("Didn't find alarm 0x%lx in queue\n",
 			  (long) *alarmed));
   }
   pthread_mutex_unlock(&LOCK_alarm);

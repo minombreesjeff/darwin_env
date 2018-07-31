@@ -16,10 +16,7 @@ Created 10/10/1995 Heikki Tuuri
 #include "que0types.h"
 #include "trx0types.h"
 
-extern char*	srv_main_thread_op_info;
-
-/* Buffer which can be used in printing fatal error messages */
-extern char	srv_fatal_errbuf[];
+extern const char*	srv_main_thread_op_info;
 
 /* When this event is set the lock timeout and InnoDB monitor
 thread starts running */
@@ -27,7 +24,8 @@ extern os_event_t	srv_lock_timeout_thread_event;
 
 /* If the last data file is auto-extended, we add this many pages to it
 at a time */
-#define SRV_AUTO_EXTEND_INCREMENT   (8 * ((1024 * 1024) / UNIV_PAGE_SIZE))
+#define SRV_AUTO_EXTEND_INCREMENT	\
+	(srv_auto_extend_increment * ((1024 * 1024) / UNIV_PAGE_SIZE))
 
 /* This is set to TRUE if the MySQL user has set it in MySQL */
 extern ibool	srv_lower_case_table_names;
@@ -40,7 +38,12 @@ extern FILE*	srv_monitor_file;
 /* Server parameters which are read from the initfile */
 
 extern char*	srv_data_home;
+#ifdef UNIV_LOG_ARCHIVE
 extern char*	srv_arch_dir;
+#endif /* UNIV_LOG_ARCHIVE */
+
+extern ibool	srv_file_per_table;
+extern ibool    srv_locks_unsafe_for_binlog;
 
 extern ulint	srv_n_data_files;
 extern char**	srv_data_file_names;
@@ -49,6 +52,7 @@ extern ulint*   srv_data_file_is_raw_partition;
 
 extern ibool	srv_auto_extend_last_data_file;
 extern ulint	srv_last_file_size_max;
+extern ulint	srv_auto_extend_increment;
 
 extern ibool	srv_created_new_raw;
 
@@ -60,20 +64,23 @@ extern char**	srv_log_group_home_dirs;
 extern ulint	srv_n_log_groups;
 extern ulint	srv_n_log_files;
 extern ulint	srv_log_file_size;
-extern ibool	srv_log_archive_on;
 extern ulint	srv_log_buffer_size;
 extern ulint	srv_flush_log_at_trx_commit;
 
 extern byte	srv_latin1_ordering[256];/* The sort order table of the latin1
 					character set */
 extern ulint	srv_pool_size;
+extern ulint	srv_awe_window_size;
 extern ulint	srv_mem_pool_size;
 extern ulint	srv_lock_table_size;
 
 extern ulint	srv_n_file_io_threads;
 
+#ifdef UNIV_LOG_ARCHIVE
+extern ibool	srv_log_archive_on;
 extern ibool	srv_archive_recovery;
 extern dulint	srv_archive_recovery_limit_lsn;
+#endif /* UNIV_LOG_ARCHIVE */
 
 extern ulint	srv_lock_wait_timeout;
 
@@ -81,22 +88,34 @@ extern char*    srv_file_flush_method_str;
 extern ulint    srv_unix_file_flush_method;
 extern ulint   	srv_win_file_flush_method;
 
+extern ulint	srv_max_n_open_files;
+
 extern ulint	srv_max_dirty_pages_pct;
 
 extern ulint	srv_force_recovery;
 extern ulint	srv_thread_concurrency;
 
-extern ulint    srv_max_n_threads;
+extern ulint	srv_max_n_threads;
 
 extern lint	srv_conc_n_threads;
 
 extern ibool	srv_fast_shutdown;
+extern ibool	srv_very_fast_shutdown;  /* if this TRUE, do not flush the
+					 buffer pool to data files at the
+					 shutdown; we effectively 'crash'
+					 InnoDB */
+extern ibool	srv_innodb_status;
 
 extern ibool	srv_use_doublewrite_buf;
 
 extern ibool    srv_set_thread_priorities;
 extern int      srv_query_thread_priority;
 
+extern ulint	srv_max_purge_lag;
+extern ibool	srv_use_awe;
+extern ibool	srv_use_adaptive_hash_indexes;
+
+extern ulint	srv_max_purge_lag;
 /*-------------------------------------------*/
 
 extern ulint	srv_n_rows_inserted;
@@ -149,6 +168,8 @@ extern	ulint	srv_test_n_mutexes;
 extern	ulint	srv_test_array_size;
 
 extern ulint	srv_activity_count;
+extern ulint	srv_fatal_semaphore_wait_threshold;
+extern ulint	srv_dml_needed_delay;
 
 extern mutex_t*	kernel_mutex_temp;/* mutex protecting the server, trx structs,
 				query threads, and lock table: we allocate

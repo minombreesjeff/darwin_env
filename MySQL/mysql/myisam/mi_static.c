@@ -38,9 +38,10 @@ my_bool myisam_concurrent_insert=1;
 #else
 my_bool myisam_concurrent_insert=0;
 #endif
-my_off_t myisam_max_extra_temp_length= MI_MAX_TEMP_LENGTH;
+my_off_t myisam_max_extra_temp_length= (my_off_t)MI_MAX_TEMP_LENGTH;
 my_off_t myisam_max_temp_length= MAX_FILE_SIZE;
 ulong    myisam_bulk_insert_tree_size=8192*1024;
+ulong    myisam_data_pointer_size=4;
 
 /*
   read_vec[] is used for converting between P_READ_KEY.. and SEARCH_
@@ -51,11 +52,12 @@ uint NEAR myisam_read_vec[]=
 {
   SEARCH_FIND, SEARCH_FIND | SEARCH_BIGGER, SEARCH_FIND | SEARCH_SMALLER,
   SEARCH_NO_FIND | SEARCH_BIGGER, SEARCH_NO_FIND | SEARCH_SMALLER,
-  SEARCH_FIND | SEARCH_PREFIX, SEARCH_LAST
+  SEARCH_FIND | SEARCH_PREFIX, SEARCH_LAST, SEARCH_LAST | SEARCH_SMALLER,
+  MBR_CONTAIN, MBR_INTERSECT, MBR_WITHIN, MBR_DISJOINT, MBR_EQUAL
 };
 
 uint NEAR myisam_readnext_vec[]=
 {
   SEARCH_BIGGER, SEARCH_BIGGER, SEARCH_SMALLER, SEARCH_BIGGER, SEARCH_SMALLER,
-  SEARCH_BIGGER, SEARCH_SMALLER
+  SEARCH_BIGGER, SEARCH_SMALLER, SEARCH_SMALLER
 };

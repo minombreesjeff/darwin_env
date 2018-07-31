@@ -19,12 +19,14 @@
 
 class Item;				/* Needed by ORDER */
 class GRANT_TABLE;
+class st_select_lex_unit;
 
 /* Order clause list element */
 
 typedef struct st_order {
   struct st_order *next;
   Item	 **item;			/* Point at item in select fields */
+  Item	 *item_ptr;			/* Storage for initial item */
   bool	 asc;				/* true if ascending */
   bool	 free_me;			/* true if item isn't shared  */
   bool	 in_field_list;			/* true if in select field list */
@@ -43,6 +45,28 @@ typedef struct st_grant_info
 
 enum tmp_table_type {NO_TMP_TABLE=0, TMP_TABLE=1, TRANSACTIONAL_TMP_TABLE=2};
 
+typedef struct st_filesort_info
+{
+  IO_CACHE *io_cache;           /* If sorted through filebyte                */
+  byte     *addon_buf;          /* Pointer to a buffer if sorted with fields */
+  uint      addon_length;       /* Length of the buffer                      */
+  struct st_sort_addon_field *addon_field;     /* Pointer to the fields info */
+  void    (*unpack)(struct st_sort_addon_field *, byte *); /* To unpack back */
+  byte     *record_pointers;    /* If sorted in memory                       */
+  ha_rows   found_records;      /* How many records in sort                  */
+} FILESORT_INFO;
+
+
+/*
+  Values in this enum are used to indicate during which operations value
+  of TIMESTAMP field should be set to current timestamp.
+*/
+enum timestamp_auto_set_type
+{
+  TIMESTAMP_NO_AUTO_SET= 0, TIMESTAMP_AUTO_SET_ON_INSERT= 1,
+  TIMESTAMP_AUTO_SET_ON_UPDATE= 2, TIMESTAMP_AUTO_SET_ON_BOTH= 3
+};
+
 /* Table cache entry struct */
 
 class Field_timestamp;
@@ -52,8 +76,11 @@ struct st_table {
   handler *file;
   Field **field;			/* Pointer to fields */
   Field_blob **blob_field;		/* Pointer to blob fields */
-  HASH	name_hash;			/* hash of field names */
-  byte *record[3];			/* Pointer to records */
+  /* hash of field names (contains pointers to elements of field array) */
+  HASH	name_hash;
+  byte *record[2];			/* Pointer to records */
+  byte *default_values;          	/* Default values for INSERT */
+  byte *insert_values;                  /* used by INSERT ... UPDATE */
   uint fields;				/* field count */
   uint reclength;			/* Recordlength */
   uint rec_buff_length;
@@ -81,19 +108,40 @@ struct st_table {
   uint raid_type,raid_chunks;
   uint status;				/* Used by postfix.. */
   uint system;				/* Set if system record */
-  ulong time_stamp;			/* Set to offset+1 of record */
+
+  /*
+    If this table has TIMESTAMP field with auto-set property (pointed by
+    timestamp_field member) then this variable indicates during which
+    operations (insert only/on update/in both cases) we should set this
+    field to current timestamp. If there are no such field in this table
+    or we should not automatically set its value during execution of current
+    statement then the variable contains TIMESTAMP_NO_AUTO_SET (i.e. 0).
+
+    Value of this variable is set for each statement in open_table() and
+    if needed cleared later in statement processing code (see mysql_update()
+    as example).
+  */
+  timestamp_auto_set_type timestamp_field_type;
+  /* Index of auto-updated TIMESTAMP field in field array */
   uint timestamp_field_offset;
+  
   uint next_number_index;
   uint blob_ptr_size;			/* 4 or 8 */
   uint next_number_key_offset;
   int current_lock;			/* Type of lock on table */
   enum tmp_table_type tmp_table;
   my_bool copy_blobs;			/* copy_blobs when storing */
-  my_bool null_row;			/* All columns are null */
-  my_bool maybe_null,outer_join;	/* Used with OUTER JOIN */
+  /*
+    Used in outer joins: if true, all columns are considered to have NULL
+    values, including columns declared as "not null".
+  */
+  my_bool null_row;
+  /* 0 or JOIN_TYPE_{LEFT|RIGHT}, same as TABLE_LIST::outer_join */
+  my_bool outer_join;
+  my_bool maybe_null;                   /* true if (outer_join != 0) */
   my_bool force_index;
   my_bool distinct,const_table,no_rows;
-  my_bool key_read, bulk_insert;
+  my_bool key_read;
   my_bool crypted;
   my_bool db_low_byte_first;		/* Portable row format */
   my_bool locked_by_flush;
@@ -102,15 +150,27 @@ struct st_table {
   my_bool crashed;
   my_bool is_view;
   my_bool no_keyread, no_cache;
+  my_bool clear_query_id;               /* To reset query_id for tables and cols */
+  my_bool auto_increment_field_not_null;
   Field *next_number_field,		/* Set if next_number is activated */
 	*found_next_number_field,	/* Set on open */
         *rowid_field;
   Field_timestamp *timestamp_field;
+#if MYSQL_VERSION_ID < 40100
+  /*
+    Indicates whenever we have to set field_length members of all TIMESTAMP
+    fields to 19 (to honour 'new_mode' variable) or to original
+    field_length values.
+  */
+  my_bool timestamp_mode;
+#endif
   my_string comment;			/* Comment about table */
+  CHARSET_INFO *table_charset;		/* Default charset of string fields */
   REGINFO reginfo;			/* field connections */
   MEM_ROOT mem_root;
   GRANT_INFO grant;
 
+  /* A pair "database_name\0table_name\0", widely used as simply a db name */
   char		*table_cache_key;
   char		*table_name,*real_name,*path;
   uint		key_length;		/* Length of key */
@@ -118,21 +178,21 @@ struct st_table {
   table_map	map;                    /* ID bit of table (1,2,4,8,16...) */
   ulong		version,flush_version;
   uchar		*null_flags;
-  IO_CACHE	*io_cache;		/* If sorted trough file*/
-  byte		*record_pointers;	/* If sorted in memory */
-  ha_rows	found_records;		/* How many records in sort */
+  FILESORT_INFO sort;
   ORDER		*group;
   ha_rows	quick_rows[MAX_KEY];
   uint		quick_key_parts[MAX_KEY];
   key_part_map  const_key_parts[MAX_KEY];
   ulong		query_id;
+  uchar		frm_version;
 
   union					/* Temporary variables */
   {
     uint        temp_pool_slot;		/* Used by intern temp tables */
     struct st_table_list *pos_in_table_list;
   };
-
+  /* number of select if it is derived table */
+  uint          derived_select_number;
   THD		*in_use;		/* Which thread uses this */
   struct st_table *next,*prev;
 };
@@ -145,21 +205,27 @@ typedef struct st_table_list
 {
   struct	st_table_list *next;
   char		*db, *alias, *real_name;
+  char          *option;                /* Used by cache index  */ 
   Item		*on_expr;		/* Used with outer join */
   struct st_table_list *natural_join;	/* natural join on this table*/
   /* ... join ... USE INDEX ... IGNORE INDEX */
-  List<String>	*use_index,*ignore_index; 
-  TABLE		*table;
-  GRANT_INFO	grant;
+  List<String>	*use_index, *ignore_index; 
+  TABLE          *table;      /* opened table */
+  st_table_list  *table_list; /* pointer to node of list of all tables */
+  class st_select_lex_unit *derived;	/* SELECT_LEX_UNIT of derived table */
+ GRANT_INFO	grant;
   thr_lock_type lock_type;
   uint		outer_join;		/* Which join type */
-  uint		shared;			/* Used in union or in multi-upd */
+  uint		shared;			/* Used in multi-upd */
   uint32        db_length, real_name_length;
   bool		straight;		/* optimize with prev table */
   bool          updating;               /* for replicate-do/ignore table */
   bool		force_index;		/* Prefer index over table scan */
+  bool          ignore_leaves;          /* Preload only non-leaf nodes */
+  bool		cacheable_table;	/* stop PS caching */
+  /* used in multi-upd privelege check */
+  bool		table_in_update_from_clause;
 } TABLE_LIST;
-
 
 typedef struct st_changed_table_list
 {
@@ -168,10 +234,11 @@ typedef struct st_changed_table_list
   uint32        key_length;
 } CHANGED_TABLE_LIST;
 
-
 typedef struct st_open_table_list
 {
   struct st_open_table_list *next;
   char	*db,*table;
   uint32 in_use,locked;
 } OPEN_TABLE_LIST;
+
+

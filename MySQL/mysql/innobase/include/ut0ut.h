@@ -17,20 +17,6 @@ Created 1/20/1994 Heikki Tuuri
 
 typedef time_t	ib_time_t;
 
-
-/************************************************************
-Uses vsprintf to emulate sprintf so that the function always returns
-the printed length. Apparently in some old SCO Unixes sprintf did not
-return the printed length but a pointer to the end of the printed string. */
-
-ulint
-ut_sprintf(
-/*=======*/
-        char*       buf,     /* in/out: buffer where to print */
-        const char* format,  /* in: format of prints */
-			...)	/* in: arguments to be printed */
-	__attribute__((__format__ (__printf__, 2, 3)));
-
 /************************************************************
 Gets the high 32 bits in a ulint. That is makes a shift >> 32,
 but since there seem to be compiler bugs in both gcc and Visual C++,
@@ -141,7 +127,7 @@ void
 ut_ulint_sort(ulint* arr, ulint* aux_arr, ulint low, ulint high);
 /*============================================================*/
 /************************************************************
-The following function returns a clock time in milliseconds. */
+The following function returns elapsed CPU time in milliseconds. */
 
 ulint
 ut_clock(void);
@@ -176,6 +162,14 @@ ut_sprintf_timestamp(
 /*=================*/
 	char*	buf); /* in: buffer where to sprintf */
 /**************************************************************
+Sprintfs a timestamp to a buffer with no spaces and with ':' characters
+replaced by '_'. */
+
+void
+ut_sprintf_timestamp_without_extra_chars(
+/*=====================================*/
+	char*	buf); /* in: buffer where to sprintf */
+/**************************************************************
 Returns current year, month, day. */
 
 void
@@ -204,12 +198,24 @@ ut_print_buf(
 	ulint		len);	/* in: length of the buffer */
 
 /**************************************************************************
+Outputs a NUL-terminated file name, quoted with apostrophes. */
+
+void
+ut_print_filename(
+/*==============*/
+	FILE*		f,	/* in: output stream */
+	const char*	name);	/* in: name to print */
+
+/**************************************************************************
 Outputs a NUL-terminated string, quoted as an SQL identifier. */
+
+struct trx_struct;
 
 void
 ut_print_name(
 /*==========*/
 	FILE*		f,	/* in: output stream */
+	struct trx_struct*trx,	/* in: transaction */
 	const char*	name);	/* in: name to print */
 
 /**************************************************************************
@@ -219,6 +225,7 @@ void
 ut_print_namel(
 /*==========*/
 	FILE*		f,	/* in: output stream */
+	struct trx_struct*trx,	/* in: transaction (NULL=no quotes) */
 	const char*	name,	/* in: name to print */
 	ulint		namelen);/* in: length of name */
 

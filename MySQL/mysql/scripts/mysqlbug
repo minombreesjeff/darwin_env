@@ -4,12 +4,12 @@
 
 echo "Finding system information for a MySQL bug report"
 
-VERSION="4.0.20"
+VERSION="4.1.10a"
 COMPILATION_COMMENT="Source distribution"
 BUGmysql="mysql@lists.mysql.com"
 # This is set by configure
-COMP_ENV_INFO="CC='gcc'  CFLAGS='-Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wparentheses -Wsign-compare -Wwrite-strings -Wunused -mcpu=pentiumpro -O3 -fno-omit-frame-pointer'  CXX='ccache gcc'  CXXFLAGS='-Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wparentheses -Wsign-compare -Wwrite-strings -Woverloaded-virtual -Wsign-promo -Wreorder -Wctor-dtor-privacy -Wnon-virtual-dtor -felide-constructors -fno-exceptions -fno-rtti -mcpu=pentiumpro -O3 -fno-omit-frame-pointer'  LDFLAGS=''  ASFLAGS=''"
-CONFIGURE_LINE="./configure '--prefix=/usr/local/mysql' '--enable-assembler' '--with-extra-charsets=complex' '--with-innodb' '--with-berkeley-db' '--with-embedded-server' '--enable-thread-safe-client' '--with-openssl' '--with-vio' '--with-raid' '--enable-local-infile' 'CFLAGS=-Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wparentheses -Wsign-compare -Wwrite-strings -Wunused -mcpu=pentiumpro -O3 -fno-omit-frame-pointer' 'CXXFLAGS=-Wimplicit -Wreturn-type -Wswitch -Wtrigraphs -Wcomment -W -Wchar-subscripts -Wformat -Wparentheses -Wsign-compare -Wwrite-strings -Woverloaded-virtual -Wsign-promo -Wreorder -Wctor-dtor-privacy -Wnon-virtual-dtor -felide-constructors -fno-exceptions -fno-rtti -mcpu=pentiumpro -O3 -fno-omit-frame-pointer' 'CXX=ccache gcc'"
+COMP_ENV_INFO="CC='ccache gcc'  CFLAGS=''  CXX='ccache gcc'  CXXFLAGS=''  LDFLAGS=''  ASFLAGS=''"
+CONFIGURE_LINE="./configure '--with-embedded-server' '--with-berkeley-db' '--with-innodb' '--enable-thread-safe-client' '--with-extra-charsets=complex' '--with-ndbcluster' 'CC=ccache gcc' 'CXX=ccache gcc'"
 
 LIBC_INFO=""
 for pat in /lib/libc.* /lib/libc-* /usr/lib/libc.* /usr/lib/libc-*
@@ -231,8 +231,8 @@ ${ORGANIZATION- $ORGANIZATION_C}
 >Class:		$CLASS_C
 >Release:	mysql-${VERSION} ($COMPILATION_COMMENT)
 `test -n "$MYSQL_SERVER" && echo ">Server: $MYSQL_SERVER"`
->C compiler:    2.95.3
->C++ compiler:  2.95.3
+>C compiler:    gcc (GCC) 3.3.3 20040412 (Red Hat Linux 3.3.3-7)
+>C++ compiler:  gcc (GCC) 3.3.3 20040412 (Red Hat Linux 3.3.3-7)
 >Environment:
 	$ENVIRONMENT_C
 `test -n "$SYSTEM"  && echo "System: $SYSTEM"`

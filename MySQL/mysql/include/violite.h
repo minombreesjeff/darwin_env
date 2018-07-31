@@ -31,27 +31,33 @@
 extern "C" {
 #endif /* __cplusplus */
 
-enum enum_vio_type { VIO_CLOSED, VIO_TYPE_TCPIP, VIO_TYPE_SOCKET,
-		     VIO_TYPE_NAMEDPIPE, VIO_TYPE_SSL};
-
-#ifndef __WIN__
-#define HANDLE void *
-#endif
+enum enum_vio_type
+{
+  VIO_CLOSED, VIO_TYPE_TCPIP, VIO_TYPE_SOCKET, VIO_TYPE_NAMEDPIPE,
+  VIO_TYPE_SSL, VIO_TYPE_SHARED_MEMORY
+};
 
 Vio*	vio_new(my_socket sd, enum enum_vio_type type, my_bool localhost);
 #ifdef __WIN__
-Vio*	vio_new_win32pipe(HANDLE hPipe);
-#endif
+Vio* vio_new_win32pipe(HANDLE hPipe);
+Vio* vio_new_win32shared_memory(NET *net,HANDLE handle_file_map,
+                                HANDLE handle_map,
+                                HANDLE event_server_wrote,
+                                HANDLE event_server_read,
+                                HANDLE event_client_wrote,
+                                HANDLE event_client_read,
+                                HANDLE event_conn_closed);
+int vio_read_pipe(Vio *vio, gptr buf, int size);
+int vio_write_pipe(Vio *vio, const gptr buf, int size);
+int vio_close_pipe(Vio * vio);
+#else
+#define HANDLE void *
+#endif /* __WIN__ */
+
 void	vio_delete(Vio* vio);
 int	vio_close(Vio* vio);
-
-#ifdef EMBEDDED_LIBRARY
-void vio_reset(Vio *vio);
-#else
-void vio_reset(Vio* vio, enum enum_vio_type type,
-	       my_socket sd, HANDLE hPipe, my_bool localhost);
-#endif
-
+void    vio_reset(Vio* vio, enum enum_vio_type type,
+                  my_socket sd, HANDLE hPipe, my_bool localhost);
 int	vio_read(Vio *vio, gptr	buf, int size);
 int	vio_write(Vio *vio, const gptr buf, int size);
 int	vio_blocking(Vio *vio, my_bool onoff, my_bool *old_mode);
@@ -67,17 +73,25 @@ const char* vio_description(Vio *vio);
 /* Return the type of the connection */
 enum enum_vio_type vio_type(Vio* vio);
 /* Return last error number */
-int vio_errno(Vio*vio);
+int	vio_errno(Vio*vio);
 /* Get socket number */
 my_socket vio_fd(Vio*vio);
 /* Remote peer's address and name in text form */
-my_bool vio_peer_addr(Vio* vio, char *buf, uint16 *port);
+my_bool	vio_peer_addr(Vio* vio, char *buf, uint16 *port);
 /* Remotes in_addr */
-void vio_in_addr(Vio *vio, struct in_addr *in);
-my_bool vio_poll_read(Vio *vio,uint timeout);
-void vio_timeout(Vio *vio,uint timeout);
+void	vio_in_addr(Vio *vio, struct in_addr *in);
+my_bool	vio_poll_read(Vio *vio,uint timeout);
+void	vio_timeout(Vio *vio,uint timeout);
 
 #ifdef HAVE_OPENSSL
+#include <openssl/opensslv.h>
+#if OPENSSL_VERSION_NUMBER < 0x0090700f
+#define DES_cblock des_cblock
+#define DES_key_schedule des_key_schedule
+#define DES_set_key_unchecked(k,ks) des_set_key_unchecked((k),*(ks))
+#define DES_ede3_cbc_encrypt(i,o,l,k1,k2,k3,iv,e) des_ede3_cbc_encrypt((i),(o),(l),*(k1),*(k2),*(k3),(iv),(e))
+#endif
+
 #define HEADER_DES_LOCL_H dummy_something
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -109,6 +123,12 @@ struct st_VioSSLAcceptorFd
 		      const char *ca_file,const char *ca_path,
 		      const char *cipher);
 Vio *new_VioSSL(struct st_VioSSLAcceptorFd *fd, Vio *sd, int state);
+#endif /* HAVE_OPENSSL */
+
+#ifdef HAVE_SMEM
+int vio_read_shared_memory(Vio *vio, gptr buf, int size);
+int vio_write_shared_memory(Vio *vio, const gptr buf, int size);
+int vio_close_shared_memory(Vio * vio);
 #endif
 
 #ifdef	__cplusplus
@@ -142,7 +162,8 @@ enum SSL_type
   SSL_TYPE_SPECIFIED
 };
 
-#ifndef EMBEDDED_LIBRARY
+
+/* HFTODO - hide this if we don't want client in embedded server */
 /* This structure is for every connection on both sides */
 struct st_vio
 {
@@ -159,7 +180,7 @@ struct st_vio
   void    (*viodelete)(Vio*);
   int     (*vioerrno)(Vio*);
   int     (*read)(Vio*, gptr, int);
-  int     (*write)(Vio*, gptr, int);
+  int     (*write)(Vio*, const gptr, int);
   int     (*vioblocking)(Vio*, my_bool, my_bool *);
   my_bool (*is_blocking)(Vio*);
   int     (*viokeepalive)(Vio*, my_bool);
@@ -170,7 +191,18 @@ struct st_vio
   int     (*vioclose)(Vio*);
   void	  (*timeout)(Vio*, unsigned int timeout);
   void	  *ssl_arg;
+#ifdef HAVE_SMEM
+  HANDLE  handle_file_map;
+  char    *handle_map;
+  HANDLE  event_server_wrote;
+  HANDLE  event_server_read;
+  HANDLE  event_client_wrote;
+  HANDLE  event_client_read;
+  HANDLE  event_conn_closed;
+  long    shared_memory_remain;
+  char    *shared_memory_pos;
+  NET     *net;
+#endif /* HAVE_SMEM */
 #endif /* HAVE_VIO */
 };
-#endif /* EMBEDDED_LIBRARY */
 #endif /* vio_violite_h_ */

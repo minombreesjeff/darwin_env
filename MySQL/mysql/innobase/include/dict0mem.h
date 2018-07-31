@@ -48,27 +48,28 @@ Creates a table memory object. */
 dict_table_t*
 dict_mem_table_create(
 /*==================*/
-				/* out, own: table object */
-	char*	name,		/* in: table name */
-	ulint	space,		/* in: space where the clustered index of
-				the table is placed; this parameter is
-				ignored if the table is made a member of
-				a cluster */
-	ulint	n_cols);	/* in: number of columns */
+					/* out, own: table object */
+	const char*	name,		/* in: table name */
+	ulint		space,		/* in: space where the clustered index
+					of the table is placed; this parameter
+					is ignored if the table is made
+					a member of a cluster */
+	ulint		n_cols);	/* in: number of columns */
 /**************************************************************************
 Creates a cluster memory object. */
 
 dict_cluster_t*
 dict_mem_cluster_create(
 /*====================*/
-				/* out, own: cluster object (where the type
-				dict_cluster_t == dict_table_t) */
-	char*	name,		/* in: cluster name */
-	ulint	space,		/* in: space where the clustered indexes
-				of the member tables are placed */
-	ulint	n_cols,		/* in: number of columns */
-	ulint	mix_len);	/* in: length of the common key prefix in the
-				cluster */
+					/* out, own: cluster object (where the
+					type dict_cluster_t == dict_table_t) */
+	const char*	name,		/* in: cluster name */
+	ulint		space,		/* in: space where the clustered
+					indexes of the member tables are
+					placed */
+	ulint		n_cols,		/* in: number of columns */
+	ulint		mix_len);	/* in: length of the common key prefix
+					in the cluster */
 /**************************************************************************
 Declares a non-published table as a member in a cluster. */
 
@@ -76,7 +77,7 @@ void
 dict_mem_table_make_cluster_member(
 /*===============================*/
 	dict_table_t*	table,		/* in: non-published table */
-	char*		cluster_name);	/* in: cluster name */
+	const char*	cluster_name);	/* in: cluster name */
 /**************************************************************************
 Adds a column definition to a table. */
 
@@ -84,7 +85,7 @@ void
 dict_mem_table_add_col(
 /*===================*/
 	dict_table_t*	table,	/* in: table */
-	char*		name,	/* in: column name */
+	const char*	name,	/* in: column name */
 	ulint		mtype,	/* in: main datatype */
 	ulint		prtype,	/* in: precise type */
 	ulint		len,	/* in: length */
@@ -95,14 +96,15 @@ Creates an index memory object. */
 dict_index_t*
 dict_mem_index_create(
 /*==================*/
-				/* out, own: index object */
-	char*	table_name,	/* in: table name */
-	char*	index_name,	/* in: index name */
-	ulint	space,		/* in: space where the index tree is placed,
-				ignored if the index is of the clustered
-				type */
-	ulint	type,		/* in: DICT_UNIQUE, DICT_CLUSTERED, ... ORed */
-	ulint	n_fields);	/* in: number of fields */
+					/* out, own: index object */
+	const char*	table_name,	/* in: table name */
+	const char*	index_name,	/* in: index name */
+	ulint		space,		/* in: space where the index tree is
+					placed, ignored if the index is of
+					the clustered type */
+	ulint		type,		/* in: DICT_UNIQUE,
+					DICT_CLUSTERED, ... ORed */
+	ulint		n_fields);	/* in: number of fields */
 /**************************************************************************
 Adds a field definition to an index. NOTE: does not take a copy
 of the column name if the field is a column. The memory occupied
@@ -112,7 +114,7 @@ void
 dict_mem_index_add_field(
 /*=====================*/
 	dict_index_t*	index,		/* in: index */
-	char*		name,		/* in: column name */
+	const char*	name,		/* in: column name */
 	ulint		order,		/* in: order criterion; 0 means an
 					ascending order */
 	ulint		prefix_len);	/* in: 0 or the column prefix length
@@ -142,25 +144,33 @@ struct dict_col_struct{
 				clustered index */
 	ulint		ord_part;/* count of how many times this column
 				appears in ordering fields of an index */
-	char*		name;	/* name */
+	const char*	name;	/* name */
 	dtype_t		type;	/* data type */
 	dict_table_t*	table;	/* back pointer to table of this column */
 	ulint		aux;	/* this is used as an auxiliary variable 
 				in some of the functions below */
 };
 
-#define DICT_MAX_COL_PREFIX_LEN	512
+/* DICT_MAX_COL_PREFIX_LEN is measured in bytes. Starting from 4.1.6, we
+set max col prefix len to < 3 * 256, so that one can create a column prefix
+index on 255 characters of a TEXT field also in the UTF-8 charset. In that
+charset, a character may take at most 3 bytes. */
+
+#define DICT_MAX_COL_PREFIX_LEN	768
 
 /* Data structure for a field in an index */
 struct dict_field_struct{
 	dict_col_t*	col;		/* pointer to the table column */
-	char*		name;		/* name of the column */
+	const char*	name;		/* name of the column */
 	ulint		order;		/* flags for ordering this field:
 					DICT_DESCEND, ... */
 	ulint		prefix_len;	/* 0 or the length of the column
-					prefix in a MySQL index of type, e.g.,
-					INDEX (textcol(25)); must be smaller
-					than DICT_MAX_COL_PREFIX_LEN */
+					prefix in bytes in a MySQL index of
+					type, e.g., INDEX (textcol(25));
+					must be smaller than
+					DICT_MAX_COL_PREFIX_LEN; NOTE that
+					in the UTF-8 charset, MySQL sets this
+					to 3 * the prefix len in UTF-8 chars */
 };
 
 /* Data structure for an index tree */
@@ -186,19 +196,18 @@ struct dict_tree_struct{
 				the list; if the tree is of the mixed
 				type, the first index in the list is the
 				index of the cluster which owns the tree */
-#ifdef UNIV_DEBUG
 	ulint		magic_n;/* magic number */
-#define	DICT_TREE_MAGIC_N	7545676
-#endif /* UNIV_DEBUG */
 };
+
+#define	DICT_TREE_MAGIC_N	7545676
 
 /* Data structure for an index */
 struct dict_index_struct{
 	dulint		id;	/* id of the index */
 	mem_heap_t*	heap;	/* memory heap */
 	ulint		type;	/* index type */
-	char*		name;	/* index name */
-	char*		table_name; /* table name */
+	const char*	name;	/* index name */
+	const char*	table_name; /* table name */
 	dict_table_t*	table;	/* back pointer to table */
 	ulint		space;	/* space where the index tree is placed */
 	ulint		page_no;/* page number of the index tree root */
@@ -236,10 +245,7 @@ struct dict_index_struct{
 	ulint		stat_n_leaf_pages;
 				/* approximate number of leaf pages in the
 				index tree */
-#ifdef UNIV_DEBUG
 	ulint		magic_n;/* magic number */
-#define	DICT_INDEX_MAGIC_N	76789786
-#endif /* UNIV_DEBUG */
 };
 
 /* Data structure for a foreign key constraint; an example:
@@ -254,12 +260,12 @@ struct dict_foreign_struct{
 					or DICT_FOREIGN_ON_DELETE_SET_NULL */
 	char*		foreign_table_name;/* foreign table name */
 	dict_table_t*	foreign_table;	/* table where the foreign key is */
-	char**		foreign_col_names;/* names of the columns in the
+	const char**	foreign_col_names;/* names of the columns in the
 					foreign key */
 	char*		referenced_table_name;/* referenced table name */
 	dict_table_t*	referenced_table;/* table where the referenced key
 					is */
-	char**		referenced_col_names;/* names of the referenced
+	const char**	referenced_col_names;/* names of the referenced
 					columns in the referenced table */
 	ulint		n_fields;	/* number of indexes' first fields
 					for which the the foreign key
@@ -290,14 +296,30 @@ a foreign key constraint is enforced, therefore RESTRICT just means no flag */
 #define DICT_FOREIGN_ON_DELETE_NO_ACTION 16
 #define DICT_FOREIGN_ON_UPDATE_NO_ACTION 32
 
+
+#define	DICT_INDEX_MAGIC_N	76789786
+
 /* Data structure for a database table */
 struct dict_table_struct{
 	dulint		id;	/* id of the table or cluster */
 	ulint		type;	/* DICT_TABLE_ORDINARY, ... */
 	mem_heap_t*	heap;	/* memory heap */
-	char*		name;	/* table name */
+	const char*	name;	/* table name */
+	const char*	dir_path_of_temp_table;/* NULL or the directory path
+				where a TEMPORARY table that was explicitly
+				created by a user should be placed if
+				innodb_file_per_table is defined in my.cnf;
+				in Unix this is usually /tmp/..., in Windows
+				\temp\... */
 	ulint		space;	/* space where the clustered index of the
 				table is placed */
+	ibool		ibd_file_missing;/* TRUE if this is in a single-table
+				tablespace and the .ibd file is missing; then
+				we must return in ha_innodb.cc an error if the
+				user tries to query such an orphaned table */
+	ibool		tablespace_discarded;/* this flag is set TRUE when the
+				user calls DISCARD TABLESPACE on this table,
+				and reset to FALSE in IMPORT TABLESPACE */
 	hash_node_t	name_hash; /* hash chain node */
 	hash_node_t	id_hash; /* hash chain node */
 	ulint		n_def;	/* number of columns defined so far */
@@ -356,7 +378,7 @@ struct dict_table_struct{
 	byte		mix_id_buf[12];
 				/* mix id of a mixed table written in
 				a compressed form */
-	char*		cluster_name; /* if the table is a member in a
+	const char*	cluster_name; /* if the table is a member in a
 				cluster, this is the name of the cluster */
 	/*----------------------*/
 	ibool		does_not_fit_in_memory;
@@ -401,12 +423,10 @@ struct dict_table_struct{
 				inited; MySQL gets the init value by executing
 				SELECT MAX(auto inc column) */
 	ib_longlong	autoinc;/* autoinc counter value to give to the
-				next inserted row */
-#ifdef UNIV_DEBUG
+				next inserted row */	
 	ulint		magic_n;/* magic number */
-#define	DICT_TABLE_MAGIC_N	76333786
-#endif /* UNIV_DEBUG */
 };
+#define	DICT_TABLE_MAGIC_N	76333786
 					
 #ifndef UNIV_NONINL
 #include "dict0mem.ic"

@@ -45,9 +45,10 @@
 #define LIBLEN FN_REFLEN-FN_LEN			/* Max l{ngd p} dev */
 #define MAX_DBKEY_LENGTH (FN_LEN*2+1+1+4+4)     /* extra 4+4 bytes for slave tmp
 						 * tables */
+#define MAX_ALIAS_NAME 256
 #define MAX_FIELD_NAME 34			/* Max colum name length +2 */
 #define MAX_SYS_VAR_LENGTH 32
-#define MAX_KEY 32				/* Max used keys */
+#define MAX_KEY 64				/* Max used keys */
 #define MAX_REF_PARTS 16			/* Max parts used as ref */
 #define MAX_KEY_LENGTH 1024			/* max possible key */
 #if SIZEOF_OFF_T > 4
@@ -57,13 +58,34 @@
 #endif
 #define MAX_HOSTNAME  61			/* len+1 in mysql.user */
 
-#define MAX_FIELD_WIDTH 256			/* Max column width +1 */
-#define MAX_TABLES	(sizeof(table_map)*8-1)	/* Max tables in join */
+#define MAX_MBWIDTH		3		/* Max multibyte sequence */
+#define MAX_FIELD_CHARLENGTH	255
+/* Max column width +1 */
+#define MAX_FIELD_WIDTH		(MAX_FIELD_CHARLENGTH*MAX_MBWIDTH+1)
+
+#define MAX_DATE_WIDTH		10	/* YYYY-MM-DD */
+#define MAX_TIME_WIDTH		23	/* -DDDDDD HH:MM:SS.###### */
+#define MAX_DATETIME_FULL_WIDTH 29	/* YYYY-MM-DD HH:MM:SS.###### AM */
+#define MAX_DATETIME_WIDTH	19	/* YYYY-MM-DD HH:MM:SS */
+
+#define MAX_TABLES	(sizeof(table_map)*8-3)	/* Max tables in join */
+#define PARAM_TABLE_BIT	(((table_map) 1) << (sizeof(table_map)*8-3))
+#define OUTER_REF_TABLE_BIT	(((table_map) 1) << (sizeof(table_map)*8-2))
 #define RAND_TABLE_BIT	(((table_map) 1) << (sizeof(table_map)*8-1))
+#define PSEUDO_TABLE_BITS (PARAM_TABLE_BIT | OUTER_REF_TABLE_BIT | \
+                           RAND_TABLE_BIT)
 #define MAX_FIELDS	4096			/* Limit in the .frm file */
 
 #define MAX_SORT_MEMORY (2048*1024-MALLOC_OVERHEAD)
 #define MIN_SORT_MEMORY (32*1024-MALLOC_OVERHEAD)
+
+/* Memory allocated when parsing a statement / saving a statement */
+#define MEM_ROOT_BLOCK_SIZE       8192
+#define MEM_ROOT_PREALLOC         8192
+#define TRANS_MEM_ROOT_BLOCK_SIZE 4096
+#define TRANS_MEM_ROOT_PREALLOC   4096
+
+#define DEFAULT_ERROR_COUNT	64
 #define EXTRA_RECORDS	10			/* Extra records in sort */
 #define SCROLL_EXTRA	5			/* Extra scroll-rows. */
 #define FIELD_NAME_USED ((uint) 32768)		/* Bit set if fieldname used */
@@ -91,17 +113,18 @@
 #define SPECIAL_NO_PRIOR	128		/* Don't prioritize threads */
 #define SPECIAL_BIG_SELECTS	256		/* Don't use heap tables */
 #define SPECIAL_NO_HOST_CACHE	512		/* Don't cache hosts */
-#define SPECIAL_LONG_LOG_FORMAT 1024
+#define SPECIAL_SHORT_LOG_FORMAT 1024
 #define SPECIAL_SAFE_MODE	2048
+#define SPECIAL_LOG_QUERIES_NOT_USING_INDEXES 4096 /* Log q not using indexes */
 
 	/* Extern defines */
-#define store_record(A,B) bmove_allign((A)->record[B],(A)->record[0],(size_t) (A)->reclength)
-#define restore_record(A,B) bmove_allign((A)->record[0],(A)->record[B],(size_t) (A)->reclength)
-#define cmp_record(A,B) memcmp((A)->record[0],(A)->record[B],(size_t) (A)->reclength)
+#define store_record(A,B) bmove_align((A)->B,(A)->record[0],(size_t) (A)->reclength)
+#define restore_record(A,B) bmove_align((A)->record[0],(A)->B,(size_t) (A)->reclength)
+#define cmp_record(A,B) memcmp((A)->record[0],(A)->B,(size_t) (A)->reclength)
 #define empty_record(A) { \
-bmove_allign((A)->record[0],(A)->record[2],(size_t) (A)->reclength); \
-bfill((A)->null_flags,(A)->null_bytes,255);\
-}
+                          restore_record((A),default_values); \
+                          bfill((A)->null_flags,(A)->null_bytes,255);\
+                        }
 
 	/* Defines for use with openfrm, openprt and openfrd */
 
@@ -124,10 +147,10 @@ bfill((A)->null_flags,(A)->null_bytes,255);\
 #define MTYP_NOEMPTY_BIT 128
 
 /*
- *  Minimum length pattern before Turbo Boyer-Moore is used
- *  for SELECT "text" LIKE "%pattern%", excluding the two
- *  wildcards in class Item_func_like.
- */
+  Minimum length pattern before Turbo Boyer-Moore is used
+  for SELECT "text" LIKE "%pattern%", excluding the two
+  wildcards in class Item_func_like.
+*/
 #define MIN_TURBOBM_PATTERN_LEN 3
 
 /* 
@@ -137,8 +160,11 @@ bfill((A)->null_flags,(A)->null_bytes,255);\
 */
 
 #define BIN_LOG_HEADER_SIZE    4 
+#define FLOATING_POINT_BUFFER 331
 
-	/* Include prototypes for unireg */
+#define DEFAULT_KEY_CACHE_NAME "default"
+
+/* Include prototypes for unireg */
 
 #include "mysqld_error.h"
 #include "structs.h"				/* All structs we need */

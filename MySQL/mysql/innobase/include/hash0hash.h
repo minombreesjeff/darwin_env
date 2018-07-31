@@ -109,7 +109,7 @@ do {\
 \
 		while (struct3333->NAME != DATA) {\
 \
-			ut_ad(struct3333);\
+			ut_a(struct3333);\
 			struct3333 = struct3333->NAME;\
 		}\
 \
@@ -283,6 +283,21 @@ hash_mutex_exit(
 /*============*/
 	hash_table_t* 	table,	/* in: hash table */
 	ulint 		fold);	/* in: fold */
+/****************************************************************
+Reserves all the mutexes of a hash table, in an ascending order. */
+
+void
+hash_mutex_enter_all(
+/*=================*/
+	hash_table_t* 	table);	/* in: hash table */
+/****************************************************************
+Releases all the mutexes of a hash table. */
+
+void
+hash_mutex_exit_all(
+/*================*/
+	hash_table_t* 	table);	/* in: hash table */
+
 
 struct hash_cell_struct{
 	void*	node;	/* hash chain node, NULL if none */
@@ -290,6 +305,8 @@ struct hash_cell_struct{
 
 /* The hash table structure */
 struct hash_table_struct {
+	ibool		adaptive;/* TRUE if this is the hash table of the
+				adaptive hash index */
 	ulint		n_cells;/* number of cells in the hash table */
 	hash_cell_t*	array;	/* pointer to cell array */
 	ulint		n_mutexes;/* if mutexes != NULL, then the number of
@@ -301,11 +318,10 @@ struct hash_table_struct {
 				memory heaps; there are then n_mutexes many of
 				these heaps */
 	mem_heap_t*	heap;
-#ifdef UNIV_DEBUG
 	ulint		magic_n;
-#define HASH_TABLE_MAGIC_N	76561114
-#endif /* UNIV_DEBUG */
 };
+
+#define HASH_TABLE_MAGIC_N	76561114
 
 #ifndef UNIV_NONINL
 #include "hash0hash.ic"

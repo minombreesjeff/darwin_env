@@ -68,9 +68,12 @@ TODO:
 
 #include "mysql_priv.h"
 #include <hash.h>
-#include <assert.h>
-
-extern HASH open_cache;
+#include "ha_myisammrg.h"
+#ifndef MASTER
+#include "../srclib/myisammrg/myrg_def.h"
+#else
+#include "../myisammrg/myrg_def.h"
+#endif
 
 static MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table,uint count,
 				 bool unlock, TABLE **write_locked);
@@ -96,7 +99,7 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd,TABLE **tables,uint count)
 	Someone has issued LOCK ALL TABLES FOR READ and we want a write lock
 	Wait until the lock is gone
       */
-      if (wait_if_global_read_lock(thd, 1))
+      if (wait_if_global_read_lock(thd, 1, 1))
       {
 	my_free((gptr) sql_lock,MYF(0));
 	sql_lock=0;
@@ -156,6 +159,7 @@ retry:
       sql_lock=0;
     }
   }
+
   thd->lock_time();
   DBUG_RETURN (sql_lock);
 }
@@ -236,7 +240,7 @@ void mysql_unlock_read_tables(THD *thd, MYSQL_LOCK *sql_lock)
   {
     if (sql_lock->locks[i]->type >= TL_WRITE_ALLOW_READ)
     {
-      swap(THR_LOCK_DATA *,*lock,sql_lock->locks[i]);
+      swap_variables(THR_LOCK_DATA *, *lock, sql_lock->locks[i]);
       lock++;
       found++;
     }
@@ -255,7 +259,7 @@ void mysql_unlock_read_tables(THD *thd, MYSQL_LOCK *sql_lock)
   {
     if ((uint) sql_lock->table[i]->reginfo.lock_type >= TL_WRITE_ALLOW_READ)
     {
-      swap(TABLE *,*table,sql_lock->table[i]);
+      swap_variables(TABLE *, *table, sql_lock->table[i]);
       table++;
       found++;
     }
@@ -431,20 +435,37 @@ static MYSQL_LOCK *get_lock_data(THD *thd, TABLE **table_ptr, uint count,
 	return 0;
       }
     }
+    THR_LOCK_DATA **org_locks = locks;
     locks=table->file->store_lock(thd, locks, get_old_locks ? TL_IGNORE :
 				  lock_type);
+    if (locks)
+      for ( ; org_locks != locks ; org_locks++)
+	(*org_locks)->debug_print_param= (void *) table;
   }
   return sql_lock;
 }
 
+
 /*****************************************************************************
-**  Lock table based on the name.
-**  This is used when we need total access to a closed, not open table
+  Lock table based on the name.
+  This is used when we need total access to a closed, not open table
 *****************************************************************************/
 
 /*
   Lock and wait for the named lock.
-  Returns 0 on ok
+
+  SYNOPSIS
+    lock_and_wait_for_table_name()
+    thd			Thread handler
+    table_list		Lock first table in this list
+
+
+  NOTES
+    Works together with global read lock.
+
+  RETURN
+    0	ok
+    1	error
 */
 
 int lock_and_wait_for_table_name(THD *thd, TABLE_LIST *table_list)
@@ -453,7 +474,7 @@ int lock_and_wait_for_table_name(THD *thd, TABLE_LIST *table_list)
   int error= -1;
   DBUG_ENTER("lock_and_wait_for_table_name");
 
-  if (wait_if_global_read_lock(thd,0))
+  if (wait_if_global_read_lock(thd, 0, 1))
     DBUG_RETURN(1);
   VOID(pthread_mutex_lock(&LOCK_open));
   if ((lock_retcode = lock_table_name(thd, table_list)) < 0)
@@ -474,20 +495,35 @@ end:
 
 /*
   Put a not open table with an old refresh version in the table cache.
-  This will force any other threads that uses the table to release it
-  as soon as possible.
-  One must have a lock on LOCK_open !
-  Return values:
-   < 0 error
-   == 0 table locked
-   > 0  table locked, but someone is using it
+
+  SYNPOSIS
+    lock_table_name()
+    thd			Thread handler
+    table_list		Lock first table in this list
+
+  WARNING
+    If you are going to update the table, you should use
+    lock_and_wait_for_table_name instead of this function as this works
+    together with 'FLUSH TABLES WITH READ LOCK'
+
+  NOTES
+    This will force any other threads that uses the table to release it
+    as soon as possible.
+
+  REQUIREMENTS
+    One must have a lock on LOCK_open !
+
+  RETURN:
+    < 0 error
+    == 0 table locked
+    > 0  table locked, but someone is using it
 */
 
 int lock_table_name(THD *thd, TABLE_LIST *table_list)
 {
   TABLE *table;
   char  key[MAX_DBKEY_LENGTH];
-  char *db= table_list->db ? table_list->db : (thd->db ? thd->db : (char*) "");
+  char *db= table_list->db;
   uint  key_length;
   DBUG_ENTER("lock_table_name");
   DBUG_PRINT("enter",("db: %s  name: %s", db, table_list->real_name));
@@ -519,7 +555,7 @@ int lock_table_name(THD *thd, TABLE_LIST *table_list)
   table->locked_by_name=1;
   table_list->table=table;
 
-  if (hash_insert(&open_cache, (byte*) table))
+  if (my_hash_insert(&open_cache, (byte*) table))
   {
     my_free((gptr) table,MYF(0));
     DBUG_RETURN(-1);
@@ -580,6 +616,10 @@ bool wait_for_locked_table_names(THD *thd, TABLE_LIST *table_list)
     table_list		Names of tables to lock
 
   NOTES
+    If you are just locking one table, you should use
+    lock_and_wait_for_table_name().
+
+  REQUIREMENTS
     One must have a lock on LOCK_open when calling this
 
   RETURN
@@ -665,15 +705,79 @@ static void print_lock_error(int error)
 /****************************************************************************
   Handling of global read locks
 
+  Taking the global read lock is TWO steps (2nd step is optional; without
+  it, COMMIT of existing transactions will be allowed):
+  lock_global_read_lock() THEN make_global_read_lock_block_commit().
+
   The global locks are handled through the global variables:
   global_read_lock
-  waiting_for_read_lock 
+    count of threads which have the global read lock (i.e. have completed at
+    least the first step above)
+  global_read_lock_blocks_commit
+    count of threads which have the global read lock and block
+    commits (i.e. have completed the second step above)
+  waiting_for_read_lock
+    count of threads which want to take a global read lock but cannot
   protect_against_global_read_lock
+    count of threads which have set protection against global read lock.
+
+  How blocking of threads by global read lock is achieved: that's
+  advisory. Any piece of code which should be blocked by global read lock must
+  be designed like this:
+  - call to wait_if_global_read_lock(). When this returns 0, no global read
+  lock is owned; if argument abort_on_refresh was 0, none can be obtained.
+  - job
+  - if abort_on_refresh was 0, call to start_waiting_global_read_lock() to
+  allow other threads to get the global read lock. I.e. removal of the
+  protection.
+  (Note: it's a bit like an implementation of rwlock).
+
+  [ I am sorry to mention some SQL syntaxes below I know I shouldn't but found
+  no better descriptive way ]
+
+  Why does FLUSH TABLES WITH READ LOCK need to block COMMIT: because it's used
+  to read a non-moving SHOW MASTER STATUS, and a COMMIT writes to the binary
+  log.
+
+  Why getting the global read lock is two steps and not one. Because FLUSH
+  TABLES WITH READ LOCK needs to insert one other step between the two:
+  flushing tables. So the order is
+  1) lock_global_read_lock() (prevents any new table write locks, i.e. stalls
+  all new updates)
+  2) close_cached_tables() (the FLUSH TABLES), which will wait for tables
+  currently opened and being updated to close (so it's possible that there is
+  a moment where all new updates of server are stalled *and* FLUSH TABLES WITH
+  READ LOCK is, too).
+  3) make_global_read_lock_block_commit().
+  If we have merged 1) and 3) into 1), we would have had this deadlock:
+  imagine thread 1 and 2, in non-autocommit mode, thread 3, and an InnoDB
+  table t.
+  thd1: SELECT * FROM t FOR UPDATE;
+  thd2: UPDATE t SET a=1; # blocked by row-level locks of thd1
+  thd3: FLUSH TABLES WITH READ LOCK; # blocked in close_cached_tables() by the
+  table instance of thd2
+  thd1: COMMIT; # blocked by thd3.
+  thd1 blocks thd2 which blocks thd3 which blocks thd1: deadlock.
+  
+  Note that we need to support that one thread does
+  FLUSH TABLES WITH READ LOCK; and then COMMIT;
+  (that's what innobackup does, for some good reason).
+  So in this exceptional case the COMMIT should not be blocked by the FLUSH
+  TABLES WITH READ LOCK.
+
+  TODO in MySQL 5.x: make_global_read_lock_block_commit() should be
+  killable. Normally CPU does not spend a long time in this function (COMMITs
+  are quite fast), but it would still be nice.
+
 ****************************************************************************/
 
 volatile uint global_read_lock=0;
+volatile uint global_read_lock_blocks_commit=0;
 static volatile uint protect_against_global_read_lock=0;
 static volatile uint waiting_for_read_lock=0;
+
+#define GOT_GLOBAL_READ_LOCK               1
+#define MADE_GLOBAL_READ_LOCK_BLOCK_COMMIT 2
 
 bool lock_global_read_lock(THD *thd)
 {
@@ -692,59 +796,85 @@ bool lock_global_read_lock(THD *thd)
     while (protect_against_global_read_lock && !thd->killed)
       pthread_cond_wait(&COND_refresh, &LOCK_open);
     waiting_for_read_lock--;
-    thd->exit_cond(old_message);
     if (thd->killed)
     {
-      (void) pthread_mutex_unlock(&LOCK_open);
+      thd->exit_cond(old_message);
       DBUG_RETURN(1);
     }
-    thd->global_read_lock=1;
+    thd->global_read_lock= GOT_GLOBAL_READ_LOCK;
     global_read_lock++;
-    (void) pthread_mutex_unlock(&LOCK_open);
+    thd->exit_cond(old_message);
   }
+  /*
+    We DON'T set global_read_lock_blocks_commit now, it will be set after
+    tables are flushed (as the present function serves for FLUSH TABLES WITH
+    READ LOCK only). Doing things in this order is necessary to avoid
+    deadlocks (we must allow COMMIT until all tables are closed; we should not
+    forbid it before, or we can have a 3-thread deadlock if 2 do SELECT FOR
+    UPDATE and one does FLUSH TABLES WITH READ LOCK).
+  */
   DBUG_RETURN(0);
 }
 
 void unlock_global_read_lock(THD *thd)
 {
   uint tmp;
-  thd->global_read_lock=0;
   pthread_mutex_lock(&LOCK_open);
   tmp= --global_read_lock;
+  if (thd->global_read_lock == MADE_GLOBAL_READ_LOCK_BLOCK_COMMIT)
+    --global_read_lock_blocks_commit;
   pthread_mutex_unlock(&LOCK_open);
   /* Send the signal outside the mutex to avoid a context switch */
   if (!tmp)
     pthread_cond_broadcast(&COND_refresh);
+  thd->global_read_lock= 0;
 }
 
+#define must_wait (global_read_lock &&                             \
+                   (is_not_commit ||                               \
+                    global_read_lock_blocks_commit))
 
-bool wait_if_global_read_lock(THD *thd, bool abort_on_refresh)
+bool wait_if_global_read_lock(THD *thd, bool abort_on_refresh,
+                              bool is_not_commit)
 {
   const char *old_message;
-  bool result=0;
+  bool result= 0, need_exit_cond;
   DBUG_ENTER("wait_if_global_read_lock");
 
+  LINT_INIT(old_message);
   (void) pthread_mutex_lock(&LOCK_open);
-  if (global_read_lock)
+  if ((need_exit_cond= must_wait))
   {
     if (thd->global_read_lock)		// This thread had the read locks
     {
-      my_error(ER_CANT_UPDATE_WITH_READLOCK,MYF(0));
+      if (is_not_commit)
+        my_error(ER_CANT_UPDATE_WITH_READLOCK,MYF(0));
       (void) pthread_mutex_unlock(&LOCK_open);
-      DBUG_RETURN(1);
+      /*
+        We allow FLUSHer to COMMIT; we assume FLUSHer knows what it does.
+        This allowance is needed to not break existing versions of innobackup
+        which do a BEGIN; INSERT; FLUSH TABLES WITH READ LOCK; COMMIT.
+      */
+      DBUG_RETURN(is_not_commit);
     }
     old_message=thd->enter_cond(&COND_refresh, &LOCK_open,
 				"Waiting for release of readlock");
-    while (global_read_lock && ! thd->killed &&
+    while (must_wait && ! thd->killed &&
 	   (!abort_on_refresh || thd->version == refresh_version))
       (void) pthread_cond_wait(&COND_refresh,&LOCK_open);
     if (thd->killed)
       result=1;
-    thd->exit_cond(old_message);
   }
   if (!abort_on_refresh && !result)
     protect_against_global_read_lock++;
-  pthread_mutex_unlock(&LOCK_open);
+  /*
+    The following is only true in case of a global read locks (which is rare)
+    and if old_message is set
+  */
+  if (unlikely(need_exit_cond)) 
+    thd->exit_cond(old_message);
+  else
+    pthread_mutex_unlock(&LOCK_open);
   DBUG_RETURN(result);
 }
 
@@ -753,10 +883,30 @@ void start_waiting_global_read_lock(THD *thd)
 {
   bool tmp;
   DBUG_ENTER("start_waiting_global_read_lock");
+  if (unlikely(thd->global_read_lock))
+    DBUG_VOID_RETURN;
   (void) pthread_mutex_lock(&LOCK_open);
   tmp= (!--protect_against_global_read_lock && waiting_for_read_lock);
   (void) pthread_mutex_unlock(&LOCK_open);
   if (tmp)
     pthread_cond_broadcast(&COND_refresh);
   DBUG_VOID_RETURN;
+}
+
+
+void make_global_read_lock_block_commit(THD *thd)
+{
+  /*
+    If we didn't succeed lock_global_read_lock(), or if we already suceeded
+    make_global_read_lock_block_commit(), do nothing.
+  */
+  if (thd->global_read_lock != GOT_GLOBAL_READ_LOCK)
+    return;
+  pthread_mutex_lock(&LOCK_open);
+  /* increment this BEFORE waiting on cond (otherwise race cond) */
+  global_read_lock_blocks_commit++;
+  while (protect_against_global_read_lock)
+    pthread_cond_wait(&COND_refresh, &LOCK_open);
+  pthread_mutex_unlock(&LOCK_open);
+  thd->global_read_lock= MADE_GLOBAL_READ_LOCK_BLOCK_COMMIT;
 }

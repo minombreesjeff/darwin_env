@@ -49,13 +49,14 @@ static	int verbose=0,testflag=0,
 static int pack_seg=HA_SPACE_PACK,pack_type=HA_PACK_KEY,remove_count=-1,
 	   create_flag=0;
 static ulong key_cache_size=IO_SIZE*16;
+static uint key_cache_block_size= KEY_CACHE_BLOCK_SIZE;
 
 static uint keys=MYISAM_KEYS,recant=1000;
 static uint use_blob=0;
 static uint16 key1[1001],key3[5000];
 static char record[300],record2[300],key[100],key2[100],
 	    read_record[300],read_record2[300],read_record3[300];
-static MI_KEYSEG glob_keyseg[MYISAM_KEYS][MAX_PARTS];
+static HA_KEYSEG glob_keyseg[MYISAM_KEYS][MAX_PARTS];
 
 		/* Test program */
 
@@ -87,10 +88,11 @@ int main(int argc, char *argv[])
   keyinfo[0].seg[0].start=0;
   keyinfo[0].seg[0].length=6;
   keyinfo[0].seg[0].type=HA_KEYTYPE_TEXT;
-  keyinfo[0].seg[0].language=MY_CHARSET_CURRENT;
+  keyinfo[0].seg[0].language= default_charset_info->number;
   keyinfo[0].seg[0].flag=(uint8) pack_seg;
   keyinfo[0].seg[0].null_bit=0;
   keyinfo[0].seg[0].null_pos=0;
+  keyinfo[0].key_alg=HA_KEY_ALG_BTREE;
   keyinfo[0].keysegs=1;
   keyinfo[0].flag = pack_type;
   keyinfo[1].seg= &glob_keyseg[1][0];
@@ -106,6 +108,7 @@ int main(int argc, char *argv[])
   keyinfo[1].seg[1].flag=HA_REVERSE_SORT;
   keyinfo[1].seg[1].null_bit=0;
   keyinfo[1].seg[1].null_pos=0;
+  keyinfo[1].key_alg=HA_KEY_ALG_BTREE;
   keyinfo[1].keysegs=2;
   keyinfo[1].flag =0;
   keyinfo[2].seg= &glob_keyseg[2][0];
@@ -115,36 +118,40 @@ int main(int argc, char *argv[])
   keyinfo[2].seg[0].flag=HA_REVERSE_SORT;
   keyinfo[2].seg[0].null_bit=0;
   keyinfo[2].seg[0].null_pos=0;
+  keyinfo[2].key_alg=HA_KEY_ALG_BTREE;
   keyinfo[2].keysegs=1;
   keyinfo[2].flag =HA_NOSAME;
   keyinfo[3].seg= &glob_keyseg[3][0];
   keyinfo[3].seg[0].start=0;
   keyinfo[3].seg[0].length=reclength-(use_blob ? 8 : 0);
   keyinfo[3].seg[0].type=HA_KEYTYPE_TEXT;
-  keyinfo[3].seg[0].language=MY_CHARSET_CURRENT;
+  keyinfo[3].seg[0].language=default_charset_info->number;
   keyinfo[3].seg[0].flag=(uint8) pack_seg;
   keyinfo[3].seg[0].null_bit=0;
   keyinfo[3].seg[0].null_pos=0;
+  keyinfo[3].key_alg=HA_KEY_ALG_BTREE;
   keyinfo[3].keysegs=1;
   keyinfo[3].flag = pack_type;
   keyinfo[4].seg= &glob_keyseg[4][0];
   keyinfo[4].seg[0].start=0;
   keyinfo[4].seg[0].length=5;
   keyinfo[4].seg[0].type=HA_KEYTYPE_TEXT;
-  keyinfo[4].seg[0].language=MY_CHARSET_CURRENT;
+  keyinfo[4].seg[0].language=default_charset_info->number;
   keyinfo[4].seg[0].flag=0;
   keyinfo[4].seg[0].null_bit=0;
   keyinfo[4].seg[0].null_pos=0;
+  keyinfo[4].key_alg=HA_KEY_ALG_BTREE;
   keyinfo[4].keysegs=1;
   keyinfo[4].flag = pack_type;
   keyinfo[5].seg= &glob_keyseg[5][0];
   keyinfo[5].seg[0].start=0;
   keyinfo[5].seg[0].length=4;
   keyinfo[5].seg[0].type=HA_KEYTYPE_TEXT;
-  keyinfo[5].seg[0].language=MY_CHARSET_CURRENT;
+  keyinfo[5].seg[0].language=default_charset_info->number;
   keyinfo[5].seg[0].flag=pack_seg;
   keyinfo[5].seg[0].null_bit=0;
   keyinfo[5].seg[0].null_pos=0;
+  keyinfo[5].key_alg=HA_KEY_ALG_BTREE;
   keyinfo[5].keysegs=1;
   keyinfo[5].flag = pack_type;
 
@@ -208,7 +215,7 @@ int main(int argc, char *argv[])
   if (!silent)
     printf("- Writing key:s\n");
   if (key_cacheing)
-    init_key_cache(key_cache_size);		/* Use a small cache */
+    init_key_cache(dflt_key_cache,key_cache_block_size,key_cache_size,0,0);
   if (locking)
     mi_lock_database(file,F_WRLCK);
   if (write_cacheing)
@@ -269,7 +276,7 @@ int main(int argc, char *argv[])
     }
   }
   if (key_cacheing)
-    resize_key_cache(key_cache_size*2);
+    resize_key_cache(dflt_key_cache,key_cache_block_size,key_cache_size*2,0,0);
 
   if (!silent)
     printf("- Delete\n");
@@ -599,13 +606,20 @@ int main(int argc, char *argv[])
   mi_status(file,&info,HA_STATUS_VARIABLE);
   for (i=0 ; i < info.keys ; i++)
   {
+    key_range min_key, max_key;
     if (mi_rfirst(file,read_record,(int) i) ||
 	mi_rlast(file,read_record2,(int) i))
       goto err;
     copy_key(file,(uint) i,(uchar*) read_record,(uchar*) key);
     copy_key(file,(uint) i,(uchar*) read_record2,(uchar*) key2);
-    range_records=mi_records_in_range(file,(int) i,key,0,HA_READ_KEY_EXACT,
-				      key2,0,HA_READ_AFTER_KEY);
+    min_key.key= key;
+    min_key.length= USE_WHOLE_KEY;
+    min_key.flag= HA_READ_KEY_EXACT;
+    max_key.key= key2;
+    max_key.length= USE_WHOLE_KEY;
+    max_key.flag= HA_READ_AFTER_KEY;
+
+    range_records= mi_records_in_range(file,(int) i, &min_key, &max_key);
     if (range_records < info.records*8/10 ||
 	range_records > info.records*12/10)
     {
@@ -627,12 +641,19 @@ int main(int argc, char *argv[])
     for (k=rnd(1000)+1 ; k>0 && key1[k] == 0 ; k--) ;
     if (j != 0 && k != 0)
     {
+      key_range min_key, max_key;
       if (j > k)
-	swap(int,j,k);
+	swap_variables(int, j, k);
       sprintf(key,"%6d",j);
       sprintf(key2,"%6d",k);
-      range_records=mi_records_in_range(file,0,key,0,HA_READ_AFTER_KEY,
-					key2,0,HA_READ_BEFORE_KEY);
+
+      min_key.key= key;
+      min_key.length= USE_WHOLE_KEY;
+      min_key.flag= HA_READ_AFTER_KEY;
+      max_key.key= key2;
+      max_key.length= USE_WHOLE_KEY;
+      max_key.flag= HA_READ_BEFORE_KEY;
+      range_records= mi_records_in_range(file, 0, &min_key, &max_key);
       records=0;
       for (j++ ; j < k ; j++)
 	records+=key1[j];
@@ -810,16 +831,19 @@ end:
       puts("Locking used");
     if (use_blob)
       puts("blobs used");
+#if 0
     printf("key cache status: \n\
 blocks used:%10lu\n\
 w_requests: %10lu\n\
 writes:     %10lu\n\
 r_requests: %10lu\n\
 reads:      %10lu\n",
-	   _my_blocks_used,_my_cache_w_requests, _my_cache_write,
-	   _my_cache_r_requests,_my_cache_read);
+	   my_blocks_used,
+           my_cache_w_requests, my_cache_write,
+	   my_cache_r_requests, my_cache_read);
+#endif
   }
-  end_key_cache();
+  end_key_cache(dflt_key_cache,1);
   if (blob_buffer)
     my_free(blob_buffer,MYF(0));
   my_end(silent ? MY_CHECK_ERROR : MY_CHECK_ERROR | MY_GIVE_INFO);
@@ -1013,7 +1037,7 @@ static void put_blob_in_record(char *blob_pos, char **blob_buffer)
 
 static void copy_key(MI_INFO *info,uint inx,uchar *rec,uchar *key_buff)
 {
-  MI_KEYSEG *keyseg;
+  HA_KEYSEG *keyseg;
 
   for (keyseg=info->s->keyinfo[inx].seg ; keyseg->type ; keyseg++)
   {

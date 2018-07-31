@@ -3,7 +3,10 @@
 #
 
 # Initialise
+--disable_warnings
 drop table if exists t1,t2;
+--enable_warnings
+SET SQL_WARNINGS=1;
 
 #
 # Test problem with CHECK TABLE;
@@ -11,8 +14,8 @@ drop table if exists t1,t2;
 
 CREATE TABLE t1 (
   STRING_DATA char(255) default NULL,
-  KEY STRING_DATA (STRING_DATA)
-) TYPE=MyISAM;
+  KEY string_data (STRING_DATA)
+) ENGINE=MyISAM;
 
 INSERT INTO t1 VALUES ('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
 INSERT INTO t1 VALUES ('DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD');
@@ -31,11 +34,15 @@ create table t1 (a tinyint not null auto_increment, b blob not null, primary key
 
 let $1=100;
 disable_query_log;
+--disable_warnings
+SET SQL_WARNINGS=0;
 while ($1)
 {
   eval insert into t1 (b) values(repeat(char(65+$1),65550-$1));
   dec $1;
 }
+SET SQL_WARNINGS=1;
+--enable_warnings
 enable_query_log;
 check table t1;
 repair table t1;
@@ -61,7 +68,7 @@ drop table t1;
 # Test of how ORDER BY works when doing it on the whole table
 #
 
-create table t1 (a int not null, b int not null, c int not null, primary key (a),key(b)) type=myisam;
+create table t1 (a int not null, b int not null, c int not null, primary key (a),key(b)) engine=myisam;
 insert into t1 values (3,3,3),(1,1,1),(2,2,2),(4,4,4);
 explain select * from t1 order by a;
 explain select * from t1 order by b;
@@ -293,6 +300,9 @@ insert into t1 values (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 update t1 set b=repeat('a',256);
 update t1 set i1=0, i2=0, i3=0, i4=0, i5=0, i6=0, i7=0;
 check table t1;
+delete from t1 where i8=1;
+select i1,i2 from t1;
+check table t1;
 drop table t1;
 
 #
@@ -314,7 +324,7 @@ CREATE TABLE `t1` (
   KEY `poster_login` (`poster_login`),
   KEY `topic_id` (`topic_id`),
   FULLTEXT KEY `post_text` (`post_text`)
-) TYPE=MyISAM;
+) ENGINE=MyISAM;
 
 INSERT INTO t1 (post_text) VALUES ('ceci est un test'),('ceci est un test'),('ceci est un test'),('ceci est un test'),('ceci est un test');
 
@@ -327,10 +337,10 @@ drop table t1;
 #
 
 --error 1071
-CREATE TABLE t1 (a varchar(255), b varchar(255), c varchar(255), KEY t1 (a, b, c));
-CREATE TABLE t1 (a varchar(255), b varchar(255), c varchar(255));
+CREATE TABLE t1 (a varchar(255), b varchar(255), c varchar(255), d varchar(255), e varchar(255), KEY t1 (a, b, c, d, e));
+CREATE TABLE t1 (a varchar(255), b varchar(255), c varchar(255), d varchar(255), e varchar(255));
 --error 1071
-ALTER TABLE t1 ADD INDEX t1 (a, b, c);   
+ALTER TABLE t1 ADD INDEX t1 (a, b, c, d, e);
 DROP TABLE t1;
 
 #
@@ -350,6 +360,8 @@ explain select * from t1,t2 where t1.b=t2.b;
 explain select * from t1,t2 force index(c) where t1.a=t2.a;
 explain select * from t1 where a=0 or a=2;
 explain select * from t1 force index (a) where a=0 or a=2;
+explain select * from t1 where c=1;
+explain select * from t1 use index() where c=1;
 drop table t1,t2;
 
 #
@@ -411,6 +423,30 @@ select * from t1 where a='807780' and b='477' and c='165';
 drop table t1;
 
 #
+# space-stripping in _mi_prefix_search: BUG#5284
+#
+DROP TABLE IF EXISTS t1;
+CREATE TABLE t1 (a varchar(150) NOT NULL, KEY (a)); 
+INSERT t1 VALUES ("can \tcan"); 
+INSERT t1 VALUES ("can   can"); 
+INSERT t1 VALUES ("can"); 
+SELECT * FROM t1;
+CHECK TABLE t1;
+DROP TABLE t1;
+
+#
+# Verify blob handling
+#
+create table t1 (a blob);
+insert into t1 values('a '),('a');
+select concat(a,'.') from t1 where a='a';
+select concat(a,'.') from t1 where a='a ';
+alter table t1 add key(a(2));
+select concat(a,'.') from t1 where a='a';
+select concat(a,'.') from t1 where a='a ';
+drop table t1;
+
+#
 # Test text and unique
 #
 create table t1 (a int not null auto_increment primary key, b text not null, unique b (b(20)));
@@ -436,3 +472,55 @@ select sql_big_result distinct t1.a from t1,t2;
 explain select sql_big_result distinct t1.a from t1,t2 order by t2.a;
 explain select distinct t1.a from t1,t2 order by t2.a;
 drop table t1,t2;
+
+#
+# Test RTREE index
+#
+--error 1235
+CREATE TABLE t1 (`a` int(11) NOT NULL default '0', `b` int(11) NOT NULL default '0', UNIQUE KEY `a` USING RTREE (`a`,`b`)) ENGINE=MyISAM;
+# INSERT INTO t1 VALUES (1,1),(1,1);
+# DELETE FROM rt WHERE a<1;
+# DROP TABLE IF EXISTS t1;
+
+create table t1 (a int, b varchar(200), c text not null) checksum=1;
+create table t2 (a int, b varchar(200), c text not null) checksum=0;
+insert t1 values (1, "aaa", "bbb"), (NULL, "", "ccccc"), (0, NULL, "");
+insert t2 select * from t1;
+checksum table t1, t2, t3 quick;
+checksum table t1, t2, t3;
+checksum table t1, t2, t3 extended;
+#show table status;
+drop table t1,t2;
+
+create table t1 (a int, key (a));
+show keys from t1;
+alter table t1 disable keys;
+show keys from t1;
+create table t2 (a int);
+let $i=1000;
+set @@rand_seed1=31415926,@@rand_seed2=2718281828;
+--disable_query_log
+while ($i)
+{
+  dec $i;
+  insert t2 values (rand()*100000);
+}
+--enable_query_log
+insert t1 select * from t2;
+show keys from t1;
+alter table t1 enable keys;
+show keys from t1;
+alter table t1 engine=heap;
+alter table t1 disable keys;
+show keys from t1;
+drop table t1,t2;
+
+#
+# index search for NULL in blob. Bug #4816
+#
+create table t1 ( a tinytext, b char(1), index idx (a(1),b) );
+insert into t1 values (null,''), (null,'');
+explain select count(*) from t1 where a is null;
+select count(*) from t1 where a is null;
+drop table t1;
+

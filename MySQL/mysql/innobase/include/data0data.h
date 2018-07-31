@@ -86,7 +86,7 @@ void
 dfield_set_data(
 /*============*/
 	dfield_t* 	field,	/* in: field */
-	void*		data,	/* in: data */
+	const void*	data,	/* in: data */
 	ulint		len);	/* in: length or UNIV_SQL_NULL */
 /**************************************************************************
 Writes an SQL null field full of zeros. */
@@ -395,11 +395,9 @@ struct dtuple_struct {
 	UT_LIST_NODE_T(dtuple_t) tuple_list;
 					/* data tuples can be linked into a
 					list using this field */
-#ifdef UNIV_DEBUG
-	ulint		magic_n;
-#define	DATA_TUPLE_MAGIC_N	65478679
-#endif /* UNIV_DEBUG */
+	ulint		magic_n;	
 };
+#define	DATA_TUPLE_MAGIC_N	65478679
 
 /* A slot for a field in a big rec vector */
 

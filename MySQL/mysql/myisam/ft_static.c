@@ -19,32 +19,28 @@
 #include "ftdefs.h"
 
 ulong ft_min_word_len=4;
-ulong ft_max_word_len=HA_FT_MAXLEN;
-ulong ft_max_word_len_for_sort=20;
-const char *ft_boolean_syntax="+ -><()~*:\"\"&|";
+ulong ft_max_word_len=HA_FT_MAXCHARLEN;
+ulong ft_query_expansion_limit=5;
+char ft_boolean_syntax[]="+ -><()~*:\"\"&|";
 
-const MI_KEYSEG ft_keysegs[FT_SEGS]={
+const HA_KEYSEG ft_keysegs[FT_SEGS]={
 {
     HA_KEYTYPE_VARTEXT,               /* type */
-    7,                                /* language (will be overwritten) */
+    63,                               /* language (will be overwritten) */
     0, 0, 0,                          /* null_bit, bit_start, bit_end */
     HA_VAR_LENGTH | HA_PACK_KEY,      /* flag */
-    HA_FT_MAXLEN,                     /* length */
-#ifdef EVAL_RUN
-    HA_FT_WLEN+1,                     /* start */
-#else /* EVAL_RUN */
+    HA_FT_MAXBYTELEN,                 /* length */
     HA_FT_WLEN,                       /* start */
-#endif /* EVAL_RUN */
     0,                                /* null_pos */
-    NULL                              /* sort_order */
+    NULL                              /* charset  */
   },
-#ifdef EVAL_RUN
   {
-      HA_KEYTYPE_INT8, 7, 0, 0, 0, 0, 1, HA_FT_WLEN, 0, NULL
-  },
-#endif /* EVAL_RUN */
-  {
-      HA_FT_WTYPE, 7, 0, 0, 0, HA_NO_SORT, HA_FT_WLEN, 0, 0, NULL
+/*
+  Note, this (and the last HA_KEYTYPE_END) segment should NOT
+  be packed in any way, otherwise w_search() won't be able to
+  update key entry 'in vivo'
+*/
+      HA_FT_WTYPE, 63, 0, 0, 0, HA_NO_SORT, HA_FT_WLEN, 0, 0, NULL
   }
 };
 
@@ -57,14 +53,18 @@ const struct _ft_vft _ft_vft_boolean = {
   ft_boolean_get_relevance,  ft_boolean_reinit_search
 };
 
-FT_INFO *(*_ft_init_vft[2])(MI_INFO *, uint, byte *, uint, my_bool) =
-{ ft_init_nlq_search, ft_init_boolean_search };
 
-FT_INFO *ft_init_search(uint mode, void *info, uint keynr,
-    byte *query, uint query_len, my_bool presort)
+FT_INFO *ft_init_search(uint flags, void *info, uint keynr,
+                        byte *query, uint query_len, CHARSET_INFO *cs,
+                        byte *record)
 {
-  return (*_ft_init_vft[mode])((MI_INFO *)info, keynr,
-          query, query_len, presort);
+  FT_INFO *res;
+  if (flags & FT_BOOL)
+    res= ft_init_boolean_search((MI_INFO *)info, keynr, query, query_len,cs);
+  else
+    res= ft_init_nlq_search((MI_INFO *)info, keynr, query, query_len, flags,
+			    record);
+  return res;
 }
 
 const char *ft_stopword_file = 0;

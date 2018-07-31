@@ -1,7 +1,9 @@
 #
 # Init section
 #
+--disable_warnings
 drop table if exists t1;
+--enable_warnings
 
 #
 # Simple IF tests
@@ -12,12 +14,19 @@ select IF(0,"ERROR","this"),IF(1,"is","ERROR"),IF(NULL,"ERROR","a"),IF(1,2,3)|0,
 #
 # Test of IF and case-sensitiveness
 #
-CREATE TABLE t1 (st varchar(255) NOT NULL, u int(11) NOT NULL) TYPE=MyISAM;
+CREATE TABLE t1 (st varchar(255) NOT NULL, u int(11) NOT NULL) ENGINE=MyISAM;
 INSERT INTO t1 VALUES ('a',1),('A',1),('aa',1),('AA',1),('a',1),('aaa',0),('BBB',0);
 select if(1,st,st) s from t1 order by s;
 select if(u=1,st,st) s from t1 order by s;
 select if(u=1,binary st,st) s from t1 order by s;
 select if(u=1,st,binary st) s from t1 where st like "%a%" order by s;
+explain extended select if(u=1,st,binary st) s from t1 where st like "%a%" order by s;
+
+#
+# NULLIF test
+#
+select nullif(u=0, 'test') from t1;
+explain extended select nullif(u=0, 'test') from t1;
 drop table t1;
 
 #
@@ -38,3 +47,16 @@ create table t1 (x int, y int);
 insert into t1 values (0,6),(10,16),(20,26),(30,10),(40,46),(50,56);
 select min(if(y -x > 5,y,NULL)), max(if(y - x > 5,y,NULL)) from t1;
 drop table t1;
+
+#
+# BUG#3987
+#
+create table t1 (a int);
+insert t1 values (1),(2);
+select if(1>2,a,avg(a)) from t1;
+drop table t1;
+
+#
+# Bug #5595  NULLIF() IS NULL returns false if NULLIF() returns NULL
+#
+SELECT NULLIF(5,5) IS NULL, NULLIF(5,5) IS NOT NULL;

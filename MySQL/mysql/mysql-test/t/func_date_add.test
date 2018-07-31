@@ -2,7 +2,10 @@
 # Test of DATE_ADD
 #
 
+--disable_warnings
 drop table if exists t1;
+--enable_warnings
+
 CREATE TABLE t1 (
   visitor_id int(10) unsigned DEFAULT '0' NOT NULL,
   group_id int(10) unsigned DEFAULT '0' NOT NULL,
@@ -10,7 +13,7 @@ CREATE TABLE t1 (
   sessions int(10) unsigned DEFAULT '0' NOT NULL,
   ts timestamp(14),
   PRIMARY KEY (visitor_id,group_id)
-)/*! type=MyISAM */;
+)/*! engine=MyISAM */;
 INSERT INTO t1 VALUES (465931136,7,2,2,20000318160952);
 INSERT INTO t1 VALUES (173865424,2,2,2,20000318233615);
 INSERT INTO t1 VALUES (173865424,8,2,2,20000318233615);

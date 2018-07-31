@@ -65,11 +65,15 @@ static struct my_option my_long_options[] =
 
 static void verify_sort();
 
+
+#include <help_start.h>
+
 static void print_version(void)
 {
   printf("%s  Ver %s Distrib %s, for %s (%s)\n",my_progname,DUMP_VERSION,
 	 MYSQL_SERVER_VERSION,SYSTEM_TYPE,MACHINE_TYPE);
 }
+
 
 static void usage()
 {
@@ -87,6 +91,7 @@ The numeric-dump-file should contain a numeric stack trace from mysqld.\n\
 If the numeric-dump-file is not given, the stack trace is read from stdin.\n");
 }
 
+#include <help_end.h>
 
 
 static void die(const char* fmt, ...)
@@ -175,9 +180,9 @@ trace dump and specify the path to it with -s or --symbols-file");
 static uchar hex_val(char c)
 {
   uchar l;
-  if (isdigit(c))
+  if (my_isdigit(&my_charset_latin1,c))
     return c - '0';
-  l = tolower(c);
+  l = my_tolower(&my_charset_latin1,c);
   if (l < 'a' || l > 'f')
     return HEX_INVALID; 
   return (uchar)10 + ((uchar)c - (uchar)'a');
@@ -203,9 +208,11 @@ static int init_sym_entry(SYM_ENTRY* se, char* buf)
 
   if (!se->addr)
     return -1;
-  while (isspace(*buf++)) ;
+  while (my_isspace(&my_charset_latin1,*buf++))
+    /* empty */;
 
-  while (isspace(*buf++)) ; /* skip more space */
+  while (my_isspace(&my_charset_latin1,*buf++))
+    /* empty - skip more space */;
   --buf;
   /* now we are on the symbol */
   for (p = se->symbol, p_end = se->symbol + sizeof(se->symbol) - 1;
@@ -285,7 +292,8 @@ static void do_resolve()
   while (fgets(buf, sizeof(buf), fp_dump))
   {
     p = buf;
-    while(isspace(*p))
+    /* skip space */
+    while (my_isspace(&my_charset_latin1,*p))
       ++p;
 
     if (*p++ == '0' && *p++ == 'x')

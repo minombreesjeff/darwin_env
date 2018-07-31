@@ -1,8 +1,8 @@
 @c START_OF_RESERVED_WORDS
 
-@c Reserved word list updated Thu Jan  1 11:46:12 2004 by arjen.
-@c Data from MySQL version 5.0.0-alpha
-@c BitKeeper ChangeSet 1.1644 (03/12/22 14:42:20)
+@c Reserved word list updated Mon Dec 20 20:21:17 2004 by paul.
+@c Data from MySQL version 5.0.3-alpha
+@c BitKeeper ChangeSet 1.1771 (04/12/20 20:20:20)
 @c To regenerate, use Support/update-reserved-words.pl
 
 @multitable @columnfractions .33 .33 .34
@@ -17,10 +17,7 @@
  @tab @code{AS}
 @item @code{ASC}
  @tab @code{ASENSITIVE}
- @tab @code{AUTO_INCREMENT}
-@item @code{BDB}
  @tab @code{BEFORE}
- @tab @code{BERKELEYDB}
 @item @code{BETWEEN}
  @tab @code{BIGINT}
  @tab @code{BINARY}
@@ -36,37 +33,40 @@
 @item @code{CHECK}
  @tab @code{COLLATE}
  @tab @code{COLUMN}
-@item @code{COLUMNS}
- @tab @code{CONDITION}
+@item @code{CONDITION}
  @tab @code{CONNECTION}
-@item @code{CONSTRAINT}
- @tab @code{CONTINUE}
+ @tab @code{CONSTRAINT}
+@item @code{CONTINUE}
+ @tab @code{CONVERT}
  @tab @code{CREATE}
 @item @code{CROSS}
  @tab @code{CURRENT_DATE}
  @tab @code{CURRENT_TIME}
 @item @code{CURRENT_TIMESTAMP}
+ @tab @code{CURRENT_USER}
  @tab @code{CURSOR}
- @tab @code{DATABASE}
-@item @code{DATABASES}
+@item @code{DATABASE}
+ @tab @code{DATABASES}
  @tab @code{DAY_HOUR}
- @tab @code{DAY_MICROSECOND}
-@item @code{DAY_MINUTE}
+@item @code{DAY_MICROSECOND}
+ @tab @code{DAY_MINUTE}
  @tab @code{DAY_SECOND}
- @tab @code{DEC}
-@item @code{DECIMAL}
+@item @code{DEC}
+ @tab @code{DECIMAL}
  @tab @code{DECLARE}
- @tab @code{DEFAULT}
-@item @code{DELAYED}
+@item @code{DEFAULT}
+ @tab @code{DELAYED}
  @tab @code{DELETE}
- @tab @code{DESC}
-@item @code{DESCRIBE}
+@item @code{DESC}
+ @tab @code{DESCRIBE}
  @tab @code{DETERMINISTIC}
- @tab @code{DISTINCT}
-@item @code{DISTINCTROW}
+@item @code{DISTINCT}
+ @tab @code{DISTINCTROW}
  @tab @code{DIV}
- @tab @code{DOUBLE}
-@item @code{DROP}
+@item @code{DOUBLE}
+ @tab @code{DROP}
+ @tab @code{DUAL}
+@item @code{EACH}
  @tab @code{ELSE}
  @tab @code{ELSEIF}
 @item @code{ENCLOSED}
@@ -76,29 +76,26 @@
  @tab @code{EXPLAIN}
  @tab @code{FALSE}
 @item @code{FETCH}
- @tab @code{FIELDS}
  @tab @code{FLOAT}
-@item @code{FOR}
- @tab @code{FORCE}
+ @tab @code{FOR}
+@item @code{FORCE}
  @tab @code{FOREIGN}
-@item @code{FOUND}
- @tab @code{FRAC_SECOND}
  @tab @code{FROM}
 @item @code{FULLTEXT}
+ @tab @code{GOTO}
  @tab @code{GRANT}
- @tab @code{GROUP}
-@item @code{HAVING}
+@item @code{GROUP}
+ @tab @code{HAVING}
  @tab @code{HIGH_PRIORITY}
- @tab @code{HOUR_MICROSECOND}
-@item @code{HOUR_MINUTE}
+@item @code{HOUR_MICROSECOND}
+ @tab @code{HOUR_MINUTE}
  @tab @code{HOUR_SECOND}
- @tab @code{IF}
-@item @code{IGNORE}
+@item @code{IF}
+ @tab @code{IGNORE}
  @tab @code{IN}
- @tab @code{INDEX}
-@item @code{INFILE}
+@item @code{INDEX}
+ @tab @code{INFILE}
  @tab @code{INNER}
- @tab @code{INNODB}
 @item @code{INOUT}
  @tab @code{INSENSITIVE}
  @tab @code{INSERT}
@@ -106,77 +103,77 @@
  @tab @code{INTEGER}
  @tab @code{INTERVAL}
 @item @code{INTO}
- @tab @code{IO_THREAD}
  @tab @code{IS}
-@item @code{ITERATE}
- @tab @code{JOIN}
+ @tab @code{ITERATE}
+@item @code{JOIN}
  @tab @code{KEY}
-@item @code{KEYS}
- @tab @code{KILL}
+ @tab @code{KEYS}
+@item @code{KILL}
  @tab @code{LEADING}
-@item @code{LEAVE}
- @tab @code{LEFT}
+ @tab @code{LEAVE}
+@item @code{LEFT}
  @tab @code{LIKE}
-@item @code{LIMIT}
- @tab @code{LINES}
+ @tab @code{LIMIT}
+@item @code{LINES}
  @tab @code{LOAD}
-@item @code{LOCALTIME}
- @tab @code{LOCALTIMESTAMP}
+ @tab @code{LOCALTIME}
+@item @code{LOCALTIMESTAMP}
  @tab @code{LOCK}
-@item @code{LONG}
- @tab @code{LONGBLOB}
+ @tab @code{LONG}
+@item @code{LONGBLOB}
  @tab @code{LONGTEXT}
-@item @code{LOOP}
- @tab @code{LOW_PRIORITY}
- @tab @code{MASTER_SERVER_ID}
-@item @code{MATCH}
+ @tab @code{LOOP}
+@item @code{LOW_PRIORITY}
+ @tab @code{MATCH}
  @tab @code{MEDIUMBLOB}
- @tab @code{MEDIUMINT}
-@item @code{MEDIUMTEXT}
+@item @code{MEDIUMINT}
+ @tab @code{MEDIUMTEXT}
  @tab @code{MIDDLEINT}
- @tab @code{MINUTE_MICROSECOND}
-@item @code{MINUTE_SECOND}
+@item @code{MINUTE_MICROSECOND}
+ @tab @code{MINUTE_SECOND}
  @tab @code{MOD}
+@item @code{MODIFIES}
  @tab @code{NATURAL}
-@item @code{NOT}
- @tab @code{NO_WRITE_TO_BINLOG}
+ @tab @code{NOT}
+@item @code{NO_WRITE_TO_BINLOG}
  @tab @code{NULL}
-@item @code{NUMERIC}
- @tab @code{ON}
+ @tab @code{NUMERIC}
+@item @code{ON}
  @tab @code{OPTIMIZE}
-@item @code{OPTION}
- @tab @code{OPTIONALLY}
+ @tab @code{OPTION}
+@item @code{OPTIONALLY}
  @tab @code{OR}
-@item @code{ORDER}
- @tab @code{OUT}
+ @tab @code{ORDER}
+@item @code{OUT}
  @tab @code{OUTER}
-@item @code{OUTFILE}
- @tab @code{PRECISION}
+ @tab @code{OUTFILE}
+@item @code{PRECISION}
  @tab @code{PRIMARY}
-@item @code{PRIVILEGES}
  @tab @code{PROCEDURE}
- @tab @code{PURGE}
-@item @code{READ}
- @tab @code{REAL}
+@item @code{PURGE}
+ @tab @code{READ}
+ @tab @code{READS}
+@item @code{REAL}
  @tab @code{REFERENCES}
-@item @code{REGEXP}
- @tab @code{RENAME}
+ @tab @code{REGEXP}
+@item @code{RENAME}
  @tab @code{REPEAT}
-@item @code{REPLACE}
- @tab @code{REQUIRE}
+ @tab @code{REPLACE}
+@item @code{REQUIRE}
  @tab @code{RESTRICT}
-@item @code{RETURN}
- @tab @code{REVOKE}
+ @tab @code{RETURN}
+@item @code{REVOKE}
  @tab @code{RIGHT}
-@item @code{RLIKE}
+ @tab @code{RLIKE}
+@item @code{SCHEMA}
+ @tab @code{SCHEMAS}
  @tab @code{SECOND_MICROSECOND}
- @tab @code{SELECT}
-@item @code{SENSITIVE}
+@item @code{SELECT}
+ @tab @code{SENSITIVE}
  @tab @code{SEPARATOR}
- @tab @code{SET}
-@item @code{SHOW}
+@item @code{SET}
+ @tab @code{SHOW}
  @tab @code{SMALLINT}
- @tab @code{SOME}
 @item @code{SONAME}
  @tab @code{SPATIAL}
  @tab @code{SPECIFIC}
@@ -187,30 +184,18 @@
  @tab @code{SQL_BIG_RESULT}
  @tab @code{SQL_CALC_FOUND_ROWS}
 @item @code{SQL_SMALL_RESULT}
- @tab @code{SQL_TSI_DAY}
- @tab @code{SQL_TSI_FRAC_SECOND}
-@item @code{SQL_TSI_HOUR}
- @tab @code{SQL_TSI_MINUTE}
- @tab @code{SQL_TSI_MONTH}
-@item @code{SQL_TSI_QUARTER}
- @tab @code{SQL_TSI_SECOND}
- @tab @code{SQL_TSI_WEEK}
-@item @code{SQL_TSI_YEAR}
  @tab @code{SSL}
  @tab @code{STARTING}
 @item @code{STRAIGHT_JOIN}
- @tab @code{STRIPED}
  @tab @code{TABLE}
-@item @code{TABLES}
  @tab @code{TERMINATED}
- @tab @code{THEN}
-@item @code{TIMESTAMPADD}
- @tab @code{TIMESTAMPDIFF}
+@item @code{THEN}
  @tab @code{TINYBLOB}
-@item @code{TINYINT}
- @tab @code{TINYTEXT}
+ @tab @code{TINYINT}
+@item @code{TINYTEXT}
  @tab @code{TO}
-@item @code{TRAILING}
+ @tab @code{TRAILING}
+@item @code{TRIGGER}
  @tab @code{TRUE}
  @tab @code{UNDO}
 @item @code{UNION}
@@ -220,26 +205,23 @@
  @tab @code{UPDATE}
  @tab @code{USAGE}
 @item @code{USE}
- @tab @code{USER_RESOURCES}
  @tab @code{USING}
-@item @code{UTC_DATE}
- @tab @code{UTC_TIME}
+ @tab @code{UTC_DATE}
+@item @code{UTC_TIME}
  @tab @code{UTC_TIMESTAMP}
-@item @code{VALUES}
- @tab @code{VARBINARY}
+ @tab @code{VALUES}
+@item @code{VARBINARY}
  @tab @code{VARCHAR}
-@item @code{VARCHARACTER}
- @tab @code{VARYING}
+ @tab @code{VARCHARACTER}
+@item @code{VARYING}
  @tab @code{WHEN}
-@item @code{WHERE}
- @tab @code{WHILE}
+ @tab @code{WHERE}
+@item @code{WHILE}
  @tab @code{WITH}
-@item @code{WRITE}
- @tab @code{XOR}
+ @tab @code{WRITE}
+@item @code{XOR}
  @tab @code{YEAR_MONTH}
-@item @code{ZEROFILL}
- @tab
- @tab
+ @tab @code{ZEROFILL}
 @end multitable
 
 @c END_OF_RESERVED_WORDS

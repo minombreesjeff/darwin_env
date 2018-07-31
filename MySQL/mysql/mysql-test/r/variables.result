@@ -1,4 +1,4 @@
-drop table if exists t1;
+drop table if exists t1,t2;
 set @`test`=1,@TEST=3,@select=2,@t5=1.23456;
 select @test,@`select`,@TEST,@not_used;
 @test	@`select`	@TEST	@not_used
@@ -22,6 +22,11 @@ NULL	NULL	NULL	NULL
 select @t1:=(@t2:=1)+@t3:=4,@t1,@t2,@t3;
 @t1:=(@t2:=1)+@t3:=4	@t1	@t2	@t3
 5	5	1	4
+explain extended select @t1:=(@t2:=1)+@t3:=4,@t1,@t2,@t3;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1003	select sql_no_cache (@t1:=((@t2:=1) + (@t3:=4))) AS `@t1:=(@t2:=1)+@t3:=4`,(@t1) AS `@t1`,(@t2) AS `@t2`,(@t3) AS `@t3`
 select @t5;
 @t5
 1.23456
@@ -50,7 +55,7 @@ Variable_name	Value
 max_join_size	100
 show global variables like 'max_join_size';
 Variable_name	Value
-max_join_size	HA_POS_ERROR
+max_join_size	10
 set GLOBAL max_join_size=2000;
 show global variables like 'max_join_size';
 Variable_name	Value
@@ -76,9 +81,19 @@ select @@VERSION=version();
 select last_insert_id(345);
 last_insert_id(345)
 345
+explain extended select last_insert_id(345);
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1003	select sql_no_cache last_insert_id(345) AS `last_insert_id(345)`
 select @@IDENTITY,last_insert_id(), @@identity;
-@@identity	last_insert_id()	@@identity
+@@IDENTITY	last_insert_id()	@@identity
 345	345	345
+explain extended select @@IDENTITY,last_insert_id(), @@identity;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1003	select sql_no_cache 345 AS `@@IDENTITY`,last_insert_id() AS `last_insert_id()`,345 AS `@@identity`
 set big_tables=OFF, big_tables=ON, big_tables=0, big_tables=1, big_tables="OFF", big_tables="ON";
 set global concurrent_insert=ON;
 show variables like 'concurrent_insert';
@@ -100,13 +115,13 @@ set global concurrent_insert=DEFAULT;
 show variables like 'concurrent_insert';
 Variable_name	Value
 concurrent_insert	ON
-set table_type=MYISAM, table_type="HEAP", global table_type="INNODB";
-show local variables like 'table_type';
+set storage_engine=MYISAM, storage_engine="HEAP", global storage_engine="MERGE";
+show local variables like 'storage_engine';
 Variable_name	Value
-table_type	HEAP
-show global variables like 'table_type';
+storage_engine	HEAP
+show global variables like 'storage_engine';
 Variable_name	Value
-table_type	INNODB
+storage_engine	MERGE
 set GLOBAL query_cache_size=100000;
 set GLOBAL myisam_max_sort_file_size=2000000;
 show global variables like 'myisam_max_sort_file_size';
@@ -152,18 +167,10 @@ set net_buffer_length=2000000000;
 show variables like 'net_buffer_length';
 Variable_name	Value
 net_buffer_length	1048576
-set GLOBAL character set cp1251_koi8;
-show global variables like "convert_character_set";
-Variable_name	Value
-convert_character_set	cp1251_koi8
 set character set cp1251_koi8;
-show variables like "convert_character_set";
+show variables like "character_set_client";
 Variable_name	Value
-convert_character_set	cp1251_koi8
-set global character set default, session character set default;
-show variables like "convert_character_set";
-Variable_name	Value
-convert_character_set	cp1251_koi8
+character_set_client	cp1251
 select @@timestamp>0;
 @@timestamp>0
 1
@@ -204,48 +211,50 @@ range_alloc_block_size	2048
 transaction_alloc_block_size	8192
 transaction_prealloc_size	4096
 set big_tables=OFFF;
-Variable 'big_tables' can't be set to the value of 'OFFF'
+ERROR 42000: Variable 'big_tables' can't be set to the value of 'OFFF'
 set big_tables="OFFF";
-Variable 'big_tables' can't be set to the value of 'OFFF'
+ERROR 42000: Variable 'big_tables' can't be set to the value of 'OFFF'
 set unknown_variable=1;
-Unknown system variable 'unknown_variable'
+ERROR HY000: Unknown system variable 'unknown_variable'
 set max_join_size="hello";
-Wrong argument type to variable 'max_join_size'
-set table_type=UNKNOWN_TABLE_TYPE;
-Variable 'table_type' can't be set to the value of 'UNKNOWN_TABLE_TYPE'
-set table_type=INNODB, big_tables=2;
-Variable 'big_tables' can't be set to the value of '2'
-show local variables like 'table_type';
+ERROR 42000: Incorrect argument type to variable 'max_join_size'
+set storage_engine=UNKNOWN_TABLE_TYPE;
+ERROR 42000: Unknown table engine 'UNKNOWN_TABLE_TYPE'
+set storage_engine=MERGE, big_tables=2;
+ERROR 42000: Variable 'big_tables' can't be set to the value of '2'
+show local variables like 'storage_engine';
 Variable_name	Value
-table_type	HEAP
+storage_engine	HEAP
 set SESSION query_cache_size=10000;
-Variable 'query_cache_size' is a GLOBAL variable and should be set with SET GLOBAL
-set GLOBAL table_type=DEFAULT;
-Variable 'table_type' doesn't have a default value
-set convert_character_set=UNKNOWN_CHARACTER_SET;
-Unknown character set: 'UNKNOWN_CHARACTER_SET'
-set character set unknown;
-Unknown character set: 'unknown'
-set character set 0;
-Wrong argument type to variable 'convert_character_set'
+ERROR HY000: Variable 'query_cache_size' is a GLOBAL variable and should be set with SET GLOBAL
+set GLOBAL storage_engine=DEFAULT;
+ERROR 42000: Variable 'storage_engine' doesn't have a default value
+set character_set_client=UNKNOWN_CHARACTER_SET;
+ERROR 42000: Unknown character set: 'UNKNOWN_CHARACTER_SET'
+set collation_connection=UNKNOWN_COLLATION;
+ERROR HY000: Unknown collation: 'UNKNOWN_COLLATION'
+set character_set_client=NULL;
+ERROR 42000: Variable 'character_set_client' can't be set to the value of 'NULL'
+set collation_connection=NULL;
+ERROR 42000: Variable 'collation_connection' can't be set to the value of 'NULL'
 set global autocommit=1;
-Variable 'autocommit' is a LOCAL variable and can't be used with SET GLOBAL
+ERROR HY000: Variable 'autocommit' is a SESSION variable and can't be used with SET GLOBAL
 select @@global.timestamp;
-Variable 'timestamp' is a LOCAL variable
+ERROR HY000: Variable 'timestamp' is a SESSION variable
 set @@version='';
-Unknown system variable 'version'
+ERROR HY000: Unknown system variable 'version'
 set @@concurrent_insert=1;
-Variable 'concurrent_insert' is a GLOBAL variable and should be set with SET GLOBAL
+ERROR HY000: Variable 'concurrent_insert' is a GLOBAL variable and should be set with SET GLOBAL
 set @@global.sql_auto_is_null=1;
-Variable 'sql_auto_is_null' is a LOCAL variable and can't be used with SET GLOBAL
+ERROR HY000: Variable 'sql_auto_is_null' is a SESSION variable and can't be used with SET GLOBAL
 select @@global.sql_auto_is_null;
-Variable 'sql_auto_is_null' is a LOCAL variable
+ERROR HY000: Variable 'sql_auto_is_null' is a SESSION variable
 set myisam_max_sort_file_size=100;
-Variable 'myisam_max_sort_file_size' is a GLOBAL variable and should be set with SET GLOBAL
+ERROR HY000: Variable 'myisam_max_sort_file_size' is a GLOBAL variable and should be set with SET GLOBAL
 set myisam_max_extra_sort_file_size=100;
-Variable 'myisam_max_extra_sort_file_size' is a GLOBAL variable and should be set with SET GLOBAL
+ERROR HY000: Variable 'myisam_max_extra_sort_file_size' is a GLOBAL variable and should be set with SET GLOBAL
 set @@SQL_WARNINGS=NULL;
-Variable 'sql_warnings' can't be set to the value of 'NULL'
+ERROR 42000: Variable 'sql_warnings' can't be set to the value of 'NULL'
 set autocommit=1;
 set big_tables=1;
 select @@autocommit, @@big_tables;
@@ -253,8 +262,8 @@ select @@autocommit, @@big_tables;
 1	1
 set global binlog_cache_size=100;
 set bulk_insert_buffer_size=100;
-set convert_character_set=cp1251_koi8;
-set convert_character_set=default;
+set character set cp1251_koi8;
+set character set default;
 set @@global.concurrent_insert=1;
 set global connect_timeout=100;
 select @@delay_key_write;
@@ -343,14 +352,13 @@ set sql_select_limit=1;
 set global sql_slave_skip_counter=100;
 set sql_warnings=1;
 set global table_cache=100;
-set table_type=myisam;
+set storage_engine=myisam;
 set global thread_cache_size=100;
 set timestamp=1, timestamp=default;
 set tmp_table_size=100;
 set tx_isolation="READ-COMMITTED";
 set wait_timeout=100;
 set log_warnings=1;
-DROP TABLE IF EXISTS t1,t2;
 create table t1 (a int not null auto_increment, primary key(a));
 create table t2 (a int not null auto_increment, primary key(a));
 insert into t1 values(null),(null),(null);
@@ -369,11 +377,108 @@ check table t1,t2;
 Table	Op	Msg_type	Msg_text
 test.t1	check	status	OK
 test.t2	check	status	OK
+select max(a) +1, max(a) +2 into @xx,@yy from t1;
 drop table t1,t2;
 select @@xxxxxxxxxx;
-Unknown system variable 'xxxxxxxxxx'
+ERROR HY000: Unknown system variable 'xxxxxxxxxx'
 select 1;
 1
 1
 select @@session.key_buffer_size;
-Variable 'key_buffer_size' is a GLOBAL variable
+ERROR HY000: Variable 'key_buffer_size' is a GLOBAL variable
+set ft_boolean_syntax = @@init_connect;
+ERROR HY000: Variable 'ft_boolean_syntax' is a GLOBAL variable and should be set with SET GLOBAL
+set global ft_boolean_syntax = @@init_connect;
+ERROR 42000: Variable 'ft_boolean_syntax' can't be set to the value of ''
+set init_connect = NULL;
+ERROR HY000: Variable 'init_connect' is a GLOBAL variable and should be set with SET GLOBAL
+set global init_connect = NULL;
+set ft_boolean_syntax = @@init_connect;
+ERROR HY000: Variable 'ft_boolean_syntax' is a GLOBAL variable and should be set with SET GLOBAL
+set global ft_boolean_syntax = @@init_connect;
+ERROR 42000: Variable 'ft_boolean_syntax' can't be set to the value of ''
+set global myisam_max_sort_file_size=4294967296;
+show global variables like 'myisam_max_sort_file_size';
+Variable_name	Value
+myisam_max_sort_file_size	MAX_FILE_SIZE
+set global myisam_max_sort_file_size=default;
+select @@global.max_user_connections,@@local.max_join_size;
+@@global.max_user_connections	@@session.max_join_size
+100	200
+set @svc=@@global.max_user_connections, @svj=@@local.max_join_size;
+select @@global.max_user_connections,@@local.max_join_size;
+@@global.max_user_connections	@@session.max_join_size
+100	200
+set @@global.max_user_connections=111,@@local.max_join_size=222;
+select @@global.max_user_connections,@@local.max_join_size;
+@@global.max_user_connections	@@session.max_join_size
+111	222
+set @@global.max_user_connections=@@local.max_join_size,@@local.max_join_size=@@global.max_user_connections;
+select @@global.max_user_connections,@@local.max_join_size;
+@@global.max_user_connections	@@session.max_join_size
+222	111
+set @@global.max_user_connections=@svc, @@local.max_join_size=@svj;
+select @@global.max_user_connections,@@local.max_join_size;
+@@global.max_user_connections	@@session.max_join_size
+100	200
+set @a=1, @b=2;
+set @a=@b, @b=@a;
+select @a, @b;
+@a	@b
+2	1
+set @@global.global.key_buffer_size= 1;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'key_buffer_size= 1' at line 1
+set GLOBAL global.key_buffer_size= 1;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'key_buffer_size= 1' at line 1
+SELECT @@global.global.key_buffer_size;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'key_buffer_size' at line 1
+SELECT @@global.session.key_buffer_size;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'key_buffer_size' at line 1
+SELECT @@global.local.key_buffer_size;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'key_buffer_size' at line 1
+set @tstlw = @@log_warnings;
+show global variables like 'log_warnings';
+Variable_name	Value
+log_warnings	1
+set global log_warnings = 0;
+show global variables like 'log_warnings';
+Variable_name	Value
+log_warnings	0
+set global log_warnings = 42;
+show global variables like 'log_warnings';
+Variable_name	Value
+log_warnings	42
+set global log_warnings = @tstlw;
+show global variables like 'log_warnings';
+Variable_name	Value
+log_warnings	1
+create table t1 (
+c1 tinyint,
+c2 smallint,
+c3 mediumint,
+c4 int,
+c5 bigint);
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `c1` tinyint(4) default NULL,
+  `c2` smallint(6) default NULL,
+  `c3` mediumint(9) default NULL,
+  `c4` int(11) default NULL,
+  `c5` bigint(20) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+drop table t1;
+set @arg00= 8, @arg01= 8.8, @arg02= 'a string';
+create table t1 as select @arg00 as c1, @arg01 as c2, @arg02 as c3;
+show create table t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `c1` bigint(20) default NULL,
+  `c2` double default NULL,
+  `c3` longtext
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+drop table t1;
+SET GLOBAL MYISAM_DATA_POINTER_SIZE= 8;
+SHOW VARIABLES LIKE 'MYISAM_DATA_POINTER_SIZE';
+Variable_name	Value
+myisam_data_pointer_size	8

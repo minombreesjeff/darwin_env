@@ -315,7 +315,7 @@ struct trx_struct{
 	ulint		magic_n;
 	/* All the next fields are protected by the kernel mutex, except the
 	undo logs which are protected by undo_mutex */
-	char*		op_info;	/* English text describing the
+	const char*	op_info;	/* English text describing the
 					current operation, or an empty
 					string */
 	ulint		type;		/* TRX_USER, TRX_PURGE */
@@ -358,7 +358,7 @@ struct trx_struct{
 	char**		mysql_query_str;/* pointer to the field in mysqld_thd
 					which contains the pointer to the
 					current SQL query string */
-	char*		mysql_log_file_name;
+	const char*	mysql_log_file_name;
 					/* if MySQL binlog is used, this field
 					contains a pointer to the latest file
 					name; this is NULL if binlog is not
@@ -366,7 +366,7 @@ struct trx_struct{
 	ib_longlong	mysql_log_offset;/* if MySQL binlog is used, this field
 					contains the end offset of the binlog
 					entry */
-	char*		mysql_master_log_file_name;
+	const char*	mysql_master_log_file_name;
 					/* if the database server is a MySQL
 					replication slave, we have here the
 					master binlog name up to which
@@ -378,6 +378,19 @@ struct trx_struct{
 					replication slave, this is the
 					position in the log file up to which
 					replication has processed */
+	/* A MySQL variable mysql_thd->synchronous_repl tells if we have
+	to use synchronous replication. See ha_innodb.cc. */
+	char*		repl_wait_binlog_name;/* NULL, or if synchronous MySQL
+					replication is used, the binlog name
+					up to which we must communicate the
+					binlog to the slave, before returning
+					from a commit; this is the same as
+					mysql_log_file_name, but we allocate
+					and copy the name to a separate buffer
+					here */
+	ib_longlong	repl_wait_binlog_pos;/* see above at
+					repl_wait_binlog_name */
+
 	os_thread_id_t	mysql_thread_id;/* id of the MySQL thread associated
 					with this transaction object */
 	ulint		mysql_process_no;/* since in Linux, 'top' reports
@@ -423,8 +436,9 @@ struct trx_struct{
 	lock_t*		auto_inc_lock;	/* possible auto-inc lock reserved by
 					the transaction; note that it is also
 					in the lock list trx_locks */
-	ulint		n_tables_locked;/* number of table locks reserved by
-					the transaction, stored in trx_locks */
+	ulint		n_lock_table_exp;/* number of explicit table locks
+					(LOCK TABLES) reserved by the
+					transaction, stored in trx_locks */
 	UT_LIST_NODE_T(trx_t)
 			trx_list;	/* list of transactions */
 	UT_LIST_NODE_T(trx_t)

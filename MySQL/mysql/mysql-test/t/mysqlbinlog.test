@@ -1,10 +1,11 @@
 # We are using .opt file since we need small binlog size
---disable_warnings
-drop table if exists t1,t2;
---enable_warnings
 
 # we need this for getting fixed timestamps inside of this test
 set timestamp=1000000000;
+
+--disable_warnings
+drop table if exists t1,t2;
+--enable_warnings
 
 create table t1 (word varchar(20));
 create table t2 (id int auto_increment not null primary key);
@@ -39,28 +40,28 @@ select "--- Local --" as "";
 #
 
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ $MYSQL_TEST_DIR/var/log/master-bin.001 
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ $MYSQL_TEST_DIR/var/log/master-bin.000001 
 
 # this should not fail but shouldn't produce any working statements
 --disable_query_log
 select "--- Broken LOAD DATA --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ $MYSQL_TEST_DIR/var/log/master-bin.002
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ $MYSQL_TEST_DIR/var/log/master-bin.000002
 
 # this should show almost nothing
 --disable_query_log
 select "--- --database --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --database=nottest $MYSQL_TEST_DIR/var/log/master-bin.001
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --database=nottest $MYSQL_TEST_DIR/var/log/master-bin.000001
 
 # this test for position option
 --disable_query_log
 select "--- --position --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --position=27 $MYSQL_TEST_DIR/var/log/master-bin.002
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --position=27 $MYSQL_TEST_DIR/var/log/master-bin.000002
 
 # These are tests for remote binlog.
 # They should return the same as previous test.
@@ -70,30 +71,29 @@ select "--- Remote --" as "";
 --enable_query_log
 
 # This is broken now
-# By the way it seems that remote version fetches all events with name >= master-bin.001
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT master-bin.001
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT master-bin.000001
 
 # This is broken too
 --disable_query_log
 select "--- Broken LOAD DATA --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT master-bin.002
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT master-bin.000002
 
 # And this too ! (altough it is documented)
 --disable_query_log
 select "--- --database --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT --database=nottest master-bin.001
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --user=root --host=127.0.0.1 --port=$MASTER_MYPORT --database=nottest master-bin.000001
 
 # Strangely but this works
 --disable_query_log
 select "--- --position --" as "";
 --enable_query_log
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --position=27 --user=root --host=127.0.0.1 --port=$MASTER_MYPORT master-bin.002
+--exec $MYSQL_BINLOG --short-form --local-load=$MYSQL_TEST_DIR/var/tmp/ --read-from-remote-server --position=27 --user=root --host=127.0.0.1 --port=$MASTER_MYPORT master-bin.000002
 
 # clean up
-drop table t1;
+drop table t1, t2;

@@ -27,9 +27,6 @@
 extern "C" {					// Because of SCO 3.2V4.2
 #endif
 #if !defined( __WIN__) && !defined(OS2)
-#if !defined(__NETWARE__)
-#include <sys/resource.h>
-#endif /* __NETWARE__ */
 #ifdef HAVE_SYS_UN_H
 #include <sys/un.h>
 #endif
@@ -61,21 +58,26 @@ bool hostname_cache_init()
 {
   host_entry tmp;
   uint offset= (uint) ((char*) (&tmp.ip) - (char*) &tmp);
-  (void) pthread_mutex_init(&LOCK_hostname,MY_MUTEX_INIT_SLOW);
-
   if (!(hostname_cache=new hash_filo(HOST_CACHE_SIZE, offset,
 				     sizeof(struct in_addr),NULL,
-				     (hash_free_key) free)))
+				     (hash_free_key) free,
+				     &my_charset_latin1)))
     return 1;
   hostname_cache->clear();
+  (void) pthread_mutex_init(&LOCK_hostname,MY_MUTEX_INIT_SLOW);
   return 0;
 }
 
 void hostname_cache_free()
 {
-  (void) pthread_mutex_destroy(&LOCK_hostname);
-  delete hostname_cache;
+  if (hostname_cache)
+  {
+    (void) pthread_mutex_destroy(&LOCK_hostname);
+    delete hostname_cache;
+    hostname_cache= 0;
+  }
 }
+
 
 static void add_hostname(struct in_addr *in,const char *name)
 {
@@ -223,10 +225,10 @@ my_string ip_to_hostname(struct in_addr *in, uint *errors)
 
   /* Don't accept hostnames that starts with digits because they may be
      false ip:s */
-  if (isdigit(name[0]))
+  if (my_isdigit(&my_charset_latin1,name[0]))
   {
     char *pos;
-    for (pos= name+1 ; isdigit(*pos); pos++) ;
+    for (pos= name+1 ; my_isdigit(&my_charset_latin1,*pos); pos++) ;
     if (*pos == '.')
     {
       DBUG_PRINT("error",("mysqld doesn't accept hostnames that starts with a number followed by a '.'"));

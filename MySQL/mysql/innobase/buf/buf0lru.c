@@ -42,6 +42,10 @@ initial segment in buf_LRU_get_recent_limit */
 
 #define BUF_LRU_INITIAL_RATIO	8
 
+/* If we switch on the InnoDB monitor because there are too few available
+frames in the buffer pool, we set this to TRUE */
+ibool	buf_lru_switched_on_innodb_mon	= FALSE;
+
 /**********************************************************************
 Takes a block out of the LRU list and page hash table and sets the block
 state to BUF_BLOCK_REMOVE_HASH. */
@@ -60,6 +64,91 @@ buf_LRU_block_free_hashed_page(
 /*===========================*/
 	buf_block_t*	block);	/* in: block, must contain a file page and
 				be in a state where it can be freed */
+
+/**********************************************************************
+Invalidates all pages belonging to a given tablespace when we are deleting
+the data file(s) of that tablespace. */
+
+void
+buf_LRU_invalidate_tablespace(
+/*==========================*/
+	ulint	id)	/* in: space id */
+{
+	buf_block_t*	block;
+	ulint		page_no;
+	ibool		all_freed;
+
+scan_again:
+	mutex_enter(&(buf_pool->mutex));
+	
+	all_freed = TRUE;
+	
+	block = UT_LIST_GET_LAST(buf_pool->LRU);
+
+	while (block != NULL) {
+	        ut_a(block->state == BUF_BLOCK_FILE_PAGE);
+
+		if (block->space == id
+		    && (block->buf_fix_count > 0 || block->io_fix != 0)) {
+
+			/* We cannot remove this page during this scan yet;
+			maybe the system is currently reading it in, or
+			flushing the modifications to the file */
+			
+			all_freed = FALSE;
+
+			goto next_page;
+		}
+
+		if (block->space == id) {
+#ifdef UNIV_DEBUG
+			if (buf_debug_prints) {
+				printf(
+				"Dropping space %lu page %lu\n",
+					(ulong) block->space,
+				        (ulong) block->offset);
+			}
+#endif
+			if (block->is_hashed) {
+				page_no = block->offset;
+			
+				mutex_exit(&(buf_pool->mutex));
+
+				/* Note that the following call will acquire
+				an S-latch on the page */
+
+				btr_search_drop_page_hash_when_freed(id,
+								page_no);
+				goto scan_again;
+			}
+
+			if (0 != ut_dulint_cmp(block->oldest_modification,
+							ut_dulint_zero)) {
+
+				/* Remove from the flush list of modified
+				blocks */
+				block->oldest_modification = ut_dulint_zero;
+
+				UT_LIST_REMOVE(flush_list, 
+						buf_pool->flush_list, block);
+			}
+
+			/* Remove from the LRU list */
+			buf_LRU_block_remove_hashed_page(block);
+			buf_LRU_block_free_hashed_page(block);
+		}
+next_page:
+		block = UT_LIST_GET_PREV(LRU, block);
+	}
+
+	mutex_exit(&(buf_pool->mutex));
+	
+	if (!all_freed) {
+		os_thread_sleep(20000);
+
+	        goto scan_again;
+	}
+}
 
 /**********************************************************************
 Gets the minimum LRU_position field for the blocks in an initial segment
@@ -118,45 +207,45 @@ buf_LRU_search_and_free_block(
 	mutex_enter(&(buf_pool->mutex));
 	
 	freed = FALSE;
-	
 	block = UT_LIST_GET_LAST(buf_pool->LRU);
 
 	while (block != NULL) {
-
+	        ut_a(block->in_LRU_list);
 		if (buf_flush_ready_for_replace(block)) {
 
-#ifdef UNIV_DEBUG
 			if (buf_debug_prints) {
 				fprintf(stderr,
 				"Putting space %lu page %lu to free list\n",
-					block->space, block->offset);
+					(ulong) block->space,
+				        (ulong) block->offset);
 			}
-#endif /* UNIV_DEBUG */
-			
+
 			buf_LRU_block_remove_hashed_page(block);
 
 			mutex_exit(&(buf_pool->mutex));
 
-			btr_search_drop_page_hash_index(block->frame);
-
+			/* Remove possible adaptive hash index built on the
+			page; in the case of AWE the block may not have a
+			frame at all */
+			
+			if (block->frame) {
+				btr_search_drop_page_hash_index(block->frame);
+			}
 			mutex_enter(&(buf_pool->mutex));
 
 			ut_a(block->buf_fix_count == 0);
 
 			buf_LRU_block_free_hashed_page(block);
-
 			freed = TRUE;
 
 			break;
 		}
-
 		block = UT_LIST_GET_PREV(LRU, block);
 		distance++;
 
 		if (!freed && n_iterations <= 10
 		    && distance > 100 + (n_iterations * buf_pool->curr_size)
 					/ 10) {
-
 			buf_pool->LRU_flush_ended = 0;
 
 			mutex_exit(&(buf_pool->mutex));
@@ -164,15 +253,12 @@ buf_LRU_search_and_free_block(
 			return(FALSE);
 		}
 	}
-
 	if (buf_pool->LRU_flush_ended > 0) {
 		buf_pool->LRU_flush_ended--;
 	}
- 
-	if (!freed) {
+ 	if (!freed) {
 		buf_pool->LRU_flush_ended = 0;
 	}
-
 	mutex_exit(&(buf_pool->mutex));
 	
 	return(freed);
@@ -206,6 +292,32 @@ buf_LRU_try_free_flushed_blocks(void)
 }	
 
 /**********************************************************************
+Returns TRUE if less than 15 % of the buffer pool is available. This can be
+used in heuristics to prevent huge transactions eating up the whole buffer
+pool for their locks. */
+
+ibool
+buf_LRU_buf_pool_running_out(void)
+/*==============================*/
+				/* out: TRUE if less than 15 % of buffer pool
+				left */
+{
+	ibool	ret	= FALSE;
+
+	mutex_enter(&(buf_pool->mutex));
+
+	if (!recv_recovery_on && UT_LIST_GET_LEN(buf_pool->free)
+	   + UT_LIST_GET_LEN(buf_pool->LRU) < buf_pool->max_size / 7) {
+		
+		ret = TRUE;
+	}
+
+	mutex_exit(&(buf_pool->mutex));
+
+	return(ret);
+}
+
+/**********************************************************************
 Returns a free block from buf_pool. The block is taken off the free list.
 If it is empty, blocks are moved from the end of the LRU list to the free
 list. */
@@ -213,7 +325,9 @@ list. */
 buf_block_t*
 buf_LRU_get_free_block(void)
 /*========================*/
-				/* out: the free control block */
+				/* out: the free control block; also if AWE is
+				used, it is guaranteed that the block has its
+				page mapped to a frame when we return */
 {
 	buf_block_t*	block		= NULL;
 	ibool		freed;
@@ -241,7 +355,8 @@ loop:
 	   
 	} else if (!recv_recovery_on && UT_LIST_GET_LEN(buf_pool->free)
 	   + UT_LIST_GET_LEN(buf_pool->LRU) < buf_pool->max_size / 5) {
-		if (!srv_print_innodb_monitor) {
+
+		if (!buf_lru_switched_on_innodb_mon) {
 
 	   		/* Over 80 % of the buffer pool is occupied by lock
 			heaps or the adaptive hash index. This may be a memory
@@ -256,18 +371,20 @@ loop:
 "InnoDB: the buffer pool bigger?\n"
 "InnoDB: Starting the InnoDB Monitor to print diagnostics, including\n"
 "InnoDB: lock heap and hash index sizes.\n",
-		(ulong)(buf_pool->curr_size / (1024 * 1024 / UNIV_PAGE_SIZE)));
+			(ulong) (buf_pool->curr_size / (1024 * 1024 / UNIV_PAGE_SIZE)));
 
+			buf_lru_switched_on_innodb_mon = TRUE;
 			srv_print_innodb_monitor = TRUE;
 			os_event_set(srv_lock_timeout_thread_event);
 		}
-	} else if (!recv_recovery_on && UT_LIST_GET_LEN(buf_pool->free)
-	   + UT_LIST_GET_LEN(buf_pool->LRU) < buf_pool->max_size / 4) {
+	} else if (buf_lru_switched_on_innodb_mon) {
 
 		/* Switch off the InnoDB Monitor; this is a simple way
 		to stop the monitor if the situation becomes less urgent,
-		but may also surprise users! */
+		but may also surprise users if the user also switched on the
+		monitor! */
 
+		buf_lru_switched_on_innodb_mon = FALSE;
 		srv_print_innodb_monitor = FALSE;
 	}
 	
@@ -275,7 +392,27 @@ loop:
 	if (UT_LIST_GET_LEN(buf_pool->free) > 0) {
 		
 		block = UT_LIST_GET_FIRST(buf_pool->free);
+		ut_a(block->in_free_list);
 		UT_LIST_REMOVE(free, buf_pool->free, block);
+		block->in_free_list = FALSE;
+		ut_a(block->state != BUF_BLOCK_FILE_PAGE);
+	        ut_a(!block->in_LRU_list);
+
+		if (srv_use_awe) {
+			if (block->frame) {
+				/* Remove from the list of mapped pages */
+		
+				UT_LIST_REMOVE(awe_LRU_free_mapped,
+					buf_pool->awe_LRU_free_mapped, block);
+			} else {
+				/* We map the page to a frame; second param
+				FALSE below because we do not want it to be
+				added to the awe_LRU_free_mapped list */
+
+				buf_awe_map_page_to_frame(block, FALSE);
+			}
+		}
+		
 		block->state = BUF_BLOCK_READY_FOR_USE;
 
 		mutex_exit(&(buf_pool->mutex));
@@ -313,10 +450,11 @@ loop:
 		"InnoDB: %lu OS file reads, %lu OS file writes, %lu OS fsyncs\n"
 		"InnoDB: Starting InnoDB Monitor to print further\n"
 		"InnoDB: diagnostics to the standard output.\n",
-			n_iterations,
-			fil_n_pending_log_flushes,
-			fil_n_pending_tablespace_flushes,
-			os_n_file_reads, os_n_file_writes, os_n_fsyncs);
+			(ulong) n_iterations,
+			(ulong) fil_n_pending_log_flushes,
+			(ulong) fil_n_pending_tablespace_flushes,
+			(ulong) os_n_file_reads, (ulong) os_n_file_writes,
+                        (ulong) os_n_fsyncs);
 
 		mon_value_was = srv_print_innodb_monitor;
 		started_monitor = TRUE;
@@ -365,7 +503,7 @@ buf_LRU_old_adjust_len(void)
 	ulint	old_len;
 	ulint	new_len;
 
-	ut_ad(buf_pool->LRU_old);
+	ut_a(buf_pool->LRU_old);
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(buf_pool->mutex)));
 #endif /* UNIV_SYNC_DEBUG */
@@ -374,6 +512,8 @@ buf_LRU_old_adjust_len(void)
 	for (;;) {
 		old_len = buf_pool->LRU_old_len;
 		new_len = 3 * (UT_LIST_GET_LEN(buf_pool->LRU) / 8);
+
+		ut_a(buf_pool->LRU_old->in_LRU_list);
 
 		/* Update the LRU_old pointer if necessary */
 	
@@ -391,7 +531,7 @@ buf_LRU_old_adjust_len(void)
 							buf_pool->LRU_old);
 			buf_pool->LRU_old_len--;
 		} else {
-			ut_ad(buf_pool->LRU_old); /* Check that we did not
+			ut_a(buf_pool->LRU_old); /* Check that we did not
 						fall out of the LRU list */
 			return;
 		}
@@ -399,9 +539,8 @@ buf_LRU_old_adjust_len(void)
 }
 
 /***********************************************************************
-Initializes the old blocks pointer in the LRU list.
-This function should be called when the LRU list grows to
-BUF_LRU_OLD_MIN_LEN length. */
+Initializes the old blocks pointer in the LRU list. This function should be
+called when the LRU list grows to BUF_LRU_OLD_MIN_LEN length. */
 static
 void
 buf_LRU_old_init(void)
@@ -409,7 +548,7 @@ buf_LRU_old_init(void)
 {
 	buf_block_t*	block;
 
-	ut_ad(UT_LIST_GET_LEN(buf_pool->LRU) == BUF_LRU_OLD_MIN_LEN);
+	ut_a(UT_LIST_GET_LEN(buf_pool->LRU) == BUF_LRU_OLD_MIN_LEN);
 
 	/* We first initialize all blocks in the LRU list as old and then use
 	the adjust function to move the LRU_old pointer to the right
@@ -418,6 +557,8 @@ buf_LRU_old_init(void)
 	block = UT_LIST_GET_FIRST(buf_pool->LRU);
 
 	while (block != NULL) {
+		ut_a(block->state == BUF_BLOCK_FILE_PAGE);
+	        ut_a(block->in_LRU_list);
 		block->old = TRUE;
 		block = UT_LIST_GET_NEXT(LRU, block);
 	}
@@ -442,6 +583,9 @@ buf_LRU_remove_block(
 	ut_ad(mutex_own(&(buf_pool->mutex)));
 #endif /* UNIV_SYNC_DEBUG */
 		
+	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
+	ut_a(block->in_LRU_list);
+
 	/* If the LRU_old pointer is defined and points to just this block,
 	move it backward one step */
 
@@ -455,11 +599,19 @@ buf_LRU_remove_block(
 		(buf_pool->LRU_old)->old = TRUE;
 
 		buf_pool->LRU_old_len++;
-		ut_ad(buf_pool->LRU_old);
+		ut_a(buf_pool->LRU_old);
 	}
 
 	/* Remove the block from the LRU list */
 	UT_LIST_REMOVE(LRU, buf_pool->LRU, block);
+	block->in_LRU_list = FALSE;
+
+	if (srv_use_awe && block->frame) {
+		/* Remove from the list of mapped pages */
+		
+		UT_LIST_REMOVE(awe_LRU_free_mapped,
+					buf_pool->awe_LRU_free_mapped, block);
+	}	
 
 	/* If the LRU list is so short that LRU_old not defined, return */
 	if (UT_LIST_GET_LEN(buf_pool->LRU) < BUF_LRU_OLD_MIN_LEN) {
@@ -497,6 +649,8 @@ buf_LRU_add_block_to_end_low(
 	ut_ad(mutex_own(&(buf_pool->mutex)));
 #endif /* UNIV_SYNC_DEBUG */
 
+	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
+
 	block->old = TRUE;
 
 	last_block = UT_LIST_GET_LAST(buf_pool->LRU);
@@ -507,8 +661,17 @@ buf_LRU_add_block_to_end_low(
 		block->LRU_position = buf_pool_clock_tic();
 	}			
 
+	ut_a(!block->in_LRU_list);
 	UT_LIST_ADD_LAST(LRU, buf_pool->LRU, block);
+	block->in_LRU_list = TRUE;
 
+	if (srv_use_awe && block->frame) {
+		/* Add to the list of mapped pages */
+		
+		UT_LIST_ADD_LAST(awe_LRU_free_mapped,
+					buf_pool->awe_LRU_free_mapped, block);
+	}
+	
 	if (UT_LIST_GET_LEN(buf_pool->LRU) >= BUF_LRU_OLD_MIN_LEN) {
 
 		buf_pool->LRU_old_len++;
@@ -551,8 +714,20 @@ buf_LRU_add_block_low(
 	ut_ad(mutex_own(&(buf_pool->mutex)));
 #endif /* UNIV_SYNC_DEBUG */
 
+	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
+	ut_a(!block->in_LRU_list);
+
 	block->old = old;
 	cl = buf_pool_clock_tic();
+
+	if (srv_use_awe && block->frame) {
+		/* Add to the list of mapped pages; for simplicity we always
+		add to the start, even if the user would have set 'old'
+		TRUE */
+		
+		UT_LIST_ADD_FIRST(awe_LRU_free_mapped,
+					buf_pool->awe_LRU_free_mapped, block);
+	}
 
 	if (!old || (UT_LIST_GET_LEN(buf_pool->LRU) < BUF_LRU_OLD_MIN_LEN)) {
 
@@ -570,6 +745,8 @@ buf_LRU_add_block_low(
 
 		block->LRU_position = (buf_pool->LRU_old)->LRU_position;
 	}
+
+	block->in_LRU_list = TRUE;
 
 	if (UT_LIST_GET_LEN(buf_pool->LRU) > BUF_LRU_OLD_MIN_LEN) {
 
@@ -641,8 +818,11 @@ buf_LRU_block_free_non_file_page(
 #endif /* UNIV_SYNC_DEBUG */
 	ut_ad(block);
 	
-	ut_ad((block->state == BUF_BLOCK_MEMORY)
+	ut_a((block->state == BUF_BLOCK_MEMORY)
 	      || (block->state == BUF_BLOCK_READY_FOR_USE));
+
+	ut_a(block->n_pointers == 0);
+	ut_a(!block->in_free_list);
 
 	block->state = BUF_BLOCK_NOT_USED;
 
@@ -651,6 +831,14 @@ buf_LRU_block_free_non_file_page(
 	memset(block->frame, '\0', UNIV_PAGE_SIZE);
 #endif	
 	UT_LIST_ADD_FIRST(free, buf_pool->free, block);
+	block->in_free_list = TRUE;
+
+	if (srv_use_awe && block->frame) {
+		/* Add to the list of mapped pages */
+		
+		UT_LIST_ADD_FIRST(awe_LRU_free_mapped,
+					buf_pool->awe_LRU_free_mapped, block);
+	}
 }
 
 /**********************************************************************
@@ -669,8 +857,7 @@ buf_LRU_block_remove_hashed_page(
 #endif /* UNIV_SYNC_DEBUG */
 	ut_ad(block);
 	
-	ut_ad(block->state == BUF_BLOCK_FILE_PAGE);
-
+	ut_a(block->state == BUF_BLOCK_FILE_PAGE);
 	ut_a(block->io_fix == 0);
 	ut_a(block->buf_fix_count == 0);
 	ut_a(ut_dulint_cmp(block->oldest_modification, ut_dulint_zero) == 0);
@@ -679,7 +866,32 @@ buf_LRU_block_remove_hashed_page(
 
 	buf_pool->freed_page_clock += 1;
 
- 	buf_frame_modify_clock_inc(block->frame);
+	/* Note that if AWE is enabled the block may not have a frame at all */
+	
+ 	buf_block_modify_clock_inc(block);
+		
+        if (block != buf_page_hash_get(block->space, block->offset)) {
+                fprintf(stderr,
+"InnoDB: Error: page %lu %lu not found from the hash table\n",
+			(ulong) block->space,
+			(ulong) block->offset);
+                if (buf_page_hash_get(block->space, block->offset)) {
+                        fprintf(stderr,
+"InnoDB: From hash table we find block %lx of %lu %lu which is not %lx\n",
+                (ulong) buf_page_hash_get(block->space, block->offset),
+                (ulong) buf_page_hash_get(block->space, block->offset)->space,
+                (ulong) buf_page_hash_get(block->space, block->offset)->offset,
+		(ulong) block);
+                }
+
+#ifdef UNIV_DEBUG
+                buf_print();
+                buf_LRU_print();
+                buf_validate();
+                buf_LRU_validate();
+#endif
+                ut_a(0);
+        }	
 
 	HASH_DELETE(buf_block_t, hash, buf_pool->page_hash,
 			buf_page_address_fold(block->space, block->offset),
@@ -700,14 +912,13 @@ buf_LRU_block_free_hashed_page(
 #ifdef UNIV_SYNC_DEBUG
 	ut_ad(mutex_own(&(buf_pool->mutex)));
 #endif /* UNIV_SYNC_DEBUG */
-	ut_ad(block->state == BUF_BLOCK_REMOVE_HASH);
+	ut_a(block->state == BUF_BLOCK_REMOVE_HASH);
 
 	block->state = BUF_BLOCK_MEMORY;
 
 	buf_LRU_block_free_non_file_page(block);
 }
 				
-#ifdef UNIV_DEBUG
 /**************************************************************************
 Validates the LRU list. */
 
@@ -794,7 +1005,7 @@ buf_LRU_print(void)
 	ut_ad(buf_pool);
 	mutex_enter(&(buf_pool->mutex));
 
-	fprintf(stderr, "Pool ulint clock %lu\n", buf_pool->ulint_clock);
+	fprintf(stderr, "Pool ulint clock %lu\n", (ulong) buf_pool->ulint_clock);
 
 	block = UT_LIST_GET_FIRST(buf_pool->LRU);
 
@@ -802,7 +1013,7 @@ buf_LRU_print(void)
 
 	while (block != NULL) {
 
-		fprintf(stderr, "BLOCK %lu ", block->offset);
+		fprintf(stderr, "BLOCK %lu ", (ulong) block->offset);
 
 		if (block->old) {
 			fputs("old ", stderr);
@@ -810,11 +1021,11 @@ buf_LRU_print(void)
 
 		if (block->buf_fix_count) {
 			fprintf(stderr, "buffix count %lu ",
-				block->buf_fix_count);
+				(ulong) block->buf_fix_count);
 		}
 
 		if (block->io_fix) {
-			fprintf(stderr, "io_fix %lu ", block->io_fix);
+			fprintf(stderr, "io_fix %lu ", (ulong) block->io_fix);
 		}
 
 		if (ut_dulint_cmp(block->oldest_modification,
@@ -825,9 +1036,9 @@ buf_LRU_print(void)
 		frame = buf_block_get_frame(block);
 
 		fprintf(stderr, "LRU pos %lu type %lu index id %lu ",
-			block->LRU_position,
-			fil_page_get_type(frame),
-			ut_dulint_get_low(btr_page_get_index_id(frame)));
+			(ulong) block->LRU_position,
+			(ulong) fil_page_get_type(frame),
+			(ulong) ut_dulint_get_low(btr_page_get_index_id(frame)));
 
 		block = UT_LIST_GET_NEXT(LRU, block);
 		if (++len == 10) {
@@ -838,4 +1049,3 @@ buf_LRU_print(void)
 
 	mutex_exit(&(buf_pool->mutex));
 }
-#endif /* UNIV_DEBUG */

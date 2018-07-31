@@ -1,5 +1,4 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
-
+/* Copyright (C) 2000-2004 MySQL AB
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
@@ -16,10 +15,6 @@
 
 
 /* HANDLER ... commands - direct access to ISAM */
-
-#include "mysql_priv.h"
-#include "sql_select.h"
-#include <assert.h>
 
 /* TODO:
   HANDLER blabla OPEN [ AS foobar ] [ (column-list) ]
@@ -38,91 +33,405 @@
   all the sql_alloc'ed memory. It's harder to work around...
 */
 
+/*
+  There are two containers holding information about open handler tables.
+  The first is 'thd->handler_tables'. It is a linked list of TABLE objects.
+  It is used like 'thd->open_tables' in the table cache. The trick is to
+  exchange these two lists during open and lock of tables. Thus the normal
+  table cache code can be used.
+  The second container is a HASH. It holds objects of the type TABLE_LIST.
+  Despite its name, no lists of tables but only single structs are hashed
+  (the 'next' pointer is always NULL). The reason for theis second container
+  is, that we want handler tables to survive FLUSH TABLE commands. A table
+  affected by FLUSH TABLE must be closed so that other threads are not
+  blocked by handler tables still in use. Since we use the normal table cache
+  functions with 'thd->handler_tables', the closed tables are removed from
+  this list. Hence we need the original open information for the handler
+  table in the case that it is used again. This information is handed over
+  to mysql_ha_open() as a TABLE_LIST. So we store this information in the
+  second container, where it is not affected by FLUSH TABLE. The second
+  container is implemented as a hash for performance reasons. Consequently,
+  we use it not only for re-opening a handler table, but also for the
+  HANDLER ... READ commands. For this purpose, we store a pointer to the
+  TABLE structure (in the first container) in the TBALE_LIST object in the
+  second container. When the table is flushed, the pointer is cleared.
+*/
+
+#include "mysql_priv.h"
+#include "sql_select.h"
+#include <assert.h>
+
+#define HANDLER_TABLES_HASH_SIZE 120
+
+static enum enum_ha_read_modes rkey_to_rnext[]=
+    { RNEXT_SAME, RNEXT, RPREV, RNEXT, RPREV, RNEXT, RPREV, RPREV };
+
 #define HANDLER_TABLES_HACK(thd) {      \
   TABLE *tmp=thd->open_tables;          \
   thd->open_tables=thd->handler_tables; \
   thd->handler_tables=tmp; }
 
-static TABLE **find_table_ptr_by_name(THD *thd,const char *db,
-				      const char *table_name, bool is_alias);
+static int mysql_ha_flush_table(THD *thd, TABLE **table_ptr, uint mode_flags);
 
-int mysql_ha_open(THD *thd, TABLE_LIST *tables)
+
+/*
+  Get hash key and hash key length.
+
+  SYNOPSIS
+    mysql_ha_hash_get_key()
+    tables                      Pointer to the hash object.
+    key_len_p   (out)           Pointer to the result for key length.
+    first                       Unused.
+
+  DESCRIPTION
+    The hash object is an TABLE_LIST struct.
+    The hash key is the alias name.
+    The hash key length is the alias name length plus one for the
+    terminateing NUL character.
+
+  RETURN
+    Pointer to the TABLE_LIST struct.
+*/
+
+static char *mysql_ha_hash_get_key(TABLE_LIST *tables, uint *key_len_p,
+                                   my_bool first __attribute__((unused)))
 {
+  *key_len_p= strlen(tables->alias) + 1 ; /* include '\0' in comparisons */
+  return tables->alias;
+}
+
+
+/*
+  Free an hash object.
+
+  SYNOPSIS
+    mysql_ha_hash_free()
+    tables                      Pointer to the hash object.
+
+  DESCRIPTION
+    The hash object is an TABLE_LIST struct.
+
+  RETURN
+    Nothing
+*/
+
+static void mysql_ha_hash_free(TABLE_LIST *tables)
+{
+  my_free((char*) tables, MYF(0));
+}
+
+
+/*
+  Open a HANDLER table.
+
+  SYNOPSIS
+    mysql_ha_open()
+    thd                         Thread identifier.
+    tables                      A list of tables with the first entry to open.
+    reopen                      Re-open a previously opened handler table.
+
+  DESCRIPTION
+    Though this function takes a list of tables, only the first list entry
+    will be opened.
+    'reopen' is set when a handler table is to be re-opened. In this case,
+    'tables' is the pointer to the hashed TABLE_LIST object which has been
+    saved on the original open.
+    'reopen' is also used to suppress the sending of an 'ok' message or
+    error messages.
+
+  RETURN
+    0    ok
+    != 0 error
+*/
+
+int mysql_ha_open(THD *thd, TABLE_LIST *tables, bool reopen)
+{
+  TABLE_LIST    *hash_tables;
+  char          *db, *name, *alias;
+  uint          dblen, namelen, aliaslen, counter;
+  int           err;
+  DBUG_ENTER("mysql_ha_open");
+  DBUG_PRINT("enter",("'%s'.'%s' as '%s'  reopen: %d",
+                      tables->db, tables->real_name, tables->alias,
+                      (int) reopen));
+
+  if (! hash_inited(&thd->handler_tables_hash))
+  {
+    /*
+      HASH entries are of type TABLE_LIST.
+    */
+    if (hash_init(&thd->handler_tables_hash, &my_charset_latin1,
+                  HANDLER_TABLES_HASH_SIZE, 0, 0,
+                  (hash_get_key) mysql_ha_hash_get_key,
+                  (hash_free_key) mysql_ha_hash_free, 0))
+      goto err;
+  }
+  else if (! reopen) /* Otherwise we have 'tables' already. */
+  {
+    if (hash_search(&thd->handler_tables_hash, (byte*) tables->alias,
+                    strlen(tables->alias) + 1))
+    {
+      DBUG_PRINT("info",("duplicate '%s'", tables->alias));
+      if (! reopen)
+        my_printf_error(ER_NONUNIQ_TABLE, ER(ER_NONUNIQ_TABLE),
+                        MYF(0), tables->alias);
+      goto err;
+    }
+  }
+
+  /*
+    open_tables() will set 'tables->table' if successful.
+    It must be NULL for a real open when calling open_tables().
+  */
+  DBUG_ASSERT(! tables->table);
   HANDLER_TABLES_HACK(thd);
-  int err=open_tables(thd,tables);
+  err=open_tables(thd, tables, &counter);
   HANDLER_TABLES_HACK(thd);
   if (err)
-    return -1;
+    goto err;
 
-  // there can be only one table in *tables
-  if (!(tables->table->file->table_flags() & HA_CAN_SQL_HANDLER))
+  /* There can be only one table in '*tables'. */
+  if (! (tables->table->file->table_flags() & HA_CAN_SQL_HANDLER))
   {
-    my_printf_error(ER_ILLEGAL_HA,ER(ER_ILLEGAL_HA),MYF(0), tables->alias);
-    mysql_ha_close(thd, tables,1);
-    return -1;
+    if (! reopen)
+      my_printf_error(ER_ILLEGAL_HA,ER(ER_ILLEGAL_HA),MYF(0), tables->alias);
+    mysql_ha_close(thd, tables);
+    goto err;
   }
 
-  send_ok(&thd->net);
-  return 0;
-}
-
-int mysql_ha_close(THD *thd, TABLE_LIST *tables, bool dont_send_ok)
-{
-  TABLE **ptr=find_table_ptr_by_name(thd, tables->db, tables->alias, 1);
-
-  if (*ptr)
+  if (! reopen)
   {
-    VOID(pthread_mutex_lock(&LOCK_open));
-    if (close_thread_table(thd, ptr))
+    /* copy the TABLE_LIST struct */
+    dblen= strlen(tables->db) + 1;
+    namelen= strlen(tables->real_name) + 1;
+    aliaslen= strlen(tables->alias) + 1;
+    if (!(my_multi_malloc(MYF(MY_WME),
+                          &hash_tables, sizeof(*hash_tables),
+                          &db, dblen,
+                          &name, namelen,
+                          &alias, aliaslen,
+                          NullS)))
+      goto err;
+    /* structure copy */
+    *hash_tables= *tables;
+    hash_tables->db= db;
+    hash_tables->real_name= name;
+    hash_tables->alias= alias;
+    memcpy(hash_tables->db, tables->db, dblen);
+    memcpy(hash_tables->real_name, tables->real_name, namelen);
+    memcpy(hash_tables->alias, tables->alias, aliaslen);
+
+    /* add to hash */
+    if (my_hash_insert(&thd->handler_tables_hash, (byte*) hash_tables))
     {
-      /* Tell threads waiting for refresh that something has happened */
-      VOID(pthread_cond_broadcast(&COND_refresh));
+      mysql_ha_close(thd, tables);
+      goto err;
     }
-    VOID(pthread_mutex_unlock(&LOCK_open));
   }
-  else
-  {
-    my_printf_error(ER_UNKNOWN_TABLE,ER(ER_UNKNOWN_TABLE),MYF(0),
-		    tables->alias, "HANDLER");
-    return -1;
-  }
-  if (!dont_send_ok)
-    send_ok(&thd->net);
-  return 0;
+
+  if (! reopen)
+    send_ok(thd);
+  DBUG_PRINT("exit",("OK"));
+  DBUG_RETURN(0);
+
+err:
+  DBUG_PRINT("exit",("ERROR"));
+  DBUG_RETURN(-1);
 }
 
-int mysql_ha_closeall(THD *thd, TABLE_LIST *tables)
+
+/*
+  Close a HANDLER table.
+
+  SYNOPSIS
+    mysql_ha_close()
+    thd                         Thread identifier.
+    tables                      A list of tables with the first entry to close.
+
+  DESCRIPTION
+    Though this function takes a list of tables, only the first list entry
+    will be closed. Broadcasts a COND_refresh condition.
+
+  RETURN
+    0    ok
+    != 0 error
+*/
+
+int mysql_ha_close(THD *thd, TABLE_LIST *tables)
 {
-  TABLE **ptr=find_table_ptr_by_name(thd, tables->db, tables->real_name, 0);
-  if (*ptr && close_thread_table(thd, ptr))
+  TABLE_LIST    *hash_tables;
+  TABLE         **table_ptr;
+  DBUG_ENTER("mysql_ha_close");
+  DBUG_PRINT("enter",("'%s'.'%s' as '%s'",
+                      tables->db, tables->real_name, tables->alias));
+
+  if ((hash_tables= (TABLE_LIST*) hash_search(&thd->handler_tables_hash,
+                                              (byte*) tables->alias,
+                                              strlen(tables->alias) + 1)))
   {
-    /* Tell threads waiting for refresh that something has happened */
-    VOID(pthread_cond_broadcast(&COND_refresh));
+    /*
+      Though we could take the table pointer from hash_tables->table,
+      we must follow the thd->handler_tables chain anyway, as we need the
+      address of the 'next' pointer referencing this table
+      for close_thread_table().
+    */
+    for (table_ptr= &(thd->handler_tables);
+         *table_ptr && (*table_ptr != hash_tables->table);
+           table_ptr= &(*table_ptr)->next);
+
+#if MYSQL_VERSION_ID < 40100
+    if (*tables->db && strcmp(hash_tables->db, tables->db))
+    {
+      DBUG_PRINT("info",("wrong db"));
+      hash_tables= NULL;
+    }
+    else
+#endif
+    {
+      if (*table_ptr)
+      {
+        (*table_ptr)->file->ha_index_or_rnd_end();
+        VOID(pthread_mutex_lock(&LOCK_open));
+        if (close_thread_table(thd, table_ptr))
+        {
+          /* Tell threads waiting for refresh that something has happened */
+          VOID(pthread_cond_broadcast(&COND_refresh));
+        }
+        VOID(pthread_mutex_unlock(&LOCK_open));
+      }
+
+      hash_delete(&thd->handler_tables_hash, (byte*) hash_tables);
+    }
   }
-  return 0;
+
+  if (! hash_tables)
+  {
+#if MYSQL_VERSION_ID < 40100
+    char buff[MAX_DBKEY_LENGTH];
+    if (*tables->db)
+      strxnmov(buff, sizeof(buff), tables->db, ".", tables->real_name, NullS);
+    else
+      strncpy(buff, tables->alias, sizeof(buff));
+    my_printf_error(ER_UNKNOWN_TABLE, ER(ER_UNKNOWN_TABLE), MYF(0),
+                    buff, "HANDLER");
+#else
+    my_printf_error(ER_UNKNOWN_TABLE, ER(ER_UNKNOWN_TABLE), MYF(0),
+                    tables->alias, "HANDLER");
+#endif
+    DBUG_PRINT("exit",("ERROR"));
+    DBUG_RETURN(-1);
+  }
+
+  send_ok(thd);
+  DBUG_PRINT("exit", ("OK"));
+  DBUG_RETURN(0);
 }
 
-static enum enum_ha_read_modes rkey_to_rnext[]=
-    { RNEXT, RNEXT, RPREV, RNEXT, RPREV, RNEXT, RPREV };
 
+/*
+  Read from a HANDLER table.
 
+  SYNOPSIS
+    mysql_ha_read()
+    thd                         Thread identifier.
+    tables                      A list of tables with the first entry to read.
+    mode
+    keyname
+    key_expr
+    ha_rkey_mode
+    cond
+    select_limit
+    offset_limit
+
+  RETURN
+    0    ok
+    != 0 error
+*/
+ 
 int mysql_ha_read(THD *thd, TABLE_LIST *tables,
     enum enum_ha_read_modes mode, char *keyname, List<Item> *key_expr,
     enum ha_rkey_function ha_rkey_mode, Item *cond,
     ha_rows select_limit,ha_rows offset_limit)
 {
-  int err, keyno=-1;
-  TABLE *table=*find_table_ptr_by_name(thd, tables->db, tables->alias, 1);
+  TABLE_LIST    *hash_tables;
+  TABLE         *table;
+  MYSQL_LOCK    *lock;
+  List<Item>	list;
+  Protocol	*protocol= thd->protocol;
+  char		buff[MAX_FIELD_WIDTH];
+  String	buffer(buff, sizeof(buff), system_charset_info);
+  int           err, keyno= -1;
+  uint          num_rows;
+  byte		*key;
+  uint		key_len;
+  DBUG_ENTER("mysql_ha_read");
+  DBUG_PRINT("enter",("'%s'.'%s' as '%s'",
+                      tables->db, tables->real_name, tables->alias));
+
+  LINT_INIT(key);
+  LINT_INIT(key_len);
+
+  list.push_front(new Item_field(NULL,NULL,"*"));
+  List_iterator<Item> it(list);
+  it++;
+
+  if ((hash_tables= (TABLE_LIST*) hash_search(&thd->handler_tables_hash,
+                                              (byte*) tables->alias,
+                                              strlen(tables->alias) + 1)))
+  {
+    table= hash_tables->table;
+    DBUG_PRINT("info-in-hash",("'%s'.'%s' as '%s' tab %p",
+                               hash_tables->db, hash_tables->real_name,
+                               hash_tables->alias, table));
+    if (!table)
+    {
+      /*
+        The handler table has been closed. Re-open it.
+      */
+      if (mysql_ha_open(thd, hash_tables, 1))
+      {
+        DBUG_PRINT("exit",("reopen failed"));
+        goto err0;
+      }
+
+      table= hash_tables->table;
+      DBUG_PRINT("info",("re-opened '%s'.'%s' as '%s' tab %p",
+                         hash_tables->db, hash_tables->real_name,
+                         hash_tables->alias, table));
+    }
+
+#if MYSQL_VERSION_ID < 40100
+    if (*tables->db && strcmp(table->table_cache_key, tables->db))
+    {
+      DBUG_PRINT("info",("wrong db"));
+      table= NULL;
+    }
+#endif
+  }
+  else
+    table= NULL;
+
   if (!table)
   {
-    my_printf_error(ER_UNKNOWN_TABLE,ER(ER_UNKNOWN_TABLE),MYF(0),
-		    tables->alias,"HANDLER");
-    return -1;
+#if MYSQL_VERSION_ID < 40100
+    char buff[MAX_DBKEY_LENGTH];
+    if (*tables->db)
+      strxnmov(buff, sizeof(buff), tables->db, ".", tables->real_name, NullS);
+    else
+      strncpy(buff, tables->alias, sizeof(buff));
+    my_printf_error(ER_UNKNOWN_TABLE, ER(ER_UNKNOWN_TABLE), MYF(0),
+                    buff, "HANDLER");
+#else
+    my_printf_error(ER_UNKNOWN_TABLE, ER(ER_UNKNOWN_TABLE), MYF(0),
+                    tables->alias, "HANDLER");
+#endif
+    goto err0;
   }
   tables->table=table;
 
-  if (cond && cond->fix_fields(thd,tables))
-    return -1;
+  if (cond && ((!cond->fixed && 
+              cond->fix_fields(thd, tables, &cond)) || cond->check_cols(1)))
+    goto err0;
 
   table->file->init_table_handle_for_HANDLER(); // Only InnoDB requires it
 
@@ -132,39 +441,43 @@ int mysql_ha_read(THD *thd, TABLE_LIST *tables,
     {
       my_printf_error(ER_KEY_DOES_NOT_EXITS,ER(ER_KEY_DOES_NOT_EXITS),MYF(0),
           keyname,tables->alias);
-      return -1;
+      goto err0;
     }
-    table->file->index_init(keyno);
+    table->file->ha_index_or_rnd_end();
+    table->file->ha_index_init(keyno);
   }
 
-  List<Item> list;
-  list.push_front(new Item_field(NULL,NULL,"*"));
-  List_iterator<Item> it(list);
-  uint num_rows;
-  it++;
-
-  insert_fields(thd,tables,tables->db,tables->alias,&it);
+  if (insert_fields(thd,tables,tables->db,tables->alias,&it))
+    goto err0;
 
   select_limit+=offset_limit;
-  send_fields(thd,list,1);
+  protocol->send_fields(&list,1);
 
   HANDLER_TABLES_HACK(thd);
-  MYSQL_LOCK *lock=mysql_lock_tables(thd,&tables->table,1);
+  lock= mysql_lock_tables(thd, &tables->table, 1);
   HANDLER_TABLES_HACK(thd);
+
   if (!lock)
      goto err0; // mysql_lock_tables() printed error message already
 
-  table->file->init_table_handle_for_HANDLER(); // Only InnoDB requires it
+  /*
+    In ::external_lock InnoDB resets the fields which tell it that
+    the handle is used in the HANDLER interface. Tell it again that
+    we are using it for HANDLER.
+  */
+
+  table->file->init_table_handle_for_HANDLER();
 
   for (num_rows=0; num_rows < select_limit; )
   {
-    switch(mode) {
+    switch (mode) {
     case RFIRST:
       if (keyname)
         err=table->file->index_first(table->record[0]);
       else
       {
-	if (!(err=table->file->rnd_init(1)))
+        table->file->ha_index_or_rnd_end();
+	if (!(err=table->file->ha_rnd_init(1)))
           err=table->file->rnd_next(table->record[0]);
       }
       mode=RNEXT;
@@ -183,36 +496,42 @@ int mysql_ha_read(THD *thd, TABLE_LIST *tables,
       DBUG_ASSERT(keyname != 0);
       err=table->file->index_prev(table->record[0]);
       break;
+    case RNEXT_SAME:
+      /* Continue scan on "(keypart1,keypart2,...)=(c1, c2, ...)  */
+      DBUG_ASSERT(keyname != 0);
+      err= table->file->index_next_same(table->record[0], key, key_len);
+      break;
     case RKEY:
     {
       DBUG_ASSERT(keyname != 0);
       KEY *keyinfo=table->key_info+keyno;
       KEY_PART_INFO *key_part=keyinfo->key_part;
-      uint key_len;
-      byte *key;
       if (key_expr->elements > keyinfo->key_parts)
       {
 	my_printf_error(ER_TOO_MANY_KEY_PARTS,ER(ER_TOO_MANY_KEY_PARTS),
 			MYF(0),keyinfo->key_parts);
 	goto err;
       }
-      List_iterator_fast<Item> it_ke(*key_expr);
+      List_iterator<Item> it_ke(*key_expr);
       Item *item;
       for (key_len=0 ; (item=it_ke++) ; key_part++)
       {
-	if (item->fix_fields(thd, tables))
+	// 'item' can be changed by fix_fields() call
+	if ((!item->fixed && 
+             item->fix_fields(thd, tables, it_ke.ref())) ||
+	    (item= *it_ke.ref())->check_cols(1))
 	  goto err;
 	if (item->used_tables() & ~RAND_TABLE_BIT)
         {
           my_error(ER_WRONG_ARGUMENTS,MYF(0),"HANDLER ... READ");
 	  goto err;
         }
-	item->save_in_field(key_part->field, 1);
+	(void) item->save_in_field(key_part->field, 1);
 	key_len+=key_part->store_length;
       }
       if (!(key= (byte*) thd->calloc(ALIGN_SIZE(key_len))))
       {
-	send_error(&thd->net,ER_OUTOFMEMORY);
+	send_error(thd,ER_OUTOFMEMORY);
 	goto err;
       }
       key_copy(key, table, keyno, key_len);
@@ -222,7 +541,7 @@ int mysql_ha_read(THD *thd, TABLE_LIST *tables,
       break;
     }
     default:
-      send_error(&thd->net,ER_ILLEGAL_HA);
+      send_error(thd,ER_ILLEGAL_HA);
       goto err;
     }
 
@@ -243,63 +562,171 @@ int mysql_ha_read(THD *thd, TABLE_LIST *tables,
       continue;
     if (num_rows >= offset_limit)
     {
-      String *packet = &thd->packet;
       Item *item;
-      packet->length(0);
+      protocol->prepare_for_resend();
       it.rewind();
       while ((item=it++))
       {
-	if (item->send(thd,packet))
+	if (item->send(thd->protocol, &buffer))
 	{
-	  packet->free();                             // Free used
+	  protocol->free();                             // Free used
 	  my_error(ER_OUT_OF_RESOURCES,MYF(0));
 	  goto err;
 	}
       }
-      my_net_write(&thd->net, (char*)packet->ptr(), packet->length());
+      protocol->write();
     }
     num_rows++;
   }
 ok:
   mysql_unlock_tables(thd,lock);
-  send_eof(&thd->net);
-  return 0;
+  send_eof(thd);
+  DBUG_PRINT("exit",("OK"));
+  DBUG_RETURN(0);
+
 err:
   mysql_unlock_tables(thd,lock);
 err0:
-  return -1;
+  DBUG_PRINT("exit",("ERROR"));
+  DBUG_RETURN(-1);
 }
 
-static TABLE **find_table_ptr_by_name(THD *thd, const char *db,
-				      const char *table_name, bool is_alias)
+
+/*
+  Flush (close) a list of HANDLER tables.
+
+  SYNOPSIS
+    mysql_ha_flush()
+    thd                         Thread identifier.
+    tables                      The list of tables to close. If NULL,
+                                close all HANDLER tables [marked as flushed].
+    mode_flags                  MYSQL_HA_CLOSE_FINAL finally close the table.
+                                MYSQL_HA_REOPEN_ON_USAGE mark for reopen.
+                                MYSQL_HA_FLUSH_ALL flush all tables, not only
+                                those marked for flush.
+
+  DESCRIPTION
+    The list of HANDLER tables may be NULL, in which case all HANDLER
+    tables are closed (if MYSQL_HA_FLUSH_ALL) is set.
+    If 'tables' is NULL and MYSQL_HA_FLUSH_ALL is not set,
+    all HANDLER tables marked for flush are closed.
+    Broadcasts a COND_refresh condition, for every table closed.
+    The caller must lock LOCK_open.
+
+  NOTE
+    Since mysql_ha_flush() is called when the base table has to be closed,
+    we compare real table names, not aliases. Hence, database names matter.
+
+  RETURN
+    0  ok
+*/
+
+int mysql_ha_flush(THD *thd, TABLE_LIST *tables, uint mode_flags)
 {
-  int dblen;
-  TABLE **ptr;
+  TABLE_LIST    *tmp_tables;
+  TABLE         **table_ptr;
+  DBUG_ENTER("mysql_ha_flush");
+  DBUG_PRINT("enter", ("tables: %p  mode_flags: 0x%02x", tables, mode_flags));
 
-  DBUG_ASSERT(db);
-  dblen=*db ? strlen(db)+1 : 0;
-  ptr=&(thd->handler_tables);
-
-  for (TABLE *table=*ptr; table ; table=*ptr)
+  if (tables)
   {
-    if ((!dblen || !memcmp(table->table_cache_key, db, dblen)) &&
-        !my_strcasecmp((is_alias ? table->table_name : table->real_name),table_name))
+    /* Close all tables in the list. */
+    for (tmp_tables= tables ; tmp_tables; tmp_tables= tmp_tables->next)
     {
-      if (table->version != refresh_version)
+      DBUG_PRINT("info-in-tables-list",("'%s'.'%s' as '%s'",
+                                        tmp_tables->db, tmp_tables->real_name,
+                                        tmp_tables->alias));
+      /* Close all currently open handler tables with the same base table. */
+      table_ptr= &(thd->handler_tables);
+      while (*table_ptr)
       {
-        VOID(pthread_mutex_lock(&LOCK_open));
-        if (close_thread_table(thd, ptr))
+        if ((! *tmp_tables->db ||
+             ! my_strcasecmp(&my_charset_latin1, (*table_ptr)->table_cache_key,
+                             tmp_tables->db)) &&
+            ! my_strcasecmp(&my_charset_latin1, (*table_ptr)->real_name,
+                            tmp_tables->real_name))
         {
-          /* Tell threads waiting for refresh that something has happened */
-          VOID(pthread_cond_broadcast(&COND_refresh));
+          DBUG_PRINT("info",("*table_ptr '%s'.'%s' as '%s'",
+                             (*table_ptr)->table_cache_key,
+                             (*table_ptr)->real_name,
+                             (*table_ptr)->table_name));
+          mysql_ha_flush_table(thd, table_ptr, mode_flags);
+          continue;
         }
-        VOID(pthread_mutex_unlock(&LOCK_open));
+        table_ptr= &(*table_ptr)->next;
+      }
+      /* end of handler_tables list */
+    }
+    /* end of flush tables list */
+  }
+  else
+  {
+    /* Close all currently open tables [which are marked for flush]. */
+    table_ptr= &(thd->handler_tables);
+    while (*table_ptr)
+    {
+      if ((mode_flags & MYSQL_HA_FLUSH_ALL) ||
+          ((*table_ptr)->version != refresh_version))
+      {
+        mysql_ha_flush_table(thd, table_ptr, mode_flags);
         continue;
       }
-      break;
+      table_ptr= &(*table_ptr)->next;
     }
-    ptr=&(table->next);
   }
-  return ptr;
+
+  DBUG_RETURN(0);
 }
 
+/*
+  Flush (close) a table.
+
+  SYNOPSIS
+    mysql_ha_flush_table()
+    thd                         Thread identifier.
+    table                       The table to close.
+    mode_flags                  MYSQL_HA_CLOSE_FINAL finally close the table.
+                                MYSQL_HA_REOPEN_ON_USAGE mark for reopen.
+
+  DESCRIPTION
+    Broadcasts a COND_refresh condition, for every table closed.
+    The caller must lock LOCK_open.
+
+  RETURN
+    0  ok
+*/
+
+static int mysql_ha_flush_table(THD *thd, TABLE **table_ptr, uint mode_flags)
+{
+  TABLE_LIST    *hash_tables;
+  TABLE         *table= *table_ptr;
+  DBUG_ENTER("mysql_ha_flush_table");
+  DBUG_PRINT("enter",("'%s'.'%s' as '%s'  flags: 0x%02x",
+                      table->table_cache_key, table->real_name,
+                      table->table_name, mode_flags));
+
+  if ((hash_tables= (TABLE_LIST*) hash_search(&thd->handler_tables_hash,
+                                        (byte*) (*table_ptr)->table_name,
+                                        strlen((*table_ptr)->table_name) + 1)))
+  {
+    if (! (mode_flags & MYSQL_HA_REOPEN_ON_USAGE))
+    {
+      /* This is a final close. Remove from hash. */
+      hash_delete(&thd->handler_tables_hash, (byte*) hash_tables);
+    }
+    else
+    {
+      /* Mark table as closed, ready for re-open. */
+      hash_tables->table= NULL;
+    }
+  }    
+
+  (*table_ptr)->file->ha_index_or_rnd_end();
+  if (close_thread_table(thd, table_ptr))
+  {
+    /* Tell threads waiting for refresh that something has happened */
+    VOID(pthread_cond_broadcast(&COND_refresh));
+  }
+
+  DBUG_RETURN(0);
+}

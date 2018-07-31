@@ -1,22 +1,22 @@
 drop table if exists t1, t2, t3, t4;
 drop table if exists t1, t2, t3, t4;
-slave start;
-Could not initialize master info structure, more error messages can be found in the MySQL error log
-slave start;
-Could not initialize master info structure, more error messages can be found in the MySQL error log
+start slave;
+ERROR HY000: Could not initialize master info structure; more error messages can be found in the MySQL error log
+start slave;
+ERROR HY000: Could not initialize master info structure; more error messages can be found in the MySQL error log
 change master to master_host='127.0.0.1',master_port=MASTER_PORT, master_user='root';
-Could not initialize master info structure, more error messages can be found in the MySQL error log
+ERROR HY000: Could not initialize master info structure; more error messages can be found in the MySQL error log
 reset slave;
 change master to master_host='127.0.0.1',master_port=MASTER_PORT, master_user='root';
 reset master;
-slave start;
+start slave;
 create temporary table temp_table (a char(80) not null);
 insert into temp_table values ("testing temporary tables");
 create table t1 (s text);
 insert into t1 values('Could not break slave'),('Tried hard');
 show slave status;
-Master_Host	Master_User	Master_Port	Connect_retry	Master_Log_File	Read_Master_Log_Pos	Relay_Log_File	Relay_Log_Pos	Relay_Master_Log_File	Slave_IO_Running	Slave_SQL_Running	Replicate_do_db	Replicate_ignore_db	Last_errno	Last_error	Skip_counter	Exec_master_log_pos	Relay_log_space
-127.0.0.1	root	MASTER_PORT	60	master-bin.001	417	slave-relay-bin.001	458	master-bin.001	Yes	Yes			0		0	417	#
+Slave_IO_State	Master_Host	Master_User	Master_Port	Connect_Retry	Master_Log_File	Read_Master_Log_Pos	Relay_Log_File	Relay_Log_Pos	Relay_Master_Log_File	Slave_IO_Running	Slave_SQL_Running	Replicate_Do_DB	Replicate_Ignore_DB	Replicate_Do_Table	Replicate_Ignore_Table	Replicate_Wild_Do_Table	Replicate_Wild_Ignore_Table	Last_Errno	Last_Error	Skip_Counter	Exec_Master_Log_Pos	Relay_Log_Space	Until_Condition	Until_Log_File	Until_Log_Pos	Master_SSL_Allowed	Master_SSL_CA_File	Master_SSL_CA_Path	Master_SSL_Cert	Master_SSL_Cipher	Master_SSL_Key	Seconds_Behind_Master
+#	127.0.0.1	root	MASTER_PORT	60	master-bin.000001	417	slave-relay-bin.000001	461	master-bin.000001	Yes	Yes							0		0	417	461	None		0	No						#
 select * from t1;
 s
 Could not break slave
@@ -25,11 +25,11 @@ flush logs;
 create table t2(m int not null auto_increment primary key);
 insert into t2 values (34),(67),(123);
 flush logs;
-show master logs;
+show binary logs;
 Log_name
-master-bin.001
-master-bin.002
-master-bin.003
+master-bin.000001
+master-bin.000002
+master-bin.000003
 create table t3 select * from temp_table;
 select * from t3;
 a
@@ -39,15 +39,25 @@ insert into t2 values(1234);
 set insert_id=1234;
 insert into t2 values(NULL);
 set global sql_slave_skip_counter=1;
-slave start;
-purge master logs to 'master-bin.003';
+start slave;
+purge master logs to 'master-bin.000002';
 show master logs;
 Log_name
-master-bin.003
+master-bin.000002
+master-bin.000003
+purge binary logs to 'master-bin.000002';
+show binary logs;
+Log_name
+master-bin.000002
+master-bin.000003
+purge master logs before now();
+show binary logs;
+Log_name
+master-bin.000003
 insert into t2 values (65);
 show slave status;
-Master_Host	Master_User	Master_Port	Connect_retry	Master_Log_File	Read_Master_Log_Pos	Relay_Log_File	Relay_Log_Pos	Relay_Master_Log_File	Slave_IO_Running	Slave_SQL_Running	Replicate_do_db	Replicate_ignore_db	Last_errno	Last_error	Skip_counter	Exec_master_log_pos	Relay_log_space
-127.0.0.1	root	MASTER_PORT	60	master-bin.003	290	slave-relay-bin.001	1073	master-bin.003	Yes	Yes			0		0	290	#
+Slave_IO_State	Master_Host	Master_User	Master_Port	Connect_Retry	Master_Log_File	Read_Master_Log_Pos	Relay_Log_File	Relay_Log_Pos	Relay_Master_Log_File	Slave_IO_Running	Slave_SQL_Running	Replicate_Do_DB	Replicate_Ignore_DB	Replicate_Do_Table	Replicate_Ignore_Table	Replicate_Wild_Do_Table	Replicate_Wild_Ignore_Table	Last_Errno	Last_Error	Skip_Counter	Exec_Master_Log_Pos	Relay_Log_Space	Until_Condition	Until_Log_File	Until_Log_Pos	Master_SSL_Allowed	Master_SSL_CA_File	Master_SSL_CA_Path	Master_SSL_Cert	Master_SSL_Cipher	Master_SSL_Key	Seconds_Behind_Master
+#	127.0.0.1	root	MASTER_PORT	60	master-bin.000003	290	slave-relay-bin.000001	1088	master-bin.000003	Yes	Yes							0		0	290	1088	None		0	No						#
 select * from t2;
 m
 34
@@ -62,19 +72,19 @@ select count(*) from t3 where n >= 4;
 count(*)
 100
 create table t4 select * from temp_table;
-show master logs;
+show binary logs;
 Log_name
-master-bin.003
-master-bin.004
+master-bin.000003
+master-bin.000004
 show master status;
-File	Position	Binlog_do_db	Binlog_ignore_db
-master-bin.004	2886		
+File	Position	Binlog_Do_DB	Binlog_Ignore_DB
+master-bin.000004	2886		
 select * from t4;
 a
 testing temporary tables part 2
 show slave status;
-Master_Host	Master_User	Master_Port	Connect_retry	Master_Log_File	Read_Master_Log_Pos	Relay_Log_File	Relay_Log_Pos	Relay_Master_Log_File	Slave_IO_Running	Slave_SQL_Running	Replicate_do_db	Replicate_ignore_db	Last_errno	Last_error	Skip_counter	Exec_master_log_pos	Relay_log_space
-127.0.0.1	root	MASTER_PORT	60	master-bin.004	2886	slave-relay-bin.001	7870	master-bin.004	Yes	Yes			0		0	2886	#
+Slave_IO_State	Master_Host	Master_User	Master_Port	Connect_Retry	Master_Log_File	Read_Master_Log_Pos	Relay_Log_File	Relay_Log_Pos	Relay_Master_Log_File	Slave_IO_Running	Slave_SQL_Running	Replicate_Do_DB	Replicate_Ignore_DB	Replicate_Do_Table	Replicate_Ignore_Table	Replicate_Wild_Do_Table	Replicate_Wild_Ignore_Table	Last_Errno	Last_Error	Skip_Counter	Exec_Master_Log_Pos	Relay_Log_Space	Until_Condition	Until_Log_File	Until_Log_Pos	Master_SSL_Allowed	Master_SSL_CA_File	Master_SSL_CA_Path	Master_SSL_Cert	Master_SSL_Cipher	Master_SSL_Key	Seconds_Behind_Master
+#	127.0.0.1	root	MASTER_PORT	60	master-bin.000004	2886	slave-relay-bin.000001	7891	master-bin.000004	Yes	Yes							0		0	2886	7891	None		0	No						#
 lock tables t3 read;
 select count(*) from t3 where n >= 4;
 count(*)

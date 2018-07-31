@@ -709,8 +709,10 @@ page_cur_parse_insert_rec(
 			"o_offset %lu\n"
                     "mismatch index %lu, end_seg_len %lu\n"
                     "parsed len %lu\n",
-                    is_short, info_bits, offset, origin_offset,
-                    mismatch_index, end_seg_len, (ulint)(ptr - ptr2));
+		    (ulong) is_short, (ulong) info_bits, (ulong) offset,
+		    (ulong) origin_offset,
+		    (ulong) mismatch_index, (ulong) end_seg_len,
+		    (ulong) (ptr - ptr2));
 
 		fputs("Dump of 300 bytes of log:\n", stderr);
 		ut_print_buf(stderr, ptr2, 300);

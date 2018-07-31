@@ -56,10 +56,8 @@ bool Item_str_buff::cmp(void)
   }
   else if (null_value)
     return 0;					// new and old value was null
-  else if (!item->binary)
-    tmp= sortcmp(&value,res) != 0;
   else
-    tmp= stringcmp(&value,res) != 0;
+    tmp= sortcmp(&value,res,item->collation.collation) != 0;
   if (tmp)
     value.copy(*res);				// Remember for next cmp
   return tmp;
@@ -99,7 +97,7 @@ bool Item_field_buff::cmp(void)
 {
   bool tmp= field->cmp(buff) != 0;		// This is not a blob!
   if (tmp)
-    field->get_image(buff,length);
+    field->get_image(buff,length,field->charset());
   if (null_value != field->is_null())
   {
     null_value= !null_value;

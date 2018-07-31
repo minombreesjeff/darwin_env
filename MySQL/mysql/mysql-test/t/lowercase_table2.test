@@ -1,6 +1,6 @@
 #
 # Test of --lower-case-table-names=2
-# (User has case insensitive file system and want's to preserve case of
+# (User has case insensitive file system and wants to preserve case of
 # table names)
 #
 --source include/have_innodb.inc
@@ -88,4 +88,26 @@ insert into T1 values (NULL,"Mic-4"),(NULL,"Mic-5"),(NULL,"Mic-6");
 SELECT LOCATION FROM T1 WHERE EVENT_ID=2 UNION ALL  SELECT LOCATION FROM T1 WHERE EVENT_ID=3;
 SELECT LOCATION FROM T1 WHERE EVENT_ID=2 UNION ALL  SELECT LOCATION FROM T1 WHERE EVENT_ID=3;
 SELECT LOCATION FROM T1 WHERE EVENT_ID=2 UNION ALL  SELECT LOCATION FROM T1 WHERE EVENT_ID=3;
+drop table T1;
+
+#
+# Test name conversion with ALTER TABLE / CREATE INDEX (Bug #3109)
+#
+
+create table T1 (A int);
+alter table T1 add index (A);
+show tables like 'T1%';
+alter table t1 add index (A);
+show tables like 't1%';
+drop table t1;
+
+#
+# Bug #7261: Alter table loses temp table
+#
+
+create temporary table T1(a int(11), b varchar(8));
+insert into T1 values (1, 'abc');
+select * from T1;
+alter table T1 add index (a);
+select * from T1;
 drop table T1;

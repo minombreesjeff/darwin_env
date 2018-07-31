@@ -42,7 +42,7 @@ FILE *my_fopen(const char *FileName, int Flags, myf MyFlags)
       on some OS (SUNOS). Actually the filename save isn't that important
       so we can ignore if this doesn't work.
     */
-    if ((uint) fileno(fd) >= MY_NFILE)
+    if ((uint) fileno(fd) >= my_file_limit)
     {
       thread_safe_increment(my_stream_opened,&THR_LOCK_open);
       DBUG_RETURN(fd);				/* safeguard */
@@ -54,7 +54,7 @@ FILE *my_fopen(const char *FileName, int Flags, myf MyFlags)
       my_stream_opened++;
       my_file_info[fileno(fd)].type = STREAM_BY_FOPEN;
       pthread_mutex_unlock(&THR_LOCK_open);
-      DBUG_PRINT("exit",("stream: %lx",fd));
+      DBUG_PRINT("exit",("stream: 0x%lx",fd));
       DBUG_RETURN(fd);
     }
     pthread_mutex_unlock(&THR_LOCK_open);
@@ -78,7 +78,7 @@ int my_fclose(FILE *fd, myf MyFlags)
 {
   int err,file;
   DBUG_ENTER("my_fclose");
-  DBUG_PRINT("my",("stream: %lx  MyFlags: %d",fd, MyFlags));
+  DBUG_PRINT("my",("stream: 0x%lx  MyFlags: %d",fd, MyFlags));
 
   pthread_mutex_lock(&THR_LOCK_open);
   file=fileno(fd);
@@ -91,7 +91,7 @@ int my_fclose(FILE *fd, myf MyFlags)
   }
   else
     my_stream_opened--;
-  if ((uint) file < MY_NFILE && my_file_info[file].type != UNOPEN)
+  if ((uint) file < my_file_limit && my_file_info[file].type != UNOPEN)
   {
     my_file_info[file].type = UNOPEN;
     my_free(my_file_info[file].name, MYF(MY_ALLOW_ZERO_PTR));
@@ -123,11 +123,11 @@ FILE *my_fdopen(File Filedes, const char *name, int Flags, myf MyFlags)
   {
     pthread_mutex_lock(&THR_LOCK_open);
     my_stream_opened++;
-    if (Filedes < MY_NFILE)
+    if ((uint) Filedes < (uint) my_file_limit)
     {
       if (my_file_info[Filedes].type != UNOPEN)
       {
-        my_file_opened--;			/* File is opened with my_open ! */
+        my_file_opened--;		/* File is opened with my_open ! */
       }
       else
       {
@@ -138,7 +138,7 @@ FILE *my_fdopen(File Filedes, const char *name, int Flags, myf MyFlags)
     pthread_mutex_unlock(&THR_LOCK_open);
   }
 
-  DBUG_PRINT("exit",("stream: %lx",fd));
+  DBUG_PRINT("exit",("stream: 0x%lx",fd));
   DBUG_RETURN(fd);
 } /* my_fdopen */
 

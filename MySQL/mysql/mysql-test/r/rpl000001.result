@@ -1,10 +1,9 @@
-slave stop;
+stop slave;
 drop table if exists t1,t2,t3,t4,t5,t6,t7,t8,t9;
 reset master;
 reset slave;
 drop table if exists t1,t2,t3,t4,t5,t6,t7,t8,t9;
-slave start;
-drop table if exists t1,t2,t3;
+start slave;
 create table t1 (word char(20) not null);
 load data infile '../../std_data/words.dat' into table t1;
 load data local infile 'MYSQL_TEST_DIR/std_data/words.dat' into table t1;
@@ -20,9 +19,9 @@ abandoned
 abandoning
 abandonment
 abandons
-slave stop;
+stop slave;
 set password for root@"localhost" = password('foo');
-slave start;
+start slave;
 set password for root@"localhost" = password('');
 create table t3(n int);
 insert into t3 values(1),(2);
@@ -35,16 +34,26 @@ sum(length(word))
 1022
 drop table t1,t3;
 reset master;
-slave stop;
+stop slave;
 reset slave;
 create table t1(n int);
 select get_lock("hold_slave",10);
 get_lock("hold_slave",10)
 1
-slave start;
+explain extended select get_lock("hold_slave",10);
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1003	select sql_no_cache get_lock(_latin1'hold_slave',10) AS `get_lock("hold_slave",10)`
+start slave;
 select release_lock("hold_slave");
 release_lock("hold_slave")
 1
+explain extended select release_lock("hold_slave");
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
+Warnings:
+Note	1003	select sql_no_cache release_lock(_latin1'hold_slave') AS `release_lock("hold_slave")`
 unlock tables;
 create table t2(id int);
 insert into t2 values(connection_id());
@@ -56,9 +65,9 @@ select (@id := id) - id from t2;
 0
 kill @id;
 drop table t2;
-Server shutdown in progress
+ERROR 08S01: Server shutdown in progress
 set global sql_slave_skip_counter=1;
-slave start;
+start slave;
 select count(*) from t1;
 count(*)
 5000
@@ -67,17 +76,17 @@ create table t1 (n int);
 insert into t1 values(3456);
 insert into mysql.user (Host, User, Password)
 VALUES ("10.10.10.%", "blafasel2", password("blafasel2"));
-select select_priv,user from mysql.user where user = 'blafasel2';
+select select_priv,user from mysql.user where user = _binary'blafasel2';
 select_priv	user
 N	blafasel2
-update mysql.user set Select_priv = "Y" where User="blafasel2";
-select select_priv,user from mysql.user where user = 'blafasel2';
+update mysql.user set Select_priv = "Y" where User= _binary"blafasel2";
+select select_priv,user from mysql.user where user = _binary'blafasel2';
 select_priv	user
 Y	blafasel2
 select n from t1;
 n
 3456
-select select_priv,user from mysql.user where user = 'blafasel2';
+select select_priv,user from mysql.user where user = _binary'blafasel2';
 select_priv	user
 Y	blafasel2
 drop table t1;

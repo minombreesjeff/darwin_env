@@ -99,6 +99,8 @@ int pthread_attr_setstacksize(pthread_attr_t *connect_att,DWORD stack);
 int pthread_attr_setprio(pthread_attr_t *connect_att,int priority);
 int pthread_attr_destroy(pthread_attr_t *connect_att);
 struct tm *localtime_r(const time_t *timep,struct tm *tmp);
+struct tm *gmtime_r(const time_t *timep,struct tm *tmp);
+
 
 void pthread_exit(void *a);	 /* was #define pthread_exit(A) ExitThread(A)*/
 
@@ -232,7 +234,6 @@ extern int my_sigwait(const sigset_t *set,int *sig);
 #include <signal.h>
 #undef sigwait
 #endif
-#undef _REENTRANT			/* Fix if _REENTRANT is in pthread.h */
 #include <pthread.h>
 #ifndef _REENTRANT
 #define _REENTRANT
@@ -278,6 +279,8 @@ extern int my_pthread_create_detached;
 #define USE_ALARM_THREAD
 #undef	HAVE_LOCALTIME_R
 #define HAVE_LOCALTIME_R
+#undef	HAVE_GMTIME_R
+#define HAVE_GMTIME_R
 #undef	HAVE_PTHREAD_ATTR_SETSCOPE
 #define HAVE_PTHREAD_ATTR_SETSCOPE
 #undef HAVE_GETHOSTBYNAME_R_GLIBC2_STYLE	/* If we are running linux */
@@ -378,6 +381,10 @@ void *my_pthread_getspecific_imp(pthread_key_t key);
 struct tm *localtime_r(const time_t *clock, struct tm *res);
 #endif
 
+#ifndef HAVE_GMTIME_R
+struct tm *gmtime_r(const time_t *clock, struct tm *res);
+#endif
+
 #ifdef HAVE_PTHREAD_CONDATTR_CREATE
 /* DCE threads on HPUX 10.20 */
 #define pthread_condattr_init pthread_condattr_create
@@ -468,7 +475,7 @@ int my_pthread_mutex_trylock(pthread_mutex_t *mutex);
 typedef struct st_safe_mutex_t
 {
   pthread_mutex_t global,mutex;
-  char *file;
+  const char *file;
   uint line,count;
   pthread_t thread;
 #ifdef SAFE_MUTEX_DETECT_DESTROY
@@ -487,7 +494,7 @@ typedef struct st_safe_mutex_info_t
 {
   struct st_safe_mutex_info_t *next;
   struct st_safe_mutex_info_t *prev;
-  char *init_file;
+  const char *init_file;
   uint32 init_line;
 } safe_mutex_info_t;
 #endif /* SAFE_MUTEX_DETECT_DESTROY */
@@ -624,14 +631,16 @@ extern int pthread_dummy(int);
 /* All thread specific variables are in the following struct */
 
 #define THREAD_NAME_SIZE 10
+#ifndef DEFAULT_THREAD_STACK
 #if defined(__ia64__)
 /*
   MySQL can survive with 32K, but some glibc libraries require > 128K stack
   To resolve hostnames
 */
-#define DEFAULT_THREAD_STACK	(192*1024L)
+#define DEFAULT_THREAD_STACK	(256*1024L)
 #else
-#define DEFAULT_THREAD_STACK	(192*1024L)
+#define DEFAULT_THREAD_STACK	(192*1024)
+#endif
 #endif
 
 struct st_my_thread_var
@@ -646,6 +655,8 @@ struct st_my_thread_var
   int cmp_length;
   int volatile abort;
   my_bool init;
+  struct st_my_thread_var *next,**prev;
+  void *opt_info;
 #ifndef DBUG_OFF
   gptr dbug;
   char name[THREAD_NAME_SIZE+1];
@@ -668,8 +679,6 @@ extern pthread_t shutdown_th, main_th, signal_th;
 #define thread_safe_increment(V,L) atomic_add(1,(atomic_t*) &V);
 #define thread_safe_add(V,C,L)     atomic_add((C),(atomic_t*) &V);
 #define thread_safe_sub(V,C,L)     atomic_sub((C),(atomic_t*) &V);
-#define statistic_increment(V,L)   thread_safe_increment((V),(L))
-#define statistic_add(V,C,L)       thread_safe_add((V),(C),(L))
 #else
 #define thread_safe_increment(V,L) \
 	pthread_mutex_lock((L)); (V)++; pthread_mutex_unlock((L));
@@ -677,6 +686,7 @@ extern pthread_t shutdown_th, main_th, signal_th;
 	pthread_mutex_lock((L)); (V)+=(C); pthread_mutex_unlock((L));
 #define thread_safe_sub(V,C,L) \
 	pthread_mutex_lock((L)); (V)-=(C); pthread_mutex_unlock((L));
+#endif /* HAVE_ATOMIC_ADD */
 #ifdef SAFE_STATISTICS
 #define statistic_increment(V,L)   thread_safe_increment((V),(L))
 #define statistic_add(V,C,L)       thread_safe_add((V),(C),(L))
@@ -684,7 +694,6 @@ extern pthread_t shutdown_th, main_th, signal_th;
 #define statistic_increment(V,L) (V)++
 #define statistic_add(V,C,L)     (V)+=(C)
 #endif /* SAFE_STATISTICS */
-#endif /* HAVE_ATOMIC_ADD */
 #endif /* thread_safe_increment */
 
 #ifdef  __cplusplus

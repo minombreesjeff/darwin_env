@@ -28,12 +28,12 @@
 #include "mysql_priv.h"
 #include <m_ctype.h>
 
-#define FCOMP			11		/* Byte per packat f{lt */
+#define FCOMP			17		/* Bytes for a packed field */
 
 static uchar * pack_screens(List<create_field> &create_fields,
 			    uint *info_length, uint *screens, bool small_file);
 static uint pack_keys(uchar *keybuff,uint key_count, KEY *key_info);
-static bool pack_header(uchar *forminfo, enum db_type table_type,
+static bool pack_header(uchar *forminfo,enum db_type table_type,
 			List<create_field> &create_fields,
 			uint info_length, uint screens, uint table_options,
 			handler *file);
@@ -45,11 +45,29 @@ static bool make_empty_rec(int file, enum db_type table_type,
 			   List<create_field> &create_fields,
 			   uint reclength,uint null_fields);
 
+/*
+  Create a frm (table definition) file
 
-int rea_create_table(my_string file_name,
-		     HA_CREATE_INFO *create_info,
-		     List<create_field> &create_fields,
-		     uint keys, KEY *key_info)
+  SYNOPSIS
+    mysql_create_frm()
+    thd			Thread handler
+    file_name		Name of file (including database and .frm)
+    create_info		create info parameters
+    create_fields	Fields to create
+    keys		number of keys to create
+    key_info		Keys to create
+    db_file		Handler to use. May be zero, in which case we use
+    			create_info->db_type
+  RETURN
+    0  ok
+    1  error
+*/
+
+bool mysql_create_frm(THD *thd, my_string file_name,
+		      HA_CREATE_INFO *create_info,
+		      List<create_field> &create_fields,
+		      uint keys, KEY *key_info,
+		      handler *db_file)
 {
   uint reclength,info_length,screens,key_info_length,maxlength,null_fields;
   File file;
@@ -57,23 +75,22 @@ int rea_create_table(my_string file_name,
   uchar fileinfo[64],forminfo[288],*keybuff;
   TYPELIB formnames;
   uchar *screen_buff;
-  handler *db_file;
-  DBUG_ENTER("rea_create_table");
+  DBUG_ENTER("mysql_create_frm");
 
   formnames.type_names=0;
   if (!(screen_buff=pack_screens(create_fields,&info_length,&screens,0)))
     DBUG_RETURN(1);
-  db_file=get_new_handler((TABLE*) 0, create_info->db_type);
+  if (db_file == NULL)
+    db_file=get_new_handler((TABLE*) 0, create_info->db_type);
   if (pack_header(forminfo, create_info->db_type,create_fields,info_length,
 		  screens, create_info->table_options, db_file))
   {
-    NET *net=my_pthread_getspecific_ptr(NET*,THR_NET);
     my_free((gptr) screen_buff,MYF(0));
-    if (net->last_errno != ER_TOO_MANY_FIELDS)
+    if (thd->net.last_errno != ER_TOO_MANY_FIELDS)
       DBUG_RETURN(1);
 
     // Try again without UNIREG screens (to get more columns)
-    net->last_error[0]=0;
+    thd->net.last_error[0]=0;
     if (!(screen_buff=pack_screens(create_fields,&info_length,&screens,1)))
       DBUG_RETURN(1);
     if (pack_header(forminfo, create_info->db_type, create_fields,info_length,
@@ -93,8 +110,8 @@ int rea_create_table(my_string file_name,
     DBUG_RETURN(1);
   }
 
-  uint key_buff_length=uint2korr(fileinfo+14);
-  keybuff=(uchar*) my_alloca(key_buff_length);
+  uint key_buff_length=keys*(7+NAME_LEN+MAX_REF_PARTS*9)+16;
+  keybuff=(uchar*) my_malloc(key_buff_length, MYF(0));
   key_info_length=pack_keys(keybuff,keys,key_info);
   VOID(get_form_pos(file,fileinfo,&formnames));
   if (!(filepos=make_new_entry(file,fileinfo,&formnames,"")))
@@ -102,6 +119,7 @@ int rea_create_table(my_string file_name,
   maxlength=(uint) next_io_size((ulong) (uint2korr(forminfo)+1000));
   int2store(forminfo+2,maxlength);
   int4store(fileinfo+10,(ulong) (filepos+maxlength));
+  int4store(fileinfo+47,key_buff_length);
   fileinfo[26]= (uchar) test((create_info->max_rows == 1) &&
 			     (create_info->min_rows == 1) && (keys == 0));
   int2store(fileinfo+28,key_info_length);
@@ -149,24 +167,71 @@ int rea_create_table(my_string file_name,
 #endif
 
   my_free((gptr) screen_buff,MYF(0));
-  my_afree((gptr) keybuff);
+  my_free((gptr) keybuff, MYF(0));
 
   if (opt_sync_frm && !(create_info->options & HA_LEX_CREATE_TMP_TABLE) &&
       my_sync(file, MYF(MY_WME)))
     goto err2;
-  if (my_close(file,MYF(MY_WME)) ||
-      ha_create_table(file_name,create_info,0))
+  if (my_close(file,MYF(MY_WME)))
     goto err3;
+
+  {
+    /* Unescape all UCS2 intervals: were escaped in pack_headers */
+    List_iterator<create_field> it(create_fields);
+    create_field *field;
+    while ((field=it++))
+    {
+      if (field->interval && field->charset->mbminlen > 1)
+        unhex_type2(field->interval);
+    }
+  }
   DBUG_RETURN(0);
 
 err:
   my_free((gptr) screen_buff,MYF(0));
-  my_afree((gptr) keybuff);
+  my_free((gptr) keybuff, MYF(0));
 err2:
   VOID(my_close(file,MYF(MY_WME)));
 err3:
   my_delete(file_name,MYF(0));
   DBUG_RETURN(1);
+} /* mysql_create_frm */
+
+
+/*
+  Create a frm (table definition) file and the tables
+
+  SYNOPSIS
+    mysql_create_frm()
+    thd			Thread handler
+    file_name		Name of file (including database and .frm)
+    create_info		create info parameters
+    create_fields	Fields to create
+    keys		number of keys to create
+    key_info		Keys to create
+    db_file		Handler to use. May be zero, in which case we use
+    			create_info->db_type
+  RETURN
+    0  ok
+    1  error
+*/
+
+int rea_create_table(THD *thd, my_string file_name,
+		     HA_CREATE_INFO *create_info,
+		     List<create_field> &create_fields,
+		     uint keys, KEY *key_info)
+{
+  DBUG_ENTER("rea_create_table");
+
+  if (mysql_create_frm(thd, file_name, create_info,
+  		       create_fields, keys, key_info, NULL))
+    DBUG_RETURN(1);
+  if (ha_create_table(file_name,create_info,0))
+  {
+    my_delete(file_name,MYF(0));    
+    DBUG_RETURN(1);
+  }
+  DBUG_RETURN(0);
 } /* rea_create_table */
 
 
@@ -251,7 +316,7 @@ static uchar * pack_screens(List<create_field> &create_fields,
 static uint pack_keys(uchar *keybuff,uint key_count,KEY *keyinfo)
 {
   uint key_parts,length;
-  uchar *pos, *keyname_pos, *key_alg_pos;
+  uchar *pos, *keyname_pos;
   KEY *key,*end;
   KEY_PART_INFO *key_part,*key_part_end;
   DBUG_ENTER("pack_keys");
@@ -260,10 +325,12 @@ static uint pack_keys(uchar *keybuff,uint key_count,KEY *keyinfo)
   key_parts=0;
   for (key=keyinfo,end=keyinfo+key_count ; key != end ; key++)
   {
-    pos[0]=(uchar) (key->flags ^ HA_NOSAME);
-    int2store(pos+1,key->key_length);
-    pos[3]=key->key_parts;
-    pos+=4;
+    int2store(pos, (key->flags ^ HA_NOSAME));
+    int2store(pos+2,key->key_length);
+    pos[4]= (uchar) key->key_parts;
+    pos[5]= (uchar) key->algorithm;
+    pos[6]=pos[7]=0;				// For the future
+    pos+=8;
     key_parts+=key->key_parts;
     DBUG_PRINT("loop",("flags: %d  key_parts: %d at %lx",
 		       key->flags,key->key_parts,
@@ -295,18 +362,19 @@ static uint pack_keys(uchar *keybuff,uint key_count,KEY *keyinfo)
   }
   *(pos++)=0;
 
-  /* For MySQL 4.0;  Store key algoritms last */
-  key_alg_pos= pos;
-  for (key=keyinfo ; key != end ; key++)
+  if (key_count > 127 || key_parts > 127)
   {
-    *(pos++)= (uchar) key->algorithm;
+    keybuff[0]= (key_count & 0x7f) | 0x80;
+    keybuff[1]= key_count >> 7;
+    int2store(keybuff+2,key_parts);
   }
-
-  keybuff[0]=(uchar) key_count;
-  keybuff[1]=(uchar) key_parts;
-  length=(uint) (keyname_pos-keybuff);
-  int2store(keybuff+2,length);
-  length=(uint) (key_alg_pos-keyname_pos);
+  else
+  {
+    keybuff[0]=(uchar) key_count;
+    keybuff[1]=(uchar) key_parts;
+    keybuff[2]= keybuff[3]= 0;
+  }
+  length=(uint) (pos-keyname_pos);
   int2store(keybuff+4,length);
   DBUG_RETURN((uint) (pos-keybuff));
 } /* pack_keys */
@@ -319,9 +387,9 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
 			uint info_length, uint screens,uint table_options,
 			handler *file)
 {
-  uint length,int_count,int_length,no_empty, int_parts,
-    time_stamp_pos,null_fields;
-  ulong reclength,totlength,n_length;
+  uint length,int_count,int_length,no_empty, int_parts;
+  uint time_stamp_pos,null_fields;
+  ulong reclength, totlength, n_length, com_length;
   DBUG_ENTER("pack_header");
 
   if (create_fields.elements > MAX_FIELDS)
@@ -331,7 +399,8 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
   }
 
   totlength=reclength=0L;
-  no_empty=int_count=int_parts=int_length=time_stamp_pos=null_fields=0;
+  no_empty=int_count=int_parts=int_length=time_stamp_pos=null_fields=
+    com_length=0;
   n_length=2L;
 
 	/* Check fields */
@@ -341,6 +410,7 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
   while ((field=it++))
   {
     totlength+= field->length;
+    com_length+= field->comment.length;
     if (MTYP_TYPENR(field->unireg_check) == Field::NOEMPTY ||
 	field->unireg_check & MTYP_NOEMPTY_BIT)
     {
@@ -348,8 +418,12 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
 					   MTYP_NOEMPTY_BIT);
       no_empty++;
     }
-    if ((MTYP_TYPENR(field->unireg_check) == Field::TIMESTAMP_FIELD ||
-	 f_packtype(field->pack_flag) == (int) FIELD_TYPE_TIMESTAMP) &&
+    /* 
+      We mark first TIMESTAMP field with NOW() in DEFAULT or ON UPDATE 
+      as auto-update field.
+    */
+    if (field->sql_type == FIELD_TYPE_TIMESTAMP &&
+        MTYP_TYPENR(field->unireg_check) != Field::NONE &&
 	!time_stamp_pos)
       time_stamp_pos=(int) field->offset+1;
     length=field->pack_length;
@@ -360,6 +434,28 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
     if (field->interval)
     {
       uint old_int_count=int_count;
+
+      if (field->charset->mbminlen > 1)
+      {
+        /* Escape UCS2 intervals using HEX notation */
+        for (uint pos= 0; pos < field->interval->count; pos++)
+        {
+          char *dst;
+          uint length= field->interval->type_lengths[pos], hex_length;
+          const char *src= field->interval->type_names[pos];
+          const char *srcend= src + length;
+          hex_length= length * 2;
+          field->interval->type_lengths[pos]= hex_length;
+          field->interval->type_names[pos]= dst= sql_alloc(hex_length + 1);
+          for ( ; src < srcend; src++)
+          {
+            *dst++= _dig_vec_upper[((uchar) *src) >> 4];
+            *dst++= _dig_vec_upper[((uchar) *src) & 15];
+          }
+          *dst= '\0';
+        }
+      }
+
       field->interval_id=get_interval_id(&int_count,create_fields,field);
       if (old_int_count != int_count)
       {
@@ -383,14 +479,15 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
   /* Hack to avoid bugs with small static rows in MySQL */
   reclength=max(file->min_record_length(table_options),reclength);
   if (info_length+(ulong) create_fields.elements*FCOMP+288+
-      n_length+int_length > 65535L || int_count > 255)
+      n_length+int_length+com_length > 65535L || int_count > 255)
   {
     my_error(ER_TOO_MANY_FIELDS,MYF(0));
     DBUG_RETURN(1);
   }
 
   bzero((char*)forminfo,288);
-  length=info_length+create_fields.elements*FCOMP+288+n_length+int_length;
+  length=(info_length+create_fields.elements*FCOMP+288+n_length+int_length+
+	  com_length);
   int2store(forminfo,length);
   forminfo[256] = (uint8) screens;
   int2store(forminfo+258,create_fields.elements);
@@ -406,6 +503,7 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
   int2store(forminfo+278,80);			/* Columns needed */
   int2store(forminfo+280,22);			/* Rows needed */
   int2store(forminfo+282,null_fields);
+  int2store(forminfo+284,com_length);
   DBUG_RETURN(0);
 } /* pack_header */
 
@@ -443,7 +541,7 @@ static uint get_interval_id(uint *int_count,List<create_field> &create_fields,
 static bool pack_fields(File file,List<create_field> &create_fields)
 {
   reg2 uint i;
-  uint int_count;
+  uint int_count, comment_length=0;
   uchar buff[MAX_FIELD_WIDTH];
   create_field *field;
   DBUG_ENTER("pack_fields");
@@ -458,12 +556,26 @@ static bool pack_fields(File file,List<create_field> &create_fields)
     buff[0]= (uchar) field->row;
     buff[1]= (uchar) field->col;
     buff[2]= (uchar) field->sc_length;
-    buff[3]= (uchar) field->length;
+    int2store(buff+3, field->length);
     uint recpos=(uint) field->offset+1;
-    int2store(buff+4,recpos);
-    int2store(buff+6,field->pack_flag);
-    int2store(buff+8,field->unireg_check);
-    buff[10]= (uchar) field->interval_id;
+    int3store(buff+5,recpos);
+    int2store(buff+8,field->pack_flag);
+    int2store(buff+10,field->unireg_check);
+    buff[12]= (uchar) field->interval_id;
+    buff[13]= (uchar) field->sql_type; 
+    if (field->sql_type == FIELD_TYPE_GEOMETRY)
+    {
+      buff[14]= (uchar) field->geom_type;
+#ifndef HAVE_SPATIAL
+      DBUG_ASSERT(0);                           // Should newer happen
+#endif
+    }
+    else if (field->charset) 
+      buff[14]= (uchar) field->charset->number;
+    else
+      buff[14]= 0;				// Numerical
+    int2store(buff+15, field->comment.length);
+    comment_length+= field->comment.length;
     set_if_bigger(int_count,field->interval_id);
     if (my_write(file,(byte*) buff,FCOMP,MYF_RW))
       DBUG_RETURN(1);
@@ -489,7 +601,7 @@ static bool pack_fields(File file,List<create_field> &create_fields)
 	/* Write intervals */
   if (int_count)
   {
-    String tmp((char*) buff,sizeof(buff));
+    String tmp((char*) buff,sizeof(buff), &my_charset_bin);
     tmp.length(0);
     it.rewind();
     int_count=0;
@@ -509,6 +621,18 @@ static bool pack_fields(File file,List<create_field> &create_fields)
     }
     if (my_write(file,(byte*) tmp.ptr(),tmp.length(),MYF_RW))
       DBUG_RETURN(1);
+  }
+  if (comment_length)
+  {
+    it.rewind();
+    int_count=0;
+    while ((field=it++))
+    {
+      if (field->comment.length)
+	if (my_write(file, (byte*) field->comment.str, field->comment.length,
+		     MYF_RW))
+	  DBUG_RETURN(1);
+    }
   }
   DBUG_RETURN(0);
 }
@@ -541,6 +665,7 @@ static bool make_empty_rec(File file,enum db_type table_type,
     DBUG_RETURN(1);
   }
 
+  table.in_use= current_thd;
   table.db_low_byte_first= handler->low_byte_first();
   table.blob_ptr_size=portable_sizeof_char_ptr;
 
@@ -563,10 +688,13 @@ static bool make_empty_rec(File file,enum db_type table_type,
 			       1 << (null_count & 7),
 			       field->pack_flag,
 			       field->sql_type,
+			       field->charset,
+			       field->geom_type,
 			       field->unireg_check,
 			       field->interval,
 			       field->field_name,
 			       &table);
+
     if (!(field->flags & NOT_NULL_FLAG))
       null_count++;
 
@@ -579,7 +707,7 @@ static bool make_empty_rec(File file,enum db_type table_type,
     if (field->def &&
 	(regfield->real_type() != FIELD_TYPE_YEAR ||
 	 field->def->val_int() != 0))
-      field->def->save_in_field(regfield, 1);
+      (void) field->def->save_in_field(regfield, 1);
     else if (regfield->real_type() == FIELD_TYPE_ENUM &&
 	     (field->flags & NOT_NULL_FLAG))
     {
@@ -587,9 +715,9 @@ static bool make_empty_rec(File file,enum db_type table_type,
       regfield->store((longlong) 1);
     }
     else if (type == Field::YES)		// Old unireg type
-      regfield->store(ER(ER_YES),(uint) strlen(ER(ER_YES)));
+      regfield->store(ER(ER_YES),(uint) strlen(ER(ER_YES)),system_charset_info);
     else if (type == Field::NO)			// Old unireg type
-      regfield->store(ER(ER_NO), (uint) strlen(ER(ER_NO)));
+      regfield->store(ER(ER_NO), (uint) strlen(ER(ER_NO)),system_charset_info);
     else
       regfield->reset();
     delete regfield;

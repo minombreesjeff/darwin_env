@@ -92,14 +92,28 @@ with mem_free. */
 void*
 mem_alloc_func_noninline(
 /*=====================*/
-				/* out, own: free storage, NULL if did not
-				succeed */
-	ulint   n,              /* in: desired number of bytes */
-	char*  	file_name,	/* in: file name where created */
-	ulint   line		/* in: line where created */
+					/* out, own: free storage,
+					NULL if did not succeed */
+	ulint		n,		/* in: desired number of bytes */
+	const char*	file_name,	/* in: file name where created */
+	ulint		line		/* in: line where created */
 	)
 {
 	return(mem_alloc_func(n, file_name, line));	
+}
+
+/**************************************************************************
+Duplicates a NUL-terminated string, allocated from a memory heap. */
+
+char*
+mem_heap_strdup(
+/*============*/
+				/* out, own: a copy of the string */
+	mem_heap_t* heap,	/* in: memory heap where string is allocated */
+	const char* str)	/* in: string to be copied */
+{
+	ulint	len = strlen(str) + 1;
+	return(memcpy(mem_heap_alloc(heap, len), str, len));
 }
 
 /*******************************************************************
@@ -108,18 +122,18 @@ Creates a memory heap block where data can be allocated. */
 mem_block_t*
 mem_heap_create_block(
 /*==================*/
-			/* out, own: memory heap block, NULL if did not
-			succeed */
-	mem_heap_t* heap,/* in: memory heap or NULL if first block should
-			be created */
-	ulint	n,	/* in: number of bytes needed for user data, or
-			if init_block is not NULL, its size in bytes */
-	void*	init_block, /* in: init block in fast create, type must be
-			MEM_HEAP_DYNAMIC */
-	ulint 	type,	/* in: type of heap: MEM_HEAP_DYNAMIC, or
-			MEM_HEAP_BUFFER possibly ORed to MEM_HEAP_BTR_SEARCH */
-	char*  	file_name,/* in: file name where created */
-	ulint 	line)   /* in: line where created */
+				/* out, own: memory heap block,
+				NULL if did not succeed */
+	mem_heap_t*	heap,	/* in: memory heap or NULL if first block
+				should be created */
+	ulint		n,	/* in: number of bytes needed for user data, or
+				if init_block is not NULL, its size in bytes */
+	void*		init_block, /* in: init block in fast create,
+				type must be MEM_HEAP_DYNAMIC */
+	ulint		type,	/* in: type of heap: MEM_HEAP_DYNAMIC or
+				MEM_HEAP_BUFFER */
+	const char*	file_name,/* in: file name where created */
+	ulint		line)	/* in: line where created */
 {
 	mem_block_t*	block;
 	ulint		len;

@@ -35,8 +35,12 @@
   it can be compiled with the UNSIGNED and/or LONGLONG flag set
 */
 
-#include <my_global.h>
-#include "m_string.h"
+
+#if !defined(_global_h) || !defined(_m_string_h)
+#  error  Calling file must include 'my_global.h' and 'm_string.h'
+   /* see 'strtoll.c' and 'strtoull.c' for the reasons */
+#endif
+
 #include "m_ctype.h"
 #include "my_sys.h"			/* defines errno */
 #include <errno.h>
@@ -95,7 +99,7 @@ function (const char *nptr,char **endptr,int base)
   s = nptr;
 
   /* Skip white space.	*/
-  while (isspace (*s))
+  while (my_isspace(&my_charset_latin1, *s))
     ++s;
   if (*s == '\0')
   {
@@ -115,7 +119,7 @@ function (const char *nptr,char **endptr,int base)
   }
     
 
-  if (base == 16 && s[0] == '0' && toupper (s[1]) == 'X')
+  if (base == 16 && s[0] == '0' && my_toupper (&my_charset_latin1, s[1]) == 'X')
     s += 2;
 
   /* If BASE is zero, figure it out ourselves.	*/
@@ -123,7 +127,7 @@ function (const char *nptr,char **endptr,int base)
   {
     if (*s == '0')
     {
-      if (toupper (s[1]) == 'X')
+      if (my_toupper (&my_charset_latin1, s[1]) == 'X')
       {
 	s += 2;
 	base = 16;
@@ -145,10 +149,10 @@ function (const char *nptr,char **endptr,int base)
   i = 0;
   for (c = *s; c != '\0'; c = *++s)
   {
-    if (isdigit (c))
+    if (my_isdigit (&my_charset_latin1, c))
       c -= '0';
-    else if (isalpha (c))
-      c = toupper (c) - 'A' + 10;
+    else if (my_isalpha (&my_charset_latin1, c))
+      c = my_toupper (&my_charset_latin1, c) - 'A' + 10;
     else
       break;
     if (c >= base)

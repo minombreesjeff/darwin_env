@@ -342,13 +342,16 @@ dict_index_rec_get_sys_col(
 		ut_ad(len == 7);
 	
 		return(trx_read_roll_ptr(field));
-	} else if ((type == DATA_ROW_ID) || (type == DATA_MIX_ID)) {
+	} else if (type == DATA_TRX_ID) {
+
+		return(trx_read_trx_id(field));
+	} else if (type == DATA_MIX_ID) {
 
 		return(mach_dulint_read_compressed(field));
 	} else {
-		ut_ad(type == DATA_TRX_ID);
+		ut_a(type == DATA_ROW_ID);
 
-		return(trx_read_trx_id(field));
+		return(mach_read_from_6(field));
 	}
 }
 
@@ -536,8 +539,8 @@ UNIV_INLINE
 dict_table_t*
 dict_table_check_if_in_cache_low(
 /*==============================*/
-				/* out: table, NULL if not found */
-	char*	table_name)	/* in: table name */
+					/* out: table, NULL if not found */
+	const char*	table_name)	/* in: table name */
 {
 	dict_table_t*	table;
 	ulint		table_fold;
@@ -562,8 +565,8 @@ UNIV_INLINE
 dict_table_t*
 dict_table_get_low(
 /*===============*/
-				/* out: table, NULL if not found */
-	char*	table_name)	/* in: table name */
+					/* out: table, NULL if not found */
+	const char*	table_name)	/* in: table name */
 {
 	dict_table_t*	table;
 	
@@ -642,7 +645,7 @@ dict_table_get_index(
 /*=================*/
 				/* out: index, NULL if does not exist */
 	dict_table_t*	table,	/* in: table */
-	char*		name)	/* in: index name */
+	const char*	name)	/* in: index name */
 {
 	dict_index_t*	index	= NULL;
 	

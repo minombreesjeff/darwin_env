@@ -20,6 +20,9 @@
 
 static int check_one_key(HP_KEYDEF *keydef, uint keynr, ulong records,
 			 ulong blength, my_bool print_status);
+static int check_one_rb_key(HP_INFO *info, uint keynr, ulong records,
+			    my_bool print_status);
+
 
 /*
   Check if keys and rows are ok in a heap table
@@ -37,7 +40,7 @@ static int check_one_key(HP_KEYDEF *keydef, uint keynr, ulong records,
     1 error
 */
 
-int heap_check_heap(HP_INFO *info,my_bool print_status)
+int heap_check_heap(HP_INFO *info, my_bool print_status)
 {
   int error;
   uint key;
@@ -47,9 +50,13 @@ int heap_check_heap(HP_INFO *info,my_bool print_status)
   DBUG_ENTER("heap_check_heap");
 
   for (error=key= 0 ; key < share->keys ; key++)
-    error|=check_one_key(share->keydef+key,key, share->records,share->blength,
-			 print_status);
-
+  {
+    if (share->keydef[key].algorithm == HA_KEY_ALG_BTREE)
+      error|= check_one_rb_key(info, key, share->records, print_status);
+    else
+      error|= check_one_key(share->keydef + key, key, share->records,
+			    share->blength, print_status);
+  }
   /*
     This is basicly the same code as in hp_scan, but we repeat it here to
     get shorter DBUG log file.
@@ -70,7 +77,7 @@ int heap_check_heap(HP_INFO *info,my_bool print_status)
 	  break;				/* End of file */
       }
     }
-    _hp_find_record(info,pos);
+    hp_find_record(info,pos);
 
     if (!info->current_ptr[share->reclength])
       deleted++;
@@ -95,14 +102,16 @@ static int check_one_key(HP_KEYDEF *keydef, uint keynr, ulong records,
   int error;
   uint i,found,max_links,seek,links;
   uint rec_link;				/* Only used with debugging */
+  uint hash_buckets_found;
   HASH_INFO *hash_info;
 
   error=0;
+  hash_buckets_found= 0;
   for (i=found=max_links=seek=0 ; i < records ; i++)
   {
     hash_info=hp_find_hash(&keydef->block,i);
-    if (_hp_mask(_hp_rec_hashnr(keydef,hash_info->ptr_to_rec),
-		 blength,records) == i)
+    if (hp_mask(hp_rec_hashnr(keydef, hash_info->ptr_to_rec),
+		blength,records) == i)
     {
       found++;
       seek++;
@@ -110,8 +119,8 @@ static int check_one_key(HP_KEYDEF *keydef, uint keynr, ulong records,
       while ((hash_info=hash_info->next_key) && found < records + 1)
       {
 	seek+= ++links;
-	if ((rec_link=_hp_mask(_hp_rec_hashnr(keydef,hash_info->ptr_to_rec),
-			       blength,records))
+	if ((rec_link = hp_mask(hp_rec_hashnr(keydef, hash_info->ptr_to_rec),
+			        blength, records))
 	    != i)
 	{
 	  DBUG_PRINT("error",("Record in wrong link: Link %d  Record: %lx  Record-link %d", i,hash_info->ptr_to_rec,rec_link));
@@ -121,20 +130,72 @@ static int check_one_key(HP_KEYDEF *keydef, uint keynr, ulong records,
 	  found++;
       }
       if (links > max_links) max_links=links;
+      hash_buckets_found++;
     }
   }
   if (found != records)
   {
-    DBUG_PRINT("error",("Found %ld of %ld records"));
+    DBUG_PRINT("error",("Found %ld of %ld records", found, records));
+    error=1;
+  }
+  if (keydef->hash_buckets != hash_buckets_found)
+  {
+    DBUG_PRINT("error",("Found %ld buckets, stats shows %ld buckets",
+                        hash_buckets_found, keydef->hash_buckets));
     error=1;
   }
   DBUG_PRINT("info",
-	     ("records: %ld   seeks: %d   max links: %d   hitrate: %.2f",
+	     ("records: %ld   seeks: %d   max links: %d   hitrate: %.2f   "
+              "buckets: %d",
 	      records,seek,max_links,
-	      (float) seek / (float) (records ? records : 1)));
+	      (float) seek / (float) (records ? records : 1), 
+              hash_buckets_found));
   if (print_status)
-    printf("Key: %d  records: %ld   seeks: %d   max links: %d   hitrate: %.2f\n",
+    printf("Key: %d  records: %ld   seeks: %d   max links: %d   "
+           "hitrate: %.2f   buckets: %d\n",
 	   keynr, records, seek, max_links,
-	   (float) seek / (float) (records ? records : 1));
+	   (float) seek / (float) (records ? records : 1), 
+           hash_buckets_found);
+  return error;
+}
+
+static int check_one_rb_key(HP_INFO *info, uint keynr, ulong records,
+			    my_bool print_status)
+{
+  HP_KEYDEF *keydef= info->s->keydef + keynr;
+  int error= 0;
+  ulong found= 0;
+  byte *key, *recpos;
+  uint key_length;
+  uint not_used;
+  
+  if ((key= tree_search_edge(&keydef->rb_tree, info->parents,
+			     &info->last_pos, offsetof(TREE_ELEMENT, left))))
+  {
+    do
+    {
+      memcpy(&recpos, key + (*keydef->get_key_length)(keydef,key), sizeof(byte*));
+      key_length= hp_rb_make_key(keydef, info->recbuf, recpos, 0);
+      if (ha_key_cmp(keydef->seg, (uchar*) info->recbuf, (uchar*) key,
+		     key_length, SEARCH_FIND | SEARCH_SAME, &not_used))
+      {
+	error= 1;
+	DBUG_PRINT("error",("Record in wrong link:  key: %d  Record: %lx\n", 
+			    keynr, recpos));
+      }
+      else
+	found++;
+      key= tree_search_next(&keydef->rb_tree, &info->last_pos,
+			    offsetof(TREE_ELEMENT, left), 
+			    offsetof(TREE_ELEMENT, right));
+    } while (key);
+  }
+  if (found != records)
+  {
+    DBUG_PRINT("error",("Found %lu of %lu records", found, records));
+    error= 1;
+  }
+  if (print_status)
+    printf("Key: %d  records: %ld\n", keynr, records);
   return error;
 }

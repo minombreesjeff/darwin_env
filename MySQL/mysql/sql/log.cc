@@ -1,15 +1,15 @@
 /* Copyright (C) 2000-2003 MySQL AB
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
@@ -23,19 +23,61 @@
 #endif
 
 #include "mysql_priv.h"
-#include "sql_acl.h"
 #include "sql_repl.h"
+#include "ha_innodb.h" // necessary to cut the binlog when crash recovery
 
 #include <my_dir.h>
 #include <stdarg.h>
 #include <m_ctype.h>				// For test_if_number
-#include <assert.h>
+
+#ifdef __NT__
+#include "message.h"
+#endif
 
 MYSQL_LOG mysql_log,mysql_update_log,mysql_slow_log,mysql_bin_log;
-extern I_List<i_string> binlog_do_db, binlog_ignore_db;
+ulong sync_binlog_counter= 0;
 
 static bool test_if_number(const char *str,
 			   long *res, bool allow_wildcards);
+
+#ifdef __NT__
+static int eventSource = 0;
+
+void setup_windows_event_source() 
+{
+  HKEY    hRegKey= NULL; 
+  DWORD   dwError= 0;
+  TCHAR   szPath[MAX_PATH];
+  DWORD dwTypes;
+    
+  if (eventSource)               // Ensure that we are only called once
+    return;
+  eventSource= 1;
+
+  // Create the event source registry key
+  dwError= RegCreateKey(HKEY_LOCAL_MACHINE, 
+                          "SYSTEM\\CurrentControlSet\\Services\\EventLog\\Application\\MySQL", 
+                          &hRegKey);
+
+  /* Name of the PE module that contains the message resource */
+  GetModuleFileName(NULL, szPath, MAX_PATH);
+
+  /* Register EventMessageFile */
+  dwError = RegSetValueEx(hRegKey, "EventMessageFile", 0, REG_EXPAND_SZ, 
+                          (PBYTE) szPath, strlen(szPath)+1);
+    
+
+  /* Register supported event types */
+  dwTypes= (EVENTLOG_ERROR_TYPE | EVENTLOG_WARNING_TYPE |
+            EVENTLOG_INFORMATION_TYPE);
+  dwError= RegSetValueEx(hRegKey, "TypesSupported", 0, REG_DWORD,
+                         (LPBYTE) &dwTypes, sizeof dwTypes);
+
+  RegCloseKey(hRegKey);
+}
+
+#endif /* __NT__ */
+
 
 /****************************************************************************
 ** Find a uniq filename for 'filename.#'.
@@ -45,16 +87,19 @@ static bool test_if_number(const char *str,
 
 static int find_uniq_filename(char *name)
 {
-  long		number;
-  uint		i,length;
-  char		buff[FN_REFLEN];
-  struct st_my_dir *dir_info;
+  long                  number;
+  uint                  i;
+  char                  buff[FN_REFLEN];
+  struct st_my_dir     *dir_info;
   reg1 struct fileinfo *file_info;
-  ulong		max_found=0;
+  ulong                 max_found=0;
+
   DBUG_ENTER("find_uniq_filename");
 
-  length=dirname_part(buff,name);
-  char *start=name+length,*end=strend(start);
+  uint  length = dirname_part(buff,name);
+  char *start  = name + length;
+  char *end    = strend(start);
+
   *end='.';
   length= (uint) (end-start+1);
 
@@ -75,7 +120,7 @@ static int find_uniq_filename(char *name)
   my_dirend(dir_info);
 
   *end++='.';
-  sprintf(end,"%03ld",max_found+1);
+  sprintf(end,"%06ld",max_found+1);
   DBUG_RETURN(0);
 }
 
@@ -106,6 +151,7 @@ MYSQL_LOG::~MYSQL_LOG()
 
 void MYSQL_LOG::cleanup()
 {
+  DBUG_ENTER("cleanup");
   if (inited)
   {
     inited= 0;
@@ -114,6 +160,7 @@ void MYSQL_LOG::cleanup()
     (void) pthread_mutex_destroy(&LOCK_index);
     (void) pthread_cond_destroy(&update_cond);
   }
+  DBUG_VOID_RETURN;
 }
 
 
@@ -178,7 +225,7 @@ bool MYSQL_LOG::open(const char *log_name, enum_log_type log_type_arg,
 		     const char *new_name, const char *index_file_name_arg,
 		     enum cache_type io_cache_type_arg,
 		     bool no_auto_events_arg,
-                     ulong max_size)
+                     ulong max_size_arg)
 {
   char buff[512];
   File file= -1, index_file_nr= -1;
@@ -189,7 +236,7 @@ bool MYSQL_LOG::open(const char *log_name, enum_log_type log_type_arg,
   last_time=query_start=0;
   write_error=0;
 
-  init(log_type_arg,io_cache_type_arg,no_auto_events_arg,max_size);
+  init(log_type_arg,io_cache_type_arg,no_auto_events_arg,max_size_arg);
   
   if (!(name=my_strdup(log_name,MYF(MY_WME))))
     goto err;
@@ -208,20 +255,26 @@ bool MYSQL_LOG::open(const char *log_name, enum_log_type log_type_arg,
   if ((file=my_open(log_file_name,open_flags,
 		    MYF(MY_WME | ME_WAITTANG))) < 0 ||
       init_io_cache(&log_file, file, IO_SIZE, io_cache_type,
-		    my_tell(file,MYF(MY_WME)), 0, MYF(MY_WME | MY_NABP)))
+		    my_tell(file,MYF(MY_WME)), 0, 
+                    MYF(MY_WME | MY_NABP |
+                        ((log_type == LOG_BIN) ? MY_WAIT_IF_FULL : 0))))
     goto err;
 
   switch (log_type) {
   case LOG_NORMAL:
   {
     char *end;
-    int len=my_snprintf(buff, sizeof(buff),
-#ifdef __NT__
-                        "%s, Version: %s, started with:\nTCP Port: %d, Named Pipe: %s\n",
+    int len=my_snprintf(buff, sizeof(buff), "%s, Version: %s. "
+#ifdef EMBEDDED_LIBRARY
+		        "embedded library\n", my_progname, server_version
+#elif __NT__
+			"started with:\nTCP Port: %d, Named Pipe: %s\n",
+			my_progname, server_version, mysqld_port, mysqld_unix_port
 #else
-                        "%s, Version: %s, started with:\nTcp port: %d  Unix socket: %s\n",
+			"started with:\nTcp port: %d  Unix socket: %s\n",
+			my_progname,server_version,mysqld_port,mysqld_unix_port
 #endif
-                        my_progname, server_version, mysql_port, mysql_unix_port);
+                       );
     end=strnmov(buff+len,"Time                 Id Command    Argument\n",
                 sizeof(buff)-len);
     if (my_b_write(&log_file, (byte*) buff,(uint) (end-buff)) ||
@@ -282,16 +335,19 @@ bool MYSQL_LOG::open(const char *log_name, enum_log_type log_type_arg,
 	First open of this class instance
 	Create an index file that will hold all file names uses for logging.
 	Add new entries to the end of it.
+	Index file (and binlog) are so critical for recovery/replication
+	that we create them with MY_WAIT_IF_FULL.
       */
       fn_format(index_file_name, index_file_name_arg, mysql_data_home,
 		".index", opt);
       if ((index_file_nr= my_open(index_file_name,
 				  O_RDWR | O_CREAT | O_BINARY ,
 				  MYF(MY_WME))) < 0 ||
+          my_sync(index_file_nr, MYF(MY_WME)) ||
 	  init_io_cache(&index_file, index_file_nr,
 			IO_SIZE, WRITE_CACHE,
 			my_seek(index_file_nr,0L,MY_SEEK_END,MYF(0)),
-			0, MYF(MY_WME)))
+			0, MYF(MY_WME | MY_WAIT_IF_FULL)))
 	goto err;
     }
     else
@@ -307,16 +363,21 @@ bool MYSQL_LOG::open(const char *log_name, enum_log_type log_type_arg,
       s.set_log_pos(this);
       s.write(&log_file);
     }
-    if (flush_io_cache(&log_file))
+    if (flush_io_cache(&log_file) ||
+        my_sync(log_file.file, MYF(MY_WME)))
       goto err;
 
     if (write_file_name_to_index_file)
     {
-      /* As this is a new log file, we write the file name to the index file */
+      /*
+        As this is a new log file, we write the file name to the index
+        file. As every time we write to the index file, we sync it.
+      */
       if (my_b_write(&index_file, (byte*) log_file_name,
 		     strlen(log_file_name)) ||
 	  my_b_write(&index_file, (byte*) "\n", 1) ||
-	  flush_io_cache(&index_file))
+	  flush_io_cache(&index_file) ||
+          my_sync(index_file.file, MYF(MY_WME)))
 	goto err;
     }
     break;
@@ -397,7 +458,8 @@ static bool copy_up_file_and_fill(IO_CACHE *index_file, my_off_t offset)
       goto err;
   }
   /* The following will either truncate the file or fill the end with \n' */
-  if (my_chsize(file, offset - init_offset, '\n', MYF(MY_WME)))
+  if (my_chsize(file, offset - init_offset, '\n', MYF(MY_WME)) ||
+      my_sync(file, MYF(MY_WME)))
     goto err;
 
   /* Reset data in old index cache */
@@ -502,7 +564,6 @@ int MYSQL_LOG::find_log_pos(LOG_INFO *linfo, const char *log_name,
   RETURN VALUES
     0			ok
     LOG_INFO_EOF	End of log-index-file found
-    LOG_INFO_SEEK	Could not allocate IO cache
     LOG_INFO_IO		Got IO error while reading file
 */
 
@@ -607,24 +668,32 @@ err:
 
 
 /*
-  Delete the current log file, remove it from index file and start on next 
+  Delete relay log files prior to rli->group_relay_log_name
+  (i.e. all logs which are not involved in a non-finished group
+  (transaction)), remove them from the index file and start on next relay log.
 
   SYNOPSIS
     purge_first_log()
-    rli		Relay log information
-
+    rli		 Relay log information
+    included     If false, all relay logs that are strictly before
+                 rli->group_relay_log_name are deleted ; if true, the latter is
+                 deleted too (i.e. all relay logs
+                 read by the SQL slave thread are deleted).
+    
   NOTE
     - This is only called from the slave-execute thread when it has read
-      all commands from a log and want to switch to a new log.
-    - When this happens, we should never be in an active transaction as
-      a transaction is always written as a single block to the binary log.
+      all commands from a relay log and want to switch to a new relay log.
+    - When this happens, we can be in an active transaction as
+      a transaction can span over two relay logs
+      (although it is always written as a single block to the master's binary 
+      log, hence cannot span over two master's binary logs).
 
   IMPLEMENTATION
     - Protects index file with LOCK_index
-    - Delete first log file,
-    - Copy all file names after this one to the front of the index file
+    - Delete relevant relay log files
+    - Copy all file names after these ones to the front of the index file
     - If the OS has truncate, truncate the file, else fill it with \n'
-    - Read the first file name from the index file and store in rli->linfo
+    - Read the next file name from the index file and store in rli->linfo
 
   RETURN VALUES
     0			ok
@@ -633,66 +702,71 @@ err:
     LOG_INFO_IO		Got IO error while reading file
 */
 
-int MYSQL_LOG::purge_first_log(struct st_relay_log_info* rli)
+#ifdef HAVE_REPLICATION
+
+int MYSQL_LOG::purge_first_log(struct st_relay_log_info* rli, bool included) 
 {
   int error;
   DBUG_ENTER("purge_first_log");
 
-  /*
-    Test pre-conditions.
-
-    Assume that we have previously read the first log and
-    stored it in rli->relay_log_name
-  */
   DBUG_ASSERT(is_open());
   DBUG_ASSERT(rli->slave_running == 1);
-  DBUG_ASSERT(!strcmp(rli->linfo.log_file_name,rli->relay_log_name));
-  DBUG_ASSERT(rli->linfo.index_file_offset ==
-	      strlen(rli->relay_log_name) + 1);
+  DBUG_ASSERT(!strcmp(rli->linfo.log_file_name,rli->event_relay_log_name));
 
-  /* We have already processed the relay log, so it's safe to delete it */
-  my_delete(rli->relay_log_name, MYF(0));
   pthread_mutex_lock(&LOCK_index);
-  if (copy_up_file_and_fill(&index_file, rli->linfo.index_file_offset))
-  {
-    error= LOG_INFO_IO;
-    goto err;
-  }
+  pthread_mutex_lock(&rli->log_space_lock);
+  rli->relay_log.purge_logs(rli->group_relay_log_name, included,
+                            0, 0, &rli->log_space_total);
+  // Tell the I/O thread to take the relay_log_space_limit into account
+  rli->ignore_log_space_limit= 0;
+  pthread_mutex_unlock(&rli->log_space_lock);
 
   /*
-    Update the space counter used by all relay logs
     Ok to broadcast after the critical region as there is no risk of
     the mutex being destroyed by this thread later - this helps save
     context switches
   */
-  pthread_mutex_lock(&rli->log_space_lock);
-  rli->log_space_total -= rli->relay_log_pos;
-  //tell the I/O thread to take the relay_log_space_limit into account
-  rli->ignore_log_space_limit= 0;
-  pthread_mutex_unlock(&rli->log_space_lock);
   pthread_cond_broadcast(&rli->log_space_cond);
   
   /*
     Read the next log file name from the index file and pass it back to
     the caller
+    If included is true, we want the first relay log;
+    otherwise we want the one after event_relay_log_name.
   */
-  if ((error=find_log_pos(&rli->linfo, NullS, 0 /*no mutex*/)))
+  if ((included && (error=find_log_pos(&rli->linfo, NullS, 0))) ||
+      (!included &&
+       ((error=find_log_pos(&rli->linfo, rli->event_relay_log_name, 0)) ||
+        (error=find_next_log(&rli->linfo, 0)))))
   {
     char buff[22];
-    sql_print_error("next log error: %d  offset: %s  log: %s",
-		    error,
-		    llstr(rli->linfo.index_file_offset,buff),
-		    rli->linfo.log_file_name);
+    sql_print_error("next log error: %d  offset: %s  log: %s included: %d",
+                    error,
+                    llstr(rli->linfo.index_file_offset,buff),
+                    rli->group_relay_log_name,
+                    included);
     goto err;
   }
+
   /*
-    Reset position to current log.  This involves setting both of the
-    position variables:
+    Reset rli's coordinates to the current log.
   */
-  rli->relay_log_pos = BIN_LOG_HEADER_SIZE;
-  rli->pending = 0;
-  strmake(rli->relay_log_name,rli->linfo.log_file_name,
-	  sizeof(rli->relay_log_name)-1);
+  rli->event_relay_log_pos= BIN_LOG_HEADER_SIZE;
+  strmake(rli->event_relay_log_name,rli->linfo.log_file_name,
+	  sizeof(rli->event_relay_log_name)-1);
+
+  /*
+    If we removed the rli->group_relay_log_name file,
+    we must update the rli->group* coordinates, otherwise do not touch it as the
+    group's execution is not finished (e.g. COMMIT not executed)
+  */
+  if (included)
+  {
+    rli->group_relay_log_pos = BIN_LOG_HEADER_SIZE;
+    strmake(rli->group_relay_log_name,rli->linfo.log_file_name,
+            sizeof(rli->group_relay_log_name)-1);
+    rli->notify_group_relay_log_name_update();
+  }
 
   /* Store where we are in the new file for the execution thread */
   flush_relay_log_info(rli);
@@ -702,15 +776,33 @@ err:
   DBUG_RETURN(error);
 }
 
+/*
+  Update log index_file
+*/
+
+int MYSQL_LOG::update_log_index(LOG_INFO* log_info, bool need_update_threads)
+{
+  if (copy_up_file_and_fill(&index_file, log_info->index_file_start_offset))
+    return LOG_INFO_IO;
+
+  // now update offsets in index file for running threads
+  if (need_update_threads)
+    adjust_linfo_offsets(log_info->index_file_start_offset);
+  return 0;
+}
 
 /*
   Remove all logs before the given log from disk and from the index file.
 
   SYNOPSIS
     purge_logs()
-    thd		Thread pointer
-    to_log	Delete all log file name before this file. This file is not
-		deleted
+    to_log	        Delete all log file name before this file. 
+    included            If true, to_log is deleted too.
+    need_mutex
+    need_update_threads If we want to update the log coordinates of
+                        all threads. False for relay logs, true otherwise.
+    freed_log_space     If not null, decrement this variable of
+                        the amount of log space freed
 
   NOTES
     If any of the logs before the deleted one is in use,
@@ -721,26 +813,115 @@ err:
     LOG_INFO_EOF		to_log not found
 */
 
-int MYSQL_LOG::purge_logs(THD* thd, const char* to_log)
+int MYSQL_LOG::purge_logs(const char *to_log, 
+                          bool included,
+                          bool need_mutex, 
+                          bool need_update_threads, 
+                          ulonglong *decrease_log_space)
 {
   int error;
+  bool exit_loop= 0;
   LOG_INFO log_info;
   DBUG_ENTER("purge_logs");
+  DBUG_PRINT("info",("to_log= %s",to_log));
 
-  pthread_mutex_lock(&LOCK_index);
+  if (need_mutex)
+    pthread_mutex_lock(&LOCK_index);
   if ((error=find_log_pos(&log_info, to_log, 0 /*no mutex*/)))
     goto err;
 
   /*
-    File name exists in index file; Delete until we find this file
+    File name exists in index file; delete until we find this file
     or a file that is used.
   */
   if ((error=find_log_pos(&log_info, NullS, 0 /*no mutex*/)))
     goto err;
-  while (strcmp(to_log,log_info.log_file_name) &&
+  while ((strcmp(to_log,log_info.log_file_name) || (exit_loop=included)) &&
+         !log_in_use(log_info.log_file_name))
+  {
+    ulong tmp;
+    LINT_INIT(tmp);
+    if (decrease_log_space) //stat the file we want to delete
+    {
+      MY_STAT s;
+      if (my_stat(log_info.log_file_name,&s,MYF(0)))
+        tmp= s.st_size;
+      else
+      {
+        /* 
+           If we could not stat, we can't know the amount
+           of space that deletion will free. In most cases,
+           deletion won't work either, so it's not a problem.
+        */
+        tmp= 0; 
+      }
+    }
+    /*
+      It's not fatal if we can't delete a log file ;
+      if we could delete it, take its size into account
+    */
+    DBUG_PRINT("info",("purging %s",log_info.log_file_name));
+    if (!my_delete(log_info.log_file_name, MYF(0)) && decrease_log_space)
+      *decrease_log_space-= tmp;
+    if (find_next_log(&log_info, 0) || exit_loop)
+      break;
+  }
+
+  /*
+    If we get killed -9 here, the sysadmin would have to edit
+    the log index file after restart - otherwise, this should be safe
+  */
+  error= update_log_index(&log_info, need_update_threads);
+
+err:
+  if (need_mutex)
+    pthread_mutex_unlock(&LOCK_index);
+  DBUG_RETURN(error);
+}
+
+/*
+  Remove all logs before the given file date from disk and from the
+  index file.
+
+  SYNOPSIS
+    purge_logs_before_date()
+    thd		Thread pointer
+    before_date	Delete all log files before given date.
+
+  NOTES
+    If any of the logs before the deleted one is in use,
+    only purge logs up to this one.
+
+  RETURN VALUES
+    0				ok
+    LOG_INFO_PURGE_NO_ROTATE	Binary file that can't be rotated
+*/
+
+int MYSQL_LOG::purge_logs_before_date(time_t purge_time)
+{
+  int error;
+  LOG_INFO log_info;
+  MY_STAT stat_area;
+
+  DBUG_ENTER("purge_logs_before_date");
+
+  pthread_mutex_lock(&LOCK_index);
+
+  /*
+    Delete until we find curren file
+    or a file that is used or a file
+    that is older than purge_time.
+  */
+  if ((error=find_log_pos(&log_info, NullS, 0 /*no mutex*/)))
+    goto err;
+
+  while (strcmp(log_file_name, log_info.log_file_name) &&
 	 !log_in_use(log_info.log_file_name))
   {
     /* It's not fatal even if we can't delete a log file */
+    if (!my_stat(log_info.log_file_name, &stat_area, MYF(0)) ||
+	stat_area.st_mtime >= purge_time)
+      break;
     my_delete(log_info.log_file_name, MYF(0));
     if (find_next_log(&log_info, 0))
       break;
@@ -750,20 +931,15 @@ int MYSQL_LOG::purge_logs(THD* thd, const char* to_log)
     If we get killed -9 here, the sysadmin would have to edit
     the log index file after restart - otherwise, this should be safe
   */
-
-  if (copy_up_file_and_fill(&index_file, log_info.index_file_start_offset))
-  {
-    error= LOG_INFO_IO;
-    goto err;
-  }
-
-  // now update offsets in index file for running threads
-  adjust_linfo_offsets(log_info.index_file_start_offset);
+  error= update_log_index(&log_info, 1);
 
 err:
   pthread_mutex_unlock(&LOCK_index);
   DBUG_RETURN(error);
 }
+
+
+#endif /* HAVE_REPLICATION */
 
 
 /*
@@ -849,17 +1025,9 @@ void MYSQL_LOG::new_file(bool need_lock)
         We log the whole file name for log file as the user may decide
         to change base names at some point.
       */
-      THD* thd = current_thd; /* may be 0 if we are reacting to SIGHUP */
+      THD *thd = current_thd; /* may be 0 if we are reacting to SIGHUP */
       Rotate_log_event r(thd,new_name+dirname_length(new_name));
       r.set_log_pos(this);
-      
-      /*
-        Because this log rotation could have been initiated by a master of
-        the slave running with log-bin, we set the flag on rotate
-        event to prevent infinite log rotation loop
-      */
-      if (thd && thd->slave_thread)
-        r.flags|= LOG_EVENT_FORCED_ROTATE_F;
       r.write(&log_file);
       bytes_written += r.get_event_len();
     }
@@ -881,6 +1049,8 @@ void MYSQL_LOG::new_file(bool need_lock)
 
   open(old_name, save_log_type, new_name_ptr, index_file_name, io_cache_type,
        no_auto_events, max_size);
+  if (this == &mysql_bin_log)
+    report_pos_in_innodb();
   my_free(old_name,MYF(0));
 
 end:
@@ -970,7 +1140,8 @@ bool MYSQL_LOG::write(THD *thd,enum enum_server_command command,
 {
   if (is_open() && (what_to_log & (1L << (uint) command)))
   {
-    int error=0;
+    uint length;
+    int error= 0;
     VOID(pthread_mutex_lock(&LOCK_log));
 
     /* Test if someone closed between the is_open test and lock */
@@ -984,8 +1155,11 @@ bool MYSQL_LOG::write(THD *thd,enum enum_server_command command,
 
       if (thd)
       {						// Normal thread
-	if ((thd->options & OPTION_LOG_OFF) &&
-	    (thd->master_access & SUPER_ACL))
+	if ((thd->options & OPTION_LOG_OFF)
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+	    && (thd->master_access & SUPER_ACL)
+#endif
+)
 	{
 	  VOID(pthread_mutex_unlock(&LOCK_log));
 	  return 0;				// No logging
@@ -1019,8 +1193,10 @@ bool MYSQL_LOG::write(THD *thd,enum enum_server_command command,
       }
       else if (my_b_write(&log_file, (byte*) "\t\t",2) < 0)
 	error=errno;
-      sprintf(buff,"%7ld %-11.11s", id,command_name[(uint) command]);
-      if (my_b_write(&log_file, (byte*) buff,strlen(buff)))
+      length=my_sprintf(buff,
+			(buff, "%7ld %-11.11s", id,
+			 command_name[(uint) command]));
+      if (my_b_write(&log_file, (byte*) buff,length))
 	error=errno;
       if (format)
       {
@@ -1045,6 +1221,13 @@ bool MYSQL_LOG::write(THD *thd,enum enum_server_command command,
 }
 
 
+inline bool sync_binlog(IO_CACHE *cache)
+{
+  return (sync_binlog_period &&
+          (sync_binlog_period == ++sync_binlog_counter) &&
+          (sync_binlog_counter= 0, my_sync(cache->file, MYF(MY_WME))));
+}
+
 /*
   Write an event to the binary log
 */
@@ -1054,6 +1237,7 @@ bool MYSQL_LOG::write(Log_event* event_info)
   THD *thd=event_info->thd;
   bool called_handler_commit=0;
   bool error=0;
+  bool should_rotate = 0;
   DBUG_ENTER("MYSQL_LOG::write(event)");
   
   pthread_mutex_lock(&LOCK_log);
@@ -1065,7 +1249,6 @@ bool MYSQL_LOG::write(Log_event* event_info)
   */
   if (is_open())
   {
-    bool should_rotate= 0;
     const char *local_db= event_info->get_db();
     IO_CACHE *file= &log_file;
 #ifdef USING_TRANSACTIONS    
@@ -1084,19 +1267,20 @@ bool MYSQL_LOG::write(Log_event* event_info)
       file= &thd->transaction.trans_log;
 #endif
     DBUG_PRINT("info",("event type=%d",event_info->get_type_code()));
+#ifdef HAVE_REPLICATION
     /* 
        In the future we need to add to the following if tests like
        "do the involved tables match (to be implemented)
         binlog_[wild_]{do|ignore}_table?" (WL#1049)"
     */
-    if ((thd && !(thd->options & OPTION_BIN_LOG) &&
-	 (thd->master_access & SUPER_ACL)) ||
-	(local_db && !db_ok(local_db, binlog_do_db, binlog_ignore_db)))
+    if ((thd && !(thd->options & OPTION_BIN_LOG)) ||
+	(!db_ok(local_db, binlog_do_db, binlog_ignore_db)))
     {
       VOID(pthread_mutex_unlock(&LOCK_log));
-      DBUG_PRINT("error",("!db_ok"));
+      DBUG_PRINT("error",("!db_ok('%s')", local_db));
       DBUG_RETURN(0);
     }
+#endif /* HAVE_REPLICATION */
 
     error=1;
     /*
@@ -1111,6 +1295,54 @@ bool MYSQL_LOG::write(Log_event* event_info)
 
     if (thd)
     {
+#if MYSQL_VERSION_ID < 50000
+      /*
+        To make replication of charsets working in 4.1 we are writing values
+        of charset related variables before every statement in the binlog,
+        if values of those variables differ from global server-wide defaults.
+        We are using SET ONE_SHOT command so that the charset vars get reset
+        to default after the first non-SET statement.
+        In the next 5.0 this won't be needed as we will use the new binlog
+        format to store charset info.
+      */
+      if ((thd->variables.character_set_client->number !=
+           global_system_variables.collation_server->number) ||
+          (thd->variables.character_set_client->number !=
+           thd->variables.collation_connection->number) ||
+          (thd->variables.collation_server->number !=
+           thd->variables.collation_connection->number))
+      {
+	char buf[200];
+        int written= my_snprintf(buf, sizeof(buf)-1,
+                    "SET ONE_SHOT CHARACTER_SET_CLIENT=%u,\
+COLLATION_CONNECTION=%u,COLLATION_DATABASE=%u,COLLATION_SERVER=%u",
+                             (uint) thd->variables.character_set_client->number,
+                             (uint) thd->variables.collation_connection->number,
+                             (uint) thd->variables.collation_database->number,
+                             (uint) thd->variables.collation_server->number);
+	Query_log_event e(thd, buf, written, 0, FALSE);
+	e.set_log_pos(this);
+	if (e.write(file))
+	  goto err;
+      }
+      /*
+        We use the same ONE_SHOT trick for making replication of time zones 
+        working in 4.1. Again in 5.0 we have better means for doing this.
+      */
+      if (thd->time_zone_used &&
+          thd->variables.time_zone != global_system_variables.time_zone)
+      {
+        char buf[MAX_TIME_ZONE_NAME_LENGTH + 26];
+        char *buf_end= strxmov(buf, "SET ONE_SHOT TIME_ZONE='", 
+                               thd->variables.time_zone->get_name()->ptr(),
+                               "'", NullS);
+        Query_log_event e(thd, buf, buf_end - buf, 0, FALSE);
+        e.set_log_pos(this);
+        if (e.write(file))
+          goto err;
+      }
+#endif
+
       if (thd->last_insert_id_used)
       {
 	Intvar_log_event e(thd,(uchar) LAST_INSERT_ID_EVENT,
@@ -1133,6 +1365,24 @@ bool MYSQL_LOG::write(Log_event* event_info)
 	if (e.write(file))
 	  goto err;
       }
+      if (thd->user_var_events.elements)
+      {
+	for (uint i= 0; i < thd->user_var_events.elements; i++)
+	{
+	  BINLOG_USER_VAR_EVENT *user_var_event;
+	  get_dynamic(&thd->user_var_events,(gptr) &user_var_event, i);
+          User_var_log_event e(thd, user_var_event->user_var_event->name.str,
+                               user_var_event->user_var_event->name.length,
+                               user_var_event->value,
+                               user_var_event->length,
+                               user_var_event->type,
+			       user_var_event->charset_number);
+          e.set_log_pos(this);
+	  if (e.write(file))
+	    goto err;
+	}
+      }
+#ifdef TO_BE_REMOVED
       if (thd->variables.convert_set)
       {
 	char buf[256], *p;
@@ -1143,6 +1393,7 @@ bool MYSQL_LOG::write(Log_event* event_info)
 	if (e.write(file))
 	  goto err;
       }
+#endif
 
       /*
 	If the user has set FOREIGN_KEY_CHECKS=0 we wrap every SQL
@@ -1154,7 +1405,7 @@ bool MYSQL_LOG::write(Log_event* event_info)
 
       if (thd->options & OPTION_NO_FOREIGN_KEY_CHECKS)
       {
-	Query_log_event e(thd, "SET FOREIGN_KEY_CHECKS=0", 24, 0);
+	Query_log_event e(thd, "SET FOREIGN_KEY_CHECKS=0", 24, 0, FALSE);
 	e.set_log_pos(this);
 	if (e.write(file))
 	  goto err;
@@ -1169,12 +1420,15 @@ bool MYSQL_LOG::write(Log_event* event_info)
 
     /* Write log events to reset the 'run environment' of the SQL command */
 
-    if (thd && thd->options & OPTION_NO_FOREIGN_KEY_CHECKS)
+    if (thd)
     {
-      Query_log_event e(thd, "SET FOREIGN_KEY_CHECKS=1", 24, 0);
-      e.set_log_pos(this);
-      if (e.write(file))
-	goto err;
+      if (thd->options & OPTION_NO_FOREIGN_KEY_CHECKS)
+      {
+        Query_log_event e(thd, "SET FOREIGN_KEY_CHECKS=1", 24, 0, FALSE);
+        e.set_log_pos(this);
+        if (e.write(file))
+          goto err;
+      }
     }
 
     /*
@@ -1196,10 +1450,11 @@ bool MYSQL_LOG::write(Log_event* event_info)
 
     if (file == &log_file) // we are writing to the real log (disk)
     {
-      if (flush_io_cache(file))
+      if (flush_io_cache(file) || sync_binlog(file))
 	goto err;
- 
-      if (opt_using_transactions && !my_b_tell(&thd->transaction.trans_log))
+
+      if (opt_using_transactions &&
+          !(thd->options & (OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN)))
       {
         /*
           LOAD DATA INFILE in AUTOCOMMIT=1 mode writes to the binlog
@@ -1211,6 +1466,30 @@ bool MYSQL_LOG::write(Log_event* event_info)
         if (event_info->get_type_code() == QUERY_EVENT ||
             event_info->get_type_code() == EXEC_LOAD_EVENT)
         {
+#ifndef DBUG_OFF
+          if (unlikely(opt_crash_binlog_innodb))
+          {
+            /*
+              This option is for use in rpl_crash_binlog_innodb.test.
+              1st we want to verify that Binlog_dump thread cannot send the
+              event now (because of LOCK_log): we here tell the Binlog_dump
+              thread to wake up, sleep for the slave to have time to possibly
+              receive data from the master (it should not), and then crash.
+              2nd we want to verify that at crash recovery the rolled back
+              event is cut from the binlog.
+            */
+            if (!(--opt_crash_binlog_innodb))
+            {
+              signal_update();
+              sleep(2);
+              fprintf(stderr,"This is a normal crash because of"
+                      " --crash-binlog-innodb\n");
+              assert(0);
+            }
+            DBUG_PRINT("info",("opt_crash_binlog_innodb: %d",
+                               opt_crash_binlog_innodb));
+          }
+#endif
           error = ha_report_binlog_offset_and_commit(thd, log_file_name,
                                                      file->pos_in_file);
           called_handler_commit=1;
@@ -1252,6 +1531,14 @@ err:
   if (called_handler_commit)
     ha_commit_complete(thd);
 
+#ifdef HAVE_REPLICATION
+  if (should_rotate && expire_logs_days)
+  {
+    long purge_time= time(0) - expire_logs_days*24*60*60;
+    if (purge_time >= 0)
+      error= purge_logs_before_date(purge_time);
+  }
+#endif
   DBUG_RETURN(error);
 }
 
@@ -1291,6 +1578,7 @@ uint MYSQL_LOG::next_file_id()
 
 bool MYSQL_LOG::write(THD *thd, IO_CACHE *cache, bool commit_or_rollback)
 {
+  bool should_rotate= 0, error= 0;
   VOID(pthread_mutex_lock(&LOCK_log));
   DBUG_ENTER("MYSQL_LOG::write(cache");
   
@@ -1313,7 +1601,15 @@ bool MYSQL_LOG::write(THD *thd, IO_CACHE *cache, bool commit_or_rollback)
       we will add the "COMMIT mark and write the buffer to the binlog.
     */
     {
-      Query_log_event qinfo(thd, "BEGIN", 5, TRUE);
+      Query_log_event qinfo(thd, "BEGIN", 5, TRUE, FALSE);
+      /*
+        Imagine this is rollback due to net timeout, after all statements of
+        the transaction succeeded. Then we want a zero-error code in BEGIN.
+        In other words, if there was a really serious error code it's already
+        in the statement's events.
+        This is safer than thd->clear_error() against kills at shutdown.
+      */
+      qinfo.error_code= 0;
       /*
         Now this Query_log_event has artificial log_pos 0. It must be adjusted
         to reflect the real position in the log. Not doing it would confuse the
@@ -1346,9 +1642,11 @@ bool MYSQL_LOG::write(THD *thd, IO_CACHE *cache, bool commit_or_rollback)
       Query_log_event qinfo(thd, 
                             commit_or_rollback ? "COMMIT" : "ROLLBACK",
                             commit_or_rollback ? 6        : 8, 
-                            TRUE);
+                            TRUE, FALSE);
+      qinfo.error_code= 0;
       qinfo.set_log_pos(this);
-      if (qinfo.write(&log_file) || flush_io_cache(&log_file))
+      if (qinfo.write(&log_file) || flush_io_cache(&log_file) ||
+          sync_binlog(&log_file))
 	goto err;
     }
     if (cache->error)				// Error on read
@@ -1357,12 +1655,28 @@ bool MYSQL_LOG::write(THD *thd, IO_CACHE *cache, bool commit_or_rollback)
       write_error=1;				// Don't give more errors
       goto err;
     }
+#ifndef DBUG_OFF
+    if (unlikely(opt_crash_binlog_innodb))
+    {
+      /* see the previous MYSQL_LOG::write() method for a comment */
+      if (!(--opt_crash_binlog_innodb))
+      {
+        signal_update();
+        sleep(2);
+        fprintf(stderr, "This is a normal crash because of"
+                " --crash-binlog-innodb\n");
+        assert(0);
+      }
+      DBUG_PRINT("info",("opt_crash_binlog_innodb: %d",
+                         opt_crash_binlog_innodb));
+    }
+#endif
     if ((ha_report_binlog_offset_and_commit(thd, log_file_name,
 					    log_file.pos_in_file)))
       goto err;
     signal_update();
     DBUG_PRINT("info",("max_size: %lu",max_size));
-    if (my_b_tell(&log_file) >= (my_off_t) max_size)
+    if (should_rotate= (my_b_tell(&log_file) >= (my_off_t) max_size))
     {
       pthread_mutex_lock(&LOCK_index);
       new_file(0); // inside mutex
@@ -1378,7 +1692,16 @@ bool MYSQL_LOG::write(THD *thd, IO_CACHE *cache, bool commit_or_rollback)
 
   ha_commit_complete(thd);
 
-  DBUG_RETURN(0);
+#ifdef HAVE_REPLICATION
+  if (should_rotate && expire_logs_days)
+  {
+    long purge_time= time(0) - expire_logs_days*24*60*60;
+    if (purge_time >= 0)
+      error= purge_logs_before_date(purge_time);
+  }
+#endif
+
+  DBUG_RETURN(error);
 
 err:
   if (!write_error)
@@ -1393,11 +1716,7 @@ err:
 
 /*
   Write update log in a format suitable for incremental backup
-
-  NOTE
-   - This code should be deleted in MySQL 5,0 as the binary log
-     is a full replacement for the update log.
-
+  This is also used by the slow query log.
 */
 
 bool MYSQL_LOG::write(THD *thd,const char *query, uint query_length,
@@ -1407,19 +1726,20 @@ bool MYSQL_LOG::write(THD *thd,const char *query, uint query_length,
   time_t current_time;
   if (!is_open())
     return 0;
+  DBUG_ENTER("MYSQL_LOG::write");
+
   VOID(pthread_mutex_lock(&LOCK_log));
   if (is_open())
   {						// Safety agains reopen
     int tmp_errno=0;
     char buff[80],*end;
     end=buff;
-    if (!(thd->options & OPTION_UPDATE_LOG) &&
-        (thd->master_access & SUPER_ACL))
+    if (!(thd->options & OPTION_UPDATE_LOG))
     {
       VOID(pthread_mutex_unlock(&LOCK_log));
-      return 0;
+      DBUG_RETURN(0);
     }
-    if ((specialflag & SPECIAL_LONG_LOG_FORMAT) || query_start_arg)
+    if (!(specialflag & SPECIAL_SHORT_LOG_FORMAT) || query_start_arg)
     {
       current_time=time(NULL);
       if (current_time != last_time)
@@ -1441,8 +1761,8 @@ bool MYSQL_LOG::write(THD *thd,const char *query, uint query_length,
           tmp_errno=errno;
       }
       if (my_b_printf(&log_file, "# User@Host: %s[%s] @ %s [%s]\n",
-                      thd->priv_user,
-                      thd->user,
+                      thd->priv_user ? thd->priv_user : "",
+                      thd->user ? thd->user : "",
                       thd->host ? thd->host : "",
                       thd->ip ? thd->ip : "") == (uint) -1)
         tmp_errno=errno;
@@ -1472,7 +1792,7 @@ bool MYSQL_LOG::write(THD *thd,const char *query, uint query_length,
     // Save value if we do an insert.
     if (thd->insert_id_used)
     {
-      if (specialflag & SPECIAL_LONG_LOG_FORMAT)
+      if (!(specialflag & SPECIAL_SHORT_LOG_FORMAT))
       {
         end=strmov(end,",insert_id=");
         end=longlong10_to_str((longlong) thd->last_insert_id,end,-10);
@@ -1517,7 +1837,7 @@ bool MYSQL_LOG::write(THD *thd,const char *query, uint query_length,
     }
   }
   VOID(pthread_mutex_unlock(&LOCK_log));
-  return error;
+  DBUG_RETURN(error);
 }
 
 
@@ -1533,27 +1853,23 @@ bool MYSQL_LOG::write(THD *thd,const char *query, uint query_length,
 
   NOTES
     One must have a lock on LOCK_log before calling this function.
-    This lock will be freed before return!
-
-    The reason for the above is that for enter_cond() / exit_cond() to
-    work the mutex must be got before enter_cond() but releases before
-    exit_cond().
-    If you don't do it this way, you will get a deadlock in THD::awake()
+    This lock will be freed before return! That's required by
+    THD::enter_cond() (see NOTES in sql_class.h).
 */
 
-
-void MYSQL_LOG:: wait_for_update(THD* thd, bool master_or_slave)
+void MYSQL_LOG::wait_for_update(THD* thd, bool master_or_slave)
 {
-  safe_mutex_assert_owner(&LOCK_log);
-  const char* old_msg = thd->enter_cond(&update_cond, &LOCK_log,
-                                        master_or_slave ?
-                                        "Has read all relay log; waiting for \
-the I/O slave thread to update it" : 
-                                        "Has sent all binlog to slave; \
-waiting for binlog to be updated"); 
+  const char *old_msg;
+  DBUG_ENTER("wait_for_update");
+  old_msg= thd->enter_cond(&update_cond, &LOCK_log,
+                           master_or_slave ?
+                           "Has read all relay log; waiting for the slave I/O "
+                           "thread to update it" : 
+                           "Has sent all binlog to slave; waiting for binlog "
+                           "to be updated"); 
   pthread_cond_wait(&update_cond, &LOCK_log);
-  pthread_mutex_unlock(&LOCK_log);		// See NOTES
   thd->exit_cond(old_msg);
+  DBUG_VOID_RETURN;
 }
 
 
@@ -1579,6 +1895,7 @@ void MYSQL_LOG::close(uint exiting)
   DBUG_PRINT("enter",("exiting: %d", (int) exiting));
   if (log_type != LOG_CLOSED && log_type != LOG_TO_BE_OPENED)
   {
+#ifdef HAVE_REPLICATION
     if (log_type == LOG_BIN && !no_auto_events &&
 	(exiting & LOG_CLOSE_STOP_EVENT))
     {
@@ -1587,6 +1904,7 @@ void MYSQL_LOG::close(uint exiting)
       s.write(&log_file);
       signal_update();
     }
+#endif /* HAVE_REPLICATION */
     end_io_cache(&log_file);
     if (my_close(log_file.file,MYF(0)) < 0 && ! write_error)
     {
@@ -1662,8 +1980,8 @@ static bool test_if_number(register const char *str,
   while (*str++ == ' ') ;
   if (*--str == '-' || *str == '+')
     str++;
-  while (isdigit(*str) || (allow_wildcards &&
-			   (*str == wild_many || *str == wild_one)))
+  while (my_isdigit(files_charset_info,*str) ||
+	 (allow_wildcards && (*str == wild_many || *str == wild_one)))
   {
     flag=1;
     str++;
@@ -1671,7 +1989,7 @@ static bool test_if_number(register const char *str,
   if (*str == '.')
   {
     for (str++ ;
-	 isdigit(*str) ||
+	 my_isdigit(files_charset_info,*str) ||
 	   (allow_wildcards && (*str == wild_many || *str == wild_one)) ;
 	 str++, flag=1) ;
   }
@@ -1683,39 +2001,31 @@ static bool test_if_number(register const char *str,
 } /* test_if_number */
 
 
-void sql_print_error(const char *format,...)
+void print_buffer_to_file(enum loglevel level, const char *buffer)
 {
-  va_list args;
   time_t skr;
   struct tm tm_tmp;
   struct tm *start;
-  va_start(args,format);
-  DBUG_ENTER("sql_print_error");
+  DBUG_ENTER("print_buffer_to_file");
+  DBUG_PRINT("enter",("buffer: %s", buffer));
 
   VOID(pthread_mutex_lock(&LOCK_error_log));
-#ifndef DBUG_OFF
-  {
-    char buff[1024];
-    my_vsnprintf(buff,sizeof(buff)-1,format,args);
-    DBUG_PRINT("error",("%s",buff));
-    va_end(args);
-    va_start(args,format);
-  }
-#endif
+
   skr=time(NULL);
-  localtime_r(&skr,&tm_tmp);
+  localtime_r(&skr, &tm_tmp);
   start=&tm_tmp;
-  fprintf(stderr,"%02d%02d%02d %2d:%02d:%02d  ",
-	  start->tm_year % 100,
-	  start->tm_mon+1,
-	  start->tm_mday,
-	  start->tm_hour,
-	  start->tm_min,
-	  start->tm_sec);
-  (void) vfprintf(stderr,format,args);
-  (void) fputc('\n',stderr);
+  fprintf(stderr, "%02d%02d%02d %2d:%02d:%02d [%s] %s\n",
+          start->tm_year % 100,
+          start->tm_mon+1,
+          start->tm_mday,
+          start->tm_hour,
+          start->tm_min,
+          start->tm_sec,
+          (level == ERROR_LEVEL ? "ERROR" : level == WARNING_LEVEL ?
+           "Warning" : "Note"),
+          buffer);
+
   fflush(stderr);
-  va_end(args);
 
   VOID(pthread_mutex_unlock(&LOCK_error_log));
   DBUG_VOID_RETURN;
@@ -1731,6 +2041,7 @@ void sql_perror(const char *message)
 #endif
 }
 
+
 bool flush_error_log()
 {
   bool result=0;
@@ -1739,6 +2050,7 @@ bool flush_error_log()
     char err_renamed[FN_REFLEN], *end;
     end= strmake(err_renamed,log_error_file,FN_REFLEN-4);
     strmov(end, "-old");
+    VOID(pthread_mutex_lock(&LOCK_error_log));
 #ifdef __WIN__
     char err_temp[FN_REFLEN+4];
     /*
@@ -1759,7 +2071,7 @@ bool flush_error_log()
       if ((fd = my_open(err_temp, O_RDONLY, MYF(0))) >= 0)
       {
         while ((bytes = (int) my_read(fd, (byte*) buf, IO_SIZE, MYF(0))) > 0)
-             my_fwrite(stderr, (byte*) buf, (uint) strlen(buf),MYF(0));
+             my_fwrite(stderr, (byte*) buf, bytes, MYF(0));
         my_close(fd, MYF(0));
       }
       (void) my_delete(err_temp, MYF(0)); 
@@ -1773,6 +2085,277 @@ bool flush_error_log()
    else
      result= 1;
 #endif
+    VOID(pthread_mutex_unlock(&LOCK_error_log));
   }
    return result;
+}
+
+
+/*
+  If the server has InnoDB on, and InnoDB has published the position of the
+  last committed transaction (which happens only if a crash recovery occured at
+  this startup) then truncate the previous binary log at the position given by
+  InnoDB. If binlog is shorter than the position, print a message to the error
+  log.
+
+  SYNOPSIS
+    cut_spurious_tail()
+
+  RETURN VALUES
+    1	Error
+    0	Ok
+*/
+
+bool MYSQL_LOG::cut_spurious_tail()
+{
+  int error= 0;
+  DBUG_ENTER("cut_spurious_tail");
+
+#ifdef HAVE_INNOBASE_DB
+  if (have_innodb != SHOW_OPTION_YES)
+    DBUG_RETURN(0);
+  /*
+    This is the place where we use information from InnoDB to cut the
+    binlog.
+  */
+  char *name= ha_innobase::get_mysql_bin_log_name();
+  ulonglong pos= ha_innobase::get_mysql_bin_log_pos();
+  ulonglong actual_size;
+  char llbuf1[22], llbuf2[22];
+
+  if (name[0] == 0 || pos == ULONGLONG_MAX)
+  {
+    DBUG_PRINT("info", ("InnoDB has not set binlog info"));
+    DBUG_RETURN(0);
+  }
+  /* The binlog given by InnoDB normally is never an active binlog */
+  if (is_open() && is_active(name))
+  {
+    sql_print_error("Warning: after InnoDB crash recovery, InnoDB says that "
+                    "the binary log of the previous run has the same name "
+                    "'%s' as the current one; this is likely to be abnormal.",
+                    name);
+    DBUG_RETURN(1);
+  }
+  sql_print_error("After InnoDB crash recovery, checking if the binary log "
+                  "'%s' contains rolled back transactions which must be "
+                  "removed from it...", name);
+  /* If we have a too long binlog, cut. If too short, print error */
+  int fd= my_open(name, O_EXCL | O_APPEND | O_BINARY | O_WRONLY, MYF(MY_WME));
+  if (fd < 0)
+  {
+    int save_errno= my_errno;
+    sql_print_error("Could not open the binary log '%s' for truncation.",
+                    name);
+    if (save_errno != ENOENT)
+      sql_print_error("The binary log '%s' should not be used for "
+                      "replication.", name);    
+    DBUG_RETURN(1);
+  }
+
+  if (pos > (actual_size= my_seek(fd, 0L, MY_SEEK_END, MYF(MY_WME))))
+  {
+    /*
+      Note that when we have MyISAM rollback this error message should be
+      reconsidered.
+    */
+    sql_print_error("The binary log '%s' is shorter than its expected size "
+                    "(actual: %s, expected: %s) so it misses at least one "
+                    "committed transaction; so it should not be used for "
+                    "replication or point-in-time recovery. You would need "
+                    "to restart slaves from a fresh master's data "
+                    "snapshot ",
+                    name, llstr(actual_size, llbuf1),
+                    llstr(pos, llbuf2));
+    error= 1;
+    goto err;
+  }
+  if (pos < actual_size)
+  {
+    sql_print_error("The binary log '%s' is bigger than its expected size "
+                    "(actual: %s, expected: %s) so it contains a rolled back "
+                    "transaction; now truncating that.", name,
+                    llstr(actual_size, llbuf1), llstr(pos, llbuf2));
+    /*
+      As on some OS, my_chsize() can only pad with 0s instead of really
+      truncating. Then mysqlbinlog (and Binlog_dump thread) will error on
+      these zeroes. This is annoying, but not more (you just need to manually
+      switch replication to the next binlog). Fortunately, in my_chsize.c, it
+      says that all modern machines support real ftruncate().
+      
+    */
+    if ((error= my_chsize(fd, pos, 0, MYF(MY_WME))))
+      goto err;
+  }
+err:
+  if (my_close(fd, MYF(MY_WME)))
+    error= 1;
+#endif
+  DBUG_RETURN(error);
+}
+
+
+/*
+  If the server has InnoDB on, store the binlog name and position into
+  InnoDB. This function is used every time we create a new binlog.
+
+  SYNOPSIS
+    report_pos_in_innodb()
+
+  NOTES
+    This cannot simply be done in MYSQL_LOG::open(), because when we create
+    the first binlog at startup, we have not called ha_init() yet so we cannot
+    write into InnoDB yet.
+
+  RETURN VALUES
+    1	Error
+    0	Ok
+*/
+
+void MYSQL_LOG::report_pos_in_innodb()
+{
+  DBUG_ENTER("report_pos_in_innodb");
+#ifdef HAVE_INNOBASE_DB
+  if (is_open() && have_innodb == SHOW_OPTION_YES)
+  {
+    DBUG_PRINT("info", ("Reporting binlog info into InnoDB - "
+                        "name: '%s' position: %d",
+                        log_file_name, my_b_tell(&log_file)));
+    innobase_store_binlog_offset_and_flush_log(log_file_name,
+                                               my_b_tell(&log_file));
+  }
+#endif
+  DBUG_VOID_RETURN;
+}
+
+
+void MYSQL_LOG::signal_update()
+{
+  DBUG_ENTER("MYSQL_LOG::signal_update");
+  pthread_cond_broadcast(&update_cond);
+  DBUG_VOID_RETURN;
+}
+
+
+#ifdef __NT__
+void print_buffer_to_nt_eventlog(enum loglevel level, char *buff,
+                                 uint length, int buffLen)
+{
+  HANDLE event;
+  char   *buffptr;
+  LPCSTR *buffmsgptr;
+  DBUG_ENTER("print_buffer_to_nt_eventlog");
+
+  buffptr= buff;
+  if (length > (uint)(buffLen-5))
+  {
+    char *newBuff= new char[length + 5];
+    strcpy(newBuff, buff);
+    buffptr= newBuff;
+  }
+  strmov(buffptr+length, "\r\n\r\n");
+  buffmsgptr= (LPCSTR*) &buffptr;               // Keep windows happy
+
+  setup_windows_event_source();
+  if ((event= RegisterEventSource(NULL,"MySQL")))
+  {
+    switch (level) {
+      case ERROR_LEVEL:
+        ReportEvent(event, EVENTLOG_ERROR_TYPE, 0, MSG_DEFAULT, NULL, 1, 0,
+                    buffmsgptr, NULL);
+        break;
+      case WARNING_LEVEL:
+        ReportEvent(event, EVENTLOG_WARNING_TYPE, 0, MSG_DEFAULT, NULL, 1, 0,
+                    buffmsgptr, NULL);
+        break;
+      case INFORMATION_LEVEL:
+        ReportEvent(event, EVENTLOG_INFORMATION_TYPE, 0, MSG_DEFAULT, NULL, 1,
+                    0, buffmsgptr, NULL);
+        break;
+    }
+    DeregisterEventSource(event);
+  }
+
+  /* if we created a string buffer, then delete it */
+  if (buffptr != buff)
+    delete[] buffptr;
+
+  DBUG_VOID_RETURN;
+}
+#endif /* __NT__ */
+
+
+/*
+  Prints a printf style message to the error log and, under NT, to the
+  Windows event log.
+
+  SYNOPSIS
+    vprint_msg_to_log()
+    event_type             Type of event to write (Error, Warning, or Info)
+    format                 Printf style format of message
+    args                   va_list list of arguments for the message    
+
+  NOTE
+
+  IMPLEMENTATION
+    This function prints the message into a buffer and then sends that buffer
+    to other functions to write that message to other logging sources.
+
+  RETURN VALUES
+    void
+*/
+
+void vprint_msg_to_log(enum loglevel level, const char *format, va_list args)
+{
+  char   buff[1024];
+  uint length;
+  DBUG_ENTER("vprint_msg_to_log");
+
+  length= my_vsnprintf(buff, sizeof(buff)-5, format, args);
+  print_buffer_to_file(level, buff);
+
+#ifdef __NT__
+  print_buffer_to_nt_eventlog(level, buff, length, sizeof(buff));
+#endif
+
+  DBUG_VOID_RETURN;
+}
+
+
+void sql_print_error(const char *format, ...) 
+{
+  va_list args;
+  DBUG_ENTER("sql_print_error");
+
+  va_start(args, format);
+  vprint_msg_to_log(ERROR_LEVEL, format, args);
+  va_end(args);
+
+  DBUG_VOID_RETURN;
+}
+
+
+void sql_print_warning(const char *format, ...) 
+{
+  va_list args;
+  DBUG_ENTER("sql_print_warning");
+
+  va_start(args, format);
+  vprint_msg_to_log(WARNING_LEVEL, format, args);
+  va_end(args);
+
+  DBUG_VOID_RETURN;
+}
+
+
+void sql_print_information(const char *format, ...) 
+{
+  va_list args;
+  DBUG_ENTER("sql_print_information");
+
+  va_start(args, format);
+  vprint_msg_to_log(INFORMATION_LEVEL, format, args);
+  va_end(args);
+
+  DBUG_VOID_RETURN;
 }

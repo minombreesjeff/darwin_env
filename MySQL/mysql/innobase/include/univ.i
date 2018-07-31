@@ -65,13 +65,7 @@ Microsoft Visual C++ */
 #define HAVE_PWRITE
 #endif
 
-/* Apparently in some old SCO Unixes the return type of sprintf is not
-an integer as it should be according to the modern Posix standard. Because
-of that we define sprintf inside InnoDB code as our own function ut_sprintf */
-#undef  sprintf
-#define sprintf    ut_sprintf
-
-#endif
+#endif /* #if (defined(WIN32) || ... */
 
 /*			DEBUG VERSION CONTROL
 			===================== */
@@ -88,10 +82,9 @@ memory is read outside the allocated blocks. */
 
 /*
 #define UNIV_DEBUG
-#define UNIV_SYNC_DEBUG
 #define UNIV_MEM_DEBUG
-
 #define UNIV_IBUF_DEBUG
+#define UNIV_SYNC_DEBUG
 #define UNIV_SEARCH_DEBUG
 #define UNIV_SYNC_PERF_STAT
 #define UNIV_SEARCH_PERF_STAT
@@ -126,7 +119,7 @@ by one. */
 /* Definition for inline version */
 
 #ifdef __WIN__
-#define UNIV_INLINE  	__inline
+#define UNIV_INLINE	__inline
 #else
 /* config.h contains the right def for 'inline' for the current compiler */
 #if (__GNUC__ == 2)
@@ -182,27 +175,37 @@ management to ensure correct alignment for doubles etc. */
 */
 
 /* Note that inside MySQL 'byte' is defined as char on Linux! */
-#define byte	unsigned char
+#define byte			unsigned char
 
-/* Another basic type we use is unsigned long integer which is intended to be
-equal to the word size of the machine. */
+/* Another basic type we use is unsigned long integer which should be equal to
+the word size of the machine, that is on a 32-bit platform 32 bits, and on a
+64-bit platform 64 bits. We also give the printf format for the type as a
+macro PRULINT. */
 
 #ifdef _WIN64
 typedef unsigned __int64	ulint;
+#define ULINTPF			"%I64u"
+typedef __int64			lint;
 #else
 typedef unsigned long int	ulint;
+#define ULINTPF			"%lu"
+typedef long int		lint;
 #endif
 
-typedef long int		lint;
-
 #ifdef __WIN__
-typedef __int64       ib_longlong;
+typedef __int64			ib_longlong;
 #else
-typedef longlong ib_longlong;
+typedef longlong		ib_longlong;
+#endif
+
+#ifndef __WIN__
+#if SIZEOF_LONG != SIZEOF_VOIDP
+#error "Error: InnoDB's ulint must be of the same size as void*"
+#endif
 #endif
 
 /* The following type should be at least a 64-bit floating point number */
-typedef double		utfloat;
+typedef double			utfloat;
 
 /* The 'undefined' value for a ulint */
 #define ULINT_UNDEFINED		((ulint)(-1))
@@ -215,7 +218,7 @@ typedef double		utfloat;
 
 /* This 'ibool' type is used within Innobase. Remember that different included
 headers may define 'bool' differently. Do not assume that 'bool' is a ulint! */
-#define ibool	ulint
+#define ibool			ulint
 
 #ifndef TRUE
 
@@ -238,11 +241,6 @@ stored part of the field in the tablespace. The length field then
 contains the sum of the following flag and the locally stored len. */
 
 #define UNIV_EXTERN_STORAGE_FIELD (UNIV_SQL_NULL - UNIV_PAGE_SIZE)
-
-/* The following definition of __FILE__ removes compiler warnings
-associated with const char* / char* mismatches with __FILE__ */
-
-#define IB__FILE__	((char*)__FILE__)
 
 #include <stdio.h>
 #include "ut0dbg.h"

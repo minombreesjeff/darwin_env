@@ -1,4 +1,4 @@
-/* Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+/* Copyright (C) 2000,2004 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,6 +17,8 @@
 /* open a isam-database */
 
 #include "fulltext.h"
+#include "sp_defs.h"
+#include "rt_index.h"
 #include <m_ctype.h>
 
 #if defined(MSDOS) || defined(__WIN__)
@@ -73,9 +75,9 @@ static MI_INFO *test_if_reopen(char *filename)
 
 MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 {
-  int lock_error,kfile,open_mode,save_errno;
+  int lock_error,kfile,open_mode,save_errno,have_rtree=0;
   uint i,j,len,errpos,head_length,base_pos,offset,info_length,keys,
-    key_parts,unique_key_parts,tmp_length,uniques;
+    key_parts,unique_key_parts,fulltext_keys,uniques;
   char name_buff[FN_REFLEN], org_name [FN_REFLEN], index_name[FN_REFLEN],
        data_name[FN_REFLEN];
   char *disk_cache, *disk_pos, *end_pos;
@@ -102,6 +104,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
     share_buff.state.rec_per_key_part=rec_per_key_part;
     share_buff.state.key_root=key_root;
     share_buff.state.key_del=key_del;
+    share_buff.key_cache= multi_key_cache_search(name_buff, strlen(name_buff));
 
     if ((kfile=my_open(name_buff,(open_mode=O_RDWR) | O_SHARE,MYF(0))) < 0)
     {
@@ -134,15 +137,13 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	  HA_OPTION_TEMP_COMPRESS_RECORD | HA_OPTION_CHECKSUM |
 	  HA_OPTION_TMP_TABLE | HA_OPTION_DELAY_KEY_WRITE))
     {
-      DBUG_PRINT("error",("wrong options: 0x%lx",
-			  share->options));
+      DBUG_PRINT("error",("wrong options: 0x%lx", share->options));
       my_errno=HA_ERR_OLD_FILE;
       goto err;
     }
     /* Don't call realpath() if the name can't be a link */
-    if (strcmp(name_buff, org_name))
-      (void) my_readlink(index_name, org_name, MYF(0));
-    else
+    if (!strcmp(name_buff, org_name) ||
+        my_readlink(index_name, org_name, MYF(0)) == -1)
       (void) strmov(index_name, org_name);
     (void) fn_format(data_name,org_name,"",MI_NAME_DEXT,2+4+16);
 
@@ -174,11 +175,9 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
     len=mi_uint2korr(share->state.header.state_info_length);
     keys=    (uint) share->state.header.keys;
     uniques= (uint) share->state.header.uniques;
+    fulltext_keys= (uint) share->state.header.fulltext_keys;
     key_parts= mi_uint2korr(share->state.header.key_parts);
     unique_key_parts= mi_uint2korr(share->state.header.unique_key_parts);
-    tmp_length=(MI_STATE_INFO_SIZE + keys * MI_STATE_KEY_SIZE +
-		key_parts*MI_STATE_KEYSEG_SIZE +
-		share->state.header.max_block_size*MI_STATE_KEYBLOCK_SIZE);
     if (len != MI_STATE_INFO_SIZE)
     {
       DBUG_PRINT("warning",
@@ -186,9 +185,6 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 		  len,MI_STATE_INFO_SIZE));
     }
     share->state_diff_length=len-MI_STATE_INFO_SIZE;
-
-    if (share->state.header.fulltext_keys)
-      fprintf(stderr, "Warning: table file %s was created in MySQL 4.1+, use REPAIR TABLE ... USE_FRM to recreate it as a valid MySQL 4.0 table\n", name_buff);
 
     mi_state_info_read(disk_cache, &share->state);
     len= mi_uint2korr(share->state.header.base_info_length);
@@ -218,6 +214,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
       goto err;
     }
 
+    key_parts+=fulltext_keys*FT_SEGS;
     if (share->base.max_key_length > MI_MAX_KEY_BUFF || keys > MI_MAX_KEY ||
 	key_parts >= MI_MAX_KEY * MI_MAX_KEY_SEG)
     {
@@ -226,7 +223,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
       goto err;
     }
 
-    /* Correct max_file_length based on length of sizeof_t */
+    /* Correct max_file_length based on length of sizeof(off_t) */
     max_data_file_length=
       (share->options & (HA_OPTION_PACK_RECORD | HA_OPTION_COMPRESS_RECORD)) ?
       (((ulonglong) 1 << (share->base.rec_reflength*8))-1) :
@@ -271,7 +268,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 			 &share->uniqueinfo,uniques*sizeof(MI_UNIQUEDEF),
 			 &share->keyparts,
 			 (key_parts+unique_key_parts+keys+uniques) *
-			 sizeof(MI_KEYSEG),
+			 sizeof(HA_KEYSEG),
 			 &share->rec,
 			 (share->base.fields+1)*sizeof(MI_COLUMNDEF),
 			 &share->blobs,sizeof(MI_BLOB)*share->base.blobs,
@@ -296,22 +293,26 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	   (char*) key_del, (sizeof(my_off_t) *
 			     share->state.header.max_block_size));
     strmov(share->unique_file_name, name_buff);
+    share->unique_name_length= strlen(name_buff);
     strmov(share->index_file_name,  index_name);
     strmov(share->data_file_name,   data_name);
 
     share->blocksize=min(IO_SIZE,myisam_block_size);
     {
-      MI_KEYSEG *pos=share->keyparts;
+      HA_KEYSEG *pos=share->keyparts;
       for (i=0 ; i < keys ; i++)
       {
 	disk_pos=mi_keydef_read(disk_pos, &share->keyinfo[i]);
-        disk_pos_assert(disk_pos + share->keyinfo[i].keysegs * MI_KEYSEG_SIZE,
-			end_pos);
+        disk_pos_assert(disk_pos + share->keyinfo[i].keysegs * HA_KEYSEG_SIZE,
+ 			end_pos);
+        if (share->keyinfo[i].key_alg == HA_KEY_ALG_RTREE)
+          have_rtree=1;
 	set_if_smaller(share->blocksize,share->keyinfo[i].block_length);
 	share->keyinfo[i].seg=pos;
 	for (j=0 ; j < share->keyinfo[i].keysegs; j++,pos++)
 	{
 	  disk_pos=mi_keyseg_read(disk_pos, pos);
+
 	  if (pos->type == HA_KEYTYPE_TEXT || pos->type == HA_KEYTYPE_VARTEXT)
 	  {
 	    if (!pos->language)
@@ -323,11 +324,54 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	    }
 	  }
 	}
-	if (share->keyinfo[i].flag & HA_FULLTEXT)
+	if (share->keyinfo[i].flag & HA_SPATIAL)
 	{
-	  share->keyinfo[i].seg=pos-FT_SEGS;
-	  share->fulltext_index=1;
+#ifdef HAVE_SPATIAL
+	  uint sp_segs=SPDIMS*2;
+	  share->keyinfo[i].seg=pos-sp_segs;
+	  share->keyinfo[i].keysegs--;
+#else
+	  my_errno=HA_ERR_UNSUPPORTED;
+	  goto err;
+#endif
 	}
+        else if (share->keyinfo[i].flag & HA_FULLTEXT)
+	{
+          if (!fulltext_keys)
+          { /* 4.0 compatibility code, to be removed in 5.0 */
+            share->keyinfo[i].seg=pos-FT_SEGS;
+            share->keyinfo[i].keysegs-=FT_SEGS;
+          }
+          else
+          {
+            uint j;
+            share->keyinfo[i].seg=pos;
+            for (j=0; j < FT_SEGS; j++)
+            {
+              *pos=ft_keysegs[j];
+              pos[0].language= pos[-1].language;
+              if (!(pos[0].charset= pos[-1].charset))
+              {
+                my_errno=HA_ERR_CRASHED;
+                goto err;
+              }
+              pos++;
+            }
+          }
+          if (!share->ft2_keyinfo.seg)
+          {
+            memcpy(& share->ft2_keyinfo, & share->keyinfo[i], sizeof(MI_KEYDEF));
+            share->ft2_keyinfo.keysegs=1;
+            share->ft2_keyinfo.flag=0;
+            share->ft2_keyinfo.keylength=
+            share->ft2_keyinfo.minlength=
+            share->ft2_keyinfo.maxlength=HA_FT_WLEN+share->base.rec_reflength;
+            share->ft2_keyinfo.seg=pos-1;
+            share->ft2_keyinfo.end=pos;
+            setup_key_functions(& share->ft2_keyinfo);
+          }
+	}
+        setup_key_functions(share->keyinfo+i);
 	share->keyinfo[i].end=pos;
 	pos->type=HA_KEYTYPE_END;			/* End */
 	pos->length=share->base.rec_reflength;
@@ -339,7 +383,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
       {
 	disk_pos=mi_uniquedef_read(disk_pos, &share->uniqueinfo[i]);
         disk_pos_assert(disk_pos + share->uniqueinfo[i].keysegs *
-			MI_KEYSEG_SIZE, end_pos);
+			HA_KEYSEG_SIZE, end_pos);
 	share->uniqueinfo[i].seg=pos;
 	for (j=0 ; j < share->uniqueinfo[i].keysegs; j++,pos++)
 	{
@@ -362,8 +406,6 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	pos++;
       }
     }
-    for (i=0 ; i < keys ; i++)
-      setup_key_functions(share->keyinfo+i);
 
     disk_pos_assert(disk_pos + share->base.fields *MI_COLUMNDEF_SIZE, end_pos);
     for (i=j=offset=0 ; i < share->base.fields ; i++)
@@ -395,10 +437,6 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 
     share->kfile=kfile;
     share->this_process=(ulong) getpid();
-    share->rnd= (int)	 share->this_process;	/* rnd-counter for splits */
-#ifndef DBUG_OFF
-    share->rnd=0;				/* To make things repeatable */
-#endif
     share->last_process= share->state.process;
     share->base.key_parts=key_parts;
     share->base.all_key_parts=key_parts+unique_key_parts;
@@ -443,7 +481,8 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 	((share->options & (HA_OPTION_READ_ONLY_DATA | HA_OPTION_TMP_TABLE |
 			   HA_OPTION_COMPRESS_RECORD |
 			   HA_OPTION_TEMP_COMPRESS_RECORD)) ||
-	 (open_flags & HA_OPEN_TMP_TABLE)) ? 0 : 1;
+	 (open_flags & HA_OPEN_TMP_TABLE) ||
+	 have_rtree) ? 0 : 1;
       if (share->concurrent_insert)
       {
 	share->lock.get_status=mi_get_status;
@@ -465,6 +504,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
     if (mi_open_datafile(&info, share, old_info->dfile))
       goto err;
     errpos=5;
+    have_rtree= old_info->rtree_recursion_state != NULL;
   }
 
   /* alloc and set up private structure parts */
@@ -474,10 +514,15 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
 		       &info.buff,(share->base.max_key_block_length*2+
 				   share->base.max_key_length),
 		       &info.lastkey,share->base.max_key_length*3+1,
+		       &info.first_mbr_key, share->base.max_key_length,
 		       &info.filename,strlen(org_name)+1,
+		       &info.rtree_recursion_state,have_rtree ? 1024 : 0,
 		       NullS))
     goto err;
   errpos=6;
+
+  if (!have_rtree)
+    info.rtree_recursion_state= NULL;
 
   strmov(info.filename,org_name);
   memcpy(info.blobs,share->blobs,sizeof(MI_BLOB)*share->base.blobs);
@@ -498,6 +543,7 @@ MI_INFO *mi_open(const char *name, int mode, uint open_flags)
   info.lock_type=F_UNLCK;
   info.quick_mode=0;
   info.bulk_insert=0;
+  info.ft1_to_ft2=0;
   info.errkey= -1;
   info.page_changed=1;
   pthread_mutex_lock(&share->intern_lock);
@@ -682,6 +728,20 @@ void mi_setup_functions(register MYISAM_SHARE *share)
 
 static void setup_key_functions(register MI_KEYDEF *keyinfo)
 {
+  if (keyinfo->key_alg == HA_KEY_ALG_RTREE)
+  {
+#ifdef HAVE_RTREE_KEYS
+    keyinfo->ck_insert = rtree_insert;
+    keyinfo->ck_delete = rtree_delete;
+#else
+    DBUG_ASSERT(0); /* mi_open should check it never happens */
+#endif
+  }
+  else
+  {
+    keyinfo->ck_insert = _mi_ck_write;
+    keyinfo->ck_delete = _mi_ck_delete;
+  }
   if (keyinfo->flag & HA_BINARY_PACK_KEY)
   {						/* Simple prefix compression */
     keyinfo->bin_search=_mi_seq_search;
@@ -694,7 +754,7 @@ static void setup_key_functions(register MI_KEYDEF *keyinfo)
     keyinfo->get_key= _mi_get_pack_key;
     if (keyinfo->seg[0].flag & HA_PACK_KEY)
     {						/* Prefix compression */
-      if (!keyinfo->seg->charset || use_strcoll(keyinfo->seg->charset) ||
+      if (!keyinfo->seg->charset || use_strnxfrm(keyinfo->seg->charset) ||
           (keyinfo->seg->flag & HA_NULL_PART))
         keyinfo->bin_search=_mi_seq_search;
       else
@@ -720,9 +780,9 @@ static void setup_key_functions(register MI_KEYDEF *keyinfo)
 }
 
 
-/***************************************************************************
-** Function to save and store the header in the index file (.MSI)
-***************************************************************************/
+/*
+   Function to save and store the header in the index file (.MYI)
+*/
 
 uint mi_state_info_write(File file, MI_STATE_INFO *state, uint pWrite)
 {
@@ -949,7 +1009,7 @@ uint mi_keydef_write(File file, MI_KEYDEF *keydef)
   uchar *ptr=buff;
 
   *ptr++ = (uchar) keydef->keysegs;
-  *ptr++ = 0;					/* not used */
+  *ptr++ = keydef->key_alg;			/* Rtree or Btree */
   mi_int2store(ptr,keydef->flag);		ptr +=2;
   mi_int2store(ptr,keydef->block_length);	ptr +=2;
   mi_int2store(ptr,keydef->keylength);		ptr +=2;
@@ -961,7 +1021,8 @@ uint mi_keydef_write(File file, MI_KEYDEF *keydef)
 char *mi_keydef_read(char *ptr, MI_KEYDEF *keydef)
 {
    keydef->keysegs	= (uint) *ptr++;
-   ptr++;
+   keydef->key_alg	= *ptr++;		/* Rtree or Btree */
+
    keydef->flag		= mi_uint2korr(ptr);	ptr +=2;
    keydef->block_length = mi_uint2korr(ptr);	ptr +=2;
    keydef->keylength	= mi_uint2korr(ptr);	ptr +=2;
@@ -977,9 +1038,9 @@ char *mi_keydef_read(char *ptr, MI_KEYDEF *keydef)
 **  mi_keyseg
 ***************************************************************************/
 
-int mi_keyseg_write(File file, const MI_KEYSEG *keyseg)
+int mi_keyseg_write(File file, const HA_KEYSEG *keyseg)
 {
-  uchar buff[MI_KEYSEG_SIZE];
+  uchar buff[HA_KEYSEG_SIZE];
   uchar *ptr=buff;
 
   *ptr++ =keyseg->type;
@@ -997,7 +1058,7 @@ int mi_keyseg_write(File file, const MI_KEYSEG *keyseg)
 }
 
 
-char *mi_keyseg_read(char *ptr, MI_KEYSEG *keyseg)
+char *mi_keyseg_read(char *ptr, HA_KEYSEG *keyseg)
 {
    keyseg->type		= *ptr++;
    keyseg->language	= *ptr++;
@@ -1064,7 +1125,7 @@ char *mi_recinfo_read(char *ptr, MI_COLUMNDEF *recinfo)
 
 /**************************************************************************
 Open data file with or without RAID
-We can't use dup() here as the data file descriptors need to have different 
+We can't use dup() here as the data file descriptors need to have different
 active seek-positions.
 
 The argument file_to_dup is here for the future if there would on some OS
@@ -1098,3 +1159,84 @@ int mi_open_keyfile(MYISAM_SHARE *share)
     return 1;
   return 0;
 }
+
+
+/*
+  Disable all indexes.
+
+  SYNOPSIS
+    mi_disable_indexes()
+    info        A pointer to the MyISAM storage engine MI_INFO struct.
+
+  DESCRIPTION
+    Disable all indexes.
+
+  RETURN
+    0  ok
+*/
+
+int mi_disable_indexes(MI_INFO *info)
+{
+  MYISAM_SHARE *share= info->s;
+
+  share->state.key_map= 0;
+  return 0;
+}
+
+
+/*
+  Enable all indexes
+
+  SYNOPSIS
+    mi_enable_indexes()
+    info        A pointer to the MyISAM storage engine MI_INFO struct.
+
+  DESCRIPTION
+    Enable all indexes. The indexes might have been disabled
+    by mi_disable_index() before.
+    The function works only if both data and indexes are empty,
+    otherwise a repair is required.
+    To be sure, call handler::delete_all_rows() before.
+
+  RETURN
+    0  ok
+    HA_ERR_CRASHED data or index is non-empty.
+*/
+
+int mi_enable_indexes(MI_INFO *info)
+{
+  int error= 0;
+  MYISAM_SHARE *share= info->s;
+
+  if (share->state.state.data_file_length ||
+      (share->state.state.key_file_length != share->base.keystart))
+    error= HA_ERR_CRASHED;
+  else
+    share->state.key_map= ((ulonglong) 1L << share->base.keys) - 1;
+  return error;
+}
+
+
+/*
+  Test if indexes are disabled.
+
+  SYNOPSIS
+    mi_indexes_are_disabled()
+    info        A pointer to the MyISAM storage engine MI_INFO struct.
+
+  DESCRIPTION
+    Test if indexes are disabled.
+
+  RETURN
+    0  indexes are not disabled
+    1  all indexes are disabled
+   [2  non-unique indexes are disabled - NOT YET IMPLEMENTED]
+*/
+
+int mi_indexes_are_disabled(MI_INFO *info)
+{
+  MYISAM_SHARE *share= info->s;
+
+  return (! share->state.key_map && share->base.keys);
+}
+

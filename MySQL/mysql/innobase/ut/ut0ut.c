@@ -16,41 +16,22 @@ Created 5/11/1994 Heikki Tuuri
 #include <string.h>
 
 #include "ut0sort.h"
+#include "trx0trx.h"
 
 ibool	ut_always_false	= FALSE;
 
 /*********************************************************************
 Get the quote character to be used in SQL identifiers.
 This definition must match the one in sql/ha_innodb.cc! */
-
-char
-mysql_get_identifier_quote_char(void);
-/*=================================*/
+extern
+int
+mysql_get_identifier_quote_char(
+/*============================*/
 				/* out: quote character to be
-				used in SQL identifiers */
-
-/************************************************************
-Uses vsprintf to emulate sprintf so that the function always returns
-the printed length. Apparently in some old SCO Unixes sprintf did not
-return the printed length but a pointer to the end of the printed string. */
-
-ulint
-ut_sprintf(
-/*=======*/
-        char*       buf,     /* in/out: buffer where to print */
-        const char* format,  /* in: format of prints */
-        ...)                 /* in: arguments to be printed */
-{
-        va_list   args;
-  
-        va_start(args, format);
-
-        vsprintf(buf, format, args);
-
-        va_end(args);
-
-        return((ulint)strlen(buf));
-}
+				used in SQL identifiers; EOF if none */
+	trx_t*		trx,	/* in: transaction */
+	const char*	name,	/* in: name to print */
+	ulint		namelen);/* in: length of name */
 
 /************************************************************
 Gets the high 32 bits in a ulint. That is makes a shift >> 32,
@@ -63,17 +44,17 @@ ut_get_high32(
 			/* out: a >> 32 */
 	ulint	a)	/* in: ulint */
 {
-#if SIZEOF_LONG == 4
-	UT_NOT_USED(a);
+	ib_longlong	i;
 
-	return 0;
-#else
-	return(a >> 32);
-#endif
+	i = (ib_longlong)a;
+
+	i = i >> 32;
+
+	return((ulint)i);
 }
 
 /************************************************************
-The following function returns a clock time in milliseconds. */
+The following function returns elapsed CPU time in milliseconds. */
 
 ulint
 ut_clock(void)
@@ -192,6 +173,50 @@ ut_sprintf_timestamp(
 }
 
 /**************************************************************
+Sprintfs a timestamp to a buffer with no spaces and with ':' characters
+replaced by '_'. */
+
+void
+ut_sprintf_timestamp_without_extra_chars(
+/*=====================================*/
+	char*	buf) /* in: buffer where to sprintf */
+{
+#ifdef __WIN__
+  	SYSTEMTIME cal_tm;
+
+  	GetLocalTime(&cal_tm);
+
+  	sprintf(buf, "%02d%02d%02d_%2d_%02d_%02d",
+	  (int)cal_tm.wYear % 100,
+	  (int)cal_tm.wMonth,
+	  (int)cal_tm.wDay,
+	  (int)cal_tm.wHour,
+	  (int)cal_tm.wMinute,
+	  (int)cal_tm.wSecond);
+#else
+	struct tm  cal_tm;
+  	struct tm* cal_tm_ptr;
+  	time_t     tm;
+
+  	time(&tm);
+
+#ifdef HAVE_LOCALTIME_R
+  	localtime_r(&tm, &cal_tm);
+  	cal_tm_ptr = &cal_tm;
+#else
+  	cal_tm_ptr = localtime(&tm);
+#endif
+  	sprintf(buf, "%02d%02d%02d_%2d_%02d_%02d",
+	  cal_tm_ptr->tm_year % 100,
+	  cal_tm_ptr->tm_mon + 1,
+	  cal_tm_ptr->tm_mday,
+	  cal_tm_ptr->tm_hour,
+	  cal_tm_ptr->tm_min,
+	  cal_tm_ptr->tm_sec);
+#endif
+}
+
+/**************************************************************
 Returns current year, month, day. */
 
 void
@@ -210,13 +235,18 @@ ut_get_year_month_day(
   	*month = (ulint)cal_tm.wMonth;
   	*day = (ulint)cal_tm.wDay;
 #else
+	struct tm  cal_tm;
   	struct tm* cal_tm_ptr;
   	time_t     tm;
 
   	time(&tm);
 
+#ifdef HAVE_LOCALTIME_R
+  	localtime_r(&tm, &cal_tm);
+  	cal_tm_ptr = &cal_tm;
+#else
   	cal_tm_ptr = localtime(&tm);
-
+#endif
   	*year = (ulint)cal_tm_ptr->tm_year + 1900;
   	*month = (ulint)cal_tm_ptr->tm_mon + 1;
   	*day = (ulint)cal_tm_ptr->tm_mday;
@@ -264,7 +294,7 @@ ut_print_buf(
 	fprintf(file, " len %lu; hex ", len);
 
 	for (data = buf, i = 0; i < len; i++) {
-		fprintf(file, "%02lx", (ulint)*data++);
+		fprintf(file, "%02lx", (ulong)*data++);
 	}
 
 	fputs("; asc ", file);
@@ -312,6 +342,31 @@ ut_2_power_up(
 	return(res);
 }
 
+/**************************************************************************
+Outputs a NUL-terminated file name, quoted with apostrophes. */
+
+void
+ut_print_filename(
+/*==============*/
+	FILE*		f,	/* in: output stream */
+	const char*	name)	/* in: name to print */
+{
+	putc('\'', f);
+	for (;;) {
+		int	c = *name++;
+		switch (c) {
+		case 0:
+			goto done;
+		case '\'':
+			putc(c, f);
+			/* fall through */
+		default:
+			putc(c, f);
+		}
+	}
+done:
+	putc('\'', f);
+}
 
 /**************************************************************************
 Outputs a NUL-terminated string, quoted as an SQL identifier. */
@@ -320,9 +375,10 @@ void
 ut_print_name(
 /*==========*/
 	FILE*		f,	/* in: output stream */
+	trx_t*		trx,	/* in: transaction */
 	const char*	name)	/* in: name to print */
 {
-	ut_print_namel(f, name, strlen(name));
+	ut_print_namel(f, trx, name, strlen(name));
 }
 
 /**************************************************************************
@@ -332,12 +388,17 @@ void
 ut_print_namel(
 /*==========*/
 	FILE*		f,	/* in: output stream */
+	trx_t*		trx,	/* in: transaction (NULL=no quotes) */
 	const char*	name,	/* in: name to print */
 	ulint		namelen)/* in: length of name */
 {
 	const char*	s = name;
 	const char*	e = s + namelen;
-	char		q = mysql_get_identifier_quote_char();
+	int		q = mysql_get_identifier_quote_char(trx, name, namelen);
+	if (q == EOF) {
+		fwrite(name, 1, namelen, f);
+		return;
+	}
 	putc(q, f);
 	while (s < e) {
 		int	c = *s++;

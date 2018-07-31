@@ -41,8 +41,9 @@ public:
   bool error,line_cuted,found_null,enclosed;
   byte	*row_start,			/* Found row starts here */
 	*row_end;			/* Found row ends here */
+  CHARSET_INFO *read_charset;
 
-  READ_INFO(File file,uint tot_length,
+  READ_INFO(File file,uint tot_length,CHARSET_INFO *cs,
 	    String &field_term,String &line_start,String &line_term,
 	    String &enclosed,int escape,bool get_it_from_net, bool is_fifo);
   ~READ_INFO();
@@ -77,9 +78,9 @@ static int read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
 			  List<Item> &fields, READ_INFO &read_info,
 			  String &enclosed, ulong skip_lines);
 
-
 int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 	       List<Item> &fields, enum enum_duplicates handle_duplicates,
+               bool ignore,
 	       bool read_file_from_client,thr_lock_type lock_type)
 {
   char name[FN_REFLEN];
@@ -89,7 +90,9 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   String *field_term=ex->field_term,*escaped=ex->escaped;
   String *enclosed=ex->enclosed;
   bool is_fifo=0;
+#ifndef EMBEDDED_LIBRARY
   LOAD_FILE_INFO lf_info;
+#endif
   char *db = table_list->db;			// This is never null
   /*
     If path for file is not defined, we will use the current database.
@@ -125,7 +128,8 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
   else
   {						// Part field list
     thd->dupp_field=0;
-    if (setup_tables(table_list) || setup_fields(thd,table_list,fields,1,0,0))
+    if (setup_tables(table_list) ||
+	setup_fields(thd, 0, table_list, fields, 1, 0, 0))
       DBUG_RETURN(-1);
     if (thd->dupp_field)
     {
@@ -162,28 +166,30 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 
   /* We can't give an error in the middle when using LOCAL files */
   if (read_file_from_client && handle_duplicates == DUP_ERROR)
-    handle_duplicates=DUP_IGNORE;
+    ignore= 1;
 
+#ifndef EMBEDDED_LIBRARY
   if (read_file_from_client)
   {
     (void)net_request_file(&thd->net,ex->file_name);
     file = -1;
   }
   else
+#endif
   {
 #ifdef DONT_ALLOW_FULL_LOAD_DATA_PATHS
     ex->file_name+=dirname_length(ex->file_name);
 #endif
-    if (!dirname_length(ex->file_name) &&
-	strlen(ex->file_name)+strlen(mysql_data_home)+strlen(tdb)+3 <
-	FN_REFLEN)
+    if (!dirname_length(ex->file_name))
     {
-      (void) sprintf(name,"%s/%s/%s",mysql_data_home,tdb,ex->file_name);
-      unpack_filename(name,name);		/* Convert to system format */
+      strxnmov(name, FN_REFLEN, mysql_real_data_home, tdb, NullS);
+      (void) fn_format(name, ex->file_name, name, "",
+		       MY_RELATIVE_PATH | MY_UNPACK_FILENAME);
     }
     else
     {
-      unpack_filename(name,ex->file_name);
+      (void) fn_format(name, ex->file_name, mysql_real_data_home, "",
+		       MY_RELATIVE_PATH | MY_UNPACK_FILENAME);
 #if !defined(__WIN__) && !defined(OS2) && ! defined(__NETWARE__)
       MY_STAT stat_info;
       if (!my_stat(name,&stat_info,MYF(MY_WME)))
@@ -211,11 +217,12 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 
   COPY_INFO info;
   bzero((char*) &info,sizeof(info));
+  info.ignore= ignore;
   info.handle_duplicates=handle_duplicates;
   info.escape_char=escaped->length() ? (*escaped)[0] : INT_MAX;
 
-  READ_INFO read_info(file,tot_length,*field_term,
-		      *ex->line_start, *ex->line_term, *enclosed,
+  READ_INFO read_info(file,tot_length,thd->variables.collation_database,
+		      *field_term,*ex->line_start, *ex->line_term, *enclosed,
 		      info.escape_char, read_file_from_client, is_fifo);
   if (read_info.error)
   {
@@ -224,6 +231,7 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     DBUG_RETURN(-1);				// Can't allocate buffers
   }
 
+#ifndef EMBEDDED_LIBRARY
   if (mysql_bin_log.is_open())
   {
     lf_info.thd = thd;
@@ -231,15 +239,18 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     lf_info.db = db;
     lf_info.table_name = table_list->real_name;
     lf_info.fields = &fields;
+    lf_info.ignore= ignore;
     lf_info.handle_dup = handle_duplicates;
     lf_info.wrote_create_file = 0;
     lf_info.last_pos_in_file = HA_POS_ERROR;
     lf_info.log_delayed= log_delayed;
     read_info.set_io_cache_arg((void*) &lf_info);
   }
-  restore_record(table,2);
+#endif /*!EMBEDDED_LIBRARY*/
 
-  thd->count_cuted_fields=1;			/* calc cuted fields */
+  restore_record(table,default_values);
+
+  thd->count_cuted_fields= CHECK_FIELD_WARN;		/* calc cuted fields */
   thd->cuted_fields=0L;
   /* Skip lines if there is a line terminator */
   if (ex->line_term->length())
@@ -255,17 +266,15 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
 
   if (!(error=test(read_info.error)))
   {
-    uint save_time_stamp=table->time_stamp;
     if (use_timestamp)
-      table->time_stamp=0;
+      table->timestamp_field_type= TIMESTAMP_NO_AUTO_SET;
+
     table->next_number_field=table->found_next_number_field;
-    VOID(table->file->extra_opt(HA_EXTRA_WRITE_CACHE,
-			    thd->variables.read_buff_size));
-    table->bulk_insert= 1;
-    if (handle_duplicates == DUP_IGNORE ||
+    if (ignore ||
 	handle_duplicates == DUP_REPLACE)
       table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
-    table->file->deactivate_non_unique_index((ha_rows) 0);
+    ha_enable_transaction(thd, FALSE); 
+    table->file->start_bulk_insert((ha_rows) 0);
     table->copy_blobs=1;
     if (!field_term->length() && !enclosed->length())
       error=read_fixed_length(thd,info,table,fields,read_info,
@@ -273,24 +282,34 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
     else
       error=read_sep_field(thd,info,table,fields,read_info,*enclosed,
 			   skip_lines);
-    if (table->file->extra(HA_EXTRA_NO_CACHE))
+    if (table->file->end_bulk_insert())
       error=1;					/* purecov: inspected */
-    if (table->file->activate_all_index(thd))
-      error=1;					/* purecov: inspected */
+    ha_enable_transaction(thd, TRUE);
     table->file->extra(HA_EXTRA_NO_IGNORE_DUP_KEY);
-    table->time_stamp=save_time_stamp;
     table->next_number_field=0;
   }
   if (file >= 0)
     my_close(file,MYF(0));
   free_blobs(table);				/* if pack_blob was used */
   table->copy_blobs=0;
-  thd->count_cuted_fields=0;			/* Don`t calc cuted fields */
+  thd->count_cuted_fields= CHECK_FIELD_IGNORE;
+
+  /*
+    We must invalidate the table in query cache before binlog writing and
+    ha_autocommit_...
+  */
+  query_cache_invalidate3(thd, table_list, 0);
 
   if (error)
   {
     if (transactional_table)
       ha_autocommit_or_rollback(thd,error);
+
+    if (read_file_from_client)
+      while (!read_info.next_line())
+	;
+
+#ifndef EMBEDDED_LIBRARY
     if (mysql_bin_log.is_open())
     {
       /*
@@ -322,18 +341,20 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
         mysql_bin_log.write(&d);
       }
     }
+#endif /*!EMBEDDED_LIBRARY*/
     error= -1;				// Error on read
     goto err;
   }
-  sprintf(name,ER(ER_LOAD_INFO),info.records,info.deleted,
-	  info.records-info.copied,thd->cuted_fields);
-  send_ok(&thd->net,info.copied+info.deleted,0L,name);
+  sprintf(name, ER(ER_LOAD_INFO), (ulong) info.records, (ulong) info.deleted,
+	  (ulong) (info.records - info.copied), (ulong) thd->cuted_fields);
+  send_ok(thd,info.copied+info.deleted,0L,name);
   // on the slave thd->query is never initialized
   if (!thd->slave_thread)
     mysql_update_log.write(thd,thd->query,thd->query_length);
 
   if (!log_delayed)
     thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;
+#ifndef EMBEDDED_LIBRARY
   if (mysql_bin_log.is_open())
   {
     /*
@@ -348,10 +369,9 @@ int mysql_load(THD *thd,sql_exchange *ex,TABLE_LIST *table_list,
       mysql_bin_log.write(&e);
     }
   }
+#endif /*!EMBEDDED_LIBRARY*/
   if (transactional_table)
     error=ha_autocommit_or_rollback(thd,error); 
-  query_cache_invalidate3(thd, table_list, 0);
-
 err:
   if (thd->lock)
   {
@@ -360,7 +380,6 @@ err:
   }
   DBUG_RETURN(error);
 }
-
 
 /****************************************************************************
 ** Read of rows of fixed size + optional garage + optonal newline
@@ -375,7 +394,8 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
   ulonglong id;
   DBUG_ENTER("read_fixed_length");
 
-  id=0;
+  id= 0;
+  
   /* No fields can be null in this format. mark all fields as not null */
   while ((sql_field= (Item_field*) it++))
       sql_field->field->set_notnull();
@@ -405,11 +425,14 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
 #endif
     while ((sql_field= (Item_field*) it++))
     {
-      Field *field=sql_field->field;
+      Field *field= sql_field->field;                  
       if (pos == read_info.row_end)
       {
-	thd->cuted_fields++;			/* Not enough fields */
-	field->reset();
+        thd->cuted_fields++;			/* Not enough fields */
+        push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN, 
+                            ER_WARN_TOO_FEW_RECORDS, 
+                            ER(ER_WARN_TOO_FEW_RECORDS), thd->row_count);
+	      field->reset();
       }
       else
       {
@@ -419,14 +442,19 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
 	    field->field_length)
 	  length=field->field_length;
 	save_chr=pos[length]; pos[length]='\0'; // Safeguard aganst malloc
-	field->store((char*) pos,length);
+  field->store((char*) pos,length,read_info.read_charset);
 	pos[length]=save_chr;
 	if ((pos+=length) > read_info.row_end)
 	  pos= read_info.row_end;	/* Fills rest with space */
       }
     }
     if (pos != read_info.row_end)
+    {
       thd->cuted_fields++;			/* To long row */
+      push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN, 
+                          ER_WARN_TOO_MANY_RECORDS, 
+                          ER(ER_WARN_TOO_MANY_RECORDS), thd->row_count); 
+    }
     if (write_record(table,&info))
       DBUG_RETURN(1);
     /*
@@ -442,7 +470,13 @@ read_fixed_length(THD *thd,COPY_INFO &info,TABLE *table,List<Item> &fields,
     if (read_info.next_line())			// Skip to next line
       break;
     if (read_info.line_cuted)
+    {
       thd->cuted_fields++;			/* To long row */
+      push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN, 
+                          ER_WARN_TOO_MANY_RECORDS, 
+                          ER(ER_WARN_TOO_MANY_RECORDS), thd->row_count); 
+    }
+    thd->row_count++;
   }
   if (id && !read_info.error)
     thd->insert_id(id);			// For binary/update log
@@ -463,8 +497,8 @@ read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
   DBUG_ENTER("read_sep_field");
 
   enclosed_length=enclosed.length();
-  id=0;
-  
+  id= 0;
+
   for (;;it.rewind())
   {
     if (thd->killed)
@@ -493,14 +527,15 @@ read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
 	{
 	  if (field->type() == FIELD_TYPE_TIMESTAMP)
 	    ((Field_timestamp*) field)->set_time();
-	  else if (field != table->next_number_field)
-	    thd->cuted_fields++;
+	  else if (field != table->next_number_field)      
+	    field->set_warning((uint) MYSQL_ERROR::WARN_LEVEL_WARN, 
+			       ER_WARN_NULL_TO_NOTNULL, 1);
 	}
 	continue;
       }
       field->set_notnull();
       read_info.row_end[0]=0;			// Safe to change end marker
-      field->store((char*) read_info.row_start,length);
+      field->store((char*) read_info.row_start,length,read_info.read_charset);
     }
     if (read_info.error)
       break;
@@ -519,6 +554,9 @@ read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
 	sql_field->field->set_null();
 	sql_field->field->reset();
 	thd->cuted_fields++;
+ 	push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN, 
+                	    ER_WARN_TOO_FEW_RECORDS,
+                	    ER(ER_WARN_TOO_FEW_RECORDS), thd->row_count);
       }
     }
     if (write_record(table,&info))
@@ -536,7 +574,13 @@ read_sep_field(THD *thd,COPY_INFO &info,TABLE *table,
     if (read_info.next_line())			// Skip to next line
       break;
     if (read_info.line_cuted)
+    {
       thd->cuted_fields++;			/* To long row */
+      push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN, 
+                          ER_WARN_TOO_MANY_RECORDS, ER(ER_WARN_TOO_MANY_RECORDS), 
+                          thd->row_count);   
+    }
+    thd->row_count++;
   }
   if (id && !read_info.error)
     thd->insert_id(id);			// For binary/update log
@@ -570,12 +614,13 @@ READ_INFO::unescape(char chr)
 */
 
 
-READ_INFO::READ_INFO(File file_par, uint tot_length, String &field_term,
-		     String &line_start, String &line_term,
+READ_INFO::READ_INFO(File file_par, uint tot_length, CHARSET_INFO *cs,
+		     String &field_term, String &line_start, String &line_term,
 		     String &enclosed_par, int escape, bool get_it_from_net,
 		     bool is_fifo)
   :file(file_par),escape_char(escape)
 {
+  read_charset= cs;
   field_term_ptr=(char*) field_term.ptr();
   field_term_length= field_term.length();
   line_term_ptr=(char*) line_term.ptr();
@@ -632,13 +677,16 @@ READ_INFO::READ_INFO(File file_par, uint tot_length, String &field_term,
 	mysys/mf_iocache.c. So we work around the problem with a
 	manual assignment
       */
+      need_end_io_cache = 1;
+
+#ifndef EMBEDDED_LIBRARY
       if (get_it_from_net)
 	cache.read_function = _my_b_net_read;
 
-      need_end_io_cache = 1;
       if (mysql_bin_log.is_open())
 	cache.pre_read = cache.pre_close =
 	  (IO_CACHE_CALLBACK) log_loaded_block;
+#endif
     }
   }
 }
@@ -720,13 +768,12 @@ int READ_INFO::read_field()
     {
       chr = GET;
 #ifdef USE_MB
-      if (use_mb(default_charset_info) &&
-          my_ismbhead(default_charset_info, chr) &&
-          to+my_mbcharlen(default_charset_info, chr) <= end_of_buff)
+      if ((my_mbcharlen(read_charset, chr) > 1) &&
+          to+my_mbcharlen(read_charset, chr) <= end_of_buff)
       {
 	  uchar* p = (uchar*)to;
 	  *to++ = chr;
-	  int ml = my_mbcharlen(default_charset_info, chr);
+	  int ml = my_mbcharlen(read_charset, chr);
 	  int i;
 	  for (i=1; i<ml; i++) {
 	      chr = GET;
@@ -734,7 +781,7 @@ int READ_INFO::read_field()
 		  goto found_eof;
 	      *to++ = chr;
 	  }
-	  if (my_ismbchar(default_charset_info,
+	  if (my_ismbchar(read_charset,
                           (const char *)p,
                           (const char *)to))
 	    continue;
@@ -918,10 +965,10 @@ int READ_INFO::next_line()
   {
     int chr = GET;
 #ifdef USE_MB
-   if (use_mb(default_charset_info) && my_ismbhead(default_charset_info, chr))
+   if (my_mbcharlen(read_charset, chr) > 1)
    {
        for (int i=1;
-            chr != my_b_EOF && i<my_mbcharlen(default_charset_info, chr);
+            chr != my_b_EOF && i<my_mbcharlen(read_charset, chr);
             i++)
 	   chr = GET;
        if (chr == escape_char)
@@ -966,7 +1013,7 @@ bool READ_INFO::find_start_of_fields()
     {						// Can't be line_start
       PUSH(chr);
       while (--ptr != line_start_ptr)
-      {					// Restart with next char
+      {						// Restart with next char
 	PUSH((uchar) *ptr);
       }
       goto try_again;

@@ -2,7 +2,10 @@
 # Test of update and delete with limit
 #
 
+--disable_warnings
 drop table if exists t1;
+--enable_warnings
+
 create table t1 (a int primary key, b int not null);
 insert into t1 () values ();		-- Testing default values
 insert into t1 values (1,1),(2,1),(3,1);
@@ -46,3 +49,13 @@ SELECT * FROM t1;
 DELETE FROM t1 WHERE id2 = 0 ORDER BY id desc LIMIT 1; 
 SELECT * FROM t1;
 DROP TABLE t1;
+
+#
+# Bug#8023 - limit on UNION with from DUAL, causes syntax error
+#
+create table t1 (a integer);
+insert into t1 values (1);
+# both queries must return one row
+select 1 as a from t1 union all select 1 from dual limit 1;
+(select 1 as a from t1) union all (select 1 from dual) limit 1;
+drop table t1;

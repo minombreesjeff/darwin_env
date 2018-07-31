@@ -287,9 +287,7 @@ upd_node_create(
 	node->select = NULL;
 	
 	node->heap = mem_heap_create(128);
-#ifdef UNIV_DEBUG
-	node->magic_n = UPD_NODE_MAGIC_N;
-#endif /* UNIV_DEBUG */
+	node->magic_n = UPD_NODE_MAGIC_N;	
 
 	node->cmpl_info = 0;
 	
@@ -383,8 +381,14 @@ row_upd_changes_field_size_or_external(
 		new_len = new_val->len;
 
 		if (new_len == UNIV_SQL_NULL) {
+			/* A bug fixed on Dec 31st, 2004: we looked at the
+			SQL NULL size from the wrong field! We may backport
+			this fix also to 4.0. The merge to 5.0 will be made
+			manually immediately after we commit this to 4.1. */
+
 			new_len = dtype_get_sql_null_size(
-					dict_index_get_nth_type(index, i));
+					dict_index_get_nth_type(index,
+						upd_field->field_no));
 		}
 
 		old_len = rec_get_nth_field_size(rec, upd_field->field_no);
@@ -687,6 +691,7 @@ row_upd_build_sec_rec_difference_binary(
 	dict_index_t*	index,	/* in: index */
 	dtuple_t*	entry,	/* in: entry to insert */
 	rec_t*		rec,	/* in: secondary index record */
+	trx_t*		trx,	/* in: transaction */
 	mem_heap_t*	heap)	/* in: memory heap from which allocated */
 {
 	upd_field_t*	upd_field;
@@ -727,7 +732,7 @@ row_upd_build_sec_rec_difference_binary(
 
 			dfield_copy(&(upd_field->new_val), dfield);
 
-			upd_field_set_field_no(upd_field, i, index);
+			upd_field_set_field_no(upd_field, i, index, trx);
 
 			upd_field->extern_storage = FALSE;
 
@@ -756,6 +761,7 @@ row_upd_build_difference_binary(
 				externally stored fields in entry, or NULL */
 	ulint		n_ext_vec,/* in: number of fields in ext_vec */
 	rec_t*		rec,	/* in: clustered index record */
+	trx_t*		trx,	/* in: transaction */
 	mem_heap_t*	heap)	/* in: memory heap from which allocated */
 {
 	upd_field_t*	upd_field;
@@ -802,7 +808,7 @@ row_upd_build_difference_binary(
 
 			dfield_copy(&(upd_field->new_val), dfield);
 
-			upd_field_set_field_no(upd_field, i, index);
+			upd_field_set_field_no(upd_field, i, index, trx);
 
 			if (upd_ext_vec_contains(ext_vec, n_ext_vec, i)) {
 				upd_field->extern_storage = TRUE;
@@ -844,6 +850,7 @@ row_upd_index_replace_new_col_vals_index_pos(
 	dfield_t*	new_val;
 	ulint		j;
 	ulint		i;
+	dtype_t*	cur_type;
 
 	ut_ad(index);
 
@@ -873,10 +880,17 @@ row_upd_index_replace_new_col_vals_index_pos(
 				}
 
 				if (field->prefix_len > 0
-			            && new_val->len != UNIV_SQL_NULL
-			            && new_val->len > field->prefix_len) {
+			            && new_val->len != UNIV_SQL_NULL) {
 
-				        dfield->len = field->prefix_len;
+				  	cur_type = dict_col_get_type(
+						dict_field_get_col(field));
+
+				  	dfield->len = 
+				    		dtype_get_at_most_n_mbchars(
+				      			cur_type,
+							field->prefix_len,
+							new_val->len,
+							new_val->data);
 				}
 			}
 		}
@@ -906,6 +920,7 @@ row_upd_index_replace_new_col_vals(
 	dfield_t*	new_val;
 	ulint		j;
 	ulint		i;
+	dtype_t*	cur_type;
 
 	ut_ad(index);
 
@@ -935,10 +950,17 @@ row_upd_index_replace_new_col_vals(
 				}
 
 				if (field->prefix_len > 0
-			            && new_val->len != UNIV_SQL_NULL
-			            && new_val->len > field->prefix_len) {
+			            && new_val->len != UNIV_SQL_NULL) {
 
-				        dfield->len = field->prefix_len;
+					cur_type = dict_col_get_type(
+						dict_field_get_col(field));
+
+				  	dfield->len =
+				    		dtype_get_at_most_n_mbchars(
+				      			cur_type,
+							field->prefix_len,
+							new_val->len,
+							new_val->data);
 				}
 			}
 		}
@@ -1202,10 +1224,11 @@ row_upd_sec_index_entry(
 	rec_t*		rec;
 	ulint		err	= DB_SUCCESS;
 	mtr_t		mtr;
-	
+	trx_t*		trx	= thr_get_trx(thr);
+
 	index = node->index;
 	
-	check_ref = row_upd_index_is_referenced(index, thr_get_trx(thr));
+	check_ref = row_upd_index_is_referenced(index, trx);
 
 	heap = mem_heap_create(1024);
 
@@ -1224,7 +1247,7 @@ row_upd_sec_index_entry(
 	if (!found) {
 		fputs("InnoDB: error in sec index entry update in\n"
 			"InnoDB: ", stderr);
-		dict_index_name_print(stderr, index);
+		dict_index_name_print(stderr, trx, index);
 		fputs("\n"
 			"InnoDB: tuple ", stderr);
 		dtuple_print(stderr, entry);
@@ -1233,7 +1256,7 @@ row_upd_sec_index_entry(
 		rec_print(stderr, rec);
 		putc('\n', stderr);
 
-		trx_print(stderr, thr_get_trx(thr));
+		trx_print(stderr, trx);
 
 		fputs("\n"
 "InnoDB: Submit a detailed bug report to http://bugs.mysql.com\n", stderr);
@@ -1604,7 +1627,8 @@ row_upd_clust_step(
 	then we have to free the file segments of the index tree associated
 	with the index */
 
-	if (ut_dulint_cmp(node->table->id, DICT_INDEXES_ID) == 0) {
+	if (node->is_delete
+	    && ut_dulint_cmp(node->table->id, DICT_INDEXES_ID) == 0) {
 
 		dict_drop_index_tree(btr_pcur_get_rec(pcur), mtr);
 
@@ -1805,7 +1829,6 @@ row_upd_step(
 	trx_start_if_not_started(trx);
 
 	node = thr->run_node;
-	ut_ad(node->magic_n == UPD_NODE_MAGIC_N);
 	
 	sel_node = node->select;
 
@@ -1925,7 +1948,6 @@ row_upd_in_place_in_select(
 
 	node = que_node_get_parent(sel_node);
 
-	ut_ad(node->magic_n == UPD_NODE_MAGIC_N);
 	ut_ad(que_node_get_type(node) == QUE_NODE_UPDATE);
 
 	pcur = node->pcur;

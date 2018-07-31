@@ -1,5 +1,5 @@
 #
-# Test are run with max_binlog_size=2048 to force automatic rotation of the
+# Test is run with max_binlog_size=2048 to force automatic rotation of the
 # binary log
 # Tests done:
 # - Check that slaves reports correct failures if master.info has strange
@@ -8,26 +8,33 @@
 # - Ensure that temporary tables works over flush logs and binary log
 #   changes
 # - Test creating a duplicate key error and recover from it
-#
+
 connect (master,localhost,root,,test,$MASTER_MYPORT,master.sock);
+--disable_warnings
 drop table if exists t1, t2, t3, t4;
+--enable_warnings
 connect (slave,localhost,root,,test,$SLAVE_MYPORT,slave.sock);
 system cat /dev/null > var/slave-data/master.info;
 system chmod 000 var/slave-data/master.info;
 connection slave;
+--disable_warnings
 drop table if exists t1, t2, t3, t4;
-# START SLAVE will fail because it can't read the file (mode 000) (system error 13)
+--enable_warnings
+
+# START SLAVE will fail because it can't read the file (mode 000)
+# (system error 13)
 --error 1201
-slave start;
+start slave;
 system chmod 600 var/slave-data/master.info;
 # It will fail again because the file is empty so the slave cannot get valuable
 # info about how to connect to the master from it (failure in
 # init_strvar_from_file() in init_master_info()).
 --error 1201
-slave start;
+start slave;
 --replace_result $MASTER_MYPORT MASTER_PORT
-# CHANGE MASTER will fail because it first parses master.info before changing it
-# (so when master.info is bad, people have to use RESET SLAVE first).
+
+# CHANGE MASTER will fail because it first parses master.info before changing
+# it (so when master.info is bad, people have to use RESET SLAVE first).
 --error 1201
 eval change master to master_host='127.0.0.1',master_port=$MASTER_MYPORT, master_user='root';
 reset slave;
@@ -36,7 +43,7 @@ eval change master to master_host='127.0.0.1',master_port=$MASTER_MYPORT, master
 connection master;
 reset master;
 connection slave;
-slave start;
+start slave;
 connection master;
 
 #
@@ -46,11 +53,9 @@ create temporary table temp_table (a char(80) not null);
 insert into temp_table values ("testing temporary tables");
 create table t1 (s text);
 insert into t1 values('Could not break slave'),('Tried hard');
-save_master_pos;
-connection slave;
-sync_with_master;
+sync_slave_with_master;
 --replace_result $MASTER_MYPORT MASTER_PORT
---replace_column 18 #
+--replace_column 1 # 33 #
 show slave status;
 select * from t1;
 connection master;
@@ -58,12 +63,10 @@ flush logs;
 create table t2(m int not null auto_increment primary key);
 insert into t2 values (34),(67),(123);
 flush logs;
-show master logs;
+show binary logs;
 create table t3 select * from temp_table;
 
-save_master_pos;
-connection slave;
-sync_with_master;
+sync_slave_with_master;
 
 select * from t3;
 connection master;
@@ -86,23 +89,26 @@ wait_for_slave_to_stop;
 
 #restart slave skipping one event
 set global sql_slave_skip_counter=1;
-slave start;
+start slave;
 
 connection master;
-save_master_pos;
 
 #let slave catch up
-connection slave;
-sync_with_master;
+sync_slave_with_master;
 connection master;
-purge master logs to 'master-bin.003';
+purge master logs to 'master-bin.000002';
 show master logs;
+# we just tests if synonyms are accepted
+purge binary logs to 'master-bin.000002';
+show binary logs;
+# sleeping 10 seconds or more would make the slave believe connection is down
+--real_sleep 1;
+purge master logs before now();
+show binary logs;
 insert into t2 values (65);
-save_master_pos;
-connection slave;
-sync_with_master;
+sync_slave_with_master;
 --replace_result $MASTER_MYPORT MASTER_PORT
---replace_column 18 #
+--replace_column 1 # 33 #
 show slave status;
 select * from t2;
 
@@ -126,7 +132,7 @@ while ($1)
 enable_query_log;
 select count(*) from t3 where n >= 4;
 create table t4 select * from temp_table;
-show master logs;
+show binary logs;
 show master status;
 save_master_pos;
 connection slave;
@@ -134,7 +140,7 @@ sync_with_master;
 select * from t4;
 
 --replace_result $MASTER_MYPORT MASTER_PORT
---replace_column 18 #
+--replace_column 1 # 33 #
 show slave status;
 # because of concurrent insert, the table may not be up to date
 # if we do not lock
@@ -144,6 +150,4 @@ unlock tables;
 #clean up
 connection master;
 drop table if exists t1,t2,t3,t4;
-save_master_pos;
-connection slave;
-sync_with_master;
+sync_slave_with_master;

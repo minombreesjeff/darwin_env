@@ -20,8 +20,9 @@ Protected by mem_hash_mutex above. */
 static ulint	mem_n_created_heaps 		= 0;
 static ulint	mem_n_allocations	  	= 0;
 static ulint	mem_total_allocated_memory	= 0;
-ulint	mem_current_allocated_memory	= 0;
+ulint		mem_current_allocated_memory	= 0;
 static ulint	mem_max_allocated_memory	= 0;
+static ulint	mem_last_print_info		= 0;
 
 /* Size of the hash table for memory management tracking */
 #define	MEM_HASH_SIZE	997
@@ -33,7 +34,7 @@ struct mem_hash_node_struct {
 	UT_LIST_NODE_T(mem_hash_node_t)
 				list;	/* hash list node */
 	mem_heap_t*		heap;	/* memory heap */
-	char*			file_name;/* file where heap was created*/
+	const char*		file_name;/* file where heap was created*/
 	ulint			line;	/* file line of creation */
 	ulint			nth_heap;/* this is the nth heap created */
 	UT_LIST_NODE_T(mem_hash_node_t)
@@ -266,7 +267,7 @@ void
 mem_hash_insert(
 /*============*/
 	mem_heap_t*	heap,	   /* in: the created heap */
-	char*		file_name, /* in: file name of creation */
+	const char*	file_name, /* in: file name of creation */
 	ulint		line)	   /* in: line where created */
 {
 	mem_hash_node_t*	new_node;
@@ -309,7 +310,7 @@ void
 mem_hash_remove(
 /*============*/
 	mem_heap_t*	heap,	   /* in: the heap to be freed */
-	char*		file_name, /* in: file name of freeing */
+	const char*	file_name, /* in: file name of freeing */
 	ulint		line)	   /* in: line where freed */
 {
 	mem_hash_node_t*	node;
@@ -338,7 +339,7 @@ mem_hash_remove(
 	if (node == NULL) {
 		fprintf(stderr,
     	    "Memory heap or buffer freed in %s line %lu did not exist.\n",
-			file_name, line);
+			file_name, (ulong) line);
 		ut_error;
 	}
 
@@ -355,15 +356,13 @@ mem_hash_remove(
 	"Inconsistency in memory heap or buffer n:o %lu created\n"
 	"in %s line %lu and tried to free in %s line %lu.\n"
 	"Hex dump of 400 bytes around memory heap first block start:\n",
-			node->nth_heap, node->file_name, node->line,
-			file_name, line);
+			node->nth_heap, node->file_name, (ulong) node->line,
+			file_name, (ulong) line);
 		ut_print_buf(stderr, (byte*)node->heap - 200, 400);
-
 		fputs("\nDump of the mem heap:\n", stderr);
-
 		mem_heap_validate_or_print(node->heap, NULL, TRUE, &error,
-					&size, NULL, NULL);
-	   ut_error;
+							 &size, NULL, NULL);
+		ut_error;
 	}
 
 	/* Free the memory occupied by the node struct */
@@ -375,7 +374,6 @@ mem_hash_remove(
 }
 #endif /* UNIV_MEM_DEBUG */
 
-#ifdef UNIV_DEBUG
 /*******************************************************************
 Checks a memory heap for consistency and prints the contents if requested.
 Outputs the sum of sizes of buffers given to the user (only in
@@ -446,6 +444,9 @@ mem_heap_validate_or_print(
 		if ((block->type == MEM_HEAP_BUFFER)
 		    && (mem_block_get_len(block) > UNIV_PAGE_SIZE)) {
 
+			fprintf(stderr,
+"InnoDB: Error: mem block %lx length %lu > UNIV_PAGE_SIZE\n", (ulong) block,
+				(ulong) mem_block_get_len(block));
 		    	/* error */
 
 		    	return;
@@ -485,6 +486,12 @@ mem_heap_validate_or_print(
 			    mem_field_trailer_get_check(user_field)) {
 				/* error */
 
+				fprintf(stderr,
+"InnoDB: Error: block %lx mem field %lx len %lu\n"
+"InnoDB: header check field is %lx but trailer %lx\n", (ulint)block,
+				   (ulint)field, len, check_field,
+				   mem_field_trailer_get_check(user_field));
+
 			     	return;
 			}
 
@@ -503,6 +510,11 @@ mem_heap_validate_or_print(
 
 		if (field != (byte*)block + mem_block_get_free(block)) {
 			/* error */
+
+			fprintf(stderr,
+"InnoDB: Error: block %lx end of mem fields %lx\n"
+"InnoDB: but block free at %lx\n", (ulint)block, (ulint)field,
+			(ulint)((byte*)block + mem_block_get_free(block)));
 
 			return;
 		}
@@ -546,7 +558,8 @@ mem_heap_print(
 				&us_size, &phys_size, &n_blocks);
 	fprintf(stderr,
   "\nheap type: %lu; size: user size %lu; physical size %lu; blocks %lu.\n",
-			heap->type, us_size, phys_size, n_blocks);
+			(ulong) heap->type, (ulong) us_size,
+			(ulong) phys_size, (ulong) n_blocks);
 	ut_a(!error);
 }
 
@@ -582,11 +595,14 @@ mem_heap_validate(
 
 	mem_heap_validate_or_print(heap, NULL, FALSE, &error, &us_size,
 						&phys_size, &n_blocks);
+	if (error) {
+		mem_heap_print(heap);
+	}
+
 	ut_a(!error);
 
 	return(TRUE);
 }
-#endif /* UNIV_DEBUG */
 
 #ifdef UNIV_MEM_DEBUG
 /*********************************************************************
@@ -738,8 +754,8 @@ mem_analyze_corruption(
 			    if (*((ulint*)p) == MEM_BLOCK_MAGIC_N) {
 				fprintf(stderr,
 			"Mem block at - %lu, file %s, line %lu\n",
-				dist, p + sizeof(ulint),
-				*(ulint*)(p + 8 + sizeof(ulint)));
+				(ulong) dist, (p + sizeof(ulint)),
+				(ulong) (*(ulint*)(p + 8 + sizeof(ulint))));
 
 				break;
 			    }
@@ -747,8 +763,8 @@ mem_analyze_corruption(
 			    if (*((ulint*)p) == MEM_FREED_BLOCK_MAGIC_N) {
 				fprintf(stderr,
 			"Freed mem block at - %lu, file %s, line %lu\n",
-				dist, p + sizeof(ulint),
-				*(ulint*)(p + 8 + sizeof(ulint)));
+				(ulong) dist, (p + sizeof(ulint)),
+				(ulong) (*(ulint*)(p + 8 + sizeof(ulint))));
 
 				break;
 			    }
@@ -775,8 +791,8 @@ mem_analyze_corruption(
 			    if (*((ulint*)p) == MEM_BLOCK_MAGIC_N) {
 				fprintf(stderr,
 			"Mem block at + %lu, file %s, line %lu\n",
-				dist, p + sizeof(ulint),
-				*(ulint*)(p + 8 + sizeof(ulint)));
+				(ulong) dist, (p + sizeof(ulint)),
+				(ulong) (*(ulint*)(p + 8 + sizeof(ulint))));
 
 				break;
 			    }
@@ -784,8 +800,8 @@ mem_analyze_corruption(
 			    if (*((ulint*)p) == MEM_FREED_BLOCK_MAGIC_N) {
 				fprintf(stderr,
 			"Freed mem block at + %lu, file %s, line %lu\n",
-				dist, p + sizeof(ulint),
-				*(ulint*)(p + 8 + sizeof(ulint)));
+				(ulong) dist, (p + sizeof(ulint)),
+				(ulong) (*(ulint*)(p + 8 + sizeof(ulint))));
 
 				break;
 			    }
@@ -798,4 +814,129 @@ mem_analyze_corruption(
 		p++;
 		dist++;
 	}
+}
+
+/*********************************************************************
+Prints information of dynamic memory usage and currently allocated
+memory heaps or buffers. Can only be used in the debug version. */
+static
+void
+mem_print_info_low(
+/*===============*/
+	ibool	print_all)      /* in: if TRUE, all heaps are printed,
+				else only the heaps allocated after the
+				previous call of this function */	
+{
+#ifdef UNIV_MEM_DEBUG
+	mem_hash_node_t*	node;
+	ulint			n_heaps 		= 0;
+	ulint			allocated_mem;
+	ulint			ph_size;
+	ulint			total_allocated_mem 	= 0;
+	ibool			error;
+	ulint			n_blocks;
+#endif
+	FILE*			outfile;
+	
+	/* outfile = fopen("ibdebug", "a"); */
+
+	outfile = stdout;
+	
+	fprintf(outfile, "\n");	
+	fprintf(outfile,
+		"________________________________________________________\n");
+	fprintf(outfile, "MEMORY ALLOCATION INFORMATION\n\n");
+
+#ifndef UNIV_MEM_DEBUG
+
+	UT_NOT_USED(print_all);
+
+	mem_pool_print_info(outfile, mem_comm_pool);
+	
+	fprintf(outfile,
+		"Sorry, non-debug version cannot give more memory info\n");
+
+	/* fclose(outfile); */
+	
+	return;
+#else
+	mutex_enter(&mem_hash_mutex);
+	
+	fprintf(outfile, "LIST OF CREATED HEAPS AND ALLOCATED BUFFERS: \n\n");
+
+	if (!print_all) {
+		fprintf(outfile, "AFTER THE LAST PRINT INFO\n");
+	}
+
+	node = UT_LIST_GET_FIRST(mem_all_list_base);
+
+	while (node != NULL) {
+		n_heaps++;
+		
+		if (!print_all && node->nth_heap < mem_last_print_info) {
+
+			goto next_heap;
+		}	
+
+		mem_heap_validate_or_print(node->heap, NULL, 
+				FALSE, &error, &allocated_mem, 
+				&ph_size, &n_blocks);
+		total_allocated_mem += allocated_mem;
+
+		fprintf(outfile,
+ "%lu: file %s line %lu of size %lu phys.size %lu with %lu blocks, type %lu\n",
+				node->nth_heap, node->file_name, node->line, 
+				allocated_mem, ph_size, n_blocks,
+				(node->heap)->type);
+	next_heap:
+		node = UT_LIST_GET_NEXT(all_list, node);
+	}
+	
+	fprintf(outfile, "\n");
+
+	fprintf(outfile, "Current allocated memory	  	: %lu\n", 
+			mem_current_allocated_memory);
+	fprintf(outfile, "Current allocated heaps and buffers	: %lu\n", 
+			n_heaps);
+	fprintf(outfile, "Cumulative allocated memory	  	: %lu\n", 
+			mem_total_allocated_memory);
+	fprintf(outfile, "Maximum allocated memory	  	: %lu\n",
+			mem_max_allocated_memory);
+	fprintf(outfile, "Cumulative created heaps and buffers	: %lu\n", 
+			mem_n_created_heaps);
+	fprintf(outfile, "Cumulative number of allocations	: %lu\n", 
+			mem_n_allocations);
+
+	mem_last_print_info = mem_n_created_heaps;
+
+	mutex_exit(&mem_hash_mutex);
+
+	mem_pool_print_info(outfile, mem_comm_pool);
+	
+/*	mem_validate(); */
+
+/* 	fclose(outfile); */
+#endif
+}
+
+/*********************************************************************
+Prints information of dynamic memory usage and currently allocated memory
+heaps or buffers. Can only be used in the debug version. */
+
+void
+mem_print_info(void)
+/*================*/
+{
+	mem_print_info_low(TRUE);
+}
+
+/*********************************************************************
+Prints information of dynamic memory usage and currently allocated memory
+heaps or buffers since the last ..._print_info or..._print_new_info. */
+
+void
+mem_print_new_info(void)
+/*====================*/
+{
+	mem_print_info_low(FALSE);
 }

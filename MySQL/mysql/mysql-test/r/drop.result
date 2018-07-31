@@ -1,17 +1,18 @@
 drop table if exists t1;
+drop database if exists mysqltest;
+drop database if exists client_test_db;
 drop table t1;
-Unknown table 't1'
+ERROR 42S02: Unknown table 't1'
 create table t1(n int);
 insert into t1 values(1);
 create temporary table t1( n int);
 insert into t1 values(2);
 create table t1(n int);
-Table 't1' already exists
+ERROR 42S01: Table 't1' already exists
 drop table t1;
 select * from t1;
 n
 1
-drop database if exists mysqltest;
 create database mysqltest;
 drop database if exists mysqltest;
 create database mysqltest;
@@ -21,6 +22,7 @@ select * from mysqltest.mysqltest;
 n
 4
 drop database if exists mysqltest;
+affected rows: 1
 create database mysqltest;
 drop database mysqltest;
 flush tables with read lock;
@@ -43,4 +45,14 @@ Database
 mysql
 test
 drop database mysqltest;
-Can't drop database 'mysqltest'. Database doesn't exist
+ERROR HY000: Can't drop database 'mysqltest'; database doesn't exist
+drop table t1;
+flush tables with read lock;
+create table t1(n int);
+ERROR HY000: Can't execute the query because you have a conflicting read lock
+unlock tables;
+create table t1(n int);
+show tables;
+Tables_in_test
+t1
+drop table t1;

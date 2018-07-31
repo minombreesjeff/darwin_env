@@ -25,6 +25,16 @@ wasted. */
 void
 buf_LRU_try_free_flushed_blocks(void);
 /*==================================*/
+/**********************************************************************
+Returns TRUE if less than 15 % of the buffer pool is available. This can be
+used in heuristics to prevent huge transactions eating up the whole buffer
+pool for their locks. */
+
+ibool
+buf_LRU_buf_pool_running_out(void);
+/*==============================*/
+				/* out: TRUE if less than 15 % of buffer pool
+				left */
 
 /*#######################################################################
 These are low-level functions
@@ -36,6 +46,16 @@ These are low-level functions
 
 #define BUF_LRU_FREE_SEARCH_LEN		(5 + 2 * BUF_READ_AHEAD_AREA)
 
+/**********************************************************************
+Invalidates all pages belonging to a given tablespace when we are deleting
+the data file(s) of that tablespace. A PROBLEM: if readahead is being started,
+what guarantees that it will not try to read in pages after this operation has
+completed? */
+
+void
+buf_LRU_invalidate_tablespace(
+/*==========================*/
+	ulint	id);	/* in: space id */
 /**********************************************************************
 Gets the minimum LRU_position field for the blocks in an initial segment
 (determined by BUF_LRU_INITIAL_RATIO) of the LRU list. The limit is not
@@ -67,7 +87,9 @@ LRU list to the free list. */
 buf_block_t*
 buf_LRU_get_free_block(void);
 /*=========================*/
-				/* out: the free control block */
+				/* out: the free control block; also if AWE is
+				used, it is guaranteed that the block has its
+				page mapped to a frame when we return */
 /**********************************************************************
 Puts a block back to the free list. */
 
@@ -100,7 +122,6 @@ void
 buf_LRU_make_block_old(
 /*===================*/
 	buf_block_t*	block);	/* in: control block */
-#ifdef UNIV_DEBUG
 /**************************************************************************
 Validates the LRU list. */
 
@@ -113,7 +134,6 @@ Prints the LRU list. */
 void
 buf_LRU_print(void);
 /*===============*/
-#endif /* UNIV_DEBUG */
 
 #ifndef UNIV_NONINL
 #include "buf0lru.ic"

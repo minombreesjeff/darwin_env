@@ -14,7 +14,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-INCLUDES=		-I$(srcdir)/../include -I../include $(openssl_includes)
+INCLUDES=		-I$(top_srcdir)/include $(openssl_includes)
 LDADD=			@CLIENT_EXTRA_LDFLAGS@ $(openssl_libs) 
 pkglib_LIBRARIES=	libvio.a
 noinst_PROGRAMS	=	test-ssl test-sslserver test-sslclient
@@ -23,7 +23,7 @@ test_ssl_SOURCES=	test-ssl.c
 test_ssl_LDADD=   	@CLIENT_EXTRA_LDFLAGS@ ../dbug/libdbug.a libvio.a \
 			../mysys/libmysys.a ../strings/libmystrings.a \
 			$(openssl_libs)
-test_sslserver_SOURCES=	test-sslserver.c
+test_sslserver_SOURCES=   test-sslserver.c
 test_sslserver_LDADD=   @CLIENT_EXTRA_LDFLAGS@	../dbug/libdbug.a libvio.a \
 			../mysys/libmysys.a ../strings/libmystrings.a \
 			$(openssl_libs)

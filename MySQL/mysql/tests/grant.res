@@ -194,7 +194,7 @@ Error in execute: select command denied to user: 'grant_user'@'localhost' for ta
 show keys from test
 Error in execute: select command denied to user: 'grant_user'@'localhost' for table 'test'
 show columns from test2
-a	int(11)			0	
+a	int(11)	binary			0	
 
 show keys from test2
 select * from test
@@ -408,8 +408,8 @@ drop table grant_test.test2
 revoke create,update on grant_test.test2 from grant_user@localhost
 grant select(a) on grant_test.test to grant_user@localhost
 show full columns from test
-a	int(11)	YES		NULL		select
-b	int(11)	YES		NULL		
+a	int(11)	binary	YES		NULL		select	
+b	int(11)	binary	YES		NULL			
 
 grant insert (b), update (b) on grant_test.test to grant_user@localhost
 select count(a) from test
@@ -579,7 +579,7 @@ GRANT LOCK TABLES ON *.* TO 'grant_user'@'localhost'
 GRANT SELECT, INSERT ON `grant_test`.`test3` TO 'grant_user'@'localhost'
 
 select * from mysql.user where user='grant_user'
-127.0.0.1	grant_user	7f70e8b858ee6782	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N					0	0	0
+127.0.0.1	grant_user	*042a99b3d247ae587783f647f2d69496d390aa71eab3	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N					0	0	0
 localhost	grant_user		N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	Y	N	N	N					0	0	0
 
 Connecting grant_user

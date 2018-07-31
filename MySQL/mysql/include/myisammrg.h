@@ -86,6 +86,7 @@ extern int myrg_rfirst(MYRG_INFO *file,byte *buf,int inx);
 extern int myrg_rlast(MYRG_INFO *file,byte *buf,int inx);
 extern int myrg_rnext(MYRG_INFO *file,byte *buf,int inx);
 extern int myrg_rprev(MYRG_INFO *file,byte *buf,int inx);
+extern int myrg_rnext_same(MYRG_INFO *file,byte *buf);
 extern int myrg_rkey(MYRG_INFO *file,byte *buf,int inx,const byte *key,
 		       uint key_len, enum ha_rkey_function search_flag);
 extern int myrg_rrnd(MYRG_INFO *file,byte *buf,ulonglong pos);
@@ -100,10 +101,7 @@ extern int myrg_extra(MYRG_INFO *file,enum ha_extra_function function,
 		      void *extra_arg);
 extern void myrg_extrafunc(MYRG_INFO *info,invalidator_by_filename inv);
 extern ha_rows myrg_records_in_range(MYRG_INFO *info,int inx,
-				    const byte *start_key,uint start_key_len,
-				    enum ha_rkey_function start_search_flag,
-				    const byte *end_key,uint end_key_len,
-				    enum ha_rkey_function end_search_flag);
+                                     key_range *min_key, key_range *max_key);
 
 extern ulonglong myrg_position(MYRG_INFO *info);
 #ifdef	__cplusplus

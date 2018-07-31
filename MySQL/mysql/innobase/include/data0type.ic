@@ -72,6 +72,17 @@ dtype_get_prtype(
 }
 
 /*************************************************************************
+Gets the MySQL charset-collation code for MySQL string types. */
+UNIV_INLINE
+ulint
+dtype_get_charset_coll(
+/*===================*/
+	ulint	prtype)	/* in: precise data type */
+{
+	return((prtype >> 16) & 0xFFUL);
+}
+
+/*************************************************************************
 Gets the type length. */
 UNIV_INLINE
 ulint
@@ -127,35 +138,44 @@ dtype_get_pad_char(
 
 /**************************************************************************
 Stores for a type the information which determines its alphabetical ordering
-and the storage size of an SQL NULL value. */
+and the storage size of an SQL NULL value. This is the >= 4.1.x storage
+format. */
 UNIV_INLINE
 void
-dtype_store_for_order_and_null_size(
-/*================================*/
-	byte*		buf,	/* in: buffer for DATA_ORDER_NULL_TYPE_BUF_SIZE
+dtype_new_store_for_order_and_null_size(
+/*====================================*/
+	byte*		buf,	/* in: buffer for
+				DATA_NEW_ORDER_NULL_TYPE_BUF_SIZE
 				bytes where we store the info */
 	dtype_t*	type)	/* in: type struct */
 {
-	ut_ad(4 == DATA_ORDER_NULL_TYPE_BUF_SIZE);
+	ut_ad(6 == DATA_NEW_ORDER_NULL_TYPE_BUF_SIZE);
 	
-	buf[0] = (byte)(type->mtype & 0xFF);
+	buf[0] = (byte)(type->mtype & 0xFFUL);
 
 	if (type->prtype & DATA_BINARY_TYPE) {
 		buf[0] = buf[0] | 128;
 	}
 
-	if (type->prtype & DATA_NONLATIN1) {
-		buf[0] = buf[0] | 64;
-	}
+	/* In versions < 4.1.2 we had: 	if (type->prtype & DATA_NONLATIN1) {
+						buf[0] = buf[0] | 64;
+					}
+	*/
 
-	buf[1] = (byte)(type->prtype & 0xFF);
+	buf[1] = (byte)(type->prtype & 0xFFUL);
 
-	mach_write_to_2(buf + 2, type->len & 0xFFFF);
+	mach_write_to_2(buf + 2, type->len & 0xFFFFUL);
+
+	mach_write_to_2(buf + 4, dtype_get_charset_coll(type->prtype));
+
+	/* Note that the second last byte is left unused, because the
+	charset-collation code is always < 256 */
 }
 
 /**************************************************************************
 Reads to a type the stored information which determines its alphabetical
-ordering and the storage size of an SQL NULL value. */
+ordering and the storage size of an SQL NULL value. This is the < 4.1.x
+storage format. */
 UNIV_INLINE
 void
 dtype_read_for_order_and_null_size(
@@ -172,12 +192,56 @@ dtype_read_for_order_and_null_size(
 	        type->prtype = type->prtype | DATA_BINARY_TYPE;
 	}
 
-	if (buf[0] & 64) {
-	        type->prtype = type->prtype | DATA_NONLATIN1;
+	type->len = mach_read_from_2(buf + 2);
+		
+	type->prtype = dtype_form_prtype(type->prtype,
+					data_mysql_default_charset_coll);
+}	
+
+/**************************************************************************
+Reads to a type the stored information which determines its alphabetical
+ordering and the storage size of an SQL NULL value. This is the >= 4.1.x
+storage format. */
+UNIV_INLINE
+void
+dtype_new_read_for_order_and_null_size(
+/*===================================*/
+	dtype_t*	type,	/* in: type struct */
+	byte*		buf)	/* in: buffer for stored type order info */
+{
+	ulint	charset_coll;
+
+	ut_ad(6 == DATA_NEW_ORDER_NULL_TYPE_BUF_SIZE);
+	
+	type->mtype = buf[0] & 63;
+	type->prtype = buf[1];
+
+	if (buf[0] & 128) {
+	        type->prtype = type->prtype | DATA_BINARY_TYPE;
 	}
 
 	type->len = mach_read_from_2(buf + 2);
-}	
+
+	mach_read_from_2(buf + 4);
+
+	charset_coll = mach_read_from_2(buf + 4);
+
+	if (dtype_is_string_type(type->mtype)) {
+		ut_a(charset_coll < 256);
+
+		if (charset_coll == 0) {
+			/* This insert buffer record was inserted with MySQL
+			version < 4.1.2, and the charset-collation code was not
+			explicitly stored to dtype->prtype at that time. It
+			must be the default charset-collation of this MySQL
+			installation. */
+
+			charset_coll = data_mysql_default_charset_coll;
+		}
+		
+		type->prtype = dtype_form_prtype(type->prtype, charset_coll);
+	}						
+}
 
 /***************************************************************************
 Returns the size of a fixed size data type, 0 if not a fixed size type. */

@@ -29,26 +29,28 @@ static my_bool verbose;
 static char *query=NULL;
 static uint lengths[256];
 
-#define MAX_LEN (HA_FT_MAXLEN+10)
+#define MAX_LEN (HA_FT_MAXBYTELEN+10)
 #define HOW_OFTEN_TO_WRITE 10000
 
 static struct my_option my_long_options[] =
 {
-  {"dump", 'd', "Dump index (incl. data offsets and word weights)",
+  {"dump", 'd', "Dump index (incl. data offsets and word weights).",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"stats", 's', "Report global stats",
+  {"stats", 's', "Report global stats.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"verbose", 'v', "Be verbose",
+  {"verbose", 'v', "Be verbose.",
    (gptr*) &verbose, (gptr*) &verbose, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"count", 'c', "Calculate per-word stats (counts and global weights)",
+  {"count", 'c', "Calculate per-word stats (counts and global weights).",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"length", 'l', "Report length distribution",
+  {"length", 'l', "Report length distribution.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"execute", 'e', "Execute given query", (gptr*) &query, (gptr*) &query, 0,
+#ifdef DISABLED
+  {"execute", 'e', "Execute given query.", (gptr*) &query, (gptr*) &query, 0,
    GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"help", 'h', "Display help and exit",
+#endif
+  {"help", 'h', "Display help and exit.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"help", '?', "Synonym for -h",
+  {"help", '?', "Synonym for -h.",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
@@ -56,9 +58,9 @@ static struct my_option my_long_options[] =
 
 int main(int argc,char *argv[])
 {
-  int error=0;
+  int error=0, subkeys;
   uint keylen, keylen2=0, inx, doc_cnt=0;
-  float weight;
+  float weight= 1.0;
   double gws, min_gws=0, avg_gws=0;
   MI_INFO *info;
   char buf[MAX_LEN], buf2[MAX_LEN], buf_maxlen[MAX_LEN], buf_min_gws[MAX_LEN];
@@ -66,7 +68,7 @@ int main(int argc,char *argv[])
   struct { MI_INFO *info; } aio0, *aio=&aio0; /* for GWS_IN_USE */
 
   MY_INIT(argv[0]);
-  if (error=handle_options(&argc, &argv, my_long_options, get_one_option))
+  if ((error= handle_options(&argc, &argv, my_long_options, get_one_option)))
     exit(error);
   if (count || dump)
     verbose=0;
@@ -81,10 +83,12 @@ int main(int argc,char *argv[])
 
   {
     char *end;
-    inx= strtoll(argv[1], &end, 10);
+    inx= (uint) strtoll(argv[1], &end, 10);
     if (*end)
       usage();
   }
+
+  init_key_cache(dflt_key_cache,MI_KEY_BLOCK_LENGTH,USE_BUFFER_INIT, 0, 0);
 
   if (!(info=mi_open(argv[0],2,HA_OPEN_ABORT_IF_LOCKED)))
   {
@@ -136,18 +140,16 @@ int main(int argc,char *argv[])
     {
       keylen=*(info->lastkey);
 
-#if HA_FT_WTYPE == HA_KEYTYPE_FLOAT
-      mi_float4get(weight,info->lastkey+keylen+1);
-#else
-#error
-#endif
+      subkeys=ft_sintXkorr(info->lastkey+keylen+1);
+      if (subkeys >= 0)
+        weight=*(float*)&subkeys;
 
 #ifdef HAVE_SNPRINTF
       snprintf(buf,MAX_LEN,"%.*s",(int) keylen,info->lastkey+1);
 #else
       sprintf(buf,"%.*s",(int) keylen,info->lastkey+1);
 #endif
-      casedn_str(buf);
+      my_casedn_str(default_charset_info,buf);
       total++;
       lengths[keylen]++;
 
@@ -180,9 +182,13 @@ int main(int argc,char *argv[])
         }
       }
       if (dump)
-        printf("%9lx %20.7f %s\n",(ulong)info->lastpos,weight,buf);
-
-      if(verbose && (total%HOW_OFTEN_TO_WRITE)==0)
+      {
+        if (subkeys>=0)
+          printf("%9lx %20.7f %s\n", (long) info->lastpos,weight,buf);
+        else
+          printf("%9lx => %17d %s\n",(long) info->lastpos,-subkeys,buf);
+      }
+      if (verbose && (total%HOW_OFTEN_TO_WRITE)==0)
         printf("%10ld\r",total);
     }
     mi_lock_database(info, F_UNLCK);
@@ -201,7 +207,7 @@ int main(int argc,char *argv[])
              "Median length: %u\n"
              "Average global weight: %f\n"
              "Most common word: %lu times, weight: %f (%s)\n",
-             (ulong)info->state->records, total, uniq, maxlen, buf_maxlen,
+             (long) info->state->records, total, uniq, maxlen, buf_maxlen,
              inx, avg_gws/uniq, max_doc_cnt, min_gws, buf_min_gws);
     }
     if (lstats)
@@ -233,18 +239,18 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 {
   switch(optid) {
   case 'd':
-    dump=1; 
+    dump=1;
     complain(count || query);
     break;
-  case 's': 
-    stats=1; 
+  case 's':
+    stats=1;
     complain(query!=0);
     break;
-  case 'c': 
+  case 'c':
     count= 1;
     complain(dump || query);
     break;
-  case 'l': 
+  case 'l':
     lstats=1;
     complain(query!=0);
     break;
@@ -258,15 +264,18 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
   return 0;
 }
 
+#include <help_start.h>
 
 static void usage()
 {
   printf("Use: myisam_ftdump <table_name> <index_num>\n");
   my_print_help(my_long_options);
   my_print_variables(my_long_options);
+  NETWARE_SET_SCREEN_MODE(1);
   exit(1);
 }
 
+#include <help_end.h>
 
 static void complain(int val) /* Kinda assert :-)  */
 {

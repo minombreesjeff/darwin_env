@@ -2,12 +2,48 @@
 # Test of procedure analyse
 #
 
+--disable_warnings
 drop table if exists t1,t2;
+--enable_warnings
 create table t1 (i int, j int, empty_string char(10), bool char(1), d date);
 insert into t1 values (1,2,"","Y","2002-03-03"), (3,4,"","N","2002-03-04"), (5,6,"","Y","2002-03-04"), (7,8,"","N","2002-03-05");
+select count(*) from t1 procedure analyse();
 select * from t1 procedure analyse();
 select * from t1 procedure analyse(2);
 create table t2 select * from t1 procedure analyse();
 select * from t2;
 drop table t1,t2;
 
+EXPLAIN SELECT 1 FROM (SELECT 1) a PROCEDURE ANALYSE();
+
+#
+# Test with impossible where
+#
+create table t1 (a int not null);
+create table t2 select * from t1 where 0=1 procedure analyse();
+show create table t2;
+select * from t1 where 0=1 procedure analyse();
+insert into t1 values(1);
+drop table t2;
+create table t2 select * from t1 where 0=1 procedure analyse();
+show create table t2;
+select * from t2;
+insert into t2 select * from t1 procedure analyse();
+select * from t2;
+insert into t1 values(2);
+drop table t2;
+create table t2 select * from t1 where 0=1 procedure analyse();
+show create table t2;
+select * from t2;
+insert into t2 select * from t1 procedure analyse();
+select * from t2;
+drop table t1,t2;
+
+#
+# Bug#2813 - analyse does not quote string values in enums from string
+#
+
+create table t1 (v varchar(128));
+insert into t1 values ('abc'),('abc\'def\\hij\"klm\0opq'),('\''),('\"'),('\\'),('a\0'),('b\''),('c\"'),('d\\'),('\'b'),('\"c'),('\\d'),('a\0\0\0b'),('a\'\'\'\'b'),('a\"\"\"\"b'),('a\\\\\\\\b'),('\'\0\\\"'),('\'\''),('\"\"'),('\\\\'),('The\ZEnd');
+select * from t1 procedure analyse();
+drop table t1;

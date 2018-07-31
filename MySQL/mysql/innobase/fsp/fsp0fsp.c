@@ -27,6 +27,10 @@ Created 11/29/1995 Heikki Tuuri
 #include "dict0mem.h"
 #include "log0log.h"
 
+
+#define FSP_HEADER_OFFSET	FIL_PAGE_DATA	/* Offset of the space header
+						within a file page */
+
 /* The data structures in files are defined just as byte strings in C */
 typedef	byte	fsp_header_t;
 typedef	byte	xdes_t;		
@@ -38,10 +42,9 @@ File space header data structure: this data structure is contained in the
 first page of a space. The space for this header is reserved in every extent
 descriptor page, but used only in the first. */
 
-#define FSP_HEADER_OFFSET	FIL_PAGE_DATA	/* Offset of the space header
-						within a file page */
 /*-------------------------------------*/
-#define FSP_NOT_USED		0	/* this field contained a value up to
+#define FSP_SPACE_ID		0	/* space id */
+#define FSP_NOT_USED		4	/* this field contained a value up to
 					which we know that the modifications
 					in the database have been flushed to
 					the file space; not used now */
@@ -50,7 +53,13 @@ descriptor page, but used only in the first. */
 #define	FSP_FREE_LIMIT		12	/* Minimum page number for which the
 					free list has not been initialized:
 					the pages >= this limit are, by
-					definition, free */
+					definition, free; note that in a
+					single-table tablespace where size
+					< 64 pages, this number is 64, i.e.,
+					we have initialized the space
+					about the first extent, but have not
+					physically allocted those pages to the
+					file */
 #define	FSP_LOWEST_NO_WRITE	16	/* The lowest page offset for which
 					the page has not been written to disk
 					(if it has been written, we know that
@@ -83,7 +92,6 @@ descriptor page, but used only in the first. */
 #define	FSP_FREE_ADD		4	/* this many free extents are added
 					to the free list from above
 					FSP_FREE_LIMIT at a time */
-
 					
 /*			FILE SEGMENT INODE
 			==================
@@ -263,9 +271,14 @@ static
 void
 fsp_fill_free_list(
 /*===============*/
-	ulint		space,	/* in: space */
-	fsp_header_t*	header,	/* in: space header */
-	mtr_t*		mtr);	/* in: mtr */
+	ibool		init_space,	/* in: TRUE if this is a single-table
+					tablespace and we are only initing
+					the tablespace's first extent
+					descriptor page and ibuf bitmap page;
+					then we do not allocate more extents */
+	ulint		space,		/* in: space */
+	fsp_header_t*	header,		/* in: space header */
+	mtr_t*		mtr);		/* in: mtr */
 /**************************************************************************
 Allocates a single free page from a segment. This function implements
 the intelligent allocation strategy which tries to minimize file space
@@ -285,6 +298,19 @@ fseg_alloc_free_page_low(
 				direction they go alphabetically: FSP_DOWN,
 				FSP_UP, FSP_NO_DIR */
 	mtr_t*		mtr);	/* in: mtr handle */
+
+
+/**************************************************************************
+Reads the file space size stored in the header page. */
+
+ulint
+fsp_get_size_low(
+/*=============*/
+			/* out: tablespace size stored in the space header */
+	page_t*	page)	/* in: header page (page 0 in the tablespace) */
+{
+	return(mach_read_from_4(page + FSP_HEADER_OFFSET + FSP_SIZE));
+}
 
 /**************************************************************************
 Gets a pointer to the space header and x-locks its page. */
@@ -569,7 +595,7 @@ xdes_init(
 	ut_ad((XDES_SIZE - XDES_BITMAP) % 4 == 0);
 
 	for (i = XDES_BITMAP; i < XDES_SIZE; i += 4) {
-		mlog_write_ulint(descr + i, 0xFFFFFFFF, MLOG_4BYTES, mtr);
+		mlog_write_ulint(descr + i, 0xFFFFFFFFUL, MLOG_4BYTES, mtr);
 	}
 
 	xdes_set_state(descr, XDES_FREE, mtr);
@@ -630,8 +656,8 @@ xdes_get_descriptor_with_space_hdr(
 	page_t*	descr_page;
 
 	ut_ad(mtr);
-	ut_ad(mtr_memo_contains(mtr, fil_space_get_latch(space), MTR_MEMO_X_LOCK));
-
+	ut_ad(mtr_memo_contains(mtr, fil_space_get_latch(space),
+						MTR_MEMO_X_LOCK));
 	/* Read free limit and space size */
 	limit = mtr_read_ulint(sp_header + FSP_FREE_LIMIT, MLOG_4BYTES, mtr);
 	size  = mtr_read_ulint(sp_header + FSP_SIZE, MLOG_4BYTES, mtr);
@@ -646,7 +672,7 @@ xdes_get_descriptor_with_space_hdr(
 	/* If offset is == limit, fill free list of the space. */
 
 	if (offset == limit) {
-		fsp_fill_free_list(space, sp_header, mtr);
+		fsp_fill_free_list(FALSE, space, sp_header, mtr);
 	}
 
 	descr_page_no = xdes_calc_descriptor_page(offset);
@@ -714,8 +740,8 @@ xdes_lst_get_descriptor(
 	xdes_t*	descr;
 
 	ut_ad(mtr);
-	ut_ad(mtr_memo_contains(mtr, fil_space_get_latch(space), MTR_MEMO_X_LOCK));
-	
+	ut_ad(mtr_memo_contains(mtr, fil_space_get_latch(space),
+							MTR_MEMO_X_LOCK));
 	descr = fut_get_ptr(space, lst_node, RW_X_LATCH, mtr) - XDES_FLST_NODE;
 
 	return(descr);
@@ -825,8 +851,21 @@ fsp_init(void)
 }
 
 /**************************************************************************
+Writes the space id to a tablespace header. This function is used past the
+buffer pool when we in fil0fil.c create a new single-table tablespace. */
+
+void
+fsp_header_write_space_id(
+/*======================*/
+	page_t*	page,		/* in: first page in the space */
+	ulint	space_id)	/* in: space id */
+{
+	mach_write_to_4(page + FSP_HEADER_OFFSET + FSP_SPACE_ID, space_id);
+}
+
+/**************************************************************************
 Initializes the space header of a new created space and creates also the
-insert buffer tree root. */
+insert buffer tree root if space == 0. */
 
 void
 fsp_header_init(
@@ -843,9 +882,6 @@ fsp_header_init(
 	mtr_x_lock(fil_space_get_latch(space), mtr);
 
 	page = buf_page_create(space, 0, mtr);
-#ifdef UNIV_SYNC_DEBUG
-	buf_page_dbg_add_level(page, SYNC_FSP_PAGE);
-#endif /* UNIV_SYNC_DEBUG */
 	buf_page_get(space, 0, RW_X_LATCH, mtr);
 #ifdef UNIV_SYNC_DEBUG
 	buf_page_dbg_add_level(page, SYNC_FSP_PAGE);
@@ -856,6 +892,8 @@ fsp_header_init(
 	fsp_init_file_page(page, mtr);
 
 	header = FSP_HEADER_OFFSET + page;
+
+	mlog_write_ulint(header + FSP_SPACE_ID, space, MLOG_4BYTES, mtr);
 
 	mlog_write_ulint(header + FSP_SIZE, size, MLOG_4BYTES, mtr); 
 	mlog_write_ulint(header + FSP_FREE_LIMIT, 0, MLOG_4BYTES, mtr); 
@@ -869,10 +907,40 @@ fsp_header_init(
 	flst_init(header + FSP_SEG_INODES_FREE, mtr);
 
 	mlog_write_dulint(header + FSP_SEG_ID, ut_dulint_create(0, 1), mtr); 
-	fsp_fill_free_list(space, header, mtr);
-
-	btr_create(DICT_CLUSTERED | DICT_UNIVERSAL | DICT_IBUF, space,
+	if (space == 0) {
+		fsp_fill_free_list(FALSE, space, header, mtr);
+		btr_create(DICT_CLUSTERED | DICT_UNIVERSAL | DICT_IBUF, space,
 				ut_dulint_add(DICT_IBUF_ID_MIN, space), mtr);
+	} else {
+		fsp_fill_free_list(TRUE, space, header, mtr);
+	}
+}
+
+/**************************************************************************
+Reads the space id from the first page of a tablespace. */
+
+ulint
+fsp_header_get_space_id(
+/*====================*/
+			/* out: space id, ULINT UNDEFINED if error */
+	page_t*	page)	/* in: first page of a tablespace */
+{
+	ulint	fsp_id;
+	ulint	id;
+
+	fsp_id = mach_read_from_4(FSP_HEADER_OFFSET + page + FSP_SPACE_ID);
+
+	id = mach_read_from_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
+
+	if (id != fsp_id) {
+	        fprintf(stderr,
+"InnoDB: Error: space id in fsp header %lu, but in the page header %lu\n",
+							    (ulong) fsp_id,
+							    (ulong) id);
+		return(ULINT_UNDEFINED);
+	}
+
+	return(id);
 }
 
 /**************************************************************************
@@ -896,7 +964,8 @@ fsp_header_inc_size(
 
 	size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, mtr);
 
-	mlog_write_ulint(header + FSP_SIZE, size + size_inc, MLOG_4BYTES, mtr); 
+	mlog_write_ulint(header + FSP_SIZE, size + size_inc, MLOG_4BYTES,
+									mtr); 
 }
 
 /**************************************************************************
@@ -909,7 +978,7 @@ ulint
 fsp_header_get_free_limit(
 /*======================*/
 			/* out: free limit in megabytes */
-	ulint	space)	/* in: space id */
+	ulint	space)	/* in: space id, must be 0 */
 {
 	fsp_header_t*	header;
 	ulint		limit;
@@ -943,7 +1012,7 @@ ulint
 fsp_header_get_tablespace_size(
 /*===========================*/
 			/* out: size in pages */
-	ulint	space)	/* in: space id */
+	ulint	space)	/* in: space id, must be 0 */
 {
 	fsp_header_t*	header;
 	ulint		size;
@@ -965,40 +1034,80 @@ fsp_header_get_tablespace_size(
 }
 
 /***************************************************************************
-Tries to extend the last data file file if it is defined as auto-extending. */
+Tries to extend a single-table tablespace so that a page would fit in the
+data file. */
 static
 ibool
-fsp_try_extend_last_file(
+fsp_try_extend_data_file_with_pages(
+/*================================*/
+					/* out: TRUE if success */
+	ulint		space,		/* in: space */
+	ulint		page_no,	/* in: page number */
+	fsp_header_t*	header,		/* in: space header */
+	mtr_t*		mtr)		/* in: mtr */
+{
+	ibool	success;
+	ulint	actual_size;
+	ulint	size;
+
+	ut_a(space != 0);
+
+	size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, mtr);
+	
+	ut_a(page_no >= size);
+
+	success = fil_extend_space_to_desired_size(&actual_size, space,
+								page_no + 1);
+	/* actual_size now has the space size in pages; it may be less than
+	we wanted if we ran out of disk space */
+	
+	mlog_write_ulint(header + FSP_SIZE, actual_size, MLOG_4BYTES, mtr);
+
+	return(success);
+}
+
+/***************************************************************************
+Tries to extend the last data file of a tablespace if it is auto-extending. */
+static
+ibool
+fsp_try_extend_data_file(
 /*=====================*/
 					/* out: FALSE if not auto-extending */
-	ulint*		actual_increase,/* out: actual increase in pages */
+	ulint*		actual_increase,/* out: actual increase in pages, where
+					we measure the tablespace size from
+					what the header field says; it may be
+					the actual file size rounded down to
+					megabyte */
 	ulint		space,		/* in: space */
 	fsp_header_t*	header,		/* in: space header */
 	mtr_t*		mtr)		/* in: mtr */
 {
 	ulint	size;
+	ulint	new_size;
+	ulint	old_size;
 	ulint	size_increase;
+	ulint	actual_size;
 	ibool	success;
-
-	ut_a(space == 0);
 
 	*actual_increase = 0;
 
-	if (!srv_auto_extend_last_data_file) {
+	if (space == 0 && !srv_auto_extend_last_data_file) {
 
 		return(FALSE);
 	}
 
 	size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, mtr);
 
-	if (srv_last_file_size_max != 0) {
+	old_size = size;
+
+	if (space == 0 && srv_last_file_size_max != 0) {
 		if (srv_last_file_size_max
 			 < srv_data_file_sizes[srv_n_data_files - 1]) {
 
 			fprintf(stderr,
 "InnoDB: Error: Last data file size is %lu, max size allowed %lu\n",
-				srv_data_file_sizes[srv_n_data_files - 1],
-				srv_last_file_size_max);
+				(ulong) srv_data_file_sizes[srv_n_data_files - 1],
+				(ulong) srv_last_file_size_max);
 		}
 
 		size_increase = srv_last_file_size_max
@@ -1007,24 +1116,58 @@ fsp_try_extend_last_file(
 			size_increase = SRV_AUTO_EXTEND_INCREMENT;
 		}
 	} else {
-		size_increase = SRV_AUTO_EXTEND_INCREMENT;
+	        if (space == 0) {
+			size_increase = SRV_AUTO_EXTEND_INCREMENT;
+		} else {
+		        /* We extend single-table tablespaces first one extent
+			at a time, but for bigger tablespaces more. It is not
+			enough to extend always by one extent, because some
+			extents are frag page extents. */
+
+			if (size < FSP_EXTENT_SIZE) {
+				/* Let us first extend the file to 64 pages */
+				success = fsp_try_extend_data_file_with_pages(
+					  space, FSP_EXTENT_SIZE - 1,
+					  header, mtr);
+				if (!success) {
+					new_size = mtr_read_ulint(
+					 header + FSP_SIZE, MLOG_4BYTES, mtr);
+
+					*actual_increase = new_size - old_size;
+
+				        return(FALSE);
+				}
+
+				size = FSP_EXTENT_SIZE;
+			}
+
+			if (size < 32 * FSP_EXTENT_SIZE) {
+			        size_increase = FSP_EXTENT_SIZE;
+			} else {
+				/* Below in fsp_fill_free_list() we assume
+				that we add at most FSP_FREE_ADD extents at
+				a time */
+				size_increase = FSP_FREE_ADD * FSP_EXTENT_SIZE;
+			}
+		}
 	}
 				
 	if (size_increase == 0) {
+
 		return(TRUE);
 	}
 	
-	/* Extend the data file. If we are not able to extend
-	the full requested length, the function tells us
-	the number of full megabytes (but the unit is pages!)
-	we were able to extend. */
-				
-	success = fil_extend_last_data_file(actual_increase, size_increase);
+	success = fil_extend_space_to_desired_size(&actual_size, space,
+							size + size_increase);
+	/* We ignore any fragments of a full megabyte when storing the size
+	to the space header */
 
-	if (success) {
-		mlog_write_ulint(header + FSP_SIZE, size + *actual_increase,
+	mlog_write_ulint(header + FSP_SIZE, 
+	   ut_calc_align_down(actual_size, (1024 * 1024) / UNIV_PAGE_SIZE),
 							MLOG_4BYTES, mtr);
-	}
+	new_size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, mtr);
+
+	*actual_increase = new_size - old_size;
 
 	return(TRUE);
 }
@@ -1037,9 +1180,14 @@ static
 void
 fsp_fill_free_list(
 /*===============*/
-	ulint		space,	/* in: space */
-	fsp_header_t*	header,	/* in: space header */
-	mtr_t*		mtr)	/* in: mtr */
+	ibool		init_space,	/* in: TRUE if this is a single-table
+					tablespace and we are only initing
+					the tablespace's first extent
+					descriptor page and ibuf bitmap page;
+					then we do not allocate more extents */
+	ulint		space,		/* in: space */
+	fsp_header_t*	header,		/* in: space header */
+	mtr_t*		mtr)		/* in: mtr */
 {
 	ulint	limit;
 	ulint	size;
@@ -1058,27 +1206,37 @@ fsp_fill_free_list(
 	size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, mtr);
 	limit = mtr_read_ulint(header + FSP_FREE_LIMIT, MLOG_4BYTES, mtr);
 
-	if (srv_auto_extend_last_data_file
+	if (space == 0 && srv_auto_extend_last_data_file
 			&& size < limit + FSP_EXTENT_SIZE * FSP_FREE_ADD) {
 
 		/* Try to increase the last data file size */
-		fsp_try_extend_last_file(&actual_increase, space, header,
-									mtr);
+		fsp_try_extend_data_file(&actual_increase, space, header, mtr);
+		size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, mtr);
+	}
+
+	if (space != 0 && !init_space
+			&& size < limit + FSP_EXTENT_SIZE * FSP_FREE_ADD) {
+
+		/* Try to increase the .ibd file size */
+		fsp_try_extend_data_file(&actual_increase, space, header, mtr);
 		size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, mtr);
 	}
 
 	i = limit;
 		
-	while ((i + FSP_EXTENT_SIZE <= size) && (count < FSP_FREE_ADD)) {
+	while ((init_space && i < 1)
+	       || ((i + FSP_EXTENT_SIZE <= size) && (count < FSP_FREE_ADD))) {
 
 		mlog_write_ulint(header + FSP_FREE_LIMIT, i + FSP_EXTENT_SIZE,
 							MLOG_4BYTES, mtr); 
 
 		/* Update the free limit info in the log system and make
 		a checkpoint */
-		log_fsp_current_free_limit_set_and_checkpoint(
+		if (space == 0) {
+		        log_fsp_current_free_limit_set_and_checkpoint(
 				(i + FSP_EXTENT_SIZE)
 				/ ((1024 * 1024) / UNIV_PAGE_SIZE));
+		}
 
 		if (0 == i % XDES_DESCRIBED_PER_PAGE) {
 
@@ -1088,10 +1246,6 @@ fsp_fill_free_list(
 
 			if (i > 0) {
 				descr_page = buf_page_create(space, i, mtr);
-#ifdef UNIV_SYNC_DEBUG
-				buf_page_dbg_add_level(descr_page,
-								SYNC_FSP_PAGE);
-#endif /* UNIV_SYNC_DEBUG */
 				buf_page_get(space, i, RW_X_LATCH, mtr);
 #ifdef UNIV_SYNC_DEBUG
 				buf_page_dbg_add_level(descr_page,
@@ -1100,7 +1254,7 @@ fsp_fill_free_list(
 				fsp_init_file_page(descr_page, mtr);
 			}
 
-			/* Initialize the ibuf page in a separate
+			/* Initialize the ibuf bitmap page in a separate
 			mini-transaction because it is low in the latching
 			order, and we must be able to release its latch
 			before returning from the fsp routine */
@@ -1109,9 +1263,6 @@ fsp_fill_free_list(
 
 			ibuf_page = buf_page_create(space,
 					i + FSP_IBUF_BITMAP_OFFSET, &ibuf_mtr);
-#ifdef UNIV_SYNC_DEBUG
-			buf_page_dbg_add_level(ibuf_page, SYNC_IBUF_BITMAP);
-#endif /* UNIV_SYNC_DEBUG */
 			buf_page_get(space, i + FSP_IBUF_BITMAP_OFFSET,
 							RW_X_LATCH, &ibuf_mtr);
 #ifdef UNIV_SYNC_DEBUG
@@ -1188,7 +1339,7 @@ fsp_alloc_free_extent(
 		first = flst_get_first(header + FSP_FREE, mtr);
 
 		if (fil_addr_is_null(first)) {
-			fsp_fill_free_list(space, header, mtr);
+			fsp_fill_free_list(FALSE, space, header, mtr);
 
 			first = flst_get_first(header + FSP_FREE, mtr);
 		}
@@ -1225,6 +1376,8 @@ fsp_alloc_free_page(
 	ulint		free;
 	ulint		frag_n_used;
 	ulint		page_no;
+	ulint		space_size;
+	ibool		success;
 	
 	ut_ad(mtr);
 
@@ -1278,6 +1431,30 @@ fsp_alloc_free_page(
 		ut_error;
 	}
 
+	page_no = xdes_get_offset(descr) + free;
+
+	space_size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, mtr);
+
+	if (space_size <= page_no) {
+	        /* It must be that we are extending a single-table tablespace
+		whose size is still < 64 pages */
+
+		ut_a(space != 0);
+		if (page_no >= FSP_EXTENT_SIZE) {
+		        fprintf(stderr,
+"InnoDB: Error: trying to extend a single-table tablespace %lu\n"
+"InnoDB: by single page(s) though the space size %lu. Page no %lu.\n",
+			   (ulong) space, (ulong) space_size, (ulong) page_no);
+			return(FIL_NULL);
+		}
+		success = fsp_try_extend_data_file_with_pages(space, page_no,
+							      header, mtr);
+		if (!success) {
+			/* No disk space left */
+		        return(FIL_NULL);
+		}
+	}
+
 	xdes_set_bit(descr, XDES_FREE_BIT, free, FALSE, mtr);
 
 	/* Update the FRAG_N_USED field */
@@ -1298,8 +1475,6 @@ fsp_alloc_free_page(
 				frag_n_used - FSP_EXTENT_SIZE, MLOG_4BYTES,
 									mtr);
 	}
-
-	page_no = xdes_get_offset(descr) + free;
 
 	/* Initialize the allocated page to the buffer pool, so that it can
 	be obtained immediately with buf_page_get without need for a disk
@@ -1346,7 +1521,8 @@ fsp_free_page(
 	if (state != XDES_FREE_FRAG && state != XDES_FULL_FRAG) {
 		fprintf(stderr,
 "InnoDB: Error: File space extent descriptor of page %lu has state %lu\n",
-								page, state);
+								(ulong) page,
+								(ulong) state);
 		fputs("InnoDB: Dump of descriptor: ", stderr);
 		ut_print_buf(stderr, ((byte*)descr) - 50, 200);
 		putc('\n', stderr);
@@ -1364,7 +1540,7 @@ fsp_free_page(
 	if (xdes_get_bit(descr, XDES_FREE_BIT, page % FSP_EXTENT_SIZE, mtr)) {
 		fprintf(stderr,
 "InnoDB: Error: File space extent descriptor of page %lu says it is free\n"
-"InnoDB: Dump of descriptor: ", page);
+"InnoDB: Dump of descriptor: ", (ulong) page);
 		ut_print_buf(stderr, ((byte*)descr) - 50, 200);
 		putc('\n', stderr);
 
@@ -1599,8 +1775,8 @@ fsp_alloc_seg_inode(
 
 	inode = fsp_seg_inode_page_get_nth_inode(page, n, mtr);
 
-	if (ULINT_UNDEFINED == fsp_seg_inode_page_find_free(page, n + 1, mtr)) {
-
+	if (ULINT_UNDEFINED == fsp_seg_inode_page_find_free(page, n + 1,
+								    mtr)) {
 		/* There are no other unused headers left on the page: move it
 		to another list */
 
@@ -1654,7 +1830,7 @@ fsp_free_seg_inode(
 		flst_remove(space_header + FSP_SEG_INODES_FREE,
 				page + FSEG_INODE_PAGE_NODE, mtr);
 
-		fsp_free_page(space, buf_frame_get_page_no(page), mtr);		
+		fsp_free_page(space, buf_frame_get_page_no(page), mtr);
 	}
 }
 
@@ -1818,12 +1994,12 @@ fseg_create_general(
 			will belong to the created segment */
 	ulint	byte_offset, /* in: byte offset of the created segment header
 			on the page */
-	ibool	has_done_reservation, /* in: TRUE if the caller has
-			already done the reservation for the pages
-			with fsp_reserve_free_extents (at least 2 extents:
-			one for the inode and, then there other for the
-			segment) is no need to do the check for this
-			individual operation */
+	ibool	has_done_reservation, /* in: TRUE if the caller has already
+			done the reservation for the pages with
+			fsp_reserve_free_extents (at least 2 extents: one for
+			the inode and the other for the segment) then there is
+			no need to do the check for this individual
+			operation */
 	mtr_t*	mtr)	/* in: mtr */
 {
 	fsp_header_t*	space_header;
@@ -1832,6 +2008,7 @@ fseg_create_general(
 	fseg_header_t*	header = 0; /* remove warning */
 	rw_lock_t*	latch;
 	ibool		success;
+	ulint		n_reserved;
 	page_t*		ret		= NULL;
 	ulint		i;
 
@@ -1855,12 +2032,14 @@ fseg_create_general(
 		/* This thread did not own the latch before this call: free
 		excess pages from the insert buffer free list */
 
-		ibuf_free_excess_pages(space);
+		if (space == 0) {
+			ibuf_free_excess_pages(space);
+		}
 	}
 
 	if (!has_done_reservation) { 
-		success = fsp_reserve_free_extents(space, 2, FSP_NORMAL, mtr);
-
+		success = fsp_reserve_free_extents(&n_reserved, space, 2,
+							FSP_NORMAL, mtr);
 		if (!success) {
 			return(NULL);
 		}
@@ -1923,7 +2102,7 @@ fseg_create_general(
 funct_exit:
 	if (!has_done_reservation) { 
 	
-		fil_space_release_free_extents(space, 2);
+		fil_space_release_free_extents(space, n_reserved);
 	}
 	
 	return(ret);
@@ -2141,6 +2320,8 @@ fseg_alloc_free_page_low(
 				FSP_UP, FSP_NO_DIR */
 	mtr_t*		mtr)	/* in: mtr handle */
 {
+	fsp_header_t*	space_header;
+	ulint		space_size;
 	dulint		seg_id;
 	ulint		used;
 	ulint		reserved;
@@ -2151,6 +2332,7 @@ fseg_alloc_free_page_low(
 	xdes_t*		ret_descr;	/* the extent of the allocated page */
 	page_t*		page;
 	ibool		frag_page_allocated = FALSE;
+	ibool		success;
 	ulint		n;
 					
 	ut_ad(mtr);
@@ -2163,8 +2345,10 @@ fseg_alloc_free_page_low(
 	
 	reserved = fseg_n_reserved_pages_low(seg_inode, &used, mtr);
 	
-	descr = xdes_get_descriptor(space, hint, mtr);
+	space_header = fsp_get_space_header(space, mtr);
 
+	descr = xdes_get_descriptor_with_space_hdr(space_header, space,
+								    hint, mtr);
 	if (descr == NULL) {
 		/* Hint outside space or too high above free limit: reset
 		hint */
@@ -2294,8 +2478,32 @@ fseg_alloc_free_page_low(
 		return(FIL_NULL);
 	}
 
-	if (!frag_page_allocated) {
+	if (space != 0) {
+		space_size = fil_space_get_size(space);
 
+		if (space_size <= ret_page) {
+		        /* It must be that we are extending a single-table
+			tablespace whose size is still < 64 pages */
+
+			if (ret_page >= FSP_EXTENT_SIZE) {
+			        fprintf(stderr,
+"InnoDB: Error (2): trying to extend a single-table tablespace %lu\n"
+"InnoDB: by single page(s) though the space size %lu. Page no %lu.\n",
+					(ulong) space, (ulong) space_size,
+					(ulong) ret_page);
+				return(FIL_NULL);
+			}
+			
+			success = fsp_try_extend_data_file_with_pages(space,
+						ret_page, space_header, mtr);
+			if (!success) {
+				/* No disk space left */
+				return(FIL_NULL);
+			}
+		}
+	}
+
+	if (!frag_page_allocated) {
 		/* Initialize the allocated page to buffer pool, so that it
 		can be obtained immediately with buf_page_get without need
 		for a disk read */
@@ -2356,6 +2564,7 @@ fseg_alloc_free_page_general(
 	rw_lock_t*	latch;
 	ibool		success;
 	ulint		page_no;
+	ulint		n_reserved;
 
 	space = buf_frame_get_space_id(seg_header);
 
@@ -2372,14 +2581,16 @@ fseg_alloc_free_page_general(
 		/* This thread did not own the latch before this call: free
 		excess pages from the insert buffer free list */
 
-		ibuf_free_excess_pages(space);
+		if (space == 0) {
+		        ibuf_free_excess_pages(space);
+		}
 	}
 
 	inode = fseg_inode_get(seg_header, mtr);
 
 	if (!has_done_reservation) {
-		success = fsp_reserve_free_extents(space, 2, FSP_NORMAL, mtr);
-
+		success = fsp_reserve_free_extents(&n_reserved, space, 2,
+							FSP_NORMAL, mtr);
 		if (!success) {
 			return(FIL_NULL);
 		}
@@ -2388,7 +2599,7 @@ fseg_alloc_free_page_general(
 	page_no = fseg_alloc_free_page_low(buf_frame_get_space_id(inode),
 					inode, hint, direction, mtr);
 	if (!has_done_reservation) {
-		fil_space_release_free_extents(space, 2);
+		fil_space_release_free_extents(space, n_reserved);
 	}
 
 	return(page_no);
@@ -2418,6 +2629,46 @@ fseg_alloc_free_page(
 }
 
 /**************************************************************************
+Checks that we have at least 2 frag pages free in the first extent of a
+single-table tablespace, and they are also physically initialized to the data
+file. That is we have already extended the data file so that those pages are
+inside the data file. If not, this function extends the tablespace with
+pages. */
+static
+ibool
+fsp_reserve_free_pages(
+/*===================*/
+					/* out: TRUE if there were >= 3 free
+					pages, or we were able to extend */
+        ulint		space,		/* in: space id, must be != 0 */
+	fsp_header_t*	space_header,	/* in: header of that space,
+					x-latched */
+	ulint		size,		/* in: size of the tablespace in pages,
+					must be < FSP_EXTENT_SIZE / 2 */
+	mtr_t*		mtr)		/* in: mtr */
+{
+	xdes_t*	descr;
+	ulint	n_used;
+
+	ut_a(space != 0);
+	ut_a(size < FSP_EXTENT_SIZE / 2);
+
+	descr = xdes_get_descriptor_with_space_hdr(space_header, space, 0,
+									mtr);
+	n_used = xdes_get_n_used(descr, mtr);
+
+	ut_a(n_used <= size);
+
+	if (size >= n_used + 2) {
+
+		return(TRUE);
+	}
+
+	return(fsp_try_extend_data_file_with_pages(space, n_used + 1,
+							  space_header, mtr));
+}
+
+/**************************************************************************
 Reserves free pages from a tablespace. All mini-transactions which may
 use several pages from the tablespace should call this function beforehand
 and reserve enough free extents so that they certainly will be able
@@ -2435,12 +2686,21 @@ two types of allocation: when space is scarce, FSP_NORMAL allocations
 will not succeed, but the latter two allocations will succeed, if possible.
 The purpose is to avoid dead end where the database is full but the
 user cannot free any space because these freeing operations temporarily
-reserve some space. */ 
+reserve some space.
+
+Single-table tablespaces whose size is < 32 pages are a special case. In this
+function we would liberally reserve several 64 page extents for every page
+split or merge in a B-tree. But we do not want to waste disk space if the table
+only occupies < 32 pages. That is why we apply different rules in that special
+case, just ensuring that there are 3 free pages available. */
 
 ibool
 fsp_reserve_free_extents(
 /*=====================*/
 			/* out: TRUE if we were able to make the reservation */
+	ulint*	n_reserved,/* out: number of extents actually reserved; if we
+			return TRUE and the tablespace size is < 64 pages,
+			then this can be 0, otherwise it is n_ext */
 	ulint	space,	/* in: space id */
 	ulint	n_ext,	/* in: number of extents to reserve */
 	ulint	alloc_type,/* in: FSP_NORMAL, FSP_UNDO, or FSP_CLEANING */
@@ -2463,6 +2723,8 @@ fsp_reserve_free_extents(
 	      || mtr_memo_contains(mtr, fil_space_get_latch(space),
 							MTR_MEMO_X_LOCK));
 #endif /* UNIV_SYNC_DEBUG */
+	*n_reserved = n_ext;
+
 	latch = fil_space_get_latch(space);
 
 	mtr_x_lock(latch, mtr);
@@ -2471,6 +2733,12 @@ fsp_reserve_free_extents(
 try_again:
 	size = mtr_read_ulint(space_header + FSP_SIZE, MLOG_4BYTES, mtr);
 	
+	if (size < FSP_EXTENT_SIZE / 2) {
+		/* Use different rules for small single-table tablespaces */
+		*n_reserved = 0;
+		return(fsp_reserve_free_pages(space, space_header, size, mtr));
+	}
+
 	n_free_list_ext = flst_get_len(space_header + FSP_FREE, mtr);
 	
 	free_limit = mtr_read_ulint(space_header + FSP_FREE_LIMIT,
@@ -2520,7 +2788,7 @@ try_again:
 		return(TRUE);
 	}
 try_to_extend:
-	success = fsp_try_extend_last_file(&n_pages_added, space,
+	success = fsp_try_extend_data_file(&n_pages_added, space,
 							space_header, mtr);
 	if (success && n_pages_added > 0) {
 
@@ -2571,6 +2839,13 @@ fsp_get_available_space_in_free_extents(
 							MLOG_4BYTES, &mtr);
 	mtr_commit(&mtr);
 
+	if (size < FSP_EXTENT_SIZE) {
+	        ut_a(space != 0);   /* This must be a single-table
+				    tablespace */
+		return(0);	    /* TODO: count free frag pages and return
+				    a value based on that */
+	}
+	
 	/* Below we play safe when counting free extents above the free limit:
 	some of them will contain extent descriptor pages, and therefore
 	will not be free extents */
@@ -2668,13 +2943,9 @@ fseg_free_page_low(
 	xdes_t*	descr;
 	ulint	not_full_n_used;
 	ulint	state;
+	dulint	descr_id;
+	dulint	seg_id;
 	ulint	i;
-
-#ifdef __WIN__
-    dulint desm;
-    dulint segm;
-#endif
-
 	
 	ut_ad(seg_inode && mtr);
 	ut_ad(mach_read_from_4(seg_inode + FSEG_MAGIC_N) ==
@@ -2698,12 +2969,12 @@ fseg_free_page_low(
 "InnoDB: though it is already marked as free in the tablespace!\n"
 "InnoDB: The tablespace free space info is corrupt.\n"
 "InnoDB: You may need to dump your InnoDB tables and recreate the whole\n"
-"InnoDB: database!\n", page);
+"InnoDB: database!\n", (ulong) page);
 	crash:
 		fputs(
-"InnoDB: If the InnoDB recovery crashes here, see section 6.1\n"
-"InnoDB: of http://www.innodb.com/ibman.php about forcing recovery.\n",
-			stderr);
+"InnoDB: Please refer to\n"
+"InnoDB: http://dev.mysql.com/doc/mysql/en/Forcing_recovery.html\n"
+"InnoDB: about forcing recovery.\n", stderr);
 		ut_error;
 	}
 		
@@ -2727,26 +2998,22 @@ fseg_free_page_low(
 		return;
 	}
 
+	/* If we get here, the page is in some extent of the segment */	
+
+	descr_id = mtr_read_dulint(descr + XDES_ID, mtr);
+	seg_id = mtr_read_dulint(seg_inode + FSEG_ID, mtr);
 /*
 	fprintf(stderr,
 "InnoDB: InnoDB is freeing space %lu page %lu,\n"
 "InnoDB: which belongs to descr seg %lu %lu\n"
 "InnoDB: segment %lu %lu.\n",
 		   space, page,
-		   ut_dulint_get_high(
-			mtr_read_dulint(descr + XDES_ID, mtr)),
-		   ut_dulint_get_low(
-			mtr_read_dulint(descr + XDES_ID, mtr)),
-		   ut_dulint_get_high(
-		     mtr_read_dulint(seg_inode + FSEG_ID, mtr)),
-		   ut_dulint_get_low(
-		     mtr_read_dulint(seg_inode + FSEG_ID, mtr)));
+		   ut_dulint_get_high(descr_id),
+		   ut_dulint_get_low(descr_id),
+		   ut_dulint_get_high(seg_id),
+		   ut_dulint_get_low(seg_id));
 */
-	/* If we get here, the page is in some extent of the segment */	
-	if (0 != ut_dulint_cmp(
-		mtr_read_dulint(descr + XDES_ID, mtr),
-		mtr_read_dulint(seg_inode + FSEG_ID, mtr))) {
-
+	if (0 != ut_dulint_cmp(descr_id, seg_id)) {
 		fputs("InnoDB: Dump of the tablespace extent descriptor: ",
 			stderr);
 		ut_print_buf(stderr, descr, 40);
@@ -2754,42 +3021,15 @@ fseg_free_page_low(
 		ut_print_buf(stderr, seg_inode, 40);
 		putc('\n', stderr);
 
-
-#ifndef __WIN__
-
-			fprintf(stderr,
+	        fprintf(stderr,
 "InnoDB: Serious error: InnoDB is trying to free space %lu page %lu,\n"
 "InnoDB: which does not belong to segment %lu %lu but belongs\n"
 "InnoDB: to segment %lu %lu.\n",
-		   space, page,
-		   ut_dulint_get_high(
-			mtr_read_dulint(descr + XDES_ID, mtr)),
-		   ut_dulint_get_low(
-			mtr_read_dulint(descr + XDES_ID, mtr)),
-		   ut_dulint_get_high(
-		     mtr_read_dulint(seg_inode + FSEG_ID, mtr)),
-		   ut_dulint_get_low(
-		     mtr_read_dulint(seg_inode + FSEG_ID, mtr)));
-
-#else
-
-/* More pedantic usage to avoid VC++ 6.0 compiler errors due to inline
-     function expansion issues */
-
-			desm = mtr_read_dulint(descr + XDES_ID, mtr);
-			segm = mtr_read_dulint(seg_inode + FSEG_ID, mtr);
-
-            fprintf(stderr,
-"InnoDB: Serious error: InnoDB is trying to free space %lu page %lu,\n"
-"InnoDB: which does not belong to segment %lu %lu but belongs\n"
-"InnoDB: to segment %lu %lu.\n",
-		   space, page,
-		   ut_dulint_get_high(desm),
-		   ut_dulint_get_low(desm),
-		   ut_dulint_get_high(segm),
-		   ut_dulint_get_low(segm));
-
-#endif
+		   (ulong) space, (ulong) page,
+		   (ulong) ut_dulint_get_high(descr_id),
+		   (ulong) ut_dulint_get_low(descr_id),
+		   (ulong) ut_dulint_get_high(seg_id),
+		   (ulong) ut_dulint_get_low(seg_id));
 		goto crash;
 	}
 
@@ -3236,8 +3476,7 @@ fseg_validate_low(
 
 	return(TRUE);
 }
-
-#ifdef UNIV_DEBUG
+	
 /***********************************************************************
 Validates a segment. */
 
@@ -3262,7 +3501,6 @@ fseg_validate(
 
 	return(ret);
 }
-#endif /* UNIV_DEBUG */
 
 /***********************************************************************
 Writes info of a segment. */
@@ -3297,7 +3535,7 @@ fseg_print_low(
 
 	seg_id_low = ut_dulint_get_low(d_var);
 	seg_id_high = ut_dulint_get_high(d_var);
-	
+ 
 	n_used = mtr_read_ulint(inode + FSEG_NOT_FULL_N_USED,
 							MLOG_4BYTES, mtr); 
 	n_frag = fseg_get_n_frag_pages(inode, mtr);
@@ -3308,12 +3546,12 @@ fseg_print_low(
 	fprintf(stderr,
 "SEGMENT id %lu %lu space %lu; page %lu; res %lu used %lu; full ext %lu\n"
 "fragm pages %lu; free extents %lu; not full extents %lu: pages %lu\n",
-		seg_id_high, seg_id_low, space, page_no, reserved, used,
-		n_full,
-		n_frag, n_free, n_not_full, n_used);
+		(ulong) seg_id_high, (ulong) seg_id_low, (ulong) space, (ulong) page_no,
+		(ulong) reserved, (ulong) used, (ulong) n_full,
+		(ulong) n_frag, (ulong) n_free, (ulong) n_not_full,
+                (ulong) n_used);
 }
 
-#ifdef UNIV_DEBUG
 /***********************************************************************
 Writes info of a segment. */
 
@@ -3334,7 +3572,6 @@ fseg_print(
 
 	fseg_print_low(inode, mtr);
 }
-#endif /* UNIV_DEBUG */
 
 /***********************************************************************
 Validates the file space system and its segments. */
@@ -3383,7 +3620,7 @@ fsp_validate(
 	n_full_frag_pages = FSP_EXTENT_SIZE *
 				flst_get_len(header + FSP_FULL_FRAG, &mtr);
 					
-	ut_a(free_limit <= size);
+	ut_a(free_limit <= size || (space != 0 && size < FSP_EXTENT_SIZE));
 					
 	flst_validate(header + FSP_FREE, &mtr);
 	flst_validate(header + FSP_FREE_FRAG, &mtr);
@@ -3620,10 +3857,10 @@ fsp_print(
 "size %lu, free limit %lu, free extents %lu\n"
 "not full frag extents %lu: used pages %lu, full frag extents %lu\n"
 "first seg id not used %lu %lu\n",
-		space,
-		size, free_limit, n_free,
-		n_free_frag, frag_n_used, n_full_frag,
-		seg_id_high, seg_id_low);
+		(long) space,
+		(ulong) size, (ulong) free_limit, (ulong) n_free,
+		(ulong) n_free_frag, (ulong) frag_n_used, (ulong) n_full_frag,
+		(ulong) seg_id_high, (ulong) seg_id_low);
 
 	mtr_commit(&mtr);	
 
@@ -3702,5 +3939,5 @@ fsp_print(
 	
 	mtr_commit(&mtr2);
 
-	fprintf(stderr, "NUMBER of file segments: %lu\n", n_segs);
+	fprintf(stderr, "NUMBER of file segments: %lu\n", (ulong) n_segs);
 }

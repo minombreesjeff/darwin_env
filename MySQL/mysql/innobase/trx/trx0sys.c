@@ -26,6 +26,17 @@ Created 3/26/1996 Heikki Tuuri
 trx_sys_t*		trx_sys 	= NULL;
 trx_doublewrite_t*	trx_doublewrite = NULL;
 
+/* The following is set to TRUE when we are upgrading from the old format data
+files to the new >= 4.1.x format multiple tablespaces format data files */
+
+ibool			trx_doublewrite_must_reset_space_ids	= FALSE;
+
+/* The following is TRUE when we are using the database in the new format,
+i.e., we have successfully upgraded, or have created a new database
+installation */
+
+ibool			trx_sys_multiple_tablespace_format	= FALSE;
+
 /* In a MySQL replication slave, in crash recovery we store the master log
 file name and position here. We have successfully got the updates to InnoDB
 up to this position. If .._pos is -1, it means no crash recovery was needed,
@@ -34,44 +45,14 @@ or there was no master log position info inside InnoDB. */
 char 		trx_sys_mysql_master_log_name[TRX_SYS_MYSQL_LOG_NAME_LEN];
 ib_longlong	trx_sys_mysql_master_log_pos	= -1;
 
-/* Do NOT merge this to the 4.1 code base! */
-ibool		trx_sys_downgrading_from_4_1_1	= FALSE;
+/* If this MySQL server uses binary logging, after InnoDB has been inited
+and if it has done a crash recovery, we store the binlog file name and position
+here. If .._pos is -1, it means there was no binlog position info inside
+InnoDB. */
 
-/********************************************************************
-Do NOT merge this to the 4.1 code base!
-Marks the trx sys header when we have successfully downgraded from the >= 4.1.1
-multiple tablespace format back to the 4.0 format. */
+char 		trx_sys_mysql_bin_log_name[TRX_SYS_MYSQL_LOG_NAME_LEN];
+ib_longlong	trx_sys_mysql_bin_log_pos	= -1;
 
-void
-trx_sys_mark_downgraded_from_4_1_1(void)
-/*====================================*/
-{
-	page_t*	page;
-	byte*	doublewrite;
-	mtr_t	mtr;
-
-	/* Let us mark to the trx_sys header that the downgrade has been
-	done. */
-
-	mtr_start(&mtr);
-
-	page = buf_page_get(TRX_SYS_SPACE, TRX_SYS_PAGE_NO, RW_X_LATCH, &mtr);
-#ifdef UNIV_SYNC_DEBUG
-	buf_page_dbg_add_level(page, SYNC_NO_ORDER_CHECK);
-#endif /* UNIV_SYNC_DEBUG */
-
-	doublewrite = page + TRX_SYS_DOUBLEWRITE;
-
-	mlog_write_ulint(doublewrite + TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED,
-				TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED_N + 1,
-				MLOG_4BYTES, &mtr);
-	mtr_commit(&mtr);
-		
-	/* Flush the modified pages to disk and make a checkpoint */
-	log_make_checkpoint_at(ut_dulint_max, TRUE);
-
-	trx_sys_downgrading_from_4_1_1 = FALSE;
-}
 
 /********************************************************************
 Determines if a page number is located inside the doublewrite buffer. */
@@ -114,11 +95,11 @@ trx_doublewrite_init(
 {
 	trx_doublewrite = mem_alloc(sizeof(trx_doublewrite_t));
 
-	/* When we have the doublewrite buffer in use, we do not need to
-	call os_file_flush (Unix fsync) after every write. */
-	
+	/* Since we now start to use the doublewrite buffer, no need to call
+	fsync() after every write to a data file */
+
 	os_do_not_call_flush_at_each_write = TRUE;
-	
+
 	mutex_create(&(trx_doublewrite->mutex));
 	mutex_set_level(&(trx_doublewrite->mutex), SYNC_DOUBLEWRITE);
 
@@ -144,7 +125,43 @@ trx_doublewrite_init(
 }
 
 /********************************************************************
-Creates the doublewrite buffer at a database start. The header of the
+Marks the trx sys header when we have successfully upgraded to the >= 4.1.x
+multiple tablespace format. */
+
+void
+trx_sys_mark_upgraded_to_multiple_tablespaces(void)
+/*===============================================*/
+{
+	page_t*	page;
+	byte*	doublewrite;
+	mtr_t	mtr;
+
+	/* We upgraded to 4.1.x and reset the space id fields in the
+	doublewrite buffer. Let us mark to the trx_sys header that the upgrade
+	has been done. */
+
+	mtr_start(&mtr);
+
+	page = buf_page_get(TRX_SYS_SPACE, TRX_SYS_PAGE_NO, RW_X_LATCH, &mtr);
+#ifdef UNIV_SYNC_DEBUG
+	buf_page_dbg_add_level(page, SYNC_NO_ORDER_CHECK);
+#endif /* UNIV_SYNC_DEBUG */
+
+	doublewrite = page + TRX_SYS_DOUBLEWRITE;
+
+	mlog_write_ulint(doublewrite + TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED,
+				TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED_N,
+				MLOG_4BYTES, &mtr);
+	mtr_commit(&mtr);
+		
+	/* Flush the modified pages to disk and make a checkpoint */
+	log_make_checkpoint_at(ut_dulint_max, TRUE);
+
+	trx_sys_multiple_tablespace_format = TRUE;
+}
+
+/********************************************************************
+Creates the doublewrite buffer to a new InnoDB installation. The header of the
 doublewrite buffer is placed on the trx system header page. */
 
 void
@@ -179,31 +196,6 @@ start_again:
 	
 	if (mach_read_from_4(doublewrite + TRX_SYS_DOUBLEWRITE_MAGIC)
 					== TRX_SYS_DOUBLEWRITE_MAGIC_N) {
-		/* Do NOT merge to the 4.1 code base! */
-        	if (mach_read_from_4(doublewrite
-				+ TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED)
-            		== TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED_N) {
-			
-			fprintf(stderr,
-"InnoDB: You are downgrading from the multiple tablespace format of\n"
-"InnoDB: >= MySQL-4.1.1 back to the old format of MySQL-4.0.\n"
-"InnoDB:\n"
-"InnoDB: MAKE SURE that the mysqld server is idle, and purge and the insert\n"
-"InnoDB: buffer merge have run to completion under >= 4.1.1 before trying to\n"
-"InnoDB: downgrade! You can determine this by looking at SHOW INNODB STATUS:\n"
-"InnoDB: if the Main thread is 'waiting for server activity' and SHOW\n"
-"InnoDB: PROCESSLIST shows that you have ended all other connections\n"
-"InnoDB: to mysqld, then purge and the insert buffer merge have been\n"
-"InnoDB: completed.\n"
-"InnoDB: If you have already created tables in >= 4.1.1, then those\n"
-"InnoDB: tables cannot be used under 4.0.\n"
-"InnoDB: NOTE THAT this downgrade procedure has not been properly tested!\n"
-"InnoDB: The safe way to downgrade is to dump all InnoDB tables and recreate\n"
-"InnoDB: the whole tablespace.\n");
-
-			trx_sys_downgrading_from_4_1_1 = TRUE;
-		}
-
 		/* The doublewrite buffer has already been created:
 		just read in some numbers */
 
@@ -313,10 +305,15 @@ start_again:
 		}
 
 		mlog_write_ulint(doublewrite + TRX_SYS_DOUBLEWRITE_MAGIC,
-				TRX_SYS_DOUBLEWRITE_MAGIC_N, MLOG_4BYTES, &mtr);
+			TRX_SYS_DOUBLEWRITE_MAGIC_N, MLOG_4BYTES, &mtr);
 		mlog_write_ulint(doublewrite + TRX_SYS_DOUBLEWRITE_MAGIC
 						+ TRX_SYS_DOUBLEWRITE_REPEAT,
-				TRX_SYS_DOUBLEWRITE_MAGIC_N, MLOG_4BYTES, &mtr);
+			TRX_SYS_DOUBLEWRITE_MAGIC_N, MLOG_4BYTES, &mtr);
+
+		mlog_write_ulint(doublewrite
+				+ TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED,
+				TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED_N,
+				MLOG_4BYTES, &mtr);
 		mtr_commit(&mtr);
 		
 		/* Flush the modified pages to disk and make a checkpoint */
@@ -324,23 +321,31 @@ start_again:
 
 		fprintf(stderr, "InnoDB: Doublewrite buffer created\n");
 
+		trx_sys_multiple_tablespace_format = TRUE;
+
 		goto start_again;
 	}
 }
 
 /********************************************************************
-At a database startup uses a possible doublewrite buffer to restore
+At a database startup initializes the doublewrite buffer memory structure if
+we already have a doublewrite buffer created in the data files. If we are
+upgrading to an InnoDB version which supports multiple tablespaces, then this
+function performs the necessary update operations. If we are in a crash
+recovery, this function uses a possible doublewrite buffer to restore
 half-written pages in the data files. */
 
 void
-trx_sys_doublewrite_restore_corrupt_pages(void)
-/*===========================================*/
+trx_sys_doublewrite_init_or_restore_pages(
+/*======================================*/
+	ibool	restore_corrupt_pages)
 {
 	byte*	buf;
 	byte*	read_buf;
 	byte*	unaligned_read_buf;
 	ulint	block1;
 	ulint	block2;
+	ulint	source_page_no;
 	byte*	page;
 	byte*	doublewrite;
 	ulint	space_id;
@@ -352,43 +357,17 @@ trx_sys_doublewrite_restore_corrupt_pages(void)
 	unaligned_read_buf = ut_malloc(2 * UNIV_PAGE_SIZE);
 	read_buf = ut_align(unaligned_read_buf, UNIV_PAGE_SIZE);	
 
-	/* Read the trx sys header to check if we are using the
-	doublewrite buffer */
+	/* Read the trx sys header to check if we are using the doublewrite
+	buffer */
 
 	fil_io(OS_FILE_READ, TRUE, TRX_SYS_SPACE, TRX_SYS_PAGE_NO, 0,
 					UNIV_PAGE_SIZE, read_buf, NULL);
-
 	doublewrite = read_buf + TRX_SYS_DOUBLEWRITE;
 
 	if (mach_read_from_4(doublewrite + TRX_SYS_DOUBLEWRITE_MAGIC)
 					== TRX_SYS_DOUBLEWRITE_MAGIC_N) {
 		/* The doublewrite buffer has been created */
 		
-		/* Do NOT merge to the 4.1 code base! */
-        	if (mach_read_from_4(doublewrite
-				+ TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED)
-            		== TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED_N) {
-			
-			fprintf(stderr,
-"InnoDB: You are downgrading from the multiple tablespace format of\n"
-"InnoDB: >= MySQL-4.1.1 back to the old format of MySQL-4.0.\n"
-"InnoDB:\n"
-"InnoDB: MAKE SURE that the mysqld server is idle, and purge and the insert\n"
-"InnoDB: buffer merge have run to completion under >= 4.1.1 before trying to\n"
-"InnoDB: downgrade! You can determine this by looking at SHOW INNODB STATUS:\n"
-"InnoDB: if the Main thread is 'waiting for server activity' and SHOW\n"
-"InnoDB: PROCESSLIST shows that you have ended all other connections\n"
-"InnoDB: to mysqld, then purge and the insert buffer merge have been\n"
-"InnoDB: completed.\n"
-"InnoDB: If you have already created tables in >= 4.1.1, then those\n"
-"InnoDB: tables cannot be used under 4.0.\n"
-"InnoDB: NOTE THAT this downgrade procedure has not been properly tested!\n"
-"InnoDB: The safe way to downgrade is to dump all InnoDB tables and recreate\n"
-"InnoDB: the whole tablespace.\n");
-
-			trx_sys_downgrading_from_4_1_1 = TRUE;
-		}
-
 		trx_doublewrite_init(doublewrite);
 
 		block1 = trx_doublewrite->block1;
@@ -397,6 +376,23 @@ trx_sys_doublewrite_restore_corrupt_pages(void)
 		buf = trx_doublewrite->write_buf;
 	} else {
 		goto leave_func;
+	}
+
+	if (mach_read_from_4(doublewrite + TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED)
+	    != TRX_SYS_DOUBLEWRITE_SPACE_ID_STORED_N) {
+		        
+	        /* We are upgrading from a version < 4.1.x to a version where
+		multiple tablespaces are supported. We must reset the space id
+		field in the pages in the doublewrite buffer because starting
+		from this version the space id is stored to
+		FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID. */
+
+		trx_doublewrite_must_reset_space_ids = TRUE;
+
+		fprintf(stderr,
+"InnoDB: Resetting space id's in the doublewrite buffer\n");
+	} else {
+		trx_sys_multiple_tablespace_format = TRUE;
 	}
 
 	/* Read the pages from the doublewrite buffer to memory */
@@ -416,13 +412,46 @@ trx_sys_doublewrite_restore_corrupt_pages(void)
 	for (i = 0; i < TRX_SYS_DOUBLEWRITE_BLOCK_SIZE * 2; i++) {
 		
 		page_no = mach_read_from_4(page + FIL_PAGE_OFFSET);
-		space_id = 0;
 
-		if (!fil_check_adress_in_tablespace(space_id, page_no)) {
+		if (trx_doublewrite_must_reset_space_ids) {
+
+		        space_id = 0;
+			mach_write_to_4(page
+					+ FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, 0);
+			/* We do not need to calculate new checksums for the
+			pages because the field .._SPACE_ID does not affect
+			them. Write the page back to where we read it from. */
+
+			if (i < TRX_SYS_DOUBLEWRITE_BLOCK_SIZE) {
+			        source_page_no = block1 + i;
+			} else {
+				source_page_no = block2
+					+ i - TRX_SYS_DOUBLEWRITE_BLOCK_SIZE;
+			}
+
+			fil_io(OS_FILE_WRITE, TRUE, 0, source_page_no, 0,
+					      UNIV_PAGE_SIZE, page, NULL);
+			/* printf("Resetting space id in page %lu\n",
+						   source_page_no); */
+		} else {
+		        space_id = mach_read_from_4(
+				page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
+		}
+
+		if (!restore_corrupt_pages) {
+			/* The database was shut down gracefully: no need to
+			restore pages */
+
+		} else if (!fil_tablespace_exists_in_mem(space_id)) {
+			/* Maybe we have dropped the single-table tablespace
+			and this page once belonged to it: do nothing */
+
+		} else if (!fil_check_adress_in_tablespace(space_id,
+								page_no)) {
 		  	fprintf(stderr,
-	"InnoDB: Warning: an inconsistent page in the doublewrite buffer\n"
-	"InnoDB: space id %lu page number %lu, %lu'th page in dblwr buf.\n",
-				space_id, page_no, i);
+"InnoDB: Warning: a page in the doublewrite buffer is not within space\n"
+"InnoDB: bounds; space id %lu page number %lu, page %lu in doublewrite buf.\n",
+				(ulong) space_id, (ulong) page_no, (ulong) i);
 		
 		} else if (space_id == TRX_SYS_SPACE
 		    && (  (page_no >= block1
@@ -445,7 +474,7 @@ trx_sys_doublewrite_restore_corrupt_pages(void)
 
 		  		fprintf(stderr,
 		"InnoDB: Warning: database page corruption or a failed\n"
-		"InnoDB: file read of page %lu.\n", page_no);
+		"InnoDB: file read of page %lu.\n", (ulong) page_no);
 		  		fprintf(stderr,
 		"InnoDB: Trying to recover it from the doublewrite buffer.\n");
 				
@@ -549,7 +578,7 @@ replication has proceeded. */
 void
 trx_sys_update_mysql_binlog_offset(
 /*===============================*/
-	char*		file_name,/* in: MySQL log file name */
+	const char*	file_name,/* in: MySQL log file name */
 	ib_longlong	offset,	/* in: position in that log file */
 	ulint		field,	/* in: offset of the MySQL log info field in
 				the trx sys header */
@@ -576,10 +605,10 @@ trx_sys_update_mysql_binlog_offset(
 				MLOG_4BYTES, mtr);
 	}
 
-	if (0 != strcmp(sys_header + field + TRX_SYS_MYSQL_LOG_NAME, file_name)) {
+	if (0 != strcmp((char*) (sys_header + field + TRX_SYS_MYSQL_LOG_NAME), file_name)) {
 
-		mlog_write_string((byte*) (sys_header + field
-					+ TRX_SYS_MYSQL_LOG_NAME),
+		mlog_write_string(sys_header + field
+					+ TRX_SYS_MYSQL_LOG_NAME,
 			(byte*) file_name, 1 + ut_strlen(file_name), mtr);
 	}
 
@@ -595,11 +624,10 @@ trx_sys_update_mysql_binlog_offset(
 
 	mlog_write_ulint(sys_header + field
 					+ TRX_SYS_MYSQL_LOG_OFFSET_LOW,
-				(ulint)(offset & 0xFFFFFFFF),
-				MLOG_4BYTES, mtr);				
+				(ulint)(offset & 0xFFFFFFFFUL),
+				MLOG_4BYTES, mtr);
 }
 
-#ifdef UNIV_HOTBACKUP
 /*********************************************************************
 Prints to stderr the MySQL binlog info in the system header if the
 magic number shows it valid. */
@@ -620,18 +648,17 @@ trx_sys_print_mysql_binlog_offset_from_page(
 
 		fprintf(stderr,
 	"ibbackup: Last MySQL binlog file position %lu %lu, file name %s\n",
-		mach_read_from_4(sys_header + TRX_SYS_MYSQL_LOG_INFO
+		(ulong) mach_read_from_4(sys_header + TRX_SYS_MYSQL_LOG_INFO
 					+ TRX_SYS_MYSQL_LOG_OFFSET_HIGH),
-		mach_read_from_4(sys_header + TRX_SYS_MYSQL_LOG_INFO
+		(ulong) mach_read_from_4(sys_header + TRX_SYS_MYSQL_LOG_INFO
 					+ TRX_SYS_MYSQL_LOG_OFFSET_LOW),
 		sys_header + TRX_SYS_MYSQL_LOG_INFO + TRX_SYS_MYSQL_LOG_NAME);
 	}
 }
-#endif /* UNIV_HOTBACKUP */
 
 /*********************************************************************
-Prints to stderr the MySQL binlog offset info in the trx system header if
-the magic number shows it valid. */
+Stores the MySQL binlog offset info in the trx system header if
+the magic number shows it valid, and print the info to stderr */
 
 void
 trx_sys_print_mysql_binlog_offset(void)
@@ -639,7 +666,8 @@ trx_sys_print_mysql_binlog_offset(void)
 {
 	trx_sysf_t*	sys_header;
 	mtr_t		mtr;
-	
+	ulong           trx_sys_mysql_bin_log_pos_high, trx_sys_mysql_bin_log_pos_low;
+
 	mtr_start(&mtr);
 
 	sys_header = trx_sysf_get(&mtr);
@@ -653,14 +681,22 @@ trx_sys_print_mysql_binlog_offset(void)
 		return;
 	}
 
-	fprintf(stderr,
-	"InnoDB: Last MySQL binlog file position %lu %lu, file name %s\n",
-		mach_read_from_4(sys_header + TRX_SYS_MYSQL_LOG_INFO
-					+ TRX_SYS_MYSQL_LOG_OFFSET_HIGH),
-		mach_read_from_4(sys_header + TRX_SYS_MYSQL_LOG_INFO
-					+ TRX_SYS_MYSQL_LOG_OFFSET_LOW),
-		sys_header + TRX_SYS_MYSQL_LOG_INFO + TRX_SYS_MYSQL_LOG_NAME);
+        trx_sys_mysql_bin_log_pos_high = mach_read_from_4(sys_header + TRX_SYS_MYSQL_LOG_INFO
+                                                    + TRX_SYS_MYSQL_LOG_OFFSET_HIGH);
+        trx_sys_mysql_bin_log_pos_low  = mach_read_from_4(sys_header + TRX_SYS_MYSQL_LOG_INFO
+                                                    + TRX_SYS_MYSQL_LOG_OFFSET_LOW);
 
+        trx_sys_mysql_bin_log_pos      =  (((ib_longlong)trx_sys_mysql_bin_log_pos_high) << 32) +
+          (ib_longlong)trx_sys_mysql_bin_log_pos_low;
+
+        ut_memcpy(trx_sys_mysql_bin_log_name, sys_header + TRX_SYS_MYSQL_LOG_INFO +
+                  TRX_SYS_MYSQL_LOG_NAME, TRX_SYS_MYSQL_LOG_NAME_LEN);
+
+        fprintf(stderr,
+                "InnoDB: Last MySQL binlog file position %lu %lu, file name %s\n",
+                trx_sys_mysql_bin_log_pos_high, trx_sys_mysql_bin_log_pos_low,
+                trx_sys_mysql_bin_log_name);
+        
 	mtr_commit(&mtr);
 }
 
@@ -691,9 +727,9 @@ trx_sys_print_mysql_master_log_pos(void)
 	fprintf(stderr,
 "InnoDB: In a MySQL replication slave the last master binlog file\n"
 "InnoDB: position %lu %lu, file name %s\n",
-		mach_read_from_4(sys_header + TRX_SYS_MYSQL_MASTER_LOG_INFO
+		(ulong) mach_read_from_4(sys_header + TRX_SYS_MYSQL_MASTER_LOG_INFO
 					+ TRX_SYS_MYSQL_LOG_OFFSET_HIGH),
-		mach_read_from_4(sys_header + TRX_SYS_MYSQL_MASTER_LOG_INFO
+		(ulong) mach_read_from_4(sys_header + TRX_SYS_MYSQL_MASTER_LOG_INFO
 					+ TRX_SYS_MYSQL_LOG_OFFSET_LOW),
 		sys_header + TRX_SYS_MYSQL_MASTER_LOG_INFO
 						+ TRX_SYS_MYSQL_LOG_NAME);
@@ -812,7 +848,7 @@ trx_sys_init_at_db_start(void)
 {
 	trx_sysf_t*	sys_header;
 	ib_longlong	rows_to_undo	= 0;
-	char*		unit		= (char*)"";
+	const char*	unit		= "";
 	trx_t*		trx;
 	mtr_t		mtr;
 
@@ -861,19 +897,19 @@ trx_sys_init_at_db_start(void)
 		}
 	
 		if (rows_to_undo > 1000000000) {
-			unit = (char*)"M";
+			unit = "M";
 			rows_to_undo = rows_to_undo / 1000000;
 		}
 
 		fprintf(stderr,
 "InnoDB: %lu transaction(s) which must be rolled back or cleaned up\n"
 "InnoDB: in total %lu%s row operations to undo\n",
-				UT_LIST_GET_LEN(trx_sys->trx_list),
-				(ulint)rows_to_undo, unit);
+				(ulong) UT_LIST_GET_LEN(trx_sys->trx_list),
+				(ulong) rows_to_undo, unit);
 
 		fprintf(stderr, "InnoDB: Trx id counter is %lu %lu\n", 
-			ut_dulint_get_high(trx_sys->max_trx_id),
-			ut_dulint_get_low(trx_sys->max_trx_id));
+			(ulong) ut_dulint_get_high(trx_sys->max_trx_id),
+			(ulong) ut_dulint_get_low(trx_sys->max_trx_id));
 	}
 
 	UT_LIST_INIT(trx_sys->view_list);

@@ -18,9 +18,7 @@ typedef struct log_struct	log_t;
 typedef struct log_group_struct	log_group_t;
 
 extern	ibool	log_do_write;
-#ifdef UNIV_LOG_DEBUG
 extern 	ibool	log_debug_writes;
-#endif /* UNIV_LOG_DEBUG */
 
 /* Wait modes for log_write_up_to */
 #define LOG_NO_WAIT		91
@@ -114,20 +112,6 @@ dulint
 log_get_lsn(void);
 /*=============*/
 			/* out: current lsn */
-/****************************************************************************
-Gets the online backup lsn. */
-UNIV_INLINE
-dulint
-log_get_online_backup_lsn_low(void);
-/*===============================*/
-/****************************************************************************
-Gets the online backup state. */
-UNIV_INLINE
-ibool
-log_get_online_backup_state_low(void);
-/*=================================*/
-				/* out: online backup state, the caller must
-				own the log_sys mutex */
 /**********************************************************
 Initializes the log. */
 
@@ -326,20 +310,6 @@ log_archived_file_name_gen(
 	char*	buf,	/* in: buffer where to write */
 	ulint	id,	/* in: group id */
 	ulint	file_no);/* in: file number */
-/**********************************************************
-Switches the database to the online backup state. */
-
-ulint
-log_switch_backup_state_on(void);
-/*============================*/
-			/* out: DB_SUCCESS or DB_ERROR */
-/**********************************************************
-Switches the online backup state off. */
-
-ulint
-log_switch_backup_state_off(void);
-/*=============================*/
-			/* out: DB_SUCCESS or DB_ERROR */
 /************************************************************************
 Checks that there is enough free space in the log to start a new query step.
 Flushes the log buffer or makes a new checkpoint if necessary. NOTE: this
@@ -519,9 +489,9 @@ Peeks the current lsn. */
 ibool
 log_peek_lsn(
 /*=========*/
-			/* out: TRUE if success, FALSE if could not get the
-			log system mutex */
-	dulint*	lsn);	/* out: if returns TRUE, current lsn is here */
+                       /* out: TRUE if success, FALSE if could not get the
+                       log system mutex */
+       dulint* lsn);   /* out: if returns TRUE, current lsn is here */
 /**************************************************************************
 Refreshes the statistics used to print per-second averages. */
 
@@ -600,12 +570,18 @@ extern log_t*	log_sys;
 #define LOG_CHECKPOINT_CHECKSUM_1 	LOG_CHECKPOINT_ARRAY_END
 #define LOG_CHECKPOINT_CHECKSUM_2 	(4 + LOG_CHECKPOINT_ARRAY_END)
 #define LOG_CHECKPOINT_FSP_FREE_LIMIT	(8 + LOG_CHECKPOINT_ARRAY_END)
-					/* current fsp free limit in the
-					tablespace, in units of one megabyte */
+					/* current fsp free limit in
+					tablespace 0, in units of one
+					megabyte; this information is only used
+					by ibbackup to decide if it can
+					truncate unused ends of
+					non-auto-extending data files in space
+					0 */
 #define LOG_CHECKPOINT_FSP_MAGIC_N	(12 + LOG_CHECKPOINT_ARRAY_END)
 					/* this magic number tells if the
 					checkpoint contains the above field:
-					the field was added to InnoDB-3.23.50 */
+					the field was added to
+					InnoDB-3.23.50 */
 #define LOG_CHECKPOINT_SIZE		(16 + LOG_CHECKPOINT_ARRAY_END)
 
 #define LOG_CHECKPOINT_FSP_MAGIC_N_VAL	1441231243
@@ -713,13 +689,11 @@ struct log_struct{
 	ulint		max_buf_free;	/* recommended maximum value of
 					buf_free, after which the buffer is
 					flushed */
-#ifdef UNIV_LOG_DEBUG
 	ulint		old_buf_free;	/* value of buf free when log was
 					last time opened; only in the debug
 					version */
 	dulint		old_lsn;	/* value of lsn when log was last time
 					opened; only in the debug version */
-#endif /* UNIV_LOG_DEBUG */
 	ibool		check_flush_or_checkpoint;
 					/* this is set to TRUE when there may
 					be need to flush the log buffer, or
@@ -796,11 +770,11 @@ struct log_struct{
 					called */
 
 	/* Fields involved in checkpoints */
-	ulint		log_group_capacity; /* capacity of the log group; if
-					the checkpoint age exceeds this, it is
-					a serious error because it is possible
-					we will then overwrite log and spoil
-					crash recovery */
+        ulint           log_group_capacity; /* capacity of the log group; if
+                                        the checkpoint age exceeds this, it is
+                                        a serious error because it is possible
+                                        we will then overwrite log and spoil
+                                        crash recovery */
 	ulint		max_modified_age_async;
 					/* when this recommended value for lsn
 					- buf_pool_get_oldest_modification()
@@ -842,7 +816,8 @@ struct log_struct{
 	/* Fields involved in archiving */
 	ulint		archiving_state;/* LOG_ARCH_ON, LOG_ARCH_STOPPING
 					LOG_ARCH_STOPPED, LOG_ARCH_OFF */
-	dulint		archived_lsn;	/* archiving has advanced to this lsn */
+	dulint		archived_lsn;	/* archiving has advanced to this
+					lsn */
 	ulint		max_archived_lsn_age_async;
 					/* recommended maximum age of
 					archived_lsn, before we start
@@ -871,13 +846,6 @@ struct log_struct{
 	os_event_t	archiving_on;	/* if archiving has been stopped,
 					a thread can wait for this event to
 					become signaled */
-	/* Fields involved in online backups */
-	ibool		online_backup_state;
-					/* TRUE if the database is in the
-					online backup state */
-	dulint		online_backup_lsn;
-					/* lsn when the state was changed to
-					the online backup state */
 };
 
 #define LOG_ARCH_ON		71

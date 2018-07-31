@@ -277,7 +277,7 @@ trx_purge_add_update_undo_to_history(
 
 		if (undo->id >= TRX_RSEG_N_SLOTS) {
 			fprintf(stderr,
-			"InnoDB: Error: undo->id is %lu\n", undo->id);
+			"InnoDB: Error: undo->id is %lu\n", (ulong) undo->id);
 			ut_error;
 		}
 
@@ -289,12 +289,15 @@ trx_purge_add_update_undo_to_history(
 			flst_get_len(seg_header + TRX_UNDO_PAGE_LIST, mtr));
 
 		mlog_write_ulint(rseg_header + TRX_RSEG_HISTORY_SIZE,
-				hist_size + undo->size, MLOG_4BYTES, mtr);	
+				hist_size + undo->size, MLOG_4BYTES, mtr);
 	}
 
 	/* Add the log as the first in the history list */
 	flst_add_first(rseg_header + TRX_RSEG_HISTORY,
 				undo_header + TRX_UNDO_HISTORY_NODE, mtr);
+	mutex_enter(&kernel_mutex);
+	trx_sys->rseg_history_len++;
+	mutex_exit(&kernel_mutex);
 
 	/* Write the trx number to the undo log header */
 	mlog_write_dulint(undo_header + TRX_UNDO_TRX_NO, trx->no, mtr);
@@ -386,6 +389,12 @@ loop:
 
 	flst_cut_end(rseg_hdr + TRX_RSEG_HISTORY,
 			log_hdr + TRX_UNDO_HISTORY_NODE, n_removed_logs, &mtr);
+
+	mutex_enter(&kernel_mutex);
+	ut_ad(trx_sys->rseg_history_len >= n_removed_logs);
+	trx_sys->rseg_history_len -= n_removed_logs;
+	mutex_exit(&kernel_mutex);
+
 	freed = FALSE;
 
 	while (!freed) {
@@ -470,6 +479,11 @@ loop:
 	}
 
 	if (cmp >= 0) {
+		mutex_enter(&kernel_mutex);
+		ut_a(trx_sys->rseg_history_len >= n_removed_logs);
+		trx_sys->rseg_history_len -= n_removed_logs;
+		mutex_exit(&kernel_mutex);
+
 		flst_truncate_end(rseg_hdr + TRX_RSEG_HISTORY,
 	    			log_hdr + TRX_UNDO_HISTORY_NODE,
 				n_removed_logs, &mtr);
@@ -631,6 +645,27 @@ trx_purge_rseg_get_next_history_log(
 	
 		mutex_exit(&(rseg->mutex));
 		mtr_commit(&mtr);
+
+		mutex_enter(&kernel_mutex);
+		
+		/* Add debug code to track history list corruption reported
+		on the MySQL mailing list on Nov 9, 2004. The fut0lst.c
+		file-based list was corrupt. The prev node pointer was
+		FIL_NULL, even though the list length was over 8 million nodes!
+		We assume that purge truncates the history list in moderate
+		size pieces, and if we here reach the head of the list, the
+		list cannot be longer than 20 000 undo logs now. */
+	
+		if (trx_sys->rseg_history_len > 20000) {
+			ut_print_timestamp(stderr);
+			fprintf(stderr,
+"  InnoDB: Warning: purge reached the head of the history list,\n"
+"InnoDB: but its length is still reported as %lu! Make a detailed bug\n"
+"InnoDB: report, and post it to bugs.mysql.com\n",
+					(ulong)trx_sys->rseg_history_len);
+		}
+
+		mutex_exit(&kernel_mutex);
 
 		return;
 	}
@@ -920,7 +955,7 @@ trx_purge_fetch_next_rec(
 			if (srv_print_thread_releases) {
 				fprintf(stderr,
 	"Purge: No logs left in the history list; pages handled %lu\n",
-					purge_sys->n_pages_handled);
+					(ulong) purge_sys->n_pages_handled);
 			}
 
 			mutex_exit(&(purge_sys->mutex));
@@ -1031,6 +1066,30 @@ trx_purge(void)
 	purge_sys->view = NULL;
 	mem_heap_empty(purge_sys->heap);
 
+	/* Determine how much data manipulation language (DML) statements
+	need to be delayed in order to reduce the lagging of the purge
+	thread. */
+	srv_dml_needed_delay = 0; /* in microseconds; default: no delay */
+
+	/* If we cannot advance the 'purge view' because of an old
+	'consistent read view', then the DML statements cannot be delayed.
+	Also, srv_max_purge_lag <= 0 means 'infinity'. */
+	if (srv_max_purge_lag > 0
+			&& !UT_LIST_GET_LAST(trx_sys->view_list)) {
+		float	ratio = (float) trx_sys->rseg_history_len
+				/ srv_max_purge_lag;
+		if (ratio > ULINT_MAX / 10000) {
+			/* Avoid overflow: maximum delay is 4295 seconds */
+			srv_dml_needed_delay = ULINT_MAX;
+		} else if (ratio > 1) {
+			/* If the history list length exceeds the
+			innodb_max_purge_lag, the
+			data manipulation statements are delayed
+			by at least 5000 microseconds. */
+			srv_dml_needed_delay = (ulint) ((ratio - .5) * 10000);
+		}
+	}
+
 	purge_sys->view = read_view_oldest_copy_or_open_new(NULL,
 							purge_sys->heap);
 	mutex_exit(&kernel_mutex);	
@@ -1072,7 +1131,8 @@ trx_purge(void)
 	if (srv_print_thread_releases) {
 
 		fprintf(stderr,
-		"Purge ends; pages handled %lu\n", purge_sys->n_pages_handled);
+		"Purge ends; pages handled %lu\n",
+		(ulong) purge_sys->n_pages_handled);
 	}
 
 	return(purge_sys->n_pages_handled - old_pages_handled);
@@ -1089,16 +1149,16 @@ trx_purge_sys_print(void)
 	read_view_print(purge_sys->view);
 
 	fprintf(stderr, "InnoDB: Purge trx n:o %lu %lu, undo n_o %lu %lu\n",
-			ut_dulint_get_high(purge_sys->purge_trx_no),
-			ut_dulint_get_low(purge_sys->purge_trx_no),
-			ut_dulint_get_high(purge_sys->purge_undo_no),
-			ut_dulint_get_low(purge_sys->purge_undo_no));
+			(ulong) ut_dulint_get_high(purge_sys->purge_trx_no),
+			(ulong) ut_dulint_get_low(purge_sys->purge_trx_no),
+			(ulong) ut_dulint_get_high(purge_sys->purge_undo_no),
+			(ulong) ut_dulint_get_low(purge_sys->purge_undo_no));
 	fprintf(stderr,
 	"InnoDB: Purge next stored %lu, page_no %lu, offset %lu,\n"
 	"InnoDB: Purge hdr_page_no %lu, hdr_offset %lu\n",
-		purge_sys->next_stored,
-		purge_sys->page_no,
-		purge_sys->offset,
-		purge_sys->hdr_page_no,
-		purge_sys->hdr_offset);
+		(ulong) purge_sys->next_stored,
+		(ulong) purge_sys->page_no,
+		(ulong) purge_sys->offset,
+		(ulong) purge_sys->hdr_page_no,
+		(ulong) purge_sys->hdr_offset);
 }
