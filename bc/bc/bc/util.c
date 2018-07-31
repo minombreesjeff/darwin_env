@@ -28,6 +28,11 @@
        
 *************************************************************************/
 
+#ifdef __APPLE__
+#include <get_compat.h>
+#else  /* !__APPLE__ */
+#define COMPAT_MODE(a,b) (1)
+#endif /* __APPLE__ */
 
 #include "bcdefs.h"
 #ifndef VARARGS
@@ -346,7 +351,7 @@ out_schar (ch)
     }
   else
     {
-      if (!std_only)
+      if (!std_only && !COMPAT_MODE("bin/bc", "Unix2003"))
 	{
 	  out_col++;
 	  if (out_col == line_size-1)
