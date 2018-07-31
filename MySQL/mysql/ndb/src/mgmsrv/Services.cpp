@@ -221,21 +221,6 @@ ParserRow<MgmApiSession> commands[] = {
     MGM_ARG("level", Int, Mandatory, "Severety level"),
     MGM_ARG("enable", Int, Mandatory, "1=disable, 0=enable, -1=toggle"),
 
-  MGM_CMD("config lock", &MgmApiSession::configLock, ""),
-
-  MGM_CMD("config unlock", &MgmApiSession::configUnlock, ""),
-    MGM_ARG("commit", Int, Mandatory, "Commit changes"),
-
-  MGM_CMD("config change", &MgmApiSession::configChange, ""),
-    MGM_ARG("section", String, Mandatory, "Section"),
-    MGM_ARG("parameter", String, Mandatory, "Parameter"),
-    MGM_ARG("value", String, Mandatory, "Value"),
-
-  MGM_CMD("config lock", &MgmApiSession::configLock, ""),
-
-  MGM_CMD("config unlock", &MgmApiSession::configUnlock, ""),
-    MGM_ARG("commit", Int, Mandatory, "Commit changes"),
-
   MGM_CMD("set parameter", &MgmApiSession::setParameter, ""),
     MGM_ARG("node", String, Mandatory, "Node"),
     MGM_ARG("parameter", String, Mandatory, "Parameter"),
@@ -343,8 +328,6 @@ MgmApiSession::getConfig_old(Parser_t::Context &ctx) {
 }
 #endif /* MGM_GET_CONFIG_BACKWARDS_COMPAT */
 
-inline void require(bool b){ if(!b) abort(); }
-
 void
 MgmApiSession::getConfig(Parser_t::Context &ctx, 
 			 const class Properties &args) {
@@ -444,9 +427,9 @@ MgmApiSession::get_nodeid(Parser_t::Context &,
     return;
   }
 
-  struct sockaddr addr;
+  struct sockaddr_in addr;
   SOCKET_SIZE_TYPE addrlen= sizeof(addr);
-  int r = getpeername(m_socket, &addr, &addrlen);
+  int r = getpeername(m_socket, (struct sockaddr*)&addr, &addrlen);
   if (r != 0 ) {
     m_output->println(cmd);
     m_output->println("result: getpeername(%d) failed, err= %d", m_socket, r);
@@ -458,7 +441,7 @@ MgmApiSession::get_nodeid(Parser_t::Context &,
   if(tmp == 0 || !m_allocated_resources->is_reserved(tmp)){
     BaseString error_string;
     if (!m_mgmsrv.alloc_node_id(&tmp, (enum ndb_mgm_node_type)nodetype, 
-				&addr, &addrlen, error_string)){
+				(struct sockaddr*)&addr, &addrlen, error_string)){
       const char *alias;
       const char *str;
       alias= ndb_mgm_get_node_type_alias_string((enum ndb_mgm_node_type)
@@ -780,9 +763,8 @@ MgmApiSession::setClusterLogLevel(Parser<MgmApiSession>::Context &,
   m_mgmsrv.m_event_listner.unlock();
 
   {
-    LogLevel ll;
-    ll.setLogLevel(category,level);
-    m_mgmsrv.m_event_listner.update_max_log_level(ll);
+    LogLevel tmp;
+    m_mgmsrv.m_event_listner.update_max_log_level(tmp);
   }
 
   m_output->println(reply);
@@ -920,8 +902,10 @@ printNodeStatus(OutputStream *output,
       nodeGroup = 0,
       connectCount = 0;
     bool system;
-    mgmsrv.status(nodeId, &status, &version, &startPhase, 
-		  &system, &dynamicId, &nodeGroup, &connectCount);
+    const char *address= NULL;
+    mgmsrv.status(nodeId, &status, &version, &startPhase,
+		  &system, &dynamicId, &nodeGroup, &connectCount,
+		  &address);
     output->println("node.%d.type: %s",
 		      nodeId,
 		      ndb_mgm_get_node_type_string(type));
@@ -933,7 +917,7 @@ printNodeStatus(OutputStream *output,
     output->println("node.%d.dynamic_id: %d", nodeId, dynamicId);
     output->println("node.%d.node_group: %d", nodeId, nodeGroup);
     output->println("node.%d.connect_count: %d", nodeId, connectCount);
-    output->println("node.%d.address: %s", nodeId, mgmsrv.get_connect_address(nodeId));
+    output->println("node.%d.address: %s", nodeId, address ? address : "");
   }
 
 }
@@ -1202,42 +1186,6 @@ MgmApiSession::setLogFilter(Parser_t::Context &ctx,
   m_output->println("");
 }
 
-void
-MgmApiSession::configLock(Parser_t::Context &,
-			   Properties const &) {
-  int ret = m_mgmsrv.lockConf();
-  m_output->println("config lock reply");
-  m_output->println("result: %d", ret);
-  m_output->println("");
-}
-
-void
-MgmApiSession::configUnlock(Parser_t::Context &,
-			   Properties const &args) {
-  Uint32 commit;
-  args.get("commit", &commit);
-  int ret = m_mgmsrv.unlockConf(commit == 1);
-  m_output->println("config unlock reply");
-  m_output->println("result: %d", ret);
-  m_output->println("");
-}
-
-void
-MgmApiSession::configChange(Parser_t::Context &,
-			    Properties const &args) {
-  BaseString section, param, value;
-  args.get("section", section);
-  args.get("parameter", param);
-  args.get("value", value);
-
-  int ret = m_mgmsrv.changeConfig(section.c_str(),
-				  param.c_str(),
-				  value.c_str());
-  m_output->println("config change reply");
-  m_output->println("result: %d", ret);
-  m_output->println("");
-}
-
 static NdbOut&
 operator<<(NdbOut& out, const LogLevel & ll)
 {
@@ -1299,21 +1247,23 @@ Ndb_mgmd_event_service::log(int eventType, const Uint32* theData, NodeId nodeId)
 void
 Ndb_mgmd_event_service::update_max_log_level(const LogLevel &log_level)
 {
-  LogLevel tmp= m_logLevel;
-  tmp.set_max(log_level);
+  LogLevel tmp = log_level;
+  m_clients.lock();
+  for(int i = m_clients.size() - 1; i >= 0; i--)
+    tmp.set_max(m_clients[i].m_logLevel);
+  m_clients.unlock();
   update_log_level(tmp);
 }
 
 void
 Ndb_mgmd_event_service::update_log_level(const LogLevel &tmp)
 {
-  if(!(tmp == m_logLevel)){
-    m_logLevel = tmp;
-    EventSubscribeReq req;
-    req = tmp;
-    req.blockRef = 0;
-    m_mgmsrv->m_log_level_requests.push_back(req);
-  }
+  m_logLevel = tmp;
+  EventSubscribeReq req;
+  req = tmp;
+  // send update to all nodes
+  req.blockRef = 0;
+  m_mgmsrv->m_log_level_requests.push_back(req);
 }
 
 void

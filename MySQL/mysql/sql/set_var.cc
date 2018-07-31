@@ -58,6 +58,7 @@
 #include <my_getopt.h>
 #include <thr_alarm.h>
 #include <myisam.h>
+
 #ifdef HAVE_BERKELEY_DB
 #include "ha_berkeley.h"
 #endif
@@ -118,6 +119,8 @@ static KEY_CACHE *create_key_cache(const char *name, uint length);
 void fix_sql_mode_var(THD *thd, enum_var_type type);
 static byte *get_error_count(THD *thd);
 static byte *get_warning_count(THD *thd);
+static byte *get_prepared_stmt_count(THD *thd);
+static byte *get_have_innodb(THD *thd);
 
 /*
   Variable definition list
@@ -238,6 +241,10 @@ sys_var_thd_ha_rows	sys_sql_max_join_size("sql_max_join_size",
 					      &SV::max_join_size,
 					      fix_max_join_size);
 #endif
+static sys_var_long_ptr_global
+sys_max_prepared_stmt_count("max_prepared_stmt_count",
+                            &max_prepared_stmt_count,
+                            &LOCK_prepared_stmt_count);
 sys_var_long_ptr	sys_max_relay_log_size("max_relay_log_size",
                                                &max_relay_log_size,
                                                fix_max_relay_log_size);
@@ -255,6 +262,12 @@ sys_var_thd_ulonglong	sys_myisam_max_extra_sort_file_size("myisam_max_extra_sort
 sys_var_thd_ulonglong	sys_myisam_max_sort_file_size("myisam_max_sort_file_size", &SV::myisam_max_sort_file_size, fix_myisam_max_sort_file_size, 1);
 sys_var_thd_ulong       sys_myisam_repair_threads("myisam_repair_threads", &SV::myisam_repair_threads);
 sys_var_thd_ulong	sys_myisam_sort_buffer_size("myisam_sort_buffer_size", &SV::myisam_sort_buff_size);
+
+sys_var_thd_enum        sys_myisam_stats_method("myisam_stats_method",
+                                                &SV::myisam_stats_method,
+                                                &myisam_stats_method_typelib,
+                                                NULL);
+
 sys_var_thd_ulong	sys_net_buffer_length("net_buffer_length",
 					      &SV::net_buffer_length);
 sys_var_thd_ulong	sys_net_read_timeout("net_read_timeout",
@@ -411,7 +424,8 @@ static sys_var_thd_bit	sys_sql_big_tables("sql_big_tables", 0,
 static sys_var_thd_bit	sys_big_selects("sql_big_selects", 0,
 					set_option_bit,
 					OPTION_BIG_SELECTS);
-static sys_var_thd_bit	sys_log_off("sql_log_off", 0,
+static sys_var_thd_bit	sys_log_off("sql_log_off",
+				    check_log_update,
 				    set_option_bit,
 				    OPTION_LOG_OFF);
 static sys_var_thd_bit	sys_log_update("sql_log_update",
@@ -456,6 +470,9 @@ static sys_var_thd_ha_rows	sys_select_limit("sql_select_limit",
 static sys_var_timestamp	sys_timestamp("timestamp");
 static sys_var_last_insert_id	sys_last_insert_id("last_insert_id");
 static sys_var_last_insert_id	sys_identity("identity");
+
+static sys_var_thd_lc_time_names       sys_lc_time_names("lc_time_names");
+
 static sys_var_insert_id	sys_insert_id("insert_id");
 static sys_var_readonly		sys_error_count("error_count",
 						OPT_SESSION,
@@ -465,6 +482,9 @@ static sys_var_readonly		sys_warning_count("warning_count",
 						  OPT_SESSION,
 						  SHOW_LONG,
 						  get_warning_count);
+static sys_var_readonly	sys_prepared_stmt_count("prepared_stmt_count",
+                                                OPT_GLOBAL, SHOW_LONG,
+                                                get_prepared_stmt_count);
 
 /* alias for last_insert_id() to be compatible with Sybase */
 #ifdef HAVE_REPLICATION
@@ -484,6 +504,8 @@ sys_var_thd_time_zone            sys_time_zone("time_zone");
 /* Read only variables */
 
 sys_var_const_str		sys_os("version_compile_os", SYSTEM_TYPE);
+sys_var_readonly                sys_have_innodb("have_innodb", OPT_GLOBAL,
+                                                SHOW_CHAR, get_have_innodb);
 /* Global read-only variable describing server license */
 sys_var_const_str		sys_license("license", STRINGIFY_ARG(LICENSE));
 
@@ -529,6 +551,7 @@ sys_var *sys_variables[]=
   &sys_ft_boolean_syntax,
   &sys_foreign_key_checks,
   &sys_group_concat_max_len,
+  &sys_have_innodb,
   &sys_identity,
   &sys_init_connect,
   &sys_init_slave,
@@ -540,6 +563,7 @@ sys_var *sys_variables[]=
   &sys_key_cache_division_limit,
   &sys_key_cache_age_threshold,
   &sys_last_insert_id,
+  &sys_lc_time_names,
   &sys_license,
   &sys_local_infile,
   &sys_log_binlog,
@@ -559,6 +583,7 @@ sys_var *sys_variables[]=
   &sys_max_heap_table_size,
   &sys_max_join_size,
   &sys_max_length_for_sort_data,
+  &sys_max_prepared_stmt_count,
   &sys_max_relay_log_size,
   &sys_max_seeks_for_key,
   &sys_max_sort_length,
@@ -570,6 +595,7 @@ sys_var *sys_variables[]=
   &sys_myisam_max_sort_file_size,
   &sys_myisam_repair_threads,
   &sys_myisam_sort_buffer_size,
+  &sys_myisam_stats_method,
   &sys_net_buffer_length,
   &sys_net_read_timeout,
   &sys_net_retry_count,
@@ -578,6 +604,7 @@ sys_var *sys_variables[]=
   &sys_new_mode,
   &sys_old_passwords,
   &sys_preload_buff_size,
+  &sys_prepared_stmt_count,
   &sys_pseudo_thread_id,
   &sys_query_alloc_block_size,
   &sys_query_cache_size,
@@ -711,6 +738,7 @@ struct show_var_st init_vars[]= {
   {"have_geometry",           (char*) &have_geometry,               SHOW_HAVE},
   {"have_innodb",	      (char*) &have_innodb,		    SHOW_HAVE},
   {"have_isam",		      (char*) &have_isam,		    SHOW_HAVE},
+  {"have_merge_engine",       (char*) &have_merge_db,               SHOW_HAVE},
   {"have_ndbcluster",         (char*) &have_ndbcluster,             SHOW_HAVE},
   {"have_openssl",	      (char*) &have_openssl,		    SHOW_HAVE},
   {"have_query_cache",        (char*) &have_query_cache,            SHOW_HAVE},
@@ -759,6 +787,7 @@ struct show_var_st init_vars[]= {
                                                                     SHOW_SYS},
   {"language",                language,                             SHOW_CHAR},
   {"large_files_support",     (char*) &opt_large_files,             SHOW_BOOL},
+  {sys_lc_time_names.name,    (char*) &sys_lc_time_names,           SHOW_SYS},
   {sys_license.name,	      (char*) &sys_license,                 SHOW_SYS},
   {sys_local_infile.name,     (char*) &sys_local_infile,	    SHOW_SYS},
 #ifdef HAVE_MLOCKALL
@@ -790,6 +819,8 @@ struct show_var_st init_vars[]= {
   {sys_max_join_size.name,	(char*) &sys_max_join_size,	    SHOW_SYS},
   {sys_max_length_for_sort_data.name, (char*) &sys_max_length_for_sort_data,
    SHOW_SYS},
+  {sys_max_prepared_stmt_count.name, (char*) &sys_max_prepared_stmt_count,
+    SHOW_SYS},
   {sys_max_relay_log_size.name, (char*) &sys_max_relay_log_size,    SHOW_SYS},
   {sys_max_seeks_for_key.name,  (char*) &sys_max_seeks_for_key,	    SHOW_SYS},
   {sys_max_sort_length.name,	(char*) &sys_max_sort_length,	    SHOW_SYS},
@@ -806,6 +837,9 @@ struct show_var_st init_vars[]= {
   {sys_myisam_repair_threads.name, (char*) &sys_myisam_repair_threads,
    SHOW_SYS},
   {sys_myisam_sort_buffer_size.name, (char*) &sys_myisam_sort_buffer_size, SHOW_SYS},
+  
+  {sys_myisam_stats_method.name, (char*) &sys_myisam_stats_method, SHOW_SYS},
+  
 #ifdef __NT__
   {"named_pipe",	      (char*) &opt_enable_named_pipe,       SHOW_MY_BOOL},
 #endif
@@ -826,6 +860,7 @@ struct show_var_st init_vars[]= {
   {"pid_file",                (char*) pidfile_name,                 SHOW_CHAR},
   {"port",                    (char*) &mysqld_port,                  SHOW_INT},
   {sys_preload_buff_size.name, (char*) &sys_preload_buff_size,      SHOW_SYS},
+  {sys_prepared_stmt_count.name, (char*) &sys_prepared_stmt_count, SHOW_SYS},
   {"protocol_version",        (char*) &protocol_version,            SHOW_INT},
   {sys_query_alloc_block_size.name, (char*) &sys_query_alloc_block_size,
    SHOW_SYS},
@@ -868,16 +903,18 @@ struct show_var_st init_vars[]= {
 #endif
   {sys_sort_buffer.name,      (char*) &sys_sort_buffer, 	    SHOW_SYS},
   {sys_sql_mode.name,         (char*) &sys_sql_mode,                SHOW_SYS},
-  {sys_storage_engine.name,   (char*) &sys_storage_engine,          SHOW_SYS},
   {"sql_notes",               (char*) &sys_sql_notes,               SHOW_BOOL},
   {"sql_warnings",            (char*) &sys_sql_warnings,            SHOW_BOOL},
+  {sys_storage_engine.name,   (char*) &sys_storage_engine,          SHOW_SYS},
 #ifdef HAVE_REPLICATION
   {sys_sync_binlog_period.name,(char*) &sys_sync_binlog_period,     SHOW_SYS},
+#endif
+  {sys_sync_frm.name,         (char*) &sys_sync_frm,               SHOW_SYS},
+#ifdef HAVE_REPLICATION
   {sys_sync_replication.name, (char*) &sys_sync_replication,        SHOW_SYS},
   {sys_sync_replication_slave_id.name, (char*) &sys_sync_replication_slave_id,SHOW_SYS},
   {sys_sync_replication_timeout.name, (char*) &sys_sync_replication_timeout,SHOW_SYS},
 #endif
-  {sys_sync_frm.name,         (char*) &sys_sync_frm,               SHOW_SYS},
 #ifdef HAVE_TZNAME
   {"system_time_zone",        system_time_zone,                     SHOW_CHAR},
 #endif
@@ -1113,14 +1150,14 @@ static void fix_net_retry_count(THD *thd, enum_var_type type)
     thd->net.retry_count=thd->variables.net_retry_count;
 }
 #else /* HAVE_REPLICATION */
-static void fix_net_read_timeout(THD *thd __attribute__(unused),
-				 enum_var_type type __attribute__(unused))
+static void fix_net_read_timeout(THD *thd __attribute__((unused)),
+				 enum_var_type type __attribute__((unused)))
 {}
-static void fix_net_write_timeout(THD *thd __attribute__(unused),
-				  enum_var_type type __attribute__(unused))
+static void fix_net_write_timeout(THD *thd __attribute__((unused)),
+				  enum_var_type type __attribute__((unused)))
 {}
-static void fix_net_retry_count(THD *thd __attribute__(unused),
-				enum_var_type type __attribute__(unused))
+static void fix_net_retry_count(THD *thd __attribute__((unused)),
+				enum_var_type type __attribute__((unused)))
 {}
 #endif /* HAVE_REPLICATION */
 
@@ -1235,29 +1272,40 @@ static void fix_server_id(THD *thd, enum_var_type type)
   server_id_supplied = 1;
 }
 
-bool sys_var_long_ptr::check(THD *thd, set_var *var)
+
+sys_var_long_ptr::
+sys_var_long_ptr(const char *name_arg, ulong *value_ptr,
+                 sys_after_update_func after_update_arg)
+  :sys_var_long_ptr_global(name_arg, value_ptr,
+                           &LOCK_global_system_variables, after_update_arg)
+{}
+
+
+bool sys_var_long_ptr_global::check(THD *thd, set_var *var)
 {
   longlong v= var->value->val_int();
   var->save_result.ulonglong_value= v < 0 ? 0 : v;
   return 0;
 }
 
-bool sys_var_long_ptr::update(THD *thd, set_var *var)
+bool sys_var_long_ptr_global::update(THD *thd, set_var *var)
 {
   ulonglong tmp= var->save_result.ulonglong_value;
-  pthread_mutex_lock(&LOCK_global_system_variables);
+  pthread_mutex_lock(guard);
   if (option_limits)
     *value= (ulong) getopt_ull_limit_value(tmp, option_limits);
   else
     *value= (ulong) tmp;
-  pthread_mutex_unlock(&LOCK_global_system_variables);
+  pthread_mutex_unlock(guard);
   return 0;
 }
 
 
-void sys_var_long_ptr::set_default(THD *thd, enum_var_type type)
+void sys_var_long_ptr_global::set_default(THD *thd, enum_var_type type)
 {
+  pthread_mutex_lock(guard);
   *value= (ulong) option_limits->def_value;
+  pthread_mutex_unlock(guard);
 }
 
 
@@ -1551,15 +1599,7 @@ err:
 
 /*
   Return an Item for a variable.  Used with @@[global.]variable_name
-
   If type is not given, return local value if exists, else global
-
-  We have to use netprintf() instead of my_error() here as this is
-  called on the parsing stage.
-
-  TODO:
-    With prepared statements/stored procedures this has to be fixed
-    to create an item that gets the current value at fix_fields() stage.
 */
 
 Item *sys_var::item(THD *thd, enum_var_type var_type, LEX_STRING *base)
@@ -1568,8 +1608,8 @@ Item *sys_var::item(THD *thd, enum_var_type var_type, LEX_STRING *base)
   {
     if (var_type != OPT_DEFAULT)
     {
-      net_printf(thd, ER_INCORRECT_GLOBAL_LOCAL_VAR,
-		 name, var_type == OPT_GLOBAL ? "SESSION" : "GLOBAL");
+      my_error(ER_INCORRECT_GLOBAL_LOCAL_VAR, MYF(0),
+               name, var_type == OPT_GLOBAL ? "SESSION" : "GLOBAL");
       return 0;
     }
     /* As there was no local variable, return the global value */
@@ -1604,16 +1644,22 @@ Item *sys_var::item(THD *thd, enum_var_type var_type, LEX_STRING *base)
     return new Item_int((int32) *(my_bool*) value_ptr(thd, var_type, base),1);
   case SHOW_CHAR:
   {
-    Item_string *tmp;
+    Item *tmp;
     pthread_mutex_lock(&LOCK_global_system_variables);
     char *str= (char*) value_ptr(thd, var_type, base);
-    tmp= new Item_string(str, strlen(str),
-                         system_charset_info, DERIVATION_SYSCONST);
+    if (str)
+      tmp= new Item_string(str, strlen(str),
+                           system_charset_info, DERIVATION_SYSCONST);
+    else
+    {
+      tmp= new Item_null();
+      tmp->collation.set(system_charset_info, DERIVATION_SYSCONST);
+    }
     pthread_mutex_unlock(&LOCK_global_system_variables);
     return tmp;
   }
   default:
-    net_printf(thd, ER_VAR_CANT_BE_READ, name);
+    my_error(ER_VAR_CANT_BE_READ, MYF(0), name);
   }
   return 0;
 }
@@ -1898,7 +1944,7 @@ byte *sys_var_character_set::value_ptr(THD *thd, enum_var_type type,
 				       LEX_STRING *base)
 {
   CHARSET_INFO *cs= ci_ptr(thd,type)[0];
-  return cs ? (byte*) cs->csname : (byte*) "NULL";
+  return cs ? (byte*) cs->csname : (byte*) NULL;
 }
 
 
@@ -2358,8 +2404,12 @@ bool sys_var_last_insert_id::update(THD *thd, set_var *var)
 byte *sys_var_last_insert_id::value_ptr(THD *thd, enum_var_type type,
 					LEX_STRING *base)
 {
-  thd->sys_var_tmp.long_value= (long) thd->insert_id();
-  return (byte*) &thd->last_insert_id;
+  /*
+    As this statement reads @@LAST_INSERT_ID, set
+    THD::last_insert_id_used.
+  */
+  thd->last_insert_id_used= TRUE;
+  return (byte*) &thd->current_insert_id;
 }
 
 
@@ -2524,6 +2574,43 @@ void sys_var_thd_time_zone::set_default(THD *thd, enum_var_type type)
  pthread_mutex_unlock(&LOCK_global_system_variables);
 }
 
+bool sys_var_thd_lc_time_names::check(THD *thd, set_var *var)
+{
+  char *locale_str =var->value->str_value.c_ptr();
+  MY_LOCALE *locale_match=  my_locale_by_name(locale_str);
+
+  if(locale_match == NULL) 
+  {
+    my_printf_error(ER_UNKNOWN_ERROR, "Unknown locale: '%s'", MYF(0), locale_str);
+    return 1;
+  }
+  else 
+  {
+    var->save_result.locale_value= locale_match;
+    return 0;
+  }
+}
+
+
+bool sys_var_thd_lc_time_names::update(THD *thd, set_var *var)
+{
+  thd->variables.lc_time_names= var->save_result.locale_value;
+  return 0;
+}
+
+
+byte *sys_var_thd_lc_time_names::value_ptr(THD *thd, enum_var_type type,
+					  LEX_STRING *base)
+{
+  return (byte *)(thd->variables.lc_time_names->name);
+}
+
+
+void sys_var_thd_lc_time_names::set_default(THD *thd, enum_var_type type)
+{
+  thd->variables.lc_time_names = &my_locale_en_US;
+}
+
 /*
   Functions to update thd->options bits
 */
@@ -2621,6 +2708,20 @@ static byte *get_error_count(THD *thd)
   return (byte*) &thd->sys_var_tmp.long_value;
 }
 
+
+static byte *get_have_innodb(THD *thd)
+{
+  return (byte*) show_comp_option_name[have_innodb];
+}
+
+
+static byte *get_prepared_stmt_count(THD *thd)
+{
+  pthread_mutex_lock(&LOCK_prepared_stmt_count);
+  thd->sys_var_tmp.ulong_value= prepared_stmt_count;
+  pthread_mutex_unlock(&LOCK_prepared_stmt_count);
+  return (byte*) &thd->sys_var_tmp.ulong_value;
+}
 
 /****************************************************************************
   Main handling of variables:
@@ -2952,7 +3053,18 @@ int set_var_password::check(THD *thd)
 {
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
   if (!user->host.str)
-    user->host.str= (char*) thd->host_or_ip;
+  {
+    if (thd->priv_host != 0)
+    {
+      user->host.str= (char *) thd->priv_host;
+      user->host.length= strlen(thd->priv_host);
+    }
+    else
+    {
+      user->host.str= (char *)"%";
+      user->host.length= 1;
+    }
+  }
   /* Returns 1 as the function sends error to client */
   return check_change_password(thd, user->host.str, user->user.str,
                                password, strlen(password)) ? 1 : 0;
@@ -3144,10 +3256,6 @@ ulong fix_sql_mode(ulong sql_mode)
 		MODE_IGNORE_SPACE |
 		MODE_NO_KEY_OPTIONS | MODE_NO_TABLE_OPTIONS |
 		MODE_NO_FIELD_OPTIONS);
-  if (sql_mode & MODE_MYSQL40)
-    sql_mode|= MODE_NO_FIELD_OPTIONS;
-  if (sql_mode & MODE_MYSQL323)
-    sql_mode|= MODE_NO_FIELD_OPTIONS;
   return sql_mode;
 }
 

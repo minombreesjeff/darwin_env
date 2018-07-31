@@ -69,25 +69,6 @@ report_errors()
   DBUG_VOID_RETURN;
 }
 
-/*
-  Delete a vio object
-
-  SYNPOSIS
-    vio_ssl_delete()
-    vio			Vio object.  May be 0.
-*/
-
-
-void vio_ssl_delete(Vio * vio)
-{
-  if (vio)
-  {
-    if (vio->type != VIO_CLOSED)
-      vio_close(vio);
-    my_free((gptr) vio,MYF(0));
-  }
-}
-
 
 int vio_ssl_errno(Vio *vio __attribute__((unused)))
 {
@@ -181,6 +162,15 @@ vio_ssl_should_retry(Vio * vio __attribute__((unused)))
   int en = socket_errno;
   return (en == SOCKET_EAGAIN || en == SOCKET_EINTR ||
 	  en == SOCKET_EWOULDBLOCK);
+}
+
+
+my_bool
+vio_ssl_was_interrupted(Vio *vio __attribute__((unused)))
+{
+  int en= socket_errno;
+  return (en == SOCKET_EAGAIN || en == SOCKET_EINTR ||
+	  en == SOCKET_EWOULDBLOCK || en == SOCKET_ETIMEDOUT);
 }
 
 

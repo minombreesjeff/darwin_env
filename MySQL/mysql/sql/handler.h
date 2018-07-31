@@ -394,7 +394,7 @@ public:
                                    key_range *max_key)
     { return (ha_rows) 10; }
   virtual void position(const byte *record)=0;
-  virtual void info(uint)=0;
+  virtual int info(uint)=0;
   virtual int extra(enum ha_extra_function operation)
   { return 0; }
   virtual int extra_opt(enum ha_extra_function operation, ulong cache_size)
@@ -522,6 +522,7 @@ public:
 extern struct show_table_type_st sys_table_types[];
 extern const char *ha_row_type[];
 extern TYPELIB tx_isolation_typelib;
+extern TYPELIB myisam_stats_method_typelib;
 
 	/* Wrapper functions */
 #define ha_commit_stmt(thd) (ha_commit_trans((thd), &((thd)->transaction.stmt)))
@@ -531,7 +532,8 @@ extern TYPELIB tx_isolation_typelib;
 
 #define ha_supports_generate(T) (T != DB_TYPE_INNODB && \
                                  T != DB_TYPE_BERKELEY_DB && \
-                                 T != DB_TYPE_NDBCLUSTER)
+                                 T != DB_TYPE_ARCHIVE_DB && \
+                                 T != DB_TYPE_FEDERATED_DB)
 
 bool ha_caching_allowed(THD* thd, char* table_key,
                         uint key_length, uint8 cache_type);

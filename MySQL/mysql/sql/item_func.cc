@@ -39,73 +39,6 @@ bool check_reserved_words(LEX_STRING *name)
 }
 
 
-static void my_coll_agg_error(DTCollation &c1, DTCollation &c2,
-			      const char *fname)
-{
-  my_error(ER_CANT_AGGREGATE_2COLLATIONS,MYF(0),
-	   c1.collation->name,c1.derivation_name(),
-	   c2.collation->name,c2.derivation_name(),
-	   fname);
-}
-
-static void my_coll_agg_error(DTCollation &c1,
-			       DTCollation &c2,
-			       DTCollation &c3,
-			       const char *fname)
-{
-  my_error(ER_CANT_AGGREGATE_3COLLATIONS,MYF(0),
-  	   c1.collation->name,c1.derivation_name(),
-	   c2.collation->name,c2.derivation_name(),
-	   c3.collation->name,c3.derivation_name(),
-	   fname);
-}
-
-
-static void my_coll_agg_error(Item** args, uint count, const char *fname)
-{
-  if (count == 2)
-    my_coll_agg_error(args[0]->collation, args[1]->collation, fname);
-  else if (count == 3)
-    my_coll_agg_error(args[0]->collation,
-		      args[1]->collation,
-		      args[2]->collation,
-		      fname);
-  else
-    my_error(ER_CANT_AGGREGATE_NCOLLATIONS,MYF(0),fname);
-}
-
-
-bool Item_func::agg_arg_collations(DTCollation &c, Item **av, uint count,
-                                   uint flags)
-{
-  uint i;
-  c.set(av[0]->collation);
-  for (i= 1; i < count; i++)
-  {
-    if (c.aggregate(av[i]->collation, flags))
-    {
-      my_coll_agg_error(av, count, func_name());
-      return TRUE;
-    }
-  }
-  if ((flags & MY_COLL_DISALLOW_NONE) &&
-      c.derivation == DERIVATION_NONE)
-  {
-    my_coll_agg_error(av, count, func_name());
-    return TRUE;
-  }
-  return FALSE;
-}
-
-
-bool Item_func::agg_arg_collations_for_comparison(DTCollation &c,
-						  Item **av, uint count,
-                                                  uint flags)
-{
-  return (agg_arg_collations(c, av, count, flags | MY_COLL_DISALLOW_NONE));
-}
-
-
 /* return TRUE if item is a constant */
 
 bool
@@ -113,88 +46,6 @@ eval_const_cond(COND *cond)
 {
   return ((Item_func*) cond)->val_int() ? TRUE : FALSE;
 }
-
-
-
-/* 
-  Collect arguments' character sets together.
-  We allow to apply automatic character set conversion in some cases.
-  The conditions when conversion is possible are:
-  - arguments A and B have different charsets
-  - A wins according to coercibility rules
-    (i.e. a column is stronger than a string constant,
-     an explicit COLLATE clause is stronger than a column)
-  - character set of A is either superset for character set of B,
-    or B is a string constant which can be converted into the
-    character set of A without data loss.
-    
-  If all of the above is true, then it's possible to convert
-  B into the character set of A, and then compare according
-  to the collation of A.
-  
-  For functions with more than two arguments:
-
-    collect(A,B,C) ::= collect(collect(A,B),C)
-*/
-
-bool Item_func::agg_arg_charsets(DTCollation &coll,
-                                 Item **args, uint nargs, uint flags)
-{
-  Item **arg, **last, *safe_args[2];
-  if (agg_arg_collations(coll, args, nargs, flags))
-    return TRUE;
-
-  /*
-    For better error reporting: save the first and the second argument.
-    We need this only if the the number of args is 3 or 2:
-    - for a longer argument list, "Illegal mix of collations"
-      doesn't display each argument's characteristics.
-    - if nargs is 1, then this error cannot happen.
-  */
-  if (nargs >=2 && nargs <= 3)
-  {
-    safe_args[0]= args[0];
-    safe_args[1]= args[1];
-  }
-
-  THD *thd= current_thd;
-  Item_arena *arena, backup;
-  bool res= FALSE;
-  /*
-    In case we're in statement prepare, create conversion item
-    in its memory: it will be reused on each execute.
-  */
-  arena= thd->change_arena_if_needed(&backup);
-
-  for (arg= args, last= args + nargs; arg < last; arg++)
-  {
-    Item* conv;
-    uint32 dummy_offset;
-    if (!String::needs_conversion(0, coll.collation,
-                                  (*arg)->collation.collation,
-                                  &dummy_offset))
-      continue;
-
-    if (!(conv= (*arg)->safe_charset_converter(coll.collation)))
-    {
-      if (nargs >=2 && nargs <= 3)
-      {
-        /* restore the original arguments for better error message */
-        args[0]= safe_args[0];
-        args[1]= safe_args[1];
-      }
-      my_coll_agg_error(args, nargs, func_name());
-      res= TRUE;
-      break; // we cannot return here, we need to restore "arena".
-    }
-    conv->fix_fields(thd, 0, &conv);
-    *arg= conv;
-  }
-  if (arena)
-    thd->restore_backup_item_arena(arena, &backup);
-  return res;
-}
-
 
 
 void Item_func::set_arguments(List<Item> &list)
@@ -456,7 +307,7 @@ Field *Item_func::tmp_table_field(TABLE *t_arg)
     res= new Field_double(max_length, maybe_null, name, t_arg, decimals);
     break;
   case STRING_RESULT:
-    if (max_length > 255)
+    if (max_length/collation.collation->mbmaxlen > CONVERT_IF_BIGGER_TO_BLOB)
       res= new Field_blob(max_length, maybe_null, name, t_arg, collation.collation);
     else
       res= new Field_string(max_length, maybe_null, name, t_arg, collation.collation);
@@ -508,10 +359,19 @@ String *Item_num_func::val_str(String *str)
 
 void Item_func::fix_num_length_and_dec()
 {
+  uint fl_length= 0;
   decimals=0;
   for (uint i=0 ; i < arg_count ; i++)
+  {
     set_if_bigger(decimals,args[i]->decimals);
+    set_if_bigger(fl_length, args[i]->max_length);
+  }
   max_length=float_length(decimals);
+  if (fl_length > max_length)
+  {
+    decimals= NOT_FIXED_DEC;
+    max_length= float_length(NOT_FIXED_DEC);
+  }
 }
 
 Item *Item_func::get_tmp_table_item(THD *thd)
@@ -647,6 +507,26 @@ longlong Item_func_unsigned::val_int()
 {
   longlong value;
   int error;
+
+  if (args[0]->result_type() == REAL_RESULT)
+  {
+    double dvalue= args[0]->val();
+    if ((null_value= args[0]->null_value))
+      return 0;
+    if (dvalue <= (double) LONGLONG_MIN)
+    {
+      return LONGLONG_MIN;
+    }
+    if (dvalue >= (double) (ulonglong) ULONGLONG_MAX)
+    {
+      return (longlong) ULONGLONG_MAX;
+    }
+    if (dvalue >= (double) (ulonglong) LONGLONG_MAX)
+    {
+      return (ulonglong) (dvalue + (dvalue > 0 ? 0.5 : -0.5));
+    }
+    return (longlong)  (dvalue + (dvalue > 0 ? 0.5 : -0.5));
+  }
 
   if (args[0]->cast_to_int_type() != STRING_RESULT)
   {
@@ -914,10 +794,7 @@ void Item_func_abs::fix_length_and_dec()
   max_length=args[0]->max_length;
   hybrid_type= REAL_RESULT;
   if (args[0]->result_type() == INT_RESULT)
-  {
     hybrid_type= INT_RESULT;
-    unsigned_flag= 1;
-  }
 }
 
 
@@ -1190,6 +1067,11 @@ bool Item_func_rand::fix_fields(THD *thd, struct st_table_list *tables,
   used_tables_cache|= RAND_TABLE_BIT;
   if (arg_count)
   {					// Only use argument once in query
+    if (!args[0]->const_during_execution())
+    {
+      my_error(ER_WRONG_ARGUMENTS, MYF(0), "RAND");
+      return TRUE;
+    }
     /*
       Allocate rand structure once: we must use thd->current_arena
       to create rand in proper mem_root if it's a prepared statement or
@@ -1601,7 +1483,7 @@ void Item_func_find_in_set::fix_length_and_dec()
       }
     }
   }
-  agg_arg_collations_for_comparison(cmp_collation, args, 2);
+  agg_arg_charsets(cmp_collation, args, 2, MY_COLL_CMP_CONV);
 }
 
 static const char separator=',';
@@ -1678,11 +1560,8 @@ longlong Item_func_bit_count::val_int()
 {
   DBUG_ASSERT(fixed == 1);
   ulonglong value= (ulonglong) args[0]->val_int();
-  if (args[0]->null_value)
-  {
-    null_value=1; /* purecov: inspected */
+  if ((null_value= args[0]->null_value))
     return 0; /* purecov: inspected */
-  }
   return (longlong) my_count_bits(value);
 }
 
@@ -2113,6 +1992,7 @@ void item_user_lock_free(void)
 void item_user_lock_release(User_level_lock *ull)
 {
   ull->locked=0;
+  ull->thread_id= 0;
   if (mysql_bin_log.is_open())
   {
     char buf[256];
@@ -2121,7 +2001,7 @@ void item_user_lock_release(User_level_lock *ull)
     tmp.copy(command, strlen(command), tmp.charset());
     tmp.append(ull->key,ull->key_length);
     tmp.append("\")", 2);
-    Query_log_event qev(current_thd, tmp.ptr(), tmp.length(),1, FALSE);
+    Query_log_event qev(current_thd, tmp.ptr(), tmp.length(),0, FALSE);
     qev.error_code=0; // this query is always safe to run on slave
     mysql_bin_log.write(&qev);
   }
@@ -2311,6 +2191,7 @@ longlong Item_func_get_lock::val_int()
   {
     ull->locked=1;
     ull->thread=thd->real_id;
+    ull->thread_id= thd->thread_id;
     thd->ull=ull;
     error=0;
   }
@@ -2369,19 +2250,45 @@ longlong Item_func_release_lock::val_int()
 }
 
 
+bool Item_func_last_insert_id::fix_fields(THD *thd, TABLE_LIST *tables,
+                                          Item **ref)
+{
+  DBUG_ASSERT(fixed == 0);
+
+  if (Item_int_func::fix_fields(thd, tables, ref))
+    return TRUE;
+
+  if (arg_count == 0)
+  {
+    /*
+      As this statement calls LAST_INSERT_ID(), set
+      THD::last_insert_id_used.
+    */
+    thd->last_insert_id_used= TRUE;
+    null_value= FALSE;
+  }
+
+  thd->lex->uncacheable(UNCACHEABLE_SIDEEFFECT);
+
+  return FALSE;
+}
+
+
 longlong Item_func_last_insert_id::val_int()
 {
   DBUG_ASSERT(fixed == 1);
+  THD* thd= current_thd;
   if (arg_count)
   {
     longlong value=args[0]->val_int();
-    current_thd->insert_id(value);
+    thd->insert_id(value);
     null_value=args[0]->null_value;
+    return value;
   }
-  else
-    current_thd->lex->uncacheable(UNCACHEABLE_SIDEEFFECT);
-  return current_thd->insert_id();
+
+  return thd->current_insert_id;
 }
+
 
 /* This function is just used to test speed of different functions */
 
@@ -2874,14 +2781,24 @@ int get_var_with_binlog(THD *thd, LEX_STRING &name,
       sql_set_variables(), we could instead manually call check() and update();
       this would save memory and time; but calling sql_set_variables() makes
       one unique place to maintain (sql_set_variables()). 
+
+      Manipulation with lex is necessary since free_underlaid_joins
+      is going to release memory belonging to the main query.
     */
 
     List<set_var_base> tmp_var_list;
+    LEX *sav_lex= thd->lex, lex_tmp;
+    thd->lex= &lex_tmp;
+    lex_start(thd, NULL, 0);
     tmp_var_list.push_back(new set_var_user(new Item_func_set_user_var(name,
                                                                        new Item_null())));
     /* Create the variable */
     if (sql_set_variables(thd, &tmp_var_list))
+    {
+      thd->lex= sav_lex;
       goto err;
+    }
+    thd->lex= sav_lex;
     if (!(var_entry= get_variable(&thd->user_vars, name, 0)))
       goto err;
   }
@@ -3015,6 +2932,37 @@ bool Item_func_get_user_var::eq(const Item *item, bool binary_cmp) const
   Item_func_get_user_var *other=(Item_func_get_user_var*) item;
   return (name.length == other->name.length &&
 	  !memcmp(name.str, other->name.str, name.length));
+}
+
+
+Item_func_get_system_var::
+Item_func_get_system_var(sys_var *var_arg, enum_var_type var_type_arg,
+                       LEX_STRING *component_arg, const char *name_arg,
+                       size_t name_len_arg)
+  :var(var_arg), var_type(var_type_arg), component(*component_arg)
+{
+  /* set_name() will allocate the name */
+  set_name(name_arg, name_len_arg, system_charset_info);
+}
+
+
+bool
+Item_func_get_system_var::fix_fields(THD *thd, TABLE_LIST *tables, Item **ref)
+{
+  Item *item;
+  DBUG_ENTER("Item_func_get_system_var::fix_fields");
+
+  /*
+    Evaluate the system variable and substitute the result (a basic constant)
+    instead of this item. If the variable can not be evaluated,
+    the error is reported in sys_var::item().
+  */
+  if (!(item= var->item(thd, var_type, &component)))
+    DBUG_RETURN(1);                             // Impossible
+  item->set_name(name, 0, system_charset_info); // don't allocate a new name
+  thd->change_item_tree(ref, item);
+
+  DBUG_RETURN(0);
 }
 
 
@@ -3362,21 +3310,19 @@ longlong Item_func_bit_xor::val_int()
     0	error
     #	constant item
 */
-  
+
 
 Item *get_system_var(THD *thd, enum_var_type var_type, LEX_STRING name,
 		     LEX_STRING component)
 {
+  sys_var *var;
+  LEX_STRING *base_name, *component_name;
+
   if (component.str == 0 &&
       !my_strcasecmp(system_charset_info, name.str, "VERSION"))
-    return new Item_string("@@VERSION", server_version,
+    return new Item_string(NULL, server_version,
 			   (uint) strlen(server_version),
 			   system_charset_info, DERIVATION_SYSCONST);
-
-  Item *item;
-  sys_var *var;
-  char buff[MAX_SYS_VAR_LENGTH*2+4+8], *pos;
-  LEX_STRING *base_name, *component_name;
 
   if (component.str)
   {
@@ -3399,51 +3345,12 @@ Item *get_system_var(THD *thd, enum_var_type var_type, LEX_STRING name,
       return 0;
     }
   }
-  if (!(item=var->item(thd, var_type, component_name)))
-    return 0;					// Impossible
   thd->lex->uncacheable(UNCACHEABLE_SIDEEFFECT);
-  buff[0]='@';
-  buff[1]='@';
-  pos=buff+2;
-  if (var_type == OPT_SESSION)
-    pos=strmov(pos,"session.");
-  else if (var_type == OPT_GLOBAL)
-    pos=strmov(pos,"global.");
-  
+
   set_if_smaller(component_name->length, MAX_SYS_VAR_LENGTH);
-  set_if_smaller(base_name->length, MAX_SYS_VAR_LENGTH);
 
-  if (component_name->str)
-  {
-    memcpy(pos, component_name->str, component_name->length);
-    pos+= component_name->length;
-    *pos++= '.';
-  }
-  memcpy(pos, base_name->str, base_name->length);
-  pos+= base_name->length;
-
-  // set_name() will allocate the name
-  item->set_name(buff,(uint) (pos-buff), system_charset_info);
-  return item;
-}
-
-
-Item *get_system_var(THD *thd, enum_var_type var_type, const char *var_name,
-		     uint length, const char *item_name)
-{
-  Item *item;
-  sys_var *var;
-  LEX_STRING null_lex_string;
-
-  null_lex_string.str= 0;
-
-  var= find_sys_var(var_name, length);
-  DBUG_ASSERT(var != 0);
-  if (!(item=var->item(thd, var_type, &null_lex_string)))
-    return 0;						// Impossible
-  thd->lex->uncacheable(UNCACHEABLE_SIDEEFFECT);
-  item->set_name(item_name, 0, system_charset_info);	// Will use original name
-  return item;
+  return new Item_func_get_system_var(var, var_type, component_name,
+                                      NULL, 0);
 }
 
 

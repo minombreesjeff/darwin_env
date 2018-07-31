@@ -140,6 +140,12 @@ select extract(SECOND FROM "1999-01-02 10:11:12");
 select extract(MONTH FROM "2001-02-00");
 
 #
+# MySQL Bugs: #12356: DATE_SUB or DATE_ADD incorrectly returns null
+#
+SELECT DATE_SUB(str_to_date('9999-12-31 00:01:00','%Y-%m-%d %H:%i:%s'), INTERVAL 1 MINUTE);
+SELECT DATE_ADD(str_to_date('9999-12-30 23:59:00','%Y-%m-%d %H:%i:%s'), INTERVAL 1 MINUTE);
+
+#
 # Test big intervals (Bug #3498)
 #
 SELECT "1900-01-01 00:00:00" + INTERVAL 2147483648 SECOND;
@@ -314,3 +320,89 @@ DROP TABLE t1;
 select last_day('2005-00-00');
 select last_day('2005-00-01');
 select last_day('2005-01-00');
+
+#
+# Bug #18501: monthname and NULLs
+#
+
+select monthname(str_to_date(null, '%m')), monthname(str_to_date(null, '%m')),
+       monthname(str_to_date(1, '%m')), monthname(str_to_date(0, '%m'));
+
+#
+# Bug #16327: problem with timestamp < 1970
+#
+
+set time_zone='-6:00';
+create table t1(a timestamp);
+insert into t1 values (19691231190001);
+select * from t1;
+drop table t1;
+
+#
+# Bug#16377 result of DATE/TIME functions were compared as strings which
+#           can lead to a wrong result.
+# Now wrong dates should be compared only with CAST()
+create table t1(f1 date, f2 time, f3 datetime);
+insert into t1 values ("2006-01-01", "12:01:01", "2006-01-01 12:01:01");
+insert into t1 values ("2006-01-02", "12:01:02", "2006-01-02 12:01:02");
+select f1 from t1 where f1 between CAST("2006-1-1" as date) and CAST(20060101 as date);
+select f1 from t1 where f1 between cast("2006-1-1" as date) and cast("2006.1.1" as date);
+select f1 from t1 where date(f1) between cast("2006-1-1" as date) and cast("2006.1.1" as date);
+select f2 from t1 where f2 between cast("12:1:2" as time) and cast("12:2:2" as time);
+select f2 from t1 where time(f2) between cast("12:1:2" as time) and cast("12:2:2" as time);
+select f3 from t1 where f3 between cast("2006-1-1 12:1:1" as datetime) and cast("2006-1-1 12:1:2" as datetime);
+select f3 from t1 where timestamp(f3) between cast("2006-1-1 12:1:1" as datetime) and cast("2006-1-1 12:1:2" as datetime);
+select f1 from t1 where cast("2006-1-1" as date) between f1 and f3;
+select f1 from t1 where cast("2006-1-1" as date) between date(f1) and date(f3);
+select f1 from t1 where cast("2006-1-1" as date) between f1 and 'zzz';
+select f1 from t1 where makedate(2006,1) between date(f1) and date(f3);
+select f1 from t1 where makedate(2006,2) between date(f1) and date(f3);
+drop table t1;
+
+#
+# Bug #16546
+# 
+
+create table t1 select now() - now(), curtime() - curtime(), 
+                       sec_to_time(1) + 0, from_unixtime(1) + 0;
+show create table t1;
+drop table t1;
+
+#
+# 21913: DATE_FORMAT() Crashes mysql server if I use it through
+#        mysql-connector-j driver.
+#
+
+SET NAMES latin1;
+SET character_set_results = NULL;
+SHOW VARIABLES LIKE 'character_set_results';
+
+CREATE TABLE testBug8868 (field1 DATE, field2 VARCHAR(32) CHARACTER SET BINARY);
+INSERT INTO testBug8868 VALUES ('2006-09-04', 'abcd');
+
+SELECT DATE_FORMAT(field1,'%b-%e %l:%i%p') as fmtddate, field2 FROM testBug8868;
+
+DROP TABLE testBug8868;
+
+SET NAMES DEFAULT;
+
+
+#
+# Bug #19844 time_format in Union truncates values
+#
+
+(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 DAY)),'%H') As H)
+union
+(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 DAY)),'%H') As H);
+(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 DAY)),'%k') As H)
+union
+(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 DAY)),'%k') As H);
+(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 HOUR)),'%H') As H)
+union
+(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 HOUR)),'%H') As H);
+
+(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 HOUR)),'%k') As H)
+union
+(select time_format(timediff(now(), DATE_SUB(now(),INTERVAL 5 HOUR)),'%k') As H);
+
+--echo End of 4.1 tests

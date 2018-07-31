@@ -31,8 +31,8 @@ int mi_rkey(MI_INFO *info, byte *buf, int inx, const byte *key, uint key_len,
   HA_KEYSEG *last_used_keyseg;
   uint pack_key_length, use_key_length, nextflag;
   DBUG_ENTER("mi_rkey");
-  DBUG_PRINT("enter",("base: %lx  inx: %d  search_flag: %d",
-		      info,inx,search_flag));
+  DBUG_PRINT("enter", ("base: %lx  buf: %lx  inx: %d  search_flag: %d",
+                       (long) info, (long) buf, inx, search_flag));
 
   if ((inx = _mi_check_index(info,inx)) < 0)
     DBUG_RETURN(my_errno);
@@ -56,15 +56,19 @@ int mi_rkey(MI_INFO *info, byte *buf, int inx, const byte *key, uint key_len,
   {
     if (key_len == 0)
       key_len=USE_WHOLE_KEY;
+    /* Save the packed key for later use in the second buffer of lastkey. */
     key_buff=info->lastkey+info->s->base.max_key_length;
     pack_key_length=_mi_pack_key(info,(uint) inx, key_buff, (uchar*) key,
 				 key_len, &last_used_keyseg);
+    /* Save packed_key_length for use by the MERGE engine. */
+    info->pack_key_length= pack_key_length;
     DBUG_EXECUTE("key",_mi_print_key(DBUG_FILE, keyinfo->seg,
 				     key_buff, pack_key_length););
   }
 
   if (fast_mi_readinfo(info))
     goto err;
+
   if (share->concurrent_insert)
     rw_rdlock(&share->key_root_lock[inx]);
 
@@ -86,21 +90,45 @@ int mi_rkey(MI_INFO *info, byte *buf, int inx, const byte *key, uint key_len,
   case HA_KEY_ALG_BTREE:
   default:
     if (!_mi_search(info, keyinfo, key_buff, use_key_length,
-		  myisam_read_vec[search_flag], info->s->state.key_root[inx]))
+                    myisam_read_vec[search_flag], info->s->state.key_root[inx]))
     {
-      while (info->lastpos >= info->state->data_file_length)
+      /*
+        If we searching for a partial key (or using >, >=, < or <=) and
+        the data is outside of the data file, we need to continue searching
+        for the first key inside the data file
+      */
+      if (info->lastpos >= info->state->data_file_length &&
+          (search_flag != HA_READ_KEY_EXACT ||
+           last_used_keyseg != keyinfo->seg + keyinfo->keysegs))
       {
-        /*
-	  Skip rows that are inserted by other threads since we got a lock
-	  Note that this can only happen if we are not searching after an
-	  exact key, because the keys are sorted according to position
-        */
-
-        if  (_mi_search_next(info, keyinfo, info->lastkey,
-			   info->lastkey_length,
-			   myisam_readnext_vec[search_flag],
-			   info->s->state.key_root[inx]))
-	  break;
+        do
+        {
+          uint not_used[2];
+          /*
+            Skip rows that are inserted by other threads since we got a lock
+            Note that this can only happen if we are not searching after an
+            full length exact key, because the keys are sorted
+            according to position
+          */
+          if  (_mi_search_next(info, keyinfo, info->lastkey,
+                               info->lastkey_length,
+                               myisam_readnext_vec[search_flag],
+                               info->s->state.key_root[inx]))
+            break;
+          /*
+            Check that the found key does still match the search.
+            _mi_search_next() delivers the next key regardless of its
+            value.
+          */
+          if (search_flag == HA_READ_KEY_EXACT &&
+              ha_key_cmp(keyinfo->seg, key_buff, info->lastkey, use_key_length,
+                         SEARCH_FIND, not_used))
+          {
+            my_errno= HA_ERR_KEY_NOT_FOUND;
+            info->lastpos= HA_OFFSET_ERROR;
+            break;
+          }
+        } while (info->lastpos >= info->state->data_file_length);
       }
     }
   }

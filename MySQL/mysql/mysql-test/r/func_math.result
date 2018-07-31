@@ -137,3 +137,17 @@ select * from t1;
 round(1, 6)
 1.000000
 drop table t1;
+select abs(-2) * -2;
+abs(-2) * -2
+-4
+create table t1 (i int);
+insert into t1 values (1);
+select rand(i) from t1;
+ERROR HY000: Incorrect arguments to RAND
+drop table t1;
+create table t1 (a varchar(90), ts datetime not null, index (a)) engine=innodb default charset=utf8;
+insert into t1 values ('http://www.foo.com/', now());
+select a from t1 where a='http://www.foo.com/' order by abs(timediff(ts, 0));
+a
+http://www.foo.com/
+drop table t1;

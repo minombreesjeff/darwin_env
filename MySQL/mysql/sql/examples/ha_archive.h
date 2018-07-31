@@ -58,7 +58,7 @@ public:
   ha_archive(TABLE *table): handler(table)
   {
     /* Set our original buffer from pre-allocated memory */
-    buffer.set(byte_buffer, IO_SIZE, system_charset_info);
+    buffer.set((char*)byte_buffer, IO_SIZE, system_charset_info);
 
     /* The size of the offset value we will use for position() */
     ref_length = sizeof(z_off_t);
@@ -95,6 +95,7 @@ public:
   int write_row(byte * buf);
   int update_row(const byte * old_data, byte * new_data);
   int delete_row(const byte * buf);
+  int delete_all_rows();
   int index_read(byte * buf, const byte * key,
                  uint key_len, enum ha_rkey_function find_flag);
   int index_read_idx(byte * buf, uint idx, const byte * key,
@@ -115,7 +116,7 @@ public:
   int read_data_header(gzFile file_to_read);
   int write_data_header(gzFile file_to_write);
   void position(const byte *record);
-  void info(uint);
+  int info(uint);
   int extra(enum ha_extra_function operation);
   int reset(void);
   int external_lock(THD *thd, int lock_type);

@@ -38,11 +38,13 @@ pkgdata_DATA =		my-small.cnf \
 			my-huge.cnf \
       my-innodb-heavy-4G.cnf \
 			mysql-log-rotate \
-			mysql-@VERSION@.spec \
-			MySQL-shared-compat.spec \
+			binary-configure \
 			ndb-config-2-node.ini
 
 pkgdata_SCRIPTS =	mysql.server
+
+noinst_DATA = mysql-@VERSION@.spec \
+			MySQL-shared-compat.spec
 
 CLEANFILES =		my-small.cnf \
 			my-medium.cnf \
@@ -104,8 +106,6 @@ SUFFIXES = .sh
 	  -e 's!@''PERL_DATA_DUMPER''@!@PERL_DATA_DUMPER@!' \
 	$< > $@-t
 	@MV@ $@-t $@
-
-all:	binary-configure
 
 # Don't update the files from bitkeeper
 %::SCCS/s.%

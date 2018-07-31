@@ -147,6 +147,7 @@ FileLogHandler::createNewFile()
   bool rc = true;	
   int fileNo = 1;
   char newName[PATH_MAX];
+  time_t newMtime, preMtime = 0;
 
   do
   {
@@ -159,7 +160,15 @@ FileLogHandler::createNewFile()
     }		
     BaseString::snprintf(newName, sizeof(newName),
 	       "%s.%d", m_pLogFile->getName(), fileNo++); 
-    
+    newMtime = File_class::mtime(newName);
+    if (newMtime < preMtime) 
+    {
+      break;
+    }
+    else
+    {
+      preMtime = newMtime;
+    }
   } while (File_class::exists(newName));
   
   m_pLogFile->close();	
@@ -187,6 +196,7 @@ FileLogHandler::setParam(const BaseString &param, const BaseString &value){
     return setMaxSize(value);
   if(param == "maxfiles")
     return setMaxFiles(value);
+  setErrorStr("Invalid parameter");
   return false;
 }
 
@@ -196,16 +206,18 @@ FileLogHandler::setFilename(const BaseString &filename) {
   if(m_pLogFile)
     delete m_pLogFile;
   m_pLogFile = new File_class(filename.c_str(), "a+");
-  open();
-  return true;
+  return open();
 }
 
 bool
 FileLogHandler::setMaxSize(const BaseString &size) {
   char *end;
   long val = strtol(size.c_str(), &end, 0); /* XXX */
-  if(size.c_str() == end)
+  if(size.c_str() == end || val < 0)
+  {
+    setErrorStr("Invalid file size");
     return false;
+  }
   if(end[0] == 'M')
     val *= 1024*1024;
   if(end[0] == 'k')
@@ -220,8 +232,11 @@ bool
 FileLogHandler::setMaxFiles(const BaseString &files) {
   char *end;
   long val = strtol(files.c_str(), &end, 0);
-  if(files.c_str() == end)
+  if(files.c_str() == end || val < 1)
+  {
+    setErrorStr("Invalid maximum number of files");
     return false;
+  }
   m_maxNoFiles = val;
 
   return true;
@@ -230,6 +245,9 @@ FileLogHandler::setMaxFiles(const BaseString &files) {
 bool
 FileLogHandler::checkParams() {
   if(m_pLogFile == NULL)
+  {
+    setErrorStr("Log file cannot be null.");
     return false;
+  }
   return true;
 }

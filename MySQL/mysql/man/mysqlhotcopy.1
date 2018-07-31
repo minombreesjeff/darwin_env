@@ -1,0 +1,306 @@
+.\"     Title: \fBmysqlhotcopy\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 11/02/2006
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL 4.1
+.\"
+.TH "\fBMYSQLHOTCOPY\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+mysqlhotcopy \- a database backup program
+.SH "SYNOPSIS"
+.HP 23
+\fBmysqlhotcopy \fR\fB\fIarguments\fR\fR
+.SH "DESCRIPTION"
+.PP
+\fBmysqlhotcopy\fR
+is a Perl script that was originally written and contributed by Tim Bunce. It uses
+LOCK TABLES,
+FLUSH TABLES, and
+cp
+or
+scp
+to make a database backup quickly. It is the fastest way to make a backup of the database or single tables, but it can be run only on the same machine where the database directories are located.
+\fBmysqlhotcopy\fR
+works only for backing up
+MyISAM
+and
+ISAM
+tables, and
+ARCHIVE
+tables as of MySQL 4.1.
+\fBmysqlhotcopy\fR
+runs on Unix, and also on NetWare as of MySQL 4.0.18.
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlhotcopy \fR\fB\fIdb_name\fR\fR\fB [\fR\fB\fI/path/to/new_directory\fR\fR\fB]\fR
+.fi
+.RE
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlhotcopy \fR\fB\fIdb_name_1\fR\fR\fB ... \fR\fB\fIdb_name_n\fR\fR\fB \fR\fB\fI/path/to/new_directory\fR\fR
+.fi
+.RE
+.PP
+Back up tables in the given database that match a regular expression:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlhotcopy \fR\fB\fIdb_name\fR\fR\fB./\fR\fB\fIregex\fR\fR\fB/\fR
+.fi
+.RE
+.PP
+The regular expression for the table name can be negated by prefixing it with a tilde (\(oq~\(cq):
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlhotcopy \fR\fB\fIdb_name\fR\fR\fB./~\fR\fB\fIregex\fR\fR\fB/\fR
+.fi
+.RE
+.PP
+\fBmysqlhotcopy\fR
+supports the following options:
+.TP 3n
+\(bu
+\fB\-\-help\fR,
+\fB\-?\fR
+.sp
+Display a help message and exit.
+.TP 3n
+\(bu
+\fB\-\-addtodest\fR
+.sp
+Do not rename target directory (if it exists); merely add files to it. This option was added in MySQL 4.0.13.
+.TP 3n
+\(bu
+\fB\-\-allowold\fR
+.sp
+Do not abort if a target exists; rename it by adding an
+_old
+suffix.
+.TP 3n
+\(bu
+\fB\-\-checkpoint=\fR\fB\fIdb_name\fR\fR\fB.\fR\fB\fItbl_name\fR\fR
+.sp
+Insert checkpoint entries into the specified database
+\fIdb_name\fR
+and table
+\fItbl_name\fR.
+.TP 3n
+\(bu
+\fB\-\-chroot=\fR\fB\fIpath\fR\fR
+.sp
+Base directory of the
+\fBchroot\fR
+jail in which
+\fBmysqld\fR
+operates. The
+\fIpath\fR
+value should match that of the
+\fB\-\-chroot\fR
+option given to
+\fBmysqld\fR. This option was added in MySQL 4.0.19.
+.TP 3n
+\(bu
+\fB\-\-debug\fR
+.sp
+Enable debug output.
+.TP 3n
+\(bu
+\fB\-\-dryrun\fR,
+\fB\-n\fR
+.sp
+Report actions without performing them.
+.TP 3n
+\(bu
+\fB\-\-flushlog\fR
+.sp
+Flush logs after all tables are locked.
+.TP 3n
+\(bu
+\fB\-\-host=\fR\fB\fIhost_name\fR\fR,
+\fB\-h \fR\fB\fIhost_name\fR\fR
+.sp
+The hostname of the local host to use for making a TCP/IP connection to the local server. By default, the connection is made to
+localhost
+using a Unix socket file.
+.TP 3n
+\(bu
+\fB\-\-keepold\fR
+.sp
+Do not delete previous (renamed) target when done.
+.TP 3n
+\(bu
+\fB\-\-method=\fR\fB\fIcommand\fR\fR
+.sp
+The method for copying files (cp
+or
+scp).
+.TP 3n
+\(bu
+\fB\-\-noindices\fR
+.sp
+Do not include full index files in the backup. This makes the backup smaller and faster. The indexes for reloaded tables can be reconstructed later with
+\fBmyisamchk \-rq\fR
+for
+MyISAM
+tables or
+\fBisamchk \-rq\fR
+for
+ISAM
+tables.
+.TP 3n
+\(bu
+\fB\-\-password=\fR\fB\fIpassword\fR\fR,
+\fB\-p\fR\fB\fIpassword\fR\fR
+.sp
+The password to use when connecting to the server. Note that the password value is not optional for this option, unlike for other MySQL programs. You can use an option file to avoid giving the password on the command line.
+.sp
+Specifying a password on the command line should be considered insecure. See
+Section\ 7.6, \(lqKeeping Your Password Secure\(rq.
+.TP 3n
+\(bu
+\fB\-\-port=\fR\fB\fIport_num\fR\fR,
+\fB\-P \fR\fB\fIport_num\fR\fR
+.sp
+The TCP/IP port number to use when connecting to the local server.
+.TP 3n
+\(bu
+\fB\-\-quiet\fR,
+\fB\-q\fR
+.sp
+Be silent except for errors.
+.TP 3n
+\(bu
+\fB\-\-record_log_pos=\fR\fB\fIdb_name\fR\fR\fB.\fR\fB\fItbl_name\fR\fR
+.sp
+Record master and slave status in the specified database
+\fIdb_name\fR
+and table
+\fItbl_name\fR.
+.TP 3n
+\(bu
+\fB\-\-regexp=\fR\fB\fIexpr\fR\fR
+.sp
+Copy all databases with names that match the given regular expression.
+.TP 3n
+\(bu
+\fB\-\-resetmaster\fR
+.sp
+Reset the binary log after locking all the tables.
+.TP 3n
+\(bu
+\fB\-\-resetslave\fR
+.sp
+Reset the
+\fImaster.info\fR
+file after locking all the tables.
+.TP 3n
+\(bu
+\fB\-\-socket=\fR\fB\fIpath\fR\fR,
+\fB\-S \fR\fB\fIpath\fR\fR
+.sp
+The Unix socket file to use for the connection.
+.TP 3n
+\(bu
+\fB\-\-suffix=\fR\fB\fIstr\fR\fR
+.sp
+The suffix for names of copied databases.
+.TP 3n
+\(bu
+\fB\-\-tmpdir=\fR\fB\fIpath\fR\fR
+.sp
+The temporary directory. The default is
+\fI/tmp\fR.
+.TP 3n
+\(bu
+\fB\-\-user=\fR\fB\fIuser_name\fR\fR,
+\fB\-u \fR\fB\fIuser_name\fR\fR
+.sp
+The MySQL username to use when connecting to the server.
+.sp
+.RE
+.PP
+\fBmysqlhotcopy\fR
+reads the
+[client]
+and
+[mysqlhotcopy]
+option groups from option files.
+.PP
+To execute
+\fBmysqlhotcopy\fR, you must have access to the files for the tables that you are backing up, the
+SELECT
+privilege for those tables, the
+RELOAD
+privilege (to be able to execute
+FLUSH TABLES), and the
+LOCK TABLES
+privilege (to be able to lock the tables).
+.PP
+Use
+perldoc
+for additional
+\fBmysqlhotcopy\fR
+documentation, including information about the structure of the tables needed for the
+\fB\-\-checkpoint\fR
+and
+\fB\-\-record_log_pos\fR
+options:
+.sp
+.RS 3n
+.nf
+shell> \fBperldoc mysqlhotcopy\fR
+.fi
+.RE
+.SH "COPYRIGHT"
+.PP
+Copyright 1997\-2006 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information.
+.SH "SEE ALSO"
+isamchk(1),
+isamlog(1),
+msql2mysql(1),
+myisam_ftdump(1),
+myisamchk(1),
+myisamlog(1),
+myisampack(1),
+mysql(1),
+mysql.server(1),
+mysql_config(1),
+mysql_explain_log(1),
+mysql_fix_privilege_tables(1),
+mysql_zap(1),
+mysqlaccess(1),
+mysqladmin(1),
+mysqlbinlog(1),
+mysqlcheck(1),
+mysqld(1),
+mysqld(8),
+mysqld_multi(1),
+mysqld_safe(1),
+mysqldump(1),
+mysqlimport(1),
+mysqlshow(1),
+pack_isam(1),
+perror(1),
+replace(1),
+safe_mysqld(1)
+.P
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

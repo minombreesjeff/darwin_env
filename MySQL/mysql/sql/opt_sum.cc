@@ -59,8 +59,8 @@ static int maxmin_in_range(bool max_fl, Field* field, COND *cond);
 
   SYNOPSIS
     opt_sum_query()
-    tables                Tables in query
-    all_fields                All fields to be returned
+    tables               Tables in query
+    all_fields           All fields to be returned
     conds                WHERE clause
 
   NOTE:
@@ -80,6 +80,8 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
   List_iterator_fast<Item> it(all_fields);
   int const_result= 1;
   bool recalc_const_item= 0;
+  longlong count= 1;
+  bool is_exact_count= TRUE;
   table_map removed_tables= 0, outer_tables= 0, used_tables= 0;
   table_map where_tables= 0;
   Item *item;
@@ -88,9 +90,13 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
   if (conds)
     where_tables= conds->used_tables();
 
-  /* Don't replace expression on a table that is part of an outer join */
+  /*
+    Analyze outer join dependencies, and, if possible, compute the number
+    of returned rows.
+  */
   for (TABLE_LIST *tl=tables; tl ; tl= tl->next)
   {
+    /* Don't replace expression on a table that is part of an outer join */
     if (tl->on_expr)
     {
       outer_tables|= tl->table->map;
@@ -106,11 +112,32 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
     }
     else
       used_tables|= tl->table->map;
+
+    /*
+      If the storage manager of 'tl' gives exact row count, compute the total
+      number of rows. If there are no outer table dependencies, this count
+      may be used as the real count.
+    */
+    if (tl->table->file->table_flags() & HA_NOT_EXACT_COUNT)
+    {
+      is_exact_count= FALSE;
+      count= 1;                                 // ensure count != 0
+    }
+    else
+    {
+      error= tl->table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
+      if(error)
+      {
+        tl->table->file->print_error(error, MYF(0));
+        return error;
+      }
+      count*= tl->table->file->records;
+    }
   }
 
   /*
-    Iterate through item is select part and replace COUNT(), MIN() and MAX()
-    with constants (if possible)
+    Iterate through all items in the SELECT clause and replace
+    COUNT(), MIN() and MAX() with constants (if possible).
   */
 
   while ((item= it++))
@@ -122,28 +149,14 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
       case Item_sum::COUNT_FUNC:
         /*
           If the expr in count(expr) can never be null we can change this
-          to the number of rows in the tables
+          to the number of rows in the tables if this number is exact and
+          there are no outer joins.
         */
-        if (!conds && !((Item_sum_count*) item)->args[0]->maybe_null)
+        if (!conds && !((Item_sum_count*) item)->args[0]->maybe_null &&
+            !outer_tables && is_exact_count)
         {
-          longlong count= 1;
-          TABLE_LIST *table;
-          for (table=tables ; table ; table=table->next)
-          {
-            if (outer_tables || (table->table->file->table_flags() &
-                                 HA_NOT_EXACT_COUNT))
-            {
-              const_result= 0;			// Can't optimize left join
-              break;
-            }
-            tables->table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
-            count*= table->table->file->records;
-          }
-          if (!table)
-          {
-            ((Item_sum_count*) item)->make_const(count);
-            recalc_const_item= 1;
-          }
+          ((Item_sum_count*) item)->make_const(count);
+          recalc_const_item= 1;
         }
         else
           const_result= 0;
@@ -174,7 +187,7 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
             Type of range for the key part for this field will be
             returned in range_fl.
           */
-          if ((outer_tables & table->map) ||
+          if (table->file->inited || (outer_tables & table->map) ||
               !find_key_for_maxmin(0, &ref, item_field->field, conds,
                                    &range_fl, &prefix_len))
           {
@@ -210,12 +223,27 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
 	  }
           removed_tables|= table->map;
         }
-        else if (!expr->const_item())		// This is VERY seldom false
+        else if (!expr->const_item() || !is_exact_count)
         {
+          /*
+            The optimization is not applicable in both cases:
+            (a) 'expr' is a non-constant expression. Then we can't
+            replace 'expr' by a constant.
+            (b) 'expr' is a costant. According to ANSI, MIN/MAX must return
+            NULL if the query does not return any rows. Thus, if we are not
+            able to determine if the query returns any rows, we can't apply
+            the optimization and replace MIN/MAX with a constant.
+          */
           const_result= 0;
           break;
         }
-        ((Item_sum_min*) item_sum)->reset();
+        if (!count)
+        {
+          /* If count == 0, then we know that is_exact_count == TRUE. */
+          ((Item_sum_min*) item_sum)->clear(); /* Set to NULL. */
+        }
+        else
+          ((Item_sum_min*) item_sum)->reset(); /* Set to the constant value. */
         ((Item_sum_min*) item_sum)->make_const();
         recalc_const_item= 1;
         break;
@@ -246,7 +274,7 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
             Type of range for the key part for this field will be
             returned in range_fl.
           */
-          if ((outer_tables & table->map) ||
+          if (table->file->inited || (outer_tables & table->map) ||
 	          !find_key_for_maxmin(1, &ref, item_field->field, conds,
 				                   &range_fl, &prefix_len))
           {
@@ -282,13 +310,28 @@ int opt_sum_query(TABLE_LIST *tables, List<Item> &all_fields,COND *conds)
 	  }
           removed_tables|= table->map;
         }
-        else if (!expr->const_item())		// This is VERY seldom false
+        else if (!expr->const_item() || !is_exact_count)
         {
+          /*
+            The optimization is not applicable in both cases:
+            (a) 'expr' is a non-constant expression. Then we can't
+            replace 'expr' by a constant.
+            (b) 'expr' is a costant. According to ANSI, MIN/MAX must return
+            NULL if the query does not return any rows. Thus, if we are not
+            able to determine if the query returns any rows, we can't apply
+            the optimization and replace MIN/MAX with a constant.
+          */
           const_result= 0;
           break;
         }
-        ((Item_sum_min*) item_sum)->reset();
-        ((Item_sum_min*) item_sum)->make_const();
+        if (!count)
+        {
+          /* If count != 1, then we know that is_exact_count == TRUE. */
+          ((Item_sum_max*) item_sum)->clear(); /* Set to NULL. */
+        }
+        else
+          ((Item_sum_max*) item_sum)->reset(); /* Set to the constant value. */
+        ((Item_sum_max*) item_sum)->make_const();
         recalc_const_item= 1;
         break;
       }
@@ -544,7 +587,8 @@ static bool matching_cond(bool max_fl, TABLE_REF *ref, KEY *keyinfo,
     }
     else
     {
-      store_val_in_field(part->field, args[between && max_fl ? 2 : 1]);
+      store_val_in_field(part->field, args[between && max_fl ? 2 : 1],
+                         CHECK_FIELD_IGNORE);
       if (part->null_bit) 
         *key_ptr++= (byte) test(part->field->is_null());
       part->field->get_key_image((char*) key_ptr, part->length,
@@ -600,6 +644,8 @@ static bool matching_cond(bool max_fl, TABLE_REF *ref, KEY *keyinfo,
         field BETWEEN const1 AND const2
      3. all references to the columns from the same table as column field
         occur only in conjucts mentioned above.
+     4. each of k first components the index is not partial, i.e. is not
+        defined on a fixed length proper prefix of the field.
 
      If such an index exists the function through the ref parameter
      returns the key value to find max/min for the field using the index,
@@ -609,8 +655,8 @@ static bool matching_cond(bool max_fl, TABLE_REF *ref, KEY *keyinfo,
       of the whole search key)
 
   NOTE
-   This function may set table->key_read to 1, which must be reset after
-   index is used! (This can only happen when function returns 1)
+    This function may set table->key_read to 1, which must be reset after
+    index is used! (This can only happen when function returns 1)
 
   RETURN
     0   Index can not be used to optimize MIN(field)/MAX(field)
@@ -635,6 +681,12 @@ static bool find_key_for_maxmin(bool max_fl, TABLE_REF *ref,
   {
     KEY_PART_INFO *part,*part_end;
     key_part_map key_part_to_use= 0;
+    /*
+      Perform a check if index is not disabled by ALTER TABLE
+      or IGNORE INDEX.
+    */
+    if (!table->keys_in_use_for_query.is_set(idx))
+      continue;
     uint jdx= 0;
     *prefix_len= 0;
     for (part= keyinfo->key_part, part_end= part+keyinfo->key_parts ;
@@ -643,6 +695,10 @@ static bool find_key_for_maxmin(bool max_fl, TABLE_REF *ref,
     {
       if (!(table->file->index_flags(idx, jdx, 0) & HA_READ_ORDER))
         return 0;
+
+        /* Check whether the index component is partial */
+      if (part->length < table->field[part->fieldnr-1]->pack_length())
+        break;
 
       if (field->eq(part->field))
       {
@@ -661,7 +717,8 @@ static bool find_key_for_maxmin(bool max_fl, TABLE_REF *ref,
               If key_part2 may be NULL, then we want to find the first row
               that is not null
             */
-            ref->key_buff[ref->key_length++]= 1;
+            ref->key_buff[ref->key_length]= 1;
+            ref->key_length+= part->store_length;
             *range_fl&= ~NO_MIN_RANGE;
             *range_fl|= NEAR_MIN;                // > NULL
           }

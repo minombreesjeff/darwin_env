@@ -41,11 +41,14 @@ static const char *fake_groups[] = { "server", "embedded", 0 };
 int check_user(THD *thd, enum enum_server_command command, 
 	       const char *passwd, uint passwd_len, const char *db,
 	       bool check_count);
+void thd_init_client_charset(THD *thd, uint cs_number);
+
 C_MODE_START
 #include <mysql.h>
 #undef ER
 #include "errmsg.h"
 #include <sql_common.h>
+
 
 void embedded_get_error(MYSQL *mysql)
 {
@@ -66,7 +69,8 @@ void embedded_get_error(MYSQL *mysql)
 static my_bool
 emb_advanced_command(MYSQL *mysql, enum enum_server_command command,
 		     const char *header, ulong header_length,
-		     const char *arg, ulong arg_length, my_bool skip_check)
+		     const char *arg, ulong arg_length, my_bool skip_check,
+                     MYSQL_STMT *stmt)
 {
   my_bool result= 1;
   THD *thd=(THD *) mysql->thd;
@@ -90,6 +94,7 @@ emb_advanced_command(MYSQL *mysql, enum enum_server_command command,
   mysql->affected_rows= ~(my_ulonglong) 0;
   mysql->field_count= 0;
   net->last_errno= 0;
+  mysql->current_stmt= stmt;
 
   thd->store_globals();				// Fix if more than one connect
   /* 
@@ -183,7 +188,6 @@ static my_bool emb_read_prepare_result(MYSQL *mysql, MYSQL_STMT *stmt)
       mysql->server_status|= SERVER_STATUS_IN_TRANS;
 
     stmt->fields= mysql->fields;
-    stmt->mem_root= mysql->field_alloc;
     mysql->fields= NULL;
   }
 
@@ -225,7 +229,7 @@ static int emb_stmt_execute(MYSQL_STMT *stmt)
   thd->client_param_count= stmt->param_count;
   thd->client_params= stmt->params;
   if (emb_advanced_command(stmt->mysql, COM_EXECUTE,0,0,
-                           header, sizeof(header), 1) ||
+                           header, sizeof(header), 1, stmt) ||
       emb_mysql_read_query_result(stmt->mysql))
   {
     NET *net= &stmt->mysql->net;
@@ -242,8 +246,6 @@ int emb_read_binary_rows(MYSQL_STMT *stmt)
   MYSQL_DATA *data;
   if (!(data= emb_read_rows(stmt->mysql, 0, 0)))
     return 1;
-  stmt->result= *data;
-  my_free((char *) data, MYF(0));
   return 0;
 }
 
@@ -298,7 +300,8 @@ my_bool emb_next_result(MYSQL *mysql)
   DBUG_ENTER("emb_next_result");
 
   if (emb_advanced_command(mysql, COM_QUERY,0,0,
-			   thd->query_rest.ptr(),thd->query_rest.length(),1) ||
+			   thd->query_rest.ptr(),
+                           thd->query_rest.length(),1, 0) ||
       emb_mysql_read_query_result(mysql))
     DBUG_RETURN(1);
 
@@ -427,9 +430,9 @@ int init_embedded_server(int argc, char **argv, char **groups)
 
   acl_error= 0;
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
-  if (!(acl_error= acl_init((THD *)0, opt_noacl)) &&
+  if (!(acl_error= acl_init(opt_noacl)) &&
       !opt_noacl)
-    (void) grant_init((THD *)0);
+    (void) grant_init();
 #endif
   if (acl_error || my_tz_init((THD *)0, default_tz_name, opt_bootstrap))
   {
@@ -482,14 +485,14 @@ void end_embedded_server()
 } /* extern "C" */
 
 C_MODE_START
-void init_embedded_mysql(MYSQL *mysql, int client_flag, char *db)
+void init_embedded_mysql(MYSQL *mysql, int client_flag)
 {
   THD *thd = (THD *)mysql->thd;
   thd->mysql= mysql;
   mysql->server_version= server_version;
 }
 
-void *create_embedded_thd(int client_flag, char *db)
+void *create_embedded_thd(int client_flag)
 {
   THD * thd= new THD;
   thd->thread_id= thread_id++;
@@ -506,6 +509,8 @@ void *create_embedded_thd(int client_flag, char *db)
 
 /* TODO - add init_connect command execution */
 
+  if (thd->variables.max_join_size == HA_POS_ERROR)
+    thd->options |= OPTION_BIG_SELECTS;
   thd->proc_info=0;				// Remove 'login'
   thd->command=COM_SLEEP;
   thd->version=refresh_version;
@@ -513,8 +518,8 @@ void *create_embedded_thd(int client_flag, char *db)
   thd->init_for_queries();
   thd->client_capabilities= client_flag;
 
-  thd->db= db;
-  thd->db_length= db ? strip_sp(db) : 0;
+  thd->db= NULL;
+  thd->db_length= 0;
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
   thd->db_access= DB_ACLS;
   thd->master_access= ~NO_ACCESS;
@@ -530,25 +535,30 @@ err:
   return NULL;
 }
 
+
 #ifdef NO_EMBEDDED_ACCESS_CHECKS
-int check_embedded_connection(MYSQL *mysql)
+int check_embedded_connection(MYSQL *mysql, const char *db)
 {
   THD *thd= (THD*)mysql->thd;
+  thd_init_client_charset(thd, mysql->charset->number);
+  thd->update_charset();
   thd->host= (char*)my_localhost;
   thd->host_or_ip= thd->host;
   thd->user= my_strdup(mysql->user, MYF(0));
   thd->priv_user= thd->user;
-  return check_user(thd, COM_CONNECT, NULL, 0, thd->db, true);
+  return check_user(thd, COM_CONNECT, NULL, 0, db, true);
 }
 
 #else
-int check_embedded_connection(MYSQL *mysql)
+int check_embedded_connection(MYSQL *mysql, const char *db)
 {
   THD *thd= (THD*)mysql->thd;
   int result;
   char scramble_buff[SCRAMBLE_LENGTH];
   int passwd_len;
 
+  thd_init_client_charset(thd, mysql->charset->number);
+  thd->update_charset();
   if (mysql->options.client_ip)
   {
     thd->host= my_strdup(mysql->options.client_ip, MYF(0));
@@ -576,7 +586,7 @@ int check_embedded_connection(MYSQL *mysql)
     passwd_len= 0;
 
   if((result= check_user(thd, COM_CONNECT, 
-			 scramble_buff, passwd_len, thd->db, true)))
+			 scramble_buff, passwd_len, db, true)))
      goto err;
 
   return 0;
@@ -634,8 +644,9 @@ bool Protocol::send_fields(List<Item> *list, uint flag)
     DBUG_RETURN(0);
 
   field_count= list->elements;
-  field_alloc= &mysql->field_alloc;
-  if (!(client_field= thd->mysql->fields= 
+  field_alloc= mysql->current_stmt ? &mysql->current_stmt->mem_root :
+                                     &mysql->field_alloc;
+  if (!(client_field= mysql->fields= 
 	(MYSQL_FIELD *)alloc_root(field_alloc, 
 				  sizeof(MYSQL_FIELD) * field_count)))
     goto err;
@@ -663,10 +674,14 @@ bool Protocol::send_fields(List<Item> *list, uint flag)
     }
     else
     {
+      uint max_char_len;
       /* With conversion */
       client_field->charsetnr= thd_cs->number;
-      uint char_len= server_field.length / item->collation.collation->mbmaxlen;
-      client_field->length= char_len * thd_cs->mbmaxlen;
+      max_char_len= (server_field.type >= (int) MYSQL_TYPE_TINY_BLOB &&
+                     server_field.type <= (int) MYSQL_TYPE_BLOB) ?
+                     server_field.length / item->collation.collation->mbminlen :
+                     server_field.length / item->collation.collation->mbmaxlen;
+      client_field->length= max_char_len * thd_cs->mbmaxlen;
     }
     client_field->type=   server_field.type;
     client_field->flags= server_field.flags;
@@ -705,7 +720,7 @@ bool Protocol::send_fields(List<Item> *list, uint flag)
     client_field->max_length= 0;
     ++client_field;
   }
-  thd->mysql->field_count= field_count;
+  mysql->field_count= field_count;
 
   DBUG_RETURN(prepare_for_send(list));
  err:
@@ -734,13 +749,20 @@ bool Protocol_prep::write()
 
   if (!data)
   {
-    if (!(data= (MYSQL_DATA*) my_malloc(sizeof(MYSQL_DATA),
-					MYF(MY_WME | MY_ZEROFILL))))
-      return true;
+    MYSQL *mysql= thd->mysql;
+
+    if (mysql->current_stmt)
+      data= &mysql->current_stmt->result;
+    else
+    {
+      if (!(data= (MYSQL_DATA*) my_malloc(sizeof(MYSQL_DATA),
+                                          MYF(MY_WME | MY_ZEROFILL))))
+        return true;
     
+      init_alloc_root(&data->alloc,8192,0);	/* Assume rowlength < 8192 */
+      data->alloc.min_malloc=sizeof(MYSQL_ROWS);
+    }
     alloc= &data->alloc;
-    init_alloc_root(alloc,8192,0);	/* Assume rowlength < 8192 */
-    alloc->min_malloc=sizeof(MYSQL_ROWS);
     data->rows=0;
     data->fields=field_count;
     data->prev_ptr= &data->data;

@@ -1295,9 +1295,9 @@ explain select fld3 from t2 use index (fld1,fld3) where fld3 = 'honeysuckle';
 # The next should give an error
 #
 
--- error 1072
+-- error 1176
 explain select fld3 from t2 ignore index (fld3,not_used);
--- error 1072
+-- error 1176
 explain select fld3 from t2 use index (not_used);
 
 #
@@ -2053,6 +2053,7 @@ AND FK_firma_id = 2;
 drop table t1;
 
 #
+#
 # Test for Bug#8009, SELECT failed on bigint unsigned when using HEX
 #
 
@@ -2116,3 +2117,229 @@ WHERE
 
 drop table t1,t2,t3;
 
+#
+# Bug #11482 4.1.12 produces different resultset for a complex query 
+#             than in previous 4.1.x
+create table t1 (f1 int);
+insert into t1 values (1),(NULL);
+create table t2 (f2 int, f3 int, f4 int);
+create index idx1 on t2 (f4);
+insert into t2 values (1,2,3),(2,4,6);
+select A.f2 from t1 left join t2 A on A.f2 = f1 where A.f3=(select min(f3)
+from  t2 C where A.f4 = C.f4) or A.f3 IS NULL; 
+drop table t1,t2;
+
+#
+# Bug #11521 Negative integer keys incorrectly substituted for 0 during
+#            range analysis.
+
+create table t2 (a tinyint unsigned);
+create index t2i on t2(a);
+insert into t2 values (0), (254), (255);
+explain select * from t2 where a > -1;
+select * from t2 where a > -1;
+drop table t2;
+
+#
+# Bug #11745: SELECT ... FROM DUAL with WHERE condition
+#
+
+CREATE TABLE t1 (a int, b int, c int);
+INSERT INTO t1
+  SELECT 50, 3, 3 FROM DUAL
+    WHERE NOT EXISTS
+      (SELECT * FROM t1 WHERE a = 50 AND b = 3);
+SELECT * FROM t1;
+INSERT INTO t1
+  SELECT 50, 3, 3 FROM DUAL
+    WHERE NOT EXISTS
+      (SELECT * FROM t1 WHERE a = 50 AND b = 3);
+select found_rows();
+SELECT * FROM t1;
+select count(*) from t1;
+select found_rows();
+select count(*) from t1 limit 2,3;
+select found_rows();
+select SQL_CALC_FOUND_ROWS count(*) from t1 limit 2,3;
+select found_rows();
+
+DROP TABLE t1;
+
+#
+# Bug 7672 Unknown column error in order clause
+#
+CREATE TABLE t1 (a INT, b INT);
+(SELECT a, b AS c FROM t1) ORDER BY c+1;
+(SELECT a, b AS c FROM t1) ORDER BY b+1;
+SELECT a, b AS c FROM t1 ORDER BY c+1;
+SELECT a, b AS c FROM t1 ORDER BY b+1;
+drop table t1;
+
+#
+# Bug #13356 assertion failed in resolve_const_item()
+#
+create table t1(f1 int, f2 int);
+create table t2(f3 int);
+select f1 from t1,t2 where f1=f2 and (f1,f2) = ((1,1));
+select f1 from t1,t2 where f1=f2 and (f1,NULL) = ((1,1));
+select f1 from t1,t2 where f1=f2 and (f1,f2) = ((1,NULL));
+insert into t1 values(1,1),(2,null);
+insert into t2 values(2);
+select * from t1,t2 where f1=f3 and (f1,f2) = (2,null);
+select * from t1,t2 where f1=f3 and (f1,f2) <=> (2,null);
+drop table t1,t2; 
+
+#
+# Bug #13535
+#
+create table t1 (f1 int not null auto_increment primary key, f2 varchar(10));
+create table t11 like t1;
+insert into t1 values(1,""),(2,"");
+--replace_column 7 X 8 X 9 X 10 X 11 X 12 X 13 X 14 X
+show table status like 't1%';
+select 123 as a from t1 where f1 is null;
+drop table t1,t11;
+
+# Bug 7672 Unknown column error in order clause
+#
+CREATE TABLE t1 (a INT, b INT);
+(SELECT a, b AS c FROM t1) ORDER BY c+1;
+(SELECT a, b AS c FROM t1) ORDER BY b+1;
+SELECT a, b AS c FROM t1 ORDER BY c+1;
+SELECT a, b AS c FROM t1 ORDER BY b+1;
+drop table t1;
+
+#
+# Bug #3874 (function in GROUP and LEFT JOIN)
+#
+
+CREATE TABLE t1 ( a INT NOT NULL, b INT NOT NULL, UNIQUE idx (a,b) );
+INSERT INTO t1 VALUES (1,1),(1,2),(1,3),(1,4);
+CREATE TABLE t2 ( a INT NOT NULL, b INT NOT NULL, c INT );
+INSERT INTO t2 VALUES ( 1,10,1), (1,10,2), (1,11,1), (1,11,2), (1,2,1), (1,2,2),
+ (1,2,3);
+SELECT t2.a, t2.b, IF(t1.b IS NULL,'',c) AS c, COUNT(*) AS d FROM t2 LEFT JOIN
+t1 ON t2.a = t1.a AND t2.b = t1.b GROUP BY a, b, c;
+SELECT t2.a, t2.b, IF(t1.b IS NULL,'',c) AS c, COUNT(*) AS d FROM t2 LEFT JOIN
+t1 ON t2.a = t1.a AND t2.b = t1.b GROUP BY t1.a, t1.b, c;
+SELECT t2.a, t2.b, IF(t1.b IS NULL,'',c) AS c, COUNT(*) AS d FROM t2 LEFT JOIN
+t1 ON t2.a = t1.a AND t2.b = t1.b GROUP BY t2.a, t2.b, c;
+SELECT t2.a, t2.b, IF(t1.b IS NULL,'',c) AS c, COUNT(*) AS d FROM t2,t1
+WHERE t2.a = t1.a AND t2.b = t1.b GROUP BY a, b, c;
+DROP TABLE IF EXISTS t1, t2;
+
+#
+# Bug #13855 select distinct with group by caused server crash
+#
+create table t1 (f1 int primary key, f2 int);
+create table t2 (f3 int, f4 int, primary key(f3,f4));
+insert into t1 values (1,1);
+insert into t2 values (1,1),(1,2);
+select distinct count(f2) >0 from t1 left join t2 on f1=f3 group by f1;
+drop table t1,t2;
+
+#
+# Bug #14482 Server crash when subselecting from the same table
+#
+create table t1 (f1 int,f2 int);
+insert into t1 values(1,1);
+create table t2 (f3 int, f4 int, primary key(f3,f4));
+insert into t2 values(1,1);
+select * from t1 where f1 in (select f3 from t2 where (f3,f4)= (select f3,f4 from t2)); 
+drop table t1,t2;
+
+#
+# Bug #4981: 4.x and 5.x produce non-optimal execution path, 3.23 regression test failure
+#
+CREATE TABLE t1(a int, b int, c int, KEY b(b), KEY c(c));
+insert into t1 values (1,0,0),(2,0,0);
+CREATE TABLE t2 (a int, b varchar(2), c varchar(2), PRIMARY KEY(a));
+insert into t2 values (1,'',''), (2,'','');
+CREATE TABLE t3 (a int, b int, PRIMARY KEY (a,b), KEY a (a), KEY b (b));
+insert into t3 values (1,1),(1,2);
+# must have "range checked" for t2
+explain select straight_join DISTINCT t2.a,t2.b, t1.c from t1, t3, t2 
+ where (t1.c=t2.a or (t1.c=t3.a and t2.a=t3.b)) and t1.b=556476786 and 
+       t2.b like '%%' order by t2.b limit 0,1;
+DROP TABLE t1,t2,t3;
+
+#
+# Bug #17873: confusing error message when IGNORE INDEX refers a column name
+#
+
+CREATE TABLE t1 (a int, INDEX idx(a));
+INSERT INTO t1 VALUES (2), (3), (1);
+
+EXPLAIN SELECT * FROM t1 IGNORE INDEX (idx);
+--error 1176
+EXPLAIN SELECT * FROM t1 IGNORE INDEX (a);
+--error 1176
+EXPLAIN SELECT * FROM t1 FORCE INDEX (a);
+
+DROP TABLE t1;
+
+#
+# Bug #18759 "Incorrect string to numeric conversion"
+#
+# This test is here so that the behavior will not be changed to 4.1
+# and not to 5.0 either. In 4.1 and 5.0 sending an integer as a string
+# will be converted internally to real (double) value and it is not
+# as accurate as bigint (longlong) for integers. Thus the results may
+# vary. In 5.1 internally it is decimal, which is a string type and
+# will be more accurate. Due to rather big changes needed to fix this
+# in 4.1 or 5.0 it is not desired to do it in the stable versions.
+#
+# This test is here only to make sure that behavior is not changed in
+# 4.1 and 5.0
+#
+CREATE TABLE t1 (i BIGINT UNSIGNED NOT NULL);
+INSERT INTO t1 VALUES (10);
+SELECT i='1e+01',i=1e+01, i in (1e+01), i in ('1e+01') FROM t1;
+DROP TABLE t1;
+
+#
+# Bug #21019: First result of SELECT COUNT(*) different than consecutive runs
+#
+CREATE TABLE t1 (a int, b int);
+INSERT INTO t1 VALUES (1,1), (2,1), (4,10);
+
+CREATE TABLE t2 (a int PRIMARY KEY, b int, KEY b (b));
+INSERT INTO t2 VALUES (1,NULL), (2,10);
+ALTER TABLE t1 ENABLE KEYS;
+
+EXPLAIN SELECT STRAIGHT_JOIN SQL_NO_CACHE COUNT(*) FROM t2, t1 WHERE t1.b = t2.b OR t2.b IS NULL;
+SELECT STRAIGHT_JOIN SQL_NO_CACHE * FROM t2, t1 WHERE t1.b = t2.b OR t2.b IS NULL;
+EXPLAIN SELECT STRAIGHT_JOIN SQL_NO_CACHE COUNT(*) FROM t2, t1 WHERE t1.b = t2.b OR t2.b IS NULL;
+SELECT STRAIGHT_JOIN SQL_NO_CACHE * FROM t2, t1 WHERE t1.b = t2.b OR t2.b IS NULL;
+DROP TABLE IF EXISTS t1,t2;
+#
+# Bug #20954 "avg(keyval) retuns 0.38 but max(keyval) returns an empty set"
+#
+--disable_ps_protocol
+CREATE TABLE t1 (key1 float default NULL, UNIQUE KEY key1 (key1));
+CREATE TABLE t2 (key2 float default NULL, UNIQUE KEY key2 (key2));
+INSERT INTO t1 VALUES (0.3762),(0.3845),(0.6158),(0.7941);
+INSERT INTO t2 VALUES (1.3762),(1.3845),(1.6158),(1.7941);
+
+explain select max(key1) from t1 where key1 <= 0.6158;
+explain select max(key2) from t2 where key2 <= 1.6158;
+explain select min(key1) from t1 where key1 >= 0.3762;
+explain select min(key2) from t2 where key2 >= 1.3762;
+explain select max(key1), min(key2) from t1, t2
+where key1 <= 0.6158 and key2 >= 1.3762;
+explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+
+select max(key1) from t1 where key1 <= 0.6158;
+select max(key2) from t2 where key2 <= 1.6158;
+select min(key1) from t1 where key1 >= 0.3762;
+select min(key2) from t2 where key2 >= 1.3762;
+select max(key1), min(key2) from t1, t2
+where key1 <= 0.6158 and key2 >= 1.3762;
+select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
+select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
+
+DROP TABLE t1,t2;
+--enable_ps_protocol
+
+# End of 4.1 tests

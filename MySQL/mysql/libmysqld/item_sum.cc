@@ -312,6 +312,7 @@ longlong Item_sum_count::val_int()
 void Item_sum_count::cleanup()
 {
   DBUG_ENTER("Item_sum_count::cleanup");
+  clear();
   Item_sum_int::cleanup();
   used_table_cache= ~(table_map) 0;
   DBUG_VOID_RETURN;
@@ -552,8 +553,8 @@ void Item_sum_hybrid::cleanup()
 
 void Item_sum_hybrid::no_rows_in_result()
 {
-  Item_sum::no_rows_in_result();
   was_values= FALSE;
+  clear();
 }
 
 
@@ -930,7 +931,6 @@ Item_sum_hybrid::min_max_update_str_field()
 
   if (!args[0]->null_value)
   {
-    res_str->strip_sp();
     result_field->val_str(&tmp_value);
 
     if (result_field->is_null() ||
@@ -1185,6 +1185,7 @@ void Item_sum_count_distinct::make_unique()
   original= 0;
   use_tree= 0; // to prevent delete_tree call on uninitialized tree
   tree= &tree_base;
+  force_copy_fields= 1;
 }
 
 
@@ -1219,6 +1220,7 @@ bool Item_sum_count_distinct::setup(THD *thd)
     free_tmp_table(thd, table);
     tmp_table_param->cleanup();
   }
+  tmp_table_param->force_copy_fields= force_copy_fields;
   if (!(table= create_tmp_table(thd, tmp_table_param, list, (ORDER*) 0, 1,
 				0,
 				select_lex->options | thd->options,
@@ -1409,12 +1411,20 @@ bool Item_sum_count_distinct::add()
 
 longlong Item_sum_count_distinct::val_int()
 {
+  int error;
   DBUG_ASSERT(fixed == 1);
   if (!table)					// Empty query
     return LL(0);
   if (use_tree)
     return tree->elements_in_tree;
-  table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
+
+  error= table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK);
+
+  if(error)
+  {
+    table->file->print_error(error, MYF(0));
+  }
+
   return table->file->records;
 }
 
@@ -1577,7 +1587,11 @@ int group_concat_key_cmp_with_distinct(void* arg, byte* key1,
       the temporary table, not the original field
     */
     Field *field= (*field_item)->get_tmp_table_field();
-    if (field)
+    /* 
+      If field_item is a const item then either get_tp_table_field returns 0
+      or it is an item over a const table. 
+    */
+    if (field && !(*field_item)->const_item())
     {
       int res;
       uint offset= field->offset();
@@ -1610,7 +1624,11 @@ int group_concat_key_cmp_with_order(void* arg, byte* key1, byte* key2)
       the temporary table, not the original field
     */
     Field *field= item->get_tmp_table_field();
-    if (field)
+    /* 
+      If item is a const item then either get_tp_table_field returns 0
+      or it is an item over a const table. 
+    */
+    if (field && !item->const_item())
     {
       int res;
       uint offset= field->offset();
@@ -1656,7 +1674,9 @@ int dump_leaf_key(byte* key, uint32 count __attribute__((unused)),
   char buff[MAX_FIELD_WIDTH];
   String tmp((char *)&buff,sizeof(buff),default_charset_info), tmp2;
 
-  if (item->result.length())
+  if (item->no_appended)
+    item->no_appended= FALSE;
+  else
     item->result.append(*item->separator);
 
   tmp.length(0);
@@ -1714,6 +1734,7 @@ Item_func_group_concat::Item_func_group_concat(bool is_distinct,
 					       String *is_separator)
   :Item_sum(), tmp_table_param(0), max_elements_in_tree(0), warning(0),
    key_length(0), tree_mode(0), distinct(is_distinct), warning_for_row(0),
+   force_copy_fields(0),
    separator(is_separator), tree(&tree_base), table(0),
    order(0), tables_list(0),
    arg_count_order(0), arg_count_field(0),
@@ -1775,6 +1796,7 @@ Item_func_group_concat::Item_func_group_concat(THD *thd,
   tree_mode(item->tree_mode),
   distinct(item->distinct),
   warning_for_row(item->warning_for_row),
+  force_copy_fields(item->force_copy_fields),
   separator(item->separator),
   tree(item->tree),
   table(item->table),
@@ -1848,6 +1870,7 @@ void Item_func_group_concat::clear()
   result.copy();
   null_value= TRUE;
   warning_for_row= FALSE;
+  no_appended= TRUE;
   if (tree_mode)
     reset_tree(tree);
 }
@@ -1890,8 +1913,7 @@ bool Item_func_group_concat::add()
 
 void Item_func_group_concat::reset_field()
 {
-  if (tree_mode)
-    reset_tree(tree);
+  DBUG_ASSERT(0);
 }
 
 
@@ -1908,7 +1930,7 @@ Item_func_group_concat::fix_fields(THD *thd, TABLE_LIST *tables, Item **ref)
   }
   
   thd->allow_sum_func= 0;
-  maybe_null= 0;
+  maybe_null= 1;
   item_thd= thd;
 
   /*
@@ -1921,10 +1943,13 @@ Item_func_group_concat::fix_fields(THD *thd, TABLE_LIST *tables, Item **ref)
          args[i]->fix_fields(thd, tables, args + i)) ||
         args[i]->check_cols(1))
       return 1;
-    if (i < arg_count_field)
-      maybe_null|= args[i]->maybe_null;
   }
 
+  if (agg_item_charsets(collation, func_name(),
+                        args, arg_count, MY_COLL_ALLOW_CONV))
+    return 1;
+
+  result.set_charset(collation.collation);
   result_field= 0;
   null_value= 1;
   max_length= group_concat_max_len;
@@ -1991,6 +2016,7 @@ bool Item_func_group_concat::setup(THD *thd)
     free_tmp_table(thd, table);
     tmp_table_param->cleanup();
   }
+  tmp_table_param->force_copy_fields= force_copy_fields;
   /*
     We have to create a temporary table to get descriptions of fields 
     (types, sizes and so on).
@@ -2066,6 +2092,7 @@ void Item_func_group_concat::make_unique()
   original= 0;
   tree_mode= 0; // to prevent delete_tree call on uninitialized tree
   tree= &tree_base;
+  force_copy_fields= 1;
 }
 
 

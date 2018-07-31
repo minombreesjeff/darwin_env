@@ -275,9 +275,16 @@ public:
     Any new item which can be NULL must implement this call.
   */
   virtual bool is_null() { return 0; }
+
   /*
-    it is "top level" item of WHERE clause and we do not need correct NULL
-    handling
+    Inform the item that there will be no distinction between its result
+    being FALSE or NULL.
+
+    NOTE
+      This function will be called for eg. Items that are top-level AND-parts
+      of the WHERE clause. Items implementing this function (currently
+      Item_cond_and and subquery-related item) enable special optimizations
+      when they are "top level".
   */
   virtual void top_level_item() {}
   /*
@@ -327,13 +334,31 @@ public:
     cleanup();
     delete this;
   }
+  /*
+    result_as_longlong() must return TRUE for Items representing DATE/TIME
+    functions and DATE/TIME table fields.
+    Those Items have result_type()==STRING_RESULT (and not INT_RESULT), but
+    their values should be compared as integers (because the integer
+    representation is more precise than the string one).
+  */
+  virtual bool result_as_longlong() { return FALSE; }
 };
+
+
+bool agg_item_collations(DTCollation &c, const char *name,
+                         Item **items, uint nitems, uint flags= 0);
+bool agg_item_collations_for_comparison(DTCollation &c, const char *name,
+                                        Item **items, uint nitems,
+                                        uint flags= 0);
+bool agg_item_charsets(DTCollation &c, const char *name,
+                       Item **items, uint nitems, uint flags= 0);
 
 
 class Item_num: public Item
 {
 public:
   virtual Item_num *neg()= 0;
+  Item *safe_charset_converter(CHARSET_INFO *tocs);
 };
 
 #define NO_CACHED_FIELD_INDEX ((uint)(-1))
@@ -440,6 +465,10 @@ public:
   Item *get_tmp_table_item(THD *thd);
   void cleanup();
   inline uint32 max_disp_length() { return field->max_length(); }
+  bool result_as_longlong()
+  {
+    return field->can_be_compared_as_longlong();
+  }
   friend class Item_default_value;
   friend class Item_insert_value;
   friend class st_select_lex_unit;
@@ -522,6 +551,7 @@ public:
     struct CONVERSION_INFO
     {
       CHARSET_INFO *character_set_client;
+      CHARSET_INFO *character_set_of_placeholder;
       /*
         This points at character set of connection if conversion
         to it is required (i. e. if placeholder typecode is not BLOB).
@@ -564,7 +594,6 @@ public:
   bool get_time(TIME *tm);
   bool get_date(TIME *tm, uint fuzzydate);
   int  save_in_field(Field *field, bool no_conversions);
-  bool fix_fields(THD *, struct st_table_list *, Item **);
 
   void set_null();
   void set_int(longlong i, uint32 max_length_arg);
@@ -608,6 +637,7 @@ public:
     basic_const_item returned TRUE.
   */
   Item *new_item();
+  Item *safe_charset_converter(CHARSET_INFO *tocs);
   /*
     Implement by-value equality evaluation if parameter value
     is set and is a basic constant (integer, real or string).
@@ -692,6 +722,14 @@ public:
   longlong val_int()
   {
     DBUG_ASSERT(fixed == 1);
+    if (value <= (double) LONGLONG_MIN)
+    {
+       return LONGLONG_MIN;
+    }
+    else if (value >= (double) (ulonglong) LONGLONG_MAX)
+    {
+      return LONGLONG_MAX;
+    }
     return (longlong) (value+(value > 0 ? 0.5 : -0.5));
   }
   String *val_str(String*);
@@ -831,10 +869,12 @@ public:
   String *val_str(String*) { DBUG_ASSERT(fixed == 1); return &str_value; }
   int save_in_field(Field *field, bool no_conversions);
   enum Item_result result_type () const { return STRING_RESULT; }
+  enum Item_result cast_to_int_type() const { return INT_RESULT; }
   enum_field_types field_type() const { return MYSQL_TYPE_STRING; }
   // to prevent drop fixed flag (no need parent cleanup call)
   void cleanup() {}
   bool eq(const Item *item, bool binary_cmp) const;
+  virtual Item *safe_charset_converter(CHARSET_INFO *tocs);
 };
 
 
@@ -952,6 +992,10 @@ public:
   }
   Item *real_item() { return *ref; }
   void print(String *str);
+  bool result_as_longlong()
+  {
+    return (*ref)->result_as_longlong();
+  }
 };
 
 
@@ -1013,20 +1057,16 @@ public:
   String* val_str(String* s);
   bool get_date(TIME *ltime, uint fuzzydate);
   void print(String *str);
+  /*
+    we add RAND_TABLE_BIT to prevent moving this item from HAVING to WHERE
+  */
+  table_map used_tables() const
+  {
+    return (depended_from ?
+            OUTER_REF_TABLE_BIT :
+            (*ref)->used_tables() | RAND_TABLE_BIT);
+  }
 };
-
-class Item_null_helper :public Item_ref_null_helper
-{
-  Item *store;
-public:
-  Item_null_helper(Item_in_subselect* master, Item *item,
-		   const char *table_name_par, const char *field_name_par)
-    :Item_ref_null_helper(master, &item, table_name_par, field_name_par),
-     store(item)
-    { ref= &store; }
-  void print(String *str);
-};
-
 
 /*
   The following class is used to optimize comparing of date and bigint columns
@@ -1201,7 +1241,11 @@ public:
   {
     return Item_field::save_in_field(field_arg, no_conversions);
   }
-  table_map used_tables() const { return (table_map)0L; }
+  /* 
+   We use RAND_TABLE_BIT to prevent Item_insert_value from
+   being treated as a constant and precalculated before execution
+  */
+  table_map used_tables() const { return RAND_TABLE_BIT; }
 
   bool walk(Item_processor processor, byte *args)
   {

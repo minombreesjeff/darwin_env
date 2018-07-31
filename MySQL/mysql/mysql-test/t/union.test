@@ -425,14 +425,6 @@ create table t1 SELECT b from t2 UNION select tx from t2;
 select * from t1;
 show create table t1;
 drop table t1,t2;
-create table t1 (d decimal(10,1));
-create table t2 (d decimal(10,9));
-insert into t1 values ("100000000.0");
-insert into t2 values ("1.23456780");
-create table t3 select * from t2 union select * from t1;
-select * from t3;
-show create table t3;
-drop table t1,t2,t3;
 create table t1 select 1 union select -1;
 select * from t1;
 show create table t1;
@@ -719,6 +711,15 @@ set @val:=6;
 select concat('value is: ', @val) union select 'some text';
 
 #
+# Bug#15949 union + illegal mix of collations (IMPLICIT + COERCIBLE)
+#
+select concat(_latin1'a', _ascii'b' collate ascii_bin);
+create table t1 (foo varchar(100)) collate ascii_bin;
+insert into t1 (foo) values ("foo");
+select foo from t1 union select 'bar' as foo from dual;
+drop table t1;
+
+#
 # Enum merging test
 #
 CREATE TABLE t1 (
@@ -737,8 +738,8 @@ drop table t2;
 create table t2 select a from t1 union select a from t1;
 show columns from t2;
 drop table t2;
--- error 1267
 create table t2 select a from t1 union select c from t1;
+drop table t2;
 create table t2 select a from t1 union select b from t1;
 show columns from t2;
 drop table t2, t1;
@@ -763,3 +764,23 @@ insert into t1 (col1) values (2),(3),(4),(5),(6);
 select 99 union all select id from t1 order by 1;
 select id from t1 union all select 99 order by 1;
 drop table t1;
+
+# 
+# Bug #14216: UNION + DECIMAL wrong values in result
+#
+create table t1 (f1 decimal(60,25), f2 decimal(60,25));
+insert into t1 values (0.0,0.0);
+select f1 from t1 union all select f2 from t1;
+select 'XXXXXXXXXXXXXXXXXXXX' as description, f1 from t1
+union all
+select 'YYYYYYYYYYYYYYYYYYYY' as description, f2 from t1;
+drop table t1;
+create table t1 (f1 decimal(60,24), f2 decimal(60,24));
+insert into t1 values (0.0,0.0);
+select f1 from t1 union all select f2 from t1;
+select 'XXXXXXXXXXXXXXXXXXXX' as description, f1 from t1
+union all
+select 'YYYYYYYYYYYYYYYYYYYY' as description, f2 from t1;
+drop table t1;
+
+# End of 4.1 tests

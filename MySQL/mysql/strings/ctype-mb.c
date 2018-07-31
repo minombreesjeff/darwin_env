@@ -260,7 +260,7 @@ uint my_charpos_mb(CHARSET_INFO *cs __attribute__((unused)),
     pos+= (mblen= my_ismbchar(cs, pos, end)) ? mblen : 1;
     length--;
   }
-  return length ? end+2-start : pos-start;
+  return length ? (uint) (end + 2 - start) : (uint) (pos - start);
 }
 
 
@@ -282,7 +282,7 @@ uint my_well_formed_len_mb(CHARSET_INFO *cs, const char *b, const char *e,
     b+= mblen;
     pos--;
   }
-  return b - b_start;
+  return (uint) (b - b_start);
 }
 
 
@@ -449,15 +449,35 @@ static void my_hash_sort_mb_bin(CHARSET_INFO *cs __attribute__((unused)),
 
 
 /* 
-  Write max key: create a buffer with multibyte
-  representation of the max_sort_char character,
-  and copy it into max_str in a loop. 
+  Fill the given buffer with 'maximum character' for given charset
+  SYNOPSIS
+      pad_max_char()
+      cs   Character set
+      str  Start of buffer to fill
+      end  End of buffer to fill
+
+  DESCRIPTION
+      Write max key:
+      - for non-Unicode character sets:
+        just set to 255.
+      - for Unicode character set (utf-8):
+        create a buffer with multibyte representation of the max_sort_char
+        character, and copy it into max_str in a loop. 
 */
 static void pad_max_char(CHARSET_INFO *cs, char *str, char *end)
 {
   char buf[10];
-  char buflen= cs->cset->wc_mb(cs, cs->max_sort_char, (uchar*) buf,
-                               (uchar*) buf + sizeof(buf));
+  char buflen;
+  
+  if (!(cs->state & MY_CS_UNICODE))
+  {
+    bfill(str, end - str, 255);
+    return;
+  }
+  
+  buflen= cs->cset->wc_mb(cs, cs->max_sort_char, (uchar*) buf,
+                          (uchar*) buf + sizeof(buf));
+  
   DBUG_ASSERT(buflen > 0);
   do
   {
@@ -502,34 +522,22 @@ my_bool my_like_range_mb(CHARSET_INFO *cs,
 			 char *min_str,char *max_str,
 			 uint *min_length,uint *max_length)
 {
-  const char *end;
+  uint mblen;
+  const char *end= ptr + ptr_length;
   char *min_org= min_str;
   char *min_end= min_str + res_length;
   char *max_end= max_str + res_length;
-  uint charlen= my_charpos(cs, ptr, ptr+ptr_length, res_length/cs->mbmaxlen);
+  uint maxcharlen= res_length / cs->mbmaxlen;
 
-  if (charlen < ptr_length)
-    ptr_length= charlen;
-  end= ptr + ptr_length;
-
-  for (; ptr != end && min_str != min_end ; ptr++)
+  for (; ptr != end && min_str != min_end && maxcharlen ; maxcharlen--)
   {
+    /* We assume here that escape, w_any, w_namy are one-byte characters */
     if (*ptr == escape && ptr+1 != end)
+      ptr++;                                    /* Skip escape */
+    else if (*ptr == w_one || *ptr == w_many)   /* '_' and '%' in SQL */
     {
-      ptr++;					/* Skip escape */
-      *min_str++= *max_str++ = *ptr;
-      continue;
-    }
-    if (*ptr == w_one || *ptr == w_many)	/* '_' and '%' in SQL */
-    {
-      charlen= my_charpos(cs, min_org, min_str, res_length/cs->mbmaxlen);
-      
-      if (charlen < (uint) (min_str - min_org))
-        min_str= min_org + charlen;
-      
       /* Write min key  */
       *min_length= (uint) (min_str - min_org);
-      *max_length= res_length;
       do
       {
 	*min_str++= (char) cs->min_sort_char;
@@ -540,10 +548,20 @@ my_bool my_like_range_mb(CHARSET_INFO *cs,
         representation of the max_sort_char character,
         and copy it into max_str in a loop. 
       */
+      *max_length= res_length;
       pad_max_char(cs, max_str, max_end);
       return 0;
     }
-    *min_str++= *max_str++ = *ptr;
+    if ((mblen= my_ismbchar(cs, ptr, end)) > 1)
+    {
+      if (ptr+mblen > end || min_str+mblen > min_end)
+        break;
+      while (mblen--)
+       *min_str++= *max_str++= *ptr++;
+    }
+    else
+       *min_str++= *max_str++= *ptr++;    
+
   }
   *min_length= *max_length = (uint) (min_str - min_org);
 
@@ -896,7 +914,7 @@ MY_COLLATION_HANDLER my_collation_mb_bin_handler =
     my_strnncoll_mb_bin,
     my_strnncollsp_mb_bin,
     my_strnxfrm_mb_bin,
-    my_like_range_simple,
+    my_like_range_mb,
     my_wildcmp_mb_bin,
     my_strcasecmp_mb_bin,
     my_instr_mb,

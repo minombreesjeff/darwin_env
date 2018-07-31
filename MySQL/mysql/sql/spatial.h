@@ -142,7 +142,7 @@ struct MBR
   bool inner_point(double x, double y) const
   {
     /* The following should be safe, even if we compare doubles */
-    return (xmin<x) && (xmax>x) && (ymin<y) && (ymax>x);
+    return (xmin<x) && (xmax>x) && (ymin<y) && (ymax>y);
   }
 
   int overlaps(const MBR *mbr)
@@ -165,6 +165,8 @@ struct Geometry_buffer;
 class Geometry
 {
 public:
+  Geometry() {}                                 /* remove gcc warning */
+  virtual ~Geometry() {}                        /* remove gcc warning */
   static void *operator new(size_t size, void *buffer)
   {
     return buffer;
@@ -172,6 +174,8 @@ public:
 
   static void operator delete(void *ptr, void *buffer)
   {}
+
+  static void operator delete(void *buffer) {}  /* remove gcc warning */
 
   enum wkbType
   {
@@ -202,6 +206,10 @@ public:
   virtual const Class_info *get_class_info() const=0;
   virtual uint32 get_data_size() const=0;
   virtual bool init_from_wkt(Gis_read_stream *trs, String *wkb)=0;
+
+  /* returns the length of the wkb that was read */
+  virtual uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo,
+                             String *res)=0;
   virtual bool get_data_as_wkt(String *txt, const char **end) const=0;
   virtual bool get_mbr(MBR *mbr, const char **end) const=0;
   virtual bool dimension(uint32 *dim, const char **end) const=0;
@@ -231,11 +239,13 @@ public:
     return my_reinterpret_cast(Geometry *)(buffer);
   }
 
-  static Geometry *create_from_wkb(Geometry_buffer *buffer,
-				   const char *data, uint32 data_len);
+  static Geometry *construct(Geometry_buffer *buffer,
+                             const char *data, uint32 data_len);
   static Geometry *create_from_wkt(Geometry_buffer *buffer,
 				   Gis_read_stream *trs, String *wkt,
 				   bool init_stream=1);
+  static int create_from_wkb(Geometry_buffer *buffer,
+                             const char *wkb, uint32 len, String *res);
   int as_wkt(String *wkt, const char **end)
   {
     uint32 len= get_class_info()->m_name.length;
@@ -249,7 +259,7 @@ public:
     return 0;
   }
 
-  inline void init_from_wkb(const char *data, uint32 data_len)
+  inline void set_data_ptr(const char *data, uint32 data_len)
   {
     m_data= data;
     m_data_end= data + data_len;
@@ -293,6 +303,7 @@ class Gis_point: public Geometry
 public:
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
+  uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
   bool get_data_as_wkt(String *txt, const char **end) const;
   bool get_mbr(MBR *mbr, const char **end) const;
   
@@ -339,6 +350,7 @@ class Gis_line_string: public Geometry
 public:
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
+  uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
   bool get_data_as_wkt(String *txt, const char **end) const;
   bool get_mbr(MBR *mbr, const char **end) const;
   int length(double *len) const;
@@ -364,6 +376,7 @@ class Gis_polygon: public Geometry
 public:
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
+  uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
   bool get_data_as_wkt(String *txt, const char **end) const;
   bool get_mbr(MBR *mbr, const char **end) const;
   int area(double *ar, const char **end) const;
@@ -389,6 +402,7 @@ class Gis_multi_point: public Geometry
 public:
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
+  uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
   bool get_data_as_wkt(String *txt, const char **end) const;
   bool get_mbr(MBR *mbr, const char **end) const;
   int num_geometries(uint32 *num) const;
@@ -410,6 +424,7 @@ class Gis_multi_line_string: public Geometry
 public:
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
+  uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
   bool get_data_as_wkt(String *txt, const char **end) const;
   bool get_mbr(MBR *mbr, const char **end) const;
   int num_geometries(uint32 *num) const;
@@ -433,6 +448,7 @@ class Gis_multi_polygon: public Geometry
 public:
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
+  uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
   bool get_data_as_wkt(String *txt, const char **end) const;
   bool get_mbr(MBR *mbr, const char **end) const;
   int num_geometries(uint32 *num) const;
@@ -456,6 +472,7 @@ class Gis_geometry_collection: public Geometry
 public:
   uint32 get_data_size() const;
   bool init_from_wkt(Gis_read_stream *trs, String *wkb);
+  uint init_from_wkb(const char *wkb, uint len, wkbByteOrder bo, String *res);
   bool get_data_as_wkt(String *txt, const char **end) const;
   bool get_mbr(MBR *mbr, const char **end) const;
   int num_geometries(uint32 *num) const;

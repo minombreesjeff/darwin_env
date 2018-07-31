@@ -56,6 +56,8 @@ static bool make_empty_rec(int file, enum db_type table_type,
     mysql_create_frm()
     thd			Thread handler
     file_name		Name of file (including database and .frm)
+    db                  Name of database
+    table               Name of table
     create_info		create info parameters
     create_fields	Fields to create
     keys		number of keys to create
@@ -68,6 +70,7 @@ static bool make_empty_rec(int file, enum db_type table_type,
 */
 
 bool mysql_create_frm(THD *thd, my_string file_name,
+                      const char *db, const char *table,
 		      HA_CREATE_INFO *create_info,
 		      List<create_field> &create_fields,
 		      uint keys, KEY *key_info,
@@ -114,7 +117,7 @@ bool mysql_create_frm(THD *thd, my_string file_name,
   reclength=uint2korr(forminfo+266);
   null_fields=uint2korr(forminfo+282);
 
-  if ((file=create_frm(file_name, reclength, fileinfo,
+  if ((file=create_frm(file_name, db, table, reclength, fileinfo,
 		       create_info, keys)) < 0)
   {
     my_free((gptr) screen_buff,MYF(0));
@@ -187,13 +190,19 @@ bool mysql_create_frm(THD *thd, my_string file_name,
     goto err3;
 
   {
-    /* Unescape all UCS2 intervals: were escaped in pack_headers */
+    /* 
+      Restore all UCS2 intervals.
+      HEX representation of them is not needed anymore.
+    */
     List_iterator<create_field> it(create_fields);
     create_field *field;
     while ((field=it++))
     {
-      if (field->interval && field->charset->mbminlen > 1)
-        unhex_type2(field->interval);
+      if (field->save_interval)
+      {
+        field->interval= field->save_interval;
+        field->save_interval= 0;
+      }
     }
   }
   DBUG_RETURN(0);
@@ -213,9 +222,11 @@ err3:
   Create a frm (table definition) file and the tables
 
   SYNOPSIS
-    mysql_create_frm()
+    rea_create_table()
     thd			Thread handler
     file_name		Name of file (including database and .frm)
+    db                  Name of database
+    table               Name of table
     create_info		create info parameters
     create_fields	Fields to create
     keys		number of keys to create
@@ -228,13 +239,14 @@ err3:
 */
 
 int rea_create_table(THD *thd, my_string file_name,
+                     const char *db, const char *table,
 		     HA_CREATE_INFO *create_info,
 		     List<create_field> &create_fields,
 		     uint keys, KEY *key_info)
 {
   DBUG_ENTER("rea_create_table");
 
-  if (mysql_create_frm(thd, file_name, create_info,
+  if (mysql_create_frm(thd, file_name, db, table, create_info,
   		       create_fields, keys, key_info, NULL))
     DBUG_RETURN(1);
   if (ha_create_table(file_name,create_info,0))
@@ -446,18 +458,36 @@ static bool pack_header(uchar *forminfo, enum db_type table_type,
       reclength=(uint) (field->offset+ data_offset + length);
     n_length+= (ulong) strlen(field->field_name)+1;
     field->interval_id=0;
+    field->save_interval= 0;
     if (field->interval)
     {
       uint old_int_count=int_count;
 
       if (field->charset->mbminlen > 1)
       {
-        /* Escape UCS2 intervals using HEX notation */
+        /* 
+          Escape UCS2 intervals using HEX notation to avoid
+          problems with delimiters between enum elements.
+          As the original representation is still needed in 
+          the function make_empty_rec to create a record of
+          filled with default values it is saved in save_interval
+          The HEX representation is created from this copy.
+        */
+        field->save_interval= field->interval;
+        field->interval= (TYPELIB*) sql_alloc(sizeof(TYPELIB));
+        *field->interval= *field->save_interval; 
+        field->interval->type_names= 
+          (const char **) sql_alloc(sizeof(char*) * 
+				    (field->interval->count+1));
+        field->interval->type_names[field->interval->count]= 0;
+        field->interval->type_lengths=
+          (uint *) sql_alloc(sizeof(uint) * field->interval->count);
+ 
         for (uint pos= 0; pos < field->interval->count; pos++)
         {
           char *dst;
-          uint length= field->interval->type_lengths[pos], hex_length;
-          const char *src= field->interval->type_names[pos];
+          uint length= field->save_interval->type_lengths[pos], hex_length;
+          const char *src= field->save_interval->type_names[pos];
           const char *srcend= src + length;
           hex_length= length * 2;
           field->interval->type_lengths[pos]= hex_length;
@@ -631,6 +661,21 @@ static bool pack_fields(File file, List<create_field> &create_fields,
 	tmp.append(NAMES_SEP_CHAR);
 	for (const char **pos=field->interval->type_names ; *pos ; pos++)
 	{
+          char *val= (char*) *pos;
+          uint str_len= strlen(val);
+          /*
+            Note, hack: in old frm NAMES_SEP_CHAR is used to separate
+            names in the interval (ENUM/SET). To allow names to contain
+            NAMES_SEP_CHAR, we replace it with a comma before writing frm.
+            Backward conversion is done during frm file opening,
+            See table.cc, openfrm() function
+          */
+          for (uint cnt= 0 ; cnt < str_len ; cnt++)
+          {
+            char c= val[cnt];
+            if (c == NAMES_SEP_CHAR)
+              val[cnt]= ',';
+          }
 	  tmp.append(*pos);
 	  tmp.append(NAMES_SEP_CHAR);
 	}
@@ -709,7 +754,8 @@ static bool make_empty_rec(File file,enum db_type table_type,
 			       field->charset,
 			       field->geom_type,
 			       field->unireg_check,
-			       field->interval,
+			       field->save_interval ? field->save_interval :
+                               field->interval, 
 			       field->field_name,
 			       &table);
 

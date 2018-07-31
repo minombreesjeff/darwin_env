@@ -16,7 +16,7 @@ include $(MAKEFILEPATH)/pb_makefiles/platform.make
 include $(MAKEFILEPATH)/pb_makefiles/commands-$(OS).make
 
 PROJECT_NAME	= MySQL
-MYSQL_VERSION	= mysql-4.1.13a
+MYSQL_VERSION	= mysql-4.1.22
 MYSQL_SRC_PPC   = mysql
 MYSQL_SRC_I386  = mysql_i386
 MYSQL_SRC_PPC64 = mysql_ppc64
@@ -174,8 +174,23 @@ mysqld_multi.1 \
 mysqld_safe.1 \
 mysqldump.1 \
 mysqlshow.1 \
+msql2mysql.1 \
+myisam_ftdump.1 \
+myisamchk.1 \
+myisamlog.1 \
+myisampack.1 \
+mysql.server.1 \
+mysql_config.1 \
+mysql_explain_log.1 \
+mysqlbinlog.1 \
+mysqlcheck.1 \
+mysqlhotcopy.1 \
+mysqlimport.1 \
+mysqlman.1 \
+pack_isam.1 \
 perror.1 \
-replace.1
+replace.1 \
+safe_mysqld.1
 
 USRSHAREMYSQL_FILES_TO_RENAME = \
 mysql.server

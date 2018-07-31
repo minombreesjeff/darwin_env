@@ -26,7 +26,7 @@ INCLUDES =		@MT_INCLUDES@ @ZLIB_INCLUDES@ \
 WRAPLIBS=		@WRAPLIBS@
 SUBDIRS =		share
 libexec_PROGRAMS =	mysqld
-noinst_PROGRAMS =	gen_lex_hash
+EXTRA_PROGRAMS =	gen_lex_hash
 bin_PROGRAMS =		mysql_tzinfo_to_sql
 gen_lex_hash_LDFLAGS =  @NOINST_LDFLAGS@
 LDADD =			@isam_libs@ \
@@ -73,7 +73,7 @@ mysqld_SOURCES =	sql_lex.cc sql_handler.cc \
 			mysqld.cc password.c hash_filo.cc hostname.cc \
 			set_var.cc sql_parse.cc sql_yacc.yy \
 			sql_base.cc table.cc sql_select.cc sql_insert.cc \
-                        sql_prepare.cc sql_error.cc \
+                        sql_prepare.cc sql_error.cc sql_locale.cc \
 			sql_update.cc sql_delete.cc uniques.cc sql_do.cc \
 			procedure.cc item_uniq.cc sql_test.cc \
 			log.cc log_event.cc init.cc derror.cc sql_acl.cc \
@@ -111,17 +111,17 @@ AM_YFLAGS =		-d
 
 mysql_tzinfo_to_sql.cc:
 	rm -f mysql_tzinfo_to_sql.cc
-	@LN_CP_F@ tztime.cc mysql_tzinfo_to_sql.cc
+	@LN_CP_F@ $(srcdir)/tztime.cc mysql_tzinfo_to_sql.cc
 
 link_sources: mysql_tzinfo_to_sql.cc
 	rm -f mini_client_errors.c
-	@LN_CP_F@ ../libmysql/errmsg.c mini_client_errors.c
+	@LN_CP_F@ $(top_srcdir)/libmysql/errmsg.c mini_client_errors.c
 	rm -f pack.c
-	@LN_CP_F@ ../sql-common/pack.c pack.c
+	@LN_CP_F@ $(top_srcdir)/sql-common/pack.c pack.c
 	rm -f client.c
-	@LN_CP_F@ ../sql-common/client.c client.c
+	@LN_CP_F@ $(top_srcdir)/sql-common/client.c client.c
 	rm -f my_time.c
-	@LN_CP_F@ ../sql-common/my_time.c my_time.c
+	@LN_CP_F@ $(top_srcdir)/sql-common/my_time.c my_time.c
 
 mysql_tzinfo_to_sql.o:	$(mysql_tzinfo_to_sql_SOURCES)
 			$(CXXCOMPILE) -c $(INCLUDES) -DTZINFO2SQL $<
@@ -137,7 +137,11 @@ sql_yacc.o:	sql_yacc.cc sql_yacc.h $(HEADERS)
 		@echo "If it fails, re-run configure with --with-low-memory"
 		$(CXXCOMPILE) $(LM_CFLAGS) -c $<
 
-lex_hash.h:	gen_lex_hash$(EXEEXT)
+# This generates lex_hash.h
+# NOTE Built sources should depend on their sources not the tool
+# this avoid the rebuild of the built files in a source dist
+lex_hash.h:	gen_lex_hash.cc lex.h
+		$(MAKE) $(AM_MAKEFLAGS) gen_lex_hash$(EXEEXT)
 		./gen_lex_hash$(EXEEXT) > $@
 
 # For testing of udf_example.so;  Works on platforms with gcc
@@ -145,7 +149,7 @@ lex_hash.h:	gen_lex_hash$(EXEEXT)
 udf_example.so:	udf_example.cc
 		$(CXXCOMPILE) -shared -o $@ $<
 
-distclean:
+distclean-local:
 		rm -f lex_hash.h
 
 # Don't update the files from bitkeeper

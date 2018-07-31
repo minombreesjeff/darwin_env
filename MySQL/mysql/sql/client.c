@@ -133,6 +133,8 @@ static void mysql_close_free(MYSQL *mysql);
 static int wait_for_data(my_socket fd, uint timeout);
 #endif
 
+CHARSET_INFO *default_client_charset_info = &my_charset_latin1;
+
 
 /****************************************************************************
   A modified version of connect().  my_connect() allows you to specify
@@ -602,7 +604,7 @@ net_safe_read(MYSQL *mysql)
     DBUG_PRINT("error",("Wrong connection or packet. fd: %s  len: %d",
 			vio_description(net->vio),len));
 #ifdef MYSQL_SERVER
-    if (vio_errno(net->vio) == SOCKET_EINTR)
+    if (vio_was_interrupted(net->vio))
       return (packet_error);
 #endif /*MYSQL_SERVER*/
     end_server(mysql);
@@ -648,7 +650,8 @@ void free_rows(MYSQL_DATA *cur)
 my_bool
 cli_advanced_command(MYSQL *mysql, enum enum_server_command command,
 		     const char *header, ulong header_length,
-		     const char *arg, ulong arg_length, my_bool skip_check)
+		     const char *arg, ulong arg_length, my_bool skip_check,
+                     MYSQL_STMT *stmt __attribute__((unused)))
 {
   NET *net= &mysql->net;
   my_bool result= 1;
@@ -713,8 +716,9 @@ void free_old_query(MYSQL *mysql)
   if (mysql->fields)
     free_root(&mysql->field_alloc,MYF(0));
   init_alloc_root(&mysql->field_alloc,8192,0); /* Assume rowlength < 8192 */
-  mysql->fields=0;
-  mysql->field_count=0;				/* For API */
+  mysql->fields= 0;
+  mysql->field_count= 0;			/* For API */
+  mysql->info= 0;
   DBUG_VOID_RETURN;
 }
 
@@ -755,7 +759,7 @@ static void cli_flush_use_result(MYSQL *mysql)
     {
       if (protocol_41(mysql))
       {
-        char *pos= (char*) mysql->net.read_pos;
+        char *pos= (char*) mysql->net.read_pos + 1;
         mysql->warning_count=uint2korr(pos); pos+=2;
         mysql->server_status=uint2korr(pos); pos+=2;
       }
@@ -1423,7 +1427,7 @@ mysql_init(MYSQL *mysql)
     bzero((char*) (mysql),sizeof(*(mysql)));
   mysql->options.connect_timeout= CONNECT_TIMEOUT;
   mysql->last_used_con= mysql->next_slave= mysql->master = mysql;
-  mysql->charset=default_charset_info;
+  mysql->charset=default_client_charset_info;
   strmov(mysql->net.sqlstate, not_error_sqlstate);
   /*
     By default, we are a replication pivot. The caller must reset it
@@ -1486,11 +1490,15 @@ mysql_ssl_set(MYSQL *mysql __attribute__((unused)) ,
 static void
 mysql_ssl_free(MYSQL *mysql __attribute__((unused)))
 {
+  struct st_VioSSLConnectorFd *st= 
+    (struct st_VioSSLConnectorFd*) mysql->connector_fd;
   my_free(mysql->options.ssl_key, MYF(MY_ALLOW_ZERO_PTR));
   my_free(mysql->options.ssl_cert, MYF(MY_ALLOW_ZERO_PTR));
   my_free(mysql->options.ssl_ca, MYF(MY_ALLOW_ZERO_PTR));
   my_free(mysql->options.ssl_capath, MYF(MY_ALLOW_ZERO_PTR));
-  my_free(mysql->options.ssl_cipher, MYF(MY_ALLOW_ZERO_PTR));
+  my_free(mysql->options.ssl_cipher, MYF(MY_ALLOW_ZERO_PTR));  
+  if (st)
+    SSL_CTX_free(st->ssl_context);
   my_free(mysql->connector_fd,MYF(MY_ALLOW_ZERO_PTR));
   mysql->options.ssl_key = 0;
   mysql->options.ssl_cert = 0;
@@ -1531,6 +1539,79 @@ static MYSQL_METHODS client_methods=
   cli_read_change_user_result
 #endif
 };
+
+C_MODE_START
+int mysql_init_character_set(MYSQL *mysql)
+{
+  NET		*net= &mysql->net;
+  const char *default_collation_name;
+  
+  /* Set character set */
+  if (!mysql->options.charset_name)
+  {
+    default_collation_name= MYSQL_DEFAULT_COLLATION_NAME;
+    if (!(mysql->options.charset_name= 
+       my_strdup(MYSQL_DEFAULT_CHARSET_NAME,MYF(MY_WME))))
+    return 1;
+  }
+  else
+    default_collation_name= NULL;
+  
+  {
+    const char *save= charsets_dir;
+    if (mysql->options.charset_dir)
+      charsets_dir=mysql->options.charset_dir;
+    mysql->charset=get_charset_by_csname(mysql->options.charset_name,
+                                         MY_CS_PRIMARY, MYF(MY_WME));
+    if (mysql->charset && default_collation_name)
+    {
+      CHARSET_INFO *collation;
+      if ((collation= 
+           get_charset_by_name(default_collation_name, MYF(MY_WME))))
+      {
+        if (!my_charset_same(mysql->charset, collation))
+        {
+          my_printf_error(ER_UNKNOWN_ERROR, 
+                         "COLLATION %s is not valid for CHARACTER SET %s",
+                         MYF(0),
+                         default_collation_name, mysql->options.charset_name);
+          mysql->charset= NULL;
+        }
+        else
+        {
+          mysql->charset= collation;
+        }
+      }
+      else
+        mysql->charset= NULL;
+    }
+    charsets_dir= save;
+  }
+  
+  if (!mysql->charset)
+  {
+    net->last_errno=CR_CANT_READ_CHARSET;
+    strmov(net->sqlstate, unknown_sqlstate);
+    if (mysql->options.charset_dir)
+      my_snprintf(net->last_error, sizeof(net->last_error)-1,
+                  ER(net->last_errno),
+                  mysql->options.charset_name,
+                  mysql->options.charset_dir);
+    else
+    {
+      char cs_dir_name[FN_REFLEN];
+      get_charsets_dir(cs_dir_name);
+      my_snprintf(net->last_error, sizeof(net->last_error)-1,
+                  ER(net->last_errno),
+                  mysql->options.charset_name,
+                  cs_dir_name);
+    }
+    return 1;
+  }
+  return 0;
+}
+C_MODE_END
+
 
 MYSQL * STDCALL 
 CLI_MYSQL_REAL_CONNECT(MYSQL *mysql,const char *host, const char *user,
@@ -1870,42 +1951,8 @@ CLI_MYSQL_REAL_CONNECT(MYSQL *mysql,const char *host, const char *user,
     goto error;
   }
 
-  /* Set character set */
-  if (!mysql->options.charset_name &&
-      !(mysql->options.charset_name= 
-       my_strdup(MYSQL_DEFAULT_CHARSET_NAME,MYF(MY_WME))))
+  if (mysql_init_character_set(mysql))
     goto error;
-  
-  {
-    const char *save= charsets_dir;
-    if (mysql->options.charset_dir)
-      charsets_dir=mysql->options.charset_dir;
-    mysql->charset=get_charset_by_csname(mysql->options.charset_name,
-                                         MY_CS_PRIMARY, MYF(MY_WME));
-    charsets_dir= save;
-  }
-  
-  if (!mysql->charset)
-  {
-    net->last_errno=CR_CANT_READ_CHARSET;
-    strmov(net->sqlstate, unknown_sqlstate);
-    if (mysql->options.charset_dir)
-      my_snprintf(net->last_error, sizeof(net->last_error)-1,
-                  ER(net->last_errno),
-                  mysql->options.charset_name,
-                  mysql->options.charset_dir);
-    else
-    {
-      char cs_dir_name[FN_REFLEN];
-      get_charsets_dir(cs_dir_name);
-      my_snprintf(net->last_error, sizeof(net->last_error)-1,
-                  ER(net->last_errno),
-                  mysql->options.charset_name,
-                  cs_dir_name);
-    }
-    goto error;
-  }
-
 
   /* Save connection information */
   if (!my_multi_malloc(MYF(0),

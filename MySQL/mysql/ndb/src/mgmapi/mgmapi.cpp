@@ -100,6 +100,7 @@ struct ndb_mgm_handle {
 #ifdef MGMAPI_LOG
   FILE* logfile;
 #endif
+  FILE *errstream;
 };
 
 #define SET_ERROR(h, e, s) setError(h, e, __LINE__, s)
@@ -143,6 +144,7 @@ extern "C"
 NdbMgmHandle
 ndb_mgm_create_handle()
 {
+  DBUG_ENTER("ndb_mgm_create_handle");
   NdbMgmHandle h     =
     (NdbMgmHandle)my_malloc(sizeof(ndb_mgm_handle),MYF(MY_WME));
   h->connected       = 0;
@@ -152,6 +154,7 @@ ndb_mgm_create_handle()
   h->read_timeout    = 50000;
   h->write_timeout   = 100;
   h->cfg_i           = 0;
+  h->errstream       = stdout;
 
   strncpy(h->last_error_desc, "No error", NDB_MGM_MAX_ERR_DESC_SIZE);
 
@@ -162,17 +165,20 @@ ndb_mgm_create_handle()
   h->logfile = 0;
 #endif
 
-  return h;
+  DBUG_PRINT("exit",("ret: %lx", h));
+  DBUG_RETURN(h);
 }
 
 extern "C"
 int
 ndb_mgm_set_connectstring(NdbMgmHandle handle, const char * mgmsrv)
 {
+  handle->cfg.~LocalConfig();
   new (&(handle->cfg)) LocalConfig;
   if (!handle->cfg.init(mgmsrv, 0) ||
       handle->cfg.ids.size() == 0)
   {
+    handle->cfg.~LocalConfig();
     new (&(handle->cfg)) LocalConfig;
     handle->cfg.init(0, 0); /* reset the LocalCongig */
     SET_ERROR(handle, NDB_MGM_ILLEGAL_CONNECT_STRING, "");
@@ -189,8 +195,11 @@ extern "C"
 void
 ndb_mgm_destroy_handle(NdbMgmHandle * handle)
 {
+  DBUG_ENTER("ndb_mgm_destroy_handle");
   if(!handle)
     return;
+  DBUG_PRINT("enter",("*handle: %lx", *handle));
+
   if((* handle)->connected){
     ndb_mgm_disconnect(* handle);
   }
@@ -203,6 +212,14 @@ ndb_mgm_destroy_handle(NdbMgmHandle * handle)
   (*handle)->cfg.~LocalConfig();
   my_free((char*)* handle,MYF(MY_ALLOW_ZERO_PTR));
   * handle = 0;
+  DBUG_VOID_RETURN;
+}
+
+extern "C" 
+void
+ndb_mgm_set_error_stream(NdbMgmHandle handle, FILE * file)
+{
+  handle->errstream = file;
 }
 
 /*****************************************************************************
@@ -251,6 +268,9 @@ static const Properties *
 ndb_mgm_call(NdbMgmHandle handle, const ParserRow<ParserDummy> *command_reply,
 	     const char *cmd, const Properties *cmd_args) 
 {
+  DBUG_ENTER("ndb_mgm_call");
+  DBUG_PRINT("enter",("handle->socket: %d, cmd: %s",
+		      handle->socket, cmd));
   SocketOutputStream out(handle->socket);
   SocketInputStream in(handle->socket, handle->read_timeout);
 
@@ -310,6 +330,8 @@ ndb_mgm_call(NdbMgmHandle handle, const ParserRow<ParserDummy> *command_reply,
     /**
      * Print some info about why the parser returns NULL
      */
+    DBUG_PRINT("info",("ctx.status: %d, ctx.m_currentToken: %s",
+		       ctx.m_status, ctx.m_currentToken));
     //ndbout << " status=" << ctx.m_status << ", curr="
     //<< ctx.m_currentToken << endl;
   } 
@@ -321,9 +343,9 @@ ndb_mgm_call(NdbMgmHandle handle, const ParserRow<ParserDummy> *command_reply,
     p->print(handle->logfile, "IN: ");
   }
 #endif
-  return p;
+  DBUG_RETURN(p);
 #else
-   return parser.parse(ctx, session);
+  DBUG_RETURN(parser.parse(ctx, session));
 #endif
 }
 
@@ -369,8 +391,8 @@ ndb_mgm_connect(NdbMgmHandle handle, int no_retries,
       break;
     if (verbose > 0) {
       char buf[1024];
-      ndbout_c("Unable to connect with connect string: %s",
-	       cfg.makeConnectString(buf,sizeof(buf)));
+      fprintf(handle->errstream, "Unable to connect with connect string: %s\n",
+	      cfg.makeConnectString(buf,sizeof(buf)));
       verbose= -1;
     }
     if (no_retries == 0) {
@@ -379,32 +401,35 @@ ndb_mgm_connect(NdbMgmHandle handle, int no_retries,
 	       "Unable to connect with connect string: %s",
 	       cfg.makeConnectString(buf,sizeof(buf)));
       if (verbose == -2)
-	ndbout << ", failed." << endl;
+	fprintf(handle->errstream, ", failed.\n");
       return -1;
     }
     if (verbose == -1) {
-      ndbout << "Retrying every " << retry_delay_in_seconds << " seconds";
+      fprintf(handle->errstream, "Retrying every %d seconds", 
+	      retry_delay_in_seconds);
       if (no_retries > 0)
-	ndbout << ". Attempts left:";
+	fprintf(handle->errstream, ". Attempts left:");
       else
-	ndbout << ", until connected.";;	
-      ndbout << flush;
+	fprintf(handle->errstream, ", until connected.");
+      fflush(handle->errstream);
       verbose= -2;
     }
     if (no_retries > 0) {
       if (verbose == -2) {
-	ndbout << " " << no_retries;
-	ndbout << flush;
+	fprintf(handle->errstream, " %d", no_retries);
+	fflush(handle->errstream);
       }
       no_retries--;
     }
     NdbSleep_SecSleep(retry_delay_in_seconds);
   }
   if (verbose == -2)
-    ndbout << endl;
-
+  {
+    fprintf(handle->errstream, "\n");
+    fflush(handle->errstream);
+  }
   handle->cfg_i = i;
-
+  
   handle->socket    = sockfd;
   handle->connected = 1;
 
@@ -456,7 +481,9 @@ ndb_mgm_match_node_type(const char * type)
   for(int i = 0; i<no_of_type_values; i++)
     if(strcmp(type, type_values[i].str) == 0)
       return type_values[i].value;
-
+    else if(strcmp(type, type_values[i].alias) == 0)
+      return type_values[i].value;
+  
   return NDB_MGM_NODE_TYPE_UNKNOWN;
 }
 
@@ -611,12 +638,12 @@ ndb_mgm_get_status(NdbMgmHandle handle)
   Vector<BaseString> split;
   tmp.split(split, ":");
   if(split.size() != 2){
-    abort();
+    SET_ERROR(handle, NDB_MGM_ILLEGAL_NODE_STATUS, buf);
     return NULL;
   }
  
   if(!(split[0].trim() == "nodes")){
-    abort();
+    SET_ERROR(handle, NDB_MGM_ILLEGAL_NODE_STATUS, buf);
     return NULL;
   }
 
@@ -665,7 +692,7 @@ ndb_mgm_get_status(NdbMgmHandle handle)
 
   if(i+1 != noOfNodes){
     free(state);
-    abort();
+    SET_ERROR(handle, NDB_MGM_ILLEGAL_NODE_STATUS, "Node count mismatch");
     return NULL;
   }
 
@@ -1651,28 +1678,28 @@ ndb_mgm_get_configuration(NdbMgmHandle handle, unsigned int version) {
   do {
     const char * buf;
     if(!prop->get("result", &buf) || strcmp(buf, "Ok") != 0){
-      ndbout_c("ERROR Message: %s\n", buf);
+      fprintf(handle->errstream, "ERROR Message: %s\n\n", buf);
       break;
     }
 
     buf = "<Unspecified>";
     if(!prop->get("Content-Type", &buf) || 
        strcmp(buf, "ndbconfig/octet-stream") != 0){
-      ndbout_c("Unhandled response type: %s", buf);
+      fprintf(handle->errstream, "Unhandled response type: %s\n", buf);
       break;
     }
 
     buf = "<Unspecified>";
     if(!prop->get("Content-Transfer-Encoding", &buf) 
        || strcmp(buf, "base64") != 0){
-      ndbout_c("Unhandled encoding: %s", buf);
+      fprintf(handle->errstream, "Unhandled encoding: %s\n", buf);
       break;
     }
 
     buf = "<Content-Length Unspecified>";
     Uint32 len = 0;
     if(!prop->get("Content-Length", &len)){
-      ndbout_c("Invalid response: %s\n", buf);
+      fprintf(handle->errstream, "Invalid response: %s\n\n", buf);
       break;
     }
 
@@ -1697,14 +1724,14 @@ ndb_mgm_get_configuration(NdbMgmHandle handle, unsigned int version) {
     const int res = base64_decode(buf64, len-1, tmp);
     delete[] buf64; 
     if(res != 0){
-      ndbout_c("Failed to decode buffer");
+      fprintf(handle->errstream, "Failed to decode buffer\n");
       break;
     }
 
     ConfigValuesFactory cvf;
     const int res2 = cvf.unpack(tmp);
     if(!res2){
-      ndbout_c("Failed to unpack buffer");
+      fprintf(handle->errstream, "Failed to unpack buffer\n");
       break;
     }
 
@@ -1808,7 +1835,7 @@ ndb_mgm_alloc_nodeid(NdbMgmHandle handle, unsigned int version, int nodetype)
     }
     Uint32 _nodeid;
     if(!prop->get("nodeid", &_nodeid) != 0){
-      ndbout_c("ERROR Message: <nodeid Unspecified>\n");
+      fprintf(handle->errstream, "ERROR Message: <nodeid Unspecified>\n");
       break;
     }
     nodeid= _nodeid;
@@ -1884,7 +1911,7 @@ ndb_mgm_set_int_parameter(NdbMgmHandle handle,
   do {
     const char * buf;
     if(!prop->get("result", &buf) || strcmp(buf, "Ok") != 0){
-      ndbout_c("ERROR Message: %s\n", buf);
+      fprintf(handle->errstream, "ERROR Message: %s\n", buf);
       break;
     }
     res= 0;
@@ -1927,7 +1954,7 @@ ndb_mgm_set_int64_parameter(NdbMgmHandle handle,
   do {
     const char * buf;
     if(!prop->get("result", &buf) || strcmp(buf, "Ok") != 0){
-      ndbout_c("ERROR Message: %s\n", buf);
+      fprintf(handle->errstream, "ERROR Message: %s\n", buf);
       break;
     }
     res= 0;
@@ -1970,7 +1997,7 @@ ndb_mgm_set_string_parameter(NdbMgmHandle handle,
   do {
     const char * buf;
     if(!prop->get("result", &buf) || strcmp(buf, "Ok") != 0){
-      ndbout_c("ERROR Message: %s\n", buf);
+      fprintf(handle->errstream, "ERROR Message: %s\n", buf);
       break;
     }
     res= 0;
@@ -2007,7 +2034,7 @@ ndb_mgm_purge_stale_sessions(NdbMgmHandle handle, char **purged){
   do {
     const char * buf;
     if(!prop->get("result", &buf) || strcmp(buf, "Ok") != 0){
-      ndbout_c("ERROR Message: %s\n", buf);
+      fprintf(handle->errstream, "ERROR Message: %s\n", buf);
       break;
     }
     if (purged) {

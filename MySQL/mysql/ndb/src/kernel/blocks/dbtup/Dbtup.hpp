@@ -1051,20 +1051,15 @@ private:
   void execTUP_SRREQ(Signal* signal);
   void execTUP_PREPLCPREQ(Signal* signal);
   void execFSOPENCONF(Signal* signal);
-  void execFSOPENREF(Signal* signal);
   void execFSCLOSECONF(Signal* signal);
-  void execFSCLOSEREF(Signal* signal);
   void execFSWRITECONF(Signal* signal);
-  void execFSWRITEREF(Signal* signal);
   void execFSREADCONF(Signal* signal);
-  void execFSREADREF(Signal* signal);
   void execNDB_STTOR(Signal* signal);
   void execREAD_CONFIG_REQ(Signal* signal);
   void execSET_VAR_REQ(Signal* signal);
   void execDROP_TAB_REQ(Signal* signal);
   void execALTER_TAB_REQ(Signal* signal);
   void execFSREMOVECONF(Signal* signal);
-  void execFSREMOVEREF(Signal* signal);
   void execTUP_ALLOCREQ(Signal* signal);
   void execTUP_DEALLOCREQ(Signal* signal);
   void execTUP_WRITELOG_REQ(Signal* signal);
@@ -1742,7 +1737,8 @@ private:
                        Uint32* const mainBuffer,
                        Uint32& noMainWords,
                        Uint32* const copyBuffer,
-                       Uint32& noCopyWords);
+                       Uint32& noCopyWords,
+		       bool xfrm);
 
   void sendTrigAttrInfo(Signal*        signal, 
                         Uint32*        data, 
@@ -2133,15 +2129,18 @@ private:
 // Public methods
   Uint32 getTabDescrOffsets(const Tablerec* regTabPtr, Uint32* offset);
   Uint32 allocTabDescr(const Tablerec* regTabPtr, Uint32* offset);
-  void freeTabDescr(Uint32 retRef, Uint32 retNo);
+  void freeTabDescr(Uint32 retRef, Uint32 retNo, bool normal = true);
   Uint32 getTabDescrWord(Uint32 index);
   void setTabDescrWord(Uint32 index, Uint32 word);
 
 // Private methods
   Uint32 sizeOfReadFunction();
   void   removeTdArea(Uint32 tabDesRef, Uint32 list);
-  void   insertTdArea(Uint32 sizeOfChunk, Uint32 tabDesRef, Uint32 list);
-  Uint32 itdaMergeTabDescr(Uint32 retRef, Uint32 retNo);
+  void   insertTdArea(Uint32 tabDesRef, Uint32 list);
+  void   itdaMergeTabDescr(Uint32& retRef, Uint32& retNo, bool normal);
+#ifdef VM_TRACE
+  void verifytabdes();
+#endif
 
 //------------------------------------------------------------------------------------------------------
 // Page Memory Manager

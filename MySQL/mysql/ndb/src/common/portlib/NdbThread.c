@@ -53,9 +53,20 @@ ndb_thread_wrapper(void* _ss){
     }
 #endif
     {
+      /**
+       * Block all signals to thread by default
+       *   let them go to main process instead
+       */
+      sigset_t mask;
+      sigfillset(&mask);
+      pthread_sigmask(SIG_BLOCK, &mask, 0);
+    }      
+    
+    {
       void *ret;
       struct NdbThread * ss = (struct NdbThread *)_ss;
       ret= (* ss->func)(ss->object);
+      DBUG_POP();
       NdbThread_Exit(ret);
     }
   /* will never be reached */
@@ -73,15 +84,18 @@ struct NdbThread* NdbThread_Create(NDB_THREAD_FUNC *p_thread_func,
   struct NdbThread* tmpThread;
   int result;
   pthread_attr_t thread_attr;
+  DBUG_ENTER("NdbThread_Create");
 
   (void)thread_prio; /* remove warning for unused parameter */
 
   if (p_thread_func == NULL)
-    return 0;
+    DBUG_RETURN(NULL);
 
   tmpThread = (struct NdbThread*)NdbMem_Allocate(sizeof(struct NdbThread));
   if (tmpThread == NULL)
-    return NULL;
+    DBUG_RETURN(NULL);
+
+  DBUG_PRINT("info",("thread_name: %s", p_thread_name));
 
   strnmov(tmpThread->thread_name,p_thread_name,sizeof(tmpThread->thread_name));
 
@@ -108,16 +122,20 @@ struct NdbThread* NdbThread_Create(NDB_THREAD_FUNC *p_thread_func,
   assert(result==0);
 
   pthread_attr_destroy(&thread_attr);
-  return tmpThread;
+  DBUG_PRINT("exit",("ret: %lx", tmpThread));
+  DBUG_RETURN(tmpThread);
 }
 
 
 void NdbThread_Destroy(struct NdbThread** p_thread)
 {
-  if (*p_thread != NULL){    
+  DBUG_ENTER("NdbThread_Destroy");
+  if (*p_thread != NULL){
+    DBUG_PRINT("enter",("*p_thread: %lx", * p_thread));
     free(* p_thread); 
     * p_thread = 0;
   }
+  DBUG_VOID_RETURN;
 }
 
 

@@ -289,8 +289,10 @@ sub start_mysqlds()
       }
       else
       {
-	$options[$j]=~ s/;/\\;/g;
-	$tmp.= " $options[$j]";
+        # we single-quote the argument, but first convert single-quotes to
+        # '"'"' so they are passed through correctly
+	$options[$j]=~ s/'/'"'"'/g;
+	$tmp.= " '$options[$j]'";
       }
     }
     if ($opt_verbose && $com =~ m/\/safe_mysqld$/ && !$info_sent)
@@ -374,7 +376,12 @@ sub get_mysqladmin_options
   $mysqladmin_found= 0 if (!length($mysqladmin));
   $com = "$mysqladmin";
   $tmp = " -u $opt_user";
-  $tmp.= defined($opt_password) ? " -p$opt_password" : "";
+  if (defined($opt_password)) {
+    my $pw= $opt_password;
+    # Protect single quotes in password
+    $pw =~ s/'/'"'"'/g;
+    $tmp.= " -p'$pw'";
+  }
   $tmp.= $opt_tcp_ip ? " -h 127.0.0.1" : "";
   for ($j = 0; defined($options[$j]); $j++)
   {
@@ -710,9 +717,6 @@ sub usage
 {
   print <<EOF;
 $my_progname version $VER by Jani Tolonen
-
-This software comes with ABSOLUTELY NO WARRANTY. This is free software,
-and you are welcome to modify and redistribute it under the GPL license.
 
 Description:
 $my_progname can be used to start, or stop any number of separate

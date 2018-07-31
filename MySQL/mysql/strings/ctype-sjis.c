@@ -213,7 +213,7 @@ static int my_strnncoll_sjis_internal(CHARSET_INFO *cs,
       uint a_char= sjiscode(*a, *(a+1));
       uint b_char= sjiscode(*b, *(b+1));
       if (a_char != b_char)
-	return a_char - b_char;
+	return (int) a_char - (int) b_char;
       a += 2;
       b += 2;
     } else
@@ -322,11 +322,13 @@ static my_bool my_like_range_sjis(CHARSET_INFO *cs __attribute__((unused)),
 				  uint res_length, char *min_str,char *max_str,
 				  uint *min_length,uint *max_length)
 {
-  const char *end=ptr+ptr_length;
+  const char *end= ptr + ptr_length;
   char *min_org=min_str;
   char *min_end=min_str+res_length;
+  uint charlen= res_length / cs->mbmaxlen;
 
-  while (ptr < end && min_str < min_end) {
+  for ( ; ptr < end && min_str < min_end && charlen > 0 ; charlen--)
+  {
     if (ismbchar_sjis(cs, ptr, end)) {
       *min_str++ = *max_str++ = *ptr++;
       if (min_str < min_end)
@@ -4499,7 +4501,7 @@ my_wc_mb_sjis(CHARSET_INFO *cs  __attribute__((unused)),
 
 mb:
   if (s+2>e)
-    return MY_CS_TOOSMALL;
+    return MY_CS_TOOSMALL2;
   
   s[0]=code>>8;
   s[1]=code&0xFF;
@@ -4513,7 +4515,7 @@ my_mb_wc_sjis(CHARSET_INFO *cs  __attribute__((unused)),
   int hi=s[0];
   
   if (s >= e)
-    return MY_CS_TOOFEW(0);
+    return MY_CS_TOOSMALL;
   
   if (hi < 0x80)
   {
@@ -4528,10 +4530,10 @@ my_mb_wc_sjis(CHARSET_INFO *cs  __attribute__((unused)),
   }
   
   if (s+2>e)
-    return MY_CS_TOOFEW(0);
+    return MY_CS_TOOSMALL2;
   
   if (!(pwc[0]=func_sjis_uni_onechar((hi<<8)+s[1])))
-    return MY_CS_ILSEQ;
+    return -2;
   
   return 2;
 }
@@ -4600,7 +4602,7 @@ uint my_well_formed_len_sjis(CHARSET_INFO *cs __attribute__((unused)),
       break;
     }
   }
-  return b - b0;
+  return (uint) (b - b0);
 }
 
 
@@ -4671,6 +4673,7 @@ CHARSET_INFO my_charset_sjis_japanese_ci=
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_ci_handler
 };
@@ -4698,6 +4701,7 @@ CHARSET_INFO my_charset_sjis_bin=
     2,			/* mbmaxlen */
     0,			/* min_sort_char */
     255,		/* max_sort_char */
+    0,                  /* escape_with_backslash_is_dangerous */
     &my_charset_handler,
     &my_collation_mb_bin_handler
 };

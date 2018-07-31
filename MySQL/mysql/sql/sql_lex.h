@@ -49,7 +49,7 @@ enum enum_sql_command {
 
   SQLCOM_SHOW_DATABASES, SQLCOM_SHOW_TABLES, SQLCOM_SHOW_FIELDS,
   SQLCOM_SHOW_KEYS, SQLCOM_SHOW_VARIABLES, SQLCOM_SHOW_LOGS, SQLCOM_SHOW_STATUS,
-  SQLCOM_SHOW_INNODB_STATUS,
+  SQLCOM_SHOW_INNODB_STATUS,SQLCOM_SHOW_NDBCLUSTER_STATUS,
   SQLCOM_SHOW_PROCESSLIST, SQLCOM_SHOW_MASTER_STAT, SQLCOM_SHOW_SLAVE_STAT,
   SQLCOM_SHOW_GRANTS, SQLCOM_SHOW_CREATE, SQLCOM_SHOW_CHARSETS,
   SQLCOM_SHOW_COLLATIONS, SQLCOM_SHOW_CREATE_DB,
@@ -257,6 +257,7 @@ public:
       UNCACHEABLE_RAND
       UNCACHEABLE_SIDEEFFECT
       UNCACHEABLE_EXPLAIN
+      UNCACHEABLE_PREPARE
   */
   uint8 uncacheable;
   enum sub_select_type linkage;
@@ -399,6 +400,7 @@ public:
   bool check_updateable(char *db, char *table);
   void print(String *str);
 
+  bool add_fake_select_lex(THD *thd);
   ulong init_prepare_fake_select_lex(THD *thd);
   int change_result(select_subselect *result, select_subselect *old_result);
   inline bool is_prepared() { return prepared; }
@@ -420,11 +422,13 @@ public:
   char *db, *db1, *table1, *db2, *table2;      	/* For outer join using .. */
   Item *where, *having;                         /* WHERE & HAVING clauses */
   Item *prep_where; /* saved WHERE clause for prepared statement processing */
+  Item *prep_having;/* saved HAVING clause for prepared statement processing */
   enum olap_type olap;
   SQL_LIST	      table_list, group_list;   /* FROM & GROUP BY clauses */
   List<Item>          item_list; /* list of fields & expressions */
   List<String>        interval_list, use_index, *use_index_ptr,
 		      ignore_index, *ignore_index_ptr;
+  bool	              is_item_list_lookup;
   /* 
     Usualy it is pointer to ftfunc_list_alloc, but in union used to create fake
     select_lex for calling mysql_select under results of union
@@ -609,7 +613,7 @@ typedef struct st_lex
   LEX_USER *grant_user;
   gptr yacc_yyss,yacc_yyvs;
   THD *thd;
-  CHARSET_INFO *charset;
+  CHARSET_INFO *charset, *underscore_charset;
 
   List<key_part_spec> col_list;
   List<key_part_spec> ref_list;

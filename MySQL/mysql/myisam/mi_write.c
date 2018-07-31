@@ -128,6 +128,10 @@ int mi_write(MI_INFO *info, byte *record)
           goto err;
         }
       }
+
+      /* The above changed info->lastkey2. Inform mi_rnext_same(). */
+      info->update&= ~HA_STATE_RNEXT_SAME;
+
       if (local_lock_tree)
         rw_unlock(&share->key_root_lock[i]);
     }
@@ -885,10 +889,10 @@ int _mi_ck_write_tree(register MI_INFO *info, uint keynr, uchar *key,
 
 static int keys_compare(bulk_insert_param *param, uchar *key1, uchar *key2)
 {
-  uint not_used;
+  uint not_used[2];
   return ha_key_cmp(param->info->s->keyinfo[param->keynr].seg,
-		     key1, key2, USE_WHOLE_KEY, SEARCH_SAME,
-		     &not_used);
+                    key1, key2, USE_WHOLE_KEY, SEARCH_SAME,
+                    not_used);
 }
 
 

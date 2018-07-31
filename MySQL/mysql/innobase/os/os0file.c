@@ -33,9 +33,13 @@ ulint	os_innodb_umask		= S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
 ulint	os_innodb_umask		= 0;
 #endif
 
+#ifdef UNIV_DO_FLUSH
 /* If the following is set to TRUE, we do not call os_file_flush in every
 os_file_write. We can set this TRUE when the doublewrite buffer is used. */
 ibool	os_do_not_call_flush_at_each_write	= FALSE;
+#else
+/* We do not call os_file_flush in every os_file_write. */
+#endif /* UNIV_DO_FLUSH */
 
 /* We use these mutexes to protect lseek + file i/o operation, if the
 OS does not provide an atomic pread or pwrite, or similar */
@@ -299,6 +303,8 @@ os_file_get_last_error(
 		return(OS_FILE_NOT_FOUND);
 	} else if (err == EEXIST) {
 		return(OS_FILE_ALREADY_EXISTS);
+	} else if (err == EXDEV || err == ENOTDIR || err == EISDIR) {
+		return(OS_FILE_PATH_ERROR);
 	} else {
 		return(100 + err);
 	}
@@ -348,7 +354,8 @@ os_file_handle_error(
 
 		return(TRUE);
 
-	} else if (err == OS_FILE_ALREADY_EXISTS) {
+	} else if (err == OS_FILE_ALREADY_EXISTS
+			|| err == OS_FILE_PATH_ERROR) {
 
 		return(FALSE);
 	} else {
@@ -452,7 +459,8 @@ os_file_handle_error_no_exit(
 
 		return(TRUE);
 
-	} else if (err == OS_FILE_ALREADY_EXISTS) {
+	} else if (err == OS_FILE_ALREADY_EXISTS
+			|| err == OS_FILE_PATH_ERROR) {
 
 		return(FALSE);
 	} else {
@@ -1974,6 +1982,7 @@ os_file_pwrite(
 	os_file_n_pending_pwrites--;
         os_mutex_exit(os_file_count_mutex);
 
+# ifdef UNIV_DO_FLUSH
 	if (srv_unix_file_flush_method != SRV_UNIX_LITTLESYNC
 	    && srv_unix_file_flush_method != SRV_UNIX_NOSYNC
 	    && !os_do_not_call_flush_at_each_write) {
@@ -1984,6 +1993,7 @@ os_file_pwrite(
 
 	        ut_a(TRUE == os_file_flush(file));
 	}
+# endif /* UNIV_DO_FLUSH */
 
         return(ret);
 #else
@@ -2006,6 +2016,7 @@ os_file_pwrite(
 	
 	ret = write(file, buf, (ssize_t)n);
 
+# ifdef UNIV_DO_FLUSH
 	if (srv_unix_file_flush_method != SRV_UNIX_LITTLESYNC
 	    && srv_unix_file_flush_method != SRV_UNIX_NOSYNC
 	    && !os_do_not_call_flush_at_each_write) {
@@ -2016,6 +2027,7 @@ os_file_pwrite(
 
 	        ut_a(TRUE == os_file_flush(file));
 	}
+# endif /* UNIV_DO_FLUSH */
 
 	os_mutex_exit(os_file_seek_mutexes[i]);
 
@@ -2282,9 +2294,11 @@ retry:
 	/* Always do fsync to reduce the probability that when the OS crashes,
 	a database page is only partially physically written to disk. */
 
+# ifdef UNIV_DO_FLUSH
 	if (!os_do_not_call_flush_at_each_write) {
 		ut_a(TRUE == os_file_flush(file));
 	}
+# endif /* UNIV_DO_FLUSH */
 
 	os_mutex_exit(os_file_seek_mutexes[i]);
 
@@ -3498,10 +3512,12 @@ os_aio_windows_handle(
 	if (ret && len == slot->len) {
 		ret_val = TRUE;
 
+# ifdef UNIV_DO_FLUSH
 		if (slot->type == OS_FILE_WRITE
 				&& !os_do_not_call_flush_at_each_write) {
 		         ut_a(TRUE == os_file_flush(slot->file));
 		}
+# endif /* UNIV_DO_FLUSH */
 	} else {
 		os_file_handle_error(slot->name, "Windows aio");
 		
@@ -3582,10 +3598,12 @@ os_aio_posix_handle(
 	*message1 = slot->message1;
 	*message2 = slot->message2;
 
+# ifdef UNIV_DO_FLUSH
 	if (slot->type == OS_FILE_WRITE
 				&& !os_do_not_call_flush_at_each_write) {
 		ut_a(TRUE == os_file_flush(slot->file));
 	}
+# endif /* UNIV_DO_FLUSH */
 
 	os_mutex_exit(array->mutex);
 
@@ -3594,6 +3612,37 @@ os_aio_posix_handle(
 	return(TRUE);
 }
 #endif
+
+/**************************************************************************
+Do a 'last millisecond' check that the page end is sensible;
+reported page checksum errors from Linux seem to wipe over the page end. */
+static
+void
+os_file_check_page_trailers(
+/*========================*/
+	byte*	combined_buf,	/* in: combined write buffer */
+	ulint	total_len)	/* in: size of combined_buf, in bytes
+				(a multiple of UNIV_PAGE_SIZE) */
+{
+	ulint	len;
+
+	for (len = 0; len + UNIV_PAGE_SIZE <= total_len;
+			len += UNIV_PAGE_SIZE) {
+		byte*	buf = combined_buf + len;
+
+		if (memcmp(buf + (FIL_PAGE_LSN + 4), buf + (UNIV_PAGE_SIZE
+				- FIL_PAGE_END_LSN_OLD_CHKSUM + 4), 4)) {
+		    	ut_print_timestamp(stderr);
+		    	fprintf(stderr,
+"  InnoDB: ERROR: The page to be written seems corrupt!\n"
+"InnoDB: Writing a block of %lu bytes, currently at offset %lu\n",
+			(ulong)total_len, (ulong)len);
+			buf_page_print(buf);
+		    	fprintf(stderr,
+"InnoDB: ERROR: The page to be written seems corrupt!\n");
+		}
+	}
+}
 
 /**************************************************************************
 Does simulated aio. This function should be called by an i/o-handler
@@ -3632,7 +3681,6 @@ os_aio_simulated_handle(
 	ibool		ret;
 	ulint		n;
 	ulint		i;
-	ulint		len2;
 	
 	segment = os_aio_get_array_and_local_segment(&array, global_segment);
 	
@@ -3839,33 +3887,16 @@ consecutive_loop:
 					(ulong) total_len);
 				ut_error;
 			}
-			  
-			/* Do a 'last millisecond' check that the page end
-			is sensible; reported page checksum errors from
-			Linux seem to wipe over the page end */
 
-			for (len2 = 0; len2 + UNIV_PAGE_SIZE <= total_len;
-						len2 += UNIV_PAGE_SIZE) {
-				if (mach_read_from_4(combined_buf + len2
-						+ FIL_PAGE_LSN + 4)
-				    != mach_read_from_4(combined_buf + len2
-				    		+ UNIV_PAGE_SIZE
-				    	- FIL_PAGE_END_LSN_OLD_CHKSUM + 4)) {
-				    	ut_print_timestamp(stderr);
-				    	fprintf(stderr,
-"  InnoDB: ERROR: The page to be written seems corrupt!\n");
-				    	fprintf(stderr,
-"InnoDB: Writing a block of %lu bytes, currently writing at offset %lu\n",
-					(ulong)total_len, (ulong)len2);
-					buf_page_print(combined_buf + len2);
-				    	fprintf(stderr,
-"InnoDB: ERROR: The page to be written seems corrupt!\n");
-				}
-			}
+			os_file_check_page_trailers(combined_buf, total_len);
 		}
-	
+
 		ret = os_file_write(slot->name, slot->file, combined_buf,
 				slot->offset, slot->offset_high, total_len);
+
+		if (array == os_aio_write_array) {
+			os_file_check_page_trailers(combined_buf, total_len);
+		}
 	} else {
 		ret = os_file_read(slot->file, combined_buf,
 				slot->offset, slot->offset_high, total_len);

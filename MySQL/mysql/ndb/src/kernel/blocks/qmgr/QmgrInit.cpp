@@ -35,6 +35,7 @@ void Qmgr::initData()
 
   Uint32 hbDBAPI = 500;
   setHbApiDelay(hbDBAPI);
+  c_stopReq.senderRef = 0;
 }//Qmgr::initData()
 
 void Qmgr::initRecords() 
@@ -49,6 +50,7 @@ Qmgr::Qmgr(const class Configuration & conf)
 
   // Transit signals
   addRecSignal(GSN_DUMP_STATE_ORD, &Qmgr::execDUMP_STATE_ORD);
+  addRecSignal(GSN_STOP_REQ, &Qmgr::execSTOP_REQ);
   addRecSignal(GSN_DEBUG_SIG, &Qmgr::execDEBUG_SIG);
   addRecSignal(GSN_CONTINUEB, &Qmgr::execCONTINUEB);
   addRecSignal(GSN_CM_HEARTBEAT, &Qmgr::execCM_HEARTBEAT);
@@ -80,7 +82,8 @@ Qmgr::Qmgr(const class Configuration & conf)
   addRecSignal(GSN_API_FAILCONF, &Qmgr::execAPI_FAILCONF);
   addRecSignal(GSN_READ_NODESREQ, &Qmgr::execREAD_NODESREQ);
   addRecSignal(GSN_SET_VAR_REQ,  &Qmgr::execSET_VAR_REQ);
-
+  addRecSignal(GSN_API_BROADCAST_REP,  &Qmgr::execAPI_BROADCAST_REP);
+  
   // Arbitration signals
   addRecSignal(GSN_ARBIT_PREPREQ, &Qmgr::execARBIT_PREPREQ);
   addRecSignal(GSN_ARBIT_PREPCONF, &Qmgr::execARBIT_PREPCONF);
@@ -91,6 +94,9 @@ Qmgr::Qmgr(const class Configuration & conf)
   addRecSignal(GSN_ARBIT_CHOOSEREF, &Qmgr::execARBIT_CHOOSEREF);
   addRecSignal(GSN_ARBIT_STOPREP, &Qmgr::execARBIT_STOPREP);
 
+  addRecSignal(GSN_READ_NODESREF, &Qmgr::execREAD_NODESREF);
+  addRecSignal(GSN_READ_NODESCONF, &Qmgr::execREAD_NODESCONF);
+  
   initData();
 }//Qmgr::Qmgr()
 

@@ -100,7 +100,7 @@ void ha_blackhole::position(const byte *record)
 }
 
 
-void ha_blackhole::info(uint flag)
+int ha_blackhole::info(uint flag)
 {
   DBUG_ENTER("ha_blackhole::info");
 
@@ -114,7 +114,7 @@ void ha_blackhole::info(uint flag)
   delete_length= 0;
   if (flag & HA_STATUS_AUTO)
     auto_increment_value= 1;
-  DBUG_VOID_RETURN;
+  DBUG_RETURN(0);
 }
 
 int ha_blackhole::external_lock(THD *thd, int lock_type)
@@ -124,14 +124,18 @@ int ha_blackhole::external_lock(THD *thd, int lock_type)
 }
 
 
+uint ha_blackhole::lock_count(void) const
+{
+  DBUG_ENTER("ha_blackhole::lock_count");
+  DBUG_RETURN(0);
+}
+
 THR_LOCK_DATA **ha_blackhole::store_lock(THD *thd,
                                          THR_LOCK_DATA **to,
                                          enum thr_lock_type lock_type)
 {
-  if (lock_type != TL_IGNORE && lock.type == TL_UNLOCK)
-    lock.type=lock_type;
-  *to++= &lock;
-  return to;
+  DBUG_ENTER("ha_blackhole::store_lock");
+  DBUG_RETURN(to);
 }
 
 

@@ -178,9 +178,9 @@ t3	CREATE TABLE `t3` (
 ) ENGINE=MRG_MyISAM DEFAULT CHARSET=latin1 UNION=(`t1`,`t2`)
 create table t4 (a int not null, b char(10), key(a)) engine=MERGE UNION=(t1,t2);
 select * from t4;
-ERROR HY000: Can't open file: 't4.MRG' (errno: 143)
+ERROR HY000: Unable to open underlying table which is differently defined or of non-MyISAM type or doesn't exist
 alter table t4 add column c int;
-ERROR HY000: Can't open file: 't4.MRG' (errno: 143)
+ERROR HY000: Unable to open underlying table which is differently defined or of non-MyISAM type or doesn't exist
 create database mysqltest;
 create table mysqltest.t6 (a int not null primary key auto_increment, message char(20));
 create table t5 (a int not null, b char(20), key(a)) engine=MERGE UNION=(test.t1,mysqltest.t6);
@@ -651,6 +651,32 @@ ERROR HY000: You can't specify target table 't1' for update in FROM clause
 create table t3 engine=merge union=(t1, t2) select * from t2;
 ERROR HY000: You can't specify target table 't2' for update in FROM clause
 drop table t1, t2;
+create table t1 (
+a double(14,4),
+b varchar(10),
+index (a,b)
+) engine=merge union=(t2,t3);
+create table t2 (
+a double(14,4),
+b varchar(10),
+index (a,b)
+) engine=myisam;
+create table t3 (
+a double(14,4),
+b varchar(10),
+index (a,b)
+) engine=myisam;
+insert into t2 values ( null, '');
+insert into t2 values ( 9999999999.999, '');
+insert into t3 select * from t2;
+select min(a), max(a) from t1;
+min(a)	max(a)
+9999999999.9990	9999999999.9990
+flush tables;
+select min(a), max(a) from t1;
+min(a)	max(a)
+9999999999.9990	9999999999.9990
+drop table t1, t2, t3;
 create table t1 (a int,b int,c int, index (a,b,c));
 create table t2 (a int,b int,c int, index (a,b,c));
 create table t3 (a int,b int,c int, index (a,b,c))
@@ -691,3 +717,67 @@ SELECT b FROM t2;
 b
 3
 DROP TABLE t1, t2;
+create table t1(a int);
+create table t2(a int);
+insert into t1 values (1);
+insert into t2 values (2);
+create table t3 (a int) engine=merge union=(t1, t2) insert_method=first;
+select * from t3;
+a
+1
+2
+insert t2 select * from t2;
+select * from t2;
+a
+2
+2
+insert t3 select * from t1;
+select * from t3;
+a
+1
+1
+2
+2
+insert t1 select * from t3;
+select * from t1;
+a
+1
+1
+1
+1
+2
+2
+select * from t2;
+a
+2
+2
+select * from t3;
+a
+1
+1
+1
+1
+2
+2
+2
+2
+check table t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	check	status	OK
+test.t2	check	status	OK
+drop table t1, t2, t3;
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES(2),(1);
+CREATE TABLE t2(a INT, KEY(a)) ENGINE=MERGE UNION=(t1);
+SELECT * FROM t2 WHERE a=2;
+ERROR HY000: Got error 124 from storage engine
+DROP TABLE t1, t2;
+CREATE TABLE t1(a INT) ENGINE=MEMORY;
+CREATE TABLE t2(a INT) ENGINE=MERGE UNION=(t1);
+SELECT * FROM t2;
+ERROR HY000: Unable to open underlying table which is differently defined or of non-MyISAM type or doesn't exist
+DROP TABLE t1, t2;
+CREATE TABLE t2(a INT) ENGINE=MERGE UNION=(t3);
+SELECT * FROM t2;
+ERROR HY000: Unable to open underlying table which is differently defined or of non-MyISAM type or doesn't exist
+DROP TABLE t2;

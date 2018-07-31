@@ -100,3 +100,42 @@ insert into t1 select a from t1 on duplicate key update a=a+1 ;
 --error 1052
 insert ignore into t1 select a from t1 on duplicate key update a=t1.a+1 ;
 drop table t1;
+
+#
+# Bug#10109 - INSERT .. SELECT ... ON DUPLICATE KEY UPDATE fails
+# Bogus "Duplicate columns" error message
+#
+
+CREATE TABLE t1 (
+  a BIGINT(20) NOT NULL DEFAULT 0,
+  PRIMARY KEY  (a)
+) ENGINE=MyISAM;
+
+INSERT INTO t1 ( a ) SELECT 0 ON DUPLICATE KEY UPDATE a = a + VALUES (a) ;
+
+DROP TABLE t1;
+
+#
+# Bug#21555: incorrect behavior with INSERT ... ON DUPL KEY UPDATE and VALUES
+#
+
+
+# End of 4.1 tests
+CREATE TABLE t1
+(
+  a   BIGINT UNSIGNED,
+  b   BIGINT UNSIGNED,
+  PRIMARY KEY (a)
+);
+
+INSERT INTO t1 VALUES (45, 1) ON DUPLICATE KEY UPDATE b =
+  IF(VALUES(b) > t1.b, VALUES(b), t1.b);
+SELECT * FROM t1;
+INSERT INTO t1 VALUES (45, 2) ON DUPLICATE KEY UPDATE b =
+  IF(VALUES(b) > t1.b, VALUES(b), t1.b);
+SELECT * FROM t1;
+INSERT INTO t1 VALUES (45, 1) ON DUPLICATE KEY UPDATE b = 
+  IF(VALUES(b) > t1.b, VALUES(b), t1.b);
+SELECT * FROM t1;
+
+DROP TABLE t1;

@@ -27,6 +27,8 @@
 
 #include <ndbapi_limits.h>
 
+#define NDB_HIDDEN_PRIMARY_KEY_LENGTH 8
+
 class Ndb;             // Forward declaration
 class NdbOperation;    // Forward declaration
 class NdbConnection;   // Forward declaration
@@ -113,11 +115,12 @@ class ha_ndbcluster: public handler
   int read_range_next();
 
   bool get_error_message(int error, String *buf);
-  void info(uint);
+  int info(uint);
   int extra(enum ha_extra_function operation);
   int extra_opt(enum ha_extra_function operation, ulong cache_size);
   int reset();
   int external_lock(THD *thd, int lock_type);
+  void unlock_row();
   int start_stmt(THD *thd);
   const char * table_type() const;
   const char ** bas_ext() const;
@@ -150,7 +153,12 @@ class ha_ndbcluster: public handler
  
   static void set_dbname(const char *pathname, char *dbname);
   static void set_tabname(const char *pathname, char *tabname);
-   
+
+  /*
+   * Internal to ha_ndbcluster, used by C functions
+   */
+  int ndb_err(NdbConnection*);
+
  private:
   int alter_table_name(const char *to);
   int drop_table();
@@ -203,7 +211,6 @@ class ha_ndbcluster: public handler
 
   longlong get_auto_increment();
   void invalidate_dictionary_cache(bool global);
-  int ndb_err(NdbConnection*);
   bool uses_blob_value(bool all_fields);
 
   int write_ndb_file();
@@ -221,11 +228,13 @@ class ha_ndbcluster: public handler
   char m_tabname[FN_HEADLEN];
   ulong m_table_flags;
   THR_LOCK_DATA m_lock;
+  bool m_lock_tuple;
   NDB_SHARE *m_share;
   NDB_INDEX_DATA  m_index[MAX_KEY];
   // NdbRecAttr has no reference to blob
   typedef union { NdbRecAttr *rec; NdbBlob *blob; void *ptr; } NdbValue;
   NdbValue m_value[NDB_MAX_ATTRIBUTES_IN_TABLE];
+  byte m_ref[NDB_HIDDEN_PRIMARY_KEY_LENGTH];
   bool m_use_write;
   bool m_ignore_dup_key;
   bool m_primary_key_update;
@@ -251,11 +260,13 @@ class ha_ndbcluster: public handler
 
   Ndb *get_ndb();
   void set_rec_per_key();
-  void records_update();
+  int records_update();
   void no_uncommitted_rows_execute_failure();
   void no_uncommitted_rows_update(int);
   void no_uncommitted_rows_init(THD *);
   void no_uncommitted_rows_reset(THD *);
+
+  void release_completed_operations(NdbConnection*);
 
   friend int execute_no_commit(ha_ndbcluster*, NdbConnection*);
   friend int execute_commit(ha_ndbcluster*, NdbConnection*);
@@ -279,3 +290,5 @@ int ndbcluster_table_exists_in_engine(THD* thd,
 int ndbcluster_drop_database(const char* path);
 
 void ndbcluster_print_error(int error, const NdbOperation *error_op);
+
+int ndbcluster_show_status(THD*);

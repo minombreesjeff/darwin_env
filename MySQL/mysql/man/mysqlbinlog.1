@@ -1,0 +1,481 @@
+.\"     Title: \fBmysqlbinlog\fR
+.\"    Author: 
+.\" Generator: DocBook XSL Stylesheets v1.70.1 <http://docbook.sf.net/>
+.\"      Date: 11/02/2006
+.\"    Manual: MySQL Database System
+.\"    Source: MySQL 4.1
+.\"
+.TH "\fBMYSQLBINLOG\fR" "1" "11/02/2006" "MySQL 4.1" "MySQL Database System"
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.SH "NAME"
+mysqlbinlog \- utility for processing binary log files
+.SH "SYNOPSIS"
+.HP 35
+\fBmysqlbinlog [\fR\fBoptions\fR\fB] \fR\fB\fIlog_file\fR\fR\fB ...\fR
+.SH "DESCRIPTION"
+.PP
+The binary log files that the server generates are written in binary format. To examine these files in text format, use the
+\fBmysqlbinlog\fR
+utility. It is available as of MySQL 3.23.14. You can also use
+\fBmysqlbinlog\fR
+to read relay log files written by a slave server in a replication setup. Relay logs have the same format as binary log files.
+.PP
+Invoke
+\fBmysqlbinlog\fR
+like this:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlbinlog [\fR\fB\fIoptions\fR\fR\fB] \fR\fB\fIlog_file\fR\fR\fB ...\fR
+.fi
+.RE
+.PP
+For example, to display the contents of the binary log file named
+\fIbinlog.000003\fR, use this command:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlbinlog binlog.0000003\fR
+.fi
+.RE
+.PP
+The output includes all events contained in
+\fIbinlog.000003\fR. Event information includes the statement executed, the time the statement took, the thread ID of the client that issued it, the timestamp when it was executed, and so forth.
+.PP
+The output from
+\fBmysqlbinlog\fR
+can be re\-executed (for example, by using it as input to
+\fBmysql\fR) to reapply the statements in the log. This is useful for recovery operations after a server crash. For other usage examples, see the discussion later in this section.
+.PP
+Normally, you use
+\fBmysqlbinlog\fR
+to read binary log files directly and apply them to the local MySQL server. It is also possible to read binary logs from a remote server by using the
+\fB\-\-read\-from\-remote\-server\fR
+option. When you read remote binary logs, the connection parameter options can be given to indicate how to connect to the server. These options are
+\fB\-\-host\fR,
+\fB\-\-password\fR,
+\fB\-\-port\fR,
+\fB\-\-protocol\fR,
+\fB\-\-socket\fR, and
+\fB\-\-user\fR; they are ignored except when you also use the
+\fB\-\-read\-from\-remote\-server\fR
+option.
+.PP
+Binary logs and relay logs are discussed further in
+Section\ 10.4, \(lqThe Binary Log\(rq, and
+Section\ 3.4, \(lqReplication Relay and Status Files\(rq.
+.PP
+\fBmysqlbinlog\fR
+supports the following options:
+.TP 3n
+\(bu
+\fB\-\-help\fR,
+\fB\-?\fR
+.sp
+Display a help message and exit.
+.TP 3n
+\(bu
+\fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
+.sp
+The directory where character sets are installed. See
+Section\ 9.1, \(lqThe Character Set Used for Data and Sorting\(rq.
+.TP 3n
+\(bu
+\fB\-\-database=\fR\fB\fIdb_name\fR\fR,
+\fB\-d \fR\fB\fIdb_name\fR\fR
+.sp
+List entries for just this database (local log only). You can only specify one database with this option \- if you specify multiple
+\fB\-\-database\fR
+options, only the last one is used. This option forces
+\fBmysqlbinlog\fR
+to output entries from the binary log where the default database (that is, the one selected by
+USE) is
+\fIdb_name\fR. Note that this does not replicate cross\-database statements such as
+UPDATE \fIsome_db.some_table\fR SET foo='bar'
+while having selected a different database or no database.
+.TP 3n
+\(bu
+\fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
+\fB\-# [\fR\fB\fIdebug_options\fR\fR\fB]\fR
+.sp
+Write a debugging log. A typical
+\fIdebug_options\fR
+string is often
+\'d:t:o,\fIfile_name\fR'.
+.TP 3n
+\(bu
+\fB\-\-disable\-log\-bin\fR,
+\fB\-D\fR
+.sp
+Disable binary logging. This is useful for avoiding an endless loop if you use the
+\fB\-\-to\-last\-log\fR
+option and are sending the output to the same MySQL server. This option also is useful when restoring after a crash to avoid duplication of the statements you have logged. This option is available as of MySQL 4.1.8.
+.sp
+This option requires that you have the
+SUPER
+privilege. It causes
+\fBmysqlbinlog\fR
+to include a
+SET SQL_LOG_BIN=0
+statement in its output to disable binary logging of the remaining output. The
+SET
+statement is ineffective unless you have the
+SUPER
+privilege.
+.TP 3n
+\(bu
+\fB\-\-force\-read\fR,
+\fB\-f\fR
+.sp
+With this option, if
+\fBmysqlbinlog\fR
+reads a binary log event that it does not recognize, it prints a warning, ignores the event, and continues. Without this option,
+\fBmysqlbinlog\fR
+stops if it reads such an event.
+.TP 3n
+\(bu
+\fB\-\-host=\fR\fB\fIhost_name\fR\fR,
+\fB\-h \fR\fB\fIhost_name\fR\fR
+.sp
+Get the binary log from the MySQL server on the given host.
+.TP 3n
+\(bu
+\fB\-\-local\-load=\fR\fB\fIpath\fR\fR,
+\fB\-l \fR\fB\fIpath\fR\fR
+.sp
+Prepare local temporary files for
+LOAD DATA INFILE
+in the specified directory.
+.TP 3n
+\(bu
+\fB\-\-offset=\fR\fB\fIN\fR\fR,
+\fB\-o \fR\fB\fIN\fR\fR
+.sp
+Skip the first
+\fIN\fR
+entries in the log.
+.TP 3n
+\(bu
+\fB\-\-password[=\fR\fB\fIpassword\fR\fR\fB]\fR,
+\fB\-p[\fR\fB\fIpassword\fR\fR\fB]\fR
+.sp
+The password to use when connecting to the server. If you use the short option form (\fB\-p\fR), you
+\fIcannot\fR
+have a space between the option and the password. If you omit the
+\fIpassword\fR
+value following the
+\fB\-\-password\fR
+or
+\fB\-p\fR
+option on the command line, you are prompted for one.
+.sp
+Specifying a password on the command line should be considered insecure. See
+Section\ 7.6, \(lqKeeping Your Password Secure\(rq.
+.TP 3n
+\(bu
+\fB\-\-port=\fR\fB\fIport_num\fR\fR,
+\fB\-P \fR\fB\fIport_num\fR\fR
+.sp
+The TCP/IP port number to use for connecting to a remote server.
+.TP 3n
+\(bu
+\fB\-\-position=\fR\fB\fIN\fR\fR,
+\fB\-j \fR\fB\fIN\fR\fR
+.sp
+Deprecated. Use
+\fB\-\-start\-position\fR
+instead (starting from MySQL 4.1.4).
+.TP 3n
+\(bu
+\fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
+.sp
+The connection protocol to use. Added in MySQL 4.1.
+.TP 3n
+\(bu
+\fB\-\-read\-from\-remote\-server\fR,
+\fB\-R\fR
+.sp
+Read the binary log from a MySQL server rather than reading a local log file. Any connection parameter options are ignored unless this option is given as well. These options are
+\fB\-\-host\fR,
+\fB\-\-password\fR,
+\fB\-\-port\fR,
+\fB\-\-protocol\fR,
+\fB\-\-socket\fR, and
+\fB\-\-user\fR.
+.TP 3n
+\(bu
+\fB\-\-result\-file=\fR\fB\fIname\fR\fR,
+\fB\-r \fR\fB\fIname\fR\fR
+.sp
+Direct output to the given file.
+.TP 3n
+\(bu
+\fB\-\-set\-charset=\fR\fB\fIcharset_name\fR\fR
+.sp
+Add a
+SET NAMES \fIcharset_name\fR
+statement to the output to specify the character set to be used for processing log files. This option was added in MySQL 4.1.21.
+.TP 3n
+\(bu
+\fB\-\-short\-form\fR,
+\fB\-s\fR
+.sp
+Display only the statements contained in the log, without any extra information.
+.TP 3n
+\(bu
+\fB\-\-socket=\fR\fB\fIpath\fR\fR,
+\fB\-S \fR\fB\fIpath\fR\fR
+.sp
+For connections to
+localhost, the Unix socket file to use, or, on Windows, the name of the named pipe to use.
+.TP 3n
+\(bu
+\fB\-\-start\-datetime=\fR\fB\fIdatetime\fR\fR
+.sp
+Start reading the binary log at the first event having a timestamp equal to or later than the
+\fIdatetime\fR
+argument. The
+\fIdatetime\fR
+value is relative to the local time zone on the machine where you run
+\fBmysqlbinlog\fR. The value should be in a format accepted for the
+DATETIME
+or
+TIMESTAMP
+data types. For example:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlbinlog \-\-start\-datetime="2005\-12\-25 11:25:56" binlog.000003\fR
+.fi
+.RE
+This option is available as of MySQL 4.1.4. It is useful for point\-in\-time recovery. See
+Section\ 8.2, \(lqExample Backup and Recovery Strategy\(rq.
+.TP 3n
+\(bu
+\fB\-\-stop\-datetime=\fR\fB\fIdatetime\fR\fR
+.sp
+Stop reading the binary log at the first event having a timestamp equal or posterior to the
+\fIdatetime\fR
+argument. This option is useful for point\-in\-time recovery. See the description of the
+\fB\-\-start\-datetime\fR
+option for information about the
+\fIdatetime\fR
+value. This option is available as of MySQL 4.1.4.
+.TP 3n
+\(bu
+\fB\-\-start\-position=\fR\fB\fIN\fR\fR
+.sp
+Start reading the binary log at the first event having a position equal to the
+\fIN\fR
+argument. This option applies to the first log file named on the command line. Available as of MySQL 4.1.4 (previously named
+\fB\-\-position\fR).
+.TP 3n
+\(bu
+\fB\-\-stop\-position=\fR\fB\fIN\fR\fR
+.sp
+Stop reading the binary log at the first event having a position equal or greater than the
+\fIN\fR
+argument. This option applies to the last log file named on the command line. Available as of MySQL 4.1.4.
+.TP 3n
+\(bu
+\fB\-\-to\-last\-log\fR,
+\fB\-t\fR
+.sp
+Do not stop at the end of the requested binary log from a MySQL server, but rather continue printing until the end of the last binary log. If you send the output to the same MySQL server, this may lead to an endless loop. This option requires
+\fB\-\-read\-from\-remote\-server\fR. Available as of MySQL 4.1.2.
+.TP 3n
+\(bu
+\fB\-\-user=\fR\fB\fIuser_name\fR\fR,
+\fB\-u \fR\fB\fIuser_name\fR\fR
+.sp
+The MySQL username to use when connecting to a remote server.
+.TP 3n
+\(bu
+\fB\-\-version\fR,
+\fB\-V\fR
+.sp
+Display version information and exit.
+.sp
+.RE
+.PP
+You can also set the following variable by using
+\fB\-\-\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
+syntax:
+.TP 3n
+\(bu
+open_files_limit
+.sp
+Specify the number of open file descriptors to reserve.
+.sp
+.RE
+.PP
+It is also possible to set variables by using
+\fB\-\-set\-variable=\fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
+or
+\fB\-O \fR\fB\fIvar_name\fR\fR\fB=\fR\fB\fIvalue\fR\fR
+syntax.
+\fIThis syntax is deprecated\fR.
+.PP
+You can pipe the output of
+\fBmysqlbinlog\fR
+into the
+\fBmysql\fR
+client to execute the statements contained in the binary log. This is used to recover from a crash when you have an old backup (see
+Section\ 8.1, \(lqDatabase Backups\(rq). For example:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlbinlog binlog.000001 | mysql\fR
+.fi
+.RE
+.PP
+Or:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlbinlog binlog.[0\-9]* | mysql\fR
+.fi
+.RE
+.PP
+You can also redirect the output of
+\fBmysqlbinlog\fR
+to a text file instead, if you need to modify the statement log first (for example, to remove statements that you do not want to execute for some reason). After editing the file, execute the statements that it contains by using it as input to the
+\fBmysql\fR
+program.
+.PP
+\fBmysqlbinlog\fR
+has the
+\fB\-\-start\-position\fR
+option, which prints only those statements with an offset in the binary log greater than or equal to a given position (the given position must match the start of one event). It also has options to stop and start when it sees an event with a given date and time. This enables you to perform point\-in\-time recovery using the
+\fB\-\-stop\-datetime\fR
+option (to be able to say, for example,
+\(lqroll forward my databases to how they were today at 10:30 a.m.\(rq).
+.PP
+If you have more than one binary log to execute on the MySQL server, the safe method is to process them all using a single connection to the server. Here is an example that demonstrates what may be
+\fIunsafe\fR:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlbinlog binlog.000001 | mysql # DANGER!!\fR
+shell> \fBmysqlbinlog binlog.000002 | mysql # DANGER!!\fR
+.fi
+.RE
+.PP
+Processing binary logs this way using different connections to the server causes problems if the first log file contains a
+CREATE TEMPORARY TABLE
+statement and the second log contains a statement that uses the temporary table. When the first
+\fBmysql\fR
+process terminates, the server drops the temporary table. When the second
+\fBmysql\fR
+process attempts to use the table, the server reports
+\(lqunknown table.\(rq
+.PP
+To avoid problems like this, use a
+\fIsingle\fR
+connection to execute the contents of all binary logs that you want to process. Here is one way to do so:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlbinlog binlog.000001 binlog.000002 | mysql\fR
+.fi
+.RE
+.PP
+Another approach is to write all the logs to a single file and then process the file:
+.sp
+.RS 3n
+.nf
+shell> \fBmysqlbinlog binlog.000001 >  /tmp/statements.sql\fR
+shell> \fBmysqlbinlog binlog.000002 >> /tmp/statements.sql\fR
+shell> \fBmysql \-e "source /tmp/statements.sql"\fR
+.fi
+.RE
+.PP
+In MySQL 3.23, the binary log did not contain the data to load for
+LOAD DATA INFILE
+statements. To execute such a statement from a binary log file, the original data file was needed. Starting from MySQL 4.0.14, the binary log does contain the data, so
+\fBmysqlbinlog\fR
+can produce output that reproduces the
+LOAD DATA INFILE
+operation without the original data file.
+\fBmysqlbinlog\fR
+copies the data to a temporary file and writes a
+LOAD DATA LOCAL INFILE
+statement that refers to the file. The default location of the directory where these files are written is system\-specific. To specify a directory explicitly, use the
+\fB\-\-local\-load\fR
+option.
+.PP
+Because
+\fBmysqlbinlog\fR
+converts
+LOAD DATA INFILE
+statements to
+LOAD DATA LOCAL INFILE
+statements (that is, it adds
+LOCAL), both the client and the server that you use to process the statements must be configured to allow
+LOCAL
+capability. See
+Section\ 5.4, \(lqSecurity Issues with LOAD DATA LOCAL\(rq.
+.PP
+\fBWarning:\fR
+The temporary files created for
+LOAD DATA LOCAL
+statements are
+\fInot\fR
+automatically deleted because they are needed until you actually execute those statements. You should delete the temporary files yourself after you no longer need the statement log. The files can be found in the temporary file directory and have names like
+\fIoriginal_file_name\-#\-#\fR.
+.PP
+Before MySQL 4.1,
+\fBmysqlbinlog\fR
+could not prepare output suitable for
+\fBmysql\fR
+if the binary log contained interlaced statements originating from different clients that used temporary tables of the same name. This is fixed in MySQL 4.1. However, the problem still existed for
+LOAD DATA INFILE
+statements until it was fixed in MySQL 4.1.8.
+.SH "COPYRIGHT"
+.PP
+Copyright 1997\-2006 MySQL AB
+.PP
+This documentation is NOT distributed under a GPL license. Use of this documentation is subject to the following terms: You may create a printed copy of this documentation solely for your own personal use. Conversion to other formats is allowed as long as the actual content is not altered or edited in any way. You shall not publish or distribute this documentation in any form or on any media, except if you distribute the documentation in a manner similar to how MySQL disseminates it (that is, electronically for download on a Web site with the software) or on a CD\-ROM or similar medium, provided however that the documentation is disseminated together with the software on the same medium. Any other use, such as any dissemination of printed copies or use of this documentation, in whole or in part, in another publication, requires the prior written consent from an authorized representative of MySQL AB. MySQL AB reserves any and all rights to this documentation not expressly granted above.
+.PP
+Please email
+<docs@mysql.com>
+for more information.
+.SH "SEE ALSO"
+isamchk(1),
+isamlog(1),
+msql2mysql(1),
+myisam_ftdump(1),
+myisamchk(1),
+myisamlog(1),
+myisampack(1),
+mysql(1),
+mysql.server(1),
+mysql_config(1),
+mysql_explain_log(1),
+mysql_fix_privilege_tables(1),
+mysql_zap(1),
+mysqlaccess(1),
+mysqladmin(1),
+mysqlcheck(1),
+mysqld(1),
+mysqld(8),
+mysqld_multi(1),
+mysqld_safe(1),
+mysqldump(1),
+mysqlhotcopy(1),
+mysqlimport(1),
+mysqlshow(1),
+pack_isam(1),
+perror(1),
+replace(1),
+safe_mysqld(1)
+.P
+For more information, please refer to the MySQL Reference Manual,
+which may already be installed locally and which is also available
+online at http://dev.mysql.com/doc/.
+.SH AUTHOR
+MySQL AB (http://www.mysql.com/).
+This software comes with no warranty.

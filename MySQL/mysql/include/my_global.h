@@ -310,6 +310,10 @@ C_MODE_END
 #undef setrlimit
 #define setrlimit cma_setrlimit64
 #endif
+/* Declare madvise where it is not declared for C++, like Solaris */
+#if HAVE_MADVISE && !HAVE_DECL_MADVISE && defined(__cplusplus)
+extern "C" int madvise(void *addr, size_t len, int behav);
+#endif
 
 #ifdef __QNXNTO__
 /* This has to be after include limits.h */
@@ -410,13 +414,51 @@ typedef unsigned short ushort;
 #define function_volatile	volatile
 #define my_reinterpret_cast(A) reinterpret_cast<A>
 #define my_const_cast(A) const_cast<A>
+# ifndef GCC_VERSION
+#  define GCC_VERSION (__GNUC__ * 1000 + __GNUC_MINOR__)
+# endif
 #elif !defined(my_reinterpret_cast)
 #define my_reinterpret_cast(A) (A)
 #define my_const_cast(A) (A)
 #endif
-#if !defined(__attribute__) && (defined(__cplusplus) || !defined(__GNUC__)  || __GNUC__ == 2 && __GNUC_MINOR__ < 8)
-#define __attribute__(A)
+
+/*
+  Disable __attribute__() on gcc < 2.7, g++ < 3.4, and non-gcc compilers.
+  Some forms of __attribute__ are actually supported in earlier versions of
+  g++, but we just disable them all because we only use them to generate
+  compilation warnings.
+*/
+#ifndef __attribute__
+# if !defined(__GNUC__)
+#  define __attribute__(A)
+# elif GCC_VERSION < 2008
+#  define __attribute__(A)
+# elif defined(__cplusplus) && GCC_VERSION < 3004
+#  define __attribute__(A)
+# endif
 #endif
+
+/*
+  __attribute__((format(...))) is only supported in gcc >= 2.8 and g++ >= 3.4
+  But that's already covered by the __attribute__ tests above, so this is
+  just a convenience macro.
+*/
+#ifndef ATTRIBUTE_FORMAT
+# define ATTRIBUTE_FORMAT(style, m, n) __attribute__((format(style, m, n)))
+#endif
+
+/*
+   __attribute__((format(...))) on a function pointer is not supported
+   until  gcc 3.1
+*/
+#ifndef ATTRIBUTE_FORMAT_FPTR
+# if (GCC_VERSION >= 3001)
+#  define ATTRIBUTE_FORMAT_FPTR(style, m, n) ATTRIBUTE_FORMAT(style, m, n)
+# else
+#  define ATTRIBUTE_FORMAT_FPTR(style, m, n)
+# endif /* GNUC >= 3.1 */
+#endif
+
 
 /* From old s-system.h */
 
@@ -797,6 +839,7 @@ typedef off_t os_off_t;
 #define socket_errno	WSAGetLastError()
 #define SOCKET_EINTR	WSAEINTR
 #define SOCKET_EAGAIN	WSAEINPROGRESS
+#define SOCKET_ETIMEDOUT WSAETIMEDOUT
 #define SOCKET_EWOULDBLOCK WSAEWOULDBLOCK
 #define SOCKET_ENFILE	ENFILE
 #define SOCKET_EMFILE	EMFILE
@@ -804,6 +847,7 @@ typedef off_t os_off_t;
 #define socket_errno	sock_errno()
 #define SOCKET_EINTR	SOCEINTR
 #define SOCKET_EAGAIN	SOCEINPROGRESS
+#define SOCKET_ETIMEDOUT SOCKET_EINTR
 #define SOCKET_EWOULDBLOCK SOCEWOULDBLOCK
 #define SOCKET_ENFILE	SOCENFILE
 #define SOCKET_EMFILE	SOCEMFILE
@@ -813,6 +857,7 @@ typedef off_t os_off_t;
 #define closesocket(A)	close(A)
 #define SOCKET_EINTR	EINTR
 #define SOCKET_EAGAIN	EAGAIN
+#define SOCKET_ETIMEDOUT SOCKET_EINTR
 #define SOCKET_EWOULDBLOCK EWOULDBLOCK
 #define SOCKET_ENFILE	ENFILE
 #define SOCKET_EMFILE	EMFILE
@@ -969,10 +1014,11 @@ do { doubleget_union _tmp; \
 #define doublestore(T,V) do { *((long *) T) = ((doubleget_union *)&V)->m[0]; \
 			     *(((long *) T)+1) = ((doubleget_union *)&V)->m[1]; \
                          } while (0)
-#define float4get(V,M) do { *((long *) &(V)) = *((long*) (M)); } while(0)
-#define float8get(V,M) doubleget((V),(M))
+#define float4get(V,M)   do { *((float *) &(V)) = *((float*) (M)); } while(0)
+#define float8get(V,M)   doubleget((V),(M))
 #define float4store(V,M) memcpy((byte*) V,(byte*) (&M),sizeof(float))
-#define floatstore(T,V) memcpy((byte*)(T), (byte*)(&V), sizeof(float))
+#define floatstore(T,V)  memcpy((byte*)(T), (byte*)(&V),sizeof(float))
+#define floatget(V,M)    memcpy((byte*) &V,(byte*) (M),sizeof(float))
 #define float8store(V,M) doublestore((V),(M))
 #endif /* __i386__ */
 
@@ -1143,7 +1189,8 @@ do { doubleget_union _tmp; \
                              *(((char*)T)+1)=(((A) >> 16));\
                              *(((char*)T)+0)=(((A) >> 24)); } while(0)
 
-#define floatstore(T,V) memcpy_fixed((byte*)(T), (byte*)(&V), sizeof(float))
+#define floatget(V,M)    memcpy_fixed((byte*) &V,(byte*) (M),sizeof(float))
+#define floatstore(T,V)  memcpy_fixed((byte*) (T),(byte*)(&V),sizeof(float))
 #define doubleget(V,M)	 memcpy_fixed((byte*) &V,(byte*) (M),sizeof(double))
 #define doublestore(T,V) memcpy_fixed((byte*) (T),(byte*) &V,sizeof(double))
 #define longlongget(V,M) memcpy_fixed((byte*) &V,(byte*) (M),sizeof(ulonglong))
@@ -1158,7 +1205,8 @@ do { doubleget_union _tmp; \
 #define shortstore(T,V) int2store(T,V)
 #define longstore(T,V)	int4store(T,V)
 #ifndef floatstore
-#define floatstore(T,V) memcpy_fixed((byte*)(T), (byte*)(&V), sizeof(float))
+#define floatstore(T,V)  memcpy_fixed((byte*) (T),(byte*) (&V),sizeof(float))
+#define floatget(V,M)    memcpy_fixed((byte*) &V, (byte*) (M), sizeof(float))
 #endif
 #ifndef doubleget
 #define doubleget(V,M)	 memcpy_fixed((byte*) &V,(byte*) (M),sizeof(double))

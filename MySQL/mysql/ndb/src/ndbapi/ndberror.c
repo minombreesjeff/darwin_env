@@ -55,9 +55,6 @@ typedef struct ErrorBundle {
 #define NI ndberror_cl_function_not_implemented
 #define UE ndberror_cl_unknown_error_code
 
-static const char REDO_BUFFER_MSG[]=
-"REDO log buffers overloaded, consult online manual (increase RedoBuffer, and|or decrease TimeBetweenLocalCheckpoints, and|or increase NoOfFragmentLogFiles)";
-
 static const char* empty_string = "";
 
 /*
@@ -164,8 +161,9 @@ ErrorBundle ErrorCodes[] = {
   { 830,  TR, "Out of add fragment operation records" },
   { 873,  TR, "Out of attrinfo records for scan in tuple manager" },
   { 1217, TR, "Out of operation records in local data manager (increase MaxNoOfLocalOperations)" },
-  { 1220, TR, REDO_BUFFER_MSG },
+  { 1220, TR, "REDO log files overloaded, consult online manual (decrease TimeBetweenLocalCheckpoints, and|or increase NoOfFragmentLogFiles)" },
   { 1222, TR, "Out of transaction markers in LQH" },
+  { 1224, TR, "Out of Send Buffer space in LQH" },
   { 4021, TR, "Out of Send Buffer space in NDB API" },
   { 4022, TR, "Out of Send Buffer space in NDB API" },
   { 4032, TR, "Out of Send Buffer space in NDB API" },
@@ -194,10 +192,10 @@ ErrorBundle ErrorCodes[] = {
   /**
    * OverloadError
    */
-  { 410,  OL, REDO_BUFFER_MSG },
+  { 410,  OL, "REDO log files overloaded, consult online manual (decrease TimeBetweenLocalCheckpoints, and|or increase NoOfFragmentLogFiles)" },
   { 677,  OL, "Index UNDO buffers overloaded (increase UndoIndexBuffer)" },
   { 891,  OL, "Data UNDO buffers overloaded (increase UndoDataBuffer)" },
-  { 1221, OL, REDO_BUFFER_MSG },
+  { 1221, OL, "REDO buffers overloaded, consult online manual (increase RedoBuffer)" },
   { 4006, OL, "Connect failure - out of connection objects (increase MaxNoOfConcurrentTransactions)" }, 
 
 
@@ -283,7 +281,7 @@ ErrorBundle ErrorCodes[] = {
   { 4601, AE, "Transaction is not started"},
   { 4602, AE, "You must call getNdbOperation before executeScan" },
   { 4603, AE, "There can only be ONE operation in a scan transaction" },
-  { 4604, AE, "takeOverScanOp, opType must be UpdateRequest or DeleteRequest" },
+  { 4604, AE, "takeOverScanOp, to take over a scanned row one must explicitly request keyinfo in readTuples call" },
   { 4605, AE, "You may only call openScanRead or openScanExclusive once for each operation"},
   { 4607, AE, "There may only be one operation in a scan transaction"},
   { 4608, AE, "You can not takeOverScan unless you have used openScanExclusive"},
@@ -312,6 +310,8 @@ ErrorBundle ErrorCodes[] = {
   { 742,  SE, "Unsupported attribute type in index" },
   { 743,  SE, "Unsupported character set in table or index" },
   { 744,  SE, "Character string is invalid for given character set" },
+  { 761,  SE, "Unable to drop table as backup is in progress" },
+  { 762,  SE, "Unable to alter table as backup is in progress" },
   { 241,  SE, "Invalid schema object version" },
   { 283,  SE, "Table is being dropped" },
   { 284,  SE, "Table not defined in transaction coordinator" },
