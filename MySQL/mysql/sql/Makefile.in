@@ -1,0 +1,1958 @@
+# Makefile.in generated automatically by automake 1.4-p5 from Makefile.am
+
+# Copyright (C) 1994, 1995-8, 1999, 2001 Free Software Foundation, Inc.
+# This Makefile.in is free software; the Free Software Foundation
+# gives unlimited permission to copy and/or distribute it,
+# with or without modifications, as long as this notice is preserved.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY, to the extent permitted by law; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE.
+
+# Copyright (C) 2000 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+#called from the top level Makefile
+
+
+SHELL = @SHELL@
+
+srcdir = @srcdir@
+top_srcdir = @top_srcdir@
+VPATH = @srcdir@
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+
+bindir = @bindir@
+sbindir = @sbindir@
+libexecdir = @libexecdir@
+datadir = @datadir@
+sysconfdir = @sysconfdir@
+sharedstatedir = @sharedstatedir@
+localstatedir = @localstatedir@
+libdir = @libdir@
+infodir = @infodir@
+mandir = @mandir@
+includedir = @includedir@
+oldincludedir = /usr/include
+
+DESTDIR =
+
+pkgdatadir = $(datadir)/@PACKAGE@
+pkglibdir = $(libdir)/@PACKAGE@
+pkgincludedir = $(includedir)/@PACKAGE@
+
+top_builddir = ..
+
+ACLOCAL = @ACLOCAL@
+AUTOCONF = @AUTOCONF@
+AUTOMAKE = @AUTOMAKE@
+AUTOHEADER = @AUTOHEADER@
+
+INSTALL = @INSTALL@
+INSTALL_PROGRAM = @INSTALL_PROGRAM@ $(AM_INSTALL_PROGRAM_FLAGS)
+INSTALL_DATA = @INSTALL_DATA@
+INSTALL_SCRIPT = @INSTALL_SCRIPT@
+transform = @program_transform_name@
+
+NORMAL_INSTALL = :
+PRE_INSTALL = :
+POST_INSTALL = :
+NORMAL_UNINSTALL = :
+PRE_UNINSTALL = :
+POST_UNINSTALL = :
+build_alias = @build_alias@
+build_triplet = @build@
+host_alias = @host_alias@
+host_triplet = @host@
+target_alias = @target_alias@
+target_triplet = @target@
+ALLOCA = @ALLOCA@
+AS = @AS@
+AVAILABLE_LANGUAGES = @AVAILABLE_LANGUAGES@
+AVAILABLE_LANGUAGES_ERRORS = @AVAILABLE_LANGUAGES_ERRORS@
+AWK = @AWK@
+CC = @CC@
+CFLAGS = @CFLAGS@
+CHARSETS_NEED_SOURCE = @CHARSETS_NEED_SOURCE@
+CHARSET_OBJS = @CHARSET_OBJS@
+CHARSET_SRCS = @CHARSET_SRCS@
+CHECK_PID = @CHECK_PID@
+CHMOD = @CHMOD@
+CLIENT_EXTRA_LDFLAGS = @CLIENT_EXTRA_LDFLAGS@
+CLIENT_LIBS = @CLIENT_LIBS@
+CMP = @CMP@
+COMPILATION_COMMENT = @COMPILATION_COMMENT@
+CONF_COMMAND = @CONF_COMMAND@
+CP = @CP@
+CPP = @CPP@
+CXX = @CXX@
+CXXFLAGS = @CXXFLAGS@
+CXXLDFLAGS = @CXXLDFLAGS@
+DLLTOOL = @DLLTOOL@
+DOT_FRM_VERSION = @DOT_FRM_VERSION@
+FIND_PROC = @FIND_PROC@
+GETCONF = @GETCONF@
+GXX = @GXX@
+HOSTNAME = @HOSTNAME@
+IS_LINUX = @IS_LINUX@
+KILL = @KILL@
+LD = @LD@
+LIBDL = @LIBDL@
+LIBTOOL = @LIBTOOL@
+LIB_EXTRA_CCFLAGS = @LIB_EXTRA_CCFLAGS@
+LM_CFLAGS = @LM_CFLAGS@
+LN = @LN@
+LN_CP_F = @LN_CP_F@
+LN_S = @LN_S@
+MACHINE_TYPE = @MACHINE_TYPE@
+MAINT = @MAINT@
+MAKEINFO = @MAKEINFO@
+MAKE_SHELL = @MAKE_SHELL@
+MT_INCLUDES = @MT_INCLUDES@
+MT_LD_ADD = @MT_LD_ADD@
+MV = @MV@
+MYSQLD_DEFAULT_SWITCHES = @MYSQLD_DEFAULT_SWITCHES@
+MYSQLD_EXTRA_LDFLAGS = @MYSQLD_EXTRA_LDFLAGS@
+MYSQLD_USER = @MYSQLD_USER@
+MYSQL_BASE_VERSION = @MYSQL_BASE_VERSION@
+MYSQL_NO_DASH_VERSION = @MYSQL_NO_DASH_VERSION@
+MYSQL_SERVER_SUFFIX = @MYSQL_SERVER_SUFFIX@
+MYSQL_TCP_PORT = @MYSQL_TCP_PORT@
+MYSQL_TCP_PORT_DEFAULT = @MYSQL_TCP_PORT_DEFAULT@
+MYSQL_UNIX_ADDR = @MYSQL_UNIX_ADDR@
+MYSQL_VERSION_ID = @MYSQL_VERSION_ID@
+NOINST_LDFLAGS = @NOINST_LDFLAGS@
+OBJDUMP = @OBJDUMP@
+PACKAGE = @PACKAGE@
+PDFMANUAL = @PDFMANUAL@
+PERL = @PERL@
+PERL5 = @PERL5@
+PROTOCOL_VERSION = @PROTOCOL_VERSION@
+PS = @PS@
+RANLIB = @RANLIB@
+RM = @RM@
+SAVE_CFLAGS = @SAVE_CFLAGS@
+SAVE_CXXFLAGS = @SAVE_CXXFLAGS@
+SAVE_CXXLDFLAGS = @SAVE_CXXLDFLAGS@
+SAVE_LDFLAGS = @SAVE_LDFLAGS@
+SED = @SED@
+SHARED_LIB_VERSION = @SHARED_LIB_VERSION@
+SYSTEM_TYPE = @SYSTEM_TYPE@
+TAR = @TAR@
+TERMCAP_LIB = @TERMCAP_LIB@
+THREAD_LOBJECTS = @THREAD_LOBJECTS@
+THREAD_LPROGRAMS = @THREAD_LPROGRAMS@
+VERSION = @VERSION@
+YACC = @YACC@
+bdb_includes = @bdb_includes@
+bdb_libs = @bdb_libs@
+bdb_libs_with_path = @bdb_libs_with_path@
+bench_dirs = @bench_dirs@
+default_charset = @default_charset@
+docs_dirs = @docs_dirs@
+gemini_includes = @gemini_includes@
+gemini_libs = @gemini_libs@
+innodb_includes = @innodb_includes@
+innodb_libs = @innodb_libs@
+innodb_system_libs = @innodb_system_libs@
+linked_client_targets = @linked_client_targets@
+readline_dir = @readline_dir@
+readline_link = @readline_link@
+server_scripts = @server_scripts@
+sql_client_dirs = @sql_client_dirs@
+sql_server_dirs = @sql_server_dirs@
+thread_dirs = @thread_dirs@
+uname_prog = @uname_prog@
+
+MYSQLDATAdir = $(localstatedir)
+MYSQLSHAREdir = $(pkgdatadir)
+MYSQLBASEdir = $(prefix)
+INCLUDES = @MT_INCLUDES@ 			@bdb_includes@ @innodb_includes@ @gemini_includes@ 			-I$(srcdir)/../include 			-I$(srcdir)/../regex 			-I$(srcdir) -I../include -I.. -I.
+
+WRAPLIBS = @WRAPLIBS@
+SUBDIRS = share
+libexec_PROGRAMS = mysqld
+noinst_PROGRAMS = gen_lex_hash
+gen_lex_hash_LDFLAGS = @NOINST_LDFLAGS@
+LDADD = ../isam/libnisam.a 			../merge/libmerge.a 			../myisam/libmyisam.a 			../myisammrg/libmyisammrg.a 			../heap/libheap.a 			../mysys/libmysys.a 			../dbug/libdbug.a 			../regex/libregex.a 			../strings/libmystrings.a
+
+mysqld_LDADD = @MYSQLD_EXTRA_LDFLAGS@ 			@bdb_libs@ @innodb_libs@ @gemini_libs@ 			$(LDADD)  $(CXXLDFLAGS) $(WRAPLIBS) @LIBDL@
+
+noinst_HEADERS = item.h item_func.h item_sum.h item_cmpfunc.h 			item_strfunc.h item_timefunc.h item_uniq.h 			item_create.h mysql_priv.h 			procedure.h sql_class.h sql_lex.h sql_list.h 			sql_manager.h sql_map.h sql_string.h unireg.h 			field.h handler.h 			ha_isammrg.h ha_isam.h ha_myisammrg.h 			ha_heap.h ha_myisam.h ha_berkeley.h ha_innobase.h 			ha_gemini.h opt_range.h opt_ft.h 			sql_select.h structs.h table.h sql_udf.h hash_filo.h 			lex.h lex_symbol.h sql_acl.h sql_crypt.h md5.h                         log_event.h mini_client.h sql_repl.h slave.h 			stacktrace.h
+
+mysqld_SOURCES = sql_lex.cc 			item.cc item_sum.cc item_buff.cc item_func.cc 			item_cmpfunc.cc item_strfunc.cc item_timefunc.cc 			thr_malloc.cc item_create.cc 			field.cc key.cc sql_class.cc sql_list.cc 			net_serv.cc violite.c net_pkg.cc lock.cc my_lock.c 			sql_string.cc sql_manager.cc sql_map.cc 			mysqld.cc password.c hash_filo.cc hostname.cc 			convert.cc sql_parse.cc sql_yacc.yy 			sql_base.cc table.cc sql_select.cc sql_insert.cc 			sql_update.cc sql_delete.cc sql_do.cc 			procedure.cc item_uniq.cc sql_test.cc 			log.cc log_event.cc init.cc derror.cc sql_acl.cc 			unireg.cc 			time.cc opt_range.cc opt_sum.cc opt_ft.cc 		   	records.cc filesort.cc handler.cc 		        ha_heap.cc ha_myisam.cc ha_myisammrg.cc 	                ha_berkeley.cc ha_innobase.cc ha_gemini.cc 			ha_isam.cc ha_isammrg.cc 			sql_db.cc sql_table.cc sql_rename.cc sql_crypt.cc 			sql_load.cc mf_iocache.cc field_conv.cc sql_show.cc 			sql_udf.cc sql_analyse.cc sql_analyse.h sql_cache.cc 			slave.cc sql_repl.cc 			mini_client.cc mini_client_errors.c 			md5.c stacktrace.c
+
+gen_lex_hash_SOURCES = gen_lex_hash.cc
+gen_lex_hash_LDADD = $(LDADD) $(CXXLDFLAGS)
+
+DEFS = -DMYSQL_SERVER 			-DDEFAULT_MYSQL_HOME="\"$(MYSQLBASEdir)\"" 			-DDATADIR="\"$(MYSQLDATAdir)\"" 			-DSHAREDIR="\"$(MYSQLSHAREdir)\"" 			@DEFS@
+
+# Don't put lex_hash.h in BUILT_SOURCES as this will give infinite recursion
+BUILT_SOURCES = sql_yacc.cc sql_yacc.h
+EXTRA_DIST = udf_example.cc $(BUILT_SOURCES)
+YFLAGS = -d
+
+OMIT_DEPENDENCIES = pthread.h stdio.h __stdio.h stdlib.h __stdlib.h math.h 			__math.h time.h __time.h unistd.h __unistd.h types.h 			xtypes.h ac-types.h posix.h string.h __string.h 			errno.h socket.h inet.h dirent.h netdb.h 			cleanup.h cond.h debug_out.h fd.h kernel.h mutex.h 			prio_queue.h pthread_attr.h pthread_once.h queue.h 			sleep.h specific.h version.h pwd.h timers.h uio.h 			cdefs.h machdep.h signal.h __signal.h util.h lex.h 			wait.h
+
+mkinstalldirs = $(SHELL) $(top_srcdir)/mkinstalldirs
+CONFIG_HEADER = ../config.h
+CONFIG_CLEAN_FILES = 
+PROGRAMS =  $(libexec_PROGRAMS) $(noinst_PROGRAMS)
+
+CPPFLAGS = @CPPFLAGS@
+LDFLAGS = @LDFLAGS@
+LIBS = @LIBS@
+mysqld_OBJECTS =  sql_lex.o item.o item_sum.o item_buff.o item_func.o \
+item_cmpfunc.o item_strfunc.o item_timefunc.o thr_malloc.o \
+item_create.o field.o key.o sql_class.o sql_list.o net_serv.o violite.o \
+net_pkg.o lock.o my_lock.o sql_string.o sql_manager.o sql_map.o \
+mysqld.o password.o hash_filo.o hostname.o convert.o sql_parse.o \
+sql_yacc.o sql_base.o table.o sql_select.o sql_insert.o sql_update.o \
+sql_delete.o sql_do.o procedure.o item_uniq.o sql_test.o log.o \
+log_event.o init.o derror.o sql_acl.o unireg.o time.o opt_range.o \
+opt_sum.o opt_ft.o records.o filesort.o handler.o ha_heap.o ha_myisam.o \
+ha_myisammrg.o ha_berkeley.o ha_innobase.o ha_gemini.o ha_isam.o \
+ha_isammrg.o sql_db.o sql_table.o sql_rename.o sql_crypt.o sql_load.o \
+mf_iocache.o field_conv.o sql_show.o sql_udf.o sql_analyse.o \
+sql_cache.o slave.o sql_repl.o mini_client.o mini_client_errors.o md5.o \
+stacktrace.o
+mysqld_DEPENDENCIES =  ../isam/libnisam.a ../merge/libmerge.a \
+../myisam/libmyisam.a ../myisammrg/libmyisammrg.a ../heap/libheap.a \
+../mysys/libmysys.a ../dbug/libdbug.a ../regex/libregex.a \
+../strings/libmystrings.a
+mysqld_LDFLAGS = 
+gen_lex_hash_OBJECTS =  gen_lex_hash.o
+gen_lex_hash_DEPENDENCIES =  ../isam/libnisam.a ../merge/libmerge.a \
+../myisam/libmyisam.a ../myisammrg/libmyisammrg.a ../heap/libheap.a \
+../mysys/libmysys.a ../dbug/libdbug.a ../regex/libregex.a \
+../strings/libmystrings.a
+CXXCOMPILE = $(CXX) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
+LTCXXCOMPILE = $(LIBTOOL) --mode=compile $(CXX) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
+CXXLD = $(CXX)
+CXXLINK = $(LIBTOOL) --mode=link $(CXXLD) $(AM_CXXFLAGS) $(CXXFLAGS) $(LDFLAGS) -o $@
+COMPILE = $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+LTCOMPILE = $(LIBTOOL) --mode=compile $(CC) $(DEFS) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
+CCLD = $(CC)
+LINK = $(LIBTOOL) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@
+HEADERS =  $(noinst_HEADERS)
+
+DIST_COMMON =  ChangeLog Makefile.am Makefile.in sql_yacc.cc
+
+
+DISTFILES = $(DIST_COMMON) $(SOURCES) $(HEADERS) $(TEXINFOS) $(EXTRA_DIST)
+
+GZIP_ENV = --best
+SOURCES = $(mysqld_SOURCES) $(gen_lex_hash_SOURCES)
+OBJECTS = $(mysqld_OBJECTS) $(gen_lex_hash_OBJECTS)
+
+all: all-redirect
+.SUFFIXES:
+.SUFFIXES: .S .c .cc .lo .o .s .yy
+$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ Makefile.am $(top_srcdir)/configure.in $(ACLOCAL_M4) 
+	cd $(top_srcdir) && $(AUTOMAKE) --gnu --include-deps sql/Makefile
+
+Makefile: $(srcdir)/Makefile.in  $(top_builddir)/config.status
+	cd $(top_builddir) \
+	  && CONFIG_FILES=$(subdir)/$@ CONFIG_HEADERS= $(SHELL) ./config.status
+
+
+mostlyclean-libexecPROGRAMS:
+
+clean-libexecPROGRAMS:
+	-test -z "$(libexec_PROGRAMS)" || rm -f $(libexec_PROGRAMS)
+
+distclean-libexecPROGRAMS:
+
+maintainer-clean-libexecPROGRAMS:
+
+install-libexecPROGRAMS: $(libexec_PROGRAMS)
+	@$(NORMAL_INSTALL)
+	$(mkinstalldirs) $(DESTDIR)$(libexecdir)
+	@list='$(libexec_PROGRAMS)'; for p in $$list; do \
+	  if test -f $$p; then \
+	    echo " $(LIBTOOL)  --mode=install $(INSTALL_PROGRAM) $$p $(DESTDIR)$(libexecdir)/`echo $$p|sed 's/$(EXEEXT)$$//'|sed '$(transform)'|sed 's/$$/$(EXEEXT)/'`"; \
+	    $(LIBTOOL)  --mode=install $(INSTALL_PROGRAM) $$p $(DESTDIR)$(libexecdir)/`echo $$p|sed 's/$(EXEEXT)$$//'|sed '$(transform)'|sed 's/$$/$(EXEEXT)/'`; \
+	  else :; fi; \
+	done
+
+uninstall-libexecPROGRAMS:
+	@$(NORMAL_UNINSTALL)
+	list='$(libexec_PROGRAMS)'; for p in $$list; do \
+	  rm -f $(DESTDIR)$(libexecdir)/`echo $$p|sed 's/$(EXEEXT)$$//'|sed '$(transform)'|sed 's/$$/$(EXEEXT)/'`; \
+	done
+
+mostlyclean-noinstPROGRAMS:
+
+clean-noinstPROGRAMS:
+	-test -z "$(noinst_PROGRAMS)" || rm -f $(noinst_PROGRAMS)
+
+distclean-noinstPROGRAMS:
+
+maintainer-clean-noinstPROGRAMS:
+
+.c.o:
+	$(COMPILE) -c $<
+
+.s.o:
+	$(COMPILE) -c $<
+
+.S.o:
+	$(COMPILE) -c $<
+
+mostlyclean-compile:
+	-rm -f *.o core *.core
+
+clean-compile:
+
+distclean-compile:
+	-rm -f *.tab.c
+
+maintainer-clean-compile:
+
+.c.lo:
+	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
+
+.s.lo:
+	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
+
+.S.lo:
+	$(LIBTOOL) --mode=compile $(COMPILE) -c $<
+
+mostlyclean-libtool:
+	-rm -f *.lo
+
+clean-libtool:
+	-rm -rf .libs _libs
+
+distclean-libtool:
+
+maintainer-clean-libtool:
+
+mysqld: $(mysqld_OBJECTS) $(mysqld_DEPENDENCIES)
+	@rm -f mysqld
+	$(CXXLINK) $(mysqld_LDFLAGS) $(mysqld_OBJECTS) $(mysqld_LDADD) $(LIBS)
+
+gen_lex_hash: $(gen_lex_hash_OBJECTS) $(gen_lex_hash_DEPENDENCIES)
+	@rm -f gen_lex_hash
+	$(CXXLINK) $(gen_lex_hash_LDFLAGS) $(gen_lex_hash_OBJECTS) $(gen_lex_hash_LDADD) $(LIBS)
+.cc.o:
+	$(CXXCOMPILE) -c $<
+.cc.lo:
+	$(LTCXXCOMPILE) -c $<
+.yy.cc:
+	$(YACC) $(AM_YFLAGS) $(YFLAGS) $< && mv y.tab.c $*.cc
+	if test -f y.tab.h; then \
+	if cmp -s y.tab.h $*.h; then rm -f y.tab.h; else mv y.tab.h $*.h; fi; \
+	else :; fi
+sql_yacc.hh: sql_yacc.cc
+
+
+# This directory's subdirectories are mostly independent; you can cd
+# into them and run `make' without going through this Makefile.
+# To change the values of `make' variables: instead of editing Makefiles,
+# (1) if the variable is set in `config.status', edit `config.status'
+#     (which will cause the Makefiles to be regenerated when you run `make');
+# (2) otherwise, pass the desired values on the `make' command line.
+
+@SET_MAKE@
+
+all-recursive install-data-recursive install-exec-recursive \
+installdirs-recursive install-recursive uninstall-recursive  \
+check-recursive installcheck-recursive info-recursive dvi-recursive:
+	@set fnord $(MAKEFLAGS); amf=$$2; \
+	dot_seen=no; \
+	target=`echo $@ | sed s/-recursive//`; \
+	list='$(SUBDIRS)'; for subdir in $$list; do \
+	  echo "Making $$target in $$subdir"; \
+	  if test "$$subdir" = "."; then \
+	    dot_seen=yes; \
+	    local_target="$$target-am"; \
+	  else \
+	    local_target="$$target"; \
+	  fi; \
+	  (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) $$local_target) \
+	   || case "$$amf" in *=*) exit 1;; *k*) fail=yes;; *) exit 1;; esac; \
+	done; \
+	if test "$$dot_seen" = "no"; then \
+	  $(MAKE) $(AM_MAKEFLAGS) "$$target-am" || exit 1; \
+	fi; test -z "$$fail"
+
+mostlyclean-recursive clean-recursive distclean-recursive \
+maintainer-clean-recursive:
+	@set fnord $(MAKEFLAGS); amf=$$2; \
+	dot_seen=no; \
+	rev=''; list='$(SUBDIRS)'; for subdir in $$list; do \
+	  rev="$$subdir $$rev"; \
+	  test "$$subdir" != "." || dot_seen=yes; \
+	done; \
+	test "$$dot_seen" = "no" && rev=". $$rev"; \
+	target=`echo $@ | sed s/-recursive//`; \
+	for subdir in $$rev; do \
+	  echo "Making $$target in $$subdir"; \
+	  if test "$$subdir" = "."; then \
+	    local_target="$$target-am"; \
+	  else \
+	    local_target="$$target"; \
+	  fi; \
+	  (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) $$local_target) \
+	   || case "$$amf" in *=*) exit 1;; *k*) fail=yes;; *) exit 1;; esac; \
+	done && test -z "$$fail"
+tags-recursive:
+	list='$(SUBDIRS)'; for subdir in $$list; do \
+	  test "$$subdir" = . || (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) tags); \
+	done
+
+tags: TAGS
+
+ID: $(HEADERS) $(SOURCES) $(LISP)
+	list='$(SOURCES) $(HEADERS)'; \
+	unique=`for i in $$list; do echo $$i; done | \
+	  awk '    { files[$$0] = 1; } \
+	       END { for (i in files) print i; }'`; \
+	here=`pwd` && cd $(srcdir) \
+	  && mkid -f$$here/ID $$unique $(LISP)
+
+TAGS: tags-recursive $(HEADERS) $(SOURCES)  $(TAGS_DEPENDENCIES) $(LISP)
+	tags=; \
+	here=`pwd`; \
+	list='$(SUBDIRS)'; for subdir in $$list; do \
+   if test "$$subdir" = .; then :; else \
+	    test -f $$subdir/TAGS && tags="$$tags -i $$here/$$subdir/TAGS"; \
+   fi; \
+	done; \
+	list='$(SOURCES) $(HEADERS)'; \
+	unique=`for i in $$list; do echo $$i; done | \
+	  awk '    { files[$$0] = 1; } \
+	       END { for (i in files) print i; }'`; \
+	test -z "$(ETAGS_ARGS)$$unique$(LISP)$$tags" \
+	  || (cd $(srcdir) && etags $(ETAGS_ARGS) $$tags  $$unique $(LISP) -o $$here/TAGS)
+
+mostlyclean-tags:
+
+clean-tags:
+
+distclean-tags:
+	-rm -f TAGS ID
+
+maintainer-clean-tags:
+
+distdir = $(top_builddir)/$(PACKAGE)-$(VERSION)/$(subdir)
+
+subdir = sql
+
+distdir: $(DISTFILES)
+	@for file in $(DISTFILES); do \
+	  d=$(srcdir); \
+	  if test -d $$d/$$file; then \
+	    cp -pr $$d/$$file $(distdir)/$$file; \
+	  else \
+	    test -f $(distdir)/$$file \
+	    || ln $$d/$$file $(distdir)/$$file 2> /dev/null \
+	    || cp -p $$d/$$file $(distdir)/$$file || :; \
+	  fi; \
+	done
+	for subdir in $(SUBDIRS); do \
+	  if test "$$subdir" = .; then :; else \
+	    test -d $(distdir)/$$subdir \
+	    || mkdir $(distdir)/$$subdir \
+	    || exit 1; \
+	    chmod 777 $(distdir)/$$subdir; \
+	    (cd $$subdir && $(MAKE) $(AM_MAKEFLAGS) top_distdir=../$(top_distdir) distdir=../$(distdir)/$$subdir distdir) \
+	      || exit 1; \
+	  fi; \
+	done
+convert.o: convert.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+derror.o: derror.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/mysys_err.h
+field.o: field.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_select.h procedure.h \
+	../include/myisam.h
+field_conv.o: field_conv.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+filesort.o: filesort.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+ha_berkeley.o: ha_berkeley.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/myisampack.h \
+	ha_berkeley.h ../bdb/build_unix/db.h sql_manager.h
+ha_gemini.o: ha_gemini.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+ha_heap.o: ha_heap.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/myisampack.h \
+	ha_heap.h ../include/heap.h
+ha_innobase.o: ha_innobase.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/myisampack.h \
+	ha_innobase.h ../innobase/include/univ.i \
+	../innobase/include/../ib_config.h ../innobase/include/ut0dbg.h \
+	../innobase/include/os0thread.h ../innobase/include/ut0ut.h \
+	../innobase/include/db0err.h ../innobase/include/srv0start.h \
+	../innobase/include/srv0srv.h ../innobase/include/sync0sync.h \
+	../innobase/include/sync0types.h ../innobase/include/ut0lst.h \
+	../innobase/include/ut0mem.h ../innobase/include/os0sync.h \
+	../innobase/include/sync0arr.h ../innobase/include/com0com.h \
+	../innobase/include/que0types.h ../innobase/include/data0data.h \
+	../innobase/include/data0types.h \
+	../innobase/include/data0type.h ../innobase/include/mem0mem.h \
+	../innobase/include/ut0byte.h ../innobase/include/ut0rnd.h \
+	../innobase/include/mach0data.h ../innobase/include/mem0dbg.h \
+	../innobase/include/dict0types.h \
+	../innobase/include/trx0types.h \
+	../innobase/include/lock0types.h ../innobase/include/trx0roll.h \
+	../innobase/include/trx0trx.h ../innobase/include/usr0types.h \
+	../innobase/include/read0types.h ../innobase/include/mtr0mtr.h \
+	../innobase/include/dyn0dyn.h ../innobase/include/buf0types.h \
+	../innobase/include/sync0rw.h ../innobase/include/mtr0types.h \
+	../innobase/include/page0types.h ../innobase/include/trx0sys.h \
+	../innobase/include/mtr0log.h ../innobase/include/buf0buf.h \
+	../innobase/include/fil0fil.h ../innobase/include/ibuf0types.h \
+	../innobase/include/os0file.h ../innobase/include/hash0hash.h \
+	../innobase/include/fut0lst.h ../innobase/include/fsp0fsp.h \
+	../innobase/include/row0ins.h ../innobase/include/row0types.h \
+	../innobase/include/row0mysql.h ../innobase/include/btr0pcur.h \
+	../innobase/include/dict0dict.h ../innobase/include/dict0mem.h \
+	../innobase/include/rem0types.h ../innobase/include/btr0types.h \
+	../innobase/include/page0cur.h ../innobase/include/page0page.h \
+	../innobase/include/rem0rec.h ../innobase/include/btr0cur.h \
+	../innobase/include/ha0ha.h ../innobase/include/btr0btr.h \
+	../innobase/include/row0sel.h ../innobase/include/pars0sym.h \
+	../innobase/include/pars0types.h \
+	../innobase/include/read0read.h ../innobase/include/row0upd.h \
+	../innobase/include/log0log.h ../innobase/include/lock0lock.h \
+	../innobase/include/dict0crea.h
+ha_isam.o: ha_isam.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/myisampack.h \
+	ha_isam.h ../include/nisam.h ../isam/isamdef.h
+ha_isammrg.o: ha_isammrg.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../merge/mrgdef.h \
+	../merge/../isam/isamdef.h ../include/nisam.h \
+	../include/merge.h ha_isammrg.h
+ha_myisam.o: ha_myisam.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/myisampack.h \
+	ha_myisam.h ../include/myisam.h ../myisam/myisamdef.h
+ha_myisammrg.o: ha_myisammrg.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ha_myisammrg.h \
+	../include/myisammrg.h ../include/myisam.h \
+	../myisammrg/mymrgdef.h ../myisammrg/../myisam/myisamdef.h \
+	../include/myisampack.h
+handler.o: handler.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ha_heap.h ../include/heap.h \
+	ha_myisam.h ../include/myisam.h ha_myisammrg.h \
+	../include/myisammrg.h ha_isam.h ../include/nisam.h \
+	ha_isammrg.h ../include/merge.h ha_berkeley.h \
+	../bdb/build_unix/db.h ha_innobase.h ../include/myisampack.h
+hash_filo.o: hash_filo.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h hash_filo.h
+hostname.o: hostname.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h hash_filo.h
+init.o: init.cc mysql_priv.h ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+item.o: item.cc mysql_priv.h ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/my_dir.h
+item_buff.o: item_buff.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+item_cmpfunc.o: item_cmpfunc.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+item_create.o: item_create.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+item_func.o: item_func.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h slave.h
+item_strfunc.o: item_strfunc.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h md5.h \
+	../include/my_dir.h
+item_sum.o: item_sum.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_select.h procedure.h \
+	../include/myisam.h
+item_timefunc.o: item_timefunc.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+item_uniq.o: item_uniq.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+key.o: key.cc mysql_priv.h ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+lock.o: lock.cc mysql_priv.h ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+log.o: log.cc mysql_priv.h ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h sql_repl.h slave.h \
+	../include/my_dir.h
+log_event.o: log_event.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+md5.o: md5.c ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/m_string.h md5.h
+mf_iocache.o: mf_iocache.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+mini_client.o: mini_client.cc ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/mysys_err.h ../include/m_string.h \
+	../include/mysql.h ../include/mysql_com.h \
+	../include/mysql_version.h mini_client.h \
+	../include/mysqld_error.h ../include/errmsg.h \
+	../include/violite.h ../include/my_net.h ../include/thr_alarm.h
+mini_client_errors.o: mini_client_errors.c ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/errmsg.h
+my_lock.o: my_lock.c ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/mysys_err.h ../include/thr_alarm.h
+mysqld.o: mysqld.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/mysql.h \
+	../include/my_dir.h sql_acl.h slave.h sql_repl.h stacktrace.h \
+	ha_berkeley.h ../bdb/build_unix/db.h ha_innobase.h ha_myisam.h \
+	../include/myisam.h ../include/nisam.h ../include/thr_alarm.h \
+	../include/getopt.h ../include/sslopt-longopts.h \
+	../include/sslopt-usage.h ../include/sslopt-case.h
+net_pkg.o: net_pkg.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+net_serv.o: net_serv.cc ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/violite.h ../include/my_net.h ../include/my_sys.h \
+	../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h ../include/mysql.h \
+	../include/mysql_com.h ../include/mysql_version.h \
+	../include/mysqld_error.h ../include/thr_alarm.h
+opt_ft.o: opt_ft.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_select.h procedure.h \
+	../include/myisam.h opt_ft.h
+opt_range.o: opt_range.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/nisam.h \
+	sql_select.h procedure.h ../include/myisam.h
+opt_sum.o: opt_sum.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_select.h procedure.h \
+	../include/myisam.h
+password.o: password.c ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h ../include/mysql.h \
+	../include/mysql_com.h ../include/mysql_version.h
+procedure.o: procedure.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h procedure.h sql_analyse.h \
+	../include/my_tree.h
+records.o: records.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+slave.o: slave.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/mysql.h \
+	../include/myisam.h mini_client.h slave.h \
+	../include/thr_alarm.h ../include/my_dir.h
+sql_acl.o: sql_acl.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h hash_filo.h
+sql_analyse.o: sql_analyse.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h procedure.h sql_analyse.h \
+	../include/my_tree.h
+sql_base.o: sql_base.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h \
+	../include/thr_alarm.h ../include/my_dir.h ../include/nisam.h
+sql_cache.o: sql_cache.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/my_dir.h
+sql_class.o: sql_class.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h \
+	../include/thr_alarm.h
+sql_crypt.o: sql_crypt.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+sql_db.o: sql_db.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h \
+	../include/my_dir.h
+sql_delete.o: sql_delete.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ha_innobase.h
+sql_do.o: sql_do.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h
+sql_insert.o: sql_insert.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h
+sql_lex.o: sql_lex.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h item_create.h lex_hash.h
+sql_list.o: sql_list.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+sql_load.o: sql_load.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/my_dir.h
+sql_manager.o: sql_manager.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_manager.h
+sql_map.o: sql_map.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+sql_parse.o: sql_parse.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h sql_repl.h slave.h \
+	../include/thr_alarm.h ../include/myisam.h ../include/my_dir.h
+sql_rename.o: sql_rename.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+sql_repl.o: sql_repl.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_repl.h slave.h sql_acl.h \
+	../include/thr_alarm.h ../include/my_dir.h
+sql_select.o: sql_select.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_select.h procedure.h \
+	../include/myisam.h opt_ft.h
+sql_show.o: sql_show.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_select.h procedure.h \
+	../include/myisam.h sql_acl.h ../include/my_dir.h ha_berkeley.h \
+	../bdb/build_unix/db.h
+sql_string.o: sql_string.cc ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h sql_string.h
+sql_table.o: sql_table.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h ../include/myisam.h
+sql_test.o: sql_test.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_select.h procedure.h \
+	../include/myisam.h
+sql_udf.o: sql_udf.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+sql_update.o: sql_update.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h sql_acl.h
+stacktrace.o: stacktrace.c ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h stacktrace.h \
+	../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h
+table.o: table.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+thr_malloc.o: thr_malloc.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+time.o: time.cc mysql_priv.h ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+unireg.o: unireg.cc mysql_priv.h ../include/global.h \
+	../include/my_config.h ../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/my_sys.h ../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h \
+	../include/mysql_version.h ../include/hash.h \
+	../include/thr_lock.h ../include/my_list.h ../include/my_base.h \
+	../include/my_bitmap.h ../include/violite.h ../include/my_net.h \
+	../include/mysql_com.h unireg.h ../include/mysqld_error.h \
+	structs.h sql_string.h sql_list.h sql_map.h handler.h table.h \
+	field.h sql_udf.h item.h item_sum.h item_func.h \
+	../include/ft_global.h item_cmpfunc.h ../regex/regex.h \
+	item_strfunc.h sql_crypt.h item_timefunc.h item_uniq.h \
+	../include/queues.h sql_class.h sql_lex.h lex_symbol.h \
+	sql_yacc.h log_event.h opt_range.h
+violite.o: violite.c ../include/global.h ../include/my_config.h \
+	../mit-pthreads/include/bits/local_lim.h \
+	../mit-pthreads/include/bits/pthreadtypes.h \
+	../mit-pthreads/include/endian.h ../include/dbug.h \
+	../include/violite.h ../include/my_net.h ../include/my_sys.h \
+	../include/my_pthread.h \
+	../mit-pthreads/include/pthread/config.h \
+	../mit-pthreads/include/sched.h ../include/m_ctype.h \
+	../include/raid.h ../include/m_string.h
+
+info-am:
+info: info-recursive
+dvi-am:
+dvi: dvi-recursive
+check-am: all-am
+check: check-recursive
+installcheck-am:
+installcheck: installcheck-recursive
+install-exec-am: install-libexecPROGRAMS
+install-exec: install-exec-recursive
+
+install-data-am:
+install-data: install-data-recursive
+
+install-am: all-am
+	@$(MAKE) $(AM_MAKEFLAGS) install-exec-am install-data-am
+install: install-recursive
+uninstall-am: uninstall-libexecPROGRAMS
+uninstall: uninstall-recursive
+all-am: Makefile $(PROGRAMS) $(HEADERS)
+all-redirect: all-recursive
+install-strip:
+	$(MAKE) $(AM_MAKEFLAGS) AM_INSTALL_PROGRAM_FLAGS=-s install
+installdirs: installdirs-recursive
+installdirs-am:
+	$(mkinstalldirs)  $(DESTDIR)$(libexecdir)
+
+
+mostlyclean-generic:
+
+clean-generic:
+
+distclean-generic:
+	-rm -f Makefile $(CONFIG_CLEAN_FILES)
+	-rm -f config.cache config.log stamp-h stamp-h[0-9]*
+
+maintainer-clean-generic:
+	-test -z "sql_yacchhsql_yacccc$(BUILT_SOURCES)" || rm -f sql_yacchh sql_yacccc $(BUILT_SOURCES)
+mostlyclean-am:  mostlyclean-libexecPROGRAMS mostlyclean-noinstPROGRAMS \
+		mostlyclean-compile mostlyclean-libtool \
+		mostlyclean-tags mostlyclean-generic
+
+mostlyclean: mostlyclean-recursive
+
+clean-am:  clean-libexecPROGRAMS clean-noinstPROGRAMS clean-compile \
+		clean-libtool clean-tags clean-generic mostlyclean-am
+
+clean: clean-recursive
+
+distclean-am:  distclean-libexecPROGRAMS distclean-noinstPROGRAMS \
+		distclean-compile distclean-libtool distclean-tags \
+		distclean-generic clean-am
+	-rm -f libtool
+
+distclean: distclean-recursive
+
+maintainer-clean-am:  maintainer-clean-libexecPROGRAMS \
+		maintainer-clean-noinstPROGRAMS \
+		maintainer-clean-compile maintainer-clean-libtool \
+		maintainer-clean-tags maintainer-clean-generic \
+		distclean-am
+	@echo "This command is intended for maintainers to use;"
+	@echo "it deletes files that may require special tools to rebuild."
+
+maintainer-clean: maintainer-clean-recursive
+
+.PHONY: mostlyclean-libexecPROGRAMS distclean-libexecPROGRAMS \
+clean-libexecPROGRAMS maintainer-clean-libexecPROGRAMS \
+uninstall-libexecPROGRAMS install-libexecPROGRAMS \
+mostlyclean-noinstPROGRAMS distclean-noinstPROGRAMS \
+clean-noinstPROGRAMS maintainer-clean-noinstPROGRAMS \
+mostlyclean-compile distclean-compile clean-compile \
+maintainer-clean-compile mostlyclean-libtool distclean-libtool \
+clean-libtool maintainer-clean-libtool install-data-recursive \
+uninstall-data-recursive install-exec-recursive \
+uninstall-exec-recursive installdirs-recursive uninstalldirs-recursive \
+all-recursive check-recursive installcheck-recursive info-recursive \
+dvi-recursive mostlyclean-recursive distclean-recursive clean-recursive \
+maintainer-clean-recursive tags tags-recursive mostlyclean-tags \
+distclean-tags clean-tags maintainer-clean-tags distdir info-am info \
+dvi-am dvi check check-am installcheck-am installcheck install-exec-am \
+install-exec install-data-am install-data install-am install \
+uninstall-am uninstall all-redirect all-am all installdirs-am \
+installdirs mostlyclean-generic distclean-generic clean-generic \
+maintainer-clean-generic clean mostlyclean distclean maintainer-clean
+
+
+link_sources:
+	rm -f mini_client_errors.c
+	@LN_CP_F@ ../libmysql/errmsg.c mini_client_errors.c
+
+gen_lex_hash.o:		gen_lex_hash.cc lex.h
+			$(CXXCOMPILE) -c $(INCLUDES) $<
+
+# Try to get better dependencies for the grammar. Othervise really bad
+# things like different grammars for different pars of MySQL can
+# happen if you are unlucky.
+sql_yacc.cc:	sql_yacc.yy
+sql_yacc.h:	sql_yacc.yy
+
+sql_yacc.o:	sql_yacc.cc sql_yacc.h
+		@echo "Note: The following compile may take a long time."
+		@echo "If it fails, re-run configure with --with-low-memory"
+		$(CXXCOMPILE) $(LM_CFLAGS) -c $<
+
+lex_hash.h:	lex.h gen_lex_hash.cc sql_yacc.h
+		$(MAKE) gen_lex_hash
+		./gen_lex_hash > $@
+
+# Hack to ensure that lex_hash.h is built early
+sql_lex.o:	lex_hash.h
+
+#distclean:
+#		rm -f lex_hash.h
+
+# Don't update the files from bitkeeper
+%::SCCS/s.%
+
+# Tell versions [3.59,3.63) of GNU make to not export all variables.
+# Otherwise a system limit (for SysV at least) may be exceeded.
+.NOEXPORT:

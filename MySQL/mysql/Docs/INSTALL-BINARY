@@ -1,0 +1,3139 @@
+Installing a MySQL Binary Distribution
+======================================
+
+* Menu:
+
+* Linux-RPM::                   Linux RPM files
+* Building clients::            Building client programs
+
+You need the following tools to install a MySQL binary distribution:
+
+   * GNU `gunzip' to uncompress the distribution.
+
+   * A reasonable `tar' to unpack the distribution. GNU `tar' is known
+     to work.  Sun `tar' is known to have problems.
+
+An alternative installation method under Linux is to use RPM (RedHat
+Package Manager) distributions.  *Note Linux-RPM::.
+
+If you run into problems, *PLEASE ALWAYS USE* `mysqlbug' when posting
+questions to <mysql@lists.mysql.com>.  Even if the problem isn't a bug,
+`mysqlbug' gathers system information that will help others solve your
+problem.  By not using `mysqlbug', you lessen the likelihood of getting
+a solution to your problem!  You will find `mysqlbug' in the `bin'
+directory after you unpack the distribution.  *Note Bug reports::.
+
+The basic commands you must execute to install and use a MySQL binary
+distribution are:
+
+     shell> groupadd mysql
+     shell> useradd -g mysql mysql
+     shell> cd /usr/local
+     shell> gunzip < /path/to/mysql-VERSION-OS.tar.gz | tar xvf -
+     shell> ln -s mysql-VERSION-OS mysql
+     shell> cd mysql
+     shell> scripts/mysql_install_db
+     shell> chown -R root  /usr/local/mysql
+     shell> chown -R mysql /usr/local/mysql/data
+     shell> chgrp -R mysql /usr/local/mysql
+     shell> chown -R root /usr/local/mysql/bin
+     shell> bin/safe_mysqld --user=mysql &
+
+You can add new users using the `bin/mysql_setpermission' script if you
+install the `DBI' and `Msql-Mysql-modules' Perl modules.
+
+A more detailed description follows.
+
+To install a binary distribution, follow the steps below, then proceed
+to *Note Post-installation::, for post-installation setup and testing:
+
+  1. Pick the directory under which you want to unpack the
+     distribution, and move into it.  In the example below, we unpack
+     the distribution under `/usr/local' and create a directory
+     `/usr/local/mysql' into which MySQL is installed.  (The following
+     instructions therefore assume you have permission to create files
+     in `/usr/local'.  If that directory is protected, you will need to
+     perform the installation as `root'.)
+
+  2. Obtain a distribution file from one of the sites listed in *Note
+     Getting MySQL: Getting MySQL.
+
+     MySQL binary distributions are provided as compressed `tar'
+     archives and have names like `mysql-VERSION-OS.tar.gz', where
+     `VERSION' is a number (for example, `3.21.15'), and `OS' indicates
+     the type of operating system for which the distribution is intended
+     (for example, `pc-linux-gnu-i586').
+
+  3. If you see a binary distribution marked with the `-max' prefix,
+     this means that the binary has support for transaction-safe tables
+     and other features. *Note `mysqld-max': mysqld-max.  Note that all
+     binaries are built from the same MySQL source distribution.
+
+  4. Add a user and group for `mysqld' to run as:
+
+          shell> groupadd mysql
+          shell> useradd -g mysql mysql
+
+     These commands add the `mysql' group and the `mysql' user.  The
+     syntax for `useradd' and `groupadd' may differ slightly on
+     different versions of Unix.  They may also be called `adduser' and
+     `addgroup'.  You may wish to call the user and group something
+     else instead of `mysql'.
+
+  5. Change into the intended installation directory:
+
+          shell> cd /usr/local
+
+  6. Unpack the distribution and create the installation directory:
+
+          shell> gunzip < /path/to/mysql-VERSION-OS.tar.gz | tar xvf -
+          shell> ln -s mysql-VERSION-OS mysql
+
+     The first command creates a directory named `mysql-VERSION-OS'.
+     The second command makes a symbolic link to that directory.  This
+     lets you refer more easily to the installation directory as
+     `/usr/local/mysql'.
+
+  7. Change into the installation directory:
+
+          shell> cd mysql
+
+     You will find several files and subdirectories in the `mysql'
+     directory.  The most important for installation purposes are the
+     `bin' and `scripts' subdirectories.
+
+    `bin'
+          This directory contains client programs and the server You
+          should add the full pathname of this directory to your `PATH'
+          environment variable so that your shell finds the MySQL
+          programs properly. *Note Environment variables::.
+
+    `scripts'
+          This directory contains the `mysql_install_db' script used to
+          initialize the `mysql' database containing the grant tables
+          that store the server access permissions.
+
+  8. If you would like to use `mysqlaccess' and have the MySQL
+     distribution in some non-standard place, you must change the
+     location where `mysqlaccess' expects to find the `mysql' client.
+     Edit the `bin/mysqlaccess' script at approximately line 18.
+     Search for a line that looks like this:
+
+          $MYSQL     = '/usr/local/bin/mysql';    # path to mysql executable
+
+     Change the path to reflect the location where `mysql' actually is
+     stored on your system.  If you do not do this, you will get a
+     `Broken pipe' error when you run `mysqlaccess'.
+
+  9. Create the MySQL grant tables (necessary only if you haven't
+     installed MySQL before):
+          shell> scripts/mysql_install_db
+
+     Note that MySQL versions older than Version 3.22.10 started the
+     MySQL server when you run `mysql_install_db'.  This is no longer
+     true!
+
+ 10. Change ownership of binaries to `root' and ownership of the data
+     directory to the user that you will run `mysqld' as:
+
+          shell> chown -R root  /usr/local/mysql
+          shell> chown -R mysql /usr/local/mysql/data
+          shell> chgrp -R mysql /usr/local/mysql
+
+     The first command changes the `owner' attribute of the files to the
+     `root' user, the second one changes the `owner' attribute of the
+     data directory to the `mysql' user, and the third one changes the
+     `group' attribute to the `mysql' group.
+
+ 11. If you want to install support for the Perl `DBI'/`DBD' interface,
+     see *Note Perl support::.
+
+ 12. If you would like MySQL to start automatically when you boot your
+     machine, you can copy `support-files/mysql.server' to the location
+     where your system has its startup files.  More information can be
+     found in the `support-files/mysql.server' script itself and in
+     *Note Automatic start::.
+
+
+After everything has been unpacked and installed, you should initialize
+and test your distribution.
+
+You can start the MySQL server with the following command:
+
+     shell> bin/safe_mysqld --user=mysql &
+
+*Note `safe_mysqld': safe_mysqld.
+
+*Note Post-installation::.
+
+
+Perl Installation Comments
+==========================
+
+* Menu:
+
+* Perl installation::           Installing Perl on Unix
+* ActiveState Perl::            Installing ActiveState Perl on Windows
+* Windows Perl::                Installing the MySQL Perl distribution on Windows
+* Perl support problems::       Problems using the Perl `DBI'/`DBD' interface
+
+
+Installing Perl on Unix
+-----------------------
+
+Perl support for MySQL is provided by means of the `DBI'/`DBD' client
+interface.  *Note Perl::.  The Perl `DBD'/`DBI' client code requires
+Perl Version 5.004 or later.  The interface *will not work* if you have
+an older version of Perl.
+
+MySQL Perl support also requires that you've installed MySQL client
+programming support.  If you installed MySQL from RPM files, client
+programs are in the client RPM, but client programming support is in
+the developer RPM.  Make sure you've installed the latter RPM.
+
+As of Version 3.22.8, Perl support is distributed separately from the
+main MySQL distribution.  If you want to install Perl support, the files
+you will need can be obtained from
+`http://www.mysql.com/Downloads/Contrib/'.
+
+The Perl distributions are provided as compressed `tar' archives and
+have names like `MODULE-VERSION.tar.gz', where `MODULE' is the module
+name and `VERSION' is the version number.  You should get the
+`Data-Dumper', `DBI', and `Msql-Mysql-modules' distributions and
+install them in that order.  The installation procedure is shown below.
+The example shown is for the `Data-Dumper' module, but the procedure is
+the same for all three distributions:
+
+  1. Unpack the distribution into the current directory:
+          shell> gunzip < Data-Dumper-VERSION.tar.gz | tar xvf -
+     This command creates a directory named `Data-Dumper-VERSION'.
+
+  2. Change into the top-level directory of the unpacked distribution:
+          shell> cd Data-Dumper-VERSION
+
+  3. Build the distribution and compile everything:
+          shell> perl Makefile.PL
+          shell> make
+          shell> make test
+          shell> make install
+
+The `make test' command is important because it verifies that the
+module is working.  Note that when you run that command during the
+`Msql-Mysql-modules' installation to exercise the interface code, the
+MySQL server must be running or the test will fail.
+
+It is a good idea to rebuild and reinstall the `Msql-Mysql-modules'
+distribution whenever you install a new release of MySQL, particularly
+if you notice symptoms such as all your `DBI' scripts dumping core
+after you upgrade MySQL.
+
+If you don't have the right to install Perl modules in the system
+directory or if you to install local Perl modules, the following
+reference may help you:
+
+     `http://www.iserver.com/support/contrib/perl5/modules.html'
+
+Look under the heading `Installing New Modules that Require Locally
+Installed Modules'.
+
+
+Installing ActiveState Perl on Windows
+--------------------------------------
+
+To install the MySQL `DBD' module with ActiveState Perl on Windows, you
+should do the following:
+
+   * Get ActiveState Perl from
+     `http://www.activestate.com/Products/ActivePerl/index.html' and
+     install it.
+
+   * Open a DOS shell.
+
+   * If required, set the HTTP_proxy variable. For example, you might
+     try:
+
+          set HTTP_proxy=my.proxy.com:3128
+
+   * Start the PPM program:
+
+          C:\> c:\perl\bin\ppm.pl
+
+   * If you have not already done so, install `DBI':
+
+          ppm> install DBI
+
+   * If this succeeds, run the following command:
+
+          install ftp://ftp.de.uu.net/pub/CPAN/authors/id/JWIED/DBD-mysql-1.2212.x86.ppd
+
+The above should work at least with ActiveState Perl Version 5.6.
+
+If you can't get the above to work, you should instead install the
+*MyODBC* driver and connect to MySQL server through ODBC:
+
+     use DBI;
+     $dbh= DBI->connect("DBI:ODBC:$dsn","$user","$password") ||
+       die "Got error $DBI::errstr when connecting to $dsn\n";
+
+
+Installing the MySQL Perl Distribution on Windows
+-------------------------------------------------
+
+The MySQL Perl distribution contains `DBI', `DBD:MySQL' and `DBD:ODBC'.
+
+   * Get the Perl distribution for Windows from
+     `http://www.mysql.com/download.html'.
+
+   * Unzip the distribution in `C:' so that you get a `C:\PERL'
+     directory.
+
+   * Add the directory `C:\PERL\BIN' to your path.
+
+   * Add the directory `C:\PERL\BIN\MSWIN32-x86-thread' or
+     `C:\PERL\BIN\MSWIN32-x86' to your path.
+
+   * Test that `perl' works by executing `perl -v' in a DOS shell.
+
+
+Problems Using the Perl `DBI'/`DBD' Interface
+---------------------------------------------
+
+If Perl reports that it can't find the `../mysql/mysql.so' module, then
+the problem is probably that Perl can't locate the shared library
+`libmysqlclient.so'.
+
+You can fix this by any of the following methods:
+
+   * Compile the `Msql-Mysql-modules' distribution with `perl
+     Makefile.PL -static -config' rather than `perl Makefile.PL'.
+
+   * Copy `libmysqlclient.so' to the directory where your other shared
+     libraries are located (probably `/usr/lib' or `/lib').
+
+   * On Linux you can add the pathname of the directory where
+     `libmysqlclient.so' is located to the `/etc/ld.so.conf' file.
+
+   * Add the pathname of the directory where `libmysqlclient.so' is
+     located to the `LD_RUN_PATH' environment variable.
+
+If you get the following errors from `DBD-mysql', you are probably
+using `gcc' (or using an old binary compiled with `gcc'):
+
+     /usr/bin/perl: can't resolve symbol '__moddi3'
+     /usr/bin/perl: can't resolve symbol '__divdi3'
+
+Add `-L/usr/lib/gcc-lib/... -lgcc' to the link command when the
+`mysql.so' library gets built (check the output from `make' for
+`mysql.so' when you compile the Perl client).  The `-L' option should
+specify the pathname of the directory where `libgcc.a' is located on
+your system.
+
+Another cause of this problem may be that Perl and MySQL aren't both
+compiled with `gcc'.  In this case, you can solve the mismatch by
+compiling both with `gcc'.
+
+If you get the following error from `Msql-Mysql-modules' when you run
+the tests:
+
+     t/00base............install_driver(mysql) failed: Can't load '../blib/arch/auto/DBD/mysql/mysql.so' for module DBD::mysql: ../blib/arch/auto/DBD/mysql/mysql.so: undefined symbol: uncompress at /usr/lib/perl5/5.00503/i586-linux/DynaLoader.pm line 169.
+
+it means that you need to include the compression library, -lz, to the
+link line. This can be doing the following change in the file
+`lib/DBD/mysql/Install.pm':
+
+     $sysliblist .= " -lm";
+     
+     to
+     
+     $sysliblist .= " -lm -lz";
+
+After this, you MUST run 'make realclean' and then proceed with the
+installation from the beginning.
+
+If you want to use the Perl module on a system that doesn't support
+dynamic linking (like SCO) you can generate a static version of Perl
+that includes `DBI' and `DBD-mysql'.  The way this works is that you
+generate a version of Perl with the `DBI' code linked in and install it
+on top of your current Perl.  Then you use that to build a version of
+Perl that additionally has the `DBD' code linked in, and install that.
+
+On SCO, you must have the following environment variables set:
+
+     shell> LD_LIBRARY_PATH=/lib:/usr/lib:/usr/local/lib:/usr/progressive/lib
+     or
+     shell> LD_LIBRARY_PATH=/usr/lib:/lib:/usr/local/lib:/usr/ccs/lib:/usr/progressive/lib:/usr/skunk/lib
+     shell> LIBPATH=/usr/lib:/lib:/usr/local/lib:/usr/ccs/lib:/usr/progressive/lib:/usr/skunk/lib
+     shell> MANPATH=scohelp:/usr/man:/usr/local1/man:/usr/local/man:/usr/skunk/man:
+
+First, create a Perl that includes a statically linked `DBI' by running
+these commands in the directory where your `DBI' distribution is
+located:
+
+     shell> perl Makefile.PL -static -config
+     shell> make
+     shell> make install
+     shell> make perl
+
+Then you must install the new Perl. The output of `make perl' will
+indicate the exact `make' command you will need to execute to perform
+the installation.  On SCO, this is `make -f Makefile.aperl inst_perl
+MAP_TARGET=perl'.
+
+Next, use the just-created Perl to create another Perl that also
+includes a statically-linked `DBD::mysql' by running these commands in
+the directory where your `Msql-Mysql-modules' distribution is located:
+
+     shell> perl Makefile.PL -static -config
+     shell> make
+     shell> make install
+     shell> make perl
+
+Finally, you should install this new Perl.  Again, the output of `make
+perl' indicates the command to use.
+
+
+Functions for Use with `GROUP BY' Clauses
+=========================================
+
+If you use a group function in a statement containing no `GROUP BY'
+clause, it is equivalent to grouping on all rows.
+
+`COUNT(expr)'
+     Returns a count of the number of non-`NULL' values in the rows
+     retrieved by a `SELECT' statement:
+
+          mysql> select student.student_name,COUNT(*)
+                     from student,course
+                     where student.student_id=course.student_id
+                     GROUP BY student_name;
+
+     `COUNT(*)' is somewhat different in that it returns a count of the
+     number of rows retrieved, whether or not they contain `NULL'
+     values.
+
+     `COUNT(*)' is optimized to return very quickly if the `SELECT'
+     retrieves from one table, no other columns are retrieved, and
+     there is no `WHERE' clause.  For example:
+
+          mysql> select COUNT(*) from student;
+
+`COUNT(DISTINCT expr,[expr...])'
+     Returns a count of the number of different non-`NULL' values:
+
+          mysql> select COUNT(DISTINCT results) from student;
+
+     In MySQL you can get the number of distinct expression
+     combinations that don't contain NULL by giving a list of
+     expressions.  In ANSI SQL you would have to do a concatenation of
+     all expressions inside `CODE(DISTINCT ..)'.
+
+`AVG(expr)'
+     Returns the average value of `expr':
+
+          mysql> select student_name, AVG(test_score)
+                     from student
+                     GROUP BY student_name;
+
+`MIN(expr)'
+`MAX(expr)'
+     Returns the minimum or maximum value of `expr'.  `MIN()' and
+     `MAX()' may take a string argument; in such cases they return the
+     minimum or maximum string value. *Note MySQL indexes::.
+
+          mysql> select student_name, MIN(test_score), MAX(test_score)
+                     from student
+                     GROUP BY student_name;
+
+`SUM(expr)'
+     Returns the sum of `expr'.  Note that if the return set has no
+     rows, it returns NULL!
+
+`STD(expr)'
+`STDDEV(expr)'
+     Returns the standard deviation of `expr'. This is an extension to
+     ANSI SQL. The `STDDEV()' form of this function is provided for
+     Oracle compatibility.
+
+`BIT_OR(expr)'
+     Returns the bitwise `OR' of all bits in `expr'. The calculation is
+     performed with 64-bit (`BIGINT') precision.
+
+`BIT_AND(expr)'
+     Returns the bitwise `AND' of all bits in `expr'. The calculation is
+     performed with 64-bit (`BIGINT') precision.
+
+MySQL has extended the use of `GROUP BY'. You can use columns or
+calculations in the `SELECT' expressions that don't appear in the
+`GROUP BY' part. This stands for _any possible value for this group_.
+You can use this to get better performance by avoiding sorting and
+grouping on unnecessary items.  For example, you don't need to group on
+`customer.name' in the following query:
+
+     mysql> select order.custid,customer.name,max(payments)
+            from order,customer
+            where order.custid = customer.custid
+            GROUP BY order.custid;
+
+In ANSI SQL, you would have to add `customer.name' to the `GROUP BY'
+clause.  In MySQL, the name is redundant if you don't run in ANSI mode.
+
+*Don't use this feature* if the columns you omit from the `GROUP BY'
+part aren't unique in the group!  You will get unpredictable results.
+
+In some cases, you can use `MIN()' and `MAX()' to obtain a specific
+column value even if it isn't unique. The following gives the value of
+`column' from the row containing the smallest value in the `sort'
+column:
+
+     substr(MIN(concat(rpad(sort,6,' '),column)),7)
+
+*Note example-Maximum-column-group-row::.
+
+Note that if you are using MySQL Version 3.22 (or earlier) or if you
+are trying to follow ANSI SQL, you can't use expressions in `GROUP BY'
+or `ORDER BY' clauses.  You can work around this limitation by using an
+alias for the expression:
+
+     mysql> SELECT id,FLOOR(value/100) AS val FROM tbl_name
+                GROUP BY id,val ORDER BY val;
+
+In MySQL Version 3.23 you can do:
+
+     mysql> SELECT id,FLOOR(value/100) FROM tbl_name ORDER BY RAND();
+
+
+SQL command, type and function index
+************************************
+
+* Menu:
+
+* ! (logical NOT):                       Logical Operators.
+* != (not equal):                        Comparison Operators.
+* ":                                     Legal names.
+* % (modulo):                            Mathematical functions.
+* % (wild card character):               String syntax.
+* & (bitwise AND):                       Bit functions.
+* && (logical AND):                      Logical Operators.
+* () (parentheses):                      Parenthesis.
+* (Control-Z) \z:                        String syntax.
+* * (multiplication):                    Arithmetic functions.
+* + (addition):                          Arithmetic functions.
+* - (subtraction):                       Arithmetic functions.
+* - (unary minus):                       Mathematical functions.
+* -p option:                             Password security.
+* -password option:                      Password security.
+* .my.cnf file <1>:                      Password security.
+* .my.cnf file <2>:                      Access denied.
+* .my.cnf file <3>:                      Connecting.
+* .my.cnf file <4>:                      Multiple servers.
+* .my.cnf file <5>:                      Option files.
+* .my.cnf file:                          Windows vs Unix.
+* .mysql_history file <1>:               Client-Side Overview.
+* .mysql_history file:                   Server-Side Overview.
+* .pid (process ID) file:                Maintenance regimen.
+* / (division):                          Arithmetic functions.
+* /etc/passwd <1>:                       SELECT.
+* /etc/passwd:                           Security.
+* < (less than):                         Comparison Operators.
+* <<:                                    Calculating days.
+* << (left shift):                       Bit functions.
+* <= (less than or equal):               Comparison Operators.
+* <=> (Equal to):                        Comparison Operators.
+* <> (not equal):                        Comparison Operators.
+* = (equal):                             Comparison Operators.
+* > (greater than):                      Comparison Operators.
+* >= (greater than or equal):            Comparison Operators.
+* >> (right shift):                      Bit functions.
+* \" (double quote):                     String syntax.
+* \' (single quote):                     String syntax.
+* \0 (ASCII 0):                          String syntax.
+* \\ (escape):                           String syntax.
+* \b (backspace):                        String syntax.
+* \n (newline):                          String syntax.
+* \r (carriage return):                  String syntax.
+* \t (tab):                              String syntax.
+* \z (Control-Z) ASCII(26):              String syntax.
+* _ (wild card character):               String syntax.
+* `:                                     Legal names.
+* ABS():                                 Mathematical functions.
+* ACOS():                                Mathematical functions.
+* ADDDATE():                             Date and time functions.
+* addition (+):                          Arithmetic functions.
+* alias:                                 Problems with alias.
+* ALTER COLUMN:                          ALTER TABLE.
+* ALTER TABLE <1>:                       ALTER TABLE problems.
+* ALTER TABLE:                           ALTER TABLE.
+* ANALYZE TABLE:                         ANALYZE TABLE.
+* AND, bitwise:                          Bit functions.
+* AND, logical:                          Logical Operators.
+* arithmetic functions:                  Bit functions.
+* ASCII():                               String functions.
+* ASIN():                                Mathematical functions.
+* ATAN():                                Mathematical functions.
+* ATAN2():                               Mathematical functions.
+* AUTO_INCREMENT, using with DBI:        Perl DBI Class.
+* AVG():                                 Group by functions.
+* backspace (\b):                        String syntax.
+* BACKUP TABLE:                          BACKUP TABLE.
+* BEGIN:                                 COMMIT.
+* BENCHMARK():                           Miscellaneous functions.
+* BETWEEN ... AND:                       Comparison Operators.
+* BIGINT:                                Column types.
+* BIN():                                 String functions.
+* BINARY:                                Case Sensitivity Operators.
+* BIT:                                   Column types.
+* bit functions:                         Bit functions.
+* BIT_AND():                             Group by functions.
+* BIT_COUNT:                             Calculating days.
+* BIT_COUNT():                           Bit functions.
+* BIT_OR:                                Calculating days.
+* BIT_OR():                              Group by functions.
+* BLOB <1>:                              BLOB.
+* BLOB:                                  Column types.
+* BOOL:                                  Column types.
+* carriage return (\r):                  String syntax.
+* CASE:                                  Control flow functions.
+* casts:                                 Case Sensitivity Operators.
+* CC environment variable <1>:           Environment variables.
+* CC environment variable <2>:           Compilation problems.
+* CC environment variable:               configure options.
+* CCX environment variable:              Environment variables.
+* CEILING():                             Mathematical functions.
+* CFLAGS environment variable <1>:       Environment variables.
+* CFLAGS environment variable:           Compilation problems.
+* CHAR <1>:                              String types.
+* CHAR:                                  Column types.
+* CHAR VARYING:                          Column types.
+* CHAR():                                String functions.
+* CHAR_LENGTH():                         String functions.
+* CHARACTER:                             Column types.
+* CHARACTER VARYING:                     Column types.
+* CHARACTER_LENGTH():                    String functions.
+* CHECK TABLE:                           CHECK TABLE.
+* ChopBlanks DBI method:                 Perl DBI Class.
+* COALESCE():                            Comparison Operators.
+* command-line options:                  Command-line options.
+* Comment syntax:                        Comments.
+* COMMIT <1>:                            COMMIT.
+* COMMIT:                                Commit-rollback.
+* comparison operators:                  Comparison Operators.
+* CONCAT():                              String functions.
+* CONCAT_WS():                           String functions.
+* configure option, --with-charset:      configure options.
+* configure option, --with-extra-charset: configure options.
+* connect() DBI method:                  Perl DBI Class.
+* CONNECTION_ID():                       Miscellaneous functions.
+* control flow functions:                Control flow functions.
+* CONV():                                String functions.
+* COS():                                 Mathematical functions.
+* COT():                                 Mathematical functions.
+* COUNT():                               Group by functions.
+* COUNT(DISTINCT):                       Group by functions.
+* CREATE DATABASE:                       CREATE DATABASE.
+* CREATE FUNCTION:                       CREATE FUNCTION.
+* CREATE INDEX:                          CREATE INDEX.
+* CREATE TABLE:                          CREATE TABLE.
+* CROSS JOIN:                            JOIN.
+* CURDATE():                             Date and time functions.
+* CURRENT_DATE:                          Date and time functions.
+* CURRENT_TIME:                          Date and time functions.
+* CURRENT_TIMESTAMP:                     Date and time functions.
+* CURTIME():                             Date and time functions.
+* CXX environment variable <1>:          Compilation problems.
+* CXX environment variable:              configure options.
+* CXXFLAGS environment variable <1>:     Environment variables.
+* CXXFLAGS environment variable <2>:     Compilation problems.
+* CXXFLAGS environment variable:         configure options.
+* data_sources() DBI method:             Perl DBI Class.
+* DATABASE():                            Miscellaneous functions.
+* DATE <1>:                              Using DATE.
+* DATE <2>:                              DATETIME.
+* DATE:                                  Column types.
+* date and time functions:               Date and time functions.
+* DATE_ADD():                            Date and time functions.
+* DATE_FORMAT():                         Date and time functions.
+* DATE_SUB():                            Date and time functions.
+* DATETIME <1>:                          DATETIME.
+* DATETIME:                              Column types.
+* DAYNAME():                             Date and time functions.
+* DAYOFMONTH():                          Date and time functions.
+* DAYOFWEEK():                           Date and time functions.
+* DAYOFYEAR():                           Date and time functions.
+* DBI->connect():                        Perl DBI Class.
+* DBI->data_sources():                   Perl DBI Class.
+* DBI->disconnect:                       Perl DBI Class.
+* DBI->do():                             Perl DBI Class.
+* DBI->execute:                          Perl DBI Class.
+* DBI->fetchall_arrayref:                Perl DBI Class.
+* DBI->fetchrow_array:                   Perl DBI Class.
+* DBI->fetchrow_arrayref:                Perl DBI Class.
+* DBI->fetchrow_hashref:                 Perl DBI Class.
+* DBI->finish:                           Perl DBI Class.
+* DBI->prepare():                        Perl DBI Class.
+* DBI->quote:                            String syntax.
+* DBI->quote():                          Perl DBI Class.
+* DBI->rows:                             Perl DBI Class.
+* DBI->trace <1>:                        Using gdb on mysqld.
+* DBI->trace:                            Perl DBI Class.
+* DBI->{ChopBlanks}:                     Perl DBI Class.
+* DBI->{insertid}:                       Perl DBI Class.
+* DBI->{is_blob}:                        Perl DBI Class.
+* DBI->{is_key}:                         Perl DBI Class.
+* DBI->{is_not_null}:                    Perl DBI Class.
+* DBI->{is_num}:                         Perl DBI Class.
+* DBI->{is_pri_key}:                     Perl DBI Class.
+* DBI->{length}:                         Perl DBI Class.
+* DBI->{max_length}:                     Perl DBI Class.
+* DBI->{NAME}:                           Perl DBI Class.
+* DBI->{NULLABLE}:                       Perl DBI Class.
+* DBI->{NUM_OF_FIELDS}:                  Perl DBI Class.
+* DBI->{table}:                          Perl DBI Class.
+* DBI->{type}:                           Perl DBI Class.
+* DBI_TRACE environment variable <1>:    Environment variables.
+* DBI_TRACE environment variable <2>:    Using gdb on mysqld.
+* DBI_TRACE environment variable:        Perl DBI Class.
+* DBI_USER environment variable:         Environment variables.
+* DECIMAL:                               Column types.
+* DECODE():                              Miscellaneous functions.
+* DEGREES():                             Mathematical functions.
+* DELAYED:                               INSERT DELAYED.
+* DELETE:                                DELETE.
+* DESC:                                  DESCRIBE.
+* DESCRIBE <1>:                          DESCRIBE.
+* DESCRIBE:                              Getting information.
+* disconnect DBI method:                 Perl DBI Class.
+* DISTINCT <1>:                          Group by functions.
+* DISTINCT <2>:                          DISTINCT optimization.
+* DISTINCT:                              Selecting columns.
+* division (/):                          Arithmetic functions.
+* DO:                                    DO.
+* do() DBI method:                       Perl DBI Class.
+* DOUBLE:                                Column types.
+* DOUBLE PRECISION:                      Column types.
+* double quote (\"):                     String syntax.
+* DROP DATABASE:                         DROP DATABASE.
+* DROP FUNCTION:                         CREATE FUNCTION.
+* DROP INDEX <1>:                        DROP INDEX.
+* DROP INDEX:                            ALTER TABLE.
+* DROP PRIMARY KEY:                      ALTER TABLE.
+* DROP TABLE:                            DROP TABLE.
+* DUMPFILE:                              SELECT.
+* ELT():                                 String functions.
+* ENCODE():                              Miscellaneous functions.
+* ENCRYPT():                             Miscellaneous functions.
+* ENUM <1>:                              ENUM.
+* ENUM:                                  Column types.
+* Environment variable, CC:              Environment variables.
+* environment variable, CC <1>:          Compilation problems.
+* environment variable, CC:              configure options.
+* Environment variable, CCX:             Environment variables.
+* Environment variable, CFLAGS:          Environment variables.
+* environment variable, CFLAGS:          Compilation problems.
+* environment variable, CXX:             Compilation problems.
+* Environment variable, CXX:             Compilation problems.
+* environment variable, CXX:             configure options.
+* Environment variable, CXXFLAGS:        Environment variables.
+* environment variable, CXXFLAGS <1>:    Compilation problems.
+* environment variable, CXXFLAGS:        configure options.
+* Environment variable, DBI_TRACE <1>:   Environment variables.
+* Environment variable, DBI_TRACE:       Using gdb on mysqld.
+* environment variable, DBI_TRACE:       Perl DBI Class.
+* Environment variable, DBI_USER:        Environment variables.
+* Environment variable, HOME:            Environment variables.
+* environment variable, HOME <1>:        Client-Side Overview.
+* environment variable, HOME:            Server-Side Overview.
+* Environment variable, LD_RUN_PATH <1>: Perl support problems.
+* Environment variable, LD_RUN_PATH <2>: Environment variables.
+* Environment variable, LD_RUN_PATH:     Solaris.
+* environment variable, LD_RUN_PATH:     Linux.
+* Environment variable, MYSQL_DEBUG <1>: Environment variables.
+* Environment variable, MYSQL_DEBUG:     Debugging client.
+* environment variable, MYSQL_DEBUG <1>: Client-Side Overview.
+* environment variable, MYSQL_DEBUG:     Server-Side Overview.
+* Environment variable, MYSQL_HISTFILE:  Environment variables.
+* environment variable, MYSQL_HISTFILE <1>: Client-Side Overview.
+* environment variable, MYSQL_HISTFILE:  Server-Side Overview.
+* Environment variable, MYSQL_HOST:      Environment variables.
+* environment variable, MYSQL_HOST:      Connecting.
+* Environment variable, MYSQL_PWD:       Environment variables.
+* environment variable, MYSQL_PWD <1>:   Client-Side Overview.
+* environment variable, MYSQL_PWD <2>:   Server-Side Overview.
+* environment variable, MYSQL_PWD:       Connecting.
+* Environment variable, MYSQL_TCP_PORT:  Environment variables.
+* environment variable, MYSQL_TCP_PORT <1>: Client-Side Overview.
+* environment variable, MYSQL_TCP_PORT <2>: Server-Side Overview.
+* environment variable, MYSQL_TCP_PORT <3>: Multiple servers.
+* environment variable, MYSQL_TCP_PORT:  Installing many servers.
+* Environment variable, MYSQL_UNIX_PORT: Environment variables.
+* environment variable, MYSQL_UNIX_PORT <1>: Client-Side Overview.
+* environment variable, MYSQL_UNIX_PORT <2>: Server-Side Overview.
+* environment variable, MYSQL_UNIX_PORT <3>: Multiple servers.
+* environment variable, MYSQL_UNIX_PORT: Installing many servers.
+* Environment variable, MYSQL_UNIX_PORT: mysql_install_db.
+* environment variable, PATH:            Installing binary.
+* Environment variable, PATH:            Environment variables.
+* Environment variable, TMPDIR <1>:      Environment variables.
+* Environment variable, TMPDIR:          mysql_install_db.
+* Environment variable, TZ <1>:          Environment variables.
+* Environment variable, TZ:              Timezone problems.
+* Environment variable, UMASK <1>:       Environment variables.
+* Environment variable, UMASK:           File permissions.
+* Environment variable, UMASK_DIR <1>:   Environment variables.
+* Environment variable, UMASK_DIR:       File permissions.
+* Environment variable, USER:            Environment variables.
+* environment variable, USER:            Connecting.
+* Environment variables, CXX:            Compilation problems.
+* equal (=):                             Comparison Operators.
+* escape (\\):                           String syntax.
+* execute DBI method:                    Perl DBI Class.
+* EXP():                                 Mathematical functions.
+* EXPLAIN:                               EXPLAIN.
+* EXPORT_SET():                          String functions.
+* EXTRACT():                             Date and time functions.
+* fetchall_arrayref DBI method:          Perl DBI Class.
+* fetchrow_array DBI method:             Perl DBI Class.
+* fetchrow_arrayref DBI method:          Perl DBI Class.
+* fetchrow_hashref DBI method:           Perl DBI Class.
+* FIELD():                               String functions.
+* FILE:                                  String functions.
+* FIND_IN_SET():                         String functions.
+* finish DBI method:                     Perl DBI Class.
+* FLOAT:                                 Column types.
+* FLOAT(M,D):                            Column types.
+* FLOAT(precision):                      Column types.
+* FLOOR():                               Mathematical functions.
+* FLUSH:                                 FLUSH.
+* FORMAT():                              Miscellaneous functions.
+* FROM_DAYS():                           Date and time functions.
+* FROM_UNIXTIME():                       Date and time functions.
+* functions, arithmetic:                 Bit functions.
+* functions, bit:                        Bit functions.
+* functions, control flow:               Control flow functions.
+* functions, date and time:              Date and time functions.
+* functions, GROUP BY:                   Group by functions.
+* Functions, logical:                    Logical Operators.
+* functions, mathematical:               Mathematical functions.
+* functions, miscellaneous:              Miscellaneous functions.
+* functions, string:                     String functions.
+* functions, string comparison:          String comparison functions.
+* Functions, user-defined:               CREATE FUNCTION.
+* GET_LOCK():                            Miscellaneous functions.
+* GRANT:                                 GRANT.
+* GRANT statement:                       Adding users.
+* greater than (>):                      Comparison Operators.
+* greater than or equal (>=):            Comparison Operators.
+* GREATEST():                            Mathematical functions.
+* GROUP BY functions:                    Group by functions.
+* HEX():                                 String functions.
+* hexadecimal values:                    Hexadecimal values.
+* HOME environment variable <1>:         Environment variables.
+* HOME environment variable <2>:         Client-Side Overview.
+* HOME environment variable:             Server-Side Overview.
+* host.frm, problems finding:            Post-installation.
+* HOUR():                                Date and time functions.
+* identifiers, quoting:                  Legal names.
+* IF():                                  Control flow functions.
+* IFNULL():                              Control flow functions.
+* IN:                                    Comparison Operators.
+* INET_ATON():                           Miscellaneous functions.
+* INET_NTOA():                           Miscellaneous functions.
+* INNER JOIN:                            JOIN.
+* INSERT <1>:                            INSERT.
+* INSERT:                                Insert speed.
+* INSERT ... SELECT:                     INSERT.
+* INSERT DELAYED:                        INSERT DELAYED.
+* INSERT statement, grant privileges:    Adding users.
+* INSERT():                              String functions.
+* insertid DBI method:                   Perl DBI Class.
+* INSTR():                               String functions.
+* INT:                                   Column types.
+* INTEGER:                               Column types.
+* INTERVAL():                            Comparison Operators.
+* IS NOT NULL:                           Comparison Operators.
+* IS NULL:                               Comparison Operators.
+* IS NULL, and indexes:                  MySQL indexes.
+* is_blob DBI method:                    Perl DBI Class.
+* is_key DBI method:                     Perl DBI Class.
+* is_not_null DBI method:                Perl DBI Class.
+* is_num DBI method:                     Perl DBI Class.
+* is_pri_key DBI method:                 Perl DBI Class.
+* ISNULL():                              Comparison Operators.
+* ISOLATION LEVEL:                       SET TRANSACTION.
+* JOIN:                                  JOIN.
+* KILL:                                  KILL.
+* LAST_INSERT_ID():                      Commit-rollback.
+* LAST_INSERT_ID([expr]):                Miscellaneous functions.
+* LCASE():                               String functions.
+* LD_RUN_PATH environment variable <1>:  Perl support problems.
+* LD_RUN_PATH environment variable <2>:  Environment variables.
+* LD_RUN_PATH environment variable <3>:  Solaris.
+* LD_RUN_PATH environment variable:      Linux.
+* LEAST():                               Mathematical functions.
+* LEFT JOIN <1>:                         JOIN.
+* LEFT JOIN:                             LEFT JOIN optimization.
+* LEFT OUTER JOIN:                       JOIN.
+* LEFT():                                String functions.
+* length DBI method:                     Perl DBI Class.
+* LENGTH():                              String functions.
+* less than (<):                         Comparison Operators.
+* less than or equal (<=):               Comparison Operators.
+* LIKE:                                  String comparison functions.
+* LIKE, and indexes:                     MySQL indexes.
+* LIKE, and wildcards:                   MySQL indexes.
+* LIMIT:                                 LIMIT optimization.
+* LOAD DATA INFILE <1>:                  Problems with NULL.
+* LOAD DATA INFILE:                      LOAD DATA.
+* LOAD_FILE():                           String functions.
+* LOCATE():                              String functions.
+* LOCK TABLES:                           LOCK TABLES.
+* LOG():                                 Mathematical functions.
+* LOG10():                               Mathematical functions.
+* Logical functions:                     Logical Operators.
+* LONGBLOB:                              Column types.
+* LONGTEXT:                              Column types.
+* LOWER():                               String functions.
+* LPAD():                                String functions.
+* LTRIM():                               String functions.
+* MAKE_SET():                            String functions.
+* MASTER_POS_WAIT():                     Miscellaneous functions.
+* MATCH ... AGAINST():                   String comparison functions.
+* mathematical functions:                Mathematical functions.
+* MAX():                                 Group by functions.
+* max_length DBI method:                 Perl DBI Class.
+* MD5():                                 Miscellaneous functions.
+* MEDIUMBLOB:                            Column types.
+* MEDIUMINT:                             Column types.
+* MEDIUMTEXT:                            Column types.
+* MID():                                 String functions.
+* MIN():                                 Group by functions.
+* minus, unary (-):                      Mathematical functions.
+* MINUTE():                              Date and time functions.
+* miscellaneous functions:               Miscellaneous functions.
+* MOD():                                 Mathematical functions.
+* modulo (%):                            Mathematical functions.
+* MONTH():                               Date and time functions.
+* MONTHNAME():                           Date and time functions.
+* multiplication (*):                    Arithmetic functions.
+* my_init():                             my_init.
+* my_thread_end():                       my_thread_end().
+* my_thread_init():                      my_thread_init().
+* my_ulonglong C type:                   C API datatypes.
+* my_ulonglong values, printing:         C API datatypes.
+* MYSQL C type:                          C API datatypes.
+* mysql_affected_rows():                 mysql_affected_rows.
+* mysql_change_user():                   mysql_change_user.
+* mysql_character_set_name():            mysql_character_set_name.
+* mysql_close():                         mysql_close.
+* mysql_connect():                       mysql_connect.
+* mysql_create_db():                     mysql_create_db.
+* mysql_data_seek():                     mysql_data_seek.
+* MYSQL_DEBUG environment variable <1>:  Environment variables.
+* MYSQL_DEBUG environment variable <2>:  Debugging client.
+* MYSQL_DEBUG environment variable <3>:  Client-Side Overview.
+* MYSQL_DEBUG environment variable:      Server-Side Overview.
+* mysql_debug():                         mysql_debug.
+* mysql_drop_db():                       mysql_drop_db.
+* mysql_dump_debug_info():               mysql_dump_debug_info.
+* mysql_eof():                           mysql_eof.
+* mysql_errno():                         mysql_errno.
+* mysql_error():                         mysql_error.
+* mysql_escape_string() <1>:             mysql_escape_string.
+* mysql_escape_string():                 String syntax.
+* mysql_fetch_field():                   mysql_fetch_field.
+* mysql_fetch_field_direct():            mysql_fetch_field_direct.
+* mysql_fetch_fields():                  mysql_fetch_fields.
+* mysql_fetch_lengths():                 mysql_fetch_lengths.
+* mysql_fetch_row():                     mysql_fetch_row.
+* MYSQL_FIELD C type:                    C API datatypes.
+* mysql_field_count() <1>:               mysql_num_fields.
+* mysql_field_count():                   mysql_field_count.
+* MYSQL_FIELD_OFFSET C type:             C API datatypes.
+* mysql_field_seek():                    mysql_field_seek.
+* mysql_field_tell():                    mysql_field_tell.
+* mysql_free_result():                   mysql_free_result.
+* mysql_get_client_info():               mysql_get_client_info.
+* mysql_get_host_info():                 mysql_get_host_info.
+* mysql_get_proto_info():                mysql_get_proto_info.
+* mysql_get_server_info():               mysql_get_server_info.
+* MYSQL_HISTFILE environment variable <1>: Environment variables.
+* MYSQL_HISTFILE environment variable <2>: Client-Side Overview.
+* MYSQL_HISTFILE environment variable:   Server-Side Overview.
+* MYSQL_HOST environment variable <1>:   Environment variables.
+* MYSQL_HOST environment variable:       Connecting.
+* mysql_info() <1>:                      mysql_info.
+* mysql_info() <2>:                      ALTER TABLE.
+* mysql_info() <3>:                      LOAD DATA.
+* mysql_info() <4>:                      UPDATE.
+* mysql_info():                          INSERT.
+* mysql_init():                          mysql_init.
+* mysql_insert_id() <1>:                 mysql_insert_id.
+* mysql_insert_id():                     Commit-rollback.
+* mysql_kill():                          mysql_kill.
+* mysql_list_dbs():                      mysql_list_dbs.
+* mysql_list_fields():                   mysql_list_fields.
+* mysql_list_processes():                mysql_list_processes.
+* mysql_list_tables():                   mysql_list_tables.
+* mysql_num_fields():                    mysql_num_fields.
+* mysql_num_rows():                      mysql_num_rows.
+* mysql_options():                       mysql_options.
+* mysql_ping():                          mysql_ping.
+* MYSQL_PWD environment variable <1>:    Environment variables.
+* MYSQL_PWD environment variable <2>:    Client-Side Overview.
+* MYSQL_PWD environment variable <3>:    Server-Side Overview.
+* MYSQL_PWD environment variable:        Connecting.
+* mysql_query() <1>:                     C API problems.
+* mysql_query():                         mysql_query.
+* mysql_real_connect():                  mysql_real_connect.
+* mysql_real_escape_string():            mysql_real_escape_string.
+* mysql_real_query():                    mysql_real_query.
+* mysql_reload():                        mysql_reload.
+* MYSQL_RES C type:                      C API datatypes.
+* MYSQL_ROW C type:                      C API datatypes.
+* mysql_row_seek():                      mysql_row_seek.
+* mysql_row_tell():                      mysql_row_tell.
+* mysql_select_db():                     mysql_select_db.
+* mysql_shutdown():                      mysql_shutdown.
+* mysql_stat():                          mysql_stat.
+* mysql_store_result() <1>:              C API problems.
+* mysql_store_result():                  mysql_store_result.
+* MYSQL_TCP_PORT environment variable <1>: Environment variables.
+* MYSQL_TCP_PORT environment variable <2>: Client-Side Overview.
+* MYSQL_TCP_PORT environment variable <3>: Server-Side Overview.
+* MYSQL_TCP_PORT environment variable <4>: Multiple servers.
+* MYSQL_TCP_PORT environment variable:   Installing many servers.
+* mysql_thread_id():                     mysql_thread_id.
+* MYSQL_UNIX_PORT environment variable <1>: Environment variables.
+* MYSQL_UNIX_PORT environment variable <2>: Client-Side Overview.
+* MYSQL_UNIX_PORT environment variable <3>: Server-Side Overview.
+* MYSQL_UNIX_PORT environment variable <4>: Multiple servers.
+* MYSQL_UNIX_PORT environment variable <5>: Installing many servers.
+* MYSQL_UNIX_PORT environment variable:  mysql_install_db.
+* mysql_use_result():                    mysql_use_result.
+* NAME DBI method:                       Perl DBI Class.
+* NATIONAL CHAR:                         Column types.
+* NATURAL LEFT JOIN:                     JOIN.
+* NATURAL LEFT OUTER JOIN:               JOIN.
+* NATURAL RIGHT JOIN:                    JOIN.
+* NATURAL RIGHT OUTER JOIN:              JOIN.
+* NCHAR:                                 Column types.
+* newline (\n):                          String syntax.
+* not equal (!=):                        Comparison Operators.
+* not equal (<>):                        Comparison Operators.
+* NOT IN:                                Comparison Operators.
+* NOT LIKE:                              String comparison functions.
+* NOT REGEXP:                            String comparison functions.
+* NOT, logical:                          Logical Operators.
+* NOW():                                 Date and time functions.
+* NUL:                                   String syntax.
+* NULL <1>:                              Problems with NULL.
+* NULL:                                  Working with NULL.
+* NULL value:                            NULL values.
+* NULLABLE DBI method:                   Perl DBI Class.
+* NULLIF():                              Control flow functions.
+* NUM_OF_FIELDS DBI method:              Perl DBI Class.
+* NUMERIC:                               Column types.
+* OCT():                                 String functions.
+* OCTET_LENGTH():                        String functions.
+* OPTIMIZE TABLE:                        OPTIMIZE TABLE.
+* OR, bitwise:                           Bit functions.
+* OR, logical:                           Logical Operators.
+* ORD():                                 String functions.
+* ORDER BY:                              ALTER TABLE.
+* parentheses ( and ):                   Parenthesis.
+* PASSWORD() <1>:                        Ignoring user.
+* PASSWORD() <2>:                        Miscellaneous functions.
+* PASSWORD() <3>:                        Passwords.
+* PASSWORD():                            Connection access.
+* PATH environment variable <1>:         Installing binary.
+* PATH environment variable:             Environment variables.
+* PERIOD_ADD():                          Date and time functions.
+* PERIOD_DIFF():                         Date and time functions.
+* PI():                                  Mathematical functions.
+* POSITION():                            String functions.
+* POW():                                 Mathematical functions.
+* POWER():                               Mathematical functions.
+* prepare() DBI method:                  Perl DBI Class.
+* PRIMARY KEY <1>:                       ALTER TABLE.
+* PRIMARY KEY:                           CREATE TABLE.
+* PROCESSLIST:                           SHOW PROCESSLIST.
+* QUARTER():                             Date and time functions.
+* quote() DBI method:                    Perl DBI Class.
+* quoting of identifiers:                Legal names.
+* RADIANS():                             Mathematical functions.
+* RAND():                                Mathematical functions.
+* REAL:                                  Column types.
+* REGEXP:                                String comparison functions.
+* RELEASE_LOCK():                        Miscellaneous functions.
+* RENAME TABLE:                          RENAME TABLE.
+* REPAIR TABLE:                          REPAIR TABLE.
+* REPEAT():                              String functions.
+* REPLACE:                               REPLACE.
+* REPLACE ... SELECT:                    INSERT.
+* REPLACE():                             String functions.
+* RESTORE TABLE:                         RESTORE TABLE.
+* return (\r):                           String syntax.
+* REVERSE():                             String functions.
+* REVOKE:                                GRANT.
+* RIGHT JOIN:                            JOIN.
+* RIGHT OUTER JOIN:                      JOIN.
+* RIGHT():                               String functions.
+* RLIKE:                                 String comparison functions.
+* ROLLBACK <1>:                          COMMIT.
+* ROLLBACK:                              Commit-rollback.
+* ROUND():                               Mathematical functions.
+* rows DBI method:                       Perl DBI Class.
+* RPAD():                                String functions.
+* RTRIM():                               String functions.
+* SEC_TO_TIME():                         Date and time functions.
+* SECOND():                              Date and time functions.
+* SELECT:                                SELECT.
+* SELECT INTO TABLE:                     Missing SELECT INTO TABLE.
+* SELECT speed:                          SELECT speed.
+* SELECT, optimizing:                    EXPLAIN.
+* SESSION_USER():                        Miscellaneous functions.
+* SET <1>:                               SET.
+* SET:                                   Column types.
+* SET OPTION:                            SET OPTION.
+* SET PASSWORD statement:                Passwords.
+* SHOW COLUMNS:                          SHOW.
+* SHOW CREATE TABLE:                     SHOW.
+* SHOW DATABASE INFO:                    SHOW.
+* SHOW DATABASES:                        SHOW.
+* SHOW FIELDS:                           SHOW.
+* SHOW GRANTS:                           SHOW.
+* SHOW INDEX:                            SHOW.
+* SHOW KEYS:                             SHOW.
+* SHOW MASTER LOGS:                      SHOW.
+* SHOW MASTER STATUS:                    SHOW.
+* SHOW PROCESSLIST:                      SHOW.
+* SHOW SLAVE STATUS:                     SHOW.
+* SHOW STATUS:                           SHOW.
+* SHOW TABLE STATUS:                     SHOW.
+* SHOW TABLES:                           SHOW.
+* SHOW VARIABLES:                        SHOW.
+* SIGN():                                Mathematical functions.
+* SIN():                                 Mathematical functions.
+* single quote (\'):                     String syntax.
+* SMALLINT:                              Column types.
+* SOUNDEX():                             String functions.
+* SPACE():                               String functions.
+* SQRT():                                Mathematical functions.
+* statements, GRANT:                     Adding users.
+* statements, INSERT:                    Adding users.
+* STD():                                 Group by functions.
+* STDDEV():                              Group by functions.
+* STRAIGHT_JOIN:                         JOIN.
+* STRCMP():                              String comparison functions.
+* string comparison functions:           String comparison functions.
+* string functions:                      String functions.
+* SUBDATE():                             Date and time functions.
+* SUBSTRING():                           String functions.
+* SUBSTRING_INDEX():                     String functions.
+* subtraction (-):                       Arithmetic functions.
+* SUM():                                 Group by functions.
+* SYSDATE():                             Date and time functions.
+* SYSTEM_USER():                         Miscellaneous functions.
+* tab (\t):                              String syntax.
+* table DBI method:                      Perl DBI Class.
+* table_cache:                           Table cache.
+* TAN():                                 Mathematical functions.
+* TEXT <1>:                              BLOB.
+* TEXT:                                  Column types.
+* threads:                               SHOW PROCESSLIST.
+* TIME <1>:                              TIME.
+* TIME:                                  Column types.
+* TIME_FORMAT():                         Date and time functions.
+* TIME_TO_SEC():                         Date and time functions.
+* TIMESTAMP <1>:                         DATETIME.
+* TIMESTAMP:                             Column types.
+* TINYBLOB:                              Column types.
+* TINYINT:                               Column types.
+* TINYTEXT:                              Column types.
+* TMPDIR environment variable <1>:       Environment variables.
+* TMPDIR environment variable:           mysql_install_db.
+* TO_DAYS():                             Date and time functions.
+* trace DBI method <1>:                  Using gdb on mysqld.
+* trace DBI method:                      Perl DBI Class.
+* TRIM():                                String functions.
+* TRUNCATE:                              TRUNCATE.
+* TRUNCATE():                            Mathematical functions.
+* type DBI method:                       Perl DBI Class.
+* Types:                                 Column types.
+* TZ environment variable <1>:           Environment variables.
+* TZ environment variable:               Timezone problems.
+* UCASE():                               String functions.
+* UDF functions:                         CREATE FUNCTION.
+* ulimit:                                Not enough file handles.
+* UMASK environment variable <1>:        Environment variables.
+* UMASK environment variable:            File permissions.
+* UMASK_DIR environment variable <1>:    Environment variables.
+* UMASK_DIR environment variable:        File permissions.
+* unary minus (-):                       Mathematical functions.
+* UNION:                                 Searching on two keys.
+* UNIQUE:                                ALTER TABLE.
+* UNIX_TIMESTAMP():                      Date and time functions.
+* UNLOCK TABLES:                         LOCK TABLES.
+* UPDATE:                                UPDATE.
+* UPPER():                               String functions.
+* USE:                                   USE.
+* USER environment variable <1>:         Environment variables.
+* USER environment variable:             Connecting.
+* USER():                                Miscellaneous functions.
+* User-defined functions:                CREATE FUNCTION.
+* VARCHAR <1>:                           String types.
+* VARCHAR:                               Column types.
+* VERSION():                             Miscellaneous functions.
+* WEEK():                                Date and time functions.
+* WEEKDAY():                             Date and time functions.
+* WHERE:                                 Where optimizations.
+* Wild card character (%):               String syntax.
+* Wild card character (_):               String syntax.
+* without-server option:                 configure options.
+* YEAR <1>:                              YEAR.
+* YEAR:                                  Column types.
+* YEAR():                                Date and time functions.
+* | (bitwise OR):                        Bit functions.
+* || (logical OR):                       Logical Operators.
+* ~:                                     Bit functions.
+
+
+Concept Index
+*************
+
+* Menu:
+
+* aborted clients:                       Communication errors.
+* aborted connection:                    Communication errors.
+* access control:                        Connection access.
+* access denied errors:                  Error Access denied.
+* access privileges:                     Privilege system.
+* Access program:                        MyODBC clients.
+* ACLs:                                  Privilege system.
+* ActiveState Perl:                      ActiveState Perl.
+* adding, character sets:                Adding character set.
+* adding, native functions:              Adding native function.
+* adding, new functions:                 Adding functions.
+* adding, new user privileges:           Adding users.
+* adding, new users:                     Installing binary.
+* adding, procedures:                    Adding procedures.
+* adding, user-definable functions:      Adding UDF.
+* administration, server:                mysqladmin.
+* ADO program:                           MyODBC clients.
+* advertising, contact information:      Contact information.
+* age, calculating:                      Date calculations.
+* alias names, case sensitivity:         Name case sensitivity.
+* aliases, for expressions:              Group by functions.
+* aliases, for tables:                   SELECT.
+* aliases, in GROUP BY clauses:          Group by functions.
+* aliases, in ORDER BY clauses:          Group by functions.
+* aliases, names:                        Legal names.
+* aliases, on expressions:               SELECT.
+* anonymous user <1>:                    Default privileges.
+* anonymous user <2>:                    Request access.
+* anonymous user:                        Connection access.
+* ANSI mode, running:                    ANSI mode.
+* ANSI SQL, differences from:            GRANT.
+* ANSI SQL92, extensions to:             Compatibility.
+* answering questions, etiquette:        Answering questions.
+* Apache:                                Apache.
+* APIs:                                  Clients.
+* APIs, Perl:                            Perl.
+* applying, patches:                     Applying patches.
+* argument processing:                   UDF arguments.
+* arithmetic expressions:                Arithmetic functions.
+* authentication tools:                  Contrib.
+* AUTO-INCREMENT, ODBC:                  ODBC and last_insert_id.
+* AUTO_INCREMENT, and NULL values:       Problems with NULL.
+* backing up, databases <1>:             mysqlhotcopy.
+* backing up, databases:                 mysqldump.
+* backslash, escape character:           Literals.
+* backups:                               Backup.
+* backups, database:                     BACKUP TABLE.
+* batch mode:                            Batch mode.
+* batch, mysql option:                   mysql.
+* BDB table type:                        Table types.
+* BDB tables:                            Commit-rollback.
+* benchmark suite:                       MySQL Benchmarks.
+* benchmarking, tools:                   Contrib.
+* benchmarks:                            Custom Benchmarks.
+* Berkeley_db table type:                Table types.
+* Big5 Chinese character encoding:       Case sensitivity.
+* binary distributions:                  MySQL binaries.
+* binary distributions, installing:      Installing binary.
+* binary distributions, on HP-UX:        Binary notes-HP-UX.
+* binary distributions, on Linux:        Binary notes-Linux.
+* binary log:                            Binary log.
+* Binlog_Dump:                           Replication FAQ.
+* bit_functions, example:                Calculating days.
+* BitKeeper tree:                        Installing source tree.
+* BLOB columns, default values:          BLOB.
+* BLOB columns, indexing:                CREATE TABLE.
+* BLOB, inserting binary data:           String syntax.
+* BLOB, size:                            Storage requirements.
+* books, about MySQL:                    MySQL Information Sources.
+* Borland Builder 4 program:             MyODBC clients.
+* Borland C++ compiler:                  Borland C++.
+* brackets, square:                      Column types.
+* buffer sizes, client:                  Clients.
+* buffer sizes, mysqld server:           Server parameters.
+* bug reports, criteria for:             Bug reports.
+* bug reports, email address:            Bug reports.
+* bugs, known:                           Bugs.
+* bugs, reporting:                       Bug reports.
+* building, client programs:             Building clients.
+* C API, datatypes:                      C.
+* C API, functions:                      C API function overview.
+* C API, linking problems:               C API linking problems.
+* C++:                                   Contrib.
+* C++ APIs:                              Cplusplus.
+* C++ Builder:                           MyODBC clients.
+* C++ compiler cannot create executables: Compilation problems.
+* C++ compiler, gcc:                     configure options.
+* caches, clearing:                      FLUSH.
+* calculating, dates:                    Date calculations.
+* calling sequences, UDF:                UDF calling sequences.
+* can't create/write to file:            Cannot create.
+* case sensitivity, in access checking:  Privileges.
+* case sensitivity, in searches:         Case sensitivity.
+* case sensitivity, in string comparisons: String comparison functions.
+* case sensitivity, of database names:   Extensions to ANSI.
+* case sensitivity, of table names:      Extensions to ANSI.
+* case-sensitivity, in names:            Name case sensitivity.
+* cast operators:                        Case Sensitivity Operators.
+* casts:                                 Comparison Operators.
+* cc1plus problems:                      Compilation problems.
+* ChangeLog:                             News.
+* changes to privileges:                 Request access.
+* changes, log:                          News.
+* changes, version 3.19:                 News-3.19.x.
+* changes, version 3.20:                 News-3.20.x.
+* changes, version 3.21:                 News-3.21.x.
+* changes, version 3.22:                 News-3.22.x.
+* changes, version 3.23:                 News-3.23.x.
+* changes, version 4.0:                  News-4.0.0.
+* changing socket location <1>:          Problems with mysql.sock.
+* changing socket location <2>:          Automatic start.
+* changing socket location:              configure options.
+* changing, column order:                Change column order.
+* character sets <1>:                    Character sets.
+* character sets:                        configure options.
+* character sets, adding:                Adding character set.
+* character-sets-dir, mysql option:      mysql.
+* characters, multi-byte:                Multi-byte characters.
+* check options, myisamchk:              myisamchk check options.
+* checking, tables for errors:           Check.
+* checksum errors:                       Solaris.
+* Chinese:                               Case sensitivity.
+* choosing types:                        Choosing types.
+* choosing, a MySQL version:             Which version.
+* clearing, caches:                      FLUSH.
+* client programs, building:             Building clients.
+* client tools:                          Clients.
+* clients, debugging:                    Debugging client.
+* clients, threaded:                     Threaded clients.
+* closing, tables:                       Table cache.
+* ColdFusion program:                    MyODBC clients.
+* collating, strings:                    String collating.
+* column names, case sensitivity:        Name case sensitivity.
+* columns, changing:                     Change column order.
+* columns, displaying:                   mysqlshow.
+* columns, indexes:                      Indexes.
+* columns, names:                        Legal names.
+* columns, other types:                  Other-vendor column types.
+* columns, selecting:                    Selecting columns.
+* columns, storage requirements:         Storage requirements.
+* columns, types:                        Column types.
+* command line history <1>:              Client-Side Overview.
+* command line history:                  Server-Side Overview.
+* command line options, mysql:           mysql.
+* command line tool:                     mysql.
+* command syntax:                        Manual conventions.
+* commands out of sync:                  Commands out of sync.
+* commands, for binary distribution:     Installing binary.
+* commands, list of:                     mysql.
+* commands, replication:                 Replication SQL.
+* comments, adding:                      Comments.
+* comments, starting:                    Missing comments.
+* commercial support, types:             Support.
+* communications protocols:              Protocol differences.
+* comparisons, MySQL vs. others:         Comparisons.
+* compatibility, between MySQL versions <1>: Upgrading-from-3.21.
+* compatibility, between MySQL versions: Upgrading-from-3.22.
+* compatibility, with ANSI SQL:          Compatibility.
+* compatibility, with mSQL:              String comparison functions.
+* compatibility, with ODBC <1>:          News-3.21.15.
+* compatibility, with ODBC <2>:          CREATE TABLE.
+* compatibility, with ODBC <3>:          JOIN.
+* compatibility, with ODBC <4>:          Comparison Operators.
+* compatibility, with ODBC <5>:          Column types.
+* compatibility, with ODBC:              Legal names.
+* compatibility, with Oracle <1>:        Group by functions.
+* compatibility, with Oracle <2>:        DESCRIBE.
+* compatibility, with Oracle:            Extensions to ANSI.
+* compatibility, with PostgreSQL:        Extensions to ANSI.
+* compatibility, with Sybase:            USE.
+* compiler, C++ gcc:                     configure options.
+* compiling, on Windows:                 Windows compiling.
+* compiling, optimizing:                 System.
+* compiling, problems:                   Compilation problems.
+* compiling, speed:                      Compile and link options.
+* compiling, statically:                 configure options.
+* compiling, user-defined functions:     UDF compiling.
+* compliance, Y2K:                       Year 2000 compliance.
+* compress, mysql option:                mysql.
+* compressed tables:                     myisampack.
+* config-file option:                    mysqld_multi.
+* config.cache:                          Compilation problems.
+* config.cache file:                     Compilation problems.
+* configuration files:                   Access denied.
+* configuration options:                 configure options.
+* configure option, -with-low-memory:    Compilation problems.
+* configure script:                      configure options.
+* configure, running after prior invocation: Compilation problems.
+* connect_timeout variable:              mysql.
+* connecting, remotely with SSH:         Windows and SSH.
+* connecting, to the server <1>:         Connecting.
+* connecting, to the server:             Connecting-disconnecting.
+* connecting, verification:              Connection access.
+* connection, aborted:                   Communication errors.
+* constant table <1>:                    Where optimizations.
+* constant table:                        EXPLAIN.
+* consultants, list of:                  Users.
+* contact information:                   Contact information.
+* Contrib directory:                     Useful Links.
+* contributed programs:                  Contrib.
+* contributing companies, list of:       Supporters.
+* contributors, list of:                 Contributors.
+* control access:                        Connection access.
+* conventions, typographical:            Manual conventions.
+* converters:                            Contrib.
+* converting, tools:                     Using mSQL tools.
+* copyrights:                            Copyright.
+* costs, licensing and support:          Cost.
+* counting, table rows:                  Counting rows.
+* crackers, security against:            Security.
+* crash:                                 Debugging server.
+* crash, recovery:                       Crash recovery.
+* crash, repeated:                       Crashing.
+* crash-me:                              MySQL Benchmarks.
+* crash-me program <1>:                  MySQL Benchmarks.
+* crash-me program:                      Portability.
+* creating, bug reports:                 Bug reports.
+* creating, databases:                   Database use.
+* creating, default startup options:     Option files.
+* creating, tables:                      Creating tables.
+* customer support, mailing address:     Bug reports.
+* customers, of MySQL:                   Internal use.
+* cvs tree:                              Installing source tree.
+* data, character sets:                  Character sets.
+* data, importing:                       mysqlimport.
+* data, ISAM table handler:              Stability.
+* data, loading into tables:             Loading tables.
+* data, retrieving:                      Retrieving data.
+* data, size:                            Data size.
+* database design:                       Design.
+* database names, case sensitivity <1>:  Name case sensitivity.
+* database names, case sensitivity:      Extensions to ANSI.
+* database, mysql option:                mysql.
+* databases, backups:                    Backup.
+* databases, creating:                   Database use.
+* databases, defined:                    What-is.
+* databases, displaying:                 mysqlshow.
+* databases, dumping <1>:                mysqlhotcopy.
+* databases, dumping:                    mysqldump.
+* databases, information about:          Getting information.
+* databases, MySQL vs. others:           Comparisons.
+* databases, names:                      Legal names.
+* databases, replicating:                Replication.
+* databases, selecting:                  Creating database.
+* databases, symbolic links <1>:         Symbolic links to tables.
+* databases, symbolic links:             Symbolic links.
+* databases, using:                      Database use.
+* DataJunction:                          MyODBC clients.
+* datatypes, C API:                      C.
+* Date and Time types:                   Date and time types.
+* date calculations:                     Date calculations.
+* DATE columns, problems:                Using DATE.
+* date functions, Y2K compliance:        Year 2000 compliance.
+* date types:                            Storage requirements.
+* date types, Y2K issues:                Y2K issues.
+* date values, problems:                 DATETIME.
+* db table, sorting:                     Request access.
+* DBI interface:                         DBI with DBD.
+* DBI Perl module:                       Perl DBI Class.
+* DBI/DBD:                               DBI-info.
+* dbServ:                                Useful Links.
+* DBUG package:                          The DBUG package.
+* debug, mysql option:                   mysql.
+* debug-info, mysql option:              mysql.
+* debugging, client:                     Debugging client.
+* debugging, server:                     Debugging server.
+* decimal point:                         Column types.
+* default hostname:                      Connecting.
+* default installation location:         Installation layouts.
+* default options:                       Option files.
+* default values, BLOB and TEXT columns: BLOB.
+* default values, suppression:           configure options.
+* default, privileges:                   Default privileges.
+* default-character-set, mysql option:   mysql.
+* delayed_insert_limit:                  INSERT DELAYED.
+* deleting, rows:                        Deleting from related tables.
+* deletion, mysql.sock:                  Problems with mysql.sock.
+* Delphi:                                Contrib.
+* Delphi program:                        MyODBC clients.
+* design, choices:                       Design.
+* design, issues:                        Bugs.
+* design, limitations:                   Design Limitations.
+* developers, list of:                   Credits.
+* development source tree:               Installing source tree.
+* digits:                                Column types.
+* directory structure, default:          Installation layouts.
+* disconnecting, from the server:        Connecting-disconnecting.
+* disk full:                             Full disk.
+* disk issues:                           Disk issues.
+* disks, splitting data across:          Windows symbolic links.
+* display size:                          Column types.
+* displaying, database information:      mysqlshow.
+* displaying, information, SHOW:         SHOW DATABASE INFO.
+* displaying, table status:              SHOW TABLE STATUS.
+* DNS:                                   DNS.
+* downgrading:                           Upgrade.
+* downloading:                           Getting MySQL.
+* dumping, databases <1>:                mysqlhotcopy.
+* dumping, databases:                    mysqldump.
+* dynamic table characteristics:         Dynamic format.
+* Eiffel Wrapper:                        Eiffel.
+* email lists:                           Mailing-list.
+* email, technical support:              Basic email support.
+* employment with MySQL:                 Contact information.
+* employment, contact information:       Contact information.
+* enable-named-commands, mysql option:   mysql.
+* entering, queries:                     Entering queries.
+* ENUM, size:                            Storage requirements.
+* environment variables <1>:             Client-Side Overview.
+* environment variables <2>:             Server-Side Overview.
+* environment variables <3>:             Access denied.
+* environment variables:                 Option files.
+* environment variables, list of:        Environment variables.
+* error mesaages, can't find file:       File permissions.
+* error messages, displaying:            perror.
+* error messages, languages:             Languages.
+* errors, access denied:                 Error Access denied.
+* errors, checking tables for:           Check.
+* errors, common:                        Problems.
+* errors, directory checksum:            Solaris.
+* errors, handling for UDFs:             UDF return values.
+* errors, known:                         Bugs.
+* errors, linking:                       Link errors.
+* errors, list of:                       Common errors.
+* errors, reporting <1>:                 Bug reports.
+* errors, reporting:                     Introduction.
+* escape characters:                     Literals.
+* estimating, query performance:         Estimating performance.
+* example option:                        mysqld_multi.
+* examples, compressed tables:           myisampack.
+* examples, myisamchk output:            Table-info.
+* examples, queries:                     Examples.
+* Excel:                                 MyODBC clients.
+* execute, mysql option:                 mysql.
+* expression aliases <1>:                Group by functions.
+* expression aliases:                    SELECT.
+* expressions, extended:                 Pattern matching.
+* extended email support:                Extended email support.
+* extensions, to ANSI SQL:               Compatibility.
+* extracting, dates:                     Date calculations.
+* fatal signal 11:                       Compilation problems.
+* features of MySQL:                     Features.
+* files, binary log:                     Binary log.
+* files, config.cache:                   Compilation problems.
+* files, error messages:                 Languages.
+* files, log <1>:                        Log file maintenance.
+* files, log:                            configure options.
+* files, not found message:              File permissions.
+* files, permissions:                    File permissions.
+* files, query log:                      Query log.
+* files, repairing:                      myisamchk repair options.
+* files, script:                         Batch mode.
+* files, size limits:                    Table size.
+* files, slow query log:                 Slow query log.
+* files, text:                           mysqlimport.
+* files, tmp:                            mysql_install_db.
+* files, update log:                     Update log.
+* files,my.cnf:                          Replication Features.
+* floating-point number:                 Column types.
+* floats:                                Number syntax.
+* flush tables:                          mysqladmin.
+* force, mysql option:                   mysql.
+* foreign keys <1>:                      ALTER TABLE.
+* foreign keys <2>:                      example-Foreign keys.
+* foreign keys:                          Missing Foreign Keys.
+* foreign keys, reasons not to use:      Broken Foreign KEY.
+* forums, Tek-Tips:                      Useful Links.
+* free licensing:                        Copyright.
+* FreeBSD troubleshooting:               Compilation problems.
+* full disk:                             Full disk.
+* full-text search:                      Fulltext Search.
+* FULLTEXT:                              Fulltext Search.
+* functionality, missing:                Missing functions.
+* functions for SELECT and WHERE clauses: Functions.
+* functions, C API:                      C API function overview.
+* functions, grouping:                   Parenthesis.
+* functions, native, adding:             Adding native function.
+* functions, new:                        Adding functions.
+* functions, useful:                     Contrib.
+* functions, user-definable, adding:     Adding UDF.
+* functions, user-defined:               Adding functions.
+* gcc:                                   configure options.
+* gdb, using:                            Using gdb on mysqld.
+* general information:                   Introduction.
+* General Public License:                What-is.
+* General Public License, MySQL:         Licensing policy.
+* getting MySQL:                         Getting MySQL.
+* global privileges:                     GRANT.
+* goals of MySQL:                        What-is.
+* GPL, General Public License:           GPL license.
+* GPL, GNU General Public License:       GPL license.
+* grant tables:                          Request access.
+* grant tables, re-creating:             Default privileges.
+* grant tables, sorting <1>:             Request access.
+* grant tables, sorting:                 Connection access.
+* granting, privleges:                   GRANT.
+* GROUP BY, aliases in:                  Group by functions.
+* GROUP BY, extensions to ANSI SQL <1>:  Group by functions.
+* GROUP BY, extensions to ANSI SQL:      SELECT.
+* grouping, expressions:                 Parenthesis.
+* handling, errors:                      UDF return values.
+* HEAP table type:                       Table types.
+* help option:                           mysqld_multi.
+* help, mysql option:                    mysql.
+* history file <1>:                      Client-Side Overview.
+* history file:                          Server-Side Overview.
+* history of MySQL:                      History.
+* host table:                            Request access.
+* host table, sorting:                   Request access.
+* host, mysql option:                    mysql.
+* hostname caching:                      DNS.
+* hostname, default:                     Connecting.
+* HP-UX, binary distribution:            Binary notes-HP-UX.
+* html, mysql option:                    mysql.
+* ID, unique:                            Getting unique ID.
+* ignore-space, mysql option:            mysql.
+* importing, data:                       mysqlimport.
+* increasing, performance:               Replication FAQ.
+* increasing, speed:                     Replication.
+* indexes:                               CREATE INDEX.
+* indexes, and BLOB columns:             CREATE TABLE.
+* indexes, and IS NULL:                  MySQL indexes.
+* indexes, and LIKE:                     MySQL indexes.
+* indexes, and NULL values:              CREATE TABLE.
+* indexes, and TEXT columns:             CREATE TABLE.
+* indexes, block size:                   SHOW VARIABLES.
+* indexes, columns:                      Indexes.
+* indexes, leftmost prefix of:           MySQL indexes.
+* indexes, multi-column:                 Multiple-column indexes.
+* indexes, multi-part:                   CREATE INDEX.
+* indexes, names:                        Legal names.
+* indexes, use of:                       MySQL indexes.
+* InnoDB table type:                     Table types.
+* InnoDB tables:                         Commit-rollback.
+* INSERT DELAYED:                        INSERT DELAYED.
+* inserting, speed of:                   Insert speed.
+* installation layouts:                  Installation layouts.
+* installation overview:                 Installing source.
+* Installing many servers:               Installing many servers.
+* installing, binary distribution:       Installing binary.
+* installing, overview:                  Installing.
+* installing, Perl:                      Perl support.
+* installing, Perl on Windows:           ActiveState Perl.
+* installing, source distribution:       Installing source.
+* installing, user-defined functions:    UDF compiling.
+* integers:                              Number syntax.
+* interface builder:                     Unireg.
+* internal compiler errors:              Compilation problems.
+* internal locking:                      Internal locking.
+* internals:                             MySQL internals.
+* Internet Service Providers:            ISP.
+* ISAM table handler:                    Stability.
+* ISAM table type:                       Table types.
+* ISP services:                          ISP.
+* Java connectivity:                     Java.
+* JDBC <1>:                              Contrib.
+* JDBC:                                  Java.
+* jobs at MySQL:                         Contact information.
+* key space, MyISAM:                     Key space.
+* keys:                                  Indexes.
+* keys, foreign <1>:                     example-Foreign keys.
+* keys, foreign:                         Missing Foreign Keys.
+* keys, multi-column:                    Multiple-column indexes.
+* keys, searching on two:                Searching on two keys.
+* keywords:                              Reserved words.
+* known errors:                          Bugs.
+* language support:                      Languages.
+* last row, unique ID:                   Getting unique ID.
+* layout of installation:                Installation layouts.
+* leftmost prefix of indexes:            MySQL indexes.
+* legal names:                           Legal names.
+* LGPL, GNU Library General Public License: LGPL license.
+* LGPL, Lesser General Public License:   LGPL license.
+* library, mysqlclient:                  Clients.
+* licensing costs:                       Cost.
+* licensing policy:                      Licensing policy.
+* licensing terms:                       Licensing and Support.
+* licensing, contact information:        Contact information.
+* licensing, examples:                   Licensing examples.
+* licensing, free:                       Copyright.
+* limitations, design:                   Design Limitations.
+* limits, file size:                     Table size.
+* linking:                               Building clients.
+* linking, errors:                       Link errors.
+* linking, problems:                     C API linking problems.
+* linking, speed:                        Compile and link options.
+* links, symbolic:                       Symbolic links.
+* Linux, binary distribution:            Binary notes-Linux.
+* literals:                              Literals.
+* loading, tables:                       Loading tables.
+* locking:                               System.
+* locking methods:                       Locking methods.
+* locking, tables:                       Internal locking.
+* Log files:                             Log Files.
+* log files:                             configure options.
+* log files, maintaining:                Log file maintenance.
+* log files, names:                      Backup.
+* log option:                            mysqld_multi.
+* log, changes:                          News.
+* login support:                         Login support.
+* magazines, online:                     Users.
+* mailing address, for customer support: Bug reports.
+* mailing list address:                  Introduction.
+* mailing lists:                         Mailing-list.
+* mailing lists, archive location:       Asking questions.
+* mailing lists, guidelines:             Answering questions.
+* main features of MySQL:                Features.
+* maintaining, log files:                Log file maintenance.
+* maintaining, tables:                   Maintenance regimen.
+* make_binary_distribution <1>:          Client-Side Overview.
+* make_binary_distribution:              Server-Side Overview.
+* manual, available formats:             Manual-info.
+* manual, online location:               Introduction.
+* manual, typographical conventions:     Manual conventions.
+* manuals, about MySQL:                  MySQL Information Sources.
+* master-slave setup:                    Replication Implementation.
+* matching, patterns:                    Pattern matching.
+* max memory used:                       mysqladmin.
+* max_allowed_packet:                    mysql.
+* max_join_size:                         mysql.
+* memory usage, myisamchk:               myisamchk memory.
+* memory use <1>:                        Memory use.
+* memory use:                            mysqladmin.
+* MERGE table type:                      Table types.
+* MERGE tables, defined:                 MERGE.
+* messages, languages:                   Languages.
+* methods, locking:                      Locking methods.
+* mirror sites:                          Getting MySQL.
+* missing functionality:                 Missing functions.
+* MIT-pthreads:                          MIT-pthreads.
+* modes, batch:                          Batch mode.
+* modules, list of:                      Stability.
+* monitor, terminal:                     Tutorial.
+* mSQL compatibility:                    String comparison functions.
+* mSQL vs. MySQL:                        Protocol differences.
+* msql2mysql <1>:                        Client-Side Overview.
+* msql2mysql:                            Server-Side Overview.
+* multi mysqld:                          mysqld_multi.
+* multi-byte characters:                 Multi-byte characters.
+* multi-column indexes:                  Multiple-column indexes.
+* multi-part index:                      CREATE INDEX.
+* multibyte character sets:              Cannot initialize character set.
+* multiple servers:                      Multiple servers.
+* My, derivation:                        History.
+* my.cnf file:                           Replication Features.
+* MyISAM table type:                     Table types.
+* MyISAM, compressed tables:             myisampack.
+* myisamchk <1>:                         Client-Side Overview.
+* myisamchk <2>:                         Server-Side Overview.
+* myisamchk:                             configure options.
+* myisamchk, example output:             Table-info.
+* myisamchk, options:                    myisamchk general options.
+* myisampack <1>:                        Silent column changes.
+* myisampack:                            myisampack.
+* MyODBC:                                ODBC.
+* MyODBC, reporting problems:            MyODBC bug report.
+* mysladmn:                              mysqladmin.
+* mysql:                                 mysql.
+* MySQL AB, defined:                     What is MySQL AB.
+* MySQL binary distribution:             Which version.
+* mysql command line options:            mysql.
+* MySQL history:                         History.
+* MySQL mailing lists:                   Questions.
+* MySQL name:                            History.
+* MySQL source distribution:             Which version.
+* MySQL table types:                     Table types.
+* MySQL tools, conversion:               Using mSQL tools.
+* MySQL usage:                           MySQL customer usage.
+* MySQL version:                         Getting MySQL.
+* MySQL, defined:                        What-is.
+* MySQL, introduction:                   What-is.
+* MySQL, pronunciation:                  What-is.
+* mysql.sock, changing location of:      configure options.
+* mysql.sock, protection:                Problems with mysql.sock.
+* mysql_fix_privilege_tables:            Access denied.
+* mysql_install_db <1>:                  Client-Side Overview.
+* mysql_install_db:                      Server-Side Overview.
+* mysql_install_db script:               mysql_install_db.
+* mysqlaccess <1>:                       Client-Side Overview.
+* mysqlaccess:                           Server-Side Overview.
+* mysqladmin <1>:                        DROP DATABASE.
+* mysqladmin <2>:                        CREATE DATABASE.
+* mysqladmin <3>:                        Client-Side Overview.
+* mysqladmin <4>:                        Server-Side Overview.
+* mysqladmin <5>:                        SHOW STATUS.
+* mysqladmin <6>:                        KILL.
+* mysqladmin:                            FLUSH.
+* mysqladmin option:                     mysqld_multi.
+* mysqlbug <1>:                          Client-Side Overview.
+* mysqlbug:                              Server-Side Overview.
+* mysqlbug script:                       Bug reports.
+* mysqlbug script, location:             Introduction.
+* mysqlclient library:                   Clients.
+* mysqld <1>:                            Client-Side Overview.
+* mysqld:                                Server-Side Overview.
+* mysqld option:                         mysqld_multi.
+* mysqld options <1>:                    Server parameters.
+* mysqld options:                        Command-line options.
+* mysqld server, buffer sizes:           Server parameters.
+* mysqld, starting:                      Changing MySQL user.
+* mysqld-max:                            mysqld-max.
+* mysqld_multi:                          mysqld_multi.
+* mysqldump <1>:                         mysqldump.
+* mysqldump <2>:                         Client-Side Overview.
+* mysqldump <3>:                         Server-Side Overview.
+* mysqldump:                             Upgrading-to-arch.
+* mysqlimport <1>:                       LOAD DATA.
+* mysqlimport <2>:                       mysqlimport.
+* mysqlimport <3>:                       Client-Side Overview.
+* mysqlimport <4>:                       Server-Side Overview.
+* mysqlimport:                           Upgrading-to-arch.
+* mysqlshow <1>:                         Client-Side Overview.
+* mysqlshow:                             Server-Side Overview.
+* mysqltest, MySQL Test Suite:           MySQL test suite.
+* named pipes:                           Windows running.
+* names:                                 Legal names.
+* names, case-sensitivity:               Name case sensitivity.
+* names, variables:                      Variables.
+* naming, releases of MySQL:             Which version.
+* native functions, adding:              Adding native function.
+* native thread support:                 Which OS.
+* negative values:                       Number syntax.
+* net etiquette <1>:                     Answering questions.
+* net etiquette:                         Asking questions.
+* net_buffer_length:                     mysql.
+* netmask notation, in mysql.user table: Connection access.
+* new procedures, adding:                Adding procedures.
+* new users, adding:                     Installing binary.
+* news sites:                            Users.
+* no matching rows:                      No matching rows.
+* no-auto-rehash, mysql option:          mysql.
+* no-log option:                         mysqld_multi.
+* no-named-commands, mysql option:       mysql.
+* no-pager, mysql option:                mysql.
+* no-tee, mysql option:                  mysql.
+* non-delimited strings:                 DATETIME.
+* Non-transactional tables:              Non-transactional tables.
+* NULL value:                            Working with NULL.
+* NULL values, and AUTO_INCREMENT columns: Problems with NULL.
+* NULL values, and indexes:              CREATE TABLE.
+* NULL values, and TIMESTAMP columns:    Problems with NULL.
+* NULL values, vs. empty values:         Problems with NULL.
+* NULL, testing for null <1>:            Control flow functions.
+* NULL, testing for null:                Comparison Operators.
+* numbers:                               Number syntax.
+* numeric types:                         Storage requirements.
+* ODBC:                                  ODBC.
+* ODBC compatibility <1>:                News-3.21.15.
+* ODBC compatibility <2>:                CREATE TABLE.
+* ODBC compatibility <3>:                JOIN.
+* ODBC compatibility <4>:                Comparison Operators.
+* ODBC compatibility <5>:                Column types.
+* ODBC compatibility:                    Legal names.
+* ODBC, administrator:                   ODBC administrator.
+* odbcadmin program:                     MyODBC clients.
+* Old Photo Album:                       Useful Links.
+* OLEDB:                                 Contrib.
+* one-database, mysql option:            mysql.
+* online location of manual:             Introduction.
+* online magazines:                      Users.
+* open source, defined:                  What-is.
+* open tables <1>:                       Open tables.
+* open tables:                           mysqladmin.
+* opening, tables:                       Table cache.
+* opens:                                 mysqladmin.
+* operating systems, file size limits:   Table size.
+* operating systems, supported:          Which OS.
+* operating systems, Windows versus Unix: Windows vs Unix.
+* operations, arithmetic:                Arithmetic functions.
+* operators, cast:                       Case Sensitivity Operators.
+* optimization, tips:                    Tips.
+* optimizations:                         Where optimizations.
+* optimizing, DISTINCT:                  DISTINCT optimization.
+* optimizing, LEFT JOIN:                 LEFT JOIN optimization.
+* optimizing, LIMIT:                     LIMIT optimization.
+* optimizing, tables:                    Optimization.
+* option files:                          Option files.
+* options, command line, mysql:          mysql.
+* options, command-line:                 Command-line options.
+* options, configure:                    configure options.
+* options, myisamchk:                    myisamchk general options.
+* options, provided by MySQL:            Tutorial.
+* options, replication:                  Replication Features.
+* Oracle compatibility <1>:              Group by functions.
+* Oracle compatibility <2>:              DESCRIBE.
+* Oracle compatibility:                  Extensions to ANSI.
+* ORDER BY, aliases in:                  Group by functions.
+* overview:                              Introduction.
+* pack_isam:                             myisampack.
+* pager, mysql option:                   mysql.
+* parameters, server:                    Server parameters.
+* partnering with MySQL:                 Contact information.
+* password encryption, reversibility of: Miscellaneous functions.
+* password option:                       mysqld_multi.
+* password, mysql option:                mysql.
+* password, root user:                   Default privileges.
+* passwords, for users:                  User names.
+* passwords, forgotten:                  Resetting permissions.
+* passwords, resetting:                  Resetting permissions.
+* passwords, security:                   What Privileges.
+* passwords, setting <1>:                SET OPTION.
+* passwords, setting <2>:                Passwords.
+* passwords, setting:                    GRANT.
+* patches, applying:                     Applying patches.
+* pattern matching:                      Pattern matching.
+* payment information:                   Payment information.
+* performance, benchmarks:               Custom Benchmarks.
+* performance, disk issues:              Disk issues.
+* performance, estimating:               Estimating performance.
+* performance, improving <1>:            Data size.
+* performance, improving:                Replication FAQ.
+* Perl API:                              Perl.
+* Perl DBI/DBD, installation problems:   Perl support problems.
+* Perl, installing:                      Perl support.
+* Perl, installing on Windows:           ActiveState Perl.
+* Perl, modules:                         Contrib.
+* permission checks, effect on speed:    Query Speed.
+* perror:                                perror.
+* PhoneSweep:                            Useful Links.
+* PHP API:                               PHP.
+* PHP, web sites:                        Users.
+* Pluribus:                              Useful Links.
+* port, mysql option:                    mysql.
+* portability:                           Portability.
+* portability, types:                    Other-vendor column types.
+* porting, to other systems:             Porting.
+* post-install, many servers:            Installing many servers.
+* post-installation, setup and testing:  Post-installation.
+* PostgreSQL compatibility:              Extensions to ANSI.
+* PostgreSQL vs. MySQL, benchmarks:      MySQL-PostgreSQL benchmarks.
+* PostgreSQL vs. MySQL, overview:        Compare PostgreSQL.
+* PostgreSQL/MySQL, features:            MySQL-PostgreSQL features.
+* PostgreSQL/MySQL, strategies:          Compare PostgreSQL.
+* prices, licensing and support:         Cost.
+* privilege information, location:       Privileges provided.
+* privilege system:                      What Privileges.
+* privilege system, described:           Privileges.
+* privilege, changes:                    Request access.
+* privileges, access:                    Privilege system.
+* privileges, adding:                    Adding users.
+* privileges, default:                   Default privileges.
+* privileges, display:                   SHOW GRANTS.
+* privileges, granting:                  GRANT.
+* privileges, revoking:                  GRANT.
+* problems, access denied errors:        Error Access denied.
+* problems, common errors:               Problems.
+* problems, compiling:                   Compilation problems.
+* problems, DATE columns:                Using DATE.
+* problems, date values:                 DATETIME.
+* problems, installing on IBM-AIX:       IBM-AIX.
+* problems, installing on Solaris:       Solaris.
+* problems, installing Perl:             Perl support problems.
+* problems, linking:                     Link errors.
+* problems, ODBC:                        MyODBC bug report.
+* problems, reporting:                   Bug reports.
+* problems, starting the server:         Starting server.
+* problems, table locking:               Table locking.
+* problems, timezone:                    Timezone problems.
+* procedures, adding:                    Adding procedures.
+* procedures, stored:                    Missing Triggers.
+* process support:                       Which OS.
+* processes, display:                    SHOW PROCESSLIST.
+* processing, arguments:                 UDF arguments.
+* products, selling:                     Licensing examples.
+* programs, client:                      Building clients.
+* programs, contributed:                 Contrib.
+* programs, crash-me:                    Portability.
+* programs, list of <1>:                 Client-Side Overview.
+* programs, list of:                     Server-Side Overview.
+* prompts, meanings:                     Entering queries.
+* pronunciation, MySQL:                  What-is.
+* Protocol mismatch:                     Upgrading-from-3.20.
+* pwPage:                                Useful Links.
+* Python APIs:                           Python.
+* queries, C API results:                NULL mysql_store_result.
+* queries, entering:                     Entering queries.
+* queries, estimating performance:       Estimating performance.
+* queries, examples:                     Examples.
+* queries, speed of:                     Query Speed.
+* queries, Twin Studeis project:         Twin.
+* query log:                             Query log.
+* questions:                             mysqladmin.
+* questions, answering:                  Answering questions.
+* quick, mysql option:                   mysql.
+* quotes, in strings:                    String syntax.
+* quoting:                               String syntax.
+* quoting binary data:                   String syntax.
+* quoting strings:                       Perl DBI Class.
+* raw, mysql option:                     mysql.
+* re-creating, grant tables:             Default privileges.
+* reconfiguring:                         Compilation problems.
+* recovery, from crash:                  Crash recovery.
+* RedHat Package Manager <1>:            Installing binary.
+* RedHat Package Manager:                Linux-RPM.
+* reducing, data size:                   Data size.
+* references:                            ALTER TABLE.
+* regex:                                 Regexp.
+* regular expression syntax, described:  Regexp.
+* related information URLs:              Useful Links.
+* relational databases, defined:         What-is.
+* release numbers:                       Which version.
+* releases, naming scheme:               Which version.
+* releases, testing:                     Which version.
+* releases, updating:                    Many versions.
+* reordering, columns:                   Change column order.
+* repair options, myisamchk:             myisamchk repair options.
+* repairing, tables:                     Repair.
+* replace <1>:                           Client-Side Overview.
+* replace:                               Server-Side Overview.
+* replication:                           Replication.
+* replication, commands:                 Replication SQL.
+* replication, two-way:                  Replication FAQ.
+* reporting, bugs:                       Bug reports.
+* reporting, errors <1>:                 Questions.
+* reporting, errors:                     Introduction.
+* reporting, MyODBC problems:            MyODBC bug report.
+* reserved words, exceptions:            Reserved words.
+* restarting, the server:                Post-installation.
+* retrieving, data:                      Stability.
+* retrieving, data from tables:          Retrieving data.
+* return values, UDFs:                   UDF return values.
+* revoking, privleges:                   GRANT.
+* root password:                         Default privileges.
+* root user, password resetting:         Resetting permissions.
+* rounding errors <1>:                   Mathematical functions.
+* rounding errors:                       Column types.
+* rows, counting:                        Counting rows.
+* rows, deleting:                        Deleting from related tables.
+* rows, locking:                         Commit-rollback.
+* rows, matching problems:               No matching rows.
+* rows, selecting:                       Selecting rows.
+* rows, sorting:                         Sorting rows.
+* RPM file:                              Linux-RPM.
+* RPM, defined:                          Installing binary.
+* RPMs, for common tools:                Contrib.
+* RTS-threads:                           RTS-threads.
+* running configure after prior invocation: Compilation problems.
+* running, a web server:                 Web server.
+* running, ANSI mode:                    ANSI mode.
+* running, batch mode:                   Batch mode.
+* running, multiple servers:             Multiple servers.
+* running, queries:                      Entering queries.
+* safe-mode command:                     mysql.
+* safe-updates, mysql option:            mysql.
+* safe_mysqld:                           safe_mysqld.
+* SCMDB:                                 Useful Links.
+* script files:                          Batch mode.
+* scripts <1>:                           mysql.
+* scripts <2>:                           mysqld_multi.
+* scripts:                               safe_mysqld.
+* scripts, mysql_install_db:             mysql_install_db.
+* scripts, mysqlbug:                     Bug reports.
+* search engines, web:                   Users.
+* searching, and case-sensitivity:       Case sensitivity.
+* searching, full-text:                  Fulltext Search.
+* searching, MySQL webpages:             Asking questions.
+* searching, two keys:                   Searching on two keys.
+* security system:                       Privilege system.
+* security, against crackers:            Security.
+* select_limit:                          mysql.
+* selecting, databases:                  Creating database.
+* selling products:                      Licensing examples.
+* sequence emulation:                    Miscellaneous functions.
+* server administration:                 mysqladmin.
+* server, connecting <1>:                Connecting.
+* server, connecting:                    Connecting-disconnecting.
+* server, debugging:                     Debugging server.
+* server, disconnecting:                 Connecting-disconnecting.
+* server, restart:                       Post-installation.
+* server, shutdown:                      Post-installation.
+* server, starting:                      Post-installation.
+* server, starting and stopping:         Automatic start.
+* server, starting problems:             Starting server.
+* servers, multiple:                     Multiple servers.
+* services:                              Users.
+* services, ISP:                         ISP.
+* services, web:                         ISP.
+* SET, size:                             Storage requirements.
+* set-variable, mysql option:            mysql.
+* setting, passwords:                    Passwords.
+* setup, post-installation:              Post-installation.
+* shell syntax:                          Manual conventions.
+* showing, database information:         mysqlshow.
+* shutting down, the server:             Post-installation.
+* silent column changes:                 Silent column changes.
+* silent, mysql option:                  mysql.
+* size of tables:                        Table size.
+* sizes, display:                        Column types.
+* skip-column-names, mysql option:       mysql.
+* skip-line-numbers, mysql option:       mysql.
+* slow queries:                          mysqladmin.
+* slow query log:                        Slow query log.
+* socket location, changing:             configure options.
+* socket, mysql option:                  mysql.
+* Solaris installation problems:         Solaris.
+* Solaris troubleshooting:               Compilation problems.
+* sorting, character sets:               Character sets.
+* sorting, data:                         Sorting rows.
+* sorting, grant tables <1>:             Request access.
+* sorting, grant tables:                 Connection access.
+* sorting, table rows:                   Sorting rows.
+* source distribution, installing:       Installing source.
+* speed, compiling:                      Compile and link options.
+* speed, increasing:                     Replication.
+* speed, inserting:                      Insert speed.
+* speed, linking:                        Compile and link options.
+* speed, of queries <1>:                 SELECT speed.
+* speed, of queries:                     Query Speed.
+* SQL commands, replication:             Replication SQL.
+* SQL, defined:                          What-is.
+* sql_yacc.cc problems:                  Compilation problems.
+* square brackets:                       Column types.
+* SSH:                                   Windows and SSH.
+* stability:                             Stability.
+* standards compatibility:               Compatibility.
+* Starting many servers:                 Installing many servers.
+* starting, comments:                    Missing comments.
+* starting, mysqld:                      Changing MySQL user.
+* starting, the server:                  Post-installation.
+* starting, the server automatically:    Automatic start.
+* startup options, default:              Option files.
+* startup parameters:                    Server parameters.
+* startup parameters, mysql:             mysql.
+* startup parameters, tuning:            System.
+* statically, compiling:                 configure options.
+* status command:                        mysql.
+* status command, results:               mysqladmin.
+* status, tables:                        SHOW TABLE STATUS.
+* stopping, the server:                  Automatic start.
+* storage of data:                       Design.
+* storage requirements, column type:     Storage requirements.
+* storage space, minimizing:             Data size.
+* stored procedures and triggers, defined: Missing Triggers.
+* storing, data:                         Stability.
+* string collating:                      String collating.
+* string comparisons, case sensitivity:  String comparison functions.
+* string types:                          String types.
+* strings, defined:                      Literals.
+* strings, escaping characters:          Literals.
+* strings, non-delimited:                DATETIME.
+* strings, quoting:                      Perl DBI Class.
+* striping, defined:                     Disk issues.
+* sub-selects:                           Missing Sub-selects.
+* superuser:                             Default privileges.
+* support costs:                         Cost.
+* support terms:                         Licensing and Support.
+* support, BDB Tables:                   Table handler support.
+* support, for operating systems:        Which OS.
+* support, InnoDB Tables:                Table handler support.
+* support, licensing:                    Licensing policy.
+* support, mailing address:              Bug reports.
+* support, types:                        Support.
+* suppression, default values:           configure options.
+* Sybase compatibility:                  USE.
+* symbolic links <1>:                    Symbolic links.
+* symbolic links:                        Windows symbolic links.
+* syntax, regular expression:            Regexp.
+* system optimization:                   System.
+* system table:                          EXPLAIN.
+* system, privilege:                     What Privileges.
+* system, security:                      Privilege system.
+* table aliases:                         SELECT.
+* table cache:                           Table cache.
+* table is full <1>:                     Full table.
+* table is full:                         SET OPTION.
+* table names, case sensitivity <1>:     Name case sensitivity.
+* table names, case sensitivity:         Extensions to ANSI.
+* table types, choosing:                 Table types.
+* table, mysql option:                   mysql.
+* tables, BDB:                           BDB.
+* tables, Berkeley DB:                   BDB.
+* tables, changing column order:         Change column order.
+* tables, checking:                      myisamchk check options.
+* tables, closing:                       Table cache.
+* tables, compressed:                    myisampack.
+* tables, compressed format:             Compressed format.
+* tables, constant <1>:                  Where optimizations.
+* tables, constant:                      EXPLAIN.
+* tables, counting rows:                 Counting rows.
+* tables, creating:                      Creating tables.
+* tables, defragment <1>:                Dynamic format.
+* tables, defragment:                    Maintenance regimen.
+* tables, defragmenting:                 OPTIMIZE TABLE.
+* tables, deleting rows:                 Deleting from related tables.
+* tables, displaying:                    mysqlshow.
+* tables, displaying status:             SHOW TABLE STATUS.
+* tables, dumping <1>:                   mysqlhotcopy.
+* tables, dumping:                       mysqldump.
+* tables, dynamic:                       Dynamic format.
+* tables, error checking:                Check.
+* tables, flush:                         mysqladmin.
+* tables, fragmentation:                 OPTIMIZE TABLE.
+* tables, grant:                         Request access.
+* tables, HEAP:                          HEAP.
+* tables, host:                          Request access.
+* tables, improving performance:         Data size.
+* tables, information:                   Table-info.
+* tables, information about:             Getting information.
+* tables, ISAM:                          ISAM.
+* tables, loading data:                  Loading tables.
+* tables, locking:                       Internal locking.
+* tables, maintenance regimen:           Maintenance regimen.
+* tables, maximum size:                  Table size.
+* tables, merging:                       MERGE.
+* tables, multiple:                      Multiple tables.
+* tables, names:                         Legal names.
+* tables, open:                          Open tables.
+* tables, opening:                       Table cache.
+* tables, optimizing:                    Optimization.
+* tables, repairing:                     Repair.
+* tables, retrieving data:               Retrieving data.
+* tables, selecting columns:             Selecting columns.
+* tables, selecting rows:                Selecting rows.
+* tables, sorting rows:                  Sorting rows.
+* tables, system:                        EXPLAIN.
+* tables, too many:                      Creating many tables.
+* tables, unique ID for last row:        Getting unique ID.
+* tables, updating:                      Commit-rollback.
+* tar, problems on Solaris:              Solaris.
+* Tcl APIs:                              Tcl.
+* tcp-ip option:                         mysqld_multi.
+* TCP/IP:                                Windows running.
+* technical support, by email:           Basic email support.
+* technical support, licensing:          Licensing policy.
+* technical support, mailing address:    Bug reports.
+* tee, mysql option:                     mysql.
+* Tek-Tips forums:                       Useful Links.
+* temporary file, write access:          mysql_install_db.
+* temporary tables, problems:            Temporary table problems.
+* terminal monitor, defined:             Tutorial.
+* testing mysqld, mysqltest:             MySQL test suite.
+* testing, connection to the server:     Connection access.
+* testing, installation:                 Post-installation.
+* testing, of MySQL releases:            Which version.
+* testing, post-installation:            Post-installation.
+* testing, the server:                   Post-installation.
+* Texinfo:                               Manual-info.
+* TEXT columns, default values:          BLOB.
+* TEXT columns, indexing:                CREATE TABLE.
+* text files, importing:                 mysqlimport.
+* TEXT, size:                            Storage requirements.
+* thread packages, differences between:  Thread packages.
+* thread support:                        Which OS.
+* thread support, non-native:            MIT-pthreads.
+* threaded clients:                      Threaded clients.
+* threads <1>:                           MySQL internals.
+* threads:                               mysqladmin.
+* threads, display:                      SHOW PROCESSLIST.
+* threads, RTS:                          RTS-threads.
+* time types:                            Storage requirements.
+* timeout <1>:                           INSERT DELAYED.
+* timeout <2>:                           Miscellaneous functions.
+* timeout:                               SHOW VARIABLES.
+* timeout, connect_timeout variable:     mysql.
+* TIMESTAMP, and NULL values:            Problems with NULL.
+* timezone problems:                     Timezone problems.
+* tips, optimization:                    Tips.
+* ToDo list for MySQL:                   TODO.
+* TODO, symlinks:                        Symbolic links to tables.
+* tools, authentication:                 Contrib.
+* tools, benchmarking:                   Contrib.
+* tools, command line:                   mysql.
+* tools, converting:                     Using mSQL tools.
+* tools, mysqld_multi:                   mysqld_multi.
+* tools, RPMs for:                       Contrib.
+* tools, safe_mysqld:                    safe_mysqld.
+* tools, useful:                         Contrib.
+* tools,, web:                           Contrib.
+* transaction-safe tables:               Commit-rollback.
+* transactions, support:                 Missing Transactions.
+* triggers, stored:                      Missing Triggers.
+* troubleshooting, FreeBSD:              Compilation problems.
+* troubleshooting, Solaris:              Compilation problems.
+* tutorial:                              Tutorial.
+* Twin Studies, queries:                 Twin.
+* type conversions:                      Comparison Operators.
+* types, columns <1>:                    Choosing types.
+* types, columns:                        Column types.
+* types, date:                           Storage requirements.
+* types, Date and Time:                  Date and time types.
+* types, numeric:                        Storage requirements.
+* types, of support:                     Support.
+* types, of tables:                      Table types.
+* types, portability:                    Other-vendor column types.
+* types, strings:                        String types.
+* types, time:                           Storage requirements.
+* typographical conventions:             Manual conventions.
+* UDFs, compiling:                       UDF compiling.
+* UDFs, defined:                         Adding functions.
+* UDFs, return values:                   UDF return values.
+* unbuffered, mysql option:              mysql.
+* unique ID:                             Getting unique ID.
+* Unireg, described:                     Unireg.
+* unloading, tables:                     Retrieving data.
+* update log:                            Update log.
+* updating, releases of MySQL:           Many versions.
+* updating, tables:                      Commit-rollback.
+* upgrading:                             Upgrade.
+* upgrading, 3.20 to 3.21:               Upgrading-from-3.20.
+* upgrading, 3.21 to 3.22:               Upgrading-from-3.21.
+* upgrading, 3.22 to 3.23:               Upgrading-from-3.22.
+* upgrading, different architecture:     Upgrading-to-arch.
+* uptime:                                mysqladmin.
+* URLS for downloading MySQL:            Getting MySQL.
+* URLs to MySQL information:             Useful Links.
+* user names, and passwords:             User names.
+* user option:                           mysqld_multi.
+* user privileges, adding:               Adding users.
+* user table, sorting:                   Connection access.
+* user variables:                        Variables.
+* user, mysql option:                    mysql.
+* user-defined functions, adding <1>:    Adding UDF.
+* user-defined functions, adding:        Adding functions.
+* users, adding:                         Installing binary.
+* users, of MySQL:                       Users.
+* users, root:                           Default privileges.
+* uses, of MySQL:                        Internal use.
+* using multiple disks to start data:    Windows symbolic links.
+* valid numbers, examples:               Number syntax.
+* VARCHAR, size:                         Storage requirements.
+* variables, mysqld:                     Server parameters.
+* variables, status:                     SHOW STATUS.
+* variables, user:                       Variables.
+* variables, values:                     SHOW VARIABLES.
+* verbose, mysql option:                 mysql.
+* version option:                        mysqld_multi.
+* version, choosing:                     Which version.
+* version, latest:                       Getting MySQL.
+* version, mysql option:                 mysql.
+* vertical, mysql option:                mysql.
+* views:                                 Missing Views.
+* virtual memory, problems while compiling: Compilation problems.
+* Visual Basic:                          MyODBC clients.
+* wait, mysql option:                    mysql.
+* Web clients:                           Contrib.
+* web pages, miscellaneous:              Users.
+* web search engines:                    Users.
+* web server, running:                   Web server.
+* web sites:                             Users.
+* web tools:                             Contrib.
+* Web+:                                  Useful Links.
+* Webmerger:                             Useful Links.
+* wild cards, in mysql.columns_priv table: Request access.
+* wild cards, in mysql.db table:         Request access.
+* wild cards, in mysql.host table:       Request access.
+* wild cards, in mysql.tables_priv table: Request access.
+* wildcards, and LIKE:                   MySQL indexes.
+* wildcards, in mysql.user table:        Connection access.
+* Windows:                               ODBC.
+* Windows, compiling on:                 Windows compiling.
+* Windows, open issues:                  Windows vs Unix.
+* Windows, versus Unix:                  Windows vs Unix.
+* Word program:                          MyODBC clients.
+* wrappers, Eiffel:                      Eiffel.
+* write access, tmp:                     mysql_install_db.
+* Year 2000 compliance:                  Year 2000 compliance.
+* Year 2000 issues:                      Y2K issues.
+
+
+Tag Table:
+Node: Top166
+Node: Introduction1802
+Node: MySQL and MySQL AB5046
+Node: What-is5730
+Node: What is MySQL AB9306
+Node: Manual-info13095
+Node: Manual conventions13810
+Node: History17422
+Node: Features18285
+Node: Stability23512
+Node: Table size30114
+Node: Year 2000 compliance32208
+Node: MySQL Information Sources36461
+Node: MySQL-Books36885
+Node: General-SQL51000
+Node: Useful Links51774
+Node: Questions70303
+Node: Mailing-list70824
+Node: Asking questions77013
+Node: Bug reports77959
+Node: Answering questions92813
+Node: Licensing and Support93616
+Node: Licensing policy94452
+Node: Copyright97859
+Node: Copyright changes99421
+Node: Licensing examples99661
+Node: Products that use MySQL100393
+Node: ISP102276
+Node: Web server103255
+Node: Cost103739
+Node: Payment information107232
+Node: Contact information108451
+Node: Support109821
+Node: Basic email support111106
+Node: Extended email support114334
+Node: Login support115827
+Node: Extended login support117463
+Node: Telephone support118823
+Node: Table handler support119364
+Node: Compatibility120223
+Node: Extensions to ANSI121189
+Node: Differences from ANSI128103
+Node: ANSI mode129106
+Node: Missing functions129996
+Node: Missing Sub-selects130911
+Node: Missing SELECT INTO TABLE133157
+Node: Missing Transactions133768
+Node: Missing Triggers140041
+Node: Missing Foreign Keys141245
+Node: Broken Foreign KEY143089
+Node: Missing Views145417
+Node: Missing comments146291
+Node: Standards147988
+Node: Commit-rollback148202
+Node: Bugs153313
+Node: Comparisons162878
+Node: Compare mSQL163656
+Node: Using mSQL tools171087
+Node: Protocol differences172528
+Node: Syntax differences173777
+Node: Compare PostgreSQL178671
+Node: MySQL-PostgreSQL goals180187
+Node: MySQL-PostgreSQL features182493
+Node: MySQL-PostgreSQL benchmarks192714
+Node: TODO204818
+Node: TODO MySQL 4.0205757
+Node: TODO future209292
+Node: TODO sometime219535
+Node: TODO unplanned223131
+Node: Installing223378
+Node: Quick Standard Installation225145
+Node: Linux-RPM225476
+Node: Windows installation227773
+Node: General Installation Issues230874
+Node: Getting MySQL231440
+Node: Which OS238458
+Node: Which version243972
+Node: Installation layouts250992
+Node: Many versions253081
+Node: MySQL binaries255431
+Node: Installing source258634
+Node: Quick install261512
+Node: Applying patches267097
+Node: configure options268487
+Node: Installing source tree276195
+Node: Compilation problems279894
+Node: MIT-pthreads286463
+Node: Post-installation289787
+Node: mysql_install_db299553
+Node: Starting server303529
+Node: Automatic start309201
+Node: Upgrade311717
+Node: Upgrading-from-3.22313891
+Node: Upgrading-from-3.21318455
+Node: Upgrading-from-3.20319922
+Node: Upgrading-to-arch322497
+Node: Operating System Specific Notes325854
+Node: Linux326456
+Node: Binary notes-Linux338951
+Node: Linux-x86342067
+Node: Linux-SPARC344249
+Node: Linux-Alpha344993
+Node: Linux-PowerPC346970
+Node: Linux-MIPS347195
+Node: Linux-IA64347529
+Node: Windows348321
+Node: Win95 start349120
+Node: NT start351025
+Node: Windows running353871
+Node: Windows and SSH357352
+Node: Windows symbolic links359022
+Node: Windows compiling360577
+Node: Windows vs Unix361270
+Node: Solaris368086
+Node: Solaris 2.7373860
+Node: Solaris x86376104
+Node: BSD Notes376883
+Node: FreeBSD377476
+Node: NetBSD379980
+Node: OpenBSD380213
+Node: OpenBSD 2.5380439
+Node: OpenBSD 2.8380737
+Node: BSDI381179
+Node: BSDI2381446
+Node: BSDI3382309
+Node: BSDI4383698
+Node: Mac OS X384847
+Node: Mac OS X Public Beta385107
+Node: Mac OS X Server385378
+Node: Other Unix Notes386171
+Node: Binary notes-HP-UX386871
+Node: HP-UX 10.20388742
+Node: HP-UX 11.x389912
+Node: IBM-AIX393957
+Node: SunOS397993
+Node: Alpha-DEC-UNIX398642
+Node: Alpha-DEC-OSF1401353
+Node: SGI-Irix404672
+Node: SCO407350
+Node: SCO Unixware412877
+Node: OS/2413431
+Node: BeOS415425
+Node: Novell Netware415983
+Node: Tutorial416409
+Node: Connecting-disconnecting418420
+Node: Entering queries420252
+Node: Database use428293
+Node: Creating database431321
+Node: Creating tables433101
+Node: Loading tables437290
+Node: Retrieving data440351
+Node: Selecting all441518
+Node: Selecting rows444001
+Node: Selecting columns447230
+Node: Sorting rows449370
+Node: Date calculations451776
+Node: Working with NULL459447
+Node: Pattern matching460925
+Node: Counting rows468669
+Node: Multiple tables472741
+Node: Getting information477168
+Node: Examples479473
+Node: example-Maximum-column481511
+Node: example-Maximum-row481858
+Node: example-Maximum-column-group482941
+Node: example-Maximum-column-group-row483467
+Node: example-user-variables485555
+Node: example-Foreign keys486304
+Node: Searching on two keys488923
+Node: Calculating days490120
+Node: Batch mode491041
+Node: Twin493580
+Node: Twin pool494966
+Node: Twin event500001
+Node: Apache500973
+Node: MySQL Database Administration501718
+Node: Configuring MySQL502571
+Node: Command-line options503034
+Node: Option files513427
+Node: Installing many servers519403
+Node: Multiple servers521580
+Node: Privilege system526510
+Node: General security527567
+Node: Security535454
+Node: Privileges options540511
+Node: What Privileges542330
+Node: Privileges542906
+Node: Privileges provided551697
+Node: Connecting557406
+Node: Connection access559719
+Node: Request access567839
+Node: Access denied575906
+Node: User Account Management589687
+Node: GRANT590333
+Node: User names599681
+Node: Privilege changes602280
+Node: Default privileges603559
+Node: Adding users607186
+Node: Passwords615205
+Node: Password security617801
+Node: Disaster Prevention620927
+Node: Backup621645
+Node: BACKUP TABLE624837
+Node: RESTORE TABLE625980
+Node: CHECK TABLE626877
+Node: REPAIR TABLE631421
+Node: Table maintenance633044
+Node: myisamchk syntax635228
+Node: myisamchk general options638508
+Node: myisamchk check options641227
+Node: myisamchk repair options643097
+Node: myisamchk other options646152
+Node: myisamchk memory647582
+Node: Crash recovery649700
+Node: Check652597
+Node: Repair654182
+Node: Optimization660568
+Node: Maintenance regimen661485
+Node: Table-info664288
+Node: Database Administration676805
+Node: OPTIMIZE TABLE677289
+Node: ANALYZE TABLE678762
+Node: FLUSH679814
+Node: KILL682270
+Node: SHOW684120
+Node: SHOW DATABASE INFO685418
+Node: SHOW TABLE STATUS688646
+Node: SHOW STATUS690151
+Node: SHOW VARIABLES700873
+Node: SHOW LOGS724574
+Node: SHOW PROCESSLIST725123
+Node: SHOW GRANTS725961
+Node: SHOW CREATE TABLE726627
+Node: Localization727250
+Node: Character sets727860
+Node: Languages730363
+Node: Adding character set731450
+Node: Character arrays734951
+Node: String collating736776
+Node: Multi-byte characters737495
+Node: Server-Side Scripts738222
+Node: Server-Side Overview738850
+Node: safe_mysqld742445
+Node: mysqld_multi746715
+Node: myisampack754865
+Node: mysqld-max769074
+Node: Client-Side Scripts772619
+Node: Client-Side Overview773582
+Node: mysql777171
+Node: mysqladmin790166
+Node: Using mysqlcheck793502
+Node: mysqldump798204
+Node: mysqlhotcopy805304
+Node: mysqlimport807498
+Node: mysqlshow812275
+Node: perror813511
+Node: Batch Commands814149
+Node: Log Files814901
+Node: Error log816338
+Node: Query log817196
+Node: Update log818198
+Node: Binary log820534
+Node: Slow query log824501
+Node: Log file maintenance825679
+Node: Replication827462
+Node: Replication Intro828407
+Node: Replication Implementation829775
+Node: Replication HOWTO831634
+Node: Replication Features836285
+Node: Replication Options843183
+Node: Replication SQL855090
+Node: Replication FAQ860691
+Node: Replication Problems871353
+Node: MySQL Optimization877097
+Node: Optimize Overview878110
+Node: Design Limitations879963
+Node: Portability880678
+Node: Internal use884033
+Node: MySQL Benchmarks887263
+Node: Custom Benchmarks890493
+Node: Query Speed892223
+Node: EXPLAIN894108
+Node: Estimating performance908263
+Node: SELECT speed909897
+Node: Where optimizations911423
+Node: DISTINCT optimization915761
+Node: LEFT JOIN optimization916556
+Node: LIMIT optimization918661
+Node: Insert speed919986
+Node: Update speed924498
+Node: Delete speed925336
+Node: Tips925774
+Node: Locking Issues934498
+Node: Internal locking934773
+Node: Table locking936862
+Node: Optimizing Database Structure941085
+Node: Design941786
+Node: Data size943316
+Node: MySQL indexes946181
+Node: Indexes953055
+Node: Multiple-column indexes954531
+Node: Table cache956676
+Node: Creating many tables959131
+Node: Open tables959738
+Node: Optimizing the Server960462
+Node: System961035
+Node: Server parameters963346
+Node: Compile and link options968287
+Node: Memory use972189
+Node: DNS977001
+Node: SET OPTION978333
+Node: Disk issues984688
+Node: Symbolic links988754
+Node: Symbolic links to databases989461
+Node: Symbolic links to tables990871
+Node: Reference993806
+Node: Language Structure994853
+Node: Literals995380
+Node: String syntax995961
+Node: Number syntax999585
+Node: Hexadecimal values1000131
+Node: NULL values1000656
+Node: Legal names1001112
+Node: Name case sensitivity1004815
+Node: Variables1006531
+Node: Comments1008745
+Node: Reserved words1010386
+Node: Column types1015359
+Node: Numeric types1026881
+Node: Date and time types1033613
+Node: Y2K issues1037200
+Node: DATETIME1038565
+Node: TIME1049115
+Node: YEAR1052091
+Node: String types1053417
+Node: CHAR1053970
+Node: BLOB1056587
+Node: ENUM1059803
+Node: SET1062631
+Node: Choosing types1065676
+Node: Other-vendor column types1066554
+Node: Storage requirements1067822
+Node: Functions1071830
+Node: Non-typed Operators1073499
+Node: Parenthesis1073903
+Node: Comparison Operators1074238
+Node: Logical Operators1080236
+Node: Control flow functions1081455
+Node: String functions1085070
+Node: String comparison functions1100706
+Node: Case Sensitivity Operators1105209
+Node: Numeric Functions1106195
+Node: Arithmetic functions1106470
+Node: Mathematical functions1107748
+Node: Date and time functions1117458
+Node: Other Functions1134441
+Node: Bit functions1134678
+Node: Miscellaneous functions1135556
+Node: Data Manipulation1145256
+Node: SELECT1145936
+Node: JOIN1155846
+Node: INSERT1160319
+Node: INSERT SELECT1165184
+Node: INSERT DELAYED1166523
+Node: UPDATE1171991
+Node: DELETE1173834
+Node: TRUNCATE1175666
+Node: REPLACE1176438
+Node: LOAD DATA1177634
+Node: DO1195486
+Node: Data Definition1195902
+Node: CREATE DATABASE1196544
+Node: DROP DATABASE1197323
+Node: CREATE TABLE1198903
+Node: Silent column changes1218011
+Node: ALTER TABLE1220023
+Node: RENAME TABLE1229521
+Node: DROP TABLE1230831
+Node: CREATE INDEX1231520
+Node: DROP INDEX1233451
+Node: Basic User Commands1233890
+Node: USE1234215
+Node: DESCRIBE1235239
+Node: Transactional Commands1236008
+Node: COMMIT1236407
+Node: LOCK TABLES1238399
+Node: SET TRANSACTION1244247
+Node: Fulltext Search1245044
+Node: Fulltext restrictions1251895
+Node: Fulltext Fine-tuning1252251
+Node: Fulltext Features to Appear in MySQL 4.01253657
+Node: Fulltext TODO1255074
+Node: Table types1256016
+Node: MyISAM1258786
+Node: Key space1266555
+Node: MyISAM table formats1267690
+Node: Static format1268263
+Node: Dynamic format1269733
+Node: Compressed format1272385
+Node: MyISAM table problems1273995
+Node: Corrupted MyISAM tables1274449
+Node: MyISAM table close1276071
+Node: MERGE1278200
+Node: ISAM1284138
+Node: HEAP1285536
+Node: BDB1288302
+Node: BDB overview1288895
+Node: BDB install1290318
+Node: BDB start1291196
+Node: BDB characteristic1293612
+Node: BDB TODO1297420
+Node: BDB portability1298083
+Node: BDB errors1298972
+Node: InnoDB1300182
+Node: InnoDB overview1301168
+Node: InnoDB start1303527
+Node: InnoDB init1312159
+Node: Error creating InnoDB1314863
+Node: Using InnoDB tables1315426
+Node: Adding and removing1318981
+Node: Backing up1320128
+Node: InnoDB checkpoints1323920
+Node: Moving1325537
+Node: InnoDB transaction model1326621
+Node: InnoDB consistent read1328356
+Node: InnoDB locking reads1329707
+Node: InnoDB Next-key locking1332129
+Node: InnoDB Locks set1334590
+Node: InnoDB Deadlock detection1337021
+Node: InnoDB Consistent read example1338057
+Node: Implementation1347841
+Node: Table and index1350382
+Node: InnoDB physical structure1351986
+Node: InnoDB Insert buffering1352789
+Node: InnoDB Adaptive hash1354189
+Node: InnoDB Physical record1355328
+Node: File space management1357863
+Node: InnoDB Disk i/o1358203
+Node: InnoDB File space1360837
+Node: InnoDB File Defragmenting1363228
+Node: Error handling1364274
+Node: InnoDB restrictions1365516
+Node: InnoDB contact information1368365
+Node: Clients1368841
+Node: PHP1369634
+Node: PHP problems1370179
+Node: Perl1371179
+Node: DBI with DBD1371664
+Node: Perl DBI Class1372591
+Node: DBI-info1386525
+Node: ODBC1387010
+Node: Installing MyODBC1387868
+Node: ODBC administrator1391090
+Node: MyODBC connect parameters1392592
+Node: ODBC Problems1396094
+Node: MyODBC clients1397278
+Node: ODBC and last_insert_id1408834
+Node: MyODBC bug report1409750
+Node: C1412132
+Node: C API datatypes1414841
+Node: C API function overview1420945
+Node: C API functions1431761
+Node: mysql_affected_rows1435783
+Node: mysql_close1437342
+Node: mysql_connect1437804
+Node: mysql_change_user1439039
+Node: mysql_character_set_name1440910
+Node: mysql_create_db1441314
+Node: mysql_data_seek1442311
+Node: mysql_debug1442947
+Node: mysql_drop_db1443612
+Node: mysql_dump_debug_info1444569
+Node: mysql_eof1445321
+Node: mysql_errno1447927
+Node: mysql_error1448704
+Node: mysql_escape_string1449661
+Node: mysql_fetch_field1450157
+Node: mysql_fetch_fields1451660
+Node: mysql_fetch_field_direct1452476
+Node: mysql_fetch_lengths1453480
+Node: mysql_fetch_row1455132
+Node: mysql_field_count1456980
+Node: mysql_field_seek1459331
+Node: mysql_field_tell1459985
+Node: mysql_free_result1460467
+Node: mysql_get_client_info1460987
+Node: mysql_get_host_info1461411
+Node: mysql_get_proto_info1461879
+Node: mysql_get_server_info1462331
+Node: mysql_info1462749
+Node: mysql_init1464096
+Node: mysql_insert_id1464860
+Node: mysql_kill1466196
+Node: mysql_list_dbs1466831
+Node: mysql_list_fields1467886
+Node: mysql_list_processes1469057
+Node: mysql_list_tables1469920
+Node: mysql_num_fields1470961
+Node: mysql_num_rows1473398
+Node: mysql_options1474119
+Node: mysql_ping1478021
+Node: mysql_query1478794
+Node: mysql_real_connect1479987
+Node: mysql_real_escape_string1485992
+Node: mysql_real_query1488060
+Node: mysql_reload1489372
+Node: mysql_row_seek1490169
+Node: mysql_row_tell1491086
+Node: mysql_select_db1491651
+Node: mysql_shutdown1492608
+Node: mysql_stat1493272
+Node: mysql_store_result1494082
+Node: mysql_thread_id1496581
+Node: mysql_use_result1497230
+Node: C Thread functions1499658
+Node: my_init1500000
+Node: my_thread_init()1500521
+Node: my_thread_end()1500898
+Node: C API problems1501282
+Node: NULL mysql_store_result1501853
+Node: Query results1503390
+Node: Getting unique ID1504899
+Node: C API linking problems1506400
+Node: Building clients1507061
+Node: Threaded clients1507806
+Node: Cplusplus1512421
+Node: Borland C++1512679
+Node: Java1513497
+Node: Python1514042
+Node: Tcl1514400
+Node: Eiffel1514692
+Node: Extending MySQL1514994
+Node: Adding functions1515297
+Node: CREATE FUNCTION1516861
+Node: Adding UDF1518322
+Node: UDF calling sequences1521917
+Node: UDF arguments1524641
+Node: UDF return values1528413
+Node: UDF compiling1530366
+Node: Adding native function1534496
+Node: Adding procedures1538344
+Node: procedure analyse1539124
+Node: Writing a procedure1539900
+Node: MySQL internals1540286
+Node: MySQL threads1541012
+Node: MySQL test suite1542530
+Node: running mysqltest1544003
+Node: extending mysqltest1545319
+Node: Reporting mysqltest bugs1548780
+Node: Problems1551501
+Node: What is crashing1552263
+Node: Common errors1556339
+Node: Error Access denied1557722
+Node: Gone away1557935
+Node: Can not connect to server1559871
+Node: Blocked host1564971
+Node: Too many connections1566142
+Node: Non-transactional tables1567239
+Node: Out of memory1568424
+Node: Packet too large1569273
+Node: Communication errors1570468
+Node: Full table1572685
+Node: Cannot create1573497
+Node: Commands out of sync1574332
+Node: Ignoring user1574950
+Node: Cannot find table1576356
+Node: Cannot initialize character set1577094
+Node: Not enough file handles1578540
+Node: Installation Issues1580915
+Node: Link errors1581310
+Node: Changing MySQL user1583955
+Node: File permissions1586774
+Node: Administration Issues1588026
+Node: Crashing1588608
+Node: Resetting permissions1595895
+Node: Full disk1597143
+Node: Temporary files1598760
+Node: Problems with mysql.sock1600285
+Node: Timezone problems1601871
+Node: Query Issues1602329
+Node: Case sensitivity1602876
+Node: Using DATE1604233
+Node: Problems with NULL1606903
+Node: Problems with alias1609617
+Node: Deleting from related tables1610628
+Node: No matching rows1611698
+Node: Table Definition Issues1613594
+Node: ALTER TABLE problems1613953
+Node: Change column order1615445
+Node: Temporary table problems1616720
+Node: Users1617399
+Node: MySQL customer usage1630143
+Node: Contrib1631637
+Node: Credits1671932
+Node: Developers1672310
+Node: Contributors1676292
+Node: Supporters1686554
+Node: News1687264
+Node: News-4.0.x1688133
+Node: News-4.0.01688595
+Node: News-3.23.x1690024
+Node: News-3.23.511694722
+Node: News-3.23.501696530
+Node: News-3.23.491698825
+Node: News-3.23.481699547
+Node: News-3.23.471701810
+Node: News-3.23.461702720
+Node: News-3.23.451703658
+Node: News-3.23.441704762
+Node: News-3.23.431707905
+Node: News-3.23.421708828
+Node: News-3.23.411710859
+Node: News-3.23.401712330
+Node: News-3.23.391714270
+Node: News-3.23.381715683
+Node: News-3.23.371717304
+Node: News-3.23.361719919
+Node: News-3.23.351721434
+Node: News-3.23.34a1721951
+Node: News-3.23.341722203
+Node: News-3.23.331724774
+Node: News-3.23.321727958
+Node: News-3.23.311729287
+Node: News-3.23.301731124
+Node: News-3.23.291733030
+Node: News-3.23.281737492
+Node: News-3.23.271742156
+Node: News-3.23.261742715
+Node: News-3.23.251745421
+Node: News-3.23.241748290
+Node: News-3.23.231749172
+Node: News-3.23.221753404
+Node: News-3.23.211754796
+Node: News-3.23.201756219
+Node: News-3.23.191756482
+Node: News-3.23.181757890
+Node: News-3.23.171758570
+Node: News-3.23.161760544
+Node: News-3.23.151761524
+Node: News-3.23.141764159
+Node: News-3.23.131765888
+Node: News-3.23.121766822
+Node: News-3.23.111768562
+Node: News-3.23.101770109
+Node: News-3.23.91770356
+Node: News-3.23.81772846
+Node: News-3.23.71774113
+Node: News-3.23.61776195
+Node: News-3.23.51777978
+Node: News-3.23.41779912
+Node: News-3.23.31781072
+Node: News-3.23.21782174
+Node: News-3.23.11784516
+Node: News-3.23.01784706
+Node: News-3.22.x1789744
+Node: News-3.22.351792354
+Node: News-3.22.341792753
+Node: News-3.22.331793153
+Node: News-3.22.321793428
+Node: News-3.22.311794128
+Node: News-3.22.301794333
+Node: News-3.22.291794895
+Node: News-3.22.281795829
+Node: News-3.22.271796249
+Node: News-3.22.261796653
+Node: News-3.22.251797546
+Node: News-3.22.241797757
+Node: News-3.22.231798278
+Node: News-3.22.221799100
+Node: News-3.22.211799819
+Node: News-3.22.201800561
+Node: News-3.22.191800912
+Node: News-3.22.181801254
+Node: News-3.22.171801810
+Node: News-3.22.161802230
+Node: News-3.22.151802938
+Node: News-3.22.141804278
+Node: News-3.22.131805181
+Node: News-3.22.121805719
+Node: News-3.22.111807050
+Node: News-3.22.101808465
+Node: News-3.22.91810723
+Node: News-3.22.81811832
+Node: News-3.22.71813319
+Node: News-3.22.61815106
+Node: News-3.22.51815732
+Node: News-3.22.41820232
+Node: News-3.22.31821893
+Node: News-3.22.21822312
+Node: News-3.22.11823755
+Node: News-3.22.01825186
+Node: News-3.21.x1829831
+Node: News-3.21.331832172
+Node: News-3.21.321832778
+Node: News-3.21.311834027
+Node: News-3.21.301834660
+Node: News-3.21.291836245
+Node: News-3.21.281836988
+Node: News-3.21.271837359
+Node: News-3.21.261838593
+Node: News-3.21.251839520
+Node: News-3.21.241840100
+Node: News-3.21.231841003
+Node: News-3.21.221842448
+Node: News-3.21.21a1844145
+Node: News-3.21.211844356
+Node: News-3.21.201844731
+Node: News-3.21.191845395
+Node: News-3.21.181845831
+Node: News-3.21.171846625
+Node: News-3.21.161847819
+Node: News-3.21.151848523
+Node: News-3.21.14b1851009
+Node: News-3.21.14a1851239
+Node: News-3.21.131852849
+Node: News-3.21.121853777
+Node: News-3.21.111855967
+Node: News-3.21.101857025
+Node: News-3.21.91858052
+Node: News-3.21.81858570
+Node: News-3.21.71859972
+Node: News-3.21.61860710
+Node: News-3.21.51861031
+Node: News-3.21.41861670
+Node: News-3.21.31862134
+Node: News-3.21.21864289
+Node: News-3.21.01866411
+Node: News-3.20.x1869056
+Node: News-3.20.181870334
+Node: News-3.20.171871924
+Node: News-3.20.161873999
+Node: News-3.20.151874928
+Node: News-3.20.141875679
+Node: News-3.20.131876978
+Node: News-3.20.111878308
+Node: News-3.20.101879238
+Node: News-3.20.91879935
+Node: News-3.20.81880359
+Node: News-3.20.71880566
+Node: News-3.20.61881674
+Node: News-3.20.31884614
+Node: News-3.20.01887047
+Node: News-3.19.x1888677
+Node: News-3.19.51889113
+Node: News-3.19.41889817
+Node: News-3.19.31890582
+Node: Porting1891230
+Node: Debugging server1894037
+Node: Compiling for debugging1896138
+Node: Making trace files1898713
+Node: Using gdb on mysqld1900398
+Node: Using stack trace1902846
+Node: Using log files1905085
+Node: Reproduceable test case1907714
+Node: Debugging client1909582
+Node: The DBUG package1910758
+Node: Locking methods1914798
+Node: RTS-threads1918749
+Node: Thread packages1921754
+Node: Environment variables1924225
+Node: Regexp1926349
+Node: Unireg1933389
+Node: GPL license1935606
+Node: LGPL license1954798
+Node: Placeholder1982900
+Node: Installing binary1983273
+Node: Perl support1990164
+Node: Perl installation1990628
+Node: ActiveState Perl1993233
+Node: Windows Perl1994410
+Node: Perl support problems1995097
+Node: Group by functions1999133
+Node: Function Index2003282
+Node: Concept Index2044048
+End Tag Table

@@ -1,0 +1,1284 @@
+This file contains any messages produced by compilers while
+running configure, to aid debugging if configure makes a mistake.
+
+configure:542: checking for gcc
+configure:655: checking whether the C compiler (gcc -O3 -DDBUG_OFF    -rdynamic) works
+configure:671: gcc -o conftest -O3 -DDBUG_OFF     -rdynamic conftest.c  1>&5
+configure:697: checking whether the C compiler (gcc -O3 -DDBUG_OFF    -rdynamic) is a cross-compiler
+configure:702: checking whether we are using GNU C
+configure:711: gcc -E conftest.c
+configure:730: checking whether gcc accepts -g
+configure:766: checking for c++
+configure:798: checking whether the C++ compiler (gcc   -rdynamic) works
+configure:814: gcc -o conftest    -rdynamic conftest.C  1>&5
+configure:840: checking whether the C++ compiler (gcc   -rdynamic) is a cross-compiler
+configure:845: checking whether we are using GNU C++
+configure:854: gcc -E conftest.C
+configure:873: checking whether gcc accepts -g
+configure:905: checking compiler availability and simple error detection
+configure:914: gcc -c -O3 -DDBUG_OFF    conftest.c 1>&5
+configure:925: gcc -c -O3 -DDBUG_OFF    conftest.c 1>&5
+configure: In function `main':
+configure:921: `syntax' undeclared (first use in this function)
+configure:921: (Each undeclared identifier is reported only once
+configure:921: for each function it appears in.)
+configure:921: parse error before `errors'
+configure: failed program was:
+#line 918 "configure"
+#include "confdefs.h"
+
+int main() {
+ syntax errors galore! 
+; return 0; }
+configure:955: gcc -c -O3 -DDBUG_OFF    conftest.c 1>&5
+configure:976: gcc -c -O3 -DDBUG_OFF    conftest.c 1>&5
+configure: In function `main':
+configure:971: conflicting types for `i'
+configure:970: previous declaration of `i'
+configure: failed program was:
+#line 965 "configure"
+#include "confdefs.h"
+
+int main() {
+
+  typedef long Long;
+  extern int i;
+  extern Long i;
+
+; return 0; }
+configure:991: checking how to run the C preprocessor
+configure:1012: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1074: checking for ranlib
+configure:1151: checking host system type
+configure:1172: checking target system type
+configure:1190: checking build system type
+configure:1453: checking for sys/termio.h
+configure:1463: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1459: sys/termio.h: No such file or directory
+configure: failed program was:
+#line 1458 "configure"
+#include "confdefs.h"
+#include <sys/termio.h>
+configure:1453: checking for termios.h
+configure:1463: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1453: checking for termio.h
+configure:1463: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1453: checking for alloc.h
+configure:1463: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1459: alloc.h: No such file or directory
+configure: failed program was:
+#line 1458 "configure"
+#include "confdefs.h"
+#include <alloc.h>
+configure:1492: checking for va_list.h
+configure:1502: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1498: va_list.h: No such file or directory
+configure: failed program was:
+#line 1497 "configure"
+#include "confdefs.h"
+#include <va_list.h>
+configure:1531: checking for syscall.h
+configure:1541: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1531: checking for sys/syscall.h
+configure:1541: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1531: checking for sys/filio.h
+configure:1541: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1537: sys/filio.h: No such file or directory
+configure: failed program was:
+#line 1536 "configure"
+#include "confdefs.h"
+#include <sys/filio.h>
+configure:1587: checking for syscall open
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall write
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall read
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall creat
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall close
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall fcntl
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall lseek
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall dup2
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall dup
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall pipe
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall fchmod
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall fchown
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall execve
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall fstat
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall lstat
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall link
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall unlink
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall chdir
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall chown
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall chmod
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall stat
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall rename
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall select
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall getdtablesize
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_getdtablesize' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_getdtablesize ;
+
+; return 0; }
+configure:1587: checking for syscall ioctl
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall ftruncate
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall flock
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall fstatfs
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall chroot
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall uname
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall sigsuspend
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall sigaction
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall sigpause
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_sigpause' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_sigpause ;
+
+; return 0; }
+configure:1587: checking for syscall sigprocmask
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall ksigaction
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_ksigaction' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_ksigaction ;
+
+; return 0; }
+configure:1587: checking for syscall getdents
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall readdir
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall getdirentries
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_getdirentries' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_getdirentries ;
+
+; return 0; }
+configure:1587: checking for syscall wait4
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall wait3
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_wait3' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_wait3 ;
+
+; return 0; }
+configure:1587: checking for syscall waitpid
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall waitsys
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_waitsys' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_waitsys ;
+
+; return 0; }
+configure:1587: checking for syscall socket
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_socket' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_socket ;
+
+; return 0; }
+configure:1587: checking for syscall bind
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_bind' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_bind ;
+
+; return 0; }
+configure:1587: checking for syscall connect
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_connect' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_connect ;
+
+; return 0; }
+configure:1587: checking for syscall accept
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_accept' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_accept ;
+
+; return 0; }
+configure:1587: checking for syscall listen
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_listen' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_listen ;
+
+; return 0; }
+configure:1587: checking for syscall getsockopt
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_getsockopt' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_getsockopt ;
+
+; return 0; }
+configure:1587: checking for syscall setsockopt
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_setsockopt' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_setsockopt ;
+
+; return 0; }
+configure:1587: checking for syscall socketpair
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_socketpair' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_socketpair ;
+
+; return 0; }
+configure:1587: checking for syscall poll
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall putmsg
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_putmsg' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_putmsg ;
+
+; return 0; }
+configure:1587: checking for syscall getmsg
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_getmsg' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_getmsg ;
+
+; return 0; }
+configure:1587: checking for syscall socketcall
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall pgrpsys
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_pgrpsys' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_pgrpsys ;
+
+; return 0; }
+configure:1587: checking for syscall exit
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall readv
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall writev
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall send
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_send' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_send ;
+
+; return 0; }
+configure:1587: checking for syscall sendto
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_sendto' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_sendto ;
+
+; return 0; }
+configure:1587: checking for syscall sendmsg
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_sendmsg' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_sendmsg ;
+
+; return 0; }
+configure:1587: checking for syscall recv
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_recv' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_recv ;
+
+; return 0; }
+configure:1587: checking for syscall recvfrom
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_recvfrom' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_recvfrom ;
+
+; return 0; }
+configure:1587: checking for syscall recvmsg
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_recvmsg' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_recvmsg ;
+
+; return 0; }
+configure:1587: checking for syscall getpeername
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_getpeername' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_getpeername ;
+
+; return 0; }
+configure:1587: checking for syscall getsockname
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_getsockname' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_getsockname ;
+
+; return 0; }
+configure:1587: checking for syscall shutdown
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure: In function `main':
+configure:1608: `SYS_shutdown' undeclared (first use in this function)
+configure:1608: (Each undeclared identifier is reported only once
+configure:1608: for each function it appears in.)
+configure: failed program was:
+#line 1592 "configure"
+#include "confdefs.h"
+
+/* FIXME: This list should be generated from info in configure.in.  */
+#ifdef HAVE_SYSCALL_H
+#include <syscall.h>
+#else
+#ifdef HAVE_SYS_SYSCALL_H
+#include <sys/syscall.h>
+#else
+where is your syscall header file??
+#endif
+#endif
+
+int main() {
+
+int x;
+x = SYS_shutdown ;
+
+; return 0; }
+configure:1587: checking for syscall getpgrp
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1587: checking for syscall fork
+configure:1613: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1648: checking for ANSI C header files
+configure:1661: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1728: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
+configure:1752: checking for off_t
+configure:1785: checking for size_t
+configure:1818: checking return type of signal handlers
+configure:1840: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:1859: checking for ssize_t
+configure:1892: checking for time_t
+configure:1928: checking for sys/time.h
+configure:1938: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1965: checking whether time.h and sys/time.h may both be included
+configure:1979: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2001: checking for struct timespec in sys/time.h
+configure:2013: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2045: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2068: checking type of size_t
+configure:2086: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2103: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2099: conflicting types for `foo'
+configure:2099: previous declaration of `foo'
+configure: failed program was:
+#line 2090 "configure"
+#include "confdefs.h"
+
+#include <stddef.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern size_t foo; extern int foo; 
+; return 0; }
+configure:2103: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2131: checking type of ssize_t
+configure:2147: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2162: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2190: checking type of clock_t
+configure:2214: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2237: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2233: conflicting types for `foo'
+configure:2233: previous declaration of `foo'
+configure: failed program was:
+#line 2218 "configure"
+#include "confdefs.h"
+
+#include <stddef.h>
+#if TIME_WITH_SYS_TIME
+# include <time.h>
+# include <sys/time.h>
+#else
+# if HAVE_SYS_TIME_H
+#  include <sys/time.h>
+# else
+#  include <time.h>
+# endif
+#endif
+
+int main() {
+ extern clock_t foo; extern int foo; 
+; return 0; }
+configure:2237: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2233: conflicting types for `foo'
+configure:2233: previous declaration of `foo'
+configure: failed program was:
+#line 2218 "configure"
+#include "confdefs.h"
+
+#include <stddef.h>
+#if TIME_WITH_SYS_TIME
+# include <time.h>
+# include <sys/time.h>
+#else
+# if HAVE_SYS_TIME_H
+#  include <sys/time.h>
+# else
+#  include <time.h>
+# endif
+#endif
+
+int main() {
+ extern clock_t foo; extern unsigned int foo; 
+; return 0; }
+configure:2237: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2265: checking type of time_t
+configure:2289: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2312: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2308: conflicting types for `foo'
+configure:2308: previous declaration of `foo'
+configure: failed program was:
+#line 2293 "configure"
+#include "confdefs.h"
+
+#include <stddef.h>
+#if TIME_WITH_SYS_TIME
+# include <time.h>
+# include <sys/time.h>
+#else
+# if HAVE_SYS_TIME_H
+#  include <sys/time.h>
+# else
+#  include <time.h>
+# endif
+#endif
+
+int main() {
+ extern time_t foo; extern int foo; 
+; return 0; }
+configure:2312: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2308: conflicting types for `foo'
+configure:2308: previous declaration of `foo'
+configure: failed program was:
+#line 2293 "configure"
+#include "confdefs.h"
+
+#include <stddef.h>
+#if TIME_WITH_SYS_TIME
+# include <time.h>
+# include <sys/time.h>
+#else
+# if HAVE_SYS_TIME_H
+#  include <sys/time.h>
+# else
+#  include <time.h>
+# endif
+#endif
+
+int main() {
+ extern time_t foo; extern unsigned int foo; 
+; return 0; }
+configure:2312: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2339: checking for fpos_t in stdio.h
+configure:2351: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2367: checking type of fpos_t
+configure:2385: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern int foo; 
+; return 0; }
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern unsigned int foo; 
+; return 0; }
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern long foo; 
+; return 0; }
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern unsigned long foo; 
+; return 0; }
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern short foo; 
+; return 0; }
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern unsigned short foo; 
+; return 0; }
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern char foo; 
+; return 0; }
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern unsigned char foo; 
+; return 0; }
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern long long foo; 
+; return 0; }
+configure:2402: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2398: conflicting types for `foo'
+configure:2398: previous declaration of `foo'
+configure: failed program was:
+#line 2389 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern fpos_t foo; extern unsigned long long foo; 
+; return 0; }
+configure:2440: checking type of off_t
+configure:2458: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2475: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2471: conflicting types for `foo'
+configure:2471: previous declaration of `foo'
+configure: failed program was:
+#line 2462 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern off_t foo; extern int foo; 
+; return 0; }
+configure:2475: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2471: conflicting types for `foo'
+configure:2471: previous declaration of `foo'
+configure: failed program was:
+#line 2462 "configure"
+#include "confdefs.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+#ifdef STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main() {
+ extern off_t foo; extern unsigned int foo; 
+; return 0; }
+configure:2475: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2502: checking type of va_list
+configure:2514: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2525: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2521: conflicting types for `foo'
+configure:2521: previous declaration of `foo'
+configure: failed program was:
+#line 2518 "configure"
+#include "confdefs.h"
+#include <stdarg.h>
+int main() {
+ extern va_list foo; extern char * foo; 
+; return 0; }
+configure:2525: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2521: conflicting types for `foo'
+configure:2521: previous declaration of `foo'
+configure: failed program was:
+#line 2518 "configure"
+#include "confdefs.h"
+#include <stdarg.h>
+int main() {
+ extern va_list foo; extern char ** foo; 
+; return 0; }
+configure:2525: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure:2556: checking IP address type
+configure:2568: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2565: `_getlong' undeclared (first use in this function)
+configure:2565: (Each undeclared identifier is reported only once
+configure:2565: for each function it appears in.)
+configure: failed program was:
+#line 2561 "configure"
+#include "confdefs.h"
+#include <sys/types.h>
+#include <arpa/nameser.h>
+int main() {
+ &_getlong; 
+; return 0; }
+configure:2615: checking IP port type
+configure:2627: gcc -c -O3 -DDBUG_OFF   -Werror  conftest.c 1>&5
+configure: In function `main':
+configure:2624: `_getshort' undeclared (first use in this function)
+configure:2624: (Each undeclared identifier is reported only once
+configure:2624: for each function it appears in.)
+configure: failed program was:
+#line 2620 "configure"
+#include "confdefs.h"
+#include <sys/types.h>
+#include <arpa/nameser.h>
+int main() {
+ &_getshort; 
+; return 0; }
+configure:2674: checking pathname for terminal devices directory
+configure:2694: checking directory name for time zone info
+configure:2717: checking filename for local time zone
+configure:2773: checking for vfork
+configure:2801: gcc -o conftest -O3 -DDBUG_OFF   -Werror   -rdynamic conftest.c  1>&5
