@@ -23,8 +23,8 @@
    This special exception was added by the Free Software Foundation
    in version 1.24 of Bison.  */
 
-#ifndef BISON_Y_TAB_H
-# define BISON_Y_TAB_H
+#ifndef BISON_SQL_YACC_H
+# define BISON_SQL_YACC_H
 
 /* Tokens.  */
 #ifndef YYTOKENTYPE
@@ -860,5 +860,5 @@ typedef union {
 
 
 
-#endif /* not BISON_Y_TAB_H */
+#endif /* not BISON_SQL_YACC_H */
 

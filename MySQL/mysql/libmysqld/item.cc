@@ -117,6 +117,14 @@ bool Item::get_time(TIME *ltime)
   return 0;
 }
 
+Item_ident::Item_ident(const char *db_name_par,const char *table_name_par,
+		       const char *field_name_par)
+  :db_name(db_name_par),table_name(table_name_par),field_name(field_name_par)
+{
+  name = (char*) field_name_par;
+}
+
+
 Item_field::Item_field(Field *f) :Item_ident(NullS,f->table_name,f->field_name)
 {
   set_field(f);
@@ -548,6 +556,7 @@ bool Item_string::save_in_field(Field *field, bool no_conversions)
   return 0;
 }
 
+
 bool Item_int::save_in_field(Field *field, bool no_conversions)
 {
   longlong nr=val_int();
@@ -693,10 +702,9 @@ Item_result item_cmp_type(Item_result a,Item_result b)
 {
   if (a == STRING_RESULT && b == STRING_RESULT)
     return STRING_RESULT;
-  else if (a == INT_RESULT && b == INT_RESULT)
+  if (a == INT_RESULT && b == INT_RESULT)
     return INT_RESULT;
-  else
-    return REAL_RESULT;
+  return REAL_RESULT;
 }
 
 

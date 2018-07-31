@@ -17,6 +17,8 @@ Created 10/10/1995 Heikki Tuuri
 #include "que0types.h"
 #include "trx0types.h"
 
+extern char*	srv_main_thread_op_info;
+
 /* Buffer which can be used in printing fatal error messages */
 extern char	srv_fatal_errbuf[];
 
@@ -79,6 +81,8 @@ extern ulint	srv_max_dirty_pages_pct;
 
 extern ulint	srv_force_recovery;
 extern ulint	srv_thread_concurrency;
+
+extern ulint    srv_max_n_threads;
 
 extern lint	srv_conc_n_threads;
 

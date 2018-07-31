@@ -323,6 +323,11 @@ bool THD::store_globals()
     return 1;
   mysys_var=my_thread_var;
   dbug_thread_id=my_thread_id();
+  /*
+    By default 'slave_proxy_id' is 'thread_id'. They may later become different
+    if this is the slave SQL thread.
+  */
+  slave_proxy_id= thread_id;
   return 0;
 }
 
@@ -490,6 +495,8 @@ bool select_send::send_data(List<Item> &items)
     }
   }
   thd->sent_row_count++;
+  if (!thd->net.vio)
+    DBUG_RETURN(0);
   bool error=my_net_write(&thd->net,(char*) packet->ptr(),packet->length());
   DBUG_RETURN(error);
 }
@@ -533,7 +540,6 @@ select_export::~select_export()
 int
 select_export::prepare(List<Item> &list)
 {
-  char path[FN_REFLEN];
   uint option=4;
   bool blob_flag=0;
 #ifdef DONT_ALLOW_FULL_LOAD_DATA_PATHS
@@ -734,9 +740,13 @@ err:
 void select_export::send_error(uint errcode,const char *err)
 {
   ::send_error(&thd->net,errcode,err);
-  (void) end_io_cache(&cache);
-  (void) my_close(file,MYF(0));
-  file= -1;
+  if (file > 0)
+  {
+    (void) end_io_cache(&cache);
+    (void) my_close(file,MYF(0));
+    (void) my_delete(path,MYF(0));		// Delete file on error
+    file= -1;
+  }
 }
 
 
@@ -844,10 +854,13 @@ err:
 void select_dump::send_error(uint errcode,const char *err)
 {
   ::send_error(&thd->net,errcode,err);
-  (void) end_io_cache(&cache);
-  (void) my_close(file,MYF(0));
-  (void) my_delete(path,MYF(0));		// Delete file on error
-  file= -1;
+  if (file > 0)
+  {
+    (void) end_io_cache(&cache);
+    (void) my_close(file,MYF(0));
+    (void) my_delete(path,MYF(0));		// Delete file on error
+    file= -1;
+  }
 }
 
 

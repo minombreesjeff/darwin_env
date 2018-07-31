@@ -205,7 +205,7 @@
 "Denne handling kunne ikke udføres med kørende slave, brug først kommandoen SLAVE STOP",
 "Denne handling kræver en kørende slave. Konfigurer en slave og brug kommandoen SLAVE START",
 "Denne server er ikke konfigureret som slave. Ret in config-filen eller brug kommandoen CHANGE MASTER TO",
-"Kunne ikke initialisere master info-struktur. Check om rettigheder i master.info",
+"Could not initialize master info structure, more error messages can be found in the MySQL error log",
 "Kunne ikke danne en slave-tråd. Check systemressourcerne",
 "Brugeren %-.64s har allerede mere end 'max_user_connections' aktive forbindelser",
 "Du må kun bruge konstantudtryk med SET",
@@ -242,3 +242,4 @@
 "This version of MySQL doesn't yet support '%s'",
 "Got fatal error %d: '%-.128s' from master when reading data from binary log",
 "Slave SQL thread ignored the query because of replicate-*-table rules"
+"Variable '%-.64s' is a %s variable"

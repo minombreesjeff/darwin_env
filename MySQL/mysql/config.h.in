@@ -354,6 +354,9 @@
 /* Define to 1 if you have the `fconvert' function. */
 #undef HAVE_FCONVERT
 
+/* Define to 1 if you have the `fdatasync' function. */
+#undef HAVE_FDATASYNC
+
 /* Define to 1 if you have the `finite' function. */
 #undef HAVE_FINITE
 
@@ -371,6 +374,9 @@
 
 /* Define to 1 if you have the `fseeko' function. */
 #undef HAVE_FSEEKO
+
+/* Define to 1 if you have the `fsync' function. */
+#undef HAVE_FSYNC
 
 /* Define to 1 if you have the `ftruncate' function. */
 #undef HAVE_FTRUNCATE
@@ -465,6 +471,9 @@
 /* Define to 1 if you have the <limits.h> header file. */
 #undef HAVE_LIMITS_H
 
+/* Define to 1 if you have the <linux/config.h> header file. */
+#undef HAVE_LINUX_CONFIG_H
+
 /* Define to 1 if you have the <locale.h> header file. */
 #undef HAVE_LOCALE_H
 
@@ -551,6 +560,9 @@
 
 /* Define to 1 if you have the `pthread_init' function. */
 #undef HAVE_PTHREAD_INIT
+
+/* Define to 1 if you have the `pthread_key_delete' function. */
+#undef HAVE_PTHREAD_KEY_DELETE
 
 /* Define to 1 if you have the `pthread_rwlock_rdlock' function. */
 #undef HAVE_PTHREAD_RWLOCK_RDLOCK

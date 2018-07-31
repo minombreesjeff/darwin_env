@@ -214,3 +214,52 @@ explain select * from t1, t2 where (t1.key1 <t2.keya + 1) and t2.keya=3;
 explain select * from t1 force index(i2), t2 where (t1.key1 <t2.keya + 1) and t2.keya=3;
 DROP TABLE t1,t2;
 
+# bug #1724: use RANGE on more selective column instead of REF on less
+# selective
+
+CREATE TABLE t1 (
+  a int(11) default NULL,
+  b int(11) default NULL,
+  KEY a (a),
+  KEY b (b)
+) TYPE=MyISAM;
+
+
+INSERT INTO t1 VALUES
+(1,1),(2,1),(3,1),(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,2),(10,2),
+(13,2),(14,2),(15,2),(16,2),(17,3),(17,3),(16,3),(17,3),(19,3),(20,3),
+(21,4),(22,5),(23,5),(24,5),(25,5),(26,5),(30,5),(31,5),(32,5),(33,5),
+(33,5),(33,5),(33,5),(33,5),(34,5),(35,5);
+
+# we expect that optimizer will choose index on A
+EXPLAIN SELECT * FROM t1 WHERE a IN(1,2) AND b=5;
+SELECT * FROM t1 WHERE a IN(1,2) AND b=5;
+
+DROP TABLE t1;
+
+#
+# Test problem with range optimzer and sub ranges
+#
+
+CREATE TABLE t1 (a int, b int, c int, INDEX (c,a,b));
+INSERT INTO t1 VALUES (1,0,0),(1,0,0),(1,0,0);
+INSERT INTO t1 VALUES (0,1,0),(0,1,0),(0,1,0);
+# -- First reports 3; second reports 6
+SELECT COUNT(*) FROM t1 WHERE (c=0 and a=1) or (c=0 and b=1);
+SELECT COUNT(*) FROM t1 WHERE (c=0 and b=1) or (c=0 and a=1);
+DROP TABLE t1;
+
+#
+# Test problem with range optimization over overlapping ranges (#2448)
+#
+
+CREATE TABLE t1 ( a int not null, b int not null, INDEX ab(a,b) );
+INSERT INTO t1 VALUES (47,1), (70,1), (15,1), (15, 4);
+SELECT * FROM t1
+WHERE
+(
+    ( b =1 AND a BETWEEN 14 AND 21 ) OR
+    ( b =2 AND a BETWEEN 16 AND 18 ) OR
+    ( b =3 AND a BETWEEN 15 AND 19 ) OR
+    (a BETWEEN 19 AND 47)
+);

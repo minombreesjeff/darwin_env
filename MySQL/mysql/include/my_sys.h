@@ -167,7 +167,7 @@ extern char *my_strdup_with_length(const byte *from, uint length,
 #if defined(_AIX) && !defined(__GNUC__)
 #pragma alloca
 #endif /* _AIX */
-#if defined(__GNUC__) && !defined(HAVE_ALLOCA_H)
+#if defined(__GNUC__) && !defined(HAVE_ALLOCA_H) && ! defined(alloca)
 #define alloca __builtin_alloca
 #endif /* GNUC */
 #define my_alloca(SZ) alloca((size_t) (SZ))
@@ -566,6 +566,7 @@ extern FILE *my_fopen(const char *FileName,int Flags,myf MyFlags);
 extern FILE *my_fdopen(File Filedes,const char *name, int Flags,myf MyFlags);
 extern int my_fclose(FILE *fd,myf MyFlags);
 extern int my_chsize(File fd,my_off_t newlength, int filler, myf MyFlags);
+extern int my_sync(File fd, myf my_flags);
 extern int my_error _VARARGS((int nr,myf MyFlags, ...));
 extern int my_printf_error _VARARGS((uint my_err, const char *format,
 				     myf MyFlags, ...)
@@ -576,7 +577,7 @@ extern int my_snprintf(char* to, size_t n, const char* fmt, ...);
 extern int my_message(uint my_err, const char *str,myf MyFlags);
 extern int my_message_no_curses(uint my_err, const char *str,myf MyFlags);
 extern int my_message_curses(uint my_err, const char *str,myf MyFlags);
-extern void my_init(void);
+extern my_bool my_init(void);
 extern void my_end(int infoflag);
 extern int my_redel(const char *from, const char *to, int MyFlags);
 extern int my_copystat(const char *from, const char *to, int MyFlags);
@@ -739,6 +740,8 @@ extern void init_alloc_root(MEM_ROOT *mem_root, uint block_size,
 extern gptr alloc_root(MEM_ROOT *mem_root,unsigned int Size);
 extern void free_root(MEM_ROOT *root, myf MyFLAGS);
 extern void set_prealloc_root(MEM_ROOT *root, char *ptr);
+extern void reset_root_defaults(MEM_ROOT *mem_root, uint block_size,
+                                uint prealloc_size);
 extern char *strdup_root(MEM_ROOT *root,const char *str);
 extern char *strmake_root(MEM_ROOT *root,const char *str,uint len);
 extern char *memdup_root(MEM_ROOT *root,const char *str,uint len);

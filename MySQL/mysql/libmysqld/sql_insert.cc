@@ -310,6 +310,8 @@ int mysql_insert(THD *thd,TABLE_LIST *table_list, List<Item> &fields,
       mysql_update_log.write(thd, thd->query, thd->query_length);
       if (mysql_bin_log.is_open())
       {
+        if (error <= 0)
+          thd->clear_error();
 	Query_log_event qinfo(thd, thd->query, thd->query_length,
 			      log_delayed);
 	if (mysql_bin_log.write(&qinfo) && transactional_table)
@@ -436,11 +438,20 @@ int write_record(TABLE *table,COPY_INFO *info)
 	key_copy((byte*) key,table,key_nr,0);
 	if ((error=(table->file->index_read_idx(table->record[1],key_nr,
 						(byte*) key,
-						table->key_info[key_nr].key_length,
+						table->key_info[key_nr].
+						key_length,
 						HA_READ_KEY_EXACT))))
 	  goto err;
       }
-      if (last_uniq_key(table,key_nr))
+      /*
+	The manual defines the REPLACE semantics that it is either an INSERT or
+	DELETE(s) + INSERT; FOREIGN KEY checks do not function in the defined
+	way if we allow MySQL to convert the latter operation internally to an
+	UPDATE.
+      */
+
+      if (last_uniq_key(table,key_nr) &&
+	  !table->file->referenced_by_foreign_key())
       {
 	if ((error=table->file->update_row(table->record[1],table->record[0])))
 	  goto err;
@@ -550,7 +561,7 @@ public:
     thd.command=COM_DELAYED_INSERT;
 
     bzero((char*) &thd.net,sizeof(thd.net));	// Safety
-    thd.system_thread=1;
+    thd.system_thread= SYSTEM_THREAD_DELAYED_INSERT;
     thd.host_or_ip= "";
     bzero((char*) &info,sizeof(info));
     pthread_mutex_init(&mutex,MY_MUTEX_INIT_FAST);
@@ -1196,7 +1207,7 @@ bool delayed_insert::handle_inserts(void)
       table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
       using_ignore=1;
     }
-    thd.net.last_errno = 0; // reset error for binlog
+    thd.clear_error(); // reset error for binlog
     if (write_record(table,&info))
     {
       info.error_count++;				// Ignore errors
@@ -1391,6 +1402,8 @@ bool select_insert::send_eof()
   mysql_update_log.write(thd,thd->query,thd->query_length);
   if (mysql_bin_log.is_open())
   {
+    if (!error)
+      thd->clear_error();
     Query_log_event qinfo(thd, thd->query, thd->query_length,
 			  table->file->has_transactions());
     mysql_bin_log.write(&qinfo);
@@ -1409,18 +1422,15 @@ bool select_insert::send_eof()
     ::send_error(&thd->net);
     return 1;
   }
+  char buff[160];
+  if (info.handle_duplicates == DUP_IGNORE)
+    sprintf(buff,ER(ER_INSERT_INFO),info.records,info.records-info.copied,
+            thd->cuted_fields);
   else
-  {
-    char buff[160];
-    if (info.handle_duplicates == DUP_IGNORE)
-      sprintf(buff,ER(ER_INSERT_INFO),info.records,info.records-info.copied,
-	      thd->cuted_fields);
-    else
-      sprintf(buff,ER(ER_INSERT_INFO),info.records,info.deleted,
-	      thd->cuted_fields);
-    ::send_ok(&thd->net,info.copied+info.deleted,last_insert_id,buff);
-    return 0;
-  }
+    sprintf(buff,ER(ER_INSERT_INFO),info.records,info.deleted,
+            thd->cuted_fields);
+  ::send_ok(&thd->net,info.copied+info.deleted,last_insert_id,buff);
+  return 0;
 }
 
 
@@ -1433,8 +1443,8 @@ select_create::prepare(List<Item> &values)
 {
   DBUG_ENTER("select_create::prepare");
 
-  table=create_table_from_items(thd, create_info, db, name,
-				extra_fields, keys, &values, &lock);
+  table= create_table_from_items(thd, create_info, db, name,
+				 extra_fields, keys, &values, &lock);
   if (!table)
     DBUG_RETURN(-1);				// abort() deletes table
 

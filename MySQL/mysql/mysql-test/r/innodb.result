@@ -1004,7 +1004,7 @@ select * from t1;
 id
 select * from t2;
 id	t1_id
-drop table t1,t2;
+drop table t2,t1;
 DROP TABLE IF EXISTS t1,t2;
 CREATE TABLE t1(id INT NOT NULL,  PRIMARY KEY (id)) TYPE=INNODB;
 CREATE TABLE t2(id  INT PRIMARY KEY, t1_id INT, INDEX par_ind (t1_id)  ) TYPE=INNODB;
@@ -1222,3 +1222,27 @@ a	b
 111	100
 111	100
 drop table t1;
+create table t1 ( c char(8) not null ) type=innodb;
+insert into t1 values ('0'),('1'),('2'),('3'),('4'),('5'),('6'),('7'),('8'),('9');
+insert into t1 values ('A'),('B'),('C'),('D'),('E'),('F');
+alter table t1 add b char(8) not null;
+alter table t1 add a char(8) not null;
+alter table t1 add primary key (a,b,c);
+update t1 set a=c, b=c;
+create table t2 (c char(8) not null, b char(8) not null, a char(8) not null, primary key(a,b,c)) type=innodb;
+insert into t2 select * from t1;
+delete t1,t2 from t2,t1 where t1.a<'B' and t2.b=t1.b;
+drop table t1,t2;
+SET AUTOCOMMIT=1;
+create table t1 (a integer auto_increment primary key) type=innodb;
+insert into t1 (a) values (NULL),(NULL);
+truncate table t1;
+insert into t1 (a) values (NULL),(NULL);
+SELECT * from t1;
+a
+3
+4
+drop table t1;
+CREATE TABLE t1 (`id 1` INT NOT NULL, PRIMARY KEY (`id 1`)) TYPE=INNODB;
+CREATE TABLE t2 (id INT PRIMARY KEY, t1_id INT, INDEX par_ind (t1_id), FOREIGN KEY (`t1_id`) REFERENCES `t1`(`id 1`)  ON DELETE CASCADE ) TYPE=INNODB;
+drop table t2,t1;

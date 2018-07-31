@@ -102,8 +102,7 @@ int STDCALL mysql_server_init(int argc __attribute__((unused)),
 			      char **argv __attribute__((unused)),
 			      char **groups __attribute__((unused)))
 {
-  mysql_once_init();
-  return 0;
+  return (int) mysql_once_init();
 }
 
 void STDCALL mysql_server_end()
@@ -941,7 +940,8 @@ static void mysql_read_default_options(struct st_mysql_options *options,
 	  options->rpl_parse= 1;
 	  break;
 	case 27:
-	  options->max_allowed_packet= atoi(opt_arg);
+          if (opt_arg)
+            options->max_allowed_packet= atoi(opt_arg);
 	  break;
 	default:
 	  DBUG_PRINT("warning",("unknown option: %s",option[0]));
@@ -1435,7 +1435,8 @@ STDCALL mysql_rpl_query_type(const char* q, int len)
 MYSQL * STDCALL
 mysql_init(MYSQL *mysql)
 {
-  mysql_once_init();
+  if (mysql_once_init())
+    return 0;
   if (!mysql)
   {
     if (!(mysql=(MYSQL*) my_malloc(sizeof(*mysql),MYF(MY_WME | MY_ZEROFILL))))
@@ -1475,15 +1476,20 @@ mysql_init(MYSQL *mysql)
     This function is called by mysql_init() and indirectly called
     by mysql_query(), so one should never have to call this from an
     outside program.
+
+  RETURN
+    0  ok
+    1  could not initialize environment (out of memory or thread keys)
 */
 
-void mysql_once_init(void)
+int mysql_once_init(void)
 {
   if (!mysql_client_init)
   {
     mysql_client_init=1;
     org_my_init_done=my_init_done;
-    my_init();					/* Will init threads */
+    if (my_init())				/* Will init threads */
+      return 1;
     init_client_errs();
     if (!mysql_port)
     {
@@ -1517,9 +1523,14 @@ void mysql_once_init(void)
   }
 #ifdef THREAD
   else
-    my_thread_init();         /* Init if new thread */
+  {
+    if (my_thread_init())         /* Init if new thread */
+      return 1;
+  }
 #endif
+  return 0;
 }
+
 
 /**************************************************************************
   Fill in SSL part of MYSQL structure and set 'use_ssl' flag.
@@ -1623,7 +1634,7 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
   char		buff[NAME_LEN+USERNAME_LENGTH+100],charset_name_buff[16];
   char		*end,*host_info,*charset_name;
   my_socket	sock;
-  uint32	ip_addr;
+  in_addr_t	ip_addr;
   struct	sockaddr_in sock_addr;
   ulong		pkt_length;
   NET		*net= &mysql->net;
@@ -2256,29 +2267,33 @@ static MYSQL* spawn_init(MYSQL* parent, const char* host,
 			 const char* passwd)
 {
   MYSQL* child;
-  if (!(child = mysql_init(0)))
-    return 0;
+  DBUG_ENTER("spawn_init");
+  if (!(child= mysql_init(0)))
+    DBUG_RETURN(0);
 
-  child->options.user = my_strdup((user) ? user :
-				  (parent->user ? parent->user :
-				   parent->options.user), MYF(0));
-  child->options.password = my_strdup((passwd) ? passwd :
-				      (parent->passwd ?
-				       parent->passwd :
-				       parent->options.password), MYF(0));
-  child->options.port = port;
-  child->options.host = my_strdup((host) ? host :
-				  (parent->host ?
-				   parent->host :
-				   parent->options.host), MYF(0));
+  child->options.user= my_strdup((user) ? user :
+				 (parent->user ? parent->user :
+				  parent->options.user), MYF(0));
+  child->options.password= my_strdup((passwd) ? passwd :
+				     (parent->passwd ?
+				      parent->passwd :
+				      parent->options.password), MYF(0));
+  child->options.port= port;
+  child->options.host= my_strdup((host) ? host :
+				 (parent->host ?
+				  parent->host :
+				  parent->options.host), MYF(0));
   if (parent->db)
-    child->options.db = my_strdup(parent->db, MYF(0));
+    child->options.db= my_strdup(parent->db, MYF(0));
   else if (parent->options.db)
-    child->options.db = my_strdup(parent->options.db, MYF(0));
+    child->options.db= my_strdup(parent->options.db, MYF(0));
 
-  child->options.rpl_parse = child->options.rpl_probe = child->rpl_pivot = 0;
-
-  return child;
+  /*
+    rpl_pivot is set to 1 in mysql_init();  Reset it as we are not doing
+    replication here
+  */
+  child->rpl_pivot= 0;
+  DBUG_RETURN(child);
 }
 
 
@@ -2291,9 +2306,6 @@ STDCALL mysql_set_master(MYSQL* mysql, const char* host,
     mysql_close(mysql->master);
   if (!(mysql->master = spawn_init(mysql, host, port, user, passwd)))
     return 1;
-  mysql->master->rpl_pivot = 0;
-  mysql->master->options.rpl_parse = 0;
-  mysql->master->options.rpl_probe = 0;
   return 0;
 }
 

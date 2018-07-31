@@ -116,6 +116,9 @@ char* query_table_status(THD *thd,const char *db,const char *table_name);
 /* Time handling defaults */
 #define TIMESTAMP_MAX_YEAR 2038
 #define YY_PART_YEAR	   70
+#define TIMESTAMP_MIN_YEAR (1900 + YY_PART_YEAR - 1)
+#define TIMESTAMP_MAX_VALUE 2145916799
+#define TIMESTAMP_MIN_VALUE 1
 #define PRECISION_FOR_DOUBLE 53
 #define PRECISION_FOR_FLOAT  24
 
@@ -247,6 +250,11 @@ void debug_sync_point(const char* lock_name, uint lock_timeout);
 #define tmp_file_prefix "#sql"			/* Prefix for tmp tables */
 #define tmp_file_prefix_length 4
 
+/* Flags for calc_week() function.  */
+#define WEEK_MONDAY_FIRST    1
+#define WEEK_YEAR            2
+#define WEEK_FIRST_WEEKDAY   4
+
 struct st_table;
 class THD;
 
@@ -359,6 +367,7 @@ void mysql_execute_command(void);
 bool do_command(THD *thd);
 bool dispatch_command(enum enum_server_command command, THD *thd,
 		      char* packet, uint packet_length);
+bool check_dup(const char *db, const char *name, TABLE_LIST *tables);
 #ifndef EMBEDDED_LIBRARY
 bool check_stack_overrun(THD *thd,char *dummy);
 #else
@@ -690,7 +699,7 @@ extern ulong specialflag, current_pid;
 
 extern uint test_flags,select_errors,ha_open_options;
 extern uint protocol_version,dropping_tables;
-extern uint delay_key_write_options;
+extern uint delay_key_write_options, lower_case_table_names;
 extern bool opt_endinfo, using_udf_functions, locked_in_memory;
 extern bool opt_using_transactions, mysql_embedded;
 extern bool using_update_log, opt_large_files;
@@ -699,10 +708,10 @@ extern bool opt_disable_networking, opt_skip_show_db;
 extern bool volatile abort_loop, shutdown_in_progress, grant_option;
 extern uint volatile thread_count, thread_running, global_read_lock;
 extern my_bool opt_sql_bin_update, opt_safe_user_create, opt_no_mix_types;
-extern my_bool opt_safe_show_db, opt_local_infile, lower_case_table_names;
+extern my_bool opt_safe_show_db, opt_local_infile;
 extern my_bool opt_slave_compressed_protocol, use_temp_pool;
 extern my_bool opt_readonly;
-extern my_bool opt_enable_named_pipe;
+extern my_bool opt_enable_named_pipe, opt_sync_frm;
 
 extern MYSQL_LOG mysql_log,mysql_update_log,mysql_slow_log,mysql_bin_log;
 extern FILE *bootstrap_file;
@@ -806,8 +815,7 @@ ha_rows filesort(TABLE *form,struct st_sort_field *sortorder, uint s_length,
 void change_double_for_sort(double nr,byte *to);
 int get_quick_record(SQL_SELECT *select);
 int calc_weekday(long daynr,bool sunday_first_day_of_week);
-uint calc_week(TIME *ltime, bool with_year, bool sunday_first_day_of_week,
-	       uint *year);
+uint calc_week(TIME *l_time, uint week_behaviour, uint *year);
 void find_date(char *pos,uint *vek,uint flag);
 TYPELIB *convert_strings_to_array_type(my_string *typelibs, my_string *end);
 TYPELIB *typelib(List<String> &strings);
@@ -888,4 +896,9 @@ inline void table_case_convert(char * name, uint length)
 {
   if (lower_case_table_names)
     casedn(name, length);
+}
+
+inline const char *table_case_name(HA_CREATE_INFO *info, const char *name)
+{
+  return ((lower_case_table_names == 2 && info->alias) ? info->alias : name);
 }

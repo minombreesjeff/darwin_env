@@ -550,6 +550,11 @@ void close_temporary_tables(THD *thd)
   query_buf_size= 50;   // Enough for DROP ... TABLE
 
   for (table=thd->temporary_tables ; table ; table=table->next)
+    /*
+      We are going to add 4 ` around the db/table names, so 1 does not look
+      enough; indeed it is enough, because table->key_length is greater (by 8,
+      because of server_id and thread_id) than db||table.
+    */
     query_buf_size+= table->key_length+1;
 
   if ((query = alloc_root(&thd->mem_root, query_buf_size)))
@@ -566,8 +571,8 @@ void close_temporary_tables(THD *thd)
         Here we assume table_cache_key always starts
         with \0 terminated db name
       */
-      end = strxmov(end,"`",table->table_cache_key,"`",
-                    ".`",table->real_name,"`,", NullS);
+      end = strxmov(end,"`",table->table_cache_key,"`.`",
+                    table->real_name,"`,", NullS);
     }
     next=table->next;
     close_temporary(table);
@@ -575,8 +580,8 @@ void close_temporary_tables(THD *thd)
   if (query && found_user_tables && mysql_bin_log.is_open())
   {
     /* The -1 is to remove last ',' */
+    thd->clear_error();
     Query_log_event qinfo(thd, query, (ulong)(end-query)-1, 0);
-    qinfo.error_code=0;
     mysql_bin_log.write(&qinfo);
   }
   thd->temporary_tables=0;
@@ -589,6 +594,8 @@ TABLE **find_temporary_table(THD *thd, const char *db, const char *table_name)
   uint	key_length= (uint) (strmov(strmov(key,db)+1,table_name)-key)+1;
   TABLE *table,**prev;
 
+  int4store(key+key_length,thd->server_id);
+  key_length += 4;
   int4store(key+key_length,thd->slave_proxy_id);
   key_length += 4;
 
@@ -617,18 +624,27 @@ bool close_temporary_table(THD *thd, const char *db, const char *table_name)
   return 0;
 }
 
+/*
+  Used by ALTER TABLE when the table is a temporary one. It changes something
+  only if the ALTER contained a RENAME clause (otherwise, table_name is the old
+  name).
+  Prepares a table cache key, which is the concatenation of db, table_name and
+  thd->slave_proxy_id, separated by '\0'.
+*/
 bool rename_temporary_table(THD* thd, TABLE *table, const char *db,
 			    const char *table_name)
 {
   char *key;
   if (!(key=(char*) alloc_root(&table->mem_root,
 			       (uint) strlen(db)+
-			       (uint) strlen(table_name)+6)))
+			       (uint) strlen(table_name)+6+4)))
     return 1;				/* purecov: inspected */
   table->key_length=(uint)
     (strmov((table->real_name=strmov(table->table_cache_key=key,
 				     db)+1),
 	    table_name) - table->table_cache_key)+1;
+  int4store(key+table->key_length,thd->server_id);
+  table->key_length += 4;
   int4store(key+table->key_length,thd->slave_proxy_id);
   table->key_length += 4;
   return 0;
@@ -783,12 +799,13 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
   if (thd->killed)
     DBUG_RETURN(0);
   key_length= (uint) (strmov(strmov(key,db)+1,table_name)-key)+1;
-  int4store(key + key_length, thd->slave_proxy_id);
+  int4store(key + key_length, thd->server_id);
+  int4store(key + key_length + 4, thd->slave_proxy_id);
 
   for (table=thd->temporary_tables; table ; table=table->next)
   {
-    if (table->key_length == key_length+4 &&
-	!memcmp(table->table_cache_key,key,key_length+4))
+    if (table->key_length == key_length+8 &&
+	!memcmp(table->table_cache_key,key,key_length+8))
     {
       if (table->query_id == thd->query_id)
       {
@@ -807,8 +824,12 @@ TABLE *open_table(THD *thd,const char *db,const char *table_name,
     {
       if (table->key_length == key_length &&
 	  !memcmp(table->table_cache_key,key,key_length) &&
-	  !my_strcasecmp(table->table_name,alias))
+	  !my_strcasecmp(table->table_name,alias) &&
+	  table->query_id != thd->query_id)
+      {
+	table->query_id=thd->query_id;
 	goto reset;
+      }
     }
     my_printf_error(ER_TABLE_NOT_LOCKED,ER(ER_TABLE_NOT_LOCKED),MYF(0),alias);
     DBUG_RETURN(0);
@@ -1319,8 +1340,7 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
       }
     }
     pthread_mutex_unlock(&LOCK_open);
-    thd->net.last_error[0]=0;				// Clear error message
-    thd->net.last_errno=0;
+    thd->clear_error();
     error=0;
     if (openfrm(path,alias,
 		(uint) (HA_OPEN_KEYFILE | HA_OPEN_RNDFILE | HA_GET_INDEX |
@@ -1331,8 +1351,7 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
 	(entry->file->is_crashed() && entry->file->check_and_repair(thd)))
     {
       /* Give right error message */
-      thd->net.last_error[0]=0;
-      thd->net.last_errno=0;
+      thd->clear_error();
       my_error(ER_NOT_KEYFILE, MYF(0), name, my_errno);
       sql_print_error("Error: Couldn't repair table: %s.%s",db,name);
       if (entry->file)
@@ -1340,15 +1359,46 @@ static int open_unireg_entry(THD *thd, TABLE *entry, const char *db,
       error=1;
     }
     else
-    {
-      thd->net.last_error[0]=0;			// Clear error message
-      thd->net.last_errno=0;
-    }
+      thd->clear_error();
     pthread_mutex_lock(&LOCK_open);
     unlock_table_name(thd,&table_list);
 
     if (error)
       goto err;
+  }
+  /*
+    If we are here, there was no fatal error (but error may be still
+    unitialized).
+  */
+  if (unlikely(entry->file->implicit_emptied))
+  {
+    entry->file->implicit_emptied= 0;
+    if (mysql_bin_log.is_open())
+    {
+      char *query, *end;
+      uint query_buf_size= 20 + 2*NAME_LEN + 1;
+      if ((query= (char*)my_malloc(query_buf_size,MYF(MY_WME))))
+      {
+        end = strxmov(strmov(query, "DELETE FROM `"),
+                      db,"`.`",name,"`", NullS);
+        Query_log_event qinfo(thd, query, (ulong)(end-query), 0);
+        mysql_bin_log.write(&qinfo);
+        my_free(query, MYF(0));
+      }
+      else
+      {
+        /*
+          As replication is maybe going to be corrupted, we need to warn the
+          DBA on top of warning the client (which will automatically be done
+          because of MYF(MY_WME) in my_malloc() above).
+        */
+        sql_print_error("Error: when opening HEAP table, could not allocate \
+memory to write 'DELETE FROM `%s`.`%s`' to the binary log",db,name);
+        if (entry->file)
+          closefrm(entry);
+        goto err;
+      }
+    }
   }
   DBUG_RETURN(0);
 err:
@@ -1596,7 +1646,7 @@ TABLE *open_temporary_table(THD *thd, const char *path, const char *db,
     total of 6 extra bytes in my_malloc in addition to table/db stuff
   */
   if (!(tmp_table=(TABLE*) my_malloc(sizeof(*tmp_table)+(uint) strlen(db)+
-				     (uint) strlen(table_name)+6,
+				     (uint) strlen(table_name)+6+4,
 				     MYF(MY_WME))))
     DBUG_RETURN(0);				/* purecov: inspected */
 
@@ -1618,6 +1668,9 @@ TABLE *open_temporary_table(THD *thd, const char *path, const char *db,
 					 strmov(tmp_table->table_cache_key,db)
 					 +1), table_name)
 				 - tmp_table->table_cache_key)+1;
+  int4store(tmp_table->table_cache_key + tmp_table->key_length,
+	    thd->server_id);
+  tmp_table->key_length += 4;
   int4store(tmp_table->table_cache_key + tmp_table->key_length,
 	    thd->slave_proxy_id);
   tmp_table->key_length += 4;
@@ -1706,6 +1759,19 @@ find_field_in_tables(THD *thd,Item_field *item,TABLE_LIST *tables)
   const char *table_name=item->table_name;
   const char *name=item->field_name;
   uint length=(uint) strlen(name);
+  char name_buff[NAME_LEN+1];
+
+  if (db && lower_case_table_names)
+  {
+    /*
+      convert database to lower case for comparision.
+      We can't do this in Item_field as this would change the
+      'name' of the item which may be used in the select list
+    */
+    strmake(name_buff, db, sizeof(name_buff)-1);
+    casedn_str(name_buff);
+    db= name_buff;
+  }
 
   if (table_name)
   {						/* Qualified field */
@@ -1822,7 +1888,7 @@ find_item_in_list(Item *find,List<Item> &items)
       }
     }
     else if (!table_name && (item->eq(find,0) ||
-			     find->name &&
+			     find->name && item->name &&
 			     !my_strcasecmp(item->name,find->name)))
     {
       found=li.ref();
@@ -1853,8 +1919,13 @@ int setup_fields(THD *thd, TABLE_LIST *tables, List<Item> &fields,
 
   while ((item=it++))
   {
+    /*
+      Expand * to all fields if this is not the temporary table for an
+      a UNION result
+    */
     if (item->type() == Item::FIELD_ITEM &&
-	((Item_field*) item)->field_name[0] == '*')
+	((Item_field*) item)->field_name[0] == '*' &&
+	!((Item_field*) item)->field)
     {
       uint elem=fields.elements;
       if (insert_fields(thd,tables,((Item_field*) item)->db_name,

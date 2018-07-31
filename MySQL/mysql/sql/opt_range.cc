@@ -70,7 +70,7 @@ public:
   {}
   inline bool is_same(SEL_ARG *arg)
   {
-    if (type != arg->type)
+    if (type != arg->type || part != arg->part)
       return 0;
     if (type != KEY_RANGE)
       return 1;
@@ -290,6 +290,7 @@ typedef struct st_qsel_param {
   char min_key[MAX_KEY_LENGTH+MAX_FIELD_WIDTH],
     max_key[MAX_KEY_LENGTH+MAX_FIELD_WIDTH];
   bool quick;				// Don't calulate possible keys
+  COND *cond;
 } PARAM;
 
 static SEL_TREE * get_mm_parts(PARAM *param,Field *field,
@@ -637,7 +638,6 @@ int SQL_SELECT::test_quick_select(THD *thd, key_map keys_to_use,
     param.table=head;
     param.keys=0;
     param.mem_root= &alloc;
-
     param.thd->no_errors=1;			// Don't warn about NULL
     init_sql_alloc(&alloc, param.thd->variables.range_alloc_block_size, 0);
     if (!(param.key_parts = (KEY_PART*) alloc_root(&alloc,
@@ -818,6 +818,8 @@ static SEL_TREE *get_mm_tree(PARAM *param,COND *cond)
   if (cond_func->select_optimize() == Item_func::OPTIMIZE_NONE)
     DBUG_RETURN(0);				// Can't be calculated
 
+  param->cond= cond;
+
   if (cond_func->functype() == Item_func::BETWEEN)
   {
     if (cond_func->arguments()[0]->type() == Item::FIELD_ITEM)
@@ -942,9 +944,10 @@ static SEL_ARG *
 get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
 	    Item_func::Functype type,Item *value)
 {
-  uint maybe_null=(uint) field->real_maybe_null();
+  uint maybe_null=(uint) field->real_maybe_null(), copies;
   uint field_length=field->pack_length()+maybe_null;
   SEL_ARG *tree;
+  char *str, *str2;
   DBUG_ENTER("get_mm_leaf");
 
   if (type == Item_func::LIKE_FUNC)
@@ -993,23 +996,26 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
     if (maybe_null)
       max_str[0]= min_str[0]=0;
     if (field->binary())
-      like_error=like_range(res->ptr(),res->length(),wild_prefix,field_length,
-			    min_str+offset,max_str+offset,(char) 255,
-			    &min_length,&max_length);
+      like_error=like_range(res->ptr(), res->length(),
+			    ((Item_func_like*)(param->cond))->escape,
+			    field_length, min_str + offset, max_str + offset,
+			    (char) 255, &min_length, &max_length);
     else
     {
 #ifdef USE_STRCOLL
       if (use_strcoll(default_charset_info))
-        like_error= my_like_range(default_charset_info,
-                                  res->ptr(),res->length(),wild_prefix,
-                                  field_length, min_str+maybe_null,
-                                  max_str+maybe_null,&min_length,&max_length);
+        like_error= my_like_range(default_charset_info, res->ptr(),
+				  res->length(),
+				  ((Item_func_like*)(param->cond))->escape,
+                                  field_length, min_str + maybe_null,
+                                  max_str + maybe_null, &min_length,
+				  &max_length);
       else
 #endif
-        like_error=like_range(res->ptr(),res->length(),wild_prefix,
-			      field_length,
-                              min_str+offset,max_str+offset,
-                              max_sort_char,&min_length,&max_length);
+        like_error=like_range(res->ptr(), res->length(),
+			      ((Item_func_like*)(param->cond))->escape,
+			      field_length, min_str + offset, max_str + offset,
+                              max_sort_char, &min_length, &max_length);
     }
     if (like_error)				// Can't optimize with LIKE
       DBUG_RETURN(0);
@@ -1056,15 +1062,37 @@ get_mm_leaf(PARAM *param, Field *field, KEY_PART *key_part,
     /* This happens when we try to insert a NULL field in a not null column */
     DBUG_RETURN(&null_element);			// cmp with NULL is never true
   }
-  // Get local copy of key
-  char *str= (char*) alloc_root(param->mem_root,
-				key_part->part_length+maybe_null);
+  /* Get local copy of key */
+  copies= 1;
+  if (field->key_type() == HA_KEYTYPE_VARTEXT)
+    copies= 2;
+  str= str2= (char*) alloc_root(param->mem_root,
+				(key_part->part_length+maybe_null)*copies+1);
   if (!str)
     DBUG_RETURN(0);
   if (maybe_null)
     *str= (char) field->is_real_null();		// Set to 1 if null
   field->get_key_image(str+maybe_null,key_part->part_length);
-  if (!(tree=new SEL_ARG(field,str,str)))
+  if (copies == 2)
+  {
+    /*
+      The key is stored as 2 byte length + key
+      key doesn't match end space. In other words, a key 'X ' should match
+      all rows between 'X' and 'X           ...'
+    */
+    uint length= uint2korr(str+maybe_null);
+    str2= str+ key_part->part_length + maybe_null;
+    /* remove end space */
+    while (length > 0 && str[length+HA_KEY_BLOB_LENGTH+maybe_null-1] == ' ')
+      length--;
+    int2store(str+maybe_null, length);
+    /* Create key that is space filled */
+    memcpy(str2, str, length + HA_KEY_BLOB_LENGTH + maybe_null);
+    bfill(str2+ length+ HA_KEY_BLOB_LENGTH +maybe_null,
+	  key_part->part_length-length - HA_KEY_BLOB_LENGTH, ' ');
+    int2store(str2+maybe_null, key_part->part_length - HA_KEY_BLOB_LENGTH);
+  }
+  if (!(tree=new SEL_ARG(field,str,str2)))
     DBUG_RETURN(0);		// out of memory
 
   switch (type) {
@@ -1474,7 +1502,7 @@ key_or(SEL_ARG *key1,SEL_ARG *key2)
     }
     return 0;
   }
-  else if (!key2)
+  if (!key2)
   {
     key1->use_count--;
     key1->free_tree();
@@ -1682,6 +1710,8 @@ key_or(SEL_ARG *key1,SEL_ARG *key2)
 	  return 0;				// OOM
 	tmp->copy_max_to_min(&key);
 	tmp->increment_use_count(key1->use_count+1);
+	/* Increment key count as it may be used for next loop */
+	key.increment_use_count(1);
 	new_arg->next_key_part=key_or(tmp->next_key_part,key.next_key_part);
 	key1=key1->insert(new_arg);
 	break;
@@ -2233,7 +2263,8 @@ check_quick_keys(PARAM *param,uint idx,SEL_ARG *key_tree,
   param->range_count++;
   if (!tmp_min_flag && ! tmp_max_flag &&
       (uint) key_tree->part+1 == param->table->key_info[keynr].key_parts &&
-      (param->table->key_info[keynr].flags & HA_NOSAME) &&
+      (param->table->key_info[keynr].flags & (HA_NOSAME | HA_END_SPACE_KEY)) ==
+      HA_NOSAME &&
       min_key_length == max_key_length &&
       !memcmp(param->min_key,param->max_key,min_key_length))
     tmp=1;					// Max one record
@@ -2367,7 +2398,8 @@ get_quick_keys(PARAM *param,QUICK_SELECT *quick,KEY_PART *key,
     {
       KEY *table_key=quick->head->key_info+quick->index;
       flag=EQ_RANGE;
-      if (table_key->flags & HA_NOSAME && key->part == table_key->key_parts-1)
+      if ((table_key->flags & (HA_NOSAME | HA_END_SPACE_KEY)) == HA_NOSAME &&
+	  key->part == table_key->key_parts-1)
       {
 	if (!(table_key->flags & HA_NULL_PART_KEY) ||
 	    !null_part_in_key(key,
@@ -2412,7 +2444,7 @@ bool QUICK_SELECT::unique_key_range()
     if (((tmp=ranges.head())->flag & (EQ_RANGE | NULL_RANGE)) == EQ_RANGE)
     {
       KEY *key=head->key_info+index;
-      return ((key->flags & HA_NOSAME) &&
+      return ((key->flags & (HA_NOSAME | HA_END_SPACE_KEY)) == HA_NOSAME &&
 	      key->key_length == tmp->min_length);
     }
   }
@@ -2447,6 +2479,7 @@ QUICK_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table, TABLE_REF *ref)
   QUICK_SELECT *quick=new QUICK_SELECT(thd, table, ref->key, 1);
   KEY *key_info = &table->key_info[ref->key];
   KEY_PART *key_part;
+  QUICK_RANGE *range;
   uint part;
 
   if (!quick)
@@ -2454,18 +2487,18 @@ QUICK_SELECT *get_quick_select_for_ref(THD *thd, TABLE *table, TABLE_REF *ref)
   if (cp_buffer_from_ref(ref))
   {
     if (thd->fatal_error)
-      return 0;					// out of memory
+      goto err;					// out of memory
     return quick;				// empty range
   }
 
-  QUICK_RANGE *range= new QUICK_RANGE();
-  if (!range)
+  if (!(range= new QUICK_RANGE()))
     goto err;			// out of memory
 
   range->min_key=range->max_key=(char*) ref->key_buff;
   range->min_length=range->max_length=ref->key_length;
   range->flag= ((ref->key_length == key_info->key_length &&
-		 (key_info->flags & HA_NOSAME)) ? EQ_RANGE : 0);
+		 (key_info->flags & (HA_NOSAME | HA_END_SPACE_KEY)) ==
+		 HA_NOSAME) ? EQ_RANGE : 0);
 
   if (!(quick->key_parts=key_part=(KEY_PART *)
 	alloc_root(&quick->alloc,sizeof(KEY_PART)*ref->key_parts)))
@@ -2677,15 +2710,18 @@ int QUICK_SELECT_DESC::get_next()
     }
     else
     {
-      /* Heikki changed Sept 11, 2002: since InnoDB does not store the cursor
-	 position if READ_KEY_EXACT is used to a primary key with all
-	 key columns specified, we must use below HA_READ_KEY_OR_NEXT,
-	 so that InnoDB stores the cursor position and is able to move
-	 the cursor one step backward after the search. */
+      /*
+	Heikki changed Sept 11, 2002: since InnoDB does not store the cursor
+	position if READ_KEY_EXACT is used to a primary key with all
+	key columns specified, we must use below HA_READ_KEY_OR_NEXT,
+	so that InnoDB stores the cursor position and is able to move
+	the cursor one step backward after the search. */
 
       DBUG_ASSERT(range->flag & NEAR_MAX || range_reads_after_key(range));
-      /* Note: even if max_key is only a prefix, HA_READ_AFTER_KEY will
-       * do the right thing - go past all keys which match the prefix */
+      /*
+	Note: even if max_key is only a prefix, HA_READ_AFTER_KEY will
+	do the right thing - go past all keys which match the prefix
+      */
       result=file->index_read(record, (byte*) range->max_key,
 			      range->max_length,
 			      ((range->flag & NEAR_MAX) ?

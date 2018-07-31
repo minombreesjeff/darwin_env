@@ -16,7 +16,7 @@ Summary(pt_BR): MySQL: Um servidor SQL rápido e confiável.
 Group(pt_BR):	Aplicações/Banco_de_Dados
 Version:	@MYSQL_NO_DASH_VERSION@
 Release:	%{release}
-Copyright:	GPL
+License:	GPL
 Source:		http://www.mysql.com/Downloads/MySQL-@MYSQL_BASE_VERSION@/mysql-%{mysql_version}.tar.gz
 URL:		http://www.mysql.com/
 Packager:	Lenz Grimmer <build@mysql.com>
@@ -120,7 +120,6 @@ Este pacote contém medições de desempenho de scripts e dados do MySQL.
 
 %package devel
 Release: %{release}
-Requires: %{name}-client
 Summary: MySQL - Development header files and libraries
 Group: Applications/Databases
 Summary(pt_BR): MySQL - Medições de desempenho
@@ -259,10 +258,11 @@ export PATH
 # Build the 4.0 Max binary (includes BDB and UDFs and therefore
 # cannot be linked statically against the patched glibc)
 
-# If we want to compile with RAID using gcc 3, we need to use
-# gcc instead of g++ to avoid linking problems (RAID code is written in C++)
-if gcc -v 2>&1 | grep 'version 3' > /dev/null 2>&1
+# Use gcc for C and C++ code (to avoid a dependency on libstdc++ and
+# including exceptions into the code
+if [ -z "$CXX" -a -z "$CC" ]
 then
+	export CC="gcc"
 	export CXX="gcc"
 fi
 
@@ -443,11 +443,12 @@ fi
 [ "$RBR" != "/" ] && [ -d $RBR ] && rm -rf $RBR;
 
 %files server
-%defattr(755 root, root)
+%defattr(-,root,root,0755)
 
-%doc %attr(644, root, root) COPYING COPYING.LIB README
-%doc %attr(644, root, root) Docs/manual.{html,ps,texi,txt} Docs/manual_toc.html
-%doc %attr(644, root, root) support-files/my-*.cnf
+%doc COPYING README
+%doc Docs/manual.{html,ps,texi,txt}
+%doc Docs/manual_toc.html
+%doc support-files/my-*.cnf
 
 %doc %attr(644, root, root) %{_infodir}/mysql.info*
 
@@ -467,6 +468,7 @@ fi
 %attr(755, root, root) %{_bindir}/isamlog
 %attr(755, root, root) %{_bindir}/my_print_defaults
 %attr(755, root, root) %{_bindir}/myisamchk
+%attr(755, root, root) %{_bindir}/myisam_ftdump
 %attr(755, root, root) %{_bindir}/myisamlog
 %attr(755, root, root) %{_bindir}/myisampack
 %attr(755, root, root) %{_bindir}/mysql_convert_table_format
@@ -493,12 +495,13 @@ fi
 %attr(755, root, root) %{_sbindir}/rcmysql
 %attr(644, root, root) %{_libdir}/mysql/mysqld.sym
 
-%attr(644, root, root) %{_sysconfdir}/logrotate.d/mysql
+%attr(644, root, root) %config(noreplace,missingok) %{_sysconfdir}/logrotate.d/mysql
 %attr(755, root, root) %{_sysconfdir}/init.d/mysql
 
 %attr(755, root, root) %{_datadir}/mysql/
 
 %files client
+%defattr(-, root, root, 0755)
 %attr(755, root, root) %{_bindir}/msql2mysql
 %attr(755, root, root) %{_bindir}/mysql
 %attr(755, root, root) %{_bindir}/mysql_find_rows
@@ -526,7 +529,7 @@ fi
 /sbin/ldconfig
 
 %files devel
-%defattr(644 root, root)
+%defattr(-, root, root, 0755)
 %attr(755, root, root) %{_bindir}/comp_err
 %attr(755, root, root) %{_bindir}/mysql_config
 %dir %attr(755, root, root) %{_includedir}/mysql
@@ -547,11 +550,12 @@ fi
 %{_libdir}/mysql/libvio.a
 
 %files shared
-%defattr(755 root, root)
+%defattr(-, root, root, 0755)
 # Shared libraries (omit for architectures that don't support them)
 %{_libdir}/*.so*
 
 %files bench
+%defattr(-, root, root, 0755)
 %attr(-, root, root) %{_datadir}/sql-bench
 %attr(-, root, root) %{_datadir}/mysql-test
 %attr(755, root, root) %{_bindir}/mysqlmanager
@@ -559,15 +563,43 @@ fi
 %attr(755, root, root) %{_bindir}/mysqlmanagerc
 
 %files Max
+%defattr(-, root, root, 0755)
 %attr(755, root, root) %{_sbindir}/mysqld-max
 %attr(644, root, root) %{_libdir}/mysql/mysqld-max.sym
 
 %files embedded
+%defattr(-, root, root, 0755)
 %attr(644, root, root) %{_libdir}/mysql/libmysqld.a
 
 # The spec file changelog only includes changes made to the spec file
 # itself
 %changelog 
+* Thu Feb 12 2004 Lenz Grimmer <lenz@mysql.com>
+
+- when using gcc, _always_ use CXX=gcc 
+- replaced Copyright with License field (Copyright is obsolete)
+
+* Tue Feb 03 2004 Lenz Grimmer <lenz@mysql.com>
+
+- added myisam_ftdump to the Server package
+
+* Mon Dec 22 2003 Lenz Grimmer <lenz@mysql.com>
+
+- marked /etc/logrotate.d/mysql as a config file (BUG 2156)
+
+* Fri Dec 13 2003 Lenz Grimmer <lenz@mysql.com>
+
+- fixed file permissions (BUG 1672)
+
+* Thu Dec 11 2003 Lenz Grimmer <lenz@mysql.com>
+
+- made testing for gcc3 a bit more robust
+
+* Fri Nov 21 2003 Lenz Grimmer <lenz@mysql.com>
+
+- removed dependency on MySQL-client from the MySQL-devel subpackage
+  as it is not really required. (BUG 1610)
+
 * Fri Aug 29 2003 Lenz Grimmer <lenz@mysql.com>
 
 - Fixed BUG 1162 (removed macro names from the changelog)

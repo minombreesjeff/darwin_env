@@ -214,8 +214,7 @@ String *Item_real_func::val_str(String *str)
   double nr=val();
   if (null_value)
     return 0; /* purecov: inspected */
-  else
-    str->set(nr,decimals);
+  str->set(nr,decimals);
   return str;
 }
 
@@ -227,7 +226,7 @@ String *Item_num_func::val_str(String *str)
     longlong nr=val_int();
     if (null_value)
       return 0; /* purecov: inspected */
-    else if (!unsigned_flag)
+    if (!unsigned_flag)
       str->set(nr);
     else
       str->set((ulonglong) nr);
@@ -237,8 +236,7 @@ String *Item_num_func::val_str(String *str)
     double nr=val();
     if (null_value)
       return 0; /* purecov: inspected */
-    else
-      str->set(nr,decimals);
+    str->set(nr,decimals);
   }
   return str;
 }
@@ -257,7 +255,7 @@ String *Item_int_func::val_str(String *str)
   longlong nr=val_int();
   if (null_value)
     return 0;
-  else if (!unsigned_flag)
+  if (!unsigned_flag)
     str->set(nr);
   else
     str->set((ulonglong) nr);
@@ -286,7 +284,7 @@ String *Item_num_op::val_str(String *str)
     longlong nr=val_int();
     if (null_value)
       return 0; /* purecov: inspected */
-    else if (!unsigned_flag)
+    if (!unsigned_flag)
       str->set(nr);
     else
       str->set((ulonglong) nr);
@@ -296,8 +294,7 @@ String *Item_num_op::val_str(String *str)
     double nr=val();
     if (null_value)
       return 0; /* purecov: inspected */
-    else
-      str->set(nr,decimals);
+    str->set(nr,decimals);
   }
   return str;
 }
@@ -554,7 +551,8 @@ double Item_func_pow::val()
 
 double Item_func_acos::val()
 {
-  double value=args[0]->val();
+  // the volatile's for BUG #2338 to calm optimizer down (because of gcc's bug)
+  volatile double value=args[0]->val();
   if ((null_value=(args[0]->null_value || (value < -1.0 || value > 1.0))))
     return 0.0;
   return fix_result(acos(value));
@@ -562,7 +560,8 @@ double Item_func_acos::val()
 
 double Item_func_asin::val()
 {
-  double value=args[0]->val();
+  // the volatile's for BUG #2338 to calm optimizer down (because of gcc's bug)
+  volatile double value=args[0]->val();
   if ((null_value=(args[0]->null_value || (value < -1.0 || value > 1.0))))
     return 0.0;
   return fix_result(asin(value));
@@ -799,7 +798,7 @@ String *Item_func_min_max::val_str(String *str)
     longlong nr=val_int();
     if (null_value)
       return 0;
-    else if (!unsigned_flag)
+    if (!unsigned_flag)
       str->set(nr);
     else
       str->set((ulonglong) nr);
@@ -810,8 +809,7 @@ String *Item_func_min_max::val_str(String *str)
     double nr=val();
     if (null_value)
       return 0; /* purecov: inspected */
-    else
-      str->set(nr,decimals);
+    str->set(nr,decimals);
     return str;
   }
   case STRING_RESULT:
@@ -1392,8 +1390,7 @@ String *Item_func_udf_float::val_str(String *str)
   double nr=val();
   if (null_value)
     return 0;					/* purecov: inspected */
-  else
-    str->set(nr,decimals);
+  str->set(nr,decimals);
   return str;
 }
 
@@ -1413,7 +1410,7 @@ String *Item_func_udf_int::val_str(String *str)
   longlong nr=val_int();
   if (null_value)
     return 0;
-  else if (!unsigned_flag)
+  if (!unsigned_flag)
     str->set(nr);
   else
     str->set((ulonglong) nr);
@@ -2087,7 +2084,7 @@ void Item_func_get_user_var::fix_length_and_dec()
 
 bool Item_func_get_user_var::const_item() const
 {
-  return var_entry && current_thd->query_id != var_entry->update_query_id;
+  return (!var_entry || current_thd->query_id != var_entry->update_query_id);
 }
 
 

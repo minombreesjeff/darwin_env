@@ -379,7 +379,11 @@ public:
   char	  priv_host[MAX_HOSTNAME];
   /* remote (peer) port */
   uint16 peer_port;
-  /* Points to info-string that will show in SHOW PROCESSLIST */
+  /*
+    Points to info-string that we show in SHOW PROCESSLIST
+    You are supposed to update thd->proc_info only if you have coded
+    a time-consuming piece that MySQL can get stuck in for a long time.
+  */
   const char *proc_info;
   /* points to host if host is available, otherwise points to ip */
   const char *host_or_ip;
@@ -408,6 +412,11 @@ public:
   enum enum_server_command command;
   uint32     server_id;
   uint32     file_id;			// for LOAD DATA INFILE
+  /*
+    Used in error messages to tell user in what part of MySQL we found an
+    error. E. g. when where= "having clause", if fix_fields() fails, user
+    will know that the error was in having clause.
+  */
   const char *where;
   time_t     start_time,time_after_lock,user_time;
   time_t     connect_time,thr_create_time; // track down slow pthread_create
@@ -451,7 +460,7 @@ public:
   long	     dbug_thread_id;
   pthread_t  real_id;
   uint	     current_tablenr,tmp_table,cond_count;
-  uint	     server_status,open_options;
+  uint	     server_status,open_options,system_thread;
   uint32     query_length;
   uint32     db_length;
   /* variables.transaction_isolation is reset to this after each commit */
@@ -461,7 +470,7 @@ public:
   bool	     set_query_id,locked,count_cuted_fields,some_tables_deleted;
   bool	     no_errors, allow_sum_func, password, fatal_error;
   bool	     query_start_used,last_insert_id_used,insert_id_used,rand_used;
-  bool	     system_thread,in_lock_tables,global_read_lock;
+  bool	     in_lock_tables,global_read_lock;
   bool       query_error, bootstrap, cleanup_done;
   bool	     safe_to_cache_query;
   bool	     volatile killed;
@@ -581,7 +590,21 @@ public:
   void add_changed_table(TABLE *table);
   void add_changed_table(const char *key, long key_length);
   CHANGED_TABLE_LIST * changed_table_dup(const char *key, long key_length);
+#ifndef EMBEDDED_LIBRARY
+  inline void clear_error()
+  {
+    net.last_error[0]= 0;
+    net.last_errno= 0;
+  }
+#else
+  void clear_error();
+#endif
 };
+
+/* Flags for the THD::system_thread (bitmap) variable */
+#define SYSTEM_THREAD_DELAYED_INSERT 1
+#define SYSTEM_THREAD_SLAVE_IO 2
+#define SYSTEM_THREAD_SLAVE_SQL 4
 
 /*
   Used to hold information about file and file structure in exchainge 
@@ -594,7 +617,7 @@ public:
   String *field_term,*enclosed,*line_term,*line_start,*escaped;
   bool opt_enclosed;
   bool dumpfile;
-  uint skip_lines;
+  ulong skip_lines;
   sql_exchange(char *name,bool dumpfile_flag);
   ~sql_exchange() {}
 };
@@ -642,11 +665,13 @@ class select_export :public select_result {
   File file;
   IO_CACHE cache;
   ha_rows row_count;
+  char path[FN_REFLEN];
   uint field_term_length;
   int field_sep_char,escape_char,line_sep_char;
   bool fixed_row_size;
 public:
-  select_export(sql_exchange *ex) :exchange(ex),file(-1),row_count(0L) {}
+  select_export(sql_exchange *ex) :exchange(ex),file(-1),row_count(0L)
+  { path[0]=0; }
   ~select_export();
   int prepare(List<Item> &list);
   bool send_fields(List<Item> &list,
@@ -709,11 +734,11 @@ class select_create: public select_insert {
   MYSQL_LOCK *lock;
   Field **field;
 public:
-  select_create (const char *db_name, const char *table_name,
-		 HA_CREATE_INFO *create_info_par,
-		 List<create_field> &fields_par,
-		 List<Key> &keys_par,
-		 List<Item> &select_fields,enum_duplicates duplic)
+  select_create(const char *db_name, const char *table_name,
+		HA_CREATE_INFO *create_info_par,
+		List<create_field> &fields_par,
+		List<Key> &keys_par,
+		List<Item> &select_fields,enum_duplicates duplic)
     :select_insert (NULL, &select_fields, duplic), db(db_name),
     name(table_name), extra_fields(&fields_par),keys(&keys_par),
     create_info(create_info_par), lock(0)
@@ -830,10 +855,11 @@ class multi_delete : public select_result
   TABLE_LIST *delete_tables, *table_being_deleted;
   Unique  **tempfiles;
   THD *thd;
-  ha_rows deleted;
+  ha_rows deleted, found;
   uint num_of_tables;
   int error;
   bool do_delete, transactional_tables, log_delayed, normal_tables;
+
 public:
   multi_delete(THD *thd, TABLE_LIST *dt, uint num_of_tables);
   ~multi_delete();

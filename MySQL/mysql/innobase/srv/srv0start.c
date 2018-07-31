@@ -1087,6 +1087,28 @@ innobase_start_or_create_for_mysql(void)
 	  	return(DB_ERROR);
 	}
 
+        /* Set the maximum number of threads which can wait for a semaphore
+        inside InnoDB */
+#if defined(__WIN__) || defined(__NETWARE__)
+
+/* Create less event semaphores because Win 98/ME had difficulty creating
+40000 event semaphores.
+Comment from Novell, Inc.: also, these just take a lot of memory on
+NetWare. */
+        srv_max_n_threads = 1000;
+#else
+        if (srv_pool_size >= 8 * 1024 * 1024) {
+                                  /* Here we still have srv_pool_size counted
+                                  in bytes, srv_boot converts the value to
+                                  pages; if buffer pool is less than 8 MB,
+                                  assume fewer threads. */
+                srv_max_n_threads = 10000;
+        } else {
+		srv_max_n_threads = 1000;       /* saves several MB of memory,
+                                                especially in 64-bit
+                                                computers */
+        }
+#endif
 	err = srv_boot();
 
 	if (err != DB_SUCCESS) {
@@ -1456,6 +1478,31 @@ innobase_start_or_create_for_mysql(void)
 	os_fast_mutex_unlock(&srv_os_test_mutex);
 
 	os_fast_mutex_free(&srv_os_test_mutex);
+
+	/***********************************************************/
+	/* Do NOT merge to the 4.1 code base! */
+	if (trx_sys_downgrading_from_4_1_1) {
+		fprintf(stderr,
+"InnoDB: You are downgrading from an InnoDB version which allows multiple\n"
+"InnoDB: tablespaces. Wait that purge and insert buffer merge run to\n"
+"InnoDB: completion...\n");
+		for (;;) {
+			os_thread_sleep(10000000);
+
+			if (0 == strcmp(srv_main_thread_op_info,
+					"waiting for server activity")) {
+				break;
+			}
+		}
+		fprintf(stderr,
+"InnoDB: Full purge and insert buffer merge completed.\n");
+
+	        trx_sys_mark_downgraded_from_4_1_1();
+
+		fprintf(stderr,
+"InnoDB: Downgraded from >= 4.1.1 to 4.0\n");
+	}
+	/***********************************************************/
 
 	if (srv_print_verbose_log) {
 	  	ut_print_timestamp(stderr);

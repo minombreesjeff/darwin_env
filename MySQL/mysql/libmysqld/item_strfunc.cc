@@ -1507,7 +1507,11 @@ void Item_func_elt::fix_length_and_dec()
 {
   max_length=0;
   decimals=0;
-  for (uint i=1 ; i < arg_count ; i++)
+#if MYSQL_VERSION_ID < 40100
+  for (uint i= 0; i < arg_count ; i++)
+#else
+  for (uint i= 1; i < arg_count ; i++)
+#endif
   {
     set_if_bigger(max_length,args[i]->max_length);
     set_if_bigger(decimals,args[i]->decimals);
@@ -1706,14 +1710,11 @@ inline String* alloc_buffer(String *res,String *str,String *tmp_value,
       str->length(length);
       return str;
     }
-    else
-    {
-      if (tmp_value->alloc(length))
-	return 0;
-      (void) tmp_value->copy(*res);
-      tmp_value->length(length);
-      return tmp_value;
-    }
+    if (tmp_value->alloc(length))
+      return 0;
+    (void) tmp_value->copy(*res);
+    tmp_value->length(length);
+    return tmp_value;
   }
   res->length(length);
   return res;
@@ -1806,7 +1807,7 @@ String *Item_func_rpad::val_str(String *str)
   const char *ptr_pad;
   int32 count= (int32) args[1]->val_int();
   String *res =args[0]->val_str(str);
-  String *rpad = args[2]->val_str(str);
+  String *rpad = args[2]->val_str(&rpad_str);
 
   if (!res || args[1]->null_value || !rpad || count < 0)
     goto err;
@@ -1866,7 +1867,7 @@ String *Item_func_lpad::val_str(String *str)
   const char *ptr_pad;
   ulong count= (long) args[1]->val_int();
   String *res= args[0]->val_str(str);
-  String *lpad= args[2]->val_str(str);
+  String *lpad= args[2]->val_str(&lpad_str);
 
   if (!res || args[1]->null_value || !lpad)
     goto err;
@@ -2043,6 +2044,10 @@ String* Item_func_export_set::val_str(String* str)
     null_value=1;
     return 0;
   }
+  /*
+    Arg count can only be 3, 4 or 5 here. This is guaranteed from the
+    grammar for EXPORT_SET()
+  */
   switch(arg_count) {
   case 5:
     num_set_values = (uint) args[4]->val_int();
@@ -2168,7 +2173,7 @@ String *Item_func_quote::val_str(String *str)
   new_length= arg_length+2; /* for beginning and ending ' signs */
 
   for (from= (char*) arg->ptr(), end= from + arg_length; from < end; from++)
-    new_length+= get_esc_bit(escmask, *from);
+    new_length+= get_esc_bit(escmask, (uchar) *from);
 
   /*
     We have to use realloc() instead of alloc() as we want to keep the

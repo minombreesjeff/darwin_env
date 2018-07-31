@@ -126,20 +126,13 @@ int chk_status(MI_CHECK *param, register MI_INFO *info)
 int chk_del(MI_CHECK *param, register MI_INFO *info, uint test_flag)
 {
   reg2 ha_rows i;
-  uint j,delete_link_length;
+  uint delete_link_length;
   my_off_t empty,next_link,old_link;
   char buff[22],buff2[22];
   DBUG_ENTER("chk_del");
 
-  if (!(test_flag & T_SILENT))
-    puts("- check key delete-chain");
-
   LINT_INIT(old_link);
   param->record_checksum=0;
-  param->key_file_blocks=info->s->base.keystart;
-  for (j=0 ; j < info->s->state.header.max_block_size ; j++)
-    if (check_k_link(param,info,j))
-      goto wrong;
   delete_link_length=((info->s->options & HA_OPTION_PACK_RECORD) ? 20 :
 		      info->s->rec_reflength+1);
 
@@ -361,6 +354,18 @@ int chk_key(MI_CHECK *param, register MI_INFO *info)
   MI_KEYDEF *keyinfo;
   char buff[22],buff2[22];
   DBUG_ENTER("chk_key");
+
+  if (!(param->testflag & T_SILENT))
+    puts("- check key delete-chain");
+
+  param->key_file_blocks=info->s->base.keystart;
+  for (key=0 ; key < info->s->state.header.max_block_size ; key++)
+    if (check_k_link(param,info,key))
+    {
+      if (param->testflag & T_VERBOSE) puts("");
+      mi_check_print_error(param,"key delete-link-chain corrupted");
+      DBUG_RETURN(-1);
+    }
 
   if (!(param->testflag & T_SILENT)) puts("- check index reference");
 
@@ -917,7 +922,7 @@ int chk_data_link(MI_CHECK *param, MI_INFO *info,int extend)
 	  info->checksum=mi_checksum(info,record);
 	  if (param->testflag & (T_EXTEND | T_MEDIUM | T_VERBOSE))
 	  {
-	    if (_mi_rec_check(info,record, info->rec_buff))
+	    if (_mi_rec_check(info,record, info->rec_buff,block_info.rec_len))
 	    {
 	      mi_check_print_error(param,"Found wrong packed record at %s",
 			  llstr(start_recpos,llbuff));
@@ -1153,6 +1158,9 @@ int mi_repair(MI_CHECK *param, register MI_INFO *info,
   }
   param->testflag|=T_REP; /* for easy checking */
 
+  if (info->s->options & (HA_OPTION_CHECKSUM | HA_OPTION_COMPRESS_RECORD))
+    param->testflag|=T_CALC_CHECKSUM;
+
   if (!param->using_global_keycache)
     VOID(init_key_cache(param->use_buffers));
 
@@ -1180,9 +1188,8 @@ int mi_repair(MI_CHECK *param, register MI_INFO *info,
   if (!rep_quick)
   {
     /* Get real path for data file */
-    fn_format(param->temp_filename,name,"", MI_NAME_DEXT,2+4+32);
     if ((new_file=my_raid_create(fn_format(param->temp_filename,
-					   param->temp_filename,"",
+					   share->data_file_name, "",
 					   DATA_TMP_EXT, 2+4),
 				 0,param->tmpfile_createflag,
 				 share->base.raid_type,
@@ -1365,6 +1372,7 @@ err:
       VOID(my_close(new_file,MYF(0)));
       VOID(my_raid_delete(param->temp_filename,info->s->base.raid_chunks,
 			  MYF(MY_WME)));
+      info->rec_cache.file=-1; /* don't flush data to new_file, it's closed */
     }
     mi_mark_crashed_on_repair(info);
   }
@@ -1820,6 +1828,9 @@ int mi_repair_by_sort(MI_CHECK *param, register MI_INFO *info,
   }
   param->testflag|=T_REP; /* for easy checking */
 
+  if (info->s->options & (HA_OPTION_CHECKSUM | HA_OPTION_COMPRESS_RECORD))
+    param->testflag|=T_CALC_CHECKSUM;
+
   bzero((char*)&sort_info,sizeof(sort_info));
   bzero((char *)&sort_param, sizeof(sort_param));
   if (!(sort_info.key_block=
@@ -1849,11 +1860,9 @@ int mi_repair_by_sort(MI_CHECK *param, register MI_INFO *info,
   if (!rep_quick)
   {
     /* Get real path for data file */
-    fn_format(param->temp_filename,name,"", MI_NAME_DEXT,2+4+32);
     if ((new_file=my_raid_create(fn_format(param->temp_filename,
-					   param->temp_filename, "",
-					   DATA_TMP_EXT,
-					   2+4),
+					   share->data_file_name, "",
+					   DATA_TMP_EXT, 2+4),
 				 0,param->tmpfile_createflag,
 				 share->base.raid_type,
 				 share->base.raid_chunks,
@@ -2189,6 +2198,9 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
   }
   param->testflag|=T_REP; /* for easy checking */
 
+  if (info->s->options & (HA_OPTION_CHECKSUM | HA_OPTION_COMPRESS_RECORD))
+    param->testflag|=T_CALC_CHECKSUM;
+
   bzero((char*)&sort_info,sizeof(sort_info));
   if (!(sort_info.key_block=
 	alloc_key_blocks(param,
@@ -2210,9 +2222,8 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
   if (!rep_quick)
   {
     /* Get real path for data file */
-    fn_format(param->temp_filename,name,"", MI_NAME_DEXT,2+4+32);
     if ((new_file=my_raid_create(fn_format(param->temp_filename,
-					   param->temp_filename, "",
+					   share->data_file_name, "",
 					   DATA_TMP_EXT,
 					   2+4),
 				 0,param->tmpfile_createflag,
@@ -2339,6 +2350,11 @@ int mi_repair_parallel(MI_CHECK *param, register MI_INFO *info,
 
     sort_param[i].record= (((char *)(sort_param+share->base.keys))+
 			   (share->base.pack_reclength * i));
+    if (!mi_alloc_rec_buff(info, -1, &sort_param[i].rec_buff))
+    {
+      mi_check_print_error(param,"Not enough memory!");
+      goto err;
+    }
 
     sort_param[i].key_length=share->rec_reflength;
     for (keyseg=sort_param[i].keyinfo->seg; keyseg->type != HA_KEYTYPE_END;
@@ -2843,8 +2859,8 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 	    if (!(to=mi_alloc_rec_buff(info,block_info.rec_len,
 				       &(sort_param->rec_buff))))
 	    {
-	      mi_check_print_error(param,"Not enough memory for blob at %s",
-			  llstr(sort_param->start_recpos,llbuff));
+	      mi_check_print_error(param,"Not enough memory for blob at %s (need %lu)",
+			  llstr(sort_param->start_recpos,llbuff), block_info.rec_len);
 	      DBUG_RETURN(1);
 	    }
 	  }
@@ -2900,7 +2916,8 @@ static int sort_get_next_record(MI_SORT_PARAM *sort_param)
 	  info->checksum=mi_checksum(info,sort_param->record);
 	if ((param->testflag & (T_EXTEND | T_REP)) || searching)
 	{
-	  if (_mi_rec_check(info, sort_param->record, sort_param->rec_buff))
+	  if (_mi_rec_check(info, sort_param->record, sort_param->rec_buff,
+                            sort_param->find_length))
 	  {
 	    mi_check_print_info(param,"Found wrong packed record at %s",
 				llstr(sort_param->start_recpos,llbuff));

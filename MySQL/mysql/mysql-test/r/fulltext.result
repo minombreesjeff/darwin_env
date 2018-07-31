@@ -5,6 +5,10 @@ INSERT INTO t1 VALUES('MySQL has now support', 'for full-text search'),
 ('Only MyISAM tables','support collections'),
 ('Function MATCH ... AGAINST()','is used to do a search'),
 ('Full-text search in MySQL', 'implements vector space model');
+SHOW INDEX FROM t1;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
+t1	1	a	1	a	A	NULL	NULL	NULL	YES	FULLTEXT	
+t1	1	a	2	b	A	NULL	NULL	NULL	YES	FULLTEXT	
 select * from t1 where MATCH(a,b) AGAINST ("collections");
 a	b
 Only MyISAM tables	support collections
@@ -134,6 +138,23 @@ Only MyISAM tables	support collections
 Function MATCH ... AGAINST()	is used to do a search
 some test foobar	implements vector space model
 drop table t1;
+create table t1 (a varchar(200) not null, fulltext (a));
+insert t1 values ("aaa10 bbb20"), ("aaa20 bbb15"), ("aaa30 bbb10");
+select * from t1 where match a against ("+aaa* +bbb*" in boolean mode);
+a
+aaa10 bbb20
+aaa20 bbb15
+aaa30 bbb10
+select * from t1 where match a against ("+aaa* +bbb1*" in boolean mode);
+a
+aaa20 bbb15
+aaa30 bbb10
+select * from t1 where match a against ("+aaa* +ccc*" in boolean mode);
+a
+select * from t1 where match a against ("+aaa10 +(bbb*)" in boolean mode);
+a
+aaa10 bbb20
+drop table t1;
 CREATE TABLE t1 (
 id int(11),
 ticket int(11),
@@ -166,7 +187,7 @@ id
 show keys from t2;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment
 t2	1	tig	1	ticket	A	NULL	NULL	NULL	YES	BTREE	
-t2	1	tix	1	inhalt	A	NULL	1	NULL	YES	FULLTEXT	
+t2	1	tix	1	inhalt	A	NULL	NULL	NULL	YES	FULLTEXT	
 show create table t2;
 Table	Create Table
 t2	CREATE TABLE `t2` (
@@ -266,4 +287,6 @@ insert into t2 values (3, 1, 'xxbuz');
 select * from t1 join t2 using(`t1_id`) where match (t1.name, t2.name) against('xxfoo' in boolean mode);
 t1_id	name	t2_id	t1_id	name
 1	data1	1	1	xxfoo
+select * from t2 where match name against ('a* b* c* d* e* f*' in boolean mode);
+t2_id	t1_id	name
 drop table t1,t2;

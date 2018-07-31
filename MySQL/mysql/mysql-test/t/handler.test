@@ -75,7 +75,7 @@ insert into t1 values (17);
 --error 1109
 handler t2 read first;
 handler t1 open as t2;
-alter table t1 type=MyISAM;
+alter table t1 engine=MyISAM;
 --error 1109
 handler t2 read first;
 drop table t1;
@@ -105,5 +105,21 @@ handler t1 open;
 handler t1 read a=(W);
 --error 1210
 handler t1 read a=(a);
+drop table t1;
+
+#
+# BUG#2304
+#
+create table t1 (a char(5));
+insert into t1 values ("Ok");
+handler t1 open as t;
+handler t read first;
+use mysql;
+handler t read first;
+handler t close;
+handler test.t1 open as t;
+handler t read first;
+handler t close;
+use test;
 drop table t1;
 

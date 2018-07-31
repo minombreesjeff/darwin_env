@@ -263,3 +263,58 @@ insert into t1 (id) values (1);
 update t1 set imagem=load_file('../../std_data/words.dat') where id=1;
 select if(imagem is null, "ERROR", "OK"),length(imagem) from t1 where id = 1;
 drop table t1;
+
+#
+# Test blob's with end space (Bug #1651)
+#
+
+create table t1 (id integer primary key auto_increment, txt text not null, unique index txt_index (txt (20)));
+insert into t1 (txt) values ('Chevy'), ('Chevy ');
+select * from t1 where txt='Chevy';
+select * from t1 where txt='Chevy ';
+select * from t1 where txt='Chevy ' or txt='Chevy';
+select * from t1 where txt='Chevy' or txt='Chevy ';
+select * from t1 where id='1' or id='2';
+insert into t1 (txt) values('Ford');
+select * from t1 where txt='Chevy' or txt='Chevy ' or txt='Ford';
+select * from t1 where txt='Chevy' or txt='Chevy ';
+select * from t1 where txt='Chevy' or txt='Chevy ' or txt=' Chevy';
+select * from t1 where txt in ('Chevy ','Chevy');
+select * from t1 where txt in ('Chevy');
+select * from t1 where txt between 'Chevy' and 'Chevy';
+select * from t1 where txt between 'Chevy' and 'Chevy' or txt='Chevy ';
+select * from t1 where txt between 'Chevy' and 'Chevy ';
+select * from t1 where txt < 'Chevy ';
+select * from t1 where txt <= 'Chevy';
+select * from t1 where txt > 'Chevy';
+select * from t1 where txt >= 'Chevy';
+drop table t1;
+
+create table t1 (id integer primary key auto_increment, txt text, unique index txt_index (txt (20)));
+insert into t1 (txt) values ('Chevy'), ('Chevy '), (NULL);
+select * from t1 where txt='Chevy' or txt is NULL;
+select * from t1 where txt='Chevy ';
+select * from t1 where txt='Chevy ' or txt='Chevy';
+select * from t1 where txt='Chevy' or txt='Chevy ';
+select * from t1 where id='1' or id='2';
+insert into t1 (txt) values('Ford');
+select * from t1 where txt='Chevy' or txt='Chevy ' or txt='Ford';
+select * from t1 where txt='Chevy' or txt='Chevy ';
+select * from t1 where txt='Chevy' or txt='Chevy ' or txt=' Chevy';
+select * from t1 where txt in ('Chevy ','Chevy');
+select * from t1 where txt in ('Chevy');
+select * from t1 where txt between 'Chevy' and 'Chevy';
+select * from t1 where txt between 'Chevy' and 'Chevy' or txt='Chevy ';
+select * from t1 where txt between 'Chevy' and 'Chevy ';
+select * from t1 where txt < 'Chevy ';
+select * from t1 where txt < 'Chevy ' or txt is NULL;
+select * from t1 where txt <= 'Chevy';
+select * from t1 where txt > 'Chevy';
+select * from t1 where txt >= 'Chevy';
+drop table t1;
+CREATE TABLE t1 ( i int(11) NOT NULL default '0',    c text NOT NULL, PRIMARY KEY  (i), KEY (c(1),c(1)));
+INSERT t1 VALUES (1,''),(2,''),(3,'asdfh'),(4,'');
+select max(i) from t1 where c = '';
+drop table t1;
+
+

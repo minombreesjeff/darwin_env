@@ -182,7 +182,8 @@ MY_LOG_DIR="$MYSQL_TEST_DIR/var/log"
 # Set LD_LIBRARY_PATH if we are using shared libraries
 #
 LD_LIBRARY_PATH="$BASEDIR/lib:$BASEDIR/libmysql/.libs:$LD_LIBRARY_PATH"
-export LD_LIBRARY_PATH
+DYLD_LIBRARY_PATH="$BASEDIR/lib:$BASEDIR/libmysql/.libs:$DYLD_LIBRARY_PATH"
+export LD_LIBRARY_PATH DYLD_LIBRARY_PATH
 
 MASTER_RUNNING=0
 MASTER_MYPORT=9306
@@ -336,7 +337,13 @@ while test $# -gt 0; do
       EXTRA_SLAVE_MYSQLD_OPT="$EXTRA_SLAVE_MYSQLD_OPT --gdb"
       ;;
     --valgrind)
-      VALGRIND="valgrind --alignment=8 --leak-check=yes --num-callers=16"
+      VALGRIND=`which valgrind` # this will print an error if not found
+      # Give good warning to the user and stop
+      if [ -z "$VALGRIND" ] ; then
+        $ECHO "You need to have the 'valgrind' program in your PATH to run mysql-test-run with option --valgrind. Valgrind's home page is http://developer.kde.org/~sewardj ."
+        exit 1
+      fi
+      VALGRIND="$VALGRIND --alignment=8 --leak-check=yes --num-callers=16"
       EXTRA_MASTER_MYSQLD_OPT="$EXTRA_MASTER_MYSQLD_OPT --skip-safemalloc --skip-bdb"
       EXTRA_SLAVE_MYSQLD_OPT="$EXTRA_SLAVE_MYSQLD_OPT --skip-safemalloc --skip-bdb"
       SLEEP_TIME_AFTER_RESTART=10
@@ -346,6 +353,9 @@ while test $# -gt 0; do
     --valgrind-options=*)
       TMP=`$ECHO "$1" | $SED -e "s;--valgrind-options=;;"`
       VALGRIND="$VALGRIND $TMP"
+      ;;
+    --valgrind-all)
+      VALGRIND="$VALGRIND -v --show-reachable=yes"
       ;;
     --skip-*)
       EXTRA_MASTER_MYSQLD_OPT="$EXTRA_MASTER_MYSQLD_OPT $1"
@@ -1161,7 +1171,7 @@ run_testcase ()
  echo $tname > $CURRENT_TEST
  SKIP_SLAVE=`$EXPR \( $tname : rpl \) = 0`
  if [ $USE_MANAGER = 1 ] ; then
-  many_slaves=`$EXPR \( $tname : rpl_failsafe \) != 0`
+  many_slaves=`$EXPR \( \( $tname : rpl_failsafe \) != 0 \) \| \( \( $tname : rpl_chain_temp_table \) != 0 \)`
  fi
 
  if [ -n "$SKIP_TEST" ] ; then

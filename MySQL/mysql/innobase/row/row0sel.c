@@ -51,7 +51,8 @@ to que_run_threads: this is to allow canceling runaway queries */
 
 /************************************************************************
 Returns TRUE if the user-defined column values in a secondary index record
-are the same as the corresponding columns in the clustered index record.
+are alphabetically the same as the corresponding columns in the clustered
+index record.
 NOTE: the comparison is NOT done as a binary comparison, but character
 fields are compared with collation! */
 static
@@ -95,11 +96,6 @@ row_sel_sec_rec_is_for_clust_rec(
 
 		       clust_len = ifield->prefix_len;
 		}
-
-                if (sec_len != clust_len) {
-
-                        return(FALSE);
-                }
 
                 if (0 != cmp_data_data(dict_col_get_type(col),
                                         clust_field, clust_len,
@@ -2822,7 +2818,16 @@ row_search_for_mysql(
 	if (match_mode == ROW_SEL_EXACT
 	    && index->type & DICT_UNIQUE
 	    && dtuple_get_n_fields(search_tuple)
-				== dict_index_get_n_unique(index)) {
+					== dict_index_get_n_unique(index)
+	    && (index->type & DICT_CLUSTERED
+		 || !dtuple_contains_null(search_tuple))) {
+
+		/* Note above that a UNIQUE secondary index can contain many
+		rows with the same key value if one of the columns is the SQL
+		null. A clustered index under MySQL can never contain null
+		columns because we demand that all the columns in primary key
+		are non-null. */
+
 		unique_search = TRUE;
 
 		/* Even if the condition is unique, MySQL seems to try to
@@ -3222,8 +3227,14 @@ rec_loop:
 			latest version of the record */
 		
 		} else if (index == clust_index) {
-			
-			if (!lock_clust_rec_cons_read_sees(rec, index,
+			  
+			/* Fetch a previous version of the row if the current
+			one is not visible in the snapshot; if we have a very
+			high force recovery level set, we try to avoid crashes
+			by skipping this lookup */
+
+			if (srv_force_recovery < 5
+                            && !lock_clust_rec_cons_read_sees(rec, index,
 							trx->read_view)) {
 
 				err = row_sel_build_prev_vers_for_mysql(

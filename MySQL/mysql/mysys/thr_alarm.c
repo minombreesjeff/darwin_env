@@ -714,6 +714,9 @@ void thr_alarm_info(ALARM_INFO *info)
   bzero((char*) info, sizeof(*info));
 }
 
+void resize_thr_alarm(uint max_alarms)
+{
+}
 
 /*****************************************************************************
   thr_alarm for win95
@@ -767,7 +770,9 @@ bool thr_got_alarm(thr_alarm_t *alrm_ptr)
 void thr_end_alarm(thr_alarm_t *alrm_ptr)
 {
   thr_alarm_t alrm= *alrm_ptr;
+  /* alrm may be zero if thr_alarm aborted with an error */
   if (alrm && alrm->crono)
+
   {
     KillTimer(NULL, alrm->crono);
     alrm->crono = 0;
@@ -791,6 +796,10 @@ void init_thr_alarm(uint max_alarm)
 void thr_alarm_info(ALARM_INFO *info)
 {
   bzero((char*) info, sizeof(*info));
+}
+
+void resize_thr_alarm(uint max_alarms)
+{
 }
 
 #endif /* __WIN__ */

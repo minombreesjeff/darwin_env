@@ -128,7 +128,12 @@ Log_event::Log_event(THD* thd_arg, uint16 flags_arg, bool using_trans)
 	       (thd->options & (OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN)));
 }
 
-
+/*
+  This minimal constructor is for when you are not even sure that there is a
+  valid THD. For example in the server when we are shutting down or flushing
+  logs after receiving a SIGHUP (then we must write a Rotate to the binlog but
+  we have no THD, so we need this minimal constructor).
+*/
 Log_event::Log_event()
   :temp_buf(0), exec_time(0), cached_event_len(0), flags(0), cache_stmt(0),
    thd(0)
@@ -834,8 +839,11 @@ Query_log_event::Query_log_event(THD* thd_arg, const char* query_arg,
 				 ulong query_length, bool using_trans)
   :Log_event(thd_arg, 0, using_trans), data_buf(0), query(query_arg),
    db(thd_arg->db), q_len((uint32) query_length),
-  error_code(thd_arg->killed ? ER_SERVER_SHUTDOWN: thd_arg->net.last_errno),
-  thread_id(thd_arg->thread_id)
+   error_code(thd_arg->killed ? ER_SERVER_SHUTDOWN: thd_arg->net.last_errno),
+   thread_id(thd_arg->thread_id),
+   /* save the original thread id; we already know the server id */
+   slave_proxy_id(thd_arg->slave_proxy_id)
+
 {
   time_t end_time;
   time(&end_time);
@@ -871,7 +879,7 @@ Query_log_event::Query_log_event(const char* buf, int event_len,
     return;
 
   memcpy(data_buf, buf + Q_DATA_OFFSET, data_len);
-  thread_id = uint4korr(buf + Q_THREAD_ID_OFFSET);
+  slave_proxy_id= thread_id= uint4korr(buf + Q_THREAD_ID_OFFSET);
   db = data_buf;
   db_len = (uint)buf[Q_DB_LEN_OFFSET];
   query=data_buf + db_len + 1;
@@ -918,7 +926,41 @@ int Query_log_event::write_data(IO_CACHE* file)
     return -1;
   
   char buf[QUERY_HEADER_LEN]; 
-  int4store(buf + Q_THREAD_ID_OFFSET, thread_id);
+  /*
+    We want to store the thread id:
+    (- as an information for the user when he reads the binlog)
+    - if the query uses temporary table: for the slave SQL thread to know to
+    which master connection the temp table belongs.
+    Now imagine we (write_data()) are called by the slave SQL thread (we are
+    logging a query executed by this thread; the slave runs with
+    --log-slave-updates). Then this query will be logged with
+    thread_id=the_thread_id_of_the_SQL_thread. Imagine that 2 temp tables of the
+    same name were created simultaneously on the master (in the master binlog
+    you have
+    CREATE TEMPORARY TABLE t; (thread 1)
+    CREATE TEMPORARY TABLE t; (thread 2)
+    ...)
+    then in the slave's binlog there will be
+    CREATE TEMPORARY TABLE t; (thread_id_of_the_slave_SQL_thread)
+    CREATE TEMPORARY TABLE t; (thread_id_of_the_slave_SQL_thread)
+    which is bad (same thread id!).
+    To avoid this, we log the thread's thread id EXCEPT for the SQL slave thread
+    for which we log the original (master's) thread id.
+    Now this moves the bug: what happens if the thread id on the master was 10
+    and when the slave replicates the query, a connection number 10 is opened by
+    a normal client on the slave, and updates a temp table of the same name? We
+    get a problem again. To avoid this, in the handling of temp tables
+    (sql_base.cc) we use thread_id AND server_id.
+    TODO when this is merged into 4.1: in 4.1, slave_proxy_id has been renamed
+    to pseudo_thread_id and is a session variable: that's to make mysqlbinlog
+    work with temp tables. We probably need to introduce
+    SET PSEUDO_SERVER_ID
+    for mysqlbinlog in 4.1. mysqlbinlog would print:
+    SET PSEUDO_SERVER_ID=
+    SET PSEUDO_THREAD_ID=
+    for each query using temp tables.
+  */
+  int4store(buf + Q_THREAD_ID_OFFSET, slave_proxy_id);
   int4store(buf + Q_EXEC_TIME_OFFSET, exec_time);
   buf[Q_DB_LEN_OFFSET] = (char) db_len;
   int2store(buf + Q_ERR_CODE_OFFSET, error_code);
@@ -1019,7 +1061,7 @@ void Rand_log_event::print(FILE* file, bool short_form, char* last_db)
 int Load_log_event::write_data_header(IO_CACHE* file)
 {
   char buf[LOAD_HEADER_LEN];
-  int4store(buf + L_THREAD_ID_OFFSET, thread_id);
+  int4store(buf + L_THREAD_ID_OFFSET, slave_proxy_id);
   int4store(buf + L_EXEC_TIME_OFFSET, exec_time);
   int4store(buf + L_SKIP_LINES_OFFSET, skip_lines);
   buf[L_TBL_LEN_OFFSET] = (char)table_name_len;
@@ -1143,10 +1185,11 @@ Load_log_event::Load_log_event(THD* thd_arg, sql_exchange* ex,
 			       enum enum_duplicates handle_dup,
 			       bool using_trans)
   :Log_event(thd_arg, 0, using_trans),thread_id(thd_arg->thread_id),
-  num_fields(0),fields(0),
-  field_lens(0),field_block_len(0),
-  table_name(table_name_arg ? table_name_arg : ""),
-  db(db_arg), fname(ex->file_name)
+   slave_proxy_id(thd_arg->slave_proxy_id),
+   num_fields(0),fields(0),
+   field_lens(0),field_block_len(0),
+   table_name(table_name_arg ? table_name_arg : ""),
+   db(db_arg), fname(ex->file_name), local_fname(FALSE)
 {
   time_t end_time;
   time(&end_time);
@@ -1222,7 +1265,7 @@ Load_log_event::Load_log_event(const char* buf, int event_len,
 			       bool old_format)
   :Log_event(buf, old_format),num_fields(0),fields(0),
   field_lens(0),field_block_len(0),
-  table_name(0),db(0),fname(0)
+  table_name(0),db(0),fname(0),local_fname(FALSE)
 {
   if (!event_len) // derived class, will call copy_log_event() itself
     return;
@@ -1236,7 +1279,7 @@ int Load_log_event::copy_log_event(const char *buf, ulong event_len,
   char* buf_end = (char*)buf + event_len;
   uint header_len= old_format ? OLD_HEADER_LEN : LOG_EVENT_HEADER_LEN;
   const char* data_head = buf + header_len;
-  thread_id = uint4korr(data_head + L_THREAD_ID_OFFSET);
+  slave_proxy_id= thread_id= uint4korr(data_head + L_THREAD_ID_OFFSET);
   exec_time = uint4korr(data_head + L_EXEC_TIME_OFFSET);
   skip_lines = uint4korr(data_head + L_SKIP_LINES_OFFSET);
   table_name_len = (uint)data_head[L_TBL_LEN_OFFSET];
@@ -1780,19 +1823,18 @@ int Query_log_event::exec_event(struct st_relay_log_info* rli)
     since we must store the pos of the END of the current log event
   */
   rli->event_len= get_event_len();
+  thd->query_error= 0;			// clear error
+  thd->clear_error();
 
   if (db_ok(thd->db, replicate_do_db, replicate_ignore_db))
   {
     thd->set_time((time_t)when);
     thd->current_tablenr = 0;
     thd->query_length= q_len;
+    thd->query= (char *) query;
     VOID(pthread_mutex_lock(&LOCK_thread_count));
-    thd->query = (char*)query;
     thd->query_id = query_id++;
     VOID(pthread_mutex_unlock(&LOCK_thread_count));
-    thd->query_error = 0;			// clear error
-    thd->net.last_errno = 0;
-    thd->net.last_error[0] = 0;
     thd->slave_proxy_id = thread_id;		// for temp tables
 	
     /*
@@ -1847,6 +1889,7 @@ Default database: '%s'",
 	       ignored_error_code(actual_error))
       {
 	thd->query_error = 0;
+        thd->clear_error();
 	*rli->last_slave_error = 0;
 	rli->last_slave_errno = 0;
       }
@@ -1879,7 +1922,7 @@ Default database: '%s'",
   // assume no convert for next query unless set explictly
   thd->variables.convert_set = 0;
   close_thread_tables(thd);      
-  free_root(&thd->mem_root,0);
+  free_root(&thd->mem_root,MYF(MY_KEEP_PREALLOC));
   return (thd->query_error ? thd->query_error : Log_event::exec_event(rli)); 
 }
 
@@ -1917,6 +1960,7 @@ int Load_log_event::exec_event(NET* net, struct st_relay_log_info* rli,
   DBUG_ASSERT(thd->query == 0);
   thd->query = 0;				// Should not be needed
   thd->query_error = 0;
+  thd->clear_error();
 
   /*
     We test replicate_*_db rules. Note that we have already prepared the file to
@@ -2051,10 +2095,10 @@ Slave: load data infile on table '%s' at log position %s in log \
     slave_print_error(rli,sql_errno,"\
 Error '%s' running LOAD DATA INFILE on table '%s'. Default database: '%s'",
 		      err, (char*)table_name, print_slave_db_safe(db));
-    free_root(&thd->mem_root,0);
+    free_root(&thd->mem_root,MYF(MY_KEEP_PREALLOC));
     return 1;
   }
-  free_root(&thd->mem_root,0);
+  free_root(&thd->mem_root,MYF(MY_KEEP_PREALLOC));
 	    
   if (thd->fatal_error)
   {

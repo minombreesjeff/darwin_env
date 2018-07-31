@@ -208,8 +208,21 @@ mysql_select(THD *thd,TABLE_LIST *tables,List<Item> &fields,COND *conds,
 {
   TABLE		*tmp_table;
   int		error, tmp_error;
-  bool		need_tmp,hidden_group_fields;
-  bool		simple_order,simple_group,no_order, skip_sort_order;
+  bool         need_tmp;
+  bool          hidden_group_fields;
+  /*
+    simple_xxxxx is set if ORDER/GROUP BY doesn't include any references
+    to other tables than the first non-constant table in the JOIN.
+    It's also set if ORDER/GROUP BY is empty.
+  */
+  bool         simple_order, simple_group;
+  /*
+    Is set only in case if we have a GROUP BY clause
+    and no ORDER BY after constant elimination of 'order'.
+  */
+  bool          no_order;
+  /* Is set if we have a GROUP BY and we have ORDER BY on a constant. */
+  bool          skip_sort_order;
   ha_rows	select_limit;
   Item::cond_result cond_value;
   SQL_SELECT	*select;
@@ -683,8 +696,18 @@ mysql_select(THD *thd,TABLE_LIST *tables,List<Item> &fields,COND *conds,
 
   if (select_options & SELECT_DESCRIBE)
   {
-    if (!order && !no_order)
-      order=group;
+    /*
+      Check if we managed to optimize ORDER BY away and don't use temporary
+      table to resolve ORDER BY: in that case, we only may need to do
+      filesort for GROUP BY.
+    */
+    if (!order && !no_order && (!skip_sort_order || !need_tmp))
+    {
+      /* Reset 'order' to 'group' and reinit variables describing 'order' */
+      order= group;
+      simple_order= simple_group;
+      skip_sort_order= 0;
+    }
     if (order &&
 	(join.const_tables == join.tables ||
 	 ((simple_order || skip_sort_order) &&
@@ -968,10 +991,20 @@ mysql_select(THD *thd,TABLE_LIST *tables,List<Item> &fields,COND *conds,
 	}
       }
     }
+    /*
+      Here we sort rows for ORDER BY/GROUP BY clause, if the optimiser
+      chose FILESORT to be faster than INDEX SCAN or there is no 
+      suitable index present.
+      Note, that create_sort_index calls test_if_skip_sort_order and may
+      finally replace sorting with index scan if there is a LIMIT clause in
+      the query. XXX: it's never shown in EXPLAIN!
+      OPTION_FOUND_ROWS supersedes LIMIT and is taken into account.
+    */
     if (create_sort_index(&join.join_tab[join.const_tables],
 			  group ? group : order,
 			  select_limit, 
-			  thd->select_limit))
+                          join.select_options & OPTION_FOUND_ROWS ?
+                          HA_POS_ERROR : thd->select_limit))
       goto err;
   }
   join.having=having;				// Actually a parameter
@@ -1228,7 +1261,8 @@ make_join_statistics(JOIN *join,TABLE_LIST *tables,COND *conds,
 	  } while (keyuse->table == table && keyuse->key == key);
 
 	  if (eq_part == PREV_BITS(uint,table->key_info[key].key_parts) &&
-	      (table->key_info[key].flags & HA_NOSAME) &&
+	      ((table->key_info[key].flags & (HA_NOSAME | HA_END_SPACE_KEY)) ==
+	       HA_NOSAME) &&
               !table->fulltext_searched)
 	  {
 	    if (const_ref == eq_part)
@@ -1441,8 +1475,8 @@ add_key_field(KEY_FIELD **key_fields,uint and_level,
     bool optimizable=0;
     for (uint i=0; i<num_values; i++)
     {
-      used_tables|=(*value)->used_tables();
-      if (!((*value)->used_tables() & (field->table->map | RAND_TABLE_BIT)))
+      used_tables|=(value[i])->used_tables();
+      if (!((value[i])->used_tables() & (field->table->map | RAND_TABLE_BIT)))
         optimizable=1;
     }
     if (!optimizable)
@@ -1650,10 +1684,6 @@ add_key_part(DYNAMIC_ARRAY *keyuse_array,KEY_FIELD *key_field)
       }
     }
   }
-  /* Mark that we can optimize LEFT JOIN */
-  if (key_field->val->type() == Item::NULL_ITEM &&
-      !key_field->field->real_maybe_null())
-    key_field->field->table->reginfo.not_exists_optimize=1;
 }
 
 
@@ -1741,30 +1771,37 @@ update_ref_and_keys(THD *thd, DYNAMIC_ARRAY *keyuse,JOIN_TAB *join_tab,
 		    uint tables, COND *cond, table_map normal_tables)
 {
   uint	and_level,i,found_eq_constant;
+  KEY_FIELD *key_fields, *end, *field;
 
+  if (!(key_fields=(KEY_FIELD*)
+	thd->alloc(sizeof(key_fields[0])*(thd->cond_count+1)*2)))
+    return TRUE; /* purecov: inspected */
+  and_level=0; field=end=key_fields;
+  if (my_init_dynamic_array(keyuse,sizeof(KEYUSE),20,64))
+    return TRUE;
+  if (cond)
   {
-    KEY_FIELD *key_fields,*end;
-
-    if (!(key_fields=(KEY_FIELD*)
-	  thd->alloc(sizeof(key_fields[0])*(thd->cond_count+1)*2)))
-      return TRUE; /* purecov: inspected */
-    and_level=0; end=key_fields;
-    if (cond)
-      add_key_fields(join_tab,&end,&and_level,cond,normal_tables);
-    for (i=0 ; i < tables ; i++)
+    add_key_fields(join_tab,&end,&and_level,cond,normal_tables);
+    for (; field != end ; field++)
     {
-      if (join_tab[i].on_expr)
-      {
-	add_key_fields(join_tab,&end,&and_level,join_tab[i].on_expr,
-		       join_tab[i].table->map);
-      }
-    }
-    if (my_init_dynamic_array(keyuse,sizeof(KEYUSE),20,64))
-      return TRUE;
-    /* fill keyuse with found key parts */
-    for (KEY_FIELD *field=key_fields ; field != end ; field++)
       add_key_part(keyuse,field);
+      /* Mark that we can optimize LEFT JOIN */
+      if (field->val->type() == Item::NULL_ITEM &&
+	  !field->field->real_maybe_null())
+	field->field->table->reginfo.not_exists_optimize=1;
+    }
   }
+  for (i=0 ; i < tables ; i++)
+  {
+    if (join_tab[i].on_expr)
+    {
+      add_key_fields(join_tab,&end,&and_level,join_tab[i].on_expr,
+		     join_tab[i].table->map);
+    }
+  }
+  /* fill keyuse with found key parts */
+  for (; field != end ; field++)
+    add_key_part(keyuse,field);
 
   if (thd->lex.select->ftfunc_list.elements)
   {
@@ -1875,7 +1912,8 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
 
     read_time+=record_count/(double) TIME_FOR_COMPARE;
     if (join->sort_by_table &&
-	join->sort_by_table != join->positions[join->const_tables].table->table)
+	join->sort_by_table !=
+	join->positions[join->const_tables].table->table)
       read_time+=record_count;			// We have to make a temp table
     if (read_time < join->best_read)
     {
@@ -1909,7 +1947,7 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
 	uint max_key_part=0;
 
 	/* Test how we can use keys */
-	rec= s->records/MATCHING_ROWS_IN_OTHER_TABLE;  /* Assumed records/key */
+	rec= s->records/MATCHING_ROWS_IN_OTHER_TABLE;  // Assumed records/key
 	for (keyuse=s->keyuse ; keyuse->table == table ;)
 	{
 	  key_map found_part=0;
@@ -1987,7 +2025,8 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
 	  if (found_part == PREV_BITS(uint,keyinfo->key_parts))
 	  {				/* use eq key */
 	    max_key_part= (uint) ~0;
-	    if ((keyinfo->flags & (HA_NOSAME | HA_NULL_PART_KEY)) == HA_NOSAME)
+	    if ((keyinfo->flags & (HA_NOSAME | HA_NULL_PART_KEY |
+				   HA_END_SPACE_KEY)) == HA_NOSAME)
 	    {
 	      tmp=prev_record_reads(join,found_ref);
 	      records=1.0;
@@ -2047,7 +2086,7 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
 		will match
 	      */
 	      if (table->quick_keys & ((key_map) 1 << key) &&
-		  table->quick_key_parts[key] <= max_key_part)
+		  table->quick_key_parts[key] == max_key_part)
 		tmp=records= (double) table->quick_rows[key];
 	      else
 	      {
@@ -2089,6 +2128,14 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
 		  }
 		  records=(ulong) tmp;
 		}
+		/*
+		  If quick_select was used on a part of this key, we know
+		  the maximum number of rows that the key can match.
+		*/
+		if (table->quick_keys & ((key_map) 1 << key) &&
+		    table->quick_key_parts[key] <= max_key_part &&
+		    records > (double) table->quick_rows[key])
+		  tmp= records= (double) table->quick_rows[key];
 	      }
 	      /* Limit the number of matched rows */
 	      set_if_smaller(tmp, (double) thd->variables.max_seeks_for_key);
@@ -2135,8 +2182,6 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
 	  !(s->table->force_index && best_key))
       {						// Check full join
         ha_rows rnd_records= s->found_records;
-        /* Estimate cost of reading table. */
-        tmp= s->table->file->scan_time();
         /*
           If there is a restriction on the table, assume that 25% of the
           rows can be skipped on next part.
@@ -2146,36 +2191,57 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
         if (found_constraint)
           rnd_records-= rnd_records/4;
 
-        if (s->on_expr)                         // Can't use join cache
+        /*
+          Range optimizer never proposes a RANGE if it isn't better
+          than FULL: so if RANGE is present, it's always preferred to FULL.
+          Here we estimate its cost.
+        */
+        if (s->quick)
         {
+          /*
+            For each record we:
+             - read record range through 'quick'
+             - skip rows which does not satisfy WHERE constraints
+           */
           tmp= record_count *
-               /* We have to read the whole table for each record */
-               (tmp +     
-               /*
-                 And we have to skip rows which does not satisfy join
-                 condition for each record.
-               */
-               (s->records - rnd_records)/(double) TIME_FOR_COMPARE);
+               (s->quick->read_time +
+               (s->found_records - rnd_records)/(double) TIME_FOR_COMPARE);
         }
         else
         {
-          /* We read the table as many times as join buffer becomes full. */
-          tmp*= (1.0 + floor((double) cache_record_length(join,idx) *
-                             record_count /
-                             (double) thd->variables.join_buff_size));
-          /* 
-            We don't make full cartesian product between rows in the scanned
-            table and existing records because we skip all rows from the
-            scanned table, which does not satisfy join condition when 
-            we read the table (see flush_cached_records for details). Here we
-            take into account cost to read and skip these records.
-          */
-          tmp+= (s->records - rnd_records)/(double) TIME_FOR_COMPARE;
+          /* Estimate cost of reading table. */
+          tmp= s->table->file->scan_time();
+          if (s->on_expr)                         // Can't use join cache
+          {
+            /*
+              For each record we have to:
+              - read the whole table record 
+              - skip rows which does not satisfy join condition
+            */
+            tmp= record_count *
+                 (tmp +     
+                 (s->records - rnd_records)/(double) TIME_FOR_COMPARE);
+          }
+          else
+          {
+            /* We read the table as many times as join buffer becomes full. */
+            tmp*= (1.0 + floor((double) cache_record_length(join,idx) *
+                               record_count /
+                               (double) thd->variables.join_buff_size));
+            /* 
+              We don't make full cartesian product between rows in the scanned
+              table and existing records because we skip all rows from the
+              scanned table, which does not satisfy join condition when 
+              we read the table (see flush_cached_records for details). Here we
+              take into account cost to read and skip these records.
+            */
+            tmp+= (s->records - rnd_records)/(double) TIME_FOR_COMPARE;
+          }
         }
 
         /*
           We estimate the cost of evaluating WHERE clause for found records
-          as record_count * rnd_records + TIME_FOR_COMPARE. This cost plus
+          as record_count * rnd_records / TIME_FOR_COMPARE. This cost plus
           tmp give us total cost of using TABLE SCAN
         */
 	if (best == DBL_MAX ||
@@ -2468,8 +2534,8 @@ static bool create_ref_for_key(JOIN *join, JOIN_TAB *j, KEYUSE *org_keyuse,
   if (j->type == JT_FT)  /* no-op */;
   else if (j->type == JT_CONST)
     j->table->const_table=1;
-  else if (((keyinfo->flags & (HA_NOSAME | HA_NULL_PART_KEY))
-	    != HA_NOSAME) ||
+  else if (((keyinfo->flags & (HA_NOSAME | HA_NULL_PART_KEY |
+			       HA_END_SPACE_KEY)) != HA_NOSAME) ||
 	   keyparts != keyinfo->key_parts)
     j->type=JT_REF;				/* Must read with repeat */
   else if (ref_key == j->ref.key_copy)
@@ -2530,9 +2596,15 @@ store_val_in_field(Field *field,Item *item)
   bool error;
   THD *thd=current_thd;
   ha_rows cuted_fields=thd->cuted_fields;
+  /*
+    we should restore old value of count_cuted_fields because
+    store_val_in_field can be called from mysql_insert 
+    with select_insert, which make count_cuted_fields= 1
+   */
+  bool old_count_cuted_fields= thd->count_cuted_fields;
   thd->count_cuted_fields=1;
   error= item->save_in_field(field, 1);
-  thd->count_cuted_fields=0;
+  thd->count_cuted_fields= old_count_cuted_fields;
   return error || cuted_fields != thd->cuted_fields;
 }
 
@@ -2590,6 +2662,8 @@ make_join_select(JOIN *join,SQL_SELECT *select,COND *cond)
     table_map used_tables;
     if (join->tables > 1)
       cond->update_used_tables();		// Tablenr may have changed
+    if (join->const_tables == join->tables)
+      join->const_table_map|=RAND_TABLE_BIT;
     {						// Check const tables
       COND *const_cond=
 	make_cond_for_table(cond,join->const_table_map,(table_map) 0);
@@ -2755,6 +2829,8 @@ make_join_readinfo(JOIN *join,uint options)
 {
   uint i;
   SELECT_LEX *select_lex = &(join->thd->lex.select_lex);
+  bool statistics= test(!(join->select_options & SELECT_DESCRIBE));
+
   DBUG_ENTER("make_join_readinfo");
 
   for (i=join->const_tables ; i < join->tables ; i++)
@@ -2839,7 +2915,8 @@ make_join_readinfo(JOIN *join,uint options)
       {
 	select_lex->options|=QUERY_NO_GOOD_INDEX_USED;
 	tab->read_first_record= join_init_quick_read_record;
-	statistic_increment(select_range_check_count, &LOCK_status);
+	if (statistics)
+	  statistic_increment(select_range_check_count, &LOCK_status);
       }
       else
       {
@@ -2848,24 +2925,28 @@ make_join_readinfo(JOIN *join,uint options)
 	{
 	  if (tab->select && tab->select->quick)
 	  {
-	    statistic_increment(select_range_count, &LOCK_status);
+	    if (statistics)
+	      statistic_increment(select_range_count, &LOCK_status);
 	  }
 	  else
 	  {
 	    select_lex->options|=QUERY_NO_INDEX_USED;
-	    statistic_increment(select_scan_count, &LOCK_status);
+	    if (statistics)
+	      statistic_increment(select_scan_count, &LOCK_status);
 	  }
 	}
 	else
 	{
 	  if (tab->select && tab->select->quick)
 	  {
-	    statistic_increment(select_full_range_join_count, &LOCK_status);
+	    if (statistics)
+	      statistic_increment(select_full_range_join_count, &LOCK_status);
 	  }
 	  else
 	  {
 	    select_lex->options|=QUERY_NO_INDEX_USED;
-	    statistic_increment(select_full_join_count, &LOCK_status);
+	    if (statistics)
+	      statistic_increment(select_full_join_count, &LOCK_status);
 	  }
 	}
 	if (!table->no_keyread)
@@ -3219,6 +3300,8 @@ return_zero_rows(JOIN *join, select_result *result,TABLE_LIST *tables,
     }
     result->send_eof();				// Should be safe
   }
+  /* Update results for FOUND_ROWS */
+  join->thd->limit_found_rows= join->thd->examined_row_count= 0;
   DBUG_RETURN(0);
 }
 
@@ -5758,7 +5841,7 @@ part_of_refkey(TABLE *table,Field *field)
 
     for (uint part=0 ; part < ref_parts ; part++,key_part++)
       if (field->eq(key_part->field) &&
-	  !(key_part->key_part_flag & HA_PART_KEY))
+	  !(key_part->key_part_flag & HA_PART_KEY_SEG))
 	return table->reginfo.join_tab->ref.items[part];
   }
   return (Item*) 0;

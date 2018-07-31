@@ -320,6 +320,13 @@ public:
   uint32 db_len;
   uint16 error_code;
   ulong thread_id;
+  /* 
+     For events created by Query_log_event::exec_event (and
+     Load_log_event::exec_event()) we need the *original* thread id, to be able
+     to log the event with the original (=master's) thread id (fix for
+     BUG#1686).
+  */
+  ulong slave_proxy_id;
 #ifndef MYSQL_CLIENT
 
   Query_log_event(THD* thd_arg, const char* query_arg, ulong query_length,
@@ -390,6 +397,7 @@ protected:
 
 public:
   ulong thread_id;
+  ulong slave_proxy_id;
   uint32 table_name_len;
   uint32 db_len;
   uint32 fname_len;
@@ -403,17 +411,19 @@ public:
   const char* fname;
   uint32 skip_lines;
   sql_ex_info sql_ex;
+  bool local_fname;
 
   /* fname doesn't point to memory inside Log_event::temp_buf  */
   void set_fname_outside_temp_buf(const char *afname, uint alen)
   {
     fname= afname;
     fname_len= alen;
+    local_fname= true;
   }
   /* fname doesn't point to memory inside Log_event::temp_buf  */
   int  check_fname_outside_temp_buf()
   {
-    return fname < temp_buf || fname > temp_buf+ cached_event_len;
+    return local_fname;
   }
 
 #ifndef MYSQL_CLIENT
@@ -521,7 +531,7 @@ public:
 
 #ifndef MYSQL_CLIENT  
   Intvar_log_event(THD* thd_arg,uchar type_arg, ulonglong val_arg)
-    :Log_event(),val(val_arg),type(type_arg)
+    :Log_event(thd_arg,0,0),val(val_arg),type(type_arg)
   {}
   void pack_info(String* packet);
   int exec_event(struct st_relay_log_info* rli);
@@ -599,7 +609,7 @@ public:
   Rotate_log_event(THD* thd_arg, const char* new_log_ident_arg,
 		   uint ident_len_arg = 0,
 		   ulonglong pos_arg = LOG_EVENT_OFFSET)
-    :Log_event(thd_arg,0,0), new_log_ident(new_log_ident_arg),
+    :Log_event(), new_log_ident(new_log_ident_arg),
     pos(pos_arg),ident_len(ident_len_arg ? ident_len_arg :
 			   (uint) strlen(new_log_ident_arg)), alloced(0)
   {}

@@ -59,6 +59,12 @@ export PATH
 
 mode=$1    # start or stop
 
+case `echo "testing\c"`,`echo -n testing` in
+    *c*,-n*) echo_n=   echo_c=     ;;
+    *c*,*)   echo_n=-n echo_c=     ;;
+    *)       echo_n=   echo_c='\c' ;;
+esac
+
 parse_arguments() {
   for arg do
     case "$arg" in
@@ -109,19 +115,6 @@ else
 fi
 
 #
-# Set pid file if not given
-#
-if test -z "$pid_file"
-then
-  pid_file=$datadir/`@HOSTNAME@`.pid
-else
-  case "$pid_file" in
-    /* ) ;;
-    * )  pid_file="$datadir/$pid_file" ;;
-  esac
-fi
-
-#
 # Test if someone changed datadir;  In this case we should also read the
 # default arguments from this directory
 #
@@ -134,6 +127,19 @@ fi
 
 parse_arguments `$print_defaults $extra_args mysqld mysql_server mysql.server`
 
+#
+# Set pid file if not given
+#
+if test -z "$pid_file"
+then
+  pid_file=$datadir/`@HOSTNAME@`.pid
+else
+  case "$pid_file" in
+    /* ) ;;
+    * )  pid_file="$datadir/$pid_file" ;;
+  esac
+fi
+
 # Safeguard (relative paths, core dumps..)
 cd $basedir
 
@@ -145,7 +151,7 @@ case "$mode" in
     then
       # Give extra arguments to mysqld with the my.cnf file. This script may
       # be overwritten at next upgrade.
-      $bindir/mysqld_safe --datadir=$datadir --pid-file=$pid_file &
+      $bindir/mysqld_safe --datadir=$datadir --pid-file=$pid_file >/dev/null 2>&1 &
       # Make lock for RedHat / SuSE
       if test -w /var/lock/subsys
       then
@@ -169,7 +175,7 @@ case "$mode" in
       sleep 1
       while [ -s $pid_file -a "$flags" != aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ]
       do
-        [ -z "$flags" ] && echo "Wait for mysqld to exit\c" || echo ".\c"
+	[ -z "$flags" ] && echo $echo_n "Wait for mysqld to exit$echo_c" || echo $echo_n ".$echo_c"
         flags=a$flags
         sleep 1
       done

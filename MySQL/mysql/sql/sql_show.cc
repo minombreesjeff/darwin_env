@@ -197,11 +197,23 @@ mysql_find_files(THD *thd,List<char> *files, const char *db,const char *path,
 #ifdef USE_SYMDIR
       char *ext;
       if (my_use_symdir && !strcmp(ext=fn_ext(file->name), ".sym"))
+      {
+	/* Only show the sym file if it points to a directory */
+	char buff[FN_REFLEN], *end;
+	MY_STAT status;
         *ext=0;                                 /* Remove extension */
+	unpack_dirname(buff, file->name);
+	end= strend(buff);
+	if (end != buff && end[-1] == FN_LIBCHAR)
+	  end[-1]= 0;				// Remove end FN_LIBCHAR
+	if (!my_stat(buff, &status, MYF(0)) ||
+	    !MY_S_ISDIR(status.st_mode))
+	  continue;
+      }
       else
 #endif
       {
-        if (file->name[0] == '.' || !MY_S_ISDIR(file->mystat.st_mode) ||
+        if (file->name[0] == '.' || !MY_S_ISDIR(file->mystat->st_mode) ||
             (wild && wild_compare(file->name,wild)))
           continue;
       }
@@ -479,11 +491,6 @@ mysqld_show_fields(THD *thd, TABLE_LIST *table_list,const char *wild,
   {
     if (!wild || !wild[0] || !wild_case_compare(field->field_name,wild))
     {
-#ifdef NOT_USED
-      if (thd->col_access & TABLE_ACLS ||
-          ! check_grant_column(thd,table,field->field_name,
-                               (uint) strlen(field->field_name),1))
-#endif
       {
         byte *pos;
         uint flags=field->flags;
@@ -496,6 +503,12 @@ mysqld_show_fields(THD *thd, TABLE_LIST *table_list,const char *wild,
         field->sql_type(type);
         net_store_data(packet,convert,type.ptr(),type.length());
 
+        /*
+          Altough TIMESTAMP fields can't contain NULL as its value they
+          will accept NULL if you will try to insert such value and will
+          convert it to current TIMESTAMP. So YES here means that NULL 
+          is allowed for assignment but can't be returned.
+        */
         pos=(byte*) ((flags & NOT_NULL_FLAG) &&
                      field->type() != FIELD_TYPE_TIMESTAMP ?
                      "" : "YES");
@@ -505,7 +518,11 @@ mysqld_show_fields(THD *thd, TABLE_LIST *table_list,const char *wild,
                      (field->flags & MULTIPLE_KEY_FLAG) ? "MUL":"");
         net_store_data(packet,convert,(char*) pos);
 
-        if (field->type() == FIELD_TYPE_TIMESTAMP ||
+        /*
+          We handle first TIMESTAMP column in special way because its
+          default value is ignored and current timestamp used instead.
+        */
+        if (table->timestamp_field == field ||
             field->unireg_check == Field::NEXT_NUMBER)
           null_default_value=1;
         if (!null_default_value && !field->is_null())
@@ -709,9 +726,8 @@ mysqld_show_keys(THD *thd, TABLE_LIST *table_list)
         net_store_null(packet);
 
       /* Check if we have a key part that only uses part of the field */
-      if (!key_part->field ||
-          key_part->length !=
-          table->field[key_part->fieldnr-1]->key_length())
+      if (!(key_info->flags & HA_FULLTEXT) && (!key_part->field ||
+          key_part->length != table->field[key_part->fieldnr-1]->key_length()))
       {
         end=int10_to_str((long) key_part->length, buff,10); /* purecov: inspected */
         net_store_data(packet,convert,buff,(uint) (end-buff)); /* purecov: inspected */
@@ -853,7 +869,9 @@ store_create_info(THD *thd, TABLE *table, String *packet)
     packet->append("CREATE TEMPORARY TABLE ", 23);
   else
     packet->append("CREATE TABLE ", 13);
-  append_identifier(thd,packet,table->real_name);
+  append_identifier(thd,packet,
+		    (lower_case_table_names == 2 ? table->table_name :
+		     table->real_name));
   packet->append(" (\n", 3);
 
   for (ptr=table->field ; (field= *ptr); ptr++)
@@ -874,7 +892,7 @@ store_create_info(THD *thd, TABLE *table, String *packet)
     packet->append(type.ptr(),type.length());
 
     has_default= (field->type() != FIELD_TYPE_BLOB &&
-		  field->type() != FIELD_TYPE_TIMESTAMP &&
+		  table->timestamp_field != field &&
 		  field->unireg_check != Field::NEXT_NUMBER);
     if (flags & NOT_NULL_FLAG)
       packet->append(" NOT NULL", 9);

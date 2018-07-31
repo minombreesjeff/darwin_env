@@ -36,7 +36,7 @@
 ** Added --single-transaction option 06/06/2002 by Peter Zaitsev
 */
 
-#define DUMP_VERSION "9.09"
+#define DUMP_VERSION "9.10"
 
 #include <my_global.h>
 #include <my_sys.h>
@@ -78,7 +78,7 @@ static my_bool  verbose=0,tFlag=0,cFlag=0,dFlag=0,quick=0, extended_insert = 0,
 	        opt_alldbs=0,opt_create_db=0,opt_first_slave=0,
                 opt_autocommit=0,opt_master_data,opt_disable_keys=0,opt_xml=0,
 	        opt_delete_master_logs=0, tty_password=0,
-		opt_single_transaction=0;
+		opt_single_transaction=0, opt_comments= 0;
 static MYSQL  mysql_connection,*sock=0;
 static char  insert_pat[12 * 1024],*opt_password=0,*current_user=0,
              *current_host=0,*path=0,*fields_terminated=0,
@@ -154,7 +154,10 @@ static struct my_option my_long_options[] =
   {"first-slave", 'x', "Locks all tables across all databases.",
    (gptr*) &opt_first_slave, (gptr*) &opt_first_slave, 0, GET_BOOL, NO_ARG,
    0, 0, 0, 0, 0, 0},
-  {"flush-logs", 'F', "Flush logs file in server before starting dump.",
+  {"flush-logs", 'F', "Flush logs file in server before starting dump. "
+    "Note that if you dump many databases at once (using the option "
+    "--databases= or --all-databases), the logs will be flushed for "
+    "each database dumped.",
    (gptr*) &flush_logs, (gptr*) &flush_logs, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
    0, 0},
   {"force", 'f', "Continue even if we get an sql-error.",
@@ -179,7 +182,7 @@ static struct my_option my_long_options[] =
   {"single-transaction", OPT_TRANSACTION,
    "Dump all tables in single transaction to get consistent snapshot. Mutually exclusive with --lock-tables.",
    (gptr*) &opt_single_transaction, (gptr*) &opt_single_transaction, 0, GET_BOOL, NO_ARG,
-   0, 0, 0, 0, 0, 0},   
+   0, 0, 0, 0, 0, 0},
   {"no-create-db", 'n',
    "'CREATE DATABASE /*!32312 IF NOT EXISTS*/ db_name;' will not be put in the output. The above line will be added otherwise, if --databases or --all-databases option was given.}",
    (gptr*) &opt_create_db, (gptr*) &opt_create_db, 0, GET_BOOL, NO_ARG, 0, 0,
@@ -236,12 +239,15 @@ static struct my_option my_long_options[] =
    NO_ARG, 0, 0, 0, 0, 0, 0},
   {"max_allowed_packet", OPT_MAX_ALLOWED_PACKET, "",
     (gptr*) &max_allowed_packet, (gptr*) &max_allowed_packet, 0,
-    GET_ULONG, REQUIRED_ARG, 24*1024*1024, 4096, 1024*1024L*1024L,
-    MALLOC_OVERHEAD, 1024, 0},
+    GET_ULONG, REQUIRED_ARG, 24*1024*1024, 4096, 
+   (longlong) 2L*1024L*1024L*1024L, MALLOC_OVERHEAD, 1024, 0},
   {"net_buffer_length", OPT_NET_BUFFER_LENGTH, "",
     (gptr*) &net_buffer_length, (gptr*) &net_buffer_length, 0,
     GET_ULONG, REQUIRED_ARG, 1024*1024L-1025, 4096, 16*1024L*1024L,
     MALLOC_OVERHEAD-1024, 1024, 0},
+  {"comments", 'i', "Write additional information.",
+   (gptr*) &opt_comments, (gptr*) &opt_comments, 0, GET_BOOL, NO_ARG,
+   1, 0, 0, 0, 0, 0},
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -259,6 +265,8 @@ static int dump_databases(char **);
 static int dump_all_databases();
 static char *quote_name(const char *name, char *buff, my_bool force);
 static void print_quoted_xml(FILE *output, char *fname, char *str, uint len);
+static const char *check_if_ignore_table(const char *table_name);
+
 
 static void print_version(void)
 {
@@ -302,7 +310,7 @@ static void write_header(FILE *sql_file, char *db_name)
     fprintf(sql_file,"<?xml version=\"1.0\"?>\n");
     fprintf(sql_file,"<mysqldump>\n");
   }
-  else
+  else if (opt_comments)
   {
     fprintf(sql_file, "-- MySQL dump %s\n--\n", DUMP_VERSION);
     fprintf(sql_file, "-- Host: %s    Database: %s\n",
@@ -561,6 +569,23 @@ static char *quote_name(const char *name, char *buff, my_bool force)
 } /* quote_name */
 
 
+
+static char *quote_for_like(const char *name, char *buff)
+{
+  char *to= buff;
+  *to++= '\'';
+  while (*name)
+  {
+    if (*name == '\'' || *name == '_' || *name == '\\' || *name == '%')
+      *to++= '\\';
+    *to++= *name++;
+  }
+  to[0]= '\'';
+  to[1]= 0;
+  return buff;
+}
+
+
 /*
   getStructure -- retrievs database structure, prints out corresponding
   CREATE statement and fills out insert_pat.
@@ -587,7 +612,8 @@ static uint getTableStructure(char *table, char* db)
   if (verbose)
     fprintf(stderr, "-- Retrieving table structure for table %s...\n", table);
 
-  sprintf(insert_pat,"SET OPTION SQL_QUOTE_SHOW_CREATE=%d", (opt_quoted || opt_keywords));
+  sprintf(insert_pat,"SET OPTION SQL_QUOTE_SHOW_CREATE=%d",
+	  (opt_quoted || opt_keywords));
   result_table=     quote_name(table, table_buff, 1);
   opt_quoted_table= quote_name(table, table_buff2, 0);
   if (!mysql_query(sock,insert_pat))
@@ -620,7 +646,7 @@ static uint getTableStructure(char *table, char* db)
         }
         write_header(sql_file, db);
       }
-      if (!opt_xml)
+      if (!opt_xml && opt_comments)
 	fprintf(sql_file, "\n--\n-- Table structure for table %s\n--\n\n",
 		result_table);
       if (opt_drop)
@@ -698,7 +724,7 @@ static uint getTableStructure(char *table, char* db)
         }
         write_header(sql_file, db);
       }
-      if (!opt_xml)
+      if (!opt_xml && opt_comments)
 	fprintf(sql_file, "\n--\n-- Table structure for table %s\n--\n\n",
 		result_table);
       if (opt_drop)
@@ -816,7 +842,9 @@ static uint getTableStructure(char *table, char* db)
       /* Get MySQL specific create options */
       if (create_options)
       {
-        sprintf(buff,"show table status like %s",result_table);
+	char show_name_buff[FN_REFLEN];
+        sprintf(buff,"show table status like %s",
+		quote_for_like(table, show_name_buff));
         if (mysql_query(sock, buff))
         {
 	  if (mysql_errno(sock) != ER_PARSE_ERROR)
@@ -921,11 +949,23 @@ static void dumpTable(uint numFields, char *table)
   MYSQL_FIELD	*field;
   MYSQL_ROW	row;
   ulong		rownr, row_break, total_length, init_length;
+  const char    *table_type;
+
+  result_table= quote_name(table,table_buff, 1);
+  opt_quoted_table= quote_name(table, table_buff2, 0);
+
+  /* Check table type */
+  if ((table_type= check_if_ignore_table(table)))
+  {
+    if (verbose)
+      fprintf(stderr,
+	      "-- Skipping data for table '%s' because it's of type %s\n",
+	      table, table_type);
+    return;
+  }
 
   if (verbose)
     fprintf(stderr, "-- Sending SELECT query...\n");
-  result_table= quote_name(table,table_buff, 1);
-  opt_quoted_table= quote_name(table, table_buff2, 0);
   if (path)
   {
     char filename[FN_REFLEN], tmp_path[FN_REFLEN];
@@ -964,14 +1004,14 @@ static void dumpTable(uint numFields, char *table)
   }
   else
   {
-    if (!opt_xml)
+    if (!opt_xml && opt_comments)
       fprintf(md_result_file,"\n--\n-- Dumping data for table %s\n--\n",
 	      result_table);
     sprintf(query, "SELECT /*!40001 SQL_NO_CACHE */ * FROM %s",
 	    result_table);
     if (where)
     {
-      if (!opt_xml)
+      if (!opt_xml && opt_comments)
 	fprintf(md_result_file,"-- WHERE:  %s\n",where);
       strxmov(strend(query), " WHERE ",where,NullS);
     }
@@ -1067,10 +1107,22 @@ static void dumpTable(uint numFields, char *table)
 	      }
 	      else
 	      {
-		/* change any strings ("inf","nan",..) into NULL */
+		/* change any strings ("inf", "-inf", "nan") into NULL */
 		char *ptr = row[i];
-		dynstr_append(&extended_row,
-			      (!isalpha(*ptr)) ? ptr : "NULL");
+		if (isalpha(*ptr) || (*ptr == '-' && isalpha(ptr[1])))
+		  dynstr_append(&extended_row, "NULL");
+		else
+		{
+		  if (field->type == FIELD_TYPE_DECIMAL)
+		  {
+		    /* add " signs around */
+		    dynstr_append(&extended_row, "\"");
+		    dynstr_append(&extended_row, ptr);
+		    dynstr_append(&extended_row, "\"");
+		  }
+		  else
+		    dynstr_append(&extended_row, ptr);
+		}
 	      }
 	    }
 	    else
@@ -1098,13 +1150,25 @@ static void dumpTable(uint numFields, char *table)
 	    }
 	    else
 	    {
-	      /* change any strings ("inf","nan",..) into NULL */
+	      /* change any strings ("inf", "-inf", "nan") into NULL */
 	      char *ptr = row[i];
 	      if (opt_xml)
 		fprintf(md_result_file, "\t\t<field name=\"%s\">%s</field>\n",
 			field->name,!isalpha(*ptr) ?ptr: "NULL");
+	      else if (isalpha(*ptr) || (*ptr == '-' && isalpha(ptr[1])))
+	        fputs("NULL", md_result_file);
 	      else
-		fputs((!isalpha(*ptr)) ? ptr : "NULL", md_result_file);
+	      {
+		if (field->type == FIELD_TYPE_DECIMAL)
+		{
+		  /* add " signs around */
+		  fputs("\"", md_result_file);
+		  fputs(ptr, md_result_file);
+		  fputs("\"", md_result_file);
+		}
+		else
+		  fputs(ptr, md_result_file);
+	      }
 	    }
 	  }
 	  else
@@ -1271,10 +1335,14 @@ static int init_dumping(char *database)
   {
     if (opt_databases || opt_alldbs)
     {
-      fprintf(md_result_file,"\n--\n-- Current Database: %s\n--\n", database);
+      /* length of table name * 2 (if name contain quotas), 2 quotas and 0 */
+      char quoted_database_buf[64*2+3];
+      char *qdatabase= quote_name(database,quoted_database_buf,opt_quoted);
+      if (opt_comments)
+	fprintf(md_result_file,"\n--\n-- Current Database: %s\n--\n", database);
       if (!opt_create_db)
 	fprintf(md_result_file,"\nCREATE DATABASE /*!32312 IF NOT EXISTS*/ %s;\n",
-		database);
+		qdatabase);
       fprintf(md_result_file,"\nUSE %s;\n", database);
     }
   }
@@ -1324,7 +1392,7 @@ static int dump_all_tables_in_db(char *database)
   if (opt_xml)
     fprintf(md_result_file, "</database>\n");
   if (lock_tables)
-    mysql_query(sock,"UNLOCK_TABLES");
+    mysql_query(sock,"UNLOCK TABLES");
   return 0;
 } /* dump_all_tables_in_db */
 
@@ -1370,7 +1438,7 @@ static int dump_selected_tables(char *db, char **table_names, int tables)
   if (opt_xml)
     fprintf(md_result_file, "</database>\n");
   if (lock_tables)
-    mysql_query(sock,"UNLOCK_TABLES");
+    mysql_query(sock,"UNLOCK TABLES");
   return 0;
 } /* dump_selected_tables */
 
@@ -1401,6 +1469,61 @@ static void print_value(FILE *file, MYSQL_RES  *result, MYSQL_ROW row,
   }
   return;					/* This shouldn't happen */
 } /* print_value */
+
+
+/*
+  Check if we the table is one of the table types that should be ignored:
+  MRG_ISAM, MRG_MYISAM
+
+  SYNOPSIS
+    check_if_ignore_table()
+    table_name			Table name to check
+
+  GLOBAL VARIABLES
+    sock			MySQL socket
+    verbose			Write warning messages
+
+  RETURN
+    0	Table should be backuped
+    #	Type of table (that should be skipped)
+*/
+
+static const char *check_if_ignore_table(const char *table_name)
+{
+  char buff[FN_REFLEN+80], show_name_buff[FN_REFLEN];
+  MYSQL_RES *res;
+  MYSQL_ROW row;
+  const char *result= 0;
+
+  sprintf(buff,"show table status like %s",
+	  quote_for_like(table_name, show_name_buff));
+  if (mysql_query(sock, buff))
+  {
+    if (mysql_errno(sock) != ER_PARSE_ERROR)
+    {					/* If old MySQL version */
+      if (verbose)
+	fprintf(stderr,
+		"-- Warning: Couldn't get status information for table %s (%s)\n",
+		table_name,mysql_error(sock));
+      return 0;					/* assume table is ok */
+    }
+  }
+  if (!(res= mysql_store_result(sock)) ||
+      !(row= mysql_fetch_row(res)))
+  {
+    fprintf(stderr,
+	    "Error: Couldn't read status information for table %s (%s)\n",
+	    table_name, mysql_error(sock));
+    if (res)
+      mysql_free_result(res);
+    return 0;					/* assume table is ok */
+  }
+  if (strcmp(row[1], (result= "MRG_MyISAM")) &&
+      strcmp(row[1], (result= "MRG_ISAM")))
+    result= 0;
+  mysql_free_result(res);  
+  return result;
+}
 
 
 int main(int argc, char **argv)
@@ -1472,8 +1595,9 @@ int main(int argc, char **argv)
 	row = mysql_fetch_row(master);
 	if (row && row[0] && row[1])
 	{
-	  fprintf(md_result_file,
-		  "\n--\n-- Position to start replication from\n--\n\n");
+	  if (opt_comments)
+	    fprintf(md_result_file,
+		    "\n--\n-- Position to start replication from\n--\n\n");
 	  fprintf(md_result_file,
 		  "CHANGE MASTER TO MASTER_LOG_FILE='%s', \
 MASTER_LOG_POS=%s ;\n",row[0],row[1]); 

@@ -72,6 +72,7 @@ int my_symlink(const char *content, const char *linkname, myf MyFlags)
 #else
   int result;
   DBUG_ENTER("my_symlink");
+  DBUG_PRINT("enter",("content: %s  linkname: %s", content, linkname));
 
   result= 0;
   if (symlink(content, linkname))
@@ -103,7 +104,8 @@ int my_symlink(const char *content, const char *linkname, myf MyFlags)
 #define BUFF_LEN FN_LEN
 #endif
 
-int my_realpath(char *to, const char *filename, myf MyFlags)
+int my_realpath(char *to, const char *filename,
+		myf MyFlags __attribute__((unused)))
 {
 #if defined(HAVE_REALPATH) && !defined(HAVE_purify) && !defined(HAVE_BROKEN_REALPATH)
   int result=0;

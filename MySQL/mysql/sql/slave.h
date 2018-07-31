@@ -239,6 +239,7 @@ typedef struct st_relay_log_info
 
   int wait_for_pos(THD* thd, String* log_name, longlong log_pos, 
 		   longlong timeout);
+  void close_temporary_tables();
 } RELAY_LOG_INFO;
 
 

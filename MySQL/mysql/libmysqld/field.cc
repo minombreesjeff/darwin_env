@@ -632,7 +632,7 @@ void Field_decimal::store(const char *from,uint len)
   if (zerofill)
   {
     left_wall=to-1;
-    while (pos != left_wall)			// Fill with zeros
+    while (pos > left_wall)			// Fill with zeros
       *pos--='0';
   }
   else
@@ -640,7 +640,7 @@ void Field_decimal::store(const char *from,uint len)
     left_wall=to+(sign_char != 0)-1;
     if (!expo_sign_char)	// If exponent was specified, ignore prezeros
     {
-      for (;pos != left_wall && pre_zeros_from !=pre_zeros_end;
+      for (;pos > left_wall && pre_zeros_from !=pre_zeros_end;
 	   pre_zeros_from++)
 	*pos--= '0';
     }
@@ -848,7 +848,7 @@ int Field_decimal::cmp(const char *a_ptr,const char *b_ptr)
     return 0;
   if (*a_ptr == '-')
     return -1;
-  else if (*b_ptr == '-')
+  if (*b_ptr == '-')
     return 1;
 
   while (a_ptr != end)
@@ -2520,31 +2520,60 @@ void Field_timestamp::store(double nr)
 ** function.
 */
 
-static longlong fix_datetime(longlong nr)
+static longlong fix_datetime(longlong nr, TIME *time_res)
 {
+  long part1,part2;
+  
   if (nr == LL(0) || nr >= LL(10000101000000))
-    return nr;					// Normal datetime >= Year 1000
+    goto ok;
   if (nr < 101)
     goto err;
   if (nr <= (YY_PART_YEAR-1)*10000L+1231L)
-    return (nr+20000000L)*1000000L;		// YYMMDD, year: 2000-2069
+  {
+    nr= (nr+20000000L)*1000000L;                 // YYMMDD, year: 2000-2069
+    goto ok;
+  }
   if (nr < (YY_PART_YEAR)*10000L+101L)
     goto err;
   if (nr <= 991231L)
-    return (nr+19000000L)*1000000L;		// YYMMDD, year: 1970-1999
+  {
+    nr= (nr+19000000L)*1000000L;                 // YYMMDD, year: 1970-1999
+    goto ok;
+  }
   if (nr < 10000101L)
     goto err;
   if (nr <= 99991231L)
-    return nr*1000000L;
+  {
+    nr= nr*1000000L;
+    goto ok;
+  }
   if (nr < 101000000L)
     goto err;
   if (nr <= (YY_PART_YEAR-1)*LL(10000000000)+LL(1231235959))
-    return nr+LL(20000000000000);		// YYMMDDHHMMSS, 2000-2069
+  {
+    nr= nr+LL(20000000000000);                   // YYMMDDHHMMSS, 2000-2069
+    goto ok;
+  }
   if (nr <  YY_PART_YEAR*LL(10000000000)+ LL(101000000))
     goto err;
   if (nr <= LL(991231235959))
-    return nr+LL(19000000000000);		// YYMMDDHHMMSS, 1970-1999
+    nr= nr+LL(19000000000000);		// YYMMDDHHMMSS, 1970-1999
 
+ ok:
+  part1=(long) (nr/LL(1000000));
+  part2=(long) (nr - (longlong) part1*LL(1000000));
+  time_res->year=  (int) (part1/10000L);  part1%=10000L;
+  time_res->month= (int) part1 / 100;
+  time_res->day=   (int) part1 % 100;
+  time_res->hour=  (int) (part2/10000L);  part2%=10000L;
+  time_res->minute=(int) part2 / 100;
+  time_res->second=(int) part2 % 100;
+    
+  if (time_res->year <= 9999 && time_res->month <= 12 && 
+      time_res->day <= 31 && time_res->hour <= 23 && 
+      time_res->minute <= 59 && time_res->second <= 59)
+    return nr;
+  
  err:
   current_thd->cuted_fields++;
   return LL(0);
@@ -2554,24 +2583,18 @@ static longlong fix_datetime(longlong nr)
 void Field_timestamp::store(longlong nr)
 {
   TIME l_time;
-  time_t timestamp;
-  long part1,part2;
+  time_t timestamp= 0;
 
-  if ((nr=fix_datetime(nr)))
+  if ((nr= fix_datetime(nr, &l_time)))
   {
     long not_used;
-    part1=(long) (nr/LL(1000000));
-    part2=(long) (nr - (longlong) part1*LL(1000000));
-    l_time.year=  (int) (part1/10000L);  part1%=10000L;
-    l_time.month= (int) part1 / 100;
-    l_time.day=	  (int) part1 % 100; 
-    l_time.hour=  (int) (part2/10000L);  part2%=10000L;
-    l_time.minute=(int) part2 / 100;
-    l_time.second=(int) part2 % 100; 
-    timestamp=my_gmt_sec(&l_time, &not_used);
+    
+    timestamp= my_gmt_sec(&l_time, &not_used);
+    
+    if (!timestamp)
+      current_thd->cuted_fields++;
   }
-  else
-    timestamp=0;
+  
 #ifdef WORDS_BIGENDIAN
   if (table->db_low_byte_first)
   {
@@ -2991,7 +3014,7 @@ void Field_year::store(const char *from, uint len)
     current_thd->cuted_fields++;
     return;
   }
-  else if (current_thd->count_cuted_fields && !test_if_int(from,len))
+  if (current_thd->count_cuted_fields && !test_if_int(from,len))
     current_thd->cuted_fields++;
   if (nr != 0 || len != 4)
   {
@@ -3406,13 +3429,10 @@ void Field_datetime::store(double nr)
 
 void Field_datetime::store(longlong nr)
 {
-  if (nr < 0 || nr > LL(99991231235959))
-  {
-    nr=0;
-    current_thd->cuted_fields++;
-  }
-  else
-    nr=fix_datetime(nr);
+  TIME not_used;
+  
+  nr= fix_datetime(nr, &not_used);
+  
 #ifdef WORDS_BIGENDIAN
   if (table->db_low_byte_first)
   {
@@ -4599,7 +4619,7 @@ void Field_enum::store(const char *from,uint length)
   uint tmp=find_enum(typelib,from,length);
   if (!tmp)
   {
-    if (length < 6)			// Can't be more than 99999 enums
+    if (length < 6) // Can't be more than 99999 enums
     {
       /* This is for reading numbers with LOAD DATA INFILE */
       char buff[7], *end;
@@ -4697,7 +4717,7 @@ String *Field_enum::val_str(String *val_buffer __attribute__((unused)),
 {
   uint tmp=(uint) Field_enum::val_int();
   if (!tmp || tmp > typelib->count)
-    val_ptr->length(0);
+    val_ptr->set("",0);
   else
     val_ptr->set((const char*) typelib->type_names[tmp-1],
 		 (uint) strlen(typelib->type_names[tmp-1]));
@@ -5100,8 +5120,7 @@ create_field::create_field(Field *old_field,Field *orig_field)
     interval=0;
   def=0;
   if (!old_field->is_real_null() && ! (flags & BLOB_FLAG) &&
-      old_field->type() != FIELD_TYPE_TIMESTAMP && old_field->ptr &&
-      orig_field)
+      old_field->ptr && orig_field)
   {
     char buff[MAX_FIELD_WIDTH],*pos;
     String tmp(buff,sizeof(buff));

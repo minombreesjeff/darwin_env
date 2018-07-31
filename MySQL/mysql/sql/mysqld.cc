@@ -140,7 +140,7 @@ int initgroups(const char *,unsigned int);
 typedef fp_except fp_except_t;
 #endif
 
-  /* We can't handle floating point expections with threads, so disable
+  /* We can't handle floating point exceptions with threads, so disable
      this on freebsd
   */
 
@@ -290,6 +290,7 @@ bool opt_disable_networking=0, opt_skip_show_db=0;
 my_bool opt_enable_named_pipe= 0, opt_debugging= 0;
 my_bool opt_local_infile, opt_external_locking, opt_slave_compressed_protocol;
 uint delay_key_write_options= (uint) DELAY_KEY_WRITE_ON;
+uint lower_case_table_names;
 
 static my_bool opt_do_pstack = 0;
 static ulong opt_specialflag=SPECIAL_ENGLISH;
@@ -305,10 +306,9 @@ char* log_error_file_ptr= log_error_file;
 static pthread_t select_thread;
 static my_bool opt_noacl=0, opt_bootstrap=0, opt_myisam_log=0;
 my_bool opt_safe_user_create = 0, opt_no_mix_types = 0;
-my_bool lower_case_table_names, opt_old_rpl_compat;
 my_bool opt_show_slave_auth_info, opt_sql_bin_update = 0;
 my_bool opt_log_slave_updates= 0, opt_console= 0;
-my_bool opt_readonly = 0;
+my_bool opt_readonly = 0, opt_sync_bdb_logs, opt_sync_frm;
 
 volatile bool  mqh_used = 0;
 FILE *bootstrap_file=0;
@@ -500,6 +500,8 @@ static uint set_maximum_open_files(uint max_file_limit);
 static ulong find_bit_type(const char *x, TYPELIB *bit_lib);
 static void clean_up(bool print_message);
 static void clean_up_mutexes(void);
+static int test_if_case_insensitive(const char *dir_name);
+static void create_pid_file();
 
 /****************************************************************************
 ** Code to end mysqld
@@ -1043,7 +1045,7 @@ static void set_user(const char *user)
     }
     return;
   }
-  else if (!user)
+  if (!user)
   {
     if (!opt_bootstrap)
     {
@@ -1459,16 +1461,7 @@ static void start_signal_handler(void)
 {
   // Save vm id of this process
   if (!opt_bootstrap)
-  {
-    File pidFile;
-    if ((pidFile = my_create(pidfile_name,0664, O_WRONLY, MYF(MY_WME))) >= 0)
-    {
-      char buff[21];
-      sprintf(buff,"%lu",(ulong) getpid());
-      (void) my_write(pidFile, buff,strlen(buff),MYF(MY_WME));
-      (void) my_close(pidFile,MYF(0));
-    }
-  }
+    create_pid_file();
   // no signal handler
 }
 
@@ -1696,7 +1689,7 @@ static void start_signal_handler(void)
   (void) pthread_attr_setdetachstate(&thr_attr,PTHREAD_CREATE_DETACHED);
   if (!(opt_specialflag & SPECIAL_NO_PRIOR))
     my_pthread_attr_setprio(&thr_attr,INTERRUPT_PRIOR);
-  pthread_attr_setstacksize(&thr_attr,32768);
+  pthread_attr_setstacksize(&thr_attr,thread_stack);
 #endif
 
   (void) pthread_mutex_lock(&LOCK_thread_count);
@@ -1752,16 +1745,8 @@ extern "C" void *signal_hand(void *arg __attribute__((unused)))
 
   /* Save pid to this process (or thread on Linux) */
   if (!opt_bootstrap)
-  {
-    File pidFile;
-    if ((pidFile = my_create(pidfile_name,0664, O_WRONLY, MYF(MY_WME))) >= 0)
-    {
-      char buff[21];
-      sprintf(buff,"%lu",(ulong) getpid());
-      (void) my_write(pidFile, buff,strlen(buff),MYF(MY_WME));
-      (void) my_close(pidFile,MYF(0));
-    }
-  }
+    create_pid_file();
+
 #ifdef HAVE_STACK_TRACE_ON_SEGV
   if (opt_do_pstack)
   {
@@ -1958,7 +1943,7 @@ extern "C" pthread_handler_decl(handle_shutdown,arg)
 #endif
 
 
-const char *load_default_groups[]= { "mysqld","server",MYSQL_BASE_VERSION,0 };
+const char *load_default_groups[]= { "mysqld","server",MYSQL_BASE_VERSION,0,0};
 
 bool open_log(MYSQL_LOG *log, const char *hostname,
 	      const char *opt_name, const char *extension,
@@ -2111,6 +2096,18 @@ int main(int argc, char **argv)
   if (set_default_charset_by_name(sys_charset.value, MYF(MY_WME)))
     exit(1);
   charsets_list = list_charsets(MYF(MY_COMPILED_SETS|MY_CONFIG_SETS));
+
+  /*
+    Ensure that lower_case_table_names is set on system where we have case
+    insensitive names.  If this is not done the users MyISAM tables will
+    get corrupted if accesses with names of different case.
+  */
+  if (!lower_case_table_names &&
+      test_if_case_insensitive(mysql_real_data_home) == 1)
+  {
+    sql_print_error("Warning: Setting lower_case_table_names=2 because file system for %s is case insensitive", mysql_real_data_home);
+    lower_case_table_names= 2;
+  }
 
 #ifdef HAVE_OPENSSL
   if (opt_use_ssl)
@@ -2561,7 +2558,7 @@ default_service_handling(char **argv,
 			 const char *extra_opt)
 {
   char path_and_service[FN_REFLEN+FN_REFLEN+32], *pos, *end;
-  end= path_and_service + sizeof(path_and_service)-1;
+  end= path_and_service + sizeof(path_and_service)-3;
 
   /* We have to quote filename if it contains spaces */
   pos= add_quoted_string(path_and_service, file_path, end);
@@ -2571,7 +2568,9 @@ default_service_handling(char **argv,
     *pos++= ' ';
     pos= add_quoted_string(pos, extra_opt, end);
   }
-  *pos= 0;					// Ensure end null
+  /* We must have servicename last */
+  *pos++= ' ';
+  (void) add_quoted_string(pos, servicename, end);
 
   if (Service.got_service_option(argv, "install"))
   {
@@ -2606,17 +2605,23 @@ int main(int argc, char **argv)
   {
     char file_path[FN_REFLEN];
     my_path(file_path, argv[0], "");		      /* Find name in path */
-    fn_format(file_path,argv[0],file_path,"",MY_REPLACE_DIR+
-              MY_UNPACK_FILENAME | MY_RESOLVE_SYMLINKS);
+    fn_format(file_path,argv[0],file_path,"",
+	      MY_REPLACE_DIR | MY_UNPACK_FILENAME | MY_RESOLVE_SYMLINKS);
     if (argc == 2)
     {	
       if (!default_service_handling(argv, MYSQL_SERVICENAME, MYSQL_SERVICENAME,
 				   file_path, ""))
 	return 0;
-      if (Service.IsService(argv[1]))
+      if (Service.IsService(argv[1]))        /* Start an optional service */
       {
-        /* start an optional service */
-        load_default_groups[0]= argv[1];
+	/*
+	  Only add the service name to the groups read from the config file
+	  if it's not "MySQL". (The default service name should be 'mysqld'
+	  but we started a bad tradition by calling it MySQL from the start
+	  and we are now stuck with it.
+	*/
+	if (my_strcasecmp(argv[1],"mysql"))
+	  load_default_groups[3]= argv[1];
         start_mode= 1;
         Service.Init(argv[1], mysql_service);
         return 0;
@@ -2624,8 +2629,7 @@ int main(int argc, char **argv)
     }
     else if (argc == 3) /* install or remove any optional service */
     {
-      if (!default_service_handling(argv, argv[2], argv[2], file_path,
-				    argv[2]))
+      if (!default_service_handling(argv, argv[2], argv[2], file_path, ""))
 	return 0;
       if (Service.IsService(argv[2]))
       {
@@ -2637,6 +2641,8 @@ int main(int argc, char **argv)
 	opt_argc= 2;				// Skip service-name
 	opt_argv=argv;
 	start_mode= 1;
+	if (my_strcasecmp(argv[2],"mysql"))
+	  load_default_groups[3]= argv[2];
 	Service.Init(argv[2], mysql_service);
 	return 0;
       }
@@ -3152,7 +3158,7 @@ enum options_mysqld {
   OPT_DELAY_KEY_WRITE_ALL,     OPT_SLOW_QUERY_LOG, 
   OPT_DELAY_KEY_WRITE,	       OPT_CHARSETS_DIR,
   OPT_BDB_HOME,                OPT_BDB_LOG,  
-  OPT_BDB_TMP,                 OPT_BDB_NOSYNC,
+  OPT_BDB_TMP,                 OPT_BDB_SYNC,
   OPT_BDB_LOCK,                OPT_BDB_SKIP, 
   OPT_BDB_NO_RECOVER,	       OPT_BDB_SHARED,
   OPT_MASTER_HOST,             OPT_MASTER_USER,
@@ -3191,7 +3197,7 @@ enum options_mysqld {
   OPT_HAVE_NAMED_PIPE,
   OPT_DO_PSTACK, OPT_REPORT_HOST,
   OPT_REPORT_USER, OPT_REPORT_PASSWORD, OPT_REPORT_PORT,
-  OPT_SHOW_SLAVE_AUTH_INFO, OPT_OLD_RPL_COMPAT,
+  OPT_SHOW_SLAVE_AUTH_INFO,
   OPT_SLAVE_LOAD_TMPDIR, OPT_NO_MIX_TYPE,
   OPT_RPL_RECOVERY_RANK,OPT_INIT_RPL_ROLE,
   OPT_RELAY_LOG, OPT_RELAY_LOG_INDEX, OPT_RELAY_LOG_INFO_FILE,
@@ -3245,7 +3251,8 @@ enum options_mysqld {
   OPT_DEFAULT_WEEK_FORMAT,
   OPT_RANGE_ALLOC_BLOCK_SIZE,
   OPT_QUERY_ALLOC_BLOCK_SIZE, OPT_QUERY_PREALLOC_SIZE,
-  OPT_TRANS_ALLOC_BLOCK_SIZE, OPT_TRANS_PREALLOC_SIZE
+  OPT_TRANS_ALLOC_BLOCK_SIZE, OPT_TRANS_PREALLOC_SIZE,
+  OPT_SYNC_FRM, OPT_BDB_NOSYNC
 };
 
 
@@ -3271,8 +3278,14 @@ struct my_option my_long_options[] =
   {"bdb-no-recover", OPT_BDB_NO_RECOVER,
    "Don't try to recover Berkeley DB tables on start", 0, 0, 0, GET_NO_ARG,
    NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"bdb-no-sync", OPT_BDB_NOSYNC, "Don't synchronously flush logs", 0, 0, 0,
-   GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"bdb-no-sync", OPT_BDB_NOSYNC,
+   "Disable synchronously flushing logs. This option is deprecated, use --skip-sync-bdb-logs or sync-bdb-logs=0 instead",
+   //   (gptr*) &opt_sync_bdb_logs, (gptr*) &opt_sync_bdb_logs, 0, GET_BOOL,
+   0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"sync-bdb-logs", OPT_BDB_SYNC,
+   "Synchronously flush logs. Enabled by default",
+   (gptr*) &opt_sync_bdb_logs, (gptr*) &opt_sync_bdb_logs, 0, GET_BOOL,
+   NO_ARG, 1, 0, 0, 0, 0, 0},
   {"bdb-shared-data", OPT_BDB_SHARED,
    "Start Berkeley DB in multi-process mode", 0, 0, 0, GET_NO_ARG, NO_ARG, 0,
    0, 0, 0, 0, 0},
@@ -3280,6 +3293,9 @@ struct my_option my_long_options[] =
    (gptr*) &berkeley_tmpdir, (gptr*) &berkeley_tmpdir, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 #endif /* HAVE_BERKELEY_DB */
+  {"sync-frm", OPT_SYNC_FRM, "Sync .frm to disk on create. Enabled by default",
+   (gptr*) &opt_sync_frm, (gptr*) &opt_sync_frm, 0, GET_BOOL, NO_ARG, 1, 0,
+   0, 0, 0, 0},
   {"skip-bdb", OPT_BDB_SKIP, "Don't use berkeley db (will save memory)",
    0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"big-tables", OPT_BIG_TABLES, 
@@ -3537,10 +3553,6 @@ Does nothing yet.",
   {"old-protocol", 'o', "Use the old (3.20) protocol client/server protocol",
    (gptr*) &protocol_version, (gptr*) &protocol_version, 0, GET_UINT, NO_ARG,
    PROTOCOL_VERSION, 0, 0, 0, 0, 0},
-  {"old-rpl-compat", OPT_OLD_RPL_COMPAT,
-   "Use old LOAD DATA format in the binary log (don't save data in file)",
-   (gptr*) &opt_old_rpl_compat, (gptr*) &opt_old_rpl_compat, 0, GET_BOOL,
-   NO_ARG, 0, 0, 0, 0, 0, 0},
 #ifdef ONE_THREAD
   {"one-thread", OPT_ONE_THREAD,
    "Only use one thread (for debugging under Linux)", 0, 0, 0, GET_NO_ARG,
@@ -3847,15 +3859,15 @@ replicating a LOAD DATA INFILE command",
    (gptr*) &max_system_variables.long_query_time, 0, GET_ULONG,
    REQUIRED_ARG, 10, 1, LONG_TIMEOUT, 0, 1, 0},
   {"lower_case_table_names", OPT_LOWER_CASE_TABLE_NAMES,
-   "If set to 1 table names are stored in lowercase on disk and table names will be case-insensitive.",
+   "If set to 1 table names are stored in lowercase on disk and table names will be case-insensitive.  Should be set to 2 if you are using a case insensitive file system",
    (gptr*) &lower_case_table_names,
-   (gptr*) &lower_case_table_names, 0, GET_BOOL, NO_ARG,
+   (gptr*) &lower_case_table_names, 0, GET_UINT, OPT_ARG,
 #ifdef FN_NO_CASE_SENCE
     1
 #else
     0
 #endif
-   , 0, 1, 0, 1, 0},
+   , 0, 2, 0, 1, 0},
   {"max_allowed_packet", OPT_MAX_ALLOWED_PACKET,
    "Max packetlength to send/receive from to server.",
    (gptr*) &global_system_variables.max_allowed_packet,
@@ -4031,7 +4043,7 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    "Use compression on master/slave protocol",
    (gptr*) &opt_slave_compressed_protocol,
    (gptr*) &opt_slave_compressed_protocol,
-   0, GET_BOOL, REQUIRED_ARG, 0, 0, 1, 0, 1, 0},
+   0, GET_BOOL, NO_ARG, 0, 0, 1, 0, 1, 0},
   {"slave_net_timeout", OPT_SLAVE_NET_TIMEOUT,
    "Number of seconds to wait for more data from a master/slave connection before aborting the read.",
    (gptr*) &slave_net_timeout, (gptr*) &slave_net_timeout, 0,
@@ -4042,7 +4054,7 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    (gptr*) &max_system_variables.range_alloc_block_size, 0, GET_ULONG,
    REQUIRED_ARG, RANGE_ALLOC_BLOCK_SIZE, 1024, ~0L, 0, 1024, 0},
   {"read-only", OPT_READONLY,
-   "Make all tables readonly, with the expections for replications (slave) threads and users with the SUPER privilege",
+   "Make all tables readonly, with the exception for replication (slave) threads and users with the SUPER privilege",
    (gptr*) &opt_readonly,
    (gptr*) &opt_readonly,
    0, GET_BOOL, NO_ARG, 0, 0, 1, 0, 1, 0},
@@ -4058,7 +4070,7 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    1, 0},
   {"table_cache", OPT_TABLE_CACHE,
    "The number of open tables for all threads.", (gptr*) &table_cache_size,
-   (gptr*) &table_cache_size, 0, GET_ULONG, REQUIRED_ARG, 64, 1, 16384, 0, 1,
+   (gptr*) &table_cache_size, 0, GET_ULONG, REQUIRED_ARG, 64, 1, ~0L, 0, 1,
    0},
   {"thread_concurrency", OPT_THREAD_CONCURRENCY,
    "Permits the application to give the threads system a hint for the desired number of threads that should be run at the same time.",
@@ -4091,12 +4103,13 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    "The number of seconds the server waits for activity on a connection before closing it",
    (gptr*) &global_system_variables.net_wait_timeout,
    (gptr*) &max_system_variables.net_wait_timeout, 0, GET_ULONG,
-   REQUIRED_ARG, NET_WAIT_TIMEOUT, 1, LONG_TIMEOUT, 0, 1, 0},
+   REQUIRED_ARG, NET_WAIT_TIMEOUT, 1, IF_WIN(INT_MAX32/1000, LONG_TIMEOUT),
+   0, 1, 0},
   { "default-week-format", OPT_DEFAULT_WEEK_FORMAT,
     "The default week format used by WEEK() functions.",
     (gptr*) &global_system_variables.default_week_format, 
     (gptr*) &max_system_variables.default_week_format, 
-    0, GET_ULONG, REQUIRED_ARG, 0, 0, 3L, 0, 1, 0},
+    0, GET_ULONG, REQUIRED_ARG, 0, 0, 7L, 0, 1, 0},
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -4269,8 +4282,8 @@ struct show_var_st status_vars[]= {
 
 static void print_version(void)
 {
-  printf("%s  Ver %s for %s on %s\n",my_progname,
-	 server_version,SYSTEM_TYPE,MACHINE_TYPE);
+  printf("%s  Ver %s for %s on %s (%s)\n",my_progname,
+	 server_version,SYSTEM_TYPE,MACHINE_TYPE, MYSQL_COMPILATION_COMMENT);
 }
 
 static void use_help(void)
@@ -4623,14 +4636,14 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     my_use_symdir=0;
     break;
   case (int) OPT_BIND_ADDRESS:
-    if (argument && isdigit(argument[0]))
+    if (isdigit(argument[0]))
     {
       my_bind_addr = (ulong) inet_addr(argument);
     }
     else
     {
       struct hostent *ent;
-      if (argument || argument[0])
+      if (argument[0])
 	ent=gethostbyname(argument);
       else
       {
@@ -4726,7 +4739,14 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
   }
 #ifdef HAVE_BERKELEY_DB
   case OPT_BDB_NOSYNC:
-    berkeley_env_flags|=DB_TXN_NOSYNC;
+    /* Deprecated option */
+    opt_sync_bdb_logs= 0;
+    /* Fall through */
+  case OPT_BDB_SYNC:
+    if (!opt_sync_bdb_logs)
+      berkeley_env_flags|= DB_TXN_NOSYNC;
+    else
+      berkeley_env_flags&= ~DB_TXN_NOSYNC;
     break;
   case OPT_BDB_NO_RECOVER:
     berkeley_init_flags&= ~(DB_RECOVER);
@@ -4819,6 +4839,9 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 #ifdef SAFEMALLOC
     sf_malloc_quick=1;
 #endif
+    break;
+  case OPT_LOWER_CASE_TABLE_NAMES:
+    lower_case_table_names= argument ? atoi(argument) : 1;
     break;
   }
   return 0;
@@ -4959,7 +4982,7 @@ static void fix_paths(void)
   set how many open files we want to be able to handle
 
   SYNOPSIS
-    set_maximum_open_files()  
+    set_maximum_open_files()
     max_file_limit		Files to open
 
   NOTES
@@ -5083,6 +5106,61 @@ skipp: ;
   DBUG_PRINT("exit",("bit-field: %ld",(ulong) found));
   DBUG_RETURN(found);
 } /* find_bit_type */
+
+
+/*
+  Check if file system used for databases is case insensitive
+
+  SYNOPSIS
+    test_if_case_sensitive()
+    dir_name			Directory to test
+
+  RETURN
+    -1  Don't know (Test failed)
+    0   File system is case sensitive
+    1   File system is case insensitive
+*/
+
+static int test_if_case_insensitive(const char *dir_name)
+{
+  int result= 0;
+  File file;
+  char buff[FN_REFLEN], buff2[FN_REFLEN];
+  MY_STAT stat_info;
+
+  fn_format(buff, glob_hostname, dir_name, ".lower-test",
+	    MY_UNPACK_FILENAME | MY_REPLACE_EXT | MY_REPLACE_DIR);
+  fn_format(buff2, glob_hostname, dir_name, ".LOWER-TEST",
+	    MY_UNPACK_FILENAME | MY_REPLACE_EXT | MY_REPLACE_DIR);
+  (void) my_delete(buff2, MYF(0));
+  if ((file= my_create(buff, 0666, O_RDWR, MYF(0))) < 0)
+  {
+    sql_print_error("Warning: Can't create test file %s", buff);
+    return -1;
+  }
+  my_close(file, MYF(0));
+  if (my_stat(buff2, &stat_info, MYF(0)))
+    result= 1;					// Can access file
+  (void) my_delete(buff, MYF(MY_WME));
+  return result;
+}
+
+
+/* Create file to store pid number */
+
+static void create_pid_file()
+{
+  File file;
+  if ((file = my_create(pidfile_name,0664,
+			O_WRONLY | O_TRUNC, MYF(MY_WME))) >= 0)
+  {
+    char buff[21], *end;
+    end= int2str((long) getpid(), buff, 10);
+    *end++= '\n';
+    (void) my_write(file, (byte*) buff, (uint) (end-buff),MYF(MY_WME));
+    (void) my_close(file, MYF(0));
+  }
+}
 
 
 /*****************************************************************************
