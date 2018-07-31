@@ -30,8 +30,8 @@
 #include <thr_alarm.h>
 #include <mysql_embed.h>
 #include <mysql_com.h>
-#include <violite.h>
 #include <my_sys.h>
+#include <violite.h>
 #include <mysys_err.h>
 #include <m_string.h>
 #include <m_ctype.h>
@@ -547,7 +547,7 @@ mc_mysql_connect(MYSQL *mysql,const char *host, const char *user,
 {
   char		buff[NAME_LEN+USERNAME_LENGTH+100],*end,*host_info;
   my_socket	sock;
-  ulong		ip_addr;
+  uint32	ip_addr;
   struct	sockaddr_in sock_addr;
   ulong		pkt_length;
   NET		*net= &mysql->net;
@@ -843,7 +843,7 @@ mc_mysql_connect(MYSQL *mysql,const char *host, const char *user,
     }
     /* Do the SSL layering. */
     DBUG_PRINT("info", ("IO layer change in progress..."));
-    DBUG_PRINT("info", ("IO context %p",((struct st_VioSSLConnectorFd*)mysql->connector_fd)->ssl_context_));
+    DBUG_PRINT("info", ("IO context %p",((struct st_VioSSLConnectorFd*)mysql->connector_fd)->ssl_context));
     sslconnect((struct st_VioSSLConnectorFd*)(mysql->connector_fd),mysql->net.vio, (long)(mysql->options.connect_timeout));
     DBUG_PRINT("info", ("IO layer change done!"));
   }

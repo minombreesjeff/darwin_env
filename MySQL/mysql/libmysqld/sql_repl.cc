@@ -532,7 +532,7 @@ Increase max_allowed_packet on master";
 	  if (!thd->killed)
 	  {
 	    /* Note that the following call unlocks lock_log */
-	    mysql_bin_log.wait_for_update(thd);
+	    mysql_bin_log.wait_for_update(thd, 0);
 	  }
 	  else
 	    pthread_mutex_unlock(log_lock);
@@ -547,7 +547,7 @@ Increase max_allowed_packet on master";
 
 	if (read_packet)
 	{
-	  thd->proc_info = "sending update to slave";
+	  thd->proc_info = "Sending binlog event to slave";
 	  if (my_net_write(net, (char*)packet->ptr(), packet->length()) )
 	  {
 	    errmsg = "Failed on my_net_write()";
@@ -584,7 +584,7 @@ Increase max_allowed_packet on master";
     {
       bool loop_breaker = 0;
       // need this to break out of the for loop from switch
-      thd->proc_info = "switching to next log";
+      thd->proc_info = "Finished reading one binlog; switching to next binlog";
       switch (mysql_bin_log.find_next_log(&linfo, 1)) {
       case LOG_INFO_EOF:
 	loop_breaker = (flags & BINLOG_DUMP_NON_BLOCK);
@@ -623,14 +623,14 @@ end:
   (void)my_close(file, MYF(MY_WME));
 
   send_eof(&thd->net);
-  thd->proc_info = "waiting to finalize termination";
+  thd->proc_info = "Waiting to finalize termination";
   pthread_mutex_lock(&LOCK_thread_count);
   thd->current_linfo = 0;
   pthread_mutex_unlock(&LOCK_thread_count);
   DBUG_VOID_RETURN;
 
 err:
-  thd->proc_info = "waiting to finalize termination";
+  thd->proc_info = "Waiting to finalize termination";
   end_io_cache(&log);
   /*
     Exclude  iteration through thread list
@@ -769,12 +769,15 @@ int reset_slave(THD *thd, MASTER_INFO* mi)
 			       &errmsg)))
     goto err;
   
-  //Clear master's log coordinates (only for good display of SHOW SLAVE STATUS)
-  mi->master_log_name[0]= 0;
-  mi->master_log_pos= BIN_LOG_HEADER_SIZE;
-  //Clear the errors displayed by SHOW SLAVE STATUS
-  mi->rli.last_slave_error[0]=0;
-  mi->rli.last_slave_errno=0;
+  /*
+    Clear master's log coordinates and reset host/user/etc to the values
+    specified in mysqld's options (only for good display of SHOW SLAVE STATUS;
+    next init_master_info() (in start_slave() for example) would have set them
+    the same way; but here this is for the case where the user does SHOW SLAVE
+    STATUS; before doing START SLAVE;
+  */
+  init_master_info_with_options(mi);
+  clear_last_slave_error(&mi->rli);
   //close master_info_file, relay_log_info_file, set mi->inited=rli->inited=0
   end_master_info(mi);
   //and delete these two files
@@ -863,7 +866,7 @@ int change_master(THD* thd, MASTER_INFO* mi)
     DBUG_RETURN(1);
   }
 
-  thd->proc_info = "changing master";
+  thd->proc_info = "Changing master";
   LEX_MASTER_INFO* lex_mi = &thd->lex.mi;
   // TODO: see if needs re-write
   if (init_master_info(mi, master_info_file, relay_log_info_file, 0))
@@ -878,9 +881,14 @@ int change_master(THD* thd, MASTER_INFO* mi)
     and we have the hold on the run locks which will keep all threads that
     could possibly modify the data structures from running
   */
+
+  /*
+    If the user specified host or port without binlog or position, 
+    reset binlog's name to FIRST and position to 4.
+  */ 
+
   if ((lex_mi->host || lex_mi->port) && !lex_mi->log_file_name && !lex_mi->pos)
   {
-    // if we change host or port, we must reset the postion
     mi->master_log_name[0] = 0;
     mi->master_log_pos= BIN_LOG_HEADER_SIZE;
     mi->rli.pending = 0;
@@ -924,7 +932,7 @@ int change_master(THD* thd, MASTER_INFO* mi)
   if (need_relay_log_purge)
   {
     mi->rli.skip_log_purge= 0;
-    thd->proc_info="purging old relay logs";
+    thd->proc_info="Purging old relay logs";
     if (purge_relay_logs(&mi->rli, thd,
 			 0 /* not only reset, but also reinit */,
 			 &errmsg))
@@ -950,15 +958,26 @@ int change_master(THD* thd, MASTER_INFO* mi)
       DBUG_RETURN(1);
     }
   }
-  mi->rli.master_log_pos = mi->master_log_pos;
   DBUG_PRINT("info", ("master_log_pos: %d", (ulong) mi->master_log_pos));
+  /* If changing RELAY_LOG_FILE or RELAY_LOG_POS, this will be nonsense: */
+  mi->rli.master_log_pos = mi->master_log_pos;
   strmake(mi->rli.master_log_name,mi->master_log_name,
 	  sizeof(mi->rli.master_log_name)-1);
   if (!mi->rli.master_log_name[0]) // uninitialized case
     mi->rli.master_log_pos=0;
 
   pthread_mutex_lock(&mi->rli.data_lock);
-  mi->rli.abort_pos_wait++;
+  mi->rli.abort_pos_wait++; /* for MASTER_POS_WAIT() to abort */
+  /* Clear the error, for a clean start. */
+  clear_last_slave_error(&mi->rli);
+  /* 
+     If we don't write new coordinates to disk now, then old will remain in
+     relay-log.info until START SLAVE is issued; but if mysqld is shutdown
+     before START SLAVE, then old will remain in relay-log.info, and will be the
+     in-memory value at restart (thus causing errors, as the old relay log does
+     not exist anymore).
+  */
+  flush_relay_log_info(&mi->rli); 
   pthread_cond_broadcast(&mi->data_cond);
   pthread_mutex_unlock(&mi->rli.data_lock);
 
@@ -1197,7 +1216,7 @@ int log_loaded_block(IO_CACHE* file)
   lf_info->last_pos_in_file = file->pos_in_file;
   if (lf_info->wrote_create_file)
   {
-    Append_block_log_event a(lf_info->thd, buffer, block_len,
+    Append_block_log_event a(lf_info->thd, lf_info->db, buffer, block_len,
 			     lf_info->log_delayed);
     mysql_bin_log.write(&a);
   }

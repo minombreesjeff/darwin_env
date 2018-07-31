@@ -144,7 +144,7 @@ int main(int argc, char **argv)
 #endif
 } /* main */
 
-enum options {
+enum options_mc {
   OPT_CHARSETS_DIR=256, OPT_SET_CHARSET,OPT_START_CHECK_POS,
   OPT_CORRECT_CHECKSUM, OPT_KEY_BUFFER_SIZE, OPT_MYISAM_BLOCK_SIZE,
   OPT_READ_BUFFER_SIZE, OPT_WRITE_BUFFER_SIZE, OPT_SORT_BUFFER_SIZE,
@@ -357,11 +357,15 @@ static void usage(void)
   -e, --extend-check  Check the table VERY throughly.  Only use this in\n\
                       extreme cases as myisamchk should normally be able to\n\
                       find out if the table is ok even without this switch\n\
-  -F, --fast	      Check only tables that haven't been closed properly\n\
-  -C, --check-only-changed\n\
-		      Check only tables that have changed since last check\n\
+  -F, --fast          Check only tables that haven't been closed properly.\n\
+                      It also applies to other requested actions (e.g. --analyze\n\
+                      will be ignored if the table is already analyzed).\n\
   -f, --force         Restart with '-r' if there are any errors in the table.\n\
 		      States will be updated as with '--update-state'\n\
+  -C, --check-only-changed\n\
+                      Check only tables that have changed since last check.\n\
+                      It also applies to other requested actions (e.g. --analyze\n\
+                      will be ignored if the table is already analyzed).\n\
   -i, --information   Print statistics information about table that is checked\n\
   -m, --medium-check  Faster than extend-check, but only finds 99.99% of\n\
 		      all errors.  Should be good enough for most cases\n\
@@ -790,15 +794,18 @@ static int myisamchk(MI_CHECK *param, my_string filename)
 	  !(param->testflag & T_CHECK_ONLY_CHANGED))))
       need_to_check=1;
 
-    if ((param->testflag & T_STATISTICS) &&
-	(share->state.changed & STATE_NOT_ANALYZED))
-      need_to_check=1;
-    if ((param->testflag & T_SORT_INDEX) &&
-	(share->state.changed & STATE_NOT_SORTED_PAGES))
-      need_to_check=1;
-    if ((param->testflag & T_REP_BY_SORT) &&
-	(share->state.changed & STATE_NOT_OPTIMIZED_KEYS))
-      need_to_check=1;
+    if (info->s->base.keys && info->state->records)
+    {
+      if ((param->testflag & T_STATISTICS) &&
+          (share->state.changed & STATE_NOT_ANALYZED))
+        need_to_check=1;
+      if ((param->testflag & T_SORT_INDEX) &&
+          (share->state.changed & STATE_NOT_SORTED_PAGES))
+        need_to_check=1;
+      if ((param->testflag & T_REP_BY_SORT) &&
+          (share->state.changed & STATE_NOT_OPTIMIZED_KEYS))
+        need_to_check=1;
+    }
     if ((param->testflag & T_CHECK_ONLY_CHANGED) &&
 	(share->state.changed & (STATE_CHANGED | STATE_CRASHED |
 				 STATE_CRASHED_ON_REPAIR)))
@@ -878,10 +885,12 @@ static int myisamchk(MI_CHECK *param, my_string filename)
       param->error_printed=0;
       goto end2;
     }
-    share->w_locks++;				/* Mark for writeinfo */
-    share->tot_locks++;
-    info->lock_type= F_EXTRA_LCK;		/* Simulate as locked */
-    info->tmp_lock_type=lock_type;
+    /*
+      _mi_readinfo() has locked the table.
+      We mark the table as locked (without doing file locks) to be able to
+      use functions that only works on locked tables (like row caching).
+    */
+    mi_lock_database(info, F_EXTRA_LCK);
     datafile=info->dfile;
 
     if (param->testflag & (T_REP_ANY | T_SORT_RECORDS | T_SORT_INDEX))
@@ -1057,8 +1066,7 @@ static int myisamchk(MI_CHECK *param, my_string filename)
     VOID(lock_file(param, share->kfile,0L,F_UNLCK,"indexfile",filename));
     info->update&= ~HA_STATE_CHANGED;
   }
-  share->w_locks--;
-  share->tot_locks--;
+  mi_lock_database(info, F_UNLCK);
 end2:
   if (mi_close(info))
   {
@@ -1400,17 +1408,24 @@ static int mi_sort_records(MI_CHECK *param,
 
   if (!(((ulonglong) 1 << sort_key) & share->state.key_map))
   {
-    mi_check_print_error(param,"Can't sort table '%s' on key %d;  No such key",
+    mi_check_print_warning(param,
+			   "Can't sort table '%s' on key %d;  No such key",
 		name,sort_key+1);
     param->error_printed=0;
-    DBUG_RETURN(-1);
+    DBUG_RETURN(0);				/* Nothing to do */
   }
   if (keyinfo->flag & HA_FULLTEXT)
   {
-    mi_check_print_error(param,"Can't sort table '%s' on FULLTEXT key %d",
-		name,sort_key+1);
+    mi_check_print_warning(param,"Can't sort table '%s' on FULLTEXT key %d",
+			   name,sort_key+1);
     param->error_printed=0;
-    DBUG_RETURN(-1);
+    DBUG_RETURN(0);				/* Nothing to do */
+  }
+  if (share->data_file_type == COMPRESSED_RECORD)
+  {
+    mi_check_print_warning(param,"Can't sort read-only table '%s'", name);
+    param->error_printed=0;
+    DBUG_RETURN(0);				/* Nothing to do */
   }
   if (!(param->testflag & T_SILENT))
   {

@@ -7,7 +7,8 @@ for a detailed list).
 
 In addition to these generic packages, we also offer binaries in
 platform-specific package formats for selected platforms.  See *Note
-Quick Standard Installation:: for more info on how to install these.
+Quick Standard Installation:: for more information on how to install
+these.
 
 The generic MySQL binary distributions are packaged as gzip-compressed
 GNU tar archives (`.tar.gz'). You need the following tools to install a
@@ -22,7 +23,7 @@ MySQL binary distribution:
      install GNU `tar' first.
 
 If you run into problems, *please always use `mysqlbug'* when posting
-questions to <mysql@lists.mysql.com>.  Even if the problem isn't a bug,
+questions to a MySQL mailing list.  Even if the problem isn't a bug,
 `mysqlbug' gathers system information that will help others solve your
 problem.  By not using `mysqlbug', you lessen the likelihood of getting
 a solution to your problem.  You will find `mysqlbug' in the `bin'
@@ -42,9 +43,9 @@ distribution are:
      shell> chown -R mysql data
      shell> chgrp -R mysql .
      shell> bin/mysqld_safe --user=mysql &
-     or
-     shell> bin/mysqld_safe --user=mysql &
-     if you are running MySQL 4.x
+
+If your version of MySQL is older than 4.0, substitute `bin/safe_mysqld'
+for `bin/mysqld_safe' in the final command.
 
 You can add new users using the `bin/mysql_setpermission' script if you
 install the `DBI' and `DBD-mysql' Perl modules.
@@ -55,12 +56,11 @@ To install a binary distribution, follow these steps, then proceed to
 *Note Post-installation::, for post-installation setup and testing:
 
   1. Pick the directory under which you want to unpack the
-     distribution, and move into it.  In the following example, we
-     unpack the distribution under `/usr/local' and create a directory
-     `/usr/local/mysql' into which MySQL is installed.  (The following
+     distribution, and move into it. In the following example, we
+     unpack the distribution under `/usr/local' (The following
      instructions, therefore, assume you have permission to create
-     files in `/usr/local'.  If that directory is protected, you will
-     need to perform the installation as `root'.)
+     files and directories in `/usr/local'.  If that directory is
+     protected, you will need to perform the installation as `root'.)
 
   2. Obtain a distribution file from one of the sites listed in *Note
      Getting MySQL: Getting MySQL.
@@ -87,7 +87,8 @@ To install a binary distribution, follow these steps, then proceed to
 
           shell> cd /usr/local
 
-  5. Unpack the distribution and create the installation directory:
+  5. Unpack the distribution, which will create the installation
+     directory.  Then create a symbolic link to that directory:
 
           shell> gunzip < /path/to/mysql-VERSION-OS.tar.gz | tar xvf -
           shell> ln -s full-path-to-mysql-VERSION-OS mysql

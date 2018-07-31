@@ -16,6 +16,9 @@ USE_MANAGER=0
 MY_TZ=GMT-3
 TZ=$MY_TZ; export TZ # for UNIX_TIMESTAMP tests to work
 
+# For query_cache test
+ulimit -n 1024
+
 #++
 # Program Definitions
 #--
@@ -253,12 +256,6 @@ while test $# -gt 0; do
     --start-and-exit)
      START_AND_EXIT=1
      ;;
-    --skip-innodb)
-     EXTRA_MASTER_MYSQLD_OPT="$EXTRA_MASTER_MYSQLD_OPT --skip-innodb"
-     EXTRA_SLAVE_MYSQLD_OPT="$EXTRA_SLAVE_MYSQLD_OPT --skip-innodb" ;;
-    --skip-bdb)
-     EXTRA_MASTER_MYSQLD_OPT="$EXTRA_MASTER_MYSQLD_OPT --skip-bdb"
-     EXTRA_SLAVE_MYSQLD_OPT="$EXTRA_SLAVE_MYSQLD_OPT --skip-bdb" ;;
     --skip-rpl) NO_SLAVE=1 ;;
     --skip-test=*) SKIP_TEST=`$ECHO "$1" | $SED -e "s;--skip-test=;;"`;;
     --do-test=*) DO_TEST=`$ECHO "$1" | $SED -e "s;--do-test=;;"`;;
@@ -340,8 +337,8 @@ while test $# -gt 0; do
       ;;
     --valgrind)
       VALGRIND="valgrind --alignment=8 --leak-check=yes --num-callers=16"
-      EXTRA_MASTER_MYSQLD_OPT="$EXTRA_MASTER_MYSQLD_OPT --skip-safemalloc"
-      EXTRA_SLAVE_MYSQLD_OPT="$EXTRA_SLAVE_MYSQLD_OPT --skip-safemalloc"
+      EXTRA_MASTER_MYSQLD_OPT="$EXTRA_MASTER_MYSQLD_OPT --skip-safemalloc --skip-bdb"
+      EXTRA_SLAVE_MYSQLD_OPT="$EXTRA_SLAVE_MYSQLD_OPT --skip-safemalloc --skip-bdb"
       SLEEP_TIME_AFTER_RESTART=10
       SLEEP_TIME_FOR_DELETE=120
       USE_RUNNING_SERVER=""
@@ -431,6 +428,16 @@ if [ x$SOURCE_DIST = x1 ] ; then
  else
    MYSQL_TEST="$BASEDIR/client/mysqltest"
  fi
+ if [ -f "$BASEDIR/client/.libs/mysqldump" ] ; then
+   MYSQL_DUMP="$BASEDIR/client/.libs/mysqldump"
+ else
+   MYSQL_DUMP="$BASEDIR/client/mysqldump"
+ fi
+ if [ -f "$BASEDIR/client/.libs/mysqlbinlog" ] ; then
+   MYSQL_BINLOG="$BASEDIR/client/.libs/mysqlbinlog"
+ else
+   MYSQL_BINLOG="$BASEDIR/client/mysqlbinlog"
+ fi
  if [ -n "$STRACE_CLIENT" ]; then
   MYSQL_TEST="strace -o $MYSQL_TEST_DIR/var/log/mysqltest.strace $MYSQL_TEST"
  fi
@@ -452,6 +459,8 @@ else
    MYSQLD="$VALGRIND $BASEDIR/bin/mysqld"
  fi
  MYSQL_TEST="$BASEDIR/bin/mysqltest"
+ MYSQL_DUMP="$BASEDIR/bin/mysqldump"
+ MYSQL_BINLOG="$BASEDIR/bin/mysqlbinlog"
  MYSQLADMIN="$BASEDIR/bin/mysqladmin"
  WAIT_PID="$BASEDIR/bin/mysql_waitpid"
  MYSQL_MANAGER="$BASEDIR/bin/mysqlmanager"
@@ -468,6 +477,11 @@ else
    CHARSETSDIR="$BASEDIR/share/charsets"
   fi
 fi
+
+MYSQL_DUMP="$MYSQL_DUMP --no-defaults -uroot --socket=$MASTER_MYSOCK"
+MYSQL_BINLOG="$MYSQL_BINLOG --no-defaults --local-load=$MYSQL_TMP_DIR"
+export MYSQL_DUMP
+export MYSQL_BINLOG
 
 if [ -z "$MASTER_MYSQLD" ]
 then
@@ -835,7 +849,6 @@ start_master()
       /bin/sh $master_init_script
   fi
   cd $BASEDIR # for gcov
-  #start master
   if [ -z "$DO_BENCH" ]
   then
     master_args="--no-defaults --log-bin=$MYSQL_TEST_DIR/var/log/master-bin \
@@ -854,6 +867,7 @@ start_master()
           --tmpdir=$MYSQL_TMP_DIR \
           --language=$LANGUAGE \
           --innodb_data_file_path=ibdata1:50M \
+	  --open-files-limit=1024 \
 	   $MASTER_40_ARGS \
            $SMALL_SERVER \
            $EXTRA_MASTER_OPT $EXTRA_MASTER_MYSQLD_OPT"
@@ -1029,8 +1043,8 @@ EOF
 
 mysql_start ()
 {
-# We should not start the deamon here as we don't know the argumens
-# for the test.  Better to let the test start the deamon
+# We should not start the daemon here as we don't know the arguments
+# for the test.  Better to let the test start the daemon
 
 #  $ECHO "Starting MySQL daemon"
 #  start_master
@@ -1352,7 +1366,7 @@ then
   mysql_install_db
   start_manager
 
-# Do not automagically start deamons if we are in gdb or running only one test
+# Do not automagically start daemons if we are in gdb or running only one test
 # case
   if [ -z "$DO_GDB" ] && [ -z "$DO_DDD" ]
   then
@@ -1369,6 +1383,9 @@ fi
 
 $ECHO  "Starting Tests"
 
+#
+# This can probably be deleted
+#
 if [ "$DO_BENCH" = 1 ]
 then
   BENCHDIR=$BASEDIR/sql-bench/

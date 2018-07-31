@@ -40,7 +40,7 @@
 #include <signal.h>
 #include <violite.h>
 
-const char *VER= "12.21";
+const char *VER= "12.22";
 
 /* Don't try to make a nice table if the data is too big */
 #define MAX_COLUMN_LENGTH	     1024
@@ -708,6 +708,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     break;
   case 'W':
 #ifdef __WIN__
+    my_free(opt_mysql_unix_port, MYF(MY_ALLOW_ZERO_PTR));
     opt_mysql_unix_port= my_strdup(MYSQL_NAMEDPIPE, MYF(0));
 #endif
     break;
@@ -800,7 +801,9 @@ static int read_lines(bool execute_commands)
       char *prompt= (char*) (glob_buffer.is_empty() ? construct_prompt() :
 			     !in_string ? "    -> " :
 			     in_string == '\'' ?
-			     "    '> " : "    \"> ");
+			     "    '> " : (in_string == '`' ?
+			     "    `> " :
+			     "    \"> "));
       if (opt_outfile && glob_buffer.is_empty())
 	fflush(OUTFILE);
 
@@ -1579,11 +1582,12 @@ print_field_types(MYSQL_RES *result)
   MYSQL_FIELD	*field;  
   while ((field = mysql_fetch_field(result)))
   {
-    tee_fprintf(PAGER,"%s '%s' %d %d %d %d %d\n",
+    tee_fprintf(PAGER,"Name:       '%s'\nTable:      '%s'\nType:       %d\nLength:     %d\nMax length: %d\nIs_null:    %d\nFlags:      %d\nDecimals:   %d\n\n",
 		field->name,
 		field->table ? "" : field->table,
 		(int) field->type,
-		field->length, field->max_length, 
+		field->length, field->max_length,
+		!IS_NOT_NULL(field->flags),
 		field->flags, field->decimals);
   }
   tee_puts("", PAGER);
@@ -2324,15 +2328,15 @@ com_status(String *buffer __attribute__((unused)),
 	(result=mysql_use_result(&mysql)))
     {
       MYSQL_ROW cur=mysql_fetch_row(result);
-      tee_fprintf(stdout, "Current database:\t%s\n",cur[0]);
+      tee_fprintf(stdout, "Current database:\t%s\n", cur[0] ? cur[0] : "");
       tee_fprintf(stdout, "Current user:\t\t%s\n",cur[1]);
       (void) mysql_fetch_row(result);		// Read eof
     }
 #ifdef HAVE_OPENSSL
-    if (mysql.net.vio && mysql.net.vio->ssl_ &&
-	SSL_get_cipher(mysql.net.vio->ssl_))
+    if (mysql.net.vio && mysql.net.vio->ssl_arg &&
+	SSL_get_cipher((SSL*) mysql.net.vio->ssl_arg))
       tee_fprintf(stdout, "SSL:\t\t\tCipher in use is %s\n",
-		  SSL_get_cipher(mysql.net.vio->ssl_));
+		  SSL_get_cipher((SSL*) mysql.net.vio->ssl_arg));
     else
 #endif /* HAVE_OPENSSL */
       tee_puts("SSL:\t\t\tNot in use", stdout);

@@ -55,7 +55,9 @@
 char pstack_file_name[80];
 #endif /* __linux__ */
 
-#if defined(HAVE_DEC_3_2_THREADS) || defined(SIGNALS_DONT_BREAK_READ)
+/* We have HAVE_purify below as this speeds up the shutdown of MySQL */
+
+#if defined(HAVE_DEC_3_2_THREADS) || defined(SIGNALS_DONT_BREAK_READ) || defined(HAVE_purify) && defined(__linux__)
 #define HAVE_CLOSE_SERVER_SOCK 1
 #endif  
 
@@ -433,8 +435,12 @@ time_t start_time;
 
 ulong opt_sql_mode = 0L;
 const char *sql_mode_names[] =
-{ "REAL_AS_FLOAT", "PIPES_AS_CONCAT", "ANSI_QUOTES", "IGNORE_SPACE",
-  "SERIALIZE","ONLY_FULL_GROUP_BY", "NO_UNSIGNED_SUBTRACTION",NullS };
+{
+  "REAL_AS_FLOAT", "PIPES_AS_CONCAT", "ANSI_QUOTES", "IGNORE_SPACE",
+  "SERIALIZE","ONLY_FULL_GROUP_BY", "NO_UNSIGNED_SUBTRACTION",
+  "NO_DIR_IN_CREATE",
+  NullS
+};
 TYPELIB sql_mode_typelib= {array_elements(sql_mode_names)-1,"",
 			   sql_mode_names};
 
@@ -530,12 +536,14 @@ static void close_connections(void)
     struct timespec abstime;
     int error;
     LINT_INIT(error);
+    DBUG_PRINT("info",("Waiting for select_thread"));
+
 #ifndef DONT_USE_THR_ALARM
     if (pthread_kill(select_thread,THR_CLIENT_ALARM))
       break;					// allready dead
 #endif
     set_timespec(abstime, 2);
-    for (uint tmp=0 ; tmp < 10 ; tmp++)
+    for (uint tmp=0 ; tmp < 10 && select_thread_in_use; tmp++)
     {
       error=pthread_cond_timedwait(&COND_thread_count,&LOCK_thread_count,
 				   &abstime);
@@ -696,8 +704,8 @@ static void close_server_sock()
     VOID(shutdown(tmp_sock,2));
 #if defined(__NETWARE__)
     /*
-      The following code is disabled for normal systems as it causes MySQL
-      AIX 4.3 during shutdown (not tested, but likely)
+      The following code is disabled for normal systems as it may cause MySQL
+      to hang on AIX 4.3 during shutdown
     */
     DBUG_PRINT("info",("calling closesocket on unix/IP socket"));
     VOID(closesocket(tmp_sock));
@@ -1132,7 +1140,14 @@ static void server_init(void)
     IPaddr.sin_family = AF_INET;
     IPaddr.sin_addr.s_addr = my_bind_addr;
     IPaddr.sin_port = (unsigned short) htons((unsigned short) mysql_port);
+
+#ifndef __WIN__
+    /*
+      We should not use SO_REUSEADDR on windows as this would enable a
+      user to open two mysqld servers with the same TCP/IP port.
+    */
     (void) setsockopt(ip_sock,SOL_SOCKET,SO_REUSEADDR,(char*)&arg,sizeof(arg));
+#endif
     if (bind(ip_sock, my_reinterpret_cast(struct sockaddr *) (&IPaddr),
 	     sizeof(IPaddr)) < 0)
     {
@@ -2158,7 +2173,10 @@ int main(int argc, char **argv)
 		  max_connections,table_cache_size));
       sql_print_error("Warning: Changed limits: max_connections: %ld  table_cache: %ld",max_connections,table_cache_size);
     }
+    open_files_limit= files;
   }
+#else
+  open_files_limit= 0;		/* Can't set or detect limit */
 #endif
   unireg_init(opt_specialflag); /* Set up extern variabels */
   init_errmessage();		/* Read error messages from file */
@@ -2506,6 +2524,19 @@ int mysql_service(void *p)
   return 0;
 }
 
+
+/* Quote string if it contains space, else copy */
+
+static char *add_quoted_string(char *to, const char *from, char *to_end)
+{
+  uint length= (uint) (to_end-to);
+
+  if (!strchr(from, ' '))
+    return strnmov(to, from, length);
+  return strxnmov(to, length, "\"", from, "\"", NullS);
+}
+
+
 /*
   Handle basic handling of services, like installation and removal
 
@@ -2515,25 +2546,41 @@ int mysql_service(void *p)
     servicename		Internal name of service
     displayname		Display name of service (in taskbar ?)
     file_path		Path to this program
+    startup_option	Startup option to mysqld
 
   RETURN VALUES
     0		option handled
     1		Could not handle option
  */
 
-bool default_service_handling(char **argv,
-			      const char *servicename,
-			      const char *displayname,
-			      const char *file_path)
+static bool
+default_service_handling(char **argv,
+			 const char *servicename,
+			 const char *displayname,
+			 const char *file_path,
+			 const char *extra_opt)
 {
+  char path_and_service[FN_REFLEN+FN_REFLEN+32], *pos, *end;
+  end= path_and_service + sizeof(path_and_service)-1;
+
+  /* We have to quote filename if it contains spaces */
+  pos= add_quoted_string(path_and_service, file_path, end);
+  if (*extra_opt)
+  {
+    /* Add (possible quoted) option after file_path */
+    *pos++= ' ';
+    pos= add_quoted_string(pos, extra_opt, end);
+  }
+  *pos= 0;					// Ensure end null
+
   if (Service.got_service_option(argv, "install"))
   {
-    Service.Install(1, servicename, displayname, file_path);
+    Service.Install(1, servicename, displayname, path_and_service);
     return 0;
   }
   if (Service.got_service_option(argv, "install-manual"))
   {
-    Service.Install(0, servicename, displayname, file_path);
+    Service.Install(0, servicename, displayname, path_and_service);
     return 0;
   }
   if (Service.got_service_option(argv, "remove"))
@@ -2559,12 +2606,12 @@ int main(int argc, char **argv)
   {
     char file_path[FN_REFLEN];
     my_path(file_path, argv[0], "");		      /* Find name in path */
-    fn_format(file_path,argv[0],file_path,"",1+4+16); /* Force full path */
-
+    fn_format(file_path,argv[0],file_path,"",MY_REPLACE_DIR+
+              MY_UNPACK_FILENAME | MY_RESOLVE_SYMLINKS);
     if (argc == 2)
     {	
-      if (!default_service_handling(argv,MYSQL_SERVICENAME, MYSQL_SERVICENAME,
-				   file_path))
+      if (!default_service_handling(argv, MYSQL_SERVICENAME, MYSQL_SERVICENAME,
+				   file_path, ""))
 	return 0;
       if (Service.IsService(argv[1]))
       {
@@ -2577,12 +2624,8 @@ int main(int argc, char **argv)
     }
     else if (argc == 3) /* install or remove any optional service */
     {
-      /* Add service name after filename */
-      uint length=strlen(file_path);
-      *strxnmov(file_path + length, sizeof(file_path)-length-2, " ",
-		argv[2], NullS)= '\0';
-
-      if (!default_service_handling(argv, argv[2], argv[2], file_path))
+      if (!default_service_handling(argv, argv[2], argv[2], file_path,
+				    argv[2]))
 	return 0;
       if (Service.IsService(argv[2]))
       {
@@ -2604,10 +2647,8 @@ int main(int argc, char **argv)
 	Install an optional service with optional config file
 	mysqld --install-manual mysqldopt --defaults-file=c:\miguel\my.ini
       */
-      uint length=strlen(file_path);
-      *strxnmov(file_path + length, sizeof(file_path)-length-2, " ",
-		argv[3], " ", argv[2], NullS)= '\0';
-      if (!default_service_handling(argv, argv[2], argv[2], file_path))
+      if (!default_service_handling(argv, argv[2], argv[2], file_path,
+				    argv[3]))
 	return 0;
     }
     else if (argc == 1 && Service.IsService(MYSQL_SERVICENAME))
@@ -2981,6 +3022,12 @@ extern "C" pthread_handler_decl(handle_connections_sockets,
     }
     if (sock == unix_sock)
       thd->host=(char*) localhost;
+#ifdef __WIN__
+    /* Set default wait_timeout */
+    ulong wait_timeout= global_system_variables.net_wait_timeout * 1000;
+    (void) setsockopt(new_sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&wait_timeout,
+                    sizeof(wait_timeout));
+#endif
     create_new_thread(thd);
   }
 
@@ -3087,7 +3134,7 @@ extern "C" pthread_handler_decl(handle_connections_namedpipes,arg)
 ** handle start options
 ******************************************************************************/
 
-enum options {
+enum options_mysqld {
   OPT_ISAM_LOG=256,            OPT_SKIP_NEW, 
   OPT_SKIP_GRANT,              OPT_SKIP_LOCK, 
   OPT_ENABLE_LOCK,             OPT_USE_LOCKING,
@@ -3195,7 +3242,10 @@ enum options {
   OPT_BDB_LOG_BUFFER_SIZE,
   OPT_BDB_MAX_LOCK,
   OPT_ERROR_LOG_FILE,
-  OPT_DEFAULT_WEEK_FORMAT
+  OPT_DEFAULT_WEEK_FORMAT,
+  OPT_RANGE_ALLOC_BLOCK_SIZE,
+  OPT_QUERY_ALLOC_BLOCK_SIZE, OPT_QUERY_PREALLOC_SIZE,
+  OPT_TRANS_ALLOC_BLOCK_SIZE, OPT_TRANS_PREALLOC_SIZE
 };
 
 
@@ -3343,7 +3393,7 @@ struct my_option my_long_options[] =
    0, 0, 0},
   {"innodb_fast_shutdown", OPT_INNODB_FAST_SHUTDOWN,
    "Speeds up server shutdown process", (gptr*) &innobase_fast_shutdown,
-   (gptr*) &innobase_fast_shutdown, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
+   (gptr*) &innobase_fast_shutdown, 0, GET_BOOL, OPT_ARG, 1, 0, 0, 0, 0, 0},
   {"innodb_max_dirty_pages_pct", OPT_INNODB_MAX_DIRTY_PAGES_PCT,
    "Percentage of dirty pages allowed in bufferpool", (gptr*) &srv_max_buf_pool_modified_pct,
    (gptr*) &srv_max_buf_pool_modified_pct, 0, GET_ULONG, REQUIRED_ARG, 90, 0, 100, 0, 0, 0},
@@ -3449,7 +3499,7 @@ Does nothing yet.",
    (gptr*) &master_ssl_cipher, (gptr*) &master_ssl_capath, 0, GET_STR, OPT_ARG,
    0, 0, 0, 0, 0, 0},
   {"myisam-recover", OPT_MYISAM_RECOVER,
-   "Syntax: myisam-recover[=option[,option...]], where option can be DEFAULT, BACKUP or FORCE.",
+   "Syntax: myisam-recover[=option[,option...]], where option can be DEFAULT, BACKUP, FORCE or QUICK.",
    (gptr*) &myisam_recover_options_str, (gptr*) &myisam_recover_options_str, 0,
    GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
   {"memlock", OPT_MEMLOCK, "Lock mysqld in memory", (gptr*) &locked_in_memory,
@@ -3810,7 +3860,7 @@ replicating a LOAD DATA INFILE command",
    "Max packetlength to send/receive from to server.",
    (gptr*) &global_system_variables.max_allowed_packet,
    (gptr*) &max_system_variables.max_allowed_packet, 0, GET_ULONG,
-   REQUIRED_ARG, 1024*1024L, 80, 1024L*1024L*1024L, MALLOC_OVERHEAD, 1024, 0},
+   REQUIRED_ARG, 1024*1024L, 1024, 1024L*1024L*1024L, MALLOC_OVERHEAD, 1024, 0},
   {"max_binlog_cache_size", OPT_MAX_BINLOG_CACHE_SIZE,
    "Can be used to restrict the total size used to cache a multi-transaction query.",
    (gptr*) &max_binlog_cache_size, (gptr*) &max_binlog_cache_size, 0,
@@ -3929,6 +3979,11 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    "If this is not 0, then mysqld will use this value to reserve file descriptors to use with setrlimit(). If this value is 0 then mysqld will reserve max_connections*5 or max_connections + table_cache*2 (whichever is larger) number of files.",
    (gptr*) &open_files_limit, (gptr*) &open_files_limit, 0, GET_ULONG,
    REQUIRED_ARG, 0, 0, 65535, 0, 1, 0},
+  {"query_alloc_block_size", OPT_QUERY_ALLOC_BLOCK_SIZE,
+   "Allocation block size for query parsing and execution",
+   (gptr*) &global_system_variables.query_alloc_block_size,
+   (gptr*) &max_system_variables.query_alloc_block_size, 0, GET_ULONG,
+   REQUIRED_ARG, QUERY_ALLOC_BLOCK_SIZE, 1024, ~0L, 0, 1024, 0},
 #ifdef HAVE_QUERY_CACHE
   {"query_cache_limit", OPT_QUERY_CACHE_LIMIT,
    "Don't cache results that are bigger than this.",
@@ -3945,6 +4000,11 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    (gptr*) &global_system_variables.query_cache_type,
    (gptr*) &max_system_variables.query_cache_type,
    0, GET_ULONG, REQUIRED_ARG, 1, 0, 2, 0, 1, 0},
+  {"query_prealloc_size", OPT_QUERY_PREALLOC_SIZE,
+   "Persistent buffer for query parsing and execution",
+   (gptr*) &global_system_variables.query_prealloc_size,
+   (gptr*) &max_system_variables.query_prealloc_size, 0, GET_ULONG,
+   REQUIRED_ARG, QUERY_ALLOC_PREALLOC_SIZE, 1024, ~0L, 0, 1024, 0},
 #endif /*HAVE_QUERY_CACHE*/
   {"read_buffer_size", OPT_RECORD_BUFFER,
    "Each thread that does a sequential scan allocates a buffer of this size for each table it scans. If you do many sequential scans, you may want to increase this value.",
@@ -3976,6 +4036,11 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    "Number of seconds to wait for more data from a master/slave connection before aborting the read.",
    (gptr*) &slave_net_timeout, (gptr*) &slave_net_timeout, 0,
    GET_ULONG, REQUIRED_ARG, SLAVE_NET_TIMEOUT, 1, LONG_TIMEOUT, 0, 1, 0},
+  {"range_alloc_block_size", OPT_RANGE_ALLOC_BLOCK_SIZE,
+   "Allocation block size for storing ranges during optimization",
+   (gptr*) &global_system_variables.range_alloc_block_size,
+   (gptr*) &max_system_variables.range_alloc_block_size, 0, GET_ULONG,
+   REQUIRED_ARG, RANGE_ALLOC_BLOCK_SIZE, 1024, ~0L, 0, 1024, 0},
   {"read-only", OPT_READONLY,
    "Make all tables readonly, with the expections for replications (slave) threads and users with the SUPER privilege",
    (gptr*) &opt_readonly,
@@ -4012,6 +4077,16 @@ this value; if zero (the default): when the size exceeds max_binlog_size. \
    "The stack size for each thread.", (gptr*) &thread_stack,
    (gptr*) &thread_stack, 0, GET_ULONG, REQUIRED_ARG,DEFAULT_THREAD_STACK,
    1024*32, ~0L, 0, 1024, 0},
+  {"transaction_alloc_block_size", OPT_TRANS_ALLOC_BLOCK_SIZE,
+   "Allocation block size for transactions to be stored in binary log",
+   (gptr*) &global_system_variables.trans_alloc_block_size,
+   (gptr*) &max_system_variables.trans_alloc_block_size, 0, GET_ULONG,
+   REQUIRED_ARG, QUERY_ALLOC_BLOCK_SIZE, 1024, ~0L, 0, 1024, 0},
+  {"transaction_prealloc_size", OPT_TRANS_PREALLOC_SIZE,
+   "Persistent buffer for transactions to be stored in binary log",
+   (gptr*) &global_system_variables.trans_prealloc_size,
+   (gptr*) &max_system_variables.trans_prealloc_size, 0, GET_ULONG,
+   REQUIRED_ARG, TRANS_ALLOC_PREALLOC_SIZE, 1024, ~0L, 0, 1024, 0},
   {"wait_timeout", OPT_WAIT_TIMEOUT,
    "The number of seconds the server waits for activity on a connection before closing it",
    (gptr*) &global_system_variables.net_wait_timeout,
@@ -4880,6 +4955,19 @@ static void fix_paths(void)
 }
 
 
+/*
+  set how many open files we want to be able to handle
+
+  SYNOPSIS
+    set_maximum_open_files()  
+    max_file_limit		Files to open
+
+  NOTES
+    The request may not fulfilled becasue of system limitations
+
+  RETURN
+    Files available to open
+*/
 
 #ifdef SET_RLIMIT_NOFILE
 static uint set_maximum_open_files(uint max_file_limit)

@@ -602,13 +602,14 @@ int mysql_create_table(THD *thd,const char *db, const char *table_name,
 	  sql_field->flags|= NOT_NULL_FLAG;
 	  sql_field->pack_flag&= ~FIELDFLAG_MAYBE_NULL;
 	}
+        else
+          key_info->flags|= HA_NULL_PART_KEY;
 	if (!(file->table_flags() & HA_NULL_KEY))
 	{
 	  my_printf_error(ER_NULL_COLUMN_IN_INDEX,ER(ER_NULL_COLUMN_IN_INDEX),
 			  MYF(0),column->field_name);
 	  DBUG_RETURN(-1);
 	}
-	key_info->flags|= HA_NULL_PART_KEY;
       }
       if (MTYP_TYPENR(sql_field->unireg_check) == Field::NEXT_NUMBER)
       {
@@ -727,7 +728,10 @@ int mysql_create_table(THD *thd,const char *db, const char *table_name,
       && find_temporary_table(thd,db,table_name))
   {
     if (create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS)
+    {
+      create_info->table_existed= 1;		// Mark that table existed
       DBUG_RETURN(0);
+    }
     my_error(ER_TABLE_EXISTS_ERROR,MYF(0),table_name);
     DBUG_RETURN(-1);
   }
@@ -738,15 +742,22 @@ int mysql_create_table(THD *thd,const char *db, const char *table_name,
     {
       VOID(pthread_mutex_unlock(&LOCK_open));
       if (create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS)
+      {
+	create_info->table_existed= 1;		// Mark that table existed
 	DBUG_RETURN(0);
+      }
       my_error(ER_TABLE_EXISTS_ERROR,MYF(0),table_name);
       DBUG_RETURN(-1);
     }
   }
 
   thd->proc_info="creating table";
+  create_info->table_existed= 0;		// Mark that table is created
 
+  if (thd->sql_mode & MODE_NO_DIR_IN_CREATE)
+    create_info->data_file_name= create_info->index_file_name= 0;
   create_info->table_options=db_options;
+
   if (rea_create_table(path, create_info, fields, key_count,
 		       key_info_buffer))
   {

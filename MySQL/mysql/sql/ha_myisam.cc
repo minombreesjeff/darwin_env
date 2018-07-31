@@ -559,7 +559,8 @@ int ha_myisam::repair(THD *thd, MI_CHECK &param, bool optimize)
   strmov(fixed_name,file->filename);
 
   // Don't lock tables if we have used LOCK TABLE
-  if (!thd->locked_tables && mi_lock_database(file,F_WRLCK))
+  if (!thd->locked_tables && 
+      mi_lock_database(file, table->tmp_table ? F_EXTRA_LCK : F_WRLCK))
   {
     mi_check_print_error(&param,ER(ER_CANT_LOCK),my_errno);
     DBUG_RETURN(HA_ADMIN_FAILED);
@@ -999,9 +1000,9 @@ int ha_myisam::delete_table(const char *name)
 
 int ha_myisam::external_lock(THD *thd, int lock_type)
 {
-  if (!table->tmp_table)
-    return mi_lock_database(file,lock_type);
-  return 0;
+  return mi_lock_database(file, !table->tmp_table ?
+			  lock_type : ((lock_type == F_UNLCK) ?
+				       F_UNLCK : F_EXTRA_LCK));
 }
 
 
@@ -1017,7 +1018,7 @@ THR_LOCK_DATA **ha_myisam::store_lock(THD *thd,
 
 void ha_myisam::update_create_info(HA_CREATE_INFO *create_info)
 {
-  table->file->info(HA_STATUS_AUTO | HA_STATUS_CONST);
+  ha_myisam::info(HA_STATUS_AUTO | HA_STATUS_CONST);
   if (!(create_info->used_fields & HA_CREATE_USED_AUTO))
   {
     create_info->auto_increment_value=auto_increment_value;

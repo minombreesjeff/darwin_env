@@ -123,7 +123,7 @@ public:
   }
   void set_max_size(ulong max_size_arg);
   void signal_update() { pthread_cond_broadcast(&update_cond);}
-  void wait_for_update(THD* thd);
+  void wait_for_update(THD* thd, bool master_or_slave);
   void set_need_start_event() { need_start_event = 1; }
   void init(enum_log_type log_type_arg,
 	    enum cache_type io_cache_type_arg,
@@ -140,7 +140,7 @@ public:
   bool write(THD *thd, const char *query, uint query_length,
 	     time_t query_start=0);
   bool write(Log_event* event_info); // binary log write
-  bool write(THD *thd, IO_CACHE *cache);
+  bool write(THD *thd, IO_CACHE *cache, bool commit_or_rollback);
 
   /*
     v stands for vector
@@ -327,6 +327,11 @@ struct system_variables
   ulong table_type;
   ulong default_week_format;
   ulong max_seeks_for_key;
+  ulong range_alloc_block_size;
+  ulong query_alloc_block_size;
+  ulong query_prealloc_size;
+  ulong trans_alloc_block_size;
+  ulong trans_prealloc_size;
 
   my_bool log_warnings;
   my_bool low_priority_updates;
@@ -452,7 +457,6 @@ public:
   /* variables.transaction_isolation is reset to this after each commit */
   enum_tx_isolation session_tx_isolation;
   char	     scramble[9];
-  uint8	     query_cache_type;		// type of query cache processing
   bool       slave_thread;
   bool	     set_query_id,locked,count_cuted_fields,some_tables_deleted;
   bool	     no_errors, allow_sum_func, password, fatal_error;
@@ -473,7 +477,6 @@ public:
   */
   ulong	     slave_proxy_id;
   NET*       slave_net;			// network connection from slave -> m.
-  my_off_t   log_pos;
    
   /* Used by the sys_var class to store temporary values */
   union
@@ -713,14 +716,14 @@ public:
 		 List<Item> &select_fields,enum_duplicates duplic)
     :select_insert (NULL, &select_fields, duplic), db(db_name),
     name(table_name), extra_fields(&fields_par),keys(&keys_par),
-    create_info(create_info_par),
-    lock(0)
+    create_info(create_info_par), lock(0)
     {}
   int prepare(List<Item> &list);
   bool send_data(List<Item> &values);
   bool send_eof();
   void abort();
 };
+
 
 class select_union :public select_result {
  public:
@@ -758,7 +761,6 @@ typedef struct st_sort_buffer {
   SORT_FIELD *sortorder;
 } SORT_BUFFER;
 
-
 /* Structure for db & table in sql_yacc */
 
 class Table_ident :public Sql_alloc {
@@ -786,7 +788,12 @@ class user_var_entry
   char *value;
   ulong length, update_query_id;
   Item_result type;
+
+  double val(my_bool *null_value);
+  longlong val_int(my_bool *null_value);
+  String *val_str(my_bool *null_value, String *str, uint decimals);
 };
+
 
 /* Class for unique (removing of duplicates) */
 

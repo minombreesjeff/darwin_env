@@ -63,7 +63,7 @@ mysql_cv_btype_last_arg_accept=none
 ],
 [int a = accept(1, (struct sockaddr *) 0, (socklen_t *) 0); return (a != 0);],
 mysql_cv_btype_last_arg_accept=socklen_t)]
-if test $mysql_cv_btype_last_arg_accept = none; then
+if test "$mysql_cv_btype_last_arg_accept" = "none"; then
 [AC_TRY_COMPILE([#if defined(inline)
 #undef inline
 #endif
@@ -74,7 +74,7 @@ if test $mysql_cv_btype_last_arg_accept = none; then
 [int a = accept(1, (struct sockaddr *) 0, (size_t *) 0); return (a != 0);],
 mysql_cv_btype_last_arg_accept=size_t)]
 fi
-if test $mysql_cv_btype_last_arg_accept = none; then
+if test "$mysql_cv_btype_last_arg_accept" = "none"; then
 mysql_cv_btype_last_arg_accept=int
 fi)
 AC_LANG_RESTORE
@@ -213,6 +213,28 @@ AC_MSG_RESULT($ac_cv_uint)
 if test "$ac_cv_uint" = "yes"
 then
   AC_DEFINE(HAVE_UINT)
+fi
+])
+
+
+AC_DEFUN(MYSQL_CHECK_IN_ADDR_T,
+[AC_MSG_CHECKING(for type in_addr_t)
+AC_CACHE_VAL(ac_cv_in_addr_t,
+[AC_TRY_RUN([#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+int main(int argc, char **argv)
+{
+  in_addr_t foo;
+  exit(0);
+}], ac_cv_in_addr_t=yes, ac_cv_in_addr_t=no, ac_cv_in_addr_t=no)])
+AC_MSG_RESULT($ac_cv_in_addr_t)
+if test "$ac_cv_in_addr_t" = "yes"
+then
+  AC_DEFINE(HAVE_IN_ADDR_T)
 fi
 ])
 
@@ -366,11 +388,11 @@ AC_CACHE_VAL(mysql_cv_termcap_lib,
 	[AC_CHECK_LIB(termcap, tgetent, mysql_cv_termcap_lib=libtermcap,
 	    mysql_cv_termcap_lib=NOT_FOUND)])])])
 AC_MSG_CHECKING(for termcap functions library)
-if test $mysql_cv_termcap_lib = NOT_FOUND; then
+if test "$mysql_cv_termcap_lib" = "NOT_FOUND"; then
 AC_MSG_ERROR([No curses/termcap library found])
-elif test $mysql_cv_termcap_lib = libtermcap; then
+elif test "$mysql_cv_termcap_lib" = "libtermcap"; then
 TERMCAP_LIB=-ltermcap
-elif test $mysql_cv_termcap_lib = libncurses; then
+elif test "$mysql_cv_termcap_lib" = "libncurses"; then
 TERMCAP_LIB=-lncurses
 else
 TERMCAP_LIB=-lcurses
@@ -426,7 +448,7 @@ AC_CACHE_VAL(mysql_cv_can_redecl_getpw,
 extern struct passwd *getpwent();], [struct passwd *z; z = getpwent();],
   mysql_cv_can_redecl_getpw=yes,mysql_cv_can_redecl_getpw=no)])
 AC_MSG_RESULT($mysql_cv_can_redecl_getpw)
-if test $mysql_cv_can_redecl_getpw = no; then
+if test "$mysql_cv_can_redecl_getpw" = "no"; then
 AC_DEFINE(HAVE_GETPW_DECLS)
 fi
 ])
@@ -438,7 +460,7 @@ AC_CACHE_VAL(mysql_cv_tiocgwinsz_in_ioctl,
 #include <sys/ioctl.h>], [int x = TIOCGWINSZ;],
   mysql_cv_tiocgwinsz_in_ioctl=yes,mysql_cv_tiocgwinsz_in_ioctl=no)])
 AC_MSG_RESULT($mysql_cv_tiocgwinsz_in_ioctl)
-if test $mysql_cv_tiocgwinsz_in_ioctl = yes; then   
+if test "$mysql_cv_tiocgwinsz_in_ioctl" = "yes"; then   
 AC_DEFINE(GWINSZ_IN_SYS_IOCTL)
 fi
 ])
@@ -450,7 +472,7 @@ AC_CACHE_VAL(mysql_cv_fionread_in_ioctl,
 #include <sys/ioctl.h>], [int x = FIONREAD;],
   mysql_cv_fionread_in_ioctl=yes,mysql_cv_fionread_in_ioctl=no)])
 AC_MSG_RESULT($mysql_cv_fionread_in_ioctl)
-if test $mysql_cv_fionread_in_ioctl = yes; then   
+if test "$mysql_cv_fionread_in_ioctl" = "yes"; then   
 AC_DEFINE(FIONREAD_IN_SYS_IOCTL)
 fi
 ])
@@ -462,7 +484,7 @@ AC_CACHE_VAL(mysql_cv_tiocstat_in_ioctl,
 #include <sys/ioctl.h>], [int x = TIOCSTAT;],
   mysql_cv_tiocstat_in_ioctl=yes,mysql_cv_tiocstat_in_ioctl=no)])
 AC_MSG_RESULT($mysql_cv_tiocstat_in_ioctl)
-if test $mysql_cv_tiocstat_in_ioctl = yes; then   
+if test "$mysql_cv_tiocstat_in_ioctl" = "yes"; then   
 AC_DEFINE(TIOCSTAT_IN_SYS_IOCTL)
 fi
 ])
@@ -495,7 +517,7 @@ AC_CACHE_VAL(mysql_cv_dirent_has_dino,
 struct dirent d; int z; z = d.d_ino;
 ], mysql_cv_dirent_has_dino=yes, mysql_cv_dirent_has_dino=no)])
 AC_MSG_RESULT($mysql_cv_dirent_has_dino)
-if test $mysql_cv_dirent_has_dino = yes; then
+if test "$mysql_cv_dirent_has_dino" = "yes"; then
 AC_DEFINE(STRUCT_DIRENT_HAS_D_INO)
 fi
 ])
@@ -514,7 +536,7 @@ extern "C"
 void (*signal ()) ();],
 [int i;], mysql_cv_void_sighandler=yes, mysql_cv_void_sighandler=no)])dnl
 AC_MSG_RESULT($mysql_cv_void_sighandler)
-if test $mysql_cv_void_sighandler = yes; then
+if test "$mysql_cv_void_sighandler" = "yes"; then
 AC_DEFINE(VOID_SIGHANDLER)
 fi
 ])
@@ -573,7 +595,7 @@ then
  AC_CACHE_CHECK([for working alloca.h], ac_cv_header_alloca_h,
  [AC_TRY_LINK([#include <alloca.h>], [char *p = alloca(2 * sizeof(int));],
    ac_cv_header_alloca_h=yes, ac_cv_header_alloca_h=no)])
- if test $ac_cv_header_alloca_h = yes
+ if test "$ac_cv_header_alloca_h" = "yes"
  then
 	AC_DEFINE(HAVE_ALLOCA)
  fi
@@ -597,11 +619,11 @@ then
  #endif
  ], [char *p = (char *) alloca(1);],
    ac_cv_func_alloca_works=yes, ac_cv_func_alloca_works=no)])
- if test $ac_cv_func_alloca_works = yes; then
+ if test "$ac_cv_func_alloca_works" = "yes"; then
    AC_DEFINE(HAVE_ALLOCA)
  fi
  
- if test $ac_cv_func_alloca_works = no; then
+ if test "$ac_cv_func_alloca_works" = "no"; then
    # The SVR3 libPW and SVR4 libucb both contain incompatible functions
    # that cause trouble.  Some versions do not even contain alloca or
    # contain a buggy version.  If you still want to use their alloca,
@@ -617,7 +639,7 @@ then
  wenotbecray
  #endif
  ], ac_cv_os_cray=yes, ac_cv_os_cray=no)])
- if test $ac_cv_os_cray = yes; then
+ if test "$ac_cv_os_cray" = "yes"; then
  for ac_func in _getb67 GETB67 getb67; do
    AC_CHECK_FUNC($ac_func, [AC_DEFINE_UNQUOTED(CRAY_STACKSEG_END, $ac_func)
    break])
@@ -722,26 +744,43 @@ AC_DEFUN(MYSQL_CHECK_VIO, [
 ])
 
 AC_DEFUN(MYSQL_FIND_OPENSSL, [
-  for d in /usr/ssl/include /usr/local/ssl/include /usr/include \
+  incs="$1"
+  libs="$2"
+  case "$incs---$libs" in
+    ---)
+      for d in /usr/ssl/include /usr/local/ssl/include /usr/include \
 /usr/include/ssl /opt/ssl/include /opt/openssl/include \
 /usr/local/ssl/include /usr/local/include ; do
-   if test -f $d/openssl/ssl.h  ; then
-     OPENSSL_INCLUDE=-I$d
-   fi
-  done
+       if test -f $d/openssl/ssl.h  ; then
+         OPENSSL_INCLUDE=-I$d
+       fi
+      done
 
- for d in /usr/ssl/lib /usr/local/ssl/lib /usr/lib/openssl \
+      for d in /usr/ssl/lib /usr/local/ssl/lib /usr/lib/openssl \
 /usr/lib /usr/lib64 /opt/ssl/lib /opt/openssl/lib /usr/local/lib/ ; do
-  if test -f $d/libssl.a ; then
-    OPENSSL_LIB=$d
-  fi
- done
+      if test -f $d/libssl.a ; then
+        OPENSSL_LIB=$d
+      fi
+      done
+      ;;
+    ---* | *---)
+      AC_MSG_ERROR([if either 'includes' or 'libs' is specified, both must be specified])
+      ;;
+    * )
+      if test -f $incs/openssl/ssl.h  ; then
+        OPENSSL_INCLUDE=-I$incs
+      fi
+      if test -f $libs/libssl.a ; then
+        OPENSSL_LIB=$libs
+      fi
+      ;;
+  esac
 
   # On RedHat 9 we need kerberos to compile openssl
   for d in /usr/kerberos/include
   do
    if test -f $d/krb5.h  ; then
-     OPENSSL_INCLUDE="$OPENSSL_INCLUDE -I$d"
+     OPENSSL_KERBEROS_INCLUDE="$d"
    fi
   done
 
@@ -765,11 +804,23 @@ AC_MSG_CHECKING(for OpenSSL)
               [openssl="$withval"],
               [openssl=no])
 
-  openssl_libs=""
-  openssl_includes=""
+  AC_ARG_WITH([openssl-includes],
+              [
+  --with-openssl-includes=DIR
+                          Find OpenSSL headers in DIR],
+              [openssl_includes="$withval"],
+              [openssl_includes=""])
+
+  AC_ARG_WITH([openssl-libs],
+              [
+  --with-openssl-libs=DIR
+                          Find OpenSSL libraries in DIR],
+              [openssl_libs="$withval"],
+              [openssl_libs=""])
+
   if test "$openssl" = "yes"
   then
-    MYSQL_FIND_OPENSSL
+    MYSQL_FIND_OPENSSL([$openssl_includes], [$openssl_libs])
     #force VIO use
     vio_dir="vio"
     vio_libs="../vio/libvio.la"
@@ -778,9 +829,14 @@ AC_MSG_CHECKING(for OpenSSL)
     openssl_libs="-L$OPENSSL_LIB -lssl -lcrypto"
     # Don't set openssl_includes to /usr/include as this gives us a lot of
     # compiler warnings when using gcc 3.x
+    openssl_includes=""
     if test "$OPENSSL_INCLUDE" != "-I/usr/include"
     then
 	openssl_includes="$OPENSSL_INCLUDE"
+    fi
+    if test "$OPENSSL_KERBEROS_INCLUDE"
+    then
+    	openssl_includes="$openssl_includes -I$OPENSSL_KERBEROS_INCLUDE"
     fi
     AC_DEFINE(HAVE_OPENSSL)
 
@@ -791,14 +847,15 @@ AC_MSG_CHECKING(for OpenSSL)
     case "$CLIENT_EXTRA_LDFLAGS $MYSQLD_EXTRA_LDFLAGS" in
 	*-all-static*) using_static="yes" ;;
     esac
-    if test $using_static = "yes"
+    if test "$using_static" = "yes"
     then
       echo "You can't use the --all-static link option when using openssl."
       exit 1
     fi
+    NON_THREADED_CLIENT_LIBS="$NON_THREADED_CLIENT_LIBS $openssl_libs"
+  else
     AC_MSG_RESULT(no)
   fi
-  NON_THREADED_CLIENT_LIBS="$NON_THREADED_CLIENT_LIBS $openssl_libs"
   AC_SUBST(openssl_libs)
   AC_SUBST(openssl_includes)
 ])

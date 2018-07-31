@@ -183,7 +183,7 @@ my_bool acl_init(THD *org_thd, bool dont_read_acl_tables)
 		    thd->net.last_error);
     goto end;
   }
-  init_sql_alloc(&mem,1024,0);
+  init_sql_alloc(&mem, ACL_ALLOC_BLOCK_SIZE, 0);
   init_read_record(&read_record_info,thd,table= tables[0].table,NULL,1,0);
   VOID(my_init_dynamic_array(&acl_hosts,sizeof(ACL_HOST),20,50));
   while (!(read_record_info.read_record(&read_record_info)))
@@ -233,10 +233,10 @@ my_bool acl_init(THD *org_thd, bool dont_read_acl_tables)
 		      "Found old style password for user '%s'. Ignoring user. (You may want to restart mysqld using --old-protocol)",
 		      user.user ? user.user : ""); /* purecov: tested */
     }
-    else if (length % 8)		// This holds true for passwords
+    else if (length % 8 || length > 16)
     {
       sql_print_error(
-		      "Found invalid password for user: '%s@%s'; Ignoring user",
+		      "Found invalid password for user: '%s'@'%s'; Ignoring user",
 		      user.user ? user.user : "",
 		      user.host.hostname ? user.host.hostname : ""); /* purecov: tested */
       continue;					/* purecov: tested */
@@ -530,8 +530,10 @@ ulong acl_getroot(THD *thd, const char *host, const char *ip, const char *user,
 	     !check_scramble(password,message,acl_user->salt,
 			     (my_bool) old_ver)))
 	{
-#ifdef HAVE_OPENSSL
 	  Vio *vio=thd->net.vio;
+#ifdef HAVE_OPENSSL
+	  SSL *ssl= (SSL*) vio->ssl_arg;
+#endif
 	  /*
 	    In this point we know that user is allowed to connect
 	    from given host by given username/password pair. Now
@@ -543,6 +545,7 @@ ulong acl_getroot(THD *thd, const char *host, const char *ip, const char *user,
 	  case SSL_TYPE_NONE: /* SSL is not required to connect */
 	    user_access=acl_user->access;
 	    break;
+#ifdef HAVE_OPENSSL
 	  case SSL_TYPE_ANY: /* Any kind of SSL is good enough */
 	    if (vio_type(vio) == VIO_TYPE_SSL)
 	      user_access=acl_user->access;
@@ -553,8 +556,8 @@ ulong acl_getroot(THD *thd, const char *host, const char *ip, const char *user,
 	      we should reject connection.
 	    */
 	    if (vio_type(vio) == VIO_TYPE_SSL && 
-	        SSL_get_verify_result(vio->ssl_) == X509_V_OK &&
-	        SSL_get_peer_certificate(vio->ssl_))
+	        SSL_get_verify_result(ssl) == X509_V_OK &&
+	        SSL_get_peer_certificate(ssl))
 	      user_access=acl_user->access;
 	    break;
 	  case SSL_TYPE_SPECIFIED: /* Client should have specified attrib */
@@ -563,28 +566,28 @@ ulong acl_getroot(THD *thd, const char *host, const char *ip, const char *user,
 	      we should reject connection.
 	    */
 	    if (vio_type(vio) == VIO_TYPE_SSL && 
-	        SSL_get_verify_result(vio->ssl_) == X509_V_OK)
+	        SSL_get_verify_result(ssl) == X509_V_OK)
 	    {
 	      if (acl_user->ssl_cipher)
 	      {
 		DBUG_PRINT("info",("comparing ciphers: '%s' and '%s'",
 				   acl_user->ssl_cipher,
-				   SSL_get_cipher(vio->ssl_)));
-		if (!strcmp(acl_user->ssl_cipher,SSL_get_cipher(vio->ssl_)))
+				   SSL_get_cipher(ssl)));
+		if (!strcmp(acl_user->ssl_cipher,SSL_get_cipher(ssl)))
 		  user_access=acl_user->access;
 		else
 		{
 		  if (global_system_variables.log_warnings)
 		    sql_print_error("X509 ciphers mismatch: should be '%s' but is '%s'",
 				    acl_user->ssl_cipher,
-				    SSL_get_cipher(vio->ssl_));
+				    SSL_get_cipher(ssl));
 		  user_access=NO_ACCESS;
 		  break;
 		}
 	      }
 	      /* Prepare certificate (if exists) */
 	      DBUG_PRINT("info",("checkpoint 1"));
-	      X509* cert=SSL_get_peer_certificate(vio->ssl_);
+	      X509* cert=SSL_get_peer_certificate(ssl);
 	      DBUG_PRINT("info",("checkpoint 2"));
 	      /* If X509 issuer is speified, we check it... */
 	      if (acl_user->x509_issuer)
@@ -625,10 +628,16 @@ ulong acl_getroot(THD *thd, const char *host, const char *ip, const char *user,
 	      }
 	      break;
 	    }
-	  }
 #else  /* HAVE_OPENSSL */
-	  user_access=acl_user->access;
+          default:
+            /*
+                If we don't have SSL but SSL is required for this user the 
+                authentication should fail.
+            */
+            break;
 #endif /* HAVE_OPENSSL */
+	  }
+          
 	  *mqh=acl_user->user_resource;
 	  if (!acl_user->user)
 	    *priv_user=(char*) "";	// Change to anonymous user /* purecov: inspected */
@@ -725,7 +734,7 @@ static void acl_insert_user(const char *user, const char *host,
 			    ulong privileges)
 {
   ACL_USER acl_user;
-  acl_user.user=strdup_root(&mem,user);
+  acl_user.user=*user ? strdup_root(&mem,user) : 0;
   update_hostname(&acl_user.host,strdup_root(&mem,host));
   acl_user.password=0;
   acl_user.access=privileges;
@@ -1227,6 +1236,24 @@ static bool update_user_table(THD *thd, const char *host, const char *user,
   bzero((char*) &tables,sizeof(tables));
   tables.alias=tables.real_name=(char*) "user";
   tables.db=(char*) "mysql";
+#ifdef HAVE_REPLICATION
+  /*
+    GRANT and REVOKE are applied the slave in/exclusion rules as they are
+    some kind of updates to the mysql.% tables.
+  */
+  if (thd->slave_thread && table_rules_on)
+  {
+    /* 
+       The tables must be marked "updating" so that tables_ok() takes them into
+       account in tests.  It's ok to leave 'updating' set after tables_ok.
+    */
+    tables.updating= 1;
+    /* Thanks to bzero, tables.next==0 */
+    if (!tables_ok(0, &tables))
+      DBUG_RETURN(0);
+  }
+#endif
+
   if (!(table=open_ltable(thd,&tables,TL_WRITE)))
     DBUG_RETURN(1); /* purecov: deadcode */
   table->field[0]->store(host,(uint) strlen(host));
@@ -1580,6 +1607,7 @@ class GRANT_TABLE :public Sql_alloc
 public:
   char *host,*db,*user,*tname, *hash_key;
   ulong privs, cols;
+  ulong sort;
   uint key_length;
   HASH hash_columns;
   GRANT_TABLE (const char *h, const char *d,const char *u, const char *t,
@@ -1589,6 +1617,7 @@ public:
     host = strdup_root(&memex,h);
     db =   strdup_root(&memex,d);
     user = strdup_root(&memex,u);
+    sort=  get_sort(3,host,db,user);
     tname= strdup_root(&memex,t);
     if (lower_case_table_names)
     {
@@ -1611,6 +1640,7 @@ public:
     user =  get_field(&memex,form,2);
     if (!user)
       user=(char*) "";
+    sort=   get_sort(3,host,db,user);
     tname = get_field(&memex,form,3);
     if (!host || !db || !tname)
     {
@@ -1718,9 +1748,10 @@ static GRANT_TABLE *table_hash_search(const char *host,const char* ip,
     }
     else
     {
-      if ((host && !wild_case_compare(host,grant_table->host)) ||
-	  (ip && !wild_case_compare(ip,grant_table->host)))
-	found=grant_table;					// Host ok
+      if (((host && !wild_case_compare(host,grant_table->host)) ||
+	  (ip && !wild_case_compare(ip,grant_table->host))) &&
+          (!found || found->sort < grant_table->sort))
+	found=grant_table;
     }
   }
   return found;
@@ -2107,8 +2138,16 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
     GRANT and REVOKE are applied the slave in/exclusion rules as they are
     some kind of updates to the mysql.% tables.
   */
-  if (thd->slave_thread && table_rules_on && !tables_ok(0, tables))
-    DBUG_RETURN(0);
+  if (thd->slave_thread && table_rules_on)
+  {
+    /* 
+       The tables must be marked "updating" so that tables_ok() takes them into
+       account in tests.
+    */
+    tables[0].updating= tables[1].updating= tables[2].updating= 1;
+    if (!tables_ok(0, tables))
+      DBUG_RETURN(0);
+  }
 #endif
 
   if (open_and_lock_tables(thd,tables))
@@ -2279,8 +2318,16 @@ int mysql_grant (THD *thd, const char *db, List <LEX_USER> &list,
     GRANT and REVOKE are applied the slave in/exclusion rules as they are
     some kind of updates to the mysql.% tables.
   */
-  if (thd->slave_thread && table_rules_on && !tables_ok(0, tables))
-    DBUG_RETURN(0);
+  if (thd->slave_thread && table_rules_on)
+  {
+    /* 
+       The tables must be marked "updating" so that tables_ok() takes them into
+       account in tests.
+    */
+    tables[0].updating= tables[1].updating= 1;
+    if (!tables_ok(0, tables))
+      DBUG_RETURN(0);
+  }
 #endif
 
   if (open_and_lock_tables(thd,tables))
@@ -2330,7 +2377,7 @@ int mysql_grant (THD *thd, const char *db, List <LEX_USER> &list,
       else
       {
 	net_printf(&thd->net,ER_WRONG_USAGE,"DB GRANT","GLOBAL PRIVILEGES");
-	result= -1;
+	result= 1;
       }
     }
   }
@@ -2370,7 +2417,7 @@ my_bool grant_init(THD *org_thd)
   grant_option = FALSE;
   (void) hash_init(&hash_tables,0,0,0, (hash_get_key) get_grant_table,
 		   (hash_free_key) free_grant_table,0);
-  init_sql_alloc(&memex,1024,0);
+  init_sql_alloc(&memex, ACL_ALLOC_BLOCK_SIZE, 0);
 
   /* Don't do anything if running with --skip-grant */
   if (!initialized)
@@ -3044,15 +3091,19 @@ int mysql_show_grants(THD *thd,LEX_USER *lex_user)
       if ((table_access | grant_table->cols) != 0)
       {
 	String global(buff,sizeof(buff));
+	ulong test_access= (table_access | grant_table->cols) & ~GRANT_ACL;
+
 	global.length(0);
 	global.append("GRANT ",6);
 
 	if (test_all_bits(table_access, (TABLE_ACLS & ~GRANT_ACL)))
 	  global.append("ALL PRIVILEGES",14);
+ 	else if (!test_access)
+ 	  global.append("USAGE",5);
 	else
 	{
 	  int found= 0;
-	  ulong j,test_access= (table_access | grant_table->cols) & ~GRANT_ACL;
+	  ulong j;
 
 	  for (counter= 0, j= SELECT_ACL; j <= TABLE_ACLS; counter++, j<<= 1)
 	  {

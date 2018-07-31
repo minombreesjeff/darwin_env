@@ -295,6 +295,7 @@ void Item_func_interval::fix_length_and_dec()
   used_tables_cache|=     item->used_tables();
   not_null_tables_cache&= item->not_null_tables();
   with_sum_func= with_sum_func || item->with_sum_func;
+  const_item_cache&=item->const_item();
 }
 
 
@@ -1045,15 +1046,18 @@ void Item_func_in::fix_length_and_dec()
       array= new in_double(arg_count);
       break;
     }
-    uint j=0;
-    for (uint i=0 ; i < arg_count ; i++)
+    if (array && !(current_thd->fatal_error))		// If not EOM
     {
-      array->set(j,args[i]);
-      if (!args[i]->null_value)			// Skip NULL values
-	j++;
+      uint j=0;
+      for (uint i=0 ; i < arg_count ; i++)
+      {
+	array->set(j,args[i]);
+	if (!args[i]->null_value)			// Skip NULL values
+	  j++;
+      }
+      if ((array->used_count=j))
+	array->sort();
     }
-    if ((array->used_count=j))
-      array->sort();
   }
   else
   {
@@ -1173,7 +1177,10 @@ Item_cond::fix_fields(THD *thd,TABLE_LIST *tables)
 {
   List_iterator<Item> li(list);
   Item *item;
+#ifndef EMBEDDED_LIBRARY			// Avoid compiler warning
   char buff[sizeof(char*)];			// Max local vars in function
+#endif
+
   not_null_tables_cache= used_tables_cache= 0;
   const_item_cache= 0;
   /*
@@ -1183,7 +1190,7 @@ Item_cond::fix_fields(THD *thd,TABLE_LIST *tables)
   and_tables_cache= ~(table_map) 0;
 
   if (thd && check_stack_overrun(thd,buff))
-    return 0;					// Fatal error flag is set!
+    return 1;					// Fatal error flag is set!
   while ((item=li++))
   {
     table_map tmp_table_map;

@@ -146,7 +146,7 @@ static void copy_sum_funcs(Item_sum **func_ptr);
 static bool add_ref_to_table_cond(THD *thd, JOIN_TAB *join_tab);
 static void init_sum_functions(Item_sum **func);
 static bool update_sum_func(Item_sum **func);
-static void select_describe(JOIN *join, bool need_tmp_table, bool need_order,
+static void select_describe(JOIN *join, bool need_tmp_table,bool need_order,
 			    bool distinct, const char *message=NullS);
 static void describe_info(JOIN *join, const char *info);
 
@@ -906,9 +906,9 @@ mysql_select(THD *thd,TABLE_LIST *tables,List<Item> &fields,COND *conds,
   if (join.group || join.tmp_table_param.sum_func_count ||
       (procedure && (procedure->flags & PROC_GROUP)))
   {
-    alloc_group_fields(&join,group);
-    setup_copy_fields(thd, &join.tmp_table_param,all_fields);
-    if (make_sum_func_list(&join,all_fields) || thd->fatal_error)
+    if (alloc_group_fields(&join,group) ||
+        setup_copy_fields(thd, &join.tmp_table_param,all_fields) ||
+        make_sum_func_list(&join,all_fields) || thd->fatal_error)
       goto err; /* purecov: inspected */
   }
   if (group || order)
@@ -972,10 +972,7 @@ mysql_select(THD *thd,TABLE_LIST *tables,List<Item> &fields,COND *conds,
 			  group ? group : order,
 			  select_limit, 
 			  thd->select_limit))
-    {
-      if (!join.join_tab[join.const_tables].select->quick)
-	goto err;
-    }
+      goto err;
   }
   join.having=having;				// Actually a parameter
   thd->proc_info="Sending data";
@@ -1003,7 +1000,8 @@ err:
   Approximate how many records will be used in each table
 *****************************************************************************/
 
-static ha_rows get_quick_record_count(SQL_SELECT *select,TABLE *table,
+static ha_rows get_quick_record_count(THD *thd, SQL_SELECT *select,
+				      TABLE *table,
 				      key_map keys,ha_rows limit)
 {
   int error;
@@ -1012,7 +1010,7 @@ static ha_rows get_quick_record_count(SQL_SELECT *select,TABLE *table,
   {
     select->head=table;
     table->reginfo.impossible_range=0;
-    if ((error=select->test_quick_select(keys,(table_map) 0,limit))
+    if ((error=select->test_quick_select(thd, keys,(table_map) 0,limit))
 	== 1)
       DBUG_RETURN(select->quick->records);
     if (error == -1)
@@ -1293,8 +1291,8 @@ make_join_statistics(JOIN *join,TABLE_LIST *tables,COND *conds,
 			  found_const_table_map,
 			  s->on_expr ? s->on_expr : conds,
 			  &error);
-      records= get_quick_record_count(select,s->table, s->const_keys,
-				      join->row_limit);
+      records= get_quick_record_count(join->thd, select, s->table,
+				      s->const_keys, join->row_limit);
       s->quick=select->quick;
       s->needed_reg=select->needed_reg;
       select->quick=0;
@@ -1425,28 +1423,34 @@ merge_key_fields(KEY_FIELD *start,KEY_FIELD *new_fields,KEY_FIELD *end,
 
 static void
 add_key_field(KEY_FIELD **key_fields,uint and_level,
-	      Field *field,bool eq_func,Item *value,
+	      Field *field,bool eq_func,Item **value, uint num_values,
 	      table_map usable_tables)
 {
   bool exists_optimize=0;
   if (!(field->flags & PART_KEY_FLAG))
   {
     // Don't remove column IS NULL on a LEFT JOIN table
-    if (!eq_func || !value || value->type() != Item::NULL_ITEM ||
-	!field->table->maybe_null || field->null_ptr)
+    if (!eq_func || (*value)->type() != Item::NULL_ITEM ||
+        !field->table->maybe_null || field->null_ptr)
       return;					// Not a key. Skip it
     exists_optimize=1;
   }
   else
   {
     table_map used_tables=0;
-    if (value && (used_tables=value->used_tables()) &
-	(field->table->map | RAND_TABLE_BIT))
+    bool optimizable=0;
+    for (uint i=0; i<num_values; i++)
+    {
+      used_tables|=(*value)->used_tables();
+      if (!((*value)->used_tables() & (field->table->map | RAND_TABLE_BIT)))
+        optimizable=1;
+    }
+    if (!optimizable)
       return;
     if (!(usable_tables & field->table->map))
     {
-      if (!eq_func || !value || value->type() != Item::NULL_ITEM ||
-	  !field->table->maybe_null || field->null_ptr)
+      if (!eq_func || (*value)->type() != Item::NULL_ITEM ||
+          !field->table->maybe_null || field->null_ptr)
 	return;					// Can't use left join optimize
       exists_optimize=1;
     }
@@ -1457,12 +1461,6 @@ add_key_field(KEY_FIELD **key_fields,uint and_level,
 			      field->table->keys_in_use_for_query);
       stat[0].keys|= possible_keys;		// Add possible keys
 
-      if (!value)
-      {						// Probably BETWEEN or IN
-	stat[0].const_keys |= possible_keys;
-	return;					// Can't be used as eq key
-      }
-
       /* Save the following cases:
 	 Field op constant
 	 Field LIKE constant where constant doesn't start with a wildcard
@@ -1470,24 +1468,38 @@ add_key_field(KEY_FIELD **key_fields,uint and_level,
 	 Field op formula
 	 Field IS NULL
 	 Field IS NOT NULL
+         Field BETWEEN ...
+         Field IN ...
       */
       stat[0].key_dependent|=used_tables;
-      if (value->const_item())
-	stat[0].const_keys |= possible_keys;
+
+      bool is_const=1;
+      for (uint i=0; i<num_values; i++)
+        is_const&= (*value)->const_item();
+      if (is_const)
+        stat[0].const_keys |= possible_keys;
 
       /* We can't always use indexes when comparing a string index to a
-	 number. cmp_type() is checked to allow compare of dates to numbers */
+	 number. cmp_type() is checked to allow compare of dates to numbers
+         also eq_func is NEVER true when num_values > 1
+       */
       if (!eq_func ||
 	  field->result_type() == STRING_RESULT &&
-	  value->result_type() != STRING_RESULT &&
-	  field->cmp_type() != value->result_type())
+	  (*value)->result_type() != STRING_RESULT &&
+	  field->cmp_type() != (*value)->result_type())
 	return;
     }
   }
+  DBUG_ASSERT(num_values == 1);
+  /*
+    For the moment eq_func is always true. This slot is reserved for future
+    extensions where we want to remembers other things than just eq comparisons
+  */
+  DBUG_ASSERT(eq_func);
   /* Store possible eq field */
   (*key_fields)->field=field;
   (*key_fields)->eq_func=eq_func;
-  (*key_fields)->val=value;
+  (*key_fields)->val= *value;
   (*key_fields)->level=(*key_fields)->const_level=and_level;
   (*key_fields)->exists_optimize=exists_optimize;
   (*key_fields)++;
@@ -1541,10 +1553,18 @@ add_key_fields(JOIN_TAB *stat,KEY_FIELD **key_fields,uint *and_level,
   case Item_func::OPTIMIZE_NONE:
     break;
   case Item_func::OPTIMIZE_KEY:
+    // BETWEEN or IN
     if (cond_func->key_item()->type() == Item::FIELD_ITEM)
       add_key_field(key_fields,*and_level,
-		    ((Item_field*) (cond_func->key_item()))->field,
-		    0,(Item*) 0,usable_tables);
+		    ((Item_field*) (cond_func->key_item()))->field, 0,
+#ifndef TO_BE_REMOVED_IN_4_1
+                    /* special treatment for IN. Not necessary in 4.1 */
+                    cond_func->arguments()      + (cond_func->functype() != Item_func::IN_FUNC),
+                    cond_func->argument_count() - (cond_func->functype() != Item_func::IN_FUNC),
+#else
+                    cond_func->arguments()+1, cond_func->argument_count()-1,
+#endif
+                    usable_tables);
     break;
   case Item_func::OPTIMIZE_OP:
   {
@@ -1556,7 +1576,7 @@ add_key_fields(JOIN_TAB *stat,KEY_FIELD **key_fields,uint *and_level,
       add_key_field(key_fields,*and_level,
 		    ((Item_field*) (cond_func->arguments()[0]))->field,
 		    equal_func,
-		    (cond_func->arguments()[1]),usable_tables);
+                    cond_func->arguments()+1, 1, usable_tables);
     }
     if (cond_func->arguments()[1]->type() == Item::FIELD_ITEM &&
 	cond_func->functype() != Item_func::LIKE_FUNC)
@@ -1564,7 +1584,7 @@ add_key_fields(JOIN_TAB *stat,KEY_FIELD **key_fields,uint *and_level,
       add_key_field(key_fields,*and_level,
 		    ((Item_field*) (cond_func->arguments()[1]))->field,
 		    equal_func,
-		    (cond_func->arguments()[0]),usable_tables);
+		    cond_func->arguments(),1,usable_tables);
     }
     break;
   }
@@ -1572,10 +1592,13 @@ add_key_fields(JOIN_TAB *stat,KEY_FIELD **key_fields,uint *and_level,
     /* column_name IS [NOT] NULL */
     if (cond_func->arguments()[0]->type() == Item::FIELD_ITEM)
     {
+      Item *tmp=new Item_null;
+      if (!tmp)					// Should never be true
+	return;
       add_key_field(key_fields,*and_level,
 		    ((Item_field*) (cond_func->arguments()[0]))->field,
 		    cond_func->functype() == Item_func::ISNULL_FUNC,
-		    new Item_null, usable_tables);
+		    &tmp, 1, usable_tables);
     }
     break;
   }
@@ -1876,7 +1899,7 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
       best=best_time=records=DBL_MAX;
       KEYUSE *best_key=0;
       uint best_max_key_part=0;
-      my_bool found_constrain= 0;
+      my_bool found_constraint= 0;
 
       if (s->keyuse)
       {						/* Use key if possible */
@@ -1957,7 +1980,7 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
           }
           else
           {
-	  found_constrain= 1;
+	  found_constraint= 1;
 	  /*
 	    Check if we found full key
 	  */
@@ -2111,29 +2134,50 @@ find_best(JOIN *join,table_map rest_tables,uint idx,double record_count,
 	    s->table->used_keys && best_key) &&
 	  !(s->table->force_index && best_key))
       {						// Check full join
-	ha_rows rnd_records= s->found_records;
-	if (s->on_expr)
-	{
-	  tmp=rows2double(rnd_records);		// Can't use read cache
-	}
-	else
-	{
-	  tmp=(double) s->read_time;
-	  /* Calculate time to read previous rows through cache */
-	  tmp*=(1.0+floor((double) cache_record_length(join,idx)*
-			  record_count /
-			  (double) thd->variables.join_buff_size));
-	}
+        ha_rows rnd_records= s->found_records;
+        /* Estimate cost of reading table. */
+        tmp= s->table->file->scan_time();
+        /*
+          If there is a restriction on the table, assume that 25% of the
+          rows can be skipped on next part.
+          This is to force tables that this table depends on before this
+          table
+        */
+        if (found_constraint)
+          rnd_records-= rnd_records/4;
 
-	/*
-	  If there is a restriction on the table, assume that 25% of the
-	  rows can be skipped on next part.
-	  This is to force tables that this table depends on before this
-	  table
-	*/
-	if (found_constrain)
-	  rnd_records-= rnd_records/4;
+        if (s->on_expr)                         // Can't use join cache
+        {
+          tmp= record_count *
+               /* We have to read the whole table for each record */
+               (tmp +     
+               /*
+                 And we have to skip rows which does not satisfy join
+                 condition for each record.
+               */
+               (s->records - rnd_records)/(double) TIME_FOR_COMPARE);
+        }
+        else
+        {
+          /* We read the table as many times as join buffer becomes full. */
+          tmp*= (1.0 + floor((double) cache_record_length(join,idx) *
+                             record_count /
+                             (double) thd->variables.join_buff_size));
+          /* 
+            We don't make full cartesian product between rows in the scanned
+            table and existing records because we skip all rows from the
+            scanned table, which does not satisfy join condition when 
+            we read the table (see flush_cached_records for details). Here we
+            take into account cost to read and skip these records.
+          */
+          tmp+= (s->records - rnd_records)/(double) TIME_FOR_COMPARE;
+        }
 
+        /*
+          We estimate the cost of evaluating WHERE clause for found records
+          as record_count * rnd_records + TIME_FOR_COMPARE. This cost plus
+          tmp give us total cost of using TABLE SCAN
+        */
 	if (best == DBL_MAX ||
 	    (tmp  + record_count/(double) TIME_FOR_COMPARE*rnd_records <
 	     best + record_count/(double) TIME_FOR_COMPARE*records))
@@ -2644,14 +2688,27 @@ make_join_select(JOIN *join,SQL_SELECT *select,COND *cond)
 	    /* Join with outer join condition */
 	    COND *orig_cond=sel->cond;
 	    sel->cond=and_conds(sel->cond,tab->on_expr);
-	    if (sel->test_quick_select(tab->keys,
+	    if (sel->test_quick_select(join->thd, tab->keys,
 				       used_tables & ~ current_map,
 				       (join->select_options &
 					OPTION_FOUND_ROWS ?
 					HA_POS_ERROR :
 					join->thd->select_limit)) < 0)
-	      DBUG_RETURN(1);				// Impossible range
-	    sel->cond=orig_cond;
+            { /* before reporting "Impossible WHERE" for the whole query
+                 we have to check isn't it only "impossible ON" instead */
+              sel->cond=orig_cond;
+              if (!tab->on_expr ||
+                  sel->test_quick_select(join->thd, tab->keys,
+                                         used_tables & ~ current_map,
+                                         (join->select_options &
+                                          OPTION_FOUND_ROWS ?
+                                          HA_POS_ERROR :
+                                          join->thd->select_limit)) < 0)
+	         DBUG_RETURN(1);			// Impossible WHERE
+            }
+            else
+	      sel->cond=orig_cond;
+
 	    /* Fix for EXPLAIN */
 	    if (sel->quick)
 	      join->best_positions[i].records_read= sel->quick->records;
@@ -3271,7 +3328,7 @@ change_cond_ref_to_const(I_List<COND_CMP> *save_list,Item *and_father,
 
 
 static void
-propagate_cond_constants(I_List<COND_CMP> *save_list,COND *and_level,
+propagate_cond_constants(I_List<COND_CMP> *save_list,COND *and_father,
 			 COND *cond)
 {
   if (cond->type() == Item::COND_ITEM)
@@ -3297,7 +3354,7 @@ propagate_cond_constants(I_List<COND_CMP> *save_list,COND *and_level,
 				   cond_cmp->cmp_func->arguments()[1]);
     }
   }
-  else if (and_level != cond && !cond->marker)		// In a AND group
+  else if (and_father != cond && !cond->marker)		// In a AND group
   {
     if (cond->type() == Item::FUNC_ITEM &&
 	(((Item_func*) cond)->functype() == Item_func::EQ_FUNC ||
@@ -3315,7 +3372,7 @@ propagate_cond_constants(I_List<COND_CMP> *save_list,COND *and_level,
 	  func->arguments()[1]=resolve_const_item(func->arguments()[1],
 						  func->arguments()[0]);
 	  func->update_used_tables();
-	  change_cond_ref_to_const(save_list,and_level,and_level,
+	  change_cond_ref_to_const(save_list,and_father,and_father,
 				   func->arguments()[0],
 				   func->arguments()[1]);
 	}
@@ -3324,7 +3381,7 @@ propagate_cond_constants(I_List<COND_CMP> *save_list,COND *and_level,
 	  func->arguments()[0]=resolve_const_item(func->arguments()[0],
 						  func->arguments()[1]);
 	  func->update_used_tables();
-	  change_cond_ref_to_const(save_list,and_level,and_level,
+	  change_cond_ref_to_const(save_list,and_father,and_father,
 				   func->arguments()[1],
 				   func->arguments()[0]);
 	}
@@ -3650,6 +3707,8 @@ Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
 	new_field->field_name=item->name;
       if (org_field->maybe_null())
 	new_field->flags&= ~NOT_NULL_FLAG;	// Because of outer join
+      if (org_field->type()==FIELD_TYPE_VAR_STRING)
+	table->db_create_options|= HA_OPTION_PACK_RECORD;
     }
     return new_field;
   }
@@ -4989,7 +5048,8 @@ test_if_quick_select(JOIN_TAB *tab)
 {
   delete tab->select->quick;
   tab->select->quick=0;
-  return tab->select->test_quick_select(tab->keys,(table_map) 0,HA_POS_ERROR);
+  return tab->select->test_quick_select(tab->join->thd, tab->keys,
+					(table_map) 0, HA_POS_ERROR);
 }
 
 
@@ -5956,7 +6016,8 @@ create_sort_index(JOIN_TAB *tab, ORDER *order, ha_rows filesort_limit,
 	For impossible ranges (like when doing a lookup on NULL on a NOT NULL
 	field, quick will contain an empty record set.
       */
-      if (!(select->quick=get_ft_or_quick_select_for_ref(table, tab)))
+      if (!(select->quick=get_ft_or_quick_select_for_ref(tab->join->thd,
+							 table, tab)))
 	goto err;
     }
   }
@@ -7212,7 +7273,7 @@ update_tmptable_sum_func(Item_sum **func_ptr,
 {
   Item_sum *func;
   while ((func= *(func_ptr++)))
-    func->update_field(0);
+    func->update_field();
 }
 
 

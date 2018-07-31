@@ -88,7 +88,7 @@ net_safe_read(MYSQL *mysql)
 {
   NET *net= &mysql->net;
   uint len=0;
-  //init_sigpipe_variables
+  /* init_sigpipe_variables */
   /* Don't give sigpipe errors if the client doesn't want them */
   set_sigpipe(mysql);
   if (net->vio != 0)
@@ -801,6 +801,17 @@ mysql_real_connect(MYSQL *mysql,const char *host, const char *user,
 		      host ? host : "(Null)",
 		      db ? db : "(Null)",
 		      user ? user : "(Null)"));
+
+  /* 
+     Check mysql_server_init was called.
+     This code shouldn't be merged to 4.1
+  */
+  if (!server_inited)
+  {
+    net->last_errno=CR_UNKNOWN_ERROR;
+    strmov(net->last_error,ER(net->last_errno));
+    goto error;
+  }
 
   net->vio = 0;				/* If something goes wrong */
   /* use default options */

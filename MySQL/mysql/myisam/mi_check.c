@@ -36,7 +36,7 @@
 	/* Functions defined in this file */
 
 static int check_k_link(MI_CHECK *param, MI_INFO *info,uint nr);
-static int chk_index(MI_CHECK *param, MI_INFO *info, MI_KEYDEF *keyinfo,
+static int chk_index(MI_CHECK *param, MI_INFO *info,MI_KEYDEF *keyinfo,
 		     my_off_t page, uchar *buff, ha_rows *keys,
 		     ha_checksum *key_checksum, uint level);
 static uint isam_key_length(MI_INFO *info,MI_KEYDEF *keyinfo);
@@ -200,21 +200,33 @@ int chk_del(MI_CHECK *param, register MI_INFO *info, uint test_flag)
 	empty+=info->s->base.pack_reclength;
       }
     }
+    if (test_flag & T_VERBOSE)
+      puts("\n");
     if (empty != info->state->empty)
     {
-      if (test_flag & T_VERBOSE) puts("");
       mi_check_print_warning(param,
-			     "Not used space is supposed to be: %s but is: %s",
-			     llstr(info->state->empty,buff),
-			     llstr(empty,buff2));
-      info->state->empty=empty;
+			     "Found %s deleted space in delete link chain. Should be %s",
+			     llstr(empty,buff2),
+			     llstr(info->state->empty,buff));
     }
-    if (i != 0 || next_link != HA_OFFSET_ERROR)
+    if (next_link != HA_OFFSET_ERROR)
+    {
+      mi_check_print_error(param,
+			   "Found more than the expected %s deleted rows in delete link chain",
+			   llstr(info->state->del, buff));
       goto wrong;
-
-    if (test_flag & T_VERBOSE) puts("\n");
+    }
+    if (i != 0)
+    {
+      mi_check_print_error(param,
+			   "Found %s deleted rows in delete link chain. Should be %s",
+			   llstr(info->state->del - i, buff2),
+			   llstr(info->state->del, buff));
+      goto wrong;
+    }
   }
   DBUG_RETURN(0);
+
 wrong:
   param->testflag|=T_RETRY_WITHOUT_QUICK;
   if (test_flag & T_VERBOSE) puts("");
@@ -1040,6 +1052,13 @@ int chk_data_link(MI_CHECK *param, MI_INFO *info,int extend)
     }
   }
 
+  if (del_length != info->state->empty)
+  {
+    mi_check_print_warning(param,
+			   "Found %s deleted space.   Should be %s",
+			   llstr(del_length,llbuff2),
+			   llstr(info->state->empty,llbuff));
+  }
   if (used+empty+del_length != info->state->data_file_length)
   {
     mi_check_print_warning(param,
@@ -1513,6 +1532,7 @@ int mi_sort_index(MI_CHECK *param, register MI_INFO *info, my_string name)
   File new_file;
   my_off_t index_pos[MI_MAX_POSSIBLE_KEY];
   uint r_locks,w_locks;
+  int old_lock;
   MYISAM_SHARE *share=info->s;
   MI_STATE_INFO old_state;
   DBUG_ENTER("sort_index");
@@ -1556,8 +1576,11 @@ int mi_sort_index(MI_CHECK *param, register MI_INFO *info, my_string name)
   flush_key_blocks(share->kfile, FLUSH_IGNORE_CHANGED);
 
   share->state.version=(ulong) time((time_t*) 0);
-  old_state=share->state;			/* save state if not stored */
-  r_locks=share->r_locks; w_locks=share->w_locks;
+  old_state= share->state;			/* save state if not stored */
+  r_locks=   share->r_locks;
+  w_locks=   share->w_locks;
+  old_lock=  info->lock_type;
+
 	/* Put same locks as old file */
   share->r_locks= share->w_locks= share->tot_locks= 0;
   (void) _mi_writeinfo(info,WRITEINFO_UPDATE_KEYFILE);
@@ -1568,12 +1591,13 @@ int mi_sort_index(MI_CHECK *param, register MI_INFO *info, my_string name)
 			MYF(0)) ||
       mi_open_keyfile(share))
     goto err2;
-  info->lock_type=F_UNLCK;			/* Force mi_readinfo to lock */
+  info->lock_type= F_UNLCK;			/* Force mi_readinfo to lock */
   _mi_readinfo(info,F_WRLCK,0);			/* Will lock the table */
-  info->lock_type=F_WRLCK;
-  share->r_locks=r_locks; share->w_locks=w_locks;
+  info->lock_type=  old_lock;
+  share->r_locks=   r_locks;
+  share->w_locks=   w_locks;
   share->tot_locks= r_locks+w_locks;
-  share->state=old_state;			/* Restore old state */
+  share->state=     old_state;			/* Restore old state */
 
   info->state->key_file_length=param->new_file_pos;
   info->update= (short) (HA_STATE_CHANGED | HA_STATE_ROW_CHANGED);
@@ -3562,10 +3586,13 @@ int update_state_info(MI_CHECK *param, MI_INFO *info,uint update)
     uint i, key_parts= mi_uint2korr(share->state.header.key_parts);
     share->state.rec_per_key_rows=info->state->records;
     share->state.changed&= ~STATE_NOT_ANALYZED;
-    for (i=0; i<key_parts; i++)
+    if (info->state->records)
     {
-      if (!(share->state.rec_per_key_part[i]=param->rec_per_key_part[i]))
-        share->state.changed|= STATE_NOT_ANALYZED;
+      for (i=0; i<key_parts; i++)
+      {
+        if (!(share->state.rec_per_key_part[i]=param->rec_per_key_part[i]))
+          share->state.changed|= STATE_NOT_ANALYZED;
+      }
     }
   }
   if (update & (UPDATE_STAT | UPDATE_SORT | UPDATE_TIME | UPDATE_AUTO_INC))
@@ -3678,6 +3705,9 @@ void update_key_parts(MI_KEYDEF *keyinfo, ulong *rec_per_key_part,
       tmp=records;
     else
       tmp= (records + (count+1)/2) / (count+1);
+    /* for some weird keys (e.g. FULLTEXT) tmp can be <1 here.
+       let's ensure it is not */
+    set_if_bigger(tmp,1);
     if (tmp >= (ulonglong) ~(ulong) 0)
       tmp=(ulonglong) ~(ulong) 0;
     *rec_per_key_part=(ulong) tmp;

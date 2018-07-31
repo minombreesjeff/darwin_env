@@ -46,11 +46,6 @@
 #endif /* HAVE_OPENSSL */
 #define SCRAMBLE_LENGTH 8
 
-#define MEM_ROOT_BLOCK_SIZE       8192
-#define MEM_ROOT_PREALLOC         8192
-#define TRANS_MEM_ROOT_BLOCK_SIZE 4096
-#define TRANS_MEM_ROOT_PREALLOC   4096
-
 extern int yyparse(void);
 extern "C" pthread_mutex_t THR_LOCK_keycache;
 #ifdef SOLARIS
@@ -533,7 +528,6 @@ check_connections(THD *thd)
     thd->ip= 0;
     bzero((char*) &thd->remote,sizeof(struct sockaddr));
   }
-  /* Ensure that wrong hostnames doesn't cause buffer overflows */
   vio_keepalive(net->vio, TRUE);
 
   ulong pkt_len=0;
@@ -715,9 +709,12 @@ pthread_handler_decl(handle_one_connection,arg)
     thd->command=COM_SLEEP;
     thd->version=refresh_version;
     thd->set_time();
-    init_sql_alloc(&thd->mem_root, MEM_ROOT_BLOCK_SIZE, MEM_ROOT_PREALLOC);
+    init_sql_alloc(&thd->mem_root, thd->variables.query_alloc_block_size,
+		   thd->variables.query_prealloc_size);
     init_sql_alloc(&thd->transaction.mem_root,
-		   TRANS_MEM_ROOT_BLOCK_SIZE, TRANS_MEM_ROOT_PREALLOC);
+		   thd->variables.trans_alloc_block_size,
+		   thd->variables.trans_prealloc_size);
+
     while (!net->error && net->vio != 0 && !thd->killed)
     {
       if (do_command(thd))
@@ -792,9 +789,11 @@ extern "C" pthread_handler_decl(handle_bootstrap,arg)
   thd->priv_user=thd->user=(char*) my_strdup("boot", MYF(MY_WME));
 
   buff= (char*) thd->net.buff;
-  init_sql_alloc(&thd->mem_root, MEM_ROOT_BLOCK_SIZE, MEM_ROOT_PREALLOC);
+  init_sql_alloc(&thd->mem_root, thd->variables.query_alloc_block_size,
+		 thd->variables.query_prealloc_size);
   init_sql_alloc(&thd->transaction.mem_root,
-		 TRANS_MEM_ROOT_BLOCK_SIZE, TRANS_MEM_ROOT_PREALLOC);
+		 thd->variables.trans_alloc_block_size,
+		 thd->variables.trans_prealloc_size);
   while (fgets(buff, thd->net.max_packet, file))
   {
     uint length=(uint) strlen(buff);
@@ -1458,6 +1457,7 @@ mysql_execute_command(void)
   {
     if (check_global_access(thd, REPL_SLAVE_ACL))
       goto error;
+    /* This query don't work now. See comment in repl_failsafe.cc */
 #ifndef WORKING_NEW_MASTER
     net_printf(&thd->net, ER_NOT_SUPPORTED_YET, "SHOW NEW MASTER");
     res= 1;
@@ -1499,6 +1499,8 @@ mysql_execute_command(void)
     res = mysql_restore_table(thd, tables);
     break;
   }
+
+#ifdef HAVE_REPLICATION
   case SQLCOM_CHANGE_MASTER:
   {
     if (check_global_access(thd, SUPER_ACL))
@@ -1535,6 +1537,8 @@ mysql_execute_command(void)
     else
       res = load_master_data(thd);
     break;
+
+#endif /* HAVE_REPLICATION */
     
 #ifdef HAVE_INNOBASE_DB
   case SQLCOM_SHOW_INNODB_STATUS:
@@ -1546,6 +1550,7 @@ mysql_execute_command(void)
     }
 #endif
 
+#ifdef HAVE_REPLICATION
   case SQLCOM_LOAD_MASTER_TABLE:
   {
     if (!tables->db)
@@ -1563,15 +1568,20 @@ mysql_execute_command(void)
 	goto error;
     }
     LOCK_ACTIVE_MI;
-    // fetch_master_table will send the error to the client on failure
+    /*
+      fetch_master_table will send the error to the client on failure.
+      Give error if the table already exists.
+    */
     if (!fetch_master_table(thd, tables->db, tables->real_name,
-			    active_mi, 0))
+			    active_mi, 0, 0))
     {
       send_ok(&thd->net);
     }
     UNLOCK_ACTIVE_MI;
     break;
   }
+#endif /* HAVE_REPLICATION */
+
   case SQLCOM_CREATE_TABLE:
   {
     ulong want_priv= ((lex->create_info.options & HA_LEX_CREATE_TMP_TABLE) ?
@@ -1676,6 +1686,7 @@ mysql_execute_command(void)
       res = mysql_create_index(thd, tables, lex->key_list);
     break;
 
+#ifdef HAVE_REPLICATION
   case SQLCOM_SLAVE_START:
   {
     LOCK_ACTIVE_MI;
@@ -1708,6 +1719,8 @@ mysql_execute_command(void)
     UNLOCK_ACTIVE_MI;
     break;
   }
+#endif /* HAVE_REPLICATION */
+
   case SQLCOM_ALTER_TABLE:
 #if defined(DONT_ALLOW_SHOW_COMMANDS)
     send_error(&thd->net,ER_NOT_ALLOWED_COMMAND); /* purecov: inspected */
@@ -2146,11 +2159,12 @@ mysql_execute_command(void)
     break;
   case SQLCOM_SHOW_STATUS:
     res= mysqld_show(thd,(lex->wild ? lex->wild->ptr() : NullS),status_vars,
-		     OPT_GLOBAL);
+		     OPT_GLOBAL, &LOCK_status);
     break;
   case SQLCOM_SHOW_VARIABLES:
     res= mysqld_show(thd, (lex->wild ? lex->wild->ptr() : NullS),
-		     init_vars, lex->option_type);
+		     init_vars, lex->option_type,
+		     &LOCK_global_system_variables);
     break;
   case SQLCOM_SHOW_LOGS:
   {
@@ -2551,7 +2565,16 @@ mysql_execute_command(void)
     thd->server_status&= ~SERVER_STATUS_IN_TRANS;
     if (!ha_rollback(thd))
     {
-      if (thd->options & OPTION_STATUS_NO_TRANS_UPDATE)
+      /*
+        If a non-transactional table was updated, warn; don't warn if this is a
+        slave thread (because when a slave thread executes a ROLLBACK, it has
+        been read from the binary log, so it's 100% sure and normal to produce
+        error ER_WARNING_NOT_COMPLETE_ROLLBACK. If we sent the warning to the
+        slave SQL thread, it would not stop the thread but just be printed in
+        the error log; but we don't want users to wonder why they have this
+        message in the error log, so we don't send it.
+      */
+      if ((thd->options & OPTION_STATUS_NO_TRANS_UPDATE) && !thd->slave_thread)
 	send_warning(&thd->net,ER_WARNING_NOT_COMPLETE_ROLLBACK,0);
       else
 	send_ok(&thd->net);
@@ -2563,7 +2586,7 @@ mysql_execute_command(void)
   case SQLCOM_ROLLBACK_TO_SAVEPOINT:
     if (!ha_rollback_to_savepoint(thd, lex->savepoint_name))
     {
-      if (thd->options & OPTION_STATUS_NO_TRANS_UPDATE)
+      if ((thd->options & OPTION_STATUS_NO_TRANS_UPDATE) && !thd->slave_thread)
 	send_warning(&thd->net,ER_WARNING_NOT_COMPLETE_ROLLBACK,0);
       else
 	send_ok(&thd->net);
@@ -2670,7 +2693,7 @@ check_access(THD *thd, ulong want_access, const char *db, ulong *save_priv,
   /* grant_option is set if there exists a single table or column grant */
   if (db_access == want_access ||
       ((grant_option && !dont_check_global_grants) &&
-       !(want_access & ~TABLE_ACLS)))
+       !(want_access & ~(db_access | TABLE_ACLS))))
     DBUG_RETURN(FALSE);				/* Ok */
   if (!no_errors)
     net_printf(&thd->net,ER_DBACCESS_DENIED_ERROR,
@@ -3385,8 +3408,7 @@ TABLE_LIST *add_table_to_list(Table_ident *table, LEX_STRING *alias,
   }
     
   ptr->alias= alias_str;
-  if (lower_case_table_names)
-    casedn_str(table->table.str);
+  table_case_convert(table->table.str, table->table.length);
   ptr->real_name=table->table.str;
   ptr->real_name_length=table->table.length;
   ptr->lock_type= lock_type;
@@ -3579,8 +3601,8 @@ bool reload_acl_and_cache(THD *thd, ulong options, TABLE_LIST *tables)
   if (options & REFRESH_LOG)
   {
     /*
-      Flush the normal query log, the update log, the binary log, the slow query
-      log, and the relay log (if it exists).
+      Flush the normal query log, the update log, the binary log,
+      the slow query log, and the relay log (if it exists).
     */
     mysql_log.new_file(1);
     mysql_update_log.new_file(1);

@@ -29,7 +29,12 @@
 #undef write  /* remove pthread.h macro definition for EMX */
 #endif
 
+#ifdef BIG_JOINS
+typedef ulonglong table_map;		/* Used for table bits in join */
+#else
 typedef ulong table_map;		/* Used for table bits in join */
+#endif /* BIG_JOINS */
+
 typedef ulong key_map;			/* Used for finding keys */
 typedef ulong key_part_map;		/* Used for finding key parts */
 
@@ -70,6 +75,16 @@ char* query_table_status(THD *thd,const char *db,const char *table_name);
 #define MYSQLD_NET_RETRY_COUNT  10	// Abort read after this many int.
 #endif
 #define TEMP_POOL_SIZE          128
+
+#define QUERY_ALLOC_BLOCK_SIZE		8192
+#define QUERY_ALLOC_PREALLOC_SIZE   	8192
+#define TRANS_ALLOC_BLOCK_SIZE		4096
+#define TRANS_ALLOC_PREALLOC_SIZE	4096
+#define RANGE_ALLOC_BLOCK_SIZE		2048
+#define ACL_ALLOC_BLOCK_SIZE		1024
+#define UDF_ALLOC_BLOCK_SIZE		1024
+#define TABLE_ALLOC_BLOCK_SIZE		1024
+
 /*
   The following parameters is to decide when to use an extra cache to
   optimise seeks when reading a big table in sorted order
@@ -194,6 +209,7 @@ char* query_table_status(THD *thd,const char *db,const char *table_name);
 #define MODE_SERIALIZABLE		16
 #define MODE_ONLY_FULL_GROUP_BY		32
 #define MODE_NO_UNSIGNED_SUBTRACTION	64
+#define MODE_NO_DIR_IN_CREATE		128
 
 #define RAID_BLOCK_SIZE 1024
 
@@ -473,11 +489,11 @@ Field *find_field_in_table(THD *thd,TABLE *table,const char *name,uint length,
 #include <openssl/des.h>
 struct st_des_keyblock 
 { 
-  des_cblock key1, key2, key3; 
+  DES_cblock key1, key2, key3; 
 };
 struct st_des_keyschedule
 {
-  des_key_schedule ks1, ks2, ks3;
+  DES_key_schedule ks1, ks2, ks3;
 };
 extern char *des_key_file;
 extern struct st_des_keyschedule des_keyschedule[10];
@@ -507,7 +523,8 @@ void mysqld_list_processes(THD *thd,const char *user,bool verbose);
 int mysqld_show_status(THD *thd);
 int mysqld_show_variables(THD *thd,const char *wild);
 int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
-		enum enum_var_type value_type);
+		enum enum_var_type value_type,
+		pthread_mutex_t *mutex);
 
 /* sql_handler.cc */
 int mysql_ha_open(THD *thd, TABLE_LIST *tables);
@@ -844,21 +861,31 @@ inline bool add_item_to_list(Item *item)
 {
   return current_lex->select->item_list.push_back(item);
 }
+
 inline bool add_value_to_list(Item *value)
 {
   return current_lex->value_list.push_back(value);
 }
+
 inline bool add_order_to_list(Item *item,bool asc)
 {
   return add_to_list(current_lex->select->order_list,item,asc);
 }
+
 inline bool add_group_to_list(Item *item,bool asc)
 {
   return add_to_list(current_lex->select->group_list,item,asc);
 }
+
 inline void mark_as_null_row(TABLE *table)
 {
   table->null_row=1;
   table->status|=STATUS_NULL_ROW;
   bfill(table->null_flags,table->null_bytes,255);
+}
+
+inline void table_case_convert(char * name, uint length)
+{
+  if (lower_case_table_names)
+    casedn(name, length);
 }

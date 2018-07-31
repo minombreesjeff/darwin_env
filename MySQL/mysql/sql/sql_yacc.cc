@@ -11716,7 +11716,7 @@ yyreduce:
     { 
 	    LEX *lex=Lex;
 	    yyval.item= new Item_func_week(yyvsp[-1].item,new Item_int((char*) "0", 
-                                           lex->thd->variables.default_week_format,1)); 
+                                   lex->thd->variables.default_week_format,1));
 	  }
     break;
 

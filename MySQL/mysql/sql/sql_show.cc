@@ -27,8 +27,6 @@
 #include "ha_berkeley.h"			// For berkeley_show_logs
 #endif
 
-/* extern "C" pthread_mutex_t THR_LOCK_keycache; */
-
 static const char *grant_names[]={
   "select","insert","update","delete","create","drop","reload","shutdown",
   "process","file","grant","references","index","alter"};
@@ -566,49 +564,49 @@ mysqld_show_create(THD *thd, TABLE_LIST *table_list)
     DBUG_RETURN(1);
   }
 
+  char buff[1024];
+  String packet(buff,sizeof(buff));
+  packet.length(0);
+  net_store_data(&packet,convert, table->table_name);
+  /*
+    A hack - we need to reserve some space for the length before
+    we know what it is - let's assume that the length of create table
+    statement will fit into 3 bytes ( 16 MB max :-) )
+  */
+  ulong store_len_offset = packet.length();
+  packet.length(store_len_offset + 4);
+  if (store_create_info(thd, table, &packet))
+    DBUG_RETURN(-1);
+  ulong create_len = packet.length() - store_len_offset - 4;
+  if (create_len > 0x00ffffff) // better readable in HEX ...
+  {
+    /*
+      Just in case somebody manages to create a table
+      with *that* much stuff in the definition
+    */
+    DBUG_RETURN(1);
+  }
+
+  /*
+    Now we have to store the length in three bytes, even if it would fit
+    into fewer bytes, so we cannot use net_store_data() anymore,
+    and do it ourselves
+  */
+  char* p = (char*)packet.ptr() + store_len_offset;
+  *p++ = (char) 253; // The client the length is stored using 3-bytes
+  int3store(p, create_len);
+
   List<Item> field_list;
   field_list.push_back(new Item_empty_string("Table",NAME_LEN));
-  field_list.push_back(new Item_empty_string("Create Table",1024));
+  field_list.push_back(new Item_empty_string("Create Table",
+        max(packet.length(),1024))); // 1024 is for not to confuse old clients
 
   if (send_fields(thd,field_list,1))
     DBUG_RETURN(1);
 
-  String *packet = &thd->packet;
-  {
-    packet->length(0);
-    net_store_data(packet,convert, table->table_name);
-    /*
-      A hack - we need to reserve some space for the length before
-      we know what it is - let's assume that the length of create table
-      statement will fit into 3 bytes ( 16 MB max :-) )
-    */
-    ulong store_len_offset = packet->length();
-    packet->length(store_len_offset + 4);
-    if (store_create_info(thd, table, packet))
-      DBUG_RETURN(-1);
-    ulong create_len = packet->length() - store_len_offset - 4;
-    if (create_len > 0x00ffffff) // better readable in HEX ...
-    {
-      /*
-	Just in case somebody manages to create a table
-	with *that* much stuff in the definition
-      */
-      DBUG_RETURN(1);
-    }
+  if (my_net_write(&thd->net, (char*)packet.ptr(), packet.length()))
+    DBUG_RETURN(1);
 
-    /*
-      Now we have to store the length in three bytes, even if it would fit
-      into fewer bytes, so we cannot use net_store_data() anymore,
-      and do it ourselves
-    */
-    char* p = (char*)packet->ptr() + store_len_offset;
-    *p++ = (char) 253; // The client the length is stored using 3-bytes
-    int3store(p, create_len);
-
-    // now we are in business :-)
-    if (my_net_write(&thd->net, (char*)packet->ptr(), packet->length()))
-      DBUG_RETURN(1);
-  }
   send_eof(&thd->net);
   DBUG_RETURN(0);
 }
@@ -817,17 +815,40 @@ append_identifier(THD *thd, String *packet, const char *name)
   }
 }
 
+
+/* Append directory name (if exists) to CREATE INFO */
+
+static void append_directory(THD *thd, String *packet, const char *dir_type,
+			     const char *filename)
+{
+  uint length;
+  if (filename && !(thd->sql_mode & MODE_NO_DIR_IN_CREATE))
+  {
+    length= dirname_length(filename);
+    packet->append(' ');
+    packet->append(dir_type);
+    packet->append(" DIRECTORY='", 12);
+    packet->append(filename, length);
+    packet->append('\'');
+  }
+}
+
+
 static int
 store_create_info(THD *thd, TABLE *table, String *packet)
 {
+  List<Item> field_list;
+  char tmp[MAX_FIELD_WIDTH], *for_str, buff[128], *end;
+  String type(tmp, sizeof(tmp));
+  Field **ptr,*field;
+  uint primary_key;
+  KEY *key_info;
+  handler *file= table->file;
+  HA_CREATE_INFO create_info;
   DBUG_ENTER("store_create_info");
   DBUG_PRINT("enter",("table: %s",table->real_name));
 
   restore_record(table,2); // Get empty record
-
-  List<Item> field_list;
-  char tmp[MAX_FIELD_WIDTH];
-  String type(tmp, sizeof(tmp));
   if (table->tmp_table)
     packet->append("CREATE TEMPORARY TABLE ", 23);
   else
@@ -835,13 +856,13 @@ store_create_info(THD *thd, TABLE *table, String *packet)
   append_identifier(thd,packet,table->real_name);
   packet->append(" (\n", 3);
 
-  Field **ptr,*field;
   for (ptr=table->field ; (field= *ptr); ptr++)
   {
+    bool has_default;
+    uint flags = field->flags;
+
     if (ptr != table->field)
       packet->append(",\n", 2);
-
-    uint flags = field->flags;
     packet->append("  ", 2);
     append_identifier(thd,packet,field->field_name);
     packet->append(' ');
@@ -852,9 +873,9 @@ store_create_info(THD *thd, TABLE *table, String *packet)
     field->sql_type(type);
     packet->append(type.ptr(),type.length());
 
-    bool has_default = (field->type() != FIELD_TYPE_BLOB &&
-			field->type() != FIELD_TYPE_TIMESTAMP &&
-			field->unireg_check != Field::NEXT_NUMBER);
+    has_default= (field->type() != FIELD_TYPE_BLOB &&
+		  field->type() != FIELD_TYPE_TIMESTAMP &&
+		  field->unireg_check != Field::NEXT_NUMBER);
     if (flags & NOT_NULL_FLAG)
       packet->append(" NOT NULL", 9);
 
@@ -880,9 +901,11 @@ store_create_info(THD *thd, TABLE *table, String *packet)
           packet->append(" auto_increment", 15 );
   }
 
-  KEY *key_info=table->key_info;
-  table->file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK | HA_STATUS_TIME);
-  uint primary_key = table->primary_key;
+  key_info= table->key_info;
+  file->info(HA_STATUS_VARIABLE | HA_STATUS_NO_LOCK | HA_STATUS_TIME);
+  bzero((char*) &create_info, sizeof(create_info));
+  file->update_create_info(&create_info);
+  primary_key= table->primary_key;
 
   for (uint i=0 ; i < table->keys ; i++,key_info++)
   {
@@ -918,7 +941,6 @@ store_create_info(THD *thd, TABLE *table, String *packet)
            table->field[key_part->fieldnr-1]->key_length() &&
            !(key_info->flags & HA_FULLTEXT)))
       {
-        char buff[64];
         buff[0] = '(';
         char* end=int10_to_str((long) key_part->length, buff + 1,10);
         *end++ = ')';
@@ -928,43 +950,38 @@ store_create_info(THD *thd, TABLE *table, String *packet)
     packet->append(')');
   }
 
-  handler *file = table->file;
+  /*
+    Get possible foreign key definitions stored in InnoDB and append them
+    to the CREATE TABLE statement
+  */
 
-  /* Get possible foreign key definitions stored in InnoDB and append them
-  to the CREATE TABLE statement */
-
-  char* for_str = file->get_foreign_key_create_info();
-
-  if (for_str) {
-  	packet->append(for_str, strlen(for_str));
-
-  	file->free_foreign_key_create_info(for_str);
+  if ((for_str= file->get_foreign_key_create_info()))
+  {
+    packet->append(for_str, strlen(for_str));
+    file->free_foreign_key_create_info(for_str);
   }
 
   packet->append("\n)", 2);
   packet->append(" TYPE=", 6);
   packet->append(file->table_type());
-  char buff[128];
-  char* p;
 
   if (table->min_rows)
   {
     packet->append(" MIN_ROWS=");
-    p = longlong10_to_str(table->min_rows, buff, 10);
-    packet->append(buff, (uint) (p - buff));
+    end= longlong10_to_str(table->min_rows, buff, 10);
+    packet->append(buff, (uint) (end- buff));
   }
-
   if (table->max_rows)
   {
     packet->append(" MAX_ROWS=");
-    p = longlong10_to_str(table->max_rows, buff, 10);
-    packet->append(buff, (uint) (p - buff));
+    end= longlong10_to_str(table->max_rows, buff, 10);
+    packet->append(buff, (uint) (end - buff));
   }
   if (table->avg_row_length)
   {
     packet->append(" AVG_ROW_LENGTH=");
-    p=longlong10_to_str(table->avg_row_length, buff,10);
-    packet->append(buff, (uint) (p - buff));
+    end= longlong10_to_str(table->avg_row_length, buff,10);
+    packet->append(buff, (uint) (end - buff));
   }
 
   if (table->db_create_options & HA_OPTION_PACK_KEYS)
@@ -989,11 +1006,15 @@ store_create_info(THD *thd, TABLE *table, String *packet)
   }
   if (file->raid_type)
   {
-    char buff[100];
-    sprintf(buff," RAID_TYPE=%s RAID_CHUNKS=%d RAID_CHUNKSIZE=%ld",
-            my_raid_type(file->raid_type), file->raid_chunks, file->raid_chunksize/RAID_BLOCK_SIZE);
-    packet->append(buff);
+    uint length;
+    length= my_snprintf(buff,sizeof(buff),
+			" RAID_TYPE=%s RAID_CHUNKS=%d RAID_CHUNKSIZE=%ld",
+			my_raid_type(file->raid_type), file->raid_chunks,
+			file->raid_chunksize/RAID_BLOCK_SIZE);
+    packet->append(buff, length);
   }
+  append_directory(thd, packet, "DATA",  create_info.data_file_name);
+  append_directory(thd, packet, "INDEX", create_info.index_file_name);
   DBUG_RETURN(0);
 }
 
@@ -1158,7 +1179,8 @@ void mysqld_list_processes(THD *thd,const char *user, bool verbose)
 
 
 int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
-		enum enum_var_type value_type)
+		enum enum_var_type value_type,
+		pthread_mutex_t *mutex)
 {
   char buff[8192];
   String packet2(buff,sizeof(buff));
@@ -1171,8 +1193,7 @@ int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
   if (send_fields(thd,field_list,1))
     DBUG_RETURN(1); /* purecov: inspected */
 
-  /* pthread_mutex_lock(&THR_LOCK_keycache); */
-  pthread_mutex_lock(&LOCK_status);
+  pthread_mutex_lock(mutex);
   for (; variables->name; variables++)
   {
     if (!(wild && wild[0] && wild_case_compare(variables->name,wild)))
@@ -1253,77 +1274,77 @@ int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
       case SHOW_SSL_CTX_SESS_ACCEPT:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_accept(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_accept(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_ACCEPT_GOOD:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_accept_good(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_accept_good(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_CONNECT_GOOD:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_connect_good(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_connect_good(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_ACCEPT_RENEGOTIATE:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_accept_renegotiate(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_accept_renegotiate(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_CONNECT_RENEGOTIATE:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_connect_renegotiate(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_connect_renegotiate(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_CB_HITS:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_cb_hits(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_cb_hits(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_HITS:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_hits(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_hits(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_CACHE_FULL:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_cache_full(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_cache_full(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_MISSES:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_misses(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_misses(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_TIMEOUTS:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_timeouts(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_timeouts(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_NUMBER:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_number(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_number(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_CONNECT:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_connect(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_connect(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_SESS_GET_CACHE_SIZE:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_sess_get_cache_size(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_sess_get_cache_size(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_GET_VERIFY_MODE:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_get_verify_mode(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_get_verify_mode(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_GET_VERIFY_DEPTH:
 	net_store_data(&packet2,(uint32) 
 		       (!ssl_acceptor_fd ? 0 :
-			SSL_CTX_get_verify_depth(ssl_acceptor_fd->ssl_context_)));
+			SSL_CTX_get_verify_depth(ssl_acceptor_fd->ssl_context)));
         break;
       case SHOW_SSL_CTX_GET_SESSION_CACHE_MODE:
 	if (!ssl_acceptor_fd)
@@ -1331,7 +1352,7 @@ int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
 	  net_store_data(&packet2,"NONE" );
 	  break;
 	}
-	switch (SSL_CTX_get_session_cache_mode(ssl_acceptor_fd->ssl_context_))
+	switch (SSL_CTX_get_session_cache_mode(ssl_acceptor_fd->ssl_context))
 	{
           case SSL_SESS_CACHE_OFF:
             net_store_data(&packet2,"OFF" );
@@ -1358,37 +1379,38 @@ int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
         break;
 	/* First group - functions relying on SSL */
       case SHOW_SSL_GET_VERSION:
-	net_store_data(&packet2, thd->net.vio->ssl_ ? 
-			SSL_get_version(thd->net.vio->ssl_) : "");
+	net_store_data(&packet2, thd->net.vio->ssl_arg ? 
+			SSL_get_version((SSL*) thd->net.vio->ssl_arg) : "");
         break;
       case SHOW_SSL_SESSION_REUSED:
-	net_store_data(&packet2,(uint32) (thd->net.vio->ssl_ ? 
-			SSL_session_reused(thd->net.vio->ssl_) : 0));
+	net_store_data(&packet2,(uint32) (thd->net.vio->ssl_arg ? 
+			SSL_session_reused((SSL*) thd->net.vio->ssl_arg) : 0));
         break;
       case SHOW_SSL_GET_DEFAULT_TIMEOUT:
-	net_store_data(&packet2,(uint32) (thd->net.vio->ssl_ ?
-			SSL_get_default_timeout(thd->net.vio->ssl_):0));
+	net_store_data(&packet2,(uint32) (thd->net.vio->ssl_arg ?
+			SSL_get_default_timeout((SSL*) thd->net.vio->ssl_arg) :
+					  0));
         break;
       case SHOW_SSL_GET_VERIFY_MODE:
-	net_store_data(&packet2,(uint32) (thd->net.vio->ssl_ ?
-			SSL_get_verify_mode(thd->net.vio->ssl_):0));
+	net_store_data(&packet2,(uint32) (thd->net.vio->ssl_arg ?
+			SSL_get_verify_mode((SSL*) thd->net.vio->ssl_arg):0));
         break;
       case SHOW_SSL_GET_VERIFY_DEPTH:
-	net_store_data(&packet2,(uint32) (thd->net.vio->ssl_ ?
-			SSL_get_verify_depth(thd->net.vio->ssl_):0));
+	net_store_data(&packet2,(uint32) (thd->net.vio->ssl_arg ?
+			SSL_get_verify_depth((SSL*) thd->net.vio->ssl_arg):0));
         break;
       case SHOW_SSL_GET_CIPHER:
-	net_store_data(&packet2, thd->net.vio->ssl_ ?
-		       SSL_get_cipher(thd->net.vio->ssl_) : "");
+	net_store_data(&packet2, thd->net.vio->ssl_arg ?
+		       SSL_get_cipher((SSL*) thd->net.vio->ssl_arg) : "");
 	break;
       case SHOW_SSL_GET_CIPHER_LIST:
-	if (thd->net.vio->ssl_)
+	if (thd->net.vio->ssl_arg)
 	{
 	  char buf[1024], *pos;
 	  pos=buf;
 	  for (int i=0 ; i++ ;)
 	  {
-	    const char *p=SSL_get_cipher_list(thd->net.vio->ssl_,i);
+	    const char *p=SSL_get_cipher_list((SSL*) thd->net.vio->ssl_arg,i);
 	    if (p == NULL) 
 	      break;
 	    pos=strmov(pos, p);
@@ -1413,14 +1435,12 @@ int mysqld_show(THD *thd, const char *wild, show_var_st *variables,
         goto err;                               /* purecov: inspected */
     }
   }
-  pthread_mutex_unlock(&LOCK_status);
-  /* pthread_mutex_unlock(&THR_LOCK_keycache); */
+  pthread_mutex_unlock(mutex);
   send_eof(&thd->net);
   DBUG_RETURN(0);
 
  err:
-  pthread_mutex_unlock(&LOCK_status);
-  /* pthread_mutex_unlock(&THR_LOCK_keycache); */
+  pthread_mutex_unlock(mutex);
   DBUG_RETURN(1);
 }
 

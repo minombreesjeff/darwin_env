@@ -174,6 +174,9 @@
 /* Define if the system files define ulong */
 #undef HAVE_ULONG
 
+/* Define if the system files define in_addr_t */
+#undef HAVE_IN_ADDR_T
+
 /* UNIXWARE7 threads are not posix */
 #undef HAVE_UNIXWARE7_THREADS
 
@@ -483,6 +486,12 @@
 /* Define to 1 if you have the `madvise' function. */
 #undef HAVE_MADVISE
 
+/* Define to 1 if you have the `mallinfo' function. */
+#undef HAVE_MALLINFO
+
+/* Define to 1 if you have the <malloc.h> header file. */
+#undef HAVE_MALLOC_H
+
 /* Define to 1 if you have the `memcpy' function. */
 #undef HAVE_MEMCPY
 
@@ -691,6 +700,9 @@
 
 /* Define to 1 if you have the <sys/ioctl.h> header file. */
 #undef HAVE_SYS_IOCTL_H
+
+/* Define to 1 if you have the <sys/malloc.h> header file. */
+#undef HAVE_SYS_MALLOC_H
 
 /* Define to 1 if you have the <sys/mman.h> header file. */
 #undef HAVE_SYS_MMAN_H

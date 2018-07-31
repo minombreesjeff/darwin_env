@@ -226,13 +226,8 @@ os_file_get_last_error(void)
   "InnoDB: the directory. It may also be you have created a subdirectory\n"
   "InnoDB: of the same name as a data file.\n"); 
 		} else {
-			 if (strerror((int)err) != NULL) {
-				fprintf(stderr,
-  "InnoDB: Error number %lu means '%s'.\n", err, strerror((int)err));
-			 }
-
 			 fprintf(stderr,
-  "InnoDB: See also section 13.2 at http://www.innodb.com/ibman.html\n"
+  "InnoDB: See section 13.2 at http://www.innodb.com/ibman.html\n"
   "InnoDB: about operating system error numbers.\n");
 		}
 	}
@@ -1030,6 +1025,7 @@ os_file_flush(
 #ifdef HAVE_FDATASYNC
 	ret = fdatasync(file);
 #else
+/*	printf("Flushing to file %lu\n", (ulint)file); */
 	ret = fsync(file);
 #endif
 	os_n_fsyncs++;

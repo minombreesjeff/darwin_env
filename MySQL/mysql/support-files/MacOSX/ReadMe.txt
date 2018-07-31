@@ -49,29 +49,57 @@ OS X PKG only.  Make sure to read Apple's help about installing MySQL
 a search for "MySQL" and read the item entitled "Installing MySQL").
 
 Especially note that the pre-installed version of MySQL on Mac OS X
-Server starts the MySQL user with the command `safe_mysqld' instead of
+Server is started with the command `safe_mysqld' instead of
 `mysqld_safe'.
 
 If you previously used Marc Liyanage's MySQL packages for Mac OS X from
 `http://www.entropy.ch', you can simply follow the update instructions
 for packages using the binary installation layout as given on his pages.
 
-If you are upgrading from Marc's version or from the Mac OS X Server
-version of MySQL to the official MySQL PKG, you also need to convert
-the existing MySQL privilege tables using the
-`mysql_fix_privilege_tables' script, since some new security privileges
-have been added.  *Note Upgrading-from-3.23::.
+If you are upgrading from Marc's 3.23.xx versions or from the Mac OS X
+Server version of MySQL to the official MySQL PKG, you also need to
+convert the existing MySQL privilege tables to the current format,
+because some new security privileges have been added.  *Note
+Upgrading-grant-tables::.
+
+If you would like to automatically start up MySQL during system bootup,
+you also need to install the MySQL Startup Item. Starting with MySQL
+4.0.15, it is part of the Mac OS X installation disk images as a
+separate installation package. Simply double-click the
+`MySQLStartupItem.pkg' icon and follow the instructions to install it.
+
+Note that this only has to be done once! There is no need to install the
+Startup Item every time you upgrade the MySQL package.
+
+The Startup Item will be installed into `/Library/StartupItems/MySQL'.
+It adds a variable `MYSQLCOM=-YES-' to the system configuration file
+`/etc/hostconfig'. If you would like to disable the automatic startup
+of MySQL, simply change this variable to `MYSQLCOM=-NO-'.
+
+On Mac OS X Server, the Startup Item installation script will
+automatically disable the startup of the default MySQL installation by
+changing the variable `MYSQL' in `/etc/hostconfig' to `MYSQL=-NO-'. This
+is to avoid conflicts on bootup. However, it does not shut down an
+already running MySQL server.
 
 After the installation, you can start up MySQL by running the following
 commands in a terminal window. Please note that you need to have
 administrator privileges to perform this task.
+
+If you have installed the Startup Item:
+
+     shell> sudo /Library/StartupItems/MySQL/MySQL start
+     (Enter your password, if necessary)
+     (Press Control-D or enter "exit" to exit the shell)
+
+If you don't use the Startup Item, enter the following command sequence:
 
      shell> cd /usr/local/mysql
      shell> sudo ./bin/mysqld_safe
      (Enter your password, if necessary)
      (Press Control-Z)
      shell> bg
-     (Press Control-D to exit the shell)
+     (Press Control-D or enter "exit" to exit the shell)
 
 You should now be able to connect to the MySQL server, for example, by
 running `/usr/local/mysql/bin/mysql'.
@@ -84,6 +112,10 @@ This is done with the following two commands:
      /usr/local/mysql/bin/mysqladmin -u root password <password>
      /usr/local/mysql/bin/mysqladmin -u root -h `hostname` password <password>
 
+Please make sure that the `hostname' command in the second line is
+enclosed by *backticks* (`), so the shell can replace it with the
+output of this command (the host name of this system)!
+
 You might want to also add aliases to your shell's resource file to
 access `mysql' and `mysqladmin' from the command line:
 
@@ -95,14 +127,6 @@ Alternatively, you could simply add `/usr/local/mysql/bin' to your
 `$HOME/.tcshrc':
 
      setenv PATH ${PATH}:/usr/local/mysql/bin
-
-To enable the automatic startup of MySQL on bootup, you can download
-Marc Liyanage's MySQL StartupItem from the following location:
-
-`http://www2.entropy.ch/download/mysql-startupitem.pkg.tar.gz'
-
-We plan to add a StartupItem to the official MySQL PKG in the near
-future.
 
 Please note that installing a new MySQL PKG does not remove the
 directory of an older installation. Unfortunately, the Mac OS X

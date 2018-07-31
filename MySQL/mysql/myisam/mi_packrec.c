@@ -165,7 +165,9 @@ my_bool _mi_read_pack_info(MI_INFO *info, pbool fix_keys)
   diff_length=(int) rec_reflength - (int) share->base.rec_reflength;
   if (fix_keys)
     share->rec_reflength=rec_reflength;
-  share->base.min_block_length=share->min_pack_length+share->pack.ref_length;
+  share->base.min_block_length=share->min_pack_length+1;
+  if (share->min_pack_length > 254)
+    share->base.min_block_length+=2;
 
   if (!(share->decode_trees=(MI_DECODE_TREE*)
 	my_malloc((uint) (trees*sizeof(MI_DECODE_TREE)+
@@ -741,6 +743,12 @@ static void uf_blob(MI_COLUMNDEF *rec, MI_BIT_BUFF *bit_buff,
   {
     ulong length=get_bits(bit_buff,rec->space_length_bits);
     uint pack_length=(uint) (end-to)-mi_portable_sizeof_char_ptr;
+    if (bit_buff->blob_pos+length > bit_buff->blob_end)
+    {
+      bit_buff->error=1;
+      bzero((byte*) to,(end-to));
+      return;
+    }
     decode_bytes(rec,bit_buff,bit_buff->blob_pos,bit_buff->blob_pos+length);
     _my_store_blob_length((byte*) to,pack_length,length);
     memcpy_fixed((char*) to+pack_length,(char*) &bit_buff->blob_pos,
@@ -1059,6 +1067,7 @@ uint _mi_pack_get_block_info(MI_INFO *myisam, MI_BLOCK_INFO *info, File file,
 			    &myisam->rec_buff)))
       return BLOCK_FATAL_ERROR;			/* not enough memory */
     myisam->bit_buff.blob_pos=(uchar*) myisam->rec_buff+info->rec_len;
+    myisam->bit_buff.blob_end= myisam->bit_buff.blob_pos+info->blob_len;
     myisam->blob_length=info->blob_len;
   }
   info->filepos=filepos+head_length;
@@ -1235,6 +1244,7 @@ static uchar *_mi_mempack_get_block_info(MI_INFO *myisam,MI_BLOCK_INFO *info,
 			    &myisam->rec_buff)))
       return 0;				/* not enough memory */
     myisam->bit_buff.blob_pos=(uchar*) myisam->rec_buff;
+    myisam->bit_buff.blob_end= (uchar*) myisam->rec_buff + info->blob_len;
   }
   return header;
 }

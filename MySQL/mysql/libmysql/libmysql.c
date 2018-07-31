@@ -64,8 +64,8 @@ uint		mysql_port=0;
 my_string	mysql_unix_port=0;
 ulong 		net_buffer_length=8192;
 ulong		max_allowed_packet= 1024L*1024L*1024L;
-ulong		net_read_timeout=  NET_READ_TIMEOUT;
-ulong		net_write_timeout= NET_WRITE_TIMEOUT;
+ulong		net_read_timeout=  CLIENT_NET_READ_TIMEOUT;
+ulong		net_write_timeout= CLIENT_NET_WRITE_TIMEOUT;
 
 #define CLIENT_CAPABILITIES	(CLIENT_LONG_PASSWORD | CLIENT_LONG_FLAG | CLIENT_TRANSACTIONS)
 
@@ -110,9 +110,16 @@ void STDCALL mysql_server_end()
 {
   /* If library called my_init(), free memory allocated by it */
   if (!org_my_init_done)
+  {
     my_end(0);
+#ifndef THREAD
+  /* Remove TRACING, if enabled by mysql_debug() */
+    DBUG_POP();
+#endif
+  }
   else
     mysql_thread_end();
+  mysql_client_init= org_my_init_done= 0;
 }
 
 my_bool STDCALL mysql_thread_init()
@@ -1445,10 +1452,6 @@ mysql_init(MYSQL *mysql)
     after we return if this is not the case.
   */
   mysql->rpl_pivot = 1; 
-#if defined(SIGPIPE) && defined(THREAD) && !defined(__WIN__)
-  if (!((mysql)->client_flag & CLIENT_IGNORE_SIGPIPE))
-    (void) signal(SIGPIPE,pipe_sig_handler);
-#endif
 
 /*
   Only enable LOAD DATA INFILE by default if configured with
@@ -1508,8 +1511,8 @@ void mysql_once_init(void)
 	mysql_unix_port = env;
     }
     mysql_debug(NullS);
-#if defined(SIGPIPE) && !defined(THREAD) && !defined(__WIN__)
-    (void) signal(SIGPIPE,SIG_IGN);
+#if defined(SIGPIPE) && !defined(__WIN__)
+    (void) signal(SIGPIPE, SIG_IGN);
 #endif
   }
 #ifdef THREAD
@@ -2902,6 +2905,11 @@ const char * STDCALL
 mysql_get_client_info(void)
 {
   return (char*) MYSQL_SERVER_VERSION;
+}
+
+ulong STDCALL mysql_get_client_version(void)
+{
+  return MYSQL_VERSION_ID;
 }
 
 

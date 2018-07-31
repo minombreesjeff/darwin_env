@@ -1,8 +1,8 @@
 @c START_OF_RESERVED_WORDS
 
-@c Reserved word list updated Fri Apr 11 13:44:13 2003 by arjen.
+@c Reserved word list updated Wed Sep 10 09:59:35 2003 by arjen.
 @c Data from MySQL version 5.0.0-alpha
-@c BitKeeper ChangeSet 1.1541 (03/04/08 19:43:24)
+@c BitKeeper ChangeSet 1.1582 (03/08/26 17:41:40)
 @c To regenerate, use Support/update-reserved-words.pl
 
 @multitable @columnfractions .33 .33 .34
@@ -49,57 +49,60 @@
  @tab @code{DATABASE}
  @tab @code{DATABASES}
 @item @code{DAY_HOUR}
+ @tab @code{DAY_MICROSECOND}
  @tab @code{DAY_MINUTE}
- @tab @code{DAY_SECOND}
-@item @code{DEC}
+@item @code{DAY_SECOND}
+ @tab @code{DEC}
  @tab @code{DECIMAL}
- @tab @code{DECLARE}
-@item @code{DEFAULT}
+@item @code{DECLARE}
+ @tab @code{DEFAULT}
  @tab @code{DELAYED}
- @tab @code{DELETE}
-@item @code{DESC}
+@item @code{DELETE}
+ @tab @code{DESC}
  @tab @code{DESCRIBE}
- @tab @code{DISTINCT}
-@item @code{DISTINCTROW}
+@item @code{DISTINCT}
+ @tab @code{DISTINCTROW}
  @tab @code{DIV}
- @tab @code{DOUBLE}
-@item @code{DROP}
+@item @code{DOUBLE}
+ @tab @code{DROP}
  @tab @code{ELSE}
- @tab @code{ELSEIF}
-@item @code{ENCLOSED}
+@item @code{ELSEIF}
+ @tab @code{ENCLOSED}
  @tab @code{ERRORS}
- @tab @code{ESCAPED}
-@item @code{EXISTS}
+@item @code{ESCAPED}
+ @tab @code{EXISTS}
  @tab @code{EXPLAIN}
- @tab @code{FALSE}
-@item @code{FIELDS}
+@item @code{FALSE}
+ @tab @code{FIELDS}
  @tab @code{FLOAT}
- @tab @code{FOR}
-@item @code{FORCE}
+@item @code{FOR}
+ @tab @code{FORCE}
  @tab @code{FOREIGN}
- @tab @code{FROM}
-@item @code{FULLTEXT}
+@item @code{FROM}
+ @tab @code{FULLTEXT}
  @tab @code{GRANT}
- @tab @code{GROUP}
-@item @code{HASH}
+@item @code{GROUP}
+ @tab @code{HASH}
  @tab @code{HAVING}
- @tab @code{HIGH_PRIORITY}
-@item @code{HOUR_MINUTE}
- @tab @code{HOUR_SECOND}
+@item @code{HIGH_PRIORITY}
+ @tab @code{HOUR_MICROSECOND}
+ @tab @code{HOUR_MINUTE}
+@item @code{HOUR_SECOND}
  @tab @code{IF}
-@item @code{IGNORE}
- @tab @code{IN}
+ @tab @code{IGNORE}
+@item @code{IN}
  @tab @code{INDEX}
-@item @code{INFILE}
- @tab @code{INNER}
+ @tab @code{INFILE}
+@item @code{INNER}
  @tab @code{INNODB}
-@item @code{INOUT}
- @tab @code{INSENSITIVE}
+ @tab @code{INOUT}
+@item @code{INSENSITIVE}
  @tab @code{INSERT}
-@item @code{INT}
- @tab @code{INTEGER}
+ @tab @code{INT}
+@item @code{INTEGER}
  @tab @code{INTERVAL}
-@item @code{INTO}
+ @tab @code{INTO}
+@item @code{IO_THREAD}
  @tab @code{IS}
  @tab @code{ITERATE}
 @item @code{JOIN}
@@ -127,42 +130,45 @@
  @tab @code{MEDIUMINT}
  @tab @code{MEDIUMTEXT}
 @item @code{MIDDLEINT}
+ @tab @code{MINUTE_MICROSECOND}
  @tab @code{MINUTE_SECOND}
- @tab @code{MOD}
-@item @code{MRG_MYISAM}
+@item @code{MOD}
+ @tab @code{MRG_MYISAM}
  @tab @code{NATURAL}
- @tab @code{NOT}
-@item @code{NULL}
- @tab @code{NUMERIC}
+@item @code{NOT}
+ @tab @code{NO_WRITE_TO_BINLOG}
+ @tab @code{NULL}
+@item @code{NUMERIC}
  @tab @code{ON}
-@item @code{OPTIMIZE}
- @tab @code{OPTION}
+ @tab @code{OPTIMIZE}
+@item @code{OPTION}
  @tab @code{OPTIONALLY}
-@item @code{OR}
- @tab @code{ORDER}
+ @tab @code{OR}
+@item @code{ORDER}
  @tab @code{OUT}
-@item @code{OUTER}
- @tab @code{OUTFILE}
+ @tab @code{OUTER}
+@item @code{OUTFILE}
  @tab @code{PRECISION}
-@item @code{PRIMARY}
- @tab @code{PRIVILEGES}
+ @tab @code{PRIMARY}
+@item @code{PRIVILEGES}
  @tab @code{PROCEDURE}
-@item @code{PURGE}
- @tab @code{READ}
+ @tab @code{PURGE}
+@item @code{READ}
  @tab @code{REAL}
-@item @code{REFERENCES}
- @tab @code{REGEXP}
+ @tab @code{REFERENCES}
+@item @code{REGEXP}
  @tab @code{RENAME}
-@item @code{REPEAT}
- @tab @code{REPLACE}
+ @tab @code{REPEAT}
+@item @code{REPLACE}
  @tab @code{REQUIRE}
-@item @code{RESTRICT}
- @tab @code{RETURN}
+ @tab @code{RESTRICT}
+@item @code{RETURN}
  @tab @code{RETURNS}
-@item @code{REVOKE}
- @tab @code{RIGHT}
+ @tab @code{REVOKE}
+@item @code{RIGHT}
  @tab @code{RLIKE}
-@item @code{RTREE}
+ @tab @code{RTREE}
+@item @code{SECOND_MICROSECOND}
  @tab @code{SELECT}
  @tab @code{SENSITIVE}
 @item @code{SEPARATOR}
@@ -201,6 +207,9 @@
 @item @code{USE}
  @tab @code{USER_RESOURCES}
  @tab @code{USING}
+@item @code{UTC_DATE}
+ @tab @code{UTC_TIME}
+ @tab @code{UTC_TIMESTAMP}
 @item @code{VALUES}
  @tab @code{VARBINARY}
  @tab @code{VARCHAR}

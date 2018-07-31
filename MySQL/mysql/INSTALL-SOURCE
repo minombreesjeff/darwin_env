@@ -1,12 +1,12 @@
-MySQL Installation
-******************
+Installing MySQL
+****************
 
 * Menu:
 
 * Quick Standard Installation::  Quick Standard Installation of MySQL
 * General Installation Issues::  General Installation Issues
-* Installing source::           Installing a MySQL source distribution
-* Post-installation::           Post-installation setup and testing
+* Installing source::           Installing a MySQL Source Distribution
+* Post-installation::           Post-installation Setup and Testing
 * Upgrade::                     Upgrading/Downgrading MySQL
 * Operating System Specific Notes::  Operating System Specific Notes
 * Perl support::                Perl Installation Comments
@@ -48,137 +48,15 @@ other platforms as well, see *Note Installing binary:: for generic
 installation instructions for these packages that apply to all
 platforms.
 
-See *Note General Installation Issues:: for more info on what other
-binary distributions are available on how to obtain them.
+See *Note General Installation Issues:: for more information on what
+other binary distributions are available on how to obtain them.
 
 * Menu:
 
-* Linux-RPM::                   Installing MySQL on Linux
 * Windows installation::        Installing MySQL on Windows
+* Linux-RPM::                   Installing MySQL on Linux
 * Mac OS X installation::       Installing MySQL on Mac OS X
 * NetWare installation::        Installing MySQL on NetWare
-
-
-Installing MySQL on Linux
--------------------------
-
-The recommended way to install MySQL on Linux is by using the RPM
-packages. The MySQL RPMs are currently built on a SuSE Linux 7.3 system
-but should work on most versions of Linux that support `rpm' and use
-`glibc'.
-
-If you have problems with an RPM file (for example, if you receive the
-error "`Sorry, the host 'xxxx' could not be looked up'"), see *Note
-Binary notes-Linux::.
-
-In most cases, you only need to install the `MySQL-server' and
-`MySQL-client' packages to get a functional MySQL installation. The
-other packages are not required for a standard installation.
-
-If you get a dependency failure when trying to install the MySQL 4.0
-packages (for example, "`error: removing these packages would break
-dependencies: libmysqlclient.so.10 is needed by ...'"), you should also
-install the package `MySQL-shared-compat', which includes both the
-shared libraries for backwards compatibility (`libmysqlclient.so.12'
-for MySQL 4.0 and `libmysqlclient.so.10' for MySQL 3.23).
-
-Many Linux distributions still ship with MySQL 3.23 and they usually
-link applications dynamically to save disk space. If these shared
-libraries are in a separate package (for example, `MySQL-shared'), it is
-sufficient to simply leave this package installed and just upgrade the
-MySQL server and client packages (which are statically linked and do
-not depend on the shared libraries). For distributions that include the
-shared libraries in the same package as the MySQL server (for example,
-Red Hat Linux), you could either install our 3.23 `MySQL-shared' RPM,
-or use the `MySQL-shared-compat' package instead.
-
-The following RPM packages are available:
-
-   * `MySQL-server-VERSION.i386.rpm'
-
-     The MySQL server.  You will need this unless you only want to
-     connect to a MySQL server running on another machine. Please note
-     that this package was called `MySQL-VERSION.i386.rpm' before MySQL
-     4.0.10.
-
-   * `MySQL-client-VERSION.i386.rpm'
-
-     The standard MySQL client programs. You probably always want to
-     install this package.
-
-   * `MySQL-bench-VERSION.i386.rpm'
-
-     Tests and benchmarks. Requires Perl and the `DBD-mysql' module.
-
-   * `MySQL-devel-VERSION.i386.rpm'
-
-     The libraries and include files that are needed if you want to
-     compile other MySQL clients, such as the Perl modules.
-
-   * `MySQL-shared-VERSION.i386.rpm'
-
-     This package contains the shared libraries (`libmysqlclient.so*')
-     that certain languages and applications need to dynamically load
-     and use MySQL.
-
-   * `MySQL-shared-compat-VERSION.i386.rpm'
-
-     This package includes the shared libraries for both MySQL 3.23 and
-     MySQL 4.0. Install this package instead of `MySQL-shared', if you
-     have applications installed that are dynamically linked against
-     MySQL 3.23 but you want to upgrade to MySQL 4.0 without breaking
-     the library dependencies. This package is available since MySQL
-     4.0.13.
-
-   * `MySQL-embedded-VERSION.i386.rpm'
-
-     The embedded MySQL server library (from MySQL 4.0).
-
-   * `MySQL-VERSION.src.rpm'
-
-     This contains the source code for all of the previous packages. It
-     can also be used to rebuild the RPMs on other architectures (for
-     example, Alpha or SPARC).
-
-To see all files in an RPM package, run:
-     shell> rpm -qpl MySQL-VERSION.i386.rpm
-
-To perform a standard minimal installation, run:
-
-     shell> rpm -i MySQL-server-VERSION.i386.rpm MySQL-client-VERSION.i386.rpm
-
-To install just the client package, run:
-
-     shell> rpm -i MySQL-client-VERSION.i386.rpm
-
-The server RPM places data under the `/var/lib/mysql' directory. The
-RPM also creates the appropriate entries in `/etc/init.d/' to start the
-server automatically at boot time. (This means that if you have
-performed a previous installation and have made changes to its startup
-script, you may want to make a copy of the script so you don't lose it
-when you install a newer RPM.) See *Note Automatic start:: for more
-info on how MySQL can be started up automatically on system startup.
-
-If you want to install the MySQL RPM on older Linux distributions that
-do not support initialisation scripts in `/etc/init.d' (directly or via
-a symlink), you should create a symbolic link that points to the
-location where your initialisation scripts actually are installed. For
-example, if that location is `/etc/rc.d/init.d', use these commands
-before installing the RPM to create `/etc/init.d' as a symbolic link
-that points there:
-
-     shell> cd /etc ; ln -s rc.d/init.d .
-
-However, all current major Linux distributions should already support
-the new directory layout that uses `/etc/init.d', because it is
-required for LSB (Linux Standard Base) compliance.
-
-After installing the RPM file(s), the `mysqld' daemon should be up and
-running and you should now be able to start using MySQL.  *Note
-Post-installation::.
-
-If something goes wrong, you can find more information in the binary
-installation chapter. *Note Installing binary::.
 
 
 Installing MySQL on Windows
@@ -255,14 +133,16 @@ Installing the Binaries
 
           C:\mysql\bin> mysqld --remove
 
-  4. Unzip the distribution file to a temporary directory.
+  4. Exit the `WinMySQLadmin' program if it is running.
 
-  5. Run the `setup.exe' program to begin the installation process.  If
+  5. Unzip the distribution file to a temporary directory.
+
+  6. Run the `setup.exe' program to begin the installation process.  If
      you want to install into another directory than the default
      (`C:\mysql'), use the `Browse' button to specify your preferred
      directory.
 
-  6. Finish the install process.
+  7. Finish the install process.
 
 
 
@@ -280,20 +160,22 @@ different MySQL servers from which you can choose:
 `mysqld-opt'   Optimised binary with no support for transactional tables
                in version 3.23. For version 4.0, `InnoDB' is enabled.
 `mysqld-nt'    Optimised binary for NT/2000/XP with support for named
-               pipes.  You can run this version on Windows 9x/Me, but in
-               this case no named pipes are created and you must have
-               TCP/IP installed.
+               pipes.
 `mysqld-max'   Optimised binary with support for symbolic links,
                `InnoDB' and `BDB' tables.
 `mysqld-max-nt'Like `mysqld-max', but compiled with support for named
                pipes.
 
-The `mysqld-nt' and `mysqld-max-nt' servers support connections over a
-named pipe. However, starting from 3.23.50, named pipes are enabled only
-if you start these servers with the `--enable-named-pipe' option.
+All of the preceding binaries are optimised for modern Intel processors
+but should work on any Intel processor >= i386.
 
-All of the preceding binaries are optimised for the Pentium Pro
-processor but should work on any Intel processor >= i386.
+When run on a version of Windows that supports named pipes (NT, 2000,
+XP), the `mysqld-nt' and `mysqld-max-nt' servers support named pipe
+connections.  However, starting from 3.23.50, named pipes are enabled
+only if you start these servers with the `--enable-named-pipe' option.
+(The servers can be run on Windows 98 or Me, but TCP/IP must be
+installed, and named pipe connections cannot be used. On Windows 95,
+these servers cannot be used.)
 
 You will find it helpful to use an option file to specify your MySQL
 configuration under the following circumstances:
@@ -307,7 +189,7 @@ configuration under the following circumstances:
      data and log files--such as, `C:\ibdata' and `C:\iblogs'.  You
      will also need to add some extra lines to the option file, as
      described in *Note `InnoDB' start: InnoDB start.  (As of MySQL
-     4.0, InnoDB will create its data and log files in the data
+     4.0, InnoDB will create its datafiles and log files in the data
      directory by default. This means you need not configure InnoDB
      explicitly, though you may still wish to do so.)
 
@@ -390,8 +272,157 @@ messages as the server starts up:
      InnoDB: foreign key constraint system tables created
      011024 10:58:25  InnoDB: Started
 
+When the server finishes its startup sequence, you should see something
+like this, which indicates that the server is ready to service client
+connections::
+
+     mysqld: ready for connections
+     Version: '4.0.14-log'  socket: ''  port: 3306
+
+The server will continue to write to the console any further diagnostic
+output it produces.  You can open a new console window in which to run
+client programs.
+
+If you omit the `--console' option, the server writes diagnostic output
+to the error log in the data directory. The error log is the file with
+the `.err' extension.
+
 For further information about running MySQL on Windows, see *Note
 Windows::.
+
+
+Installing MySQL on Linux
+-------------------------
+
+The recommended way to install MySQL on Linux is by using the RPM
+packages. The MySQL RPMs are currently built on a SuSE Linux 7.3 system
+but should work on most versions of Linux that support `rpm' and use
+`glibc'.
+
+If you have problems with an RPM file (for example, if you receive the
+error "`Sorry, the host 'xxxx' could not be looked up'"), see *Note
+Binary notes-Linux::.
+
+In most cases, you only need to install the `MySQL-server' and
+`MySQL-client' packages to get a functional MySQL installation. The
+other packages are not required for a standard installation.  If you
+want to run a MySQL Max server that has additional capabilities, you
+should install the `MySQL-Max' RPM after installing the `MySQL-server'
+RPM.  *Note `mysqld-max': mysqld-max.
+
+If you get a dependency failure when trying to install the MySQL 4.0
+packages (for example, "`error: removing these packages would break
+dependencies: libmysqlclient.so.10 is needed by ...'"), you should also
+install the package `MySQL-shared-compat', which includes both the
+shared libraries for backward compatibility (`libmysqlclient.so.12' for
+MySQL 4.0 and `libmysqlclient.so.10' for MySQL 3.23).
+
+Many Linux distributions still ship with MySQL 3.23 and they usually
+link applications dynamically to save disk space. If these shared
+libraries are in a separate package (for example, `MySQL-shared'), it is
+sufficient to simply leave this package installed and just upgrade the
+MySQL server and client packages (which are statically linked and do
+not depend on the shared libraries). For distributions that include the
+shared libraries in the same package as the MySQL server (for example,
+Red Hat Linux), you could either install our 3.23 `MySQL-shared' RPM,
+or use the `MySQL-shared-compat' package instead.
+
+The following RPM packages are available:
+
+   * `MySQL-server-VERSION.i386.rpm'
+
+     The MySQL server.  You will need this unless you only want to
+     connect to a MySQL server running on another machine. Please note
+     that this package was called `MySQL-VERSION.i386.rpm' before MySQL
+     4.0.10.
+
+   * `MySQL-Max-VERSION.i386.rpm'
+
+     The MySQL Max server. This server has additional capabilities that
+     the one in the `MySQL-server' RPM does not.  You must install the
+     `MySQL-server' RPM first, because the `MySQL-Max' RPM depends on
+     it.
+
+   * `MySQL-client-VERSION.i386.rpm'
+
+     The standard MySQL client programs. You probably always want to
+     install this package.
+
+   * `MySQL-bench-VERSION.i386.rpm'
+
+     Tests and benchmarks. Requires Perl and the `DBD-mysql' module.
+
+   * `MySQL-devel-VERSION.i386.rpm'
+
+     The libraries and include files that are needed if you want to
+     compile other MySQL clients, such as the Perl modules.
+
+   * `MySQL-shared-VERSION.i386.rpm'
+
+     This package contains the shared libraries (`libmysqlclient.so*')
+     that certain languages and applications need to dynamically load
+     and use MySQL.
+
+   * `MySQL-shared-compat-VERSION.i386.rpm'
+
+     This package includes the shared libraries for both MySQL 3.23 and
+     MySQL 4.0. Install this package instead of `MySQL-shared', if you
+     have applications installed that are dynamically linked against
+     MySQL 3.23 but you want to upgrade to MySQL 4.0 without breaking
+     the library dependencies. This package is available since MySQL
+     4.0.13.
+
+   * `MySQL-embedded-VERSION.i386.rpm'
+
+     The embedded MySQL server library (from MySQL 4.0).
+
+   * `MySQL-VERSION.src.rpm'
+
+     This contains the source code for all of the previous packages. It
+     can also be used to rebuild the RPMs on other architectures (for
+     example, Alpha or SPARC).
+
+To see all files in an RPM package (for example, a `MySQL-server' RPM),
+run:
+
+     shell> rpm -qpl MySQL-server-VERSION.i386.rpm
+
+To perform a standard minimal installation, run:
+
+     shell> rpm -i MySQL-server-VERSION.i386.rpm MySQL-client-VERSION.i386.rpm
+
+To install just the client package, run:
+
+     shell> rpm -i MySQL-client-VERSION.i386.rpm
+
+The server RPM places data under the `/var/lib/mysql' directory. The
+RPM also creates the appropriate entries in `/etc/init.d/' to start the
+server automatically at boot time. (This means that if you have
+performed a previous installation and have made changes to its startup
+script, you may want to make a copy of the script so you don't lose it
+when you install a newer RPM.) See *Note Automatic start:: for more
+information on how MySQL can be started automatically on system startup.
+
+If you want to install the MySQL RPM on older Linux distributions that
+do not support initialisation scripts in `/etc/init.d' (directly or via
+a symlink), you should create a symbolic link that points to the
+location where your initialisation scripts actually are installed. For
+example, if that location is `/etc/rc.d/init.d', use these commands
+before installing the RPM to create `/etc/init.d' as a symbolic link
+that points there:
+
+     shell> cd /etc; ln -s rc.d/init.d .
+
+However, all current major Linux distributions should already support
+the new directory layout that uses `/etc/init.d', because it is
+required for LSB (Linux Standard Base) compliance.
+
+If the RPM files that you install include `MySQL-server', the `mysqld'
+daemon should be up and running after installation.  You should now be
+able to start using MySQL.  *Note Post-installation::.
+
+If something goes wrong, you can find more information in the binary
+installation chapter. *Note Installing binary::.
 
 
 Installing MySQL on Mac OS X
@@ -445,29 +476,57 @@ OS X PKG only.  Make sure to read Apple's help about installing MySQL
 a search for "MySQL" and read the item entitled "Installing MySQL").
 
 Especially note that the pre-installed version of MySQL on Mac OS X
-Server starts the MySQL user with the command `safe_mysqld' instead of
+Server is started with the command `safe_mysqld' instead of
 `mysqld_safe'.
 
 If you previously used Marc Liyanage's MySQL packages for Mac OS X from
 `http://www.entropy.ch', you can simply follow the update instructions
 for packages using the binary installation layout as given on his pages.
 
-If you are upgrading from Marc's version or from the Mac OS X Server
-version of MySQL to the official MySQL PKG, you also need to convert
-the existing MySQL privilege tables using the
-`mysql_fix_privilege_tables' script, since some new security privileges
-have been added.  *Note Upgrading-from-3.23::.
+If you are upgrading from Marc's 3.23.xx versions or from the Mac OS X
+Server version of MySQL to the official MySQL PKG, you also need to
+convert the existing MySQL privilege tables to the current format,
+because some new security privileges have been added.  *Note
+Upgrading-grant-tables::.
+
+If you would like to automatically start up MySQL during system bootup,
+you also need to install the MySQL Startup Item. Starting with MySQL
+4.0.15, it is part of the Mac OS X installation disk images as a
+separate installation package. Simply double-click the
+`MySQLStartupItem.pkg' icon and follow the instructions to install it.
+
+Note that this only has to be done once! There is no need to install the
+Startup Item every time you upgrade the MySQL package.
+
+The Startup Item will be installed into `/Library/StartupItems/MySQL'.
+It adds a variable `MYSQLCOM=-YES-' to the system configuration file
+`/etc/hostconfig'. If you would like to disable the automatic startup
+of MySQL, simply change this variable to `MYSQLCOM=-NO-'.
+
+On Mac OS X Server, the Startup Item installation script will
+automatically disable the startup of the default MySQL installation by
+changing the variable `MYSQL' in `/etc/hostconfig' to `MYSQL=-NO-'. This
+is to avoid conflicts on bootup. However, it does not shut down an
+already running MySQL server.
 
 After the installation, you can start up MySQL by running the following
 commands in a terminal window. Please note that you need to have
 administrator privileges to perform this task.
+
+If you have installed the Startup Item:
+
+     shell> sudo /Library/StartupItems/MySQL/MySQL start
+     (Enter your password, if necessary)
+     (Press Control-D or enter "exit" to exit the shell)
+
+If you don't use the Startup Item, enter the following command sequence:
 
      shell> cd /usr/local/mysql
      shell> sudo ./bin/mysqld_safe
      (Enter your password, if necessary)
      (Press Control-Z)
      shell> bg
-     (Press Control-D to exit the shell)
+     (Press Control-D or enter "exit" to exit the shell)
 
 You should now be able to connect to the MySQL server, for example, by
 running `/usr/local/mysql/bin/mysql'.
@@ -480,6 +539,10 @@ This is done with the following two commands:
      /usr/local/mysql/bin/mysqladmin -u root password <password>
      /usr/local/mysql/bin/mysqladmin -u root -h `hostname` password <password>
 
+Please make sure that the `hostname' command in the second line is
+enclosed by *backticks* (`), so the shell can replace it with the
+output of this command (the host name of this system)!
+
 You might want to also add aliases to your shell's resource file to
 access `mysql' and `mysqladmin' from the command line:
 
@@ -491,14 +554,6 @@ Alternatively, you could simply add `/usr/local/mysql/bin' to your
 `$HOME/.tcshrc':
 
      setenv PATH ${PATH}:/usr/local/mysql/bin
-
-To enable the automatic startup of MySQL on bootup, you can download
-Marc Liyanage's MySQL StartupItem from the following location:
-
-`http://www2.entropy.ch/download/mysql-startupitem.pkg.tar.gz'
-
-We plan to add a StartupItem to the official MySQL PKG in the near
-future.
 
 Please note that installing a new MySQL PKG does not remove the
 directory of an older installation. Unfortunately, the Mac OS X
@@ -606,7 +661,7 @@ General Installation Issues
 * Menu:
 
 * Getting MySQL::               How to Get MySQL
-* Verifying Package Integrity::  Verifying Package Integrity Using `MD5 Checksums' or `GnuPG'
+* Verifying Package Integrity::   Verifying Package Integrity Using `MD5 Checksums' or `GnuPG'
 * Which OS::                    Operating Systems Supported by MySQL
 * Which version::               Which MySQL Version to Use
 * Installation layouts::        Installation Layouts
@@ -666,12 +721,6 @@ Example:
 
 You should check, if the resulting checksum matches the one printed on
 the download page right below the respective package.
-
-Most mirror sites also offer a file named `MD5SUMS', which also includes
-the MD5 checksums for all files included in the `Downloads' directory.
-Please note however that it's very easy to modify this file and it's
-not a very reliable method. If in doubt, you should consult different
-mirror sites and compare the results.
 
 Signature Checking Using `GnuPG'
 --------------------------------
@@ -914,7 +963,7 @@ cooperation with the developers of the OS/library components MySQL
 depends upon. If you are interested in making one of those components
 better, are in a position to influence their development, and need more
 detailed instructions on what MySQL needs to run better, send an e-mail
-to <internals@lists.mysql.com>.
+to the MySQL internals mailing list.  *Note Mailing-list::.
 
 Please note that the preceding comparison is not to say that one OS is
 better or worse than the other in general. We are talking about
@@ -972,8 +1021,8 @@ installation:
      suffix and is configured with the same options as `mysqld-max'.
      *Note `mysqld-max': mysqld-max.
 
-     If you want to use the MySQL-Max RPM, you must first install the
-     standard MySQL RPM.
+     If you want to use the `MySQL-Max' RPM, you must first install the
+     standard `MySQL-server' RPM.
 
    * If you want to configure `mysqld' with some extra features that are
      not in the standard binary distributions.  Here is a list of the
@@ -1011,23 +1060,18 @@ installation:
 
 The MySQL naming scheme uses release numbers that consist of three
 numbers and a suffix.  For example, a release name like
-`mysql-3.21.17-beta' is interpreted like this:
+`mysql-4.1.0-alpha' is interpreted like this:
 
-   * The first number (`3') describes the file format.  All Version 3
-     releases have the same file format.
+   * The first number (`4') is the major version and also describes the
+     file format.  All Version 4 releases have the same file format.
 
-   * The second number (`21') is the release level.  Normally there are
-     two to choose from. One is the production branch (currently
-     `3.23') and the other is the development branch (currently `4.0').
-     Normally both are stable, but the development version may have
-     quirks, may be missing documentation on new features, or may fail
-     to compile on some systems.
+   * The second number (`1') is the release level.
 
-   * The third number (`17') is the version number within the release
+   * The third number (`0') is the version number within the release
      level.  This is incremented for each new distribution.  Usually you
      want the latest version for the release level you have chosen.
 
-   * The suffix (`beta') indicates the stability level of the release.
+   * The suffix (`alpha') indicates the stability level of the release.
      The possible suffixes are:
 
         - `alpha' indicates that the release contains some large
@@ -1056,6 +1100,23 @@ numbers and a suffix.  For example, a release name like
           other than platform-specific bugs.  Only critical bug fixes
           are applied to the release. This is what we call a production
           (stable) release.
+
+In the MySQL development process, multiple versions co-exist and are at
+a different stage. Naturally, relevant bugfixes from an earlier series
+also propagate upward.
+   * For the old stable/production series `3.23', new versions are only
+     released for critical bugs.
+
+   * The current series `4.0') is stable/production quality, with new
+     versions released for bugfixes. No new features are added that
+     could influence the code stability.
+
+   * In the alpha branch `4.1' major new features are added. Sources
+     and binaries are available for use and testing on development
+     systems.
+
+   * The development branch `5.0' is only available from the BitKeeper
+     tree.
 
 All versions of MySQL are run through our standard tests and benchmarks
 to ensure that they are relatively safe to use.  Because the standard
@@ -1097,6 +1158,7 @@ following directories in that location:
 `bin'       Client programs and the
             `mysqld' server
 `data'      Log files, databases
+`docs'      Documentation, ChangeLog
 `include'   Include (header) files
 `lib'       Libraries
 `scripts'   `mysql_install_db'
@@ -1170,8 +1232,7 @@ We use the following policy when updating MySQL:
      other systems but probably less frequently.
 
    * We usually make patches available as soon as we have located and
-     fixed small bugs. They are usually posted to
-     <bugs@lists.mysql.com> and are immediately available from our
+     fixed small bugs. They usually are immediately available from our
      public BitKeeper repositories. They will also be included in the
      next release.
 
@@ -1248,11 +1309,11 @@ Here is a description of how our build process works:
      causes a core dump), we fix this and restart the build process.
 
    * After publishing the binaries on `http://www.mysql.com/', we send
-     out an announce email on the lists <mysql@lists.mysql.com> and
-     <announce@lists.mysql.com>.  The announce message contains a list
-     of all changes to the release and any known problems with the
-     release.  (The 'known problems' section in the release notes has
-     only been needed in a handful of releases.)
+     out an announce email on the `mysql' and `announce' mailing lists.
+     *Note Mailing-list::.  The announcement message contains a list of
+     all changes to the release and any known problems with the release.
+     (The 'known problems' section in the release notes has only been
+     needed in a handful of releases.)
 
    * To quickly give our users access to the latest MySQL features, we
      do a new MySQL release every 4-5 weeks.
@@ -1290,7 +1351,7 @@ options.
 
 Binaries built on MySQL AB development systems:
 
-Linux 2.4.xx i386 with `gcc' 2.95.3
+Linux 2.4.xx x86 with `gcc' 2.95.3
      `CFLAGS="-O2 -mcpu=pentiumpro" CXX=gcc CXXFLAGS="-O2
      -mcpu=pentiumpro -felide-constructors" ./configure
      --prefix=/usr/local/mysql --with-extra-charsets=complex
@@ -1318,13 +1379,6 @@ Linux 2.4.xx alpha with `ccc' (Compaq C V6.2-505 / Compaq C++ V6.3-006)
      --with-mysqld-ldflags=-non_shared
      --with-client-ldflags=-non_shared --disable-shared'
 
-Linux 2.2.xx sparc with `egcs' 1.1.2
-     `CC=gcc CFLAGS="-O3 -fno-omit-frame-pointer" CXX=gcc CXXFLAGS="-O3
-     -fno-omit-frame-pointer -felide-constructors -fno-exceptions
-     -fno-rtti" ./configure --prefix=/usr/local/mysql
-     --with-extra-charsets=complex --enable-thread-safe-client
-     --enable-local-infile --enable-assembler --disable-shared'
-
 Linux 2.4.xx s390 with `gcc' 2.95.3
      `CFLAGS="-O2" CXX=gcc CXXFLAGS="-O2 -felide-constructors"
      ./configure --prefix=/usr/local/mysql
@@ -1338,7 +1392,16 @@ Linux 2.4.xx x86_64 (AMD64) with `gcc' 3.2.1
      --with-extra-charsets=complex --enable-thread-safe-client
      --enable-local-infile  --disable-shared'
 
-Sun Solaris 2.8 sparc with `gcc' 3.2
+Sun Solaris 8 x86 with `gcc' 3.2.3
+     `CC=gcc CFLAGS="-O3 -fno-omit-frame-pointer" CXX=gcc CXXFLAGS="-O3
+     -fno-omit-frame-pointer -felide-constructors -fno-exceptions
+     -fno-rtti" ./configure --prefix=/usr/local/mysql
+     --localstatedir=/usr/local/mysql/data
+     --libexecdir=/usr/local/mysql/bin --with-extra-charsets=complex
+     --enable-thread-safe-client --enable-local-infile
+     --disable-shared --with-innodb'
+
+Sun Solaris 8 sparc with `gcc' 3.2
      `CC=gcc CFLAGS="-O3 -fno-omit-frame-pointer" CXX=gcc CXXFLAGS="-O3
      -fno-omit-frame-pointer -felide-constructors -fno-exceptions
      -fno-rtti" ./configure --prefix=/usr/local/mysql
@@ -1346,7 +1409,7 @@ Sun Solaris 2.8 sparc with `gcc' 3.2
      --enable-local-infile --enable-assembler --with-named-z-libs=no
      --with-named-curses-libs=-lcurses --disable-shared'
 
-Sun Solaris 2.8 sparc 64bit with `gcc' 3.2
+Sun Solaris 8 sparc 64bit with `gcc' 3.2
      `CC=gcc CFLAGS="-O3 -m64 -fno-omit-frame-pointer" CXX=gcc
      CXXFLAGS="-O3 -m64 -fno-omit-frame-pointer -felide-constructors
      -fno-exceptions -fno-rtti" ./configure --prefix=/usr/local/mysql
@@ -1354,7 +1417,7 @@ Sun Solaris 2.8 sparc 64bit with `gcc' 3.2
      --enable-local-infile --enable-assembler --with-named-z-libs=no
      --with-named-curses-libs=-lcurses --disable-shared'
 
-Sun Solaris 2.9 sparc with `gcc' 2.95.3
+Sun Solaris 9 sparc with `gcc' 2.95.3
      `CC=gcc CFLAGS="-O3 -fno-omit-frame-pointer" CXX=gcc CXXFLAGS="-O3
      -fno-omit-frame-pointer -felide-constructors -fno-exceptions
      -fno-rtti" ./configure --prefix=/usr/local/mysql
@@ -1362,7 +1425,7 @@ Sun Solaris 2.9 sparc with `gcc' 2.95.3
      --enable-local-infile --enable-assembler
      --with-named-curses-libs=-lcurses --disable-shared'
 
-Sun Solaris 2.9 sparc with `cc-5.0' (Sun Forte 5.0)
+Sun Solaris 9 sparc with `cc-5.0' (Sun Forte 5.0)
      `CC=cc-5.0 CXX=CC ASFLAGS="-xarch=v9" CFLAGS="-Xa -xstrconst -mt
      -D_FORTEC_ -xarch=v9" CXXFLAGS="-noex -mt -D_FORTEC_ -xarch=v9"
      ./configure --prefix=/usr/local/mysql
@@ -1370,14 +1433,23 @@ Sun Solaris 2.9 sparc with `cc-5.0' (Sun Forte 5.0)
      --enable-local-infile --enable-assembler --with-named-z-libs=no
      --enable-thread-safe-client --disable-shared'
 
-IBM AIX 4.3.2 ppc with `gcc' 3.2.1
+IBM AIX 4.3.2 ppc with `gcc' 3.2.3
      `CFLAGS="-O2 -mcpu=powerpc -Wa,-many " CXX=gcc CXXFLAGS="-O2
      -mcpu=powerpc -Wa,-many  -felide-constructors -fno-exceptions
      -fno-rtti" ./configure --prefix=/usr/local/mysql
      --with-extra-charsets=complex --enable-thread-safe-client
      --enable-local-infile --with-named-z-libs=no --disable-shared'
 
-IBM AIX 5.1.0 ppc with `gcc' 3.2.1
+IBM AIX 4.3.3 ppc with `xlC_r' (IBM Visual Age C/C++ 6.0)
+     `CC=xlc_r CFLAGS="-ma -O2 -qstrict -qoptimize=2 -qmaxmem=8192"
+     CXX=xlC_r CXXFLAGS ="-ma -O2 -qstrict -qoptimize=2 -qmaxmem=8192"
+     ./configure --prefix=/usr/local/mysql
+     --localstatedir=/usr/local/mysql/data
+     --libexecdir=/usr/local/mysql/bin --with-extra-charsets=complex
+     --enable-thread-safe-client --enable-local-infile
+     --with-named-z-libs=no --disable-shared --with-innodb'
+
+IBM AIX 5.1.0 ppc with `gcc' 3.3
      `CFLAGS="-O2 -mcpu=powerpc -Wa,-many" CXX=gcc CXXFLAGS="-O2
      -mcpu=powerpc -Wa,-many  -felide-constructors -fno-exceptions
      -fno-rtti" ./configure --prefix=/usr/local/mysql
@@ -1394,10 +1466,18 @@ HP-UX 10.20 pa-risc1.1 with `gcc' 3.1
      --with-named-thread-libs=-ldce --with-lib-ccflags=-fPIC
      --disable-shared'
 
-HP-UX 11.11 pa-risc2.0 with `aCC' (HP ANSI C++ B3910B A.03.33)
+HP-UX 11.11 pa-risc2.0 64bit with `aCC' (HP ANSI C++ B3910B A.03.33)
      `CC=cc CXX=aCC CFLAGS=+DD64 CXXFLAGS=+DD64 ./configure
      --prefix=/usr/local/mysql --with-extra-charsets=complex
      --enable-thread-safe-client --enable-local-infile --disable-shared'
+
+HP-UX 11.11 pa-risc2.0 32bit with `aCC' (HP ANSI C++ B3910B A.03.33)
+     `CC=cc CXX=aCC CFLAGS="+DAportable" CXXFLAGS="+DAportable"
+     ./configure --prefix=/usr/local/mysql
+     --localstatedir=/usr/local/mysql/data
+     --libexecdir=/usr/local/mysql/bin --with-extra-charsets=complex
+     --enable-thread-safe-client --enable-local-infile
+     --disable-shared --with-innodb'
 
 Apple Mac OS X 10.2 powerpc with `gcc' 3.1
      `CC=gcc CFLAGS="-O3 -fno-omit-frame-pointer" CXX=gcc CXXFLAGS="-O3
@@ -1456,9 +1536,23 @@ SGI Irix 6.5 IP32 with `gcc' 3.0.1
      --with-extra-charsets=complex --enable-thread-safe-client
      --enable-local-infile  --disable-shared'
 
+FreeBSD 5.0 sparc64 with `gcc' 3.2.1
+     `CFLAGS=-DHAVE_BROKEN_REALPATH ./configure
+     --prefix=/usr/local/mysql --localstatedir=/usr/local/mysql/data
+     --libexecdir=/usr/local/mysql/bin --with-extra-charsets=complex
+     --enable-thread-safe-client --enable-local-infile --disable-shared
+     --with-innodb'
+
 The following compile options have been used for binary packages MySQL
 AB used to provide in the past. These binaries are no longer being
 updated, but the compile options are kept here for reference purposes.
+
+Linux 2.2.xx sparc with `egcs' 1.1.2
+     `CC=gcc CFLAGS="-O3 -fno-omit-frame-pointer" CXX=gcc CXXFLAGS="-O3
+     -fno-omit-frame-pointer -felide-constructors -fno-exceptions
+     -fno-rtti" ./configure --prefix=/usr/local/mysql
+     --with-extra-charsets=complex --enable-thread-safe-client
+     --enable-local-infile --enable-assembler --disable-shared'
 
 Linux 2.2.x with x686 with `gcc' 2.95.2
      `CFLAGS="-O3 -mpentiumpro" CXX=gcc CXXFLAGS="-O3 -mpentiumpro
@@ -1494,8 +1588,8 @@ AIX 2 4 with `gcc' 2.7.2.2
      --with-extra-charsets=complex'
 
 Anyone who has more optimal options for any of the preceding
-configurations listed can always mail them to the developer's mailing
-list at <internals@lists.mysql.com>.
+configurations listed can always mail them to the MySQL internals s
+mailing list.  *Note Mailing-list::.
 
 RPM distributions prior to MySQL Version 3.22 are user-contributed.
 Beginning with Version 3.22, the RPMs are generated by us at MySQL AB.
@@ -1516,7 +1610,8 @@ for a detailed list).
 
 In addition to these generic packages, we also offer binaries in
 platform-specific package formats for selected platforms.  See *Note
-Quick Standard Installation:: for more info on how to install these.
+Quick Standard Installation:: for more information on how to install
+these.
 
 The generic MySQL binary distributions are packaged as gzip-compressed
 GNU tar archives (`.tar.gz'). You need the following tools to install a
@@ -1531,7 +1626,7 @@ MySQL binary distribution:
      install GNU `tar' first.
 
 If you run into problems, *please always use `mysqlbug'* when posting
-questions to <mysql@lists.mysql.com>.  Even if the problem isn't a bug,
+questions to a MySQL mailing list.  Even if the problem isn't a bug,
 `mysqlbug' gathers system information that will help others solve your
 problem.  By not using `mysqlbug', you lessen the likelihood of getting
 a solution to your problem.  You will find `mysqlbug' in the `bin'
@@ -1551,9 +1646,9 @@ distribution are:
      shell> chown -R mysql data
      shell> chgrp -R mysql .
      shell> bin/mysqld_safe --user=mysql &
-     or
-     shell> bin/mysqld_safe --user=mysql &
-     if you are running MySQL 4.x
+
+If your version of MySQL is older than 4.0, substitute `bin/safe_mysqld'
+for `bin/mysqld_safe' in the final command.
 
 You can add new users using the `bin/mysql_setpermission' script if you
 install the `DBI' and `DBD-mysql' Perl modules.
@@ -1564,12 +1659,11 @@ To install a binary distribution, follow these steps, then proceed to
 *Note Post-installation::, for post-installation setup and testing:
 
   1. Pick the directory under which you want to unpack the
-     distribution, and move into it.  In the following example, we
-     unpack the distribution under `/usr/local' and create a directory
-     `/usr/local/mysql' into which MySQL is installed.  (The following
+     distribution, and move into it. In the following example, we
+     unpack the distribution under `/usr/local' (The following
      instructions, therefore, assume you have permission to create
-     files in `/usr/local'.  If that directory is protected, you will
-     need to perform the installation as `root'.)
+     files and directories in `/usr/local'.  If that directory is
+     protected, you will need to perform the installation as `root'.)
 
   2. Obtain a distribution file from one of the sites listed in *Note
      Getting MySQL: Getting MySQL.
@@ -1596,7 +1690,8 @@ To install a binary distribution, follow these steps, then proceed to
 
           shell> cd /usr/local
 
-  5. Unpack the distribution and create the installation directory:
+  5. Unpack the distribution, which will create the installation
+     directory.  Then create a symbolic link to that directory:
 
           shell> gunzip < /path/to/mysql-VERSION-OS.tar.gz | tar xvf -
           shell> ln -s full-path-to-mysql-VERSION-OS mysql
@@ -1732,7 +1827,7 @@ with `-fno-exceptions'. When in doubt, do the following:
 On most systems this will give you a fast and stable binary.
 
 If you run into problems, *please always use `mysqlbug'* when posting
-questions to <mysql@lists.mysql.com>.  Even if the problem isn't a bug,
+questions to a MySQL mailing list.  Even if the problem isn't a bug,
 `mysqlbug' gathers system information that will help others solve your
 problem.  By not using `mysqlbug', you lessen the likelihood of getting
 a solution to your problem.  You will find `mysqlbug' in the `scripts'
@@ -1740,9 +1835,9 @@ directory after you unpack the distribution.  *Note Bug reports::.
 
 * Menu:
 
-* Quick install::               Quick installation overview
-* Applying patches::            Applying patches
-* configure options::           Typical `configure' options
+* Quick install::               Quick Installation Overview
+* Applying patches::            Applying Patches
+* configure options::           Typical `configure' Options
 * Installing source tree::      Installing from the Development Source Tree
 * Compilation problems::        Problems Compiling MySQL?
 * MIT-pthreads::                MIT-pthreads Notes
@@ -1769,8 +1864,8 @@ distribution are:
      shell> cp support-files/my-medium.cnf /etc/my.cnf
      shell> /usr/local/mysql/bin/mysqld_safe --user=mysql &
 
-If your version of MySQL is older than 4.0, use `safe_mysqld' rather
-than `mysqld_safe'.
+If your version of MySQL is older than 4.0, substitute `bin/safe_mysqld'
+for `bin/mysqld_safe' in the final command.
 
 If you want to have support for InnoDB tables, you should edit the
 `/etc/my.cnf' file and remove the `#' character before the parameter
@@ -1805,7 +1900,7 @@ testing:
 
      MySQL source distributions are provided as compressed `tar'
      archives and have names like `mysql-VERSION.tar.gz', where
-     `VERSION' is a number like {No value for `mysqlversion'}.
+     `VERSION' is a number like 4.0.16.
 
   4. Add a user and group for `mysqld' to run as:
 
@@ -1840,11 +1935,11 @@ testing:
      options: configure options, discusses some of the more useful
      options.
 
-     If `configure' fails, and you are going to send mail to
-     <mysql@lists.mysql.com> to ask for assistance, please include any
-     lines from `config.log' that you think can help solve the problem.
-     Also include the last couple of lines of output from `configure'
-     if `configure' aborts.  Post the bug report using the `mysqlbug'
+     If `configure' fails, and you are going to send mail to a MySQL
+     mailing list to ask for assistance, please include any lines from
+     `config.log' that you think can help solve the problem.  Also
+     include the last couple of lines of output from `configure' if
+     `configure' aborts.  Post the bug report using the `mysqlbug'
      script.  *Note Bug reports::.
 
      If the compile fails, see *Note Compilation problems::, for help
@@ -2198,8 +2293,8 @@ instructions:
           cd mysql-4.0
           bk -r edit
           aclocal; autoheader; autoconf; automake
-          (cd innobase ; aclocal; autoheader; autoconf; automake) # for InnoDB
-          (cd bdb/dist ; sh s_all ) # for Berkeley DB
+          (cd innobase; aclocal; autoheader; autoconf; automake) # for InnoDB
+          (cd bdb/dist; sh s_all ) # for Berkeley DB
           ./configure  # Add your favorite options here
           make
 
@@ -2238,12 +2333,12 @@ instructions:
 
   9. You can examine the change history for the tree with all the diffs
      by using `bk sccstool'.  If you see some funny diffs or code that
-     you have a question about, do not hesitate to send e-mail to
-     <internals@lists.mysql.com>. Also, if you think you have a better
-     idea on how to do something, send an e-mail to the same address
-     with a patch.  `bk diffs' will produce a patch for you after you
-     have made changes to the source. If you do not have the time to
-     code your idea, just send a description.
+     you have a question about, do not hesitate to send e-mail to the
+     MySQL internals mailing list.  *Note Mailing-list::.  Also, if you
+     think you have a better idea on how to do something, send an
+     e-mail to the same address with a patch.  `bk diffs' will produce
+     a patch for you after you have made changes to the source. If you
+     do not have the time to code your idea, just send a description.
 
  10. `BitKeeper' has a nice help utility that you can access via `bk
      helptool'.
@@ -2526,7 +2621,7 @@ MySQL source directory. It will create a new subdirectory
      disabled by default for performance reasons.  You can tell the
      server to use system locking with the `--external-locking' option.
      This is only needed if you want to be able to run two MySQL
-     servers against the same data files (not recommended).
+     servers against the same datafiles (not recommended).
 
    * Sometimes the pthread `bind()' command fails to bind to a socket
      without any error message (at least on Solaris).  The result is
@@ -2537,7 +2632,7 @@ MySQL source directory. It will create a new subdirectory
           error: 'Can't connect to mysql server on localhost (146)'
 
      The solution to this is to kill the `mysqld' server and restart it.
-     This has only happened to us when we have forced the server down
+     This has only happened to us when we have forced down the server
      and done a restart immediately.
 
    * With MIT-pthreads, the `sleep()' system call isn't interruptible
@@ -2633,9 +2728,9 @@ Post-installation Setup and Testing
 
 * Menu:
 
-* mysql_install_db::            Problems running `mysql_install_db'
-* Starting server::             Problems starting the MySQL server
-* Automatic start::             Starting and stopping MySQL automatically
+* mysql_install_db::            Problems Running `mysql_install_db'
+* Starting server::             Problems Starting the MySQL Server
+* Automatic start::             Starting and Stopping MySQL Automatically
 
 Once you've installed MySQL (from either a binary or source
 distribution), you need to initialise the grant tables, start the
@@ -3046,7 +3141,7 @@ another `mysqld' server) is already using the TCP/IP port or socket
 
      Can't start server: Bind on TCP/IP port: Address already in use
        or
-     Can't start server : Bind on unix socket...
+     Can't start server: Bind on unix socket...
 
 Use `ps' to make sure that you don't have another `mysqld' server
 running.  If you can't find another server running, you can try to
@@ -3105,10 +3200,17 @@ invoking it with `start' or `stop' arguments:
 
 `mysql.server' can be found in the `share/mysql' directory under the
 MySQL installation directory or in the `support-files' directory of the
-MySQL source tree. Note that if you use the Linux RPM package
+MySQL source tree.
+
+Note that if you use the Linux RPM package
 (`MySQL-server-VERSION.rpm'), the `mysql.server' script has already
 been installed as `/etc/init.d/mysql' - you don't have to install it
-manually. See *Note Linux-RPM:: for more info on the Linux RPM packages.
+manually. See *Note Linux-RPM:: for more information on the Linux RPM
+packages.
+
+On Mac OS X, you can install a separate MySQL Startup Item package to
+enable the automatic startup of MySQL on system bootup.  See *Note Mac
+OS X installation:: for details.
 
 Before `mysql.server' starts the server, it changes the directory to
 the MySQL installation directory, then invokes `mysqld_safe'.  You
@@ -3146,7 +3248,7 @@ As an alternative to the above, some operating systems also use
 services on bootup. To start up MySQL using this method, you could
 append something like the following to it:
 
-     /bin/sh -c 'cd /usr/local/mysql ; ./bin/mysqld_safe --user=mysql &'
+     /bin/sh -c 'cd /usr/local/mysql; ./bin/mysqld_safe --user=mysql &'
 
 You can also add options for `mysql.server' in a global `/etc/my.cnf'
 file.  A typical `/etc/my.cnf' file might look like this:
@@ -3184,11 +3286,11 @@ Upgrading/Downgrading MySQL
 
 Before you do an upgrade, you should back up your old databases.
 
-You can always move the MySQL form files and datafiles between different
-versions on the same architecture as long as you have the same base
-version of MySQL. The current base version is 4. If you change the
-character set when running MySQL, you must run `myisamchk -r -q
---set-character-set=charset' on all tables.  Otherwise, your indexes
+You can always move the MySQL format files and datafiles between
+different versions on the same architecture as long as you have the
+same base version of MySQL. The current base version is 4. If you
+change the character set when running MySQL, you must run `myisamchk -r
+-q --set-character-set=charset' on all tables.  Otherwise, your indexes
 may not be ordered correctly, because changing the character set may
 also change the sort order.
 
@@ -3222,6 +3324,7 @@ MySQL interfaces as well, such as the Python `MySQLdb' module.
 * Upgrading-from-3.22::         Upgrading From Version 3.22 to 3.23
 * Upgrading-from-3.21::         Upgrading from Version 3.21 to 3.22
 * Upgrading-from-3.20::         Upgrading from Version 3.20 to 3.21
+* Upgrading-grant-tables::      Upgrading the Grant Tables
 * Upgrading-to-arch::           Upgrading to Another Architecture
 * Windows upgrading::           Upgrading MySQL under Windows
 
@@ -3229,47 +3332,63 @@ MySQL interfaces as well, such as the Python `MySQLdb' module.
 Upgrading From Version 4.0 to 4.1
 ---------------------------------
 
-* Menu:
+Several visible things have changed between MySQL 4.0 and MySQL 4.1 to
+fix some critical bugs and make MySQL more compatible with the ANSI SQL
+standard. These changes may affect your applications.
 
-* Prepare-upgrade-4.0-4.1::     Preparing to Upgrade From Version 4.0 to 4.1
-* What-to-do-from-4.0::         What to do when upgrading from 4.0 to 4.1
+Some of the 4.1 behaviours can be tested in 4.0 before performing a
+full upgrade to 4.1. We have added to later MySQL 4.0 releases (from
+4.0.12 on) a `--new' startup option for `mysqld'.  This option gives
+you the 4.1 behaviour for the most critical changes.  You can also
+enable these behaviours for a given client connection with the `SET
+@@new=1' command, or turn them off if they are on with `SET @@new=0'.
 
+If you believe that some of the 4.1 changes will affect you, we
+recommend that before upgrading to 4.1, you download the latest MySQL
+4.0 version and run it with the `--new' option.  That way you can test
+the new behaviors in 4.0 to make sure that your applications work with
+them. This will help you have a smooth painless transition when you
+perform a full upgrade to 4.1 later.
 
-Preparing to Upgrade From Version 4.0 to 4.1
-............................................
+The following list describes changes that may affect applications and
+that you should watch out for when upgrading to version 4.1:
 
-Some visible things have changed between MySQL 4.0 and MySQL 4.1 to fix
-some critical bugs and make MySQL more compatible with the ANSI SQL
-standard.
+   * `TIMESTAMP' is now returned as a string in `'YYYY-MM-DD HH:MM:SS''
+     format.  (The `--new' option can be used from 4.0.12 on to make a
+     4.0 server behave as 4.1 in this respect.)  If you want to have
+     the value returned as a number (like Version 4.0 does) you should
+     add +0 to `TIMESTAMP' columns when you retrieve them:
 
-Instead of adding options (and a lot of code) to try to make 4.1 behave
-like 4.0 we have taken another approach:
+          mysql> SELECT ts_col + 0 FROM tbl_name;
 
-We have added to the later MySQL 4.0 releases (from 4.0.12 on) the
-`--new' startup option for `mysqld', which gives you the 4.1 behaviour
-for the most critical changes.  You can also set this behaviour for a
-given client connection with the `SET @@new=1 command'.
+     Display widths for `TIMESTAMP' columns are no longer supported.
+     For example, if you declare a column as `TIMESTAMP(10)', the `(10)'
+     is ignored.
 
-If you believe that some of the following changes will affect you when
-you upgrade to 4.1, we recommend that before upgrading to 4.1, you
-download the latest MySQL 4.0 version and make sure that your
-applications work in the `--new' mode.  This way you will have a smooth
-painless upgrade to 4.1 later.
-
-In MySQL 4.1 we have done some things that may affect applications.
-The following is a list of things that you have to watch out for when
-upgrading to version 4.1:
-
-   * `TIMESTAMP' is now returned as a string with the format
-     `'YYYY-MM-DD HH:MM:SS''. If you want to have this as a number (like
-     Version 4.0 does) should add +0 to `TIMESTAMP' columns when you
-     retrieve them.  Different `TIMESTAMP' display widths are no longer
-     supported.
-
-     This change was necessary for SQL standards compliance. In a future
-     version, a further change will be made (backward compatible with
-     this change), allowing the timestamp length to indicate the
+     These changes were necessary for SQL standards compliance. In a
+     future version, a further change will be made (backward compatible
+     with this change), allowing the timestamp length to indicate the
      desired number of digits for fractions of a second.
+
+   * Binary values such as `0xFFDF' now are assumed to be strings
+     instead of numbers.  This fixes some problems with character sets
+     where it's convenient to input a string as a binary value.  With
+     this change, you should use `CAST()' if you want to compare binary
+     values numerically as integers:
+
+          mysql> SELECT CAST(0xFEFF AS UNSIGNED INTEGER) < CAST(0xFF AS UNSIGNED INTEGER);
+                  -> 0
+
+     If you don't use `CAST()', a lexical string comparison will be
+     done:
+
+          mysql> SELECT 0xFEFF < 0xFF;
+                  -> 1
+
+     Using binary items in a numeric context or comparing them using the
+     `=' operator should work as before.  (The `--new' option can be
+     used from 4.0.13 on to make a 4.0 server behave as 4.1 in this
+     respect.)
 
    * For functions that produce a `DATE', `DATETIME', or `TIME' value,
      the result returned to the client now is fixed up to have a
@@ -3283,21 +3402,9 @@ upgrading to version 4.1:
           mysql> SELECT CAST("2001-1-1" as DATETIME);
               -> '2001-01-01'
 
-   * Binary values such as `0xFFDF' now are assumed to be strings
-     instead of numbers.  This fixes some problems with character sets
-     where it's convenient to input the string as a binary values.
-     With this change, you should use `CAST()' if you want to compare
-     binary values numerically as integers:
-
-          SELECT CAST(0xFEFF AS UNSIGNED INTEGER) < CAST(0xFF AS UNSIGNED INTEGER)
-
-     Using binary items in a numeric context or comparing them using the
-     `=' operator should work as before.  (The `--new' option can be
-     used to make the server behave as 4.1 in this repect from 4.0.13
-     on.)
-
-   * `AUTO_INCREMENT' columns cannot take `DEFAULT' values. (In 4.0
-     these were just silently ignored; in 4.1, an error occurs).
+   * `DEFAULT' values no longer can be specified for `AUTO_INCREMENT'
+     columns. (In 4.0, a `DEFAULT' value is silently ignored; in 4.1,
+     an error occurs).
 
    * `SERIALIZE' is no longer a valid option value for the `sql_mode'
      variable.  You should use `SET TRANSACTION ISOLATION LEVEL
@@ -3305,40 +3412,41 @@ upgrading to version 4.1:
      `--sql-mode' option for `mysqld', either. Use
      `--transaction-isolation=SERIALIZABLE' instead.
 
-   * All column and tables now have a character set, which shows up in
-     `SHOW CREATE TABLE' and `mysqldump'.  (MySQL versions 4.0.6 and
-     above can read the new dump files; older versions cannot.)
+   * All tables and string columns now have a character set.  *Note
+     Charset::.  Character set information is displayed by `SHOW CREATE
+     TABLE' and `mysqldump'.  (MySQL versions 4.0.6 and above can read
+     the new dump files; older versions cannot.)
+
+   * The table definition format used in `.frm' files has changed
+     slightly in 4.1.  MySQL 4.0 versions from 4.0.11 on can read the
+     new `.frm' format directly, but older versions cannot.  If you
+     need to move tables from 4.1 to a version earlier than 4.0.11, you
+     should use `mysqldump'.  *Note `mysqldump': mysqldump.
 
    * If you are running multiple servers on the same Windows machine,
      you should use a different `--shared_memory_base_name' option on
      all machines.
 
+   * The interface to aggregated UDF functions has changed a bit. You
+     must now declare a `clear()' function for each aggregate function.
 
-*Note:* The table definition format used in `.frm' files has changed
-slightly in 4.1.  MySQL 4.0 versions from 4.0.11 on can read the new
-`.frm' format directly, but older versions cannot.  If you need to move
-tables from 4.1 to an earlier MySQL version, you should use `mysqldump'.
-*Note `mysqldump': mysqldump.
-
-If you are running MySQL Server on Windows, please also see *Note
-Windows upgrading::.
-
-
-What to do when upgrading from 4.0 to 4.1
-.........................................
 
 In general, upgrading to 4.1 from an earlier MySQL version involves the
 following steps:
 
-   * Check the changes section if there is some change that may affect
-     your application. *Note Prepare-upgrade-4.0-4.1::.
+   * Check the changes listed earlier in this section to see if there
+     are any that may affect your applications.
 
    * Read the 4.1 news items to see what significant new features you
      can use in 4.1.  *Note News-4.1.x::.
 
-   * Run the script `mysql_fix_privilege_tables' to generate the new
+   * If you are running MySQL Server on Windows, please also see *Note
+     Windows upgrading::.
+
+   * After upgrading, update the grant tables to generate the new
      longer `Password' column that is needed for secure handling of
-     passwords.
+     passwords.  The procedure uses `mysql_fix_privilege_tables' and is
+     described in *Note Upgrading-grant-tables::.
 
 
 The password hashing mechanism has changed in 4.1 to provide better
@@ -3386,8 +3494,9 @@ Upgrading From Version 3.23 to 4.0
 In general, you should do the following when upgrading to 4.0 from an
 earlier MySQL version:
 
-   * Run the script `mysql_fix_privilege_tables' to add new privileges
-     and features to the MySQL privilege tables.
+   * After upgrading, update the grant tables to add new privileges and
+     features.  The procedure uses the `mysql_fix_privilege_tables'
+     script and is described in *Note Upgrading-grant-tables::.
 
    * Edit any MySQL startup scripts or configure files to not use any
      of the deprecated options described later in this section.
@@ -3406,6 +3515,10 @@ earlier MySQL version:
      You can also issue a `ALTER TABLE table_name TYPE=MyISAM'
      statement for each `ISAM' table to convert it to `MyISAM'.
 
+     To find out the table type for a given table, use this statement:
+
+          mysql> SHOW TABLE STATUS LIKE 'tbl_name';
+
    * Ensure that you don't have any MySQL clients that use shared
      libraries (like the Perl `DBD-mysql' mode). If you do, you should
      recompile them, because the data structures used in
@@ -3417,7 +3530,8 @@ MySQL 4.0 will work even if you don't do the above, but you will not be
 able to use the new security privileges that MySQL 4.0 and you may run
 into problems when upgrading later to MySQL 4.1 or newer.  The `ISAM'
 file format still works in MySQL 4.0 but it's deprecated and will be
-disabled in MySQL 5.0.
+disabled (not compiled in by default) in MySQL 4.1. `MyISAM' tables
+should be used instead.
 
 Old clients should work with a Version 4.0 server without any problems.
 
@@ -3433,9 +3547,10 @@ for when upgrading to version 4.0:
    * MySQL 4.0 has a lot of new privileges in the `mysql.user' table.
      *Note `GRANT': GRANT.
 
-     To get these new privileges to work, you must run the
-     `mysql_fix_privilege_tables' script.  Until you do, all users have
-     the `SHOW DATABASES', `CREATE TEMPORARY TABLES', and `LOCK TABLES'
+     To get these new privileges to work, you must update the grant
+     tables.  The procedure is described in *Note
+     Upgrading-grant-tables::.  Until you do this, all users have the
+     `SHOW DATABASES', `CREATE TEMPORARY TABLES', and `LOCK TABLES'
      privileges. `SUPER' and `EXECUTE' privileges take their value from
      `PROCESS'.  `REPLICATION SLAVE' and `REPLICATION CLIENT' take their
      values from `FILE'.
@@ -3458,6 +3573,13 @@ for when upgrading to version 4.0:
    * `safe_mysqld' is renamed to `mysqld_safe'.  For backward
      compatibility, binary distributions will for some time include
      `safe_mysqld' as a symlink to `mysqld_safe'.
+
+   * InnoDB support is now included by default in binary distributions.
+     If you build MySQL from source, InnoDB is configured in by default.
+     If you do not use InnoDB and want to save memory when running a
+     server that has InnoDB support enabled, use the `--skip-innodb'
+     server startop option. To compile MySQL without InnoDB support,
+     run `configure' with the `--without-innodb' option.
 
    * The startup parameters `myisam_max_extra_sort_file_size' and
      `myisam_max_extra_sort_file_size' are now given in bytes (they
@@ -3726,9 +3848,8 @@ After installing MySQL Version 3.22, you should start the new server
 and then run the `mysql_fix_privilege_tables' script. This will add the
 new privileges that you need to use the `GRANT' command.  If you forget
 this, you will get `Access denied' when you try to use `ALTER TABLE',
-`CREATE INDEX', or `DROP INDEX'. If your MySQL `root' user requires a
-password, you should give this as an argument to
-`mysql_fix_privilege_tables'.
+`CREATE INDEX', or `DROP INDEX'. The procedure for updating the grant
+tables is described in *Note Upgrading-grant-tables::.
 
 The C API interface to `mysql_real_connect()' has changed.  If you have
 an old client program that calls this function, you must place a `0' for
@@ -3804,6 +3925,59 @@ The following changes may affect queries in old applications:
    * There are some new reserved words. The most notable are `DATE',
      `TIME', and `TIMESTAMP'.
 
+
+
+Upgrading the Grant Tables
+--------------------------
+
+Some releases introduce changes to the structure of the grant tables
+(the tables in the `mysql' database) to add new  privileges or
+features. To make sure that your grant tables are current when you
+update to a new version of MySQL, you should update your grant tables
+as well.
+
+On Unix or Unix-like systems, update the grant tables by running the
+`mysql_fix_privilege_tables' script:
+
+     shell> mysql_fix_privilege_tables
+
+You must run this script while the server is running. It attempts to
+connect to the server running on the local host as `root'.  If your
+`root' account requires a password, indicate the password on the
+command line.  For MySQL 4.1 and up, specify the password like this:
+
+     shell> mysql_fix_privilege_tables --password=root_password
+
+Prior to MySQL 4.1, specify the password like this:
+
+     shell> mysql_fix_privilege_tables root_password
+
+The `mysql_fix_privilege_tables' script performs any actions necessary
+to convert your grant tables to the current format. You may see some
+`Duplicate column name' warnings as it runs; they can be ignored.
+
+After running the script, stop the server and restart it.
+
+On Windows systems, there isn't an easy way to update the grant tables
+until MySQL 4.0.15.  From version 4.0.15 on, MySQL distributions
+include a `mysql_fix_privilege_tables.sql' SQL script that you can run
+using the `mysql' client.  If your MySQL installation is located at
+`C:\mysql', the command looks like this (enter it all on one line):
+
+     shell> C:\mysql\bin\mysql -f -u root -p mysql
+                < C:\mysql\scripts\mysql_fix_privilege_tables.sql
+
+If your installation is located in some other directory, adjust the
+pathnames appropriately.
+
+The command will prompt you for the `root' password; enter it when
+prompted.
+
+As with the Unix procedure, you may see some `Duplicate column name'
+warnings as `mysql' processes the statements in the
+`mysql_fix_privilege_tables.sql' script; they can be ignored.
+
+After running the script, stop the server and restart it.
 
 
 Upgrading to Another Architecture
@@ -3900,21 +4074,26 @@ When upgrading MySQL under Windows, please follow these steps:
      if you are running MySQL as a service, or with `mysqladmin
      shutdown' otherwise).
 
-  5. Run the installation script of the Windows distribution, by
+  5. Exit the `WinMySQLadmin' program if it is running.
+
+  6. Run the installation script of the Windows distribution, by
      clicking the "Install" button in WinZip and following the
      installation steps of the script.
 
-  6. You may either overwrite your old MySQL installation (usually
+  7. You may either overwrite your old MySQL installation (usually
      located at `C:\mysql'), or install it into a different directory,
      such as `C:\mysql4'. Overwriting the old installation is
      recommended.
 
-  7. The version of MySQL that is started as a service is determined by
+  8. The version of MySQL that is started as a service is determined by
      the `basedir' parameter in the `my.ini' file of your Windows
      directory (for example, `C:\WINNT').
 
-  8. Restart the server (for example, with `NET START mysql' if you run
+  9. Restart the server (for example, with `NET START mysql' if you run
      MYSQL as a service, or by invoking `mysqld' directly otherwise).
+
+ 10. Update the grant tables. The procedure is described in *Note
+     Upgrading-grant-tables::.
 
 
 Possible error situations:
@@ -3937,8 +4116,8 @@ Operating System Specific Notes
 
 * Menu:
 
-* Linux::                       Linux Notes (All Linux Versions)
 * Windows::                     Windows Notes
+* Linux::                       Linux Notes (All Linux Versions)
 * Solaris::                     Solaris Notes
 * BSD Notes::                   BSD Notes
 * Mac OS X::                    Mac OS X Notes
@@ -3946,498 +4125,6 @@ Operating System Specific Notes
 * OS/2::                        OS/2 Notes
 * Novell NetWare::              Novell NetWare Notes
 * BeOS::                        BeOS Notes
-
-
-Linux Notes (All Linux Versions)
---------------------------------
-
-* Menu:
-
-* Binary notes-Linux::          Linux Notes for Binary Distributions
-* Linux-x86::                   Linux x86 Notes
-* Linux-SPARC::                 Linux SPARC Notes
-* Linux-Alpha::                 Linux Alpha Notes
-* Linux-PowerPC::               Linux PowerPC Notes
-* Linux-MIPS::                  Linux MIPS Notes
-* Linux-IA-64::                 Linux IA-64 Notes
-
-The following notes regarding `glibc' apply only to the situation when
-you build MySQL yourself. If you are running Linux on an x86 machine,
-in most cases it is much better for you to just use our binary. We link
-our binaries against the best patched version of `glibc' we can come up
-with and with the best compiler options, in an attempt to make it
-suitable for a high-load server. So if you read the following text, and
-are in doubt about what you should do, try our binary first to see if
-it meets your needs, and worry about your own build only after you have
-discovered that our binary is not good enough. In that case, we would
-appreciate a note about it, so we can build a better binary next time.
-For a typical user, even for setups with a lot of concurrent
-connections and/or tables exceeding the 2G limit, our binary in most
-cases is the best choice.
-
-MySQL uses LinuxThreads on Linux.  If you are using an old Linux
-version that doesn't have `glibc2', you must install LinuxThreads
-before trying to compile MySQL.   You can get LinuxThreads at
-`http://www.mysql.com/downloads/os-linux.html'.
-
-*Note*: we have seen some strange problems with Linux 2.2.14 and MySQL
-on SMP systems. If you have a SMP system, we recommend you upgrade to
-Linux 2.4 as soon as possible.  Your system will be faster and more
-stable by doing this.
-
-Note that `glibc' versions before and including Version 2.1.1 have a
-fatal bug in `pthread_mutex_timedwait' handling, which is used when you
-do `INSERT DELAYED'.  We recommend that you not use `INSERT DELAYED'
-before upgrading glibc.
-
-If you plan to have 1000+ concurrent connections, you will need to make
-some changes to LinuxThreads, recompile it, and relink MySQL against
-the new `libpthread.a'.  Increase `PTHREAD_THREADS_MAX' in
-`sysdeps/unix/sysv/linux/bits/local_lim.h' to 4096 and decrease
-`STACK_SIZE' in `linuxthreads/internals.h' to 256 KB. The paths are
-relative to the root of `glibc' Note that MySQL will not be stable with
-around 600-1000 connections if `STACK_SIZE' is the default of 2 MB.
-
-If MySQL can't open enough files, or connections, it may be that you
-haven't configured Linux to handle enough files.
-
-In Linux 2.2 and onward, you can check the number of allocated file
-handles by doing:
-
-     cat /proc/sys/fs/file-max
-     cat /proc/sys/fs/dquot-max
-     cat /proc/sys/fs/super-max
-
-If you have more than 16 MB of memory, you should add something like the
-following to your init scripts (for example, `/etc/init.d/boot.local'
-on SuSE Linux):
-
-     echo 65536 > /proc/sys/fs/file-max
-     echo 8192 > /proc/sys/fs/dquot-max
-     echo 1024 > /proc/sys/fs/super-max
-
-You can also run the preceding commands from the command-line as root,
-but these settings will be lost the next time your computer reboots.
-
-Alternatively, you can set these parameters on bootup by using the
-`sysctl' tool, which is used by many Linux distributions (SuSE has
-added it as well, beginning with SuSE Linux 8.0). Just put the following
-values into a file named `/etc/sysctl.conf':
-
-     # Increase some values for MySQL
-     fs.file-max = 65536
-     fs.dquot-max = 8192
-     fs.super-max = 1024
-
-You should also add the following to `/etc/my.cnf':
-
-     [mysqld_safe]
-     open-files-limit=8192
-
-This should allow MySQL to create up to 8192 connections + files.
-
-The `STACK_SIZE' constant in LinuxThreads controls the spacing of thread
-stacks in the address space.  It needs to be large enough so that there
-will be plenty of room for the stack of each individual thread, but
-small enough to keep the stack of some threads from running into the
-global `mysqld' data.  Unfortunately, the Linux implementation of
-`mmap()', as we have experimentally discovered, will successfully unmap
-an already mapped region if you ask it to map out an address already in
-use, zeroing out the data on the entire page, instead of returning an
-error.  So, the safety of `mysqld' or any other threaded application
-depends on the "gentleman" behaviour of the code that creates threads.
-The user must take measures to make sure the number of running threads
-at any time is sufficiently low for thread stacks to stay away from the
-global heap.  With `mysqld', you should enforce this "gentleman"
-behaviour by setting a reasonable value for the `max_connections'
-variable.
-
-If you build MySQL yourself and do not want to mess with patching
-LinuxThreads, you should set `max_connections' to a value no higher
-than 500.  It should be even less if you have a large key buffer,  large
-heap tables, or some other things that make `mysqld' allocate a lot of
-memory, or if you are running a 2.2 kernel with a 2G patch. If you are
-using our binary or RPM version 3.23.25 or later, you can safely set
-`max_connections' at 1500, assuming no large key buffer or heap tables
-with lots of data.  The more you reduce `STACK_SIZE' in LinuxThreads
-the more threads you can safely create.  We recommend the values between
-128K and 256K.
-
-If you use a lot of concurrent connections, you may suffer from a
-"feature" in the 2.2 kernel that penalises a process for forking or
-cloning a child in an attempt to prevent a fork bomb attack.  This will
-cause MySQL not to scale well as you increase the number of concurrent
-clients.  On single-CPU systems, we have seen this manifested in a very
-slow thread creation, which means it may take a long time to connect to
-MySQL (as long as 1 minute), and it may take just as long to shut it
-down.  On multiple-CPU systems, we have observed a gradual drop in
-query speed as the number of clients increases.  In the process of
-trying to find a solution, we have received a kernel patch from one of
-our users, who claimed it made a lot of difference for his site.  The
-patch is available at
-`http://www.mysql.com/Downloads/Patches/linux-fork.patch'. We have now
-done rather extensive testing of this patch on both development and
-production systems.  It has significantly improved `MySQL' performance
-without causing any problems and we now recommend it to our users who
-are still running high-load servers on 2.2 kernels.  This issue has
-been fixed in the 2.4 kernel, so if you are not satisfied with the
-current performance of your system, rather than patching your 2.2
-kernel, it might be easier to just upgrade to 2.4, which will also give
-you a nice SMP boost in addition to fixing this fairness bug.
-
-We have tested MySQL on the 2.4 kernel on a 2-CPU machine and found
-MySQL scales *much* better--there was virtually no slowdown on queries
-throughput all the way up to 1000 clients, and the MySQL scaling factor
-(computed as the ratio of maximum throughput to the throughput with one
-client) was 180%.  We have observed similar results on a 4-CPU
-system--virtually no slowdown as the number of clients was increased up
-to 1000, and 300% scaling factor. So for a high-load SMP server we
-would definitely recommend the 2.4 kernel at this point. We have
-discovered that it is essential to run `mysqld' process with the
-highest possible priority on the 2.4 kernel to achieve maximum
-performance.  This can be done by adding `renice -20 $$' command to
-`mysqld_safe'. In our testing on a 4-CPU machine, increasing the
-priority gave 60% increase in throughput with 400 clients.
-
-We are currently also trying to collect more info on how well `MySQL'
-performs on 2.4 kernel on 4-way and 8-way systems. If you have access
-such a system and have done some benchmarks, please send a mail to
-<docs@mysql.com> with the results - we will include them in the manual.
-
-There is another issue that greatly hurts MySQL performance, especially
-on SMP systems.  The implementation of mutex in LinuxThreads in
-`glibc-2.1' is very bad for programs with many threads that only hold
-the mutex for a short time. On an SMP system, ironic as it is, if you
-link MySQL against unmodified `LinuxThreads', removing processors from
-the machine improves MySQL performance in many cases.  We have made a
-patch available for `glibc 2.1.3' to correct this behaviour
-(`http://www.mysql.com/Downloads/Linux/linuxthreads-2.1-patch').
-
-With `glibc-2.2.2' MySQL version 3.23.36 will use the adaptive mutex,
-which is much better than even the patched one in `glibc-2.1.3'. Be
-warned, however, that under some conditions, the current mutex code in
-`glibc-2.2.2' overspins, which hurts MySQL performance. The chance of
-this condition can be reduced by renicing `mysqld' process to the
-highest priority. We have also been able to correct the overspin
-behaviour with a patch, available at
-`http://www.mysql.com/Downloads/Linux/linuxthreads-2.2.2.patch'.  It
-combines the correction of overspin, maximum number of threads, and
-stack spacing all in one. You will need to apply it in the
-`linuxthreads' directory with `patch -p0
-</tmp/linuxthreads-2.2.2.patch'.  We hope it will be included in some
-form in to the future releases of `glibc-2.2'. In any case, if you link
-against `glibc-2.2.2' you still need to correct `STACK_SIZE' and
-`PTHREAD_THREADS_MAX'. We hope that the defaults will be corrected to
-some more acceptable values for high-load MySQL setup in the future, so
-that your own build can be reduced to `./configure; make; make install'.
-
-We recommend that you use the above patches to build a special static
-version of `libpthread.a' and use it only for statically linking
-against `MySQL'. We know that the patches are safe for `MySQL' and
-significantly improve its performance, but we cannot say anything about
-other applications. If you link other applications against the patched
-version of the library, or build a patched shared version and install
-it on your system, you are doing it at your own risk with regard to
-other applications that depend on `LinuxThreads'.
-
-If you experience any strange problems during the installation of
-MySQL, or with some common utilities hanging, it is very likely that
-they are either library or compiler related. If this is the case, using
-our binary will resolve them.
-
-One known problem with the binary distribution is that with older Linux
-systems that use `libc' (like Red Hat 4.x or Slackware), you will get
-some non-fatal problems with hostname resolution.  *Note Binary
-notes-Linux::.
-
-When using LinuxThreads you will see a minimum of three processes
-running.  These are in fact threads.  There will be one thread for the
-LinuxThreads manager, one thread to handle connections, and one thread
-to handle alarms and signals.
-
-Note that the Linux kernel and the LinuxThread library can by default
-only have 1024 threads.  This means that you can only have up to 1021
-connections to MySQL on an unpatched system.  The page
-`http://www.volano.com/linuxnotes.html' contains information how to go
-around this limit.
-
-If you see a dead `mysqld' daemon process with `ps', this usually means
-that you have found a bug in MySQL or you have a corrupted table. *Note
-Crashing::.
-
-To get a core dump on Linux if `mysqld' dies with a `SIGSEGV' signal,
-you can start `mysqld' with the `--core-file' option.  Note that you
-also probably need to raise the `core file size' by adding `ulimit -c
-1000000' to `mysqld_safe' or starting `mysqld_safe' with
-`--core-file-size=1000000'.  *Note `mysqld_safe': mysqld_safe.
-
-If you are linking your own MySQL client and get the error:
-
-     ld.so.1: ./my: fatal: libmysqlclient.so.4:
-     open failed: No such file or directory
-
-When executing them, the problem can be avoided by one of the following
-methods:
-
-   * Link the client with the following flag (instead of `-Lpath'):
-     `-Wl,r/path-libmysqlclient.so'.
-
-   * Copy `libmysqclient.so' to `/usr/lib'.
-
-   * Add the pathname of the directory where `libmysqlclient.so' is
-     located to the `LD_RUN_PATH' environment variable before running
-     your client.
-
-If you are using the Fujitsu compiler `(fcc / FCC)' you will have some
-problems compiling MySQL because the Linux header files are very `gcc'
-oriented.
-
-The following `configure' line should work with `fcc/FCC':
-
-     CC=fcc CFLAGS="-O -K fast -K lib -K omitfp -Kpreex -D_GNU_SOURCE \
-     -DCONST=const -DNO_STRTOLL_PROTO" CXX=FCC CXXFLAGS="-O -K fast -K lib \
-     -K omitfp -K preex --no_exceptions --no_rtti -D_GNU_SOURCE -DCONST=const \
-     -Dalloca=__builtin_alloca -DNO_STRTOLL_PROTO \
-     '-D_EXTERN_INLINE=static __inline'" ./configure --prefix=/usr/local/mysql \
-     --enable-assembler --with-mysqld-ldflags=-all-static --disable-shared \
-     --with-low-memory
-
-
-Linux Notes for Binary Distributions
-....................................
-
-MySQL needs at least Linux Version 2.0.
-
-*Warning*: We have reports from some MySQL users that they have got
-serious stability problems with MySQL with Linux kernel 2.2.14.  If you
-are using this kernel you should upgrade to 2.2.19 (or newer) or to a
-2.4 kernel.  If you have a multi-cpu box, then you should seriously
-consider using 2.4 as this will give you a significant speed boost.
-
-The binary release is linked with `-static', which means you do not
-normally need to worry about which version of the system libraries you
-have. You need not install LinuxThreads, either.  A program linked with
-`-static' is slightly bigger than a dynamically linked program but also
-slightly faster (3-5%).  One problem, however, is that you can't use
-user-definable functions (UDFs) with a statically linked program.  If
-you are going to write or use UDFs (this is something for C or C++
-programmers only), you must compile MySQL yourself, using dynamic
-linking.
-
-If you are using a `libc'-based system (instead of a `glibc2' system),
-you will probably get some problems with hostname resolving and
-`getpwnam()' with the binary release. (This is because `glibc'
-unfortunately depends on some external libraries to resolve hostnames
-and `getpwent()', even when compiled with `-static'). In this case you
-probably get the following error message when you run
-`mysql_install_db':
-
-     Sorry, the host 'xxxx' could not be looked up
-
-or the following error when you try to run `mysqld' with the `--user'
-option:
-
-     getpwnam: No such file or directory
-
-You can solve this problem in one of the following ways:
-
-   * Get a MySQL source distribution (an RPM or the `tar.gz'
-     distribution) and install this instead.
-
-   * Execute `mysql_install_db --force'; this will not execute the
-     `resolveip' test in `mysql_install_db'.  The downside is that you
-     can't use host names in the grant tables; you must use IP numbers
-     instead (except for `localhost').  If you are using an old MySQL
-     release that doesn't support `--force', you have to remove the
-     `resolveip' test in `mysql_install' with an editor.
-
-   * Start `mysqld' with `su' instead of using `--user'.
-
-The Linux-Intel binary and RPM releases of MySQL are configured for the
-highest possible speed.  We are always trying to use the fastest stable
-compiler available.
-
-MySQL Perl support requires Version Perl 5.004_03 or newer.
-
-On some Linux 2.2 versions, you may get the error `Resource temporarily
-unavailable' when you do a lot of new connections to a `mysqld' server
-over TCP/IP.
-
-The problem is that Linux has a delay between when you close a TCP/IP
-socket and until this is actually freed by the system.  As there is only
-room for a finite number of TCP/IP slots, you will get the above error
-if you try to do too many new TCP/IP connections during a small time,
-like when you run the MySQL `test-connect' benchmark over TCP/IP.
-
-We have mailed about this problem a couple of times to different Linux
-mailing lists but have never been able to resolve this properly.
-
-The only known 'fix' to this problem is to use persistent connections in
-your clients or use sockets, if you are running the database server and
-clients on the same machine.  We hope that the `Linux 2.4' kernel will
-fix this problem in the future.
-
-
-Linux x86 Notes
-...............
-
-MySQL requires `libc' Version 5.4.12 or newer. It's known to work with
-`libc' 5.4.46.  `glibc' Version 2.0.6 and later should also work. There
-have been some problems with the `glibc' RPMs from Red Hat, so if you
-have problems, check whether there are any updates.  The `glibc'
-2.0.7-19 and 2.0.7-29 RPMs are known to work.
-
-If you are using Red Hat 8.0 or a new glibc 2.2.x library you should
-start mysqld with the option `--thread-stack=192K'.  If you don't do it
-mysqld will die in `gethostbyaddr()' because the new glibc library
-requires > 128K memory on stack for this call. This stack size is now
-the default on MySQL 4.0.10 and above.
-
-If you are using gcc 3.0 and above to compile MySQL, you must install
-the `libstdc++v3' library before compiling MySQL; if you don't do this
-you will get an error about a missing `__cxa_pure_virtual' symbol
-during linking.
-
-On some older Linux distributions, `configure' may produce an error
-like this:
-
-     Syntax error in sched.h. Change _P to __P in the /usr/include/sched.h file.
-     See the Installation chapter in the Reference Manual.
-
-Just do what the error message says and add an extra underscore to the
-`_P' macro that has only one underscore, then try again.
-
-You may get some warnings when compiling; those shown here can be
-ignored:
-
-     mysqld.cc -o objs-thread/mysqld.o
-     mysqld.cc: In function `void init_signals()':
-     mysqld.cc:315: warning: assignment of negative value `-1' to
-     `long unsigned int'
-     mysqld.cc: In function `void * signal_hand(void *)':
-     mysqld.cc:346: warning: assignment of negative value `-1' to
-     `long unsigned int'
-
-`mysql.server' can be found in the `share/mysql' directory under the
-MySQL installation directory or in the `support-files' directory of the
-MySQL source tree.
-
-If `mysqld' always core dumps when it starts up, the problem may be that
-you have an old `/lib/libc.a'.  Try renaming it, then remove
-`sql/mysqld' and do a new `make install' and try again.  This problem
-has been reported on some Slackware installations.
-
-If you get the following error when linking `mysqld', it means that
-your `libg++.a' is not installed correctly:
-
-     /usr/lib/libc.a(putc.o): In function `_IO_putc':
-     putc.o(.text+0x0): multiple definition of `_IO_putc'
-
-You can avoid using `libg++.a' by running `configure' like this:
-
-     shell> CXX=gcc ./configure
-
-
-Linux SPARC Notes
-.................
-
-In some implementations, `readdir_r()' is broken.  The symptom is that
-`SHOW DATABASES' always returns an empty set.  This can be fixed by
-removing `HAVE_READDIR_R' from `config.h' after configuring and before
-compiling.
-
-Some problems will require patching your Linux installation.  The patch
-can be found at
-`http://www.mysql.com/Downloads/patches/Linux-sparc-2.0.30.diff'.  This
-patch is against the Linux distribution `sparclinux-2.0.30.tar.gz' that
-is available at `vger.rutgers.edu' (a version of Linux that was never
-merged with the official 2.0.30).  You must also install LinuxThreads
-Version 0.6 or newer.
-
-
-Linux Alpha Notes
-.................
-
-MySQL Version 3.23.12 is the first MySQL version that is tested on
-Linux-Alpha.  If you plan to use MySQL on Linux-Alpha, you should
-ensure that you have this version or newer.
-
-We have tested MySQL on Alpha with our benchmarks and test suite, and
-it appears to work nicely.
-
-We currently build the MySQL binary packages on SuSE Linux 7.0 for AXP,
-kernel 2.4.4-SMP, Compaq C compiler (V6.2-505) and Compaq C++ compiler
-(V6.3-006) on a Compaq DS20 machine with an Alpha EV6 processor.
-
-You can find the above compilers at
-`http://www.support.compaq.com/alpha-tools/'.  By using these compilers,
-instead of gcc, we get about 9-14% better performance with MySQL.
-
-Note that until MySQL version 3.23.52 and 4.0.2 we optimised the binary
-for the current CPU only (by using the `-fast' compile option); this
-meant that you could only use our binaries if you had an Alpha EV6
-processor.
-
-Starting with all following releases we added the `-arch generic' flag
-to our compile options, which makes sure the binary runs on all Alpha
-processors. We also compile statically to avoid library problems.
-
-     CC=ccc CFLAGS="-fast -arch generic" CXX=cxx \
-     CXXFLAGS="-fast -arch generic -noexceptions -nortti" \
-     ./configure --prefix=/usr/local/mysql --disable-shared \
-     --with-extra-charsets=complex --enable-thread-safe-client \
-     --with-mysqld-ldflags=-non_shared --with-client-ldflags=-non_shared
-
-If you want to use egcs the following configure line worked for us:
-
-     CFLAGS="-O3 -fomit-frame-pointer" CXX=gcc \
-     CXXFLAGS="-O3 -fomit-frame-pointer -felide-constructors \
-     -fno-exceptions -fno-rtti" ./configure --prefix=/usr/local/mysql \
-     --disable-shared
-
-Some known problems when running MySQL on Linux-Alpha:
-
-   * Debugging threaded applications like MySQL will not work with `gdb
-     4.18'.  You should download and use gdb 5.1 instead!
-
-   * If you try linking `mysqld' statically when using `gcc', the
-     resulting image will core dump at start.  In other words, *don't*
-     use `--with-mysqld-ldflags=-all-static' with `gcc'.
-
-
-Linux PowerPC Notes
-...................
-
-MySQL should work on MkLinux with the newest `glibc' package (tested
-with `glibc' 2.0.7).
-
-
-Linux MIPS Notes
-................
-
-To get MySQL to work on Qube2, (Linux Mips), you need the newest
-`glibc' libraries (`glibc-2.0.7-29C2' is known to work).  You must also
-use the `egcs' C++ compiler (`egcs-1.0.2-9', `gcc 2.95.2' or newer).
-
-
-Linux IA-64 Notes
-.................
-
-To get MySQL to compile on Linux IA-64, we use the following compile
-line: Using `gcc-2.96':
-
-     CC=gcc CFLAGS="-O3 -fno-omit-frame-pointer" CXX=gcc \
-     CXXFLAGS="-O3 -fno-omit-frame-pointer -felide-constructors \
-     -fno-exceptions -fno-rtti" ./configure --prefix=/usr/local/mysql \
-     "--with-comment=Official MySQL binary" --with-extra-charsets=complex
-
-On IA-64, the MySQL client binaries use shared libraries. This means
-that if you install our binary distribution in some other place than
-`/usr/local/mysql' you need to add the path of the directory where you
-have `libmysqlclient.so' installed either to the `/etc/ld.so.conf' file
-or to the value of your `LD_LIBRARY_PATH' environment variable.
-
-*Note Link errors::.
 
 
 Windows Notes
@@ -4461,12 +4148,12 @@ examples if you have MySQL installed in a different location.
 
 * Menu:
 
-* Win95 start::                 Starting MySQL on Windows 9x / Me
-* NT start::                    Starting MySQL on Windows NT / 2000 / XP
+* Win95 start::                 Starting MySQL on Windows 95, 98, or Me
+* NT start::                    Starting MySQL on Windows NT, 2000, or XP
 * Windows running::             Running MySQL on Windows
 * Windows and SSH::             Connecting to MySQL Remotely from Windows with SSH
-* Windows symbolic links::      Distributing Data Across Different Disks under Win32
-* Windows client compiling::    Compiling MySQL Clients on Windows.
+* Windows symbolic links::      Distributing Data Across Different Disks on Windows
+* Windows client compiling::    Compiling MySQL Clients on Windows
 * Windows vs Unix::             MySQL for Windows Compared to Unix MySQL
 
 
@@ -4931,15 +4618,497 @@ Windows release:
      were interruptible. This would make it possible to kill open
      threads with `mysqladmin kill' on Windows.
 
-   * `mysqld' always starts in the "C" locale and not in the default
-     locale.  We would like to have `mysqld' use the current locale for
-     the sort order.
-
    * Add macros to use the faster thread-safe increment/decrement
      methods provided by Windows.
 
 Other Windows-specific issues are described in the `README' file that
 comes with the Windows distribution of MySQL.
+
+
+Linux Notes (All Linux Versions)
+--------------------------------
+
+* Menu:
+
+* Binary notes-Linux::          Linux Notes for Binary Distributions
+* Linux-x86::                   Linux x86 Notes
+* Linux-SPARC::                 Linux SPARC Notes
+* Linux-Alpha::                 Linux Alpha Notes
+* Linux-PowerPC::               Linux PowerPC Notes
+* Linux-MIPS::                  Linux MIPS Notes
+* Linux-IA-64::                 Linux IA-64 Notes
+
+The following notes regarding `glibc' apply only to the situation when
+you build MySQL yourself. If you are running Linux on an x86 machine,
+in most cases it is much better for you to just use our binary. We link
+our binaries against the best patched version of `glibc' we can come up
+with and with the best compiler options, in an attempt to make it
+suitable for a high-load server. So if you read the following text, and
+are in doubt about what you should do, try our binary first to see if
+it meets your needs, and worry about your own build only after you have
+discovered that our binary is not good enough. In that case, we would
+appreciate a note about it, so we can build a better binary next time.
+For a typical user, even for setups with a lot of concurrent
+connections and/or tables exceeding the 2G limit, our binary in most
+cases is the best choice.
+
+MySQL uses LinuxThreads on Linux.  If you are using an old Linux
+version that doesn't have `glibc2', you must install LinuxThreads
+before trying to compile MySQL.   You can get LinuxThreads at
+`http://www.mysql.com/downloads/os-linux.html'.
+
+*Note*: we have seen some strange problems with Linux 2.2.14 and MySQL
+on SMP systems. If you have a SMP system, we recommend you upgrade to
+Linux 2.4 as soon as possible.  Your system will be faster and more
+stable by doing this.
+
+Note that `glibc' versions before and including Version 2.1.1 have a
+fatal bug in `pthread_mutex_timedwait' handling, which is used when you
+do `INSERT DELAYED'.  We recommend that you not use `INSERT DELAYED'
+before upgrading glibc.
+
+If you plan to have 1000+ concurrent connections, you will need to make
+some changes to LinuxThreads, recompile it, and relink MySQL against
+the new `libpthread.a'.  Increase `PTHREAD_THREADS_MAX' in
+`sysdeps/unix/sysv/linux/bits/local_lim.h' to 4096 and decrease
+`STACK_SIZE' in `linuxthreads/internals.h' to 256 KB. The paths are
+relative to the root of `glibc' Note that MySQL will not be stable with
+around 600-1000 connections if `STACK_SIZE' is the default of 2 MB.
+
+If MySQL can't open enough files, or connections, it may be that you
+haven't configured Linux to handle enough files.
+
+In Linux 2.2 and onward, you can check the number of allocated file
+handles by doing:
+
+     cat /proc/sys/fs/file-max
+     cat /proc/sys/fs/dquot-max
+     cat /proc/sys/fs/super-max
+
+If you have more than 16 MB of memory, you should add something like the
+following to your init scripts (for example, `/etc/init.d/boot.local'
+on SuSE Linux):
+
+     echo 65536 > /proc/sys/fs/file-max
+     echo 8192 > /proc/sys/fs/dquot-max
+     echo 1024 > /proc/sys/fs/super-max
+
+You can also run the preceding commands from the command-line as root,
+but these settings will be lost the next time your computer reboots.
+
+Alternatively, you can set these parameters on bootup by using the
+`sysctl' tool, which is used by many Linux distributions (SuSE has
+added it as well, beginning with SuSE Linux 8.0). Just put the following
+values into a file named `/etc/sysctl.conf':
+
+     # Increase some values for MySQL
+     fs.file-max = 65536
+     fs.dquot-max = 8192
+     fs.super-max = 1024
+
+You should also add the following to `/etc/my.cnf':
+
+     [mysqld_safe]
+     open-files-limit=8192
+
+This should allow MySQL to create up to 8192 connections + files.
+
+The `STACK_SIZE' constant in LinuxThreads controls the spacing of thread
+stacks in the address space.  It needs to be large enough so that there
+will be plenty of room for the stack of each individual thread, but
+small enough to keep the stack of some threads from running into the
+global `mysqld' data.  Unfortunately, the Linux implementation of
+`mmap()', as we have experimentally discovered, will successfully unmap
+an already mapped region if you ask it to map out an address already in
+use, zeroing out the data on the entire page, instead of returning an
+error.  So, the safety of `mysqld' or any other threaded application
+depends on the "gentleman" behaviour of the code that creates threads.
+The user must take measures to make sure the number of running threads
+at any time is sufficiently low for thread stacks to stay away from the
+global heap.  With `mysqld', you should enforce this "gentleman"
+behaviour by setting a reasonable value for the `max_connections'
+variable.
+
+If you build MySQL yourself and do not want to mess with patching
+LinuxThreads, you should set `max_connections' to a value no higher
+than 500.  It should be even less if you have a large key buffer,  large
+heap tables, or some other things that make `mysqld' allocate a lot of
+memory, or if you are running a 2.2 kernel with a 2G patch. If you are
+using our binary or RPM version 3.23.25 or later, you can safely set
+`max_connections' at 1500, assuming no large key buffer or heap tables
+with lots of data.  The more you reduce `STACK_SIZE' in LinuxThreads
+the more threads you can safely create.  We recommend the values between
+128K and 256K.
+
+If you use a lot of concurrent connections, you may suffer from a
+"feature" in the 2.2 kernel that penalises a process for forking or
+cloning a child in an attempt to prevent a fork bomb attack.  This will
+cause MySQL not to scale well as you increase the number of concurrent
+clients.  On single-CPU systems, we have seen this manifested in a very
+slow thread creation, which means it may take a long time to connect to
+MySQL (as long as 1 minute), and it may take just as long to shut it
+down.  On multiple-CPU systems, we have observed a gradual drop in
+query speed as the number of clients increases.  In the process of
+trying to find a solution, we have received a kernel patch from one of
+our users, who claimed it made a lot of difference for his site.  The
+patch is available at
+`http://www.mysql.com/Downloads/Patches/linux-fork.patch'. We have now
+done rather extensive testing of this patch on both development and
+production systems.  It has significantly improved `MySQL' performance
+without causing any problems and we now recommend it to our users who
+are still running high-load servers on 2.2 kernels.  This issue has
+been fixed in the 2.4 kernel, so if you are not satisfied with the
+current performance of your system, rather than patching your 2.2
+kernel, it might be easier to just upgrade to 2.4, which will also give
+you a nice SMP boost in addition to fixing this fairness bug.
+
+We have tested MySQL on the 2.4 kernel on a 2-CPU machine and found
+MySQL scales *much* better--there was virtually no slowdown on queries
+throughput all the way up to 1000 clients, and the MySQL scaling factor
+(computed as the ratio of maximum throughput to the throughput with one
+client) was 180%.  We have observed similar results on a 4-CPU
+system--virtually no slowdown as the number of clients was increased up
+to 1000, and 300% scaling factor. So for a high-load SMP server we
+would definitely recommend the 2.4 kernel at this point. We have
+discovered that it is essential to run `mysqld' process with the
+highest possible priority on the 2.4 kernel to achieve maximum
+performance.  This can be done by adding `renice -20 $$' command to
+`mysqld_safe'. In our testing on a 4-CPU machine, increasing the
+priority gave 60% increase in throughput with 400 clients.
+
+We are currently also trying to collect more information on how well
+`MySQL' performs on 2.4 kernel on 4-way and 8-way systems. If you have
+access such a system and have done some benchmarks, please send a mail
+to <docs@mysql.com> with the results - we will include them in the
+manual.
+
+There is another issue that greatly hurts MySQL performance, especially
+on SMP systems.  The implementation of mutex in LinuxThreads in
+`glibc-2.1' is very bad for programs with many threads that only hold
+the mutex for a short time. On an SMP system, ironic as it is, if you
+link MySQL against unmodified `LinuxThreads', removing processors from
+the machine improves MySQL performance in many cases.  We have made a
+patch available for `glibc 2.1.3' to correct this behaviour
+(`http://www.mysql.com/Downloads/Linux/linuxthreads-2.1-patch').
+
+With `glibc-2.2.2' MySQL version 3.23.36 will use the adaptive mutex,
+which is much better than even the patched one in `glibc-2.1.3'. Be
+warned, however, that under some conditions, the current mutex code in
+`glibc-2.2.2' overspins, which hurts MySQL performance. The chance of
+this condition can be reduced by renicing `mysqld' process to the
+highest priority. We have also been able to correct the overspin
+behaviour with a patch, available at
+`http://www.mysql.com/Downloads/Linux/linuxthreads-2.2.2.patch'.  It
+combines the correction of overspin, maximum number of threads, and
+stack spacing all in one. You will need to apply it in the
+`linuxthreads' directory with `patch -p0
+</tmp/linuxthreads-2.2.2.patch'.  We hope it will be included in some
+form in to the future releases of `glibc-2.2'. In any case, if you link
+against `glibc-2.2.2' you still need to correct `STACK_SIZE' and
+`PTHREAD_THREADS_MAX'. We hope that the defaults will be corrected to
+some more acceptable values for high-load MySQL setup in the future, so
+that your own build can be reduced to `./configure; make; make install'.
+
+We recommend that you use the above patches to build a special static
+version of `libpthread.a' and use it only for statically linking
+against `MySQL'. We know that the patches are safe for `MySQL' and
+significantly improve its performance, but we cannot say anything about
+other applications. If you link other applications against the patched
+version of the library, or build a patched shared version and install
+it on your system, you are doing it at your own risk with regard to
+other applications that depend on `LinuxThreads'.
+
+If you experience any strange problems during the installation of
+MySQL, or with some common utilities hanging, it is very likely that
+they are either library or compiler related. If this is the case, using
+our binary will resolve them.
+
+One known problem with the binary distribution is that with older Linux
+systems that use `libc' (like Red Hat 4.x or Slackware), you will get
+some non-fatal problems with hostname resolution.  *Note Binary
+notes-Linux::.
+
+When using LinuxThreads you will see a minimum of three processes
+running.  These are in fact threads.  There will be one thread for the
+LinuxThreads manager, one thread to handle connections, and one thread
+to handle alarms and signals.
+
+Note that the Linux kernel and the LinuxThread library can by default
+only have 1024 threads.  This means that you can only have up to 1021
+connections to MySQL on an unpatched system.  The page
+`http://www.volano.com/linuxnotes.html' contains information how to go
+around this limit.
+
+If you see a dead `mysqld' daemon process with `ps', this usually means
+that you have found a bug in MySQL or you have a corrupted table. *Note
+Crashing::.
+
+To get a core dump on Linux if `mysqld' dies with a `SIGSEGV' signal,
+you can start `mysqld' with the `--core-file' option.  Note that you
+also probably need to raise the `core file size' by adding `ulimit -c
+1000000' to `mysqld_safe' or starting `mysqld_safe' with
+`--core-file-size=1000000'.  *Note `mysqld_safe': mysqld_safe.
+
+If you are linking your own MySQL client and get the error:
+
+     ld.so.1: ./my: fatal: libmysqlclient.so.4:
+     open failed: No such file or directory
+
+When executing them, the problem can be avoided by one of the following
+methods:
+
+   * Link the client with the following flag (instead of `-Lpath'):
+     `-Wl,r/path-libmysqlclient.so'.
+
+   * Copy `libmysqclient.so' to `/usr/lib'.
+
+   * Add the pathname of the directory where `libmysqlclient.so' is
+     located to the `LD_RUN_PATH' environment variable before running
+     your client.
+
+If you are using the Fujitsu compiler `(fcc / FCC)' you will have some
+problems compiling MySQL because the Linux header files are very `gcc'
+oriented.
+
+The following `configure' line should work with `fcc/FCC':
+
+     CC=fcc CFLAGS="-O -K fast -K lib -K omitfp -Kpreex -D_GNU_SOURCE \
+     -DCONST=const -DNO_STRTOLL_PROTO" CXX=FCC CXXFLAGS="-O -K fast -K lib \
+     -K omitfp -K preex --no_exceptions --no_rtti -D_GNU_SOURCE -DCONST=const \
+     -Dalloca=__builtin_alloca -DNO_STRTOLL_PROTO \
+     '-D_EXTERN_INLINE=static __inline'" ./configure --prefix=/usr/local/mysql \
+     --enable-assembler --with-mysqld-ldflags=-all-static --disable-shared \
+     --with-low-memory
+
+
+Linux Notes for Binary Distributions
+....................................
+
+MySQL needs at least Linux Version 2.0.
+
+*Warning*: We have reports from some MySQL users that they have got
+serious stability problems with MySQL with Linux kernel 2.2.14.  If you
+are using this kernel you should upgrade to 2.2.19 (or newer) or to a
+2.4 kernel.  If you have a multi-cpu box, then you should seriously
+consider using 2.4 as this will give you a significant speed boost.
+
+The binary release is linked with `-static', which means you do not
+normally need to worry about which version of the system libraries you
+have. You need not install LinuxThreads, either.  A program linked with
+`-static' is slightly bigger than a dynamically linked program but also
+slightly faster (3-5%).  One problem, however, is that you can't use
+user-definable functions (UDFs) with a statically linked program.  If
+you are going to write or use UDFs (this is something for C or C++
+programmers only), you must compile MySQL yourself, using dynamic
+linking.
+
+If you are using a `libc'-based system (instead of a `glibc2' system),
+you will probably get some problems with hostname resolving and
+`getpwnam()' with the binary release. (This is because `glibc'
+unfortunately depends on some external libraries to resolve hostnames
+and `getpwent()', even when compiled with `-static'). In this case you
+probably get the following error message when you run
+`mysql_install_db':
+
+     Sorry, the host 'xxxx' could not be looked up
+
+or the following error when you try to run `mysqld' with the `--user'
+option:
+
+     getpwnam: No such file or directory
+
+You can solve this problem in one of the following ways:
+
+   * Get a MySQL source distribution (an RPM or the `tar.gz'
+     distribution) and install this instead.
+
+   * Execute `mysql_install_db --force'; this will not execute the
+     `resolveip' test in `mysql_install_db'.  The downside is that you
+     can't use host names in the grant tables; you must use IP numbers
+     instead (except for `localhost').  If you are using an old MySQL
+     release that doesn't support `--force', you have to remove the
+     `resolveip' test in `mysql_install' with an editor.
+
+   * Start `mysqld' with `su' instead of using `--user'.
+
+The Linux-Intel binary and RPM releases of MySQL are configured for the
+highest possible speed.  We are always trying to use the fastest stable
+compiler available.
+
+MySQL Perl support requires Version Perl 5.004_03 or newer.
+
+On some Linux 2.2 versions, you may get the error `Resource temporarily
+unavailable' when you do a lot of new connections to a `mysqld' server
+over TCP/IP.
+
+The problem is that Linux has a delay between when you close a TCP/IP
+socket and until this is actually freed by the system.  As there is only
+room for a finite number of TCP/IP slots, you will get the above error
+if you try to do too many new TCP/IP connections during a small time,
+like when you run the MySQL `test-connect' benchmark over TCP/IP.
+
+We have mailed about this problem a couple of times to different Linux
+mailing lists but have never been able to resolve this properly.
+
+The only known 'fix' to this problem is to use persistent connections in
+your clients or use sockets, if you are running the database server and
+clients on the same machine.  We hope that the `Linux 2.4' kernel will
+fix this problem in the future.
+
+
+Linux x86 Notes
+...............
+
+MySQL requires `libc' Version 5.4.12 or newer. It's known to work with
+`libc' 5.4.46.  `glibc' Version 2.0.6 and later should also work. There
+have been some problems with the `glibc' RPMs from Red Hat, so if you
+have problems, check whether there are any updates.  The `glibc'
+2.0.7-19 and 2.0.7-29 RPMs are known to work.
+
+If you are using Red Hat 8.0 or a new `glibc' 2.2.x library, you should
+start `mysqld' with the option `--thread-stack=192K'.  (Use `-O
+thread_stack=192K' before MySQL 4.) If you don't do this, `mysqld' will
+die in `gethostbyaddr()' because the new `glibc' library requires a
+stack size greater than 128K for this call. This stack size is now the
+default on MySQL 4.0.10 and above.
+
+If you are using `gcc' 3.0 and above to compile MySQL, you must install
+the `libstdc++v3' library before compiling MySQL; if you don't do this,
+you will get an error about a missing `__cxa_pure_virtual' symbol
+during linking.
+
+On some older Linux distributions, `configure' may produce an error
+like this:
+
+     Syntax error in sched.h. Change _P to __P in the /usr/include/sched.h file.
+     See the Installation chapter in the Reference Manual.
+
+Just do what the error message says and add an extra underscore to the
+`_P' macro that has only one underscore, then try again.
+
+You may get some warnings when compiling; those shown here can be
+ignored:
+
+     mysqld.cc -o objs-thread/mysqld.o
+     mysqld.cc: In function `void init_signals()':
+     mysqld.cc:315: warning: assignment of negative value `-1' to
+     `long unsigned int'
+     mysqld.cc: In function `void * signal_hand(void *)':
+     mysqld.cc:346: warning: assignment of negative value `-1' to
+     `long unsigned int'
+
+`mysql.server' can be found in the `share/mysql' directory under the
+MySQL installation directory or in the `support-files' directory of the
+MySQL source tree.
+
+If `mysqld' always core dumps when it starts up, the problem may be that
+you have an old `/lib/libc.a'.  Try renaming it, then remove
+`sql/mysqld' and do a new `make install' and try again.  This problem
+has been reported on some Slackware installations.
+
+If you get the following error when linking `mysqld', it means that
+your `libg++.a' is not installed correctly:
+
+     /usr/lib/libc.a(putc.o): In function `_IO_putc':
+     putc.o(.text+0x0): multiple definition of `_IO_putc'
+
+You can avoid using `libg++.a' by running `configure' like this:
+
+     shell> CXX=gcc ./configure
+
+
+Linux SPARC Notes
+.................
+
+In some implementations, `readdir_r()' is broken.  The symptom is that
+`SHOW DATABASES' always returns an empty set.  This can be fixed by
+removing `HAVE_READDIR_R' from `config.h' after configuring and before
+compiling.
+
+
+Linux Alpha Notes
+.................
+
+MySQL Version 3.23.12 is the first MySQL version that is tested on
+Linux-Alpha.  If you plan to use MySQL on Linux-Alpha, you should
+ensure that you have this version or newer.
+
+We have tested MySQL on Alpha with our benchmarks and test suite, and
+it appears to work nicely.
+
+We currently build the MySQL binary packages on SuSE Linux 7.0 for AXP,
+kernel 2.4.4-SMP, Compaq C compiler (V6.2-505) and Compaq C++ compiler
+(V6.3-006) on a Compaq DS20 machine with an Alpha EV6 processor.
+
+You can find the above compilers at
+`http://www.support.compaq.com/alpha-tools/'.  By using these compilers,
+instead of gcc, we get about 9-14% better performance with MySQL.
+
+Note that until MySQL version 3.23.52 and 4.0.2 we optimised the binary
+for the current CPU only (by using the `-fast' compile option); this
+meant that you could only use our binaries if you had an Alpha EV6
+processor.
+
+Starting with all following releases we added the `-arch generic' flag
+to our compile options, which makes sure the binary runs on all Alpha
+processors. We also compile statically to avoid library problems.
+
+     CC=ccc CFLAGS="-fast -arch generic" CXX=cxx \
+     CXXFLAGS="-fast -arch generic -noexceptions -nortti" \
+     ./configure --prefix=/usr/local/mysql --disable-shared \
+     --with-extra-charsets=complex --enable-thread-safe-client \
+     --with-mysqld-ldflags=-non_shared --with-client-ldflags=-non_shared
+
+If you want to use egcs the following configure line worked for us:
+
+     CFLAGS="-O3 -fomit-frame-pointer" CXX=gcc \
+     CXXFLAGS="-O3 -fomit-frame-pointer -felide-constructors \
+     -fno-exceptions -fno-rtti" ./configure --prefix=/usr/local/mysql \
+     --disable-shared
+
+Some known problems when running MySQL on Linux-Alpha:
+
+   * Debugging threaded applications like MySQL will not work with `gdb
+     4.18'.  You should download and use gdb 5.1 instead!
+
+   * If you try linking `mysqld' statically when using `gcc', the
+     resulting image will core dump at start.  In other words, *don't*
+     use `--with-mysqld-ldflags=-all-static' with `gcc'.
+
+
+Linux PowerPC Notes
+...................
+
+MySQL should work on MkLinux with the newest `glibc' package (tested
+with `glibc' 2.0.7).
+
+
+Linux MIPS Notes
+................
+
+To get MySQL to work on Qube2, (Linux Mips), you need the newest
+`glibc' libraries (`glibc-2.0.7-29C2' is known to work).  You must also
+use the `egcs' C++ compiler (`egcs-1.0.2-9', `gcc 2.95.2' or newer).
+
+
+Linux IA-64 Notes
+.................
+
+To get MySQL to compile on Linux IA-64, we use the following compile
+line: Using `gcc-2.96':
+
+     CC=gcc CFLAGS="-O3 -fno-omit-frame-pointer" CXX=gcc \
+     CXXFLAGS="-O3 -fno-omit-frame-pointer -felide-constructors \
+     -fno-exceptions -fno-rtti" ./configure --prefix=/usr/local/mysql \
+     "--with-comment=Official MySQL binary" --with-extra-charsets=complex
+
+On IA-64, the MySQL client binaries use shared libraries. This means
+that if you install our binary distribution in some other place than
+`/usr/local/mysql' you need to add the path of the directory where you
+have `libmysqlclient.so' installed either to the `/etc/ld.so.conf' file
+or to the value of your `LD_LIBRARY_PATH' environment variable.
+
+*Note Link errors::.
 
 
 Solaris Notes
@@ -5192,7 +5361,7 @@ following methods:
 Solaris x86 Notes
 .................
 
-On Solaris 2.8 on x86, `mysqld' will dump core if you remove the debug
+On Solaris 8 on x86, `mysqld' will dump core if you remove the debug
 symbols using `strip'.
 
 If you are using `gcc' or `egcs' on Solaris x86 and you experience
@@ -5232,8 +5401,8 @@ as specific versions within those.
 FreeBSD Notes
 .............
 
-FreeBSD 4.x is recommended for running MySQL since the thread package
-is much more integrated.
+FreeBSD 4.x or newer is recommended for running MySQL since the thread
+package is much more integrated.
 
 The easiest and therefore the preferred way to install is to use the
 mysql-server and mysql-client ports available on
@@ -5268,7 +5437,14 @@ LinuxThreads library, which avoids a few of the problems that the
 native FreeBSD thread implementation has. For a very good comparison of
 LinuxThreads vs. native threads have a look at Jeremy Zawodny's article
 "FreeBSD or Linux for your MySQL Server?" at
-`http://jeremy.zawodny.com/blog/archives/000203.html'.
+`http://jeremy.zawodny.com/blog/archives/000697.html'
+
+The known problems when using LinuxThreads on FreeBSD are:
+
+   * `wait_timeout' is not working (probably signal handling problem in
+     FreeBSD/LinuxThreads).  This is supposed to get fixed in FreeBSD
+     5.0.  The symptom is that persistent connections can hang for *a
+     long* time without getting closed done.
 
 The MySQL `Makefile's require GNU make (`gmake') to work.  If you want
 to compile MySQL you need to install GNU `make' first.
@@ -5450,7 +5626,7 @@ Mac OS X Notes
 * Menu:
 
 * Mac OS X 10.x::               Mac OS X 10.x
-* Mac OS X Server::             Mac OS X Server
+* Mac OS X Server::             Mac OS X Server 1.2 (Rhapsody)
 
 
 Mac OS X 10.x
@@ -5719,7 +5895,7 @@ a power2 machine.
 If you don't know what your CPU is then do a "uname -m", this will give
 you back a string that looks like "000514676700", with a format of
 xxyyyyyymmss where xx and ss are always 0's, yyyyyy is a unique system
-id and mm is the id of the CPU Planar. A chart of these values can be
+ID and mm is the ID of the CPU Planar. A chart of these values can be
 found at
 `http://publib.boulder.ibm.com/doc_link/en_US/a_doc_lib/cmds/aixcmds5/uname.htm'.
 This will give you a machine type and a machine model you can use to
@@ -6244,14 +6420,7 @@ building and optimising MySQL for NetWare.
 BeOS Notes
 ----------
 
-We are really interested in getting MySQL to work on BeOS, but
-unfortunately we don't have any person who knows BeOS or has time to do
-a port.
-
-We are interested in finding someone to do a port, and we will help them
-with any technical questions they may have while doing the port.
-
-We have previously talked with some BeOS developers that have said that
+We have in the past talked with some BeOS developers that have said that
 MySQL is 80% ported to BeOS, but we haven't heard from them in a while.
 
 
@@ -6262,8 +6431,7 @@ Perl Installation Comments
 
 * Perl installation::           Installing Perl on Unix
 * ActiveState Perl::            Installing ActiveState Perl on Windows
-* Windows Perl::                Installing the MySQL Perl distribution on Windows
-* Perl support problems::       Problems using the Perl `DBI'/`DBD' interface
+* Perl support problems::       Problems Using the Perl `DBI'/`DBD' Interface
 
 
 Installing Perl on Unix
@@ -6362,25 +6530,6 @@ If you can't get the above to work, you should instead install the
      use DBI;
      $dbh= DBI->connect("DBI:ODBC:$dsn","$user","$password") ||
        die "Got error $DBI::errstr when connecting to $dsn\n";
-
-
-Installing the MySQL Perl Distribution on Windows
--------------------------------------------------
-
-The MySQL Perl distribution contains `DBI', `DBD:MySQL' and `DBD:ODBC'.
-
-   * Get the Perl distribution for Windows from
-     `http://www.mysql.com/downloads/os-win32.html'.
-
-   * Unzip the distribution in `C:' so that you get a `C:\PERL'
-     directory.
-
-   * Add the directory `C:\PERL\BIN' to your path.
-
-   * Add the directory `C:\PERL\BIN\MSWIN32-x86-thread' or
-     `C:\PERL\BIN\MSWIN32-x86' to your path.
-
-   * Test that `perl' works by executing `perl -v' in a DOS shell.
 
 
 Problems Using the Perl `DBI'/`DBD' Interface

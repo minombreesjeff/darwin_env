@@ -24,6 +24,30 @@
   having to re-read the master updates.
  */
 
+/*
+  MUTEXES in replication:
+
+  LOCK_active_mi: this is meant for multimaster, when we can switch from a
+  master to another. It protects active_mi. We don't care of it for the moment,
+  as active_mi never moves (it's created at startup and deleted at shutdown, and
+  not changed: it always points to the same MASTER_INFO struct), because we
+  don't have multimaster. So for the moment, mi does not move, and mi->rli does
+  not either.
+
+  In MASTER_INFO: run_lock, data_lock
+  run_lock protects all information about the run state: slave_running, and the
+  existence of the I/O thread (to stop/start it, you need this mutex).
+  data_lock protects some moving members of the struct: counters (log name,
+  position) and relay log (MYSQL_LOG object).
+
+  In RELAY_LOG_INFO: run_lock, data_lock
+  see MASTER_INFO
+  
+  In MYSQL_LOG: LOCK_log, LOCK_index of the binlog and the relay log
+  LOCK_log: when you write to it. LOCK_index: when you create/delete a binlog
+  (so that you have to update the .index file).
+*/
+
 extern ulong slave_net_timeout, master_retry_count;
 extern MY_BITMAP slave_error_mask;
 extern bool use_slave_mask;
@@ -146,7 +170,8 @@ typedef struct st_relay_log_info
   /*
     Handling of the relay_log_space_limit optional constraint.
     ignore_log_space_limit is used to resolve a deadlock between I/O and SQL
-    threads, it makes the I/O thread temporarily forget about the constraint
+    threads, the SQL thread sets it to unblock the I/O thread and make it
+    temporarily forget about the constraint.
   */
   ulonglong log_space_limit,log_space_total;
   bool ignore_log_space_limit;
@@ -360,9 +385,9 @@ int start_slave_thread(pthread_handler h_func, pthread_mutex_t* start_lock,
 int mysql_table_dump(THD* thd, const char* db,
 		     const char* tbl_name, int fd = -1);
 
-/* retrieve non-exitent table from master */
+/* retrieve table from master and copy to slave*/
 int fetch_master_table(THD* thd, const char* db_name, const char* table_name,
-		       MASTER_INFO* mi, MYSQL* mysql);
+		       MASTER_INFO* mi, MYSQL* mysql, bool overwrite);
 
 int show_master_info(THD* thd, MASTER_INFO* mi);
 int show_binlog_info(THD* thd);
@@ -382,12 +407,15 @@ int add_table_rule(HASH* h, const char* table_spec);
 int add_wild_table_rule(DYNAMIC_ARRAY* a, const char* table_spec);
 void init_table_rule_hash(HASH* h, bool* h_inited);
 void init_table_rule_array(DYNAMIC_ARRAY* a, bool* a_inited);
-char* rewrite_db(char* db);
+const char *rewrite_db(const char* db);
+const char *print_slave_db_safe(const char* db);
 int check_expected_error(THD* thd, RELAY_LOG_INFO* rli, int error_code);
 void skip_load_data_infile(NET* net);
-void slave_print_error(RELAY_LOG_INFO* rli,int err_code, const char* msg, ...);
+void slave_print_error(RELAY_LOG_INFO* rli, int err_code, const char* msg, ...);
 
 void end_slave(); /* clean up */
+void init_master_info_with_options(MASTER_INFO* mi);
+void clear_last_slave_error(RELAY_LOG_INFO* rli);
 int init_master_info(MASTER_INFO* mi, const char* master_info_fname,
 		     const char* slave_info_fname,
 		     bool abort_if_no_master_info_file);

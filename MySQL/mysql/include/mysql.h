@@ -60,6 +60,9 @@ typedef int my_socket;
 extern unsigned int mysql_port;
 extern char *mysql_unix_port;
 
+#define CLIENT_NET_READ_TIMEOUT		365*24*3600	/* Timeout on read */
+#define CLIENT_NET_WRITE_TIMEOUT	365*24*3600	/* Timeout on write */
+
 #ifdef __NETWARE__
 #pragma pack(push, 8)		/* 8 byte alignment */
 #endif
@@ -349,10 +352,11 @@ int		STDCALL mysql_refresh(MYSQL *mysql,
 				     unsigned int refresh_options);
 int		STDCALL mysql_kill(MYSQL *mysql,unsigned long pid);
 int		STDCALL mysql_ping(MYSQL *mysql);
-const char *		STDCALL mysql_stat(MYSQL *mysql);
-const char *		STDCALL mysql_get_server_info(MYSQL *mysql);
-const char *		STDCALL mysql_get_client_info(void);
-const char *		STDCALL mysql_get_host_info(MYSQL *mysql);
+const char *	STDCALL mysql_stat(MYSQL *mysql);
+const char *	STDCALL mysql_get_server_info(MYSQL *mysql);
+const char *	STDCALL mysql_get_client_info(void);
+unsigned long	STDCALL mysql_get_client_version(void);
+const char *	STDCALL mysql_get_host_info(MYSQL *mysql);
 unsigned int	STDCALL mysql_get_proto_info(MYSQL *mysql);
 MYSQL_RES *	STDCALL mysql_list_dbs(MYSQL *mysql,const char *wild);
 MYSQL_RES *	STDCALL mysql_list_tables(MYSQL *mysql,const char *wild);
@@ -423,6 +427,8 @@ int simple_command(MYSQL *mysql,enum enum_server_command command,
 		   const char *arg, unsigned long length, my_bool skipp_check);
 unsigned long net_safe_read(MYSQL* mysql);
 void mysql_once_init(void);
+
+extern my_bool server_inited;
 
 #ifdef __NETWARE__
 #pragma pack(pop)		/* restore alignment */

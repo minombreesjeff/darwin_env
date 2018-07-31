@@ -240,7 +240,7 @@ int berkeley_show_logs(THD *thd)
   MEM_ROOT *old_root=my_pthread_getspecific_ptr(MEM_ROOT*,THR_MALLOC);
   DBUG_ENTER("berkeley_show_logs");
 
-  init_alloc_root(&show_logs_root, 1024, 1024);
+  init_sql_alloc(&show_logs_root, 1024, 1024);
   my_pthread_setspecific_ptr(THR_MALLOC,&show_logs_root);
 
   if ((error= log_archive(db_env, &all_logs, DB_ARCH_ABS | DB_ARCH_LOG,
@@ -1420,6 +1420,8 @@ int ha_berkeley::index_read(byte * buf, const byte * key,
   bzero((char*) &row,sizeof(row));
   if (key_len == key_info->key_length)
   {
+    if (find_flag == HA_READ_AFTER_KEY)
+      key_info->handler.bdb_return_if_eq= 1;
     error=read_row(cursor->c_get(cursor, pack_key(&last_key,
 						  active_index,
 						  key_buff,
@@ -1428,6 +1430,7 @@ int ha_berkeley::index_read(byte * buf, const byte * key,
 				 (find_flag == HA_READ_KEY_EXACT ?
 				  DB_SET : DB_SET_RANGE)),
 		   (char*) buf, active_index, &row, (DBT*) 0, 0);
+    key_info->handler.bdb_return_if_eq= 0;
   }
   else
   {

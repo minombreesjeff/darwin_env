@@ -3,6 +3,10 @@
 %define mysqld_user		mysql
 %define server_suffix -standard
 
+# We don't package all files installed into the build root by intention -
+# See BUG#998 for details.
+%define _unpackaged_files_terminate_build 0
+
 %define see_base For a description of MySQL see the base MySQL RPM or http://www.mysql.com
 
 Name: MySQL
@@ -216,7 +220,6 @@ sh -c  "PATH=\"${MYSQL_BUILD_PATH:-$PATH}\" \
             --infodir=%{_infodir} \
             --includedir=%{_includedir} \
             --mandir=%{_mandir} \
-	    --with-embedded-server \
 	    --enable-thread-safe-client \
 	    --with-comment=\"Official MySQL RPM\";
 	    # Add this for more debugging support
@@ -245,7 +248,7 @@ MBD=$RPM_BUILD_DIR/mysql-%{mysql_version}
 
 # Clean up the BuildRoot first
 [ "$RBR" != "/" ] && [ -d $RBR ] && rm -rf $RBR;
-mkdir -p $RBR
+mkdir -p $RBR%{_libdir}/mysql
 
 #
 # Use MYSQL_BUILD_PATH so that we can use a dedicated version of gcc
@@ -267,6 +270,7 @@ BuildMySQL "--enable-shared \
 		--with-berkeley-db \
 		--with-innodb \
 		--with-raid \
+		--with-embedded-server \
 		--with-server-suffix='-Max'"
 
 # Save everything for debug
@@ -275,6 +279,9 @@ BuildMySQL "--enable-shared \
 # Save mysqld-max
 mv sql/mysqld sql/mysqld-max
 nm --numeric-sort sql/mysqld-max > sql/mysqld-max.sym
+
+# Install embedded server library in the build root
+install -m 644 libmysqld/libmysqld.a $RBR%{_libdir}/mysql
 
 # Save libraries
 (cd libmysql/.libs; tar cf $RBR/shared-libs.tar *.so*)
@@ -295,13 +302,14 @@ BuildMySQL "--disable-shared \
 		--with-client-ldflags='-all-static' \
 		$USE_OTHER_LIBC_DIR \
 		--with-server-suffix='%{server_suffix}' \
+		--without-embedded-server \
 		--without-berkeley-db \
 		--with-innodb \
 		--without-vio \
 		--without-openssl"
 nm --numeric-sort sql/mysqld > sql/mysqld.sym
 
-%install -n mysql-%{mysql_version}
+%install
 RBR=$RPM_BUILD_ROOT
 MBD=$RPM_BUILD_DIR/mysql-%{mysql_version}
 
@@ -319,7 +327,7 @@ install -d $RBR%{_sbindir}
 make install-strip DESTDIR=$RBR benchdir_root=%{_datadir}
 
 # Install shared libraries (Disable for architectures that don't support it)
-(cd $RBR%{_libdir}; tar xf $RBR/shared-libs.tar)
+(cd $RBR%{_libdir}; tar xf $RBR/shared-libs.tar; rm -f $RBR/shared-libs.tar)
 
 # install saved mysqld-max
 install -s -m755 $MBD/sql/mysqld-max $RBR%{_sbindir}/mysqld-max
@@ -447,6 +455,7 @@ fi
 %doc %attr(644, root, man) %{_mandir}/man1/isamlog.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysql_zap.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqld.1*
+%doc %attr(644, root, man) %{_mandir}/man1/mysql_fix_privilege_tables.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqld_multi.1*
 %doc %attr(644, root, man) %{_mandir}/man1/mysqld_safe.1*
 %doc %attr(644, root, man) %{_mandir}/man1/perror.1*
@@ -462,6 +471,7 @@ fi
 %attr(755, root, root) %{_bindir}/myisampack
 %attr(755, root, root) %{_bindir}/mysql_convert_table_format
 %attr(755, root, root) %{_bindir}/mysql_explain_log
+%attr(755, root, root) %{_bindir}/mysql_fix_extensions
 %attr(755, root, root) %{_bindir}/mysql_fix_privilege_tables
 %attr(755, root, root) %{_bindir}/mysql_install_db
 %attr(755, root, root) %{_bindir}/mysql_secure_installation
@@ -492,12 +502,14 @@ fi
 %attr(755, root, root) %{_bindir}/msql2mysql
 %attr(755, root, root) %{_bindir}/mysql
 %attr(755, root, root) %{_bindir}/mysql_find_rows
+%attr(755, root, root) %{_bindir}/mysql_tableinfo
 %attr(755, root, root) %{_bindir}/mysql_waitpid
 %attr(755, root, root) %{_bindir}/mysqlaccess
 %attr(755, root, root) %{_bindir}/mysqladmin
 %attr(755, root, root) %{_bindir}/mysqlbinlog
 %attr(755, root, root) %{_bindir}/mysqlcheck
 %attr(755, root, root) %{_bindir}/mysqldump
+%attr(755, root, root) %{_bindir}/mysqldumpslow
 %attr(755, root, root) %{_bindir}/mysqlimport
 %attr(755, root, root) %{_bindir}/mysqlshow
 
@@ -553,11 +565,26 @@ fi
 %files embedded
 %attr(644, root, root) %{_libdir}/mysql/libmysqld.a
 
+# The spec file changelog only includes changes made to the spec file
+# itself
 %changelog 
+* Fri Aug 29 2003 Lenz Grimmer <lenz@mysql.com>
+
+- Fixed BUG 1162 (removed macro names from the changelog)
+- Really fixed BUG 998 (disable the checking for installed but
+  unpackaged files)
+
+* Tue Aug 05 2003 Lenz Grimmer <lenz@mysql.com>
+
+- Fixed BUG 959 (libmysqld not being compiled properly)
+- Fixed BUG 998 (RPM build errors): added missing files to the
+  distribution (mysql_fix_extensions, mysql_tableinfo, mysqldumpslow,
+  mysql_fix_privilege_tables.1), removed "-n" from install section.
+
 * Wed Jul 09 2003 Lenz Grimmer <lenz@mysql.com>
 
 - removed the GIF Icon (file was not included in the sources anyway)
-- removed unused variable %shared_lib_version
+- removed unused variable shared_lib_version
 - do not run automake before building the standard binary
   (should not be necessary)
 - add server suffix '-standard' to standard binary (to be in line
@@ -578,7 +605,7 @@ fi
 * Mon Mar 10 2003 Lenz Grimmer <lenz@mysql.com>
 
 - added missing file mysql_secure_installation to server subpackage
-  (bug #141)
+  (BUG 141)
 
 * Tue Feb 11 2003 Lenz Grimmer <lenz@mysql.com>
 

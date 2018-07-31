@@ -198,6 +198,8 @@ INCLUDES = @MT_INCLUDES@ -I$(top_srcdir)/include -I$(srcdir) \
 LIBS = @LIBS@ @WRAPLIBS@
 LDADD = @CLIENT_EXTRA_LDFLAGS@ ../libmysqld.a @innodb_system_libs@ @LIBDL@ $(CXXLDFLAGS)
 
+mysqltest_LINK = $(CXXLINK)
+
 mysqltest_SOURCES = mysqltest.c
 
 mysql_SOURCES = mysql.cc readline.cc completion_hash.cc \
@@ -274,7 +276,7 @@ mysql$(EXEEXT): $(mysql_OBJECTS) $(mysql_DEPENDENCIES)
 	$(CXXLINK) $(mysql_LDFLAGS) $(mysql_OBJECTS) $(mysql_LDADD) $(LIBS)
 mysqltest$(EXEEXT): $(mysqltest_OBJECTS) $(mysqltest_DEPENDENCIES) 
 	@rm -f mysqltest$(EXEEXT)
-	$(LINK) $(mysqltest_LDFLAGS) $(mysqltest_OBJECTS) $(mysqltest_LDADD) $(LIBS)
+	$(mysqltest_LINK) $(mysqltest_LDFLAGS) $(mysqltest_OBJECTS) $(mysqltest_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT) core *.core

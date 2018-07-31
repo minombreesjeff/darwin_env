@@ -42,7 +42,7 @@
 
 **********************************************************************/
 
-#define MTEST_VERSION "1.27"
+#define MTEST_VERSION "1.29"
 
 #include <my_global.h>
 #include <mysql_embed.h>
@@ -77,6 +77,7 @@
 #ifndef MYSQL_MANAGER_PORT
 #define MYSQL_MANAGER_PORT 23546
 #endif
+#define MAX_SERVER_ARGS 20
 
 /*
   Sometimes in a test the client starts before
@@ -121,9 +122,18 @@ static int  *block_ok_stack_end;
 static int *cur_block, *block_stack_end;
 static int block_stack[BLOCK_STACK_DEPTH];
 
-
 static int block_ok_stack[BLOCK_STACK_DEPTH];
 static uint global_expected_errno[MAX_EXPECTED_ERRORS], global_expected_errors;
+
+static int embedded_server_arg_count=0;
+static char *embedded_server_args[MAX_SERVER_ARGS];
+
+static const char *embedded_server_groups[] = {
+  "server",
+  "embedded",
+  "mysqltest_SERVER",
+  NullS
+};
 
 #include "sslopt-vars.h"
 
@@ -199,6 +209,7 @@ Q_ENABLE_RESULT_LOG, Q_DISABLE_RESULT_LOG,
 Q_SERVER_START, Q_SERVER_STOP,Q_REQUIRE_MANAGER,
 Q_WAIT_FOR_SLAVE_TO_STOP,
 Q_REQUIRE_VERSION,
+Q_EXEC,
 Q_UNKNOWN,			       /* Unknown command.   */
 Q_COMMENT,			       /* Comments, ignored. */
 Q_COMMENT_WITH_COMMAND
@@ -221,6 +232,13 @@ const char *command_names[]=
   "connection",
   "query",
   "connect",
+  /* the difference between sleep and real_sleep is that sleep will use
+     the delay from command line (--sleep) if there is one.
+     real_sleep always uses delay from it's argument.
+     the logic is that sometimes delays are cpu-dependent (and --sleep
+     can be used to set this delay. real_sleep is used for cpu-independent
+     delays
+   */
   "sleep",
   "real_sleep",
   "inc",
@@ -257,6 +275,7 @@ const char *command_names[]=
   "require_manager",
   "wait_for_slave_to_stop",
   "require_version",
+  "exec",
   0
 };
 
@@ -317,18 +336,8 @@ void mysql_disable_rpl_parse(MYSQL* mysql __attribute__((unused))) {}
 int mysql_rpl_parse_enabled(MYSQL* mysql __attribute__((unused))) { return 1; }
 int mysql_rpl_probe(MYSQL *mysql __attribute__((unused))) { return 1; }
 #endif
-
-#define MAX_SERVER_ARGS 20
-
-static int embedded_server_arg_count=0;
-static char *embedded_server_args[MAX_SERVER_ARGS];
-
-static const char *embedded_server_groups[] = {
-  "server",
-  "embedded",
-  "mysqltest_SERVER",
-  NullS
-};
+static void replace_dynstr_append_mem(DYNAMIC_STRING *ds, const char *val,
+				      int len);
 
 
 static void do_eval(DYNAMIC_STRING* query_eval, const char* query)
@@ -484,15 +493,6 @@ void init_parser()
   memset(&var_reg,0, sizeof(var_reg));
 }
 
-int hex_val(int c)
-{
-  if (isdigit(c))
-    return c - '0';
-  else if ((c = tolower(c)) >= 'a' && c <= 'f')
-    return c - 'a' + 10;
-  else
-    return -1;
-}
 
 int dyn_string_cmp(DYNAMIC_STRING* ds, const char* fname)
 {
@@ -823,6 +823,70 @@ int do_source(struct st_query* q)
   return open_file(name);
 }
 
+/*
+  Execute given command.
+
+  SYNOPSIS
+    do_exec()
+    q	called command
+
+  DESCRIPTION
+    If one uses --exec command [args] command in .test file
+    we will execute the command and record its output.
+
+  RETURN VALUES
+    0	ok
+    1	error
+*/
+
+int do_exec(struct st_query* q)
+{
+  int error= 0;
+  DYNAMIC_STRING *ds;
+  DYNAMIC_STRING ds_tmp;
+  char buf[1024];
+  FILE *res_file;
+  char *cmd= q->first_argument;
+
+  while (*cmd && isspace(*cmd))
+    cmd++;
+  if (!*cmd)
+    die("Missing argument in exec\n");
+
+  if (q->record_file[0])
+  {
+    init_dynamic_string(&ds_tmp, "", 16384, 65536);
+    ds= &ds_tmp;
+  }
+  else
+    ds= &ds_res;
+
+  if (!(res_file= popen(cmd, "r")) && q->abort_on_error)
+    die("popen() failed\n");
+  while (fgets(buf, sizeof(buf), res_file))
+    replace_dynstr_append_mem(ds, buf, strlen(buf));
+  pclose(res_file);
+  
+  if (glob_replace)
+    free_replace();
+
+  if (record)
+  {
+    if (!q->record_file[0] && !result_file)
+      die("At line %u: Missing result file", start_lineno);
+    if (!result_file)
+      str_to_file(q->record_file, ds->str, ds->length);
+  }
+  else if (q->record_file[0])
+  {
+    error= check_result(ds, q->record_file, q->require_file);
+  }
+  if (ds == &ds_tmp)
+    dynstr_free(&ds_tmp);
+  
+  return error;
+}
+
 int var_query_set(VAR* v, const char* p, const char** p_end)
 {
   char* end = (char*)((p_end && *p_end) ? *p_end : p + strlen(p));
@@ -845,7 +909,28 @@ int var_query_set(VAR* v, const char* p, const char** p_end)
   }
 
   if ((row = mysql_fetch_row(res)) && row[0])
-    eval_expr(v, row[0], 0);
+  {
+    /*
+      Concatenate all row results with tab in between to allow us to work
+      with results from many columns (for example from SHOW VARIABLES)
+    */
+    DYNAMIC_STRING result;
+    uint i;
+    ulong *lengths;
+    char *end;
+
+    init_dynamic_string(&result, "", 16384, 65536);
+    lengths= mysql_fetch_lengths(res);
+    for (i=0; i < mysql_num_fields(res); i++)
+    {
+      if (row[0])
+	dynstr_append_mem(&result, row[i], lengths[i]);
+      dynstr_append_mem(&result, "\t", 1);
+    }
+    end= result.str + result.length-1;
+    eval_expr(v, result.str, (const char**) &end);
+    dynstr_free(&result);
+  }
   else
     eval_expr(v, "", 0);
 
@@ -902,8 +987,6 @@ int eval_expr(VAR* v, const char* p, const char** p_end)
       return 0;
     }
 
-  if (p_end)
-    *p_end = 0;
   die("Invalid expr: %s", p);
   return 1;
 }
@@ -1197,7 +1280,7 @@ static char *get_string(char **to_ptr, char **from_ptr,
     VAR *var=var_get(start, &end, 0, 1);
     if (var && to == (char*) end+1)
     {
-      DBUG_PRINT("info",("var: %s -> %s", start, var->str_val));
+      DBUG_PRINT("info",("var: '%s' -> '%s'", start, var->str_val));
       DBUG_RETURN(var->str_val);	/* return found variable value */
     }
   }
@@ -1521,56 +1604,6 @@ int do_while(struct st_query* q)
     *++block_ok = 1;
   var_free(&v);
   return 0;
-}
-
-
-int safe_copy_unescape(char* dest, char* src, int size)
-{
-  register char* p_dest = dest, *p_src = src;
-  register int c, val;
-  enum { ST_NORMAL, ST_ESCAPED, ST_HEX2} state = ST_NORMAL ;
-
-  size--; /* just to make life easier */
-
-  for (; p_dest - size < dest && p_src - size < src &&
-       (c = *p_src) != '\n' && c; ++p_src)
-  {
-    switch(state) {
-    case ST_NORMAL:
-      if (c == '\\')
-	state = ST_ESCAPED;
-      else
-	*p_dest++ = c;
-      break;
-    case ST_ESCAPED:
-      if ((val = hex_val(c)) > 0)
-      {
-	*p_dest = val;
-	state = ST_HEX2;
-      }
-      else
-      {
-	state = ST_NORMAL;
-	*p_dest++ = c;
-      }
-      break;
-    case ST_HEX2:
-      if ((val = hex_val(c)) > 0)
-      {
-	*p_dest = (*p_dest << 4) + val;
-	p_dest++;
-      }
-      else
-	*p_dest++ = c;
-
-      state = ST_NORMAL;
-      break;
-
-    }
-  }
-
-  *p_dest = 0;
-  return (p_dest - dest);
 }
 
 
@@ -2501,6 +2534,9 @@ int main(int argc, char** argv)
 	break;
       case Q_PING:
 	(void) mysql_ping(&cur_con->mysql);
+	break;
+      case Q_EXEC: 
+	(void) do_exec(q);
 	break;
       default: processed = 0; break;
       }

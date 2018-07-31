@@ -1367,6 +1367,8 @@ void select_insert::send_error(uint errcode,const char *err)
                             table->file->has_transactions());
       mysql_bin_log.write(&qinfo);
     }
+    if (!table->tmp_table)
+      thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;    
   }
   ha_rollback_stmt(thd);
   if (info.copied || info.deleted)
@@ -1398,6 +1400,8 @@ bool select_insert::send_eof()
   if (info.copied || info.deleted)
   {
     query_cache_invalidate3(thd, table, 1);
+    if (!(table->file->has_transactions() || table->tmp_table))
+	thd->options|=OPTION_STATUS_NO_TRANS_UPDATE;
   }
   if (error)
   {
@@ -1433,6 +1437,14 @@ select_create::prepare(List<Item> &values)
 				extra_fields, keys, &values, &lock);
   if (!table)
     DBUG_RETURN(-1);				// abort() deletes table
+
+  if (table->fields < values.elements)
+  {
+    my_printf_error(ER_WRONG_VALUE_COUNT_ON_ROW,
+                    ER(ER_WRONG_VALUE_COUNT_ON_ROW),
+		    MYF(0),1);
+    DBUG_RETURN(-1);
+  }
 
   /* First field to copy */
   field=table->field+table->fields - values.elements;
@@ -1494,7 +1506,7 @@ bool select_create::send_eof()
     */
     if (!table->tmp_table)
       hash_delete(&open_cache,(byte*) table);
-    lock=0; 
+    lock=0;
     table=0;
     VOID(pthread_mutex_unlock(&LOCK_open));
   }
@@ -1515,7 +1527,8 @@ void select_create::abort()
     enum db_type table_type=table->db_type;
     if (!table->tmp_table)
       hash_delete(&open_cache,(byte*) table);
-    quick_rm_table(table_type,db,name);
+    if (!create_info->table_existed)
+      quick_rm_table(table_type,db,name);
     table=0;
   }
   VOID(pthread_mutex_unlock(&LOCK_open));

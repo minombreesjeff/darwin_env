@@ -1596,6 +1596,13 @@ dict_index_build_internal_clust(
 				break;
 			}
 
+			if (dict_index_get_nth_field(new_index, i)->prefix_len
+			    > 0) {
+				new_index->trx_id_offset = 0;
+
+				break;
+			}
+
 			new_index->trx_id_offset += fixed_size;
 		}
 
@@ -2405,8 +2412,11 @@ dict_strip_comments(
 	ptr = str;
 
 	for (;;) {
+scan_more:
 		if (*sptr == '\0') {
 			*ptr = '\0';
+
+			ut_a(ptr <= str + strlen(sql_string));
 
 			return(str);
 		}
@@ -2421,7 +2431,7 @@ dict_strip_comments(
 				    || *sptr == (char)0x0D
 				    || *sptr == '\0') {
 
-					break;
+					goto scan_more;
 				}
 
 				sptr++;
@@ -2435,12 +2445,12 @@ dict_strip_comments(
 
 				     	sptr += 2;
 
-					break;
+					goto scan_more;
 				}
 
 				if (*sptr == '\0') {
 
-					break;
+					goto scan_more;
 				}
 
 				sptr++;

@@ -1068,6 +1068,12 @@ Optional Packages:
   --with-mysqlfs          Include the corba-based MySQL file system
   --with-vio              Include the Virtual IO support
   --with-openssl          Include the OpenSSL support
+
+  --with-openssl-includes=DIR
+                          Find OpenSSL headers in DIR
+
+  --with-openssl-libs=DIR
+                          Find OpenSSL libraries in DIR
   --without-docs          Skip building of the documentation.
   --without-bench         Skip building of the benchmark suite.
   --without-readline      Use system readline instead of bundled copy.
@@ -1800,7 +1806,7 @@ fi
 
 # Define the identity of the package.
 PACKAGE=mysql
-VERSION=4.0.14
+VERSION=4.0.16
 
 cat >>confdefs.h <<_ACEOF
 #define PACKAGE "$PACKAGE"
@@ -4991,7 +4997,7 @@ test "x$enable_libtool_lock" != xno && enable_libtool_lock=yes
 case $host in
 *-*-irix6*)
   # Find out which ABI we are using.
-  echo '#line 4994 "configure"' > conftest.$ac_ext
+  echo '#line 5000 "configure"' > conftest.$ac_ext
   if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -5530,7 +5536,7 @@ chmod -w .
 save_CFLAGS="$CFLAGS"
 CFLAGS="$CFLAGS -o out/conftest2.$ac_objext"
 compiler_c_o=no
-if { (eval echo configure:5533: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>out/conftest.err; } && test -s out/conftest2.$ac_objext; then
+if { (eval echo configure:5539: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>out/conftest.err; } && test -s out/conftest2.$ac_objext; then
   # The compiler can only warn and ignore the option if not recognized
   # So say no if there are warnings
   if test -s out/conftest.err; then
@@ -7295,7 +7301,7 @@ else
     lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 7298 "configure"
+#line 7304 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -7393,7 +7399,7 @@ else
     lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 7396 "configure"
+#line 7402 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -10659,13 +10665,15 @@ fi
 
 
 
+
+
 for ac_header in fcntl.h float.h floatingpoint.h ieeefp.h limits.h \
  memory.h pwd.h select.h \
  stdlib.h stddef.h \
  strings.h string.h synch.h sys/mman.h sys/socket.h netinet/in.h arpa/inet.h \
  sys/timeb.h sys/types.h sys/un.h sys/vadvise.h sys/wait.h term.h \
  unistd.h utime.h sys/utime.h termio.h termios.h sched.h crypt.h alloca.h \
- sys/ioctl.h
+ sys/ioctl.h malloc.h sys/malloc.h
 do
 as_ac_Header=`echo "ac_cv_header_$ac_header" | $as_tr_sh`
 if eval "test \"\${$as_ac_Header+set}\" = set"; then
@@ -12757,7 +12765,7 @@ case $SYSTEM_TYPE in
   *darwin6*)
     if test "$ac_cv_c_compiler_gnu" = "yes"
     then
-      FLAGS="-traditional-cpp -DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH -DFN_NO_CASE_SENCE"
+      FLAGS="-DHAVE_DARWIN_THREADS -D_P1003_1B_VISIBLE -DSIGNAL_WITH_VIO_CLOSE -DSIGNALS_DONT_BREAK_READ -DHAVE_BROKEN_REALPATH -DFN_NO_CASE_SENCE"
       CFLAGS="$CFLAGS $FLAGS"
       CXXFLAGS="$CXXFLAGS $FLAGS"
       MAX_C_OPTIMIZE="-O"
@@ -13173,7 +13181,12 @@ echo $ECHO_N "checking \"SCO UnixWare7 native threads\"... $ECHO_C" >&6
 
   LIBS=`echo " $LIBS " | sed -e 's/ -lsocket / /g'`
 
-      with_named_thread="-Kthread -lsocket -lnsl"
+      if expr "$CC" : ".*gcc.*"
+        then
+          with_named_thread="-pthread -lsocket -lnsl"
+      else
+        with_named_thread="-Kthread -lsocket -lnsl"
+      fi
       if expr "$SYSTEM_TYPE" : ".*unixware7.0.0" > /dev/null
       then
         cat >>confdefs.h <<\_ACEOF
@@ -13221,7 +13234,12 @@ echo $ECHO_N "checking \"OpenUNIX8 native threads\"... $ECHO_C" >&6
 
   LIBS=`echo " $LIBS " | sed -e 's/ -lsocket / /g'`
 
-      with_named_thread="-Kthread -lsocket -lnsl"
+      if expr "$CC" : ".*gcc.*"
+      then
+          with_named_thread="-pthread -lsocket -lnsl"
+      else
+        with_named_thread="-Kthread -lsocket -lnsl"
+      fi
       if expr "$SYSTEM_TYPE" : ".*unixware7.0.0" > /dev/null
       then
         cat >>confdefs.h <<\_ACEOF
@@ -16888,7 +16906,7 @@ else
 cat conftest.$ac_ext >&5
 fi
 rm -f conftest.$ac_objext conftest.$ac_ext
-if test $mysql_cv_btype_last_arg_accept = none; then
+if test "$mysql_cv_btype_last_arg_accept" = "none"; then
 cat >conftest.$ac_ext <<_ACEOF
 #line $LINENO "configure"
 #include "confdefs.h"
@@ -16932,7 +16950,7 @@ cat conftest.$ac_ext >&5
 fi
 rm -f conftest.$ac_objext conftest.$ac_ext
 fi
-if test $mysql_cv_btype_last_arg_accept = none; then
+if test "$mysql_cv_btype_last_arg_accept" = "none"; then
 mysql_cv_btype_last_arg_accept=int
 fi
 fi
@@ -17064,7 +17082,7 @@ rm -f conftest.$ac_objext conftest$ac_exeext conftest.$ac_ext
 fi
 echo "$as_me:$LINENO: result: $ac_cv_header_alloca_h" >&5
 echo "${ECHO_T}$ac_cv_header_alloca_h" >&6
- if test $ac_cv_header_alloca_h = yes
+ if test "$ac_cv_header_alloca_h" = "yes"
  then
 	cat >>confdefs.h <<\_ACEOF
 #define HAVE_ALLOCA 1
@@ -17133,14 +17151,14 @@ rm -f conftest.$ac_objext conftest$ac_exeext conftest.$ac_ext
 fi
 echo "$as_me:$LINENO: result: $ac_cv_func_alloca_works" >&5
 echo "${ECHO_T}$ac_cv_func_alloca_works" >&6
- if test $ac_cv_func_alloca_works = yes; then
+ if test "$ac_cv_func_alloca_works" = "yes"; then
    cat >>confdefs.h <<\_ACEOF
 #define HAVE_ALLOCA 1
 _ACEOF
 
  fi
 
- if test $ac_cv_func_alloca_works = no; then
+ if test "$ac_cv_func_alloca_works" = "no"; then
    # The SVR3 libPW and SVR4 libucb both contain incompatible functions
    # that cause trouble.  Some versions do not even contain alloca or
    # contain a buggy version.  If you still want to use their alloca,
@@ -17177,7 +17195,7 @@ rm -f conftest*
 fi
 echo "$as_me:$LINENO: result: $ac_cv_os_cray" >&5
 echo "${ECHO_T}$ac_cv_os_cray" >&6
- if test $ac_cv_os_cray = yes; then
+ if test "$ac_cv_os_cray" = "yes"; then
  for ac_func in _getb67 GETB67 getb67; do
    as_ac_var=`echo "ac_cv_func_$ac_func" | $as_tr_sh`
 echo "$as_me:$LINENO: checking for $ac_func" >&5
@@ -17544,7 +17562,7 @@ _ACEOF
 
 fi
 
-#Check for fp_except in ieeefp.h
+# Check for fp_except in ieeefp.h
 echo "$as_me:$LINENO: checking for type fp_except" >&5
 echo $ECHO_N "checking for type fp_except... $ECHO_C" >&6
 if test "${ac_cv_fp_except+set}" = set; then
@@ -17595,6 +17613,63 @@ if test "$ac_cv_fp_except" = "yes"
 then
   cat >>confdefs.h <<\_ACEOF
 #define HAVE_FP_EXCEPT 1
+_ACEOF
+
+fi
+
+# Check for IN_ADDR_T
+echo "$as_me:$LINENO: checking for type in_addr_t" >&5
+echo $ECHO_N "checking for type in_addr_t... $ECHO_C" >&6
+if test "${ac_cv_in_addr_t+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  if test "$cross_compiling" = yes; then
+  ac_cv_in_addr_t=no
+else
+  cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+#include "confdefs.h"
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+int main(int argc, char **argv)
+{
+  in_addr_t foo;
+  exit(0);
+}
+_ACEOF
+rm -f conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } && { ac_try='./conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_in_addr_t=yes
+else
+  echo "$as_me: program exited with status $ac_status" >&5
+echo "$as_me: failed program was:" >&5
+cat conftest.$ac_ext >&5
+( exit $ac_status )
+ac_cv_in_addr_t=no
+fi
+rm -f core core.* *.core conftest$ac_exeext conftest.$ac_objext conftest.$ac_ext
+fi
+fi
+
+echo "$as_me:$LINENO: result: $ac_cv_in_addr_t" >&5
+echo "${ECHO_T}$ac_cv_in_addr_t" >&6
+if test "$ac_cv_in_addr_t" = "yes"
+then
+  cat >>confdefs.h <<\_ACEOF
+#define HAVE_IN_ADDR_T 1
 _ACEOF
 
 fi
@@ -18416,7 +18491,7 @@ fi
 
 echo "$as_me:$LINENO: result: $mysql_cv_can_redecl_getpw" >&5
 echo "${ECHO_T}$mysql_cv_can_redecl_getpw" >&6
-if test $mysql_cv_can_redecl_getpw = no; then
+if test "$mysql_cv_can_redecl_getpw" = "no"; then
 cat >>confdefs.h <<\_ACEOF
 #define HAVE_GETPW_DECLS 1
 _ACEOF
@@ -18470,7 +18545,7 @@ fi
 
 echo "$as_me:$LINENO: result: $mysql_cv_tiocgwinsz_in_ioctl" >&5
 echo "${ECHO_T}$mysql_cv_tiocgwinsz_in_ioctl" >&6
-if test $mysql_cv_tiocgwinsz_in_ioctl = yes; then
+if test "$mysql_cv_tiocgwinsz_in_ioctl" = "yes"; then
 cat >>confdefs.h <<\_ACEOF
 #define GWINSZ_IN_SYS_IOCTL 1
 _ACEOF
@@ -18524,7 +18599,7 @@ fi
 
 echo "$as_me:$LINENO: result: $mysql_cv_fionread_in_ioctl" >&5
 echo "${ECHO_T}$mysql_cv_fionread_in_ioctl" >&6
-if test $mysql_cv_fionread_in_ioctl = yes; then
+if test "$mysql_cv_fionread_in_ioctl" = "yes"; then
 cat >>confdefs.h <<\_ACEOF
 #define FIONREAD_IN_SYS_IOCTL 1
 _ACEOF
@@ -18578,7 +18653,7 @@ fi
 
 echo "$as_me:$LINENO: result: $mysql_cv_tiocstat_in_ioctl" >&5
 echo "${ECHO_T}$mysql_cv_tiocstat_in_ioctl" >&6
-if test $mysql_cv_tiocstat_in_ioctl = yes; then
+if test "$mysql_cv_tiocstat_in_ioctl" = "yes"; then
 cat >>confdefs.h <<\_ACEOF
 #define TIOCSTAT_IN_SYS_IOCTL 1
 _ACEOF
@@ -18654,7 +18729,7 @@ fi
 
 echo "$as_me:$LINENO: result: $mysql_cv_dirent_has_dino" >&5
 echo "${ECHO_T}$mysql_cv_dirent_has_dino" >&6
-if test $mysql_cv_dirent_has_dino = yes; then
+if test "$mysql_cv_dirent_has_dino" = "yes"; then
 cat >>confdefs.h <<\_ACEOF
 #define STRUCT_DIRENT_HAS_D_INO 1
 _ACEOF
@@ -18714,7 +18789,7 @@ rm -f conftest.$ac_objext conftest.$ac_ext
 fi
 echo "$as_me:$LINENO: result: $mysql_cv_void_sighandler" >&5
 echo "${ECHO_T}$mysql_cv_void_sighandler" >&6
-if test $mysql_cv_void_sighandler = yes; then
+if test "$mysql_cv_void_sighandler" = "yes"; then
 cat >>confdefs.h <<\_ACEOF
 #define VOID_SIGHANDLER 1
 _ACEOF
@@ -18912,13 +18987,13 @@ fi
 
 echo "$as_me:$LINENO: checking for termcap functions library" >&5
 echo $ECHO_N "checking for termcap functions library... $ECHO_C" >&6
-if test $mysql_cv_termcap_lib = NOT_FOUND; then
+if test "$mysql_cv_termcap_lib" = "NOT_FOUND"; then
 { { echo "$as_me:$LINENO: error: No curses/termcap library found" >&5
 echo "$as_me: error: No curses/termcap library found" >&2;}
    { (exit 1); exit 1; }; }
-elif test $mysql_cv_termcap_lib = libtermcap; then
+elif test "$mysql_cv_termcap_lib" = "libtermcap"; then
 TERMCAP_LIB=-ltermcap
-elif test $mysql_cv_termcap_lib = libncurses; then
+elif test "$mysql_cv_termcap_lib" = "libncurses"; then
 TERMCAP_LIB=-lncurses
 else
 TERMCAP_LIB=-lcurses
@@ -19778,12 +19853,13 @@ done
 
 
 
+
 for ac_func in alarm bmove \
  chsize ftruncate rint finite isnan fpsetmask fpresetsticky\
  cuserid fcntl fconvert poll \
  getrusage getpwuid getcwd getrlimit getwd index stpcpy locking longjmp \
  perror pread realpath readlink rename \
- socket strnlen madvise mkstemp \
+ socket strnlen madvise mallinfo mkstemp \
  strtol strtoul strtoll strtoull snprintf tempnam thr_setconcurrency \
  gethostbyaddr_r gethostbyname_r getpwnam \
  bfill bzero bcmp strstr strpbrk strerror \
@@ -20890,31 +20966,66 @@ else
   openssl=no
 fi;
 
-  openssl_libs=""
+
+# Check whether --with-openssl-includes or --without-openssl-includes was given.
+if test "${with_openssl_includes+set}" = set; then
+  withval="$with_openssl_includes"
+  openssl_includes="$withval"
+else
   openssl_includes=""
+fi;
+
+
+# Check whether --with-openssl-libs or --without-openssl-libs was given.
+if test "${with_openssl_libs+set}" = set; then
+  withval="$with_openssl_libs"
+  openssl_libs="$withval"
+else
+  openssl_libs=""
+fi;
+
   if test "$openssl" = "yes"
   then
 
-  for d in /usr/ssl/include /usr/local/ssl/include /usr/include \
+  incs="$openssl_includes"
+  libs="$openssl_libs"
+  case "$incs---$libs" in
+    ---)
+      for d in /usr/ssl/include /usr/local/ssl/include /usr/include \
 /usr/include/ssl /opt/ssl/include /opt/openssl/include \
 /usr/local/ssl/include /usr/local/include ; do
-   if test -f $d/openssl/ssl.h  ; then
-     OPENSSL_INCLUDE=-I$d
-   fi
-  done
+       if test -f $d/openssl/ssl.h  ; then
+         OPENSSL_INCLUDE=-I$d
+       fi
+      done
 
- for d in /usr/ssl/lib /usr/local/ssl/lib /usr/lib/openssl \
+      for d in /usr/ssl/lib /usr/local/ssl/lib /usr/lib/openssl \
 /usr/lib /usr/lib64 /opt/ssl/lib /opt/openssl/lib /usr/local/lib/ ; do
-  if test -f $d/libssl.a ; then
-    OPENSSL_LIB=$d
-  fi
- done
+      if test -f $d/libssl.a ; then
+        OPENSSL_LIB=$d
+      fi
+      done
+      ;;
+    ---* | *---)
+      { { echo "$as_me:$LINENO: error: if either 'includes' or 'libs' is specified, both must be specified" >&5
+echo "$as_me: error: if either 'includes' or 'libs' is specified, both must be specified" >&2;}
+   { (exit 1); exit 1; }; }
+      ;;
+    * )
+      if test -f $incs/openssl/ssl.h  ; then
+        OPENSSL_INCLUDE=-I$incs
+      fi
+      if test -f $libs/libssl.a ; then
+        OPENSSL_LIB=$libs
+      fi
+      ;;
+  esac
 
   # On RedHat 9 we need kerberos to compile openssl
   for d in /usr/kerberos/include
   do
    if test -f $d/krb5.h  ; then
-     OPENSSL_INCLUDE="$OPENSSL_INCLUDE -I$d"
+     OPENSSL_KERBEROS_INCLUDE="$d"
    fi
   done
 
@@ -20942,9 +21053,14 @@ echo "${ECHO_T}yes" >&6
     openssl_libs="-L$OPENSSL_LIB -lssl -lcrypto"
     # Don't set openssl_includes to /usr/include as this gives us a lot of
     # compiler warnings when using gcc 3.x
+    openssl_includes=""
     if test "$OPENSSL_INCLUDE" != "-I/usr/include"
     then
 	openssl_includes="$OPENSSL_INCLUDE"
+    fi
+    if test "$OPENSSL_KERBEROS_INCLUDE"
+    then
+    	openssl_includes="$openssl_includes -I$OPENSSL_KERBEROS_INCLUDE"
     fi
     cat >>confdefs.h <<\_ACEOF
 #define HAVE_OPENSSL 1
@@ -20958,15 +21074,16 @@ _ACEOF
     case "$CLIENT_EXTRA_LDFLAGS $MYSQLD_EXTRA_LDFLAGS" in
 	*-all-static*) using_static="yes" ;;
     esac
-    if test $using_static = "yes"
+    if test "$using_static" = "yes"
     then
       echo "You can't use the --all-static link option when using openssl."
       exit 1
     fi
+    NON_THREADED_CLIENT_LIBS="$NON_THREADED_CLIENT_LIBS $openssl_libs"
+  else
     echo "$as_me:$LINENO: result: no" >&5
 echo "${ECHO_T}no" >&6
   fi
-  NON_THREADED_CLIENT_LIBS="$NON_THREADED_CLIENT_LIBS $openssl_libs"
 
 
 
@@ -21114,9 +21231,9 @@ do
   done
   if test $charset_okay = 0;
   then
-    { { echo "$as_me:$LINENO: error: Charset $cs not available. (Available $CHARSETS_AVAILABLE).
+    { { echo "$as_me:$LINENO: error: Charset '$cs' not available. (Available $CHARSETS_AVAILABLE).
     See the Installation chapter in the Reference Manual." >&5
-echo "$as_me: error: Charset $cs not available. (Available $CHARSETS_AVAILABLE).
+echo "$as_me: error: Charset '$cs' not available. (Available $CHARSETS_AVAILABLE).
     See the Installation chapter in the Reference Manual." >&2;}
    { (exit 1); exit 1; }; };
   fi
